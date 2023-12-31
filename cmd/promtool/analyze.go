@@ -255,15 +255,16 @@ func querySamples(ctx context.Context, api v1.API, query string, start, end time
 }
 
 // available is the total number of buckets. min/avg/max is for the number of
-// changed buckets.
+// changed buckets. minDelta/avgDelta/maxDelta is for the total absolute change
+// in the buckets across all timesteps.
 type statistics struct {
-	min, max, populated, available int
-	avg                            float64
-	step                           time.Duration
+	min, max, populated, available, minDelta, maxDelta int
+	avg, avgDelta                                      float64
+	step                                               time.Duration
 }
 
 func (s statistics) String() string {
-	return fmt.Sprintf("Bucket min/avg/max/pop/avail@scrape: %d/%.3f/%d/%d/%d@%v", s.min, s.avg, s.max, s.populated, s.available, s.step)
+	return fmt.Sprintf("Bucket min/avg/max/pop/avail/minDelta/avgDelta/maxDelta@scrape: %d/%.3f/%d/%d/%d/%d/%.3f/%d@%v", s.min, s.avg, s.max, s.populated, s.available, s.minDelta, s.avgDelta, s.maxDelta, s.step)
 }
 
 type calcBucketStatisticsFunc func(matrix model.Matrix, step time.Duration, histo *statshistogram) (*statistics, error)
@@ -273,6 +274,7 @@ func calcClassicBucketStatistics(matrix model.Matrix, step time.Duration, histo 
 
 	stats := &statistics{
 		min:       math.MaxInt,
+		minDelta:  math.MaxInt,
 		available: numBuckets,
 		step:      step,
 	}
@@ -298,6 +300,7 @@ func calcClassicBucketStatistics(matrix model.Matrix, step time.Duration, histo 
 	}
 
 	sumBucketsChanged := 0
+	totalDelta := 0
 	for timeIdx := 1; timeIdx < numSamples; timeIdx++ {
 		curr, err := getBucketCountsAtTime(matrix, numBuckets, timeIdx)
 		if err != nil {
@@ -310,25 +313,35 @@ func calcClassicBucketStatistics(matrix model.Matrix, step time.Duration, histo 
 		}
 
 		countBucketsChanged := 0
+		delta := 0
 		for bIdx := range matrix {
 			if curr[bIdx] != prev[bIdx] {
 				countBucketsChanged++
+				delta += abs(curr[bIdx] - prev[bIdx])
 			}
 		}
 
 		histo.update(countBucketsChanged)
 
 		sumBucketsChanged += countBucketsChanged
+		totalDelta += delta
 		if stats.min > countBucketsChanged {
 			stats.min = countBucketsChanged
 		}
 		if stats.max < countBucketsChanged {
 			stats.max = countBucketsChanged
 		}
+		if stats.minDelta > delta {
+			stats.minDelta = delta
+		}
+		if stats.maxDelta < delta {
+			stats.maxDelta = delta
+		}
 
 		prev = curr
 	}
 	stats.avg = float64(sumBucketsChanged) / float64(numSamples-1)
+	stats.avgDelta = float64(totalDelta) / float64(numSamples-1)
 	stats.populated = len(isNotEmpty)
 	return stats, nil
 }
@@ -373,14 +386,23 @@ func makeBucketBounds(b *model.HistogramBucket) bucketBounds {
 	}
 }
 
+func abs(num int) int {
+	if num < 0 {
+		return -num
+	}
+	return num
+}
+
 func calcNativeBucketStatistics(matrix model.Matrix, step time.Duration, histo *statshistogram) (*statistics, error) {
 	stats := &statistics{
-		min:  math.MaxInt,
-		step: step,
+		min:      math.MaxInt,
+		minDelta: math.MaxInt,
+		step:     step,
 	}
 
 	overall := make(map[bucketBounds]struct{})
 	sumBucketsChanged := 0
+	totalDelta := 0
 	if len(matrix) == 0 {
 		return nil, notNativeHistogramErr
 	}
@@ -402,35 +424,47 @@ func calcNativeBucketStatistics(matrix model.Matrix, step time.Duration, histo *
 				overall[bb] = struct{}{}
 			}
 			countBucketsChanged := 0
+			delta := 0
 			for bucket, currCount := range curr {
 				prevCount, ok := prev[bucket]
 				if !ok {
 					countBucketsChanged++
+					delta += int(currCount)
 				} else if prevCount != currCount {
 					countBucketsChanged++
+					delta += int(math.Abs(prevCount - currCount))
 				}
 			}
-			for bucket := range prev {
+			for bucket, prevCount := range prev {
 				_, ok := curr[bucket]
 				if !ok {
 					countBucketsChanged++
+					delta += int(prevCount)
 				}
 			}
 
 			histo.update(countBucketsChanged)
 
 			sumBucketsChanged += countBucketsChanged
+			totalDelta += delta
 			if stats.min > countBucketsChanged {
 				stats.min = countBucketsChanged
 			}
 			if stats.max < countBucketsChanged {
 				stats.max = countBucketsChanged
 			}
+			if stats.minDelta > delta {
+				stats.minDelta = delta
+			}
+			if stats.maxDelta < delta {
+				stats.maxDelta = delta
+			}
 
 			prev = curr
 		}
 	}
 	stats.avg = float64(sumBucketsChanged) / float64(len(matrix[0].Histograms)-1)
+	stats.avgDelta = float64(totalDelta) / float64(len(matrix[0].Histograms)-1)
 	stats.available = len(overall)
 	stats.populated = stats.available
 	return stats, nil
@@ -463,7 +497,7 @@ func (d distribution) String() string {
 }
 
 type metaStatistics struct {
-	min, avg, max, populated, available distribution
+	min, avg, max, populated, available, minDelta, avgDelta, maxDelta distribution
 }
 
 func newMetaStatistics() *metaStatistics {
@@ -473,11 +507,14 @@ func newMetaStatistics() *metaStatistics {
 		max:       newDistribution(),
 		populated: newDistribution(),
 		available: newDistribution(),
+		minDelta:  newDistribution(),
+		avgDelta:  newDistribution(),
+		maxDelta:  newDistribution(),
 	}
 }
 
 func (ms metaStatistics) String() string {
-	return fmt.Sprintf("min - %v\navg - %v\nmax - %v\npopulated - %v\navail - %v\ncount - %d", ms.min, ms.avg, ms.max, ms.populated, ms.available, ms.min.count)
+	return fmt.Sprintf("min - %v\navg - %v\nmax - %v\npopulated - %v\navail - %v\nminDelta - %v\navgDelta - %v\nmaxDelta - %v\ncount - %d", ms.min, ms.avg, ms.max, ms.populated, ms.available, ms.minDelta, ms.avgDelta, ms.maxDelta, ms.min.count)
 }
 
 func (ms *metaStatistics) update(s *statistics) {
@@ -486,6 +523,9 @@ func (ms *metaStatistics) update(s *statistics) {
 	ms.max.update(s.max)
 	ms.populated.update(s.populated)
 	ms.available.update(s.available)
+	ms.minDelta.update(s.minDelta)
+	ms.avgDelta.update(int(s.avgDelta))
+	ms.maxDelta.update(s.maxDelta)
 }
 
 type statshistogram struct {
