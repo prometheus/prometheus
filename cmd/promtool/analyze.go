@@ -33,7 +33,8 @@ import (
 )
 
 var (
-	notNativeHistogramErr = fmt.Errorf("not a native histogram")
+	errNotNativeHistogram = fmt.Errorf("not a native histogram")
+	errNotEnoughData      = fmt.Errorf("not enough data")
 )
 
 type AnalyzeHistogramsConfig struct {
@@ -129,7 +130,7 @@ func (c *AnalyzeHistogramsConfig) getStatsFromMetrics(ctx context.Context, api v
 			}
 			stats, err := calcBucketStatistics(matrix, step, metahistogram)
 			if err != nil {
-				if err == notNativeHistogramErr {
+				if err == errNotNativeHistogram || err == errNotEnoughData {
 					continue
 				}
 				return err
@@ -183,23 +184,23 @@ func metricBasename(bucketMetricName string) (string, error) {
 	return bucketMetricName[:len(bucketMetricName)-len("_bucket")], nil
 }
 
-func queryMetadataForHistograms(ctx context.Context, api v1.API, query, limit string) ([]string, error) {
-	result, err := api.Metadata(ctx, query, limit)
-	if err != nil {
-		return nil, err
-	}
+// func queryMetadataForHistograms(ctx context.Context, api v1.API, query, limit string) ([]string, error) {
+// 	result, err := api.Metadata(ctx, query, limit)
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	metrics := make([]string, 0)
-	for metric, metadata := range result {
-		for _, metadatum := range metadata {
-			if metadatum.Type == "histogram" || metadatum.Type == "gaugehistogram" {
-				metrics = append(metrics, metric)
-			}
-		}
-	}
+// 	metrics := make([]string, 0)
+// 	for metric, metadata := range result {
+// 		for _, metadatum := range metadata {
+// 			if metadatum.Type == "histogram" || metadatum.Type == "gaugehistogram" {
+// 				metrics = append(metrics, metric)
+// 			}
+// 		}
+// 	}
 
-	return metrics, nil
-}
+// 	return metrics, nil
+// }
 
 // Query the related count_over_time(*_sum[duration]) series to double check that metricName is a
 // histogram. This keeps the result small (avoids buckets) and the count gives scrape interval
@@ -280,8 +281,7 @@ func calcClassicBucketStatistics(matrix model.Matrix, step time.Duration, histo 
 	}
 
 	if numBuckets == 0 || len(matrix[0].Values) < 2 {
-		// Not enough data.
-		return stats, nil
+		return stats, errNotEnoughData
 	}
 
 	numSamples := len(matrix[0].Values)
@@ -404,11 +404,11 @@ func calcNativeBucketStatistics(matrix model.Matrix, step time.Duration, histo *
 	sumBucketsChanged := 0
 	totalDelta := 0
 	if len(matrix) == 0 {
-		return nil, notNativeHistogramErr
+		return nil, errNotEnoughData
 	}
 	for _, vector := range matrix {
 		if len(vector.Histograms) == 0 {
-			return nil, notNativeHistogramErr
+			return nil, errNotNativeHistogram
 		}
 		prev := make(map[bucketBounds]float64)
 		for _, bucket := range vector.Histograms[0].Histogram.Buckets {
