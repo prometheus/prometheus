@@ -257,13 +257,13 @@ func querySamples(ctx context.Context, api v1.API, query string, start, end time
 // available is the total number of buckets. min/avg/max is for the number of
 // changed buckets.
 type statistics struct {
-	min, max, available int
-	avg                 float64
-	step                time.Duration
+	min, max, populated, available int
+	avg                            float64
+	step                           time.Duration
 }
 
 func (s statistics) String() string {
-	return fmt.Sprintf("Bucket min/avg/max/avail@scrape: %d/%.3f/%d/%d@%v", s.min, s.avg, s.max, s.available, s.step)
+	return fmt.Sprintf("Bucket min/avg/max/pop/avail@scrape: %d/%.3f/%d/%d/%d@%v", s.min, s.avg, s.max, s.populated, s.available, s.step)
 }
 
 type calcBucketStatisticsFunc func(matrix model.Matrix, step time.Duration, histo *statshistogram) (*statistics, error)
@@ -290,12 +290,23 @@ func calcClassicBucketStatistics(matrix model.Matrix, step time.Duration, histo 
 	if err != nil {
 		return stats, err
 	}
+	isNotEmpty := make(map[int]struct{})
+	for i, b := range prev {
+		if b != 0 {
+			isNotEmpty[i] = struct{}{}
+		}
+	}
 
 	sumBucketsChanged := 0
 	for timeIdx := 1; timeIdx < numSamples; timeIdx++ {
 		curr, err := getBucketCountsAtTime(matrix, numBuckets, timeIdx)
 		if err != nil {
 			return stats, err
+		}
+		for i, b := range curr {
+			if b != 0 {
+				isNotEmpty[i] = struct{}{}
+			}
 		}
 
 		countBucketsChanged := 0
@@ -318,6 +329,7 @@ func calcClassicBucketStatistics(matrix model.Matrix, step time.Duration, histo 
 		prev = curr
 	}
 	stats.avg = float64(sumBucketsChanged) / float64(numSamples-1)
+	stats.populated = len(isNotEmpty)
 	return stats, nil
 }
 
@@ -420,6 +432,7 @@ func calcNativeBucketStatistics(matrix model.Matrix, step time.Duration, histo *
 	}
 	stats.avg = float64(sumBucketsChanged) / float64(len(matrix[0].Histograms)-1)
 	stats.available = len(overall)
+	stats.populated = stats.available
 	return stats, nil
 }
 
@@ -450,7 +463,7 @@ func (d distribution) String() string {
 }
 
 type metaStatistics struct {
-	min, avg, max, available distribution
+	min, avg, max, populated, available distribution
 }
 
 func newMetaStatistics() *metaStatistics {
@@ -458,18 +471,20 @@ func newMetaStatistics() *metaStatistics {
 		min:       newDistribution(),
 		avg:       newDistribution(),
 		max:       newDistribution(),
+		populated: newDistribution(),
 		available: newDistribution(),
 	}
 }
 
 func (ms metaStatistics) String() string {
-	return fmt.Sprintf("min - %v\navg - %v\nmax - %v\navail - %v\ncount - %d", ms.min, ms.avg, ms.max, ms.available, ms.min.count)
+	return fmt.Sprintf("min - %v\navg - %v\nmax - %v\npopulated - %v\navail - %v\ncount - %d", ms.min, ms.avg, ms.max, ms.populated, ms.available, ms.min.count)
 }
 
 func (ms *metaStatistics) update(s *statistics) {
 	ms.min.update(s.min)
 	ms.avg.update(int(s.avg))
 	ms.max.update(s.max)
+	ms.populated.update(s.populated)
 	ms.available.update(s.available)
 }
 
