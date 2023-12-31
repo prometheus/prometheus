@@ -15,6 +15,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -99,7 +100,7 @@ func (c *QueryAnalyzeConfig) getStatsFromMetrics(ctx context.Context, api v1.API
 			if len(series.Values) == 0 {
 				stats, err := calcNativeBucketStatistics(series)
 				if err != nil {
-					if err == errNotNativeHistogram || err == errNotEnoughData {
+					if errors.Is(err, errNotNativeHistogram) || errors.Is(err, errNotEnoughData) {
 						continue
 					}
 					return err
@@ -125,7 +126,7 @@ func (c *QueryAnalyzeConfig) getStatsFromMetrics(ctx context.Context, api v1.API
 		for key, matrix := range matrices {
 			stats, err := calcClassicBucketStatistics(matrix)
 			if err != nil {
-				if err == errNotEnoughData {
+				if errors.Is(err, errNotEnoughData) {
 					continue
 				}
 				return err
