@@ -26,8 +26,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/grafana/regexp"
-
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
 
@@ -37,8 +35,6 @@ import (
 var (
 	errNotNativeHistogram = fmt.Errorf("not a native histogram")
 	errNotEnoughData      = fmt.Errorf("not enough data")
-
-	sumSuffix = regexp.MustCompile(`_sum\b`)
 )
 
 type QueryAnalyzeConfig struct {
@@ -73,36 +69,21 @@ func (c *QueryAnalyzeConfig) run(url *url.URL, roundtripper http.RoundTripper) e
 	}
 
 	if c.metricType == "nativehistograms" {
-		return c.getStatsFromMetrics(ctx, api, endTime, os.Stdout, identity, true, c.matchers)
+		return c.getStatsFromMetrics(ctx, api, endTime, os.Stdout, true, c.matchers)
 	}
-	for _, matcher := range c.matchers {
-		if !sumSuffix.MatchString(matcher) {
-			return fmt.Errorf("every classic histogram matcher must have a '_sum' suffix in the metric name, but the matcher '%s' does not", matcher)
-		}
-	}
-	return c.getStatsFromMetrics(ctx, api, endTime, os.Stdout, replaceSumWithBucket, false, c.matchers)
+	return c.getStatsFromMetrics(ctx, api, endTime, os.Stdout, false, c.matchers)
 }
 
-type transformNameFunc func(name string) string
-
-func identity(name string) string {
-	return name
-}
-
-func replaceSumWithBucket(name string) string {
-	return sumSuffix.ReplaceAllString(name, "_bucket")
-}
-
-func (c *QueryAnalyzeConfig) getStatsFromMetrics(ctx context.Context, api v1.API, endTime time.Time, out io.Writer, transformNameForSeriesSel transformNameFunc, isNative bool, matchers []string) error {
+func (c *QueryAnalyzeConfig) getStatsFromMetrics(ctx context.Context, api v1.API, endTime time.Time, out io.Writer, isNative bool, matchers []string) error {
 	metastats := newMetaStatistics()
 	metahistogram := newStatsHistogram()
-	if isNative {
-		for _, matcher := range matchers {
-			seriesSel := seriesSelector(matcher, c.duration)
-			matrix, err := querySamples(ctx, api, seriesSel, endTime)
-			if err != nil {
-				return err
-			}
+	for _, matcher := range matchers {
+		seriesSel := seriesSelector(matcher, c.duration)
+		matrix, err := querySamples(ctx, api, seriesSel, endTime)
+		if err != nil {
+			return err
+		}
+		if isNative {
 			for _, series := range matrix {
 				stats, err := calcNativeBucketStatistics(series, metahistogram)
 				if err != nil {
@@ -114,23 +95,20 @@ func (c *QueryAnalyzeConfig) getStatsFromMetrics(ctx context.Context, api v1.API
 				fmt.Fprintf(out, "%s=%v\n", series.Metric, *stats)
 				metastats.update(stats)
 			}
-		}
-	} else {
-		for _, matcher := range matchers {
-			series, err := queryLabelSets(ctx, api, matcher, endTime, c.duration)
-			if err != nil {
-				return err
-			}
-			for _, sample := range series {
-				// Get labels to match.
-				lbs := model.LabelSet(sample.Metric)
+		} else {
+			matrices := make(map[string]model.Matrix)
+			for _, series := range matrix {
+				lbs := model.LabelSet(series.Metric).Clone()
+				if _, ok := lbs["le"]; !ok {
+					continue
+				}
 				metricName := string(lbs[labels.MetricName])
 				delete(lbs, labels.MetricName)
-				seriesSel := seriesSelectorWithLabels(transformNameForSeriesSel(metricName), lbs, c.duration)
-				matrix, err := querySamples(ctx, api, seriesSel, endTime)
-				if err != nil {
-					return err
-				}
+				delete(lbs, "le")
+				key := formatSeriesName(metricName, lbs)
+				matrices[key] = append(matrices[key], series)
+			}
+			for key, matrix := range matrices {
 				stats, err := calcClassicBucketStatistics(matrix, metahistogram)
 				if err != nil {
 					if err == errNotEnoughData {
@@ -138,7 +116,7 @@ func (c *QueryAnalyzeConfig) getStatsFromMetrics(ctx context.Context, api v1.API
 					}
 					return err
 				}
-				fmt.Fprintf(out, "%s=%v\n", seriesSel, *stats)
+				fmt.Fprintf(out, "%s=%v\n", key, *stats)
 				metastats.update(stats)
 			}
 		}
@@ -148,54 +126,19 @@ func (c *QueryAnalyzeConfig) getStatsFromMetrics(ctx context.Context, api v1.API
 	return nil
 }
 
-// Query the last_over_time(*_sum[duration]) series related to the matcher,
-// keeping the result small (avoids buckets).
-func queryLabelSets(ctx context.Context, api v1.API, metricName string, end time.Time, duration time.Duration) (model.Vector, error) {
-	query := fmt.Sprintf("last_over_time(%s[%s])", metricName, duration.String())
-
-	values, _, err := api.Query(ctx, query, end)
-	if err != nil {
-		return nil, err
-	}
-
-	series, ok := values.(model.Vector)
-	if !ok {
-		return nil, fmt.Errorf("query for metrics resulted in non-Vector")
-	}
-	return series, nil
-}
-
 func seriesSelector(metricName string, duration time.Duration) string {
 	builder := strings.Builder{}
 	builder.WriteString(metricName)
 	builder.WriteRune('[')
 	builder.WriteString(duration.String())
 	builder.WriteRune(']')
-
 	return builder.String()
 }
 
-func seriesSelectorWithLabels(metricName string, lbs model.LabelSet, duration time.Duration) string {
+func formatSeriesName(metricName string, lbs model.LabelSet) string {
 	builder := strings.Builder{}
 	builder.WriteString(metricName)
-	builder.WriteRune('{')
-	first := true
-	for l, v := range lbs {
-		if first {
-			first = false
-		} else {
-			builder.WriteRune(',')
-		}
-		builder.WriteString(string(l))
-		builder.WriteString("=\"")
-		builder.WriteString(string(v))
-		builder.WriteRune('"')
-	}
-	builder.WriteRune('}')
-	builder.WriteRune('[')
-	builder.WriteString(duration.String())
-	builder.WriteRune(']')
-
+	builder.WriteString(lbs.String())
 	return builder.String()
 }
 
