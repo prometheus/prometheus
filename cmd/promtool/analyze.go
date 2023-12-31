@@ -35,6 +35,19 @@ import (
 var (
 	errNotNativeHistogram = fmt.Errorf("not a native histogram")
 	errNotEnoughData      = fmt.Errorf("not enough data")
+
+	outputHeaderNative = `Bucket stats for each native histogram series over time
+-------------------------------------------------------
+The min, avg, and max number of populated buckets. If followed by another number,
+this is the total number of buckets that differs from the max number of populated
+buckets.`
+	outputHeaderClassic = `Bucket stats for each classic histogram series over time
+--------------------------------------------------------
+First the min, avg, and max number of populated buckets, followed by the total
+number of buckets (if different from the max number of populated buckets).`
+	outputFooter = `Aggregated bucket stats
+-----------------------
+Each line shows min/avg/max over the series above.`
 )
 
 type QueryAnalyzeConfig struct {
@@ -75,6 +88,11 @@ func (c *QueryAnalyzeConfig) run(url *url.URL, roundtripper http.RoundTripper) e
 }
 
 func (c *QueryAnalyzeConfig) getStatsFromMetrics(ctx context.Context, api v1.API, endTime time.Time, out io.Writer, isNative bool, matchers []string) error {
+	if isNative {
+		fmt.Fprintf(out, "%s\n\n", outputHeaderNative)
+	} else {
+		fmt.Fprintf(out, "%s\n\n", outputHeaderClassic)
+	}
 	metastats := newMetaStatistics()
 	for _, matcher := range matchers {
 		seriesSel := seriesSelector(matcher, c.duration)
@@ -91,7 +109,7 @@ func (c *QueryAnalyzeConfig) getStatsFromMetrics(ctx context.Context, api v1.API
 					}
 					return err
 				}
-				fmt.Fprintf(out, "%s: %v\n", series.Metric, *stats)
+				fmt.Fprintf(out, "- %s: %v\n", series.Metric, *stats)
 				metastats.update(stats)
 			}
 		} else {
@@ -118,12 +136,12 @@ func (c *QueryAnalyzeConfig) getStatsFromMetrics(ctx context.Context, api v1.API
 					}
 					return err
 				}
-				fmt.Fprintf(out, "%s: %v\n", key, *stats)
+				fmt.Fprintf(out, "- %s: %v\n", key, *stats)
 				metastats.update(stats)
 			}
 		}
 	}
-	fmt.Fprintln(out, metastats)
+	fmt.Fprintf(out, "\n%s\n\n%s\n", outputFooter, metastats)
 	return nil
 }
 
@@ -166,7 +184,10 @@ type statistics struct {
 }
 
 func (s statistics) String() string {
-	return fmt.Sprintf("Bucket stats (min/avg/max) - number of populated buckets: %d/%.3f/%d. total number of buckets: %d", s.minPop, s.avgPop, s.maxPop, s.total)
+	if s.maxPop == s.total {
+		return fmt.Sprintf("%d/%.3f/%d", s.minPop, s.avgPop, s.maxPop)
+	}
+	return fmt.Sprintf("%d/%.3f/%d/%d", s.minPop, s.avgPop, s.maxPop, s.total)
 }
 
 func calcClassicBucketStatistics(matrix model.Matrix) (*statistics, error) {
@@ -306,7 +327,7 @@ func (d *distribution) update(num int) {
 }
 
 func (d distribution) String() string {
-	return fmt.Sprintf("min/avg/max: %d/%.3f/%d", d.min, d.avg, d.max)
+	return fmt.Sprintf("%d/%.3f/%d", d.min, d.avg, d.max)
 }
 
 type metaStatistics struct {
@@ -323,7 +344,10 @@ func newMetaStatistics() *metaStatistics {
 }
 
 func (ms metaStatistics) String() string {
-	return fmt.Sprintf("minPop - %v\navgPop - %v\nmaxPop - %v\ntotal - %v\ncount - %d", ms.minPop, ms.avgPop, ms.maxPop, ms.total, ms.minPop.count)
+	if ms.maxPop == ms.total {
+		return fmt.Sprintf("Histogram series (%d in total):\n- min populated: %v\n- avg populated: %v\n- max populated: %v", ms.minPop.count, ms.minPop, ms.avgPop, ms.maxPop)
+	}
+	return fmt.Sprintf("Histogram series (%d in total):\n- min populated: %v\n- avg populated: %v\n- max populated: %v\n- total: %v", ms.minPop.count, ms.minPop, ms.avgPop, ms.maxPop, ms.total)
 }
 
 func (ms *metaStatistics) update(s *statistics) {
