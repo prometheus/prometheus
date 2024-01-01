@@ -51,7 +51,7 @@ require (
 	github.com/prometheus/common v0.45.1-0.20231122191551-832cd6e99f99
 	github.com/prometheus/common/assets v0.2.0
 	github.com/prometheus/common/sigv4 v0.1.0
-	github.com/prometheus/exporter-toolkit v0.10.0
+	github.com/prometheus/exporter-toolkit v0.11.0
 	github.com/scaleway/scaleway-sdk-go v1.0.0-beta.21
 	github.com/shurcooL/httpfs v0.0.0-20230704072500-f1e31cf0ba5c
 	github.com/stretchr/testify v1.8.4
