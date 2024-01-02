@@ -366,7 +366,7 @@ func optimizeAlternatingLiterals(s string) (StringMatcher, []string) {
 	// If there are no alternates, check if the string is a literal
 	if estimatedAlternates == 1 {
 		if regexp.QuoteMeta(s) == s {
-			return &equalStringMatcher{s: s, caseSensitive: true}, nil
+			return &equalStringMatcher{s: s, caseSensitive: true}, []string{s}
 		}
 		return nil, nil
 	}

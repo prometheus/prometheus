@@ -342,6 +342,14 @@ func TestFindSetMatches(t *testing.T) {
 			matches, actualCaseSensitive := findSetMatches(parsed)
 			require.Equal(t, c.expMatches, matches)
 			require.Equal(t, c.expCaseSensitive, actualCaseSensitive)
+
+			if c.expCaseSensitive {
+				// When the regexp is case sensitive, we want to ensure that the
+				// set matches are maintained in the final matcher.
+				r, err := newFastRegexMatcherWithoutCache(c.pattern)
+				require.NoError(t, err)
+				require.Equal(t, c.expMatches, r.SetMatches())
+			}
 		})
 	}
 }
