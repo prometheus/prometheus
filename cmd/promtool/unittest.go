@@ -366,14 +366,12 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 						diffOpts := jsondiff.DefaultConsoleOptions()
 						expAlertsJSON, err := json.Marshal(expAlerts)
 						if err != nil {
-							// errs = append(errs, fmt.Errorf("alertName: %s\nError converting expAlert to JSON: %v", tg.TestGroupName, expAlerts.String()))
 							errs = append(errs, fmt.Errorf("error marshaling expected %s alert: [%s]", tg.TestGroupName, err.Error()))
 							continue
 						}
 
 						gotAlertsJSON, err := json.Marshal(gotAlerts)
 						if err != nil {
-							// errs = append(errs, fmt.Errorf("alertName: %s\nError converting gotAlert to JSON: %v", tg.TestGroupName, gotAlerts.String()))
 							errs = append(errs, fmt.Errorf("error marshaling received %s alert: [%s]", tg.TestGroupName, err.Error()))
 							continue
 						}
