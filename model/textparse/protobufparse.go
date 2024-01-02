@@ -181,29 +181,7 @@ func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram, *his
 	}
 	if h.GetSampleCountFloat() > 0 || h.GetZeroCountFloat() > 0 {
 		// It is a float histogram.
-		fh := histogram.FloatHistogram{
-			Count:           h.GetSampleCountFloat(),
-			Sum:             h.GetSampleSum(),
-			ZeroThreshold:   h.GetZeroThreshold(),
-			ZeroCount:       h.GetZeroCountFloat(),
-			Schema:          h.GetSchema(),
-			PositiveSpans:   make([]histogram.Span, len(h.GetPositiveSpan())),
-			PositiveBuckets: h.GetPositiveCount(),
-			NegativeSpans:   make([]histogram.Span, len(h.GetNegativeSpan())),
-			NegativeBuckets: h.GetNegativeCount(),
-		}
-		for i, span := range h.GetPositiveSpan() {
-			fh.PositiveSpans[i].Offset = span.GetOffset()
-			fh.PositiveSpans[i].Length = span.GetLength()
-		}
-		for i, span := range h.GetNegativeSpan() {
-			fh.NegativeSpans[i].Offset = span.GetOffset()
-			fh.NegativeSpans[i].Length = span.GetLength()
-		}
-		if p.mf.GetType() == dto.MetricType_GAUGE_HISTOGRAM {
-			fh.CounterResetHint = histogram.GaugeType
-		}
-		fh.Compact(0)
+		fh := convertFloatHistogram(h, p.mf.GetType())
 		if ts != 0 {
 			return p.metricBytes.Bytes(), &ts, nil, &fh
 		}
@@ -213,6 +191,41 @@ func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram, *his
 		return p.metricBytes.Bytes(), nil, nil, &fh
 	}
 
+	sh := convertHistogram(h, p.mf.GetType())
+	if ts != 0 {
+		return p.metricBytes.Bytes(), &ts, &sh, nil
+	}
+	return p.metricBytes.Bytes(), nil, &sh, nil
+}
+
+func convertFloatHistogram(h *dto.Histogram, t dto.MetricType) histogram.FloatHistogram {
+	fh := histogram.FloatHistogram{
+		Count:           h.GetSampleCountFloat(),
+		Sum:             h.GetSampleSum(),
+		ZeroThreshold:   h.GetZeroThreshold(),
+		ZeroCount:       h.GetZeroCountFloat(),
+		Schema:          h.GetSchema(),
+		PositiveSpans:   make([]histogram.Span, len(h.GetPositiveSpan())),
+		PositiveBuckets: h.GetPositiveCount(),
+		NegativeSpans:   make([]histogram.Span, len(h.GetNegativeSpan())),
+		NegativeBuckets: h.GetNegativeCount(),
+	}
+	for i, span := range h.GetPositiveSpan() {
+		fh.PositiveSpans[i].Offset = span.GetOffset()
+		fh.PositiveSpans[i].Length = span.GetLength()
+	}
+	for i, span := range h.GetNegativeSpan() {
+		fh.NegativeSpans[i].Offset = span.GetOffset()
+		fh.NegativeSpans[i].Length = span.GetLength()
+	}
+	if t == dto.MetricType_GAUGE_HISTOGRAM {
+		fh.CounterResetHint = histogram.GaugeType
+	}
+	fh.Compact(0)
+	return fh
+}
+
+func convertHistogram(h *dto.Histogram, t dto.MetricType) histogram.Histogram {
 	sh := histogram.Histogram{
 		Count:           h.GetSampleCount(),
 		Sum:             h.GetSampleSum(),
@@ -232,14 +245,11 @@ func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram, *his
 		sh.NegativeSpans[i].Offset = span.GetOffset()
 		sh.NegativeSpans[i].Length = span.GetLength()
 	}
-	if p.mf.GetType() == dto.MetricType_GAUGE_HISTOGRAM {
+	if t == dto.MetricType_GAUGE_HISTOGRAM {
 		sh.CounterResetHint = histogram.GaugeType
 	}
 	sh.Compact(0)
-	if ts != 0 {
-		return p.metricBytes.Bytes(), &ts, &sh, nil
-	}
-	return p.metricBytes.Bytes(), nil, &sh, nil
+	return sh
 }
 
 // Help returns the metric name and help text in the current entry.

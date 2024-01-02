@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 )
 
@@ -65,7 +66,9 @@ _metric_starting_with_underscore 1
 testmetric{_label_starting_with_underscore="foo"} 1
 testmetric{label="\"bar\""} 1
 # TYPE foo counter
-foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
+foo_total 17.0 1520879607.789 # {id="counter-test"} 5
+# TYPE nativehistogram histogram
+nativehistogram {"sample_count":24,"sample_sum":100,"schema":0,"zero_threshold":0.001,"zero_count":4,"positive_span":[{"offset":0,"length":2},{"offset":1,"length":2}],"negative_span":[{"offset":0,"length":2},{"offset":1,"length":2}],"positive_delta":[2,1,-2,3],"negative_delta":[2,1,-2,3]}`
 
 	input += "\n# HELP metric foo\x00bar"
 	input += "\nnull_byte_metric{a=\"abc\x00\"} 1"
@@ -78,6 +81,7 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 		m       string
 		t       *int64
 		v       float64
+		h       *histogram.Histogram
 		typ     model.MetricType
 		help    string
 		unit    string
@@ -237,6 +241,22 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 			t:    int64p(1520879607789),
 			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "counter-test"), Value: 5},
 		}, {
+			m:   "nativehistogram",
+			typ: model.MetricTypeHistogram,
+		}, {
+			m: "nativehistogram",
+			h: &histogram.Histogram{
+				Schema:          0,
+				ZeroThreshold:   0.001,
+				ZeroCount:       4,
+				Sum:             100.0,
+				Count:           24,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+				NegativeSpans:   []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+				PositiveBuckets: []int64{2, 1, -2, 3},
+				NegativeBuckets: []int64{2, 1, -2, 3},
+			},
+		}, {
 			m:    "metric",
 			help: "foo\x00bar",
 		}, {
@@ -275,6 +295,12 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 				require.True(t, found)
 				require.Equal(t, *exp[i].e, e)
 			}
+
+		case EntryHistogram:
+			m, ts, h, _ := p.Histogram()
+			require.Equal(t, exp[i].m, string(m))
+			require.Equal(t, exp[i].t, ts)
+			require.Equal(t, exp[i].h, h)
 
 		case EntryType:
 			m, typ := p.Type()
@@ -619,7 +645,7 @@ func TestOMNullByteHandling(t *testing.T) {
 		},
 		{
 			input: "a{b\x00=\"hiih\"}	1",
-			err:   "expected equal, got \"\\x00\" (\"INVALID\") while parsing: \"a{b\\x00\"",
+			err: "expected equal, got \"\\x00\" (\"INVALID\") while parsing: \"a{b\\x00\"",
 		},
 		{
 			input: "a\x00{b=\"ddd\"} 1",

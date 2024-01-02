@@ -17,6 +17,7 @@
 package textparse
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -24,12 +25,14 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/gogo/protobuf/jsonpb"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
+	dto "github.com/prometheus/prometheus/prompb/io/prometheus/client"
 )
 
 type openMetricsLexer struct {
@@ -77,7 +80,9 @@ type OpenMetricsParser struct {
 	series  []byte
 	text    []byte
 	mtype   model.MetricType
+	mname   []byte
 	val     float64
+	h       *histogram.Histogram
 	ts      int64
 	hasTS   bool
 	start   int
@@ -105,10 +110,13 @@ func (p *OpenMetricsParser) Series() ([]byte, *int64, float64) {
 	return p.series, nil, p.val
 }
 
-// Histogram returns (nil, nil, nil, nil) for now because OpenMetrics does not
-// support sparse histograms yet.
+// Histogram returns the bytes of the series, the timestamp if set, and the parsed histogram. Currently float histograms are not supported in the text format.
 func (p *OpenMetricsParser) Histogram() ([]byte, *int64, *histogram.Histogram, *histogram.FloatHistogram) {
-	return nil, nil, nil, nil
+	if p.hasTS {
+		ts := p.ts
+		return p.series, &ts, p.h, nil
+	}
+	return p.series, nil, p.h, nil
 }
 
 // Help returns the metric name and help text in the current entry.
@@ -129,7 +137,7 @@ func (p *OpenMetricsParser) Help() ([]byte, []byte) {
 // Must only be called after Next returned a type entry.
 // The returned byte slices become invalid after the next call to Next.
 func (p *OpenMetricsParser) Type() ([]byte, model.MetricType) {
-	return p.l.b[p.offsets[0]:p.offsets[1]], p.mtype
+	return p.mname, p.mtype
 }
 
 // Unit returns the metric name and unit in the current entry.
@@ -242,6 +250,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 	p.offsets = p.offsets[:0]
 	p.eOffsets = p.eOffsets[:0]
 	p.exemplar = p.exemplar[:0]
+	p.h = nil
 	p.exemplarVal = 0
 	p.hasExemplarTs = false
 
@@ -292,6 +301,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 			default:
 				return EntryInvalid, fmt.Errorf("invalid metric type %q", s)
 			}
+			p.mname = p.l.b[p.offsets[0]:p.offsets[1]]
 		case tHelp:
 			if !utf8.Valid(p.text) {
 				return EntryInvalid, fmt.Errorf("help text %q is not a valid utf8 string", p.text)
@@ -315,7 +325,8 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 
 	case tMName:
 		p.offsets = append(p.offsets, p.l.i)
-		p.series = p.l.b[p.start:p.l.i]
+		name := p.l.b[p.start:p.l.i]
+		p.series = name
 
 		t2 := p.nextToken()
 		if t2 == tBraceOpen {
@@ -326,7 +337,14 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 			p.series = p.l.b[p.start:p.l.i]
 			t2 = p.nextToken()
 		}
-		p.val, err = p.getFloatValue(t2, "metric")
+		// We are parsing a native histogram if the name of this series matches
+		// the name from the type metadata.
+		if (p.mtype == model.MetricTypeGaugeHistogram || p.mtype == model.MetricTypeHistogram) &&
+			bytes.Equal(name, p.mname) {
+			p.h, err = p.getHistogramValue(t2)
+		} else {
+			p.val, err = p.getFloatValue(t2, "metric")
+		}
 		if err != nil {
 			return EntryInvalid, err
 		}
@@ -363,6 +381,9 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 			}
 		default:
 			return EntryInvalid, p.parseError("expected timestamp or # symbol", t2)
+		}
+		if p.h != nil {
+			return EntryHistogram, nil
 		}
 		return EntrySeries, nil
 
@@ -476,4 +497,24 @@ func (p *OpenMetricsParser) getFloatValue(t token, after string) (float64, error
 		val = math.Float64frombits(value.NormalNaN)
 	}
 	return val, nil
+}
+
+func (p *OpenMetricsParser) getHistogramValue(t token) (*histogram.Histogram, error) {
+	if t != tValue {
+		return nil, p.parseError("expected value after metric", t)
+	}
+
+	h := dto.Histogram{}
+	unparsed := yoloString(p.l.buf()[1:])
+	err := jsonpb.UnmarshalString(unparsed, &h)
+	if err != nil {
+		return nil, err
+	}
+
+	ht := dto.MetricType_HISTOGRAM
+	if p.mtype == model.MetricTypeGaugeHistogram {
+		ht = dto.MetricType_GAUGE_HISTOGRAM
+	}
+	sh := convertHistogram(&h, ht)
+	return &sh, nil
 }
