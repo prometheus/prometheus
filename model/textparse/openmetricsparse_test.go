@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 )
 
@@ -65,7 +66,22 @@ _metric_starting_with_underscore 1
 testmetric{_label_starting_with_underscore="foo"} 1
 testmetric{label="\"bar\""} 1
 # TYPE foo counter
-foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
+foo_total 17.0 1520879607.789 # {id="counter-test"} 5
+# TYPE nativehistogram histogram
+nativehistogram_count 24
+nativehistogram_sum 100
+nativehistogram_created 1520430000.123
+nativehistogram_schema 0
+nativehistogram_zerothreshold 0.001
+nativehistogram_zerocount 4
+nativehistogram_positive_span{offset="0",i="0"} 2
+nativehistogram_positive_span{offset="0",i="1"} 1
+nativehistogram_positive_span{offset="1",i="0"} -2
+nativehistogram_positive_span{offset="1",i="1"} 3
+nativehistogram_negative_span{offset="0",i="0"} 2
+nativehistogram_negative_span{offset="0",i="1"} 1
+nativehistogram_negative_span{offset="1",i="0"} -2
+nativehistogram_negative_span{offset="1",i="1"} 3`
 
 	input += "\n# HELP metric foo\x00bar"
 	input += "\nnull_byte_metric{a=\"abc\x00\"} 1"
@@ -79,6 +95,7 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 		t       *int64
 		v       float64
 		typ     model.MetricType
+		h       *histogram.Histogram
 		help    string
 		unit    string
 		comment string
@@ -237,6 +254,10 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 			t:    int64p(1520879607789),
 			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "counter-test"), Value: 5},
 		}, {
+			m:    "nativehistogram",
+			typ:  model.MetricTypeHistogram,
+			lset: labels.FromStrings("__name__", "nativehistogram"),
+		}, {
 			m:    "metric",
 			help: "foo\x00bar",
 		}, {
@@ -275,6 +296,15 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 				require.True(t, found)
 				require.Equal(t, *exp[i].e, e)
 			}
+
+		case EntryHistogram:
+			m, ts, h, _ := p.Histogram()
+
+			p.Metric(&res)
+			require.Equal(t, exp[i].m, string(m))
+			require.Equal(t, exp[i].t, ts)
+			require.Equal(t, exp[i].h, h)
+			require.Equal(t, exp[i].lset, res)
 
 		case EntryType:
 			m, typ := p.Type()

@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -82,6 +83,12 @@ type OpenMetricsParser struct {
 	hasTS   bool
 	start   int
 	offsets []int
+
+	h           *histogram.Histogram
+	hLabels     labels.Labels
+	removeH     bool
+	cachedEntry Entry
+	cachedErr   error
 
 	eOffsets      []int
 	exemplar      []byte
@@ -176,6 +183,57 @@ func (p *OpenMetricsParser) Metric(l *labels.Labels) string {
 	return s
 }
 
+func (p *OpenMetricsParser) withoutHistLabels() labels.Labels {
+	p.builder.Reset()
+
+	s := string(p.series)
+	for i := 1; i < len(p.offsets); i += 4 {
+		a := p.offsets[i] - p.start
+		b := p.offsets[i+1] - p.start
+		c := p.offsets[i+2] - p.start
+		d := p.offsets[i+3] - p.start
+
+		switch s[a:b] {
+		case "le", "offset", "i":
+			continue
+		default:
+		}
+
+		value := s[c:d]
+		// Replacer causes allocations. Replace only when necessary.
+		if strings.IndexByte(s[c:d], byte('\\')) >= 0 {
+			value = lvalReplacer.Replace(value)
+		}
+		p.builder.Add(s[a:b], value)
+	}
+
+	p.builder.Sort()
+	return p.builder.Labels()
+}
+
+func (p *OpenMetricsParser) offset() (offset int, index int, err error) {
+	for i := 1; i < len(p.offsets); i += 4 {
+		a := p.offsets[i] - p.start
+		b := p.offsets[i+1] - p.start
+		c := p.offsets[i+2] - p.start
+		d := p.offsets[i+3] - p.start
+
+		switch string(p.series[a:b]) {
+		case "offset":
+			offset, err = strconv.Atoi(string(p.series[c:d]))
+			if err != nil {
+				return
+			}
+		case "i":
+			index, err = strconv.Atoi(string(p.series[c:d]))
+			if err != nil {
+				return
+			}
+		}
+	}
+	return
+}
+
 // Exemplar writes the exemplar of the current sample into the passed exemplar.
 // It returns whether an exemplar exists. As OpenMetrics only ever has one
 // exemplar per sample, every call after the first (for the same sample) will
@@ -236,6 +294,88 @@ func (p *OpenMetricsParser) parseError(exp string, got token) error {
 // Next advances the parser to the next sample. It returns false if no
 // more samples were read or an error occurred.
 func (p *OpenMetricsParser) Next() (Entry, error) {
+	if p.removeH {
+		p.h = nil
+		return p.cachedEntry, p.cachedErr
+	}
+	entry, err := p.next()
+	if err != nil {
+		return entry, err
+	}
+	if (p.h != nil && p.h.ZeroThreshold != 0.0) &&
+		(entry != EntrySeries ||
+			!labels.Equal(p.hLabels, p.withoutHistLabels())) {
+		p.cachedEntry = entry
+		p.cachedErr = err
+		p.removeH = true
+		return EntryHistogram, nil
+	}
+
+	if entry != EntrySeries ||
+		!(p.mtype == model.MetricTypeHistogram || p.mtype == model.MetricTypeGaugeHistogram) {
+		return entry, err
+	}
+	if p.h == nil {
+		p.h = &histogram.Histogram{}
+		p.hLabels = p.withoutHistLabels()
+	}
+	//hist := histogram.Histogram{}
+	name := string(p.series[:p.offsets[0]-p.start])
+	switch {
+	case strings.HasSuffix(name, "bucket"):
+		return EntrySeries, nil
+	case strings.HasSuffix(name, "count"):
+		p.h.Count = uint64(p.val)
+		return EntrySeries, nil
+	case strings.HasSuffix(name, "sum"):
+		p.h.Sum = p.val
+		return EntrySeries, nil
+	case strings.HasSuffix(name, "created"):
+		return EntrySeries, nil
+	case strings.HasSuffix(name, "zero_threshold"):
+		p.h.ZeroThreshold = p.val
+	case strings.HasSuffix(name, "zero_count"):
+		p.h.ZeroCount = uint64(p.val)
+	case strings.HasSuffix(name, "positive_span"):
+		offset, _, err := p.offset()
+		if err != nil {
+			return EntryInvalid, fmt.Errorf("could not parse offset")
+		}
+
+		if len(p.h.PositiveSpans) == 0 ||
+			p.h.PositiveSpans[len(p.h.PositiveSpans)-1].Offset != int32(offset) {
+			p.h.PositiveSpans = append(p.h.PositiveSpans, histogram.Span{
+				Offset: int32(offset),
+				Length: 1,
+			})
+		} else {
+			p.h.PositiveSpans[len(p.h.PositiveSpans)-1].Length += 1
+		}
+		p.h.PositiveBuckets = append(p.h.PositiveBuckets, int64(p.val))
+	case strings.HasSuffix(name, "negative_span"):
+		offset, _, err := p.offset()
+		if err != nil {
+			return EntryInvalid, fmt.Errorf("could not parse offset")
+		}
+
+		if len(p.h.NegativeSpans) == 0 ||
+			p.h.NegativeSpans[len(p.h.PositiveSpans)-1].Offset != int32(offset) {
+			p.h.NegativeSpans = append(p.h.NegativeSpans, histogram.Span{
+				Offset: int32(offset),
+				Length: 1,
+			})
+		} else {
+			p.h.NegativeSpans[len(p.h.PositiveSpans)-1].Length += 1
+		}
+		p.h.NegativeBuckets = append(p.h.NegativeBuckets, int64(p.val))
+	default:
+		return EntryInvalid, fmt.Errorf("unexpected histogram suffix encountered for: %s", name)
+	}
+	fmt.Printf("name: `%s`, metric_type: %v\n", name, p.mtype)
+	return p.Next()
+}
+
+func (p *OpenMetricsParser) next() (Entry, error) {
 	var err error
 
 	p.start = p.l.i
