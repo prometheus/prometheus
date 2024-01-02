@@ -77,10 +77,7 @@ const (
 	checkReadiness           = "/-/ready"
 )
 
-var (
-	lintOptions = []string{lintOptionAll, lintOptionDuplicateRules, lintOptionNone}
-	diffFlag    bool
-)
+var lintOptions = []string{lintOptionAll, lintOptionDuplicateRules, lintOptionNone}
 
 func main() {
 	var (
@@ -367,13 +364,13 @@ func main() {
 		os.Exit(QueryLabels(serverURL, httpRoundTripper, *queryLabelsMatch, *queryLabelsName, *queryLabelsBegin, *queryLabelsEnd, p))
 
 	case testRulesCmd.FullCommand():
-		diffFlag = *testRulesDiff
 		os.Exit(RulesUnitTest(
 			promql.LazyLoaderOpts{
 				EnableAtModifier:     true,
 				EnableNegativeOffset: true,
 			},
 			*testRulesRun,
+			*testRulesDiff,
 			*testRulesFiles...),
 		)
 

@@ -42,7 +42,7 @@ import (
 
 // RulesUnitTest does unit testing of rules based on the unit testing files provided.
 // More info about the file format can be found in the docs.
-func RulesUnitTest(queryOpts promql.LazyLoaderOpts, runStrings []string, files ...string) int {
+func RulesUnitTest(queryOpts promql.LazyLoaderOpts, runStrings []string, diffFlag bool, files ...string) int {
 	failed := false
 
 	var run *regexp.Regexp
@@ -51,7 +51,7 @@ func RulesUnitTest(queryOpts promql.LazyLoaderOpts, runStrings []string, files .
 	}
 
 	for _, f := range files {
-		if errs := ruleUnitTest(f, queryOpts, run); errs != nil {
+		if errs := ruleUnitTest(f, queryOpts, run, diffFlag); errs != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
 			for _, e := range errs {
 				fmt.Fprintln(os.Stderr, e.Error())
@@ -69,7 +69,7 @@ func RulesUnitTest(queryOpts promql.LazyLoaderOpts, runStrings []string, files .
 	return successExitCode
 }
 
-func ruleUnitTest(filename string, queryOpts promql.LazyLoaderOpts, run *regexp.Regexp) []error {
+func ruleUnitTest(filename string, queryOpts promql.LazyLoaderOpts, run *regexp.Regexp, diffFlag bool) []error {
 	fmt.Println("Unit Testing: ", filename)
 
 	b, err := os.ReadFile(filename)
@@ -111,7 +111,7 @@ func ruleUnitTest(filename string, queryOpts promql.LazyLoaderOpts, run *regexp.
 		if t.Interval == 0 {
 			t.Interval = unitTestInp.EvaluationInterval
 		}
-		ers := t.test(evalInterval, groupOrderMap, queryOpts, unitTestInp.RuleFiles...)
+		ers := t.test(evalInterval, groupOrderMap, queryOpts, diffFlag, unitTestInp.RuleFiles...)
 		if ers != nil {
 			errs = append(errs, ers...)
 		}
@@ -175,7 +175,7 @@ type testGroup struct {
 }
 
 // test performs the unit tests.
-func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]int, queryOpts promql.LazyLoaderOpts, ruleFiles ...string) []error {
+func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]int, queryOpts promql.LazyLoaderOpts, diffFlag bool, ruleFiles ...string) []error {
 	// Setup testing suite.
 	suite, err := promql.NewLazyLoader(nil, tg.seriesLoadingString(), queryOpts)
 	if err != nil {
@@ -366,20 +366,22 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 						diffOpts := jsondiff.DefaultConsoleOptions()
 						expAlertsJSON, err := json.Marshal(expAlerts)
 						if err != nil {
-							errs = append(errs, fmt.Errorf("alertName: %s\nError converting expAlert to JSON: %v", tg.TestGroupName, expAlerts.String()))
+							// errs = append(errs, fmt.Errorf("alertName: %s\nError converting expAlert to JSON: %v", tg.TestGroupName, expAlerts.String()))
+							errs = append(errs, fmt.Errorf("error marshaling expected %s alert: [%s]", tg.TestGroupName, err.Error()))
 							continue
 						}
 
 						gotAlertsJSON, err := json.Marshal(gotAlerts)
 						if err != nil {
-							errs = append(errs, fmt.Errorf("alertName: %s\nError converting gotAlert to JSON: %v", tg.TestGroupName, gotAlerts.String()))
+							// errs = append(errs, fmt.Errorf("alertName: %s\nError converting gotAlert to JSON: %v", tg.TestGroupName, gotAlerts.String()))
+							errs = append(errs, fmt.Errorf("error marshaling received %s alert: [%s]", tg.TestGroupName, err.Error()))
 							continue
 						}
 
 						res, diff := jsondiff.Compare(expAlertsJSON, gotAlertsJSON, &diffOpts)
 						if res != jsondiff.FullMatch {
-							errs = append(errs, fmt.Errorf("%s    alertname: %s, time: %s, \n diff: %v",
-								testName, testcase.Alertname, testcase.EvalTime.String(), diff))
+							errs = append(errs, fmt.Errorf("%s    alertname: %s, time: %s, \n        diff: %v",
+								testName, testcase.Alertname, testcase.EvalTime.String(), indentLines(diff, "            ")))
 						}
 					} else {
 						errs = append(errs, fmt.Errorf("%s    alertname: %s, time: %s, \n        exp:%v, \n        got:%v",
