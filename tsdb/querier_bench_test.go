@@ -125,6 +125,7 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 	iNotAlternate := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "(1|2|3|4|5|6|20|55)")
 	iXYZ := labels.MustNewMatcher(labels.MatchRegexp, "i", "X|Y|Z")
 	iNotXYZ := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "X|Y|Z")
+	literalRegexp := labels.MustNewMatcher(labels.MatchRegexp, "i_times_n", "0")
 	cases := []struct {
 		name     string
 		matchers []*labels.Matcher
@@ -168,6 +169,7 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 		{`n="1",i=~".+",i!~"2.*",j="foo"`, []*labels.Matcher{n1, iPlus, iNot2Star, jFoo}},
 		{`n="1",i=~".+",i!~".*2.*",j="foo"`, []*labels.Matcher{n1, iPlus, iNotStar2Star, jFoo}},
 		{`n="X",i=~".+",i!~".*2.*",j="foo"`, []*labels.Matcher{nX, iPlus, iNotStar2Star, jFoo}},
+		{`i_times_n=~"0"`, []*labels.Matcher{literalRegexp}},
 	}
 
 	for _, c := range cases {
