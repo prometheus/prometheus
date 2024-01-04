@@ -212,3 +212,7 @@ exclude (
 	github.com/grpc-ecosystem/grpc-gateway v1.14.7
 	google.golang.org/api v0.30.0
 )
+
+replace github.com/prometheus/common => /home/owilliams/src/third_party/common
+
+replace github.com/prometheus/client_golang => /home/owilliams/src/grafana/client_golang
