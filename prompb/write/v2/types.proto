@@ -61,14 +61,14 @@ message Sample {
 
 message Metadata {
   enum MetricType {
-    UNKNOWN        = 0;
-    COUNTER        = 1;
-    GAUGE          = 2;
-    HISTOGRAM      = 3;
-    GAUGEHISTOGRAM = 4;
-    SUMMARY        = 5;
-    INFO           = 6;
-    STATESET       = 7;
+    METRIC_TYPE_UNSPECIFIED        = 0;
+    METRIC_TYPE_COUNTER        = 1;
+    METRIC_TYPE_GAUGE          = 2;
+    METRIC_TYPE_HISTOGRAM      = 3;
+    METRIC_TYPE_GAUGEHISTOGRAM = 4;
+    METRIC_TYPE_SUMMARY        = 5;
+    METRIC_TYPE_INFO           = 6;
+    METRIC_TYPE_STATESET       = 7;
   }
   MetricType type = 1;
   uint32 help_ref = 3;
@@ -83,10 +83,10 @@ message Metadata {
 // integer histogram as well as a float histogram.
 message Histogram {
   enum ResetHint {
-    UNKNOWN = 0; // Need to test for a counter reset explicitly.
-    YES     = 1; // This is the 1st histogram after a counter reset.
-    NO      = 2; // There was no counter reset between this and the previous Histogram.
-    GAUGE   = 3; // This is a gauge histogram where counter resets don't happen.
+    RESET_HINT_UNSPECIFIED = 0; // Need to test for a counter reset explicitly.
+    RESET_HINT_YES     = 1; // This is the 1st histogram after a counter reset.
+    RESET_HINT_NO      = 2; // There was no counter reset between this and the previous Histogram.
+    RESET_HINT_GAUGE   = 3; // This is a gauge histogram where counter resets don't happen.
   }
 
   oneof count { // Count of observations in the histogram.

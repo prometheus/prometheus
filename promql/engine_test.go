@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"sort"
 	"testing"
 	"time"
@@ -46,7 +47,9 @@ func TestMain(m *testing.M) {
 func TestQueryConcurrency(t *testing.T) {
 	maxConcurrency := 10
 
-	dir := t.TempDir()
+	dir, err := os.MkdirTemp("", "test_concurrency")
+	require.NoError(t, err)
+	defer os.RemoveAll(dir)
 	queryTracker := NewActiveQueryTracker(dir, maxConcurrency, nil)
 	t.Cleanup(queryTracker.Close)
 
