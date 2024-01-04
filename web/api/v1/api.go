@@ -41,7 +41,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/textparse"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -1114,7 +1114,7 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 			}
 			// If no metric is specified, get the full list for the target.
 			if metric == "" {
-				for _, md := range t.MetadataList() {
+				for _, md := range t.ListMetadata() {
 					res = append(res, metricMetadata{
 						Target: t.Labels(),
 						Metric: md.Metric,
@@ -1126,7 +1126,7 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 				continue
 			}
 			// Get metadata for the specified metric.
-			if md, ok := t.Metadata(metric); ok {
+			if md, ok := t.GetMetadata(metric); ok {
 				res = append(res, metricMetadata{
 					Target: t.Labels(),
 					Type:   md.Type,
@@ -1141,11 +1141,11 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 }
 
 type metricMetadata struct {
-	Target labels.Labels        `json:"target"`
-	Metric string               `json:"metric,omitempty"`
-	Type   textparse.MetricType `json:"type"`
-	Help   string               `json:"help"`
-	Unit   string               `json:"unit"`
+	Target labels.Labels    `json:"target"`
+	Metric string           `json:"metric,omitempty"`
+	Type   model.MetricType `json:"type"`
+	Help   string           `json:"help"`
+	Unit   string           `json:"unit"`
 }
 
 // AlertmanagerDiscovery has all the active Alertmanagers.
@@ -1221,14 +1221,8 @@ func rulesAlertsToAPIAlerts(rulesAlerts []*rules.Alert) []*Alert {
 	return apiAlerts
 }
 
-type metadata struct {
-	Type textparse.MetricType `json:"type"`
-	Help string               `json:"help"`
-	Unit string               `json:"unit"`
-}
-
 func (api *API) metricMetadata(r *http.Request) apiFuncResult {
-	metrics := map[string]map[metadata]struct{}{}
+	metrics := map[string]map[metadata.Metadata]struct{}{}
 
 	limit := -1
 	if s := r.FormValue("limit"); s != "" {
@@ -1249,8 +1243,8 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 	for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
 		for _, t := range tt {
 			if metric == "" {
-				for _, mm := range t.MetadataList() {
-					m := metadata{Type: mm.Type, Help: mm.Help, Unit: mm.Unit}
+				for _, mm := range t.ListMetadata() {
+					m := metadata.Metadata{Type: mm.Type, Help: mm.Help, Unit: mm.Unit}
 					ms, ok := metrics[mm.Metric]
 
 					if limitPerMetric > 0 && len(ms) >= limitPerMetric {
@@ -1258,7 +1252,7 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 					}
 
 					if !ok {
-						ms = map[metadata]struct{}{}
+						ms = map[metadata.Metadata]struct{}{}
 						metrics[mm.Metric] = ms
 					}
 					ms[m] = struct{}{}
@@ -1266,8 +1260,8 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 				continue
 			}
 
-			if md, ok := t.Metadata(metric); ok {
-				m := metadata{Type: md.Type, Help: md.Help, Unit: md.Unit}
+			if md, ok := t.GetMetadata(metric); ok {
+				m := metadata.Metadata{Type: md.Type, Help: md.Help, Unit: md.Unit}
 				ms, ok := metrics[md.Metric]
 
 				if limitPerMetric > 0 && len(ms) >= limitPerMetric {
@@ -1275,7 +1269,7 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 				}
 
 				if !ok {
-					ms = map[metadata]struct{}{}
+					ms = map[metadata.Metadata]struct{}{}
 					metrics[md.Metric] = ms
 				}
 				ms[m] = struct{}{}
@@ -1284,13 +1278,13 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 	}
 
 	// Put the elements from the pseudo-set into a slice for marshaling.
-	res := map[string][]metadata{}
+	res := map[string][]metadata.Metadata{}
 	for name, set := range metrics {
 		if limit >= 0 && len(res) >= limit {
 			break
 		}
 
-		s := []metadata{}
+		s := []metadata.Metadata{}
 		for metadata := range set {
 			s = append(s, metadata)
 		}

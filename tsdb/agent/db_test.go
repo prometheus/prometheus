@@ -84,7 +84,7 @@ func TestDB_InvalidSeries(t *testing.T) {
 	})
 }
 
-func createTestAgentDB(t *testing.T, reg prometheus.Registerer, opts *Options) *DB {
+func createTestAgentDB(t testing.TB, reg prometheus.Registerer, opts *Options) *DB {
 	t.Helper()
 
 	dbDir := t.TempDir()
@@ -877,4 +877,22 @@ func TestDBAllowOOOSamples(t *testing.T) {
 	require.Equal(t, float64(40), m.Metric[0].Counter.GetValue(), "agent wal mismatch of total appended samples")
 	require.Equal(t, float64(80), m.Metric[1].Counter.GetValue(), "agent wal mismatch of total appended histograms")
 	require.NoError(t, db.Close())
+}
+
+func BenchmarkCreateSeries(b *testing.B) {
+	s := createTestAgentDB(b, nil, DefaultOptions())
+	defer s.Close()
+
+	app := s.Appender(context.Background()).(*appender)
+	lbls := make([]labels.Labels, b.N)
+
+	for i, l := range labelsForTest("benchmark", b.N) {
+		lbls[i] = labels.New(l...)
+	}
+
+	b.ResetTimer()
+
+	for _, l := range lbls {
+		app.getOrCreate(l)
+	}
 }

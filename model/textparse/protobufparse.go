@@ -252,21 +252,21 @@ func (p *ProtobufParser) Help() ([]byte, []byte) {
 // Type returns the metric name and type in the current entry.
 // Must only be called after Next returned a type entry.
 // The returned byte slices become invalid after the next call to Next.
-func (p *ProtobufParser) Type() ([]byte, MetricType) {
+func (p *ProtobufParser) Type() ([]byte, model.MetricType) {
 	n := p.metricBytes.Bytes()
 	switch p.mf.GetType() {
 	case dto.MetricType_COUNTER:
-		return n, MetricTypeCounter
+		return n, model.MetricTypeCounter
 	case dto.MetricType_GAUGE:
-		return n, MetricTypeGauge
+		return n, model.MetricTypeGauge
 	case dto.MetricType_HISTOGRAM:
-		return n, MetricTypeHistogram
+		return n, model.MetricTypeHistogram
 	case dto.MetricType_GAUGE_HISTOGRAM:
-		return n, MetricTypeGaugeHistogram
+		return n, model.MetricTypeGaugeHistogram
 	case dto.MetricType_SUMMARY:
-		return n, MetricTypeSummary
+		return n, model.MetricTypeSummary
 	}
-	return n, MetricTypeUnknown
+	return n, model.MetricTypeUnknown
 }
 
 // Unit always returns (nil, nil) because units aren't supported by the protobuf

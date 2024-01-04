@@ -1038,7 +1038,7 @@ func (a *headAppender) Commit() (err error) {
 	for i, m := range a.metadata {
 		series = a.metadataSeries[i]
 		series.Lock()
-		series.meta = &metadata.Metadata{Type: record.ToTextparseMetricType(m.Type), Unit: m.Unit, Help: m.Help}
+		series.meta = &metadata.Metadata{Type: record.ToMetricType(m.Type), Unit: m.Unit, Help: m.Help}
 		series.Unlock()
 	}
 

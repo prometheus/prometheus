@@ -286,8 +286,8 @@ func (mc *MetadataMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 	for tset, targets := range mc.TargetsGatherer.TargetsActive() {
 		var size, length int
 		for _, t := range targets {
-			size += t.MetadataSize()
-			length += t.MetadataLength()
+			size += t.SizeMetadata()
+			length += t.LengthMetadata()
 		}
 
 		ch <- prometheus.MustNewConstMetric(

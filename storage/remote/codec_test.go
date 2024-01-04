@@ -20,11 +20,11 @@ import (
 	"testing"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -488,17 +488,17 @@ func TestMergeLabels(t *testing.T) {
 func TestMetricTypeToMetricTypeProto(t *testing.T) {
 	tc := []struct {
 		desc     string
-		input    textparse.MetricType
+		input    model.MetricType
 		expected prompb.MetricMetadata_MetricType
 	}{
 		{
 			desc:     "with a single-word metric",
-			input:    textparse.MetricTypeCounter,
+			input:    model.MetricTypeCounter,
 			expected: prompb.MetricMetadata_COUNTER,
 		},
 		{
 			desc:     "with a two-word metric",
-			input:    textparse.MetricTypeStateset,
+			input:    model.MetricTypeStateset,
 			expected: prompb.MetricMetadata_STATESET,
 		},
 		{
