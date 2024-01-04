@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -63,9 +64,16 @@ func TestPuppetSlashInURL(t *testing.T) {
 			Port:             80,
 			RefreshInterval:  model.Duration(30 * time.Second),
 		}
-		d, err := NewDiscovery(&cfg, log.NewNopLogger(), prometheus.NewRegistry())
+
+		refreshDebugMetrics := discovery.NewRefreshDebugMetrics(prometheus.DefaultRegisterer)
+		metrics := cfg.NewDiscovererDebugMetrics(prometheus.NewRegistry(), refreshDebugMetrics)
+		require.NoError(t, metrics.Register())
+
+		d, err := NewDiscovery(&cfg, log.NewNopLogger(), metrics)
 		require.NoError(t, err)
 		require.Equal(t, apiURL, d.url)
+
+		metrics.Unregister()
 	}
 }
 
@@ -80,7 +88,11 @@ func TestPuppetDBRefresh(t *testing.T) {
 		RefreshInterval:  model.Duration(30 * time.Second),
 	}
 
-	d, err := NewDiscovery(&cfg, log.NewNopLogger(), prometheus.NewRegistry())
+	refreshDebugMetrics := discovery.NewRefreshDebugMetrics(prometheus.DefaultRegisterer)
+	metrics := cfg.NewDiscovererDebugMetrics(prometheus.NewRegistry(), refreshDebugMetrics)
+	require.NoError(t, metrics.Register())
+
+	d, err := NewDiscovery(&cfg, log.NewNopLogger(), metrics)
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -107,6 +119,8 @@ func TestPuppetDBRefresh(t *testing.T) {
 		},
 	}
 	require.Equal(t, expectedTargets, tgs)
+
+	metrics.Unregister()
 }
 
 func TestPuppetDBRefreshWithParameters(t *testing.T) {
@@ -121,7 +135,11 @@ func TestPuppetDBRefreshWithParameters(t *testing.T) {
 		RefreshInterval:   model.Duration(30 * time.Second),
 	}
 
-	d, err := NewDiscovery(&cfg, log.NewNopLogger(), prometheus.NewRegistry())
+	refreshDebugMetrics := discovery.NewRefreshDebugMetrics(prometheus.DefaultRegisterer)
+	metrics := cfg.NewDiscovererDebugMetrics(prometheus.NewRegistry(), refreshDebugMetrics)
+	require.NoError(t, metrics.Register())
+
+	d, err := NewDiscovery(&cfg, log.NewNopLogger(), metrics)
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -158,6 +176,8 @@ func TestPuppetDBRefreshWithParameters(t *testing.T) {
 		},
 	}
 	require.Equal(t, expectedTargets, tgs)
+
+	metrics.Unregister()
 }
 
 func TestPuppetDBInvalidCode(t *testing.T) {
@@ -173,12 +193,18 @@ func TestPuppetDBInvalidCode(t *testing.T) {
 		RefreshInterval:  model.Duration(30 * time.Second),
 	}
 
-	d, err := NewDiscovery(&cfg, log.NewNopLogger(), prometheus.NewRegistry())
+	refreshDebugMetrics := discovery.NewRefreshDebugMetrics(prometheus.DefaultRegisterer)
+	metrics := cfg.NewDiscovererDebugMetrics(prometheus.NewRegistry(), refreshDebugMetrics)
+	require.NoError(t, metrics.Register())
+
+	d, err := NewDiscovery(&cfg, log.NewNopLogger(), metrics)
 	require.NoError(t, err)
 
 	ctx := context.Background()
 	_, err = d.refresh(ctx)
 	require.EqualError(t, err, "server returned HTTP status 400 Bad Request")
+
+	metrics.Unregister()
 }
 
 func TestPuppetDBInvalidFormat(t *testing.T) {
@@ -194,10 +220,16 @@ func TestPuppetDBInvalidFormat(t *testing.T) {
 		RefreshInterval:  model.Duration(30 * time.Second),
 	}
 
-	d, err := NewDiscovery(&cfg, log.NewNopLogger(), prometheus.NewRegistry())
+	refreshDebugMetrics := discovery.NewRefreshDebugMetrics(prometheus.DefaultRegisterer)
+	metrics := cfg.NewDiscovererDebugMetrics(prometheus.NewRegistry(), refreshDebugMetrics)
+	require.NoError(t, metrics.Register())
+
+	d, err := NewDiscovery(&cfg, log.NewNopLogger(), metrics)
 	require.NoError(t, err)
 
 	ctx := context.Background()
 	_, err = d.refresh(ctx)
 	require.EqualError(t, err, "unsupported content type text/plain; charset=utf-8")
+
+	metrics.Unregister()
 }

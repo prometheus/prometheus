@@ -9,10 +9,11 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/prometheus/prometheus/prompb"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.uber.org/multierr"
+
+	"github.com/prometheus/prometheus/prompb"
 
 	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
 )

@@ -10,10 +10,11 @@ import (
 	"math"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/value"
-	"github.com/prometheus/prometheus/prompb"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
+
+	"github.com/prometheus/prometheus/model/value"
+	"github.com/prometheus/prometheus/prompb"
 )
 
 const defaultZeroThreshold = 1e-128

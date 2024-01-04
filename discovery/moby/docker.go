@@ -76,12 +76,19 @@ type DockerSDConfig struct {
 	RefreshInterval model.Duration `yaml:"refresh_interval"`
 }
 
+// NewDiscovererDebugMetrics implements discovery.Config.
+func (*DockerSDConfig) NewDiscovererDebugMetrics(reg prometheus.Registerer, rdmm discovery.RefreshDebugMetricsInstantiator) discovery.DiscovererDebugMetrics {
+	return &dockerMetrics{
+		refreshMetrics: rdmm,
+	}
+}
+
 // Name returns the name of the Config.
 func (*DockerSDConfig) Name() string { return "docker" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *DockerSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDockerDiscovery(c, opts.Logger, opts.Registerer)
+	return NewDockerDiscovery(c, opts.Logger, opts.DebugMetrics)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -115,8 +122,11 @@ type DockerDiscovery struct {
 }
 
 // NewDockerDiscovery returns a new DockerDiscovery which periodically refreshes its targets.
-func NewDockerDiscovery(conf *DockerSDConfig, logger log.Logger, reg prometheus.Registerer) (*DockerDiscovery, error) {
-	var err error
+func NewDockerDiscovery(conf *DockerSDConfig, logger log.Logger, metrics discovery.DiscovererDebugMetrics) (*DockerDiscovery, error) {
+	m, ok := metrics.(*dockerMetrics)
+	if !ok {
+		return nil, fmt.Errorf("invalid discovery metrics type")
+	}
 
 	d := &DockerDiscovery{
 		port:               conf.Port,
@@ -167,11 +177,11 @@ func NewDockerDiscovery(conf *DockerSDConfig, logger log.Logger, reg prometheus.
 
 	d.Discovery = refresh.NewDiscovery(
 		refresh.Options{
-			Logger:   logger,
-			Mech:     "docker",
-			Interval: time.Duration(conf.RefreshInterval),
-			RefreshF: d.refresh,
-			Registry: reg,
+			Logger:              logger,
+			Mech:                "docker",
+			Interval:            time.Duration(conf.RefreshInterval),
+			RefreshF:            d.refresh,
+			MetricsInstantiator: m.refreshMetrics,
 		},
 	)
 	return d, nil

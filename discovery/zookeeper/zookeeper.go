@@ -25,6 +25,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-zookeeper/zk"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/discovery"
@@ -54,6 +55,11 @@ type ServersetSDConfig struct {
 	Servers []string       `yaml:"servers"`
 	Paths   []string       `yaml:"paths"`
 	Timeout model.Duration `yaml:"timeout,omitempty"`
+}
+
+// NewDiscovererDebugMetrics implements discovery.Config.
+func (*ServersetSDConfig) NewDiscovererDebugMetrics(reg prometheus.Registerer, rdmm discovery.RefreshDebugMetricsInstantiator) discovery.DiscovererDebugMetrics {
+	return &discovery.NoopDiscovererDebugMetrics{}
 }
 
 // Name returns the name of the Config.
@@ -91,6 +97,11 @@ type NerveSDConfig struct {
 	Servers []string       `yaml:"servers"`
 	Paths   []string       `yaml:"paths"`
 	Timeout model.Duration `yaml:"timeout,omitempty"`
+}
+
+// NewDiscovererDebugMetrics implements discovery.Config.
+func (*NerveSDConfig) NewDiscovererDebugMetrics(reg prometheus.Registerer, rdmm discovery.RefreshDebugMetricsInstantiator) discovery.DiscovererDebugMetrics {
+	return &discovery.NoopDiscovererDebugMetrics{}
 }
 
 // Name returns the name of the Config.

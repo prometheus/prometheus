@@ -24,6 +24,8 @@ import (
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/discovery"
 )
 
 type LinodeSDTestSuite struct {
@@ -53,7 +55,13 @@ func TestLinodeSDRefresh(t *testing.T) {
 		Credentials: tokenID,
 		Type:        "Bearer",
 	}
-	d, err := NewDiscovery(&cfg, log.NewNopLogger(), prometheus.NewRegistry())
+
+	refreshDebugMetrics := discovery.NewRefreshDebugMetrics(prometheus.DefaultRegisterer)
+	metrics := cfg.NewDiscovererDebugMetrics(prometheus.NewRegistry(), refreshDebugMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+
+	d, err := NewDiscovery(&cfg, log.NewNopLogger(), metrics)
 	require.NoError(t, err)
 	endpoint, err := url.Parse(sdmock.Mock.Endpoint())
 	require.NoError(t, err)

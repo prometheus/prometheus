@@ -23,6 +23,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
+
+	"github.com/prometheus/prometheus/discovery"
 )
 
 func TestDockerSwarmSDServicesRefresh(t *testing.T) {
@@ -39,7 +41,12 @@ host: %s
 	var cfg DockerSwarmSDConfig
 	require.NoError(t, yaml.Unmarshal([]byte(cfgString), &cfg))
 
-	d, err := NewDiscovery(&cfg, log.NewNopLogger(), prometheus.NewRegistry())
+	refreshDebugMetrics := discovery.NewRefreshDebugMetrics(prometheus.DefaultRegisterer)
+	metrics := cfg.NewDiscovererDebugMetrics(prometheus.NewRegistry(), refreshDebugMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+
+	d, err := NewDiscovery(&cfg, log.NewNopLogger(), metrics)
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -333,7 +340,12 @@ filters:
 	var cfg DockerSwarmSDConfig
 	require.NoError(t, yaml.Unmarshal([]byte(cfgString), &cfg))
 
-	d, err := NewDiscovery(&cfg, log.NewNopLogger(), prometheus.NewRegistry())
+	refreshDebugMetrics := discovery.NewRefreshDebugMetrics(prometheus.DefaultRegisterer)
+	metrics := cfg.NewDiscovererDebugMetrics(prometheus.NewRegistry(), refreshDebugMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+
+	d, err := NewDiscovery(&cfg, log.NewNopLogger(), metrics)
 	require.NoError(t, err)
 
 	ctx := context.Background()

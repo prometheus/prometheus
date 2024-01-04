@@ -23,6 +23,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/discovery"
 )
 
 type DigitalOceanSDTestSuite struct {
@@ -47,7 +49,13 @@ func TestDigitalOceanSDRefresh(t *testing.T) {
 
 	cfg := DefaultSDConfig
 	cfg.HTTPClientConfig.BearerToken = tokenID
-	d, err := NewDiscovery(&cfg, log.NewNopLogger(), prometheus.NewRegistry())
+
+	refreshDebugMetrics := discovery.NewRefreshDebugMetrics(prometheus.DefaultRegisterer)
+	metrics := cfg.NewDiscovererDebugMetrics(prometheus.NewRegistry(), refreshDebugMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+
+	d, err := NewDiscovery(&cfg, log.NewNopLogger(), metrics)
 	require.NoError(t, err)
 	endpoint, err := url.Parse(sdmock.Mock.Endpoint())
 	require.NoError(t, err)

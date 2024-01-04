@@ -80,12 +80,19 @@ type LightsailSDConfig struct {
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 }
 
+// NewDiscovererDebugMetrics implements discovery.Config.
+func (*LightsailSDConfig) NewDiscovererDebugMetrics(reg prometheus.Registerer, rdmm discovery.RefreshDebugMetricsInstantiator) discovery.DiscovererDebugMetrics {
+	return &lightsailMetrics{
+		refreshMetrics: rdmm,
+	}
+}
+
 // Name returns the name of the Lightsail Config.
 func (*LightsailSDConfig) Name() string { return "lightsail" }
 
 // NewDiscoverer returns a Discoverer for the Lightsail Config.
 func (c *LightsailSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewLightsailDiscovery(c, opts.Logger, opts.Registerer), nil
+	return NewLightsailDiscovery(c, opts.Logger, opts.DebugMetrics)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface for the Lightsail Config.
@@ -122,23 +129,29 @@ type LightsailDiscovery struct {
 }
 
 // NewLightsailDiscovery returns a new LightsailDiscovery which periodically refreshes its targets.
-func NewLightsailDiscovery(conf *LightsailSDConfig, logger log.Logger, reg prometheus.Registerer) *LightsailDiscovery {
+func NewLightsailDiscovery(conf *LightsailSDConfig, logger log.Logger, metrics discovery.DiscovererDebugMetrics) (*LightsailDiscovery, error) {
+	m, ok := metrics.(*lightsailMetrics)
+	if !ok {
+		return nil, fmt.Errorf("invalid discovery metrics type")
+	}
+
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
+
 	d := &LightsailDiscovery{
 		cfg: conf,
 	}
 	d.Discovery = refresh.NewDiscovery(
 		refresh.Options{
-			Logger:   logger,
-			Mech:     "lightsail",
-			Interval: time.Duration(d.cfg.RefreshInterval),
-			RefreshF: d.refresh,
-			Registry: reg,
+			Logger:              logger,
+			Mech:                "lightsail",
+			Interval:            time.Duration(d.cfg.RefreshInterval),
+			RefreshF:            d.refresh,
+			MetricsInstantiator: m.refreshMetrics,
 		},
 	)
-	return d
+	return d, nil
 }
 
 func (d *LightsailDiscovery) lightsailClient() (*lightsail.Lightsail, error) {
