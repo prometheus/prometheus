@@ -2336,11 +2336,14 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 
 	server := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			accept := r.Header.Get("Accept")
 			if protobufParsing {
-				accept := r.Header.Get("Accept")
 				if !strings.HasPrefix(accept, "application/vnd.google.protobuf;") {
 					t.Errorf("Expected Accept header to prefer application/vnd.google.protobuf, got %q", accept)
 				}
+			}
+			if strings.Contains(accept, "validchars=utf8") {
+				t.Errorf("Expected Accept header not to allow utf8, got %q", accept)
 			}
 
 			timeout := r.Header.Get("X-Prometheus-Scrape-Timeout-Seconds")
@@ -2381,9 +2384,68 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 		require.Equal(t, "metric_a 1\nmetric_b 2\n", buf.String())
 	}
 
-	runTest(acceptHeader(config.DefaultScrapeProtocols))
+	runTest(acceptHeader(config.DefaultScrapeProtocols, false))
 	protobufParsing = true
-	runTest(acceptHeader(config.DefaultProtoFirstScrapeProtocols))
+	runTest(acceptHeader(config.DefaultProtoFirstScrapeProtocols, false))
+}
+
+func TestUTF8TargetScraperScrapeOK(t *testing.T) {
+	const (
+		configTimeout   = 1500 * time.Millisecond
+		expectedTimeout = "1.5"
+	)
+
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			accept := r.Header.Get("Accept")
+			if !strings.Contains(accept, "validchars=utf8") {
+				t.Errorf("Expected Accept header to allow utf8, got %q", accept)
+			}
+
+			timeout := r.Header.Get("X-Prometheus-Scrape-Timeout-Seconds")
+			if timeout != expectedTimeout {
+				t.Errorf("Expected scrape timeout header %q, got %q", expectedTimeout, timeout)
+			}
+
+			w.Header().Set("Content-Type", `text/plain; version=1.0.0; validchars=utf8`)
+			w.Write([]byte(`{"metric.a"} 1
+{"metric.b"} 2
+`))
+		}),
+	)
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	if err != nil {
+		panic(err)
+	}
+
+	runTest := func(acceptHeader string) {
+		ts := &targetScraper{
+			Target: &Target{
+				labels: labels.FromStrings(
+					model.SchemeLabel, serverURL.Scheme,
+					model.AddressLabel, serverURL.Host,
+				),
+			},
+			client:       http.DefaultClient,
+			timeout:      configTimeout,
+			acceptHeader: acceptHeader,
+		}
+		var buf bytes.Buffer
+
+		resp, err := ts.scrape(context.Background())
+		require.NoError(t, err)
+		contentType, err := ts.readResponse(context.Background(), resp, &buf)
+		require.NoError(t, err)
+		require.Equal(t, "text/plain; version=1.0.0; validchars=utf8", contentType)
+		require.Equal(t, `{"metric.a"} 1
+{"metric.b"} 2
+`, buf.String())
+	}
+
+	runTest(acceptHeader(config.DefaultScrapeProtocols, true))
+	runTest(acceptHeader(config.DefaultProtoFirstScrapeProtocols, true))
 }
 
 func TestTargetScrapeScrapeCancel(t *testing.T) {
@@ -2409,7 +2471,7 @@ func TestTargetScrapeScrapeCancel(t *testing.T) {
 			),
 		},
 		client:       http.DefaultClient,
-		acceptHeader: acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols),
+		acceptHeader: acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols, false),
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -2464,7 +2526,7 @@ func TestTargetScrapeScrapeNotFound(t *testing.T) {
 			),
 		},
 		client:       http.DefaultClient,
-		acceptHeader: acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols),
+		acceptHeader: acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols, false),
 	}
 
 	resp, err := ts.scrape(context.Background())
@@ -2508,7 +2570,7 @@ func TestTargetScraperBodySizeLimit(t *testing.T) {
 		},
 		client:        http.DefaultClient,
 		bodySizeLimit: bodySizeLimit,
-		acceptHeader:  acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols),
+		acceptHeader:  acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols, false),
 		metrics:       newTestScrapeMetrics(t),
 	}
 	var buf bytes.Buffer

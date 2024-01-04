@@ -58,6 +58,10 @@ func MetricTextToWriteRequest(input io.Reader, labels map[string]string) (*promp
 func MetricFamiliesToWriteRequest(mf map[string]*dto.MetricFamily, extraLabels map[string]string) (*prompb.WriteRequest, error) {
 	wr := &prompb.WriteRequest{}
 
+	if model.NameValidationScheme == model.UTF8Validation {
+		wr.Utf8Names = true
+	}
+
 	// build metric list
 	sortedMetricNames := make([]string, 0, len(mf))
 	for metric := range mf {
