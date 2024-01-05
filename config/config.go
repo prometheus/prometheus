@@ -728,6 +728,9 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	}
 
 	if globalConfig.AllowUTF8Names {
+		if model.NameValidationScheme != model.UTF8Validation {
+			return fmt.Errorf("utf8 name support requested but feature not enabled via --enable-feature=utf8-names")
+		}
 		c.AllowUTF8Names = true
 	}
 
