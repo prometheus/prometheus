@@ -1126,7 +1126,7 @@ A DNS-based service discovery configuration allows specifying a set of DNS
 domain names which are periodically queried to discover a list of targets. The
 DNS servers to be contacted are read from `/etc/resolv.conf`.
 
-This service discovery method only supports basic DNS A, AAAA, MX and SRV
+This service discovery method only supports basic DNS A, AAAA, MX, NS and SRV
 record queries, but not the advanced DNS-SD approach specified in
 [RFC6763](https://tools.ietf.org/html/rfc6763).
 
@@ -1136,13 +1136,14 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_dns_srv_record_target`: the target field of the SRV record
 * `__meta_dns_srv_record_port`: the port field of the SRV record
 * `__meta_dns_mx_record_target`: the target field of the MX record
+* `__meta_dns_ns_record_target`: the target field of the NS record
 
 ```yaml
 # A list of DNS domain names to be queried.
 names:
   [ - <string> ]
 
-# The type of DNS query to perform. One of SRV, A, AAAA or MX.
+# The type of DNS query to perform. One of SRV, A, AAAA, MX or NS.
 [ type: <string> | default = 'SRV' ]
 
 # The port number used if the query type is not SRV.
@@ -2228,6 +2229,11 @@ See below for the configuration options for Kuma MonitoringAssignment discovery:
 ```yaml
 # Address of the Kuma Control Plane's MADS xDS server.
 server: <string>
+
+# Client id is used by Kuma Control Plane to compute Monitoring Assignment for specific Prometheus backend. 
+# This is useful when migrating between multiple Prometheus backends, or having separate backend for each Mesh.
+# When not specified, system hostname/fqdn will be used if available, if not `prometheus` will be used.
+[ client_id: <string> ]
 
 # The time to wait between polling update requests.
 [ refresh_interval: <duration> | default = 30s ]

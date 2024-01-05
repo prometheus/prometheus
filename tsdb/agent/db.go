@@ -241,6 +241,8 @@ type DB struct {
 	donec chan struct{}
 	stopc chan struct{}
 
+	writeNotified wlog.WriteNotified
+
 	metrics *dbMetrics
 }
 
@@ -311,6 +313,12 @@ func Open(l log.Logger, reg prometheus.Registerer, rs *remote.Storage, dir strin
 	return db, nil
 }
 
+// SetWriteNotified allows to set an instance to notify when a write happens.
+// It must be used during initialization. It is not safe to use it during execution.
+func (db *DB) SetWriteNotified(wn wlog.WriteNotified) {
+	db.writeNotified = wn
+}
+
 func validateOptions(opts *Options) *Options {
 	if opts == nil {
 		opts = DefaultOptions()
@@ -351,7 +359,7 @@ func (db *DB) replayWAL() error {
 	start := time.Now()
 
 	dir, startFrom, err := wlog.LastCheckpoint(db.wal.Dir())
-	if err != nil && err != record.ErrNotFound {
+	if err != nil && !errors.Is(err, record.ErrNotFound) {
 		return fmt.Errorf("find last checkpoint: %w", err)
 	}
 
@@ -954,6 +962,11 @@ func (a *appender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Met
 	return 0, nil
 }
 
+func (a *appender) AppendCTZeroSample(storage.SeriesRef, labels.Labels, int64, int64) (storage.SeriesRef, error) {
+	// TODO(bwplotka): Wire metadata in the Agent's appender.
+	return 0, nil
+}
+
 // Commit submits the collected samples and purges the batch.
 func (a *appender) Commit() error {
 	if err := a.log(); err != nil {
@@ -962,6 +975,10 @@ func (a *appender) Commit() error {
 
 	a.clearData()
 	a.appenderPool.Put(a)
+
+	if a.writeNotified != nil {
+		a.writeNotified.Notify()
+	}
 	return nil
 }
 

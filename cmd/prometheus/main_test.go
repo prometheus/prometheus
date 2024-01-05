@@ -346,7 +346,7 @@ func getCurrentGaugeValuesFor(t *testing.T, reg prometheus.Gatherer, metricNames
 				continue
 			}
 
-			require.Equal(t, 1, len(g.GetMetric()))
+			require.Len(t, g.GetMetric(), 1)
 			if _, ok := res[m]; ok {
 				t.Error("expected only one metric family for", m)
 				t.FailNow()

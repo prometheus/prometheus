@@ -426,7 +426,7 @@ func (w *Writer) AddSeries(ref storage.SeriesRef, lset labels.Labels, chunks ...
 	// We add padding to 16 bytes to increase the addressable space we get through 4 byte
 	// series references.
 	if err := w.addPadding(16); err != nil {
-		return fmt.Errorf("failed to write padding bytes: %v", err)
+		return fmt.Errorf("failed to write padding bytes: %w", err)
 	}
 
 	if w.f.pos%16 != 0 {
@@ -443,7 +443,7 @@ func (w *Writer) AddSeries(ref storage.SeriesRef, lset labels.Labels, chunks ...
 		if !ok {
 			nameIndex, err = w.symbols.ReverseLookup(l.Name)
 			if err != nil {
-				return fmt.Errorf("symbol entry for %q does not exist, %v", l.Name, err)
+				return fmt.Errorf("symbol entry for %q does not exist, %w", l.Name, err)
 			}
 		}
 		w.labelNames[l.Name]++
@@ -453,7 +453,7 @@ func (w *Writer) AddSeries(ref storage.SeriesRef, lset labels.Labels, chunks ...
 		if !ok || cacheEntry.lastValue != l.Value {
 			valueIndex, err = w.symbols.ReverseLookup(l.Value)
 			if err != nil {
-				return fmt.Errorf("symbol entry for %q does not exist, %v", l.Value, err)
+				return fmt.Errorf("symbol entry for %q does not exist, %w", l.Value, err)
 			}
 			w.symbolCache[l.Name] = symbolCacheEntry{
 				index:          nameIndex,

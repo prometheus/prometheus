@@ -254,6 +254,12 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
 	},
+	"mad_over_time": {
+		Name:         "mad_over_time",
+		ArgTypes:     []ValueType{ValueTypeMatrix},
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
+	},
 	"max_over_time": {
 		Name:       "max_over_time",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
@@ -346,6 +352,20 @@ var Functions = map[string]*Function{
 		Name:       "sort_desc",
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
+	},
+	"sort_by_label": {
+		Name:         "sort_by_label",
+		ArgTypes:     []ValueType{ValueTypeVector, ValueTypeString},
+		Variadic:     -1,
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
+	},
+	"sort_by_label_desc": {
+		Name:         "sort_by_label_desc",
+		ArgTypes:     []ValueType{ValueTypeVector, ValueTypeString},
+		Variadic:     -1,
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
 	},
 	"sqrt": {
 		Name:       "sqrt",

@@ -1,21 +1,16 @@
 # Changelog
 
-## 2.48.0-rc.2 / 2023-11-02
+## unreleased
 
-* [ENHANCEMENT] Scraping: Add configuration option for tracking staleness of scraped timestamps. #13060
-* [BUGFIX] Storage: Fix crash caused by incorrect mixed samples handling. #13055
-* [BUGFIX] TSDB: Fix compactor failures by adding min time to histogram chunks. #13062
+* [ENHANCEMENT] TSDB: Make the wlog watcher read segments synchronously when not tailing. #13224
+* [BUGFIX] Agent: Participate in notify calls. #13223
 
-## 2.48.0-rc.1 / 2023-10-24
-
-* [BUGFIX] PromQL: Reduce inefficiency introduced by warnings/annotations and temporarily remove possible non-counter warnings. #13012
-
-## 2.48.0-rc.0 / 2023-10-10
+## 2.48.0 / 2023-11-16
 
 * [CHANGE] Remote-write: respect Retry-After header on 5xx errors. #12677
 * [FEATURE] Alerting: Add AWS SigV4 authentication support for Alertmanager endpoints. #12774
 * [FEATURE] Promtool: Add support for histograms in the TSDB dump command. #12775
-* [FEATURE] PromQL: Add warnings (and annotations) to PromQL query results. #12152 #12982 #12988
+* [FEATURE] PromQL: Add warnings (and annotations) to PromQL query results. #12152 #12982 #12988 #13012
 * [FEATURE] Remote-write: Add Azure AD OAuth authentication support for remote write requests. #12572
 * [ENHANCEMENT] Remote-write: Add a header to count retried remote write requests. #12729
 * [ENHANCEMENT] TSDB: Improve query performance by re-using iterator when moving between series. #12757
@@ -31,6 +26,7 @@
 * [ENHANCEMENT] Scraping: Save memory when scraping by delaying creation of buffer. #12953
 * [ENHANCEMENT] Agent: Allow ingestion of out-of-order samples. #12897
 * [ENHANCEMENT] Promtool: Improve support for native histograms in TSDB analyze command. #12869
+* [ENHANCEMENT] Scraping: Add configuration option for tracking staleness of scraped timestamps. #13060
 * [BUGFIX] SD: Ensure that discovery managers are properly canceled. #10569
 * [BUGFIX] TSDB: Fix PostingsForMatchers race with creating new series. #12558
 * [BUGFIX] TSDB: Fix handling of explicit counter reset header in histograms. #12772
@@ -40,6 +36,8 @@
 * [BUGFIX] Promtool: Fix errors not being reported in check rules command. #12715
 * [BUGFIX] TSDB: Avoid panics reported in logs when head initialization takes a long time. #12876
 * [BUGFIX] TSDB: Ensure that WBL is repaired when possible. #12406
+* [BUGFIX] Storage: Fix crash caused by incorrect mixed samples handling. #13055
+* [BUGFIX] TSDB: Fix compactor failures by adding min time to histogram chunks. #13062
 
 ## 2.47.1 / 2023-10-04
 

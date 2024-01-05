@@ -55,6 +55,7 @@ type SDConfig struct {
 	RefreshInterval  model.Duration          `yaml:"refresh_interval,omitempty"`
 	FetchTimeout     model.Duration          `yaml:"fetch_timeout,omitempty"`
 	Server           string                  `yaml:"server,omitempty"`
+	ClientID         string                  `yaml:"client_id,omitempty"`
 }
 
 // mustRegisterMessage registers the provided message type in the typeRegistry, and panics
@@ -68,9 +69,6 @@ func mustRegisterMessage(typeRegistry *protoregistry.Types, mt protoreflect.Mess
 func init() {
 	// Register top-level SD Configs.
 	discovery.RegisterConfig(&KumaSDConfig{})
-
-	// Register metrics.
-	prometheus.MustRegister(kumaFetchDuration, kumaFetchSkipUpdateCount, kumaFetchFailuresCount)
 
 	// Register protobuf types that need to be marshalled/ unmarshalled.
 	mustRegisterMessage(protoTypes, (&v3.DiscoveryRequest{}).ProtoReflect().Type())
@@ -109,12 +107,20 @@ type fetchDiscovery struct {
 	parseResources resourceParser
 	logger         log.Logger
 
-	fetchDuration        prometheus.Observer
+	fetchDuration        prometheus.Summary
 	fetchSkipUpdateCount prometheus.Counter
 	fetchFailuresCount   prometheus.Counter
+
+	metricRegisterer discovery.MetricRegisterer
 }
 
 func (d *fetchDiscovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
+	err := d.metricRegisterer.RegisterMetrics()
+	if err != nil {
+		level.Error(d.logger).Log("msg", "Unable to register metrics", "err", err.Error())
+		return
+	}
+	defer d.metricRegisterer.UnregisterMetrics()
 	defer d.client.Close()
 
 	ticker := time.NewTicker(d.refreshInterval)

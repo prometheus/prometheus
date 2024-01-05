@@ -100,7 +100,7 @@ func TestFanout_SelectSorted(t *testing.T) {
 		}
 
 		require.Equal(t, labelsResult, outputLabel)
-		require.Equal(t, inputTotalSize, len(result))
+		require.Len(t, result, inputTotalSize)
 	})
 	t.Run("chunk querier", func(t *testing.T) {
 		querier, err := fanoutStorage.ChunkQuerier(0, 8000)
@@ -128,7 +128,7 @@ func TestFanout_SelectSorted(t *testing.T) {
 
 		require.NoError(t, seriesSet.Err())
 		require.Equal(t, labelsResult, outputLabel)
-		require.Equal(t, inputTotalSize, len(result))
+		require.Len(t, result, inputTotalSize)
 	})
 }
 
@@ -178,7 +178,7 @@ func TestFanoutErrors(t *testing.T) {
 			}
 
 			if tc.warning != nil {
-				require.Greater(t, len(ss.Warnings()), 0, "warnings expected")
+				require.NotEmpty(t, ss.Warnings(), "warnings expected")
 				w := ss.Warnings()
 				require.Error(t, w.AsErrors()[0])
 				require.Equal(t, tc.warning.Error(), w.AsStrings("", 0)[0])
@@ -204,7 +204,7 @@ func TestFanoutErrors(t *testing.T) {
 			}
 
 			if tc.warning != nil {
-				require.Greater(t, len(ss.Warnings()), 0, "warnings expected")
+				require.NotEmpty(t, ss.Warnings(), "warnings expected")
 				w := ss.Warnings()
 				require.Error(t, w.AsErrors()[0])
 				require.Equal(t, tc.warning.Error(), w.AsStrings("", 0)[0])

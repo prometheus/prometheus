@@ -188,7 +188,7 @@ func TestWALRepair_ReadingError(t *testing.T) {
 				result = append(result, append(b, r.Record()...))
 			}
 			require.NoError(t, r.Err())
-			require.Equal(t, test.intactRecs, len(result), "Wrong number of intact records")
+			require.Len(t, result, test.intactRecs, "Wrong number of intact records")
 
 			for i, r := range result {
 				if !bytes.Equal(records[i], r) {
@@ -282,7 +282,7 @@ func TestCorruptAndCarryOn(t *testing.T) {
 		reader := NewReader(sr)
 		i := 0
 		for ; i < 4 && reader.Next(); i++ {
-			require.Equal(t, recordSize, len(reader.Record()))
+			require.Len(t, reader.Record(), recordSize)
 		}
 		require.Equal(t, 4, i, "not enough records")
 		require.False(t, reader.Next(), "unexpected record")
@@ -300,8 +300,8 @@ func TestCorruptAndCarryOn(t *testing.T) {
 		require.NoError(t, err)
 
 		// Ensure that we have a completely clean slate after repairing.
-		require.Equal(t, w.segment.Index(), 1) // We corrupted segment 0.
-		require.Equal(t, w.donePages, 0)
+		require.Equal(t, 1, w.segment.Index()) // We corrupted segment 0.
+		require.Equal(t, 0, w.donePages)
 
 		for i := 0; i < 5; i++ {
 			buf := make([]byte, recordSize)
@@ -324,11 +324,11 @@ func TestCorruptAndCarryOn(t *testing.T) {
 		reader := NewReader(sr)
 		i := 0
 		for ; i < 9 && reader.Next(); i++ {
-			require.Equal(t, recordSize, len(reader.Record()))
+			require.Len(t, reader.Record(), recordSize)
 		}
 		require.Equal(t, 9, i, "wrong number of records")
 		require.False(t, reader.Next(), "unexpected record")
-		require.Equal(t, nil, reader.Err())
+		require.NoError(t, reader.Err())
 		sr.Close()
 	}
 }
@@ -455,7 +455,7 @@ func TestLogPartialWrite(t *testing.T) {
 
 			for i := 1; i <= testData.numRecords; i++ {
 				if err := w.Log(record); i == testData.faultyRecord {
-					require.Error(t, io.ErrShortWrite, err)
+					require.ErrorIs(t, io.ErrShortWrite, err)
 				} else {
 					require.NoError(t, err)
 				}

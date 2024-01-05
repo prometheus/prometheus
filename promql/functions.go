@@ -23,6 +23,7 @@ import (
 
 	"github.com/grafana/regexp"
 	"github.com/prometheus/common/model"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -367,6 +368,68 @@ func funcSortDesc(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 	return Vector(byValueSorter), nil
 }
 
+// === sort_by_label(vector parser.ValueTypeVector, label parser.ValueTypeString...) (Vector, Annotations) ===
+func funcSortByLabel(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	// In case the labels are the same, NaN should sort to the bottom, so take
+	// ascending sort with NaN first and reverse it.
+	var anno annotations.Annotations
+	vals[0], anno = funcSort(vals, args, enh)
+	labels := stringSliceFromArgs(args[1:])
+	slices.SortFunc(vals[0].(Vector), func(a, b Sample) int {
+		// Iterate over each given label
+		for _, label := range labels {
+			lv1 := a.Metric.Get(label)
+			lv2 := b.Metric.Get(label)
+			// 0 if a == b, -1 if a < b, and +1 if a > b.
+			switch strings.Compare(lv1, lv2) {
+			case -1:
+				return -1
+			case +1:
+				return +1
+			default:
+				continue
+			}
+		}
+
+		return 0
+	})
+
+	return vals[0].(Vector), anno
+}
+
+// === sort_by_label_desc(vector parser.ValueTypeVector, label parser.ValueTypeString...) (Vector, Annotations) ===
+func funcSortByLabelDesc(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	// In case the labels are the same, NaN should sort to the bottom, so take
+	// ascending sort with NaN first and reverse it.
+	var anno annotations.Annotations
+	vals[0], anno = funcSortDesc(vals, args, enh)
+	labels := stringSliceFromArgs(args[1:])
+	slices.SortFunc(vals[0].(Vector), func(a, b Sample) int {
+		// Iterate over each given label
+		for _, label := range labels {
+			lv1 := a.Metric.Get(label)
+			lv2 := b.Metric.Get(label)
+			// If label values are the same, continue to the next label
+			if lv1 == lv2 {
+				continue
+			}
+			// 0 if a == b, -1 if a < b, and +1 if a > b.
+			switch strings.Compare(lv1, lv2) {
+			case -1:
+				return +1
+			case +1:
+				return -1
+			default:
+				continue
+			}
+		}
+
+		return 0
+	})
+
+	return vals[0].(Vector), anno
+}
+
 // === clamp(Vector parser.ValueTypeVector, min, max Scalar) (Vector, Annotations) ===
 func funcClamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	vec := vals[0].(Vector)
@@ -543,6 +606,25 @@ func funcLastOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	return append(enh.Out, Sample{
 		Metric: el.Metric,
 		H:      h.H,
+	}), nil
+}
+
+// === mad_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
+func funcMadOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(vals[0].(Matrix)[0].Floats) == 0 {
+		return enh.Out, nil
+	}
+	return aggrOverTime(vals, enh, func(s Series) float64 {
+		values := make(vectorByValueHeap, 0, len(s.Floats))
+		for _, f := range s.Floats {
+			values = append(values, Sample{F: f.F})
+		}
+		median := quantile(0.5, values)
+		values = make(vectorByValueHeap, 0, len(s.Floats))
+		for _, f := range s.Floats {
+			values = append(values, Sample{F: math.Abs(f.F - median)})
+		}
+		return quantile(0.5, values)
 	}), nil
 }
 
@@ -1113,7 +1195,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 	var histogramSamples []Sample
 
 	for _, sample := range inVec {
-		// We are only looking for conventional buckets here. Remember
+		// We are only looking for classic buckets here. Remember
 		// the histograms for later treatment.
 		if sample.H != nil {
 			histogramSamples = append(histogramSamples, sample)
@@ -1144,10 +1226,10 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 	// Now deal with the histograms.
 	for _, sample := range histogramSamples {
 		// We have to reconstruct the exact same signature as above for
-		// a conventional histogram, just ignoring any le label.
+		// a classic histogram, just ignoring any le label.
 		enh.lblBuf = sample.Metric.Bytes(enh.lblBuf)
 		if mb, ok := enh.signatureToMetricWithBuckets[string(enh.lblBuf)]; ok && len(mb.buckets) > 0 {
-			// At this data point, we have conventional histogram
+			// At this data point, we have classic histogram
 			// buckets and a native histogram with the same name and
 			// labels. Do not evaluate anything.
 			annos.Add(annotations.NewMixedClassicNativeHistogramsWarning(sample.Metric.Get(labels.MetricName), args[1].PositionRange()))
@@ -1475,6 +1557,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"log10":              funcLog10,
 	"log2":               funcLog2,
 	"last_over_time":     funcLastOverTime,
+	"mad_over_time":      funcMadOverTime,
 	"max_over_time":      funcMaxOverTime,
 	"min_over_time":      funcMinOverTime,
 	"minute":             funcMinute,
@@ -1493,6 +1576,8 @@ var FunctionCalls = map[string]FunctionCall{
 	"sinh":               funcSinh,
 	"sort":               funcSort,
 	"sort_desc":          funcSortDesc,
+	"sort_by_label":      funcSortByLabel,
+	"sort_by_label_desc": funcSortByLabelDesc,
 	"sqrt":               funcSqrt,
 	"stddev_over_time":   funcStddevOverTime,
 	"stdvar_over_time":   funcStdvarOverTime,
@@ -1636,4 +1721,12 @@ func stringFromArg(e parser.Expr) string {
 	tmp := unwrapStepInvariantExpr(e) // Unwrap StepInvariant
 	unwrapParenExpr(&tmp)             // Optionally unwrap ParenExpr
 	return tmp.(*parser.StringLiteral).Val
+}
+
+func stringSliceFromArgs(args parser.Expressions) []string {
+	tmp := make([]string, len(args))
+	for i := 0; i < len(args); i++ {
+		tmp[i] = stringFromArg(args[i])
+	}
+	return tmp
 }

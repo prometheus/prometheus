@@ -94,6 +94,7 @@ func (a Annotations) AsStrings(query string, maxAnnos int) []string {
 	return arr
 }
 
+//nolint:revive // error-naming.
 var (
 	// Currently there are only 2 types, warnings and info.
 	// For now, info are visually identical with warnings as we have not updated
@@ -130,7 +131,7 @@ func (e annoErr) Unwrap() error {
 
 // NewInvalidQuantileWarning is used when the user specifies an invalid quantile
 // value, i.e. a float that is outside the range [0, 1] or NaN.
-func NewInvalidQuantileWarning(q float64, pos posrange.PositionRange) annoErr {
+func NewInvalidQuantileWarning(q float64, pos posrange.PositionRange) error {
 	return annoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w, got %g", InvalidQuantileWarning, q),
@@ -139,7 +140,7 @@ func NewInvalidQuantileWarning(q float64, pos posrange.PositionRange) annoErr {
 
 // NewBadBucketLabelWarning is used when there is an error parsing the bucket label
 // of a classic histogram.
-func NewBadBucketLabelWarning(metricName, label string, pos posrange.PositionRange) annoErr {
+func NewBadBucketLabelWarning(metricName, label string, pos posrange.PositionRange) error {
 	return annoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w of %q for metric name %q", BadBucketLabelWarning, label, metricName),
@@ -149,7 +150,7 @@ func NewBadBucketLabelWarning(metricName, label string, pos posrange.PositionRan
 // NewMixedFloatsHistogramsWarning is used when the queried series includes both
 // float samples and histogram samples for functions that do not support mixed
 // samples.
-func NewMixedFloatsHistogramsWarning(metricName string, pos posrange.PositionRange) annoErr {
+func NewMixedFloatsHistogramsWarning(metricName string, pos posrange.PositionRange) error {
 	return annoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w %q", MixedFloatsHistogramsWarning, metricName),
@@ -158,7 +159,7 @@ func NewMixedFloatsHistogramsWarning(metricName string, pos posrange.PositionRan
 
 // NewMixedClassicNativeHistogramsWarning is used when the queried series includes
 // both classic and native histograms.
-func NewMixedClassicNativeHistogramsWarning(metricName string, pos posrange.PositionRange) annoErr {
+func NewMixedClassicNativeHistogramsWarning(metricName string, pos posrange.PositionRange) error {
 	return annoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w %q", MixedClassicNativeHistogramsWarning, metricName),
@@ -167,7 +168,7 @@ func NewMixedClassicNativeHistogramsWarning(metricName string, pos posrange.Posi
 
 // NewPossibleNonCounterInfo is used when a named counter metric with only float samples does not
 // have the suffixes _total, _sum, _count, or _bucket.
-func NewPossibleNonCounterInfo(metricName string, pos posrange.PositionRange) annoErr {
+func NewPossibleNonCounterInfo(metricName string, pos posrange.PositionRange) error {
 	return annoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w %q", PossibleNonCounterInfo, metricName),
@@ -176,7 +177,7 @@ func NewPossibleNonCounterInfo(metricName string, pos posrange.PositionRange) an
 
 // NewHistogramQuantileForcedMonotonicityInfo is used when the input (classic histograms) to
 // histogram_quantile needs to be forced to be monotonic.
-func NewHistogramQuantileForcedMonotonicityInfo(metricName string, pos posrange.PositionRange) annoErr {
+func NewHistogramQuantileForcedMonotonicityInfo(metricName string, pos posrange.PositionRange) error {
 	return annoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w %q", HistogramQuantileForcedMonotonicityInfo, metricName),

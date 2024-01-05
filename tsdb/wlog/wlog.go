@@ -116,6 +116,10 @@ func (e *CorruptionErr) Error() string {
 	return fmt.Sprintf("corruption in segment %s at %d: %s", SegmentName(e.Dir, e.Segment), e.Offset, e.Err)
 }
 
+func (e *CorruptionErr) Unwrap() error {
+	return e.Err
+}
+
 // OpenWriteSegment opens segment k in dir. The returned segment is ready for new appends.
 func OpenWriteSegment(logger log.Logger, dir string, k int) (*Segment, error) {
 	segName := SegmentName(dir, k)
@@ -970,7 +974,7 @@ type segmentBufReader struct {
 	off  int // Offset of read data into current segment.
 }
 
-func NewSegmentBufReader(segs ...*Segment) *segmentBufReader {
+func NewSegmentBufReader(segs ...*Segment) io.ReadCloser {
 	if len(segs) == 0 {
 		return &segmentBufReader{}
 	}
@@ -981,15 +985,16 @@ func NewSegmentBufReader(segs ...*Segment) *segmentBufReader {
 	}
 }
 
-func NewSegmentBufReaderWithOffset(offset int, segs ...*Segment) (sbr *segmentBufReader, err error) {
+func NewSegmentBufReaderWithOffset(offset int, segs ...*Segment) (io.ReadCloser, error) {
 	if offset == 0 || len(segs) == 0 {
 		return NewSegmentBufReader(segs...), nil
 	}
 
-	sbr = &segmentBufReader{
+	sbr := &segmentBufReader{
 		buf:  bufio.NewReaderSize(segs[0], 16*pageSize),
 		segs: segs,
 	}
+	var err error
 	if offset > 0 {
 		_, err = sbr.buf.Discard(offset)
 	}

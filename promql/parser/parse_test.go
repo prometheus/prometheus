@@ -3604,9 +3604,9 @@ func TestParseExpressions(t *testing.T) {
 				require.True(t, ok, "unexpected error type")
 
 				for _, e := range errorList {
-					require.True(t, 0 <= e.PositionRange.Start, "parse error has negative position\nExpression '%s'\nError: %v", test.input, e)
-					require.True(t, e.PositionRange.Start <= e.PositionRange.End, "parse error has negative length\nExpression '%s'\nError: %v", test.input, e)
-					require.True(t, e.PositionRange.End <= posrange.Pos(len(test.input)), "parse error is not contained in input\nExpression '%s'\nError: %v", test.input, e)
+					require.LessOrEqual(t, 0, e.PositionRange.Start, "parse error has negative position\nExpression '%s'\nError: %v", test.input, e)
+					require.LessOrEqual(t, e.PositionRange.Start, e.PositionRange.End, "parse error has negative length\nExpression '%s'\nError: %v", test.input, e)
+					require.LessOrEqual(t, e.PositionRange.End, posrange.Pos(len(test.input)), "parse error is not contained in input\nExpression '%s'\nError: %v", test.input, e)
 				}
 			}
 		})

@@ -23,6 +23,7 @@ linters:
     - nolintlint
     - predeclared
     - revive
+    - testifylint
     - unconvert
     - unused
 
@@ -35,13 +36,9 @@ issues:
     - path: _test.go
       linters:
         - errcheck
-    - path: tsdb/
+    - path: "tsdb/head_wal.go"
       linters:
         - errorlint
-    - path: tsdb/
-      text: "import 'github.com/pkg/errors' is not allowed"
-      linters:
-        - depguard
     - linters:
         - godot
       source: "^// ==="
@@ -81,8 +78,55 @@ linters-settings:
   gofumpt:
     extra-rules: true
   revive:
+    # By default, revive will enable only the linting rules that are named in the configuration file.
+    # So, it's needed to explicitly set in configuration all required rules.
+    # The following configuration enables all the rules from the defaults.toml
+    # https://github.com/mgechev/revive/blob/master/defaults.toml
     rules:
-      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#unused-parameter
-      - name: unused-parameter
-        severity: warning
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md
+      - name: blank-imports
+      - name: context-as-argument
+        arguments:
+          # allow functions with test or bench signatures
+          - allowTypesBefore: "*testing.T,testing.TB"
+      - name: context-keys-type
+      - name: dot-imports
+      # A lot of false positives: incorrectly identifies channel draining as "empty code block".
+      # See https://github.com/mgechev/revive/issues/386
+      - name: empty-block
         disabled: true
+      - name: error-naming
+      - name: error-return
+      - name: error-strings
+      - name: errorf
+      - name: exported
+      - name: increment-decrement
+      - name: indent-error-flow
+      - name: package-comments
+      - name: range
+      - name: receiver-naming
+      - name: redefines-builtin-id
+      - name: superfluous-else
+      - name: time-naming
+      - name: unexported-return
+      - name: unreachable-code
+      - name: unused-parameter
+        disabled: true
+      - name: var-declaration
+      - name: var-naming
+  testifylint:
+    disable:
+      - float-compare
+      - go-require
+    enable:
+      - bool-compare
+      - compares
+      - empty
+      - error-is-as
+      - error-nil
+      - expected-actual
+      - len
+      - require-error
+      - suite-dont-use-pkg
+      - suite-extra-assert-call
+ 

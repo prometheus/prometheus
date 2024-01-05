@@ -284,7 +284,7 @@ func (p *queryLogTest) run(t *testing.T) {
 
 	if !p.enabledAtStart {
 		p.query(t)
-		require.Equal(t, 0, len(readQueryLog(t, queryLogFile.Name())))
+		require.Empty(t, readQueryLog(t, queryLogFile.Name()))
 		p.setQueryLog(t, queryLogFile.Name())
 		p.reloadConfig(t)
 	}
@@ -309,7 +309,7 @@ func (p *queryLogTest) run(t *testing.T) {
 	p.query(t)
 
 	ql = readQueryLog(t, queryLogFile.Name())
-	require.Equal(t, qc, len(ql))
+	require.Len(t, ql, qc)
 
 	qc = len(ql)
 	p.setQueryLog(t, queryLogFile.Name())
@@ -320,7 +320,7 @@ func (p *queryLogTest) run(t *testing.T) {
 
 	ql = readQueryLog(t, queryLogFile.Name())
 	if p.exactQueryCount() {
-		require.Equal(t, qc, len(ql))
+		require.Len(t, ql, qc)
 	} else {
 		require.Greater(t, len(ql), qc, "no queries logged")
 	}
@@ -340,7 +340,7 @@ func (p *queryLogTest) run(t *testing.T) {
 	require.NoError(t, os.Rename(queryLogFile.Name(), newFile.Name()))
 	ql = readQueryLog(t, newFile.Name())
 	if p.exactQueryCount() {
-		require.Equal(t, qc, len(ql))
+		require.Len(t, ql, qc)
 	}
 	p.validateLastQuery(t, ql)
 	qc = len(ql)
@@ -351,7 +351,7 @@ func (p *queryLogTest) run(t *testing.T) {
 
 	ql = readQueryLog(t, newFile.Name())
 	if p.exactQueryCount() {
-		require.Equal(t, qc, len(ql))
+		require.Len(t, ql, qc)
 	} else {
 		require.Greater(t, len(ql), qc, "no queries logged")
 	}

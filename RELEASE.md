@@ -53,7 +53,8 @@ Release cadence of first pre-releases being cut is 6 weeks.
 | v2.46          | 2023-07-12                                 | Julien Pivotto (GitHub: @roidelapluie)      |
 | v2.47          | 2023-08-23                                 | Bryan Boreham (GitHub: @bboreham)           |
 | v2.48          | 2023-10-04                                 | Levi Harrison (GitHub: @LeviHarrison)       |
-| v2.49          | 2023-11-15                                 | **searching for volunteer**                 |
+| v2.49          | 2023-12-05                                 | Bartek Plotka (GitHub: @bwplotka)           |
+| v2.50          | 2024-01-16                                 | **searching for volunteer**                 |
 
 If you are interested in volunteering please create a pull request against the [prometheus/prometheus](https://github.com/prometheus/prometheus) repository and propose yourself for the release series of your choice.
 
@@ -108,14 +109,16 @@ This is also a good time to consider any experimental features and feature
 flags for promotion to stable or for deprecation or ultimately removal. Do any
 of these in pull requests, one per feature.
 
+> NOTE: As a validation step check if all security alerts are closed after this step: https://github.com/prometheus/prometheus/security/dependabot. Sometimes it's ok
+> if not critical and e.g. fix is not released yet (or it does not relate to 
+> upgrading) or when we are unaffected.
+ 
 #### Manually updating Go dependencies
 
 This is usually only needed for `+incompatible` and `v0.0.0` non-semver updates.
 
 ```bash
-make update-go-deps
-git add go.mod go.sum
-git commit -m "Update dependencies"
+make update-all-go-deps
 ```
 
 #### Manually updating React dependencies

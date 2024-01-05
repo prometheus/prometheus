@@ -76,7 +76,7 @@ message Histogram {
   uint64 sample_count       = 1;
   double sample_count_float = 4; // Overrides sample_count if > 0.
   double sample_sum         = 2;
-  // Buckets for the conventional histogram.
+  // Buckets for the classic histogram.
   repeated Bucket bucket = 3 [(gogoproto.nullable) = false]; // Ordered in increasing order of upper_bound, +Inf bucket is optional.
 
   google.protobuf.Timestamp created_timestamp = 15;
@@ -153,4 +153,5 @@ message MetricFamily {
   string          help   = 2;
   MetricType      type   = 3;
   repeated Metric metric = 4 [(gogoproto.nullable) = false];
+  string          unit   = 5;
 }

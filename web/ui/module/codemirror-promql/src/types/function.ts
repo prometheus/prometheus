@@ -56,6 +56,7 @@ import {
   Ln,
   Log10,
   Log2,
+  MadOverTime,
   MaxOverTime,
   MinOverTime,
   Minute,
@@ -74,6 +75,8 @@ import {
   Sinh,
   Sort,
   SortDesc,
+  SortByLabel,
+  SortByLabelDesc,
   Sqrt,
   StddevOverTime,
   StdvarOverTime,
@@ -368,6 +371,12 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
     variadic: 0,
     returnType: ValueType.vector,
   },
+  [MadOverTime]: {
+    name: 'mad_over_time',
+    argTypes: [ValueType.matrix],
+    variadic: 0,
+    returnType: ValueType.vector,
+  },
   [MaxOverTime]: {
     name: 'max_over_time',
     argTypes: [ValueType.matrix],
@@ -474,6 +483,18 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
     name: 'sort_desc',
     argTypes: [ValueType.vector],
     variadic: 0,
+    returnType: ValueType.vector,
+  },
+  [SortByLabel]: {
+    name: 'sort_by_label',
+    argTypes: [ValueType.vector, ValueType.string],
+    variadic: -1,
+    returnType: ValueType.vector,
+  },
+  [SortByLabelDesc]: {
+    name: 'sort_by_label_desc',
+    argTypes: [ValueType.vector, ValueType.string],
+    variadic: -1,
     returnType: ValueType.vector,
   },
   [Sqrt]: {

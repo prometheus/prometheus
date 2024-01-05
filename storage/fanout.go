@@ -202,6 +202,20 @@ func (f *fanoutAppender) UpdateMetadata(ref SeriesRef, l labels.Labels, m metada
 	return ref, nil
 }
 
+func (f *fanoutAppender) AppendCTZeroSample(ref SeriesRef, l labels.Labels, t, ct int64) (SeriesRef, error) {
+	ref, err := f.primary.AppendCTZeroSample(ref, l, t, ct)
+	if err != nil {
+		return ref, err
+	}
+
+	for _, appender := range f.secondaries {
+		if _, err := appender.AppendCTZeroSample(ref, l, t, ct); err != nil {
+			return 0, err
+		}
+	}
+	return ref, nil
+}
+
 func (f *fanoutAppender) Commit() (err error) {
 	err = f.primary.Commit()
 

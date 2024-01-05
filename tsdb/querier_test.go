@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"math/rand"
@@ -26,7 +27,6 @@ import (
 	"time"
 
 	"github.com/oklog/ulid"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -213,7 +213,7 @@ func testBlockQuerier(t *testing.T, c blockQuerierTestCase, ir IndexReader, cr C
 			require.Equal(t, eok, rok)
 
 			if !eok {
-				require.Equal(t, 0, len(res.Warnings()))
+				require.Empty(t, res.Warnings())
 				break
 			}
 			sexp := c.exp.At()
@@ -248,7 +248,7 @@ func testBlockQuerier(t *testing.T, c blockQuerierTestCase, ir IndexReader, cr C
 			require.Equal(t, eok, rok)
 
 			if !eok {
-				require.Equal(t, 0, len(res.Warnings()))
+				require.Empty(t, res.Warnings())
 				break
 			}
 			sexpChks := c.expChks.At()
@@ -1077,6 +1077,24 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 				}),
 			},
 			expectedMinMaxTimes: []minMaxTimes{{1, 3}, {9, 9}},
+		},
+		{
+			name: "two chunks with first chunk deleted",
+			samples: [][]chunks.Sample{
+				{sample{1, 2, nil, nil}, sample{2, 3, nil, nil}, sample{3, 5, nil, nil}, sample{6, 1, nil, nil}},
+				{sample{7, 89, nil, nil}, sample{9, 8, nil, nil}},
+			},
+			intervals: tombstones.Intervals{{Mint: 1, Maxt: 6}},
+
+			expected: []chunks.Sample{
+				sample{7, 89, nil, nil}, sample{9, 8, nil, nil},
+			},
+			expectedChks: []chunks.Meta{
+				assureChunkFromSamples(t, []chunks.Sample{
+					sample{7, 89, nil, nil}, sample{9, 8, nil, nil},
+				}),
+			},
+			expectedMinMaxTimes: []minMaxTimes{{7, 9}},
 		},
 		// Deletion with seek.
 		{
@@ -2090,7 +2108,7 @@ func BenchmarkMergedSeriesSet(b *testing.B) {
 						i++
 					}
 					require.NoError(b, ms.Err())
-					require.Equal(b, len(lbls), i)
+					require.Len(b, lbls, i)
 				}
 			})
 		}
@@ -2339,7 +2357,7 @@ func (m mockIndex) Postings(ctx context.Context, name string, values ...string) 
 func (m mockIndex) SortedPostings(p index.Postings) index.Postings {
 	ep, err := index.ExpandPostings(p)
 	if err != nil {
-		return index.ErrPostings(errors.Wrap(err, "expand postings"))
+		return index.ErrPostings(fmt.Errorf("expand postings: %w", err))
 	}
 
 	sort.Slice(ep, func(i, j int) bool {
@@ -2567,7 +2585,7 @@ func BenchmarkQuerySeek(b *testing.B) {
 					require.NoError(b, it.Err())
 				}
 				require.NoError(b, ss.Err())
-				require.Equal(b, 0, len(ss.Warnings()))
+				require.Empty(b, ss.Warnings())
 			})
 		}
 	}
@@ -2695,7 +2713,7 @@ func BenchmarkSetMatcher(b *testing.B) {
 				for ss.Next() {
 				}
 				require.NoError(b, ss.Err())
-				require.Equal(b, 0, len(ss.Warnings()))
+				require.Empty(b, ss.Warnings())
 			}
 		})
 	}
@@ -3234,7 +3252,7 @@ func benchQuery(b *testing.B, expExpansions int, q storage.Querier, selectors la
 			actualExpansions++
 		}
 		require.NoError(b, ss.Err())
-		require.Equal(b, 0, len(ss.Warnings()))
+		require.Empty(b, ss.Warnings())
 		require.Equal(b, expExpansions, actualExpansions)
 		require.NoError(b, ss.Err())
 	}
@@ -3424,7 +3442,7 @@ func TestBlockBaseSeriesSet(t *testing.T) {
 
 			i++
 		}
-		require.Equal(t, len(tc.expIdxs), i)
+		require.Len(t, tc.expIdxs, i)
 		require.NoError(t, bcs.Err())
 	}
 }
@@ -3725,4 +3743,81 @@ type indexReaderCountingPostingsForMatchersCalls struct {
 func (f *indexReaderCountingPostingsForMatchersCalls) PostingsForMatchers(ctx context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
 	f.postingsForMatchersCalls++
 	return f.IndexReader.PostingsForMatchers(ctx, concurrent, ms...)
+}
+
+func TestQueryWithOneChunkCompletelyDeleted(t *testing.T) {
+	ctx := context.Background()
+	db := openTestDB(t, nil, nil)
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
+
+	db.EnableNativeHistograms()
+	appender := db.Appender(context.Background())
+
+	var (
+		err       error
+		seriesRef storage.SeriesRef
+	)
+	lbs := labels.FromStrings("__name__", "test")
+
+	// Create an int histogram chunk with samples between 0 - 20 and 30 - 40.
+	for i := 0; i < 20; i++ {
+		h := tsdbutil.GenerateTestHistogram(1)
+		seriesRef, err = appender.AppendHistogram(seriesRef, lbs, int64(i), h, nil)
+		require.NoError(t, err)
+	}
+	for i := 30; i < 40; i++ {
+		h := tsdbutil.GenerateTestHistogram(1)
+		seriesRef, err = appender.AppendHistogram(seriesRef, lbs, int64(i), h, nil)
+		require.NoError(t, err)
+	}
+
+	// Append some float histograms - float histograms are a different encoding
+	// type from int histograms so a new chunk is created.
+	for i := 60; i < 100; i++ {
+		fh := tsdbutil.GenerateTestFloatHistogram(1)
+		seriesRef, err = appender.AppendHistogram(seriesRef, lbs, int64(i), nil, fh)
+		require.NoError(t, err)
+	}
+
+	err = appender.Commit()
+	require.NoError(t, err)
+
+	matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test")
+	require.NoError(t, err)
+
+	// Delete all samples from the int histogram chunk. The deletion intervals
+	// doesn't cover the entire histogram chunk, but does cover all the samples
+	// in the chunk. This case was previously not handled properly.
+	err = db.Delete(ctx, 0, 20, matcher)
+	require.NoError(t, err)
+	err = db.Delete(ctx, 30, 40, matcher)
+	require.NoError(t, err)
+
+	chunkQuerier, err := db.ChunkQuerier(0, 100)
+	require.NoError(t, err)
+
+	css := chunkQuerier.Select(context.Background(), false, nil, matcher)
+
+	seriesCount := 0
+	for css.Next() {
+		seriesCount++
+		series := css.At()
+
+		sampleCount := 0
+		it := series.Iterator(nil)
+		for it.Next() {
+			chk := it.At()
+			cit := chk.Chunk.Iterator(nil)
+			for vt := cit.Next(); vt != chunkenc.ValNone; vt = cit.Next() {
+				require.Equal(t, chunkenc.ValFloatHistogram, vt, "Only float histograms expected, other sample types should have been deleted.")
+				sampleCount++
+			}
+		}
+		require.NoError(t, it.Err())
+		require.Equal(t, 40, sampleCount)
+	}
+	require.NoError(t, css.Err())
+	require.Equal(t, 1, seriesCount)
 }

@@ -26,7 +26,7 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
-	"github.com/gogo/protobuf/types"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -148,7 +148,7 @@ type PromParser struct {
 	builder labels.ScratchBuilder
 	series  []byte
 	text    []byte
-	mtype   MetricType
+	mtype   model.MetricType
 	val     float64
 	ts      int64
 	hasTS   bool
@@ -192,7 +192,7 @@ func (p *PromParser) Help() ([]byte, []byte) {
 // Type returns the metric name and type in the current entry.
 // Must only be called after Next returned a type entry.
 // The returned byte slices become invalid after the next call to Next.
-func (p *PromParser) Type() ([]byte, MetricType) {
+func (p *PromParser) Type() ([]byte, model.MetricType) {
 	return p.l.b[p.offsets[0]:p.offsets[1]], p.mtype
 }
 
@@ -247,9 +247,10 @@ func (p *PromParser) Exemplar(*exemplar.Exemplar) bool {
 	return false
 }
 
-// CreatedTimestamp returns false because PromParser does not support created timestamps.
-func (p *PromParser) CreatedTimestamp(_ *types.Timestamp) bool {
-	return false
+// CreatedTimestamp returns nil as it's not implemented yet.
+// TODO(bwplotka): https://github.com/prometheus/prometheus/issues/12980
+func (p *PromParser) CreatedTimestamp() *int64 {
+	return nil
 }
 
 // nextToken returns the next token from the promlexer. It skips over tabs
@@ -306,15 +307,15 @@ func (p *PromParser) Next() (Entry, error) {
 		case tType:
 			switch s := yoloString(p.text); s {
 			case "counter":
-				p.mtype = MetricTypeCounter
+				p.mtype = model.MetricTypeCounter
 			case "gauge":
-				p.mtype = MetricTypeGauge
+				p.mtype = model.MetricTypeGauge
 			case "histogram":
-				p.mtype = MetricTypeHistogram
+				p.mtype = model.MetricTypeHistogram
 			case "summary":
-				p.mtype = MetricTypeSummary
+				p.mtype = model.MetricTypeSummary
 			case "untyped":
-				p.mtype = MetricTypeUnknown
+				p.mtype = model.MetricTypeUnknown
 			default:
 				return EntryInvalid, fmt.Errorf("invalid metric type %q", s)
 			}
