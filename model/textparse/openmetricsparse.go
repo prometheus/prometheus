@@ -25,7 +25,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/gogo/protobuf/jsonpb"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -504,9 +503,7 @@ func (p *OpenMetricsParser) getHistogramValue(t token) (*histogram.Histogram, er
 		return nil, p.parseError("expected value after metric", t)
 	}
 
-	h := dto.Histogram{}
-	unparsed := yoloString(p.l.buf()[1:])
-	err := jsonpb.UnmarshalString(unparsed, &h)
+	h, err := parseHistogram(p.l.buf()[1:])
 	if err != nil {
 		return nil, err
 	}
@@ -515,6 +512,185 @@ func (p *OpenMetricsParser) getHistogramValue(t token) (*histogram.Histogram, er
 	if p.mtype == model.MetricTypeGaugeHistogram {
 		ht = dto.MetricType_GAUGE_HISTOGRAM
 	}
-	sh := convertHistogram(&h, ht)
+	sh := convertHistogram(h, ht)
 	return &sh, nil
+}
+
+func parseHistogram(val []byte) (*dto.Histogram, error) {
+	r := bytes.NewReader(val)
+	ch, _, err := r.ReadRune()
+	if err != nil || ch != '{' {
+		return nil, fmt.Errorf("expected histogram to start with '{': %w", err)
+	}
+	h := dto.Histogram{}
+	for {
+		key, err := readKey(r)
+		if err != nil {
+			break
+		}
+		switch key {
+		case "schema":
+			var v int32
+			_, err := fmt.Fscanf(r, "%d", &v)
+			if err != nil {
+				return nil, err
+			}
+			h.Schema = v
+		case "zero_threshold":
+			var v float64
+			_, err := fmt.Fscanf(r, "%f", &v)
+			if err != nil {
+				return nil, err
+			}
+			h.ZeroThreshold = v
+		case "zero_count":
+			var v uint64
+			_, err := fmt.Fscanf(r, "%d", &v)
+			if err != nil {
+				return nil, err
+			}
+			h.ZeroCount = v
+		case "sample_count":
+			var v uint64
+			_, err := fmt.Fscanf(r, "%d", &v)
+			if err != nil {
+				return nil, err
+			}
+			h.SampleCount = v
+		case "sample_sum":
+			var v float64
+			_, err := fmt.Fscanf(r, "%f", &v)
+			if err != nil {
+				return nil, err
+			}
+			h.SampleSum = v
+		case "positive_span":
+			spans, err := parseSpans(r)
+			if err != nil {
+				return nil, err
+			}
+			h.PositiveSpan = spans
+		case "negative_span":
+			spans, err := parseSpans(r)
+			if err != nil {
+				return nil, err
+			}
+			h.NegativeSpan = spans
+		case "positive_delta":
+			deltas, err := parseDeltas(r)
+			if err != nil {
+				return nil, err
+			}
+			h.PositiveDelta = deltas
+		case "negative_delta":
+			deltas, err := parseDeltas(r)
+			if err != nil {
+				return nil, err
+			}
+			h.NegativeDelta = deltas
+		default:
+			return nil, fmt.Errorf("unknown key: '%s'", key)
+		}
+	}
+	return &h, nil
+}
+
+func readKey(r *bytes.Reader) (string, error) {
+	var b strings.Builder
+	for {
+		ch, _, err := r.ReadRune()
+		if err != nil {
+			return "", err
+		}
+
+		if ch == ',' {
+			continue
+		}
+
+		if !isKeyRune(ch) {
+			if ch == '}' {
+				return "", io.EOF
+			}
+			return b.String(), nil
+		}
+		_, err = b.WriteRune(ch)
+		if err != nil {
+			return "", err
+		}
+	}
+}
+
+func isKeyRune(ch rune) bool {
+	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_'
+}
+
+func parseSpans(r *bytes.Reader) ([]dto.BucketSpan, error) {
+	ch, _, err := r.ReadRune()
+	if err != nil {
+		return nil, err
+	}
+	if ch != '[' {
+		return nil, errors.New("expected spans to begin with '['")
+	}
+	spans := []dto.BucketSpan{}
+
+	for {
+		ch, _, err := r.ReadRune()
+		if err != nil {
+			return nil, err
+		}
+		if ch == ',' {
+			continue
+		}
+		if ch == ']' {
+			return spans, nil
+		}
+		// Unread the first character of the number before parsing the bucket.
+		if err = r.UnreadRune(); err != nil {
+			return nil, err
+		}
+		var (
+			offset int32
+			length uint32
+		)
+		_, err = fmt.Fscanf(r, "%d:%d", &offset, &length)
+		if err != nil {
+			return nil, fmt.Errorf("could not parse bucket: %w", err)
+		}
+		spans = append(spans, dto.BucketSpan{
+			Offset: offset,
+			Length: length,
+		})
+	}
+}
+
+func parseDeltas(r *bytes.Reader) ([]int64, error) {
+	ch, _, err := r.ReadRune()
+	if err != nil {
+		return nil, err
+	}
+	if ch != '[' {
+		return nil, errors.New("expected deltas to begin with '['")
+	}
+	deltas := []int64{}
+
+	for {
+		ch, _, err := r.ReadRune()
+		if err != nil {
+			return nil, err
+		}
+		if ch == ',' {
+			continue
+		}
+		if ch == ']' {
+			return deltas, nil
+		}
+		// Unread the first character of the number before parsing the value.
+		if err = r.UnreadRune(); err != nil {
+			return nil, err
+		}
+		var delta int64
+		fmt.Fscanf(r, "%d", &delta)
+		deltas = append(deltas, delta)
+	}
 }

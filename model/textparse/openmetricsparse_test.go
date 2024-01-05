@@ -68,7 +68,7 @@ testmetric{label="\"bar\""} 1
 # TYPE foo counter
 foo_total 17.0 1520879607.789 # {id="counter-test"} 5
 # TYPE nativehistogram histogram
-nativehistogram {"sample_count":24,"sample_sum":100,"schema":0,"zero_threshold":0.001,"zero_count":4,"positive_span":[{"offset":0,"length":2},{"offset":1,"length":2}],"negative_span":[{"offset":0,"length":2},{"offset":1,"length":2}],"positive_delta":[2,1,-2,3],"negative_delta":[2,1,-2,3]}`
+nativehistogram {sample_count:24,sample_sum:100,schema:0,zero_threshold:0.001,zero_count:4,positive_span:[0:2,1:2],negative_span:[0:2,1:2],positive_delta:[2,1,-2,3],negative_delta:[2,1,-2,3]}`
 
 	input += "\n# HELP metric foo\x00bar"
 	input += "\nnull_byte_metric{a=\"abc\x00\"} 1"
@@ -645,7 +645,7 @@ func TestOMNullByteHandling(t *testing.T) {
 		},
 		{
 			input: "a{b\x00=\"hiih\"}	1",
-			err: "expected equal, got \"\\x00\" (\"INVALID\") while parsing: \"a{b\\x00\"",
+			err:   "expected equal, got \"\\x00\" (\"INVALID\") while parsing: \"a{b\\x00\"",
 		},
 		{
 			input: "a\x00{b=\"ddd\"} 1",
