@@ -1243,7 +1243,7 @@ func populateSymbols(ctx context.Context, mergeFunc storage.VerticalChunkSeriesM
 			}
 		}
 
-		if err != io.EOF {
+		if !errors.Is(err, io.EOF) {
 			return fmt.Errorf("iterating symbols: %w", err)
 		}
 

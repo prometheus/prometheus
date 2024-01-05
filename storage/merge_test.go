@@ -863,7 +863,7 @@ func TestConcatenatingChunkSeriesMerger(t *testing.T) {
 
 			count, err := merged.ChunkCount()
 			require.NoError(t, err)
-			require.Equal(t, len(expChks), count)
+			require.Len(t, expChks, count)
 		})
 	}
 }

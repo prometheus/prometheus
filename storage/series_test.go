@@ -102,7 +102,7 @@ func TestNewListChunkSeriesFromSamples(t *testing.T) {
 
 	count, err := series.ChunkCount()
 	require.NoError(t, err)
-	require.Equal(t, len(chks), count, "should have one chunk per group of samples")
+	require.Len(t, chks, count, "should have one chunk per group of samples")
 }
 
 // TestSeriesSetToChunkSet test the property of SeriesSet that says

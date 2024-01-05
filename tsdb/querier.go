@@ -15,11 +15,11 @@ package tsdb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 
 	"github.com/oklog/ulid"
-	"github.com/pkg/errors"
 	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -470,7 +470,7 @@ func labelValuesFromSeries(r IndexReader, labelName string, refs []storage.Serie
 	for _, ref := range refs {
 		err := r.Series(ref, &builder, nil)
 		// Postings may be stale. Skip if no underlying series exists.
-		if errors.Cause(err) == storage.ErrNotFound {
+		if errors.Is(err, storage.ErrNotFound) {
 			continue
 		}
 		if err != nil {

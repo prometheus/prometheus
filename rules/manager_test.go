@@ -317,7 +317,7 @@ func TestForStateAddSamples(t *testing.T) {
 						filteredRes = append(filteredRes, smpl)
 					} else {
 						// If not 'ALERTS_FOR_STATE', it has to be 'ALERTS'.
-						require.Equal(t, smplName, "ALERTS")
+						require.Equal(t, "ALERTS", smplName)
 					}
 				}
 				for i := range test.result {

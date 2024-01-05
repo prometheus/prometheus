@@ -15,6 +15,7 @@ package chunks
 
 import (
 	"encoding/binary"
+	"errors"
 	"math/rand"
 	"os"
 	"strconv"
@@ -22,7 +23,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -185,7 +185,7 @@ func TestChunkDiskMapper_WriteUnsupportedChunk_Chunk_IterateChunks(t *testing.T)
 	ucSeriesRef, ucChkRef, ucMint, ucMaxt, uchunk := writeUnsupportedChunk(t, 0, hrw)
 
 	// Checking on-disk bytes for the first file.
-	require.Equal(t, 1, len(hrw.mmappedChunkFiles), "expected 1 mmapped file, got %d", len(hrw.mmappedChunkFiles))
+	require.Len(t, hrw.mmappedChunkFiles, 1, "expected 1 mmapped file, got %d", len(hrw.mmappedChunkFiles))
 	require.Equal(t, len(hrw.mmappedChunkFiles), len(hrw.closers))
 
 	// Testing IterateAllChunks method.
@@ -206,7 +206,7 @@ func TestChunkDiskMapper_WriteUnsupportedChunk_Chunk_IterateChunks(t *testing.T)
 		// The chunk encoding is unknown so Chunk() should fail but us the caller
 		// are ok with that. Above we asserted that the encoding we expected was
 		// EncUnsupportedXOR
-		require.NotNil(t, err)
+		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid chunk encoding \"<unknown>\"")
 		require.Nil(t, actChunk)
 

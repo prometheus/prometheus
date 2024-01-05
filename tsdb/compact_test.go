@@ -615,7 +615,7 @@ func TestCompaction_CompactWithSplitting(t *testing.T) {
 					}
 
 					// Check that symbols table covered all symbols found from series.
-					require.Equal(t, 0, len(seriesSymbols))
+					require.Empty(t, seriesSymbols)
 				}
 
 				require.Equal(t, uint64(series), totalSeries)
