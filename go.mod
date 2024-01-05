@@ -93,6 +93,12 @@ require (
 )
 
 require (
+	github.com/DmitriyVTitov/size v1.5.0
+	github.com/dgraph-io/ristretto v0.1.1
+	github.com/pkg/errors v0.9.1
+)
+
+require (
 	cloud.google.com/go/compute v1.23.3 // indirect
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.5.0 // indirect
