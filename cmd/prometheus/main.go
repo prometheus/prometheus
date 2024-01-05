@@ -228,9 +228,8 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				level.Info(logger).Log("msg", "Experimental created timestamp zero ingestion enabled. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
 			case "utf8-names":
-				config.DefaultConfig.GlobalConfig.AllowUTF8Names = true
-				config.DefaultGlobalConfig.AllowUTF8Names = true
 				model.NameValidationScheme = model.UTF8Validation
+				level.Info(logger).Log("msg", "Experimental utf8 support enabled")
 			case "":
 				continue
 			case "promql-at-modifier", "promql-negative-offset":
