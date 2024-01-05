@@ -93,7 +93,6 @@ require (
 require (
 	github.com/DmitriyVTitov/size v1.5.0
 	github.com/dgraph-io/ristretto v0.1.1
-	github.com/pkg/errors v0.9.1
 )
 
 require (
@@ -173,6 +172,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.0.2 // indirect
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/procfs v0.12.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect

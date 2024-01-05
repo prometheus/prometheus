@@ -502,7 +502,8 @@ func main() {
 		level.Error(logger).Log("msg", fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "file", absPath, "err", err)
 		os.Exit(2)
 	}
-	if _, err := cfgFile.GetScrapeConfigs(); err != nil {
+	cfgs, err := cfgFile.GetScrapeConfigs()
+	if err != nil {
 		absPath, pathErr := filepath.Abs(cfg.configFile)
 		if pathErr != nil {
 			absPath = cfg.configFile
@@ -510,6 +511,11 @@ func main() {
 		level.Error(logger).Log("msg", fmt.Sprintf("Error loading scrape config files from config (--config.file=%q)", cfg.configFile), "file", absPath, "err", err)
 		os.Exit(2)
 	}
+
+	for _, c := range cfgs {
+		level.Info(logger).Log("msg", fmt.Sprintf("utf8????? %v", c.AllowUTF8Names))
+	}
+
 	if cfg.tsdb.EnableExemplarStorage {
 		if cfgFile.StorageConfig.ExemplarsConfig == nil {
 			cfgFile.StorageConfig.ExemplarsConfig = &config.DefaultExemplarsConfig

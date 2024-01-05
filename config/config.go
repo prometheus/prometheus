@@ -727,6 +727,10 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 		return fmt.Errorf("%w for scrape config with job name %q", err, c.JobName)
 	}
 
+	if globalConfig.AllowUTF8Names {
+		c.AllowUTF8Names = true
+	}
+
 	return nil
 }
 
