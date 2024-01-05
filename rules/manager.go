@@ -424,6 +424,7 @@ type RuleConcurrencyController interface {
 	RuleEligible(g *Group, r Rule) bool
 
 	// Allow determines whether any concurrent evaluation slots are available.
+	// If Allow() returns true, then Done() must be called to release the acquired slot.
 	Allow() bool
 
 	// Done releases a concurrent evaluation slot.
@@ -445,15 +446,15 @@ func newRuleConcurrencyController(enabled bool, maxConcurrency int64) RuleConcur
 
 // concurrentRuleEvalController holds a weighted semaphore which controls the concurrent evaluation of rules.
 type concurrentRuleEvalController struct {
-	mu      sync.Mutex
-	enabled bool
-	sema    *semaphore.Weighted
-	depMaps map[*Group]dependencyMap
+	enabled   bool
+	sema      *semaphore.Weighted
+	depMapsMu sync.Mutex
+	depMaps   map[*Group]dependencyMap
 }
 
 func (c *concurrentRuleEvalController) RuleEligible(g *Group, r Rule) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.depMapsMu.Lock()
+	defer c.depMapsMu.Unlock()
 
 	depMap, found := c.depMaps[g]
 	if !found {
@@ -481,8 +482,8 @@ func (c *concurrentRuleEvalController) Done() {
 }
 
 func (c *concurrentRuleEvalController) Invalidate() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.depMapsMu.Lock()
+	defer c.depMapsMu.Unlock()
 
 	// Clear out the memoized dependency maps because some or all groups may have been updated.
 	c.depMaps = map[*Group]dependencyMap{}

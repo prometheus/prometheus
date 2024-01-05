@@ -423,8 +423,13 @@ func (g *Group) CopyState(from *Group) {
 }
 
 // Eval runs a single evaluation cycle in which all rules are evaluated sequentially.
+// Rules can be evaluated concurrently if the `concurrent-rule-eval` feature flag is enabled.
 func (g *Group) Eval(ctx context.Context, ts time.Time) {
-	var samplesTotal atomic.Float64
+	var (
+		samplesTotal atomic.Float64
+		wg           sync.WaitGroup
+	)
+
 	for i, rule := range g.rules {
 		select {
 		case <-g.done:
@@ -435,6 +440,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		eval := func(i int, rule Rule, async bool) {
 			defer func() {
 				if async {
+					wg.Done()
 					g.opts.RuleConcurrencyController.Done()
 				}
 			}()
@@ -569,12 +575,14 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		// Try run concurrently if there are slots available.
 		ctrl := g.opts.RuleConcurrencyController
 		if ctrl != nil && ctrl.RuleEligible(g, rule) && ctrl.Allow() {
+			wg.Add(1)
 			go eval(i, rule, true)
 		} else {
 			eval(i, rule, false)
 		}
 	}
 
+	wg.Wait()
 	if g.metrics != nil {
 		g.metrics.GroupSamples.WithLabelValues(GroupKey(g.File(), g.Name())).Set(samplesTotal.Load())
 	}
@@ -940,7 +948,7 @@ func buildDependencyMap(rules []Rule) dependencyMap {
 
 	if len(rules) <= 1 {
 		// No relationships if group has 1 or fewer rules.
-		return nil
+		return dependencies
 	}
 
 	inputs := make(map[string][]Rule, len(rules))
@@ -949,7 +957,9 @@ func buildDependencyMap(rules []Rule) dependencyMap {
 	var indeterminate bool
 
 	for _, rule := range rules {
-		rule := rule
+		if indeterminate {
+			break
+		}
 
 		name := rule.Name()
 		outputs[name] = append(outputs[name], rule)
@@ -980,15 +990,10 @@ func buildDependencyMap(rules []Rule) dependencyMap {
 		return nil
 	}
 
-	if len(inputs) == 0 || len(outputs) == 0 {
-		// No relationships can be inferred.
-		return nil
-	}
-
 	for output, outRules := range outputs {
 		for _, outRule := range outRules {
-			if rs, found := inputs[output]; found && len(rs) > 0 {
-				dependencies[outRule] = append(dependencies[outRule], rs...)
+			if inRules, found := inputs[output]; found && len(inRules) > 0 {
+				dependencies[outRule] = append(dependencies[outRule], inRules...)
 			}
 		}
 	}
