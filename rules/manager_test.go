@@ -169,7 +169,7 @@ func TestAlertingRule(t *testing.T) {
 				filteredRes = append(filteredRes, smpl)
 			} else {
 				// If not 'ALERTS', it has to be 'ALERTS_FOR_STATE'.
-				require.Equal(t, smplName, "ALERTS_FOR_STATE")
+				require.Equal(t, "ALERTS_FOR_STATE", smplName)
 			}
 		}
 		for i := range test.result {
@@ -317,7 +317,7 @@ func TestForStateAddSamples(t *testing.T) {
 						filteredRes = append(filteredRes, smpl)
 					} else {
 						// If not 'ALERTS_FOR_STATE', it has to be 'ALERTS'.
-						require.Equal(t, smplName, "ALERTS")
+						require.Equal(t, "ALERTS", smplName)
 					}
 				}
 				for i := range test.result {
@@ -337,7 +337,6 @@ func TestForStateAddSamples(t *testing.T) {
 				for _, aa := range rule.ActiveAlerts() {
 					require.Zero(t, aa.Labels.Get(model.MetricNameLabel), "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
 				}
-
 			}
 		})
 	}
@@ -478,12 +477,12 @@ func TestForStateRestore(t *testing.T) {
 		// Checking if we have restored it correctly.
 		switch {
 		case tst.noRestore:
-			require.Equal(t, tst.num, len(got))
+			require.Len(t, got, tst.num)
 			for _, e := range got {
 				require.Equal(t, e.ActiveAt, restoreTime)
 			}
 		case tst.gracePeriod:
-			require.Equal(t, tst.num, len(got))
+			require.Len(t, got, tst.num)
 			for _, e := range got {
 				require.Equal(t, opts.ForGracePeriod, e.ActiveAt.Add(alertForDuration).Sub(restoreTime))
 			}
@@ -740,7 +739,7 @@ func TestUpdate(t *testing.T) {
 
 	err := ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil)
 	require.NoError(t, err)
-	require.Greater(t, len(ruleManager.groups), 0, "expected non-empty rule groups")
+	require.NotEmpty(t, ruleManager.groups, "expected non-empty rule groups")
 	ogs := map[string]*Group{}
 	for h, g := range ruleManager.groups {
 		g.seriesInPreviousEval = []map[string]labels.Labels{
@@ -761,7 +760,7 @@ func TestUpdate(t *testing.T) {
 
 	// Groups will be recreated if updated.
 	rgs, errs := rulefmt.ParseFile("fixtures/rules.yaml")
-	require.Equal(t, 0, len(errs), "file parsing failures")
+	require.Empty(t, errs, "file parsing failures")
 
 	tmpFile, err := os.CreateTemp("", "rules.test.*.yaml")
 	require.NoError(t, err)
@@ -1141,20 +1140,20 @@ func TestNotify(t *testing.T) {
 
 	// Alert sent right away
 	group.Eval(ctx, time.Unix(1, 0))
-	require.Equal(t, 1, len(lastNotified))
+	require.Len(t, lastNotified, 1)
 	require.NotZero(t, lastNotified[0].ValidUntil, "ValidUntil should not be zero")
 
 	// Alert is not sent 1s later
 	group.Eval(ctx, time.Unix(2, 0))
-	require.Equal(t, 0, len(lastNotified))
+	require.Empty(t, lastNotified)
 
 	// Alert is resent at t=5s
 	group.Eval(ctx, time.Unix(5, 0))
-	require.Equal(t, 1, len(lastNotified))
+	require.Len(t, lastNotified, 1)
 
 	// Resolution alert sent right away
 	group.Eval(ctx, time.Unix(6, 0))
-	require.Equal(t, 1, len(lastNotified))
+	require.Len(t, lastNotified, 1)
 }
 
 func TestMetricsUpdate(t *testing.T) {
@@ -1352,7 +1351,7 @@ func TestMetricsStalenessOnManagerShutdown(t *testing.T) {
 	require.NoError(t, err)
 	ruleManager.Stop()
 	stopped = true
-	require.True(t, time.Since(start) < 1*time.Second, "rule manager does not stop early")
+	require.Less(t, time.Since(start), 1*time.Second, "rule manager does not stop early")
 	time.Sleep(5 * time.Second)
 	require.Equal(t, 0, countStaleNaN(t, storage), "invalid count of staleness markers after stopping the engine")
 }
@@ -1857,9 +1856,9 @@ func TestNativeHistogramsInRecordingRules(t *testing.T) {
 
 	require.Equal(t, labels.FromStrings("__name__", "sum:histogram_metric"), s.Labels())
 
-	expHist := hists[0].ToFloat()
+	expHist := hists[0].ToFloat(nil)
 	for _, h := range hists[1:] {
-		expHist = expHist.Add(h.ToFloat())
+		expHist = expHist.Add(h.ToFloat(nil))
 	}
 
 	it := s.Iterator(nil)

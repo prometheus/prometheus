@@ -38,7 +38,6 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/scrape"
@@ -180,7 +179,7 @@ func TestMetadataDelivery(t *testing.T) {
 	for i := 0; i < numMetadata; i++ {
 		metadata = append(metadata, scrape.MetricMetadata{
 			Metric: "prometheus_remote_storage_sent_metadata_bytes_total_" + strconv.Itoa(i),
-			Type:   textparse.MetricTypeCounter,
+			Type:   model.MetricTypeCounter,
 			Help:   "a nice help text",
 			Unit:   "",
 		})
@@ -188,7 +187,7 @@ func TestMetadataDelivery(t *testing.T) {
 
 	m.AppendMetadata(context.Background(), metadata)
 
-	require.Equal(t, numMetadata, len(c.receivedMetadata))
+	require.Len(t, c.receivedMetadata, numMetadata)
 	// One more write than the rounded qoutient should be performed in order to get samples that didn't
 	// fit into MaxSamplesPerSend.
 	require.Equal(t, numMetadata/mcfg.MaxSamplesPerSend+1, c.writesReceived)
@@ -318,9 +317,9 @@ func TestSeriesReset(t *testing.T) {
 		}
 		m.StoreSeries(series, i)
 	}
-	require.Equal(t, numSegments*numSeries, len(m.seriesLabels))
+	require.Len(t, m.seriesLabels, numSegments*numSeries)
 	m.SeriesReset(2)
-	require.Equal(t, numSegments*numSeries/2, len(m.seriesLabels))
+	require.Len(t, m.seriesLabels, numSegments*numSeries/2)
 }
 
 func TestReshard(t *testing.T) {
@@ -619,7 +618,7 @@ func createHistograms(numSamples, numSeries int, floatHistogram bool) ([]record.
 				fh := record.RefFloatHistogramSample{
 					Ref: chunks.HeadSeriesRef(i),
 					T:   int64(j),
-					FH:  hist.ToFloat(),
+					FH:  hist.ToFloat(nil),
 				}
 				floatHistograms = append(floatHistograms, fh)
 			} else {
@@ -1288,7 +1287,7 @@ func TestQueueManagerMetrics(t *testing.T) {
 	// Make sure metrics pass linting.
 	problems, err := client_testutil.GatherAndLint(reg)
 	require.NoError(t, err)
-	require.Equal(t, 0, len(problems), "Metric linting problems detected: %v", problems)
+	require.Empty(t, problems, "Metric linting problems detected: %v", problems)
 
 	// Make sure all metrics were unregistered. A failure here means you need
 	// unregister a metric in `queueManagerMetrics.unregister()`.

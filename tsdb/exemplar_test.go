@@ -88,7 +88,7 @@ func TestAddExemplar(t *testing.T) {
 	}
 
 	require.NoError(t, es.AddExemplar(l, e))
-	require.Equal(t, es.index[string(l.Bytes(nil))].newest, 0, "exemplar was not stored correctly")
+	require.Equal(t, 0, es.index[string(l.Bytes(nil))].newest, "exemplar was not stored correctly")
 
 	e2 := exemplar.Exemplar{
 		Labels: labels.FromStrings("traceID", "zxcvb"),
@@ -97,7 +97,7 @@ func TestAddExemplar(t *testing.T) {
 	}
 
 	require.NoError(t, es.AddExemplar(l, e2))
-	require.Equal(t, es.index[string(l.Bytes(nil))].newest, 1, "exemplar was not stored correctly, location of newest exemplar for series in index did not update")
+	require.Equal(t, 1, es.index[string(l.Bytes(nil))].newest, "exemplar was not stored correctly, location of newest exemplar for series in index did not update")
 	require.True(t, es.exemplars[es.index[string(l.Bytes(nil))].newest].exemplar.Equals(e2), "exemplar was not stored correctly, expected %+v got: %+v", e2, es.exemplars[es.index[string(l.Bytes(nil))].newest].exemplar)
 
 	require.NoError(t, es.AddExemplar(l, e2), "no error is expected attempting to add duplicate exemplar")
@@ -145,7 +145,7 @@ func TestStorageOverflow(t *testing.T) {
 	require.NoError(t, err, "error creating label matcher for exemplar query")
 	ret, err := es.Select(100, 110, []*labels.Matcher{m})
 	require.NoError(t, err)
-	require.True(t, len(ret) == 1, "select should have returned samples for a single series only")
+	require.Len(t, ret, 1, "select should have returned samples for a single series only")
 
 	require.True(t, reflect.DeepEqual(eList[1:], ret[0].Exemplars), "select did not return expected exemplars\n\texpected: %+v\n\tactual: %+v\n", eList[1:], ret[0].Exemplars)
 }
@@ -171,7 +171,7 @@ func TestSelectExemplar(t *testing.T) {
 	require.NoError(t, err, "error creating label matcher for exemplar query")
 	ret, err := es.Select(0, 100, []*labels.Matcher{m})
 	require.NoError(t, err)
-	require.True(t, len(ret) == 1, "select should have returned samples for a single series only")
+	require.Len(t, ret, 1, "select should have returned samples for a single series only")
 
 	expectedResult := []exemplar.Exemplar{e}
 	require.True(t, reflect.DeepEqual(expectedResult, ret[0].Exemplars), "select did not return expected exemplars\n\texpected: %+v\n\tactual: %+v\n", expectedResult, ret[0].Exemplars)
@@ -209,15 +209,15 @@ func TestSelectExemplar_MultiSeries(t *testing.T) {
 	require.NoError(t, err, "error creating label matcher for exemplar query")
 	ret, err := es.Select(100, 200, []*labels.Matcher{m})
 	require.NoError(t, err)
-	require.True(t, len(ret) == 1, "select should have returned samples for a single series only")
-	require.True(t, len(ret[0].Exemplars) == 3, "didn't get expected 8 exemplars, got %d", len(ret[0].Exemplars))
+	require.Len(t, ret, 1, "select should have returned samples for a single series only")
+	require.Len(t, ret[0].Exemplars, 3, "didn't get expected 8 exemplars, got %d", len(ret[0].Exemplars))
 
 	m, err = labels.NewMatcher(labels.MatchEqual, labels.MetricName, l1Name)
 	require.NoError(t, err, "error creating label matcher for exemplar query")
 	ret, err = es.Select(100, 200, []*labels.Matcher{m})
 	require.NoError(t, err)
-	require.True(t, len(ret) == 1, "select should have returned samples for a single series only")
-	require.True(t, len(ret[0].Exemplars) == 2, "didn't get expected 8 exemplars, got %d", len(ret[0].Exemplars))
+	require.Len(t, ret, 1, "select should have returned samples for a single series only")
+	require.Len(t, ret[0].Exemplars, 2, "didn't get expected 8 exemplars, got %d", len(ret[0].Exemplars))
 }
 
 func TestSelectExemplar_TimeRange(t *testing.T) {
@@ -243,8 +243,8 @@ func TestSelectExemplar_TimeRange(t *testing.T) {
 	require.NoError(t, err, "error creating label matcher for exemplar query")
 	ret, err := es.Select(102, 104, []*labels.Matcher{m})
 	require.NoError(t, err)
-	require.True(t, len(ret) == 1, "select should have returned samples for a single series only")
-	require.True(t, len(ret[0].Exemplars) == 3, "didn't get expected two exemplars %d, %+v", len(ret[0].Exemplars), ret)
+	require.Len(t, ret, 1, "select should have returned samples for a single series only")
+	require.Len(t, ret[0].Exemplars, 3, "didn't get expected two exemplars %d, %+v", len(ret[0].Exemplars), ret)
 }
 
 // Test to ensure that even though a series matches more than one matcher from the
@@ -281,7 +281,7 @@ func TestSelectExemplar_DuplicateSeries(t *testing.T) {
 
 	ret, err := es.Select(0, 100, m...)
 	require.NoError(t, err)
-	require.True(t, len(ret) == 1, "select should have returned samples for a single series only")
+	require.Len(t, ret, 1, "select should have returned samples for a single series only")
 }
 
 func TestIndexOverwrite(t *testing.T) {

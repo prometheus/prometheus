@@ -97,7 +97,7 @@ func TestSampledReadEndpoint(t *testing.T) {
 	err = proto.Unmarshal(uncompressed, &resp)
 	require.NoError(t, err)
 
-	require.Equal(t, 2, len(resp.Results), "Expected 2 results.")
+	require.Len(t, resp.Results, 2, "Expected 2 results.")
 
 	require.Equal(t, &prompb.QueryResult{
 		Timeseries: []*prompb.TimeSeries{
@@ -191,7 +191,7 @@ func BenchmarkStreamReadEndpoint(b *testing.B) {
 			results = append(results, res)
 		}
 
-		require.Equal(b, 6, len(results), "Expected 6 results.")
+		require.Len(b, results, 6, "Expected 6 results.")
 	}
 }
 
@@ -291,7 +291,7 @@ func TestStreamReadEndpoint(t *testing.T) {
 		results = append(results, res)
 	}
 
-	require.Equal(t, 6, len(results), "Expected 6 results.")
+	require.Len(t, results, 6, "Expected 6 results.")
 
 	require.Equal(t, []*prompb.ChunkedReadResponse{
 		{

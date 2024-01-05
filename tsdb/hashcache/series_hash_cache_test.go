@@ -66,7 +66,7 @@ func TestSeriesHashCache_MeasureApproximateSizePerEntry(t *testing.T) {
 	runtime.ReadMemStats(&after)
 
 	t.Logf("approximate size per entry: %d bytes", (after.TotalAlloc-before.TotalAlloc)/numEntries)
-	require.Equal(t, uint64(approxBytesPerEntry), (after.TotalAlloc-before.TotalAlloc)/numEntries, "approxBytesPerEntry constant is out date")
+	require.Equal(t, approxBytesPerEntry, int((after.TotalAlloc-before.TotalAlloc)/numEntries), "approxBytesPerEntry constant is out date")
 }
 
 func TestSeriesHashCache_Concurrency(t *testing.T) {

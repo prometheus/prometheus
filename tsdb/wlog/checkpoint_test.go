@@ -229,7 +229,7 @@ func TestCheckpoint(t *testing.T) {
 			// Only the new checkpoint should be left.
 			files, err := os.ReadDir(dir)
 			require.NoError(t, err)
-			require.Equal(t, 1, len(files))
+			require.Len(t, files, 1)
 			require.Equal(t, "checkpoint.00000106", files[0].Name())
 
 			sr, err := NewSegmentsReader(filepath.Join(dir, "checkpoint.00000106"))

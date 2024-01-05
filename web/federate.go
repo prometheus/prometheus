@@ -138,7 +138,7 @@ Loop:
 			case chunkenc.ValFloat:
 				f = sample.F()
 			case chunkenc.ValHistogram:
-				fh = sample.H().ToFloat()
+				fh = sample.H().ToFloat(nil)
 			case chunkenc.ValFloatHistogram:
 				fh = sample.FH()
 			default:

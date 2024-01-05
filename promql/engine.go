@@ -1075,7 +1075,7 @@ type EvalNodeHelper struct {
 	// Caches.
 	// DropMetricName and label_*.
 	Dmn map[uint64]labels.Labels
-	// funcHistogramQuantile for conventional histograms.
+	// funcHistogramQuantile for classic histograms.
 	signatureToMetricWithBuckets map[string]*metricWithBuckets
 	// label_replace.
 	regex *regexp.Regexp
@@ -2053,7 +2053,12 @@ func (ev *evaluator) matrixIterSlice(
 		var drop int
 		for drop = 0; histograms[drop].T < mint; drop++ {
 		}
+		// Rotate the buffer around the drop index so that points before mint can be
+		// reused to store new histograms.
+		tail := make([]HPoint, drop)
+		copy(tail, histograms[:drop])
 		copy(histograms, histograms[drop:])
+		copy(histograms[len(histograms)-drop:], tail)
 		histograms = histograms[:len(histograms)-drop]
 		ev.currentSamples -= totalHPointSize(histograms)
 		// Only append points with timestamps after the last timestamp we have.
@@ -2079,21 +2084,27 @@ loop:
 		case chunkenc.ValNone:
 			break loop
 		case chunkenc.ValFloatHistogram, chunkenc.ValHistogram:
-			t, h := buf.AtFloatHistogram()
-			if value.IsStaleNaN(h.Sum) {
-				continue loop
-			}
+			t := buf.AtT()
 			// Values in the buffer are guaranteed to be smaller than maxt.
 			if t >= mintHistograms {
-				if ev.currentSamples >= ev.maxSamples {
-					ev.error(ErrTooManySamples(env))
-				}
-				point := HPoint{T: t, H: h}
 				if histograms == nil {
 					histograms = getHPointSlice(16)
 				}
-				histograms = append(histograms, point)
-				ev.currentSamples += point.size()
+				n := len(histograms)
+				if n < cap(histograms) {
+					histograms = histograms[:n+1]
+				} else {
+					histograms = append(histograms, HPoint{})
+				}
+				histograms[n].T, histograms[n].H = buf.AtFloatHistogram(histograms[n].H)
+				if value.IsStaleNaN(histograms[n].H.Sum) {
+					histograms = histograms[:n]
+					continue loop
+				}
+				if ev.currentSamples >= ev.maxSamples {
+					ev.error(ErrTooManySamples(env))
+				}
+				ev.currentSamples += histograms[n].size()
 			}
 		case chunkenc.ValFloat:
 			t, f := buf.At()
@@ -2116,17 +2127,22 @@ loop:
 	// The sought sample might also be in the range.
 	switch soughtValueType {
 	case chunkenc.ValFloatHistogram, chunkenc.ValHistogram:
-		t, h := it.AtFloatHistogram()
-		if t == maxt && !value.IsStaleNaN(h.Sum) {
-			if ev.currentSamples >= ev.maxSamples {
-				ev.error(ErrTooManySamples(env))
+		t := it.AtT()
+		if t == maxt {
+			_, h := it.AtFloatHistogram()
+			if !value.IsStaleNaN(h.Sum) {
+				if ev.currentSamples >= ev.maxSamples {
+					ev.error(ErrTooManySamples(env))
+				}
+				if histograms == nil {
+					histograms = getHPointSlice(16)
+				}
+				// The last sample comes directly from the iterator, so we need to copy it to
+				// avoid having the same reference twice in the buffer.
+				point := HPoint{T: t, H: h.Copy()}
+				histograms = append(histograms, point)
+				ev.currentSamples += point.size()
 			}
-			if histograms == nil {
-				histograms = getHPointSlice(16)
-			}
-			point := HPoint{T: t, H: h}
-			histograms = append(histograms, point)
-			ev.currentSamples += point.size()
 		}
 	case chunkenc.ValFloat:
 		t, f := it.At()

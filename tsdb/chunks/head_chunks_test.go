@@ -15,6 +15,7 @@ package chunks
 
 import (
 	"encoding/binary"
+	"errors"
 	"math/rand"
 	"os"
 	"strconv"
@@ -22,7 +23,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -128,7 +128,7 @@ func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 	}
 
 	// Checking on-disk bytes for the first file.
-	require.Equal(t, 3, len(hrw.mmappedChunkFiles), "expected 3 mmapped files, got %d", len(hrw.mmappedChunkFiles))
+	require.Len(t, hrw.mmappedChunkFiles, 3, "expected 3 mmapped files, got %d", len(hrw.mmappedChunkFiles))
 	require.Equal(t, len(hrw.mmappedChunkFiles), len(hrw.closers))
 
 	actualBytes, err := os.ReadFile(firstFileName)
@@ -173,7 +173,7 @@ func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 		idx++
 		return nil
 	}))
-	require.Equal(t, len(expectedData), idx)
+	require.Len(t, expectedData, idx)
 }
 
 func TestChunkDiskMapper_WriteUnsupportedChunk_Chunk_IterateChunks(t *testing.T) {
@@ -185,7 +185,7 @@ func TestChunkDiskMapper_WriteUnsupportedChunk_Chunk_IterateChunks(t *testing.T)
 	ucSeriesRef, ucChkRef, ucMint, ucMaxt, uchunk := writeUnsupportedChunk(t, 0, hrw)
 
 	// Checking on-disk bytes for the first file.
-	require.Equal(t, 1, len(hrw.mmappedChunkFiles), "expected 1 mmapped file, got %d", len(hrw.mmappedChunkFiles))
+	require.Len(t, hrw.mmappedChunkFiles, 1, "expected 1 mmapped file, got %d", len(hrw.mmappedChunkFiles))
 	require.Equal(t, len(hrw.mmappedChunkFiles), len(hrw.closers))
 
 	// Testing IterateAllChunks method.
@@ -206,7 +206,7 @@ func TestChunkDiskMapper_WriteUnsupportedChunk_Chunk_IterateChunks(t *testing.T)
 		// The chunk encoding is unknown so Chunk() should fail but us the caller
 		// are ok with that. Above we asserted that the encoding we expected was
 		// EncUnsupportedXOR
-		require.NotNil(t, err)
+		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid chunk encoding \"<unknown>\"")
 		require.Nil(t, actChunk)
 
@@ -252,7 +252,7 @@ func TestChunkDiskMapper_Truncate(t *testing.T) {
 
 		for _, i := range remainingFiles {
 			_, ok := hrw.mmappedChunkFiles[i]
-			require.Equal(t, true, ok)
+			require.True(t, ok)
 		}
 	}
 
@@ -509,7 +509,7 @@ func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
 	nonEmptyFile() // 2.
 	nonEmptyFile() // 3.
 
-	require.Equal(t, 3, len(hrw.mmappedChunkFiles))
+	require.Len(t, hrw.mmappedChunkFiles, 3)
 	lastFile := 0
 	for idx := range hrw.mmappedChunkFiles {
 		if idx > lastFile {
@@ -538,7 +538,7 @@ func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
 		hrw = createChunkDiskMapper(t, dir)
 
 		// Removed from memory.
-		require.Equal(t, 3, len(hrw.mmappedChunkFiles))
+		require.Len(t, hrw.mmappedChunkFiles, 3)
 		for idx := range hrw.mmappedChunkFiles {
 			require.LessOrEqual(t, idx, lastFile, "file index is bigger than previous last file")
 		}
@@ -546,7 +546,7 @@ func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
 		// Removed even from disk.
 		files, err := os.ReadDir(dir)
 		require.NoError(t, err)
-		require.Equal(t, 3, len(files))
+		require.Len(t, files, 3)
 		for _, fi := range files {
 			seq, err := strconv.ParseUint(fi.Name(), 10, 64)
 			require.NoError(t, err)

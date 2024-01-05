@@ -11,8 +11,8 @@ jobs:
       - name: Upgrade golang
         run: |
           cd /tmp
-          wget https://dl.google.com/go/go1.20.3.linux-amd64.tar.gz
-          tar -zxvf go1.20.3.linux-amd64.tar.gz
+          wget https://dl.google.com/go/go1.21.5.linux-amd64.tar.gz
+          tar -zxvf go1.21.5.linux-amd64.tar.gz
           sudo rm -fr /usr/local/go
           sudo mv /tmp/go /usr/local/go
           cd -
@@ -35,8 +35,8 @@ jobs:
       - name: Upgrade golang
         run: |
           cd /tmp
-          wget https://dl.google.com/go/go1.20.3.linux-amd64.tar.gz
-          tar -zxvf go1.20.3.linux-amd64.tar.gz
+          wget https://dl.google.com/go/go1.21.5.linux-amd64.tar.gz
+          tar -zxvf go1.21.5.linux-amd64.tar.gz
           sudo rm -fr /usr/local/go
           sudo mv /tmp/go /usr/local/go
           cd -

@@ -119,20 +119,19 @@ also experimental) protobuf parser, through which _all_ metrics are ingested
 (i.e. not only native histograms). Prometheus will try to negotiate the
 protobuf format first. The instrumented target needs to support the protobuf
 format, too, _and_ it needs to expose native histograms. The protobuf format
-allows to expose conventional and native histograms side by side. With this
-feature flag disabled, Prometheus will continue to parse the conventional
-histogram (albeit via the text format). With this flag enabled, Prometheus will
-still ingest those conventional histograms that do not come with a
-corresponding native histogram. However, if a native histogram is present,
-Prometheus will ignore the corresponding conventional histogram, with the
-notable exception of exemplars, which are always ingested. To keep the
-conventional histograms as well, enable `scrape_classic_histograms` in the
-scrape job.
+allows to expose classic and native histograms side by side. With this feature
+flag disabled, Prometheus will continue to parse the classic histogram (albeit
+via the text format). With this flag enabled, Prometheus will still ingest
+those classic histograms that do not come with a corresponding native
+histogram. However, if a native histogram is present, Prometheus will ignore
+the corresponding classic histogram, with the notable exception of exemplars,
+which are always ingested. To keep the classic histograms as well, enable
+`scrape_classic_histograms` in the scrape job.
 
 _Note about the format of `le` and `quantile` label values:_
 
 In certain situations, the protobuf parsing changes the number formatting of
-the `le` labels of conventional histograms and the `quantile` labels of
+the `le` labels of classic histograms and the `quantile` labels of
 summaries. Typically, this happens if the scraped target is instrumented with
 [client_golang](https://github.com/prometheus/client_golang) provided that
 [promhttp.HandlerOpts.EnableOpenMetrics](https://pkg.go.dev/github.com/prometheus/client_golang/prometheus/promhttp#HandlerOpts)
@@ -195,3 +194,13 @@ won't work when you push OTLP metrics.
 
 Enables PromQL functions that are considered experimental and whose name or
 semantics could change.
+
+## Created Timestamps Zero Injection
+
+`--enable-feature=created-timestamp-zero-ingestion`
+
+Enables ingestion of created timestamp. Created timestamps are injected as 0 valued samples when appropriate. See [PromCon talk](https://youtu.be/nWf0BfQ5EEA) for details.
+
+Currently Prometheus supports created timestamps only on the traditional Prometheus Protobuf protocol (WIP for other protocols). As a result, when enabling this feature, the Prometheus protobuf scrape protocol will be prioritized (See `scrape_config.scrape_protocols` settings for more details).
+
+Besides enabling this feature in Prometheus, created timestamps need to be exposed by the application being scraped.

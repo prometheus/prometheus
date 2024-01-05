@@ -96,6 +96,11 @@ describe('promql operations', () => {
       expectedDiag: [] as Diagnostic[],
     },
     {
+      expr: 'mad_over_time(rate(metric_name[5m])[1h:] offset 1m)',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
       expr: 'max_over_time(rate(metric_name[5m])[1h:] offset 1m)',
       expectedValueType: ValueType.vector,
       expectedDiag: [] as Diagnostic[],

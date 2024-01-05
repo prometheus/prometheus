@@ -205,7 +205,7 @@ func TestIndexRW_Postings(t *testing.T) {
 		err := ir.Series(p.At(), &builder, &c)
 
 		require.NoError(t, err)
-		require.Equal(t, 0, len(c))
+		require.Empty(t, c)
 		require.Equal(t, series[i], builder.Labels())
 	}
 	require.NoError(t, p.Err())
@@ -262,7 +262,7 @@ func TestIndexRW_Postings(t *testing.T) {
 				expected = append(expected, p.At())
 			}
 			require.NoError(t, p.Err())
-			require.Greater(t, len(expected), 0)
+			require.NotEmpty(t, expected)
 
 			// Query the same postings for each shard.
 			const shardCount = uint64(4)

@@ -102,7 +102,7 @@ func TestNewListChunkSeriesFromSamples(t *testing.T) {
 
 	count, err := series.ChunkCount()
 	require.NoError(t, err)
-	require.Equal(t, len(chks), count, "should have one chunk per group of samples")
+	require.Len(t, chks, count, "should have one chunk per group of samples")
 }
 
 // TestSeriesSetToChunkSet test the property of SeriesSet that says
@@ -151,7 +151,7 @@ func TestChunkSeriesSetToSeriesSet(t *testing.T) {
 		j := 0
 		for iter.Next() == chunkenc.ValFloat {
 			ts, v := iter.At()
-			require.EqualValues(t, series[i].samples[j], fSample{t: ts, f: v})
+			require.EqualValues(t, fSample{t: ts, f: v}, series[i].samples[j])
 			j++
 		}
 	}

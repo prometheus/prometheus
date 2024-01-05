@@ -100,7 +100,7 @@ func (ad *AzureAdTestSuite) TestAzureAdRoundTripper() {
 		ad.mockCredential.On("GetToken", mock.Anything, mock.Anything).Return(*testToken, nil)
 
 		tokenProvider, err := newTokenProvider(c.cfg, ad.mockCredential)
-		ad.Assert().NoError(err)
+		ad.Require().NoError(err)
 
 		rt := &azureADRoundTripper{
 			next: promhttp.RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
@@ -113,15 +113,15 @@ func (ad *AzureAdTestSuite) TestAzureAdRoundTripper() {
 		cli := &http.Client{Transport: rt}
 
 		req, err := http.NewRequest(http.MethodPost, "https://example.com", strings.NewReader("Hello, world!"))
-		ad.Assert().NoError(err)
+		ad.Require().NoError(err)
 
 		_, err = cli.Do(req)
-		ad.Assert().NoError(err)
-		ad.Assert().NotNil(gotReq)
+		ad.Require().NoError(err)
+		ad.NotNil(gotReq)
 
 		origReq := gotReq
-		ad.Assert().NotEmpty(origReq.Header.Get("Authorization"))
-		ad.Assert().Equal("Bearer "+testTokenString, origReq.Header.Get("Authorization"))
+		ad.NotEmpty(origReq.Header.Get("Authorization"))
+		ad.Equal("Bearer "+testTokenString, origReq.Header.Get("Authorization"))
 	}
 }
 
@@ -258,9 +258,9 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 		if c.err != "" {
 			actualTokenProvider, actualErr := newTokenProvider(c.cfg, s.mockCredential)
 
-			s.Assert().Nil(actualTokenProvider)
-			s.Assert().NotNil(actualErr)
-			s.Assert().ErrorContains(actualErr, c.err)
+			s.Nil(actualTokenProvider)
+			s.Require().Error(actualErr)
+			s.Require().ErrorContains(actualErr, c.err)
 		} else {
 			testToken := &azcore.AccessToken{
 				Token:     testTokenString,
@@ -272,21 +272,21 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 
 			actualTokenProvider, actualErr := newTokenProvider(c.cfg, s.mockCredential)
 
-			s.Assert().NotNil(actualTokenProvider)
-			s.Assert().Nil(actualErr)
-			s.Assert().NotNil(actualTokenProvider.getAccessToken(context.Background()))
+			s.NotNil(actualTokenProvider)
+			s.Require().NoError(actualErr)
+			s.NotNil(actualTokenProvider.getAccessToken(context.Background()))
 
 			// Token set to refresh at half of the expiry time. The test tokens are set to expiry in 5s.
 			// Hence, the 4 seconds wait to check if the token is refreshed.
 			time.Sleep(4 * time.Second)
 
-			s.Assert().NotNil(actualTokenProvider.getAccessToken(context.Background()))
+			s.NotNil(actualTokenProvider.getAccessToken(context.Background()))
 
 			s.mockCredential.AssertNumberOfCalls(s.T(), "GetToken", 2*mockGetTokenCallCounter)
-			mockGetTokenCallCounter += 1
+			mockGetTokenCallCounter++
 			accessToken, err := actualTokenProvider.getAccessToken(context.Background())
-			s.Assert().Nil(err)
-			s.Assert().NotEqual(accessToken, testTokenString)
+			s.Require().NoError(err)
+			s.NotEqual(testTokenString, accessToken)
 		}
 	}
 }

@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/discovery/v1"
@@ -31,12 +32,6 @@ import (
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
-)
-
-var (
-	epslAddCount    = eventCount.WithLabelValues("endpointslice", "add")
-	epslUpdateCount = eventCount.WithLabelValues("endpointslice", "update")
-	epslDeleteCount = eventCount.WithLabelValues("endpointslice", "delete")
 )
 
 // EndpointSlice discovers new endpoint targets.
@@ -57,10 +52,19 @@ type EndpointSlice struct {
 }
 
 // NewEndpointSlice returns a new endpointslice discovery.
-func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node cache.SharedInformer) *EndpointSlice {
+func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node cache.SharedInformer, eventCount *prometheus.CounterVec) *EndpointSlice {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
+
+	epslAddCount := eventCount.WithLabelValues(RoleEndpointSlice.String(), MetricLabelRoleAdd)
+	epslUpdateCount := eventCount.WithLabelValues(RoleEndpointSlice.String(), MetricLabelRoleUpdate)
+	epslDeleteCount := eventCount.WithLabelValues(RoleEndpointSlice.String(), MetricLabelRoleDelete)
+
+	svcAddCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleAdd)
+	svcUpdateCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleUpdate)
+	svcDeleteCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleDelete)
+
 	e := &EndpointSlice{
 		logger:             l,
 		endpointSliceInf:   eps,
@@ -71,7 +75,7 @@ func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, nod
 		podStore:           pod.GetStore(),
 		nodeInf:            node,
 		withNodeMetadata:   node != nil,
-		queue:              workqueue.NewNamed("endpointSlice"),
+		queue:              workqueue.NewNamed(RoleEndpointSlice.String()),
 	}
 
 	_, err := e.endpointSliceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{

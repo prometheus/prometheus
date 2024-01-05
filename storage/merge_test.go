@@ -863,7 +863,7 @@ func TestConcatenatingChunkSeriesMerger(t *testing.T) {
 
 			count, err := merged.ChunkCount()
 			require.NoError(t, err)
-			require.Equal(t, len(expChks), count)
+			require.Len(t, expChks, count)
 		})
 	}
 }
@@ -1562,7 +1562,7 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 				}
 				require.Subset(t, tcase.expectedWarnings, res.Warnings())
 				require.Equal(t, tcase.expectedErrs[0], res.Err())
-				require.True(t, errors.Is(res.Err(), tcase.expectedErrs[0]), "expected error doesn't match")
+				require.ErrorIs(t, res.Err(), tcase.expectedErrs[0], "expected error doesn't match")
 				require.Equal(t, tcase.expectedSelectsSeries, lbls)
 
 				for _, qr := range q.queriers {
@@ -1578,7 +1578,7 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 			t.Run("LabelNames", func(t *testing.T) {
 				res, w, err := q.LabelNames(ctx)
 				require.Subset(t, tcase.expectedWarnings, w)
-				require.True(t, errors.Is(err, tcase.expectedErrs[1]), "expected error doesn't match")
+				require.ErrorIs(t, err, tcase.expectedErrs[1], "expected error doesn't match")
 				require.Equal(t, tcase.expectedLabels, res)
 
 				if err != nil {
@@ -1593,7 +1593,7 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 			t.Run("LabelValues", func(t *testing.T) {
 				res, w, err := q.LabelValues(ctx, "test")
 				require.Subset(t, tcase.expectedWarnings, w)
-				require.True(t, errors.Is(err, tcase.expectedErrs[2]), "expected error doesn't match")
+				require.ErrorIs(t, err, tcase.expectedErrs[2], "expected error doesn't match")
 				require.Equal(t, tcase.expectedLabels, res)
 
 				if err != nil {
@@ -1609,7 +1609,7 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 				matcher := labels.MustNewMatcher(labels.MatchEqual, "otherLabel", "someValue")
 				res, w, err := q.LabelValues(ctx, "test2", matcher)
 				require.Subset(t, tcase.expectedWarnings, w)
-				require.True(t, errors.Is(err, tcase.expectedErrs[3]), "expected error doesn't match")
+				require.ErrorIs(t, err, tcase.expectedErrs[3], "expected error doesn't match")
 				require.Equal(t, tcase.expectedLabels, res)
 
 				if err != nil {

@@ -186,7 +186,7 @@ func TestSeriesSetFilter(t *testing.T) {
 		filtered := newSeriesSetFilter(FromQueryResult(true, tc.in), tc.toRemove)
 		act, ws, err := ToQueryResult(filtered, 1e6)
 		require.NoError(t, err)
-		require.Equal(t, 0, len(ws))
+		require.Empty(t, ws)
 		require.Equal(t, tc.expected, act)
 	}
 }

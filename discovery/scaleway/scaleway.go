@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/scaleway/scaleway-sdk-go/scw"
@@ -160,7 +161,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 func (c SDConfig) NewDiscoverer(options discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(&c, options.Logger)
+	return NewDiscovery(&c, options.Logger, options.Registerer)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -177,17 +178,20 @@ func init() {
 // the Discoverer interface.
 type Discovery struct{}
 
-func NewDiscovery(conf *SDConfig, logger log.Logger) (*refresh.Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger log.Logger, reg prometheus.Registerer) (*refresh.Discovery, error) {
 	r, err := newRefresher(conf)
 	if err != nil {
 		return nil, err
 	}
 
 	return refresh.NewDiscovery(
-		logger,
-		"scaleway",
-		time.Duration(conf.RefreshInterval),
-		r.refresh,
+		refresh.Options{
+			Logger:   logger,
+			Mech:     "scaleway",
+			Interval: time.Duration(conf.RefreshInterval),
+			RefreshF: r.refresh,
+			Registry: reg,
+		},
 	), nil
 }
 

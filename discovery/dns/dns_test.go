@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/miekg/dns"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -81,6 +82,7 @@ func TestDNS(t *testing.T) {
 							"__meta_dns_srv_record_target": "",
 							"__meta_dns_srv_record_port":   "",
 							"__meta_dns_mx_record_target":  "",
+							"__meta_dns_ns_record_target":  "",
 						},
 					},
 				},
@@ -112,6 +114,7 @@ func TestDNS(t *testing.T) {
 							"__meta_dns_srv_record_target": "",
 							"__meta_dns_srv_record_port":   "",
 							"__meta_dns_mx_record_target":  "",
+							"__meta_dns_ns_record_target":  "",
 						},
 					},
 				},
@@ -143,6 +146,7 @@ func TestDNS(t *testing.T) {
 							"__meta_dns_srv_record_target": "db1.example.com.",
 							"__meta_dns_srv_record_port":   "3306",
 							"__meta_dns_mx_record_target":  "",
+							"__meta_dns_ns_record_target":  "",
 						},
 						{
 							"__address__":                  "db2.example.com:3306",
@@ -150,6 +154,7 @@ func TestDNS(t *testing.T) {
 							"__meta_dns_srv_record_target": "db2.example.com.",
 							"__meta_dns_srv_record_port":   "3306",
 							"__meta_dns_mx_record_target":  "",
+							"__meta_dns_ns_record_target":  "",
 						},
 					},
 				},
@@ -180,6 +185,7 @@ func TestDNS(t *testing.T) {
 							"__meta_dns_srv_record_target": "db1.example.com.",
 							"__meta_dns_srv_record_port":   "3306",
 							"__meta_dns_mx_record_target":  "",
+							"__meta_dns_ns_record_target":  "",
 						},
 					},
 				},
@@ -227,6 +233,7 @@ func TestDNS(t *testing.T) {
 							"__meta_dns_srv_record_target": "",
 							"__meta_dns_srv_record_port":   "",
 							"__meta_dns_mx_record_target":  "smtp1.example.com.",
+							"__meta_dns_ns_record_target":  "",
 						},
 						{
 							"__address__":                  "smtp2.example.com:25",
@@ -234,6 +241,7 @@ func TestDNS(t *testing.T) {
 							"__meta_dns_srv_record_target": "",
 							"__meta_dns_srv_record_port":   "",
 							"__meta_dns_mx_record_target":  "smtp2.example.com.",
+							"__meta_dns_ns_record_target":  "",
 						},
 					},
 				},
@@ -245,7 +253,8 @@ func TestDNS(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			sd := NewDiscovery(tc.config, nil)
+			sd, err := NewDiscovery(tc.config, nil, prometheus.NewRegistry())
+			require.NoError(t, err)
 			sd.lookupFn = tc.lookup
 
 			tgs, err := sd.refresh(context.Background())

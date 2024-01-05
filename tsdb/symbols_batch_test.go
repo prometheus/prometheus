@@ -55,8 +55,8 @@ func testSymbolsBatchAndIterationWithFlushersConcurrency(t *testing.T, flushersC
 	var w, prev string
 	for w, err = it.NextSymbol(); err == nil; w, err = it.NextSymbol() {
 		if !first {
-			require.True(t, w != "")
-			require.True(t, prev < w)
+			require.NotEqual(t, "", w)
+			require.Less(t, prev, w)
 		}
 
 		first = false
@@ -67,5 +67,5 @@ func testSymbolsBatchAndIterationWithFlushersConcurrency(t *testing.T, flushersC
 		prev = w
 	}
 	require.Equal(t, io.EOF, err)
-	require.Equal(t, 0, len(allWords))
+	require.Empty(t, allWords)
 }

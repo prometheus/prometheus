@@ -24,6 +24,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
@@ -79,7 +80,7 @@ var (
 )
 
 func newTritonDiscovery(c SDConfig) (*Discovery, error) {
-	return New(nil, &c)
+	return New(nil, &c, prometheus.NewRegistry())
 }
 
 func TestTritonSDNew(t *testing.T) {
@@ -155,7 +156,7 @@ func TestTritonSDRefreshMultipleTargets(t *testing.T) {
 
 	tgts := testTritonSDRefresh(t, conf, dstr)
 	require.NotNil(t, tgts)
-	require.Equal(t, 2, len(tgts))
+	require.Len(t, tgts, 2)
 }
 
 func TestTritonSDRefreshNoServer(t *testing.T) {
@@ -163,7 +164,7 @@ func TestTritonSDRefreshNoServer(t *testing.T) {
 
 	_, err := td.refresh(context.Background())
 	require.Error(t, err)
-	require.Equal(t, strings.Contains(err.Error(), "an error occurred when requesting targets from the discovery endpoint"), true)
+	require.True(t, strings.Contains(err.Error(), "an error occurred when requesting targets from the discovery endpoint"))
 }
 
 func TestTritonSDRefreshCancelled(t *testing.T) {
@@ -173,7 +174,7 @@ func TestTritonSDRefreshCancelled(t *testing.T) {
 	cancel()
 	_, err := td.refresh(ctx)
 	require.Error(t, err)
-	require.Equal(t, strings.Contains(err.Error(), context.Canceled.Error()), true)
+	require.True(t, strings.Contains(err.Error(), context.Canceled.Error()))
 }
 
 func TestTritonSDRefreshCNsUUIDOnly(t *testing.T) {
@@ -188,7 +189,7 @@ func TestTritonSDRefreshCNsUUIDOnly(t *testing.T) {
 
 	tgts := testTritonSDRefresh(t, cnconf, dstr)
 	require.NotNil(t, tgts)
-	require.Equal(t, 2, len(tgts))
+	require.Len(t, tgts, 2)
 }
 
 func TestTritonSDRefreshCNsWithHostname(t *testing.T) {
@@ -205,7 +206,7 @@ func TestTritonSDRefreshCNsWithHostname(t *testing.T) {
 
 	tgts := testTritonSDRefresh(t, cnconf, dstr)
 	require.NotNil(t, tgts)
-	require.Equal(t, 2, len(tgts))
+	require.Len(t, tgts, 2)
 }
 
 func testTritonSDRefresh(t *testing.T, c SDConfig, dstr string) []model.LabelSet {
@@ -235,7 +236,7 @@ func testTritonSDRefresh(t *testing.T, c SDConfig, dstr string) []model.LabelSet
 
 	tgs, err := td.refresh(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, 1, len(tgs))
+	require.Len(t, tgs, 1)
 	tg := tgs[0]
 	require.NotNil(t, tg)
 

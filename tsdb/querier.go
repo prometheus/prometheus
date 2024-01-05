@@ -15,11 +15,11 @@ package tsdb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 
 	"github.com/oklog/ulid"
-	"github.com/pkg/errors"
 	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -47,18 +47,18 @@ type blockBaseQuerier struct {
 func newBlockBaseQuerier(b BlockReader, mint, maxt int64) (*blockBaseQuerier, error) {
 	indexr, err := b.Index()
 	if err != nil {
-		return nil, errors.Wrap(err, "open index reader")
+		return nil, fmt.Errorf("open index reader: %w", err)
 	}
 	chunkr, err := b.Chunks()
 	if err != nil {
 		indexr.Close()
-		return nil, errors.Wrap(err, "open chunk reader")
+		return nil, fmt.Errorf("open chunk reader: %w", err)
 	}
 	tombsr, err := b.Tombstones()
 	if err != nil {
 		indexr.Close()
 		chunkr.Close()
-		return nil, errors.Wrap(err, "open tombstone reader")
+		return nil, fmt.Errorf("open tombstone reader: %w", err)
 	}
 
 	if tombsr == nil {
@@ -386,12 +386,12 @@ const maxExpandedPostingsFactor = 100 // Division factor for maximum number of m
 func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, matchers ...*labels.Matcher) ([]string, error) {
 	p, err := r.PostingsForMatchers(ctx, false, matchers...)
 	if err != nil {
-		return nil, errors.Wrap(err, "fetching postings for matchers")
+		return nil, fmt.Errorf("fetching postings for matchers: %w", err)
 	}
 
 	allValues, err := r.LabelValues(ctx, name)
 	if err != nil {
-		return nil, errors.Wrapf(err, "fetching values of label %s", name)
+		return nil, fmt.Errorf("fetching values of label %s: %w", name, err)
 	}
 
 	// If we have a matcher for the label name, we can filter out values that don't match
@@ -429,7 +429,7 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, ma
 		if len(expanded) <= maxExpandedPostings {
 			// When we're here, p.Next() must have returned false, so we need to check for errors.
 			if err := p.Err(); err != nil {
-				return nil, errors.Wrap(err, "expanding postings for matchers")
+				return nil, fmt.Errorf("expanding postings for matchers: %w", err)
 			}
 
 			// We have expanded all the postings -- all returned label values will be from these series only.
@@ -445,12 +445,12 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, ma
 	for i, value := range allValues {
 		valuesPostings[i], err = r.Postings(ctx, name, value)
 		if err != nil {
-			return nil, errors.Wrapf(err, "fetching postings for %s=%q", name, value)
+			return nil, fmt.Errorf("fetching postings for %s=%q: %w", name, value, err)
 		}
 	}
 	indexes, err := index.FindIntersectingPostings(p, valuesPostings)
 	if err != nil {
-		return nil, errors.Wrap(err, "intersecting postings")
+		return nil, fmt.Errorf("intersecting postings: %w", err)
 	}
 
 	values := make([]string, 0, len(indexes))
@@ -470,11 +470,11 @@ func labelValuesFromSeries(r IndexReader, labelName string, refs []storage.Serie
 	for _, ref := range refs {
 		err := r.Series(ref, &builder, nil)
 		// Postings may be stale. Skip if no underlying series exists.
-		if errors.Cause(err) == storage.ErrNotFound {
+		if errors.Is(err, storage.ErrNotFound) {
 			continue
 		}
 		if err != nil {
-			return nil, errors.Wrapf(err, "label values for label %s", labelName)
+			return nil, fmt.Errorf("label values for label %s: %w", labelName, err)
 		}
 
 		v := builder.Labels().Get(labelName)
@@ -552,8 +552,8 @@ func labelNamesWithMatchers(ctx context.Context, r IndexReader, matchers ...*lab
 	for p.Next() {
 		postings = append(postings, p.At())
 	}
-	if p.Err() != nil {
-		return nil, errors.Wrapf(p.Err(), "postings for label names with matchers")
+	if err := p.Err(); err != nil {
+		return nil, fmt.Errorf("postings for label names with matchers: %w", err)
 	}
 
 	return r.LabelNamesFor(ctx, postings...)
@@ -592,10 +592,10 @@ func (b *blockBaseSeriesSet) Next() bool {
 	for b.p.Next() {
 		if err := b.index.Series(b.p.At(), &b.builder, &b.bufChks); err != nil {
 			// Postings may be stale. Skip if no underlying series exists.
-			if errors.Cause(err) == storage.ErrNotFound {
+			if errors.Is(err, storage.ErrNotFound) {
 				continue
 			}
-			b.err = errors.Wrapf(err, "get series %d", b.p.At())
+			b.err = fmt.Errorf("get series %d: %w", b.p.At(), err)
 			return false
 		}
 
@@ -605,7 +605,7 @@ func (b *blockBaseSeriesSet) Next() bool {
 
 		intervals, err := b.tombstones.Get(b.p.At())
 		if err != nil {
-			b.err = errors.Wrap(err, "get tombstones")
+			b.err = fmt.Errorf("get tombstones: %w", err)
 			return false
 		}
 
@@ -755,7 +755,7 @@ func (p *populateWithDelGenericSeriesIterator) next(copyHeadChunk bool) bool {
 	}
 
 	if p.err != nil {
-		p.err = errors.Wrapf(p.err, "cannot populate chunk %d from block %s", p.currMeta.Ref, p.blockID.String())
+		p.err = fmt.Errorf("cannot populate chunk %d from block %s: %w", p.currMeta.Ref, p.blockID.String(), p.err)
 		return false
 	}
 
@@ -923,24 +923,32 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 	}
 
 	// Move to the next chunk/deletion iterator.
-	if !p.next(true) {
-		return false
-	}
-
-	if p.currMeta.Chunk != nil {
+	// This is a for loop as if the current p.currDelIter returns no samples
+	// (which means a chunk won't be created), there still might be more
+	// samples/chunks from the rest of p.metas.
+	for p.next(true) {
 		if p.currDelIter == nil {
 			p.currMetaWithChunk = p.currMeta
 			return true
 		}
-		// If ChunkOrIterable() returned a non-nil chunk, the samples in
-		// p.currDelIter will only form one chunk, as the only change
-		// p.currDelIter might make is deleting some samples.
-		return p.populateCurrForSingleChunk()
-	}
 
-	// If ChunkOrIterable() returned an iterable, multiple chunks may be
-	// created from the samples in p.currDelIter.
-	return p.populateChunksFromIterable()
+		if p.currMeta.Chunk != nil {
+			// If ChunkOrIterable() returned a non-nil chunk, the samples in
+			// p.currDelIter will only form one chunk, as the only change
+			// p.currDelIter might make is deleting some samples.
+			if p.populateCurrForSingleChunk() {
+				return true
+			}
+		} else {
+			// If ChunkOrIterable() returned an iterable, multiple chunks may be
+			// created from the samples in p.currDelIter.
+			if p.populateChunksFromIterable() {
+				return true
+			}
+		}
+
+	}
+	return false
 }
 
 // populateCurrForSingleChunk sets the fields within p.currMetaWithChunk. This
@@ -949,7 +957,7 @@ func (p *populateWithDelChunkSeriesIterator) populateCurrForSingleChunk() bool {
 	valueType := p.currDelIter.Next()
 	if valueType == chunkenc.ValNone {
 		if err := p.currDelIter.Err(); err != nil {
-			p.err = errors.Wrap(err, "iterate chunk while re-encoding")
+			p.err = fmt.Errorf("iterate chunk while re-encoding: %w", err)
 		}
 		return false
 	}
@@ -1017,11 +1025,11 @@ func (p *populateWithDelChunkSeriesIterator) populateCurrForSingleChunk() bool {
 	}
 
 	if err != nil {
-		p.err = errors.Wrap(err, "iterate chunk while re-encoding")
+		p.err = fmt.Errorf("iterate chunk while re-encoding: %w", err)
 		return false
 	}
 	if err := p.currDelIter.Err(); err != nil {
-		p.err = errors.Wrap(err, "iterate chunk while re-encoding")
+		p.err = fmt.Errorf("iterate chunk while re-encoding: %w", err)
 		return false
 	}
 
@@ -1040,7 +1048,7 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 	firstValueType := p.currDelIter.Next()
 	if firstValueType == chunkenc.ValNone {
 		if err := p.currDelIter.Err(); err != nil {
-			p.err = errors.Wrap(err, "populateChunksFromIterable: no samples could be read")
+			p.err = fmt.Errorf("populateChunksFromIterable: no samples could be read: %w", err)
 			return false
 		}
 		return false
@@ -1124,11 +1132,11 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 	}
 
 	if err != nil {
-		p.err = errors.Wrap(err, "populateChunksFromIterable: error when writing new chunks")
+		p.err = fmt.Errorf("populateChunksFromIterable: error when writing new chunks: %w", err)
 		return false
 	}
 	if err = p.currDelIter.Err(); err != nil {
-		p.err = errors.Wrap(err, "populateChunksFromIterable: currDelIter error when writing new chunks")
+		p.err = fmt.Errorf("populateChunksFromIterable: currDelIter error when writing new chunks: %w", err)
 		return false
 	}
 

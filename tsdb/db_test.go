@@ -34,7 +34,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
@@ -134,7 +133,7 @@ func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[str
 		result[name] = samples
 	}
 	require.NoError(t, ss.Err())
-	require.Equal(t, 0, len(ss.Warnings()))
+	require.Empty(t, ss.Warnings())
 
 	return result
 }
@@ -184,7 +183,7 @@ func queryChunks(t testing.TB, q storage.ChunkQuerier, matchers ...*labels.Match
 		result[name] = chks
 	}
 	require.NoError(t, ss.Err())
-	require.Equal(t, 0, len(ss.Warnings()))
+	require.Empty(t, ss.Warnings())
 	return result
 }
 
@@ -207,7 +206,7 @@ func TestDB_reloadOrder(t *testing.T) {
 
 	require.NoError(t, db.reloadBlocks())
 	blocks := db.Blocks()
-	require.Equal(t, 3, len(blocks))
+	require.Len(t, blocks, 3)
 	require.Equal(t, metas[1].MinTime, blocks[0].Meta().MinTime)
 	require.Equal(t, metas[1].MaxTime, blocks[0].Meta().MaxTime)
 	require.Equal(t, metas[0].MinTime, blocks[1].Meta().MinTime)
@@ -362,7 +361,7 @@ func TestDBAppenderAddRef(t *testing.T) {
 
 	// Missing labels & invalid refs should fail.
 	_, err = app2.Append(9999999, labels.EmptyLabels(), 1, 1)
-	require.Equal(t, ErrInvalidSample, errors.Cause(err))
+	require.ErrorIs(t, err, ErrInvalidSample)
 
 	require.NoError(t, app2.Commit())
 
@@ -478,7 +477,7 @@ Outer:
 			require.Equal(t, eok, rok)
 
 			if !eok {
-				require.Equal(t, 0, len(res.Warnings()))
+				require.Empty(t, res.Warnings())
 				continue Outer
 			}
 			sexp := expss.At()
@@ -526,7 +525,7 @@ func TestAmendHistogramDatapointCausesError(t *testing.T) {
 		},
 		PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 0},
 	}
-	fh := h.ToFloat()
+	fh := h.ToFloat(nil)
 
 	app = db.Appender(ctx)
 	_, err = app.AppendHistogram(0, labels.FromStrings("a", "c"), 0, h.Copy(), nil)
@@ -686,7 +685,7 @@ func TestDB_Snapshot(t *testing.T) {
 		require.NoError(t, series.Err())
 	}
 	require.NoError(t, seriesSet.Err())
-	require.Equal(t, 0, len(seriesSet.Warnings()))
+	require.Empty(t, seriesSet.Warnings())
 	require.Equal(t, 1000.0, sum)
 }
 
@@ -735,7 +734,7 @@ func TestDB_Snapshot_ChunksOutsideOfCompactedRange(t *testing.T) {
 		require.NoError(t, series.Err())
 	}
 	require.NoError(t, seriesSet.Err())
-	require.Equal(t, 0, len(seriesSet.Warnings()))
+	require.Empty(t, seriesSet.Warnings())
 
 	// Since we snapshotted with MaxTime - 10, so expect 10 less samples.
 	require.Equal(t, 1000.0-10, sum)
@@ -811,7 +810,7 @@ Outer:
 			require.Equal(t, eok, rok)
 
 			if !eok {
-				require.Equal(t, 0, len(res.Warnings()))
+				require.Empty(t, res.Warnings())
 				continue Outer
 			}
 			sexp := expss.At()
@@ -979,7 +978,7 @@ func TestDB_e2e(t *testing.T) {
 			}
 
 			require.NoError(t, ss.Err())
-			require.Equal(t, 0, len(ss.Warnings()))
+			require.Empty(t, ss.Warnings())
 			require.Equal(t, expected, result)
 
 			q.Close()
@@ -1011,7 +1010,7 @@ func TestWALFlushedOnDBClose(t *testing.T) {
 
 	values, ws, err := q.LabelValues(ctx, "labelname")
 	require.NoError(t, err)
-	require.Equal(t, 0, len(ws))
+	require.Empty(t, ws)
 	require.Equal(t, []string{"labelvalue"}, values)
 }
 
@@ -1048,7 +1047,7 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 					files = append(files, fi)
 				}
 			}
-			require.Greater(t, len(files), 1, "current WALSegmentSize should result in more than a single WAL file.")
+			require.NotEmpty(t, files, "current WALSegmentSize should result in more than a single WAL file.")
 			// All the full segment files (all but the last) should match the segment size option.
 			for _, f := range files[:len(files)-1] {
 				require.Equal(t, int64(segmentSize), f.Size(), "WAL file size doesn't match WALSegmentSize option, filename: %v", f.Name())
@@ -1261,7 +1260,7 @@ func TestTombstoneClean(t *testing.T) {
 			require.Equal(t, errExp, errRes)
 			require.Equal(t, smplExp, smplRes)
 		}
-		require.Equal(t, 0, len(res.Warnings()))
+		require.Empty(t, res.Warnings())
 
 		for _, b := range db.Blocks() {
 			require.Equal(t, tombstones.NewMemTombstones(), b.tombstones)
@@ -1309,7 +1308,7 @@ func TestTombstoneCleanResultEmptyBlock(t *testing.T) {
 	// After cleaning tombstones that covers the entire block, no blocks should be left behind.
 	actualBlockDirs, err := blockDirs(db.dir)
 	require.NoError(t, err)
-	require.Equal(t, 0, len(actualBlockDirs))
+	require.Empty(t, actualBlockDirs)
 }
 
 // TestTombstoneCleanFail tests that a failing TombstoneClean doesn't leave any blocks behind.
@@ -1355,7 +1354,7 @@ func TestTombstoneCleanFail(t *testing.T) {
 	require.NoError(t, err)
 	// Only one block should have been replaced by a new block.
 	require.Equal(t, len(oldBlockDirs), len(actualBlockDirs))
-	require.Equal(t, len(intersection(oldBlockDirs, actualBlockDirs)), len(actualBlockDirs)-1)
+	require.Len(t, intersection(oldBlockDirs, actualBlockDirs), len(actualBlockDirs)-1)
 }
 
 // TestTombstoneCleanRetentionLimitsRace tests that a CleanTombstones operation
@@ -1647,9 +1646,9 @@ func TestSizeRetention(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, 1, actRetentionCount, "metric retention count mismatch")
-	require.Equal(t, actSize, expSize, "metric db size doesn't match actual disk size")
+	require.Equal(t, expSize, actSize, "metric db size doesn't match actual disk size")
 	require.LessOrEqual(t, expSize, sizeLimit, "actual size (%v) is expected to be less than or equal to limit (%v)", expSize, sizeLimit)
-	require.Equal(t, len(blocks)-1, len(actBlocks), "new block count should be decreased from:%v to:%v", len(blocks), len(blocks)-1)
+	require.Len(t, actBlocks, len(blocks)-1, "new block count should be decreased from:%v to:%v", len(blocks), len(blocks)-1)
 	require.Equal(t, expBlocks[0].MaxTime, actBlocks[0].meta.MaxTime, "maxT mismatch of the first block")
 	require.Equal(t, expBlocks[len(expBlocks)-1].MaxTime, actBlocks[len(actBlocks)-1].meta.MaxTime, "maxT mismatch of the last block")
 }
@@ -1673,7 +1672,7 @@ func TestSizeRetentionMetric(t *testing.T) {
 		}()
 
 		actMaxBytes := int64(prom_testutil.ToFloat64(db.metrics.maxBytes))
-		require.Equal(t, actMaxBytes, c.expMaxBytes, "metric retention limit bytes mismatch")
+		require.Equal(t, c.expMaxBytes, actMaxBytes, "metric retention limit bytes mismatch")
 	}
 }
 
@@ -1746,7 +1745,7 @@ func TestNotMatcherSelectsLabelsUnsetSeries(t *testing.T) {
 		ss := q.Select(ctx, false, nil, c.selector...)
 		lres, _, ws, err := expandSeriesSet(ss)
 		require.NoError(t, err)
-		require.Equal(t, 0, len(ws))
+		require.Empty(t, ws)
 		require.Equal(t, c.series, lres)
 	}
 }
@@ -1779,7 +1778,7 @@ func TestOverlappingBlocksDetectsAllOverlaps(t *testing.T) {
 		metas[i] = BlockMeta{MinTime: int64(i * 10), MaxTime: int64((i + 1) * 10)}
 	}
 
-	require.Equal(t, 0, len(OverlappingBlocks(metas)), "we found unexpected overlaps")
+	require.Empty(t, OverlappingBlocks(metas), "we found unexpected overlaps")
 
 	// Add overlapping blocks. We've to establish order again since we aren't interested
 	// in trivial overlaps caused by unorderedness.
@@ -2078,7 +2077,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		actBlocks, err := blockDirs(db.Dir())
 		require.NoError(t, err)
 		require.Equal(t, len(db.Blocks()), len(actBlocks))
-		require.Equal(t, 0, len(actBlocks))
+		require.Empty(t, actBlocks)
 		require.Equal(t, 0, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran)), "no compaction should be triggered here")
 	})
 
@@ -2098,7 +2097,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		actBlocks, err := blockDirs(db.Dir())
 		require.NoError(t, err)
 		require.Equal(t, len(db.Blocks()), len(actBlocks))
-		require.Equal(t, 0, len(actBlocks))
+		require.Empty(t, actBlocks)
 
 		app = db.Appender(ctx)
 		_, err = app.Append(0, defaultLabel, 1, 0)
@@ -2119,7 +2118,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		actBlocks, err = blockDirs(db.Dir())
 		require.NoError(t, err)
 		require.Equal(t, len(db.Blocks()), len(actBlocks))
-		require.Equal(t, 1, len(actBlocks), "No blocks created when compacting with >0 samples")
+		require.Len(t, actBlocks, 1, "No blocks created when compacting with >0 samples")
 	})
 
 	t.Run(`When no new block is created from head, and there are some blocks on disk
@@ -2151,8 +2150,8 @@ func TestNoEmptyBlocks(t *testing.T) {
 		}
 
 		oldBlocks := db.Blocks()
-		require.NoError(t, db.reloadBlocks())                          // Reload the db to register the new blocks.
-		require.Equal(t, len(blocks)+len(oldBlocks), len(db.Blocks())) // Ensure all blocks are registered.
+		require.NoError(t, db.reloadBlocks())                   // Reload the db to register the new blocks.
+		require.Len(t, db.Blocks(), len(blocks)+len(oldBlocks)) // Ensure all blocks are registered.
 		require.NoError(t, db.Delete(ctx, math.MinInt64, math.MaxInt64, defaultMatcher))
 		require.NoError(t, db.Compact(ctx))
 		require.Equal(t, 5, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran)), "compaction should have been triggered here once for each block that have tombstones")
@@ -2160,7 +2159,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		actBlocks, err := blockDirs(db.Dir())
 		require.NoError(t, err)
 		require.Equal(t, len(db.Blocks()), len(actBlocks))
-		require.Equal(t, 1, len(actBlocks), "All samples are deleted. Only the most recent block should remain after compaction.")
+		require.Len(t, actBlocks, 1, "All samples are deleted. Only the most recent block should remain after compaction.")
 	})
 }
 
@@ -2261,7 +2260,7 @@ func TestDB_LabelNames(t *testing.T) {
 		var ws annotations.Annotations
 		labelNames, ws, err = q.LabelNames(ctx)
 		require.NoError(t, err)
-		require.Equal(t, 0, len(ws))
+		require.Empty(t, ws)
 		require.NoError(t, q.Close())
 		require.Equal(t, tst.exp2, labelNames)
 	}
@@ -2290,7 +2289,7 @@ func TestCorrectNumTombstones(t *testing.T) {
 
 	err := db.Compact(ctx)
 	require.NoError(t, err)
-	require.Equal(t, 1, len(db.blocks))
+	require.Len(t, db.blocks, 1)
 
 	require.NoError(t, db.Delete(ctx, 0, 1, defaultMatcher))
 	require.Equal(t, uint64(1), db.blocks[0].meta.Stats.NumTombstones)
@@ -2353,7 +2352,7 @@ func TestBlockRanges(t *testing.T) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	require.Equal(t, 2, len(db.Blocks()), "no new block created after the set timeout")
+	require.Len(t, db.Blocks(), 2, "no new block created after the set timeout")
 
 	if db.Blocks()[0].Meta().MaxTime > db.Blocks()[1].Meta().MinTime {
 		t.Fatalf("new block overlaps  old:%v,new:%v", db.Blocks()[0].Meta(), db.Blocks()[1].Meta())
@@ -2381,7 +2380,7 @@ func TestBlockRanges(t *testing.T) {
 	require.NoError(t, err)
 
 	defer db.Close()
-	require.Equal(t, 3, len(db.Blocks()), "db doesn't include expected number of blocks")
+	require.Len(t, db.Blocks(), 3, "db doesn't include expected number of blocks")
 	require.Equal(t, db.Blocks()[2].Meta().MaxTime, thirdBlockMaxt, "unexpected maxt of the last block")
 
 	app = db.Appender(ctx)
@@ -2395,7 +2394,7 @@ func TestBlockRanges(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	require.Equal(t, 4, len(db.Blocks()), "no new block created after the set timeout")
+	require.Len(t, db.Blocks(), 4, "no new block created after the set timeout")
 
 	if db.Blocks()[2].Meta().MaxTime > db.Blocks()[3].Meta().MinTime {
 		t.Fatalf("new block overlaps  old:%v,new:%v", db.Blocks()[2].Meta(), db.Blocks()[3].Meta())
@@ -2576,7 +2575,7 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 	defer func() { require.NoError(t, db.Close()) }()
 	blocks, err := db.Blocks()
 	require.NoError(t, err)
-	require.Equal(t, len(blocks), 1)
+	require.Len(t, blocks, 1)
 
 	querier, err := db.Querier(0, int64(maxt)-1)
 	require.NoError(t, err)
@@ -2596,7 +2595,7 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 		require.NoError(t, series.Err())
 	}
 	require.NoError(t, seriesSet.Err())
-	require.Equal(t, 0, len(seriesSet.Warnings()))
+	require.Empty(t, seriesSet.Warnings())
 	require.Equal(t, 1000.0, sum)
 }
 
@@ -2655,7 +2654,7 @@ func TestDBCannotSeePartialCommits(t *testing.T) {
 			ss := querier.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 			_, seriesSet, ws, err := expandSeriesSet(ss)
 			require.NoError(t, err)
-			require.Equal(t, 0, len(ws))
+			require.Empty(t, ws)
 
 			values := map[float64]struct{}{}
 			for _, series := range seriesSet {
@@ -2699,13 +2698,13 @@ func TestDBQueryDoesntSeeAppendsAfterCreation(t *testing.T) {
 	ss := querierBeforeAdd.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	_, seriesSet, ws, err := expandSeriesSet(ss)
 	require.NoError(t, err)
-	require.Equal(t, 0, len(ws))
+	require.Empty(t, ws)
 	require.Equal(t, map[string][]sample{}, seriesSet)
 
 	ss = querierAfterAddButBeforeCommit.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	_, seriesSet, ws, err = expandSeriesSet(ss)
 	require.NoError(t, err)
-	require.Equal(t, 0, len(ws))
+	require.Empty(t, ws)
 	require.Equal(t, map[string][]sample{}, seriesSet)
 
 	// This commit is after the queriers are created, so should not be returned.
@@ -2716,14 +2715,14 @@ func TestDBQueryDoesntSeeAppendsAfterCreation(t *testing.T) {
 	ss = querierBeforeAdd.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	_, seriesSet, ws, err = expandSeriesSet(ss)
 	require.NoError(t, err)
-	require.Equal(t, 0, len(ws))
+	require.Empty(t, ws)
 	require.Equal(t, map[string][]sample{}, seriesSet)
 
 	// Series exists but has no samples for querier created after Add.
 	ss = querierAfterAddButBeforeCommit.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	_, seriesSet, ws, err = expandSeriesSet(ss)
 	require.NoError(t, err)
-	require.Equal(t, 0, len(ws))
+	require.Empty(t, ws)
 	require.Equal(t, map[string][]sample{`{foo="bar"}`: {}}, seriesSet)
 
 	querierAfterCommit, err := db.Querier(0, 1000000)
@@ -2734,7 +2733,7 @@ func TestDBQueryDoesntSeeAppendsAfterCreation(t *testing.T) {
 	ss = querierAfterCommit.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	_, seriesSet, ws, err = expandSeriesSet(ss)
 	require.NoError(t, err)
-	require.Equal(t, 0, len(ws))
+	require.Empty(t, ws)
 	require.Equal(t, map[string][]sample{`{foo="bar"}`: {{t: 0, f: 0}}}, seriesSet)
 }
 
@@ -2881,7 +2880,7 @@ func TestChunkWriter_ReadAfterWrite(t *testing.T) {
 
 			files, err := os.ReadDir(tempDir)
 			require.NoError(t, err)
-			require.Equal(t, test.expSegmentsCount, len(files), "expected segments count mismatch")
+			require.Len(t, files, test.expSegmentsCount, "expected segments count mismatch")
 
 			// Verify that all data is written to the segments.
 			sizeExp := 0
@@ -3031,7 +3030,7 @@ func TestCompactHead(t *testing.T) {
 	require.NoError(t, deleteNonBlocks(db.Dir()))
 	db, err = Open(dbDir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg, nil)
 	require.NoError(t, err)
-	require.Equal(t, 1, len(db.Blocks()))
+	require.Len(t, db.Blocks(), 1)
 	require.Equal(t, int64(maxt), db.Head().MinTime())
 	defer func() { require.NoError(t, db.Close()) }()
 	querier, err := db.Querier(0, int64(maxt)-1)
@@ -3193,7 +3192,7 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 		}
 		loaded++
 	}
-	require.Equal(t, len(expectedLoadedDirs), loaded)
+	require.Len(t, expectedLoadedDirs, loaded)
 	require.NoError(t, db.Close())
 
 	files, err := os.ReadDir(tmpDir)
@@ -3208,7 +3207,7 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 			ignored++
 		}
 	}
-	require.Equal(t, len(expectedIgnoredDirs), ignored)
+	require.Len(t, expectedIgnoredDirs, ignored)
 	_, err = os.Stat(tmpCheckpointDir)
 	require.True(t, os.IsNotExist(err))
 	_, err = os.Stat(tmpChunkSnapshotDir)
@@ -3261,7 +3260,7 @@ func TestOneCheckpointPerCompactCall(t *testing.T) {
 	require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.checkpointCreationTotal))
 
 	// As the data spans for 59 blocks, 58 go to disk and 1 remains in Head.
-	require.Equal(t, 58, len(db.Blocks()))
+	require.Len(t, db.Blocks(), 58)
 	// Though WAL was truncated only once, head should be truncated after each compaction.
 	require.Equal(t, 58.0, prom_testutil.ToFloat64(db.head.metrics.headTruncateTotal))
 
@@ -3294,7 +3293,7 @@ func TestOneCheckpointPerCompactCall(t *testing.T) {
 	db.DisableCompactions()
 
 	// 1 block more.
-	require.Equal(t, 59, len(db.Blocks()))
+	require.Len(t, db.Blocks(), 59)
 	// No series in Head because of this new block.
 	require.Equal(t, 0, int(db.head.NumSeries()))
 
@@ -3319,7 +3318,7 @@ func TestOneCheckpointPerCompactCall(t *testing.T) {
 	require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.checkpointCreationTotal))
 
 	// No new blocks should be created as there was not data in between the new samples and the blocks.
-	require.Equal(t, 59, len(db.Blocks()))
+	require.Len(t, db.Blocks(), 59)
 
 	// The compaction should have only truncated first 2/3 of WAL (while also rotating the files).
 	first, last, err = wlog.Segments(db.head.wal.Dir())
@@ -3456,7 +3455,7 @@ func testQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t 
 		iterators = append(iterators, it)
 	}
 	require.NoError(t, seriesSet.Err())
-	require.Equal(t, actualSeries, numSeries)
+	require.Equal(t, numSeries, actualSeries)
 
 	// Compact the TSDB head again.
 	require.NoError(t, db.Compact(ctx))
@@ -3590,7 +3589,7 @@ func testChunkQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChun
 		}
 	}
 	require.NoError(t, seriesSet.Err())
-	require.Equal(t, actualSeries, numSeries)
+	require.Equal(t, numSeries, actualSeries)
 
 	// Compact the TSDB head again.
 	require.NoError(t, db.Compact(ctx))
@@ -4113,9 +4112,9 @@ func TestDBPanicOnMmappingHeadChunk(t *testing.T) {
 	numSamples := int(170*time.Minute/time.Millisecond) / int(itvl)
 	addSamples(numSamples)
 
-	require.Len(t, db.Blocks(), 0)
+	require.Empty(t, db.Blocks())
 	require.NoError(t, db.Compact(ctx))
-	require.Len(t, db.Blocks(), 0)
+	require.Empty(t, db.Blocks())
 
 	// Restarting.
 	require.NoError(t, db.Close())
@@ -4128,7 +4127,7 @@ func TestDBPanicOnMmappingHeadChunk(t *testing.T) {
 	numSamples = int(20*time.Minute/time.Millisecond) / int(itvl)
 	addSamples(numSamples)
 
-	require.Len(t, db.Blocks(), 0)
+	require.Empty(t, db.Blocks())
 	require.NoError(t, db.Compact(ctx))
 	require.Len(t, db.Blocks(), 1)
 
@@ -4474,13 +4473,13 @@ func TestOOOCompaction(t *testing.T) {
 		require.NoError(t, err)
 		require.False(t, created)
 		require.Greater(t, ms.ooo.oooHeadChunk.chunk.NumSamples(), 0)
-		require.Equal(t, 14, len(ms.ooo.oooMmappedChunks)) // 7 original, 7 duplicate.
+		require.Len(t, ms.ooo.oooMmappedChunks, 14) // 7 original, 7 duplicate.
 	}
 	checkNonEmptyOOOChunk(series1)
 	checkNonEmptyOOOChunk(series2)
 
 	// No blocks before compaction.
-	require.Equal(t, len(db.Blocks()), 0)
+	require.Empty(t, db.Blocks())
 
 	// There is a 0th WBL file.
 	require.NoError(t, db.head.wbl.Sync()) // syncing to make sure wbl is flushed in windows
@@ -4496,7 +4495,7 @@ func TestOOOCompaction(t *testing.T) {
 	require.NoError(t, db.CompactOOOHead(ctx))
 
 	// 3 blocks exist now. [0, 120), [120, 240), [240, 360)
-	require.Equal(t, len(db.Blocks()), 3)
+	require.Len(t, db.Blocks(), 3)
 
 	verifyDBSamples() // Blocks created out of OOO head now.
 
@@ -4548,7 +4547,7 @@ func TestOOOCompaction(t *testing.T) {
 	// Since this is a forced compaction, this block is not aligned with 2h.
 	err = db.CompactHead(NewRangeHead(db.head, 250*time.Minute.Milliseconds(), 350*time.Minute.Milliseconds()))
 	require.NoError(t, err)
-	require.Equal(t, len(db.Blocks()), 4) // [0, 120), [120, 240), [240, 360), [250, 351)
+	require.Len(t, db.Blocks(), 4) // [0, 120), [120, 240), [240, 360), [250, 351)
 	verifySamples(db.Blocks()[3], 250, 350)
 
 	verifyDBSamples() // Blocks created out of normal and OOO head now. But not merged.
@@ -4563,7 +4562,7 @@ func TestOOOCompaction(t *testing.T) {
 	// This will merge overlapping block.
 	require.NoError(t, db.Compact(ctx))
 
-	require.Equal(t, len(db.Blocks()), 3) // [0, 120), [120, 240), [240, 360)
+	require.Len(t, db.Blocks(), 3) // [0, 120), [120, 240), [240, 360)
 	verifySamples(db.Blocks()[0], 90, 119)
 	verifySamples(db.Blocks()[1], 120, 239)
 	verifySamples(db.Blocks()[2], 240, 350) // Merged block.
@@ -4619,19 +4618,19 @@ func TestOOOCompactionWithNormalCompaction(t *testing.T) {
 
 	// If the normal Head is not compacted, the OOO head compaction does not take place.
 	require.NoError(t, db.Compact(ctx))
-	require.Equal(t, len(db.Blocks()), 0)
+	require.Empty(t, db.Blocks())
 
 	// Add more in-order samples in future that would trigger the compaction.
 	addSamples(400, 450)
 
 	// No blocks before compaction.
-	require.Equal(t, len(db.Blocks()), 0)
+	require.Empty(t, db.Blocks())
 
 	// Compacts normal and OOO head.
 	require.NoError(t, db.Compact(ctx))
 
 	// 2 blocks exist now. [0, 120), [250, 360)
-	require.Equal(t, len(db.Blocks()), 2)
+	require.Len(t, db.Blocks(), 2)
 	require.Equal(t, int64(0), db.Blocks()[0].MinTime())
 	require.Equal(t, 120*time.Minute.Milliseconds(), db.Blocks()[0].MaxTime())
 	require.Equal(t, 250*time.Minute.Milliseconds(), db.Blocks()[1].MinTime())
@@ -4720,19 +4719,19 @@ func TestOOOCompactionWithDisabledWriteLog(t *testing.T) {
 
 	// If the normal Head is not compacted, the OOO head compaction does not take place.
 	require.NoError(t, db.Compact(ctx))
-	require.Equal(t, len(db.Blocks()), 0)
+	require.Empty(t, db.Blocks())
 
 	// Add more in-order samples in future that would trigger the compaction.
 	addSamples(400, 450)
 
 	// No blocks before compaction.
-	require.Equal(t, len(db.Blocks()), 0)
+	require.Empty(t, db.Blocks())
 
 	// Compacts normal and OOO head.
 	require.NoError(t, db.Compact(ctx))
 
 	// 2 blocks exist now. [0, 120), [250, 360)
-	require.Equal(t, len(db.Blocks()), 2)
+	require.Len(t, db.Blocks(), 2)
 	require.Equal(t, int64(0), db.Blocks()[0].MinTime())
 	require.Equal(t, 120*time.Minute.Milliseconds(), db.Blocks()[0].MaxTime())
 	require.Equal(t, 250*time.Minute.Milliseconds(), db.Blocks()[1].MinTime())
@@ -4816,7 +4815,7 @@ func TestOOOQueryAfterRestartWithSnapshotAndRemovedWBL(t *testing.T) {
 		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
 		require.NoError(t, err)
 		require.False(t, created)
-		require.Equal(t, 2, len(ms.ooo.oooMmappedChunks))
+		require.Len(t, ms.ooo.oooMmappedChunks, 2)
 		require.NotNil(t, ms.ooo.oooHeadChunk)
 	}
 
@@ -4835,7 +4834,7 @@ func TestOOOQueryAfterRestartWithSnapshotAndRemovedWBL(t *testing.T) {
 		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
 		require.NoError(t, err)
 		require.False(t, created)
-		require.Equal(t, 2, len(ms.ooo.oooMmappedChunks))
+		require.Len(t, ms.ooo.oooMmappedChunks, 2)
 		require.Equal(t, 109*time.Minute.Milliseconds(), ms.ooo.oooMmappedChunks[1].maxTime)
 		require.Nil(t, ms.ooo.oooHeadChunk) // Because of missing wbl.
 	}
@@ -4864,9 +4863,9 @@ func TestOOOQueryAfterRestartWithSnapshotAndRemovedWBL(t *testing.T) {
 	verifySamples(90, 109)
 
 	// Compaction should also work fine.
-	require.Equal(t, len(db.Blocks()), 0)
+	require.Empty(t, db.Blocks())
 	require.NoError(t, db.CompactOOOHead(ctx))
-	require.Equal(t, len(db.Blocks()), 1) // One block from OOO data.
+	require.Len(t, db.Blocks(), 1) // One block from OOO data.
 	require.Equal(t, int64(0), db.Blocks()[0].MinTime())
 	require.Equal(t, 120*time.Minute.Milliseconds(), db.Blocks()[0].MaxTime())
 
@@ -4885,7 +4884,6 @@ func Test_Querier_OOOQuery(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 24 * time.Hour.Milliseconds()
-	opts.AllowOverlappingCompaction = false
 
 	series1 := labels.FromStrings("foo", "bar1")
 
@@ -4959,7 +4957,7 @@ func Test_Querier_OOOQuery(t *testing.T) {
 
 			seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar1"))
 			require.NotNil(t, seriesSet[series1.String()])
-			require.Equal(t, 1, len(seriesSet))
+			require.Len(t, seriesSet, 1)
 			require.Equal(t, expSamples, seriesSet[series1.String()])
 			require.GreaterOrEqual(t, float64(oooSamples), prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamplesAppended), "number of ooo appended samples mismatch")
 		})
@@ -4970,7 +4968,6 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 24 * time.Hour.Milliseconds()
-	opts.AllowOverlappingCompaction = false
 
 	series1 := labels.FromStrings("foo", "bar1")
 
@@ -5044,7 +5041,7 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 
 			chks := queryChunks(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar1"))
 			require.NotNil(t, chks[series1.String()])
-			require.Equal(t, 1, len(chks))
+			require.Len(t, chks, 1)
 			require.Equal(t, float64(oooSamples), prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamplesAppended), "number of ooo appended samples mismatch")
 			var gotSamples []chunks.Sample
 			for _, chunk := range chks[series1.String()] {
@@ -5319,7 +5316,7 @@ func TestWBLAndMmapReplay(t *testing.T) {
 			s1MmapSamples = append(s1MmapSamples, sample{t: ts, f: val})
 		}
 	}
-	require.Greater(t, len(s1MmapSamples), 0)
+	require.NotEmpty(t, s1MmapSamples)
 
 	require.NoError(t, db.Close())
 
@@ -5468,7 +5465,7 @@ func TestOOOCompactionFailure(t *testing.T) {
 	addSample(90, 310)
 
 	// No blocks before compaction.
-	require.Equal(t, len(db.Blocks()), 0)
+	require.Empty(t, db.Blocks())
 
 	// There is a 0th WBL file.
 	verifyFirstWBLFileIs0 := func(count int) {
@@ -5501,7 +5498,7 @@ func TestOOOCompactionFailure(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		require.Error(t, db.CompactOOOHead(ctx))
 	}
-	require.Equal(t, len(db.Blocks()), 0)
+	require.Empty(t, db.Blocks())
 
 	// M-map files don't change after failed compaction.
 	verifyMmapFiles("000001")
@@ -5512,7 +5509,7 @@ func TestOOOCompactionFailure(t *testing.T) {
 	db.compactor = originalCompactor
 	require.NoError(t, db.CompactOOOHead(ctx))
 	oldBlocks := db.Blocks()
-	require.Equal(t, len(db.Blocks()), 3)
+	require.Len(t, db.Blocks(), 3)
 
 	// Check that the ooo chunks were removed.
 	ms, created, err := db.head.getOrCreate(series1.Hash(), series1)
@@ -5523,7 +5520,7 @@ func TestOOOCompactionFailure(t *testing.T) {
 	// The failed compaction should not have left the ooo Head corrupted.
 	// Hence, expect no new blocks with another OOO compaction call.
 	require.NoError(t, db.CompactOOOHead(ctx))
-	require.Equal(t, len(db.Blocks()), 3)
+	require.Len(t, db.Blocks(), 3)
 	require.Equal(t, oldBlocks, db.Blocks())
 
 	// There should be a single m-map file
@@ -5565,7 +5562,7 @@ func TestOOOCompactionFailure(t *testing.T) {
 	// Since this is a forced compaction, this block is not aligned with 2h.
 	err = db.CompactHead(NewRangeHead(db.head, 250*time.Minute.Milliseconds(), 350*time.Minute.Milliseconds()))
 	require.NoError(t, err)
-	require.Equal(t, len(db.Blocks()), 4) // [0, 120), [120, 240), [240, 360), [250, 351)
+	require.Len(t, db.Blocks(), 4) // [0, 120), [120, 240), [240, 360), [250, 351)
 	verifySamples(db.Blocks()[3], 250, 350)
 
 	// The compaction also clears out the old m-map files. Including
@@ -5910,9 +5907,9 @@ func TestOutOfOrderRuntimeConfig(t *testing.T) {
 		require.NoError(t, err)
 		require.Greater(t, size, int64(0))
 
-		require.Len(t, db.Blocks(), 0)
+		require.Empty(t, db.Blocks())
 		require.NoError(t, db.compactOOOHead(ctx))
-		require.Greater(t, len(db.Blocks()), 0)
+		require.NotEmpty(t, db.Blocks())
 
 		// WBL is empty.
 		size, err = db.head.wbl.Size()
@@ -5932,7 +5929,7 @@ func TestOutOfOrderRuntimeConfig(t *testing.T) {
 
 		// OOO of 59m old fails.
 		s := addSamples(t, db, 251, 260, false, nil)
-		require.Len(t, s, 0)
+		require.Empty(t, s)
 		verifySamples(t, db, allSamples)
 
 		oldWblPtr := fmt.Sprintf("%p", db.head.wbl)
@@ -5967,7 +5964,7 @@ func TestOutOfOrderRuntimeConfig(t *testing.T) {
 
 		// OOO of 49m old fails.
 		s := addSamples(t, db, 261, 270, false, nil)
-		require.Len(t, s, 0)
+		require.Empty(t, s)
 
 		// WBL does not change.
 		newWblPtr := fmt.Sprintf("%p", db.head.wbl)
@@ -5998,7 +5995,7 @@ func TestOutOfOrderRuntimeConfig(t *testing.T) {
 
 		// OOO fails.
 		s := addSamples(t, db, 251, 260, false, nil)
-		require.Len(t, s, 0)
+		require.Empty(t, s)
 		verifySamples(t, db, allSamples)
 
 		require.Nil(t, db.head.wbl)
@@ -6035,7 +6032,7 @@ func TestOutOfOrderRuntimeConfig(t *testing.T) {
 
 		// OOO within old time window fails.
 		s := addSamples(t, db, 290, 309, false, nil)
-		require.Len(t, s, 0)
+		require.Empty(t, s)
 
 		// WBL does not change and is not removed.
 		newWblPtr := fmt.Sprintf("%p", db.head.wbl)
@@ -6057,7 +6054,7 @@ func TestOutOfOrderRuntimeConfig(t *testing.T) {
 
 		// OOO fails.
 		s := addSamples(t, db, 290, 309, false, nil)
-		require.Len(t, s, 0)
+		require.Empty(t, s)
 		verifySamples(t, db, allSamples)
 		require.Nil(t, db.head.wbl)
 
@@ -6067,7 +6064,7 @@ func TestOutOfOrderRuntimeConfig(t *testing.T) {
 
 		// OOO still fails.
 		s = addSamples(t, db, 290, 309, false, nil)
-		require.Len(t, s, 0)
+		require.Empty(t, s)
 		verifySamples(t, db, allSamples)
 		require.Nil(t, db.head.wbl)
 	})
@@ -6327,7 +6324,7 @@ func TestDiskFillingUpAfterDisablingOOO(t *testing.T) {
 	db.DisableCompactions()
 
 	ms := db.head.series.getByHash(series1.Hash(), series1)
-	require.Greater(t, len(ms.ooo.oooMmappedChunks), 0, "OOO mmap chunk was not replayed")
+	require.NotEmpty(t, ms.ooo.oooMmappedChunks, "OOO mmap chunk was not replayed")
 
 	checkMmapFileContents := func(contains, notContains []string) {
 		mmapDir := mmappedChunksDir(db.head.opts.ChunkDirRoot)
@@ -6399,8 +6396,8 @@ func testHistogramAppendAndQueryHelper(t *testing.T, floatHistogram bool) {
 		var err error
 		app := db.Appender(ctx)
 		if floatHistogram {
-			_, err = app.AppendHistogram(0, lbls, minute(tsMinute), nil, h.ToFloat())
-			efh := h.ToFloat()
+			_, err = app.AppendHistogram(0, lbls, minute(tsMinute), nil, h.ToFloat(nil))
+			efh := h.ToFloat(nil)
 			efh.CounterResetHint = expCRH
 			*exp = append(*exp, sample{t: minute(tsMinute), fh: efh})
 		} else {
@@ -6654,7 +6651,6 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 		t.Helper()
 
 		opts := DefaultOptions()
-		opts.AllowOverlappingCompaction = true // TODO(jesusvazquez): This replaced AllowOverlappingBlocks, make sure that works.
 		db := openTestDB(t, opts, nil)
 		t.Cleanup(func() {
 			require.NoError(t, db.Close())
@@ -6691,7 +6687,7 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 			}
 		}
 
-		require.Len(t, db.Blocks(), 0)
+		require.Empty(t, db.Blocks())
 		require.NoError(t, db.reload())
 		require.Len(t, db.Blocks(), len(blockSeries))
 
@@ -6821,20 +6817,20 @@ func TestNativeHistogramFlag(t *testing.T) {
 	// Disabled by default.
 	_, err = app.AppendHistogram(0, l, 100, h, nil)
 	require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
-	_, err = app.AppendHistogram(0, l, 105, nil, h.ToFloat())
+	_, err = app.AppendHistogram(0, l, 105, nil, h.ToFloat(nil))
 	require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
 
 	// Enable and append.
 	db.EnableNativeHistograms()
 	_, err = app.AppendHistogram(0, l, 200, h, nil)
 	require.NoError(t, err)
-	_, err = app.AppendHistogram(0, l, 205, nil, h.ToFloat())
+	_, err = app.AppendHistogram(0, l, 205, nil, h.ToFloat(nil))
 	require.NoError(t, err)
 
 	db.DisableNativeHistograms()
 	_, err = app.AppendHistogram(0, l, 300, h, nil)
 	require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
-	_, err = app.AppendHistogram(0, l, 305, nil, h.ToFloat())
+	_, err = app.AppendHistogram(0, l, 305, nil, h.ToFloat(nil))
 	require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
 
 	require.NoError(t, app.Commit())
@@ -6843,7 +6839,7 @@ func TestNativeHistogramFlag(t *testing.T) {
 	require.NoError(t, err)
 	act := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	require.Equal(t, map[string][]chunks.Sample{
-		l.String(): {sample{t: 200, h: h}, sample{t: 205, fh: h.ToFloat()}},
+		l.String(): {sample{t: 200, h: h}, sample{t: 205, fh: h.ToFloat(nil)}},
 	}, act)
 }
 
