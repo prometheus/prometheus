@@ -338,7 +338,7 @@ describe('DataTable', () => {
     const dataTableProps: DataTableProps = {
       data: {
         resultType: 'string',
-        result: 'string',
+        result: [1572098246.599, 'test'],
       },
       useLocalTime: false,
     };
@@ -346,7 +346,7 @@ describe('DataTable', () => {
     it('renders a string row', () => {
       const table = dataTable.find(Table);
       const rows = table.find('tr');
-      expect(rows.text()).toEqual('stringt');
+      expect(rows.text()).toEqual('stringtest');
     });
   });
 });
