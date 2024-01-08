@@ -442,8 +442,7 @@ func (db *DBReadOnly) FlushWAL(dir string) (returnErr error) {
 		nil,
 		db.logger,
 		ExponentialBlockRanges(DefaultOptions().MinBlockDuration, 3, 5),
-		chunkenc.NewPool(),
-		nil,
+		chunkenc.NewPool(), nil,
 	)
 	if err != nil {
 		return fmt.Errorf("create leveled compactor: %w", err)
