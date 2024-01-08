@@ -1,5 +1,10 @@
 # Changelog
 
+
+## 2.49.0-rc.2 / 2024-01-08
+
+* [BUGFIX] UI: Fix scalar and string data type issues when querying introduced by heatmap feature. #13371
+
 ## 2.49.0-rc.1 / 2023-12-19
 
 * [BUGFIX] SD: Fix Azure VM Scale Set NIC issue. #13283
