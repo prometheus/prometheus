@@ -82,26 +82,27 @@ func (h *FloatHistogram) Copy() *FloatHistogram {
 	return &c
 }
 
-// CopyFrom makes a deep copy of the given FloatHistogram into the receiver object.
-func (h *FloatHistogram) CopyFrom(from FloatHistogram) {
-	h.CounterResetHint = from.CounterResetHint
-	h.Schema = from.Schema
-	h.ZeroThreshold = from.ZeroThreshold
-	h.ZeroCount = from.ZeroCount
-	h.Count = from.Count
-	h.Sum = from.Sum
+// CopyTo makes a deep copy into the given FloatHistogram.
+// The destination object has to be a non-nil pointer.
+func (h *FloatHistogram) CopyTo(to *FloatHistogram) {
+	to.CounterResetHint = h.CounterResetHint
+	to.Schema = h.Schema
+	to.ZeroThreshold = h.ZeroThreshold
+	to.ZeroCount = h.ZeroCount
+	to.Count = h.Count
+	to.Sum = h.Sum
 
-	h.PositiveSpans = resize(h.PositiveSpans, len(from.PositiveSpans))
-	copy(h.PositiveSpans, from.PositiveSpans)
+	to.PositiveSpans = resize(to.PositiveSpans, len(h.PositiveSpans))
+	copy(to.PositiveSpans, h.PositiveSpans)
 
-	h.NegativeSpans = resize(h.NegativeSpans, len(from.NegativeSpans))
-	copy(h.NegativeSpans, from.NegativeSpans)
+	to.NegativeSpans = resize(to.NegativeSpans, len(h.NegativeSpans))
+	copy(to.NegativeSpans, h.NegativeSpans)
 
-	h.PositiveBuckets = resize(h.PositiveBuckets, len(from.PositiveBuckets))
-	copy(h.PositiveBuckets, from.PositiveBuckets)
+	to.PositiveBuckets = resize(to.PositiveBuckets, len(h.PositiveBuckets))
+	copy(to.PositiveBuckets, h.PositiveBuckets)
 
-	h.NegativeBuckets = resize(h.NegativeBuckets, len(from.NegativeBuckets))
-	copy(h.NegativeBuckets, from.NegativeBuckets)
+	to.NegativeBuckets = resize(to.NegativeBuckets, len(h.NegativeBuckets))
+	copy(to.NegativeBuckets, h.NegativeBuckets)
 }
 
 // CopyToSchema works like Copy, but the returned deep copy has the provided

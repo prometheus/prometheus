@@ -233,7 +233,7 @@ func TestFloatHistogramCopyFrom(t *testing.T) {
 	for _, tcase := range cases {
 		t.Run(tcase.name, func(t *testing.T) {
 			hCopy := &FloatHistogram{}
-			hCopy.CopyFrom(*tcase.orig)
+			tcase.orig.CopyTo(hCopy)
 
 			// Modify a primitive value in the original histogram.
 			tcase.orig.Sum++

@@ -382,7 +382,7 @@ func (it *SampleRingIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (in
 		return it.t, it.h.ToFloat(fh)
 	}
 	if fh != nil {
-		fh.CopyFrom(*it.fh)
+		it.fh.CopyTo(fh)
 		return it.t, fh
 	}
 	return it.t, it.fh.Copy()
@@ -683,7 +683,7 @@ func addH(s hSample, buf []hSample, r *sampleRing) []hSample {
 	if buf[r.i].h == nil {
 		buf[r.i].h = s.h.Copy()
 	} else {
-		buf[r.i].h.CopyFrom(*s.h)
+		s.h.CopyTo(buf[r.i].h)
 	}
 	r.l++
 
@@ -727,7 +727,7 @@ func addFH(s fhSample, buf []fhSample, r *sampleRing) []fhSample {
 	if buf[r.i].fh == nil {
 		buf[r.i].fh = s.fh.Copy()
 	} else {
-		buf[r.i].fh.CopyFrom(*s.fh)
+		s.fh.CopyTo(buf[r.i].fh)
 	}
 	r.l++
 
