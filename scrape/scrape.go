@@ -684,8 +684,8 @@ func acceptHeader(sps []config.ScrapeProtocol, allowUTF8Names bool) string {
 	weight := len(config.ScrapeProtocolsHeaders) + 1
 	for _, sp := range sps {
 		val := config.ScrapeProtocolsHeaders[sp]
-		if allowUTF8Names {
-			val += ";"+config.UTF8NamesHeader
+		if (sp != config.PrometheusProto || sp == config.OpenMetricsText2_0_0 || sp == config.PrometheusText1_0_0) && allowUTF8Names {
+			val += ";" + config.UTF8NamesHeader
 		}
 		val += fmt.Sprintf(";q=0.%d", weight)
 		vals = append(vals, val)
@@ -693,7 +693,9 @@ func acceptHeader(sps []config.ScrapeProtocol, allowUTF8Names bool) string {
 	}
 	// Default match anything.
 	vals = append(vals, fmt.Sprintf("*/*;q=0.%d", weight))
-	return strings.Join(vals, ",")
+	ret := strings.Join(vals, ",")
+	fmt.Println("~~~~~~~~~~~~~~~~~~~accept header", ret)
+	return ret
 }
 
 func acceptEncodingHeader(enableCompression bool) string {
