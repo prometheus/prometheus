@@ -167,17 +167,23 @@ func (m *Manager) reloader() {
 func (m *Manager) reload() {
 	m.mtxScrape.Lock()
 	defer m.mtxScrape.Unlock()
-	var err error
-	if m.opts.NameEscapingScheme != "" {
-		model.NameEscapingScheme, err = model.ToEscapingScheme(m.opts.NameEscapingScheme)
-		if err != nil {
-			level.Error(m.logger).Log("msg", "error setting escaping scheme", "err", err)
-			return
-		}
-	} else {
-		model.NameEscapingScheme = DefaultNameEscapingScheme
-	}
-	level.Info(m.logger).Log("msg", "ESCAPING SCHEME", "scheme", model.NameEscapingScheme.String(), "arg", m.opts.NameEscapingScheme)
+	// var err error
+	// if m.opts.UTF8Names {
+	// 	model.NameValidationScheme = model.UTF8Validation
+	// } else {
+	// 	model.NameValidationScheme = model.LegacyValidation
+	// }
+	// level.Info(m.logger).Log("msg", "validation scheme", "scheme", model.NameValidationScheme, "arg", m.opts.UTF8Names)
+	// if m.opts.NameEscapingScheme != "" {
+	// 	model.NameEscapingScheme, err = model.ToEscapingScheme(m.opts.NameEscapingScheme)
+	// 	if err != nil {
+	// 		level.Error(m.logger).Log("msg", "error setting escaping scheme", "err", err)
+	// 		return
+	// 	}
+	// } else {
+	// 	model.NameEscapingScheme = DefaultNameEscapingScheme
+	// }
+	level.Info(m.logger).Log("msg", "ESCAPING SCHEME", "scheme", model.NameEscapingScheme.String())
 
 	var wg sync.WaitGroup
 	for setName, groups := range m.targetSets {
