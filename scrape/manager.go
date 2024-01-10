@@ -91,6 +91,8 @@ type Options struct {
 	skipOffsetting bool
 }
 
+const DefaultNameEscapingScheme = model.ValueEncodingEscaping
+
 // Manager maintains a set of scrape pools and manages start/stop cycles
 // when receiving new target groups from the discovery manager.
 type Manager struct {
@@ -160,12 +162,16 @@ func (m *Manager) reload() {
 	m.mtxScrape.Lock()
 	defer m.mtxScrape.Unlock()
 	var err error
-	model.DefaultNameEscapingScheme, err = model.ToEscapingScheme(m.opts.NameEscapingScheme)
-	level.Info(m.logger).Log("msg", "ESCAPING SCHEME UPDATED", "scheme", m.opts.NameEscapingScheme)
-	if err != nil {
-		level.Error(m.logger).Log("msg", "error setting escaping scheme", "err", err)
-		return
+	if m.opts.NameEscapingScheme != "" {
+		model.NameEscapingScheme, err = model.ToEscapingScheme(m.opts.NameEscapingScheme)
+		if err != nil {
+			level.Error(m.logger).Log("msg", "error setting escaping scheme", "err", err)
+			return
+		}
+	} else {
+		model.NameEscapingScheme = DefaultNameEscapingScheme
 	}
+	level.Info(m.logger).Log("msg", "ESCAPING SCHEME", "scheme", model.NameEscapingScheme.String(), "arg", m.opts.NameEscapingScheme)
 
 	var wg sync.WaitGroup
 	for setName, groups := range m.targetSets {
