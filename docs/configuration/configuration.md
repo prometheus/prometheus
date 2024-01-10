@@ -452,9 +452,24 @@ metric_relabel_configs:
 # failed. 0 means no limit.
 [ native_histogram_bucket_limit: <int> | default = 0 ]
 
-# Limit on bucket factor of a single native histogram.
-# If this is exceeded, native histogram will be automatically reduced.
-# failed. 1.00271 means the minimum factor supported in prometheus.
+# Lower limit for the growth factor of one bucket to the next in each native histogram. 
+# The resolution of a histogram # with a lower growth factor will be reduced until it is within the limit.
+# Here is the conversion table from growth factor to resulting schema/scale.
+# | growth factor | resulting schema AKA scale |
+# | ---   | --- |
+# | 65536 | -4  |
+# | 256   | -3  |
+# | 16    | -2  |
+# | 4     | -1  |
+# | 2     |  0  |
+# | 1.4   |  1  |
+# | 1.1   |  2  |
+# | 1.09  |  3  |
+# | 1.04  |  4  |
+# | 1.02  |  5  |
+# | 1.01  |  6  |
+# | 1.005 |  7  |
+# | 1.002 |  8  |
 [ native_histogram_min_bucket_factor: <float> | default = 1.00271 ]
 ```
 
