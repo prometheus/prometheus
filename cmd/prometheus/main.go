@@ -146,6 +146,7 @@ type flagConfig struct {
 	queryConcurrency    int
 	queryMaxSamples     int
 	RemoteFlushDeadline model.Duration
+	nameEscapingScheme string
 
 	featureList []string
 	// These options are extracted from featureList
@@ -432,7 +433,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("scrape.name-escaping-scheme", "method to escape legacy invalid names when sending to an old version of prometheus.  can be one of values (default), underscores, or dots").Default(scrape.DefaultNameEscapingScheme.String()).StringVar(&cfg.scrape.NameEscapingScheme)
+	a.Flag("scrape.name-escaping-scheme", "method to escape legacy invalid names when sending to an old version of prometheus.  can be one of values (default), underscores, or dots").Default(scrape.DefaultNameEscapingScheme.String()).StringVar(&cfg.nameEscapingScheme)
 
 	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-at-modifier, promql-negative-offset, promql-per-step-stats, promql-experimental-functions, remote-write-receiver (DEPRECATED), extra-scrape-metrics, new-service-discovery-manager, auto-gomaxprocs, no-default-scrape-port, native-histograms, otlp-write-receiver, utf8-names. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
@@ -460,6 +461,15 @@ func main() {
 	if err := cfg.setFeatureListOptions(logger); err != nil {
 		fmt.Fprintln(os.Stderr, fmt.Errorf("Error parsing feature list: %w", err))
 		os.Exit(1)
+	}
+
+	if cfg.nameEscapingScheme != "" {
+		scheme, err := model.ToEscapingScheme(cfg.nameEscapingScheme)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Invalid name escaping scheme: %q", cfg.nameEscapingScheme)
+			os.Exit(1)
+		}
+		model.NameEscapingScheme = scheme
 	}
 
 	if agentMode && len(serverOnlyFlags) > 0 {
