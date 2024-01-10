@@ -116,7 +116,7 @@ func (tc *ZookeeperTreeCache) Stop() {
 	tc.stop <- struct{}{}
 	go func() {
 		// Drain tc.head.events so that go routines can make progress and exit.
-		for range tc.head.events { // nolint:revive
+		for range tc.head.events {
 		}
 	}()
 	go func() {

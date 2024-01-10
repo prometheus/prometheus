@@ -6,3 +6,5 @@
 /tsdb @jesusvazquez
 /promql @roidelapluie
 /cmd/promtool @dgl
+/documentation/prometheus-mixin @metalmatze
+

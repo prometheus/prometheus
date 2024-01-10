@@ -17,13 +17,13 @@ import (
 	"container/heap"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math/rand"
 	"sort"
 	"strconv"
 	"testing"
 
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -380,6 +380,38 @@ func BenchmarkIntersect(t *testing.B) {
 	})
 }
 
+func BenchmarkMerge(t *testing.B) {
+	var lps []*ListPostings
+	var refs [][]storage.SeriesRef
+
+	// Create 100000 matchers(k=100000), making sure all memory allocation is done before starting the loop.
+	for i := 0; i < 100000; i++ {
+		var temp []storage.SeriesRef
+		for j := 1; j < 100; j++ {
+			temp = append(temp, storage.SeriesRef(i+j*100000))
+		}
+		lps = append(lps, newListPostings(temp...))
+		refs = append(refs, temp)
+	}
+
+	its := make([]Postings, len(refs))
+	for _, nSeries := range []int{1, 10, 100, 1000, 10000, 100000} {
+		t.Run(fmt.Sprint(nSeries), func(bench *testing.B) {
+			ctx := context.Background()
+			for i := 0; i < bench.N; i++ {
+				// Reset the ListPostings to their original values each time round the loop.
+				for j := range refs[:nSeries] {
+					lps[j].list = refs[j]
+					its[j] = lps[j]
+				}
+				if err := consumePostings(Merge(ctx, its[:nSeries]...)); err != nil {
+					bench.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
 func TestMultiMerge(t *testing.T) {
 	i1 := newListPostings(1, 2, 3, 4, 5, 6, 1000, 1001)
 	i2 := newListPostings(2, 4, 5, 6, 7, 8, 999, 1001)
@@ -481,7 +513,7 @@ func TestMergedPostings(t *testing.T) {
 			m := Merge(ctx, c.in...)
 
 			if c.res == EmptyPostings() {
-				require.Equal(t, EmptyPostings(), m)
+				require.False(t, m.Next())
 				return
 			}
 
@@ -977,7 +1009,7 @@ func TestMemPostings_Delete(t *testing.T) {
 	deleted := p.Get("lbl1", "b")
 	expanded, err = ExpandPostings(deleted)
 	require.NoError(t, err)
-	require.Equal(t, 0, len(expanded), "expected empty postings, got %v", expanded)
+	require.Empty(t, expanded, "expected empty postings, got %v", expanded)
 }
 
 func TestFindIntersectingPostings(t *testing.T) {

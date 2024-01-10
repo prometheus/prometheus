@@ -59,14 +59,14 @@ func TestSetCompactionFailed(t *testing.T) {
 	blockDir := createBlock(t, tmpdir, genSeries(1, 1, 0, 1))
 	b, err := OpenBlock(nil, blockDir, nil)
 	require.NoError(t, err)
-	require.Equal(t, false, b.meta.Compaction.Failed)
+	require.False(t, b.meta.Compaction.Failed)
 	require.NoError(t, b.setCompactionFailed())
-	require.Equal(t, true, b.meta.Compaction.Failed)
+	require.True(t, b.meta.Compaction.Failed)
 	require.NoError(t, b.Close())
 
 	b, err = OpenBlock(nil, blockDir, nil)
 	require.NoError(t, err)
-	require.Equal(t, true, b.meta.Compaction.Failed)
+	require.True(t, b.meta.Compaction.Failed)
 	require.NoError(t, b.Close())
 }
 
@@ -166,7 +166,7 @@ func TestCorruptedChunk(t *testing.T) {
 				require.NoError(t, err)
 				n, err := f.Write([]byte("x"))
 				require.NoError(t, err)
-				require.Equal(t, n, 1)
+				require.Equal(t, 1, n)
 			},
 			iterErr: errors.New("cannot populate chunk 8 from block 00000000000000000000000000: checksum mismatch expected:cfc0526c, actual:34815eae"),
 		},
@@ -178,7 +178,7 @@ func TestCorruptedChunk(t *testing.T) {
 			blockDir := createBlock(t, tmpdir, []storage.Series{series})
 			files, err := sequenceFiles(chunkDir(blockDir))
 			require.NoError(t, err)
-			require.Greater(t, len(files), 0, "No chunk created.")
+			require.NotEmpty(t, files, "No chunk created.")
 
 			f, err := os.OpenFile(files[0], os.O_RDWR, 0o666)
 			require.NoError(t, err)
@@ -224,7 +224,7 @@ func TestLabelValuesWithMatchers(t *testing.T) {
 	blockDir := createBlock(t, tmpdir, seriesEntries)
 	files, err := sequenceFiles(chunkDir(blockDir))
 	require.NoError(t, err)
-	require.Greater(t, len(files), 0, "No chunk created.")
+	require.NotEmpty(t, files, "No chunk created.")
 
 	// Check open err.
 	block, err := OpenBlock(nil, blockDir, nil)
@@ -352,16 +352,14 @@ func TestReadIndexFormatV1(t *testing.T) {
 
 	q, err := NewBlockQuerier(block, 0, 1000)
 	require.NoError(t, err)
-	require.Equal(t, query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")),
-		map[string][]chunks.Sample{`{foo="bar"}`: {sample{t: 1, f: 2}}})
+	require.Equal(t, map[string][]chunks.Sample{`{foo="bar"}`: {sample{t: 1, f: 2}}}, query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")))
 
 	q, err = NewBlockQuerier(block, 0, 1000)
 	require.NoError(t, err)
-	require.Equal(t, query(t, q, labels.MustNewMatcher(labels.MatchNotRegexp, "foo", "^.?$")),
-		map[string][]chunks.Sample{
-			`{foo="bar"}`: {sample{t: 1, f: 2}},
-			`{foo="baz"}`: {sample{t: 3, f: 4}},
-		})
+	require.Equal(t, map[string][]chunks.Sample{
+		`{foo="bar"}`: {sample{t: 1, f: 2}},
+		`{foo="baz"}`: {sample{t: 3, f: 4}},
+	}, query(t, q, labels.MustNewMatcher(labels.MatchNotRegexp, "foo", "^.?$")))
 }
 
 func BenchmarkLabelValuesWithMatchers(b *testing.B) {
@@ -383,7 +381,7 @@ func BenchmarkLabelValuesWithMatchers(b *testing.B) {
 	blockDir := createBlock(b, tmpdir, seriesEntries)
 	files, err := sequenceFiles(chunkDir(blockDir))
 	require.NoError(b, err)
-	require.Greater(b, len(files), 0, "No chunk created.")
+	require.NotEmpty(b, files, "No chunk created.")
 
 	// Check open err.
 	block, err := OpenBlock(nil, blockDir, nil)
@@ -402,7 +400,7 @@ func BenchmarkLabelValuesWithMatchers(b *testing.B) {
 	for benchIdx := 0; benchIdx < b.N; benchIdx++ {
 		actualValues, err := indexReader.LabelValues(ctx, "b_tens", matchers...)
 		require.NoError(b, err)
-		require.Equal(b, 9, len(actualValues))
+		require.Len(b, actualValues, 9)
 	}
 }
 
@@ -436,7 +434,7 @@ func TestLabelNamesWithMatchers(t *testing.T) {
 	blockDir := createBlock(t, tmpdir, seriesEntries)
 	files, err := sequenceFiles(chunkDir(blockDir))
 	require.NoError(t, err)
-	require.Greater(t, len(files), 0, "No chunk created.")
+	require.NotEmpty(t, files, "No chunk created.")
 
 	// Check open err.
 	block, err := OpenBlock(nil, blockDir, nil)
@@ -489,6 +487,19 @@ func createBlock(tb testing.TB, dir string, series []storage.Series) string {
 }
 
 func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
+	compactor, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{1000000}, nil, nil)
+	require.NoError(tb, err)
+
+	require.NoError(tb, os.MkdirAll(dir, 0o777))
+
+	// Add +1 millisecond to block maxt because block intervals are half-open: [b.MinTime, b.MaxTime).
+	// Because of this block intervals are always +1 than the total samples it includes.
+	ulid, err := compactor.Write(dir, head, head.MinTime(), head.MaxTime()+1, nil)
+	require.NoError(tb, err)
+	return filepath.Join(dir, ulid.String())
+}
+
+func createBlockFromOOOHead(tb testing.TB, dir string, head *OOOCompactionHead) string {
 	compactor, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{1000000}, nil, nil)
 	require.NoError(tb, err)
 
@@ -645,7 +656,7 @@ func genHistogramSeries(totalSeries, labelCount int, mint, maxt, step int64, flo
 			h.CounterResetHint = histogram.NotCounterReset
 		}
 		if floatHistogram {
-			return sample{t: ts, fh: h.ToFloat()}
+			return sample{t: ts, fh: h.ToFloat(nil)}
 		}
 		return sample{t: ts, h: h}
 	})
@@ -681,7 +692,7 @@ func genHistogramAndFloatSeries(totalSeries, labelCount int, mint, maxt, step in
 				h.CounterResetHint = histogram.NotCounterReset
 			}
 			if floatHistogram {
-				s = sample{t: ts, fh: h.ToFloat()}
+				s = sample{t: ts, fh: h.ToFloat(nil)}
 			} else {
 				s = sample{t: ts, h: h}
 			}

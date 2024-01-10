@@ -24,6 +24,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -74,7 +76,7 @@ type OpenMetricsParser struct {
 	builder labels.ScratchBuilder
 	series  []byte
 	text    []byte
-	mtype   MetricType
+	mtype   model.MetricType
 	val     float64
 	ts      int64
 	hasTS   bool
@@ -126,7 +128,7 @@ func (p *OpenMetricsParser) Help() ([]byte, []byte) {
 // Type returns the metric name and type in the current entry.
 // Must only be called after Next returned a type entry.
 // The returned byte slices become invalid after the next call to Next.
-func (p *OpenMetricsParser) Type() ([]byte, MetricType) {
+func (p *OpenMetricsParser) Type() ([]byte, model.MetricType) {
 	return p.l.b[p.offsets[0]:p.offsets[1]], p.mtype
 }
 
@@ -134,7 +136,6 @@ func (p *OpenMetricsParser) Type() ([]byte, MetricType) {
 // Must only be called after Next returned a unit entry.
 // The returned byte slices become invalid after the next call to Next.
 func (p *OpenMetricsParser) Unit() ([]byte, []byte) {
-	// The Prometheus format does not have units.
 	return p.l.b[p.offsets[0]:p.offsets[1]], p.text
 }
 
@@ -211,6 +212,12 @@ func (p *OpenMetricsParser) Exemplar(e *exemplar.Exemplar) bool {
 	return true
 }
 
+// CreatedTimestamp returns nil as it's not implemented yet.
+// TODO(bwplotka): https://github.com/prometheus/prometheus/issues/12980
+func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
+	return nil
+}
+
 // nextToken returns the next token from the openMetricsLexer.
 func (p *OpenMetricsParser) nextToken() token {
 	tok := p.l.Lex()
@@ -266,21 +273,21 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 		case tType:
 			switch s := yoloString(p.text); s {
 			case "counter":
-				p.mtype = MetricTypeCounter
+				p.mtype = model.MetricTypeCounter
 			case "gauge":
-				p.mtype = MetricTypeGauge
+				p.mtype = model.MetricTypeGauge
 			case "histogram":
-				p.mtype = MetricTypeHistogram
+				p.mtype = model.MetricTypeHistogram
 			case "gaugehistogram":
-				p.mtype = MetricTypeGaugeHistogram
+				p.mtype = model.MetricTypeGaugeHistogram
 			case "summary":
-				p.mtype = MetricTypeSummary
+				p.mtype = model.MetricTypeSummary
 			case "info":
-				p.mtype = MetricTypeInfo
+				p.mtype = model.MetricTypeInfo
 			case "stateset":
-				p.mtype = MetricTypeStateset
+				p.mtype = model.MetricTypeStateset
 			case "unknown":
-				p.mtype = MetricTypeUnknown
+				p.mtype = model.MetricTypeUnknown
 			default:
 				return EntryInvalid, fmt.Errorf("invalid metric type %q", s)
 			}

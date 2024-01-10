@@ -429,6 +429,15 @@ Unit tests for rules.
 
 
 
+###### Flags
+
+| Flag | Description |
+| --- | --- |
+| <code class="text-nowrap">--run</code> | If set, will only run test groups whose names match the regular expression. Can be specified multiple times. |
+
+
+
+
 ###### Arguments
 
 | Argument | Description | Required |

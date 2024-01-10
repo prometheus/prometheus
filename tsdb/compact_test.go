@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"math/rand"
@@ -27,7 +28,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
-	"github.com/pkg/errors"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 
@@ -38,6 +38,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
@@ -933,6 +934,32 @@ func TestCompaction_populateBlock(t *testing.T) {
 				},
 			},
 		},
+		{
+			// Regression test for populateWithDelChunkSeriesIterator failing to set minTime on chunks.
+			title:          "Populate from mixed type series and expect sample inside the interval only.",
+			compactMinTime: 1,
+			compactMaxTime: 11,
+			inputSeriesSamples: [][]seriesSamples{
+				{
+					{
+						lset: map[string]string{"a": "1"},
+						chunks: [][]sample{
+							{{t: 0, h: tsdbutil.GenerateTestHistogram(0)}, {t: 1, h: tsdbutil.GenerateTestHistogram(1)}},
+							{{t: 10, f: 1}, {t: 11, f: 2}},
+						},
+					},
+				},
+			},
+			expSeriesSamples: []seriesSamples{
+				{
+					lset: map[string]string{"a": "1"},
+					chunks: [][]sample{
+						{{t: 1, h: tsdbutil.GenerateTestHistogram(1)}},
+						{{t: 10, f: 1}},
+					},
+				},
+			},
+		},
 	} {
 		t.Run(tc.title, func(t *testing.T) {
 			blocks := make([]BlockReader, 0, len(tc.inputSeriesSamples))
@@ -974,12 +1001,23 @@ func TestCompaction_populateBlock(t *testing.T) {
 						firstTs int64 = math.MaxInt64
 						s       sample
 					)
-					for iter.Next() == chunkenc.ValFloat {
-						s.t, s.f = iter.At()
+					for vt := iter.Next(); vt != chunkenc.ValNone; vt = iter.Next() {
+						switch vt {
+						case chunkenc.ValFloat:
+							s.t, s.f = iter.At()
+							samples = append(samples, s)
+						case chunkenc.ValHistogram:
+							s.t, s.h = iter.AtHistogram()
+							samples = append(samples, s)
+						case chunkenc.ValFloatHistogram:
+							s.t, s.fh = iter.AtFloatHistogram()
+							samples = append(samples, s)
+						default:
+							require.Fail(t, "unexpected value type")
+						}
 						if firstTs == math.MaxInt64 {
 							firstTs = s.t
 						}
-						samples = append(samples, s)
 					}
 
 					// Check if chunk has correct min, max times.
@@ -1106,6 +1144,46 @@ func BenchmarkCompactionFromHead(b *testing.B) {
 	}
 }
 
+func BenchmarkCompactionFromOOOHead(b *testing.B) {
+	dir := b.TempDir()
+	totalSeries := 100000
+	totalSamples := 100
+	for labelNames := 1; labelNames < totalSeries; labelNames *= 10 {
+		labelValues := totalSeries / labelNames
+		b.Run(fmt.Sprintf("labelnames=%d,labelvalues=%d", labelNames, labelValues), func(b *testing.B) {
+			chunkDir := b.TempDir()
+			opts := DefaultHeadOptions()
+			opts.ChunkRange = 1000
+			opts.ChunkDirRoot = chunkDir
+			opts.OutOfOrderTimeWindow.Store(int64(totalSamples))
+			h, err := NewHead(nil, nil, nil, nil, opts, nil)
+			require.NoError(b, err)
+			for ln := 0; ln < labelNames; ln++ {
+				app := h.Appender(context.Background())
+				for lv := 0; lv < labelValues; lv++ {
+					lbls := labels.FromStrings(fmt.Sprintf("%d", ln), fmt.Sprintf("%d%s%d", lv, postingsBenchSuffix, ln))
+					_, err = app.Append(0, lbls, int64(totalSamples), 0)
+					require.NoError(b, err)
+					for ts := 0; ts < totalSamples; ts++ {
+						_, err = app.Append(0, lbls, int64(ts), float64(ts))
+						require.NoError(b, err)
+					}
+				}
+				require.NoError(b, app.Commit())
+			}
+
+			b.ResetTimer()
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				oooHead, err := NewOOOCompactionHead(context.TODO(), h)
+				require.NoError(b, err)
+				createBlockFromOOOHead(b, filepath.Join(dir, fmt.Sprintf("%d-%d", i, labelNames)), oooHead)
+			}
+			h.Close()
+		})
+	}
+}
+
 // TestDisableAutoCompactions checks that we can
 // disable and enable the auto compaction.
 // This is needed for unit tests that rely on
@@ -1144,7 +1222,7 @@ func TestDisableAutoCompactions(t *testing.T) {
 	}
 
 	require.Greater(t, prom_testutil.ToFloat64(db.metrics.compactionsSkipped), 0.0, "No compaction was skipped after the set timeout.")
-	require.Equal(t, 0, len(db.blocks))
+	require.Empty(t, db.blocks)
 
 	// Enable the compaction, trigger it and check that the block is persisted.
 	db.EnableCompactions()
@@ -1158,7 +1236,7 @@ func TestDisableAutoCompactions(t *testing.T) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	require.Greater(t, len(db.Blocks()), 0, "No block was persisted after the set timeout.")
+	require.NotEmpty(t, db.Blocks(), "No block was persisted after the set timeout.")
 }
 
 // TestCancelCompactions ensures that when the db is closed
@@ -1181,7 +1259,7 @@ func TestCancelCompactions(t *testing.T) {
 	{
 		db, err := open(tmpdir, log.NewNopLogger(), nil, DefaultOptions(), []int64{1, 2000}, nil)
 		require.NoError(t, err)
-		require.Equal(t, 3, len(db.Blocks()), "initial block count mismatch")
+		require.Len(t, db.Blocks(), 3, "initial block count mismatch")
 		require.Equal(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran), "initial compaction counter mismatch")
 		db.compactc <- struct{}{} // Trigger a compaction.
 		for prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.PopulatingBlocks) <= 0 {
@@ -1200,7 +1278,7 @@ func TestCancelCompactions(t *testing.T) {
 	{
 		db, err := open(tmpdirCopy, log.NewNopLogger(), nil, DefaultOptions(), []int64{1, 2000}, nil)
 		require.NoError(t, err)
-		require.Equal(t, 3, len(db.Blocks()), "initial block count mismatch")
+		require.Len(t, db.Blocks(), 3, "initial block count mismatch")
 		require.Equal(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran), "initial compaction counter mismatch")
 		db.compactc <- struct{}{} // Trigger a compaction.
 
@@ -1213,7 +1291,7 @@ func TestCancelCompactions(t *testing.T) {
 		actT := time.Since(start)
 
 		expT := timeCompactionUninterrupted / 2 // Closing the db in the middle of compaction should less than half the time.
-		require.True(t, actT < expT, "closing the db took more than expected. exp: <%v, act: %v", expT, actT)
+		require.Less(t, actT, expT, "closing the db took more than expected. exp: <%v, act: %v", expT, actT)
 
 		// Make sure that no blocks were marked as compaction failed.
 		// This checks that the `context.Canceled` error is properly checked at all levels:
@@ -1324,8 +1402,8 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 				for tsMinute := from; tsMinute <= to; tsMinute++ {
 					var err error
 					if floatTest {
-						_, err = app.AppendHistogram(0, lbls, minute(tsMinute), nil, h.ToFloat())
-						efh := h.ToFloat()
+						_, err = app.AppendHistogram(0, lbls, minute(tsMinute), nil, h.ToFloat(nil))
+						efh := h.ToFloat(nil)
 						if tsMinute == from {
 							efh.CounterResetHint = histogram.UnknownCounterReset
 						} else {

@@ -121,6 +121,16 @@ func (rws *WriteStorage) run() {
 	}
 }
 
+func (rws *WriteStorage) Notify() {
+	rws.mtx.Lock()
+	defer rws.mtx.Unlock()
+
+	for _, q := range rws.queues {
+		// These should all be non blocking
+		q.watcher.Notify()
+	}
+}
+
 // ApplyConfig updates the state as the new config requires.
 // Only stop & create queues which have changes.
 func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
@@ -290,6 +300,11 @@ func (t *timestampTracker) AppendHistogram(_ storage.SeriesRef, _ labels.Labels,
 func (t *timestampTracker) UpdateMetadata(_ storage.SeriesRef, _ labels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
 	// TODO: Add and increment a `metadata` field when we get around to wiring metadata in remote_write.
 	// UpadteMetadata is no-op for remote write (where timestampTracker is being used) for now.
+	return 0, nil
+}
+
+func (t *timestampTracker) AppendCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
+	// AppendCTZeroSample is no-op for remote-write for now.
 	return 0, nil
 }
 

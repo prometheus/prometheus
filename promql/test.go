@@ -49,7 +49,7 @@ var (
 )
 
 const (
-	epsilon = 0.000001 // Relative error allowed for sample values.
+	defaultEpsilon = 0.000001 // Relative error allowed for sample values.
 )
 
 var testStartTime = time.Unix(0, 0).UTC()
@@ -73,6 +73,9 @@ func LoadedStorage(t testutil.T, input string) *teststorage.TestStorage {
 
 // RunBuiltinTests runs an acceptance test suite against the provided engine.
 func RunBuiltinTests(t *testing.T, engine engineQuerier) {
+	t.Cleanup(func() { parser.EnableExperimentalFunctions = false })
+	parser.EnableExperimentalFunctions = true
+
 	files, err := fs.Glob(testsFs, "*/*.test")
 	require.NoError(t, err)
 
@@ -440,7 +443,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 			if (expH == nil) != (v.H == nil) || (expH != nil && !expH.Equals(v.H)) {
 				return fmt.Errorf("expected %v for %s but got %s", HistogramTestExpression(expH), v.Metric, HistogramTestExpression(v.H))
 			}
-			if !almostEqual(exp0.Value, v.F) {
+			if !almostEqual(exp0.Value, v.F, defaultEpsilon) {
 				return fmt.Errorf("expected %v for %s but got %v", exp0.Value, v.Metric, v.F)
 			}
 
@@ -464,7 +467,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 		if exp0.Histogram != nil {
 			return fmt.Errorf("expected Histogram %v but got scalar %s", exp0.Histogram.TestExpression(), val.String())
 		}
-		if !almostEqual(exp0.Value, val.V) {
+		if !almostEqual(exp0.Value, val.V, defaultEpsilon) {
 			return fmt.Errorf("expected Scalar %v but got %v", val.V, exp0.Value)
 		}
 
@@ -663,9 +666,9 @@ func (t *test) clear() {
 	t.context, t.cancelCtx = context.WithCancel(context.Background())
 }
 
-// samplesAlmostEqual returns true if the two sample lines only differ by a
-// small relative error in their sample value.
-func almostEqual(a, b float64) bool {
+// almostEqual returns true if a and b differ by less than their sum
+// multiplied by epsilon.
+func almostEqual(a, b, epsilon float64) bool {
 	// NaN has no equality but for testing we still want to know whether both values
 	// are NaN.
 	if math.IsNaN(a) && math.IsNaN(b) {
@@ -677,12 +680,13 @@ func almostEqual(a, b float64) bool {
 		return true
 	}
 
+	absSum := math.Abs(a) + math.Abs(b)
 	diff := math.Abs(a - b)
 
-	if a == 0 || b == 0 || diff < minNormal {
+	if a == 0 || b == 0 || absSum < minNormal {
 		return diff < epsilon*minNormal
 	}
-	return diff/(math.Abs(a)+math.Abs(b)) < epsilon
+	return diff/math.Min(absSum, math.MaxFloat64) < epsilon
 }
 
 func parseNumber(s string) (float64, error) {

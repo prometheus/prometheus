@@ -33,7 +33,6 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -475,7 +474,7 @@ func (c *concreteSeriesIterator) At() (t int64, v float64) {
 	return s.Timestamp, s.Value
 }
 
-// AtHistogram implements chunkenc.Iterator
+// AtHistogram implements chunkenc.Iterator.
 func (c *concreteSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
 	if c.curValType != chunkenc.ValHistogram {
 		panic("iterator is not on an integer histogram sample")
@@ -484,7 +483,7 @@ func (c *concreteSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
 	return h.Timestamp, HistogramProtoToHistogram(h)
 }
 
-// AtFloatHistogram implements chunkenc.Iterator
+// AtFloatHistogram implements chunkenc.Iterator.
 func (c *concreteSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
 	switch c.curValType {
 	case chunkenc.ValHistogram:
@@ -547,7 +546,7 @@ func (c *concreteSeriesIterator) Err() error {
 }
 
 // validateLabelsAndMetricName validates the label names/values and metric names returned from remote read,
-// also making sure that there are no labels with duplicate names
+// also making sure that there are no labels with duplicate names.
 func validateLabelsAndMetricName(ls []prompb.Label) error {
 	for i, l := range ls {
 		if l.Name == labels.MetricName && !model.IsValidMetricName(model.LabelValue(l.Value)) {
@@ -752,7 +751,7 @@ func spansToSpansProto(s []histogram.Span) []prompb.BucketSpan {
 	return spans
 }
 
-// LabelProtosToMetric unpack a []*prompb.Label to a model.Metric
+// LabelProtosToMetric unpack a []*prompb.Label to a model.Metric.
 func LabelProtosToMetric(labelPairs []*prompb.Label) model.Metric {
 	metric := make(model.Metric, len(labelPairs))
 	for _, l := range labelPairs {
@@ -784,7 +783,7 @@ func labelsToLabelsProto(lbls labels.Labels, buf []prompb.Label) []prompb.Label 
 }
 
 // metricTypeToMetricTypeProto transforms a Prometheus metricType into prompb metricType. Since the former is a string we need to transform it to an enum.
-func metricTypeToMetricTypeProto(t textparse.MetricType) prompb.MetricMetadata_MetricType {
+func metricTypeToMetricTypeProto(t model.MetricType) prompb.MetricMetadata_MetricType {
 	mt := strings.ToUpper(string(t))
 	v, ok := prompb.MetricMetadata_MetricType_value[mt]
 	if !ok {

@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"net"
 	"net/http"
 	"strings"
@@ -27,13 +28,17 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v4"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v2"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v4"
+	cache "github.com/Code-Hex/go-generics-cache"
+	"github.com/Code-Hex/go-generics-cache/policy/lru"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
+
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 
@@ -74,12 +79,6 @@ var (
 		AuthenticationMethod: authMethodOAuth,
 		HTTPClientConfig:     config_util.DefaultHTTPClientConfig,
 	}
-
-	failuresCount = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name: "prometheus_sd_azure_failures_total",
-			Help: "Number of Azure service discovery refresh failures.",
-		})
 )
 
 var environments = map[string]cloud.Configuration{
@@ -96,7 +95,7 @@ func CloudConfigurationFromName(name string) (cloud.Configuration, error) {
 	name = strings.ToUpper(name)
 	env, ok := environments[name]
 	if !ok {
-		return env, fmt.Errorf("There is no cloud configuration matching the name %q", name)
+		return env, fmt.Errorf("there is no cloud configuration matching the name %q", name)
 	}
 
 	return env, nil
@@ -104,7 +103,6 @@ func CloudConfigurationFromName(name string) (cloud.Configuration, error) {
 
 func init() {
 	discovery.RegisterConfig(&SDConfig{})
-	prometheus.MustRegister(failuresCount)
 }
 
 // SDConfig is the configuration for Azure based service discovery.
@@ -127,7 +125,7 @@ func (*SDConfig) Name() string { return "azure" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger), nil
+	return NewDiscovery(c, opts.Logger, opts.Registerer)
 }
 
 func validateAuthParam(param, name string) error {
@@ -145,7 +143,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-
 	if err = validateAuthParam(c.SubscriptionID, "subscription_id"); err != nil {
 		return err
 	}
@@ -171,28 +168,49 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 type Discovery struct {
 	*refresh.Discovery
-	logger log.Logger
-	cfg    *SDConfig
-	port   int
+	logger        log.Logger
+	cfg           *SDConfig
+	port          int
+	cache         *cache.Cache[string, *armnetwork.Interface]
+	failuresCount prometheus.Counter
+	cacheHitCount prometheus.Counter
 }
 
 // NewDiscovery returns a new AzureDiscovery which periodically refreshes its targets.
-func NewDiscovery(cfg *SDConfig, logger log.Logger) *Discovery {
+func NewDiscovery(cfg *SDConfig, logger log.Logger, reg prometheus.Registerer) (*Discovery, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
+	l := cache.New(cache.AsLRU[string, *armnetwork.Interface](lru.WithCapacity(5000)))
 	d := &Discovery{
 		cfg:    cfg,
 		port:   cfg.Port,
 		logger: logger,
+		cache:  l,
+		failuresCount: prometheus.NewCounter(
+			prometheus.CounterOpts{
+				Name: "prometheus_sd_azure_failures_total",
+				Help: "Number of Azure service discovery refresh failures.",
+			}),
+		cacheHitCount: prometheus.NewCounter(
+			prometheus.CounterOpts{
+				Name: "prometheus_sd_azure_cache_hit_total",
+				Help: "Number of cache hit during refresh.",
+			}),
 	}
+
 	d.Discovery = refresh.NewDiscovery(
-		logger,
-		"azure",
-		time.Duration(cfg.RefreshInterval),
-		d.refresh,
+		refresh.Options{
+			Logger:   logger,
+			Mech:     "azure",
+			Interval: time.Duration(cfg.RefreshInterval),
+			RefreshF: d.refresh,
+			Registry: reg,
+			Metrics:  []prometheus.Collector{d.failuresCount, d.cacheHitCount},
+		},
 	)
-	return d
+
+	return d, nil
 }
 
 // azureClient represents multiple Azure Resource Manager providers.
@@ -281,7 +299,7 @@ func newCredential(cfg SDConfig, policyClientOptions policy.ClientOptions) (azco
 	return credential, nil
 }
 
-// virtualMachine represents an Azure virtual machine (which can also be created by a VMSS)
+// virtualMachine represents an Azure virtual machine (which can also be created by a VMSS).
 type virtualMachine struct {
 	ID                string
 	Name              string
@@ -290,6 +308,7 @@ type virtualMachine struct {
 	Location          string
 	OsType            string
 	ScaleSet          string
+	InstanceID        string
 	Tags              map[string]*string
 	NetworkInterfaces []string
 	Size              string
@@ -314,14 +333,14 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	client, err := createAzureClient(*d.cfg)
 	if err != nil {
-		failuresCount.Inc()
+		d.failuresCount.Inc()
 		return nil, fmt.Errorf("could not create Azure client: %w", err)
 	}
 	client.logger = d.logger
 
 	machines, err := client.getVMs(ctx, d.cfg.ResourceGroup)
 	if err != nil {
-		failuresCount.Inc()
+		d.failuresCount.Inc()
 		return nil, fmt.Errorf("could not get virtual machines: %w", err)
 	}
 
@@ -330,14 +349,14 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	// Load the vms managed by scale sets.
 	scaleSets, err := client.getScaleSets(ctx, d.cfg.ResourceGroup)
 	if err != nil {
-		failuresCount.Inc()
+		d.failuresCount.Inc()
 		return nil, fmt.Errorf("could not get virtual machine scale sets: %w", err)
 	}
 
 	for _, scaleSet := range scaleSets {
 		scaleSetVms, err := client.getScaleSetVMs(ctx, scaleSet)
 		if err != nil {
-			failuresCount.Inc()
+			d.failuresCount.Inc()
 			return nil, fmt.Errorf("could not get virtual machine scale set vms: %w", err)
 		}
 		machines = append(machines, scaleSetVms...)
@@ -385,15 +404,26 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 			// Get the IP address information via separate call to the network provider.
 			for _, nicID := range vm.NetworkInterfaces {
-				networkInterface, err := client.getNetworkInterfaceByID(ctx, nicID)
-				if err != nil {
-					if errors.Is(err, errorNotFound) {
-						level.Warn(d.logger).Log("msg", "Network interface does not exist", "name", nicID, "err", err)
+				var networkInterface *armnetwork.Interface
+				if v, ok := d.getFromCache(nicID); ok {
+					networkInterface = v
+					d.cacheHitCount.Add(1)
+				} else {
+					if vm.ScaleSet == "" {
+						networkInterface, err = client.getVMNetworkInterfaceByID(ctx, nicID)
 					} else {
-						ch <- target{labelSet: nil, err: err}
+						networkInterface, err = client.getVMScaleSetVMNetworkInterfaceByID(ctx, nicID, vm.ScaleSet, vm.InstanceID)
 					}
-					// Get out of this routine because we cannot continue without a network interface.
-					return
+					if err != nil {
+						if errors.Is(err, errorNotFound) {
+							level.Warn(d.logger).Log("msg", "Network interface does not exist", "name", nicID, "err", err)
+						} else {
+							ch <- target{labelSet: nil, err: err}
+						}
+						// Get out of this routine because we cannot continue without a network interface.
+						return
+					}
+					d.addToCache(nicID, networkInterface)
 				}
 
 				if networkInterface.Properties == nil {
@@ -440,7 +470,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	var tg targetgroup.Group
 	for tgt := range ch {
 		if tgt.err != nil {
-			failuresCount.Inc()
+			d.failuresCount.Inc()
 			return nil, fmt.Errorf("unable to complete Azure service discovery: %w", tgt.err)
 		}
 		if tgt.labelSet != nil {
@@ -601,6 +631,7 @@ func mapFromVMScaleSetVM(vm armcompute.VirtualMachineScaleSetVM, scaleSetName st
 		Location:          *(vm.Location),
 		OsType:            osType,
 		ScaleSet:          scaleSetName,
+		InstanceID:        *(vm.InstanceID),
 		Tags:              tags,
 		NetworkInterfaces: networkInterfaces,
 		Size:              size,
@@ -609,22 +640,58 @@ func mapFromVMScaleSetVM(vm armcompute.VirtualMachineScaleSetVM, scaleSetName st
 
 var errorNotFound = errors.New("network interface does not exist")
 
-// getNetworkInterfaceByID gets the network interface.
+// getVMNetworkInterfaceByID gets the network interface.
 // If a 404 is returned from the Azure API, `errorNotFound` is returned.
-func (client *azureClient) getNetworkInterfaceByID(ctx context.Context, networkInterfaceID string) (*armnetwork.Interface, error) {
+func (client *azureClient) getVMNetworkInterfaceByID(ctx context.Context, networkInterfaceID string) (*armnetwork.Interface, error) {
 	r, err := newAzureResourceFromID(networkInterfaceID, client.logger)
 	if err != nil {
 		return nil, fmt.Errorf("could not parse network interface ID: %w", err)
 	}
 
-	resp, err := client.nic.Get(ctx, r.ResourceGroupName, r.Name, nil)
+	resp, err := client.nic.Get(ctx, r.ResourceGroupName, r.Name, &armnetwork.InterfacesClientGetOptions{Expand: to.Ptr("IPConfigurations/PublicIPAddress")})
 	if err != nil {
 		var responseError *azcore.ResponseError
 		if errors.As(err, &responseError) && responseError.StatusCode == http.StatusNotFound {
 			return nil, errorNotFound
 		}
-		return nil, fmt.Errorf("Failed to retrieve Interface %v with error: %w", networkInterfaceID, err)
+		return nil, fmt.Errorf("failed to retrieve Interface %v with error: %w", networkInterfaceID, err)
 	}
 
 	return &resp.Interface, nil
+}
+
+// getVMScaleSetVMNetworkInterfaceByID gets the network interface.
+// If a 404 is returned from the Azure API, `errorNotFound` is returned.
+func (client *azureClient) getVMScaleSetVMNetworkInterfaceByID(ctx context.Context, networkInterfaceID, scaleSetName, instanceID string) (*armnetwork.Interface, error) {
+	r, err := newAzureResourceFromID(networkInterfaceID, client.logger)
+	if err != nil {
+		return nil, fmt.Errorf("could not parse network interface ID: %w", err)
+	}
+
+	resp, err := client.nic.GetVirtualMachineScaleSetNetworkInterface(ctx, r.ResourceGroupName, scaleSetName, instanceID, r.Name, &armnetwork.InterfacesClientGetVirtualMachineScaleSetNetworkInterfaceOptions{Expand: to.Ptr("IPConfigurations/PublicIPAddress")})
+	if err != nil {
+		var responseError *azcore.ResponseError
+		if errors.As(err, &responseError) && responseError.StatusCode == http.StatusNotFound {
+			return nil, errorNotFound
+		}
+		return nil, fmt.Errorf("failed to retrieve Interface %v with error: %w", networkInterfaceID, err)
+	}
+
+	return &resp.Interface, nil
+}
+
+// addToCache will add the network interface information for the specified nicID.
+func (d *Discovery) addToCache(nicID string, netInt *armnetwork.Interface) {
+	random := rand.Int63n(int64(time.Duration(d.cfg.RefreshInterval * 3).Seconds()))
+	rs := time.Duration(random) * time.Second
+	exptime := time.Duration(d.cfg.RefreshInterval*10) + rs
+	d.cache.Set(nicID, netInt, cache.WithExpiration(exptime))
+	level.Debug(d.logger).Log("msg", "Adding nic", "nic", nicID, "time", exptime.Seconds())
+}
+
+// getFromCache will get the network Interface for the specified nicID
+// If the cache is disabled nothing will happen.
+func (d *Discovery) getFromCache(nicID string) (*armnetwork.Interface, bool) {
+	net, found := d.cache.Get(nicID)
+	return net, found
 }

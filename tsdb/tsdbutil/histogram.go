@@ -30,6 +30,14 @@ func GenerateTestHistograms(n int) (r []*histogram.Histogram) {
 	return r
 }
 
+func GenerateTestHistogramsWithUnknownResetHint(n int) []*histogram.Histogram {
+	hs := GenerateTestHistograms(n)
+	for i := range hs {
+		hs[i].CounterResetHint = histogram.UnknownCounterReset
+	}
+	return hs
+}
+
 // GenerateTestHistogram but it is up to the user to set any known counter reset hint.
 func GenerateTestHistogram(i int) *histogram.Histogram {
 	return &histogram.Histogram{
@@ -116,7 +124,17 @@ func SetHistogramNotCounterReset(h *histogram.Histogram) *histogram.Histogram {
 	return h
 }
 
+func SetHistogramCounterReset(h *histogram.Histogram) *histogram.Histogram {
+	h.CounterResetHint = histogram.CounterReset
+	return h
+}
+
 func SetFloatHistogramNotCounterReset(h *histogram.FloatHistogram) *histogram.FloatHistogram {
 	h.CounterResetHint = histogram.NotCounterReset
+	return h
+}
+
+func SetFloatHistogramCounterReset(h *histogram.FloatHistogram) *histogram.FloatHistogram {
+	h.CounterResetHint = histogram.CounterReset
 	return h
 }

@@ -16,6 +16,7 @@ package v1
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -33,7 +34,6 @@ import (
 	"github.com/prometheus/prometheus/util/stats"
 
 	"github.com/go-kit/log"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -44,7 +44,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/textparse"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -209,15 +209,22 @@ func (t testAlertmanagerRetriever) toFactory() func(context.Context) Alertmanage
 }
 
 type rulesRetrieverMock struct {
-	testing *testing.T
+	alertingRules []*rules.AlertingRule
+	ruleGroups    []*rules.Group
+	testing       *testing.T
 }
 
-func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
+func (m *rulesRetrieverMock) CreateAlertingRules() {
 	expr1, err := parser.ParseExpr(`absent(test_metric3) != 1`)
 	if err != nil {
 		m.testing.Fatalf("unable to parse alert expression: %s", err)
 	}
 	expr2, err := parser.ParseExpr(`up == 1`)
+	if err != nil {
+		m.testing.Fatalf("Unable to parse alert expression: %s", err)
+	}
+
+	expr3, err := parser.ParseExpr(`vector(1)`)
 	if err != nil {
 		m.testing.Fatalf("Unable to parse alert expression: %s", err)
 	}
@@ -246,15 +253,29 @@ func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
 		true,
 		log.NewNopLogger(),
 	)
+	rule3 := rules.NewAlertingRule(
+		"test_metric5",
+		expr3,
+		time.Second,
+		0,
+		labels.FromStrings("name", "tm5"),
+		labels.Labels{},
+		labels.FromStrings("name", "tm5"),
+		"",
+		false,
+		log.NewNopLogger(),
+	)
+
 	var r []*rules.AlertingRule
 	r = append(r, rule1)
 	r = append(r, rule2)
-	return r
+	r = append(r, rule3)
+	m.alertingRules = r
 }
 
-func (m rulesRetrieverMock) RuleGroups() []*rules.Group {
-	var ar rulesRetrieverMock
-	arules := ar.AlertingRules()
+func (m *rulesRetrieverMock) CreateRuleGroups() {
+	m.CreateAlertingRules()
+	arules := m.AlertingRules()
 	storage := teststorage.New(m.testing)
 	defer storage.Close()
 
@@ -271,6 +292,7 @@ func (m rulesRetrieverMock) RuleGroups() []*rules.Group {
 		Appendable: storage,
 		Context:    context.Background(),
 		Logger:     log.NewNopLogger(),
+		NotifyFunc: func(ctx context.Context, expr string, alerts ...*rules.Alert) {},
 	}
 
 	var r []rules.Rule
@@ -294,10 +316,18 @@ func (m rulesRetrieverMock) RuleGroups() []*rules.Group {
 		ShouldRestore: false,
 		Opts:          opts,
 	})
-	return []*rules.Group{group}
+	m.ruleGroups = []*rules.Group{group}
 }
 
-func (m rulesRetrieverMock) toFactory() func(context.Context) RulesRetriever {
+func (m *rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
+	return m.alertingRules
+}
+
+func (m *rulesRetrieverMock) RuleGroups() []*rules.Group {
+	return m.ruleGroups
+}
+
+func (m *rulesRetrieverMock) toFactory() func(context.Context) RulesRetriever {
 	return func(context.Context) RulesRetriever { return m }
 }
 
@@ -380,12 +410,14 @@ func TestEndpoints(t *testing.T) {
 	now := time.Now()
 
 	t.Run("local", func(t *testing.T) {
-		var algr rulesRetrieverMock
+		algr := rulesRetrieverMock{}
 		algr.testing = t
 
-		algr.AlertingRules()
+		algr.CreateAlertingRules()
+		algr.CreateRuleGroups()
 
-		algr.RuleGroups()
+		g := algr.RuleGroups()
+		g[0].Eval(context.Background(), time.Now())
 
 		testTargetRetriever := setupTestTargetRetriever(t)
 
@@ -442,12 +474,14 @@ func TestEndpoints(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		var algr rulesRetrieverMock
+		algr := rulesRetrieverMock{}
 		algr.testing = t
 
-		algr.AlertingRules()
+		algr.CreateAlertingRules()
+		algr.CreateRuleGroups()
 
-		algr.RuleGroups()
+		g := algr.RuleGroups()
+		g[0].Eval(context.Background(), time.Now())
 
 		testTargetRetriever := setupTestTargetRetriever(t)
 
@@ -838,7 +872,7 @@ func TestStats(t *testing.T) {
 			name:  "stats is blank",
 			param: "",
 			expected: func(t *testing.T, i interface{}) {
-				require.IsType(t, i, &QueryData{})
+				require.IsType(t, &QueryData{}, i)
 				qd := i.(*QueryData)
 				require.Nil(t, qd.Stats)
 			},
@@ -847,7 +881,7 @@ func TestStats(t *testing.T) {
 			name:  "stats is true",
 			param: "true",
 			expected: func(t *testing.T, i interface{}) {
-				require.IsType(t, i, &QueryData{})
+				require.IsType(t, &QueryData{}, i)
 				qd := i.(*QueryData)
 				require.NotNil(t, qd.Stats)
 				qs := qd.Stats.Builtin()
@@ -862,7 +896,7 @@ func TestStats(t *testing.T) {
 			name:  "stats is all",
 			param: "all",
 			expected: func(t *testing.T, i interface{}) {
-				require.IsType(t, i, &QueryData{})
+				require.IsType(t, &QueryData{}, i)
 				qd := i.(*QueryData)
 				require.NotNil(t, qd.Stats)
 				qs := qd.Stats.Builtin()
@@ -883,12 +917,12 @@ func TestStats(t *testing.T) {
 			},
 			param: "known",
 			expected: func(t *testing.T, i interface{}) {
-				require.IsType(t, i, &QueryData{})
+				require.IsType(t, &QueryData{}, i)
 				qd := i.(*QueryData)
 				require.NotNil(t, qd.Stats)
 				j, err := json.Marshal(qd.Stats)
 				require.NoError(t, err)
-				require.JSONEq(t, string(j), `{"custom":"Custom Value"}`)
+				require.JSONEq(t, `{"custom":"Custom Value"}`, string(j))
 			},
 		},
 	} {
@@ -1036,6 +1070,36 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 		sorter                func(interface{})
 		metadata              []targetMetadata
 		exemplars             []exemplar.QueryResult
+		zeroFunc              func(interface{})
+	}
+
+	rulesZeroFunc := func(i interface{}) {
+		if i != nil {
+			v := i.(*RuleDiscovery)
+			for _, ruleGroup := range v.RuleGroups {
+				ruleGroup.EvaluationTime = float64(0)
+				ruleGroup.LastEvaluation = time.Time{}
+				for k, rule := range ruleGroup.Rules {
+					switch r := rule.(type) {
+					case AlertingRule:
+						r.LastEvaluation = time.Time{}
+						r.EvaluationTime = float64(0)
+						r.LastError = ""
+						r.Health = "ok"
+						for _, alert := range r.Alerts {
+							alert.ActiveAt = nil
+						}
+						ruleGroup.Rules[k] = r
+					case RecordingRule:
+						r.LastEvaluation = time.Time{}
+						r.EvaluationTime = float64(0)
+						r.LastError = ""
+						r.Health = "ok"
+						ruleGroup.Rules[k] = r
+					}
+				}
+			}
+		}
 	}
 
 	tests := []test{
@@ -1520,7 +1584,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					metadata: []scrape.MetricMetadata{
 						{
 							Metric: "go_threads",
-							Type:   textparse.MetricTypeGauge,
+							Type:   model.MetricTypeGauge,
 							Help:   "Number of OS threads created.",
 							Unit:   "",
 						},
@@ -1533,7 +1597,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						"job": "test",
 					}),
 					Help: "Number of OS threads created.",
-					Type: textparse.MetricTypeGauge,
+					Type: model.MetricTypeGauge,
 					Unit: "",
 				},
 			},
@@ -1550,7 +1614,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					metadata: []scrape.MetricMetadata{
 						{
 							Metric: "prometheus_tsdb_storage_blocks_bytes",
-							Type:   textparse.MetricTypeGauge,
+							Type:   model.MetricTypeGauge,
 							Help:   "The number of bytes that are currently used for local storage by all blocks.",
 							Unit:   "",
 						},
@@ -1564,7 +1628,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					}),
 					Metric: "prometheus_tsdb_storage_blocks_bytes",
 					Help:   "The number of bytes that are currently used for local storage by all blocks.",
-					Type:   textparse.MetricTypeGauge,
+					Type:   model.MetricTypeGauge,
 					Unit:   "",
 				},
 			},
@@ -1578,7 +1642,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					metadata: []scrape.MetricMetadata{
 						{
 							Metric: "go_threads",
-							Type:   textparse.MetricTypeGauge,
+							Type:   model.MetricTypeGauge,
 							Help:   "Number of OS threads created.",
 							Unit:   "",
 						},
@@ -1589,7 +1653,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					metadata: []scrape.MetricMetadata{
 						{
 							Metric: "prometheus_tsdb_storage_blocks_bytes",
-							Type:   textparse.MetricTypeGauge,
+							Type:   model.MetricTypeGauge,
 							Help:   "The number of bytes that are currently used for local storage by all blocks.",
 							Unit:   "",
 						},
@@ -1603,7 +1667,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					}),
 					Metric: "go_threads",
 					Help:   "Number of OS threads created.",
-					Type:   textparse.MetricTypeGauge,
+					Type:   model.MetricTypeGauge,
 					Unit:   "",
 				},
 				{
@@ -1612,7 +1676,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					}),
 					Metric: "prometheus_tsdb_storage_blocks_bytes",
 					Help:   "The number of bytes that are currently used for local storage by all blocks.",
-					Type:   textparse.MetricTypeGauge,
+					Type:   model.MetricTypeGauge,
 					Unit:   "",
 				},
 			},
@@ -1655,22 +1719,22 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					metadata: []scrape.MetricMetadata{
 						{
 							Metric: "prometheus_engine_query_duration_seconds",
-							Type:   textparse.MetricTypeSummary,
+							Type:   model.MetricTypeSummary,
 							Help:   "Query timings",
 							Unit:   "",
 						},
 						{
 							Metric: "go_info",
-							Type:   textparse.MetricTypeGauge,
+							Type:   model.MetricTypeGauge,
 							Help:   "Information about the Go environment.",
 							Unit:   "",
 						},
 					},
 				},
 			},
-			response: map[string][]metadata{
-				"prometheus_engine_query_duration_seconds": {{textparse.MetricTypeSummary, "Query timings", ""}},
-				"go_info": {{textparse.MetricTypeGauge, "Information about the Go environment.", ""}},
+			response: map[string][]metadata.Metadata{
+				"prometheus_engine_query_duration_seconds": {{Type: model.MetricTypeSummary, Help: "Query timings", Unit: ""}},
+				"go_info": {{Type: model.MetricTypeGauge, Help: "Information about the Go environment.", Unit: ""}},
 			},
 		},
 		// With duplicate metadata for a metric that comes from different targets.
@@ -1682,7 +1746,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					metadata: []scrape.MetricMetadata{
 						{
 							Metric: "go_threads",
-							Type:   textparse.MetricTypeGauge,
+							Type:   model.MetricTypeGauge,
 							Help:   "Number of OS threads created",
 							Unit:   "",
 						},
@@ -1693,15 +1757,15 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					metadata: []scrape.MetricMetadata{
 						{
 							Metric: "go_threads",
-							Type:   textparse.MetricTypeGauge,
+							Type:   model.MetricTypeGauge,
 							Help:   "Number of OS threads created",
 							Unit:   "",
 						},
 					},
 				},
 			},
-			response: map[string][]metadata{
-				"go_threads": {{textparse.MetricTypeGauge, "Number of OS threads created", ""}},
+			response: map[string][]metadata.Metadata{
+				"go_threads": {{Type: model.MetricTypeGauge, Help: "Number of OS threads created"}},
 			},
 		},
 		// With non-duplicate metadata for the same metric from different targets.
@@ -1713,7 +1777,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					metadata: []scrape.MetricMetadata{
 						{
 							Metric: "go_threads",
-							Type:   textparse.MetricTypeGauge,
+							Type:   model.MetricTypeGauge,
 							Help:   "Number of OS threads created",
 							Unit:   "",
 						},
@@ -1724,21 +1788,21 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					metadata: []scrape.MetricMetadata{
 						{
 							Metric: "go_threads",
-							Type:   textparse.MetricTypeGauge,
+							Type:   model.MetricTypeGauge,
 							Help:   "Number of OS threads that were created.",
 							Unit:   "",
 						},
 					},
 				},
 			},
-			response: map[string][]metadata{
+			response: map[string][]metadata.Metadata{
 				"go_threads": {
-					{textparse.MetricTypeGauge, "Number of OS threads created", ""},
-					{textparse.MetricTypeGauge, "Number of OS threads that were created.", ""},
+					{Type: model.MetricTypeGauge, Help: "Number of OS threads created"},
+					{Type: model.MetricTypeGauge, Help: "Number of OS threads that were created."},
 				},
 			},
 			sorter: func(m interface{}) {
-				v := m.(map[string][]metadata)["go_threads"]
+				v := m.(map[string][]metadata.Metadata)["go_threads"]
 
 				sort.Slice(v, func(i, j int) bool {
 					return v[i].Help < v[j].Help
@@ -1757,13 +1821,13 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					metadata: []scrape.MetricMetadata{
 						{
 							Metric: "go_threads",
-							Type:   textparse.MetricTypeGauge,
+							Type:   model.MetricTypeGauge,
 							Help:   "Number of OS threads created",
 							Unit:   "",
 						},
 						{
 							Metric: "prometheus_engine_query_duration_seconds",
-							Type:   textparse.MetricTypeSummary,
+							Type:   model.MetricTypeSummary,
 							Help:   "Query Timmings.",
 							Unit:   "",
 						},
@@ -1774,7 +1838,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					metadata: []scrape.MetricMetadata{
 						{
 							Metric: "go_gc_duration_seconds",
-							Type:   textparse.MetricTypeSummary,
+							Type:   model.MetricTypeSummary,
 							Help:   "A summary of the GC invocation durations.",
 							Unit:   "",
 						},
@@ -1793,31 +1857,31 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					metadata: []scrape.MetricMetadata{
 						{
 							Metric: "go_threads",
-							Type:   textparse.MetricTypeGauge,
+							Type:   model.MetricTypeGauge,
 							Help:   "Number of OS threads created",
 							Unit:   "",
 						},
 						{
 							Metric: "go_threads",
-							Type:   textparse.MetricTypeGauge,
+							Type:   model.MetricTypeGauge,
 							Help:   "Repeated metadata",
 							Unit:   "",
 						},
 						{
 							Metric: "go_gc_duration_seconds",
-							Type:   textparse.MetricTypeSummary,
+							Type:   model.MetricTypeSummary,
 							Help:   "A summary of the GC invocation durations.",
 							Unit:   "",
 						},
 					},
 				},
 			},
-			response: map[string][]metadata{
+			response: map[string][]metadata.Metadata{
 				"go_threads": {
-					{textparse.MetricTypeGauge, "Number of OS threads created", ""},
+					{Type: model.MetricTypeGauge, Help: "Number of OS threads created"},
 				},
 				"go_gc_duration_seconds": {
-					{textparse.MetricTypeSummary, "A summary of the GC invocation durations.", ""},
+					{Type: model.MetricTypeSummary, Help: "A summary of the GC invocation durations."},
 				},
 			},
 		},
@@ -1831,19 +1895,19 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					metadata: []scrape.MetricMetadata{
 						{
 							Metric: "go_threads",
-							Type:   textparse.MetricTypeGauge,
+							Type:   model.MetricTypeGauge,
 							Help:   "Number of OS threads created",
 							Unit:   "",
 						},
 						{
 							Metric: "go_threads",
-							Type:   textparse.MetricTypeGauge,
+							Type:   model.MetricTypeGauge,
 							Help:   "Repeated metadata",
 							Unit:   "",
 						},
 						{
 							Metric: "go_gc_duration_seconds",
-							Type:   textparse.MetricTypeSummary,
+							Type:   model.MetricTypeSummary,
 							Help:   "A summary of the GC invocation durations.",
 							Unit:   "",
 						},
@@ -1864,19 +1928,19 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					metadata: []scrape.MetricMetadata{
 						{
 							Metric: "go_threads",
-							Type:   textparse.MetricTypeGauge,
+							Type:   model.MetricTypeGauge,
 							Help:   "Number of OS threads created",
 							Unit:   "",
 						},
 						{
 							Metric: "go_threads",
-							Type:   textparse.MetricTypeGauge,
+							Type:   model.MetricTypeGauge,
 							Help:   "Repeated metadata",
 							Unit:   "",
 						},
 						{
 							Metric: "go_gc_duration_seconds",
-							Type:   textparse.MetricTypeSummary,
+							Type:   model.MetricTypeSummary,
 							Help:   "A summary of the GC invocation durations.",
 							Unit:   "",
 						},
@@ -1887,13 +1951,13 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					metadata: []scrape.MetricMetadata{
 						{
 							Metric: "go_threads",
-							Type:   textparse.MetricTypeGauge,
+							Type:   model.MetricTypeGauge,
 							Help:   "Number of OS threads created, but from a different target",
 							Unit:   "",
 						},
 						{
 							Metric: "go_gc_duration_seconds",
-							Type:   textparse.MetricTypeSummary,
+							Type:   model.MetricTypeSummary,
 							Help:   "A summary of the GC invocation durations, but from a different target.",
 							Unit:   "",
 						},
@@ -1913,7 +1977,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					metadata: []scrape.MetricMetadata{
 						{
 							Metric: "go_threads",
-							Type:   textparse.MetricTypeGauge,
+							Type:   model.MetricTypeGauge,
 							Help:   "Number of OS threads created",
 							Unit:   "",
 						},
@@ -1924,27 +1988,27 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					metadata: []scrape.MetricMetadata{
 						{
 							Metric: "go_gc_duration_seconds",
-							Type:   textparse.MetricTypeSummary,
+							Type:   model.MetricTypeSummary,
 							Help:   "A summary of the GC invocation durations.",
 							Unit:   "",
 						},
 						{
 							Metric: "go_threads",
-							Type:   textparse.MetricTypeGauge,
+							Type:   model.MetricTypeGauge,
 							Help:   "Number of OS threads that were created.",
 							Unit:   "",
 						},
 					},
 				},
 			},
-			response: map[string][]metadata{
+			response: map[string][]metadata.Metadata{
 				"go_threads": {
-					{textparse.MetricTypeGauge, "Number of OS threads created", ""},
-					{textparse.MetricTypeGauge, "Number of OS threads that were created.", ""},
+					{Type: model.MetricTypeGauge, Help: "Number of OS threads created"},
+					{Type: model.MetricTypeGauge, Help: "Number of OS threads that were created."},
 				},
 			},
 			sorter: func(m interface{}) {
-				v := m.(map[string][]metadata)["go_threads"]
+				v := m.(map[string][]metadata.Metadata)["go_threads"]
 
 				sort.Slice(v, func(i, j int) bool {
 					return v[i].Help < v[j].Help
@@ -1961,19 +2025,19 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					metadata: []scrape.MetricMetadata{
 						{
 							Metric: "go_threads",
-							Type:   textparse.MetricTypeGauge,
+							Type:   model.MetricTypeGauge,
 							Help:   "Number of OS threads created",
 							Unit:   "",
 						},
 					},
 				},
 			},
-			response: map[string][]metadata{},
+			response: map[string][]metadata.Metadata{},
 		},
 		// With no available metadata.
 		{
 			endpoint: api.metricMetadata,
-			response: map[string][]metadata{},
+			response: map[string][]metadata.Metadata{},
 		},
 		{
 			endpoint: api.serveConfig,
@@ -1988,7 +2052,22 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 		{
 			endpoint: api.alerts,
 			response: &AlertDiscovery{
-				Alerts: []*Alert{},
+				Alerts: []*Alert{
+					{
+						Labels:      labels.FromStrings("alertname", "test_metric5", "name", "tm5"),
+						Annotations: labels.Labels{},
+						State:       "pending",
+						Value:       "1e+00",
+					},
+				},
+			},
+			zeroFunc: func(i interface{}) {
+				if i != nil {
+					v := i.(*AlertDiscovery)
+					for _, alert := range v.Alerts {
+						alert.ActiveAt = nil
+					}
+				}
 			},
 		},
 		{
@@ -2009,7 +2088,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Labels:      labels.Labels{},
 								Annotations: labels.Labels{},
 								Alerts:      []*Alert{},
-								Health:      "unknown",
+								Health:      "ok",
 								Type:        "alerting",
 							},
 							AlertingRule{
@@ -2020,20 +2099,98 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Labels:      labels.Labels{},
 								Annotations: labels.Labels{},
 								Alerts:      []*Alert{},
-								Health:      "unknown",
+								Health:      "ok",
 								Type:        "alerting",
+							},
+							AlertingRule{
+								State:       "pending",
+								Name:        "test_metric5",
+								Query:       "vector(1)",
+								Duration:    1,
+								Labels:      labels.FromStrings("name", "tm5"),
+								Annotations: labels.Labels{},
+								Alerts: []*Alert{
+									{
+										Labels:      labels.FromStrings("alertname", "test_metric5", "name", "tm5"),
+										Annotations: labels.Labels{},
+										State:       "pending",
+										Value:       "1e+00",
+									},
+								},
+								Health: "ok",
+								Type:   "alerting",
 							},
 							RecordingRule{
 								Name:   "recording-rule-1",
 								Query:  "vector(1)",
 								Labels: labels.Labels{},
-								Health: "unknown",
+								Health: "ok",
 								Type:   "recording",
 							},
 						},
 					},
 				},
 			},
+			zeroFunc: rulesZeroFunc,
+		},
+		{
+			endpoint: api.rules,
+			query: url.Values{
+				"exclude_alerts": []string{"true"},
+			},
+			response: &RuleDiscovery{
+				RuleGroups: []*RuleGroup{
+					{
+						Name:     "grp",
+						File:     "/path/to/file",
+						Interval: 1,
+						Limit:    0,
+						Rules: []Rule{
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric3",
+								Query:       "absent(test_metric3) != 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      nil,
+								Health:      "ok",
+								Type:        "alerting",
+							},
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric4",
+								Query:       "up == 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      nil,
+								Health:      "ok",
+								Type:        "alerting",
+							},
+							AlertingRule{
+								State:       "pending",
+								Name:        "test_metric5",
+								Query:       "vector(1)",
+								Duration:    1,
+								Labels:      labels.FromStrings("name", "tm5"),
+								Annotations: labels.Labels{},
+								Alerts:      nil,
+								Health:      "ok",
+								Type:        "alerting",
+							},
+							RecordingRule{
+								Name:   "recording-rule-1",
+								Query:  "vector(1)",
+								Labels: labels.Labels{},
+								Health: "ok",
+								Type:   "recording",
+							},
+						},
+					},
+				},
+			},
+			zeroFunc: rulesZeroFunc,
 		},
 		{
 			endpoint: api.rules,
@@ -2056,7 +2213,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Labels:      labels.Labels{},
 								Annotations: labels.Labels{},
 								Alerts:      []*Alert{},
-								Health:      "unknown",
+								Health:      "ok",
 								Type:        "alerting",
 							},
 							AlertingRule{
@@ -2067,13 +2224,32 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Labels:      labels.Labels{},
 								Annotations: labels.Labels{},
 								Alerts:      []*Alert{},
-								Health:      "unknown",
+								Health:      "ok",
 								Type:        "alerting",
+							},
+							AlertingRule{
+								State:       "pending",
+								Name:        "test_metric5",
+								Query:       "vector(1)",
+								Duration:    1,
+								Labels:      labels.FromStrings("name", "tm5"),
+								Annotations: labels.Labels{},
+								Alerts: []*Alert{
+									{
+										Labels:      labels.FromStrings("alertname", "test_metric5", "name", "tm5"),
+										Annotations: labels.Labels{},
+										State:       "pending",
+										Value:       "1e+00",
+									},
+								},
+								Health: "ok",
+								Type:   "alerting",
 							},
 						},
 					},
 				},
 			},
+			zeroFunc: rulesZeroFunc,
 		},
 		{
 			endpoint: api.rules,
@@ -2092,13 +2268,14 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Name:   "recording-rule-1",
 								Query:  "vector(1)",
 								Labels: labels.Labels{},
-								Health: "unknown",
+								Health: "ok",
 								Type:   "recording",
 							},
 						},
 					},
 				},
 			},
+			zeroFunc: rulesZeroFunc,
 		},
 		{
 			endpoint: api.rules,
@@ -2119,13 +2296,14 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Labels:      labels.Labels{},
 								Annotations: labels.Labels{},
 								Alerts:      []*Alert{},
-								Health:      "unknown",
+								Health:      "ok",
 								Type:        "alerting",
 							},
 						},
 					},
 				},
 			},
+			zeroFunc: rulesZeroFunc,
 		},
 		{
 			endpoint: api.rules,
@@ -2151,13 +2329,14 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Labels:      labels.Labels{},
 								Annotations: labels.Labels{},
 								Alerts:      []*Alert{},
-								Health:      "unknown",
+								Health:      "ok",
 								Type:        "alerting",
 							},
 						},
 					},
 				},
 			},
+			zeroFunc: rulesZeroFunc,
 		},
 		{
 			endpoint: api.queryExemplars,
@@ -2696,6 +2875,9 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 							assertAPIResponseMetadataLen(t, res.data, test.responseMetadataTotal)
 						}
 					} else {
+						if test.zeroFunc != nil {
+							test.zeroFunc(res.data)
+						}
 						assertAPIResponse(t, res.data, test.response)
 					}
 				})
@@ -2749,7 +2931,7 @@ func assertAPIResponseMetadataLen(t *testing.T, got interface{}, expLen int) {
 	t.Helper()
 
 	var gotLen int
-	response := got.(map[string][]metadata)
+	response := got.(map[string][]metadata.Metadata)
 	for _, m := range response {
 		gotLen += len(m)
 	}
@@ -2792,7 +2974,7 @@ func (f *fakeDB) WALReplayStatus() (tsdb.WALReplayStatus, error) {
 }
 
 func TestAdminEndpoints(t *testing.T) {
-	tsdb, tsdbWithError, tsdbNotReady := &fakeDB{}, &fakeDB{err: errors.New("some error")}, &fakeDB{err: errors.Wrap(tsdb.ErrNotReady, "wrap")}
+	tsdb, tsdbWithError, tsdbNotReady := &fakeDB{}, &fakeDB{err: errors.New("some error")}, &fakeDB{err: fmt.Errorf("wrap: %w", tsdb.ErrNotReady)}
 	snapshotAPI := func(api *API) apiFunc { return api.snapshot }
 	cleanAPI := func(api *API) apiFunc { return api.cleanTombstones }
 	deleteAPI := func(api *API) apiFunc { return api.deleteSeries }
@@ -3172,7 +3354,7 @@ func TestParseTimeParam(t *testing.T) {
 				asTime: time.Time{},
 				asError: func() error {
 					_, err := parseTime("baz")
-					return errors.Wrapf(err, "Invalid time value for '%s'", "foo")
+					return fmt.Errorf("Invalid time value for '%s': %w", "foo", err)
 				},
 			},
 		},

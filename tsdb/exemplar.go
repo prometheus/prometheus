@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"unicode/utf8"
 
@@ -245,11 +246,26 @@ func (ce *CircularExemplarStorage) validateExemplar(key []byte, e exemplar.Exemp
 
 	// Check for duplicate vs last stored exemplar for this series.
 	// NB these are expected, and appending them is a no-op.
-	if ce.exemplars[idx.newest].exemplar.Equals(e) {
+	// For floats and classic histograms, there is only 1 exemplar per series,
+	// so this is sufficient. For native histograms with multiple exemplars per series,
+	// we have another check below.
+	newestExemplar := ce.exemplars[idx.newest].exemplar
+	if newestExemplar.Equals(e) {
 		return storage.ErrDuplicateExemplar
 	}
 
-	if e.Ts <= ce.exemplars[idx.newest].exemplar.Ts {
+	// Since during the scrape the exemplars are sorted first by timestamp, then value, then labels,
+	// if any of these conditions are true, we know that the exemplar is either a duplicate
+	// of a previous one (but not the most recent one as that is checked above) or out of order.
+	// We now allow exemplars with duplicate timestamps as long as they have different values and/or labels
+	// since that can happen for different buckets of a native histogram.
+	// We do not distinguish between duplicates and out of order as iterating through the exemplars
+	// to check for that would be expensive (versus just comparing with the most recent one) especially
+	// since this is run under a lock, and not worth it as we just need to return an error so we do not
+	// append the exemplar.
+	if e.Ts < newestExemplar.Ts ||
+		(e.Ts == newestExemplar.Ts && e.Value < newestExemplar.Value) ||
+		(e.Ts == newestExemplar.Ts && e.Value == newestExemplar.Value && e.Labels.Hash() < newestExemplar.Labels.Hash()) {
 		if appended {
 			ce.metrics.outOfOrderExemplars.Inc()
 		}
@@ -348,7 +364,7 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 
 	err := ce.validateExemplar(seriesLabels, e, true)
 	if err != nil {
-		if err == storage.ErrDuplicateExemplar {
+		if errors.Is(err, storage.ErrDuplicateExemplar) {
 			// Duplicate exemplar, noop.
 			return nil
 		}

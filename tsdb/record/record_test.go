@@ -18,7 +18,6 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -159,7 +158,7 @@ func TestRecord_EncodeDecode(t *testing.T) {
 		floatHistograms[i] = RefFloatHistogramSample{
 			Ref: h.Ref,
 			T:   h.T,
-			FH:  h.H.ToFloat(),
+			FH:  h.H.ToFloat(nil),
 		}
 	}
 	decFloatHistograms, err := dec.FloatHistogramSamples(enc.FloatHistogramSamples(floatHistograms, nil), nil)
@@ -209,7 +208,7 @@ func TestRecord_Corrupted(t *testing.T) {
 
 		corrupted := enc.Samples(samples, nil)[:8]
 		_, err := dec.Samples(corrupted, nil)
-		require.Equal(t, errors.Cause(err), encoding.ErrInvalidSize)
+		require.ErrorIs(t, err, encoding.ErrInvalidSize)
 	})
 
 	t.Run("Test corrupted tombstone record", func(t *testing.T) {
@@ -232,7 +231,7 @@ func TestRecord_Corrupted(t *testing.T) {
 
 		corrupted := enc.Exemplars(exemplars, nil)[:8]
 		_, err := dec.Exemplars(corrupted, nil)
-		require.Equal(t, errors.Cause(err), encoding.ErrInvalidSize)
+		require.ErrorIs(t, err, encoding.ErrInvalidSize)
 	})
 
 	t.Run("Test corrupted metadata record", func(t *testing.T) {
@@ -242,7 +241,7 @@ func TestRecord_Corrupted(t *testing.T) {
 
 		corrupted := enc.Metadata(meta, nil)[:8]
 		_, err := dec.Metadata(corrupted, nil)
-		require.Equal(t, errors.Cause(err), encoding.ErrInvalidSize)
+		require.ErrorIs(t, err, encoding.ErrInvalidSize)
 	})
 
 	t.Run("Test corrupted histogram record", func(t *testing.T) {
@@ -267,7 +266,7 @@ func TestRecord_Corrupted(t *testing.T) {
 
 		corrupted := enc.HistogramSamples(histograms, nil)[:8]
 		_, err := dec.HistogramSamples(corrupted, nil)
-		require.Equal(t, errors.Cause(err), encoding.ErrInvalidSize)
+		require.ErrorIs(t, err, encoding.ErrInvalidSize)
 	})
 }
 

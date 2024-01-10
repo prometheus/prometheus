@@ -16,7 +16,7 @@ import {
   decodePanelOptionsFromQueryString,
   parsePrometheusFloat,
 } from '.';
-import { PanelType } from '../pages/graph/Panel';
+import { GraphDisplayMode, PanelType } from '../pages/graph/Panel';
 
 describe('Utils', () => {
   describe('escapeHTML', (): void => {
@@ -210,7 +210,7 @@ describe('Utils', () => {
           expr: 'rate(node_cpu_seconds_total{mode="system"}[1m])',
           range: 60 * 60 * 1000,
           resolution: null,
-          stacked: false,
+          displayMode: GraphDisplayMode.Lines,
           type: PanelType.Graph,
         },
       },
@@ -221,13 +221,12 @@ describe('Utils', () => {
           expr: 'node_filesystem_avail_bytes',
           range: 60 * 60 * 1000,
           resolution: null,
-          stacked: false,
+          displayMode: GraphDisplayMode.Lines,
           type: PanelType.Table,
         },
       },
     ];
-    const query =
-      '?g0.expr=rate(node_cpu_seconds_total%7Bmode%3D%22system%22%7D%5B1m%5D)&g0.tab=0&g0.stacked=0&g0.show_exemplars=0&g0.range_input=1h&g0.end_input=2019-10-25%2023%3A37%3A00&g0.moment_input=2019-10-25%2023%3A37%3A00&g1.expr=node_filesystem_avail_bytes&g1.tab=1&g1.stacked=0&g1.show_exemplars=0&g1.range_input=1h';
+    const query = `?g0.expr=rate(node_cpu_seconds_total%7Bmode%3D%22system%22%7D%5B1m%5D)&g0.tab=0&g0.display_mode=${GraphDisplayMode.Lines}&g0.show_exemplars=0&g0.range_input=1h&g0.end_input=2019-10-25%2023%3A37%3A00&g0.moment_input=2019-10-25%2023%3A37%3A00&g1.expr=node_filesystem_avail_bytes&g1.tab=1&g1.display_mode=${GraphDisplayMode.Lines}&g1.show_exemplars=0&g1.range_input=1h`;
 
     describe('decodePanelOptionsFromQueryString', () => {
       it('returns [] when query is empty', () => {
@@ -246,7 +245,7 @@ describe('Utils', () => {
         expect(parseOption('expr=foo')).toEqual({ expr: 'foo' });
       });
       it('should parse stacked', () => {
-        expect(parseOption('stacked=1')).toEqual({ stacked: true });
+        expect(parseOption('stacked=1')).toEqual({ displayMode: GraphDisplayMode.Stacked });
       });
       it('should parse end_input', () => {
         expect(parseOption('end_input=2019-10-25%2023%3A37')).toEqual({ endTime: moment.utc('2019-10-25 23:37').valueOf() });
@@ -294,14 +293,16 @@ describe('Utils', () => {
             options: {
               expr: 'foo',
               type: PanelType.Graph,
-              stacked: true,
+              displayMode: GraphDisplayMode.Stacked,
               showExemplars: true,
               range: 0,
               endTime: null,
               resolution: 1,
             },
           })
-        ).toEqual('g0.expr=foo&g0.tab=0&g0.stacked=1&g0.show_exemplars=1&g0.range_input=0s&g0.step_input=1');
+        ).toEqual(
+          `g0.expr=foo&g0.tab=0&g0.display_mode=${GraphDisplayMode.Stacked}&g0.show_exemplars=1&g0.range_input=0s&g0.step_input=1`
+        );
       });
     });
 

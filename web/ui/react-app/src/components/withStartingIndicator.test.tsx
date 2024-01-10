@@ -2,7 +2,7 @@ import * as React from 'react';
 import { shallow } from 'enzyme';
 import { WALReplayData } from '../types/types';
 import { StartingContent } from './withStartingIndicator';
-import { Progress } from 'reactstrap';
+import { Alert, Progress } from 'reactstrap';
 
 describe('Starting', () => {
   describe('progress bar', () => {
@@ -51,6 +51,18 @@ describe('Starting', () => {
       const progress = starting.find(Progress);
       expect(progress.prop('value')).toBe(21);
       expect(progress.prop('color')).toBe('success');
+    });
+
+    it('shows unexpected error', () => {
+      const status: WALReplayData = {
+        min: 0,
+        max: 20,
+        current: 0,
+      };
+
+      const starting = shallow(<StartingContent status={status} isUnexpected={true} />);
+      const alert = starting.find(Alert);
+      expect(alert.prop('color')).toBe('danger');
     });
   });
 });

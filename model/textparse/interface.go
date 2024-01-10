@@ -16,6 +16,8 @@ package textparse
 import (
 	"mime"
 
+	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -42,7 +44,7 @@ type Parser interface {
 	// Type returns the metric name and type in the current entry.
 	// Must only be called after Next returned a type entry.
 	// The returned byte slices become invalid after the next call to Next.
-	Type() ([]byte, MetricType)
+	Type() ([]byte, model.MetricType)
 
 	// Unit returns the metric name and unit in the current entry.
 	// Must only be called after Next returned a unit entry.
@@ -63,6 +65,11 @@ type Parser interface {
 	// for the same sample. It returns false once all exemplars are
 	// retrieved (including the case where no exemplars exist at all).
 	Exemplar(l *exemplar.Exemplar) bool
+
+	// CreatedTimestamp returns the created timestamp (in milliseconds) for the
+	// current sample. It returns nil if it is unknown e.g. if it wasn't set,
+	// if the scrape protocol or metric type does not support created timestamps.
+	CreatedTimestamp() *int64
 
 	// Next advances the parser to the next sample. It returns false if no
 	// more samples were read or an error occurred.
@@ -103,18 +110,4 @@ const (
 	EntryComment   Entry = 3
 	EntryUnit      Entry = 4
 	EntryHistogram Entry = 5 // A series with a native histogram as a value.
-)
-
-// MetricType represents metric type values.
-type MetricType string
-
-const (
-	MetricTypeCounter        = MetricType("counter")
-	MetricTypeGauge          = MetricType("gauge")
-	MetricTypeHistogram      = MetricType("histogram")
-	MetricTypeGaugeHistogram = MetricType("gaugehistogram")
-	MetricTypeSummary        = MetricType("summary")
-	MetricTypeInfo           = MetricType("info")
-	MetricTypeStateset       = MetricType("stateset")
-	MetricTypeUnknown        = MetricType("unknown")
 )

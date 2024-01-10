@@ -23,7 +23,6 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -230,7 +229,7 @@ func TestCheckpoint(t *testing.T) {
 			// Only the new checkpoint should be left.
 			files, err := os.ReadDir(dir)
 			require.NoError(t, err)
-			require.Equal(t, 1, len(files))
+			require.Len(t, files, 1)
 			require.Equal(t, "checkpoint.00000106", files[0].Name())
 
 			sr, err := NewSegmentsReader(filepath.Join(dir, "checkpoint.00000106"))
@@ -325,7 +324,7 @@ func TestCheckpointNoTmpFolderAfterError(t *testing.T) {
 	// Walk the wlog dir to make sure there are no tmp folder left behind after the error.
 	err = filepath.Walk(w.Dir(), func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return errors.Wrapf(err, "access err %q: %v", path, err)
+			return fmt.Errorf("access err %q: %w", path, err)
 		}
 		if info.IsDir() && strings.HasSuffix(info.Name(), ".tmp") {
 			return fmt.Errorf("wlog dir contains temporary folder:%s", info.Name())
