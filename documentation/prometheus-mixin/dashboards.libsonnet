@@ -37,12 +37,12 @@ local template = grafana.template;
         g.row('Discovery')
         .addPanel(
           g.panel('Target Sync') +
-          g.queryPanel('sum(rate(prometheus_target_sync_length_seconds_sum{cluster=~"$cluster",job=~"$job",instance=~"$instance"}[5m])) by (cluster, job, scrape_job, instance) * 1e3', '{{cluster}}:{{job}}:{{scrape_job}}') +
+          g.queryPanel('sum(rate(prometheus_target_sync_length_seconds_sum{cluster=~"$cluster",job=~"$job",instance=~"$instance"}[5m])) by (cluster, job, scrape_job, instance) * 1e3', '{{cluster}}:{{job}}:{{instance}}:{{scrape_job}}') +
           { yaxes: g.yaxes('ms') }
         )
         .addPanel(
           g.panel('Targets') +
-          g.queryPanel('sum by (cluster, job, instance) (prometheus_sd_discovered_targets{cluster=~"$cluster", job=~"$job",instance=~"$instance"})', '{{cluster}}:{{job}}') +
+          g.queryPanel('sum by (cluster, job, instance) (prometheus_sd_discovered_targets{cluster=~"$cluster", job=~"$job",instance=~"$instance"})', '{{cluster}}:{{job}}:{{instance}}') +
           g.stack
         )
       )
@@ -50,7 +50,7 @@ local template = grafana.template;
         g.row('Retrieval')
         .addPanel(
           g.panel('Average Scrape Interval Duration') +
-          g.queryPanel('rate(prometheus_target_interval_length_seconds_sum{cluster=~"$cluster", job=~"$job",instance=~"$instance"}[5m]) / rate(prometheus_target_interval_length_seconds_count{cluster=~"$cluster", job=~"$job",instance=~"$instance"}[5m]) * 1e3', '{{cluster}}:{{job}} {{interval}} configured') +
+          g.queryPanel('rate(prometheus_target_interval_length_seconds_sum{cluster=~"$cluster", job=~"$job",instance=~"$instance"}[5m]) / rate(prometheus_target_interval_length_seconds_count{cluster=~"$cluster", job=~"$job",instance=~"$instance"}[5m]) * 1e3', '{{cluster}}:{{job}}:{{instance}} {{interval}} configured') +
           { yaxes: g.yaxes('ms') }
         )
         .addPanel(
@@ -62,11 +62,11 @@ local template = grafana.template;
             'sum by (cluster, job, instance) (rate(prometheus_target_scrapes_sample_out_of_bounds_total{cluster=~"$cluster",job=~"$job",instance=~"$instance"}[1m]))',
             'sum by (cluster, job, instance) (rate(prometheus_target_scrapes_sample_out_of_order_total{cluster=~"$cluster",job=~"$job",instance=~"$instance"}[1m]))',
           ], [
-            'exceeded body size limit: {{cluster}} {{job}}',
-            'exceeded sample limit: {{cluster}} {{job}}',
-            'duplicate timestamp: {{cluster}} {{job}}',
-            'out of bounds: {{cluster}} {{job}}',
-            'out of order: {{cluster}} {{job}}',
+            'exceeded body size limit: {{cluster}} {{job}} {{instance}}',
+            'exceeded sample limit: {{cluster}} {{job}} {{instance}}',
+            'duplicate timestamp: {{cluster}} {{job}} {{instance}}',
+            'out of bounds: {{cluster}} {{job}} {{instance}}',
+            'out of order: {{cluster}} {{job}} {{instance}}',
           ]) +
           g.stack
         )
