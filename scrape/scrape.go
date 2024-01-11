@@ -1928,10 +1928,10 @@ func pickSchema(bucketFactor float64) int32 {
 	}
 	floor := math.Floor(-math.Log2(math.Log2(bucketFactor)))
 	switch {
-	case floor >= 8:
-		return 8
-	case floor <= -4:
-		return -4
+	case floor >= float64(nativeHistogramMaxSchema):
+		return nativeHistogramMaxSchema
+	case floor <= float64(nativeHistogramMinSchema):
+		return nativeHistogramMinSchema
 	default:
 		return int32(floor)
 	}
