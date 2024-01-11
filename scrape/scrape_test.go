@@ -3482,3 +3482,68 @@ func TestScrapeLoopCompression(t *testing.T) {
 		})
 	}
 }
+
+func TestPickSchema(t *testing.T) {
+	tcs := []struct {
+		factor float64
+		schema int32
+	}{
+		{
+			factor: 65536,
+			schema: -4,
+		},
+		{
+			factor: 256,
+			schema: -3,
+		},
+		{
+			factor: 16,
+			schema: -2,
+		},
+		{
+			factor: 4,
+			schema: -1,
+		},
+		{
+			factor: 2,
+			schema: 0,
+		},
+		{
+			factor: 1.4,
+			schema: 1,
+		},
+		{
+			factor: 1.1,
+			schema: 2,
+		},
+		{
+			factor: 1.09,
+			schema: 3,
+		},
+		{
+			factor: 1.04,
+			schema: 4,
+		},
+		{
+			factor: 1.02,
+			schema: 5,
+		},
+		{
+			factor: 1.01,
+			schema: 6,
+		},
+		{
+			factor: 1.005,
+			schema: 7,
+		},
+		{
+			factor: 1.002,
+			schema: 8,
+		},
+	}
+
+	for _, tc := range tcs {
+		schema := pickSchema(tc.factor)
+		require.Equal(t, tc.schema, schema)
+	}
+}
