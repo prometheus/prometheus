@@ -453,7 +453,7 @@ metric_relabel_configs:
 [ native_histogram_bucket_limit: <int> | default = 0 ]
 
 # Lower limit for the growth factor of one bucket to the next in each native histogram. 
-# The resolution of a histogram # with a lower growth factor will be reduced until it is within the limit.
+# The resolution of a histogram with a lower growth factor will be reduced until it is within the limit.
 # Here is the conversion table from growth factor to resulting schema/scale.
 # | growth factor | resulting schema AKA scale |
 # | ---   | --- |
