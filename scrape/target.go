@@ -387,8 +387,10 @@ func (app *bucketLimitAppender) AppendHistogram(ref storage.SeriesRef, lset labe
 	return ref, nil
 }
 
-const nativeHistogramMaxSchema int32 = 8
-const nativeHistogramMinSchema int32 = -4
+const (
+	nativeHistogramMaxSchema int32 = 8
+	nativeHistogramMinSchema int32 = -4
+)
 
 type maxSchemaAppender struct {
 	storage.Appender
