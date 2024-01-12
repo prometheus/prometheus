@@ -23,10 +23,6 @@ import (
 	"github.com/prometheus/prometheus/pp/go/cppbridge/fastcgo"
 )
 
-func init() {
-	fastcgo.UnsafeCall0(C.prompp_init)
-}
-
 func freeBytes(b []byte) {
 	fastcgo.UnsafeCall1(
 		C.prompp_free_bytes,
