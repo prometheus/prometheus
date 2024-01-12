@@ -17,6 +17,8 @@ import (
 	"math"
 	"testing"
 
+	"golang.org/x/exp/slices"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -140,10 +142,7 @@ func TestReduceResolutionHistogram(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		spansCopy := make([]Span, len(tc.spans))
-		bucketsCopy := make([]int64, len(tc.buckets))
-		copy(spansCopy, tc.spans)
-		copy(bucketsCopy, tc.buckets)
+		spansCopy, bucketsCopy := slices.Clone(tc.spans), slices.Clone(tc.buckets)
 		spans, buckets := reduceResolution(tc.spans, tc.buckets, tc.schema, tc.targetSchema, true, false)
 		require.Equal(t, tc.expectedSpans, spans)
 		require.Equal(t, tc.expectedBuckets, buckets)
@@ -191,10 +190,7 @@ func TestReduceResolutionFloatHistogram(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		spansCopy := make([]Span, len(tc.spans))
-		bucketsCopy := make([]float64, len(tc.buckets))
-		copy(spansCopy, tc.spans)
-		copy(bucketsCopy, tc.buckets)
+		spansCopy, bucketsCopy := slices.Clone(tc.spans), slices.Clone(tc.buckets)
 		spans, buckets := reduceResolution(tc.spans, tc.buckets, tc.schema, tc.targetSchema, false, false)
 		require.Equal(t, tc.expectedSpans, spans)
 		require.Equal(t, tc.expectedBuckets, buckets)
