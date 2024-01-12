@@ -18,11 +18,7 @@
 //#entrypoint.function_pointers
 
 #if PROMPP_PLATFORM_AMD64
-enum arch_flavor {
-    generic,
-    nehalem,
-    haswell
-};
+enum arch_flavor { generic, nehalem, haswell };
 
 arch_flavor determine_arch_flavor() {
   if (!__builtin_cpu_supports("sse4.2"))
@@ -34,10 +30,7 @@ arch_flavor determine_arch_flavor() {
   return haswell;
 }
 #elif PROMPP_PLATFORM_ARM64
-enum arch_flavor {
-    generic,
-    crc32
-};
+enum arch_flavor { generic, crc32 };
 
 arch_flavor determine_arch_flavor() {
   if (getauxval(AT_HWCAP) & HWCAP_CRC32) {
@@ -49,7 +42,7 @@ arch_flavor determine_arch_flavor() {
 
 const char* prompp_flavor = nullptr;
 extern "C" void prompp_get_flavor(void* res) {
-  using res_t = struct{
+  using res_t = struct {
     const char* data;
     size_t len;
   };
@@ -61,40 +54,88 @@ extern "C" void prompp_get_flavor(void* res) {
   }
 }
 
-extern "C" void prompp_init() {
+#define EXTERN_FUNCTION(return_type, name, args) \
+  return_type amd64_haswell_##name args;         \
+  return_type amd64_nehalem_##name args;         \
+  return_type amd64_k8_##name args;              \
+  return_type arm64_armv8_a_crc_##name args;     \
+  return_type arm64_armv8_a_##name args;
+
+extern "C" {
+EXTERN_FUNCTION(void, prompp_jemalloc_init, ());
+EXTERN_FUNCTION(void*, malloc, (size_t));
+EXTERN_FUNCTION(void*, realloc, (void*, size_t));
+EXTERN_FUNCTION(void*, calloc, (size_t n, size_t size));
+EXTERN_FUNCTION(void, free, (void*));
+}
+
+#undef EXTERN_FUNCTION
+
+static void initialize();
+
+#if !defined(__SANITIZE_ADDRESS__)
+#define DEFINE_ALLOCATOR_SYMBOL(return_type, name, args, parameters) \
+  extern "C" return_type name args { return name ## _func parameters; }
+#else
+#define DEFINE_ALLOCATOR_SYMBOL(return_type, name, args, parameters)
+#endif
+
+#define OVERRIDE_ALLOCATOR_SYMBOL(return_type, name, args, parameters) \
+  return_type initialize_and_ ## name args; \
+  static return_type (*name ## _func) args = initialize_and_ ## name; \
+  return_type initialize_and_ ## name args { \
+    initialize(); \
+    return name ## _func parameters; \
+  } \
+  DEFINE_ALLOCATOR_SYMBOL(return_type, name, args, parameters)
+
+OVERRIDE_ALLOCATOR_SYMBOL(void*, malloc, (size_t size), (size));
+OVERRIDE_ALLOCATOR_SYMBOL(void*, realloc, (void* ptr, size_t size), (ptr, size));
+OVERRIDE_ALLOCATOR_SYMBOL(void*, calloc, (size_t n, size_t size), (n, size));
+OVERRIDE_ALLOCATOR_SYMBOL(void, free, (void *ptr), (ptr));
+
+#undef OVERRIDE_ALLOCATOR_SYMBOL
+#undef DEFINE_ALLOCATOR_SYMBOL
+
+#define SELECT_ARCH(arch, flavor)  \
+  arch##_prompp_jemalloc_init();   \
+  malloc_func = arch##_malloc;   \
+  realloc_func = arch##_realloc; \
+  calloc_func = arch##_calloc;   \
+  free_func = arch##_free;       \
+  prompp_flavor = flavor;
+
+static __attribute__((constructor)) void initialize() {
   switch (determine_arch_flavor()) {
 #if PROMPP_PLATFORM_AMD64
-  case haswell: {
+    case haswell: {
 //#entrypoint.amd64_haswell_bindings
-    void amd64_haswell_prompp_jemalloc_init();
-    amd64_haswell_prompp_jemalloc_init();
-    prompp_flavor = "haswell";
-    break; }
-  case nehalem: {
+      SELECT_ARCH(amd64_haswell, "haswell");
+      break;
+    }
+    case nehalem: {
 //#entrypoint.amd64_nehalem_bindings
-    void amd64_nehalem_prompp_jemalloc_init();
-    amd64_nehalem_prompp_jemalloc_init();
-    prompp_flavor = "nehalem";
-    break; }
-  default: {
+      SELECT_ARCH(amd64_nehalem, "nehalem");
+      break;
+    }
+    default: {
 //#entrypoint.amd64_k8_bindings
-    void amd64_k8_prompp_jemalloc_init();
-    amd64_k8_prompp_jemalloc_init();
-    prompp_flavor = "k8";
-    break; }
+      SELECT_ARCH(amd64_k8, "k8");
+      break;
+    }
 #elif PROMPP_PLATFORM_ARM64
-  case crc32: {
+    case crc32: {
 //#entrypoint.arm64_armv8_a_crc_bindings
-    void arm64_armv8_a_crc_prompp_jemalloc_init();
-    arm64_armv8_a_crc_prompp_jemalloc_init();
-    prompp_flavor = "armv8-a+crc";
-    break; }
-  default: {
+      SELECT_ARCH(arm64_armv8_a_crc, "armv8-a+crc");
+      break;
+    }
+    default: {
 //#entrypoint.arm64_armv8_a_bindings
-    void arm64_armv8_a_prompp_jemalloc_init();
-    arm64_armv8_a_prompp_jemalloc_init();
-    prompp_flavor = "armv8-a";
-    break; }
+      SELECT_ARCH(arm64_armv8_a, "armv8-a");
+      break;
+    }
 #endif
   }
 }
+
+#undef SELECT_ARCH

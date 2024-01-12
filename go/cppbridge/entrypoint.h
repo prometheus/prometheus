@@ -264,12 +264,6 @@ extern "C" {
  */
 void prompp_get_flavor(void* res);
 
-/**
- * @brief determine flavor and setup function pointers
- *
- */
-void prompp_init();
-
 #ifdef __cplusplus
 }
 #endif
