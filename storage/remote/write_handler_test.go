@@ -82,6 +82,9 @@ func TestRemoteWriteHandler(t *testing.T) {
 
 			k++
 		}
+		m := ts.Metadata
+		require.Equal(t, mockMetadata{ls, int32(m.Type), m.Unit, m.Help}, appendable.metadata[l])
+		l++
 	}
 }
 
@@ -106,6 +109,7 @@ func TestRemoteWriteHandlerMinimizedFormat(t *testing.T) {
 	i := 0
 	j := 0
 	k := 0
+	l := 0
 	// the reduced write request is equivalent to the write request fixture.
 	// we can use it for
 	for _, ts := range writeRequestFixture.Timeseries {
@@ -134,7 +138,7 @@ func TestRemoteWriteHandlerMinimizedFormat(t *testing.T) {
 		}
 
 		m := ts.Metadata
-		require.Equal(t, mockMetadata{labels, int32(m.Type), m.Unit, m.Help}, appendable.metadata[l])
+		require.Equal(t, mockMetadata{ls, int32(m.Type), m.Unit, m.Help}, appendable.metadata[l])
 		l++
 
 	}

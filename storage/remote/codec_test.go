@@ -73,6 +73,7 @@ var writeRequestFixture = &prompb.WriteRequest{
 			Exemplars:  []prompb.Exemplar{{Labels: []prompb.Label{{Name: "h", Value: "i"}}, Value: 2, Timestamp: 1}},
 			Histograms: []prompb.Histogram{HistogramToHistogramProto(2, &testHistogram), FloatHistogramToHistogramProto(3, testHistogram.ToFloat(nil))},
 			//Metadata:   prompb.Metadata{Type: prompb.Metadata_GAUGE, Help: "help text 2", Unit: "unit text 2"}},
+		},
 	},
 }
 

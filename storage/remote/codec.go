@@ -34,7 +34,6 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
-	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/write/v2"
 	"github.com/prometheus/prometheus/storage"
@@ -649,6 +648,14 @@ func metadataProtoToMetadata(mp prompb.Metadata) metadata.Metadata {
 	}
 }
 
+func metadataProtoV2ToMetadata(mp writev2.Metadata, symbols []string) metadata.Metadata {
+	return metadata.Metadata{
+		Type: metricTypeFromProtoV2Equivalent(mp.Type),
+		Unit: symbols[mp.UnitRef],
+		Help: symbols[mp.HelpRef],
+	}
+}
+
 // HistogramProtoToHistogram extracts a (normal integer) Histogram from the
 // provided proto message. The caller has to make sure that the proto message
 // represents an integer histogram and not a float histogram, or it panics.
@@ -853,6 +860,15 @@ func spansToSpansProto(s []histogram.Span) []prompb.BucketSpan {
 	return spans
 }
 
+func spansToMinSpansProto(s []histogram.Span) []writev2.BucketSpan {
+	spans := make([]writev2.BucketSpan, len(s))
+	for i := 0; i < len(s); i++ {
+		spans[i] = writev2.BucketSpan{Offset: s[i].Offset, Length: s[i].Length}
+	}
+
+	return spans
+}
+
 // LabelProtosToMetric unpack a []*prompb.Label to a model.Metric
 func LabelProtosToMetric(labelPairs []*prompb.Label) model.Metric {
 	metric := make(model.Metric, len(labelPairs))
@@ -925,7 +941,18 @@ func metricTypeToMetricTypeProto(t model.MetricType) prompb.MetricMetadata_Metri
 	return prompb.MetricMetadata_MetricType(v)
 }
 
-func metricTypeToProtoEquivalent(t textparse.MetricType) prompb.Metadata_MetricType {
+// metricTypeToMetricTypeProtoV2 transforms a Prometheus metricType into writev2 metricType. Since the former is a string we need to transform it to an enum.
+func metricTypeToMetricTypeProtoV2(t model.MetricType) writev2.Metadata_MetricType {
+	mt := strings.ToUpper(string(t))
+	v, ok := prompb.MetricMetadata_MetricType_value[mt]
+	if !ok {
+		return writev2.Metadata_METRIC_TYPE_UNSPECIFIED
+	}
+
+	return writev2.Metadata_MetricType(v)
+}
+
+func metricTypeToProtoEquivalent(t model.MetricType) prompb.Metadata_MetricType {
 	mt := strings.ToUpper(string(t))
 	v, ok := prompb.Metadata_MetricType_value[mt]
 	if !ok {
@@ -935,9 +962,14 @@ func metricTypeToProtoEquivalent(t textparse.MetricType) prompb.Metadata_MetricT
 	return prompb.Metadata_MetricType(v)
 }
 
-func metricTypeFromProtoEquivalent(t prompb.Metadata_MetricType) textparse.MetricType {
+func metricTypeFromProtoEquivalent(t prompb.Metadata_MetricType) model.MetricType {
 	mt := strings.ToLower(t.String())
-	return textparse.MetricType(mt) // TODO(@tpaschalis) a better way for this?
+	return model.MetricType(mt) // TODO(@tpaschalis) a better way for this?
+}
+
+func metricTypeFromProtoV2Equivalent(t writev2.Metadata_MetricType) model.MetricType {
+	mt := strings.ToLower(t.String())
+	return model.MetricType(mt) // TODO(@tpaschalis) a better way for this?
 }
 
 // DecodeWriteRequest from an io.Reader into a prompb.WriteRequest, handling
