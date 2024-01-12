@@ -1517,21 +1517,11 @@ func populateTimeSeries(batch []timeSeries, pendingData []prompb.TimeSeries, sen
 		if sendNativeHistograms {
 			pendingData[nPending].Histograms = pendingData[nPending].Histograms[:0]
 		}
-		if sendMetadata {
-			pendingData[nPending].Metadata = prompb.Metadata{}
-		}
 
 		// Number of pending samples is limited by the fact that sendSamples (via sendSamplesWithBackoff)
 		// retries endlessly, so once we reach max samples, if we can never send to the endpoint we'll
 		// stop reading from the queue. This makes it safe to reference pendingSamples by index.
 		pendingData[nPending].Labels = labelsToLabelsProto(d.seriesLabels, pendingData[nPending].Labels)
-		if sendMetadata {
-			pendingData[nPending].Metadata = prompb.Metadata{
-				Type: metricTypeToProtoEquivalent(d.metadata.Type),
-				Help: d.metadata.Help,
-				Unit: d.metadata.Unit,
-			}
-		}
 
 		switch d.sType {
 		case tSample:

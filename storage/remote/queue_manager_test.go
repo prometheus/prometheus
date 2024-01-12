@@ -117,7 +117,6 @@ func TestSampleDelivery(t *testing.T) {
 			// Generates same series in both cases.
 			if tc.samples {
 				samples, series = createTimeseries(n, n)
-				metadata = createSeriesMetadata(series)
 			}
 			if tc.exemplars {
 				exemplars, series = createExemplars(n, n)
@@ -128,6 +127,8 @@ func TestSampleDelivery(t *testing.T) {
 			if tc.floatHistograms {
 				_, floatHistograms, series = createHistograms(n, n, true)
 			}
+			metadata = createSeriesMetadata(series)
+			//if
 
 			// Apply new config.
 			queueConfig.Capacity = len(samples)
@@ -368,19 +369,14 @@ func TestSeriesReset(t *testing.T) {
 	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, Base1)
 	for i := 0; i < numSegments; i++ {
 		series := []record.RefSeries{}
-		metadata := []record.RefMetadata{}
 		for j := 0; j < numSeries; j++ {
 			series = append(series, record.RefSeries{Ref: chunks.HeadSeriesRef((i * 100) + j), Labels: labels.FromStrings("a", "a")})
-			metadata = append(metadata, record.RefMetadata{Ref: chunks.HeadSeriesRef((i * 100) + j), Type: 0, Unit: "unit text", Help: "help text"})
 		}
 		m.StoreSeries(series, i)
-		m.StoreMetadata(metadata)
 	}
 	require.Len(t, m.seriesLabels, numSegments*numSeries)
-	require.Equal(t, numSegments*numSeries, len(m.seriesMetadata))
 	m.SeriesReset(2)
 	require.Len(t, m.seriesLabels, numSegments*numSeries/2)
-	require.Equal(t, numSegments*numSeries/2, len(m.seriesMetadata))
 }
 
 func TestReshard(t *testing.T) {
@@ -868,8 +864,6 @@ func (c *TestWriteClient) waitForExpectedData(tb testing.TB) {
 		require.Equal(tb, expectedFloatHistogram, c.receivedFloatHistograms[ts], ts)
 	}
 }
-
-var emptyMetadata prompb.Metadata
 
 func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) error {
 	c.mtx.Lock()
