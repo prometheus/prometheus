@@ -531,7 +531,13 @@ func NewQueueManager(
 }
 
 // AppendWatcherMetadata sends metadata to the remote storage. Metadata is sent in batches, but is not parallelized.
+// This is only used for the 1.x proto format.
 func (t *QueueManager) AppendWatcherMetadata(ctx context.Context, metadata []scrape.MetricMetadata) {
+	// no op for any newer proto format, which will cache metadata sent to it from the WAL watcher.
+	if t.rwFormat > MinStrings {
+		return
+	}
+	// 1.X will still get metadata in batches.
 	mm := make([]prompb.MetricMetadata, 0, len(metadata))
 	for _, entry := range metadata {
 		mm = append(mm, prompb.MetricMetadata{

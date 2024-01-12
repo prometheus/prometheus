@@ -678,7 +678,7 @@ func TestRun_StartupTime(t *testing.T) {
 			require.NoError(t, w.Close())
 
 			wt := newWriteToMock()
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false)
 			watcher.MaxSegment = segments
 
 			watcher.setMetrics()
