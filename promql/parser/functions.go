@@ -254,6 +254,12 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
 	},
+	"mad_over_time": {
+		Name:         "mad_over_time",
+		ArgTypes:     []ValueType{ValueTypeMatrix},
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
+	},
 	"max_over_time": {
 		Name:       "max_over_time",
 		ArgTypes:   []ValueType{ValueTypeMatrix},

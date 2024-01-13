@@ -205,7 +205,7 @@ func TestIndexRW_Postings(t *testing.T) {
 		err := ir.Series(p.At(), &builder, &c)
 
 		require.NoError(t, err)
-		require.Equal(t, 0, len(c))
+		require.Empty(t, c)
 		require.Equal(t, series[i], builder.Labels())
 	}
 	require.NoError(t, p.Err())

@@ -118,7 +118,7 @@ func TestChunkSeriesSetToSeriesSet(t *testing.T) {
 		j := 0
 		for iter.Next() == chunkenc.ValFloat {
 			ts, v := iter.At()
-			require.EqualValues(t, series[i].samples[j], fSample{t: ts, f: v})
+			require.EqualValues(t, fSample{t: ts, f: v}, series[i].samples[j])
 			j++
 		}
 	}

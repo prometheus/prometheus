@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
@@ -52,7 +53,7 @@ func TestLinodeSDRefresh(t *testing.T) {
 		Credentials: tokenID,
 		Type:        "Bearer",
 	}
-	d, err := NewDiscovery(&cfg, log.NewNopLogger())
+	d, err := NewDiscovery(&cfg, log.NewNopLogger(), prometheus.NewRegistry())
 	require.NoError(t, err)
 	endpoint, err := url.Parse(sdmock.Mock.Endpoint())
 	require.NoError(t, err)
@@ -61,12 +62,12 @@ func TestLinodeSDRefresh(t *testing.T) {
 	tgs, err := d.refresh(context.Background())
 	require.NoError(t, err)
 
-	require.Equal(t, 1, len(tgs))
+	require.Len(t, tgs, 1)
 
 	tg := tgs[0]
 	require.NotNil(t, tg)
 	require.NotNil(t, tg.Targets)
-	require.Equal(t, 4, len(tg.Targets))
+	require.Len(t, tg.Targets, 4)
 
 	for i, lbls := range []model.LabelSet{
 		{

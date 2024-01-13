@@ -153,4 +153,5 @@ message MetricFamily {
   string          help   = 2;
   MetricType      type   = 3;
   repeated Metric metric = 4 [(gogoproto.nullable) = false];
+  string          unit   = 5;
 }

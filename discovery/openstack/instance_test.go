@@ -61,12 +61,12 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 	tgs, err := instance.refresh(ctx)
 
 	require.NoError(t, err)
-	require.Equal(t, 1, len(tgs))
+	require.Len(t, tgs, 1)
 
 	tg := tgs[0]
 	require.NotNil(t, tg)
 	require.NotNil(t, tg.Targets)
-	require.Equal(t, 4, len(tg.Targets))
+	require.Len(t, tg.Targets, 4)
 
 	for i, lbls := range []model.LabelSet{
 		{

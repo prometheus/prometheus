@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"math/rand"
@@ -26,7 +27,6 @@ import (
 	"time"
 
 	"github.com/oklog/ulid"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -213,7 +213,7 @@ func testBlockQuerier(t *testing.T, c blockQuerierTestCase, ir IndexReader, cr C
 			require.Equal(t, eok, rok)
 
 			if !eok {
-				require.Equal(t, 0, len(res.Warnings()))
+				require.Empty(t, res.Warnings())
 				break
 			}
 			sexp := c.exp.At()
@@ -248,7 +248,7 @@ func testBlockQuerier(t *testing.T, c blockQuerierTestCase, ir IndexReader, cr C
 			require.Equal(t, eok, rok)
 
 			if !eok {
-				require.Equal(t, 0, len(res.Warnings()))
+				require.Empty(t, res.Warnings())
 				break
 			}
 			sexpChks := c.expChks.At()
@@ -2068,7 +2068,7 @@ func BenchmarkMergedSeriesSet(b *testing.B) {
 						i++
 					}
 					require.NoError(b, ms.Err())
-					require.Equal(b, len(lbls), i)
+					require.Len(b, lbls, i)
 				}
 			})
 		}
@@ -2317,7 +2317,7 @@ func (m mockIndex) Postings(ctx context.Context, name string, values ...string) 
 func (m mockIndex) SortedPostings(p index.Postings) index.Postings {
 	ep, err := index.ExpandPostings(p)
 	if err != nil {
-		return index.ErrPostings(errors.Wrap(err, "expand postings"))
+		return index.ErrPostings(fmt.Errorf("expand postings: %w", err))
 	}
 
 	sort.Slice(ep, func(i, j int) bool {
@@ -2503,7 +2503,7 @@ func BenchmarkQuerySeek(b *testing.B) {
 					require.NoError(b, it.Err())
 				}
 				require.NoError(b, ss.Err())
-				require.Equal(b, 0, len(ss.Warnings()))
+				require.Empty(b, ss.Warnings())
 			})
 		}
 	}
@@ -2631,7 +2631,7 @@ func BenchmarkSetMatcher(b *testing.B) {
 				for ss.Next() {
 				}
 				require.NoError(b, ss.Err())
-				require.Equal(b, 0, len(ss.Warnings()))
+				require.Empty(b, ss.Warnings())
 			}
 		})
 	}
@@ -3233,7 +3233,7 @@ func benchQuery(b *testing.B, expExpansions int, q storage.Querier, selectors la
 			actualExpansions++
 		}
 		require.NoError(b, ss.Err())
-		require.Equal(b, 0, len(ss.Warnings()))
+		require.Empty(b, ss.Warnings())
 		require.Equal(b, expExpansions, actualExpansions)
 		require.NoError(b, ss.Err())
 	}
@@ -3415,7 +3415,7 @@ func TestBlockBaseSeriesSet(t *testing.T) {
 
 			i++
 		}
-		require.Equal(t, len(tc.expIdxs), i)
+		require.Len(t, tc.expIdxs, i)
 		require.NoError(t, bcs.Err())
 	}
 }
@@ -3654,7 +3654,7 @@ func TestQueryWithOneChunkCompletelyDeleted(t *testing.T) {
 			chk := it.At()
 			cit := chk.Chunk.Iterator(nil)
 			for vt := cit.Next(); vt != chunkenc.ValNone; vt = cit.Next() {
-				require.Equal(t, vt, chunkenc.ValFloatHistogram, "Only float histograms expected, other sample types should have been deleted.")
+				require.Equal(t, chunkenc.ValFloatHistogram, vt, "Only float histograms expected, other sample types should have been deleted.")
 				sampleCount++
 			}
 		}

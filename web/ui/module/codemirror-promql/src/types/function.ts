@@ -56,6 +56,7 @@ import {
   Ln,
   Log10,
   Log2,
+  MadOverTime,
   MaxOverTime,
   MinOverTime,
   Minute,
@@ -367,6 +368,12 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
   [Log2]: {
     name: 'log2',
     argTypes: [ValueType.vector],
+    variadic: 0,
+    returnType: ValueType.vector,
+  },
+  [MadOverTime]: {
+    name: 'mad_over_time',
+    argTypes: [ValueType.matrix],
     variadic: 0,
     returnType: ValueType.vector,
   },

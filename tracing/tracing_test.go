@@ -20,7 +20,7 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/prometheus/prometheus/config"
 )
@@ -105,7 +105,7 @@ func TestUninstallingTracerProvider(t *testing.T) {
 	}
 
 	require.NoError(t, m.ApplyConfig(&cfg))
-	require.NotEqual(t, trace.NewNoopTracerProvider(), otel.GetTracerProvider())
+	require.NotEqual(t, noop.NewTracerProvider(), otel.GetTracerProvider())
 
 	// Uninstall by passing empty config.
 	cfg2 := config.Config{
@@ -114,7 +114,7 @@ func TestUninstallingTracerProvider(t *testing.T) {
 
 	require.NoError(t, m.ApplyConfig(&cfg2))
 	// Make sure we get a no-op tracer provider after uninstallation.
-	require.Equal(t, trace.NewNoopTracerProvider(), otel.GetTracerProvider())
+	require.Equal(t, noop.NewTracerProvider(), otel.GetTracerProvider())
 }
 
 func TestTracerProviderShutdown(t *testing.T) {
@@ -131,5 +131,5 @@ func TestTracerProviderShutdown(t *testing.T) {
 
 	// Check if we closed the done channel.
 	_, ok := <-m.done
-	require.Equal(t, ok, false)
+	require.False(t, ok)
 }

@@ -74,7 +74,7 @@ func (b *BufferedSeriesIterator) PeekBack(n int) (sample chunks.Sample, ok bool)
 
 // Buffer returns an iterator over the buffered data. Invalidates previously
 // returned iterators.
-func (b *BufferedSeriesIterator) Buffer() chunkenc.Iterator {
+func (b *BufferedSeriesIterator) Buffer() *SampleRingIterator {
 	return b.buf.iterator()
 }
 
@@ -202,7 +202,7 @@ func (s hSample) H() *histogram.Histogram {
 }
 
 func (s hSample) FH() *histogram.FloatHistogram {
-	return s.h.ToFloat()
+	return s.h.ToFloat(nil)
 }
 
 func (s hSample) Type() chunkenc.ValueType {
@@ -252,7 +252,7 @@ type sampleRing struct {
 	f int // Position of first element in ring buffer.
 	l int // Number of elements in buffer.
 
-	it sampleRingIterator
+	it SampleRingIterator
 }
 
 type bufType int
@@ -304,13 +304,15 @@ func (r *sampleRing) reset() {
 }
 
 // Returns the current iterator. Invalidates previously returned iterators.
-func (r *sampleRing) iterator() chunkenc.Iterator {
+func (r *sampleRing) iterator() *SampleRingIterator {
 	r.it.r = r
 	r.it.i = -1
 	return &r.it
 }
 
-type sampleRingIterator struct {
+// SampleRingIterator is returned by BufferedSeriesIterator.Buffer() and can be
+// used to iterate samples buffered in the lookback window.
+type SampleRingIterator struct {
 	r  *sampleRing
 	i  int
 	t  int64
@@ -319,7 +321,7 @@ type sampleRingIterator struct {
 	fh *histogram.FloatHistogram
 }
 
-func (it *sampleRingIterator) Next() chunkenc.ValueType {
+func (it *SampleRingIterator) Next() chunkenc.ValueType {
 	it.i++
 	if it.i >= it.r.l {
 		return chunkenc.ValNone
@@ -358,30 +360,28 @@ func (it *sampleRingIterator) Next() chunkenc.ValueType {
 	}
 }
 
-func (it *sampleRingIterator) Seek(int64) chunkenc.ValueType {
-	return chunkenc.ValNone
-}
-
-func (it *sampleRingIterator) Err() error {
-	return nil
-}
-
-func (it *sampleRingIterator) At() (int64, float64) {
+// At returns the current float element of the iterator.
+func (it *SampleRingIterator) At() (int64, float64) {
 	return it.t, it.f
 }
 
-func (it *sampleRingIterator) AtHistogram() (int64, *histogram.Histogram) {
+// AtHistogram returns the current histogram element of the iterator.
+func (it *SampleRingIterator) AtHistogram() (int64, *histogram.Histogram) {
 	return it.t, it.h
 }
 
-func (it *sampleRingIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+// AtFloatHistogram returns the current histogram element of the iterator. If the
+// current sample is an integer histogram, it will be converted to a float histogram.
+// An optional histogram.FloatHistogram can be provided to avoid allocating a new
+// object for the conversion.
+func (it *SampleRingIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	if it.fh == nil {
-		return it.t, it.h.ToFloat()
+		return it.t, it.h.ToFloat(fh)
 	}
 	return it.t, it.fh
 }
 
-func (it *sampleRingIterator) AtT() int64 {
+func (it *SampleRingIterator) AtT() int64 {
 	return it.t
 }
 

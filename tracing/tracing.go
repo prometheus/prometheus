@@ -32,6 +32,7 @@ import (
 	tracesdk "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 	"google.golang.org/grpc/credentials"
 
 	"github.com/prometheus/prometheus/config"
@@ -87,7 +88,7 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 	if cfg.TracingConfig.Endpoint == "" {
 		m.config = cfg.TracingConfig
 		m.shutdownFunc = nil
-		otel.SetTracerProvider(trace.NewNoopTracerProvider())
+		otel.SetTracerProvider(noop.NewTracerProvider())
 		level.Info(m.logger).Log("msg", "Tracing provider uninstalled.")
 		return nil
 	}

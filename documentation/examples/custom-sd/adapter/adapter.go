@@ -25,6 +25,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/discovery"
@@ -167,7 +168,7 @@ func NewAdapter(ctx context.Context, file, name string, d discovery.Discoverer, 
 		ctx:     ctx,
 		disc:    d,
 		groups:  make(map[string]*customSD),
-		manager: discovery.NewManager(ctx, logger),
+		manager: discovery.NewManager(ctx, logger, prometheus.NewRegistry()),
 		output:  file,
 		name:    name,
 		logger:  logger,

@@ -78,9 +78,15 @@ type Options struct {
 	EnableMetadataStorage bool
 	// Option to increase the interval used by scrape manager to throttle target groups updates.
 	DiscoveryReloadInterval model.Duration
+	// Option to enable the ingestion of the created timestamp as a synthetic zero sample.
+	// See: https://github.com/prometheus/proposals/blob/main/proposals/2023-06-13_created-timestamp.md
+	EnableCreatedTimestampZeroIngestion bool
 
 	// Optional HTTP client options to use when scraping.
 	HTTPClientOptions []config_util.HTTPClientOption
+
+	// private option for testability.
+	skipOffsetting bool
 }
 
 // Manager maintains a set of scrape pools and manages start/stop cycles
@@ -282,24 +288,10 @@ func (m *Manager) TargetsActive() map[string][]*Target {
 	m.mtxScrape.Lock()
 	defer m.mtxScrape.Unlock()
 
-	var (
-		wg  sync.WaitGroup
-		mtx sync.Mutex
-	)
-
 	targets := make(map[string][]*Target, len(m.scrapePools))
-	wg.Add(len(m.scrapePools))
 	for tset, sp := range m.scrapePools {
-		// Running in parallel limits the blocking time of scrapePool to scrape
-		// interval when there's an update from SD.
-		go func(tset string, sp *scrapePool) {
-			mtx.Lock()
-			targets[tset] = sp.ActiveTargets()
-			mtx.Unlock()
-			wg.Done()
-		}(tset, sp)
+		targets[tset] = sp.ActiveTargets()
 	}
-	wg.Wait()
 	return targets
 }
 

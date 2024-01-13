@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/regexp"
 	"github.com/prometheus/common/model"
 	"gopkg.in/yaml.v2"
 
@@ -39,11 +40,16 @@ import (
 
 // RulesUnitTest does unit testing of rules based on the unit testing files provided.
 // More info about the file format can be found in the docs.
-func RulesUnitTest(queryOpts promql.LazyLoaderOpts, files ...string) int {
+func RulesUnitTest(queryOpts promql.LazyLoaderOpts, runStrings []string, files ...string) int {
 	failed := false
 
+	var run *regexp.Regexp
+	if runStrings != nil {
+		run = regexp.MustCompile(strings.Join(runStrings, "|"))
+	}
+
 	for _, f := range files {
-		if errs := ruleUnitTest(f, queryOpts); errs != nil {
+		if errs := ruleUnitTest(f, queryOpts, run); errs != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
 			for _, e := range errs {
 				fmt.Fprintln(os.Stderr, e.Error())
@@ -61,7 +67,7 @@ func RulesUnitTest(queryOpts promql.LazyLoaderOpts, files ...string) int {
 	return successExitCode
 }
 
-func ruleUnitTest(filename string, queryOpts promql.LazyLoaderOpts) []error {
+func ruleUnitTest(filename string, queryOpts promql.LazyLoaderOpts, run *regexp.Regexp) []error {
 	fmt.Println("Unit Testing: ", filename)
 
 	b, err := os.ReadFile(filename)
@@ -96,6 +102,10 @@ func ruleUnitTest(filename string, queryOpts promql.LazyLoaderOpts) []error {
 	// Testing.
 	var errs []error
 	for _, t := range unitTestInp.Tests {
+		if !matchesRun(t.TestGroupName, run) {
+			continue
+		}
+
 		if t.Interval == 0 {
 			t.Interval = unitTestInp.EvaluationInterval
 		}
@@ -109,6 +119,14 @@ func ruleUnitTest(filename string, queryOpts promql.LazyLoaderOpts) []error {
 		return errs
 	}
 	return nil
+}
+
+func matchesRun(name string, run *regexp.Regexp) bool {
+	if run == nil {
+		return true
+	}
+
+	return run.MatchString(name)
 }
 
 // unitTestFile holds the contents of a single unit test file.

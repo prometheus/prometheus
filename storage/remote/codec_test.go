@@ -20,11 +20,11 @@ import (
 	"testing"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -57,7 +57,7 @@ var writeRequestFixture = &prompb.WriteRequest{
 			},
 			Samples:    []prompb.Sample{{Value: 1, Timestamp: 0}},
 			Exemplars:  []prompb.Exemplar{{Labels: []prompb.Label{{Name: "f", Value: "g"}}, Value: 1, Timestamp: 0}},
-			Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat())},
+			Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat(nil))},
 		},
 		{
 			Labels: []prompb.Label{
@@ -69,7 +69,7 @@ var writeRequestFixture = &prompb.WriteRequest{
 			},
 			Samples:    []prompb.Sample{{Value: 2, Timestamp: 1}},
 			Exemplars:  []prompb.Exemplar{{Labels: []prompb.Label{{Name: "h", Value: "i"}}, Value: 2, Timestamp: 1}},
-			Histograms: []prompb.Histogram{HistogramToHistogramProto(2, &testHistogram), FloatHistogramToHistogramProto(3, testHistogram.ToFloat())},
+			Histograms: []prompb.Histogram{HistogramToHistogramProto(2, &testHistogram), FloatHistogramToHistogramProto(3, testHistogram.ToFloat(nil))},
 		},
 	},
 }
@@ -488,17 +488,17 @@ func TestMergeLabels(t *testing.T) {
 func TestMetricTypeToMetricTypeProto(t *testing.T) {
 	tc := []struct {
 		desc     string
-		input    textparse.MetricType
+		input    model.MetricType
 		expected prompb.MetricMetadata_MetricType
 	}{
 		{
 			desc:     "with a single-word metric",
-			input:    textparse.MetricTypeCounter,
+			input:    model.MetricTypeCounter,
 			expected: prompb.MetricMetadata_COUNTER,
 		},
 		{
 			desc:     "with a two-word metric",
-			input:    textparse.MetricTypeStateset,
+			input:    model.MetricTypeStateset,
 			expected: prompb.MetricMetadata_STATESET,
 		},
 		{
@@ -517,7 +517,7 @@ func TestMetricTypeToMetricTypeProto(t *testing.T) {
 }
 
 func TestDecodeWriteRequest(t *testing.T) {
-	buf, _, err := buildWriteRequest(writeRequestFixture.Timeseries, nil, nil, nil)
+	buf, _, _, err := buildWriteRequest(nil, writeRequestFixture.Timeseries, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	actual, err := DecodeWriteRequest(bytes.NewReader(buf))
@@ -755,7 +755,7 @@ func TestStreamResponse(t *testing.T) {
 		maxBytesInFrame,
 		&sync.Pool{})
 	require.Nil(t, warning)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	expectData := []*prompb.ChunkedSeries{{
 		Labels: lbs1,
 		Chunks: []prompb.Chunk{chunk, chunk},

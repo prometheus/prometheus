@@ -194,3 +194,13 @@ won't work when you push OTLP metrics.
 
 Enables PromQL functions that are considered experimental and whose name or
 semantics could change.
+
+## Created Timestamps Zero Injection
+
+`--enable-feature=created-timestamp-zero-ingestion`
+
+Enables ingestion of created timestamp. Created timestamps are injected as 0 valued samples when appropriate. See [PromCon talk](https://youtu.be/nWf0BfQ5EEA) for details.
+
+Currently Prometheus supports created timestamps only on the traditional Prometheus Protobuf protocol (WIP for other protocols). As a result, when enabling this feature, the Prometheus protobuf scrape protocol will be prioritized (See `scrape_config.scrape_protocols` settings for more details).
+
+Besides enabling this feature in Prometheus, created timestamps need to be exposed by the application being scraped.

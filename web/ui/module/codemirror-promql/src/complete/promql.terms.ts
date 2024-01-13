@@ -318,6 +318,12 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'mad_over_time',
+    detail: 'function',
+    info: 'Return the median absolute deviation over time for input series',
+    type: 'function',
+  },
+  {
     label: 'max_over_time',
     detail: 'function',
     info: 'Return the maximum value over time for input series',

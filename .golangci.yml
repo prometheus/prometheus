@@ -23,6 +23,7 @@ linters:
     - nolintlint
     - predeclared
     - revive
+    - testifylint
     - unconvert
     - unused
 
@@ -35,13 +36,9 @@ issues:
     - path: _test.go
       linters:
         - errcheck
-    - path: tsdb/
+    - path: "tsdb/head_wal.go"
       linters:
         - errorlint
-    - path: tsdb/
-      text: "import 'github.com/pkg/errors' is not allowed"
-      linters:
-        - depguard
     - linters:
         - godot
       source: "^// ==="
@@ -117,3 +114,19 @@ linters-settings:
         disabled: true
       - name: var-declaration
       - name: var-naming
+  testifylint:
+    disable:
+      - float-compare
+      - go-require
+    enable:
+      - bool-compare
+      - compares
+      - empty
+      - error-is-as
+      - error-nil
+      - expected-actual
+      - len
+      - require-error
+      - suite-dont-use-pkg
+      - suite-extra-assert-call
+ 

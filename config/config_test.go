@@ -568,6 +568,7 @@ var expectedConf = &Config{
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&xds.KumaSDConfig{
 					Server:           "http://kuma-control-plane.kuma-system.svc:5676",
+					ClientID:         "main-prometheus",
 					HTTPClientConfig: config.DefaultHTTPClientConfig,
 					RefreshInterval:  model.Duration(15 * time.Second),
 					FetchTimeout:     model.Duration(2 * time.Minute),
@@ -1457,8 +1458,8 @@ func TestRemoteWriteRetryOnRateLimit(t *testing.T) {
 	got := &Config{}
 	require.NoError(t, yaml.UnmarshalStrict(out, got))
 
-	require.Equal(t, true, got.RemoteWriteConfigs[0].QueueConfig.RetryOnRateLimit)
-	require.Equal(t, false, got.RemoteWriteConfigs[1].QueueConfig.RetryOnRateLimit)
+	require.True(t, got.RemoteWriteConfigs[0].QueueConfig.RetryOnRateLimit)
+	require.False(t, got.RemoteWriteConfigs[1].QueueConfig.RetryOnRateLimit)
 }
 
 func TestLoadConfig(t *testing.T) {
@@ -1475,9 +1476,9 @@ func TestLoadConfig(t *testing.T) {
 func TestScrapeIntervalLarger(t *testing.T) {
 	c, err := LoadFile("testdata/scrape_interval_larger.good.yml", false, false, log.NewNopLogger())
 	require.NoError(t, err)
-	require.Equal(t, 1, len(c.ScrapeConfigs))
+	require.Len(t, c.ScrapeConfigs, 1)
 	for _, sc := range c.ScrapeConfigs {
-		require.Equal(t, true, sc.ScrapeInterval >= sc.ScrapeTimeout)
+		require.GreaterOrEqual(t, sc.ScrapeInterval, sc.ScrapeTimeout)
 	}
 }
 
@@ -1493,7 +1494,7 @@ func TestElideSecrets(t *testing.T) {
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	require.Equal(t, 22, len(matches), "wrong number of secret matches found")
+	require.Len(t, matches, 22, "wrong number of secret matches found")
 	require.NotContains(t, yamlConfig, "mysecret",
 		"yaml marshal reveals authentication credentials.")
 }
@@ -2063,7 +2064,7 @@ func TestAgentMode(t *testing.T) {
 
 	c, err := LoadFile("testdata/agent_mode.without_remote_writes.yml", true, false, log.NewNopLogger())
 	require.NoError(t, err)
-	require.Len(t, c.RemoteWriteConfigs, 0)
+	require.Empty(t, c.RemoteWriteConfigs)
 
 	c, err = LoadFile("testdata/agent_mode.good.yml", true, false, log.NewNopLogger())
 	require.NoError(t, err)
@@ -2257,5 +2258,5 @@ func TestScrapeConfigDisableCompression(t *testing.T) {
 	got := &Config{}
 	require.NoError(t, yaml.UnmarshalStrict(out, got))
 
-	require.Equal(t, false, got.ScrapeConfigs[0].EnableCompression)
+	require.False(t, got.ScrapeConfigs[0].EnableCompression)
 }

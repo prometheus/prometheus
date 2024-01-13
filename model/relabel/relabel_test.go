@@ -14,6 +14,7 @@
 package relabel
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -214,6 +215,25 @@ func TestRelabel(t *testing.T) {
 			}),
 		},
 		{
+			// Blank replacement should delete the label.
+			input: labels.FromMap(map[string]string{
+				"a": "foo",
+				"f": "baz",
+			}),
+			relabel: []*Config{
+				{
+					SourceLabels: model.LabelNames{"a"},
+					Regex:        MustNewRegexp("(f).*"),
+					TargetLabel:  "$1",
+					Replacement:  "$2",
+					Action:       Replace,
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"a": "foo",
+			}),
+		},
+		{
 			input: labels.FromMap(map[string]string{
 				"a": "foo",
 				"b": "bar",
@@ -334,7 +354,7 @@ func TestRelabel(t *testing.T) {
 		},
 		{ // invalid target_labels
 			input: labels.FromMap(map[string]string{
-				"a": "some-name-value",
+				"a": "some-name-0",
 			}),
 			relabel: []*Config{
 				{
@@ -349,18 +369,18 @@ func TestRelabel(t *testing.T) {
 					Regex:        MustNewRegexp("some-([^-]+)-([^,]+)"),
 					Action:       Replace,
 					Replacement:  "${1}",
-					TargetLabel:  "0${3}",
+					TargetLabel:  "${3}",
 				},
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        MustNewRegexp("some-([^-]+)-([^,]+)"),
+					Regex:        MustNewRegexp("some-([^-]+)(-[^,]+)"),
 					Action:       Replace,
 					Replacement:  "${1}",
-					TargetLabel:  "-${3}",
+					TargetLabel:  "${3}",
 				},
 			},
 			output: labels.FromMap(map[string]string{
-				"a": "some-name-value",
+				"a": "some-name-0",
 			}),
 		},
 		{ // more complex real-life like usecase
@@ -565,6 +585,7 @@ func TestRelabel(t *testing.T) {
 			if cfg.Replacement == "" {
 				cfg.Replacement = DefaultRelabelConfig.Replacement
 			}
+			require.NoError(t, cfg.Validate())
 		}
 
 		res, keep := Process(test.input, test.relabel...)
@@ -572,6 +593,77 @@ func TestRelabel(t *testing.T) {
 		if keep {
 			require.Equal(t, test.output, res)
 		}
+	}
+}
+
+func TestRelabelValidate(t *testing.T) {
+	tests := []struct {
+		config   Config
+		expected string
+	}{
+		{
+			config:   Config{},
+			expected: `relabel action cannot be empty`,
+		},
+		{
+			config: Config{
+				Action: Replace,
+			},
+			expected: `requires 'target_label' value`,
+		},
+		{
+			config: Config{
+				Action: Lowercase,
+			},
+			expected: `requires 'target_label' value`,
+		},
+		{
+			config: Config{
+				Action:      Lowercase,
+				Replacement: DefaultRelabelConfig.Replacement,
+				TargetLabel: "${3}",
+			},
+			expected: `"${3}" is invalid 'target_label'`,
+		},
+		{
+			config: Config{
+				SourceLabels: model.LabelNames{"a"},
+				Regex:        MustNewRegexp("some-([^-]+)-([^,]+)"),
+				Action:       Replace,
+				Replacement:  "${1}",
+				TargetLabel:  "${3}",
+			},
+		},
+		{
+			config: Config{
+				SourceLabels: model.LabelNames{"a"},
+				Regex:        MustNewRegexp("some-([^-]+)-([^,]+)"),
+				Action:       Replace,
+				Replacement:  "${1}",
+				TargetLabel:  "0${3}",
+			},
+			expected: `"0${3}" is invalid 'target_label'`,
+		},
+		{
+			config: Config{
+				SourceLabels: model.LabelNames{"a"},
+				Regex:        MustNewRegexp("some-([^-]+)-([^,]+)"),
+				Action:       Replace,
+				Replacement:  "${1}",
+				TargetLabel:  "-${3}",
+			},
+			expected: `"-${3}" is invalid 'target_label' for replace action`,
+		},
+	}
+	for i, test := range tests {
+		t.Run(fmt.Sprint(i), func(t *testing.T) {
+			err := test.config.Validate()
+			if test.expected == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, test.expected)
+			}
+		})
 	}
 }
 
