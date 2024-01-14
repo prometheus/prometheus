@@ -792,12 +792,12 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 	slices.Sort(vals)
 
 	limit, err := parseLimitParam(r.FormValue("limit"))
- 	if err != nil {
- 		return invalidParamError(err, "limit")
- 	}
- 	if len(vals) > limit {
- 		vals = vals[:limit]
- 	}
+	if err != nil {
+		return invalidParamError(err, "limit")
+	}
+	if len(vals) > limit {
+		vals = vals[:limit]
+	}
 
 	return apiFuncResult{vals, nil, warnings, closer}
 }
@@ -878,9 +878,9 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 	metrics := []labels.Labels{}
 
 	limit, err := parseLimitParam(r.FormValue("limit"))
- 	if err != nil {
- 		return invalidParamError(err, "limit")
- 	}
+	if err != nil {
+		return invalidParamError(err, "limit")
+	}
 
 	for set.Next() {
 		metrics = append(metrics, set.At().Labels())
@@ -1894,7 +1894,6 @@ OUTER:
 	}
 	return matcherSets, nil
 }
-
 
 func parseLimitParam(limitStr string) (limit int, err error) {
 	limit = math.MaxInt
