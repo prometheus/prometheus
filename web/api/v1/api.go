@@ -703,6 +703,14 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 	if names == nil {
 		names = []string{}
 	}
+
+	limit, err := parseLimitParam(r.FormValue("limit"))
+	if err != nil {
+		return invalidParamError(err, "limit")
+	}
+	if len(names) > limit {
+		names = names[:limit]
+	}
 	return apiFuncResult{names, nil, warnings, nil}
 }
 
@@ -783,6 +791,14 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 
 	slices.Sort(vals)
 
+	limit, err := parseLimitParam(r.FormValue("limit"))
+ 	if err != nil {
+ 		return invalidParamError(err, "limit")
+ 	}
+ 	if len(vals) > limit {
+ 		vals = vals[:limit]
+ 	}
+
 	return apiFuncResult{vals, nil, warnings, closer}
 }
 
@@ -860,8 +876,18 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 	}
 
 	metrics := []labels.Labels{}
+
+	limit, err := parseLimitParam(r.FormValue("limit"))
+ 	if err != nil {
+ 		return invalidParamError(err, "limit")
+ 	}
+
 	for set.Next() {
 		metrics = append(metrics, set.At().Labels())
+
+		if len(metrics) >= limit {
+			break
+		}
 	}
 
 	warnings := set.Warnings()
@@ -1867,4 +1893,22 @@ OUTER:
 		return nil, errors.New("match[] must contain at least one non-empty matcher")
 	}
 	return matcherSets, nil
+}
+
+
+func parseLimitParam(limitStr string) (limit int, err error) {
+	limit = math.MaxInt
+	if limitStr != "" {
+		limit, err = strconv.Atoi(limitStr)
+		if limitStr == "" {
+			return limit, nil
+		}
+		if err != nil {
+			return limit, err
+		}
+		if limit <= 0 {
+			return limit, errors.New("limit must be positive")
+		}
+	}
+	return limit, nil
 }
