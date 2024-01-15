@@ -567,7 +567,7 @@ Dump samples from a TSDB.
 | --- | --- | --- |
 | <code class="text-nowrap">--min-time</code> | Minimum timestamp to dump. | `-9223372036854775808` |
 | <code class="text-nowrap">--max-time</code> | Maximum timestamp to dump. | `9223372036854775807` |
-| <code class="text-nowrap">--match</code> | Series selector. | `{__name__=~'(?s:.*)'}` |
+| <code class="text-nowrap">--match</code> | Series selector. Can be specified multiple times. | `{__name__=~'(?s:.*)'}` |
 
 
 
