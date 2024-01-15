@@ -1,5 +1,10 @@
 # Changelog
 
+## unreleased
+
+* [ENHANCEMENT] TSDB: Make the wlog watcher read segments synchronously when not tailing. #13224
+* [BUGFIX] Agent: Participate in notify calls. #13223
+
 ## 2.49.0 / 2024-01-15
 
 * [FEATURE] Promtool: Add `--run` flag promtool test rules command. #12206
