@@ -1,19 +1,10 @@
 # Changelog
 
-
-## 2.49.0-rc.2 / 2024-01-08
-
-* [BUGFIX] UI: Fix scalar and string data type issues when querying introduced by heatmap feature. #13371
-
-## 2.49.0-rc.1 / 2023-12-19
-
-* [BUGFIX] SD: Fix Azure VM Scale Set NIC issue. #13283
-
-## 2.49.0-rc.0 / 2023-12-12
+## 2.49.0 / 2024-01-15
 
 * [FEATURE] Promtool: Add `--run` flag promtool test rules command. #12206
 * [FEATURE] SD: Add support for `NS` records to DNS SD. #13219
-* [FEATURE] UI: Add heatmap visualization setting in the Graph tab, useful histograms. #13096
+* [FEATURE] UI: Add heatmap visualization setting in the Graph tab, useful histograms. #13096 #13371
 * [FEATURE] Scraping: Add `scrape_config.enable_compression` (default true) to disable gzip compression when scraping the target. #13166
 * [FEATURE] PromQL: Add a `promql-experimental-functions` feature flag containing some new experimental PromQL functions. #13103 NOTE: More experimental functions might be added behind the same feature flag in the future. Added functions:
   * Experimental `mad_over_time` (median absolute deviation around the median) function. #13059
@@ -41,6 +32,7 @@
 * [BUGFIX] Mixins: Fix `url` filter on remote write dashboards. #10721
 * [BUGFIX] PromQL/TSDB: Various fixes to float histogram operations. #12891 #12977 #12609 #13190 #13189 #13191 #13201 #13212 #13208
 * [BUGFIX] Promtool: Fix int32 overflow issues for 32-bit architectures. #12978
+* [BUGFIX] SD: Fix Azure VM Scale Set NIC issue. #13283
 
 ## 2.48.1 / 2023-12-07
 
