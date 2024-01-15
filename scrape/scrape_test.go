@@ -660,9 +660,11 @@ func newBasicScrapeLoop(t testing.TB, ctx context.Context, scraper scraper, app 
 		false,
 		false,
 		false,
+		false,
 		nil,
 		false,
 		newTestScrapeMetrics(t),
+		false,
 	)
 }
 
@@ -801,9 +803,11 @@ func TestScrapeLoopRun(t *testing.T) {
 		false,
 		false,
 		false,
+		false,
 		nil,
 		false,
 		scrapeMetrics,
+		false,
 	)
 
 	// The loop must terminate during the initial offset if the context
@@ -945,9 +949,11 @@ func TestScrapeLoopMetadata(t *testing.T) {
 		false,
 		false,
 		false,
+		false,
 		nil,
 		false,
 		scrapeMetrics,
+		false,
 	)
 	defer cancel()
 
@@ -965,19 +971,19 @@ test_metric 1
 
 	md, ok := cache.GetMetadata("test_metric")
 	require.True(t, ok, "expected metadata to be present")
-	require.Equal(t, textparse.MetricTypeCounter, md.Type, "unexpected metric type")
+	require.Equal(t, model.MetricTypeCounter, md.Type, "unexpected metric type")
 	require.Equal(t, "some help text", md.Help)
 	require.Equal(t, "metric", md.Unit)
 
 	md, ok = cache.GetMetadata("test_metric_no_help")
 	require.True(t, ok, "expected metadata to be present")
-	require.Equal(t, textparse.MetricTypeGauge, md.Type, "unexpected metric type")
+	require.Equal(t, model.MetricTypeGauge, md.Type, "unexpected metric type")
 	require.Equal(t, "", md.Help)
 	require.Equal(t, "", md.Unit)
 
 	md, ok = cache.GetMetadata("test_metric_no_type")
 	require.True(t, ok, "expected metadata to be present")
-	require.Equal(t, textparse.MetricTypeUnknown, md.Type, "unexpected metric type")
+	require.Equal(t, model.MetricTypeUnknown, md.Type, "unexpected metric type")
 	require.Equal(t, "other help text", md.Help)
 	require.Equal(t, "", md.Unit)
 }
@@ -2377,7 +2383,7 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 
 	runTest(acceptHeader(config.DefaultScrapeProtocols))
 	protobufParsing = true
-	runTest(acceptHeader(config.DefaultNativeHistogramScrapeProtocols))
+	runTest(acceptHeader(config.DefaultProtoFirstScrapeProtocols))
 }
 
 func TestTargetScrapeScrapeCancel(t *testing.T) {

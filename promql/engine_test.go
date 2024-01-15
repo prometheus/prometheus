@@ -3169,28 +3169,75 @@ func TestNativeHistogramRate(t *testing.T) {
 	}
 	require.NoError(t, app.Commit())
 
-	queryString := fmt.Sprintf("rate(%s[1m])", seriesName)
-	qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(int64(5*time.Minute/time.Millisecond)))
-	require.NoError(t, err)
-	res := qry.Exec(context.Background())
-	require.NoError(t, res.Err)
-	vector, err := res.Vector()
-	require.NoError(t, err)
-	require.Len(t, vector, 1)
-	actualHistogram := vector[0].H
-	expectedHistogram := &histogram.FloatHistogram{
-		CounterResetHint: histogram.GaugeType,
-		Schema:           1,
-		ZeroThreshold:    0.001,
-		ZeroCount:        1. / 15.,
-		Count:            9. / 15.,
-		Sum:              1.226666666666667,
-		PositiveSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
-		PositiveBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
-		NegativeSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
-		NegativeBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
-	}
-	require.Equal(t, expectedHistogram, actualHistogram)
+	queryString := fmt.Sprintf("rate(%s[45s])", seriesName)
+	t.Run("instant_query", func(t *testing.T) {
+		qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(int64(5*time.Minute/time.Millisecond)))
+		require.NoError(t, err)
+		res := qry.Exec(context.Background())
+		require.NoError(t, res.Err)
+		vector, err := res.Vector()
+		require.NoError(t, err)
+		require.Len(t, vector, 1)
+		actualHistogram := vector[0].H
+		expectedHistogram := &histogram.FloatHistogram{
+			CounterResetHint: histogram.GaugeType,
+			Schema:           1,
+			ZeroThreshold:    0.001,
+			ZeroCount:        1. / 15.,
+			Count:            9. / 15.,
+			Sum:              1.2266666666666663,
+			PositiveSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+			PositiveBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+			NegativeSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+			NegativeBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+		}
+		require.Equal(t, expectedHistogram, actualHistogram)
+	})
+
+	t.Run("range_query", func(t *testing.T) {
+		step := 30 * time.Second
+		start := timestamp.Time(int64(5 * time.Minute / time.Millisecond))
+		end := start.Add(step)
+		qry, err := engine.NewRangeQuery(context.Background(), storage, nil, queryString, start, end, step)
+		require.NoError(t, err)
+		res := qry.Exec(context.Background())
+		require.NoError(t, res.Err)
+		matrix, err := res.Matrix()
+		require.NoError(t, err)
+		require.Len(t, matrix, 1)
+		require.Len(t, matrix[0].Histograms, 2)
+		actualHistograms := matrix[0].Histograms
+		expectedHistograms := []HPoint{{
+			T: 300000,
+			H: &histogram.FloatHistogram{
+				CounterResetHint: histogram.GaugeType,
+				Schema:           1,
+				ZeroThreshold:    0.001,
+				ZeroCount:        1. / 15.,
+				Count:            9. / 15.,
+				Sum:              1.2266666666666663,
+				PositiveSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+				PositiveBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+				NegativeSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+				NegativeBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+			},
+		}, {
+			T: 330000,
+			H: &histogram.FloatHistogram{
+				CounterResetHint: histogram.GaugeType,
+				Schema:           1,
+				ZeroThreshold:    0.001,
+				ZeroCount:        1. / 15.,
+				Count:            9. / 15.,
+				Sum:              1.2266666666666663,
+				PositiveSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+				PositiveBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+				NegativeSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+				NegativeBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+			},
+		}}
+		require.Equal(t, expectedHistograms, actualHistograms)
+	})
 }
 
 func TestNativeFloatHistogramRate(t *testing.T) {
@@ -3267,7 +3314,7 @@ func TestNativeHistogram_HistogramCountAndSum(t *testing.T) {
 			app := storage.Appender(context.Background())
 			var err error
 			if floatHisto {
-				_, err = app.AppendHistogram(0, lbls, ts, nil, h.ToFloat())
+				_, err = app.AppendHistogram(0, lbls, ts, nil, h.ToFloat(nil))
 			} else {
 				_, err = app.AppendHistogram(0, lbls, ts, h, nil)
 			}
@@ -3287,7 +3334,7 @@ func TestNativeHistogram_HistogramCountAndSum(t *testing.T) {
 			require.Len(t, vector, 1)
 			require.Nil(t, vector[0].H)
 			if floatHisto {
-				require.Equal(t, h.ToFloat().Count, vector[0].F)
+				require.Equal(t, h.ToFloat(nil).Count, vector[0].F)
 			} else {
 				require.Equal(t, float64(h.Count), vector[0].F)
 			}
@@ -3305,7 +3352,7 @@ func TestNativeHistogram_HistogramCountAndSum(t *testing.T) {
 			require.Len(t, vector, 1)
 			require.Nil(t, vector[0].H)
 			if floatHisto {
-				require.Equal(t, h.ToFloat().Sum, vector[0].F)
+				require.Equal(t, h.ToFloat(nil).Sum, vector[0].F)
 			} else {
 				require.Equal(t, h.Sum, vector[0].F)
 			}
@@ -3433,7 +3480,7 @@ func TestNativeHistogram_HistogramStdDevVar(t *testing.T) {
 				app := storage.Appender(context.Background())
 				var err error
 				if floatHisto {
-					_, err = app.AppendHistogram(0, lbls, ts, nil, tc.h.ToFloat())
+					_, err = app.AppendHistogram(0, lbls, ts, nil, tc.h.ToFloat(nil))
 				} else {
 					_, err = app.AppendHistogram(0, lbls, ts, tc.h, nil)
 				}
@@ -3678,7 +3725,7 @@ func TestNativeHistogram_HistogramQuantile(t *testing.T) {
 				app := storage.Appender(context.Background())
 				var err error
 				if floatHisto {
-					_, err = app.AppendHistogram(0, lbls, ts, nil, c.h.ToFloat())
+					_, err = app.AppendHistogram(0, lbls, ts, nil, c.h.ToFloat(nil))
 				} else {
 					_, err = app.AppendHistogram(0, lbls, ts, c.h, nil)
 				}
@@ -4109,7 +4156,7 @@ func TestNativeHistogram_HistogramFraction(t *testing.T) {
 				app := storage.Appender(context.Background())
 				var err error
 				if floatHisto {
-					_, err = app.AppendHistogram(0, lbls, ts, nil, c.h.ToFloat())
+					_, err = app.AppendHistogram(0, lbls, ts, nil, c.h.ToFloat(nil))
 				} else {
 					_, err = app.AppendHistogram(0, lbls, ts, c.h, nil)
 				}
@@ -4272,7 +4319,7 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 					// Since we mutate h later, we need to create a copy here.
 					var err error
 					if floatHisto {
-						_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy().ToFloat())
+						_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy().ToFloat(nil))
 					} else {
 						_, err = app.AppendHistogram(0, lbls, ts, h.Copy(), nil)
 					}
@@ -4282,7 +4329,7 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 					newTs := ts + int64(idx1)*int64(time.Minute/time.Millisecond)
 					// Since we mutate h later, we need to create a copy here.
 					if floatHisto {
-						_, err = app.AppendHistogram(0, lbls, newTs, nil, h.Copy().ToFloat())
+						_, err = app.AppendHistogram(0, lbls, newTs, nil, h.Copy().ToFloat(nil))
 					} else {
 						_, err = app.AppendHistogram(0, lbls, newTs, h.Copy(), nil)
 					}
@@ -4530,7 +4577,7 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 					// Since we mutate h later, we need to create a copy here.
 					var err error
 					if floatHisto {
-						_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy().ToFloat())
+						_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy().ToFloat(nil))
 					} else {
 						_, err = app.AppendHistogram(0, lbls, ts, h.Copy(), nil)
 					}
@@ -4687,7 +4734,7 @@ func TestNativeHistogram_MulDivOperator(t *testing.T) {
 				// Since we mutate h later, we need to create a copy here.
 				var err error
 				if floatHisto {
-					_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy().ToFloat())
+					_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy().ToFloat(nil))
 				} else {
 					_, err = app.AppendHistogram(0, lbls, ts, h.Copy(), nil)
 				}

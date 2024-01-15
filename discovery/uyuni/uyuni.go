@@ -25,6 +25,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/kolo/xmlrpc"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
@@ -115,7 +116,7 @@ func (*SDConfig) Name() string { return "uyuni" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger)
+	return NewDiscovery(c, opts.Logger, opts.Registerer)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -203,7 +204,7 @@ func getEndpointInfoForSystems(
 }
 
 // NewDiscovery returns a uyuni discovery for the given configuration.
-func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger log.Logger, reg prometheus.Registerer) (*Discovery, error) {
 	apiURL, err := url.Parse(conf.Server)
 	if err != nil {
 		return nil, err
@@ -227,10 +228,13 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 	}
 
 	d.Discovery = refresh.NewDiscovery(
-		logger,
-		"uyuni",
-		time.Duration(conf.RefreshInterval),
-		d.refresh,
+		refresh.Options{
+			Logger:   logger,
+			Mech:     "uyuni",
+			Interval: time.Duration(conf.RefreshInterval),
+			RefreshF: d.refresh,
+			Registry: reg,
+		},
 	)
 	return d, nil
 }

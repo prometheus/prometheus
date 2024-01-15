@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 )
@@ -46,7 +47,7 @@ func TestVultrSDRefresh(t *testing.T) {
 
 	cfg := DefaultSDConfig
 	cfg.HTTPClientConfig.BearerToken = APIKey
-	d, err := NewDiscovery(&cfg, log.NewNopLogger())
+	d, err := NewDiscovery(&cfg, log.NewNopLogger(), prometheus.NewRegistry())
 	require.NoError(t, err)
 	endpoint, err := url.Parse(sdMock.Mock.Endpoint())
 	require.NoError(t, err)

@@ -2230,6 +2230,11 @@ See below for the configuration options for Kuma MonitoringAssignment discovery:
 # Address of the Kuma Control Plane's MADS xDS server.
 server: <string>
 
+# Client id is used by Kuma Control Plane to compute Monitoring Assignment for specific Prometheus backend. 
+# This is useful when migrating between multiple Prometheus backends, or having separate backend for each Mesh.
+# When not specified, system hostname/fqdn will be used if available, if not `prometheus` will be used.
+[ client_id: <string> ]
+
 # The time to wait between polling update requests.
 [ refresh_interval: <duration> | default = 30s ]
 
@@ -3614,6 +3619,10 @@ queue_config:
   # Retry upon receiving a 429 status code from the remote-write storage.
   # This is experimental and might change in the future.
   [ retry_on_http_429: <boolean> | default = false ]
+  # If set, any sample that is older than sample_age_limit
+  # will not be sent to the remote storage. The default value is 0s,
+  # which means that all samples are sent.
+  [ sample_age_limit: <duration> | default = 0s ]
 
 # Configures the sending of series metadata to remote storage.
 # Metadata configuration is subject to change at any point

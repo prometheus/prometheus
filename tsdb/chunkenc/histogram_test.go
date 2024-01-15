@@ -98,7 +98,7 @@ func TestHistogramChunkSameBuckets(t *testing.T) {
 	chk, _, app, err := app.AppendHistogram(nil, ts, h, false)
 	require.NoError(t, err)
 	require.Nil(t, chk)
-	exp = append(exp, result{t: ts, h: h, fh: h.ToFloat()})
+	exp = append(exp, result{t: ts, h: h, fh: h.ToFloat(nil)})
 	require.Equal(t, 1, c.NumSamples())
 
 	// Add an updated histogram.
@@ -114,7 +114,7 @@ func TestHistogramChunkSameBuckets(t *testing.T) {
 	require.Nil(t, chk)
 	hExp := h.Copy()
 	hExp.CounterResetHint = histogram.NotCounterReset
-	exp = append(exp, result{t: ts, h: hExp, fh: hExp.ToFloat()})
+	exp = append(exp, result{t: ts, h: hExp, fh: hExp.ToFloat(nil)})
 	require.Equal(t, 2, c.NumSamples())
 
 	// Add update with new appender.
@@ -133,7 +133,7 @@ func TestHistogramChunkSameBuckets(t *testing.T) {
 	require.Nil(t, chk)
 	hExp = h.Copy()
 	hExp.CounterResetHint = histogram.NotCounterReset
-	exp = append(exp, result{t: ts, h: hExp, fh: hExp.ToFloat()})
+	exp = append(exp, result{t: ts, h: hExp, fh: hExp.ToFloat(nil)})
 	require.Equal(t, 3, c.NumSamples())
 
 	// 1. Expand iterator in simple case.
@@ -278,8 +278,8 @@ func TestHistogramChunkBucketChanges(t *testing.T) {
 	hExp := h2.Copy()
 	hExp.CounterResetHint = histogram.NotCounterReset
 	exp := []result{
-		{t: ts1, h: h1, fh: h1.ToFloat()},
-		{t: ts2, h: hExp, fh: hExp.ToFloat()},
+		{t: ts1, h: h1, fh: h1.ToFloat(nil)},
+		{t: ts2, h: hExp, fh: hExp.ToFloat(nil)},
 	}
 	it := c.Iterator(nil)
 	var act []result

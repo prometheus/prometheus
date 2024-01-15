@@ -116,6 +116,10 @@ func (e *CorruptionErr) Error() string {
 	return fmt.Sprintf("corruption in segment %s at %d: %s", SegmentName(e.Dir, e.Segment), e.Offset, e.Err)
 }
 
+func (e *CorruptionErr) Unwrap() error {
+	return e.Err
+}
+
 // OpenWriteSegment opens segment k in dir. The returned segment is ready for new appends.
 func OpenWriteSegment(logger log.Logger, dir string, k int) (*Segment, error) {
 	segName := SegmentName(dir, k)

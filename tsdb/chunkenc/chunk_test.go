@@ -14,6 +14,7 @@
 package chunkenc
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -153,8 +154,8 @@ func benchmarkIterator(b *testing.B, newChunk func() Chunk) {
 			res = v
 			i++
 		}
-		if it.Err() != io.EOF {
-			require.NoError(b, it.Err())
+		if err := it.Err(); err != nil && !errors.Is(err, io.EOF) {
+			require.NoError(b, err)
 		}
 		_ = res
 	}

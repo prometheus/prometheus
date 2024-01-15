@@ -110,6 +110,8 @@ type symbolCacheEntry struct {
 	lastValue      string
 }
 
+type PostingsEncoder func(*encoding.Encbuf, []uint32) error
+
 // Writer implements the IndexWriter interface for the standard
 // serialization format.
 type Writer struct {
@@ -148,6 +150,8 @@ type Writer struct {
 	crc32 hash.Hash
 
 	Version int
+
+	postingsEncoder PostingsEncoder
 }
 
 // TOC represents index Table Of Content that states where each section of index starts.
@@ -186,7 +190,8 @@ func NewTOCFromByteSlice(bs ByteSlice) (*TOC, error) {
 }
 
 // NewWriter returns a new Writer to the given filename. It serializes data in format version 2.
-func NewWriter(ctx context.Context, fn string) (*Writer, error) {
+// It uses the given encoder to encode each postings list.
+func NewWriterWithEncoder(ctx context.Context, fn string, encoder PostingsEncoder) (*Writer, error) {
 	dir := filepath.Dir(fn)
 
 	df, err := fileutil.OpenDir(dir)
@@ -229,14 +234,21 @@ func NewWriter(ctx context.Context, fn string) (*Writer, error) {
 		buf1: encoding.Encbuf{B: make([]byte, 0, 1<<22)},
 		buf2: encoding.Encbuf{B: make([]byte, 0, 1<<22)},
 
-		symbolCache: make(map[string]symbolCacheEntry, 1<<8),
-		labelNames:  make(map[string]uint64, 1<<8),
-		crc32:       newCRC32(),
+		symbolCache:     make(map[string]symbolCacheEntry, 1<<8),
+		labelNames:      make(map[string]uint64, 1<<8),
+		crc32:           newCRC32(),
+		postingsEncoder: encoder,
 	}
 	if err := iw.writeMeta(); err != nil {
 		return nil, err
 	}
 	return iw, nil
+}
+
+// NewWriter creates a new index writer using the default encoder. See
+// NewWriterWithEncoder.
+func NewWriter(ctx context.Context, fn string) (*Writer, error) {
+	return NewWriterWithEncoder(ctx, fn, EncodePostingsRaw)
 }
 
 func (w *Writer) write(bufs ...[]byte) error {
@@ -425,7 +437,7 @@ func (w *Writer) AddSeries(ref storage.SeriesRef, lset labels.Labels, chunks ...
 	// We add padding to 16 bytes to increase the addressable space we get through 4 byte
 	// series references.
 	if err := w.addPadding(16); err != nil {
-		return fmt.Errorf("failed to write padding bytes: %v", err)
+		return fmt.Errorf("failed to write padding bytes: %w", err)
 	}
 
 	if w.f.pos%16 != 0 {
@@ -442,7 +454,7 @@ func (w *Writer) AddSeries(ref storage.SeriesRef, lset labels.Labels, chunks ...
 		if !ok {
 			nameIndex, err = w.symbols.ReverseLookup(l.Name)
 			if err != nil {
-				return fmt.Errorf("symbol entry for %q does not exist, %v", l.Name, err)
+				return fmt.Errorf("symbol entry for %q does not exist, %w", l.Name, err)
 			}
 		}
 		w.labelNames[l.Name]++
@@ -452,7 +464,7 @@ func (w *Writer) AddSeries(ref storage.SeriesRef, lset labels.Labels, chunks ...
 		if !ok || cacheEntry.lastValue != l.Value {
 			valueIndex, err = w.symbols.ReverseLookup(l.Value)
 			if err != nil {
-				return fmt.Errorf("symbol entry for %q does not exist, %v", l.Value, err)
+				return fmt.Errorf("symbol entry for %q does not exist, %w", l.Value, err)
 			}
 			w.symbolCache[l.Name] = symbolCacheEntry{
 				index:          nameIndex,
@@ -941,6 +953,20 @@ func (w *Writer) writePostingsToTmpFiles() error {
 	return nil
 }
 
+// EncodePostingsRaw uses the "basic" postings list encoding format with no compression:
+// <BE uint32 len X><BE uint32 0><BE uint32 1>...<BE uint32 X-1>.
+func EncodePostingsRaw(e *encoding.Encbuf, offs []uint32) error {
+	e.PutBE32int(len(offs))
+
+	for _, off := range offs {
+		if off > (1<<32)-1 {
+			return fmt.Errorf("series offset %d exceeds 4 bytes", off)
+		}
+		e.PutBE32(off)
+	}
+	return nil
+}
+
 func (w *Writer) writePosting(name, value string, offs []uint32) error {
 	// Align beginning to 4 bytes for more efficient postings list scans.
 	if err := w.fP.AddPadding(4); err != nil {
@@ -959,13 +985,8 @@ func (w *Writer) writePosting(name, value string, offs []uint32) error {
 	w.cntPO++
 
 	w.buf1.Reset()
-	w.buf1.PutBE32int(len(offs))
-
-	for _, off := range offs {
-		if off > (1<<32)-1 {
-			return fmt.Errorf("series offset %d exceeds 4 bytes", off)
-		}
-		w.buf1.PutBE32(off)
+	if err := w.postingsEncoder(&w.buf1, offs); err != nil {
+		return err
 	}
 
 	w.buf2.Reset()

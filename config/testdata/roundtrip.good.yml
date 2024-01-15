@@ -108,6 +108,7 @@ scrape_configs:
 
     kuma_sd_configs:
       - server: http://kuma-control-plane.kuma-system.svc:5676
+        client_id: main-prometheus
 
     marathon_sd_configs:
       - servers:
