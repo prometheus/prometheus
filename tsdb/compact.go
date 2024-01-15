@@ -184,8 +184,8 @@ func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer
 	if l == nil {
 		l = log.NewNopLogger()
 	}
-	var mergeFunc storage.VerticalChunkSeriesMergeFunc
-	if opts.MergeFunc == nil {
+	mergeFunc := opts.MergeFunc
+	if mergeFunc == nil {
 		mergeFunc = storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge)
 	}
 	var maxBlockChunkSegmentSize int64
