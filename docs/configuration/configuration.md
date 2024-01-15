@@ -454,7 +454,7 @@ metric_relabel_configs:
 
 # Lower limit for the growth factor of one bucket to the next in each native histogram. 
 # The resolution of a histogram with a lower growth factor will be reduced until it is within the limit.
-# Here is the conversion table from growth factor to resulting schema/scale.
+# To set an upper limit for the schema (equivalent to "scale" in OTel's exponential histograms), use the following factor limits:
 # | growth factor | resulting schema AKA scale |
 # | ---   | --- |
 # | 65536 | -4  |
@@ -470,7 +470,7 @@ metric_relabel_configs:
 # | 1.01  |  6  |
 # | 1.005 |  7  |
 # | 1.002 |  8  |
-[ native_histogram_min_bucket_factor: <float> | default = 1.00271 ]
+[ native_histogram_min_bucket_factor: <float> | default = 0 ]
 ```
 
 Where `<job_name>` must be unique across all scrape configurations.
