@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.49.1 / 2024-01-15
+
+* [BUGFIX] TSDB: Fixed a wrong `q=` value in scrape accept header #13313
+
 ## 2.49.0 / 2024-01-15
 
 * [FEATURE] Promtool: Add `--run` flag promtool test rules command. #12206
