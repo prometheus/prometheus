@@ -256,9 +256,9 @@ func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matc
 					return nil, err
 				}
 
-				it, err := postingsForMatcher(ctx, ix, inverse)
-				if err != nil {
-					return nil, err
+				it := ix.PostingsForMatcher(ctx, inverse)
+				if it.Err() != nil {
+					return nil, it.Err()
 				}
 				notIts = append(notIts, it)
 			case isNot && !matchesEmpty: // l!=""
@@ -278,10 +278,10 @@ func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matc
 				}
 				its = append(its, it)
 			default: // l="a"
-				// Non-Not matcher, use normal postingsForMatcher.
-				it, err := postingsForMatcher(ctx, ix, m)
-				if err != nil {
-					return nil, err
+				// Non-Not matcher, use normal PostingsForMatcher.
+				it := ix.PostingsForMatcher(ctx, m)
+				if it.Err() != nil {
+					return nil, it.Err()
 				}
 				if index.IsEmptyPostingsType(it) {
 					return index.EmptyPostings(), nil
@@ -308,41 +308,6 @@ func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matc
 	}
 
 	return it, nil
-}
-
-func postingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Matcher) (index.Postings, error) {
-	// This method will not return postings for missing labels.
-
-	// Fast-path for equal matching.
-	if m.Type == labels.MatchEqual {
-		return ix.Postings(ctx, m.Name, m.Value)
-	}
-
-	// Fast-path for set matching.
-	if m.Type == labels.MatchRegexp {
-		setMatches := labels.FindSetMatches(m.GetRegexString())
-		if len(setMatches) > 0 {
-			return ix.Postings(ctx, m.Name, setMatches...)
-		}
-	}
-
-	vals, err := ix.LabelValues(ctx, m.Name)
-	if err != nil {
-		return nil, err
-	}
-
-	var res []string
-	for _, val := range vals {
-		if m.Matches(val) {
-			res = append(res, val)
-		}
-	}
-
-	if len(res) == 0 {
-		return index.EmptyPostings(), nil
-	}
-
-	return ix.Postings(ctx, m.Name, res...)
 }
 
 // inversePostingsForMatcher returns the postings for the series with the label name set but not matching the matcher.

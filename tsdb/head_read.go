@@ -121,6 +121,10 @@ func (h *headIndexReader) Postings(ctx context.Context, name string, values ...s
 	}
 }
 
+func (h *headIndexReader) PostingsForMatcher(ctx context.Context, m *labels.Matcher) index.Postings {
+	return h.head.postings.PostingsForMatcher(ctx, h, m)
+}
+
 func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 	series := make([]*memSeries, 0, 128)
 

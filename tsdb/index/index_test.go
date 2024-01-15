@@ -556,6 +556,205 @@ func TestReaderWithInvalidBuffer(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestReader_PostingsForMatcher(t *testing.T) {
+	dir := t.TempDir()
+	fn := filepath.Join(dir, indexFilename)
+	ctx := context.Background()
+
+	iw, err := NewWriter(ctx, fn)
+	require.NoError(t, err)
+
+	symbols := map[string]struct{}{}
+	// These have to be ordered
+	series := []labels.Labels{
+		labels.FromStrings("i", "a", "n", "1"),
+		labels.FromStrings("i", "b", "n", "1"),
+		labels.FromStrings("n", "1"),
+		labels.FromStrings("n", "2"),
+		labels.FromStrings("n", "2.5"),
+	}
+	for _, ls := range series {
+		ls.Range(func(l labels.Label) {
+			symbols[l.Name] = struct{}{}
+			symbols[l.Value] = struct{}{}
+		})
+	}
+	var syms []string
+	for s := range symbols {
+		syms = append(syms, s)
+	}
+	sort.Strings(syms)
+	for _, s := range syms {
+		require.NoError(t, iw.AddSymbol(s))
+	}
+
+	for i, s := range series {
+		require.NoError(t, iw.AddSeries(storage.SeriesRef(i), s))
+	}
+	require.NoError(t, iw.Close())
+
+	ir, err := NewFileReader(fn)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, ir.Close())
+	})
+
+	testCases := []struct {
+		matcher *labels.Matcher
+		exp     []labels.Labels
+	}{
+		// Simple equals.
+		{
+			matcher: labels.MustNewMatcher(labels.MatchEqual, "n", "1"),
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1"),
+				labels.FromStrings("n", "1", "i", "a"),
+				labels.FromStrings("n", "1", "i", "b"),
+			},
+		},
+		{
+			// PostingsForMatcher will only return postings for the matcher's label.
+			matcher: labels.MustNewMatcher(labels.MatchEqual, "missing", ""),
+			exp:     []labels.Labels{},
+		},
+		// Not equals.
+		{
+			matcher: labels.MustNewMatcher(labels.MatchNotEqual, "n", "1"),
+			exp: []labels.Labels{
+				labels.FromStrings("n", "2"),
+				labels.FromStrings("n", "2.5"),
+			},
+		},
+		{
+			matcher: labels.MustNewMatcher(labels.MatchNotEqual, "i", ""),
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1", "i", "a"),
+				labels.FromStrings("n", "1", "i", "b"),
+			},
+		},
+		{
+			matcher: labels.MustNewMatcher(labels.MatchNotEqual, "missing", ""),
+			exp:     []labels.Labels{},
+		},
+		// Regexp.
+		{
+			matcher: labels.MustNewMatcher(labels.MatchRegexp, "n", "^1$"),
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1"),
+				labels.FromStrings("n", "1", "i", "a"),
+				labels.FromStrings("n", "1", "i", "b"),
+			},
+		},
+		{
+			// PostingsForMatcher will only return postings for the matcher's label.
+			matcher: labels.MustNewMatcher(labels.MatchRegexp, "i", "^$"),
+			exp:     []labels.Labels{},
+		},
+		// Not regexp.
+		{
+			matcher: labels.MustNewMatcher(labels.MatchNotRegexp, "n", "^1$"),
+			exp: []labels.Labels{
+				labels.FromStrings("n", "2"),
+				labels.FromStrings("n", "2.5"),
+			},
+		},
+		{
+			matcher: labels.MustNewMatcher(labels.MatchNotRegexp, "n", "1"),
+			exp: []labels.Labels{
+				labels.FromStrings("n", "2"),
+				labels.FromStrings("n", "2.5"),
+			},
+		},
+		{
+			matcher: labels.MustNewMatcher(labels.MatchNotRegexp, "n", "1|2.5"),
+			exp: []labels.Labels{
+				labels.FromStrings("n", "2"),
+			},
+		},
+		{
+			matcher: labels.MustNewMatcher(labels.MatchNotRegexp, "n", "(1|2.5)"),
+			exp: []labels.Labels{
+				labels.FromStrings("n", "2"),
+			},
+		},
+		// Set optimization for regexp.
+		// Refer to https://github.com/prometheus/prometheus/issues/2651.
+		{
+			matcher: labels.MustNewMatcher(labels.MatchRegexp, "n", "1|2"),
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1"),
+				labels.FromStrings("n", "1", "i", "a"),
+				labels.FromStrings("n", "1", "i", "b"),
+				labels.FromStrings("n", "2"),
+			},
+		},
+		{
+			matcher: labels.MustNewMatcher(labels.MatchRegexp, "i", "a|b"),
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1", "i", "a"),
+				labels.FromStrings("n", "1", "i", "b"),
+			},
+		},
+		{
+			matcher: labels.MustNewMatcher(labels.MatchRegexp, "i", "(a|b)"),
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1", "i", "a"),
+				labels.FromStrings("n", "1", "i", "b"),
+			},
+		},
+		{
+			matcher: labels.MustNewMatcher(labels.MatchRegexp, "n", "x1|2"),
+			exp: []labels.Labels{
+				labels.FromStrings("n", "2"),
+			},
+		},
+		{
+			matcher: labels.MustNewMatcher(labels.MatchRegexp, "n", "2|2\\.5"),
+			exp: []labels.Labels{
+				labels.FromStrings("n", "2"),
+				labels.FromStrings("n", "2.5"),
+			},
+		},
+		// Empty value.
+		{
+			// PostingsForMatcher will only return postings having a matching label.
+			matcher: labels.MustNewMatcher(labels.MatchRegexp, "i", "c||d"),
+			exp:     []labels.Labels{},
+		},
+		{
+			// PostingsForMatcher will only return postings having a matching label.
+			matcher: labels.MustNewMatcher(labels.MatchRegexp, "i", "(c||d)"),
+			exp:     []labels.Labels{},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.matcher.String(), func(t *testing.T) {
+			exp := map[string]struct{}{}
+			for _, l := range tc.exp {
+				exp[l.String()] = struct{}{}
+			}
+
+			it := ir.PostingsForMatcher(ctx, tc.matcher)
+
+			var builder labels.ScratchBuilder
+			for it.Next() {
+				require.NoError(t, ir.Series(it.At(), &builder, nil))
+				lbls := builder.Labels()
+				_, ok := exp[lbls.String()]
+				require.True(t, ok, "Got unexpected label set %s", lbls.String())
+				delete(exp, lbls.String())
+			}
+			require.NoError(t, it.Err())
+
+			var remaining []string
+			for l := range exp {
+				remaining = append(remaining, l)
+			}
+			require.Empty(t, remaining, "Didn't find all expected label sets")
+		})
+	}
+}
+
 // TestNewFileReaderErrorNoOpenFiles ensures that in case of an error no file remains open.
 func TestNewFileReaderErrorNoOpenFiles(t *testing.T) {
 	dir := testutil.NewTemporaryDirectory("block", t)

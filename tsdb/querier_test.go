@@ -2326,6 +2326,16 @@ func (m mockIndex) SortedPostings(p index.Postings) index.Postings {
 	return index.NewListPostings(ep)
 }
 
+func (m mockIndex) PostingsForMatcher(ctx context.Context, matcher *labels.Matcher) index.Postings {
+	var res []index.Postings
+	for l, srs := range m.postings {
+		if l.Name == matcher.Name && matcher.Matches(l.Value) {
+			res = append(res, index.NewListPostings(srs))
+		}
+	}
+	return index.Merge(ctx, res...)
+}
+
 func (m mockIndex) ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings {
 	out := make([]storage.SeriesRef, 0, 128)
 
@@ -3190,92 +3200,6 @@ func benchQuery(b *testing.B, expExpansions int, q storage.Querier, selectors la
 		require.Empty(b, ss.Warnings())
 		require.Equal(b, expExpansions, actualExpansions)
 		require.NoError(b, ss.Err())
-	}
-}
-
-// mockMatcherIndex is used to check if the regex matcher works as expected.
-type mockMatcherIndex struct{}
-
-func (m mockMatcherIndex) Symbols() index.StringIter { return nil }
-
-func (m mockMatcherIndex) Close() error { return nil }
-
-// SortedLabelValues will return error if it is called.
-func (m mockMatcherIndex) SortedLabelValues(context.Context, string, ...*labels.Matcher) ([]string, error) {
-	return []string{}, errors.New("sorted label values called")
-}
-
-// LabelValues will return error if it is called.
-func (m mockMatcherIndex) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, error) {
-	return []string{}, errors.New("label values called")
-}
-
-func (m mockMatcherIndex) LabelValueFor(context.Context, storage.SeriesRef, string) (string, error) {
-	return "", errors.New("label value for called")
-}
-
-func (m mockMatcherIndex) LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([]string, error) {
-	return nil, errors.New("label names for for called")
-}
-
-func (m mockMatcherIndex) Postings(context.Context, string, ...string) (index.Postings, error) {
-	return index.EmptyPostings(), nil
-}
-
-func (m mockMatcherIndex) SortedPostings(p index.Postings) index.Postings {
-	return index.EmptyPostings()
-}
-
-func (m mockMatcherIndex) ShardedPostings(ps index.Postings, shardIndex, shardCount uint64) index.Postings {
-	return ps
-}
-
-func (m mockMatcherIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
-	return nil
-}
-
-func (m mockMatcherIndex) LabelNames(context.Context, ...*labels.Matcher) ([]string, error) {
-	return []string{}, nil
-}
-
-func TestPostingsForMatcher(t *testing.T) {
-	ctx := context.Background()
-
-	cases := []struct {
-		matcher  *labels.Matcher
-		hasError bool
-	}{
-		{
-			// Equal label matcher will just return.
-			matcher:  labels.MustNewMatcher(labels.MatchEqual, "test", "test"),
-			hasError: false,
-		},
-		{
-			// Regex matcher which doesn't have '|' will call Labelvalues()
-			matcher:  labels.MustNewMatcher(labels.MatchRegexp, "test", ".*"),
-			hasError: true,
-		},
-		{
-			matcher:  labels.MustNewMatcher(labels.MatchRegexp, "test", "a|b"),
-			hasError: false,
-		},
-		{
-			// Test case for double quoted regex matcher
-			matcher:  labels.MustNewMatcher(labels.MatchRegexp, "test", "^(?:a|b)$"),
-			hasError: true,
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.matcher.String(), func(t *testing.T) {
-			ir := &mockMatcherIndex{}
-			_, err := postingsForMatcher(ctx, ir, tc.matcher)
-			if tc.hasError {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-			}
-		})
 	}
 }
 

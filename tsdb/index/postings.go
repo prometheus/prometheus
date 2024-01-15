@@ -397,6 +397,30 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 	}
 }
 
+func (p *MemPostings) PostingsForMatcher(ctx context.Context, pr PostingsReader, m *labels.Matcher) Postings {
+	if p, ok := fastPostingsForMatcher(ctx, pr, m); ok {
+		return p
+	}
+
+	p.mtx.RLock()
+
+	e := p.m[m.Name]
+	if len(e) == 0 {
+		p.mtx.RUnlock()
+		return EmptyPostings()
+	}
+
+	var its []Postings
+	for v, srs := range e {
+		if m.Matches(v) && len(srs) > 0 {
+			its = append(its, NewListPostings(srs))
+		}
+	}
+	p.mtx.RUnlock()
+
+	return Merge(ctx, its...)
+}
+
 // ExpandPostings returns the postings expanded as a slice.
 func ExpandPostings(p Postings) (res []storage.SeriesRef, err error) {
 	for p.Next() {
@@ -897,4 +921,31 @@ func (h *postingsWithIndexHeap) Pop() interface{} {
 	x := old[n-1]
 	*h = old[0 : n-1]
 	return x
+}
+
+// fastPostingsForMatcher tries fast-paths for getting postings for a given matcher.
+// If a fast-path was chosen, the resulting Postings and true are returned. Otherwise nil and false are returned.
+func fastPostingsForMatcher(ctx context.Context, pr PostingsReader, m *labels.Matcher) (Postings, bool) {
+	// Fast-path for equal matching.
+	if m.Type == labels.MatchEqual {
+		p, err := pr.Postings(ctx, m.Name, m.Value)
+		if err != nil {
+			return ErrPostings(err), true
+		}
+		return p, true
+	}
+
+	// Fast-path for set matching.
+	if m.Type == labels.MatchRegexp {
+		setMatches := labels.FindSetMatches(m.GetRegexString())
+		if len(setMatches) > 0 {
+			p, err := pr.Postings(ctx, m.Name, setMatches...)
+			if err != nil {
+				return ErrPostings(err), true
+			}
+			return p, true
+		}
+	}
+
+	return nil, false
 }
