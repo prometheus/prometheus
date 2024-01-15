@@ -16,9 +16,8 @@ package stats
 import (
 	"bytes"
 	"fmt"
+	"slices"
 	"time"
-
-	"golang.org/x/exp/slices"
 )
 
 // A Timer that can be started and stopped and accumulates the total time it
