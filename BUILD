@@ -19,6 +19,7 @@ cc_library(
     hdrs = glob(["bare_bones/*.h"]),
     deps = [
         "//third_party",
+        "@lz4//:lz4",
         "@parallel_hashmap",
         "@scope_exit",
         # "@zlib//:zlib",
@@ -60,25 +61,6 @@ cc_binary(
     ],
     deps = [
         ":bare_bones",
-    ],
-)
-
-cc_library(
-    name = "lz4chain",
-    hdrs = glob(["bare_bones/lz4chain/*.h"]),
-    deps = [
-        ":bare_bones_headers",
-        "@lz4//:lz4"
-    ],
-)
-
-cc_test(
-    name = "lz4chain_test",
-    srcs = glob(["bare_bones/lz4chain/tests/*_tests.cpp"]),
-    malloc = "@jemalloc",
-    deps = [
-        ":lz4chain",
-        "@gtest//:gtest_main",
     ],
 )
 
@@ -185,7 +167,6 @@ cc_library(
     deps = [
         ":wal",
         ":prometheus",
-        "@lz4stream//:lz4stream",
         "@gtest//:gtest_main",
         "//third_party:third_party",
     ],
@@ -205,7 +186,6 @@ cc_library(
     hdrs = glob(["integration_tests/*.h"]),
     deps = [
         ":primitives",
-        "@lz4stream//:lz4stream",
         "@gtest//:gtest_main",
     ],
 )

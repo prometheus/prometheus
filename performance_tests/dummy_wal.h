@@ -1,4 +1,3 @@
-#include <lz4_stream.h>
 #include <parallel_hashmap/phmap_utils.h>
 #include <cassert>
 #include <chrono>
@@ -10,6 +9,8 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+#include "bare_bones/lz4_stream.h"
 
 #define XXH_INLINE_ALL
 #include "third_party/xxhash/xxhash.h"
@@ -190,7 +191,7 @@ class DummyWal {
   uint64_t cnt_ = 0;
 
   std::ifstream file_;
-  lz4_stream::istream in_;
+  BareBones::LZ4Stream::istream in_;
   enum { A, B } a_or_b_ = A;
   std::vector<char> buf_a_;
   std::vector<char> buf_b_;

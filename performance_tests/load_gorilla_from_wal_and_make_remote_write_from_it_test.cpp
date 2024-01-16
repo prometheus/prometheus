@@ -2,14 +2,12 @@
 
 #include <chrono>
 
-#include <lz4_stream.h>
-
+#include "bare_bones/lz4_stream.h"
+#include "log.h"
 #include "primitives/primitives.h"
 #include "prometheus/remote_write.h"
 #include "third_party/protozero/pbf_writer.hpp"
 #include "wal/wal.h"
-
-#include "log.h"
 
 using namespace PromPP;  // NOLINT
 

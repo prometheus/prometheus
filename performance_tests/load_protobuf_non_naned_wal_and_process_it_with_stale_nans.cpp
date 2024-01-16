@@ -1,18 +1,14 @@
 #include "load_protobuf_non_naned_wal_and_process_it_with_stale_nans.h"
 
-#include "prometheus/remote_write.h"
-
-#include "third_party/protozero/pbf_reader.hpp"
-
-#include "bare_bones/gorilla.h"  // stale_nan utils
-
-#include "dummy_wal.h"
-#include "wal/wal.h"
-
-#include "log.h"
-
 #include <chrono>
 #include <ios>
+
+#include "bare_bones/gorilla.h"  // stale_nan utils
+#include "dummy_wal.h"
+#include "log.h"
+#include "prometheus/remote_write.h"
+#include "third_party/protozero/pbf_reader.hpp"
+#include "wal/wal.h"
 
 using namespace PromPP;  // NOLINT
 
@@ -64,7 +60,7 @@ struct BenchParams {
 void run_bench(BenchParams& benchmark_params, const std::string& path, const Config& config, Metrics& metrics) {
   using namespace std::chrono_literals;
   std::ifstream infile(path, std::ios_base::binary);
-  lz4_stream::istream in(infile);
+  BareBones::LZ4Stream::istream in(infile);
   size_t processed_messages_count = 0;
 
   // 1. read our messages
