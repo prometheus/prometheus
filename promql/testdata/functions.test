@@ -482,6 +482,19 @@ load 5m
 	http_requests{job="app-server", instance="0", group="canary"}		0+70x10
 	http_requests{job="app-server", instance="1", group="canary"}		0+80x10
 	http_requests{job="api-server", instance="2", group="production"}	0+10x10
+	cpu_time_total{job="cpu", cpu="0"} 0+10x10
+	cpu_time_total{job="cpu", cpu="1"} 0+10x10
+	cpu_time_total{job="cpu", cpu="2"} 0+10x10
+	cpu_time_total{job="cpu", cpu="3"} 0+10x10
+	cpu_time_total{job="cpu", cpu="10"} 0+10x10
+	cpu_time_total{job="cpu", cpu="11"} 0+10x10
+	cpu_time_total{job="cpu", cpu="12"} 0+10x10
+	cpu_time_total{job="cpu", cpu="20"} 0+10x10
+	cpu_time_total{job="cpu", cpu="21"} 0+10x10
+	cpu_time_total{job="cpu", cpu="100"} 0+10x10
+	node_uname_info{job="node_exporter", instance="4m600", release="1.2.3"} 0+10x10
+	node_uname_info{job="node_exporter", instance="4m5", release="1.11.3"} 0+10x10
+	node_uname_info{job="node_exporter", instance="4m1000", release="1.111.3"} 0+10x10
 
 eval_ordered instant at 50m sort_by_label(http_requests, "instance")
 	http_requests{group="production", instance="0", job="api-server"} 100
@@ -578,6 +591,28 @@ eval_ordered instant at 50m sort_by_label_desc(http_requests, "instance", "group
 	http_requests{group="production", instance="0", job="api-server"} 100
 	http_requests{group="canary", instance="0", job="app-server"} 700
 	http_requests{group="canary", instance="0", job="api-server"} 300
+
+eval_ordered instant at 50m sort_by_label(cpu_time_total, "cpu")
+	cpu_time_total{job="cpu", cpu="0"} 100
+	cpu_time_total{job="cpu", cpu="1"} 100
+	cpu_time_total{job="cpu", cpu="2"} 100
+	cpu_time_total{job="cpu", cpu="3"} 100
+	cpu_time_total{job="cpu", cpu="10"} 100
+	cpu_time_total{job="cpu", cpu="11"} 100
+	cpu_time_total{job="cpu", cpu="12"} 100
+	cpu_time_total{job="cpu", cpu="20"} 100
+	cpu_time_total{job="cpu", cpu="21"} 100
+	cpu_time_total{job="cpu", cpu="100"} 100
+
+eval_ordered instant at 50m sort_by_label(node_uname_info, "instance")
+	node_uname_info{job="node_exporter", instance="4m5", release="1.11.3"} 100
+	node_uname_info{job="node_exporter", instance="4m600", release="1.2.3"} 100
+	node_uname_info{job="node_exporter", instance="4m1000", release="1.111.3"} 100
+
+eval_ordered instant at 50m sort_by_label(node_uname_info, "release")
+	node_uname_info{job="node_exporter", instance="4m600", release="1.2.3"} 100
+	node_uname_info{job="node_exporter", instance="4m5", release="1.11.3"} 100
+	node_uname_info{job="node_exporter", instance="4m1000", release="1.111.3"} 100
 
 # Tests for holt_winters
 clear
