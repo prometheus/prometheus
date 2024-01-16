@@ -2642,44 +2642,10 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, grouping []string, par
 	if op == parser.QUANTILE {
 		q = param.(float64)
 	}
-	var valueLabel string
-	var recomputeGroupingKey bool
-	if op == parser.COUNT_VALUES {
-		valueLabel = param.(string)
-		if !model.LabelName(valueLabel).IsValid() {
-			ev.errorf("invalid label name %q", valueLabel)
-		}
-		if !without {
-			// We're changing the grouping labels so we have to ensure they're still sorted
-			// and we have to flag to recompute the grouping key. Considering the count_values()
-			// operator is less frequently used than other aggregations, we're fine having to
-			// re-compute the grouping key on each step for this case.
-			grouping = append(grouping, valueLabel)
-			slices.Sort(grouping)
-			recomputeGroupingKey = true
-		}
-	}
 
-	var buf []byte
 	for si, s := range vec {
 		metric := s.Metric
-
-		if op == parser.COUNT_VALUES {
-			enh.resetBuilder(metric)
-			enh.lb.Set(valueLabel, strconv.FormatFloat(s.F, 'f', -1, 64))
-			metric = enh.lb.Labels()
-
-			// We've changed the metric so we have to recompute the grouping key.
-			recomputeGroupingKey = true
-		}
-
-		// We can use the pre-computed grouping key unless grouping labels have changed.
-		var groupingKey uint64
-		if !recomputeGroupingKey {
-			groupingKey = seriesHelper[si].groupingKey
-		} else {
-			groupingKey, buf = generateGroupingKey(metric, grouping, without, buf)
-		}
+		groupingKey := seriesHelper[si].groupingKey
 
 		group, ok := result[groupingKey]
 		// Add a new group if it doesn't exist.
@@ -2800,7 +2766,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, grouping []string, par
 				group.floatValue = s.F
 			}
 
-		case parser.COUNT, parser.COUNT_VALUES:
+		case parser.COUNT:
 			group.groupCount++
 
 		case parser.STDVAR, parser.STDDEV:
@@ -2872,7 +2838,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, grouping []string, par
 				aggr.floatValue = aggr.floatMean
 			}
 
-		case parser.COUNT, parser.COUNT_VALUES:
+		case parser.COUNT:
 			aggr.floatValue = float64(aggr.groupCount)
 
 		case parser.STDVAR:
