@@ -24,6 +24,7 @@ import (
 	"runtime"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -1544,6 +1545,18 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 				}
 			}
 			ev.samplesStats.UpdatePeak(ev.currentSamples)
+
+			if e.Func.Name == "rate" || e.Func.Name == "increase" {
+				samples := inMatrix[0]
+				metricName := samples.Metric.Get(labels.MetricName)
+				if metricName != "" && len(samples.Floats) > 0 &&
+					!strings.HasSuffix(metricName, "_total") &&
+					!strings.HasSuffix(metricName, "_sum") &&
+					!strings.HasSuffix(metricName, "_count") &&
+					!strings.HasSuffix(metricName, "_bucket") {
+					warnings.Add(annotations.NewPossibleNonCounterInfo(metricName, e.Args[0].PositionRange()))
+				}
+			}
 		}
 		ev.samplesStats.UpdatePeak(ev.currentSamples)
 
