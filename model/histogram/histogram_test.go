@@ -654,7 +654,7 @@ func TestHistogramCopy(t *testing.T) {
 	}
 }
 
-func TestHistogramCopyFrom(t *testing.T) {
+func TestHistogramCopyTo(t *testing.T) {
 	cases := []struct {
 		name     string
 		orig     *Histogram
