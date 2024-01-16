@@ -2,8 +2,7 @@
 
 #include <chrono>
 
-#include <lz4_stream.h>
-
+#include "bare_bones/lz4_stream.h"
 #include "primitives/snug_composites.h"
 
 using namespace PromPP;  // NOLINT
@@ -12,7 +11,7 @@ void full_load_lss::execute(const Config& config, Metrics& metrics) const {
   // test load time: DecodingTable
   {
     std::ifstream infile(input_file_full_name(config), std::ios_base::binary);
-    lz4_stream::istream in(infile);
+    BareBones::LZ4Stream::istream in(infile);
     if (!infile.is_open()) {
       throw std::runtime_error("failed to open file '" + input_file_full_name(config) + "'");
     }
@@ -30,7 +29,7 @@ void full_load_lss::execute(const Config& config, Metrics& metrics) const {
   // test load time: ParallelEncodingBimap
   {
     std::ifstream infile(input_file_full_name(config), std::ios_base::binary);
-    lz4_stream::istream in(infile);
+    BareBones::LZ4Stream::istream in(infile);
     if (!infile.is_open()) {
       throw std::runtime_error("failed to open file '" + input_file_full_name(config) + "'");
     }
@@ -48,7 +47,7 @@ void full_load_lss::execute(const Config& config, Metrics& metrics) const {
   // test load time: EncodingBimap
   {
     std::ifstream infile(input_file_full_name(config), std::ios_base::binary);
-    lz4_stream::istream in(infile);
+    BareBones::LZ4Stream::istream in(infile);
     if (!infile.is_open()) {
       throw std::runtime_error("failed to open file '" + input_file_full_name(config) + "'");
     }
@@ -72,7 +71,7 @@ void full_load_lss::execute(const Config& config, Metrics& metrics) const {
 
     Primitives::SnugComposites::LabelSet::OrderedEncodingBimap lss;
 
-    lz4_stream::istream in(infile);
+    BareBones::LZ4Stream::istream in(infile);
     auto start = std::chrono::steady_clock::now();
     in >> lss;
     auto now = std::chrono::steady_clock::now();
@@ -90,7 +89,7 @@ void full_load_lss::execute(const Config& config, Metrics& metrics) const {
 
     Primitives::SnugComposites::LabelSet::OrderedIndexingTable lss;
 
-    lz4_stream::istream in(infile);
+    BareBones::LZ4Stream::istream in(infile);
     auto start = std::chrono::steady_clock::now();
     in >> lss;
     auto now = std::chrono::steady_clock::now();
