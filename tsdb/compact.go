@@ -188,12 +188,12 @@ func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer
 	if mergeFunc == nil {
 		mergeFunc = storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge)
 	}
-	var maxBlockChunkSegmentSize int64
-	if opts.MaxBlockChunkSegmentSize == 0 {
+	maxBlockChunkSegmentSize := opts.MaxBlockChunkSegmentSize
+	if maxBlockChunkSegmentSize == 0 {
 		maxBlockChunkSegmentSize = chunks.DefaultChunkSegmentSize
 	}
-	var pe index.PostingsEncoder
-	if opts.PE == nil {
+	pe := opts.PE
+	if pe == nil {
 		pe = index.EncodePostingsRaw
 	}
 	return &LeveledCompactor{
