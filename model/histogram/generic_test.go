@@ -17,9 +17,8 @@ import (
 	"math"
 	"testing"
 
-	"golang.org/x/exp/slices"
-
 	"github.com/stretchr/testify/require"
+	"golang.org/x/exp/slices"
 )
 
 func TestGetBound(t *testing.T) {
