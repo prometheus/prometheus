@@ -2691,19 +2691,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, grouping []string, par
 		group, ok := result[groupingKey]
 		// Add a new group if it doesn't exist.
 		if !ok {
-			var m labels.Labels
-			enh.resetBuilder(metric)
-			switch {
-			case without:
-				enh.lb.Del(grouping...)
-				enh.lb.Del(labels.MetricName)
-				m = enh.lb.Labels()
-			case len(grouping) > 0:
-				enh.lb.Keep(grouping...)
-				m = enh.lb.Labels()
-			default:
-				m = labels.EmptyLabels()
-			}
+			m := generateGroupingLabels(enh, metric, without, grouping)
 			newAgg := &groupedAggregation{
 				labels:     m,
 				floatValue: s.F,
@@ -2967,6 +2955,21 @@ func generateGroupingKey(metric labels.Labels, grouping []string, without bool, 
 	}
 
 	return metric.HashForLabels(buf, grouping...)
+}
+
+func generateGroupingLabels(enh *EvalNodeHelper, metric labels.Labels, without bool, grouping []string) labels.Labels {
+	enh.resetBuilder(metric)
+	switch {
+	case without:
+		enh.lb.Del(grouping...)
+		enh.lb.Del(labels.MetricName)
+		return enh.lb.Labels()
+	case len(grouping) > 0:
+		enh.lb.Keep(grouping...)
+		return enh.lb.Labels()
+	default:
+		return labels.EmptyLabels()
+	}
 }
 
 // btos returns 1 if b is true, 0 otherwise.
