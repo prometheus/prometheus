@@ -3540,6 +3540,11 @@ func TestPickSchema(t *testing.T) {
 			factor: 1.002,
 			schema: 8,
 		},
+		// The default value of native_histogram_min_bucket_factor
+		{
+			factor: 0,
+			schema: 8,
+		},
 	}
 
 	for _, tc := range tcs {
