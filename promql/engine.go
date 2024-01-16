@@ -2967,23 +2967,8 @@ func (ev *evaluator) aggregationCountValues(e *parser.AggregateExpr, grouping []
 		group, ok := result[groupingKey]
 		// Add a new group if it doesn't exist.
 		if !ok {
-			var m labels.Labels
-			enh.resetBuilder(metric)
-			switch {
-			case without:
-				enh.lb.Del(grouping...)
-				enh.lb.Del(labels.MetricName)
-				m = enh.lb.Labels()
-			case len(grouping) > 0:
-				enh.lb.Keep(grouping...)
-				m = enh.lb.Labels()
-			default:
-				m = labels.EmptyLabels()
-			}
 			newAgg := &groupedAggregation{
-				labels:     m,
-				floatValue: s.F,
-				floatMean:  s.F,
+				labels:     generateGroupingLabels(enh, metric, e.Without, grouping),
 				groupCount: 1,
 			}
 			switch {
