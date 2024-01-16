@@ -35,9 +35,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/google/pprof/profile"
 	"github.com/prometheus/client_golang/api"
-	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/client_golang/prometheus/testutil/promlint"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -185,6 +183,14 @@ func main() {
 	queryLabelsEnd := queryLabelsCmd.Flag("end", "End time (RFC3339 or Unix timestamp).").String()
 	queryLabelsMatch := queryLabelsCmd.Flag("match", "Series selector. Can be specified multiple times.").Strings()
 
+	queryAnalyzeCfg := &QueryAnalyzeConfig{}
+	queryAnalyzeCmd := queryCmd.Command("analyze", "Run queries against your Prometheus to analyze the usage pattern of certain metrics.")
+	queryAnalyzeCmd.Flag("server", "Prometheus server to query.").Required().URLVar(&serverURL)
+	queryAnalyzeCmd.Flag("type", "Type of metric: histogram.").Required().StringVar(&queryAnalyzeCfg.metricType)
+	queryAnalyzeCmd.Flag("duration", "Time frame to analyze.").Default("1h").DurationVar(&queryAnalyzeCfg.duration)
+	queryAnalyzeCmd.Flag("time", "Query time (RFC3339 or Unix timestamp), defaults to now.").StringVar(&queryAnalyzeCfg.time)
+	queryAnalyzeCmd.Flag("match", "Series selector. Can be specified multiple times.").Required().StringsVar(&queryAnalyzeCfg.matchers)
+
 	pushCmd := app.Command("push", "Push to a Prometheus server.")
 	pushCmd.Flag("http.config.file", "HTTP client configuration file for promtool to connect to Prometheus.").PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
 	pushMetricsCmd := pushCmd.Command("metrics", "Push metrics to a prometheus remote write (for testing purpose only).")
@@ -230,7 +236,7 @@ func main() {
 	dumpPath := tsdbDumpCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
 	dumpMinTime := tsdbDumpCmd.Flag("min-time", "Minimum timestamp to dump.").Default(strconv.FormatInt(math.MinInt64, 10)).Int64()
 	dumpMaxTime := tsdbDumpCmd.Flag("max-time", "Maximum timestamp to dump.").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
-	dumpMatch := tsdbDumpCmd.Flag("match", "Series selector.").Default("{__name__=~'(?s:.*)'}").String()
+	dumpMatch := tsdbDumpCmd.Flag("match", "Series selector. Can be specified multiple times.").Default("{__name__=~'(?s:.*)'}").Strings()
 
 	importCmd := tsdbCmd.Command("create-blocks-from", "[Experimental] Import samples from input and produce TSDB blocks. Please refer to the storage docs for more details.")
 	importHumanReadable := importCmd.Flag("human-readable", "Print human readable values.").Short('r').Bool()
@@ -389,6 +395,9 @@ func main() {
 
 	case importRulesCmd.FullCommand():
 		os.Exit(checkErr(importRules(serverURL, httpRoundTripper, *importRulesStart, *importRulesEnd, *importRulesOutputDir, *importRulesEvalInterval, *maxBlockDuration, *importRulesFiles...)))
+
+	case queryAnalyzeCmd.FullCommand():
+		os.Exit(checkErr(queryAnalyzeCfg.run(serverURL, httpRoundTripper)))
 
 	case documentationCmd.FullCommand():
 		os.Exit(checkErr(documentcli.GenerateMarkdown(app.Model(), os.Stdout)))
@@ -997,246 +1006,6 @@ func checkMetricsExtended(r io.Reader) ([]metricStat, int, error) {
 	return stats, total, nil
 }
 
-// QueryInstant performs an instant query against a Prometheus server.
-func QueryInstant(url *url.URL, roundTripper http.RoundTripper, query, evalTime string, p printer) int {
-	if url.Scheme == "" {
-		url.Scheme = "http"
-	}
-	config := api.Config{
-		Address:      url.String(),
-		RoundTripper: roundTripper,
-	}
-
-	// Create new client.
-	c, err := api.NewClient(config)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "error creating API client:", err)
-		return failureExitCode
-	}
-
-	eTime := time.Now()
-	if evalTime != "" {
-		eTime, err = parseTime(evalTime)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error parsing evaluation time:", err)
-			return failureExitCode
-		}
-	}
-
-	// Run query against client.
-	api := v1.NewAPI(c)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, _, err := api.Query(ctx, query, eTime) // Ignoring warnings for now.
-	cancel()
-	if err != nil {
-		return handleAPIError(err)
-	}
-
-	p.printValue(val)
-
-	return successExitCode
-}
-
-// QueryRange performs a range query against a Prometheus server.
-func QueryRange(url *url.URL, roundTripper http.RoundTripper, headers map[string]string, query, start, end string, step time.Duration, p printer) int {
-	if url.Scheme == "" {
-		url.Scheme = "http"
-	}
-	config := api.Config{
-		Address:      url.String(),
-		RoundTripper: roundTripper,
-	}
-
-	if len(headers) > 0 {
-		config.RoundTripper = promhttp.RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
-			for key, value := range headers {
-				req.Header.Add(key, value)
-			}
-			return roundTripper.RoundTrip(req)
-		})
-	}
-
-	// Create new client.
-	c, err := api.NewClient(config)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "error creating API client:", err)
-		return failureExitCode
-	}
-
-	var stime, etime time.Time
-
-	if end == "" {
-		etime = time.Now()
-	} else {
-		etime, err = parseTime(end)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error parsing end time:", err)
-			return failureExitCode
-		}
-	}
-
-	if start == "" {
-		stime = etime.Add(-5 * time.Minute)
-	} else {
-		stime, err = parseTime(start)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error parsing start time:", err)
-			return failureExitCode
-		}
-	}
-
-	if !stime.Before(etime) {
-		fmt.Fprintln(os.Stderr, "start time is not before end time")
-		return failureExitCode
-	}
-
-	if step == 0 {
-		resolution := math.Max(math.Floor(etime.Sub(stime).Seconds()/250), 1)
-		// Convert seconds to nanoseconds such that time.Duration parses correctly.
-		step = time.Duration(resolution) * time.Second
-	}
-
-	// Run query against client.
-	api := v1.NewAPI(c)
-	r := v1.Range{Start: stime, End: etime, Step: step}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, _, err := api.QueryRange(ctx, query, r) // Ignoring warnings for now.
-	cancel()
-
-	if err != nil {
-		return handleAPIError(err)
-	}
-
-	p.printValue(val)
-	return successExitCode
-}
-
-// QuerySeries queries for a series against a Prometheus server.
-func QuerySeries(url *url.URL, roundTripper http.RoundTripper, matchers []string, start, end string, p printer) int {
-	if url.Scheme == "" {
-		url.Scheme = "http"
-	}
-	config := api.Config{
-		Address:      url.String(),
-		RoundTripper: roundTripper,
-	}
-
-	// Create new client.
-	c, err := api.NewClient(config)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "error creating API client:", err)
-		return failureExitCode
-	}
-
-	stime, etime, err := parseStartTimeAndEndTime(start, end)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return failureExitCode
-	}
-
-	// Run query against client.
-	api := v1.NewAPI(c)
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, _, err := api.Series(ctx, matchers, stime, etime) // Ignoring warnings for now.
-	cancel()
-
-	if err != nil {
-		return handleAPIError(err)
-	}
-
-	p.printSeries(val)
-	return successExitCode
-}
-
-// QueryLabels queries for label values against a Prometheus server.
-func QueryLabels(url *url.URL, roundTripper http.RoundTripper, matchers []string, name, start, end string, p printer) int {
-	if url.Scheme == "" {
-		url.Scheme = "http"
-	}
-	config := api.Config{
-		Address:      url.String(),
-		RoundTripper: roundTripper,
-	}
-
-	// Create new client.
-	c, err := api.NewClient(config)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "error creating API client:", err)
-		return failureExitCode
-	}
-
-	stime, etime, err := parseStartTimeAndEndTime(start, end)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return failureExitCode
-	}
-
-	// Run query against client.
-	api := v1.NewAPI(c)
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, warn, err := api.LabelValues(ctx, name, matchers, stime, etime)
-	cancel()
-
-	for _, v := range warn {
-		fmt.Fprintln(os.Stderr, "query warning:", v)
-	}
-	if err != nil {
-		return handleAPIError(err)
-	}
-
-	p.printLabelValues(val)
-	return successExitCode
-}
-
-func handleAPIError(err error) int {
-	var apiErr *v1.Error
-	if errors.As(err, &apiErr) && apiErr.Detail != "" {
-		fmt.Fprintf(os.Stderr, "query error: %v (detail: %s)\n", apiErr, strings.TrimSpace(apiErr.Detail))
-	} else {
-		fmt.Fprintln(os.Stderr, "query error:", err)
-	}
-
-	return failureExitCode
-}
-
-func parseStartTimeAndEndTime(start, end string) (time.Time, time.Time, error) {
-	var (
-		minTime = time.Now().Add(-9999 * time.Hour)
-		maxTime = time.Now().Add(9999 * time.Hour)
-		err     error
-	)
-
-	stime := minTime
-	etime := maxTime
-
-	if start != "" {
-		stime, err = parseTime(start)
-		if err != nil {
-			return stime, etime, fmt.Errorf("error parsing start time: %w", err)
-		}
-	}
-
-	if end != "" {
-		etime, err = parseTime(end)
-		if err != nil {
-			return stime, etime, fmt.Errorf("error parsing end time: %w", err)
-		}
-	}
-	return stime, etime, nil
-}
-
-func parseTime(s string) (time.Time, error) {
-	if t, err := strconv.ParseFloat(s, 64); err == nil {
-		s, ns := math.Modf(t)
-		return time.Unix(int64(s), int64(ns*float64(time.Second))).UTC(), nil
-	}
-	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
-		return t, nil
-	}
-	return time.Time{}, fmt.Errorf("cannot parse %q to a valid timestamp", s)
-}
-
 type endpointsGroup struct {
 	urlToFilename map[string]string
 	postProcess   func(b []byte) ([]byte, error)
@@ -1390,15 +1159,12 @@ func importRules(url *url.URL, roundTripper http.RoundTripper, start, end, outpu
 		evalInterval:     evalInterval,
 		maxBlockDuration: maxBlockDuration,
 	}
-	client, err := api.NewClient(api.Config{
-		Address:      url.String(),
-		RoundTripper: roundTripper,
-	})
+	api, err := newAPI(url, roundTripper, nil)
 	if err != nil {
 		return fmt.Errorf("new api client error: %w", err)
 	}
 
-	ruleImporter := newRuleImporter(log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr)), cfg, v1.NewAPI(client))
+	ruleImporter := newRuleImporter(log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr)), cfg, api)
 	errs := ruleImporter.loadGroups(ctx, files)
 	for _, err := range errs {
 		if err != nil {

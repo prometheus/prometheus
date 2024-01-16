@@ -706,7 +706,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 	return nil
 }
 
-func dumpSamples(ctx context.Context, path string, mint, maxt int64, match string) (err error) {
+func dumpSamples(ctx context.Context, path string, mint, maxt int64, match []string) (err error) {
 	db, err := tsdb.OpenDBReadOnly(path, nil)
 	if err != nil {
 		return err
@@ -720,11 +720,21 @@ func dumpSamples(ctx context.Context, path string, mint, maxt int64, match strin
 	}
 	defer q.Close()
 
-	matchers, err := parser.ParseMetricSelector(match)
+	matcherSets, err := parser.ParseMetricSelectors(match)
 	if err != nil {
 		return err
 	}
-	ss := q.Select(ctx, false, nil, matchers...)
+
+	var ss storage.SeriesSet
+	if len(matcherSets) > 1 {
+		var sets []storage.SeriesSet
+		for _, mset := range matcherSets {
+			sets = append(sets, q.Select(ctx, true, nil, mset...))
+		}
+		ss = storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
+	} else {
+		ss = q.Select(ctx, false, nil, matcherSets[0]...)
+	}
 
 	for ss.Next() {
 		series := ss.At()
