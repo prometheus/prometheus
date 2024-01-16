@@ -192,7 +192,7 @@ func TestFloatHistogramCopy(t *testing.T) {
 	}
 }
 
-func TestFloatHistogramCopyFrom(t *testing.T) {
+func TestFloatHistogramCopyTo(t *testing.T) {
 	cases := []struct {
 		name     string
 		orig     *FloatHistogram
