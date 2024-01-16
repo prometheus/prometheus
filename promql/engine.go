@@ -1347,8 +1347,8 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 		param := unwrapStepInvariantExpr(e.Param)
 		unwrapParenExpr(&param)
 		if s, ok := param.(*parser.StringLiteral); ok {
-			return ev.rangeEval(initSeries, func(v []parser.Value, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-				return ev.aggregation(e, sortedGrouping, s.Val, v[0].(Vector), sh[0], enh)
+			return ev.rangeEval(nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+				return ev.aggregationCountValues(e, sortedGrouping, s.Val, v[0].(Vector), enh)
 			}, e.Expr)
 		}
 
@@ -2937,6 +2937,83 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, grouping []string, par
 		default:
 			// For other aggregations, we already have the right value.
 		}
+
+		enh.Out = append(enh.Out, Sample{
+			Metric: aggr.labels,
+			F:      aggr.floatValue,
+			H:      aggr.histogramValue,
+		})
+	}
+	return enh.Out, annos
+}
+
+func (ev *evaluator) aggregationCountValues(e *parser.AggregateExpr, grouping []string, valueLabel string, vec Vector, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	without := e.Without
+	var annos annotations.Annotations
+	result := map[uint64]*groupedAggregation{}
+	orderedResult := []*groupedAggregation{}
+	if !model.LabelName(valueLabel).IsValid() {
+		ev.errorf("invalid label name %q", valueLabel)
+	}
+	if !without {
+		// We're changing the grouping labels so we have to ensure they're still sorted
+		// and we have to flag to recompute the grouping key. Considering the count_values()
+		// operator is less frequently used than other aggregations, we're fine having to
+		// re-compute the grouping key on each step for this case.
+		grouping = append(grouping, valueLabel)
+		slices.Sort(grouping)
+	}
+
+	var buf []byte
+	for _, s := range vec {
+		metric := s.Metric
+
+		enh.resetBuilder(metric)
+		enh.lb.Set(valueLabel, strconv.FormatFloat(s.F, 'f', -1, 64))
+		metric = enh.lb.Labels()
+
+		// We've changed the metric so we have to recompute the grouping key.
+		var groupingKey uint64
+		groupingKey, buf = generateGroupingKey(metric, grouping, without, buf)
+
+		group, ok := result[groupingKey]
+		// Add a new group if it doesn't exist.
+		if !ok {
+			var m labels.Labels
+			enh.resetBuilder(metric)
+			switch {
+			case without:
+				enh.lb.Del(grouping...)
+				enh.lb.Del(labels.MetricName)
+				m = enh.lb.Labels()
+			case len(grouping) > 0:
+				enh.lb.Keep(grouping...)
+				m = enh.lb.Labels()
+			default:
+				m = labels.EmptyLabels()
+			}
+			newAgg := &groupedAggregation{
+				labels:     m,
+				floatValue: s.F,
+				floatMean:  s.F,
+				groupCount: 1,
+			}
+			switch {
+			case s.H == nil:
+				newAgg.hasFloat = true
+			}
+
+			result[groupingKey] = newAgg
+			orderedResult = append(orderedResult, newAgg)
+			continue
+		}
+
+		group.groupCount++
+	}
+
+	// Construct the result Vector from the aggregated groups.
+	for _, aggr := range orderedResult {
+		aggr.floatValue = float64(aggr.groupCount)
 
 		enh.Out = append(enh.Out, Sample{
 			Metric: aggr.labels,
