@@ -66,6 +66,10 @@ func NewXORChunk() *XORChunk {
 	return &XORChunk{b: bstream{stream: b, count: 0}}
 }
 
+func (c *XORChunk) Reset(stream []byte) {
+	c.b.Reset(stream)
+}
+
 // Encoding returns the encoding type.
 func (c *XORChunk) Encoding() Encoding {
 	return EncXOR
@@ -171,7 +175,6 @@ func (a *xorAppender) Append(t int64, v float64) {
 		}
 
 		a.writeVDelta(v)
-
 	default:
 		tDelta = uint64(t - a.t)
 		dod := int64(tDelta - a.tDelta)
