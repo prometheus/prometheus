@@ -12,7 +12,6 @@
 // limitations under the License.
 
 //go:build !windows && !openbsd
-// +build !windows,!openbsd
 
 package runtime
 
