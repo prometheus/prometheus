@@ -2686,9 +2686,6 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, grouping []string, par
 				newAgg.groupCount = 0
 			}
 
-			result[groupingKey] = newAgg
-			orderedResult = append(orderedResult, newAgg)
-
 			inputVecLen := int64(len(vec))
 			resultSize := k
 			switch {
@@ -2699,22 +2696,25 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, grouping []string, par
 			}
 			switch op {
 			case parser.STDVAR, parser.STDDEV:
-				result[groupingKey].floatValue = 0
+				newAgg.floatValue = 0
 			case parser.TOPK, parser.QUANTILE:
-				result[groupingKey].heap = make(vectorByValueHeap, 1, resultSize)
-				result[groupingKey].heap[0] = Sample{
+				newAgg.heap = make(vectorByValueHeap, 1, resultSize)
+				newAgg.heap[0] = Sample{
 					F:      s.F,
 					Metric: s.Metric,
 				}
 			case parser.BOTTOMK:
-				result[groupingKey].reverseHeap = make(vectorByReverseValueHeap, 1, resultSize)
-				result[groupingKey].reverseHeap[0] = Sample{
+				newAgg.reverseHeap = make(vectorByReverseValueHeap, 1, resultSize)
+				newAgg.reverseHeap[0] = Sample{
 					F:      s.F,
 					Metric: s.Metric,
 				}
 			case parser.GROUP:
-				result[groupingKey].floatValue = 1
+				newAgg.floatValue = 1
 			}
+
+			result[groupingKey] = newAgg
+			orderedResult = append(orderedResult, newAgg)
 			continue
 		}
 
