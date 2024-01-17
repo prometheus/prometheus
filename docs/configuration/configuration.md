@@ -489,7 +489,7 @@ metric_relabel_configs:
 # +----------------------------+----------------------------+
 # 
 # 0 results in the smallest supported factor (which is currently ~1.0027 or
-# schema 8, but might change in the future
+# schema 8, but might change in the future).
 [ native_histogram_min_bucket_factor: <float> | default = 0 ]
 ```
 
