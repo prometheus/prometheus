@@ -685,14 +685,12 @@ func (w *Watcher) readSegmentForGC(r *LiveReader, segmentNum int, _ bool) error 
 			}
 			w.writer.UpdateSeriesSegment(series, segmentNum)
 
-		// Ignore these; we're only interested in series.
-		case record.Samples:
-		case record.Exemplars:
-		case record.Tombstones:
-
-		default:
+		case record.Unknown:
 			// Could be corruption, or reading from a WAL from a newer Prometheus.
 			w.recordDecodeFailsMetric.Inc()
+
+		default:
+			// We're only interested in series.
 		}
 	}
 	if err := r.Err(); err != nil {

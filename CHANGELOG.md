@@ -7,6 +7,7 @@
 * [ENHANCEMENT] OTLP: Improve remote write format translation performance by using label set hashes for metric identifiers instead of string based ones. #14006 #13991
 * [BUGFIX] OTLP: Don't generate target_info unless at least one identifying label is defined. #13991
 * [BUGFIX] OTLP: Don't generate target_info unless there are metrics. #13991
+* [BUGFIX] tsdb/wlog.Watcher.readSegmentForGC: Only count unknown record types against record_decode_failures_total metric. #14042
 
 ## 2.52.0-rc.1 / 2024-05-03
 
