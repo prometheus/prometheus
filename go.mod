@@ -39,7 +39,7 @@ require (
 	github.com/json-iterator/go v1.1.12
 	github.com/klauspost/compress v1.17.4
 	github.com/kolo/xmlrpc v0.0.0-20220921171641-a4b6fa1dd06b
-	github.com/linode/linodego v1.25.0
+	github.com/linode/linodego v1.27.1
 	github.com/miekg/dns v1.1.57
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f
@@ -72,10 +72,10 @@ require (
 	go.uber.org/goleak v1.3.0
 	go.uber.org/multierr v1.11.0
 	golang.org/x/exp v0.0.0-20231206192017-f3f8817b8deb
-	golang.org/x/net v0.19.0
+	golang.org/x/net v0.20.0
 	golang.org/x/oauth2 v0.15.0
 	golang.org/x/sync v0.5.0
-	golang.org/x/sys v0.15.0
+	golang.org/x/sys v0.16.0
 	golang.org/x/time v0.5.0
 	golang.org/x/tools v0.16.0
 	google.golang.org/api v0.153.0
@@ -123,7 +123,7 @@ require (
 	github.com/go-openapi/spec v0.20.9 // indirect
 	github.com/go-openapi/swag v0.22.4 // indirect
 	github.com/go-openapi/validate v0.22.1 // indirect
-	github.com/go-resty/resty/v2 v2.10.0 // indirect
+	github.com/go-resty/resty/v2 v2.11.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.0.0 // indirect
 	github.com/golang/glog v1.1.2 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
@@ -177,9 +177,9 @@ require (
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/otel/metric v1.21.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.0.0 // indirect
-	golang.org/x/crypto v0.16.0 // indirect
+	golang.org/x/crypto v0.18.0 // indirect
 	golang.org/x/mod v0.14.0 // indirect
-	golang.org/x/term v0.15.0 // indirect
+	golang.org/x/term v0.16.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20231120223509-83a465c0220f // indirect
