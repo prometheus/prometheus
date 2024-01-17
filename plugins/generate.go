@@ -12,7 +12,6 @@
 // limitations under the License.
 
 //go:build plugins
-// +build plugins
 
 package main
 

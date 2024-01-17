@@ -12,7 +12,6 @@
 // limitations under the License.
 
 //go:build (386 && darwin) || (386 && freebsd)
-// +build 386,darwin 386,freebsd
 
 package runtime
 
