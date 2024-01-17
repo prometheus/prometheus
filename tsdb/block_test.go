@@ -257,7 +257,7 @@ func TestLabelValuesWithMatchers(t *testing.T) {
 			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "unique", "value[5-7]5")},
 			expectedValues: []string{"value5", "value6", "value7"},
 		}, {
-			name:           "get tens by matching for absence of unique label",
+			name:           "get tens by matching for presence of unique label",
 			labelName:      "tens",
 			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "unique", "")},
 			expectedValues: []string{"value0", "value1", "value2", "value3", "value4", "value5", "value6", "value7", "value8", "value9"},
