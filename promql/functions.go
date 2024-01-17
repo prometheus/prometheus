@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/facette/natsort"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/common/model"
 	"golang.org/x/exp/slices"
@@ -380,15 +381,16 @@ func funcSortByLabel(vals []parser.Value, args parser.Expressions, enh *EvalNode
 		for _, label := range labels {
 			lv1 := a.Metric.Get(label)
 			lv2 := b.Metric.Get(label)
-			// 0 if a == b, -1 if a < b, and +1 if a > b.
-			switch strings.Compare(lv1, lv2) {
-			case -1:
-				return -1
-			case +1:
-				return +1
-			default:
+
+			if lv1 == lv2 {
 				continue
 			}
+
+			if natsort.Compare(lv1, lv2) {
+				return -1
+			}
+
+			return +1
 		}
 
 		return 0
@@ -409,19 +411,16 @@ func funcSortByLabelDesc(vals []parser.Value, args parser.Expressions, enh *Eval
 		for _, label := range labels {
 			lv1 := a.Metric.Get(label)
 			lv2 := b.Metric.Get(label)
-			// If label values are the same, continue to the next label
+
 			if lv1 == lv2 {
 				continue
 			}
-			// 0 if a == b, -1 if a < b, and +1 if a > b.
-			switch strings.Compare(lv1, lv2) {
-			case -1:
+
+			if natsort.Compare(lv1, lv2) {
 				return +1
-			case +1:
-				return -1
-			default:
-				continue
 			}
+
+			return -1
 		}
 
 		return 0
