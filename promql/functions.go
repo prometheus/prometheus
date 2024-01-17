@@ -202,7 +202,7 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 			continue
 		}
 		if curr.CounterResetHint == histogram.GaugeType {
-			annos.Add(annotations.NewCounterHistogramRateOnGaugeHistogramWarning(metricName, pos))
+			annos.Add(annotations.NewNativeHistogramNotCounterWarning(metricName, pos))
 		}
 		if curr.Schema < minSchema {
 			minSchema = curr.Schema
@@ -222,7 +222,7 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 			prev = curr
 		}
 	} else if points[0].H.CounterResetHint != histogram.GaugeType || points[len(points)-1].H.CounterResetHint != histogram.GaugeType {
-		annos.Add(annotations.NewGaugeHistogramRateOnCounterHistogramWarning(metricName, pos))
+		annos.Add(annotations.NewNativeHistogramNotGaugeWarning(metricName, pos))
 	}
 
 	h.CounterResetHint = histogram.GaugeType
