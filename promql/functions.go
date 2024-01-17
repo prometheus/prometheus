@@ -187,6 +187,8 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 		minSchema = last.Schema
 	}
 
+	var annos annotations.Annotations
+
 	// First iteration to find out two things:
 	// - What's the smallest relevant schema?
 	// - Are all data points histograms?
@@ -197,9 +199,11 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 		if curr == nil {
 			return nil, annotations.New().Add(annotations.NewMixedFloatsHistogramsWarning(metricName, pos))
 		}
-		// TODO(trevorwhitney): Check if isCounter is consistent with curr.CounterResetHint.
 		if !isCounter {
 			continue
+		}
+		if curr.CounterResetHint == histogram.GaugeType {
+			annos.Add(annotations.NewNativeHistogramNotCounterWarning(metricName, pos))
 		}
 		if curr.Schema < minSchema {
 			minSchema = curr.Schema
@@ -218,6 +222,8 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 			}
 			prev = curr
 		}
+	} else if points[0].H.CounterResetHint != histogram.GaugeType || points[len(points)-1].H.CounterResetHint != histogram.GaugeType {
+		annos.Add(annotations.NewNativeHistogramNotGaugeWarning(metricName, pos))
 	}
 
 	h.CounterResetHint = histogram.GaugeType
