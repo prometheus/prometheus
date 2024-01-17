@@ -27,10 +27,10 @@ in-file offset (lower 4 bytes) and segment sequence number (upper 4 bytes).
 
 # Chunk
 
-Unlike chunks in the on-disk blocks, here we additionally store series
-reference that the chunks belongs to and the mint/maxt of the chunks. This is
-because we don't have an index associated with these chunks, hence these meta
-information are used while replaying the chunks.
+Unlike chunks in the on-disk blocks, here we additionally the store series
+reference that each chunk belongs to and the mint/maxt of the chunks. This is
+because we don't have an index associated with these chunks, hence this metadata
+is used while replaying the chunks.
 
 ```
 ┌─────────────────────┬───────────────────────┬───────────────────────┬───────────────────┬───────────────┬──────────────┬────────────────┐
