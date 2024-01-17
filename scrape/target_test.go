@@ -590,3 +590,64 @@ func TestBucketLimitAppender(t *testing.T) {
 		}
 	}
 }
+
+func TestMaxSchemaAppender(t *testing.T) {
+	example := histogram.Histogram{
+		Schema:        0,
+		Count:         21,
+		Sum:           33,
+		ZeroThreshold: 0.001,
+		ZeroCount:     3,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 3},
+		},
+		PositiveBuckets: []int64{3, 0, 0},
+		NegativeSpans: []histogram.Span{
+			{Offset: 0, Length: 3},
+		},
+		NegativeBuckets: []int64{3, 0, 0},
+	}
+
+	cases := []struct {
+		h            histogram.Histogram
+		maxSchema    int32
+		expectSchema int32
+	}{
+		{
+			h:            example,
+			maxSchema:    -1,
+			expectSchema: -1,
+		},
+		{
+			h:            example,
+			maxSchema:    0,
+			expectSchema: 0,
+		},
+	}
+
+	resApp := &collectResultAppender{}
+
+	for _, c := range cases {
+		for _, floatHisto := range []bool{true, false} {
+			t.Run(fmt.Sprintf("floatHistogram=%t", floatHisto), func(t *testing.T) {
+				app := &maxSchemaAppender{Appender: resApp, maxSchema: c.maxSchema}
+				ts := int64(10 * time.Minute / time.Millisecond)
+				lbls := labels.FromStrings("__name__", "sparse_histogram_series")
+				var err error
+				if floatHisto {
+					fh := c.h.Copy().ToFloat(nil)
+					_, err = app.AppendHistogram(0, lbls, ts, nil, fh)
+					require.Equal(t, c.expectSchema, fh.Schema)
+					require.NoError(t, err)
+
+				} else {
+					h := c.h.Copy()
+					_, err = app.AppendHistogram(0, lbls, ts, h, nil)
+					require.Equal(t, c.expectSchema, h.Schema)
+					require.NoError(t, err)
+				}
+				require.NoError(t, app.Commit())
+			})
+		}
+	}
+}
