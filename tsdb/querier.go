@@ -445,10 +445,6 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, ma
 		return nil, fmt.Errorf("fetching values of label %s: %w", name, err)
 	}
 
-	if len(allValues) == 0 {
-		return nil, nil
-	}
-
 	// If we have a matcher for the label name, we can filter out values that don't match
 	// before we fetch postings. This is especially useful for labels with many values.
 	// e.g. __name__ with a selector like {__name__="xyz"}
@@ -468,6 +464,10 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, ma
 			}
 		}
 		allValues = filteredValues
+	}
+	
+	if len(allValues) == 0 {
+		return nil, nil
 	}
 
 	// If we don't have any matchers for other labels, then we're done.
