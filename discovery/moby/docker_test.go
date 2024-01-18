@@ -40,8 +40,8 @@ host: %s
 	var cfg DockerSDConfig
 	require.NoError(t, yaml.Unmarshal([]byte(cfgString), &cfg))
 
-	refreshDebugMetrics := discovery.NewRefreshDebugMetrics(prometheus.DefaultRegisterer)
-	metrics := cfg.NewDiscovererDebugMetrics(prometheus.NewRegistry(), refreshDebugMetrics)
+	refreshMetrics := discovery.NewRefreshMetrics(prometheus.DefaultRegisterer)
+	metrics := cfg.NewDiscovererMetrics(prometheus.NewRegistry(), refreshMetrics)
 	require.NoError(t, metrics.Register())
 	defer metrics.Unregister()
 

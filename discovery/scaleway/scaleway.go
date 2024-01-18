@@ -104,8 +104,8 @@ type SDConfig struct {
 	Role role `yaml:"role"`
 }
 
-// NewDiscovererDebugMetrics implements discovery.Config.
-func (*SDConfig) NewDiscovererDebugMetrics(reg prometheus.Registerer, rdmm discovery.RefreshDebugMetricsInstantiator) discovery.DiscovererDebugMetrics {
+// NewDiscovererMetrics implements discovery.Config.
+func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rdmm discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &scalewayMetrics{
 		refreshMetrics: rdmm,
 	}
@@ -168,7 +168,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 func (c SDConfig) NewDiscoverer(options discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(&c, options.Logger, options.DebugMetrics)
+	return NewDiscovery(&c, options.Logger, options.Metrics)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -185,7 +185,7 @@ func init() {
 // the Discoverer interface.
 type Discovery struct{}
 
-func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererDebugMetrics) (*refresh.Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*refresh.Discovery, error) {
 	m, ok := metrics.(*scalewayMetrics)
 	if !ok {
 		return nil, fmt.Errorf("invalid discovery metrics type")

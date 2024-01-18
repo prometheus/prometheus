@@ -42,7 +42,7 @@ type provider struct {
 }
 
 // NewManager is the Discovery Manager constructor.
-func NewManager(ctx context.Context, logger log.Logger, registerer prometheus.Registerer, sdMetrics map[string]discovery.DiscovererDebugMetrics, options ...func(*Manager)) *Manager {
+func NewManager(ctx context.Context, logger log.Logger, registerer prometheus.Registerer, sdMetrics map[string]discovery.DiscovererMetrics, options ...func(*Manager)) *Manager {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -110,7 +110,7 @@ type Manager struct {
 	registerer prometheus.Registerer
 
 	metrics   *discovery.Metrics
-	sdMetrics map[string]discovery.DiscovererDebugMetrics
+	sdMetrics map[string]discovery.DiscovererMetrics
 }
 
 // Run starts the background processing.
@@ -285,8 +285,8 @@ func (m *Manager) registerProviders(cfgs discovery.Configs, setName string) int 
 		}
 		typ := cfg.Name()
 		d, err := cfg.NewDiscoverer(discovery.DiscovererOptions{
-			Logger:       log.With(m.logger, "discovery", typ, "config", setName),
-			DebugMetrics: m.sdMetrics[typ],
+			Logger:  log.With(m.logger, "discovery", typ, "config", setName),
+			Metrics: m.sdMetrics[typ],
 		})
 		if err != nil {
 			level.Error(m.logger).Log("msg", "Cannot create service discovery", "err", err, "type", typ, "config", setName)

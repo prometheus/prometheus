@@ -18,10 +18,10 @@ import (
 )
 
 type ec2Metrics struct {
-	refreshMetrics discovery.RefreshDebugMetricsInstantiator
+	refreshMetrics discovery.RefreshMetricsInstantiator
 }
 
-var _ discovery.DiscovererDebugMetrics = (*ec2Metrics)(nil)
+var _ discovery.DiscovererMetrics = (*ec2Metrics)(nil)
 
 // Register implements discovery.DiscovererMetrics.
 func (m *ec2Metrics) Register() error {

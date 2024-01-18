@@ -231,7 +231,7 @@ func TestWriteOutput(t *testing.T) {
 	require.NoError(t, err)
 
 	reg := prometheus.NewRegistry()
-	refreshDebugMetrics := discovery.NewRefreshDebugMetrics(prometheus.DefaultRegisterer)
+	refreshDebugMetrics := discovery.NewRefreshMetrics(prometheus.DefaultRegisterer)
 	sdMetrics, err := discovery.RegisterSDMetrics(reg, refreshDebugMetrics)
 	require.NoError(t, err)
 

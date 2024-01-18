@@ -20,17 +20,17 @@ import (
 // Metric vectors for the "refresh" package.
 // We define them here in the "discovery" package in order to avoid a cyclic dependency between
 // "discovery" and "refresh".
-type RefreshDebugMetricsVecs struct {
+type RefreshMetricsVecs struct {
 	failuresVec *prometheus.CounterVec
 	durationVec *prometheus.SummaryVec
 
 	metricRegisterer MetricRegisterer
 }
 
-var _ RefreshDebugMetricsManager = (*RefreshDebugMetricsVecs)(nil)
+var _ RefreshMetricsManager = (*RefreshMetricsVecs)(nil)
 
-func NewRefreshDebugMetrics(reg prometheus.Registerer) RefreshDebugMetricsManager {
-	m := &RefreshDebugMetricsVecs{
+func NewRefreshMetrics(reg prometheus.Registerer) RefreshMetricsManager {
+	m := &RefreshMetricsVecs{
 		failuresVec: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "prometheus_sd_refresh_failures_total",
@@ -57,19 +57,19 @@ func NewRefreshDebugMetrics(reg prometheus.Registerer) RefreshDebugMetricsManage
 }
 
 // Instantiate returns metrics out of metric vectors.
-func (m *RefreshDebugMetricsVecs) Instantiate(mech string) *RefreshDebugMetrics {
-	return &RefreshDebugMetrics{
+func (m *RefreshMetricsVecs) Instantiate(mech string) *RefreshMetrics {
+	return &RefreshMetrics{
 		Failures: m.failuresVec.WithLabelValues(mech),
 		Duration: m.durationVec.WithLabelValues(mech),
 	}
 }
 
 // Register implements discovery.DiscovererMetrics.
-func (m *RefreshDebugMetricsVecs) Register() error {
+func (m *RefreshMetricsVecs) Register() error {
 	return m.metricRegisterer.RegisterMetrics()
 }
 
 // Unregister implements discovery.DiscovererMetrics.
-func (m *RefreshDebugMetricsVecs) Unregister() {
+func (m *RefreshMetricsVecs) Unregister() {
 	m.metricRegisterer.UnregisterMetrics()
 }

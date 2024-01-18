@@ -57,9 +57,9 @@ type ServersetSDConfig struct {
 	Timeout model.Duration `yaml:"timeout,omitempty"`
 }
 
-// NewDiscovererDebugMetrics implements discovery.Config.
-func (*ServersetSDConfig) NewDiscovererDebugMetrics(reg prometheus.Registerer, rdmm discovery.RefreshDebugMetricsInstantiator) discovery.DiscovererDebugMetrics {
-	return &discovery.NoopDiscovererDebugMetrics{}
+// NewDiscovererMetrics implements discovery.Config.
+func (*ServersetSDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rdmm discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return &discovery.NoopDiscovererMetrics{}
 }
 
 // Name returns the name of the Config.
@@ -99,9 +99,9 @@ type NerveSDConfig struct {
 	Timeout model.Duration `yaml:"timeout,omitempty"`
 }
 
-// NewDiscovererDebugMetrics implements discovery.Config.
-func (*NerveSDConfig) NewDiscovererDebugMetrics(reg prometheus.Registerer, rdmm discovery.RefreshDebugMetricsInstantiator) discovery.DiscovererDebugMetrics {
-	return &discovery.NoopDiscovererDebugMetrics{}
+// NewDiscovererMetrics implements discovery.Config.
+func (*NerveSDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rdmm discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return &discovery.NoopDiscovererMetrics{}
 }
 
 // Name returns the name of the Config.

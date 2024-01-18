@@ -70,8 +70,8 @@ type SDConfig struct {
 	Version         int              `yaml:"version"`
 }
 
-// NewDiscovererDebugMetrics implements discovery.Config.
-func (*SDConfig) NewDiscovererDebugMetrics(reg prometheus.Registerer, rdmm discovery.RefreshDebugMetricsInstantiator) discovery.DiscovererDebugMetrics {
+// NewDiscovererMetrics implements discovery.Config.
+func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rdmm discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &tritonMetrics{
 		refreshMetrics: rdmm,
 	}
@@ -82,7 +82,7 @@ func (*SDConfig) Name() string { return "triton" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return New(opts.Logger, c, opts.DebugMetrics)
+	return New(opts.Logger, c, opts.Metrics)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -146,7 +146,7 @@ type Discovery struct {
 }
 
 // New returns a new Discovery which periodically refreshes its targets.
-func New(logger log.Logger, conf *SDConfig, metrics discovery.DiscovererDebugMetrics) (*Discovery, error) {
+func New(logger log.Logger, conf *SDConfig, metrics discovery.DiscovererMetrics) (*Discovery, error) {
 	m, ok := metrics.(*tritonMetrics)
 	if !ok {
 		return nil, fmt.Errorf("invalid discovery metrics type")

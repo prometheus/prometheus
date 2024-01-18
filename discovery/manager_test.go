@@ -36,11 +36,11 @@ func TestMain(m *testing.M) {
 	testutil.TolerantVerifyLeak(m)
 }
 
-func NewTestDebugMetrics(t *testing.T, reg prometheus.Registerer) (*RefreshDebugMetricsManager, map[string]DiscovererDebugMetrics) {
-	refreshDebugMetrics := NewRefreshDebugMetrics(reg)
-	sdMetrics, err := RegisterSDMetrics(reg, refreshDebugMetrics)
+func NewTestMetrics(t *testing.T, reg prometheus.Registerer) (*RefreshMetricsManager, map[string]DiscovererMetrics) {
+	refreshMetrics := NewRefreshMetrics(reg)
+	sdMetrics, err := RegisterSDMetrics(reg, refreshMetrics)
 	require.NoError(t, err)
-	return &refreshDebugMetrics, sdMetrics
+	return &refreshMetrics, sdMetrics
 }
 
 // TestTargetUpdatesOrder checks that the target updates are received in the expected order.
@@ -673,7 +673,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 			defer cancel()
 
 			reg := prometheus.NewRegistry()
-			_, sdMetrics := NewTestDebugMetrics(t, reg)
+			_, sdMetrics := NewTestMetrics(t, reg)
 
 			discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
 			require.NotNil(t, discoveryManager)
@@ -792,7 +792,7 @@ func TestTargetSetTargetGroupsPresentOnConfigReload(t *testing.T) {
 	defer cancel()
 
 	reg := prometheus.NewRegistry()
-	_, sdMetrics := NewTestDebugMetrics(t, reg)
+	_, sdMetrics := NewTestMetrics(t, reg)
 
 	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
@@ -829,7 +829,7 @@ func TestTargetSetTargetGroupsPresentOnConfigRename(t *testing.T) {
 	defer cancel()
 
 	reg := prometheus.NewRegistry()
-	_, sdMetrics := NewTestDebugMetrics(t, reg)
+	_, sdMetrics := NewTestMetrics(t, reg)
 
 	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
@@ -869,7 +869,7 @@ func TestTargetSetTargetGroupsPresentOnConfigDuplicateAndDeleteOriginal(t *testi
 	defer cancel()
 
 	reg := prometheus.NewRegistry()
-	_, sdMetrics := NewTestDebugMetrics(t, reg)
+	_, sdMetrics := NewTestMetrics(t, reg)
 
 	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
@@ -912,7 +912,7 @@ func TestTargetSetTargetGroupsPresentOnConfigChange(t *testing.T) {
 	defer cancel()
 
 	reg := prometheus.NewRegistry()
-	_, sdMetrics := NewTestDebugMetrics(t, reg)
+	_, sdMetrics := NewTestMetrics(t, reg)
 
 	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
@@ -978,7 +978,7 @@ func TestTargetSetRecreatesTargetGroupsOnConfigChange(t *testing.T) {
 	defer cancel()
 
 	reg := prometheus.NewRegistry()
-	_, sdMetrics := NewTestDebugMetrics(t, reg)
+	_, sdMetrics := NewTestMetrics(t, reg)
 
 	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
@@ -1022,7 +1022,7 @@ func TestDiscovererConfigs(t *testing.T) {
 	defer cancel()
 
 	reg := prometheus.NewRegistry()
-	_, sdMetrics := NewTestDebugMetrics(t, reg)
+	_, sdMetrics := NewTestMetrics(t, reg)
 
 	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
@@ -1059,7 +1059,7 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	defer cancel()
 
 	reg := prometheus.NewRegistry()
-	_, sdMetrics := NewTestDebugMetrics(t, reg)
+	_, sdMetrics := NewTestMetrics(t, reg)
 
 	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
@@ -1111,7 +1111,7 @@ func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
 	defer cancel()
 
 	reg := prometheus.NewRegistry()
-	_, sdMetrics := NewTestDebugMetrics(t, reg)
+	_, sdMetrics := NewTestMetrics(t, reg)
 
 	discoveryManager := NewManager(ctx, nil, reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
@@ -1152,7 +1152,7 @@ func TestApplyConfigDoesNotModifyStaticTargets(t *testing.T) {
 	defer cancel()
 
 	reg := prometheus.NewRegistry()
-	_, sdMetrics := NewTestDebugMetrics(t, reg)
+	_, sdMetrics := NewTestMetrics(t, reg)
 
 	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
@@ -1175,9 +1175,9 @@ type errorConfig struct{ err error }
 func (e errorConfig) Name() string                                        { return "error" }
 func (e errorConfig) NewDiscoverer(DiscovererOptions) (Discoverer, error) { return nil, e.err }
 
-// NewDiscovererDebugMetrics implements discovery.Config.
-func (errorConfig) NewDiscovererDebugMetrics(prometheus.Registerer, RefreshDebugMetricsInstantiator) DiscovererDebugMetrics {
-	return &NoopDiscovererDebugMetrics{}
+// NewDiscovererMetrics implements discovery.Config.
+func (errorConfig) NewDiscovererMetrics(prometheus.Registerer, RefreshMetricsInstantiator) DiscovererMetrics {
+	return &NoopDiscovererMetrics{}
 }
 
 type lockStaticConfig struct {
@@ -1185,9 +1185,9 @@ type lockStaticConfig struct {
 	config StaticConfig
 }
 
-// NewDiscovererDebugMetrics implements discovery.Config.
-func (lockStaticConfig) NewDiscovererDebugMetrics(prometheus.Registerer, RefreshDebugMetricsInstantiator) DiscovererDebugMetrics {
-	return &NoopDiscovererDebugMetrics{}
+// NewDiscovererMetrics implements discovery.Config.
+func (lockStaticConfig) NewDiscovererMetrics(prometheus.Registerer, RefreshMetricsInstantiator) DiscovererMetrics {
+	return &NoopDiscovererMetrics{}
 }
 
 func (s lockStaticConfig) Name() string { return "lockstatic" }
@@ -1213,7 +1213,7 @@ func TestGaugeFailedConfigs(t *testing.T) {
 	defer cancel()
 
 	reg := prometheus.NewRegistry()
-	_, sdMetrics := NewTestDebugMetrics(t, reg)
+	_, sdMetrics := NewTestMetrics(t, reg)
 
 	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
@@ -1373,7 +1373,7 @@ func TestCoordinationWithReceiver(t *testing.T) {
 			defer cancel()
 
 			reg := prometheus.NewRegistry()
-			_, sdMetrics := NewTestDebugMetrics(t, reg)
+			_, sdMetrics := NewTestMetrics(t, reg)
 
 			mgr := NewManager(ctx, nil, reg, sdMetrics)
 			require.NotNil(t, mgr)
@@ -1473,7 +1473,7 @@ func TestTargetSetTargetGroupsUpdateDuringApplyConfig(t *testing.T) {
 	defer cancel()
 
 	reg := prometheus.NewRegistry()
-	_, sdMetrics := NewTestDebugMetrics(t, reg)
+	_, sdMetrics := NewTestMetrics(t, reg)
 
 	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
@@ -1537,9 +1537,9 @@ func newTestDiscoverer() *testDiscoverer {
 	}
 }
 
-// NewDiscovererDebugMetrics implements discovery.Config.
-func (*testDiscoverer) NewDiscovererDebugMetrics(prometheus.Registerer, RefreshDebugMetricsInstantiator) DiscovererDebugMetrics {
-	return &NoopDiscovererDebugMetrics{}
+// NewDiscovererMetrics implements discovery.Config.
+func (*testDiscoverer) NewDiscovererMetrics(prometheus.Registerer, RefreshMetricsInstantiator) DiscovererMetrics {
+	return &NoopDiscovererMetrics{}
 }
 
 // Name implements Config.

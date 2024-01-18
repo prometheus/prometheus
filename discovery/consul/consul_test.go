@@ -38,11 +38,11 @@ func TestMain(m *testing.M) {
 }
 
 // TODO: Add ability to unregister metrics?
-func NewTestDebugMetrics(t *testing.T, conf discovery.Config, reg prometheus.Registerer) discovery.DiscovererDebugMetrics {
-	refreshDebugMetrics := discovery.NewRefreshDebugMetrics(reg)
-	require.NoError(t, refreshDebugMetrics.Register())
+func NewTestMetrics(t *testing.T, conf discovery.Config, reg prometheus.Registerer) discovery.DiscovererMetrics {
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	require.NoError(t, refreshMetrics.Register())
 
-	metrics := conf.NewDiscovererDebugMetrics(prometheus.NewRegistry(), refreshDebugMetrics)
+	metrics := conf.NewDiscovererMetrics(prometheus.NewRegistry(), refreshMetrics)
 	require.NoError(t, metrics.Register())
 
 	return metrics
@@ -53,7 +53,7 @@ func TestConfiguredService(t *testing.T) {
 		Services: []string{"configuredServiceName"},
 	}
 
-	metrics := NewTestDebugMetrics(t, conf, prometheus.NewRegistry())
+	metrics := NewTestMetrics(t, conf, prometheus.NewRegistry())
 
 	consulDiscovery, err := NewDiscovery(conf, nil, metrics)
 	if err != nil {
@@ -73,7 +73,7 @@ func TestConfiguredServiceWithTag(t *testing.T) {
 		ServiceTags: []string{"http"},
 	}
 
-	metrics := NewTestDebugMetrics(t, conf, prometheus.NewRegistry())
+	metrics := NewTestMetrics(t, conf, prometheus.NewRegistry())
 
 	consulDiscovery, err := NewDiscovery(conf, nil, metrics)
 	if err != nil {
@@ -170,7 +170,7 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		metrics := NewTestDebugMetrics(t, tc.conf, prometheus.NewRegistry())
+		metrics := NewTestMetrics(t, tc.conf, prometheus.NewRegistry())
 
 		consulDiscovery, err := NewDiscovery(tc.conf, nil, metrics)
 		if err != nil {
@@ -186,7 +186,7 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 func TestNonConfiguredService(t *testing.T) {
 	conf := &SDConfig{}
 
-	metrics := NewTestDebugMetrics(t, conf, prometheus.NewRegistry())
+	metrics := NewTestMetrics(t, conf, prometheus.NewRegistry())
 
 	consulDiscovery, err := NewDiscovery(conf, nil, metrics)
 	if err != nil {
@@ -286,7 +286,7 @@ func newServer(t *testing.T) (*httptest.Server, *SDConfig) {
 func newDiscovery(t *testing.T, config *SDConfig) *Discovery {
 	logger := log.NewNopLogger()
 
-	metrics := NewTestDebugMetrics(t, config, prometheus.NewRegistry())
+	metrics := NewTestMetrics(t, config, prometheus.NewRegistry())
 
 	d, err := NewDiscovery(config, logger, metrics)
 	require.NoError(t, err)

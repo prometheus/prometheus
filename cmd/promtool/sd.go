@@ -79,15 +79,15 @@ func CheckSD(sdConfigFiles, sdJobName string, sdTimeout time.Duration, noDefault
 
 	for _, cfg := range scrapeConfig.ServiceDiscoveryConfigs {
 		reg := prometheus.NewRegistry()
-		refreshDebugMetrics := discovery.NewRefreshDebugMetrics(reg)
-		metrics := cfg.NewDiscovererDebugMetrics(reg, refreshDebugMetrics)
+		refreshDebugMetrics := discovery.NewRefreshMetrics(reg)
+		metrics := cfg.NewDiscovererMetrics(reg, refreshDebugMetrics)
 		err := metrics.Register()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Could not register service discovery metrics", err)
 			return failureExitCode
 		}
 
-		d, err := cfg.NewDiscoverer(discovery.DiscovererOptions{Logger: logger, DebugMetrics: metrics})
+		d, err := cfg.NewDiscoverer(discovery.DiscovererOptions{Logger: logger, Metrics: metrics})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Could not create new discoverer", err)
 			return failureExitCode

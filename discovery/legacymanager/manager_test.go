@@ -36,11 +36,11 @@ func TestMain(m *testing.M) {
 	testutil.TolerantVerifyLeak(m)
 }
 
-func newTestDebugMetrics(t *testing.T, reg prometheus.Registerer) (*discovery.RefreshDebugMetricsManager, map[string]discovery.DiscovererDebugMetrics) {
-	refreshDebugMetrics := discovery.NewRefreshDebugMetrics(reg)
-	sdMetrics, err := discovery.RegisterSDMetrics(reg, refreshDebugMetrics)
+func newTestMetrics(t *testing.T, reg prometheus.Registerer) (*discovery.RefreshMetricsManager, map[string]discovery.DiscovererMetrics) {
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	sdMetrics, err := discovery.RegisterSDMetrics(reg, refreshMetrics)
 	require.NoError(t, err)
-	return &refreshDebugMetrics, sdMetrics
+	return &refreshMetrics, sdMetrics
 }
 
 // TestTargetUpdatesOrder checks that the target updates are received in the expected order.
@@ -673,7 +673,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 			defer cancel()
 
 			reg := prometheus.NewRegistry()
-			_, sdMetrics := newTestDebugMetrics(t, reg)
+			_, sdMetrics := newTestMetrics(t, reg)
 
 			discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
 			require.NotNil(t, discoveryManager)
@@ -760,7 +760,7 @@ func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
 	defer cancel()
 
 	reg := prometheus.NewRegistry()
-	_, sdMetrics := newTestDebugMetrics(t, reg)
+	_, sdMetrics := newTestMetrics(t, reg)
 
 	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
@@ -793,7 +793,7 @@ func TestDiscovererConfigs(t *testing.T) {
 	defer cancel()
 
 	reg := prometheus.NewRegistry()
-	_, sdMetrics := newTestDebugMetrics(t, reg)
+	_, sdMetrics := newTestMetrics(t, reg)
 
 	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
@@ -822,7 +822,7 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	defer cancel()
 
 	reg := prometheus.NewRegistry()
-	_, sdMetrics := newTestDebugMetrics(t, reg)
+	_, sdMetrics := newTestMetrics(t, reg)
 
 	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
@@ -866,7 +866,7 @@ func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
 	defer cancel()
 
 	reg := prometheus.NewRegistry()
-	_, sdMetrics := newTestDebugMetrics(t, reg)
+	_, sdMetrics := newTestMetrics(t, reg)
 
 	discoveryManager := NewManager(ctx, nil, reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
@@ -902,7 +902,7 @@ func TestApplyConfigDoesNotModifyStaticTargets(t *testing.T) {
 	defer cancel()
 
 	reg := prometheus.NewRegistry()
-	_, sdMetrics := newTestDebugMetrics(t, reg)
+	_, sdMetrics := newTestMetrics(t, reg)
 
 	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
@@ -927,9 +927,9 @@ func (e errorConfig) NewDiscoverer(discovery.DiscovererOptions) (discovery.Disco
 	return nil, e.err
 }
 
-// NewDiscovererDebugMetrics implements discovery.Config.
-func (errorConfig) NewDiscovererDebugMetrics(reg prometheus.Registerer, rdmm discovery.RefreshDebugMetricsInstantiator) discovery.DiscovererDebugMetrics {
-	return &discovery.NoopDiscovererDebugMetrics{}
+// NewDiscovererMetrics implements discovery.Config.
+func (errorConfig) NewDiscovererMetrics(reg prometheus.Registerer, rdmm discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return &discovery.NoopDiscovererMetrics{}
 }
 
 func TestGaugeFailedConfigs(t *testing.T) {
@@ -937,7 +937,7 @@ func TestGaugeFailedConfigs(t *testing.T) {
 	defer cancel()
 
 	reg := prometheus.NewRegistry()
-	_, sdMetrics := newTestDebugMetrics(t, reg)
+	_, sdMetrics := newTestMetrics(t, reg)
 
 	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
@@ -1097,7 +1097,7 @@ func TestCoordinationWithReceiver(t *testing.T) {
 			defer cancel()
 
 			reg := prometheus.NewRegistry()
-			_, sdMetrics := newTestDebugMetrics(t, reg)
+			_, sdMetrics := newTestMetrics(t, reg)
 
 			mgr := NewManager(ctx, nil, reg, sdMetrics)
 			require.NotNil(t, mgr)

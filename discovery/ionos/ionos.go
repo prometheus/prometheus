@@ -43,7 +43,7 @@ func init() {
 type Discovery struct{}
 
 // NewDiscovery returns a new refresh.Discovery for IONOS Cloud.
-func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererDebugMetrics) (*refresh.Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*refresh.Discovery, error) {
 	m, ok := metrics.(*ionosMetrics)
 	if !ok {
 		return nil, fmt.Errorf("invalid discovery metrics type")
@@ -89,8 +89,8 @@ type SDConfig struct {
 	ionosEndpoint string // For tests only.
 }
 
-// NewDiscovererDebugMetrics implements discovery.Config.
-func (*SDConfig) NewDiscovererDebugMetrics(reg prometheus.Registerer, rdmm discovery.RefreshDebugMetricsInstantiator) discovery.DiscovererDebugMetrics {
+// NewDiscovererMetrics implements discovery.Config.
+func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rdmm discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &ionosMetrics{
 		refreshMetrics: rdmm,
 	}
@@ -103,7 +103,7 @@ func (c SDConfig) Name() string {
 
 // NewDiscoverer returns a new discovery.Discoverer for IONOS Cloud.
 func (c SDConfig) NewDiscoverer(options discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(&c, options.Logger, options.DebugMetrics)
+	return NewDiscovery(&c, options.Logger, options.Metrics)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.

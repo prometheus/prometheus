@@ -19,7 +19,7 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 )
 
-var _ discovery.DiscovererDebugMetrics = (*kubernetesMetrics)(nil)
+var _ discovery.DiscovererMetrics = (*kubernetesMetrics)(nil)
 
 type kubernetesMetrics struct {
 	eventCount *prometheus.CounterVec
@@ -27,7 +27,7 @@ type kubernetesMetrics struct {
 	metricRegisterer discovery.MetricRegisterer
 }
 
-func newDiscovererDebugMetrics(reg prometheus.Registerer, rdmm discovery.RefreshDebugMetricsInstantiator) discovery.DiscovererDebugMetrics {
+func newDiscovererMetrics(reg prometheus.Registerer, rdmm discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	m := &kubernetesMetrics{
 		eventCount: prometheus.NewCounterVec(
 			prometheus.CounterOpts{

@@ -66,8 +66,8 @@ type SDConfig struct {
 	Availability                string           `yaml:"availability,omitempty"`
 }
 
-// NewDiscovererDebugMetrics implements discovery.Config.
-func (*SDConfig) NewDiscovererDebugMetrics(reg prometheus.Registerer, rdmm discovery.RefreshDebugMetricsInstantiator) discovery.DiscovererDebugMetrics {
+// NewDiscovererMetrics implements discovery.Config.
+func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rdmm discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &openstackMetrics{
 		refreshMetrics: rdmm,
 	}
@@ -78,7 +78,7 @@ func (*SDConfig) Name() string { return "openstack" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger, opts.DebugMetrics)
+	return NewDiscovery(c, opts.Logger, opts.Metrics)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -142,7 +142,7 @@ type refresher interface {
 }
 
 // NewDiscovery returns a new OpenStack Discoverer which periodically refreshes its targets.
-func NewDiscovery(conf *SDConfig, l log.Logger, metrics discovery.DiscovererDebugMetrics) (*refresh.Discovery, error) {
+func NewDiscovery(conf *SDConfig, l log.Logger, metrics discovery.DiscovererMetrics) (*refresh.Discovery, error) {
 	m, ok := metrics.(*openstackMetrics)
 	if !ok {
 		return nil, fmt.Errorf("invalid discovery metrics type")

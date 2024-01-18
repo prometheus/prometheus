@@ -41,8 +41,8 @@ func testConfig() SDConfig {
 func testUpdateServices(client appListClient) ([]*targetgroup.Group, error) {
 	cfg := testConfig()
 
-	refreshDebugMetrics := discovery.NewRefreshDebugMetrics(prometheus.DefaultRegisterer)
-	metrics := cfg.NewDiscovererDebugMetrics(prometheus.NewRegistry(), refreshDebugMetrics)
+	refreshMetrics := discovery.NewRefreshMetrics(prometheus.DefaultRegisterer)
+	metrics := cfg.NewDiscovererMetrics(prometheus.NewRegistry(), refreshMetrics)
 	err := metrics.Register()
 	if err != nil {
 		return nil, err
@@ -143,8 +143,8 @@ func TestMarathonSDSendGroup(t *testing.T) {
 
 func TestMarathonSDRemoveApp(t *testing.T) {
 	cfg := testConfig()
-	refreshDebugMetrics := discovery.NewRefreshDebugMetrics(prometheus.DefaultRegisterer)
-	metrics := cfg.NewDiscovererDebugMetrics(prometheus.NewRegistry(), refreshDebugMetrics)
+	refreshMetrics := discovery.NewRefreshMetrics(prometheus.DefaultRegisterer)
+	metrics := cfg.NewDiscovererMetrics(prometheus.NewRegistry(), refreshMetrics)
 	require.NoError(t, metrics.Register())
 	defer metrics.Unregister()
 

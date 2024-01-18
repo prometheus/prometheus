@@ -97,8 +97,8 @@ type EC2SDConfig struct {
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 }
 
-// NewDiscovererDebugMetrics implements discovery.Config.
-func (*EC2SDConfig) NewDiscovererDebugMetrics(reg prometheus.Registerer, rdmm discovery.RefreshDebugMetricsInstantiator) discovery.DiscovererDebugMetrics {
+// NewDiscovererMetrics implements discovery.Config.
+func (*EC2SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rdmm discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &ec2Metrics{
 		refreshMetrics: rdmm,
 	}
@@ -109,7 +109,7 @@ func (*EC2SDConfig) Name() string { return "ec2" }
 
 // NewDiscoverer returns a Discoverer for the EC2 Config.
 func (c *EC2SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewEC2Discovery(c, opts.Logger, opts.DebugMetrics)
+	return NewEC2Discovery(c, opts.Logger, opts.Metrics)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface for the EC2 Config.
@@ -155,7 +155,7 @@ type EC2Discovery struct {
 }
 
 // NewEC2Discovery returns a new EC2Discovery which periodically refreshes its targets.
-func NewEC2Discovery(conf *EC2SDConfig, logger log.Logger, metrics discovery.DiscovererDebugMetrics) (*EC2Discovery, error) {
+func NewEC2Discovery(conf *EC2SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*EC2Discovery, error) {
 	m, ok := metrics.(*ec2Metrics)
 	if !ok {
 		return nil, fmt.Errorf("invalid discovery metrics type")

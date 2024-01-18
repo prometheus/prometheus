@@ -68,7 +68,7 @@ func TestRefresh(t *testing.T) {
 	}
 	interval := time.Millisecond
 
-	metrics := discovery.NewRefreshDebugMetrics(prometheus.NewRegistry())
+	metrics := discovery.NewRefreshMetrics(prometheus.NewRegistry())
 	require.NoError(t, metrics.Register())
 	defer metrics.Unregister()
 

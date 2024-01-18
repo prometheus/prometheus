@@ -19,7 +19,7 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 )
 
-var _ discovery.DiscovererDebugMetrics = (*xdsMetrics)(nil)
+var _ discovery.DiscovererMetrics = (*xdsMetrics)(nil)
 
 type xdsMetrics struct {
 	fetchDuration        prometheus.Summary
@@ -29,7 +29,7 @@ type xdsMetrics struct {
 	metricRegisterer discovery.MetricRegisterer
 }
 
-func newDiscovererDebugMetrics(reg prometheus.Registerer, rdmm discovery.RefreshDebugMetricsInstantiator) discovery.DiscovererDebugMetrics {
+func newDiscovererMetrics(reg prometheus.Registerer, rdmm discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	m := &xdsMetrics{
 		fetchFailuresCount: prometheus.NewCounter(
 			prometheus.CounterOpts{

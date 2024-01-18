@@ -43,9 +43,9 @@ func TestHTTPValidRefresh(t *testing.T) {
 	}
 
 	reg := prometheus.NewRegistry()
-	refreshDebugMetrics := discovery.NewRefreshDebugMetrics(reg)
-	defer refreshDebugMetrics.Unregister()
-	metrics := cfg.NewDiscovererDebugMetrics(reg, refreshDebugMetrics)
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	defer refreshMetrics.Unregister()
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
 	require.NoError(t, metrics.Register())
 	defer metrics.Unregister()
 
@@ -88,9 +88,9 @@ func TestHTTPInvalidCode(t *testing.T) {
 	}
 
 	reg := prometheus.NewRegistry()
-	refreshDebugMetrics := discovery.NewRefreshDebugMetrics(reg)
-	defer refreshDebugMetrics.Unregister()
-	metrics := cfg.NewDiscovererDebugMetrics(reg, refreshDebugMetrics)
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	defer refreshMetrics.Unregister()
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
 	require.NoError(t, metrics.Register())
 	defer metrics.Unregister()
 
@@ -117,9 +117,9 @@ func TestHTTPInvalidFormat(t *testing.T) {
 	}
 
 	reg := prometheus.NewRegistry()
-	refreshDebugMetrics := discovery.NewRefreshDebugMetrics(reg)
-	defer refreshDebugMetrics.Unregister()
-	metrics := cfg.NewDiscovererDebugMetrics(reg, refreshDebugMetrics)
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	defer refreshMetrics.Unregister()
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
 	require.NoError(t, metrics.Register())
 	defer metrics.Unregister()
 
@@ -436,9 +436,9 @@ func TestSourceDisappeared(t *testing.T) {
 	}
 
 	reg := prometheus.NewRegistry()
-	refreshDebugMetrics := discovery.NewRefreshDebugMetrics(reg)
-	defer refreshDebugMetrics.Unregister()
-	metrics := cfg.NewDiscovererDebugMetrics(reg, refreshDebugMetrics)
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	defer refreshMetrics.Unregister()
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
 	require.NoError(t, metrics.Register())
 	defer metrics.Unregister()
 

@@ -19,17 +19,17 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 )
 
-var _ discovery.DiscovererDebugMetrics = (*nomadMetrics)(nil)
+var _ discovery.DiscovererMetrics = (*nomadMetrics)(nil)
 
 type nomadMetrics struct {
-	refreshMetrics discovery.RefreshDebugMetricsInstantiator
+	refreshMetrics discovery.RefreshMetricsInstantiator
 
 	failuresCount prometheus.Counter
 
 	metricRegisterer discovery.MetricRegisterer
 }
 
-func newDiscovererDebugMetrics(reg prometheus.Registerer, rdmm discovery.RefreshDebugMetricsInstantiator) discovery.DiscovererDebugMetrics {
+func newDiscovererMetrics(reg prometheus.Registerer, rdmm discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	m := &nomadMetrics{
 		refreshMetrics: rdmm,
 		failuresCount: prometheus.NewCounter(

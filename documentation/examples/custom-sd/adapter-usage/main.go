@@ -277,8 +277,8 @@ func main() {
 	}
 
 	reg := prometheus.NewRegistry()
-	refreshDebugMetrics := prom_discovery.NewRefreshDebugMetrics(prometheus.DefaultRegisterer)
-	metrics, err := prom_discovery.RegisterSDMetrics(reg, refreshDebugMetrics)
+	refreshMetrics := prom_discovery.NewRefreshMetrics(prometheus.DefaultRegisterer)
+	metrics, err := prom_discovery.RegisterSDMetrics(reg, refreshMetrics)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to register service discovery debug metrics", "err", err)
 		os.Exit(1)

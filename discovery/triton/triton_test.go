@@ -81,9 +81,9 @@ var (
 	}
 )
 
-func newTritonDiscovery(c SDConfig) (*Discovery, discovery.DiscovererDebugMetrics, error) {
-	refreshDebugMetrics := discovery.NewRefreshDebugMetrics(prometheus.DefaultRegisterer)
-	metrics := c.NewDiscovererDebugMetrics(prometheus.NewRegistry(), refreshDebugMetrics)
+func newTritonDiscovery(c SDConfig) (*Discovery, discovery.DiscovererMetrics, error) {
+	refreshMetrics := discovery.NewRefreshMetrics(prometheus.DefaultRegisterer)
+	metrics := c.NewDiscovererMetrics(prometheus.NewRegistry(), refreshMetrics)
 	err := metrics.Register()
 	if err != nil {
 		return nil, nil, err

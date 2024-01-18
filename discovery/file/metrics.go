@@ -19,7 +19,7 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 )
 
-var _ discovery.DiscovererDebugMetrics = (*fileMetrics)(nil)
+var _ discovery.DiscovererMetrics = (*fileMetrics)(nil)
 
 type fileMetrics struct {
 	fileSDReadErrorsCount  prometheus.Counter
@@ -30,7 +30,7 @@ type fileMetrics struct {
 	metricRegisterer discovery.MetricRegisterer
 }
 
-func newDiscovererDebugMetrics(reg prometheus.Registerer, rdmm discovery.RefreshDebugMetricsInstantiator) discovery.DiscovererDebugMetrics {
+func newDiscovererMetrics(reg prometheus.Registerer, rdmm discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	fm := &fileMetrics{
 		fileSDReadErrorsCount: prometheus.NewCounter(
 			prometheus.CounterOpts{

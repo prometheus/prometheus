@@ -53,8 +53,8 @@ type SDConfig struct {
 	Service           string         `yaml:"service"`
 }
 
-// NewDiscovererDebugMetrics implements discovery.Config.
-func (*SDConfig) NewDiscovererDebugMetrics(reg prometheus.Registerer, rdmm discovery.RefreshDebugMetricsInstantiator) discovery.DiscovererDebugMetrics {
+// NewDiscovererMetrics implements discovery.Config.
+func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rdmm discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &ovhcloudMetrics{
 		refreshMetrics: rdmm,
 	}
@@ -101,7 +101,7 @@ func createClient(config *SDConfig) (*ovh.Client, error) {
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(options discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, options.Logger, options.DebugMetrics)
+	return NewDiscovery(c, options.Logger, options.Metrics)
 }
 
 func init() {
@@ -148,7 +148,7 @@ func newRefresher(conf *SDConfig, logger log.Logger) (refresher, error) {
 }
 
 // NewDiscovery returns a new OVHcloud Discoverer which periodically refreshes its targets.
-func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererDebugMetrics) (*refresh.Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*refresh.Discovery, error) {
 	m, ok := metrics.(*ovhcloudMetrics)
 	if !ok {
 		return nil, fmt.Errorf("invalid discovery metrics type")

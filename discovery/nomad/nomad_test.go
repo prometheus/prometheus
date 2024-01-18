@@ -131,8 +131,8 @@ func TestConfiguredService(t *testing.T) {
 		Server: "http://localhost:4646",
 	}
 
-	refreshDebugMetrics := discovery.NewRefreshDebugMetrics(prometheus.DefaultRegisterer)
-	metrics := conf.NewDiscovererDebugMetrics(prometheus.NewRegistry(), refreshDebugMetrics)
+	refreshMetrics := discovery.NewRefreshMetrics(prometheus.DefaultRegisterer)
+	metrics := conf.NewDiscovererMetrics(prometheus.NewRegistry(), refreshMetrics)
 	require.NoError(t, metrics.Register())
 
 	_, err := NewDiscovery(conf, nil, metrics)
@@ -152,8 +152,8 @@ func TestNomadSDRefresh(t *testing.T) {
 	cfg := DefaultSDConfig
 	cfg.Server = endpoint.String()
 
-	refreshDebugMetrics := discovery.NewRefreshDebugMetrics(prometheus.DefaultRegisterer)
-	metrics := cfg.NewDiscovererDebugMetrics(prometheus.NewRegistry(), refreshDebugMetrics)
+	refreshMetrics := discovery.NewRefreshMetrics(prometheus.DefaultRegisterer)
+	metrics := cfg.NewDiscovererMetrics(prometheus.NewRegistry(), refreshMetrics)
 	require.NoError(t, metrics.Register())
 	defer metrics.Unregister()
 

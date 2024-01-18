@@ -50,8 +50,8 @@ func TestVultrSDRefresh(t *testing.T) {
 	cfg := DefaultSDConfig
 	cfg.HTTPClientConfig.BearerToken = APIKey
 
-	refreshDebugMetrics := discovery.NewRefreshDebugMetrics(prometheus.DefaultRegisterer)
-	metrics := cfg.NewDiscovererDebugMetrics(prometheus.NewRegistry(), refreshDebugMetrics)
+	refreshMetrics := discovery.NewRefreshMetrics(prometheus.DefaultRegisterer)
+	metrics := cfg.NewDiscovererMetrics(prometheus.NewRegistry(), refreshMetrics)
 	require.NoError(t, metrics.Register())
 	defer metrics.Unregister()
 

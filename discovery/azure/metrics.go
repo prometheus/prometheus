@@ -19,10 +19,10 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 )
 
-var _ discovery.DiscovererDebugMetrics = (*azureMetrics)(nil)
+var _ discovery.DiscovererMetrics = (*azureMetrics)(nil)
 
 type azureMetrics struct {
-	refreshMetrics discovery.RefreshDebugMetricsInstantiator
+	refreshMetrics discovery.RefreshMetricsInstantiator
 
 	failuresCount prometheus.Counter
 	cacheHitCount prometheus.Counter
@@ -30,7 +30,7 @@ type azureMetrics struct {
 	metricRegisterer discovery.MetricRegisterer
 }
 
-func newDiscovererDebugMetrics(reg prometheus.Registerer, rdmm discovery.RefreshDebugMetricsInstantiator) discovery.DiscovererDebugMetrics {
+func newDiscovererMetrics(reg prometheus.Registerer, rdmm discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	m := &azureMetrics{
 		refreshMetrics: rdmm,
 		failuresCount: prometheus.NewCounter(

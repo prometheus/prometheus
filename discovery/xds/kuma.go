@@ -58,9 +58,9 @@ const (
 
 type KumaSDConfig = SDConfig
 
-// NewDiscovererDebugMetrics implements discovery.Config.
-func (*KumaSDConfig) NewDiscovererDebugMetrics(reg prometheus.Registerer, rdmm discovery.RefreshDebugMetricsInstantiator) discovery.DiscovererDebugMetrics {
-	return newDiscovererDebugMetrics(reg, rdmm)
+// NewDiscovererMetrics implements discovery.Config.
+func (*KumaSDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rdmm discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return newDiscovererMetrics(reg, rdmm)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -102,7 +102,7 @@ func (c *KumaSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discover
 		logger = log.NewNopLogger()
 	}
 
-	return NewKumaHTTPDiscovery(c, logger, opts.DebugMetrics)
+	return NewKumaHTTPDiscovery(c, logger, opts.Metrics)
 }
 
 func convertKumaV1MonitoringAssignment(assignment *MonitoringAssignment) []model.LabelSet {
@@ -158,7 +158,7 @@ func kumaMadsV1ResourceParser(resources []*anypb.Any, typeURL string) ([]model.L
 	return targets, nil
 }
 
-func NewKumaHTTPDiscovery(conf *KumaSDConfig, logger log.Logger, metrics discovery.DiscovererDebugMetrics) (discovery.Discoverer, error) {
+func NewKumaHTTPDiscovery(conf *KumaSDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (discovery.Discoverer, error) {
 	m, ok := metrics.(*xdsMetrics)
 	if !ok {
 		return nil, fmt.Errorf("invalid discovery metrics type")

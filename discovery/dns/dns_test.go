@@ -255,8 +255,8 @@ func TestDNS(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			refreshDebugMetrics := discovery.NewRefreshDebugMetrics(prometheus.DefaultRegisterer)
-			metrics := tc.config.NewDiscovererDebugMetrics(prometheus.NewRegistry(), refreshDebugMetrics)
+			refreshMetrics := discovery.NewRefreshMetrics(prometheus.DefaultRegisterer)
+			metrics := tc.config.NewDiscovererMetrics(prometheus.NewRegistry(), refreshMetrics)
 			require.NoError(t, metrics.Register())
 
 			sd, err := NewDiscovery(tc.config, nil, metrics)

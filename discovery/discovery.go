@@ -39,7 +39,7 @@ type Discoverer interface {
 	Run(ctx context.Context, up chan<- []*targetgroup.Group)
 }
 
-type DiscovererDebugMetrics interface {
+type DiscovererMetrics interface {
 	Register() error
 	Unregister()
 }
@@ -48,7 +48,7 @@ type DiscovererDebugMetrics interface {
 type DiscovererOptions struct {
 	Logger log.Logger
 
-	DebugMetrics DiscovererDebugMetrics
+	Metrics DiscovererMetrics
 
 	// Extra HTTP client options to expose to Discoverers. This field may be
 	// ignored; Discoverer implementations must opt-in to reading it.
@@ -58,20 +58,20 @@ type DiscovererOptions struct {
 // Metrics used by the "refresh" package.
 // We define them here in the "discovery" package in order to avoid a cyclic dependency between
 // "discovery" and "refresh".
-type RefreshDebugMetrics struct {
+type RefreshMetrics struct {
 	Failures prometheus.Counter
 	Duration prometheus.Observer
 }
 
 // Instantiate the metrics used by the "refresh" package.
-type RefreshDebugMetricsInstantiator interface {
-	Instantiate(mech string) *RefreshDebugMetrics
+type RefreshMetricsInstantiator interface {
+	Instantiate(mech string) *RefreshMetrics
 }
 
 // An interface for registering, unregistering, and instantiating metrics for the "refresh" package.
-type RefreshDebugMetricsManager interface {
-	DiscovererDebugMetrics
-	RefreshDebugMetricsInstantiator
+type RefreshMetricsManager interface {
+	DiscovererMetrics
+	RefreshMetricsInstantiator
 }
 
 // A Config provides the configuration and constructor for a Discoverer.
@@ -83,7 +83,7 @@ type Config interface {
 	// with the given DiscovererOptions.
 	NewDiscoverer(DiscovererOptions) (Discoverer, error)
 
-	NewDiscovererDebugMetrics(prometheus.Registerer, RefreshDebugMetricsInstantiator) DiscovererDebugMetrics
+	NewDiscovererMetrics(prometheus.Registerer, RefreshMetricsInstantiator) DiscovererMetrics
 }
 
 // Configs is a slice of Config values that uses custom YAML marshaling and unmarshaling
@@ -139,8 +139,8 @@ func (c StaticConfig) NewDiscoverer(DiscovererOptions) (Discoverer, error) {
 }
 
 // No metrics are needed for this service discovery mechanism.
-func (c StaticConfig) NewDiscovererDebugMetrics(prometheus.Registerer, RefreshDebugMetricsInstantiator) DiscovererDebugMetrics {
-	return &NoopDiscovererDebugMetrics{}
+func (c StaticConfig) NewDiscovererMetrics(prometheus.Registerer, RefreshMetricsInstantiator) DiscovererMetrics {
+	return &NoopDiscovererMetrics{}
 }
 
 type staticDiscoverer []*targetgroup.Group

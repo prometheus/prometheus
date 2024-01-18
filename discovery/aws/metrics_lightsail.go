@@ -18,10 +18,10 @@ import (
 )
 
 type lightsailMetrics struct {
-	refreshMetrics discovery.RefreshDebugMetricsInstantiator
+	refreshMetrics discovery.RefreshMetricsInstantiator
 }
 
-var _ discovery.DiscovererDebugMetrics = (*lightsailMetrics)(nil)
+var _ discovery.DiscovererMetrics = (*lightsailMetrics)(nil)
 
 // Register implements discovery.DiscovererMetrics.
 func (m *lightsailMetrics) Register() error {

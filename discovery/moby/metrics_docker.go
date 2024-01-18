@@ -17,10 +17,10 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 )
 
-var _ discovery.DiscovererDebugMetrics = (*dockerMetrics)(nil)
+var _ discovery.DiscovererMetrics = (*dockerMetrics)(nil)
 
 type dockerMetrics struct {
-	refreshMetrics discovery.RefreshDebugMetricsInstantiator
+	refreshMetrics discovery.RefreshMetricsInstantiator
 }
 
 // Register implements discovery.DiscovererMetrics.

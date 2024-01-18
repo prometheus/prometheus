@@ -126,8 +126,8 @@ func TestPollingRefreshSkipUpdate(t *testing.T) {
 	}
 
 	cfg := &SDConfig{}
-	refreshDebugMetrics := discovery.NewRefreshDebugMetrics(prometheus.DefaultRegisterer)
-	metrics := cfg.NewDiscovererDebugMetrics(prometheus.NewRegistry(), refreshDebugMetrics)
+	refreshMetrics := discovery.NewRefreshMetrics(prometheus.DefaultRegisterer)
+	metrics := cfg.NewDiscovererMetrics(prometheus.NewRegistry(), refreshMetrics)
 	require.NoError(t, metrics.Register())
 
 	xdsMetrics, ok := metrics.(*xdsMetrics)
@@ -171,8 +171,8 @@ func TestPollingRefreshAttachesGroupMetadata(t *testing.T) {
 	}
 
 	reg := prometheus.DefaultRegisterer
-	refreshDebugMetrics := discovery.NewRefreshDebugMetrics(prometheus.DefaultRegisterer)
-	metrics := newDiscovererDebugMetrics(reg, refreshDebugMetrics)
+	refreshMetrics := discovery.NewRefreshMetrics(prometheus.DefaultRegisterer)
+	metrics := newDiscovererMetrics(reg, refreshMetrics)
 	require.NoError(t, metrics.Register())
 	xdsMetrics, ok := metrics.(*xdsMetrics)
 	require.True(t, ok)
@@ -252,8 +252,8 @@ func TestPollingDisappearingTargets(t *testing.T) {
 	}
 
 	cfg := &SDConfig{}
-	refreshDebugMetrics := discovery.NewRefreshDebugMetrics(prometheus.DefaultRegisterer)
-	metrics := cfg.NewDiscovererDebugMetrics(prometheus.NewRegistry(), refreshDebugMetrics)
+	refreshMetrics := discovery.NewRefreshMetrics(prometheus.DefaultRegisterer)
+	metrics := cfg.NewDiscovererMetrics(prometheus.NewRegistry(), refreshMetrics)
 	require.NoError(t, metrics.Register())
 
 	xdsMetrics, ok := metrics.(*xdsMetrics)

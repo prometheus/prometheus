@@ -30,7 +30,7 @@ type Options struct {
 	Mech                string
 	Interval            time.Duration
 	RefreshF            func(ctx context.Context) ([]*targetgroup.Group, error)
-	MetricsInstantiator discovery.RefreshDebugMetricsInstantiator
+	MetricsInstantiator discovery.RefreshMetricsInstantiator
 }
 
 // Discovery implements the Discoverer interface.
@@ -38,7 +38,7 @@ type Discovery struct {
 	logger   log.Logger
 	interval time.Duration
 	refreshf func(ctx context.Context) ([]*targetgroup.Group, error)
-	metrics  *discovery.RefreshDebugMetrics
+	metrics  *discovery.RefreshMetrics
 }
 
 // NewDiscovery returns a Discoverer function that calls a refresh() function at every interval.

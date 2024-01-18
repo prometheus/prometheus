@@ -14,15 +14,15 @@
 package discovery
 
 // Create a dummy debug metrics struct, because this SD doesn't have any debug metrics.
-type NoopDiscovererDebugMetrics struct{}
+type NoopDiscovererMetrics struct{}
 
-var _ DiscovererDebugMetrics = (*NoopDiscovererDebugMetrics)(nil)
+var _ DiscovererMetrics = (*NoopDiscovererMetrics)(nil)
 
-// Register implements discovery.DiscovererDebugMetrics.
-func (*NoopDiscovererDebugMetrics) Register() error {
+// Register implements discovery.DiscovererMetrics.
+func (*NoopDiscovererMetrics) Register() error {
 	return nil
 }
 
-// Unregister implements discovery.DiscovererDebugMetrics.
-func (*NoopDiscovererDebugMetrics) Unregister() {
+// Unregister implements discovery.DiscovererMetrics.
+func (*NoopDiscovererMetrics) Unregister() {
 }

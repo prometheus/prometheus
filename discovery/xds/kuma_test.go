@@ -109,8 +109,8 @@ func getKumaMadsV1DiscoveryResponse(resources ...*MonitoringAssignment) (*v3.Dis
 }
 
 func newKumaTestHTTPDiscovery(c KumaSDConfig) (*fetchDiscovery, error) {
-	refreshDebugMetrics := discovery.NewRefreshDebugMetrics(prometheus.DefaultRegisterer)
-	metrics := c.NewDiscovererDebugMetrics(prometheus.NewRegistry(), refreshDebugMetrics)
+	refreshMetrics := discovery.NewRefreshMetrics(prometheus.DefaultRegisterer)
+	metrics := c.NewDiscovererMetrics(prometheus.NewRegistry(), refreshMetrics)
 	err := metrics.Register()
 	if err != nil {
 		return nil, err

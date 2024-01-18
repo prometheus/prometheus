@@ -19,10 +19,10 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 )
 
-var _ discovery.DiscovererDebugMetrics = (*dnsMetrics)(nil)
+var _ discovery.DiscovererMetrics = (*dnsMetrics)(nil)
 
 type dnsMetrics struct {
-	refreshMetrics discovery.RefreshDebugMetricsInstantiator
+	refreshMetrics discovery.RefreshMetricsInstantiator
 
 	dnsSDLookupsCount        prometheus.Counter
 	dnsSDLookupFailuresCount prometheus.Counter
@@ -30,7 +30,7 @@ type dnsMetrics struct {
 	metricRegisterer discovery.MetricRegisterer
 }
 
-func newDiscovererDebugMetrics(reg prometheus.Registerer, rdmm discovery.RefreshDebugMetricsInstantiator) discovery.DiscovererDebugMetrics {
+func newDiscovererMetrics(reg prometheus.Registerer, rdmm discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	m := &dnsMetrics{
 		refreshMetrics: rdmm,
 		dnsSDLookupsCount: prometheus.NewCounter(

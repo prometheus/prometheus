@@ -67,21 +67,21 @@ func (p *Provider) Config() interface{} {
 // Registers the metrics needed for SD mechanisms.
 // Does not register the metrics for the Discovery Manager.
 // TODO: Add ability to unregister the metrics?
-func CreateAndRegisterSDMetrics(reg prometheus.Registerer) (map[string]DiscovererDebugMetrics, error) {
+func CreateAndRegisterSDMetrics(reg prometheus.Registerer) (map[string]DiscovererMetrics, error) {
 	// Some SD mechanisms use the "refresh" package, which has its own metrics.
-	refreshSdDiscMetrics := NewRefreshDebugMetrics(reg)
+	refreshSdMetrics := NewRefreshMetrics(reg)
 
 	// Register the metrics specific for each SD mechanism, and the ones for the refresh package.
-	sdDiscMetrics, err := RegisterSDMetrics(reg, refreshSdDiscMetrics)
+	sdMetrics, err := RegisterSDMetrics(reg, refreshSdMetrics)
 	if err != nil {
 		return nil, fmt.Errorf("failed to register service discovery metrics: %w", err)
 	}
 
-	return sdDiscMetrics, nil
+	return sdMetrics, nil
 }
 
 // NewManager is the Discovery Manager constructor.
-func NewManager(ctx context.Context, logger log.Logger, registerer prometheus.Registerer, sdMetrics map[string]DiscovererDebugMetrics, options ...func(*Manager)) *Manager {
+func NewManager(ctx context.Context, logger log.Logger, registerer prometheus.Registerer, sdMetrics map[string]DiscovererMetrics, options ...func(*Manager)) *Manager {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -161,7 +161,7 @@ type Manager struct {
 	registerer prometheus.Registerer
 
 	metrics   *Metrics
-	sdMetrics map[string]DiscovererDebugMetrics
+	sdMetrics map[string]DiscovererMetrics
 }
 
 // Providers returns the currently configured SD providers.
@@ -420,7 +420,7 @@ func (m *Manager) registerProviders(cfgs Configs, setName string) int {
 		d, err := cfg.NewDiscoverer(DiscovererOptions{
 			Logger:            log.With(m.logger, "discovery", typ, "config", setName),
 			HTTPClientOptions: m.httpOpts,
-			DebugMetrics:      m.sdMetrics[typ],
+			Metrics:           m.sdMetrics[typ],
 		})
 		if err != nil {
 			level.Error(m.logger).Log("msg", "Cannot create service discovery", "err", err, "type", typ, "config", setName)

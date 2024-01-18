@@ -18,10 +18,10 @@ import (
 )
 
 type openstackMetrics struct {
-	refreshMetrics discovery.RefreshDebugMetricsInstantiator
+	refreshMetrics discovery.RefreshMetricsInstantiator
 }
 
-var _ discovery.DiscovererDebugMetrics = (*openstackMetrics)(nil)
+var _ discovery.DiscovererMetrics = (*openstackMetrics)(nil)
 
 // Register implements discovery.DiscovererMetrics.
 func (m *openstackMetrics) Register() error {
