@@ -420,10 +420,20 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 						} else {
 							ch <- target{labelSet: nil, err: err}
 						}
-						// Get out of this routine because we cannot continue without a network interface.
-						return
+						d.addToCache(nicID, networkInterface)
+					} else {
+						networkInterface, err = client.getVMScaleSetVMNetworkInterfaceByID(ctx, nicID, vm.ScaleSet, vm.InstanceID)
+						if err != nil {
+							if errors.Is(err, errorNotFound) {
+								level.Warn(d.logger).Log("msg", "Network interface does not exist", "name", nicID, "err", err)
+							} else {
+								ch <- target{labelSet: nil, err: err}
+							}
+							// Get out of this routine because we cannot continue without a network interface.
+							return
+						}
+						d.addToCache(nicID, networkInterface)
 					}
-					d.addToCache(nicID, networkInterface)
 				}
 
 				if networkInterface.Properties == nil {

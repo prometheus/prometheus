@@ -1,0 +1,10 @@
+{__name__="heavy_metric", foo="foo"} 5 0
+{__name__="heavy_metric", foo="foo"} 4 60000
+{__name__="heavy_metric", foo="foo"} 3 120000
+{__name__="heavy_metric", foo="foo"} 2 180000
+{__name__="heavy_metric", foo="foo"} 1 240000
+{__name__="metric", baz="abc", foo="bar"} 1 0
+{__name__="metric", baz="abc", foo="bar"} 2 60000
+{__name__="metric", baz="abc", foo="bar"} 3 120000
+{__name__="metric", baz="abc", foo="bar"} 4 180000
+{__name__="metric", baz="abc", foo="bar"} 5 240000

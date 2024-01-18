@@ -90,9 +90,9 @@ type LeveledCompactor struct {
 	ctx                         context.Context
 	maxBlockChunkSegmentSize    int64
 	mergeFunc                   storage.VerticalChunkSeriesMergeFunc
+	postingsEncoder             index.PostingsEncoder
 	enableOverlappingCompaction bool
-
-	concurrencyOpts LeveledCompactorConcurrencyOptions
+	concurrencyOpts             LeveledCompactorConcurrencyOptions
 }
 
 type CompactorMetrics struct {
@@ -155,12 +155,35 @@ func newCompactorMetrics(r prometheus.Registerer) *CompactorMetrics {
 	return m
 }
 
-// NewLeveledCompactor returns a LeveledCompactor.
-func NewLeveledCompactor(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc, enableOverlappingCompaction bool) (*LeveledCompactor, error) {
-	return NewLeveledCompactorWithChunkSize(ctx, r, l, ranges, pool, chunks.DefaultChunkSegmentSize, mergeFunc, enableOverlappingCompaction)
+type LeveledCompactorOptions struct {
+	// PE specifies the postings encoder. It is called when compactor is writing out the postings for a label name/value pair during compaction.
+	// If it is nil then the default encoder is used. At the moment that is the "raw" encoder. See index.EncodePostingsRaw for more.
+	PE index.PostingsEncoder
+	// MaxBlockChunkSegmentSize is the max block chunk segment size. If it is 0 then the default chunks.DefaultChunkSegmentSize is used.
+	MaxBlockChunkSegmentSize int64
+	// MergeFunc is used for merging series together in vertical compaction. By default storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge) is used.
+	MergeFunc storage.VerticalChunkSeriesMergeFunc
+	// EnableOverlappingCompaction enables compaction of overlapping blocks. In Prometheus it is always enabled.
+	// It is useful for downstream projects like Mimir, Cortex, Thanos where they have a separate component that does compaction.
+	EnableOverlappingCompaction bool
 }
 
-func NewLeveledCompactorWithChunkSize(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, maxBlockChunkSegmentSize int64, mergeFunc storage.VerticalChunkSeriesMergeFunc, enableOverlappingCompaction bool) (*LeveledCompactor, error) {
+func NewLeveledCompactorWithChunkSize(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, maxBlockChunkSegmentSize int64, mergeFunc storage.VerticalChunkSeriesMergeFunc) (*LeveledCompactor, error) {
+	return NewLeveledCompactorWithOptions(ctx, r, l, ranges, pool, LeveledCompactorOptions{
+		MaxBlockChunkSegmentSize:    maxBlockChunkSegmentSize,
+		MergeFunc:                   mergeFunc,
+		EnableOverlappingCompaction: true,
+	})
+}
+
+func NewLeveledCompactor(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc) (*LeveledCompactor, error) {
+	return NewLeveledCompactorWithOptions(ctx, r, l, ranges, pool, LeveledCompactorOptions{
+		MergeFunc:                   mergeFunc,
+		EnableOverlappingCompaction: true,
+	})
+}
+
+func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, opts LeveledCompactorOptions) (*LeveledCompactor, error) {
 	if len(ranges) == 0 {
 		return nil, fmt.Errorf("at least one range must be provided")
 	}
@@ -170,8 +193,17 @@ func NewLeveledCompactorWithChunkSize(ctx context.Context, r prometheus.Register
 	if l == nil {
 		l = log.NewNopLogger()
 	}
+	mergeFunc := opts.MergeFunc
 	if mergeFunc == nil {
 		mergeFunc = storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge)
+	}
+	maxBlockChunkSegmentSize := opts.MaxBlockChunkSegmentSize
+	if maxBlockChunkSegmentSize == 0 {
+		maxBlockChunkSegmentSize = chunks.DefaultChunkSegmentSize
+	}
+	pe := opts.PE
+	if pe == nil {
+		pe = index.EncodePostingsRaw
 	}
 	return &LeveledCompactor{
 		ranges:                      ranges,
@@ -181,8 +213,9 @@ func NewLeveledCompactorWithChunkSize(ctx context.Context, r prometheus.Register
 		ctx:                         ctx,
 		maxBlockChunkSegmentSize:    maxBlockChunkSegmentSize,
 		mergeFunc:                   mergeFunc,
+		postingsEncoder:             pe,
+		enableOverlappingCompaction: opts.EnableOverlappingCompaction,
 		concurrencyOpts:             DefaultLeveledCompactorConcurrencyOptions(),
-		enableOverlappingCompaction: enableOverlappingCompaction,
 	}, nil
 }
 
@@ -810,7 +843,7 @@ func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blockPop
 		outBlocks[ix].chunkw = chunkw
 
 		var indexw IndexWriter
-		indexw, err = index.NewWriter(c.ctx, filepath.Join(tmp, indexFilename))
+		indexw, err = index.NewWriterWithEncoder(c.ctx, filepath.Join(tmp, indexFilename), c.postingsEncoder)
 		if err != nil {
 			return fmt.Errorf("open index writer: %w", err)
 		}
