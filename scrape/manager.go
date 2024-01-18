@@ -168,6 +168,7 @@ func (m *Manager) reload() {
 	// 	model.NameValidationScheme = model.LegacyValidation
 	// }
 	// level.Info(m.logger).Log("msg", "validation scheme", "scheme", model.NameValidationScheme, "arg", m.opts.UTF8Names)
+	// XXXXX the problem with this is that agent does not really use scrape.Options.  Also too, this is like per-scrape not per-instance, so it's not really the right place for this at all.
 	// if m.opts.NameEscapingScheme != "" {
 	// 	model.NameEscapingScheme, err = model.ToEscapingScheme(m.opts.NameEscapingScheme)
 	// 	if err != nil {
