@@ -465,7 +465,7 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, ma
 		}
 		allValues = filteredValues
 	}
-	
+
 	if len(allValues) == 0 {
 		return nil, nil
 	}
