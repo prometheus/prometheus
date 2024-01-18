@@ -55,6 +55,16 @@ func (oh *OOOHeadIndexReader) Series(ref storage.SeriesRef, builder *labels.Scra
 	return oh.series(ref, builder, chks, oh.lastGarbageCollectedMmapRef, 0)
 }
 
+func newOOOHeadIndexReaderWithContext(head *Head, mint, maxt int64, lastGarbageCollectedMmapRef chunks.ChunkDiskMapperRef, qctx *headQueryContext) *OOOHeadIndexReader {
+	hr := &headIndexReader{
+		head: head,
+		mint: mint,
+		maxt: maxt,
+		qctx: qctx,
+	}
+	return &OOOHeadIndexReader{hr, lastGarbageCollectedMmapRef}
+}
+
 // lastGarbageCollectedMmapRef gives the last mmap chunk that may be being garbage collected and so
 // any chunk at or before this ref will not be considered. 0 disables this check.
 //

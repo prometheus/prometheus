@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"math"
 	"sync"
+	"unsafe"
 
 	"github.com/go-kit/log/level"
 	"golang.org/x/exp/slices"
@@ -30,6 +31,97 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 )
 
+type postingsCacheEntry struct {
+	p      index.Postings
+	sorted bool
+}
+
+type headQueryContext struct {
+	postingsCache map[string]postingsCacheEntry
+}
+
+func (c *headQueryContext) enablePostingsCache() {
+	if c != nil {
+		c.postingsCache = map[string]postingsCacheEntry{}
+	}
+}
+
+func (c *headQueryContext) postingsCacheEnabled() bool {
+	return c != nil && c.postingsCache != nil
+}
+
+func (c *headQueryContext) popCachedPostings(matchers string, sort bool) (index.Postings, bool) {
+	if !c.postingsCacheEnabled() {
+		return nil, false
+	}
+
+	e, ok := c.postingsCache[matchers]
+	if !ok {
+		return nil, false
+	}
+	if e.sorted != sort {
+		return nil, false
+	}
+	delete(c.postingsCache, matchers)
+	return e.p, true
+}
+
+func (c *headQueryContext) cachePostings(matchers string, p index.Postings, sorted bool) index.Postings {
+	if !c.postingsCacheEnabled() {
+		return p
+	}
+
+	c.postingsCache[matchers] = postingsCacheEntry{p: p.Clone(), sorted: sorted}
+	return p
+}
+
+func encodeMatchers(ms []*labels.Matcher) string {
+	var size int
+	for _, m := range ms {
+		size += len(m.Name) + len(m.Type.String()) + len(m.Value) + 1
+	}
+	buf := make([]byte, 0, size)
+	for _, m := range ms {
+		buf = append(buf, m.Name...)
+		buf = append(buf, m.Type.String()...)
+		buf = append(buf, m.Value...)
+		buf = append(buf, ' ')
+	}
+	return *(*string)(unsafe.Pointer(&buf))
+}
+
+func maybeCachedPostingsForMatchersFromHeadIndexContext(ctx context.Context, ix IndexReader, ms []*labels.Matcher, sortSeries bool) (index.Postings, error) {
+	var p index.Postings
+
+	var headQueryCtx *headQueryContext
+	if ixWithHeadQueryContext, ok := ix.(interface {
+		headQueryContext() *headQueryContext
+	}); ok {
+		headQueryCtx = ixWithHeadQueryContext.headQueryContext()
+	}
+
+	cacheEnabled := headQueryCtx != nil && headQueryCtx.postingsCacheEnabled()
+	cached := false
+	matchersKey := ""
+	if cacheEnabled {
+		matchersKey = encodeMatchers(ms)
+		p, cached = headQueryCtx.popCachedPostings(matchersKey, sortSeries)
+	}
+	if !cached {
+		var err error
+		if p, err = PostingsForMatchers(ctx, ix, ms...); err != nil {
+			return nil, err
+		}
+		if sortSeries {
+			p = ix.SortedPostings(p)
+		}
+	}
+	if !cached && cacheEnabled {
+		p = headQueryCtx.cachePostings(matchersKey, p, sortSeries)
+	}
+	return p, nil
+}
+
 func (h *Head) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
 	return h.exemplars.ExemplarQuerier(ctx)
 }
@@ -39,16 +131,26 @@ func (h *Head) Index() (IndexReader, error) {
 	return h.indexRange(math.MinInt64, math.MaxInt64), nil
 }
 
-func (h *Head) indexRange(mint, maxt int64) *headIndexReader {
+func (h *Head) indexRangeWithContext(mint, maxt int64, qctx *headQueryContext) *headIndexReader {
 	if hmin := h.MinTime(); hmin > mint {
 		mint = hmin
 	}
-	return &headIndexReader{head: h, mint: mint, maxt: maxt}
+	return &headIndexReader{head: h, mint: mint, maxt: maxt, qctx: qctx}
+}
+
+func (h *Head) indexRange(mint, maxt int64) *headIndexReader {
+	return h.indexRangeWithContext(mint, maxt, nil)
 }
 
 type headIndexReader struct {
 	head       *Head
 	mint, maxt int64
+
+	qctx *headQueryContext
+}
+
+func (h *headIndexReader) headQueryContext() *headQueryContext {
+	return h.qctx
 }
 
 func (h *headIndexReader) Close() error {

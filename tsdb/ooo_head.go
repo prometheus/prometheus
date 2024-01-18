@@ -116,21 +116,27 @@ type OOORangeHead struct {
 	mint, maxt int64
 
 	isoState *oooIsolationState
+
+	qctx *headQueryContext
 }
 
 func NewOOORangeHead(head *Head, mint, maxt int64, minRef chunks.ChunkDiskMapperRef) *OOORangeHead {
-	isoState := head.oooIso.TrackReadAfter(minRef)
+	return newOOORangeHeadWithContext(head, mint, maxt, minRef, nil)
+}
 
+func newOOORangeHeadWithContext(head *Head, mint, maxt int64, minRef chunks.ChunkDiskMapperRef, qctx *headQueryContext) *OOORangeHead {
+	isoState := head.oooIso.TrackReadAfter(minRef)
 	return &OOORangeHead{
 		head:     head,
 		mint:     mint,
 		maxt:     maxt,
 		isoState: isoState,
+		qctx:     qctx,
 	}
 }
 
 func (oh *OOORangeHead) Index() (IndexReader, error) {
-	return NewOOOHeadIndexReader(oh.head, oh.mint, oh.maxt, oh.isoState.minRef), nil
+	return newOOOHeadIndexReaderWithContext(oh.head, oh.mint, oh.maxt, oh.isoState.minRef, oh.qctx), nil
 }
 
 func (oh *OOORangeHead) Chunks() (ChunkReader, error) {

@@ -1922,9 +1922,9 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 		}
 	}()
 
+	headQueryCtx := &headQueryContext{}
 	if maxt >= db.head.MinTime() {
-		rh := NewRangeHead(db.head, mint, maxt)
-		var err error
+		rh := newRangeHeadWithContext(db.head, mint, maxt, headQueryCtx)
 		inOrderHeadQuerier, err := NewBlockQuerier(rh, mint, maxt)
 		if err != nil {
 			return nil, fmt.Errorf("open block querier for head %s: %w", rh, err)
@@ -1941,7 +1941,7 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 			inOrderHeadQuerier = nil
 		}
 		if getNew {
-			rh := NewRangeHead(db.head, newMint, maxt)
+			rh := newRangeHeadWithContext(db.head, newMint, maxt, headQueryCtx)
 			inOrderHeadQuerier, err = NewBlockQuerier(rh, newMint, maxt)
 			if err != nil {
 				return nil, fmt.Errorf("open block querier for head while getting new querier %s: %w", rh, err)
@@ -1954,8 +1954,8 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 	}
 
 	if overlapsClosedInterval(mint, maxt, db.head.MinOOOTime(), db.head.MaxOOOTime()) {
-		rh := NewOOORangeHead(db.head, mint, maxt, db.lastGarbageCollectedMmapRef)
-		var err error
+		headQueryCtx.enablePostingsCache()
+		rh := newOOORangeHeadWithContext(db.head, mint, maxt, db.lastGarbageCollectedMmapRef, headQueryCtx)
 		outOfOrderHeadQuerier, err := NewBlockQuerier(rh, mint, maxt)
 		if err != nil {
 			// If NewBlockQuerier() failed, make sure to clean up the pending read created by NewOOORangeHead.
@@ -2004,8 +2004,9 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 		}
 	}()
 
+	headQueryCtx := &headQueryContext{}
 	if maxt >= db.head.MinTime() {
-		rh := NewRangeHead(db.head, mint, maxt)
+		rh := newRangeHeadWithContext(db.head, mint, maxt, headQueryCtx)
 		inOrderHeadQuerier, err := NewBlockChunkQuerier(rh, mint, maxt)
 		if err != nil {
 			return nil, fmt.Errorf("open querier for head %s: %w", rh, err)
@@ -2022,7 +2023,7 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 			inOrderHeadQuerier = nil
 		}
 		if getNew {
-			rh := NewRangeHead(db.head, newMint, maxt)
+			rh := newRangeHeadWithContext(db.head, newMint, maxt, headQueryCtx)
 			inOrderHeadQuerier, err = NewBlockChunkQuerier(rh, newMint, maxt)
 			if err != nil {
 				return nil, fmt.Errorf("open querier for head while getting new querier %s: %w", rh, err)
@@ -2035,7 +2036,8 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 	}
 
 	if overlapsClosedInterval(mint, maxt, db.head.MinOOOTime(), db.head.MaxOOOTime()) {
-		rh := NewOOORangeHead(db.head, mint, maxt, db.lastGarbageCollectedMmapRef)
+		headQueryCtx.enablePostingsCache()
+		rh := newOOORangeHeadWithContext(db.head, mint, maxt, db.lastGarbageCollectedMmapRef, headQueryCtx)
 		outOfOrderHeadQuerier, err := NewBlockChunkQuerier(rh, mint, maxt)
 		if err != nil {
 			return nil, fmt.Errorf("open block chunk querier for ooo head %s: %w", rh, err)
