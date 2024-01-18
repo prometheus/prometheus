@@ -405,6 +405,11 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 	// For all seen pods, check all container ports. If they were not covered
 	// by one of the service endpoints, generate targets for them.
 	for _, pe := range seenPods {
+		// PodIP can be empty when a pod is starting or has been evicted.
+		if len(pe.pod.Status.PodIP) == 0 {
+			continue
+		}
+
 		for _, c := range pe.pod.Spec.Containers {
 			for _, cport := range c.Ports {
 				hasSeenPort := func() bool {
@@ -422,21 +427,18 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 					continue
 				}
 
-				// PodIP can be empty when a pod is starting or has been evicted.
-				if len(pe.pod.Status.PodIP) != 0 {
-					a := net.JoinHostPort(pe.pod.Status.PodIP, strconv.FormatUint(uint64(cport.ContainerPort), 10))
-					ports := strconv.FormatUint(uint64(cport.ContainerPort), 10)
+				a := net.JoinHostPort(pe.pod.Status.PodIP, strconv.FormatUint(uint64(cport.ContainerPort), 10))
+				ports := strconv.FormatUint(uint64(cport.ContainerPort), 10)
 
-					target := model.LabelSet{
-						model.AddressLabel:            lv(a),
-						podContainerNameLabel:         lv(c.Name),
-						podContainerImageLabel:        lv(c.Image),
-						podContainerPortNameLabel:     lv(cport.Name),
-						podContainerPortNumberLabel:   lv(ports),
-						podContainerPortProtocolLabel: lv(string(cport.Protocol)),
-					}
-					tg.Targets = append(tg.Targets, target.Merge(podLabels(pe.pod)))
+				target := model.LabelSet{
+					model.AddressLabel:            lv(a),
+					podContainerNameLabel:         lv(c.Name),
+					podContainerImageLabel:        lv(c.Image),
+					podContainerPortNameLabel:     lv(cport.Name),
+					podContainerPortNumberLabel:   lv(ports),
+					podContainerPortProtocolLabel: lv(string(cport.Protocol)),
 				}
+				tg.Targets = append(tg.Targets, target.Merge(podLabels(pe.pod)))
 			}
 		}
 	}

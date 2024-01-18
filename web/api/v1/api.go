@@ -1848,13 +1848,9 @@ func parseDuration(s string) (time.Duration, error) {
 }
 
 func parseMatchersParam(matchers []string) ([][]*labels.Matcher, error) {
-	var matcherSets [][]*labels.Matcher
-	for _, s := range matchers {
-		matchers, err := parser.ParseMetricSelector(s)
-		if err != nil {
-			return nil, err
-		}
-		matcherSets = append(matcherSets, matchers)
+	matcherSets, err := parser.ParseMetricSelectors(matchers)
+	if err != nil {
+		return nil, err
 	}
 
 OUTER:

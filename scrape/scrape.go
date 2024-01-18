@@ -99,6 +99,7 @@ type scrapeLoopOptions struct {
 	scraper                  scraper
 	sampleLimit              int
 	bucketLimit              int
+	maxSchema                int32
 	labelLimits              *labelLimits
 	honorLabels              bool
 	honorTimestamps          bool
@@ -165,6 +166,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 			opts.enableCompression,
 			opts.sampleLimit,
 			opts.bucketLimit,
+			opts.maxSchema,
 			opts.labelLimits,
 			opts.interval,
 			opts.timeout,
@@ -270,6 +272,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 		bodySizeLimit = int64(sp.config.BodySizeLimit)
 		sampleLimit   = int(sp.config.SampleLimit)
 		bucketLimit   = int(sp.config.NativeHistogramBucketLimit)
+		maxSchema     = pickSchema(sp.config.NativeHistogramMinBucketFactor)
 		labelLimits   = &labelLimits{
 			labelLimit:            int(sp.config.LabelLimit),
 			labelNameLengthLimit:  int(sp.config.LabelNameLengthLimit),
@@ -310,6 +313,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 				scraper:                  s,
 				sampleLimit:              sampleLimit,
 				bucketLimit:              bucketLimit,
+				maxSchema:                maxSchema,
 				labelLimits:              labelLimits,
 				honorLabels:              honorLabels,
 				honorTimestamps:          honorTimestamps,
@@ -613,7 +617,7 @@ func mutateReportSampleLabels(lset labels.Labels, target *Target) labels.Labels 
 }
 
 // appender returns an appender for ingested samples from the target.
-func appender(app storage.Appender, sampleLimit, bucketLimit int) storage.Appender {
+func appender(app storage.Appender, sampleLimit, bucketLimit int, maxSchema int32) storage.Appender {
 	app = &timeLimitAppender{
 		Appender: app,
 		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
@@ -633,6 +637,14 @@ func appender(app storage.Appender, sampleLimit, bucketLimit int) storage.Append
 			limit:    bucketLimit,
 		}
 	}
+
+	if maxSchema < nativeHistogramMaxSchema {
+		app = &maxSchemaAppender{
+			Appender:  app,
+			maxSchema: maxSchema,
+		}
+	}
+
 	return app
 }
 
@@ -786,6 +798,7 @@ type scrapeLoop struct {
 	forcedErrMtx             sync.Mutex
 	sampleLimit              int
 	bucketLimit              int
+	maxSchema                int32
 	labelLimits              *labelLimits
 	interval                 time.Duration
 	timeout                  time.Duration
@@ -1078,6 +1091,7 @@ func newScrapeLoop(ctx context.Context,
 	enableCompression bool,
 	sampleLimit int,
 	bucketLimit int,
+	maxSchema int32,
 	labelLimits *labelLimits,
 	interval time.Duration,
 	timeout time.Duration,
@@ -1128,6 +1142,7 @@ func newScrapeLoop(ctx context.Context,
 		enableCompression:        enableCompression,
 		sampleLimit:              sampleLimit,
 		bucketLimit:              bucketLimit,
+		maxSchema:                maxSchema,
 		labelLimits:              labelLimits,
 		interval:                 interval,
 		timeout:                  timeout,
@@ -1458,7 +1473,7 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 	}
 
 	// Take an appender with limits.
-	app = appender(app, sl.sampleLimit, sl.bucketLimit)
+	app = appender(app, sl.sampleLimit, sl.bucketLimit, sl.maxSchema)
 
 	defer func() {
 		if err != nil {
@@ -1905,4 +1920,19 @@ func ContextWithTarget(ctx context.Context, t *Target) context.Context {
 func TargetFromContext(ctx context.Context) (*Target, bool) {
 	t, ok := ctx.Value(ctxKeyTarget).(*Target)
 	return t, ok
+}
+
+func pickSchema(bucketFactor float64) int32 {
+	if bucketFactor <= 1 {
+		bucketFactor = 1.00271
+	}
+	floor := math.Floor(-math.Log2(math.Log2(bucketFactor)))
+	switch {
+	case floor >= float64(nativeHistogramMaxSchema):
+		return nativeHistogramMaxSchema
+	case floor <= float64(nativeHistogramMinSchema):
+		return nativeHistogramMinSchema
+	default:
+		return int32(floor)
+	}
 }

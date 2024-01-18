@@ -5,6 +5,45 @@
 * [ENHANCEMENT] TSDB: Make the wlog watcher read segments synchronously when not tailing. #13224
 * [BUGFIX] Agent: Participate in notify calls. #13223
 
+## 2.49.0 / 2024-01-15
+
+* [FEATURE] Promtool: Add `--run` flag promtool test rules command. #12206
+* [FEATURE] SD: Add support for `NS` records to DNS SD. #13219
+* [FEATURE] UI: Add heatmap visualization setting in the Graph tab, useful histograms. #13096 #13371
+* [FEATURE] Scraping: Add `scrape_config.enable_compression` (default true) to disable gzip compression when scraping the target. #13166
+* [FEATURE] PromQL: Add a `promql-experimental-functions` feature flag containing some new experimental PromQL functions. #13103 NOTE: More experimental functions might be added behind the same feature flag in the future. Added functions:
+  * Experimental `mad_over_time` (median absolute deviation around the median) function. #13059
+  * Experimental `sort_by_label` and `sort_by_label_desc` functions allowing sorting returned series by labels. #11299
+* [FEATURE] SD: Add `__meta_linode_gpus` label to Linode SD. #13097
+* [FEATURE] API: Add `exclude_alerts` query parameter to `/api/v1/rules` to only return recording rules. #12999
+* [FEATURE] TSDB: --storage.tsdb.retention.time flag value is now exposed as a `prometheus_tsdb_retention_limit_seconds` metric. #12986
+* [FEATURE] Scraping: Add ability to specify priority of scrape protocols to accept during scrape (e.g. to scrape Prometheus proto format for certain jobs). This can be changed by setting `global.scrape_protocols` and `scrape_config.scrape_protocols`. #12738
+* [ENHANCEMENT] Scraping: Automated handling of scraping histograms that violate `scrape_config.native_histogram_bucket_limit` setting. #13129
+* [ENHANCEMENT] Scraping: Optimized memory allocations when scraping. #12992
+* [ENHANCEMENT] SD: Added cache for Azure SD to avoid rate-limits. #12622
+* [ENHANCEMENT] TSDB: Various improvements to OOO exemplar scraping. E.g. allowing ingestion of exemplars with the same timestamp, but with different labels. #13021
+* [ENHANCEMENT] API: Optimize `/api/v1/labels` and `/api/v1/label/<label_name>/values` when 1 set of matchers are used. #12888
+* [ENHANCEMENT] TSDB: Various optimizations for TSDB block index, head mmap chunks and WAL, reducing latency and memory allocations (improving API calls, compaction queries etc). #12997 #13058 #13056 #13040
+* [ENHANCEMENT] PromQL: Optimize memory allocations and latency when querying float histograms. #12954
+* [ENHANCEMENT] Rules: Instrument TraceID in log lines for rule evaluations. #13034
+* [ENHANCEMENT] PromQL: Optimize memory allocations in query_range calls. #13043
+* [ENHANCEMENT] Promtool: unittest interval now defaults to evaluation_intervals when not set. #12729
+* [BUGFIX] SD: Fixed Azure SD public IP reporting #13241
+* [BUGFIX] API: Fix inaccuracies in posting cardinality statistics. #12653
+* [BUGFIX] PromQL: Fix inaccuracies of `histogram_quantile` with classic histograms. #13153
+* [BUGFIX] TSDB: Fix rare fails or inaccurate queries with OOO samples. #13115
+* [BUGFIX] TSDB: Fix rare panics on append commit when exemplars are used. #13092
+* [BUGFIX] TSDB: Fix exemplar WAL storage, so remote write can send/receive samples before exemplars. #13113
+* [BUGFIX] Mixins: Fix `url` filter on remote write dashboards. #10721
+* [BUGFIX] PromQL/TSDB: Various fixes to float histogram operations. #12891 #12977 #12609 #13190 #13189 #13191 #13201 #13212 #13208
+* [BUGFIX] Promtool: Fix int32 overflow issues for 32-bit architectures. #12978
+* [BUGFIX] SD: Fix Azure VM Scale Set NIC issue. #13283
+
+## 2.48.1 / 2023-12-07
+
+* [BUGFIX] TSDB: Make the wlog watcher read segments synchronously when not tailing. #13224
+* [BUGFIX] Agent: Participate in notify calls (fixes slow down in remote write handling introduced in 2.45). #13223
+
 ## 2.48.0 / 2023-11-16
 
 * [CHANGE] Remote-write: respect Retry-After header on 5xx errors. #12677

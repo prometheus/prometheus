@@ -469,8 +469,8 @@ func (h *FloatHistogram) DetectReset(previous *FloatHistogram) bool {
 	// is a counter reset or not.
 	// We do the same if the CounterResetHint is GaugeType, which should not happen, but PromQL still
 	// allows the user to apply functions to gauge histograms that are only meant for counter histograms.
-	// In this case, we treat the gauge histograms as a counter histograms
-	// (and we plan to return a warning about it to the user).
+	// In this case, we treat the gauge histograms as counter histograms. A warning should be returned
+	// to the user in this case.
 	if h.Count < previous.Count {
 		return true
 	}

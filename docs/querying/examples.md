@@ -39,7 +39,7 @@ To select all HTTP status codes except 4xx ones, you could run:
 
 ## Subquery
 
-Return the 5-minute rate of the `http_requests_total` metric for the past 30 minutes, with a resolution of 1 minute.
+Return the 5-minute [rate](./functions.md#rate) of the `http_requests_total` metric for the past 30 minutes, with a resolution of 1 minute.
 
     rate(http_requests_total[5m])[30m:1m]
 

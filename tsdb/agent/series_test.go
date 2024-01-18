@@ -74,3 +74,63 @@ func TestNoDeadlock(t *testing.T) {
 		require.FailNow(t, "deadlock detected")
 	}
 }
+
+func labelsWithHashCollision() (labels.Labels, labels.Labels) {
+	// These two series have the same XXHash; thanks to https://github.com/pstibrany/labels_hash_collisions
+	ls1 := labels.FromStrings("__name__", "metric", "lbl1", "value", "lbl2", "l6CQ5y")
+	ls2 := labels.FromStrings("__name__", "metric", "lbl1", "value", "lbl2", "v7uDlF")
+
+	if ls1.Hash() != ls2.Hash() {
+		// These ones are the same when using -tags stringlabels
+		ls1 = labels.FromStrings("__name__", "metric", "lbl", "HFnEaGl")
+		ls2 = labels.FromStrings("__name__", "metric", "lbl", "RqcXatm")
+	}
+
+	if ls1.Hash() != ls2.Hash() {
+		panic("This code needs to be updated: find new labels with colliding hash values.")
+	}
+
+	return ls1, ls2
+}
+
+// stripeSeriesWithCollidingSeries returns a stripeSeries with two memSeries having the same, colliding, hash.
+func stripeSeriesWithCollidingSeries(_ *testing.T) (*stripeSeries, *memSeries, *memSeries) {
+	lbls1, lbls2 := labelsWithHashCollision()
+	ms1 := memSeries{
+		lset: lbls1,
+	}
+	ms2 := memSeries{
+		lset: lbls2,
+	}
+	hash := lbls1.Hash()
+	s := newStripeSeries(1)
+
+	s.Set(hash, &ms1)
+	s.Set(hash, &ms2)
+
+	return s, &ms1, &ms2
+}
+
+func TestStripeSeries_Get(t *testing.T) {
+	s, ms1, ms2 := stripeSeriesWithCollidingSeries(t)
+	hash := ms1.lset.Hash()
+
+	// Verify that we can get both of the series despite the hash collision
+	got := s.GetByHash(hash, ms1.lset)
+	require.Same(t, ms1, got)
+	got = s.GetByHash(hash, ms2.lset)
+	require.Same(t, ms2, got)
+}
+
+func TestStripeSeries_gc(t *testing.T) {
+	s, ms1, ms2 := stripeSeriesWithCollidingSeries(t)
+	hash := ms1.lset.Hash()
+
+	s.GC(1)
+
+	// Verify that we can get neither ms1 nor ms2 after gc-ing corresponding series
+	got := s.GetByHash(hash, ms1.lset)
+	require.Nil(t, got)
+	got = s.GetByHash(hash, ms2.lset)
+	require.Nil(t, got)
+}

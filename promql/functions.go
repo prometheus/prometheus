@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/facette/natsort"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/common/model"
 	"golang.org/x/exp/slices"
@@ -186,6 +187,8 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 		minSchema = last.Schema
 	}
 
+	var annos annotations.Annotations
+
 	// First iteration to find out two things:
 	// - What's the smallest relevant schema?
 	// - Are all data points histograms?
@@ -196,9 +199,11 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 		if curr == nil {
 			return nil, annotations.New().Add(annotations.NewMixedFloatsHistogramsWarning(metricName, pos))
 		}
-		// TODO(trevorwhitney): Check if isCounter is consistent with curr.CounterResetHint.
 		if !isCounter {
 			continue
+		}
+		if curr.CounterResetHint == histogram.GaugeType {
+			annos.Add(annotations.NewNativeHistogramNotCounterWarning(metricName, pos))
 		}
 		if curr.Schema < minSchema {
 			minSchema = curr.Schema
@@ -217,6 +222,8 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 			}
 			prev = curr
 		}
+	} else if points[0].H.CounterResetHint != histogram.GaugeType || points[len(points)-1].H.CounterResetHint != histogram.GaugeType {
+		annos.Add(annotations.NewNativeHistogramNotGaugeWarning(metricName, pos))
 	}
 
 	h.CounterResetHint = histogram.GaugeType
@@ -380,15 +387,16 @@ func funcSortByLabel(vals []parser.Value, args parser.Expressions, enh *EvalNode
 		for _, label := range labels {
 			lv1 := a.Metric.Get(label)
 			lv2 := b.Metric.Get(label)
-			// 0 if a == b, -1 if a < b, and +1 if a > b.
-			switch strings.Compare(lv1, lv2) {
-			case -1:
-				return -1
-			case +1:
-				return +1
-			default:
+
+			if lv1 == lv2 {
 				continue
 			}
+
+			if natsort.Compare(lv1, lv2) {
+				return -1
+			}
+
+			return +1
 		}
 
 		return 0
@@ -409,19 +417,16 @@ func funcSortByLabelDesc(vals []parser.Value, args parser.Expressions, enh *Eval
 		for _, label := range labels {
 			lv1 := a.Metric.Get(label)
 			lv2 := b.Metric.Get(label)
-			// If label values are the same, continue to the next label
+
 			if lv1 == lv2 {
 				continue
 			}
-			// 0 if a == b, -1 if a < b, and +1 if a > b.
-			switch strings.Compare(lv1, lv2) {
-			case -1:
+
+			if natsort.Compare(lv1, lv2) {
 				return +1
-			case +1:
-				return -1
-			default:
-				continue
 			}
+
+			return -1
 		}
 
 		return 0
@@ -532,15 +537,8 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 				count++
 				left := h.H.Copy().Div(float64(count))
 				right := mean.Copy().Div(float64(count))
-				// The histogram being added/subtracted must have
-				// an equal or larger schema.
-				if h.H.Schema >= mean.Schema {
-					toAdd := right.Mul(-1).Add(left)
-					mean.Add(toAdd)
-				} else {
-					toAdd := left.Sub(right)
-					mean = toAdd.Add(mean)
-				}
+				toAdd := left.Sub(right)
+				mean.Add(toAdd)
 			}
 			return mean
 		}), nil
@@ -680,13 +678,7 @@ func funcSumOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 		return aggrHistOverTime(vals, enh, func(s Series) *histogram.FloatHistogram {
 			sum := s.Histograms[0].H.Copy()
 			for _, h := range s.Histograms[1:] {
-				// The histogram being added must have
-				// an equal or larger schema.
-				if h.H.Schema >= sum.Schema {
-					sum.Add(h.H)
-				} else {
-					sum = h.H.Copy().Add(sum)
-				}
+				sum.Add(h.H)
 			}
 			return sum
 		}), nil

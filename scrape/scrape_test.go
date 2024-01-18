@@ -513,7 +513,7 @@ func TestScrapePoolAppender(t *testing.T) {
 	appl, ok := loop.(*scrapeLoop)
 	require.True(t, ok, "Expected scrapeLoop but got %T", loop)
 
-	wrapped := appender(appl.appender(context.Background()), 0, 0)
+	wrapped := appender(appl.appender(context.Background()), 0, 0, nativeHistogramMaxSchema)
 
 	tl, ok := wrapped.(*timeLimitAppender)
 	require.True(t, ok, "Expected timeLimitAppender but got %T", wrapped)
@@ -529,7 +529,7 @@ func TestScrapePoolAppender(t *testing.T) {
 	appl, ok = loop.(*scrapeLoop)
 	require.True(t, ok, "Expected scrapeLoop but got %T", loop)
 
-	wrapped = appender(appl.appender(context.Background()), sampleLimit, 0)
+	wrapped = appender(appl.appender(context.Background()), sampleLimit, 0, nativeHistogramMaxSchema)
 
 	sl, ok := wrapped.(*limitAppender)
 	require.True(t, ok, "Expected limitAppender but got %T", wrapped)
@@ -540,9 +540,26 @@ func TestScrapePoolAppender(t *testing.T) {
 	_, ok = tl.Appender.(nopAppender)
 	require.True(t, ok, "Expected base appender but got %T", tl.Appender)
 
-	wrapped = appender(appl.appender(context.Background()), sampleLimit, 100)
+	wrapped = appender(appl.appender(context.Background()), sampleLimit, 100, nativeHistogramMaxSchema)
 
 	bl, ok := wrapped.(*bucketLimitAppender)
+	require.True(t, ok, "Expected bucketLimitAppender but got %T", wrapped)
+
+	sl, ok = bl.Appender.(*limitAppender)
+	require.True(t, ok, "Expected limitAppender but got %T", bl)
+
+	tl, ok = sl.Appender.(*timeLimitAppender)
+	require.True(t, ok, "Expected timeLimitAppender but got %T", sl.Appender)
+
+	_, ok = tl.Appender.(nopAppender)
+	require.True(t, ok, "Expected base appender but got %T", tl.Appender)
+
+	wrapped = appender(appl.appender(context.Background()), sampleLimit, 100, 0)
+
+	ml, ok := wrapped.(*maxSchemaAppender)
+	require.True(t, ok, "Expected maxSchemaAppender but got %T", wrapped)
+
+	bl, ok = ml.Appender.(*bucketLimitAppender)
 	require.True(t, ok, "Expected bucketLimitAppender but got %T", wrapped)
 
 	sl, ok = bl.Appender.(*limitAppender)
@@ -653,7 +670,7 @@ func newBasicScrapeLoop(t testing.TB, ctx context.Context, scraper scraper, app 
 		true,
 		false,
 		true,
-		0, 0,
+		0, 0, nativeHistogramMaxSchema,
 		nil,
 		interval,
 		time.Hour,
@@ -796,7 +813,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		true,
 		false,
 		true,
-		0, 0,
+		0, 0, nativeHistogramMaxSchema,
 		nil,
 		time.Second,
 		time.Hour,
@@ -942,7 +959,7 @@ func TestScrapeLoopMetadata(t *testing.T) {
 		true,
 		false,
 		true,
-		0, 0,
+		0, 0, nativeHistogramMaxSchema,
 		nil,
 		0,
 		0,
@@ -1194,7 +1211,9 @@ func TestScrapeLoopCache(t *testing.T) {
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sl := newBasicScrapeLoop(t, ctx, scraper, app, 10*time.Millisecond)
+	// Decreasing the scrape interval could make the test fail, as multiple scrapes might be initiated at identical millisecond timestamps.
+	// See https://github.com/prometheus/prometheus/issues/12727.
+	sl := newBasicScrapeLoop(t, ctx, scraper, app, 100*time.Millisecond)
 
 	numScrapes := 0
 
@@ -3463,5 +3482,75 @@ func TestScrapeLoopCompression(t *testing.T) {
 			case <-scraped:
 			}
 		})
+	}
+}
+
+func TestPickSchema(t *testing.T) {
+	tcs := []struct {
+		factor float64
+		schema int32
+	}{
+		{
+			factor: 65536,
+			schema: -4,
+		},
+		{
+			factor: 256,
+			schema: -3,
+		},
+		{
+			factor: 16,
+			schema: -2,
+		},
+		{
+			factor: 4,
+			schema: -1,
+		},
+		{
+			factor: 2,
+			schema: 0,
+		},
+		{
+			factor: 1.4,
+			schema: 1,
+		},
+		{
+			factor: 1.1,
+			schema: 2,
+		},
+		{
+			factor: 1.09,
+			schema: 3,
+		},
+		{
+			factor: 1.04,
+			schema: 4,
+		},
+		{
+			factor: 1.02,
+			schema: 5,
+		},
+		{
+			factor: 1.01,
+			schema: 6,
+		},
+		{
+			factor: 1.005,
+			schema: 7,
+		},
+		{
+			factor: 1.002,
+			schema: 8,
+		},
+		// The default value of native_histogram_min_bucket_factor
+		{
+			factor: 0,
+			schema: 8,
+		},
+	}
+
+	for _, tc := range tcs {
+		schema := pickSchema(tc.factor)
+		require.Equal(t, tc.schema, schema)
 	}
 }

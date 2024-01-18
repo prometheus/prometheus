@@ -193,9 +193,10 @@ func (t *testRunner) targets() []*targetgroup.Group {
 func (t *testRunner) requireUpdate(ref time.Time, expected []*targetgroup.Group) {
 	t.Helper()
 
+	timeout := time.After(defaultWait)
 	for {
 		select {
-		case <-time.After(defaultWait):
+		case <-timeout:
 			t.Fatalf("Expected update but got none")
 			return
 		case <-time.After(defaultWait / 10):
