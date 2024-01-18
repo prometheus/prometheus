@@ -644,6 +644,11 @@ func returnAPIError(err error) *apiError {
 }
 
 func (api *API) labelNames(r *http.Request) apiFuncResult {
+	limit, err := parseLimitParam(r.FormValue("limit"))
+	if err != nil {
+		return invalidParamError(err, "limit")
+	}
+
 	start, err := parseTimeParam(r, "start", MinTime)
 	if err != nil {
 		return invalidParamError(err, "start")
@@ -704,10 +709,6 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 		names = []string{}
 	}
 
-	limit, err := parseLimitParam(r.FormValue("limit"))
-	if err != nil {
-		return invalidParamError(err, "limit")
-	}
 	if len(names) > limit {
 		names = names[:limit]
 	}
@@ -1897,11 +1898,12 @@ OUTER:
 
 func parseLimitParam(limitStr string) (limit int, err error) {
 	limit = math.MaxInt
+	if limitStr == "" {
+		return limit, nil
+	}
+
 	if limitStr != "" {
 		limit, err = strconv.Atoi(limitStr)
-		if limitStr == "" {
-			return limit, nil
-		}
 		if err != nil {
 			return limit, err
 		}
