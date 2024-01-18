@@ -191,7 +191,7 @@ func benchmarkLabelValuesWithMatchers(b *testing.B, ir IndexReader) {
 	jXplus := labels.MustNewMatcher(labels.MatchRegexp, "j", "X.+")
 	n1 := labels.MustNewMatcher(labels.MatchEqual, "n", "1"+postingsBenchSuffix)
 	nX := labels.MustNewMatcher(labels.MatchNotEqual, "n", "X"+postingsBenchSuffix)
-	nPlus := labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")
+	nPlus := labels.MustNewMatcher(labels.MatchRegexp, "n", "^.+$")
 
 	ctx := context.Background()
 
