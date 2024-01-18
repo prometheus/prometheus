@@ -12,7 +12,6 @@
 // limitations under the License.
 
 //go:build builtinassets
-// +build builtinassets
 
 package ui
 

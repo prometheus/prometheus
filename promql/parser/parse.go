@@ -208,6 +208,20 @@ func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
 	return m, err
 }
 
+// ParseMetricSelectors parses a list of provided textual metric selectors into lists of
+// label matchers.
+func ParseMetricSelectors(matchers []string) (m [][]*labels.Matcher, err error) {
+	var matcherSets [][]*labels.Matcher
+	for _, s := range matchers {
+		matchers, err := ParseMetricSelector(s)
+		if err != nil {
+			return nil, err
+		}
+		matcherSets = append(matcherSets, matchers)
+	}
+	return matcherSets, nil
+}
+
 // SequenceValue is an omittable value in a sequence of time series values.
 type SequenceValue struct {
 	Value     float64

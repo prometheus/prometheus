@@ -12,5 +12,5 @@ GZIP_OPTS="-fk"
 if ! gzip -k -h &>/dev/null; then GZIP_OPTS="-f"; fi
 
 find static -type f -name '*.gz' -delete
-find static -type f -exec gzip $GZIP_OPTS '{}' \; -print0 | xargs -0 -I % echo %.gz | xargs echo //go:embed >> embed.go
+find static -type f -exec gzip $GZIP_OPTS '{}' \; -print0 | xargs -0 -I % echo %.gz | sort | xargs echo //go:embed >> embed.go
 echo var EmbedFS embed.FS >> embed.go

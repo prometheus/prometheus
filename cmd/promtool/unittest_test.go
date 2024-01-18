@@ -125,7 +125,7 @@ func TestRulesUnitTest(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := RulesUnitTest(tt.queryOpts, nil, tt.args.files...); got != tt.want {
+			if got := RulesUnitTest(tt.queryOpts, nil, false, tt.args.files...); got != tt.want {
 				t.Errorf("RulesUnitTest() = %v, want %v", got, tt.want)
 			}
 		})
@@ -178,7 +178,7 @@ func TestRulesUnitTestRun(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := RulesUnitTest(tt.queryOpts, tt.args.run, tt.args.files...); got != tt.want {
+			if got := RulesUnitTest(tt.queryOpts, tt.args.run, false, tt.args.files...); got != tt.want {
 				t.Errorf("RulesUnitTest() = %v, want %v", got, tt.want)
 			}
 		})

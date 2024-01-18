@@ -594,6 +594,8 @@ Same as `sort`, but sorts in descending order.
 
 Please note that the sort by label functions only affect the results of instant queries, as range query results always have a fixed output ordering.
 
+This function uses [natural sort order](https://en.wikipedia.org/wiki/Natural_sort_order).
+
 ## `sort_by_label_desc()`
 
 **This function has to be enabled via the [feature flag](../feature_flags/) `--enable-feature=promql-experimental-functions`.**
@@ -601,6 +603,8 @@ Please note that the sort by label functions only affect the results of instant 
 Same as `sort_by_label`, but sorts in descending order.
 
 Please note that the sort by label functions only affect the results of instant queries, as range query results always have a fixed output ordering.
+
+This function uses [natural sort order](https://en.wikipedia.org/wiki/Natural_sort_order).
 
 ## `sqrt()`
 
