@@ -34,7 +34,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
 	github.com/hashicorp/consul/api v1.26.1
 	github.com/hashicorp/nomad/api v0.0.0-20230721134942-515895c7690c // Not upgrading this for now due to https://github.com/prometheus/prometheus/pull/13255#issuecomment-1845237409
-	github.com/hetznercloud/hcloud-go/v2 v2.4.0
+	github.com/hetznercloud/hcloud-go/v2 v2.6.0
 	github.com/ionos-cloud/sdk-go/v6 v6.1.10
 	github.com/json-iterator/go v1.1.12
 	github.com/klauspost/compress v1.17.4
