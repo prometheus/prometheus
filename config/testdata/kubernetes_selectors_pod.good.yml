@@ -7,7 +7,9 @@ scrape_configs:
             label: "foo=bar"
             field: "metadata.status=Running"
       - role: pod
+        attach_metadata:
+          node: true
         selectors:
-          - role: "pod"
-            label: "foo in (bar,baz)"
+          - role: "node"
+            label: "foo=bar"
             field: "metadata.status=Running"

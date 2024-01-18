@@ -222,6 +222,10 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 				break
 			}
 		}
+		// The pod role supports node selectors when configured with `attach_metadata: {node: true}`.
+		if !allowed && selector.Role == RoleNode && c.Role == RolePod && c.AttachMetadata.Node {
+			allowed = true
+		}
 
 		if !allowed {
 			return fmt.Errorf("%s role supports only %s selectors", c.Role, strings.Join(allowedSelectors[c.Role], ", "))
