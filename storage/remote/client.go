@@ -389,15 +389,15 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query, sortSeries bool)
 		cancelCopy := cancel
 		cancel = nil
 
-		ss := c.handleChunkedResponse(httpResp, query.StartTimestampMs, query.EndTimestampMs, func(err error) {
+		s := NewChunkedReader(httpResp.Body, c.chunkedReadLimit, nil)
+		return NewChunkedSeriesSet(s, httpResp.Body, query.StartTimestampMs, query.EndTimestampMs, func(err error) {
 			code := strconv.Itoa(httpResp.StatusCode)
 			if err != io.EOF {
 				code = "aborted_stream"
 			}
 			c.readQueriesTotal.WithLabelValues("chunked", code).Inc()
 			cancelCopy()
-		})
-		return ss, nil
+		}), nil
 	default:
 		c.readQueriesDuration.WithLabelValues("unsupported").Observe(time.Since(start).Seconds())
 		c.readQueriesTotal.WithLabelValues("unsupported", strconv.Itoa(httpResp.StatusCode)).Inc()
@@ -434,9 +434,4 @@ func (c *Client) handleSampledResponse(req *prompb.ReadRequest, httpResp *http.R
 	res := resp.Results[0]
 
 	return FromQueryResult(sortSeries, res), nil
-}
-
-func (c *Client) handleChunkedResponse(httpResp *http.Response, mint, maxt int64, cancel func(error)) storage.SeriesSet {
-	s := NewChunkedReader(httpResp.Body, c.chunkedReadLimit, nil)
-	return NewChunkedSeriesSet(s, httpResp.Body, mint, maxt, cancel)
 }
