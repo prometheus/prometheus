@@ -29,6 +29,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	config_util "github.com/prometheus/common/config"
@@ -160,6 +161,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 			func(l labels.Labels) labels.Labels { return mutateReportSampleLabels(l, opts.target) },
 			func(ctx context.Context) storage.Appender { return app.Appender(ctx) },
 			cache,
+			options.ScrapeCacheByHash,
 			offsetSeed,
 			opts.honorTimestamps,
 			opts.trackTimestampsStaleness,
@@ -788,6 +790,7 @@ type scrapeLoop struct {
 	scraper                  scraper
 	l                        log.Logger
 	cache                    *scrapeCache
+	cacheByHash              bool
 	lastScrapeSize           int
 	buffers                  *pool.Pool
 	offsetSeed               uint64
@@ -836,11 +839,13 @@ type scrapeCache struct {
 
 	// Parsed string to an entry with information about the actual label set
 	// and its storage reference.
-	series map[string]*cacheEntry
+	series     map[string]*cacheEntry
+	seriesHash map[uint64]*cacheEntry
 
 	// Cache of dropped metric strings and their iteration. The iteration must
 	// be a pointer so we can update it.
-	droppedSeries map[string]*uint64
+	droppedSeries     map[string]*uint64
+	droppedSeriesHash map[uint64]uint64
 
 	// seriesCur and seriesPrev store the labels of series that were seen
 	// in the current and previous scrape.
@@ -869,18 +874,20 @@ func (m *metaEntry) size() int {
 
 func newScrapeCache(metrics *scrapeMetrics) *scrapeCache {
 	return &scrapeCache{
-		series:        map[string]*cacheEntry{},
-		droppedSeries: map[string]*uint64{},
-		seriesCur:     map[uint64]labels.Labels{},
-		seriesPrev:    map[uint64]labels.Labels{},
-		metadata:      map[string]*metaEntry{},
-		metrics:       metrics,
+		series:            map[string]*cacheEntry{},
+		droppedSeries:     map[string]*uint64{},
+		seriesHash:        map[uint64]*cacheEntry{},
+		droppedSeriesHash: map[uint64]uint64{},
+		seriesCur:         map[uint64]labels.Labels{},
+		seriesPrev:        map[uint64]labels.Labels{},
+		metadata:          map[string]*metaEntry{},
+		metrics:           metrics,
 	}
 }
 
 func (c *scrapeCache) iterDone(flushCache bool) {
 	c.metaMtx.Lock()
-	count := len(c.series) + len(c.droppedSeries) + len(c.metadata)
+	count := len(c.series) + len(c.seriesHash) + len(c.droppedSeries) + len(c.droppedSeriesHash) + len(c.metadata)
 	c.metaMtx.Unlock()
 
 	switch {
@@ -905,9 +912,19 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 				delete(c.series, s)
 			}
 		}
+		for s, e := range c.seriesHash {
+			if c.iter != e.lastIter {
+				delete(c.seriesHash, s)
+			}
+		}
 		for s, iter := range c.droppedSeries {
 			if c.iter != *iter {
 				delete(c.droppedSeries, s)
+			}
+		}
+		for s, iter := range c.droppedSeriesHash {
+			if c.iter != iter {
+				delete(c.droppedSeriesHash, s)
 			}
 		}
 		c.metaMtx.Lock()
@@ -956,6 +973,34 @@ func (c *scrapeCache) getDropped(met []byte) bool {
 	iterp, ok := c.droppedSeries[string(met)]
 	if ok {
 		*iterp = c.iter
+	}
+	return ok
+}
+
+func (c *scrapeCache) getByHash(hash uint64) (*cacheEntry, bool) {
+	e, ok := c.seriesHash[hash]
+	if !ok {
+		return nil, false
+	}
+	e.lastIter = c.iter
+	return e, true
+}
+
+func (c *scrapeCache) addRefByHash(xhash uint64, ref storage.SeriesRef, lset labels.Labels, hash uint64) {
+	if ref == 0 {
+		return
+	}
+	c.seriesHash[xhash] = &cacheEntry{ref: ref, lastIter: c.iter, lset: lset, hash: hash}
+}
+
+func (c *scrapeCache) addDroppedByHash(hash uint64) {
+	c.droppedSeriesHash[hash] = c.iter
+}
+
+func (c *scrapeCache) getDroppedByHash(hash uint64) bool {
+	_, ok := c.droppedSeriesHash[hash]
+	if ok {
+		c.droppedSeriesHash[hash] = c.iter
 	}
 	return ok
 }
@@ -1085,6 +1130,7 @@ func newScrapeLoop(ctx context.Context,
 	reportSampleMutator labelsMutator,
 	appender func(ctx context.Context) storage.Appender,
 	cache *scrapeCache,
+	cacheByHash bool,
 	offsetSeed uint64,
 	honorTimestamps bool,
 	trackTimestampsStaleness bool,
@@ -1129,6 +1175,7 @@ func newScrapeLoop(ctx context.Context,
 		scraper:                  sc,
 		buffers:                  buffers,
 		cache:                    cache,
+		cacheByHash:              cacheByHash,
 		appender:                 appender,
 		sampleMutator:            sampleMutator,
 		reportSampleMutator:      reportSampleMutator,
@@ -1536,16 +1583,27 @@ loop:
 		meta = metadata.Metadata{}
 		metadataChanged = false
 
-		if sl.cache.getDropped(met) {
-			continue
-		}
-		ce, ok := sl.cache.get(met)
 		var (
-			ref  storage.SeriesRef
-			hash uint64
+			ref           storage.SeriesRef
+			hash          uint64
+			ce            *cacheEntry
+			sha           uint64
+			seriesInCache bool
 		)
+		if sl.cacheByHash {
+			sha = xxhash.Sum64(met)
+			if sl.cache.getDroppedByHash(hash) {
+				continue
+			}
+			ce, seriesInCache = sl.cache.getByHash(hash)
+		} else {
+			if sl.cache.getDropped(met) {
+				continue
+			}
+			ce, seriesInCache = sl.cache.get(met)
+		}
 
-		if ok {
+		if seriesInCache {
 			ref = ce.ref
 			lset = ce.lset
 
@@ -1561,7 +1619,11 @@ loop:
 
 			// The label set may be set to empty to indicate dropping.
 			if lset.IsEmpty() {
-				sl.cache.addDropped(met)
+				if sl.cacheByHash {
+					sl.cache.addDroppedByHash(hash)
+				} else {
+					sl.cache.addDropped(met)
+				}
 				continue
 			}
 
@@ -1610,12 +1672,16 @@ loop:
 			break loop
 		}
 
-		if !ok {
+		if !seriesInCache {
 			if parsedTimestamp == nil || sl.trackTimestampsStaleness {
 				// Bypass staleness logic if there is an explicit timestamp.
 				sl.cache.trackStaleness(hash, lset)
 			}
-			sl.cache.addRef(met, ref, lset, hash)
+			if sl.cacheByHash {
+				sl.cache.addRefByHash(sha, ref, lset, hash)
+			} else {
+				sl.cache.addRef(met, ref, lset, hash)
+			}
 			if sampleAdded && sampleLimitErr == nil && bucketLimitErr == nil {
 				seriesAdded++
 			}
