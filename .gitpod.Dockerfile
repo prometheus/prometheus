@@ -1,4 +1,4 @@
-FROM gitpod/workspace-full@sha256:45638cd7eaeb35fc64e8c55a0aa65eaba41b82853133da4f5b537e0dd218b9f8
+FROM gitpod/workspace-full
 
 ENV CUSTOM_NODE_VERSION=16
 ENV CUSTOM_GO_VERSION=1.19
