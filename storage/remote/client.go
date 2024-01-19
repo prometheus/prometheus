@@ -277,8 +277,8 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) error {
 		return RecoverableError{err, defaultBackoff}
 	}
 	defer func() {
-		io.Copy(io.Discard, httpResp.Body)
-		httpResp.Body.Close()
+		_, _ = io.Copy(io.Discard, httpResp.Body)
+		_ = httpResp.Body.Close()
 	}()
 
 	//nolint:usestdlibvars
@@ -353,11 +353,6 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query, sortSeries bool)
 	httpReq.Header.Set("X-Prometheus-Remote-Read-Version", "0.1.0")
 
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
-	defer func() {
-		if cancel != nil {
-			cancel()
-		}
-	}()
 
 	ctx, span := otel.Tracer("").Start(ctx, "Remote Read", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
@@ -365,6 +360,7 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query, sortSeries bool)
 	start := time.Now()
 	httpResp, err := c.Client.Do(httpReq.WithContext(ctx))
 	if err != nil {
+		cancel()
 		return nil, fmt.Errorf("error sending request: %w", err)
 	}
 
@@ -373,6 +369,7 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query, sortSeries bool)
 		body, _ := io.ReadAll(httpResp.Body)
 		_ = httpResp.Body.Close()
 
+		cancel()
 		return nil, fmt.Errorf("remote server %s returned http status %s: %s", c.urlString, httpResp.Status, string(body))
 	}
 
@@ -382,13 +379,11 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query, sortSeries bool)
 	case strings.HasPrefix(contentType, "application/x-protobuf"):
 		c.readQueriesDuration.WithLabelValues("sampled").Observe(time.Since(start).Seconds())
 		c.readQueriesTotal.WithLabelValues("sampled", strconv.Itoa(httpResp.StatusCode)).Inc()
-		return c.handleSampledResponse(req, httpResp, sortSeries)
+		ss, err := c.handleSampledResponse(req, httpResp, sortSeries)
+		cancel()
+		return ss, err
 	case strings.HasPrefix(contentType, "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse"):
 		c.readQueriesDuration.WithLabelValues("chunked").Observe(time.Since(start).Seconds())
-		// We copy cancel here so we can nil out the original and prevent the context from being cancelled as soon as
-		// Read returns.
-		cancelCopy := cancel
-		cancel = nil
 
 		s := NewChunkedReader(httpResp.Body, c.chunkedReadLimit, nil)
 		return NewChunkedSeriesSet(s, httpResp.Body, query.StartTimestampMs, query.EndTimestampMs, func(err error) {
@@ -397,11 +392,12 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query, sortSeries bool)
 				code = "aborted_stream"
 			}
 			c.readQueriesTotal.WithLabelValues("chunked", code).Inc()
-			cancelCopy()
+			cancel()
 		}), nil
 	default:
 		c.readQueriesDuration.WithLabelValues("unsupported").Observe(time.Since(start).Seconds())
 		c.readQueriesTotal.WithLabelValues("unsupported", strconv.Itoa(httpResp.StatusCode)).Inc()
+		cancel()
 		return nil, fmt.Errorf("unsupported content type: %s", contentType)
 	}
 }
