@@ -568,7 +568,7 @@ func (s *chunkedSeriesSet) Next() bool {
 
 	err := s.chunkedReader.NextProto(res)
 	if err != nil {
-		if err != io.EOF {
+		if !errors.Is(err, io.EOF) {
 			s.err = err
 			_, _ = io.Copy(io.Discard, s.respBody)
 		}

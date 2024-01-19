@@ -367,7 +367,7 @@ func TestReadClient(t *testing.T) {
 				s := ss.At()
 
 				l := s.Labels()
-				require.Equal(t, len(test.expectedLabels[i]), l.Len())
+				require.Len(t, test.expectedLabels[i], l.Len())
 				for k, v := range test.expectedLabels[i] {
 					require.True(t, l.Has(k))
 					require.Equal(t, v, l.Get(k))
@@ -388,7 +388,7 @@ func TestReadClient(t *testing.T) {
 					j++
 				}
 
-				require.Equal(t, len(test.expectedSamples[i]), j)
+				require.Len(t, test.expectedSamples[i], j)
 
 				i++
 			}

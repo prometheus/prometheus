@@ -17,6 +17,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -392,7 +393,7 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query, sortSeries bool)
 		s := NewChunkedReader(httpResp.Body, c.chunkedReadLimit, nil)
 		return NewChunkedSeriesSet(s, httpResp.Body, query.StartTimestampMs, query.EndTimestampMs, func(err error) {
 			code := strconv.Itoa(httpResp.StatusCode)
-			if err != io.EOF {
+			if !errors.Is(err, io.EOF) {
 				code = "aborted_stream"
 			}
 			c.readQueriesTotal.WithLabelValues("chunked", code).Inc()
