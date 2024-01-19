@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
 	otlptranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
 )
 
@@ -207,9 +208,13 @@ func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prwMetricsMap, errs := otlptranslator.FromMetrics(req.Metrics(), otlptranslator.Settings{
+	metrics := req.Metrics()
+	settings := otlptranslator.Settings{
 		AddMetricSuffixes: true,
-	})
+		SendMetadata:      true,
+	}
+
+	prwMetricsMap, errs := otlptranslator.FromMetrics(metrics, settings)
 	if errs != nil {
 		level.Warn(h.logger).Log("msg", "Error translating OTLP metrics to Prometheus write request", "err", errs)
 	}
@@ -220,8 +225,15 @@ func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		prwMetrics = append(prwMetrics, *ts)
 	}
 
+	m := prometheusremotewrite.OtelMetricsToMetadata(metrics, settings.AddMetricSuffixes)
+	metadata := make([]prompb.MetricMetadata, 0, len(m))
+	for _, mm := range m {
+		metadata = append(metadata, *mm)
+	}
+
 	err = h.rwHandler.write(r.Context(), &prompb.WriteRequest{
 		Timeseries: prwMetrics,
+		Metadata:   metadata,
 	})
 
 	switch {

@@ -98,7 +98,7 @@ func addSingleSumNumberDataPoint(
 				nameStr,
 				name+createdSuffix,
 			)
-			addCreatedTimeSeriesIfNeeded(series, createdLabels, startTimestamp, metric.Type().String())
+			addCreatedTimeSeriesIfNeeded(series, createdLabels, startTimestamp, pt.Timestamp(), metric.Type().String())
 		}
 	}
 }
