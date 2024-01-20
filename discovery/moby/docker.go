@@ -246,7 +246,11 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 				networkMode := string(containerNetworkMode)
 				networks = map[string]*network.EndpointSettings{networkMode: networks[networkMode]}
 			} else {
-				// Get first network if is not user defined
+				// Get first network if container network mode has "none" value.
+				// This case appears under certain condition:
+				// 1. Container created with network set to "--net=none".
+				// 2. Disconnect network "none".
+				// 3. Reconnect network with user defined networks.
 				var first string
 				for k, n := range networks {
 					if n != nil {
