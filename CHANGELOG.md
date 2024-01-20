@@ -2,6 +2,7 @@
 
 ## unreleased
 
+* [FEATURE] PromQL: Add `adelta`/`aincrease`/`arate` functions: the version without extrapolation of `delta`/`increase`/`rate` functions. #13436
 * [ENHANCEMENT] TSDB: Make the wlog watcher read segments synchronously when not tailing. #13224
 * [BUGFIX] Agent: Participate in notify calls. #13223
 

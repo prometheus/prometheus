@@ -110,6 +110,9 @@ FunctionIdentifier {
   Abs |
   Acos |
   Acosh |
+  Adelta |
+  Aincrease |
+  Arate |
   Asin |
   Asinh |
   Atan |
@@ -342,6 +345,9 @@ NumberLiteral  {
   AbsentOverTime { condFn<"absent_over_time"> }
   Acos { condFn<"acos"> }
   Acosh { condFn<"acosh"> }
+  Adelta { condFn<"adelta"> }
+  Aincrease { condFn<"aincrease"> }
+  Arate { condFn<"arate"> }
   Asin { condFn<"asin"> }
   Asinh { condFn<"asinh">}
   Atan { condFn<"atan"> }
