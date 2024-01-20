@@ -46,12 +46,12 @@ host: %s
 	tgs, err := d.refresh(ctx)
 	require.NoError(t, err)
 
-	require.Len(t, tgs, 1)
+	require.Equal(t, 1, len(tgs))
 
 	tg := tgs[0]
 	require.NotNil(t, tg)
 	require.NotNil(t, tg.Targets)
-	require.Len(t, tg.Targets, 6)
+	require.Equal(t, 6, len(tg.Targets))
 
 	for i, lbls := range []model.LabelSet{
 		{
