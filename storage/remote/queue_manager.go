@@ -462,7 +462,6 @@ func NewQueueManager(
 	sm ReadyScrapeManager,
 	enableExemplarRemoteWrite bool,
 	enableNativeHistogramRemoteWrite bool,
-	enableMetadataRemoteWrite bool,
 	rwFormat RemoteWriteFormat,
 ) *QueueManager {
 	if logger == nil {
@@ -509,7 +508,11 @@ func NewQueueManager(
 		highestRecvTimestamp: highestRecvTimestamp,
 	}
 
-	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite, enableMetadataRemoteWrite)
+	walMetadata := false
+	if t.rwFormat > Version1 {
+		walMetadata = true
+	}
+	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite, walMetadata)
 
 	// The current MetadataWatcher implementation is mutually exclusive
 	// with the new approach, which stores metadata as WAL records and
@@ -529,7 +532,7 @@ func NewQueueManager(
 }
 
 // AppendWatcherMetadata sends metadata to the remote storage. Metadata is sent in batches, but is not parallelized.
-// This is only used for the 1.x proto format.
+// This is only used for the metadata_config.send setting and 1.x Remote Write.
 func (t *QueueManager) AppendWatcherMetadata(ctx context.Context, metadata []scrape.MetricMetadata) {
 	// no op for any newer proto format, which will cache metadata sent to it from the WAL watcher.
 	if t.rwFormat > Version2 {
@@ -1699,9 +1702,8 @@ func populateMinimizedTimeSeriesStr(symbolTable *rwSymbolTable, batch []timeSeri
 			nPendingHistograms++
 		case tMetadata:
 			pendingData[nPending].Metadata.Type = metricTypeToMetricTypeProtoV2(d.metadata.Type)
-			// todo: intern strings
-			//pendingData[nPending].Metadata.HelpRef = d.metadata.Help
-			//pendingData[nPending].Metadata.UnitRef = d.metadata.Unit
+			pendingData[nPending].Metadata.HelpRef = symbolTable.RefStr(d.metadata.Help)
+			pendingData[nPending].Metadata.HelpRef = symbolTable.RefStr(d.metadata.Unit)
 			nPendingMetadata++
 		}
 	}

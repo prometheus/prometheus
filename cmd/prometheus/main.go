@@ -524,13 +524,6 @@ func main() {
 		cfg.tsdb.OutOfOrderTimeWindow = cfgFile.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
 	}
 
-	for _, rwc := range cfgFile.RemoteWriteConfigs {
-		// cfg.scrape.EnableMetadataStorage is set via the cli feature flag `enable feature` using `metadata-storage`
-		if rwc.SendWALMetadata && !cfg.scrape.EnableMetadataStorage {
-			level.Warn(logger).Log("msg", "the 'send_metadata' remote_write parameter must be set along the --enable-features=metadata-storage flag to take effect")
-		}
-	}
-
 	// Now that the validity of the config is established, set the config
 	// success metrics accordingly, although the config isn't really loaded
 	// yet. This will happen later (including setting these metrics again),

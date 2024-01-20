@@ -210,7 +210,6 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rws.scraper,
 			rwConf.SendExemplars,
 			rwConf.SendNativeHistograms,
-			rwConf.SendWALMetadata,
 			rws.rwFormat,
 		)
 		// Keep track of which queues are new so we know which to start.

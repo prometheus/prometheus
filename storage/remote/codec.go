@@ -913,7 +913,7 @@ func spansToMinSpansProto(s []histogram.Span) []writev2.BucketSpan {
 	return spans
 }
 
-// LabelProtosToMetric unpack a []*prompb.Label to a model.Metric
+// LabelProtosToMetric unpack a []*prompb.Label to a model.Metric.
 func LabelProtosToMetric(labelPairs []*prompb.Label) model.Metric {
 	metric := make(model.Metric, len(labelPairs))
 	for _, l := range labelPairs {

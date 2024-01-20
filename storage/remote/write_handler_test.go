@@ -105,7 +105,6 @@ func TestRemoteWriteHandlerMinimizedFormat(t *testing.T) {
 	i := 0
 	j := 0
 	k := 0
-	//l := 0
 	// the reduced write request is equivalent to the write request fixture.
 	// we can use it for
 	for _, ts := range writeRequestMinimizedFixture.Timeseries {
@@ -133,11 +132,7 @@ func TestRemoteWriteHandlerMinimizedFormat(t *testing.T) {
 			k++
 		}
 
-		// todo: metadata
-		//m := ts.Metadata
-		//require.Equal(t, mockMetadata{ls, int32(m.Type), m.Unit, m.Help}, appendable.metadata[l])
-		//l++
-
+		// todo: check for metadata
 	}
 }
 
@@ -332,7 +327,6 @@ type mockAppendable struct {
 	exemplars       []mockExemplar
 	latestHistogram int64
 	histograms      []mockHistogram
-	metadata        []mockMetadata
 	commitErr       error
 }
 
@@ -354,13 +348,6 @@ type mockHistogram struct {
 	t  int64
 	h  *histogram.Histogram
 	fh *histogram.FloatHistogram
-}
-
-type mockMetadata struct {
-	l     labels.Labels
-	mtype int32
-	unit  string
-	help  string
 }
 
 func (m *mockAppendable) Appender(_ context.Context) storage.Appender {
