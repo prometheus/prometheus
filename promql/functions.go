@@ -66,9 +66,9 @@ func funcTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper)
 
 // extrapolatedRate is a utility function for rate/increase/delta.
 // It calculates the rate (allowing for counter resets if isCounter is true),
-// extrapolates if the first/last sample is close to the boundary, and returns
+// extrapolates if extrapolate is true and the first/last sample is close to the boundary, and returns
 // the result as either per-second (if isRate is true) or overall.
-func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper, isCounter, isRate bool) (Vector, annotations.Annotations) {
+func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper, isCounter, isRate, extrapolate bool) (Vector, annotations.Annotations) {
 	ms := args[0].(*parser.MatrixSelector)
 	vs := ms.VectorSelector.(*parser.VectorSelector)
 	var (
@@ -121,6 +121,13 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	default:
 		// TODO: add RangeTooShortWarning
 		return enh.Out, annos
+	}
+
+	if !extrapolate {
+		if isRate {
+			resultFloat /= ms.Range.Seconds()
+		}
+		return append(enh.Out, Sample{F: resultFloat, H: resultHistogram}), annos
 	}
 
 	// Duration between first/last samples and boundary of range.
@@ -262,17 +269,17 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 
 // === delta(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcDelta(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return extrapolatedRate(vals, args, enh, false, false)
+	return extrapolatedRate(vals, args, enh, false, false, true)
 }
 
 // === rate(node parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcRate(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return extrapolatedRate(vals, args, enh, true, true)
+	return extrapolatedRate(vals, args, enh, true, true, true)
 }
 
 // === increase(node parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcIncrease(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return extrapolatedRate(vals, args, enh, true, false)
+	return extrapolatedRate(vals, args, enh, true, false, true)
 }
 
 // === irate(node parser.ValueTypeMatrix) (Vector, Annotations) ===
@@ -283,6 +290,21 @@ func funcIrate(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 // === idelta(node model.ValMatrix) (Vector, Annotations) ===
 func funcIdelta(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return instantValue(vals, enh.Out, false)
+}
+
+// === adelta(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
+func funcAdelta(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	return extrapolatedRate(vals, args, enh, false, false, false)
+}
+
+// === arate(node parser.ValueTypeMatrix) (Vector, Annotations) ===
+func funcArate(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	return extrapolatedRate(vals, args, enh, true, true, false)
+}
+
+// === aincrease(node parser.ValueTypeMatrix) (Vector, Annotations) ===
+func funcAincrease(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	return extrapolatedRate(vals, args, enh, true, false, false)
 }
 
 func instantValue(vals []parser.Value, out Vector, isRate bool) (Vector, annotations.Annotations) {
@@ -1653,6 +1675,9 @@ var FunctionCalls = map[string]FunctionCall{
 	"absent_over_time":   funcAbsentOverTime,
 	"acos":               funcAcos,
 	"acosh":              funcAcosh,
+	"adelta":             funcAdelta,
+	"aincrease":          funcAincrease,
+	"arate":              funcArate,
 	"asin":               funcAsin,
 	"asinh":              funcAsinh,
 	"atan":               funcAtan,
