@@ -78,9 +78,9 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// TODO: this should eventually be done via content negotiation/looking at the header
 	switch h.rwFormat {
-	case Base1:
+	case Version1:
 		req, err = DecodeWriteRequest(r.Body)
-	case MinStrings:
+	case Version2:
 		reqMinStr, err = DecodeMinimizedWriteRequestStr(r.Body)
 	}
 
@@ -92,9 +92,9 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// TODO: this should eventually be done detecting the format version above
 	switch h.rwFormat {
-	case Base1:
+	case Version1:
 		err = h.write(r.Context(), req)
-	case MinStrings:
+	case Version2:
 		err = h.writeMinStr(r.Context(), reqMinStr)
 	}
 

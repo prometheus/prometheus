@@ -392,8 +392,8 @@ type WriteClient interface {
 type RemoteWriteFormat int64 //nolint:revive // exported.
 
 const (
-	Base1      RemoteWriteFormat = iota // original map based format
-	MinStrings                          // symbols are indices into an array of strings
+	Version1 RemoteWriteFormat = iota // 1.0, 0.1, etc.
+	Version2                          // symbols are indices into an array of strings
 )
 
 // QueueManager manages a queue of samples to be sent to the Storage
@@ -410,7 +410,6 @@ type QueueManager struct {
 	relabelConfigs       []*relabel.Config
 	sendExemplars        bool
 	sendNativeHistograms bool
-	sendMetadata         bool
 	watcher              *wlog.Watcher
 	metadataWatcher      *MetadataWatcher
 	// experimental feature, new remote write proto format
@@ -489,8 +488,7 @@ func NewQueueManager(
 		sendNativeHistograms: enableNativeHistogramRemoteWrite,
 		// TODO: we should eventually set the format via content negotiation,
 		// so this field would be the desired format, maybe with a fallback?
-		rwFormat:     rwFormat,
-		sendMetadata: enableMetadataRemoteWrite,
+		rwFormat: rwFormat,
 
 		seriesLabels:         make(map[chunks.HeadSeriesRef]labels.Labels),
 		seriesMetadata:       make(map[chunks.HeadSeriesRef]*metadata.Metadata),
@@ -517,8 +515,8 @@ func NewQueueManager(
 	// with the new approach, which stores metadata as WAL records and
 	// ships them alongside series. If both mechanisms are set, the new one
 	// takes precedence by implicitly disabling the older one.
-	if t.mcfg.Send && t.sendMetadata {
-		level.Warn(logger).Log("msg", "the 'send_metadata' and 'metadata_config.send' parameters are mutually exclusive; defaulting to use 'send_metadata'")
+	if t.mcfg.Send && t.rwFormat > Version1 {
+		level.Warn(logger).Log("msg", "usage of 'metadata_config.send' is redundant when using remote write v2 (or higher) as metadata will always be gathered from the WAL and included for every series within each write request")
 		t.mcfg.Send = false
 	}
 
@@ -534,7 +532,7 @@ func NewQueueManager(
 // This is only used for the 1.x proto format.
 func (t *QueueManager) AppendWatcherMetadata(ctx context.Context, metadata []scrape.MetricMetadata) {
 	// no op for any newer proto format, which will cache metadata sent to it from the WAL watcher.
-	if t.rwFormat > MinStrings {
+	if t.rwFormat > Version2 {
 		return
 	}
 	// 1.X will still get metadata in batches.
@@ -890,7 +888,7 @@ func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 
 // StoreMetadata keeps track of known series' metadata for lookups when sending samples to remote.
 func (t *QueueManager) StoreMetadata(meta []record.RefMetadata) {
-	if !t.sendMetadata {
+	if t.rwFormat < Version2 {
 		return
 	}
 
@@ -1474,11 +1472,11 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 				return
 			}
 			switch s.qm.rwFormat {
-			case Base1:
-				nPendingSamples, nPendingExemplars, nPendingHistograms := populateTimeSeries(batch, pendingData, s.qm.sendExemplars, s.qm.sendNativeHistograms, s.qm.sendMetadata)
+			case Version1:
+				nPendingSamples, nPendingExemplars, nPendingHistograms := populateTimeSeries(batch, pendingData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
 				n := nPendingSamples + nPendingExemplars + nPendingHistograms
 				s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, &buf)
-			case MinStrings:
+			case Version2:
 				nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata := populateMinimizedTimeSeriesStr(&symbolTable, batch, pendingMinStrData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
 				n := nPendingSamples + nPendingExemplars + nPendingHistograms
 				s.sendMinStrSamples(ctx, pendingMinStrData[:n], symbolTable.LabelsStrings(), nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, &pBufRaw, &buf)
@@ -1494,13 +1492,13 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			batch := queue.Batch()
 			if len(batch) > 0 {
 				switch s.qm.rwFormat {
-				case Base1:
-					nPendingSamples, nPendingExemplars, nPendingHistograms := populateTimeSeries(batch, pendingData, s.qm.sendExemplars, s.qm.sendNativeHistograms, s.qm.sendMetadata)
+				case Version1:
+					nPendingSamples, nPendingExemplars, nPendingHistograms := populateTimeSeries(batch, pendingData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
 					n := nPendingSamples + nPendingExemplars + nPendingHistograms
 					s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, &buf)
 					level.Debug(s.qm.logger).Log("msg", "runShard timer ticked, sending buffered data", "samples", nPendingSamples,
 						"exemplars", nPendingExemplars, "shard", shardNum, "histograms", nPendingHistograms)
-				case MinStrings:
+				case Version2:
 					nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata := populateMinimizedTimeSeriesStr(&symbolTable, batch, pendingMinStrData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
 					n := nPendingSamples + nPendingExemplars + nPendingHistograms
 					s.sendMinStrSamples(ctx, pendingMinStrData[:n], symbolTable.LabelsStrings(), nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, &pBufRaw, &buf)
@@ -1513,7 +1511,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 	}
 }
 
-func populateTimeSeries(batch []timeSeries, pendingData []prompb.TimeSeries, sendExemplars, sendNativeHistograms, sendMetadata bool) (int, int, int) {
+func populateTimeSeries(batch []timeSeries, pendingData []prompb.TimeSeries, sendExemplars, sendNativeHistograms bool) (int, int, int) {
 	var nPendingSamples, nPendingExemplars, nPendingHistograms int
 	for nPending, d := range batch {
 		pendingData[nPending].Samples = pendingData[nPending].Samples[:0]

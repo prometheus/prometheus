@@ -46,7 +46,7 @@ func TestRemoteWriteHandler(t *testing.T) {
 
 	appendable := &mockAppendable{}
 	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Base1)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version1)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -94,7 +94,7 @@ func TestRemoteWriteHandlerMinimizedFormat(t *testing.T) {
 
 	appendable := &mockAppendable{}
 	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(nil, nil, appendable, MinStrings)
+	handler := NewWriteHandler(nil, nil, appendable, Version2)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -155,7 +155,7 @@ func TestOutOfOrderSample(t *testing.T) {
 		latestSample: 100,
 	}
 	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Base1)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version1)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -181,7 +181,7 @@ func TestOutOfOrderExemplar(t *testing.T) {
 		latestExemplar: 100,
 	}
 	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Base1)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version1)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -205,7 +205,7 @@ func TestOutOfOrderHistogram(t *testing.T) {
 		latestHistogram: 100,
 	}
 	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Base1)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version1)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -234,7 +234,7 @@ func BenchmarkRemoteWritehandler(b *testing.B) {
 
 	appendable := &mockAppendable{}
 	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Base1)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version1)
 	recorder := httptest.NewRecorder()
 
 	b.ResetTimer()
@@ -254,7 +254,7 @@ func TestCommitErr(t *testing.T) {
 		commitErr: fmt.Errorf("commit error"),
 	}
 	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Base1)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version1)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -280,7 +280,7 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 		require.NoError(b, db.Close())
 	})
 	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(log.NewNopLogger(), nil, db.Head(), Base1)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, db.Head(), Version1)
 
 	buf, _, err := buildWriteRequest(genSeriesWithSample(1000, 200*time.Minute.Milliseconds()), nil, nil, nil)
 	require.NoError(b, err)
