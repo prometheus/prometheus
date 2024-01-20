@@ -67,8 +67,7 @@ func TestSampleDelivery(t *testing.T) {
 		exemplars       bool
 		histograms      bool
 		floatHistograms bool
-		//metadata        bool
-		rwFormat RemoteWriteFormat
+		rwFormat        RemoteWriteFormat
 	}{
 		{samples: true, exemplars: false, histograms: false, floatHistograms: false, name: "samples only"},
 		{samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "samples, exemplars, and histograms"},
