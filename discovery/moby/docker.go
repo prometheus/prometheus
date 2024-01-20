@@ -60,7 +60,7 @@ var DefaultDockerSDConfig = DockerSDConfig{
 	Filters:            []Filter{},
 	HostNetworkingHost: "localhost",
 	HTTPClientConfig:   config.DefaultHTTPClientConfig,
-	MatchFirstNetwork:     true,
+	MatchFirstNetwork:  true,
 }
 
 func init() {
@@ -76,8 +76,8 @@ type DockerSDConfig struct {
 	Filters            []Filter `yaml:"filters"`
 	HostNetworkingHost string   `yaml:"host_networking_host"`
 
-	RefreshInterval model.Duration `yaml:"refresh_interval"`
-	MatchFirstNetwork  bool           `yaml:"match_first_network "`
+	RefreshInterval   model.Duration `yaml:"refresh_interval"`
+	MatchFirstNetwork bool           `yaml:"match_first_network "`
 }
 
 // Name returns the name of the Config.
@@ -116,7 +116,7 @@ type DockerDiscovery struct {
 	port               int
 	hostNetworkingHost string
 	filters            filters.Args
-	matchFirstNetwork     bool
+	matchFirstNetwork  bool
 }
 
 // NewDockerDiscovery returns a new DockerDiscovery which periodically refreshes its targets.
@@ -126,7 +126,7 @@ func NewDockerDiscovery(conf *DockerSDConfig, logger log.Logger, reg prometheus.
 	d := &DockerDiscovery{
 		port:               conf.Port,
 		hostNetworkingHost: conf.HostNetworkingHost,
-		matchFirstNetwork:     conf.MatchFirstNetwork,
+		matchFirstNetwork:  conf.MatchFirstNetwork,
 	}
 
 	hostURL, err := url.Parse(conf.Host)
