@@ -23,7 +23,9 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
@@ -58,6 +60,7 @@ var DefaultDockerSDConfig = DockerSDConfig{
 	Filters:            []Filter{},
 	HostNetworkingHost: "localhost",
 	HTTPClientConfig:   config.DefaultHTTPClientConfig,
+	MatchFirstNetwork:     true,
 }
 
 func init() {
@@ -74,6 +77,7 @@ type DockerSDConfig struct {
 	HostNetworkingHost string   `yaml:"host_networking_host"`
 
 	RefreshInterval model.Duration `yaml:"refresh_interval"`
+	MatchFirstNetwork  bool           `yaml:"match_first_network "`
 }
 
 // Name returns the name of the Config.
@@ -112,6 +116,7 @@ type DockerDiscovery struct {
 	port               int
 	hostNetworkingHost string
 	filters            filters.Args
+	matchFirstNetwork     bool
 }
 
 // NewDockerDiscovery returns a new DockerDiscovery which periodically refreshes its targets.
@@ -121,6 +126,7 @@ func NewDockerDiscovery(conf *DockerSDConfig, logger log.Logger, reg prometheus.
 	d := &DockerDiscovery{
 		port:               conf.Port,
 		hostNetworkingHost: conf.HostNetworkingHost,
+		matchFirstNetwork:     conf.MatchFirstNetwork,
 	}
 
 	hostURL, err := url.Parse(conf.Host)
@@ -192,6 +198,11 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 		return nil, fmt.Errorf("error while computing network labels: %w", err)
 	}
 
+	allContainers := make(map[string]types.Container)
+	for _, c := range containers {
+		allContainers[c.ID] = c
+	}
+
 	for _, c := range containers {
 		if len(c.Names) == 0 {
 			continue
@@ -208,7 +219,46 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 			commonLabels[dockerLabelContainerLabelPrefix+ln] = v
 		}
 
-		for _, n := range c.NetworkSettings.Networks {
+		networks := c.NetworkSettings.Networks
+		containerNetworkMode := container.NetworkMode(c.HostConfig.NetworkMode)
+		if len(networks) == 0 {
+			// Try to lookup shared networks
+			for {
+				if containerNetworkMode.IsContainer() {
+					tmpContainer, exists := allContainers[containerNetworkMode.ConnectedContainer()]
+					if !exists {
+						break
+					}
+					networks = tmpContainer.NetworkSettings.Networks
+					containerNetworkMode = container.NetworkMode(tmpContainer.HostConfig.NetworkMode)
+					if len(networks) > 0 {
+						break
+					}
+				} else {
+					break
+				}
+			}
+		}
+
+		if d.matchFirstNetwork && len(networks) > 1 {
+			// Match user defined network
+			if containerNetworkMode.IsUserDefined() {
+				networkMode := string(containerNetworkMode)
+				networks = map[string]*network.EndpointSettings{networkMode: networks[networkMode]}
+			} else {
+				// Get first network if is not user defined
+				var first string
+				for k, n := range networks {
+					if n != nil {
+						first = k
+						break
+					}
+				}
+				networks = map[string]*network.EndpointSettings{first: networks[first]}
+			}
+		}
+
+		for _, n := range networks {
 			var added bool
 
 			for _, p := range c.Ports {
