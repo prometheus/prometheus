@@ -212,7 +212,7 @@ type rulesRetrieverMock struct {
 	testing *testing.T
 }
 
-func (m rulesRetrieverMock) AlertingRules(matcherSets ...[]*labels.Matcher) []*rules.AlertingRule {
+func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
 	expr1, err := parser.ParseExpr(`absent(test_metric3) != 1`)
 	if err != nil {
 		m.testing.Fatalf("unable to parse alert expression: %s", err)
@@ -2261,6 +2261,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				RuleGroups: []*RuleGroup{},
 			},
 		},
+		// This is testing OR condition, the api response should return rule if it matches one of the label selector
 		{
 			endpoint: api.rules,
 			query: url.Values{

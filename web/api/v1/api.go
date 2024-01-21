@@ -113,7 +113,7 @@ type AlertmanagerRetriever interface {
 // RulesRetriever provides a list of active rules and alerts.
 type RulesRetriever interface {
 	RuleGroups() []*rules.Group
-	AlertingRules(matcherSets ...[]*labels.Matcher) []*rules.AlertingRule
+	AlertingRules() []*rules.AlertingRule
 }
 
 type StatsRenderer func(context.Context, *stats.Statistics, string) stats.QueryStats
