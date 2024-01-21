@@ -1471,6 +1471,9 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 		it := storage.NewBuffer(selRange)
 		var chkIter chunkenc.Iterator
 		for i, s := range selVS.Series {
+			if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
+				ev.error(err)
+			}
 			ev.currentSamples -= len(floats) + totalHPointSize(histograms)
 			if floats != nil {
 				floats = floats[:0]
@@ -1690,6 +1693,9 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 		it := storage.NewMemoizedEmptyIterator(durationMilliseconds(ev.lookbackDelta))
 		var chkIter chunkenc.Iterator
 		for i, s := range e.Series {
+			if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
+				ev.error(err)
+			}
 			chkIter = s.Iterator(chkIter)
 			it.Reset(chkIter)
 			ss := Series{
