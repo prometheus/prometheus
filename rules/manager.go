@@ -393,9 +393,9 @@ func (m *Manager) Rules(matcherSets ...[]*labels.Matcher) []Rule {
 }
 
 // AlertingRules returns the list of the manager's alerting rules.
-func (m *Manager) AlertingRules(matcherSets ...[]*labels.Matcher) []*AlertingRule {
+func (m *Manager) AlertingRules() []*AlertingRule {
 	alerts := []*AlertingRule{}
-	for _, rule := range m.Rules(matcherSets...) {
+	for _, rule := range m.Rules() {
 		if alertingRule, ok := rule.(*AlertingRule); ok {
 			alerts = append(alerts, alertingRule)
 		}
