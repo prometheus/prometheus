@@ -46,12 +46,12 @@ host: %s
 	tgs, err := d.refresh(ctx)
 	require.NoError(t, err)
 
-	require.Equal(t, 1, len(tgs))
+	require.Len(t, tgs, 1)
 
 	tg := tgs[0]
 	require.NotNil(t, tg)
 	require.NotNil(t, tg.Targets)
-	require.Equal(t, 6, len(tg.Targets))
+	require.Len(t, tg.Targets, 6)
 
 	for i, lbls := range []model.LabelSet{
 		{
@@ -182,12 +182,12 @@ host: %s
 	tgs, err := d.refresh(ctx)
 	require.NoError(t, err)
 
-	require.Equal(t, 1, len(tgs))
+	require.Len(t, tgs, 1)
 
 	tg := tgs[0]
 	require.NotNil(t, tg)
 	require.NotNil(t, tg.Targets)
-	require.Equal(t, 9, len(tg.Targets))
+	require.Len(t, tg.Targets, 9)
 
 	sortFunc := func(labelSets []model.LabelSet) {
 		sort.Slice(labelSets, func(i, j int) bool {
