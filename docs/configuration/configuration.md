@@ -930,7 +930,7 @@ tls_config:
 [ host_networking_host: <string> | default = "localhost" ]
 
 # Match the first network if the container has multiple networks defined, thus avoiding collecting duplicate targets.
-[ match_first_network: <string> | default = true ]
+[ match_first_network: <boolean> | default = true ]
 
 # Optional filters to limit the discovery process to a subset of available
 # resources.
