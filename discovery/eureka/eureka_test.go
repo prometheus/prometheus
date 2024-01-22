@@ -37,13 +37,15 @@ func testUpdateServices(respHandler http.HandlerFunc) ([]*targetgroup.Group, err
 		Server: ts.URL,
 	}
 
-	refreshMetrics := discovery.NewRefreshMetrics(prometheus.DefaultRegisterer)
-	metrics := conf.NewDiscovererMetrics(prometheus.NewRegistry(), refreshMetrics)
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := conf.NewDiscovererMetrics(reg, refreshMetrics)
 	err := metrics.Register()
 	if err != nil {
 		return nil, err
 	}
 	defer metrics.Unregister()
+	defer refreshMetrics.Unregister()
 
 	md, err := NewDiscovery(&conf, nil, metrics)
 	if err != nil {

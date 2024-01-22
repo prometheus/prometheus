@@ -152,8 +152,9 @@ func (t *testRunner) run(files ...string) {
 			RefreshInterval: model.Duration(1 * time.Hour),
 		}
 
-		refreshMetrics := discovery.NewRefreshMetrics(prometheus.DefaultRegisterer)
-		metrics := conf.NewDiscovererMetrics(prometheus.NewRegistry(), refreshMetrics)
+		reg := prometheus.NewRegistry()
+		refreshMetrics := discovery.NewRefreshMetrics(reg)
+		metrics := conf.NewDiscovererMetrics(reg, refreshMetrics)
 		require.NoError(t, metrics.Register())
 
 		d, err := NewDiscovery(

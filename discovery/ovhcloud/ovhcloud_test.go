@@ -123,10 +123,12 @@ func TestDiscoverer(t *testing.T) {
 	conf, _ := getMockConf("vps")
 	logger := testutil.NewLogger(t)
 
-	refreshMetrics := discovery.NewRefreshMetrics(prometheus.DefaultRegisterer)
-	metrics := conf.NewDiscovererMetrics(prometheus.NewRegistry(), refreshMetrics)
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := conf.NewDiscovererMetrics(reg, refreshMetrics)
 	require.NoError(t, metrics.Register())
 	defer metrics.Unregister()
+	defer refreshMetrics.Unregister()
 
 	_, err := conf.NewDiscoverer(discovery.DiscovererOptions{
 		Logger:  logger,

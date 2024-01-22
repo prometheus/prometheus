@@ -109,8 +109,10 @@ func getKumaMadsV1DiscoveryResponse(resources ...*MonitoringAssignment) (*v3.Dis
 }
 
 func newKumaTestHTTPDiscovery(c KumaSDConfig) (*fetchDiscovery, error) {
-	refreshMetrics := discovery.NewRefreshMetrics(prometheus.DefaultRegisterer)
-	metrics := c.NewDiscovererMetrics(prometheus.NewRegistry(), refreshMetrics)
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	// TODO(ptodev): Add the ability to unregister refresh metrics.
+	metrics := c.NewDiscovererMetrics(reg, refreshMetrics)
 	err := metrics.Register()
 	if err != nil {
 		return nil, err

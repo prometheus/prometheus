@@ -65,8 +65,9 @@ func TestPuppetSlashInURL(t *testing.T) {
 			RefreshInterval:  model.Duration(30 * time.Second),
 		}
 
-		refreshMetrics := discovery.NewRefreshMetrics(prometheus.DefaultRegisterer)
-		metrics := cfg.NewDiscovererMetrics(prometheus.NewRegistry(), refreshMetrics)
+		reg := prometheus.NewRegistry()
+		refreshMetrics := discovery.NewRefreshMetrics(reg)
+		metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
 		require.NoError(t, metrics.Register())
 
 		d, err := NewDiscovery(&cfg, log.NewNopLogger(), metrics)
@@ -88,8 +89,9 @@ func TestPuppetDBRefresh(t *testing.T) {
 		RefreshInterval:  model.Duration(30 * time.Second),
 	}
 
-	refreshMetrics := discovery.NewRefreshMetrics(prometheus.DefaultRegisterer)
-	metrics := cfg.NewDiscovererMetrics(prometheus.NewRegistry(), refreshMetrics)
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
 	require.NoError(t, metrics.Register())
 
 	d, err := NewDiscovery(&cfg, log.NewNopLogger(), metrics)
@@ -135,8 +137,9 @@ func TestPuppetDBRefreshWithParameters(t *testing.T) {
 		RefreshInterval:   model.Duration(30 * time.Second),
 	}
 
-	refreshMetrics := discovery.NewRefreshMetrics(prometheus.DefaultRegisterer)
-	metrics := cfg.NewDiscovererMetrics(prometheus.NewRegistry(), refreshMetrics)
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
 	require.NoError(t, metrics.Register())
 
 	d, err := NewDiscovery(&cfg, log.NewNopLogger(), metrics)
@@ -193,8 +196,9 @@ func TestPuppetDBInvalidCode(t *testing.T) {
 		RefreshInterval:  model.Duration(30 * time.Second),
 	}
 
-	refreshMetrics := discovery.NewRefreshMetrics(prometheus.DefaultRegisterer)
-	metrics := cfg.NewDiscovererMetrics(prometheus.NewRegistry(), refreshMetrics)
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
 	require.NoError(t, metrics.Register())
 
 	d, err := NewDiscovery(&cfg, log.NewNopLogger(), metrics)
@@ -220,8 +224,9 @@ func TestPuppetDBInvalidFormat(t *testing.T) {
 		RefreshInterval:  model.Duration(30 * time.Second),
 	}
 
-	refreshMetrics := discovery.NewRefreshMetrics(prometheus.DefaultRegisterer)
-	metrics := cfg.NewDiscovererMetrics(prometheus.NewRegistry(), refreshMetrics)
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
 	require.NoError(t, metrics.Register())
 
 	d, err := NewDiscovery(&cfg, log.NewNopLogger(), metrics)

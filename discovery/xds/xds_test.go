@@ -126,8 +126,9 @@ func TestPollingRefreshSkipUpdate(t *testing.T) {
 	}
 
 	cfg := &SDConfig{}
-	refreshMetrics := discovery.NewRefreshMetrics(prometheus.DefaultRegisterer)
-	metrics := cfg.NewDiscovererMetrics(prometheus.NewRegistry(), refreshMetrics)
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
 	require.NoError(t, metrics.Register())
 
 	xdsMetrics, ok := metrics.(*xdsMetrics)
@@ -157,6 +158,7 @@ func TestPollingRefreshSkipUpdate(t *testing.T) {
 	}
 
 	metrics.Unregister()
+	refreshMetrics.Unregister()
 }
 
 func TestPollingRefreshAttachesGroupMetadata(t *testing.T) {
@@ -170,8 +172,8 @@ func TestPollingRefreshAttachesGroupMetadata(t *testing.T) {
 		},
 	}
 
-	reg := prometheus.DefaultRegisterer
-	refreshMetrics := discovery.NewRefreshMetrics(prometheus.DefaultRegisterer)
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
 	metrics := newDiscovererMetrics(reg, refreshMetrics)
 	require.NoError(t, metrics.Register())
 	xdsMetrics, ok := metrics.(*xdsMetrics)
@@ -210,6 +212,9 @@ func TestPollingRefreshAttachesGroupMetadata(t *testing.T) {
 	target2 := group.Targets[1]
 	require.Contains(t, target2, model.LabelName("__meta_custom_xds_label"))
 	require.Equal(t, model.LabelValue("a-value"), target2["__meta_custom_xds_label"])
+
+	metrics.Unregister()
+	refreshMetrics.Unregister()
 }
 
 func TestPollingDisappearingTargets(t *testing.T) {
@@ -252,8 +257,9 @@ func TestPollingDisappearingTargets(t *testing.T) {
 	}
 
 	cfg := &SDConfig{}
-	refreshMetrics := discovery.NewRefreshMetrics(prometheus.DefaultRegisterer)
-	metrics := cfg.NewDiscovererMetrics(prometheus.NewRegistry(), refreshMetrics)
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
 	require.NoError(t, metrics.Register())
 
 	xdsMetrics, ok := metrics.(*xdsMetrics)
@@ -287,4 +293,7 @@ func TestPollingDisappearingTargets(t *testing.T) {
 
 	require.Equal(t, source, groups[0].Source)
 	require.Len(t, groups[0].Targets, 1)
+
+	metrics.Unregister()
+	refreshMetrics.Unregister()
 }

@@ -75,9 +75,9 @@ func TestRefresh(t *testing.T) {
 	d := NewDiscovery(
 		Options{
 			Logger:              nil,
+			Mech:                "test",
 			Interval:            interval,
 			RefreshF:            refresh,
-			Mech:                "test",
 			MetricsInstantiator: metrics,
 		},
 	)

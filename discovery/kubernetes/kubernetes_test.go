@@ -51,13 +51,14 @@ func makeDiscoveryWithVersion(role Role, nsDiscovery NamespaceDiscovery, k8sVer 
 	fakeDiscovery, _ := clientset.Discovery().(*fakediscovery.FakeDiscovery)
 	fakeDiscovery.FakedServerVersion = &version.Info{GitVersion: k8sVer}
 
-	refreshMetrics := discovery.NewRefreshMetrics(prometheus.DefaultRegisterer)
-	metrics := newDiscovererMetrics(prometheus.NewRegistry(), refreshMetrics)
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := newDiscovererMetrics(reg, refreshMetrics)
 	err := metrics.Register()
 	if err != nil {
 		panic(err)
 	}
-	// TODO: Unregister the metrics at the end of the test.
+	// TODO(ptodev): Unregister the metrics at the end of the test.
 
 	kubeMetrics, ok := metrics.(*kubernetesMetrics)
 	if !ok {
