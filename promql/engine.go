@@ -65,6 +65,9 @@ const (
 	// The getHPointSlice and getFPointSlice functions are called with an estimated size which often can be
 	// over-estimated.
 	maxPointsSliceSize = 5000
+
+	// The default buffer size for points used by the matrix selector.
+	matrixSelectorSliceSize = 16
 )
 
 type engineMetrics struct {
@@ -1548,7 +1551,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 
 		ev.currentSamples -= len(floats) + totalHPointSize(histograms)
 		putFPointSlice(floats)
-		putHPointSlice(histograms)
+		putMatrixSelectorHPointSlice(histograms)
 
 		// The absent_over_time function returns 0 or 1 series. So far, the matrix
 		// contains multiple series. The following code will create a new series
@@ -1921,6 +1924,13 @@ func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, no
 var (
 	fPointPool zeropool.Pool[[]FPoint]
 	hPointPool zeropool.Pool[[]HPoint]
+
+	// matrixSelectorHPool holds reusable histogram slices used by the matrix
+	// selector. The key difference between this pool and the hPointPool is that
+	// slices returned by this pool should never hold multiple copies of the same
+	// histogram pointer since histogram objects are reused across query evaluation
+	// steps.
+	matrixSelectorHPool zeropool.Pool[[]HPoint]
 )
 
 func getFPointSlice(sz int) []FPoint {
@@ -1960,6 +1970,20 @@ func getHPointSlice(sz int) []HPoint {
 func putHPointSlice(p []HPoint) {
 	if p != nil {
 		hPointPool.Put(p[:0])
+	}
+}
+
+func getMatrixSelectorHPoints() []HPoint {
+	if p := matrixSelectorHPool.Get(); p != nil {
+		return p
+	}
+
+	return make([]HPoint, 0, matrixSelectorSliceSize)
+}
+
+func putMatrixSelectorHPointSlice(p []HPoint) {
+	if p != nil {
+		matrixSelectorHPool.Put(p[:0])
 	}
 }
 
@@ -2087,7 +2111,7 @@ loop:
 			// Values in the buffer are guaranteed to be smaller than maxt.
 			if t >= mintHistograms {
 				if histograms == nil {
-					histograms = getHPointSlice(16)
+					histograms = getMatrixSelectorHPoints()
 				}
 				n := len(histograms)
 				if n < cap(histograms) {
@@ -2130,7 +2154,7 @@ loop:
 			break
 		}
 		if histograms == nil {
-			histograms = getHPointSlice(16)
+			histograms = getMatrixSelectorHPoints()
 		}
 		n := len(histograms)
 		if n < cap(histograms) {
