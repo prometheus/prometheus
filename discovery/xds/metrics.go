@@ -29,7 +29,7 @@ type xdsMetrics struct {
 	metricRegisterer discovery.MetricRegisterer
 }
 
-func newDiscovererMetrics(reg prometheus.Registerer, rdmm discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+func newDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	m := &xdsMetrics{
 		fetchFailuresCount: prometheus.NewCounter(
 			prometheus.CounterOpts{

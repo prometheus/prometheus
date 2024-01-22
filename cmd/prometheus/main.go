@@ -631,15 +631,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	sdDiscMetrics, err := discovery.CreateAndRegisterSDMetrics(prometheus.DefaultRegisterer)
+	sdMetrics, err := discovery.CreateAndRegisterSDMetrics(prometheus.DefaultRegisterer)
 	if err != nil {
-		level.Error(logger).Log("msg", "failed to register service discovery debug metrics", "err", err)
+		level.Error(logger).Log("msg", "failed to register service discovery metrics", "err", err)
 		os.Exit(1)
 	}
 
 	if cfg.enableNewSDManager {
 		{
-			discMgr := discovery.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), prometheus.DefaultRegisterer, sdDiscMetrics, discovery.Name("scrape"))
+			discMgr := discovery.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), prometheus.DefaultRegisterer, sdMetrics, discovery.Name("scrape"))
 			if discMgr == nil {
 				level.Error(logger).Log("msg", "failed to create a discovery manager scrape")
 				os.Exit(1)
@@ -648,7 +648,7 @@ func main() {
 		}
 
 		{
-			discMgr := discovery.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), prometheus.DefaultRegisterer, sdDiscMetrics, discovery.Name("notify"))
+			discMgr := discovery.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), prometheus.DefaultRegisterer, sdMetrics, discovery.Name("notify"))
 			if discMgr == nil {
 				level.Error(logger).Log("msg", "failed to create a discovery manager notify")
 				os.Exit(1)
@@ -657,7 +657,7 @@ func main() {
 		}
 	} else {
 		{
-			discMgr := legacymanager.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), prometheus.DefaultRegisterer, sdDiscMetrics, legacymanager.Name("scrape"))
+			discMgr := legacymanager.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), prometheus.DefaultRegisterer, sdMetrics, legacymanager.Name("scrape"))
 			if discMgr == nil {
 				level.Error(logger).Log("msg", "failed to create a discovery manager scrape")
 				os.Exit(1)
@@ -666,7 +666,7 @@ func main() {
 		}
 
 		{
-			discMgr := legacymanager.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), prometheus.DefaultRegisterer, sdDiscMetrics, legacymanager.Name("notify"))
+			discMgr := legacymanager.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), prometheus.DefaultRegisterer, sdMetrics, legacymanager.Name("notify"))
 			if discMgr == nil {
 				level.Error(logger).Log("msg", "failed to create a discovery manager notify")
 				os.Exit(1)

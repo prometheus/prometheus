@@ -39,6 +39,7 @@ type Discoverer interface {
 	Run(ctx context.Context, up chan<- []*targetgroup.Group)
 }
 
+// Internal metrics of service discovery mechanisms.
 type DiscovererMetrics interface {
 	Register() error
 	Unregister()
@@ -69,6 +70,11 @@ type RefreshMetricsInstantiator interface {
 }
 
 // An interface for registering, unregistering, and instantiating metrics for the "refresh" package.
+// Refresh metrics are registered and unregistered outside of the service discovery mechanism.
+// This is so that the same metrics can be reused across different service discovery mechanisms.
+// To manage refresh metrics inside the SD mechanism, we'd need to use const labels which are
+// specific to that SD. However, doing so would also expose too many unused metrics on
+// the Prometheus /metrics endpoint.
 type RefreshMetricsManager interface {
 	DiscovererMetrics
 	RefreshMetricsInstantiator
@@ -83,6 +89,7 @@ type Config interface {
 	// with the given DiscovererOptions.
 	NewDiscoverer(DiscovererOptions) (Discoverer, error)
 
+	// NewDiscovererMetrics returns the metrics used by the service discovery.
 	NewDiscovererMetrics(prometheus.Registerer, RefreshMetricsInstantiator) DiscovererMetrics
 }
 

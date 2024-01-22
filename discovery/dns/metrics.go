@@ -30,9 +30,9 @@ type dnsMetrics struct {
 	metricRegisterer discovery.MetricRegisterer
 }
 
-func newDiscovererMetrics(reg prometheus.Registerer, rdmm discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+func newDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	m := &dnsMetrics{
-		refreshMetrics: rdmm,
+		refreshMetrics: rmi,
 		dnsSDLookupsCount: prometheus.NewCounter(
 			prometheus.CounterOpts{
 				Namespace: namespace,

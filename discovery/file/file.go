@@ -58,8 +58,8 @@ type SDConfig struct {
 }
 
 // NewDiscovererMetrics implements discovery.Config.
-func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rdmm discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
-	return newDiscovererMetrics(reg, rdmm)
+func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return newDiscovererMetrics(reg, rmi)
 }
 
 // Name returns the name of the Config.
@@ -99,6 +99,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 const fileSDFilepathLabel = model.MetaLabelPrefix + "filepath"
 
 // TimestampCollector is a Custom Collector for Timestamps of the files.
+// TODO(ptodev): Now that each file SD has its own TimestampCollector
+// inside discovery/file/metrics.go, we can refactor this collector
+// (or get rid of it) as each TimestampCollector instance will only use one discoverer.
 type TimestampCollector struct {
 	Description *prometheus.Desc
 	discoverers map[*Discovery]struct{}

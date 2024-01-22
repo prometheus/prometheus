@@ -98,9 +98,9 @@ type EC2SDConfig struct {
 }
 
 // NewDiscovererMetrics implements discovery.Config.
-func (*EC2SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rdmm discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+func (*EC2SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &ec2Metrics{
-		refreshMetrics: rdmm,
+		refreshMetrics: rmi,
 	}
 }
 

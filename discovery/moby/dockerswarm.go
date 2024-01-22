@@ -71,9 +71,9 @@ type Filter struct {
 }
 
 // NewDiscovererMetrics implements discovery.Config.
-func (*DockerSwarmSDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rdmm discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+func (*DockerSwarmSDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &dockerswarmMetrics{
-		refreshMetrics: rdmm,
+		refreshMetrics: rmi,
 	}
 }
 

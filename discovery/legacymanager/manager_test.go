@@ -928,7 +928,7 @@ func (e errorConfig) NewDiscoverer(discovery.DiscovererOptions) (discovery.Disco
 }
 
 // NewDiscovererMetrics implements discovery.Config.
-func (errorConfig) NewDiscovererMetrics(reg prometheus.Registerer, rdmm discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+func (errorConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &discovery.NoopDiscovererMetrics{}
 }
 

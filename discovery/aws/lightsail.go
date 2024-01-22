@@ -81,9 +81,9 @@ type LightsailSDConfig struct {
 }
 
 // NewDiscovererMetrics implements discovery.Config.
-func (*LightsailSDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rdmm discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+func (*LightsailSDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &lightsailMetrics{
-		refreshMetrics: rdmm,
+		refreshMetrics: rmi,
 	}
 }
 

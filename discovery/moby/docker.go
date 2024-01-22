@@ -77,9 +77,9 @@ type DockerSDConfig struct {
 }
 
 // NewDiscovererMetrics implements discovery.Config.
-func (*DockerSDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rdmm discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+func (*DockerSDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &dockerMetrics{
-		refreshMetrics: rdmm,
+		refreshMetrics: rmi,
 	}
 }
 

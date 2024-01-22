@@ -59,8 +59,8 @@ const (
 type KumaSDConfig = SDConfig
 
 // NewDiscovererMetrics implements discovery.Config.
-func (*KumaSDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rdmm discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
-	return newDiscovererMetrics(reg, rdmm)
+func (*KumaSDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return newDiscovererMetrics(reg, rmi)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.

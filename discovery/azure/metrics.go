@@ -30,9 +30,9 @@ type azureMetrics struct {
 	metricRegisterer discovery.MetricRegisterer
 }
 
-func newDiscovererMetrics(reg prometheus.Registerer, rdmm discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+func newDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	m := &azureMetrics{
-		refreshMetrics: rdmm,
+		refreshMetrics: rmi,
 		failuresCount: prometheus.NewCounter(
 			prometheus.CounterOpts{
 				Name: "prometheus_sd_azure_failures_total",

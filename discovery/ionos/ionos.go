@@ -90,9 +90,9 @@ type SDConfig struct {
 }
 
 // NewDiscovererMetrics implements discovery.Config.
-func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rdmm discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &ionosMetrics{
-		refreshMetrics: rdmm,
+		refreshMetrics: rmi,
 	}
 }
 
