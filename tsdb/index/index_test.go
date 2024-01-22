@@ -241,9 +241,14 @@ func TestIndexRW_Postings(t *testing.T) {
 		"b": {"1", "2", "3", "4"},
 	}, labelIndices)
 
+	require.NoError(t, ir.Close())
+
 	t.Run("ShardedPostings()", func(t *testing.T) {
 		ir, err := NewFileReader(fn)
 		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, ir.Close())
+		})
 
 		// List all postings for a given label value. This is what we expect to get
 		// in output from all shards.
@@ -289,8 +294,6 @@ func TestIndexRW_Postings(t *testing.T) {
 			}
 		}
 	})
-
-	require.NoError(t, ir.Close())
 }
 
 func TestPostingsMany(t *testing.T) {
