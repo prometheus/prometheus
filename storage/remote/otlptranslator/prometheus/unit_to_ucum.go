@@ -8,6 +8,7 @@ package prometheus // import "github.com/open-telemetry/opentelemetry-collector-
 import "strings"
 
 var wordToUCUM = map[string]string{
+
 	// Time
 	"days":         "d",
 	"hours":        "h",
