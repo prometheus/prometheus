@@ -558,7 +558,7 @@ func (a *HistogramAppender) recode(
 	numPositiveBuckets, numNegativeBuckets := countSpans(positiveSpans), countSpans(negativeSpans)
 
 	for it.Next() == ValHistogram {
-		tOld, hOld := it.AtHistogram()
+		tOld, hOld := it.AtHistogram(nil)
 
 		// We have to newly allocate slices for the modified buckets
 		// here because they are kept by the appender until the next
@@ -776,42 +776,96 @@ func (it *histogramIterator) At() (int64, float64) {
 	panic("cannot call histogramIterator.At")
 }
 
-func (it *histogramIterator) AtHistogram() (int64, *histogram.Histogram) {
+func (it *histogramIterator) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
 	if value.IsStaleNaN(it.sum) {
 		return it.t, &histogram.Histogram{Sum: it.sum}
 	}
-	it.atHistogramCalled = true
-	return it.t, &histogram.Histogram{
-		CounterResetHint: counterResetHint(it.counterResetHeader, it.numRead),
-		Count:            it.cnt,
-		ZeroCount:        it.zCnt,
-		Sum:              it.sum,
-		ZeroThreshold:    it.zThreshold,
-		Schema:           it.schema,
-		PositiveSpans:    it.pSpans,
-		NegativeSpans:    it.nSpans,
-		PositiveBuckets:  it.pBuckets,
-		NegativeBuckets:  it.nBuckets,
+	if h == nil {
+		it.atHistogramCalled = true
+		return it.t, &histogram.Histogram{
+			CounterResetHint: counterResetHint(it.counterResetHeader, it.numRead),
+			Count:            it.cnt,
+			ZeroCount:        it.zCnt,
+			Sum:              it.sum,
+			ZeroThreshold:    it.zThreshold,
+			Schema:           it.schema,
+			PositiveSpans:    it.pSpans,
+			NegativeSpans:    it.nSpans,
+			PositiveBuckets:  it.pBuckets,
+			NegativeBuckets:  it.nBuckets,
+		}
 	}
+
+	h.CounterResetHint = counterResetHint(it.counterResetHeader, it.numRead)
+	h.Schema = it.schema
+	h.ZeroThreshold = it.zThreshold
+	h.ZeroCount = it.zCnt
+	h.Count = it.cnt
+	h.Sum = it.sum
+
+	h.PositiveSpans = resize(h.PositiveSpans, len(it.pSpans))
+	copy(h.PositiveSpans, it.pSpans)
+
+	h.NegativeSpans = resize(h.NegativeSpans, len(it.nSpans))
+	copy(h.NegativeSpans, it.nSpans)
+
+	h.PositiveBuckets = resize(h.PositiveBuckets, len(it.pBuckets))
+	copy(h.PositiveBuckets, it.pBuckets)
+
+	h.NegativeBuckets = resize(h.NegativeBuckets, len(it.nBuckets))
+	copy(h.NegativeBuckets, it.nBuckets)
+
+	return it.t, h
 }
 
-func (it *histogramIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+func (it *histogramIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	if value.IsStaleNaN(it.sum) {
 		return it.t, &histogram.FloatHistogram{Sum: it.sum}
 	}
-	it.atFloatHistogramCalled = true
-	return it.t, &histogram.FloatHistogram{
-		CounterResetHint: counterResetHint(it.counterResetHeader, it.numRead),
-		Count:            float64(it.cnt),
-		ZeroCount:        float64(it.zCnt),
-		Sum:              it.sum,
-		ZeroThreshold:    it.zThreshold,
-		Schema:           it.schema,
-		PositiveSpans:    it.pSpans,
-		NegativeSpans:    it.nSpans,
-		PositiveBuckets:  it.pFloatBuckets,
-		NegativeBuckets:  it.nFloatBuckets,
+	if fh == nil {
+		it.atFloatHistogramCalled = true
+		return it.t, &histogram.FloatHistogram{
+			CounterResetHint: counterResetHint(it.counterResetHeader, it.numRead),
+			Count:            float64(it.cnt),
+			ZeroCount:        float64(it.zCnt),
+			Sum:              it.sum,
+			ZeroThreshold:    it.zThreshold,
+			Schema:           it.schema,
+			PositiveSpans:    it.pSpans,
+			NegativeSpans:    it.nSpans,
+			PositiveBuckets:  it.pFloatBuckets,
+			NegativeBuckets:  it.nFloatBuckets,
+		}
 	}
+
+	fh.CounterResetHint = counterResetHint(it.counterResetHeader, it.numRead)
+	fh.Schema = it.schema
+	fh.ZeroThreshold = it.zThreshold
+	fh.ZeroCount = float64(it.zCnt)
+	fh.Count = float64(it.cnt)
+	fh.Sum = it.sum
+
+	fh.PositiveSpans = resize(fh.PositiveSpans, len(it.pSpans))
+	copy(fh.PositiveSpans, it.pSpans)
+
+	fh.NegativeSpans = resize(fh.NegativeSpans, len(it.nSpans))
+	copy(fh.NegativeSpans, it.nSpans)
+
+	fh.PositiveBuckets = resize(fh.PositiveBuckets, len(it.pBuckets))
+	var currentPositive float64
+	for i, b := range it.pBuckets {
+		currentPositive += float64(b)
+		fh.PositiveBuckets[i] = currentPositive
+	}
+
+	fh.NegativeBuckets = resize(fh.NegativeBuckets, len(it.nBuckets))
+	var currentNegative float64
+	for i, b := range it.nBuckets {
+		currentNegative += float64(b)
+		fh.NegativeBuckets[i] = currentNegative
+	}
+
+	return it.t, fh
 }
 
 func (it *histogramIterator) AtT() int64 {
@@ -1055,4 +1109,11 @@ func (it *histogramIterator) readSum() bool {
 		return false
 	}
 	return true
+}
+
+func resize[T any](items []T, n int) []T {
+	if cap(items) < n {
+		return make([]T, n)
+	}
+	return items[:n]
 }

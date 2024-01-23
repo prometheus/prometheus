@@ -66,6 +66,9 @@ const (
 	// The getHPointSlice and getFPointSlice functions are called with an estimated size which often can be
 	// over-estimated.
 	maxPointsSliceSize = 5000
+
+	// The default buffer size for points used by the matrix selector.
+	matrixSelectorSliceSize = 16
 )
 
 type engineMetrics struct {
@@ -1564,7 +1567,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 
 		ev.currentSamples -= len(floats) + totalHPointSize(histograms)
 		putFPointSlice(floats)
-		putHPointSlice(histograms)
+		putMatrixSelectorHPointSlice(histograms)
 
 		// The absent_over_time function returns 0 or 1 series. So far, the matrix
 		// contains multiple series. The following code will create a new series
@@ -1940,6 +1943,13 @@ func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, no
 var (
 	fPointPool zeropool.Pool[[]FPoint]
 	hPointPool zeropool.Pool[[]HPoint]
+
+	// matrixSelectorHPool holds reusable histogram slices used by the matrix
+	// selector. The key difference between this pool and the hPointPool is that
+	// slices returned by this pool should never hold multiple copies of the same
+	// histogram pointer since histogram objects are reused across query evaluation
+	// steps.
+	matrixSelectorHPool zeropool.Pool[[]HPoint]
 )
 
 func getFPointSlice(sz int) []FPoint {
@@ -1979,6 +1989,20 @@ func getHPointSlice(sz int) []HPoint {
 func putHPointSlice(p []HPoint) {
 	if p != nil {
 		hPointPool.Put(p[:0])
+	}
+}
+
+func getMatrixSelectorHPoints() []HPoint {
+	if p := matrixSelectorHPool.Get(); p != nil {
+		return p
+	}
+
+	return make([]HPoint, 0, matrixSelectorSliceSize)
+}
+
+func putMatrixSelectorHPointSlice(p []HPoint) {
+	if p != nil {
+		matrixSelectorHPool.Put(p[:0])
 	}
 }
 
@@ -2106,13 +2130,13 @@ loop:
 			// Values in the buffer are guaranteed to be smaller than maxt.
 			if t >= mintHistograms {
 				if histograms == nil {
-					histograms = getHPointSlice(16)
+					histograms = getMatrixSelectorHPoints()
 				}
 				n := len(histograms)
 				if n < cap(histograms) {
 					histograms = histograms[:n+1]
 				} else {
-					histograms = append(histograms, HPoint{})
+					histograms = append(histograms, HPoint{H: &histogram.FloatHistogram{}})
 				}
 				histograms[n].T, histograms[n].H = buf.AtFloatHistogram(histograms[n].H)
 				if value.IsStaleNaN(histograms[n].H.Sum) {
@@ -2145,23 +2169,28 @@ loop:
 	// The sought sample might also be in the range.
 	switch soughtValueType {
 	case chunkenc.ValFloatHistogram, chunkenc.ValHistogram:
-		t := it.AtT()
-		if t == maxt {
-			_, h := it.AtFloatHistogram()
-			if !value.IsStaleNaN(h.Sum) {
-				if ev.currentSamples >= ev.maxSamples {
-					ev.error(ErrTooManySamples(env))
-				}
-				if histograms == nil {
-					histograms = getHPointSlice(16)
-				}
-				// The last sample comes directly from the iterator, so we need to copy it to
-				// avoid having the same reference twice in the buffer.
-				point := HPoint{T: t, H: h.Copy()}
-				histograms = append(histograms, point)
-				ev.currentSamples += point.size()
-			}
+		if it.AtT() != maxt {
+			break
 		}
+		if histograms == nil {
+			histograms = getMatrixSelectorHPoints()
+		}
+		n := len(histograms)
+		if n < cap(histograms) {
+			histograms = histograms[:n+1]
+		} else {
+			histograms = append(histograms, HPoint{H: &histogram.FloatHistogram{}})
+		}
+		histograms[n].T, histograms[n].H = it.AtFloatHistogram(histograms[n].H)
+		if value.IsStaleNaN(histograms[n].H.Sum) {
+			histograms = histograms[:n]
+			break
+		}
+		if ev.currentSamples >= ev.maxSamples {
+			ev.error(ErrTooManySamples(env))
+		}
+		ev.currentSamples += histograms[n].size()
+
 	case chunkenc.ValFloat:
 		t, f := it.At()
 		if t == maxt && !value.IsStaleNaN(f) {

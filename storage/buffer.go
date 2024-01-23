@@ -24,6 +24,9 @@ import (
 
 // BufferedSeriesIterator wraps an iterator with a look-back buffer.
 type BufferedSeriesIterator struct {
+	hReader  histogram.Histogram
+	fhReader histogram.FloatHistogram
+
 	it    chunkenc.Iterator
 	buf   *sampleRing
 	delta int64
@@ -118,10 +121,10 @@ func (b *BufferedSeriesIterator) Next() chunkenc.ValueType {
 		t, f := b.it.At()
 		b.buf.addF(fSample{t: t, f: f})
 	case chunkenc.ValHistogram:
-		t, h := b.it.AtHistogram()
+		t, h := b.it.AtHistogram(&b.hReader)
 		b.buf.addH(hSample{t: t, h: h})
 	case chunkenc.ValFloatHistogram:
-		t, fh := b.it.AtFloatHistogram()
+		t, fh := b.it.AtFloatHistogram(&b.fhReader)
 		b.buf.addFH(fhSample{t: t, fh: fh})
 	default:
 		panic(fmt.Errorf("BufferedSeriesIterator: unknown value type %v", b.valueType))
@@ -140,13 +143,13 @@ func (b *BufferedSeriesIterator) At() (int64, float64) {
 }
 
 // AtHistogram returns the current histogram element of the iterator.
-func (b *BufferedSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
-	return b.it.AtHistogram()
+func (b *BufferedSeriesIterator) AtHistogram(fh *histogram.Histogram) (int64, *histogram.Histogram) {
+	return b.it.AtHistogram(fh)
 }
 
 // AtFloatHistogram returns the current float-histogram element of the iterator.
-func (b *BufferedSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
-	return b.it.AtFloatHistogram()
+func (b *BufferedSeriesIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+	return b.it.AtFloatHistogram(fh)
 }
 
 // AtT returns the current timestamp of the iterator.
@@ -378,7 +381,11 @@ func (it *SampleRingIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (in
 	if it.fh == nil {
 		return it.t, it.h.ToFloat(fh)
 	}
-	return it.t, it.fh
+	if fh != nil {
+		it.fh.CopyTo(fh)
+		return it.t, fh
+	}
+	return it.t, it.fh.Copy()
 }
 
 func (it *SampleRingIterator) AtT() int64 {
@@ -672,7 +679,12 @@ func addH(s hSample, buf []hSample, r *sampleRing) []hSample {
 		}
 	}
 
-	buf[r.i] = s
+	buf[r.i].t = s.t
+	if buf[r.i].h == nil {
+		buf[r.i].h = s.h.Copy()
+	} else {
+		s.h.CopyTo(buf[r.i].h)
+	}
 	r.l++
 
 	// Free head of the buffer of samples that just fell out of the range.
@@ -711,7 +723,12 @@ func addFH(s fhSample, buf []fhSample, r *sampleRing) []fhSample {
 		}
 	}
 
-	buf[r.i] = s
+	buf[r.i].t = s.t
+	if buf[r.i].fh == nil {
+		buf[r.i].fh = s.fh.Copy()
+	} else {
+		s.fh.CopyTo(buf[r.i].fh)
+	}
 	r.l++
 
 	// Free head of the buffer of samples that just fell out of the range.
