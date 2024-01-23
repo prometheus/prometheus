@@ -29,6 +29,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -144,19 +145,28 @@ func (t *testRunner) run(files ...string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.cancelSD = cancel
 	go func() {
+		conf := &SDConfig{
+			Files: files,
+			// Setting a high refresh interval to make sure that the tests only
+			// rely on file watches.
+			RefreshInterval: model.Duration(1 * time.Hour),
+		}
+
+		reg := prometheus.NewRegistry()
+		refreshMetrics := discovery.NewRefreshMetrics(reg)
+		metrics := conf.NewDiscovererMetrics(reg, refreshMetrics)
+		require.NoError(t, metrics.Register())
+
 		d, err := NewDiscovery(
-			&SDConfig{
-				Files: files,
-				// Setting a high refresh interval to make sure that the tests only
-				// rely on file watches.
-				RefreshInterval: model.Duration(1 * time.Hour),
-			},
+			conf,
 			nil,
-			prometheus.NewRegistry(),
+			metrics,
 		)
 		require.NoError(t, err)
 
 		d.Run(ctx, t.ch)
+
+		metrics.Unregister()
 	}()
 }
 

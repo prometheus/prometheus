@@ -20,7 +20,6 @@ import (
 	v3 "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -107,20 +106,10 @@ type fetchDiscovery struct {
 	parseResources resourceParser
 	logger         log.Logger
 
-	fetchDuration        prometheus.Summary
-	fetchSkipUpdateCount prometheus.Counter
-	fetchFailuresCount   prometheus.Counter
-
-	metricRegisterer discovery.MetricRegisterer
+	metrics *xdsMetrics
 }
 
 func (d *fetchDiscovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
-	err := d.metricRegisterer.RegisterMetrics()
-	if err != nil {
-		level.Error(d.logger).Log("msg", "Unable to register metrics", "err", err.Error())
-		return
-	}
-	defer d.metricRegisterer.UnregisterMetrics()
 	defer d.client.Close()
 
 	ticker := time.NewTicker(d.refreshInterval)
@@ -141,7 +130,7 @@ func (d *fetchDiscovery) poll(ctx context.Context, ch chan<- []*targetgroup.Grou
 	t0 := time.Now()
 	response, err := d.client.Fetch(ctx)
 	elapsed := time.Since(t0)
-	d.fetchDuration.Observe(elapsed.Seconds())
+	d.metrics.fetchDuration.Observe(elapsed.Seconds())
 
 	// Check the context before in order to exit early.
 	select {
@@ -152,20 +141,20 @@ func (d *fetchDiscovery) poll(ctx context.Context, ch chan<- []*targetgroup.Grou
 
 	if err != nil {
 		level.Error(d.logger).Log("msg", "error parsing resources", "err", err)
-		d.fetchFailuresCount.Inc()
+		d.metrics.fetchFailuresCount.Inc()
 		return
 	}
 
 	if response == nil {
 		// No update needed.
-		d.fetchSkipUpdateCount.Inc()
+		d.metrics.fetchSkipUpdateCount.Inc()
 		return
 	}
 
 	parsedTargets, err := d.parseResources(response.Resources, response.TypeUrl)
 	if err != nil {
 		level.Error(d.logger).Log("msg", "error parsing resources", "err", err)
-		d.fetchFailuresCount.Inc()
+		d.metrics.fetchFailuresCount.Inc()
 		return
 	}
 

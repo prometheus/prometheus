@@ -29,6 +29,7 @@ import (
 	"go.uber.org/goleak"
 	"gopkg.in/yaml.v2"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -36,11 +37,25 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
 
+// TODO: Add ability to unregister metrics?
+func NewTestMetrics(t *testing.T, conf discovery.Config, reg prometheus.Registerer) discovery.DiscovererMetrics {
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	require.NoError(t, refreshMetrics.Register())
+
+	metrics := conf.NewDiscovererMetrics(prometheus.NewRegistry(), refreshMetrics)
+	require.NoError(t, metrics.Register())
+
+	return metrics
+}
+
 func TestConfiguredService(t *testing.T) {
 	conf := &SDConfig{
 		Services: []string{"configuredServiceName"},
 	}
-	consulDiscovery, err := NewDiscovery(conf, nil, prometheus.NewRegistry())
+
+	metrics := NewTestMetrics(t, conf, prometheus.NewRegistry())
+
+	consulDiscovery, err := NewDiscovery(conf, nil, metrics)
 	if err != nil {
 		t.Errorf("Unexpected error when initializing discovery %v", err)
 	}
@@ -57,7 +72,10 @@ func TestConfiguredServiceWithTag(t *testing.T) {
 		Services:    []string{"configuredServiceName"},
 		ServiceTags: []string{"http"},
 	}
-	consulDiscovery, err := NewDiscovery(conf, nil, prometheus.NewRegistry())
+
+	metrics := NewTestMetrics(t, conf, prometheus.NewRegistry())
+
+	consulDiscovery, err := NewDiscovery(conf, nil, metrics)
 	if err != nil {
 		t.Errorf("Unexpected error when initializing discovery %v", err)
 	}
@@ -152,7 +170,9 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		consulDiscovery, err := NewDiscovery(tc.conf, nil, prometheus.NewRegistry())
+		metrics := NewTestMetrics(t, tc.conf, prometheus.NewRegistry())
+
+		consulDiscovery, err := NewDiscovery(tc.conf, nil, metrics)
 		if err != nil {
 			t.Errorf("Unexpected error when initializing discovery %v", err)
 		}
@@ -160,13 +180,15 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 		if ret != tc.shouldWatch {
 			t.Errorf("Expected should watch? %t, got %t. Watched service and tags: %s %+v, input was %s %+v", tc.shouldWatch, ret, tc.conf.Services, tc.conf.ServiceTags, tc.serviceName, tc.serviceTags)
 		}
-
 	}
 }
 
 func TestNonConfiguredService(t *testing.T) {
 	conf := &SDConfig{}
-	consulDiscovery, err := NewDiscovery(conf, nil, prometheus.NewRegistry())
+
+	metrics := NewTestMetrics(t, conf, prometheus.NewRegistry())
+
+	consulDiscovery, err := NewDiscovery(conf, nil, metrics)
 	if err != nil {
 		t.Errorf("Unexpected error when initializing discovery %v", err)
 	}
@@ -263,7 +285,10 @@ func newServer(t *testing.T) (*httptest.Server, *SDConfig) {
 
 func newDiscovery(t *testing.T, config *SDConfig) *Discovery {
 	logger := log.NewNopLogger()
-	d, err := NewDiscovery(config, logger, prometheus.NewRegistry())
+
+	metrics := NewTestMetrics(t, config, prometheus.NewRegistry())
+
+	d, err := NewDiscovery(config, logger, metrics)
 	require.NoError(t, err)
 	return d
 }

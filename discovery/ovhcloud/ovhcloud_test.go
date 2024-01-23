@@ -122,9 +122,17 @@ func TestParseIPs(t *testing.T) {
 func TestDiscoverer(t *testing.T) {
 	conf, _ := getMockConf("vps")
 	logger := testutil.NewLogger(t)
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := conf.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+	defer refreshMetrics.Unregister()
+
 	_, err := conf.NewDiscoverer(discovery.DiscovererOptions{
-		Logger:     logger,
-		Registerer: prometheus.NewRegistry(),
+		Logger:  logger,
+		Metrics: metrics,
 	})
 
 	require.NoError(t, err)
