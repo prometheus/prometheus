@@ -241,8 +241,8 @@ func TestWALMetadataDelivery(t *testing.T) {
 	qm.StoreSeries(series, 0)
 	qm.StoreMetadata(metadata)
 
-	require.Len(t, num, len(qm.seriesLabels))
-	require.Len(t, num, len(qm.seriesMetadata))
+	require.Len(t, qm.seriesLabels, num)
+	require.Len(t, qm.seriesMetadata, num)
 
 	c.waitForExpectedData(t)
 }
