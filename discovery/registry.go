@@ -262,7 +262,7 @@ func replaceYAMLTypeError(err error, oldTyp, newTyp reflect.Type) error {
 }
 
 // RegisterSDMetrics registers the metrics used by service discovery mechanisms.
-// RegisterSDMetrics should be called only once during the lifetime of the PRometheus process.
+// RegisterSDMetrics should be called only once during the lifetime of the Prometheus process.
 // There is no need for the Prometheus process to unregister the metrics.
 func RegisterSDMetrics(registerer prometheus.Registerer, rmm RefreshMetricsManager) (map[string]DiscovererMetrics, error) {
 	err := rmm.Register()
