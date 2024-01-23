@@ -1464,6 +1464,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 		// Reuse objects across steps to save memory allocations.
 		var floats []FPoint
 		var histograms []HPoint
+		var prevSS *Series
 		inMatrix := make(Matrix, 1)
 		inArgs[matrixArgIndex] = inMatrix
 		enh := &EvalNodeHelper{Out: make(Vector, 0, 1)}
@@ -1524,12 +1525,23 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 				if len(outVec) > 0 {
 					if outVec[0].H == nil {
 						if ss.Floats == nil {
-							ss.Floats = getFPointSlice(numSteps)
+							if prevSS != nil && cap(prevSS.Floats)-2*len(prevSS.Floats) > 0 {
+								ss.Floats = prevSS.Floats[len(prevSS.Floats):]
+								prevSS.Floats = prevSS.Floats[0:len(prevSS.Floats):len(prevSS.Floats)]
+							} else {
+								ss.Floats = getFPointSlice(numSteps)
+							}
 						}
+
 						ss.Floats = append(ss.Floats, FPoint{F: outVec[0].F, T: ts})
 					} else {
 						if ss.Histograms == nil {
-							ss.Histograms = getHPointSlice(numSteps)
+							if prevSS != nil && cap(prevSS.Histograms)-2*len(prevSS.Histograms) > 0 {
+								ss.Histograms = prevSS.Histograms[len(prevSS.Histograms):]
+								prevSS.Histograms = prevSS.Histograms[0:len(prevSS.Histograms):len(prevSS.Histograms)]
+							} else {
+								ss.Histograms = getHPointSlice(numSteps)
+							}
 						}
 						ss.Histograms = append(ss.Histograms, HPoint{H: outVec[0].H, T: ts})
 					}
@@ -1538,9 +1550,11 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 				it.ReduceDelta(stepRange)
 			}
 			histSamples := totalHPointSize(ss.Histograms)
+
 			if len(ss.Floats)+histSamples > 0 {
 				if ev.currentSamples+len(ss.Floats)+histSamples <= ev.maxSamples {
 					mat = append(mat, ss)
+					prevSS = &mat[len(mat)-1]
 					ev.currentSamples += len(ss.Floats) + histSamples
 				} else {
 					ev.error(ErrTooManySamples(env))
@@ -1690,6 +1704,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 			ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
 		}
 		mat := make(Matrix, 0, len(e.Series))
+		var prevSS *Series
 		it := storage.NewMemoizedEmptyIterator(durationMilliseconds(ev.lookbackDelta))
 		var chkIter chunkenc.Iterator
 		for i, s := range e.Series {
@@ -1709,14 +1724,24 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 					if ev.currentSamples < ev.maxSamples {
 						if h == nil {
 							if ss.Floats == nil {
-								ss.Floats = getFPointSlice(numSteps)
+								if prevSS != nil && cap(prevSS.Floats)-2*len(prevSS.Floats) > 0 {
+									ss.Floats = prevSS.Floats[len(prevSS.Floats):]
+									prevSS.Floats = prevSS.Floats[0:len(prevSS.Floats):len(prevSS.Floats)]
+								} else {
+									ss.Floats = getFPointSlice(numSteps)
+								}
 							}
 							ss.Floats = append(ss.Floats, FPoint{F: f, T: ts})
 							ev.currentSamples++
 							ev.samplesStats.IncrementSamplesAtStep(step, 1)
 						} else {
 							if ss.Histograms == nil {
-								ss.Histograms = getHPointSlice(numSteps)
+								if prevSS != nil && cap(prevSS.Histograms)-2*len(prevSS.Histograms) > 0 {
+									ss.Histograms = prevSS.Histograms[len(prevSS.Histograms):]
+									prevSS.Histograms = prevSS.Histograms[0:len(prevSS.Histograms):len(prevSS.Histograms)]
+								} else {
+									ss.Histograms = getHPointSlice(numSteps)
+								}
 							}
 							point := HPoint{H: h, T: ts}
 							ss.Histograms = append(ss.Histograms, point)
@@ -1732,6 +1757,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 
 			if len(ss.Floats)+len(ss.Histograms) > 0 {
 				mat = append(mat, ss)
+				prevSS = &mat[len(mat)-1]
 			}
 		}
 		ev.samplesStats.UpdatePeak(ev.currentSamples)

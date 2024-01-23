@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -66,10 +67,16 @@ func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *Engine, interval,
 			ref, _ := a.Append(refs[i], metric, ts, float64(s)+float64(i)/float64(len(metrics)))
 			refs[i] = ref
 		}
+		metric := labels.FromStrings("__name__", "sparse", "l", strconv.Itoa(s/(numIntervals/50)))
+		_, err := a.Append(0, metric, ts, float64(s)/float64(len(metrics)))
+		if err != nil {
+			return err
+		}
 		if err := a.Commit(); err != nil {
 			return err
 		}
 	}
+
 	stor.DB.ForceHeadMMap() // Ensure we have at most one head chunk for every series.
 	stor.DB.Compact(ctx)
 	return nil
@@ -92,6 +99,10 @@ func rangeQueryCases() []benchCase {
 		},
 		{
 			expr:  "rate(a_X[1m])",
+			steps: 10000,
+		},
+		{
+			expr:  "rate(sparse[1m])",
 			steps: 10000,
 		},
 		// Holt-Winters and long ranges.
@@ -248,6 +259,9 @@ func BenchmarkRangeQuery(b *testing.B) {
 	}
 	cases := rangeQueryCases()
 
+	fPointSize := int(unsafe.Sizeof(FPoint{}))
+	hPointSize := int(unsafe.Sizeof(HPoint{}))
+
 	for _, c := range cases {
 		name := fmt.Sprintf("expr=%s,steps=%d", c.expr, c.steps)
 		b.Run(name, func(b *testing.B) {
@@ -265,6 +279,17 @@ func BenchmarkRangeQuery(b *testing.B) {
 				if res.Err != nil {
 					b.Fatal(res.Err)
 				}
+				m, err := res.Matrix()
+				if err != nil {
+					b.Fatal(res.Err)
+				}
+				inMemoryBytes := 0
+				for _, s := range m {
+					inMemoryBytes += cap(s.Floats) * fPointSize
+					inMemoryBytes += cap(s.Histograms) * hPointSize
+				}
+
+				b.ReportMetric(float64(inMemoryBytes), "QueryInMemoryBytes")
 				qry.Close()
 			}
 		})
