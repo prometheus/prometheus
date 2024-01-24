@@ -315,8 +315,6 @@ func main() {
 				noDefaultScrapePort = true
 			case "":
 				continue
-			case "promql-at-modifier", "promql-negative-offset":
-				fmt.Printf("  WARNING: Option for --enable-feature is a no-op after promotion to a stable feature: %q\n", o)
 			default:
 				fmt.Printf("  WARNING: Unknown option for --enable-feature: %q\n", o)
 			}
