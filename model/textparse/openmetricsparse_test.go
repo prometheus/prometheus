@@ -23,6 +23,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestOpenMetricsParse(t *testing.T) {
@@ -268,12 +269,12 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 			require.Equal(t, exp[i].m, string(m))
 			require.Equal(t, exp[i].t, ts)
 			require.Equal(t, exp[i].v, v)
-			require.Equal(t, exp[i].lset, res)
+			testutil.RequireEqual(t, exp[i].lset, res)
 			if exp[i].e == nil {
 				require.False(t, found)
 			} else {
 				require.True(t, found)
-				require.Equal(t, *exp[i].e, e)
+				testutil.RequireEqual(t, *exp[i].e, e)
 			}
 
 		case EntryType:

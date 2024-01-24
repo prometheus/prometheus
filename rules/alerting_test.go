@@ -719,7 +719,7 @@ func TestSendAlertsDontAffectActiveAlerts(t *testing.T) {
 
 	// The relabel rule changes a1=1 to a1=bug.
 	// But the labels with the AlertingRule should not be changed.
-	require.Equal(t, labels.FromStrings("a1", "1"), rule.active[h].Labels)
+	testutil.RequireEqual(t, labels.FromStrings("a1", "1"), rule.active[h].Labels)
 }
 
 func TestKeepFiringFor(t *testing.T) {

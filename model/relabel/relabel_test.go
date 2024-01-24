@@ -22,6 +22,7 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestRelabel(t *testing.T) {
@@ -591,7 +592,7 @@ func TestRelabel(t *testing.T) {
 		res, keep := Process(test.input, test.relabel...)
 		require.Equal(t, !test.drop, keep)
 		if keep {
-			require.Equal(t, test.output, res)
+			testutil.RequireEqual(t, test.output, res)
 		}
 	}
 }
