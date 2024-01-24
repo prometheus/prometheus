@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.45.3 / 2024-01-24
+
+This release contains security fixes in dependencies and has been built with go1.21.6. #13450.
+
+* [BUGFIX] TSDB: Remove double memory snapshot on shutdown. #13110
+
 ## 2.45.2 / 2023-12-19
 
 This release contains security fixes in dependencies and has been built with go1.21.5. #13307
