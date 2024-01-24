@@ -95,6 +95,7 @@ func EncodeReadResponse(resp *prompb.ReadResponse, w http.ResponseWriter) error 
 
 // ToQuery builds a Query proto.
 func ToQuery(from, to int64, matchers []*labels.Matcher, hints *storage.SelectHints) (*prompb.Query, error) {
+	// XXXXX TODO maybe here is where we explode to union between possible names?
 	ms, err := toLabelMatchers(matchers)
 	if err != nil {
 		return nil, err
@@ -176,6 +177,8 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 
 // FromQueryResult unpacks and sorts a QueryResult proto.
 func FromQueryResult(sortSeries bool, res *prompb.QueryResult) storage.SeriesSet {
+	// XXXXXXXX TODO somewhere in here we need to collapse the metric names
+	// from exploded down to the single one we wanted.
 	series := make([]storage.Series, 0, len(res.Timeseries))
 	for _, ts := range res.Timeseries {
 		if err := validateLabelsAndMetricName(ts.Labels); err != nil {
