@@ -1525,23 +1525,13 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 				if len(outVec) > 0 {
 					if outVec[0].H == nil {
 						if ss.Floats == nil {
-							if prevSS != nil && cap(prevSS.Floats)-2*len(prevSS.Floats) > 0 {
-								ss.Floats = prevSS.Floats[len(prevSS.Floats):]
-								prevSS.Floats = prevSS.Floats[0:len(prevSS.Floats):len(prevSS.Floats)]
-							} else {
-								ss.Floats = getFPointSlice(numSteps)
-							}
+							ss.Floats = reuseOrGetFPointSlices(prevSS, numSteps)
 						}
 
 						ss.Floats = append(ss.Floats, FPoint{F: outVec[0].F, T: ts})
 					} else {
 						if ss.Histograms == nil {
-							if prevSS != nil && cap(prevSS.Histograms)-2*len(prevSS.Histograms) > 0 {
-								ss.Histograms = prevSS.Histograms[len(prevSS.Histograms):]
-								prevSS.Histograms = prevSS.Histograms[0:len(prevSS.Histograms):len(prevSS.Histograms)]
-							} else {
-								ss.Histograms = getHPointSlice(numSteps)
-							}
+							ss.Histograms = reuseOrGetHPointSlices(prevSS, numSteps)
 						}
 						ss.Histograms = append(ss.Histograms, HPoint{H: outVec[0].H, T: ts})
 					}
@@ -1724,24 +1714,14 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 					if ev.currentSamples < ev.maxSamples {
 						if h == nil {
 							if ss.Floats == nil {
-								if prevSS != nil && cap(prevSS.Floats)-2*len(prevSS.Floats) > 0 {
-									ss.Floats = prevSS.Floats[len(prevSS.Floats):]
-									prevSS.Floats = prevSS.Floats[0:len(prevSS.Floats):len(prevSS.Floats)]
-								} else {
-									ss.Floats = getFPointSlice(numSteps)
-								}
+								ss.Floats = reuseOrGetFPointSlices(prevSS, numSteps)
 							}
 							ss.Floats = append(ss.Floats, FPoint{F: f, T: ts})
 							ev.currentSamples++
 							ev.samplesStats.IncrementSamplesAtStep(step, 1)
 						} else {
 							if ss.Histograms == nil {
-								if prevSS != nil && cap(prevSS.Histograms)-2*len(prevSS.Histograms) > 0 {
-									ss.Histograms = prevSS.Histograms[len(prevSS.Histograms):]
-									prevSS.Histograms = prevSS.Histograms[0:len(prevSS.Histograms):len(prevSS.Histograms)]
-								} else {
-									ss.Histograms = getHPointSlice(numSteps)
-								}
+								ss.Histograms = reuseOrGetHPointSlices(prevSS, numSteps)
 							}
 							point := HPoint{H: h, T: ts}
 							ss.Histograms = append(ss.Histograms, point)
@@ -1876,6 +1856,26 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 	}
 
 	panic(fmt.Errorf("unhandled expression of type: %T", expr))
+}
+
+func reuseOrGetHPointSlices(prevSS *Series, numSteps int) (r []HPoint) {
+	if prevSS != nil && cap(prevSS.Histograms)-2*len(prevSS.Histograms) > 0 {
+		r = prevSS.Histograms[len(prevSS.Histograms):]
+		prevSS.Histograms = prevSS.Histograms[0:len(prevSS.Histograms):len(prevSS.Histograms)]
+		return
+	}
+
+	return getHPointSlice(numSteps)
+}
+
+func reuseOrGetFPointSlices(prevSS *Series, numSteps int) (r []FPoint) {
+	if prevSS != nil && cap(prevSS.Floats)-2*len(prevSS.Floats) > 0 {
+		r = prevSS.Floats[len(prevSS.Floats):]
+		prevSS.Floats = prevSS.Floats[0:len(prevSS.Floats):len(prevSS.Floats)]
+		return
+	}
+
+	return getFPointSlice(numSteps)
 }
 
 func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(vs *parser.VectorSelector, call FunctionCall, e *parser.Call) (parser.Value, annotations.Annotations) {

@@ -34,6 +34,10 @@ func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *Engine, interval,
 	ctx := context.Background()
 
 	metrics := []labels.Labels{}
+	// Generating test series: a_X, b_X, and h_X, where X can take values of one, ten, or hundred,
+	// representing the number of series each metric name contains.
+	// Metric a_X and b_X are simple metrics where h_X is a histogram.
+	// These metrics will have data for all test time range
 	metrics = append(metrics, labels.FromStrings("__name__", "a_one"))
 	metrics = append(metrics, labels.FromStrings("__name__", "b_one"))
 	for j := 0; j < 10; j++ {
@@ -67,6 +71,9 @@ func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *Engine, interval,
 			ref, _ := a.Append(refs[i], metric, ts, float64(s)+float64(i)/float64(len(metrics)))
 			refs[i] = ref
 		}
+		// Generating a sparse time series named "sparse" with multiple label values for the label "l".
+		// Each label value of "l" will contain data only for a subset of the test time range, resulting in sparse series.
+		// The "sparse" series differ from the previous series as the latter contain data for the entire test time range.
 		metric := labels.FromStrings("__name__", "sparse", "l", strconv.Itoa(s/(numIntervals/50)))
 		_, err := a.Append(0, metric, ts, float64(s)/float64(len(metrics)))
 		if err != nil {
