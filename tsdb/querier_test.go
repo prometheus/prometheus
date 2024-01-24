@@ -3309,13 +3309,15 @@ func TestPostingsForMatcher(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		ir := &mockMatcherIndex{}
-		_, err := postingsForMatcher(ctx, ir, tc.matcher)
-		if tc.hasError {
-			require.Error(t, err)
-		} else {
-			require.NoError(t, err)
-		}
+		t.Run(tc.matcher.String(), func(t *testing.T) {
+			ir := &mockMatcherIndex{}
+			_, err := postingsForMatcher(ctx, ir, tc.matcher)
+			if tc.hasError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
 	}
 }
 
