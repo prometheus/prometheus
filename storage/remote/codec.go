@@ -629,11 +629,11 @@ func exemplarProtoToExemplar(ep prompb.Exemplar) exemplar.Exemplar {
 	}
 }
 
-func minExemplarProtoToExemplar(ep writev2.Exemplar, symbols []string) exemplar.Exemplar {
+func exemplarProtoV2ToExemplar(ep writev2.Exemplar, symbols []string) exemplar.Exemplar {
 	timestamp := ep.Timestamp
 
 	return exemplar.Exemplar{
-		Labels: Uint32StrRefToLabels(symbols, ep.LabelsRefs),
+		Labels: labelProtosV2ToLabels(ep.LabelsRefs, symbols),
 		Value:  ep.Value,
 		Ts:     timestamp,
 		HasTs:  timestamp != 0,
@@ -766,9 +766,9 @@ func FloatMinHistogramProtoToFloatHistogram(hp writev2.Histogram) *histogram.Flo
 		ZeroCount:        hp.GetZeroCountFloat(),
 		Count:            hp.GetCountFloat(),
 		Sum:              hp.Sum,
-		PositiveSpans:    minSpansProtoToSpans(hp.GetPositiveSpans()),
+		PositiveSpans:    spansProtoV2ToSpans(hp.GetPositiveSpans()),
 		PositiveBuckets:  hp.GetPositiveCounts(),
-		NegativeSpans:    minSpansProtoToSpans(hp.GetNegativeSpans()),
+		NegativeSpans:    spansProtoV2ToSpans(hp.GetNegativeSpans()),
 		NegativeBuckets:  hp.GetNegativeCounts(),
 	}
 }
@@ -787,9 +787,9 @@ func MinHistogramProtoToHistogram(hp writev2.Histogram) *histogram.Histogram {
 		ZeroCount:        hp.GetZeroCountInt(),
 		Count:            hp.GetCountInt(),
 		Sum:              hp.Sum,
-		PositiveSpans:    minSpansProtoToSpans(hp.GetPositiveSpans()),
+		PositiveSpans:    spansProtoV2ToSpans(hp.GetPositiveSpans()),
 		PositiveBuckets:  hp.GetPositiveDeltas(),
-		NegativeSpans:    minSpansProtoToSpans(hp.GetNegativeSpans()),
+		NegativeSpans:    spansProtoV2ToSpans(hp.GetNegativeSpans()),
 		NegativeBuckets:  hp.GetNegativeDeltas(),
 	}
 }
@@ -804,15 +804,6 @@ func spansProtoToSpans(s []prompb.BucketSpan) []histogram.Span {
 }
 
 func spansProtoV2ToSpans(s []writev2.BucketSpan) []histogram.Span {
-	spans := make([]histogram.Span, len(s))
-	for i := 0; i < len(s); i++ {
-		spans[i] = histogram.Span{Offset: s[i].Offset, Length: s[i].Length}
-	}
-
-	return spans
-}
-
-func minSpansProtoToSpans(s []writev2.BucketSpan) []histogram.Span {
 	spans := make([]histogram.Span, len(s))
 	for i := 0; i < len(s); i++ {
 		spans[i] = histogram.Span{Offset: s[i].Offset, Length: s[i].Length}
@@ -931,6 +922,8 @@ func labelProtosToLabels(labelPairs []prompb.Label) labels.Labels {
 	return b.Labels()
 }
 
+// labelProtosV2ToLabels transforms v2 proto labels references, which are uint32 values, into labels via
+// indexing into the symbols slice.
 func labelProtosV2ToLabels(labelRefs []uint32, symbols []string) labels.Labels {
 	b := labels.ScratchBuilder{}
 	for i := 0; i < len(labelRefs); i += 2 {
@@ -953,8 +946,7 @@ func labelsToLabelsProto(lbls labels.Labels, buf []prompb.Label) []prompb.Label 
 	return result
 }
 
-// TODO.
-func labelsToUint32SliceStr(lbls labels.Labels, symbolTable *rwSymbolTable, buf []uint32) []uint32 {
+func lablesToLabelsProtoV2Refs(lbls labels.Labels, symbolTable *rwSymbolTable, buf []uint32) []uint32 {
 	result := buf[:0]
 	lbls.Range(func(l labels.Label) {
 		off := symbolTable.RefStr(l.Name)
@@ -963,24 +955,6 @@ func labelsToUint32SliceStr(lbls labels.Labels, symbolTable *rwSymbolTable, buf 
 		result = append(result, off)
 	})
 	return result
-}
-
-// TODO.
-func Uint32StrRefToLabels(symbols []string, minLabels []uint32) labels.Labels {
-	ls := labels.NewScratchBuilder(len(minLabels) / 2)
-
-	strIdx := 0
-	for strIdx < len(minLabels) {
-		// todo, check for overflow?
-		nameIdx := minLabels[strIdx]
-		strIdx++
-		valueIdx := minLabels[strIdx]
-		strIdx++
-
-		ls.Add(symbols[nameIdx], symbols[valueIdx])
-	}
-
-	return ls.Labels()
 }
 
 // metricTypeToMetricTypeProto transforms a Prometheus metricType into prompb metricType. Since the former is a string we need to transform it to an enum.
@@ -1110,7 +1084,7 @@ func MinimizedWriteRequestToWriteRequest(redReq *writev2.WriteRequest) (*prompb.
 	}
 
 	for i, rts := range redReq.Timeseries {
-		Uint32StrRefToLabels(redReq.Symbols, rts.LabelsRefs).Range(func(l labels.Label) {
+		labelProtosV2ToLabels(rts.LabelsRefs, redReq.Symbols).Range(func(l labels.Label) {
 			req.Timeseries[i].Labels = append(req.Timeseries[i].Labels, prompb.Label{
 				Name:  l.Name,
 				Value: l.Value,
@@ -1121,7 +1095,7 @@ func MinimizedWriteRequestToWriteRequest(redReq *writev2.WriteRequest) (*prompb.
 		for j, e := range rts.Exemplars {
 			exemplars[j].Value = e.Value
 			exemplars[j].Timestamp = e.Timestamp
-			Uint32StrRefToLabels(redReq.Symbols, e.LabelsRefs).Range(func(l labels.Label) {
+			labelProtosV2ToLabels(e.LabelsRefs, redReq.Symbols).Range(func(l labels.Label) {
 				exemplars[j].Labels = append(exemplars[j].Labels, prompb.Label{
 					Name:  l.Name,
 					Value: l.Value,

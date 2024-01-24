@@ -348,7 +348,7 @@ func (h *writeHandler) writeMinStr(ctx context.Context, req *writev2.WriteReques
 	}()
 
 	for _, ts := range req.Timeseries {
-		ls := Uint32StrRefToLabels(req.Symbols, ts.LabelsRefs)
+		ls := labelProtosV2ToLabels(ts.LabelsRefs, req.Symbols)
 
 		err := h.appendMinSamples(app, ts.Samples, ls)
 		if err != nil {
@@ -356,7 +356,7 @@ func (h *writeHandler) writeMinStr(ctx context.Context, req *writev2.WriteReques
 		}
 
 		for _, ep := range ts.Exemplars {
-			e := minExemplarProtoToExemplar(ep, req.Symbols)
+			e := exemplarProtoV2ToExemplar(ep, req.Symbols)
 			h.appendExemplar(app, e, ls, &outOfOrderExemplarErrs)
 		}
 

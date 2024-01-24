@@ -107,7 +107,7 @@ func TestSampleDelivery(t *testing.T) {
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, tc.rwFormat)
+			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, tc.rwFormat, true)
 			defer s.Close()
 
 			var (
@@ -209,7 +209,7 @@ func TestMetadataDelivery(t *testing.T) {
 
 func TestWALMetadataDelivery(t *testing.T) {
 	dir := t.TempDir()
-	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, Version2)
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, Version2, true)
 	defer s.Close()
 
 	cfg := config.DefaultQueueConfig
