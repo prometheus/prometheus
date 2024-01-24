@@ -61,7 +61,7 @@ require (
 	github.com/vultr/govultr/v2 v2.17.2
 	go.opentelemetry.io/collector/featuregate v1.0.1
 	go.opentelemetry.io/collector/pdata v1.0.1
-	go.opentelemetry.io/collector/semconv v0.92.0
+	go.opentelemetry.io/collector/semconv v0.93.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.47.0
 	go.opentelemetry.io/otel v1.22.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.22.0
