@@ -74,12 +74,17 @@ type SDConfig struct {
 	TagSeparator     string                  `yaml:"tag_separator,omitempty"`
 }
 
+// NewDiscovererMetrics implements discovery.Config.
+func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return newDiscovererMetrics(reg, rmi)
+}
+
 // Name returns the name of the Config.
 func (*SDConfig) Name() string { return "nomad" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger, opts.Registerer)
+	return NewDiscovery(c, opts.Logger, opts.Metrics)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -112,11 +117,16 @@ type Discovery struct {
 	region          string
 	server          string
 	tagSeparator    string
-	failuresCount   prometheus.Counter
+	metrics         *nomadMetrics
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
-func NewDiscovery(conf *SDConfig, logger log.Logger, reg prometheus.Registerer) (*Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+	m, ok := metrics.(*nomadMetrics)
+	if !ok {
+		return nil, fmt.Errorf("invalid discovery metrics type")
+	}
+
 	d := &Discovery{
 		allowStale:      conf.AllowStale,
 		namespace:       conf.Namespace,
@@ -124,11 +134,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger, reg prometheus.Registerer) 
 		region:          conf.Region,
 		server:          conf.Server,
 		tagSeparator:    conf.TagSeparator,
-		failuresCount: prometheus.NewCounter(
-			prometheus.CounterOpts{
-				Name: "prometheus_sd_nomad_failures_total",
-				Help: "Number of nomad service discovery refresh failures.",
-			}),
+		metrics:         m,
 	}
 
 	HTTPClient, err := config.NewClientFromConfig(conf.HTTPClientConfig, "nomad_sd")
@@ -151,12 +157,11 @@ func NewDiscovery(conf *SDConfig, logger log.Logger, reg prometheus.Registerer) 
 
 	d.Discovery = refresh.NewDiscovery(
 		refresh.Options{
-			Logger:   logger,
-			Mech:     "nomad",
-			Interval: time.Duration(conf.RefreshInterval),
-			RefreshF: d.refresh,
-			Registry: reg,
-			Metrics:  []prometheus.Collector{d.failuresCount},
+			Logger:              logger,
+			Mech:                "nomad",
+			Interval:            time.Duration(conf.RefreshInterval),
+			RefreshF:            d.refresh,
+			MetricsInstantiator: m.refreshMetrics,
 		},
 	)
 	return d, nil
@@ -168,7 +173,7 @@ func (d *Discovery) refresh(context.Context) ([]*targetgroup.Group, error) {
 	}
 	stubs, _, err := d.client.Services().List(opts)
 	if err != nil {
-		d.failuresCount.Inc()
+		d.metrics.failuresCount.Inc()
 		return nil, err
 	}
 
@@ -180,7 +185,7 @@ func (d *Discovery) refresh(context.Context) ([]*targetgroup.Group, error) {
 		for _, service := range stub.Services {
 			instances, _, err := d.client.Services().Get(service.ServiceName, opts)
 			if err != nil {
-				d.failuresCount.Inc()
+				d.metrics.failuresCount.Inc()
 				return nil, fmt.Errorf("failed to fetch services: %w", err)
 			}
 

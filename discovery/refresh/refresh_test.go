@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -66,13 +67,18 @@ func TestRefresh(t *testing.T) {
 		return nil, fmt.Errorf("some error")
 	}
 	interval := time.Millisecond
+
+	metrics := discovery.NewRefreshMetrics(prometheus.NewRegistry())
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+
 	d := NewDiscovery(
 		Options{
-			Logger:   nil,
-			Mech:     "test",
-			Interval: interval,
-			RefreshF: refresh,
-			Registry: prometheus.NewRegistry(),
+			Logger:              nil,
+			Mech:                "test",
+			Interval:            interval,
+			RefreshF:            refresh,
+			MetricsInstantiator: metrics,
 		},
 	)
 

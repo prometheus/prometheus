@@ -42,7 +42,7 @@ type provider struct {
 }
 
 // NewManager is the Discovery Manager constructor.
-func NewManager(ctx context.Context, logger log.Logger, registerer prometheus.Registerer, options ...func(*Manager)) *Manager {
+func NewManager(ctx context.Context, logger log.Logger, registerer prometheus.Registerer, sdMetrics map[string]discovery.DiscovererMetrics, options ...func(*Manager)) *Manager {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -55,6 +55,7 @@ func NewManager(ctx context.Context, logger log.Logger, registerer prometheus.Re
 		updatert:       5 * time.Second,
 		triggerSend:    make(chan struct{}, 1),
 		registerer:     registerer,
+		sdMetrics:      sdMetrics,
 	}
 	for _, option := range options {
 		option(mgr)
@@ -62,7 +63,7 @@ func NewManager(ctx context.Context, logger log.Logger, registerer prometheus.Re
 
 	// Register the metrics.
 	// We have to do this after setting all options, so that the name of the Manager is set.
-	if metrics, err := discovery.NewMetrics(registerer, mgr.name); err == nil {
+	if metrics, err := discovery.NewManagerMetrics(registerer, mgr.name); err == nil {
 		mgr.metrics = metrics
 	} else {
 		level.Error(logger).Log("msg", "Failed to create discovery manager metrics", "manager", mgr.name, "err", err)
@@ -108,7 +109,8 @@ type Manager struct {
 	// A registerer for all service discovery metrics.
 	registerer prometheus.Registerer
 
-	metrics *discovery.Metrics
+	metrics   *discovery.Metrics
+	sdMetrics map[string]discovery.DiscovererMetrics
 }
 
 // Run starts the background processing.
@@ -283,8 +285,8 @@ func (m *Manager) registerProviders(cfgs discovery.Configs, setName string) int 
 		}
 		typ := cfg.Name()
 		d, err := cfg.NewDiscoverer(discovery.DiscovererOptions{
-			Logger:     log.With(m.logger, "discovery", typ, "config", setName),
-			Registerer: m.registerer,
+			Logger:  log.With(m.logger, "discovery", typ, "config", setName),
+			Metrics: m.sdMetrics[typ],
 		})
 		if err != nil {
 			level.Error(m.logger).Log("msg", "Cannot create service discovery", "err", err, "type", typ, "config", setName)

@@ -29,24 +29,15 @@ import (
 	"go.uber.org/goleak"
 	"google.golang.org/protobuf/types/known/anypb"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
-var (
-	sdConf = SDConfig{
-		Server:          "http://127.0.0.1",
-		RefreshInterval: model.Duration(10 * time.Second),
-		ClientID:        "test-id",
-	}
-
-	testFetchFailuresCount = prometheus.NewCounter(
-		prometheus.CounterOpts{})
-	testFetchSkipUpdateCount = prometheus.NewCounter(
-		prometheus.CounterOpts{})
-	testFetchDuration = prometheus.NewSummary(
-		prometheus.SummaryOpts{},
-	)
-)
+var sdConf = SDConfig{
+	Server:          "http://127.0.0.1",
+	RefreshInterval: model.Duration(10 * time.Second),
+	ClientID:        "test-id",
+}
 
 func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
@@ -133,12 +124,22 @@ func TestPollingRefreshSkipUpdate(t *testing.T) {
 			return nil, nil
 		},
 	}
+
+	cfg := &SDConfig{}
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+
+	xdsMetrics, ok := metrics.(*xdsMetrics)
+	if !ok {
+		require.Fail(t, "invalid discovery metrics type")
+	}
+
 	pd := &fetchDiscovery{
-		client:               rc,
-		logger:               nopLogger,
-		fetchDuration:        testFetchDuration,
-		fetchFailuresCount:   testFetchFailuresCount,
-		fetchSkipUpdateCount: testFetchSkipUpdateCount,
+		client:  rc,
+		logger:  nopLogger,
+		metrics: xdsMetrics,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -155,6 +156,9 @@ func TestPollingRefreshSkipUpdate(t *testing.T) {
 	case <-ch:
 		require.Fail(t, "no update expected")
 	}
+
+	metrics.Unregister()
+	refreshMetrics.Unregister()
 }
 
 func TestPollingRefreshAttachesGroupMetadata(t *testing.T) {
@@ -167,13 +171,18 @@ func TestPollingRefreshAttachesGroupMetadata(t *testing.T) {
 			return &v3.DiscoveryResponse{}, nil
 		},
 	}
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := newDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	xdsMetrics, ok := metrics.(*xdsMetrics)
+	require.True(t, ok)
+
 	pd := &fetchDiscovery{
-		source:               source,
-		client:               rc,
-		logger:               nopLogger,
-		fetchDuration:        testFetchDuration,
-		fetchFailuresCount:   testFetchFailuresCount,
-		fetchSkipUpdateCount: testFetchSkipUpdateCount,
+		source: source,
+		client: rc,
+		logger: nopLogger,
 		parseResources: constantResourceParser([]model.LabelSet{
 			{
 				"__meta_custom_xds_label": "a-value",
@@ -186,6 +195,7 @@ func TestPollingRefreshAttachesGroupMetadata(t *testing.T) {
 				"instance":                "prometheus-02",
 			},
 		}, nil),
+		metrics: xdsMetrics,
 	}
 	ch := make(chan []*targetgroup.Group, 1)
 	pd.poll(context.Background(), ch)
@@ -202,6 +212,9 @@ func TestPollingRefreshAttachesGroupMetadata(t *testing.T) {
 	target2 := group.Targets[1]
 	require.Contains(t, target2, model.LabelName("__meta_custom_xds_label"))
 	require.Equal(t, model.LabelValue("a-value"), target2["__meta_custom_xds_label"])
+
+	metrics.Unregister()
+	refreshMetrics.Unregister()
 }
 
 func TestPollingDisappearingTargets(t *testing.T) {
@@ -243,14 +256,23 @@ func TestPollingDisappearingTargets(t *testing.T) {
 		}, nil
 	}
 
+	cfg := &SDConfig{}
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+
+	xdsMetrics, ok := metrics.(*xdsMetrics)
+	if !ok {
+		require.Fail(t, "invalid discovery metrics type")
+	}
+
 	pd := &fetchDiscovery{
-		source:               source,
-		client:               rc,
-		logger:               nopLogger,
-		fetchDuration:        testFetchDuration,
-		fetchFailuresCount:   testFetchFailuresCount,
-		fetchSkipUpdateCount: testFetchSkipUpdateCount,
-		parseResources:       parser,
+		source:         source,
+		client:         rc,
+		logger:         nopLogger,
+		parseResources: parser,
+		metrics:        xdsMetrics,
 	}
 
 	ch := make(chan []*targetgroup.Group, 1)
@@ -271,4 +293,7 @@ func TestPollingDisappearingTargets(t *testing.T) {
 
 	require.Equal(t, source, groups[0].Source)
 	require.Len(t, groups[0].Targets, 1)
+
+	metrics.Unregister()
+	refreshMetrics.Unregister()
 }

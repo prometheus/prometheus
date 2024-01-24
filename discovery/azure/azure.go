@@ -120,12 +120,17 @@ type SDConfig struct {
 	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
 }
 
+// NewDiscovererMetrics implements discovery.Config.
+func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return newDiscovererMetrics(reg, rmi)
+}
+
 // Name returns the name of the Config.
 func (*SDConfig) Name() string { return "azure" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger, opts.Registerer)
+	return NewDiscovery(c, opts.Logger, opts.Metrics)
 }
 
 func validateAuthParam(param, name string) error {
@@ -168,45 +173,39 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 type Discovery struct {
 	*refresh.Discovery
-	logger        log.Logger
-	cfg           *SDConfig
-	port          int
-	cache         *cache.Cache[string, *armnetwork.Interface]
-	failuresCount prometheus.Counter
-	cacheHitCount prometheus.Counter
+	logger  log.Logger
+	cfg     *SDConfig
+	port    int
+	cache   *cache.Cache[string, *armnetwork.Interface]
+	metrics *azureMetrics
 }
 
 // NewDiscovery returns a new AzureDiscovery which periodically refreshes its targets.
-func NewDiscovery(cfg *SDConfig, logger log.Logger, reg prometheus.Registerer) (*Discovery, error) {
+func NewDiscovery(cfg *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+	m, ok := metrics.(*azureMetrics)
+	if !ok {
+		return nil, fmt.Errorf("invalid discovery metrics type")
+	}
+
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 	l := cache.New(cache.AsLRU[string, *armnetwork.Interface](lru.WithCapacity(5000)))
 	d := &Discovery{
-		cfg:    cfg,
-		port:   cfg.Port,
-		logger: logger,
-		cache:  l,
-		failuresCount: prometheus.NewCounter(
-			prometheus.CounterOpts{
-				Name: "prometheus_sd_azure_failures_total",
-				Help: "Number of Azure service discovery refresh failures.",
-			}),
-		cacheHitCount: prometheus.NewCounter(
-			prometheus.CounterOpts{
-				Name: "prometheus_sd_azure_cache_hit_total",
-				Help: "Number of cache hit during refresh.",
-			}),
+		cfg:     cfg,
+		port:    cfg.Port,
+		logger:  logger,
+		cache:   l,
+		metrics: m,
 	}
 
 	d.Discovery = refresh.NewDiscovery(
 		refresh.Options{
-			Logger:   logger,
-			Mech:     "azure",
-			Interval: time.Duration(cfg.RefreshInterval),
-			RefreshF: d.refresh,
-			Registry: reg,
-			Metrics:  []prometheus.Collector{d.failuresCount, d.cacheHitCount},
+			Logger:              logger,
+			Mech:                "azure",
+			Interval:            time.Duration(cfg.RefreshInterval),
+			RefreshF:            d.refresh,
+			MetricsInstantiator: m.refreshMetrics,
 		},
 	)
 
@@ -333,14 +332,14 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	client, err := createAzureClient(*d.cfg)
 	if err != nil {
-		d.failuresCount.Inc()
+		d.metrics.failuresCount.Inc()
 		return nil, fmt.Errorf("could not create Azure client: %w", err)
 	}
 	client.logger = d.logger
 
 	machines, err := client.getVMs(ctx, d.cfg.ResourceGroup)
 	if err != nil {
-		d.failuresCount.Inc()
+		d.metrics.failuresCount.Inc()
 		return nil, fmt.Errorf("could not get virtual machines: %w", err)
 	}
 
@@ -349,14 +348,14 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	// Load the vms managed by scale sets.
 	scaleSets, err := client.getScaleSets(ctx, d.cfg.ResourceGroup)
 	if err != nil {
-		d.failuresCount.Inc()
+		d.metrics.failuresCount.Inc()
 		return nil, fmt.Errorf("could not get virtual machine scale sets: %w", err)
 	}
 
 	for _, scaleSet := range scaleSets {
 		scaleSetVms, err := client.getScaleSetVMs(ctx, scaleSet)
 		if err != nil {
-			d.failuresCount.Inc()
+			d.metrics.failuresCount.Inc()
 			return nil, fmt.Errorf("could not get virtual machine scale set vms: %w", err)
 		}
 		machines = append(machines, scaleSetVms...)
@@ -407,7 +406,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 				var networkInterface *armnetwork.Interface
 				if v, ok := d.getFromCache(nicID); ok {
 					networkInterface = v
-					d.cacheHitCount.Add(1)
+					d.metrics.cacheHitCount.Add(1)
 				} else {
 					if vm.ScaleSet == "" {
 						networkInterface, err = client.getVMNetworkInterfaceByID(ctx, nicID)
@@ -480,7 +479,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	var tg targetgroup.Group
 	for tgt := range ch {
 		if tgt.err != nil {
-			d.failuresCount.Inc()
+			d.metrics.failuresCount.Inc()
 			return nil, fmt.Errorf("unable to complete Azure service discovery: %w", tgt.err)
 		}
 		if tgt.labelSet != nil {
