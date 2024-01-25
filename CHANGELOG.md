@@ -1,9 +1,8 @@
 # Changelog
 
-## unreleased
+## 2.49.1 / 2024-01-15
 
-* [ENHANCEMENT] TSDB: Make the wlog watcher read segments synchronously when not tailing. #13224
-* [BUGFIX] Agent: Participate in notify calls. #13223
+* [BUGFIX] TSDB: Fixed a wrong `q=` value in scrape accept header #13313
 
 ## 2.49.0 / 2024-01-15
 
