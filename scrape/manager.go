@@ -205,6 +205,7 @@ func (m *Manager) reload() {
 		}
 
 		wg.Add(1)
+
 		// Run the sync in parallel as these take a while and at high load can't catch up.
 		go func(sp *scrapePool, groups []*targetgroup.Group) {
 			sp.Sync(groups)
@@ -213,6 +214,21 @@ func (m *Manager) reload() {
 	}
 	m.mtxScrape.Unlock()
 	wg.Wait()
+
+	activeTargets := make(map[uint64]*Target)
+	for _, scrapePool := range m.scrapePools {
+		for _, target := range scrapePool.activeTargets {
+			if t, ok := activeTargets[target.labels.Hash()]; ok {
+				level.Warn(m.logger).Log(
+					"msg", "Found targets with same labels after relabelling",
+					"target", t.URL().String(),
+					"target", target.URL().String(),
+				)
+			}
+			activeTargets[target.labels.Hash()] = target
+		}
+	}
+
 }
 
 // setOffsetSeed calculates a global offsetSeed per server relying on extra label set.
