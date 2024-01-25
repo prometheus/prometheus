@@ -78,6 +78,24 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'adelta',
+    detail: 'function',
+    info: 'Calculate the non extrapolated difference between beginning and end of a range vector (for gauges)',
+    type: 'function',
+  },
+  {
+    label: 'aincrease',
+    detail: 'function',
+    info: 'Calculate the non extrapolated increase in value over a range of time (for counters)',
+    type: 'function',
+  },
+  {
+    label: 'arate',
+    detail: 'function',
+    info: 'Calculate the non extrapolated per-second increase over a range vector (for counters)',
+    type: 'function',
+  },
+  {
     label: 'asin',
     detail: 'function',
     info: 'Calculate the arcsine, in radians, for input series',

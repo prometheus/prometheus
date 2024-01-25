@@ -76,6 +76,37 @@ absent_over_time(sum(nonexistent{job="myjob"})[1h:])
 In the first two examples, `absent_over_time()` tries to be smart about deriving
 labels of the 1-element output vector from the input vector.
 
+## `adelta()`
+
+`adelta(v range-vector)` calculates the difference between the last and the first samples
+in the range vector `v`, returning an instant vector with the given deltas and
+equivalent labels. It does not extrapolate values at boundaries as `delta()` does.
+
+`adelta` should only be used with gauges.
+
+See `delta()` for more details.
+
+## `aincrease()`
+
+`aincrease(v range-vector)` calculates the increase in the time series in the range vector.
+It does not extrapolate values at boundaries as `increase()` does.
+
+`aincrease` should only be used with counters and native histograms where the
+components behave like counters.
+
+See `increase()` for more details.
+
+## `arate()`
+
+`arate(v range-vector)` calculates the per-second average rate of increase of the
+time series in the range vector. It does not extrapolate at boundaries values
+as `rate()` does.
+
+`arate` should only be used with counters and native histograms where the
+components behave like counters.
+
+See `rate()` for more details.
+
 ## `ceil()`
 
 `ceil(v instant-vector)` rounds the sample values of all elements in `v` up to

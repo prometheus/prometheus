@@ -1,4 +1,5 @@
 # Testdata for resets() and changes().
+#
 load 5m
 	http_requests{path="/foo"}	1 2 3 0 1 0 0 1 2 0
 	http_requests{path="/bar"}	1 2 3 4 5 1 2 3 4 5
@@ -67,19 +68,26 @@ eval instant at 15m changes(x[15m])
 
 clear
 
-# Tests for increase().
-load 5m
-	http_requests{path="/foo"}	0+10x10
-	http_requests{path="/bar"}	0+10x5 0+10x5
+# Tests for increase()/aincrease().
+load 15s
+	http_requests{path="/foo"}	0x40 0+1x20 20x40
+	http_requests{path="/bar"}	0x40 0+1x10 0+1x10 10x40
 
-# Tests for increase().
-eval instant at 50m increase(http_requests[50m])
-	{path="/foo"} 100
-	{path="/bar"}  90
+eval instant at 21m5s increase(http_requests[15m])
+	{path="/foo"} 20.112994350282488
+	{path="/bar"} 20.112994350282488
 
-eval instant at 50m increase(http_requests[100m])
-	{path="/foo"} 100
-	{path="/bar"}  90
+eval instant at 21m5s increase(http_requests[100m])
+	{path="/foo"} 20.07936507936508
+	{path="/bar"} 20.07936507936508
+
+eval instant at 21m5s aincrease(http_requests[15m])
+	{path="/foo"} 20
+	{path="/bar"} 20
+
+eval instant at 21m5s aincrease(http_requests[100m])
+	{path="/foo"} 20
+	{path="/bar"} 20
 
 clear
 
@@ -101,11 +109,17 @@ load 5m
 	testcounter_reset_end    	0+10x9 0 10
 
 # Counter resets at in the middle of range are handled correctly by rate().
-eval instant at 50m rate(testcounter_reset_middle[50m])
-	{} 0.03
+eval instant at 51m rate(testcounter_reset_middle[50m])
+	{} 0.02962962962962963
+
+eval instant at 51m arate(testcounter_reset_middle[50m])
+	{} 0.0266666666666666
 
 # Counter resets at end of range are ignored by rate().
 eval instant at 50m rate(testcounter_reset_end[5m])
+	{} 0
+
+eval instant at 50m arate(testcounter_reset_end[5m])
 	{} 0
 
 clear
@@ -169,14 +183,18 @@ eval instant at 30m irate(http_requests[50m])
 
 clear
 
-# Tests for delta().
-load 5m
-	http_requests{path="/foo"}	0 50 100 150 200
-	http_requests{path="/bar"}	200 150 100 50 0
+# Tests for delta()/adelta().
+load 15s
+	http_requests{path="/foo"}	0x40 0+1x20 20x40
+	http_requests{path="/bar"}	20x40 20-1x20 0x40
 
-eval instant at 20m delta(http_requests[20m])
-	{path="/foo"} 200
-	{path="/bar"} -200
+eval instant at 21m5s delta(http_requests[15m])
+	{path="/foo"} 20.338983050847457
+	{path="/bar"} -20.338983050847457
+
+eval instant at 21m5s adelta(http_requests[15m])
+	{path="/foo"} 20
+	{path="/bar"} -20
 
 clear
 
