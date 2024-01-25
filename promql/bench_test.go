@@ -20,7 +20,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"unsafe"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -64,6 +63,9 @@ func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *Engine, interval,
 	}
 	refs := make([]storage.SeriesRef, len(metrics))
 
+	// Number points for each different label value of "l" for the sparse series
+	pointsPerSparseSeries := numIntervals / 50
+
 	for s := 0; s < numIntervals; s++ {
 		a := stor.Appender(context.Background())
 		ts := int64(s * interval)
@@ -71,10 +73,9 @@ func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *Engine, interval,
 			ref, _ := a.Append(refs[i], metric, ts, float64(s)+float64(i)/float64(len(metrics)))
 			refs[i] = ref
 		}
-		// Generating a sparse time series named "sparse" with multiple label values for the label "l".
-		// Each label value of "l" will contain data only for a subset of the test time range, resulting in sparse series.
-		// The "sparse" series differ from the previous series as the latter contain data for the entire test time range.
-		metric := labels.FromStrings("__name__", "sparse", "l", strconv.Itoa(s/(numIntervals/50)))
+		// Generating a sparse time series: each label value of "l" will contain data only for
+		// pointsPerSparseSeries points
+		metric := labels.FromStrings("__name__", "sparse", "l", strconv.Itoa(s/pointsPerSparseSeries))
 		_, err := a.Append(0, metric, ts, float64(s)/float64(len(metrics)))
 		if err != nil {
 			return err
@@ -266,9 +267,6 @@ func BenchmarkRangeQuery(b *testing.B) {
 	}
 	cases := rangeQueryCases()
 
-	fPointSize := int(unsafe.Sizeof(FPoint{}))
-	hPointSize := int(unsafe.Sizeof(HPoint{}))
-
 	for _, c := range cases {
 		name := fmt.Sprintf("expr=%s,steps=%d", c.expr, c.steps)
 		b.Run(name, func(b *testing.B) {
@@ -286,17 +284,6 @@ func BenchmarkRangeQuery(b *testing.B) {
 				if res.Err != nil {
 					b.Fatal(res.Err)
 				}
-				m, err := res.Matrix()
-				if err != nil {
-					b.Fatal(res.Err)
-				}
-				inMemoryBytes := 0
-				for _, s := range m {
-					inMemoryBytes += cap(s.Floats) * fPointSize
-					inMemoryBytes += cap(s.Histograms) * hPointSize
-				}
-
-				b.ReportMetric(float64(inMemoryBytes), "QueryInMemoryBytes")
 				qry.Close()
 			}
 		})
