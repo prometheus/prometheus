@@ -45,6 +45,7 @@ import {
   HistogramStdDev,
   HistogramStdVar,
   HistogramSum,
+  HistogramAvg,
   HoltWinters,
   Hour,
   Idelta,
@@ -301,6 +302,12 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
   },
   [HistogramSum]: {
     name: 'histogram_sum',
+    argTypes: [ValueType.vector],
+    variadic: 0,
+    returnType: ValueType.vector,
+  },
+  [HistogramAvg]: {
+    name: 'histogram_avg',
     argTypes: [ValueType.vector],
     variadic: 0,
     returnType: ValueType.vector,

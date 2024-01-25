@@ -177,6 +177,11 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
 	},
+	"histogram_avg": {
+		Name:       "histogram_avg",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		ReturnType: ValueTypeVector,
+	},
 	"histogram_stddev": {
 		Name:       "histogram_stddev",
 		ArgTypes:   []ValueType{ValueTypeVector},

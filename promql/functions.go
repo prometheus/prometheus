@@ -1081,6 +1081,23 @@ func funcHistogramSum(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	return enh.Out, nil
 }
 
+// === histogram_avg(Vector parser.ValueTypeVector) (Vector, Annotations) ===
+func funcHistogramAvg(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	inVec := vals[0].(Vector)
+
+	for _, sample := range inVec {
+		// Skip non-histogram samples.
+		if sample.H == nil {
+			continue
+		}
+		enh.Out = append(enh.Out, Sample{
+			Metric: sample.Metric.DropMetricName(),
+			F:      sample.H.Sum / sample.H.Count,
+		})
+	}
+	return enh.Out, nil
+}
+
 // === histogram_stddev(Vector parser.ValueTypeVector) (Vector, Annotations)  ===
 func funcHistogramStdDev(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	inVec := vals[0].(Vector)
@@ -1536,6 +1553,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"histogram_fraction": funcHistogramFraction,
 	"histogram_quantile": funcHistogramQuantile,
 	"histogram_sum":      funcHistogramSum,
+	"histogram_avg":      funcHistogramAvg,
 	"histogram_stddev":   funcHistogramStdDev,
 	"histogram_stdvar":   funcHistogramStdVar,
 	"holt_winters":       funcHoltWinters,

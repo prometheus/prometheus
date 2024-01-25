@@ -193,12 +193,19 @@ Use `histogram_count` in the following way to calculate a rate of observations
 
     histogram_count(rate(http_request_duration_seconds[10m]))
 
-The additional use of `histogram_sum` enables the calculation of the average of
-observed values (in this case corresponding to “average request duration”):
+## `histogram_avg()`
+_This function only acts on native histograms, which are an experimental
+feature. The behavior of this function may change in future versions of
+Prometheus, including its removal from PromQL._
 
-      histogram_sum(rate(http_request_duration_seconds[10m]))
-	/
-      histogram_count(rate(http_request_duration_seconds[10m]))
+`histogram_avg(v instant-vector)` returns the arithmetic average of observed values stored in
+a native histogram. Samples that are not native histograms are ignored and do
+not show up in the returned vector.
+
+Use `histogram_avg` as demonstrated below to compute the average request duration
+over a 5-minute window from a native histogram:
+
+    histogram_avg(rate(http_request_duration_seconds[5m]))
 
 ## `histogram_fraction()`
 
