@@ -15,6 +15,7 @@ package remote
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"sync"
@@ -66,6 +67,7 @@ type WriteStorage struct {
 	dir               string
 	queues            map[string]*QueueManager
 	rwFormat          RemoteWriteFormat
+	metadataInWAL     bool
 	samplesIn         *ewmaRate
 	flushDeadline     time.Duration
 	interner          *pool
@@ -77,7 +79,7 @@ type WriteStorage struct {
 }
 
 // NewWriteStorage creates and runs a WriteStorage.
-func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager, rwFormat RemoteWriteFormat) *WriteStorage {
+func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager, rwFormat RemoteWriteFormat, metadataInWal bool) *WriteStorage {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -147,6 +149,10 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 	newQueues := make(map[string]*QueueManager)
 	newHashes := []string{}
 	for _, rwConf := range conf.RemoteWriteConfigs {
+		// todo: change the rws.rwFormat to a queue config field
+		if rws.rwFormat > Version1 && rws.metadataInWAL {
+			return errors.New("invalid remote write configuration, if you are using remote write version 2.0 then the feature flag for metadata records in the WAL must be enabled")
+		}
 		hash, err := toHash(rwConf)
 		if err != nil {
 			return err

@@ -46,7 +46,7 @@ func TestRemoteWriteHandler(t *testing.T) {
 
 	appendable := &mockAppendable{}
 	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Base1)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version1)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -94,7 +94,7 @@ func TestRemoteWriteHandlerMinimizedFormat(t *testing.T) {
 
 	appendable := &mockAppendable{}
 	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(nil, nil, appendable, MinStrings)
+	handler := NewWriteHandler(nil, nil, appendable, Version2)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -107,30 +107,32 @@ func TestRemoteWriteHandlerMinimizedFormat(t *testing.T) {
 	k := 0
 	// the reduced write request is equivalent to the write request fixture.
 	// we can use it for
-	for _, ts := range writeRequestFixture.Timeseries {
-		ls := labelProtosToLabels(ts.Labels)
+	for _, ts := range writeRequestMinimizedFixture.Timeseries {
+		ls := labelProtosV2ToLabels(ts.LabelsRefs, writeRequestMinimizedFixture.Symbols)
 		for _, s := range ts.Samples {
 			require.Equal(t, mockSample{ls, s.Timestamp, s.Value}, appendable.samples[i])
 			i++
 		}
 
 		for _, e := range ts.Exemplars {
-			exemplarLabels := labelProtosToLabels(e.Labels)
+			exemplarLabels := labelProtosV2ToLabels(e.LabelsRefs, writeRequestMinimizedFixture.Symbols)
 			require.Equal(t, mockExemplar{ls, exemplarLabels, e.Timestamp, e.Value}, appendable.exemplars[j])
 			j++
 		}
 
 		for _, hp := range ts.Histograms {
 			if hp.IsFloatHistogram() {
-				fh := FloatHistogramProtoToFloatHistogram(hp)
+				fh := FloatHistogramProtoV2ToFloatHistogram(hp)
 				require.Equal(t, mockHistogram{ls, hp.Timestamp, nil, fh}, appendable.histograms[k])
 			} else {
-				h := HistogramProtoToHistogram(hp)
+				h := HistogramProtoV2ToHistogram(hp)
 				require.Equal(t, mockHistogram{ls, hp.Timestamp, h, nil}, appendable.histograms[k])
 			}
 
 			k++
 		}
+
+		// todo: check for metadata
 	}
 }
 
@@ -148,7 +150,7 @@ func TestOutOfOrderSample(t *testing.T) {
 		latestSample: 100,
 	}
 	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Base1)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version1)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -174,7 +176,7 @@ func TestOutOfOrderExemplar(t *testing.T) {
 		latestExemplar: 100,
 	}
 	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Base1)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version1)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -198,7 +200,7 @@ func TestOutOfOrderHistogram(t *testing.T) {
 		latestHistogram: 100,
 	}
 	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Base1)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version1)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -227,7 +229,7 @@ func BenchmarkRemoteWritehandler(b *testing.B) {
 
 	appendable := &mockAppendable{}
 	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Base1)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version1)
 	recorder := httptest.NewRecorder()
 
 	b.ResetTimer()
@@ -247,7 +249,7 @@ func TestCommitErr(t *testing.T) {
 		commitErr: fmt.Errorf("commit error"),
 	}
 	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Base1)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version1)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -273,7 +275,7 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 		require.NoError(b, db.Close())
 	})
 	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(log.NewNopLogger(), nil, db.Head(), Base1)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, db.Head(), Version1)
 
 	buf, _, err := buildWriteRequest(genSeriesWithSample(1000, 200*time.Minute.Milliseconds()), nil, nil, nil)
 	require.NoError(b, err)
@@ -390,7 +392,7 @@ func (m *mockAppendable) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t
 	return 0, nil
 }
 
-func (m *mockAppendable) UpdateMetadata(_ storage.SeriesRef, _ labels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
+func (m *mockAppendable) UpdateMetadata(_ storage.SeriesRef, l labels.Labels, mp metadata.Metadata) (storage.SeriesRef, error) {
 	// TODO: Wire metadata in a mockAppendable field when we get around to handling metadata in remote_write.
 	// UpdateMetadata is no-op for remote write (where mockAppendable is being used to test) for now.
 	return 0, nil

@@ -78,9 +78,9 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// TODO: this should eventually be done via content negotiation/looking at the header
 	switch h.rwFormat {
-	case Base1:
+	case Version1:
 		req, err = DecodeWriteRequest(r.Body)
-	case MinStrings:
+	case Version2:
 		reqMinStr, err = DecodeMinimizedWriteRequestStr(r.Body)
 	}
 
@@ -92,9 +92,9 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// TODO: this should eventually be done detecting the format version above
 	switch h.rwFormat {
-	case Base1:
+	case Version1:
 		err = h.write(r.Context(), req)
-	case MinStrings:
+	case Version2:
 		err = h.writeMinStr(r.Context(), reqMinStr)
 	}
 
@@ -348,7 +348,7 @@ func (h *writeHandler) writeMinStr(ctx context.Context, req *writev2.WriteReques
 	}()
 
 	for _, ts := range req.Timeseries {
-		ls := Uint32StrRefToLabels(req.Symbols, ts.LabelsRefs)
+		ls := labelProtosV2ToLabels(ts.LabelsRefs, req.Symbols)
 
 		err := h.appendMinSamples(app, ts.Samples, ls)
 		if err != nil {
@@ -356,7 +356,7 @@ func (h *writeHandler) writeMinStr(ctx context.Context, req *writev2.WriteReques
 		}
 
 		for _, ep := range ts.Exemplars {
-			e := minExemplarProtoToExemplar(ep, req.Symbols)
+			e := exemplarProtoV2ToExemplar(ep, req.Symbols)
 			h.appendExemplar(app, e, ls, &outOfOrderExemplarErrs)
 		}
 
@@ -364,6 +364,12 @@ func (h *writeHandler) writeMinStr(ctx context.Context, req *writev2.WriteReques
 		if err != nil {
 			return err
 		}
+
+		m := metadataProtoV2ToMetadata(ts.Metadata, req.Symbols)
+		if _, err = app.UpdateMetadata(0, ls, m); err != nil {
+			level.Debug(h.logger).Log("msg", "error while updating metadata from remote write", "err", err)
+		}
+
 	}
 
 	if outOfOrderExemplarErrs > 0 {

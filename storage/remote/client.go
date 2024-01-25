@@ -211,7 +211,7 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) error {
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
 	httpReq.Header.Set("User-Agent", UserAgent)
 
-	if c.rwFormat == Base1 {
+	if c.rwFormat == Version1 {
 		httpReq.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion1HeaderValue)
 	} else {
 		// Set the right header if we're using v1.1 remote write protocol

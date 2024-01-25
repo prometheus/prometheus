@@ -204,3 +204,10 @@ Enables ingestion of created timestamp. Created timestamps are injected as 0 val
 Currently Prometheus supports created timestamps only on the traditional Prometheus Protobuf protocol (WIP for other protocols). As a result, when enabling this feature, the Prometheus protobuf scrape protocol will be prioritized (See `scrape_config.scrape_protocols` settings for more details).
 
 Besides enabling this feature in Prometheus, created timestamps need to be exposed by the application being scraped.
+
+## Metadata WAL Records
+`--enable-features=metadata-wal-records`
+
+When enabled, Prometheus will store metadata in-memory and keep track of
+metadata changes as WAL records on a per-series basis. This must be used if
+you are also using remote write 2.0 as it will only gather metadata from the WAL.

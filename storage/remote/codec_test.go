@@ -898,7 +898,7 @@ func (c *mockChunkIterator) Err() error {
 func TestStrFormat(t *testing.T) {
 	r := newRwSymbolTable()
 	ls := labels.FromStrings("asdf", "qwer", "zxcv", "1234")
-	encoded := labelsToUint32SliceStr(ls, &r, nil)
-	decoded := Uint32StrRefToLabels(r.LabelsStrings(), encoded)
+	encoded := labelsToLabelsProtoV2Refs(ls, &r, nil)
+	decoded := labelProtosV2ToLabels(encoded, r.LabelsStrings())
 	require.Equal(t, ls, decoded)
 }

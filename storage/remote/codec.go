@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/write/v2"
 	"github.com/prometheus/prometheus/storage"
@@ -628,14 +629,22 @@ func exemplarProtoToExemplar(ep prompb.Exemplar) exemplar.Exemplar {
 	}
 }
 
-func minExemplarProtoToExemplar(ep writev2.Exemplar, symbols []string) exemplar.Exemplar {
+func exemplarProtoV2ToExemplar(ep writev2.Exemplar, symbols []string) exemplar.Exemplar {
 	timestamp := ep.Timestamp
 
 	return exemplar.Exemplar{
-		Labels: Uint32StrRefToLabels(symbols, ep.LabelsRefs),
+		Labels: labelProtosV2ToLabels(ep.LabelsRefs, symbols),
 		Value:  ep.Value,
 		Ts:     timestamp,
 		HasTs:  timestamp != 0,
+	}
+}
+
+func metadataProtoV2ToMetadata(mp writev2.Metadata, symbols []string) metadata.Metadata {
+	return metadata.Metadata{
+		Type: metricTypeFromProtoV2Equivalent(mp.Type),
+		Unit: symbols[mp.UnitRef],
+		Help: symbols[mp.HelpRef],
 	}
 }
 
@@ -660,6 +669,27 @@ func HistogramProtoToHistogram(hp prompb.Histogram) *histogram.Histogram {
 	}
 }
 
+// HistogramProtoV2ToHistogram extracts a (normal integer) Histogram from the
+// provided proto message. The caller has to make sure that the proto message
+// represents an integer histogram and not a float histogram, or it panics.
+func HistogramProtoV2ToHistogram(hp writev2.Histogram) *histogram.Histogram {
+	if hp.IsFloatHistogram() {
+		panic("HistogramProtoToHistogram called with a float histogram")
+	}
+	return &histogram.Histogram{
+		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
+		Schema:           hp.Schema,
+		ZeroThreshold:    hp.ZeroThreshold,
+		ZeroCount:        hp.GetZeroCountInt(),
+		Count:            hp.GetCountInt(),
+		Sum:              hp.Sum,
+		PositiveSpans:    spansProtoV2ToSpans(hp.GetPositiveSpans()),
+		PositiveBuckets:  hp.GetPositiveDeltas(),
+		NegativeSpans:    spansProtoV2ToSpans(hp.GetNegativeSpans()),
+		NegativeBuckets:  hp.GetNegativeDeltas(),
+	}
+}
+
 // FloatHistogramProtoToFloatHistogram extracts a float Histogram from the
 // provided proto message to a Float Histogram. The caller has to make sure that
 // the proto message represents a float histogram and not an integer histogram,
@@ -678,6 +708,28 @@ func FloatHistogramProtoToFloatHistogram(hp prompb.Histogram) *histogram.FloatHi
 		PositiveSpans:    spansProtoToSpans(hp.GetPositiveSpans()),
 		PositiveBuckets:  hp.GetPositiveCounts(),
 		NegativeSpans:    spansProtoToSpans(hp.GetNegativeSpans()),
+		NegativeBuckets:  hp.GetNegativeCounts(),
+	}
+}
+
+// FloatHistogramProtoV2ToFloatHistogram extracts a float Histogram from the
+// provided proto message to a Float Histogram. The caller has to make sure that
+// the proto message represents a float histogram and not an integer histogram,
+// or it panics.
+func FloatHistogramProtoV2ToFloatHistogram(hp writev2.Histogram) *histogram.FloatHistogram {
+	if !hp.IsFloatHistogram() {
+		panic("FloatHistogramProtoToFloatHistogram called with an integer histogram")
+	}
+	return &histogram.FloatHistogram{
+		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
+		Schema:           hp.Schema,
+		ZeroThreshold:    hp.ZeroThreshold,
+		ZeroCount:        hp.GetZeroCountFloat(),
+		Count:            hp.GetCountFloat(),
+		Sum:              hp.Sum,
+		PositiveSpans:    spansProtoV2ToSpans(hp.GetPositiveSpans()),
+		PositiveBuckets:  hp.GetPositiveCounts(),
+		NegativeSpans:    spansProtoV2ToSpans(hp.GetNegativeSpans()),
 		NegativeBuckets:  hp.GetNegativeCounts(),
 	}
 }
@@ -714,9 +766,9 @@ func FloatMinHistogramProtoToFloatHistogram(hp writev2.Histogram) *histogram.Flo
 		ZeroCount:        hp.GetZeroCountFloat(),
 		Count:            hp.GetCountFloat(),
 		Sum:              hp.Sum,
-		PositiveSpans:    minSpansProtoToSpans(hp.GetPositiveSpans()),
+		PositiveSpans:    spansProtoV2ToSpans(hp.GetPositiveSpans()),
 		PositiveBuckets:  hp.GetPositiveCounts(),
-		NegativeSpans:    minSpansProtoToSpans(hp.GetNegativeSpans()),
+		NegativeSpans:    spansProtoV2ToSpans(hp.GetNegativeSpans()),
 		NegativeBuckets:  hp.GetNegativeCounts(),
 	}
 }
@@ -735,9 +787,9 @@ func MinHistogramProtoToHistogram(hp writev2.Histogram) *histogram.Histogram {
 		ZeroCount:        hp.GetZeroCountInt(),
 		Count:            hp.GetCountInt(),
 		Sum:              hp.Sum,
-		PositiveSpans:    minSpansProtoToSpans(hp.GetPositiveSpans()),
+		PositiveSpans:    spansProtoV2ToSpans(hp.GetPositiveSpans()),
 		PositiveBuckets:  hp.GetPositiveDeltas(),
-		NegativeSpans:    minSpansProtoToSpans(hp.GetNegativeSpans()),
+		NegativeSpans:    spansProtoV2ToSpans(hp.GetNegativeSpans()),
 		NegativeBuckets:  hp.GetNegativeDeltas(),
 	}
 }
@@ -751,7 +803,7 @@ func spansProtoToSpans(s []prompb.BucketSpan) []histogram.Span {
 	return spans
 }
 
-func minSpansProtoToSpans(s []writev2.BucketSpan) []histogram.Span {
+func spansProtoV2ToSpans(s []writev2.BucketSpan) []histogram.Span {
 	spans := make([]histogram.Span, len(s))
 	for i := 0; i < len(s); i++ {
 		spans[i] = histogram.Span{Offset: s[i].Offset, Length: s[i].Length}
@@ -870,6 +922,17 @@ func labelProtosToLabels(labelPairs []prompb.Label) labels.Labels {
 	return b.Labels()
 }
 
+// labelProtosV2ToLabels transforms v2 proto labels references, which are uint32 values, into labels via
+// indexing into the symbols slice.
+func labelProtosV2ToLabels(labelRefs []uint32, symbols []string) labels.Labels {
+	b := labels.ScratchBuilder{}
+	for i := 0; i < len(labelRefs); i += 2 {
+		b.Add(symbols[labelRefs[i]], symbols[labelRefs[i+1]])
+	}
+	b.Sort()
+	return b.Labels()
+}
+
 // labelsToLabelsProto transforms labels into prompb labels. The buffer slice
 // will be used to avoid allocations if it is big enough to store the labels.
 func labelsToLabelsProto(lbls labels.Labels, buf []prompb.Label) []prompb.Label {
@@ -883,8 +946,7 @@ func labelsToLabelsProto(lbls labels.Labels, buf []prompb.Label) []prompb.Label 
 	return result
 }
 
-// TODO.
-func labelsToUint32SliceStr(lbls labels.Labels, symbolTable *rwSymbolTable, buf []uint32) []uint32 {
+func labelsToLabelsProtoV2Refs(lbls labels.Labels, symbolTable *rwSymbolTable, buf []uint32) []uint32 {
 	result := buf[:0]
 	lbls.Range(func(l labels.Label) {
 		off := symbolTable.RefStr(l.Name)
@@ -893,24 +955,6 @@ func labelsToUint32SliceStr(lbls labels.Labels, symbolTable *rwSymbolTable, buf 
 		result = append(result, off)
 	})
 	return result
-}
-
-// TODO.
-func Uint32StrRefToLabels(symbols []string, minLabels []uint32) labels.Labels {
-	ls := labels.NewScratchBuilder(len(minLabels) / 2)
-
-	strIdx := 0
-	for strIdx < len(minLabels) {
-		// todo, check for overflow?
-		nameIdx := minLabels[strIdx]
-		strIdx++
-		valueIdx := minLabels[strIdx]
-		strIdx++
-
-		ls.Add(symbols[nameIdx], symbols[valueIdx])
-	}
-
-	return ls.Labels()
 }
 
 // metricTypeToMetricTypeProto transforms a Prometheus metricType into prompb metricType. Since the former is a string we need to transform it to an enum.
@@ -922,6 +966,22 @@ func metricTypeToMetricTypeProto(t model.MetricType) prompb.MetricMetadata_Metri
 	}
 
 	return prompb.MetricMetadata_MetricType(v)
+}
+
+// metricTypeToMetricTypeProtoV2 transforms a Prometheus metricType into writev2 metricType. Since the former is a string we need to transform it to an enum.
+func metricTypeToMetricTypeProtoV2(t model.MetricType) writev2.Metadata_MetricType {
+	mt := strings.ToUpper(string(t))
+	v, ok := prompb.MetricMetadata_MetricType_value[mt]
+	if !ok {
+		return writev2.Metadata_METRIC_TYPE_UNSPECIFIED
+	}
+
+	return writev2.Metadata_MetricType(v)
+}
+
+func metricTypeFromProtoV2Equivalent(t writev2.Metadata_MetricType) model.MetricType {
+	mt := strings.ToLower(t.String())
+	return model.MetricType(mt) // TODO(@tpaschalis) a better way for this?
 }
 
 // DecodeWriteRequest from an io.Reader into a prompb.WriteRequest, handling
@@ -1024,7 +1084,7 @@ func MinimizedWriteRequestToWriteRequest(redReq *writev2.WriteRequest) (*prompb.
 	}
 
 	for i, rts := range redReq.Timeseries {
-		Uint32StrRefToLabels(redReq.Symbols, rts.LabelsRefs).Range(func(l labels.Label) {
+		labelProtosV2ToLabels(rts.LabelsRefs, redReq.Symbols).Range(func(l labels.Label) {
 			req.Timeseries[i].Labels = append(req.Timeseries[i].Labels, prompb.Label{
 				Name:  l.Name,
 				Value: l.Value,
@@ -1035,7 +1095,7 @@ func MinimizedWriteRequestToWriteRequest(redReq *writev2.WriteRequest) (*prompb.
 		for j, e := range rts.Exemplars {
 			exemplars[j].Value = e.Value
 			exemplars[j].Timestamp = e.Timestamp
-			Uint32StrRefToLabels(redReq.Symbols, e.LabelsRefs).Range(func(l labels.Label) {
+			labelProtosV2ToLabels(e.LabelsRefs, redReq.Symbols).Range(func(l labels.Label) {
 				exemplars[j].Labels = append(exemplars[j].Labels, prompb.Label{
 					Name:  l.Name,
 					Value: l.Value,
