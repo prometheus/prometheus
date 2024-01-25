@@ -1024,8 +1024,8 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 				globalURL, err := getGlobalURL(target.URL(), api.globalURLOptions)
 
 				res.ActiveTargets = append(res.ActiveTargets, &Target{
-					DiscoveredLabels: target.DiscoveredLabels().Labels(),
-					Labels:           target.Labels().Labels(),
+					DiscoveredLabels: target.DiscoveredLabels(),
+					Labels:           target.Labels(),
 					ScrapePool:       key,
 					ScrapeURL:        target.URL().String(),
 					GlobalURL:        globalURL.String(),
@@ -1063,7 +1063,7 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 			}
 			for _, target := range targetsDropped[key] {
 				res.DroppedTargets = append(res.DroppedTargets, &DroppedTarget{
-					DiscoveredLabels: target.DiscoveredLabels().Labels(),
+					DiscoveredLabels: target.DiscoveredLabels(),
 				})
 			}
 		}
