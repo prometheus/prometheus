@@ -1076,7 +1076,7 @@ type EvalNodeHelper struct {
 	Out Vector
 
 	// Caches.
-	// DropMetricName and label_*.
+	// label_*.
 	Dmn map[uint64]labels.Labels
 	// funcHistogramQuantile for classic histograms.
 	signatureToMetricWithBuckets map[string]*metricWithBuckets
@@ -1099,21 +1099,6 @@ func (enh *EvalNodeHelper) resetBuilder(lbls labels.Labels) {
 	} else {
 		enh.lb.Reset(lbls)
 	}
-}
-
-// DropMetricName is a cached version of DropMetricName.
-func (enh *EvalNodeHelper) DropMetricName(l labels.Labels) labels.Labels {
-	if enh.Dmn == nil {
-		enh.Dmn = make(map[uint64]labels.Labels, len(enh.Out))
-	}
-	h := l.Hash()
-	ret, ok := enh.Dmn[h]
-	if ok {
-		return ret
-	}
-	ret = dropMetricName(l)
-	enh.Dmn[h] = ret
-	return ret
 }
 
 // rangeEval evaluates the given expressions, and then for each step calls
@@ -1492,7 +1477,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 			// vector functions, the only change needed is to drop the
 			// metric name in the output.
 			if e.Func.Name != "last_over_time" {
-				metric = dropMetricName(metric)
+				metric = metric.DropMetricName()
 			}
 			ss := Series{
 				Metric: metric,
@@ -1624,7 +1609,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 		mat := val.(Matrix)
 		if e.Op == parser.SUB {
 			for i := range mat {
-				mat[i].Metric = dropMetricName(mat[i].Metric)
+				mat[i].Metric = mat[i].Metric.DropMetricName()
 				for j := range mat[i].Floats {
 					mat[i].Floats[j].F = -mat[i].Floats[j].F
 				}
@@ -2370,7 +2355,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 		}
 		metric := resultMetric(ls.Metric, rs.Metric, op, matching, enh)
 		if returnBool {
-			metric = enh.DropMetricName(metric)
+			metric = metric.DropMetricName()
 		}
 		insertedSigs, exists := matchedSigs[sig]
 		if matching.Card == parser.CardOneToOne {
@@ -2492,16 +2477,12 @@ func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scala
 			lhsSample.F = float
 			lhsSample.H = histogram
 			if shouldDropMetricName(op) || returnBool {
-				lhsSample.Metric = enh.DropMetricName(lhsSample.Metric)
+				lhsSample.Metric = lhsSample.Metric.DropMetricName()
 			}
 			enh.Out = append(enh.Out, lhsSample)
 		}
 	}
 	return enh.Out
-}
-
-func dropMetricName(l labels.Labels) labels.Labels {
-	return labels.NewBuilder(l).Del(labels.MetricName).Labels()
 }
 
 // scalarBinop evaluates a binary operation between two Scalars.
