@@ -99,6 +99,7 @@ type scrapeLoopOptions struct {
 	scraper                  scraper
 	sampleLimit              int
 	bucketLimit              int
+	maxSchema                int32
 	labelLimits              *labelLimits
 	honorLabels              bool
 	honorTimestamps          bool
@@ -106,9 +107,10 @@ type scrapeLoopOptions struct {
 	interval                 time.Duration
 	timeout                  time.Duration
 	scrapeClassicHistograms  bool
-	mrc                      []*relabel.Config
-	cache                    *scrapeCache
-	enableCompression        bool
+
+	mrc               []*relabel.Config
+	cache             *scrapeCache
+	enableCompression bool
 }
 
 const maxAheadTime = 10 * time.Minute
@@ -164,15 +166,18 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 			opts.enableCompression,
 			opts.sampleLimit,
 			opts.bucketLimit,
+			opts.maxSchema,
 			opts.labelLimits,
 			opts.interval,
 			opts.timeout,
 			opts.scrapeClassicHistograms,
+			options.EnableCreatedTimestampZeroIngestion,
 			options.ExtraMetrics,
 			options.EnableMetadataStorage,
 			opts.target,
 			options.PassMetadataInContext,
 			metrics,
+			options.skipOffsetting,
 		)
 	}
 	sp.metrics.targetScrapePoolTargetLimit.WithLabelValues(sp.config.JobName).Set(float64(sp.config.TargetLimit))
@@ -267,6 +272,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 		bodySizeLimit = int64(sp.config.BodySizeLimit)
 		sampleLimit   = int(sp.config.SampleLimit)
 		bucketLimit   = int(sp.config.NativeHistogramBucketLimit)
+		maxSchema     = pickSchema(sp.config.NativeHistogramMinBucketFactor)
 		labelLimits   = &labelLimits{
 			labelLimit:            int(sp.config.LabelLimit),
 			labelNameLengthLimit:  int(sp.config.LabelNameLengthLimit),
@@ -307,6 +313,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 				scraper:                  s,
 				sampleLimit:              sampleLimit,
 				bucketLimit:              bucketLimit,
+				maxSchema:                maxSchema,
 				labelLimits:              labelLimits,
 				honorLabels:              honorLabels,
 				honorTimestamps:          honorTimestamps,
@@ -610,7 +617,7 @@ func mutateReportSampleLabels(lset labels.Labels, target *Target) labels.Labels 
 }
 
 // appender returns an appender for ingested samples from the target.
-func appender(app storage.Appender, sampleLimit, bucketLimit int) storage.Appender {
+func appender(app storage.Appender, sampleLimit, bucketLimit int, maxSchema int32) storage.Appender {
 	app = &timeLimitAppender{
 		Appender: app,
 		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
@@ -630,6 +637,14 @@ func appender(app storage.Appender, sampleLimit, bucketLimit int) storage.Append
 			limit:    bucketLimit,
 		}
 	}
+
+	if maxSchema < nativeHistogramMaxSchema {
+		app = &maxSchemaAppender{
+			Appender:  app,
+			maxSchema: maxSchema,
+		}
+	}
+
 	return app
 }
 
@@ -783,10 +798,12 @@ type scrapeLoop struct {
 	forcedErrMtx             sync.Mutex
 	sampleLimit              int
 	bucketLimit              int
+	maxSchema                int32
 	labelLimits              *labelLimits
 	interval                 time.Duration
 	timeout                  time.Duration
 	scrapeClassicHistograms  bool
+	enableCTZeroIngestion    bool
 
 	appender            func(ctx context.Context) storage.Appender
 	sampleMutator       labelsMutator
@@ -804,6 +821,8 @@ type scrapeLoop struct {
 	appendMetadataToWAL bool
 
 	metrics *scrapeMetrics
+
+	skipOffsetting bool // For testability.
 }
 
 // scrapeCache tracks mappings of exposed metric strings to label sets and
@@ -955,12 +974,12 @@ func (c *scrapeCache) forEachStale(f func(labels.Labels) bool) {
 	}
 }
 
-func (c *scrapeCache) setType(metric []byte, t textparse.MetricType) {
+func (c *scrapeCache) setType(metric []byte, t model.MetricType) {
 	c.metaMtx.Lock()
 
 	e, ok := c.metadata[string(metric)]
 	if !ok {
-		e = &metaEntry{Metadata: metadata.Metadata{Type: textparse.MetricTypeUnknown}}
+		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
 		c.metadata[string(metric)] = e
 	}
 	if e.Type != t {
@@ -977,7 +996,7 @@ func (c *scrapeCache) setHelp(metric, help []byte) {
 
 	e, ok := c.metadata[string(metric)]
 	if !ok {
-		e = &metaEntry{Metadata: metadata.Metadata{Type: textparse.MetricTypeUnknown}}
+		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
 		c.metadata[string(metric)] = e
 	}
 	if e.Help != string(help) {
@@ -994,7 +1013,7 @@ func (c *scrapeCache) setUnit(metric, unit []byte) {
 
 	e, ok := c.metadata[string(metric)]
 	if !ok {
-		e = &metaEntry{Metadata: metadata.Metadata{Type: textparse.MetricTypeUnknown}}
+		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
 		c.metadata[string(metric)] = e
 	}
 	if e.Unit != string(unit) {
@@ -1072,15 +1091,18 @@ func newScrapeLoop(ctx context.Context,
 	enableCompression bool,
 	sampleLimit int,
 	bucketLimit int,
+	maxSchema int32,
 	labelLimits *labelLimits,
 	interval time.Duration,
 	timeout time.Duration,
 	scrapeClassicHistograms bool,
+	enableCTZeroIngestion bool,
 	reportExtraMetrics bool,
 	appendMetadataToWAL bool,
 	target *Target,
 	passMetadataInContext bool,
 	metrics *scrapeMetrics,
+	skipOffsetting bool,
 ) *scrapeLoop {
 	if l == nil {
 		l = log.NewNopLogger()
@@ -1120,13 +1142,16 @@ func newScrapeLoop(ctx context.Context,
 		enableCompression:        enableCompression,
 		sampleLimit:              sampleLimit,
 		bucketLimit:              bucketLimit,
+		maxSchema:                maxSchema,
 		labelLimits:              labelLimits,
 		interval:                 interval,
 		timeout:                  timeout,
 		scrapeClassicHistograms:  scrapeClassicHistograms,
+		enableCTZeroIngestion:    enableCTZeroIngestion,
 		reportExtraMetrics:       reportExtraMetrics,
 		appendMetadataToWAL:      appendMetadataToWAL,
 		metrics:                  metrics,
+		skipOffsetting:           skipOffsetting,
 	}
 	sl.ctx, sl.cancel = context.WithCancel(ctx)
 
@@ -1134,12 +1159,14 @@ func newScrapeLoop(ctx context.Context,
 }
 
 func (sl *scrapeLoop) run(errc chan<- error) {
-	select {
-	case <-time.After(sl.scraper.offset(sl.interval, sl.offsetSeed)):
-		// Continue after a scraping offset.
-	case <-sl.ctx.Done():
-		close(sl.stopped)
-		return
+	if !sl.skipOffsetting {
+		select {
+		case <-time.After(sl.scraper.offset(sl.interval, sl.offsetSeed)):
+			// Continue after a scraping offset.
+		case <-sl.ctx.Done():
+			close(sl.stopped)
+			return
+		}
 	}
 
 	var last time.Time
@@ -1446,7 +1473,7 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 	}
 
 	// Take an appender with limits.
-	app = appender(app, sl.sampleLimit, sl.bucketLimit)
+	app = appender(app, sl.sampleLimit, sl.bucketLimit, sl.maxSchema)
 
 	defer func() {
 		if err != nil {
@@ -1555,6 +1582,15 @@ loop:
 
 			// Append metadata for new series if they were present.
 			updateMetadata(lset, true)
+		}
+
+		if ctMs := p.CreatedTimestamp(); sl.enableCTZeroIngestion && ctMs != nil {
+			ref, err = app.AppendCTZeroSample(ref, lset, t, *ctMs)
+			if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) { // OOO is a common case, ignoring completely for now.
+				// CT is an experimental feature. For now, we don't need to fail the
+				// scrape on errors updating the created timestamp, log debug.
+				level.Debug(sl.l).Log("msg", "Error when appending CT in scrape loop", "series", string(met), "ct", *ctMs, "t", t, "err", err)
+			}
 		}
 
 		if isHistogram {
@@ -1884,4 +1920,19 @@ func ContextWithTarget(ctx context.Context, t *Target) context.Context {
 func TargetFromContext(ctx context.Context) (*Target, bool) {
 	t, ok := ctx.Value(ctxKeyTarget).(*Target)
 	return t, ok
+}
+
+func pickSchema(bucketFactor float64) int32 {
+	if bucketFactor <= 1 {
+		bucketFactor = 1.00271
+	}
+	floor := math.Floor(-math.Log2(math.Log2(bucketFactor)))
+	switch {
+	case floor >= float64(nativeHistogramMaxSchema):
+		return nativeHistogramMaxSchema
+	case floor <= float64(nativeHistogramMinSchema):
+		return nativeHistogramMinSchema
+	default:
+		return int32(floor)
+	}
 }

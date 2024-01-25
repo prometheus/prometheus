@@ -22,8 +22,11 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/discovery"
 )
 
 type NomadSDTestSuite struct {
@@ -127,8 +130,16 @@ func TestConfiguredService(t *testing.T) {
 	conf := &SDConfig{
 		Server: "http://localhost:4646",
 	}
-	_, err := NewDiscovery(conf, nil)
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := conf.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+
+	_, err := NewDiscovery(conf, nil, metrics)
 	require.NoError(t, err)
+
+	metrics.Unregister()
 }
 
 func TestNomadSDRefresh(t *testing.T) {
@@ -141,7 +152,15 @@ func TestNomadSDRefresh(t *testing.T) {
 
 	cfg := DefaultSDConfig
 	cfg.Server = endpoint.String()
-	d, err := NewDiscovery(&cfg, log.NewNopLogger())
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+	defer refreshMetrics.Unregister()
+
+	d, err := NewDiscovery(&cfg, log.NewNopLogger(), metrics)
 	require.NoError(t, err)
 
 	tgs, err := d.refresh(context.Background())

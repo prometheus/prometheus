@@ -83,7 +83,14 @@ type Span struct {
 
 // Copy returns a deep copy of the Histogram.
 func (h *Histogram) Copy() *Histogram {
-	c := *h
+	c := Histogram{
+		CounterResetHint: h.CounterResetHint,
+		Schema:           h.Schema,
+		ZeroThreshold:    h.ZeroThreshold,
+		ZeroCount:        h.ZeroCount,
+		Count:            h.Count,
+		Sum:              h.Sum,
+	}
 
 	if len(h.PositiveSpans) != 0 {
 		c.PositiveSpans = make([]Span, len(h.PositiveSpans))
@@ -103,6 +110,29 @@ func (h *Histogram) Copy() *Histogram {
 	}
 
 	return &c
+}
+
+// CopyTo makes a deep copy into the given Histogram object.
+// The destination object has to be a non-nil pointer.
+func (h *Histogram) CopyTo(to *Histogram) {
+	to.CounterResetHint = h.CounterResetHint
+	to.Schema = h.Schema
+	to.ZeroThreshold = h.ZeroThreshold
+	to.ZeroCount = h.ZeroCount
+	to.Count = h.Count
+	to.Sum = h.Sum
+
+	to.PositiveSpans = resize(to.PositiveSpans, len(h.PositiveSpans))
+	copy(to.PositiveSpans, h.PositiveSpans)
+
+	to.NegativeSpans = resize(to.NegativeSpans, len(h.NegativeSpans))
+	copy(to.NegativeSpans, h.NegativeSpans)
+
+	to.PositiveBuckets = resize(to.PositiveBuckets, len(h.PositiveBuckets))
+	copy(to.PositiveBuckets, h.PositiveBuckets)
+
+	to.NegativeBuckets = resize(to.NegativeBuckets, len(h.NegativeBuckets))
+	copy(to.NegativeBuckets, h.NegativeBuckets)
 }
 
 // String returns a string representation of the Histogram.
@@ -282,50 +312,49 @@ func (h *Histogram) Compact(maxEmptyBuckets int) *Histogram {
 	return h
 }
 
-// ToFloat returns a FloatHistogram representation of the Histogram. It is a
-// deep copy (e.g. spans are not shared).
-func (h *Histogram) ToFloat() *FloatHistogram {
-	var (
-		positiveSpans, negativeSpans     []Span
-		positiveBuckets, negativeBuckets []float64
-	)
-	if len(h.PositiveSpans) != 0 {
-		positiveSpans = make([]Span, len(h.PositiveSpans))
-		copy(positiveSpans, h.PositiveSpans)
+// ToFloat returns a FloatHistogram representation of the Histogram. It is a deep
+// copy (e.g. spans are not shared). The function accepts a FloatHistogram as an
+// argument whose memory will be reused and overwritten if provided. If this
+// argument is nil, a new FloatHistogram will be allocated.
+func (h *Histogram) ToFloat(fh *FloatHistogram) *FloatHistogram {
+	if fh == nil {
+		fh = &FloatHistogram{}
 	}
-	if len(h.NegativeSpans) != 0 {
-		negativeSpans = make([]Span, len(h.NegativeSpans))
-		copy(negativeSpans, h.NegativeSpans)
-	}
-	if len(h.PositiveBuckets) != 0 {
-		positiveBuckets = make([]float64, len(h.PositiveBuckets))
-		var current float64
-		for i, b := range h.PositiveBuckets {
-			current += float64(b)
-			positiveBuckets[i] = current
-		}
-	}
-	if len(h.NegativeBuckets) != 0 {
-		negativeBuckets = make([]float64, len(h.NegativeBuckets))
-		var current float64
-		for i, b := range h.NegativeBuckets {
-			current += float64(b)
-			negativeBuckets[i] = current
-		}
+	fh.CounterResetHint = h.CounterResetHint
+	fh.Schema = h.Schema
+	fh.ZeroThreshold = h.ZeroThreshold
+	fh.ZeroCount = float64(h.ZeroCount)
+	fh.Count = float64(h.Count)
+	fh.Sum = h.Sum
+
+	fh.PositiveSpans = resize(fh.PositiveSpans, len(h.PositiveSpans))
+	copy(fh.PositiveSpans, h.PositiveSpans)
+
+	fh.NegativeSpans = resize(fh.NegativeSpans, len(h.NegativeSpans))
+	copy(fh.NegativeSpans, h.NegativeSpans)
+
+	fh.PositiveBuckets = resize(fh.PositiveBuckets, len(h.PositiveBuckets))
+	var currentPositive float64
+	for i, b := range h.PositiveBuckets {
+		currentPositive += float64(b)
+		fh.PositiveBuckets[i] = currentPositive
 	}
 
-	return &FloatHistogram{
-		CounterResetHint: h.CounterResetHint,
-		Schema:           h.Schema,
-		ZeroThreshold:    h.ZeroThreshold,
-		ZeroCount:        float64(h.ZeroCount),
-		Count:            float64(h.Count),
-		Sum:              h.Sum,
-		PositiveSpans:    positiveSpans,
-		NegativeSpans:    negativeSpans,
-		PositiveBuckets:  positiveBuckets,
-		NegativeBuckets:  negativeBuckets,
+	fh.NegativeBuckets = resize(fh.NegativeBuckets, len(h.NegativeBuckets))
+	var currentNegative float64
+	for i, b := range h.NegativeBuckets {
+		currentNegative += float64(b)
+		fh.NegativeBuckets[i] = currentNegative
 	}
+
+	return fh
+}
+
+func resize[T any](items []T, n int) []T {
+	if cap(items) < n {
+		return make([]T, n)
+	}
+	return items[:n]
 }
 
 // Validate validates consistency between span and bucket slices. Also, buckets are checked

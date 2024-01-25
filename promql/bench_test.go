@@ -296,8 +296,12 @@ func BenchmarkNativeHistograms(b *testing.B) {
 			query: "sum(native_histogram_series)",
 		},
 		{
-			name:  "sum rate",
-			query: "sum(rate(native_histogram_series[1m]))",
+			name:  "sum rate with short rate interval",
+			query: "sum(rate(native_histogram_series[2m]))",
+		},
+		{
+			name:  "sum rate with long rate interval",
+			query: "sum(rate(native_histogram_series[20m]))",
 		},
 	}
 

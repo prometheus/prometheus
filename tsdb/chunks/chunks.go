@@ -226,10 +226,10 @@ func ChunkMetasToSamples(chunks []Meta) (result []Sample) {
 				t, v := it.At()
 				result = append(result, sample{t: t, f: v})
 			case chunkenc.ValHistogram:
-				t, h := it.AtHistogram()
+				t, h := it.AtHistogram(nil)
 				result = append(result, sample{t: t, h: h})
 			case chunkenc.ValFloatHistogram:
-				t, fh := it.AtFloatHistogram()
+				t, fh := it.AtFloatHistogram(nil)
 				result = append(result, sample{t: t, fh: fh})
 			default:
 				panic("unexpected value type")
@@ -671,7 +671,7 @@ func (s *Reader) Size() int64 {
 	return s.size
 }
 
-// Chunk returns a chunk from a given reference.
+// ChunkOrIterable returns a chunk from a given reference.
 func (s *Reader) ChunkOrIterable(meta Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
 	sgmIndex, chkStart := BlockChunkRef(meta.Ref).Unpack()
 

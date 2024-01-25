@@ -33,7 +33,6 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -153,10 +152,10 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 					Value:     val,
 				})
 			case chunkenc.ValHistogram:
-				ts, h := iter.AtHistogram()
+				ts, h := iter.AtHistogram(nil)
 				histograms = append(histograms, HistogramToHistogramProto(ts, h))
 			case chunkenc.ValFloatHistogram:
-				ts, fh := iter.AtFloatHistogram()
+				ts, fh := iter.AtFloatHistogram(nil)
 				histograms = append(histograms, FloatHistogramToHistogramProto(ts, fh))
 			default:
 				return nil, ss.Warnings(), fmt.Errorf("unrecognized value type: %s", valType)
@@ -476,7 +475,7 @@ func (c *concreteSeriesIterator) At() (t int64, v float64) {
 }
 
 // AtHistogram implements chunkenc.Iterator.
-func (c *concreteSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
+func (c *concreteSeriesIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	if c.curValType != chunkenc.ValHistogram {
 		panic("iterator is not on an integer histogram sample")
 	}
@@ -485,7 +484,7 @@ func (c *concreteSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
 }
 
 // AtFloatHistogram implements chunkenc.Iterator.
-func (c *concreteSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+func (c *concreteSeriesIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	switch c.curValType {
 	case chunkenc.ValHistogram:
 		fh := c.series.histograms[c.histogramsCur]
@@ -784,7 +783,7 @@ func labelsToLabelsProto(lbls labels.Labels, buf []prompb.Label) []prompb.Label 
 }
 
 // metricTypeToMetricTypeProto transforms a Prometheus metricType into prompb metricType. Since the former is a string we need to transform it to an enum.
-func metricTypeToMetricTypeProto(t textparse.MetricType) prompb.MetricMetadata_MetricType {
+func metricTypeToMetricTypeProto(t model.MetricType) prompb.MetricMetadata_MetricType {
 	mt := strings.ToUpper(string(t))
 	v, ok := prompb.MetricMetadata_MetricType_value[mt]
 	if !ok {

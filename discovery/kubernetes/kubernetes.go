@@ -58,24 +58,14 @@ import (
 const (
 	// metaLabelPrefix is the meta prefix used for all meta labels.
 	// in this discovery.
-	metaLabelPrefix  = model.MetaLabelPrefix + "kubernetes_"
-	namespaceLabel   = metaLabelPrefix + "namespace"
-	metricsNamespace = "prometheus_sd_kubernetes"
-	presentValue     = model.LabelValue("true")
+	metaLabelPrefix = model.MetaLabelPrefix + "kubernetes_"
+	namespaceLabel  = metaLabelPrefix + "namespace"
+	presentValue    = model.LabelValue("true")
 )
 
 var (
 	// Http header.
 	userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
-	// Custom events metric.
-	eventCount = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: metricsNamespace,
-			Name:      "events_total",
-			Help:      "The number of Kubernetes events handled.",
-		},
-		[]string{"role", "event"},
-	)
 	// DefaultSDConfig is the default Kubernetes SD configuration.
 	DefaultSDConfig = SDConfig{
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
@@ -84,15 +74,6 @@ var (
 
 func init() {
 	discovery.RegisterConfig(&SDConfig{})
-	prometheus.MustRegister(eventCount)
-	// Initialize metric vectors.
-	for _, role := range []string{"endpointslice", "endpoints", "node", "pod", "service", "ingress"} {
-		for _, evt := range []string{"add", "delete", "update"} {
-			eventCount.WithLabelValues(role, evt)
-		}
-	}
-	(&clientGoRequestMetricAdapter{}).Register(prometheus.DefaultRegisterer)
-	(&clientGoWorkqueueMetricsProvider{}).Register(prometheus.DefaultRegisterer)
 }
 
 // Role is role of the service in Kubernetes.
@@ -121,6 +102,16 @@ func (c *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 }
 
+func (c Role) String() string {
+	return string(c)
+}
+
+const (
+	MetricLabelRoleAdd    = "add"
+	MetricLabelRoleDelete = "delete"
+	MetricLabelRoleUpdate = "update"
+)
+
 // SDConfig is the configuration for Kubernetes service discovery.
 type SDConfig struct {
 	APIServer          config.URL              `yaml:"api_server,omitempty"`
@@ -132,12 +123,17 @@ type SDConfig struct {
 	AttachMetadata     AttachMetadataConfig    `yaml:"attach_metadata,omitempty"`
 }
 
+// NewDiscovererMetrics implements discovery.Config.
+func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return newDiscovererMetrics(reg, rmi)
+}
+
 // Name returns the name of the Config.
 func (*SDConfig) Name() string { return "kubernetes" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return New(opts.Logger, c)
+	return New(opts.Logger, opts.Metrics, c)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -274,6 +270,7 @@ type Discovery struct {
 	selectors          roleSelector
 	ownNamespace       string
 	attachMetadata     AttachMetadataConfig
+	metrics            *kubernetesMetrics
 }
 
 func (d *Discovery) getNamespaces() []string {
@@ -292,7 +289,12 @@ func (d *Discovery) getNamespaces() []string {
 }
 
 // New creates a new Kubernetes discovery for the given role.
-func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
+func New(l log.Logger, metrics discovery.DiscovererMetrics, conf *SDConfig) (*Discovery, error) {
+	m, ok := metrics.(*kubernetesMetrics)
+	if !ok {
+		return nil, fmt.Errorf("invalid discovery metrics type")
+	}
+
 	if l == nil {
 		l = log.NewNopLogger()
 	}
@@ -346,7 +348,7 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		return nil, err
 	}
 
-	return &Discovery{
+	d := &Discovery{
 		client:             c,
 		logger:             l,
 		role:               conf.Role,
@@ -355,7 +357,10 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		selectors:          mapSelector(conf.Selectors),
 		ownNamespace:       ownNamespace,
 		attachMetadata:     conf.AttachMetadata,
-	}, nil
+		metrics:            m,
+	}
+
+	return d, nil
 }
 
 func mapSelector(rawSelector []SelectorConfig) roleSelector {
@@ -391,6 +396,7 @@ const resyncDisabled = 0
 // Run implements the discoverer interface.
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	d.Lock()
+
 	namespaces := d.getNamespaces()
 
 	switch d.role {
@@ -482,6 +488,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				cache.NewSharedInformer(slw, &apiv1.Service{}, resyncDisabled),
 				cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncDisabled),
 				nodeInf,
+				d.metrics.eventCount,
 			)
 			d.discoverers = append(d.discoverers, eps)
 			go eps.endpointSliceInf.Run(ctx.Done())
@@ -541,6 +548,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				cache.NewSharedInformer(slw, &apiv1.Service{}, resyncDisabled),
 				cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncDisabled),
 				nodeInf,
+				d.metrics.eventCount,
 			)
 			d.discoverers = append(d.discoverers, eps)
 			go eps.endpointsInf.Run(ctx.Done())
@@ -572,6 +580,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				log.With(d.logger, "role", "pod"),
 				d.newPodsByNodeInformer(plw),
 				nodeInformer,
+				d.metrics.eventCount,
 			)
 			d.discoverers = append(d.discoverers, pod)
 			go pod.podInf.Run(ctx.Done())
@@ -594,6 +603,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			svc := NewService(
 				log.With(d.logger, "role", "service"),
 				cache.NewSharedInformer(slw, &apiv1.Service{}, resyncDisabled),
+				d.metrics.eventCount,
 			)
 			d.discoverers = append(d.discoverers, svc)
 			go svc.informer.Run(ctx.Done())
@@ -651,13 +661,14 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			ingress := NewIngress(
 				log.With(d.logger, "role", "ingress"),
 				informer,
+				d.metrics.eventCount,
 			)
 			d.discoverers = append(d.discoverers, ingress)
 			go ingress.informer.Run(ctx.Done())
 		}
 	case RoleNode:
 		nodeInformer := d.newNodeInformer(ctx)
-		node := NewNode(log.With(d.logger, "role", "node"), nodeInformer)
+		node := NewNode(log.With(d.logger, "role", "node"), nodeInformer, d.metrics.eventCount)
 		d.discoverers = append(d.discoverers, node)
 		go node.informer.Run(ctx.Done())
 	default:

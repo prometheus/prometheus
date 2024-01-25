@@ -21,7 +21,7 @@ import (
 	"testing"
 
 	"github.com/gogo/protobuf/proto"
-	"github.com/gogo/protobuf/types"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -58,6 +58,7 @@ metric: <
 		`name: "go_memstats_alloc_bytes_total"
 help: "Total number of bytes allocated, even if freed."
 type: COUNTER
+unit: "bytes"
 metric: <
   counter: <
     value: 1.546544e+06
@@ -623,14 +624,14 @@ func TestProtobufParse(t *testing.T) {
 		m       string
 		t       int64
 		v       float64
-		typ     MetricType
+		typ     model.MetricType
 		help    string
 		unit    string
 		comment string
 		shs     *histogram.Histogram
 		fhs     *histogram.FloatHistogram
 		e       []exemplar.Exemplar
-		ct      *types.Timestamp
+		ct      int64
 	}
 
 	inputBuf := createTestProtoBuf(t)
@@ -650,7 +651,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:   "go_build_info",
-					typ: MetricTypeGauge,
+					typ: model.MetricTypeGauge,
 				},
 				{
 					m: "go_build_info\xFFchecksum\xFF\xFFpath\xFFgithub.com/prometheus/client_golang\xFFversion\xFF(devel)",
@@ -665,10 +666,11 @@ func TestProtobufParse(t *testing.T) {
 				{
 					m:    "go_memstats_alloc_bytes_total",
 					help: "Total number of bytes allocated, even if freed.",
+					unit: "bytes",
 				},
 				{
 					m:   "go_memstats_alloc_bytes_total",
-					typ: MetricTypeCounter,
+					typ: model.MetricTypeCounter,
 				},
 				{
 					m: "go_memstats_alloc_bytes_total",
@@ -686,7 +688,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:   "something_untyped",
-					typ: MetricTypeUnknown,
+					typ: model.MetricTypeUnknown,
 				},
 				{
 					m: "something_untyped",
@@ -702,7 +704,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:   "test_histogram",
-					typ: MetricTypeHistogram,
+					typ: model.MetricTypeHistogram,
 				},
 				{
 					m: "test_histogram",
@@ -737,7 +739,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:   "test_gauge_histogram",
-					typ: MetricTypeGaugeHistogram,
+					typ: model.MetricTypeGaugeHistogram,
 				},
 				{
 					m: "test_gauge_histogram",
@@ -773,7 +775,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:   "test_float_histogram",
-					typ: MetricTypeHistogram,
+					typ: model.MetricTypeHistogram,
 				},
 				{
 					m: "test_float_histogram",
@@ -808,7 +810,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:   "test_gauge_float_histogram",
-					typ: MetricTypeGaugeHistogram,
+					typ: model.MetricTypeGaugeHistogram,
 				},
 				{
 					m: "test_gauge_float_histogram",
@@ -844,7 +846,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:   "test_histogram2",
-					typ: MetricTypeHistogram,
+					typ: model.MetricTypeHistogram,
 				},
 				{
 					m: "test_histogram2_count",
@@ -904,7 +906,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:   "test_histogram_family",
-					typ: MetricTypeHistogram,
+					typ: model.MetricTypeHistogram,
 				},
 				{
 					m: "test_histogram_family\xfffoo\xffbar",
@@ -948,7 +950,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:   "test_float_histogram_with_zerothreshold_zero",
-					typ: MetricTypeHistogram,
+					typ: model.MetricTypeHistogram,
 				},
 				{
 					m: "test_float_histogram_with_zerothreshold_zero",
@@ -972,7 +974,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:   "rpc_durations_seconds",
-					typ: MetricTypeSummary,
+					typ: model.MetricTypeSummary,
 				},
 				{
 					m: "rpc_durations_seconds_count\xffservice\xffexponential",
@@ -1023,7 +1025,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:   "without_quantiles",
-					typ: MetricTypeSummary,
+					typ: model.MetricTypeSummary,
 				},
 				{
 					m: "without_quantiles_count",
@@ -1045,7 +1047,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:   "empty_histogram",
-					typ: MetricTypeHistogram,
+					typ: model.MetricTypeHistogram,
 				},
 				{
 					m: "empty_histogram",
@@ -1064,12 +1066,12 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:   "test_counter_with_createdtimestamp",
-					typ: MetricTypeCounter,
+					typ: model.MetricTypeCounter,
 				},
 				{
 					m:  "test_counter_with_createdtimestamp",
 					v:  42,
-					ct: &types.Timestamp{Seconds: 1, Nanos: 1},
+					ct: 1000,
 					lset: labels.FromStrings(
 						"__name__", "test_counter_with_createdtimestamp",
 					),
@@ -1080,12 +1082,12 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:   "test_summary_with_createdtimestamp",
-					typ: MetricTypeSummary,
+					typ: model.MetricTypeSummary,
 				},
 				{
 					m:  "test_summary_with_createdtimestamp_count",
 					v:  42,
-					ct: &types.Timestamp{Seconds: 1, Nanos: 1},
+					ct: 1000,
 					lset: labels.FromStrings(
 						"__name__", "test_summary_with_createdtimestamp_count",
 					),
@@ -1093,7 +1095,7 @@ func TestProtobufParse(t *testing.T) {
 				{
 					m:  "test_summary_with_createdtimestamp_sum",
 					v:  1.234,
-					ct: &types.Timestamp{Seconds: 1, Nanos: 1},
+					ct: 1000,
 					lset: labels.FromStrings(
 						"__name__", "test_summary_with_createdtimestamp_sum",
 					),
@@ -1104,11 +1106,11 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:   "test_histogram_with_createdtimestamp",
-					typ: MetricTypeHistogram,
+					typ: model.MetricTypeHistogram,
 				},
 				{
 					m:  "test_histogram_with_createdtimestamp",
-					ct: &types.Timestamp{Seconds: 1, Nanos: 1},
+					ct: 1000,
 					shs: &histogram.Histogram{
 						CounterResetHint: histogram.UnknownCounterReset,
 						PositiveSpans:    []histogram.Span{},
@@ -1124,11 +1126,11 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:   "test_gaugehistogram_with_createdtimestamp",
-					typ: MetricTypeGaugeHistogram,
+					typ: model.MetricTypeGaugeHistogram,
 				},
 				{
 					m:  "test_gaugehistogram_with_createdtimestamp",
-					ct: &types.Timestamp{Seconds: 1, Nanos: 1},
+					ct: 1000,
 					shs: &histogram.Histogram{
 						CounterResetHint: histogram.GaugeType,
 						PositiveSpans:    []histogram.Span{},
@@ -1150,7 +1152,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{ // 1
 					m:   "go_build_info",
-					typ: MetricTypeGauge,
+					typ: model.MetricTypeGauge,
 				},
 				{ // 2
 					m: "go_build_info\xFFchecksum\xFF\xFFpath\xFFgithub.com/prometheus/client_golang\xFFversion\xFF(devel)",
@@ -1168,7 +1170,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{ // 4
 					m:   "go_memstats_alloc_bytes_total",
-					typ: MetricTypeCounter,
+					typ: model.MetricTypeCounter,
 				},
 				{ // 5
 					m: "go_memstats_alloc_bytes_total",
@@ -1186,7 +1188,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{ // 7
 					m:   "something_untyped",
-					typ: MetricTypeUnknown,
+					typ: model.MetricTypeUnknown,
 				},
 				{ // 8
 					m: "something_untyped",
@@ -1202,7 +1204,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{ // 10
 					m:   "test_histogram",
-					typ: MetricTypeHistogram,
+					typ: model.MetricTypeHistogram,
 				},
 				{ // 11
 					m: "test_histogram",
@@ -1295,7 +1297,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{ // 19
 					m:   "test_gauge_histogram",
-					typ: MetricTypeGaugeHistogram,
+					typ: model.MetricTypeGaugeHistogram,
 				},
 				{ // 20
 					m: "test_gauge_histogram",
@@ -1389,7 +1391,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{ // 28
 					m:   "test_float_histogram",
-					typ: MetricTypeHistogram,
+					typ: model.MetricTypeHistogram,
 				},
 				{ // 29
 					m: "test_float_histogram",
@@ -1482,7 +1484,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{ // 37
 					m:   "test_gauge_float_histogram",
-					typ: MetricTypeGaugeHistogram,
+					typ: model.MetricTypeGaugeHistogram,
 				},
 				{ // 38
 					m: "test_gauge_float_histogram",
@@ -1576,7 +1578,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{ // 46
 					m:   "test_histogram2",
-					typ: MetricTypeHistogram,
+					typ: model.MetricTypeHistogram,
 				},
 				{ // 47
 					m: "test_histogram2_count",
@@ -1636,7 +1638,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{ // 54
 					m:   "test_histogram_family",
-					typ: MetricTypeHistogram,
+					typ: model.MetricTypeHistogram,
 				},
 				{ // 55
 					m: "test_histogram_family\xfffoo\xffbar",
@@ -1766,7 +1768,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{ // 68
 					m:   "test_float_histogram_with_zerothreshold_zero",
-					typ: MetricTypeHistogram,
+					typ: model.MetricTypeHistogram,
 				},
 				{ // 69
 					m: "test_float_histogram_with_zerothreshold_zero",
@@ -1790,7 +1792,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{ // 71
 					m:   "rpc_durations_seconds",
-					typ: MetricTypeSummary,
+					typ: model.MetricTypeSummary,
 				},
 				{ // 72
 					m: "rpc_durations_seconds_count\xffservice\xffexponential",
@@ -1841,7 +1843,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{ // 78
 					m:   "without_quantiles",
-					typ: MetricTypeSummary,
+					typ: model.MetricTypeSummary,
 				},
 				{ // 79
 					m: "without_quantiles_count",
@@ -1863,7 +1865,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{ // 79
 					m:   "empty_histogram",
-					typ: MetricTypeHistogram,
+					typ: model.MetricTypeHistogram,
 				},
 				{ // 80
 					m: "empty_histogram",
@@ -1882,12 +1884,12 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{ // 82
 					m:   "test_counter_with_createdtimestamp",
-					typ: MetricTypeCounter,
+					typ: model.MetricTypeCounter,
 				},
 				{ // 83
 					m:  "test_counter_with_createdtimestamp",
 					v:  42,
-					ct: &types.Timestamp{Seconds: 1, Nanos: 1},
+					ct: 1000,
 					lset: labels.FromStrings(
 						"__name__", "test_counter_with_createdtimestamp",
 					),
@@ -1898,12 +1900,12 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{ // 85
 					m:   "test_summary_with_createdtimestamp",
-					typ: MetricTypeSummary,
+					typ: model.MetricTypeSummary,
 				},
 				{ // 86
 					m:  "test_summary_with_createdtimestamp_count",
 					v:  42,
-					ct: &types.Timestamp{Seconds: 1, Nanos: 1},
+					ct: 1000,
 					lset: labels.FromStrings(
 						"__name__", "test_summary_with_createdtimestamp_count",
 					),
@@ -1911,7 +1913,7 @@ func TestProtobufParse(t *testing.T) {
 				{ // 87
 					m:  "test_summary_with_createdtimestamp_sum",
 					v:  1.234,
-					ct: &types.Timestamp{Seconds: 1, Nanos: 1},
+					ct: 1000,
 					lset: labels.FromStrings(
 						"__name__", "test_summary_with_createdtimestamp_sum",
 					),
@@ -1922,11 +1924,11 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{ // 89
 					m:   "test_histogram_with_createdtimestamp",
-					typ: MetricTypeHistogram,
+					typ: model.MetricTypeHistogram,
 				},
 				{ // 90
 					m:  "test_histogram_with_createdtimestamp",
-					ct: &types.Timestamp{Seconds: 1, Nanos: 1},
+					ct: 1000,
 					shs: &histogram.Histogram{
 						CounterResetHint: histogram.UnknownCounterReset,
 						PositiveSpans:    []histogram.Span{},
@@ -1942,11 +1944,11 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{ // 92
 					m:   "test_gaugehistogram_with_createdtimestamp",
-					typ: MetricTypeGaugeHistogram,
+					typ: model.MetricTypeGaugeHistogram,
 				},
 				{ // 93
 					m:  "test_gaugehistogram_with_createdtimestamp",
-					ct: &types.Timestamp{Seconds: 1, Nanos: 1},
+					ct: 1000,
 					shs: &histogram.Histogram{
 						CounterResetHint: histogram.GaugeType,
 						PositiveSpans:    []histogram.Span{},
@@ -1981,10 +1983,9 @@ func TestProtobufParse(t *testing.T) {
 					m, ts, v := p.Series()
 
 					var e exemplar.Exemplar
-					var ct types.Timestamp
 					p.Metric(&res)
 					eFound := p.Exemplar(&e)
-					ctFound := p.CreatedTimestamp(&ct)
+					ct := p.CreatedTimestamp()
 					require.Equal(t, exp[i].m, string(m), "i: %d", i)
 					if ts != nil {
 						require.Equal(t, exp[i].t, *ts, "i: %d", i)
@@ -2000,11 +2001,11 @@ func TestProtobufParse(t *testing.T) {
 						require.Equal(t, exp[i].e[0], e, "i: %d", i)
 						require.False(t, p.Exemplar(&e), "too many exemplars returned, i: %d", i)
 					}
-					if exp[i].ct != nil {
-						require.True(t, ctFound, "i: %d", i)
-						require.Equal(t, exp[i].ct.String(), ct.String(), "i: %d", i)
+					if exp[i].ct != 0 {
+						require.NotNilf(t, ct, "i: %d", i)
+						require.Equal(t, exp[i].ct, *ct, "i: %d", i)
 					} else {
-						require.False(t, ctFound, "i: %d", i)
+						require.Nilf(t, ct, "i: %d", i)
 					}
 
 				case EntryHistogram:

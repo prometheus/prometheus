@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"math/rand"
@@ -26,7 +27,6 @@ import (
 	"time"
 
 	"github.com/oklog/ulid"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -775,11 +775,11 @@ func (it *mockSampleIterator) At() (int64, float64) {
 	return it.s[it.idx].T(), it.s[it.idx].F()
 }
 
-func (it *mockSampleIterator) AtHistogram() (int64, *histogram.Histogram) {
+func (it *mockSampleIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	return it.s[it.idx].T(), it.s[it.idx].H()
 }
 
-func (it *mockSampleIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+func (it *mockSampleIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	return it.s[it.idx].T(), it.s[it.idx].FH()
 }
 
@@ -1822,12 +1822,12 @@ func checkCurrVal(t *testing.T, valType chunkenc.ValueType, it *populateWithDelS
 		require.Equal(t, int64(expectedTs), ts)
 		require.Equal(t, float64(expectedValue), v)
 	case chunkenc.ValHistogram:
-		ts, h := it.AtHistogram()
+		ts, h := it.AtHistogram(nil)
 		require.Equal(t, int64(expectedTs), ts)
 		h.CounterResetHint = histogram.UnknownCounterReset
 		require.Equal(t, tsdbutil.GenerateTestHistogram(expectedValue), h)
 	case chunkenc.ValFloatHistogram:
-		ts, h := it.AtFloatHistogram()
+		ts, h := it.AtFloatHistogram(nil)
 		require.Equal(t, int64(expectedTs), ts)
 		h.CounterResetHint = histogram.UnknownCounterReset
 		require.Equal(t, tsdbutil.GenerateTestFloatHistogram(expectedValue), h)
@@ -2317,7 +2317,7 @@ func (m mockIndex) Postings(ctx context.Context, name string, values ...string) 
 func (m mockIndex) SortedPostings(p index.Postings) index.Postings {
 	ep, err := index.ExpandPostings(p)
 	if err != nil {
-		return index.ErrPostings(errors.Wrap(err, "expand postings"))
+		return index.ErrPostings(fmt.Errorf("expand postings: %w", err))
 	}
 
 	sort.Slice(ep, func(i, j int) bool {
@@ -3309,13 +3309,15 @@ func TestPostingsForMatcher(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		ir := &mockMatcherIndex{}
-		_, err := postingsForMatcher(ctx, ir, tc.matcher)
-		if tc.hasError {
-			require.Error(t, err)
-		} else {
-			require.NoError(t, err)
-		}
+		t.Run(tc.matcher.String(), func(t *testing.T) {
+			ir := &mockMatcherIndex{}
+			_, err := postingsForMatcher(ctx, ir, tc.matcher)
+			if tc.hasError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
 	}
 }
 

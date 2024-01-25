@@ -94,10 +94,10 @@ func TestFloatHistogramChunkSameBuckets(t *testing.T) {
 		},
 		NegativeBuckets: []int64{2, 1, -1, -1}, // counts: 2, 3, 2, 1 (total 8)
 	}
-	chk, _, app, err := app.AppendFloatHistogram(nil, ts, h.ToFloat(), false)
+	chk, _, app, err := app.AppendFloatHistogram(nil, ts, h.ToFloat(nil), false)
 	require.NoError(t, err)
 	require.Nil(t, chk)
-	exp = append(exp, floatResult{t: ts, h: h.ToFloat()})
+	exp = append(exp, floatResult{t: ts, h: h.ToFloat(nil)})
 	require.Equal(t, 1, c.NumSamples())
 
 	// Add an updated histogram.
@@ -108,10 +108,10 @@ func TestFloatHistogramChunkSameBuckets(t *testing.T) {
 	h.Sum = 24.4
 	h.PositiveBuckets = []int64{5, -2, 1, -2} // counts: 5, 3, 4, 2 (total 14)
 	h.NegativeBuckets = []int64{4, -1, 1, -1} // counts: 4, 3, 4, 4 (total 15)
-	chk, _, _, err = app.AppendFloatHistogram(nil, ts, h.ToFloat(), false)
+	chk, _, _, err = app.AppendFloatHistogram(nil, ts, h.ToFloat(nil), false)
 	require.NoError(t, err)
 	require.Nil(t, chk)
-	expH := h.ToFloat()
+	expH := h.ToFloat(nil)
 	expH.CounterResetHint = histogram.NotCounterReset
 	exp = append(exp, floatResult{t: ts, h: expH})
 	require.Equal(t, 2, c.NumSamples())
@@ -127,10 +127,10 @@ func TestFloatHistogramChunkSameBuckets(t *testing.T) {
 	h.Sum = 24.4
 	h.PositiveBuckets = []int64{6, 1, -3, 6} // counts: 6, 7, 4, 10 (total 27)
 	h.NegativeBuckets = []int64{5, 1, -2, 3} // counts: 5, 6, 4, 7 (total 22)
-	chk, _, _, err = app.AppendFloatHistogram(nil, ts, h.ToFloat(), false)
+	chk, _, _, err = app.AppendFloatHistogram(nil, ts, h.ToFloat(nil), false)
 	require.NoError(t, err)
 	require.Nil(t, chk)
-	expH = h.ToFloat()
+	expH = h.ToFloat(nil)
 	expH.CounterResetHint = histogram.NotCounterReset
 	exp = append(exp, floatResult{t: ts, h: expH})
 	require.Equal(t, 3, c.NumSamples())
@@ -140,7 +140,7 @@ func TestFloatHistogramChunkSameBuckets(t *testing.T) {
 	require.NoError(t, it.Err())
 	var act []floatResult
 	for it.Next() == ValFloatHistogram {
-		fts, fh := it.AtFloatHistogram()
+		fts, fh := it.AtFloatHistogram(nil)
 		act = append(act, floatResult{t: fts, h: fh})
 	}
 	require.NoError(t, it.Err())
@@ -150,7 +150,7 @@ func TestFloatHistogramChunkSameBuckets(t *testing.T) {
 	it2 := c.Iterator(it)
 	var act2 []floatResult
 	for it2.Next() == ValFloatHistogram {
-		fts, fh := it2.AtFloatHistogram()
+		fts, fh := it2.AtFloatHistogram(nil)
 		act2 = append(act2, floatResult{t: fts, h: fh})
 	}
 	require.NoError(t, it2.Err())
@@ -164,7 +164,7 @@ func TestFloatHistogramChunkSameBuckets(t *testing.T) {
 	it3 := c.iterator(itX)
 	var act3 []floatResult
 	for it3.Next() == ValFloatHistogram {
-		fts, fh := it3.AtFloatHistogram()
+		fts, fh := it3.AtFloatHistogram(nil)
 		act3 = append(act3, floatResult{t: fts, h: fh})
 	}
 	require.NoError(t, it3.Err())
@@ -178,10 +178,10 @@ func TestFloatHistogramChunkSameBuckets(t *testing.T) {
 	// Below ones should not matter.
 	require.Equal(t, ValFloatHistogram, it4.Seek(exp[mid].t))
 	require.Equal(t, ValFloatHistogram, it4.Seek(exp[mid].t))
-	fts, fh := it4.AtFloatHistogram()
+	fts, fh := it4.AtFloatHistogram(nil)
 	act4 = append(act4, floatResult{t: fts, h: fh})
 	for it4.Next() == ValFloatHistogram {
-		fts, fh := it4.AtFloatHistogram()
+		fts, fh := it4.AtFloatHistogram(nil)
 		act4 = append(act4, floatResult{t: fts, h: fh})
 	}
 	require.NoError(t, it4.Err())
@@ -217,7 +217,7 @@ func TestFloatHistogramChunkBucketChanges(t *testing.T) {
 		NegativeBuckets: []int64{1},
 	}
 
-	chk, _, app, err := app.AppendFloatHistogram(nil, ts1, h1.ToFloat(), false)
+	chk, _, app, err := app.AppendFloatHistogram(nil, ts1, h1.ToFloat(nil), false)
 	require.NoError(t, err)
 	require.Nil(t, chk)
 	require.Equal(t, 1, c.NumSamples())
@@ -245,13 +245,13 @@ func TestFloatHistogramChunkBucketChanges(t *testing.T) {
 	h2.NegativeBuckets = []int64{2, -1} // 2 1 (total 3)
 	// This is how span changes will be handled.
 	hApp, _ := app.(*FloatHistogramAppender)
-	posInterjections, negInterjections, ok, cr := hApp.appendable(h2.ToFloat())
+	posInterjections, negInterjections, ok, cr := hApp.appendable(h2.ToFloat(nil))
 	require.NotEmpty(t, posInterjections)
 	require.NotEmpty(t, negInterjections)
 	require.True(t, ok) // Only new buckets came in.
 	require.False(t, cr)
 	c, app = hApp.recode(posInterjections, negInterjections, h2.PositiveSpans, h2.NegativeSpans)
-	chk, _, _, err = app.AppendFloatHistogram(nil, ts2, h2.ToFloat(), false)
+	chk, _, _, err = app.AppendFloatHistogram(nil, ts2, h2.ToFloat(nil), false)
 	require.NoError(t, err)
 	require.Nil(t, chk)
 	require.Equal(t, 2, c.NumSamples())
@@ -263,16 +263,16 @@ func TestFloatHistogramChunkBucketChanges(t *testing.T) {
 	h1.PositiveBuckets = []int64{6, -3, -3, 3, -3, 0, 2, 2, 1, -5, 1}
 	h1.NegativeSpans = h2.NegativeSpans
 	h1.NegativeBuckets = []int64{0, 1}
-	expH2 := h2.ToFloat()
+	expH2 := h2.ToFloat(nil)
 	expH2.CounterResetHint = histogram.NotCounterReset
 	exp := []floatResult{
-		{t: ts1, h: h1.ToFloat()},
+		{t: ts1, h: h1.ToFloat(nil)},
 		{t: ts2, h: expH2},
 	}
 	it := c.Iterator(nil)
 	var act []floatResult
 	for it.Next() == ValFloatHistogram {
-		fts, fh := it.AtFloatHistogram()
+		fts, fh := it.AtFloatHistogram(nil)
 		act = append(act, floatResult{t: fts, h: fh})
 	}
 	require.NoError(t, it.Err())

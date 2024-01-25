@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/ovh/go-ovh/ovh"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
@@ -50,6 +51,13 @@ type SDConfig struct {
 	ConsumerKey       config.Secret  `yaml:"consumer_key"`
 	RefreshInterval   model.Duration `yaml:"refresh_interval"`
 	Service           string         `yaml:"service"`
+}
+
+// NewDiscovererMetrics implements discovery.Config.
+func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return &ovhcloudMetrics{
+		refreshMetrics: rmi,
+	}
 }
 
 // Name implements the Discoverer interface.
@@ -93,7 +101,7 @@ func createClient(config *SDConfig) (*ovh.Client, error) {
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(options discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, options.Logger)
+	return NewDiscovery(c, options.Logger, options.Metrics)
 }
 
 func init() {
@@ -140,16 +148,24 @@ func newRefresher(conf *SDConfig, logger log.Logger) (refresher, error) {
 }
 
 // NewDiscovery returns a new OVHcloud Discoverer which periodically refreshes its targets.
-func NewDiscovery(conf *SDConfig, logger log.Logger) (*refresh.Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*refresh.Discovery, error) {
+	m, ok := metrics.(*ovhcloudMetrics)
+	if !ok {
+		return nil, fmt.Errorf("invalid discovery metrics type")
+	}
+
 	r, err := newRefresher(conf, logger)
 	if err != nil {
 		return nil, err
 	}
 
 	return refresh.NewDiscovery(
-		logger,
-		"ovhcloud",
-		time.Duration(conf.RefreshInterval),
-		r.refresh,
+		refresh.Options{
+			Logger:              logger,
+			Mech:                "ovhcloud",
+			Interval:            time.Duration(conf.RefreshInterval),
+			RefreshF:            r.refresh,
+			MetricsInstantiator: m.refreshMetrics,
+		},
 	), nil
 }

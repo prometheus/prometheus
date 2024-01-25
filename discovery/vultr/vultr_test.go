@@ -20,8 +20,11 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/discovery"
 )
 
 type VultrSDTestSuite struct {
@@ -46,7 +49,15 @@ func TestVultrSDRefresh(t *testing.T) {
 
 	cfg := DefaultSDConfig
 	cfg.HTTPClientConfig.BearerToken = APIKey
-	d, err := NewDiscovery(&cfg, log.NewNopLogger())
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+	defer refreshMetrics.Unregister()
+
+	d, err := NewDiscovery(&cfg, log.NewNopLogger(), metrics)
 	require.NoError(t, err)
 	endpoint, err := url.Parse(sdMock.Mock.Endpoint())
 	require.NoError(t, err)

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
@@ -37,7 +38,7 @@ type sdCheckResult struct {
 }
 
 // CheckSD performs service discovery for the given job name and reports the results.
-func CheckSD(sdConfigFiles, sdJobName string, sdTimeout time.Duration, noDefaultScrapePort bool) int {
+func CheckSD(sdConfigFiles, sdJobName string, sdTimeout time.Duration, noDefaultScrapePort bool, registerer prometheus.Registerer) int {
 	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 
 	cfg, err := config.LoadFile(sdConfigFiles, false, false, logger)
@@ -77,12 +78,25 @@ func CheckSD(sdConfigFiles, sdJobName string, sdTimeout time.Duration, noDefault
 	defer cancel()
 
 	for _, cfg := range scrapeConfig.ServiceDiscoveryConfigs {
-		d, err := cfg.NewDiscoverer(discovery.DiscovererOptions{Logger: logger})
+		reg := prometheus.NewRegistry()
+		refreshMetrics := discovery.NewRefreshMetrics(reg)
+		metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+		err := metrics.Register()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Could not register service discovery metrics", err)
+			return failureExitCode
+		}
+
+		d, err := cfg.NewDiscoverer(discovery.DiscovererOptions{Logger: logger, Metrics: metrics})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Could not create new discoverer", err)
 			return failureExitCode
 		}
-		go d.Run(ctx, targetGroupChan)
+		go func() {
+			d.Run(ctx, targetGroupChan)
+			metrics.Unregister()
+			refreshMetrics.Unregister()
+		}()
 	}
 
 	var targetGroups []*targetgroup.Group

@@ -13,7 +13,6 @@
 
 // Only build when go-fuzz is in use
 //go:build gofuzz
-// +build gofuzz
 
 package promql
 

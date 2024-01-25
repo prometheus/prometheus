@@ -22,18 +22,13 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-)
-
-var (
-	epAddCount    = eventCount.WithLabelValues("endpoints", "add")
-	epUpdateCount = eventCount.WithLabelValues("endpoints", "update")
-	epDeleteCount = eventCount.WithLabelValues("endpoints", "delete")
 )
 
 // Endpoints discovers new endpoint targets.
@@ -54,10 +49,19 @@ type Endpoints struct {
 }
 
 // NewEndpoints returns a new endpoints discovery.
-func NewEndpoints(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node cache.SharedInformer) *Endpoints {
+func NewEndpoints(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node cache.SharedInformer, eventCount *prometheus.CounterVec) *Endpoints {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
+
+	epAddCount := eventCount.WithLabelValues(RoleEndpoint.String(), MetricLabelRoleAdd)
+	epUpdateCount := eventCount.WithLabelValues(RoleEndpoint.String(), MetricLabelRoleUpdate)
+	epDeleteCount := eventCount.WithLabelValues(RoleEndpoint.String(), MetricLabelRoleDelete)
+
+	svcAddCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleAdd)
+	svcUpdateCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleUpdate)
+	svcDeleteCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleDelete)
+
 	e := &Endpoints{
 		logger:           l,
 		endpointsInf:     eps,
@@ -68,7 +72,7 @@ func NewEndpoints(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node ca
 		podStore:         pod.GetStore(),
 		nodeInf:          node,
 		withNodeMetadata: node != nil,
-		queue:            workqueue.NewNamed("endpoints"),
+		queue:            workqueue.NewNamed(RoleEndpoint.String()),
 	}
 
 	_, err := e.endpointsInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -365,6 +369,11 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
 	// For all seen pods, check all container ports. If they were not covered
 	// by one of the service endpoints, generate targets for them.
 	for _, pe := range seenPods {
+		// PodIP can be empty when a pod is starting or has been evicted.
+		if len(pe.pod.Status.PodIP) == 0 {
+			continue
+		}
+
 		for _, c := range pe.pod.Spec.Containers {
 			for _, cport := range c.Ports {
 				hasSeenPort := func() bool {
@@ -379,21 +388,18 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
 					continue
 				}
 
-				// PodIP can be empty when a pod is starting or has been evicted.
-				if len(pe.pod.Status.PodIP) != 0 {
-					a := net.JoinHostPort(pe.pod.Status.PodIP, strconv.FormatUint(uint64(cport.ContainerPort), 10))
-					ports := strconv.FormatUint(uint64(cport.ContainerPort), 10)
+				a := net.JoinHostPort(pe.pod.Status.PodIP, strconv.FormatUint(uint64(cport.ContainerPort), 10))
+				ports := strconv.FormatUint(uint64(cport.ContainerPort), 10)
 
-					target := model.LabelSet{
-						model.AddressLabel:            lv(a),
-						podContainerNameLabel:         lv(c.Name),
-						podContainerImageLabel:        lv(c.Image),
-						podContainerPortNameLabel:     lv(cport.Name),
-						podContainerPortNumberLabel:   lv(ports),
-						podContainerPortProtocolLabel: lv(string(cport.Protocol)),
-					}
-					tg.Targets = append(tg.Targets, target.Merge(podLabels(pe.pod)))
+				target := model.LabelSet{
+					model.AddressLabel:            lv(a),
+					podContainerNameLabel:         lv(c.Name),
+					podContainerImageLabel:        lv(c.Image),
+					podContainerPortNameLabel:     lv(cport.Name),
+					podContainerPortNumberLabel:   lv(ports),
+					podContainerPortProtocolLabel: lv(string(cport.Protocol)),
 				}
+				tg.Targets = append(tg.Targets, target.Merge(podLabels(pe.pod)))
 			}
 		}
 	}

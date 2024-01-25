@@ -252,27 +252,28 @@ func (p *ProtobufParser) Help() ([]byte, []byte) {
 // Type returns the metric name and type in the current entry.
 // Must only be called after Next returned a type entry.
 // The returned byte slices become invalid after the next call to Next.
-func (p *ProtobufParser) Type() ([]byte, MetricType) {
+func (p *ProtobufParser) Type() ([]byte, model.MetricType) {
 	n := p.metricBytes.Bytes()
 	switch p.mf.GetType() {
 	case dto.MetricType_COUNTER:
-		return n, MetricTypeCounter
+		return n, model.MetricTypeCounter
 	case dto.MetricType_GAUGE:
-		return n, MetricTypeGauge
+		return n, model.MetricTypeGauge
 	case dto.MetricType_HISTOGRAM:
-		return n, MetricTypeHistogram
+		return n, model.MetricTypeHistogram
 	case dto.MetricType_GAUGE_HISTOGRAM:
-		return n, MetricTypeGaugeHistogram
+		return n, model.MetricTypeGaugeHistogram
 	case dto.MetricType_SUMMARY:
-		return n, MetricTypeSummary
+		return n, model.MetricTypeSummary
 	}
-	return n, MetricTypeUnknown
+	return n, model.MetricTypeUnknown
 }
 
-// Unit always returns (nil, nil) because units aren't supported by the protobuf
-// format.
+// Unit returns the metric unit in the current entry.
+// Must only be called after Next returned a unit entry.
+// The returned byte slices become invalid after the next call to Next.
 func (p *ProtobufParser) Unit() ([]byte, []byte) {
-	return nil, nil
+	return p.metricBytes.Bytes(), []byte(p.mf.GetUnit())
 }
 
 // Comment always returns nil because comments aren't supported by the protobuf
@@ -360,22 +361,26 @@ func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
 	return true
 }
 
-func (p *ProtobufParser) CreatedTimestamp(ct *types.Timestamp) bool {
-	var foundCT *types.Timestamp
+// CreatedTimestamp returns CT or nil if CT is not present or
+// invalid (as timestamp e.g. negative value) on counters, summaries or histograms.
+func (p *ProtobufParser) CreatedTimestamp() *int64 {
+	var ct *types.Timestamp
 	switch p.mf.GetType() {
 	case dto.MetricType_COUNTER:
-		foundCT = p.mf.GetMetric()[p.metricPos].GetCounter().GetCreatedTimestamp()
+		ct = p.mf.GetMetric()[p.metricPos].GetCounter().GetCreatedTimestamp()
 	case dto.MetricType_SUMMARY:
-		foundCT = p.mf.GetMetric()[p.metricPos].GetSummary().GetCreatedTimestamp()
+		ct = p.mf.GetMetric()[p.metricPos].GetSummary().GetCreatedTimestamp()
 	case dto.MetricType_HISTOGRAM, dto.MetricType_GAUGE_HISTOGRAM:
-		foundCT = p.mf.GetMetric()[p.metricPos].GetHistogram().GetCreatedTimestamp()
+		ct = p.mf.GetMetric()[p.metricPos].GetHistogram().GetCreatedTimestamp()
 	default:
 	}
-	if foundCT == nil {
-		return false
+	ctAsTime, err := types.TimestampFromProto(ct)
+	if err != nil {
+		// Errors means ct == nil or invalid timestamp, which we silently ignore.
+		return nil
 	}
-	*ct = *foundCT
-	return true
+	ctMilis := ctAsTime.UnixMilli()
+	return &ctMilis
 }
 
 // Next advances the parser to the next "sample" (emulating the behavior of a
@@ -417,6 +422,16 @@ func (p *ProtobufParser) Next() (Entry, error) {
 			// All good.
 		default:
 			return EntryInvalid, fmt.Errorf("unknown metric type for metric %q: %s", name, p.mf.GetType())
+		}
+		unit := p.mf.GetUnit()
+		if len(unit) > 0 {
+			if p.mf.GetType() == dto.MetricType_COUNTER && strings.HasSuffix(name, "_total") {
+				if !strings.HasSuffix(name[:len(name)-6], unit) || len(name)-6 < len(unit)+1 || name[len(name)-6-len(unit)-1] != '_' {
+					return EntryInvalid, fmt.Errorf("unit %q not a suffix of counter %q", unit, name)
+				}
+			} else if !strings.HasSuffix(name, unit) || len(name) < len(unit)+1 || name[len(name)-len(unit)-1] != '_' {
+				return EntryInvalid, fmt.Errorf("unit %q not a suffix of metric %q", unit, name)
+			}
 		}
 		p.metricBytes.Reset()
 		p.metricBytes.WriteString(name)

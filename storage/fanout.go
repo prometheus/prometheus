@@ -89,7 +89,9 @@ func (f *fanout) Querier(mint, maxt int64) (Querier, error) {
 			}
 			return nil, errs.Err()
 		}
-		secondaries = append(secondaries, querier)
+		if _, ok := querier.(noopQuerier); !ok {
+			secondaries = append(secondaries, querier)
+		}
 	}
 	return NewMergeQuerier([]Querier{primary}, secondaries, ChainedSeriesMerge), nil
 }
@@ -196,6 +198,20 @@ func (f *fanoutAppender) UpdateMetadata(ref SeriesRef, l labels.Labels, m metada
 
 	for _, appender := range f.secondaries {
 		if _, err := appender.UpdateMetadata(ref, l, m); err != nil {
+			return 0, err
+		}
+	}
+	return ref, nil
+}
+
+func (f *fanoutAppender) AppendCTZeroSample(ref SeriesRef, l labels.Labels, t, ct int64) (SeriesRef, error) {
+	ref, err := f.primary.AppendCTZeroSample(ref, l, t, ct)
+	if err != nil {
+		return ref, err
+	}
+
+	for _, appender := range f.secondaries {
+		if _, err := appender.AppendCTZeroSample(ref, l, t, ct); err != nil {
 			return 0, err
 		}
 	}

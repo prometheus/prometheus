@@ -15,11 +15,11 @@ package tsdb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -85,6 +85,17 @@ func (a *initAppender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m 
 
 	a.app = a.head.appender()
 	return a.app.UpdateMetadata(ref, l, m)
+}
+
+func (a *initAppender) AppendCTZeroSample(ref storage.SeriesRef, lset labels.Labels, t, ct int64) (storage.SeriesRef, error) {
+	if a.app != nil {
+		return a.app.AppendCTZeroSample(ref, lset, t, ct)
+	}
+
+	a.head.initTime(t)
+	a.app = a.head.appender()
+
+	return a.app.AppendCTZeroSample(ref, lset, t, ct)
 }
 
 // initTime initializes a head with the first timestamp. This only needs to be called
@@ -319,27 +330,10 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
 	if s == nil {
-		// Ensure no empty labels have gotten through.
-		lset = lset.WithoutEmpty()
-		if lset.IsEmpty() {
-			return 0, errors.Wrap(ErrInvalidSample, "empty labelset")
-		}
-
-		if l, dup := lset.HasDuplicateLabelNames(); dup {
-			return 0, errors.Wrap(ErrInvalidSample, fmt.Sprintf(`label name "%s" is not unique`, l))
-		}
-
-		var created bool
 		var err error
-		s, created, err = a.head.getOrCreate(lset.Hash(), lset)
+		s, err = a.getOrCreate(lset)
 		if err != nil {
 			return 0, err
-		}
-		if created {
-			a.series = append(a.series, record.RefSeries{
-				Ref:    s.ref,
-				Labels: lset,
-			})
 		}
 	}
 
@@ -364,10 +358,10 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 		a.head.metrics.oooHistogram.Observe(float64(delta) / 1000)
 	}
 	if err != nil {
-		switch err {
-		case storage.ErrOutOfOrderSample:
+		switch {
+		case errors.Is(err, storage.ErrOutOfOrderSample):
 			a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
-		case storage.ErrTooOldSample:
+		case errors.Is(err, storage.ErrTooOldSample):
 			a.head.metrics.tooOldSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
 		}
 		return 0, err
@@ -387,6 +381,71 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	})
 	a.sampleSeries = append(a.sampleSeries, s)
 	return storage.SeriesRef(s.ref), nil
+}
+
+// AppendCTZeroSample appends synthetic zero sample for ct timestamp. It returns
+// error when sample can't be appended. See
+// storage.CreatedTimestampAppender.AppendCTZeroSample for further documentation.
+func (a *headAppender) AppendCTZeroSample(ref storage.SeriesRef, lset labels.Labels, t, ct int64) (storage.SeriesRef, error) {
+	if ct >= t {
+		return 0, fmt.Errorf("CT is newer or the same as sample's timestamp, ignoring")
+	}
+
+	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
+	if s == nil {
+		var err error
+		s, err = a.getOrCreate(lset)
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	// Check if CT wouldn't be OOO vs samples we already might have for this series.
+	// NOTE(bwplotka): This will be often hit as it's expected for long living
+	// counters to share the same CT.
+	s.Lock()
+	isOOO, _, err := s.appendable(ct, 0, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+	if err == nil {
+		s.pendingCommit = true
+	}
+	s.Unlock()
+	if err != nil {
+		return 0, err
+	}
+	if isOOO {
+		return storage.SeriesRef(s.ref), storage.ErrOutOfOrderCT
+	}
+
+	if ct > a.maxt {
+		a.maxt = ct
+	}
+	a.samples = append(a.samples, record.RefSample{Ref: s.ref, T: ct, V: 0.0})
+	a.sampleSeries = append(a.sampleSeries, s)
+	return storage.SeriesRef(s.ref), nil
+}
+
+func (a *headAppender) getOrCreate(lset labels.Labels) (*memSeries, error) {
+	// Ensure no empty labels have gotten through.
+	lset = lset.WithoutEmpty()
+	if lset.IsEmpty() {
+		return nil, fmt.Errorf("empty labelset: %w", ErrInvalidSample)
+	}
+	if l, dup := lset.HasDuplicateLabelNames(); dup {
+		return nil, fmt.Errorf(`label name "%s" is not unique: %w`, l, ErrInvalidSample)
+	}
+	var created bool
+	var err error
+	s, created, err := a.head.getOrCreate(lset.Hash(), lset)
+	if err != nil {
+		return nil, err
+	}
+	if created {
+		a.series = append(a.series, record.RefSeries{
+			Ref:    s.ref,
+			Labels: lset,
+		})
+	}
+	return s, nil
 }
 
 // appendable checks whether the given sample is valid for appending to the series. (if we return false and no error)
@@ -498,7 +557,7 @@ func (a *headAppender) AppendExemplar(ref storage.SeriesRef, lset labels.Labels,
 
 	err := a.head.exemplars.ValidateExemplar(s.lset, e)
 	if err != nil {
-		if err == storage.ErrDuplicateExemplar || err == storage.ErrExemplarsDisabled {
+		if errors.Is(err, storage.ErrDuplicateExemplar) || errors.Is(err, storage.ErrExemplarsDisabled) {
 			// Duplicate, don't return an error but don't accept the exemplar.
 			return 0, nil
 		}
@@ -537,11 +596,11 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		// Ensure no empty labels have gotten through.
 		lset = lset.WithoutEmpty()
 		if lset.IsEmpty() {
-			return 0, errors.Wrap(ErrInvalidSample, "empty labelset")
+			return 0, fmt.Errorf("empty labelset: %w", ErrInvalidSample)
 		}
 
 		if l, dup := lset.HasDuplicateLabelNames(); dup {
-			return 0, errors.Wrap(ErrInvalidSample, fmt.Sprintf(`label name "%s" is not unique`, l))
+			return 0, fmt.Errorf(`label name "%s" is not unique: %w`, l, ErrInvalidSample)
 		}
 
 		var created bool
@@ -569,7 +628,7 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		s.Lock()
 		if err := s.appendableHistogram(t, h); err != nil {
 			s.Unlock()
-			if err == storage.ErrOutOfOrderSample {
+			if errors.Is(err, storage.ErrOutOfOrderSample) {
 				a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
 			}
 			return 0, err
@@ -586,7 +645,7 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		s.Lock()
 		if err := s.appendableFloatHistogram(t, fh); err != nil {
 			s.Unlock()
-			if err == storage.ErrOutOfOrderSample {
+			if errors.Is(err, storage.ErrOutOfOrderSample) {
 				a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
 			}
 			return 0, err
@@ -670,7 +729,7 @@ func (a *headAppender) log() error {
 		buf = rec[:0]
 
 		if err := a.head.wal.Log(rec); err != nil {
-			return errors.Wrap(err, "log series")
+			return fmt.Errorf("log series: %w", err)
 		}
 	}
 	if len(a.metadata) > 0 {
@@ -678,7 +737,7 @@ func (a *headAppender) log() error {
 		buf = rec[:0]
 
 		if err := a.head.wal.Log(rec); err != nil {
-			return errors.Wrap(err, "log metadata")
+			return fmt.Errorf("log metadata: %w", err)
 		}
 	}
 	if len(a.samples) > 0 {
@@ -686,21 +745,21 @@ func (a *headAppender) log() error {
 		buf = rec[:0]
 
 		if err := a.head.wal.Log(rec); err != nil {
-			return errors.Wrap(err, "log samples")
+			return fmt.Errorf("log samples: %w", err)
 		}
 	}
 	if len(a.histograms) > 0 {
 		rec = enc.HistogramSamples(a.histograms, buf)
 		buf = rec[:0]
 		if err := a.head.wal.Log(rec); err != nil {
-			return errors.Wrap(err, "log histograms")
+			return fmt.Errorf("log histograms: %w", err)
 		}
 	}
 	if len(a.floatHistograms) > 0 {
 		rec = enc.FloatHistogramSamples(a.floatHistograms, buf)
 		buf = rec[:0]
 		if err := a.head.wal.Log(rec); err != nil {
-			return errors.Wrap(err, "log float histograms")
+			return fmt.Errorf("log float histograms: %w", err)
 		}
 	}
 	// Exemplars should be logged after samples (float/native histogram/etc),
@@ -712,7 +771,7 @@ func (a *headAppender) log() error {
 		buf = rec[:0]
 
 		if err := a.head.wal.Log(rec); err != nil {
-			return errors.Wrap(err, "log exemplars")
+			return fmt.Errorf("log exemplars: %w", err)
 		}
 	}
 	return nil
@@ -741,7 +800,7 @@ func (a *headAppender) Commit() (err error) {
 
 	if err := a.log(); err != nil {
 		_ = a.Rollback() // Most likely the same error will happen again.
-		return errors.Wrap(err, "write to WAL")
+		return fmt.Errorf("write to WAL: %w", err)
 	}
 
 	if a.head.writeNotified != nil {
@@ -759,7 +818,7 @@ func (a *headAppender) Commit() (err error) {
 		}
 		// We don't instrument exemplar appends here, all is instrumented by storage.
 		if err := a.head.exemplars.AddExemplar(s.lset, e.exemplar); err != nil {
-			if err == storage.ErrOutOfOrderExemplar {
+			if errors.Is(err, storage.ErrOutOfOrderExemplar) {
 				continue
 			}
 			level.Debug(a.head.logger).Log("msg", "Unknown error while adding exemplar", "err", err)
@@ -839,16 +898,16 @@ func (a *headAppender) Commit() (err error) {
 		series.Lock()
 
 		oooSample, _, err := series.appendable(s.T, s.V, a.headMaxt, a.minValidTime, a.oooTimeWindow)
-		switch err {
-		case nil:
+		switch {
+		case err == nil:
 			// Do nothing.
-		case storage.ErrOutOfOrderSample:
+		case errors.Is(err, storage.ErrOutOfOrderSample):
 			samplesAppended--
 			oooRejected++
-		case storage.ErrOutOfBounds:
+		case errors.Is(err, storage.ErrOutOfBounds):
 			samplesAppended--
 			oobRejected++
-		case storage.ErrTooOldSample:
+		case errors.Is(err, storage.ErrTooOldSample):
 			samplesAppended--
 			tooOldRejected++
 		default:
@@ -979,7 +1038,7 @@ func (a *headAppender) Commit() (err error) {
 	for i, m := range a.metadata {
 		series = a.metadataSeries[i]
 		series.Lock()
-		series.meta = &metadata.Metadata{Type: record.ToTextparseMetricType(m.Type), Unit: m.Unit, Help: m.Help}
+		series.meta = &metadata.Metadata{Type: record.ToMetricType(m.Type), Unit: m.Unit, Help: m.Help}
 		series.Unlock()
 	}
 
@@ -1428,7 +1487,7 @@ func (s *memSeries) mmapChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (count i
 }
 
 func handleChunkWriteError(err error) {
-	if err != nil && err != chunks.ErrChunkDiskMapperClosed {
+	if err != nil && !errors.Is(err, chunks.ErrChunkDiskMapperClosed) {
 		panic(err)
 	}
 }

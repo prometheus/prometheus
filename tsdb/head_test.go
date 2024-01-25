@@ -30,9 +30,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
@@ -2055,9 +2055,8 @@ func TestWalRepair_DecodingError(t *testing.T) {
 					require.Equal(t, 0.0, prom_testutil.ToFloat64(h.metrics.walCorruptionsTotal))
 					initErr := h.Init(math.MinInt64)
 
-					err = errors.Cause(initErr) // So that we can pick up errors even if wrapped.
-					_, corrErr := err.(*wlog.CorruptionErr)
-					require.True(t, corrErr, "reading the wal didn't return corruption error")
+					var cerr *wlog.CorruptionErr
+					require.ErrorAs(t, initErr, &cerr, "reading the wal didn't return corruption error")
 					require.NoError(t, h.Close()) // Head will close the wal as well.
 				}
 
@@ -2128,12 +2127,11 @@ func TestWblRepair_DecodingError(t *testing.T) {
 		require.Equal(t, 0.0, prom_testutil.ToFloat64(h.metrics.walCorruptionsTotal))
 		initErr := h.Init(math.MinInt64)
 
-		_, ok := initErr.(*errLoadWbl)
-		require.True(t, ok) // Wbl errors are wrapped into errLoadWbl, make sure we can unwrap it.
+		var elb *errLoadWbl
+		require.ErrorAs(t, initErr, &elb) // Wbl errors are wrapped into errLoadWbl, make sure we can unwrap it.
 
-		err = errors.Cause(initErr) // So that we can pick up errors even if wrapped.
-		_, corrErr := err.(*wlog.CorruptionErr)
-		require.True(t, corrErr, "reading the wal didn't return corruption error")
+		var cerr *wlog.CorruptionErr
+		require.ErrorAs(t, initErr, &cerr, "reading the wal didn't return corruption error")
 		require.NoError(t, h.Close()) // Head will close the wal as well.
 	}
 
@@ -2554,7 +2552,7 @@ func TestIsolationAppendIDZeroIsNoop(t *testing.T) {
 
 	ok, _ := s.append(0, 0, 0, cOpts)
 	require.True(t, ok, "Series append failed.")
-	require.Equal(t, 0, s.txs.txIDCount, "Series should not have an appendID after append with appendID=0.")
+	require.Equal(t, 0, int(s.txs.txIDCount), "Series should not have an appendID after append with appendID=0.")
 }
 
 func TestHeadSeriesChunkRace(t *testing.T) {
@@ -2774,6 +2772,13 @@ func TestHeadLabelValuesWithMatchers(t *testing.T) {
 	}
 	require.NoError(t, app.Commit())
 
+	var uniqueWithout30s []string
+	for i := 0; i < 100; i++ {
+		if i/10 != 3 {
+			uniqueWithout30s = append(uniqueWithout30s, fmt.Sprintf("value%d", i))
+		}
+	}
+	sort.Strings(uniqueWithout30s)
 	testCases := []struct {
 		name           string
 		labelName      string
@@ -2796,10 +2801,18 @@ func TestHeadLabelValuesWithMatchers(t *testing.T) {
 			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "unique", "value[5-7]5")},
 			expectedValues: []string{"value5", "value6", "value7"},
 		}, {
-			name:           "get tens by matching for absence of unique label",
+			name:           "get tens by matching for presence of unique label",
 			labelName:      "tens",
 			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "unique", "")},
 			expectedValues: []string{"value0", "value1", "value2", "value3", "value4", "value5", "value6", "value7", "value8", "value9"},
+		}, {
+			name:      "get unique IDs based on tens not being equal to a certain value, while not empty",
+			labelName: "unique",
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchNotEqual, "tens", "value3"),
+				labels.MustNewMatcher(labels.MatchNotEqual, "tens", ""),
+			},
+			expectedValues: uniqueWithout30s,
 		},
 	}
 
@@ -3379,10 +3392,10 @@ func TestAppendHistogram(t *testing.T) {
 			for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
 				switch typ {
 				case chunkenc.ValHistogram:
-					ts, h := it.AtHistogram()
+					ts, h := it.AtHistogram(nil)
 					actHistograms = append(actHistograms, sample{t: ts, h: h})
 				case chunkenc.ValFloatHistogram:
-					ts, fh := it.AtFloatHistogram()
+					ts, fh := it.AtFloatHistogram(nil)
 					actFloatHistograms = append(actFloatHistograms, sample{t: ts, fh: fh})
 				}
 			}
@@ -4027,10 +4040,10 @@ func testHistogramStaleSampleHelper(t *testing.T, floatHistogram bool) {
 		for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
 			switch typ {
 			case chunkenc.ValHistogram:
-				t, h := it.AtHistogram()
+				t, h := it.AtHistogram(nil)
 				actHistograms = append(actHistograms, timedHistogram{t: t, h: h})
 			case chunkenc.ValFloatHistogram:
-				t, h := it.AtFloatHistogram()
+				t, h := it.AtFloatHistogram(nil)
 				actHistograms = append(actHistograms, timedHistogram{t: t, fh: h})
 			}
 		}
@@ -4082,8 +4095,8 @@ func testHistogramStaleSampleHelper(t *testing.T, floatHistogram bool) {
 	for _, h := range tsdbutil.GenerateTestHistograms(numHistograms) {
 		var err error
 		if floatHistogram {
-			_, err = app.AppendHistogram(0, l, 100*int64(len(expHistograms)), nil, h.ToFloat())
-			expHistograms = append(expHistograms, timedHistogram{t: 100 * int64(len(expHistograms)), fh: h.ToFloat()})
+			_, err = app.AppendHistogram(0, l, 100*int64(len(expHistograms)), nil, h.ToFloat(nil))
+			expHistograms = append(expHistograms, timedHistogram{t: 100 * int64(len(expHistograms)), fh: h.ToFloat(nil)})
 		} else {
 			_, err = app.AppendHistogram(0, l, 100*int64(len(expHistograms)), h, nil)
 			expHistograms = append(expHistograms, timedHistogram{t: 100 * int64(len(expHistograms)), h: h})
@@ -4113,8 +4126,8 @@ func testHistogramStaleSampleHelper(t *testing.T, floatHistogram bool) {
 	for _, h := range tsdbutil.GenerateTestHistograms(2 * numHistograms)[numHistograms:] {
 		var err error
 		if floatHistogram {
-			_, err = app.AppendHistogram(0, l, 100*int64(len(expHistograms)), nil, h.ToFloat())
-			expHistograms = append(expHistograms, timedHistogram{t: 100 * int64(len(expHistograms)), fh: h.ToFloat()})
+			_, err = app.AppendHistogram(0, l, 100*int64(len(expHistograms)), nil, h.ToFloat(nil))
+			expHistograms = append(expHistograms, timedHistogram{t: 100 * int64(len(expHistograms)), fh: h.ToFloat(nil)})
 		} else {
 			_, err = app.AppendHistogram(0, l, 100*int64(len(expHistograms)), h, nil)
 			expHistograms = append(expHistograms, timedHistogram{t: 100 * int64(len(expHistograms)), h: h})
@@ -4160,7 +4173,7 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 				app := head.Appender(context.Background())
 				var err error
 				if floatHisto {
-					_, err = app.AppendHistogram(0, l, ts, nil, h.ToFloat())
+					_, err = app.AppendHistogram(0, l, ts, nil, h.ToFloat(nil))
 				} else {
 					_, err = app.AppendHistogram(0, l, ts, h.Copy(), nil)
 				}
@@ -5640,4 +5653,94 @@ func TestPostingsCardinalityStats(t *testing.T) {
 	require.NotEqual(t, statsForSomeLabel1, statsForSomeLabel)
 	// Using cache.
 	require.Equal(t, statsForSomeLabel1, head.PostingsCardinalityStats("n", 1))
+}
+
+func TestHeadAppender_AppendCTZeroSample(t *testing.T) {
+	type appendableSamples struct {
+		ts  int64
+		val float64
+		ct  int64
+	}
+	for _, tc := range []struct {
+		name              string
+		appendableSamples []appendableSamples
+		expectedSamples   []model.Sample
+	}{
+		{
+			name: "In order ct+normal sample",
+			appendableSamples: []appendableSamples{
+				{ts: 100, val: 10, ct: 1},
+			},
+			expectedSamples: []model.Sample{
+				{Timestamp: 1, Value: 0},
+				{Timestamp: 100, Value: 10},
+			},
+		},
+		{
+			name: "Consecutive appends with same ct ignore ct",
+			appendableSamples: []appendableSamples{
+				{ts: 100, val: 10, ct: 1},
+				{ts: 101, val: 10, ct: 1},
+			},
+			expectedSamples: []model.Sample{
+				{Timestamp: 1, Value: 0},
+				{Timestamp: 100, Value: 10},
+				{Timestamp: 101, Value: 10},
+			},
+		},
+		{
+			name: "Consecutive appends with newer ct do not ignore ct",
+			appendableSamples: []appendableSamples{
+				{ts: 100, val: 10, ct: 1},
+				{ts: 102, val: 10, ct: 101},
+			},
+			expectedSamples: []model.Sample{
+				{Timestamp: 1, Value: 0},
+				{Timestamp: 100, Value: 10},
+				{Timestamp: 101, Value: 0},
+				{Timestamp: 102, Value: 10},
+			},
+		},
+		{
+			name: "CT equals to previous sample timestamp is ignored",
+			appendableSamples: []appendableSamples{
+				{ts: 100, val: 10, ct: 1},
+				{ts: 101, val: 10, ct: 100},
+			},
+			expectedSamples: []model.Sample{
+				{Timestamp: 1, Value: 0},
+				{Timestamp: 100, Value: 10},
+				{Timestamp: 101, Value: 10},
+			},
+		},
+	} {
+		h, _ := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
+		defer func() {
+			require.NoError(t, h.Close())
+		}()
+		a := h.Appender(context.Background())
+		lbls := labels.FromStrings("foo", "bar")
+		for _, sample := range tc.appendableSamples {
+			_, err := a.AppendCTZeroSample(0, lbls, sample.ts, sample.ct)
+			require.NoError(t, err)
+			_, err = a.Append(0, lbls, sample.ts, sample.val)
+			require.NoError(t, err)
+		}
+		require.NoError(t, a.Commit())
+
+		q, err := NewBlockQuerier(h, math.MinInt64, math.MaxInt64)
+		require.NoError(t, err)
+		ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+		require.True(t, ss.Next())
+		s := ss.At()
+		require.False(t, ss.Next())
+		it := s.Iterator(nil)
+		for _, sample := range tc.expectedSamples {
+			require.Equal(t, chunkenc.ValFloat, it.Next())
+			timestamp, value := it.At()
+			require.Equal(t, sample.Timestamp, model.Time(timestamp))
+			require.Equal(t, sample.Value, model.SampleValue(value))
+		}
+		require.Equal(t, chunkenc.ValNone, it.Next())
+	}
 }

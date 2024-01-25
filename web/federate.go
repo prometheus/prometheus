@@ -65,14 +65,10 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	var matcherSets [][]*labels.Matcher
-	for _, s := range req.Form["match[]"] {
-		matchers, err := parser.ParseMetricSelector(s)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		matcherSets = append(matcherSets, matchers)
+	matcherSets, err := parser.ParseMetricSelectors(req.Form["match[]"])
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	var (
@@ -127,7 +123,7 @@ Loop:
 		case chunkenc.ValFloat:
 			t, f = it.At()
 		case chunkenc.ValFloatHistogram, chunkenc.ValHistogram:
-			t, fh = it.AtFloatHistogram()
+			t, fh = it.AtFloatHistogram(nil)
 		default:
 			sample, ok := it.PeekBack(1)
 			if !ok {
@@ -138,7 +134,7 @@ Loop:
 			case chunkenc.ValFloat:
 				f = sample.F()
 			case chunkenc.ValHistogram:
-				fh = sample.H().ToFloat()
+				fh = sample.H().ToFloat(nil)
 			case chunkenc.ValFloatHistogram:
 				fh = sample.FH()
 			default:

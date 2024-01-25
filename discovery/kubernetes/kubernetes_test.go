@@ -29,6 +29,8 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -49,13 +51,30 @@ func makeDiscoveryWithVersion(role Role, nsDiscovery NamespaceDiscovery, k8sVer 
 	fakeDiscovery, _ := clientset.Discovery().(*fakediscovery.FakeDiscovery)
 	fakeDiscovery.FakedServerVersion = &version.Info{GitVersion: k8sVer}
 
-	return &Discovery{
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := newDiscovererMetrics(reg, refreshMetrics)
+	err := metrics.Register()
+	if err != nil {
+		panic(err)
+	}
+	// TODO(ptodev): Unregister the metrics at the end of the test.
+
+	kubeMetrics, ok := metrics.(*kubernetesMetrics)
+	if !ok {
+		panic("invalid discovery metrics type")
+	}
+
+	d := &Discovery{
 		client:             clientset,
 		logger:             log.NewNopLogger(),
 		role:               role,
 		namespaceDiscovery: &nsDiscovery,
 		ownNamespace:       "own-ns",
-	}, clientset
+		metrics:            kubeMetrics,
+	}
+
+	return d, clientset
 }
 
 // makeDiscoveryWithMetadata creates a kubernetes.Discovery instance with the specified metadata config.
