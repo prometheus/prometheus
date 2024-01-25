@@ -1,5 +1,38 @@
 # Changelog
 
+
+## 2.50.0-rc.0 / 2024-01-26
+
+* [FEATURE] Add new feature flag `created-timestamp-zero-ingestion`. #12733 #13279
+* [FEATURE] TSDB/{index,compact}: allow using custom postings encoding format. #13242 #13407 #13391
+* [FEATURE] Promtool: Add `analyze` histograms command #12331
+* [FEATURE] TSDB/compaction: Add a way to enable overlapping compaction #13282 #13393 #13398
+* [FEATURE] Add automatic memory limit handling. Activated using the flag `auto-gomemlimit.ratio` #13395
+* [ENHANCEMENT] Promtool: allow setting multiple matchers to `promtool tsdb dump`. #13296
+* [ENHANCEMENT] PromQL: Restore more efficient version of `NewPossibleNonCounterInfo` annotation. #13022
+* [ENHANCEMENT] Enable reusing memory when converting between histogram types. #13215
+* [ENHANCEMENT] PERFORMANCE: Reuse float histogram objects. #13276 #13289
+* [ENHANCEMENT] SD: Extend Kuma SD configuration to allow users to specify ClientId. #13278
+* [ENHANCEMENT] Optimize histogram iterators. #13340
+* [ENHANCEMENT] PROMQL: Use natural sort in `sort_by_label` and `sort_by_label_desc`. #13411
+* [ENHANCEMENT] Native Histograms: support `native_histogram_min_bucket_factor` in scrape_config. #13222
+* [ENHANCEMENT] Metrics: Add warnings for histogramRate applied with isCounter not matching counter/gauge histogram. #13392
+* [ENHANCEMENT] TSDB/PERFORMANCE: make transaction isolation data structures smaller. #13015
+* [ENHANCEMENT] TSDB/postings: use Loser Tree for merge. #12878
+* [ENHANCEMENT] TSDB/PERFORMANCE: simplify internal series delete function. #13261
+* [ENHANCEMENT] TSDB/AGENT: Performance improvement by making the global hash lookup table smaller. #13262
+* [ENHANCEMENT] Labels/PERFORMANCE: Add DropMetricName function, used in PromQL. #13446
+* [ENHANCEMENT] PERFORMANCE: Optimize label values with matchers by taking shortcuts. #13426
+* [ENHANCEMENT] SD/PERFORMANCE: check preconditions earlier and avoid unnecessary checks or iterations in kube_sd. #13408
+* [ENHANCEMENT] PromQL: simplify Native Histogram arithmetics. #13267
+* [ENHANCEMENT] Promtool: Improve visibility for `promtool test rules` with JSON colored formatting. #13342
+* [ENHANCEMENT] CONSOLES: exclude iowait and steal from CPU Utilisation. #9593
+* [BUGFIX] Fix quality value in HTTP Accept header. #13313
+* [BUGFIX] Fix reusing float histograms. #13289
+* [BUGFIX] UI: fix handling of scalar and string in isHeatmapData. #13371
+* [CHANGE] REMOTE_WRITE: Drop old inmemory samples. Activated using the config entry `sample_age_limit` #13002
+* [CHANGE] REMOTE_WRITE: Error `storage.ErrTooOldSample` is now generating HTTP error 400 instead of HTTP error 500. #13335
+
 ## 2.49.1 / 2024-01-15
 
 * [BUGFIX] TSDB: Fixed a wrong `q=` value in scrape accept header #13313
