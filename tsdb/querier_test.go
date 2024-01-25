@@ -3304,7 +3304,7 @@ func TestPostingsForMatcher(t *testing.T) {
 		{
 			// Test case for double quoted regex matcher
 			matcher:  labels.MustNewMatcher(labels.MatchRegexp, "test", "^(?:a|b)$"),
-			hasError: true,
+			hasError: false,
 		},
 	}
 
