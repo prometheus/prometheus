@@ -628,6 +628,7 @@ outer:
 			t.seriesMtx.Unlock()
 			continue
 		}
+		// todo: handle or at least log an error if no metadata is found
 		meta := t.seriesMetadata[s.Ref]
 		t.seriesMtx.Unlock()
 		// Start with a very small backoff. This should not be t.cfg.MinBackoff
@@ -898,7 +899,6 @@ func (t *QueueManager) StoreMetadata(meta []record.RefMetadata) {
 	t.seriesMtx.Lock()
 	defer t.seriesMtx.Unlock()
 	for _, m := range meta {
-		// TODO(@tpaschalis) Introduce and use an internMetadata method for the unit/help texts.
 		t.seriesMetadata[m.Ref] = &metadata.Metadata{
 			Type: record.ToMetricType(m.Type),
 			Unit: m.Unit,
@@ -1315,6 +1315,9 @@ func newQueue(batchSize, capacity int) *queue {
 func (q *queue) Append(datum timeSeries) bool {
 	q.batchMtx.Lock()
 	defer q.batchMtx.Unlock()
+	// TODO: check if metadata now means we've reduced the total # of samples
+	// we can batch together here, and if so find a way to not include metadata
+	// in the batch size calculation.
 	q.batch = append(q.batch, datum)
 	if len(q.batch) == cap(q.batch) {
 		select {
@@ -1480,9 +1483,9 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 				n := nPendingSamples + nPendingExemplars + nPendingHistograms
 				s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, &buf)
 			case Version2:
-				nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata := populateMinimizedTimeSeriesStr(&symbolTable, batch, pendingMinStrData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
+				nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata := populateV2TimeSeries(&symbolTable, batch, pendingMinStrData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
 				n := nPendingSamples + nPendingExemplars + nPendingHistograms
-				s.sendMinStrSamples(ctx, pendingMinStrData[:n], symbolTable.LabelsStrings(), nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, &pBufRaw, &buf)
+				s.sendV2Samples(ctx, pendingMinStrData[:n], symbolTable.LabelsStrings(), nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, &pBufRaw, &buf)
 				symbolTable.clear()
 			}
 
@@ -1502,9 +1505,9 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 					level.Debug(s.qm.logger).Log("msg", "runShard timer ticked, sending buffered data", "samples", nPendingSamples,
 						"exemplars", nPendingExemplars, "shard", shardNum, "histograms", nPendingHistograms)
 				case Version2:
-					nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata := populateMinimizedTimeSeriesStr(&symbolTable, batch, pendingMinStrData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
+					nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata := populateV2TimeSeries(&symbolTable, batch, pendingMinStrData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
 					n := nPendingSamples + nPendingExemplars + nPendingHistograms
-					s.sendMinStrSamples(ctx, pendingMinStrData[:n], symbolTable.LabelsStrings(), nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, &pBufRaw, &buf)
+					s.sendV2Samples(ctx, pendingMinStrData[:n], symbolTable.LabelsStrings(), nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, &pBufRaw, &buf)
 					symbolTable.clear()
 				}
 			}
@@ -1567,11 +1570,8 @@ func (s *shards) sendSamples(ctx context.Context, series []prompb.TimeSeries, sa
 	s.updateMetrics(ctx, err, sampleCount, exemplarCount, histogramCount, 0, time.Since(begin))
 }
 
-func (s *shards) sendMinStrSamples(ctx context.Context, samples []writev2.TimeSeries, labels []string, sampleCount, exemplarCount, histogramCount, metadataCount int, pBuf, buf *[]byte) {
+func (s *shards) sendV2Samples(ctx context.Context, samples []writev2.TimeSeries, labels []string, sampleCount, exemplarCount, histogramCount, metadataCount int, pBuf, buf *[]byte) {
 	begin := time.Now()
-	// Build the ReducedWriteRequest with no metadata.
-	// Failing to build the write request is non-recoverable, since it will
-	// only error if marshaling the proto to bytes fails.
 	req, highest, err := buildMinimizedWriteRequestStr(samples, labels, pBuf, buf)
 	if err == nil {
 		err = s.sendSamplesWithBackoff(ctx, req, sampleCount, exemplarCount, histogramCount, metadataCount, highest)
@@ -1663,10 +1663,18 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, rawReq []byte, samp
 	return err
 }
 
-func populateMinimizedTimeSeriesStr(symbolTable *rwSymbolTable, batch []timeSeries, pendingData []writev2.TimeSeries, sendExemplars, sendNativeHistograms bool) (int, int, int, int) {
+func populateV2TimeSeries(symbolTable *rwSymbolTable, batch []timeSeries, pendingData []writev2.TimeSeries, sendExemplars, sendNativeHistograms bool) (int, int, int, int) {
 	var nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata int
 	for nPending, d := range batch {
 		pendingData[nPending].Samples = pendingData[nPending].Samples[:0]
+		// todo: should we also safeguard against empty metadata here?
+		if d.metadata != nil {
+			pendingData[nPending].Metadata.Type = metricTypeToMetricTypeProtoV2(d.metadata.Type)
+			pendingData[nPending].Metadata.HelpRef = symbolTable.RefStr(d.metadata.Help)
+			pendingData[nPending].Metadata.HelpRef = symbolTable.RefStr(d.metadata.Unit)
+			nPendingMetadata++
+		}
+
 		if sendExemplars {
 			pendingData[nPending].Exemplars = pendingData[nPending].Exemplars[:0]
 		}
@@ -1679,7 +1687,7 @@ func populateMinimizedTimeSeriesStr(symbolTable *rwSymbolTable, batch []timeSeri
 		// stop reading from the queue. This makes it safe to reference pendingSamples by index.
 		// pendingData[nPending].Labels = labelsToLabelsProto(d.seriesLabels, pendingData[nPending].Labels)
 
-		pendingData[nPending].LabelsRefs = lablesToLabelsProtoV2Refs(d.seriesLabels, symbolTable, pendingData[nPending].LabelsRefs)
+		pendingData[nPending].LabelsRefs = labelsToLabelsProtoV2Refs(d.seriesLabels, symbolTable, pendingData[nPending].LabelsRefs)
 		switch d.sType {
 		case tSample:
 			pendingData[nPending].Samples = append(pendingData[nPending].Samples, writev2.Sample{
@@ -1689,7 +1697,7 @@ func populateMinimizedTimeSeriesStr(symbolTable *rwSymbolTable, batch []timeSeri
 			nPendingSamples++
 		case tExemplar:
 			pendingData[nPending].Exemplars = append(pendingData[nPending].Exemplars, writev2.Exemplar{
-				LabelsRefs: lablesToLabelsProtoV2Refs(d.exemplarLabels, symbolTable, nil), // TODO: optimize, reuse slice
+				LabelsRefs: labelsToLabelsProtoV2Refs(d.exemplarLabels, symbolTable, nil), // TODO: optimize, reuse slice
 				Value:      d.value,
 				Timestamp:  d.timestamp,
 			})
@@ -1701,10 +1709,8 @@ func populateMinimizedTimeSeriesStr(symbolTable *rwSymbolTable, batch []timeSeri
 			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, FloatHistogramToMinHistogramProto(d.timestamp, d.floatHistogram))
 			nPendingHistograms++
 		case tMetadata:
-			pendingData[nPending].Metadata.Type = metricTypeToMetricTypeProtoV2(d.metadata.Type)
-			pendingData[nPending].Metadata.HelpRef = symbolTable.RefStr(d.metadata.Help)
-			pendingData[nPending].Metadata.HelpRef = symbolTable.RefStr(d.metadata.Unit)
-			nPendingMetadata++
+			// TODO: log or return an error?
+			// we shouldn't receive metadata type data here, it should already be inserted into the timeSeries
 		}
 	}
 	return nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata

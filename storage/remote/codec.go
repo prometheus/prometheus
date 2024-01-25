@@ -946,7 +946,7 @@ func labelsToLabelsProto(lbls labels.Labels, buf []prompb.Label) []prompb.Label 
 	return result
 }
 
-func lablesToLabelsProtoV2Refs(lbls labels.Labels, symbolTable *rwSymbolTable, buf []uint32) []uint32 {
+func labelsToLabelsProtoV2Refs(lbls labels.Labels, symbolTable *rwSymbolTable, buf []uint32) []uint32 {
 	result := buf[:0]
 	lbls.Range(func(l labels.Label) {
 		off := symbolTable.RefStr(l.Name)

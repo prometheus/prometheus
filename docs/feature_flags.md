@@ -205,9 +205,9 @@ Currently Prometheus supports created timestamps only on the traditional Prometh
 
 Besides enabling this feature in Prometheus, created timestamps need to be exposed by the application being scraped.
 
-## Metadata Storage
+## Metadata WAL Records
 `--enable-features=metadata-wal-records`
 
 When enabled, Prometheus will store metadata in-memory and keep track of
-metadata changes as WAL records on a per series basis. This must be used if
+metadata changes as WAL records on a per-series basis. This must be used if
 you are also using remote write 2.0 as it will only gather metadata from the WAL.

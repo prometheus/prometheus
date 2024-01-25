@@ -190,12 +190,12 @@ type perRequestWriteClient struct {
 func newPerRequestWriteClient(expectUnorderedRequests bool) *perRequestWriteClient {
 	return &perRequestWriteClient{
 		expectUnorderedRequests: expectUnorderedRequests,
-		TestWriteClient:         NewTestWriteClient(MinStrings),
+		TestWriteClient:         NewTestWriteClient(Version2),
 	}
 }
 
 func (c *perRequestWriteClient) expectRequestSamples(ss []record.RefSample, series []record.RefSeries) {
-	tc := NewTestWriteClient(MinStrings)
+	tc := NewTestWriteClient(Version2)
 	c.requests = append(c.requests, tc)
 
 	c.expectedSeries = series
@@ -338,7 +338,7 @@ func TestHistogramSampleBatching(t *testing.T) {
 			mcfg := config.DefaultMetadataConfig
 
 			metrics := newQueueManagerMetrics(nil, "", "")
-			m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), tc.queueConfig, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, MinStrings)
+			m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), tc.queueConfig, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, Version2)
 			m.StoreSeries(series, 0)
 
 			m.Start()
@@ -420,7 +420,7 @@ func TestWALMetadataDelivery(t *testing.T) {
 	require.Len(t, qm.seriesLabels, num)
 	require.Len(t, qm.seriesMetadata, num)
 
-	c.waitForExpectedData(t)
+	c.waitForExpectedData(t, 30*time.Second)
 }
 
 func TestSampleDeliveryTimeout(t *testing.T) {
@@ -1420,13 +1420,8 @@ func TestCalculateDesiredShards(t *testing.T) {
 }
 
 func TestCalculateDesiredShardsDetail(t *testing.T) {
-<<<<<<< HEAD
 	c := NewTestWriteClient(Version1)
 	cfg := config.DefaultQueueConfig
-=======
-	c := NewTestWriteClient(Base1)
-	cfg := testDefaultQueueConfig()
->>>>>>> remote-write-2.0
 	mcfg := config.DefaultMetadataConfig
 
 	dir := t.TempDir()
@@ -1774,14 +1769,14 @@ func BenchmarkBuildMinimizedWriteRequest(b *testing.B) {
 
 		// Warmup buffers
 		for i := 0; i < 10; i++ {
-			populateMinimizedTimeSeriesStr(&symbolTable, tc.batch, seriesBuff, true, true)
+			populateV2TimeSeries(&symbolTable, tc.batch, seriesBuff, true, true)
 			buildMinimizedWriteRequestStr(seriesBuff, symbolTable.LabelsStrings(), &pBuf, &buff)
 		}
 
 		b.Run(fmt.Sprintf("%d-instances", len(tc.batch)), func(b *testing.B) {
 			totalSize := 0
 			for j := 0; j < b.N; j++ {
-				populateMinimizedTimeSeriesStr(&symbolTable, tc.batch, seriesBuff, true, true)
+				populateV2TimeSeries(&symbolTable, tc.batch, seriesBuff, true, true)
 				b.ResetTimer()
 				req, _, err := buildMinimizedWriteRequestStr(seriesBuff, symbolTable.LabelsStrings(), &pBuf, &buff)
 				if err != nil {
