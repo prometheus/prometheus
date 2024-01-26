@@ -176,6 +176,9 @@ type HeadOptions struct {
 	// The default value is GOMAXPROCS.
 	// If it is set to a negative value or zero, the default value is used.
 	WALReplayConcurrency int
+
+	// EnableSharding enables ShardedPostings() support in the Head.
+	EnableSharding bool
 }
 
 const (
@@ -1663,7 +1666,12 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, e
 
 func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labels.Labels) (*memSeries, bool, error) {
 	s, created, err := h.series.getOrSet(hash, lset, func() *memSeries {
-		return newMemSeries(lset, id, labels.StableHash(lset), h.opts.IsolationDisabled)
+		shardHash := uint64(0)
+		if h.opts.EnableSharding {
+			shardHash = labels.StableHash(lset)
+		}
+
+		return newMemSeries(lset, id, shardHash, h.opts.IsolationDisabled)
 	})
 	if err != nil {
 		return nil, false, err
@@ -2022,7 +2030,8 @@ type memSeries struct {
 	lset labels.Labels
 	meta *metadata.Metadata
 
-	// Series labels hash to use for sharding purposes.
+	// Series labels hash to use for sharding purposes. The value is always 0 when sharding has not
+	// been explicitly enabled in TSDB.
 	shardHash uint64
 
 	// Immutable chunks on disk that have not yet gone into a block, in order of ascending time stamps.
