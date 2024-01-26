@@ -86,7 +86,7 @@ type IndexReader interface {
 	// the series labels mod shardCount, using a hash function which is consistent over time.
 	ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings
 
-	// Series populates the given labels and chunk metas for the series identified
+	// Series populates the given builder and chunk metas for the series identified
 	// by the reference.
 	// Returns storage.ErrNotFound if the ref does not resolve to a known series.
 	Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error
