@@ -71,6 +71,9 @@ type Group struct {
 	// Rule group evaluation iteration function,
 	// defaults to DefaultEvalIterationFunc.
 	evalIterationFunc GroupEvalIterationFunc
+
+	// concurrencyController controls the rules evaluation concurrency.
+	concurrencyController RuleConcurrencyController
 }
 
 // GroupEvalIterationFunc is used to implement and extend rule group
@@ -114,21 +117,27 @@ func NewGroup(o GroupOptions) *Group {
 		evalIterationFunc = DefaultEvalIterationFunc
 	}
 
+	concurrencyController := o.Opts.RuleConcurrencyController
+	if concurrencyController == nil {
+		concurrencyController = sequentialRuleEvalController{}
+	}
+
 	return &Group{
-		name:                 o.Name,
-		file:                 o.File,
-		interval:             o.Interval,
-		limit:                o.Limit,
-		rules:                o.Rules,
-		shouldRestore:        o.ShouldRestore,
-		opts:                 o.Opts,
-		seriesInPreviousEval: make([]map[string]labels.Labels, len(o.Rules)),
-		done:                 make(chan struct{}),
-		managerDone:          o.done,
-		terminated:           make(chan struct{}),
-		logger:               log.With(o.Opts.Logger, "file", o.File, "group", o.Name),
-		metrics:              metrics,
-		evalIterationFunc:    evalIterationFunc,
+		name:                  o.Name,
+		file:                  o.File,
+		interval:              o.Interval,
+		limit:                 o.Limit,
+		rules:                 o.Rules,
+		shouldRestore:         o.ShouldRestore,
+		opts:                  o.Opts,
+		seriesInPreviousEval:  make([]map[string]labels.Labels, len(o.Rules)),
+		done:                  make(chan struct{}),
+		managerDone:           o.done,
+		terminated:            make(chan struct{}),
+		logger:                log.With(o.Opts.Logger, "file", o.File, "group", o.Name),
+		metrics:               metrics,
+		evalIterationFunc:     evalIterationFunc,
+		concurrencyController: concurrencyController,
 	}
 }
 
@@ -570,13 +579,12 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 		// If the rule has no dependencies, it can run concurrently because no other rules in this group depend on its output.
 		// Try run concurrently if there are slots available.
-		ctrl := g.opts.RuleConcurrencyController
-		if ctrl != nil && ctrl.RuleEligible(g, rule) && ctrl.Allow() {
+		if ctrl := g.concurrencyController; ctrl.RuleEligible(g, rule) && ctrl.Allow() {
 			wg.Add(1)
 
 			go eval(i, rule, func() {
 				wg.Done()
-				g.opts.RuleConcurrencyController.Done()
+				ctrl.Done()
 			})
 		} else {
 			eval(i, rule, nil)

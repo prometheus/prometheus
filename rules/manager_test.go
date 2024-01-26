@@ -676,7 +676,8 @@ func TestDeletedRuleMarkedStale(t *testing.T) {
 		rules:                []Rule{},
 		seriesInPreviousEval: []map[string]labels.Labels{},
 		opts: &ManagerOptions{
-			Appendable: st,
+			Appendable:                st,
+			RuleConcurrencyController: sequentialRuleEvalController{},
 		},
 		metrics: NewGroupMetrics(nil),
 	}

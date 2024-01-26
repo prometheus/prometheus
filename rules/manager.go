@@ -135,7 +135,11 @@ func NewManager(o *ManagerOptions) *Manager {
 	}
 
 	if o.RuleConcurrencyController == nil {
-		o.RuleConcurrencyController = newRuleConcurrencyController(o.ConcurrentEvalsEnabled, o.MaxConcurrentEvals)
+		if o.ConcurrentEvalsEnabled {
+			o.RuleConcurrencyController = newRuleConcurrencyController(o.MaxConcurrentEvals)
+		} else {
+			o.RuleConcurrencyController = sequentialRuleEvalController{}
+		}
 	}
 
 	m := &Manager{
@@ -184,9 +188,7 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
-	if m.opts.RuleConcurrencyController != nil {
-		m.opts.RuleConcurrencyController.Invalidate()
-	}
+	m.opts.RuleConcurrencyController.Invalidate()
 
 	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, groupEvalIterationFunc, files...)
 
@@ -436,20 +438,18 @@ type RuleConcurrencyController interface {
 	Invalidate()
 }
 
-func newRuleConcurrencyController(enabled bool, maxConcurrency int64) RuleConcurrencyController {
-	return &concurrentRuleEvalController{
-		enabled: enabled,
-		sema:    semaphore.NewWeighted(maxConcurrency),
-		depMaps: map[*Group]dependencyMap{},
-	}
-}
-
 // concurrentRuleEvalController holds a weighted semaphore which controls the concurrent evaluation of rules.
 type concurrentRuleEvalController struct {
-	enabled   bool
 	sema      *semaphore.Weighted
 	depMapsMu sync.Mutex
 	depMaps   map[*Group]dependencyMap
+}
+
+func newRuleConcurrencyController(maxConcurrency int64) RuleConcurrencyController {
+	return &concurrentRuleEvalController{
+		sema:    semaphore.NewWeighted(maxConcurrency),
+		depMaps: map[*Group]dependencyMap{},
+	}
 }
 
 func (c *concurrentRuleEvalController) RuleEligible(g *Group, r Rule) bool {
@@ -466,18 +466,10 @@ func (c *concurrentRuleEvalController) RuleEligible(g *Group, r Rule) bool {
 }
 
 func (c *concurrentRuleEvalController) Allow() bool {
-	if !c.enabled {
-		return false
-	}
-
 	return c.sema.TryAcquire(1)
 }
 
 func (c *concurrentRuleEvalController) Done() {
-	if !c.enabled {
-		return
-	}
-
 	c.sema.Release(1)
 }
 
@@ -488,3 +480,17 @@ func (c *concurrentRuleEvalController) Invalidate() {
 	// Clear out the memoized dependency maps because some or all groups may have been updated.
 	c.depMaps = map[*Group]dependencyMap{}
 }
+
+// sequentialRuleEvalController is a RuleConcurrencyController that runs every rule sequentially.
+type sequentialRuleEvalController struct{}
+
+func (c sequentialRuleEvalController) RuleEligible(_ *Group, _ Rule) bool {
+	return false
+}
+
+func (c sequentialRuleEvalController) Allow() bool {
+	return false
+}
+
+func (c sequentialRuleEvalController) Done()       {}
+func (c sequentialRuleEvalController) Invalidate() {}
