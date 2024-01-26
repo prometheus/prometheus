@@ -1773,7 +1773,7 @@ func BenchmarkBuildMinimizedWriteRequest(b *testing.B) {
 		// Warmup buffers
 		for i := 0; i < 10; i++ {
 			populateV2TimeSeries(&symbolTable, tc.batch, seriesBuff, true, true)
-			buildMinimizedWriteRequestStr(seriesBuff, symbolTable.LabelsStrings(), &pBuf, &buff)
+			buildV2WriteRequest(seriesBuff, symbolTable.LabelsStrings(), &pBuf, &buff)
 		}
 
 		b.Run(fmt.Sprintf("%d-instances", len(tc.batch)), func(b *testing.B) {
@@ -1781,7 +1781,7 @@ func BenchmarkBuildMinimizedWriteRequest(b *testing.B) {
 			for j := 0; j < b.N; j++ {
 				populateV2TimeSeries(&symbolTable, tc.batch, seriesBuff, true, true)
 				b.ResetTimer()
-				req, _, err := buildMinimizedWriteRequestStr(seriesBuff, symbolTable.LabelsStrings(), &pBuf, &buff)
+				req, _, err := buildV2WriteRequest(seriesBuff, symbolTable.LabelsStrings(), &pBuf, &buff)
 				if err != nil {
 					b.Fatal(err)
 				}

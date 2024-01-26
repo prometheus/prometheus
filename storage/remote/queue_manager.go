@@ -1570,7 +1570,7 @@ func (s *shards) sendSamples(ctx context.Context, series []prompb.TimeSeries, sa
 
 func (s *shards) sendV2Samples(ctx context.Context, samples []writev2.TimeSeries, labels []string, sampleCount, exemplarCount, histogramCount, metadataCount int, pBuf, buf *[]byte) {
 	begin := time.Now()
-	req, highest, err := buildMinimizedWriteRequestStr(samples, labels, pBuf, buf)
+	req, highest, err := buildV2WriteRequest(samples, labels, pBuf, buf)
 	if err == nil {
 		err = s.sendSamplesWithBackoff(ctx, req, sampleCount, exemplarCount, histogramCount, metadataCount, highest)
 	}
@@ -1844,7 +1844,7 @@ func (r *rwSymbolTable) clear() {
 	}
 }
 
-func buildMinimizedWriteRequestStr(samples []writev2.TimeSeries, labels []string, pBuf, buf *[]byte) ([]byte, int64, error) {
+func buildV2WriteRequest(samples []writev2.TimeSeries, labels []string, pBuf, buf *[]byte) ([]byte, int64, error) {
 	var highest int64
 	for _, ts := range samples {
 		// At the moment we only ever append a TimeSeries with a single sample or exemplar in it.

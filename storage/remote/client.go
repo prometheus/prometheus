@@ -216,7 +216,7 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) error {
 		httpReq.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion1HeaderValue)
 	} else {
 		// Set the right header if we're using v1.1 remote write protocol
-		httpReq.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion11HeaderValue)
+		httpReq.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion2HeaderValue)
 	}
 
 	if attempt > 0 {

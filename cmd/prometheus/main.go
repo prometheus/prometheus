@@ -188,7 +188,7 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 				c.scrape.ExtraMetrics = true
 				level.Info(logger).Log("msg", "Experimental additional scrape metrics enabled")
 			case "metadata-wal-records":
-				c.scrape.EnableMetadataStorage = true
+				c.scrape.AppendMetadata = true
 				level.Info(logger).Log("msg", "Experimental metadata records in WAL enabled, required for remote write 2.0")
 			case "new-service-discovery-manager":
 				c.enableNewSDManager = true
@@ -612,7 +612,7 @@ func main() {
 	var (
 		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
 		scraper       = &readyScrapeManager{}
-		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.scrape.EnableMetadataStorage)
+		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.scrape.AppendMetadata)
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 

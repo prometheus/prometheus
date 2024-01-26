@@ -85,11 +85,11 @@ func TestRemoteWriteHandler(t *testing.T) {
 }
 
 func TestRemoteWriteHandlerMinimizedFormat(t *testing.T) {
-	buf, _, err := buildMinimizedWriteRequestStr(writeRequestMinimizedFixture.Timeseries, writeRequestMinimizedFixture.Symbols, nil, nil)
+	buf, _, err := buildV2WriteRequest(writeRequestMinimizedFixture.Timeseries, writeRequestMinimizedFixture.Symbols, nil, nil)
 	require.NoError(t, err)
 
 	req, err := http.NewRequest("", "", bytes.NewReader(buf))
-	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion11HeaderValue)
+	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion2HeaderValue)
 	require.NoError(t, err)
 
 	appendable := &mockAppendable{}

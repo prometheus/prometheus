@@ -567,7 +567,7 @@ func TestDecodeWriteRequest(t *testing.T) {
 }
 
 func TestDecodeMinWriteRequest(t *testing.T) {
-	buf, _, err := buildMinimizedWriteRequestStr(writeRequestMinimizedFixture.Timeseries, writeRequestMinimizedFixture.Symbols, nil, nil)
+	buf, _, err := buildV2WriteRequest(writeRequestMinimizedFixture.Timeseries, writeRequestMinimizedFixture.Symbols, nil, nil)
 
 	require.NoError(t, err)
 

@@ -148,9 +148,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 	newQueues := make(map[string]*QueueManager)
 	newHashes := []string{}
 	for _, rwConf := range conf.RemoteWriteConfigs {
-		// todo: change the rws.rwFormat to a queue config field
 		if rwConf.ProtocolVersion > Version1 && !rws.metadataInWAL {
-			fmt.Println("metdata in wal: ", rws.metadataInWAL)
 			return errors.New("invalid remote write configuration, if you are using remote write version 2.0 then the feature flag for metadata records in the WAL must be enabled")
 		}
 		hash, err := toHash(rwConf)

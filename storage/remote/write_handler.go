@@ -35,9 +35,9 @@ import (
 )
 
 const (
-	RemoteWriteVersionHeader        = "X-Prometheus-Remote-Write-Version"
-	RemoteWriteVersion1HeaderValue  = "0.1.0"
-	RemoteWriteVersion11HeaderValue = "1.1" // TODO-RW11: Final value?
+	RemoteWriteVersionHeader       = "X-Prometheus-Remote-Write-Version"
+	RemoteWriteVersion1HeaderValue = "0.1.0"
+	RemoteWriteVersion2HeaderValue = "2.0"
 )
 
 type writeHandler struct {
