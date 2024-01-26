@@ -1425,7 +1425,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					},
 					{
 						DiscoveredLabels:   labels.FromStrings(),
-						Labels:             labels.FromStrings("job", "blackbox"),
+						Labels:             labels.FromStrings("job", "test"),
 						ScrapePool:         "test",
 						ScrapeURL:          "http://example.com:8080/metrics",
 						GlobalURL:          "http://example.com:8080/metrics",
@@ -1474,7 +1474,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					},
 					{
 						DiscoveredLabels:   labels.FromStrings(),
-						Labels:             labels.FromStrings("job", "blackbox"),
+						Labels:             labels.FromStrings("job", "test"),
 						ScrapePool:         "test",
 						ScrapeURL:          "http://example.com:8080/metrics",
 						GlobalURL:          "http://example.com:8080/metrics",
@@ -1523,7 +1523,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					},
 					{
 						DiscoveredLabels:   labels.FromStrings(),
-						Labels:             labels.FromStrings("job", "blackbox"),
+						Labels:             labels.FromStrings("job", "test"),
 						ScrapePool:         "test",
 						ScrapeURL:          "http://example.com:8080/metrics",
 						GlobalURL:          "http://example.com:8080/metrics",
