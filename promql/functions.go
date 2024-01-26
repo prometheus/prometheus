@@ -603,7 +603,7 @@ func funcLastOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	}
 	return append(enh.Out, Sample{
 		Metric: el.Metric,
-		H:      h.H,
+		H:      h.H.Copy(),
 	}), nil
 }
 
