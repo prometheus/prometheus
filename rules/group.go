@@ -437,13 +437,10 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		default:
 		}
 
-		eval := func(i int, rule Rule, async bool) {
-			defer func() {
-				if async {
-					wg.Done()
-					g.opts.RuleConcurrencyController.Done()
-				}
-			}()
+		eval := func(i int, rule Rule, cleanup func()) {
+			if cleanup != nil {
+				defer cleanup()
+			}
 
 			logger := log.WithPrefix(g.logger, "name", rule.Name(), "index", i)
 			ctx, sp := otel.Tracer("").Start(ctx, "rule")
@@ -576,9 +573,13 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		ctrl := g.opts.RuleConcurrencyController
 		if ctrl != nil && ctrl.RuleEligible(g, rule) && ctrl.Allow() {
 			wg.Add(1)
-			go eval(i, rule, true)
+
+			go eval(i, rule, func() {
+				wg.Done()
+				g.opts.RuleConcurrencyController.Done()
+			})
 		} else {
-			eval(i, rule, false)
+			eval(i, rule, nil)
 		}
 	}
 
