@@ -188,7 +188,7 @@ type Options struct {
 	// For Prometheus, this will always be true.
 	EnableOverlappingCompaction bool
 
-	// EnableSharding enabled query sharding support in TSDB.
+	// EnableSharding enables query sharding support in TSDB.
 	EnableSharding bool
 }
 
