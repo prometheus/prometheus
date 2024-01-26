@@ -1524,6 +1524,72 @@ func TestDependenciesEdgeCases(t *testing.T) {
 		require.True(t, depMap.isIndependent(rule1))
 		require.True(t, depMap.isIndependent(rule2))
 	})
+
+	t.Run("rule with regexp matcher on metric name", func(t *testing.T) {
+		expr, err := parser.ParseExpr("sum(requests)")
+		require.NoError(t, err)
+		rule1 := NewRecordingRule("first", expr, labels.Labels{})
+
+		expr, err = parser.ParseExpr(`sum({__name__=~".+"})`)
+		require.NoError(t, err)
+		rule2 := NewRecordingRule("second", expr, labels.Labels{})
+
+		group := NewGroup(GroupOptions{
+			Name:     "rule_group",
+			Interval: time.Second,
+			Rules:    []Rule{rule1, rule2},
+			Opts:     opts,
+		})
+
+		depMap := buildDependencyMap(group.rules)
+		// A rule with regexp matcher on metric name causes the whole group to be indeterminate.
+		require.False(t, depMap.isIndependent(rule1))
+		require.False(t, depMap.isIndependent(rule2))
+	})
+
+	t.Run("rule with not equal matcher on metric name", func(t *testing.T) {
+		expr, err := parser.ParseExpr("sum(requests)")
+		require.NoError(t, err)
+		rule1 := NewRecordingRule("first", expr, labels.Labels{})
+
+		expr, err = parser.ParseExpr(`sum({__name__!="requests", service="app"})`)
+		require.NoError(t, err)
+		rule2 := NewRecordingRule("second", expr, labels.Labels{})
+
+		group := NewGroup(GroupOptions{
+			Name:     "rule_group",
+			Interval: time.Second,
+			Rules:    []Rule{rule1, rule2},
+			Opts:     opts,
+		})
+
+		depMap := buildDependencyMap(group.rules)
+		// A rule with not equal matcher on metric name causes the whole group to be indeterminate.
+		require.False(t, depMap.isIndependent(rule1))
+		require.False(t, depMap.isIndependent(rule2))
+	})
+
+	t.Run("rule with not regexp matcher on metric name", func(t *testing.T) {
+		expr, err := parser.ParseExpr("sum(requests)")
+		require.NoError(t, err)
+		rule1 := NewRecordingRule("first", expr, labels.Labels{})
+
+		expr, err = parser.ParseExpr(`sum({__name__!~"requests.+", service="app"})`)
+		require.NoError(t, err)
+		rule2 := NewRecordingRule("second", expr, labels.Labels{})
+
+		group := NewGroup(GroupOptions{
+			Name:     "rule_group",
+			Interval: time.Second,
+			Rules:    []Rule{rule1, rule2},
+			Opts:     opts,
+		})
+
+		depMap := buildDependencyMap(group.rules)
+		// A rule with not regexp matcher on metric name causes the whole group to be indeterminate.
+		require.False(t, depMap.isIndependent(rule1))
+		require.False(t, depMap.isIndependent(rule2))
+	})
 }
 
 func TestNoMetricSelector(t *testing.T) {
