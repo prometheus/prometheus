@@ -389,11 +389,9 @@ type WriteClient interface {
 	Endpoint() string
 }
 
-type RemoteWriteFormat int64 //nolint:revive // exported.
-
 const (
-	Version1 RemoteWriteFormat = iota // 1.0, 0.1, etc.
-	Version2                          // symbols are indices into an array of strings
+	Version1 config.RemoteWriteFormat = iota // 1.0, 0.1, etc.
+	Version2                                 // symbols are indices into an array of strings
 )
 
 // QueueManager manages a queue of samples to be sent to the Storage
@@ -413,7 +411,7 @@ type QueueManager struct {
 	watcher              *wlog.Watcher
 	metadataWatcher      *MetadataWatcher
 	// experimental feature, new remote write proto format
-	rwFormat RemoteWriteFormat
+	rwFormat config.RemoteWriteFormat
 
 	clientMtx   sync.RWMutex
 	storeClient WriteClient
@@ -462,7 +460,7 @@ func NewQueueManager(
 	sm ReadyScrapeManager,
 	enableExemplarRemoteWrite bool,
 	enableNativeHistogramRemoteWrite bool,
-	rwFormat RemoteWriteFormat,
+	rwFormat config.RemoteWriteFormat,
 ) *QueueManager {
 	if logger == nil {
 		logger = log.NewNopLogger()

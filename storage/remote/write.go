@@ -66,7 +66,6 @@ type WriteStorage struct {
 	externalLabels    labels.Labels
 	dir               string
 	queues            map[string]*QueueManager
-	rwFormat          RemoteWriteFormat
 	metadataInWAL     bool
 	samplesIn         *ewmaRate
 	flushDeadline     time.Duration
@@ -79,13 +78,12 @@ type WriteStorage struct {
 }
 
 // NewWriteStorage creates and runs a WriteStorage.
-func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager, rwFormat RemoteWriteFormat, metadataInWal bool) *WriteStorage {
+func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager, metadataInWal bool) *WriteStorage {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 	rws := &WriteStorage{
 		queues:            make(map[string]*QueueManager),
-		rwFormat:          rwFormat,
 		watcherMetrics:    wlog.NewWatcherMetrics(reg),
 		liveReaderMetrics: wlog.NewLiveReaderMetrics(reg),
 		logger:            logger,
@@ -96,6 +94,7 @@ func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, dir string, f
 		interner:          newPool(),
 		scraper:           sm,
 		quit:              make(chan struct{}),
+		metadataInWAL:     metadataInWal,
 		highestTimestamp: &maxTimestamp{
 			Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
 				Namespace: namespace,
@@ -150,7 +149,8 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 	newHashes := []string{}
 	for _, rwConf := range conf.RemoteWriteConfigs {
 		// todo: change the rws.rwFormat to a queue config field
-		if rws.rwFormat > Version1 && rws.metadataInWAL {
+		if rwConf.ProtocolVersion > Version1 && !rws.metadataInWAL {
+			fmt.Println("metdata in wal: ", rws.metadataInWAL)
 			return errors.New("invalid remote write configuration, if you are using remote write version 2.0 then the feature flag for metadata records in the WAL must be enabled")
 		}
 		hash, err := toHash(rwConf)
@@ -173,7 +173,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 
 		c, err := NewWriteClient(name, &ClientConfig{
 			URL:               rwConf.URL,
-			RemoteWriteFormat: rws.rwFormat,
+			RemoteWriteFormat: rwConf.ProtocolVersion,
 			Timeout:           rwConf.RemoteTimeout,
 			HTTPClientConfig:  rwConf.HTTPClientConfig,
 			SigV4Config:       rwConf.SigV4Config,
@@ -216,7 +216,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rws.scraper,
 			rwConf.SendExemplars,
 			rwConf.SendNativeHistograms,
-			rws.rwFormat,
+			rwConf.ProtocolVersion,
 		)
 		// Keep track of which queues are new so we know which to start.
 		newHashes = append(newHashes, hash)

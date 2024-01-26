@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/prometheus/prometheus/config"
 	"net/http"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -47,13 +48,13 @@ type writeHandler struct {
 
 	// Experimental feature, new remote write proto format
 	// The handler will accept the new format, but it can still accept the old one
-	// TODO: this should eventually be via content negotiation
-	rwFormat RemoteWriteFormat
+	// TODO: this should eventually be via content negotiation?
+	rwFormat config.RemoteWriteFormat
 }
 
 // NewWriteHandler creates a http.Handler that accepts remote write requests and
 // writes them to the provided appendable.
-func NewWriteHandler(logger log.Logger, reg prometheus.Registerer, appendable storage.Appendable, rwFormat RemoteWriteFormat) http.Handler {
+func NewWriteHandler(logger log.Logger, reg prometheus.Registerer, appendable storage.Appendable, rwFormat config.RemoteWriteFormat) http.Handler {
 	h := &writeHandler{
 		logger:     logger,
 		appendable: appendable,

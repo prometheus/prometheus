@@ -68,7 +68,7 @@ func TestSampleDelivery(t *testing.T) {
 		exemplars       bool
 		histograms      bool
 		floatHistograms bool
-		rwFormat        RemoteWriteFormat
+		rwFormat        config.RemoteWriteFormat
 	}{
 		{samples: true, exemplars: false, histograms: false, floatHistograms: false, name: "samples only"},
 		{samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "samples, exemplars, and histograms"},
@@ -108,7 +108,7 @@ func TestSampleDelivery(t *testing.T) {
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, tc.rwFormat, true)
+			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, true)
 			defer s.Close()
 
 			var (
@@ -138,6 +138,8 @@ func TestSampleDelivery(t *testing.T) {
 			// Apply new config.
 			queueConfig.Capacity = len(samples)
 			queueConfig.MaxSamplesPerSend = len(samples) / 2
+			// For now we only ever have a single rw config in this test.
+			conf.RemoteWriteConfigs[0].ProtocolVersion = tc.rwFormat
 			require.NoError(t, s.ApplyConfig(conf))
 			hash, err := toHash(writeConfig)
 			require.NoError(t, err)
@@ -385,7 +387,7 @@ func TestMetadataDelivery(t *testing.T) {
 
 func TestWALMetadataDelivery(t *testing.T) {
 	dir := t.TempDir()
-	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, Version2, true)
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, true)
 	defer s.Close()
 
 	cfg := config.DefaultQueueConfig
@@ -394,6 +396,7 @@ func TestWALMetadataDelivery(t *testing.T) {
 
 	writeConfig := baseRemoteWriteConfig("http://test-storage.com")
 	writeConfig.QueueConfig = cfg
+	writeConfig.ProtocolVersion = Version2
 
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
@@ -424,7 +427,7 @@ func TestWALMetadataDelivery(t *testing.T) {
 }
 
 func TestSampleDeliveryTimeout(t *testing.T) {
-	for _, rwFormat := range []RemoteWriteFormat{Version1, Version2} {
+	for _, rwFormat := range []config.RemoteWriteFormat{Version1, Version2} {
 		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
 			// Let's send one less sample than batch size, and wait the timeout duration
 			n := 9
@@ -456,7 +459,7 @@ func TestSampleDeliveryTimeout(t *testing.T) {
 }
 
 func TestSampleDeliveryOrder(t *testing.T) {
-	for _, rwFormat := range []RemoteWriteFormat{Version1, Version2} {
+	for _, rwFormat := range []config.RemoteWriteFormat{Version1, Version2} {
 		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
 			ts := 10
 			n := config.DefaultQueueConfig.MaxSamplesPerSend * ts
@@ -558,7 +561,7 @@ func TestSeriesReset(t *testing.T) {
 }
 
 func TestReshard(t *testing.T) {
-	for _, rwFormat := range []RemoteWriteFormat{Version1, Version2} {
+	for _, rwFormat := range []config.RemoteWriteFormat{Version1, Version2} {
 		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
 			size := 10 // Make bigger to find more races.
 			nSeries := 6
@@ -601,7 +604,7 @@ func TestReshard(t *testing.T) {
 }
 
 func TestReshardRaceWithStop(t *testing.T) {
-	for _, rwFormat := range []RemoteWriteFormat{Version1, Version2} {
+	for _, rwFormat := range []config.RemoteWriteFormat{Version1, Version2} {
 		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
 			c := NewTestWriteClient(rwFormat)
 			var m *QueueManager
@@ -639,7 +642,7 @@ func TestReshardRaceWithStop(t *testing.T) {
 }
 
 func TestReshardPartialBatch(t *testing.T) {
-	for _, rwFormat := range []RemoteWriteFormat{Version1, Version2} {
+	for _, rwFormat := range []config.RemoteWriteFormat{Version1, Version2} {
 		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
 			samples, series := createTimeseries(1, 10)
 
@@ -685,7 +688,7 @@ func TestReshardPartialBatch(t *testing.T) {
 // where a large scrape (> capacity + max samples per send) is appended at the
 // same time as a batch times out according to the batch send deadline.
 func TestQueueFilledDeadlock(t *testing.T) {
-	for _, rwFormat := range []RemoteWriteFormat{Version1, Version2} {
+	for _, rwFormat := range []config.RemoteWriteFormat{Version1, Version2} {
 		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
 			samples, series := createTimeseries(50, 1)
 
@@ -727,7 +730,7 @@ func TestQueueFilledDeadlock(t *testing.T) {
 }
 
 func TestReleaseNoninternedString(t *testing.T) {
-	for _, rwFormat := range []RemoteWriteFormat{Version1, Version2} {
+	for _, rwFormat := range []config.RemoteWriteFormat{Version1, Version2} {
 		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
 			cfg := testDefaultQueueConfig()
 			mcfg := config.DefaultMetadataConfig
@@ -964,10 +967,10 @@ type TestWriteClient struct {
 	writesReceived          int
 	mtx                     sync.Mutex
 	buf                     []byte
-	rwFormat                RemoteWriteFormat
+	rwFormat                config.RemoteWriteFormat
 }
 
-func NewTestWriteClient(rwFormat RemoteWriteFormat) *TestWriteClient {
+func NewTestWriteClient(rwFormat config.RemoteWriteFormat) *TestWriteClient {
 	return &TestWriteClient{
 		receivedSamples:  map[string][]prompb.Sample{},
 		expectedSamples:  map[string][]prompb.Sample{},

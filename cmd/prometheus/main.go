@@ -612,7 +612,7 @@ func main() {
 	var (
 		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
 		scraper       = &readyScrapeManager{}
-		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, remote.RemoteWriteFormat(cfg.rwFormat), cfg.scrape.EnableMetadataStorage)
+		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.scrape.EnableMetadataStorage)
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 
@@ -774,7 +774,7 @@ func main() {
 		cfg.web.Flags[f.Name] = f.Value.String()
 	}
 
-	cfg.web.RemoteWriteFormat = remote.RemoteWriteFormat(cfg.rwFormat)
+	cfg.web.RemoteWriteFormat = config.RemoteWriteFormat(cfg.rwFormat)
 	// Depends on cfg.web.ScrapeManager so needs to be after cfg.web.ScrapeManager = scrapeManager.
 	webHandler := web.New(log.With(logger, "component", "web"), &cfg.web)
 

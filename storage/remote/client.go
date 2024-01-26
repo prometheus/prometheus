@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/prometheus/prometheus/config"
 	"io"
 	"math/rand"
 	"net/http"
@@ -81,9 +82,9 @@ func init() {
 
 // Client allows reading and writing from/to a remote HTTP endpoint.
 type Client struct {
-	remoteName string            // Used to differentiate clients in metrics.
-	urlString  string            // url.String()
-	rwFormat   RemoteWriteFormat // For write clients, ignored for read clients.
+	remoteName string                   // Used to differentiate clients in metrics.
+	urlString  string                   // url.String()
+	rwFormat   config.RemoteWriteFormat // For write clients, ignored for read clients.
 	Client     *http.Client
 	timeout    time.Duration
 
@@ -97,7 +98,7 @@ type Client struct {
 // ClientConfig configures a client.
 type ClientConfig struct {
 	URL               *config_util.URL
-	RemoteWriteFormat RemoteWriteFormat
+	RemoteWriteFormat config.RemoteWriteFormat
 	Timeout           model.Duration
 	HTTPClientConfig  config_util.HTTPClientConfig
 	SigV4Config       *sigv4.SigV4Config
