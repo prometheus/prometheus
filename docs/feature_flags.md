@@ -221,5 +221,6 @@ By default, rule groups execute concurrently, but the rules within a group execu
 output of a preceding rule as its input. However, if there is no detectable relationship between rules then there is no
 reason to run them sequentially.
 When the `concurrent-rule-eval` feature flag is enabled, rules without any dependency on other rules within a rule group will be evaluated concurrently.
-This can improve rule reliability at the expense of adding more concurrent query load. The number of concurrent rule evaluations can be configured
-with `--rules.max-concurrent-rule-evals` which is set to `4` by default.
+This has the potential to improve rule group evaluation latency and resource utilization at the expense of adding more concurrent query load.
+
+The number of concurrent rule evaluations can be configured with `--rules.max-concurrent-rule-evals`, which is set to `4` by default.
