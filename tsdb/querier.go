@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"unicode/utf8"
 
 	"github.com/oklog/ulid"
 	"golang.org/x/exp/slices"
@@ -33,20 +32,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/util/annotations"
 )
-
-// Bitmap used by func isRegexMetaCharacter to check whether a character needs to be escaped.
-var regexMetaCharacterBytes [16]byte
-
-// isRegexMetaCharacter reports whether byte b needs to be escaped.
-func isRegexMetaCharacter(b byte) bool {
-	return b < utf8.RuneSelf && regexMetaCharacterBytes[b%16]&(1<<(b/16)) != 0
-}
-
-func init() {
-	for _, b := range []byte(`.+*?()|[]{}^$`) {
-		regexMetaCharacterBytes[b%16] |= 1 << (b / 16)
-	}
-}
 
 type blockBaseQuerier struct {
 	blockID    ulid.ULID
