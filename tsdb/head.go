@@ -1484,9 +1484,9 @@ func (h *Head) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Match
 			continue
 		}
 
-		series.RLock()
+		series.Lock()
 		t0, t1 := series.minTime(), series.maxTime()
-		series.RUnlock()
+		series.Unlock()
 		if t0 == math.MinInt64 || t1 == math.MinInt64 {
 			continue
 		}
@@ -2016,7 +2016,7 @@ func (s sample) Type() chunkenc.ValueType {
 // memSeries is the in-memory representation of a series. None of its methods
 // are goroutine safe and it is the caller's responsibility to lock it.
 type memSeries struct {
-	sync.RWMutex
+	sync.Mutex
 
 	ref  chunks.HeadSeriesRef
 	lset labels.Labels
