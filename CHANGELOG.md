@@ -1,13 +1,12 @@
 # Changelog
 
-
 ## 2.50.0-rc.0 / 2024-01-26
 
-* [FEATURE] Add new feature flag `created-timestamp-zero-ingestion`. #12733 #13279
+* [FEATURE] Add support for ingesting zeros as created timestamps (enabled under the feature-flag `created-timestamp-zero-ingestion`). #12733 #13279
 * [FEATURE] TSDB/{index,compact}: allow using custom postings encoding format. #13242 #13407 #13391
 * [FEATURE] Promtool: Add `analyze` histograms command #12331
 * [FEATURE] TSDB/compaction: Add a way to enable overlapping compaction #13282 #13393 #13398
-* [FEATURE] Add automatic memory limit handling. Activated using the flag `auto-gomemlimit.ratio` #13395
+* [FEATURE] Add automatic memory limit handling. Activated using the feature flag `auto-gomemlimit` #13395
 * [ENHANCEMENT] Promtool: allow setting multiple matchers to `promtool tsdb dump`. #13296
 * [ENHANCEMENT] PromQL: Restore more efficient version of `NewPossibleNonCounterInfo` annotation. #13022
 * [ENHANCEMENT] Enable reusing memory when converting between histogram types. #13215
