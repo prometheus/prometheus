@@ -416,11 +416,11 @@ func SendAlerts(s Sender, externalURL string) NotifyFunc {
 	}
 }
 
-// RuleConcurrencyController controls whether rules can be evaluated concurrently. Its purpose it to bound the amount
-// of concurrency in rule evaluations, to not overwhelm the Prometheus server with additional query load.
-// Concurrency is controlled globally, not on a per-group basis.
+// RuleConcurrencyController controls whether rules can be evaluated concurrently. Its purpose is to bound the amount
+// of concurrency in rule evaluations to avoid overwhelming the Prometheus server with additional query load and ensure
+// the correctness of rules running concurrently. Concurrency is controlled globally, not on a per-group basis.
 type RuleConcurrencyController interface {
-	// RuleEligible determines if a rule can be run concurrently.
+	// RuleEligible determines if the rule can guarantee correct results while running concurrently.
 	RuleEligible(g *Group, r Rule) bool
 
 	// Allow determines whether any concurrent evaluation slots are available.
