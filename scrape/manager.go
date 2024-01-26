@@ -221,14 +221,13 @@ func (m *Manager) reload() {
 			if t, ok := activeTargets[target.labels.Hash()]; ok {
 				level.Warn(m.logger).Log(
 					"msg", "Found targets with same labels after relabelling",
-					"target", t.URL().String(),
-					"target", target.URL().String(),
+					"target", t.DiscoveredLabels().Get(model.AddressLabel),
+					"target", target.DiscoveredLabels().Get(model.AddressLabel),
 				)
 			}
 			activeTargets[target.labels.Hash()] = target
 		}
 	}
-
 }
 
 // setOffsetSeed calculates a global offsetSeed per server relying on extra label set.

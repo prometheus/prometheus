@@ -616,6 +616,32 @@ func TestManagerTargetsUpdates(t *testing.T) {
 	}
 }
 
+func TestManagerDuplicateAfterRelabellingWarning(t *testing.T) {
+	var output []interface{}
+	logger := log.Logger(log.LoggerFunc(func(keyvals ...interface{}) error {
+		output = keyvals
+		return nil
+	}))
+
+	opts := Options{}
+	testRegistry := prometheus.NewRegistry()
+	m, err := NewManager(&opts, logger, nil, testRegistry)
+	require.NoError(t, err)
+
+	m.scrapePools = map[string]*scrapePool{}
+	sp := &scrapePool{
+		activeTargets: map[uint64]*Target{},
+	}
+	sp.activeTargets[uint64(0)] = &Target{discoveredLabels: labels.FromStrings("__address__", "foo")}
+	sp.activeTargets[uint64(1)] = &Target{discoveredLabels: labels.FromStrings("__address__", "bar")}
+	m.scrapePools["default"] = sp
+
+	m.reload()
+	require.Contains(t, output, "Found targets with same labels after relabelling")
+	require.Contains(t, output, "foo")
+	require.Contains(t, output, "bar")
+}
+
 func TestSetOffsetSeed(t *testing.T) {
 	getConfig := func(prometheus string) *config.Config {
 		cfgText := `
