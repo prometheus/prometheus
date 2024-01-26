@@ -1522,7 +1522,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						ScrapeTimeout:      "10s",
 					},
 					{
-						DiscoveredLabels: labels.FromStrings()s,
+						DiscoveredLabels: labels.FromStrings(),
 						Labels: labels.FromStrings("job","test"),
 						ScrapePool:         "test",
 						ScrapeURL:          "http://example.com:8080/metrics",
