@@ -197,8 +197,19 @@ type SelectHints struct {
 	By       bool     // Indicate whether it is without or by.
 	Range    int64    // Range vector selector range in milliseconds.
 
-	ShardIndex uint64 // Current shard index (starts from 0 and up to ShardCount-1).
-	ShardCount uint64 // Total number of shards (0 means sharding is disabled).
+	// ShardCount is the total number of shards that series should be split into
+	// at query time. Then, only series in the ShardIndex shard will be returned
+	// by the query.
+	//
+	// ShardCount equal to 0 means that sharding is disabled.
+	ShardCount uint64
+
+	// ShardIndex is the series shard index to query. The index must be between 0 and ShardCount-1.
+	// When ShardCount is set to a value > 0, then a query will only process series within the
+	// ShardIndex's shard.
+	//
+	// Series are sharded by "labels stable hash" mod "ShardCount".
+	ShardIndex uint64
 
 	// DisableTrimming allows to disable trimming of matching series chunks based on query Start and End time.
 	// When disabled, the result may contain samples outside the queried time range but Select() performances
