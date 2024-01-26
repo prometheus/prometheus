@@ -1589,6 +1589,50 @@ func TestDependenciesEdgeCases(t *testing.T) {
 		require.False(t, depMap.isIndependent(rule1))
 		require.False(t, depMap.isIndependent(rule2))
 	})
+
+	t.Run("rule querying ALERTS metric", func(t *testing.T) {
+		expr, err := parser.ParseExpr("sum(requests)")
+		require.NoError(t, err)
+		rule1 := NewRecordingRule("first", expr, labels.Labels{})
+
+		expr, err = parser.ParseExpr(`sum(ALERTS{alertname="test"})`)
+		require.NoError(t, err)
+		rule2 := NewRecordingRule("second", expr, labels.Labels{})
+
+		group := NewGroup(GroupOptions{
+			Name:     "rule_group",
+			Interval: time.Second,
+			Rules:    []Rule{rule1, rule2},
+			Opts:     opts,
+		})
+
+		depMap := buildDependencyMap(group.rules)
+		// A rule querying ALERTS metric causes the whole group to be indeterminate.
+		require.False(t, depMap.isIndependent(rule1))
+		require.False(t, depMap.isIndependent(rule2))
+	})
+
+	t.Run("rule querying ALERTS_FOR_STATE metric", func(t *testing.T) {
+		expr, err := parser.ParseExpr("sum(requests)")
+		require.NoError(t, err)
+		rule1 := NewRecordingRule("first", expr, labels.Labels{})
+
+		expr, err = parser.ParseExpr(`sum(ALERTS_FOR_STATE{alertname="test"})`)
+		require.NoError(t, err)
+		rule2 := NewRecordingRule("second", expr, labels.Labels{})
+
+		group := NewGroup(GroupOptions{
+			Name:     "rule_group",
+			Interval: time.Second,
+			Rules:    []Rule{rule1, rule2},
+			Opts:     opts,
+		})
+
+		depMap := buildDependencyMap(group.rules)
+		// A rule querying ALERTS_FOR_STATE metric causes the whole group to be indeterminate.
+		require.False(t, depMap.isIndependent(rule1))
+		require.False(t, depMap.isIndependent(rule2))
+	})
 }
 
 func TestNoMetricSelector(t *testing.T) {
