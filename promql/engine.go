@@ -1091,6 +1091,10 @@ type EvalNodeHelper struct {
 	rightSigs    map[string]Sample
 	matchedSigs  map[string]map[uint64]struct{}
 	resultMetric map[string]labels.Labels
+
+	// optimisations for step invariant series
+	stepInvariant       []bool
+	stepInvariantSigSet []map[string]struct{}
 }
 
 func (enh *EvalNodeHelper) resetBuilder(lbls labels.Labels) {
@@ -1114,6 +1118,12 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 	originalNumSamples := ev.currentSamples
 
 	var warnings annotations.Annotations
+	vectors := make([]Vector, len(exprs))    // Input vectors for the function.
+	args := make([]parser.Value, len(exprs)) // Argument to function.
+	// Create an output vector that is as big as the input matrix with
+	// the most time series.
+	biggestLen := 1
+
 	for i, e := range exprs {
 		// Functions will take string arguments from the expressions, not the values.
 		if e != nil && e.Type() != parser.ValueTypeString {
@@ -1127,20 +1137,17 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 			origMatrixes[i] = make(Matrix, len(matrixes[i]))
 			copy(origMatrixes[i], matrixes[i])
 		}
-	}
 
-	vectors := make([]Vector, len(exprs))    // Input vectors for the function.
-	args := make([]parser.Value, len(exprs)) // Argument to function.
-	// Create an output vector that is as big as the input matrix with
-	// the most time series.
-	biggestLen := 1
-	for i := range exprs {
 		vectors[i] = make(Vector, 0, len(matrixes[i]))
 		if len(matrixes[i]) > biggestLen {
 			biggestLen = len(matrixes[i])
 		}
 	}
-	enh := &EvalNodeHelper{Out: make(Vector, 0, biggestLen)}
+	enh := &EvalNodeHelper{
+		Out:                 make(Vector, 0, biggestLen),
+		stepInvariant:       make([]bool, len(exprs)),
+		stepInvariantSigSet: make([]map[string]struct{}, len(exprs)),
+	}
 	type seriesAndTimestamp struct {
 		Series
 		ts int64
@@ -1159,12 +1166,16 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 		seriesHelpers = make([][]EvalSeriesHelper, len(exprs))
 		bufHelpers = make([][]EvalSeriesHelper, len(exprs))
 
-		for i := range exprs {
+		for i, e := range exprs {
 			seriesHelpers[i] = make([]EvalSeriesHelper, len(matrixes[i]))
 			bufHelpers[i] = make([]EvalSeriesHelper, len(matrixes[i]))
 
 			for si, series := range matrixes[i] {
 				prepSeries(series.Metric, &seriesHelpers[i][si])
+			}
+			if _, si := e.(*parser.StepInvariantExpr); si {
+				enh.stepInvariant[i] = true
+				enh.stepInvariantSigSet[i] = map[string]struct{}{}
 			}
 		}
 	}
@@ -2359,16 +2370,43 @@ func (ev *evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching,
 		return nil // Short-circuit: AND with nothing is nothing.
 	}
 
-	// The set of signatures for the right-hand side Vector.
-	rightSigs := map[string]struct{}{}
-	// Add all rhs samples to a map so we can easily find matches later.
-	for _, sh := range rhsh {
-		rightSigs[sh.signature] = struct{}{}
+	var (
+		iterate []EvalSeriesHelper
+		vectors Vector
+	)
+
+	compareAgainst := map[string]struct{}{}
+	switch {
+	case enh.stepInvariant[0]:
+		if len(enh.stepInvariantSigSet[0]) == 0 {
+			for _, sh := range lhsh {
+				enh.stepInvariantSigSet[0][sh.signature] = struct{}{}
+			}
+		}
+		compareAgainst = enh.stepInvariantSigSet[0]
+		iterate = rhsh
+		vectors = rhs
+	case enh.stepInvariant[1]:
+		if len(enh.stepInvariantSigSet[1]) == 0 {
+			for _, sh := range rhsh {
+				enh.stepInvariantSigSet[1][sh.signature] = struct{}{}
+			}
+		}
+		compareAgainst = enh.stepInvariantSigSet[1]
+		iterate = lhsh
+		vectors = lhs
+	default:
+		for _, sh := range rhsh {
+			compareAgainst[sh.signature] = struct{}{}
+		}
+		iterate = lhsh
+		vectors = lhs
+
 	}
 
-	for i, ls := range lhs {
+	for i, ls := range vectors {
 		// If there's a matching entry in the right-hand side Vector, add the sample.
-		if _, ok := rightSigs[lhsh[i].signature]; ok {
+		if _, ok := compareAgainst[iterate[i].signature]; ok {
 			enh.Out = append(enh.Out, ls)
 		}
 	}
@@ -2389,14 +2427,32 @@ func (ev *evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, 
 
 	leftSigs := map[string]struct{}{}
 	// Add everything from the left-hand-side Vector.
-	for i, ls := range lhs {
-		leftSigs[lhsh[i].signature] = struct{}{}
-		enh.Out = append(enh.Out, ls)
+	if enh.stepInvariant[0] {
+		// LHS is step invariant.
+		if len(enh.stepInvariantSigSet[0]) == 0 {
+			for _, sh := range lhsh {
+				enh.stepInvariantSigSet[0][sh.signature] = struct{}{}
+			}
+		}
+		leftSigs = enh.stepInvariantSigSet[0]
+	} else {
+		for _, sh := range lhsh {
+			leftSigs[sh.signature] = struct{}{}
+		}
 	}
+
+	// Add everything from the left-hand-side Vector.
+	enh.Out = append(enh.Out, lhs...)
+
 	// Add all right-hand side elements which have not been added from the left-hand side.
 	for j, rs := range rhs {
 		if _, ok := leftSigs[rhsh[j].signature]; !ok {
 			enh.Out = append(enh.Out, rs)
+		}
+
+		// Short circuit after first sample if the rhs is step invariant
+		if enh.stepInvariant[1] {
+			break
 		}
 	}
 	return enh.Out
@@ -2414,13 +2470,28 @@ func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatchi
 	}
 
 	rightSigs := map[string]struct{}{}
-	for _, sh := range rhsh {
-		rightSigs[sh.signature] = struct{}{}
+	if enh.stepInvariant[1] {
+		// RHS is step invariant.
+		if len(enh.stepInvariantSigSet[1]) == 0 {
+			for _, sh := range rhsh {
+				enh.stepInvariantSigSet[1][sh.signature] = struct{}{}
+			}
+		}
+		rightSigs = enh.stepInvariantSigSet[1]
+	} else {
+		for _, sh := range rhsh {
+			rightSigs[sh.signature] = struct{}{}
+		}
 	}
 
 	for i, ls := range lhs {
 		if _, ok := rightSigs[lhsh[i].signature]; !ok {
 			enh.Out = append(enh.Out, ls)
+		}
+
+		// Short circuit after first sample if the lhs is step invariant
+		if enh.stepInvariant[0] {
+			break
 		}
 	}
 	return enh.Out
