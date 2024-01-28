@@ -47,10 +47,11 @@ func TestConcurrentRangeQueries(t *testing.T) {
 	stor := teststorage.New(t)
 	defer stor.Close()
 	opts := EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 50000000,
-		Timeout:    100 * time.Second,
+		Logger:           nil,
+		Reg:              nil,
+		MaxSamples:       50000000,
+		Timeout:          100 * time.Second,
+		EnableAtModifier: true,
 	}
 	engine := NewEngine(opts)
 
