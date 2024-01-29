@@ -5,24 +5,97 @@
 
 #include "bare_bones/exception.h"
 #include "bare_bones/vector.h"
+#include "primitives/go_model.h"
 #include "primitives/primitives.h"
 #include "prometheus/remote_write.h"
 
 #include "third_party/protozero/pbf_reader.hpp"
 
 namespace PromPP::WAL {
-class Hashdex {
- public:
-  // Determines the sharded en/decoding constraints for label_sets and protobufs.
-  // Use it to limit the hashdex's memory consumption for sharding protobufs.
-  struct label_set_limits {
-    uint32_t max_label_name_length;
-    uint32_t max_label_value_length;
-    uint32_t max_label_names_per_timeseries;
-    size_t max_timeseries_count;
-    size_t max_pb_size_in_bytes;
+
+template <class LabelSet>
+void set_cluser_and_replica_values(const LabelSet& label_set, std::string_view& cluster, std::string_view& replica) {
+  for (auto& [name, value] : label_set) {
+    if (name == "cluster") {
+      cluster = value;
+    }
+    if (name == "__replica__") {
+      replica = value;
+    }
+  }
+}
+
+struct HashdexLimits {
+  uint32_t max_label_name_length;
+  uint32_t max_label_value_length;
+  uint32_t max_label_names_per_timeseries;
+  size_t max_timeseries_count;
+};
+
+class GoModelHashdex {
+  class Item {
+    size_t hash_;
+    const PromPP::Primitives::Go::TimeSeries& go_time_series_;
+
+   public:
+    Item(size_t hash, const PromPP::Primitives::Go::TimeSeries& go_time_series) : hash_(hash), go_time_series_(go_time_series) {}
+
+    size_t hash() const { return hash_; }
+
+    template <class Timeseries>
+    void read(Timeseries& timeseries) const {
+      PromPP::Primitives::Go::read_timeseries(go_time_series_, timeseries);
+    }
   };
 
+ private:
+  BareBones::Vector<Item> items_;
+  std::string_view replica_;
+  std::string_view cluster_;
+  const HashdexLimits limits_{};
+
+ public:
+  using iterator_category = BareBones::Vector<Item>::iterator_category;
+  using value_type = const Item;
+  using const_iterator = BareBones::Vector<Item>::const_iterator;
+
+  inline __attribute__((always_inline)) GoModelHashdex() noexcept {}
+  inline __attribute__((always_inline)) GoModelHashdex(const HashdexLimits& limits) noexcept : limits_(limits) {}
+  inline __attribute__((always_inline)) ~GoModelHashdex(){};
+
+  constexpr const std::string_view replica() const noexcept { return replica_; }
+  constexpr const std::string_view cluster() const noexcept { return cluster_; }
+  constexpr const HashdexLimits& limits() const noexcept { return limits_; }
+
+  inline __attribute__((always_inline)) void presharding(PromPP::Primitives::Go::SliceView<PromPP::Primitives::Go::TimeSeries>& go_time_series_slice) {
+    if (limits_.max_timeseries_count && std::size(go_time_series_slice) > limits_.max_timeseries_count) {
+      throw BareBones::Exception(0x1806e61dde4a3d6f, "Timeseries limit exceeded");
+    }
+
+    items_.reserve(std::size(items_) + std::size(go_time_series_slice));
+    PromPP::Primitives::LabelViewSet label_set;
+    PromPP::Primitives::Go::LabelSetLimits limits = {
+        limits_.max_label_name_length,
+        limits_.max_label_value_length,
+        limits_.max_label_names_per_timeseries,
+    };
+    bool first = true;
+    for (auto& go_time_series : go_time_series_slice) {
+      PromPP::Primitives::Go::read_label_set(go_time_series.label_set, label_set, limits);
+      items_.emplace_back(hash_value(label_set), go_time_series);
+      if (first) {
+        first = false;
+        set_cluser_and_replica_values(label_set, cluster_, replica_);
+      }
+      label_set.clear();
+    }
+  }
+
+  inline __attribute__((always_inline)) const_iterator begin() const noexcept { return std::begin(items_); }
+  inline __attribute__((always_inline)) const_iterator end() const noexcept { return std::end(items_); }
+};
+
+class ProtobufHashdex {
   class Item {
     size_t hash_;
     std::string_view data_;
@@ -41,28 +114,23 @@ class Hashdex {
   BareBones::Vector<Item> items_;
   std::string_view replica_;
   std::string_view cluster_;
-  const label_set_limits limits_{};  // no limits on default.
+  const HashdexLimits limits_{};  // no limits on default.
 
  public:
   using iterator_category = BareBones::Vector<const Item>::iterator_category;
   using value_type = const Item;
   using const_iterator = BareBones::Vector<const Item>::const_iterator;
 
-  inline __attribute__((always_inline)) Hashdex() noexcept {}
-  inline __attribute__((always_inline)) Hashdex(const label_set_limits& limits) noexcept : limits_(limits) {}
-  inline __attribute__((always_inline)) ~Hashdex(){};
+  inline __attribute__((always_inline)) ProtobufHashdex() noexcept {}
+  inline __attribute__((always_inline)) ProtobufHashdex(const HashdexLimits& limits) noexcept : limits_(limits) {}
+  inline __attribute__((always_inline)) ~ProtobufHashdex(){};
 
   constexpr const std::string_view replica() const noexcept { return replica_; }
   constexpr const std::string_view cluster() const noexcept { return cluster_; }
-  constexpr const label_set_limits& limits() const noexcept { return limits_; }
+  constexpr const HashdexLimits& limits() const noexcept { return limits_; }
 
   // presharding - from protobuf make presharding slice with hash end proto.
   inline __attribute__((always_inline)) void presharding(const char* proto_data, size_t proto_len) {
-    if (limits_.max_pb_size_in_bytes && proto_len > limits_.max_pb_size_in_bytes) {
-      throw BareBones::Exception(0x1d979f3023b86c48, "Protobuf message's size (%zd) exceeds the maximum protobuf message size (%zd)", proto_len,
-                                 limits_.max_pb_size_in_bytes);
-    }
-
     size_t current_timeseries_n = 0;
     Prometheus::RemoteWrite::PbLabelSetMemoryLimits pb_limits = {
         limits_.max_label_name_length,
@@ -84,14 +152,7 @@ class Hashdex {
         items_.emplace_back(hash_value(label_set), pb_view);
         if (first) {
           first = false;
-          for (const auto& [name, value] : label_set) {
-            if (name == "cluster") {
-              cluster_ = value;
-            }
-            if (name == "__replica__") {
-              replica_ = value;
-            }
-          }
+          set_cluser_and_replica_values(label_set, cluster_, replica_);
         }
         label_set.clear();
         current_timeseries_n++;

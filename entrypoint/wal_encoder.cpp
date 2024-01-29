@@ -1,4 +1,4 @@
-#include <cstdint>
+#include <variant>
 
 #include "_helpers.hpp"
 #include "wal_encoder.h"
@@ -34,7 +34,7 @@ extern "C" void prompp_wal_encoder_dtor(void* args) {
 extern "C" void prompp_wal_encoder_add(void* args, void* res) {
   struct Arguments {
     PromPP::WAL::Encoder* encoder;
-    PromPP::WAL::Hashdex* hashdex;
+    HashdexVariant* hashdex;
   };
   struct Result {
     uint32_t samples;
@@ -49,7 +49,10 @@ extern "C" void prompp_wal_encoder_add(void* args, void* res) {
   Result* out = new (res) Result();
 
   try {
-    in->encoder->add(*in->hashdex, out);
+    auto lmb = [ in, out ](auto& hashdex) __attribute__((always_inline)) {
+      in->encoder->add(hashdex, out);
+    };
+    std::visit(lmb, *in->hashdex);
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
     handle_current_exception(__func__, err_stream);
@@ -59,7 +62,7 @@ extern "C" void prompp_wal_encoder_add(void* args, void* res) {
 extern "C" void prompp_wal_encoder_add_with_stale_nans(void* args, void* res) {
   struct Arguments {
     PromPP::WAL::Encoder* encoder;
-    PromPP::WAL::Hashdex* hashdex;
+    HashdexVariant* hashdex;
     int64_t stale_ts;
     PromPP::WAL::Writer::SourceState source_state;
   };
@@ -77,7 +80,10 @@ extern "C" void prompp_wal_encoder_add_with_stale_nans(void* args, void* res) {
   Result* out = new (res) Result();
 
   try {
-    out->source_state = in->encoder->add_with_stalenans(*in->hashdex, out, in->stale_ts, in->source_state);
+    auto lmb = [ in, out ](auto& hashdex) __attribute__((always_inline)) {
+      in->encoder->add(hashdex, out);
+    };
+    std::visit(lmb, *in->hashdex);
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
     handle_current_exception(__func__, err_stream);

@@ -4,6 +4,8 @@ import (
 	"encoding/binary"
 	"runtime"
 	"strings"
+
+	"github.com/prometheus/prometheus/pp/go/model"
 )
 
 // ShardedData - array of structures with (*LabelSet, timestamp, value, LSHash)
@@ -12,43 +14,40 @@ type ShardedData interface {
 	Replica() string
 }
 
-// WALHashdex - Presharding data, GO wrapper for WALHashdex, init from GO and filling from C/C++.
-type WALHashdex struct {
+// WALProtobufHashdex - Presharding data, GO wrapper for WALProtobufHashdex, init from GO and filling from C/C++.
+type WALProtobufHashdex struct {
 	hashdex uintptr
 	data    []byte
 	cluster string
 	replica string
 }
 
-// HashdexLimits - memory limits for Hashdex.
-type HashdexLimits struct {
+// WALHashdexLimits - memory limits for Hashdex.
+type WALHashdexLimits struct {
 	MaxLabelNameLength         uint32 `validate:"required"`
 	MaxLabelValueLength        uint32 `validate:"required"`
 	MaxLabelNamesPerTimeseries uint32 `validate:"required"`
 	MaxTimeseriesCount         uint64
-	MaxPbSizeInBytes           uint64 `validate:"required"`
 }
 
 const (
 	defaultMaxLabelNameLength         = 4096
 	defaultMaxLabelValueLength        = 65536
 	defaultMaxLabelNamesPerTimeseries = 320
-	defaultMaxPbSizeInBytes           = 100 << 20
 )
 
-// DefaultHashdexLimits - Default memory limits for Hashdex.
-func DefaultHashdexLimits() HashdexLimits {
-	return HashdexLimits{
+// DefaultWALHashdexLimits - Default memory limits for Hashdex.
+func DefaultWALHashdexLimits() WALHashdexLimits {
+	return WALHashdexLimits{
 		MaxLabelNameLength:         defaultMaxLabelNameLength,
 		MaxLabelValueLength:        defaultMaxLabelValueLength,
 		MaxLabelNamesPerTimeseries: defaultMaxLabelNamesPerTimeseries,
 		MaxTimeseriesCount:         0,
-		MaxPbSizeInBytes:           defaultMaxPbSizeInBytes,
 	}
 }
 
 // MarshalBinary - encoding to byte.
-func (l *HashdexLimits) MarshalBinary() ([]byte, error) {
+func (l *WALHashdexLimits) MarshalBinary() ([]byte, error) {
 	//revive:disable-next-line:add-constant sum 2+3+2+4
 	buf := make([]byte, 0, 11)
 
@@ -56,12 +55,11 @@ func (l *HashdexLimits) MarshalBinary() ([]byte, error) {
 	buf = binary.AppendUvarint(buf, uint64(l.MaxLabelValueLength))
 	buf = binary.AppendUvarint(buf, uint64(l.MaxLabelNamesPerTimeseries))
 	buf = binary.AppendUvarint(buf, l.MaxTimeseriesCount)
-	buf = binary.AppendUvarint(buf, l.MaxPbSizeInBytes)
 	return buf, nil
 }
 
 // UnmarshalBinary - decoding from byte.
-func (l *HashdexLimits) UnmarshalBinary(data []byte) error {
+func (l *WALHashdexLimits) UnmarshalBinary(data []byte) error {
 	var offset int
 
 	maxLabelNameLength, n := binary.Uvarint(data[offset:])
@@ -76,38 +74,90 @@ func (l *HashdexLimits) UnmarshalBinary(data []byte) error {
 	l.MaxLabelNamesPerTimeseries = uint32(maxLabelNamesPerTimeseries)
 	offset += n
 
-	maxTimeseriesCount, n := binary.Uvarint(data[offset:])
+	maxTimeseriesCount, _ := binary.Uvarint(data[offset:])
 	l.MaxTimeseriesCount = maxTimeseriesCount
-	offset += n
-
-	maxPbSizeInBytes, _ := binary.Uvarint(data[offset:])
-	l.MaxPbSizeInBytes = maxPbSizeInBytes
 
 	return nil
 }
 
-// NewWALHashdex - init new Hashdex with limits.
-func NewWALHashdex(protoData []byte, limits HashdexLimits) (ShardedData, error) {
+// NewWALProtobufHashdex - init new WALProtobufHashdex with limits.
+func NewWALProtobufHashdex(protoData []byte, limits WALHashdexLimits) (ShardedData, error) {
 	// cluster and replica - in memory GO(protoData)
-	h := &WALHashdex{
-		hashdex: walHashdexCtor(limits),
+	h := &WALProtobufHashdex{
+		hashdex: walProtobufHashdexCtor(limits),
 		data:    protoData,
 	}
-	runtime.SetFinalizer(h, func(h *WALHashdex) {
+	runtime.SetFinalizer(h, func(h *WALProtobufHashdex) {
 		runtime.KeepAlive(h.data)
-		walHashdexDtor(h.hashdex)
+		walProtobufHashdexDtor(h.hashdex)
 	})
 	var exception []byte
-	h.cluster, h.replica, exception = walHashdexPresharding(h.hashdex, protoData)
+	h.cluster, h.replica, exception = walProtobufHashdexPresharding(h.hashdex, protoData)
 	return h, handleException(exception)
 }
 
+// cptr - pointer to underlying c++ object.
+func (h *WALProtobufHashdex) cptr() uintptr {
+	return h.hashdex
+}
+
 // Cluster - get Cluster name.
-func (h *WALHashdex) Cluster() string {
+func (h *WALProtobufHashdex) Cluster() string {
 	return strings.Clone(h.cluster)
 }
 
 // Replica - get Replica name.
-func (h *WALHashdex) Replica() string {
+func (h *WALProtobufHashdex) Replica() string {
 	return strings.Clone(h.replica)
+}
+
+// WALGoModelHashdex - Go wrapper for PromPP::WAL::GoModelHashdex..
+type WALGoModelHashdex struct {
+	hashdex uintptr
+	data    []model.TimeSeries
+	cluster string
+	replica string
+}
+
+// cptr - pointer to underlying c++ object.
+func (h *WALGoModelHashdex) cptr() uintptr {
+	return h.hashdex
+}
+
+// Cluster - get Cluster name.
+func (h *WALGoModelHashdex) Cluster() string {
+	return strings.Clone(h.cluster)
+}
+
+// Replica - get Replica name.
+func (h *WALGoModelHashdex) Replica() string {
+	return strings.Clone(h.replica)
+}
+
+// NewWALGoModelHashdex - init new GoModelHashdex with limits.
+func NewWALGoModelHashdex(limits WALHashdexLimits, data []model.TimeSeries) (ShardedData, error) {
+	h := &WALGoModelHashdex{
+		hashdex: walGoModelHashdexCtor(limits),
+		data:    data,
+	}
+	runtime.SetFinalizer(h, func(h *WALGoModelHashdex) {
+		runtime.KeepAlive(h.data)
+		walGoModelHashdexDtor(h.hashdex)
+	})
+	var exception []byte
+	h.cluster, h.replica, exception = walGoModelHashdexPresharding(h.hashdex, data)
+	return h, handleException(exception)
+}
+
+// HashdexFactory - hashdex factory.
+type HashdexFactory struct{}
+
+// Protobuf - constructs Prometheus Remote Write based hashdex.
+func (HashdexFactory) Protobuf(data []byte, limits WALHashdexLimits) (ShardedData, error) {
+	return NewWALProtobufHashdex(data, limits)
+}
+
+// GoModel - constructs model.TimeSeries based hashdex.
+func (HashdexFactory) GoModel(data []model.TimeSeries, limits WALHashdexLimits) (ShardedData, error) {
+	return NewWALGoModelHashdex(limits, data)
 }

@@ -152,19 +152,23 @@ func NewWALEncoder(shardID uint16, logShards uint8) *WALEncoder {
 	return e
 }
 
+type cptrable interface {
+	cptr() uintptr
+}
+
 // Add - add to encode incoming data(ShardedData) through C++ encoder.
 func (e *WALEncoder) Add(ctx context.Context, shardedData ShardedData) (SegmentStats, error) {
-	hashdex, ok := shardedData.(*WALHashdex)
-	if !ok {
-		return nil, fmt.Errorf("shardedData not casting to Hashdex")
-	}
-
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
 
+	cptrContainer, ok := shardedData.(cptrable)
+	if !ok {
+		return nil, fmt.Errorf("sharded data must implement cptrable interface")
+	}
+
 	// shardedData.hashdex - Hashdex, struct(init from GO), filling in C/C++
-	stats, exception := walEncoderAdd(e.encoder, hashdex.hashdex)
+	stats, exception := walEncoderAdd(e.encoder, cptrContainer.cptr())
 	return stats, handleException(exception)
 }
 
@@ -202,16 +206,21 @@ func (e *WALEncoder) AddWithStaleNans(
 	sourceState *SourceState,
 	staleTS int64,
 ) (SegmentStats, *SourceState, error) {
-	hashdex, ok := shardedData.(*WALHashdex)
-	if !ok {
-		return nil, nil, fmt.Errorf("shardedData not casting to Hashdex")
-	}
-
 	if ctx.Err() != nil {
 		return nil, nil, ctx.Err()
 	}
 
-	stats, state, exception := walEncoderAddWithStaleNans(e.encoder, hashdex.hashdex, sourceState.pointer, staleTS)
+	cptrContainer, ok := shardedData.(cptrable)
+	if !ok {
+		return nil, nil, fmt.Errorf("sharded data must implement cptrable interface")
+	}
+
+	stats, state, exception := walEncoderAddWithStaleNans(
+		e.encoder,
+		cptrContainer.cptr(),
+		sourceState.pointer,
+		staleTS,
+	)
 	return stats, &SourceState{state}, handleException(exception)
 }
 

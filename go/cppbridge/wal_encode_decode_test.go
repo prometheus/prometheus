@@ -6,11 +6,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/prompb"
+	"github.com/stretchr/testify/suite"
+
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/frames"
 	"github.com/prometheus/prometheus/pp/go/frames/framestest"
-	"github.com/prometheus/prometheus/prompb"
-	"github.com/stretchr/testify/suite"
 )
 
 type EncoderDecoderSuite struct {
@@ -92,7 +93,7 @@ func (*EncoderDecoderSuite) transferringData(income frames.WritePayload) []byte 
 }
 
 func (s *EncoderDecoderSuite) TestEncodeDecode() {
-	hlimits := cppbridge.DefaultHashdexLimits()
+	hlimits := cppbridge.DefaultWALHashdexLimits()
 	dec := cppbridge.NewWALDecoder()
 	enc := cppbridge.NewWALEncoder(0, 0)
 	count := 10
@@ -106,7 +107,7 @@ func (s *EncoderDecoderSuite) TestEncodeDecode() {
 		s.Require().NoError(err)
 
 		s.T().Log("sharding protobuf")
-		h, err := cppbridge.NewWALHashdex(data, hlimits)
+		h, err := cppbridge.NewWALProtobufHashdex(data, hlimits)
 		s.Require().NoError(err)
 
 		s.T().Log("encoding protobuf")
@@ -138,7 +139,7 @@ func (s *EncoderDecoderSuite) TestEncodeDecode() {
 
 func (s *EncoderDecoderSuite) TestEncodeDecodeOpenHead() {
 	createdAt := time.Now()
-	hlimits := cppbridge.DefaultHashdexLimits()
+	hlimits := cppbridge.DefaultWALHashdexLimits()
 	dec := cppbridge.NewWALDecoder()
 	enc := cppbridge.NewWALEncoder(0, 0)
 	for i := 1; i < 21; i++ {
@@ -148,7 +149,7 @@ func (s *EncoderDecoderSuite) TestEncodeDecodeOpenHead() {
 		s.Require().NoError(err)
 
 		s.T().Log("sharding protobuf")
-		h, err := cppbridge.NewWALHashdex(data, hlimits)
+		h, err := cppbridge.NewWALProtobufHashdex(data, hlimits)
 		s.Require().NoError(err)
 
 		s.T().Log("encoding protobuf")
@@ -180,7 +181,7 @@ func (s *EncoderDecoderSuite) TestEncodeDecodeOpenHead() {
 }
 
 func (s *EncoderDecoderSuite) TestRestoreFromStream() {
-	hlimits := cppbridge.DefaultHashdexLimits()
+	hlimits := cppbridge.DefaultWALHashdexLimits()
 	enc := cppbridge.NewWALEncoder(0, 0)
 	buf := make([]byte, 0)
 	count := 10
@@ -191,7 +192,7 @@ func (s *EncoderDecoderSuite) TestRestoreFromStream() {
 		expectedWr := s.makeData(10, int64(i))
 		data, err := expectedWr.Marshal()
 		s.Require().NoError(err)
-		h, err := cppbridge.NewWALHashdex(data, hlimits)
+		h, err := cppbridge.NewWALProtobufHashdex(data, hlimits)
 		s.Require().NoError(err)
 		_, gos, err := enc.Encode(s.baseCtx, h)
 		s.Require().NoError(err)
@@ -224,10 +225,10 @@ func (s *EncoderDecoderSuite) EncodeDecodeBench(i int64) {
 	expectedWr := s.makeData(100, i)
 	data, err := expectedWr.Marshal()
 	s.Require().NoError(err)
-	hlimits := cppbridge.DefaultHashdexLimits()
+	hlimits := cppbridge.DefaultWALHashdexLimits()
 	dec := cppbridge.NewWALDecoder()
 	enc := cppbridge.NewWALEncoder(0, 0)
-	h, err := cppbridge.NewWALHashdex(data, hlimits)
+	h, err := cppbridge.NewWALProtobufHashdex(data, hlimits)
 	s.Require().NoError(err)
 
 	_, gos, err := enc.Encode(s.baseCtx, h)

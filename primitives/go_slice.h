@@ -89,6 +89,31 @@ class Slice {
   using iterator = T*;
 
   Slice() : data_(nullptr), len_(0), cap_(0) {}
+  Slice(const Slice& o) : len_(o.len_) {
+    reserve(len_);
+    if constexpr (BareBones::IsTriviallyCopyable<T>::value) {
+      std::memcpy(data_, o.data_, len_ * sizeof(T));
+    } else {
+      for (size_t i = 0; i != len_; ++i) {
+        new (data_ + i) T(o[i]);
+      }
+    }
+  }
+
+  Slice& operator=(const Slice& o) noexcept {
+    len_ = o.len_;
+    reserve(len_);
+
+    if constexpr (BareBones::IsTriviallyCopyable<T>::value) {
+      std::memcpy(data_, o.data_, len_ * sizeof(T));
+    } else {
+      for (size_t i = 0; i != len_; ++i) {
+        new (data_ + i) T(o[i]);
+      }
+    }
+
+    return *this;
+  }
 
   inline __attribute__((always_inline)) void reserve(size_t size) {
     if (size <= cap_) {
@@ -266,6 +291,7 @@ class Slice {
     assert(i < len_);
     return data_[i];
   }
+
 };  // class Slice
 
 class BytesStream {

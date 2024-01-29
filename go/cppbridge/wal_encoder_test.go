@@ -5,11 +5,12 @@ import (
 	"math"
 	"testing"
 
+	"github.com/prometheus/prometheus/prompb"
+	"github.com/stretchr/testify/suite"
+
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/frames"
 	"github.com/prometheus/prometheus/pp/go/frames/framestest"
-	"github.com/prometheus/prometheus/prompb"
-	"github.com/stretchr/testify/suite"
 )
 
 type EncoderSuite struct {
@@ -73,12 +74,12 @@ func (*EncoderSuite) transferringData(income frames.WritePayload) []byte {
 
 func (s *EncoderSuite) TestEncode() {
 	s.T().Log("encode data")
-	hlimits := cppbridge.DefaultHashdexLimits()
+	hlimits := cppbridge.DefaultWALHashdexLimits()
 	encodeCount := 10000
 	enc := cppbridge.NewWALEncoder(0, 0)
 
 	for i := 0; i < encodeCount; i++ {
-		h, err := cppbridge.NewWALHashdex(s.makeData(int64(i)), hlimits)
+		h, err := cppbridge.NewWALProtobufHashdex(s.makeData(int64(i)), hlimits)
 		s.Require().NoError(err)
 
 		segKey, seg, err := enc.Encode(s.baseCtx, h)
@@ -100,14 +101,26 @@ func (s *EncoderSuite) TestEncode() {
 func (s *EncoderSuite) TestEncodeError() {
 	ctx, cancel := context.WithCancel(s.baseCtx)
 	cancel()
-	hlimits := cppbridge.DefaultHashdexLimits()
+	hlimits := cppbridge.DefaultWALHashdexLimits()
 
-	h, err := cppbridge.NewWALHashdex(s.makeData(int64(1)), hlimits)
+	h, err := cppbridge.NewWALProtobufHashdex(s.makeData(int64(1)), hlimits)
 	s.Require().NoError(err)
 
 	enc := cppbridge.NewWALEncoder(0, 0)
 	_, _, err2 := enc.Encode(ctx, h)
 	s.Error(err2)
+}
+
+func (s *EncoderSuite) TestEncoder_Add() {
+	limits := cppbridge.DefaultWALHashdexLimits()
+	data := s.makeData(100)
+	protoHashdex, err := cppbridge.NewWALProtobufHashdex(data, limits)
+	s.Require().NoError(err)
+
+	encoder := cppbridge.NewWALEncoder(0, 0)
+	segmentStats, err := encoder.Add(s.baseCtx, protoHashdex)
+	s.Require().NoError(err)
+	_ = segmentStats
 }
 
 func (s *EncoderSuite) TestEncodeErrorCPPExceptions() {
@@ -132,8 +145,8 @@ func (s *EncoderSuite) TestEncodeErrorCPPExceptions() {
 	b, err := wr.Marshal()
 	s.Require().NoError(err)
 
-	hlimits := cppbridge.DefaultHashdexLimits()
-	h, err := cppbridge.NewWALHashdex(b, hlimits)
+	hlimits := cppbridge.DefaultWALHashdexLimits()
+	h, err := cppbridge.NewWALProtobufHashdex(b, hlimits)
 	s.Require().NoError(err)
 
 	enc := cppbridge.NewWALEncoder(0, 0)
@@ -169,8 +182,8 @@ func (s *EncoderSuite) TestFinalizeErrorCPPExceptions() {
 	b, err := wr.Marshal()
 	s.Require().NoError(err)
 
-	hlimits := cppbridge.DefaultHashdexLimits()
-	h, err := cppbridge.NewWALHashdex(b, hlimits)
+	hlimits := cppbridge.DefaultWALHashdexLimits()
+	h, err := cppbridge.NewWALProtobufHashdex(b, hlimits)
 	s.Require().NoError(err)
 
 	enc := cppbridge.NewWALEncoder(0, 0)
@@ -183,8 +196,8 @@ func (s *EncoderSuite) TestFinalizeErrorCPPExceptions() {
 
 func (s *EncoderSuite) TestEncodeRemainingSize() {
 	var remainingTableSize uint32 = math.MaxUint32
-	hlimits := cppbridge.DefaultHashdexLimits()
-	h, err := cppbridge.NewWALHashdex(s.makeData(1), hlimits)
+	hlimits := cppbridge.DefaultWALHashdexLimits()
+	h, err := cppbridge.NewWALProtobufHashdex(s.makeData(1), hlimits)
 	s.NoError(err)
 
 	enc := cppbridge.NewWALEncoder(0, 0)

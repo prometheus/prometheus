@@ -21,6 +21,7 @@ import (
 	"unsafe" //nolint:gocritic // because otherwise it won't work
 
 	"github.com/prometheus/prometheus/pp/go/cppbridge/fastcgo"
+	"github.com/prometheus/prometheus/pp/go/model"
 )
 
 func freeBytes(b []byte) {
@@ -50,13 +51,13 @@ func memInfo() (res MemInfo) {
 	return res
 }
 
-func walHashdexCtor(limits HashdexLimits) uintptr {
+func walProtobufHashdexCtor(limits WALHashdexLimits) uintptr {
 	var res struct {
 		hashdex uintptr
 	}
 
 	fastcgo.UnsafeCall2(
-		C.prompp_wal_hashdex_ctor,
+		C.prompp_wal_protobuf_hashdex_ctor,
 		uintptr(unsafe.Pointer(&limits)),
 		uintptr(unsafe.Pointer(&res)),
 	)
@@ -64,18 +65,18 @@ func walHashdexCtor(limits HashdexLimits) uintptr {
 	return res.hashdex
 }
 
-func walHashdexDtor(hashdex uintptr) {
+func walProtobufHashdexDtor(hashdex uintptr) {
 	var args = struct {
 		hashdex uintptr
 	}{hashdex}
 
 	fastcgo.UnsafeCall1(
-		C.prompp_wal_hashdex_dtor,
+		C.prompp_wal_protobuf_hashdex_dtor,
 		uintptr(unsafe.Pointer(&args)),
 	)
 }
 
-func walHashdexPresharding(hashdex uintptr, protobuf []byte) (cluster, replica string, err []byte) {
+func walProtobufHashdexPresharding(hashdex uintptr, protobuf []byte) (cluster, replica string, err []byte) {
 	var args = struct {
 		hashdex  uintptr
 		protobuf []byte
@@ -87,7 +88,52 @@ func walHashdexPresharding(hashdex uintptr, protobuf []byte) (cluster, replica s
 	}
 
 	fastcgo.UnsafeCall2(
-		C.prompp_wal_hashdex_presharding,
+		C.prompp_wal_protobuf_hashdex_presharding,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.cluster, res.replica, res.exception
+}
+
+func walGoModelHashdexCtor(limits WALHashdexLimits) uintptr {
+	var res struct {
+		hashdex uintptr
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_wal_go_model_hashdex_ctor,
+		uintptr(unsafe.Pointer(&limits)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.hashdex
+}
+
+func walGoModelHashdexDtor(hashdex uintptr) {
+	var args = struct {
+		hashdex uintptr
+	}{hashdex}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_wal_go_model_hashdex_dtor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
+func walGoModelHashdexPresharding(hashdex uintptr, data []model.TimeSeries) (cluster, replica string, err []byte) {
+	var args = struct {
+		hashdex uintptr
+		data    []model.TimeSeries
+	}{hashdex, data}
+	var res struct {
+		cluster   string
+		replica   string
+		exception []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_wal_go_model_hashdex_presharding,
 		uintptr(unsafe.Pointer(&args)),
 		uintptr(unsafe.Pointer(&res)),
 	)
