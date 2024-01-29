@@ -39,9 +39,10 @@ func TestMain(m *testing.M) {
 // when reading a record.
 func TestWALRepair_ReadingError(t *testing.T) {
 	for name, test := range map[string]struct {
-		corrSgm    int              // Which segment to corrupt.
-		corrFunc   func(f *os.File) // Func that applies the corruption.
-		intactRecs int              // Total expected records left after the repair.
+		corrSgm        int              // Which segment to corrupt.
+		corrFunc       func(f *os.File) // Func that applies the corruption.
+		intactRecs     int              // Total expected records left after the repair.
+		intactRecIndex []int            // Index of the intact record.
 	}{
 		"torn_last_record": {
 			2,
@@ -52,6 +53,7 @@ func TestWALRepair_ReadingError(t *testing.T) {
 				require.NoError(t, err)
 			},
 			8,
+			[]int{0, 1, 2, 3, 4, 5, 6, 7},
 		},
 		// Ensures that the page buffer is big enough to fit
 		// an entire page size without panicking.
@@ -65,6 +67,7 @@ func TestWALRepair_ReadingError(t *testing.T) {
 				require.NoError(t, err)
 			},
 			4,
+			[]int{0, 1, 2, 3},
 		},
 		"bad_fragment_sequence": {
 			1,
@@ -75,6 +78,7 @@ func TestWALRepair_ReadingError(t *testing.T) {
 				require.NoError(t, err)
 			},
 			4,
+			[]int{0, 1, 2, 3},
 		},
 		"bad_fragment_flag": {
 			1,
@@ -85,6 +89,7 @@ func TestWALRepair_ReadingError(t *testing.T) {
 				require.NoError(t, err)
 			},
 			4,
+			[]int{0, 1, 2, 3},
 		},
 		"bad_checksum": {
 			1,
@@ -95,6 +100,7 @@ func TestWALRepair_ReadingError(t *testing.T) {
 				require.NoError(t, err)
 			},
 			4,
+			[]int{0, 1, 2, 3},
 		},
 		"bad_length": {
 			1,
@@ -105,6 +111,7 @@ func TestWALRepair_ReadingError(t *testing.T) {
 				require.NoError(t, err)
 			},
 			4,
+			[]int{0, 1, 2, 3},
 		},
 		"bad_content": {
 			1,
@@ -115,6 +122,29 @@ func TestWALRepair_ReadingError(t *testing.T) {
 				require.NoError(t, err)
 			},
 			4,
+			[]int{0, 1, 2, 3},
+		},
+		"unexpected_middle": {
+			1,
+			func(f *os.File) {
+				_, err := f.Seek(pageSize, 0)
+				require.NoError(t, err)
+				_, err = f.Write([]byte{byte(recMiddle)})
+				require.NoError(t, err)
+			},
+			4,
+			[]int{0, 1, 2, 3},
+		},
+		"unexpected_full_after_first": {
+			1,
+			func(f *os.File) {
+				_, err := f.Seek(pageSize, 0)
+				require.NoError(t, err)
+				_, err = f.Write([]byte{byte(recFirst)})
+				require.NoError(t, err)
+			},
+			4,
+			[]int{0, 1, 2, 3},
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -190,9 +220,10 @@ func TestWALRepair_ReadingError(t *testing.T) {
 			}
 			require.NoError(t, r.Err())
 			require.Len(t, result, test.intactRecs, "Wrong number of intact records")
+			require.Len(t, test.intactRecIndex, len(result), "Wrong number of intact records")
 
 			for i, r := range result {
-				if !bytes.Equal(records[i], r) {
+				if !bytes.Equal(records[test.intactRecIndex[i]], r) {
 					t.Fatalf("record %d diverges: want %x, got %x", i, records[i][:10], r[:10])
 				}
 			}
@@ -201,6 +232,201 @@ func TestWALRepair_ReadingError(t *testing.T) {
 			_, last, err = Segments(w.Dir())
 			require.NoError(t, err)
 			require.Equal(t, test.corrSgm+1, last)
+			fi, err := os.Stat(SegmentName(dir, last))
+			require.NoError(t, err)
+			require.Equal(t, int64(0), fi.Size())
+		})
+	}
+}
+
+// TestWALIgnoreCorruption ensures that if ignoreCorruption is set, reading will continue on remain valid records.
+func TestWALIgnoreCorruption(t *testing.T) {
+	for name, test := range map[string]struct {
+		corrSgm        int              // Which segment to corrupt.
+		corrFunc       func(f *os.File) // Func that applies the corruption.
+		intactRecs     int              // Total expected records left after the repair.
+		intactRecIndex []int            // Index of the intact record.
+	}{
+		"bad_fragment_sequence": {
+			1,
+			func(f *os.File) {
+				_, err := f.Seek(pageSize, 0)
+				require.NoError(t, err)
+				_, err = f.Write([]byte{byte(recLast)})
+				require.NoError(t, err)
+			},
+			8,
+			[]int{0, 1, 2, 3, 5, 6, 7, 8},
+		},
+		"bad_fragment_flag": {
+			1,
+			func(f *os.File) {
+				_, err := f.Seek(pageSize, 0)
+				require.NoError(t, err)
+				_, err = f.Write([]byte{123})
+				require.NoError(t, err)
+			},
+			8,
+			[]int{0, 1, 2, 3, 5, 6, 7, 8},
+		},
+		"bad_checksum": {
+			1,
+			func(f *os.File) {
+				_, err := f.Seek(pageSize+4, 0)
+				require.NoError(t, err)
+				_, err = f.Write([]byte{0})
+				require.NoError(t, err)
+			},
+			4,
+			[]int{0, 1, 2, 3},
+		},
+		"bad_length": {
+			1,
+			func(f *os.File) {
+				_, err := f.Seek(pageSize+2, 0)
+				require.NoError(t, err)
+				_, err = f.Write([]byte{0})
+				require.NoError(t, err)
+			},
+			4,
+			[]int{0, 1, 2, 3},
+		},
+		"bad_content": {
+			1,
+			func(f *os.File) {
+				_, err := f.Seek(pageSize+100, 0)
+				require.NoError(t, err)
+				_, err = f.Write([]byte("beef"))
+				require.NoError(t, err)
+			},
+			4,
+			[]int{0, 1, 2, 3},
+		},
+		"unexpected_middle": {
+			1,
+			func(f *os.File) {
+				_, err := f.Seek(pageSize, 0)
+				require.NoError(t, err)
+				_, err = f.Write([]byte{byte(recMiddle)})
+				require.NoError(t, err)
+			},
+			8,
+			[]int{0, 1, 2, 3, 5, 6, 7, 8},
+		},
+		"unexpected_full_after_first": {
+			1,
+			func(f *os.File) {
+				_, err := f.Seek(pageSize, 0)
+				require.NoError(t, err)
+				_, err = f.Write([]byte{byte(recFirst)})
+				require.NoError(t, err)
+			},
+			7,
+			[]int{0, 1, 2, 3, 6, 7, 8},
+		},
+		"multi_corruption_in_one_seg": {
+			1,
+			func(f *os.File) {
+				_, err := f.Seek(0, 0)
+				require.NoError(t, err)
+				_, err = f.Write([]byte{byte(recLast)})
+				require.NoError(t, err)
+
+				_, err = f.Seek(pageSize, 0)
+				require.NoError(t, err)
+				_, err = f.Write([]byte{byte(recMiddle)})
+				require.NoError(t, err)
+			},
+			7,
+			[]int{0, 1, 2, 5, 6, 7, 8},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+
+			// Create 3 segments with 3 records each and
+			// then corrupt given records in a given segment.
+			// As a result we expect a repaired WAL with given intact records.
+			segSize := 3 * pageSize
+			w, err := NewSize(nil, nil, dir, segSize, CompressionNone)
+			require.NoError(t, err)
+
+			var records [][]byte
+
+			for i := 1; i <= 9; i++ {
+				b := make([]byte, pageSize-recordHeaderSize)
+				b[0] = byte(i)
+				records = append(records, b)
+				require.NoError(t, w.Log(b))
+			}
+			first, last, err := Segments(w.Dir())
+			require.NoError(t, err)
+			require.Equal(t, 3, 1+last-first, "wlog creation didn't result in expected number of segments")
+
+			require.NoError(t, w.Close())
+
+			f, err := os.OpenFile(SegmentName(dir, test.corrSgm), os.O_RDWR, 0o666)
+			require.NoError(t, err)
+
+			test.corrFunc(f)
+
+			require.NoError(t, f.Close())
+
+			w, err = NewSize(nil, nil, dir, segSize, CompressionNone)
+			require.NoError(t, err)
+			defer w.Close()
+
+			first, last, err = Segments(w.Dir())
+			require.NoError(t, err)
+
+			for i := first; i <= last; i++ {
+				s, err := OpenReadSegment(SegmentName(w.Dir(), i))
+				require.NoError(t, err)
+
+				sr := NewSegmentBufReader(s)
+				require.NoError(t, err)
+				r := NewReader(sr)
+				r.SetIgnoreCorruption() // Ignore corruption.
+				for r.Next() {
+				}
+
+				// Close the segment so we don't break things on Windows.
+				s.Close()
+
+				// No corruption in this segment.
+				if r.Err() == nil {
+					continue
+				}
+				require.NoError(t, w.Repair(r.Err()))
+				break
+			}
+
+			sr, err := NewSegmentsReader(dir)
+			require.NoError(t, err)
+			defer sr.Close()
+			r := NewReader(sr)
+			r.SetIgnoreCorruption() // Ignore corruption.
+
+			var result [][]byte
+			for r.Next() {
+				var b []byte
+				result = append(result, append(b, r.Record()...))
+			}
+			require.NoError(t, r.Err())
+			require.Len(t, result, test.intactRecs, "Wrong number of intact records")
+			require.Len(t, result, len(test.intactRecIndex), "Wrong number of intact records")
+
+			for i, r := range result {
+				if !bytes.Equal(records[test.intactRecIndex[i]], r) {
+					t.Logf("expected record %d: %x\n", i, records[test.intactRecIndex[i]][:10])
+					t.Logf("record %d: %x\n", i, r[:10])
+					t.Fatalf("record %d diverges: want %x, got %x", i, records[i][:10], r[:10])
+				}
+			}
+
+			// Make sure last is a new 0 size Segment, if there are valid records after the corruption, last may not equal corruptSgm+1.
+			_, last, err = Segments(w.Dir())
+			require.NoError(t, err)
 			fi, err := os.Stat(SegmentName(dir, last))
 			require.NoError(t, err)
 			require.Equal(t, int64(0), fi.Size())

@@ -84,6 +84,7 @@ func DefaultOptions() *Options {
 		HeadChunksWriteQueueSize:    chunks.DefaultWriteQueueSize,
 		OutOfOrderCapMax:            DefaultOutOfOrderCapMax,
 		EnableOverlappingCompaction: true,
+		IgnoreWALReadingCorruption:  DefaultIgnoreWALReadingCorruption,
 	}
 }
 
@@ -186,6 +187,9 @@ type Options struct {
 	// they'd rather keep overlapping blocks and let another component do the overlapping compaction later.
 	// For Prometheus, this will always be true.
 	EnableOverlappingCompaction bool
+
+	// IgnoreWALReadingCorruption is a flag to ignore WAL corruption during replay.
+	IgnoreWALReadingCorruption bool
 }
 
 type BlocksToDeleteFunc func(blocks []*Block) map[ulid.ULID]struct{}
@@ -881,6 +885,9 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	if opts.IsolationDisabled {
 		// We only override this flag if isolation is disabled at DB level. We use the default otherwise.
 		headOpts.IsolationDisabled = opts.IsolationDisabled
+	}
+	if opts.IgnoreWALReadingCorruption {
+		headOpts.IgnoreWALReadingCorruption = opts.IgnoreWALReadingCorruption
 	}
 	db.head, err = NewHead(r, l, wal, wbl, headOpts, stats.Head)
 	if err != nil {

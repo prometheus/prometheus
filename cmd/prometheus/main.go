@@ -356,6 +356,8 @@ func main() {
 	serverOnlyFlag(a, "storage.tsdb.wal-compression-type", "Compression algorithm for the tsdb WAL.").
 		Hidden().Default(string(wlog.CompressionSnappy)).EnumVar(&cfg.tsdb.WALCompressionType, string(wlog.CompressionSnappy), string(wlog.CompressionZstd))
 
+	serverOnlyFlag(a, "storage.tsdb.ignore-wal-reading-corruption", "Ignore WAL corruption while reading it, if true this will skip all corruption records of WAL and truncate it as normal.").Default("false").BoolVar(&cfg.tsdb.IgnoreWALReadingCorruption)
+
 	serverOnlyFlag(a, "storage.tsdb.head-chunks-write-queue-size", "Size of the queue through which head chunks are written to the disk to be m-mapped, 0 disables the queue completely. Experimental.").
 		Default("0").IntVar(&cfg.tsdb.HeadChunksWriteQueueSize)
 
@@ -374,6 +376,8 @@ func main() {
 
 	agentOnlyFlag(a, "storage.agent.wal-compression-type", "Compression algorithm for the agent WAL.").
 		Hidden().Default(string(wlog.CompressionSnappy)).EnumVar(&cfg.agent.WALCompressionType, string(wlog.CompressionSnappy), string(wlog.CompressionZstd))
+
+	agentOnlyFlag(a, "storage.agent.ignore-wal-replay-corruption", "Ignore WAL corruption while reading it, if true this will skip all corruption records of WAL and truncate it as normal.").Default("false").BoolVar(&cfg.agent.IgnoreWALReadingCorruption)
 
 	agentOnlyFlag(a, "storage.agent.wal-truncate-frequency",
 		"The frequency at which to truncate the WAL and remove old data.").
@@ -1148,6 +1152,7 @@ func main() {
 					"RetentionDuration", cfg.tsdb.RetentionDuration,
 					"WALSegmentSize", cfg.tsdb.WALSegmentSize,
 					"WALCompression", cfg.tsdb.WALCompression,
+					"IgnoreWALReadingCorruption", cfg.tsdb.IgnoreWALReadingCorruption,
 				)
 
 				startTimeMargin := int64(2 * time.Duration(cfg.tsdb.MinBlockDuration).Seconds() * 1000)
@@ -1661,6 +1666,7 @@ type tsdbOptions struct {
 	MaxExemplars                   int64
 	EnableMemorySnapshotOnShutdown bool
 	EnableNativeHistograms         bool
+	IgnoreWALReadingCorruption     bool
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -1682,30 +1688,33 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableNativeHistograms:         opts.EnableNativeHistograms,
 		OutOfOrderTimeWindow:           opts.OutOfOrderTimeWindow,
 		EnableOverlappingCompaction:    true,
+		IgnoreWALReadingCorruption:     opts.IgnoreWALReadingCorruption,
 	}
 }
 
 // agentOptions is a version of agent.Options with defined units. This is required
 // as agent.Option fields are unit agnostic (time).
 type agentOptions struct {
-	WALSegmentSize         units.Base2Bytes
-	WALCompression         bool
-	WALCompressionType     string
-	StripeSize             int
-	TruncateFrequency      model.Duration
-	MinWALTime, MaxWALTime model.Duration
-	NoLockfile             bool
+	WALSegmentSize             units.Base2Bytes
+	WALCompression             bool
+	WALCompressionType         string
+	StripeSize                 int
+	TruncateFrequency          model.Duration
+	MinWALTime, MaxWALTime     model.Duration
+	NoLockfile                 bool
+	IgnoreWALReadingCorruption bool
 }
 
 func (opts agentOptions) ToAgentOptions() agent.Options {
 	return agent.Options{
-		WALSegmentSize:    int(opts.WALSegmentSize),
-		WALCompression:    wlog.ParseCompressionType(opts.WALCompression, opts.WALCompressionType),
-		StripeSize:        opts.StripeSize,
-		TruncateFrequency: time.Duration(opts.TruncateFrequency),
-		MinWALTime:        durationToInt64Millis(time.Duration(opts.MinWALTime)),
-		MaxWALTime:        durationToInt64Millis(time.Duration(opts.MaxWALTime)),
-		NoLockfile:        opts.NoLockfile,
+		WALSegmentSize:             int(opts.WALSegmentSize),
+		WALCompression:             wlog.ParseCompressionType(opts.WALCompression, opts.WALCompressionType),
+		IgnoreWALReadingCorruption: opts.IgnoreWALReadingCorruption,
+		StripeSize:                 opts.StripeSize,
+		TruncateFrequency:          time.Duration(opts.TruncateFrequency),
+		MinWALTime:                 durationToInt64Millis(time.Duration(opts.MinWALTime)),
+		MaxWALTime:                 durationToInt64Millis(time.Duration(opts.MaxWALTime)),
+		NoLockfile:                 opts.NoLockfile,
 	}
 }
 

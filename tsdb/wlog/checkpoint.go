@@ -93,7 +93,7 @@ const checkpointPrefix = "checkpoint."
 // segmented format as the original WAL itself.
 // This makes it easy to read it through the WAL package and concatenate
 // it with the original WAL.
-func Checkpoint(logger log.Logger, w *WL, from, to int, keep func(id chunks.HeadSeriesRef) bool, mint int64) (*CheckpointStats, error) {
+func Checkpoint(logger log.Logger, w *WL, from, to int, keep func(id chunks.HeadSeriesRef) bool, mint int64, ignoreCorruption bool) (*CheckpointStats, error) {
 	stats := &CheckpointStats{}
 	var sgmReader io.ReadCloser
 
@@ -161,6 +161,9 @@ func Checkpoint(logger log.Logger, w *WL, from, to int, keep func(id chunks.Head
 
 		latestMetadataMap = make(map[chunks.HeadSeriesRef]record.RefMetadata)
 	)
+	if ignoreCorruption {
+		r.SetIgnoreCorruption()
+	}
 	for r.Next() {
 		series, samples, histogramSamples, tstones, exemplars, metadata = series[:0], samples[:0], histogramSamples[:0], tstones[:0], exemplars[:0], metadata[:0]
 
