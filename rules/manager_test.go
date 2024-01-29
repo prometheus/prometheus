@@ -679,6 +679,7 @@ func TestDeletedRuleMarkedStale(t *testing.T) {
 			Appendable:                st,
 			RuleConcurrencyController: sequentialRuleEvalController{},
 		},
+		metrics: NewGroupMetrics(nil),
 	}
 	newGroup.CopyState(oldGroup)
 

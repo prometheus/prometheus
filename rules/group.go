@@ -592,9 +592,8 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 	}
 
 	wg.Wait()
-	if g.metrics != nil {
-		g.metrics.GroupSamples.WithLabelValues(GroupKey(g.File(), g.Name())).Set(samplesTotal.Load())
-	}
+
+	g.metrics.GroupSamples.WithLabelValues(GroupKey(g.File(), g.Name())).Set(samplesTotal.Load())
 	g.cleanupStaleSeries(ctx, ts)
 }
 
