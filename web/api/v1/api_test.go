@@ -1439,14 +1439,14 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				},
 				DroppedTargets: []*DroppedTarget{
 					{
-						DiscoveredLabels: map[string]string{
-							"__address__":         "http://dropped.example.com:9115",
-							"__metrics_path__":    "/probe",
-							"__scheme__":          "http",
-							"job":                 "blackbox",
-							"__scrape_interval__": "30s",
-							"__scrape_timeout__":  "15s",
-						},
+						DiscoveredLabels: labels.FromStrings(
+							"__address__", "http://dropped.example.com:9115",
+							"__metrics_path__", "/probe",
+							"__scheme__", "http",
+							"job", "blackbox",
+							"__scrape_interval__", "30s",
+							"__scrape_timeout__", "15s",
+						),
 					},
 				},
 				DroppedTargetCounts: map[string]int{"blackbox": 1},
@@ -1488,14 +1488,14 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				},
 				DroppedTargets: []*DroppedTarget{
 					{
-						DiscoveredLabels: map[string]string{
-							"__address__":         "http://dropped.example.com:9115",
-							"__metrics_path__":    "/probe",
-							"__scheme__":          "http",
-							"job":                 "blackbox",
-							"__scrape_interval__": "30s",
-							"__scrape_timeout__":  "15s",
-						},
+						DiscoveredLabels: labels.FromStrings(
+							"__address__", "http://dropped.example.com:9115",
+							"__metrics_path__", "/probe",
+							"__scheme__", "http",
+							"job", "blackbox",
+							"__scrape_interval__", "30s",
+							"__scrape_timeout__", "15s",
+						),
 					},
 				},
 				DroppedTargetCounts: map[string]int{"blackbox": 1},
@@ -1547,14 +1547,14 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				ActiveTargets: []*Target{},
 				DroppedTargets: []*DroppedTarget{
 					{
-						DiscoveredLabels: map[string]string{
-							"__address__":         "http://dropped.example.com:9115",
-							"__metrics_path__":    "/probe",
-							"__scheme__":          "http",
-							"job":                 "blackbox",
-							"__scrape_interval__": "30s",
-							"__scrape_timeout__":  "15s",
-						},
+						DiscoveredLabels: labels.FromStrings(
+							"__address__", "http://dropped.example.com:9115",
+							"__metrics_path__", "/probe",
+							"__scheme__", "http",
+							"job", "blackbox",
+							"__scrape_interval__", "30s",
+							"__scrape_timeout__", "15s",
+						),
 					},
 				},
 				DroppedTargetCounts: map[string]int{"blackbox": 1},

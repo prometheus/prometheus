@@ -903,7 +903,7 @@ type ScrapePoolsDiscovery struct {
 // DroppedTarget has the information for one target that was dropped during relabelling.
 type DroppedTarget struct {
 	// Labels before any processing.
-	DiscoveredLabels map[string]string `json:"discoveredLabels"`
+	DiscoveredLabels labels.Labels `json:"discoveredLabels"`
 }
 
 // TargetDiscovery has all the active targets.
@@ -1063,7 +1063,7 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 			}
 			for _, target := range targetsDropped[key] {
 				res.DroppedTargets = append(res.DroppedTargets, &DroppedTarget{
-					DiscoveredLabels: target.DiscoveredLabels().Map(),
+					DiscoveredLabels: target.DiscoveredLabels(),
 				})
 			}
 		}
