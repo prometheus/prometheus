@@ -84,6 +84,7 @@ func DefaultOptions() *Options {
 		HeadChunksWriteQueueSize:    chunks.DefaultWriteQueueSize,
 		OutOfOrderCapMax:            DefaultOutOfOrderCapMax,
 		EnableOverlappingCompaction: true,
+		EnableSharding:              false,
 	}
 }
 
@@ -186,6 +187,9 @@ type Options struct {
 	// they'd rather keep overlapping blocks and let another component do the overlapping compaction later.
 	// For Prometheus, this will always be true.
 	EnableOverlappingCompaction bool
+
+	// EnableSharding enables query sharding support in TSDB.
+	EnableSharding bool
 }
 
 type BlocksToDeleteFunc func(blocks []*Block) map[ulid.ULID]struct{}
@@ -875,6 +879,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	headOpts.EnableNativeHistograms.Store(opts.EnableNativeHistograms)
 	headOpts.OutOfOrderTimeWindow.Store(opts.OutOfOrderTimeWindow)
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
+	headOpts.EnableSharding = opts.EnableSharding
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
 	}

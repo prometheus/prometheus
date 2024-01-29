@@ -1744,6 +1744,33 @@ func (r *Reader) SortedPostings(p Postings) Postings {
 	return p
 }
 
+// ShardedPostings returns a postings list filtered by the provided shardIndex out of shardCount.
+func (r *Reader) ShardedPostings(p Postings, shardIndex, shardCount uint64) Postings {
+	var (
+		out     = make([]storage.SeriesRef, 0, 128)
+		bufLbls = labels.ScratchBuilder{}
+	)
+
+	for p.Next() {
+		id := p.At()
+
+		// Get the series labels (no chunks).
+		err := r.Series(id, &bufLbls, nil)
+		if err != nil {
+			return ErrPostings(fmt.Errorf("series %d not found", id))
+		}
+
+		// Check if the series belong to the shard.
+		if labels.StableHash(bufLbls.Labels())%shardCount != shardIndex {
+			continue
+		}
+
+		out = append(out, id)
+	}
+
+	return NewListPostings(out)
+}
+
 // Size returns the size of an index file.
 func (r *Reader) Size() int64 {
 	return int64(r.b.Len())
@@ -1864,9 +1891,12 @@ func (dec *Decoder) LabelValueFor(ctx context.Context, b []byte, label string) (
 
 // Series decodes a series entry from the given byte slice into builder and chks.
 // Previous contents of builder can be overwritten - make sure you copy before retaining.
+// Skips reading chunks metadata if chks is nil.
 func (dec *Decoder) Series(b []byte, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	builder.Reset()
-	*chks = (*chks)[:0]
+	if chks != nil {
+		*chks = (*chks)[:0]
+	}
 
 	d := encoding.Decbuf{B: b}
 
@@ -1890,6 +1920,11 @@ func (dec *Decoder) Series(b []byte, builder *labels.ScratchBuilder, chks *[]chu
 		}
 
 		builder.Add(ln, lv)
+	}
+
+	// Skip reading chunks metadata if chks is nil.
+	if chks == nil {
+		return d.Err()
 	}
 
 	// Read the chunks meta data.
