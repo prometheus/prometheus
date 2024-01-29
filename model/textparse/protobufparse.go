@@ -75,6 +75,8 @@ type ProtobufParser struct {
 
 	// The following are just shenanigans to satisfy the Parser interface.
 	metricBytes *bytes.Buffer // A somewhat fluid representation of the current metric.
+
+	exemaplerPos int
 }
 
 // NewProtobufParser returns a parser for the payload in the byte slice.
@@ -317,28 +319,42 @@ func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
 	case dto.MetricType_COUNTER:
 		exProto = m.GetCounter().GetExemplar()
 	case dto.MetricType_HISTOGRAM, dto.MetricType_GAUGE_HISTOGRAM:
-		bb := m.GetHistogram().GetBucket()
 		isClassic := p.state == EntrySeries
-		if p.fieldPos < 0 {
-			if isClassic {
-				return false // At _count or _sum.
+		if !isClassic && len(m.GetHistogram().GetExemplars()) > 0 {
+			exs := m.GetHistogram().GetExemplars()
+			for p.exemaplerPos < len(exs) {
+				exProto = exs[p.exemaplerPos]
+				p.exemaplerPos++
+				if exProto != nil && exProto.GetTimestamp() != nil {
+					break
+				}
 			}
-			p.fieldPos = 0 // Start at 1st bucket for native histograms.
-		}
-		for p.fieldPos < len(bb) {
-			exProto = bb[p.fieldPos].GetExemplar()
-			if isClassic {
-				break
+			if exProto != nil && exProto.GetTimestamp() == nil {
+				return false
 			}
-			p.fieldPos++
-			// We deliberately drop exemplars with no timestamp only for native histograms.
-			if exProto != nil && (isClassic || exProto.GetTimestamp() != nil) {
-				break // Found a classic histogram exemplar or a native histogram exemplar with a timestamp.
+		} else {
+			bb := m.GetHistogram().GetBucket()
+			if p.fieldPos < 0 {
+				if isClassic {
+					return false // At _count or _sum.
+				}
+				p.fieldPos = 0 // Start at 1st bucket for native histograms.
 			}
-		}
-		// If the last exemplar for native histograms has no timestamp, ignore it.
-		if !isClassic && exProto.GetTimestamp() == nil {
-			return false
+			for p.fieldPos < len(bb) {
+				exProto = bb[p.fieldPos].GetExemplar()
+				if isClassic {
+					break
+				}
+				p.fieldPos++
+				// We deliberately drop exemplars with no timestamp only for native histograms.
+				if exProto != nil && (isClassic || exProto.GetTimestamp() != nil) {
+					break // Found a classic histogram exemplar or a native histogram exemplar with a timestamp.
+				}
+			}
+			// If the last exemplar for native histograms has no timestamp, ignore it.
+			if !isClassic && exProto.GetTimestamp() == nil {
+				return false
+			}
 		}
 	default:
 		return false
