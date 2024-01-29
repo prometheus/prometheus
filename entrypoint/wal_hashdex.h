@@ -16,7 +16,7 @@ extern "C" {
  *     hashdex uintptr // pointer to constructed hashdex
  * }
  */
-void prompp_wal_hashdex_ctor(void* args, void* res);
+void prompp_wal_protobuf_hashdex_ctor(void* args, void* res);
 
 /**
  * @brief Destroy hashdex
@@ -25,7 +25,7 @@ void prompp_wal_hashdex_ctor(void* args, void* res);
  *     hashdex uintptr // pointer to constructed hashdex
  * }
  */
-void prompp_wal_hashdex_dtor(void* args);
+void prompp_wal_protobuf_hashdex_dtor(void* args);
 
 /**
  * @brief Fill hashdex from protobuf
@@ -45,7 +45,51 @@ void prompp_wal_hashdex_dtor(void* args);
  *     error   []byte // error string if thrown
  * }
  */
-void prompp_wal_hashdex_presharding(void* args, void* res);
+void prompp_wal_protobuf_hashdex_presharding(void* args, void* res);
+
+/**
+ * @brief Construct a new WAL GoModelHashdex
+ *
+ * @param args { // limits for incoming data
+ *     max_label_name_length          uint32
+ *     max_label_value_length         uint32
+ *     max_label_names_per_timeseries uint32
+ *     max_timeseries_count           uint64
+ * }
+ * @param res {
+ *     hashdex uintptr // pointer to constructed hashdex
+ * }
+ */
+void prompp_wal_go_model_hashdex_ctor(void* args, void* res);
+
+/**
+ * @brief Destroy hashdex
+ *
+ * @param args {
+ *     hashdex uintptr // pointer to constructed hashdex
+ * }
+ */
+void prompp_wal_go_model_hashdex_dtor(void* args);
+
+/**
+ * @brief Fill hashdex from Go memory
+ *
+ * Hashdex only indexing go memory (model.TimeSeries) and doesn't copy all data.
+ * Caller should preserve original protobuf content at the same
+ * memory address to use hashdex in next call.
+ *
+ * @param args {
+ *     hashdex  uintptr // pointer to constructed hashdex
+ *     data     []model.TimeSeries  // Go content
+ * }
+ * @param res {
+ *     // this data is a view over go memory and shouldn't be destroyed explicitely
+ *     cluster string // value of label cluster from first sample
+ *     replica string // value of label __replica__ from first sample
+ *     error   []byte // error string if thrown
+ * }
+ */
+void prompp_wal_go_model_hashdex_presharding(void* args, void* res);
 
 #ifdef __cplusplus
 }  // extern "C"

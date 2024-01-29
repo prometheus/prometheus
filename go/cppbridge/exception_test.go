@@ -27,8 +27,8 @@ func TestHashdex_error(t *testing.T) {
 	b, err := wr.Marshal()
 	require.NoError(t, err)
 
-	hlimits := cppbridge.DefaultHashdexLimits()
-	_, err = cppbridge.NewWALHashdex(b, hlimits)
+	hlimits := cppbridge.DefaultWALHashdexLimits()
+	_, err = cppbridge.NewWALProtobufHashdex(b, hlimits)
 	assert.Error(t, err)
 	var coreErr *cppbridge.Exception
 	assert.ErrorAs(t, err, &coreErr)

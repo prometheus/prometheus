@@ -28,8 +28,8 @@ void prompp_wal_encoder_dtor(void* args);
  * @brief Add data to current segment
  *
  * @param args {
- *     encoder uintptr // pointer to constructed encoder
- *     hashdex uintptr // pointer to filled hashdex
+ *     encoder uintptr      // pointer to constructed encoder
+ *     hashdex uintptr      // pointer to filled hashdex
  * }
  * @param res {
  *     samples            uint32  // number of samples in segment
@@ -48,6 +48,7 @@ void prompp_wal_encoder_add(void* args, void* res);
  * @param args {
  *     encoder      uintptr // pointer to constructed encoder
  *     hashdex      uintptr // pointer to filled hashdex
+ *     hashdex_type uint8   // type of hashdex
  *     stale_ts     int64   // timestamp for StaleNaNs
  *     source_state uintptr // pointer to source state (null on first call)
  * }

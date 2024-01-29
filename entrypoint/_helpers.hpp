@@ -3,8 +3,10 @@
 #include <exception>
 #include <string>
 #include <string_view>
+#include <variant>
 
 #include "bare_bones/exception.h"
+#include "wal/hashdex.h"
 
 template <class Out>
 inline __attribute__((always_inline)) void handle_current_exception(std::string_view func_name, Out& out) {
@@ -26,3 +28,9 @@ inline __attribute__((always_inline)) void handle_current_exception(std::string_
   out.put('\n');
   out.write(st.data(), st.size());
 }
+
+/**
+ * used for indexing HashdexVariant.
+ */
+enum HashdexType : uint8_t { protobuf = 0, go_model = 1 };
+using HashdexVariant = std::variant<PromPP::WAL::ProtobufHashdex, PromPP::WAL::GoModelHashdex>;
