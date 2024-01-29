@@ -1411,10 +1411,8 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			response: &TargetDiscovery{
 				ActiveTargets: []*Target{
 					{
-						DiscoveredLabels: map[string]string{},
-						Labels: map[string]string{
-							"job": "blackbox",
-						},
+						DiscoveredLabels:   labels.FromStrings(),
+						Labels:             labels.FromStrings("job", "blackbox"),
 						ScrapePool:         "blackbox",
 						ScrapeURL:          "http://localhost:9115/probe?target=example.com",
 						GlobalURL:          "http://localhost:9115/probe?target=example.com",
@@ -1426,10 +1424,8 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						ScrapeTimeout:      "10s",
 					},
 					{
-						DiscoveredLabels: map[string]string{},
-						Labels: map[string]string{
-							"job": "test",
-						},
+						DiscoveredLabels:   labels.FromStrings(),
+						Labels:             labels.FromStrings("job", "test"),
 						ScrapePool:         "test",
 						ScrapeURL:          "http://example.com:8080/metrics",
 						GlobalURL:          "http://example.com:8080/metrics",
@@ -1464,10 +1460,8 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			response: &TargetDiscovery{
 				ActiveTargets: []*Target{
 					{
-						DiscoveredLabels: map[string]string{},
-						Labels: map[string]string{
-							"job": "blackbox",
-						},
+						DiscoveredLabels:   labels.FromStrings(),
+						Labels:             labels.FromStrings("job", "blackbox"),
 						ScrapePool:         "blackbox",
 						ScrapeURL:          "http://localhost:9115/probe?target=example.com",
 						GlobalURL:          "http://localhost:9115/probe?target=example.com",
@@ -1479,10 +1473,8 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						ScrapeTimeout:      "10s",
 					},
 					{
-						DiscoveredLabels: map[string]string{},
-						Labels: map[string]string{
-							"job": "test",
-						},
+						DiscoveredLabels:   labels.FromStrings(),
+						Labels:             labels.FromStrings("job", "test"),
 						ScrapePool:         "test",
 						ScrapeURL:          "http://example.com:8080/metrics",
 						GlobalURL:          "http://example.com:8080/metrics",
@@ -1517,10 +1509,8 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			response: &TargetDiscovery{
 				ActiveTargets: []*Target{
 					{
-						DiscoveredLabels: map[string]string{},
-						Labels: map[string]string{
-							"job": "blackbox",
-						},
+						DiscoveredLabels:   labels.FromStrings(),
+						Labels:             labels.FromStrings("job", "blackbox"),
 						ScrapePool:         "blackbox",
 						ScrapeURL:          "http://localhost:9115/probe?target=example.com",
 						GlobalURL:          "http://localhost:9115/probe?target=example.com",
@@ -1532,10 +1522,8 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						ScrapeTimeout:      "10s",
 					},
 					{
-						DiscoveredLabels: map[string]string{},
-						Labels: map[string]string{
-							"job": "test",
-						},
+						DiscoveredLabels:   labels.FromStrings(),
+						Labels:             labels.FromStrings("job", "test"),
 						ScrapePool:         "test",
 						ScrapeURL:          "http://example.com:8080/metrics",
 						GlobalURL:          "http://example.com:8080/metrics",
