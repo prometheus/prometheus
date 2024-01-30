@@ -37,6 +37,86 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 )
 
+func TestRemoteWriteHeadHandler(t *testing.T) {
+	handler := NewWriteHeadHandler(log.NewNopLogger(), nil, Version2)
+
+	req, err := http.NewRequest(http.MethodHead, "", nil)
+	require.NoError(t, err)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	resp := recorder.Result()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	// Check header is expected value
+	protHeader := resp.Header.Get(RemoteWriteVersionHeader)
+	require.Equal(t, protHeader, "2.0;snappy;,0.1.0")
+}
+
+func TestRemoteWriteHandlerMinimizedMissingContentEncoding(t *testing.T) {
+	// Send a v2 request without a "Content-Encoding:" header -> 406
+	buf, _, err := buildMinimizedWriteRequestStr(writeRequestMinimizedFixture.Timeseries, writeRequestMinimizedFixture.Symbols, nil, nil)
+	require.NoError(t, err)
+
+	req, err := http.NewRequest("", "", bytes.NewReader(buf))
+	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
+	// Do not provide "Content-Encoding: snappy" header
+	// req.Header.Set("Content-Encoding", "snappy")
+	require.NoError(t, err)
+
+	appendable := &mockAppendable{}
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version2)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	resp := recorder.Result()
+	// Should give us a 406
+	require.Equal(t, http.StatusNotAcceptable, resp.StatusCode)
+}
+
+func TestRemoteWriteHandlerInvalidCompression(t *testing.T) {
+	// Send a v2 request without an unhandled compression scheme -> 406
+	buf, _, err := buildMinimizedWriteRequestStr(writeRequestMinimizedFixture.Timeseries, writeRequestMinimizedFixture.Symbols, nil, nil)
+	require.NoError(t, err)
+
+	req, err := http.NewRequest("", "", bytes.NewReader(buf))
+	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
+	req.Header.Set("Content-Encoding", "zstd")
+	require.NoError(t, err)
+
+	appendable := &mockAppendable{}
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version2)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	resp := recorder.Result()
+	// Expect a 406
+	require.Equal(t, http.StatusNotAcceptable, resp.StatusCode)
+}
+
+func TestRemoteWriteHandlerInvalidVersion(t *testing.T) {
+	// Send a protocol version number that isn't recognised/supported -> 400
+	buf, _, err := buildMinimizedWriteRequestStr(writeRequestMinimizedFixture.Timeseries, writeRequestMinimizedFixture.Symbols, nil, nil)
+	require.NoError(t, err)
+
+	req, err := http.NewRequest("", "", bytes.NewReader(buf))
+	req.Header.Set(RemoteWriteVersionHeader, "0.3.0")
+	require.NoError(t, err)
+
+	appendable := &mockAppendable{}
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version2)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	resp := recorder.Result()
+	// Expect a 400 BadRequest
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
 func TestRemoteWriteHandler(t *testing.T) {
 	buf, _, err := buildWriteRequest(writeRequestFixture.Timeseries, nil, nil, nil)
 	require.NoError(t, err)
@@ -45,7 +125,6 @@ func TestRemoteWriteHandler(t *testing.T) {
 	require.NoError(t, err)
 
 	appendable := &mockAppendable{}
-	// TODO: test with other proto format(s)
 	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version1)
 
 	recorder := httptest.NewRecorder()
@@ -53,6 +132,10 @@ func TestRemoteWriteHandler(t *testing.T) {
 
 	resp := recorder.Result()
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+
+	// Check header is expected value
+	protHeader := resp.Header.Get(RemoteWriteVersionHeader)
+	require.Equal(t, protHeader, "0.1.0")
 
 	i := 0
 	j := 0
@@ -89,18 +172,23 @@ func TestRemoteWriteHandlerMinimizedFormat(t *testing.T) {
 	require.NoError(t, err)
 
 	req, err := http.NewRequest("", "", bytes.NewReader(buf))
-	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion11HeaderValue)
+	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
+	// Must provide "Content-Encoding: snappy" header
+	req.Header.Set("Content-Encoding", "snappy")
 	require.NoError(t, err)
 
 	appendable := &mockAppendable{}
-	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(nil, nil, appendable, Version2)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version2)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
 
 	resp := recorder.Result()
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+
+	// Check header is expected value
+	protHeader := resp.Header.Get(RemoteWriteVersionHeader)
+	require.Equal(t, protHeader, "2.0;snappy;,0.1.0")
 
 	i := 0
 	j := 0
