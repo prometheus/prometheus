@@ -470,7 +470,7 @@ func lexStatements(l *Lexer) stateFn {
 			skipSpaces(l)
 		}
 		l.bracketOpen = true
-		return lexDuration
+		return lexNumberOrDuration
 	case r == ']':
 		if !l.bracketOpen {
 			return l.errorf("unexpected right bracket %q", r)
@@ -832,18 +832,6 @@ func lexLineComment(l *Lexer) stateFn {
 	return lexStatements
 }
 
-func lexDuration(l *Lexer) stateFn {
-	if l.scanNumber() {
-		return l.errorf("missing unit character in duration")
-	}
-	if !acceptRemainingDuration(l) {
-		return l.errorf("bad duration syntax: %q", l.input[l.start:l.pos])
-	}
-	l.backup()
-	l.emit(DURATION)
-	return lexStatements
-}
-
 // lexNumber scans a number: decimal, hex, oct or float.
 func lexNumber(l *Lexer) stateFn {
 	if !l.scanNumber() {
@@ -897,6 +885,7 @@ func acceptRemainingDuration(l *Lexer) bool {
 func (l *Lexer) scanNumber() bool {
 	digits := "0123456789"
 	// Disallow hexadecimal in series descriptions as the syntax is ambiguous.
+	initialPos := l.pos
 	if !l.seriesDesc && l.accept("0") && l.accept("xX") {
 		digits = "0123456789abcdefABCDEF"
 	}
@@ -907,6 +896,10 @@ func (l *Lexer) scanNumber() bool {
 	if l.accept("eE") {
 		l.accept("+-")
 		l.acceptRun("0123456789")
+	}
+	// empty string is not a valid number
+	if l.pos == initialPos {
+		return false
 	}
 	// Next thing must not be alphanumeric unless it's the times token
 	// for series repetitions.

@@ -897,6 +897,10 @@ duration        : DURATION
                                 yylex.(*parser).addParseErr($1.PositionRange(), err)
                         }
                         }
+                | number
+		        {
+			  $$ = yylex.(*parser).parseNumberLiteral($1);
+		        }
                 ;
 
 
