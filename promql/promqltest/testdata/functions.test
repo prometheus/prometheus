@@ -10,6 +10,11 @@ eval instant at 50m resets(http_requests[5m])
 	{path="/bar"} 0
 	{path="/biz"} 0
 
+eval instant at 50m resets(http_requests[300])
+	{path="/foo"} 0
+	{path="/bar"} 0
+	{path="/biz"} 0
+
 eval instant at 50m resets(http_requests[20m])
 	{path="/foo"} 1
 	{path="/bar"} 0

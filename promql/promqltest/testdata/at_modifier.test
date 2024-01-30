@@ -14,7 +14,15 @@ eval instant at 10s metric @ 100 offset 50s
   metric{job="1"} 5
   metric{job="2"} 10
 
+eval instant at 10s metric @ 100 offset 50
+  metric{job="1"} 5
+  metric{job="2"} 10
+
 eval instant at 10s metric offset 50s @ 100
+  metric{job="1"} 5
+  metric{job="2"} 10
+
+eval instant at 10s metric offset 50 @ 100
   metric{job="1"} 5
   metric{job="2"} 10
 
@@ -22,7 +30,23 @@ eval instant at 10s metric @ 0 offset -50s
   metric{job="1"} 5
   metric{job="2"} 10
 
+eval instant at 10s metric @ 0 offset -50
+  metric{job="1"} 5
+  metric{job="2"} 10
+
 eval instant at 10s metric offset -50s @ 0
+  metric{job="1"} 5
+  metric{job="2"} 10
+
+eval instant at 10s metric offset -50 @ 0
+  metric{job="1"} 5
+  metric{job="2"} 10
+
+eval instant at 10s metric @ 0 offset -50s
+  metric{job="1"} 5
+  metric{job="2"} 10
+
+eval instant at 10s metric @ 0 offset -50
   metric{job="1"} 5
   metric{job="2"} 10
 
@@ -48,6 +72,12 @@ eval instant at 25s sum_over_time(metric{job="1"}[100s] @ 100 offset 50s)
 eval instant at 25s sum_over_time(metric{job="1"}[100s] offset 50s @ 100)
   {job="1"} 15
 
+eval instant at 25s sum_over_time(metric{job="1"}[100] @ 100 offset 50)
+  {job="1"} 15
+
+eval instant at 25s sum_over_time(metric{job="1"}[100] offset 50s @ 100)
+  {job="1"} 15
+
 # Different timestamps.
 eval instant at 25s metric{job="1"} @ 50 + metric{job="1"} @ 100
   {job="1"} 15
@@ -56,6 +86,9 @@ eval instant at 25s rate(metric{job="1"}[100s] @ 100) + label_replace(rate(metri
   {job="1"} 0.3
 
 eval instant at 25s sum_over_time(metric{job="1"}[100s] @ 100) + label_replace(sum_over_time(metric{job="2"}[100s] @ 100), "job", "1", "", "")
+  {job="1"} 165
+
+eval instant at 25s sum_over_time(metric{job="1"}[100] @ 100) + label_replace(sum_over_time(metric{job="2"}[100] @ 100), "job", "1", "", "")
   {job="1"} 165
 
 # Subqueries.
@@ -70,6 +103,10 @@ eval instant at 25s sum_over_time(metric{job="1"}[100s:1s] @ 100 offset 20s)
 
 # 10*(1+2+...+7) + 8.
 eval instant at 25s sum_over_time(metric{job="1"}[100s:1s] offset 20s @ 100)
+  {job="1"} 288
+
+# 10*(1+2+...+7) + 8.
+eval instant at 25s sum_over_time(metric{job="1"}[100:1] offset 20 @ 100)
   {job="1"} 288
 
 # Subquery with different timestamps.
