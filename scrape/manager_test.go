@@ -632,14 +632,21 @@ func TestManagerDuplicateAfterRelabellingWarning(t *testing.T) {
 	sp := &scrapePool{
 		activeTargets: map[uint64]*Target{},
 	}
-	sp.activeTargets[uint64(0)] = &Target{discoveredLabels: labels.FromStrings("__address__", "foo")}
-	sp.activeTargets[uint64(1)] = &Target{discoveredLabels: labels.FromStrings("__address__", "bar")}
+	sp.activeTargets[uint64(0)] = &Target{
+		discoveredLabels: labels.FromStrings("__address__", "foo"),
+		labels:           labels.FromStrings("label_key", "label_value"),
+	}
+	sp.activeTargets[uint64(1)] = &Target{
+		discoveredLabels: labels.FromStrings("__address__", "bar"),
+		labels:           labels.FromStrings("label_key", "label_value"),
+	}
 	m.scrapePools["default"] = sp
 
 	m.reload()
 	require.Contains(t, output, "Found targets with same labels after relabelling")
 	require.Contains(t, output, "foo")
 	require.Contains(t, output, "bar")
+	require.Contains(t, output, `{label_key="label_value"}`)
 }
 
 func TestSetOffsetSeed(t *testing.T) {
