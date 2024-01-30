@@ -26,6 +26,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/exp/slices"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -103,18 +104,21 @@ type NotifyFunc func(ctx context.Context, expr string, alerts ...*Alert)
 
 // ManagerOptions bundles options for the Manager.
 type ManagerOptions struct {
-	ExternalURL     *url.URL
-	QueryFunc       QueryFunc
-	NotifyFunc      NotifyFunc
-	Context         context.Context
-	Appendable      storage.Appendable
-	Queryable       storage.Queryable
-	Logger          log.Logger
-	Registerer      prometheus.Registerer
-	OutageTolerance time.Duration
-	ForGracePeriod  time.Duration
-	ResendDelay     time.Duration
-	GroupLoader     GroupLoader
+	ExternalURL               *url.URL
+	QueryFunc                 QueryFunc
+	NotifyFunc                NotifyFunc
+	Context                   context.Context
+	Appendable                storage.Appendable
+	Queryable                 storage.Queryable
+	Logger                    log.Logger
+	Registerer                prometheus.Registerer
+	OutageTolerance           time.Duration
+	ForGracePeriod            time.Duration
+	ResendDelay               time.Duration
+	GroupLoader               GroupLoader
+	MaxConcurrentEvals        int64
+	ConcurrentEvalsEnabled    bool
+	RuleConcurrencyController RuleConcurrencyController
 
 	Metrics *Metrics
 }
@@ -128,6 +132,14 @@ func NewManager(o *ManagerOptions) *Manager {
 
 	if o.GroupLoader == nil {
 		o.GroupLoader = FileLoader{}
+	}
+
+	if o.RuleConcurrencyController == nil {
+		if o.ConcurrentEvalsEnabled {
+			o.RuleConcurrencyController = newRuleConcurrencyController(o.MaxConcurrentEvals)
+		} else {
+			o.RuleConcurrencyController = sequentialRuleEvalController{}
+		}
 	}
 
 	m := &Manager{
@@ -175,6 +187,8 @@ func (m *Manager) Stop() {
 func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string, groupEvalIterationFunc GroupEvalIterationFunc) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
+
+	m.opts.RuleConcurrencyController.Invalidate()
 
 	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, groupEvalIterationFunc, files...)
 
@@ -403,3 +417,80 @@ func SendAlerts(s Sender, externalURL string) NotifyFunc {
 		}
 	}
 }
+
+// RuleConcurrencyController controls whether rules can be evaluated concurrently. Its purpose is to bound the amount
+// of concurrency in rule evaluations to avoid overwhelming the Prometheus server with additional query load and ensure
+// the correctness of rules running concurrently. Concurrency is controlled globally, not on a per-group basis.
+type RuleConcurrencyController interface {
+	// RuleEligible determines if the rule can guarantee correct results while running concurrently.
+	RuleEligible(g *Group, r Rule) bool
+
+	// Allow determines whether any concurrent evaluation slots are available.
+	// If Allow() returns true, then Done() must be called to release the acquired slot.
+	Allow() bool
+
+	// Done releases a concurrent evaluation slot.
+	Done()
+
+	// Invalidate instructs the controller to invalidate its state.
+	// This should be called when groups are modified (during a reload, for instance), because the controller may
+	// store some state about each group in order to more efficiently determine rule eligibility.
+	Invalidate()
+}
+
+// concurrentRuleEvalController holds a weighted semaphore which controls the concurrent evaluation of rules.
+type concurrentRuleEvalController struct {
+	sema      *semaphore.Weighted
+	depMapsMu sync.Mutex
+	depMaps   map[*Group]dependencyMap
+}
+
+func newRuleConcurrencyController(maxConcurrency int64) RuleConcurrencyController {
+	return &concurrentRuleEvalController{
+		sema:    semaphore.NewWeighted(maxConcurrency),
+		depMaps: map[*Group]dependencyMap{},
+	}
+}
+
+func (c *concurrentRuleEvalController) RuleEligible(g *Group, r Rule) bool {
+	c.depMapsMu.Lock()
+	defer c.depMapsMu.Unlock()
+
+	depMap, found := c.depMaps[g]
+	if !found {
+		depMap = buildDependencyMap(g.rules)
+		c.depMaps[g] = depMap
+	}
+
+	return depMap.isIndependent(r)
+}
+
+func (c *concurrentRuleEvalController) Allow() bool {
+	return c.sema.TryAcquire(1)
+}
+
+func (c *concurrentRuleEvalController) Done() {
+	c.sema.Release(1)
+}
+
+func (c *concurrentRuleEvalController) Invalidate() {
+	c.depMapsMu.Lock()
+	defer c.depMapsMu.Unlock()
+
+	// Clear out the memoized dependency maps because some or all groups may have been updated.
+	c.depMaps = map[*Group]dependencyMap{}
+}
+
+// sequentialRuleEvalController is a RuleConcurrencyController that runs every rule sequentially.
+type sequentialRuleEvalController struct{}
+
+func (c sequentialRuleEvalController) RuleEligible(_ *Group, _ Rule) bool {
+	return false
+}
+
+func (c sequentialRuleEvalController) Allow() bool {
+	return false
+}
+
+func (c sequentialRuleEvalController) Done()       {}
+func (c sequentialRuleEvalController) Invalidate() {}
