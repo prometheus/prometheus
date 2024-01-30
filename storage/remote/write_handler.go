@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/prometheus/prometheus/model/labels"
 	writev2 "github.com/prometheus/prometheus/prompb/write/v2"
@@ -36,8 +37,65 @@ import (
 const (
 	RemoteWriteVersionHeader        = "X-Prometheus-Remote-Write-Version"
 	RemoteWriteVersion1HeaderValue  = "0.1.0"
-	RemoteWriteVersion11HeaderValue = "1.1" // TODO-RW11: Final value?
+	RemoteWriteVersion20HeaderValue = "2.0"
 )
+
+func RemoteWriteHeaderNameValues(rwFormat RemoteWriteFormat) map[string]string {
+	// Return the correct remote write header name/values based on provided rwFormat
+	ret := make(map[string]string, 1)
+
+	switch rwFormat {
+	case Version1:
+		ret[RemoteWriteVersionHeader] = RemoteWriteVersion1HeaderValue
+	case Version2:
+		// We need to add the supported protocol definitions in order:
+		tuples := make([]string, 0, 2)
+		// Add 2.0;snappy;
+		tuples = append(tuples, RemoteWriteVersion20HeaderValue+";snappy;")
+		// Add default 0.1.0
+		tuples = append(tuples, RemoteWriteVersion1HeaderValue)
+		ret[RemoteWriteVersionHeader] = strings.Join(tuples, ",")
+	}
+	return ret
+}
+
+type writeHeadHandler struct {
+	logger log.Logger
+
+	remoteWrite20HeadRequests prometheus.Counter
+
+	// Experimental feature, new remote write proto format
+	// The handler will accept the new format, but it can still accept the old one
+	rwFormat RemoteWriteFormat
+}
+
+func NewWriteHeadHandler(logger log.Logger, reg prometheus.Registerer, rwFormat RemoteWriteFormat) http.Handler {
+	h := &writeHeadHandler{
+		logger:   logger,
+		rwFormat: rwFormat,
+		remoteWrite20HeadRequests: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "prometheus",
+			Subsystem: "api",
+			Name:      "remote_write_20_head_requests",
+			Help:      "The number of remote write 2.0 head requests.",
+		}),
+	}
+	if reg != nil {
+		reg.MustRegister(h.remoteWrite20HeadRequests)
+	}
+	return h
+}
+
+func (h *writeHeadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Send a response to the HEAD request based on the format supported
+
+	// Add appropriate header values for the specific rwFormat
+	for hName, hValue := range RemoteWriteHeaderNameValues(h.rwFormat) {
+		w.Header().Set(hName, hValue)
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
 
 type writeHandler struct {
 	logger     log.Logger
@@ -47,7 +105,6 @@ type writeHandler struct {
 
 	// Experimental feature, new remote write proto format
 	// The handler will accept the new format, but it can still accept the old one
-	// TODO: this should eventually be via content negotiation
 	rwFormat RemoteWriteFormat
 }
 
@@ -76,25 +133,59 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var req *prompb.WriteRequest
 	var reqMinStr *writev2.WriteRequest
 
-	// TODO: this should eventually be done via content negotiation/looking at the header
-	switch h.rwFormat {
-	case Version1:
-		req, err = DecodeWriteRequest(r.Body)
-	case Version2:
-		reqMinStr, err = DecodeMinimizedWriteRequestStr(r.Body)
+	// Set the header(s) in the response based on the rwFormat the server supports
+	for hName, hValue := range RemoteWriteHeaderNameValues(h.rwFormat) {
+		w.Header().Set(hName, hValue)
 	}
 
-	if err != nil {
-		level.Error(h.logger).Log("msg", "Error decoding remote write request", "err", err.Error())
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	// Parse the headers to work out how to handle this
+	contentEncoding := r.Header.Get("Content-Encoding")
+	protoVer := r.Header.Get(RemoteWriteVersionHeader)
+
+	if protoVer == "" {
+		// No header provided, assume 0.1.0 as everything that relies on later
+		// features MUST supply the correct headers
+		protoVer = RemoteWriteVersion1HeaderValue
+	} else if protoVer == RemoteWriteVersion20HeaderValue {
+		// This is a 2.0 request, woo
+	} else {
+		// We have a version in the header but it is not one we recognise
+		// TODO - make a proper error for this
+		level.Error(h.logger).Log("msg", "Error decoding remote write request", "err", "Unknown remote write version in headers", "ver", protoVer)
+		http.Error(w, "Unknown remote write version in headers", http.StatusBadRequest)
 		return
 	}
 
-	// TODO: this should eventually be done detecting the format version above
-	switch h.rwFormat {
-	case Version1:
+	// At this point we are happy with the version but need to check the encoding
+	if protoVer == RemoteWriteVersion1HeaderValue {
+		// If the version is 0.1.0 then we automatically assume Snappy encoding
+		// so we check that it is "snappy" if specified or unspecified
+		if contentEncoding != "" && contentEncoding != "snappy" {
+			level.Error(h.logger).Log("msg", "Error determining remote write request encoding", "contentEncoding", contentEncoding)
+			http.Error(w, "Error determining remote write encoding", http.StatusBadRequest)
+			return
+		}
+		req, err = DecodeWriteRequest(r.Body)
+		if err != nil {
+			level.Error(h.logger).Log("msg", "Error decoding remote write request", "err", err.Error())
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		err = h.write(r.Context(), req)
-	case Version2:
+	} else {
+		// 2.0 request
+		// MUST be snappy encoded
+		if contentEncoding != "snappy" {
+			level.Error(h.logger).Log("msg", "Error determining remote write request encoding", "contentEncoding", contentEncoding)
+			http.Error(w, "Error determining remote write encoding", http.StatusNotAcceptable)
+			return
+		}
+		reqMinStr, err = DecodeMinimizedWriteRequestStr(r.Body)
+		if err != nil {
+			level.Error(h.logger).Log("msg", "Error decoding remote write request", "err", err.Error())
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		err = h.writeMinStr(r.Context(), reqMinStr)
 	}
 

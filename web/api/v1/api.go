@@ -217,9 +217,10 @@ type API struct {
 	isAgent       bool
 	statsRenderer StatsRenderer
 
-	remoteWriteHandler http.Handler
-	remoteReadHandler  http.Handler
-	otlpWriteHandler   http.Handler
+	remoteWriteHeadHandler http.Handler
+	remoteWriteHandler     http.Handler
+	remoteReadHandler      http.Handler
+	otlpWriteHandler       http.Handler
 
 	codecs []Codec
 }
@@ -297,6 +298,7 @@ func NewAPI(
 
 	if rwEnabled {
 		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, rwFormat)
+		a.remoteWriteHeadHandler = remote.NewWriteHeadHandler(logger, registerer, rwFormat)
 	}
 	if otlpEnabled {
 		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, ap)
@@ -393,6 +395,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/walreplay", api.serveWALReplayStatus)
 	r.Post("/read", api.ready(api.remoteRead))
 	r.Post("/write", api.ready(api.remoteWrite))
+	r.Head("/write", api.remoteWriteHead)
 	r.Post("/otlp/v1/metrics", api.ready(api.otlpWrite))
 
 	r.Get("/alerts", wrapAgent(api.alerts))
@@ -1613,6 +1616,14 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 		api.remoteReadHandler.ServeHTTP(w, r)
 	} else {
 		http.Error(w, "not found", http.StatusNotFound)
+	}
+}
+
+func (api *API) remoteWriteHead(w http.ResponseWriter, r *http.Request) {
+	if api.remoteWriteHeadHandler != nil {
+		api.remoteWriteHeadHandler.ServeHTTP(w, r)
+	} else {
+		http.Error(w, "remote write receiver needs to be enabled with --web.enable-remote-write-receiver", http.StatusNotFound)
 	}
 }
 
