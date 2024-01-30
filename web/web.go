@@ -261,7 +261,7 @@ type Options struct {
 	EnableOTLPWriteReceiver    bool
 	IsAgent                    bool
 	AppName                    string
-	// TODO: should this change to a list of tuples, maybe via the content negotation PR?
+	// TODO(cstyan): should this change to a list of tuples, maybe via the content negotiation PR?
 	RemoteWriteFormat config.RemoteWriteFormat
 
 	Gatherer   prometheus.Gatherer

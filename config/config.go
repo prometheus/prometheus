@@ -1014,7 +1014,7 @@ func CheckTargetAddress(address model.LabelValue) error {
 }
 
 // This needs to live here rather than in the remote package to avoid an import cycle.
-type RemoteWriteFormat int64 //nolint:revive // exported.
+type RemoteWriteFormat int64
 
 // RemoteWriteConfig is the configuration for writing to remote storage.
 type RemoteWriteConfig struct {

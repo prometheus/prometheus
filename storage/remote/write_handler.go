@@ -17,19 +17,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/prometheus/prometheus/config"
 	"net/http"
-
-	"github.com/prometheus/prometheus/model/labels"
-	writev2 "github.com/prometheus/prometheus/prompb/write/v2"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
+	writev2 "github.com/prometheus/prometheus/prompb/write/v2"
 	"github.com/prometheus/prometheus/storage"
 	otlptranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
 )
