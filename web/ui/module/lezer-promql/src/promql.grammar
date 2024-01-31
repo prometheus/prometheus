@@ -365,13 +365,13 @@ NumberLiteral  {
   Deriv { condFn<"deriv"> }
   Exp { condFn<"exp"> }
   Floor { condFn<"floor"> }
+  HistogramAvg { condFn<"histogram_avg"> }
   HistogramCount { condFn<"histogram_count"> }
   HistogramFraction { condFn<"histogram_fraction"> }
   HistogramQuantile { condFn<"histogram_quantile"> }
   HistogramStdDev { condFn<"histogram_stddev"> }
   HistogramStdVar { condFn<"histogram_stdvar"> }
   HistogramSum { condFn<"histogram_sum"> }
-  HistogramAvg { condFn<"histogram_avg"> }
   HoltWinters { condFn<"holt_winters"> }
   Hour { condFn<"hour"> }
   Idelta { condFn<"idelta"> }
