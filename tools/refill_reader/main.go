@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,8 +13,11 @@ import (
 
 	"github.com/prometheus/prometheus/pp/go/delivery"
 	"github.com/prometheus/prometheus/pp/go/frames"
-	"github.com/prometheus/prometheus/pp/go/util"
 	"go.uber.org/zap"
+)
+
+const (
+	defaultBufferSize = 1 << 10
 )
 
 func main() {
@@ -45,8 +49,14 @@ func main() {
 		zap.L().Fatal("failed open file", zap.Error(err))
 	}
 
+	size, err := storage.Size()
+	if err != nil {
+		zap.L().Fatal("failed get size", zap.Error(err))
+	}
+
+	reader := bufio.NewReaderSize(storage, defaultBufferSize)
 	ctx := context.Background()
-	if err = list(ctx, storage); err != nil {
+	if err = list(ctx, reader, int(size)); err != nil {
 		zap.L().Fatal("failed read file", zap.Error(err))
 	}
 }
@@ -66,6 +76,7 @@ func initLog() error {
 }
 
 func makeConfig() (*delivery.FileStorageConfig, error) {
+	//revive:disable:add-constant not need const
 	if len(os.Args) < 2 {
 		return nil, errors.New("path to refill is required as first argument")
 	}
@@ -85,6 +96,7 @@ var legend = map[frames.TypeFrame]string{
 	frames.UnknownType:          "Unknown",
 	frames.TitleType:            "Title",
 	frames.DestinationNamesType: "DestinationNames",
+	frames.SnapshotType:         "Snapshot",
 	frames.SegmentType:          "Segment",
 	frames.StatusType:           "Status",
 	frames.RejectStatusType:     "Rejects",
@@ -93,19 +105,25 @@ var legend = map[frames.TypeFrame]string{
 
 // FileData - data to output.
 type FileData struct {
-	Type      string `json:"type"`
-	Offset    int64  `json:"offset"`
-	Size      int32  `json:"size"`
-	ShardID   uint16 `json:"shard_id,omitempty"`
-	SegmentID uint32 `json:"segment_id,omitempty"`
+	Type           string       `json:"type"`
+	ContentVersion uint8        `json:"content_version"`
+	Offset         int          `json:"offset"`
+	Size           uint32       `json:"size"`
+	SegmentInfo    *SegmentInfo `json:"segment_info,omitempty"`
 }
 
-func list(ctx context.Context, storage *delivery.FileStorage) error {
+// SegmentInfo - segment information.
+type SegmentInfo struct {
+	ShardID   uint16 `json:"shard_id"`
+	SegmentID uint32 `json:"segment_id"`
+}
+
+func list(ctx context.Context, r *bufio.Reader, size int) error {
 	je := json.NewEncoder(os.Stdout)
-	var off int64
+	var off int
 	for {
 		// read header frame
-		h, err := frames.ReadHeader(ctx, util.NewOffsetReader(storage, off))
+		h, err := frames.ReadHeader(ctx, r)
 		if errors.Is(err, io.EOF) {
 			break
 		}
@@ -113,16 +131,39 @@ func list(ctx context.Context, storage *delivery.FileStorage) error {
 			return err
 		}
 
-		_ = je.Encode(FileData{
-			Type:      legend[h.GetType()],
-			Offset:    off,
-			Size:      h.FullSize(),
-			ShardID:   h.GetShardID(),
-			SegmentID: h.GetSegmentID(),
-		})
+		fd := FileData{
+			Type:           legend[h.GetType()],
+			ContentVersion: h.GetContentVersion(),
+			Offset:         off,
+			Size:           h.FrameSize(),
+		}
+		var n int
+		if h.GetType() == frames.SegmentType {
+			si := frames.NewSegmentInfoEmpty()
+			n, err = si.ReadSegmentInfo(ctx, r, h)
+			if err != nil {
+				return err
+			}
+
+			fd.SegmentInfo = &SegmentInfo{
+				ShardID:   si.GetShardID(),
+				SegmentID: si.GetSegmentID(),
+			}
+		}
+
+		if err = je.Encode(fd); err != nil {
+			return err
+		}
 
 		// move cursor position
-		off += int64(h.SizeOf()) + int64(h.GetSize())
+		move := int(h.GetSize() - uint32(n))
+		off += h.SizeOf() + move
+		if off > size {
+			return errors.New("data oversize")
+		}
+		if _, err := r.Discard(move); err != nil {
+			return err
+		}
 	}
 
 	return nil
