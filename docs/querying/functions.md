@@ -190,6 +190,12 @@ over a 5-minute window from a native histogram:
 
     histogram_avg(rate(http_request_duration_seconds[5m]))
 
+Which is equivalent to the following query:
+
+    histogram_sum(rate(http_request_duration_seconds[5m]))
+    /
+    histogram_count(rate(http_request_duration_seconds[5m]))
+
 ## `histogram_count()` and `histogram_sum()`
 
 _Both functions only act on native histograms, which are an experimental
