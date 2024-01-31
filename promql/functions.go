@@ -1042,8 +1042,9 @@ func funcPredictLinear(vals []parser.Value, args parser.Expressions, enh *EvalNo
 	if len(samples.Floats) < 2 {
 		return enh.Out, nil
 	}
-	slope, intercept := linearRegression(samples.Floats, enh.Ts)
 
+	interceptTime := determineInterceptTime(args, enh.Ts)
+	slope, intercept := linearRegression(samples.Floats, interceptTime)
 	return append(enh.Out, Sample{F: slope*duration + intercept}), nil
 }
 
@@ -1591,7 +1592,7 @@ var AtModifierUnsafeFunctions = map[string]struct{}{
 	// Step invariant functions.
 	"days_in_month": {}, "day_of_month": {}, "day_of_week": {}, "day_of_year": {},
 	"hour": {}, "minute": {}, "month": {}, "year": {},
-	"predict_linear": {}, "time": {},
+	"time": {},
 	// Uses timestamp of the argument for the result,
 	// hence unsafe to use with @ modifier.
 	"timestamp": {},
@@ -1721,4 +1722,22 @@ func stringSliceFromArgs(args parser.Expressions) []string {
 		tmp[i] = stringFromArg(args[i])
 	}
 	return tmp
+}
+
+func determineInterceptTime(args parser.Expressions, defaultTs int64) int64 {
+	if len(args) == 0 {
+		return defaultTs
+	}
+
+	matrixSelector, ok := args[0].(*parser.MatrixSelector)
+	if !ok {
+		return defaultTs
+	}
+
+	vectorSelector, ok := matrixSelector.VectorSelector.(*parser.VectorSelector)
+	if !ok || vectorSelector.Timestamp == nil {
+		return defaultTs
+	}
+
+	return *vectorSelector.Timestamp
 }
