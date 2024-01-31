@@ -125,67 +125,18 @@ func TestFrameSuite(t *testing.T) {
 
 func (s *FrameSuite) SetupSuite() {
 	s.rw = NewFileBuffer()
-	s.version = 3
+	s.version = 4
 }
 
 func (s *FrameSuite) TearDownTest() {
 	s.rw.Reset()
 }
 
-func (s *FrameSuite) TestHeaderEncodeDecodeBinaryAt() {
-	wh := frames.NewHeader(3, 1, 0, 1, 10)
-	b := wh.EncodeBinary()
-
-	_, err := s.rw.Write(b)
-	s.Require().NoError(err)
-
-	rh := frames.NewHeaderEmpty()
-	err = rh.DecodeBinary(util.NewOffsetReader(s.rw, 0))
-	s.Require().NoError(err)
-
-	s.Equal(wh.String(), rh.String())
-	s.Equal(wh.GetVersion(), rh.GetVersion())
-	s.Equal(wh.FullSize(), rh.FullSize())
-}
-
-func (s *FrameSuite) TestHeaderEncodeDecodeBinary() {
-	wh := frames.NewHeader(3, 1, 0, 1, 10)
-	b := wh.EncodeBinary()
-
-	_, err := s.rw.Write(b)
-	s.Require().NoError(err)
-
-	_, err = s.rw.Seek(0, 0)
-	s.Require().NoError(err)
-
-	rh := frames.NewHeaderEmpty()
-	err = rh.DecodeBinary(s.rw)
-	s.Require().NoError(err)
-
-	s.Equal(wh.String(), rh.String())
-}
-
-func (s *FrameSuite) TestHeaderEncodeDecodeBinaryWithError() {
-	wh := frames.NewHeader(3, 20, 0, 1, 10)
-	b := wh.EncodeBinary()
-
-	_, err := s.rw.Write(b)
-	s.Require().NoError(err)
-
-	_, err = s.rw.Seek(0, 0)
-	s.Require().NoError(err)
-
-	rh := frames.NewHeaderEmpty()
-	err = rh.DecodeBinary(s.rw)
-	s.Require().Error(err)
-}
-
 func (s *FrameSuite) TestFrame() {
 	var (
-		version   uint8            = 3
+		version   uint8            = 4
 		typeFrame frames.TypeFrame = frames.AuthType
 		shardID   uint16           = 1
-		segmentID uint32           = 1
 	)
 	body, err := frames.NewAuthMsg(
 		uuid.NewString(),
@@ -196,7 +147,8 @@ func (s *FrameSuite) TestFrame() {
 		shardID,
 	).MarshalBinary()
 	s.Require().NoError(err)
-	wm := frames.NewFrame(version, typeFrame, body, shardID, segmentID)
+	wm, err := frames.NewFrame(version, frames.ContentVersion1, typeFrame, body)
+	s.Require().NoError(err)
 
 	b := wm.EncodeBinary()
 	_, err = s.rw.Write(b)
@@ -218,12 +170,10 @@ func (s *FrameSuite) TestFrame() {
 	s.Require().Equal(version, rm.GetVersion())
 	s.Require().Equal(typeFrame, rm.GetType())
 	s.Require().Equal(wm.GetCreatedAt(), rm.GetCreatedAt())
-	s.Require().Equal(shardID, rm.GetShardID())
-	s.Require().Equal(segmentID, rm.GetSegmentID())
 }
 
 func (s *FrameSuite) TestFrameQuick() {
-	f := func(version uint8, shardID uint16, segmentID uint32) bool {
+	f := func(shardID uint16) bool {
 		body, err := frames.NewAuthMsg(
 			uuid.NewString(),
 			uuid.NewString(),
@@ -233,7 +183,8 @@ func (s *FrameSuite) TestFrameQuick() {
 			shardID,
 		).MarshalBinary()
 		s.Require().NoError(err)
-		wm := frames.NewFrame(version, frames.AuthType, body, shardID, segmentID)
+		wm, err := frames.NewFrame(s.version, frames.ContentVersion1, frames.AuthType, body)
+		s.Require().NoError(err)
 		b := wm.EncodeBinary()
 
 		rw := NewFileBuffer()
@@ -251,11 +202,9 @@ func (s *FrameSuite) TestFrameQuick() {
 		s.Require().NoError(err)
 
 		s.Require().Equal(wm.GetHeader(), rm.GetHeader())
-		s.Require().Equal(version, rm.GetVersion())
+		s.Require().Equal(s.version, rm.GetVersion())
 		s.Require().Equal(wm.GetType(), rm.GetType())
 		s.Require().Equal(wm.GetCreatedAt(), rm.GetCreatedAt())
-		s.Require().Equal(shardID, rm.GetShardID())
-		s.Require().Equal(segmentID, rm.GetSegmentID())
 
 		return s.Equal(*wm, *rm)
 	}
@@ -826,88 +775,6 @@ func (s *FrameSuite) TestRefillMsgFrameWithMsg() {
 	s.Require().Equal(msgs, rm.Messages)
 }
 
-func (s *FrameSuite) TestTitle() {
-	wm := frames.NewTitle(1, uuid.New())
-	b, err := wm.MarshalBinary()
-	s.Require().NoError(err)
-
-	rm := frames.NewTitleEmpty()
-	err = rm.UnmarshalBinary(b)
-	s.Require().NoError(err)
-
-	s.Require().Equal(*wm, *rm)
-}
-
-func (s *FrameSuite) TestTitleQuick() {
-	f := func(snp uint8, blockID uuid.UUID) bool {
-		wm := frames.NewTitle(snp, blockID)
-		b, err := wm.MarshalBinary()
-		s.Require().NoError(err)
-
-		rm := frames.NewTitleEmpty()
-		err = rm.UnmarshalBinary(b)
-		s.Require().NoError(err)
-
-		return s.Equal(*wm, *rm)
-	}
-
-	err := quick.Check(f, nil)
-	s.NoError(err)
-}
-
-func (s *FrameSuite) TestTitleFrameAt() {
-	ctx := context.Background()
-	var (
-		snp     uint8     = 2
-		blockID uuid.UUID = uuid.New()
-	)
-	wm, err := frames.NewTitleFrame(snp, blockID)
-	s.Require().NoError(err)
-	b := wm.EncodeBinary()
-
-	_, err = s.rw.Write(b)
-	s.Require().NoError(err)
-
-	var off int64
-	h, err := frames.ReadHeader(ctx, util.NewOffsetReader(s.rw, off))
-	s.Require().NoError(err)
-	off += int64(h.SizeOf())
-	s.Require().Equal(frames.TitleType, h.GetType())
-
-	rm, err := frames.ReadAtTitle(ctx, s.rw, off, int(h.GetSize()))
-	s.Require().NoError(err)
-
-	s.Require().Equal(snp, rm.GetShardsNumberPower())
-	s.Require().Equal(blockID, rm.GetBlockID())
-}
-
-func (s *FrameSuite) TestTitleFrame() {
-	ctx := context.Background()
-	var (
-		snp     uint8     = 2
-		blockID uuid.UUID = uuid.New()
-	)
-	wm, err := frames.NewTitleFrame(snp, blockID)
-	s.Require().NoError(err)
-	b := wm.EncodeBinary()
-
-	_, err = s.rw.Write(b)
-	s.Require().NoError(err)
-
-	_, err = s.rw.Seek(0, 0)
-	s.Require().NoError(err)
-
-	h, err := frames.ReadHeader(ctx, s.rw)
-	s.Require().NoError(err)
-	s.Require().Equal(frames.TitleType, h.GetType())
-
-	rm, err := frames.ReadTitle(ctx, s.rw, int(h.GetSize()))
-	s.Require().NoError(err)
-
-	s.Require().Equal(snp, rm.GetShardsNumberPower())
-	s.Require().Equal(blockID, rm.GetBlockID())
-}
-
 func (s *FrameSuite) TestDestinationsNames() {
 	names := []string{
 		"www.bcollector.com",
@@ -1052,69 +919,6 @@ func (s *FrameSuite) TestDestinationsNamesFrameWithMsg() {
 	s.Require().NoError(err)
 
 	s.Require().Equal(names, rm.ToString())
-}
-
-func (s *FrameSuite) TestSegmentFrameAt() {
-	ctx := context.Background()
-	var (
-		data             = uuid.NewString()
-		shardID   uint16 = 1
-		segmentID uint32 = 5
-	)
-	wm := frames.NewWriteFrame(
-		s.version,
-		frames.SegmentType,
-		shardID,
-		segmentID,
-		frames.NewBinaryBody([]byte(data)),
-	)
-	_, err := wm.WriteTo(s.rw)
-	s.Require().NoError(err)
-
-	var off int64
-	h, err := frames.ReadHeader(ctx, util.NewOffsetReader(s.rw, off))
-	s.Require().NoError(err)
-	off += int64(h.SizeOf())
-	s.Require().Equal(frames.SegmentType, h.GetType())
-	s.Require().Equal(shardID, h.GetShardID())
-	s.Require().Equal(segmentID, h.GetSegmentID())
-
-	rm, err := frames.ReadBinaryBody(ctx, util.NewOffsetReader(s.rw, off), int(h.GetSize()))
-	s.Require().NoError(err)
-
-	s.Require().Equal(data, string(rm.Bytes()))
-}
-
-func (s *FrameSuite) TestSegmentFrame() {
-	ctx := context.Background()
-	var (
-		data             = uuid.NewString()
-		shardID   uint16 = 1
-		segmentID uint32 = 5
-	)
-	wm := frames.NewWriteFrame(
-		s.version,
-		frames.SegmentType,
-		shardID,
-		segmentID,
-		frames.NewBinaryBody([]byte(data)),
-	)
-	_, err := wm.WriteTo(s.rw)
-	s.Require().NoError(err)
-
-	_, err = s.rw.Seek(0, 0)
-	s.Require().NoError(err)
-
-	h, err := frames.ReadHeader(ctx, s.rw)
-	s.Require().NoError(err)
-	s.Require().Equal(frames.SegmentType, h.GetType())
-	s.Require().Equal(shardID, h.GetShardID())
-	s.Require().Equal(segmentID, h.GetSegmentID())
-
-	rm, err := frames.ReadBinaryBody(ctx, s.rw, int(h.GetSize()))
-	s.Require().NoError(err)
-
-	s.Require().Equal(data, string(rm.Bytes()))
 }
 
 func (s *FrameSuite) TestStatuses() {
@@ -1405,7 +1209,7 @@ func (s *FrameSuite) TestFinalMsgFrameAt() {
 	var (
 		hasRefill = true
 	)
-	wm, err := frames.NewFinalMsgFrame(3, 1, 1, hasRefill)
+	wm, err := frames.NewFinalMsgFrame(s.version, hasRefill)
 	s.Require().NoError(err)
 
 	_, err = wm.WriteTo(s.rw)
@@ -1427,11 +1231,13 @@ func (s *FrameSuite) TestFinalMsgFrameAt() {
 func (s *FrameSuite) TestFinalMsgWriteFrameAt() {
 	ctx := context.Background()
 	var (
-		hasRefill = true
+		hasRefill            = true
+		contentVersion uint8 = 1
 	)
-	wm := frames.NewWriteFrame(3, frames.FinalType, 1, 1, frames.NewFinalMsg(hasRefill))
+	wm, err := frames.NewWriteFrame(s.version, contentVersion, frames.FinalType, frames.NewFinalMsg(hasRefill))
+	s.Require().NoError(err)
 
-	_, err := wm.WriteTo(s.rw)
+	_, err = wm.WriteTo(s.rw)
 	s.Require().NoError(err)
 
 	var off int64
@@ -1452,7 +1258,7 @@ func (s *FrameSuite) TestFinalMsgFrame() {
 	var (
 		hasRefill = true
 	)
-	wm, err := frames.NewFinalMsgFrame(3, 1, 1, hasRefill)
+	wm, err := frames.NewFinalMsgFrame(s.version, hasRefill)
 	s.Require().NoError(err)
 
 	_, err = wm.WriteTo(s.rw)
@@ -1475,11 +1281,13 @@ func (s *FrameSuite) TestFinalMsgFrame() {
 func (s *FrameSuite) TestFinalMsgWriteFrame() {
 	ctx := context.Background()
 	var (
-		hasRefill = true
+		hasRefill            = true
+		contentVersion uint8 = 1
 	)
-	wm := frames.NewWriteFrame(3, frames.FinalType, 1, 1, frames.NewFinalMsg(hasRefill))
+	wm, err := frames.NewWriteFrame(s.version, contentVersion, frames.FinalType, frames.NewFinalMsg(hasRefill))
+	s.Require().NoError(err)
 
-	_, err := wm.WriteTo(s.rw)
+	_, err = wm.WriteTo(s.rw)
 	s.Require().NoError(err)
 
 	_, err = s.rw.Seek(0, 0)

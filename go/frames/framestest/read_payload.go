@@ -30,3 +30,18 @@ func ReadFrame(ctx context.Context, f *frames.WriteFrame) (*frames.ReadFrame, er
 	})
 	return rf, g.Wait()
 }
+
+// ReadSegment - convert WriteSegment into ReadSegmentV4.
+func ReadSegment(ctx context.Context, f frames.FrameWriter) (*frames.ReadSegmentV4, error) {
+	r, w := io.Pipe()
+	g := new(errgroup.Group)
+	g.Go(func() error {
+		_, err := f.WriteTo(w)
+		return err
+	})
+	rf := frames.NewReadSegmentV4Empty()
+	g.Go(func() error {
+		return rf.Read(ctx, r)
+	})
+	return rf, g.Wait()
+}

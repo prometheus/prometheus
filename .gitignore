@@ -9,3 +9,5 @@ bazel-*
 .vscode
 .cache
 .bash_history
+MODULE.bazel
+MODULE.bazel.lock

@@ -21,13 +21,14 @@ type WriteFrame struct {
 
 // NewWriteFrame - init new Frame.
 func NewWriteFrame(
-	version uint8,
+	version, contentVersion uint8,
 	typeFrame TypeFrame,
-	shardID uint16,
-	segmentID uint32,
 	payload WritePayload,
-) *WriteFrame {
-	h := NewHeader(version, typeFrame, shardID, segmentID, uint32(payload.Size()))
+) (*WriteFrame, error) {
+	h, err := NewHeader(version, contentVersion, typeFrame, uint32(payload.Size()))
+	if err != nil {
+		return nil, err
+	}
 	chksum := crc32.NewIEEE()
 	_, _ = payload.WriteTo(chksum)
 	h.SetChksum(chksum.Sum32())
@@ -36,7 +37,7 @@ func NewWriteFrame(
 	return &WriteFrame{
 		header:  h,
 		payload: payload,
-	}
+	}, nil
 }
 
 // WriteTo - implement io.WriterTo.

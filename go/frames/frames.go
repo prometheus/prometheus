@@ -14,7 +14,6 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/google/uuid"
 	"github.com/prometheus/prometheus/pp/go/util"
 )
 
@@ -64,15 +63,22 @@ type ReadFrame struct {
 }
 
 // NewFrame - init new Frame.
-func NewFrame(version uint8, typeFrame TypeFrame, b []byte, shardID uint16, segmentID uint32) *ReadFrame {
-	h := NewHeader(version, typeFrame, shardID, segmentID, uint32(len(b)))
+func NewFrame(
+	version, contentVersion uint8,
+	typeFrame TypeFrame,
+	b []byte,
+) (*ReadFrame, error) {
+	h, err := NewHeader(version, contentVersion, typeFrame, uint32(len(b)))
+	if err != nil {
+		return nil, err
+	}
 	h.SetChksum(crc32.ChecksumIEEE(b))
 	h.SetCreatedAt(time.Now().UnixNano())
 
 	return &ReadFrame{
 		Header: h,
 		Body:   b,
-	}
+	}, nil
 }
 
 // NewFrameEmpty - init new Frame for read.
@@ -87,27 +93,17 @@ func (fr *ReadFrame) GetHeader() Header {
 
 // GetVersion - return version.
 func (fr *ReadFrame) GetVersion() uint8 {
-	return fr.Header.version
+	return fr.Header.GetVersion()
 }
 
 // GetType - return type frame.
 func (fr *ReadFrame) GetType() TypeFrame {
-	return fr.Header.typeFrame
+	return fr.Header.GetType()
 }
 
 // GetCreatedAt - return created time unix nano.
 func (fr *ReadFrame) GetCreatedAt() int64 {
-	return fr.Header.createdAt
-}
-
-// GetShardID - return shardID.
-func (fr *ReadFrame) GetShardID() uint16 {
-	return fr.Header.shardID
-}
-
-// GetSegmentID - return segmentID.
-func (fr *ReadFrame) GetSegmentID() uint32 {
-	return fr.Header.segmentID
+	return fr.Header.GetCreatedAt()
 }
 
 // GetChksum - return checksum.
@@ -153,7 +149,7 @@ func (fr *ReadFrame) Read(ctx context.Context, r io.Reader) error {
 		return ctx.Err()
 	}
 	fr.Header = h
-	fr.Body = make([]byte, int(fr.Header.size))
+	fr.Body = make([]byte, int(fr.Header.GetSize()))
 	if _, err = io.ReadFull(r, fr.Body); err != nil {
 		return err
 	}
@@ -216,7 +212,7 @@ func NewAuthFrame(
 		return nil, err
 	}
 
-	return NewFrame(version, AuthType, body, 0, 0), nil
+	return NewFrame(version, ContentVersion1, AuthType, body)
 }
 
 // NewAuthFrameWithMsg - init new frame with msg.
@@ -226,7 +222,7 @@ func NewAuthFrameWithMsg(version uint8, msg *AuthMsg) (*ReadFrame, error) {
 		return nil, err
 	}
 
-	return NewFrame(version, AuthType, body, 0, 0), nil
+	return NewFrame(version, ContentVersion1, AuthType, body)
 }
 
 // AuthMsg - message for authorization.
@@ -394,7 +390,7 @@ func NewResponseFrame(version uint8, text string, code, segmentID uint32, sendAt
 		return nil, err
 	}
 
-	return NewFrame(version, ResponseType, body, 0, segmentID), nil
+	return NewFrame(version, ContentVersion1, ResponseType, body)
 }
 
 // NewResponseFrameWithMsg - init new frame with msg.
@@ -404,7 +400,7 @@ func NewResponseFrameWithMsg(version uint8, msg *ResponseMsg) (*ReadFrame, error
 		return nil, err
 	}
 
-	return NewFrame(version, ResponseType, body, 0, msg.SegmentID), nil
+	return NewFrame(version, ContentVersion1, ResponseType, body)
 }
 
 // NewResponseMsgEmpty - init ResponseMsg for read.
@@ -530,7 +526,7 @@ func NewRefillFrame(version uint8, msgs []MessageData) (*ReadFrame, error) {
 		return nil, err
 	}
 
-	return NewFrame(version, RefillType, body, 0, 0), nil
+	return NewFrame(version, ContentVersion1, RefillType, body)
 }
 
 // NewRefillFrameWithMsg - init new frame with msg.
@@ -540,7 +536,7 @@ func NewRefillFrameWithMsg(version uint8, msg *RefillMsg) (*ReadFrame, error) {
 		return nil, err
 	}
 
-	return NewFrame(version, RefillType, body, 0, 0), nil
+	return NewFrame(version, ContentVersion1, RefillType, body)
 }
 
 // MessageData - data for the start message of the refill.
@@ -690,136 +686,6 @@ func (rm *RefillMsg) Read(ctx context.Context, r io.Reader, size int) error {
 	return rm.UnmarshalBinary(buf)
 }
 
-// ReadAtTitle - read body to Title with ReaderAt.
-func ReadAtTitle(ctx context.Context, r io.ReaderAt, off int64, size int) (*Title, error) {
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-
-	tb := NewTitleEmpty()
-	if err := tb.ReadAt(ctx, r, off, size); err != nil {
-		return nil, err
-	}
-
-	return tb, nil
-}
-
-// ReadTitle - read body to Title with Reader.
-func ReadTitle(ctx context.Context, r io.Reader, size int) (*Title, error) {
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-
-	tb := NewTitleEmpty()
-	if err := tb.Read(ctx, r, size); err != nil {
-		return nil, err
-	}
-
-	return tb, nil
-}
-
-// NewTitleFrame - init new frame.
-func NewTitleFrame(snp uint8, blockID uuid.UUID) (*ReadFrame, error) {
-	body, err := NewTitle(snp, blockID).MarshalBinary()
-	if err != nil {
-		return nil, err
-	}
-
-	return NewFrame(defaultVersion, TitleType, body, 0, 0), nil
-}
-
-// titleSize -contant size.
-// sum = 1(numberOfShards=uint8)+16(blockID=uuid.UUID)
-const titleSize int = 17
-
-// Title - title body frame with number of shards and block ID.
-type Title struct {
-	shardsNumberPower uint8
-	blockID           uuid.UUID
-}
-
-// NewTitle - init Title.
-func NewTitle(snp uint8, blockID uuid.UUID) *Title {
-	return &Title{
-		shardsNumberPower: snp,
-		blockID:           blockID,
-	}
-}
-
-// NewTitleEmpty - init Title for read.
-func NewTitleEmpty() *Title {
-	return new(Title)
-}
-
-// GetShardsNumberPower - get number of shards.
-func (tb *Title) GetShardsNumberPower() uint8 {
-	return tb.shardsNumberPower
-}
-
-// GetBlockID - get block ID.
-func (tb *Title) GetBlockID() uuid.UUID {
-	return tb.blockID
-}
-
-// SizeOf - get size body.
-func (*Title) SizeOf() int {
-	return titleSize
-}
-
-// MarshalBinary - encoding to byte.
-func (tb *Title) MarshalBinary() ([]byte, error) {
-	var offset int
-	buf := make([]byte, tb.SizeOf())
-
-	// write numberOfShards and move offset
-	buf[0] = tb.shardsNumberPower
-	offset += sizeOfUint8
-
-	// write blockID and move offset
-	buf = append(buf[:offset], tb.blockID[:]...)
-
-	return buf, nil
-}
-
-// UnmarshalBinary - decoding from byte.
-func (tb *Title) UnmarshalBinary(data []byte) error {
-	// read numberOfShards
-	var off int
-	tb.shardsNumberPower = data[0]
-	off += sizeOfUint8
-
-	// read blockID
-	return tb.blockID.UnmarshalBinary(data[off:])
-}
-
-// ReadAt - read Title with ReaderAt.
-func (tb *Title) ReadAt(ctx context.Context, r io.ReaderAt, off int64, size int) error {
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-
-	buf := make([]byte, size)
-	if _, err := r.ReadAt(buf, off); err != nil {
-		return err
-	}
-
-	return tb.UnmarshalBinary(buf)
-}
-
-// Read - read Title with Reader.
-func (tb *Title) Read(ctx context.Context, r io.Reader, size int) error {
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-
-	buf := make([]byte, size)
-	if _, err := io.ReadFull(r, buf); err != nil {
-		return err
-	}
-
-	return tb.UnmarshalBinary(buf)
-}
-
 // ReadAtDestinationsNames - read body to DestinationsNames with ReaderAt.
 func ReadAtDestinationsNames(ctx context.Context, r io.ReaderAt, off int64, size int) (*DestinationsNames, error) {
 	if ctx.Err() != nil {
@@ -855,7 +721,7 @@ func NewDestinationsNamesFrame(version uint8, names ...string) (*ReadFrame, erro
 		return nil, err
 	}
 
-	return NewFrame(version, DestinationNamesType, body, 0, 0), nil
+	return NewFrame(version, ContentVersion1, DestinationNamesType, body)
 }
 
 // NewDestinationsNamesFrameWithMsg - init new frame with msg.
@@ -865,7 +731,7 @@ func NewDestinationsNamesFrameWithMsg(version uint8, msg *DestinationsNames) (*R
 		return nil, err
 	}
 
-	return NewFrame(version, DestinationNamesType, body, 0, 0), nil
+	return NewFrame(version, ContentVersion1, DestinationNamesType, body)
 }
 
 // stringViewSize -contant size.
@@ -1100,7 +966,7 @@ func NewStatusesFrame(ss encoding.BinaryMarshaler) (*ReadFrame, error) {
 	if err != nil {
 		return nil, err
 	}
-	return NewFrame(defaultVersion, StatusType, body, 0, 0), nil
+	return NewFrame(defaultVersion, ContentVersion1, StatusType, body)
 }
 
 // Statuses - slice with statuses.
@@ -1190,7 +1056,7 @@ func (ss *Statuses) ReadAt(ctx context.Context, r io.ReaderAt, off int64, size i
 	return ss.UnmarshalBinary(buf)
 }
 
-// Read - read BinaryBody with Reader.
+// Read - read Statuses with Reader.
 func (ss *Statuses) Read(ctx context.Context, r io.Reader, size int) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -1238,7 +1104,7 @@ func NewRejectStatusesFrame(rs encoding.BinaryMarshaler) (*ReadFrame, error) {
 	if err != nil {
 		return nil, err
 	}
-	return NewFrame(defaultVersion, RejectStatusType, body, 0, 0), nil
+	return NewFrame(defaultVersion, ContentVersion1, RejectStatusType, body)
 }
 
 // Reject - rejected segment struct.
@@ -1339,6 +1205,11 @@ func (rjss *RejectStatuses) Read(ctx context.Context, r io.Reader, size int) err
 	return rjss.UnmarshalBinary(buf)
 }
 
+// Len - return length rejects.
+func (rjss RejectStatuses) Len() int {
+	return len(rjss)
+}
+
 // ReadAtFrameRefillShardEOF - read body to RefillShardEOF with ReaderAt.
 func ReadAtFrameRefillShardEOF(ctx context.Context, r io.ReaderAt, off int64, size int) (*RefillShardEOF, error) {
 	if ctx.Err() != nil {
@@ -1374,7 +1245,7 @@ func NewRefillShardEOFFrame(nameID uint32, shardID uint16) (*ReadFrame, error) {
 		return nil, err
 	}
 
-	return NewFrame(defaultVersion, RefillShardEOFType, body, shardID, 0), nil
+	return NewFrame(defaultVersion, ContentVersion1, RefillShardEOFType, body)
 }
 
 // RefillShardEOF - a message to mark that all segments have been sent.
@@ -1486,13 +1357,13 @@ func ReadFrameFinalMsg(ctx context.Context, r io.Reader, size int) (*FinalMsg, e
 }
 
 // NewFinalMsgFrame - init new frame.
-func NewFinalMsgFrame(version uint8, segmentID uint32, shardID uint16, hasRefill bool) (*ReadFrame, error) {
+func NewFinalMsgFrame(version uint8, hasRefill bool) (*ReadFrame, error) {
 	body, err := NewFinalMsg(hasRefill).MarshalBinary()
 	if err != nil {
 		return nil, err
 	}
 
-	return NewFrame(version, FinalType, body, shardID, segmentID), nil
+	return NewFrame(version, ContentVersion1, FinalType, body)
 }
 
 // FinalMsg - message indicating that the block has been finalized.

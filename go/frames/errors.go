@@ -8,6 +8,10 @@ import (
 var (
 	// ErrUnknownFrameType - error for unknown type frame.
 	ErrUnknownFrameType = errors.New("unknown frame type")
+	// ErrUnknownHeaderVersion - error for unknown header version.
+	ErrUnknownHeaderVersion = errors.New("unknown header version")
+	// ErrDeprecatedHeaderVersion - error for deprecated header version.
+	ErrDeprecatedHeaderVersion = errors.New("deprecated header version")
 	// ErrHeaderIsCorrupted - error for corrupted header in frame(not equal magic byte).
 	ErrHeaderIsCorrupted = errors.New("header is corrupted")
 	// ErrHeaderIsNil - error for nil header in frame.
@@ -22,6 +26,10 @@ var (
 	ErrTokenEmpty = errors.New("auth token is empty")
 	// ErrUUIDEmpty - error for empty UUID.
 	ErrUUIDEmpty = errors.New("agent uuid is empty")
+	// ErrUnknownTitleVersion - error for unknown title version.
+	ErrUnknownTitleVersion = errors.New("unknown title version")
+	// ErrUnknownSegmentVersion - error for unknown segment version.
+	ErrUnknownSegmentVersion = errors.New("unknown segment version")
 )
 
 // ErrNotEqualChecksum - checksum mismatch error.

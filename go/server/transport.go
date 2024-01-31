@@ -8,13 +8,17 @@ import (
 	"path/filepath"
 
 	"github.com/prometheus/prometheus/prompb"
+	"golang.org/x/net/websocket"
 
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/frames"
 	"github.com/prometheus/prometheus/pp/go/transport"
 )
 
-const protocolVersion uint8 = 3
+const (
+	protocolVersion       uint8 = 3
+	protocolVersionSocket uint8 = 4
+)
 
 // Reader - implementation of the reader with the Next iterator function.
 type Reader interface {
@@ -84,7 +88,7 @@ func (*ProtocolReader) handleFinal(rf *frames.ReadFrame) (*Request, error) {
 		return nil, err
 	}
 	return &Request{
-		SegmentID: rf.GetSegmentID(),
+		SegmentID: 0,
 		SentAt:    rf.GetCreatedAt(),
 		Finalized: true,
 		HasRefill: fm.HasRefill(),
@@ -93,7 +97,7 @@ func (*ProtocolReader) handleFinal(rf *frames.ReadFrame) (*Request, error) {
 
 // TCPReader - wrappers over connection from cient.
 type TCPReader struct {
-	t *transport.Transport
+	t *transport.NetTransport
 }
 
 var _ Reader = &TCPReader{}
@@ -103,7 +107,7 @@ func NewTCPReader(
 	cfg *transport.Config,
 	conn net.Conn,
 ) *TCPReader {
-	t := transport.New(cfg, conn)
+	t := transport.NewNetTransport(cfg, conn)
 	return &TCPReader{t: t}
 }
 
@@ -214,4 +218,64 @@ type Request struct {
 	EncodedAt int64
 	Finalized bool
 	HasRefill bool
+}
+
+// WebSocketReader - wrappers over connection from cient.
+type WebSocketReader struct {
+	t *transport.WebSocketTransport
+}
+
+// NewWebSocketReader - init new WebSocketReader.
+func NewWebSocketReader(cfg *transport.Config, wsconn *websocket.Conn) *WebSocketReader {
+	return &WebSocketReader{t: transport.NewWebSocketTransport(cfg, wsconn)}
+}
+
+// Next - func-iterator, read from conn and return raw message.
+func (r *WebSocketReader) Next(ctx context.Context, fr frames.FrameReader) error {
+	return r.t.Read(ctx, fr)
+}
+
+// SendResponse - send response to client.
+func (r *WebSocketReader) SendResponse(ctx context.Context, msg *frames.ResponseV4) error {
+	_, err := msg.WriteTo(r.t.Writer(ctx))
+	return err
+}
+
+// FileReaderV4 - reader refill from file.
+type FileReaderV4 struct {
+	file *os.File
+}
+
+// NewFileReaderV4 - init new FileReaderV4.
+func NewFileReaderV4(filePath string) (*FileReaderV4, error) {
+	file, err := os.OpenFile(
+		filepath.Clean(filePath),
+		os.O_RDONLY,
+		0,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("open file %s: %w", filePath, err)
+	}
+
+	return &FileReaderV4{
+		file: file,
+	}, nil
+}
+
+// Next - func-iterator, read from file and return raw message.
+func (fr *FileReaderV4) Next(ctx context.Context) (*frames.ReadRefillSegmentV4, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	fe := frames.NewReadRefillSegmentV4Empty()
+	if err := fe.Read(ctx, fr.file); err != nil {
+		return nil, fmt.Errorf("read file %s: %w", fr.file.Name(), err)
+	}
+
+	return fe, nil
+}
+
+// Close - close the file reader.
+func (fr *FileReaderV4) Close() error {
+	return fr.file.Close()
 }
