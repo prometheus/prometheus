@@ -1,0 +1,14 @@
+groups:
+  - name: test
+    rules:
+      # independents
+      - record: job:http_requests:rate1m
+        expr: sum by (job)(rate(http_requests_total[1m]))
+      - record: job:http_requests:rate5m
+        expr: sum by (job)(rate(http_requests_total[5m]))
+
+      # dependents
+      - record: job:http_requests:rate15m
+        expr: sum by (job)(rate(http_requests_total[15m]))
+      - record: TooManyRequests
+        expr: job:http_requests:rate15m > 100

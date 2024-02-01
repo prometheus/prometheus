@@ -1173,10 +1173,10 @@ func TestChainSampleIteratorSeek(t *testing.T) {
 					t, f := merged.At()
 					actual = append(actual, fSample{t, f})
 				case chunkenc.ValHistogram:
-					t, h := merged.AtHistogram()
+					t, h := merged.AtHistogram(nil)
 					actual = append(actual, hSample{t, h})
 				case chunkenc.ValFloatHistogram:
-					t, fh := merged.AtFloatHistogram()
+					t, fh := merged.AtFloatHistogram(nil)
 					actual = append(actual, fhSample{t, fh})
 				}
 				s, err := ExpandSamples(merged, nil)
@@ -1259,10 +1259,10 @@ func TestChainSampleIteratorSeekHistogramCounterResetHint(t *testing.T) {
 					t, f := merged.At()
 					actual = append(actual, fSample{t, f})
 				case chunkenc.ValHistogram:
-					t, h := merged.AtHistogram()
+					t, h := merged.AtHistogram(nil)
 					actual = append(actual, hSample{t, h})
 				case chunkenc.ValFloatHistogram:
-					t, fh := merged.AtFloatHistogram()
+					t, fh := merged.AtFloatHistogram(nil)
 					actual = append(actual, fhSample{t, fh})
 				}
 				s, err := ExpandSamples(merged, nil)
@@ -1629,11 +1629,11 @@ func (e errIterator) At() (int64, float64) {
 	return 0, 0
 }
 
-func (e errIterator) AtHistogram() (int64, *histogram.Histogram) {
+func (e errIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	return 0, nil
 }
 
-func (e errIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+func (e errIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	return 0, nil
 }
 

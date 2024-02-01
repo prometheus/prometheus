@@ -70,19 +70,21 @@ var ErrNotReady = errors.New("TSDB not ready")
 // millisecond precision timestamps.
 func DefaultOptions() *Options {
 	return &Options{
-		WALSegmentSize:            wlog.DefaultSegmentSize,
-		MaxBlockChunkSegmentSize:  chunks.DefaultChunkSegmentSize,
-		RetentionDuration:         int64(15 * 24 * time.Hour / time.Millisecond),
-		MinBlockDuration:          DefaultBlockDuration,
-		MaxBlockDuration:          DefaultBlockDuration,
-		NoLockfile:                false,
-		SamplesPerChunk:           DefaultSamplesPerChunk,
-		WALCompression:            wlog.CompressionNone,
-		StripeSize:                DefaultStripeSize,
-		HeadChunksWriteBufferSize: chunks.DefaultWriteBufferSize,
-		IsolationDisabled:         defaultIsolationDisabled,
-		HeadChunksWriteQueueSize:  chunks.DefaultWriteQueueSize,
-		OutOfOrderCapMax:          DefaultOutOfOrderCapMax,
+		WALSegmentSize:              wlog.DefaultSegmentSize,
+		MaxBlockChunkSegmentSize:    chunks.DefaultChunkSegmentSize,
+		RetentionDuration:           int64(15 * 24 * time.Hour / time.Millisecond),
+		MinBlockDuration:            DefaultBlockDuration,
+		MaxBlockDuration:            DefaultBlockDuration,
+		NoLockfile:                  false,
+		SamplesPerChunk:             DefaultSamplesPerChunk,
+		WALCompression:              wlog.CompressionNone,
+		StripeSize:                  DefaultStripeSize,
+		HeadChunksWriteBufferSize:   chunks.DefaultWriteBufferSize,
+		IsolationDisabled:           defaultIsolationDisabled,
+		HeadChunksWriteQueueSize:    chunks.DefaultWriteQueueSize,
+		OutOfOrderCapMax:            DefaultOutOfOrderCapMax,
+		EnableOverlappingCompaction: true,
+		EnableSharding:              false,
 	}
 }
 
@@ -177,6 +179,17 @@ type Options struct {
 	// OutOfOrderCapMax is maximum capacity for OOO chunks (in samples).
 	// If it is <=0, the default value is assumed.
 	OutOfOrderCapMax int64
+
+	// Compaction of overlapping blocks are allowed if EnableOverlappingCompaction is true.
+	// This is an optional flag for overlapping blocks.
+	// The reason why this flag exists is because there are various users of the TSDB
+	// that do not want vertical compaction happening on ingest time. Instead,
+	// they'd rather keep overlapping blocks and let another component do the overlapping compaction later.
+	// For Prometheus, this will always be true.
+	EnableOverlappingCompaction bool
+
+	// EnableSharding enables query sharding support in TSDB.
+	EnableSharding bool
 }
 
 type BlocksToDeleteFunc func(blocks []*Block) map[ulid.ULID]struct{}
@@ -442,8 +455,7 @@ func (db *DBReadOnly) FlushWAL(dir string) (returnErr error) {
 		nil,
 		db.logger,
 		ExponentialBlockRanges(DefaultOptions().MinBlockDuration, 3, 5),
-		chunkenc.NewPool(),
-		nil,
+		chunkenc.NewPool(), nil,
 	)
 	if err != nil {
 		return fmt.Errorf("create leveled compactor: %w", err)
@@ -817,7 +829,10 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	db.compactor, err = NewLeveledCompactorWithChunkSize(ctx, r, l, rngs, db.chunkPool, opts.MaxBlockChunkSegmentSize, nil)
+	db.compactor, err = NewLeveledCompactorWithOptions(ctx, r, l, rngs, db.chunkPool, LeveledCompactorOptions{
+		MaxBlockChunkSegmentSize:    opts.MaxBlockChunkSegmentSize,
+		EnableOverlappingCompaction: opts.EnableOverlappingCompaction,
+	})
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("create leveled compactor: %w", err)
@@ -864,6 +879,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	headOpts.EnableNativeHistograms.Store(opts.EnableNativeHistograms)
 	headOpts.OutOfOrderTimeWindow.Store(opts.OutOfOrderTimeWindow)
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
+	headOpts.EnableSharding = opts.EnableSharding
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
 	}

@@ -269,10 +269,11 @@ func (p *ProtobufParser) Type() ([]byte, model.MetricType) {
 	return n, model.MetricTypeUnknown
 }
 
-// Unit always returns (nil, nil) because units aren't supported by the protobuf
-// format.
+// Unit returns the metric unit in the current entry.
+// Must only be called after Next returned a unit entry.
+// The returned byte slices become invalid after the next call to Next.
 func (p *ProtobufParser) Unit() ([]byte, []byte) {
-	return nil, nil
+	return p.metricBytes.Bytes(), []byte(p.mf.GetUnit())
 }
 
 // Comment always returns nil because comments aren't supported by the protobuf
@@ -421,6 +422,16 @@ func (p *ProtobufParser) Next() (Entry, error) {
 			// All good.
 		default:
 			return EntryInvalid, fmt.Errorf("unknown metric type for metric %q: %s", name, p.mf.GetType())
+		}
+		unit := p.mf.GetUnit()
+		if len(unit) > 0 {
+			if p.mf.GetType() == dto.MetricType_COUNTER && strings.HasSuffix(name, "_total") {
+				if !strings.HasSuffix(name[:len(name)-6], unit) || len(name)-6 < len(unit)+1 || name[len(name)-6-len(unit)-1] != '_' {
+					return EntryInvalid, fmt.Errorf("unit %q not a suffix of counter %q", unit, name)
+				}
+			} else if !strings.HasSuffix(name, unit) || len(name) < len(unit)+1 || name[len(name)-len(unit)-1] != '_' {
+				return EntryInvalid, fmt.Errorf("unit %q not a suffix of metric %q", unit, name)
+			}
 		}
 		p.metricBytes.Reset()
 		p.metricBytes.WriteString(name)

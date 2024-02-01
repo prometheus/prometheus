@@ -440,6 +440,10 @@ func (ir *OOOCompactionHeadIndexReader) SortedPostings(p index.Postings) index.P
 	return p
 }
 
+func (ir *OOOCompactionHeadIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings {
+	return ir.ch.oooIR.ShardedPostings(p, shardIndex, shardCount)
+}
+
 func (ir *OOOCompactionHeadIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	return ir.ch.oooIR.series(ref, builder, chks, 0, ir.ch.lastMmapRef)
 }

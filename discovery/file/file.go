@@ -57,12 +57,17 @@ type SDConfig struct {
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 }
 
+// NewDiscovererMetrics implements discovery.Config.
+func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return newDiscovererMetrics(reg, rmi)
+}
+
 // Name returns the name of the Config.
 func (*SDConfig) Name() string { return "file" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger, opts.Registerer)
+	return NewDiscovery(c, opts.Logger, opts.Metrics)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -94,6 +99,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 const fileSDFilepathLabel = model.MetaLabelPrefix + "filepath"
 
 // TimestampCollector is a Custom Collector for Timestamps of the files.
+// TODO(ptodev): Now that each file SD has its own TimestampCollector
+// inside discovery/file/metrics.go, we can refactor this collector
+// (or get rid of it) as each TimestampCollector instance will only use one discoverer.
 type TimestampCollector struct {
 	Description *prometheus.Desc
 	discoverers map[*Discovery]struct{}
@@ -169,16 +177,16 @@ type Discovery struct {
 	lastRefresh map[string]int
 	logger      log.Logger
 
-	fileSDReadErrorsCount  prometheus.Counter
-	fileSDScanDuration     prometheus.Summary
-	fileWatcherErrorsCount prometheus.Counter
-	fileSDTimeStamp        *TimestampCollector
-
-	metricRegisterer discovery.MetricRegisterer
+	metrics *fileMetrics
 }
 
 // NewDiscovery returns a new file discovery for the given paths.
-func NewDiscovery(conf *SDConfig, logger log.Logger, reg prometheus.Registerer) (*Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+	fm, ok := metrics.(*fileMetrics)
+	if !ok {
+		return nil, fmt.Errorf("invalid discovery metrics type")
+	}
+
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -188,33 +196,10 @@ func NewDiscovery(conf *SDConfig, logger log.Logger, reg prometheus.Registerer) 
 		interval:   time.Duration(conf.RefreshInterval),
 		timestamps: make(map[string]float64),
 		logger:     logger,
-		fileSDReadErrorsCount: prometheus.NewCounter(
-			prometheus.CounterOpts{
-				Name: "prometheus_sd_file_read_errors_total",
-				Help: "The number of File-SD read errors.",
-			}),
-		fileSDScanDuration: prometheus.NewSummary(
-			prometheus.SummaryOpts{
-				Name:       "prometheus_sd_file_scan_duration_seconds",
-				Help:       "The duration of the File-SD scan in seconds.",
-				Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
-			}),
-		fileWatcherErrorsCount: prometheus.NewCounter(
-			prometheus.CounterOpts{
-				Name: "prometheus_sd_file_watcher_errors_total",
-				Help: "The number of File-SD errors caused by filesystem watch failures.",
-			}),
-		fileSDTimeStamp: NewTimestampCollector(),
+		metrics:    fm,
 	}
 
-	disc.fileSDTimeStamp.addDiscoverer(disc)
-
-	disc.metricRegisterer = discovery.NewMetricRegisterer(reg, []prometheus.Collector{
-		disc.fileSDReadErrorsCount,
-		disc.fileSDScanDuration,
-		disc.fileWatcherErrorsCount,
-		disc.fileSDTimeStamp,
-	})
+	fm.init(disc)
 
 	return disc, nil
 }
@@ -253,17 +238,10 @@ func (d *Discovery) watchFiles() {
 
 // Run implements the Discoverer interface.
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
-	err := d.metricRegisterer.RegisterMetrics()
-	if err != nil {
-		level.Error(d.logger).Log("msg", "Unable to register metrics", "err", err.Error())
-		return
-	}
-	defer d.metricRegisterer.UnregisterMetrics()
-
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		level.Error(d.logger).Log("msg", "Error adding file watcher", "err", err)
-		d.fileWatcherErrorsCount.Inc()
+		d.metrics.fileWatcherErrorsCount.Inc()
 		return
 	}
 	d.watcher = watcher
@@ -327,7 +305,7 @@ func (d *Discovery) stop() {
 	done := make(chan struct{})
 	defer close(done)
 
-	d.fileSDTimeStamp.removeDiscoverer(d)
+	d.metrics.fileSDTimeStamp.removeDiscoverer(d)
 
 	// Closing the watcher will deadlock unless all events and errors are drained.
 	go func() {
@@ -353,13 +331,13 @@ func (d *Discovery) stop() {
 func (d *Discovery) refresh(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	t0 := time.Now()
 	defer func() {
-		d.fileSDScanDuration.Observe(time.Since(t0).Seconds())
+		d.metrics.fileSDScanDuration.Observe(time.Since(t0).Seconds())
 	}()
 	ref := map[string]int{}
 	for _, p := range d.listFiles() {
 		tgroups, err := d.readFile(p)
 		if err != nil {
-			d.fileSDReadErrorsCount.Inc()
+			d.metrics.fileSDReadErrorsCount.Inc()
 
 			level.Error(d.logger).Log("msg", "Error reading file", "path", p, "err", err)
 			// Prevent deletion down below.

@@ -224,3 +224,14 @@ eval instant at 5m histogram_fraction(0, 4, balanced_histogram)
 # the first populated bucket after the span of empty buckets.
 eval instant at 5m histogram_quantile(0.5, balanced_histogram)
 	{} 0.5
+
+# Add histogram to test sum(last_over_time) regression
+load 5m
+    incr_sum_histogram{number="1"} {{schema:0 sum:0 count:0 buckets:[1]}}+{{schema:0 sum:1 count:1 buckets:[1]}}x10
+    incr_sum_histogram{number="2"} {{schema:0 sum:0 count:0 buckets:[1]}}+{{schema:0 sum:2 count:1 buckets:[1]}}x10
+
+eval instant at 50m histogram_sum(sum(incr_sum_histogram))
+    {} 30
+
+eval instant at 50m histogram_sum(sum(last_over_time(incr_sum_histogram[5m])))
+    {} 30

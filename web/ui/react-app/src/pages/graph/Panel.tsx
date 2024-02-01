@@ -194,7 +194,8 @@ class Panel extends Component<PanelProps, PanelState> {
       }
 
       const isHeatmap = isHeatmapData(query.data);
-      if (!isHeatmap) {
+      const isHeatmapDisplayMode = this.props.options.displayMode === GraphDisplayMode.Heatmap;
+      if (!isHeatmap && isHeatmapDisplayMode) {
         this.setOptions({ displayMode: GraphDisplayMode.Lines });
       }
 
