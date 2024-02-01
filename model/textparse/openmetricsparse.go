@@ -136,7 +136,6 @@ func (p *OpenMetricsParser) Type() ([]byte, model.MetricType) {
 // Must only be called after Next returned a unit entry.
 // The returned byte slices become invalid after the next call to Next.
 func (p *OpenMetricsParser) Unit() ([]byte, []byte) {
-	// The Prometheus format does not have units.
 	return p.l.b[p.offsets[0]:p.offsets[1]], p.text
 }
 

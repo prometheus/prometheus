@@ -58,12 +58,17 @@ type SDConfig struct {
 	URL              string                  `yaml:"url"`
 }
 
+// NewDiscovererMetrics implements discovery.Config.
+func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return newDiscovererMetrics(reg, rmi)
+}
+
 // Name returns the name of the Config.
 func (*SDConfig) Name() string { return "http" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger, opts.HTTPClientOptions, opts.Registerer)
+	return NewDiscovery(c, opts.Logger, opts.HTTPClientOptions, opts.Metrics)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -105,11 +110,16 @@ type Discovery struct {
 	client          *http.Client
 	refreshInterval time.Duration
 	tgLastLength    int
-	failuresCount   prometheus.Counter
+	metrics         *httpMetrics
 }
 
 // NewDiscovery returns a new HTTP discovery for the given config.
-func NewDiscovery(conf *SDConfig, logger log.Logger, clientOpts []config.HTTPClientOption, reg prometheus.Registerer) (*Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger log.Logger, clientOpts []config.HTTPClientOption, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+	m, ok := metrics.(*httpMetrics)
+	if !ok {
+		return nil, fmt.Errorf("invalid discovery metrics type")
+	}
+
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -124,21 +134,16 @@ func NewDiscovery(conf *SDConfig, logger log.Logger, clientOpts []config.HTTPCli
 		url:             conf.URL,
 		client:          client,
 		refreshInterval: time.Duration(conf.RefreshInterval), // Stored to be sent as headers.
-		failuresCount: prometheus.NewCounter(
-			prometheus.CounterOpts{
-				Name: "prometheus_sd_http_failures_total",
-				Help: "Number of HTTP service discovery refresh failures.",
-			}),
+		metrics:         m,
 	}
 
 	d.Discovery = refresh.NewDiscovery(
 		refresh.Options{
-			Logger:   logger,
-			Mech:     "http",
-			Interval: time.Duration(conf.RefreshInterval),
-			RefreshF: d.Refresh,
-			Registry: reg,
-			Metrics:  []prometheus.Collector{d.failuresCount},
+			Logger:              logger,
+			Mech:                "http",
+			Interval:            time.Duration(conf.RefreshInterval),
+			RefreshF:            d.Refresh,
+			MetricsInstantiator: m.refreshMetrics,
 		},
 	)
 	return d, nil
@@ -155,7 +160,7 @@ func (d *Discovery) Refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	resp, err := d.client.Do(req.WithContext(ctx))
 	if err != nil {
-		d.failuresCount.Inc()
+		d.metrics.failuresCount.Inc()
 		return nil, err
 	}
 	defer func() {
@@ -164,31 +169,31 @@ func (d *Discovery) Refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		d.failuresCount.Inc()
+		d.metrics.failuresCount.Inc()
 		return nil, fmt.Errorf("server returned HTTP status %s", resp.Status)
 	}
 
 	if !matchContentType.MatchString(strings.TrimSpace(resp.Header.Get("Content-Type"))) {
-		d.failuresCount.Inc()
+		d.metrics.failuresCount.Inc()
 		return nil, fmt.Errorf("unsupported content type %q", resp.Header.Get("Content-Type"))
 	}
 
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
-		d.failuresCount.Inc()
+		d.metrics.failuresCount.Inc()
 		return nil, err
 	}
 
 	var targetGroups []*targetgroup.Group
 
 	if err := json.Unmarshal(b, &targetGroups); err != nil {
-		d.failuresCount.Inc()
+		d.metrics.failuresCount.Inc()
 		return nil, err
 	}
 
 	for i, tg := range targetGroups {
 		if tg == nil {
-			d.failuresCount.Inc()
+			d.metrics.failuresCount.Inc()
 			err = errors.New("nil target group item found")
 			return nil, err
 		}

@@ -21,7 +21,7 @@
 <tr>
   <td><a href="node-overview.html?instance={{ .Labels.instance }}">{{ reReplaceAll "(.*?://)([^:/]+?)(:\\d+)?/.*" "$2" .Labels.instance }}</a></td>
   <td{{ if eq (. | value) 1.0 }}>Yes{{ else }} class="alert-danger">No{{ end }}</td>
-  <td>{{ template "prom_query_drilldown" (args (printf "100 * (1 - avg by(instance)(irate(node_cpu_seconds_total{job='node',mode='idle',instance='%s'}[5m])))" .Labels.instance) "%" "printf.1f") }}</td>
+  <td>{{ template "prom_query_drilldown" (args (printf "100 * (1 - avg by(instance) (sum without(mode) (irate(node_cpu_seconds_total{job='node',mode=~'idle|iowait|steal',instance='%s'}[5m]))))" .Labels.instance) "%" "printf.1f") }}</td>
   <td>{{ template "prom_query_drilldown" (args (printf "node_memory_MemFree_bytes{job='node',instance='%s'} + node_memory_Cached_bytes{job='node',instance='%s'} + node_memory_Buffers_bytes{job='node',instance='%s'}" .Labels.instance .Labels.instance .Labels.instance) "B" "humanize1024") }}</td>
 </tr>
 {{ else }}

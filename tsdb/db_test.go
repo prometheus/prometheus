@@ -107,10 +107,10 @@ func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[str
 				ts, v := it.At()
 				samples = append(samples, sample{t: ts, f: v})
 			case chunkenc.ValHistogram:
-				ts, h := it.AtHistogram()
+				ts, h := it.AtHistogram(nil)
 				samples = append(samples, sample{t: ts, h: h})
 			case chunkenc.ValFloatHistogram:
-				ts, fh := it.AtFloatHistogram()
+				ts, fh := it.AtFloatHistogram(nil)
 				samples = append(samples, sample{t: ts, fh: fh})
 			default:
 				t.Fatalf("unknown sample type in query %s", typ.String())
@@ -6664,10 +6664,10 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 						ts, v := it.At()
 						slice = append(slice, sample{t: ts, f: v})
 					case chunkenc.ValHistogram:
-						ts, h := it.AtHistogram()
+						ts, h := it.AtHistogram(nil)
 						slice = append(slice, sample{t: ts, h: h})
 					case chunkenc.ValFloatHistogram:
-						ts, h := it.AtFloatHistogram()
+						ts, h := it.AtFloatHistogram(nil)
 						slice = append(slice, sample{t: ts, fh: h})
 					default:
 						t.Fatalf("unexpected sample value type %d", typ)

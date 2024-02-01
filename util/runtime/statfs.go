@@ -12,7 +12,6 @@
 // limitations under the License.
 
 //go:build openbsd || windows || netbsd || solaris
-// +build openbsd windows netbsd solaris
 
 package runtime
 

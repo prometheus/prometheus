@@ -594,6 +594,8 @@ Same as `sort`, but sorts in descending order.
 
 Please note that the sort by label functions only affect the results of instant queries, as range query results always have a fixed output ordering.
 
+This function uses [natural sort order](https://en.wikipedia.org/wiki/Natural_sort_order).
+
 ## `sort_by_label_desc()`
 
 **This function has to be enabled via the [feature flag](../feature_flags/) `--enable-feature=promql-experimental-functions`.**
@@ -601,6 +603,8 @@ Please note that the sort by label functions only affect the results of instant 
 Same as `sort_by_label`, but sorts in descending order.
 
 Please note that the sort by label functions only affect the results of instant queries, as range query results always have a fixed output ordering.
+
+This function uses [natural sort order](https://en.wikipedia.org/wiki/Natural_sort_order).
 
 ## `sqrt()`
 
@@ -640,9 +644,14 @@ over time and return an instant vector with per-series aggregation results:
 * `quantile_over_time(scalar, range-vector)`: the φ-quantile (0 ≤ φ ≤ 1) of the values in the specified interval.
 * `stddev_over_time(range-vector)`: the population standard deviation of the values in the specified interval.
 * `stdvar_over_time(range-vector)`: the population standard variance of the values in the specified interval.
-* `mad_over_time(range-vector)`: the median absolute deviation of all points in the specified interval.
 * `last_over_time(range-vector)`: the most recent point value in the specified interval.
 * `present_over_time(range-vector)`: the value 1 for any series in the specified interval.
+
+If the [feature flag](../feature_flags/)
+`--enable-feature=promql-experimental-functions` is set, the following
+additional functions are available:
+
+* `mad_over_time(range-vector)`: the median absolute deviation of all points in the specified interval.
 
 Note that all values in the specified interval have the same weight in the
 aggregation even if the values are not equally spaced throughout the interval.

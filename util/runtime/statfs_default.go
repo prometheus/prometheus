@@ -12,7 +12,6 @@
 // limitations under the License.
 
 //go:build !windows && !openbsd && !netbsd && !solaris && !386
-// +build !windows,!openbsd,!netbsd,!solaris,!386
 
 package runtime
 

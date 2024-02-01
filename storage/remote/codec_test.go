@@ -19,6 +19,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
@@ -319,31 +320,31 @@ func TestConcreteSeriesIterator_HistogramSamples(t *testing.T) {
 
 	// Seek to the first sample with ts=1.
 	require.Equal(t, chunkenc.ValHistogram, it.Seek(1))
-	ts, v := it.AtHistogram()
+	ts, v := it.AtHistogram(nil)
 	require.Equal(t, int64(1), ts)
 	require.Equal(t, histograms[0], v)
 
 	// Seek one further, next sample still has ts=1.
 	require.Equal(t, chunkenc.ValHistogram, it.Next())
-	ts, v = it.AtHistogram()
+	ts, v = it.AtHistogram(nil)
 	require.Equal(t, int64(1), ts)
 	require.Equal(t, histograms[1], v)
 
 	// Seek again to 1 and make sure we stay where we are.
 	require.Equal(t, chunkenc.ValHistogram, it.Seek(1))
-	ts, v = it.AtHistogram()
+	ts, v = it.AtHistogram(nil)
 	require.Equal(t, int64(1), ts)
 	require.Equal(t, histograms[1], v)
 
 	// Another seek.
 	require.Equal(t, chunkenc.ValHistogram, it.Seek(3))
-	ts, v = it.AtHistogram()
+	ts, v = it.AtHistogram(nil)
 	require.Equal(t, int64(3), ts)
 	require.Equal(t, histograms[3], v)
 
 	// And we don't go back.
 	require.Equal(t, chunkenc.ValHistogram, it.Seek(2))
-	ts, v = it.AtHistogram()
+	ts, v = it.AtHistogram(nil)
 	require.Equal(t, int64(3), ts)
 	require.Equal(t, histograms[3], v)
 
@@ -388,12 +389,12 @@ func TestConcreteSeriesIterator_FloatAndHistogramSamples(t *testing.T) {
 		fh *histogram.FloatHistogram
 	)
 	require.Equal(t, chunkenc.ValHistogram, it.Next())
-	ts, h = it.AtHistogram()
+	ts, h = it.AtHistogram(nil)
 	require.Equal(t, int64(1), ts)
 	require.Equal(t, histograms[0], h)
 
 	require.Equal(t, chunkenc.ValHistogram, it.Next())
-	ts, h = it.AtHistogram()
+	ts, h = it.AtHistogram(nil)
 	require.Equal(t, int64(2), ts)
 	require.Equal(t, histograms[1], h)
 
@@ -434,13 +435,13 @@ func TestConcreteSeriesIterator_FloatAndHistogramSamples(t *testing.T) {
 	require.Equal(t, 8., v)
 
 	require.Equal(t, chunkenc.ValHistogram, it.Next())
-	ts, h = it.AtHistogram()
+	ts, h = it.AtHistogram(nil)
 	require.Equal(t, int64(16), ts)
 	require.Equal(t, histograms[10], h)
 
 	// Getting a float histogram from an int histogram works.
 	require.Equal(t, chunkenc.ValHistogram, it.Next())
-	ts, fh = it.AtFloatHistogram()
+	ts, fh = it.AtFloatHistogram(nil)
 	require.Equal(t, int64(17), ts)
 	expected := HistogramProtoToFloatHistogram(HistogramToHistogramProto(int64(17), histograms[11]))
 	require.Equal(t, expected, fh)
@@ -558,7 +559,7 @@ func TestMetricTypeToMetricTypeProto(t *testing.T) {
 }
 
 func TestDecodeWriteRequest(t *testing.T) {
-	buf, _, err := buildWriteRequest(writeRequestFixture.Timeseries, nil, nil, nil)
+	buf, _, _, err := buildWriteRequest(nil, writeRequestFixture.Timeseries, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	actual, err := DecodeWriteRequest(bytes.NewReader(buf))
@@ -567,7 +568,7 @@ func TestDecodeWriteRequest(t *testing.T) {
 }
 
 func TestDecodeMinWriteRequest(t *testing.T) {
-	buf, _, err := buildMinimizedWriteRequestStr(writeRequestMinimizedFixture.Timeseries, writeRequestMinimizedFixture.Symbols, nil, nil)
+	buf, _, _, err := buildMinimizedWriteRequestStr(log.NewNopLogger(), writeRequestMinimizedFixture.Timeseries, writeRequestMinimizedFixture.Symbols, nil, nil, nil)
 
 	require.NoError(t, err)
 

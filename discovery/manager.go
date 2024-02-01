@@ -64,8 +64,24 @@ func (p *Provider) Config() interface{} {
 	return p.config
 }
 
+// Registers the metrics needed for SD mechanisms.
+// Does not register the metrics for the Discovery Manager.
+// TODO(ptodev): Add ability to unregister the metrics?
+func CreateAndRegisterSDMetrics(reg prometheus.Registerer) (map[string]DiscovererMetrics, error) {
+	// Some SD mechanisms use the "refresh" package, which has its own metrics.
+	refreshSdMetrics := NewRefreshMetrics(reg)
+
+	// Register the metrics specific for each SD mechanism, and the ones for the refresh package.
+	sdMetrics, err := RegisterSDMetrics(reg, refreshSdMetrics)
+	if err != nil {
+		return nil, fmt.Errorf("failed to register service discovery metrics: %w", err)
+	}
+
+	return sdMetrics, nil
+}
+
 // NewManager is the Discovery Manager constructor.
-func NewManager(ctx context.Context, logger log.Logger, registerer prometheus.Registerer, options ...func(*Manager)) *Manager {
+func NewManager(ctx context.Context, logger log.Logger, registerer prometheus.Registerer, sdMetrics map[string]DiscovererMetrics, options ...func(*Manager)) *Manager {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -77,6 +93,7 @@ func NewManager(ctx context.Context, logger log.Logger, registerer prometheus.Re
 		updatert:    5 * time.Second,
 		triggerSend: make(chan struct{}, 1),
 		registerer:  registerer,
+		sdMetrics:   sdMetrics,
 	}
 	for _, option := range options {
 		option(mgr)
@@ -84,7 +101,7 @@ func NewManager(ctx context.Context, logger log.Logger, registerer prometheus.Re
 
 	// Register the metrics.
 	// We have to do this after setting all options, so that the name of the Manager is set.
-	if metrics, err := NewMetrics(registerer, mgr.name); err == nil {
+	if metrics, err := NewManagerMetrics(registerer, mgr.name); err == nil {
 		mgr.metrics = metrics
 	} else {
 		level.Error(logger).Log("msg", "Failed to create discovery manager metrics", "manager", mgr.name, "err", err)
@@ -143,7 +160,8 @@ type Manager struct {
 	// A registerer for all service discovery metrics.
 	registerer prometheus.Registerer
 
-	metrics *Metrics
+	metrics   *Metrics
+	sdMetrics map[string]DiscovererMetrics
 }
 
 // Providers returns the currently configured SD providers.
@@ -402,7 +420,7 @@ func (m *Manager) registerProviders(cfgs Configs, setName string) int {
 		d, err := cfg.NewDiscoverer(DiscovererOptions{
 			Logger:            log.With(m.logger, "discovery", typ, "config", setName),
 			HTTPClientOptions: m.httpOpts,
-			Registerer:        m.registerer,
+			Metrics:           m.sdMetrics[typ],
 		})
 		if err != nil {
 			level.Error(m.logger).Log("msg", "Cannot create service discovery", "err", err, "type", typ, "config", setName)

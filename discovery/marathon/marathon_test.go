@@ -23,7 +23,9 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -37,7 +39,19 @@ func testConfig() SDConfig {
 }
 
 func testUpdateServices(client appListClient) ([]*targetgroup.Group, error) {
-	md, err := NewDiscovery(testConfig(), nil, prometheus.NewRegistry())
+	cfg := testConfig()
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	err := metrics.Register()
+	if err != nil {
+		return nil, err
+	}
+	defer metrics.Unregister()
+	defer refreshMetrics.Unregister()
+
+	md, err := NewDiscovery(cfg, nil, metrics)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +144,15 @@ func TestMarathonSDSendGroup(t *testing.T) {
 }
 
 func TestMarathonSDRemoveApp(t *testing.T) {
-	md, err := NewDiscovery(testConfig(), nil, prometheus.NewRegistry())
+	cfg := testConfig()
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+	defer refreshMetrics.Unregister()
+
+	md, err := NewDiscovery(cfg, nil, metrics)
 	if err != nil {
 		t.Fatalf("%s", err)
 	}

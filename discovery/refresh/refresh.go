@@ -20,19 +20,17 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
 type Options struct {
-	Logger   log.Logger
-	Mech     string
-	Interval time.Duration
-	RefreshF func(ctx context.Context) ([]*targetgroup.Group, error)
-	Registry prometheus.Registerer
-	Metrics  []prometheus.Collector
+	Logger              log.Logger
+	Mech                string
+	Interval            time.Duration
+	RefreshF            func(ctx context.Context) ([]*targetgroup.Group, error)
+	MetricsInstantiator discovery.RefreshMetricsInstantiator
 }
 
 // Discovery implements the Discoverer interface.
@@ -40,15 +38,13 @@ type Discovery struct {
 	logger   log.Logger
 	interval time.Duration
 	refreshf func(ctx context.Context) ([]*targetgroup.Group, error)
-
-	failures prometheus.Counter
-	duration prometheus.Summary
-
-	metricRegisterer discovery.MetricRegisterer
+	metrics  *discovery.RefreshMetrics
 }
 
 // NewDiscovery returns a Discoverer function that calls a refresh() function at every interval.
 func NewDiscovery(opts Options) *Discovery {
+	m := opts.MetricsInstantiator.Instantiate(opts.Mech)
+
 	var logger log.Logger
 	if opts.Logger == nil {
 		logger = log.NewNopLogger()
@@ -60,44 +56,14 @@ func NewDiscovery(opts Options) *Discovery {
 		logger:   logger,
 		interval: opts.Interval,
 		refreshf: opts.RefreshF,
-		failures: prometheus.NewCounter(
-			prometheus.CounterOpts{
-				Name: "prometheus_sd_refresh_failures_total",
-				Help: "Number of refresh failures for the given SD mechanism.",
-				ConstLabels: prometheus.Labels{
-					"mechanism": opts.Mech,
-				},
-			}),
-		duration: prometheus.NewSummary(
-			prometheus.SummaryOpts{
-				Name:       "prometheus_sd_refresh_duration_seconds",
-				Help:       "The duration of a refresh in seconds for the given SD mechanism.",
-				Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
-				ConstLabels: prometheus.Labels{
-					"mechanism": opts.Mech,
-				},
-			}),
+		metrics:  m,
 	}
-
-	metrics := []prometheus.Collector{d.failures, d.duration}
-	if opts.Metrics != nil {
-		metrics = append(metrics, opts.Metrics...)
-	}
-
-	d.metricRegisterer = discovery.NewMetricRegisterer(opts.Registry, metrics)
 
 	return &d
 }
 
 // Run implements the Discoverer interface.
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
-	err := d.metricRegisterer.RegisterMetrics()
-	if err != nil {
-		level.Error(d.logger).Log("msg", "Unable to register metrics", "err", err.Error())
-		return
-	}
-	defer d.metricRegisterer.UnregisterMetrics()
-
 	// Get an initial set right away.
 	tgs, err := d.refresh(ctx)
 	if err != nil {
@@ -140,12 +106,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	now := time.Now()
 	defer func() {
-		d.duration.Observe(time.Since(now).Seconds())
+		d.metrics.Duration.Observe(time.Since(now).Seconds())
 	}()
 
 	tgs, err := d.refreshf(ctx)
 	if err != nil {
-		d.failures.Inc()
+		d.metrics.Failures.Inc()
 	}
 	return tgs, err
 }
