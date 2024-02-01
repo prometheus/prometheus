@@ -67,6 +67,9 @@ EXTERN_FUNCTION(void*, malloc, (size_t));
 EXTERN_FUNCTION(void*, realloc, (void*, size_t));
 EXTERN_FUNCTION(void*, calloc, (size_t n, size_t size));
 EXTERN_FUNCTION(int, posix_memalign, (void **__memptr, size_t __alignment, size_t __size));
+EXTERN_FUNCTION(void*, aligned_alloc, (size_t alignment, size_t size));
+EXTERN_FUNCTION(void*, valloc, (size_t size));
+EXTERN_FUNCTION(void*, memalign, (size_t alignment, size_t size));
 EXTERN_FUNCTION(void, free, (void*));
 }
 
@@ -94,6 +97,9 @@ OVERRIDE_ALLOCATOR_SYMBOL(void*, malloc, (size_t size), (size));
 OVERRIDE_ALLOCATOR_SYMBOL(void*, realloc, (void* ptr, size_t size), (ptr, size));
 OVERRIDE_ALLOCATOR_SYMBOL(void*, calloc, (size_t n, size_t size), (n, size));
 OVERRIDE_ALLOCATOR_SYMBOL(int, posix_memalign, (void **__memptr, size_t __alignment, size_t __size), (__memptr, __alignment, __size));
+OVERRIDE_ALLOCATOR_SYMBOL(void*, aligned_alloc, (size_t alignment, size_t size), (alignment, size));
+OVERRIDE_ALLOCATOR_SYMBOL(void*, valloc, (size_t size), (size));
+OVERRIDE_ALLOCATOR_SYMBOL(void*, memalign, (size_t alignment, size_t size), (alignment, size));
 OVERRIDE_ALLOCATOR_SYMBOL(void, free, (void *ptr), (ptr));
 
 #undef OVERRIDE_ALLOCATOR_SYMBOL
@@ -105,6 +111,9 @@ OVERRIDE_ALLOCATOR_SYMBOL(void, free, (void *ptr), (ptr));
   realloc_func = arch##_realloc; \
   calloc_func = arch##_calloc;   \
   posix_memalign_func = arch##_posix_memalign;   \
+  aligned_alloc_func = arch##_aligned_alloc;   \
+  valloc_func = arch##_valloc;   \
+  memalign_func = arch##_memalign;   \
   free_func = arch##_free;       \
   prompp_flavor = flavor;
 
