@@ -61,7 +61,6 @@ func TestConfiguredService(t *testing.T) {
 		"Expected service %s to be watched", "configuredServiceName")
 	require.False(t, consulDiscovery.shouldWatch("nonConfiguredServiceName", []string{""}),
 		"Expected service %s to not be watched", "nonConfiguredServiceName")
-
 }
 
 func TestConfiguredServiceWithTag(t *testing.T) {

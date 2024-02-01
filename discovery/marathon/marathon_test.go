@@ -112,11 +112,11 @@ func TestMarathonSDSendGroup(t *testing.T) {
 	}
 	tgs, err := testUpdateServices(client)
 	require.NoError(t, err)
-	require.Equal(t, 1, len(tgs), "Expected 1 target group.")
+	require.Len(t, tgs, 1, "Expected 1 target group.")
 
 	tg := tgs[0]
 	require.Equal(t, "test-service", tg.Source, "Wrong target group name.")
-	require.Equal(t, 1, len(tg.Targets), "Expected 1 target.")
+	require.Len(t, tg.Targets, 1, "Expected 1 target.")
 
 	tgt := tg.Targets[0]
 	require.Equal(t, "mesos-slave1:31000", string(tgt[model.AddressLabel]), "Wrong target address.")
@@ -140,7 +140,7 @@ func TestMarathonSDRemoveApp(t *testing.T) {
 	}
 	tgs, err := md.refresh(context.Background())
 	require.NoError(t, err, "Got error on first update.")
-	require.Equal(t, 1, len(tgs), "Expected 1 targetgroup.")
+	require.Len(t, tgs, 1, "Expected 1 targetgroup.")
 	tg1 := tgs[0]
 
 	md.appsClient = func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
@@ -148,7 +148,7 @@ func TestMarathonSDRemoveApp(t *testing.T) {
 	}
 	tgs, err = md.refresh(context.Background())
 	require.NoError(t, err, "Got error on second update.")
-	require.Equal(t, 1, len(tgs), "Expected 1 targetgroup.")
+	require.Len(t, tgs, 1, "Expected 1 targetgroup.")
 
 	tg2 := tgs[0]
 
@@ -189,11 +189,11 @@ func TestMarathonSDSendGroupWithMultiplePort(t *testing.T) {
 	}
 	tgs, err := testUpdateServices(client)
 	require.NoError(t, err)
-	require.Equal(t, 1, len(tgs), "Expected 1 target group.")
+	require.Len(t, tgs, 1, "Expected 1 target group.")
 
 	tg := tgs[0]
 	require.Equal(t, "test-service", tg.Source, "Wrong target group name.")
-	require.Equal(t, 2, len(tg.Targets), "Wrong number of targets.")
+	require.Len(t, tg.Targets, 2, "Wrong number of targets.")
 
 	tgt := tg.Targets[0]
 	require.Equal(t, "mesos-slave1:31000", string(tgt[model.AddressLabel]), "Wrong target address.")
@@ -234,7 +234,7 @@ func TestMarathonZeroTaskPorts(t *testing.T) {
 	}
 	tgs, err := testUpdateServices(client)
 	require.NoError(t, err)
-	require.Equal(t, 1, len(tgs), "Expected 1 target group.")
+	require.Len(t, tgs, 1, "Expected 1 target group.")
 
 	tg := tgs[0]
 	require.Equal(t, "test-service-zero-ports", tg.Source, "Wrong target group name.")
@@ -292,11 +292,11 @@ func TestMarathonSDSendGroupWithPortDefinitions(t *testing.T) {
 	}
 	tgs, err := testUpdateServices(client)
 	require.NoError(t, err)
-	require.Equal(t, 1, len(tgs), "Expected 1 target group.")
+	require.Len(t, tgs, 1, "Expected 1 target group.")
 
 	tg := tgs[0]
 	require.Equal(t, "test-service", tg.Source, "Wrong target group name.")
-	require.Equal(t, 2, len(tg.Targets), "Wrong number of targets.")
+	require.Len(t, tg.Targets, 2, "Wrong number of targets.")
 
 	tgt := tg.Targets[0]
 	require.Equal(t, "mesos-slave1:1234", string(tgt[model.AddressLabel]), "Wrong target address.")
@@ -346,11 +346,11 @@ func TestMarathonSDSendGroupWithPortDefinitionsRequirePorts(t *testing.T) {
 	}
 	tgs, err := testUpdateServices(client)
 	require.NoError(t, err)
-	require.Equal(t, 1, len(tgs), "Expected 1 target group.")
+	require.Len(t, tgs, 1, "Expected 1 target group.")
 
 	tg := tgs[0]
 	require.Equal(t, "test-service", tg.Source, "Wrong target group name.")
-	require.Equal(t, 2, len(tg.Targets), "Wrong number of targets.")
+	require.Len(t, tg.Targets, 2, "Wrong number of targets.")
 
 	tgt := tg.Targets[0]
 	require.Equal(t, "mesos-slave1:31000", string(tgt[model.AddressLabel]), "Wrong target address.")
@@ -393,11 +393,11 @@ func TestMarathonSDSendGroupWithPorts(t *testing.T) {
 	}
 	tgs, err := testUpdateServices(client)
 	require.NoError(t, err)
-	require.Equal(t, 1, len(tgs), "Expected 1 target group.")
+	require.Len(t, tgs, 1, "Expected 1 target group.")
 
 	tg := tgs[0]
 	require.Equal(t, "test-service", tg.Source, "Wrong target group name.")
-	require.Equal(t, 2, len(tg.Targets), "Wrong number of targets.")
+	require.Len(t, tg.Targets, 2, "Wrong number of targets.")
 
 	tgt := tg.Targets[0]
 	require.Equal(t, "mesos-slave1:31000", string(tgt[model.AddressLabel]), "Wrong target address.")
@@ -449,11 +449,11 @@ func TestMarathonSDSendGroupWithContainerPortMappings(t *testing.T) {
 	}
 	tgs, err := testUpdateServices(client)
 	require.NoError(t, err)
-	require.Equal(t, 1, len(tgs), "Expected 1 target group.")
+	require.Len(t, tgs, 1, "Expected 1 target group.")
 
 	tg := tgs[0]
 	require.Equal(t, "test-service", tg.Source, "Wrong target group name.")
-	require.Equal(t, 2, len(tg.Targets), "Wrong number of targets.")
+	require.Len(t, tg.Targets, 2, "Wrong number of targets.")
 
 	tgt := tg.Targets[0]
 	require.Equal(t, "mesos-slave1:12345", string(tgt[model.AddressLabel]), "Wrong target address.")
@@ -505,11 +505,11 @@ func TestMarathonSDSendGroupWithDockerContainerPortMappings(t *testing.T) {
 	}
 	tgs, err := testUpdateServices(client)
 	require.NoError(t, err)
-	require.Equal(t, 1, len(tgs), "Expected 1 target group.")
+	require.Len(t, tgs, 1, "Expected 1 target group.")
 
 	tg := tgs[0]
 	require.Equal(t, "test-service", tg.Source, "Wrong target group name.")
-	require.Equal(t, 2, len(tg.Targets), "Wrong number of targets.")
+	require.Len(t, tg.Targets, 2, "Wrong number of targets.")
 
 	tgt := tg.Targets[0]
 	require.Equal(t, "mesos-slave1:31000", string(tgt[model.AddressLabel]), "Wrong target address.")
@@ -565,11 +565,11 @@ func TestMarathonSDSendGroupWithContainerNetworkAndPortMapping(t *testing.T) {
 	}
 	tgs, err := testUpdateServices(client)
 	require.NoError(t, err)
-	require.Equal(t, 1, len(tgs), "Expected 1 target group.")
+	require.Len(t, tgs, 1, "Expected 1 target group.")
 
 	tg := tgs[0]
 	require.Equal(t, "test-service", tg.Source, "Wrong target group name.")
-	require.Equal(t, 2, len(tg.Targets), "Wrong number of targets.")
+	require.Len(t, tg.Targets, 2, "Wrong number of targets.")
 
 	tgt := tg.Targets[0]
 	require.Equal(t, "1.2.3.4:8080", string(tgt[model.AddressLabel]), "Wrong target address.")
