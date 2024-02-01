@@ -657,6 +657,7 @@ func isTimeSeriesOldFilter(metrics *queueManagerMetrics, baseTime time.Time, sam
 		return false
 	}
 }
+
 func isV2TimeSeriesOldFilter(metrics *queueManagerMetrics, baseTime time.Time, sampleAgeLimit time.Duration) func(ts writev2.TimeSeries) bool {
 	return func(ts writev2.TimeSeries) bool {
 		if sampleAgeLimit == 0 {
