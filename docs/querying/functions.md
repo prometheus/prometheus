@@ -175,6 +175,27 @@ Special cases are:
 `floor(v instant-vector)` rounds the sample values of all elements in `v` down
 to the nearest integer.
 
+## `histogram_avg()`
+
+_This function only acts on native histograms, which are an experimental
+feature. The behavior of this function may change in future versions of
+Prometheus, including its removal from PromQL._
+
+`histogram_avg(v instant-vector)` returns the arithmetic average of observed values stored in
+a native histogram. Samples that are not native histograms are ignored and do
+not show up in the returned vector.
+
+Use `histogram_avg` as demonstrated below to compute the average request duration
+over a 5-minute window from a native histogram:
+
+    histogram_avg(rate(http_request_duration_seconds[5m]))
+
+Which is equivalent to the following query:
+
+      histogram_sum(rate(http_request_duration_seconds[5m]))
+    /
+      histogram_count(rate(http_request_duration_seconds[5m]))
+
 ## `histogram_count()` and `histogram_sum()`
 
 _Both functions only act on native histograms, which are an experimental
@@ -192,13 +213,6 @@ Use `histogram_count` in the following way to calculate a rate of observations
 (in this case corresponding to “requests per second”) from a native histogram:
 
     histogram_count(rate(http_request_duration_seconds[10m]))
-
-The additional use of `histogram_sum` enables the calculation of the average of
-observed values (in this case corresponding to “average request duration”):
-
-      histogram_sum(rate(http_request_duration_seconds[10m]))
-	/
-      histogram_count(rate(http_request_duration_seconds[10m]))
 
 ## `histogram_fraction()`
 
