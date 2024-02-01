@@ -192,9 +192,9 @@ over a 5-minute window from a native histogram:
 
 Which is equivalent to the following query:
 
-    histogram_sum(rate(http_request_duration_seconds[5m]))
+      histogram_sum(rate(http_request_duration_seconds[5m]))
     /
-    histogram_count(rate(http_request_duration_seconds[5m]))
+      histogram_count(rate(http_request_duration_seconds[5m]))
 
 ## `histogram_count()` and `histogram_sum()`
 
