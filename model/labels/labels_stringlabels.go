@@ -188,8 +188,7 @@ func (ls Labels) BytesWithoutLabels(buf []byte, names ...string) []byte {
 
 // Copy returns a copy of the labels.
 func (ls Labels) Copy() Labels {
-	buf := append([]byte{}, ls.data...)
-	return Labels{data: yoloString(buf)}
+	return Labels{data: strings.Clone(ls.data)}
 }
 
 // Get returns the value for the label with the given name.
