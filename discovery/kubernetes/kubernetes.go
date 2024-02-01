@@ -767,6 +767,21 @@ func (d *Discovery) newPodsByNodeInformer(plw *cache.ListWatch) cache.SharedInde
 
 func (d *Discovery) newEndpointsByNodeInformer(plw *cache.ListWatch) cache.SharedIndexInformer {
 	indexers := make(map[string]cache.IndexFunc)
+	indexers[podIndex] = func(obj interface{}) ([]string, error) {
+		e, ok := obj.(*apiv1.Endpoints)
+		if !ok {
+			return nil, fmt.Errorf("object is not endpoints")
+		}
+		var pods []string
+		for _, target := range e.Subsets {
+			for _, addr := range target.Addresses {
+				if addr.TargetRef != nil && addr.TargetRef.Kind == "Pod" {
+					pods = append(pods, namespacedName(addr.TargetRef.Namespace, addr.TargetRef.Name))
+				}
+			}
+		}
+		return pods, nil
+	}
 	if !d.attachMetadata.Node {
 		return cache.NewSharedIndexInformer(plw, &apiv1.Endpoints{}, resyncDisabled, indexers)
 	}
@@ -871,4 +886,8 @@ func addObjectMetaLabels(labelSet model.LabelSet, objectMeta metav1.ObjectMeta, 
 		labelSet[model.LabelName(metaLabelPrefix+string(role)+"_annotation_"+ln)] = lv(v)
 		labelSet[model.LabelName(metaLabelPrefix+string(role)+"_annotationpresent_"+ln)] = presentValue
 	}
+}
+
+func namespacedName(namespace, name string) string {
+	return namespace + "/" + name
 }
