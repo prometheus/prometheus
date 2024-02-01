@@ -1111,7 +1111,7 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 	matrixes := make([]Matrix, len(exprs))
 	origMatrixes := make([]Matrix, len(exprs))
-	originalNumSamples := ev.currentSamples
+	rangeEvalSamples := 0
 
 	var warnings annotations.Annotations
 	for i, e := range exprs {
@@ -1121,6 +1121,13 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 			val, ws := ev.eval(e)
 			warnings.Merge(ws)
 			matrixes[i] = val.(Matrix)
+
+			// Since we are copying the samples in memory here, check for ErrTooManySamples.
+			rangeEvalSamples += matrixes[i].TotalSamples()
+			if rangeEvalSamples+ev.currentSamples > ev.maxSamples {
+				ev.error(ErrTooManySamples(env))
+			}
+			ev.samplesStats.UpdatePeak(ev.currentSamples + rangeEvalSamples)
 
 			// Keep a copy of the original point slices so that they
 			// can be returned to the pool.
@@ -1146,7 +1153,6 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 		ts int64
 	}
 	seriess := make(map[uint64]seriesAndTimestamp, biggestLen) // Output series by series hash.
-	tempNumSamples := ev.currentSamples
 
 	var (
 		seriesHelpers [][]EvalSeriesHelper
@@ -1173,8 +1179,6 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 		if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
 			ev.error(err)
 		}
-		// Reset number of samples in memory after each timestamp.
-		ev.currentSamples = tempNumSamples
 		// Gather input vectors for this timestamp.
 		for i := range exprs {
 			vectors[i] = vectors[i][:0]
@@ -1199,13 +1203,8 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 				if prepSeries != nil {
 					bufHelpers[i] = append(bufHelpers[i], seriesHelpers[i][si])
 				}
-				ev.currentSamples++
-				if ev.currentSamples > ev.maxSamples {
-					ev.error(ErrTooManySamples(env))
-				}
 			}
 			args[i] = vectors[i]
-			ev.samplesStats.UpdatePeak(ev.currentSamples)
 		}
 
 		// Make the function call.
@@ -1215,16 +1214,13 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 		warnings.Merge(ws)
 
 		vecNumSamples := result.TotalSamples()
-		ev.currentSamples += vecNumSamples
-		// When we reset currentSamples to tempNumSamples during the next iteration of the loop it also
-		// needs to include the samples from the result here, as they're still in memory.
-		tempNumSamples += vecNumSamples
-		ev.samplesStats.UpdatePeak(ev.currentSamples)
-
-		if ev.currentSamples > ev.maxSamples {
+		// We need to include the samples from the result here, as they're still in memory,
+		// and will be used to construct the result of the query.
+		rangeEvalSamples += vecNumSamples
+		if rangeEvalSamples+ev.currentSamples > ev.maxSamples {
 			ev.error(ErrTooManySamples(env))
 		}
-		ev.samplesStats.UpdatePeak(ev.currentSamples)
+		ev.samplesStats.UpdatePeak(ev.currentSamples + rangeEvalSamples)
 
 		// If this could be an instant query, shortcut so as not to change sort order.
 		if ev.endTimestamp == ev.startTimestamp {
@@ -1239,8 +1235,7 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 					mat[i] = Series{Metric: s.Metric, Histograms: []HPoint{{T: ts, H: s.H}}}
 				}
 			}
-			ev.currentSamples = originalNumSamples + mat.TotalSamples()
-			ev.samplesStats.UpdatePeak(ev.currentSamples)
+			ev.currentSamples += mat.TotalSamples()
 			return mat, warnings
 		}
 
@@ -1283,8 +1278,7 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 	for _, ss := range seriess {
 		mat = append(mat, ss.Series)
 	}
-	ev.currentSamples = originalNumSamples + mat.TotalSamples()
-	ev.samplesStats.UpdatePeak(ev.currentSamples)
+	ev.currentSamples += mat.TotalSamples()
 	return mat, warnings
 }
 

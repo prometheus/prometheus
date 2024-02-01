@@ -999,7 +999,7 @@ load 10s
 		{
 			Query:        "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s]))",
 			Start:        time.Unix(201, 0),
-			PeakSamples:  52,
+			PeakSamples:  55,
 			TotalSamples: 72, // 2 * (3 sample per query * 12 queries (60/5))
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 72,
@@ -1039,7 +1039,7 @@ load 10s
 			Start:        time.Unix(201, 0),
 			End:          time.Unix(220, 0),
 			Interval:     5 * time.Second,
-			PeakSamples:  5,
+			PeakSamples:  8,
 			TotalSamples: 4, // (1 sample / 10 seconds) * 4 steps
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 1,
@@ -1165,7 +1165,7 @@ load 10s
 			Start:        time.Unix(201, 0),
 			End:          time.Unix(220, 0),
 			Interval:     5 * time.Second,
-			PeakSamples:  76,
+			PeakSamples:  88,
 			TotalSamples: 288, // 2 * (3 sample per query * 12 queries (60/5) * 4 steps)
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 72,
@@ -1371,6 +1371,19 @@ load 10s
 			Query:      `rate(rate(bigmetric[10s:1s] @ 10)[100s:25s] @ 1000)[17s:1s] @ 2000`,
 			MaxSamples: 36,
 			Start:      time.Unix(10, 0),
+		},
+		{
+			//   5 samples loaded for LHS bigmetric{a="1"} for ts = 0, 5s, 10s, 15s, 20s
+			// + 5 samples loaded for LHS bigmetric{a="2"} for ts = 0, 5s, 10s, 15s, 20s
+			// + 5 samples loaded for RHS bigmetric{a="1"} for ts = 0, 5s, 10s, 15s, 20s
+			// + 5 samples loaded for RHS bigmetric{a="2"} for ts = 0, 5s, 10s, 15s, 20s
+			// + 20 samples from the metrics 🔝 stored into slice origMatrixes to prepare to send to + function
+			// + 10 samples (2 samples each from 5 calls to +) stored to generate the result matrix
+			Query:      `bigmetric + bigmetric`,
+			MaxSamples: 50,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(20, 0),
+			Interval:   5 * time.Second,
 		},
 	}
 
