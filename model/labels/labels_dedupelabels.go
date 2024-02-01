@@ -81,10 +81,10 @@ func (t *SymbolTable) toNumUnlocked(name string) int {
 	}
 	i := t.nextNum
 	if t.nextNum == cap(t.byNum) {
-		// Name table is full; copy to a new one.  Don't touch the existing slice.
-		oldSlice := t.byNum
-		t.nameTable = &nameTable{byNum: make([]string, cap(oldSlice)*2), symbolTable: t}
-		copy(t.nameTable.byNum, oldSlice)
+		// Name table is full; copy to a new one. Don't touch the existing slice, as nameTable is immutable after construction.
+		newSlice := make([]string, cap(t.byNum)*2)
+		copy(newSlice, t.byNum)
+		t.nameTable = &nameTable{byNum: newSlice, symbolTable: t}
 	}
 	name = strings.Clone(name)
 	t.byNum[i] = name
@@ -112,18 +112,18 @@ func decodeVarint(data string, index int) (int, int) {
 	if b < 0x80 {
 		return int(b), index
 	}
-	size := int(b & 0x7F)
+	value := int(b & 0x7F)
 	for shift := uint(7); ; shift += 7 {
 		// Just panic if we go of the end of data, since all Labels strings are constructed internally and
 		// malformed data indicates a bug, or memory corruption.
 		b := data[index]
 		index++
-		size |= int(b&0x7F) << shift
+		value |= int(b&0x7F) << shift
 		if b < 0x80 {
 			break
 		}
 	}
-	return size, index
+	return value, index
 }
 
 func decodeString(t *nameTable, data string, index int) (string, int) {
@@ -304,8 +304,7 @@ func (ls Labels) BytesWithoutLabels(buf []byte, names ...string) []byte {
 
 // Copy returns a copy of the labels.
 func (ls Labels) Copy() Labels {
-	buf := append([]byte{}, ls.data...)
-	return Labels{syms: ls.syms, data: yoloString(buf)}
+	return Labels{syms: ls.syms, data: strings.Clone(ls.data)}
 }
 
 // Get returns the value for the label with the given name.
