@@ -265,7 +265,7 @@ func (si *SegmentInfo) ReadFrom(ctx context.Context, r io.Reader) error {
 	}
 
 	data := make([]byte, SegmentInfoSize)
-	if _, err := r.Read(data); err != nil {
+	if _, err := io.ReadFull(r, data); err != nil {
 		return err
 	}
 	si.unmarshalBinaryInfo(data)

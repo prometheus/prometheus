@@ -157,7 +157,7 @@ func list(ctx context.Context, r *bufio.Reader, size int) error {
 
 		// move cursor position
 		move := int(h.GetSize() - uint32(n))
-		off += h.SizeOf() + move
+		off += int(h.FrameSize())
 		if off > size {
 			return errors.New("data oversize")
 		}
