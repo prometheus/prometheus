@@ -715,17 +715,11 @@ func (w *Writer) writeLabelIndexesOffsetTable() error {
 	}
 
 	// Write out the length.
-	w.buf1.Reset()
-	l := w.f.pos - startPos - 4
-	if l > math.MaxUint32 {
-		return fmt.Errorf("label indexes offset table size exceeds 4 bytes: %d", l)
+	err := w.writeLengthAndHash(startPos)
+	if err != nil {
+		return fmt.Errorf("label indexes offset table length/crc32 write error: %w", err)
 	}
-	w.buf1.PutBE32int(int(l))
-	if err := w.writeAt(w.buf1.Get(), startPos); err != nil {
-		return err
-	}
-
-	return w.writeLenghtAndHash(startPos)
+	return nil
 }
 
 // writePostingsOffsetTable writes the postings offset table.
@@ -793,25 +787,31 @@ func (w *Writer) writePostingsOffsetTable() error {
 	}
 	w.fPO = nil
 
-	return w.writeLenghtAndHash(startPos)
+	err = w.writeLengthAndHash(startPos)
+	if err != nil {
+		return fmt.Errorf("postings offset table length/crc32 write error: %w", err)
+	}
+	return nil
 }
 
-func (w *Writer) writeLenghtAndHash(startPos uint64) error {
-	// Write out the length.
+func (w *Writer) writeLengthAndHash(startPos uint64) error {
 	w.buf1.Reset()
 	l := w.f.pos - startPos - 4
 	if l > math.MaxUint32 {
-		return fmt.Errorf("postings offset table size exceeds 4 bytes: %d", l)
+		return fmt.Errorf("length size exceeds 4 bytes: %d", l)
 	}
 	w.buf1.PutBE32int(int(l))
 	if err := w.writeAt(w.buf1.Get(), startPos); err != nil {
-		return err
+		return fmt.Errorf("write length from buffer error: %w", err)
 	}
 
 	// Write out the hash.
 	w.buf1.Reset()
 	w.buf1.PutHashSum(w.crc32)
-	return w.write(w.buf1.Get())
+	if err := w.write(w.buf1.Get()); err != nil {
+		return fmt.Errorf("write buffer's crc32 error: %w", err)
+	}
+	return nil
 }
 
 const indexTOCLen = 6*8 + crc32.Size
