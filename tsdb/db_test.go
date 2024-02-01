@@ -3480,7 +3480,7 @@ func testQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t 
 	// when the iterator tries to fetch an head chunk which has been offloaded because
 	// of the head compaction in the meanwhile.
 	if firstErr != nil {
-		require.ErrorContains(t, firstErr, "cannot populate chunk", "unexpected error: %s", firstErr.Error())
+		require.ErrorContains(t, firstErr, "cannot populate chunk")
 	}
 }
 

@@ -3084,7 +3084,7 @@ func TestClose(t *testing.T) {
 	createBlock(t, dir, genSeries(1, 1, 10, 20))
 
 	db, err := Open(dir, nil, nil, DefaultOptions(), nil)
-	require.NoError(t, err, "Opening test storage failed: %s", err)
+	require.NoError(t, err, "Opening test storage failed: %s")
 	defer func() {
 		require.NoError(t, db.Close())
 	}()

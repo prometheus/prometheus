@@ -73,6 +73,6 @@ Loop:
 	require.Error(t, err, "prometheus didn't shutdown gracefully after sending the Interrupt signal")
 	// TODO - find a better way to detect when the process didn't exit as expected!
 	if stoppedErr != nil {
-		require.EqualError(t, stoppedErr, "signal: interrupt", "prometheus exited with an unexpected error: %v", stoppedErr)
+		require.EqualError(t, stoppedErr, "signal: interrupt", "prometheus exit")
 	}
 }

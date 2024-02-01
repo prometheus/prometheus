@@ -186,10 +186,9 @@ func TestReader(t *testing.T) {
 					require.Equal(t, c.exp[j], rec, "Bytes within record did not match expected Bytes")
 				}
 				if !c.fail {
-					require.NoError(t, r.Err(), "unexpected error: %s", r.Err())
-				}
-				if c.fail {
-					require.Error(t, r.Err(), "expected error but got none")
+					require.NoError(t, r.Err())
+				} else {
+					require.Error(t, r.Err())
 				}
 			})
 		}

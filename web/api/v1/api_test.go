@@ -295,7 +295,7 @@ func (m *rulesRetrieverMock) CreateRuleGroups() {
 	}
 
 	recordingExpr, err := parser.ParseExpr(`vector(1)`)
-	require.NoError(m.testing, err, "unable to parse alert expression: %s", err)
+	require.NoError(m.testing, err, "unable to parse alert expression")
 	recordingRule := rules.NewRecordingRule("recording-rule-1", recordingExpr, labels.Labels{})
 	r = append(r, recordingRule)
 
@@ -3238,10 +3238,10 @@ func TestRespondError(t *testing.T) {
 	defer s.Close()
 
 	resp, err := http.Get(s.URL)
-	require.NoError(t, err, "Error on test request: %s", err)
+	require.NoError(t, err, "Error on test request")
 	body, err := io.ReadAll(resp.Body)
 	defer resp.Body.Close()
-	require.NoError(t, err, "Error reading response body: %s", err)
+	require.NoError(t, err, "Error reading response body")
 	want, have := http.StatusServiceUnavailable, resp.StatusCode
 	require.Equal(t, want, have, "Return code %d expected in error response but got %d", want, have)
 	h := resp.Header.Get("Content-Type")
@@ -3249,7 +3249,7 @@ func TestRespondError(t *testing.T) {
 
 	var res Response
 	err = json.Unmarshal(body, &res)
-	require.NoError(t, err, "Error unmarshaling JSON body: %s", err)
+	require.NoError(t, err, "Error unmarshaling JSON body")
 
 	exp := &Response{
 		Status:    statusError,
@@ -3379,7 +3379,7 @@ func TestParseTime(t *testing.T) {
 	for _, test := range tests {
 		ts, err := parseTime(test.input)
 		if !test.fail {
-			require.NoError(t, err, "Unexpected error for %q: %s", test.input, err)
+			require.NoError(t, err, "Unexpected error for %q", test.input)
 			require.NotNil(t, ts)
 			require.True(t, ts.Equal(test.result), "Expected time %v for input %q but got %v", test.result, test.input, ts)
 			continue
@@ -3429,7 +3429,7 @@ func TestParseDuration(t *testing.T) {
 	for _, test := range tests {
 		d, err := parseDuration(test.input)
 		if !test.fail {
-			require.NoError(t, err, "Unexpected error for %q: %s", test.input, err)
+			require.NoError(t, err, "Unexpected error for %q", test.input)
 			require.Equal(t, test.result, d, "Expected duration %v for input %q but got %v", test.result, test.input, d)
 			continue
 		}

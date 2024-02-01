@@ -33,12 +33,12 @@ func TestLocking(t *testing.T) {
 	require.Error(t, err, "File %q unexpectedly exists.", fileName)
 
 	lock, existed, err := Flock(fileName)
-	require.NoError(t, err, "Error locking file %q: %s", fileName, err)
+	require.NoError(t, err, "Error locking file %q", fileName)
 	require.False(t, existed, "File %q reported as existing during locking.", fileName)
 
 	// File must now exist.
 	_, err = os.Stat(fileName)
-	require.NoError(t, err, "Could not stat file %q expected to exist: %s", fileName, err)
+	require.NoError(t, err, "Could not stat file %q expected to exist", fileName)
 
 	// Try to lock again.
 	lockedAgain, existed, err := Flock(fileName)
@@ -47,17 +47,17 @@ func TestLocking(t *testing.T) {
 	require.True(t, existed, "Existing file %q not recognized.", fileName)
 
 	err = lock.Release()
-	require.NoError(t, err, "Error releasing lock for file %q: %s", fileName, err)
+	require.NoError(t, err, "Error releasing lock for file %q", fileName)
 
 	// File must still exist.
 	_, err = os.Stat(fileName)
-	require.NoError(t, err, "Could not stat file %q expected to exist: %s", fileName, err)
+	require.NoError(t, err, "Could not stat file %q expected to exist", fileName)
 
 	// Lock existing file.
 	lock, existed, err = Flock(fileName)
-	require.NoError(t, err, "Error locking file %q: %s", fileName, err)
+	require.NoError(t, err, "Error locking file %q", fileName)
 	require.True(t, existed, "Existing file %q not recognized.", fileName)
 
 	err = lock.Release()
-	require.NoError(t, err, "Error releasing lock for file %q: %s", fileName, err)
+	require.NoError(t, err, "Error releasing lock for file %q", fileName)
 }
