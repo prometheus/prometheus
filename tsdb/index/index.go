@@ -50,6 +50,8 @@ const (
 	FormatV2 = 2
 
 	indexFilename = "index"
+
+	seriesByteAlign = 16
 )
 
 type indexWriterSeries struct {
@@ -436,11 +438,11 @@ func (w *Writer) AddSeries(ref storage.SeriesRef, lset labels.Labels, chunks ...
 	}
 	// We add padding to 16 bytes to increase the addressable space we get through 4 byte
 	// series references.
-	if err := w.addPadding(16); err != nil {
+	if err := w.addPadding(seriesByteAlign); err != nil {
 		return fmt.Errorf("failed to write padding bytes: %w", err)
 	}
 
-	if w.f.pos%16 != 0 {
+	if w.f.pos%seriesByteAlign != 0 {
 		return fmt.Errorf("series write not 16-byte aligned at %d", w.f.pos)
 	}
 
@@ -711,6 +713,7 @@ func (w *Writer) writeLabelIndexesOffsetTable() error {
 			return err
 		}
 	}
+
 	// Write out the length.
 	w.buf1.Reset()
 	l := w.f.pos - startPos - 4
@@ -722,9 +725,7 @@ func (w *Writer) writeLabelIndexesOffsetTable() error {
 		return err
 	}
 
-	w.buf1.Reset()
-	w.buf1.PutHashSum(w.crc32)
-	return w.write(w.buf1.Get())
+	return w.writeLenghtAndHash(startPos)
 }
 
 // writePostingsOffsetTable writes the postings offset table.
@@ -792,6 +793,10 @@ func (w *Writer) writePostingsOffsetTable() error {
 	}
 	w.fPO = nil
 
+	return w.writeLenghtAndHash(startPos)
+}
+
+func (w *Writer) writeLenghtAndHash(startPos uint64) error {
 	// Write out the length.
 	w.buf1.Reset()
 	l := w.f.pos - startPos - 4
@@ -803,7 +808,7 @@ func (w *Writer) writePostingsOffsetTable() error {
 		return err
 	}
 
-	// Finally write the hash.
+	// Write out the hash.
 	w.buf1.Reset()
 	w.buf1.PutHashSum(w.crc32)
 	return w.write(w.buf1.Get())
@@ -849,10 +854,10 @@ func (w *Writer) writePostingsToTmpFiles() error {
 	for d.Len() > 0 {
 		d.ConsumePadding()
 		startPos := w.toc.LabelIndices - uint64(d.Len())
-		if startPos%16 != 0 {
+		if startPos%seriesByteAlign != 0 {
 			return fmt.Errorf("series not 16-byte aligned at %d", startPos)
 		}
-		offsets = append(offsets, uint32(startPos/16))
+		offsets = append(offsets, uint32(startPos/seriesByteAlign))
 		// Skip to next series.
 		x := d.Uvarint()
 		d.Skip(x + crc32.Size)
@@ -911,7 +916,7 @@ func (w *Writer) writePostingsToTmpFiles() error {
 					if _, ok := postings[lno]; !ok {
 						postings[lno] = map[uint32][]uint32{}
 					}
-					postings[lno][lvo] = append(postings[lno][lvo], uint32(startPos/16))
+					postings[lno][lvo] = append(postings[lno][lvo], uint32(startPos/seriesByteAlign))
 				}
 			}
 			// Skip to next series.
@@ -948,7 +953,6 @@ func (w *Writer) writePostingsToTmpFiles() error {
 			return w.ctx.Err()
 		default:
 		}
-
 	}
 	return nil
 }
@@ -1556,7 +1560,7 @@ func (r *Reader) LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([
 		// In version 2 series IDs are no longer exact references but series are 16-byte padded
 		// and the ID is the multiple of 16 of the actual position.
 		if r.version == FormatV2 {
-			offset = id * 16
+			offset = id * seriesByteAlign
 		}
 
 		d := encoding.NewDecbufUvarintAt(r.b, int(offset), castagnoliTable)
@@ -1595,7 +1599,7 @@ func (r *Reader) LabelValueFor(ctx context.Context, id storage.SeriesRef, label 
 	// In version 2 series IDs are no longer exact references but series are 16-byte padded
 	// and the ID is the multiple of 16 of the actual position.
 	if r.version == FormatV2 {
-		offset = id * 16
+		offset = id * seriesByteAlign
 	}
 	d := encoding.NewDecbufUvarintAt(r.b, int(offset), castagnoliTable)
 	buf := d.Get()
@@ -1621,7 +1625,7 @@ func (r *Reader) Series(id storage.SeriesRef, builder *labels.ScratchBuilder, ch
 	// In version 2 series IDs are no longer exact references but series are 16-byte padded
 	// and the ID is the multiple of 16 of the actual position.
 	if r.version == FormatV2 {
-		offset = id * 16
+		offset = id * seriesByteAlign
 	}
 	d := encoding.NewDecbufUvarintAt(r.b, int(offset), castagnoliTable)
 	if d.Err() != nil {
