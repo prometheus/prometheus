@@ -253,7 +253,7 @@ func NewAPI(
 	registerer prometheus.Registerer,
 	statsRenderer StatsRenderer,
 	rwEnabled bool,
-	rwFormat remote.RemoteWriteFormat,
+	rwFormat config.RemoteWriteFormat,
 	otlpEnabled bool,
 ) *API {
 	a := &API{

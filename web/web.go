@@ -57,7 +57,6 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/httputil"
 	api_v1 "github.com/prometheus/prometheus/web/api/v1"
@@ -262,7 +261,8 @@ type Options struct {
 	EnableOTLPWriteReceiver    bool
 	IsAgent                    bool
 	AppName                    string
-	RemoteWriteFormat          remote.RemoteWriteFormat
+	// TODO(cstyan): should this change to a list of tuples, maybe via the content negotiation PR?
+	RemoteWriteFormat config.RemoteWriteFormat
 
 	Gatherer   prometheus.Gatherer
 	Registerer prometheus.Registerer
