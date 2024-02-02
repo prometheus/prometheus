@@ -14,7 +14,7 @@ systems via the [HTTP API](api.md).
 
 ## Examples
 
-This document is a Promethues basic language reference. For learning, it may be easier to
+This document is a Prometheus basic language reference. For learning, it may be easier to
 start with a couple of [examples](examples.md).
 
 ## Expression language data types
@@ -334,7 +334,7 @@ PromQL supports line comments that start with `#`. Example:
 The timestamps at which to sample data, during a query, are selected
 independently of the actual present time series data. This method principally supports
 cases like aggregation (`sum`, `avg`, and so on), where multiple aggregated
-time series do not precisely precisely in time. Because of their independence,
+time series do not precisely align in time. Because of their independence,
 Prometheus needs to assign a value at those timestamps for each relevant time
 series. It does so by taking the newest sample before this timestamp.
 
@@ -347,10 +347,10 @@ If a query is evaluated at a sampling timestamp after a time series is marked
 as stale, then no value is returned for that time series. If new samples are
 subsequently ingested for that time series, they will be returned as expected.
 
-A time series will go stale when they're no longer exposed / the target no
-longer exists. This effectively means that time series "disappears" from graphs 
-at the times of their latest collected sample, and they will not show up in queries
-over a time interval they are marked stale.
+If no sample is found (by default) 5 minutes before a sampling timestamp,
+no value is returned for that time series at this point in time. This
+effectively means that time series "disappear" from graphs at times where their
+latest collected sample is older than 5 minutes or after they are marked stale.
 
 Staleness will not be marked for time series that have timestamps included in
 their scrapes. Only the 5 minute threshold will be applied in that case.
