@@ -89,7 +89,9 @@ func (f *fanout) Querier(mint, maxt int64) (Querier, error) {
 			}
 			return nil, errs.Err()
 		}
-		secondaries = append(secondaries, querier)
+		if _, ok := querier.(noopQuerier); !ok {
+			secondaries = append(secondaries, querier)
+		}
 	}
 	return NewMergeQuerier([]Querier{primary}, secondaries, ChainedSeriesMerge), nil
 }

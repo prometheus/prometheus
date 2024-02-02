@@ -464,11 +464,11 @@ func (ssi *storageSeriesIterator) At() (t int64, v float64) {
 	return ssi.currT, ssi.currF
 }
 
-func (ssi *storageSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
+func (ssi *storageSeriesIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	panic(errors.New("storageSeriesIterator: AtHistogram not supported"))
 }
 
-func (ssi *storageSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+func (ssi *storageSeriesIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	return ssi.currT, ssi.currH
 }
 

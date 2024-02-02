@@ -1,0 +1,15 @@
+groups:
+  - name: independents
+    rules:
+      - record: job:http_requests:rate1m
+        expr: sum by (job)(rate(http_requests_total[1m]))
+      - record: job:http_requests:rate5m
+        expr: sum by (job)(rate(http_requests_total[5m]))
+      - record: job:http_requests:rate15m
+        expr: sum by (job)(rate(http_requests_total[15m]))
+      - record: job:http_requests:rate30m
+        expr: sum by (job)(rate(http_requests_total[30m]))
+      - record: job:http_requests:rate1h
+        expr: sum by (job)(rate(http_requests_total[1h]))
+      - record: job:http_requests:rate2h
+        expr: sum by (job)(rate(http_requests_total[2h]))

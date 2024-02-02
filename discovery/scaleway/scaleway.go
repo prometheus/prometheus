@@ -104,6 +104,13 @@ type SDConfig struct {
 	Role role `yaml:"role"`
 }
 
+// NewDiscovererMetrics implements discovery.Config.
+func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return &scalewayMetrics{
+		refreshMetrics: rmi,
+	}
+}
+
 func (c SDConfig) Name() string {
 	return "scaleway"
 }
@@ -161,7 +168,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 func (c SDConfig) NewDiscoverer(options discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(&c, options.Logger, options.Registerer)
+	return NewDiscovery(&c, options.Logger, options.Metrics)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -178,7 +185,12 @@ func init() {
 // the Discoverer interface.
 type Discovery struct{}
 
-func NewDiscovery(conf *SDConfig, logger log.Logger, reg prometheus.Registerer) (*refresh.Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*refresh.Discovery, error) {
+	m, ok := metrics.(*scalewayMetrics)
+	if !ok {
+		return nil, fmt.Errorf("invalid discovery metrics type")
+	}
+
 	r, err := newRefresher(conf)
 	if err != nil {
 		return nil, err
@@ -186,11 +198,11 @@ func NewDiscovery(conf *SDConfig, logger log.Logger, reg prometheus.Registerer) 
 
 	return refresh.NewDiscovery(
 		refresh.Options{
-			Logger:   logger,
-			Mech:     "scaleway",
-			Interval: time.Duration(conf.RefreshInterval),
-			RefreshF: r.refresh,
-			Registry: reg,
+			Logger:              logger,
+			Mech:                "scaleway",
+			Interval:            time.Duration(conf.RefreshInterval),
+			RefreshF:            r.refresh,
+			MetricsInstantiator: m.refreshMetrics,
 		},
 	), nil
 }

@@ -1007,10 +1007,10 @@ func TestCompaction_populateBlock(t *testing.T) {
 							s.t, s.f = iter.At()
 							samples = append(samples, s)
 						case chunkenc.ValHistogram:
-							s.t, s.h = iter.AtHistogram()
+							s.t, s.h = iter.AtHistogram(nil)
 							samples = append(samples, s)
 						case chunkenc.ValFloatHistogram:
-							s.t, s.fh = iter.AtFloatHistogram()
+							s.t, s.fh = iter.AtFloatHistogram(nil)
 							samples = append(samples, s)
 						default:
 							require.Fail(t, "unexpected value type")

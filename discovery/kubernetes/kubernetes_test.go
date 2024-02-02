@@ -51,23 +51,28 @@ func makeDiscoveryWithVersion(role Role, nsDiscovery NamespaceDiscovery, k8sVer 
 	fakeDiscovery, _ := clientset.Discovery().(*fakediscovery.FakeDiscovery)
 	fakeDiscovery.FakedServerVersion = &version.Info{GitVersion: k8sVer}
 
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := newDiscovererMetrics(reg, refreshMetrics)
+	err := metrics.Register()
+	if err != nil {
+		panic(err)
+	}
+	// TODO(ptodev): Unregister the metrics at the end of the test.
+
+	kubeMetrics, ok := metrics.(*kubernetesMetrics)
+	if !ok {
+		panic("invalid discovery metrics type")
+	}
+
 	d := &Discovery{
 		client:             clientset,
 		logger:             log.NewNopLogger(),
 		role:               role,
 		namespaceDiscovery: &nsDiscovery,
 		ownNamespace:       "own-ns",
-		eventCount: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Namespace: discovery.KubernetesMetricsNamespace,
-				Name:      "events_total",
-				Help:      "The number of Kubernetes events handled.",
-			},
-			[]string{"role", "event"},
-		),
+		metrics:            kubeMetrics,
 	}
-
-	d.metricRegisterer = discovery.NewMetricRegisterer(prometheus.NewRegistry(), []prometheus.Collector{d.eventCount})
 
 	return d, clientset
 }

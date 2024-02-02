@@ -142,6 +142,118 @@ func TestFloatHistogramMul(t *testing.T) {
 	}
 }
 
+func TestFloatHistogramCopy(t *testing.T) {
+	cases := []struct {
+		name     string
+		orig     *FloatHistogram
+		expected *FloatHistogram
+	}{
+		{
+			name:     "without buckets",
+			orig:     &FloatHistogram{},
+			expected: &FloatHistogram{},
+		},
+		{
+			name: "with buckets",
+			orig: &FloatHistogram{
+				PositiveSpans:   []Span{{-2, 1}},
+				PositiveBuckets: []float64{1, 3, -3, 42},
+				NegativeSpans:   []Span{{3, 2}},
+				NegativeBuckets: []float64{5, 3, 1.234e5, 1000},
+			},
+			expected: &FloatHistogram{
+				PositiveSpans:   []Span{{-2, 1}},
+				PositiveBuckets: []float64{1, 3, -3, 42},
+				NegativeSpans:   []Span{{3, 2}},
+				NegativeBuckets: []float64{5, 3, 1.234e5, 1000},
+			},
+		},
+		{
+			name: "with empty buckets and non empty capacity",
+			orig: &FloatHistogram{
+				PositiveSpans:   make([]Span, 0, 1),
+				PositiveBuckets: make([]float64, 0, 1),
+				NegativeSpans:   make([]Span, 0, 1),
+				NegativeBuckets: make([]float64, 0, 1),
+			},
+			expected: &FloatHistogram{},
+		},
+	}
+
+	for _, tcase := range cases {
+		t.Run(tcase.name, func(t *testing.T) {
+			hCopy := tcase.orig.Copy()
+
+			// Modify a primitive value in the original histogram.
+			tcase.orig.Sum++
+			require.Equal(t, tcase.expected, hCopy)
+			assertDeepCopyFHSpans(t, tcase.orig, hCopy, tcase.expected)
+		})
+	}
+}
+
+func TestFloatHistogramCopyTo(t *testing.T) {
+	cases := []struct {
+		name     string
+		orig     *FloatHistogram
+		expected *FloatHistogram
+	}{
+		{
+			name:     "without buckets",
+			orig:     &FloatHistogram{},
+			expected: &FloatHistogram{},
+		},
+		{
+			name: "with buckets",
+			orig: &FloatHistogram{
+				PositiveSpans:   []Span{{-2, 1}},
+				PositiveBuckets: []float64{1, 3, -3, 42},
+				NegativeSpans:   []Span{{3, 2}},
+				NegativeBuckets: []float64{5, 3, 1.234e5, 1000},
+			},
+			expected: &FloatHistogram{
+				PositiveSpans:   []Span{{-2, 1}},
+				PositiveBuckets: []float64{1, 3, -3, 42},
+				NegativeSpans:   []Span{{3, 2}},
+				NegativeBuckets: []float64{5, 3, 1.234e5, 1000},
+			},
+		},
+		{
+			name: "with empty buckets and non empty capacity",
+			orig: &FloatHistogram{
+				PositiveSpans:   make([]Span, 0, 1),
+				PositiveBuckets: make([]float64, 0, 1),
+				NegativeSpans:   make([]Span, 0, 1),
+				NegativeBuckets: make([]float64, 0, 1),
+			},
+			expected: &FloatHistogram{},
+		},
+	}
+
+	for _, tcase := range cases {
+		t.Run(tcase.name, func(t *testing.T) {
+			hCopy := &FloatHistogram{}
+			tcase.orig.CopyTo(hCopy)
+
+			// Modify a primitive value in the original histogram.
+			tcase.orig.Sum++
+			require.Equal(t, tcase.expected, hCopy)
+			assertDeepCopyFHSpans(t, tcase.orig, hCopy, tcase.expected)
+		})
+	}
+}
+
+func assertDeepCopyFHSpans(t *testing.T, orig, hCopy, expected *FloatHistogram) {
+	// Do an in-place expansion of an original spans slice.
+	orig.PositiveSpans = expandSpans(orig.PositiveSpans)
+	orig.PositiveSpans[len(orig.PositiveSpans)-1] = Span{1, 2}
+
+	hCopy.PositiveSpans = expandSpans(hCopy.PositiveSpans)
+	expected.PositiveSpans = expandSpans(expected.PositiveSpans)
+	// Expand the copy spans and assert that modifying the original has not affected the copy.
+	require.Equal(t, expected, hCopy)
+}
+
 func TestFloatHistogramDiv(t *testing.T) {
 	cases := []struct {
 		name     string

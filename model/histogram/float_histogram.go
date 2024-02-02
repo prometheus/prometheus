@@ -53,26 +53,56 @@ type FloatHistogram struct {
 
 // Copy returns a deep copy of the Histogram.
 func (h *FloatHistogram) Copy() *FloatHistogram {
-	c := *h
+	c := FloatHistogram{
+		CounterResetHint: h.CounterResetHint,
+		Schema:           h.Schema,
+		ZeroThreshold:    h.ZeroThreshold,
+		ZeroCount:        h.ZeroCount,
+		Count:            h.Count,
+		Sum:              h.Sum,
+	}
 
-	if h.PositiveSpans != nil {
+	if len(h.PositiveSpans) != 0 {
 		c.PositiveSpans = make([]Span, len(h.PositiveSpans))
 		copy(c.PositiveSpans, h.PositiveSpans)
 	}
-	if h.NegativeSpans != nil {
+	if len(h.NegativeSpans) != 0 {
 		c.NegativeSpans = make([]Span, len(h.NegativeSpans))
 		copy(c.NegativeSpans, h.NegativeSpans)
 	}
-	if h.PositiveBuckets != nil {
+	if len(h.PositiveBuckets) != 0 {
 		c.PositiveBuckets = make([]float64, len(h.PositiveBuckets))
 		copy(c.PositiveBuckets, h.PositiveBuckets)
 	}
-	if h.NegativeBuckets != nil {
+	if len(h.NegativeBuckets) != 0 {
 		c.NegativeBuckets = make([]float64, len(h.NegativeBuckets))
 		copy(c.NegativeBuckets, h.NegativeBuckets)
 	}
 
 	return &c
+}
+
+// CopyTo makes a deep copy into the given FloatHistogram.
+// The destination object has to be a non-nil pointer.
+func (h *FloatHistogram) CopyTo(to *FloatHistogram) {
+	to.CounterResetHint = h.CounterResetHint
+	to.Schema = h.Schema
+	to.ZeroThreshold = h.ZeroThreshold
+	to.ZeroCount = h.ZeroCount
+	to.Count = h.Count
+	to.Sum = h.Sum
+
+	to.PositiveSpans = resize(to.PositiveSpans, len(h.PositiveSpans))
+	copy(to.PositiveSpans, h.PositiveSpans)
+
+	to.NegativeSpans = resize(to.NegativeSpans, len(h.NegativeSpans))
+	copy(to.NegativeSpans, h.NegativeSpans)
+
+	to.PositiveBuckets = resize(to.PositiveBuckets, len(h.PositiveBuckets))
+	copy(to.PositiveBuckets, h.PositiveBuckets)
+
+	to.NegativeBuckets = resize(to.NegativeBuckets, len(h.NegativeBuckets))
+	copy(to.NegativeBuckets, h.NegativeBuckets)
 }
 
 // CopyToSchema works like Copy, but the returned deep copy has the provided
@@ -469,8 +499,8 @@ func (h *FloatHistogram) DetectReset(previous *FloatHistogram) bool {
 	// is a counter reset or not.
 	// We do the same if the CounterResetHint is GaugeType, which should not happen, but PromQL still
 	// allows the user to apply functions to gauge histograms that are only meant for counter histograms.
-	// In this case, we treat the gauge histograms as a counter histograms
-	// (and we plan to return a warning about it to the user).
+	// In this case, we treat the gauge histograms as counter histograms. A warning should be returned
+	// to the user in this case.
 	if h.Count < previous.Count {
 		return true
 	}
