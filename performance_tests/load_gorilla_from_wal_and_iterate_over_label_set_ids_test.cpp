@@ -11,7 +11,7 @@ using namespace PromPP;  // NOLINT
 std::chrono::nanoseconds load_gorilla_from_wal_and_iterate_over_label_set_ids::process_data(WAL::Reader& wal) const {
   auto start = std::chrono::steady_clock::now();
   uint64_t sum_of_ls_id = 0;
-  wal.process_segment([&](Primitives::LabelSetID ls_id, uint64_t ts, double v) { sum_of_ls_id += ls_id; });
+  wal.process_segment([&](Primitives::LabelSetID ls_id, uint64_t, double) { sum_of_ls_id += ls_id; });
   auto end = std::chrono::steady_clock::now();
   auto period = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
   period_ += period;

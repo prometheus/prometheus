@@ -69,8 +69,8 @@ class CRC32 {
   inline __attribute__((always_inline)) void compute(uint64_t data) noexcept {
     static constexpr auto lut = generate_lut();
 
-    const uint32_t data_one = *reinterpret_cast<uint32_t*>(&data) ^ crc_;
-    const uint32_t data_two = *(reinterpret_cast<uint32_t*>(&data) + 1);
+    const uint32_t data_one = static_cast<uint32_t>(data) ^ crc_;
+    const uint32_t data_two = static_cast<uint32_t>(data >> 32);
 
     crc_ = lut[0][data_two >> 24 & 0xFF] ^ lut[1][(data_two >> 16) & 0xFF] ^ lut[2][(data_two >> 8) & 0xFF] ^ lut[3][data_two & 0xFF] ^
            lut[4][data_one >> 24 & 0xFF] ^ lut[5][(data_one >> 16) & 0xFF] ^ lut[6][(data_one >> 8) & 0xFF] ^ lut[7][data_one & 0xFF];

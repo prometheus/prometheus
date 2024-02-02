@@ -13,7 +13,7 @@ std::chrono::nanoseconds load_gorilla_from_wal_and_iterate_over_sample_label_nam
   auto start = std::chrono::steady_clock::now();
   uint64_t sum_of_ls_name_symbols_ids = 0;
   uint64_t count = 0;
-  wal.process_segment([&](WAL::Reader::label_set_type label_set, uint64_t ts, double v) {
+  wal.process_segment([&](WAL::Reader::label_set_type label_set, uint64_t, double) {
     ++count;
     for (auto i = label_set.names().begin(); i != label_set.names().end(); ++i) {
       sum_of_ls_name_symbols_ids += i.id();

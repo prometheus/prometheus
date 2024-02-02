@@ -94,6 +94,8 @@ def _impl(ctx):
                                 # Common compile flags here
                                 "-fPIC",
                                 "-Wall",
+                                "-Wextra",
+                                "-Werror",
                                 "-gdwarf",
                                 "-ggdb",
                                 "-march=" + ctx.attr.march[BuildSettingInfo].value,

@@ -37,7 +37,7 @@ class TestSnugCompositesStringFilament {
         out.write(data.begin() + first_to_save, size_to_save);
       }
 
-      uint32_t save_size(data_type const _data, Checkpoint const* from = nullptr) const {
+      uint32_t save_size(data_type const, Checkpoint const* from = nullptr) const {
         uint32_t res = 1;  // mode
         uint32_t first_to_save = 0;
         if (from != nullptr) {

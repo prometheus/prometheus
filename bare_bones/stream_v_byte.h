@@ -591,7 +591,7 @@ class DecodeIterator {
     return retval;
   }
   inline __attribute__((always_inline)) bool operator==(const DecodeIterator& other) const noexcept { return n_ == other.n_; }
-  inline __attribute__((always_inline)) bool operator==(const DecodeIteratorSentinel& other) const noexcept { return !n_; }
+  inline __attribute__((always_inline)) bool operator==(const DecodeIteratorSentinel&) const noexcept { return !n_; }
 
   inline __attribute__((always_inline)) value_type operator*() const noexcept { return Codec::decode(code_, d_i_); }
 };

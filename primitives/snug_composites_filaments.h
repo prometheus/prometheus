@@ -56,7 +56,7 @@ class Symbol {
         out.write(&data[first_to_save], size_to_save);
       }
 
-      inline __attribute__((always_inline)) uint32_t save_size(data_type const& _data, Checkpoint const* from = nullptr) const {
+      inline __attribute__((always_inline)) uint32_t save_size(data_type const&, Checkpoint const* from = nullptr) const {
         uint32_t res = 0;
 
         // version
@@ -153,7 +153,7 @@ class Symbol {
     }
   }
 
-  inline __attribute__((always_inline)) const uint32_t length() const noexcept { return length_; }
+  inline __attribute__((always_inline)) uint32_t length() const noexcept { return length_; }
 };
 
 template <class SymbolsTableType>

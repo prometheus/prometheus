@@ -162,7 +162,7 @@ class OrderedSeriesList {
       return retval;
     }
 
-    inline __attribute__((always_inline)) bool operator==(const IteratorSentinel& other) const noexcept { return i_ == ordered_series_list_->size(); }
+    inline __attribute__((always_inline)) bool operator==(const IteratorSentinel&) const noexcept { return i_ == ordered_series_list_->size(); }
 
     inline __attribute__((always_inline)) auto operator*() const noexcept {
       return BasicSeries<const Primitives::SnugComposites::LabelSet::OrderedIndexingTable::value_type, const Chunks*>(ordered_series_list_->label_sets_[i_],

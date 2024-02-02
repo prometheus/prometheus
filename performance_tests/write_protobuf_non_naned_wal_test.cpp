@@ -95,7 +95,7 @@ class WalMessagesTimeWindowPack {
  public:
   explicit WalMessagesTimeWindowPack(size_t seed = 0) : device_(seed) {}
 
-  const size_t buffer_size() const noexcept { return buffer_size_; }
+  size_t buffer_size() const noexcept { return buffer_size_; }
 
   bool add_message(const DummyWal::Timeseries& tmsr) {
     auto cur_msg_src_uid = create_source_id_from_ls(tmsr.label_set());

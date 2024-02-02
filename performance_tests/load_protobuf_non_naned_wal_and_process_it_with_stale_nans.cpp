@@ -53,11 +53,11 @@ struct BenchParams {
   virtual const char* name() const = 0;
   virtual const char* total_processed_metrics_name() const = 0;
   virtual const char* avg_size_metrics_name() const = 0;
-  virtual void benched_cb(const Message& msg) {}
+  virtual void benched_cb(const Message&) {}
   virtual bool need_processed_messages_count() { return false; }
 };
 
-void run_bench(BenchParams& benchmark_params, const std::string& path, const Config& config, Metrics& metrics) {
+void run_bench(BenchParams& benchmark_params, const std::string& path, const Config&, Metrics& metrics) {
   using namespace std::chrono_literals;
   std::ifstream infile(path, std::ios_base::binary);
   BareBones::LZ4Stream::istream in(infile);

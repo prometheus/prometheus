@@ -70,7 +70,7 @@ class Bitset {
     data_[v >> 6] |= (1ull << (v & 0x3F));
   }
 
-  inline __attribute__((always_inline)) const bool operator[](uint32_t v) const noexcept {
+  inline __attribute__((always_inline)) bool operator[](uint32_t v) const noexcept {
     assert(v < size_);
     return (data_[v >> 6] & (1ull << (v & 0x3F))) > 0;
   }
@@ -127,7 +127,7 @@ class Bitset {
       return retval;
     }
     inline __attribute__((always_inline)) bool operator==(const Iterator& other) const noexcept { return block_n_ == other.block_n_ && j_ == other.j_; }
-    inline __attribute__((always_inline)) bool operator==(const IteratorSentinel& other) const noexcept { return block_n_ == last_block_n_ && j_ == 64; }
+    inline __attribute__((always_inline)) bool operator==(const IteratorSentinel&) const noexcept { return block_n_ == last_block_n_ && j_ == 64; }
   };
 
   using const_iterator = Iterator;

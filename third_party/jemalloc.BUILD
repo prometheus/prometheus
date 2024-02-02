@@ -26,6 +26,9 @@ configure_make(
 		"--with-lg-page=\"12\"",
 		"--with-lg-hugepage=21",
     ],
+    copts = [
+        "-Wno-error"
+    ],
     out_static_libs = [
         "libjemalloc.a",
     ],
