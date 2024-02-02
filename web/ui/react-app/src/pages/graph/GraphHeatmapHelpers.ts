@@ -1,10 +1,12 @@
+import { DataTableProps } from './DataTable';
 import { GraphProps, GraphSeries } from './Graph';
 
-export function isHeatmapData(data: GraphProps['data']) {
-  if (!data?.result?.length || data?.result?.length < 2) {
+export function isHeatmapData(data: DataTableProps['data']) {
+  if (data?.resultType === 'scalar' || data?.resultType === 'string' || !data?.result?.length || data?.result?.length < 2) {
     return false;
   }
-  const result = data.result;
+  // Type assertion to prevent TS2349 error.
+  const result = data.result as GraphProps['data']['result'];
   const firstLabels = Object.keys(result[0].metric).filter((label) => label !== 'le');
   return result.every(({ metric }) => {
     const labels = Object.keys(metric).filter((label) => label !== 'le');

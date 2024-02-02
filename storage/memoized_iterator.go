@@ -113,7 +113,7 @@ func (b *MemoizedSeriesIterator) Next() chunkenc.ValueType {
 		b.prevFloatHistogram = nil
 	case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
 		b.prevValue = 0
-		b.prevTime, b.prevFloatHistogram = b.it.AtFloatHistogram()
+		b.prevTime, b.prevFloatHistogram = b.it.AtFloatHistogram(nil)
 	}
 
 	b.valueType = b.it.Next()
@@ -133,7 +133,7 @@ func (b *MemoizedSeriesIterator) At() (int64, float64) {
 
 // AtFloatHistogram returns the current float-histogram element of the iterator.
 func (b *MemoizedSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
-	return b.it.AtFloatHistogram()
+	return b.it.AtFloatHistogram(nil)
 }
 
 // Err returns the last encountered error.

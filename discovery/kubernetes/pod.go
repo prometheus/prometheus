@@ -33,7 +33,10 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
-const nodeIndex = "node"
+const (
+	nodeIndex = "node"
+	podIndex  = "pod"
+)
 
 // Pod discovers new pod targets.
 type Pod struct {
@@ -326,7 +329,7 @@ func podSource(pod *apiv1.Pod) string {
 }
 
 func podSourceFromNamespaceAndName(namespace, name string) string {
-	return "pod/" + namespace + "/" + name
+	return "pod/" + namespacedName(namespace, name)
 }
 
 func podReady(pod *apiv1.Pod) model.LabelValue {

@@ -22,7 +22,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
 	"github.com/go-kit/log"
@@ -76,12 +76,19 @@ type DockerSDConfig struct {
 	RefreshInterval model.Duration `yaml:"refresh_interval"`
 }
 
+// NewDiscovererMetrics implements discovery.Config.
+func (*DockerSDConfig) NewDiscovererMetrics(_ prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return &dockerMetrics{
+		refreshMetrics: rmi,
+	}
+}
+
 // Name returns the name of the Config.
 func (*DockerSDConfig) Name() string { return "docker" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *DockerSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDockerDiscovery(c, opts.Logger, opts.Registerer)
+	return NewDockerDiscovery(c, opts.Logger, opts.Metrics)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -115,8 +122,11 @@ type DockerDiscovery struct {
 }
 
 // NewDockerDiscovery returns a new DockerDiscovery which periodically refreshes its targets.
-func NewDockerDiscovery(conf *DockerSDConfig, logger log.Logger, reg prometheus.Registerer) (*DockerDiscovery, error) {
-	var err error
+func NewDockerDiscovery(conf *DockerSDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*DockerDiscovery, error) {
+	m, ok := metrics.(*dockerMetrics)
+	if !ok {
+		return nil, fmt.Errorf("invalid discovery metrics type")
+	}
 
 	d := &DockerDiscovery{
 		port:               conf.Port,
@@ -167,11 +177,11 @@ func NewDockerDiscovery(conf *DockerSDConfig, logger log.Logger, reg prometheus.
 
 	d.Discovery = refresh.NewDiscovery(
 		refresh.Options{
-			Logger:   logger,
-			Mech:     "docker",
-			Interval: time.Duration(conf.RefreshInterval),
-			RefreshF: d.refresh,
-			Registry: reg,
+			Logger:              logger,
+			Mech:                "docker",
+			Interval:            time.Duration(conf.RefreshInterval),
+			RefreshF:            d.refresh,
+			MetricsInstantiator: m.refreshMetrics,
 		},
 	)
 	return d, nil
@@ -182,7 +192,7 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 		Source: "Docker",
 	}
 
-	containers, err := d.client.ContainerList(ctx, types.ContainerListOptions{Filters: d.filters})
+	containers, err := d.client.ContainerList(ctx, container.ListOptions{Filters: d.filters})
 	if err != nil {
 		return nil, fmt.Errorf("error while listing containers: %w", err)
 	}

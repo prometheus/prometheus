@@ -805,7 +805,7 @@ func TestShouldReshard(t *testing.T) {
 func createTimeseries(numSamples, numSeries int, extraLabels ...labels.Label) ([]record.RefSample, []record.RefSeries) {
 	samples := make([]record.RefSample, 0, numSamples)
 	series := make([]record.RefSeries, 0, numSeries)
-	b := labels.ScratchBuilder{}
+	lb := labels.ScratchBuilder{}
 	for i := 0; i < numSeries; i++ {
 		name := fmt.Sprintf("test_metric_%d", i)
 		for j := 0; j < numSamples; j++ {
@@ -816,18 +816,18 @@ func createTimeseries(numSamples, numSeries int, extraLabels ...labels.Label) ([
 			})
 		}
 		// Create Labels that is name of series plus any extra labels supplied.
-		b.Reset()
-		b.Add(labels.MetricName, name)
+		lb.Reset()
+		lb.Add(labels.MetricName, name)
 		rand.Shuffle(len(extraLabels), func(i, j int) {
 			extraLabels[i], extraLabels[j] = extraLabels[j], extraLabels[i]
 		})
 		for _, l := range extraLabels {
-			b.Add(l.Name, l.Value)
+			lb.Add(l.Name, l.Value)
 		}
-		b.Sort()
+		lb.Sort()
 		series = append(series, record.RefSeries{
 			Ref:    chunks.HeadSeriesRef(i),
-			Labels: b.Labels(),
+			Labels: lb.Labels(),
 		})
 	}
 	return samples, series
@@ -1243,7 +1243,7 @@ func BenchmarkSampleSend(b *testing.B) {
 func BenchmarkStartup(b *testing.B) {
 	dir := os.Getenv("WALDIR")
 	if dir == "" {
-		return
+		b.Skip("WALDIR env var not set")
 	}
 
 	// Find the second largest segment; we will replay up to this.
@@ -1706,6 +1706,7 @@ func createDummyTimeSeries(instances int) []timeSeries {
 }
 
 func BenchmarkBuildWriteRequest(b *testing.B) {
+	noopLogger := log.NewNopLogger()
 	bench := func(b *testing.B, batch []timeSeries) {
 		buff := make([]byte, 0)
 		seriesBuff := make([]prompb.TimeSeries, len(batch))
@@ -1718,14 +1719,14 @@ func BenchmarkBuildWriteRequest(b *testing.B) {
 		// Warmup buffers
 		for i := 0; i < 10; i++ {
 			populateTimeSeries(batch, seriesBuff, true, true)
-			buildWriteRequest(seriesBuff, nil, pBuf, &buff)
+			buildWriteRequest(noopLogger, seriesBuff, nil, pBuf, &buff, nil)
 		}
 
 		b.ResetTimer()
 		totalSize := 0
 		for i := 0; i < b.N; i++ {
 			populateTimeSeries(batch, seriesBuff, true, true)
-			req, _, err := buildWriteRequest(seriesBuff, nil, pBuf, &buff)
+			req, _, _, err := buildWriteRequest(noopLogger, seriesBuff, nil, pBuf, &buff, nil)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -1752,6 +1753,7 @@ func BenchmarkBuildWriteRequest(b *testing.B) {
 }
 
 func BenchmarkBuildMinimizedWriteRequest(b *testing.B) {
+	noopLogger := log.NewNopLogger()
 	type testcase struct {
 		batch []timeSeries
 	}
@@ -1773,7 +1775,7 @@ func BenchmarkBuildMinimizedWriteRequest(b *testing.B) {
 		// Warmup buffers
 		for i := 0; i < 10; i++ {
 			populateV2TimeSeries(&symbolTable, tc.batch, seriesBuff, true, true)
-			buildV2WriteRequest(seriesBuff, symbolTable.LabelsStrings(), &pBuf, &buff)
+			buildV2WriteRequest(noopLogger, seriesBuff, symbolTable.LabelsStrings(), &pBuf, &buff, nil)
 		}
 
 		b.Run(fmt.Sprintf("%d-instances", len(tc.batch)), func(b *testing.B) {
@@ -1781,7 +1783,7 @@ func BenchmarkBuildMinimizedWriteRequest(b *testing.B) {
 			for j := 0; j < b.N; j++ {
 				populateV2TimeSeries(&symbolTable, tc.batch, seriesBuff, true, true)
 				b.ResetTimer()
-				req, _, err := buildV2WriteRequest(seriesBuff, symbolTable.LabelsStrings(), &pBuf, &buff)
+				req, _, _, err := buildV2WriteRequest(noopLogger, seriesBuff, symbolTable.LabelsStrings(), &pBuf, &buff, nil)
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -1789,6 +1791,267 @@ func BenchmarkBuildMinimizedWriteRequest(b *testing.B) {
 				totalSize += len(req)
 				b.ReportMetric(float64(totalSize)/float64(b.N), "compressedSize/op")
 			}
+		})
+	}
+}
+
+func TestDropOldTimeSeries(t *testing.T) {
+	size := 10
+	nSeries := 6
+	nSamples := config.DefaultQueueConfig.Capacity * size
+	samples, newSamples, series := createTimeseriesWithOldSamples(nSamples, nSeries)
+
+	// TODO: test with new version
+	c := NewTestWriteClient(Version1)
+	c.expectSamples(newSamples, series)
+
+	cfg := config.DefaultQueueConfig
+	mcfg := config.DefaultMetadataConfig
+	cfg.MaxShards = 1
+	cfg.SampleAgeLimit = model.Duration(60 * time.Second)
+	dir := t.TempDir()
+
+	metrics := newQueueManagerMetrics(nil, "", "")
+	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, Version1)
+	m.StoreSeries(series, 0)
+
+	m.Start()
+	defer m.Stop()
+
+	m.Append(samples)
+	c.waitForExpectedData(t, 30*time.Second)
+}
+
+func TestIsSampleOld(t *testing.T) {
+	currentTime := time.Now()
+	require.True(t, isSampleOld(currentTime, 60*time.Second, timestamp.FromTime(currentTime.Add(-61*time.Second))))
+	require.False(t, isSampleOld(currentTime, 60*time.Second, timestamp.FromTime(currentTime.Add(-59*time.Second))))
+}
+
+func createTimeseriesWithOldSamples(numSamples, numSeries int, extraLabels ...labels.Label) ([]record.RefSample, []record.RefSample, []record.RefSeries) {
+	newSamples := make([]record.RefSample, 0, numSamples)
+	samples := make([]record.RefSample, 0, numSamples)
+	series := make([]record.RefSeries, 0, numSeries)
+	lb := labels.ScratchBuilder{}
+	for i := 0; i < numSeries; i++ {
+		name := fmt.Sprintf("test_metric_%d", i)
+		// We create half of the samples in the past.
+		past := timestamp.FromTime(time.Now().Add(-5 * time.Minute))
+		for j := 0; j < numSamples/2; j++ {
+			samples = append(samples, record.RefSample{
+				Ref: chunks.HeadSeriesRef(i),
+				T:   past + int64(j),
+				V:   float64(i),
+			})
+		}
+		for j := 0; j < numSamples/2; j++ {
+			sample := record.RefSample{
+				Ref: chunks.HeadSeriesRef(i),
+				T:   int64(int(time.Now().UnixMilli()) + j),
+				V:   float64(i),
+			}
+			samples = append(samples, sample)
+			newSamples = append(newSamples, sample)
+		}
+		// Create Labels that is name of series plus any extra labels supplied.
+		lb.Reset()
+		lb.Add(labels.MetricName, name)
+		for _, l := range extraLabels {
+			lb.Add(l.Name, l.Value)
+		}
+		lb.Sort()
+		series = append(series, record.RefSeries{
+			Ref:    chunks.HeadSeriesRef(i),
+			Labels: lb.Labels(),
+		})
+	}
+	return samples, newSamples, series
+}
+
+func filterTsLimit(limit int64, ts prompb.TimeSeries) bool {
+	return limit > ts.Samples[0].Timestamp
+}
+
+func TestBuildTimeSeries(t *testing.T) {
+	testCases := []struct {
+		name           string
+		ts             []prompb.TimeSeries
+		filter         func(ts prompb.TimeSeries) bool
+		lowestTs       int64
+		highestTs      int64
+		droppedSamples int
+		responseLen    int
+	}{
+		{
+			name: "No filter applied",
+			ts: []prompb.TimeSeries{
+				{
+					Samples: []prompb.Sample{
+						{
+							Timestamp: 1234567890,
+							Value:     1.23,
+						},
+					},
+				},
+				{
+					Samples: []prompb.Sample{
+						{
+							Timestamp: 1234567891,
+							Value:     2.34,
+						},
+					},
+				},
+				{
+					Samples: []prompb.Sample{
+						{
+							Timestamp: 1234567892,
+							Value:     3.34,
+						},
+					},
+				},
+			},
+			filter:      nil,
+			responseLen: 3,
+			lowestTs:    1234567890,
+			highestTs:   1234567892,
+		},
+		{
+			name: "Filter applied, samples in order",
+			ts: []prompb.TimeSeries{
+				{
+					Samples: []prompb.Sample{
+						{
+							Timestamp: 1234567890,
+							Value:     1.23,
+						},
+					},
+				},
+				{
+					Samples: []prompb.Sample{
+						{
+							Timestamp: 1234567891,
+							Value:     2.34,
+						},
+					},
+				},
+				{
+					Samples: []prompb.Sample{
+						{
+							Timestamp: 1234567892,
+							Value:     3.45,
+						},
+					},
+				},
+				{
+					Samples: []prompb.Sample{
+						{
+							Timestamp: 1234567893,
+							Value:     3.45,
+						},
+					},
+				},
+			},
+			filter:         func(ts prompb.TimeSeries) bool { return filterTsLimit(1234567892, ts) },
+			responseLen:    2,
+			lowestTs:       1234567892,
+			highestTs:      1234567893,
+			droppedSamples: 2,
+		},
+		{
+			name: "Filter applied, samples out of order",
+			ts: []prompb.TimeSeries{
+				{
+					Samples: []prompb.Sample{
+						{
+							Timestamp: 1234567892,
+							Value:     3.45,
+						},
+					},
+				},
+				{
+					Samples: []prompb.Sample{
+						{
+							Timestamp: 1234567890,
+							Value:     1.23,
+						},
+					},
+				},
+				{
+					Samples: []prompb.Sample{
+						{
+							Timestamp: 1234567893,
+							Value:     3.45,
+						},
+					},
+				},
+				{
+					Samples: []prompb.Sample{
+						{
+							Timestamp: 1234567891,
+							Value:     2.34,
+						},
+					},
+				},
+			},
+			filter:         func(ts prompb.TimeSeries) bool { return filterTsLimit(1234567892, ts) },
+			responseLen:    2,
+			lowestTs:       1234567892,
+			highestTs:      1234567893,
+			droppedSamples: 2,
+		},
+		{
+			name: "Filter applied, samples not consecutive",
+			ts: []prompb.TimeSeries{
+				{
+					Samples: []prompb.Sample{
+						{
+							Timestamp: 1234567890,
+							Value:     1.23,
+						},
+					},
+				},
+				{
+					Samples: []prompb.Sample{
+						{
+							Timestamp: 1234567892,
+							Value:     3.45,
+						},
+					},
+				},
+				{
+					Samples: []prompb.Sample{
+						{
+							Timestamp: 1234567895,
+							Value:     6.78,
+						},
+					},
+				},
+				{
+					Samples: []prompb.Sample{
+						{
+							Timestamp: 1234567897,
+							Value:     6.78,
+						},
+					},
+				},
+			},
+			filter:         func(ts prompb.TimeSeries) bool { return filterTsLimit(1234567895, ts) },
+			responseLen:    2,
+			lowestTs:       1234567895,
+			highestTs:      1234567897,
+			droppedSamples: 2,
+		},
+	}
+
+	// Run the test cases
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			highest, lowest, result, droppedSamples, _, _ := buildTimeSeries(tc.ts, tc.filter)
+			require.NotNil(t, result)
+			require.Len(t, result, tc.responseLen)
+			require.Equal(t, tc.highestTs, highest)
+			require.Equal(t, tc.lowestTs, lowest)
+			require.Equal(t, tc.droppedSamples, droppedSamples)
 		})
 	}
 }

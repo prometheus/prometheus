@@ -880,9 +880,9 @@ func (api *API) dropSeries(_ *http.Request) apiFuncResult {
 // Target has the information for one target.
 type Target struct {
 	// Labels before any processing.
-	DiscoveredLabels map[string]string `json:"discoveredLabels"`
+	DiscoveredLabels labels.Labels `json:"discoveredLabels"`
 	// Any labels that are added to this target and its metrics.
-	Labels map[string]string `json:"labels"`
+	Labels labels.Labels `json:"labels"`
 
 	ScrapePool string `json:"scrapePool"`
 	ScrapeURL  string `json:"scrapeUrl"`
@@ -904,7 +904,7 @@ type ScrapePoolsDiscovery struct {
 // DroppedTarget has the information for one target that was dropped during relabelling.
 type DroppedTarget struct {
 	// Labels before any processing.
-	DiscoveredLabels map[string]string `json:"discoveredLabels"`
+	DiscoveredLabels labels.Labels `json:"discoveredLabels"`
 }
 
 // TargetDiscovery has all the active targets.
@@ -1025,8 +1025,8 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 				globalURL, err := getGlobalURL(target.URL(), api.globalURLOptions)
 
 				res.ActiveTargets = append(res.ActiveTargets, &Target{
-					DiscoveredLabels: target.DiscoveredLabels().Map(),
-					Labels:           target.Labels().Map(),
+					DiscoveredLabels: target.DiscoveredLabels(),
+					Labels:           target.Labels(),
 					ScrapePool:       key,
 					ScrapeURL:        target.URL().String(),
 					GlobalURL:        globalURL.String(),
@@ -1064,7 +1064,7 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 			}
 			for _, target := range targetsDropped[key] {
 				res.DroppedTargets = append(res.DroppedTargets, &DroppedTarget{
-					DiscoveredLabels: target.DiscoveredLabels().Map(),
+					DiscoveredLabels: target.DiscoveredLabels(),
 				})
 			}
 		}
@@ -1849,13 +1849,9 @@ func parseDuration(s string) (time.Duration, error) {
 }
 
 func parseMatchersParam(matchers []string) ([][]*labels.Matcher, error) {
-	var matcherSets [][]*labels.Matcher
-	for _, s := range matchers {
-		matchers, err := parser.ParseMetricSelector(s)
-		if err != nil {
-			return nil, err
-		}
-		matcherSets = append(matcherSets, matchers)
+	matcherSets, err := parser.ParseMetricSelectors(matchers)
+	if err != nil {
+		return nil, err
 	}
 
 OUTER:

@@ -1,3 +1,5 @@
+// DO NOT EDIT. COPIED AS-IS. SEE ../README.md
+
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 

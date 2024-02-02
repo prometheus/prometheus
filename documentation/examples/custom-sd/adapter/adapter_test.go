@@ -18,9 +18,11 @@ import (
 	"os"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -227,6 +229,12 @@ func TestWriteOutput(t *testing.T) {
 	defer os.Remove(tmpfile.Name())
 	tmpfile.Close()
 	require.NoError(t, err)
-	adapter := NewAdapter(ctx, tmpfile.Name(), "test_sd", nil, nil)
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	sdMetrics, err := discovery.RegisterSDMetrics(reg, refreshMetrics)
+	require.NoError(t, err)
+
+	adapter := NewAdapter(ctx, tmpfile.Name(), "test_sd", nil, nil, sdMetrics, reg)
 	require.NoError(t, adapter.writeOutput())
 }

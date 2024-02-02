@@ -58,6 +58,11 @@ const (
 
 type KumaSDConfig = SDConfig
 
+// NewDiscovererMetrics implements discovery.Config.
+func (*KumaSDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return newDiscovererMetrics(reg, rmi)
+}
+
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *KumaSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultKumaSDConfig
@@ -97,7 +102,7 @@ func (c *KumaSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discover
 		logger = log.NewNopLogger()
 	}
 
-	return NewKumaHTTPDiscovery(c, logger, opts.Registerer)
+	return NewKumaHTTPDiscovery(c, logger, opts.Metrics)
 }
 
 func convertKumaV1MonitoringAssignment(assignment *MonitoringAssignment) []model.LabelSet {
@@ -153,7 +158,12 @@ func kumaMadsV1ResourceParser(resources []*anypb.Any, typeURL string) ([]model.L
 	return targets, nil
 }
 
-func NewKumaHTTPDiscovery(conf *KumaSDConfig, logger log.Logger, reg prometheus.Registerer) (discovery.Discoverer, error) {
+func NewKumaHTTPDiscovery(conf *KumaSDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (discovery.Discoverer, error) {
+	m, ok := metrics.(*xdsMetrics)
+	if !ok {
+		return nil, fmt.Errorf("invalid discovery metrics type")
+	}
+
 	// Default to "prometheus" if hostname is unavailable.
 	clientID := conf.ClientID
 	if clientID == "" {
@@ -189,36 +199,8 @@ func NewKumaHTTPDiscovery(conf *KumaSDConfig, logger log.Logger, reg prometheus.
 		refreshInterval: time.Duration(conf.RefreshInterval),
 		source:          "kuma",
 		parseResources:  kumaMadsV1ResourceParser,
-		fetchFailuresCount: prometheus.NewCounter(
-			prometheus.CounterOpts{
-				Namespace: namespace,
-				Name:      "sd_kuma_fetch_failures_total",
-				Help:      "The number of Kuma MADS fetch call failures.",
-			}),
-		fetchSkipUpdateCount: prometheus.NewCounter(
-			prometheus.CounterOpts{
-				Namespace: namespace,
-				Name:      "sd_kuma_fetch_skipped_updates_total",
-				Help:      "The number of Kuma MADS fetch calls that result in no updates to the targets.",
-			}),
-		fetchDuration: prometheus.NewSummary(
-			prometheus.SummaryOpts{
-				Namespace:  namespace,
-				Name:       "sd_kuma_fetch_duration_seconds",
-				Help:       "The duration of a Kuma MADS fetch call.",
-				Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
-			},
-		),
+		metrics:         m,
 	}
-
-	d.metricRegisterer = discovery.NewMetricRegisterer(
-		reg,
-		[]prometheus.Collector{
-			d.fetchFailuresCount,
-			d.fetchSkipUpdateCount,
-			d.fetchDuration,
-		},
-	)
 
 	return d, nil
 }
