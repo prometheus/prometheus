@@ -74,6 +74,8 @@ type DockerSDConfig struct {
 	HostNetworkingHost string   `yaml:"host_networking_host"`
 
 	RefreshInterval model.Duration `yaml:"refresh_interval"`
+
+	IncludeNoNetworkTargets bool `taml:"include_no_network_targets"`
 }
 
 // NewDiscovererMetrics implements discovery.Config.
@@ -115,10 +117,11 @@ func (c *DockerSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 
 type DockerDiscovery struct {
 	*refresh.Discovery
-	client             *client.Client
-	port               int
-	hostNetworkingHost string
-	filters            filters.Args
+	client                  *client.Client
+	port                    int
+	hostNetworkingHost      string
+	filters                 filters.Args
+	includeNoNetworkTargets bool
 }
 
 // NewDockerDiscovery returns a new DockerDiscovery which periodically refreshes its targets.
@@ -129,8 +132,9 @@ func NewDockerDiscovery(conf *DockerSDConfig, logger log.Logger, metrics discove
 	}
 
 	d := &DockerDiscovery{
-		port:               conf.Port,
-		hostNetworkingHost: conf.HostNetworkingHost,
+		port:                    conf.Port,
+		hostNetworkingHost:      conf.HostNetworkingHost,
+		includeNoNetworkTargets: conf.IncludeNoNetworkTargets,
 	}
 
 	hostURL, err := url.Parse(conf.Host)
@@ -278,7 +282,7 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 				added = true
 			}
 		}
-		if !added {
+		if d.includeNoNetworkTargets && !added {
 			labels := model.LabelSet{}
 			for k, v := range commonLabels {
 				labels[model.LabelName(k)] = model.LabelValue(v)
