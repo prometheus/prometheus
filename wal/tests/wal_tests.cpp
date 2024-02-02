@@ -226,7 +226,7 @@ TEST_F(Wal, BasicEncoderBasicDecoder) {
 
   // check reader samples
   samples_sequence_type outcomes_reader_samples;
-  reader.process_segment([&](uint32_t ls_id, uint64_t ts, double v) { outcomes_reader_samples.push_back(SampleForTest(ts, v)); });
+  reader.process_segment([&](uint32_t, uint64_t ts, double v) { outcomes_reader_samples.push_back(SampleForTest(ts, v)); });
 
   auto etalon_sample_reader = etalons_samples.begin();
   auto outcome_sample_reader = outcomes_reader_samples.begin();
@@ -261,7 +261,7 @@ TEST_F(Wal, Snapshots) {
     if (i < 5) {
       writer_stream << encoder;
       writer_stream >> decoder;
-      decoder.process_segment([](uint32_t ls_id, uint64_t ts, double v) {});
+      decoder.process_segment([](uint32_t, uint64_t, double) {});
     } else {
       redundants.emplace_back(encoder.write(devnull));
     }

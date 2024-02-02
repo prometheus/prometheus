@@ -12,7 +12,7 @@ using namespace PromPP;  // NOLINT
 std::chrono::nanoseconds load_gorilla_from_wal_and_iterate_over_label_set_names::process_data(PromPP::WAL::Reader& wal) const {
   auto start = std::chrono::steady_clock::now();
   uint64_t sum_of_ls_name_symbols_lengths = 0;
-  wal.process_segment([&](WAL::Reader::label_set_type label_set, uint64_t ts, double v) {
+  wal.process_segment([&](WAL::Reader::label_set_type label_set, uint64_t, double) {
     for (const auto& ln : label_set.names()) {
       sum_of_ls_name_symbols_lengths += ln.length();
     }

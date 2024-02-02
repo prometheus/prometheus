@@ -80,7 +80,7 @@ class SparseVector {
       return retval;
     }
     inline __attribute__((always_inline)) bool operator==(const Iterator& o) const noexcept { return i_ == o.i_; }
-    inline __attribute__((always_inline)) bool operator==(const IteratorSentinel& o) const noexcept { return i_ == Bitset::IteratorSentinel(); }
+    inline __attribute__((always_inline)) bool operator==(const IteratorSentinel&) const noexcept { return i_ == Bitset::IteratorSentinel(); }
   };
 
   using const_iterator = Iterator;

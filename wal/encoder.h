@@ -65,7 +65,7 @@ class Encoder {
 
   template <class Stats>
   inline __attribute__((always_inline)) void collect_source(Stats* stats, Primitives::Timestamp stale_ts, Writer::SourceState state) {
-    constexpr auto add_many_cb = [&](auto& add_cb) {};
+    constexpr auto add_many_cb = [&](auto&) {};
     auto result = writer_.add_many<decltype(writer_)::add_many_generator_callback_type::with_hash_value, decltype(timeseries_)>(state, stale_ts, add_many_cb);
     write_stats(stats);
     Writer::DestroySourceState(result);

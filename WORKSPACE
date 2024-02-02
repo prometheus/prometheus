@@ -33,6 +33,9 @@ git_repository(
     remote = "https://github.com/google/googletest",
     commit = "58d77fa8070e8cec2dc1ed015d66b454c8d78850",
     shallow_since = "1656350095 -0400",
+    patches = [
+        "//third_party/patches/gtest:no-werror.patch",
+    ],
 )
 
 git_repository(

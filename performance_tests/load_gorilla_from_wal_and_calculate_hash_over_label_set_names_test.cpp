@@ -12,7 +12,7 @@ using namespace PromPP;  // NOLINT
 std::chrono::nanoseconds load_gorilla_from_wal_and_calculate_hash_over_label_set_names::process_data(WAL::Reader& wal) const {
   auto start = std::chrono::steady_clock::now();
   uint64_t xor_of_ls_name_hash = 0;
-  wal.process_segment([&](WAL::Reader::label_set_type label_set, uint64_t ts, double v) { xor_of_ls_name_hash ^= hash_value(label_set.names()); });
+  wal.process_segment([&](WAL::Reader::label_set_type label_set, uint64_t, double) { xor_of_ls_name_hash ^= hash_value(label_set.names()); });
   auto end = std::chrono::steady_clock::now();
   auto period = end - start;
   period_ += period;

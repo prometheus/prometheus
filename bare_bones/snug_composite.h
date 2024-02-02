@@ -3,8 +3,11 @@
 #include <fstream>
 #include <string_view>
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
 #include <parallel_hashmap/btree.h>
 #include <parallel_hashmap/phmap.h>
+#pragma GCC diagnostic pop
 
 #include <scope_exit.h>
 
@@ -222,7 +225,7 @@ class DecodingTable {
   data_type data_;
   Vector<Filament> items_;
 
-  virtual void after_items_load(uint32_t first_loaded_id) noexcept {}
+  virtual void after_items_load(uint32_t) noexcept {}
 
  public:
   using checkpoint_type = Checkpoint;

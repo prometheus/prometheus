@@ -96,7 +96,7 @@ class RLE {
 
     template <std::input_iterator IteratorType, class IteratorSentinelType>
       requires std::is_same<typename std::iterator_traits<IteratorType>::value_type, value_type>::value && std::sentinel_for<IteratorSentinelType, IteratorType>
-    inline __attribute__((always_inline)) value_type decode(const IteratorType& begin, const IteratorSentinelType& end, const Encoder& encoder) const noexcept {
+    inline __attribute__((always_inline)) value_type decode(const IteratorType&, const IteratorSentinelType&, const Encoder&) const noexcept {
       return last_;
     }
 
@@ -311,9 +311,7 @@ class EncodedSequence {
       return retval;
     }
 
-    inline __attribute__((always_inline)) bool operator==(const IteratorSentinel& other) const noexcept {
-      return decoder_.is_finished(begin_, end_, *encoder_);
-    }
+    inline __attribute__((always_inline)) bool operator==(const IteratorSentinel&) const noexcept { return decoder_.is_finished(begin_, end_, *encoder_); }
 
     inline __attribute__((always_inline)) value_type operator*() const noexcept { return decoder_.decode(begin_, end_, *encoder_); }
   };

@@ -49,7 +49,7 @@ class Decoder {
   inline __attribute__((always_inline)) void decode_dry(Input& in) {
     std::ispanstream inspan(std::string_view(in.data(), in.size()));
     inspan >> reader_;
-    reader_.process_segment([](uint32_t ls_id, uint64_t ts, double v) {});
+    reader_.process_segment([](uint32_t, uint64_t, double) {});
   }
 
   // restore_from_stream - restore the decoder state to the required segment from the file.
@@ -62,7 +62,7 @@ class Decoder {
         break;
       }
       stats->offset = inspan.tellg();
-      reader_.process_segment([](uint32_t ls_id, uint64_t ts, double v) {});
+      reader_.process_segment([](uint32_t, uint64_t, double) {});
     }
 
     stats->segment_id = reader_.last_processed_segment();

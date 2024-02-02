@@ -23,10 +23,10 @@ class __attribute__((__packed__)) StreamEncoder {
   int64_t last_ts_delta_;  // for stream gorilla samples might not be ordered
 
   double last_v_;
-  uint8_t last_v_xor_length_ = 0;
-  uint8_t last_v_xor_leading_z_;
-  uint8_t last_v_xor_trailing_z_;
-  uint8_t v_xor_waste_bits_written_;
+  uint8_t last_v_xor_length_{};
+  uint8_t last_v_xor_leading_z_{};
+  uint8_t last_v_xor_trailing_z_{};
+  uint8_t v_xor_waste_bits_written_{};
 
   enum : uint8_t { INITIAL = 0, FIRST_ENCODED = 1, SECOND_ENCODED = 2 } state_ = INITIAL;
 
