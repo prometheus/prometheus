@@ -11,9 +11,11 @@ import { isPresent } from './utils';
 // Declared/defined in public/index.html, value replaced by Prometheus when serving bundle.
 declare const GLOBAL_CONSOLES_LINK: string;
 declare const GLOBAL_AGENT_MODE: string;
+declare const GLOBAL_READY: string;
 
 let consolesLink: string | null = GLOBAL_CONSOLES_LINK;
 const agentMode: string | null = GLOBAL_AGENT_MODE;
+const ready: string | null = GLOBAL_READY;
 
 if (
   GLOBAL_CONSOLES_LINK === 'CONSOLES_LINK_PLACEHOLDER' ||
@@ -23,4 +25,7 @@ if (
   consolesLink = null;
 }
 
-ReactDOM.render(<App consolesLink={consolesLink} agentMode={agentMode === 'true'} />, document.getElementById('root'));
+ReactDOM.render(
+  <App consolesLink={consolesLink} agentMode={agentMode === 'true'} ready={ready === 'true'} />,
+  document.getElementById('root')
+);

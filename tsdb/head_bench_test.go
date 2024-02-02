@@ -14,14 +14,15 @@
 package tsdb
 
 import (
+	"errors"
 	"strconv"
 	"testing"
 
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 )
 
 func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
@@ -30,7 +31,7 @@ func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = 1000
 	opts.ChunkDirRoot = chunkDir
-	h, err := NewHead(nil, nil, nil, opts, nil)
+	h, err := NewHead(nil, nil, nil, nil, opts, nil)
 	require.NoError(b, err)
 	defer h.Close()
 
@@ -45,7 +46,7 @@ func BenchmarkHeadStripeSeriesCreateParallel(b *testing.B) {
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = 1000
 	opts.ChunkDirRoot = chunkDir
-	h, err := NewHead(nil, nil, nil, opts, nil)
+	h, err := NewHead(nil, nil, nil, nil, opts, nil)
 	require.NoError(b, err)
 	defer h.Close()
 
@@ -69,7 +70,7 @@ func BenchmarkHeadStripeSeriesCreate_PreCreationFailure(b *testing.B) {
 	// Mock the PreCreation() callback to fail on each series.
 	opts.SeriesCallback = failingSeriesLifecycleCallback{}
 
-	h, err := NewHead(nil, nil, nil, opts, nil)
+	h, err := NewHead(nil, nil, nil, nil, opts, nil)
 	require.NoError(b, err)
 	defer h.Close()
 
@@ -80,6 +81,6 @@ func BenchmarkHeadStripeSeriesCreate_PreCreationFailure(b *testing.B) {
 
 type failingSeriesLifecycleCallback struct{}
 
-func (failingSeriesLifecycleCallback) PreCreation(labels.Labels) error { return errors.New("failed") }
-func (failingSeriesLifecycleCallback) PostCreation(labels.Labels)      {}
-func (failingSeriesLifecycleCallback) PostDeletion(...labels.Labels)   {}
+func (failingSeriesLifecycleCallback) PreCreation(labels.Labels) error                     { return errors.New("failed") }
+func (failingSeriesLifecycleCallback) PostCreation(labels.Labels)                          {}
+func (failingSeriesLifecycleCallback) PostDeletion(map[chunks.HeadSeriesRef]labels.Labels) {}

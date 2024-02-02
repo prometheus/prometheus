@@ -13,5 +13,27 @@
 
 package prompb
 
+import (
+	"sync"
+)
+
 func (m Sample) T() int64   { return m.Timestamp }
 func (m Sample) V() float64 { return m.Value }
+
+func (h Histogram) IsFloatHistogram() bool {
+	_, ok := h.GetCount().(*Histogram_CountFloat)
+	return ok
+}
+
+func (r *ChunkedReadResponse) PooledMarshal(p *sync.Pool) ([]byte, error) {
+	size := r.Size()
+	data, ok := p.Get().(*[]byte)
+	if ok && cap(*data) >= size {
+		n, err := r.MarshalToSizedBuffer((*data)[:size])
+		if err != nil {
+			return nil, err
+		}
+		return (*data)[:n], nil
+	}
+	return r.Marshal()
+}

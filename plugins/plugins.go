@@ -61,6 +61,9 @@ import (
 	// Register openstack plugin.
 	_ "github.com/prometheus/prometheus/discovery/openstack"
 
+	// Register ovhcloud plugin.
+	_ "github.com/prometheus/prometheus/discovery/ovhcloud"
+
 	// Register puppetdb plugin.
 	_ "github.com/prometheus/prometheus/discovery/puppetdb"
 

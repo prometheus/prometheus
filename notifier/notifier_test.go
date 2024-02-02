@@ -31,7 +31,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
-	yaml "gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -83,7 +83,7 @@ func TestHandlerNextBatch(t *testing.T) {
 	require.NoError(t, alertsEqual(expected[0:maxBatchSize], h.nextBatch()))
 	require.NoError(t, alertsEqual(expected[maxBatchSize:2*maxBatchSize], h.nextBatch()))
 	require.NoError(t, alertsEqual(expected[2*maxBatchSize:], h.nextBatch()))
-	require.Equal(t, 0, len(h.queue), "Expected queue to be empty but got %d alerts", len(h.queue))
+	require.Empty(t, h.queue, "Expected queue to be empty but got %d alerts", len(h.queue))
 }
 
 func alertsEqual(a, b []*Alert) error {
@@ -243,7 +243,7 @@ func TestCustomDo(t *testing.T) {
 func TestExternalLabels(t *testing.T) {
 	h := NewManager(&Options{
 		QueueCapacity:  3 * maxBatchSize,
-		ExternalLabels: labels.Labels{{Name: "a", Value: "b"}},
+		ExternalLabels: labels.FromStrings("a", "b"),
 		RelabelConfigs: []*relabel.Config{
 			{
 				SourceLabels: model.LabelNames{"alertname"},
@@ -482,7 +482,7 @@ alerting:
 `
 	err := yaml.UnmarshalStrict([]byte(s), cfg)
 	require.NoError(t, err, "Unable to load YAML config.")
-	require.Equal(t, 1, len(cfg.AlertingConfig.AlertmanagerConfigs))
+	require.Len(t, cfg.AlertingConfig.AlertmanagerConfigs, 1)
 
 	err = n.ApplyConfig(cfg)
 	require.NoError(t, err, "Error applying the config.")
@@ -533,7 +533,7 @@ alerting:
 `
 	err := yaml.UnmarshalStrict([]byte(s), cfg)
 	require.NoError(t, err, "Unable to load YAML config.")
-	require.Equal(t, 1, len(cfg.AlertingConfig.AlertmanagerConfigs))
+	require.Len(t, cfg.AlertingConfig.AlertmanagerConfigs, 1)
 
 	err = n.ApplyConfig(cfg)
 	require.NoError(t, err, "Error applying the config.")
@@ -570,7 +570,7 @@ func makeInputTargetGroup() *targetgroup.Group {
 }
 
 func TestLabelsToOpenAPILabelSet(t *testing.T) {
-	require.Equal(t, models.LabelSet{"aaa": "111", "bbb": "222"}, labelsToOpenAPILabelSet(labels.Labels{{Name: "aaa", Value: "111"}, {Name: "bbb", Value: "222"}}))
+	require.Equal(t, models.LabelSet{"aaa": "111", "bbb": "222"}, labelsToOpenAPILabelSet(labels.FromStrings("aaa", "111", "bbb", "222")))
 }
 
 // TestHangingNotifier validates that targets updates happen even when there are

@@ -10,6 +10,21 @@ tests:
       - series: test_full
         values: "0 0"
 
+      - series: test_repeat
+        values: "1x2"
+
+      - series: test_increase
+        values: "1+1x2"
+
+      - series: test_histogram
+        values: "{{schema:1 sum:-0.3 count:32.1 z_bucket:7.1 z_bucket_w:0.05 buckets:[5.1 10 7] offset:-3 n_buckets:[4.1 5] n_offset:-5}}"
+
+      - series: test_histogram_repeat
+        values: "{{sum:3 count:2 buckets:[2]}}x2"
+
+      - series: test_histogram_increase
+        values: "{{sum:3 count:2 buckets:[2]}}+{{sum:1.3 count:1 buckets:[1]}}x2"
+
       - series: test_stale
         values: "0 stale"
 
@@ -30,6 +45,37 @@ tests:
         eval_time: 2m
         exp_samples:
           - value: 60
+
+      # Repeat & increase
+      - expr: test_repeat
+        eval_time: 2m
+        exp_samples:
+          - value: 1
+            labels: "test_repeat"
+      - expr: test_increase
+        eval_time: 2m
+        exp_samples:
+          - value: 3
+            labels: "test_increase"
+
+      # Histograms
+      - expr: test_histogram
+        eval_time: 1m
+        exp_samples:
+          - labels: "test_histogram"
+            histogram: "{{schema:1 sum:-0.3 count:32.1 z_bucket:7.1 z_bucket_w:0.05 buckets:[5.1 10 7] offset:-3 n_buckets:[4.1 5] n_offset:-5}}"
+
+      - expr: test_histogram_repeat
+        eval_time: 2m
+        exp_samples:
+          - labels: "test_histogram_repeat"
+            histogram: "{{count:2 sum:3 buckets:[2]}}"
+
+      - expr: test_histogram_increase
+        eval_time: 2m
+        exp_samples:
+          - labels: "test_histogram_increase"
+            histogram: "{{count:4 sum:5.6 buckets:[4]}}"
 
       # Ensure a value is stale as soon as it is marked as such.
       - expr: test_stale

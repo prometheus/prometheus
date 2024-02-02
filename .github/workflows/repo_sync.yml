@@ -1,0 +1,19 @@
+---
+name: Sync repo files
+on:
+  schedule:
+    - cron: '44 17 * * *'
+permissions:
+  contents: read
+
+jobs:
+  repo_sync:
+    runs-on: ubuntu-latest
+    if: github.repository_owner == 'prometheus'
+    container:
+      image: quay.io/prometheus/golang-builder
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - run: ./scripts/sync_repo_files.sh
+        env:
+          GITHUB_TOKEN: ${{ secrets.PROMBOT_GITHUB_TOKEN }}

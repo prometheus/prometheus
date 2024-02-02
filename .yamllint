@@ -20,9 +20,4 @@ rules:
       config/testdata/section_key_dup.bad.yml
   line-length: disable
   truthy:
-    ignore: |
-      .github/workflows/codeql-analysis.yml
-      .github/workflows/funcbench.yml
-      .github/workflows/fuzzing.yml
-      .github/workflows/prombench.yml
-      .github/workflows/golangci-lint.yml
+    check-keys: false

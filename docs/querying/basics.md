@@ -32,6 +32,16 @@ expression), only some of these types are legal as the result from a
 user-specified expression. For example, an expression that returns an instant
 vector is the only type that can be directly graphed.
 
+_Notes about the experimental native histograms:_
+
+* Ingesting native histograms has to be enabled via a [feature
+  flag](../../feature_flags.md#native-histograms).
+* Once native histograms have been ingested into the TSDB (and even after
+  disabling the feature flag again), both instant vectors and range vectors may
+  now contain samples that aren't simple floating point numbers (float samples)
+  but complete histograms (histogram samples). A vector may contain a mix of
+  float samples and histogram samples.
+
 ## Literals
 
 ### String literals
@@ -147,9 +157,11 @@ syntax](https://github.com/google/re2/wiki/Syntax).
 
 Range vector literals work like instant vector literals, except that they
 select a range of samples back from the current instant. Syntactically, a [time
-duration](#time-durations) is appended in square brackets (`[]`) at the end of a
-vector selector to specify how far back in time values should be fetched for
-each resulting range vector element.
+duration](#time-durations) is appended in square brackets (`[]`) at the end of
+a vector selector to specify how far back in time values should be fetched for
+each resulting range vector element. The range is a closed interval,
+i.e. samples with timestamps coinciding with either boundary of the range are
+still included in the selection.
 
 In this example, we select all the values we have recorded within the last 5
 minutes for all time series that have the metric name `http_requests_total` and
@@ -200,8 +212,8 @@ While the following would be *incorrect*:
 
     sum(http_requests_total{method="GET"}) offset 5m // INVALID.
 
-The same works for range vectors. This returns the 5-minute rate that
-`http_requests_total` had a week ago:
+The same works for range vectors. This returns the 5-minute [rate](./functions.md#rate)
+that `http_requests_total` had a week ago:
 
     rate(http_requests_total[5m] offset 1w)
 

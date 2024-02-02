@@ -73,12 +73,21 @@ func TestParseFileFailure(t *testing.T) {
 			filename: "invalid_label_name.bad.yaml",
 			errMsg:   "invalid label name",
 		},
+		{
+			filename: "record_and_for.bad.yaml",
+			errMsg:   "invalid field 'for' in recording rule",
+		},
+		{
+			filename: "record_and_keep_firing_for.bad.yaml",
+			errMsg:   "invalid field 'keep_firing_for' in recording rule",
+		},
 	}
 
 	for _, c := range table {
 		_, errs := ParseFile(filepath.Join("testdata", c.filename))
 		require.NotNil(t, errs, "Expected error parsing %s but got none", c.filename)
-		require.Error(t, errs[0], c.errMsg, "Expected error for %s.", c.filename)
+		require.Error(t, errs[0])
+		require.Containsf(t, errs[0].Error(), c.errMsg, "Expected error for %s.", c.filename)
 	}
 }
 
@@ -184,10 +193,10 @@ groups:
 	_, errs := Parse([]byte(group))
 	require.Len(t, errs, 2, "Expected two errors")
 	var err00 *Error
-	require.True(t, errors.As(errs[0], &err00))
+	require.ErrorAs(t, errs[0], &err00)
 	err0 := err00.Err.node
 	var err01 *Error
-	require.True(t, errors.As(errs[1], &err01))
+	require.ErrorAs(t, errs[1], &err01)
 	err1 := err01.Err.node
 	require.NotEqual(t, err0, err1, "Error nodes should not be the same")
 }

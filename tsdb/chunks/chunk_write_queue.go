@@ -42,6 +42,7 @@ type chunkWriteJob struct {
 	maxt      int64
 	chk       chunkenc.Chunk
 	ref       ChunkDiskMapperRef
+	isOOO     bool
 	callback  func(error)
 }
 
@@ -76,7 +77,7 @@ type chunkWriteQueue struct {
 }
 
 // writeChunkF is a function which writes chunks, it is dynamic to allow mocking in tests.
-type writeChunkF func(HeadSeriesRef, int64, int64, chunkenc.Chunk, ChunkDiskMapperRef, bool) error
+type writeChunkF func(HeadSeriesRef, int64, int64, chunkenc.Chunk, ChunkDiskMapperRef, bool, bool) error
 
 func newChunkWriteQueue(reg prometheus.Registerer, size int, writeChunk writeChunkF) *chunkWriteQueue {
 	counters := prometheus.NewCounterVec(
@@ -133,7 +134,7 @@ func (c *chunkWriteQueue) start() {
 }
 
 func (c *chunkWriteQueue) processJob(job chunkWriteJob) {
-	err := c.writeChunk(job.seriesRef, job.mint, job.maxt, job.chk, job.ref, job.cutFile)
+	err := c.writeChunk(job.seriesRef, job.mint, job.maxt, job.chk, job.ref, job.isOOO, job.cutFile)
 	if job.callback != nil {
 		job.callback(err)
 	}

@@ -1,4 +1,4 @@
-import React, { Fragment, FC } from 'react';
+import React, { Fragment, FC, useState, useEffect } from 'react';
 import { Table } from 'reactstrap';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
 import { useFetch } from '../../hooks/useFetch';
@@ -97,7 +97,46 @@ const StatusResult: FC<{ fetchPath: string; title: string }> = ({ fetchPath, tit
   );
 };
 
-const Status: FC<{ agentMode: boolean }> = ({ agentMode }) => {
+interface StatusProps {
+  agentMode?: boolean | false;
+  setAnimateLogo?: (animateLogo: boolean) => void;
+}
+
+const Status: FC<StatusProps> = ({ agentMode, setAnimateLogo }) => {
+  /*    _
+   *   /' \
+   *  |    |
+   *   \__/ */
+
+  const [inputText, setInputText] = useState('');
+
+  useEffect(() => {
+    const handleKeyPress = (event: KeyboardEvent) => {
+      const keyPressed = event.key.toUpperCase();
+      setInputText((prevInputText) => {
+        const newInputText = prevInputText.slice(-3) + String.fromCharCode(((keyPressed.charCodeAt(0) - 64) % 26) + 65);
+        return newInputText;
+      });
+    };
+
+    document.addEventListener('keypress', handleKeyPress);
+
+    return () => {
+      document.removeEventListener('keypress', handleKeyPress);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (setAnimateLogo && inputText != '') {
+      setAnimateLogo(inputText.toUpperCase() === 'QSPN');
+    }
+  }, [inputText]);
+
+  /*    _
+   *   /' \
+   *  |    |
+   *   \__/ */
+
   const pathPrefix = usePathPrefix();
   const path = `${pathPrefix}/${API_PATH}`;
 

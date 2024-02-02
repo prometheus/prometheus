@@ -13,7 +13,7 @@ which handles storage and querying of all Prometheus v2 data.
 
 ## External resources
 
-* A writeup of the original design can be found [here](https://fabxc.org/blog/2017-04-10-writing-a-tsdb/).
+* A writeup of the original design can be found [here](https://web.archive.org/web/20210803115658/https://fabxc.org/tsdb/).
 * Video: [Storing 16 Bytes at Scale](https://youtu.be/b_pEevMAC3I) from [PromCon 2017](https://promcon.io/2017-munich/).
 * Compression is based on the Gorilla TSDB [white paper](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).
 

@@ -40,14 +40,16 @@ for dir in ${DIRS}; do
             -I="${PROM_PATH}" \
             -I="${GRPC_GATEWAY_ROOT}/third_party/googleapis" \
             ./*.proto
-
+		protoc --gogofast_out=Mgoogle/protobuf/timestamp.proto=github.com/gogo/protobuf/types,paths=source_relative:. -I=. \
+            -I="${GOGOPROTO_PATH}" \
+            ./io/prometheus/client/*.proto
 		sed -i.bak -E 's/import _ \"github.com\/gogo\/protobuf\/gogoproto\"//g' -- *.pb.go
 		sed -i.bak -E 's/import _ \"google\/protobuf\"//g' -- *.pb.go
 		sed -i.bak -E 's/\t_ \"google\/protobuf\"//g' -- *.pb.go
 		sed -i.bak -E 's/golang\/protobuf\/descriptor/gogo\/protobuf\/protoc-gen-gogo\/descriptor/g' -- *.go
 		sed -i.bak -E 's/golang\/protobuf/gogo\/protobuf/g' -- *.go
 		rm -f -- *.bak
-		goimports -w ./*.go
+		goimports -w ./*.go ./io/prometheus/client/*.go
 	popd
 done
 

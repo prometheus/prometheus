@@ -12,7 +12,6 @@
 // limitations under the License.
 
 //go:build !windows
-// +build !windows
 
 package tsdb
 
@@ -34,7 +33,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
-	"github.com/prometheus/prometheus/tsdb/wal"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
 func TestSegmentWAL_cut(t *testing.T) {
@@ -49,7 +48,7 @@ func TestSegmentWAL_cut(t *testing.T) {
 	require.NoError(t, w.cut())
 
 	// Cutting creates a new file.
-	require.Equal(t, 2, len(w.files))
+	require.Len(t, w.files, 2)
 
 	require.NoError(t, w.write(WALEntrySeries, 1, []byte("Hello World!!")))
 
@@ -409,7 +408,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 			r := w2.Reader()
 
 			serf := func(l []record.RefSeries) {
-				require.Equal(t, 0, len(l))
+				require.Empty(t, l)
 			}
 
 			// Weird hack to check order of reads.
@@ -450,7 +449,7 @@ func TestMigrateWAL_Empty(t *testing.T) {
 	wdir := path.Join(dir, "wal")
 
 	// Initialize empty WAL.
-	w, err := wal.New(nil, nil, wdir, false)
+	w, err := wlog.New(nil, nil, wdir, wlog.CompressionNone)
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
 
@@ -493,7 +492,7 @@ func TestMigrateWAL_Fuzz(t *testing.T) {
 	// Perform migration.
 	require.NoError(t, MigrateWAL(nil, wdir))
 
-	w, err := wal.New(nil, nil, wdir, false)
+	w, err := wlog.New(nil, nil, wdir, wlog.CompressionNone)
 	require.NoError(t, err)
 
 	// We can properly write some new data after migration.
@@ -505,10 +504,10 @@ func TestMigrateWAL_Fuzz(t *testing.T) {
 	require.NoError(t, w.Close())
 
 	// Read back all data.
-	sr, err := wal.NewSegmentsReader(wdir)
+	sr, err := wlog.NewSegmentsReader(wdir)
 	require.NoError(t, err)
 
-	r := wal.NewReader(sr)
+	r := wlog.NewReader(sr)
 	var res []interface{}
 	var dec record.Decoder
 

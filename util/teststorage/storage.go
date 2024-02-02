@@ -39,6 +39,7 @@ func New(t testutil.T) *TestStorage {
 	opts.MinBlockDuration = int64(24 * time.Hour / time.Millisecond)
 	opts.MaxBlockDuration = int64(24 * time.Hour / time.Millisecond)
 	opts.RetentionDuration = 0
+	opts.EnableNativeHistograms = true
 	db, err := tsdb.Open(dir, nil, nil, opts, tsdb.NewDBStats())
 	require.NoError(t, err, "unexpected error while opening test storage")
 	reg := prometheus.NewRegistry()

@@ -1,0 +1,5 @@
+remote_read:
+  - url: http://remote1/read
+    read_recent: true
+    name: default
+    enable_http2: false

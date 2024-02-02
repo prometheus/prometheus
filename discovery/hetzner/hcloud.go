@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/hetznercloud/hcloud-go/hcloud"
+	"github.com/hetznercloud/hcloud-go/v2/hcloud"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
@@ -59,7 +59,7 @@ type hcloudDiscovery struct {
 }
 
 // newHcloudDiscovery returns a new hcloudDiscovery which periodically refreshes its targets.
-func newHcloudDiscovery(conf *SDConfig, logger log.Logger) (*hcloudDiscovery, error) {
+func newHcloudDiscovery(conf *SDConfig, _ log.Logger) (*hcloudDiscovery, error) {
 	d := &hcloudDiscovery{
 		port: conf.Port,
 	}
@@ -91,7 +91,7 @@ func (d *hcloudDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 	targets := make([]model.LabelSet, len(servers))
 	for i, server := range servers {
 		labels := model.LabelSet{
-			hetznerLabelRole:              model.LabelValue(hetznerRoleHcloud),
+			hetznerLabelRole:              model.LabelValue(HetznerRoleHcloud),
 			hetznerLabelServerID:          model.LabelValue(fmt.Sprintf("%d", server.ID)),
 			hetznerLabelServerName:        model.LabelValue(server.Name),
 			hetznerLabelDatacenter:        model.LabelValue(server.Datacenter.Name),

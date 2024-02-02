@@ -78,20 +78,33 @@ assets-tarball: assets
 	@echo '>> packaging assets'
 	scripts/package_assets.sh
 
+# We only want to generate the parser when there's changes to the grammar.
+.PHONY: parser
+parser:
+	@echo ">> running goyacc to generate the .go file."
+ifeq (, $(shell command -v goyacc > /dev/null))
+	@echo "goyacc not installed so skipping"
+	@echo "To install: go install golang.org/x/tools/cmd/goyacc@v0.6.0"
+else
+	goyacc -o promql/parser/generated_parser.y.go promql/parser/generated_parser.y
+endif
+
 .PHONY: test
 # If we only want to only test go code we have to change the test target
 # which is called by all.
 ifeq ($(GO_ONLY),1)
-test: common-test
+test: common-test check-go-mod-version
 else
-test: common-test ui-build-module ui-test ui-lint
+test: common-test ui-build-module ui-test ui-lint check-go-mod-version
 endif
 
 .PHONY: npm_licenses
 npm_licenses: ui-install
 	@echo ">> bundling npm licenses"
-	rm -f $(REACT_APP_NPM_LICENSES_TARBALL)
-	find $(UI_NODE_MODULES_PATH) -iname "license*" | tar cfj $(REACT_APP_NPM_LICENSES_TARBALL) --transform 's/^/npm_licenses\//' --files-from=-
+	rm -f $(REACT_APP_NPM_LICENSES_TARBALL) npm_licenses
+	ln -s . npm_licenses
+	find npm_licenses/$(UI_NODE_MODULES_PATH) -iname "license*" | tar cfj $(REACT_APP_NPM_LICENSES_TARBALL) --files-from=-
+	rm -f npm_licenses
 
 .PHONY: tarball
 tarball: npm_licenses common-tarball
@@ -107,7 +120,7 @@ plugins/plugins.go: plugins.yml plugins/generate.go
 plugins: plugins/plugins.go
 
 .PHONY: build
-build: assets npm_licenses assets-compress common-build plugins
+build: assets npm_licenses assets-compress plugins common-build
 
 .PHONY: bench_tsdb
 bench_tsdb: $(PROMU)
@@ -120,3 +133,22 @@ bench_tsdb: $(PROMU)
 	@$(GO) tool pprof --alloc_space -svg $(PROMTOOL) $(TSDB_BENCHMARK_OUTPUT_DIR)/mem.prof > $(TSDB_BENCHMARK_OUTPUT_DIR)/memprof.alloc.svg
 	@$(GO) tool pprof -svg $(PROMTOOL) $(TSDB_BENCHMARK_OUTPUT_DIR)/block.prof > $(TSDB_BENCHMARK_OUTPUT_DIR)/blockprof.svg
 	@$(GO) tool pprof -svg $(PROMTOOL) $(TSDB_BENCHMARK_OUTPUT_DIR)/mutex.prof > $(TSDB_BENCHMARK_OUTPUT_DIR)/mutexprof.svg
+
+.PHONY: cli-documentation
+cli-documentation:
+	$(GO) run ./cmd/prometheus/ --write-documentation > docs/command-line/prometheus.md
+	$(GO) run ./cmd/promtool/ write-documentation > docs/command-line/promtool.md
+
+.PHONY: check-go-mod-version
+check-go-mod-version:
+	@echo ">> checking go.mod version matching"
+	@./scripts/check-go-mod-version.sh
+
+.PHONY: update-all-go-deps
+update-all-go-deps:
+	@$(MAKE) update-go-deps
+	@echo ">> updating Go dependencies in ./documentation/examples/remote_storage/"
+	@cd ./documentation/examples/remote_storage/ && for m in $$($(GO) list -mod=readonly -m -f '{{ if and (not .Indirect) (not .Main)}}{{.Path}}{{end}}' all); do \
+		$(GO) get -d $$m; \
+	done
+	@cd ./documentation/examples/remote_storage/ && $(GO) mod tidy

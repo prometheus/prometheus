@@ -42,8 +42,20 @@ Release cadence of first pre-releases being cut is 6 weeks.
 | v2.35          | 2022-04-06                                 | Augustin Husson (GitHub: @nexucis)          |
 | v2.36          | 2022-05-18                                 | Matthias Loibl (GitHub: @metalmatze)        |
 | v2.37 LTS      | 2022-06-29                                 | Julien Pivotto (GitHub: @roidelapluie)      |
-| v2.38          | 2022-08-10                                 | **searching for volunteer**                 |
-| v2.39          | 2022-09-21                                 | **searching for volunteer**                 |
+| v2.38          | 2022-08-10                                 | Julius Volz (GitHub: @juliusv)              |
+| v2.39          | 2022-09-21                                 | Ganesh Vernekar (GitHub: @codesome)         |
+| v2.40          | 2022-11-02                                 | Ganesh Vernekar (GitHub: @codesome)         |
+| v2.41          | 2022-12-14                                 | Julien Pivotto (GitHub: @roidelapluie)      |
+| v2.42          | 2023-01-25                                 | Kemal Akkoyun (GitHub: @kakkoyun)           |
+| v2.43          | 2023-03-08                                 | Julien Pivotto (GitHub: @roidelapluie)      |
+| v2.44          | 2023-04-19                                 | Bryan Boreham (GitHub: @bboreham)           |
+| v2.45 LTS      | 2023-05-31                                 | Jesus Vazquez (Github: @jesusvazquez)       |
+| v2.46          | 2023-07-12                                 | Julien Pivotto (GitHub: @roidelapluie)      |
+| v2.47          | 2023-08-23                                 | Bryan Boreham (GitHub: @bboreham)           |
+| v2.48          | 2023-10-04                                 | Levi Harrison (GitHub: @LeviHarrison)       |
+| v2.49          | 2023-12-05                                 | Bartek Plotka (GitHub: @bwplotka)           |
+| v2.50          | 2024-01-16                                 | Augustin Husson (GitHub: @nexucis)          |
+| v2.51          | 2024-02-13                                 | **searching for volunteer**                 |
 
 If you are interested in volunteering please create a pull request against the [prometheus/prometheus](https://github.com/prometheus/prometheus) repository and propose yourself for the release series of your choice.
 
@@ -98,14 +110,16 @@ This is also a good time to consider any experimental features and feature
 flags for promotion to stable or for deprecation or ultimately removal. Do any
 of these in pull requests, one per feature.
 
+> NOTE: As a validation step check if all security alerts are closed after this step: https://github.com/prometheus/prometheus/security/dependabot. Sometimes it's ok
+> if not critical and e.g. fix is not released yet (or it does not relate to 
+> upgrading) or when we are unaffected.
+ 
 #### Manually updating Go dependencies
 
 This is usually only needed for `+incompatible` and `v0.0.0` non-semver updates.
 
 ```bash
-make update-go-deps
-git add go.mod go.sum
-git commit -m "Update dependencies"
+make update-all-go-deps
 ```
 
 #### Manually updating React dependencies
@@ -139,6 +153,7 @@ For release candidates still update `CHANGELOG.md`, but when you cut the final r
 
 Entries in the `CHANGELOG.md` are meant to be in this order:
 
+* `[SECURITY]` - A bugfix that specifically fixes a security issue.
 * `[CHANGE]`
 * `[FEATURE]`
 * `[ENHANCEMENT]`

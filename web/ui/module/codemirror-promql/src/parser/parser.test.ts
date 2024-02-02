@@ -96,6 +96,11 @@ describe('promql operations', () => {
       expectedDiag: [] as Diagnostic[],
     },
     {
+      expr: 'mad_over_time(rate(metric_name[5m])[1h:] offset 1m)',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
       expr: 'max_over_time(rate(metric_name[5m])[1h:] offset 1m)',
       expectedValueType: ValueType.vector,
       expectedDiag: [] as Diagnostic[],
@@ -708,6 +713,80 @@ describe('promql operations', () => {
         '  sum by(le, method, path) (                                    # 2nd argument to histogram_quantile(), an aggregated histogram.\n' +
         '    rate(                                                       # Argument to sum(), the per-second increase of a histogram over 5m.\n' +
         '      demo_api_request_duration_seconds_bucket{job="demo"}[5m]  # Argument to rate(), the raw histogram series over the last 5m.\n' +
+        '    )\n' +
+        '  )\n' +
+        ')',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr:
+        'histogram_fraction(                                      # Root of the query, final result, approximates a fraction of observations within an interval.\n' +
+        '  -Inf,                                                  # 1st argument to histogram_fraction(), start of the interval.\n' +
+        '  123.4,                                                 # 2nd argument to histogram_fraction(), end of the interval.\n' +
+        '  sum by(method, path) (                                 # 3rd argument to histogram_fraction(), an aggregated histogram.\n' +
+        '    rate(                                                # Argument to sum(), the per-second increase of a histogram over 5m.\n' +
+        '      demo_api_request_duration_seconds{job="demo"}[5m]  # Argument to rate(), a vector of sparse histogram series over the last 5m.\n' +
+        '    )\n' +
+        '  )\n' +
+        ')',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr:
+        'histogram_count(                                         # Root of the query, final result, returns the count of observations.\n' +
+        '  sum by(method, path) (                                 # Argument to histogram_count(), an aggregated histogram.\n' +
+        '    rate(                                                # Argument to sum(), the per-second increase of a histogram over 5m.\n' +
+        '      demo_api_request_duration_seconds{job="demo"}[5m]  # Argument to rate(), a vector of sparse histogram series over the last 5m.\n' +
+        '    )\n' +
+        '  )\n' +
+        ')',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr:
+        'histogram_sum(                                           # Root of the query, final result, returns the sum of observations.\n' +
+        '  sum by(method, path) (                                 # Argument to histogram_sum(), an aggregated histogram.\n' +
+        '    rate(                                                # Argument to sum(), the per-second increase of a histogram over 5m.\n' +
+        '      demo_api_request_duration_seconds{job="demo"}[5m]  # Argument to rate(), a vector of sparse histogram series over the last 5m.\n' +
+        '    )\n' +
+        '  )\n' +
+        ')',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr:
+        'histogram_avg(                                           # Root of the query, final result, returns the average of observations.\n' +
+        '  sum by(method, path) (                                 # Argument to histogram_avg(), an aggregated histogram.\n' +
+        '    rate(                                                # Argument to sum(), the per-second increase of a histogram over 5m.\n' +
+        '      demo_api_request_duration_seconds{job="demo"}[5m]  # Argument to rate(), a vector of sparse histogram series over the last 5m.\n' +
+        '    )\n' +
+        '  )\n' +
+        ')',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr:
+        'histogram_stddev(                                           # Root of the query, final result, returns the standard deviation of observations.\n' +
+        '  sum by(method, path) (                                 # Argument to histogram_stddev(), an aggregated histogram.\n' +
+        '    rate(                                                # Argument to sum(), the per-second increase of a histogram over 5m.\n' +
+        '      demo_api_request_duration_seconds{job="demo"}[5m]  # Argument to rate(), a vector of sparse histogram series over the last 5m.\n' +
+        '    )\n' +
+        '  )\n' +
+        ')',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr:
+        'histogram_stdvar(                                           # Root of the query, final result, returns the standard variance of observations.\n' +
+        '  sum by(method, path) (                                 # Argument to histogram_stdvar(), an aggregated histogram.\n' +
+        '    rate(                                                # Argument to sum(), the per-second increase of a histogram over 5m.\n' +
+        '      demo_api_request_duration_seconds{job="demo"}[5m]  # Argument to rate(), a vector of sparse histogram series over the last 5m.\n' +
         '    )\n' +
         '  )\n' +
         ')',

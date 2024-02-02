@@ -477,10 +477,10 @@ load 5m
     trigNaN{} NaN
 
 eval instant at 5m trigy atan2 trigx
-    trigy{} 0.4636476090008061
+    {} 0.4636476090008061
 
 eval instant at 5m trigy atan2 trigNaN
-    trigy{} NaN
+    {} NaN
 
 eval instant at 5m 10 atan2 20
     0.4636476090008061

@@ -46,7 +46,7 @@ func TestChunkedReaderCanReadFromChunkedWriter(t *testing.T) {
 	for _, msg := range msgs {
 		n, err := w.Write(msg)
 		require.NoError(t, err)
-		require.Equal(t, len(msg), n)
+		require.Len(t, msg, n)
 	}
 
 	i := 0

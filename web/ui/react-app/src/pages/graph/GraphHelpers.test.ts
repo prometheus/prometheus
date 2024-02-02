@@ -212,6 +212,7 @@ describe('GraphHelpers', () => {
         },
         series: {
           stack: false,
+          heatmap: false,
           lines: { lineWidth: 1, steps: false, fill: true },
           shadowSize: 0,
         },

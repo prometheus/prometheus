@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"sort"
 	"testing"
@@ -24,15 +25,19 @@ import (
 
 	"github.com/go-kit/log"
 
-	"github.com/prometheus/prometheus/util/stats"
-
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/prometheus/prometheus/util/stats"
+	"github.com/prometheus/prometheus/util/teststorage"
 )
 
 func TestMain(m *testing.M) {
@@ -46,6 +51,7 @@ func TestQueryConcurrency(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 	queryTracker := NewActiveQueryTracker(dir, maxConcurrency, nil)
+	t.Cleanup(queryTracker.Close)
 
 	opts := EngineOpts{
 		Logger:             nil,
@@ -134,7 +140,7 @@ func TestQueryTimeout(t *testing.T) {
 	require.Error(t, res.Err, "expected timeout error but got none")
 
 	var e ErrQueryTimeout
-	require.True(t, errors.As(res.Err, &e), "expected timeout error but got: %s", res.Err)
+	require.ErrorAs(t, res.Err, &e, "expected timeout error but got: %s", res.Err)
 }
 
 const errQueryCanceled = ErrQueryCanceled("test statement execution")
@@ -190,15 +196,15 @@ type errQuerier struct {
 	err error
 }
 
-func (q *errQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
+func (q *errQuerier) Select(context.Context, bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
 	return errSeriesSet{err: q.err}
 }
 
-func (*errQuerier) LabelValues(string, ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (*errQuerier) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
-func (*errQuerier) LabelNames(...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (*errQuerier) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 func (*errQuerier) Close() error { return nil }
@@ -208,10 +214,10 @@ type errSeriesSet struct {
 	err error
 }
 
-func (errSeriesSet) Next() bool                   { return false }
-func (errSeriesSet) At() storage.Series           { return nil }
-func (e errSeriesSet) Err() error                 { return e.err }
-func (e errSeriesSet) Warnings() storage.Warnings { return nil }
+func (errSeriesSet) Next() bool                          { return false }
+func (errSeriesSet) At() storage.Series                  { return nil }
+func (e errSeriesSet) Err() error                        { return e.err }
+func (e errSeriesSet) Warnings() annotations.Annotations { return nil }
 
 func TestQueryError(t *testing.T) {
 	opts := EngineOpts{
@@ -222,32 +228,32 @@ func TestQueryError(t *testing.T) {
 	}
 	engine := NewEngine(opts)
 	errStorage := ErrStorage{errors.New("storage error")}
-	queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+	queryable := storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
 		return &errQuerier{err: errStorage}, nil
 	})
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 
-	vectorQuery, err := engine.NewInstantQuery(queryable, nil, "foo", time.Unix(1, 0))
+	vectorQuery, err := engine.NewInstantQuery(ctx, queryable, nil, "foo", time.Unix(1, 0))
 	require.NoError(t, err)
 
 	res := vectorQuery.Exec(ctx)
 	require.Error(t, res.Err, "expected error on failed select but got none")
-	require.True(t, errors.Is(res.Err, errStorage), "expected error doesn't match")
+	require.ErrorIs(t, res.Err, errStorage, "expected error doesn't match")
 
-	matrixQuery, err := engine.NewInstantQuery(queryable, nil, "foo[1m]", time.Unix(1, 0))
+	matrixQuery, err := engine.NewInstantQuery(ctx, queryable, nil, "foo[1m]", time.Unix(1, 0))
 	require.NoError(t, err)
 
 	res = matrixQuery.Exec(ctx)
 	require.Error(t, res.Err, "expected error on failed select but got none")
-	require.True(t, errors.Is(res.Err, errStorage), "expected error doesn't match")
+	require.ErrorIs(t, res.Err, errStorage, "expected error doesn't match")
 }
 
 type noopHintRecordingQueryable struct {
 	hints []*storage.SelectHints
 }
 
-func (h *noopHintRecordingQueryable) Querier(context.Context, int64, int64) (storage.Querier, error) {
+func (h *noopHintRecordingQueryable) Querier(int64, int64) (storage.Querier, error) {
 	return &hintRecordingQuerier{Querier: &errQuerier{}, h: h}, nil
 }
 
@@ -257,9 +263,9 @@ type hintRecordingQuerier struct {
 	h *noopHintRecordingQueryable
 }
 
-func (h *hintRecordingQuerier) Select(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func (h *hintRecordingQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	h.h.hints = append(h.h.hints, hints)
-	return h.Querier.Select(sortSeries, hints, matchers...)
+	return h.Querier.Select(ctx, sortSeries, hints, matchers...)
 }
 
 func TestSelectHintsSetCorrectly(t *testing.T) {
@@ -330,56 +336,56 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 		}, {
 			query: "foo[2m:1s]", start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 175000, End: 300000},
+				{Start: 175000, End: 300000, Step: 1000},
 			},
 		}, {
 			query: "count_over_time(foo[2m:1s])", start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 175000, End: 300000, Func: "count_over_time"},
+				{Start: 175000, End: 300000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: "count_over_time(foo[2m:1s] @ 300)", start: 200000,
 			expected: []*storage.SelectHints{
-				{Start: 175000, End: 300000, Func: "count_over_time"},
+				{Start: 175000, End: 300000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: "count_over_time(foo[2m:1s] @ 200)", start: 200000,
 			expected: []*storage.SelectHints{
-				{Start: 75000, End: 200000, Func: "count_over_time"},
+				{Start: 75000, End: 200000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: "count_over_time(foo[2m:1s] @ 100)", start: 200000,
 			expected: []*storage.SelectHints{
-				{Start: -25000, End: 100000, Func: "count_over_time"},
+				{Start: -25000, End: 100000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: "count_over_time(foo[2m:1s] offset 10s)", start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 165000, End: 290000, Func: "count_over_time"},
+				{Start: 165000, End: 290000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: "count_over_time((foo offset 10s)[2m:1s] offset 10s)", start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 155000, End: 280000, Func: "count_over_time"},
+				{Start: 155000, End: 280000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			// When the @ is on the vector selector, the enclosing subquery parameters
 			// don't affect the hint ranges.
 			query: "count_over_time((foo @ 200 offset 10s)[2m:1s] offset 10s)", start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 185000, End: 190000, Func: "count_over_time"},
+				{Start: 185000, End: 190000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			// When the @ is on the vector selector, the enclosing subquery parameters
 			// don't affect the hint ranges.
 			query: "count_over_time((foo @ 200 offset 10s)[2m:1s] @ 100 offset 10s)", start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 185000, End: 190000, Func: "count_over_time"},
+				{Start: 185000, End: 190000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: "count_over_time((foo offset 10s)[2m:1s] @ 100 offset 10s)", start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: -45000, End: 80000, Func: "count_over_time"},
+				{Start: -45000, End: 80000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: "foo", start: 10000, end: 20000,
@@ -498,13 +504,13 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 		}, {
 			query: "(max by (dim1) (foo))[5s:1s]", start: 10000,
 			expected: []*storage.SelectHints{
-				{Start: 0, End: 10000, Func: "max", By: true, Grouping: []string{"dim1"}},
+				{Start: 0, End: 10000, Func: "max", By: true, Grouping: []string{"dim1"}, Step: 1000},
 			},
 		}, {
 			query: "(sum(http_requests{group=~\"p.*\"})+max(http_requests{group=~\"c.*\"}))[20s:5s]", start: 120000,
 			expected: []*storage.SelectHints{
-				{Start: 95000, End: 120000, Func: "sum", By: true},
-				{Start: 95000, End: 120000, Func: "max", By: true},
+				{Start: 95000, End: 120000, Func: "sum", By: true, Step: 5000},
+				{Start: 95000, End: 120000, Func: "max", By: true, Step: 5000},
 			},
 		}, {
 			query: "foo @ 50 + bar @ 250 + baz @ 900", start: 100000, end: 500000,
@@ -544,12 +550,12 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 		}, { // Hints are based on the inner most subquery timestamp.
 			query: `sum_over_time(sum_over_time(metric{job="1"}[100s])[100s:25s] @ 50)[3s:1s] @ 3000`, start: 100000,
 			expected: []*storage.SelectHints{
-				{Start: -150000, End: 50000, Range: 100000, Func: "sum_over_time"},
+				{Start: -150000, End: 50000, Range: 100000, Func: "sum_over_time", Step: 25000},
 			},
 		}, { // Hints are based on the inner most subquery timestamp.
 			query: `sum_over_time(sum_over_time(metric{job="1"}[100s])[100s:25s] @ 3000)[3s:1s] @ 50`,
 			expected: []*storage.SelectHints{
-				{Start: 2800000, End: 3000000, Range: 100000, Func: "sum_over_time"},
+				{Start: 2800000, End: 3000000, Range: 100000, Func: "sum_over_time", Step: 25000},
 			},
 		},
 	} {
@@ -561,10 +567,12 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 				query Query
 				err   error
 			)
+			ctx := context.Background()
+
 			if tc.end == 0 {
-				query, err = engine.NewInstantQuery(hintsRecorder, nil, tc.query, timestamp.Time(tc.start))
+				query, err = engine.NewInstantQuery(ctx, hintsRecorder, nil, tc.query, timestamp.Time(tc.start))
 			} else {
-				query, err = engine.NewRangeQuery(hintsRecorder, nil, tc.query, timestamp.Time(tc.start), timestamp.Time(tc.end), time.Second)
+				query, err = engine.NewRangeQuery(ctx, hintsRecorder, nil, tc.query, timestamp.Time(tc.start), timestamp.Time(tc.end), time.Second)
 			}
 			require.NoError(t, err)
 
@@ -627,19 +635,15 @@ func TestEngineShutdown(t *testing.T) {
 	require.Error(t, res2.Err, "expected error on querying with canceled context but got none")
 
 	var e ErrQueryCanceled
-	require.True(t, errors.As(res2.Err, &e), "expected cancellation error but got: %s", res2.Err)
+	require.ErrorAs(t, res2.Err, &e, "expected cancellation error but got: %s", res2.Err)
 }
 
 func TestEngineEvalStmtTimestamps(t *testing.T) {
-	test, err := NewTest(t, `
+	storage := LoadedStorage(t, `
 load 10s
   metric 1 2
 `)
-	require.NoError(t, err)
-	defer test.Close()
-
-	err = test.Run()
-	require.NoError(t, err)
+	t.Cleanup(func() { storage.Close() })
 
 	cases := []struct {
 		Query       string
@@ -659,7 +663,8 @@ load 10s
 			Query: "metric",
 			Result: Vector{
 				Sample{
-					Point:  Point{V: 1, T: 1000},
+					F:      1,
+					T:      1000,
 					Metric: labels.FromStrings("__name__", "metric"),
 				},
 			},
@@ -669,7 +674,7 @@ load 10s
 			Query: "metric[20s]",
 			Result: Matrix{
 				Series{
-					Points: []Point{{V: 1, T: 0}, {V: 2, T: 10000}},
+					Floats: []FPoint{{F: 1, T: 0}, {F: 2, T: 10000}},
 					Metric: labels.FromStrings("__name__", "metric"),
 				},
 			},
@@ -680,7 +685,8 @@ load 10s
 			Query: "1",
 			Result: Matrix{
 				Series{
-					Points: []Point{{V: 1, T: 0}, {V: 1, T: 1000}, {V: 1, T: 2000}},
+					Floats: []FPoint{{F: 1, T: 0}, {F: 1, T: 1000}, {F: 1, T: 2000}},
+					Metric: labels.EmptyLabels(),
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -691,7 +697,7 @@ load 10s
 			Query: "metric",
 			Result: Matrix{
 				Series{
-					Points: []Point{{V: 1, T: 0}, {V: 1, T: 1000}, {V: 1, T: 2000}},
+					Floats: []FPoint{{F: 1, T: 0}, {F: 1, T: 1000}, {F: 1, T: 2000}},
 					Metric: labels.FromStrings("__name__", "metric"),
 				},
 			},
@@ -703,7 +709,7 @@ load 10s
 			Query: "metric",
 			Result: Matrix{
 				Series{
-					Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}},
+					Floats: []FPoint{{F: 1, T: 0}, {F: 1, T: 5000}, {F: 2, T: 10000}},
 					Metric: labels.FromStrings("__name__", "metric"),
 				},
 			},
@@ -721,14 +727,15 @@ load 10s
 		t.Run(fmt.Sprintf("%d query=%s", i, c.Query), func(t *testing.T) {
 			var err error
 			var qry Query
+			engine := newTestEngine()
 			if c.Interval == 0 {
-				qry, err = test.QueryEngine().NewInstantQuery(test.Queryable(), nil, c.Query, c.Start)
+				qry, err = engine.NewInstantQuery(context.Background(), storage, nil, c.Query, c.Start)
 			} else {
-				qry, err = test.QueryEngine().NewRangeQuery(test.Queryable(), nil, c.Query, c.Start, c.End, c.Interval)
+				qry, err = engine.NewRangeQuery(context.Background(), storage, nil, c.Query, c.Start, c.End, c.Interval)
 			}
 			require.NoError(t, err)
 
-			res := qry.Exec(test.Context())
+			res := qry.Exec(context.Background())
 			if c.ShouldError {
 				require.Error(t, res.Err, "expected error for the query %q", c.Query)
 				return
@@ -741,18 +748,14 @@ load 10s
 }
 
 func TestQueryStatistics(t *testing.T) {
-	test, err := NewTest(t, `
+	storage := LoadedStorage(t, `
 load 10s
   metricWith1SampleEvery10Seconds 1+1x100
   metricWith3SampleEvery10Seconds{a="1",b="1"} 1+1x100
   metricWith3SampleEvery10Seconds{a="2",b="2"} 1+1x100
   metricWith3SampleEvery10Seconds{a="3",b="2"} 1+1x100
 `)
-	require.NoError(t, err)
-	defer test.Close()
-
-	err = test.Run()
-	require.NoError(t, err)
+	t.Cleanup(func() { storage.Close() })
 
 	cases := []struct {
 		Query               string
@@ -1187,25 +1190,25 @@ load 10s
 		},
 	}
 
-	engine := test.QueryEngine()
+	engine := newTestEngine()
 	engine.enablePerStepStats = true
 	origMaxSamples := engine.maxSamplesPerQuery
 	for _, c := range cases {
 		t.Run(c.Query, func(t *testing.T) {
-			opts := &QueryOpts{EnablePerStepStats: true}
+			opts := NewPrometheusQueryOpts(true, 0)
 			engine.maxSamplesPerQuery = origMaxSamples
 
 			runQuery := func(expErr error) *stats.Statistics {
 				var err error
 				var qry Query
 				if c.Interval == 0 {
-					qry, err = engine.NewInstantQuery(test.Queryable(), opts, c.Query, c.Start)
+					qry, err = engine.NewInstantQuery(context.Background(), storage, opts, c.Query, c.Start)
 				} else {
-					qry, err = engine.NewRangeQuery(test.Queryable(), opts, c.Query, c.Start, c.End, c.Interval)
+					qry, err = engine.NewRangeQuery(context.Background(), storage, opts, c.Query, c.Start, c.End, c.Interval)
 				}
 				require.NoError(t, err)
 
-				res := qry.Exec(test.Context())
+				res := qry.Exec(context.Background())
 				require.Equal(t, expErr, res.Err)
 
 				return qry.Stats()
@@ -1227,17 +1230,13 @@ load 10s
 }
 
 func TestMaxQuerySamples(t *testing.T) {
-	test, err := NewTest(t, `
+	storage := LoadedStorage(t, `
 load 10s
   metric 1+1x100
   bigmetric{a="1"} 1+1x100
   bigmetric{a="2"} 1+1x100
 `)
-	require.NoError(t, err)
-	defer test.Close()
-
-	err = test.Run()
-	require.NoError(t, err)
+	t.Cleanup(func() { storage.Close() })
 
 	// These test cases should be touching the limit exactly (hence no exceeding).
 	// Exceeding the limit will be tested by doing -1 to the MaxSamples.
@@ -1375,20 +1374,20 @@ load 10s
 		},
 	}
 
-	engine := test.QueryEngine()
 	for _, c := range cases {
 		t.Run(c.Query, func(t *testing.T) {
+			engine := newTestEngine()
 			testFunc := func(expError error) {
 				var err error
 				var qry Query
 				if c.Interval == 0 {
-					qry, err = engine.NewInstantQuery(test.Queryable(), nil, c.Query, c.Start)
+					qry, err = engine.NewInstantQuery(context.Background(), storage, nil, c.Query, c.Start)
 				} else {
-					qry, err = engine.NewRangeQuery(test.Queryable(), nil, c.Query, c.Start, c.End, c.Interval)
+					qry, err = engine.NewRangeQuery(context.Background(), storage, nil, c.Query, c.Start, c.End, c.Interval)
 				}
 				require.NoError(t, err)
 
-				res := qry.Exec(test.Context())
+				res := qry.Exec(context.Background())
 				stats := qry.Stats()
 				require.Equal(t, expError, res.Err)
 				require.NotNil(t, stats)
@@ -1409,7 +1408,8 @@ load 10s
 }
 
 func TestAtModifier(t *testing.T) {
-	test, err := NewTest(t, `
+	engine := newTestEngine()
+	storage := LoadedStorage(t, `
 load 10s
   metric{job="1"} 0+1x1000
   metric{job="2"} 0+2x1000
@@ -1420,11 +1420,7 @@ load 10s
 load 1ms
   metric_ms 0+1x10000
 `)
-	require.NoError(t, err)
-	defer test.Close()
-
-	err = test.Run()
-	require.NoError(t, err)
+	t.Cleanup(func() { storage.Close() })
 
 	lbls1 := labels.FromStrings("__name__", "metric", "job", "1")
 	lbls2 := labels.FromStrings("__name__", "metric", "job", "2")
@@ -1434,12 +1430,12 @@ load 1ms
 	lblsneg := labels.FromStrings("__name__", "metric_neg")
 
 	// Add some samples with negative timestamp.
-	db := test.TSDB()
+	db := storage.DB
 	app := db.Appender(context.Background())
 	ref, err := app.Append(0, lblsneg, -1000000, 1000)
 	require.NoError(t, err)
 	for ts := int64(-1000000 + 1000); ts <= 0; ts += 1000 {
-		_, err := app.Append(ref, nil, ts, -float64(ts/1000)+1)
+		_, err := app.Append(ref, labels.EmptyLabels(), ts, -float64(ts/1000)+1)
 		require.NoError(t, err)
 	}
 
@@ -1458,20 +1454,20 @@ load 1ms
 			query: `metric_neg @ 0`,
 			start: 100,
 			result: Vector{
-				Sample{Point: Point{V: 1, T: 100000}, Metric: lblsneg},
+				Sample{F: 1, T: 100000, Metric: lblsneg},
 			},
 		}, {
 			query: `metric_neg @ -200`,
 			start: 100,
 			result: Vector{
-				Sample{Point: Point{V: 201, T: 100000}, Metric: lblsneg},
+				Sample{F: 201, T: 100000, Metric: lblsneg},
 			},
 		}, {
 			query: `metric{job="2"} @ 50`,
 			start: -2, end: 2, interval: 1,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 10, T: -2000}, {V: 10, T: -1000}, {V: 10, T: 0}, {V: 10, T: 1000}, {V: 10, T: 2000}},
+					Floats: []FPoint{{F: 10, T: -2000}, {F: 10, T: -1000}, {F: 10, T: 0}, {F: 10, T: 1000}, {F: 10, T: 2000}},
 					Metric: lbls2,
 				},
 			},
@@ -1480,11 +1476,11 @@ load 1ms
 			start: 10,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 28, T: 280000}, {V: 29, T: 290000}, {V: 30, T: 300000}},
+					Floats: []FPoint{{F: 28, T: 280000}, {F: 29, T: 290000}, {F: 30, T: 300000}},
 					Metric: lbls1,
 				},
 				Series{
-					Points: []Point{{V: 56, T: 280000}, {V: 58, T: 290000}, {V: 60, T: 300000}},
+					Floats: []FPoint{{F: 56, T: 280000}, {F: 58, T: 290000}, {F: 60, T: 300000}},
 					Metric: lbls2,
 				},
 			},
@@ -1493,7 +1489,7 @@ load 1ms
 			start: 100,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 3, T: -2000}, {V: 2, T: -1000}, {V: 1, T: 0}},
+					Floats: []FPoint{{F: 3, T: -2000}, {F: 2, T: -1000}, {F: 1, T: 0}},
 					Metric: lblsneg,
 				},
 			},
@@ -1502,7 +1498,7 @@ load 1ms
 			start: 100,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 504, T: -503000}, {V: 503, T: -502000}, {V: 502, T: -501000}, {V: 501, T: -500000}},
+					Floats: []FPoint{{F: 504, T: -503000}, {F: 503, T: -502000}, {F: 502, T: -501000}, {F: 501, T: -500000}},
 					Metric: lblsneg,
 				},
 			},
@@ -1511,7 +1507,7 @@ load 1ms
 			start: 100,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 2342, T: 2342}, {V: 2343, T: 2343}, {V: 2344, T: 2344}, {V: 2345, T: 2345}},
+					Floats: []FPoint{{F: 2342, T: 2342}, {F: 2343, T: 2343}, {F: 2344, T: 2344}, {F: 2345, T: 2345}},
 					Metric: lblsms,
 				},
 			},
@@ -1520,11 +1516,11 @@ load 1ms
 			start: 100,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 20, T: 200000}, {V: 22, T: 225000}, {V: 25, T: 250000}, {V: 27, T: 275000}, {V: 30, T: 300000}},
+					Floats: []FPoint{{F: 20, T: 200000}, {F: 22, T: 225000}, {F: 25, T: 250000}, {F: 27, T: 275000}, {F: 30, T: 300000}},
 					Metric: lbls1,
 				},
 				Series{
-					Points: []Point{{V: 40, T: 200000}, {V: 44, T: 225000}, {V: 50, T: 250000}, {V: 54, T: 275000}, {V: 60, T: 300000}},
+					Floats: []FPoint{{F: 40, T: 200000}, {F: 44, T: 225000}, {F: 50, T: 250000}, {F: 54, T: 275000}, {F: 60, T: 300000}},
 					Metric: lbls2,
 				},
 			},
@@ -1533,7 +1529,7 @@ load 1ms
 			start: 100,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 51, T: -50000}, {V: 26, T: -25000}, {V: 1, T: 0}},
+					Floats: []FPoint{{F: 51, T: -50000}, {F: 26, T: -25000}, {F: 1, T: 0}},
 					Metric: lblsneg,
 				},
 			},
@@ -1542,7 +1538,7 @@ load 1ms
 			start: 100,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 151, T: -150000}, {V: 126, T: -125000}, {V: 101, T: -100000}},
+					Floats: []FPoint{{F: 151, T: -150000}, {F: 126, T: -125000}, {F: 101, T: -100000}},
 					Metric: lblsneg,
 				},
 			},
@@ -1551,7 +1547,7 @@ load 1ms
 			start: 100,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 2250, T: 2250}, {V: 2275, T: 2275}, {V: 2300, T: 2300}, {V: 2325, T: 2325}},
+					Floats: []FPoint{{F: 2250, T: 2250}, {F: 2275, T: 2275}, {F: 2300, T: 2300}, {F: 2325, T: 2325}},
 					Metric: lblsms,
 				},
 			},
@@ -1560,7 +1556,7 @@ load 1ms
 			start: 50, end: 80, interval: 10,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 995, T: 50000}, {V: 994, T: 60000}, {V: 993, T: 70000}, {V: 992, T: 80000}},
+					Floats: []FPoint{{F: 995, T: 50000}, {F: 994, T: 60000}, {F: 993, T: 70000}, {F: 992, T: 80000}},
 					Metric: lblstopk3,
 				},
 			},
@@ -1569,7 +1565,7 @@ load 1ms
 			start: 50, end: 80, interval: 10,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 10, T: 50000}, {V: 12, T: 60000}, {V: 14, T: 70000}, {V: 16, T: 80000}},
+					Floats: []FPoint{{F: 10, T: 50000}, {F: 12, T: 60000}, {F: 14, T: 70000}, {F: 16, T: 80000}},
 					Metric: lblstopk2,
 				},
 			},
@@ -1578,7 +1574,7 @@ load 1ms
 			start: 70, end: 100, interval: 10,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 993, T: 70000}, {V: 992, T: 80000}, {V: 991, T: 90000}, {V: 990, T: 100000}},
+					Floats: []FPoint{{F: 993, T: 70000}, {F: 992, T: 80000}, {F: 991, T: 90000}, {F: 990, T: 100000}},
 					Metric: lblstopk3,
 				},
 			},
@@ -1587,7 +1583,7 @@ load 1ms
 			start: 100, end: 130, interval: 10,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 990, T: 100000}, {V: 989, T: 110000}, {V: 988, T: 120000}, {V: 987, T: 130000}},
+					Floats: []FPoint{{F: 990, T: 100000}, {F: 989, T: 110000}, {F: 988, T: 120000}, {F: 987, T: 130000}},
 					Metric: lblstopk3,
 				},
 			},
@@ -1598,17 +1594,17 @@ load 1ms
 			start: 0, end: 7 * 60, interval: 60,
 			result: Matrix{
 				Series{
-					Points: []Point{
-						{V: 3600, T: 0},
-						{V: 3600, T: 60 * 1000},
-						{V: 3600, T: 2 * 60 * 1000},
-						{V: 3600, T: 3 * 60 * 1000},
-						{V: 3600, T: 4 * 60 * 1000},
-						{V: 3600, T: 5 * 60 * 1000},
-						{V: 3600, T: 6 * 60 * 1000},
-						{V: 3600, T: 7 * 60 * 1000},
+					Floats: []FPoint{
+						{F: 3600, T: 0},
+						{F: 3600, T: 60 * 1000},
+						{F: 3600, T: 2 * 60 * 1000},
+						{F: 3600, T: 3 * 60 * 1000},
+						{F: 3600, T: 4 * 60 * 1000},
+						{F: 3600, T: 5 * 60 * 1000},
+						{F: 3600, T: 6 * 60 * 1000},
+						{F: 3600, T: 7 * 60 * 1000},
 					},
-					Metric: labels.Labels{},
+					Metric: labels.EmptyLabels(),
 				},
 			},
 		},
@@ -1623,13 +1619,13 @@ load 1ms
 			var err error
 			var qry Query
 			if c.end == 0 {
-				qry, err = test.QueryEngine().NewInstantQuery(test.Queryable(), nil, c.query, start)
+				qry, err = engine.NewInstantQuery(context.Background(), storage, nil, c.query, start)
 			} else {
-				qry, err = test.QueryEngine().NewRangeQuery(test.Queryable(), nil, c.query, start, end, interval)
+				qry, err = engine.NewRangeQuery(context.Background(), storage, nil, c.query, start, end, interval)
 			}
 			require.NoError(t, err)
 
-			res := qry.Exec(test.Context())
+			res := qry.Exec(context.Background())
 			require.NoError(t, res.Err)
 			if expMat, ok := c.result.(Matrix); ok {
 				sort.Sort(expMat)
@@ -1660,7 +1656,6 @@ func TestRecoverEvaluatorRuntime(t *testing.T) {
 
 	// Cause a runtime panic.
 	var a []int
-	//nolint:govet
 	a[123] = 1
 }
 
@@ -1681,9 +1676,9 @@ func TestRecoverEvaluatorError(t *testing.T) {
 func TestRecoverEvaluatorErrorWithWarnings(t *testing.T) {
 	ev := &evaluator{logger: log.NewNopLogger()}
 	var err error
-	var ws storage.Warnings
+	var ws annotations.Annotations
 
-	warnings := storage.Warnings{errors.New("custom warning")}
+	warnings := annotations.New().Add(errors.New("custom warning"))
 	e := errWithWarnings{
 		err:      errors.New("custom error"),
 		warnings: warnings,
@@ -1719,7 +1714,7 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						Matrix{
 							Series{
-								Points: []Point{{V: 1, T: 0}, {V: 2, T: 10000}},
+								Floats: []FPoint{{F: 1, T: 0}, {F: 2, T: 10000}},
 								Metric: labels.FromStrings("__name__", "metric"),
 							},
 						},
@@ -1733,7 +1728,7 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						Matrix{
 							Series{
-								Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}},
+								Floats: []FPoint{{F: 1, T: 0}, {F: 1, T: 5000}, {F: 2, T: 10000}},
 								Metric: labels.FromStrings("__name__", "metric"),
 							},
 						},
@@ -1747,7 +1742,7 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						Matrix{
 							Series{
-								Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}},
+								Floats: []FPoint{{F: 1, T: 0}, {F: 1, T: 5000}, {F: 2, T: 10000}},
 								Metric: labels.FromStrings("__name__", "metric"),
 							},
 						},
@@ -1761,7 +1756,7 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						Matrix{
 							Series{
-								Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}},
+								Floats: []FPoint{{F: 1, T: 0}, {F: 1, T: 5000}, {F: 2, T: 10000}},
 								Metric: labels.FromStrings("__name__", "metric"),
 							},
 						},
@@ -1775,7 +1770,7 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						Matrix{
 							Series{
-								Points: []Point{{V: 2, T: 15000}, {V: 2, T: 20000}, {V: 2, T: 25000}, {V: 2, T: 30000}},
+								Floats: []FPoint{{F: 2, T: 15000}, {F: 2, T: 20000}, {F: 2, T: 25000}, {F: 2, T: 30000}},
 								Metric: labels.FromStrings("__name__", "metric"),
 							},
 						},
@@ -1789,7 +1784,7 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						Matrix{
 							Series{
-								Points: []Point{{V: 2, T: 10000}, {V: 2, T: 15000}, {V: 2, T: 20000}, {V: 2, T: 25000}, {V: 2, T: 30000}},
+								Floats: []FPoint{{F: 2, T: 10000}, {F: 2, T: 15000}, {F: 2, T: 20000}, {F: 2, T: 25000}, {F: 2, T: 30000}},
 								Metric: labels.FromStrings("__name__", "metric"),
 							},
 						},
@@ -1803,7 +1798,7 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						Matrix{
 							Series{
-								Points: []Point{{V: 2, T: 10000}, {V: 2, T: 15000}, {V: 2, T: 20000}, {V: 2, T: 25000}},
+								Floats: []FPoint{{F: 2, T: 10000}, {F: 2, T: 15000}, {F: 2, T: 20000}, {F: 2, T: 25000}},
 								Metric: labels.FromStrings("__name__", "metric"),
 							},
 						},
@@ -1817,7 +1812,7 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						Matrix{
 							Series{
-								Points: []Point{{V: 2, T: 10000}, {V: 2, T: 15000}, {V: 2, T: 20000}, {V: 2, T: 25000}},
+								Floats: []FPoint{{F: 2, T: 10000}, {F: 2, T: 15000}, {F: 2, T: 20000}, {F: 2, T: 25000}},
 								Metric: labels.FromStrings("__name__", "metric"),
 							},
 						},
@@ -1840,7 +1835,7 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						Matrix{
 							Series{
-								Points: []Point{{V: 9990, T: 9990000}, {V: 10000, T: 10000000}, {V: 100, T: 10010000}, {V: 130, T: 10020000}},
+								Floats: []FPoint{{F: 9990, T: 9990000}, {F: 10000, T: 10000000}, {F: 100, T: 10010000}, {F: 130, T: 10020000}},
 								Metric: labels.FromStrings("__name__", "http_requests", "job", "api-server", "instance", "0", "group", "production"),
 							},
 						},
@@ -1854,7 +1849,7 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						Matrix{
 							Series{
-								Points: []Point{{V: 9840, T: 9840000}, {V: 9900, T: 9900000}, {V: 9960, T: 9960000}, {V: 130, T: 10020000}, {V: 310, T: 10080000}},
+								Floats: []FPoint{{F: 9840, T: 9840000}, {F: 9900, T: 9900000}, {F: 9960, T: 9960000}, {F: 130, T: 10020000}, {F: 310, T: 10080000}},
 								Metric: labels.FromStrings("__name__", "http_requests", "job", "api-server", "instance", "0", "group", "production"),
 							},
 						},
@@ -1868,7 +1863,7 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						Matrix{
 							Series{
-								Points: []Point{{V: 8640, T: 8640000}, {V: 8700, T: 8700000}, {V: 8760, T: 8760000}, {V: 8820, T: 8820000}, {V: 8880, T: 8880000}},
+								Floats: []FPoint{{F: 8640, T: 8640000}, {F: 8700, T: 8700000}, {F: 8760, T: 8760000}, {F: 8820, T: 8820000}, {F: 8880, T: 8880000}},
 								Metric: labels.FromStrings("__name__", "http_requests", "job", "api-server", "instance", "0", "group", "production"),
 							},
 						},
@@ -1882,19 +1877,19 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						Matrix{
 							Series{
-								Points: []Point{{V: 3, T: 7985000}, {V: 3, T: 7990000}, {V: 3, T: 7995000}, {V: 3, T: 8000000}},
+								Floats: []FPoint{{F: 3, T: 7985000}, {F: 3, T: 7990000}, {F: 3, T: 7995000}, {F: 3, T: 8000000}},
 								Metric: labels.FromStrings("job", "api-server", "instance", "0", "group", "canary"),
 							},
 							Series{
-								Points: []Point{{V: 4, T: 7985000}, {V: 4, T: 7990000}, {V: 4, T: 7995000}, {V: 4, T: 8000000}},
+								Floats: []FPoint{{F: 4, T: 7985000}, {F: 4, T: 7990000}, {F: 4, T: 7995000}, {F: 4, T: 8000000}},
 								Metric: labels.FromStrings("job", "api-server", "instance", "1", "group", "canary"),
 							},
 							Series{
-								Points: []Point{{V: 1, T: 7985000}, {V: 1, T: 7990000}, {V: 1, T: 7995000}, {V: 1, T: 8000000}},
+								Floats: []FPoint{{F: 1, T: 7985000}, {F: 1, T: 7990000}, {F: 1, T: 7995000}, {F: 1, T: 8000000}},
 								Metric: labels.FromStrings("job", "api-server", "instance", "0", "group", "production"),
 							},
 							Series{
-								Points: []Point{{V: 2, T: 7985000}, {V: 2, T: 7990000}, {V: 2, T: 7995000}, {V: 2, T: 8000000}},
+								Floats: []FPoint{{F: 2, T: 7985000}, {F: 2, T: 7990000}, {F: 2, T: 7995000}, {F: 2, T: 8000000}},
 								Metric: labels.FromStrings("job", "api-server", "instance", "1", "group", "production"),
 							},
 						},
@@ -1908,8 +1903,8 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						Matrix{
 							Series{
-								Points: []Point{{V: 270, T: 90000}, {V: 300, T: 100000}, {V: 330, T: 110000}, {V: 360, T: 120000}},
-								Metric: labels.Labels{},
+								Floats: []FPoint{{F: 270, T: 90000}, {F: 300, T: 100000}, {F: 330, T: 110000}, {F: 360, T: 120000}},
+								Metric: labels.EmptyLabels(),
 							},
 						},
 						nil,
@@ -1922,8 +1917,8 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						Matrix{
 							Series{
-								Points: []Point{{V: 800, T: 80000}, {V: 900, T: 90000}, {V: 1000, T: 100000}, {V: 1100, T: 110000}, {V: 1200, T: 120000}},
-								Metric: labels.Labels{},
+								Floats: []FPoint{{F: 800, T: 80000}, {F: 900, T: 90000}, {F: 1000, T: 100000}, {F: 1100, T: 110000}, {F: 1200, T: 120000}},
+								Metric: labels.EmptyLabels(),
 							},
 						},
 						nil,
@@ -1936,8 +1931,8 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						Matrix{
 							Series{
-								Points: []Point{{V: 1000, T: 100000}, {V: 1000, T: 105000}, {V: 1100, T: 110000}, {V: 1100, T: 115000}, {V: 1200, T: 120000}},
-								Metric: labels.Labels{},
+								Floats: []FPoint{{F: 1000, T: 100000}, {F: 1000, T: 105000}, {F: 1100, T: 110000}, {F: 1100, T: 115000}, {F: 1200, T: 120000}},
+								Metric: labels.EmptyLabels(),
 							},
 						},
 						nil,
@@ -1948,18 +1943,16 @@ func TestSubquerySelector(t *testing.T) {
 		},
 	} {
 		t.Run("", func(t *testing.T) {
-			test, err := NewTest(t, tst.loadString)
-			require.NoError(t, err)
-			defer test.Close()
+			engine := newTestEngine()
+			storage := LoadedStorage(t, tst.loadString)
+			t.Cleanup(func() { storage.Close() })
 
-			require.NoError(t, test.Run())
-			engine := test.QueryEngine()
 			for _, c := range tst.cases {
 				t.Run(c.Query, func(t *testing.T) {
-					qry, err := engine.NewInstantQuery(test.Queryable(), nil, c.Query, c.Start)
+					qry, err := engine.NewInstantQuery(context.Background(), storage, nil, c.Query, c.Start)
 					require.NoError(t, err)
 
-					res := qry.Exec(test.Context())
+					res := qry.Exec(context.Background())
 					require.Equal(t, c.Result.Err, res.Err)
 					mat := res.Value.(Matrix)
 					sort.Sort(mat)
@@ -1968,6 +1961,47 @@ func TestSubquerySelector(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestTimestampFunction_StepsMoreOftenThanSamples(t *testing.T) {
+	engine := newTestEngine()
+	storage := LoadedStorage(t, `
+load 1m
+  metric 0+1x1000
+`)
+	t.Cleanup(func() { storage.Close() })
+
+	query := "timestamp(metric)"
+	start := time.Unix(0, 0)
+	end := time.Unix(61, 0)
+	interval := time.Second
+
+	// We expect the value to be 0 for t=0s to t=59s (inclusive), then 60 for t=60s and t=61s.
+	expectedPoints := []FPoint{}
+
+	for t := 0; t <= 59; t++ {
+		expectedPoints = append(expectedPoints, FPoint{F: 0, T: int64(t * 1000)})
+	}
+
+	expectedPoints = append(
+		expectedPoints,
+		FPoint{F: 60, T: 60_000},
+		FPoint{F: 60, T: 61_000},
+	)
+
+	expectedResult := Matrix{
+		Series{
+			Floats: expectedPoints,
+			Metric: labels.EmptyLabels(),
+		},
+	}
+
+	qry, err := engine.NewRangeQuery(context.Background(), storage, nil, query, start, end, interval)
+	require.NoError(t, err)
+
+	res := qry.Exec(context.Background())
+	require.NoError(t, res.Err)
+	require.Equal(t, expectedResult, res.Value)
 }
 
 type FakeQueryLogger struct {
@@ -2023,7 +2057,7 @@ func TestQueryLogger_basic(t *testing.T) {
 
 	l := len(f1.logs)
 	queryExec()
-	require.Equal(t, 2*l, len(f1.logs))
+	require.Len(t, f1.logs, 2*l)
 
 	// Test that we close the query logger when unsetting it.
 	require.False(t, f1.closed, "expected f1 to be open, got closed")
@@ -2113,7 +2147,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 			expected: &parser.StepInvariantExpr{
 				Expr: &parser.NumberLiteral{
 					Val:      123.4567,
-					PosRange: parser.PositionRange{Start: 0, End: 8},
+					PosRange: posrange.PositionRange{Start: 0, End: 8},
 				},
 			},
 		},
@@ -2122,7 +2156,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 			expected: &parser.StepInvariantExpr{
 				Expr: &parser.StringLiteral{
 					Val:      "foo",
-					PosRange: parser.PositionRange{Start: 0, End: 5},
+					PosRange: posrange.PositionRange{Start: 0, End: 5},
 				},
 			},
 		},
@@ -2135,7 +2169,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 					LabelMatchers: []*labels.Matcher{
 						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
 					},
-					PosRange: parser.PositionRange{
+					PosRange: posrange.PositionRange{
 						Start: 0,
 						End:   3,
 					},
@@ -2145,7 +2179,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 					LabelMatchers: []*labels.Matcher{
 						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "bar"),
 					},
-					PosRange: parser.PositionRange{
+					PosRange: posrange.PositionRange{
 						Start: 6,
 						End:   9,
 					},
@@ -2162,7 +2196,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 					LabelMatchers: []*labels.Matcher{
 						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
 					},
-					PosRange: parser.PositionRange{
+					PosRange: posrange.PositionRange{
 						Start: 0,
 						End:   3,
 					},
@@ -2173,7 +2207,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 						LabelMatchers: []*labels.Matcher{
 							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "bar"),
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 6,
 							End:   14,
 						},
@@ -2193,7 +2227,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 						LabelMatchers: []*labels.Matcher{
 							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 0,
 							End:   8,
 						},
@@ -2204,7 +2238,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 						LabelMatchers: []*labels.Matcher{
 							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "bar"),
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 11,
 							End:   19,
 						},
@@ -2222,7 +2256,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 					LabelMatchers: []*labels.Matcher{
 						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "test"),
 					},
-					PosRange: parser.PositionRange{
+					PosRange: posrange.PositionRange{
 						Start: 0,
 						End:   4,
 					},
@@ -2242,7 +2276,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 							parser.MustLabelMatcher(labels.MatchEqual, "a", "b"),
 							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "test"),
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 0,
 							End:   11,
 						},
@@ -2261,13 +2295,13 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 					LabelMatchers: []*labels.Matcher{
 						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
 					},
-					PosRange: parser.PositionRange{
+					PosRange: posrange.PositionRange{
 						Start: 13,
 						End:   24,
 					},
 				},
 				Grouping: []string{"foo"},
-				PosRange: parser.PositionRange{
+				PosRange: posrange.PositionRange{
 					Start: 0,
 					End:   25,
 				},
@@ -2283,14 +2317,14 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 						LabelMatchers: []*labels.Matcher{
 							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 13,
 							End:   29,
 						},
 						Timestamp: makeInt64Pointer(10000),
 					},
 					Grouping: []string{"foo"},
-					PosRange: parser.PositionRange{
+					PosRange: posrange.PositionRange{
 						Start: 0,
 						End:   30,
 					},
@@ -2310,13 +2344,13 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 							LabelMatchers: []*labels.Matcher{
 								parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric1"),
 							},
-							PosRange: parser.PositionRange{
+							PosRange: posrange.PositionRange{
 								Start: 4,
 								End:   21,
 							},
 							Timestamp: makeInt64Pointer(10000),
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 0,
 							End:   22,
 						},
@@ -2328,13 +2362,13 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 							LabelMatchers: []*labels.Matcher{
 								parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric2"),
 							},
-							PosRange: parser.PositionRange{
+							PosRange: posrange.PositionRange{
 								Start: 29,
 								End:   46,
 							},
 							Timestamp: makeInt64Pointer(20000),
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 25,
 							End:   47,
 						},
@@ -2354,7 +2388,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 					LabelMatchers: []*labels.Matcher{
 						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
 					},
-					PosRange: parser.PositionRange{
+					PosRange: posrange.PositionRange{
 						Start: 0,
 						End:   11,
 					},
@@ -2371,7 +2405,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 										LabelMatchers: []*labels.Matcher{
 											parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
 										},
-										PosRange: parser.PositionRange{
+										PosRange: posrange.PositionRange{
 											Start: 29,
 											End:   40,
 										},
@@ -2381,19 +2415,19 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 									EndPos: 49,
 								},
 							},
-							PosRange: parser.PositionRange{
+							PosRange: posrange.PositionRange{
 								Start: 24,
 								End:   50,
 							},
 						},
 						Param: &parser.NumberLiteral{
 							Val: 5,
-							PosRange: parser.PositionRange{
+							PosRange: posrange.PositionRange{
 								Start: 21,
 								End:   22,
 							},
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 16,
 							End:   51,
 						},
@@ -2406,7 +2440,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 			expected: &parser.Call{
 				Func: parser.MustGetFunction("time"),
 				Args: parser.Expressions{},
-				PosRange: parser.PositionRange{
+				PosRange: posrange.PositionRange{
 					Start: 0,
 					End:   6,
 				},
@@ -2421,7 +2455,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 						parser.MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
 						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
 					},
-					PosRange: parser.PositionRange{
+					PosRange: posrange.PositionRange{
 						Start: 0,
 						End:   14,
 					},
@@ -2441,7 +2475,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 							parser.MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
 							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 0,
 							End:   14,
 						},
@@ -2466,13 +2500,13 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 									parser.MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
 									parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
 								},
-								PosRange: parser.PositionRange{
+								PosRange: posrange.PositionRange{
 									Start: 4,
 									End:   23,
 								},
 								Timestamp: makeInt64Pointer(20000),
 							},
-							PosRange: parser.PositionRange{
+							PosRange: posrange.PositionRange{
 								Start: 0,
 								End:   24,
 							},
@@ -2503,7 +2537,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 													parser.MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
 													parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
 												},
-												PosRange: parser.PositionRange{
+												PosRange: posrange.PositionRange{
 													Start: 19,
 													End:   33,
 												},
@@ -2512,7 +2546,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 											EndPos: 37,
 										},
 									},
-									PosRange: parser.PositionRange{
+									PosRange: posrange.PositionRange{
 										Start: 14,
 										End:   38,
 									},
@@ -2522,7 +2556,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 								EndPos:    56,
 							},
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 0,
 							End:   57,
 						},
@@ -2542,7 +2576,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 						LabelMatchers: []*labels.Matcher{
 							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 0,
 							End:   27,
 						},
@@ -2564,7 +2598,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 						LabelMatchers: []*labels.Matcher{
 							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 0,
 							End:   11,
 						},
@@ -2592,7 +2626,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 								LabelMatchers: []*labels.Matcher{
 									parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
 								},
-								PosRange: parser.PositionRange{
+								PosRange: posrange.PositionRange{
 									Start: 1,
 									End:   4,
 								},
@@ -2605,14 +2639,14 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 										parser.MustLabelMatcher(labels.MatchEqual, "__name__", "bar"),
 									},
 									Timestamp: makeInt64Pointer(1234000),
-									PosRange: parser.PositionRange{
+									PosRange: posrange.PositionRange{
 										Start: 7,
 										End:   27,
 									},
 								},
 							},
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 0,
 							End:   28,
 						},
@@ -2643,18 +2677,18 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 							LabelMatchers: []*labels.Matcher{
 								parser.MustLabelMatcher(labels.MatchEqual, "__name__", "metric"),
 							},
-							PosRange: parser.PositionRange{
+							PosRange: posrange.PositionRange{
 								Start: 8,
 								End:   19,
 							},
 							Timestamp: makeInt64Pointer(10000),
 						}},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 4,
 							End:   20,
 						},
 					}},
-					PosRange: parser.PositionRange{
+					PosRange: posrange.PositionRange{
 						Start: 0,
 						End:   21,
 					},
@@ -2676,13 +2710,13 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 								LabelMatchers: []*labels.Matcher{
 									parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric1"),
 								},
-								PosRange: parser.PositionRange{
+								PosRange: posrange.PositionRange{
 									Start: 8,
 									End:   25,
 								},
 								Timestamp: makeInt64Pointer(10000),
 							},
-							PosRange: parser.PositionRange{
+							PosRange: posrange.PositionRange{
 								Start: 4,
 								End:   26,
 							},
@@ -2694,19 +2728,19 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 								LabelMatchers: []*labels.Matcher{
 									parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric2"),
 								},
-								PosRange: parser.PositionRange{
+								PosRange: posrange.PositionRange{
 									Start: 33,
 									End:   50,
 								},
 								Timestamp: makeInt64Pointer(20000),
 							},
-							PosRange: parser.PositionRange{
+							PosRange: posrange.PositionRange{
 								Start: 29,
 								End:   52,
 							},
 						},
 					},
-					PosRange: parser.PositionRange{
+					PosRange: posrange.PositionRange{
 						Start: 0,
 						End:   52,
 					},
@@ -2721,7 +2755,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 					LabelMatchers: []*labels.Matcher{
 						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
 					},
-					PosRange: parser.PositionRange{
+					PosRange: posrange.PositionRange{
 						Start: 0,
 						End:   13,
 					},
@@ -2738,7 +2772,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 					LabelMatchers: []*labels.Matcher{
 						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
 					},
-					PosRange: parser.PositionRange{
+					PosRange: posrange.PositionRange{
 						Start: 0,
 						End:   11,
 					},
@@ -2758,7 +2792,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 						LabelMatchers: []*labels.Matcher{
 							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "test"),
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 0,
 							End:   4,
 						},
@@ -2779,7 +2813,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 						LabelMatchers: []*labels.Matcher{
 							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "test"),
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 0,
 							End:   4,
 						},
@@ -2798,7 +2832,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 						LabelMatchers: []*labels.Matcher{
 							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 0,
 							End:   11,
 						},
@@ -2820,7 +2854,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 						LabelMatchers: []*labels.Matcher{
 							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 0,
 							End:   11,
 						},
@@ -2850,7 +2884,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 							LabelMatchers: []*labels.Matcher{
 								parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
 							},
-							PosRange: parser.PositionRange{
+							PosRange: posrange.PositionRange{
 								Start: 6,
 								End:   17,
 							},
@@ -2861,20 +2895,20 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 									Op: parser.MUL,
 									LHS: &parser.NumberLiteral{
 										Val: 3,
-										PosRange: parser.PositionRange{
+										PosRange: posrange.PositionRange{
 											Start: 21,
 											End:   22,
 										},
 									},
 									RHS: &parser.NumberLiteral{
 										Val: 1024,
-										PosRange: parser.PositionRange{
+										PosRange: posrange.PositionRange{
 											Start: 25,
 											End:   29,
 										},
 									},
 								},
-								PosRange: parser.PositionRange{
+								PosRange: posrange.PositionRange{
 									Start: 20,
 									End:   30,
 								},
@@ -2882,7 +2916,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 						},
 					},
 				},
-				PosRange: parser.PositionRange{
+				PosRange: posrange.PositionRange{
 					Start: 0,
 					End:   31,
 				},
@@ -2963,14 +2997,14 @@ func TestEngineOptsValidation(t *testing.T) {
 
 	for _, c := range cases {
 		eng := NewEngine(c.opts)
-		_, err1 := eng.NewInstantQuery(nil, nil, c.query, time.Unix(10, 0))
-		_, err2 := eng.NewRangeQuery(nil, nil, c.query, time.Unix(0, 0), time.Unix(10, 0), time.Second)
+		_, err1 := eng.NewInstantQuery(context.Background(), nil, nil, c.query, time.Unix(10, 0))
+		_, err2 := eng.NewRangeQuery(context.Background(), nil, nil, c.query, time.Unix(0, 0), time.Unix(10, 0), time.Second)
 		if c.fail {
 			require.Equal(t, c.expError, err1)
 			require.Equal(t, c.expError, err2)
 		} else {
-			require.Nil(t, err1)
-			require.Nil(t, err2)
+			require.NoError(t, err1)
+			require.NoError(t, err2)
 		}
 	}
 }
@@ -2992,8 +3026,8 @@ func TestRangeQuery(t *testing.T) {
 			Query: "sum_over_time(bar[30s])",
 			Result: Matrix{
 				Series{
-					Points: []Point{{V: 0, T: 0}, {V: 11, T: 60000}, {V: 1100, T: 120000}},
-					Metric: labels.Labels{},
+					Floats: []FPoint{{F: 0, T: 0}, {F: 11, T: 60000}, {F: 1100, T: 120000}},
+					Metric: labels.EmptyLabels(),
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -3007,8 +3041,8 @@ func TestRangeQuery(t *testing.T) {
 			Query: "sum_over_time(bar[30s])",
 			Result: Matrix{
 				Series{
-					Points: []Point{{V: 0, T: 0}, {V: 11, T: 60000}, {V: 1100, T: 120000}},
-					Metric: labels.Labels{},
+					Floats: []FPoint{{F: 0, T: 0}, {F: 11, T: 60000}, {F: 1100, T: 120000}},
+					Metric: labels.EmptyLabels(),
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -3022,8 +3056,8 @@ func TestRangeQuery(t *testing.T) {
 			Query: "sum_over_time(bar[30s])",
 			Result: Matrix{
 				Series{
-					Points: []Point{{V: 0, T: 0}, {V: 11, T: 60000}, {V: 1100, T: 120000}, {V: 110000, T: 180000}, {V: 11000000, T: 240000}},
-					Metric: labels.Labels{},
+					Floats: []FPoint{{F: 0, T: 0}, {F: 11, T: 60000}, {F: 1100, T: 120000}, {F: 110000, T: 180000}, {F: 11000000, T: 240000}},
+					Metric: labels.EmptyLabels(),
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -3037,8 +3071,8 @@ func TestRangeQuery(t *testing.T) {
 			Query: "sum_over_time(bar[30s])",
 			Result: Matrix{
 				Series{
-					Points: []Point{{V: 5, T: 0}, {V: 59, T: 60000}, {V: 9, T: 120000}, {V: 956, T: 180000}},
-					Metric: labels.Labels{},
+					Floats: []FPoint{{F: 5, T: 0}, {F: 59, T: 60000}, {F: 9, T: 120000}, {F: 956, T: 180000}},
+					Metric: labels.EmptyLabels(),
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -3052,8 +3086,8 @@ func TestRangeQuery(t *testing.T) {
 			Query: "metric",
 			Result: Matrix{
 				Series{
-					Points: []Point{{V: 1, T: 0}, {V: 3, T: 60000}, {V: 5, T: 120000}},
-					Metric: labels.Labels{labels.Label{Name: "__name__", Value: "metric"}},
+					Floats: []FPoint{{F: 1, T: 0}, {F: 3, T: 60000}, {F: 5, T: 120000}},
+					Metric: labels.FromStrings("__name__", "metric"),
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -3067,8 +3101,8 @@ func TestRangeQuery(t *testing.T) {
 			Query: "metric",
 			Result: Matrix{
 				Series{
-					Points: []Point{{V: 1, T: 0}, {V: 3, T: 60000}, {V: 5, T: 120000}},
-					Metric: labels.Labels{labels.Label{Name: "__name__", Value: "metric"}},
+					Floats: []FPoint{{F: 1, T: 0}, {F: 3, T: 60000}, {F: 5, T: 120000}},
+					Metric: labels.FromStrings("__name__", "metric"),
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -3083,18 +3117,18 @@ func TestRangeQuery(t *testing.T) {
 			Query: `foo > 2 or bar`,
 			Result: Matrix{
 				Series{
-					Points: []Point{{V: 1, T: 0}, {V: 3, T: 60000}, {V: 5, T: 120000}},
-					Metric: labels.Labels{
-						labels.Label{Name: "__name__", Value: "bar"},
-						labels.Label{Name: "job", Value: "2"},
-					},
+					Floats: []FPoint{{F: 1, T: 0}, {F: 3, T: 60000}, {F: 5, T: 120000}},
+					Metric: labels.FromStrings(
+						"__name__", "bar",
+						"job", "2",
+					),
 				},
 				Series{
-					Points: []Point{{V: 3, T: 60000}, {V: 5, T: 120000}},
-					Metric: labels.Labels{
-						labels.Label{Name: "__name__", Value: "foo"},
-						labels.Label{Name: "job", Value: "1"},
-					},
+					Floats: []FPoint{{F: 3, T: 60000}, {F: 5, T: 120000}},
+					Metric: labels.FromStrings(
+						"__name__", "foo",
+						"job", "1",
+					),
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -3104,19 +3138,1736 @@ func TestRangeQuery(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.Name, func(t *testing.T) {
-			test, err := NewTest(t, c.Load)
-			require.NoError(t, err)
-			defer test.Close()
+			engine := newTestEngine()
+			storage := LoadedStorage(t, c.Load)
+			t.Cleanup(func() { storage.Close() })
 
-			err = test.Run()
-			require.NoError(t, err)
-
-			qry, err := test.QueryEngine().NewRangeQuery(test.Queryable(), nil, c.Query, c.Start, c.End, c.Interval)
+			qry, err := engine.NewRangeQuery(context.Background(), storage, nil, c.Query, c.Start, c.End, c.Interval)
 			require.NoError(t, err)
 
-			res := qry.Exec(test.Context())
+			res := qry.Exec(context.Background())
 			require.NoError(t, res.Err)
 			require.Equal(t, c.Result, res.Value)
+		})
+	}
+}
+
+func TestNativeHistogramRate(t *testing.T) {
+	// TODO(beorn7): Integrate histograms into the PromQL testing framework
+	// and write more tests there.
+	engine := newTestEngine()
+	storage := teststorage.New(t)
+	t.Cleanup(func() { storage.Close() })
+
+	seriesName := "sparse_histogram_series"
+	lbls := labels.FromStrings("__name__", seriesName)
+
+	app := storage.Appender(context.Background())
+	for i, h := range tsdbutil.GenerateTestHistograms(100) {
+		_, err := app.AppendHistogram(0, lbls, int64(i)*int64(15*time.Second/time.Millisecond), h, nil)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	queryString := fmt.Sprintf("rate(%s[45s])", seriesName)
+	t.Run("instant_query", func(t *testing.T) {
+		qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(int64(5*time.Minute/time.Millisecond)))
+		require.NoError(t, err)
+		res := qry.Exec(context.Background())
+		require.NoError(t, res.Err)
+		vector, err := res.Vector()
+		require.NoError(t, err)
+		require.Len(t, vector, 1)
+		actualHistogram := vector[0].H
+		expectedHistogram := &histogram.FloatHistogram{
+			CounterResetHint: histogram.GaugeType,
+			Schema:           1,
+			ZeroThreshold:    0.001,
+			ZeroCount:        1. / 15.,
+			Count:            9. / 15.,
+			Sum:              1.2266666666666663,
+			PositiveSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+			PositiveBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+			NegativeSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+			NegativeBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+		}
+		require.Equal(t, expectedHistogram, actualHistogram)
+	})
+
+	t.Run("range_query", func(t *testing.T) {
+		step := 30 * time.Second
+		start := timestamp.Time(int64(5 * time.Minute / time.Millisecond))
+		end := start.Add(step)
+		qry, err := engine.NewRangeQuery(context.Background(), storage, nil, queryString, start, end, step)
+		require.NoError(t, err)
+		res := qry.Exec(context.Background())
+		require.NoError(t, res.Err)
+		matrix, err := res.Matrix()
+		require.NoError(t, err)
+		require.Len(t, matrix, 1)
+		require.Len(t, matrix[0].Histograms, 2)
+		actualHistograms := matrix[0].Histograms
+		expectedHistograms := []HPoint{{
+			T: 300000,
+			H: &histogram.FloatHistogram{
+				CounterResetHint: histogram.GaugeType,
+				Schema:           1,
+				ZeroThreshold:    0.001,
+				ZeroCount:        1. / 15.,
+				Count:            9. / 15.,
+				Sum:              1.2266666666666663,
+				PositiveSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+				PositiveBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+				NegativeSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+				NegativeBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+			},
+		}, {
+			T: 330000,
+			H: &histogram.FloatHistogram{
+				CounterResetHint: histogram.GaugeType,
+				Schema:           1,
+				ZeroThreshold:    0.001,
+				ZeroCount:        1. / 15.,
+				Count:            9. / 15.,
+				Sum:              1.2266666666666663,
+				PositiveSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+				PositiveBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+				NegativeSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+				NegativeBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+			},
+		}}
+		require.Equal(t, expectedHistograms, actualHistograms)
+	})
+}
+
+func TestNativeFloatHistogramRate(t *testing.T) {
+	// TODO(beorn7): Integrate histograms into the PromQL testing framework
+	// and write more tests there.
+	engine := newTestEngine()
+	storage := teststorage.New(t)
+	t.Cleanup(func() { storage.Close() })
+
+	seriesName := "sparse_histogram_series"
+	lbls := labels.FromStrings("__name__", seriesName)
+
+	app := storage.Appender(context.Background())
+	for i, fh := range tsdbutil.GenerateTestFloatHistograms(100) {
+		_, err := app.AppendHistogram(0, lbls, int64(i)*int64(15*time.Second/time.Millisecond), nil, fh)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	queryString := fmt.Sprintf("rate(%s[1m])", seriesName)
+	qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(int64(5*time.Minute/time.Millisecond)))
+	require.NoError(t, err)
+	res := qry.Exec(context.Background())
+	require.NoError(t, res.Err)
+	vector, err := res.Vector()
+	require.NoError(t, err)
+	require.Len(t, vector, 1)
+	actualHistogram := vector[0].H
+	expectedHistogram := &histogram.FloatHistogram{
+		CounterResetHint: histogram.GaugeType,
+		Schema:           1,
+		ZeroThreshold:    0.001,
+		ZeroCount:        1. / 15.,
+		Count:            9. / 15.,
+		Sum:              1.226666666666667,
+		PositiveSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+		PositiveBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+		NegativeSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+		NegativeBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+	}
+	require.Equal(t, expectedHistogram, actualHistogram)
+}
+
+func TestNativeHistogram_HistogramCountAndSum(t *testing.T) {
+	// TODO(codesome): Integrate histograms into the PromQL testing framework
+	// and write more tests there.
+	h := &histogram.Histogram{
+		Count:         24,
+		ZeroCount:     4,
+		ZeroThreshold: 0.001,
+		Sum:           100,
+		Schema:        0,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []int64{2, 1, -2, 3},
+		NegativeSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		NegativeBuckets: []int64{2, 1, -2, 3},
+	}
+	for _, floatHisto := range []bool{true, false} {
+		t.Run(fmt.Sprintf("floatHistogram=%t", floatHisto), func(t *testing.T) {
+			engine := newTestEngine()
+			storage := teststorage.New(t)
+			t.Cleanup(func() { storage.Close() })
+
+			seriesName := "sparse_histogram_series"
+			lbls := labels.FromStrings("__name__", seriesName)
+
+			ts := int64(10 * time.Minute / time.Millisecond)
+			app := storage.Appender(context.Background())
+			var err error
+			if floatHisto {
+				_, err = app.AppendHistogram(0, lbls, ts, nil, h.ToFloat(nil))
+			} else {
+				_, err = app.AppendHistogram(0, lbls, ts, h, nil)
+			}
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			queryString := fmt.Sprintf("histogram_count(%s)", seriesName)
+			qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(ts))
+			require.NoError(t, err)
+
+			res := qry.Exec(context.Background())
+			require.NoError(t, res.Err)
+
+			vector, err := res.Vector()
+			require.NoError(t, err)
+
+			require.Len(t, vector, 1)
+			require.Nil(t, vector[0].H)
+			if floatHisto {
+				require.Equal(t, h.ToFloat(nil).Count, vector[0].F)
+			} else {
+				require.Equal(t, float64(h.Count), vector[0].F)
+			}
+
+			queryString = fmt.Sprintf("histogram_sum(%s)", seriesName)
+			qry, err = engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(ts))
+			require.NoError(t, err)
+
+			res = qry.Exec(context.Background())
+			require.NoError(t, res.Err)
+
+			vector, err = res.Vector()
+			require.NoError(t, err)
+
+			require.Len(t, vector, 1)
+			require.Nil(t, vector[0].H)
+			if floatHisto {
+				require.Equal(t, h.ToFloat(nil).Sum, vector[0].F)
+			} else {
+				require.Equal(t, h.Sum, vector[0].F)
+			}
+		})
+	}
+}
+
+func TestNativeHistogram_HistogramStdDevVar(t *testing.T) {
+	// TODO(codesome): Integrate histograms into the PromQL testing framework
+	// and write more tests there.
+	testCases := []struct {
+		name   string
+		h      *histogram.Histogram
+		stdVar float64
+	}{
+		{
+			name: "1, 2, 3, 4 low-res",
+			h: &histogram.Histogram{
+				Count:  4,
+				Sum:    10,
+				Schema: 2,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 1},
+					{Offset: 3, Length: 1},
+					{Offset: 2, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 0, 0, 0},
+			},
+			stdVar: 1.163807968526718, // actual variance: 1.25
+		},
+		{
+			name: "1, 2, 3, 4 hi-res",
+			h: &histogram.Histogram{
+				Count:  4,
+				Sum:    10,
+				Schema: 8,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 1},
+					{Offset: 255, Length: 1},
+					{Offset: 149, Length: 1},
+					{Offset: 105, Length: 1},
+				},
+				PositiveBuckets: []int64{1, 0, 0, 0},
+			},
+			stdVar: 1.2471347737158793, // actual variance: 1.25
+		},
+		{
+			name: "-50, -8, 0, 3, 8, 9, 100",
+			h: &histogram.Histogram{
+				Count:     7,
+				ZeroCount: 1,
+				Sum:       62,
+				Schema:    3,
+				PositiveSpans: []histogram.Span{
+					{Offset: 13, Length: 1},
+					{Offset: 10, Length: 1},
+					{Offset: 1, Length: 1},
+					{Offset: 27, Length: 1},
+				},
+				PositiveBuckets: []int64{1, 0, 0, 0},
+				NegativeSpans: []histogram.Span{
+					{Offset: 24, Length: 1},
+					{Offset: 21, Length: 1},
+				},
+				NegativeBuckets: []int64{1, 0},
+			},
+			stdVar: 1544.8582535368798, // actual variance: 1738.4082
+		},
+		{
+			name: "-50, -8, 0, 3, 8, 9, 100, NaN",
+			h: &histogram.Histogram{
+				Count:     8,
+				ZeroCount: 1,
+				Sum:       math.NaN(),
+				Schema:    3,
+				PositiveSpans: []histogram.Span{
+					{Offset: 13, Length: 1},
+					{Offset: 10, Length: 1},
+					{Offset: 1, Length: 1},
+					{Offset: 27, Length: 1},
+				},
+				PositiveBuckets: []int64{1, 0, 0, 0},
+				NegativeSpans: []histogram.Span{
+					{Offset: 24, Length: 1},
+					{Offset: 21, Length: 1},
+				},
+				NegativeBuckets: []int64{1, 0},
+			},
+			stdVar: math.NaN(),
+		},
+		{
+			name: "-50, -8, 0, 3, 8, 9, 100, +Inf",
+			h: &histogram.Histogram{
+				Count:     7,
+				ZeroCount: 1,
+				Sum:       math.Inf(1),
+				Schema:    3,
+				PositiveSpans: []histogram.Span{
+					{Offset: 13, Length: 1},
+					{Offset: 10, Length: 1},
+					{Offset: 1, Length: 1},
+					{Offset: 27, Length: 1},
+				},
+				PositiveBuckets: []int64{1, 0, 0, 0},
+				NegativeSpans: []histogram.Span{
+					{Offset: 24, Length: 1},
+					{Offset: 21, Length: 1},
+				},
+				NegativeBuckets: []int64{1, 0},
+			},
+			stdVar: math.NaN(),
+		},
+	}
+	for _, tc := range testCases {
+		for _, floatHisto := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s floatHistogram=%t", tc.name, floatHisto), func(t *testing.T) {
+				engine := newTestEngine()
+				storage := teststorage.New(t)
+				t.Cleanup(func() { storage.Close() })
+
+				seriesName := "sparse_histogram_series"
+				lbls := labels.FromStrings("__name__", seriesName)
+
+				ts := int64(10 * time.Minute / time.Millisecond)
+				app := storage.Appender(context.Background())
+				var err error
+				if floatHisto {
+					_, err = app.AppendHistogram(0, lbls, ts, nil, tc.h.ToFloat(nil))
+				} else {
+					_, err = app.AppendHistogram(0, lbls, ts, tc.h, nil)
+				}
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+
+				queryString := fmt.Sprintf("histogram_stdvar(%s)", seriesName)
+				qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(ts))
+				require.NoError(t, err)
+
+				res := qry.Exec(context.Background())
+				require.NoError(t, res.Err)
+
+				vector, err := res.Vector()
+				require.NoError(t, err)
+
+				require.Len(t, vector, 1)
+				require.Nil(t, vector[0].H)
+				require.InEpsilon(t, tc.stdVar, vector[0].F, 1e-12)
+
+				queryString = fmt.Sprintf("histogram_stddev(%s)", seriesName)
+				qry, err = engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(ts))
+				require.NoError(t, err)
+
+				res = qry.Exec(context.Background())
+				require.NoError(t, res.Err)
+
+				vector, err = res.Vector()
+				require.NoError(t, err)
+
+				require.Len(t, vector, 1)
+				require.Nil(t, vector[0].H)
+				require.InEpsilon(t, math.Sqrt(tc.stdVar), vector[0].F, 1e-12)
+			})
+		}
+	}
+}
+
+func TestNativeHistogram_HistogramQuantile(t *testing.T) {
+	// TODO(codesome): Integrate histograms into the PromQL testing framework
+	// and write more tests there.
+	type subCase struct {
+		quantile string
+		value    float64
+	}
+
+	cases := []struct {
+		text string
+		// Histogram to test.
+		h *histogram.Histogram
+		// Different quantiles to test for this histogram.
+		subCases []subCase
+	}{
+		{
+			text: "all positive buckets with zero bucket",
+			h: &histogram.Histogram{
+				Count:         12,
+				ZeroCount:     2,
+				ZeroThreshold: 0.001,
+				Sum:           100, // Does not matter.
+				Schema:        0,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{2, 1, -2, 3},
+			},
+			subCases: []subCase{
+				{
+					quantile: "1.0001",
+					value:    math.Inf(1),
+				},
+				{
+					quantile: "1",
+					value:    16,
+				},
+				{
+					quantile: "0.99",
+					value:    15.759999999999998,
+				},
+				{
+					quantile: "0.9",
+					value:    13.600000000000001,
+				},
+				{
+					quantile: "0.6",
+					value:    4.799999999999997,
+				},
+				{
+					quantile: "0.5",
+					value:    1.6666666666666665,
+				},
+				{ // Zero bucket.
+					quantile: "0.1",
+					value:    0.0006000000000000001,
+				},
+				{
+					quantile: "0",
+					value:    0,
+				},
+				{
+					quantile: "-1",
+					value:    math.Inf(-1),
+				},
+			},
+		},
+		{
+			text: "all negative buckets with zero bucket",
+			h: &histogram.Histogram{
+				Count:         12,
+				ZeroCount:     2,
+				ZeroThreshold: 0.001,
+				Sum:           100, // Does not matter.
+				Schema:        0,
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []int64{2, 1, -2, 3},
+			},
+			subCases: []subCase{
+				{
+					quantile: "1.0001",
+					value:    math.Inf(1),
+				},
+				{ // Zero bucket.
+					quantile: "1",
+					value:    0,
+				},
+				{ // Zero bucket.
+					quantile: "0.99",
+					value:    -6.000000000000048e-05,
+				},
+				{ // Zero bucket.
+					quantile: "0.9",
+					value:    -0.0005999999999999996,
+				},
+				{
+					quantile: "0.5",
+					value:    -1.6666666666666667,
+				},
+				{
+					quantile: "0.1",
+					value:    -13.6,
+				},
+				{
+					quantile: "0",
+					value:    -16,
+				},
+				{
+					quantile: "-1",
+					value:    math.Inf(-1),
+				},
+			},
+		},
+		{
+			text: "both positive and negative buckets with zero bucket",
+			h: &histogram.Histogram{
+				Count:         24,
+				ZeroCount:     4,
+				ZeroThreshold: 0.001,
+				Sum:           100, // Does not matter.
+				Schema:        0,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{2, 1, -2, 3},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []int64{2, 1, -2, 3},
+			},
+			subCases: []subCase{
+				{
+					quantile: "1.0001",
+					value:    math.Inf(1),
+				},
+				{
+					quantile: "1",
+					value:    16,
+				},
+				{
+					quantile: "0.99",
+					value:    15.519999999999996,
+				},
+				{
+					quantile: "0.9",
+					value:    11.200000000000003,
+				},
+				{
+					quantile: "0.7",
+					value:    1.2666666666666657,
+				},
+				{ // Zero bucket.
+					quantile: "0.55",
+					value:    0.0006000000000000005,
+				},
+				{ // Zero bucket.
+					quantile: "0.5",
+					value:    0,
+				},
+				{ // Zero bucket.
+					quantile: "0.45",
+					value:    -0.0005999999999999996,
+				},
+				{
+					quantile: "0.3",
+					value:    -1.266666666666667,
+				},
+				{
+					quantile: "0.1",
+					value:    -11.2,
+				},
+				{
+					quantile: "0.01",
+					value:    -15.52,
+				},
+				{
+					quantile: "0",
+					value:    -16,
+				},
+				{
+					quantile: "-1",
+					value:    math.Inf(-1),
+				},
+			},
+		},
+	}
+
+	engine := newTestEngine()
+	storage := teststorage.New(t)
+	t.Cleanup(func() { storage.Close() })
+	idx := int64(0)
+	for _, floatHisto := range []bool{true, false} {
+		for _, c := range cases {
+			t.Run(fmt.Sprintf("%s floatHistogram=%t", c.text, floatHisto), func(t *testing.T) {
+				seriesName := "sparse_histogram_series"
+				lbls := labels.FromStrings("__name__", seriesName)
+				ts := idx * int64(10*time.Minute/time.Millisecond)
+				app := storage.Appender(context.Background())
+				var err error
+				if floatHisto {
+					_, err = app.AppendHistogram(0, lbls, ts, nil, c.h.ToFloat(nil))
+				} else {
+					_, err = app.AppendHistogram(0, lbls, ts, c.h, nil)
+				}
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+
+				for j, sc := range c.subCases {
+					t.Run(fmt.Sprintf("%d %s", j, sc.quantile), func(t *testing.T) {
+						queryString := fmt.Sprintf("histogram_quantile(%s, %s)", sc.quantile, seriesName)
+						qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(ts))
+						require.NoError(t, err)
+
+						res := qry.Exec(context.Background())
+						require.NoError(t, res.Err)
+
+						vector, err := res.Vector()
+						require.NoError(t, err)
+
+						require.Len(t, vector, 1)
+						require.Nil(t, vector[0].H)
+						require.True(t, almostEqual(sc.value, vector[0].F, defaultEpsilon))
+					})
+				}
+				idx++
+			})
+		}
+	}
+}
+
+func TestNativeHistogram_HistogramFraction(t *testing.T) {
+	// TODO(codesome): Integrate histograms into the PromQL testing framework
+	// and write more tests there.
+	type subCase struct {
+		lower, upper string
+		value        float64
+	}
+
+	invariantCases := []subCase{
+		{
+			lower: "42",
+			upper: "3.1415",
+			value: 0,
+		},
+		{
+			lower: "0",
+			upper: "0",
+			value: 0,
+		},
+		{
+			lower: "0.000001",
+			upper: "0.000001",
+			value: 0,
+		},
+		{
+			lower: "42",
+			upper: "42",
+			value: 0,
+		},
+		{
+			lower: "-3.1",
+			upper: "-3.1",
+			value: 0,
+		},
+		{
+			lower: "3.1415",
+			upper: "NaN",
+			value: math.NaN(),
+		},
+		{
+			lower: "NaN",
+			upper: "42",
+			value: math.NaN(),
+		},
+		{
+			lower: "NaN",
+			upper: "NaN",
+			value: math.NaN(),
+		},
+		{
+			lower: "-Inf",
+			upper: "+Inf",
+			value: 1,
+		},
+	}
+
+	cases := []struct {
+		text string
+		// Histogram to test.
+		h *histogram.Histogram
+		// Different ranges to test for this histogram.
+		subCases []subCase
+	}{
+		{
+			text: "empty histogram",
+			h:    &histogram.Histogram{},
+			subCases: []subCase{
+				{
+					lower: "3.1415",
+					upper: "42",
+					value: math.NaN(),
+				},
+			},
+		},
+		{
+			text: "all positive buckets with zero bucket",
+			h: &histogram.Histogram{
+				Count:         12,
+				ZeroCount:     2,
+				ZeroThreshold: 0.001,
+				Sum:           100, // Does not matter.
+				Schema:        0,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{2, 1, -2, 3}, // Abs: 2, 3, 1, 4
+			},
+			subCases: append([]subCase{
+				{
+					lower: "0",
+					upper: "+Inf",
+					value: 1,
+				},
+				{
+					lower: "-Inf",
+					upper: "0",
+					value: 0,
+				},
+				{
+					lower: "-0.001",
+					upper: "0",
+					value: 0,
+				},
+				{
+					lower: "0",
+					upper: "0.001",
+					value: 2. / 12.,
+				},
+				{
+					lower: "0",
+					upper: "0.0005",
+					value: 1. / 12.,
+				},
+				{
+					lower: "0.001",
+					upper: "inf",
+					value: 10. / 12.,
+				},
+				{
+					lower: "-inf",
+					upper: "-0.001",
+					value: 0,
+				},
+				{
+					lower: "1",
+					upper: "2",
+					value: 3. / 12.,
+				},
+				{
+					lower: "1.5",
+					upper: "2",
+					value: 1.5 / 12.,
+				},
+				{
+					lower: "1",
+					upper: "8",
+					value: 4. / 12.,
+				},
+				{
+					lower: "1",
+					upper: "6",
+					value: 3.5 / 12.,
+				},
+				{
+					lower: "1.5",
+					upper: "6",
+					value: 2. / 12.,
+				},
+				{
+					lower: "-2",
+					upper: "-1",
+					value: 0,
+				},
+				{
+					lower: "-2",
+					upper: "-1.5",
+					value: 0,
+				},
+				{
+					lower: "-8",
+					upper: "-1",
+					value: 0,
+				},
+				{
+					lower: "-6",
+					upper: "-1",
+					value: 0,
+				},
+				{
+					lower: "-6",
+					upper: "-1.5",
+					value: 0,
+				},
+			}, invariantCases...),
+		},
+		{
+			text: "all negative buckets with zero bucket",
+			h: &histogram.Histogram{
+				Count:         12,
+				ZeroCount:     2,
+				ZeroThreshold: 0.001,
+				Sum:           100, // Does not matter.
+				Schema:        0,
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []int64{2, 1, -2, 3},
+			},
+			subCases: append([]subCase{
+				{
+					lower: "0",
+					upper: "+Inf",
+					value: 0,
+				},
+				{
+					lower: "-Inf",
+					upper: "0",
+					value: 1,
+				},
+				{
+					lower: "-0.001",
+					upper: "0",
+					value: 2. / 12.,
+				},
+				{
+					lower: "0",
+					upper: "0.001",
+					value: 0,
+				},
+				{
+					lower: "-0.0005",
+					upper: "0",
+					value: 1. / 12.,
+				},
+				{
+					lower: "0.001",
+					upper: "inf",
+					value: 0,
+				},
+				{
+					lower: "-inf",
+					upper: "-0.001",
+					value: 10. / 12.,
+				},
+				{
+					lower: "1",
+					upper: "2",
+					value: 0,
+				},
+				{
+					lower: "1.5",
+					upper: "2",
+					value: 0,
+				},
+				{
+					lower: "1",
+					upper: "8",
+					value: 0,
+				},
+				{
+					lower: "1",
+					upper: "6",
+					value: 0,
+				},
+				{
+					lower: "1.5",
+					upper: "6",
+					value: 0,
+				},
+				{
+					lower: "-2",
+					upper: "-1",
+					value: 3. / 12.,
+				},
+				{
+					lower: "-2",
+					upper: "-1.5",
+					value: 1.5 / 12.,
+				},
+				{
+					lower: "-8",
+					upper: "-1",
+					value: 4. / 12.,
+				},
+				{
+					lower: "-6",
+					upper: "-1",
+					value: 3.5 / 12.,
+				},
+				{
+					lower: "-6",
+					upper: "-1.5",
+					value: 2. / 12.,
+				},
+			}, invariantCases...),
+		},
+		{
+			text: "both positive and negative buckets with zero bucket",
+			h: &histogram.Histogram{
+				Count:         24,
+				ZeroCount:     4,
+				ZeroThreshold: 0.001,
+				Sum:           100, // Does not matter.
+				Schema:        0,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{2, 1, -2, 3},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []int64{2, 1, -2, 3},
+			},
+			subCases: append([]subCase{
+				{
+					lower: "0",
+					upper: "+Inf",
+					value: 0.5,
+				},
+				{
+					lower: "-Inf",
+					upper: "0",
+					value: 0.5,
+				},
+				{
+					lower: "-0.001",
+					upper: "0",
+					value: 2. / 24,
+				},
+				{
+					lower: "0",
+					upper: "0.001",
+					value: 2. / 24.,
+				},
+				{
+					lower: "-0.0005",
+					upper: "0.0005",
+					value: 2. / 24.,
+				},
+				{
+					lower: "0.001",
+					upper: "inf",
+					value: 10. / 24.,
+				},
+				{
+					lower: "-inf",
+					upper: "-0.001",
+					value: 10. / 24.,
+				},
+				{
+					lower: "1",
+					upper: "2",
+					value: 3. / 24.,
+				},
+				{
+					lower: "1.5",
+					upper: "2",
+					value: 1.5 / 24.,
+				},
+				{
+					lower: "1",
+					upper: "8",
+					value: 4. / 24.,
+				},
+				{
+					lower: "1",
+					upper: "6",
+					value: 3.5 / 24.,
+				},
+				{
+					lower: "1.5",
+					upper: "6",
+					value: 2. / 24.,
+				},
+				{
+					lower: "-2",
+					upper: "-1",
+					value: 3. / 24.,
+				},
+				{
+					lower: "-2",
+					upper: "-1.5",
+					value: 1.5 / 24.,
+				},
+				{
+					lower: "-8",
+					upper: "-1",
+					value: 4. / 24.,
+				},
+				{
+					lower: "-6",
+					upper: "-1",
+					value: 3.5 / 24.,
+				},
+				{
+					lower: "-6",
+					upper: "-1.5",
+					value: 2. / 24.,
+				},
+			}, invariantCases...),
+		},
+	}
+	idx := int64(0)
+	for _, floatHisto := range []bool{true, false} {
+		for _, c := range cases {
+			t.Run(fmt.Sprintf("%s floatHistogram=%t", c.text, floatHisto), func(t *testing.T) {
+				engine := newTestEngine()
+				storage := teststorage.New(t)
+				t.Cleanup(func() { storage.Close() })
+
+				seriesName := "sparse_histogram_series"
+				lbls := labels.FromStrings("__name__", seriesName)
+
+				ts := idx * int64(10*time.Minute/time.Millisecond)
+				app := storage.Appender(context.Background())
+				var err error
+				if floatHisto {
+					_, err = app.AppendHistogram(0, lbls, ts, nil, c.h.ToFloat(nil))
+				} else {
+					_, err = app.AppendHistogram(0, lbls, ts, c.h, nil)
+				}
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+
+				for j, sc := range c.subCases {
+					t.Run(fmt.Sprintf("%d %s %s", j, sc.lower, sc.upper), func(t *testing.T) {
+						queryString := fmt.Sprintf("histogram_fraction(%s, %s, %s)", sc.lower, sc.upper, seriesName)
+						qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(ts))
+						require.NoError(t, err)
+
+						res := qry.Exec(context.Background())
+						require.NoError(t, res.Err)
+
+						vector, err := res.Vector()
+						require.NoError(t, err)
+
+						require.Len(t, vector, 1)
+						require.Nil(t, vector[0].H)
+						if math.IsNaN(sc.value) {
+							require.True(t, math.IsNaN(vector[0].F))
+							return
+						}
+						require.Equal(t, sc.value, vector[0].F)
+					})
+				}
+				idx++
+			})
+		}
+	}
+}
+
+func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
+	// TODO(codesome): Integrate histograms into the PromQL testing framework
+	// and write more tests there.
+	cases := []struct {
+		histograms  []histogram.Histogram
+		expected    histogram.FloatHistogram
+		expectedAvg histogram.FloatHistogram
+	}{
+		{
+			histograms: []histogram.Histogram{
+				{
+					CounterResetHint: histogram.GaugeType,
+					Schema:           0,
+					Count:            25,
+					Sum:              1234.5,
+					ZeroThreshold:    0.001,
+					ZeroCount:        4,
+					PositiveSpans: []histogram.Span{
+						{Offset: 0, Length: 2},
+						{Offset: 1, Length: 2},
+					},
+					PositiveBuckets: []int64{1, 1, -1, 0},
+					NegativeSpans: []histogram.Span{
+						{Offset: 0, Length: 2},
+						{Offset: 2, Length: 2},
+					},
+					NegativeBuckets: []int64{2, 2, -3, 8},
+				},
+				{
+					CounterResetHint: histogram.GaugeType,
+					Schema:           0,
+					Count:            41,
+					Sum:              2345.6,
+					ZeroThreshold:    0.001,
+					ZeroCount:        5,
+					PositiveSpans: []histogram.Span{
+						{Offset: 0, Length: 4},
+						{Offset: 0, Length: 0},
+						{Offset: 0, Length: 3},
+					},
+					PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 0},
+					NegativeSpans: []histogram.Span{
+						{Offset: 1, Length: 4},
+						{Offset: 2, Length: 0},
+						{Offset: 2, Length: 3},
+					},
+					NegativeBuckets: []int64{1, 3, -2, 5, -2, 0, -3},
+				},
+				{
+					CounterResetHint: histogram.GaugeType,
+					Schema:           0,
+					Count:            41,
+					Sum:              1111.1,
+					ZeroThreshold:    0.001,
+					ZeroCount:        5,
+					PositiveSpans: []histogram.Span{
+						{Offset: 0, Length: 4},
+						{Offset: 0, Length: 0},
+						{Offset: 0, Length: 3},
+					},
+					PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 0},
+					NegativeSpans: []histogram.Span{
+						{Offset: 1, Length: 4},
+						{Offset: 2, Length: 0},
+						{Offset: 2, Length: 3},
+					},
+					NegativeBuckets: []int64{1, 3, -2, 5, -2, 0, -3},
+				},
+				{
+					CounterResetHint: histogram.GaugeType,
+					Schema:           1, // Everything is 0 just to make the count 4 so avg has nicer numbers.
+				},
+			},
+			expected: histogram.FloatHistogram{
+				CounterResetHint: histogram.GaugeType,
+				Schema:           0,
+				ZeroThreshold:    0.001,
+				ZeroCount:        14,
+				Count:            107,
+				Sum:              4691.2,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 7},
+				},
+				PositiveBuckets: []float64{3, 8, 2, 5, 3, 2, 2},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 6},
+					{Offset: 3, Length: 3},
+				},
+				NegativeBuckets: []float64{2, 6, 8, 4, 15, 9, 10, 10, 4},
+			},
+			expectedAvg: histogram.FloatHistogram{
+				CounterResetHint: histogram.GaugeType,
+				Schema:           0,
+				ZeroThreshold:    0.001,
+				ZeroCount:        3.5,
+				Count:            26.75,
+				Sum:              1172.8,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 7},
+				},
+				PositiveBuckets: []float64{0.75, 2, 0.5, 1.25, 0.75, 0.5, 0.5},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 6},
+					{Offset: 3, Length: 3},
+				},
+				NegativeBuckets: []float64{0.5, 1.5, 2, 1, 3.75, 2.25, 2.5, 2.5, 1},
+			},
+		},
+	}
+
+	idx0 := int64(0)
+	for _, c := range cases {
+		for _, floatHisto := range []bool{true, false} {
+			t.Run(fmt.Sprintf("floatHistogram=%t %d", floatHisto, idx0), func(t *testing.T) {
+				storage := teststorage.New(t)
+				t.Cleanup(func() { storage.Close() })
+
+				seriesName := "sparse_histogram_series"
+				seriesNameOverTime := "sparse_histogram_series_over_time"
+
+				engine := newTestEngine()
+
+				ts := idx0 * int64(10*time.Minute/time.Millisecond)
+				app := storage.Appender(context.Background())
+				for idx1, h := range c.histograms {
+					lbls := labels.FromStrings("__name__", seriesName, "idx", fmt.Sprintf("%d", idx1))
+					// Since we mutate h later, we need to create a copy here.
+					var err error
+					if floatHisto {
+						_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy().ToFloat(nil))
+					} else {
+						_, err = app.AppendHistogram(0, lbls, ts, h.Copy(), nil)
+					}
+					require.NoError(t, err)
+
+					lbls = labels.FromStrings("__name__", seriesNameOverTime)
+					newTs := ts + int64(idx1)*int64(time.Minute/time.Millisecond)
+					// Since we mutate h later, we need to create a copy here.
+					if floatHisto {
+						_, err = app.AppendHistogram(0, lbls, newTs, nil, h.Copy().ToFloat(nil))
+					} else {
+						_, err = app.AppendHistogram(0, lbls, newTs, h.Copy(), nil)
+					}
+					require.NoError(t, err)
+				}
+				require.NoError(t, app.Commit())
+
+				queryAndCheck := func(queryString string, ts int64, exp Vector) {
+					qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(ts))
+					require.NoError(t, err)
+
+					res := qry.Exec(context.Background())
+					require.NoError(t, res.Err)
+
+					vector, err := res.Vector()
+					require.NoError(t, err)
+
+					require.Equal(t, exp, vector)
+				}
+
+				// sum().
+				queryString := fmt.Sprintf("sum(%s)", seriesName)
+				queryAndCheck(queryString, ts, []Sample{{T: ts, H: &c.expected, Metric: labels.EmptyLabels()}})
+
+				// + operator.
+				queryString = fmt.Sprintf(`%s{idx="0"}`, seriesName)
+				for idx := 1; idx < len(c.histograms); idx++ {
+					queryString += fmt.Sprintf(` + ignoring(idx) %s{idx="%d"}`, seriesName, idx)
+				}
+				queryAndCheck(queryString, ts, []Sample{{T: ts, H: &c.expected, Metric: labels.EmptyLabels()}})
+
+				// count().
+				queryString = fmt.Sprintf("count(%s)", seriesName)
+				queryAndCheck(queryString, ts, []Sample{{T: ts, F: 4, Metric: labels.EmptyLabels()}})
+
+				// avg().
+				queryString = fmt.Sprintf("avg(%s)", seriesName)
+				queryAndCheck(queryString, ts, []Sample{{T: ts, H: &c.expectedAvg, Metric: labels.EmptyLabels()}})
+
+				offset := int64(len(c.histograms) - 1)
+				newTs := ts + offset*int64(time.Minute/time.Millisecond)
+
+				// sum_over_time().
+				queryString = fmt.Sprintf("sum_over_time(%s[%dm:1m])", seriesNameOverTime, offset)
+				queryAndCheck(queryString, newTs, []Sample{{T: newTs, H: &c.expected, Metric: labels.EmptyLabels()}})
+
+				// avg_over_time().
+				queryString = fmt.Sprintf("avg_over_time(%s[%dm:1m])", seriesNameOverTime, offset)
+				queryAndCheck(queryString, newTs, []Sample{{T: newTs, H: &c.expectedAvg, Metric: labels.EmptyLabels()}})
+			})
+			idx0++
+		}
+	}
+}
+
+func TestNativeHistogram_SubOperator(t *testing.T) {
+	// TODO(codesome): Integrate histograms into the PromQL testing framework
+	// and write more tests there.
+	cases := []struct {
+		histograms []histogram.Histogram
+		expected   histogram.FloatHistogram
+	}{
+		{
+			histograms: []histogram.Histogram{
+				{
+					Schema:        0,
+					Count:         41,
+					Sum:           2345.6,
+					ZeroThreshold: 0.001,
+					ZeroCount:     5,
+					PositiveSpans: []histogram.Span{
+						{Offset: 0, Length: 4},
+						{Offset: 0, Length: 0},
+						{Offset: 0, Length: 3},
+					},
+					PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 0},
+					NegativeSpans: []histogram.Span{
+						{Offset: 1, Length: 4},
+						{Offset: 2, Length: 0},
+						{Offset: 2, Length: 3},
+					},
+					NegativeBuckets: []int64{1, 3, -2, 5, -2, 0, -3},
+				},
+				{
+					Schema:        0,
+					Count:         11,
+					Sum:           1234.5,
+					ZeroThreshold: 0.001,
+					ZeroCount:     3,
+					PositiveSpans: []histogram.Span{
+						{Offset: 1, Length: 2},
+					},
+					PositiveBuckets: []int64{2, -1},
+					NegativeSpans: []histogram.Span{
+						{Offset: 2, Length: 2},
+					},
+					NegativeBuckets: []int64{3, -1},
+				},
+			},
+			expected: histogram.FloatHistogram{
+				Schema:        0,
+				Count:         30,
+				Sum:           1111.1,
+				ZeroThreshold: 0.001,
+				ZeroCount:     2,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 4},
+				},
+				PositiveBuckets: []float64{1, 1, 2, 1, 1, 1},
+				NegativeSpans: []histogram.Span{
+					{Offset: 1, Length: 2},
+					{Offset: 1, Length: 1},
+					{Offset: 4, Length: 3},
+				},
+				NegativeBuckets: []float64{1, 1, 7, 5, 5, 2},
+			},
+		},
+		{
+			histograms: []histogram.Histogram{
+				{
+					Schema:        0,
+					Count:         41,
+					Sum:           2345.6,
+					ZeroThreshold: 0.001,
+					ZeroCount:     5,
+					PositiveSpans: []histogram.Span{
+						{Offset: 0, Length: 4},
+						{Offset: 0, Length: 0},
+						{Offset: 0, Length: 3},
+					},
+					PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 0},
+					NegativeSpans: []histogram.Span{
+						{Offset: 1, Length: 4},
+						{Offset: 2, Length: 0},
+						{Offset: 2, Length: 3},
+					},
+					NegativeBuckets: []int64{1, 3, -2, 5, -2, 0, -3},
+				},
+				{
+					Schema:        1,
+					Count:         11,
+					Sum:           1234.5,
+					ZeroThreshold: 0.001,
+					ZeroCount:     3,
+					PositiveSpans: []histogram.Span{
+						{Offset: 1, Length: 2},
+					},
+					PositiveBuckets: []int64{2, -1},
+					NegativeSpans: []histogram.Span{
+						{Offset: 2, Length: 2},
+					},
+					NegativeBuckets: []int64{3, -1},
+				},
+			},
+			expected: histogram.FloatHistogram{
+				Schema:        0,
+				Count:         30,
+				Sum:           1111.1,
+				ZeroThreshold: 0.001,
+				ZeroCount:     2,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 1},
+					{Offset: 1, Length: 5},
+				},
+				PositiveBuckets: []float64{1, 1, 2, 1, 1, 1},
+				NegativeSpans: []histogram.Span{
+					{Offset: 1, Length: 4},
+					{Offset: 4, Length: 3},
+				},
+				NegativeBuckets: []float64{-2, 2, 2, 7, 5, 5, 2},
+			},
+		},
+		{
+			histograms: []histogram.Histogram{
+				{
+					Schema:        1,
+					Count:         11,
+					Sum:           1234.5,
+					ZeroThreshold: 0.001,
+					ZeroCount:     3,
+					PositiveSpans: []histogram.Span{
+						{Offset: 1, Length: 2},
+					},
+					PositiveBuckets: []int64{2, -1},
+					NegativeSpans: []histogram.Span{
+						{Offset: 2, Length: 2},
+					},
+					NegativeBuckets: []int64{3, -1},
+				},
+				{
+					Schema:        0,
+					Count:         41,
+					Sum:           2345.6,
+					ZeroThreshold: 0.001,
+					ZeroCount:     5,
+					PositiveSpans: []histogram.Span{
+						{Offset: 0, Length: 4},
+						{Offset: 0, Length: 0},
+						{Offset: 0, Length: 3},
+					},
+					PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 0},
+					NegativeSpans: []histogram.Span{
+						{Offset: 1, Length: 4},
+						{Offset: 2, Length: 0},
+						{Offset: 2, Length: 3},
+					},
+					NegativeBuckets: []int64{1, 3, -2, 5, -2, 0, -3},
+				},
+			},
+			expected: histogram.FloatHistogram{
+				Schema:        0,
+				Count:         -30,
+				Sum:           -1111.1,
+				ZeroThreshold: 0.001,
+				ZeroCount:     -2,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 1},
+					{Offset: 1, Length: 5},
+				},
+				PositiveBuckets: []float64{-1, -1, -2, -1, -1, -1},
+				NegativeSpans: []histogram.Span{
+					{Offset: 1, Length: 4},
+					{Offset: 4, Length: 3},
+				},
+				NegativeBuckets: []float64{2, -2, -2, -7, -5, -5, -2},
+			},
+		},
+	}
+
+	idx0 := int64(0)
+	for _, c := range cases {
+		for _, floatHisto := range []bool{true, false} {
+			t.Run(fmt.Sprintf("floatHistogram=%t %d", floatHisto, idx0), func(t *testing.T) {
+				engine := newTestEngine()
+				storage := teststorage.New(t)
+				t.Cleanup(func() { storage.Close() })
+
+				seriesName := "sparse_histogram_series"
+
+				ts := idx0 * int64(10*time.Minute/time.Millisecond)
+				app := storage.Appender(context.Background())
+				for idx1, h := range c.histograms {
+					lbls := labels.FromStrings("__name__", seriesName, "idx", fmt.Sprintf("%d", idx1))
+					// Since we mutate h later, we need to create a copy here.
+					var err error
+					if floatHisto {
+						_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy().ToFloat(nil))
+					} else {
+						_, err = app.AppendHistogram(0, lbls, ts, h.Copy(), nil)
+					}
+					require.NoError(t, err)
+				}
+				require.NoError(t, app.Commit())
+
+				queryAndCheck := func(queryString string, exp Vector) {
+					qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(ts))
+					require.NoError(t, err)
+
+					res := qry.Exec(context.Background())
+					require.NoError(t, res.Err)
+
+					vector, err := res.Vector()
+					require.NoError(t, err)
+
+					if len(vector) == len(exp) {
+						for i, e := range exp {
+							got := vector[i].H
+							if got != e.H {
+								// Error messages are better if we compare structs, not pointers.
+								require.Equal(t, *e.H, *got)
+							}
+						}
+					}
+
+					require.Equal(t, exp, vector)
+				}
+
+				// - operator.
+				queryString := fmt.Sprintf(`%s{idx="0"}`, seriesName)
+				for idx := 1; idx < len(c.histograms); idx++ {
+					queryString += fmt.Sprintf(` - ignoring(idx) %s{idx="%d"}`, seriesName, idx)
+				}
+				queryAndCheck(queryString, []Sample{{T: ts, H: &c.expected, Metric: labels.EmptyLabels()}})
+			})
+		}
+		idx0++
+	}
+}
+
+func TestNativeHistogram_MulDivOperator(t *testing.T) {
+	// TODO(codesome): Integrate histograms into the PromQL testing framework
+	// and write more tests there.
+	originalHistogram := histogram.Histogram{
+		Schema:        0,
+		Count:         21,
+		Sum:           33,
+		ZeroThreshold: 0.001,
+		ZeroCount:     3,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 3},
+		},
+		PositiveBuckets: []int64{3, 0, 0},
+		NegativeSpans: []histogram.Span{
+			{Offset: 0, Length: 3},
+		},
+		NegativeBuckets: []int64{3, 0, 0},
+	}
+
+	cases := []struct {
+		scalar      float64
+		histogram   histogram.Histogram
+		expectedMul histogram.FloatHistogram
+		expectedDiv histogram.FloatHistogram
+	}{
+		{
+			scalar:    3,
+			histogram: originalHistogram,
+			expectedMul: histogram.FloatHistogram{
+				Schema:        0,
+				Count:         63,
+				Sum:           99,
+				ZeroThreshold: 0.001,
+				ZeroCount:     9,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 3},
+				},
+				PositiveBuckets: []float64{9, 9, 9},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 3},
+				},
+				NegativeBuckets: []float64{9, 9, 9},
+			},
+			expectedDiv: histogram.FloatHistogram{
+				Schema:        0,
+				Count:         7,
+				Sum:           11,
+				ZeroThreshold: 0.001,
+				ZeroCount:     1,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 3},
+				},
+				PositiveBuckets: []float64{1, 1, 1},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 3},
+				},
+				NegativeBuckets: []float64{1, 1, 1},
+			},
+		},
+		{
+			scalar:    0,
+			histogram: originalHistogram,
+			expectedMul: histogram.FloatHistogram{
+				Schema:        0,
+				Count:         0,
+				Sum:           0,
+				ZeroThreshold: 0.001,
+				ZeroCount:     0,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 3},
+				},
+				PositiveBuckets: []float64{0, 0, 0},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 3},
+				},
+				NegativeBuckets: []float64{0, 0, 0},
+			},
+			expectedDiv: histogram.FloatHistogram{
+				Schema:        0,
+				Count:         math.Inf(1),
+				Sum:           math.Inf(1),
+				ZeroThreshold: 0.001,
+				ZeroCount:     math.Inf(1),
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 3},
+				},
+				PositiveBuckets: []float64{math.Inf(1), math.Inf(1), math.Inf(1)},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 3},
+				},
+				NegativeBuckets: []float64{math.Inf(1), math.Inf(1), math.Inf(1)},
+			},
+		},
+	}
+
+	idx0 := int64(0)
+	for _, c := range cases {
+		for _, floatHisto := range []bool{true, false} {
+			t.Run(fmt.Sprintf("floatHistogram=%t %d", floatHisto, idx0), func(t *testing.T) {
+				storage := teststorage.New(t)
+				t.Cleanup(func() { storage.Close() })
+
+				seriesName := "sparse_histogram_series"
+				floatSeriesName := "float_series"
+
+				engine := newTestEngine()
+
+				ts := idx0 * int64(10*time.Minute/time.Millisecond)
+				app := storage.Appender(context.Background())
+				h := c.histogram
+				lbls := labels.FromStrings("__name__", seriesName)
+				// Since we mutate h later, we need to create a copy here.
+				var err error
+				if floatHisto {
+					_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy().ToFloat(nil))
+				} else {
+					_, err = app.AppendHistogram(0, lbls, ts, h.Copy(), nil)
+				}
+				require.NoError(t, err)
+				_, err = app.Append(0, labels.FromStrings("__name__", floatSeriesName), ts, c.scalar)
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+
+				queryAndCheck := func(queryString string, exp Vector) {
+					qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(ts))
+					require.NoError(t, err)
+
+					res := qry.Exec(context.Background())
+					require.NoError(t, res.Err)
+
+					vector, err := res.Vector()
+					require.NoError(t, err)
+
+					require.Equal(t, exp, vector)
+				}
+
+				// histogram * scalar.
+				queryString := fmt.Sprintf(`%s * %f`, seriesName, c.scalar)
+				queryAndCheck(queryString, []Sample{{T: ts, H: &c.expectedMul, Metric: labels.EmptyLabels()}})
+
+				// scalar * histogram.
+				queryString = fmt.Sprintf(`%f * %s`, c.scalar, seriesName)
+				queryAndCheck(queryString, []Sample{{T: ts, H: &c.expectedMul, Metric: labels.EmptyLabels()}})
+
+				// histogram * float.
+				queryString = fmt.Sprintf(`%s * %s`, seriesName, floatSeriesName)
+				queryAndCheck(queryString, []Sample{{T: ts, H: &c.expectedMul, Metric: labels.EmptyLabels()}})
+
+				// float * histogram.
+				queryString = fmt.Sprintf(`%s * %s`, floatSeriesName, seriesName)
+				queryAndCheck(queryString, []Sample{{T: ts, H: &c.expectedMul, Metric: labels.EmptyLabels()}})
+
+				// histogram / scalar.
+				queryString = fmt.Sprintf(`%s / %f`, seriesName, c.scalar)
+				queryAndCheck(queryString, []Sample{{T: ts, H: &c.expectedDiv, Metric: labels.EmptyLabels()}})
+
+				// histogram / float.
+				queryString = fmt.Sprintf(`%s / %s`, seriesName, floatSeriesName)
+				queryAndCheck(queryString, []Sample{{T: ts, H: &c.expectedDiv, Metric: labels.EmptyLabels()}})
+			})
+			idx0++
+		}
+	}
+}
+
+func TestQueryLookbackDelta(t *testing.T) {
+	var (
+		load = `load 5m
+metric 0 1 2
+`
+		query           = "metric"
+		lastDatapointTs = time.Unix(600, 0)
+	)
+
+	cases := []struct {
+		name                          string
+		ts                            time.Time
+		engineLookback, queryLookback time.Duration
+		expectSamples                 bool
+	}{
+		{
+			name:          "default lookback delta",
+			ts:            lastDatapointTs.Add(defaultLookbackDelta),
+			expectSamples: true,
+		},
+		{
+			name:          "outside default lookback delta",
+			ts:            lastDatapointTs.Add(defaultLookbackDelta + time.Millisecond),
+			expectSamples: false,
+		},
+		{
+			name:           "custom engine lookback delta",
+			ts:             lastDatapointTs.Add(10 * time.Minute),
+			engineLookback: 10 * time.Minute,
+			expectSamples:  true,
+		},
+		{
+			name:           "outside custom engine lookback delta",
+			ts:             lastDatapointTs.Add(10*time.Minute + time.Millisecond),
+			engineLookback: 10 * time.Minute,
+			expectSamples:  false,
+		},
+		{
+			name:           "custom query lookback delta",
+			ts:             lastDatapointTs.Add(20 * time.Minute),
+			engineLookback: 10 * time.Minute,
+			queryLookback:  20 * time.Minute,
+			expectSamples:  true,
+		},
+		{
+			name:           "outside custom query lookback delta",
+			ts:             lastDatapointTs.Add(20*time.Minute + time.Millisecond),
+			engineLookback: 10 * time.Minute,
+			queryLookback:  20 * time.Minute,
+			expectSamples:  false,
+		},
+		{
+			name:           "negative custom query lookback delta",
+			ts:             lastDatapointTs.Add(20 * time.Minute),
+			engineLookback: -10 * time.Minute,
+			queryLookback:  20 * time.Minute,
+			expectSamples:  true,
+		},
+	}
+
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			engine := newTestEngine()
+			storage := LoadedStorage(t, load)
+			t.Cleanup(func() { storage.Close() })
+
+			if c.engineLookback != 0 {
+				engine.lookbackDelta = c.engineLookback
+			}
+			opts := NewPrometheusQueryOpts(false, c.queryLookback)
+			qry, err := engine.NewInstantQuery(context.Background(), storage, opts, query, c.ts)
+			require.NoError(t, err)
+
+			res := qry.Exec(context.Background())
+			require.NoError(t, res.Err)
+			vec, ok := res.Value.(Vector)
+			require.True(t, ok)
+			if c.expectSamples {
+				require.NotEmpty(t, vec)
+			} else {
+				require.Empty(t, vec)
+			}
 		})
 	}
 }

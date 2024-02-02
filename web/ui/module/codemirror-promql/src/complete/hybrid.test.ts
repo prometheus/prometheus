@@ -231,7 +231,19 @@ describe('analyzeCompletion test', () => {
       title: 'starting to autocomplete labelName in aggregate modifier',
       expr: 'sum by ()',
       pos: 8, // cursor is between the bracket
-      expectedContext: [{ kind: ContextKind.LabelName }],
+      expectedContext: [{ kind: ContextKind.LabelName, metricName: '' }],
+    },
+    {
+      title: 'starting to autocomplete labelName in aggregate modifier with metric name',
+      expr: 'sum(up) by ()',
+      pos: 12, // cursor is between ()
+      expectedContext: [{ kind: ContextKind.LabelName, metricName: 'up' }],
+    },
+    {
+      title: 'starting to autocomplete labelName in aggregate modifier with metric name in front',
+      expr: 'sum by ()(up)',
+      pos: 8, // cursor is between ()
+      expectedContext: [{ kind: ContextKind.LabelName, metricName: 'up' }],
     },
     {
       title: 'continue to autocomplete labelName in aggregate modifier',
@@ -243,7 +255,7 @@ describe('analyzeCompletion test', () => {
       title: 'autocomplete labelName in a list',
       expr: 'sum by (myLabel1,)',
       pos: 17, // cursor is between the bracket after the string myLab
-      expectedContext: [{ kind: ContextKind.LabelName }],
+      expectedContext: [{ kind: ContextKind.LabelName, metricName: '' }],
     },
     {
       title: 'autocomplete labelName in a list 2',

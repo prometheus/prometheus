@@ -4,7 +4,7 @@
 
 ==>
 
-PromQL(Expr(NumberLiteral))
+PromQL(NumberLiteral)
 
 # Double-quoted string literal
 
@@ -12,7 +12,7 @@ PromQL(Expr(NumberLiteral))
 
 ==>
 
-PromQL(Expr(StringLiteral))
+PromQL(StringLiteral)
 
 # Single-quoted string literal
 
@@ -20,7 +20,7 @@ PromQL(Expr(StringLiteral))
 
 ==>
 
-PromQL(Expr(StringLiteral))
+PromQL(StringLiteral)
 
 # Backtick-quoted string literal
 
@@ -28,7 +28,7 @@ PromQL(Expr(StringLiteral))
 
 ==>
 
-PromQL(Expr(StringLiteral))
+PromQL(StringLiteral)
 
 # Backtick-quoted multi-line string literal
 
@@ -38,7 +38,7 @@ string`
 
 ==>
 
-PromQL(Expr(StringLiteral))
+PromQL(StringLiteral)
 
 # Addition
 
@@ -46,7 +46,7 @@ PromQL(Expr(StringLiteral))
 
 ==>
 
-PromQL(Expr(BinaryExpr(Expr(NumberLiteral), Add, BinModifiers, Expr(NumberLiteral))))
+PromQL(BinaryExpr(NumberLiteral, Add, NumberLiteral))
 
 # Complex expression
 
@@ -55,101 +55,61 @@ sum by(job, mode) (rate(node_cpu_seconds_total[1m])) / on(job) group_left sum by
 ==>
 
 PromQL(
-  Expr(
     BinaryExpr(
-      Expr(
         AggregateExpr(
           AggregateOp(Sum),
           AggregateModifier(
             By,
             GroupingLabels(
-              GroupingLabelList(
-                GroupingLabelList(
-                  GroupingLabel(LabelName)
-                ),
-                GroupingLabel(LabelName)
-              )
+                LabelName,
+                LabelName
             )
           ),
           FunctionCallBody(
-            FunctionCallArgs(
-              Expr(
                 FunctionCall(
                   FunctionIdentifier(Rate),
                   FunctionCallBody(
-                    FunctionCallArgs(
-                      Expr(
                         MatrixSelector(
-                          Expr(
                             VectorSelector(
-                              MetricIdentifier(
                                 Identifier
-                              )
-                            )
-                          ),
+                            ),
                           Duration
                         )
-                      )
-                    )
                   )
                 )
-              )
-            )
           )
-        )
       ),
       Div,
-      BinModifiers(
-        OnOrIgnoring(
+        MatchingModifierClause(
           On,
           GroupingLabels(
-            GroupingLabelList(
-              GroupingLabel(LabelName)
-            )
+              LabelName
           )
+          GroupLeft
         ),
-        GroupLeft
-      ),
-      Expr(
         AggregateExpr(
           AggregateOp(Sum),
           AggregateModifier(
             By,
             GroupingLabels(
-              GroupingLabelList(
-                GroupingLabel(LabelName)
-              )
+                LabelName
             )
           ),
           FunctionCallBody(
-            FunctionCallArgs(
-              Expr(
                 FunctionCall(
                   FunctionIdentifier(Rate),
                   FunctionCallBody(
-                    FunctionCallArgs(
-                      Expr(
                         MatrixSelector(
-                          Expr(
                             VectorSelector(
-                              MetricIdentifier(
                                 Identifier
-                              )
-                            )
-                          ),
+                            ),
                           Duration
-                        )
                       )
-                    )
                   )
-                )
               )
-            )
           )
         )
-      )
     )
-  )
 )
 
 # Case insensitivity for aggregations and binop modifiers.
@@ -159,66 +119,42 @@ SuM BY(testlabel1) (testmetric1) / IGNOring(testlabel2) AVG withOUT(testlabel3) 
 ==>
 
 PromQL(
-  Expr(
     BinaryExpr(
-      Expr(
         AggregateExpr(
           AggregateOp(Sum),
           AggregateModifier(
             By,
             GroupingLabels(
-              GroupingLabelList(
-                GroupingLabel(LabelName)
-              )
+                LabelName
             )
           ),
           FunctionCallBody(
-            FunctionCallArgs(
-              Expr(
                 VectorSelector(
-                  MetricIdentifier(Identifier)
+                  Identifier
                 )
-              )
-            )
           )
-        )
-      ),
+        ),
       Div,
-      BinModifiers(
-        OnOrIgnoring(
+        MatchingModifierClause(
           Ignoring,
           GroupingLabels(
-            GroupingLabelList(
-              GroupingLabel(LabelName)
-            )
+              LabelName
           )
-        )
-      ),
-      Expr(
+        ),
         AggregateExpr(
           AggregateOp(Avg),
           AggregateModifier(
             Without,
             GroupingLabels(
-              GroupingLabelList(
-                GroupingLabel(LabelName)
-              )
+                LabelName
             )
           ),
           FunctionCallBody(
-            FunctionCallArgs(
-              Expr(
                 VectorSelector(
-                  MetricIdentifier(
                     Identifier
-                  )
                 )
-              )
-            )
           )
-        )
       )
-    )
   )
 )
 
@@ -229,85 +165,40 @@ metric1 and metric2 AND metric3 unless metric4 UNLESS metric5 or metric6 OR metr
 ==>
 
 PromQL(
-  Expr(
+  BinaryExpr(
     BinaryExpr(
-      Expr(
+      BinaryExpr(
         BinaryExpr(
-          Expr(
+          BinaryExpr(
             BinaryExpr(
-              Expr(
-                BinaryExpr(
-                  Expr(
-                    BinaryExpr(
-                      Expr(
-                        BinaryExpr(
-                          Expr(
-                            VectorSelector(
-                              MetricIdentifier(Identifier)
-                            )
-                          ),
-                          And,
-                          BinModifiers,
-                          Expr(
-                            VectorSelector(
-                              MetricIdentifier(Identifier)
-                            )
-                          )
-                        )
-                      ),
-                      And,
-                      BinModifiers,
-                      Expr(
-                        VectorSelector(
-                          MetricIdentifier(Identifier)
-                        )
-                      )
-                    )
-                  ),
-                  Unless,
-                  BinModifiers,
-                  Expr(
-                    VectorSelector(
-                      MetricIdentifier(Identifier)
-                    )
-                  )
-                )
-              ),
-              Unless,
-              BinModifiers,
-              Expr(
-                VectorSelector(
-                  MetricIdentifier(Identifier)
-                )
-              )
-            )
+              VectorSelector(Identifier),
+              And,
+              VectorSelector(Identifier)
+            ),
+            And,
+            VectorSelector(Identifier)
           ),
-          Or,
-          BinModifiers,
-          Expr(
-            VectorSelector(
-              MetricIdentifier(Identifier)
-            )
-          )
-        )
+          Unless,
+          VectorSelector(Identifier)
+        ),
+        Unless,
+        VectorSelector(Identifier)
       ),
       Or,
-      BinModifiers,
-      Expr(
-        VectorSelector(
-          MetricIdentifier(Identifier)
-        )
-      )
-    )
+      VectorSelector(Identifier)
+    ),
+    Or,
+    VectorSelector(Identifier)
   )
 )
+
 # Duration units
 
 foo[1y2w3d4h5m6s7ms]
 
 ==>
 
-PromQL(Expr(MatrixSelector(Expr(VectorSelector(MetricIdentifier(Identifier))),Duration)))
+PromQL(MatrixSelector(VectorSelector(Identifier),Duration))
 
 # Incorrectly ordered duration units
 
@@ -315,7 +206,7 @@ foo[1m2h]
 
 ==>
 
-PromQL(Expr(SubqueryExpr(Expr(VectorSelector(MetricIdentifier(Identifier))),Duration,⚠,Duration)))
+PromQL(SubqueryExpr(VectorSelector(Identifier),Duration,⚠,Duration))
 
 # Using a function name as a metric name
 
@@ -323,7 +214,7 @@ rate
 
 ==>
 
-PromQL(Expr(VectorSelector(MetricIdentifier(Identifier))))
+PromQL(VectorSelector(Identifier))
 
 # Match operators
 
@@ -332,41 +223,31 @@ metric_name{a="1",b!="2",c=~"3",d!~"4"}
 ==>
 
 PromQL(
-  Expr(
     VectorSelector(
-      MetricIdentifier(Identifier),
+      Identifier,
       LabelMatchers(
-        LabelMatchList(
-          LabelMatchList(
-            LabelMatchList(
-              LabelMatchList(
-                LabelMatcher(
-                  LabelName,
-                  MatchOp(EqlSingle),
-                  StringLiteral
-                )
-              ),
-              LabelMatcher(
-                LabelName,
-                MatchOp(Neq),
-                StringLiteral
-              )
-            ),
-            LabelMatcher(
-              LabelName,
-              MatchOp(EqlRegex),
-              StringLiteral
-            )
-          ),
-          LabelMatcher(
-            LabelName,
-            MatchOp(NeqRegex),
-            StringLiteral
-          )
+        LabelMatcher(
+          LabelName,
+          MatchOp(EqlSingle),
+          StringLiteral
         ),
+        LabelMatcher(
+          LabelName,
+          MatchOp(Neq),
+          StringLiteral
+        ),
+        LabelMatcher(
+          LabelName,
+          MatchOp(EqlRegex),
+          StringLiteral
+        ),
+        LabelMatcher(
+          LabelName,
+          MatchOp(NeqRegex),
+          StringLiteral
+        )
       )
     )
-  )
 )
 
 # Binary expression with bool modifier
@@ -376,18 +257,14 @@ metric_name > bool 1
 ==>
 
 PromQL(
-  Expr(
     BinaryExpr(
-      Expr(
         VectorSelector(
-          MetricIdentifier(Identifier)
-        )
-      ),
+          Identifier
+        ),
       Gtr,
-      BinModifiers(Bool),
-      Expr(NumberLiteral)
+      BoolModifier(Bool),
+      NumberLiteral
     )
-  )
 )
 
 # Binary expression with group_x() labels.
@@ -397,41 +274,25 @@ metric1 + on(foo) group_left(bar, baz) metric2
 ==>
 
 PromQL(
-  Expr(
     BinaryExpr(
-      Expr(
         VectorSelector(
-          MetricIdentifier(Identifier)
-        )
-      ),
+          Identifier
+        ),
       Add,
-      BinModifiers(
-        OnOrIgnoring(
+        MatchingModifierClause(
           On,
           GroupingLabels(
-            GroupingLabelList(
-              GroupingLabel(LabelName)
-            )
+              LabelName
+          )
+          GroupLeft,
+          GroupingLabels(
+            LabelName,
+            LabelName
           )
         ),
-        GroupLeft,
-        GroupingLabels(
-          GroupingLabelList(
-            GroupingLabelList(
-              GroupingLabel(LabelName)
-            ),
-            GroupingLabel(LabelName)
-          )
-        )
-      ),
-      Expr(
         VectorSelector(
-          MetricIdentifier(
             Identifier
-          )
         )
-      )
-    )
   )
 )
 
@@ -441,27 +302,17 @@ last_over_time(data[1m])
 
 ==>
 PromQL(
-  Expr(
     FunctionCall(
       FunctionIdentifier(LastOverTime),
       FunctionCallBody(
-        FunctionCallArgs(
-          Expr(
             MatrixSelector(
-              Expr(
                 VectorSelector(
-                  MetricIdentifier(
                     Identifier
-                  )
-                )
-              ),
+                ),
               Duration
             )
-          )
-        )
       )
     )
-  )
 )
 
 # Function sgn
@@ -470,21 +321,13 @@ sgn(data)
 
 ==>
 PromQL(
-  Expr(
     FunctionCall(
       FunctionIdentifier(Sgn),
       FunctionCallBody(
-        FunctionCallArgs(
-          Expr(
             VectorSelector(
-              MetricIdentifier(
                 Identifier
-              )
             )
-          )
-        )
       )
-    )
   )
 )
 
@@ -494,28 +337,14 @@ clamp(data,0,1)
 
 ==>
 PromQL(
-  Expr(
     FunctionCall(
       FunctionIdentifier(Clamp),
       FunctionCallBody(
-        FunctionCallArgs(
-          FunctionCallArgs(
-            FunctionCallArgs(
-              Expr(
-                VectorSelector(
-                  MetricIdentifier(
-                    Identifier
-                  )
-                )
-              )
-            ),
-            Expr(NumberLiteral)
-          ),
-          Expr(NumberLiteral)
-        )
+        VectorSelector(Identifier),
+        NumberLiteral,
+        NumberLiteral
       )
     )
-  )
 )
 
 # Metric start
@@ -523,14 +352,14 @@ PromQL(
 start
 
 ==>
-PromQL(Expr(VectorSelector(MetricIdentifier(Identifier))))
+PromQL(VectorSelector(Identifier))
 
 # Metric end
 
 end
 
 ==>
-PromQL(Expr(VectorSelector(MetricIdentifier(Identifier))))
+PromQL(VectorSelector(Identifier))
 
 # Simple At start
 
@@ -538,19 +367,13 @@ foo @ start()
 
 ==>
 PromQL(
-  Expr(
     StepInvariantExpr(
-      Expr(
         VectorSelector(
-          MetricIdentifier(
             Identifier
-          )
-        )
-      )
+        ),
       At,
       AtModifierPreprocessors(Start),
     )
-  )
 )
 
 # Simple At end
@@ -559,19 +382,13 @@ foo @ end()
 
 ==>
 PromQL(
-  Expr(
     StepInvariantExpr(
-      Expr(
         VectorSelector(
-          MetricIdentifier(
             Identifier
-          )
-        )
-      )
+        ),
       At,
       AtModifierPreprocessors(End),
     )
-  )
 )
 
 # Simple At number
@@ -580,18 +397,12 @@ foo @ 1234
 
 ==>
 PromQL(
-  Expr(
     StepInvariantExpr(
-      Expr(
         VectorSelector(
-          MetricIdentifier(
             Identifier
-          )
-        )
-      )
+        ),
       At,
       NumberLiteral
-    )
   )
 )
 
@@ -601,19 +412,13 @@ foo @ start(                 )
 
 ==>
 PromQL(
-  Expr(
     StepInvariantExpr(
-      Expr(
         VectorSelector(
-          MetricIdentifier(
             Identifier
-          )
-        )
-      )
+        ),
       At,
       AtModifierPreprocessors(Start),
     )
-  )
 )
 
 # Complex test with At modifier
@@ -624,60 +429,34 @@ topk(7, rate(process_cpu_seconds_total[1h] @ 1234))
 
 ==>
 PromQL(
-  Expr(
     BinaryExpr(
-      Expr(
         FunctionCall(
           FunctionIdentifier(Rate),
           FunctionCallBody(
-            FunctionCallArgs(
-              Expr(
                 MatrixSelector(
-                  Expr(VectorSelector(MetricIdentifier(Identifier))),
+                  VectorSelector(Identifier),
                   Duration
                 )
-              )
-            )
           )
-        )
-      ),
+        ),
       And,
-      BinModifiers,
-      Expr(
         AggregateExpr(
           AggregateOp(Topk),
           FunctionCallBody(
-            FunctionCallArgs(
-              FunctionCallArgs(Expr(NumberLiteral)),
-              Expr(
-                FunctionCall(
-                  FunctionIdentifier(Rate),
-                  FunctionCallBody(
-                    FunctionCallArgs(
-                      Expr(
-                        StepInvariantExpr(
-                          Expr(
-                            MatrixSelector(
-                              Expr(
-                                VectorSelector(MetricIdentifier(Identifier))
-                              ),
-                              Duration
-                            )
-                          ),
-                          At,
-                          NumberLiteral
-                        )
-                      )
-                    )
-                  )
+            NumberLiteral,
+            FunctionCall(
+              FunctionIdentifier(Rate),
+              FunctionCallBody(
+                StepInvariantExpr(
+                  MatrixSelector(VectorSelector(Identifier), Duration),
+                  At,
+                  NumberLiteral
                 )
               )
             )
           )
         )
-      )
     )
-  )
 )
 
 # At modifier with negative number
@@ -686,19 +465,13 @@ foo @ - 1234
 
 ==>
 PromQL(
-  Expr(
     StepInvariantExpr(
-      Expr(
         VectorSelector(
-          MetricIdentifier(
             Identifier
-          )
-        )
-      )
+        ),
       At,
       NumberLiteral
     )
-  )
 )
 
 # At modifier with explicit positive number
@@ -707,19 +480,13 @@ foo @ + 1234
 
 ==>
 PromQL(
-  Expr(
     StepInvariantExpr(
-      Expr(
         VectorSelector(
-          MetricIdentifier(
             Identifier
-          )
-        )
-      )
+        ),
       At,
       NumberLiteral
     )
-  )
 )
 
 # Metric prefixed by Inf
@@ -727,123 +494,123 @@ PromQL(
 infra
 
 ==>
-PromQL(Expr(VectorSelector(MetricIdentifier(Identifier))))
+PromQL(VectorSelector(Identifier))
 
 # Metric prefixed by Nan
 
 nananere
 
 ==>
-PromQL(Expr(VectorSelector(MetricIdentifier(Identifier))))
+PromQL(VectorSelector(Identifier))
 
 # Mixed-case NaN.
 
 NaN
 
 ==>
-PromQL(Expr(NumberLiteral))
+PromQL(NumberLiteral)
 
 # Lower-cased NaN.
 
 nan
 
 ==>
-PromQL(Expr(NumberLiteral))
+PromQL(NumberLiteral)
 
 # Inf.
 
 Inf
 
 ==>
-PromQL(Expr(NumberLiteral))
+PromQL(NumberLiteral)
 
 # Negative Inf.
 
 -Inf
 
 ==>
-PromQL(Expr(NumberLiteral))
+PromQL(NumberLiteral)
 
 # Positive Inf.
 
 +Inf
 
 ==>
-PromQL(Expr(NumberLiteral))
+PromQL(NumberLiteral)
 
 # Lower-cased Inf.
 
 inf
 
 ==>
-PromQL(Expr(NumberLiteral))
+PromQL(NumberLiteral)
 
 # Upper-cased Inf.
 
 INF
 
 ==>
-PromQL(Expr(NumberLiteral))
+PromQL(NumberLiteral)
 
 # Negative number literal.
 
 -42
 
 ==>
-PromQL(Expr(NumberLiteral))
+PromQL(NumberLiteral)
 
 # Explicitly positive number literal.
 
 +42
 
 ==>
-PromQL(Expr(NumberLiteral))
+PromQL(NumberLiteral)
 
 # Trying to illegally use NaN as a metric name.
 
 NaN{foo="bar"}
 
 ==>
-PromQL(Expr(BinaryExpr(Expr(NumberLiteral),⚠,BinModifiers,Expr(VectorSelector(LabelMatchers(LabelMatchList(LabelMatcher(LabelName,MatchOp(EqlSingle),StringLiteral))))))))
+PromQL(BinaryExpr(NumberLiteral,⚠,VectorSelector(LabelMatchers(LabelMatcher(LabelName,MatchOp(EqlSingle),StringLiteral)))))
 
 # Trying to illegally use Inf as a metric name.
 
 Inf{foo="bar"}
 
 ==>
-PromQL(Expr(BinaryExpr(Expr(NumberLiteral),⚠,BinModifiers,Expr(VectorSelector(LabelMatchers(LabelMatchList(LabelMatcher(LabelName,MatchOp(EqlSingle),StringLiteral))))))))
+PromQL(BinaryExpr(NumberLiteral,⚠,VectorSelector(LabelMatchers(LabelMatcher(LabelName,MatchOp(EqlSingle),StringLiteral)))))
 
 # Negative offset
 
 foo offset -5d
 
 ==>
-PromQL(Expr(OffsetExpr(Expr(VectorSelector(MetricIdentifier(Identifier))), Offset, Sub, Duration)))
+PromQL(OffsetExpr(VectorSelector(Identifier), Offset, Sub, Duration))
 
 # Negative offset with space
 
 foo offset - 5d
 
 ==>
-PromQL(Expr(OffsetExpr(Expr(VectorSelector(MetricIdentifier(Identifier))), Offset, Sub, Duration)))
+PromQL(OffsetExpr(VectorSelector(Identifier), Offset, Sub, Duration))
 
 # Positive offset
 
 foo offset 5d
 
 ==>
-PromQL(Expr(OffsetExpr(Expr(VectorSelector(MetricIdentifier(Identifier))), Offset, Duration)))
+PromQL(OffsetExpr(VectorSelector(Identifier), Offset, Duration))
 
 # Parsing only metric names with alternative @top { "top": "MetricName" }
 
 sum:my_metric_name:rate5m
 
 ==>
-MetricName(MetricIdentifier(Identifier))
+MetricName(Identifier)
 
 # Testing Atan2 inherited precedence level
 
 1 + foo atan2 bar
 
 ==>
-PromQL(Expr(BinaryExpr(Expr(NumberLiteral),Add,BinModifiers,Expr(BinaryExpr(Expr(VectorSelector(MetricIdentifier(Identifier))),Atan2,BinModifiers,Expr(VectorSelector(MetricIdentifier(Identifier))))))))
+PromQL(BinaryExpr(NumberLiteral,Add,BinaryExpr(VectorSelector(Identifier),Atan2,VectorSelector(Identifier))))

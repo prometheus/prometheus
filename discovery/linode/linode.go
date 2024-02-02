@@ -51,6 +51,7 @@ const (
 	linodeLabelStatus             = linodeLabel + "status"
 	linodeLabelTags               = linodeLabel + "tags"
 	linodeLabelGroup              = linodeLabel + "group"
+	linodeLabelGPUs               = linodeLabel + "gpus"
 	linodeLabelHypervisor         = linodeLabel + "hypervisor"
 	linodeLabelBackups            = linodeLabel + "backups"
 	linodeLabelSpecsDiskBytes     = linodeLabel + "specs_disk_bytes"
@@ -66,24 +67,15 @@ const (
 )
 
 // DefaultSDConfig is the default Linode SD configuration.
-var (
-	DefaultSDConfig = SDConfig{
-		TagSeparator:     ",",
-		Port:             80,
-		RefreshInterval:  model.Duration(60 * time.Second),
-		HTTPClientConfig: config.DefaultHTTPClientConfig,
-	}
-
-	failuresCount = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name: "prometheus_sd_linode_failures_total",
-			Help: "Number of Linode service discovery refresh failures.",
-		})
-)
+var DefaultSDConfig = SDConfig{
+	TagSeparator:     ",",
+	Port:             80,
+	RefreshInterval:  model.Duration(60 * time.Second),
+	HTTPClientConfig: config.DefaultHTTPClientConfig,
+}
 
 func init() {
 	discovery.RegisterConfig(&SDConfig{})
-	prometheus.MustRegister(failuresCount)
 }
 
 // SDConfig is the configuration for Linode based service discovery.
@@ -95,12 +87,17 @@ type SDConfig struct {
 	TagSeparator    string         `yaml:"tag_separator,omitempty"`
 }
 
+// NewDiscovererMetrics implements discovery.Config.
+func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return newDiscovererMetrics(reg, rmi)
+}
+
 // Name returns the name of the Config.
 func (*SDConfig) Name() string { return "linode" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger)
+	return NewDiscovery(c, opts.Logger, opts.Metrics)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -130,16 +127,23 @@ type Discovery struct {
 	pollCount            int
 	lastResults          []*targetgroup.Group
 	eventPollingEnabled  bool
+	metrics              *linodeMetrics
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
-func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+	m, ok := metrics.(*linodeMetrics)
+	if !ok {
+		return nil, fmt.Errorf("invalid discovery metrics type")
+	}
+
 	d := &Discovery{
 		port:                 conf.Port,
 		tagSeparator:         conf.TagSeparator,
 		pollCount:            0,
 		lastRefreshTimestamp: time.Now().UTC(),
 		eventPollingEnabled:  true,
+		metrics:              m,
 	}
 
 	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "linode_sd")
@@ -157,10 +161,13 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 	d.client = &client
 
 	d.Discovery = refresh.NewDiscovery(
-		logger,
-		"linode",
-		time.Duration(conf.RefreshInterval),
-		d.refresh,
+		refresh.Options{
+			Logger:              logger,
+			Mech:                "linode",
+			Interval:            time.Duration(conf.RefreshInterval),
+			RefreshF:            d.refresh,
+			MetricsInstantiator: m.refreshMetrics,
+		},
 	)
 	return d, nil
 }
@@ -221,14 +228,14 @@ func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, erro
 	// Gather all linode instances.
 	instances, err := d.client.ListInstances(ctx, &linodego.ListOptions{PageSize: 500})
 	if err != nil {
-		failuresCount.Inc()
+		d.metrics.failuresCount.Inc()
 		return nil, err
 	}
 
 	// Gather detailed IP address info for all IPs on all linode instances.
 	detailedIPs, err := d.client.ListIPAddresses(ctx, &linodego.ListOptions{PageSize: 500})
 	if err != nil {
-		failuresCount.Inc()
+		d.metrics.failuresCount.Inc()
 		return nil, err
 	}
 
@@ -249,20 +256,20 @@ func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, erro
 				if detailedIP.Address != ip.String() {
 					continue
 				}
-
-				if detailedIP.Public && publicIPv4 == "" {
+				switch {
+				case detailedIP.Public && publicIPv4 == "":
 					publicIPv4 = detailedIP.Address
 
 					if detailedIP.RDNS != "" && detailedIP.RDNS != "null" {
 						publicIPv4RDNS = detailedIP.RDNS
 					}
-				} else if !detailedIP.Public && privateIPv4 == "" {
+				case !detailedIP.Public && privateIPv4 == "":
 					privateIPv4 = detailedIP.Address
 
 					if detailedIP.RDNS != "" && detailedIP.RDNS != "null" {
 						privateIPv4RDNS = detailedIP.RDNS
 					}
-				} else {
+				default:
 					extraIPs = append(extraIPs, detailedIP.Address)
 				}
 			}
@@ -302,12 +309,13 @@ func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, erro
 			linodeLabelType:               model.LabelValue(instance.Type),
 			linodeLabelStatus:             model.LabelValue(instance.Status),
 			linodeLabelGroup:              model.LabelValue(instance.Group),
+			linodeLabelGPUs:               model.LabelValue(fmt.Sprintf("%d", instance.Specs.GPUs)),
 			linodeLabelHypervisor:         model.LabelValue(instance.Hypervisor),
 			linodeLabelBackups:            model.LabelValue(backupsStatus),
-			linodeLabelSpecsDiskBytes:     model.LabelValue(fmt.Sprintf("%d", instance.Specs.Disk<<20)),
-			linodeLabelSpecsMemoryBytes:   model.LabelValue(fmt.Sprintf("%d", instance.Specs.Memory<<20)),
+			linodeLabelSpecsDiskBytes:     model.LabelValue(fmt.Sprintf("%d", int64(instance.Specs.Disk)<<20)),
+			linodeLabelSpecsMemoryBytes:   model.LabelValue(fmt.Sprintf("%d", int64(instance.Specs.Memory)<<20)),
 			linodeLabelSpecsVCPUs:         model.LabelValue(fmt.Sprintf("%d", instance.Specs.VCPUs)),
-			linodeLabelSpecsTransferBytes: model.LabelValue(fmt.Sprintf("%d", instance.Specs.Transfer<<20)),
+			linodeLabelSpecsTransferBytes: model.LabelValue(fmt.Sprintf("%d", int64(instance.Specs.Transfer)<<20)),
 		}
 
 		addr := net.JoinHostPort(publicIPv4, strconv.FormatUint(uint64(d.port), 10))

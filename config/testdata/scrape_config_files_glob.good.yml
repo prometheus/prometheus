@@ -1,0 +1,2 @@
+scrape_config_files:
+  - scrape_configs/*.yml

@@ -20,9 +20,12 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/discovery"
 )
 
 type LinodeSDTestSuite struct {
@@ -52,7 +55,15 @@ func TestLinodeSDRefresh(t *testing.T) {
 		Credentials: tokenID,
 		Type:        "Bearer",
 	}
-	d, err := NewDiscovery(&cfg, log.NewNopLogger())
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+	defer refreshMetrics.Unregister()
+
+	d, err := NewDiscovery(&cfg, log.NewNopLogger(), metrics)
 	require.NoError(t, err)
 	endpoint, err := url.Parse(sdmock.Mock.Endpoint())
 	require.NoError(t, err)
@@ -61,12 +72,12 @@ func TestLinodeSDRefresh(t *testing.T) {
 	tgs, err := d.refresh(context.Background())
 	require.NoError(t, err)
 
-	require.Equal(t, 1, len(tgs))
+	require.Len(t, tgs, 1)
 
 	tg := tgs[0]
 	require.NotNil(t, tg)
 	require.NotNil(t, tg.Targets)
-	require.Equal(t, 4, len(tg.Targets))
+	require.Len(t, tg.Targets, 4)
 
 	for i, lbls := range []model.LabelSet{
 		{
@@ -85,6 +96,7 @@ func TestLinodeSDRefresh(t *testing.T) {
 			"__meta_linode_status":               model.LabelValue("running"),
 			"__meta_linode_tags":                 model.LabelValue(",monitoring,"),
 			"__meta_linode_group":                model.LabelValue(""),
+			"__meta_linode_gpus":                 model.LabelValue("0"),
 			"__meta_linode_hypervisor":           model.LabelValue("kvm"),
 			"__meta_linode_backups":              model.LabelValue("disabled"),
 			"__meta_linode_specs_disk_bytes":     model.LabelValue("85899345920"),
@@ -109,6 +121,7 @@ func TestLinodeSDRefresh(t *testing.T) {
 			"__meta_linode_status":               model.LabelValue("running"),
 			"__meta_linode_tags":                 model.LabelValue(",monitoring,"),
 			"__meta_linode_group":                model.LabelValue(""),
+			"__meta_linode_gpus":                 model.LabelValue("0"),
 			"__meta_linode_hypervisor":           model.LabelValue("kvm"),
 			"__meta_linode_backups":              model.LabelValue("disabled"),
 			"__meta_linode_specs_disk_bytes":     model.LabelValue("85899345920"),
@@ -132,6 +145,7 @@ func TestLinodeSDRefresh(t *testing.T) {
 			"__meta_linode_status":               model.LabelValue("running"),
 			"__meta_linode_tags":                 model.LabelValue(",monitoring,"),
 			"__meta_linode_group":                model.LabelValue(""),
+			"__meta_linode_gpus":                 model.LabelValue("0"),
 			"__meta_linode_hypervisor":           model.LabelValue("kvm"),
 			"__meta_linode_backups":              model.LabelValue("disabled"),
 			"__meta_linode_specs_disk_bytes":     model.LabelValue("53687091200"),
@@ -155,6 +169,7 @@ func TestLinodeSDRefresh(t *testing.T) {
 			"__meta_linode_status":               model.LabelValue("running"),
 			"__meta_linode_tags":                 model.LabelValue(",monitoring,"),
 			"__meta_linode_group":                model.LabelValue(""),
+			"__meta_linode_gpus":                 model.LabelValue("0"),
 			"__meta_linode_hypervisor":           model.LabelValue("kvm"),
 			"__meta_linode_backups":              model.LabelValue("disabled"),
 			"__meta_linode_specs_disk_bytes":     model.LabelValue("26843545600"),

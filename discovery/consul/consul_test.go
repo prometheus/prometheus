@@ -22,12 +22,14 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 	"gopkg.in/yaml.v2"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -35,11 +37,25 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
 
+// TODO: Add ability to unregister metrics?
+func NewTestMetrics(t *testing.T, conf discovery.Config, reg prometheus.Registerer) discovery.DiscovererMetrics {
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	require.NoError(t, refreshMetrics.Register())
+
+	metrics := conf.NewDiscovererMetrics(prometheus.NewRegistry(), refreshMetrics)
+	require.NoError(t, metrics.Register())
+
+	return metrics
+}
+
 func TestConfiguredService(t *testing.T) {
 	conf := &SDConfig{
 		Services: []string{"configuredServiceName"},
 	}
-	consulDiscovery, err := NewDiscovery(conf, nil)
+
+	metrics := NewTestMetrics(t, conf, prometheus.NewRegistry())
+
+	consulDiscovery, err := NewDiscovery(conf, nil, metrics)
 	if err != nil {
 		t.Errorf("Unexpected error when initializing discovery %v", err)
 	}
@@ -56,7 +72,10 @@ func TestConfiguredServiceWithTag(t *testing.T) {
 		Services:    []string{"configuredServiceName"},
 		ServiceTags: []string{"http"},
 	}
-	consulDiscovery, err := NewDiscovery(conf, nil)
+
+	metrics := NewTestMetrics(t, conf, prometheus.NewRegistry())
+
+	consulDiscovery, err := NewDiscovery(conf, nil, metrics)
 	if err != nil {
 		t.Errorf("Unexpected error when initializing discovery %v", err)
 	}
@@ -151,7 +170,9 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		consulDiscovery, err := NewDiscovery(tc.conf, nil)
+		metrics := NewTestMetrics(t, tc.conf, prometheus.NewRegistry())
+
+		consulDiscovery, err := NewDiscovery(tc.conf, nil, metrics)
 		if err != nil {
 			t.Errorf("Unexpected error when initializing discovery %v", err)
 		}
@@ -159,13 +180,15 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 		if ret != tc.shouldWatch {
 			t.Errorf("Expected should watch? %t, got %t. Watched service and tags: %s %+v, input was %s %+v", tc.shouldWatch, ret, tc.conf.Services, tc.conf.ServiceTags, tc.serviceName, tc.serviceTags)
 		}
-
 	}
 }
 
 func TestNonConfiguredService(t *testing.T) {
 	conf := &SDConfig{}
-	consulDiscovery, err := NewDiscovery(conf, nil)
+
+	metrics := NewTestMetrics(t, conf, prometheus.NewRegistry())
+
+	consulDiscovery, err := NewDiscovery(conf, nil, metrics)
 	if err != nil {
 		t.Errorf("Unexpected error when initializing discovery %v", err)
 	}
@@ -262,19 +285,22 @@ func newServer(t *testing.T) (*httptest.Server, *SDConfig) {
 
 func newDiscovery(t *testing.T, config *SDConfig) *Discovery {
 	logger := log.NewNopLogger()
-	d, err := NewDiscovery(config, logger)
+
+	metrics := NewTestMetrics(t, config, prometheus.NewRegistry())
+
+	d, err := NewDiscovery(config, logger, metrics)
 	require.NoError(t, err)
 	return d
 }
 
 func checkOneTarget(t *testing.T, tg []*targetgroup.Group) {
-	require.Equal(t, 1, len(tg))
+	require.Len(t, tg, 1)
 	target := tg[0]
 	require.Equal(t, "test-dc", string(target.Labels["__meta_consul_dc"]))
 	require.Equal(t, target.Source, string(target.Labels["__meta_consul_service"]))
 	if target.Source == "test" {
 		// test service should have one node.
-		require.Greater(t, len(target.Targets), 0, "Test service should have one node")
+		require.NotEmpty(t, target.Targets, "Test service should have one node")
 	}
 }
 
@@ -313,7 +339,7 @@ func TestNoTargets(t *testing.T) {
 	}()
 
 	targets := (<-ch)[0].Targets
-	require.Equal(t, 0, len(targets))
+	require.Empty(t, targets)
 	cancel()
 	<-ch
 }
@@ -365,7 +391,7 @@ func TestGetDatacenterShouldReturnError(t *testing.T) {
 		{
 			// Define a handler that will return status 500.
 			handler: func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(500)
+				w.WriteHeader(http.StatusInternalServerError)
 			},
 			errMessage: "Unexpected response code: 500 ()",
 		},
@@ -484,7 +510,7 @@ oauth2:
 				return
 			}
 
-			require.Equal(t, config, test.expected)
+			require.Equal(t, test.expected, config)
 		})
 	}
 }

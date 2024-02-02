@@ -1,0 +1,2 @@
+{__name__="metric", baz="abc", foo="bar"} 2 60000
+{__name__="metric", baz="abc", foo="bar"} 3 120000

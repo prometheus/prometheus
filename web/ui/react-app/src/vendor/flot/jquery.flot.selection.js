@@ -1,11 +1,7 @@
-/**
- *
- * THIS FILE WAS COPIED INTO PROMETHEUS FROM GRAFANA'S VENDORED FORK OF FLOT
- * (LIVING AT https://github.com/grafana/grafana/tree/v7.5.8/public/vendor/flot).
- * THE ORIGINAL FLOT CODE WAS LICENSED UNDER THE MIT LICENSE AS STATED BELOW.
- * ADDITIONAL CHANGES HAVE BEEN CONTRIBUTED TO THE GRAFANA FORK UNDER AN
- * APACHE 2 LICENSE, SEE https://github.com/grafana/grafana/blob/v7.5.8/LICENSE.
- */
+/*
+SPDX-License-Identifier: MIT
+Source: https://github.com/grafana/grafana/blob/main/public/vendor/flot/jquery.flot.selection.js
+*/
 
 /* eslint-disable prefer-spread */
 /* eslint-disable no-loop-func */

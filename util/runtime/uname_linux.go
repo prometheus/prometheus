@@ -13,11 +13,7 @@
 
 package runtime
 
-import (
-	"bytes"
-
-	"golang.org/x/sys/unix"
-)
+import "golang.org/x/sys/unix"
 
 // Uname returns the uname of the host machine.
 func Uname() string {
@@ -27,11 +23,11 @@ func Uname() string {
 		panic("unix.Uname failed: " + err.Error())
 	}
 
-	str := "(" + string(buf.Sysname[:bytes.IndexByte(buf.Sysname[:], 0)])
-	str += " " + string(buf.Release[:bytes.IndexByte(buf.Release[:], 0)])
-	str += " " + string(buf.Version[:bytes.IndexByte(buf.Version[:], 0)])
-	str += " " + string(buf.Machine[:bytes.IndexByte(buf.Machine[:], 0)])
-	str += " " + string(buf.Nodename[:bytes.IndexByte(buf.Nodename[:], 0)])
-	str += " " + string(buf.Domainname[:bytes.IndexByte(buf.Domainname[:], 0)]) + ")"
+	str := "(" + unix.ByteSliceToString(buf.Sysname[:])
+	str += " " + unix.ByteSliceToString(buf.Release[:])
+	str += " " + unix.ByteSliceToString(buf.Version[:])
+	str += " " + unix.ByteSliceToString(buf.Machine[:])
+	str += " " + unix.ByteSliceToString(buf.Nodename[:])
+	str += " " + unix.ByteSliceToString(buf.Domainname[:]) + ")"
 	return str
 }

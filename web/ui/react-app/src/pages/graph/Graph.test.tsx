@@ -4,6 +4,7 @@ import { shallow, mount } from 'enzyme';
 import Graph from './Graph';
 import ReactResizeDetector from 'react-resize-detector';
 import { Legend } from './Legend';
+import { GraphDisplayMode } from './Panel';
 
 describe('Graph', () => {
   beforeAll(() => {
@@ -30,7 +31,7 @@ describe('Graph', () => {
         endTime: 1572130692,
         resolution: 28,
       },
-      stacked: false,
+      displayMode: GraphDisplayMode.Stacked,
       data: {
         resultType: 'matrix',
         result: [
@@ -115,7 +116,7 @@ describe('Graph', () => {
       graph = mount(
         <Graph
           {...({
-            stacked: true,
+            displayMode: GraphDisplayMode.Stacked,
             queryParams: {
               startTime: 1572128592,
               endTime: 1572128598,
@@ -152,7 +153,7 @@ describe('Graph', () => {
       );
     });
     it('should trigger state update when stacked prop is changed', () => {
-      graph.setProps({ stacked: false });
+      graph.setProps({ displayMode: GraphDisplayMode.Lines });
       expect(spyState).toHaveBeenCalledWith(
         {
           chartData: {
@@ -177,7 +178,7 @@ describe('Graph', () => {
       const graph = mount(
         <Graph
           {...({
-            stacked: true,
+            displayMode: GraphDisplayMode.Stacked,
             queryParams: {
               startTime: 1572128592,
               endTime: 1572130692,
@@ -201,7 +202,7 @@ describe('Graph', () => {
       const graph = shallow(
         <Graph
           {...({
-            stacked: true,
+            displayMode: GraphDisplayMode.Stacked,
             queryParams: {
               startTime: 1572128592,
               endTime: 1572128598,
@@ -221,7 +222,7 @@ describe('Graph', () => {
       const graph = mount(
         <Graph
           {...({
-            stacked: true,
+            displayMode: GraphDisplayMode.Stacked,
             queryParams: {
               startTime: 1572128592,
               endTime: 1572128598,
@@ -240,7 +241,7 @@ describe('Graph', () => {
       const graph = mount(
         <Graph
           {...({
-            stacked: true,
+            displayMode: GraphDisplayMode.Stacked,
             queryParams: {
               startTime: 1572128592,
               endTime: 1572128598,
@@ -261,7 +262,7 @@ describe('Graph', () => {
       const graph = mount(
         <Graph
           {...({
-            stacked: true,
+            displayMode: GraphDisplayMode.Stacked,
             queryParams: {
               startTime: 1572128592,
               endTime: 1572128598,
@@ -289,7 +290,7 @@ describe('Graph', () => {
       const graph: any = mount(
         <Graph
           {...({
-            stacked: true,
+            displayMode: GraphDisplayMode.Stacked,
             queryParams: {
               startTime: 1572128592,
               endTime: 1572128598,

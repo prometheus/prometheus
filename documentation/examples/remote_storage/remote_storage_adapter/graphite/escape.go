@@ -47,21 +47,21 @@ const (
 // byte sequence found in this TagValue in way very similar to the traditional
 // percent-encoding (https://en.wikipedia.org/wiki/Percent-encoding):
 //
-// - The string that underlies TagValue is scanned byte by byte.
+//   - The string that underlies TagValue is scanned byte by byte.
 //
-// - If a byte represents a legal Graphite rune with the exception of '%', '/',
-//   '=' and '.', that byte is directly copied to the resulting byte slice.
-//   % is used for percent-encoding of other bytes.
-//   / is not usable in filenames.
-//   = is used when generating the path to associate values to labels.
-//   . already means something for Graphite and thus can't be used in a value.
+//   - If a byte represents a legal Graphite rune with the exception of '%', '/',
+//     '=' and '.', that byte is directly copied to the resulting byte slice.
+//     % is used for percent-encoding of other bytes.
+//     / is not usable in filenames.
+//     = is used when generating the path to associate values to labels.
+//     . already means something for Graphite and thus can't be used in a value.
 //
-// - If the byte is any of (){},=.'"\, then a '\' will be prepended to it. We
-//   do not percent-encode them since they are explicitly usable in this
-//   way in Graphite.
+//   - If the byte is any of (){},=.'"\, then a '\' will be prepended to it. We
+//     do not percent-encode them since they are explicitly usable in this
+//     way in Graphite.
 //
-// - All other bytes are replaced by '%' followed by two bytes containing the
-//   uppercase ASCII representation of their hexadecimal value.
+//   - All other bytes are replaced by '%' followed by two bytes containing the
+//     uppercase ASCII representation of their hexadecimal value.
 //
 // This encoding allows to save arbitrary Go strings in Graphite. That's
 // required because Prometheus label values can contain anything. Using
@@ -69,16 +69,16 @@ const (
 //
 // Examples:
 //
-// "foo-bar-42" -> "foo-bar-42"
+//	"foo-bar-42" -> "foo-bar-42"
 //
-// "foo_bar%42" -> "foo_bar%2542"
+//	"foo_bar%42" -> "foo_bar%2542"
 //
-// "http://example.org:8080" -> "http:%2F%2Fexample%2Eorg:8080"
+//	"http://example.org:8080" -> "http:%2F%2Fexample%2Eorg:8080"
 //
-// "Björn's email: bjoern@soundcloud.com" ->
-// "Bj%C3%B6rn's%20email:%20bjoern%40soundcloud.com"
+//	"Björn's email: bjoern@soundcloud.com" ->
+//	"Bj%C3%B6rn's%20email:%20bjoern%40soundcloud.com"
 //
-// "日" -> "%E6%97%A5"
+//	"日" -> "%E6%97%A5"
 func escape(tv model.LabelValue) string {
 	length := len(tv)
 	result := bytes.NewBuffer(make([]byte, 0, length))

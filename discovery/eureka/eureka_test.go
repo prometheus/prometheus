@@ -20,9 +20,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -35,7 +37,17 @@ func testUpdateServices(respHandler http.HandlerFunc) ([]*targetgroup.Group, err
 		Server: ts.URL,
 	}
 
-	md, err := NewDiscovery(&conf, nil)
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := conf.NewDiscovererMetrics(reg, refreshMetrics)
+	err := metrics.Register()
+	if err != nil {
+		return nil, err
+	}
+	defer metrics.Unregister()
+	defer refreshMetrics.Unregister()
+
+	md, err := NewDiscovery(&conf, nil, metrics)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +67,7 @@ func TestEurekaSDHandleError(t *testing.T) {
 	tgs, err := testUpdateServices(respHandler)
 
 	require.EqualError(t, err, errTesting)
-	require.Equal(t, len(tgs), 0)
+	require.Empty(t, tgs)
 }
 
 func TestEurekaSDEmptyList(t *testing.T) {
@@ -72,7 +84,7 @@ func TestEurekaSDEmptyList(t *testing.T) {
 	)
 	tgs, err := testUpdateServices(respHandler)
 	require.NoError(t, err)
-	require.Equal(t, len(tgs), 1)
+	require.Len(t, tgs, 1)
 }
 
 func TestEurekaSDSendGroup(t *testing.T) {
@@ -232,11 +244,11 @@ func TestEurekaSDSendGroup(t *testing.T) {
 
 	tgs, err := testUpdateServices(respHandler)
 	require.NoError(t, err)
-	require.Equal(t, len(tgs), 1)
+	require.Len(t, tgs, 1)
 
 	tg := tgs[0]
-	require.Equal(t, tg.Source, "eureka")
-	require.Equal(t, len(tg.Targets), 4)
+	require.Equal(t, "eureka", tg.Source)
+	require.Len(t, tg.Targets, 4)
 
 	tgt := tg.Targets[0]
 	require.Equal(t, tgt[model.AddressLabel], model.LabelValue("config-service001.test.com:8080"))

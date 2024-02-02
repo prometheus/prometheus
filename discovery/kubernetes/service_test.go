@@ -96,6 +96,27 @@ func makeExternalService() *v1.Service {
 	}
 }
 
+func makeLoadBalancerService() *v1.Service {
+	return &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "testservice-loadbalancer",
+			Namespace: "default",
+		},
+		Spec: v1.ServiceSpec{
+			Ports: []v1.ServicePort{
+				{
+					Name:     "testport",
+					Protocol: v1.ProtocolTCP,
+					Port:     int32(31900),
+				},
+			},
+			Type:           v1.ServiceTypeLoadBalancer,
+			LoadBalancerIP: "127.0.0.1",
+			ClusterIP:      "10.0.0.1",
+		},
+	}
+}
+
 func TestServiceDiscoveryAdd(t *testing.T) {
 	n, c := makeDiscovery(RoleService, NamespaceDiscovery{})
 
@@ -106,8 +127,10 @@ func TestServiceDiscoveryAdd(t *testing.T) {
 			c.CoreV1().Services(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
 			obj = makeExternalService()
 			c.CoreV1().Services(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+			obj = makeLoadBalancerService()
+			c.CoreV1().Services(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
 		},
-		expectedMaxItems: 2,
+		expectedMaxItems: 3,
 		expectedRes: map[string]*targetgroup.Group{
 			"svc/default/testservice": {
 				Targets: []model.LabelSet{
@@ -142,6 +165,24 @@ func TestServiceDiscoveryAdd(t *testing.T) {
 					"__meta_kubernetes_namespace":    "default",
 				},
 				Source: "svc/default/testservice-external",
+			},
+			"svc/default/testservice-loadbalancer": {
+				Targets: []model.LabelSet{
+					{
+						"__meta_kubernetes_service_port_protocol": "TCP",
+						"__address__":                               "testservice-loadbalancer.default.svc:31900",
+						"__meta_kubernetes_service_type":            "LoadBalancer",
+						"__meta_kubernetes_service_port_name":       "testport",
+						"__meta_kubernetes_service_port_number":     "31900",
+						"__meta_kubernetes_service_cluster_ip":      "10.0.0.1",
+						"__meta_kubernetes_service_loadbalancer_ip": "127.0.0.1",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_service_name": "testservice-loadbalancer",
+					"__meta_kubernetes_namespace":    "default",
+				},
+				Source: "svc/default/testservice-loadbalancer",
 			},
 		},
 	}.Run(t)

@@ -21,8 +21,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -36,7 +39,19 @@ func testConfig() SDConfig {
 }
 
 func testUpdateServices(client appListClient) ([]*targetgroup.Group, error) {
-	md, err := NewDiscovery(testConfig(), nil)
+	cfg := testConfig()
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	err := metrics.Register()
+	if err != nil {
+		return nil, err
+	}
+	defer metrics.Unregister()
+	defer refreshMetrics.Unregister()
+
+	md, err := NewDiscovery(cfg, nil, metrics)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +144,15 @@ func TestMarathonSDSendGroup(t *testing.T) {
 }
 
 func TestMarathonSDRemoveApp(t *testing.T) {
-	md, err := NewDiscovery(testConfig(), nil)
+	cfg := testConfig()
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+	defer refreshMetrics.Unregister()
+
+	md, err := NewDiscovery(cfg, nil, metrics)
 	if err != nil {
 		t.Fatalf("%s", err)
 	}
@@ -159,10 +182,10 @@ func TestMarathonSDRemoveApp(t *testing.T) {
 	tg2 := tgs[0]
 
 	if tg2.Source != tg1.Source {
-		t.Fatalf("Source is different: %s != %s", tg1.Source, tg2.Source)
 		if len(tg2.Targets) > 0 {
-			t.Fatalf("Got a non-empty target set: %s", tg2.Targets)
+			t.Errorf("Got a non-empty target set: %s", tg2.Targets)
 		}
+		t.Fatalf("Source is different: %s != %s", tg1.Source, tg2.Source)
 	}
 }
 

@@ -15,6 +15,7 @@ package relabel
 
 import (
 	"crypto/md5"
+	"encoding/binary"
 	"fmt"
 	"strings"
 
@@ -45,6 +46,10 @@ const (
 	Keep Action = "keep"
 	// Drop drops targets for which the input does match the regex.
 	Drop Action = "drop"
+	// KeepEqual drops targets for which the input does not match the target.
+	KeepEqual Action = "keepequal"
+	// Drop drops targets for which the input does match the target.
+	DropEqual Action = "dropequal"
 	// HashMod sets a label to the modulus of a hash of labels.
 	HashMod Action = "hashmod"
 	// LabelMap copies labels to other labelnames based on a regex.
@@ -66,7 +71,7 @@ func (a *Action) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	switch act := Action(strings.ToLower(s)); act {
-	case Replace, Keep, Drop, HashMod, LabelMap, LabelDrop, LabelKeep, Lowercase, Uppercase:
+	case Replace, Keep, Drop, HashMod, LabelMap, LabelDrop, LabelKeep, Lowercase, Uppercase, KeepEqual, DropEqual:
 		*a = act
 		return nil
 	}
@@ -103,19 +108,29 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.Regex.Regexp == nil {
 		c.Regex = MustNewRegexp("")
 	}
+	return c.Validate()
+}
+
+func (c *Config) Validate() error {
 	if c.Action == "" {
 		return fmt.Errorf("relabel action cannot be empty")
 	}
 	if c.Modulus == 0 && c.Action == HashMod {
 		return fmt.Errorf("relabel configuration for hashmod requires non-zero modulus")
 	}
-	if (c.Action == Replace || c.Action == HashMod || c.Action == Lowercase || c.Action == Uppercase) && c.TargetLabel == "" {
+	if (c.Action == Replace || c.Action == HashMod || c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && c.TargetLabel == "" {
 		return fmt.Errorf("relabel configuration for %s action requires 'target_label' value", c.Action)
 	}
-	if (c.Action == Replace || c.Action == Lowercase || c.Action == Uppercase) && !relabelTarget.MatchString(c.TargetLabel) {
+	if c.Action == Replace && !strings.Contains(c.TargetLabel, "$") && !model.LabelName(c.TargetLabel).IsValid() {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
-	if (c.Action == Lowercase || c.Action == Uppercase) && c.Replacement != DefaultRelabelConfig.Replacement {
+	if c.Action == Replace && strings.Contains(c.TargetLabel, "$") && !relabelTarget.MatchString(c.TargetLabel) {
+		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
+	}
+	if (c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && !model.LabelName(c.TargetLabel).IsValid() {
+		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
+	}
+	if (c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && c.Replacement != DefaultRelabelConfig.Replacement {
 		return fmt.Errorf("'replacement' can not be set for %s action", c.Action)
 	}
 	if c.Action == LabelMap && !relabelTarget.MatchString(c.Replacement) {
@@ -123,6 +138,15 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 	if c.Action == HashMod && !model.LabelName(c.TargetLabel).IsValid() {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
+	}
+
+	if c.Action == DropEqual || c.Action == KeepEqual {
+		if c.Regex != DefaultRelabelConfig.Regex ||
+			c.Modulus != DefaultRelabelConfig.Modulus ||
+			c.Separator != DefaultRelabelConfig.Separator ||
+			c.Replacement != DefaultRelabelConfig.Replacement {
+			return fmt.Errorf("%s action requires only 'source_labels' and `target_label`, and no other fields", c.Action)
+		}
 	}
 
 	if c.Action == LabelDrop || c.Action == LabelKeep {
@@ -188,37 +212,59 @@ func (re Regexp) String() string {
 	return str[4 : len(str)-2]
 }
 
-// Process returns a relabeled copy of the given label set. The relabel configurations
+// Process returns a relabeled version of the given label set. The relabel configurations
 // are applied in order of input.
-// If a label set is dropped, nil is returned.
-// May return the input labelSet modified.
-func Process(labels labels.Labels, cfgs ...*Config) labels.Labels {
-	for _, cfg := range cfgs {
-		labels = relabel(labels, cfg)
-		if labels == nil {
-			return nil
-		}
+// There are circumstances where Process will modify the input label.
+// If you want to avoid issues with the input label set being modified, at the cost of
+// higher memory usage, you can use lbls.Copy().
+// If a label set is dropped, EmptyLabels and false is returned.
+func Process(lbls labels.Labels, cfgs ...*Config) (ret labels.Labels, keep bool) {
+	lb := labels.NewBuilder(lbls)
+	if !ProcessBuilder(lb, cfgs...) {
+		return labels.EmptyLabels(), false
 	}
-	return labels
+	return lb.Labels(), true
 }
 
-func relabel(lset labels.Labels, cfg *Config) labels.Labels {
-	values := make([]string, 0, len(cfg.SourceLabels))
+// ProcessBuilder is like Process, but the caller passes a labels.Builder
+// containing the initial set of labels, which is mutated by the rules.
+func ProcessBuilder(lb *labels.Builder, cfgs ...*Config) (keep bool) {
+	for _, cfg := range cfgs {
+		keep = relabel(cfg, lb)
+		if !keep {
+			return false
+		}
+	}
+	return true
+}
+
+func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
+	var va [16]string
+	values := va[:0]
+	if len(cfg.SourceLabels) > cap(values) {
+		values = make([]string, 0, len(cfg.SourceLabels))
+	}
 	for _, ln := range cfg.SourceLabels {
-		values = append(values, lset.Get(string(ln)))
+		values = append(values, lb.Get(string(ln)))
 	}
 	val := strings.Join(values, cfg.Separator)
-
-	lb := labels.NewBuilder(lset)
 
 	switch cfg.Action {
 	case Drop:
 		if cfg.Regex.MatchString(val) {
-			return nil
+			return false
 		}
 	case Keep:
 		if !cfg.Regex.MatchString(val) {
-			return nil
+			return false
+		}
+	case DropEqual:
+		if lb.Get(cfg.TargetLabel) == val {
+			return false
+		}
+	case KeepEqual:
+		if lb.Get(cfg.TargetLabel) != val {
+			return false
 		}
 	case Replace:
 		indexes := cfg.Regex.FindStringSubmatchIndex(val)
@@ -228,12 +274,11 @@ func relabel(lset labels.Labels, cfg *Config) labels.Labels {
 		}
 		target := model.LabelName(cfg.Regex.ExpandString([]byte{}, cfg.TargetLabel, val, indexes))
 		if !target.IsValid() {
-			lb.Del(cfg.TargetLabel)
 			break
 		}
 		res := cfg.Regex.ExpandString([]byte{}, cfg.Replacement, val, indexes)
 		if len(res) == 0 {
-			lb.Del(cfg.TargetLabel)
+			lb.Del(string(target))
 			break
 		}
 		lb.Set(string(target), string(res))
@@ -242,42 +287,32 @@ func relabel(lset labels.Labels, cfg *Config) labels.Labels {
 	case Uppercase:
 		lb.Set(cfg.TargetLabel, strings.ToUpper(val))
 	case HashMod:
-		mod := sum64(md5.Sum([]byte(val))) % cfg.Modulus
+		hash := md5.Sum([]byte(val))
+		// Use only the last 8 bytes of the hash to give the same result as earlier versions of this code.
+		mod := binary.BigEndian.Uint64(hash[8:]) % cfg.Modulus
 		lb.Set(cfg.TargetLabel, fmt.Sprintf("%d", mod))
 	case LabelMap:
-		for _, l := range lset {
+		lb.Range(func(l labels.Label) {
 			if cfg.Regex.MatchString(l.Name) {
 				res := cfg.Regex.ReplaceAllString(l.Name, cfg.Replacement)
 				lb.Set(res, l.Value)
 			}
-		}
+		})
 	case LabelDrop:
-		for _, l := range lset {
+		lb.Range(func(l labels.Label) {
 			if cfg.Regex.MatchString(l.Name) {
 				lb.Del(l.Name)
 			}
-		}
+		})
 	case LabelKeep:
-		for _, l := range lset {
+		lb.Range(func(l labels.Label) {
 			if !cfg.Regex.MatchString(l.Name) {
 				lb.Del(l.Name)
 			}
-		}
+		})
 	default:
 		panic(fmt.Errorf("relabel: unknown relabel action type %q", cfg.Action))
 	}
 
-	return lb.Labels()
-}
-
-// sum64 sums the md5 hash to an uint64.
-func sum64(hash [md5.Size]byte) uint64 {
-	var s uint64
-
-	for i, b := range hash {
-		shift := uint64((md5.Size - i - 1) * 8)
-
-		s |= uint64(b) << shift
-	}
-	return s
+	return true
 }

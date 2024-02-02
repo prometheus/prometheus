@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"math"
 	"sync"
 )
 
@@ -45,6 +46,7 @@ func (i *isolationState) IsolationDisabled() bool {
 
 type isolationAppender struct {
 	appendID uint64
+	minTime  int64
 	prev     *isolationAppender
 	next     *isolationAppender
 }
@@ -116,13 +118,29 @@ func (i *isolation) lowWatermarkLocked() uint64 {
 	return i.appendsOpenList.next.appendID
 }
 
+// lowestAppendTime returns the lowest minTime for any open appender,
+// or math.MaxInt64 if no open appenders.
+func (i *isolation) lowestAppendTime() int64 {
+	var lowest int64 = math.MaxInt64
+	i.appendMtx.RLock()
+	defer i.appendMtx.RUnlock()
+
+	for a := i.appendsOpenList.next; a != i.appendsOpenList; a = a.next {
+		if lowest > a.minTime {
+			lowest = a.minTime
+		}
+	}
+	return lowest
+}
+
 // State returns an object used to control isolation
 // between a query and appends. Must be closed when complete.
 func (i *isolation) State(mint, maxt int64) *isolationState {
 	i.appendMtx.RLock() // Take append mutex before read mutex.
 	defer i.appendMtx.RUnlock()
 
-	// We need to track the reads even when isolation is disabled.
+	// We need to track reads even when isolation is disabled, so that head
+	// truncation can wait till reads overlapping that range have finished.
 	isoState := &isolationState{
 		maxAppendID:       i.appendsOpenList.appendID,
 		lowWatermark:      i.appendsOpenList.next.appendID, // Lowest appendID from appenders, or lastAppendId.
@@ -163,7 +181,7 @@ func (i *isolation) TraverseOpenReads(f func(s *isolationState) bool) {
 // newAppendID increments the transaction counter and returns a new transaction
 // ID. The first ID returned is 1.
 // Also returns the low watermark, to keep lock/unlock operations down.
-func (i *isolation) newAppendID() (uint64, uint64) {
+func (i *isolation) newAppendID(minTime int64) (uint64, uint64) {
 	if i.disabled {
 		return 0, 0
 	}
@@ -176,6 +194,7 @@ func (i *isolation) newAppendID() (uint64, uint64) {
 
 	app := i.appendersPool.Get().(*isolationAppender)
 	app.appendID = i.appendsOpenList.appendID
+	app.minTime = minTime
 	app.prev = i.appendsOpenList.prev
 	app.next = i.appendsOpenList
 
@@ -221,32 +240,39 @@ func (i *isolation) closeAppend(appendID uint64) {
 // The transactionID ring buffer.
 type txRing struct {
 	txIDs     []uint64
-	txIDFirst int // Position of the first id in the ring.
-	txIDCount int // How many ids in the ring.
+	txIDFirst uint32 // Position of the first id in the ring.
+	txIDCount uint32 // How many ids in the ring.
 }
 
-func newTxRing(cap int) *txRing {
+func newTxRing(capacity int) *txRing {
 	return &txRing{
-		txIDs: make([]uint64, cap),
+		txIDs: make([]uint64, capacity),
 	}
 }
 
 func (txr *txRing) add(appendID uint64) {
-	if txr.txIDCount == len(txr.txIDs) {
+	if int(txr.txIDCount) == len(txr.txIDs) {
 		// Ring buffer is full, expand by doubling.
-		newRing := make([]uint64, txr.txIDCount*2)
-		idx := copy(newRing[:], txr.txIDs[txr.txIDFirst:])
+		newLen := txr.txIDCount * 2
+		if newLen == 0 {
+			newLen = 4
+		}
+		newRing := make([]uint64, newLen)
+		idx := copy(newRing, txr.txIDs[txr.txIDFirst:])
 		copy(newRing[idx:], txr.txIDs[:txr.txIDFirst])
 		txr.txIDs = newRing
 		txr.txIDFirst = 0
 	}
 
-	txr.txIDs[(txr.txIDFirst+txr.txIDCount)%len(txr.txIDs)] = appendID
+	txr.txIDs[int(txr.txIDFirst+txr.txIDCount)%len(txr.txIDs)] = appendID
 	txr.txIDCount++
 }
 
 func (txr *txRing) cleanupAppendIDsBelow(bound uint64) {
-	pos := txr.txIDFirst
+	if len(txr.txIDs) == 0 {
+		return
+	}
+	pos := int(txr.txIDFirst)
 
 	for txr.txIDCount > 0 {
 		if txr.txIDs[pos] < bound {
@@ -262,7 +288,7 @@ func (txr *txRing) cleanupAppendIDsBelow(bound uint64) {
 		}
 	}
 
-	txr.txIDFirst %= len(txr.txIDs)
+	txr.txIDFirst %= uint32(len(txr.txIDs))
 }
 
 func (txr *txRing) iterator() *txRingIterator {
@@ -277,7 +303,7 @@ func (txr *txRing) iterator() *txRingIterator {
 type txRingIterator struct {
 	ids []uint64
 
-	pos int
+	pos uint32
 }
 
 func (it *txRingIterator) At() uint64 {
@@ -286,7 +312,7 @@ func (it *txRingIterator) At() uint64 {
 
 func (it *txRingIterator) Next() {
 	it.pos++
-	if it.pos == len(it.ids) {
+	if int(it.pos) == len(it.ids) {
 		it.pos = 0
 	}
 }

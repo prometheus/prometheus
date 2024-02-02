@@ -54,3 +54,20 @@ export const getColor = (health: string): string => {
       return 'warning';
   }
 };
+
+export interface TargetHealthFilters {
+  healthy: boolean;
+  unhealthy: boolean;
+  unknown: boolean;
+}
+
+export const filterTargetsByHealth = (health: string, filters: TargetHealthFilters): boolean => {
+  switch (health.toLowerCase()) {
+    case 'up':
+      return filters.healthy;
+    case 'down':
+      return filters.unhealthy;
+    default:
+      return filters.unknown;
+  }
+};

@@ -37,7 +37,7 @@ if [ -z "${GITHUB_TOKEN}" ]; then
 fi
 
 # List of files that should be synced.
-SYNC_FILES="CODE_OF_CONDUCT.md LICENSE Makefile.common SECURITY.md .yamllint .github/workflows/golangci-lint.yml"
+SYNC_FILES="CODE_OF_CONDUCT.md LICENSE Makefile.common SECURITY.md .yamllint scripts/golangci-lint.yml .github/workflows/scorecards.yml"
 
 # Go to the root of the repo
 cd "$(git rev-parse --show-cdup)" || exit 1
@@ -46,12 +46,6 @@ source_dir="$(pwd)"
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "${tmp_dir}"' EXIT
-
-prometheus_orb_version="$(yq eval '.orbs.prometheus' .circleci/config.yml)"
-if [[ -z "${prometheus_orb_version}" ]]; then
-  echo_red '"ERROR: Unable to get CircleCI orb version'
-  exit 1
-fi
 
 ## Internal functions
 github_api() {
@@ -105,24 +99,6 @@ check_go() {
   curl -sLf -o /dev/null "https://raw.githubusercontent.com/${org_repo}/${default_branch}/go.mod"
 }
 
-check_circleci_orb() {
-  local org_repo
-  local default_branch
-  org_repo="$1"
-  default_branch="$2"
-  local ci_config_url="https://raw.githubusercontent.com/${org_repo}/${default_branch}/.circleci/config.yml"
-
-  orb_version="$(curl -sL --fail "${ci_config_url}" | yq eval '.orbs.prometheus' -)"
-  if [[ -z "${orb_version}" ]]; then
-    echo_yellow "WARNING: Failed to fetch CirleCI orb version from '${org_repo}'"
-    return 0
-  fi
-
-  if [[ "${orb_version}" != "null" && "${orb_version}" != "${prometheus_orb_version}" ]]; then
-    echo "CircleCI-orb"
-  fi
-}
-
 process_repo() {
   local org_repo
   local default_branch
@@ -139,20 +115,23 @@ process_repo() {
   local needs_update=()
   for source_file in ${SYNC_FILES}; do
     source_checksum="$(sha256sum "${source_dir}/${source_file}" | cut -d' ' -f1)"
-
-    target_file="$(curl -sL --fail "https://raw.githubusercontent.com/${org_repo}/${default_branch}/${source_file}")"
+    if [[ "${source_file}" == 'scripts/golangci-lint.yml' ]] && ! check_go "${org_repo}" "${default_branch}" ; then
+      echo "${org_repo} is not Go, skipping golangci-lint.yml."
+      continue
+    fi
     if [[ "${source_file}" == 'LICENSE' ]] && ! check_license "${target_file}" ; then
       echo "LICENSE in ${org_repo} is not apache, skipping."
       continue
     fi
-    if [[ "${source_file}" == '.github/workflows/golangci-lint.yml' ]] && ! check_go "${org_repo}" "${default_branch}" ; then
-      echo "${org_repo} is not Go, skipping .github/workflows/golangci-lint.yml."
-      continue
+    target_filename="${source_file}"
+    if [[ "${source_file}" == 'scripts/golangci-lint.yml' ]] ; then
+      target_filename=".github/workflows/golangci-lint.yml"
     fi
+    target_file="$(curl -sL --fail "https://raw.githubusercontent.com/${org_repo}/${default_branch}/${target_filename}")"
     if [[ -z "${target_file}" ]]; then
-      echo "${source_file} doesn't exist in ${org_repo}"
+      echo "${target_filename} doesn't exist in ${org_repo}"
       case "${source_file}" in
-        CODE_OF_CONDUCT.md | SECURITY.md | .github/workflows/golangci-lint.yml)
+        CODE_OF_CONDUCT.md | SECURITY.md)
           echo "${source_file} missing in ${org_repo}, force updating."
           needs_update+=("${source_file}")
           ;;
@@ -167,13 +146,6 @@ process_repo() {
     echo "${source_file} needs updating."
     needs_update+=("${source_file}")
   done
-
-  local circleci
-  circleci="$(check_circleci_orb "${org_repo}" "${default_branch}")"
-  if [[ -n "${circleci}" ]]; then
-    echo "${circleci} needs updating."
-    needs_update+=("${circleci}")
-  fi
 
   if [[ "${#needs_update[@]}" -eq 0 ]] ; then
     echo "No files need sync."
@@ -190,9 +162,12 @@ process_repo() {
 
   # Update the files in target repo by one from prometheus/prometheus.
   for source_file in "${needs_update[@]}"; do
+    target_filename="${source_file}"
+    if [[ "${source_file}" == 'scripts/golangci-lint.yml' ]] ; then
+      target_filename=".github/workflows/golangci-lint.yml"
+    fi
     case "${source_file}" in
-      CircleCI-orb) yq eval -i ".orbs.prometheus = \"${prometheus_orb_version}\"" .circleci/config.yml ;;
-      *) cp -f "${source_dir}/${source_file}" "./${source_file}" ;;
+      *) cp -f "${source_dir}/${source_file}" "./${target_filename}" ;;
     esac
   done
 

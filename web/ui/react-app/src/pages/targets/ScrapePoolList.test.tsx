@@ -36,7 +36,7 @@ describe('ScrapePoolList', () => {
       await act(async () => {
         scrapePoolList = mount(
           <PathPrefixContext.Provider value="/path/prefix">
-            <ScrapePoolList />
+            <ScrapePoolList scrapePools={[]} selectedPool={null} onPoolSelect={jest.fn()} />
           </PathPrefixContext.Provider>
         );
       });
@@ -63,7 +63,7 @@ describe('ScrapePoolList', () => {
       await act(async () => {
         scrapePoolList = mount(
           <PathPrefixContext.Provider value="/path/prefix">
-            <ScrapePoolList />
+            <ScrapePoolList scrapePools={[]} selectedPool={null} onPoolSelect={jest.fn()} />
           </PathPrefixContext.Provider>
         );
       });

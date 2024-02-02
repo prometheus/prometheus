@@ -1,13 +1,7 @@
-/**
- *
- * THIS FILE WAS COPIED INTO PROMETHEUS FROM GRAFANA'S VENDORED FORK OF FLOT
- * (LIVING AT https://github.com/grafana/grafana/tree/master/public/vendor/flot),
- * WHICH CONTAINS FIXES FOR DISPLAYING NULL VALUES IN STACKED GRAPHS. THE ORIGINAL
- * FLOT CODE WAS LICENSED UNDER THE MIT LICENSE AS STATED BELOW. ADDITIONAL
- * CHANGES HAVE BEEN CONTRIBUTED TO THE GRAFANA FORK UNDER AN APACHE 2 LICENSE, SEE
- * https://github.com/grafana/grafana/blob/master/license.
- *
- */
+/*
+SPDX-License-Identifier: MIT
+Source: https://github.com/grafana/grafana/blob/main/public/vendor/flot/jquery.flot.time.js
+*/
 
 /* eslint-disable prefer-rest-params */
 /* eslint-disable no-useless-concat */

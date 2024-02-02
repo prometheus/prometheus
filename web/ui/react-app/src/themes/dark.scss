@@ -11,11 +11,13 @@ $config-yaml-color: $black;
 $config-yaml-bg: $gray-500;
 $config-yaml-border: $gray-700;
 
-$query-stats-color: $secondary;
+$query-stats-color: lighten($secondary, 20%);
 
 $metrics-explorer-bg: $dropdown-link-hover-bg;
 
 $clear-time-btn-bg: $secondary;
+
+$checked-checkbox-color: #60a5fa;
 
 .bootstrap-dark {
   @import './shared';

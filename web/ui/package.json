@@ -2,7 +2,7 @@
   "name": "prometheus-io",
   "private": true,
   "scripts": {
-    "build": "bash build_ui.sh --all",
+    "build": "GENERATE_SOURCEMAP=false bash build_ui.sh --all",
     "build:module": "bash build_ui.sh --build-module",
     "start": "npm run start -w react-app",
     "test": "npm run test --workspaces",
@@ -16,16 +16,17 @@
     "npm": ">=7.0.0"
   },
   "devDependencies": {
-    "@types/jest": "^27.4.1",
-    "@types/node": "^17.0.23",
-    "eslint-config-prettier": "^8.5.0",
-    "eslint-config-react-app": "^7.0.0",
-    "eslint-plugin-prettier": "^4.0.0",
-    "jest-canvas-mock": "^2.3.1",
+    "@types/jest": "^29.5.11",
+    "@types/node": "^20.10.4",
+    "eslint-config-prettier": "^8.10.0",
+    "eslint-config-react-app": "^7.0.1",
+    "eslint-plugin-prettier": "^4.2.1",
+    "jest-canvas-mock": "^2.5.2",
     "jest-fetch-mock": "^3.0.3",
-    "react-scripts": "^5.0.0",
-    "prettier": "^2.6.1",
-    "ts-jest": "^27.1.4",
-    "typescript": "^4.6.3"
-  }
+    "prettier": "^2.8.8",
+    "react-scripts": "^5.0.1",
+    "ts-jest": "^29.1.1",
+    "typescript": "^4.9.5"
+  },
+  "version": "0.49.1"
 }

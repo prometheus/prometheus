@@ -16,6 +16,7 @@ package strutil
 import (
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/grafana/regexp"
 )
@@ -38,6 +39,26 @@ func GraphLinkForExpression(expr string) string {
 
 // SanitizeLabelName replaces anything that doesn't match
 // client_label.LabelNameRE with an underscore.
+// Note: this does not handle all Prometheus label name restrictions (such as
+// not starting with a digit 0-9), and hence should only be used if the label
+// name is prefixed with a known valid string.
 func SanitizeLabelName(name string) string {
 	return invalidLabelCharRE.ReplaceAllString(name, "_")
+}
+
+// SanitizeFullLabelName replaces any invalid character with an underscore, and
+// if given an empty string, returns a string containing a single underscore.
+func SanitizeFullLabelName(name string) string {
+	if len(name) == 0 {
+		return "_"
+	}
+	var validSb strings.Builder
+	for i, b := range name {
+		if !((b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || b == '_' || (b >= '0' && b <= '9' && i > 0)) {
+			validSb.WriteRune('_')
+		} else {
+			validSb.WriteRune(b)
+		}
+	}
+	return validSb.String()
 }

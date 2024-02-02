@@ -19,30 +19,24 @@ import {
   AggregateExpr,
   And,
   BinaryExpr,
-  BinModifiers,
-  Bool,
+  BoolModifier,
   Div,
   Duration,
   Eql,
   EqlRegex,
   EqlSingle,
-  Expr,
-  FunctionCallArgs,
   FunctionCallBody,
-  GroupingLabel,
   GroupingLabels,
   Gte,
   Gtr,
-  Identifier,
   LabelMatcher,
   LabelMatchers,
-  LabelMatchList,
   LabelName,
   Lss,
   Lte,
   MatchOp,
   MatrixSelector,
-  MetricIdentifier,
+  Identifier,
   Mod,
   Mul,
   Neq,
@@ -61,7 +55,7 @@ import {
 } from '@prometheus-io/lezer-promql';
 import { Completion, CompletionContext, CompletionResult } from '@codemirror/autocomplete';
 import { EditorState } from '@codemirror/state';
-import { buildLabelMatchers, containsAtLeastOneChild, containsChild, retrieveAllRecursiveNodes, walkBackward, walkThrough } from '../parser';
+import { buildLabelMatchers, containsAtLeastOneChild, containsChild, walkBackward } from '../parser';
 import {
   aggregateOpModifierTerms,
   aggregateOpTerms,
@@ -116,15 +110,35 @@ export interface Context {
   matchers?: Matcher[];
 }
 
+function getMetricNameInGroupBy(tree: SyntaxNode, state: EditorState): string {
+  // There should be an AggregateExpr as parent of the GroupingLabels.
+  // Then we should find the VectorSelector child to be able to find the metric name.
+  const currentNode: SyntaxNode | null = walkBackward(tree, AggregateExpr);
+  if (!currentNode) {
+    return '';
+  }
+  let metricName = '';
+  currentNode.cursor().iterate((node) => {
+    // Continue until we find the VectorSelector, then look up the metric name.
+    if (node.type.id === VectorSelector) {
+      metricName = getMetricNameInVectorSelector(node.node, state);
+      if (metricName) {
+        return false;
+      }
+    }
+  });
+  return metricName;
+}
+
 function getMetricNameInVectorSelector(tree: SyntaxNode, state: EditorState): string {
   // Find if there is a defined metric name. Should be used to autocomplete a labelValue or a labelName
-  // First find the parent "VectorSelector" to be able to find then the subChild "MetricIdentifier" if it exists.
+  // First find the parent "VectorSelector" to be able to find then the subChild "Identifier" if it exists.
   let currentNode: SyntaxNode | null = walkBackward(tree, VectorSelector);
   if (!currentNode) {
     // Weird case that shouldn't happen, because "VectorSelector" is by definition the parent of the LabelMatchers.
     return '';
   }
-  currentNode = walkThrough(currentNode, MetricIdentifier, Identifier);
+  currentNode = currentNode.getChild(Identifier);
   if (!currentNode) {
     return '';
   }
@@ -193,7 +207,7 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
       if (node.parent?.type.id === OffsetExpr) {
         // we are likely in the given situation:
         // `metric_name offset 5` that leads to this tree:
-        // `Expr(OffsetExpr(Expr(VectorSelector(MetricIdentifier(Identifier))),Offset,⚠))`
+        // `OffsetExpr(VectorSelector(Identifier),Offset,⚠)`
         // Here we can just autocomplete a duration.
         result.push({ kind: ContextKind.Duration });
         break;
@@ -219,7 +233,7 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
         break;
       }
       // when we are in the situation 'metric_name !', we have the following tree
-      // Expr(VectorSelector(MetricIdentifier(Identifier),⚠))
+      // VectorSelector(Identifier,⚠)
       // We should try to know if the char '!' is part of a binOp.
       // Note: as it is quite experimental, maybe it requires more condition and to check the current tree (parent, other child at the same level ..etc.).
       const operator = state.sliceDoc(node.from, node.to);
@@ -247,13 +261,11 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
         }
         if (errorNodeParent?.type.id === VectorSelector) {
           // it matches 'sum b'. So here we also have to autocomplete the aggregate operation modifier only
-          // if the associated metricIdentifier is matching an aggregation operation.
+          // if the associated identifier is matching an aggregation operation.
           // Note: here is the corresponding tree in order to understand the situation:
-          // Expr(
-          // 	VectorSelector(
-          // 		MetricIdentifier(Identifier),
-          // 		⚠(Identifier)
-          // 	)
+          // VectorSelector(
+          //   Identifier,
+          //   ⚠(Identifier)
           // )
           const operator = getMetricNameInVectorSelector(node, state);
           if (aggregateOpTerms.filter((term) => term.label === operator).length > 0) {
@@ -268,14 +280,13 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
           break;
         }
 
-        if (errorNodeParent && containsChild(errorNodeParent, Expr)) {
+        if (errorNodeParent && containsChild(errorNodeParent, 'Expr')) {
           // this last case can appear with the following expression:
           // 1. http_requests_total{method="GET"} off
           // 2. rate(foo[5m]) un
           // 3. sum(http_requests_total{method="GET"} off)
           // For these different cases we have this kind of tree:
           // Parent (
-          //    Expr(),
           //    ⚠(Identifier)
           // )
           // We don't really care about the parent, here we are more interested if in the siblings of the error node, there is the node 'Expr'
@@ -291,15 +302,15 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
       // 2. sum(http_requests_total{method="GET"} / o) --> BinOpModifier + metric/function/aggregation
       // Examples above give a different tree each time and ends up to be treated in this case.
       // But they all have the following common tree pattern:
-      // Parent( Expr(...),
+      // Parent( ...,
       //         ... ,
-      //         Expr(VectorSelector(MetricIdentifier(Identifier)))
+      //         VectorSelector(Identifier)
       //       )
       //
       // So the first things to do is to get the `Parent` and to determinate if we are in this configuration.
       // Otherwise we would just have to autocomplete the metric / function / aggregation.
 
-      const parent = node.parent?.parent?.parent?.parent;
+      const parent = node.parent?.parent;
       if (!parent) {
         // this case can be possible if the topNode is not anymore PromQL but MetricName.
         // In this particular case, then we just want to autocomplete the metric
@@ -307,7 +318,7 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
         break;
       }
       // now we have to know if we have two Expr in the direct children of the `parent`
-      const containExprTwice = containsChild(parent, Expr, Expr);
+      const containExprTwice = containsChild(parent, 'Expr', 'Expr');
       if (containExprTwice) {
         if (parent.type.id === BinaryExpr && !containsAtLeastOneChild(parent, 0)) {
           // We are likely in the case 1 or 5
@@ -320,11 +331,10 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
           );
           // in  case the BinaryExpr is a comparison, we should autocomplete the `bool` keyword. But only if it is not present.
           // When the `bool` keyword is NOT present, then the expression looks like this:
-          // 			BinaryExpr( Expr(...), Gtr , BinModifiers, Expr(...) )
+          // 			BinaryExpr( ..., Gtr , ... )
           // When the `bool` keyword is present, then the expression looks like this:
-          //      BinaryExpr( Expr(...), Gtr , BinModifiers(Bool), Expr(...) )
-          // To know if it is not present, we just have to check if the Bool is not present as a child of the BinModifiers.
-          if (containsAtLeastOneChild(parent, Eql, Gte, Gtr, Lte, Lss, Neq) && !walkThrough(parent, BinModifiers, Bool)) {
+          //      BinaryExpr( ..., Gtr , BoolModifier(...), ... )
+          if (containsAtLeastOneChild(parent, Eql, Gte, Gtr, Lte, Lss, Neq) && !containsAtLeastOneChild(parent, BoolModifier)) {
             result.push({ kind: ContextKind.Bool });
           }
         }
@@ -334,7 +344,7 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
           { kind: ContextKind.Function },
           { kind: ContextKind.Aggregation }
         );
-        if (parent.type.id !== FunctionCallArgs && parent.type.id !== MatrixSelector) {
+        if (parent.type.id !== FunctionCallBody && parent.type.id !== MatrixSelector) {
           // it's too avoid to autocomplete a number in situation where it shouldn't.
           // Like with `sum by(rat)`
           result.push({ kind: ContextKind.Number });
@@ -354,9 +364,9 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
       break;
     case GroupingLabels:
       // In this case we are in the given situation:
-      //      sum by ()
-      // So we have to autocomplete any labelName
-      result.push({ kind: ContextKind.LabelName });
+      //      sum by () or sum (metric_name) by ()
+      // so we have or to autocomplete any kind of labelName or to autocomplete only the labelName associated to the metric
+      result.push({ kind: ContextKind.LabelName, metricName: getMetricNameInGroupBy(node, state) });
       break;
     case LabelMatchers:
       // In that case we are in the given situation:
@@ -365,7 +375,7 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
       result.push({ kind: ContextKind.LabelName, metricName: getMetricNameInVectorSelector(node, state) });
       break;
     case LabelName:
-      if (node.parent?.type.id === GroupingLabel) {
+      if (node.parent?.type.id === GroupingLabels) {
         // In this case we are in the given situation:
         //      sum by (myL)
         // So we have to continue to autocomplete any kind of labelName
@@ -393,7 +403,8 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
         // then find the metricName if it exists
         const metricName = getMetricNameInVectorSelector(node, state);
         // finally get the full matcher available
-        const labelMatchers = buildLabelMatchers(retrieveAllRecursiveNodes(walkBackward(node, LabelMatchList), LabelMatchList, LabelMatcher), state);
+        const matcherNode = walkBackward(node, LabelMatchers);
+        const labelMatchers = buildLabelMatchers(matcherNode ? matcherNode.getChildren(LabelMatcher) : [], state);
         result.push({
           kind: ContextKind.LabelValue,
           metricName: metricName,
@@ -407,10 +418,10 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
         // Here we are likely in this situation:
         //     `go[5d:4]`
         // and we have the given tree:
-        // Expr( SubqueryExpr(
-        // 		Expr(VectorSelector(MetricIdentifier(Identifier))),
-        // 		Duration, Duration, ⚠(NumberLiteral)
-        // ))
+        // SubqueryExpr(
+        //   VectorSelector(Identifier),
+        //   Duration, Duration, ⚠(NumberLiteral)
+        // )
         // So we should continue to autocomplete a duration
         result.push({ kind: ContextKind.Duration });
       } else {

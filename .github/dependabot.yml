@@ -4,6 +4,13 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+    groups:
+      k8s.io:
+          patterns:
+            - "k8s.io/*"
+      go.opentelemetry.io:
+          patterns:
+            - "go.opentelemetry.io/*"
   - package-ecosystem: "gomod"
     directory: "/documentation/examples/remote_storage"
     schedule:
@@ -14,6 +21,10 @@ updates:
       interval: "monthly"
   - package-ecosystem: "github-actions"
     directory: "/"
+    schedule:
+      interval: "monthly"
+  - package-ecosystem: "github-actions"
+    directory: "/scripts"
     schedule:
       interval: "monthly"
   - package-ecosystem: "docker"

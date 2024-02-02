@@ -49,7 +49,7 @@ const Filter: FC<FilterProps> = ({ filter, setFilter, expanded, setExpanded }) =
     },
   };
   return (
-    <ButtonGroup className="mt-3 mb-4">
+    <ButtonGroup className="text-nowrap">
       <Button {...btnProps.all}>All</Button>
       <Button {...btnProps.unhealthy}>Unhealthy</Button>
       <Button {...btnProps.expansionState}>{allExpanded ? 'Collapse All' : 'Expand All'}</Button>

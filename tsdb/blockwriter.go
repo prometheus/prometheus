@@ -15,13 +15,14 @@ package tsdb
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"math"
 	"os"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid"
-	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/storage"
@@ -39,7 +40,7 @@ type BlockWriter struct {
 }
 
 // ErrNoSeriesAppended is returned if the series count is zero while flushing blocks.
-var ErrNoSeriesAppended error = errors.New("no series appended, aborting")
+var ErrNoSeriesAppended = errors.New("no series appended, aborting")
 
 // NewBlockWriter create a new block writer.
 //
@@ -65,15 +66,16 @@ func NewBlockWriter(logger log.Logger, dir string, blockSize int64) (*BlockWrite
 func (w *BlockWriter) initHead() error {
 	chunkDir, err := os.MkdirTemp(os.TempDir(), "head")
 	if err != nil {
-		return errors.Wrap(err, "create temp dir")
+		return fmt.Errorf("create temp dir: %w", err)
 	}
 	w.chunkDir = chunkDir
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = w.blockSize
 	opts.ChunkDirRoot = w.chunkDir
-	h, err := NewHead(nil, w.logger, nil, opts, NewHeadStats())
+	opts.EnableNativeHistograms.Store(true)
+	h, err := NewHead(nil, w.logger, nil, nil, opts, NewHeadStats())
 	if err != nil {
-		return errors.Wrap(err, "tsdb.NewHead")
+		return fmt.Errorf("tsdb.NewHead: %w", err)
 	}
 
 	w.head = h
@@ -101,11 +103,11 @@ func (w *BlockWriter) Flush(ctx context.Context) (ulid.ULID, error) {
 		[]int64{w.blockSize},
 		chunkenc.NewPool(), nil)
 	if err != nil {
-		return ulid.ULID{}, errors.Wrap(err, "create leveled compactor")
+		return ulid.ULID{}, fmt.Errorf("create leveled compactor: %w", err)
 	}
 	id, err := compactor.Write(w.destinationDir, w.head, mint, maxt, nil)
 	if err != nil {
-		return ulid.ULID{}, errors.Wrap(err, "compactor write")
+		return ulid.ULID{}, fmt.Errorf("compactor write: %w", err)
 	}
 
 	return id, nil

@@ -13,7 +13,6 @@
 
 // Only build when go-fuzz is in use
 //go:build gofuzz
-// +build gofuzz
 
 package promql
 
@@ -58,7 +57,7 @@ const (
 )
 
 func fuzzParseMetricWithContentType(in []byte, contentType string) int {
-	p, warning := textparse.New(in, contentType)
+	p, warning := textparse.New(in, contentType, false)
 	if warning != nil {
 		// An invalid content type is being passed, which should not happen
 		// in this context.
