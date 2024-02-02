@@ -920,3 +920,45 @@ func TestAlertingEvalWithOrigin(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, detail, NewRuleDetail(rule))
 }
+
+func TestAlertingRule_SetNoDependentRules(t *testing.T) {
+	rule := NewAlertingRule(
+		"test",
+		&parser.NumberLiteral{Val: 1},
+		time.Minute,
+		0,
+		labels.FromStrings("test", "test"),
+		labels.EmptyLabels(),
+		labels.EmptyLabels(),
+		"",
+		true, log.NewNopLogger(),
+	)
+	require.False(t, rule.NoDependentRules())
+
+	rule.SetNoDependentRules(false)
+	require.False(t, rule.NoDependentRules())
+
+	rule.SetNoDependentRules(true)
+	require.True(t, rule.NoDependentRules())
+}
+
+func TestAlertingRule_SetNoDependencyRules(t *testing.T) {
+	rule := NewAlertingRule(
+		"test",
+		&parser.NumberLiteral{Val: 1},
+		time.Minute,
+		0,
+		labels.FromStrings("test", "test"),
+		labels.EmptyLabels(),
+		labels.EmptyLabels(),
+		"",
+		true, log.NewNopLogger(),
+	)
+	require.False(t, rule.NoDependencyRules())
+
+	rule.SetNoDependencyRules(false)
+	require.False(t, rule.NoDependencyRules())
+
+	rule.SetNoDependencyRules(true)
+	require.True(t, rule.NoDependencyRules())
+}
