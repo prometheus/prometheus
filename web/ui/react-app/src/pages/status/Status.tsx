@@ -1,5 +1,4 @@
-import React, { Fragment, FC } from 'react';
-import { RouteComponentProps } from '@reach/router';
+import React, { Fragment, FC, useState, useEffect } from 'react';
 import { Table } from 'reactstrap';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
 import { useFetch } from '../../hooks/useFetch';
@@ -13,6 +12,7 @@ interface StatusPageProps {
 
 export const statusConfig: Record<
   string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   { title?: string; customizeValue?: (v: any, key: string) => any; customRow?: boolean; skip?: boolean }
 > = {
   startTime: { title: 'Start time', customizeValue: (v: string) => new Date(v).toUTCString() },
@@ -58,7 +58,7 @@ export const StatusContent: FC<StatusPageProps> = ({ data, title }) => {
       <Table className="h-auto" size="sm" bordered striped>
         <tbody>
           {Object.entries(data).map(([k, v]) => {
-            const { title = k, customizeValue = (val: any) => val, customRow, skip } = statusConfig[k] || {};
+            const { title = k, customizeValue = (val: string) => val, customRow, skip } = statusConfig[k] || {};
             if (skip) {
               return null;
             }
@@ -83,28 +83,74 @@ const StatusWithStatusIndicator = withStatusIndicator(StatusContent);
 
 StatusContent.displayName = 'Status';
 
-const Status: FC<RouteComponentProps> = () => {
+const StatusResult: FC<{ fetchPath: string; title: string }> = ({ fetchPath, title }) => {
+  const { response, isLoading, error } = useFetch(fetchPath);
+  return (
+    <StatusWithStatusIndicator
+      key={title}
+      data={response.data}
+      title={title}
+      isLoading={isLoading}
+      error={error}
+      componentTitle={title}
+    />
+  );
+};
+
+interface StatusProps {
+  agentMode?: boolean | false;
+  setAnimateLogo?: (animateLogo: boolean) => void;
+}
+
+const Status: FC<StatusProps> = ({ agentMode, setAnimateLogo }) => {
+  /*    _
+   *   /' \
+   *  |    |
+   *   \__/ */
+
+  const [inputText, setInputText] = useState('');
+
+  useEffect(() => {
+    const handleKeyPress = (event: KeyboardEvent) => {
+      const keyPressed = event.key.toUpperCase();
+      setInputText((prevInputText) => {
+        const newInputText = prevInputText.slice(-3) + String.fromCharCode(((keyPressed.charCodeAt(0) - 64) % 26) + 65);
+        return newInputText;
+      });
+    };
+
+    document.addEventListener('keypress', handleKeyPress);
+
+    return () => {
+      document.removeEventListener('keypress', handleKeyPress);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (setAnimateLogo && inputText != '') {
+      setAnimateLogo(inputText.toUpperCase() === 'QSPN');
+    }
+  }, [inputText]);
+
+  /*    _
+   *   /' \
+   *  |    |
+   *   \__/ */
+
   const pathPrefix = usePathPrefix();
   const path = `${pathPrefix}/${API_PATH}`;
 
   return (
     <>
       {[
-        { fetchResult: useFetch<Record<string, string>>(`${path}/status/runtimeinfo`), title: 'Runtime Information' },
-        { fetchResult: useFetch<Record<string, string>>(`${path}/status/buildinfo`), title: 'Build Information' },
-        { fetchResult: useFetch<Record<string, string>>(`${path}/alertmanagers`), title: 'Alertmanagers' },
-      ].map(({ fetchResult, title }) => {
-        const { response, isLoading, error } = fetchResult;
-        return (
-          <StatusWithStatusIndicator
-            key={title}
-            data={response.data}
-            title={title}
-            isLoading={isLoading}
-            error={error}
-            componentTitle={title}
-          />
-        );
+        { fetchPath: `${path}/status/runtimeinfo`, title: 'Runtime Information' },
+        { fetchPath: `${path}/status/buildinfo`, title: 'Build Information' },
+        { fetchPath: `${path}/alertmanagers`, title: 'Alertmanagers' },
+      ].map(({ fetchPath, title }) => {
+        if (agentMode && title === 'Alertmanagers') {
+          return null;
+        }
+        return <StatusResult fetchPath={fetchPath} title={title} />;
       })}
     </>
   );

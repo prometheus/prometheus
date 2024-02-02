@@ -16,18 +16,19 @@ package marathon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math/rand"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/pkg/errors"
+	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
@@ -48,7 +49,7 @@ const (
 	// imageLabel is the label that is used for the docker image running the service.
 	imageLabel model.LabelName = metaLabelPrefix + "image"
 	// portIndexLabel is the integer port index when multiple ports are defined;
-	// e.g. PORT1 would have a value of '1'
+	// e.g. PORT1 would have a value of '1'.
 	portIndexLabel model.LabelName = metaLabelPrefix + "port_index"
 	// taskLabel contains the mesos task name of the app instance.
 	taskLabel model.LabelName = metaLabelPrefix + "task"
@@ -61,7 +62,8 @@ const (
 
 // DefaultSDConfig is the default Marathon SD configuration.
 var DefaultSDConfig = SDConfig{
-	RefreshInterval: model.Duration(30 * time.Second),
+	RefreshInterval:  model.Duration(30 * time.Second),
+	HTTPClientConfig: config.DefaultHTTPClientConfig,
 }
 
 func init() {
@@ -77,12 +79,19 @@ type SDConfig struct {
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 }
 
+// NewDiscovererMetrics implements discovery.Config.
+func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return &marathonMetrics{
+		refreshMetrics: rmi,
+	}
+}
+
 // Name returns the name of the Config.
 func (*SDConfig) Name() string { return "marathon" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(*c, opts.Logger)
+	return NewDiscovery(*c, opts.Logger, opts.Metrics)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -105,14 +114,16 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if len(c.AuthToken) > 0 && len(c.AuthTokenFile) > 0 {
 		return errors.New("marathon_sd: at most one of auth_token & auth_token_file must be configured")
 	}
-	if c.HTTPClientConfig.BasicAuth != nil && (len(c.AuthToken) > 0 || len(c.AuthTokenFile) > 0) {
-		return errors.New("marathon_sd: at most one of basic_auth, auth_token & auth_token_file must be configured")
-	}
-	if (len(c.HTTPClientConfig.BearerToken) > 0 || len(c.HTTPClientConfig.BearerTokenFile) > 0) && (len(c.AuthToken) > 0 || len(c.AuthTokenFile) > 0) {
-		return errors.New("marathon_sd: at most one of bearer_token, bearer_token_file, auth_token & auth_token_file must be configured")
-	}
-	if c.HTTPClientConfig.Authorization != nil && (len(c.AuthToken) > 0 || len(c.AuthTokenFile) > 0) {
-		return errors.New("marathon_sd: at most one of auth_token, auth_token_file & authorization must be configured")
+
+	if len(c.AuthToken) > 0 || len(c.AuthTokenFile) > 0 {
+		switch {
+		case c.HTTPClientConfig.BasicAuth != nil:
+			return errors.New("marathon_sd: at most one of basic_auth, auth_token & auth_token_file must be configured")
+		case len(c.HTTPClientConfig.BearerToken) > 0 || len(c.HTTPClientConfig.BearerTokenFile) > 0:
+			return errors.New("marathon_sd: at most one of bearer_token, bearer_token_file, auth_token & auth_token_file must be configured")
+		case c.HTTPClientConfig.Authorization != nil:
+			return errors.New("marathon_sd: at most one of auth_token, auth_token_file & authorization must be configured")
+		}
 	}
 	return c.HTTPClientConfig.Validate()
 }
@@ -129,15 +140,21 @@ type Discovery struct {
 }
 
 // NewDiscovery returns a new Marathon Discovery.
-func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
-	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "marathon_sd", false, false)
+func NewDiscovery(conf SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+	m, ok := metrics.(*marathonMetrics)
+	if !ok {
+		return nil, fmt.Errorf("invalid discovery metrics type")
+	}
+
+	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "marathon_sd")
 	if err != nil {
 		return nil, err
 	}
 
-	if len(conf.AuthToken) > 0 {
+	switch {
+	case len(conf.AuthToken) > 0:
 		rt, err = newAuthTokenRoundTripper(conf.AuthToken, rt)
-	} else if len(conf.AuthTokenFile) > 0 {
+	case len(conf.AuthTokenFile) > 0:
 		rt, err = newAuthTokenFileRoundTripper(conf.AuthTokenFile, rt)
 	}
 	if err != nil {
@@ -150,10 +167,13 @@ func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
 		appsClient: fetchApps,
 	}
 	d.Discovery = refresh.NewDiscovery(
-		logger,
-		"marathon",
-		time.Duration(conf.RefreshInterval),
-		d.refresh,
+		refresh.Options{
+			Logger:              logger,
+			Mech:                "marathon",
+			Interval:            time.Duration(conf.RefreshInterval),
+			RefreshF:            d.refresh,
+			MetricsInstantiator: m.refreshMetrics,
+		},
 	)
 	return d, nil
 }
@@ -185,17 +205,17 @@ type authTokenFileRoundTripper struct {
 // newAuthTokenFileRoundTripper adds the auth token read from the file to a request.
 func newAuthTokenFileRoundTripper(tokenFile string, rt http.RoundTripper) (http.RoundTripper, error) {
 	// fail-fast if we can't read the file.
-	_, err := ioutil.ReadFile(tokenFile)
+	_, err := os.ReadFile(tokenFile)
 	if err != nil {
-		return nil, errors.Wrapf(err, "unable to read auth token file %s", tokenFile)
+		return nil, fmt.Errorf("unable to read auth token file %s: %w", tokenFile, err)
 	}
 	return &authTokenFileRoundTripper{tokenFile, rt}, nil
 }
 
 func (rt *authTokenFileRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
-	b, err := ioutil.ReadFile(rt.authTokenFile)
+	b, err := os.ReadFile(rt.authTokenFile)
 	if err != nil {
-		return nil, errors.Wrapf(err, "unable to read auth token file %s", rt.authTokenFile)
+		return nil, fmt.Errorf("unable to read auth token file %s: %w", rt.authTokenFile, err)
 	}
 	authToken := strings.TrimSpace(string(b))
 
@@ -330,18 +350,23 @@ func fetchApps(ctx context.Context, client *http.Client, url string) (*appList, 
 		return nil, err
 	}
 	defer func() {
-		io.Copy(ioutil.Discard, resp.Body)
+		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 	}()
 
 	if (resp.StatusCode < 200) || (resp.StatusCode >= 300) {
-		return nil, errors.Errorf("non 2xx status '%v' response during marathon service discovery", resp.StatusCode)
+		return nil, fmt.Errorf("non 2xx status '%v' response during marathon service discovery", resp.StatusCode)
+	}
+
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
 	}
 
 	var apps appList
-	err = json.NewDecoder(resp.Body).Decode(&apps)
+	err = json.Unmarshal(b, &apps)
 	if err != nil {
-		return nil, errors.Wrapf(err, "%q", url)
+		return nil, fmt.Errorf("%q: %w", url, err)
 	}
 	return &apps, nil
 }
@@ -394,19 +419,20 @@ func targetsForApp(app *app) []model.LabelSet {
 	var labels []map[string]string
 	var prefix string
 
-	if len(app.Container.PortMappings) != 0 {
+	switch {
+	case len(app.Container.PortMappings) != 0:
 		// In Marathon 1.5.x the "container.docker.portMappings" object was moved
 		// to "container.portMappings".
 		ports, labels = extractPortMapping(app.Container.PortMappings, app.isContainerNet())
 		prefix = portMappingLabelPrefix
 
-	} else if len(app.Container.Docker.PortMappings) != 0 {
+	case len(app.Container.Docker.PortMappings) != 0:
 		// Prior to Marathon 1.5 the port mappings could be found at the path
 		// "container.docker.portMappings".
 		ports, labels = extractPortMapping(app.Container.Docker.PortMappings, app.isContainerNet())
 		prefix = portMappingLabelPrefix
 
-	} else if len(app.PortDefinitions) != 0 {
+	case len(app.PortDefinitions) != 0:
 		// PortDefinitions deprecates the "ports" array and can be used to specify
 		// a list of ports with metadata in case a mapping is not required.
 		ports = make([]uint32, len(app.PortDefinitions))
@@ -472,7 +498,6 @@ func targetsForApp(app *app) []model.LabelSet {
 
 // Generate a target endpoint string in host:port format.
 func targetEndpoint(task *task, port uint32, containerNet bool) string {
-
 	var host string
 
 	// Use the task's ipAddress field when it's in a container network
@@ -487,7 +512,6 @@ func targetEndpoint(task *task, port uint32, containerNet bool) string {
 
 // Get a list of ports and a list of labels from a PortMapping.
 func extractPortMapping(portMappings []portMapping, containerNet bool) ([]uint32, []map[string]string) {
-
 	ports := make([]uint32, len(portMappings))
 	labels := make([]map[string]string, len(portMappings))
 

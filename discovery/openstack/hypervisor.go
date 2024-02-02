@@ -18,12 +18,11 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/hypervisors"
 	"github.com/gophercloud/gophercloud/pagination"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -50,23 +49,26 @@ type HypervisorDiscovery struct {
 
 // newHypervisorDiscovery returns a new hypervisor discovery.
 func newHypervisorDiscovery(provider *gophercloud.ProviderClient, opts *gophercloud.AuthOptions,
-	port int, region string, availability gophercloud.Availability, l log.Logger) *HypervisorDiscovery {
-	return &HypervisorDiscovery{provider: provider, authOpts: opts,
-		region: region, port: port, availability: availability, logger: l}
+	port int, region string, availability gophercloud.Availability, l log.Logger,
+) *HypervisorDiscovery {
+	return &HypervisorDiscovery{
+		provider: provider, authOpts: opts,
+		region: region, port: port, availability: availability, logger: l,
+	}
 }
 
 func (h *HypervisorDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	h.provider.Context = ctx
 	err := openstack.Authenticate(h.provider, *h.authOpts)
 	if err != nil {
-		return nil, errors.Wrap(err, "could not authenticate to OpenStack")
+		return nil, fmt.Errorf("could not authenticate to OpenStack: %w", err)
 	}
 
 	client, err := openstack.NewComputeV2(h.provider, gophercloud.EndpointOpts{
 		Region: h.region, Availability: h.availability,
 	})
 	if err != nil {
-		return nil, errors.Wrap(err, "could not create OpenStack compute session")
+		return nil, fmt.Errorf("could not create OpenStack compute session: %w", err)
 	}
 
 	tg := &targetgroup.Group{
@@ -74,11 +76,11 @@ func (h *HypervisorDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group
 	}
 	// OpenStack API reference
 	// https://developer.openstack.org/api-ref/compute/#list-hypervisors-details
-	pagerHypervisors := hypervisors.List(client)
+	pagerHypervisors := hypervisors.List(client, nil)
 	err = pagerHypervisors.EachPage(func(page pagination.Page) (bool, error) {
 		hypervisorList, err := hypervisors.ExtractHypervisors(page)
 		if err != nil {
-			return false, errors.Wrap(err, "could not extract hypervisors")
+			return false, fmt.Errorf("could not extract hypervisors: %w", err)
 		}
 		for _, hypervisor := range hypervisorList {
 			labels := model.LabelSet{}

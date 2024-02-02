@@ -15,11 +15,13 @@ package hetzner
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/hetznercloud/hcloud-go/hcloud"
-	"github.com/pkg/errors"
+	"github.com/go-kit/log"
+	"github.com/hetznercloud/hcloud-go/v2/hcloud"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
@@ -41,8 +43,9 @@ const (
 
 // DefaultSDConfig is the default Hetzner SD configuration.
 var DefaultSDConfig = SDConfig{
-	Port:            80,
-	RefreshInterval: model.Duration(60 * time.Second),
+	Port:             80,
+	RefreshInterval:  model.Duration(60 * time.Second),
+	HTTPClientConfig: config.DefaultHTTPClientConfig,
 }
 
 func init() {
@@ -55,9 +58,16 @@ type SDConfig struct {
 
 	RefreshInterval model.Duration `yaml:"refresh_interval"`
 	Port            int            `yaml:"port"`
-	Role            role           `yaml:"role"`
+	Role            Role           `yaml:"role"`
 	hcloudEndpoint  string         // For tests only.
 	robotEndpoint   string         // For tests only.
+}
+
+// NewDiscovererMetrics implements discovery.Config.
+func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return &hetznerMetrics{
+		refreshMetrics: rmi,
+	}
 }
 
 // Name returns the name of the Config.
@@ -65,36 +75,36 @@ func (*SDConfig) Name() string { return "hetzner" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger)
+	return NewDiscovery(c, opts.Logger, opts.Metrics)
 }
 
 type refresher interface {
 	refresh(context.Context) ([]*targetgroup.Group, error)
 }
 
-// role is the role of the target within the Hetzner Ecosystem.
-type role string
+// Role is the Role of the target within the Hetzner Ecosystem.
+type Role string
 
 // The valid options for role.
 const (
 	// Hetzner Robot Role (Dedicated Server)
 	// https://robot.hetzner.com
-	hetznerRoleRobot role = "robot"
+	HetznerRoleRobot Role = "robot"
 	// Hetzner Cloud Role
 	// https://console.hetzner.cloud
-	hetznerRoleHcloud role = "hcloud"
+	HetznerRoleHcloud Role = "hcloud"
 )
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *role) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*string)(c)); err != nil {
 		return err
 	}
 	switch *c {
-	case hetznerRoleRobot, hetznerRoleHcloud:
+	case HetznerRoleRobot, HetznerRoleHcloud:
 		return nil
 	default:
-		return errors.Errorf("unknown role %q", *c)
+		return fmt.Errorf("unknown role %q", *c)
 	}
 }
 
@@ -113,6 +123,11 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return c.HTTPClientConfig.Validate()
 }
 
+// SetDirectory joins any relative file paths with dir.
+func (c *SDConfig) SetDirectory(dir string) {
+	c.HTTPClientConfig.SetDirectory(dir)
+}
+
 // Discovery periodically performs Hetzner requests. It implements
 // the Discoverer interface.
 type Discovery struct {
@@ -120,28 +135,36 @@ type Discovery struct {
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
-func NewDiscovery(conf *SDConfig, logger log.Logger) (*refresh.Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*refresh.Discovery, error) {
+	m, ok := metrics.(*hetznerMetrics)
+	if !ok {
+		return nil, fmt.Errorf("invalid discovery metrics type")
+	}
+
 	r, err := newRefresher(conf, logger)
 	if err != nil {
 		return nil, err
 	}
 
 	return refresh.NewDiscovery(
-		logger,
-		"hetzner",
-		time.Duration(conf.RefreshInterval),
-		r.refresh,
+		refresh.Options{
+			Logger:              logger,
+			Mech:                "hetzner",
+			Interval:            time.Duration(conf.RefreshInterval),
+			RefreshF:            r.refresh,
+			MetricsInstantiator: m.refreshMetrics,
+		},
 	), nil
 }
 
 func newRefresher(conf *SDConfig, l log.Logger) (refresher, error) {
 	switch conf.Role {
-	case hetznerRoleHcloud:
+	case HetznerRoleHcloud:
 		if conf.hcloudEndpoint == "" {
 			conf.hcloudEndpoint = hcloud.Endpoint
 		}
 		return newHcloudDiscovery(conf, l)
-	case hetznerRoleRobot:
+	case HetznerRoleRobot:
 		if conf.robotEndpoint == "" {
 			conf.robotEndpoint = "https://robot-ws.your-server.de"
 		}

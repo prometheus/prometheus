@@ -8,7 +8,7 @@ const MockCmp: React.FC = () => <div className="mock" />;
 describe('Checkbox', () => {
   it('renders with subcomponents', () => {
     const checkBox = shallow(<Checkbox />);
-    [FormGroup, Input, Label].forEach(component => expect(checkBox.find(component)).toHaveLength(1));
+    [FormGroup, Input, Label].forEach((component) => expect(checkBox.find(component)).toHaveLength(1));
   });
 
   it('passes down the correct FormGroup props', () => {

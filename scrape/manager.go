@@ -14,124 +14,99 @@
 package scrape
 
 import (
-	"encoding"
+	"errors"
 	"fmt"
 	"hash/fnv"
-	"net"
-	"os"
 	"reflect"
 	"sync"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
-	"github.com/pkg/errors"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
+	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/osutil"
+	"github.com/prometheus/prometheus/util/pool"
 )
 
-var targetMetadataCache = newMetadataMetricsCollector()
-
-// MetadataMetricsCollector is a Custom Collector for the metadata cache metrics.
-type MetadataMetricsCollector struct {
-	CacheEntries *prometheus.Desc
-	CacheBytes   *prometheus.Desc
-
-	scrapeManager *Manager
-}
-
-func newMetadataMetricsCollector() *MetadataMetricsCollector {
-	return &MetadataMetricsCollector{
-		CacheEntries: prometheus.NewDesc(
-			"prometheus_target_metadata_cache_entries",
-			"Total number of metric metadata entries in the cache",
-			[]string{"scrape_job"},
-			nil,
-		),
-		CacheBytes: prometheus.NewDesc(
-			"prometheus_target_metadata_cache_bytes",
-			"The number of bytes that are currently used for storing metric metadata in the cache",
-			[]string{"scrape_job"},
-			nil,
-		),
+// NewManager is the Manager constructor.
+func NewManager(o *Options, logger log.Logger, app storage.Appendable, registerer prometheus.Registerer) (*Manager, error) {
+	if o == nil {
+		o = &Options{}
 	}
-}
-
-func (mc *MetadataMetricsCollector) registerManager(m *Manager) {
-	mc.scrapeManager = m
-}
-
-// Describe sends the metrics descriptions to the channel.
-func (mc *MetadataMetricsCollector) Describe(ch chan<- *prometheus.Desc) {
-	ch <- mc.CacheEntries
-	ch <- mc.CacheBytes
-}
-
-// Collect creates and sends the metrics for the metadata cache.
-func (mc *MetadataMetricsCollector) Collect(ch chan<- prometheus.Metric) {
-	if mc.scrapeManager == nil {
-		return
-	}
-
-	for tset, targets := range mc.scrapeManager.TargetsActive() {
-		var size, length int
-		for _, t := range targets {
-			size += t.MetadataSize()
-			length += t.MetadataLength()
-		}
-
-		ch <- prometheus.MustNewConstMetric(
-			mc.CacheEntries,
-			prometheus.GaugeValue,
-			float64(length),
-			tset,
-		)
-
-		ch <- prometheus.MustNewConstMetric(
-			mc.CacheBytes,
-			prometheus.GaugeValue,
-			float64(size),
-			tset,
-		)
-	}
-}
-
-// NewManager is the Manager constructor
-func NewManager(logger log.Logger, app storage.Appendable) *Manager {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
+
+	sm, err := newScrapeMetrics(registerer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create scrape manager due to error: %w", err)
+	}
+
 	m := &Manager{
 		append:        app,
+		opts:          o,
 		logger:        logger,
 		scrapeConfigs: make(map[string]*config.ScrapeConfig),
 		scrapePools:   make(map[string]*scrapePool),
 		graceShut:     make(chan struct{}),
 		triggerReload: make(chan struct{}, 1),
+		metrics:       sm,
+		buffers:       pool.New(1e3, 100e6, 3, func(sz int) interface{} { return make([]byte, 0, sz) }),
 	}
-	targetMetadataCache.registerManager(m)
 
-	return m
+	m.metrics.setTargetMetadataCacheGatherer(m)
+
+	return m, nil
+}
+
+// Options are the configuration parameters to the scrape manager.
+type Options struct {
+	ExtraMetrics  bool
+	NoDefaultPort bool
+	// Option used by downstream scraper users like OpenTelemetry Collector
+	// to help lookup metric metadata. Should be false for Prometheus.
+	PassMetadataInContext bool
+	// Option to enable the experimental in-memory metadata storage and append
+	// metadata to the WAL.
+	EnableMetadataStorage bool
+	// Option to increase the interval used by scrape manager to throttle target groups updates.
+	DiscoveryReloadInterval model.Duration
+	// Option to enable the ingestion of the created timestamp as a synthetic zero sample.
+	// See: https://github.com/prometheus/proposals/blob/main/proposals/2023-06-13_created-timestamp.md
+	EnableCreatedTimestampZeroIngestion bool
+
+	// Optional HTTP client options to use when scraping.
+	HTTPClientOptions []config_util.HTTPClientOption
+
+	// private option for testability.
+	skipOffsetting bool
 }
 
 // Manager maintains a set of scrape pools and manages start/stop cycles
-// when receiving new target groups form the discovery manager.
+// when receiving new target groups from the discovery manager.
 type Manager struct {
+	opts      *Options
 	logger    log.Logger
 	append    storage.Appendable
 	graceShut chan struct{}
 
-	jitterSeed    uint64     // Global jitterSeed seed is used to spread scrape workload across HA setup.
+	offsetSeed    uint64     // Global offsetSeed seed is used to spread scrape workload across HA setup.
 	mtxScrape     sync.Mutex // Guards the fields below.
 	scrapeConfigs map[string]*config.ScrapeConfig
 	scrapePools   map[string]*scrapePool
 	targetSets    map[string][]*targetgroup.Group
+	buffers       *pool.Pool
 
 	triggerReload chan struct{}
+
+	metrics *scrapeMetrics
 }
 
 // Run receives and saves target set updates and triggers the scraping loops reloading.
@@ -155,7 +130,13 @@ func (m *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
 }
 
 func (m *Manager) reloader() {
-	ticker := time.NewTicker(5 * time.Second)
+	reloadIntervalDuration := m.opts.DiscoveryReloadInterval
+	if reloadIntervalDuration < model.Duration(5*time.Second) {
+		reloadIntervalDuration = model.Duration(5 * time.Second)
+	}
+
+	ticker := time.NewTicker(time.Duration(reloadIntervalDuration))
+
 	defer ticker.Stop()
 
 	for {
@@ -183,8 +164,10 @@ func (m *Manager) reload() {
 				level.Error(m.logger).Log("msg", "error reloading target set", "err", "invalid config id:"+setName)
 				continue
 			}
-			sp, err := newScrapePool(scrapeConfig, m.append, m.jitterSeed, log.With(m.logger, "scrape_pool", setName))
+			m.metrics.targetScrapePools.Inc()
+			sp, err := newScrapePool(scrapeConfig, m.append, m.offsetSeed, log.With(m.logger, "scrape_pool", setName), m.buffers, m.opts, m.metrics)
 			if err != nil {
+				m.metrics.targetScrapePoolsFailed.Inc()
 				level.Error(m.logger).Log("msg", "error creating new scrape pool", "err", err, "scrape_pool", setName)
 				continue
 			}
@@ -203,17 +186,17 @@ func (m *Manager) reload() {
 	wg.Wait()
 }
 
-// setJitterSeed calculates a global jitterSeed per server relying on extra label set.
-func (m *Manager) setJitterSeed(labels labels.Labels) error {
+// setOffsetSeed calculates a global offsetSeed per server relying on extra label set.
+func (m *Manager) setOffsetSeed(labels labels.Labels) error {
 	h := fnv.New64a()
-	hostname, err := getFqdn()
+	hostname, err := osutil.GetFQDN()
 	if err != nil {
 		return err
 	}
 	if _, err := fmt.Fprintf(h, "%s%s", hostname, labels.String()); err != nil {
 		return err
 	}
-	m.jitterSeed = h.Sum64()
+	m.offsetSeed = h.Sum64()
 	return nil
 }
 
@@ -239,23 +222,29 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 	m.mtxScrape.Lock()
 	defer m.mtxScrape.Unlock()
 
+	scfgs, err := cfg.GetScrapeConfigs()
+	if err != nil {
+		return err
+	}
+
 	c := make(map[string]*config.ScrapeConfig)
-	for _, scfg := range cfg.ScrapeConfigs {
+	for _, scfg := range scfgs {
 		c[scfg.JobName] = scfg
 	}
 	m.scrapeConfigs = c
 
-	if err := m.setJitterSeed(cfg.GlobalConfig.ExternalLabels); err != nil {
+	if err := m.setOffsetSeed(cfg.GlobalConfig.ExternalLabels); err != nil {
 		return err
 	}
 
 	// Cleanup and reload pool if the configuration has changed.
 	var failed bool
 	for name, sp := range m.scrapePools {
-		if cfg, ok := m.scrapeConfigs[name]; !ok {
+		switch cfg, ok := m.scrapeConfigs[name]; {
+		case !ok:
 			sp.stop()
 			delete(m.scrapePools, name)
-		} else if !reflect.DeepEqual(sp.config, cfg) {
+		case !reflect.DeepEqual(sp.config, cfg):
 			err := sp.reload(cfg)
 			if err != nil {
 				level.Error(m.logger).Log("msg", "error reloading scrape pool", "err", err, "scrape_pool", name)
@@ -282,33 +271,31 @@ func (m *Manager) TargetsAll() map[string][]*Target {
 	return targets
 }
 
+// ScrapePools returns the list of all scrape pool names.
+func (m *Manager) ScrapePools() []string {
+	m.mtxScrape.Lock()
+	defer m.mtxScrape.Unlock()
+
+	names := make([]string, 0, len(m.scrapePools))
+	for name := range m.scrapePools {
+		names = append(names, name)
+	}
+	return names
+}
+
 // TargetsActive returns the active targets currently being scraped.
 func (m *Manager) TargetsActive() map[string][]*Target {
 	m.mtxScrape.Lock()
 	defer m.mtxScrape.Unlock()
 
-	var (
-		wg  sync.WaitGroup
-		mtx sync.Mutex
-	)
-
 	targets := make(map[string][]*Target, len(m.scrapePools))
-	wg.Add(len(m.scrapePools))
 	for tset, sp := range m.scrapePools {
-		// Running in parallel limits the blocking time of scrapePool to scrape
-		// interval when there's an update from SD.
-		go func(tset string, sp *scrapePool) {
-			mtx.Lock()
-			targets[tset] = sp.ActiveTargets()
-			mtx.Unlock()
-			wg.Done()
-		}(tset, sp)
+		targets[tset] = sp.ActiveTargets()
 	}
-	wg.Wait()
 	return targets
 }
 
-// TargetsDropped returns the dropped targets during relabelling.
+// TargetsDropped returns the dropped targets during relabelling, subject to KeepDroppedTargets limit.
 func (m *Manager) TargetsDropped() map[string][]*Target {
 	m.mtxScrape.Lock()
 	defer m.mtxScrape.Unlock()
@@ -320,45 +307,13 @@ func (m *Manager) TargetsDropped() map[string][]*Target {
 	return targets
 }
 
-// getFqdn returns a FQDN if it's possible, otherwise falls back to hostname.
-func getFqdn() (string, error) {
-	hostname, err := os.Hostname()
-	if err != nil {
-		return "", err
+func (m *Manager) TargetsDroppedCounts() map[string]int {
+	m.mtxScrape.Lock()
+	defer m.mtxScrape.Unlock()
+
+	counts := make(map[string]int, len(m.scrapePools))
+	for tset, sp := range m.scrapePools {
+		counts[tset] = sp.droppedTargetsCount
 	}
-
-	ips, err := net.LookupIP(hostname)
-	if err != nil {
-		// Return the system hostname if we can't look up the IP address.
-		return hostname, nil
-	}
-
-	lookup := func(ipStr encoding.TextMarshaler) (string, error) {
-		ip, err := ipStr.MarshalText()
-		if err != nil {
-			return "", err
-		}
-		hosts, err := net.LookupAddr(string(ip))
-		if err != nil || len(hosts) == 0 {
-			return "", err
-		}
-		return hosts[0], nil
-	}
-
-	for _, addr := range ips {
-		if ip := addr.To4(); ip != nil {
-			if fqdn, err := lookup(ip); err == nil {
-				return fqdn, nil
-			}
-
-		}
-
-		if ip := addr.To16(); ip != nil {
-			if fqdn, err := lookup(ip); err == nil {
-				return fqdn, nil
-			}
-
-		}
-	}
-	return hostname, nil
+	return counts
 }

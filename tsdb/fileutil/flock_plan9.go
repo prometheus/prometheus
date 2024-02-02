@@ -24,7 +24,7 @@ func (l *plan9Lock) Release() error {
 }
 
 func newLock(fileName string) (Releaser, error) {
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, os.ModeExclusive|0666)
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, os.ModeExclusive|0o666)
 	if err != nil {
 		return nil, err
 	}

@@ -10,8 +10,10 @@ import { GraphTabContent } from './GraphTabContent';
 import DataTable from './DataTable';
 import TimeInput from './TimeInput';
 import QueryStatsView, { QueryStats } from './QueryStatsView';
-import { QueryParams } from '../../types/types';
+import { QueryParams, ExemplarData } from '../../types/types';
 import { API_PATH } from '../../constants/constants';
+import { debounce } from '../../utils';
+import { isHeatmapData } from './GraphHeatmapHelpers';
 
 interface PanelProps {
   options: PanelOptions;
@@ -23,16 +25,22 @@ interface PanelProps {
   onExecuteQuery: (query: string) => void;
   pathPrefix: string;
   enableAutocomplete: boolean;
+  enableHighlighting: boolean;
+  enableLinter: boolean;
+  id: string;
 }
 
 interface PanelState {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data: any; // TODO: Type data.
+  exemplars: ExemplarData;
   lastQueryParams: QueryParams | null;
   loading: boolean;
   warnings: string[] | null;
   error: string | null;
   stats: QueryStats | null;
   exprInputValue: string;
+  isHeatmapData: boolean;
 }
 
 export interface PanelOptions {
@@ -41,12 +49,19 @@ export interface PanelOptions {
   range: number; // Range in milliseconds.
   endTime: number | null; // Timestamp in milliseconds.
   resolution: number | null; // Resolution in seconds.
-  stacked: boolean;
+  displayMode: GraphDisplayMode;
+  showExemplars: boolean;
 }
 
 export enum PanelType {
   Graph = 'graph',
   Table = 'table',
+}
+
+export enum GraphDisplayMode {
+  Lines = 'lines',
+  Stacked = 'stacked',
+  Heatmap = 'heatmap',
 }
 
 export const PanelDefaultOptions: PanelOptions = {
@@ -55,43 +70,51 @@ export const PanelDefaultOptions: PanelOptions = {
   range: 60 * 60 * 1000,
   endTime: null,
   resolution: null,
-  stacked: false,
+  displayMode: GraphDisplayMode.Lines,
+  showExemplars: false,
 };
 
 class Panel extends Component<PanelProps, PanelState> {
   private abortInFlightFetch: (() => void) | null = null;
+  private debounceExecuteQuery: () => void;
 
   constructor(props: PanelProps) {
     super(props);
 
     this.state = {
       data: null,
+      exemplars: [],
       lastQueryParams: null,
       loading: false,
       warnings: null,
       error: null,
       stats: null,
       exprInputValue: props.options.expr,
+      isHeatmapData: false,
     };
+
+    this.debounceExecuteQuery = debounce(this.executeQuery.bind(this), 250);
   }
 
-  componentDidUpdate({ options: prevOpts }: PanelProps) {
-    const { endTime, range, resolution, type } = this.props.options;
-    if (
-      prevOpts.endTime !== endTime ||
-      prevOpts.range !== range ||
-      prevOpts.resolution !== resolution ||
-      prevOpts.type !== type
-    ) {
+  componentDidUpdate({ options: prevOpts }: PanelProps): void {
+    const { endTime, range, resolution, showExemplars, type } = this.props.options;
+
+    if (prevOpts.endTime !== endTime || prevOpts.range !== range) {
+      this.debounceExecuteQuery();
+      return;
+    }
+
+    if (prevOpts.resolution !== resolution || prevOpts.type !== type || showExemplars !== prevOpts.showExemplars) {
       this.executeQuery();
     }
   }
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.executeQuery();
   }
 
-  executeQuery = (): void => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  executeQuery = async (): Promise<any> => {
     const { exprInputValue: expr } = this.state;
     const queryStart = Date.now();
     this.props.onExecuteQuery(expr);
@@ -134,58 +157,81 @@ class Panel extends Component<PanelProps, PanelState> {
         throw new Error('Invalid panel type "' + this.props.options.type + '"');
     }
 
-    fetch(`${this.props.pathPrefix}/${API_PATH}/${path}?${params}`, {
-      cache: 'no-store',
-      credentials: 'same-origin',
-      signal: abortController.signal,
-    })
-      .then(resp => resp.json())
-      .then(json => {
-        if (json.status !== 'success') {
-          throw new Error(json.error || 'invalid response JSON');
-        }
+    let query;
+    let exemplars;
+    try {
+      query = await fetch(`${this.props.pathPrefix}/${API_PATH}/${path}?${params}`, {
+        cache: 'no-store',
+        credentials: 'same-origin',
+        signal: abortController.signal,
+      }).then((resp) => resp.json());
 
-        let resultSeries = 0;
-        if (json.data) {
-          const { resultType, result } = json.data;
-          if (resultType === 'scalar') {
-            resultSeries = 1;
-          } else if (result && result.length > 0) {
-            resultSeries = result.length;
-          }
-        }
+      if (query.status !== 'success') {
+        throw new Error(query.error || 'invalid response JSON');
+      }
 
-        this.setState({
-          error: null,
-          data: json.data,
-          warnings: json.warnings,
-          lastQueryParams: {
-            startTime,
-            endTime,
-            resolution,
-          },
-          stats: {
-            loadTime: Date.now() - queryStart,
-            resolution,
-            resultSeries,
-          },
-          loading: false,
-        });
-        this.abortInFlightFetch = null;
-      })
-      .catch(error => {
-        if (error.name === 'AbortError') {
-          // Aborts are expected, don't show an error for them.
-          return;
+      if (this.props.options.type === 'graph' && this.props.options.showExemplars) {
+        params.delete('step'); // Not needed for this request.
+        exemplars = await fetch(`${this.props.pathPrefix}/${API_PATH}/query_exemplars?${params}`, {
+          cache: 'no-store',
+          credentials: 'same-origin',
+          signal: abortController.signal,
+        }).then((resp) => resp.json());
+
+        if (exemplars.status !== 'success') {
+          throw new Error(exemplars.error || 'invalid response JSON');
         }
-        this.setState({
-          error: 'Error executing query: ' + error.message,
-          loading: false,
-        });
+      }
+
+      let resultSeries = 0;
+      if (query.data) {
+        const { resultType, result } = query.data;
+        if (resultType === 'scalar') {
+          resultSeries = 1;
+        } else if (result && result.length > 0) {
+          resultSeries = result.length;
+        }
+      }
+
+      const isHeatmap = isHeatmapData(query.data);
+      const isHeatmapDisplayMode = this.props.options.displayMode === GraphDisplayMode.Heatmap;
+      if (!isHeatmap && isHeatmapDisplayMode) {
+        this.setOptions({ displayMode: GraphDisplayMode.Lines });
+      }
+
+      this.setState({
+        error: null,
+        data: query.data,
+        exemplars: exemplars?.data,
+        warnings: query.warnings,
+        lastQueryParams: {
+          startTime,
+          endTime,
+          resolution,
+        },
+        stats: {
+          loadTime: Date.now() - queryStart,
+          resolution,
+          resultSeries,
+        },
+        loading: false,
+        isHeatmapData: isHeatmap,
       });
+      this.abortInFlightFetch = null;
+    } catch (err: unknown) {
+      const error = err as Error;
+      if (error.name === 'AbortError') {
+        // Aborts are expected, don't show an error for them.
+        return;
+      }
+      this.setState({
+        error: 'Error executing query: ' + error.message,
+        loading: false,
+      });
+    }
   };
 
-  setOptions(opts: object): void {
+  setOptions(opts: Partial<PanelOptions>): void {
     const newOpts = { ...this.props.options, ...opts };
     this.props.onOptionsChanged(newOpts);
   }
@@ -205,15 +251,15 @@ class Panel extends Component<PanelProps, PanelState> {
     return this.props.options.endTime;
   };
 
-  handleChangeEndTime = (endTime: number | null) => {
+  handleChangeEndTime = (endTime: number | null): void => {
     this.setOptions({ endTime: endTime });
   };
 
-  handleChangeResolution = (resolution: number | null) => {
+  handleChangeResolution = (resolution: number | null): void => {
     this.setOptions({ resolution: resolution });
   };
 
-  handleChangeType = (type: PanelType) => {
+  handleChangeType = (type: PanelType): void => {
     if (this.props.options.type === type) {
       return;
     }
@@ -222,11 +268,19 @@ class Panel extends Component<PanelProps, PanelState> {
     this.setOptions({ type: type });
   };
 
-  handleChangeStacking = (stacked: boolean) => {
-    this.setOptions({ stacked: stacked });
+  handleChangeDisplayMode = (mode: GraphDisplayMode): void => {
+    this.setOptions({ displayMode: mode });
   };
 
-  render() {
+  handleChangeShowExemplars = (show: boolean): void => {
+    this.setOptions({ showExemplars: show });
+  };
+
+  handleTimeRangeSelection = (startTime: number, endTime: number): void => {
+    this.setOptions({ range: endTime - startTime, endTime: endTime });
+  };
+
+  render(): JSX.Element {
     const { pastQueries, metricNames, options } = this.props;
     return (
       <div className="panel">
@@ -238,6 +292,8 @@ class Panel extends Component<PanelProps, PanelState> {
               executeQuery={this.executeQuery}
               loading={this.state.loading}
               enableAutocomplete={this.props.enableAutocomplete}
+              enableHighlighting={this.props.enableHighlighting}
+              enableLinter={this.props.enableLinter}
               queryHistory={pastQueries}
               metricNames={metricNames}
             />
@@ -285,7 +341,7 @@ class Panel extends Component<PanelProps, PanelState> {
                         onChangeTime={this.handleChangeEndTime}
                       />
                     </div>
-                    <DataTable data={this.state.data} />
+                    <DataTable data={this.state.data} useLocalTime={this.props.useLocalTime} />
                   </>
                 )}
               </TabPane>
@@ -297,17 +353,24 @@ class Panel extends Component<PanelProps, PanelState> {
                       endTime={options.endTime}
                       useLocalTime={this.props.useLocalTime}
                       resolution={options.resolution}
-                      stacked={options.stacked}
+                      displayMode={options.displayMode}
+                      isHeatmapData={this.state.isHeatmapData}
+                      showExemplars={options.showExemplars}
                       onChangeRange={this.handleChangeRange}
                       onChangeEndTime={this.handleChangeEndTime}
                       onChangeResolution={this.handleChangeResolution}
-                      onChangeStacking={this.handleChangeStacking}
+                      onChangeDisplayMode={this.handleChangeDisplayMode}
+                      onChangeShowExemplars={this.handleChangeShowExemplars}
                     />
                     <GraphTabContent
                       data={this.state.data}
-                      stacked={options.stacked}
+                      exemplars={this.state.exemplars}
+                      displayMode={options.displayMode}
                       useLocalTime={this.props.useLocalTime}
+                      showExemplars={options.showExemplars}
                       lastQueryParams={this.state.lastQueryParams}
+                      id={this.props.id}
+                      handleTimeRangeSelection={this.handleTimeRangeSelection}
                     />
                   </>
                 )}

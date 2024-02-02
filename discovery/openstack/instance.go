@@ -18,14 +18,13 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/floatingips"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/pagination"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -37,6 +36,7 @@ const (
 	openstackLabelAddressPool    = openstackLabelPrefix + "address_pool"
 	openstackLabelInstanceFlavor = openstackLabelPrefix + "instance_flavor"
 	openstackLabelInstanceID     = openstackLabelPrefix + "instance_id"
+	openstackLabelInstanceImage  = openstackLabelPrefix + "instance_image"
 	openstackLabelInstanceName   = openstackLabelPrefix + "instance_name"
 	openstackLabelInstanceStatus = openstackLabelPrefix + "instance_status"
 	openstackLabelPrivateIP      = openstackLabelPrefix + "private_ip"
@@ -59,12 +59,15 @@ type InstanceDiscovery struct {
 
 // NewInstanceDiscovery returns a new instance discovery.
 func newInstanceDiscovery(provider *gophercloud.ProviderClient, opts *gophercloud.AuthOptions,
-	port int, region string, allTenants bool, availability gophercloud.Availability, l log.Logger) *InstanceDiscovery {
+	port int, region string, allTenants bool, availability gophercloud.Availability, l log.Logger,
+) *InstanceDiscovery {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
-	return &InstanceDiscovery{provider: provider, authOpts: opts,
-		region: region, port: port, allTenants: allTenants, availability: availability, logger: l}
+	return &InstanceDiscovery{
+		provider: provider, authOpts: opts,
+		region: region, port: port, allTenants: allTenants, availability: availability, logger: l,
+	}
 }
 
 type floatingIPKey struct {
@@ -76,14 +79,14 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 	i.provider.Context = ctx
 	err := openstack.Authenticate(i.provider, *i.authOpts)
 	if err != nil {
-		return nil, errors.Wrap(err, "could not authenticate to OpenStack")
+		return nil, fmt.Errorf("could not authenticate to OpenStack: %w", err)
 	}
 
 	client, err := openstack.NewComputeV2(i.provider, gophercloud.EndpointOpts{
 		Region: i.region, Availability: i.availability,
 	})
 	if err != nil {
-		return nil, errors.Wrap(err, "could not create OpenStack compute session")
+		return nil, fmt.Errorf("could not create OpenStack compute session: %w", err)
 	}
 
 	// OpenStack API reference
@@ -94,7 +97,7 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 	err = pagerFIP.EachPage(func(page pagination.Page) (bool, error) {
 		result, err := floatingips.ExtractFloatingIPs(page)
 		if err != nil {
-			return false, errors.Wrap(err, "could not extract floatingips")
+			return false, fmt.Errorf("could not extract floatingips: %w", err)
 		}
 		for _, ip := range result {
 			// Skip not associated ips
@@ -121,11 +124,11 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 	}
 	err = pager.EachPage(func(page pagination.Page) (bool, error) {
 		if ctx.Err() != nil {
-			return false, errors.Wrap(ctx.Err(), "could not extract instances")
+			return false, fmt.Errorf("could not extract instances: %w", ctx.Err())
 		}
 		instanceList, err := servers.ExtractServers(page)
 		if err != nil {
-			return false, errors.Wrap(err, "could not extract instances")
+			return false, fmt.Errorf("could not extract instances: %w", err)
 		}
 
 		for _, s := range instanceList {
@@ -142,12 +145,18 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 				openstackLabelUserID:         model.LabelValue(s.UserID),
 			}
 
-			id, ok := s.Flavor["id"].(string)
+			flavorID, ok := s.Flavor["id"].(string)
 			if !ok {
 				level.Warn(i.logger).Log("msg", "Invalid type for flavor id, expected string")
 				continue
 			}
-			labels[openstackLabelInstanceFlavor] = model.LabelValue(id)
+			labels[openstackLabelInstanceFlavor] = model.LabelValue(flavorID)
+
+			imageID, ok := s.Image["id"].(string)
+			if ok {
+				labels[openstackLabelInstanceImage] = model.LabelValue(imageID)
+			}
+
 			for k, v := range s.Metadata {
 				name := strutil.SanitizeLabelName(k)
 				labels[openstackLabelTagPrefix+model.LabelName(name)] = model.LabelValue(v)

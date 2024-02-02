@@ -3,6 +3,6 @@ scrape_configs:
     kubernetes_sd_configs:
       - role: ingress
         selectors:
-          - role:  "node"
+          - role: "node"
             label: "foo=bar"
             field: "metadata.status=Running"

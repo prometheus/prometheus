@@ -6,7 +6,6 @@
     "plugin:prettier/recommended"
   ],
   "rules": {
-    "@typescript-eslint/camelcase": "warn",
     "@typescript-eslint/explicit-function-return-type": ["off"],
     "eol-last": [
       "error",
@@ -28,5 +27,6 @@
   },
   "plugins": [
     "prettier"
-  ]
+  ],
+  "ignorePatterns": ["src/vendor/**"]
 }

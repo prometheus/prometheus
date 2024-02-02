@@ -8,5 +8,5 @@ tests:
         values: 3
 
     promql_expr_test:
-          # This PromQL generates an error.
-          - expr: "join_1 + on(a) join_2"
+      # This PromQL generates an error.
+      - expr: "join_1 + on(a) join_2"

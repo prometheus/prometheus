@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 )
@@ -48,12 +48,12 @@ func TestHCloudSDRefresh(t *testing.T) {
 
 	targetGroups, err := d.refresh(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, 1, len(targetGroups))
+	require.Len(t, targetGroups, 1)
 
 	targetGroup := targetGroups[0]
 	require.NotNil(t, targetGroup, "targetGroup should not be nil")
 	require.NotNil(t, targetGroup.Targets, "targetGroup.targets should not be nil")
-	require.Equal(t, 3, len(targetGroup.Targets))
+	require.Len(t, targetGroup.Targets, 3)
 
 	for i, labelSet := range []model.LabelSet{
 		{
@@ -77,6 +77,7 @@ func TestHCloudSDRefresh(t *testing.T) {
 			"__meta_hetzner_hcloud_disk_size_gb":                     model.LabelValue("25"),
 			"__meta_hetzner_hcloud_server_type":                      model.LabelValue("cx11"),
 			"__meta_hetzner_hcloud_private_ipv4_mynet":               model.LabelValue("10.0.0.2"),
+			"__meta_hetzner_hcloud_labelpresent_my_key":              model.LabelValue("true"),
 			"__meta_hetzner_hcloud_label_my_key":                     model.LabelValue("my-value"),
 		},
 		{
@@ -99,6 +100,10 @@ func TestHCloudSDRefresh(t *testing.T) {
 			"__meta_hetzner_hcloud_memory_size_gb":                   model.LabelValue("1"),
 			"__meta_hetzner_hcloud_disk_size_gb":                     model.LabelValue("50"),
 			"__meta_hetzner_hcloud_server_type":                      model.LabelValue("cpx11"),
+			"__meta_hetzner_hcloud_labelpresent_key":                 model.LabelValue("true"),
+			"__meta_hetzner_hcloud_labelpresent_other_key":           model.LabelValue("true"),
+			"__meta_hetzner_hcloud_label_key":                        model.LabelValue(""),
+			"__meta_hetzner_hcloud_label_other_key":                  model.LabelValue("value"),
 		},
 		{
 			"__address__":                                            model.LabelValue("1.2.3.6:80"),

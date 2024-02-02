@@ -15,20 +15,22 @@
 package tsdb
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
-	"sort"
 	"sync"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid"
-	"github.com/pkg/errors"
+	"golang.org/x/exp/slices"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
@@ -40,8 +42,8 @@ import (
 // IndexWriter serializes the index for a block of series data.
 // The methods must be called in the order they are specified in.
 type IndexWriter interface {
-	// AddSymbols registers all string symbols that are encountered in series
-	// and other indices. Symbols must be added in sorted order.
+	// AddSymbol registers a single symbol.
+	// Symbols must be registered in sorted order.
 	AddSymbol(sym string) error
 
 	// AddSeries populates the index writer with a series and its offsets
@@ -49,7 +51,7 @@ type IndexWriter interface {
 	// Implementations may require series to be insert in strictly increasing order by
 	// their labels. The reference numbers are used to resolve entries in postings lists
 	// that are added later.
-	AddSeries(ref uint64, l labels.Labels, chunks ...chunks.Meta) error
+	AddSeries(ref storage.SeriesRef, l labels.Labels, chunks ...chunks.Meta) error
 
 	// Close writes any finalization and closes the resources associated with
 	// the underlying writer.
@@ -64,33 +66,42 @@ type IndexReader interface {
 	Symbols() index.StringIter
 
 	// SortedLabelValues returns sorted possible label values.
-	SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error)
+	SortedLabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error)
 
 	// LabelValues returns possible label values which may not be sorted.
-	LabelValues(name string, matchers ...*labels.Matcher) ([]string, error)
+	LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error)
 
 	// Postings returns the postings list iterator for the label pairs.
 	// The Postings here contain the offsets to the series inside the index.
 	// Found IDs are not strictly required to point to a valid Series, e.g.
-	// during background garbage collections. Input values must be sorted.
-	Postings(name string, values ...string) (index.Postings, error)
+	// during background garbage collections.
+	Postings(ctx context.Context, name string, values ...string) (index.Postings, error)
 
 	// SortedPostings returns a postings list that is reordered to be sorted
 	// by the label set of the underlying series.
 	SortedPostings(index.Postings) index.Postings
 
-	// Series populates the given labels and chunk metas for the series identified
+	// ShardedPostings returns a postings list filtered by the provided shardIndex
+	// out of shardCount. For a given posting, its shard MUST be computed hashing
+	// the series labels mod shardCount, using a hash function which is consistent over time.
+	ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings
+
+	// Series populates the given builder and chunk metas for the series identified
 	// by the reference.
 	// Returns storage.ErrNotFound if the ref does not resolve to a known series.
-	Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error
+	Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error
 
 	// LabelNames returns all the unique label names present in the index in sorted order.
-	LabelNames() ([]string, error)
+	LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, error)
 
 	// LabelValueFor returns label value for the given label name in the series referred to by ID.
 	// If the series couldn't be found or the series doesn't have the requested label a
 	// storage.ErrNotFound is returned as error.
-	LabelValueFor(id uint64, label string) (string, error)
+	LabelValueFor(ctx context.Context, id storage.SeriesRef, label string) (string, error)
+
+	// LabelNamesFor returns all the label names for the series referred to by IDs.
+	// The names returned are sorted.
+	LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([]string, error)
 
 	// Close releases the underlying resources of the reader.
 	Close() error
@@ -111,8 +122,19 @@ type ChunkWriter interface {
 
 // ChunkReader provides reading access of serialized time series data.
 type ChunkReader interface {
-	// Chunk returns the series data chunk with the given reference.
-	Chunk(ref uint64) (chunkenc.Chunk, error)
+	// ChunkOrIterable returns the series data for the given chunks.Meta.
+	// Either a single chunk will be returned, or an iterable.
+	// A single chunk should be returned if chunks.Meta maps to a chunk that
+	// already exists and doesn't need modifications.
+	// An iterable should be returned if chunks.Meta maps to a subset of the
+	// samples in a stored chunk, or multiple chunks. (E.g. OOOHeadChunkReader
+	// could return an iterable where multiple histogram samples have counter
+	// resets. There can only be one counter reset per histogram chunk so
+	// multiple chunks would be created from the iterable in this case.)
+	// Only one of chunk or iterable should be returned. In some cases you may
+	// always expect a chunk to be returned. You can check that iterable is nil
+	// in those cases.
+	ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error)
 
 	// Close releases all underlying resources of the reader.
 	Close() error
@@ -185,16 +207,45 @@ type BlockMetaCompaction struct {
 	// this block.
 	Parents []BlockDesc `json:"parents,omitempty"`
 	Failed  bool        `json:"failed,omitempty"`
+	// Additional information about the compaction, for example, block created from out-of-order chunks.
+	Hints []string `json:"hints,omitempty"`
 }
 
-const indexFilename = "index"
-const metaFilename = "meta.json"
-const metaVersion1 = 1
+func (bm *BlockMetaCompaction) SetOutOfOrder() {
+	if bm.containsHint(CompactionHintFromOutOfOrder) {
+		return
+	}
+	bm.Hints = append(bm.Hints, CompactionHintFromOutOfOrder)
+	slices.Sort(bm.Hints)
+}
+
+func (bm *BlockMetaCompaction) FromOutOfOrder() bool {
+	return bm.containsHint(CompactionHintFromOutOfOrder)
+}
+
+func (bm *BlockMetaCompaction) containsHint(hint string) bool {
+	for _, h := range bm.Hints {
+		if h == hint {
+			return true
+		}
+	}
+	return false
+}
+
+const (
+	indexFilename = "index"
+	metaFilename  = "meta.json"
+	metaVersion1  = 1
+
+	// CompactionHintFromOutOfOrder is a hint noting that the block
+	// was created from out-of-order chunks.
+	CompactionHintFromOutOfOrder = "from-out-of-order"
+)
 
 func chunkDir(dir string) string { return filepath.Join(dir, "chunks") }
 
 func readMetaFile(dir string) (*BlockMeta, int64, error) {
-	b, err := ioutil.ReadFile(filepath.Join(dir, metaFilename))
+	b, err := os.ReadFile(filepath.Join(dir, metaFilename))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -204,7 +255,7 @@ func readMetaFile(dir string) (*BlockMeta, int64, error) {
 		return nil, 0, err
 	}
 	if m.Version != metaVersion1 {
-		return nil, 0, errors.Errorf("unexpected meta file version %d", m.Version)
+		return nil, 0, fmt.Errorf("unexpected meta file version %d", m.Version)
 	}
 
 	return &m, int64(len(b)), nil
@@ -421,35 +472,48 @@ func (r blockIndexReader) Symbols() index.StringIter {
 	return r.ir.Symbols()
 }
 
-func (r blockIndexReader) SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+func (r blockIndexReader) SortedLabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
 	var st []string
 	var err error
 
 	if len(matchers) == 0 {
-		st, err = r.ir.SortedLabelValues(name)
+		st, err = r.ir.SortedLabelValues(ctx, name)
 	} else {
-		st, err = r.LabelValues(name, matchers...)
+		st, err = r.LabelValues(ctx, name, matchers...)
 		if err == nil {
-			sort.Strings(st)
+			slices.Sort(st)
 		}
 	}
-
-	return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+	if err != nil {
+		return st, fmt.Errorf("block: %s: %w", r.b.Meta().ULID, err)
+	}
+	return st, nil
 }
 
-func (r blockIndexReader) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+func (r blockIndexReader) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
 	if len(matchers) == 0 {
-		st, err := r.ir.LabelValues(name)
-		return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+		st, err := r.ir.LabelValues(ctx, name)
+		if err != nil {
+			return st, fmt.Errorf("block: %s: %w", r.b.Meta().ULID, err)
+		}
+		return st, nil
 	}
 
-	return labelValuesWithMatchers(r, name, matchers...)
+	return labelValuesWithMatchers(ctx, r.ir, name, matchers...)
 }
 
-func (r blockIndexReader) Postings(name string, values ...string) (index.Postings, error) {
-	p, err := r.ir.Postings(name, values...)
+func (r blockIndexReader) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, error) {
+	if len(matchers) == 0 {
+		return r.b.LabelNames(ctx)
+	}
+
+	return labelNamesWithMatchers(ctx, r.ir, matchers...)
+}
+
+func (r blockIndexReader) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
+	p, err := r.ir.Postings(ctx, name, values...)
 	if err != nil {
-		return p, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+		return p, fmt.Errorf("block: %s: %w", r.b.Meta().ULID, err)
 	}
 	return p, nil
 }
@@ -458,15 +522,15 @@ func (r blockIndexReader) SortedPostings(p index.Postings) index.Postings {
 	return r.ir.SortedPostings(p)
 }
 
-func (r blockIndexReader) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error {
-	if err := r.ir.Series(ref, lset, chks); err != nil {
-		return errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
-	}
-	return nil
+func (r blockIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings {
+	return r.ir.ShardedPostings(p, shardIndex, shardCount)
 }
 
-func (r blockIndexReader) LabelNames() ([]string, error) {
-	return r.b.LabelNames()
+func (r blockIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
+	if err := r.ir.Series(ref, builder, chks); err != nil {
+		return fmt.Errorf("block: %s: %w", r.b.Meta().ULID, err)
+	}
+	return nil
 }
 
 func (r blockIndexReader) Close() error {
@@ -475,8 +539,14 @@ func (r blockIndexReader) Close() error {
 }
 
 // LabelValueFor returns label value for the given label name in the series referred to by ID.
-func (r blockIndexReader) LabelValueFor(id uint64, label string) (string, error) {
-	return r.ir.LabelValueFor(id, label)
+func (r blockIndexReader) LabelValueFor(ctx context.Context, id storage.SeriesRef, label string) (string, error) {
+	return r.ir.LabelValueFor(ctx, id, label)
+}
+
+// LabelNamesFor returns all the label names for the series referred to by IDs.
+// The names returned are sorted.
+func (r blockIndexReader) LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([]string, error) {
+	return r.ir.LabelNamesFor(ctx, ids...)
 }
 
 type blockTombstoneReader struct {
@@ -500,7 +570,7 @@ func (r blockChunkReader) Close() error {
 }
 
 // Delete matching series between mint and maxt in the block.
-func (pb *Block) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
+func (pb *Block) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Matcher) error {
 	pb.mtx.Lock()
 	defer pb.mtx.Unlock()
 
@@ -508,9 +578,9 @@ func (pb *Block) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 		return ErrClosing
 	}
 
-	p, err := PostingsForMatchers(pb.indexr, ms...)
+	p, err := PostingsForMatchers(ctx, pb.indexr, ms...)
 	if err != nil {
-		return errors.Wrap(err, "select series")
+		return fmt.Errorf("select series: %w", err)
 	}
 
 	ir := pb.indexr
@@ -518,12 +588,12 @@ func (pb *Block) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 	// Choose only valid postings which have chunks in the time-range.
 	stones := tombstones.NewMemTombstones()
 
-	var lset labels.Labels
 	var chks []chunks.Meta
+	var builder labels.ScratchBuilder
 
 Outer:
 	for p.Next() {
-		err := ir.Series(p.At(), &lset, &chks)
+		err := ir.Series(p.At(), &builder, &chks)
 		if err != nil {
 			return err
 		}
@@ -542,7 +612,7 @@ Outer:
 		return p.Err()
 	}
 
-	err = pb.tombstones.Iter(func(id uint64, ivs tombstones.Intervals) error {
+	err = pb.tombstones.Iter(func(id storage.SeriesRef, ivs tombstones.Intervals) error {
 		for _, iv := range ivs {
 			stones.AddInterval(id, iv)
 		}
@@ -574,7 +644,7 @@ Outer:
 func (pb *Block) CleanTombstones(dest string, c Compactor) (*ulid.ULID, bool, error) {
 	numStones := 0
 
-	if err := pb.tombstones.Iter(func(id uint64, ivs tombstones.Intervals) error {
+	if err := pb.tombstones.Iter(func(id storage.SeriesRef, ivs tombstones.Intervals) error {
 		numStones += len(ivs)
 		return nil
 	}); err != nil {
@@ -597,13 +667,13 @@ func (pb *Block) CleanTombstones(dest string, c Compactor) (*ulid.ULID, bool, er
 // Snapshot creates snapshot of the block into dir.
 func (pb *Block) Snapshot(dir string) error {
 	blockDir := filepath.Join(dir, pb.meta.ULID.String())
-	if err := os.MkdirAll(blockDir, 0777); err != nil {
-		return errors.Wrap(err, "create snapshot block dir")
+	if err := os.MkdirAll(blockDir, 0o777); err != nil {
+		return fmt.Errorf("create snapshot block dir: %w", err)
 	}
 
 	chunksDir := chunkDir(blockDir)
-	if err := os.MkdirAll(chunksDir, 0777); err != nil {
-		return errors.Wrap(err, "create snapshot chunk dir")
+	if err := os.MkdirAll(chunksDir, 0o777); err != nil {
+		return fmt.Errorf("create snapshot chunk dir: %w", err)
 	}
 
 	// Hardlink meta, index and tombstones
@@ -613,21 +683,21 @@ func (pb *Block) Snapshot(dir string) error {
 		tombstones.TombstonesFilename,
 	} {
 		if err := os.Link(filepath.Join(pb.dir, fname), filepath.Join(blockDir, fname)); err != nil {
-			return errors.Wrapf(err, "create snapshot %s", fname)
+			return fmt.Errorf("create snapshot %s: %w", fname, err)
 		}
 	}
 
 	// Hardlink the chunks
 	curChunkDir := chunkDir(pb.dir)
-	files, err := ioutil.ReadDir(curChunkDir)
+	files, err := os.ReadDir(curChunkDir)
 	if err != nil {
-		return errors.Wrap(err, "ReadDir the current chunk dir")
+		return fmt.Errorf("ReadDir the current chunk dir: %w", err)
 	}
 
 	for _, f := range files {
 		err := os.Link(filepath.Join(curChunkDir, f.Name()), filepath.Join(chunksDir, f.Name()))
 		if err != nil {
-			return errors.Wrap(err, "hardlink a chunk")
+			return fmt.Errorf("hardlink a chunk: %w", err)
 		}
 	}
 
@@ -642,8 +712,8 @@ func (pb *Block) OverlapsClosedInterval(mint, maxt int64) bool {
 }
 
 // LabelNames returns all the unique label names present in the Block in sorted order.
-func (pb *Block) LabelNames() ([]string, error) {
-	return pb.indexr.LabelNames()
+func (pb *Block) LabelNames(ctx context.Context) ([]string, error) {
+	return pb.indexr.LabelNames(ctx)
 }
 
 func clampInterval(a, b, mint, maxt int64) (int64, int64) {

@@ -14,23 +14,92 @@
 package promql
 
 import (
-	"path/filepath"
+	"context"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
+
+	"github.com/prometheus/prometheus/util/teststorage"
 )
 
+func newTestEngine() *Engine {
+	return NewEngine(EngineOpts{
+		Logger:                   nil,
+		Reg:                      nil,
+		MaxSamples:               10000,
+		Timeout:                  100 * time.Second,
+		NoStepSubqueryIntervalFn: func(int64) int64 { return durationMilliseconds(1 * time.Minute) },
+		EnableAtModifier:         true,
+		EnableNegativeOffset:     true,
+		EnablePerStepStats:       true,
+	})
+}
+
 func TestEvaluations(t *testing.T) {
-	files, err := filepath.Glob("testdata/*.test")
+	RunBuiltinTests(t, newTestEngine())
+}
+
+// Run a lot of queries at the same time, to check for race conditions.
+func TestConcurrentRangeQueries(t *testing.T) {
+	stor := teststorage.New(t)
+	defer stor.Close()
+	opts := EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 50000000,
+		Timeout:    100 * time.Second,
+	}
+	engine := NewEngine(opts)
+
+	const interval = 10000 // 10s interval.
+	// A day of data plus 10k steps.
+	numIntervals := 8640 + 10000
+	err := setupRangeQueryTestData(stor, engine, interval, numIntervals)
 	require.NoError(t, err)
 
-	for _, fn := range files {
-		t.Run(fn, func(t *testing.T) {
-			test, err := newTestFromFile(t, fn)
-			require.NoError(t, err)
-			require.NoError(t, test.Run())
+	cases := rangeQueryCases()
 
-			test.Close()
+	// Limit the number of queries running at the same time.
+	const numConcurrent = 4
+	sem := make(chan struct{}, numConcurrent)
+	for i := 0; i < numConcurrent; i++ {
+		sem <- struct{}{}
+	}
+	var g errgroup.Group
+	for _, c := range cases {
+		c := c
+		if strings.Contains(c.expr, "count_values") && c.steps > 10 {
+			continue // This test is too big to run with -race.
+		}
+		if strings.Contains(c.expr, "[1d]") && c.steps > 100 {
+			continue // This test is too slow.
+		}
+		<-sem
+		g.Go(func() error {
+			defer func() {
+				sem <- struct{}{}
+			}()
+			ctx := context.Background()
+			qry, err := engine.NewRangeQuery(
+				ctx, stor, nil, c.expr,
+				time.Unix(int64((numIntervals-c.steps)*10), 0),
+				time.Unix(int64(numIntervals*10), 0), time.Second*10)
+			if err != nil {
+				return err
+			}
+			res := qry.Exec(ctx)
+			if res.Err != nil {
+				t.Logf("Query: %q, steps: %d, result: %s", c.expr, c.steps, res.Err)
+				return res.Err
+			}
+			qry.Close()
+			return nil
 		})
 	}
+
+	err = g.Wait()
+	require.NoError(t, err)
 }

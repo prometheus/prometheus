@@ -1,0 +1,83 @@
+/* This file is a copy of ForEvolve/bootstrap-dark dark theme:
+   https://github.com/ForEvolve/bootstrap-dark/blob/master/scss/toggle-bootstrap-dark.scss
+   but with Bootstrap reboot import removed.
+   See https://github.com/prometheus/prometheus/pull/8604#issuecomment-820391870
+   and https://github.com/ForEvolve/bootstrap-dark/issues/49
+*/
+
+@import '~bootstrap/scss/functions';
+@import '~bootstrap/scss/variables';
+
+@import '~@forevolve/bootstrap-dark/scss/dark-variables';
+
+@import '~bootstrap/scss/mixins';
+@import '~@forevolve/bootstrap-dark/scss/mixins-overrides';
+@import '~@forevolve/bootstrap-dark/scss/dark-mixins';
+
+html {
+  font-family: sans-serif; // 2
+  line-height: 1.15; // 3
+  -webkit-text-size-adjust: 100%; // 4
+  -webkit-tap-highlight-color: rgba($black, 0); // 5
+}
+
+body.bootstrap-dark {
+  margin: 0; // 1
+  font-family: $font-family-base;
+  @include font-size($font-size-base);
+  font-weight: $font-weight-base;
+  line-height: $line-height-base;
+  color: $body-color;
+  text-align: left; // 3
+  background-color: $body-bg; // 2
+}
+
+.bootstrap-dark {
+  @import '~bootstrap/scss/root';
+  @import '~bootstrap/scss/type';
+  @import '~bootstrap/scss/images';
+  @import '~bootstrap/scss/code';
+  @import '~bootstrap/scss/grid';
+
+  @import '~bootstrap/scss/tables';
+  @import '~@forevolve/bootstrap-dark/scss/dark-tables';
+
+  @import '~bootstrap/scss/forms';
+  @import '~@forevolve/bootstrap-dark/scss/form-overrides';
+
+  @import '~bootstrap/scss/buttons';
+  @import '~bootstrap/scss/transitions';
+  @import '~bootstrap/scss/dropdown';
+  @import '~bootstrap/scss/button-group';
+
+  @import '~bootstrap/scss/input-group';
+  @import '~@forevolve/bootstrap-dark/scss/dark-input-group';
+
+  @import '~bootstrap/scss/custom-forms';
+  @import '~bootstrap/scss/nav';
+  @import '~bootstrap/scss/navbar';
+  @import '~bootstrap/scss/card';
+  @import '~bootstrap/scss/breadcrumb';
+  @import '~bootstrap/scss/pagination';
+  @import '~bootstrap/scss/badge';
+  @import '~bootstrap/scss/jumbotron';
+  @import '~bootstrap/scss/alert';
+  @import '~bootstrap/scss/progress';
+  @import '~bootstrap/scss/media';
+  @import '~bootstrap/scss/list-group';
+  @import '~bootstrap/scss/close';
+  @import '~bootstrap/scss/toasts';
+  @import '~bootstrap/scss/modal';
+  @import '~bootstrap/scss/tooltip';
+  @import '~bootstrap/scss/popover';
+  @import '~bootstrap/scss/carousel';
+  @import '~bootstrap/scss/spinners';
+  @import '~bootstrap/scss/utilities';
+
+  .navbar-themed {
+    @extend .bg-dark;
+    @extend .navbar-dark;
+  }
+
+  @import '~@forevolve/bootstrap-dark/scss/dark-styles';
+}

@@ -21,6 +21,20 @@
             },
           },
           {
+            alert: 'PrometheusSDRefreshFailure',
+            expr: |||
+              increase(prometheus_sd_refresh_failures_total{%(prometheusSelector)s}[10m]) > 0
+            ||| % $._config,
+            'for': '20m',
+            labels: {
+              severity: 'warning',
+            },
+            annotations: {
+              summary: 'Failed Prometheus SD refresh.',
+              description: 'Prometheus %(prometheusName)s has failed to refresh SD with mechanism {{$labels.mechanism}}.' % $._config,
+            },
+          },
+          {
             alert: 'PrometheusNotificationQueueRunningFull',
             expr: |||
               # Without min_over_time, failed scrapes could create false negatives, see
@@ -261,6 +275,76 @@
               description: 'Prometheus %(prometheusName)s has dropped {{ printf "%%.0f" $value }} targets because the number of targets exceeded the configured target_limit.' % $._config,
             },
           },
+          {
+            alert: 'PrometheusLabelLimitHit',
+            expr: |||
+              increase(prometheus_target_scrape_pool_exceeded_label_limits_total{%(prometheusSelector)s}[5m]) > 0
+            ||| % $._config,
+            'for': '15m',
+            labels: {
+              severity: 'warning',
+            },
+            annotations: {
+              summary: 'Prometheus has dropped targets because some scrape configs have exceeded the labels limit.',
+              description: 'Prometheus %(prometheusName)s has dropped {{ printf "%%.0f" $value }} targets because some samples exceeded the configured label_limit, label_name_length_limit or label_value_length_limit.' % $._config,
+            },
+          },
+          {
+            alert: 'PrometheusScrapeBodySizeLimitHit',
+            expr: |||
+              increase(prometheus_target_scrapes_exceeded_body_size_limit_total{%(prometheusSelector)s}[5m]) > 0
+            ||| % $._config,
+            'for': '15m',
+            labels: {
+              severity: 'warning',
+            },
+            annotations: {
+              summary: 'Prometheus has dropped some targets that exceeded body size limit.',
+              description: 'Prometheus %(prometheusName)s has failed {{ printf "%%.0f" $value }} scrapes in the last 5m because some targets exceeded the configured body_size_limit.' % $._config,
+            },
+          },
+          {
+            alert: 'PrometheusScrapeSampleLimitHit',
+            expr: |||
+              increase(prometheus_target_scrapes_exceeded_sample_limit_total{%(prometheusSelector)s}[5m]) > 0
+            ||| % $._config,
+            'for': '15m',
+            labels: {
+              severity: 'warning',
+            },
+            annotations: {
+              summary: 'Prometheus has failed scrapes that have exceeded the configured sample limit.',
+              description: 'Prometheus %(prometheusName)s has failed {{ printf "%%.0f" $value }} scrapes in the last 5m because some targets exceeded the configured sample_limit.' % $._config,
+            },
+          },
+          {
+            alert: 'PrometheusTargetSyncFailure',
+            expr: |||
+              increase(prometheus_target_sync_failed_total{%(prometheusSelector)s}[30m]) > 0
+            ||| % $._config,
+            'for': '5m',
+            labels: {
+              severity: 'critical',
+            },
+            annotations: {
+              summary: 'Prometheus has failed to sync targets.',
+              description: '{{ printf "%%.0f" $value }} targets in Prometheus %(prometheusName)s have failed to sync because invalid configuration was supplied.' % $._config,
+            },
+          },
+          {
+            alert: 'PrometheusHighQueryLoad',
+            expr: |||
+              avg_over_time(prometheus_engine_queries{%(prometheusSelector)s}[5m]) / max_over_time(prometheus_engine_queries_concurrent_max{%(prometheusSelector)s}[5m]) > 0.8
+            ||| % $._config,
+            'for': '15m',
+            labels: {
+              severity: 'warning',
+            },
+            annotations: {
+              summary: 'Prometheus is reaching its maximum capacity serving concurrent requests.',
+              description: 'Prometheus %(prometheusName)s query API has less than 20%% available capacity in its query engine for the last 15 minutes.' % $._config,
+            },
+          },
         ] + if $._config.prometheusHAGroupLabels == '' then self.rulesWithoutHA else self.rulesWithHA,
         rulesWithoutHA:: [
           {
@@ -359,6 +443,21 @@
             alert: 'PrometheusHAGroupCrashlooping',
             expr: |||
               (
+                  prometheus_tsdb_clean_start{%(prometheusSelector)s} == 0
+                and
+                  (
+                    count by (%(prometheusHAGroupLabels)s) (
+                      changes(process_start_time_seconds{%(prometheusSelector)s}[1h]) > 1
+                    )
+                    /
+                    count by (%(prometheusHAGroupLabels)s) (
+                      up{%(prometheusSelector)s}
+                    )
+                  )
+                  > 0.5
+              )
+              or
+              (
                 count by (%(prometheusHAGroupLabels)s) (
                   changes(process_start_time_seconds{%(prometheusSelector)s}[30m]) > 4
                 )
@@ -375,7 +474,7 @@
             },
             annotations: {
               summary: 'More than half of the Prometheus instances within the same HA group are crashlooping.',
-              description: '{{ $value | humanizePercentage }} of Prometheus instances within the %(prometheusHAGroupName)s HA group have restarted at least 5 times in the last 30m.' % $._config,
+              description: '{{ $value | humanizePercentage }} of Prometheus instances within the %(prometheusHAGroupName)s HA group have had at least 5 total restarts in the last 30m or 2 unclean restarts in the last 1h.' % $._config,
             },
           },
         ],

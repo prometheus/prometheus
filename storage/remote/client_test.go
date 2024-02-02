@@ -15,6 +15,7 @@ package remote
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -22,7 +23,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pkg/errors"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
@@ -73,7 +73,7 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 		c, err := NewWriteClient(hash, conf)
 		require.NoError(t, err)
 
-		err = c.Store(context.Background(), []byte{})
+		err = c.Store(context.Background(), []byte{}, 0)
 		if test.err != nil {
 			require.EqualError(t, err, test.err.Error())
 		} else {
@@ -85,12 +85,22 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 }
 
 func TestClientRetryAfter(t *testing.T) {
-	server := httptest.NewServer(
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Error(w, longErrMessage, 429)
-		}),
-	)
-	defer server.Close()
+	setupServer := func(statusCode int) *httptest.Server {
+		return httptest.NewServer(
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Retry-After", "5")
+				http.Error(w, longErrMessage, statusCode)
+			}),
+		)
+	}
+
+	getClientConfig := func(serverURL *url.URL, retryOnRateLimit bool) *ClientConfig {
+		return &ClientConfig{
+			URL:              &config_util.URL{URL: serverURL},
+			Timeout:          model.Duration(time.Second),
+			RetryOnRateLimit: retryOnRateLimit,
+		}
+	}
 
 	getClient := func(conf *ClientConfig) WriteClient {
 		hash, err := toHash(conf)
@@ -100,31 +110,35 @@ func TestClientRetryAfter(t *testing.T) {
 		return c
 	}
 
-	serverURL, err := url.Parse(server.URL)
-	require.NoError(t, err)
-
-	conf := &ClientConfig{
-		URL:              &config_util.URL{URL: serverURL},
-		Timeout:          model.Duration(time.Second),
-		RetryOnRateLimit: false,
+	testCases := []struct {
+		name                string
+		statusCode          int
+		retryOnRateLimit    bool
+		expectedRecoverable bool
+		expectedRetryAfter  model.Duration
+	}{
+		{"TooManyRequests - No Retry", http.StatusTooManyRequests, false, false, 0},
+		{"TooManyRequests - With Retry", http.StatusTooManyRequests, true, true, 5 * model.Duration(time.Second)},
+		{"InternalServerError", http.StatusInternalServerError, false, true, 5 * model.Duration(time.Second)}, // HTTP 5xx errors do not depend on retryOnRateLimit.
 	}
 
-	c := getClient(conf)
-	err = c.Store(context.Background(), []byte{})
-	if _, ok := err.(RecoverableError); ok {
-		t.Fatal("recoverable error not expected")
-	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := setupServer(tc.statusCode)
+			defer server.Close()
 
-	conf = &ClientConfig{
-		URL:              &config_util.URL{URL: serverURL},
-		Timeout:          model.Duration(time.Second),
-		RetryOnRateLimit: true,
-	}
+			serverURL, err := url.Parse(server.URL)
+			require.NoError(t, err)
 
-	c = getClient(conf)
-	err = c.Store(context.Background(), []byte{})
-	if _, ok := err.(RecoverableError); !ok {
-		t.Fatal("recoverable error was expected")
+			c := getClient(getClientConfig(serverURL, tc.retryOnRateLimit))
+
+			var recErr RecoverableError
+			err = c.Store(context.Background(), []byte{}, 0)
+			require.Equal(t, tc.expectedRecoverable, errors.As(err, &recErr), "Mismatch in expected recoverable error status.")
+			if tc.expectedRecoverable {
+				require.Equal(t, tc.expectedRetryAfter, recErr.retryAfter)
+			}
+		})
 	}
 }
 
@@ -153,4 +167,44 @@ func TestRetryAfterDuration(t *testing.T) {
 	for _, c := range tc {
 		require.Equal(t, c.expected, retryAfterDuration(c.tInput), c.name)
 	}
+}
+
+func TestClientHeaders(t *testing.T) {
+	headersToSend := map[string]string{"Foo": "Bar", "Baz": "qux"}
+
+	var called bool
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			called = true
+			receivedHeaders := r.Header
+			for name, value := range headersToSend {
+				require.Equal(
+					t,
+					[]string{value},
+					receivedHeaders.Values(name),
+					"expected %v to be part of the received headers %v",
+					headersToSend,
+					receivedHeaders,
+				)
+			}
+		}),
+	)
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	conf := &ClientConfig{
+		URL:     &config_util.URL{URL: serverURL},
+		Timeout: model.Duration(time.Second),
+		Headers: headersToSend,
+	}
+
+	c, err := NewWriteClient("c", conf)
+	require.NoError(t, err)
+
+	err = c.Store(context.Background(), []byte{}, 0)
+	require.NoError(t, err)
+
+	require.True(t, called, "The remote server wasn't called")
 }

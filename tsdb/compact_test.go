@@ -15,25 +15,31 @@ package tsdb
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"io/ioutil"
 	"math"
+	"math/rand"
 	"os"
 	"path"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/pkg/errors"
+	"github.com/go-kit/log"
+	"github.com/oklog/ulid"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
 func TestSplitByRange(t *testing.T) {
@@ -158,7 +164,7 @@ func TestNoPanicFor0Tombstones(t *testing.T) {
 		},
 	}
 
-	c, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{50}, nil)
+	c, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{50}, nil, nil)
 	require.NoError(t, err)
 
 	c.plan(metas)
@@ -172,7 +178,7 @@ func TestLeveledCompactor_plan(t *testing.T) {
 		180,
 		540,
 		1620,
-	}, nil)
+	}, nil, nil)
 	require.NoError(t, err)
 
 	cases := map[string]struct {
@@ -381,7 +387,7 @@ func TestRangeWithFailedCompactionWontGetSelected(t *testing.T) {
 		240,
 		720,
 		2160,
-	}, nil)
+	}, nil, nil)
 	require.NoError(t, err)
 
 	cases := []struct {
@@ -431,16 +437,12 @@ func TestCompactionFailWillCleanUpTempDir(t *testing.T) {
 		240,
 		720,
 		2160,
-	}, nil)
+	}, nil, nil)
 	require.NoError(t, err)
 
-	tmpdir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(tmpdir))
-	}()
+	tmpdir := t.TempDir()
 
-	require.Error(t, compactor.write(tmpdir, &BlockMeta{}, erringBReader{}))
+	require.Error(t, compactor.write(tmpdir, &BlockMeta{}, DefaultBlockPopulator{}, erringBReader{}))
 	_, err = os.Stat(filepath.Join(tmpdir, BlockMeta{}.ULID.String()) + tmpForCreationBlockDirSuffix)
 	require.True(t, os.IsNotExist(err), "directory is not cleaned up")
 }
@@ -466,8 +468,8 @@ func (erringBReader) Size() int64                            { return 0 }
 
 type nopChunkWriter struct{}
 
-func (nopChunkWriter) WriteChunks(chunks ...chunks.Meta) error { return nil }
-func (nopChunkWriter) Close() error                            { return nil }
+func (nopChunkWriter) WriteChunks(...chunks.Meta) error { return nil }
+func (nopChunkWriter) Close() error                     { return nil }
 
 func samplesForRange(minTime, maxTime int64, maxSamplesPerChunk int) (ret [][]sample) {
 	var curr []sample
@@ -932,6 +934,32 @@ func TestCompaction_populateBlock(t *testing.T) {
 				},
 			},
 		},
+		{
+			// Regression test for populateWithDelChunkSeriesIterator failing to set minTime on chunks.
+			title:          "Populate from mixed type series and expect sample inside the interval only.",
+			compactMinTime: 1,
+			compactMaxTime: 11,
+			inputSeriesSamples: [][]seriesSamples{
+				{
+					{
+						lset: map[string]string{"a": "1"},
+						chunks: [][]sample{
+							{{t: 0, h: tsdbutil.GenerateTestHistogram(0)}, {t: 1, h: tsdbutil.GenerateTestHistogram(1)}},
+							{{t: 10, f: 1}, {t: 11, f: 2}},
+						},
+					},
+				},
+			},
+			expSeriesSamples: []seriesSamples{
+				{
+					lset: map[string]string{"a": "1"},
+					chunks: [][]sample{
+						{{t: 1, h: tsdbutil.GenerateTestHistogram(1)}},
+						{{t: 10, f: 1}},
+					},
+				},
+			},
+		},
 	} {
 		t.Run(tc.title, func(t *testing.T) {
 			blocks := make([]BlockReader, 0, len(tc.inputSeriesSamples))
@@ -940,7 +968,7 @@ func TestCompaction_populateBlock(t *testing.T) {
 				blocks = append(blocks, &mockBReader{ir: ir, cr: cr, mint: mint, maxt: maxt})
 			}
 
-			c, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{0}, nil)
+			c, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{0}, nil, nil)
 			require.NoError(t, err)
 
 			meta := &BlockMeta{
@@ -952,7 +980,8 @@ func TestCompaction_populateBlock(t *testing.T) {
 			}
 
 			iw := &mockIndexWriter{}
-			err = c.populateBlock(blocks, meta, iw, nopChunkWriter{})
+			blockPopulator := DefaultBlockPopulator{}
+			err = blockPopulator.PopulateBlock(c.ctx, c.metrics, c.logger, c.chunkPool, c.mergeFunc, blocks, meta, iw, nopChunkWriter{})
 			if tc.expErr != nil {
 				require.Error(t, err)
 				require.Equal(t, tc.expErr.Error(), err.Error())
@@ -972,12 +1001,23 @@ func TestCompaction_populateBlock(t *testing.T) {
 						firstTs int64 = math.MaxInt64
 						s       sample
 					)
-					for iter.Next() {
-						s.t, s.v = iter.At()
+					for vt := iter.Next(); vt != chunkenc.ValNone; vt = iter.Next() {
+						switch vt {
+						case chunkenc.ValFloat:
+							s.t, s.f = iter.At()
+							samples = append(samples, s)
+						case chunkenc.ValHistogram:
+							s.t, s.h = iter.AtHistogram(nil)
+							samples = append(samples, s)
+						case chunkenc.ValFloatHistogram:
+							s.t, s.fh = iter.AtFloatHistogram(nil)
+							samples = append(samples, s)
+						default:
+							require.Fail(t, "unexpected value type")
+						}
 						if firstTs == math.MaxInt64 {
 							firstTs = s.t
 						}
-						samples = append(samples, s)
 					}
 
 					// Check if chunk has correct min, max times.
@@ -1048,11 +1088,7 @@ func BenchmarkCompaction(b *testing.B) {
 	for _, c := range cases {
 		nBlocks := len(c.ranges)
 		b.Run(fmt.Sprintf("type=%s,blocks=%d,series=%d,samplesPerSeriesPerBlock=%d", c.compactionType, nBlocks, nSeries, c.ranges[0][1]-c.ranges[0][0]+1), func(b *testing.B) {
-			dir, err := ioutil.TempDir("", "bench_compaction")
-			require.NoError(b, err)
-			defer func() {
-				require.NoError(b, os.RemoveAll(dir))
-			}()
+			dir := b.TempDir()
 			blockDirs := make([]string, 0, len(c.ranges))
 			var blocks []*Block
 			for _, r := range c.ranges {
@@ -1065,7 +1101,7 @@ func BenchmarkCompaction(b *testing.B) {
 				blockDirs = append(blockDirs, block.Dir())
 			}
 
-			c, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{0}, nil)
+			c, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{0}, nil, nil)
 			require.NoError(b, err)
 
 			b.ResetTimer()
@@ -1079,24 +1115,16 @@ func BenchmarkCompaction(b *testing.B) {
 }
 
 func BenchmarkCompactionFromHead(b *testing.B) {
-	dir, err := ioutil.TempDir("", "bench_compaction_from_head")
-	require.NoError(b, err)
-	defer func() {
-		require.NoError(b, os.RemoveAll(dir))
-	}()
+	dir := b.TempDir()
 	totalSeries := 100000
 	for labelNames := 1; labelNames < totalSeries; labelNames *= 10 {
 		labelValues := totalSeries / labelNames
 		b.Run(fmt.Sprintf("labelnames=%d,labelvalues=%d", labelNames, labelValues), func(b *testing.B) {
-			chunkDir, err := ioutil.TempDir("", "chunk_dir")
-			require.NoError(b, err)
-			defer func() {
-				require.NoError(b, os.RemoveAll(chunkDir))
-			}()
+			chunkDir := b.TempDir()
 			opts := DefaultHeadOptions()
 			opts.ChunkRange = 1000
 			opts.ChunkDirRoot = chunkDir
-			h, err := NewHead(nil, nil, nil, opts)
+			h, err := NewHead(nil, nil, nil, nil, opts, nil)
 			require.NoError(b, err)
 			for ln := 0; ln < labelNames; ln++ {
 				app := h.Appender(context.Background())
@@ -1110,6 +1138,46 @@ func BenchmarkCompactionFromHead(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				createBlockFromHead(b, filepath.Join(dir, fmt.Sprintf("%d-%d", i, labelNames)), h)
+			}
+			h.Close()
+		})
+	}
+}
+
+func BenchmarkCompactionFromOOOHead(b *testing.B) {
+	dir := b.TempDir()
+	totalSeries := 100000
+	totalSamples := 100
+	for labelNames := 1; labelNames < totalSeries; labelNames *= 10 {
+		labelValues := totalSeries / labelNames
+		b.Run(fmt.Sprintf("labelnames=%d,labelvalues=%d", labelNames, labelValues), func(b *testing.B) {
+			chunkDir := b.TempDir()
+			opts := DefaultHeadOptions()
+			opts.ChunkRange = 1000
+			opts.ChunkDirRoot = chunkDir
+			opts.OutOfOrderTimeWindow.Store(int64(totalSamples))
+			h, err := NewHead(nil, nil, nil, nil, opts, nil)
+			require.NoError(b, err)
+			for ln := 0; ln < labelNames; ln++ {
+				app := h.Appender(context.Background())
+				for lv := 0; lv < labelValues; lv++ {
+					lbls := labels.FromStrings(fmt.Sprintf("%d", ln), fmt.Sprintf("%d%s%d", lv, postingsBenchSuffix, ln))
+					_, err = app.Append(0, lbls, int64(totalSamples), 0)
+					require.NoError(b, err)
+					for ts := 0; ts < totalSamples; ts++ {
+						_, err = app.Append(0, lbls, int64(ts), float64(ts))
+						require.NoError(b, err)
+					}
+				}
+				require.NoError(b, app.Commit())
+			}
+
+			b.ResetTimer()
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				oooHead, err := NewOOOCompactionHead(context.TODO(), h)
+				require.NoError(b, err)
+				createBlockFromOOOHead(b, filepath.Join(dir, fmt.Sprintf("%d-%d", i, labelNames)), oooHead)
 			}
 			h.Close()
 		})
@@ -1154,7 +1222,7 @@ func TestDisableAutoCompactions(t *testing.T) {
 	}
 
 	require.Greater(t, prom_testutil.ToFloat64(db.metrics.compactionsSkipped), 0.0, "No compaction was skipped after the set timeout.")
-	require.Equal(t, 0, len(db.blocks))
+	require.Empty(t, db.blocks)
 
 	// Enable the compaction, trigger it and check that the block is persisted.
 	db.EnableCompactions()
@@ -1168,17 +1236,13 @@ func TestDisableAutoCompactions(t *testing.T) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	require.Greater(t, len(db.Blocks()), 0, "No block was persisted after the set timeout.")
+	require.NotEmpty(t, db.Blocks(), "No block was persisted after the set timeout.")
 }
 
 // TestCancelCompactions ensures that when the db is closed
 // any running compaction is cancelled to unblock closing the db.
 func TestCancelCompactions(t *testing.T) {
-	tmpdir, err := ioutil.TempDir("", "testCancelCompaction")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(tmpdir))
-	}()
+	tmpdir := t.TempDir()
 
 	// Create some blocks to fall within the compaction range.
 	createBlock(t, tmpdir, genSeries(1, 10000, 0, 1000))
@@ -1186,28 +1250,24 @@ func TestCancelCompactions(t *testing.T) {
 	createBlock(t, tmpdir, genSeries(1, 1, 2000, 2001)) // The most recent block is ignored so can be e small one.
 
 	// Copy the db so we have an exact copy to compare compaction times.
-	tmpdirCopy := tmpdir + "Copy"
-	err = fileutil.CopyDirs(tmpdir, tmpdirCopy)
+	tmpdirCopy := t.TempDir()
+	err := fileutil.CopyDirs(tmpdir, tmpdirCopy)
 	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(tmpdirCopy))
-	}()
 
 	// Measure the compaction time without interrupting it.
 	var timeCompactionUninterrupted time.Duration
 	{
-		db, err := open(tmpdir, log.NewNopLogger(), nil, DefaultOptions(), []int64{1, 2000})
+		db, err := open(tmpdir, log.NewNopLogger(), nil, DefaultOptions(), []int64{1, 2000}, nil)
 		require.NoError(t, err)
-		require.Equal(t, 3, len(db.Blocks()), "initial block count mismatch")
-		require.Equal(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran), "initial compaction counter mismatch")
+		require.Len(t, db.Blocks(), 3, "initial block count mismatch")
+		require.Equal(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran), "initial compaction counter mismatch")
 		db.compactc <- struct{}{} // Trigger a compaction.
-		var start time.Time
-		for prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.populatingBlocks) <= 0 {
+		for prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.PopulatingBlocks) <= 0 {
 			time.Sleep(3 * time.Millisecond)
 		}
-		start = time.Now()
 
-		for prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran) != 1 {
+		start := time.Now()
+		for prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran) != 1 {
 			time.Sleep(3 * time.Millisecond)
 		}
 		timeCompactionUninterrupted = time.Since(start)
@@ -1216,26 +1276,35 @@ func TestCancelCompactions(t *testing.T) {
 	}
 	// Measure the compaction time when closing the db in the middle of compaction.
 	{
-		db, err := open(tmpdirCopy, log.NewNopLogger(), nil, DefaultOptions(), []int64{1, 2000})
+		db, err := open(tmpdirCopy, log.NewNopLogger(), nil, DefaultOptions(), []int64{1, 2000}, nil)
 		require.NoError(t, err)
-		require.Equal(t, 3, len(db.Blocks()), "initial block count mismatch")
-		require.Equal(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran), "initial compaction counter mismatch")
+		require.Len(t, db.Blocks(), 3, "initial block count mismatch")
+		require.Equal(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran), "initial compaction counter mismatch")
 		db.compactc <- struct{}{} // Trigger a compaction.
-		dbClosed := make(chan struct{})
 
-		for prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.populatingBlocks) <= 0 {
+		for prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.PopulatingBlocks) <= 0 {
 			time.Sleep(3 * time.Millisecond)
 		}
-		go func() {
-			require.NoError(t, db.Close())
-			close(dbClosed)
-		}()
 
 		start := time.Now()
-		<-dbClosed
+		require.NoError(t, db.Close())
 		actT := time.Since(start)
-		expT := time.Duration(timeCompactionUninterrupted / 2) // Closing the db in the middle of compaction should less than half the time.
-		require.True(t, actT < expT, "closing the db took more than expected. exp: <%v, act: %v", expT, actT)
+
+		expT := timeCompactionUninterrupted / 2 // Closing the db in the middle of compaction should less than half the time.
+		require.Less(t, actT, expT, "closing the db took more than expected. exp: <%v, act: %v", expT, actT)
+
+		// Make sure that no blocks were marked as compaction failed.
+		// This checks that the `context.Canceled` error is properly checked at all levels:
+		// - tsdb_errors.NewMulti() should have the Is() method implemented for correct checks.
+		// - callers should check with errors.Is() instead of ==.
+		readOnlyDB, err := OpenDBReadOnly(tmpdirCopy, log.NewNopLogger())
+		require.NoError(t, err)
+		blocks, err := readOnlyDB.Blocks()
+		require.NoError(t, err)
+		for i, b := range blocks {
+			require.Falsef(t, b.Meta().Compaction.Failed, "block %d (%s) should not be marked as compaction failed", i, b.Meta().ULID)
+		}
+		require.NoError(t, readOnlyDB.Close())
 	}
 }
 
@@ -1277,6 +1346,8 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 
 	for title, bootStrap := range tests {
 		t.Run(title, func(t *testing.T) {
+			ctx := context.Background()
+
 			db := openTestDB(t, nil, []int64{1, 100})
 			defer func() {
 				require.NoError(t, db.Close())
@@ -1294,15 +1365,15 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 			require.NoError(t, os.RemoveAll(lastBlockIndex)) // Corrupt the block by removing the index file.
 
 			require.Equal(t, 0.0, prom_testutil.ToFloat64(db.metrics.reloadsFailed), "initial 'failed db reloadBlocks' count metrics mismatch")
-			require.Equal(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran), "initial `compactions` count metric mismatch")
+			require.Equal(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran), "initial `compactions` count metric mismatch")
 			require.Equal(t, 0.0, prom_testutil.ToFloat64(db.metrics.compactionsFailed), "initial `compactions failed` count metric mismatch")
 
 			// Do the compaction and check the metrics.
 			// Compaction should succeed, but the reloadBlocks should fail and
 			// the new block created from the compaction should be deleted.
-			require.Error(t, db.Compact())
+			require.Error(t, db.Compact(ctx))
 			require.Equal(t, 1.0, prom_testutil.ToFloat64(db.metrics.reloadsFailed), "'failed db reloadBlocks' count metrics mismatch")
-			require.Equal(t, 1.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran), "`compaction` count metric mismatch")
+			require.Equal(t, 1.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran), "`compaction` count metric mismatch")
 			require.Equal(t, 1.0, prom_testutil.ToFloat64(db.metrics.compactionsFailed), "`compactions failed` count metric mismatch")
 
 			actBlocks, err = blockDirs(db.Dir())
@@ -1310,4 +1381,467 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 			require.Equal(t, expBlocks, len(actBlocks)-1, "block count should be the same as before the compaction") // -1 to exclude the corrupted block.
 		})
 	}
+}
+
+func TestHeadCompactionWithHistograms(t *testing.T) {
+	for _, floatTest := range []bool{true, false} {
+		t.Run(fmt.Sprintf("float=%t", floatTest), func(t *testing.T) {
+			head, _ := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
+			require.NoError(t, head.Init(0))
+			t.Cleanup(func() {
+				require.NoError(t, head.Close())
+			})
+
+			minute := func(m int) int64 { return int64(m) * time.Minute.Milliseconds() }
+			ctx := context.Background()
+			appendHistogram := func(
+				lbls labels.Labels, from, to int, h *histogram.Histogram, exp *[]chunks.Sample,
+			) {
+				t.Helper()
+				app := head.Appender(ctx)
+				for tsMinute := from; tsMinute <= to; tsMinute++ {
+					var err error
+					if floatTest {
+						_, err = app.AppendHistogram(0, lbls, minute(tsMinute), nil, h.ToFloat(nil))
+						efh := h.ToFloat(nil)
+						if tsMinute == from {
+							efh.CounterResetHint = histogram.UnknownCounterReset
+						} else {
+							efh.CounterResetHint = histogram.NotCounterReset
+						}
+						*exp = append(*exp, sample{t: minute(tsMinute), fh: efh})
+					} else {
+						_, err = app.AppendHistogram(0, lbls, minute(tsMinute), h, nil)
+						eh := h.Copy()
+						if tsMinute == from {
+							eh.CounterResetHint = histogram.UnknownCounterReset
+						} else {
+							eh.CounterResetHint = histogram.NotCounterReset
+						}
+						*exp = append(*exp, sample{t: minute(tsMinute), h: eh})
+					}
+					require.NoError(t, err)
+				}
+				require.NoError(t, app.Commit())
+			}
+			appendFloat := func(lbls labels.Labels, from, to int, exp *[]chunks.Sample) {
+				t.Helper()
+				app := head.Appender(ctx)
+				for tsMinute := from; tsMinute <= to; tsMinute++ {
+					_, err := app.Append(0, lbls, minute(tsMinute), float64(tsMinute))
+					require.NoError(t, err)
+					*exp = append(*exp, sample{t: minute(tsMinute), f: float64(tsMinute)})
+				}
+				require.NoError(t, app.Commit())
+			}
+
+			var (
+				series1                = labels.FromStrings("foo", "bar1")
+				series2                = labels.FromStrings("foo", "bar2")
+				series3                = labels.FromStrings("foo", "bar3")
+				series4                = labels.FromStrings("foo", "bar4")
+				exp1, exp2, exp3, exp4 []chunks.Sample
+			)
+			h := &histogram.Histogram{
+				Count:         15,
+				ZeroCount:     4,
+				ZeroThreshold: 0.001,
+				Sum:           35.5,
+				Schema:        1,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 2, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 1, -1, 0},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 1},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []int64{1, 2, -1},
+			}
+
+			// Series with only histograms.
+			appendHistogram(series1, 100, 105, h, &exp1)
+
+			// Series starting with float and then getting histograms.
+			appendFloat(series2, 100, 102, &exp2)
+			appendHistogram(series2, 103, 105, h.Copy(), &exp2)
+			appendFloat(series2, 106, 107, &exp2)
+			appendHistogram(series2, 108, 109, h.Copy(), &exp2)
+
+			// Series starting with histogram and then getting float.
+			appendHistogram(series3, 101, 103, h.Copy(), &exp3)
+			appendFloat(series3, 104, 106, &exp3)
+			appendHistogram(series3, 107, 108, h.Copy(), &exp3)
+			appendFloat(series3, 109, 110, &exp3)
+
+			// A float only series.
+			appendFloat(series4, 100, 102, &exp4)
+
+			// Compaction.
+			mint := head.MinTime()
+			maxt := head.MaxTime() + 1 // Block intervals are half-open: [b.MinTime, b.MaxTime).
+			compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{DefaultBlockDuration}, chunkenc.NewPool(), nil)
+			require.NoError(t, err)
+			id, err := compactor.Write(head.opts.ChunkDirRoot, head, mint, maxt, nil)
+			require.NoError(t, err)
+			require.NotEqual(t, ulid.ULID{}, id)
+
+			// Open the block and query it and check the histograms.
+			block, err := OpenBlock(nil, path.Join(head.opts.ChunkDirRoot, id.String()), nil)
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				require.NoError(t, block.Close())
+			})
+
+			q, err := NewBlockQuerier(block, block.MinTime(), block.MaxTime())
+			require.NoError(t, err)
+
+			actHists := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
+			require.Equal(t, map[string][]chunks.Sample{
+				series1.String(): exp1,
+				series2.String(): exp2,
+				series3.String(): exp3,
+				series4.String(): exp4,
+			}, actHists)
+		})
+	}
+}
+
+// Depending on numSeriesPerSchema, it can take few gigs of memory;
+// the test adds all samples to appender before committing instead of
+// buffering the writes to make it run faster.
+func TestSparseHistogramSpaceSavings(t *testing.T) {
+	t.Skip()
+
+	cases := []struct {
+		numSeriesPerSchema int
+		numBuckets         int
+		numSpans           int
+		gapBetweenSpans    int
+	}{
+		{1, 15, 1, 0},
+		{1, 50, 1, 0},
+		{1, 100, 1, 0},
+		{1, 15, 3, 5},
+		{1, 50, 3, 3},
+		{1, 100, 3, 2},
+		{100, 15, 1, 0},
+		{100, 50, 1, 0},
+		{100, 100, 1, 0},
+		{100, 15, 3, 5},
+		{100, 50, 3, 3},
+		{100, 100, 3, 2},
+	}
+
+	type testSummary struct {
+		oldBlockTotalSeries int
+		oldBlockIndexSize   int64
+		oldBlockChunksSize  int64
+		oldBlockTotalSize   int64
+
+		sparseBlockTotalSeries int
+		sparseBlockIndexSize   int64
+		sparseBlockChunksSize  int64
+		sparseBlockTotalSize   int64
+
+		numBuckets      int
+		numSpans        int
+		gapBetweenSpans int
+	}
+
+	var summaries []testSummary
+
+	allSchemas := []int{-4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8}
+	schemaDescription := []string{"minus_4", "minus_3", "minus_2", "minus_1", "0", "1", "2", "3", "4", "5", "6", "7", "8"}
+	numHistograms := 120 * 4 // 15s scrape interval.
+	timeStep := DefaultBlockDuration / int64(numHistograms)
+	for _, c := range cases {
+		t.Run(
+			fmt.Sprintf("series=%d,span=%d,gap=%d,buckets=%d",
+				len(allSchemas)*c.numSeriesPerSchema,
+				c.numSpans,
+				c.gapBetweenSpans,
+				c.numBuckets,
+			),
+			func(t *testing.T) {
+				oldHead, _ := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
+				t.Cleanup(func() {
+					require.NoError(t, oldHead.Close())
+				})
+				sparseHead, _ := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
+				t.Cleanup(func() {
+					require.NoError(t, sparseHead.Close())
+				})
+
+				var allSparseSeries []struct {
+					baseLabels labels.Labels
+					hists      []*histogram.Histogram
+				}
+
+				for sid, schema := range allSchemas {
+					for i := 0; i < c.numSeriesPerSchema; i++ {
+						lbls := labels.FromStrings(
+							"__name__", fmt.Sprintf("rpc_durations_%d_histogram_seconds", i),
+							"instance", "localhost:8080",
+							"job", fmt.Sprintf("sparse_histogram_schema_%s", schemaDescription[sid]),
+						)
+						allSparseSeries = append(allSparseSeries, struct {
+							baseLabels labels.Labels
+							hists      []*histogram.Histogram
+						}{baseLabels: lbls, hists: generateCustomHistograms(numHistograms, c.numBuckets, c.numSpans, c.gapBetweenSpans, schema)})
+					}
+				}
+
+				oldApp := oldHead.Appender(context.Background())
+				sparseApp := sparseHead.Appender(context.Background())
+				numOldSeriesPerHistogram := 0
+
+				var oldULID ulid.ULID
+				var sparseULID ulid.ULID
+
+				var wg sync.WaitGroup
+
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+
+					// Ingest sparse histograms.
+					for _, ah := range allSparseSeries {
+						var (
+							ref storage.SeriesRef
+							err error
+						)
+						for i := 0; i < numHistograms; i++ {
+							ts := int64(i) * timeStep
+							ref, err = sparseApp.AppendHistogram(ref, ah.baseLabels, ts, ah.hists[i], nil)
+							require.NoError(t, err)
+						}
+					}
+					require.NoError(t, sparseApp.Commit())
+
+					// Sparse head compaction.
+					mint := sparseHead.MinTime()
+					maxt := sparseHead.MaxTime() + 1 // Block intervals are half-open: [b.MinTime, b.MaxTime).
+					compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{DefaultBlockDuration}, chunkenc.NewPool(), nil)
+					require.NoError(t, err)
+					sparseULID, err = compactor.Write(sparseHead.opts.ChunkDirRoot, sparseHead, mint, maxt, nil)
+					require.NoError(t, err)
+					require.NotEqual(t, ulid.ULID{}, sparseULID)
+				}()
+
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+
+					// Ingest histograms the old way.
+					for _, ah := range allSparseSeries {
+						refs := make([]storage.SeriesRef, c.numBuckets+((c.numSpans-1)*c.gapBetweenSpans))
+						for i := 0; i < numHistograms; i++ {
+							ts := int64(i) * timeStep
+
+							h := ah.hists[i]
+
+							numOldSeriesPerHistogram = 0
+							it := h.CumulativeBucketIterator()
+							itIdx := 0
+							var err error
+							for it.Next() {
+								numOldSeriesPerHistogram++
+								b := it.At()
+								lbls := labels.NewBuilder(ah.baseLabels).Set("le", fmt.Sprintf("%.16f", b.Upper)).Labels()
+								refs[itIdx], err = oldApp.Append(refs[itIdx], lbls, ts, float64(b.Count))
+								require.NoError(t, err)
+								itIdx++
+							}
+							baseName := ah.baseLabels.Get(labels.MetricName)
+							// _count metric.
+							countLbls := labels.NewBuilder(ah.baseLabels).Set(labels.MetricName, baseName+"_count").Labels()
+							_, err = oldApp.Append(0, countLbls, ts, float64(h.Count))
+							require.NoError(t, err)
+							numOldSeriesPerHistogram++
+
+							// _sum metric.
+							sumLbls := labels.NewBuilder(ah.baseLabels).Set(labels.MetricName, baseName+"_sum").Labels()
+							_, err = oldApp.Append(0, sumLbls, ts, h.Sum)
+							require.NoError(t, err)
+							numOldSeriesPerHistogram++
+						}
+					}
+
+					require.NoError(t, oldApp.Commit())
+
+					// Old head compaction.
+					mint := oldHead.MinTime()
+					maxt := oldHead.MaxTime() + 1 // Block intervals are half-open: [b.MinTime, b.MaxTime).
+					compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{DefaultBlockDuration}, chunkenc.NewPool(), nil)
+					require.NoError(t, err)
+					oldULID, err = compactor.Write(oldHead.opts.ChunkDirRoot, oldHead, mint, maxt, nil)
+					require.NoError(t, err)
+					require.NotEqual(t, ulid.ULID{}, oldULID)
+				}()
+
+				wg.Wait()
+
+				oldBlockDir := filepath.Join(oldHead.opts.ChunkDirRoot, oldULID.String())
+				sparseBlockDir := filepath.Join(sparseHead.opts.ChunkDirRoot, sparseULID.String())
+
+				oldSize, err := fileutil.DirSize(oldBlockDir)
+				require.NoError(t, err)
+				oldIndexSize, err := fileutil.DirSize(filepath.Join(oldBlockDir, "index"))
+				require.NoError(t, err)
+				oldChunksSize, err := fileutil.DirSize(filepath.Join(oldBlockDir, "chunks"))
+				require.NoError(t, err)
+
+				sparseSize, err := fileutil.DirSize(sparseBlockDir)
+				require.NoError(t, err)
+				sparseIndexSize, err := fileutil.DirSize(filepath.Join(sparseBlockDir, "index"))
+				require.NoError(t, err)
+				sparseChunksSize, err := fileutil.DirSize(filepath.Join(sparseBlockDir, "chunks"))
+				require.NoError(t, err)
+
+				summaries = append(summaries, testSummary{
+					oldBlockTotalSeries:    len(allSchemas) * c.numSeriesPerSchema * numOldSeriesPerHistogram,
+					oldBlockIndexSize:      oldIndexSize,
+					oldBlockChunksSize:     oldChunksSize,
+					oldBlockTotalSize:      oldSize,
+					sparseBlockTotalSeries: len(allSchemas) * c.numSeriesPerSchema,
+					sparseBlockIndexSize:   sparseIndexSize,
+					sparseBlockChunksSize:  sparseChunksSize,
+					sparseBlockTotalSize:   sparseSize,
+					numBuckets:             c.numBuckets,
+					numSpans:               c.numSpans,
+					gapBetweenSpans:        c.gapBetweenSpans,
+				})
+			})
+	}
+
+	for _, s := range summaries {
+		fmt.Printf(`
+Meta: NumBuckets=%d, NumSpans=%d, GapBetweenSpans=%d
+Old Block: NumSeries=%d, IndexSize=%d, ChunksSize=%d, TotalSize=%d
+Sparse Block: NumSeries=%d, IndexSize=%d, ChunksSize=%d, TotalSize=%d
+Savings: Index=%.2f%%, Chunks=%.2f%%, Total=%.2f%%
+`,
+			s.numBuckets, s.numSpans, s.gapBetweenSpans,
+			s.oldBlockTotalSeries, s.oldBlockIndexSize, s.oldBlockChunksSize, s.oldBlockTotalSize,
+			s.sparseBlockTotalSeries, s.sparseBlockIndexSize, s.sparseBlockChunksSize, s.sparseBlockTotalSize,
+			100*(1-float64(s.sparseBlockIndexSize)/float64(s.oldBlockIndexSize)),
+			100*(1-float64(s.sparseBlockChunksSize)/float64(s.oldBlockChunksSize)),
+			100*(1-float64(s.sparseBlockTotalSize)/float64(s.oldBlockTotalSize)),
+		)
+	}
+}
+
+func generateCustomHistograms(numHists, numBuckets, numSpans, gapBetweenSpans, schema int) (r []*histogram.Histogram) {
+	// First histogram with all the settings.
+	h := &histogram.Histogram{
+		Sum:    1000 * rand.Float64(),
+		Schema: int32(schema),
+	}
+
+	// Generate spans.
+	h.PositiveSpans = []histogram.Span{
+		{Offset: int32(rand.Intn(10)), Length: uint32(numBuckets)},
+	}
+	if numSpans > 1 {
+		spanWidth := numBuckets / numSpans
+		// First span gets those additional buckets.
+		h.PositiveSpans[0].Length = uint32(spanWidth + (numBuckets - spanWidth*numSpans))
+		for i := 0; i < numSpans-1; i++ {
+			h.PositiveSpans = append(h.PositiveSpans, histogram.Span{Offset: int32(rand.Intn(gapBetweenSpans) + 1), Length: uint32(spanWidth)})
+		}
+	}
+
+	// Generate buckets.
+	v := int64(rand.Intn(30) + 1)
+	h.PositiveBuckets = []int64{v}
+	count := v
+	firstHistValues := []int64{v}
+	for i := 0; i < numBuckets-1; i++ {
+		delta := int64(rand.Intn(20))
+		if rand.Int()%2 == 0 && firstHistValues[len(firstHistValues)-1] > delta {
+			// Randomly making delta negative such that curr value will be >0.
+			delta = -delta
+		}
+
+		currVal := firstHistValues[len(firstHistValues)-1] + delta
+		count += currVal
+		firstHistValues = append(firstHistValues, currVal)
+
+		h.PositiveBuckets = append(h.PositiveBuckets, delta)
+	}
+
+	h.Count = uint64(count)
+
+	r = append(r, h)
+
+	// Remaining histograms with same spans but changed bucket values.
+	for j := 0; j < numHists-1; j++ {
+		newH := h.Copy()
+		newH.Sum = float64(j+1) * 1000 * rand.Float64()
+
+		// Generate buckets.
+		count := int64(0)
+		currVal := int64(0)
+		for i := range newH.PositiveBuckets {
+			delta := int64(rand.Intn(10))
+			if i == 0 {
+				newH.PositiveBuckets[i] += delta
+				currVal = newH.PositiveBuckets[i]
+				continue
+			}
+			currVal += newH.PositiveBuckets[i]
+			if rand.Int()%2 == 0 && (currVal-delta) > firstHistValues[i] {
+				// Randomly making delta negative such that curr value will be >0
+				// and above the previous count since we are not doing resets here.
+				delta = -delta
+			}
+			newH.PositiveBuckets[i] += delta
+			currVal += delta
+			count += currVal
+		}
+
+		newH.Count = uint64(count)
+
+		r = append(r, newH)
+		h = newH
+	}
+
+	return r
+}
+
+func TestCompactBlockMetas(t *testing.T) {
+	parent1 := ulid.MustNew(100, nil)
+	parent2 := ulid.MustNew(200, nil)
+	parent3 := ulid.MustNew(300, nil)
+	parent4 := ulid.MustNew(400, nil)
+
+	input := []*BlockMeta{
+		{ULID: parent1, MinTime: 1000, MaxTime: 2000, Compaction: BlockMetaCompaction{Level: 2, Sources: []ulid.ULID{ulid.MustNew(1, nil), ulid.MustNew(10, nil)}}},
+		{ULID: parent2, MinTime: 200, MaxTime: 500, Compaction: BlockMetaCompaction{Level: 1}},
+		{ULID: parent3, MinTime: 500, MaxTime: 2500, Compaction: BlockMetaCompaction{Level: 3, Sources: []ulid.ULID{ulid.MustNew(5, nil), ulid.MustNew(6, nil)}}},
+		{ULID: parent4, MinTime: 100, MaxTime: 900, Compaction: BlockMetaCompaction{Level: 1}},
+	}
+
+	outUlid := ulid.MustNew(1000, nil)
+	output := CompactBlockMetas(outUlid, input...)
+
+	expected := &BlockMeta{
+		ULID:    outUlid,
+		MinTime: 100,
+		MaxTime: 2500,
+		Stats:   BlockStats{},
+		Compaction: BlockMetaCompaction{
+			Level:   4,
+			Sources: []ulid.ULID{ulid.MustNew(1, nil), ulid.MustNew(5, nil), ulid.MustNew(6, nil), ulid.MustNew(10, nil)},
+			Parents: []BlockDesc{
+				{ULID: parent1, MinTime: 1000, MaxTime: 2000},
+				{ULID: parent2, MinTime: 200, MaxTime: 500},
+				{ULID: parent3, MinTime: 500, MaxTime: 2500},
+				{ULID: parent4, MinTime: 100, MaxTime: 900},
+			},
+		},
+	}
+	require.Equal(t, expected, output)
 }

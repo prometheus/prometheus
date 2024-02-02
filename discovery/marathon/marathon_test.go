@@ -21,19 +21,37 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
 var (
 	marathonValidLabel = map[string]string{"prometheus": "yes"}
 	testServers        = []string{"http://localhost:8080"}
-	conf               = SDConfig{Servers: testServers}
 )
 
+func testConfig() SDConfig {
+	return SDConfig{Servers: testServers}
+}
+
 func testUpdateServices(client appListClient) ([]*targetgroup.Group, error) {
-	md, err := NewDiscovery(conf, nil)
+	cfg := testConfig()
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	err := metrics.Register()
+	if err != nil {
+		return nil, err
+	}
+	defer metrics.Unregister()
+	defer refreshMetrics.Unregister()
+
+	md, err := NewDiscovery(cfg, nil, metrics)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +69,7 @@ func TestMarathonSDHandleError(t *testing.T) {
 		}
 	)
 	tgs, err := testUpdateServices(client)
-	if err != errTesting {
+	if !errors.Is(err, errTesting) {
 		t.Fatalf("Expected error: %s", err)
 	}
 	if len(tgs) != 0 {
@@ -60,9 +78,7 @@ func TestMarathonSDHandleError(t *testing.T) {
 }
 
 func TestMarathonSDEmptyList(t *testing.T) {
-	var (
-		client = func(_ context.Context, _ *http.Client, _ string) (*appList, error) { return &appList{}, nil }
-	)
+	client := func(_ context.Context, _ *http.Client, _ string) (*appList, error) { return &appList{}, nil }
 	tgs, err := testUpdateServices(client)
 	if err != nil {
 		t.Fatalf("Got error: %s", err)
@@ -99,11 +115,9 @@ func marathonTestAppList(labels map[string]string, runningTasks int) *appList {
 }
 
 func TestMarathonSDSendGroup(t *testing.T) {
-	var (
-		client = func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
-			return marathonTestAppList(marathonValidLabel, 1), nil
-		}
-	)
+	client := func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
+		return marathonTestAppList(marathonValidLabel, 1), nil
+	}
 	tgs, err := testUpdateServices(client)
 	if err != nil {
 		t.Fatalf("Got error: %s", err)
@@ -130,7 +144,15 @@ func TestMarathonSDSendGroup(t *testing.T) {
 }
 
 func TestMarathonSDRemoveApp(t *testing.T) {
-	md, err := NewDiscovery(conf, nil)
+	cfg := testConfig()
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+	defer refreshMetrics.Unregister()
+
+	md, err := NewDiscovery(cfg, nil, metrics)
 	if err != nil {
 		t.Fatalf("%s", err)
 	}
@@ -160,10 +182,10 @@ func TestMarathonSDRemoveApp(t *testing.T) {
 	tg2 := tgs[0]
 
 	if tg2.Source != tg1.Source {
-		t.Fatalf("Source is different: %s != %s", tg1.Source, tg2.Source)
 		if len(tg2.Targets) > 0 {
-			t.Fatalf("Got a non-empty target set: %s", tg2.Targets)
+			t.Errorf("Got a non-empty target set: %s", tg2.Targets)
 		}
+		t.Fatalf("Source is different: %s != %s", tg1.Source, tg2.Source)
 	}
 }
 
@@ -195,11 +217,9 @@ func marathonTestAppListWithMultiplePorts(labels map[string]string, runningTasks
 }
 
 func TestMarathonSDSendGroupWithMultiplePort(t *testing.T) {
-	var (
-		client = func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
-			return marathonTestAppListWithMultiplePorts(marathonValidLabel, 1), nil
-		}
-	)
+	client := func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
+		return marathonTestAppListWithMultiplePorts(marathonValidLabel, 1), nil
+	}
 	tgs, err := testUpdateServices(client)
 	if err != nil {
 		t.Fatalf("Got error: %s", err)
@@ -254,11 +274,9 @@ func marathonTestZeroTaskPortAppList(labels map[string]string, runningTasks int)
 }
 
 func TestMarathonZeroTaskPorts(t *testing.T) {
-	var (
-		client = func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
-			return marathonTestZeroTaskPortAppList(marathonValidLabel, 1), nil
-		}
-	)
+	client := func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
+		return marathonTestZeroTaskPortAppList(marathonValidLabel, 1), nil
+	}
 	tgs, err := testUpdateServices(client)
 	if err != nil {
 		t.Fatalf("Got error: %s", err)
@@ -286,13 +304,6 @@ func Test500ErrorHttpResponseWithValidJSONBody(t *testing.T) {
 	// Create a test server with mock HTTP handler.
 	ts := httptest.NewServer(http.HandlerFunc(respHandler))
 	defer ts.Close()
-	// Backup conf for future tests.
-	backupConf := conf
-	defer func() {
-		conf = backupConf
-	}()
-	// Setup conf for the test case.
-	conf = SDConfig{Servers: []string{ts.URL}}
 	// Execute test case and validate behavior.
 	_, err := testUpdateServices(nil)
 	if err == nil {
@@ -331,11 +342,9 @@ func marathonTestAppListWithPortDefinitions(labels map[string]string, runningTas
 }
 
 func TestMarathonSDSendGroupWithPortDefinitions(t *testing.T) {
-	var (
-		client = func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
-			return marathonTestAppListWithPortDefinitions(marathonValidLabel, 1), nil
-		}
-	)
+	client := func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
+		return marathonTestAppListWithPortDefinitions(marathonValidLabel, 1), nil
+	}
 	tgs, err := testUpdateServices(client)
 	if err != nil {
 		t.Fatalf("Got error: %s", err)
@@ -403,11 +412,9 @@ func marathonTestAppListWithPortDefinitionsRequirePorts(labels map[string]string
 }
 
 func TestMarathonSDSendGroupWithPortDefinitionsRequirePorts(t *testing.T) {
-	var (
-		client = func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
-			return marathonTestAppListWithPortDefinitionsRequirePorts(marathonValidLabel, 1), nil
-		}
-	)
+	client := func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
+		return marathonTestAppListWithPortDefinitionsRequirePorts(marathonValidLabel, 1), nil
+	}
 	tgs, err := testUpdateServices(client)
 	if err != nil {
 		t.Fatalf("Got error: %s", err)
@@ -470,11 +477,9 @@ func marathonTestAppListWithPorts(labels map[string]string, runningTasks int) *a
 }
 
 func TestMarathonSDSendGroupWithPorts(t *testing.T) {
-	var (
-		client = func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
-			return marathonTestAppListWithPorts(marathonValidLabel, 1), nil
-		}
-	)
+	client := func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
+		return marathonTestAppListWithPorts(marathonValidLabel, 1), nil
+	}
 	tgs, err := testUpdateServices(client)
 	if err != nil {
 		t.Fatalf("Got error: %s", err)
@@ -546,11 +551,9 @@ func marathonTestAppListWithContainerPortMappings(labels map[string]string, runn
 }
 
 func TestMarathonSDSendGroupWithContainerPortMappings(t *testing.T) {
-	var (
-		client = func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
-			return marathonTestAppListWithContainerPortMappings(marathonValidLabel, 1), nil
-		}
-	)
+	client := func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
+		return marathonTestAppListWithContainerPortMappings(marathonValidLabel, 1), nil
+	}
 	tgs, err := testUpdateServices(client)
 	if err != nil {
 		t.Fatalf("Got error: %s", err)
@@ -622,11 +625,9 @@ func marathonTestAppListWithDockerContainerPortMappings(labels map[string]string
 }
 
 func TestMarathonSDSendGroupWithDockerContainerPortMappings(t *testing.T) {
-	var (
-		client = func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
-			return marathonTestAppListWithDockerContainerPortMappings(marathonValidLabel, 1), nil
-		}
-	)
+	client := func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
+		return marathonTestAppListWithDockerContainerPortMappings(marathonValidLabel, 1), nil
+	}
 	tgs, err := testUpdateServices(client)
 	if err != nil {
 		t.Fatalf("Got error: %s", err)
@@ -702,11 +703,9 @@ func marathonTestAppListWithContainerNetworkAndPortMappings(labels map[string]st
 }
 
 func TestMarathonSDSendGroupWithContainerNetworkAndPortMapping(t *testing.T) {
-	var (
-		client = func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
-			return marathonTestAppListWithContainerNetworkAndPortMappings(marathonValidLabel, 1), nil
-		}
-	)
+	client := func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
+		return marathonTestAppListWithContainerNetworkAndPortMappings(marathonValidLabel, 1), nil
+	}
 	tgs, err := testUpdateServices(client)
 	if err != nil {
 		t.Fatalf("Got error: %s", err)

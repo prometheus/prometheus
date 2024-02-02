@@ -91,3 +91,18 @@ func (tg *Group) UnmarshalJSON(b []byte) error {
 	tg.Labels = g.Labels
 	return nil
 }
+
+// MarshalJSON implements the json.Marshaler interface.
+func (tg Group) MarshalJSON() ([]byte, error) {
+	g := &struct {
+		Targets []string       `json:"targets"`
+		Labels  model.LabelSet `json:"labels,omitempty"`
+	}{
+		Targets: make([]string, 0, len(tg.Targets)),
+		Labels:  tg.Labels,
+	}
+	for _, t := range tg.Targets {
+		g.Targets = append(g.Targets, string(t[model.AddressLabel]))
+	}
+	return json.Marshal(g)
+}

@@ -1,4 +1,4 @@
-import { formatValue, getColors, parseValue, getOptions } from './GraphHelpers';
+import { formatValue, parseValue, getOptions } from './GraphHelpers';
 import moment from 'moment';
 require('../../vendor/flot/jquery.flot'); // need for $.colors
 
@@ -60,31 +60,12 @@ describe('GraphHelpers', () => {
         { input: 2e-24, output: '2.00y' },
         { input: 2e-25, output: '0.20y' },
         { input: 2e-26, output: '0.02y' },
-      ].map(t => {
+      ].map((t) => {
         expect(formatValue(t.input)).toBe(t.output);
       });
     });
     it('should throw error if no match', () => {
-      try {
-        formatValue(undefined as any);
-      } catch (error) {
-        expect(error.message).toEqual("couldn't format a value, this is a bug");
-      }
-    });
-  });
-  describe('getColors', () => {
-    it('should generate proper colors', () => {
-      const data: any = {
-        resultType: 'matrix',
-        result: [{}, {}, {}, {}, {}, {}, {}],
-      };
-      expect(
-        getColors(data)
-          .map(c => c.toString())
-          .join(',')
-      ).toEqual(
-        'rgb(237,194,64),rgb(175,216,248),rgb(203,75,75),rgb(77,167,77),rgb(148,64,237),rgb(189,155,51),rgb(140,172,198)'
-      );
+      expect(() => formatValue(undefined as any)).toThrowError("couldn't format a value, this is a bug");
     });
   });
   describe('parseValue', () => {
@@ -102,7 +83,7 @@ describe('GraphHelpers', () => {
     it('should configure options properly if stacked prop is true', () => {
       expect(getOptions(true, false)).toMatchObject({
         series: {
-          stack: true,
+          stack: false,
           lines: { lineWidth: 1, steps: false, fill: true },
           shadowSize: 0,
         },
@@ -143,16 +124,21 @@ describe('GraphHelpers', () => {
         getOptions(true, false).tooltip.content('', 1572128592, 1572128592, {
           series: { labels: { foo: '1', bar: '2' }, color: '' },
         } as any)
-      ).toEqual(`
+      ).toEqual(
+        `
             <div class="date">1970-01-19 04:42:08 +00:00</div>
             <div>
               <span class="detail-swatch" style="background-color: "></span>
               <span>value: <strong>1572128592</strong></span>
-            <div>
-            <div class="labels mt-1">
-              <div class="mb-1"><strong>foo</strong>: 1</div><div class="mb-1"><strong>bar</strong>: 2</div>
             </div>
-          `);
+            <div class="mt-2 mb-1 font-weight-bold">Series:</div>
+            
+            <div class="labels">
+              
+              
+              <div class="mb-1"><strong>foo</strong>: 1</div><div class="mb-1"><strong>bar</strong>: 2</div>
+            </div>`
+      );
     });
     it('should return proper tooltip html from options with local time', () => {
       moment.tz.setDefault('America/New_York');
@@ -165,11 +151,40 @@ describe('GraphHelpers', () => {
             <div>
               <span class="detail-swatch" style="background-color: "></span>
               <span>value: <strong>1572128592</strong></span>
+            </div>
+            <div class="mt-2 mb-1 font-weight-bold">Series:</div>
+            
+            <div class="labels">
+              
+              
+              <div class="mb-1"><strong>foo</strong>: 1</div><div class="mb-1"><strong>bar</strong>: 2</div>
+            </div>`);
+    });
+    it('should return proper tooltip for exemplar', () => {
+      expect(
+        getOptions(true, false).tooltip.content('', 1572128592, 1572128592, {
+          series: { labels: { foo: '1', bar: '2' }, seriesLabels: { foo: '2', bar: '3' }, color: '' },
+        } as any)
+      ).toEqual(`
+            <div class="date">1970-01-19 04:42:08 +00:00</div>
             <div>
-            <div class="labels mt-1">
+              <span class="detail-swatch" style="background-color: "></span>
+              <span>value: <strong>1572128592</strong></span>
+            </div>
+            <div class="mt-2 mb-1 font-weight-bold">Trace exemplar:</div>
+            
+            <div class="labels">
+              
+              
               <div class="mb-1"><strong>foo</strong>: 1</div><div class="mb-1"><strong>bar</strong>: 2</div>
             </div>
-          `);
+            
+            <div class="mt-2 mb-1 font-weight-bold">Associated series:</div>
+            <div class="labels">
+              
+              
+              <div class="mb-1"><strong>foo</strong>: 2</div><div class="mb-1"><strong>bar</strong>: 3</div>
+            </div>`);
     });
     it('should render Plot with proper options', () => {
       expect(getOptions(true, false)).toEqual({
@@ -196,9 +211,13 @@ describe('GraphHelpers', () => {
           lines: true,
         },
         series: {
-          stack: true,
+          stack: false,
+          heatmap: false,
           lines: { lineWidth: 1, steps: false, fill: true },
           shadowSize: 0,
+        },
+        selection: {
+          mode: 'x',
         },
       });
     });

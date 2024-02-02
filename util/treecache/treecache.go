@@ -15,15 +15,15 @@ package treecache
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/go-zookeeper/zk"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -176,11 +176,11 @@ func (tc *ZookeeperTreeCache) loop(path string) {
 					node = childNode
 				}
 
-				err := tc.recursiveNodeUpdate(ev.Path, node)
-				if err != nil {
+				switch err := tc.recursiveNodeUpdate(ev.Path, node); {
+				case err != nil:
 					level.Error(tc.logger).Log("msg", "Error during processing of Zookeeper event", "err", err)
 					failure()
-				} else if tc.head.data == nil {
+				case tc.head.data == nil:
 					level.Error(tc.logger).Log("msg", "Error during processing of Zookeeper event", "err", "path no longer exists", "path", tc.prefix)
 					failure()
 				}
@@ -214,13 +214,14 @@ func (tc *ZookeeperTreeCache) loop(path string) {
 
 func (tc *ZookeeperTreeCache) recursiveNodeUpdate(path string, node *zookeeperTreeCacheNode) error {
 	data, _, dataWatcher, err := tc.conn.GetW(path)
-	if err == zk.ErrNoNode {
+	switch {
+	case errors.Is(err, zk.ErrNoNode):
 		tc.recursiveDelete(path, node)
 		if node == tc.head {
-			return errors.Errorf("path %s does not exist", path)
+			return fmt.Errorf("path %s does not exist", path)
 		}
 		return nil
-	} else if err != nil {
+	case err != nil:
 		return err
 	}
 
@@ -230,10 +231,11 @@ func (tc *ZookeeperTreeCache) recursiveNodeUpdate(path string, node *zookeeperTr
 	}
 
 	children, _, childWatcher, err := tc.conn.ChildrenW(path)
-	if err == zk.ErrNoNode {
+	switch {
+	case errors.Is(err, zk.ErrNoNode):
 		tc.recursiveDelete(path, node)
 		return nil
-	} else if err != nil {
+	case err != nil:
 		return err
 	}
 

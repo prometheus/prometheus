@@ -1,35 +1,39 @@
-import React, { FC, useState, useEffect } from 'react';
-import { RouteComponentProps } from '@reach/router';
-import { Alert, Button } from 'reactstrap';
+import { FC, useEffect, useState } from 'react';
+import { Alert, Button, Toast, ToastBody } from 'reactstrap';
 
-import Panel, { PanelOptions, PanelDefaultOptions } from './Panel';
 import Checkbox from '../../components/Checkbox';
-import { generateID, decodePanelOptionsFromQueryString, encodePanelOptionsToQueryString, callAll } from '../../utils';
+import { API_PATH } from '../../constants/constants';
+import { ToastContext } from '../../contexts/ToastContext';
+import { usePathPrefix } from '../../contexts/PathPrefixContext';
 import { useFetch } from '../../hooks/useFetch';
 import { useLocalStorage } from '../../hooks/useLocalStorage';
-import { usePathPrefix } from '../../contexts/PathPrefixContext';
-import { API_PATH } from '../../constants/constants';
+import { callAll, decodePanelOptionsFromQueryString, encodePanelOptionsToQueryString, generateID } from '../../utils';
+import Panel, { PanelDefaultOptions, PanelOptions } from './Panel';
 
 export type PanelMeta = { key: string; options: PanelOptions; id: string };
 
-export const updateURL = (nextPanels: PanelMeta[]) => {
+export const updateURL = (nextPanels: PanelMeta[]): void => {
   const query = encodePanelOptionsToQueryString(nextPanels);
   window.history.pushState({}, '', query);
 };
 
-interface PanelListProps extends RouteComponentProps {
+interface PanelListContentProps {
   panels: PanelMeta[];
   metrics: string[];
   useLocalTime: boolean;
   queryHistoryEnabled: boolean;
   enableAutocomplete: boolean;
+  enableHighlighting: boolean;
+  enableLinter: boolean;
 }
 
-export const PanelListContent: FC<PanelListProps> = ({
+export const PanelListContent: FC<PanelListContentProps> = ({
   metrics = [],
   useLocalTime,
   queryHistoryEnabled,
   enableAutocomplete,
+  enableHighlighting,
+  enableLinter,
   ...rest
 }) => {
   const [panels, setPanels] = useState(rest.panels);
@@ -84,9 +88,10 @@ export const PanelListContent: FC<PanelListProps> = ({
           pathPrefix={pathPrefix}
           onExecuteQuery={handleExecuteQuery}
           key={id}
+          id={id}
           options={options}
-          onOptionsChanged={opts =>
-            callAll(setPanels, updateURL)(panels.map(p => (id === p.id ? { ...p, options: opts } : p)))
+          onOptionsChanged={(opts) =>
+            callAll(setPanels, updateURL)(panels.map((p) => (id === p.id ? { ...p, options: opts } : p)))
           }
           removePanel={() =>
             callAll(
@@ -103,6 +108,8 @@ export const PanelListContent: FC<PanelListProps> = ({
           metricNames={metrics}
           pastQueries={queryHistoryEnabled ? historyItems : []}
           enableAutocomplete={enableAutocomplete}
+          enableHighlighting={enableHighlighting}
+          enableLinter={enableLinter}
         />
       ))}
       <Button className="d-block mb-3" color="primary" onClick={addPanel}>
@@ -112,11 +119,14 @@ export const PanelListContent: FC<PanelListProps> = ({
   );
 };
 
-const PanelList: FC<RouteComponentProps> = () => {
+const PanelList: FC = () => {
   const [delta, setDelta] = useState(0);
   const [useLocalTime, setUseLocalTime] = useLocalStorage('use-local-time', false);
   const [enableQueryHistory, setEnableQueryHistory] = useLocalStorage('enable-query-history', false);
   const [enableAutocomplete, setEnableAutocomplete] = useLocalStorage('enable-metric-autocomplete', true);
+  const [enableHighlighting, setEnableHighlighting] = useLocalStorage('enable-syntax-highlighting', true);
+  const [enableLinter, setEnableLinter] = useLocalStorage('enable-linter', true);
+  const [clipboardMsg, setClipboardMsg] = useState<string | null>(null);
 
   const pathPrefix = usePathPrefix();
   const { response: metricsRes, error: metricsErr } = useFetch<string[]>(`${pathPrefix}/${API_PATH}/label/__name__/values`);
@@ -125,6 +135,13 @@ const PanelList: FC<RouteComponentProps> = () => {
   const { response: timeRes, error: timeErr } = useFetch<{ result: number[] }>(
     `${pathPrefix}/${API_PATH}/query?query=time()`
   );
+
+  const onClipboardMsg = (msg: string) => {
+    setClipboardMsg(msg);
+    setTimeout(() => {
+      setClipboardMsg(null);
+    }, 1500);
+  };
 
   useEffect(() => {
     if (timeRes.data) {
@@ -141,51 +158,81 @@ const PanelList: FC<RouteComponentProps> = () => {
 
   return (
     <>
-      <Checkbox
-        wrapperStyles={{ marginLeft: 3, display: 'inline-block' }}
-        id="query-history-checkbox"
-        onChange={({ target }) => setEnableQueryHistory(target.checked)}
-        defaultChecked={enableQueryHistory}
-      >
-        Enable query history
-      </Checkbox>
-      <Checkbox
-        wrapperStyles={{ marginLeft: 20, display: 'inline-block' }}
-        id="use-local-time-checkbox"
-        onChange={({ target }) => setUseLocalTime(target.checked)}
-        defaultChecked={useLocalTime}
-      >
-        Use local time
-      </Checkbox>
-      <Checkbox
-        wrapperStyles={{ marginLeft: 20, display: 'inline-block' }}
-        id="autocomplete"
-        onChange={({ target }) => setEnableAutocomplete(target.checked)}
-        defaultChecked={enableAutocomplete}
-      >
-        Enable autocomplete
-      </Checkbox>
-      {(delta > 30 || timeErr) && (
-        <Alert color="danger">
-          <strong>Warning: </strong>
-          {timeErr && `Unexpected response status when fetching server time: ${timeErr.message}`}
-          {delta >= 30 &&
-            `Error fetching server time: Detected ${delta} seconds time difference between your browser and the server. Prometheus relies on accurate time and time drift might cause unexpected query results.`}
-        </Alert>
-      )}
-      {metricsErr && (
-        <Alert color="danger">
-          <strong>Warning: </strong>
-          Error fetching metrics list: Unexpected response status when fetching metric names: {metricsErr.message}
-        </Alert>
-      )}
-      <PanelListContent
-        panels={decodePanelOptionsFromQueryString(window.location.search)}
-        useLocalTime={useLocalTime}
-        metrics={metricsRes.data}
-        queryHistoryEnabled={enableQueryHistory}
-        enableAutocomplete={enableAutocomplete}
-      />
+      <ToastContext.Provider value={onClipboardMsg}>
+        <div className="clearfix">
+          <Toast
+            isOpen={clipboardMsg != null}
+            style={{ position: 'fixed', zIndex: 1000, left: '50%', transform: 'translateX(-50%)' }}
+          >
+            <ToastBody>Label matcher copied to clipboard</ToastBody>
+          </Toast>
+          <div className="float-left">
+            <Checkbox
+              wrapperStyles={{ display: 'inline-block' }}
+              id="use-local-time-checkbox"
+              onChange={({ target }) => setUseLocalTime(target.checked)}
+              defaultChecked={useLocalTime}
+            >
+              Use local time
+            </Checkbox>
+            <Checkbox
+              wrapperStyles={{ marginLeft: 20, display: 'inline-block' }}
+              id="query-history-checkbox"
+              onChange={({ target }) => setEnableQueryHistory(target.checked)}
+              defaultChecked={enableQueryHistory}
+            >
+              Enable query history
+            </Checkbox>
+            <Checkbox
+              wrapperStyles={{ marginLeft: 20, display: 'inline-block' }}
+              id="autocomplete-checkbox"
+              onChange={({ target }) => setEnableAutocomplete(target.checked)}
+              defaultChecked={enableAutocomplete}
+            >
+              Enable autocomplete
+            </Checkbox>
+          </div>
+          <Checkbox
+            wrapperStyles={{ marginLeft: 20, display: 'inline-block' }}
+            id="highlighting-checkbox"
+            onChange={({ target }) => setEnableHighlighting(target.checked)}
+            defaultChecked={enableHighlighting}
+          >
+            Enable highlighting
+          </Checkbox>
+          <Checkbox
+            wrapperStyles={{ marginLeft: 20, display: 'inline-block' }}
+            id="linter-checkbox"
+            onChange={({ target }) => setEnableLinter(target.checked)}
+            defaultChecked={enableLinter}
+          >
+            Enable linter
+          </Checkbox>
+        </div>
+        {(delta > 30 || timeErr) && (
+          <Alert color="danger">
+            <strong>Warning: </strong>
+            {timeErr && `Unexpected response status when fetching server time: ${timeErr.message}`}
+            {delta >= 30 &&
+              `Error fetching server time: Detected ${delta} seconds time difference between your browser and the server. Prometheus relies on accurate time and time drift might cause unexpected query results.`}
+          </Alert>
+        )}
+        {metricsErr && (
+          <Alert color="danger">
+            <strong>Warning: </strong>
+            Error fetching metrics list: Unexpected response status when fetching metric names: {metricsErr.message}
+          </Alert>
+        )}
+        <PanelListContent
+          panels={decodePanelOptionsFromQueryString(window.location.search)}
+          useLocalTime={useLocalTime}
+          metrics={metricsRes.data}
+          queryHistoryEnabled={enableQueryHistory}
+          enableAutocomplete={enableAutocomplete}
+          enableHighlighting={enableHighlighting}
+          enableLinter={enableLinter}
+        />
+      </ToastContext.Provider>
     </>
   );
 };

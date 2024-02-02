@@ -1,4 +1,4 @@
 scrape_configs:
-- job_name: prometheus
-  kubernetes_sd_configs:
-  - role: endpoints
+  - job_name: prometheus
+    kubernetes_sd_configs:
+      - role: endpoints

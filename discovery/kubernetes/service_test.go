@@ -96,6 +96,27 @@ func makeExternalService() *v1.Service {
 	}
 }
 
+func makeLoadBalancerService() *v1.Service {
+	return &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "testservice-loadbalancer",
+			Namespace: "default",
+		},
+		Spec: v1.ServiceSpec{
+			Ports: []v1.ServicePort{
+				{
+					Name:     "testport",
+					Protocol: v1.ProtocolTCP,
+					Port:     int32(31900),
+				},
+			},
+			Type:           v1.ServiceTypeLoadBalancer,
+			LoadBalancerIP: "127.0.0.1",
+			ClusterIP:      "10.0.0.1",
+		},
+	}
+}
+
 func TestServiceDiscoveryAdd(t *testing.T) {
 	n, c := makeDiscovery(RoleService, NamespaceDiscovery{})
 
@@ -106,17 +127,20 @@ func TestServiceDiscoveryAdd(t *testing.T) {
 			c.CoreV1().Services(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
 			obj = makeExternalService()
 			c.CoreV1().Services(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+			obj = makeLoadBalancerService()
+			c.CoreV1().Services(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
 		},
-		expectedMaxItems: 2,
+		expectedMaxItems: 3,
 		expectedRes: map[string]*targetgroup.Group{
 			"svc/default/testservice": {
 				Targets: []model.LabelSet{
 					{
 						"__meta_kubernetes_service_port_protocol": "TCP",
-						"__address__":                          "testservice.default.svc:30900",
-						"__meta_kubernetes_service_type":       "ClusterIP",
-						"__meta_kubernetes_service_cluster_ip": "10.0.0.1",
-						"__meta_kubernetes_service_port_name":  "testport",
+						"__address__":                           "testservice.default.svc:30900",
+						"__meta_kubernetes_service_type":        "ClusterIP",
+						"__meta_kubernetes_service_cluster_ip":  "10.0.0.1",
+						"__meta_kubernetes_service_port_name":   "testport",
+						"__meta_kubernetes_service_port_number": "30900",
 					},
 				},
 				Labels: model.LabelSet{
@@ -132,6 +156,7 @@ func TestServiceDiscoveryAdd(t *testing.T) {
 						"__address__":                             "testservice-external.default.svc:31900",
 						"__meta_kubernetes_service_type":          "ExternalName",
 						"__meta_kubernetes_service_port_name":     "testport",
+						"__meta_kubernetes_service_port_number":   "31900",
 						"__meta_kubernetes_service_external_name": "FooExternalName",
 					},
 				},
@@ -140,6 +165,24 @@ func TestServiceDiscoveryAdd(t *testing.T) {
 					"__meta_kubernetes_namespace":    "default",
 				},
 				Source: "svc/default/testservice-external",
+			},
+			"svc/default/testservice-loadbalancer": {
+				Targets: []model.LabelSet{
+					{
+						"__meta_kubernetes_service_port_protocol": "TCP",
+						"__address__":                               "testservice-loadbalancer.default.svc:31900",
+						"__meta_kubernetes_service_type":            "LoadBalancer",
+						"__meta_kubernetes_service_port_name":       "testport",
+						"__meta_kubernetes_service_port_number":     "31900",
+						"__meta_kubernetes_service_cluster_ip":      "10.0.0.1",
+						"__meta_kubernetes_service_loadbalancer_ip": "127.0.0.1",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_service_name": "testservice-loadbalancer",
+					"__meta_kubernetes_namespace":    "default",
+				},
+				Source: "svc/default/testservice-loadbalancer",
 			},
 		},
 	}.Run(t)
@@ -178,17 +221,19 @@ func TestServiceDiscoveryUpdate(t *testing.T) {
 				Targets: []model.LabelSet{
 					{
 						"__meta_kubernetes_service_port_protocol": "TCP",
-						"__address__":                          "testservice.default.svc:30900",
-						"__meta_kubernetes_service_type":       "ClusterIP",
-						"__meta_kubernetes_service_cluster_ip": "10.0.0.1",
-						"__meta_kubernetes_service_port_name":  "testport0",
+						"__address__":                           "testservice.default.svc:30900",
+						"__meta_kubernetes_service_type":        "ClusterIP",
+						"__meta_kubernetes_service_cluster_ip":  "10.0.0.1",
+						"__meta_kubernetes_service_port_name":   "testport0",
+						"__meta_kubernetes_service_port_number": "30900",
 					},
 					{
 						"__meta_kubernetes_service_port_protocol": "UDP",
-						"__address__":                          "testservice.default.svc:30901",
-						"__meta_kubernetes_service_type":       "ClusterIP",
-						"__meta_kubernetes_service_cluster_ip": "10.0.0.1",
-						"__meta_kubernetes_service_port_name":  "testport1",
+						"__address__":                           "testservice.default.svc:30901",
+						"__meta_kubernetes_service_type":        "ClusterIP",
+						"__meta_kubernetes_service_cluster_ip":  "10.0.0.1",
+						"__meta_kubernetes_service_port_name":   "testport1",
+						"__meta_kubernetes_service_port_number": "30901",
 					},
 				},
 				Labels: model.LabelSet{
@@ -223,10 +268,11 @@ func TestServiceDiscoveryNamespaces(t *testing.T) {
 				Targets: []model.LabelSet{
 					{
 						"__meta_kubernetes_service_port_protocol": "TCP",
-						"__address__":                          "testservice.ns1.svc:30900",
-						"__meta_kubernetes_service_type":       "ClusterIP",
-						"__meta_kubernetes_service_cluster_ip": "10.0.0.1",
-						"__meta_kubernetes_service_port_name":  "testport",
+						"__address__":                           "testservice.ns1.svc:30900",
+						"__meta_kubernetes_service_type":        "ClusterIP",
+						"__meta_kubernetes_service_cluster_ip":  "10.0.0.1",
+						"__meta_kubernetes_service_port_name":   "testport",
+						"__meta_kubernetes_service_port_number": "30900",
 					},
 				},
 				Labels: model.LabelSet{
@@ -239,10 +285,11 @@ func TestServiceDiscoveryNamespaces(t *testing.T) {
 				Targets: []model.LabelSet{
 					{
 						"__meta_kubernetes_service_port_protocol": "TCP",
-						"__address__":                          "testservice.ns2.svc:30900",
-						"__meta_kubernetes_service_type":       "ClusterIP",
-						"__meta_kubernetes_service_cluster_ip": "10.0.0.1",
-						"__meta_kubernetes_service_port_name":  "testport",
+						"__address__":                           "testservice.ns2.svc:30900",
+						"__meta_kubernetes_service_type":        "ClusterIP",
+						"__meta_kubernetes_service_cluster_ip":  "10.0.0.1",
+						"__meta_kubernetes_service_port_name":   "testport",
+						"__meta_kubernetes_service_port_number": "30900",
 					},
 				},
 				Labels: model.LabelSet{
@@ -250,6 +297,93 @@ func TestServiceDiscoveryNamespaces(t *testing.T) {
 					"__meta_kubernetes_namespace":    "ns2",
 				},
 				Source: "svc/ns2/testservice",
+			},
+		},
+	}.Run(t)
+}
+
+func TestServiceDiscoveryOwnNamespace(t *testing.T) {
+	n, c := makeDiscovery(RoleService, NamespaceDiscovery{IncludeOwnNamespace: true})
+
+	k8sDiscoveryTest{
+		discovery: n,
+		afterStart: func() {
+			for _, ns := range []string{"own-ns", "non-own-ns"} {
+				obj := makeService()
+				obj.Namespace = ns
+				c.CoreV1().Services(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+			}
+		},
+		expectedMaxItems: 1,
+		expectedRes: map[string]*targetgroup.Group{
+			"svc/own-ns/testservice": {
+				Targets: []model.LabelSet{
+					{
+						"__meta_kubernetes_service_port_protocol": "TCP",
+						"__address__":                           "testservice.own-ns.svc:30900",
+						"__meta_kubernetes_service_type":        "ClusterIP",
+						"__meta_kubernetes_service_cluster_ip":  "10.0.0.1",
+						"__meta_kubernetes_service_port_name":   "testport",
+						"__meta_kubernetes_service_port_number": "30900",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_service_name": "testservice",
+					"__meta_kubernetes_namespace":    "own-ns",
+				},
+				Source: "svc/own-ns/testservice",
+			},
+		},
+	}.Run(t)
+}
+
+func TestServiceDiscoveryAllNamespaces(t *testing.T) {
+	n, c := makeDiscovery(RoleService, NamespaceDiscovery{})
+
+	k8sDiscoveryTest{
+		discovery: n,
+		afterStart: func() {
+			for _, ns := range []string{"own-ns", "non-own-ns"} {
+				obj := makeService()
+				obj.Namespace = ns
+				c.CoreV1().Services(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+			}
+		},
+		expectedMaxItems: 2,
+		expectedRes: map[string]*targetgroup.Group{
+			"svc/own-ns/testservice": {
+				Targets: []model.LabelSet{
+					{
+						"__meta_kubernetes_service_port_protocol": "TCP",
+						"__address__":                           "testservice.own-ns.svc:30900",
+						"__meta_kubernetes_service_type":        "ClusterIP",
+						"__meta_kubernetes_service_cluster_ip":  "10.0.0.1",
+						"__meta_kubernetes_service_port_name":   "testport",
+						"__meta_kubernetes_service_port_number": "30900",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_service_name": "testservice",
+					"__meta_kubernetes_namespace":    "own-ns",
+				},
+				Source: "svc/own-ns/testservice",
+			},
+			"svc/non-own-ns/testservice": {
+				Targets: []model.LabelSet{
+					{
+						"__meta_kubernetes_service_port_protocol": "TCP",
+						"__address__":                           "testservice.non-own-ns.svc:30900",
+						"__meta_kubernetes_service_type":        "ClusterIP",
+						"__meta_kubernetes_service_cluster_ip":  "10.0.0.1",
+						"__meta_kubernetes_service_port_name":   "testport",
+						"__meta_kubernetes_service_port_number": "30900",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_service_name": "testservice",
+					"__meta_kubernetes_namespace":    "non-own-ns",
+				},
+				Source: "svc/non-own-ns/testservice",
 			},
 		},
 	}.Run(t)

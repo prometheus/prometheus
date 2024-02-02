@@ -1,0 +1,34 @@
+# Evaluate once every 100d to avoid this taking too long.
+evaluation_interval: 100d
+
+rule_files:
+  - rules.yml
+
+tests:
+  - interval: 100d
+    input_series:
+      - series: test
+        # Max time in time.Duration is 106751d from 1970 (2^63/10^9), i.e. 2262.
+        # We use the nearest 100 days to that to ensure the unit tests can fully
+        # cover the expected range.
+        values: '0+1x1067'
+
+    promql_expr_test:
+      - expr: timestamp(test)
+        eval_time: 0m
+        exp_samples:
+          - value: 0
+      - expr: test
+        eval_time: 100d # one evaluation_interval.
+        exp_samples:
+          - labels: test
+            value: 1
+      - expr: timestamp(test)
+        eval_time: 106700d
+        exp_samples:
+          - value: 9218880000 # 106700d -> seconds.
+      - expr: fixed_data
+        eval_time: 106700d
+        exp_samples:
+          - labels: fixed_data
+            value: 1

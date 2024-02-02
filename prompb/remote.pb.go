@@ -34,8 +34,10 @@ const (
 	// Content-Type: "application/x-protobuf"
 	// Content-Encoding: "snappy"
 	ReadRequest_SAMPLES ReadRequest_ResponseType = 0
-	// Server will stream a delimited ChunkedReadResponse message that contains XOR encoded chunks for a single series.
-	// Each message is following varint size and fixed size bigendian uint32 for CRC32 Castagnoli checksum.
+	// Server will stream a delimited ChunkedReadResponse message that
+	// contains XOR or HISTOGRAM(!) encoded chunks for a single series.
+	// Each message is following varint size and fixed size bigendian
+	// uint32 for CRC32 Castagnoli checksum.
 	//
 	// Response headers:
 	// Content-Type: "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse"

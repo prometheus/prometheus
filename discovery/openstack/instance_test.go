@@ -51,7 +51,6 @@ func (s *OpenstackSDInstanceTestSuite) openstackAuthSuccess() (refresher, error)
 }
 
 func TestOpenstackSDInstanceRefresh(t *testing.T) {
-
 	mock := &OpenstackSDInstanceTestSuite{}
 	mock.SetupTest(t)
 
@@ -62,18 +61,19 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 	tgs, err := instance.refresh(ctx)
 
 	require.NoError(t, err)
-	require.Equal(t, 1, len(tgs))
+	require.Len(t, tgs, 1)
 
 	tg := tgs[0]
 	require.NotNil(t, tg)
 	require.NotNil(t, tg.Targets)
-	require.Equal(t, 4, len(tg.Targets))
+	require.Len(t, tg.Targets, 4)
 
 	for i, lbls := range []model.LabelSet{
 		{
 			"__address__":                      model.LabelValue("10.0.0.32:0"),
 			"__meta_openstack_instance_flavor": model.LabelValue("1"),
 			"__meta_openstack_instance_id":     model.LabelValue("ef079b0c-e610-4dfb-b1aa-b49f07ac48e5"),
+			"__meta_openstack_instance_image":  model.LabelValue("f90f6034-2570-4974-8351-6b49732ef2eb"),
 			"__meta_openstack_instance_status": model.LabelValue("ACTIVE"),
 			"__meta_openstack_instance_name":   model.LabelValue("herp"),
 			"__meta_openstack_private_ip":      model.LabelValue("10.0.0.32"),
@@ -86,6 +86,7 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 			"__address__":                      model.LabelValue("10.0.0.31:0"),
 			"__meta_openstack_instance_flavor": model.LabelValue("1"),
 			"__meta_openstack_instance_id":     model.LabelValue("9e5476bd-a4ec-4653-93d6-72c93aa682ba"),
+			"__meta_openstack_instance_image":  model.LabelValue("f90f6034-2570-4974-8351-6b49732ef2eb"),
 			"__meta_openstack_instance_status": model.LabelValue("ACTIVE"),
 			"__meta_openstack_instance_name":   model.LabelValue("derp"),
 			"__meta_openstack_private_ip":      model.LabelValue("10.0.0.31"),

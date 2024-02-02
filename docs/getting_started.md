@@ -81,7 +81,7 @@ navigating to its metrics endpoint:
 
 Let us explore data that Prometheus has collected about itself. To
 use Prometheus's built-in expression browser, navigate to
-http://localhost:9090/graph and choose the "Console" view within the "Graph" tab.
+http://localhost:9090/graph and choose the "Table" view within the "Graph" tab.
 
 As you can gather from [localhost:9090/metrics](http://localhost:9090/metrics),
 one metric that Prometheus exports about itself is named
@@ -250,3 +250,18 @@ scrape_configs:
 Restart Prometheus with the new configuration and verify that a new time series
 with the metric name `job_instance_mode:node_cpu_seconds:avg_rate5m`
 is now available by querying it through the expression browser or graphing it.
+
+## Reloading configuration
+
+As mentioned in the [configuration documentation](configuration/configuration.md) a
+Prometheus instance can have its configuration reloaded without restarting the
+process by using the `SIGHUP` signal. If you're running on Linux this can be
+performed by using `kill -s SIGHUP <PID>`, replacing `<PID>` with your Prometheus
+process ID.
+
+## Shutting down your instance gracefully.
+
+While Prometheus does have recovery mechanisms in the case that there is an
+abrupt process failure it is recommend to use the `SIGTERM` signal to cleanly
+shutdown a Prometheus instance. If you're running on Linux this can be performed
+by using `kill -s SIGTERM <PID>`, replacing `<PID>` with your Prometheus process ID.

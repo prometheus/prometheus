@@ -1,5 +1,0 @@
-groups:
-  - name: yolo
-    rules:
-    - record: strawberry{flavor="sweet"}
-      expr: 1

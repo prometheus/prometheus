@@ -1,0 +1,23 @@
+# An example scrape configuration for running Prometheus with
+# Nomad build in service discovery.
+#
+# The following config can be used to monitor services running on
+# a nomad that is started using the getting started tutorial [1]
+#
+# sudo nomad agent -dev -bind 0.0.0.0 -log-level INFO
+#
+# [1] https://learn.hashicorp.com/tutorials/nomad/get-started-run?in=nomad/get-started
+
+scrape_configs:
+  # Make Prometheus scrape itself for metrics.
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Discover Nomad services to scrape.
+  - job_name: 'nomad_sd'
+    nomad_sd_configs:
+      - server: 'http://localhost:4646'
+    relabel_configs:
+      - source_labels: [__meta_nomad_service]
+        target_label: job

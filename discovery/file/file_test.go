@@ -17,7 +17,6 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
@@ -25,10 +24,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -53,12 +54,9 @@ type testRunner struct {
 func newTestRunner(t *testing.T) *testRunner {
 	t.Helper()
 
-	tmpDir, err := ioutil.TempDir("", "prometheus-file-sd")
-	require.NoError(t, err)
-
 	return &testRunner{
 		T:       t,
-		dir:     tmpDir,
+		dir:     t.TempDir(),
 		ch:      make(chan []*targetgroup.Group),
 		done:    make(chan struct{}),
 		stopped: make(chan struct{}),
@@ -73,10 +71,10 @@ func (t *testRunner) copyFile(src string) string {
 }
 
 // copyFileTo atomically copies a file with a different name to the runner's directory.
-func (t *testRunner) copyFileTo(src string, name string) string {
+func (t *testRunner) copyFileTo(src, name string) string {
 	t.Helper()
 
-	newf, err := ioutil.TempFile(t.dir, "")
+	newf, err := os.CreateTemp(t.dir, "")
 	require.NoError(t, err)
 
 	f, err := os.Open(src)
@@ -95,10 +93,10 @@ func (t *testRunner) copyFileTo(src string, name string) string {
 }
 
 // writeString writes atomically a string to a file.
-func (t *testRunner) writeString(file string, data string) {
+func (t *testRunner) writeString(file, data string) {
 	t.Helper()
 
-	newf, err := ioutil.TempFile(t.dir, "")
+	newf, err := os.CreateTemp(t.dir, "")
 	require.NoError(t, err)
 
 	_, err = newf.WriteString(data)
@@ -147,15 +145,28 @@ func (t *testRunner) run(files ...string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.cancelSD = cancel
 	go func() {
-		NewDiscovery(
-			&SDConfig{
-				Files: files,
-				// Setting a high refresh interval to make sure that the tests only
-				// rely on file watches.
-				RefreshInterval: model.Duration(1 * time.Hour),
-			},
+		conf := &SDConfig{
+			Files: files,
+			// Setting a high refresh interval to make sure that the tests only
+			// rely on file watches.
+			RefreshInterval: model.Duration(1 * time.Hour),
+		}
+
+		reg := prometheus.NewRegistry()
+		refreshMetrics := discovery.NewRefreshMetrics(reg)
+		metrics := conf.NewDiscovererMetrics(reg, refreshMetrics)
+		require.NoError(t, metrics.Register())
+
+		d, err := NewDiscovery(
+			conf,
 			nil,
-		).Run(ctx, t.ch)
+			metrics,
+		)
+		require.NoError(t, err)
+
+		d.Run(ctx, t.ch)
+
+		metrics.Unregister()
 	}()
 }
 
@@ -192,9 +203,10 @@ func (t *testRunner) targets() []*targetgroup.Group {
 func (t *testRunner) requireUpdate(ref time.Time, expected []*targetgroup.Group) {
 	t.Helper()
 
+	timeout := time.After(defaultWait)
 	for {
 		select {
-		case <-time.After(defaultWait):
+		case <-timeout:
 			t.Fatalf("Expected update but got none")
 			return
 		case <-time.After(defaultWait / 10):
@@ -312,6 +324,7 @@ func TestInitialUpdate(t *testing.T) {
 		"fixtures/valid.yml",
 		"fixtures/valid.json",
 	} {
+		tc := tc
 		t.Run(tc, func(t *testing.T) {
 			t.Parallel()
 
@@ -477,6 +490,7 @@ func TestRemoveFile(t *testing.T) {
 			},
 			{
 				Source: fileSource(sdFile, 1),
-			}},
+			},
+		},
 	)
 }

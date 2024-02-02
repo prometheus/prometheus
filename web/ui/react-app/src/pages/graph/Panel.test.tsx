@@ -1,7 +1,6 @@
 import * as React from 'react';
 import { mount, shallow } from 'enzyme';
-import Panel, { PanelOptions, PanelType } from './Panel';
-import ExpressionInput from './ExpressionInput';
+import Panel, { GraphDisplayMode, PanelOptions, PanelType } from './Panel';
 import GraphControls from './GraphControls';
 import { NavLink, TabPane } from 'reactstrap';
 import TimeInput from './TimeInput';
@@ -15,11 +14,13 @@ const defaultProps = {
     range: 10,
     endTime: 1572100217898,
     resolution: 28,
-    stacked: false,
+    displayMode: GraphDisplayMode.Lines,
+    showExemplars: true,
   },
   onOptionsChanged: (): void => {
     // Do nothing.
   },
+  useLocalTime: false,
   pastQueries: [],
   metricNames: [
     'prometheus_engine_queries',
@@ -32,22 +33,15 @@ const defaultProps = {
   onExecuteQuery: (): void => {
     // Do nothing.
   },
+  pathPrefix: '/',
   enableAutocomplete: true,
+  enableHighlighting: true,
+  enableLinter: true,
+  id: 'panel',
 };
 
 describe('Panel', () => {
   const panel = shallow(<Panel {...defaultProps} />);
-
-  it('renders an ExpressionInput', () => {
-    const input = panel.find(ExpressionInput);
-    expect(input.prop('value')).toEqual('prometheus_engine');
-    expect(input.prop('metricNames')).toEqual([
-      'prometheus_engine_queries',
-      'prometheus_engine_queries_concurrent_max',
-      'prometheus_engine_query_duration_seconds',
-    ]);
-    expect(input.prop('queryHistory')).toEqual([]);
-  });
 
   it('renders NavLinks', () => {
     const results: PanelOptions[] = [];
@@ -75,7 +69,7 @@ describe('Panel', () => {
   });
 
   it('renders a TabPane with a TimeInput and a DataTable when in table mode', () => {
-    const tab = panel.find(TabPane).filterWhere(tab => tab.prop('tabId') === 'table');
+    const tab = panel.find(TabPane).filterWhere((tab) => tab.prop('tabId') === 'table');
     const timeInput = tab.find(TimeInput);
     expect(timeInput.prop('time')).toEqual(defaultProps.options.endTime);
     expect(timeInput.prop('range')).toEqual(defaultProps.options.range);
@@ -90,7 +84,8 @@ describe('Panel', () => {
       range: 10,
       endTime: 1572100217898,
       resolution: 28,
-      stacked: false,
+      displayMode: GraphDisplayMode.Lines,
+      showExemplars: true,
     };
     const graphPanel = mount(<Panel {...defaultProps} options={options} />);
     const controls = graphPanel.find(GraphControls);
@@ -99,8 +94,8 @@ describe('Panel', () => {
     expect(controls.prop('endTime')).toEqual(options.endTime);
     expect(controls.prop('range')).toEqual(options.range);
     expect(controls.prop('resolution')).toEqual(options.resolution);
-    expect(controls.prop('stacked')).toEqual(options.stacked);
-    expect(graph.prop('stacked')).toEqual(options.stacked);
+    expect(controls.prop('displayMode')).toEqual(options.displayMode);
+    expect(graph.prop('displayMode')).toEqual(options.displayMode);
   });
 
   describe('when switching between modes', () => {
@@ -151,9 +146,10 @@ describe('Panel', () => {
       //change query without executing
       panel.setProps({ options: { ...defaultProps.options, expr: newExpr } });
       expect(executeQuerySpy).toHaveBeenCalledTimes(0);
+      const debounceExecuteQuerySpy = jest.spyOn(instance, 'debounceExecuteQuery');
       //execute query implicitly with time change
       panel.setProps({ options: { ...defaultProps.options, expr: newExpr, endTime: 1575744840 } });
-      expect(executeQuerySpy).toHaveBeenCalledTimes(1);
+      expect(debounceExecuteQuerySpy).toHaveBeenCalledTimes(1);
     });
   });
 });

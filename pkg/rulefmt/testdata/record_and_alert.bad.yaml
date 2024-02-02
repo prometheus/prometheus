@@ -1,6 +1,0 @@
-groups:
-- name: yolo
-  rules:
-  - record: Hi
-    alert: Hello
-    expr: 1

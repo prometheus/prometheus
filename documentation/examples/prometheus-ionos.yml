@@ -1,0 +1,30 @@
+# A example scrape configuration for running Prometheus with IONOS Cloud.
+scrape_configs:
+  - job_name: "node"
+    ionos_sd_configs:
+      - basic_auth:
+          # Replace with your username.
+          username: username
+          # Replace with your password.
+          password: password
+        # You can find your data center unique ID here: https://dcd.ionos.com/latest/
+        datacenter_id: 11111111-1111-1111-1111-111111111111
+        port: 9100
+    relabel_configs:
+      # Only scrape servers that are available via API.
+      - source_labels: [__meta_ionos_server_lifecycle]
+        action: keep
+        regex: "AVAILABLE"
+
+      # Only scrape servers that are in a running state.
+      - source_labels: [__meta_ionos_server_state]
+        action: keep
+        regex: "RUNNING"
+
+      # Replace instance label with server name.
+      - source_labels: [__meta_ionos_server_name]
+        target_label: instance
+
+      # Add server availability zone as label.
+      - source_labels: [__meta_ionos_availability_zone]
+        target_label: ionos_zone

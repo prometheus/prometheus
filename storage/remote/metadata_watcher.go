@@ -15,12 +15,13 @@ package remote
 
 import (
 	"context"
+	"errors"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
-	"github.com/pkg/errors"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/scrape"
 )
 
@@ -135,7 +136,7 @@ func (mw *MetadataWatcher) collect() {
 	metadata := []scrape.MetricMetadata{}
 	for _, tset := range mw.manager.TargetsActive() {
 		for _, target := range tset {
-			for _, entry := range target.MetadataList() {
+			for _, entry := range target.ListMetadata() {
 				if _, ok := metadataSet[entry]; !ok {
 					metadata = append(metadata, entry)
 					metadataSet[entry] = struct{}{}

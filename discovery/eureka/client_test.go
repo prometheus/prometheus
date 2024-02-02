@@ -184,17 +184,17 @@ func TestFetchApps(t *testing.T) {
 	apps, err := fetchApps(context.TODO(), ts.URL, &http.Client{})
 	require.NoError(t, err)
 
-	require.Equal(t, len(apps.Applications), 2)
-	require.Equal(t, apps.Applications[0].Name, "CONFIG-SERVICE")
-	require.Equal(t, apps.Applications[1].Name, "META-SERVICE")
+	require.Len(t, apps.Applications, 2)
+	require.Equal(t, "CONFIG-SERVICE", apps.Applications[0].Name)
+	require.Equal(t, "META-SERVICE", apps.Applications[1].Name)
 
-	require.Equal(t, len(apps.Applications[1].Instances), 2)
-	require.Equal(t, apps.Applications[1].Instances[0].InstanceID, "meta-service002.test.com:meta-service:8080")
-	require.Equal(t, apps.Applications[1].Instances[0].Metadata.Items[0].XMLName.Local, "project")
-	require.Equal(t, apps.Applications[1].Instances[0].Metadata.Items[0].Content, "meta-service")
-	require.Equal(t, apps.Applications[1].Instances[0].Metadata.Items[1].XMLName.Local, "management.port")
-	require.Equal(t, apps.Applications[1].Instances[0].Metadata.Items[1].Content, "8090")
-	require.Equal(t, apps.Applications[1].Instances[1].InstanceID, "meta-service001.test.com:meta-service:8080")
+	require.Len(t, apps.Applications[1].Instances, 2)
+	require.Equal(t, "meta-service002.test.com:meta-service:8080", apps.Applications[1].Instances[0].InstanceID)
+	require.Equal(t, "project", apps.Applications[1].Instances[0].Metadata.Items[0].XMLName.Local)
+	require.Equal(t, "meta-service", apps.Applications[1].Instances[0].Metadata.Items[0].Content)
+	require.Equal(t, "management.port", apps.Applications[1].Instances[0].Metadata.Items[1].XMLName.Local)
+	require.Equal(t, "8090", apps.Applications[1].Instances[0].Metadata.Items[1].Content)
+	require.Equal(t, "meta-service001.test.com:meta-service:8080", apps.Applications[1].Instances[1].InstanceID)
 }
 
 func Test500ErrorHttpResponse(t *testing.T) {

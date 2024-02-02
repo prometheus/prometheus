@@ -39,7 +39,20 @@ func main() {
 			fmt.Println(m)
 
 			for _, s := range ts.Samples {
-				fmt.Printf("  %f %d\n", s.Value, s.Timestamp)
+				fmt.Printf("\tSample:  %f %d\n", s.Value, s.Timestamp)
+			}
+
+			for _, e := range ts.Exemplars {
+				m := make(model.Metric, len(e.Labels))
+				for _, l := range e.Labels {
+					m[model.LabelName(l.Name)] = model.LabelValue(l.Value)
+				}
+				fmt.Printf("\tExemplar:  %+v %f %d\n", m, e.Value, e.Timestamp)
+			}
+
+			for _, hp := range ts.Histograms {
+				h := remote.HistogramProtoToHistogram(hp)
+				fmt.Printf("\tHistogram:  %s\n", h.String())
 			}
 		}
 	})

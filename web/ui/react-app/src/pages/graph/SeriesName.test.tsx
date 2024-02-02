@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { shallow } from 'enzyme';
+import { shallow, ShallowWrapper } from 'enzyme';
 import SeriesName from './SeriesName';
 
 describe('SeriesName', () => {
@@ -51,26 +51,36 @@ describe('SeriesName', () => {
         { name: 'label3', value: 'value_3', className: 'legend-label-name' },
         { name: '}', className: 'legend-label-brace' },
       ];
+
+      const testLabelContainerElement = (text: string, expectedText: string, container: ShallowWrapper) => {
+        expect(text).toEqual(expectedText);
+        expect(container.prop('className')).toEqual('legend-label-container');
+        expect(container.childAt(0).prop('className')).toEqual('legend-label-name');
+        expect(container.childAt(2).prop('className')).toEqual('legend-label-value');
+      };
+
       testCases.forEach((tc, i) => {
         const child = seriesName.childAt(i);
+        const firstChildElement = child.childAt(0);
+        const firstChildElementClass = firstChildElement.prop('className');
         const text = child
           .children()
-          .map(ch => ch.text())
+          .map((ch) => ch.text())
           .join('');
         switch (child.children().length) {
           case 1:
-            expect(text).toEqual(tc.name);
-            expect(child.prop('className')).toEqual(tc.className);
+            switch (firstChildElementClass) {
+              case 'legend-label-container':
+                testLabelContainerElement(text, `${tc.name}="${tc.value}"`, firstChildElement);
+                break;
+              default:
+                expect(text).toEqual(tc.name);
+                expect(child.prop('className')).toEqual(tc.className);
+            }
             break;
-          case 3:
-            expect(text).toEqual(`${tc.name}="${tc.value}"`);
-            expect(child.childAt(0).prop('className')).toEqual('legend-label-name');
-            expect(child.childAt(2).prop('className')).toEqual('legend-label-value');
-            break;
-          case 4:
-            expect(text).toEqual(`, ${tc.name}="${tc.value}"`);
-            expect(child.childAt(1).prop('className')).toEqual('legend-label-name');
-            expect(child.childAt(3).prop('className')).toEqual('legend-label-value');
+          case 2:
+            const container = child.childAt(1);
+            testLabelContainerElement(text, `, ${tc.name}="${tc.value}"`, container);
             break;
           default:
             fail('incorrect number of children: ' + child.children().length);

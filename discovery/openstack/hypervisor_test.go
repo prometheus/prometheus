@@ -47,19 +47,18 @@ func (s *OpenstackSDHypervisorTestSuite) openstackAuthSuccess() (refresher, erro
 }
 
 func TestOpenstackSDHypervisorRefresh(t *testing.T) {
-
 	mock := &OpenstackSDHypervisorTestSuite{}
 	mock.SetupTest(t)
 
 	hypervisor, _ := mock.openstackAuthSuccess()
 	ctx := context.Background()
 	tgs, err := hypervisor.refresh(ctx)
-	require.Equal(t, 1, len(tgs))
+	require.Len(t, tgs, 1)
 	tg := tgs[0]
 	require.NoError(t, err)
 	require.NotNil(t, tg)
 	require.NotNil(t, tg.Targets)
-	require.Equal(t, 2, len(tg.Targets))
+	require.Len(t, tg.Targets, 2)
 
 	for l, v := range map[string]string{
 		"__address__":                          "172.16.70.14:0",

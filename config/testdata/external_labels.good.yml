@@ -1,0 +1,7 @@
+global:
+  external_labels:
+    bar: foo
+    foo: ${TEST}
+    baz: foo${TEST}bar
+    qux: foo$${TEST}
+    xyz: foo$$bar

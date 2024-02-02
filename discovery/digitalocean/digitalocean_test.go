@@ -19,9 +19,12 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/discovery"
 )
 
 type DigitalOceanSDTestSuite struct {
@@ -46,7 +49,15 @@ func TestDigitalOceanSDRefresh(t *testing.T) {
 
 	cfg := DefaultSDConfig
 	cfg.HTTPClientConfig.BearerToken = tokenID
-	d, err := NewDiscovery(&cfg, log.NewNopLogger())
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+	defer refreshMetrics.Unregister()
+
+	d, err := NewDiscovery(&cfg, log.NewNopLogger(), metrics)
 	require.NoError(t, err)
 	endpoint, err := url.Parse(sdmock.Mock.Endpoint())
 	require.NoError(t, err)
@@ -56,12 +67,12 @@ func TestDigitalOceanSDRefresh(t *testing.T) {
 	tgs, err := d.refresh(ctx)
 	require.NoError(t, err)
 
-	require.Equal(t, 1, len(tgs))
+	require.Len(t, tgs, 1)
 
 	tg := tgs[0]
 	require.NotNil(t, tg)
 	require.NotNil(t, tg.Targets)
-	require.Equal(t, 4, len(tg.Targets))
+	require.Len(t, tg.Targets, 4)
 
 	for i, lbls := range []model.LabelSet{
 		{
@@ -76,6 +87,7 @@ func TestDigitalOceanSDRefresh(t *testing.T) {
 			"__meta_digitalocean_region":       model.LabelValue("nyc3"),
 			"__meta_digitalocean_size":         model.LabelValue("s-1vcpu-1gb"),
 			"__meta_digitalocean_status":       model.LabelValue("active"),
+			"__meta_digitalocean_vpc":          model.LabelValue("f9b0769c-e118-42fb-a0c4-fed15ef69662"),
 			"__meta_digitalocean_features":     model.LabelValue(",backups,ipv6,virtio,"),
 		},
 		{
@@ -90,6 +102,7 @@ func TestDigitalOceanSDRefresh(t *testing.T) {
 			"__meta_digitalocean_region":       model.LabelValue("nyc3"),
 			"__meta_digitalocean_size":         model.LabelValue("s-1vcpu-1gb"),
 			"__meta_digitalocean_status":       model.LabelValue("active"),
+			"__meta_digitalocean_vpc":          model.LabelValue("f9b0769c-e118-42fb-a0c4-fed15ef69662"),
 			"__meta_digitalocean_tags":         model.LabelValue(",monitor,"),
 			"__meta_digitalocean_features":     model.LabelValue(",virtio,"),
 		},
@@ -105,6 +118,7 @@ func TestDigitalOceanSDRefresh(t *testing.T) {
 			"__meta_digitalocean_region":       model.LabelValue("fra1"),
 			"__meta_digitalocean_size":         model.LabelValue("s-1vcpu-1gb"),
 			"__meta_digitalocean_status":       model.LabelValue("off"),
+			"__meta_digitalocean_vpc":          model.LabelValue("953d698c-dc84-11e8-80bc-3cfdfea9fba1"),
 			"__meta_digitalocean_features":     model.LabelValue(",ipv6,private_networking,"),
 		},
 		{
@@ -119,6 +133,7 @@ func TestDigitalOceanSDRefresh(t *testing.T) {
 			"__meta_digitalocean_region":       model.LabelValue("fra1"),
 			"__meta_digitalocean_size":         model.LabelValue("s-1vcpu-1gb"),
 			"__meta_digitalocean_status":       model.LabelValue("active"),
+			"__meta_digitalocean_vpc":          model.LabelValue("953d698c-dc84-11e8-80bc-3cfdfea9fba1"),
 			"__meta_digitalocean_features":     model.LabelValue(",ipv6,private_networking,"),
 		},
 	} {

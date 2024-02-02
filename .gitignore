@@ -8,19 +8,26 @@
 /promtool
 benchmark.txt
 /data
+/data-agent
 /cmd/prometheus/data
+/cmd/prometheus/data-agent
 /cmd/prometheus/debug
 /benchout
+/cmd/promtool/data
 
 !/.travis.yml
 !/.promu.yml
 !/.golangci.yml
 /documentation/examples/remote_storage/remote_storage_adapter/remote_storage_adapter
-/documentation/examples/remote_storage/example_write_adapter/example_writer_adapter
+/documentation/examples/remote_storage/example_write_adapter/example_write_adapter
 
 npm_licenses.tar.bz2
 /web/ui/static/react
-/web/ui/assets_vfsdata.go
 
 /vendor
 /.build
+
+/**/node_modules
+
+# Ignore parser debug
+y.output

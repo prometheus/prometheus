@@ -22,3 +22,7 @@ groups:
       # A recording rule that doesn't depend on input series.
       - record: fixed_data
         expr: 1
+
+      # Subquery with default resolution test.
+      - record: suquery_interval_test
+        expr: count_over_time(up[5m:])

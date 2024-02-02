@@ -126,7 +126,7 @@ After the labels, the number of indexed chunks is encoded, followed by a sequenc
 ### Label Index
 
 A label index section indexes the existing (combined) values for one or more label names.
-The `#names` field determines the number of indexed label names, followed by the total number of entries in the `#entries` field. The body holds #entries / #names tuples of symbol table references, each tuple being of #names length. The value tuples are sorted in lexicographically increasing order. This is no longer used.
+The `#names` field determines the number of indexed label names, followed by the total number of entries in the `#entries` field. The body holds `#entries / #names` tuples of symbol table references, each tuple being of #names length. The value tuples are sorted in lexicographically increasing order. This is no longer used.
 
 ```
 ┌───────────────┬────────────────┬────────────────┐

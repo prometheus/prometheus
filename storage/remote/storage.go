@@ -21,16 +21,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/logging"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/logging"
 )
 
 // String constants for instrumentation.
@@ -51,7 +51,7 @@ type startTimeCallback func() (int64, error)
 // Storage represents all the remote read and write endpoints.  It implements
 // storage.Storage.
 type Storage struct {
-	logger log.Logger
+	logger *logging.Deduper
 	mtx    sync.Mutex
 
 	rws *WriteStorage
@@ -66,13 +66,18 @@ func NewStorage(l log.Logger, reg prometheus.Registerer, stCallback startTimeCal
 	if l == nil {
 		l = log.NewNopLogger()
 	}
+	logger := logging.Dedupe(l, 1*time.Minute)
 
 	s := &Storage{
-		logger:                 logging.Dedupe(l, 1*time.Minute),
+		logger:                 logger,
 		localStartTimeCallback: stCallback,
 	}
 	s.rws = NewWriteStorage(s.logger, reg, walDir, flushDeadline, sm)
 	return s
+}
+
+func (s *Storage) Notify() {
+	s.rws.Notify()
 }
 
 // ApplyConfig updates the state as the new config requires.
@@ -111,14 +116,19 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 			URL:              rrConf.URL,
 			Timeout:          rrConf.RemoteTimeout,
 			HTTPClientConfig: rrConf.HTTPClientConfig,
+			Headers:          rrConf.Headers,
 		})
 		if err != nil {
 			return err
 		}
 
+		externalLabels := conf.GlobalConfig.ExternalLabels
+		if !rrConf.FilterExternalLabels {
+			externalLabels = labels.EmptyLabels()
+		}
 		queryables = append(queryables, NewSampleAndChunkQueryableClient(
 			c,
-			conf.GlobalConfig.ExternalLabels,
+			externalLabels,
 			labelsToEqualityMatchers(rrConf.RequiredMatchers),
 			rrConf.ReadRecent,
 			s.localStartTimeCallback,
@@ -139,14 +149,14 @@ func (s *Storage) StartTime() (int64, error) {
 // Returned querier will never return error as all queryables are assumed best effort.
 // Additionally all returned queriers ensure that its Select's SeriesSets have ready data after first `Next` invoke.
 // This is because Prometheus (fanout and secondary queries) can't handle the stream failing half way through by design.
-func (s *Storage) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+func (s *Storage) Querier(mint, maxt int64) (storage.Querier, error) {
 	s.mtx.Lock()
 	queryables := s.queryables
 	s.mtx.Unlock()
 
 	queriers := make([]storage.Querier, 0, len(queryables))
 	for _, queryable := range queryables {
-		q, err := queryable.Querier(ctx, mint, maxt)
+		q, err := queryable.Querier(mint, maxt)
 		if err != nil {
 			return nil, err
 		}
@@ -157,14 +167,14 @@ func (s *Storage) Querier(ctx context.Context, mint, maxt int64) (storage.Querie
 
 // ChunkQuerier returns a storage.MergeQuerier combining the remote client queriers
 // of each configured remote read endpoint.
-func (s *Storage) ChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
+func (s *Storage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
 	s.mtx.Lock()
 	queryables := s.queryables
 	s.mtx.Unlock()
 
 	queriers := make([]storage.ChunkQuerier, 0, len(queryables))
 	for _, queryable := range queryables {
-		q, err := queryable.ChunkQuerier(ctx, mint, maxt)
+		q, err := queryable.ChunkQuerier(mint, maxt)
 		if err != nil {
 			return nil, err
 		}
@@ -178,8 +188,14 @@ func (s *Storage) Appender(ctx context.Context) storage.Appender {
 	return s.rws.Appender(ctx)
 }
 
+// LowestSentTimestamp returns the lowest sent timestamp across all queues.
+func (s *Storage) LowestSentTimestamp() int64 {
+	return s.rws.LowestSentTimestamp()
+}
+
 // Close the background processing of the storage queues.
 func (s *Storage) Close() error {
+	s.logger.Stop()
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 	return s.rws.Close()

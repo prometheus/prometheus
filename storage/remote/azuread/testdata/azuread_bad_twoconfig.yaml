@@ -1,0 +1,7 @@
+cloud: AzurePublic
+managed_identity:
+  client_id: 00000000-0000-0000-0000-000000000000
+oauth:
+  client_id: 00000000-0000-0000-0000-000000000000
+  client_secret: Cl1ent$ecret!
+  tenant_id: 00000000-a12b-3cd4-e56f-000000000000

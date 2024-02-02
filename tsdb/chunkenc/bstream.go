@@ -48,8 +48,8 @@ import (
 
 // bstream is a stream of bits.
 type bstream struct {
-	stream []byte // the data stream
-	count  uint8  // how many bits are valid in current byte
+	stream []byte // The data stream.
+	count  uint8  // How many right-most bits are available for writing in the current byte (the last byte of the stream).
 }
 
 func (b *bstream) bytes() []byte {
@@ -86,16 +86,19 @@ func (b *bstream) writeByte(byt byte) {
 
 	i := len(b.stream) - 1
 
-	// fill up b.b with b.count bits from byt
+	// Complete the last byte with the leftmost b.count bits from byt.
 	b.stream[i] |= byt >> (8 - b.count)
 
 	b.stream = append(b.stream, 0)
 	i++
+	// Write the remainder, if any.
 	b.stream[i] = byt << b.count
 }
 
+// writeBits writes the nbits right-most bits of u to the stream
+// in left-to-right order.
 func (b *bstream) writeBits(u uint64, nbits int) {
-	u <<= (64 - uint(nbits))
+	u <<= 64 - uint(nbits)
 	for nbits >= 8 {
 		byt := byte(u >> 56)
 		b.writeByte(byt)
@@ -115,12 +118,19 @@ type bstreamReader struct {
 	streamOffset int // The offset from which read the next byte from the stream.
 
 	buffer uint64 // The current buffer, filled from the stream, containing up to 8 bytes from which read bits.
-	valid  uint8  // The number of bits valid to read (from left) in the current buffer.
+	valid  uint8  // The number of right-most bits valid to read (from left) in the current 8 byte buffer.
+	last   byte   // A copy of the last byte of the stream.
 }
 
 func newBReader(b []byte) bstreamReader {
+	// The last byte of the stream can be updated later, so we take a copy.
+	var last byte
+	if len(b) > 0 {
+		last = b[len(b)-1]
+	}
 	return bstreamReader{
 		stream: b,
+		last:   last,
 	}
 }
 
@@ -148,6 +158,8 @@ func (b *bstreamReader) readBitFast() (bit, error) {
 	return (b.buffer & bitmask) != 0, nil
 }
 
+// readBits constructs a uint64 with the nbits right-most bits
+// read from the stream, and any other bits 0.
 func (b *bstreamReader) readBits(nbits uint8) (uint64, error) {
 	if b.valid == 0 {
 		if !b.loadNextBuffer(nbits) {
@@ -170,7 +182,7 @@ func (b *bstreamReader) readBits(nbits uint8) (uint64, error) {
 	}
 
 	bitmask = (uint64(1) << nbits) - 1
-	v = v | ((b.buffer >> (b.valid - nbits)) & bitmask)
+	v |= ((b.buffer >> (b.valid - nbits)) & bitmask)
 	b.valid -= nbits
 
 	return v, nil
@@ -218,18 +230,25 @@ func (b *bstreamReader) loadNextBuffer(nbits uint8) bool {
 		return true
 	}
 
-	// We're here if the are 8 or less bytes left in the stream. Since this reader needs
-	// to handle race conditions with concurrent writes happening on the very last byte
-	// we make sure to never over more than the minimum requested bits (rounded up to
-	// the next byte). The following code is slower but called less frequently.
+	// We're here if there are 8 or less bytes left in the stream.
+	// The following code is slower but called less frequently.
 	nbytes := int((nbits / 8) + 1)
 	if b.streamOffset+nbytes > len(b.stream) {
 		nbytes = len(b.stream) - b.streamOffset
 	}
 
 	buffer := uint64(0)
-	for i := 0; i < nbytes; i++ {
-		buffer = buffer | (uint64(b.stream[b.streamOffset+i]) << uint(8*(nbytes-i-1)))
+	skip := 0
+	if b.streamOffset+nbytes == len(b.stream) {
+		// There can be concurrent writes happening on the very last byte
+		// of the stream, so use the copy we took at initialization time.
+		buffer |= uint64(b.last)
+		// Read up to the byte before
+		skip = 1
+	}
+
+	for i := 0; i < nbytes-skip; i++ {
+		buffer |= (uint64(b.stream[b.streamOffset+i]) << uint(8*(nbytes-i-1)))
 	}
 
 	b.buffer = buffer

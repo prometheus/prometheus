@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build tools
+//go:build tools
 
 // Package tools tracks dependencies for tools that are required to generate the protobuf code.
 // See https://github.com/golang/go/issues/25922

@@ -1,0 +1,7 @@
+scrape_configs:
+  - job_name: prometheus
+    relabel_configs:
+      - action: uppercase
+        source_labels: [__name__]
+        target_label: __name__
+        replacement: bar

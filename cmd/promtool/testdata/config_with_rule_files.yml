@@ -1,0 +1,3 @@
+rule_files:
+  - non-existent-file.yml
+  - /etc/non/existent/file.yml

@@ -13,15 +13,15 @@ spec:
         app: rabbitmq
     spec:
       containers:
-      - image: rabbitmq:3.5.4-management
-        name: rabbitmq
-        ports:
-        - containerPort: 5672
-          name: service
-        - containerPort: 15672
-          name: management
-      - image: kbudde/rabbitmq-exporter
-        name: rabbitmq-exporter
-        ports:
-        - containerPort: 9090
-          name: exporter
+        - image: rabbitmq:3.5.4-management
+          name: rabbitmq
+          ports:
+            - containerPort: 5672
+              name: service
+            - containerPort: 15672
+              name: management
+        - image: kbudde/rabbitmq-exporter
+          name: rabbitmq-exporter
+          ports:
+            - containerPort: 9090
+              name: exporter

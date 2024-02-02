@@ -1,0 +1,41 @@
+# A example scrape configuration for running Prometheus with Scaleway.
+scrape_configs:
+  - job_name: 'prometheus'
+    scaleway_sd_configs:
+      - role: instance
+        # You can find you project ID here: https://console.scaleway.com/project/settings
+        project_id: 11111111-1111-1111-1111-111111111111
+        # Replace with Scaleway Credentials: https://console.scaleway.com/project/credentials
+        access_key: SCWXXXXXXXXXXXXXXXXX
+        secret_key: 11111111-1111-1111-1111-111111111111
+    relabel_configs:
+      # Only scrape targets that have a tag 'prometheus'.
+      - source_labels: [__meta_scaleway_instance_tags]
+        regex: '.*,prometheus,.*'
+        action: keep
+      # Use the public IPv6 address and port 9100 to scrape the target.
+      - source_labels: [__meta_scaleway_instance_public_ipv6]
+        target_label: __address__
+        replacement: '[$1]:9090'
+      # Add the zone as label
+      - source_labels: [__meta_scaleway_instance_zone]
+        target_label: scw_zone
+
+  - job_name: 'node'
+    scaleway_sd_configs:
+      - role: baremetal
+        # You can find you project ID here: https://console.scaleway.com/project/settings
+        project_id: 11111111-1111-1111-1111-111111111111
+        zone: fr-par-2
+        # Replace with Scaleway Credentials: https://console.scaleway.com/project/credentials
+        access_key: SCWXXXXXXXXXXXXXXXXX
+        secret_key: 11111111-1111-1111-1111-111111111111
+    relabel_configs:
+      # Filter out servers that are not physically in the datacenter.
+      - source_labels: [__meta_scaleway_baremetal_status]
+        regex: '(delivering|out_of_stock)'
+        action: drop
+      # Use the public IPv6 address and port 9100 to scrape the target.
+      - source_labels: [__meta_scaleway_baremetal_public_ipv6]
+        target_label: __address__
+        replacement: '[$1]:9100'

@@ -12,14 +12,15 @@
 // limitations under the License.
 
 // Only build when go-fuzz is in use
-// +build gofuzz
+//go:build gofuzz
 
 package promql
 
 import (
+	"errors"
 	"io"
 
-	"github.com/prometheus/prometheus/pkg/textparse"
+	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
@@ -56,7 +57,13 @@ const (
 )
 
 func fuzzParseMetricWithContentType(in []byte, contentType string) int {
-	p := textparse.New(in, contentType)
+	p, warning := textparse.New(in, contentType, false)
+	if warning != nil {
+		// An invalid content type is being passed, which should not happen
+		// in this context.
+		panic(warning)
+	}
+
 	var err error
 	for {
 		_, err = p.Next()
@@ -64,7 +71,7 @@ func fuzzParseMetricWithContentType(in []byte, contentType string) int {
 			break
 		}
 	}
-	if err == io.EOF {
+	if errors.Is(err, io.EOF) {
 		err = nil
 	}
 

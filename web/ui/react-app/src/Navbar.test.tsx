@@ -5,7 +5,7 @@ import { NavItem, NavLink } from 'reactstrap';
 
 describe('Navbar should contain console Link', () => {
   it('with non-empty consoleslink', () => {
-    const app = shallow(<Navigation pathPrefix="/path/prefix" consolesLink="/path/consoles" />);
+    const app = shallow(<Navigation consolesLink="/path/consoles" agentMode={false} />);
     expect(
       app.contains(
         <NavItem>
@@ -18,7 +18,7 @@ describe('Navbar should contain console Link', () => {
 
 describe('Navbar should not contain consoles link', () => {
   it('with empty string in consolesLink', () => {
-    const app = shallow(<Navigation pathPrefix="/path/prefix" consolesLink={null} />);
+    const app = shallow(<Navigation consolesLink={null} agentMode={false} />);
     expect(
       app.contains(
         <NavItem>

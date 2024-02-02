@@ -16,7 +16,8 @@ package azure
 import (
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2018-10-01/compute"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 )
@@ -28,37 +29,49 @@ func TestMain(m *testing.M) {
 func TestMapFromVMWithEmptyTags(t *testing.T) {
 	id := "test"
 	name := "name"
+	size := "size"
+	vmSize := armcompute.VirtualMachineSizeTypes(size)
+	osType := armcompute.OperatingSystemTypesLinux
 	vmType := "type"
 	location := "westeurope"
-	networkProfile := compute.NetworkProfile{
-		NetworkInterfaces: &[]compute.NetworkInterfaceReference{},
+	computerName := "computer_name"
+	networkProfile := armcompute.NetworkProfile{
+		NetworkInterfaces: []*armcompute.NetworkInterfaceReference{},
 	}
-	properties := &compute.VirtualMachineProperties{
-		StorageProfile: &compute.StorageProfile{
-			OsDisk: &compute.OSDisk{
-				OsType: "Linux",
+	properties := &armcompute.VirtualMachineProperties{
+		OSProfile: &armcompute.OSProfile{
+			ComputerName: &computerName,
+		},
+		StorageProfile: &armcompute.StorageProfile{
+			OSDisk: &armcompute.OSDisk{
+				OSType: &osType,
 			},
 		},
 		NetworkProfile: &networkProfile,
+		HardwareProfile: &armcompute.HardwareProfile{
+			VMSize: &vmSize,
+		},
 	}
 
-	testVM := compute.VirtualMachine{
-		ID:                       &id,
-		Name:                     &name,
-		Type:                     &vmType,
-		Location:                 &location,
-		Tags:                     nil,
-		VirtualMachineProperties: properties,
+	testVM := armcompute.VirtualMachine{
+		ID:         &id,
+		Name:       &name,
+		Type:       &vmType,
+		Location:   &location,
+		Tags:       nil,
+		Properties: properties,
 	}
 
 	expectedVM := virtualMachine{
 		ID:                id,
 		Name:              name,
+		ComputerName:      computerName,
 		Type:              vmType,
 		Location:          location,
 		OsType:            "Linux",
 		Tags:              map[string]*string{},
 		NetworkInterfaces: []string{},
+		Size:              size,
 	}
 
 	actualVM := mapFromVM(testVM)
@@ -69,40 +82,52 @@ func TestMapFromVMWithEmptyTags(t *testing.T) {
 func TestMapFromVMWithTags(t *testing.T) {
 	id := "test"
 	name := "name"
+	size := "size"
+	vmSize := armcompute.VirtualMachineSizeTypes(size)
+	osType := armcompute.OperatingSystemTypesLinux
 	vmType := "type"
 	location := "westeurope"
+	computerName := "computer_name"
 	tags := map[string]*string{
 		"prometheus": new(string),
 	}
-	networkProfile := compute.NetworkProfile{
-		NetworkInterfaces: &[]compute.NetworkInterfaceReference{},
+	networkProfile := armcompute.NetworkProfile{
+		NetworkInterfaces: []*armcompute.NetworkInterfaceReference{},
 	}
-	properties := &compute.VirtualMachineProperties{
-		StorageProfile: &compute.StorageProfile{
-			OsDisk: &compute.OSDisk{
-				OsType: "Linux",
+	properties := &armcompute.VirtualMachineProperties{
+		OSProfile: &armcompute.OSProfile{
+			ComputerName: &computerName,
+		},
+		StorageProfile: &armcompute.StorageProfile{
+			OSDisk: &armcompute.OSDisk{
+				OSType: &osType,
 			},
 		},
 		NetworkProfile: &networkProfile,
+		HardwareProfile: &armcompute.HardwareProfile{
+			VMSize: &vmSize,
+		},
 	}
 
-	testVM := compute.VirtualMachine{
-		ID:                       &id,
-		Name:                     &name,
-		Type:                     &vmType,
-		Location:                 &location,
-		Tags:                     tags,
-		VirtualMachineProperties: properties,
+	testVM := armcompute.VirtualMachine{
+		ID:         &id,
+		Name:       &name,
+		Type:       &vmType,
+		Location:   &location,
+		Tags:       tags,
+		Properties: properties,
 	}
 
 	expectedVM := virtualMachine{
 		ID:                id,
 		Name:              name,
+		ComputerName:      computerName,
 		Type:              vmType,
 		Location:          location,
 		OsType:            "Linux",
 		Tags:              tags,
 		NetworkInterfaces: []string{},
+		Size:              size,
 	}
 
 	actualVM := mapFromVM(testVM)
@@ -113,39 +138,54 @@ func TestMapFromVMWithTags(t *testing.T) {
 func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
 	id := "test"
 	name := "name"
+	size := "size"
+	vmSize := armcompute.VirtualMachineSizeTypes(size)
+	osType := armcompute.OperatingSystemTypesLinux
 	vmType := "type"
+	instanceID := "123"
 	location := "westeurope"
-	networkProfile := compute.NetworkProfile{
-		NetworkInterfaces: &[]compute.NetworkInterfaceReference{},
+	computerName := "computer_name"
+	networkProfile := armcompute.NetworkProfile{
+		NetworkInterfaces: []*armcompute.NetworkInterfaceReference{},
 	}
-	properties := &compute.VirtualMachineScaleSetVMProperties{
-		StorageProfile: &compute.StorageProfile{
-			OsDisk: &compute.OSDisk{
-				OsType: "Linux",
+	properties := &armcompute.VirtualMachineScaleSetVMProperties{
+		OSProfile: &armcompute.OSProfile{
+			ComputerName: &computerName,
+		},
+		StorageProfile: &armcompute.StorageProfile{
+			OSDisk: &armcompute.OSDisk{
+				OSType: &osType,
 			},
 		},
 		NetworkProfile: &networkProfile,
+		HardwareProfile: &armcompute.HardwareProfile{
+			VMSize: &vmSize,
+		},
 	}
 
-	testVM := compute.VirtualMachineScaleSetVM{
-		ID:                                 &id,
-		Name:                               &name,
-		Type:                               &vmType,
-		Location:                           &location,
-		Tags:                               nil,
-		VirtualMachineScaleSetVMProperties: properties,
+	testVM := armcompute.VirtualMachineScaleSetVM{
+		ID:         &id,
+		Name:       &name,
+		Type:       &vmType,
+		InstanceID: &instanceID,
+		Location:   &location,
+		Tags:       nil,
+		Properties: properties,
 	}
 
 	scaleSet := "testSet"
 	expectedVM := virtualMachine{
 		ID:                id,
 		Name:              name,
+		ComputerName:      computerName,
 		Type:              vmType,
 		Location:          location,
 		OsType:            "Linux",
 		Tags:              map[string]*string{},
 		NetworkInterfaces: []string{},
 		ScaleSet:          scaleSet,
+		InstanceID:        instanceID,
+		Size:              size,
 	}
 
 	actualVM := mapFromVMScaleSetVM(testVM, scaleSet)
@@ -156,42 +196,57 @@ func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
 func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 	id := "test"
 	name := "name"
+	size := "size"
+	vmSize := armcompute.VirtualMachineSizeTypes(size)
+	osType := armcompute.OperatingSystemTypesLinux
 	vmType := "type"
+	instanceID := "123"
 	location := "westeurope"
+	computerName := "computer_name"
 	tags := map[string]*string{
 		"prometheus": new(string),
 	}
-	networkProfile := compute.NetworkProfile{
-		NetworkInterfaces: &[]compute.NetworkInterfaceReference{},
+	networkProfile := armcompute.NetworkProfile{
+		NetworkInterfaces: []*armcompute.NetworkInterfaceReference{},
 	}
-	properties := &compute.VirtualMachineScaleSetVMProperties{
-		StorageProfile: &compute.StorageProfile{
-			OsDisk: &compute.OSDisk{
-				OsType: "Linux",
+	properties := &armcompute.VirtualMachineScaleSetVMProperties{
+		OSProfile: &armcompute.OSProfile{
+			ComputerName: &computerName,
+		},
+		StorageProfile: &armcompute.StorageProfile{
+			OSDisk: &armcompute.OSDisk{
+				OSType: &osType,
 			},
 		},
 		NetworkProfile: &networkProfile,
+		HardwareProfile: &armcompute.HardwareProfile{
+			VMSize: &vmSize,
+		},
 	}
 
-	testVM := compute.VirtualMachineScaleSetVM{
-		ID:                                 &id,
-		Name:                               &name,
-		Type:                               &vmType,
-		Location:                           &location,
-		Tags:                               tags,
-		VirtualMachineScaleSetVMProperties: properties,
+	testVM := armcompute.VirtualMachineScaleSetVM{
+		ID:         &id,
+		Name:       &name,
+		Type:       &vmType,
+		InstanceID: &instanceID,
+		Location:   &location,
+		Tags:       tags,
+		Properties: properties,
 	}
 
 	scaleSet := "testSet"
 	expectedVM := virtualMachine{
 		ID:                id,
 		Name:              name,
+		ComputerName:      computerName,
 		Type:              vmType,
 		Location:          location,
 		OsType:            "Linux",
 		Tags:              tags,
 		NetworkInterfaces: []string{},
 		ScaleSet:          scaleSet,
+		InstanceID:        instanceID,
+		Size:              size,
 	}
 
 	actualVM := mapFromVMScaleSetVM(testVM, scaleSet)
@@ -202,18 +257,26 @@ func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 func TestNewAzureResourceFromID(t *testing.T) {
 	for _, tc := range []struct {
 		id       string
-		expected azureResource
+		expected *arm.ResourceID
 	}{
 		{
-			id:       "/a/b/c/group/d/e/f/name",
-			expected: azureResource{"name", "group"},
+			id: "/subscriptions/SUBSCRIPTION_ID/resourceGroups/group/providers/PROVIDER/TYPE/name",
+			expected: &arm.ResourceID{
+				Name:              "name",
+				ResourceGroupName: "group",
+			},
 		},
 		{
-			id:       "/a/b/c/group/d/e/f/name/g/h",
-			expected: azureResource{"name", "group"},
+			id: "/subscriptions/SUBSCRIPTION_ID/resourceGroups/group/providers/PROVIDER/TYPE/name/TYPE/h",
+			expected: &arm.ResourceID{
+				Name:              "h",
+				ResourceGroupName: "group",
+			},
 		},
 	} {
-		actual, _ := newAzureResourceFromID(tc.id, nil)
-		require.Equal(t, tc.expected, actual)
+		actual, err := newAzureResourceFromID(tc.id, nil)
+		require.NoError(t, err)
+		require.Equal(t, tc.expected.Name, actual.Name)
+		require.Equal(t, tc.expected.ResourceGroupName, actual.ResourceGroupName)
 	}
 }

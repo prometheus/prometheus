@@ -17,7 +17,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -31,6 +31,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 type origin int
@@ -191,7 +193,7 @@ func (p *queryLogTest) String() string {
 	}
 	name = name + ", " + p.host + ":" + strconv.Itoa(p.port)
 	if p.enabledAtStart {
-		name = name + ", enabled at start"
+		name += ", enabled at start"
 	}
 	if p.prefix != "" {
 		name = name + ", with prefix " + p.prefix
@@ -233,10 +235,10 @@ func (p *queryLogTest) run(t *testing.T) {
 	p.skip(t)
 
 	// Setup temporary files for this test.
-	queryLogFile, err := ioutil.TempFile("", "query")
+	queryLogFile, err := os.CreateTemp("", "query")
 	require.NoError(t, err)
 	defer os.Remove(queryLogFile.Name())
-	p.configFile, err = ioutil.TempFile("", "config")
+	p.configFile, err = os.CreateTemp("", "config")
 	require.NoError(t, err)
 	defer os.Remove(p.configFile.Name())
 
@@ -246,11 +248,7 @@ func (p *queryLogTest) run(t *testing.T) {
 		p.setQueryLog(t, "")
 	}
 
-	dir, err := ioutil.TempDir("", "query_log_test")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	params := append([]string{
 		"-test.main",
@@ -271,7 +269,7 @@ func (p *queryLogTest) run(t *testing.T) {
 	wg.Add(1)
 	defer wg.Wait()
 	go func() {
-		slurp, _ := ioutil.ReadAll(stderr)
+		slurp, _ := io.ReadAll(stderr)
 		t.Log(string(slurp))
 		wg.Done()
 	}()
@@ -286,7 +284,7 @@ func (p *queryLogTest) run(t *testing.T) {
 
 	if !p.enabledAtStart {
 		p.query(t)
-		require.Equal(t, 0, len(readQueryLog(t, queryLogFile.Name())))
+		require.Empty(t, readQueryLog(t, queryLogFile.Name()))
 		p.setQueryLog(t, queryLogFile.Name())
 		p.reloadConfig(t)
 	}
@@ -311,7 +309,7 @@ func (p *queryLogTest) run(t *testing.T) {
 	p.query(t)
 
 	ql = readQueryLog(t, queryLogFile.Name())
-	require.Equal(t, qc, len(ql))
+	require.Len(t, ql, qc)
 
 	qc = len(ql)
 	p.setQueryLog(t, queryLogFile.Name())
@@ -322,7 +320,7 @@ func (p *queryLogTest) run(t *testing.T) {
 
 	ql = readQueryLog(t, queryLogFile.Name())
 	if p.exactQueryCount() {
-		require.Equal(t, qc, len(ql))
+		require.Len(t, ql, qc)
 	} else {
 		require.Greater(t, len(ql), qc, "no queries logged")
 	}
@@ -335,14 +333,14 @@ func (p *queryLogTest) run(t *testing.T) {
 		return
 	}
 	// Move the file, Prometheus should still write to the old file.
-	newFile, err := ioutil.TempFile("", "newLoc")
+	newFile, err := os.CreateTemp("", "newLoc")
 	require.NoError(t, err)
 	require.NoError(t, newFile.Close())
 	defer os.Remove(newFile.Name())
 	require.NoError(t, os.Rename(queryLogFile.Name(), newFile.Name()))
 	ql = readQueryLog(t, newFile.Name())
 	if p.exactQueryCount() {
-		require.Equal(t, qc, len(ql))
+		require.Len(t, ql, qc)
 	}
 	p.validateLastQuery(t, ql)
 	qc = len(ql)
@@ -353,7 +351,7 @@ func (p *queryLogTest) run(t *testing.T) {
 
 	ql = readQueryLog(t, newFile.Name())
 	if p.exactQueryCount() {
-		require.Equal(t, qc, len(ql))
+		require.Len(t, ql, qc)
 	} else {
 		require.Greater(t, len(ql), qc, "no queries logged")
 	}
@@ -412,7 +410,6 @@ func TestQueryLog(t *testing.T) {
 	cwd, err := os.Getwd()
 	require.NoError(t, err)
 
-	port := 15000
 	for _, host := range []string{"127.0.0.1", "[::1]"} {
 		for _, prefix := range []string{"", "/foobar"} {
 			for _, enabledAtStart := range []bool{true, false} {
@@ -422,7 +419,7 @@ func TestQueryLog(t *testing.T) {
 						host:           host,
 						enabledAtStart: enabledAtStart,
 						prefix:         prefix,
-						port:           port,
+						port:           testutil.RandomUnprivilegedPort(t),
 						cwd:            cwd,
 					}
 
