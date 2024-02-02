@@ -75,7 +75,7 @@ type DockerSDConfig struct {
 
 	RefreshInterval model.Duration `yaml:"refresh_interval"`
 
-	IncludeNoNetworkTargets bool `taml:"include_no_network_targets"`
+	IncludeNoNetworkTargets bool `yaml:"include_no_network_targets"`
 }
 
 // NewDiscovererMetrics implements discovery.Config.
