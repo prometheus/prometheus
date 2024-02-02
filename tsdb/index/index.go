@@ -725,7 +725,7 @@ func (w *Writer) writeLabelIndexesOffsetTable() error {
 		return err
 	}
 
-	return w.writeLenghtAndHash(startPos)
+	return w.writeLengthAndHash(startPos)
 }
 
 // writePostingsOffsetTable writes the postings offset table.
@@ -793,10 +793,10 @@ func (w *Writer) writePostingsOffsetTable() error {
 	}
 	w.fPO = nil
 
-	return w.writeLenghtAndHash(startPos)
+	return w.writeLengthAndHash(startPos)
 }
 
-func (w *Writer) writeLenghtAndHash(startPos uint64) error {
+func (w *Writer) writeLengthAndHash(startPos uint64) error {
 	// Write out the length.
 	w.buf1.Reset()
 	l := w.f.pos - startPos - 4
