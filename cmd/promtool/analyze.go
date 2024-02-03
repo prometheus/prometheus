@@ -30,7 +30,7 @@ import (
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/v2/model/labels"
 )
 
 var (

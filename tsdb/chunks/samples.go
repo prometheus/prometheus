@@ -14,8 +14,8 @@
 package chunks
 
 import (
-	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/v2/model/histogram"
+	"github.com/prometheus/prometheus/v2/tsdb/chunkenc"
 )
 
 type Samples interface {

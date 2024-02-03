@@ -24,7 +24,7 @@ import (
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/v2/prompb"
 )
 
 const (

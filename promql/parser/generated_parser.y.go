@@ -12,10 +12,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/value"
-	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/v2/model/histogram"
+	"github.com/prometheus/prometheus/v2/model/labels"
+	"github.com/prometheus/prometheus/v2/model/value"
+	"github.com/prometheus/prometheus/v2/promql/parser/posrange"
 )
 
 //line promql/parser/generated_parser.y:30

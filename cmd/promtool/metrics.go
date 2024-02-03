@@ -27,8 +27,8 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/storage/remote"
-	"github.com/prometheus/prometheus/util/fmtutil"
+	"github.com/prometheus/prometheus/v2/storage/remote"
+	"github.com/prometheus/prometheus/v2/util/fmtutil"
 )
 
 // Push metrics to a prometheus remote write (for testing purpose only).
