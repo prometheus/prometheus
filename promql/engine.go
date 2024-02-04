@@ -1409,6 +1409,15 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 				break
 			}
 		}
+
+		// Special handling for functions that work on series not samples.
+		switch e.Func.Name {
+		case "label_replace":
+			return ev.evalLabelReplace(e.Args)
+		case "label_join":
+			return ev.evalLabelJoin(e.Args)
+		}
+
 		if !matrixArg {
 			// Does not have a matrix argument.
 			return ev.rangeEval(nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
