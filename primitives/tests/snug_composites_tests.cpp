@@ -82,7 +82,7 @@ TEST(SnugComposites, SnapshotRollbackSymbolEncodingBimap) {
   encoding_bimap.rollback(checkpoint);
 
   // add new elements
-  for (auto str : etalons) {
+  for (const auto& str : etalons) {
     encoding_bimap.find_or_emplace(str);
   }
 

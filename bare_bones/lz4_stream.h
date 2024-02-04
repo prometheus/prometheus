@@ -29,7 +29,7 @@ class basic_ostream : public std::ostream {
    *
    * @param sink The stream to write compressed data to
    */
-  basic_ostream(std::ostream& sink, int compression_level = LZ4HC_CLEVEL_DEFAULT) : std::ostream(&buffer_), buffer_(sink, compression_level) {}
+  explicit basic_ostream(std::ostream& sink, int compression_level = LZ4HC_CLEVEL_DEFAULT) : std::ostream(&buffer_), buffer_(sink, compression_level) {}
 
   /**
    * @brief Destroys the LZ4 output stream. Calls close() if not already called.
@@ -150,12 +150,12 @@ class basic_istream : public std::istream {
    *
    * @param source The stream to read LZ4 compressed data from
    */
-  basic_istream(std::istream& source) : std::istream(&buffer_), buffer_(source) {}
+  explicit basic_istream(std::istream& source) : std::istream(&buffer_), buffer_(source) {}
 
  private:
   class input_buffer : public std::streambuf {
    public:
-    input_buffer(std::istream& source) : source_(source) {
+    explicit input_buffer(std::istream& source) : source_(source) {
       size_t ret = LZ4F_createDecompressionContext(&ctx_, LZ4F_VERSION);
       if (LZ4F_isError(ret) != 0) {
         throw std::runtime_error(std::string("Failed to create LZ4 decompression context: ") + LZ4F_getErrorName(ret));

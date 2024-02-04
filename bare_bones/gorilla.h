@@ -192,7 +192,7 @@ class __attribute__((__packed__)) StreamDecoder {
   StreamDecoder() = default;
 
   // TODO: merge move ctor and copy ctor into one?
-  inline __attribute__((always_inline)) StreamDecoder(const StreamEncoder& e)
+  explicit inline __attribute__((always_inline)) StreamDecoder(const StreamEncoder& e)
       : last_ts_(e.last_ts_),
         last_ts_delta_(e.last_ts_delta_),
         last_v_(e.last_v_),
@@ -200,12 +200,12 @@ class __attribute__((__packed__)) StreamDecoder {
         last_v_xor_trailing_z_(e.last_v_xor_trailing_z_),
         state_(static_cast<decltype(this->state_)>(e.state_)) {}
 
-  inline __attribute__((always_inline)) StreamDecoder(StreamEncoder&& e)
+  explicit inline __attribute__((always_inline)) StreamDecoder(StreamEncoder&& e)
       : last_ts_(e.last_ts_),
         last_ts_delta_(e.last_ts_delta_),
         last_v_(e.last_v_),
-        last_v_xor_length_(std::move(e.last_v_xor_length_)),
-        last_v_xor_trailing_z_(std::move(e.last_v_xor_trailing_z_)),
+        last_v_xor_length_(e.last_v_xor_length_),
+        last_v_xor_trailing_z_(e.last_v_xor_trailing_z_),
         state_(static_cast<decltype(this->state_)>(e.state_)) {}
 
   inline __attribute__((always_inline)) int64_t last_timestamp() const noexcept { return last_ts_; }

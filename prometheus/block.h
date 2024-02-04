@@ -189,8 +189,8 @@ class TableOfContent {
   }
   TableOfContent(const TableOfContent&) = default;
   TableOfContent& operator=(const TableOfContent&) = default;
-  TableOfContent(TableOfContent&&) = default;
-  TableOfContent& operator=(TableOfContent&&) = default;
+  TableOfContent(TableOfContent&&) noexcept = default;
+  TableOfContent& operator=(TableOfContent&&) noexcept = default;
 
   uint64_t symbols_table_offset() const { return reference_to_symbols_table_; }
   uint64_t symbols_table_length() const { return reference_to_series_table_ - reference_to_symbols_table_; }

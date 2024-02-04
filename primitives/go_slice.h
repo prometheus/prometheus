@@ -8,6 +8,7 @@
 #include <iostream>
 #include <type_traits>
 
+#include "bare_bones/preprocess.h"
 #include "bare_bones/type_traits.h"
 
 namespace PromPP::Primitives::Go {
@@ -120,10 +121,10 @@ class Slice {
       return;
     }
     cap_ = std::max(size, cap_ * 2);
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wclass-memaccess"
+    PRAGMA_DIAGNOSTIC(push)
+    PRAGMA_DIAGNOSTIC(ignored DIAGNOSTIC_CLASS_MEMACCESS)
     data_ = reinterpret_cast<T*>(std::realloc(data_, cap_ * sizeof(T)));
-#pragma GCC diagnostic pop
+    PRAGMA_DIAGNOSTIC(pop)
     if (__builtin_expect(data_ == nullptr, false)) {
       std::abort();
     }
@@ -134,10 +135,10 @@ class Slice {
       return;
     }
     cap_ = len_;
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wclass-memaccess"
+    PRAGMA_DIAGNOSTIC(push)
+    PRAGMA_DIAGNOSTIC(ignored DIAGNOSTIC_CLASS_MEMACCESS)
     data_ = reinterpret_cast<T*>(std::realloc(data_, cap_ * sizeof(T)));
-#pragma GCC diagnostic pop
+    PRAGMA_DIAGNOSTIC(pop)
     if (__builtin_expect(data_ == nullptr, false)) {
       std::abort();
     }
@@ -150,22 +151,22 @@ class Slice {
       if constexpr (BareBones::IsZeroInitializable<T>::value) {
         if constexpr (BareBones::IsTriviallyDestructible<T>::value) {
           if (size > len_) {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wclass-memaccess"
+            PRAGMA_DIAGNOSTIC(push)
+            PRAGMA_DIAGNOSTIC(ignored DIAGNOSTIC_CLASS_MEMACCESS)
             std::memset(data_ + len_, 0, (size - len_) * sizeof(T));
-#pragma GCC diagnostic pop
+            PRAGMA_DIAGNOSTIC(pop)
           } else {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wclass-memaccess"
+            PRAGMA_DIAGNOSTIC(push)
+            PRAGMA_DIAGNOSTIC(ignored DIAGNOSTIC_CLASS_MEMACCESS)
             std::memset(data_ + size, 0, (len_ - size) * sizeof(T));
-#pragma GCC diagnostic pop
+            PRAGMA_DIAGNOSTIC(pop)
           }
         } else {
           if (size > len_) {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wclass-memaccess"
+            PRAGMA_DIAGNOSTIC(push)
+            PRAGMA_DIAGNOSTIC(ignored DIAGNOSTIC_CLASS_MEMACCESS)
             std::memset(data_ + len_, 0, (size - len_) * sizeof(T));
-#pragma GCC diagnostic pop
+            PRAGMA_DIAGNOSTIC(pop)
           } else {
             for (uint32_t i = size; i != len_; ++i) {
               (data_ + i)->~T();
@@ -199,10 +200,10 @@ class Slice {
         (data_ + i)->~T();
       }
     }
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wclass-memaccess"
+    PRAGMA_DIAGNOSTIC(push)
+    PRAGMA_DIAGNOSTIC(ignored DIAGNOSTIC_CLASS_MEMACCESS)
     std::ranges::move(last, end(), first);
-#pragma GCC diagnostic pop
+    PRAGMA_DIAGNOSTIC(pop)
     resize(len_ - (last - first));
     return first;
   }
@@ -263,10 +264,10 @@ class Slice {
     reserve(size);
     if constexpr (!std::is_trivial<T>::value) {
       if constexpr (BareBones::IsZeroInitializable<T>::value) {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wclass-memaccess"
+        PRAGMA_DIAGNOSTIC(push)
+        PRAGMA_DIAGNOSTIC(ignored DIAGNOSTIC_CLASS_MEMACCESS)
         std::fill_n(data_ + len_, count, item);
-#pragma GCC diagnostic pop
+        PRAGMA_DIAGNOSTIC(pop)
       } else {
         for (uint32_t i = len_; i != size; ++i) {
           new (data_ + i) T(item);
@@ -299,7 +300,7 @@ class BytesStream {
   std::ios_base::iostate exceptions_;
 
  public:
-  BytesStream(Slice<char>* s) : slice_(s), exceptions_(std::ifstream::goodbit) {}
+  explicit BytesStream(Slice<char>* s) : slice_(s), exceptions_(std::ifstream::goodbit) {}
 
   std::ios_base::iostate exceptions() const { return exceptions_; }
   void exceptions(std::ios_base::iostate except) { exceptions_ = except; }

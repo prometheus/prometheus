@@ -463,8 +463,9 @@ class Codec1238 {
     } else if (code == 2) {
       return *d_i | (*(d_i + 1) << 8) | (*(d_i + 2) << 16);
     } else {
-      return (uint64_t)*d_i | ((uint64_t)(*(d_i + 1)) << 8) | ((uint64_t)(*(d_i + 2)) << 16) | ((uint64_t)(*(d_i + 3)) << 24) | ((uint64_t)(*(d_i + 4)) << 32) |
-             ((uint64_t)(*(d_i + 5)) << 40) | ((uint64_t)(*(d_i + 6)) << 48) | ((uint64_t)(*(d_i + 7)) << 56);
+      return static_cast<uint64_t>(*d_i) | (static_cast<uint64_t>(*(d_i + 1)) << 8) | (static_cast<uint64_t>(*(d_i + 2)) << 16) |
+             (static_cast<uint64_t>(*(d_i + 3)) << 24) | (static_cast<uint64_t>(*(d_i + 4)) << 32) | (static_cast<uint64_t>(*(d_i + 5)) << 40) |
+             (static_cast<uint64_t>(*(d_i + 6)) << 48) | (static_cast<uint64_t>(*(d_i + 7)) << 56);
     }
   }
 

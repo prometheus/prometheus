@@ -5,6 +5,7 @@
 #include <cstring>
 #include <numeric>
 
+#include "preprocess.h"
 #include "type_traits.h"
 
 namespace BareBones {
@@ -37,10 +38,10 @@ class Memory {
       new_size = std::min(new_size, static_cast<size_t>(std::numeric_limits<uint32_t>::max()));
     }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wclass-memaccess"
+    PRAGMA_DIAGNOSTIC(push)
+    PRAGMA_DIAGNOSTIC(ignored DIAGNOSTIC_CLASS_MEMACCESS)
     data_ = reinterpret_cast<T*>(std::realloc(data_, new_size * sizeof(T)));
-#pragma GCC diagnostic pop
+    PRAGMA_DIAGNOSTIC(pop)
     if (__builtin_expect(data_ == nullptr, false)) {
       std::abort();
     }
@@ -90,19 +91,19 @@ class Memory {
 
     if (this != &o) {
       size_ = o.size_;
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wclass-memaccess"
+      PRAGMA_DIAGNOSTIC(push)
+      PRAGMA_DIAGNOSTIC(ignored DIAGNOSTIC_CLASS_MEMACCESS)
       data_ = reinterpret_cast<T*>(std::realloc(data_, size_ * sizeof(T)));
-#pragma GCC diagnostic pop
+      PRAGMA_DIAGNOSTIC(pop)
       if (__builtin_expect(data_ == nullptr, false)) {
         size_ = 0;
         std::abort();
       }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wclass-memaccess"
+      PRAGMA_DIAGNOSTIC(push)
+      PRAGMA_DIAGNOSTIC(ignored DIAGNOSTIC_CLASS_MEMACCESS)
       std::memcpy(data_, o.data_, size_ * sizeof(T));
-#pragma GCC diagnostic pop
+      PRAGMA_DIAGNOSTIC(pop)
     }
 
     return *this;

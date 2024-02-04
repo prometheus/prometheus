@@ -69,7 +69,7 @@ class TimeSeriesForTest {
 
  public:
   TimeSeriesForTest() = default;
-  TimeSeriesForTest(const LabelSetForTest label_set, const std::vector<SampleForTest> samples) : samples_(samples) {
+  TimeSeriesForTest(const LabelSetForTest& label_set, const std::vector<SampleForTest>& samples) : samples_(samples) {
     label_set_ = PrimaryLS(data_, label_set).composite(data_);
   }
 

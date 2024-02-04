@@ -217,17 +217,13 @@ class BasicEncoder {
     BitsetType cur_bitset;
 
     template <typename T>
-    StaleNaNsState(T* t) : parent(t) {}
+    explicit StaleNaNsState(T* t) : parent(t) {}
   };
 
   // Opaque type for storing state between add_many() calls
-  using SourceState = size_t;
+  using SourceState = void*;
 
-  static void DestroySourceState(SourceState h) {
-    if (h) {
-      delete reinterpret_cast<StaleNaNsState<>*>(h);
-    }
-  }
+  static void DestroySourceState(SourceState h) { delete reinterpret_cast<StaleNaNsState<>*>(h); }
 
  private:
   LabelSetsTable label_sets_;
@@ -516,7 +512,7 @@ class BasicEncoder {
       }
       throw;
     }
-    return reinterpret_cast<SourceState>(result);
+    return result;
   }
 
   template <class OutputStream>
@@ -980,15 +976,15 @@ class BasicDecoder {
 
     if (ls_id_crc != segment_ls_id_crc_) {
       throw BareBones::Exception(0x6ea4e8b039aea0e8, "Decoder %s got error: CRC for LabelSet's ids mismatch: Decoder ls_id CRC: %u, segment ls_id CRC: %u",
-                                 uuids::to_string(uuid_).c_str(), (uint32_t)segment_ls_id_crc_, (uint32_t)ls_id_crc);
+                                 uuids::to_string(uuid_).c_str(), static_cast<uint32_t>(segment_ls_id_crc_), static_cast<uint32_t>(ls_id_crc));
     }
     if (ts_crc != segment_ts_crc_) {
       throw BareBones::Exception(0x0fd1fbf569f6c3c5, "Decoder %s got error: CRC for LabelSet's timestamps mismatch: Decoder ts CRC: %u, segment ts CRC: %u",
-                                 uuids::to_string(uuid_).c_str(), (uint32_t)segment_ts_crc_, (uint32_t)ts_crc);
+                                 uuids::to_string(uuid_).c_str(), static_cast<uint32_t>(segment_ts_crc_), static_cast<uint32_t>(ts_crc));
     }
     if (v_crc != segment_v_crc_) {
       throw BareBones::Exception(0x0ee2b199218aaf7d, "Decoder %s got error: CRC for LabelSet's timestamps mismatch: Decoder ts CRC: %u, segment ts CRC: %u",
-                                 uuids::to_string(uuid_).c_str(), (uint32_t)segment_v_crc_, (uint32_t)v_crc);
+                                 uuids::to_string(uuid_).c_str(), static_cast<uint32_t>(segment_v_crc_), static_cast<uint32_t>(v_crc));
     }
 
     clear_segment();

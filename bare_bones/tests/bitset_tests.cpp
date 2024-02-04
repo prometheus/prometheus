@@ -49,6 +49,7 @@ TEST(BareBonesBitset, random_access) {
 
   std::mt19937 gen32(testing::UnitTest::GetInstance()->random_seed());
   // Generate index for bit position
+  index.reserve(bs_size);
   for (auto i = 0; i < (bs_size); ++i) {
     index.push_back(gen32() % (bs_size - 1));
   }
@@ -65,6 +66,7 @@ TEST(BareBonesBitset, random_access) {
 
   // Prepare result vector from index
   std::vector<uint32_t> bs_vec_reference;
+  bs_vec_reference.reserve(index.size());
   for (auto i : index) {
     bs_vec_reference.push_back(i);
   }
