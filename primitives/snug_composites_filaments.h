@@ -323,7 +323,7 @@ class LabelNameSet {
   template <class T>
   // TODO requires is_label_name_set
   inline __attribute__((always_inline)) LabelNameSet(data_type& data, const T& lns) noexcept : pos_(data.symbols_ids_sequences.size()), size_(lns.size()) {
-    for (auto label_name : lns) {
+    for (const auto& label_name : lns) {
       uint32_t smbl_id = data.symbols_table.find_or_emplace(label_name);
       data.symbols_ids_sequences.push_back(smbl_id);
     }
@@ -398,7 +398,7 @@ class LabelSet {
       symbols_checkpoints_type symbols_tables_checkpoints_;
 
      public:
-      inline __attribute__((always_inline)) Checkpoint(data_type const& data) noexcept
+      explicit inline __attribute__((always_inline)) Checkpoint(data_type const& data) noexcept
           : size_(data.symbols_ids_sequences.size()), label_name_sets_table_checkpoint_(data.label_name_sets_table.checkpoint()) {
         for (const auto& symbols_table : data.symbols_tables) {
           symbols_tables_checkpoints_.emplace_back(symbols_table->checkpoint());
@@ -731,7 +731,7 @@ class LabelSet {
 
     inline __attribute__((always_inline)) const label_name_set_type& names() const noexcept { return label_name_set_; }
 
-    inline __attribute__((always_inline)) const auto size() const noexcept { return label_name_set_.size(); }
+    inline __attribute__((always_inline)) auto size() const noexcept { return label_name_set_.size(); }
 
     template <class LabelNameSetIteratorType, class ValuesIteratorType>
     class Iterator {

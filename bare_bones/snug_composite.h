@@ -107,7 +107,7 @@ class DecodingTable {
     typename data_type::checkpoint_type data_checkpoint_;
 
    public:
-    inline __attribute__((always_inline)) Checkpoint(DecodingTable<Filament> const& decoding_table) noexcept
+    explicit inline __attribute__((always_inline)) Checkpoint(DecodingTable<Filament> const& decoding_table) noexcept
         : decoding_table_(&decoding_table), size_(decoding_table.size()), data_checkpoint_(decoding_table.data().checkpoint()) {}
 
     size_t size() const noexcept { return size_; }

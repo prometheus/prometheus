@@ -60,7 +60,7 @@ class GoModelHashdex {
   using const_iterator = BareBones::Vector<Item>::const_iterator;
 
   inline __attribute__((always_inline)) GoModelHashdex() noexcept {}
-  inline __attribute__((always_inline)) GoModelHashdex(const HashdexLimits& limits) noexcept : limits_(limits) {}
+  explicit inline __attribute__((always_inline)) GoModelHashdex(const HashdexLimits& limits) noexcept : limits_(limits) {}
   inline __attribute__((always_inline)) ~GoModelHashdex(){};
 
   constexpr const std::string_view replica() const noexcept { return replica_; }
@@ -122,7 +122,7 @@ class ProtobufHashdex {
   using const_iterator = BareBones::Vector<const Item>::const_iterator;
 
   inline __attribute__((always_inline)) ProtobufHashdex() noexcept {}
-  inline __attribute__((always_inline)) ProtobufHashdex(const HashdexLimits& limits) noexcept : limits_(limits) {}
+  explicit inline __attribute__((always_inline)) ProtobufHashdex(const HashdexLimits& limits) noexcept : limits_(limits) {}
   inline __attribute__((always_inline)) ~ProtobufHashdex(){};
 
   constexpr const std::string_view replica() const noexcept { return replica_; }

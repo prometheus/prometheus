@@ -88,22 +88,22 @@ class Vector {
       if constexpr (IsZeroInitializable<T>::value) {
         if constexpr (IsTriviallyDestructible<T>::value) {
           if (size > size_) {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wclass-memaccess"
+            PRAGMA_DIAGNOSTIC(push)
+            PRAGMA_DIAGNOSTIC(ignored DIAGNOSTIC_CLASS_MEMACCESS)
             std::memset(data_ + size_, 0, (size - size_) * sizeof(T));
-#pragma GCC diagnostic pop
+            PRAGMA_DIAGNOSTIC(pop)
           } else {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wclass-memaccess"
+            PRAGMA_DIAGNOSTIC(push)
+            PRAGMA_DIAGNOSTIC(ignored DIAGNOSTIC_CLASS_MEMACCESS)
             std::memset(data_ + size, 0, (size_ - size) * sizeof(T));
-#pragma GCC diagnostic pop
+            PRAGMA_DIAGNOSTIC(pop)
           }
         } else {
           if (size > size_) {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wclass-memaccess"
+            PRAGMA_DIAGNOSTIC(push)
+            PRAGMA_DIAGNOSTIC(ignored DIAGNOSTIC_CLASS_MEMACCESS)
             std::memset(data_ + size_, 0, (size - size_) * sizeof(T));
-#pragma GCC diagnostic pop
+            PRAGMA_DIAGNOSTIC(pop)
           } else {
             for (uint32_t i = size; i != size_; ++i) {
               (data_ + i)->~T();
@@ -169,10 +169,10 @@ class Vector {
     assert(pos <= data_ + size_);
     const auto idx = pos - data_;
     reserve(size_ + 1);
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wclass-memaccess"
+    PRAGMA_DIAGNOSTIC(push)
+    PRAGMA_DIAGNOSTIC(ignored DIAGNOSTIC_CLASS_MEMACCESS)
     std::memmove(data_ + idx + 1, data_ + idx, (size_ - idx) * sizeof(T));
-#pragma GCC diagnostic pop
+    PRAGMA_DIAGNOSTIC(pop)
     ++size_;
     new (data_ + idx) T(item);
     return data_ + idx;

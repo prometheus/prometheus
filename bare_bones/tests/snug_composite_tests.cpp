@@ -24,7 +24,7 @@ class TestSnugCompositesStringFilament {
       uint32_t size() const { return size_; }
 
       template <BareBones::OutputStream S>
-      void save(S& out, data_type const data, Checkpoint const* from = nullptr) const {
+      void save(S& out, const data_type& data, Checkpoint const* from = nullptr) const {
         SerializationMode mode = (from != nullptr) ? SerializationMode::DELTA : SerializationMode::SNAPSHOT;
         out.put(static_cast<char>(mode));
         uint32_t first_to_save = 0;
@@ -37,7 +37,7 @@ class TestSnugCompositesStringFilament {
         out.write(data.begin() + first_to_save, size_to_save);
       }
 
-      uint32_t save_size(data_type const, Checkpoint const* from = nullptr) const {
+      uint32_t save_size(const data_type&, Checkpoint const* from = nullptr) const {
         uint32_t res = 1;  // mode
         uint32_t first_to_save = 0;
         if (from != nullptr) {
