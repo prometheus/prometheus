@@ -206,7 +206,7 @@ func readTestWAL(t testing.TB, dir string) (recs []interface{}) {
 			require.NoError(t, err)
 			recs = append(recs, exemplars)
 		default:
-			t.Fatalf("unknown record type")
+			require.Fail(t, "unknown record type")
 		}
 	}
 	require.NoError(t, r.Err())
@@ -1371,7 +1371,7 @@ func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
 		case []record.RefMetadata:
 			metadata++
 		default:
-			t.Fatalf("unknown record type")
+			require.Fail(t, "unknown record type")
 		}
 	}
 	require.Equal(t, 1, series)
@@ -1620,9 +1620,7 @@ func TestComputeChunkEndTime(t *testing.T) {
 	for testName, tc := range cases {
 		t.Run(testName, func(t *testing.T) {
 			got := computeChunkEndTime(tc.start, tc.cur, tc.max, tc.ratioToFull)
-			if got != tc.res {
-				t.Errorf("expected %d for (start: %d, cur: %d, max: %d, ratioToFull: %f), got %d", tc.res, tc.start, tc.cur, tc.max, tc.ratioToFull, got)
-			}
+			require.Equal(t, tc.res, got, "(start: %d, cur: %d, max: %d)", tc.start, tc.cur, tc.max)
 		})
 	}
 }

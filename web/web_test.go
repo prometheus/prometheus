@@ -440,7 +440,7 @@ func TestShutdownWithStaleConnection(t *testing.T) {
 	select {
 	case <-closed:
 	case <-time.After(timeout + 5*time.Second):
-		t.Fatalf("Server still running after read timeout.")
+		require.FailNow(t, "Server still running after read timeout.")
 	}
 }
 
@@ -502,7 +502,7 @@ func TestHandleMultipleQuitRequests(t *testing.T) {
 	select {
 	case <-closed:
 	case <-time.After(5 * time.Second):
-		t.Fatalf("Server still running after 5 seconds.")
+		require.FailNow(t, "Server still running after 5 seconds.")
 	}
 }
 
