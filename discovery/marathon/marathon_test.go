@@ -152,8 +152,8 @@ func TestMarathonSDRemoveApp(t *testing.T) {
 
 	tg2 := tgs[0]
 
-	require.Equal(t, tg1.Source, tg2.Source, "Source is different.")
 	require.NotEmpty(t, tg2.Targets, "Got a non-empty target set.")
+	require.Equal(t, tg1.Source, tg2.Source, "Source is different.")
 }
 
 func marathonTestAppListWithMultiplePorts(labels map[string]string, runningTasks int) *appList {
@@ -307,7 +307,7 @@ func TestMarathonSDSendGroupWithPortDefinitions(t *testing.T) {
 
 	tgt = tg.Targets[1]
 	require.Equal(t, "mesos-slave1:5678", string(tgt[model.AddressLabel]), "Wrong target address.")
-	require.Equal(t, "", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the second port.")
+	require.Empty(t, tgt[model.LabelName(portMappingLabelPrefix+"prometheus")], "Wrong portMappings label from the second port.")
 	require.Equal(t, "yes", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the second port.")
 }
 
