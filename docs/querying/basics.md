@@ -347,13 +347,14 @@ If a query is evaluated at a sampling timestamp after a time series is marked
 as stale, then no value is returned for that time series. If new samples are
 subsequently ingested for that time series, they will be returned as expected.
 
-If no sample is found (by default) 5 minutes before a sampling timestamp,
-no value is returned for that time series at this point in time. This
-effectively means that time series "disappear" from graphs at times where their
-latest collected sample is older than 5 minutes or after they are marked stale.
+A time series will go stale when it is no longer exported, or the target no
+longer exists. Such time series will disappear from graphs 
+at the times of their latest collected sample, and they will not be returned
+in queries after they are marked stale.
 
-Staleness will not be marked for time series that have timestamps included in
-their scrapes. Only the 5 minute threshold will be applied in that case.
+Some exporters, which put their own timestamps on samples, get a different behaviour: 
+series that stop being exported take the last value for (by default) 5 minutes before
+disappearing. The `track_timestamps_staleness` setting can change this.
 
 ### Avoiding slow queries and overloads
 
