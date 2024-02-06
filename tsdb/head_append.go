@@ -684,9 +684,9 @@ func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels,
 		return 0, fmt.Errorf("unknown series when trying to add metadata with HeadSeriesRef: %d and labels: %s", ref, lset)
 	}
 
-	s.RLock()
+	s.Lock()
 	hasNewMetadata := s.meta == nil || *s.meta != meta
-	s.RUnlock()
+	s.Unlock()
 
 	if hasNewMetadata {
 		a.metadata = append(a.metadata, record.RefMetadata{

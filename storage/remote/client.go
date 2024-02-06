@@ -141,22 +141,22 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 	}
 	t := httpClient.Transport
 
+	if len(conf.Headers) > 0 {
+		t = newInjectHeadersRoundTripper(conf.Headers, t)
+	}
+
 	if conf.SigV4Config != nil {
-		t, err = sigv4.NewSigV4RoundTripper(conf.SigV4Config, httpClient.Transport)
+		t, err = sigv4.NewSigV4RoundTripper(conf.SigV4Config, t)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	if conf.AzureADConfig != nil {
-		t, err = azuread.NewAzureADRoundTripper(conf.AzureADConfig, httpClient.Transport)
+		t, err = azuread.NewAzureADRoundTripper(conf.AzureADConfig, t)
 		if err != nil {
 			return nil, err
 		}
-	}
-
-	if len(conf.Headers) > 0 {
-		t = newInjectHeadersRoundTripper(conf.Headers, t)
 	}
 
 	httpClient.Transport = otelhttp.NewTransport(t)

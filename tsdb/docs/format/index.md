@@ -82,6 +82,10 @@ Each series section is aligned to 16 bytes. The ID for a series is the `offset/1
 Every series entry first holds its number of labels, followed by tuples of symbol table references that contain the label name and value. The label pairs are lexicographically sorted.  
 After the labels, the number of indexed chunks is encoded, followed by a sequence of metadata entries containing the chunks minimum (`mint`) and maximum (`maxt`) timestamp and a reference to its position in the chunk file. The `mint` is the time of the first sample and `maxt` is the time of the last sample in the chunk. Holding the time range data in the index allows dropping chunks irrelevant to queried time ranges without accessing them directly.
 
+Chunk references within single series must be increasing, and chunk references for `series_(N+1)` must be higher than chunk references for `series_N`.
+This property guarantees that chunks that belong to the same series are grouped together in the segment files.
+Furthermore chunk `mint` must be less or equal than `maxt`, and subsequent chunks within single series must have increasing `mint` and `maxt` and not overlap.
+
 `mint` of the first chunk is stored, it's `maxt` is stored as a delta and the `mint` and `maxt` are encoded as deltas to the previous time for subsequent chunks. Similarly, the reference of the first chunk is stored and the next ref is stored as a delta to the previous one.
 
 ```

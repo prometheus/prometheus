@@ -759,6 +759,18 @@ describe('promql operations', () => {
     },
     {
       expr:
+        'histogram_avg(                                           # Root of the query, final result, returns the average of observations.\n' +
+        '  sum by(method, path) (                                 # Argument to histogram_avg(), an aggregated histogram.\n' +
+        '    rate(                                                # Argument to sum(), the per-second increase of a histogram over 5m.\n' +
+        '      demo_api_request_duration_seconds{job="demo"}[5m]  # Argument to rate(), a vector of sparse histogram series over the last 5m.\n' +
+        '    )\n' +
+        '  )\n' +
+        ')',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr:
         'histogram_stddev(                                           # Root of the query, final result, returns the standard deviation of observations.\n' +
         '  sum by(method, path) (                                 # Argument to histogram_stddev(), an aggregated histogram.\n' +
         '    rate(                                                # Argument to sum(), the per-second increase of a histogram over 5m.\n' +

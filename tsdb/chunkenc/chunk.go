@@ -131,16 +131,20 @@ type Iterator interface {
 	// At returns the current timestamp/value pair if the value is a float.
 	// Before the iterator has advanced, the behaviour is unspecified.
 	At() (int64, float64)
-	// AtHistogram returns the current timestamp/value pair if the value is
-	// a histogram with integer counts. Before the iterator has advanced,
-	// the behaviour is unspecified.
-	AtHistogram() (int64, *histogram.Histogram)
+	// AtHistogram returns the current timestamp/value pair if the value is a
+	// histogram with integer counts. Before the iterator has advanced, the behaviour
+	// is unspecified.
+	// The method accepts an optional Histogram object which will be
+	// reused when not nil. Otherwise, a new Histogram object will be allocated.
+	AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram)
 	// AtFloatHistogram returns the current timestamp/value pair if the
 	// value is a histogram with floating-point counts. It also works if the
 	// value is a histogram with integer counts, in which case a
 	// FloatHistogram copy of the histogram is returned. Before the iterator
 	// has advanced, the behaviour is unspecified.
-	AtFloatHistogram() (int64, *histogram.FloatHistogram)
+	// The method accepts an optional FloatHistogram object which will be
+	// reused when not nil. Otherwise, a new FloatHistogram object will be allocated.
+	AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram)
 	// AtT returns the current timestamp.
 	// Before the iterator has advanced, the behaviour is unspecified.
 	AtT() int64
@@ -222,9 +226,11 @@ func (it *mockSeriesIterator) At() (int64, float64) {
 	return it.timeStamps[it.currIndex], it.values[it.currIndex]
 }
 
-func (it *mockSeriesIterator) AtHistogram() (int64, *histogram.Histogram) { return math.MinInt64, nil }
+func (it *mockSeriesIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
+	return math.MinInt64, nil
+}
 
-func (it *mockSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+func (it *mockSeriesIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	return math.MinInt64, nil
 }
 
@@ -249,13 +255,18 @@ func NewNopIterator() Iterator {
 
 type nopIterator struct{}
 
-func (nopIterator) Next() ValueType                                      { return ValNone }
-func (nopIterator) Seek(int64) ValueType                                 { return ValNone }
-func (nopIterator) At() (int64, float64)                                 { return math.MinInt64, 0 }
-func (nopIterator) AtHistogram() (int64, *histogram.Histogram)           { return math.MinInt64, nil }
-func (nopIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) { return math.MinInt64, nil }
-func (nopIterator) AtT() int64                                           { return math.MinInt64 }
-func (nopIterator) Err() error                                           { return nil }
+func (nopIterator) Next() ValueType      { return ValNone }
+func (nopIterator) Seek(int64) ValueType { return ValNone }
+func (nopIterator) At() (int64, float64) { return math.MinInt64, 0 }
+func (nopIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
+	return math.MinInt64, nil
+}
+
+func (nopIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+	return math.MinInt64, nil
+}
+func (nopIterator) AtT() int64 { return math.MinInt64 }
+func (nopIterator) Err() error { return nil }
 
 // Pool is used to create and reuse chunk references to avoid allocations.
 type Pool interface {

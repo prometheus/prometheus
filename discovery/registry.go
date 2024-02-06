@@ -24,6 +24,8 @@ import (
 
 	"gopkg.in/yaml.v2"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -257,4 +259,25 @@ func replaceYAMLTypeError(err error, oldTyp, newTyp reflect.Type) error {
 		}
 	}
 	return err
+}
+
+// RegisterSDMetrics registers the metrics used by service discovery mechanisms.
+// RegisterSDMetrics should be called only once during the lifetime of the Prometheus process.
+// There is no need for the Prometheus process to unregister the metrics.
+func RegisterSDMetrics(registerer prometheus.Registerer, rmm RefreshMetricsManager) (map[string]DiscovererMetrics, error) {
+	err := rmm.Register()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create service discovery refresh metrics")
+	}
+
+	metrics := make(map[string]DiscovererMetrics)
+	for _, conf := range configNames {
+		currentSdMetrics := conf.NewDiscovererMetrics(registerer, rmm)
+		err = currentSdMetrics.Register()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create service discovery metrics")
+		}
+		metrics[conf.Name()] = currentSdMetrics
+	}
+	return metrics, nil
 }
