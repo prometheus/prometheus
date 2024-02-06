@@ -219,10 +219,10 @@ testmetric{label="\"bar\""} 1`
 }
 
 func TestUTF8PromParse(t *testing.T) {
-	// model.NameValidationScheme = model.UTF8Validation
-	// defer func() {
-	// 	model.NameValidationScheme = model.LegacyValidation
-	// }()
+	model.NameValidationScheme = model.UTF8Validation
+	defer func() {
+		model.NameValidationScheme = model.LegacyValidation
+	}()
 
 	input := `# HELP "go.gc_duration_seconds" A summary of the GC invocation durations.
 # 	TYPE "go.gc_duration_seconds" summary
@@ -242,7 +242,7 @@ func TestUTF8PromParse(t *testing.T) {
 		m       string
 		t       *int64
 		v       float64
-		typ     MetricType
+		typ     model.MetricType
 		help    string
 		comment string
 	}{
@@ -251,7 +251,7 @@ func TestUTF8PromParse(t *testing.T) {
 			help: "A summary of the GC invocation durations.",
 		}, {
 			m:   "go.gc_duration_seconds",
-			typ: MetricTypeSummary,
+			typ: model.MetricTypeSummary,
 		}, {
 			m:    `{"go.gc_duration_seconds",quantile="0"}`,
 			v:    4.9351e-05,
