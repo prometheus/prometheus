@@ -302,7 +302,7 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 
 func TestUTF8OpenMetricsParse(t *testing.T) {
 	model.NameValidationScheme = model.UTF8Validation
-	defer func(){
+	defer func() {
 		model.NameValidationScheme = model.LegacyValidation
 	}()
 
