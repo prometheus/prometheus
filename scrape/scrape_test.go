@@ -2327,7 +2327,7 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 				require.True(t, strings.HasPrefix(accept, "application/vnd.google.protobuf;"),
 					"Expected Accept header to prefer application/vnd.google.protobuf.")
 			}
-			if strings.Contains(accept, "validchars=utf8") {
+			if strings.Contains(accept, "escaping=allow-utf-8") {
 				t.Errorf("Expected Accept header not to allow utf8, got %q", accept)
 			}
 
@@ -2381,7 +2381,7 @@ func TestUTF8TargetScraperScrapeOK(t *testing.T) {
 	server := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			accept := r.Header.Get("Accept")
-			if !strings.Contains(accept, "validchars=utf8") {
+			if !strings.Contains(accept, "escaping=allow-utf-8") {
 				t.Errorf("Expected Accept header to allow utf8, got %q", accept)
 			}
 
@@ -2390,7 +2390,7 @@ func TestUTF8TargetScraperScrapeOK(t *testing.T) {
 				t.Errorf("Expected scrape timeout header %q, got %q", expectedTimeout, timeout)
 			}
 
-			w.Header().Set("Content-Type", `text/plain; version=1.0.0; validchars=utf8`)
+			w.Header().Set("Content-Type", `text/plain; version=1.0.0; escaping=allow-utf-8`)
 			w.Write([]byte(`{"metric.a"} 1
 {"metric.b"} 2
 `))
@@ -2421,7 +2421,7 @@ func TestUTF8TargetScraperScrapeOK(t *testing.T) {
 		require.NoError(t, err)
 		contentType, err := ts.readResponse(context.Background(), resp, &buf)
 		require.NoError(t, err)
-		require.Equal(t, "text/plain; version=1.0.0; validchars=utf8", contentType)
+		require.Equal(t, "text/plain; version=1.0.0; escaping=allow-utf-8", contentType)
 		require.Equal(t, `{"metric.a"} 1
 {"metric.b"} 2
 `, buf.String())
