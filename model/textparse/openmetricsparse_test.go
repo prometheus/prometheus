@@ -301,9 +301,10 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 }
 
 func TestUTF8OpenMetricsParse(t *testing.T) {
+	oldValidationScheme := model.NameValidationScheme
 	model.NameValidationScheme = model.UTF8Validation
 	defer func() {
-		model.NameValidationScheme = model.LegacyValidation
+		model.NameValidationScheme = oldValidationScheme
 	}()
 
 	input := `# HELP "go.gc_duration_seconds" A summary of the GC invocation durations.
