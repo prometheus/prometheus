@@ -20,7 +20,7 @@ void load_protobuf_wal_and_save_gorilla_to_sharded_wal::execute(const Config& co
 
   for (const auto& number_of_shards : numbers_of_shards_) {
     std::ifstream infile(input_file_full_name(config), std::ios_base::in | std::ios_base::binary);
-    BareBones::LZ4Stream::istream in(infile);
+    BareBones::LZ4Stream::istream in(&infile);
     if (!infile.is_open()) {
       throw std::runtime_error("failed to open file '" + input_file_full_name(config) + "'");
     }

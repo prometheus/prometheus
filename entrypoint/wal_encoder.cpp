@@ -8,6 +8,15 @@
 #include "wal/hashdex.h"
 #include "wal/wal.h"
 
+extern "C" void prompp_wal_encoders_version(void* res) {
+  struct Result {
+    uint8_t encoders_version;
+  };
+
+  Result* out = new (res) Result();
+  out->encoders_version = static_cast<uint8_t>(PromPP::WAL::Writer::version);
+}
+
 extern "C" void prompp_wal_encoder_ctor(void* args, void* res) {
   struct Arguments {
     uint16_t shard_id;

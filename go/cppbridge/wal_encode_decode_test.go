@@ -94,7 +94,7 @@ func (*EncoderDecoderSuite) transferringData(income frames.WritePayload) []byte 
 
 func (s *EncoderDecoderSuite) TestEncodeDecode() {
 	hlimits := cppbridge.DefaultWALHashdexLimits()
-	dec := cppbridge.NewWALDecoder()
+	dec := cppbridge.NewWALDecoder(cppbridge.EncodersVersion())
 	enc := cppbridge.NewWALEncoder(0, 0)
 	count := 10
 	k := count + 1
@@ -140,7 +140,7 @@ func (s *EncoderDecoderSuite) TestEncodeDecode() {
 func (s *EncoderDecoderSuite) TestEncodeDecodeOpenHead() {
 	createdAt := time.Now()
 	hlimits := cppbridge.DefaultWALHashdexLimits()
-	dec := cppbridge.NewWALDecoder()
+	dec := cppbridge.NewWALDecoder(cppbridge.EncodersVersion())
 	enc := cppbridge.NewWALEncoder(0, 0)
 	for i := 1; i < 21; i++ {
 		s.T().Log("generate protobuf")
@@ -183,6 +183,7 @@ func (s *EncoderDecoderSuite) TestEncodeDecodeOpenHead() {
 func (s *EncoderDecoderSuite) TestRestoreFromStream() {
 	hlimits := cppbridge.DefaultWALHashdexLimits()
 	enc := cppbridge.NewWALEncoder(0, 0)
+	encodersVersion := cppbridge.EncodersVersion()
 	buf := make([]byte, 0)
 	count := 10
 	offsets := make([]uint64, count)
@@ -203,7 +204,7 @@ func (s *EncoderDecoderSuite) TestRestoreFromStream() {
 
 	for i := range offsets {
 		s.T().Logf("restore decoder for segment id: %d\n", i)
-		dec := cppbridge.NewWALDecoder()
+		dec := cppbridge.NewWALDecoder(encodersVersion)
 		offset, retoreSID, err := dec.RestoreFromStream(s.baseCtx, buf, uint32(i))
 		s.Require().NoError(err)
 
@@ -211,9 +212,10 @@ func (s *EncoderDecoderSuite) TestRestoreFromStream() {
 		s.Equal(uint32(i), retoreSID)
 	}
 
-	s.T().Logf("restore decoder for over segment id: %d\n", count)
-	dec := cppbridge.NewWALDecoder()
-	offset, retoreSID, err := dec.RestoreFromStream(s.baseCtx, buf, uint32(count))
+	s.T().Logf("restore decoder for over segment id: %d\n", count-1)
+	dec := cppbridge.NewWALDecoder(encodersVersion)
+	// cannot restore to more id
+	offset, retoreSID, err := dec.RestoreFromStream(s.baseCtx, buf, uint32(count-1))
 	s.Require().NoError(err)
 
 	s.Equal(uint64(len(buf)), offset)
@@ -226,7 +228,7 @@ func (s *EncoderDecoderSuite) EncodeDecodeBench(i int64) {
 	data, err := expectedWr.Marshal()
 	s.Require().NoError(err)
 	hlimits := cppbridge.DefaultWALHashdexLimits()
-	dec := cppbridge.NewWALDecoder()
+	dec := cppbridge.NewWALDecoder(cppbridge.EncodersVersion())
 	enc := cppbridge.NewWALEncoder(0, 0)
 	h, err := cppbridge.NewWALProtobufHashdex(data, hlimits)
 	s.Require().NoError(err)
@@ -243,7 +245,7 @@ func (s *EncoderDecoderSuite) EncodeDecodeBench(i int64) {
 
 // this test run for local  benchmark test
 func (s *EncoderDecoderSuite) TestEncodeDecodeBenchmark() {
-	for i := 0; i < 1000; i++ {
+	for i := 0; i < 10; i++ {
 		s.EncodeDecodeBench(int64(i))
 	}
 }

@@ -218,7 +218,7 @@ class DummyWal {
   }
 
  public:
-  DummyWal(const std::string& file_path) : file_(file_path, std::ios_base::in | std::ios_base::binary), in_(file_) {
+  DummyWal(const std::string& file_path) : file_(file_path, std::ios_base::in | std::ios_base::binary), in_(&file_) {
     if (!file_.is_open()) {
       throw std::runtime_error("failed to open file '" + file_path + "'");
     }

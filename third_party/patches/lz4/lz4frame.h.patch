@@ -1,0 +1,11 @@
+--- lib/lz4frame.h
++++ lib/lz4frame_patched.h
+@@ -74,7 +74,7 @@ extern "C" {
+ #elif defined(LZ4_DLL_IMPORT) && (LZ4_DLL_IMPORT==1)
+ #  define LZ4FLIB_API __declspec(dllimport)
+ #elif defined(__GNUC__) && (__GNUC__ >= 4)
+-#  define LZ4FLIB_API __attribute__ ((__visibility__ ("default")))
++#  define LZ4FLIB_API
+ #else
+ #  define LZ4FLIB_API
+ #endif

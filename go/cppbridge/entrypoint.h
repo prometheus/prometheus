@@ -28,11 +28,15 @@ extern "C" {
 /**
  * @brief Construct a new WAL Decoder
  *
+ * @param args {
+ *     encoder_version uint8_t // basic encoder version
+ * }
+ *
  * @param res {
  *     decoder uintptr // pointer to constructed decoder
  * }
  */
-void prompp_wal_decoder_ctor(void* res);
+void prompp_wal_decoder_ctor(void* args, void* res);
 
 /**
  * @brief Destroy decoder
@@ -69,8 +73,9 @@ void prompp_wal_decoder_decode(void* args, void* res);
  *     decoder uintptr // pointer to constructed decoder
  *     segment []byte  // segment content
  * }
- * @param args {
- *     error   []byte  // error string if thrown
+ * @param res {
+ *     segment_id uint32  // last decoded segment id
+ *     error   []byte     // error string if thrown
  * }
  */
 void prompp_wal_decoder_decode_dry(void* args, void* res);
@@ -97,6 +102,15 @@ void prompp_wal_decoder_restore_from_stream(void* args, void* res);
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/**
+ * @brief Basic encoder version
+ *
+ * @param res {
+ *     encoders_version uint8_t // basic encoders version
+ * }
+ */
+void prompp_wal_encoders_version(void* res);
 
 /**
  * @brief Construct a new WAL Encoder

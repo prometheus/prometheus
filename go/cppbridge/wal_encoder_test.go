@@ -72,6 +72,12 @@ func (*EncoderSuite) transferringData(income frames.WritePayload) []byte {
 	return buf
 }
 
+func (s *EncoderSuite) TestEncoderVersion() {
+	var expectedVersion uint8 = 3
+	actualVersion := cppbridge.EncodersVersion()
+	s.Equal(expectedVersion, actualVersion)
+}
+
 func (s *EncoderSuite) TestEncode() {
 	s.T().Log("encode data")
 	hlimits := cppbridge.DefaultWALHashdexLimits()

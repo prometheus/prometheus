@@ -32,6 +32,9 @@ func freeBytes(b []byte) {
 	runtime.KeepAlive(b)
 }
 
+// GetFlavor returns recognized architecture flavor
+//
+//revive:disable:confusing-naming // wrapper
 func getFlavor() string {
 	var res struct {
 		flavor string
@@ -144,6 +147,20 @@ func walGoModelHashdexPresharding(hashdex uintptr, data []model.TimeSeries) (clu
 //
 // Encoder
 //
+
+// walEncodersVersion - return current encoders version.
+func walEncodersVersion() uint8 {
+	var res struct {
+		encoders_version uint8
+	}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_wal_encoders_version,
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.encoders_version
+}
 
 // walEncoderCtor - wrapper for constructor C-Encoder.
 func walEncoderCtor(shardID uint16, logShards uint8) uintptr {
@@ -269,13 +286,17 @@ func walEncoderDtor(encoder uintptr) {
 //
 
 // walDecoderCtor - wrapper for constructor C-Decoder.
-func walDecoderCtor() uintptr {
+func walDecoderCtor(encodersVersion uint8) uintptr {
+	var args = struct {
+		encoder_version uint8
+	}{encodersVersion}
 	var res struct {
 		decoder uintptr
 	}
 
-	fastcgo.UnsafeCall1(
+	fastcgo.UnsafeCall2(
 		C.prompp_wal_decoder_ctor,
+		uintptr(unsafe.Pointer(&args)),
 		uintptr(unsafe.Pointer(&res)),
 	)
 
@@ -304,13 +325,14 @@ func walDecoderDecode(decoder uintptr, segment []byte) (stats DecodedSegmentStat
 }
 
 // decoderDecode - decode WAL-segment and drop decoded data through C++ decoder.
-func walDecoderDecodeDry(decoder uintptr, segment []byte) (err []byte) {
+func walDecoderDecodeDry(decoder uintptr, segment []byte) (segmentID uint32, err []byte) {
 	var args = struct {
 		decoder uintptr
 		segment []byte
 	}{decoder, segment}
 	var res struct {
-		error []byte
+		segmentID uint32
+		error     []byte
 	}
 
 	fastcgo.UnsafeCall2(
@@ -319,7 +341,7 @@ func walDecoderDecodeDry(decoder uintptr, segment []byte) (err []byte) {
 		uintptr(unsafe.Pointer(&res)),
 	)
 
-	return res.error
+	return res.segmentID, res.error
 }
 
 // decoderDecode - decode all segments from given stream dump through C++ decoder.

@@ -3,6 +3,15 @@ extern "C" {
 #endif
 
 /**
+ * @brief Basic encoder version
+ *
+ * @param res {
+ *     encoders_version uint8_t // basic encoders version
+ * }
+ */
+void prompp_wal_encoders_version(void* res);
+
+/**
  * @brief Construct a new WAL Encoder
  *
  * @param args {

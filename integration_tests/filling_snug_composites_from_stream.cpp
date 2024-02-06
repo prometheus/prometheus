@@ -14,9 +14,9 @@ namespace {
 
 struct SnugComposite : public testing::Test {
   std::ifstream underlying_stream_for_lss_wal_lz4_stream;
-  BareBones::LZ4Stream::istream lss_wal_lz4_stream{underlying_stream_for_lss_wal_lz4_stream};
+  BareBones::LZ4Stream::istream lss_wal_lz4_stream{&underlying_stream_for_lss_wal_lz4_stream};
   std::ifstream underlying_stream_for_lss_full_lz4_stream;
-  BareBones::LZ4Stream::istream lss_full_lz4_stream{underlying_stream_for_lss_full_lz4_stream};
+  BareBones::LZ4Stream::istream lss_full_lz4_stream{&underlying_stream_for_lss_full_lz4_stream};
   Primitives::SnugComposites::LabelSet::DecodingTable expected_result;
 
   void SetUp() final {

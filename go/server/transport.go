@@ -18,6 +18,8 @@ import (
 const (
 	protocolVersion       uint8 = 3
 	protocolVersionSocket uint8 = 4
+
+	encodersVersion uint8 = 1
 )
 
 // Reader - implementation of the reader with the Next iterator function.
@@ -60,7 +62,7 @@ func (pr *ProtocolReader) Next(ctx context.Context) (*Request, error) {
 // handlePut - process the put using the decoder.
 func (pr *ProtocolReader) handlePut(ctx context.Context, fe *frames.ReadFrame) (*Request, error) {
 	if pr.decoder == nil {
-		pr.decoder = cppbridge.NewWALDecoder()
+		pr.decoder = cppbridge.NewWALDecoder(encodersVersion)
 	}
 
 	segment, err := pr.decoder.Decode(ctx, fe.GetBody())

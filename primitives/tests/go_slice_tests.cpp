@@ -1,23 +1,32 @@
 #include <gtest/gtest.h>
-#include <algorithm>
-#include <string>
 
 #include "primitives/go_slice.h"
 
 namespace {
-TEST(TestGoSlice, write_and_read) {
-  using PromPP::Primitives::Go::BytesStream;
-  using PromPP::Primitives::Go::Slice;
-  using PromPP::Primitives::Go::SliceView;
 
-  Slice<char> s;
-  BytesStream bs(&s);
+using PromPP::Primitives::Go::BytesStream;
+using PromPP::Primitives::Go::Slice;
 
-  std::string test = "Hello!";
-  bs.write(test.data(), test.size());
+class BytesStreamFixture : public testing::Test {
+ protected:
+  Slice<char> slice_;
+  BytesStream stream_{&slice_};
+};
 
-  SliceView<char>* sv = reinterpret_cast<SliceView<char>*>(&s);
+TEST_F(BytesStreamFixture, Test1) {
+  // Arrange
+  constexpr std::string_view expected = "Hello!5123.456";
+  stream_.exceptions(std::ifstream::failbit | std::ifstream::badbit | std::ifstream::eofbit);
 
-  EXPECT_EQ(test, std::string_view(sv->data(), sv->size()));
+  // Act
+  stream_ << "Hello";
+  stream_ << '!';
+  stream_ << 5;
+  stream_ << 123.456;
+
+  // Assert
+  EXPECT_EQ(expected, std::string_view(slice_.data(), slice_.size()));
+  EXPECT_EQ(expected.size(), stream_.tellp());
 }
+
 }  // namespace

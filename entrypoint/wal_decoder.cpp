@@ -7,13 +7,17 @@
 #include "primitives/go_slice_protozero.h"
 #include "wal/decoder.h"
 
-extern "C" void prompp_wal_decoder_ctor(void* res) {
+extern "C" void prompp_wal_decoder_ctor(void* args, void* res) {
+  struct Arguments {
+    uint8_t encoder_version;
+  };
   using Result = struct {
     PromPP::WAL::Decoder* decoder;
   };
 
+  auto* in = reinterpret_cast<Arguments*>(args);
   Result* out = new (res) Result();
-  out->decoder = new PromPP::WAL::Decoder();
+  out->decoder = new PromPP::WAL::Decoder(static_cast<PromPP::WAL::BasicEncoderVersion>(in->encoder_version));
 }
 
 extern "C" void prompp_wal_decoder_dtor(void* args) {
@@ -57,6 +61,7 @@ extern "C" void prompp_wal_decoder_decode_dry(void* args, void* res) {
     PromPP::Primitives::Go::SliceView<char> segment;
   };
   struct Result {
+    uint32_t segment_id;
     PromPP::Primitives::Go::Slice<char> error;
   };
 
@@ -64,7 +69,7 @@ extern "C" void prompp_wal_decoder_decode_dry(void* args, void* res) {
   Result* out = new (res) Result();
 
   try {
-    in->decoder->decode_dry(in->segment);
+    in->decoder->decode_dry(in->segment, out);
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
     handle_current_exception(__func__, err_stream);

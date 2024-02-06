@@ -8,7 +8,7 @@ using namespace PromPP;  // NOLINT
 
 void save_lss_to_wal::execute(const Config& config, Metrics& metrics) const {
   std::ofstream outfile(output_file_full_name(config), std::ios_base::binary);
-  BareBones::LZ4Stream::ostream out(outfile);
+  BareBones::LZ4Stream::ostream out(&outfile);
   if (!outfile.is_open()) {
     throw std::runtime_error("failed to open file '" + output_file_full_name(config) + "'");
   }

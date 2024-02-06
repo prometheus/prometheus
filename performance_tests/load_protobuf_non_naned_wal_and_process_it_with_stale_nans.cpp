@@ -60,7 +60,7 @@ struct BenchParams {
 void run_bench(BenchParams& benchmark_params, const std::string& path, const Config&, Metrics& metrics) {
   using namespace std::chrono_literals;
   std::ifstream infile(path, std::ios_base::binary);
-  BareBones::LZ4Stream::istream in(infile);
+  BareBones::LZ4Stream::istream in(&infile);
   size_t processed_messages_count = 0;
 
   // 1. read our messages
