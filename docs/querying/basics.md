@@ -51,7 +51,7 @@ String literals are designated by single quotes, double quotes or backticks.
 PromQL follows the same [escaping rules as
 Go](https://golang.org/ref/spec#String_literals). For string literals in single or double quotes, a
 backslash begins an escape sequence, which may be followed by `a`, `b`, `f`,
-`n`, `r`, `t`, `v` or `\`.  Characters can be produced using octal
+`n`, `r`, `t`, `v` or `\`.  Specific characters can be provided using octal
 (`\nnn`) or hexadecimal (`\xnn`, `\unnnn` and `\Unnnnnnnn`) notations.  
 
 Conversely, escape characters are not parsed in string literals designated by backticks. It is important to note that, unlike Go, Prometheus does not discard newlines inside backticks.
@@ -146,7 +146,7 @@ The query:
 
     http_requests_total{replica!="rep-a",replica=~"rep.*"}
 
-Would them match:
+Would then match:
 
     http_requests_total{replica="rep-b"}
 
