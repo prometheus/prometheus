@@ -82,7 +82,11 @@ Examples:
     -Inf
     NaN
 
-## Time series Selectors
+## Time series selectors
+
+Time series selectors are responsible for selecting the times series and raw or inferred sample timestamps and values.
+
+Time series *selectors* are not to be confused with higher level concept of instant and range *queries* that can execute the time series *selectors*. A higher level instant query would evaluate the given selector at one point in time, however the range query would evaluate the selector at multiple different times in between a minimum and maximum timestamp at regular steps.
 
 ### Instant vector selectors
 
