@@ -327,7 +327,7 @@ PromQL supports line comments that start with `#`. Example:
 ### Staleness
 
 The timestamps at which to sample data, during a query, are selected
-independently of the actual present time series data. This method principally supports
+independently of the actual present time series data. This is mainly to support
 cases like aggregation (`sum`, `avg`, and so on), where multiple aggregated
 time series do not precisely align in time. Because of their independence,
 Prometheus needs to assign a value at those timestamps for each relevant time
