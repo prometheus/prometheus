@@ -52,7 +52,7 @@ PromQL follows the same [escaping rules as
 Go](https://golang.org/ref/spec#String_literals). For string literals in single or double quotes, a
 backslash begins an escape sequence, which may be followed by `a`, `b`, `f`,
 `n`, `r`, `t`, `v` or `\`.  Specific characters can be provided using octal
-(`\nnn`) or hexadecimal (`\xnn`, `\unnnn` and `\Unnnnnnnn`) notations.  
+(`\nnn`) or hexadecimal (`\xnn`, `\unnnn` and `\Unnnnnnnn`) notations.
 
 Conversely, escape characters are not parsed in string literals designated by backticks. It is important to note that, unlike Go, Prometheus does not discard newlines inside backticks.
 
@@ -86,8 +86,8 @@ Examples:
 
 ### Instant vector selectors
 
-Instant vector selectors allow the selection of a set of time series (in a time range query) 
-and a single sample value for each at a given timestamp (in an instant query).  In the simplest
+Instant vector selectors allow the selection of a set of time series and a
+single sample value for each at a given timestamp (point in time).  In the simplest
 form, only a metric name is specified, which results in an instant vector
 containing elements for all time series that have this metric name.
 
@@ -202,7 +202,7 @@ following units:
 
 * `ms` - milliseconds
 * `s` - seconds
-* `m` - minutes - assuming a minute always has 60s<sup>1</sup>
+* `m` - minutes
 * `h` - hours
 * `d` - days - assuming a day always has 24h
 * `w` - weeks - assuming a week always has 7d
@@ -331,7 +331,8 @@ independently of the actual present time series data. This is mainly to support
 cases like aggregation (`sum`, `avg`, and so on), where multiple aggregated
 time series do not precisely align in time. Because of their independence,
 Prometheus needs to assign a value at those timestamps for each relevant time
-series. It does so by taking the newest sample before this timestamp.
+series. It does so by taking the newest sample before this timestamp within the lookback period.
+The lookback period is 5 minutes by default.
 
 If a target scrape or rule evaluation no longer returns a sample for a time
 series that was previously present, this time series will be marked as stale.
