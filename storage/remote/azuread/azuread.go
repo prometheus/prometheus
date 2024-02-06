@@ -111,13 +111,11 @@ func (c *AzureADConfig) Validate() error {
 	}
 
 	if c.ManagedIdentity != nil {
-		if c.ManagedIdentity.ClientID == "" {
-			return fmt.Errorf("must provide an Azure Managed Identity client_id in the Azure AD config")
-		}
-
-		_, err := uuid.Parse(c.ManagedIdentity.ClientID)
-		if err != nil {
-			return fmt.Errorf("the provided Azure Managed Identity client_id is invalid")
+		if c.ManagedIdentity.ClientID != "" {
+			_, err := uuid.Parse(c.ManagedIdentity.ClientID)
+			if err != nil {
+				return fmt.Errorf("the provided Azure Managed Identity client_id is invalid")
+			}
 		}
 	}
 
@@ -230,8 +228,13 @@ func newTokenCredential(cfg *AzureADConfig) (azcore.TokenCredential, error) {
 
 // newManagedIdentityTokenCredential returns new Managed Identity token credential.
 func newManagedIdentityTokenCredential(clientOpts *azcore.ClientOptions, managedIdentityConfig *ManagedIdentityConfig) (azcore.TokenCredential, error) {
-	clientID := azidentity.ClientID(managedIdentityConfig.ClientID)
-	opts := &azidentity.ManagedIdentityCredentialOptions{ClientOptions: *clientOpts, ID: clientID}
+	var opts *azidentity.ManagedIdentityCredentialOptions
+	if managedIdentityConfig.ClientID != "" {
+		clientID := azidentity.ClientID(managedIdentityConfig.ClientID)
+		opts = &azidentity.ManagedIdentityCredentialOptions{ClientOptions: *clientOpts, ID: clientID}
+	} else {
+		opts = &azidentity.ManagedIdentityCredentialOptions{ClientOptions: *clientOpts}
+	}
 	return azidentity.NewManagedIdentityCredential(opts)
 }
 
