@@ -1956,8 +1956,9 @@ func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, no
 }
 
 var (
-	fPointPool zeropool.Pool[[]FPoint]
-	hPointPool zeropool.Pool[[]HPoint]
+	minPoolSizePower = 5
+	fPointPool       = make([]zeropool.Pool[[]FPoint], 32)
+	hPointPool       zeropool.Pool[[]HPoint]
 
 	// matrixSelectorHPool holds reusable histogram slices used by the matrix
 	// selector. The key difference between this pool and the hPointPool is that
@@ -1968,7 +1969,18 @@ var (
 )
 
 func getFPointSlice(sz int) []FPoint {
-	if p := fPointPool.Get(); p != nil {
+	index := int(math.Ceil(math.Log2(float64(sz)))) - minPoolSizePower
+
+	if index >= len(fPointPool) {
+		return make([]FPoint, 0, sz)
+	}
+
+	// if the size is < than the minPoolSizePower we return an array from the first pool
+	if index < 0 {
+		index = 0
+	}
+
+	if p := fPointPool[index].Get(); p != nil {
 		return p
 	}
 
@@ -1983,7 +1995,11 @@ func getFPointSlice(sz int) []FPoint {
 // This function is called with an estimated size which often can be over-estimated.
 func putFPointSlice(p []FPoint) {
 	if p != nil {
-		fPointPool.Put(p[:0])
+		index := int(math.Floor(math.Log2(float64(cap(p))))) - minPoolSizePower
+		if index >= len(fPointPool) || index < 0 {
+			return
+		}
+		fPointPool[index].Put(p[:0])
 	}
 }
 
