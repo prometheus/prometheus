@@ -46,7 +46,7 @@ _Notes about the experimental native histograms:_
 
 ### String literals
 
-Strings literals are designated by single quotes, double quotes or backticks.
+String literals are designated by single quotes, double quotes or backticks.
 
 PromQL follows the same [escaping rules as
 Go](https://golang.org/ref/spec#String_literals). For string literals in single or double quotes, a
@@ -105,7 +105,7 @@ metric name that also have the `job` label set to `prometheus` and their
 
     http_requests_total{job="prometheus",group="canary"}
 
-It is also possible to negatively match a label value or match label values
+It is also possible to negatively match a label value, or to match label values
 against regular expressions. The following label matching operators exist:
 
 * `=`: Select labels that are exactly equal to the provided string.
@@ -123,7 +123,7 @@ For example, this selects all `http_requests_total` time series for `staging`,
 Label matchers that match empty label values also select all time series that
 do not have the specific label set at all. It is possible to have multiple matchers for the same label name.
 
-An example dataset may include:
+For example, given the dataset:
 
     http_requests_total
     http_requests_total{replica="rep-a"}
@@ -139,11 +139,6 @@ The query `http_requests_total{environment=""}` would match and return:
 and would exclude:
 
     http_requests_total{environment="development"}
-
-Regex-matches are fully anchored, meaning the pattern will only match if the whole string matches.
-
-    http_requests_total{replica=~"^rep.*"} # Good!
-    http_requests_total{replica=~"^rep"}   # No match
 
 Multiple matchers can be used for the same label name; they all must pass for a result to be returned. 
 
@@ -367,10 +362,10 @@ or aggregated your data sufficiently, switch to graph mode. If the expression
 still takes too long to graph ad-hoc, pre-record it via a [recording
 rule](../configuration/recording_rules.md#recording-rules).
 
-This consideration is especially relevant for Prometheus's query language, where a bare
+This is especially relevant for Prometheus's query language, where a bare
 metric name selector like `api_http_requests_total` could expand to thousands
 of time series with different labels. Also, keep in mind that expressions that
-aggregate over many number of time series samples will generate load on the server even if the
-output is only a small number of time series samples. This is similar to how it would
+aggregate over many time series will generate load on the server even if the
+output is only a small number of time series. This is similar to how it would
 be slow to sum all values of a column in a relational database, even if the
 output value is only a single number.
