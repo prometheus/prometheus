@@ -9,7 +9,7 @@ using namespace PromPP;  // NOLINT
 
 void full_save_lss::execute(const Config& config, Metrics& metrics) const {
   std::ifstream infile(input_file_full_name(config), std::ios_base::binary);
-  BareBones::LZ4Stream::istream in(infile);
+  BareBones::LZ4Stream::istream in(&infile);
   if (!infile.is_open()) {
     throw std::runtime_error("failed to open file '" + input_file_full_name(config) + "'");
   }
@@ -20,7 +20,7 @@ void full_save_lss::execute(const Config& config, Metrics& metrics) const {
   }
 
   std::ofstream outfile(output_file_full_name(config), std::ios_base::binary);
-  BareBones::LZ4Stream::ostream out(outfile);
+  BareBones::LZ4Stream::ostream out(&outfile);
   if (!outfile.is_open()) {
     throw std::runtime_error("failed to open file '" + output_file_full_name(config) + "'");
   }

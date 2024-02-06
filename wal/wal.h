@@ -14,6 +14,7 @@
 #include "bare_bones/encoding.h"
 #include "bare_bones/exception.h"
 #include "bare_bones/gorilla.h"
+#include "bare_bones/lz4_stream.h"
 #include "bare_bones/snug_composite.h"
 #include "bare_bones/sparse_vector.h"
 #include "bare_bones/vector.h"
@@ -91,6 +92,8 @@ concept TimeseriesWithHashValGenerator = requires(Callable c, AddCallable ac, co
 template <typename Callable, typename AddCallable, typename Timeseries>
 concept TimeseriesGenerator =
     TimeseriesWithoutHashValGenerator<Callable, AddCallable, Timeseries> || TimeseriesWithHashValGenerator<Callable, AddCallable, Timeseries>;
+
+enum class BasicEncoderVersion : uint8_t { kV1 = 1, kV2, kV3 };
 
 template <class LabelSetsTable = Primitives::SnugComposites::LabelSet::EncodingBimap>
 class BasicEncoder {
@@ -223,6 +226,8 @@ class BasicEncoder {
   // Opaque type for storing state between add_many() calls
   using SourceState = void*;
 
+  static constexpr BasicEncoderVersion version = BasicEncoderVersion::kV3;
+
   static void DestroySourceState(SourceState h) { delete reinterpret_cast<StaleNaNsState<>*>(h); }
 
  private:
@@ -230,6 +235,7 @@ class BasicEncoder {
   typename LabelSetsTable::checkpoint_type label_sets_checkpoint_;
   Buffer buffer_;
   BareBones::Vector<BareBones::Encoding::Gorilla::StreamEncoder> gorilla_;
+  BareBones::LZ4Stream::ostream lz4stream_{nullptr};
 
   const uuids::uuid uuid_;
   uint32_t next_encoded_segment_ = 0;
@@ -246,8 +252,7 @@ class BasicEncoder {
   uint16_t shard_id_ = 0;
   uint8_t pow_two_of_total_shards_ = 0;
 
-  template <class OutputStream>
-  std::unique_ptr<Redundant> encode_segment(OutputStream& out) {
+  std::unique_ptr<Redundant> encode_segment(std::ostream& stream) {
     BareBones::BitSequence gorilla_ts_bitseq, gorilla_v_bitseq;
     BareBones::EncodedSequence<BareBones::Encoding::DeltaRLE<>> ls_id_delta_rle_seq;
     BareBones::EncodedSequence<BareBones::Encoding::DeltaZigZagRLE<>> ts_delta_rle_seq;
@@ -304,67 +309,51 @@ class BasicEncoder {
       });
     }
 
-    auto original_exceptions = out.exceptions();
-    auto sg1 = std::experimental::scope_exit([&]() { out.exceptions(original_exceptions); });
-    out.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+    auto sg1 = std::experimental::scope_exit([original_exceptions = stream.exceptions(), &stream]() { stream.exceptions(original_exceptions); });
+    stream.exceptions(std::ifstream::failbit | std::ifstream::badbit);
 
-    // write version
-    out.put(1);
-    ++metadata_bytes_;
-
-    // write uuid
-    out.write(reinterpret_cast<const char*>(uuid_.as_bytes().data()), 16);
-    metadata_bytes_ += 16;
-
-    // write shard ID
-    out.write(reinterpret_cast<const char*>(&shard_id_), 2);
-    metadata_bytes_ += 2;
-
-    // and pow of two of total shards..
-    out.write(reinterpret_cast<const char*>(&pow_two_of_total_shards_), 1);
-    metadata_bytes_ += 1;
-
-    // write segment number
-    out.write(reinterpret_cast<const char*>(&next_encoded_segment_), sizeof(next_encoded_segment_));
-    metadata_bytes_ += sizeof(next_encoded_segment_);
+    lz4stream_.set_stream(&stream);
 
     // write open-close timestamps
     const int64_t created_at_tsns = buffer_.first_sample_added_at_ts_ns();
     const auto now = std::chrono::system_clock::now();
     const int64_t encoded_at_tsns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
-    out.write(reinterpret_cast<const char*>(&created_at_tsns), sizeof(created_at_tsns));
-    out.write(reinterpret_cast<const char*>(&encoded_at_tsns), sizeof(encoded_at_tsns));
+    lz4stream_.write(reinterpret_cast<const char*>(&created_at_tsns), sizeof(created_at_tsns));
+    lz4stream_.write(reinterpret_cast<const char*>(&encoded_at_tsns), sizeof(encoded_at_tsns));
     metadata_bytes_ += 16;
 
     // write new label sets
     label_sets_checkpoint_ = label_sets_.checkpoint();
     label_sets_bytes_ += label_sets_checkpoint_.save_size(&redundant->label_sets_checkpoint);
-    out << (label_sets_checkpoint_ - redundant->label_sets_checkpoint);
+    lz4stream_ << (label_sets_checkpoint_ - redundant->label_sets_checkpoint);
 
     // write ls ids
     ls_id_bytes_ += ls_id_delta_rle_seq.save_size() + ls_id_crc.save_size();
-    out << ls_id_delta_rle_seq << ls_id_crc;
+    lz4stream_ << ls_id_delta_rle_seq << ls_id_crc;
 
     // write ts base
-    out.write(reinterpret_cast<const char*>(&ts_base_), sizeof(ts_base_));
+    lz4stream_.write(reinterpret_cast<const char*>(&ts_base_), sizeof(ts_base_));
     ts_bytes_ += sizeof(ts_base_);
 
     // write ts
     if (ts_delta_rle_is_worth_trying && ts_delta_rle_seq.save_size() < gorilla_ts_bitseq.save_size()) {
-      out.put(0);
+      lz4stream_.put(0);
 
       ts_bytes_ += ts_delta_rle_seq.save_size() + ts_crc.save_size();
-      out << ts_delta_rle_seq << ts_crc;
+      lz4stream_ << ts_delta_rle_seq << ts_crc;
     } else {
-      out.put(1);
+      lz4stream_.put(1);
 
       ts_bytes_ += gorilla_ts_bitseq.save_size() + ts_crc.save_size();
-      out << gorilla_ts_bitseq << ts_crc;
+      lz4stream_ << gorilla_ts_bitseq << ts_crc;
     }
 
     // write values
     v_bytes_ += gorilla_v_bitseq.save_size() + v_crc.save_size();
-    out << gorilla_v_bitseq << v_crc;
+    lz4stream_ << gorilla_v_bitseq << v_crc;
+
+    lz4stream_ << std::flush;
+    lz4stream_.set_stream(nullptr);
 
     samples_ += buffer_.samples_count();
     buffer_.clear();
@@ -626,6 +615,7 @@ template <class LabelSetsTable = Primitives::SnugComposites::LabelSet::DecodingT
 class BasicDecoder {
   LabelSetsTable label_sets_;
   BareBones::Vector<BareBones::Encoding::Gorilla::StreamDecoder> gorilla_;
+  BareBones::LZ4Stream::istream lz4stream_{nullptr};
 
   uuids::uuid uuid_;
   uint32_t last_processed_segment_ = std::numeric_limits<uint32_t>::max();
@@ -644,6 +634,7 @@ class BasicDecoder {
   uint8_t pow_two_of_total_shards_ = 0;
   int64_t created_at_tsns_ = 0;
   int64_t encoded_at_tsns_ = 0;
+  BasicEncoderVersion encoder_version_;
 
   void clear_segment() {
     segment_gorilla_ts_bitseq_.clear();
@@ -684,76 +675,22 @@ class BasicDecoder {
     return uuid;
   }
 
-  template <class InputStream>
-  void load_segment(InputStream& in) {
+  void load_segment(std::istream& stream) {
     assert(segment_gorilla_v_bitseq_.empty());
 
-    // read version
-    uint8_t version = in.get();
-
     // return successfully, if stream is empty
-    if (in.eof())
+    if (stream.eof())
       return;
 
-    // check version
-    if (version != 1) {
-      throw BareBones::Exception(0x3449dc095f9e2f31, "Invalid segment version (%d), only version 1 is supported", version);
+    if (encoder_version_ == BasicEncoderVersion::kV1) {
+      char v1_data[24];
+      stream.read(v1_data, sizeof(v1_data));
     }
 
-    auto original_exceptions = in.exceptions();
-    auto sg1 = std::experimental::scope_exit([&]() { in.exceptions(original_exceptions); });
-    in.exceptions(std::ifstream::failbit | std::ifstream::badbit | std::ifstream::eofbit);
+    auto sg1 = std::experimental::scope_exit([original_exceptions = stream.exceptions(), &stream]() { stream.exceptions(original_exceptions); });
+    stream.exceptions(std::ifstream::failbit | std::ifstream::badbit | std::ifstream::eofbit);
 
-    // read uuid
-    auto uuid = read_uuid(in);
-
-    // associate uuid if it's a first segment
-    if (last_processed_segment_ + 1 == 0)
-      uuid_ = uuid;
-
-    // check uuid
-    if (uuid_ != uuid) {
-      throw BareBones::Exception(0x4050da9e13900f11, "Input segment's UUID (%s) doesn't match with Decoder's UUID (%s)", uuids::to_string(uuid).c_str(),
-                                 uuids::to_string(uuid_).c_str());
-    }
-
-    {
-      uint16_t shard_id = 0;
-      uint8_t pow_two_of_total_shards = 0;
-
-      // read shard ID
-      in.read(reinterpret_cast<char*>(&shard_id), sizeof(shard_id));
-
-      // associate shard_id if it's a first segment
-      if (last_processed_segment_ + 1 == 0) {
-        shard_id_ = shard_id;
-      }
-
-      if (shard_id != shard_id_) {
-        throw BareBones::Exception(0xcf388325297850a4, "Input segment's shard id (%d) doesn't match with Decoder's shard id (%d)", shard_id, shard_id_);
-      }
-
-      // read pow of two of total shards
-      in.read(reinterpret_cast<char*>(&pow_two_of_total_shards), sizeof(pow_two_of_total_shards));
-
-      // associate also shards count if it's a first segment
-      if (last_processed_segment_ + 1 == 0) {
-        pow_two_of_total_shards_ = pow_two_of_total_shards;
-      }
-
-      if (pow_two_of_total_shards != pow_two_of_total_shards_) {
-        throw BareBones::Exception(0x85a8f764e17983db, "Input segment's shards count (%d) doesn't match with Decoder's shards count (%d)",
-                                   pow_two_of_total_shards, pow_two_of_total_shards_);
-      }
-    }
-
-    // read segment
-    uint32_t segment;
-    in.read(reinterpret_cast<char*>(&segment), sizeof(segment));
-
-    if (segment != last_processed_segment_ + 1) {
-      throw BareBones::Exception(0xfb9b62e957a1ac39, "Unexpected input segment id %d, expected %d", segment, (last_processed_segment_ + 1));
-    }
+    std::istream& in = get_stream(stream);
 
     in.read(reinterpret_cast<char*>(&created_at_tsns_), sizeof(created_at_tsns_));
     in.read(reinterpret_cast<char*>(&encoded_at_tsns_), sizeof(encoded_at_tsns_));
@@ -786,7 +723,18 @@ class BasicDecoder {
     gorilla_.resize(label_sets_.size());
   }
 
+  [[nodiscard]] PROMPP_ALWAYS_INLINE std::istream& get_stream(std::istream& stream) noexcept {
+    if (encoder_version_ == BasicEncoderVersion::kV3) {
+      lz4stream_.set_stream(&stream);
+      return lz4stream_;
+    }
+
+    return stream;
+  }
+
  public:
+  explicit BasicDecoder(BasicEncoderVersion encoder_version) : encoder_version_(encoder_version) {}
+
   // label sets' comparison is expensive, so it must be explicitly compared
   // as a byte streams.
   bool operator==(const BasicDecoder& reader) const noexcept {

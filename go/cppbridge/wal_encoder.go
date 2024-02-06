@@ -128,6 +128,11 @@ type SourceState struct {
 	pointer uintptr
 }
 
+// EncodersVersion - return current encoder version.
+func EncodersVersion() uint8 {
+	return walEncodersVersion()
+}
+
 // WALEncoder - go wrapper for C-WALEncoder.
 //
 //	encoder - pointer to a C++ encoder initiated in C++ memory;

@@ -117,9 +117,9 @@ type WALDecoder struct {
 }
 
 // NewWALDecoder - init new Decoder.
-func NewWALDecoder() *WALDecoder {
+func NewWALDecoder(encodersVersion uint8) *WALDecoder {
 	d := &WALDecoder{
-		decoder: walDecoderCtor(),
+		decoder: walDecoderCtor(encodersVersion),
 	}
 	runtime.SetFinalizer(d, func(d *WALDecoder) {
 		walDecoderDtor(d.decoder)
@@ -137,13 +137,13 @@ func (d *WALDecoder) Decode(ctx context.Context, segment []byte) (ProtobufConten
 }
 
 // DecodeDry - decode incoming encoding data, restores decoder.
-func (d *WALDecoder) DecodeDry(ctx context.Context, segment []byte) error {
+func (d *WALDecoder) DecodeDry(ctx context.Context, segment []byte) (uint32, error) {
 	if ctx.Err() != nil {
-		return ctx.Err()
+		return 0, ctx.Err()
 	}
 
-	exception := walDecoderDecodeDry(d.decoder, segment)
-	return handleException(exception)
+	segmentID, exception := walDecoderDecodeDry(d.decoder, segment)
+	return segmentID, handleException(exception)
 }
 
 // RestoreFromStream - restore from incoming encoding data, restores decoder.

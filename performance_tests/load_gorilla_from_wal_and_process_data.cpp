@@ -7,13 +7,13 @@ using namespace PromPP;  // NOLINT
 
 void load_gorilla_from_wal_and_process_data::execute(const Config& config, Metrics& metrics) const {
   std::ifstream infile(input_file_full_name(config), std::ios_base::binary);
-  BareBones::LZ4Stream::istream in(infile);
+  BareBones::LZ4Stream::istream in(&infile);
   if (!infile.is_open()) {
     throw std::runtime_error("failed to open file '" + input_file_full_name(config) + "'");
   }
   std::chrono::nanoseconds period(0);
 
-  WAL::Reader wal;
+  WAL::Reader wal{WAL::BasicEncoderVersion::kV3};
   while (!in.eof()) {
     uint32_t series = wal.series();
     uint64_t samples = wal.samples();

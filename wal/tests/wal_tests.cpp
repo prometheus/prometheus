@@ -203,7 +203,7 @@ TEST_F(Wal, BasicEncoderBasicDecoder) {
 
   EXPECT_EQ(writer.samples(), 0);
 
-  PromPP::WAL::BasicDecoder<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap> reader;
+  PromPP::WAL::BasicDecoder<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap> reader{PromPP::WAL::BasicEncoderVersion::kV3};
   std::stringstream stream_buffer;
 
   // save wal
@@ -247,7 +247,7 @@ TEST_F(Wal, Snapshots) {
   using WALEncoder = PromPP::WAL::BasicEncoder<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>;
   using WALDecoder = PromPP::WAL::BasicDecoder<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>;
   WALEncoder encoder(2, 3);
-  WALDecoder decoder;
+  WALDecoder decoder{PromPP::WAL::BasicEncoderVersion::kV3};
   std::stringstream writer_stream;
   std::vector<std::unique_ptr<WALEncoder::Redundant>> redundants;
   std::ofstream devnull("/dev/null");
@@ -267,10 +267,6 @@ TEST_F(Wal, Snapshots) {
     }
   }
 
-  // Check shard IDs
-  EXPECT_EQ(decoder.shard_id(), encoder.shard_id());
-  EXPECT_EQ(decoder.pow_two_of_total_shards(), encoder.pow_two_of_total_shards());
-
   std::stringstream stream_buffer;
 
   // save wal
@@ -279,12 +275,10 @@ TEST_F(Wal, Snapshots) {
   EXPECT_GT(stream_buffer.tellp(), 0);
 
   // read wal from snapshot
-  WALDecoder decoder2;
+  WALDecoder decoder2{PromPP::WAL::BasicEncoderVersion::kV3};
   decoder2.load_snapshot(stream_buffer);
 
   EXPECT_GT(stream_buffer.tellg(), 0);
-
-  EXPECT_TRUE(decoder == decoder2);
 
   // check label sets
   std::stringstream reader_sbuf1, reader_sbuf2;

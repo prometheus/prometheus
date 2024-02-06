@@ -1,6 +1,8 @@
 package cppbridge
 
 // GetFlavor returns recognized architecture flavor
+//
+//revive:disable:confusing-naming // wrapper
 func GetFlavor() string {
 	return getFlavor()
 }

@@ -268,8 +268,9 @@ func (s *GoModelHashdexTestSuite) makeTestData(limits cppbridge.WALHashdexLimits
 }
 
 func (s *GoModelHashdexTestSuite) TestHappyPath() {
+	encodersVersion := cppbridge.EncodersVersion()
 	limits := cppbridge.DefaultWALHashdexLimits()
-	dec := cppbridge.NewWALDecoder()
+	dec := cppbridge.NewWALDecoder(encodersVersion)
 	enc := cppbridge.NewWALEncoder(0, 0)
 
 	testData := s.makeTestData(limits, 1000)

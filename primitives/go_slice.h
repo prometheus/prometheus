@@ -295,34 +295,32 @@ class Slice {
 
 };  // class Slice
 
-class BytesStream {
-  Slice<char>* slice_;
-  std::ios_base::iostate exceptions_;
-
+class BytesStream : public std::ostream {
  public:
-  explicit BytesStream(Slice<char>* s) : slice_(s), exceptions_(std::ifstream::goodbit) {}
+  explicit BytesStream(Slice<char>* s) : std::ostream(&buffer_), buffer_(s) {}
 
-  std::ios_base::iostate exceptions() const { return exceptions_; }
-  void exceptions(std::ios_base::iostate except) { exceptions_ = except; }
+ private:
+  class output_buffer : public std::streambuf {
+   public:
+    explicit output_buffer(Slice<char>* s) : slice_(s) {}
 
-  bool good() const { return true; }
-  bool eof() const { return false; }
-  bool fail() const { return false; }
-  bool bad() const { return false; }
+   private:
+    Slice<char>* slice_;
 
-  BytesStream& put(char c) {
-    slice_->push_back(c);
-    return *this;
-  }
+    int_type overflow(int_type ch) override {
+      slice_->push_back(ch);
+      return ch;
+    }
 
-  BytesStream& write(const char* s, std::streamsize count) {
-    slice_->push_back(s, s + count);
-    return *this;
-  }
+    std::streamsize xsputn(const char_type* s, std::streamsize count) override {
+      slice_->push_back(s, s + count);
+      return count;
+    }
 
-  size_t tellp() const noexcept { return slice_->size(); }
+    pos_type seekoff(off_type, std::ios_base::seekdir, std::ios_base::openmode) override { return slice_->size(); }
+  };
 
-  BytesStream& flush() { return *this; }
-};  // class BytesStream
+  output_buffer buffer_;
+};
 
 }  // namespace PromPP::Primitives::Go

@@ -21,7 +21,7 @@ class Decoder {
   Reader reader_;
 
  public:
-  inline __attribute__((always_inline)) Decoder() noexcept {}
+  inline __attribute__((always_inline)) explicit Decoder(BasicEncoderVersion encoder_version) noexcept : reader_(encoder_version) {}
 
   // decode - decoding incoming data and make protbuf.
   template <class Input, class Output, class Stats>
@@ -45,11 +45,12 @@ class Decoder {
   }
 
   // decode_dry - decoding incoming data without protbuf.
-  template <class Input>
-  inline __attribute__((always_inline)) void decode_dry(Input& in) {
+  template <class Input, class Stats>
+  inline __attribute__((always_inline)) void decode_dry(Input& in, Stats* stats) {
     std::ispanstream inspan(std::string_view(in.data(), in.size()));
     inspan >> reader_;
     reader_.process_segment([](uint32_t, uint64_t, double) {});
+    stats->segment_id = reader_.last_processed_segment();
   }
 
   // restore_from_stream - restore the decoder state to the required segment from the file.

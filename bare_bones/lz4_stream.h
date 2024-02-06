@@ -27,9 +27,9 @@ class basic_ostream : public std::ostream {
   /**
    * @brief Constructs an LZ4 compression output stream
    *
-   * @param sink The stream to write compressed data to
+   * @param stream The stream to write compressed data to
    */
-  explicit basic_ostream(std::ostream& sink, int compression_level = LZ4HC_CLEVEL_DEFAULT) : std::ostream(&buffer_), buffer_(sink, compression_level) {}
+  explicit basic_ostream(std::ostream* stream, int compression_level = LZ4HC_CLEVEL_DEFAULT) : std::ostream(&buffer_), buffer_(stream, compression_level) {}
 
   /**
    * @brief Destroys the LZ4 output stream. Calls close() if not already called.
@@ -41,7 +41,9 @@ class basic_ostream : public std::ostream {
    *
    * After calling this function no more data should be written to the stream.
    */
-  void close() { buffer_.close(); }
+  PROMPP_ALWAYS_INLINE void close() { buffer_.close(); }
+
+  PROMPP_ALWAYS_INLINE void set_stream(std::ostream* stream) { buffer_.set_stream(stream); }
 
  private:
   class output_buffer : public std::streambuf {
@@ -49,12 +51,11 @@ class basic_ostream : public std::ostream {
     output_buffer(const output_buffer&) = delete;
     output_buffer& operator=(const output_buffer&) = delete;
 
-    output_buffer(std::ostream& sink, int compression_level) : sink_(sink) {
-      LZ4F_preferences_t preferences = LZ4F_INIT_PREFERENCES;
-      preferences.compressionLevel = compression_level;
+    output_buffer(std::ostream* stream, int compression_level) : stream_(stream) {
+      preferences_.compressionLevel = compression_level;
 
       // TODO: No need to recalculate the dest_buf_ size on each construction
-      dest_buf_.reserve(LZ4F_compressBound(src_buf_.size(), &preferences));
+      dest_buf_.reserve(LZ4F_compressBound(src_buf_.size(), &preferences_));
 
       char* base = &src_buf_.front();
       setp(base, base + src_buf_.size() - 1);
@@ -63,26 +64,37 @@ class basic_ostream : public std::ostream {
       if (LZ4F_isError(ret) != 0) {
         throw std::runtime_error(std::string("Failed to create LZ4 compression context: ") + LZ4F_getErrorName(ret));
       }
-      write_header(preferences);
+      write_header();
     }
 
     ~output_buffer() { close(); }
 
-    void close() {
+    PROMPP_ALWAYS_INLINE void close() {
       if (closed_) {
         return;
       }
-      sync();
+
+      if (stream_ != nullptr) {
+        sync();
+      }
+
       LZ4F_freeCompressionContext(ctx_);
       closed_ = true;
     }
 
+    PROMPP_ALWAYS_INLINE void set_stream(std::ostream* stream) {
+      stream_ = stream;
+      write_header();
+    }
+
    private:
-    std::ostream& sink_;
     std::array<char, SrcBufSize> src_buf_;
     std::vector<char> dest_buf_;
+    LZ4F_preferences_t preferences_ = LZ4F_INIT_PREFERENCES;
+    std::ostream* stream_;
     LZ4F_compressionContext_t ctx_{};
     bool closed_{};
+    bool header_written_{};
 
     int_type overflow(int_type ch) override {
       assert(std::less_equal<char*>()(pptr(), epptr()));
@@ -103,32 +115,42 @@ class basic_ostream : public std::ostream {
     PROMPP_ALWAYS_INLINE void compress_and_write() {
       // TODO: Throw exception instead or set badbit
       assert(!closed_);
+      assert(stream_ != nullptr);
+
       int orig_size = static_cast<int>(pptr() - pbase());
       pbump(-orig_size);
       size_t ret = LZ4F_compressUpdate(ctx_, &dest_buf_.front(), dest_buf_.capacity(), pbase(), orig_size, nullptr);
       if (LZ4F_isError(ret) != 0) {
         throw std::runtime_error(std::string("LZ4 compression failed: ") + LZ4F_getErrorName(ret));
       }
-      sink_.write(&dest_buf_.front(), ret);
+      stream_->write(&dest_buf_.front(), ret);
     }
 
     PROMPP_ALWAYS_INLINE void flush() {
       assert(!closed_);
+      assert(stream_ != nullptr);
+
       size_t ret = LZ4F_flush(ctx_, &dest_buf_.front(), dest_buf_.capacity(), nullptr);
       if (LZ4F_isError(ret) != 0) {
         throw std::runtime_error(std::string("LZ4 flush failed: ") + LZ4F_getErrorName(ret));
       }
-      sink_.write(&dest_buf_.front(), ret);
+      stream_->write(&dest_buf_.front(), ret);
     }
 
-    PROMPP_ALWAYS_INLINE void write_header(const LZ4F_preferences_t& preferences) {
+    PROMPP_ALWAYS_INLINE void write_header() {
       // TODO: Throw exception instead or set badbit
       assert(!closed_);
-      size_t ret = LZ4F_compressBegin(ctx_, &dest_buf_.front(), dest_buf_.capacity(), &preferences);
+
+      if (stream_ == nullptr || header_written_) {
+        return;
+      }
+
+      size_t ret = LZ4F_compressBegin(ctx_, &dest_buf_.front(), dest_buf_.capacity(), &preferences_);
       if (LZ4F_isError(ret) != 0) {
         throw std::runtime_error(std::string("Failed to start LZ4 compression: ") + LZ4F_getErrorName(ret));
       }
-      sink_.write(&dest_buf_.front(), ret);
+      stream_->write(&dest_buf_.front(), ret);
+      header_written_ = true;
     }
   };
 
@@ -150,12 +172,17 @@ class basic_istream : public std::istream {
    *
    * @param source The stream to read LZ4 compressed data from
    */
-  explicit basic_istream(std::istream& source) : std::istream(&buffer_), buffer_(source) {}
+  explicit basic_istream(std::istream* stream) : std::istream(&buffer_), buffer_(stream) {}
+
+  PROMPP_ALWAYS_INLINE void set_stream(std::istream* stream) {
+    buffer_.set_stream(stream);
+    clear();
+  }
 
  private:
   class input_buffer : public std::streambuf {
    public:
-    explicit input_buffer(std::istream& source) : source_(source) {
+    explicit input_buffer(std::istream* stream) : stream_(stream) {
       size_t ret = LZ4F_createDecompressionContext(&ctx_, LZ4F_VERSION);
       if (LZ4F_isError(ret) != 0) {
         throw std::runtime_error(std::string("Failed to create LZ4 decompression context: ") + LZ4F_getErrorName(ret));
@@ -166,6 +193,8 @@ class basic_istream : public std::istream {
     ~input_buffer() { LZ4F_freeDecompressionContext(ctx_); }
 
     int_type underflow() override {
+      assert(stream_ != nullptr);
+
       if (data_block_count_ == 0) {
         if (!read_first_data_block()) {
           return traits_type::eof();
@@ -187,12 +216,17 @@ class basic_istream : public std::istream {
     input_buffer(const input_buffer&) = delete;
     input_buffer& operator=(const input_buffer&) = delete;
 
+    PROMPP_ALWAYS_INLINE void set_stream(std::istream* stream) noexcept {
+      stream_ = stream;
+      set_pointers(0);
+    }
+
    private:
     std::array<char, DestBufSize> decompressed_buffer_;
     std::string src_buf_;
     std::string_view source_buffer_view_;
     std::array<char, LZ4F_HEADER_SIZE_MAX + LZ4F_BLOCK_HEADER_SIZE> data_block_header_;
-    std::istream& source_;
+    std::istream* stream_;
     size_t data_block_count_{};
     LZ4F_decompressionContext_t ctx_{};
 
@@ -201,15 +235,15 @@ class basic_istream : public std::istream {
     }
 
     [[nodiscard]] size_t read_header() {
-      source_.read(&data_block_header_.front(), LZ4F_MIN_SIZE_TO_KNOW_HEADER_LENGTH);
-      auto header_size = LZ4F_headerSize(&data_block_header_.front(), source_.gcount());
+      stream_->read(&data_block_header_.front(), LZ4F_MIN_SIZE_TO_KNOW_HEADER_LENGTH);
+      auto header_size = LZ4F_headerSize(&data_block_header_.front(), stream_->gcount());
       if (LZ4F_isError(header_size)) {
         return 0;
       }
 
       auto rest_of_header = header_size - LZ4F_MIN_SIZE_TO_KNOW_HEADER_LENGTH;
-      source_.read(&data_block_header_.front() + source_.gcount(), rest_of_header);
-      if (static_cast<size_t>(source_.gcount()) != rest_of_header) {
+      stream_->read(&data_block_header_.front() + stream_->gcount(), rest_of_header);
+      if (static_cast<size_t>(stream_->gcount()) != rest_of_header) {
         return 0;
       }
 
@@ -236,18 +270,18 @@ class basic_istream : public std::istream {
       memcpy(&src_buf_.front(), &data_block_header_.front(), header_size);
 
       auto read_size = data_block_size - header_size;
-      source_.read(&src_buf_.front() + header_size, read_size);
-      if (static_cast<size_t>(source_.gcount()) != read_size) {
+      stream_->read(&src_buf_.front() + header_size, read_size);
+      if (static_cast<size_t>(stream_->gcount()) != read_size) {
         return false;
       }
 
-      source_buffer_view_ = {&src_buf_.front(), header_size + source_.gcount()};
+      source_buffer_view_ = {&src_buf_.front(), header_size + stream_->gcount()};
       return true;
     }
 
     [[nodiscard]] uint32_t read_data_block_size(size_t& header_size) {
-      source_.read(&data_block_header_.front() + header_size, LZ4F_BLOCK_HEADER_SIZE);
-      if (source_.gcount() != LZ4F_BLOCK_HEADER_SIZE) {
+      stream_->read(&data_block_header_.front() + header_size, LZ4F_BLOCK_HEADER_SIZE);
+      if (stream_->gcount() != LZ4F_BLOCK_HEADER_SIZE) {
         return 0;
       }
 

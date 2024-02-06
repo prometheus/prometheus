@@ -79,8 +79,9 @@ http_archive(
     url = "https://github.com/lz4/lz4/archive/v1.9.2.tar.gz",
     sha256 = "658ba6191fa44c92280d4aa2c271b0f4fbc0e34d249578dd05e50e76d0e5efcc",
     strip_prefix = "lz4-1.9.2",
-    patch_cmds = [
-        """sed -i.bak 's/__attribute__ ((__visibility__ ("default")))//g' lib/lz4frame.h """,
+    patches = [
+        "//third_party/patches/lz4:lz4frame.h.patch",
+        "//third_party/patches/lz4:lz4hc.c.patch",
     ],
     build_file = "//third_party:lz4.BUILD",
 )
