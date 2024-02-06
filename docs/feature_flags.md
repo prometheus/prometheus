@@ -95,6 +95,14 @@ computed at all.
 
 When enabled, GOMAXPROCS variable is automatically set to match Linux container CPU quota.
 
+## Auto GOMEMLIMIT
+
+`--enable-feature=auto-gomemlimit`
+
+When enabled, the GOMEMLIMIT variable is automatically set to match the Linux container memory limit. If there is no container limit, or the process is runing outside of containers, the system memory total is used.
+
+There is also an additional tuning flag, `--auto-gomemlimit.ratio`, which allows controling how much of the memory is used for Prometheus. The remainder is reserved for memory outside the process. For example, kernel page cache. Page cache is important for Prometheus TSDB query performance. The default is `0.9`, which means 90% of the memory limit will be used for Prometheus.
+
 ## No default scrape port
 
 `--enable-feature=no-default-scrape-port`
@@ -204,3 +212,15 @@ Enables ingestion of created timestamp. Created timestamps are injected as 0 val
 Currently Prometheus supports created timestamps only on the traditional Prometheus Protobuf protocol (WIP for other protocols). As a result, when enabling this feature, the Prometheus protobuf scrape protocol will be prioritized (See `scrape_config.scrape_protocols` settings for more details).
 
 Besides enabling this feature in Prometheus, created timestamps need to be exposed by the application being scraped.
+
+## Concurrent evaluation of independent rules
+
+`--enable-feature=concurrent-rule-eval`
+
+By default, rule groups execute concurrently, but the rules within a group execute sequentially; this is because rules can use the
+output of a preceding rule as its input. However, if there is no detectable relationship between rules then there is no
+reason to run them sequentially.
+When the `concurrent-rule-eval` feature flag is enabled, rules without any dependency on other rules within a rule group will be evaluated concurrently.
+This has the potential to improve rule group evaluation latency and resource utilization at the expense of adding more concurrent query load.
+
+The number of concurrent rule evaluations can be configured with `--rules.max-concurrent-rule-evals`, which is set to `4` by default.

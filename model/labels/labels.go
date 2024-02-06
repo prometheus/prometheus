@@ -342,6 +342,19 @@ func (ls Labels) Validate(f func(l Label) error) error {
 	return nil
 }
 
+// DropMetricName returns Labels with "__name__" removed.
+func (ls Labels) DropMetricName() Labels {
+	for i, l := range ls {
+		if l.Name == MetricName {
+			if i == 0 { // Make common case fast with no allocations.
+				return ls[1:]
+			}
+			return append(ls[:i], ls[i+1:]...)
+		}
+	}
+	return ls
+}
+
 // InternStrings calls intern on every string value inside ls, replacing them with what it returns.
 func (ls *Labels) InternStrings(intern func(string) string) {
 	for i, l := range *ls {

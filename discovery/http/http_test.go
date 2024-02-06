@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -41,7 +42,14 @@ func TestHTTPValidRefresh(t *testing.T) {
 		RefreshInterval:  model.Duration(30 * time.Second),
 	}
 
-	d, err := NewDiscovery(&cfg, log.NewNopLogger(), nil, prometheus.NewRegistry())
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	defer refreshMetrics.Unregister()
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+
+	d, err := NewDiscovery(&cfg, log.NewNopLogger(), nil, metrics)
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -63,7 +71,7 @@ func TestHTTPValidRefresh(t *testing.T) {
 		},
 	}
 	require.Equal(t, expectedTargets, tgs)
-	require.Equal(t, 0.0, getFailureCount(d.failuresCount))
+	require.Equal(t, 0.0, getFailureCount(d.metrics.failuresCount))
 }
 
 func TestHTTPInvalidCode(t *testing.T) {
@@ -79,13 +87,20 @@ func TestHTTPInvalidCode(t *testing.T) {
 		RefreshInterval:  model.Duration(30 * time.Second),
 	}
 
-	d, err := NewDiscovery(&cfg, log.NewNopLogger(), nil, prometheus.NewRegistry())
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	defer refreshMetrics.Unregister()
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+
+	d, err := NewDiscovery(&cfg, log.NewNopLogger(), nil, metrics)
 	require.NoError(t, err)
 
 	ctx := context.Background()
 	_, err = d.Refresh(ctx)
 	require.EqualError(t, err, "server returned HTTP status 400 Bad Request")
-	require.Equal(t, 1.0, getFailureCount(d.failuresCount))
+	require.Equal(t, 1.0, getFailureCount(d.metrics.failuresCount))
 }
 
 func TestHTTPInvalidFormat(t *testing.T) {
@@ -101,13 +116,20 @@ func TestHTTPInvalidFormat(t *testing.T) {
 		RefreshInterval:  model.Duration(30 * time.Second),
 	}
 
-	d, err := NewDiscovery(&cfg, log.NewNopLogger(), nil, prometheus.NewRegistry())
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	defer refreshMetrics.Unregister()
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+
+	d, err := NewDiscovery(&cfg, log.NewNopLogger(), nil, metrics)
 	require.NoError(t, err)
 
 	ctx := context.Background()
 	_, err = d.Refresh(ctx)
 	require.EqualError(t, err, `unsupported content type "text/plain; charset=utf-8"`)
-	require.Equal(t, 1.0, getFailureCount(d.failuresCount))
+	require.Equal(t, 1.0, getFailureCount(d.metrics.failuresCount))
 }
 
 func getFailureCount(failuresCount prometheus.Counter) float64 {
@@ -412,7 +434,15 @@ func TestSourceDisappeared(t *testing.T) {
 		URL:              ts.URL,
 		RefreshInterval:  model.Duration(1 * time.Second),
 	}
-	d, err := NewDiscovery(&cfg, log.NewNopLogger(), nil, prometheus.NewRegistry())
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	defer refreshMetrics.Unregister()
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+
+	d, err := NewDiscovery(&cfg, log.NewNopLogger(), nil, metrics)
 	require.NoError(t, err)
 	for _, test := range cases {
 		ctx := context.Background()

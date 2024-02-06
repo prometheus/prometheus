@@ -192,9 +192,7 @@ func TestWALRepair_ReadingError(t *testing.T) {
 			require.Len(t, result, test.intactRecs, "Wrong number of intact records")
 
 			for i, r := range result {
-				if !bytes.Equal(records[i], r) {
-					t.Fatalf("record %d diverges: want %x, got %x", i, records[i][:10], r[:10])
-				}
+				require.True(t, bytes.Equal(records[i], r), "record %d diverges: want %x, got %x", i, records[i][:10], r[:10])
 			}
 
 			// Make sure there is a new 0 size Segment after the corrupted Segment.

@@ -445,7 +445,7 @@ func funcClamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 	}
 	for _, el := range vec {
 		enh.Out = append(enh.Out, Sample{
-			Metric: enh.DropMetricName(el.Metric),
+			Metric: el.Metric.DropMetricName(),
 			F:      math.Max(min, math.Min(max, el.F)),
 		})
 	}
@@ -458,7 +458,7 @@ func funcClampMax(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 	max := vals[1].(Vector)[0].F
 	for _, el := range vec {
 		enh.Out = append(enh.Out, Sample{
-			Metric: enh.DropMetricName(el.Metric),
+			Metric: el.Metric.DropMetricName(),
 			F:      math.Min(max, el.F),
 		})
 	}
@@ -471,7 +471,7 @@ func funcClampMin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 	min := vals[1].(Vector)[0].F
 	for _, el := range vec {
 		enh.Out = append(enh.Out, Sample{
-			Metric: enh.DropMetricName(el.Metric),
+			Metric: el.Metric.DropMetricName(),
 			F:      math.Max(min, el.F),
 		})
 	}
@@ -493,7 +493,7 @@ func funcRound(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 	for _, el := range vec {
 		f := math.Floor(el.F*toNearestInverse+0.5) / toNearestInverse
 		enh.Out = append(enh.Out, Sample{
-			Metric: enh.DropMetricName(el.Metric),
+			Metric: el.Metric.DropMetricName(),
 			F:      f,
 		})
 	}
@@ -603,7 +603,7 @@ func funcLastOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	}
 	return append(enh.Out, Sample{
 		Metric: el.Metric,
-		H:      h.H,
+		H:      h.H.Copy(),
 	}), nil
 }
 
@@ -797,7 +797,7 @@ func simpleFunc(vals []parser.Value, enh *EvalNodeHelper, f func(float64) float6
 	for _, el := range vals[0].(Vector) {
 		if el.H == nil { // Process only float samples.
 			enh.Out = append(enh.Out, Sample{
-				Metric: enh.DropMetricName(el.Metric),
+				Metric: el.Metric.DropMetricName(),
 				F:      f(el.F),
 			})
 		}
@@ -943,7 +943,7 @@ func funcTimestamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHe
 	vec := vals[0].(Vector)
 	for _, el := range vec {
 		enh.Out = append(enh.Out, Sample{
-			Metric: enh.DropMetricName(el.Metric),
+			Metric: el.Metric.DropMetricName(),
 			F:      float64(el.T) / 1000,
 		})
 	}
@@ -1057,7 +1057,7 @@ func funcHistogramCount(vals []parser.Value, args parser.Expressions, enh *EvalN
 			continue
 		}
 		enh.Out = append(enh.Out, Sample{
-			Metric: enh.DropMetricName(sample.Metric),
+			Metric: sample.Metric.DropMetricName(),
 			F:      sample.H.Count,
 		})
 	}
@@ -1074,8 +1074,25 @@ func funcHistogramSum(vals []parser.Value, args parser.Expressions, enh *EvalNod
 			continue
 		}
 		enh.Out = append(enh.Out, Sample{
-			Metric: enh.DropMetricName(sample.Metric),
+			Metric: sample.Metric.DropMetricName(),
 			F:      sample.H.Sum,
+		})
+	}
+	return enh.Out, nil
+}
+
+// === histogram_avg(Vector parser.ValueTypeVector) (Vector, Annotations) ===
+func funcHistogramAvg(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	inVec := vals[0].(Vector)
+
+	for _, sample := range inVec {
+		// Skip non-histogram samples.
+		if sample.H == nil {
+			continue
+		}
+		enh.Out = append(enh.Out, Sample{
+			Metric: sample.Metric.DropMetricName(),
+			F:      sample.H.Sum / sample.H.Count,
 		})
 	}
 	return enh.Out, nil
@@ -1107,7 +1124,7 @@ func funcHistogramStdDev(vals []parser.Value, args parser.Expressions, enh *Eval
 		variance += cVariance
 		variance /= sample.H.Count
 		enh.Out = append(enh.Out, Sample{
-			Metric: enh.DropMetricName(sample.Metric),
+			Metric: sample.Metric.DropMetricName(),
 			F:      math.Sqrt(variance),
 		})
 	}
@@ -1140,7 +1157,7 @@ func funcHistogramStdVar(vals []parser.Value, args parser.Expressions, enh *Eval
 		variance += cVariance
 		variance /= sample.H.Count
 		enh.Out = append(enh.Out, Sample{
-			Metric: enh.DropMetricName(sample.Metric),
+			Metric: sample.Metric.DropMetricName(),
 			F:      variance,
 		})
 	}
@@ -1159,7 +1176,7 @@ func funcHistogramFraction(vals []parser.Value, args parser.Expressions, enh *Ev
 			continue
 		}
 		enh.Out = append(enh.Out, Sample{
-			Metric: enh.DropMetricName(sample.Metric),
+			Metric: sample.Metric.DropMetricName(),
 			F:      histogramFraction(lower, upper, sample.H),
 		})
 	}
@@ -1230,7 +1247,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 		}
 
 		enh.Out = append(enh.Out, Sample{
-			Metric: enh.DropMetricName(sample.Metric),
+			Metric: sample.Metric.DropMetricName(),
 			F:      histogramQuantile(q, sample.H),
 		})
 	}
@@ -1440,7 +1457,7 @@ func dateWrapper(vals []parser.Value, enh *EvalNodeHelper, f func(time.Time) flo
 	for _, el := range vals[0].(Vector) {
 		t := time.Unix(int64(el.F), 0).UTC()
 		enh.Out = append(enh.Out, Sample{
-			Metric: enh.DropMetricName(el.Metric),
+			Metric: el.Metric.DropMetricName(),
 			F:      f(t),
 		})
 	}
@@ -1532,6 +1549,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"deriv":              funcDeriv,
 	"exp":                funcExp,
 	"floor":              funcFloor,
+	"histogram_avg":      funcHistogramAvg,
 	"histogram_count":    funcHistogramCount,
 	"histogram_fraction": funcHistogramFraction,
 	"histogram_quantile": funcHistogramQuantile,

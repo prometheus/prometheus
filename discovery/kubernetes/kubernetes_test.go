@@ -51,23 +51,28 @@ func makeDiscoveryWithVersion(role Role, nsDiscovery NamespaceDiscovery, k8sVer 
 	fakeDiscovery, _ := clientset.Discovery().(*fakediscovery.FakeDiscovery)
 	fakeDiscovery.FakedServerVersion = &version.Info{GitVersion: k8sVer}
 
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := newDiscovererMetrics(reg, refreshMetrics)
+	err := metrics.Register()
+	if err != nil {
+		panic(err)
+	}
+	// TODO(ptodev): Unregister the metrics at the end of the test.
+
+	kubeMetrics, ok := metrics.(*kubernetesMetrics)
+	if !ok {
+		panic("invalid discovery metrics type")
+	}
+
 	d := &Discovery{
 		client:             clientset,
 		logger:             log.NewNopLogger(),
 		role:               role,
 		namespaceDiscovery: &nsDiscovery,
 		ownNamespace:       "own-ns",
-		eventCount: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Namespace: discovery.KubernetesMetricsNamespace,
-				Name:      "events_total",
-				Help:      "The number of Kubernetes events handled.",
-			},
-			[]string{"role", "event"},
-		),
+		metrics:            kubeMetrics,
 	}
-
-	d.metricRegisterer = discovery.NewMetricRegisterer(prometheus.NewRegistry(), []prometheus.Collector{d.eventCount})
 
 	return d, clientset
 }
@@ -126,14 +131,8 @@ func (d k8sDiscoveryTest) Run(t *testing.T) {
 	go readResultWithTimeout(t, ch, d.expectedMaxItems, time.Second, resChan)
 
 	dd, ok := d.discovery.(hasSynced)
-	if !ok {
-		t.Errorf("discoverer does not implement hasSynced interface")
-		return
-	}
-	if !cache.WaitForCacheSync(ctx.Done(), dd.hasSynced) {
-		t.Errorf("discoverer failed to sync: %v", dd)
-		return
-	}
+	require.True(t, ok, "discoverer does not implement hasSynced interface")
+	require.True(t, cache.WaitForCacheSync(ctx.Done(), dd.hasSynced), "discoverer failed to sync: %v", dd)
 
 	if d.afterStart != nil {
 		d.afterStart()

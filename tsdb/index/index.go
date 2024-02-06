@@ -50,6 +50,8 @@ const (
 	FormatV2 = 2
 
 	indexFilename = "index"
+
+	seriesByteAlign = 16
 )
 
 type indexWriterSeries struct {
@@ -144,8 +146,11 @@ type Writer struct {
 	labelNames   map[string]uint64     // Label names, and their usage.
 
 	// Hold last series to validate that clients insert new series in order.
-	lastSeries labels.Labels
-	lastRef    storage.SeriesRef
+	lastSeries    labels.Labels
+	lastSeriesRef storage.SeriesRef
+
+	// Hold last added chunk reference to make sure that chunks are ordered properly.
+	lastChunkRef chunks.ChunkRef
 
 	crc32 hash.Hash
 
@@ -431,16 +436,34 @@ func (w *Writer) AddSeries(ref storage.SeriesRef, lset labels.Labels, chunks ...
 		return fmt.Errorf("out-of-order series added with label set %q", lset)
 	}
 
-	if ref < w.lastRef && !w.lastSeries.IsEmpty() {
+	if ref < w.lastSeriesRef && !w.lastSeries.IsEmpty() {
 		return fmt.Errorf("series with reference greater than %d already added", ref)
 	}
+
+	lastChunkRef := w.lastChunkRef
+	lastMaxT := int64(0)
+	for ix, c := range chunks {
+		if c.Ref < lastChunkRef {
+			return fmt.Errorf("unsorted chunk reference: %d, previous: %d", c.Ref, lastChunkRef)
+		}
+		lastChunkRef = c.Ref
+
+		if ix > 0 && c.MinTime <= lastMaxT {
+			return fmt.Errorf("chunk minT %d is not higher than previous chunk maxT %d", c.MinTime, lastMaxT)
+		}
+		if c.MaxTime < c.MinTime {
+			return fmt.Errorf("chunk maxT %d is less than minT %d", c.MaxTime, c.MinTime)
+		}
+		lastMaxT = c.MaxTime
+	}
+
 	// We add padding to 16 bytes to increase the addressable space we get through 4 byte
 	// series references.
-	if err := w.addPadding(16); err != nil {
+	if err := w.addPadding(seriesByteAlign); err != nil {
 		return fmt.Errorf("failed to write padding bytes: %w", err)
 	}
 
-	if w.f.pos%16 != 0 {
+	if w.f.pos%seriesByteAlign != 0 {
 		return fmt.Errorf("series write not 16-byte aligned at %d", w.f.pos)
 	}
 
@@ -508,7 +531,8 @@ func (w *Writer) AddSeries(ref storage.SeriesRef, lset labels.Labels, chunks ...
 	}
 
 	w.lastSeries.CopyFrom(lset)
-	w.lastRef = ref
+	w.lastSeriesRef = ref
+	w.lastChunkRef = lastChunkRef
 
 	return nil
 }
@@ -711,20 +735,13 @@ func (w *Writer) writeLabelIndexesOffsetTable() error {
 			return err
 		}
 	}
-	// Write out the length.
-	w.buf1.Reset()
-	l := w.f.pos - startPos - 4
-	if l > math.MaxUint32 {
-		return fmt.Errorf("label indexes offset table size exceeds 4 bytes: %d", l)
-	}
-	w.buf1.PutBE32int(int(l))
-	if err := w.writeAt(w.buf1.Get(), startPos); err != nil {
-		return err
-	}
 
-	w.buf1.Reset()
-	w.buf1.PutHashSum(w.crc32)
-	return w.write(w.buf1.Get())
+	// Write out the length.
+	err := w.writeLengthAndHash(startPos)
+	if err != nil {
+		return fmt.Errorf("label indexes offset table length/crc32 write error: %w", err)
+	}
+	return nil
 }
 
 // writePostingsOffsetTable writes the postings offset table.
@@ -792,21 +809,31 @@ func (w *Writer) writePostingsOffsetTable() error {
 	}
 	w.fPO = nil
 
-	// Write out the length.
+	err = w.writeLengthAndHash(startPos)
+	if err != nil {
+		return fmt.Errorf("postings offset table length/crc32 write error: %w", err)
+	}
+	return nil
+}
+
+func (w *Writer) writeLengthAndHash(startPos uint64) error {
 	w.buf1.Reset()
 	l := w.f.pos - startPos - 4
 	if l > math.MaxUint32 {
-		return fmt.Errorf("postings offset table size exceeds 4 bytes: %d", l)
+		return fmt.Errorf("length size exceeds 4 bytes: %d", l)
 	}
 	w.buf1.PutBE32int(int(l))
 	if err := w.writeAt(w.buf1.Get(), startPos); err != nil {
-		return err
+		return fmt.Errorf("write length from buffer error: %w", err)
 	}
 
-	// Finally write the hash.
+	// Write out the hash.
 	w.buf1.Reset()
 	w.buf1.PutHashSum(w.crc32)
-	return w.write(w.buf1.Get())
+	if err := w.write(w.buf1.Get()); err != nil {
+		return fmt.Errorf("write buffer's crc32 error: %w", err)
+	}
+	return nil
 }
 
 const indexTOCLen = 6*8 + crc32.Size
@@ -849,10 +876,10 @@ func (w *Writer) writePostingsToTmpFiles() error {
 	for d.Len() > 0 {
 		d.ConsumePadding()
 		startPos := w.toc.LabelIndices - uint64(d.Len())
-		if startPos%16 != 0 {
+		if startPos%seriesByteAlign != 0 {
 			return fmt.Errorf("series not 16-byte aligned at %d", startPos)
 		}
-		offsets = append(offsets, uint32(startPos/16))
+		offsets = append(offsets, uint32(startPos/seriesByteAlign))
 		// Skip to next series.
 		x := d.Uvarint()
 		d.Skip(x + crc32.Size)
@@ -911,7 +938,7 @@ func (w *Writer) writePostingsToTmpFiles() error {
 					if _, ok := postings[lno]; !ok {
 						postings[lno] = map[uint32][]uint32{}
 					}
-					postings[lno][lvo] = append(postings[lno][lvo], uint32(startPos/16))
+					postings[lno][lvo] = append(postings[lno][lvo], uint32(startPos/seriesByteAlign))
 				}
 			}
 			// Skip to next series.
@@ -948,7 +975,6 @@ func (w *Writer) writePostingsToTmpFiles() error {
 			return w.ctx.Err()
 		default:
 		}
-
 	}
 	return nil
 }
@@ -1556,7 +1582,7 @@ func (r *Reader) LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([
 		// In version 2 series IDs are no longer exact references but series are 16-byte padded
 		// and the ID is the multiple of 16 of the actual position.
 		if r.version == FormatV2 {
-			offset = id * 16
+			offset = id * seriesByteAlign
 		}
 
 		d := encoding.NewDecbufUvarintAt(r.b, int(offset), castagnoliTable)
@@ -1595,7 +1621,7 @@ func (r *Reader) LabelValueFor(ctx context.Context, id storage.SeriesRef, label 
 	// In version 2 series IDs are no longer exact references but series are 16-byte padded
 	// and the ID is the multiple of 16 of the actual position.
 	if r.version == FormatV2 {
-		offset = id * 16
+		offset = id * seriesByteAlign
 	}
 	d := encoding.NewDecbufUvarintAt(r.b, int(offset), castagnoliTable)
 	buf := d.Get()
@@ -1621,7 +1647,7 @@ func (r *Reader) Series(id storage.SeriesRef, builder *labels.ScratchBuilder, ch
 	// In version 2 series IDs are no longer exact references but series are 16-byte padded
 	// and the ID is the multiple of 16 of the actual position.
 	if r.version == FormatV2 {
-		offset = id * 16
+		offset = id * seriesByteAlign
 	}
 	d := encoding.NewDecbufUvarintAt(r.b, int(offset), castagnoliTable)
 	if d.Err() != nil {
@@ -1744,6 +1770,33 @@ func (r *Reader) SortedPostings(p Postings) Postings {
 	return p
 }
 
+// ShardedPostings returns a postings list filtered by the provided shardIndex out of shardCount.
+func (r *Reader) ShardedPostings(p Postings, shardIndex, shardCount uint64) Postings {
+	var (
+		out     = make([]storage.SeriesRef, 0, 128)
+		bufLbls = labels.ScratchBuilder{}
+	)
+
+	for p.Next() {
+		id := p.At()
+
+		// Get the series labels (no chunks).
+		err := r.Series(id, &bufLbls, nil)
+		if err != nil {
+			return ErrPostings(fmt.Errorf("series %d not found", id))
+		}
+
+		// Check if the series belong to the shard.
+		if labels.StableHash(bufLbls.Labels())%shardCount != shardIndex {
+			continue
+		}
+
+		out = append(out, id)
+	}
+
+	return NewListPostings(out)
+}
+
 // Size returns the size of an index file.
 func (r *Reader) Size() int64 {
 	return int64(r.b.Len())
@@ -1864,9 +1917,12 @@ func (dec *Decoder) LabelValueFor(ctx context.Context, b []byte, label string) (
 
 // Series decodes a series entry from the given byte slice into builder and chks.
 // Previous contents of builder can be overwritten - make sure you copy before retaining.
+// Skips reading chunks metadata if chks is nil.
 func (dec *Decoder) Series(b []byte, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	builder.Reset()
-	*chks = (*chks)[:0]
+	if chks != nil {
+		*chks = (*chks)[:0]
+	}
 
 	d := encoding.Decbuf{B: b}
 
@@ -1890,6 +1946,11 @@ func (dec *Decoder) Series(b []byte, builder *labels.ScratchBuilder, chks *[]chu
 		}
 
 		builder.Add(ln, lv)
+	}
+
+	// Skip reading chunks metadata if chks is nil.
+	if chks == nil {
+		return d.Err()
 	}
 
 	// Read the chunks meta data.

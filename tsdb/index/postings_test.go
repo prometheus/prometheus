@@ -61,9 +61,7 @@ func TestMemPostings_ensureOrder(t *testing.T) {
 			ok := sort.SliceIsSorted(l, func(i, j int) bool {
 				return l[i] < l[j]
 			})
-			if !ok {
-				t.Fatalf("postings list %v is not sorted", l)
-			}
+			require.True(t, ok, "postings list %v is not sorted", l)
 		}
 	}
 }
@@ -214,9 +212,7 @@ func TestIntersect(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run("", func(t *testing.T) {
-			if c.res == nil {
-				t.Fatal("intersect result expectancy cannot be nil")
-			}
+			require.NotNil(t, c.res, "intersect result expectancy cannot be nil")
 
 			expected, err := ExpandPostings(c.res)
 			require.NoError(t, err)
@@ -228,9 +224,7 @@ func TestIntersect(t *testing.T) {
 				return
 			}
 
-			if i == EmptyPostings() {
-				t.Fatal("intersect unexpected result: EmptyPostings sentinel")
-			}
+			require.NotEqual(t, EmptyPostings(), i, "intersect unexpected result: EmptyPostings sentinel")
 
 			res, err := ExpandPostings(i)
 			require.NoError(t, err)
@@ -501,9 +495,7 @@ func TestMergedPostings(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run("", func(t *testing.T) {
-			if c.res == nil {
-				t.Fatal("merge result expectancy cannot be nil")
-			}
+			require.NotNil(t, c.res, "merge result expectancy cannot be nil")
 
 			ctx := context.Background()
 
@@ -517,9 +509,7 @@ func TestMergedPostings(t *testing.T) {
 				return
 			}
 
-			if m == EmptyPostings() {
-				t.Fatal("merge unexpected result: EmptyPostings sentinel")
-			}
+			require.NotEqual(t, EmptyPostings(), m, "merge unexpected result: EmptyPostings sentinel")
 
 			res, err := ExpandPostings(m)
 			require.NoError(t, err)
@@ -897,9 +887,7 @@ func TestWithoutPostings(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run("", func(t *testing.T) {
-			if c.res == nil {
-				t.Fatal("without result expectancy cannot be nil")
-			}
+			require.NotNil(t, c.res, "without result expectancy cannot be nil")
 
 			expected, err := ExpandPostings(c.res)
 			require.NoError(t, err)
@@ -911,9 +899,7 @@ func TestWithoutPostings(t *testing.T) {
 				return
 			}
 
-			if w == EmptyPostings() {
-				t.Fatal("without unexpected result: EmptyPostings sentinel")
-			}
+			require.NotEqual(t, EmptyPostings(), w, "without unexpected result: EmptyPostings sentinel")
 
 			res, err := ExpandPostings(w)
 			require.NoError(t, err)

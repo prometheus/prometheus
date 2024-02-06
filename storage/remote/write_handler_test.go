@@ -204,6 +204,7 @@ func TestCommitErr(t *testing.T) {
 }
 
 func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
+	b.Skip("Not a valid benchmark (does not count to b.N)")
 	dir := b.TempDir()
 
 	opts := tsdb.DefaultOptions()
