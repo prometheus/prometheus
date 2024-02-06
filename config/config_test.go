@@ -2276,5 +2276,5 @@ func TestDockerSDWithIncludeNoNetworkTargets(t *testing.T) {
 	require.Len(t, got.ScrapeConfigs[0].ServiceDiscoveryConfigs, 1)
 	dockerSd, ok := got.ScrapeConfigs[0].ServiceDiscoveryConfigs[0].(*moby.DockerSDConfig)
 	require.True(t, ok)
-	require.Equal(t, dockerSd.IncludeNoNetworkTargets, true)
+	require.True(t, dockerSd.IncludeNoNetworkTargets)
 }
