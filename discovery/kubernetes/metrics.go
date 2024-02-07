@@ -22,7 +22,8 @@ import (
 var _ discovery.DiscovererMetrics = (*kubernetesMetrics)(nil)
 
 type kubernetesMetrics struct {
-	eventCount *prometheus.CounterVec
+	eventCount    *prometheus.CounterVec
+	failuresCount prometheus.Counter
 
 	metricRegisterer discovery.MetricRegisterer
 }
@@ -37,10 +38,18 @@ func newDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetric
 			},
 			[]string{"role", "event"},
 		),
+		failuresCount: prometheus.NewCounter(
+			prometheus.CounterOpts{
+				Namespace: discovery.KubernetesMetricsNamespace,
+				Name:      "failures_total",
+				Help:      "The number of failed WATCH/LIST requests.",
+			},
+		),
 	}
 
 	m.metricRegisterer = discovery.NewMetricRegisterer(reg, []prometheus.Collector{
 		m.eventCount,
+		m.failuresCount,
 	})
 
 	// Initialize metric vectors.
@@ -60,6 +69,8 @@ func newDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetric
 			m.eventCount.WithLabelValues(role, evt)
 		}
 	}
+
+	m.failuresCount.Add(0)
 
 	return m
 }
