@@ -6,7 +6,7 @@
 #include <ranges>
 
 #define XXH_INLINE_ALL
-#include "third_party/xxhash/xxhash.h"
+#include "xxHash/xxhash.h"
 
 #include "bare_bones/vector.h"
 

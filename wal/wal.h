@@ -93,7 +93,7 @@ template <typename Callable, typename AddCallable, typename Timeseries>
 concept TimeseriesGenerator =
     TimeseriesWithoutHashValGenerator<Callable, AddCallable, Timeseries> || TimeseriesWithHashValGenerator<Callable, AddCallable, Timeseries>;
 
-enum class BasicEncoderVersion : uint8_t { kV1 = 1, kV2, kV3 };
+enum class BasicEncoderVersion : uint8_t { kUnknown = 0, kV1, kV2, kV3 };
 
 template <class LabelSetsTable = Primitives::SnugComposites::LabelSet::EncodingBimap>
 class BasicEncoder {
@@ -611,11 +611,11 @@ class BasicEncoder {
   }
 };
 
-template <class LabelSetsTable = Primitives::SnugComposites::LabelSet::DecodingTable>
+template <class LabelSetsTable = Primitives::SnugComposites::LabelSet::DecodingTable, size_t LZ4DecompressedBufferSize = 256>
 class BasicDecoder {
   LabelSetsTable label_sets_;
   BareBones::Vector<BareBones::Encoding::Gorilla::StreamDecoder> gorilla_;
-  BareBones::LZ4Stream::istream lz4stream_{nullptr};
+  BareBones::LZ4Stream::basic_istream<LZ4DecompressedBufferSize> lz4stream_{nullptr};
 
   uuids::uuid uuid_;
   uint32_t last_processed_segment_ = std::numeric_limits<uint32_t>::max();
@@ -692,13 +692,13 @@ class BasicDecoder {
 
     std::istream& in = get_stream(stream);
 
-    in.read(reinterpret_cast<char*>(&created_at_tsns_), sizeof(created_at_tsns_));
-    in.read(reinterpret_cast<char*>(&encoded_at_tsns_), sizeof(encoded_at_tsns_));
-
-    // read label sets
-    label_sets_.load(in);
-
     try {
+      in.read(reinterpret_cast<char*>(&created_at_tsns_), sizeof(created_at_tsns_));
+      in.read(reinterpret_cast<char*>(&encoded_at_tsns_), sizeof(encoded_at_tsns_));
+
+      // read label sets
+      label_sets_.load(in);
+
       // read ls ids
       in >> segment_ls_id_delta_rle_seq_ >> segment_ls_id_crc_;
 
@@ -716,6 +716,7 @@ class BasicDecoder {
       in >> segment_gorilla_v_bitseq_ >> segment_v_crc_;
     } catch (...) {
       clear_segment();
+      invalidate();
       throw;
     }
 
@@ -734,6 +735,15 @@ class BasicDecoder {
 
  public:
   explicit BasicDecoder(BasicEncoderVersion encoder_version) : encoder_version_(encoder_version) {}
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_empty() const noexcept { return last_processed_segment_ == std::numeric_limits<uint32_t>::max(); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_valid() const noexcept { return encoder_version_ != BasicEncoderVersion::kUnknown; }
+
+  PROMPP_ALWAYS_INLINE void set_encoder_version(BasicEncoderVersion version) noexcept {
+    assert(is_empty());
+    encoder_version_ = version;
+  }
+  PROMPP_ALWAYS_INLINE void invalidate() noexcept { encoder_version_ = BasicEncoderVersion::kUnknown; }
 
   // label sets' comparison is expensive, so it must be explicitly compared
   // as a byte streams.
@@ -981,6 +991,6 @@ class BasicDecoder {
   }
 };
 
-using Writer = BasicEncoder<Primitives::SnugComposites::LabelSet::EncodingBimap>;
-using Reader = BasicDecoder<Primitives::SnugComposites::LabelSet::DecodingTable>;
+using Writer = BasicEncoder<>;
+using Reader = BasicDecoder<>;
 }  // namespace PromPP::WAL

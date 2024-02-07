@@ -1,0 +1,20 @@
+--- absl/copts/configure_copts.bzl
++++ absl/copts/configure_copts.bzl
+@@ -27,7 +27,7 @@ ABSL_DEFAULT_COPTS = select({
+     "//absl:clang_compiler": ABSL_LLVM_FLAGS,
+     "//absl:gcc_compiler": ABSL_GCC_FLAGS,
+     "//conditions:default": ABSL_GCC_FLAGS,
+-})
++}) + ["-Wno-error"]
+ 
+ ABSL_TEST_COPTS = select({
+     "//absl:msvc_compiler": ABSL_MSVC_TEST_FLAGS,
+@@ -35,7 +35,7 @@ ABSL_TEST_COPTS = select({
+     "//absl:clang_compiler": ABSL_LLVM_TEST_FLAGS,
+     "//absl:gcc_compiler": ABSL_GCC_TEST_FLAGS,
+     "//conditions:default": ABSL_GCC_TEST_FLAGS,
+-})
++}) + ["-Wno-error"]
+ 
+ ABSL_DEFAULT_LINKOPTS = select({
+     "//absl:msvc_compiler": ABSL_MSVC_LINKOPTS,

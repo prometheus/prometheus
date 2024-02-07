@@ -13,7 +13,7 @@
 #include "bare_bones/lz4_stream.h"
 
 #define XXH_INLINE_ALL
-#include "third_party/xxhash/xxhash.h"
+#include "xxHash/xxhash.h"
 
 class DummyWal {
  public:

@@ -1,0 +1,98 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "lru_cache",
+    hdrs = ["lru_cache.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":lru_cache_impl",
+        ":dynamic_lru_cache",
+        ":node_lru_cache",
+        ":static_lru_cache",
+        ":default_providers",
+    ],
+)
+
+cc_library(
+    name = "lru_cache_impl",
+    hdrs = ["lru_cache_impl.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":exception",
+        ":traits_util",
+    ],
+)
+
+cc_library(
+    name = "default_providers",
+    hdrs = ["default_providers.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":exception",
+        ":traits_util",
+    ],
+)
+
+cc_library(
+    name = "exception",
+    hdrs = ["exception.h"],
+    visibility = ["//visibility:public"],
+    deps = [":traits_util"],
+)
+
+cc_library(
+    name = "vector_node_container",
+    hdrs = ["vector_node_container.h"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "dynamic_lru_cache",
+    hdrs = ["dynamic_lru_cache.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":lru_cache_impl",
+        ":vector_node_container",
+        ":traits_util",
+    ],
+)
+
+cc_library(
+    name = "array_node_container",
+    hdrs = ["array_node_container.h"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "static_lru_cache",
+    hdrs = ["static_lru_cache.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":lru_cache_impl",
+        ":array_node_container",
+        ":traits_util",
+    ],
+)
+
+cc_library(
+    name = "node_lru_cache",
+    hdrs = ["node_lru_cache.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":lru_cache_impl",
+        ":traits_util",
+        "@com_google_absl//absl/container:node_hash_set",
+    ],
+)
+
+cc_library(
+    name = "traits_util",
+    hdrs = ["traits_util.h"],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "tests",
+    srcs = glob(["*_tests.cpp",]),
+    visibility = ["//visibility:public"],
+)

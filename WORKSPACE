@@ -177,3 +177,51 @@ http_archive(
     ],
     build_file = "//third_party:roaring.BUILD",
 )
+
+http_archive(
+    name = "boost_1.82.0",
+    url = "https://github.com/boostorg/boost/releases/download/boost-1.82.0/boost-1.82.0.tar.gz",
+    sha256 = "b62bd839ea6c28265af9a1f68393eda37fab3611425d3b28882d8e424535ec9d",
+    strip_prefix = "boost-1.82.0/",
+    build_file = "//third_party:boost_1.82.0.BUILD",
+)
+
+local_repository(
+    name = "xxHash",
+    path = "third_party/xxHash",
+)
+
+http_archive(
+    name = "ceph_fmt",
+    url = "https://github.com/ceph/fmt/archive/refs/tags/9.1.0.tar.gz",
+    sha256 = "5dea48d1fcddc3ec571ce2058e13910a0d4a6bab4cc09a809d8b1dd1c88ae6f2",
+    strip_prefix = "fmt-9.1.0/",
+    build_file = "//third_party:ceph/fmt.BUILD",
+)
+
+http_archive(
+    name = "ceph",
+    url = "https://github.com/ceph/ceph/archive/refs/tags/v19.0.0.tar.gz",
+    sha256 = "e08b8f1df525fe70d693b916dc6bf7e8f60cf0836c5f0dd1ec5a31b051a4c288",
+    strip_prefix = "ceph-19.0.0/",
+    build_file = "//third_party:ceph/ceph.BUILD",
+    patch_args = ["-p1"],
+    patches = [
+        "//third_party/patches/ceph:needed_includes_for_build.patch",
+    ],
+)
+
+http_archive(
+    name = "com_google_absl",
+    url = "https://github.com/abseil/abseil-cpp/archive/refs/tags/20240116.rc1.tar.gz",
+    sha256 = "f8903111260a18d2cc4618cd5bf35a22bcc28f372ebe4f04024b49e88a2e16c1",
+    strip_prefix = "abseil-cpp-20240116.rc1/",
+    patches = [
+        "//third_party/patches/com_google_absl:no-werror.patch",
+    ],
+)
+
+local_repository(
+    name = "lru_cache",
+    path = "third_party/lru_cache",
+)
