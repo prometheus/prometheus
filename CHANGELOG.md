@@ -2,8 +2,8 @@
 
 ## 2.50.0-rc.0 / 2024-02-07
 
-* [CHANGE] Remote Write: Drop old inmemory samples. Activated using the config entry `sample_age_limit` #13002
 * [CHANGE] Remote Write: Error `storage.ErrTooOldSample` is now generating HTTP error 400 instead of HTTP error 500. #13335
+* [FEATURE] Remote Write: Drop old inmemory samples. Activated using the config entry `sample_age_limit` #13002
 * [FEATURE] **Experimental**: Add support for ingesting zeros as created timestamps (enabled under the feature-flag `created-timestamp-zero-ingestion`). #12733 #13279
 * [FEATURE] Promtool: Add `analyze` histograms command #12331
 * [FEATURE] TSDB/compaction: Add a way to enable overlapping compaction #13282 #13393 #13398
@@ -13,12 +13,12 @@
 * [ENHANCEMENT] Kuma SD: Extend configuration to allow users to specify ClientId. #13278
 * [ENHANCEMENT] PromQL: Use natural sort in `sort_by_label` and `sort_by_label_desc`. This is **experimental**. #13411
 * [ENHANCEMENT] Native Histograms: support `native_histogram_min_bucket_factor` in scrape_config. #13222
-* [ENHANCEMENT] Metrics: Add warnings for histogramRate applied with isCounter not matching counter/gauge histogram. #13392
+* [ENHANCEMENT] Native Histograms: Issue warning if histogramRate is applied to the wrong kind of histogram. #13392
 * [ENHANCEMENT] TSDB: Make transaction isolation data structures smaller. #13015
 * [ENHANCEMENT] TSDB/postings: Optimize merge using Loser Tree. #12878
 * [ENHANCEMENT] TSDB: Simplify internal series delete function. #13261
 * [ENHANCEMENT] AGENT: Performance improvement by making the global hash lookup table smaller. #13262
-* [ENHANCEMENT] Labels: Add DropMetricName function, used in PromQL. #13446
+* [ENHANCEMENT] PromQL: faster execution of metric functions, e.g. abs(), rate() #13446
 * [ENHANCEMENT] TSDB: Optimize label values with matchers by taking shortcuts. #13426
 * [ENHANCEMENT] Kubernetes SD: Check preconditions earlier and avoid unnecessary checks or iterations in kube_sd. #13408
 * [ENHANCEMENT] Promtool: Improve visibility for `promtool test rules` with JSON colored formatting. #13342
