@@ -156,12 +156,18 @@ message Histogram {
   }
   double sum = 3; // Sum of observations in the histogram.
   // The schema defines the bucket schema. Currently, valid numbers
-  // are -4 <= n <= 8. They are all for base-2 bucket schemas, where 1
+  // are -53 and numbers in range of -4 <= n <= 8.
+  //
+  // The schema equal to -54 (0xCB in hex) means custom bounds a
+  //
+  // They are all for base-2 bucket schemas, where 1
   // is a bucket boundary in each case, and then each power of two is
   // divided into 2^n logarithmic buckets. Or in other words, each
   // bucket boundary is the previous boundary times 2^(2^-n). In the
   // future, more bucket schemas may be added using numbers < -4 or >
   // 8.
+  // TODO(bwplotka): Explain schema semantics for custom_bounds (custom histograms)
+  // once designed.
   sint32 schema             = 4;
   double zero_threshold     = 5; // Breadth of the zero bucket.
   oneof zero_count { // Count in zero bucket.
@@ -172,16 +178,20 @@ message Histogram {
   // Negative Buckets.
   repeated BucketSpan negative_spans =  8 [(gogoproto.nullable) = false];
   // Use either "negative_deltas" or "negative_counts", the former for
-  // regular histograms with integer counts, the latter for float
-  // histograms.
+  // regular histograms with integer counts, the latter for
+  // float histograms.
   repeated sint64 negative_deltas    =  9; // Count delta of each bucket compared to previous one (or to zero for 1st bucket).
   repeated double negative_counts    = 10; // Absolute count of each bucket.
 
   // Positive Buckets.
+  // In case of "custom_bounds" use, the positive buckets are interpreted as follows:
+  // * The span offset+length points to an the index of the custom_bound array
+  // or +Inf if pointing to outside the array.
+  // * The counts and deltas have the same meaning as for exponential histograms.
   repeated BucketSpan positive_spans = 11 [(gogoproto.nullable) = false];
   // Use either "positive_deltas" or "positive_counts", the former for
-  // regular histograms with integer counts, the latter for float
-  // histograms.
+  // regular histograms with integer counts, the latter for
+  // float histograms.
   repeated sint64 positive_deltas    = 12; // Count delta of each bucket compared to previous one (or to zero for 1st bucket).
   repeated double positive_counts    = 13; // Absolute count of each bucket.
 
@@ -190,6 +200,33 @@ message Histogram {
   // For Go, see github.com/prometheus/prometheus/model/timestamp/timestamp.go
   // for conversion from/to time.Time to Prometheus timestamp.
   int64 timestamp = 15;
+
+  // custom_bounds specify monotonically increasing upper inclusive boundary for
+  // the bucket counts with arbitrary widths for this histogram. In other words,
+  // custom_bounds represents custom, explicit bucketing that could have been
+  // converted from classic histograms.
+  //
+  // Those bounds are then referenced by spans in positive_spans with corresponding positive
+  // counts of deltas (refer to positive_spans for more details). This way we can
+  // have encode sparse histograms with custom bucketing (many buckets are often
+  // not used).
+  //
+  // Note that for custom bounds, even negative observations are placed in the positive
+  // counts to simplify the implementation and avoid ambiguity of where to place
+  // an underflow bucket (for example (-2, 1]. Therefore negative buckets and
+  // the zero bucket are unused, if scheme indicates custom bucketing.
+  //
+  // For each upper boundary the previous boundary represent the lower exclusive
+  // boundary for that bucket. The first element is the upper inclusive boundary
+  // for the first bucket, which implicitly has a lower inclusive bound of -Inf.
+  // This is similar to "le" label semantics on classic histograms. You may add a
+  // bucket with an upper bound of 0 to make sure that you really have no negative
+  // observations, but in practice, native histogram rendering will show both with
+  // or without first upper boundary 0 and no negative counts as the same case.
+  //
+  // The last element is a lower bound for the implicit +Inf bucket (the overflow
+  // bucket).
+  repeated double custom_bounds = 16;
 }
 
 // A BucketSpan defines a number of consecutive buckets with their
