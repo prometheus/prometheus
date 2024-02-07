@@ -1,5 +1,4 @@
-diff --git a/BUILD2.bazel b/BUILD.bazel
-index ac62251..b21139f 100644
+--- BUILD.bazel
 +++ BUILD.bazel
 @@ -101,7 +101,7 @@ cc_library(
      copts = select({

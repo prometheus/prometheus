@@ -164,7 +164,7 @@ class basic_ostream : public std::ostream {
  * decompress its output data to that stream.
  *
  */
-template <size_t DestBufSize = 256>
+template <size_t DecompressedBufferSize = 256>
 class basic_istream : public std::istream {
  public:
   /**
@@ -222,7 +222,7 @@ class basic_istream : public std::istream {
     }
 
    private:
-    std::array<char, DestBufSize> decompressed_buffer_;
+    std::array<char, DecompressedBufferSize> decompressed_buffer_;
     std::string src_buf_;
     std::string_view source_buffer_view_;
     std::array<char, LZ4F_HEADER_SIZE_MAX + LZ4F_BLOCK_HEADER_SIZE> data_block_header_;

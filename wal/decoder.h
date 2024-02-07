@@ -21,7 +21,7 @@ class Decoder {
   Reader reader_;
 
  public:
-  inline __attribute__((always_inline)) explicit Decoder(BasicEncoderVersion encoder_version) noexcept : reader_(encoder_version) {}
+  explicit inline __attribute__((always_inline)) Decoder(BasicEncoderVersion encoder_version) noexcept : reader_(encoder_version) {}
 
   // decode - decoding incoming data and make protbuf.
   template <class Input, class Output, class Stats>

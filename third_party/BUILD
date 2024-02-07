@@ -6,11 +6,6 @@ cc_library(
 )
 
 cc_library(
-    name = "xxhash",
-    hdrs = ["xxhash/xxhash.h"],
-)
-
-cc_library(
     name = "uuid",
     hdrs = ["uuid.h"],
 )
@@ -19,7 +14,6 @@ cc_library(
     name = "third_party",
     deps = [
         ":protozero",
-        ":xxhash",
         ":uuid",
     ],
 )

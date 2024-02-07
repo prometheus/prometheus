@@ -22,6 +22,7 @@ cc_library(
         "@lz4//:lz4",
         "@parallel_hashmap",
         "@scope_exit",
+        "@xxHash",
         # "@zlib//:zlib",
         # "@lzma//:lzma",
         # "@elf//:elf",
@@ -196,5 +197,51 @@ cc_binary(
     malloc = "@jemalloc",
     deps = [
         ":integration_tests_headers"
+    ]
+)
+
+cc_library(
+    name = "ceph_sdk",
+    srcs = glob(["ceph/sdk/**/*.cpp"]),
+    hdrs = glob(["ceph/sdk/**/*.h"]),
+    includes = ["./ceph"],
+    deps = [
+        "@ceph//:ceph",
+        ":bare_bones_headers"
+    ],
+)
+
+cc_library(
+    name = "cls_wal_modules",
+    hdrs = glob(["ceph/cls/cls_wal/modules/**/*.h", "ceph/cls/cls_wal/constants.h"]),
+    includes = ["ceph/cls/cls_wal"],
+    deps = [
+        ":bare_bones_headers",
+        ":prometheus",
+        ":wal",
+        "@lru_cache//:lru_cache"
+    ]
+)
+
+cc_binary(
+    name = "cls_wal",
+    srcs = glob(["ceph/cls/cls_wal/*.cpp"]),
+    deps = [
+        ":cls_wal_modules",
+        ":ceph_sdk",
+    ],
+    linkshared = True,
+)
+
+cc_test(
+    name = "cls_wal_test",
+    srcs = glob([
+        "ceph/cls/cls_wal/tests/**/*.cpp",
+        "ceph/cls/cls_wal/tests/**/*.hpp"
+    ]),
+    deps = [
+        ":cls_wal_modules",
+        ":ceph_sdk",
+        "@gtest//:gtest_main",
     ]
 )

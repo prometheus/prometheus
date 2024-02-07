@@ -2,6 +2,7 @@
 
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <ios>
 
 namespace BareBones {

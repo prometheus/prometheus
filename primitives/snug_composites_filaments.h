@@ -4,7 +4,7 @@
 
 #include <scope_exit.h>
 #define XXH_INLINE_ALL
-#include "third_party/xxhash/xxhash.h"
+#include "xxHash/xxhash.h"
 
 #include "bare_bones/exception.h"
 #include "bare_bones/snug_composite.h"
