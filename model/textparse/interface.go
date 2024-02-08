@@ -85,6 +85,10 @@ func New(b []byte, contentType string, parseClassicHistograms bool) (Parser, err
 		return NewPromParser(b), nil
 	}
 
+	// XXXX looks like this could be a place to decide if UTF8 is ok?? or is this
+	// all about we need a global option ---- yeah I think prometheus is either
+	// utf8 on and some preferred escaping, or its utf8 off.  not per scrape target.
+	// In wihch case, nothing needs to change here.
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err != nil {
 		return NewPromParser(b), err

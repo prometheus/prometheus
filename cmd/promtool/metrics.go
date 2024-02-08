@@ -102,6 +102,7 @@ func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[strin
 }
 
 func parseAndPushMetrics(client *remote.Client, data []byte, labels map[string]string) bool {
+	// XXXXX ok we need communication between this call (it should escape)
 	metricsData, err := fmtutil.MetricTextToWriteRequest(bytes.NewReader(data), labels)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "  FAILED:", err)
@@ -116,6 +117,7 @@ func parseAndPushMetrics(client *remote.Client, data []byte, labels map[string]s
 
 	// Encode the request body into snappy encoding.
 	compressed := snappy.Encode(nil, raw)
+	// XXXXXXXXX and this call to store (which sets the content headers)
 	err = client.Store(context.Background(), compressed, 0)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "  FAILED:", err)

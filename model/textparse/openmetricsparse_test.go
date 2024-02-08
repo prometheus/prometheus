@@ -301,10 +301,10 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 }
 
 func TestUTF8OpenMetricsParse(t *testing.T) {
-	// model.NameValidationScheme = model.UTF8Validation
-	// defer func(){
-	// 	model.NameValidationScheme = model.LegacyValidation
-	// }()
+	model.NameValidationScheme = model.UTF8Validation
+	defer func(){
+		model.NameValidationScheme = model.LegacyValidation
+	}()
 
 	input := `# HELP "go.gc_duration_seconds" A summary of the GC invocation durations.
 # TYPE "go.gc_duration_seconds" summary
@@ -324,7 +324,7 @@ func TestUTF8OpenMetricsParse(t *testing.T) {
 		m       string
 		t       *int64
 		v       float64
-		typ     MetricType
+		typ     model.MetricType
 		help    string
 		unit    string
 		comment string
@@ -335,7 +335,7 @@ func TestUTF8OpenMetricsParse(t *testing.T) {
 			help: "A summary of the GC invocation durations.",
 		}, {
 			m:   "go.gc_duration_seconds",
-			typ: MetricTypeSummary,
+			typ: model.MetricTypeSummary,
 		}, {
 			m:    "go.gc_duration_seconds",
 			unit: "seconds",
