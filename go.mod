@@ -203,6 +203,7 @@ require (
 )
 
 replace (
+	github.com/prometheus/common => /home/owilliams/src/third_party/common
 	k8s.io/klog => github.com/simonpasquier/klog-gokit v0.3.0
 	k8s.io/klog/v2 => github.com/simonpasquier/klog-gokit/v3 v3.3.0
 )

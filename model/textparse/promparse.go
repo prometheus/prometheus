@@ -28,6 +28,7 @@ import (
 
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -445,8 +446,11 @@ func (p *PromParser) parseLVals() error {
 		// Free trailing commas are allowed. NOTE: this allows spaces between label
 		// names, unlike in OpenMetrics. It is not clear if this is intended or an
 		// accidental bug.
-		if t = p.nextToken(); t == tComma {
+		t = p.nextToken()
+		if t == tComma {
 			t = p.nextToken()
+		} else if t != tBraceClose {
+			return p.parseError("expected comma or brace close", t)
 		}
 	}
 }
@@ -454,15 +458,12 @@ func (p *PromParser) parseLVals() error {
 // parseMetricSuffix parses the end of the line after the metric name and
 // labels. It starts parsing with the provided token.
 func (p *PromParser) parseMetricSuffix(t token) (Entry, error) {
-	if p.offsets[0] == -1 {
-		return EntryInvalid, fmt.Errorf("metric name not set while parsing: %q", p.l.b[p.start:p.l.i])
-	}
 	if t != tValue {
 		return EntryInvalid, p.parseError("expected value after metric", t)
 	}
 	var err error
 	if p.val, err = parseFloat(yoloString(p.l.buf())); err != nil {
-		return EntryInvalid, fmt.Errorf("%w while parsing: %q", err, p.l.b[p.start:p.l.i])
+		return EntryInvalid, fmt.Errorf("%v while parsing: %q", err, p.l.b[p.start:p.l.i])
 	}
 	// Ensure canonical NaN value.
 	if math.IsNaN(p.val) {
@@ -475,7 +476,7 @@ func (p *PromParser) parseMetricSuffix(t token) (Entry, error) {
 	case tTimestamp:
 		p.hasTS = true
 		if p.ts, err = strconv.ParseInt(yoloString(p.l.buf()), 10, 64); err != nil {
-			return EntryInvalid, fmt.Errorf("%w while parsing: %q", err, p.l.b[p.start:p.l.i])
+			return EntryInvalid, fmt.Errorf("%v while parsing: %q", err, p.l.b[p.start:p.l.i])
 		}
 		if t2 := p.nextToken(); t2 != tLinebreak {
 			return EntryInvalid, p.parseError("expected next entry after timestamp", t2)
@@ -484,6 +485,9 @@ func (p *PromParser) parseMetricSuffix(t token) (Entry, error) {
 		return EntryInvalid, p.parseError("expected timestamp or new record", t)
 	}
 
+	if p.offsets[0] == -1 {
+		return EntryInvalid, fmt.Errorf("metric name not set while parsing: %q", p.l.b[p.start:p.l.i])
+	}
 	return EntrySeries, nil
 }
 

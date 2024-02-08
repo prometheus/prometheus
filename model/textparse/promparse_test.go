@@ -219,10 +219,9 @@ testmetric{label="\"bar\""} 1`
 }
 
 func TestUTF8PromParse(t *testing.T) {
-	oldValidationScheme := model.NameValidationScheme
 	model.NameValidationScheme = model.UTF8Validation
 	defer func() {
-		model.NameValidationScheme = oldValidationScheme
+		model.NameValidationScheme = model.LegacyValidation
 	}()
 
 	input := `# HELP "go.gc_duration_seconds" A summary of the GC invocation durations.
@@ -243,7 +242,7 @@ func TestUTF8PromParse(t *testing.T) {
 		m       string
 		t       *int64
 		v       float64
-		typ     model.MetricType
+		typ     MetricType
 		help    string
 		comment string
 	}{
@@ -252,7 +251,7 @@ func TestUTF8PromParse(t *testing.T) {
 			help: "A summary of the GC invocation durations.",
 		}, {
 			m:   "go.gc_duration_seconds",
-			typ: model.MetricTypeSummary,
+			typ: MetricTypeSummary,
 		}, {
 			m:    `{"go.gc_duration_seconds",quantile="0"}`,
 			v:    4.9351e-05,
@@ -393,7 +392,7 @@ func TestPromParseErrors(t *testing.T) {
 		},
 		{
 			input: `{a="ok"} 1`,
-			err:   "metric name not set while parsing: \"{a=\\\"ok\\\"} 1\"",
+			err:   "metric name not set while parsing: \"{a=\\\"ok\\\"} 1\\n\"",
 		},
 		{
 			input: "# TYPE #\n#EOF\n",
