@@ -1122,6 +1122,11 @@ type Reader struct {
 	dec *Decoder
 
 	version int
+
+	// Function to read symbols
+	readSymbolsFunc func() (*Symbols, error)
+	// Function to close Reader
+	closeReaderFunc func() error
 }
 
 type postingOffset struct {
@@ -1172,13 +1177,7 @@ func NewFileReader(path string) (*Reader, error) {
 	return r, nil
 }
 
-func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
-	r := &Reader{
-		b:        b,
-		c:        c,
-		postings: map[string][]postingOffset{},
-	}
-
+func createReader(r *Reader) (*Reader, error) {
 	// Verify header.
 	if r.b.Len() < HeaderLen {
 		return nil, fmt.Errorf("index header: %w", encoding.ErrInvalidSize)
@@ -1193,12 +1192,12 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 	}
 
 	var err error
-	r.toc, err = NewTOCFromByteSlice(b)
+	r.toc, err = NewTOCFromByteSlice(r.b)
 	if err != nil {
 		return nil, fmt.Errorf("read TOC: %w", err)
 	}
 
-	r.symbols, err = NewSymbols(r.b, r.version, int(r.toc.Symbols))
+	r.symbols, err = r.readSymbolsFunc()
 	if err != nil {
 		return nil, fmt.Errorf("read symbols: %w", err)
 	}
@@ -1477,7 +1476,7 @@ func ReadPostingsOffsetTable(bs ByteSlice, off uint64, f func(name, value []byte
 
 // Close the reader and its underlying resources.
 func (r *Reader) Close() error {
-	return r.c.Close()
+	return r.closeReaderFunc()
 }
 
 func (r *Reader) lookupSymbol(ctx context.Context, o uint32) (string, error) {
