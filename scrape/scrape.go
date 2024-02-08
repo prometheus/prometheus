@@ -684,13 +684,7 @@ func acceptHeader(sps []config.ScrapeProtocol, allowUTF8Names bool) string {
 	weight := len(config.ScrapeProtocolsHeaders) + 1
 	for _, sp := range sps {
 		val := config.ScrapeProtocolsHeaders[sp]
-<<<<<<< HEAD
 		if allowUTF8Names {
-||||||| parent of e18ed1b45 (Make sure to apply escaping config)
-		if (sp != config.PrometheusProto || sp == config.OpenMetricsText2_0_0 || sp == config.PrometheusText1_0_0) && allowUTF8Names {
-=======
-		if (sp == config.PrometheusProto || sp == config.OpenMetricsText2_0_0 || sp == config.PrometheusText1_0_0) && allowUTF8Names {
->>>>>>> e18ed1b45 (Make sure to apply escaping config)
 			val += ";" + config.UTF8NamesHeader
 		}
 		val += fmt.Sprintf(";q=0.%d", weight)

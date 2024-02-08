@@ -219,9 +219,10 @@ testmetric{label="\"bar\""} 1`
 }
 
 func TestUTF8PromParse(t *testing.T) {
+	oldValidationScheme := model.NameValidationScheme
 	model.NameValidationScheme = model.UTF8Validation
 	defer func() {
-		model.NameValidationScheme = model.LegacyValidation
+		model.NameValidationScheme = oldValidationScheme
 	}()
 
 	input := `# HELP "go.gc_duration_seconds" A summary of the GC invocation durations.
@@ -597,7 +598,7 @@ func BenchmarkParse(b *testing.B) {
 				for i := 0; i < b.N; i += promtestdataSampleCount {
 					decSamples := make(model.Vector, 0, 50)
 					sdec := expfmt.SampleDecoder{
-						Dec: expfmt.NewDecoder(bytes.NewReader(buf), expfmt.FmtText_1_0_0),
+						Dec: expfmt.NewDecoder(bytes.NewReader(buf), expfmt.FmtText),
 						Opts: &expfmt.DecodeOptions{
 							Timestamp: model.TimeFromUnixNano(0),
 						},
