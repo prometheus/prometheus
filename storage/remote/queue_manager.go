@@ -398,6 +398,7 @@ type WriteClient interface {
 type QueueManager struct {
 	lastSendTimestamp          atomic.Int64
 	buildRequestLimitTimestamp atomic.Int64
+	reshardDisableTimestamp    atomic.Int64
 
 	logger               log.Logger
 	flushDeadline        time.Duration
@@ -574,7 +575,7 @@ func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []p
 	retry := func() {
 		t.metrics.retriedMetadataTotal.Add(float64(len(metadata)))
 	}
-	err = sendWriteRequestWithBackoff(ctx, t.cfg, t.logger, attemptStore, retry)
+	err = t.sendWriteRequestWithBackoff(ctx, attemptStore, retry)
 	if err != nil {
 		return err
 	}
@@ -1019,6 +1020,10 @@ func (t *QueueManager) shouldReshard(desiredShards int) bool {
 	lsts := t.lastSendTimestamp.Load()
 	if lsts < minSendTimestamp {
 		level.Warn(t.logger).Log("msg", "Skipping resharding, last successful send was beyond threshold", "lastSendTimestamp", lsts, "minSendTimestamp", minSendTimestamp)
+		return false
+	}
+	if disableTimestamp := t.reshardDisableTimestamp.Load(); time.Now().Unix() < disableTimestamp {
+		level.Warn(t.logger).Log("msg", "Skipping resharding, resharding is disabled", "disabled_for", time.Until(time.Unix(disableTimestamp, 0)))
 		return false
 	}
 	return true
@@ -1622,7 +1627,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		s.qm.metrics.retriedHistogramsTotal.Add(float64(histogramCount))
 	}
 
-	err = sendWriteRequestWithBackoff(ctx, s.qm.cfg, s.qm.logger, attemptStore, onRetry)
+	err = s.qm.sendWriteRequestWithBackoff(ctx, attemptStore, onRetry)
 	if errors.Is(err, context.Canceled) {
 		// When there is resharding, we cancel the context for this queue, which means the data is not sent.
 		// So we exit early to not update the metrics.
@@ -1635,8 +1640,8 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 	return err
 }
 
-func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l log.Logger, attempt func(int) error, onRetry func()) error {
-	backoff := cfg.MinBackoff
+func (qm *QueueManager) sendWriteRequestWithBackoff(ctx context.Context, attempt func(int) error, onRetry func()) error {
+	backoff := qm.cfg.MinBackoff
 	sleepDuration := model.Duration(0)
 	try := 0
 
@@ -1663,10 +1668,19 @@ func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l 
 		switch {
 		case backoffErr.retryAfter > 0:
 			sleepDuration = backoffErr.retryAfter
-			level.Info(l).Log("msg", "Retrying after duration specified by Retry-After header", "duration", sleepDuration)
+			level.Info(qm.logger).Log("msg", "Retrying after duration specified by Retry-After header", "duration", sleepDuration)
 		case backoffErr.retryAfter < 0:
-			level.Debug(l).Log("msg", "retry-after cannot be in past, retrying using default backoff mechanism")
+			level.Debug(qm.logger).Log("msg", "retry-after cannot be in past, retrying using default backoff mechanism")
 		}
+
+		// We should never reshard for a recoverable error; increasing shards could
+		// make the problem worse, particularly if we're getting rate limited.
+		//
+		// reshardDisableTimestamp holds the unix timestamp until which resharding
+		// is diableld. We'll update that timestamp if the period we were just told
+		// to sleep for is newer than the existing disabled timestamp.
+		reshardWaitPeriod := time.Now().Add(time.Duration(sleepDuration) * 2)
+		setAtomicToNewer(&qm.reshardDisableTimestamp, reshardWaitPeriod.Unix())
 
 		select {
 		case <-ctx.Done():
@@ -1675,15 +1689,34 @@ func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l 
 
 		// If we make it this far, we've encountered a recoverable error and will retry.
 		onRetry()
-		level.Warn(l).Log("msg", "Failed to send batch, retrying", "err", err)
+		level.Warn(qm.logger).Log("msg", "Failed to send batch, retrying", "err", err)
 
 		backoff = sleepDuration * 2
 
-		if backoff > cfg.MaxBackoff {
-			backoff = cfg.MaxBackoff
+		if backoff > qm.cfg.MaxBackoff {
+			backoff = qm.cfg.MaxBackoff
 		}
 
 		try++
+	}
+}
+
+// setAtomicToNewer atomically sets a value to the newer uint64 between itself
+// and the provided newValue argument.
+func setAtomicToNewer(value *atomic.Int64, newValue int64) {
+	for {
+		current := value.Load()
+		if current >= newValue {
+			// If the current stored value is newer than newValue; abort.
+			return
+		}
+
+		// Try to swap the value. If the atomic value has changed, we loop back to
+		// the beginning until we've successfully swapped out the value or the
+		// value stored in it is newer than newValue.
+		if value.CompareAndSwap(current, newValue) {
+			return
+		}
 	}
 }
 
