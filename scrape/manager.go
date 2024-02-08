@@ -81,7 +81,7 @@ type Options struct {
 	// Option to enable the ingestion of the created timestamp as a synthetic zero sample.
 	// See: https://github.com/prometheus/proposals/blob/main/proposals/2023-06-13_created-timestamp.md
 	EnableCreatedTimestampZeroIngestion bool
-	// if UTF8 is not allowed, use this method 
+	// if UTF8 is not allowed, use this method
 	NameEscapingScheme string
 
 	// Optional HTTP client options to use when scraping.

@@ -535,8 +535,7 @@ func main() {
 		level.Error(logger).Log("msg", fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "file", absPath, "err", err)
 		os.Exit(2)
 	}
-	cfgs, err := cfgFile.GetScrapeConfigs()
-	if err != nil {
+	if _, err := cfgFile.GetScrapeConfigs(); err != nil {
 		absPath, pathErr := filepath.Abs(cfg.configFile)
 		if pathErr != nil {
 			absPath = cfg.configFile
