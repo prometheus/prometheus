@@ -723,6 +723,11 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("invalid label name: %q", name)}, nil, nil}
 	}
 
+	limit, err := parseLimitParam(r.FormValue("limit"))
+	if err != nil {
+		return invalidParamError(err, "limit")
+	}
+
 	start, err := parseTimeParam(r, "start", MinTime)
 	if err != nil {
 		return invalidParamError(err, "start")
@@ -792,10 +797,6 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 
 	slices.Sort(vals)
 
-	limit, err := parseLimitParam(r.FormValue("limit"))
-	if err != nil {
-		return invalidParamError(err, "limit")
-	}
 	if len(vals) > limit {
 		vals = vals[:limit]
 	}
@@ -824,6 +825,11 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 	}
 	if len(r.Form["match[]"]) == 0 {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.New("no match[] parameter provided")}, nil, nil}
+	}
+
+	limit, err := parseLimitParam(r.FormValue("limit"))
+	if err != nil {
+		return invalidParamError(err, "limit")
 	}
 
 	start, err := parseTimeParam(r, "start", MinTime)
@@ -877,11 +883,6 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 	}
 
 	metrics := []labels.Labels{}
-
-	limit, err := parseLimitParam(r.FormValue("limit"))
-	if err != nil {
-		return invalidParamError(err, "limit")
-	}
 
 	for set.Next() {
 		metrics = append(metrics, set.At().Labels())
