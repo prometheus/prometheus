@@ -709,8 +709,10 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 		names = []string{}
 	}
 
-	if len(names) > limit {
+	if len(names) >= limit {
 		names = names[:limit]
+		warnings := annotations.New().Add(errors.New("results truncated due to limit"))
+		return apiFuncResult{names, nil, warnings, nil}
 	}
 	return apiFuncResult{names, nil, warnings, nil}
 }
@@ -797,8 +799,10 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 
 	slices.Sort(vals)
 
-	if len(vals) > limit {
+	if len(vals) >= limit {
 		vals = vals[:limit]
+		warnings = annotations.New().Add(errors.New("results truncated due to limit"))
+		return apiFuncResult{vals, nil, warnings, closer}
 	}
 
 	return apiFuncResult{vals, nil, warnings, closer}
