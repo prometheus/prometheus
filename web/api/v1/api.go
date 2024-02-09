@@ -888,7 +888,7 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 
 		if len(metrics) >= limit {
 			warnings := annotations.New().Add(errors.New("results truncated due to limit"))
-            return apiFuncResult{metrics, nil, warnings, closer}
+			return apiFuncResult{metrics, nil, warnings, closer}
 		}
 	}
 
