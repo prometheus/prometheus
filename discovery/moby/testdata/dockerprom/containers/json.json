@@ -107,9 +107,7 @@
     },
     "State": "running",
     "Status": "Up 3 minutes",
-    "HostConfig": {
-      "NetworkMode": "host"
-    },
+    "HostConfig": { "NetworkMode": "host" },
     "NetworkSettings": {
       "Networks": {
         "host": {
