@@ -138,14 +138,9 @@ func TestDockerSDIncludeNoNetworkOption(t *testing.T) {
 			expectedTargetsLen:      1,
 			expectedTargets: []model.LabelSet{
 				{
-					"__meta_docker_container_id":                               "c301b928faceb1a18fe379f6bc178727ef920bb30b0f9b8592b32b36255a0eca",
-					"__meta_docker_container_label_com_docker_compose_project": "dockersd",
-					"__meta_docker_container_label_com_docker_compose_service": "noport",
-					"__meta_docker_container_label_com_docker_compose_version": "1.25.0",
-					"__meta_docker_container_name":                             "/dockersd_noport_1",
-					"__meta_docker_container_label_maintainer":                 "The Prometheus Authors <prometheus-developers@googlegroups.com>",
-					"__meta_docker_container_label_prometheus_job":             "noport",
-					"__meta_docker_container_network_mode":                     "",
+					"__meta_docker_container_id":           "f5a1207ad17d3ce586a4ea34f3ed0cd5ddfc56aa2289766e3334fa5157fdb7bc",
+					"__meta_docker_container_name":         "/frontend-9f19aeb5-ceff-1a87-809d-87ef8e83b828",
+					"__meta_docker_container_network_mode": "",
 				},
 			},
 		},
@@ -153,7 +148,7 @@ func TestDockerSDIncludeNoNetworkOption(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			sdmock := NewSDMock(t, "dockerprom_include_no_network")
+			sdmock := NewSDMock(t, "nomad_consul_connect")
 			sdmock.Setup()
 
 			e := sdmock.Endpoint()
