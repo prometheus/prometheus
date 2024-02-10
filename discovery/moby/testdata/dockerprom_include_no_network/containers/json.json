@@ -18,26 +18,7 @@
     },
     "State": "running",
     "Status": "Up 40 seconds",
-    "NetworkSettings": {
-      "Bridge": "",
-      "SandboxID": "",
-      "HairpinMode": false,
-      "LinkLocalIPv6Address": "",
-      "LinkLocalIPv6PrefixLen": 0,
-      "Ports": {},
-      "SandboxKey": "",
-      "SecondaryIPAddresses": null,
-      "SecondaryIPv6Addresses": null,
-      "EndpointID": "",
-      "Gateway": "",
-      "GlobalIPv6Address": "",
-      "GlobalIPv6PrefixLen": 0,
-      "IPAddress": "",
-      "IPPrefixLen": 0,
-      "IPv6Gateway": "",
-      "MacAddress": "",
-      "Networks": {}
-    },
+    "NetworkSettings": {},
     "Mounts": []
   }
 ]
