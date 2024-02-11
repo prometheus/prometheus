@@ -1106,6 +1106,10 @@ func (enh *EvalNodeHelper) resetBuilder(lbls labels.Labels) {
 // for each series, then passed to each call funcCall.
 func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper), funcCall func([]parser.Value, [][]EvalSeriesHelper, *EvalNodeHelper) (Vector, annotations.Annotations), exprs ...parser.Expr) (Matrix, annotations.Annotations) {
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
+	if numSteps > ev.maxSamples {
+		numSteps = ev.maxSamples
+	}
+
 	matrixes := make([]Matrix, len(exprs))
 	origMatrixes := make([]Matrix, len(exprs))
 	originalNumSamples := ev.currentSamples
@@ -1325,6 +1329,9 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 		ev.error(err)
 	}
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
+	if numSteps > ev.maxSamples {
+		numSteps = ev.maxSamples
+	}
 
 	// Create a new span to help investigate inner evaluation performances.
 	ctxWithSpan, span := otel.Tracer("").Start(ev.ctx, stats.InnerEvalTime.SpanOperation()+" eval "+reflect.TypeOf(expr).String())
@@ -1707,7 +1714,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 
 			for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
 				step++
-				_, f, h, ok := ev.vectorSelectorSingle(it, e, ts)
+				t, f, h, ok := ev.vectorSelectorSingle(it, e, ts)
 				if ok {
 					if ev.currentSamples < ev.maxSamples {
 						if h == nil {
@@ -1729,6 +1736,14 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 						}
 					} else {
 						ev.error(ErrTooManySamples(env))
+					}
+				} else if t > ts {
+					// vectorSelectorSingle returned false, so there is no sample close to
+					// the desired time.
+					skipSteps := ev.stepsToTimestamp(ts, t) - 1
+					if skipSteps > 0 {
+						ts += skipSteps * ev.interval
+						step += int(skipSteps)
 					}
 				}
 			}
@@ -1930,7 +1945,15 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(vs *parser.Vec
 	})
 }
 
+func (ev *evaluator) stepsToTimestamp(earlierTimestamp, laterTimestamp int64) int64 {
+	if earlierTimestamp > laterTimestamp {
+		panic(fmt.Sprint("Expected", earlierTimestamp, "<", laterTimestamp))
+	}
+	return (laterTimestamp - earlierTimestamp) / ev.interval
+}
+
 // vectorSelectorSingle evaluates an instant vector for the iterator of one time series.
+// on error, returns the timestamp of the next sample (or the endTimestamp) and no value.
 func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, node *parser.VectorSelector, ts int64) (
 	int64, float64, *histogram.FloatHistogram, bool,
 ) {
@@ -1945,6 +1968,7 @@ func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, no
 		if it.Err() != nil {
 			ev.error(it.Err())
 		}
+		t = ev.endTimestamp
 	case chunkenc.ValFloat:
 		t, v = it.At()
 	case chunkenc.ValFloatHistogram:
@@ -1954,10 +1978,11 @@ func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, no
 	}
 	if valueType == chunkenc.ValNone || t > refTime {
 		var ok bool
-		t, v, h, ok = it.PeekPrev()
-		if !ok || t < refTime-durationMilliseconds(ev.lookbackDelta) {
-			return 0, 0, nil, false
+		pt, pv, ph, ok := it.PeekPrev()
+		if !ok || pt < refTime-durationMilliseconds(ev.lookbackDelta) {
+			return t, 0, nil, false
 		}
+		t, v, h = pt, pv, ph
 	}
 	if value.IsStaleNaN(v) || (h != nil && value.IsStaleNaN(h.Sum)) {
 		return 0, 0, nil, false
