@@ -113,6 +113,7 @@ type symbolCacheEntry struct {
 }
 
 type PostingsEncoder func(*encoding.Encbuf, []uint32) error
+
 type PostingsDecoder func(b []byte) (int, Postings, error)
 
 // Writer implements the IndexWriter interface for the standard
