@@ -1319,7 +1319,7 @@ func TestTombstoneCleanFail(t *testing.T) {
 	totalBlocks := 2
 	for i := 0; i < totalBlocks; i++ {
 		blockDir := createBlock(t, db.Dir(), genSeries(1, 1, int64(i), int64(i)+1))
-		block, err := OpenBlock(nil, blockDir, nil)
+		block, err := OpenBlock(nil, blockDir, nil, nil)
 		require.NoError(t, err)
 		// Add some fake tombstones to trigger the compaction.
 		tomb := tombstones.NewMemTombstones()
@@ -1374,7 +1374,7 @@ func TestTombstoneCleanRetentionLimitsRace(t *testing.T) {
 			// Generate some blocks with old mint (near epoch).
 			for j := 0; j < totalBlocks; j++ {
 				blockDir := createBlock(t, dbDir, genSeries(10, 1, int64(j), int64(j)+1))
-				block, err := OpenBlock(nil, blockDir, nil)
+				block, err := OpenBlock(nil, blockDir, nil, nil)
 				require.NoError(t, err)
 				// Cover block with tombstones so it can be deleted with CleanTombstones() as well.
 				tomb := tombstones.NewMemTombstones()
@@ -1435,7 +1435,7 @@ func (c *mockCompactorFailing) Write(dest string, _ BlockReader, _, _ int64, _ *
 		return ulid.ULID{}, fmt.Errorf("the compactor already did the maximum allowed blocks so it is time to fail")
 	}
 
-	block, err := OpenBlock(nil, createBlock(c.t, dest, genSeries(1, 1, 0, 1)), nil)
+	block, err := OpenBlock(nil, createBlock(c.t, dest, genSeries(1, 1, 0, 1)), nil, nil)
 	require.NoError(c.t, err)
 	require.NoError(c.t, block.Close()) // Close block as we won't be using anywhere.
 	c.blocks = append(c.blocks, block)

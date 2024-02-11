@@ -144,7 +144,7 @@ func TestIndexRW_Create_Open(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, iw.Close())
 
-	ir, err := NewFileReader(fn)
+	ir, err := NewFileReader(fn, nil)
 	require.NoError(t, err)
 	require.NoError(t, ir.Close())
 
@@ -155,7 +155,7 @@ func TestIndexRW_Create_Open(t *testing.T) {
 	require.NoError(t, err)
 	f.Close()
 
-	_, err = NewFileReader(dir)
+	_, err = NewFileReader(dir, nil)
 	require.Error(t, err)
 }
 
@@ -191,7 +191,7 @@ func TestIndexRW_Postings(t *testing.T) {
 
 	require.NoError(t, iw.Close())
 
-	ir, err := NewFileReader(fn)
+	ir, err := NewFileReader(fn, nil)
 	require.NoError(t, err)
 
 	p, err := ir.Postings(ctx, "a", "1")
@@ -243,7 +243,7 @@ func TestIndexRW_Postings(t *testing.T) {
 	require.NoError(t, ir.Close())
 
 	t.Run("ShardedPostings()", func(t *testing.T) {
-		ir, err := NewFileReader(fn)
+		ir, err := NewFileReader(fn, nil)
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, ir.Close())
@@ -329,7 +329,7 @@ func TestPostingsMany(t *testing.T) {
 	}
 	require.NoError(t, iw.Close())
 
-	ir, err := NewFileReader(fn)
+	ir, err := NewFileReader(fn, nil)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, ir.Close()) }()
 
@@ -465,7 +465,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 	err = iw.Close()
 	require.NoError(t, err)
 
-	ir, err := NewFileReader(filepath.Join(dir, indexFilename))
+	ir, err := NewFileReader(filepath.Join(dir, indexFilename), nil)
 	require.NoError(t, err)
 
 	for p := range mi.postings {
@@ -564,7 +564,7 @@ func TestNewFileReaderErrorNoOpenFiles(t *testing.T) {
 	err := os.WriteFile(idxName, []byte("corrupted contents"), 0o666)
 	require.NoError(t, err)
 
-	_, err = NewFileReader(idxName)
+	_, err = NewFileReader(idxName, nil)
 	require.Error(t, err)
 
 	// dir.Close will fail on Win if idxName fd is not closed on error path.
@@ -654,7 +654,7 @@ func BenchmarkReader_ShardedPostings(b *testing.B) {
 	b.ResetTimer()
 
 	// Create a reader to read back all postings from the index.
-	ir, err := NewFileReader(fn)
+	ir, err := NewFileReader(fn, nil)
 	require.NoError(b, err)
 
 	b.ResetTimer()
@@ -668,7 +668,7 @@ func BenchmarkReader_ShardedPostings(b *testing.B) {
 }
 
 func TestDecoder_Postings_WrongInput(t *testing.T) {
-	_, _, err := (&Decoder{}).Postings([]byte("the cake is a lie"))
+	_, _, err := (&Decoder{Postings: DecodePostingsRaw}).Postings([]byte("the cake is a lie"))
 	require.Error(t, err)
 }
 

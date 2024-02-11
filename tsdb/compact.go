@@ -83,6 +83,7 @@ type LeveledCompactor struct {
 	maxBlockChunkSegmentSize    int64
 	mergeFunc                   storage.VerticalChunkSeriesMergeFunc
 	postingsEncoder             index.PostingsEncoder
+	postingsDecoder             index.PostingsDecoder
 	enableOverlappingCompaction bool
 }
 
@@ -150,6 +151,9 @@ type LeveledCompactorOptions struct {
 	// PE specifies the postings encoder. It is called when compactor is writing out the postings for a label name/value pair during compaction.
 	// If it is nil then the default encoder is used. At the moment that is the "raw" encoder. See index.EncodePostingsRaw for more.
 	PE index.PostingsEncoder
+	// PD specifies the postings decoder. It is called when opening a block or opening the index file.
+	// If it is nil then the default decoder is used. At the moment that is the "raw" decoder. See index.DecodePostingsRaw for more.
+	PD index.PostingsDecoder
 	// MaxBlockChunkSegmentSize is the max block chunk segment size. If it is 0 then the default chunks.DefaultChunkSegmentSize is used.
 	MaxBlockChunkSegmentSize int64
 	// MergeFunc is used for merging series together in vertical compaction. By default storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge) is used.
@@ -196,6 +200,10 @@ func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer
 	if pe == nil {
 		pe = index.EncodePostingsRaw
 	}
+	pd := opts.PD
+	if pd == nil {
+		pd = index.DecodePostingsRaw
+	}
 	return &LeveledCompactor{
 		ranges:                      ranges,
 		chunkPool:                   pool,
@@ -205,6 +213,7 @@ func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer
 		maxBlockChunkSegmentSize:    maxBlockChunkSegmentSize,
 		mergeFunc:                   mergeFunc,
 		postingsEncoder:             pe,
+		postingsDecoder:             pd,
 		enableOverlappingCompaction: opts.EnableOverlappingCompaction,
 	}, nil
 }
@@ -469,7 +478,7 @@ func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string,
 
 		if b == nil {
 			var err error
-			b, err = OpenBlock(c.logger, d, c.chunkPool)
+			b, err = OpenBlock(c.logger, d, c.chunkPool, c.postingsDecoder)
 			if err != nil {
 				return uid, err
 			}
