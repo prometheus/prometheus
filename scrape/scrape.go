@@ -680,7 +680,8 @@ var errBodySizeLimit = errors.New("body size limit exceeded")
 // https://www.rfc-editor.org/rfc/rfc9110.html#name-accept defines.
 // No validation is here, we expect scrape protocols to be validated already.
 func acceptHeader(sps []config.ScrapeProtocol) string {
-	var vals []string
+	vals := make([]string, len(sps)+1)
+	vals = vals[:0]
 	weight := len(config.ScrapeProtocolsHeaders) + 1
 	for _, sp := range sps {
 		vals = append(vals, fmt.Sprintf("%s;q=0.%d", config.ScrapeProtocolsHeaders[sp], weight))
