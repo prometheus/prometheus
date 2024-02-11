@@ -146,7 +146,7 @@ func TestIndexRW_Create_Open(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, iw.Close())
 
-	ir, err := NewFileReader(fn)
+	ir, err := NewFileReader(fn, nil)
 	require.NoError(t, err)
 	require.NoError(t, ir.Close())
 
@@ -157,7 +157,7 @@ func TestIndexRW_Create_Open(t *testing.T) {
 	require.NoError(t, err)
 	f.Close()
 
-	_, err = NewFileReader(dir)
+	_, err = NewFileReader(dir, nil)
 	require.Error(t, err)
 }
 
@@ -218,7 +218,7 @@ func TestIndexRW_Postings(t *testing.T) {
 	}, labelIndices)
 
 	t.Run("ShardedPostings()", func(t *testing.T) {
-		ir, err := NewFileReader(fn)
+		ir, err := NewFileReader(fn, nil)
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, ir.Close())
@@ -469,7 +469,7 @@ func TestDecbufUvarintWithInvalidBuffer(t *testing.T) {
 func TestReaderWithInvalidBuffer(t *testing.T) {
 	b := realByteSlice([]byte{0x81, 0x81, 0x81, 0x81, 0x81, 0x81})
 
-	_, err := NewReader(b)
+	_, err := NewReader(b, DecodePostingsRaw)
 	require.Error(t, err)
 }
 
@@ -481,7 +481,7 @@ func TestNewFileReaderErrorNoOpenFiles(t *testing.T) {
 	err := os.WriteFile(idxName, []byte("corrupted contents"), 0o666)
 	require.NoError(t, err)
 
-	_, err = NewFileReader(idxName)
+	_, err = NewFileReader(idxName, nil)
 	require.Error(t, err)
 
 	// dir.Close will fail on Win if idxName fd is not closed on error path.
@@ -560,7 +560,7 @@ func BenchmarkReader_ShardedPostings(b *testing.B) {
 }
 
 func TestDecoder_Postings_WrongInput(t *testing.T) {
-	_, _, err := (&Decoder{}).Postings([]byte("the cake is a lie"))
+	_, _, err := (&Decoder{DecodePostings: DecodePostingsRaw}).DecodePostings([]byte("the cake is a lie"))
 	require.Error(t, err)
 }
 
