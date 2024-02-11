@@ -56,6 +56,8 @@ type ProtobufParser struct {
 	fieldPos    int
 	fieldsDone  bool // true if no more fields of a Summary or (legacy) Histogram to be processed.
 	redoClassic bool // true after parsing a native histogram if we need to parse it again as a classic histogram.
+	// exemplarPos is the position within exemplars slice of native exemplars.
+	exemplarPos int
 
 	// exemplarReturned is set to true each time an exemplar has been
 	// returned, and set back to false upon each Next() call.
@@ -75,8 +77,6 @@ type ProtobufParser struct {
 
 	// The following are just shenanigans to satisfy the Parser interface.
 	metricBytes *bytes.Buffer // A somewhat fluid representation of the current metric.
-
-	exemaplerPos int
 }
 
 // NewProtobufParser returns a parser for the payload in the byte slice.
@@ -306,8 +306,9 @@ func (p *ProtobufParser) Metric(l *labels.Labels) string {
 
 // Exemplar writes the exemplar of the current sample into the passed
 // exemplar. It returns if an exemplar exists or not. In case of a native
-// histogram, the legacy bucket section is still used for exemplars. To ingest
-// all exemplars, call the Exemplar method repeatedly until it returns false.
+// histogram, the exemplars in native histogram will be returned.
+// If this field is empty, the legacy bucket section is still used for exemplars.
+// To ingest all exemplars, call the Exemplar method repeatedly until it returns false.
 func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
 	if p.exemplarReturned && p.state == EntrySeries {
 		// We only ever return one exemplar per (non-native-histogram) series.
@@ -322,9 +323,9 @@ func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
 		isClassic := p.state == EntrySeries
 		if !isClassic && len(m.GetHistogram().GetExemplars()) > 0 {
 			exs := m.GetHistogram().GetExemplars()
-			for p.exemaplerPos < len(exs) {
-				exProto = exs[p.exemaplerPos]
-				p.exemaplerPos++
+			for p.exemplarPos < len(exs) {
+				exProto = exs[p.exemplarPos]
+				p.exemplarPos++
 				if exProto != nil && exProto.GetTimestamp() != nil {
 					break
 				}

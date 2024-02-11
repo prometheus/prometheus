@@ -661,24 +661,35 @@ metric: <
     positive_delta: 2
     positive_delta: -1
     positive_delta: -1
-	exemplars: <
-	  label: <
-	    name: "dummyID"
-	    value: "59780"
-	  >
-	  value: -0.00039
-	  timestamp: <
-	    seconds: 1625851155
-	    nanos: 146848499
-	  >
-	>
-	exemplars: <
-	  label: <
-	    name: "dummyID"
-	    value: "5617"
-	  >
-	  value: -0.00029
-	>
+    exemplars: <
+      label: <
+        name: "dummyID"
+        value: "59780"
+      >
+      value: -0.00039
+      timestamp: <
+        seconds: 1625851155
+        nanos: 146848499
+      >
+    >
+    exemplars: <
+      label: <
+        name: "dummyID"
+        value: "5617"
+      >
+      value: -0.00029
+    >
+    exemplars: <
+      label: <
+        name: "dummyID"
+        value: "59772"
+      >
+      value: -0.00052
+      timestamp: <
+        seconds: 1625851160
+        nanos: 156848499
+      >
+    >
   >
   timestamp_ms: 1234568
 >
@@ -1261,6 +1272,7 @@ func TestProtobufParse(t *testing.T) {
 					),
 					e: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "59780"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
+						{Labels: labels.FromStrings("dummyID", "59772"), Value: -0.00052, HasTs: true, Ts: 1625851160156},
 					},
 				},
 			},
@@ -2114,6 +2126,7 @@ func TestProtobufParse(t *testing.T) {
 					),
 					e: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "59780"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
+						{Labels: labels.FromStrings("dummyID", "59772"), Value: -0.00052, HasTs: true, Ts: 1625851160156},
 					},
 				},
 				{ // 97
