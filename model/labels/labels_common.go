@@ -116,7 +116,11 @@ func (ls Labels) Map() map[string]string {
 
 // FromMap returns new sorted Labels from the given map.
 func FromMap(m map[string]string) Labels {
-	l := make([]Label, 0, len(m))
+	length := len(m)
+	if length == 0 {
+		return EmptyLabels()
+	}
+	l := make([]Label, 0, length)
 	for k, v := range m {
 		l = append(l, Label{Name: k, Value: v})
 	}
