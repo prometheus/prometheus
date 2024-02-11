@@ -18,7 +18,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/prometheus/prometheus/tsdb/index"
 	"io"
 	"io/fs"
 	"math"
@@ -45,6 +44,7 @@ import (
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	_ "github.com/prometheus/prometheus/tsdb/goversion" // Load the package into main to make sure minium Go version is met.
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
