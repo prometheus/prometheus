@@ -40,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/util/runutil"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestPopulateLabels(t *testing.T) {
@@ -449,8 +450,8 @@ func TestPopulateLabels(t *testing.T) {
 			require.NoError(t, err)
 		}
 		require.Equal(t, c.in, in)
-		require.Equal(t, c.res, res)
-		require.Equal(t, c.resOrig, orig)
+		testutil.RequireEqual(t, c.res, res)
+		testutil.RequireEqual(t, c.resOrig, orig)
 	}
 }
 

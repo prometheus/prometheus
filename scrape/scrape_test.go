@@ -32,6 +32,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
+	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	config_util "github.com/prometheus/common/config"
@@ -1341,7 +1342,7 @@ func TestScrapeLoopAppend(t *testing.T) {
 			scrapeLabels:    `metric NaN`,
 			discoveryLabels: nil,
 			expLset:         labels.FromStrings("__name__", "metric"),
-			expValue:        float64(value.NormalNaN),
+			expValue:        math.Float64frombits(value.NormalNaN),
 		},
 	}
 
@@ -1375,16 +1376,15 @@ func TestScrapeLoopAppend(t *testing.T) {
 			},
 		}
 
-		// When the expected value is NaN
-		// DeepEqual will report NaNs as being different,
-		// so replace it with the expected one.
-		if test.expValue == float64(value.NormalNaN) {
-			app.resultFloats[0].f = expected[0].f
-		}
-
 		t.Logf("Test:%s", test.title)
-		require.Equal(t, expected, app.resultFloats)
+		requireEqual(t, expected, app.resultFloats)
 	}
+}
+
+func requireEqual(t *testing.T, expected, actual interface{}, msgAndArgs ...interface{}) {
+	testutil.RequireEqualWithOptions(t, expected, actual,
+		[]cmp.Option{cmp.Comparer(equalFloatSamples), cmp.AllowUnexported(histogramSample{})},
+		msgAndArgs...)
 }
 
 func TestScrapeLoopAppendForConflictingPrefixedLabels(t *testing.T) {
@@ -1450,7 +1450,7 @@ func TestScrapeLoopAppendForConflictingPrefixedLabels(t *testing.T) {
 
 			require.NoError(t, slApp.Commit())
 
-			require.Equal(t, []floatSample{
+			requireEqual(t, []floatSample{
 				{
 					metric: labels.FromStrings(tc.expected...),
 					t:      timestamp.FromTime(time.Date(2000, 1, 1, 1, 0, 0, 0, time.UTC)),
@@ -1544,7 +1544,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 			f:      1,
 		},
 	}
-	require.Equal(t, want, resApp.rolledbackFloats, "Appended samples not as expected:\n%s", appender)
+	requireEqual(t, want, resApp.rolledbackFloats, "Appended samples not as expected:\n%s", appender)
 
 	now = time.Now()
 	slApp = sl.appender(context.Background())
@@ -1684,7 +1684,6 @@ func TestScrapeLoop_ChangingMetricString(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, slApp.Commit())
 
-	// DeepEqual will report NaNs as being different, so replace with a different value.
 	want := []floatSample{
 		{
 			metric: labels.FromStrings("__name__", "metric_a", "a", "1", "b", "1"),
@@ -1716,11 +1715,6 @@ func TestScrapeLoopAppendStaleness(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, slApp.Commit())
 
-	ingestedNaN := math.Float64bits(app.resultFloats[1].f)
-	require.Equal(t, value.StaleNaN, ingestedNaN, "Appended stale sample wasn't as expected")
-
-	// DeepEqual will report NaNs as being different, so replace with a different value.
-	app.resultFloats[1].f = 42
 	want := []floatSample{
 		{
 			metric: labels.FromStrings(model.MetricNameLabel, "metric_a"),
@@ -1730,10 +1724,10 @@ func TestScrapeLoopAppendStaleness(t *testing.T) {
 		{
 			metric: labels.FromStrings(model.MetricNameLabel, "metric_a"),
 			t:      timestamp.FromTime(now.Add(time.Second)),
-			f:      42,
+			f:      math.Float64frombits(value.StaleNaN),
 		},
 	}
-	require.Equal(t, want, app.resultFloats, "Appended samples not as expected:\n%s", appender)
+	requireEqual(t, want, app.resultFloats, "Appended samples not as expected:\n%s", appender)
 }
 
 func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
@@ -1776,8 +1770,6 @@ func TestScrapeLoopAppendStalenessIfTrackTimestampStaleness(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, slApp.Commit())
 
-	// DeepEqual will report NaNs as being different, so replace with a different value.
-	app.resultFloats[1].f = 42
 	want := []floatSample{
 		{
 			metric: labels.FromStrings(model.MetricNameLabel, "metric_a"),
@@ -1787,10 +1779,10 @@ func TestScrapeLoopAppendStalenessIfTrackTimestampStaleness(t *testing.T) {
 		{
 			metric: labels.FromStrings(model.MetricNameLabel, "metric_a"),
 			t:      timestamp.FromTime(now.Add(time.Second)),
-			f:      42,
+			f:      math.Float64frombits(value.StaleNaN),
 		},
 	}
-	require.Equal(t, want, app.resultFloats, "Appended samples not as expected:\n%s", appender)
+	requireEqual(t, want, app.resultFloats, "Appended samples not as expected:\n%s", appender)
 }
 
 func TestScrapeLoopAppendExemplar(t *testing.T) {
@@ -2158,9 +2150,9 @@ metric: <
 			_, _, _, err := sl.append(app, buf.Bytes(), test.contentType, now)
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
-			require.Equal(t, test.floats, app.resultFloats)
-			require.Equal(t, test.histograms, app.resultHistograms)
-			require.Equal(t, test.exemplars, app.resultExemplars)
+			requireEqual(t, test.floats, app.resultFloats)
+			requireEqual(t, test.histograms, app.resultHistograms)
+			requireEqual(t, test.exemplars, app.resultExemplars)
 		})
 	}
 }
@@ -2215,8 +2207,8 @@ func TestScrapeLoopAppendExemplarSeries(t *testing.T) {
 		require.NoError(t, app.Commit())
 	}
 
-	require.Equal(t, samples, app.resultFloats)
-	require.Equal(t, exemplars, app.resultExemplars)
+	requireEqual(t, samples, app.resultFloats)
+	requireEqual(t, exemplars, app.resultExemplars)
 }
 
 func TestScrapeLoopRunReportsTargetDownOnScrapeError(t *testing.T) {
@@ -2292,7 +2284,7 @@ func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T
 			f:      1,
 		},
 	}
-	require.Equal(t, want, app.resultFloats, "Appended samples not as expected:\n%s", appender)
+	requireEqual(t, want, app.resultFloats, "Appended samples not as expected:\n%s", appender)
 	require.Equal(t, 4, total)
 	require.Equal(t, 4, added)
 	require.Equal(t, 1, seriesAdded)

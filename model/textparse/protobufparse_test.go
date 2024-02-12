@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/util/testutil"
 
 	dto "github.com/prometheus/prometheus/prompb/io/prometheus/client"
 )
@@ -1993,12 +1994,12 @@ func TestProtobufParse(t *testing.T) {
 						require.Equal(t, int64(0), exp[i].t, "i: %d", i)
 					}
 					require.Equal(t, exp[i].v, v, "i: %d", i)
-					require.Equal(t, exp[i].lset, res, "i: %d", i)
+					testutil.RequireEqual(t, exp[i].lset, res, "i: %d", i)
 					if len(exp[i].e) == 0 {
 						require.False(t, eFound, "i: %d", i)
 					} else {
 						require.True(t, eFound, "i: %d", i)
-						require.Equal(t, exp[i].e[0], e, "i: %d", i)
+						testutil.RequireEqual(t, exp[i].e[0], e, "i: %d", i)
 						require.False(t, p.Exemplar(&e), "too many exemplars returned, i: %d", i)
 					}
 					if exp[i].ct != 0 {
@@ -2017,7 +2018,7 @@ func TestProtobufParse(t *testing.T) {
 					} else {
 						require.Equal(t, int64(0), exp[i].t, "i: %d", i)
 					}
-					require.Equal(t, exp[i].lset, res, "i: %d", i)
+					testutil.RequireEqual(t, exp[i].lset, res, "i: %d", i)
 					require.Equal(t, exp[i].m, string(m), "i: %d", i)
 					if shs != nil {
 						require.Equal(t, exp[i].shs, shs, "i: %d", i)
@@ -2026,7 +2027,7 @@ func TestProtobufParse(t *testing.T) {
 					}
 					j := 0
 					for e := (exemplar.Exemplar{}); p.Exemplar(&e); j++ {
-						require.Equal(t, exp[i].e[j], e, "i: %d", i)
+						testutil.RequireEqual(t, exp[i].e[j], e, "i: %d", i)
 						e = exemplar.Exemplar{}
 					}
 					require.Len(t, exp[i].e, j, "not enough exemplars found, i: %d", i)

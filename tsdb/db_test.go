@@ -4058,11 +4058,11 @@ func TestOOOWALWrite(t *testing.T) {
 
 	// The normal WAL.
 	actRecs := getRecords(path.Join(dir, "wal"))
-	require.Equal(t, inOrderRecords, actRecs)
+	testutil.RequireEqual(t, inOrderRecords, actRecs)
 
 	// The WBL.
 	actRecs = getRecords(path.Join(dir, wlog.WblDirName))
-	require.Equal(t, oooRecords, actRecs)
+	testutil.RequireEqual(t, oooRecords, actRecs)
 }
 
 // Tests https://github.com/prometheus/prometheus/issues/10291#issuecomment-1044373110.

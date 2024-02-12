@@ -44,6 +44,7 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 const defaultFlushDeadline = 1 * time.Minute
@@ -1077,7 +1078,7 @@ func TestProcessExternalLabels(t *testing.T) {
 	} {
 		b.Reset(tc.labels)
 		processExternalLabels(b, tc.externalLabels)
-		require.Equal(t, tc.expected, b.Labels(), "test %d", i)
+		testutil.RequireEqual(t, tc.expected, b.Labels(), "test %d", i)
 	}
 }
 

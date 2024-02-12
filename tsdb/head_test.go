@@ -30,6 +30,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
@@ -50,6 +51,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 // newTestHeadDefaultOptions returns the HeadOptions that should be used by default in unit tests.
@@ -677,10 +679,10 @@ func TestHead_ReadWAL(t *testing.T) {
 			s50 := head.series.getByID(50)
 			s100 := head.series.getByID(100)
 
-			require.Equal(t, labels.FromStrings("a", "1"), s10.lset)
-			require.Equal(t, (*memSeries)(nil), s11) // Series without samples should be garbage collected at head.Init().
-			require.Equal(t, labels.FromStrings("a", "4"), s50.lset)
-			require.Equal(t, labels.FromStrings("a", "3"), s100.lset)
+			testutil.RequireEqual(t, labels.FromStrings("a", "1"), s10.lset)
+			require.Nil(t, s11) // Series without samples should be garbage collected at head.Init().
+			testutil.RequireEqual(t, labels.FromStrings("a", "4"), s50.lset)
+			testutil.RequireEqual(t, labels.FromStrings("a", "3"), s100.lset)
 
 			expandChunk := func(c chunkenc.Iterator) (x []sample) {
 				for c.Next() == chunkenc.ValFloat {
@@ -707,7 +709,7 @@ func TestHead_ReadWAL(t *testing.T) {
 			require.NoError(t, err)
 			e, err := q.Select(0, 1000, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "1")})
 			require.NoError(t, err)
-			require.Equal(t, exemplar.Exemplar{Ts: 100, Value: 1, Labels: labels.FromStrings("traceID", "asdf")}, e[0].Exemplars[0])
+			require.True(t, exemplar.Exemplar{Ts: 100, Value: 1, Labels: labels.FromStrings("traceID", "asdf")}.Equals(e[0].Exemplars[0]))
 		})
 	}
 }
@@ -3743,7 +3745,7 @@ func TestChunkSnapshot(t *testing.T) {
 		})
 		require.NoError(t, err)
 		// Verifies both existence of right exemplars and order of exemplars in the buffer.
-		require.Equal(t, expExemplars, actExemplars)
+		testutil.RequireEqualWithOptions(t, expExemplars, actExemplars, []cmp.Option{cmp.AllowUnexported(ex{})})
 	}
 
 	var (

@@ -32,6 +32,7 @@ import (
 
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/util/stats"
+	"github.com/prometheus/prometheus/util/testutil"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
@@ -597,7 +598,7 @@ func TestGetSeries(t *testing.T) {
 				r := res.data.([]labels.Labels)
 				sort.Sort(byLabels(tc.expected))
 				sort.Sort(byLabels(r))
-				require.Equal(t, tc.expected, r)
+				testutil.RequireEqual(t, tc.expected, r)
 			}
 		})
 	}
@@ -2878,7 +2879,7 @@ func assertAPIError(t *testing.T, got *apiError, exp errorType) {
 func assertAPIResponse(t *testing.T, got, exp interface{}) {
 	t.Helper()
 
-	require.Equal(t, exp, got)
+	testutil.RequireEqual(t, exp, got)
 }
 
 func assertAPIResponseLength(t *testing.T, got interface{}, expLen int) {

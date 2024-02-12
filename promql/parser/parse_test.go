@@ -26,6 +26,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/util/testutil"
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
@@ -4018,7 +4019,7 @@ func TestParseSeries(t *testing.T) {
 
 		if !test.fail {
 			require.NoError(t, err)
-			require.Equal(t, test.expectedMetric, metric, "error on input '%s'", test.input)
+			testutil.RequireEqual(t, test.expectedMetric, metric, "error on input '%s'", test.input)
 			require.Equal(t, test.expectedValues, vals, "error in input '%s'", test.input)
 		} else {
 			require.Error(t, err)

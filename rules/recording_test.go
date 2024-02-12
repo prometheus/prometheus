@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/util/teststorage"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 var (
@@ -126,7 +127,7 @@ func TestRuleEval(t *testing.T) {
 			rule := NewRecordingRule("test_rule", scenario.expr, scenario.ruleLabels)
 			result, err := rule.Eval(context.TODO(), ruleEvaluationTime, EngineQueryFunc(testEngine, storage), nil, 0)
 			require.NoError(t, err)
-			require.Equal(t, scenario.expected, result)
+			testutil.RequireEqual(t, scenario.expected, result)
 		})
 	}
 }

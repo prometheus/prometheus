@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestNoDuplicateReadConfigs(t *testing.T) {
@@ -484,7 +485,7 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 				got = append(got, ss.At().Labels())
 			}
 			require.NoError(t, ss.Err())
-			require.Equal(t, tc.expectedSeries, got)
+			testutil.RequireEqual(t, tc.expectedSeries, got)
 		})
 	}
 }
