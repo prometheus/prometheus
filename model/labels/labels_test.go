@@ -708,7 +708,8 @@ func TestScratchBuilder(t *testing.T) {
 
 func TestLabels_Hash(t *testing.T) {
 	lbls := FromStrings("foo", "bar", "baz", "qux")
-	require.Equal(t, lbls.Hash(), lbls.Hash())
+	hash1, hash2 := lbls.Hash(), lbls.Hash()
+	require.Equal(t, hash1, hash2)
 	require.NotEqual(t, lbls.Hash(), FromStrings("foo", "bar").Hash(), "different labels match.")
 }
 
