@@ -1,5 +1,32 @@
 # Changelog
 
+## 2.50.0-rc.0 / 2024-02-07
+
+* [CHANGE] Remote Write: Error `storage.ErrTooOldSample` is now generating HTTP error 400 instead of HTTP error 500. #13335
+* [FEATURE] Remote Write: Drop old inmemory samples. Activated using the config entry `sample_age_limit`. #13002
+* [FEATURE] **Experimental**: Add support for ingesting zeros as created timestamps. (enabled under the feature-flag `created-timestamp-zero-ingestion`). #12733 #13279
+* [FEATURE] Promtool: Add `analyze` histograms command. #12331
+* [FEATURE] TSDB/compaction: Add a way to enable overlapping compaction. #13282 #13393 #13398
+* [FEATURE] Add automatic memory limit handling. Activated using the feature flag. `auto-gomemlimit` #13395
+* [ENHANCEMENT] Promtool: allow specifying multiple matchers in `promtool tsdb dump`. #13296
+* [ENHANCEMENT] PromQL: Restore more efficient version of `NewPossibleNonCounterInfo` annotation. #13022
+* [ENHANCEMENT] Kuma SD: Extend configuration to allow users to specify client ID. #13278
+* [ENHANCEMENT] PromQL: Use natural sort in `sort_by_label` and `sort_by_label_desc`. This is **experimental**. #13411
+* [ENHANCEMENT] Native Histograms: support `native_histogram_min_bucket_factor` in scrape_config. #13222
+* [ENHANCEMENT] Native Histograms: Issue warning if histogramRate is applied to the wrong kind of histogram. #13392
+* [ENHANCEMENT] TSDB: Make transaction isolation data structures smaller. #13015
+* [ENHANCEMENT] TSDB/postings: Optimize merge using Loser Tree. #12878
+* [ENHANCEMENT] TSDB: Simplify internal series delete function. #13261
+* [ENHANCEMENT] Agent: Performance improvement by making the global hash lookup table smaller. #13262
+* [ENHANCEMENT] PromQL: faster execution of metric functions, e.g. abs(), rate() #13446
+* [ENHANCEMENT] TSDB: Optimize label values with matchers by taking shortcuts. #13426
+* [ENHANCEMENT] Kubernetes SD: Check preconditions earlier and avoid unnecessary checks or iterations in kube_sd. #13408
+* [ENHANCEMENT] Promtool: Improve visibility for `promtool test rules` with JSON colored formatting. #13342
+* [ENHANCEMENT] Consoles: Exclude iowait and steal from CPU Utilisation. #9593
+* [ENHANCEMENT] Various improvements and optimizations on Native Histograms. #13267, #13215, #13276 #13289, #13340
+* [BUGFIX] Scraping: Fix quality value in HTTP Accept header. #13313
+* [BUGFIX] UI: Fix usage of the function `time()` that was crashing. #13371
+
 ## 2.49.1 / 2024-01-15
 
 * [BUGFIX] TSDB: Fixed a wrong `q=` value in scrape accept header #13313
