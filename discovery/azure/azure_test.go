@@ -35,6 +35,7 @@ func TestMapFromVMWithEmptyTags(t *testing.T) {
 	vmType := "type"
 	location := "westeurope"
 	computerName := "computer_name"
+	status := "PowerState/Foo"
 	networkProfile := armcompute.NetworkProfile{
 		NetworkInterfaces: []*armcompute.NetworkInterfaceReference{},
 	}
@@ -50,6 +51,9 @@ func TestMapFromVMWithEmptyTags(t *testing.T) {
 		NetworkProfile: &networkProfile,
 		HardwareProfile: &armcompute.HardwareProfile{
 			VMSize: &vmSize,
+		},
+		InstanceView: &armcompute.VirtualMachineInstanceView{
+			Statuses: []*armcompute.InstanceViewStatus{{Code: &status}},
 		},
 	}
 
@@ -72,6 +76,7 @@ func TestMapFromVMWithEmptyTags(t *testing.T) {
 		Tags:              map[string]*string{},
 		NetworkInterfaces: []string{},
 		Size:              size,
+		PowerStateCode:    "PowerState/Foo",
 	}
 
 	actualVM := mapFromVM(testVM)
@@ -145,6 +150,7 @@ func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
 	instanceID := "123"
 	location := "westeurope"
 	computerName := "computer_name"
+	status := "PowerState/Foo"
 	networkProfile := armcompute.NetworkProfile{
 		NetworkInterfaces: []*armcompute.NetworkInterfaceReference{},
 	}
@@ -160,6 +166,9 @@ func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
 		NetworkProfile: &networkProfile,
 		HardwareProfile: &armcompute.HardwareProfile{
 			VMSize: &vmSize,
+		},
+		InstanceView: &armcompute.VirtualMachineScaleSetVMInstanceView{
+			Statuses: []*armcompute.InstanceViewStatus{{Code: &status}},
 		},
 	}
 
@@ -186,6 +195,7 @@ func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
 		ScaleSet:          scaleSet,
 		InstanceID:        instanceID,
 		Size:              size,
+		PowerStateCode:    "PowerState/Foo",
 	}
 
 	actualVM := mapFromVMScaleSetVM(testVM, scaleSet)

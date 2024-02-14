@@ -311,6 +311,7 @@ type virtualMachine struct {
 	Tags              map[string]*string
 	NetworkInterfaces []string
 	Size              string
+	PowerStateCode    string
 }
 
 // Create a new azureResource object from an ID string.
@@ -439,12 +440,12 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 					continue
 				}
 
-				// Unfortunately Azure does not return information on whether a VM is deallocated.
-				// This information is available via another API call however the Go SDK does not
-				// yet support this. On deallocated machines, this value happens to be nil so it
-				// is a cheap and easy way to determine if a machine is allocated or not.
-				if networkInterface.Properties.Primary == nil {
-					level.Debug(d.logger).Log("msg", "Skipping deallocated virtual machine", "machine", vm.Name)
+				// https://github.com/prometheus/prometheus/issues/4340
+				// https://github.com/Azure/azure-sdk-for-go/issues/2838
+				if networkInterface.Properties.MacAddress == nil ||
+					strings.EqualFold(vm.PowerStateCode, "PowerState/deallocated") ||
+					strings.EqualFold(vm.PowerStateCode, "PowerState/stopped") {
+					level.Debug(d.logger).Log("msg", "Skipping deallocated/stopped virtual machine", "machine", vm.Name)
 					return
 				}
 
@@ -579,6 +580,7 @@ func mapFromVM(vm armcompute.VirtualMachine) virtualMachine {
 		tags = vm.Tags
 	}
 
+	var vmStatuses []*armcompute.InstanceViewStatus
 	if vm.Properties != nil {
 		if vm.Properties.NetworkProfile != nil {
 			for _, vmNIC := range vm.Properties.NetworkProfile.NetworkInterfaces {
@@ -590,6 +592,9 @@ func mapFromVM(vm armcompute.VirtualMachine) virtualMachine {
 		}
 		if vm.Properties.HardwareProfile != nil {
 			size = string(*vm.Properties.HardwareProfile.VMSize)
+		}
+		if vm.Properties.InstanceView != nil {
+			vmStatuses = vm.Properties.InstanceView.Statuses
 		}
 	}
 
@@ -604,6 +609,7 @@ func mapFromVM(vm armcompute.VirtualMachine) virtualMachine {
 		Tags:              tags,
 		NetworkInterfaces: networkInterfaces,
 		Size:              size,
+		PowerStateCode:    getPowerStateFromVMInstanceView(vmStatuses),
 	}
 }
 
@@ -618,6 +624,7 @@ func mapFromVMScaleSetVM(vm armcompute.VirtualMachineScaleSetVM, scaleSetName st
 		tags = vm.Tags
 	}
 
+	var vmStatuses []*armcompute.InstanceViewStatus
 	if vm.Properties != nil {
 		if vm.Properties.NetworkProfile != nil {
 			for _, vmNIC := range vm.Properties.NetworkProfile.NetworkInterfaces {
@@ -630,6 +637,10 @@ func mapFromVMScaleSetVM(vm armcompute.VirtualMachineScaleSetVM, scaleSetName st
 		if vm.Properties.HardwareProfile != nil {
 			size = string(*vm.Properties.HardwareProfile.VMSize)
 		}
+		if vm.Properties.InstanceView != nil {
+			vmStatuses = vm.Properties.InstanceView.Statuses
+		}
+
 	}
 
 	return virtualMachine{
@@ -644,6 +655,7 @@ func mapFromVMScaleSetVM(vm armcompute.VirtualMachineScaleSetVM, scaleSetName st
 		Tags:              tags,
 		NetworkInterfaces: networkInterfaces,
 		Size:              size,
+		PowerStateCode:    getPowerStateFromVMInstanceView(vmStatuses),
 	}
 }
 
@@ -703,4 +715,15 @@ func (d *Discovery) addToCache(nicID string, netInt *armnetwork.Interface) {
 func (d *Discovery) getFromCache(nicID string) (*armnetwork.Interface, bool) {
 	net, found := d.cache.Get(nicID)
 	return net, found
+}
+
+func getPowerStateFromVMInstanceView(statuses []*armcompute.InstanceViewStatus) string {
+	var powerState string
+	for _, ivs := range statuses {
+		code := *(ivs.Code)
+		if strings.HasPrefix(code, "PowerState") {
+			powerState = code
+		}
+	}
+	return powerState
 }
