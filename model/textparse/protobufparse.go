@@ -306,8 +306,8 @@ func (p *ProtobufParser) Metric(l *labels.Labels) string {
 
 // Exemplar writes the exemplar of the current sample into the passed
 // exemplar. It returns if an exemplar exists or not. In case of a native
-// histogram, the exemplars in native histogram will be returned.
-// If this field is empty, the legacy bucket section is still used for exemplars.
+// histogram, the exemplars in the native histogram will be returned.
+// If this field is empty, the classic bucket section is still used for exemplars.
 // To ingest all exemplars, call the Exemplar method repeatedly until it returns false.
 func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
 	if p.exemplarReturned && p.state == EntrySeries {
