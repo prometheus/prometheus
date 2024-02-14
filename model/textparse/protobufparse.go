@@ -56,7 +56,7 @@ type ProtobufParser struct {
 	fieldPos    int
 	fieldsDone  bool // true if no more fields of a Summary or (legacy) Histogram to be processed.
 	redoClassic bool // true after parsing a native histogram if we need to parse it again as a classic histogram.
-	// exemplarPos is the position within exemplars slice of native exemplars.
+	// exemplarPos is the position within the exemplars slice of a native histogram.
 	exemplarPos int
 
 	// exemplarReturned is set to true each time an exemplar has been
