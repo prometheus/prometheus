@@ -307,6 +307,7 @@ URL query parameters:
 - `end=<rfc3339 | unix_timestamp>`: End timestamp. Optional.
 - `match[]=<series_selector>`: Repeated series selector argument that selects the
   series from which to read the label names. Optional.
+- `limit=<number>`: Maximum number of returned series. Optional.
 
 
 The `data` section of the JSON response is a list of string label names.
@@ -357,6 +358,7 @@ URL query parameters:
 - `end=<rfc3339 | unix_timestamp>`: End timestamp. Optional.
 - `match[]=<series_selector>`: Repeated series selector argument that selects the
   series from which to read the label values. Optional.
+- `limit=<number>`: Maximum number of returned series. Optional.
 
 
 The `data` section of the JSON response is a list of string label values.

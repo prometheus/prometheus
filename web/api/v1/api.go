@@ -711,7 +711,7 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 
 	if len(names) >= limit {
 		names = names[:limit]
-		warnings := annotations.New().Add(errors.New("results truncated due to limit"))
+		warnings = warnings.Add(errors.New("results truncated due to limit"))
 		return apiFuncResult{names, nil, warnings, nil}
 	}
 	return apiFuncResult{names, nil, warnings, nil}
@@ -801,7 +801,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 
 	if len(vals) >= limit {
 		vals = vals[:limit]
-		warnings = annotations.New().Add(errors.New("results truncated due to limit"))
+		warnings = warnings.Add(errors.New("results truncated due to limit"))
 		return apiFuncResult{vals, nil, warnings, closer}
 	}
 
@@ -1908,14 +1908,13 @@ func parseLimitParam(limitStr string) (limit int, err error) {
 		return limit, nil
 	}
 
-	if limitStr != "" {
-		limit, err = strconv.Atoi(limitStr)
-		if err != nil {
-			return limit, err
-		}
-		if limit <= 0 {
-			return limit, errors.New("limit must be positive")
-		}
+	limit, err = strconv.Atoi(limitStr)
+	if err != nil {
+		return limit, err
 	}
+	if limit <= 0 {
+		return limit, errors.New("limit must be positive")
+	}
+
 	return limit, nil
 }
