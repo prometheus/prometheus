@@ -712,6 +712,9 @@ func TestRun_AvoidNotifyWhenBehind(t *testing.T) {
 	const seriesCount = 20
 	const samplesCount = 300
 
+	// This test may take slightly more than 1s to finish in cloud CI.
+	readTimeout := 2 * time.Second
+
 	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
 		t.Run(string(compress), func(t *testing.T) {
 			dir := t.TempDir()
@@ -724,6 +727,7 @@ func TestRun_AvoidNotifyWhenBehind(t *testing.T) {
 			w, err := NewSize(nil, nil, wdir, pageSize, compress)
 			require.NoError(t, err)
 			var wg sync.WaitGroup
+			// add one segment initially to ensure there's a value > 0 for the last segment id
 			for i := 0; i < 1; i++ {
 				for j := 0; j < seriesCount; j++ {
 					ref := j + (i * 100)
@@ -748,8 +752,8 @@ func TestRun_AvoidNotifyWhenBehind(t *testing.T) {
 					}
 				}
 			}
+			wg.Add(1)
 			go func() {
-				wg.Add(1)
 				defer wg.Done()
 				for i := 1; i < segments; i++ {
 					for j := 0; j < seriesCount; j++ {

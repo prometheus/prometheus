@@ -484,7 +484,6 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 
 		// we haven't read due to a notification in quite some time, try reading anyways
 		case <-readTicker.C:
-			fmt.Println("reading because of ticker")
 			level.Debug(w.logger).Log("msg", "Watcher is reading the WAL due to timeout, haven't received any write notifications recently", "timeout", readTimeout)
 			err := w.readAndHandleError(reader, segmentNum, tail, size)
 			if err != nil {
@@ -494,8 +493,6 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 			readTicker.Reset(readTimeout)
 
 		case <-w.readNotify:
-			fmt.Println("reading because of notify")
-
 			err := w.readAndHandleError(reader, segmentNum, tail, size)
 			if err != nil {
 				return err
