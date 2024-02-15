@@ -48,7 +48,7 @@ extern "C" void prompp_wal_decoder_decode(void* args, void* res) {
   Result* out = new (res) Result();
 
   try {
-    in->decoder->decode(in->segment, out->protobuf, out);
+    in->decoder->decode(in->segment, out->protobuf, *out);
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
     handle_current_exception(__func__, err_stream);
