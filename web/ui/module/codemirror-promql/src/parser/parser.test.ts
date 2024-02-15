@@ -825,6 +825,124 @@ describe('promql operations', () => {
       expectedValueType: ValueType.vector,
       expectedDiag: [],
     },
+    {
+      expr: '{"foo"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      // with metric name in the middle
+      expr: '{a="b","foo",c~="d"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: '{"foo", a="bc"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: '{"colon:in:the:middle"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: '{"dot.in.the.middle"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: '{"😀 in metric name"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      // quotes with escape
+      expr: '{"this is \"foo\" metric"}', // eslint-disable-line
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: '{"foo","colon:in:the:middle"="val"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: '{"foo","dot.in.the.middle"="val"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: '{"foo","😀 in label name"="val"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      // quotes with escape
+      expr: '{"foo","this is \"bar\" label"="val"}', // eslint-disable-line
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: 'foo{"bar"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 0,
+          message: 'metric name must not be set twice: foo or bar',
+          severity: 'error',
+          to: 10,
+        },
+      ],
+    },
+    {
+      expr: '{"foo", __name__="bar"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 0,
+          message: 'metric name must not be set twice: foo or bar',
+          severity: 'error',
+          to: 23,
+        },
+      ],
+    },
+    {
+      expr: '{"foo", "__name__"="bar"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 0,
+          message: 'metric name must not be set twice: foo or bar',
+          severity: 'error',
+          to: 25,
+        },
+      ],
+    },
+    {
+      expr: '{"__name__"="foo", __name__="bar"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 0,
+          message: 'metric name must not be set twice: foo or bar',
+          severity: 'error',
+          to: 34,
+        },
+      ],
+    },
+    {
+      expr: '{"foo", "bar"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 0,
+          to: 14,
+          message: 'metric name must not be set twice: foo or bar',
+          severity: 'error',
+        },
+      ],
+    },
   ];
   testCases.forEach((value) => {
     const state = createEditorState(value.expr);
