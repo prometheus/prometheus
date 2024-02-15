@@ -291,14 +291,22 @@ func (w *Watcher) Run() error {
 		return err
 	}
 
+	tail := false
+
 	level.Debug(w.logger).Log("msg", "Tailing WAL", "lastCheckpoint", lastCheckpoint, "checkpointIndex", checkpointIndex, "currentSegment", currentSegment, "lastSegment", lastSegment)
 	for !isClosed(w.quit) {
 		w.currentSegmentMetric.Set(float64(currentSegment))
 		level.Debug(w.logger).Log("msg", "Processing segment", "currentSegment", currentSegment)
 
+		// Reset the value of lastSegment, this is to avoid having to wait too long for between reads if we're reading a
+		// segment that is not the most recent segment after startup. Ignore error here since if there was a problem it would
+		// have been surfaced earlier.
+		_, lastSegment, _ := w.firstAndLast()
+		tail = currentSegment >= lastSegment
+
 		// On start, after reading the existing WAL for series records, we have a pointer to what is the latest segment.
 		// On subsequent calls to this function, currentSegment will have been incremented and we should open that segment.
-		if err := w.watch(currentSegment, currentSegment >= lastSegment); err != nil && !errors.Is(err, ErrIgnorable) {
+		if err := w.watch(currentSegment, tail); err != nil && !errors.Is(err, ErrIgnorable) {
 			return err
 		}
 
@@ -476,6 +484,7 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 
 		// we haven't read due to a notification in quite some time, try reading anyways
 		case <-readTicker.C:
+			fmt.Println("reading because of ticker")
 			level.Debug(w.logger).Log("msg", "Watcher is reading the WAL due to timeout, haven't received any write notifications recently", "timeout", readTimeout)
 			err := w.readAndHandleError(reader, segmentNum, tail, size)
 			if err != nil {
@@ -485,6 +494,8 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 			readTicker.Reset(readTimeout)
 
 		case <-w.readNotify:
+			fmt.Println("reading because of notify")
+
 			err := w.readAndHandleError(reader, segmentNum, tail, size)
 			if err != nil {
 				return err
