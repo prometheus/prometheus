@@ -202,7 +202,7 @@ func TestCheckpoint(t *testing.T) {
 				histogramsInWAL += 4
 
 				b = enc.Exemplars([]record.RefExemplar{
-					{Ref: 1, T: last, V: float64(i), Labels: labels.FromStrings("traceID", fmt.Sprintf("trace-%d", i))},
+					{Ref: 1, T: last, V: float64(i), Labels: labels.FromStrings("trace_id", fmt.Sprintf("trace-%d", i))},
 				}, nil)
 				require.NoError(t, w.Log(b))
 
