@@ -475,6 +475,22 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: ` +{"some_metric"}`,
+		expected: &UnaryExpr{
+			Op: ADD,
+			Expr: &VectorSelector{
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 2,
+					End:   17,
+				},
+			},
+			StartPos: 1,
+		},
+	},
+	{
 		input:  "",
 		fail:   true,
 		errMsg: "no expression found in input",
@@ -1703,6 +1719,33 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: `{"foo"}`,
+		expected: &VectorSelector{
+			// When a metric is named inside the braces, the Name field is not set.
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   7,
+			},
+		},
+	},
+	{
+		input: `{"foo", a="bc"}`,
+		expected: &VectorSelector{
+			// When a metric is named inside the braces, the Name field is not set.
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				MustLabelMatcher(labels.MatchEqual, "a", "bc"),
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   15,
+			},
+		},
+	},
+	{
 		input: `foo{NaN='bc'}`,
 		expected: &VectorSelector{
 			Name: "foo",
@@ -1744,6 +1787,23 @@ var testExpr = []struct {
 			PosRange: posrange.PositionRange{
 				Start: 0,
 				End:   48,
+			},
+		},
+	},
+	{
+		// Metric name in the middle of selector list is fine.
+		input: `{a="b", foo!="bar", "foo", test=~"test", bar!~"baz"}`,
+		expected: &VectorSelector{
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, "a", "b"),
+				MustLabelMatcher(labels.MatchNotEqual, "foo", "bar"),
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				MustLabelMatcher(labels.MatchRegexp, "test", "test"),
+				MustLabelMatcher(labels.MatchNotRegexp, "bar", "baz"),
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   52,
 			},
 		},
 	},
@@ -1870,6 +1930,11 @@ var testExpr = []struct {
 		input:  `foo{__name__="bar" lol}`,
 		fail:   true,
 		errMsg: `unexpected identifier "lol" in label matching, expected "," or "}"`,
+	},
+	{
+		input:  `foo{"a"=}`,
+		fail:   true,
+		errMsg: `unexpected "}" in label matching, expected string`,
 	},
 	// Test matrix selector.
 	{
