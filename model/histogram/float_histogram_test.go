@@ -1551,6 +1551,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 	cases := []struct {
 		name               string
 		in1, in2, expected *FloatHistogram
+		expErrMsg          string
 	}{
 		{
 			"same bucket layout",
@@ -1584,6 +1585,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				NegativeSpans:   []Span{{3, 2}, {3, 2}},
 				NegativeBuckets: []float64{4, 2, 9, 10},
 			},
+			"",
 		},
 		{
 			"same bucket layout, defined differently",
@@ -1617,6 +1619,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				NegativeSpans:   []Span{{3, 5}, {0, 2}},
 				NegativeBuckets: []float64{4, 2, 0, 0, 0, 9, 10},
 			},
+			"",
 		},
 		{
 			"non-overlapping spans",
@@ -1650,6 +1653,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				NegativeSpans:   []Span{{-9, 2}, {3, 2}, {5, 2}, {3, 2}},
 				NegativeBuckets: []float64{1, 1, 4, 4, 3, 1, 5, 6},
 			},
+			"",
 		},
 		{
 			"non-overlapping spans inverted order",
@@ -1683,6 +1687,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				NegativeSpans:   []Span{{-6, 2}, {1, 2}, {4, 2}, {3, 2}},
 				NegativeBuckets: []float64{1, 1, 4, 4, 3, 1, 5, 6},
 			},
+			"",
 		},
 		{
 			"overlapping spans",
@@ -1716,6 +1721,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				NegativeSpans:   []Span{{3, 3}, {1, 3}},
 				NegativeBuckets: []float64{3, 2, 1, 4, 9, 6},
 			},
+			"",
 		},
 		{
 			"overlapping spans inverted order",
@@ -1749,6 +1755,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				NegativeSpans:   []Span{{3, 3}, {1, 3}},
 				NegativeBuckets: []float64{3, 2, 1, 4, 9, 6},
 			},
+			"",
 		},
 		{
 			"schema change",
@@ -1784,6 +1791,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				NegativeSpans:   []Span{{3, 3}, {1, 3}},
 				NegativeBuckets: []float64{3, 2, 1, 4, 9, 6},
 			},
+			"",
 		},
 		{
 			"larger zero bucket in first histogram",
@@ -1817,6 +1825,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				NegativeSpans:   []Span{{3, 3}, {1, 3}},
 				NegativeBuckets: []float64{3, 2, 1, 4, 9, 6},
 			},
+			"",
 		},
 		{
 			"larger zero bucket in second histogram",
@@ -1850,6 +1859,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				NegativeSpans:   []Span{{3, 3}, {1, 3}},
 				NegativeBuckets: []float64{3, 2, 1, 4, 9, 6},
 			},
+			"",
 		},
 		{
 			"larger zero threshold in first histogram ends up inside a populated bucket of second histogram",
@@ -1883,6 +1893,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				NegativeSpans:   []Span{{3, 3}, {1, 3}},
 				NegativeBuckets: []float64{3, 2, 1, 4, 9, 6},
 			},
+			"",
 		},
 		{
 			"larger zero threshold in second histogram ends up inside a populated bucket of first histogram",
@@ -1916,6 +1927,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				NegativeSpans:   []Span{{3, 3}, {1, 3}},
 				NegativeBuckets: []float64{3, 2, 1, 4, 9, 6},
 			},
+			"",
 		},
 		{
 			"schema change combined with larger zero bucket in second histogram",
@@ -1951,6 +1963,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				NegativeSpans:   []Span{{3, 3}, {1, 3}},
 				NegativeBuckets: []float64{3, 2, 1, 4, 9, 6},
 			},
+			"",
 		},
 		{
 			"schema change combined with larger zero bucket in first histogram",
@@ -1986,6 +1999,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				NegativeSpans:   []Span{{3, 3}, {1, 3}},
 				NegativeBuckets: []float64{3, 2, 1, 4, 9, 6},
 			},
+			"",
 		},
 		{
 			"same custom bucket layout",
@@ -2013,6 +2027,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				PositiveBuckets: []float64{1, 0, 5, 7, 13},
 				CustomBounds:    []float64{1, 2, 3, 4},
 			},
+			"",
 		},
 		{
 			"same custom bucket layout, defined differently",
@@ -2040,6 +2055,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				PositiveBuckets: []float64{1, 0, 5, 7, 13},
 				CustomBounds:    []float64{1, 2, 3, 4},
 			},
+			"",
 		},
 		{
 			"non-overlapping spans with custom buckets",
@@ -2067,6 +2083,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				PositiveBuckets: []float64{1, 0, 5, 4, 3, 4, 7, 2, 3, 6},
 				CustomBounds:    []float64{1, 2, 3, 4},
 			},
+			"",
 		},
 		{
 			"non-overlapping spans inverted order with custom buckets",
@@ -2094,6 +2111,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				PositiveBuckets: []float64{1, 0, 5, 4, 3, 4, 7, 2, 3, 6},
 				CustomBounds:    []float64{1, 2, 3, 4},
 			},
+			"",
 		},
 		{
 			"overlapping spans with custom buckets",
@@ -2121,6 +2139,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				PositiveBuckets: []float64{1, 5, 4, 2, 6, 10, 9, 5},
 				CustomBounds:    []float64{1, 2, 3, 4},
 			},
+			"",
 		},
 		{
 			"overlapping spans inverted order with custom buckets",
@@ -2148,36 +2167,93 @@ func TestFloatHistogramAdd(t *testing.T) {
 				PositiveBuckets: []float64{1, 5, 4, 2, 6, 10, 9, 5},
 				CustomBounds:    []float64{1, 2, 3, 4},
 			},
+			"",
+		},
+		{
+			"different custom bucket layout",
+			&FloatHistogram{
+				Schema:          CustomBucketsSchema,
+				Count:           15,
+				Sum:             2.345,
+				PositiveSpans:   []Span{{-2, 2}, {1, 3}},
+				PositiveBuckets: []float64{1, 0, 3, 4, 7},
+				CustomBounds:    []float64{1, 2, 3, 4},
+			},
+			&FloatHistogram{
+				Schema:          CustomBucketsSchema,
+				Count:           11,
+				Sum:             1.234,
+				PositiveSpans:   []Span{{-2, 2}, {1, 3}},
+				PositiveBuckets: []float64{0, 0, 2, 3, 6},
+				CustomBounds:    []float64{1, 2, 3, 4, 5},
+			},
+			nil,
+			"cannot apply this operation on custom buckets histograms with different custom bounds",
+		},
+		{
+			"mix exponential and custom buckets histograms",
+			&FloatHistogram{
+				ZeroThreshold:   0.01,
+				ZeroCount:       8,
+				Count:           59,
+				Sum:             1.234,
+				Schema:          0,
+				PositiveSpans:   []Span{{-2, 5}, {0, 3}},
+				PositiveBuckets: []float64{2, 5, 4, 2, 3, 6, 7, 5},
+				NegativeSpans:   []Span{{3, 3}, {1, 3}},
+				NegativeBuckets: []float64{4, 10, 1, 4, 14, 7},
+			},
+			&FloatHistogram{
+				Schema:          CustomBucketsSchema,
+				Count:           11,
+				Sum:             12,
+				PositiveSpans:   []Span{{-2, 2}, {1, 3}},
+				PositiveBuckets: []float64{0, 0, 2, 3, 6},
+				CustomBounds:    []float64{1, 2, 3, 4},
+			},
+			nil,
+			"cannot apply this operation on histograms with a mix of exponential and custom bucket schemas",
 		},
 	}
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			testHistogramAdd(t, c.in1, c.in2, c.expected)
-			testHistogramAdd(t, c.in2, c.in1, c.expected)
+			testHistogramAdd(t, c.in1, c.in2, c.expected, c.expErrMsg)
+			testHistogramAdd(t, c.in2, c.in1, c.expected, c.expErrMsg)
 		})
 	}
 }
 
-func testHistogramAdd(t *testing.T, a, b, expected *FloatHistogram) {
+func testHistogramAdd(t *testing.T, a, b, expected *FloatHistogram, expErrMsg string) {
 	var (
 		aCopy        = a.Copy()
 		bCopy        = b.Copy()
-		expectedCopy = expected.Copy()
+		expectedCopy *FloatHistogram
 	)
 
-	res := aCopy.Add(bCopy)
+	if expected != nil {
+		expectedCopy = expected.Copy()
+	}
 
-	res.Compact(0)
-	expectedCopy.Compact(0)
+	res, err := aCopy.Add(bCopy)
+	if expErrMsg != "" {
+		require.EqualError(t, err, expErrMsg)
+	} else {
+		require.NoError(t, err)
+	}
 
-	require.Equal(t, expectedCopy, res)
+	if expected != nil {
+		res.Compact(0)
+		expectedCopy.Compact(0)
 
-	// Has it also happened in-place?
-	require.Equal(t, expectedCopy, aCopy)
+		require.Equal(t, expectedCopy, res)
 
-	// Check that the argument was not mutated.
-	require.Equal(t, b, bCopy)
+		// Has it also happened in-place?
+		require.Equal(t, expectedCopy, aCopy)
+
+		// Check that the argument was not mutated.
+		require.Equal(t, b, bCopy)
+	}
 }
 
 func TestFloatHistogramSub(t *testing.T) {
@@ -2186,6 +2262,7 @@ func TestFloatHistogramSub(t *testing.T) {
 	cases := []struct {
 		name               string
 		in1, in2, expected *FloatHistogram
+		expErrMsg          string
 	}{
 		{
 			"same bucket layout",
@@ -2219,6 +2296,7 @@ func TestFloatHistogramSub(t *testing.T) {
 				NegativeSpans:   []Span{{3, 2}, {3, 2}},
 				NegativeBuckets: []float64{2, 0, 1, 2},
 			},
+			"",
 		},
 		{
 			"schema change",
@@ -2254,6 +2332,7 @@ func TestFloatHistogramSub(t *testing.T) {
 				NegativeSpans:   []Span{{3, 3}, {1, 3}},
 				NegativeBuckets: []float64{1, 9, 1, 4, 9, 1},
 			},
+			"",
 		},
 		{
 			"same custom bucket layout",
@@ -2281,38 +2360,98 @@ func TestFloatHistogramSub(t *testing.T) {
 				PositiveBuckets: []float64{1, 0, 1, 1, 1},
 				CustomBounds:    []float64{1, 2, 3, 4},
 			},
+			"",
+		},
+		{
+			"different custom bucket layout",
+			&FloatHistogram{
+				Schema:          CustomBucketsSchema,
+				Count:           15,
+				Sum:             23,
+				PositiveSpans:   []Span{{-2, 2}, {1, 3}},
+				PositiveBuckets: []float64{1, 0, 3, 4, 7},
+				CustomBounds:    []float64{1, 2, 3, 4},
+			},
+			&FloatHistogram{
+				Schema:          CustomBucketsSchema,
+				Count:           11,
+				Sum:             12,
+				PositiveSpans:   []Span{{-2, 2}, {1, 3}},
+				PositiveBuckets: []float64{0, 0, 2, 3, 6},
+				CustomBounds:    []float64{1, 2, 3, 4, 5},
+			},
+			nil,
+			"cannot apply this operation on custom buckets histograms with different custom bounds",
+		},
+		{
+			"mix exponential and custom buckets histograms",
+			&FloatHistogram{
+				ZeroThreshold:   0.01,
+				ZeroCount:       8,
+				Count:           59,
+				Sum:             1.234,
+				Schema:          0,
+				PositiveSpans:   []Span{{-2, 5}, {0, 3}},
+				PositiveBuckets: []float64{2, 5, 4, 2, 3, 6, 7, 5},
+				NegativeSpans:   []Span{{3, 3}, {1, 3}},
+				NegativeBuckets: []float64{4, 10, 1, 4, 14, 7},
+			},
+			&FloatHistogram{
+				Schema:          CustomBucketsSchema,
+				Count:           11,
+				Sum:             12,
+				PositiveSpans:   []Span{{-2, 2}, {1, 3}},
+				PositiveBuckets: []float64{0, 0, 2, 3, 6},
+				CustomBounds:    []float64{1, 2, 3, 4},
+			},
+			nil,
+			"cannot apply this operation on histograms with a mix of exponential and custom bucket schemas",
 		},
 	}
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			testFloatHistogramSub(t, c.in1, c.in2, c.expected)
+			testFloatHistogramSub(t, c.in1, c.in2, c.expected, c.expErrMsg)
 
-			expectedNegative := c.expected.Copy().Mul(-1)
-			testFloatHistogramSub(t, c.in2, c.in1, expectedNegative)
+			var expectedNegative *FloatHistogram
+			if c.expected != nil {
+				expectedNegative = c.expected.Copy().Mul(-1)
+			}
+			testFloatHistogramSub(t, c.in2, c.in1, expectedNegative, c.expErrMsg)
 		})
 	}
 }
 
-func testFloatHistogramSub(t *testing.T, a, b, expected *FloatHistogram) {
+func testFloatHistogramSub(t *testing.T, a, b, expected *FloatHistogram, expErrMsg string) {
 	var (
 		aCopy        = a.Copy()
 		bCopy        = b.Copy()
-		expectedCopy = expected.Copy()
+		expectedCopy *FloatHistogram
 	)
 
-	res := aCopy.Sub(bCopy)
+	if expected != nil {
+		expectedCopy = expected.Copy()
+	}
 
-	res.Compact(0)
-	expectedCopy.Compact(0)
+	res, err := aCopy.Sub(bCopy)
+	if expErrMsg != "" {
+		require.EqualError(t, err, expErrMsg)
+	} else {
+		require.NoError(t, err)
+	}
 
-	require.Equal(t, expectedCopy, res)
+	if expected != nil {
+		res.Compact(0)
+		expectedCopy.Compact(0)
 
-	// Has it also happened in-place?
-	require.Equal(t, expectedCopy, aCopy)
+		require.Equal(t, expectedCopy, res)
 
-	// Check that the argument was not mutated.
-	require.Equal(t, b, bCopy)
+		// Has it also happened in-place?
+		require.Equal(t, expectedCopy, aCopy)
+
+		// Check that the argument was not mutated.
+		require.Equal(t, b, bCopy)
+	}
 }
 
 func TestFloatHistogramCopyToSchema(t *testing.T) {

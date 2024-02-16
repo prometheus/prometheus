@@ -30,6 +30,8 @@ var (
 	ErrHistogramSpansBucketsMismatch  = errors.New("histogram spans specify different number of buckets than provided")
 	ErrHistogramCustomBucketsMismatch = errors.New("histogram custom bounds are too few")
 	ErrHistogramCustomBucketsInvalid  = errors.New("histogram custom bounds must be in strictly increasing order")
+	ErrHistogramsIncompatibleSchema   = errors.New("cannot apply this operation on histograms with a mix of exponential and custom bucket schemas")
+	ErrHistogramsIncompatibleBounds   = errors.New("cannot apply this operation on custom buckets histograms with different custom bounds")
 )
 
 // BucketCount is a type constraint for the count in a bucket, which can be

@@ -2553,12 +2553,20 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 	switch op {
 	case parser.ADD:
 		if hlhs != nil && hrhs != nil {
-			return 0, hlhs.Copy().Add(hrhs).Compact(0), true
+			res, err := hlhs.Copy().Add(hrhs)
+			if err != nil {
+				panic(err)
+			}
+			return 0, res.Compact(0), true
 		}
 		return lhs + rhs, nil, true
 	case parser.SUB:
 		if hlhs != nil && hrhs != nil {
-			return 0, hlhs.Copy().Sub(hrhs).Compact(0), true
+			res, err := hlhs.Copy().Sub(hrhs)
+			if err != nil {
+				panic(err)
+			}
+			return 0, res.Compact(0), true
 		}
 		return lhs - rhs, nil, true
 	case parser.MUL:
@@ -2743,7 +2751,10 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, grouping []string, par
 			if s.H != nil {
 				group.hasHistogram = true
 				if group.histogramValue != nil {
-					group.histogramValue.Add(s.H)
+					_, err := group.histogramValue.Add(s.H)
+					if err != nil {
+						panic(err)
+					}
 				}
 				// Otherwise the aggregation contained floats
 				// previously and will be invalid anyway. No
@@ -2760,8 +2771,14 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, grouping []string, par
 				if group.histogramMean != nil {
 					left := s.H.Copy().Div(float64(group.groupCount))
 					right := group.histogramMean.Copy().Div(float64(group.groupCount))
-					toAdd := left.Sub(right)
-					group.histogramMean.Add(toAdd)
+					toAdd, err := left.Sub(right)
+					if err != nil {
+						panic(err)
+					}
+					_, err = group.histogramMean.Add(toAdd)
+					if err != nil {
+						panic(err)
+					}
 				}
 				// Otherwise the aggregation contained floats
 				// previously and will be invalid anyway. No

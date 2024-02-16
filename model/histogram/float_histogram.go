@@ -306,12 +306,12 @@ func (h *FloatHistogram) Div(scalar float64) *FloatHistogram {
 // 2 custom buckets histograms with the exact same custom bounds.
 //
 // This method returns a pointer to the receiving histogram for convenience.
-func (h *FloatHistogram) Add(other *FloatHistogram) *FloatHistogram {
+func (h *FloatHistogram) Add(other *FloatHistogram) (*FloatHistogram, error) {
 	if h.HasCustomBounds() != other.HasCustomBounds() {
-		return nil
+		return nil, ErrHistogramsIncompatibleSchema
 	}
 	if h.HasCustomBounds() && !floatBucketsMatch(h.CustomBounds, other.CustomBounds) {
-		return nil
+		return nil, ErrHistogramsIncompatibleBounds
 	}
 
 	switch {
@@ -357,7 +357,7 @@ func (h *FloatHistogram) Add(other *FloatHistogram) *FloatHistogram {
 		h.ZeroCount = 0
 		h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, false, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
 		h.NegativeSpans, h.NegativeBuckets = nil, nil
-		return h
+		return h, nil
 	}
 
 	var (
@@ -383,16 +383,16 @@ func (h *FloatHistogram) Add(other *FloatHistogram) *FloatHistogram {
 
 	h.CustomBounds = nil
 
-	return h
+	return h, nil
 }
 
 // Sub works like Add but subtracts the other histogram.
-func (h *FloatHistogram) Sub(other *FloatHistogram) *FloatHistogram {
+func (h *FloatHistogram) Sub(other *FloatHistogram) (*FloatHistogram, error) {
 	if h.HasCustomBounds() != other.HasCustomBounds() {
-		return nil
+		return nil, ErrHistogramsIncompatibleSchema
 	}
 	if h.HasCustomBounds() && !floatBucketsMatch(h.CustomBounds, other.CustomBounds) {
-		return nil
+		return nil, ErrHistogramsIncompatibleBounds
 	}
 
 	if !h.HasCustomBounds() {
@@ -414,7 +414,7 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) *FloatHistogram {
 		h.ZeroCount = 0
 		h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
 		h.NegativeSpans, h.NegativeBuckets = nil, nil
-		return h
+		return h, nil
 	}
 
 	var (
@@ -439,7 +439,7 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) *FloatHistogram {
 
 	h.CustomBounds = nil
 
-	return h
+	return h, nil
 }
 
 // Equals returns true if the given float histogram matches exactly.
