@@ -48,18 +48,19 @@ type readHandler struct {
 // NewReadHandler creates a http.Handler that accepts remote read requests and
 // writes them to the provided queryable.
 func NewReadHandler(logger log.Logger, r prometheus.Registerer, queryable storage.SampleAndChunkQueryable, config func() config.Config, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame int) http.Handler {
+	waitDuration := promauto.With(r).NewCounter(prometheus.CounterOpts{
+		Namespace:   "prometheus",
+		Subsystem:   "api",
+		Help:        "Total number of seconds spent waiting at the query gate before remote read query execution",
+		Name:        "remote_read_wait_duration_seconds_total",
+		ConstLabels: prometheus.Labels{"name": "read_handler"},
+	})
 	h := &readHandler{
-		logger:                logger,
-		queryable:             queryable,
-		config:                config,
-		remoteReadSampleLimit: remoteReadSampleLimit,
-		remoteReadGate: gate.New(remoteReadConcurrencyLimit, promauto.With(r).NewCounter(prometheus.CounterOpts{
-			Namespace:   "prometheus",
-			Subsystem:   "api",
-			Help:        "Total number of seconds spent waiting at the query gate before remote read query execution",
-			Name:        "remote_read_wait_duration_seconds_total",
-			ConstLabels: prometheus.Labels{"name": "read_handler"},
-		})),
+		logger:                    logger,
+		queryable:                 queryable,
+		config:                    config,
+		remoteReadSampleLimit:     remoteReadSampleLimit,
+		remoteReadGate:            gate.New(remoteReadConcurrencyLimit, &waitDuration),
 		remoteReadMaxBytesInFrame: remoteReadMaxBytesInFrame,
 		marshalPool:               &sync.Pool{},
 

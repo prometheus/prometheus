@@ -23,12 +23,12 @@ import (
 // A Gate controls the maximum number of concurrently running and waiting queries.
 type Gate struct {
 	ch           chan struct{}
-	waitDuration prometheus.Counter
+	waitDuration *prometheus.Counter
 }
 
 // New returns a query gate that limits the number of queries
 // being concurrently executed.
-func New(length int, waitDuration prometheus.Counter) *Gate {
+func New(length int, waitDuration *prometheus.Counter) *Gate {
 	return &Gate{
 		ch:           make(chan struct{}, length),
 		waitDuration: waitDuration,
@@ -40,7 +40,7 @@ func (g *Gate) Start(ctx context.Context) error {
 	startTime := time.Now()
 	defer func() {
 		if g.waitDuration != nil {
-			g.waitDuration.Add(time.Since(startTime).Seconds())
+			(*g.waitDuration).Add(time.Since(startTime).Seconds())
 		}
 	}()
 	select {
