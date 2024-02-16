@@ -20,11 +20,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/prometheus/client_golang/prometheus/promauto"
-
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/config"
@@ -58,7 +57,7 @@ func NewReadHandler(logger log.Logger, r prometheus.Registerer, queryable storag
 			Namespace:   "prometheus",
 			Subsystem:   "api",
 			Help:        "Total number of seconds spent waiting at the query gate before remote read query execution",
-			Name:        "prometheus_api_remote_read_wait_duration_seconds_total",
+			Name:        "remote_read_wait_duration_seconds_total",
 			ConstLabels: prometheus.Labels{"name": "read_handler"},
 		})),
 		remoteReadMaxBytesInFrame: remoteReadMaxBytesInFrame,
