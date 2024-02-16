@@ -208,6 +208,26 @@ func TestCumulativeBucketIterator(t *testing.T) {
 				{Lower: math.Inf(-1), Upper: 16, Count: 8, LowerInclusive: true, UpperInclusive: true, Index: 2},
 			},
 		},
+		{
+			histogram: Histogram{
+				Schema: CustomBucketsSchema,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 1, -1, 0},
+				CustomBounds:    []float64{5, 10, 20, 50},
+			},
+			expectedBuckets: []Bucket[uint64]{
+				{Lower: math.Inf(-1), Upper: 5, Count: 1, LowerInclusive: true, UpperInclusive: true, Index: 0},
+				{Lower: math.Inf(-1), Upper: 10, Count: 3, LowerInclusive: true, UpperInclusive: true, Index: 1},
+
+				{Lower: math.Inf(-1), Upper: 20, Count: 3, LowerInclusive: true, UpperInclusive: true, Index: 2},
+
+				{Lower: math.Inf(-1), Upper: 50, Count: 4, LowerInclusive: true, UpperInclusive: true, Index: 3},
+				{Lower: math.Inf(-1), Upper: math.Inf(1), Count: 5, LowerInclusive: true, UpperInclusive: true, Index: 4},
+			},
+		},
 	}
 
 	for i, c := range cases {
@@ -368,6 +388,62 @@ func TestRegularBucketIterator(t *testing.T) {
 			},
 			expectedNegativeBuckets: []Bucket[uint64]{},
 		},
+		{
+			histogram: Histogram{
+				Schema: CustomBucketsSchema,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 1, -1, 0},
+				CustomBounds:    []float64{5, 10, 20, 50},
+			},
+			expectedPositiveBuckets: []Bucket[uint64]{
+				{Lower: math.Inf(-1), Upper: 5, Count: 1, LowerInclusive: true, UpperInclusive: true, Index: 0},
+				{Lower: 5, Upper: 10, Count: 2, LowerInclusive: false, UpperInclusive: true, Index: 1},
+
+				{Lower: 20, Upper: 50, Count: 1, LowerInclusive: false, UpperInclusive: true, Index: 3},
+				{Lower: 50, Upper: math.Inf(1), Count: 1, LowerInclusive: false, UpperInclusive: true, Index: 4},
+			},
+			expectedNegativeBuckets: []Bucket[uint64]{},
+		},
+		{
+			histogram: Histogram{
+				Schema: CustomBucketsSchema,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 1, -1, 0},
+				CustomBounds:    []float64{0, 10, 20, 50},
+			},
+			expectedPositiveBuckets: []Bucket[uint64]{
+				{Lower: math.Inf(-1), Upper: 0, Count: 1, LowerInclusive: true, UpperInclusive: true, Index: 0},
+				{Lower: 0, Upper: 10, Count: 2, LowerInclusive: false, UpperInclusive: true, Index: 1},
+
+				{Lower: 20, Upper: 50, Count: 1, LowerInclusive: false, UpperInclusive: true, Index: 3},
+				{Lower: 50, Upper: math.Inf(1), Count: 1, LowerInclusive: false, UpperInclusive: true, Index: 4},
+			},
+			expectedNegativeBuckets: []Bucket[uint64]{},
+		},
+		{
+			histogram: Histogram{
+				Schema: CustomBucketsSchema,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 5},
+				},
+				PositiveBuckets: []int64{1, 1, 0, -1, 0},
+				CustomBounds:    []float64{-5, 0, 20, 50},
+			},
+			expectedPositiveBuckets: []Bucket[uint64]{
+				{Lower: math.Inf(-1), Upper: -5, Count: 1, LowerInclusive: true, UpperInclusive: true, Index: 0},
+				{Lower: -5, Upper: 0, Count: 2, LowerInclusive: false, UpperInclusive: true, Index: 1},
+				{Lower: 0, Upper: 20, Count: 2, LowerInclusive: false, UpperInclusive: true, Index: 2},
+				{Lower: 20, Upper: 50, Count: 1, LowerInclusive: false, UpperInclusive: true, Index: 3},
+				{Lower: 50, Upper: math.Inf(1), Count: 1, LowerInclusive: false, UpperInclusive: true, Index: 4},
+			},
+			expectedNegativeBuckets: []Bucket[uint64]{},
+		},
 	}
 
 	for i, c := range cases {
@@ -456,6 +532,74 @@ func TestHistogramToFloat(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			fh := h.ToFloat(c.fh)
+			require.Equal(t, h.String(), fh.String())
+		})
+	}
+}
+
+func TestCustomBucketsHistogramToFloat(t *testing.T) {
+	h := Histogram{
+		Schema: CustomBucketsSchema,
+		Count:  10,
+		Sum:    2.7,
+		PositiveSpans: []Span{
+			{Offset: 0, Length: 4},
+			{Offset: 0, Length: 0},
+			{Offset: 0, Length: 3},
+		},
+		PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 0},
+		CustomBounds:    []float64{5, 10, 20, 50, 100, 500},
+	}
+	cases := []struct {
+		name string
+		fh   *FloatHistogram
+	}{
+		{name: "without prior float histogram"},
+		{name: "prior float histogram with more buckets", fh: &FloatHistogram{
+			Schema:        2,
+			Count:         3,
+			Sum:           5,
+			ZeroThreshold: 4,
+			ZeroCount:     1,
+			PositiveSpans: []Span{
+				{Offset: 1, Length: 2},
+				{Offset: 1, Length: 2},
+				{Offset: 1, Length: 2},
+			},
+			PositiveBuckets: []float64{1, 2, 3, 4, 5, 6, 7, 8, 9},
+			NegativeSpans: []Span{
+				{Offset: 20, Length: 6},
+				{Offset: 12, Length: 7},
+				{Offset: 33, Length: 10},
+			},
+			NegativeBuckets: []float64{1, 2, 3, 4, 5, 6, 7, 8, 9},
+		}},
+		{name: "prior float histogram with fewer buckets", fh: &FloatHistogram{
+			Schema:        2,
+			Count:         3,
+			Sum:           5,
+			ZeroThreshold: 4,
+			ZeroCount:     1,
+			PositiveSpans: []Span{
+				{Offset: 1, Length: 2},
+				{Offset: 1, Length: 2},
+				{Offset: 1, Length: 2},
+			},
+			PositiveBuckets: []float64{1, 2},
+			NegativeSpans: []Span{
+				{Offset: 20, Length: 6},
+				{Offset: 12, Length: 7},
+				{Offset: 33, Length: 10},
+			},
+			NegativeBuckets: []float64{1, 2},
+		}},
+	}
+
+	require.NoError(t, h.Validate())
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			fh := h.ToFloat(c.fh)
+			require.NoError(t, fh.Validate())
 			require.Equal(t, h.String(), fh.String())
 		})
 	}
@@ -640,6 +784,21 @@ func TestHistogramCopy(t *testing.T) {
 			},
 			expected: &Histogram{},
 		},
+		{
+			name: "with custom buckets",
+			orig: &Histogram{
+				Schema:          CustomBucketsSchema,
+				PositiveSpans:   []Span{{-2, 1}},
+				PositiveBuckets: []int64{1, 3, -3, 42},
+				CustomBounds:    []float64{5, 10, 15},
+			},
+			expected: &Histogram{
+				Schema:          CustomBucketsSchema,
+				PositiveSpans:   []Span{{-2, 1}},
+				PositiveBuckets: []int64{1, 3, -3, 42},
+				CustomBounds:    []float64{5, 10, 15},
+			},
+		},
 	}
 
 	for _, tcase := range cases {
@@ -689,6 +848,21 @@ func TestHistogramCopyTo(t *testing.T) {
 				NegativeBuckets: make([]int64, 0, 1),
 			},
 			expected: &Histogram{},
+		},
+		{
+			name: "with custom buckets",
+			orig: &Histogram{
+				Schema:          CustomBucketsSchema,
+				PositiveSpans:   []Span{{-2, 1}},
+				PositiveBuckets: []int64{1, 3, -3, 42},
+				CustomBounds:    []float64{5, 10, 15},
+			},
+			expected: &Histogram{
+				Schema:          CustomBucketsSchema,
+				PositiveSpans:   []Span{{-2, 1}},
+				PositiveBuckets: []int64{1, 3, -3, 42},
+				CustomBounds:    []float64{5, 10, 15},
+			},
 		},
 	}
 
@@ -971,6 +1145,86 @@ func TestHistogramCompact(t *testing.T) {
 				NegativeBuckets: []int64{2, 3},
 			},
 		},
+		{
+			"nothing should happen with custom buckets",
+			&Histogram{
+				Schema:          CustomBucketsSchema,
+				PositiveSpans:   []Span{{-2, 1}, {2, 3}},
+				PositiveBuckets: []int64{1, 3, -3, 42},
+				CustomBounds:    []float64{5, 10, 15},
+			},
+			0,
+			&Histogram{
+				Schema:          CustomBucketsSchema,
+				PositiveSpans:   []Span{{-2, 1}, {2, 3}},
+				PositiveBuckets: []int64{1, 3, -3, 42},
+				CustomBounds:    []float64{5, 10, 15},
+			},
+		},
+		{
+			"eliminate zero offsets with custom buckets",
+			&Histogram{
+				Schema:          CustomBucketsSchema,
+				PositiveSpans:   []Span{{-2, 1}, {0, 3}, {0, 1}},
+				PositiveBuckets: []int64{1, 3, -3, 42, 3},
+				CustomBounds:    []float64{5, 10, 15, 20},
+			},
+			0,
+			&Histogram{
+				Schema:          CustomBucketsSchema,
+				PositiveSpans:   []Span{{-2, 5}},
+				PositiveBuckets: []int64{1, 3, -3, 42, 3},
+				CustomBounds:    []float64{5, 10, 15, 20},
+			},
+		},
+		{
+			"eliminate zero length with custom buckets",
+			&Histogram{
+				Schema:          CustomBucketsSchema,
+				PositiveSpans:   []Span{{-2, 2}, {2, 0}, {3, 3}},
+				PositiveBuckets: []int64{1, 3, -3, 42, 3},
+				CustomBounds:    []float64{5, 10, 15, 20},
+			},
+			0,
+			&Histogram{
+				Schema:          CustomBucketsSchema,
+				PositiveSpans:   []Span{{-2, 2}, {5, 3}},
+				PositiveBuckets: []int64{1, 3, -3, 42, 3},
+				CustomBounds:    []float64{5, 10, 15, 20},
+			},
+		},
+		{
+			"eliminate multiple zero length spans with custom buckets",
+			&Histogram{
+				Schema:          CustomBucketsSchema,
+				PositiveSpans:   []Span{{-2, 2}, {2, 0}, {2, 0}, {2, 0}, {3, 3}},
+				PositiveBuckets: []int64{1, 3, -3, 42, 3},
+				CustomBounds:    []float64{5, 10, 15, 20},
+			},
+			0,
+			&Histogram{
+				Schema:          CustomBucketsSchema,
+				PositiveSpans:   []Span{{-2, 2}, {9, 3}},
+				PositiveBuckets: []int64{1, 3, -3, 42, 3},
+				CustomBounds:    []float64{5, 10, 15, 20},
+			},
+		},
+		{
+			"cut empty buckets at start or end of spans, even in the middle, with custom buckets",
+			&Histogram{
+				Schema:          CustomBucketsSchema,
+				PositiveSpans:   []Span{{-4, 6}, {3, 6}},
+				PositiveBuckets: []int64{0, 0, 1, 3, -4, 0, 1, 42, 3, -46, 0, 0},
+				CustomBounds:    []float64{5, 10, 15, 20},
+			},
+			0,
+			&Histogram{
+				Schema:          CustomBucketsSchema,
+				PositiveSpans:   []Span{{-2, 2}, {5, 3}},
+				PositiveBuckets: []int64{1, 3, -3, 42, 3},
+				CustomBounds:    []float64{5, 10, 15, 20},
+			},
+		},
 	}
 
 	for _, c := range cases {
@@ -1106,6 +1360,88 @@ func TestHistogramValidation(t *testing.T) {
 			},
 			errMsg:    `3 observations found in buckets, but the Count field is 2: histogram's observation count should equal the number of observations found in the buckets (in absence of NaN)`,
 			skipFloat: true,
+		},
+		"rejects a normal histogram with custom buckets schema": {
+			h: &Histogram{
+				Count:         12,
+				ZeroCount:     2,
+				ZeroThreshold: 0.001,
+				Sum:           19.4,
+				Schema:        CustomBucketsSchema,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 1, -1, 0},
+				NegativeSpans: []Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []int64{1, 1, -1, 0},
+			},
+			errMsg: `custom buckets: only 0 custom bounds defined which is insufficient to cover total span length of 5: histogram custom bounds are too few`,
+		},
+		"rejects a custom buckets histogram with zero/negative buckets": {
+			h: &Histogram{
+				Count:         12,
+				ZeroCount:     2,
+				ZeroThreshold: 0.001,
+				Sum:           19.4,
+				Schema:        CustomBucketsSchema,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 1, -1, 0},
+				NegativeSpans: []Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []int64{1, 1, -1, 0},
+				CustomBounds:    []float64{1, 2, 3, 4},
+			},
+			errMsg:    `custom buckets: must have zero count of 0`,
+			skipFloat: true, // Converting to float will remove the wrong fields so only the float version will pass validation
+		},
+		"rejects a custom buckets histogram with too few bounds": {
+			h: &Histogram{
+				Count:  5,
+				Sum:    19.4,
+				Schema: CustomBucketsSchema,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 1, -1, 0},
+				CustomBounds:    []float64{1, 2, 3},
+			},
+			errMsg: `custom buckets: only 3 custom bounds defined which is insufficient to cover total span length of 5: histogram custom bounds are too few`,
+		},
+		"valid custom buckets histogram": {
+			h: &Histogram{
+				Count:  5,
+				Sum:    19.4,
+				Schema: CustomBucketsSchema,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 1, -1, 0},
+				CustomBounds:    []float64{1, 2, 3, 4},
+			},
+		},
+		"valid custom buckets histogram with extra bounds": {
+			h: &Histogram{
+				Count:  5,
+				Sum:    19.4,
+				Schema: CustomBucketsSchema,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 1, -1, 0},
+				CustomBounds:    []float64{1, 2, 3, 4, 5, 6, 7, 8},
+			},
 		},
 	}
 

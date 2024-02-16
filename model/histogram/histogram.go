@@ -50,11 +50,12 @@ const (
 type Histogram struct {
 	// Counter reset information.
 	CounterResetHint CounterResetHint
-	// Currently valid schema numbers are -4 <= n <= 8.  They are all for
-	// base-2 bucket schemas, where 1 is a bucket boundary in each case, and
-	// then each power of two is divided into 2^n logarithmic buckets.  Or
-	// in other words, each bucket boundary is the previous boundary times
-	// 2^(2^-n).
+	// Currently valid schema numbers are -4 <= n <= 8 for exponential buckets,
+	// They are all for base-2 bucket schemas, where 1 is a bucket boundary in
+	// each case, and then each power of two is divided into 2^n logarithmic buckets.
+	// Or in other words, each bucket boundary is the previous boundary times
+	// 2^(2^-n). Another valid schema number is 127 for custom buckets, defined by
+	// the CustomBounds field.
 	Schema int32
 	// Width of the zero bucket.
 	ZeroThreshold float64
@@ -70,6 +71,12 @@ type Histogram struct {
 	// count. All following ones are deltas relative to the previous
 	// element.
 	PositiveBuckets, NegativeBuckets []int64
+	// Holds the custom (usually upper) bounds for bucket definitions, otherwise nil.
+	// This slice is interned, to be treated as immutable and copied by reference.
+	// These numbers should be strictly increasing. This field is only used when the
+	// schema is 127, and the ZeroThreshold, ZeroCount, NegativeSpans and NegativeBuckets
+	// fields are not used.
+	CustomBounds []float64
 }
 
 // A Span defines a continuous sequence of buckets.
@@ -81,32 +88,45 @@ type Span struct {
 	Length uint32
 }
 
+func (h *Histogram) HasCustomBounds() bool {
+	return h.Schema == CustomBucketsSchema
+}
+
 // Copy returns a deep copy of the Histogram.
 func (h *Histogram) Copy() *Histogram {
 	c := Histogram{
 		CounterResetHint: h.CounterResetHint,
 		Schema:           h.Schema,
-		ZeroThreshold:    h.ZeroThreshold,
-		ZeroCount:        h.ZeroCount,
 		Count:            h.Count,
 		Sum:              h.Sum,
+	}
+
+	if h.HasCustomBounds() {
+		if len(h.CustomBounds) != 0 {
+			c.CustomBounds = make([]float64, len(h.CustomBounds))
+			copy(c.CustomBounds, h.CustomBounds)
+		}
+	} else {
+		c.ZeroThreshold = h.ZeroThreshold
+		c.ZeroCount = h.ZeroCount
+
+		if len(h.NegativeSpans) != 0 {
+			c.NegativeSpans = make([]Span, len(h.NegativeSpans))
+			copy(c.NegativeSpans, h.NegativeSpans)
+		}
+		if len(h.NegativeBuckets) != 0 {
+			c.NegativeBuckets = make([]int64, len(h.NegativeBuckets))
+			copy(c.NegativeBuckets, h.NegativeBuckets)
+		}
 	}
 
 	if len(h.PositiveSpans) != 0 {
 		c.PositiveSpans = make([]Span, len(h.PositiveSpans))
 		copy(c.PositiveSpans, h.PositiveSpans)
 	}
-	if len(h.NegativeSpans) != 0 {
-		c.NegativeSpans = make([]Span, len(h.NegativeSpans))
-		copy(c.NegativeSpans, h.NegativeSpans)
-	}
 	if len(h.PositiveBuckets) != 0 {
 		c.PositiveBuckets = make([]int64, len(h.PositiveBuckets))
 		copy(c.PositiveBuckets, h.PositiveBuckets)
-	}
-	if len(h.NegativeBuckets) != 0 {
-		c.NegativeBuckets = make([]int64, len(h.NegativeBuckets))
-		copy(c.NegativeBuckets, h.NegativeBuckets)
 	}
 
 	return &c
@@ -117,22 +137,36 @@ func (h *Histogram) Copy() *Histogram {
 func (h *Histogram) CopyTo(to *Histogram) {
 	to.CounterResetHint = h.CounterResetHint
 	to.Schema = h.Schema
-	to.ZeroThreshold = h.ZeroThreshold
-	to.ZeroCount = h.ZeroCount
 	to.Count = h.Count
 	to.Sum = h.Sum
+
+	if h.HasCustomBounds() {
+		to.ZeroThreshold = 0
+		to.ZeroCount = 0
+
+		to.NegativeSpans = nil
+		to.NegativeBuckets = nil
+
+		to.CustomBounds = resize(to.CustomBounds, len(h.CustomBounds))
+		copy(to.CustomBounds, h.CustomBounds)
+	} else {
+		to.ZeroThreshold = h.ZeroThreshold
+		to.ZeroCount = h.ZeroCount
+
+		to.NegativeSpans = resize(to.NegativeSpans, len(h.NegativeSpans))
+		copy(to.NegativeSpans, h.NegativeSpans)
+
+		to.NegativeBuckets = resize(to.NegativeBuckets, len(h.NegativeBuckets))
+		copy(to.NegativeBuckets, h.NegativeBuckets)
+
+		to.CustomBounds = nil
+	}
 
 	to.PositiveSpans = resize(to.PositiveSpans, len(h.PositiveSpans))
 	copy(to.PositiveSpans, h.PositiveSpans)
 
-	to.NegativeSpans = resize(to.NegativeSpans, len(h.NegativeSpans))
-	copy(to.NegativeSpans, h.NegativeSpans)
-
 	to.PositiveBuckets = resize(to.PositiveBuckets, len(h.PositiveBuckets))
 	copy(to.PositiveBuckets, h.PositiveBuckets)
-
-	to.NegativeBuckets = resize(to.NegativeBuckets, len(h.NegativeBuckets))
-	copy(to.NegativeBuckets, h.NegativeBuckets)
 }
 
 // String returns a string representation of the Histogram.
@@ -168,6 +202,9 @@ func (h *Histogram) String() string {
 
 // ZeroBucket returns the zero bucket.
 func (h *Histogram) ZeroBucket() Bucket[uint64] {
+	if h.HasCustomBounds() {
+		panic("histograms with custom bounds have no zero bucket")
+	}
 	return Bucket[uint64]{
 		Lower:          -h.ZeroThreshold,
 		Upper:          h.ZeroThreshold,
@@ -180,14 +217,14 @@ func (h *Histogram) ZeroBucket() Bucket[uint64] {
 // PositiveBucketIterator returns a BucketIterator to iterate over all positive
 // buckets in ascending order (starting next to the zero bucket and going up).
 func (h *Histogram) PositiveBucketIterator() BucketIterator[uint64] {
-	it := newRegularBucketIterator(h.PositiveSpans, h.PositiveBuckets, h.Schema, true)
+	it := newRegularBucketIterator(h.PositiveSpans, h.PositiveBuckets, h.Schema, true, h.CustomBounds)
 	return &it
 }
 
 // NegativeBucketIterator returns a BucketIterator to iterate over all negative
 // buckets in descending order (starting next to the zero bucket and going down).
 func (h *Histogram) NegativeBucketIterator() BucketIterator[uint64] {
-	it := newRegularBucketIterator(h.NegativeSpans, h.NegativeBuckets, h.Schema, false)
+	it := newRegularBucketIterator(h.NegativeSpans, h.NegativeBuckets, h.Schema, false, nil)
 	return &it
 }
 
@@ -208,28 +245,38 @@ func (h *Histogram) CumulativeBucketIterator() BucketIterator[uint64] {
 // but they must represent the same bucket layout to match.
 // Sum is compared based on its bit pattern because this method
 // is about data equality rather than mathematical equality.
+// We ignore fields that are not used based on the exponential / custom buckets schema.
 func (h *Histogram) Equals(h2 *Histogram) bool {
 	if h2 == nil {
 		return false
 	}
 
-	if h.Schema != h2.Schema || h.ZeroThreshold != h2.ZeroThreshold ||
-		h.ZeroCount != h2.ZeroCount || h.Count != h2.Count ||
+	if h.Schema != h2.Schema || h.Count != h2.Count ||
 		math.Float64bits(h.Sum) != math.Float64bits(h2.Sum) {
 		return false
+	}
+
+	if h.HasCustomBounds() {
+		if !floatBucketsMatch(h.CustomBounds, h2.CustomBounds) {
+			return false
+		}
+	} else {
+		if h.ZeroThreshold != h2.ZeroThreshold || h.ZeroCount != h2.ZeroCount {
+			return false
+		}
+		if !spansMatch(h.NegativeSpans, h2.NegativeSpans) {
+			return false
+		}
+		if !slices.Equal(h.NegativeBuckets, h2.NegativeBuckets) {
+			return false
+		}
+
 	}
 
 	if !spansMatch(h.PositiveSpans, h2.PositiveSpans) {
 		return false
 	}
-	if !spansMatch(h.NegativeSpans, h2.NegativeSpans) {
-		return false
-	}
-
 	if !slices.Equal(h.PositiveBuckets, h2.PositiveBuckets) {
-		return false
-	}
-	if !slices.Equal(h.NegativeBuckets, h2.NegativeBuckets) {
 		return false
 	}
 
@@ -322,29 +369,40 @@ func (h *Histogram) ToFloat(fh *FloatHistogram) *FloatHistogram {
 	}
 	fh.CounterResetHint = h.CounterResetHint
 	fh.Schema = h.Schema
-	fh.ZeroThreshold = h.ZeroThreshold
-	fh.ZeroCount = float64(h.ZeroCount)
 	fh.Count = float64(h.Count)
 	fh.Sum = h.Sum
 
+	if h.HasCustomBounds() {
+		fh.ZeroThreshold = 0
+		fh.ZeroCount = 0
+		fh.NegativeSpans = nil
+		fh.NegativeBuckets = nil
+		fh.CustomBounds = resize(fh.CustomBounds, len(h.CustomBounds))
+		copy(fh.CustomBounds, h.CustomBounds)
+	} else {
+		fh.ZeroThreshold = h.ZeroThreshold
+		fh.ZeroCount = float64(h.ZeroCount)
+
+		fh.NegativeSpans = resize(fh.NegativeSpans, len(h.NegativeSpans))
+		copy(fh.NegativeSpans, h.NegativeSpans)
+
+		fh.NegativeBuckets = resize(fh.NegativeBuckets, len(h.NegativeBuckets))
+		var currentNegative float64
+		for i, b := range h.NegativeBuckets {
+			currentNegative += float64(b)
+			fh.NegativeBuckets[i] = currentNegative
+		}
+		fh.CustomBounds = nil
+	}
+
 	fh.PositiveSpans = resize(fh.PositiveSpans, len(h.PositiveSpans))
 	copy(fh.PositiveSpans, h.PositiveSpans)
-
-	fh.NegativeSpans = resize(fh.NegativeSpans, len(h.NegativeSpans))
-	copy(fh.NegativeSpans, h.NegativeSpans)
 
 	fh.PositiveBuckets = resize(fh.PositiveBuckets, len(h.PositiveBuckets))
 	var currentPositive float64
 	for i, b := range h.PositiveBuckets {
 		currentPositive += float64(b)
 		fh.PositiveBuckets[i] = currentPositive
-	}
-
-	fh.NegativeBuckets = resize(fh.NegativeBuckets, len(h.NegativeBuckets))
-	var currentNegative float64
-	for i, b := range h.NegativeBuckets {
-		currentNegative += float64(b)
-		fh.NegativeBuckets[i] = currentNegative
 	}
 
 	return fh
@@ -358,25 +416,47 @@ func resize[T any](items []T, n int) []T {
 }
 
 // Validate validates consistency between span and bucket slices. Also, buckets are checked
-// against negative values.
+// against negative values. We check to make sure there are no unexpected fields or field values
+// based on the exponential / custom buckets schema.
 // For histograms that have not observed any NaN values (based on IsNaN(h.Sum) check), a
 // strict h.Count = nCount + pCount + h.ZeroCount check is performed.
 // Otherwise, only a lower bound check will be done (h.Count >= nCount + pCount + h.ZeroCount),
 // because NaN observations do not increment the values of buckets (but they do increment
 // the total h.Count).
 func (h *Histogram) Validate() error {
-	if err := checkHistogramSpans(h.NegativeSpans, len(h.NegativeBuckets)); err != nil {
-		return fmt.Errorf("negative side: %w", err)
+	var nCount, pCount uint64
+	if h.HasCustomBounds() {
+		if err := checkHistogramCustomBounds(h.CustomBounds, h.PositiveSpans); err != nil {
+			return fmt.Errorf("custom buckets: %w", err)
+		}
+		if h.ZeroCount != 0 {
+			return fmt.Errorf("custom buckets: must have zero count of 0")
+		}
+		if h.ZeroThreshold != 0 {
+			return fmt.Errorf("custom buckets: must have zero threshold of 0")
+		}
+		if h.NegativeSpans != nil {
+			return fmt.Errorf("custom buckets: must not have negative spans")
+		}
+		if h.NegativeBuckets != nil {
+			return fmt.Errorf("custom buckets: must not have negative buckets")
+		}
+	} else {
+		if err := checkHistogramSpans(h.NegativeSpans, len(h.NegativeBuckets)); err != nil {
+			return fmt.Errorf("negative side: %w", err)
+		}
+		err := checkHistogramBuckets(h.NegativeBuckets, &nCount, true)
+		if err != nil {
+			return fmt.Errorf("negative side: %w", err)
+		}
+		if h.CustomBounds != nil {
+			return fmt.Errorf("histogram with exponential schema must not have custom bounds")
+		}
 	}
 	if err := checkHistogramSpans(h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
 		return fmt.Errorf("positive side: %w", err)
 	}
-	var nCount, pCount uint64
-	err := checkHistogramBuckets(h.NegativeBuckets, &nCount, true)
-	if err != nil {
-		return fmt.Errorf("negative side: %w", err)
-	}
-	err = checkHistogramBuckets(h.PositiveBuckets, &pCount, true)
+	err := checkHistogramBuckets(h.PositiveBuckets, &pCount, true)
 	if err != nil {
 		return fmt.Errorf("positive side: %w", err)
 	}
@@ -399,12 +479,13 @@ type regularBucketIterator struct {
 	baseBucketIterator[uint64, int64]
 }
 
-func newRegularBucketIterator(spans []Span, buckets []int64, schema int32, positive bool) regularBucketIterator {
+func newRegularBucketIterator(spans []Span, buckets []int64, schema int32, positive bool, customBounds []float64) regularBucketIterator {
 	i := baseBucketIterator[uint64, int64]{
-		schema:   schema,
-		spans:    spans,
-		buckets:  buckets,
-		positive: positive,
+		schema:       schema,
+		spans:        spans,
+		buckets:      buckets,
+		positive:     positive,
+		customBounds: customBounds,
 	}
 	return regularBucketIterator{i}
 }
@@ -478,7 +559,7 @@ func (c *cumulativeBucketIterator) Next() bool {
 
 	if c.emptyBucketCount > 0 {
 		// We are traversing through empty buckets at the moment.
-		c.currUpper = getBound(c.currIdx, c.h.Schema)
+		c.currUpper = getBound(c.currIdx, c.h.Schema, c.h.CustomBounds)
 		c.currIdx++
 		c.emptyBucketCount--
 		return true
@@ -495,7 +576,7 @@ func (c *cumulativeBucketIterator) Next() bool {
 
 	c.currCount += c.h.PositiveBuckets[c.posBucketsIdx]
 	c.currCumulativeCount += uint64(c.currCount)
-	c.currUpper = getBound(c.currIdx, c.h.Schema)
+	c.currUpper = getBound(c.currIdx, c.h.Schema, c.h.CustomBounds)
 
 	c.posBucketsIdx++
 	c.idxInSpan++
@@ -526,6 +607,12 @@ func (c *cumulativeBucketIterator) At() Bucket[uint64] {
 // ReduceResolution reduces the histogram's spans, buckets into target schema.
 // The target schema must be smaller than the current histogram's schema.
 func (h *Histogram) ReduceResolution(targetSchema int32) *Histogram {
+	if h.HasCustomBounds() {
+		panic("cannot reduce resolution when there are custom bounds")
+	}
+	if targetSchema == CustomBucketsSchema {
+		panic("cannot reduce resolution to custom buckets schema")
+	}
 	if targetSchema >= h.Schema {
 		panic(fmt.Errorf("cannot reduce resolution from schema %d to %d", h.Schema, targetSchema))
 	}
