@@ -908,6 +908,7 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 	// The evaluation of the VectorSelector inside then evaluates the given range and unsets
 	// the variable.
 	var evalRange time.Duration
+	lookbackDelta := durationMilliseconds(s.LookbackDelta)
 
 	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
 		switch n := node.(type) {
@@ -918,11 +919,12 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 				interval = s.Interval
 			}
 			hints := &storage.SelectHints{
-				Start: start,
-				End:   end,
-				Step:  durationMilliseconds(interval),
-				Range: durationMilliseconds(evalRange),
-				Func:  extractFuncFromPath(path),
+				Start:         start,
+				End:           end,
+				Step:          durationMilliseconds(interval),
+				Range:         durationMilliseconds(evalRange),
+				Func:          extractFuncFromPath(path),
+				LookbackDelta: lookbackDelta,
 			}
 			evalRange = 0
 			hints.By, hints.Grouping = extractGroupsFromPath(path)

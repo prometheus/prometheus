@@ -197,6 +197,8 @@ type SelectHints struct {
 	By       bool     // Indicate whether it is without or by.
 	Range    int64    // Range vector selector range in milliseconds.
 
+	LookbackDelta int64 // Lookback delta in milliseconds for this select.
+
 	// ShardCount is the total number of shards that series should be split into
 	// at query time. Then, only series in the ShardIndex shard will be returned
 	// by the query.

@@ -147,13 +147,14 @@ func (h *readHandler) remoteReadSamples(
 			var hints *storage.SelectHints
 			if query.Hints != nil {
 				hints = &storage.SelectHints{
-					Start:    query.Hints.StartMs,
-					End:      query.Hints.EndMs,
-					Step:     query.Hints.StepMs,
-					Func:     query.Hints.Func,
-					Grouping: query.Hints.Grouping,
-					Range:    query.Hints.RangeMs,
-					By:       query.Hints.By,
+					Start:         query.Hints.StartMs,
+					End:           query.Hints.EndMs,
+					Step:          query.Hints.StepMs,
+					Func:          query.Hints.Func,
+					Grouping:      query.Hints.Grouping,
+					Range:         query.Hints.RangeMs,
+					By:            query.Hints.By,
+					LookbackDelta: query.Hints.LookbackDeltaMs,
 				}
 			}
 
@@ -215,13 +216,14 @@ func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.Re
 			var hints *storage.SelectHints
 			if query.Hints != nil {
 				hints = &storage.SelectHints{
-					Start:    query.Hints.StartMs,
-					End:      query.Hints.EndMs,
-					Step:     query.Hints.StepMs,
-					Func:     query.Hints.Func,
-					Grouping: query.Hints.Grouping,
-					Range:    query.Hints.RangeMs,
-					By:       query.Hints.By,
+					Start:         query.Hints.StartMs,
+					End:           query.Hints.EndMs,
+					Step:          query.Hints.StepMs,
+					Func:          query.Hints.Func,
+					Grouping:      query.Hints.Grouping,
+					Range:         query.Hints.RangeMs,
+					By:            query.Hints.By,
+					LookbackDelta: query.Hints.LookbackDeltaMs,
 				}
 			}
 

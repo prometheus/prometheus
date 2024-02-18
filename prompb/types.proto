@@ -159,6 +159,7 @@ message ReadHints {
   repeated string grouping = 5; // List of label names used in aggregation.
   bool by = 6; // Indicate whether it is without or by.
   int64 range_ms = 7; // Range vector selector range in milliseconds.
+  int64 lookback_delta_ms = 8; // Lookback delta in milliseconds.
 }
 
 // Chunk represents a TSDB chunk.
