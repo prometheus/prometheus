@@ -14,6 +14,7 @@
 package scrape
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -250,6 +251,11 @@ func newScrapeMetrics(reg prometheus.Registerer) (*scrapeMetrics, error) {
 	} {
 		err := reg.Register(collector)
 		if err != nil {
+			are := &prometheus.AlreadyRegisteredError{}
+			if errors.As(err, are) {
+				// Nothing to do if this collector is already registered
+				continue
+			}
 			return nil, fmt.Errorf("failed to register scrape metrics: %w", err)
 		}
 	}
