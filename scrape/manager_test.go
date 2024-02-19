@@ -1271,3 +1271,7 @@ scrape_configs:
 		[]string{fmt.Sprintf("http://%s/metrics", otherJobTargetURL)},
 	)
 }
+
+// TODO: delete tragets from json file, they should disappear
+
+// TODO: remove target one by one from json file, they should be removed from .targets

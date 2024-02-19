@@ -387,8 +387,16 @@ func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) {
 		m.targets[poolKey] = make(map[string]*targetgroup.Group)
 	}
 	for _, tg := range tgs {
-		if tg != nil { // Some Discoverers send nil target group so need to check for it to avoid panics.
+		// Some Discoverers send nil target group so need to check for it to avoid panics.
+		if tg == nil {
+			continue
+		}
+		if len(tg.Targets) > 0 {
 			m.targets[poolKey][tg.Source] = tg
+		} else {
+			// The target group is empty, drop any existing entry to avoid leaks.
+			// In case the group yielded targets before, allGroups() will take care of making consumers drop them.
+			delete(m.targets[poolKey], tg.Source)
 		}
 	}
 }
@@ -397,30 +405,27 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 	tSets := map[string][]*targetgroup.Group{}
 	n := map[string]int{}
 
-	m.targetsMtx.Lock()
-	defer m.targetsMtx.Unlock()
-	for pkey, tsets := range m.targets {
-		for _, tg := range tsets {
-			// Even if the target group 'tg' is empty we still need to send it to the 'Scrape manager'
-			// to signal that it needs to stop all scrape loops for this target set.
-			tSets[pkey.setName] = append(tSets[pkey.setName], tg)
-			n[pkey.setName] += len(tg.Targets)
-		}
-	}
-
-	// Send empty lists for subs without any targets to make sure old stale targets are dropped by consumers.
-	// See: https://github.com/prometheus/prometheus/issues/12858 for details.
 	m.mtx.RLock()
+	m.targetsMtx.Lock()
 	for _, p := range m.providers {
 		p.mu.RLock()
 		for s := range p.subs {
+			// Send empty lists for subs without any targets to make sure old stale targets are dropped by consumers.
+			// See: https://github.com/prometheus/prometheus/issues/12858 for details.
 			if _, ok := tSets[s]; !ok {
 				tSets[s] = []*targetgroup.Group{}
 				n[s] = 0
 			}
+			if tsets, ok := m.targets[poolKey{s, p.name}]; ok {
+				for _, tg := range tsets {
+					tSets[s] = append(tSets[s], tg)
+					n[s] += len(tg.Targets)
+				}
+			}
 		}
 		p.mu.RUnlock()
 	}
+	m.targetsMtx.Unlock()
 	m.mtx.RUnlock()
 
 	for setName, v := range n {
