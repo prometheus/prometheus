@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.50.0-rc.1 / 2024-02-19
+
+[BUGFIX] Azure SD: Fix SD crashing when it finds a VM scale set. #13578
+
 ## 2.50.0-rc.0 / 2024-02-07
 
 * [CHANGE] Remote Write: Error `storage.ErrTooOldSample` is now generating HTTP error 400 instead of HTTP error 500. #13335
