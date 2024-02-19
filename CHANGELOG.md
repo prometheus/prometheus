@@ -1,5 +1,9 @@
 # Changelog
 
+## unreleased
+
+* [ENHANCEMENT] SD: Add `include_no_network_targets` to the Docker SD configuration. #11065
+
 ## 2.49.1 / 2024-01-15
 
 * [BUGFIX] TSDB: Fixed a wrong `q=` value in scrape accept header #13313

@@ -929,6 +929,12 @@ tls_config:
 # The host to use if the container is in host networking mode.
 [ host_networking_host: <string> | default = "localhost" ]
 
+# Include containers without network information as targets.
+# This is useful for scenarios where containers do not have network information,
+# such as certain Nomad configurations. When enabled, Promtail will scrape logs from
+# these containers even if they lack network settings.
+[ include_no_network_targets: <boolean> | default: false ]
+
 # Optional filters to limit the discovery process to a subset of available
 # resources.
 # The available filters are listed in the upstream documentation:

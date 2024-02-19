@@ -1,0 +1,25 @@
+[
+  {
+    "Id": "f5a1207ad17d3ce586a4ea34f3ed0cd5ddfc56aa2289766e3334fa5157fdb7bc",
+    "Names": [
+      "/frontend-9f19aeb5-ceff-1a87-809d-87ef8e83b828"
+    ],
+    "Image": "phashicorpnomad/uuid-fe:v5",
+    "ImageID": "sha256:31775c6c1948dc3651399b71dce313ea07e28d1c7c2fab732472af5447fb9d2f",
+    "Command": "/opt/uuid-fe",
+    "Created": 1707577830,
+    "Ports": [
+      {
+        "PrivatePort": 8080,
+        "Type": "tcp"
+      }
+    ],
+    "Labels": {},
+    "State": "running",
+    "Status": "Up 5 minutes",
+    "NetworkSettings": {
+      "Networks": {}
+    },
+    "Mounts": []
+  }
+]

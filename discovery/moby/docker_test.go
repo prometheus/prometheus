@@ -119,3 +119,79 @@ host: %s
 		})
 	}
 }
+
+func TestDockerSDIncludeNoNetworkOption(t *testing.T) {
+	tests := []struct {
+		name                    string
+		includeNoNetworkTargets bool
+		expectedTargetsLen      int
+		expectedTargets         []model.LabelSet
+	}{
+		{
+			name:                    "Exclude no network targets",
+			includeNoNetworkTargets: false,
+			expectedTargetsLen:      0,
+		},
+		{
+			name:                    "Include no network targets",
+			includeNoNetworkTargets: true,
+			expectedTargetsLen:      1,
+			expectedTargets: []model.LabelSet{
+				{
+					"__meta_docker_container_id":           "f5a1207ad17d3ce586a4ea34f3ed0cd5ddfc56aa2289766e3334fa5157fdb7bc",
+					"__meta_docker_container_name":         "/frontend-9f19aeb5-ceff-1a87-809d-87ef8e83b828",
+					"__meta_docker_container_network_mode": "",
+				},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sdmock := NewSDMock(t, "nomad_consul_connect")
+			sdmock.Setup()
+
+			e := sdmock.Endpoint()
+			url := e[:len(e)-1]
+			cfgString := fmt.Sprintf(`
+---
+host: %s
+include_no_network_targets: %t
+`, url, tc.includeNoNetworkTargets)
+			var cfg DockerSDConfig
+			require.NoError(t, yaml.Unmarshal([]byte(cfgString), &cfg))
+			require.Equal(t, tc.includeNoNetworkTargets, cfg.IncludeNoNetworkTargets)
+
+			reg := prometheus.NewRegistry()
+			refreshMetrics := discovery.NewRefreshMetrics(reg)
+			metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+			require.NoError(t, metrics.Register())
+			defer metrics.Unregister()
+			defer refreshMetrics.Unregister()
+
+			d, err := NewDockerDiscovery(&cfg, log.NewNopLogger(), metrics)
+			require.NoError(t, err)
+
+			ctx := context.Background()
+			tgs, err := d.refresh(ctx)
+			require.NoError(t, err)
+
+			require.Len(t, tgs, 1)
+
+			tg := tgs[0]
+			require.NotNil(t, tg)
+			if tc.expectedTargetsLen == 0 {
+				require.Nil(t, tg.Targets)
+			} else {
+				require.NotNil(t, tg.Targets)
+				require.Len(t, tg.Targets, tc.expectedTargetsLen)
+
+				for i, lbls := range tc.expectedTargets {
+					t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
+						require.Equal(t, lbls, tg.Targets[i])
+					})
+				}
+			}
+		})
+	}
+}
