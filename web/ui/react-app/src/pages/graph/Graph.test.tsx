@@ -80,7 +80,7 @@ describe('Graph', () => {
             exemplars: [
               {
                 labels: {
-                  traceID: '12345',
+                  trace_id: '12345',
                 },
                 timestamp: 1572130580,
                 value: '9',
