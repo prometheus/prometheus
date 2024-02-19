@@ -60,17 +60,19 @@ type writeToMock struct {
 	seriesSegmentIndexes    map[chunks.HeadSeriesRef]int
 
 	// delay reads with a short sleep
-	delay bool
+	delay time.Duration
 }
 
 func (wtm *writeToMock) Append(s []record.RefSample) bool {
-	time.Sleep(10 * time.Millisecond)
+	if wtm.delay > 0 {
+		time.Sleep(10 * time.Millisecond)
+	}
 	wtm.samplesAppended += len(s)
 	return true
 }
 
 func (wtm *writeToMock) AppendExemplars(e []record.RefExemplar) bool {
-	if wtm.delay {
+	if wtm.delay > 0 {
 		time.Sleep(10 * time.Millisecond)
 	}
 	wtm.exemplarsAppended += len(e)
@@ -78,7 +80,7 @@ func (wtm *writeToMock) AppendExemplars(e []record.RefExemplar) bool {
 }
 
 func (wtm *writeToMock) AppendHistograms(h []record.RefHistogramSample) bool {
-	if wtm.delay {
+	if wtm.delay > 0 {
 		time.Sleep(10 * time.Millisecond)
 	}
 	wtm.histogramsAppended += len(h)
@@ -86,7 +88,7 @@ func (wtm *writeToMock) AppendHistograms(h []record.RefHistogramSample) bool {
 }
 
 func (wtm *writeToMock) AppendFloatHistograms(fh []record.RefFloatHistogramSample) bool {
-	if wtm.delay {
+	if wtm.delay > 0 {
 		time.Sleep(10 * time.Millisecond)
 	}
 	wtm.floatHistogramsAppended += len(fh)
@@ -94,7 +96,7 @@ func (wtm *writeToMock) AppendFloatHistograms(fh []record.RefFloatHistogramSampl
 }
 
 func (wtm *writeToMock) StoreSeries(series []record.RefSeries, index int) {
-	if wtm.delay {
+	if wtm.delay > 0 {
 		time.Sleep(10 * time.Millisecond)
 	}
 	wtm.UpdateSeriesSegment(series, index)
@@ -129,7 +131,7 @@ func (wtm *writeToMock) checkNumSeries() int {
 func newWriteToMock(delay bool) *writeToMock {
 	return &writeToMock{
 		seriesSegmentIndexes: make(map[chunks.HeadSeriesRef]int),
-		delay:                delay,
+		delay:                10 * time.Millisecond,
 	}
 }
 
