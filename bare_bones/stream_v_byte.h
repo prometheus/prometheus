@@ -597,8 +597,10 @@ class DecodeIterator {
   inline __attribute__((always_inline)) value_type operator*() const noexcept { return Codec::decode(code_, d_i_); }
 };
 
-template <class Codec>
+template <class Codec, uint32_t PreAllocationElementsCount = 1024>
 class Sequence {
+  static_assert(std::popcount(PreAllocationElementsCount) == 1, "PreAllocationElementsCount must be a power of two");
+
   uint32_t size_ = 0;
 
   Memory<uint8_t> keys_;
@@ -610,13 +612,16 @@ class Sequence {
  public:
   using value_type = typename Codec::value_type;
 
- private:
-  inline __attribute__((always_inline)) uint32_t next_size(uint32_t size) const noexcept {
-    if (size == std::numeric_limits<uint32_t>::max())
-      std::abort();
+  [[nodiscard]] uint32_t allocated_memory() const noexcept { return keys_.size() + data_.size(); }
 
-    // ceil up to next 1024
-    return (size + 1024) & 0xFFFFFC00u;
+ private:
+  [[nodiscard]] inline __attribute__((always_inline)) uint32_t next_size(uint32_t size) const noexcept {
+    if (size == std::numeric_limits<uint32_t>::max()) {
+      [[unlikely]] std::abort();
+    }
+
+    // ceil up to next PreAllocationElementsCount
+    return (size + PreAllocationElementsCount) & ~(PreAllocationElementsCount - 1);
   }
 
   inline __attribute__((always_inline)) void reserve_keys(uint32_t size) noexcept {
@@ -637,7 +642,7 @@ class Sequence {
     d_i_ = data_ + actual_data_size;
   }
 
-  inline __attribute__((always_inline)) void reserve_for_next_1024() noexcept {
+  inline __attribute__((always_inline)) void reserve_for_next_elements() noexcept {
     const uint32_t new_size = next_size(size_);
     reserve_keys(new_size);
     reserve_data(new_size, d_i_ - data_);
@@ -655,9 +660,9 @@ class Sequence {
   inline __attribute__((always_inline)) Sequence& operator=(Sequence&&) noexcept = default;
 
   inline __attribute__((always_inline)) void push_back(value_type val) noexcept {
-    // if size_ divides by 1024 without reminders
-    if (!(size_ & 0x3FF))
-      reserve_for_next_1024();
+    if ((size_ % PreAllocationElementsCount) == 0) {
+      [[unlikely]] reserve_for_next_elements();
+    }
 
     assert(static_cast<size_t>(d_i_ - data_ + 4) <= data_.size());
     assert(d_i_ >= data_);

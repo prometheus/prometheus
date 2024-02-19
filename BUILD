@@ -164,7 +164,7 @@ cc_static_library(
 
 cc_library(
     name = "performance_tests_headers",
-    hdrs = glob(["performance_tests/*.h"]),
+    hdrs = glob(["performance_tests/**/*.h"]),
     deps = [
         ":wal",
         ":prometheus",
@@ -175,11 +175,11 @@ cc_library(
 
 cc_binary(
     name = "performance_tests",
-    srcs = glob(["performance_tests/*.cpp"]),
+    srcs = glob(["performance_tests/**/*.cpp"]),
     malloc = "@jemalloc",
     deps = [
-        ":performance_tests_headers"
-    ],
+        ":performance_tests_headers",
+    ]
 )
 
 cc_library(

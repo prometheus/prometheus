@@ -249,32 +249,31 @@ class EncodedSequence {
   typename E::Encoder encoder_;
 
   DataSequence data_;
-  std::back_insert_iterator<DataSequence> data_back_inserter_;
 
  public:
   using value_type = typename DataSequence::value_type;
 
-  inline __attribute__((always_inline)) EncodedSequence() noexcept : data_back_inserter_(std::back_inserter(data_)) {}
-
+  EncodedSequence() = default;
   EncodedSequence(const EncodedSequence&) = delete;
   EncodedSequence& operator=(const EncodedSequence&) = delete;
 
-  inline __attribute__((always_inline)) EncodedSequence(EncodedSequence&& o) noexcept
-      : encoder_(std::move(o.encoder_)), data_(std::move(o.data_)), data_back_inserter_(std::back_inserter(data_)) {
-    o.data_back_inserter_ = std::back_inserter(o.data_);
-  }
+  inline __attribute__((always_inline)) EncodedSequence(EncodedSequence&& o) noexcept : encoder_(std::move(o.encoder_)), data_(std::move(o.data_)) {}
 
   inline __attribute__((always_inline)) EncodedSequence& operator=(EncodedSequence&& o) noexcept {
     encoder_ = std::move(o.encoder_);
     data_ = std::move(o.data_);
-    data_back_inserter_ = std::back_inserter(data_);
-    o.data_back_inserter_ = std::back_inserter(o.data_);
     return *this;
   }
 
-  inline __attribute__((always_inline)) void push_back(value_type val) noexcept { encoder_.encode(val, data_back_inserter_); }
+  inline __attribute__((always_inline)) void push_back(value_type val) noexcept {
+    std::back_insert_iterator<decltype(data_)> data_back_inserter{data_};
+    encoder_.encode(val, data_back_inserter);
+  }
 
-  inline __attribute__((always_inline)) void flush() noexcept { encoder_.flush(data_back_inserter_); }
+  inline __attribute__((always_inline)) void flush() noexcept {
+    std::back_insert_iterator<decltype(data_)> data_back_inserter{data_};
+    encoder_.flush(data_back_inserter);
+  }
 
   inline __attribute__((always_inline)) void clear() noexcept {
     encoder_.clear();
@@ -322,7 +321,7 @@ class EncodedSequence {
 
   inline __attribute__((always_inline)) auto begin() const noexcept { return Iterator(data_.begin(), data_.end(), &encoder_); }
 
-  inline __attribute__((always_inline)) auto end() const noexcept { return IteratorSentinel(); }
+  static inline __attribute__((always_inline)) auto end() noexcept { return IteratorSentinel(); }
 
   inline __attribute__((always_inline)) size_t save_size() noexcept {
     flush();
@@ -330,6 +329,8 @@ class EncodedSequence {
     // version is written and read by methods put() and get() and they write and read 1 byte
     return 1 + sizeof(Encoding::id<E>::value) + data_.save_size();
   }
+
+  [[nodiscard]] uint32_t allocated_memory() const noexcept { return data_.allocated_memory(); }
 
   template <OutputStream S>
   friend S& operator<<(S& out, EncodedSequence& seq) {
@@ -387,5 +388,8 @@ class EncodedSequence {
     return in;
   }
 };
+
+template <class T>
+struct IsTriviallyReallocatable<BareBones::EncodedSequence<BareBones::Encoding::DeltaRLE<T>>> : std::true_type {};
 
 }  // namespace BareBones

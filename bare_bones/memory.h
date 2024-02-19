@@ -21,6 +21,8 @@ class Memory {
   using iterator = T*;
   using const_iterator = const T*;
 
+  static constexpr size_t kMinAllocationSize = 32;
+
   inline __attribute__((always_inline)) void resize_to_fit_at_least(size_t size) noexcept {
     if (__builtin_expect(size > std::numeric_limits<uint32_t>::max(), false))
       std::abort();
@@ -28,7 +30,7 @@ class Memory {
     size_t new_size;
     if (sizeof(T) < 8 && size * 1.5 * sizeof(T) < 256) {
       // grow 50%, round up to 32b
-      new_size = ((static_cast<size_t>(size * sizeof(T) * 1.5) & 0xFFFFFFFFFFFFFFE0) + 32) / sizeof(T);
+      new_size = ((static_cast<size_t>(size * sizeof(T) * 1.5) & 0xFFFFFFFFFFFFFFE0) + kMinAllocationSize) / sizeof(T);
     } else if (size * 1.5 * sizeof(T) < 4096) {
       // grow 50%, round up to 256b
       new_size = ((static_cast<size_t>(size * sizeof(T) * 1.5) & 0xFFFFFFFFFFFFFF00) + 256) / sizeof(T);

@@ -5,7 +5,13 @@
 #include <stdexcept>
 
 std::string Test::name() const {
-  return abi::__cxa_demangle(typeid(*this).name(), nullptr, nullptr, nullptr);
+  std::string name = abi::__cxa_demangle(typeid(*this).name(), nullptr, nullptr, nullptr);
+  auto namespace_pos = name.find_last_of(':');
+  if (namespace_pos != std::string::npos) {
+    name = name.substr(namespace_pos + 1);
+  }
+
+  return name;
 }
 
 std::string Test::input_file_name(const Config& config) const {
