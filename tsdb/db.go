@@ -193,7 +193,7 @@ type Options struct {
 	EnableSharding bool
 
 	// PostingsDecoderFactory allows users to customize postings decoders based on BlockMeta.
-	// By default,
+	// By default, DefaultPostingsDecoderFactory will be used to create raw posting decoder.
 	PostingsDecoderFactory PostingsDecoderFactory
 }
 
