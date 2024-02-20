@@ -44,7 +44,6 @@ import (
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	_ "github.com/prometheus/prometheus/tsdb/goversion" // Load the package into main to make sure minium Go version is met.
-	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
@@ -193,6 +192,8 @@ type Options struct {
 	// EnableSharding enables query sharding support in TSDB.
 	EnableSharding bool
 
+	// PostingsDecoderFactory allows users to customize postings decoders based on BlockMeta.
+	// By default,
 	PostingsDecoderFactory PostingsDecoderFactory
 }
 
@@ -670,7 +671,7 @@ func (db *DBReadOnly) LastBlockID() (string, error) {
 }
 
 // Block returns a block reader by given block id.
-func (db *DBReadOnly) Block(blockID string) (BlockReader, error) {
+func (db *DBReadOnly) Block(blockID string, postingsDecoderFactory PostingsDecoderFactory) (BlockReader, error) {
 	select {
 	case <-db.closed:
 		return nil, ErrClosed
@@ -682,7 +683,7 @@ func (db *DBReadOnly) Block(blockID string) (BlockReader, error) {
 		return nil, fmt.Errorf("invalid block ID %s", blockID)
 	}
 
-	block, err := OpenBlock(db.logger, filepath.Join(db.dir, blockID), nil, index.DecodePostingsRaw)
+	block, err := OpenBlock(db.logger, filepath.Join(db.dir, blockID), nil, postingsDecoderFactory)
 	if err != nil {
 		return nil, err
 	}
@@ -763,10 +764,6 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	}
 	if stats == nil {
 		stats = NewDBStats()
-	}
-
-	if opts.PostingsDecoderFactory == nil {
-		opts.PostingsDecoderFactory = DefaultPostingsDecoderFactory
 	}
 
 	for i, v := range rngs {
@@ -1556,7 +1553,7 @@ func openBlocks(l log.Logger, dir string, loaded []*Block, chunkPool chunkenc.Po
 		// See if we already have the block in memory or open it otherwise.
 		block, open := getBlock(loaded, meta.ULID)
 		if !open {
-			block, err = OpenBlock(l, bDir, chunkPool, postingsDecoderFactory(meta))
+			block, err = OpenBlock(l, bDir, chunkPool, postingsDecoderFactory)
 			if err != nil {
 				corrupted[meta.ULID] = err
 				continue

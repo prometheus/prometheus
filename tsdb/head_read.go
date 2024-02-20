@@ -149,7 +149,7 @@ func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 	return index.NewListPostings(ep)
 }
 
-// ShardedPostings implements IndexReader. This function returns a failing postings list if sharding
+// ShardedPostings implements IndexReader. This function returns an failing postings list if sharding
 // has not been enabled in the Head.
 func (h *headIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings {
 	if !h.head.opts.EnableSharding {

@@ -2471,13 +2471,13 @@ func TestDBReadOnly(t *testing.T) {
 	})
 	t.Run("block", func(t *testing.T) {
 		blockID := expBlock.meta.ULID.String()
-		block, err := dbReadOnly.Block(blockID)
+		block, err := dbReadOnly.Block(blockID, nil)
 		require.NoError(t, err)
 		require.Equal(t, expBlock.Meta(), block.Meta(), "block meta mismatch")
 	})
 	t.Run("invalid block ID", func(t *testing.T) {
 		blockID := "01GTDVZZF52NSWB5SXQF0P2PGF"
-		_, err := dbReadOnly.Block(blockID)
+		_, err := dbReadOnly.Block(blockID, nil)
 		require.Error(t, err)
 	})
 	t.Run("last block ID", func(t *testing.T) {
