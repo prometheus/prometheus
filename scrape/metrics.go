@@ -75,191 +75,244 @@ func newScrapeMetrics(reg prometheus.Registerer) (*scrapeMetrics, error) {
 		// newScrapeMetrics() is called by NewManager(), while also TargetsGatherer is the new Manager.
 	}
 
-	sm.targetScrapePools = prometheus.NewCounter(
+	var err error
+	sm.targetScrapePools, err = registerCollector(reg, prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrape_pools_total",
 			Help: "Total number of scrape pool creation attempts.",
 		},
-	)
-	sm.targetScrapePoolsFailed = prometheus.NewCounter(
+	))
+	if err != nil {
+		return nil, err
+	}
+
+	sm.targetScrapePoolsFailed, err = registerCollector(reg, prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrape_pools_failed_total",
 			Help: "Total number of scrape pool creations that failed.",
 		},
-	)
+	))
+	if err != nil {
+		return nil, err
+	}
 
 	// Used by scrapePool.
-	sm.targetReloadIntervalLength = prometheus.NewSummaryVec(
+	sm.targetReloadIntervalLength, err = registerCollector(reg, prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
 			Name:       "prometheus_target_reload_length_seconds",
 			Help:       "Actual interval to reload the scrape pool with a given configuration.",
 			Objectives: map[float64]float64{0.01: 0.001, 0.05: 0.005, 0.5: 0.05, 0.90: 0.01, 0.99: 0.001},
 		},
 		[]string{"interval"},
-	)
-	sm.targetScrapePoolReloads = prometheus.NewCounter(
+	))
+	if err != nil {
+		return nil, err
+	}
+
+	sm.targetScrapePoolReloads, err = registerCollector(reg, prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrape_pool_reloads_total",
 			Help: "Total number of scrape pool reloads.",
 		},
-	)
-	sm.targetScrapePoolReloadsFailed = prometheus.NewCounter(
+	))
+	if err != nil {
+		return nil, err
+	}
+
+	sm.targetScrapePoolReloadsFailed, err = registerCollector(reg, prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrape_pool_reloads_failed_total",
 			Help: "Total number of failed scrape pool reloads.",
 		},
-	)
-	sm.targetScrapePoolExceededTargetLimit = prometheus.NewCounter(
+	))
+	if err != nil {
+		return nil, err
+	}
+
+	sm.targetScrapePoolExceededTargetLimit, err = registerCollector(reg, prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrape_pool_exceeded_target_limit_total",
 			Help: "Total number of times scrape pools hit the target limit, during sync or config reload.",
 		},
-	)
-	sm.targetScrapePoolTargetLimit = prometheus.NewGaugeVec(
+	))
+	if err != nil {
+		return nil, err
+	}
+
+	sm.targetScrapePoolTargetLimit, err = registerCollector(reg, prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "prometheus_target_scrape_pool_target_limit",
 			Help: "Maximum number of targets allowed in this scrape pool.",
 		},
 		[]string{"scrape_job"},
-	)
-	sm.targetScrapePoolTargetsAdded = prometheus.NewGaugeVec(
+	))
+	if err != nil {
+		return nil, err
+	}
+
+	sm.targetScrapePoolTargetsAdded, err = registerCollector(reg, prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "prometheus_target_scrape_pool_targets",
 			Help: "Current number of targets in this scrape pool.",
 		},
 		[]string{"scrape_job"},
-	)
-	sm.targetScrapePoolSyncsCounter = prometheus.NewCounterVec(
+	))
+	if err != nil {
+		return nil, err
+	}
+
+	sm.targetScrapePoolSyncsCounter, err = registerCollector(reg, prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrape_pool_sync_total",
 			Help: "Total number of syncs that were executed on a scrape pool.",
 		},
 		[]string{"scrape_job"},
-	)
-	sm.targetSyncIntervalLength = prometheus.NewSummaryVec(
+	))
+	if err != nil {
+		return nil, err
+	}
+
+	sm.targetSyncIntervalLength, err = registerCollector(reg, prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
 			Name:       "prometheus_target_sync_length_seconds",
 			Help:       "Actual interval to sync the scrape pool.",
 			Objectives: map[float64]float64{0.01: 0.001, 0.05: 0.005, 0.5: 0.05, 0.90: 0.01, 0.99: 0.001},
 		},
 		[]string{"scrape_job"},
-	)
-	sm.targetSyncFailed = prometheus.NewCounterVec(
+	))
+	if err != nil {
+		return nil, err
+	}
+
+	sm.targetSyncFailed, err = registerCollector(reg, prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_sync_failed_total",
 			Help: "Total number of target sync failures.",
 		},
 		[]string{"scrape_job"},
-	)
+	))
+	if err != nil {
+		return nil, err
+	}
 
 	// Used by targetScraper.
-	sm.targetScrapeExceededBodySizeLimit = prometheus.NewCounter(
+	sm.targetScrapeExceededBodySizeLimit, err = registerCollector(reg, prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrapes_exceeded_body_size_limit_total",
 			Help: "Total number of scrapes that hit the body size limit",
 		},
-	)
+	))
+	if err != nil {
+		return nil, err
+	}
 
 	// Used by scrapeCache.
-	sm.targetScrapeCacheFlushForced = prometheus.NewCounter(
+	sm.targetScrapeCacheFlushForced, err = registerCollector(reg, prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrapes_cache_flush_forced_total",
 			Help: "How many times a scrape cache was flushed due to getting big while scrapes are failing.",
 		},
-	)
+	))
+	if err != nil {
+		return nil, err
+	}
 
 	// Used by scrapeLoop.
-	sm.targetIntervalLength = prometheus.NewSummaryVec(
+	sm.targetIntervalLength, err = registerCollector(reg, prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
 			Name:       "prometheus_target_interval_length_seconds",
 			Help:       "Actual intervals between scrapes.",
 			Objectives: map[float64]float64{0.01: 0.001, 0.05: 0.005, 0.5: 0.05, 0.90: 0.01, 0.99: 0.001},
 		},
 		[]string{"interval"},
-	)
-	sm.targetScrapeSampleLimit = prometheus.NewCounter(
+	))
+	if err != nil {
+		return nil, err
+	}
+
+	sm.targetScrapeSampleLimit, err = registerCollector(reg, prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrapes_exceeded_sample_limit_total",
 			Help: "Total number of scrapes that hit the sample limit and were rejected.",
 		},
-	)
-	sm.targetScrapeSampleDuplicate = prometheus.NewCounter(
+	))
+	if err != nil {
+		return nil, err
+	}
+
+	sm.targetScrapeSampleDuplicate, err = registerCollector(reg, prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrapes_sample_duplicate_timestamp_total",
 			Help: "Total number of samples rejected due to duplicate timestamps but different values.",
 		},
-	)
-	sm.targetScrapeSampleOutOfOrder = prometheus.NewCounter(
+	))
+	if err != nil {
+		return nil, err
+	}
+
+	sm.targetScrapeSampleOutOfOrder, err = registerCollector(reg, prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrapes_sample_out_of_order_total",
 			Help: "Total number of samples rejected due to not being out of the expected order.",
 		},
-	)
-	sm.targetScrapeSampleOutOfBounds = prometheus.NewCounter(
+	))
+	if err != nil {
+		return nil, err
+	}
+
+	sm.targetScrapeSampleOutOfBounds, err = registerCollector(reg, prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrapes_sample_out_of_bounds_total",
 			Help: "Total number of samples rejected due to timestamp falling outside of the time bounds.",
 		},
-	)
-	sm.targetScrapePoolExceededLabelLimits = prometheus.NewCounter(
+	))
+	if err != nil {
+		return nil, err
+	}
+
+	sm.targetScrapePoolExceededLabelLimits, err = registerCollector(reg, prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrape_pool_exceeded_label_limits_total",
 			Help: "Total number of times scrape pools hit the label limits, during sync or config reload.",
 		},
-	)
-	sm.targetScrapeNativeHistogramBucketLimit = prometheus.NewCounter(
+	))
+	if err != nil {
+		return nil, err
+	}
+
+	sm.targetScrapeNativeHistogramBucketLimit, err = registerCollector(reg, prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrapes_exceeded_native_histogram_bucket_limit_total",
 			Help: "Total number of scrapes that hit the native histogram bucket limit and were rejected.",
 		},
-	)
-	sm.targetScrapeExemplarOutOfOrder = prometheus.NewCounter(
+	))
+	if err != nil {
+		return nil, err
+	}
+
+	sm.targetScrapeExemplarOutOfOrder, err = registerCollector(reg, prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrapes_exemplar_out_of_order_total",
 			Help: "Total number of exemplar rejected due to not being out of the expected order.",
 		},
-	)
-
-	for _, collector := range []prometheus.Collector{
-		// Used by Manager.
-		sm.targetMetadataCache,
-		sm.targetScrapePools,
-		sm.targetScrapePoolsFailed,
-		// Used by scrapePool.
-		sm.targetReloadIntervalLength,
-		sm.targetScrapePoolReloads,
-		sm.targetScrapePoolReloadsFailed,
-		sm.targetSyncIntervalLength,
-		sm.targetScrapePoolSyncsCounter,
-		sm.targetScrapePoolExceededTargetLimit,
-		sm.targetScrapePoolTargetLimit,
-		sm.targetScrapePoolTargetsAdded,
-		sm.targetSyncFailed,
-		// Used by targetScraper.
-		sm.targetScrapeExceededBodySizeLimit,
-		// Used by scrapeCache.
-		sm.targetScrapeCacheFlushForced,
-		// Used by scrapeLoop.
-		sm.targetIntervalLength,
-		sm.targetScrapeSampleLimit,
-		sm.targetScrapeSampleDuplicate,
-		sm.targetScrapeSampleOutOfOrder,
-		sm.targetScrapeSampleOutOfBounds,
-		sm.targetScrapeExemplarOutOfOrder,
-		sm.targetScrapePoolExceededLabelLimits,
-		sm.targetScrapeNativeHistogramBucketLimit,
-	} {
-		err := reg.Register(collector)
-		if err != nil {
-			are := &prometheus.AlreadyRegisteredError{}
-			if errors.As(err, are) {
-				// Nothing to do if this collector is already registered
-				continue
-			}
-			return nil, fmt.Errorf("failed to register scrape metrics: %w", err)
-		}
+	))
+	if err != nil {
+		return nil, err
 	}
+
 	return sm, nil
+}
+
+func registerCollector[C prometheus.Collector](reg prometheus.Registerer, collector C) (C, error) {
+	err := reg.Register(collector)
+	if err != nil {
+		are := &prometheus.AlreadyRegisteredError{}
+		if errors.As(err, are) {
+			return are.ExistingCollector.(C), nil
+		}
+		return collector, fmt.Errorf("failed to register scrape metrics: %w", err)
+	}
+	return collector, nil
 }
 
 func (sm *scrapeMetrics) setTargetMetadataCacheGatherer(gatherer TargetsGatherer) {
