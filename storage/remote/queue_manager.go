@@ -1023,7 +1023,7 @@ func (t *QueueManager) shouldReshard(desiredShards int) bool {
 		return false
 	}
 	if disableTimestamp := t.reshardDisableTimestamp.Load(); time.Now().Unix() < disableTimestamp {
-		level.Warn(t.logger).Log("msg", "Skipping resharding, resharding is disabled", "disabled_for", time.Until(time.Unix(disableTimestamp, 0)))
+		level.Warn(t.logger).Log("msg", "Skipping resharding, resharding is disabled while waiting for recoverable errors", "disabled_for", time.Until(time.Unix(disableTimestamp, 0)))
 		return false
 	}
 	return true
@@ -1640,8 +1640,8 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 	return err
 }
 
-func (qm *QueueManager) sendWriteRequestWithBackoff(ctx context.Context, attempt func(int) error, onRetry func()) error {
-	backoff := qm.cfg.MinBackoff
+func (t *QueueManager) sendWriteRequestWithBackoff(ctx context.Context, attempt func(int) error, onRetry func()) error {
+	backoff := t.cfg.MinBackoff
 	sleepDuration := model.Duration(0)
 	try := 0
 
@@ -1668,9 +1668,9 @@ func (qm *QueueManager) sendWriteRequestWithBackoff(ctx context.Context, attempt
 		switch {
 		case backoffErr.retryAfter > 0:
 			sleepDuration = backoffErr.retryAfter
-			level.Info(qm.logger).Log("msg", "Retrying after duration specified by Retry-After header", "duration", sleepDuration)
+			level.Info(t.logger).Log("msg", "Retrying after duration specified by Retry-After header", "duration", sleepDuration)
 		case backoffErr.retryAfter < 0:
-			level.Debug(qm.logger).Log("msg", "retry-after cannot be in past, retrying using default backoff mechanism")
+			level.Debug(t.logger).Log("msg", "retry-after cannot be in past, retrying using default backoff mechanism")
 		}
 
 		// We should never reshard for a recoverable error; increasing shards could
@@ -1680,7 +1680,7 @@ func (qm *QueueManager) sendWriteRequestWithBackoff(ctx context.Context, attempt
 		// is diableld. We'll update that timestamp if the period we were just told
 		// to sleep for is newer than the existing disabled timestamp.
 		reshardWaitPeriod := time.Now().Add(time.Duration(sleepDuration) * 2)
-		setAtomicToNewer(&qm.reshardDisableTimestamp, reshardWaitPeriod.Unix())
+		setAtomicToNewer(&t.reshardDisableTimestamp, reshardWaitPeriod.Unix())
 
 		select {
 		case <-ctx.Done():
@@ -1689,19 +1689,19 @@ func (qm *QueueManager) sendWriteRequestWithBackoff(ctx context.Context, attempt
 
 		// If we make it this far, we've encountered a recoverable error and will retry.
 		onRetry()
-		level.Warn(qm.logger).Log("msg", "Failed to send batch, retrying", "err", err)
+		level.Warn(t.logger).Log("msg", "Failed to send batch, retrying", "err", err)
 
 		backoff = sleepDuration * 2
 
-		if backoff > qm.cfg.MaxBackoff {
-			backoff = qm.cfg.MaxBackoff
+		if backoff > t.cfg.MaxBackoff {
+			backoff = t.cfg.MaxBackoff
 		}
 
 		try++
 	}
 }
 
-// setAtomicToNewer atomically sets a value to the newer uint64 between itself
+// setAtomicToNewer atomically sets a value to the newer int64 between itself
 // and the provided newValue argument.
 func setAtomicToNewer(value *atomic.Int64, newValue int64) {
 	for {
