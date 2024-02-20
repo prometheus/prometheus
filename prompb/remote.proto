@@ -25,6 +25,9 @@ message WriteRequest {
   // We reserve it to avoid any compatibility issues.
   reserved  2;
   repeated prometheus.MetricMetadata metadata = 3 [(gogoproto.nullable) = false];
+  // If true, metric names and labels can use the full UTF-8 character set.
+  // Otherwise, apply the legacy naming convention.
+  bool utf8_names = 4;
 }
 
 // ReadRequest represents a remote read request.

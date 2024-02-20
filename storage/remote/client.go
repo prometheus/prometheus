@@ -274,6 +274,7 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	c.readQueries.Inc()
 	defer c.readQueries.Dec()
 
+	// XXXXXX based on content negotiation we may need to escape the query. (If the other side is old)
 	req := &prompb.ReadRequest{
 		// TODO: Support batching multiple queries into one read request,
 		// as the protobuf interface allows for it.
