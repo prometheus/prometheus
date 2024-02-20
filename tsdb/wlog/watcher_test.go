@@ -65,7 +65,7 @@ type writeToMock struct {
 
 func (wtm *writeToMock) Append(s []record.RefSample) bool {
 	if wtm.delay > 0 {
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(wtm.delay)
 	}
 	wtm.samplesAppended += len(s)
 	return true
@@ -73,7 +73,7 @@ func (wtm *writeToMock) Append(s []record.RefSample) bool {
 
 func (wtm *writeToMock) AppendExemplars(e []record.RefExemplar) bool {
 	if wtm.delay > 0 {
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(wtm.delay)
 	}
 	wtm.exemplarsAppended += len(e)
 	return true
@@ -81,7 +81,7 @@ func (wtm *writeToMock) AppendExemplars(e []record.RefExemplar) bool {
 
 func (wtm *writeToMock) AppendHistograms(h []record.RefHistogramSample) bool {
 	if wtm.delay > 0 {
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(wtm.delay)
 	}
 	wtm.histogramsAppended += len(h)
 	return true
@@ -89,7 +89,7 @@ func (wtm *writeToMock) AppendHistograms(h []record.RefHistogramSample) bool {
 
 func (wtm *writeToMock) AppendFloatHistograms(fh []record.RefFloatHistogramSample) bool {
 	if wtm.delay > 0 {
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(wtm.delay)
 	}
 	wtm.floatHistogramsAppended += len(fh)
 	return true
@@ -97,7 +97,7 @@ func (wtm *writeToMock) AppendFloatHistograms(fh []record.RefFloatHistogramSampl
 
 func (wtm *writeToMock) StoreSeries(series []record.RefSeries, index int) {
 	if wtm.delay > 0 {
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(wtm.delay)
 	}
 	wtm.UpdateSeriesSegment(series, index)
 }
@@ -128,10 +128,10 @@ func (wtm *writeToMock) checkNumSeries() int {
 	return len(wtm.seriesSegmentIndexes)
 }
 
-func newWriteToMock(delay bool) *writeToMock {
+func newWriteToMock(delay time.Duration) *writeToMock {
 	return &writeToMock{
 		seriesSegmentIndexes: make(map[chunks.HeadSeriesRef]int),
-		delay:                10 * time.Millisecond,
+		delay:                delay,
 	}
 }
 
@@ -228,7 +228,7 @@ func TestTailSamples(t *testing.T) {
 			first, last, err := Segments(w.Dir())
 			require.NoError(t, err)
 
-			wt := newWriteToMock(false)
+			wt := newWriteToMock(0)
 			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, true, true)
 			watcher.SetStartTime(now)
 
@@ -313,7 +313,7 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 			_, _, err = Segments(w.Dir())
 			require.NoError(t, err)
 
-			wt := newWriteToMock(false)
+			wt := newWriteToMock(0)
 			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false)
 			go watcher.Start()
 
@@ -402,7 +402,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 			_, _, err = Segments(w.Dir())
 			require.NoError(t, err)
 			readTimeout = time.Second
-			wt := newWriteToMock(false)
+			wt := newWriteToMock(0)
 			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false)
 			go watcher.Start()
 
@@ -473,7 +473,7 @@ func TestReadCheckpoint(t *testing.T) {
 			_, _, err = Segments(w.Dir())
 			require.NoError(t, err)
 
-			wt := newWriteToMock(false)
+			wt := newWriteToMock(0)
 			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false)
 			go watcher.Start()
 
@@ -542,7 +542,7 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			wt := newWriteToMock(false)
+			wt := newWriteToMock(0)
 			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false)
 			watcher.MaxSegment = -1
 
@@ -615,7 +615,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			require.NoError(t, err)
 
 			readTimeout = time.Second
-			wt := newWriteToMock(false)
+			wt := newWriteToMock(0)
 			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false)
 			watcher.MaxSegment = -1
 			go watcher.Start()
@@ -694,7 +694,7 @@ func TestRun_StartupTime(t *testing.T) {
 			}
 			require.NoError(t, w.Close())
 
-			wt := newWriteToMock(false)
+			wt := newWriteToMock(0)
 			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false)
 			watcher.MaxSegment = segments
 
@@ -783,7 +783,7 @@ func TestRun_AvoidNotifyWhenBehind(t *testing.T) {
 				}
 			}()
 
-			wt := newWriteToMock(true)
+			wt := newWriteToMock(time.Millisecond)
 			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false)
 			watcher.MaxSegment = segments
 
