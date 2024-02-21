@@ -349,7 +349,7 @@ func addSingleHistogramDataPoint(pt pmetric.HistogramDataPoint, resource pcommon
 	startTimestamp := pt.StartTimestamp()
 	if settings.ExportCreatedMetric && startTimestamp != 0 {
 		labels := createLabels(createdSuffix)
-		addCreatedTimeSeriesIfNeeded(tsMap, labels, startTimestamp, metric.Type().String())
+		addCreatedTimeSeriesIfNeeded(tsMap, labels, startTimestamp, pt.Timestamp(), metric.Type().String())
 	}
 }
 
@@ -518,7 +518,7 @@ func addSingleSummaryDataPoint(pt pmetric.SummaryDataPoint, resource pcommon.Res
 	startTimestamp := pt.StartTimestamp()
 	if settings.ExportCreatedMetric && startTimestamp != 0 {
 		createdLabels := createLabels(baseName + createdSuffix)
-		addCreatedTimeSeriesIfNeeded(tsMap, createdLabels, startTimestamp, metric.Type().String())
+		addCreatedTimeSeriesIfNeeded(tsMap, createdLabels, startTimestamp, pt.Timestamp(), metric.Type().String())
 	}
 }
 
@@ -528,6 +528,7 @@ func addCreatedTimeSeriesIfNeeded(
 	series map[string]*prompb.TimeSeries,
 	labels []prompb.Label,
 	startTimestamp pcommon.Timestamp,
+	timestamp pcommon.Timestamp,
 	metricType string,
 ) {
 	sig := timeSeriesSignature(metricType, &labels)
@@ -536,7 +537,8 @@ func addCreatedTimeSeriesIfNeeded(
 			Labels: labels,
 			Samples: []prompb.Sample{
 				{ // convert ns to ms
-					Value: float64(convertTimeStamp(startTimestamp)),
+					Value:     float64(convertTimeStamp(startTimestamp)),
+					Timestamp: convertTimeStamp(timestamp),
 				},
 			},
 		}
