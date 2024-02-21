@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { FetchFn } from '.';
+import { FetchFn } from './index';
 import { Matcher } from '../types';
 import { labelMatchersToString } from '../parser';
 import LRUCache from 'lru-cache';

@@ -1,13 +1,14 @@
 {
   "name": "@prometheus-io/mantine-ui",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.49.1",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "start": "vite",
     "build": "tsc && vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "echo TODO: Create tests for the new Mantine UI"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.12.0",
@@ -31,7 +32,6 @@
     "react-router-dom": "^6.22.1"
   },
   "devDependencies": {
-    "@types/eslint": "~8.56.2",
     "@types/react": "^18.2.55",
     "@types/react-dom": "^18.2.19",
     "@typescript-eslint/eslint-plugin": "^6.21.0",
@@ -43,7 +43,6 @@
     "postcss": "^8.4.35",
     "postcss-preset-mantine": "^1.13.0",
     "postcss-simple-vars": "^7.0.1",
-    "typescript": "^5.2.2",
     "vite": "^5.1.0"
   }
 }
