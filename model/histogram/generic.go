@@ -406,7 +406,7 @@ func checkHistogramBuckets[BC BucketCount, IBC InternalBucketCount](buckets []IB
 	return nil
 }
 
-func checkHistogramCustomBounds(bounds []float64, spans []Span) error {
+func checkHistogramCustomBounds(bounds []float64, spans []Span, numBuckets int) error {
 	prev := math.Inf(-1)
 	for _, curr := range bounds {
 		if curr <= prev {
@@ -415,9 +415,17 @@ func checkHistogramCustomBounds(bounds []float64, spans []Span) error {
 		prev = curr
 	}
 
+	var spanBuckets int
 	var totalSpanLength int
-	for _, span := range spans {
+	for n, span := range spans {
+		if span.Offset < 0 {
+			return fmt.Errorf("span number %d with offset %d: %w", n+1, span.Offset, ErrHistogramSpanNegativeOffset)
+		}
+		spanBuckets += int(span.Length)
 		totalSpanLength += int(span.Length) + int(span.Offset)
+	}
+	if spanBuckets != numBuckets {
+		return fmt.Errorf("spans need %d buckets, have %d buckets: %w", spanBuckets, numBuckets, ErrHistogramSpansBucketsMismatch)
 	}
 	if (len(bounds) + 1) < totalSpanLength {
 		return fmt.Errorf("only %d custom bounds defined which is insufficient to cover total span length of %d: %w", len(bounds), totalSpanLength, ErrHistogramCustomBucketsMismatch)

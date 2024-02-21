@@ -353,10 +353,7 @@ func (h *FloatHistogram) Add(other *FloatHistogram) (*FloatHistogram, error) {
 	)
 
 	if h.HasCustomBounds() {
-		h.ZeroThreshold = 0
-		h.ZeroCount = 0
 		h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, false, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
-		h.NegativeSpans, h.NegativeBuckets = nil, nil
 		return h, nil
 	}
 
@@ -380,8 +377,6 @@ func (h *FloatHistogram) Add(other *FloatHistogram) (*FloatHistogram, error) {
 
 	h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, false, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
 	h.NegativeSpans, h.NegativeBuckets = addBuckets(h.Schema, h.ZeroThreshold, false, hNegativeSpans, hNegativeBuckets, otherNegativeSpans, otherNegativeBuckets)
-
-	h.CustomBounds = nil
 
 	return h, nil
 }
@@ -410,10 +405,7 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) (*FloatHistogram, error) {
 	)
 
 	if h.HasCustomBounds() {
-		h.ZeroThreshold = 0
-		h.ZeroCount = 0
 		h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
-		h.NegativeSpans, h.NegativeBuckets = nil, nil
 		return h, nil
 	}
 
@@ -436,8 +428,6 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) (*FloatHistogram, error) {
 
 	h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
 	h.NegativeSpans, h.NegativeBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, hNegativeSpans, hNegativeBuckets, otherNegativeSpans, otherNegativeBuckets)
-
-	h.CustomBounds = nil
 
 	return h, nil
 }
@@ -599,8 +589,10 @@ func (h *FloatHistogram) DetectReset(previous *FloatHistogram) bool {
 	if h.Count < previous.Count {
 		return true
 	}
-	if h.HasCustomBounds() != previous.HasCustomBounds() {
-		// TODO(zenador): correct?
+	if h.HasCustomBounds() != previous.HasCustomBounds() || (h.HasCustomBounds() && !floatBucketsMatch(h.CustomBounds, previous.CustomBounds)) {
+		// Mark that something has changed or that the application has been restarted. However, this does
+		// not matter so much since the change in schema will be handled directly in the chunks and PromQL
+		// functions.
 		return true
 	}
 	if h.Schema > previous.Schema {
@@ -757,7 +749,7 @@ func (h *FloatHistogram) AllReverseBucketIterator() BucketIterator[float64] {
 func (h *FloatHistogram) Validate() error {
 	var nCount, pCount float64
 	if h.HasCustomBounds() {
-		if err := checkHistogramCustomBounds(h.CustomBounds, h.PositiveSpans); err != nil {
+		if err := checkHistogramCustomBounds(h.CustomBounds, h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
 			return fmt.Errorf("custom buckets: %w", err)
 		}
 		if h.ZeroCount != 0 {
@@ -773,6 +765,9 @@ func (h *FloatHistogram) Validate() error {
 			return fmt.Errorf("custom buckets: must not have negative buckets")
 		}
 	} else {
+		if err := checkHistogramSpans(h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
+			return fmt.Errorf("positive side: %w", err)
+		}
 		if err := checkHistogramSpans(h.NegativeSpans, len(h.NegativeBuckets)); err != nil {
 			return fmt.Errorf("negative side: %w", err)
 		}
@@ -783,9 +778,6 @@ func (h *FloatHistogram) Validate() error {
 		if h.CustomBounds != nil {
 			return fmt.Errorf("histogram with exponential schema must not have custom bounds")
 		}
-	}
-	if err := checkHistogramSpans(h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
-		return fmt.Errorf("positive side: %w", err)
 	}
 	err := checkHistogramBuckets(h.PositiveBuckets, &pCount, false)
 	if err != nil {
@@ -911,10 +903,11 @@ func (h *FloatHistogram) reconcileZeroBuckets(other *FloatHistogram) float64 {
 // If positive is true, the returned iterator iterates through the positive
 // buckets, otherwise through the negative buckets.
 //
-// If absoluteStartValue is < the lowest absolute value of any upper bucket
-// boundary, the iterator starts with the first bucket. Otherwise, it will skip
-// all buckets with an absolute value of their upper boundary ≤
-// absoluteStartValue.
+// Only for exponential schemas, if absoluteStartValue is < the lowest absolute
+// value of any upper bucket boundary, the iterator starts with the first bucket.
+// Otherwise, it will skip all buckets with an absolute value of their upper boundary ≤
+// absoluteStartValue. For custom bucket schemas, absoluteStartValue is ignored and
+// no buckets are skipped.
 //
 // targetSchema must be ≤ the schema of FloatHistogram (and of course within the
 // legal values for schemas in general). The buckets are merged to match the
@@ -957,14 +950,12 @@ func newReverseFloatBucketIterator(
 ) reverseFloatBucketIterator {
 	r := reverseFloatBucketIterator{
 		baseBucketIterator: baseBucketIterator[float64, float64]{
-			schema:   schema,
-			spans:    spans,
-			buckets:  buckets,
-			positive: positive,
+			schema:       schema,
+			spans:        spans,
+			buckets:      buckets,
+			positive:     positive,
+			customBounds: customBounds,
 		},
-	}
-	if positive {
-		r.baseBucketIterator.customBounds = customBounds
 	}
 
 	r.spansIdx = len(r.spans) - 1
@@ -1077,7 +1068,7 @@ func (i *floatBucketIterator) Next() bool {
 		}
 	}
 
-	// Skip buckets before absoluteStartValue.
+	// Skip buckets before absoluteStartValue for exponential schemas.
 	// TODO(beorn7): Maybe do something more efficient than this recursive call.
 	if !i.boundReachedStartValue && i.targetSchema != CustomBucketsSchema && getBoundExponential(i.currIdx, i.targetSchema) <= i.absoluteStartValue {
 		return i.Next()

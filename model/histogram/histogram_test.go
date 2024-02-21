@@ -1361,7 +1361,7 @@ func TestHistogramValidation(t *testing.T) {
 			errMsg:    `3 observations found in buckets, but the Count field is 2: histogram's observation count should equal the number of observations found in the buckets (in absence of NaN)`,
 			skipFloat: true,
 		},
-		"rejects a normal histogram with custom buckets schema": {
+		"rejects an exponential histogram with custom buckets schema": {
 			h: &Histogram{
 				Count:         12,
 				ZeroCount:     2,
@@ -1380,6 +1380,21 @@ func TestHistogramValidation(t *testing.T) {
 				NegativeBuckets: []int64{1, 1, -1, 0},
 			},
 			errMsg: `custom buckets: only 0 custom bounds defined which is insufficient to cover total span length of 5: histogram custom bounds are too few`,
+		},
+		"rejects a custom buckets histogram with exponential schema": {
+			h: &Histogram{
+				Count:  5,
+				Sum:    19.4,
+				Schema: 0,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 1, -1, 0},
+				CustomBounds:    []float64{1, 2, 3, 4},
+			},
+			errMsg:    `histogram with exponential schema must not have custom bounds`,
+			skipFloat: true, // Converting to float will remove the wrong fields so only the float version will pass validation
 		},
 		"rejects a custom buckets histogram with zero/negative buckets": {
 			h: &Histogram{
@@ -1402,6 +1417,48 @@ func TestHistogramValidation(t *testing.T) {
 			},
 			errMsg:    `custom buckets: must have zero count of 0`,
 			skipFloat: true, // Converting to float will remove the wrong fields so only the float version will pass validation
+		},
+		"rejects a custom buckets histogram with negative offset in first span": {
+			h: &Histogram{
+				Count:  5,
+				Sum:    19.4,
+				Schema: CustomBucketsSchema,
+				PositiveSpans: []Span{
+					{Offset: -1, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 1, -1, 0},
+				CustomBounds:    []float64{1, 2, 3, 4},
+			},
+			errMsg: `custom buckets: span number 1 with offset -1: histogram has a span whose offset is negative`,
+		},
+		"rejects a custom buckets histogram with negative offset in subsequent spans": {
+			h: &Histogram{
+				Count:  5,
+				Sum:    19.4,
+				Schema: CustomBucketsSchema,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 2},
+					{Offset: -1, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 1, -1, 0},
+				CustomBounds:    []float64{1, 2, 3, 4},
+			},
+			errMsg: `custom buckets: span number 2 with offset -1: histogram has a span whose offset is negative`,
+		},
+		"rejects a custom buckets histogram with non-matching bucket counts": {
+			h: &Histogram{
+				Count:  5,
+				Sum:    19.4,
+				Schema: CustomBucketsSchema,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 1, -1},
+				CustomBounds:    []float64{1, 2, 3, 4},
+			},
+			errMsg: `custom buckets: spans need 4 buckets, have 3 buckets: histogram spans specify different number of buckets than provided`,
 		},
 		"rejects a custom buckets histogram with too few bounds": {
 			h: &Histogram{
