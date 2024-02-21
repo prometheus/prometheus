@@ -164,20 +164,22 @@ func FindSetMatches(pattern string) []string {
 				return nil
 			}
 			escaped = false
-		} else {
-			switch {
-			case isRegexMetaCharacter(pattern[i]):
-				if pattern[i] == '|' {
-					sets = append(sets, &strings.Builder{})
-				} else {
-					return nil
-				}
-			case pattern[i] == '\\':
-				escaped = true
-			default:
-				sets[len(sets)-1].WriteByte(pattern[i])
-			}
+			continue
 		}
+		
+		switch {
+		case isRegexMetaCharacter(pattern[i]):
+			if pattern[i] == '|' {
+				sets = append(sets, &strings.Builder{})
+			} else {
+				return nil
+			}
+		case pattern[i] == '\\':
+			escaped = true
+		default:
+			sets[len(sets)-1].WriteByte(pattern[i])
+		}
+	
 	}
 	matches := make([]string, 0, len(sets))
 	for _, s := range sets {
