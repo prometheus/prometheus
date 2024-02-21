@@ -1014,9 +1014,9 @@ func (pr mockPostingsReader) Postings(ctx context.Context, name string, values .
 
 func TestMemPostings_PostingsForMatcher(t *testing.T) {
 	series := []labels.Labels{
+		labels.FromStrings("i", "a", "n", "1"),
+		labels.FromStrings("i", "b", "n", "1"),
 		labels.FromStrings("n", "1"),
-		labels.FromStrings("n", "1", "i", "a"),
-		labels.FromStrings("n", "1", "i", "b"),
 		labels.FromStrings("n", "2"),
 		labels.FromStrings("n", "2.5"),
 	}
@@ -1050,7 +1050,7 @@ func TestMemPostings_PostingsForMatcher(t *testing.T) {
 		},
 		{
 			matcher: labels.MustNewMatcher(labels.MatchNotEqual, "i", ""),
-			exp:     []storage.SeriesRef{2, 3},
+			exp:     []storage.SeriesRef{1, 2},
 		},
 		{
 			matcher: labels.MustNewMatcher(labels.MatchNotEqual, "missing", ""),
@@ -1091,11 +1091,11 @@ func TestMemPostings_PostingsForMatcher(t *testing.T) {
 		},
 		{
 			matcher: labels.MustNewMatcher(labels.MatchRegexp, "i", "a|b"),
-			exp:     []storage.SeriesRef{2, 3},
+			exp:     []storage.SeriesRef{1, 2},
 		},
 		{
 			matcher: labels.MustNewMatcher(labels.MatchRegexp, "i", "(a|b)"),
-			exp:     []storage.SeriesRef{2, 3},
+			exp:     []storage.SeriesRef{1, 2},
 		},
 		{
 			matcher: labels.MustNewMatcher(labels.MatchRegexp, "n", "x1|2"),
