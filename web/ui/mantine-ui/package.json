@@ -10,12 +10,28 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@codemirror/autocomplete": "^6.12.0",
+    "@codemirror/language": "^6.10.1",
+    "@codemirror/lint": "^6.5.0",
+    "@codemirror/state": "^6.4.0",
+    "@codemirror/view": "^6.24.0",
+    "@lezer/common": "^1.2.1",
+    "@lezer/highlight": "^1.2.0",
+    "@mantine/code-highlight": "^7.5.3",
     "@mantine/core": "^7.5.3",
+    "@mantine/dates": "^7.5.3",
     "@mantine/hooks": "^7.5.3",
+    "@prometheus-io/codemirror-promql": "^0.50.0-rc.1",
+    "@tabler/icons-react": "^2.47.0",
+    "@tanstack/react-query": "^5.22.2",
+    "@uiw/react-codemirror": "^4.21.22",
+    "dayjs": "^1.11.10",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.22.1"
   },
   "devDependencies": {
+    "@types/eslint": "~8.56.2",
     "@types/react": "^18.2.55",
     "@types/react-dom": "^18.2.19",
     "@typescript-eslint/eslint-plugin": "^6.21.0",
