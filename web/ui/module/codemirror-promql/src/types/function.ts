@@ -39,6 +39,7 @@ import {
   Deriv,
   Exp,
   Floor,
+  HistogramAvg,
   HistogramCount,
   HistogramFraction,
   HistogramQuantile,
@@ -265,6 +266,12 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
   },
   [Floor]: {
     name: 'floor',
+    argTypes: [ValueType.vector],
+    variadic: 0,
+    returnType: ValueType.vector,
+  },
+  [HistogramAvg]: {
+    name: 'histogram_avg',
     argTypes: [ValueType.vector],
     variadic: 0,
     returnType: ValueType.vector,

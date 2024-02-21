@@ -28,6 +28,7 @@ require (
 	github.com/go-zookeeper/zk v1.0.3
 	github.com/gogo/protobuf v1.3.2
 	github.com/golang/snappy v0.0.4
+	github.com/google/go-cmp v0.6.0
 	github.com/google/pprof v0.0.0-20240117000934-35fc243c5815
 	github.com/google/uuid v1.5.0
 	github.com/gophercloud/gophercloud v1.8.0
@@ -51,7 +52,7 @@ require (
 	github.com/prometheus/alertmanager v0.26.0
 	github.com/prometheus/client_golang v1.18.0
 	github.com/prometheus/client_model v0.5.0
-	github.com/prometheus/common v0.46.0
+	github.com/prometheus/common v0.47.0
 	github.com/prometheus/common/assets v0.2.0
 	github.com/prometheus/common/sigv4 v0.1.0
 	github.com/prometheus/exporter-toolkit v0.11.0
@@ -135,7 +136,6 @@ require (
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/google/gnostic-models v0.6.8 // indirect
-	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/s2a-go v0.1.7 // indirect

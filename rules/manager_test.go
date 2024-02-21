@@ -42,6 +42,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/teststorage"
+	prom_testutil "github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestMain(m *testing.M) {
@@ -180,7 +181,7 @@ func TestAlertingRule(t *testing.T) {
 		sort.Slice(filteredRes, func(i, j int) bool {
 			return labels.Compare(filteredRes[i].Metric, filteredRes[j].Metric) < 0
 		})
-		require.Equal(t, test.result, filteredRes)
+		prom_testutil.RequireEqual(t, test.result, filteredRes)
 
 		for _, aa := range rule.ActiveAlerts() {
 			require.Zero(t, aa.Labels.Get(model.MetricNameLabel), "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
@@ -330,7 +331,7 @@ func TestForStateAddSamples(t *testing.T) {
 		sort.Slice(filteredRes, func(i, j int) bool {
 			return labels.Compare(filteredRes[i].Metric, filteredRes[j].Metric) < 0
 		})
-		require.Equal(t, test.result, filteredRes)
+		prom_testutil.RequireEqual(t, test.result, filteredRes)
 
 		for _, aa := range rule.ActiveAlerts() {
 			require.Zero(t, aa.Labels.Get(model.MetricNameLabel), "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
@@ -1314,6 +1315,8 @@ func TestRuleGroupEvalIterationFunc(t *testing.T) {
 			evaluationTimestamp: atomic.NewTime(time.Time{}),
 			evaluationDuration:  atomic.NewDuration(0),
 			lastError:           atomic.NewError(nil),
+			noDependentRules:    atomic.NewBool(false),
+			noDependencyRules:   atomic.NewBool(false),
 		}
 
 		group := NewGroup(GroupOptions{
@@ -1405,6 +1408,66 @@ func TestNativeHistogramsInRecordingRules(t *testing.T) {
 	require.Equal(t, ts.Add(10*time.Second).UnixMilli(), tsp)
 	require.Equal(t, expHist, fh)
 	require.Equal(t, chunkenc.ValNone, it.Next())
+}
+
+func TestManager_LoadGroups_ShouldCheckWhetherEachRuleHasDependentsAndDependencies(t *testing.T) {
+	storage := teststorage.New(t)
+	t.Cleanup(func() {
+		require.NoError(t, storage.Close())
+	})
+
+	ruleManager := NewManager(&ManagerOptions{
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
+		Appendable: storage,
+		QueryFunc:  func(ctx context.Context, q string, ts time.Time) (promql.Vector, error) { return nil, nil },
+	})
+
+	t.Run("load a mix of dependent and independent rules", func(t *testing.T) {
+		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, []string{"fixtures/rules_multiple.yaml"}...)
+		require.Empty(t, errs)
+		require.Len(t, groups, 1)
+
+		expected := map[string]struct {
+			noDependentRules  bool
+			noDependencyRules bool
+		}{
+			"job:http_requests:rate1m": {
+				noDependentRules:  true,
+				noDependencyRules: true,
+			},
+			"job:http_requests:rate5m": {
+				noDependentRules:  true,
+				noDependencyRules: true,
+			},
+			"job:http_requests:rate15m": {
+				noDependentRules:  true,
+				noDependencyRules: false,
+			},
+			"TooManyRequests": {
+				noDependentRules:  false,
+				noDependencyRules: true,
+			},
+		}
+
+		for _, r := range ruleManager.Rules() {
+			exp, ok := expected[r.Name()]
+			require.Truef(t, ok, "rule: %s", r.String())
+			require.Equalf(t, exp.noDependentRules, r.NoDependentRules(), "rule: %s", r.String())
+			require.Equalf(t, exp.noDependencyRules, r.NoDependencyRules(), "rule: %s", r.String())
+		}
+	})
+
+	t.Run("load only independent rules", func(t *testing.T) {
+		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, []string{"fixtures/rules_multiple_independent.yaml"}...)
+		require.Empty(t, errs)
+		require.Len(t, groups, 1)
+
+		for _, r := range ruleManager.Rules() {
+			require.Truef(t, r.NoDependentRules(), "rule: %s", r.String())
+			require.Truef(t, r.NoDependencyRules(), "rule: %s", r.String())
+		}
+	})
 }
 
 func TestDependencyMap(t *testing.T) {

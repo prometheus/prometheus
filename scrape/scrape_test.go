@@ -32,6 +32,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
+	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	config_util "github.com/prometheus/common/config"
@@ -72,15 +73,11 @@ func TestNewScrapePool(t *testing.T) {
 		sp, _ = newScrapePool(cfg, app, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
 	)
 
-	if a, ok := sp.appendable.(*nopAppendable); !ok || a != app {
-		t.Fatalf("Wrong sample appender")
-	}
-	if sp.config != cfg {
-		t.Fatalf("Wrong scrape config")
-	}
-	if sp.newLoop == nil {
-		t.Fatalf("newLoop function not initialized")
-	}
+	a, ok := sp.appendable.(*nopAppendable)
+	require.True(t, ok, "Failure to append.")
+	require.Equal(t, app, a, "Wrong sample appender.")
+	require.Equal(t, cfg, sp.config, "Wrong scrape config.")
+	require.NotNil(t, sp.newLoop, "newLoop function not initialized.")
 }
 
 func TestDroppedTargetsList(t *testing.T) {
@@ -233,12 +230,10 @@ func TestScrapePoolStop(t *testing.T) {
 
 	select {
 	case <-time.After(5 * time.Second):
-		t.Fatalf("scrapeLoop.stop() did not return as expected")
+		require.Fail(t, "scrapeLoop.stop() did not return as expected")
 	case <-done:
 		// This should have taken at least as long as the last target slept.
-		if time.Since(stopTime) < time.Duration(numTargets*20)*time.Millisecond {
-			t.Fatalf("scrapeLoop.stop() exited before all targets stopped")
-		}
+		require.GreaterOrEqual(t, time.Since(stopTime), time.Duration(numTargets*20)*time.Millisecond, "scrapeLoop.stop() exited before all targets stopped")
 	}
 
 	mtx.Lock()
@@ -324,12 +319,10 @@ func TestScrapePoolReload(t *testing.T) {
 
 	select {
 	case <-time.After(5 * time.Second):
-		t.Fatalf("scrapeLoop.reload() did not return as expected")
+		require.FailNow(t, "scrapeLoop.reload() did not return as expected")
 	case <-done:
 		// This should have taken at least as long as the last target slept.
-		if time.Since(reloadTime) < time.Duration(numTargets*20)*time.Millisecond {
-			t.Fatalf("scrapeLoop.stop() exited before all targets stopped")
-		}
+		require.GreaterOrEqual(t, time.Since(reloadTime), time.Duration(numTargets*20)*time.Millisecond, "scrapeLoop.stop() exited before all targets stopped")
 	}
 
 	mtx.Lock()
@@ -703,13 +696,13 @@ func TestScrapeLoopStopBeforeRun(t *testing.T) {
 
 	select {
 	case <-stopDone:
-		t.Fatalf("Stopping terminated before run exited successfully")
+		require.FailNow(t, "Stopping terminated before run exited successfully.")
 	case <-time.After(500 * time.Millisecond):
 	}
 
 	// Running the scrape loop must exit before calling the scraper even once.
 	scraper.scrapeFunc = func(context.Context, io.Writer) error {
-		t.Fatalf("scraper was called for terminated scrape loop")
+		require.FailNow(t, "Scraper was called for terminated scrape loop.")
 		return nil
 	}
 
@@ -722,13 +715,13 @@ func TestScrapeLoopStopBeforeRun(t *testing.T) {
 	select {
 	case <-runDone:
 	case <-time.After(1 * time.Second):
-		t.Fatalf("Running terminated scrape loop did not exit")
+		require.FailNow(t, "Running terminated scrape loop did not exit.")
 	}
 
 	select {
 	case <-stopDone:
 	case <-time.After(1 * time.Second):
-		t.Fatalf("Stopping did not terminate after running exited")
+		require.FailNow(t, "Stopping did not terminate after running exited.")
 	}
 }
 
@@ -765,14 +758,13 @@ func TestScrapeLoopStop(t *testing.T) {
 	select {
 	case <-signal:
 	case <-time.After(5 * time.Second):
-		t.Fatalf("Scrape wasn't stopped.")
+		require.FailNow(t, "Scrape wasn't stopped.")
 	}
 
 	// We expected 1 actual sample for each scrape plus 5 for report samples.
 	// At least 2 scrapes were made, plus the final stale markers.
-	if len(appender.resultFloats) < 6*3 || len(appender.resultFloats)%6 != 0 {
-		t.Fatalf("Expected at least 3 scrapes with 6 samples each, got %d samples", len(appender.resultFloats))
-	}
+	require.GreaterOrEqual(t, len(appender.resultFloats), 6*3, "Expected at least 3 scrapes with 6 samples each.")
+	require.Zero(t, len(appender.resultFloats)%6, "There is a scrape with missing samples.")
 	// All samples in a scrape must have the same timestamp.
 	var ts int64
 	for i, s := range appender.resultFloats {
@@ -785,9 +777,7 @@ func TestScrapeLoopStop(t *testing.T) {
 	}
 	// All samples from the last scrape must be stale markers.
 	for _, s := range appender.resultFloats[len(appender.resultFloats)-5:] {
-		if !value.IsStaleNaN(s.f) {
-			t.Fatalf("Appended last sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(s.f))
-		}
+		require.True(t, value.IsStaleNaN(s.f), "Appended last sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(s.f))
 	}
 }
 
@@ -843,9 +833,9 @@ func TestScrapeLoopRun(t *testing.T) {
 	select {
 	case <-signal:
 	case <-time.After(5 * time.Second):
-		t.Fatalf("Cancellation during initial offset failed")
+		require.FailNow(t, "Cancellation during initial offset failed.")
 	case err := <-errc:
-		t.Fatalf("Unexpected error: %s", err)
+		require.FailNow(t, "Unexpected error: %s", err)
 	}
 
 	// The provided timeout must cause cancellation of the context passed down to the
@@ -873,11 +863,9 @@ func TestScrapeLoopRun(t *testing.T) {
 
 	select {
 	case err := <-errc:
-		if !errors.Is(err, context.DeadlineExceeded) {
-			t.Fatalf("Expected timeout error but got: %s", err)
-		}
+		require.ErrorIs(t, err, context.DeadlineExceeded)
 	case <-time.After(3 * time.Second):
-		t.Fatalf("Expected timeout error but got none")
+		require.FailNow(t, "Expected timeout error but got none.")
 	}
 
 	// We already caught the timeout error and are certainly in the loop.
@@ -890,9 +878,9 @@ func TestScrapeLoopRun(t *testing.T) {
 	case <-signal:
 		// Loop terminated as expected.
 	case err := <-errc:
-		t.Fatalf("Unexpected error: %s", err)
+		require.FailNow(t, "Unexpected error: %s", err)
 	case <-time.After(3 * time.Second):
-		t.Fatalf("Loop did not terminate on context cancellation")
+		require.FailNow(t, "Loop did not terminate on context cancellation")
 	}
 }
 
@@ -912,7 +900,7 @@ func TestScrapeLoopForcedErr(t *testing.T) {
 	sl.setForcedError(forcedErr)
 
 	scraper.scrapeFunc = func(context.Context, io.Writer) error {
-		t.Fatalf("should not be scraped")
+		require.FailNow(t, "Should not be scraped.")
 		return nil
 	}
 
@@ -923,18 +911,16 @@ func TestScrapeLoopForcedErr(t *testing.T) {
 
 	select {
 	case err := <-errc:
-		if !errors.Is(err, forcedErr) {
-			t.Fatalf("Expected forced error but got: %s", err)
-		}
+		require.ErrorIs(t, err, forcedErr)
 	case <-time.After(3 * time.Second):
-		t.Fatalf("Expected forced error but got none")
+		require.FailNow(t, "Expected forced error but got none.")
 	}
 	cancel()
 
 	select {
 	case <-signal:
 	case <-time.After(5 * time.Second):
-		t.Fatalf("Scrape not stopped")
+		require.FailNow(t, "Scrape not stopped.")
 	}
 }
 
@@ -1141,7 +1127,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
 	select {
 	case <-signal:
 	case <-time.After(5 * time.Second):
-		t.Fatalf("Scrape wasn't stopped.")
+		require.FailNow(t, "Scrape wasn't stopped.")
 	}
 
 	// 1 successfully scraped sample, 1 stale marker after first fail, 5 report samples for
@@ -1188,7 +1174,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 	select {
 	case <-signal:
 	case <-time.After(5 * time.Second):
-		t.Fatalf("Scrape wasn't stopped.")
+		require.FailNow(t, "Scrape wasn't stopped.")
 	}
 
 	// 1 successfully scraped sample, 1 stale marker after first fail, 5 report samples for
@@ -1220,19 +1206,15 @@ func TestScrapeLoopCache(t *testing.T) {
 	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
 		switch numScrapes {
 		case 1, 2:
-			if _, ok := sl.cache.series["metric_a"]; !ok {
-				t.Errorf("metric_a missing from cache after scrape %d", numScrapes)
-			}
-			if _, ok := sl.cache.series["metric_b"]; !ok {
-				t.Errorf("metric_b missing from cache after scrape %d", numScrapes)
-			}
+			_, ok := sl.cache.series["metric_a"]
+			require.True(t, ok, "metric_a missing from cache after scrape %d", numScrapes)
+			_, ok = sl.cache.series["metric_b"]
+			require.True(t, ok, "metric_b missing from cache after scrape %d", numScrapes)
 		case 3:
-			if _, ok := sl.cache.series["metric_a"]; !ok {
-				t.Errorf("metric_a missing from cache after scrape %d", numScrapes)
-			}
-			if _, ok := sl.cache.series["metric_b"]; ok {
-				t.Errorf("metric_b present in cache after scrape %d", numScrapes)
-			}
+			_, ok := sl.cache.series["metric_a"]
+			require.True(t, ok, "metric_a missing from cache after scrape %d", numScrapes)
+			_, ok = sl.cache.series["metric_b"]
+			require.False(t, ok, "metric_b present in cache after scrape %d", numScrapes)
 		}
 
 		numScrapes++
@@ -1257,7 +1239,7 @@ func TestScrapeLoopCache(t *testing.T) {
 	select {
 	case <-signal:
 	case <-time.After(5 * time.Second):
-		t.Fatalf("Scrape wasn't stopped.")
+		require.FailNow(t, "Scrape wasn't stopped.")
 	}
 
 	// 1 successfully scraped sample, 1 stale marker after first fail, 5 report samples for
@@ -1305,12 +1287,10 @@ func TestScrapeLoopCacheMemoryExhaustionProtection(t *testing.T) {
 	select {
 	case <-signal:
 	case <-time.After(5 * time.Second):
-		t.Fatalf("Scrape wasn't stopped.")
+		require.FailNow(t, "Scrape wasn't stopped.")
 	}
 
-	if len(sl.cache.series) > 2000 {
-		t.Fatalf("More than 2000 series cached. Got: %d", len(sl.cache.series))
-	}
+	require.LessOrEqual(t, len(sl.cache.series), 2000, "More than 2000 series cached.")
 }
 
 func TestScrapeLoopAppend(t *testing.T) {
@@ -1352,7 +1332,7 @@ func TestScrapeLoopAppend(t *testing.T) {
 			// Honor Labels should ignore labels with the same name.
 			title:           "Honor Labels",
 			honorLabels:     true,
-			scrapeLabels:    `metric{n1="1" n2="2"} 0`,
+			scrapeLabels:    `metric{n1="1", n2="2"} 0`,
 			discoveryLabels: []string{"n1", "0"},
 			expLset:         labels.FromStrings("__name__", "metric", "n1", "1", "n2", "2"),
 			expValue:        0,
@@ -1362,7 +1342,7 @@ func TestScrapeLoopAppend(t *testing.T) {
 			scrapeLabels:    `metric NaN`,
 			discoveryLabels: nil,
 			expLset:         labels.FromStrings("__name__", "metric"),
-			expValue:        float64(value.NormalNaN),
+			expValue:        math.Float64frombits(value.NormalNaN),
 		},
 	}
 
@@ -1396,16 +1376,15 @@ func TestScrapeLoopAppend(t *testing.T) {
 			},
 		}
 
-		// When the expected value is NaN
-		// DeepEqual will report NaNs as being different,
-		// so replace it with the expected one.
-		if test.expValue == float64(value.NormalNaN) {
-			app.resultFloats[0].f = expected[0].f
-		}
-
 		t.Logf("Test:%s", test.title)
-		require.Equal(t, expected, app.resultFloats)
+		requireEqual(t, expected, app.resultFloats)
 	}
+}
+
+func requireEqual(t *testing.T, expected, actual interface{}, msgAndArgs ...interface{}) {
+	testutil.RequireEqualWithOptions(t, expected, actual,
+		[]cmp.Option{cmp.Comparer(equalFloatSamples), cmp.AllowUnexported(histogramSample{})},
+		msgAndArgs...)
 }
 
 func TestScrapeLoopAppendForConflictingPrefixedLabels(t *testing.T) {
@@ -1427,7 +1406,7 @@ func TestScrapeLoopAppendForConflictingPrefixedLabels(t *testing.T) {
 		},
 		"One target label collides with existing label, plus existing label already with prefix 'exported": {
 			targetLabels:  []string{"foo", "3"},
-			exposedLabels: `metric{foo="1" exported_foo="2"} 0`,
+			exposedLabels: `metric{foo="1", exported_foo="2"} 0`,
 			expected:      []string{"__name__", "metric", "exported_exported_foo", "1", "exported_foo", "2", "foo", "3"},
 		},
 		"One target label collides with existing label, both already with prefix 'exported'": {
@@ -1437,7 +1416,7 @@ func TestScrapeLoopAppendForConflictingPrefixedLabels(t *testing.T) {
 		},
 		"Two target labels collide with existing labels, both with and without prefix 'exported'": {
 			targetLabels:  []string{"foo", "3", "exported_foo", "4"},
-			exposedLabels: `metric{foo="1" exported_foo="2"} 0`,
+			exposedLabels: `metric{foo="1", exported_foo="2"} 0`,
 			expected: []string{
 				"__name__", "metric", "exported_exported_foo", "1", "exported_exported_exported_foo",
 				"2", "exported_foo", "4", "foo", "3",
@@ -1445,7 +1424,7 @@ func TestScrapeLoopAppendForConflictingPrefixedLabels(t *testing.T) {
 		},
 		"Extreme example": {
 			targetLabels:  []string{"foo", "0", "exported_exported_foo", "1", "exported_exported_exported_foo", "2"},
-			exposedLabels: `metric{foo="3" exported_foo="4" exported_exported_exported_foo="5"} 0`,
+			exposedLabels: `metric{foo="3", exported_foo="4", exported_exported_exported_foo="5"} 0`,
 			expected: []string{
 				"__name__", "metric",
 				"exported_exported_exported_exported_exported_foo", "5",
@@ -1471,7 +1450,7 @@ func TestScrapeLoopAppendForConflictingPrefixedLabels(t *testing.T) {
 
 			require.NoError(t, slApp.Commit())
 
-			require.Equal(t, []floatSample{
+			requireEqual(t, []floatSample{
 				{
 					metric: labels.FromStrings(tc.expected...),
 					t:      timestamp.FromTime(time.Date(2000, 1, 1, 1, 0, 0, 0, time.UTC)),
@@ -1541,9 +1520,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 	now := time.Now()
 	slApp := sl.appender(context.Background())
 	total, added, seriesAdded, err := sl.append(app, []byte("metric_a 1\nmetric_b 1\nmetric_c 1\n"), "", now)
-	if !errors.Is(err, errSampleLimit) {
-		t.Fatalf("Did not see expected sample limit error: %s", err)
-	}
+	require.ErrorIs(t, err, errSampleLimit)
 	require.NoError(t, slApp.Rollback())
 	require.Equal(t, 3, total)
 	require.Equal(t, 3, added)
@@ -1567,14 +1544,12 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 			f:      1,
 		},
 	}
-	require.Equal(t, want, resApp.rolledbackFloats, "Appended samples not as expected:\n%s", appender)
+	requireEqual(t, want, resApp.rolledbackFloats, "Appended samples not as expected:\n%s", appender)
 
 	now = time.Now()
 	slApp = sl.appender(context.Background())
 	total, added, seriesAdded, err = sl.append(slApp, []byte("metric_a 1\nmetric_b 1\nmetric_c{deleteme=\"yes\"} 1\nmetric_d 1\nmetric_e 1\nmetric_f 1\nmetric_g 1\nmetric_h{deleteme=\"yes\"} 1\nmetric_i{deleteme=\"yes\"} 1\n"), "", now)
-	if !errors.Is(err, errSampleLimit) {
-		t.Fatalf("Did not see expected sample limit error: %s", err)
-	}
+	require.ErrorIs(t, err, errSampleLimit)
 	require.NoError(t, slApp.Rollback())
 	require.Equal(t, 9, total)
 	require.Equal(t, 6, added)
@@ -1709,7 +1684,6 @@ func TestScrapeLoop_ChangingMetricString(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, slApp.Commit())
 
-	// DeepEqual will report NaNs as being different, so replace with a different value.
 	want := []floatSample{
 		{
 			metric: labels.FromStrings("__name__", "metric_a", "a", "1", "b", "1"),
@@ -1741,11 +1715,6 @@ func TestScrapeLoopAppendStaleness(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, slApp.Commit())
 
-	ingestedNaN := math.Float64bits(app.resultFloats[1].f)
-	require.Equal(t, value.StaleNaN, ingestedNaN, "Appended stale sample wasn't as expected")
-
-	// DeepEqual will report NaNs as being different, so replace with a different value.
-	app.resultFloats[1].f = 42
 	want := []floatSample{
 		{
 			metric: labels.FromStrings(model.MetricNameLabel, "metric_a"),
@@ -1755,10 +1724,10 @@ func TestScrapeLoopAppendStaleness(t *testing.T) {
 		{
 			metric: labels.FromStrings(model.MetricNameLabel, "metric_a"),
 			t:      timestamp.FromTime(now.Add(time.Second)),
-			f:      42,
+			f:      math.Float64frombits(value.StaleNaN),
 		},
 	}
-	require.Equal(t, want, app.resultFloats, "Appended samples not as expected:\n%s", appender)
+	requireEqual(t, want, app.resultFloats, "Appended samples not as expected:\n%s", appender)
 }
 
 func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
@@ -1801,8 +1770,6 @@ func TestScrapeLoopAppendStalenessIfTrackTimestampStaleness(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, slApp.Commit())
 
-	// DeepEqual will report NaNs as being different, so replace with a different value.
-	app.resultFloats[1].f = 42
 	want := []floatSample{
 		{
 			metric: labels.FromStrings(model.MetricNameLabel, "metric_a"),
@@ -1812,10 +1779,10 @@ func TestScrapeLoopAppendStalenessIfTrackTimestampStaleness(t *testing.T) {
 		{
 			metric: labels.FromStrings(model.MetricNameLabel, "metric_a"),
 			t:      timestamp.FromTime(now.Add(time.Second)),
-			f:      42,
+			f:      math.Float64frombits(value.StaleNaN),
 		},
 	}
-	require.Equal(t, want, app.resultFloats, "Appended samples not as expected:\n%s", appender)
+	requireEqual(t, want, app.resultFloats, "Appended samples not as expected:\n%s", appender)
 }
 
 func TestScrapeLoopAppendExemplar(t *testing.T) {
@@ -2183,9 +2150,9 @@ metric: <
 			_, _, _, err := sl.append(app, buf.Bytes(), test.contentType, now)
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
-			require.Equal(t, test.floats, app.resultFloats)
-			require.Equal(t, test.histograms, app.resultHistograms)
-			require.Equal(t, test.exemplars, app.resultExemplars)
+			requireEqual(t, test.floats, app.resultFloats)
+			requireEqual(t, test.histograms, app.resultHistograms)
+			requireEqual(t, test.exemplars, app.resultExemplars)
 		})
 	}
 }
@@ -2240,8 +2207,8 @@ func TestScrapeLoopAppendExemplarSeries(t *testing.T) {
 		require.NoError(t, app.Commit())
 	}
 
-	require.Equal(t, samples, app.resultFloats)
-	require.Equal(t, exemplars, app.resultExemplars)
+	requireEqual(t, samples, app.resultFloats)
+	requireEqual(t, exemplars, app.resultExemplars)
 }
 
 func TestScrapeLoopRunReportsTargetDownOnScrapeError(t *testing.T) {
@@ -2317,7 +2284,7 @@ func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T
 			f:      1,
 		},
 	}
-	require.Equal(t, want, app.resultFloats, "Appended samples not as expected:\n%s", appender)
+	requireEqual(t, want, app.resultFloats, "Appended samples not as expected:\n%s", appender)
 	require.Equal(t, 4, total)
 	require.Equal(t, 4, added)
 	require.Equal(t, 1, seriesAdded)
@@ -2357,15 +2324,12 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if protobufParsing {
 				accept := r.Header.Get("Accept")
-				if !strings.HasPrefix(accept, "application/vnd.google.protobuf;") {
-					t.Errorf("Expected Accept header to prefer application/vnd.google.protobuf, got %q", accept)
-				}
+				require.True(t, strings.HasPrefix(accept, "application/vnd.google.protobuf;"),
+					"Expected Accept header to prefer application/vnd.google.protobuf.")
 			}
 
 			timeout := r.Header.Get("X-Prometheus-Scrape-Timeout-Seconds")
-			if timeout != expectedTimeout {
-				t.Errorf("Expected scrape timeout header %q, got %q", expectedTimeout, timeout)
-			}
+			require.Equal(t, expectedTimeout, timeout, "Expected scrape timeout header.")
 
 			w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
 			w.Write([]byte("metric_a 1\nmetric_b 2\n"))
@@ -2453,7 +2417,7 @@ func TestTargetScrapeScrapeCancel(t *testing.T) {
 
 	select {
 	case <-time.After(5 * time.Second):
-		t.Fatalf("Scrape function did not return unexpectedly")
+		require.FailNow(t, "Scrape function did not return unexpectedly.")
 	case err := <-errc:
 		require.NoError(t, err)
 	}
@@ -3053,7 +3017,7 @@ func TestScrapeReportSingleAppender(t *testing.T) {
 	select {
 	case <-signal:
 	case <-time.After(5 * time.Second):
-		t.Fatalf("Scrape wasn't stopped.")
+		require.FailNow(t, "Scrape wasn't stopped.")
 	}
 }
 

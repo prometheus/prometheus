@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/teststorage"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 var testEngine = promql.NewEngine(promql.EngineOpts{
@@ -180,7 +181,7 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 			}
 		}
 
-		require.Equal(t, result, filteredRes)
+		testutil.RequireEqual(t, result, filteredRes)
 	}
 	evalTime := baseTime.Add(time.Duration(len(results)) * time.Minute)
 	res, err := rule.Eval(context.TODO(), evalTime, EngineQueryFunc(testEngine, storage), nil, 0)
@@ -278,7 +279,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 		}
 	}
 
-	require.Equal(t, result, filteredRes)
+	testutil.RequireEqual(t, result, filteredRes)
 }
 
 func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
@@ -371,7 +372,7 @@ func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
 		}
 	}
 
-	require.Equal(t, result, filteredRes)
+	testutil.RequireEqual(t, result, filteredRes)
 }
 
 func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
@@ -425,7 +426,7 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 			require.Equal(t, "ALERTS_FOR_STATE", smplName)
 		}
 	}
-	require.Equal(t, result, filteredRes)
+	testutil.RequireEqual(t, result, filteredRes)
 }
 
 func TestAlertingRuleQueryInTemplate(t *testing.T) {
@@ -718,7 +719,7 @@ func TestSendAlertsDontAffectActiveAlerts(t *testing.T) {
 
 	// The relabel rule changes a1=1 to a1=bug.
 	// But the labels with the AlertingRule should not be changed.
-	require.Equal(t, labels.FromStrings("a1", "1"), rule.active[h].Labels)
+	testutil.RequireEqual(t, labels.FromStrings("a1", "1"), rule.active[h].Labels)
 }
 
 func TestKeepFiringFor(t *testing.T) {
@@ -823,7 +824,7 @@ func TestKeepFiringFor(t *testing.T) {
 			}
 		}
 
-		require.Equal(t, result, filteredRes)
+		testutil.RequireEqual(t, result, filteredRes)
 	}
 	evalTime := baseTime.Add(time.Duration(len(results)) * time.Minute)
 	res, err := rule.Eval(context.TODO(), evalTime, EngineQueryFunc(testEngine, storage), nil, 0)
@@ -870,7 +871,7 @@ func TestPendingAndKeepFiringFor(t *testing.T) {
 	for _, smpl := range res {
 		smplName := smpl.Metric.Get("__name__")
 		if smplName == "ALERTS" {
-			require.Equal(t, result, smpl)
+			testutil.RequireEqual(t, result, smpl)
 		} else {
 			// If not 'ALERTS', it has to be 'ALERTS_FOR_STATE'.
 			require.Equal(t, "ALERTS_FOR_STATE", smplName)
@@ -919,4 +920,46 @@ func TestAlertingEvalWithOrigin(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, detail, NewRuleDetail(rule))
+}
+
+func TestAlertingRule_SetNoDependentRules(t *testing.T) {
+	rule := NewAlertingRule(
+		"test",
+		&parser.NumberLiteral{Val: 1},
+		time.Minute,
+		0,
+		labels.FromStrings("test", "test"),
+		labels.EmptyLabels(),
+		labels.EmptyLabels(),
+		"",
+		true, log.NewNopLogger(),
+	)
+	require.False(t, rule.NoDependentRules())
+
+	rule.SetNoDependentRules(false)
+	require.False(t, rule.NoDependentRules())
+
+	rule.SetNoDependentRules(true)
+	require.True(t, rule.NoDependentRules())
+}
+
+func TestAlertingRule_SetNoDependencyRules(t *testing.T) {
+	rule := NewAlertingRule(
+		"test",
+		&parser.NumberLiteral{Val: 1},
+		time.Minute,
+		0,
+		labels.FromStrings("test", "test"),
+		labels.EmptyLabels(),
+		labels.EmptyLabels(),
+		"",
+		true, log.NewNopLogger(),
+	)
+	require.False(t, rule.NoDependencyRules())
+
+	rule.SetNoDependencyRules(false)
+	require.False(t, rule.NoDependencyRules())
+
+	rule.SetNoDependencyRules(true)
+	require.True(t, rule.NoDependencyRules())
 }

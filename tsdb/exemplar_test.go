@@ -40,7 +40,7 @@ func TestValidateExemplar(t *testing.T) {
 
 	l := labels.FromStrings("service", "asdf")
 	e := exemplar.Exemplar{
-		Labels: labels.FromStrings("traceID", "qwerty"),
+		Labels: labels.FromStrings("trace_id", "qwerty"),
 		Value:  0.1,
 		Ts:     1,
 	}
@@ -49,7 +49,7 @@ func TestValidateExemplar(t *testing.T) {
 	require.NoError(t, es.AddExemplar(l, e))
 
 	e2 := exemplar.Exemplar{
-		Labels: labels.FromStrings("traceID", "zxcvb"),
+		Labels: labels.FromStrings("trace_id", "zxcvb"),
 		Value:  0.1,
 		Ts:     2,
 	}
@@ -82,7 +82,7 @@ func TestAddExemplar(t *testing.T) {
 
 	l := labels.FromStrings("service", "asdf")
 	e := exemplar.Exemplar{
-		Labels: labels.FromStrings("traceID", "qwerty"),
+		Labels: labels.FromStrings("trace_id", "qwerty"),
 		Value:  0.1,
 		Ts:     1,
 	}
@@ -91,7 +91,7 @@ func TestAddExemplar(t *testing.T) {
 	require.Equal(t, 0, es.index[string(l.Bytes(nil))].newest, "exemplar was not stored correctly")
 
 	e2 := exemplar.Exemplar{
-		Labels: labels.FromStrings("traceID", "zxcvb"),
+		Labels: labels.FromStrings("trace_id", "zxcvb"),
 		Value:  0.1,
 		Ts:     2,
 	}
@@ -132,7 +132,7 @@ func TestStorageOverflow(t *testing.T) {
 	var eList []exemplar.Exemplar
 	for i := 0; i < len(es.exemplars)+1; i++ {
 		e := exemplar.Exemplar{
-			Labels: labels.FromStrings("traceID", "a"),
+			Labels: labels.FromStrings("trace_id", "a"),
 			Value:  float64(i+1) / 10,
 			Ts:     int64(101 + i),
 		}
@@ -158,7 +158,7 @@ func TestSelectExemplar(t *testing.T) {
 	lName, lValue := "service", "asdf"
 	l := labels.FromStrings(lName, lValue)
 	e := exemplar.Exemplar{
-		Labels: labels.FromStrings("traceID", "querty"),
+		Labels: labels.FromStrings("trace_id", "querty"),
 		Value:  0.1,
 		Ts:     12,
 	}
@@ -189,7 +189,7 @@ func TestSelectExemplar_MultiSeries(t *testing.T) {
 
 	for i := 0; i < len(es.exemplars); i++ {
 		e1 := exemplar.Exemplar{
-			Labels: labels.FromStrings("traceID", "a"),
+			Labels: labels.FromStrings("trace_id", "a"),
 			Value:  float64(i+1) / 10,
 			Ts:     int64(101 + i),
 		}
@@ -197,7 +197,7 @@ func TestSelectExemplar_MultiSeries(t *testing.T) {
 		require.NoError(t, err)
 
 		e2 := exemplar.Exemplar{
-			Labels: labels.FromStrings("traceID", "b"),
+			Labels: labels.FromStrings("trace_id", "b"),
 			Value:  float64(i+1) / 10,
 			Ts:     int64(101 + i),
 		}
@@ -231,7 +231,7 @@ func TestSelectExemplar_TimeRange(t *testing.T) {
 
 	for i := 0; int64(i) < lenEs; i++ {
 		err := es.AddExemplar(l, exemplar.Exemplar{
-			Labels: labels.FromStrings("traceID", strconv.Itoa(i)),
+			Labels: labels.FromStrings("trace_id", strconv.Itoa(i)),
 			Value:  0.1,
 			Ts:     int64(101 + i),
 		})
@@ -255,7 +255,7 @@ func TestSelectExemplar_DuplicateSeries(t *testing.T) {
 	es := exs.(*CircularExemplarStorage)
 
 	e := exemplar.Exemplar{
-		Labels: labels.FromStrings("traceID", "qwerty"),
+		Labels: labels.FromStrings("trace_id", "qwerty"),
 		Value:  0.1,
 		Ts:     12,
 	}
@@ -413,7 +413,7 @@ func TestResize(t *testing.T) {
 func BenchmarkAddExemplar(b *testing.B) {
 	// We need to include these labels since we do length calculation
 	// before adding.
-	exLabels := labels.FromStrings("traceID", "89620921")
+	exLabels := labels.FromStrings("trace_id", "89620921")
 
 	for _, n := range []int{10000, 100000, 1000000} {
 		b.Run(fmt.Sprintf("%d", n), func(b *testing.B) {
