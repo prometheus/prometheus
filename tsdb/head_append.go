@@ -835,7 +835,8 @@ func (a *headAppender) Commit() (err error) {
 	defer a.head.iso.closeAppend(a.appendID)
 
 	var (
-		floatsAppended = len(a.samples)
+		floatsAppended     = len(a.samples)
+		histogramsAppended = len(a.histograms) + len(a.floatHistograms)
 		// number of samples out of order but accepted: with ooo enabled and within time window
 		floatOOOAccepted int
 		// number of samples rejected due to: out of order but OOO support disabled.
@@ -988,7 +989,6 @@ func (a *headAppender) Commit() (err error) {
 		series.Unlock()
 	}
 
-	histogramsAppended := len(a.histograms)
 	for i, s := range a.histograms {
 		series = a.histogramSeries[i]
 		series.Lock()
@@ -1014,7 +1014,6 @@ func (a *headAppender) Commit() (err error) {
 		}
 	}
 
-	histogramsAppended += len(a.floatHistograms)
 	for i, s := range a.floatHistograms {
 		series = a.floatHistogramSeries[i]
 		series.Lock()
