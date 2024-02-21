@@ -61,4 +61,20 @@ type Rule interface {
 	// GetEvaluationTimestamp returns last evaluation timestamp.
 	// NOTE: Used dynamically by rules.html template.
 	GetEvaluationTimestamp() time.Time
+
+	// SetNoDependentRules sets whether there's no other rule in the rule group that depends on this rule.
+	SetNoDependentRules(bool)
+
+	// NoDependentRules returns true if it's guaranteed that in the rule group there's no other rule
+	// which depends on this one. In case this function returns false there's no such guarantee, which
+	// means there may or may not be other rules depending on this one.
+	NoDependentRules() bool
+
+	// SetNoDependencyRules sets whether this rule doesn't depend on the output of any rule in the rule group.
+	SetNoDependencyRules(bool)
+
+	// NoDependencyRules returns true if it's guaranteed that this rule doesn't depend on the output of
+	// any other rule in the group. In case this function returns false there's no such guarantee, which
+	// means the rule may or may not depend on other rules.
+	NoDependencyRules() bool
 }

@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc32"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"sort"
@@ -206,7 +205,7 @@ func TestIndexRW_Postings(t *testing.T) {
 
 		require.NoError(t, err)
 		require.Empty(t, c)
-		require.Equal(t, series[i], builder.Labels())
+		testutil.RequireEqual(t, series[i], builder.Labels())
 	}
 	require.NoError(t, p.Err())
 
@@ -407,15 +406,17 @@ func TestPersistence_index_e2e(t *testing.T) {
 
 	var input indexWriterSeriesSlice
 
+	ref := uint64(0)
 	// Generate ChunkMetas for every label set.
 	for i, lset := range lbls {
 		var metas []chunks.Meta
 
 		for j := 0; j <= (i % 20); j++ {
+			ref++
 			metas = append(metas, chunks.Meta{
 				MinTime: int64(j * 10000),
-				MaxTime: int64((j + 1) * 10000),
-				Ref:     chunks.ChunkRef(rand.Uint64()),
+				MaxTime: int64((j+1)*10000) - 1,
+				Ref:     chunks.ChunkRef(ref),
 				Chunk:   chunkenc.NewXORChunk(),
 			})
 		}
@@ -487,7 +488,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 
 			err = mi.Series(expp.At(), &eBuilder, &expchks)
 			require.NoError(t, err)
-			require.Equal(t, eBuilder.Labels(), builder.Labels())
+			testutil.RequireEqual(t, eBuilder.Labels(), builder.Labels())
 			require.Equal(t, expchks, chks)
 		}
 		require.False(t, expp.Next(), "Expected no more postings for %q=%q", p.Name, p.Value)
@@ -669,4 +670,52 @@ func BenchmarkReader_ShardedPostings(b *testing.B) {
 func TestDecoder_Postings_WrongInput(t *testing.T) {
 	_, _, err := (&Decoder{}).Postings([]byte("the cake is a lie"))
 	require.Error(t, err)
+}
+
+func TestChunksRefOrdering(t *testing.T) {
+	dir := t.TempDir()
+
+	idx, err := NewWriter(context.Background(), filepath.Join(dir, "index"))
+	require.NoError(t, err)
+
+	require.NoError(t, idx.AddSymbol("1"))
+	require.NoError(t, idx.AddSymbol("2"))
+	require.NoError(t, idx.AddSymbol("__name__"))
+
+	c50 := chunks.Meta{Ref: 50}
+	c100 := chunks.Meta{Ref: 100}
+	c200 := chunks.Meta{Ref: 200}
+
+	require.NoError(t, idx.AddSeries(1, labels.FromStrings("__name__", "1"), c100))
+	require.EqualError(t, idx.AddSeries(2, labels.FromStrings("__name__", "2"), c50), "unsorted chunk reference: 50, previous: 100")
+	require.NoError(t, idx.AddSeries(2, labels.FromStrings("__name__", "2"), c200))
+	require.NoError(t, idx.Close())
+}
+
+func TestChunksTimeOrdering(t *testing.T) {
+	dir := t.TempDir()
+
+	idx, err := NewWriter(context.Background(), filepath.Join(dir, "index"))
+	require.NoError(t, err)
+
+	require.NoError(t, idx.AddSymbol("1"))
+	require.NoError(t, idx.AddSymbol("2"))
+	require.NoError(t, idx.AddSymbol("__name__"))
+
+	require.NoError(t, idx.AddSeries(1, labels.FromStrings("__name__", "1"),
+		chunks.Meta{Ref: 1, MinTime: 0, MaxTime: 10}, // Also checks that first chunk can have MinTime: 0.
+		chunks.Meta{Ref: 2, MinTime: 11, MaxTime: 20},
+		chunks.Meta{Ref: 3, MinTime: 21, MaxTime: 30},
+	))
+
+	require.EqualError(t, idx.AddSeries(1, labels.FromStrings("__name__", "2"),
+		chunks.Meta{Ref: 10, MinTime: 0, MaxTime: 10},
+		chunks.Meta{Ref: 20, MinTime: 10, MaxTime: 20},
+	), "chunk minT 10 is not higher than previous chunk maxT 10")
+
+	require.EqualError(t, idx.AddSeries(1, labels.FromStrings("__name__", "2"),
+		chunks.Meta{Ref: 10, MinTime: 100, MaxTime: 30},
+	), "chunk maxT 30 is less than minT 100")
+
+	require.NoError(t, idx.Close())
 }

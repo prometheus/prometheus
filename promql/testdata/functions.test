@@ -221,19 +221,19 @@ eval instant at 50m deriv(testcounter_reset_middle[100m])
 # intercept at t=0: 6.818181818181818
 # intercept at t=3000: 38.63636363636364
 # intercept at t=3000+3600: 76.81818181818181
-eval instant at 50m predict_linear(testcounter_reset_middle[100m], 3600)
+eval instant at 50m predict_linear(testcounter_reset_middle[50m], 3600)
 	{} 76.81818181818181
 
 # intercept at t = 3000+3600 = 6600
-eval instant at 50m predict_linear(testcounter_reset_middle[100m] @ 3000, 3600)
+eval instant at 50m predict_linear(testcounter_reset_middle[50m] @ 3000, 3600)
 	{} 76.81818181818181
 
 # intercept at t = 600+3600 = 4200
-eval instant at 10m predict_linear(testcounter_reset_middle[100m] @ 3000, 3600)
+eval instant at 10m predict_linear(testcounter_reset_middle[50m] @ 3000, 3600)
 	{} 51.36363636363637
 
 # intercept at t = 4200+3600 = 7800
-eval instant at 70m predict_linear(testcounter_reset_middle[100m] @ 3000, 3600)
+eval instant at 70m predict_linear(testcounter_reset_middle[50m] @ 3000, 3600)
 	{} 89.54545454545455
 
 # With http_requests, there is a sample value exactly at the end of

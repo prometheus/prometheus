@@ -450,14 +450,12 @@ func (ls Labels) DropMetricName() Labels {
 	return ls
 }
 
-// InternStrings calls intern on every string value inside ls, replacing them with what it returns.
+// InternStrings is a no-op because it would only save when the whole set of labels is identical.
 func (ls *Labels) InternStrings(intern func(string) string) {
-	ls.data = intern(ls.data)
 }
 
-// ReleaseStrings calls release on every string value inside ls.
+// ReleaseStrings is a no-op for the same reason as InternStrings.
 func (ls Labels) ReleaseStrings(release func(string)) {
-	release(ls.data)
 }
 
 // Labels returns the labels from the builder.

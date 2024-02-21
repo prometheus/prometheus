@@ -146,8 +146,11 @@ type Writer struct {
 	labelNames   map[string]uint64     // Label names, and their usage.
 
 	// Hold last series to validate that clients insert new series in order.
-	lastSeries labels.Labels
-	lastRef    storage.SeriesRef
+	lastSeries    labels.Labels
+	lastSeriesRef storage.SeriesRef
+
+	// Hold last added chunk reference to make sure that chunks are ordered properly.
+	lastChunkRef chunks.ChunkRef
 
 	crc32 hash.Hash
 
@@ -433,9 +436,27 @@ func (w *Writer) AddSeries(ref storage.SeriesRef, lset labels.Labels, chunks ...
 		return fmt.Errorf("out-of-order series added with label set %q", lset)
 	}
 
-	if ref < w.lastRef && !w.lastSeries.IsEmpty() {
+	if ref < w.lastSeriesRef && !w.lastSeries.IsEmpty() {
 		return fmt.Errorf("series with reference greater than %d already added", ref)
 	}
+
+	lastChunkRef := w.lastChunkRef
+	lastMaxT := int64(0)
+	for ix, c := range chunks {
+		if c.Ref < lastChunkRef {
+			return fmt.Errorf("unsorted chunk reference: %d, previous: %d", c.Ref, lastChunkRef)
+		}
+		lastChunkRef = c.Ref
+
+		if ix > 0 && c.MinTime <= lastMaxT {
+			return fmt.Errorf("chunk minT %d is not higher than previous chunk maxT %d", c.MinTime, lastMaxT)
+		}
+		if c.MaxTime < c.MinTime {
+			return fmt.Errorf("chunk maxT %d is less than minT %d", c.MaxTime, c.MinTime)
+		}
+		lastMaxT = c.MaxTime
+	}
+
 	// We add padding to 16 bytes to increase the addressable space we get through 4 byte
 	// series references.
 	if err := w.addPadding(seriesByteAlign); err != nil {
@@ -510,7 +531,8 @@ func (w *Writer) AddSeries(ref storage.SeriesRef, lset labels.Labels, chunks ...
 	}
 
 	w.lastSeries.CopyFrom(lset)
-	w.lastRef = ref
+	w.lastSeriesRef = ref
+	w.lastChunkRef = lastChunkRef
 
 	return nil
 }
@@ -715,17 +737,11 @@ func (w *Writer) writeLabelIndexesOffsetTable() error {
 	}
 
 	// Write out the length.
-	w.buf1.Reset()
-	l := w.f.pos - startPos - 4
-	if l > math.MaxUint32 {
-		return fmt.Errorf("label indexes offset table size exceeds 4 bytes: %d", l)
+	err := w.writeLengthAndHash(startPos)
+	if err != nil {
+		return fmt.Errorf("label indexes offset table length/crc32 write error: %w", err)
 	}
-	w.buf1.PutBE32int(int(l))
-	if err := w.writeAt(w.buf1.Get(), startPos); err != nil {
-		return err
-	}
-
-	return w.writeLenghtAndHash(startPos)
+	return nil
 }
 
 // writePostingsOffsetTable writes the postings offset table.
@@ -793,25 +809,31 @@ func (w *Writer) writePostingsOffsetTable() error {
 	}
 	w.fPO = nil
 
-	return w.writeLenghtAndHash(startPos)
+	err = w.writeLengthAndHash(startPos)
+	if err != nil {
+		return fmt.Errorf("postings offset table length/crc32 write error: %w", err)
+	}
+	return nil
 }
 
-func (w *Writer) writeLenghtAndHash(startPos uint64) error {
-	// Write out the length.
+func (w *Writer) writeLengthAndHash(startPos uint64) error {
 	w.buf1.Reset()
 	l := w.f.pos - startPos - 4
 	if l > math.MaxUint32 {
-		return fmt.Errorf("postings offset table size exceeds 4 bytes: %d", l)
+		return fmt.Errorf("length size exceeds 4 bytes: %d", l)
 	}
 	w.buf1.PutBE32int(int(l))
 	if err := w.writeAt(w.buf1.Get(), startPos); err != nil {
-		return err
+		return fmt.Errorf("write length from buffer error: %w", err)
 	}
 
 	// Write out the hash.
 	w.buf1.Reset()
 	w.buf1.PutHashSum(w.crc32)
-	return w.write(w.buf1.Get())
+	if err := w.write(w.buf1.Get()); err != nil {
+		return fmt.Errorf("write buffer's crc32 error: %w", err)
+	}
+	return nil
 }
 
 const indexTOCLen = 6*8 + crc32.Size

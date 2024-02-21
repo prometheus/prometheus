@@ -815,16 +815,10 @@ func TestLexer(t *testing.T) {
 							hasError = true
 						}
 					}
-					if !hasError {
-						t.Logf("%d: input %q", i, test.input)
-						require.Fail(t, "expected lexing error but did not fail")
-					}
+					require.True(t, hasError, "%d: input %q, expected lexing error but did not fail", i, test.input)
 					continue
 				}
-				if lastItem.Typ == ERROR {
-					t.Logf("%d: input %q", i, test.input)
-					require.Fail(t, "unexpected lexing error at position %d: %s", lastItem.Pos, lastItem)
-				}
+				require.NotEqual(t, ERROR, lastItem.Typ, "%d: input %q, unexpected lexing error at position %d: %s", i, test.input, lastItem.Pos, lastItem)
 
 				eofItem := Item{EOF, posrange.Pos(len(test.input)), ""}
 				require.Equal(t, lastItem, eofItem, "%d: input %q", i, test.input)

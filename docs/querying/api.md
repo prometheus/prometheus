@@ -404,7 +404,7 @@ $ curl -g 'http://localhost:9090/api/v1/query_exemplars?query=test_exemplar_metr
             "exemplars": [
                 {
                     "labels": {
-                        "traceID": "EpTxMJ40fUus7aGY"
+                        "trace_id": "EpTxMJ40fUus7aGY"
                     },
                     "value": "6",
                     "timestamp": 1600096945.479
@@ -421,14 +421,14 @@ $ curl -g 'http://localhost:9090/api/v1/query_exemplars?query=test_exemplar_metr
             "exemplars": [
                 {
                     "labels": {
-                        "traceID": "Olp9XHlq763ccsfa"
+                        "trace_id": "Olp9XHlq763ccsfa"
                     },
                     "value": "19",
                     "timestamp": 1600096955.479
                 },
                 {
                     "labels": {
-                        "traceID": "hCtjygkIHwAN9vs4"
+                        "trace_id": "hCtjygkIHwAN9vs4"
                     },
                     "value": "20",
                     "timestamp": 1600096965.489

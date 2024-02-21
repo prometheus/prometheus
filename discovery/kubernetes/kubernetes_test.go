@@ -131,14 +131,8 @@ func (d k8sDiscoveryTest) Run(t *testing.T) {
 	go readResultWithTimeout(t, ch, d.expectedMaxItems, time.Second, resChan)
 
 	dd, ok := d.discovery.(hasSynced)
-	if !ok {
-		t.Errorf("discoverer does not implement hasSynced interface")
-		return
-	}
-	if !cache.WaitForCacheSync(ctx.Done(), dd.hasSynced) {
-		t.Errorf("discoverer failed to sync: %v", dd)
-		return
-	}
+	require.True(t, ok, "discoverer does not implement hasSynced interface")
+	require.True(t, cache.WaitForCacheSync(ctx.Done(), dd.hasSynced), "discoverer failed to sync: %v", dd)
 
 	if d.afterStart != nil {
 		d.afterStart()

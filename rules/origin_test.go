@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -43,9 +44,73 @@ func (u unknownRule) SetEvaluationDuration(time.Duration)  {}
 func (u unknownRule) GetEvaluationDuration() time.Duration { return 0 }
 func (u unknownRule) SetEvaluationTimestamp(time.Time)     {}
 func (u unknownRule) GetEvaluationTimestamp() time.Time    { return time.Time{} }
+func (u unknownRule) SetNoDependentRules(bool)             {}
+func (u unknownRule) NoDependentRules() bool               { return false }
+func (u unknownRule) SetNoDependencyRules(bool)            {}
+func (u unknownRule) NoDependencyRules() bool              { return false }
 
 func TestNewRuleDetailPanics(t *testing.T) {
 	require.PanicsWithValue(t, `unknown rule type "rules.unknownRule"`, func() {
 		NewRuleDetail(unknownRule{})
+	})
+}
+
+func TestFromOriginContext(t *testing.T) {
+	t.Run("should return zero value if RuleDetail is missing in the context", func(t *testing.T) {
+		detail := FromOriginContext(context.Background())
+		require.Zero(t, detail)
+
+		// The zero value for NoDependentRules must be the most conservative option.
+		require.False(t, detail.NoDependentRules)
+
+		// The zero value for NoDependencyRules must be the most conservative option.
+		require.False(t, detail.NoDependencyRules)
+	})
+}
+
+func TestNewRuleDetail(t *testing.T) {
+	t.Run("should populate NoDependentRules and NoDependencyRules for a RecordingRule", func(t *testing.T) {
+		rule := NewRecordingRule("test", &parser.NumberLiteral{Val: 1}, labels.EmptyLabels())
+		detail := NewRuleDetail(rule)
+		require.False(t, detail.NoDependentRules)
+		require.False(t, detail.NoDependencyRules)
+
+		rule.SetNoDependentRules(true)
+		detail = NewRuleDetail(rule)
+		require.True(t, detail.NoDependentRules)
+		require.False(t, detail.NoDependencyRules)
+
+		rule.SetNoDependencyRules(true)
+		detail = NewRuleDetail(rule)
+		require.True(t, detail.NoDependentRules)
+		require.True(t, detail.NoDependencyRules)
+	})
+
+	t.Run("should populate NoDependentRules and NoDependencyRules for a AlertingRule", func(t *testing.T) {
+		rule := NewAlertingRule(
+			"test",
+			&parser.NumberLiteral{Val: 1},
+			time.Minute,
+			0,
+			labels.FromStrings("test", "test"),
+			labels.EmptyLabels(),
+			labels.EmptyLabels(),
+			"",
+			true, log.NewNopLogger(),
+		)
+
+		detail := NewRuleDetail(rule)
+		require.False(t, detail.NoDependentRules)
+		require.False(t, detail.NoDependencyRules)
+
+		rule.SetNoDependentRules(true)
+		detail = NewRuleDetail(rule)
+		require.True(t, detail.NoDependentRules)
+		require.False(t, detail.NoDependencyRules)
+
+		rule.SetNoDependencyRules(true)
+		detail = NewRuleDetail(rule)
+		require.True(t, detail.NoDependentRules)
+		require.True(t, detail.NoDependencyRules)
 	})
 }

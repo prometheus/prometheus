@@ -119,6 +119,7 @@ type ManagerOptions struct {
 	MaxConcurrentEvals        int64
 	ConcurrentEvalsEnabled    bool
 	RuleConcurrencyController RuleConcurrencyController
+	RuleDependencyController  RuleDependencyController
 
 	Metrics *Metrics
 }
@@ -140,6 +141,10 @@ func NewManager(o *ManagerOptions) *Manager {
 		} else {
 			o.RuleConcurrencyController = sequentialRuleEvalController{}
 		}
+	}
+
+	if o.RuleDependencyController == nil {
+		o.RuleDependencyController = ruleDependencyController{}
 	}
 
 	m := &Manager{
@@ -187,8 +192,6 @@ func (m *Manager) Stop() {
 func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string, groupEvalIterationFunc GroupEvalIterationFunc) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
-
-	m.opts.RuleConcurrencyController.Invalidate()
 
 	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, groupEvalIterationFunc, files...)
 
@@ -322,6 +325,9 @@ func (m *Manager) LoadGroups(
 				))
 			}
 
+			// Check dependencies between rules and store it on the Rule itself.
+			m.opts.RuleDependencyController.AnalyseRules(rules)
+
 			groups[GroupKey(fn, rg.Name)] = NewGroup(GroupOptions{
 				Name:              rg.Name,
 				File:              fn,
@@ -418,24 +424,35 @@ func SendAlerts(s Sender, externalURL string) NotifyFunc {
 	}
 }
 
-// RuleConcurrencyController controls whether rules can be evaluated concurrently. Its purpose is to bound the amount
-// of concurrency in rule evaluations to avoid overwhelming the Prometheus server with additional query load and ensure
-// the correctness of rules running concurrently. Concurrency is controlled globally, not on a per-group basis.
-type RuleConcurrencyController interface {
-	// RuleEligible determines if the rule can guarantee correct results while running concurrently.
-	RuleEligible(g *Group, r Rule) bool
+// RuleDependencyController controls whether a set of rules have dependencies between each other.
+type RuleDependencyController interface {
+	// AnalyseRules analyses dependencies between the input rules. For each rule that it's guaranteed
+	// not having any dependants and/or dependency, this function should call Rule.SetNoDependentRules(true)
+	// and/or Rule.SetNoDependencyRules(true).
+	AnalyseRules(rules []Rule)
+}
 
+type ruleDependencyController struct{}
+
+// AnalyseRules implements RuleDependencyController.
+func (c ruleDependencyController) AnalyseRules(rules []Rule) {
+	depMap := buildDependencyMap(rules)
+	for _, r := range rules {
+		r.SetNoDependentRules(depMap.dependents(r) == 0)
+		r.SetNoDependencyRules(depMap.dependencies(r) == 0)
+	}
+}
+
+// RuleConcurrencyController controls concurrency for rules that are safe to be evaluated concurrently.
+// Its purpose is to bound the amount of concurrency in rule evaluations to avoid overwhelming the Prometheus
+// server with additional query load. Concurrency is controlled globally, not on a per-group basis.
+type RuleConcurrencyController interface {
 	// Allow determines whether any concurrent evaluation slots are available.
 	// If Allow() returns true, then Done() must be called to release the acquired slot.
 	Allow() bool
 
 	// Done releases a concurrent evaluation slot.
 	Done()
-
-	// Invalidate instructs the controller to invalidate its state.
-	// This should be called when groups are modified (during a reload, for instance), because the controller may
-	// store some state about each group in order to more efficiently determine rule eligibility.
-	Invalidate()
 }
 
 // concurrentRuleEvalController holds a weighted semaphore which controls the concurrent evaluation of rules.
