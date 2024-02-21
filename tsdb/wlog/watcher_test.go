@@ -714,8 +714,8 @@ func TestRun_AvoidNotifyWhenBehind(t *testing.T) {
 	const seriesCount = 20
 	const samplesCount = 300
 
-	// This test may take slightly more than 1s to finish in cloud CI.
-	readTimeout := 2 * time.Second
+	// This test can take longer than intended to finish in cloud CI.
+	readTimeout := 10 * time.Second
 
 	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
 		t.Run(string(compress), func(t *testing.T) {
