@@ -23,7 +23,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/config"
@@ -48,13 +47,14 @@ type readHandler struct {
 // NewReadHandler creates a http.Handler that accepts remote read requests and
 // writes them to the provided queryable.
 func NewReadHandler(logger log.Logger, r prometheus.Registerer, queryable storage.SampleAndChunkQueryable, config func() config.Config, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame int) http.Handler {
-	waitDuration := promauto.With(r).NewCounter(prometheus.CounterOpts{
+	waitDuration := prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace:   "prometheus",
 		Subsystem:   "api",
 		Help:        "Total number of seconds spent waiting at the query gate before remote read query execution",
 		Name:        "remote_read_wait_duration_seconds_total",
 		ConstLabels: prometheus.Labels{"name": "read_handler"},
 	})
+
 	h := &readHandler{
 		logger:                    logger,
 		queryable:                 queryable,
@@ -62,17 +62,16 @@ func NewReadHandler(logger log.Logger, r prometheus.Registerer, queryable storag
 		remoteReadSampleLimit:     remoteReadSampleLimit,
 		remoteReadGate:            gate.New(remoteReadConcurrencyLimit, &waitDuration),
 		remoteReadMaxBytesInFrame: remoteReadMaxBytesInFrame,
-		marshalPool:               &sync.Pool{},
-
 		queries: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: "prometheus",
 			Subsystem: "api", // TODO: changes to storage in Prometheus 3.0.
 			Name:      "remote_read_queries",
 			Help:      "The current number of remote read queries being executed or waiting.",
 		}),
+		marshalPool: &sync.Pool{},
 	}
 	if r != nil {
-		r.MustRegister(h.queries)
+		r.MustRegister(h.queries, waitDuration)
 	}
 	return h
 }
