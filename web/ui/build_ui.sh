@@ -33,7 +33,7 @@ function buildReactApp() {
   echo "build react-app"
   npm run build -w @prometheus-io/app
   rm -rf ./static/react
-  mv ./react-app/build ./static/react
+  mv ./app/dist ./static/react
 }
 
 for i in "$@"; do

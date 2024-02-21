@@ -1,5 +1,5 @@
 {
-  "name": "app",
+  "name": "@prometheus-io/app",
   "private": true,
   "version": "0.0.0",
   "type": "module",

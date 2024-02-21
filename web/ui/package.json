@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "build": "npm run build -w app",
+    "build": "GENERATE_SOURCEMAP=false bash build_ui.sh --all",
     "build:module": "bash build_ui.sh --build-module",
     "start": "npm run start -w app"
   },
