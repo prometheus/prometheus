@@ -166,7 +166,7 @@ func FindSetMatches(pattern string) []string {
 			escaped = false
 			continue
 		}
-		
+
 		switch {
 		case isRegexMetaCharacter(pattern[i]):
 			if pattern[i] == '|' {
@@ -179,7 +179,7 @@ func FindSetMatches(pattern string) []string {
 		default:
 			sets[len(sets)-1].WriteByte(pattern[i])
 		}
-	
+
 	}
 	matches := make([]string, 0, len(sets))
 	for _, s := range sets {
