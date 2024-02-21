@@ -1,0 +1,39 @@
+{
+  "name": "app",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "vite",
+    "build": "tsc && vite build",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@codemirror/autocomplete": "^6.11.1",
+    "@codemirror/commands": "^6.3.2",
+    "@codemirror/language": "^6.9.3",
+    "@codemirror/lint": "^6.4.2",
+    "@codemirror/search": "^6.5.5",
+    "@codemirror/state": "^6.3.3",
+    "@codemirror/view": "^6.22.1",
+    "@lezer/common": "^1.2.1",
+    "@lezer/highlight": "^1.2.0",
+    "@mantine/code-highlight": "^7.5.3",
+    "@mantine/core": "^7.5.3",
+    "@mantine/dates": "^7.5.3",
+    "@mantine/hooks": "^7.5.3",
+    "@prometheus-io/codemirror-promql": "0.49.1",
+    "@uiw/react-codemirror": "^4.21.22",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.55",
+    "@types/react-dom": "^18.2.19",
+    "@vitejs/plugin-react-swc": "^3.5.0",
+    "eslint": "^8.56.0",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "eslint-plugin-react-refresh": "^0.4.5"
+  }
+}
