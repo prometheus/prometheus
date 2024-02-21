@@ -169,7 +169,7 @@ func TestTailSamples(t *testing.T) {
 							Ref:    chunks.HeadSeriesRef(inner),
 							T:      now.UnixNano() + 1,
 							V:      float64(i),
-							Labels: labels.FromStrings("traceID", fmt.Sprintf("trace-%d", inner)),
+							Labels: labels.FromStrings("trace_id", fmt.Sprintf("trace-%d", inner)),
 						},
 					}, nil)
 					require.NoError(t, w.Log(exemplar))

@@ -66,12 +66,15 @@ C     [^\n]
 #                                     return l.consumeComment()
 <sComment>HELP[\t ]+                  l.state = sMeta1; return tHelp
 <sComment>TYPE[\t ]+                  l.state = sMeta1; return tType
+<sMeta1>\"(\\.|[^\\"])*\"             l.state = sMeta2; return tMName
 <sMeta1>{M}({M}|{D})*                 l.state = sMeta2; return tMName
 <sMeta2>{C}*                          l.state = sInit; return tText
 
 {M}({M}|{D})*                         l.state = sValue; return tMName
 <sValue>\{                            l.state = sLabels; return tBraceOpen
+\{                                    l.state = sLabels; return tBraceOpen
 <sLabels>{L}({L}|{D})*                return tLName
+<sLabels>\"(\\.|[^\\"])*\"            l.state = sLabels; return tQString
 <sLabels>\}                           l.state = sValue; return tBraceClose
 <sLabels>=                            l.state = sLValue; return tEqual
 <sLabels>,                            return tComma

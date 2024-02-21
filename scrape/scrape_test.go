@@ -1332,7 +1332,7 @@ func TestScrapeLoopAppend(t *testing.T) {
 			// Honor Labels should ignore labels with the same name.
 			title:           "Honor Labels",
 			honorLabels:     true,
-			scrapeLabels:    `metric{n1="1" n2="2"} 0`,
+			scrapeLabels:    `metric{n1="1", n2="2"} 0`,
 			discoveryLabels: []string{"n1", "0"},
 			expLset:         labels.FromStrings("__name__", "metric", "n1", "1", "n2", "2"),
 			expValue:        0,
@@ -1406,7 +1406,7 @@ func TestScrapeLoopAppendForConflictingPrefixedLabels(t *testing.T) {
 		},
 		"One target label collides with existing label, plus existing label already with prefix 'exported": {
 			targetLabels:  []string{"foo", "3"},
-			exposedLabels: `metric{foo="1" exported_foo="2"} 0`,
+			exposedLabels: `metric{foo="1", exported_foo="2"} 0`,
 			expected:      []string{"__name__", "metric", "exported_exported_foo", "1", "exported_foo", "2", "foo", "3"},
 		},
 		"One target label collides with existing label, both already with prefix 'exported'": {
@@ -1416,7 +1416,7 @@ func TestScrapeLoopAppendForConflictingPrefixedLabels(t *testing.T) {
 		},
 		"Two target labels collide with existing labels, both with and without prefix 'exported'": {
 			targetLabels:  []string{"foo", "3", "exported_foo", "4"},
-			exposedLabels: `metric{foo="1" exported_foo="2"} 0`,
+			exposedLabels: `metric{foo="1", exported_foo="2"} 0`,
 			expected: []string{
 				"__name__", "metric", "exported_exported_foo", "1", "exported_exported_exported_foo",
 				"2", "exported_foo", "4", "foo", "3",
@@ -1424,7 +1424,7 @@ func TestScrapeLoopAppendForConflictingPrefixedLabels(t *testing.T) {
 		},
 		"Extreme example": {
 			targetLabels:  []string{"foo", "0", "exported_exported_foo", "1", "exported_exported_exported_foo", "2"},
-			exposedLabels: `metric{foo="3" exported_foo="4" exported_exported_exported_foo="5"} 0`,
+			exposedLabels: `metric{foo="3", exported_foo="4", exported_exported_exported_foo="5"} 0`,
 			expected: []string{
 				"__name__", "metric",
 				"exported_exported_exported_exported_exported_foo", "5",

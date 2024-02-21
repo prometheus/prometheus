@@ -102,9 +102,9 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	}, decTstones)
 
 	exemplars := []RefExemplar{
-		{Ref: 0, T: 12423423, V: 1.2345, Labels: labels.FromStrings("traceID", "qwerty")},
-		{Ref: 123, T: -1231, V: -123, Labels: labels.FromStrings("traceID", "asdf")},
-		{Ref: 2, T: 0, V: 99999, Labels: labels.FromStrings("traceID", "zxcv")},
+		{Ref: 0, T: 12423423, V: 1.2345, Labels: labels.FromStrings("trace_id", "qwerty")},
+		{Ref: 123, T: -1231, V: -123, Labels: labels.FromStrings("trace_id", "asdf")},
+		{Ref: 2, T: 0, V: 99999, Labels: labels.FromStrings("trace_id", "zxcv")},
 	}
 	decExemplars, err := dec.Exemplars(enc.Exemplars(exemplars, nil), nil)
 	require.NoError(t, err)
@@ -227,7 +227,7 @@ func TestRecord_Corrupted(t *testing.T) {
 
 	t.Run("Test corrupted exemplar record", func(t *testing.T) {
 		exemplars := []RefExemplar{
-			{Ref: 0, T: 12423423, V: 1.2345, Labels: labels.FromStrings("traceID", "asdf")},
+			{Ref: 0, T: 12423423, V: 1.2345, Labels: labels.FromStrings("trace_id", "asdf")},
 		}
 
 		corrupted := enc.Exemplars(exemplars, nil)[:8]

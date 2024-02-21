@@ -134,14 +134,14 @@ func TestJsonCodec_Encode(t *testing.T) {
 					SeriesLabels: labels.FromStrings("foo", "bar"),
 					Exemplars: []exemplar.Exemplar{
 						{
-							Labels: labels.FromStrings("traceID", "abc"),
+							Labels: labels.FromStrings("trace_id", "abc"),
 							Value:  100.123,
 							Ts:     1234,
 						},
 					},
 				},
 			},
-			expected: `{"status":"success","data":[{"seriesLabels":{"foo":"bar"},"exemplars":[{"labels":{"traceID":"abc"},"value":"100.123","timestamp":1.234}]}]}`,
+			expected: `{"status":"success","data":[{"seriesLabels":{"foo":"bar"},"exemplars":[{"labels":{"trace_id":"abc"},"value":"100.123","timestamp":1.234}]}]}`,
 		},
 		{
 			response: []exemplar.QueryResult{
@@ -149,14 +149,14 @@ func TestJsonCodec_Encode(t *testing.T) {
 					SeriesLabels: labels.FromStrings("foo", "bar"),
 					Exemplars: []exemplar.Exemplar{
 						{
-							Labels: labels.FromStrings("traceID", "abc"),
+							Labels: labels.FromStrings("trace_id", "abc"),
 							Value:  math.Inf(1),
 							Ts:     1234,
 						},
 					},
 				},
 			},
-			expected: `{"status":"success","data":[{"seriesLabels":{"foo":"bar"},"exemplars":[{"labels":{"traceID":"abc"},"value":"+Inf","timestamp":1.234}]}]}`,
+			expected: `{"status":"success","data":[{"seriesLabels":{"foo":"bar"},"exemplars":[{"labels":{"trace_id":"abc"},"value":"+Inf","timestamp":1.234}]}]}`,
 		},
 	}
 

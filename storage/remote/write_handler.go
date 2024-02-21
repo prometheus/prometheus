@@ -81,7 +81,7 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// checkAppendExemplarError modifies the AppendExamplar's returned error based on the error cause.
+// checkAppendExemplarError modifies the AppendExemplar's returned error based on the error cause.
 func (h *writeHandler) checkAppendExemplarError(err error, e exemplar.Exemplar, outOfOrderErrs *int) error {
 	unwrappedErr := errors.Unwrap(err)
 	if unwrappedErr == nil {

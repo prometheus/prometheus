@@ -585,7 +585,7 @@ func createExemplars(numExemplars, numSeries int) ([]record.RefExemplar, []recor
 				Ref:    chunks.HeadSeriesRef(i),
 				T:      int64(j),
 				V:      float64(i),
-				Labels: labels.FromStrings("traceID", fmt.Sprintf("trace-%d", i)),
+				Labels: labels.FromStrings("trace_id", fmt.Sprintf("trace-%d", i)),
 			}
 			exemplars = append(exemplars, e)
 		}

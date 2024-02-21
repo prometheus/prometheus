@@ -375,7 +375,7 @@ func BenchmarkLoadWLs(b *testing.B) {
 									Ref:    chunks.HeadSeriesRef(k) * 101,
 									T:      int64(i) * 10,
 									V:      float64(i) * 100,
-									Labels: labels.FromStrings("traceID", fmt.Sprintf("trace-%d", i)),
+									Labels: labels.FromStrings("trace_id", fmt.Sprintf("trace-%d", i)),
 								})
 							}
 							populateTestWL(b, wal, []interface{}{refExemplars})
@@ -660,7 +660,7 @@ func TestHead_ReadWAL(t *testing.T) {
 					{Ref: 0, Intervals: []tombstones.Interval{{Mint: 99, Maxt: 101}}},
 				},
 				[]record.RefExemplar{
-					{Ref: 10, T: 100, V: 1, Labels: labels.FromStrings("traceID", "asdf")},
+					{Ref: 10, T: 100, V: 1, Labels: labels.FromStrings("trace_id", "asdf")},
 				},
 			}
 
@@ -709,7 +709,7 @@ func TestHead_ReadWAL(t *testing.T) {
 			require.NoError(t, err)
 			e, err := q.Select(0, 1000, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "1")})
 			require.NoError(t, err)
-			require.True(t, exemplar.Exemplar{Ts: 100, Value: 1, Labels: labels.FromStrings("traceID", "asdf")}.Equals(e[0].Exemplars[0]))
+			require.True(t, exemplar.Exemplar{Ts: 100, Value: 1, Labels: labels.FromStrings("trace_id", "asdf")}.Equals(e[0].Exemplars[0]))
 		})
 	}
 }
@@ -3049,7 +3049,7 @@ func TestHeadExemplars(t *testing.T) {
 	head, _ := newTestHead(t, chunkRange, wlog.CompressionNone, false)
 	app := head.Appender(context.Background())
 
-	l := labels.FromStrings("traceId", "123")
+	l := labels.FromStrings("trace_id", "123")
 	// It is perfectly valid to add Exemplars before the current start time -
 	// histogram buckets that haven't been update in a while could still be
 	// exported exemplars from an hour ago.
@@ -3694,7 +3694,7 @@ func TestChunkSnapshot(t *testing.T) {
 		e := ex{
 			seriesLabels: lbls,
 			e: exemplar.Exemplar{
-				Labels: labels.FromStrings("traceID", fmt.Sprintf("%d", rand.Int())),
+				Labels: labels.FromStrings("trace_id", fmt.Sprintf("%d", rand.Int())),
 				Value:  rand.Float64(),
 				Ts:     ts,
 			},
