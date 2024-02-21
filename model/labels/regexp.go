@@ -21,7 +21,7 @@ import (
 	"github.com/grafana/regexp/syntax"
 )
 
-// Bitmap used by func isRegexMetaCharacter to check whether a character needs to be escaped.
+// regexMetaCharacterBytes is a bitmap used by func isRegexMetaCharacter to check whether a character needs to be escaped.
 var regexMetaCharacterBytes [16]byte
 
 // isRegexMetaCharacter reports whether byte b needs to be escaped.
