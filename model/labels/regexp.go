@@ -139,6 +139,7 @@ func optimizeConcatRegex(r *syntax.Regexp) (prefix, suffix, contains string) {
 	return
 }
 
+// FindSetMatches returns set matches detected in a regular expression pattern.
 func FindSetMatches(pattern string) []string {
 	// Return empty matches if the wrapper from Prometheus is missing.
 	if len(pattern) < 6 || pattern[:4] != "^(?:" || pattern[len(pattern)-2:] != ")$" {
