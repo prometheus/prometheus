@@ -4,18 +4,19 @@
   "scripts": {
     "build": "GENERATE_SOURCEMAP=false bash build_ui.sh --all",
     "build:module": "bash build_ui.sh --build-module",
-    "start": "npm run start -w react-app",
+    "start": "npm run start -w mantine-ui",
     "test": "npm run test --workspaces",
     "lint": "npm run lint --workspaces"
   },
   "workspaces": [
-    "react-app",
+    "mantine-ui",
     "module/*"
   ],
   "engines": {
     "npm": ">=7.0.0"
   },
   "devDependencies": {
+    "@rollup/plugin-node-resolve": "^15.2.3",
     "@types/jest": "^29.5.11",
     "@types/node": "^20.10.4",
     "eslint-config-prettier": "^8.10.0",
@@ -24,9 +25,9 @@
     "jest-canvas-mock": "^2.5.2",
     "jest-fetch-mock": "^3.0.3",
     "prettier": "^2.8.8",
-    "react-scripts": "^5.0.1",
+    "rollup": "^4.12.0",
     "ts-jest": "^29.1.1",
-    "typescript": "^4.9.5"
+    "typescript": "^5.3.3"
   },
   "version": "0.49.1"
 }

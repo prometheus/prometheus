@@ -30,10 +30,10 @@ function buildModule() {
 }
 
 function buildReactApp() {
-  echo "build react-app"
-  npm run build -w @prometheus-io/app
+  echo "build mantine-ui"
+  npm run build -w @prometheus-io/mantine-ui
   rm -rf ./static/react
-  mv ./react-app/build ./static/react
+  mv ./mantine-ui/dist ./static/react
 }
 
 for i in "$@"; do

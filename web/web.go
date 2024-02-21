@@ -436,8 +436,8 @@ func New(logger log.Logger, o *Options) *Handler {
 	}
 
 	// Static files required by the React app.
-	router.Get("/static/*filepath", func(w http.ResponseWriter, r *http.Request) {
-		r.URL.Path = path.Join("/static/react/static", route.Param(r.Context(), "filepath"))
+	router.Get("/assets/*filepath", func(w http.ResponseWriter, r *http.Request) {
+		r.URL.Path = path.Join("/static/react/assets", route.Param(r.Context(), "filepath"))
 		fs := server.StaticFileServer(ui.Assets)
 		fs.ServeHTTP(w, r)
 	})
