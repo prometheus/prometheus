@@ -45,7 +45,7 @@ message TimeSeries {
   // or created timestamp.
   repeated uint32 labels_refs = 1;
 
-  // samples contain zero or more samples for a given timeseries. For a typical
+  // samples contain zero or more samples for a given timeseries. For typical
   // clients, in healthy cases, there will be only one sample, for ~real
   // time metric streaming. Samples can, in theory, co-exist with histogram samples
   // (histograms field), although it should be extremely rare in practice (e.g.
@@ -55,7 +55,7 @@ message TimeSeries {
   // Samples are sorted by timestamp (older first).
   repeated Sample samples = 2 [(gogoproto.nullable) = false];
   // histograms contain zero or more histogram samples for a given timeseries.
-  // For a typical clients, in healthy cases, there will be only one sample, for ~real
+  // For typical clients, in healthy cases, there will be only one sample, for ~real
   // time metric streaming. histograms can co-exist with samples (see samples
   // for details).
   //
