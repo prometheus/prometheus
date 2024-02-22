@@ -1,10 +1,6 @@
 # Changelog
 
-## 2.50.0-rc.1 / 2024-02-19
-
-[BUGFIX] Azure SD: Fix SD crashing when it finds a VM scale set. #13578
-
-## 2.50.0-rc.0 / 2024-02-07
+## 2.50.0 / 2024-02-22
 
 * [CHANGE] Remote Write: Error `storage.ErrTooOldSample` is now generating HTTP error 400 instead of HTTP error 500. #13335
 * [FEATURE] Remote Write: Drop old inmemory samples. Activated using the config entry `sample_age_limit`. #13002
@@ -30,6 +26,7 @@
 * [ENHANCEMENT] Various improvements and optimizations on Native Histograms. #13267, #13215, #13276 #13289, #13340
 * [BUGFIX] Scraping: Fix quality value in HTTP Accept header. #13313
 * [BUGFIX] UI: Fix usage of the function `time()` that was crashing. #13371
+* [BUGFIX] Azure SD: Fix SD crashing when it finds a VM scale set. #13578
 
 ## 2.49.1 / 2024-01-15
 
