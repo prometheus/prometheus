@@ -48,11 +48,10 @@ type readHandler struct {
 // writes them to the provided queryable.
 func NewReadHandler(logger log.Logger, r prometheus.Registerer, queryable storage.SampleAndChunkQueryable, config func() config.Config, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame int) http.Handler {
 	waitDuration := prometheus.NewCounter(prometheus.CounterOpts{
-		Namespace:   "prometheus",
-		Subsystem:   "api",
-		Help:        "Total number of seconds spent waiting at the query gate before remote read query execution",
-		Name:        "remote_read_wait_duration_seconds_total",
-		ConstLabels: prometheus.Labels{"name": "read_handler"},
+		Namespace: "prometheus",
+		Subsystem: "api",
+		Name:      "remote_read_wait_duration_seconds_total",
+		Help:      "Total number of seconds spent waiting at the query gate before remote read query execution",
 	})
 
 	h := &readHandler{
