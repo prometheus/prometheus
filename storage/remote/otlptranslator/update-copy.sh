@@ -1,7 +1,7 @@
 #!/bin/bash
 set -xe
 
-OTEL_VERSION=v0.88.0
+OTEL_VERSION=v0.95.0
 
 git clone https://github.com/open-telemetry/opentelemetry-collector-contrib ./tmp
 cd ./tmp
