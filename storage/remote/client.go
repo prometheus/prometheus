@@ -32,10 +32,12 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/sigv4"
 	"github.com/prometheus/common/version"
+
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage/remote/azuread"
 )
@@ -81,9 +83,9 @@ func init() {
 
 // Client allows reading and writing from/to a remote HTTP endpoint.
 type Client struct {
-	remoteName string            // Used to differentiate clients in metrics.
-	urlString  string            // url.String()
-	rwFormat   RemoteWriteFormat // For write clients, ignored for read clients.
+	remoteName string                   // Used to differentiate clients in metrics.
+	urlString  string                   // url.String()
+	rwFormat   config.RemoteWriteFormat // For write clients, ignored for read clients.
 	Client     *http.Client
 	timeout    time.Duration
 
@@ -97,7 +99,7 @@ type Client struct {
 // ClientConfig configures a client.
 type ClientConfig struct {
 	URL               *config_util.URL
-	RemoteWriteFormat RemoteWriteFormat
+	RemoteWriteFormat config.RemoteWriteFormat
 	Timeout           model.Duration
 	HTTPClientConfig  config_util.HTTPClientConfig
 	SigV4Config       *sigv4.SigV4Config
@@ -144,22 +146,22 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 	}
 	t := httpClient.Transport
 
+	if len(conf.Headers) > 0 {
+		t = newInjectHeadersRoundTripper(conf.Headers, t)
+	}
+
 	if conf.SigV4Config != nil {
-		t, err = sigv4.NewSigV4RoundTripper(conf.SigV4Config, httpClient.Transport)
+		t, err = sigv4.NewSigV4RoundTripper(conf.SigV4Config, t)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	if conf.AzureADConfig != nil {
-		t, err = azuread.NewAzureADRoundTripper(conf.AzureADConfig, httpClient.Transport)
+		t, err = azuread.NewAzureADRoundTripper(conf.AzureADConfig, t)
 		if err != nil {
 			return nil, err
 		}
-	}
-
-	if len(conf.Headers) > 0 {
-		t = newInjectHeadersRoundTripper(conf.Headers, t)
 	}
 
 	httpClient.Transport = otelhttp.NewTransport(t)
@@ -215,7 +217,7 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) error {
 		httpReq.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion1HeaderValue)
 	} else {
 		// Set the right header if we're using v1.1 remote write protocol
-		httpReq.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion11HeaderValue)
+		httpReq.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion2HeaderValue)
 	}
 
 	if attempt > 0 {

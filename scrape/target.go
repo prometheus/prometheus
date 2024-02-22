@@ -387,6 +387,35 @@ func (app *bucketLimitAppender) AppendHistogram(ref storage.SeriesRef, lset labe
 	return ref, nil
 }
 
+const (
+	nativeHistogramMaxSchema int32 = 8
+	nativeHistogramMinSchema int32 = -4
+)
+
+type maxSchemaAppender struct {
+	storage.Appender
+
+	maxSchema int32
+}
+
+func (app *maxSchemaAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	if h != nil {
+		if h.Schema > app.maxSchema {
+			h = h.ReduceResolution(app.maxSchema)
+		}
+	}
+	if fh != nil {
+		if fh.Schema > app.maxSchema {
+			fh = fh.ReduceResolution(app.maxSchema)
+		}
+	}
+	ref, err := app.Appender.AppendHistogram(ref, lset, t, h, fh)
+	if err != nil {
+		return 0, err
+	}
+	return ref, nil
+}
+
 // PopulateLabels builds a label set from the given label set and scrape configuration.
 // It returns a label set before relabeling was applied as the second return value.
 // Returns the original discovered label set found before relabelling was applied if the target is dropped during relabeling.

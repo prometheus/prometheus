@@ -429,14 +429,33 @@ func (ls Labels) Validate(f func(l Label) error) error {
 	return nil
 }
 
-// InternStrings calls intern on every string value inside ls, replacing them with what it returns.
-func (ls *Labels) InternStrings(intern func(string) string) {
-	ls.data = intern(ls.data)
+// DropMetricName returns Labels with "__name__" removed.
+func (ls Labels) DropMetricName() Labels {
+	for i := 0; i < len(ls.data); {
+		lName, i2 := decodeString(ls.data, i)
+		size, i2 := decodeSize(ls.data, i2)
+		i2 += size
+		if lName == MetricName {
+			if i == 0 { // Make common case fast with no allocations.
+				ls.data = ls.data[i2:]
+			} else {
+				ls.data = ls.data[:i] + ls.data[i2:]
+			}
+			break
+		} else if lName[0] > MetricName[0] { // Stop looking if we've gone past.
+			break
+		}
+		i = i2
+	}
+	return ls
 }
 
-// ReleaseStrings calls release on every string value inside ls.
+// InternStrings is a no-op because it would only save when the whole set of labels is identical.
+func (ls *Labels) InternStrings(intern func(string) string) {
+}
+
+// ReleaseStrings is a no-op for the same reason as InternStrings.
 func (ls Labels) ReleaseStrings(release func(string)) {
-	release(ls.data)
 }
 
 // Labels returns the labels from the builder.

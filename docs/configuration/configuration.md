@@ -451,6 +451,46 @@ metric_relabel_configs:
 # native histogram. If this is exceeded, the entire scrape will be treated as
 # failed. 0 means no limit.
 [ native_histogram_bucket_limit: <int> | default = 0 ]
+
+# Lower limit for the growth factor of one bucket to the next in each native
+# histogram. The resolution of a histogram with a lower growth factor will be
+# reduced until it is within the limit.
+# To set an upper limit for the schema (equivalent to "scale" in OTel's
+# exponential histograms), use the following factor limits:
+# 
+# +----------------------------+----------------------------+
+# |        growth factor       | resulting schema AKA scale |
+# +----------------------------+----------------------------+
+# |          65536             |             -4             |
+# +----------------------------+----------------------------+
+# |            256             |             -3             |
+# +----------------------------+----------------------------+
+# |             16             |             -2             |
+# +----------------------------+----------------------------+
+# |              4             |             -1             |
+# +----------------------------+----------------------------+
+# |              2             |              0             |
+# +----------------------------+----------------------------+
+# |              1.4           |              1             |
+# +----------------------------+----------------------------+
+# |              1.1           |              2             |
+# +----------------------------+----------------------------+
+# |              1.09          |              3             |
+# +----------------------------+----------------------------+
+# |              1.04          |              4             |
+# +----------------------------+----------------------------+
+# |              1.02          |              5             |
+# +----------------------------+----------------------------+
+# |              1.01          |              6             |
+# +----------------------------+----------------------------+
+# |              1.005         |              7             |
+# +----------------------------+----------------------------+
+# |              1.002         |              8             |
+# +----------------------------+----------------------------+
+# 
+# 0 results in the smallest supported factor (which is currently ~1.0027 or
+# schema 8, but might change in the future).
+[ native_histogram_min_bucket_factor: <float> | default = 0 ]
 ```
 
 Where `<job_name>` must be unique across all scrape configurations.
@@ -3619,6 +3659,10 @@ queue_config:
   # Retry upon receiving a 429 status code from the remote-write storage.
   # This is experimental and might change in the future.
   [ retry_on_http_429: <boolean> | default = false ]
+  # If set, any sample that is older than sample_age_limit
+  # will not be sent to the remote storage. The default value is 0s,
+  # which means that all samples are sent.
+  [ sample_age_limit: <duration> | default = 0s ]
 
 # Configures the sending of series metadata to remote storage.
 # Metadata configuration is subject to change at any point

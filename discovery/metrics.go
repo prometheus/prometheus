@@ -38,7 +38,7 @@ type Metrics struct {
 	SentUpdates       prometheus.Counter
 }
 
-func NewMetrics(registerer prometheus.Registerer, sdManagerName string) (*Metrics, error) {
+func NewManagerMetrics(registerer prometheus.Registerer, sdManagerName string) (*Metrics, error) {
 	m := &Metrics{}
 
 	m.FailedConfigs = prometheus.NewGauge(

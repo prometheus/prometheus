@@ -142,6 +142,9 @@ type AlertingRule struct {
 	active map[uint64]*Alert
 
 	logger log.Logger
+
+	noDependentRules  *atomic.Bool
+	noDependencyRules *atomic.Bool
 }
 
 // NewAlertingRule constructs a new AlertingRule.
@@ -168,6 +171,8 @@ func NewAlertingRule(
 		evaluationTimestamp: atomic.NewTime(time.Time{}),
 		evaluationDuration:  atomic.NewDuration(0),
 		lastError:           atomic.NewError(nil),
+		noDependentRules:    atomic.NewBool(false),
+		noDependencyRules:   atomic.NewBool(false),
 	}
 }
 
@@ -315,6 +320,22 @@ func (r *AlertingRule) SetRestored(restored bool) {
 // Restored returns the restoration state of the alerting rule.
 func (r *AlertingRule) Restored() bool {
 	return r.restored.Load()
+}
+
+func (r *AlertingRule) SetNoDependentRules(noDependentRules bool) {
+	r.noDependentRules.Store(noDependentRules)
+}
+
+func (r *AlertingRule) NoDependentRules() bool {
+	return r.noDependentRules.Load()
+}
+
+func (r *AlertingRule) SetNoDependencyRules(noDependencyRules bool) {
+	r.noDependencyRules.Store(noDependencyRules)
+}
+
+func (r *AlertingRule) NoDependencyRules() bool {
+	return r.noDependencyRules.Load()
 }
 
 // resolvedRetention is the duration for which a resolved alert instance

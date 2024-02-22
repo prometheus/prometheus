@@ -112,6 +112,9 @@ message Histogram {
   // histograms.
   repeated sint64 positive_delta = 13; // Count delta of each bucket compared to previous one (or to zero for 1st bucket).
   repeated double positive_count = 14; // Absolute count of each bucket.
+
+  // Only used for native histograms. These exemplars MUST have a timestamp.
+  repeated Exemplar exemplars = 16;
 }
 
 message Bucket {

@@ -610,9 +610,12 @@ type ScrapeConfig struct {
 	// More than this label value length post metric-relabeling will cause the
 	// scrape to fail. 0 means no limit.
 	LabelValueLengthLimit uint `yaml:"label_value_length_limit,omitempty"`
-	// More than this many buckets in a native histogram will cause the scrape to
-	// fail.
+	// If there are more than this many buckets in a native histogram,
+	// buckets will be merged to stay within the limit.
 	NativeHistogramBucketLimit uint `yaml:"native_histogram_bucket_limit,omitempty"`
+	// If the growth factor of one bucket to the next is smaller than this,
+	// buckets will be merged to increase the factor sufficiently.
+	NativeHistogramMinBucketFactor float64 `yaml:"native_histogram_min_bucket_factor,omitempty"`
 	// Keep no more than this many dropped targets per job.
 	// 0 means no limit.
 	KeepDroppedTargets uint `yaml:"keep_dropped_targets,omitempty"`
@@ -1013,6 +1016,9 @@ func CheckTargetAddress(address model.LabelValue) error {
 	return nil
 }
 
+// This needs to live here rather than in the remote package to avoid an import cycle.
+type RemoteWriteFormat int64
+
 // RemoteWriteConfig is the configuration for writing to remote storage.
 type RemoteWriteConfig struct {
 	URL                  *config.URL       `yaml:"url"`
@@ -1022,6 +1028,7 @@ type RemoteWriteConfig struct {
 	Name                 string            `yaml:"name,omitempty"`
 	SendExemplars        bool              `yaml:"send_exemplars,omitempty"`
 	SendNativeHistograms bool              `yaml:"send_native_histograms,omitempty"`
+	ProtocolVersion      RemoteWriteFormat `yaml:"remote_write_version,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
@@ -1124,6 +1131,9 @@ type QueueConfig struct {
 	MinBackoff       model.Duration `yaml:"min_backoff,omitempty"`
 	MaxBackoff       model.Duration `yaml:"max_backoff,omitempty"`
 	RetryOnRateLimit bool           `yaml:"retry_on_http_429,omitempty"`
+
+	// Samples older than the limit will be dropped.
+	SampleAgeLimit model.Duration `yaml:"sample_age_limit,omitempty"`
 }
 
 // MetadataConfig is the configuration for sending metadata to remote

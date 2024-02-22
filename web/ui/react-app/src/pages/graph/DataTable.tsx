@@ -24,7 +24,7 @@ export interface DataTableProps {
       }
     | {
         resultType: 'string';
-        result: string;
+        result: SampleValue;
       };
   useLocalTime: boolean;
 }

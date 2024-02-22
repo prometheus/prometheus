@@ -32,6 +32,7 @@ import (
 
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/util/stats"
+	"github.com/prometheus/prometheus/util/testutil"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
@@ -216,18 +217,11 @@ type rulesRetrieverMock struct {
 
 func (m *rulesRetrieverMock) CreateAlertingRules() {
 	expr1, err := parser.ParseExpr(`absent(test_metric3) != 1`)
-	if err != nil {
-		m.testing.Fatalf("unable to parse alert expression: %s", err)
-	}
+	require.NoError(m.testing, err)
 	expr2, err := parser.ParseExpr(`up == 1`)
-	if err != nil {
-		m.testing.Fatalf("Unable to parse alert expression: %s", err)
-	}
-
+	require.NoError(m.testing, err)
 	expr3, err := parser.ParseExpr(`vector(1)`)
-	if err != nil {
-		m.testing.Fatalf("Unable to parse alert expression: %s", err)
-	}
+	require.NoError(m.testing, err)
 
 	rule1 := rules.NewAlertingRule(
 		"test_metric3",
@@ -302,9 +296,7 @@ func (m *rulesRetrieverMock) CreateRuleGroups() {
 	}
 
 	recordingExpr, err := parser.ParseExpr(`vector(1)`)
-	if err != nil {
-		m.testing.Fatalf("unable to parse alert expression: %s", err)
-	}
+	require.NoError(m.testing, err, "unable to parse alert expression")
 	recordingRule := rules.NewRecordingRule("recording-rule-1", recordingExpr, labels.Labels{})
 	r = append(r, recordingRule)
 
@@ -462,7 +454,7 @@ func TestEndpoints(t *testing.T) {
 		// TODO: test with other proto format(s)?
 		remote := remote.NewStorage(promlog.New(&promlogConfig), prometheus.DefaultRegisterer, func() (int64, error) {
 			return 0, nil
-		}, dbDir, 1*time.Second, nil, remote.Version1, false)
+		}, dbDir, 1*time.Second, nil, false)
 
 		err = remote.ApplyConfig(&config.Config{
 			RemoteReadConfigs: []*config.RemoteReadConfig{
@@ -607,7 +599,7 @@ func TestGetSeries(t *testing.T) {
 				r := res.data.([]labels.Labels)
 				sort.Sort(byLabels(tc.expected))
 				sort.Sort(byLabels(r))
-				require.Equal(t, tc.expected, r)
+				testutil.RequireEqual(t, tc.expected, r)
 			}
 		})
 	}
@@ -715,9 +707,7 @@ func TestQueryExemplars(t *testing.T) {
 			for _, te := range tc.exemplars {
 				for _, e := range te.Exemplars {
 					_, err := es.AppendExemplar(0, te.SeriesLabels, e)
-					if err != nil {
-						t.Fatal(err)
-					}
+					require.NoError(t, err)
 				}
 			}
 
@@ -1412,10 +1402,8 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			response: &TargetDiscovery{
 				ActiveTargets: []*Target{
 					{
-						DiscoveredLabels: map[string]string{},
-						Labels: map[string]string{
-							"job": "blackbox",
-						},
+						DiscoveredLabels:   labels.FromStrings(),
+						Labels:             labels.FromStrings("job", "blackbox"),
 						ScrapePool:         "blackbox",
 						ScrapeURL:          "http://localhost:9115/probe?target=example.com",
 						GlobalURL:          "http://localhost:9115/probe?target=example.com",
@@ -1427,10 +1415,8 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						ScrapeTimeout:      "10s",
 					},
 					{
-						DiscoveredLabels: map[string]string{},
-						Labels: map[string]string{
-							"job": "test",
-						},
+						DiscoveredLabels:   labels.FromStrings(),
+						Labels:             labels.FromStrings("job", "test"),
 						ScrapePool:         "test",
 						ScrapeURL:          "http://example.com:8080/metrics",
 						GlobalURL:          "http://example.com:8080/metrics",
@@ -1444,14 +1430,14 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				},
 				DroppedTargets: []*DroppedTarget{
 					{
-						DiscoveredLabels: map[string]string{
-							"__address__":         "http://dropped.example.com:9115",
-							"__metrics_path__":    "/probe",
-							"__scheme__":          "http",
-							"job":                 "blackbox",
-							"__scrape_interval__": "30s",
-							"__scrape_timeout__":  "15s",
-						},
+						DiscoveredLabels: labels.FromStrings(
+							"__address__", "http://dropped.example.com:9115",
+							"__metrics_path__", "/probe",
+							"__scheme__", "http",
+							"job", "blackbox",
+							"__scrape_interval__", "30s",
+							"__scrape_timeout__", "15s",
+						),
 					},
 				},
 				DroppedTargetCounts: map[string]int{"blackbox": 1},
@@ -1465,10 +1451,8 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			response: &TargetDiscovery{
 				ActiveTargets: []*Target{
 					{
-						DiscoveredLabels: map[string]string{},
-						Labels: map[string]string{
-							"job": "blackbox",
-						},
+						DiscoveredLabels:   labels.FromStrings(),
+						Labels:             labels.FromStrings("job", "blackbox"),
 						ScrapePool:         "blackbox",
 						ScrapeURL:          "http://localhost:9115/probe?target=example.com",
 						GlobalURL:          "http://localhost:9115/probe?target=example.com",
@@ -1480,10 +1464,8 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						ScrapeTimeout:      "10s",
 					},
 					{
-						DiscoveredLabels: map[string]string{},
-						Labels: map[string]string{
-							"job": "test",
-						},
+						DiscoveredLabels:   labels.FromStrings(),
+						Labels:             labels.FromStrings("job", "test"),
 						ScrapePool:         "test",
 						ScrapeURL:          "http://example.com:8080/metrics",
 						GlobalURL:          "http://example.com:8080/metrics",
@@ -1497,14 +1479,14 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				},
 				DroppedTargets: []*DroppedTarget{
 					{
-						DiscoveredLabels: map[string]string{
-							"__address__":         "http://dropped.example.com:9115",
-							"__metrics_path__":    "/probe",
-							"__scheme__":          "http",
-							"job":                 "blackbox",
-							"__scrape_interval__": "30s",
-							"__scrape_timeout__":  "15s",
-						},
+						DiscoveredLabels: labels.FromStrings(
+							"__address__", "http://dropped.example.com:9115",
+							"__metrics_path__", "/probe",
+							"__scheme__", "http",
+							"job", "blackbox",
+							"__scrape_interval__", "30s",
+							"__scrape_timeout__", "15s",
+						),
 					},
 				},
 				DroppedTargetCounts: map[string]int{"blackbox": 1},
@@ -1518,10 +1500,8 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			response: &TargetDiscovery{
 				ActiveTargets: []*Target{
 					{
-						DiscoveredLabels: map[string]string{},
-						Labels: map[string]string{
-							"job": "blackbox",
-						},
+						DiscoveredLabels:   labels.FromStrings(),
+						Labels:             labels.FromStrings("job", "blackbox"),
 						ScrapePool:         "blackbox",
 						ScrapeURL:          "http://localhost:9115/probe?target=example.com",
 						GlobalURL:          "http://localhost:9115/probe?target=example.com",
@@ -1533,10 +1513,8 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						ScrapeTimeout:      "10s",
 					},
 					{
-						DiscoveredLabels: map[string]string{},
-						Labels: map[string]string{
-							"job": "test",
-						},
+						DiscoveredLabels:   labels.FromStrings(),
+						Labels:             labels.FromStrings("job", "test"),
 						ScrapePool:         "test",
 						ScrapeURL:          "http://example.com:8080/metrics",
 						GlobalURL:          "http://example.com:8080/metrics",
@@ -1560,14 +1538,14 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				ActiveTargets: []*Target{},
 				DroppedTargets: []*DroppedTarget{
 					{
-						DiscoveredLabels: map[string]string{
-							"__address__":         "http://dropped.example.com:9115",
-							"__metrics_path__":    "/probe",
-							"__scheme__":          "http",
-							"job":                 "blackbox",
-							"__scrape_interval__": "30s",
-							"__scrape_timeout__":  "15s",
-						},
+						DiscoveredLabels: labels.FromStrings(
+							"__address__", "http://dropped.example.com:9115",
+							"__metrics_path__", "/probe",
+							"__scheme__", "http",
+							"job", "blackbox",
+							"__scrape_interval__", "30s",
+							"__scrape_timeout__", "15s",
+						),
 					},
 				},
 				DroppedTargetCounts: map[string]int{"blackbox": 1},
@@ -2845,9 +2823,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					}
 
 					req, err := request(method, test.query)
-					if err != nil {
-						t.Fatal(err)
-					}
+					require.NoError(t, err)
 
 					tr.ResetMetadataStore()
 					for _, tm := range test.metadata {
@@ -2857,9 +2833,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					for _, te := range test.exemplars {
 						for _, e := range te.Exemplars {
 							_, err := es.AppendExemplar(0, te.SeriesLabels, e)
-							if err != nil {
-								t.Fatal(err)
-							}
+							require.NoError(t, err)
 						}
 					}
 
@@ -2895,37 +2869,25 @@ func describeAPIFunc(f apiFunc) string {
 func assertAPIError(t *testing.T, got *apiError, exp errorType) {
 	t.Helper()
 
-	if got != nil {
-		if exp == errorNone {
-			t.Fatalf("Unexpected error: %s", got)
-		}
-		if exp != got.typ {
-			t.Fatalf("Expected error of type %q but got type %q (%q)", exp, got.typ, got)
-		}
-		return
-	}
-	if exp != errorNone {
-		t.Fatalf("Expected error of type %q but got none", exp)
+	if exp == errorNone {
+		require.Nil(t, got)
+	} else {
+		require.NotNil(t, got)
+		require.Equal(t, exp, got.typ, "(%q)", got)
 	}
 }
 
 func assertAPIResponse(t *testing.T, got, exp interface{}) {
 	t.Helper()
 
-	require.Equal(t, exp, got)
+	testutil.RequireEqual(t, exp, got)
 }
 
 func assertAPIResponseLength(t *testing.T, got interface{}, expLen int) {
 	t.Helper()
 
 	gotLen := reflect.ValueOf(got).Len()
-	if gotLen != expLen {
-		t.Fatalf(
-			"Response length does not match, expected:\n%d\ngot:\n%d",
-			expLen,
-			gotLen,
-		)
-	}
+	require.Equal(t, expLen, gotLen, "Response length does not match")
 }
 
 func assertAPIResponseMetadataLen(t *testing.T, got interface{}, expLen int) {
@@ -2937,13 +2899,7 @@ func assertAPIResponseMetadataLen(t *testing.T, got interface{}, expLen int) {
 		gotLen += len(m)
 	}
 
-	if gotLen != expLen {
-		t.Fatalf(
-			"Amount of metadata in the response does not match, expected:\n%d\ngot:\n%d",
-			expLen,
-			gotLen,
-		)
-	}
+	require.Equal(t, expLen, gotLen, "Amount of metadata in the response does not match")
 }
 
 type fakeDB struct {
@@ -3284,26 +3240,18 @@ func TestRespondError(t *testing.T) {
 	defer s.Close()
 
 	resp, err := http.Get(s.URL)
-	if err != nil {
-		t.Fatalf("Error on test request: %s", err)
-	}
+	require.NoError(t, err, "Error on test request")
 	body, err := io.ReadAll(resp.Body)
 	defer resp.Body.Close()
-	if err != nil {
-		t.Fatalf("Error reading response body: %s", err)
-	}
-
-	if want, have := http.StatusServiceUnavailable, resp.StatusCode; want != have {
-		t.Fatalf("Return code %d expected in error response but got %d", want, have)
-	}
-	if h := resp.Header.Get("Content-Type"); h != "application/json" {
-		t.Fatalf("Expected Content-Type %q but got %q", "application/json", h)
-	}
+	require.NoError(t, err, "Error reading response body")
+	want, have := http.StatusServiceUnavailable, resp.StatusCode
+	require.Equal(t, want, have, "Return code %d expected in error response but got %d", want, have)
+	h := resp.Header.Get("Content-Type")
+	require.Equal(t, "application/json", h, "Expected Content-Type %q but got %q", "application/json", h)
 
 	var res Response
-	if err = json.Unmarshal(body, &res); err != nil {
-		t.Fatalf("Error unmarshaling JSON body: %s", err)
-	}
+	err = json.Unmarshal(body, &res)
+	require.NoError(t, err, "Error unmarshaling JSON body")
 
 	exp := &Response{
 		Status:    statusError,
@@ -3432,17 +3380,13 @@ func TestParseTime(t *testing.T) {
 
 	for _, test := range tests {
 		ts, err := parseTime(test.input)
-		if err != nil && !test.fail {
-			t.Errorf("Unexpected error for %q: %s", test.input, err)
+		if !test.fail {
+			require.NoError(t, err, "Unexpected error for %q", test.input)
+			require.NotNil(t, ts)
+			require.True(t, ts.Equal(test.result), "Expected time %v for input %q but got %v", test.result, test.input, ts)
 			continue
 		}
-		if err == nil && test.fail {
-			t.Errorf("Expected error for %q but got none", test.input)
-			continue
-		}
-		if !test.fail && !ts.Equal(test.result) {
-			t.Errorf("Expected time %v for input %q but got %v", test.result, test.input, ts)
-		}
+		require.Error(t, err, "Expected error for %q but got none", test.input)
 	}
 }
 
@@ -3486,17 +3430,12 @@ func TestParseDuration(t *testing.T) {
 
 	for _, test := range tests {
 		d, err := parseDuration(test.input)
-		if err != nil && !test.fail {
-			t.Errorf("Unexpected error for %q: %s", test.input, err)
+		if !test.fail {
+			require.NoError(t, err, "Unexpected error for %q", test.input)
+			require.Equal(t, test.result, d, "Expected duration %v for input %q but got %v", test.result, test.input, d)
 			continue
 		}
-		if err == nil && test.fail {
-			t.Errorf("Expected error for %q but got none", test.input)
-			continue
-		}
-		if !test.fail && d != test.result {
-			t.Errorf("Expected duration %v for input %q but got %v", test.result, test.input, d)
-		}
+		require.Error(t, err, "Expected error for %q but got none", test.input)
 	}
 }
 
@@ -3509,18 +3448,11 @@ func TestOptionsMethod(t *testing.T) {
 	defer s.Close()
 
 	req, err := http.NewRequest("OPTIONS", s.URL+"/any_path", nil)
-	if err != nil {
-		t.Fatalf("Error creating OPTIONS request: %s", err)
-	}
+	require.NoError(t, err, "Error creating OPTIONS request")
 	client := &http.Client{}
 	resp, err := client.Do(req)
-	if err != nil {
-		t.Fatalf("Error executing OPTIONS request: %s", err)
-	}
-
-	if resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("Expected status %d, got %d", http.StatusNoContent, resp.StatusCode)
-	}
+	require.NoError(t, err, "Error executing OPTIONS request")
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 }
 
 func TestTSDBStatus(t *testing.T) {
@@ -3559,9 +3491,7 @@ func TestTSDBStatus(t *testing.T) {
 			api := &API{db: tc.db, gatherer: prometheus.DefaultGatherer}
 			endpoint := tc.endpoint(api)
 			req, err := http.NewRequest(tc.method, fmt.Sprintf("?%s", tc.values.Encode()), nil)
-			if err != nil {
-				t.Fatalf("Error when creating test request: %s", err)
-			}
+			require.NoError(t, err, "Error when creating test request")
 			res := endpoint(req)
 			assertAPIError(t, res.err, tc.errType)
 		})

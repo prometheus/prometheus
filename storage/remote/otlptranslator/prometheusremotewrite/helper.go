@@ -1,4 +1,4 @@
-// DO NOT EDIT. COPIED AS-IS. SEE README.md
+// DO NOT EDIT. COPIED AS-IS. SEE ../README.md
 
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
@@ -71,8 +71,8 @@ func (a ByLabelName) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 // creates a new TimeSeries in the map if not found and returns the time series signature.
 // tsMap will be unmodified if either labels or sample is nil, but can still be modified if the exemplar is nil.
 func addSample(tsMap map[string]*prompb.TimeSeries, sample *prompb.Sample, labels []prompb.Label,
-	datatype string) string {
-
+	datatype string,
+) string {
 	if sample == nil || labels == nil || tsMap == nil {
 		return ""
 	}
@@ -185,7 +185,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externa
 	sort.Stable(ByLabelName(labels))
 
 	for _, label := range labels {
-		var finalKey = prometheustranslator.NormalizeLabel(label.Name)
+		finalKey := prometheustranslator.NormalizeLabel(label.Name)
 		if existingLabel, alreadyExists := l[finalKey]; alreadyExists {
 			l[finalKey] = existingLabel + ";" + label.Value
 		} else {
@@ -457,7 +457,8 @@ func maxTimestamp(a, b pcommon.Timestamp) pcommon.Timestamp {
 
 // addSingleSummaryDataPoint converts pt to len(QuantileValues) + 2 samples.
 func addSingleSummaryDataPoint(pt pmetric.SummaryDataPoint, resource pcommon.Resource, metric pmetric.Metric, settings Settings,
-	tsMap map[string]*prompb.TimeSeries) {
+	tsMap map[string]*prompb.TimeSeries,
+) {
 	timestamp := convertTimeStamp(pt.Timestamp())
 	// sum and count of the summary should append suffix to baseName
 	baseName := prometheustranslator.BuildCompliantName(metric, settings.Namespace, settings.AddMetricSuffixes)

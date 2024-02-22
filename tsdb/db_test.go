@@ -27,7 +27,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -107,10 +106,10 @@ func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[str
 				ts, v := it.At()
 				samples = append(samples, sample{t: ts, f: v})
 			case chunkenc.ValHistogram:
-				ts, h := it.AtHistogram()
+				ts, h := it.AtHistogram(nil)
 				samples = append(samples, sample{t: ts, h: h})
 			case chunkenc.ValFloatHistogram:
-				ts, fh := it.AtFloatHistogram()
+				ts, fh := it.AtFloatHistogram(nil)
 				samples = append(samples, sample{t: ts, fh: fh})
 			default:
 				t.Fatalf("unknown sample type in query %s", typ.String())
@@ -2327,9 +2326,7 @@ func TestBlockRanges(t *testing.T) {
 	app := db.Appender(ctx)
 	lbl := labels.FromStrings("a", "b")
 	_, err = app.Append(0, lbl, firstBlockMaxT-1, rand.Float64())
-	if err == nil {
-		t.Fatalf("appending a sample with a timestamp covered by a previous block shouldn't be possible")
-	}
+	require.Error(t, err, "appending a sample with a timestamp covered by a previous block shouldn't be possible")
 	_, err = app.Append(0, lbl, firstBlockMaxT+1, rand.Float64())
 	require.NoError(t, err)
 	_, err = app.Append(0, lbl, firstBlockMaxT+2, rand.Float64())
@@ -2347,9 +2344,8 @@ func TestBlockRanges(t *testing.T) {
 	}
 	require.Len(t, db.Blocks(), 2, "no new block created after the set timeout")
 
-	if db.Blocks()[0].Meta().MaxTime > db.Blocks()[1].Meta().MinTime {
-		t.Fatalf("new block overlaps  old:%v,new:%v", db.Blocks()[0].Meta(), db.Blocks()[1].Meta())
-	}
+	require.LessOrEqual(t, db.Blocks()[1].Meta().MinTime, db.Blocks()[0].Meta().MaxTime,
+		"new block overlaps  old:%v,new:%v", db.Blocks()[0].Meta(), db.Blocks()[1].Meta())
 
 	// Test that wal records are skipped when an existing block covers the same time ranges
 	// and compaction doesn't create an overlapping block.
@@ -2389,9 +2385,8 @@ func TestBlockRanges(t *testing.T) {
 
 	require.Len(t, db.Blocks(), 4, "no new block created after the set timeout")
 
-	if db.Blocks()[2].Meta().MaxTime > db.Blocks()[3].Meta().MinTime {
-		t.Fatalf("new block overlaps  old:%v,new:%v", db.Blocks()[2].Meta(), db.Blocks()[3].Meta())
-	}
+	require.LessOrEqual(t, db.Blocks()[3].Meta().MinTime, db.Blocks()[2].Meta().MaxTime,
+		"new block overlaps  old:%v,new:%v", db.Blocks()[2].Meta(), db.Blocks()[3].Meta())
 }
 
 // TestDBReadOnly ensures that opening a DB in readonly mode doesn't modify any files on the disk.
@@ -3180,9 +3175,8 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 
 	var loaded int
 	for _, l := range loadedBlocks {
-		if _, ok := expectedLoadedDirs[filepath.Join(tmpDir, l.meta.ULID.String())]; !ok {
-			t.Fatal("unexpected block", l.meta.ULID, "was loaded")
-		}
+		_, ok := expectedLoadedDirs[filepath.Join(tmpDir, l.meta.ULID.String())]
+		require.True(t, ok, "unexpected block", l.meta.ULID, "was loaded")
 		loaded++
 	}
 	require.Len(t, expectedLoadedDirs, loaded)
@@ -3193,9 +3187,8 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 
 	var ignored int
 	for _, f := range files {
-		if _, ok := expectedRemovedDirs[filepath.Join(tmpDir, f.Name())]; ok {
-			t.Fatal("expected", filepath.Join(tmpDir, f.Name()), "to be removed, but still exists")
-		}
+		_, ok := expectedRemovedDirs[filepath.Join(tmpDir, f.Name())]
+		require.False(t, ok, "expected", filepath.Join(tmpDir, f.Name()), "to be removed, but still exists")
 		if _, ok := expectedIgnoredDirs[filepath.Join(tmpDir, f.Name())]; ok {
 			ignored++
 		}
@@ -3486,8 +3479,8 @@ func testQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t 
 	// the "cannot populate chunk XXX: not found" error occurred. This error can occur
 	// when the iterator tries to fetch an head chunk which has been offloaded because
 	// of the head compaction in the meanwhile.
-	if firstErr != nil && !strings.Contains(firstErr.Error(), "cannot populate chunk") {
-		t.Fatalf("unexpected error: %s", firstErr.Error())
+	if firstErr != nil {
+		require.ErrorContains(t, firstErr, "cannot populate chunk")
 	}
 }
 
@@ -4065,11 +4058,11 @@ func TestOOOWALWrite(t *testing.T) {
 
 	// The normal WAL.
 	actRecs := getRecords(path.Join(dir, "wal"))
-	require.Equal(t, inOrderRecords, actRecs)
+	testutil.RequireEqual(t, inOrderRecords, actRecs)
 
 	// The WBL.
 	actRecs = getRecords(path.Join(dir, wlog.WblDirName))
-	require.Equal(t, oooRecords, actRecs)
+	testutil.RequireEqual(t, oooRecords, actRecs)
 }
 
 // Tests https://github.com/prometheus/prometheus/issues/10291#issuecomment-1044373110.
@@ -6664,10 +6657,10 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 						ts, v := it.At()
 						slice = append(slice, sample{t: ts, f: v})
 					case chunkenc.ValHistogram:
-						ts, h := it.AtHistogram()
+						ts, h := it.AtHistogram(nil)
 						slice = append(slice, sample{t: ts, h: h})
 					case chunkenc.ValFloatHistogram:
-						ts, h := it.AtFloatHistogram()
+						ts, h := it.AtFloatHistogram(nil)
 						slice = append(slice, sample{t: ts, fh: h})
 					default:
 						t.Fatalf("unexpected sample value type %d", typ)

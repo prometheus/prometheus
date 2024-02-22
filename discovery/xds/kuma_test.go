@@ -28,6 +28,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 	"gopkg.in/yaml.v2"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -108,7 +109,16 @@ func getKumaMadsV1DiscoveryResponse(resources ...*MonitoringAssignment) (*v3.Dis
 }
 
 func newKumaTestHTTPDiscovery(c KumaSDConfig) (*fetchDiscovery, error) {
-	kd, err := NewKumaHTTPDiscovery(&c, nopLogger, prometheus.NewRegistry())
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	// TODO(ptodev): Add the ability to unregister refresh metrics.
+	metrics := c.NewDiscovererMetrics(reg, refreshMetrics)
+	err := metrics.Register()
+	if err != nil {
+		return nil, err
+	}
+
+	kd, err := NewKumaHTTPDiscovery(&c, nopLogger, metrics)
 	if err != nil {
 		return nil, err
 	}
@@ -207,6 +217,8 @@ func TestNewKumaHTTPDiscovery(t *testing.T) {
 	require.Equal(t, KumaMadsV1ResourceTypeURL, resClient.ResourceTypeURL())
 	require.Equal(t, kumaConf.ClientID, resClient.ID())
 	require.Equal(t, KumaMadsV1ResourceType, resClient.config.ResourceType)
+
+	kd.metrics.Unregister()
 }
 
 func TestKumaHTTPDiscoveryRefresh(t *testing.T) {
@@ -301,4 +313,6 @@ tls_config:
 	case <-ch:
 		require.Fail(t, "no update expected")
 	}
+
+	kd.metrics.Unregister()
 }

@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestNoDuplicateReadConfigs(t *testing.T) {
@@ -92,7 +93,7 @@ func TestNoDuplicateReadConfigs(t *testing.T) {
 	for _, tc := range cases {
 		t.Run("", func(t *testing.T) {
 			// todo: test with new format type(s)?
-			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, Version1, false)
+			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
 			conf := &config.Config{
 				GlobalConfig:      config.DefaultGlobalConfig,
 				RemoteReadConfigs: tc.cfgs,
@@ -485,7 +486,7 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 				got = append(got, ss.At().Labels())
 			}
 			require.NoError(t, ss.Err())
-			require.Equal(t, tc.expectedSeries, got)
+			testutil.RequireEqual(t, tc.expectedSeries, got)
 		})
 	}
 }

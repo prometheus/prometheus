@@ -208,6 +208,20 @@ func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
 	return m, err
 }
 
+// ParseMetricSelectors parses a list of provided textual metric selectors into lists of
+// label matchers.
+func ParseMetricSelectors(matchers []string) (m [][]*labels.Matcher, err error) {
+	var matcherSets [][]*labels.Matcher
+	for _, s := range matchers {
+		matchers, err := ParseMetricSelector(s)
+		if err != nil {
+			return nil, err
+		}
+		matcherSets = append(matcherSets, matchers)
+	}
+	return matcherSets, nil
+}
+
 // SequenceValue is an omittable value in a sequence of time series values.
 type SequenceValue struct {
 	Value     float64
@@ -403,6 +417,8 @@ func (p *parser) newBinaryExpression(lhs Node, op Item, modifiers, rhs Node) *Bi
 }
 
 func (p *parser) assembleVectorSelector(vs *VectorSelector) {
+	// If the metric name was set outside the braces, add a matcher for it.
+	// If the metric name was inside the braces we don't need to do anything.
 	if vs.Name != "" {
 		nameMatcher, err := labels.NewMatcher(labels.MatchEqual, labels.MetricName, vs.Name)
 		if err != nil {
@@ -775,6 +791,18 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 			// Skip the check for non-empty matchers because an explicit
 			// metric name is a non-empty matcher.
 			break
+		} else {
+			// We also have to make sure a metric name was not set twice inside the
+			// braces.
+			foundMetricName := ""
+			for _, m := range n.LabelMatchers {
+				if m != nil && m.Name == labels.MetricName {
+					if foundMetricName != "" {
+						p.addParseErrf(n.PositionRange(), "metric name must not be set twice: %q or %q", foundMetricName, m.Value)
+					}
+					foundMetricName = m.Value
+				}
+			}
 		}
 
 		// A Vector selector must contain at least one non-empty matcher to prevent
@@ -853,6 +881,15 @@ func (p *parser) newLabelMatcher(label, operator, value Item) *labels.Matcher {
 	m, err := labels.NewMatcher(matchType, label.Val, val)
 	if err != nil {
 		p.addParseErr(mergeRanges(&label, &value), err)
+	}
+
+	return m
+}
+
+func (p *parser) newMetricNameMatcher(value Item) *labels.Matcher {
+	m, err := labels.NewMatcher(labels.MatchEqual, labels.MetricName, value.Val)
+	if err != nil {
+		p.addParseErr(value.PositionRange(), err)
 	}
 
 	return m

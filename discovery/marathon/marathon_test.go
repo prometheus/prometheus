@@ -23,7 +23,9 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -37,7 +39,19 @@ func testConfig() SDConfig {
 }
 
 func testUpdateServices(client appListClient) ([]*targetgroup.Group, error) {
-	md, err := NewDiscovery(testConfig(), nil, prometheus.NewRegistry())
+	cfg := testConfig()
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	err := metrics.Register()
+	if err != nil {
+		return nil, err
+	}
+	defer metrics.Unregister()
+	defer refreshMetrics.Unregister()
+
+	md, err := NewDiscovery(cfg, nil, metrics)
 	if err != nil {
 		return nil, err
 	}
@@ -55,23 +69,15 @@ func TestMarathonSDHandleError(t *testing.T) {
 		}
 	)
 	tgs, err := testUpdateServices(client)
-	if !errors.Is(err, errTesting) {
-		t.Fatalf("Expected error: %s", err)
-	}
-	if len(tgs) != 0 {
-		t.Fatalf("Got group: %s", tgs)
-	}
+	require.ErrorIs(t, err, errTesting)
+	require.Empty(t, tgs, "Expected no target groups.")
 }
 
 func TestMarathonSDEmptyList(t *testing.T) {
 	client := func(_ context.Context, _ *http.Client, _ string) (*appList, error) { return &appList{}, nil }
 	tgs, err := testUpdateServices(client)
-	if err != nil {
-		t.Fatalf("Got error: %s", err)
-	}
-	if len(tgs) > 0 {
-		t.Fatalf("Got group: %v", tgs)
-	}
+	require.NoError(t, err)
+	require.Empty(t, tgs, "Expected no target groups.")
 }
 
 func marathonTestAppList(labels map[string]string, runningTasks int) *appList {
@@ -105,66 +111,49 @@ func TestMarathonSDSendGroup(t *testing.T) {
 		return marathonTestAppList(marathonValidLabel, 1), nil
 	}
 	tgs, err := testUpdateServices(client)
-	if err != nil {
-		t.Fatalf("Got error: %s", err)
-	}
-	if len(tgs) != 1 {
-		t.Fatal("Expected 1 target group, got", len(tgs))
-	}
+	require.NoError(t, err)
+	require.Len(t, tgs, 1, "Expected 1 target group.")
 
 	tg := tgs[0]
+	require.Equal(t, "test-service", tg.Source, "Wrong target group name.")
+	require.Len(t, tg.Targets, 1, "Expected 1 target.")
 
-	if tg.Source != "test-service" {
-		t.Fatalf("Wrong target group name: %s", tg.Source)
-	}
-	if len(tg.Targets) != 1 {
-		t.Fatalf("Wrong number of targets: %v", tg.Targets)
-	}
 	tgt := tg.Targets[0]
-	if tgt[model.AddressLabel] != "mesos-slave1:31000" {
-		t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
-	}
-	if tgt[model.LabelName(portMappingLabelPrefix+"prometheus")] != "yes" {
-		t.Fatalf("Wrong first portMappings label from the first port: %s", tgt[model.AddressLabel])
-	}
+	require.Equal(t, "mesos-slave1:31000", string(tgt[model.AddressLabel]), "Wrong target address.")
+	require.Equal(t, "yes", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the first port.")
 }
 
 func TestMarathonSDRemoveApp(t *testing.T) {
-	md, err := NewDiscovery(testConfig(), nil, prometheus.NewRegistry())
-	if err != nil {
-		t.Fatalf("%s", err)
-	}
+	cfg := testConfig()
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+	defer refreshMetrics.Unregister()
+
+	md, err := NewDiscovery(cfg, nil, metrics)
+	require.NoError(t, err)
 
 	md.appsClient = func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
 		return marathonTestAppList(marathonValidLabel, 1), nil
 	}
 	tgs, err := md.refresh(context.Background())
-	if err != nil {
-		t.Fatalf("Got error on first update: %s", err)
-	}
-	if len(tgs) != 1 {
-		t.Fatal("Expected 1 targetgroup, got", len(tgs))
-	}
+	require.NoError(t, err, "Got error on first update.")
+	require.Len(t, tgs, 1, "Expected 1 targetgroup.")
 	tg1 := tgs[0]
 
 	md.appsClient = func(_ context.Context, _ *http.Client, _ string) (*appList, error) {
 		return marathonTestAppList(marathonValidLabel, 0), nil
 	}
 	tgs, err = md.refresh(context.Background())
-	if err != nil {
-		t.Fatalf("Got error on second update: %s", err)
-	}
-	if len(tgs) != 1 {
-		t.Fatal("Expected 1 targetgroup, got", len(tgs))
-	}
+	require.NoError(t, err, "Got error on second update.")
+	require.Len(t, tgs, 1, "Expected 1 targetgroup.")
+
 	tg2 := tgs[0]
 
-	if tg2.Source != tg1.Source {
-		if len(tg2.Targets) > 0 {
-			t.Errorf("Got a non-empty target set: %s", tg2.Targets)
-		}
-		t.Fatalf("Source is different: %s != %s", tg1.Source, tg2.Source)
-	}
+	require.NotEmpty(t, tg2.Targets, "Got a non-empty target set.")
+	require.Equal(t, tg1.Source, tg2.Source, "Source is different.")
 }
 
 func marathonTestAppListWithMultiplePorts(labels map[string]string, runningTasks int) *appList {
@@ -199,34 +188,22 @@ func TestMarathonSDSendGroupWithMultiplePort(t *testing.T) {
 		return marathonTestAppListWithMultiplePorts(marathonValidLabel, 1), nil
 	}
 	tgs, err := testUpdateServices(client)
-	if err != nil {
-		t.Fatalf("Got error: %s", err)
-	}
-	if len(tgs) != 1 {
-		t.Fatal("Expected 1 target group, got", len(tgs))
-	}
-	tg := tgs[0]
+	require.NoError(t, err)
+	require.Len(t, tgs, 1, "Expected 1 target group.")
 
-	if tg.Source != "test-service" {
-		t.Fatalf("Wrong target group name: %s", tg.Source)
-	}
-	if len(tg.Targets) != 2 {
-		t.Fatalf("Wrong number of targets: %v", tg.Targets)
-	}
+	tg := tgs[0]
+	require.Equal(t, "test-service", tg.Source, "Wrong target group name.")
+	require.Len(t, tg.Targets, 2, "Wrong number of targets.")
+
 	tgt := tg.Targets[0]
-	if tgt[model.AddressLabel] != "mesos-slave1:31000" {
-		t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
-	}
-	if tgt[model.LabelName(portMappingLabelPrefix+"prometheus")] != "yes" {
-		t.Fatalf("Wrong first portMappings label from the first port: %s", tgt[model.AddressLabel])
-	}
+	require.Equal(t, "mesos-slave1:31000", string(tgt[model.AddressLabel]), "Wrong target address.")
+	require.Equal(t, "yes", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]),
+		"Wrong portMappings label from the first port: %s", tgt[model.AddressLabel])
+
 	tgt = tg.Targets[1]
-	if tgt[model.AddressLabel] != "mesos-slave1:32000" {
-		t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
-	}
-	if tgt[model.LabelName(portMappingLabelPrefix+"prometheus")] != "" {
-		t.Fatalf("Wrong portMappings label from the second port: %s", tgt[model.AddressLabel])
-	}
+	require.Equal(t, "mesos-slave1:32000", string(tgt[model.AddressLabel]), "Wrong target address.")
+	require.Equal(t, "", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]),
+		"Wrong portMappings label from the second port: %s", tgt[model.AddressLabel])
 }
 
 func marathonTestZeroTaskPortAppList(labels map[string]string, runningTasks int) *appList {
@@ -256,20 +233,12 @@ func TestMarathonZeroTaskPorts(t *testing.T) {
 		return marathonTestZeroTaskPortAppList(marathonValidLabel, 1), nil
 	}
 	tgs, err := testUpdateServices(client)
-	if err != nil {
-		t.Fatalf("Got error: %s", err)
-	}
-	if len(tgs) != 1 {
-		t.Fatal("Expected 1 target group, got", len(tgs))
-	}
-	tg := tgs[0]
+	require.NoError(t, err)
+	require.Len(t, tgs, 1, "Expected 1 target group.")
 
-	if tg.Source != "test-service-zero-ports" {
-		t.Fatalf("Wrong target group name: %s", tg.Source)
-	}
-	if len(tg.Targets) != 0 {
-		t.Fatalf("Wrong number of targets: %v", tg.Targets)
-	}
+	tg := tgs[0]
+	require.Equal(t, "test-service-zero-ports", tg.Source, "Wrong target group name.")
+	require.Empty(t, tg.Targets, "Wrong number of targets.")
 }
 
 func Test500ErrorHttpResponseWithValidJSONBody(t *testing.T) {
@@ -284,9 +253,7 @@ func Test500ErrorHttpResponseWithValidJSONBody(t *testing.T) {
 	defer ts.Close()
 	// Execute test case and validate behavior.
 	_, err := testUpdateServices(nil)
-	if err == nil {
-		t.Fatalf("Expected error for 5xx HTTP response from marathon server, got nil")
-	}
+	require.Error(t, err, "Expected error for 5xx HTTP response from marathon server.")
 }
 
 func marathonTestAppListWithPortDefinitions(labels map[string]string, runningTasks int) *appList {
@@ -324,40 +291,24 @@ func TestMarathonSDSendGroupWithPortDefinitions(t *testing.T) {
 		return marathonTestAppListWithPortDefinitions(marathonValidLabel, 1), nil
 	}
 	tgs, err := testUpdateServices(client)
-	if err != nil {
-		t.Fatalf("Got error: %s", err)
-	}
-	if len(tgs) != 1 {
-		t.Fatal("Expected 1 target group, got", len(tgs))
-	}
-	tg := tgs[0]
+	require.NoError(t, err)
+	require.Len(t, tgs, 1, "Expected 1 target group.")
 
-	if tg.Source != "test-service" {
-		t.Fatalf("Wrong target group name: %s", tg.Source)
-	}
-	if len(tg.Targets) != 2 {
-		t.Fatalf("Wrong number of targets: %v", tg.Targets)
-	}
+	tg := tgs[0]
+	require.Equal(t, "test-service", tg.Source, "Wrong target group name.")
+	require.Len(t, tg.Targets, 2, "Wrong number of targets.")
+
 	tgt := tg.Targets[0]
-	if tgt[model.AddressLabel] != "mesos-slave1:1234" {
-		t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
-	}
-	if tgt[model.LabelName(portMappingLabelPrefix+"prometheus")] != "" {
-		t.Fatalf("Wrong first portMappings label from the first port: %s", tgt[model.AddressLabel])
-	}
-	if tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")] != "" {
-		t.Fatalf("Wrong first portDefinitions label from the first port: %s", tgt[model.AddressLabel])
-	}
+	require.Equal(t, "mesos-slave1:1234", string(tgt[model.AddressLabel]), "Wrong target address.")
+	require.Equal(t, "", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]),
+		"Wrong portMappings label from the first port.")
+	require.Equal(t, "", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]),
+		"Wrong portDefinitions label from the first port.")
+
 	tgt = tg.Targets[1]
-	if tgt[model.AddressLabel] != "mesos-slave1:5678" {
-		t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
-	}
-	if tgt[model.LabelName(portMappingLabelPrefix+"prometheus")] != "" {
-		t.Fatalf("Wrong portMappings label from the second port: %s", tgt[model.AddressLabel])
-	}
-	if tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")] != "yes" {
-		t.Fatalf("Wrong portDefinitions label from the second port: %s", tgt[model.AddressLabel])
-	}
+	require.Equal(t, "mesos-slave1:5678", string(tgt[model.AddressLabel]), "Wrong target address.")
+	require.Empty(t, tgt[model.LabelName(portMappingLabelPrefix+"prometheus")], "Wrong portMappings label from the second port.")
+	require.Equal(t, "yes", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the second port.")
 }
 
 func marathonTestAppListWithPortDefinitionsRequirePorts(labels map[string]string, runningTasks int) *appList {
@@ -394,40 +345,22 @@ func TestMarathonSDSendGroupWithPortDefinitionsRequirePorts(t *testing.T) {
 		return marathonTestAppListWithPortDefinitionsRequirePorts(marathonValidLabel, 1), nil
 	}
 	tgs, err := testUpdateServices(client)
-	if err != nil {
-		t.Fatalf("Got error: %s", err)
-	}
-	if len(tgs) != 1 {
-		t.Fatal("Expected 1 target group, got", len(tgs))
-	}
-	tg := tgs[0]
+	require.NoError(t, err)
+	require.Len(t, tgs, 1, "Expected 1 target group.")
 
-	if tg.Source != "test-service" {
-		t.Fatalf("Wrong target group name: %s", tg.Source)
-	}
-	if len(tg.Targets) != 2 {
-		t.Fatalf("Wrong number of targets: %v", tg.Targets)
-	}
+	tg := tgs[0]
+	require.Equal(t, "test-service", tg.Source, "Wrong target group name.")
+	require.Len(t, tg.Targets, 2, "Wrong number of targets.")
+
 	tgt := tg.Targets[0]
-	if tgt[model.AddressLabel] != "mesos-slave1:31000" {
-		t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
-	}
-	if tgt[model.LabelName(portMappingLabelPrefix+"prometheus")] != "" {
-		t.Fatalf("Wrong first portMappings label from the first port: %s", tgt[model.AddressLabel])
-	}
-	if tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")] != "" {
-		t.Fatalf("Wrong first portDefinitions label from the first port: %s", tgt[model.AddressLabel])
-	}
+	require.Equal(t, "mesos-slave1:31000", string(tgt[model.AddressLabel]), "Wrong target address.")
+	require.Equal(t, "", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the first port.")
+	require.Equal(t, "", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the first port.")
+
 	tgt = tg.Targets[1]
-	if tgt[model.AddressLabel] != "mesos-slave1:32000" {
-		t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
-	}
-	if tgt[model.LabelName(portMappingLabelPrefix+"prometheus")] != "" {
-		t.Fatalf("Wrong portMappings label from the second port: %s", tgt[model.AddressLabel])
-	}
-	if tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")] != "yes" {
-		t.Fatalf("Wrong portDefinitions label from the second port: %s", tgt[model.AddressLabel])
-	}
+	require.Equal(t, "mesos-slave1:32000", string(tgt[model.AddressLabel]), "Wrong target address.")
+	require.Equal(t, "", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the second port.")
+	require.Equal(t, "yes", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the second port.")
 }
 
 func marathonTestAppListWithPorts(labels map[string]string, runningTasks int) *appList {
@@ -459,40 +392,22 @@ func TestMarathonSDSendGroupWithPorts(t *testing.T) {
 		return marathonTestAppListWithPorts(marathonValidLabel, 1), nil
 	}
 	tgs, err := testUpdateServices(client)
-	if err != nil {
-		t.Fatalf("Got error: %s", err)
-	}
-	if len(tgs) != 1 {
-		t.Fatal("Expected 1 target group, got", len(tgs))
-	}
-	tg := tgs[0]
+	require.NoError(t, err)
+	require.Len(t, tgs, 1, "Expected 1 target group.")
 
-	if tg.Source != "test-service" {
-		t.Fatalf("Wrong target group name: %s", tg.Source)
-	}
-	if len(tg.Targets) != 2 {
-		t.Fatalf("Wrong number of targets: %v", tg.Targets)
-	}
+	tg := tgs[0]
+	require.Equal(t, "test-service", tg.Source, "Wrong target group name.")
+	require.Len(t, tg.Targets, 2, "Wrong number of targets.")
+
 	tgt := tg.Targets[0]
-	if tgt[model.AddressLabel] != "mesos-slave1:31000" {
-		t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
-	}
-	if tgt[model.LabelName(portMappingLabelPrefix+"prometheus")] != "" {
-		t.Fatalf("Wrong first portMappings label from the first port: %s", tgt[model.AddressLabel])
-	}
-	if tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")] != "" {
-		t.Fatalf("Wrong first portDefinitions label from the first port: %s", tgt[model.AddressLabel])
-	}
+	require.Equal(t, "mesos-slave1:31000", string(tgt[model.AddressLabel]), "Wrong target address.")
+	require.Equal(t, "", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the first port.")
+	require.Equal(t, "", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the first port.")
+
 	tgt = tg.Targets[1]
-	if tgt[model.AddressLabel] != "mesos-slave1:32000" {
-		t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
-	}
-	if tgt[model.LabelName(portMappingLabelPrefix+"prometheus")] != "" {
-		t.Fatalf("Wrong portMappings label from the second port: %s", tgt[model.AddressLabel])
-	}
-	if tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")] != "" {
-		t.Fatalf("Wrong portDefinitions label from the second port: %s", tgt[model.AddressLabel])
-	}
+	require.Equal(t, "mesos-slave1:32000", string(tgt[model.AddressLabel]), "Wrong target address.")
+	require.Equal(t, "", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the second port.")
+	require.Equal(t, "", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the second port.")
 }
 
 func marathonTestAppListWithContainerPortMappings(labels map[string]string, runningTasks int) *appList {
@@ -533,40 +448,22 @@ func TestMarathonSDSendGroupWithContainerPortMappings(t *testing.T) {
 		return marathonTestAppListWithContainerPortMappings(marathonValidLabel, 1), nil
 	}
 	tgs, err := testUpdateServices(client)
-	if err != nil {
-		t.Fatalf("Got error: %s", err)
-	}
-	if len(tgs) != 1 {
-		t.Fatal("Expected 1 target group, got", len(tgs))
-	}
-	tg := tgs[0]
+	require.NoError(t, err)
+	require.Len(t, tgs, 1, "Expected 1 target group.")
 
-	if tg.Source != "test-service" {
-		t.Fatalf("Wrong target group name: %s", tg.Source)
-	}
-	if len(tg.Targets) != 2 {
-		t.Fatalf("Wrong number of targets: %v", tg.Targets)
-	}
+	tg := tgs[0]
+	require.Equal(t, "test-service", tg.Source, "Wrong target group name.")
+	require.Len(t, tg.Targets, 2, "Wrong number of targets.")
+
 	tgt := tg.Targets[0]
-	if tgt[model.AddressLabel] != "mesos-slave1:12345" {
-		t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
-	}
-	if tgt[model.LabelName(portMappingLabelPrefix+"prometheus")] != "yes" {
-		t.Fatalf("Wrong first portMappings label from the first port: %s", tgt[model.AddressLabel])
-	}
-	if tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")] != "" {
-		t.Fatalf("Wrong first portDefinitions label from the first port: %s", tgt[model.AddressLabel])
-	}
+	require.Equal(t, "mesos-slave1:12345", string(tgt[model.AddressLabel]), "Wrong target address.")
+	require.Equal(t, "yes", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the first port.")
+	require.Equal(t, "", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the first port.")
+
 	tgt = tg.Targets[1]
-	if tgt[model.AddressLabel] != "mesos-slave1:32000" {
-		t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
-	}
-	if tgt[model.LabelName(portMappingLabelPrefix+"prometheus")] != "" {
-		t.Fatalf("Wrong portMappings label from the second port: %s", tgt[model.AddressLabel])
-	}
-	if tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")] != "" {
-		t.Fatalf("Wrong portDefinitions label from the second port: %s", tgt[model.AddressLabel])
-	}
+	require.Equal(t, "mesos-slave1:32000", string(tgt[model.AddressLabel]), "Wrong target address.")
+	require.Equal(t, "", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the second port.")
+	require.Equal(t, "", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the second port.")
 }
 
 func marathonTestAppListWithDockerContainerPortMappings(labels map[string]string, runningTasks int) *appList {
@@ -607,40 +504,22 @@ func TestMarathonSDSendGroupWithDockerContainerPortMappings(t *testing.T) {
 		return marathonTestAppListWithDockerContainerPortMappings(marathonValidLabel, 1), nil
 	}
 	tgs, err := testUpdateServices(client)
-	if err != nil {
-		t.Fatalf("Got error: %s", err)
-	}
-	if len(tgs) != 1 {
-		t.Fatal("Expected 1 target group, got", len(tgs))
-	}
-	tg := tgs[0]
+	require.NoError(t, err)
+	require.Len(t, tgs, 1, "Expected 1 target group.")
 
-	if tg.Source != "test-service" {
-		t.Fatalf("Wrong target group name: %s", tg.Source)
-	}
-	if len(tg.Targets) != 2 {
-		t.Fatalf("Wrong number of targets: %v", tg.Targets)
-	}
+	tg := tgs[0]
+	require.Equal(t, "test-service", tg.Source, "Wrong target group name.")
+	require.Len(t, tg.Targets, 2, "Wrong number of targets.")
+
 	tgt := tg.Targets[0]
-	if tgt[model.AddressLabel] != "mesos-slave1:31000" {
-		t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
-	}
-	if tgt[model.LabelName(portMappingLabelPrefix+"prometheus")] != "yes" {
-		t.Fatalf("Wrong first portMappings label from the first port: %s", tgt[model.AddressLabel])
-	}
-	if tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")] != "" {
-		t.Fatalf("Wrong first portDefinitions label from the first port: %s", tgt[model.AddressLabel])
-	}
+	require.Equal(t, "mesos-slave1:31000", string(tgt[model.AddressLabel]), "Wrong target address.")
+	require.Equal(t, "yes", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the first port.")
+	require.Equal(t, "", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the first port.")
+
 	tgt = tg.Targets[1]
-	if tgt[model.AddressLabel] != "mesos-slave1:12345" {
-		t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
-	}
-	if tgt[model.LabelName(portMappingLabelPrefix+"prometheus")] != "" {
-		t.Fatalf("Wrong portMappings label from the second port: %s", tgt[model.AddressLabel])
-	}
-	if tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")] != "" {
-		t.Fatalf("Wrong portDefinitions label from the second port: %s", tgt[model.AddressLabel])
-	}
+	require.Equal(t, "mesos-slave1:12345", string(tgt[model.AddressLabel]), "Wrong target address.")
+	require.Equal(t, "", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the second port.")
+	require.Equal(t, "", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the second port.")
 }
 
 func marathonTestAppListWithContainerNetworkAndPortMappings(labels map[string]string, runningTasks int) *appList {
@@ -685,38 +564,20 @@ func TestMarathonSDSendGroupWithContainerNetworkAndPortMapping(t *testing.T) {
 		return marathonTestAppListWithContainerNetworkAndPortMappings(marathonValidLabel, 1), nil
 	}
 	tgs, err := testUpdateServices(client)
-	if err != nil {
-		t.Fatalf("Got error: %s", err)
-	}
-	if len(tgs) != 1 {
-		t.Fatal("Expected 1 target group, got", len(tgs))
-	}
-	tg := tgs[0]
+	require.NoError(t, err)
+	require.Len(t, tgs, 1, "Expected 1 target group.")
 
-	if tg.Source != "test-service" {
-		t.Fatalf("Wrong target group name: %s", tg.Source)
-	}
-	if len(tg.Targets) != 2 {
-		t.Fatalf("Wrong number of targets: %v", tg.Targets)
-	}
+	tg := tgs[0]
+	require.Equal(t, "test-service", tg.Source, "Wrong target group name.")
+	require.Len(t, tg.Targets, 2, "Wrong number of targets.")
+
 	tgt := tg.Targets[0]
-	if tgt[model.AddressLabel] != "1.2.3.4:8080" {
-		t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
-	}
-	if tgt[model.LabelName(portMappingLabelPrefix+"prometheus")] != "yes" {
-		t.Fatalf("Wrong first portMappings label from the first port: %s", tgt[model.AddressLabel])
-	}
-	if tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")] != "" {
-		t.Fatalf("Wrong first portDefinitions label from the first port: %s", tgt[model.AddressLabel])
-	}
+	require.Equal(t, "1.2.3.4:8080", string(tgt[model.AddressLabel]), "Wrong target address.")
+	require.Equal(t, "yes", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the first port.")
+	require.Equal(t, "", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the first port.")
+
 	tgt = tg.Targets[1]
-	if tgt[model.AddressLabel] != "1.2.3.4:1234" {
-		t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
-	}
-	if tgt[model.LabelName(portMappingLabelPrefix+"prometheus")] != "" {
-		t.Fatalf("Wrong portMappings label from the second port: %s", tgt[model.AddressLabel])
-	}
-	if tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")] != "" {
-		t.Fatalf("Wrong portDefinitions label from the second port: %s", tgt[model.AddressLabel])
-	}
+	require.Equal(t, "1.2.3.4:1234", string(tgt[model.AddressLabel]), "Wrong target address.")
+	require.Equal(t, "", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the second port.")
+	require.Equal(t, "", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the second port.")
 }

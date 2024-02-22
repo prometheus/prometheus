@@ -447,6 +447,12 @@ func TestLabels_Get(t *testing.T) {
 	require.Equal(t, "222", FromStrings("aaaa", "111", "bbb", "222").Get("bbb"))
 }
 
+func TestLabels_DropMetricName(t *testing.T) {
+	require.True(t, Equal(FromStrings("aaa", "111", "bbb", "222"), FromStrings("aaa", "111", "bbb", "222").DropMetricName()))
+	require.True(t, Equal(FromStrings("aaa", "111"), FromStrings(MetricName, "myname", "aaa", "111").DropMetricName()))
+	require.True(t, Equal(FromStrings("__aaa__", "111", "bbb", "222"), FromStrings("__aaa__", "111", MetricName, "myname", "bbb", "222").DropMetricName()))
+}
+
 // BenchmarkLabels_Get was written to check whether a binary search can improve the performance vs the linear search implementation
 // The results have shown that binary search would only be better when searching last labels in scenarios with more than 10 labels.
 // In the following list, `old` is the linear search while `new` is the binary search implementation (without calling sort.Search, which performs even worse here)
@@ -702,7 +708,8 @@ func TestScratchBuilder(t *testing.T) {
 
 func TestLabels_Hash(t *testing.T) {
 	lbls := FromStrings("foo", "bar", "baz", "qux")
-	require.Equal(t, lbls.Hash(), lbls.Hash())
+	hash1, hash2 := lbls.Hash(), lbls.Hash()
+	require.Equal(t, hash1, hash2)
 	require.NotEqual(t, lbls.Hash(), FromStrings("foo", "bar").Hash(), "different labels match.")
 }
 
