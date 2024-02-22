@@ -262,10 +262,8 @@ func (w *Watcher) loop() {
 // Run the watcher, which will tail the WAL until the quit channel is closed
 // or an error case is hit.
 func (w *Watcher) Run() error {
-	_, lastSegment, err := w.firstAndLast()
-	if err != nil {
-		return fmt.Errorf("wal.Segments: %w", err)
-	}
+	var lastSegment int
+	var err error
 
 	// We want to ensure this is false across iterations since
 	// Run will be called again if there was a failure to read the WAL.
@@ -296,9 +294,17 @@ func (w *Watcher) Run() error {
 		w.currentSegmentMetric.Set(float64(currentSegment))
 		level.Debug(w.logger).Log("msg", "Processing segment", "currentSegment", currentSegment)
 
+		// Reset the value of lastSegment each iteration, this is to avoid having to wait too long for
+		// between reads if we're reading a segment that is not the most recent segment after startup.
+		_, lastSegment, err = w.firstAndLast()
+		if err != nil {
+			return fmt.Errorf("wal.Segments: %w", err)
+		}
+		tail := currentSegment >= lastSegment
+
 		// On start, after reading the existing WAL for series records, we have a pointer to what is the latest segment.
 		// On subsequent calls to this function, currentSegment will have been incremented and we should open that segment.
-		if err := w.watch(currentSegment, currentSegment >= lastSegment); err != nil && !errors.Is(err, ErrIgnorable) {
+		if err := w.watch(currentSegment, tail); err != nil && !errors.Is(err, ErrIgnorable) {
 			return err
 		}
 
