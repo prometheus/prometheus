@@ -1,7 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.tsx";
-import "./index.css";
 import { Settings, SettingsContext } from "./settings.ts";
 
 // Declared/defined in public/index.html, value replaced by Prometheus when serving bundle.
