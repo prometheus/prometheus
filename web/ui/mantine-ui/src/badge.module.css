@@ -1,0 +1,49 @@
+.statsBadge {
+  background-color: light-dark(
+    var(--mantine-color-gray-1),
+    var(--mantine-color-gray-9)
+  );
+  color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-5));
+}
+
+.labelBadge {
+  background-color: light-dark(
+    var(--mantine-color-gray-1),
+    var(--mantine-color-gray-9)
+  );
+  color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-5));
+}
+
+.healthOk {
+  background-color: light-dark(
+    var(--mantine-color-green-1),
+    var(--mantine-color-green-9)
+  );
+  color: light-dark(var(--mantine-color-green-9), var(--mantine-color-green-1));
+}
+
+.healthErr {
+  background-color: light-dark(
+    var(--mantine-color-red-1),
+    darken(var(--mantine-color-red-9), 0.25)
+  );
+  color: light-dark(var(--mantine-color-red-9), var(--mantine-color-red-1));
+}
+
+.healthWarn {
+  background-color: light-dark(
+    var(--mantine-color-yellow-1),
+    var(--mantine-color-yellow-9)
+  );
+  color: light-dark(
+    var(--mantine-color-yellow-9),
+    var(--mantine-color-yellow-1)
+  );
+}
+
+.healthUnknown {
+  background-color: light-dark(
+    var(--mantine-color-gray-1),
+    var(--mantine-color-gray-9)
+  );
+}

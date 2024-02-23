@@ -46,6 +46,14 @@ interface RuleGroup {
   lastEvaluation: string;
 }
 
+type AlertingRuleGroup = Omit<RuleGroup, "rules"> & {
+  rules: AlertingRule[];
+};
+
 export interface RulesMap {
   groups: RuleGroup[];
+}
+
+export interface AlertingRulesMap {
+  groups: AlertingRuleGroup[];
 }

@@ -109,10 +109,14 @@ export const humanizeDuration = (milliseconds: number): string => {
   return "0s";
 };
 
-export const formatRelative = (startStr: string, end: number): string => {
+export const formatRelative = (
+  startStr: string,
+  end: number,
+  suffix: string = " ago"
+): string => {
   const start = parseTime(startStr);
   if (start < 0) {
-    return "Never";
+    return "never";
   }
-  return humanizeDuration(end - start) + " ago";
+  return humanizeDuration(end - start) + suffix;
 };
