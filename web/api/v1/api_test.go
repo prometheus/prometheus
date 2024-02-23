@@ -1872,7 +1872,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					{Type: model.MetricTypeSummary, Help: "A summary of the GC invocation durations."},
 				},
 			},
-			responseAsJSON: `{"go_threads": [{"type":"gauge", unit:"", "help":"Number of OS threads created"}],"go_gc_duration_seconds":[{"type":"summary", unit:"", "help":"A summary of the GC invocation durations."}]}`,
+			responseAsJSON: `{"go_gc_duration_seconds":[{"type":"summary", "unit":"", "help":"A summary of the GC invocation durations."}],"go_threads": [{"type":"gauge", "unit":"", "help":"Number of OS threads created"}]}`,
 		},
 		// With a limit for the number of metadata per metric and per metric.
 		{
