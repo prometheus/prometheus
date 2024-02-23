@@ -15,27 +15,43 @@ package labels
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"github.com/grafana/regexp"
 	"github.com/grafana/regexp/syntax"
 )
 
+// Bitmap used by func isRegexMetaCharacter to check whether a character needs to be escaped.
+var regexMetaCharacterBytes [16]byte
+
+// isRegexMetaCharacter reports whether byte b needs to be escaped.
+func isRegexMetaCharacter(b byte) bool {
+	return b < utf8.RuneSelf && regexMetaCharacterBytes[b%16]&(1<<(b/16)) != 0
+}
+
+func init() {
+	for _, b := range []byte(`.+*?()|[]{}^$`) {
+		regexMetaCharacterBytes[b%16] |= 1 << (b / 16)
+	}
+}
+
 type FastRegexMatcher struct {
 	re       *regexp.Regexp
+	literal  map[string]struct{}
 	prefix   string
 	suffix   string
 	contains string
 
-	// shortcut for literals
-	literal bool
-	value   string
+	pattern string
 }
 
 func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
-	if isLiteral(v) {
-		return &FastRegexMatcher{literal: true, value: v}, nil
+	literalMatchers, remainingMatcher := findSetMatches(v)
+	p := "^(?:" + v + ")$"
+	if len(remainingMatcher) == 0 {
+		return &FastRegexMatcher{literal: literalMatchers, pattern: p}, nil
 	}
-	re, err := regexp.Compile("^(?:" + v + ")$")
+	re, err := regexp.Compile("^(?:" + remainingMatcher + ")$")
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +62,8 @@ func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 	}
 
 	m := &FastRegexMatcher{
-		re: re,
+		re:      re,
+		literal: literalMatchers,
 	}
 
 	if parsed.Op == syntax.OpConcat {
@@ -57,9 +74,10 @@ func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 }
 
 func (m *FastRegexMatcher) MatchString(s string) bool {
-	if m.literal {
-		return s == m.value
+	if _, ok := m.literal[s]; ok {
+		return true
 	}
+
 	if m.prefix != "" && !strings.HasPrefix(s, m.prefix) {
 		return false
 	}
@@ -69,18 +87,14 @@ func (m *FastRegexMatcher) MatchString(s string) bool {
 	if m.contains != "" && !strings.Contains(s, m.contains) {
 		return false
 	}
-	return m.re.MatchString(s)
+	if m.re != nil {
+		return m.re.MatchString(s)
+	}
+	return false
 }
 
 func (m *FastRegexMatcher) GetRegexString() string {
-	if m.literal {
-		return m.value
-	}
-	return m.re.String()
-}
-
-func isLiteral(re string) bool {
-	return regexp.QuoteMeta(re) == re
+	return m.pattern
 }
 
 // optimizeConcatRegex returns literal prefix/suffix text that can be safely
@@ -122,4 +136,56 @@ func optimizeConcatRegex(r *syntax.Regexp) (prefix, suffix, contains string) {
 	}
 
 	return
+}
+
+func findSetMatches(pattern string) (map[string]struct{}, string) {
+	if len(pattern) < 1 {
+		return map[string]struct{}{"": {}}, pattern
+	}
+	escaped := false
+	sets := map[string]struct{}{}
+	regexSets := []string{}
+	init := 0
+	end := len(pattern)
+	containsMeta := false
+	sb := strings.Builder{}
+	for i := init; i < end; i++ {
+		if escaped {
+			switch {
+			case isRegexMetaCharacter(pattern[i]):
+				sb.WriteByte(pattern[i])
+			case pattern[i] == '\\':
+				sb.WriteByte('\\')
+			default:
+				return nil, pattern
+			}
+			escaped = false
+		} else {
+			switch {
+			case isRegexMetaCharacter(pattern[i]):
+				if pattern[i] == '|' {
+					if containsMeta {
+						regexSets = append(regexSets, sb.String())
+					} else {
+						sets[sb.String()] = struct{}{}
+					}
+					sb.Reset()
+					containsMeta = false
+				} else {
+					sb.WriteByte(pattern[i])
+					containsMeta = true
+				}
+			case pattern[i] == '\\':
+				escaped = true
+			default:
+				sb.WriteByte(pattern[i])
+			}
+		}
+	}
+	if containsMeta {
+		regexSets = append(regexSets, sb.String())
+	} else {
+		sets[sb.String()] = struct{}{}
+	}
+	return sets, strings.Join(regexSets, "|")
 }
