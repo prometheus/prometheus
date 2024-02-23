@@ -69,6 +69,21 @@ func TestHistogramString(t *testing.T) {
 			},
 			expectedString: "{count:19, sum:2.7, [-64,-32):1, [-16,-8):1, [-8,-4):2, [-4,-2):1, [-2,-1):3, [-1,-0.5):1, (0.5,1]:1, (1,2]:3, (2,4]:1, (4,8]:2, (8,16]:1, (16,32]:1, (32,64]:1}",
 		},
+		{
+			histogram: Histogram{
+				Schema: CustomBucketsSchema,
+				Count:  19,
+				Sum:    2.7,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 4},
+					{Offset: 0, Length: 0},
+					{Offset: 0, Length: 3},
+				},
+				PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 0},
+				CustomBounds:    []float64{1, 2, 5, 10, 15, 20, 25, 50},
+			},
+			expectedString: "{count:19, sum:2.7, [-Inf,1]:1, (1,2]:3, (2,5]:1, (5,10]:2, (10,15]:1, (15,20]:1, (20,25]:1}",
+		},
 	}
 
 	for i, c := range cases {

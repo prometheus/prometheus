@@ -3312,6 +3312,58 @@ func TestFloatHistogramSize(t *testing.T) {
 	}
 }
 
+func TestFloatHistogramString(t *testing.T) {
+	cases := []struct {
+		name     string
+		fh       *FloatHistogram
+		expected string
+	}{
+		{
+			"exponential histogram",
+			&FloatHistogram{
+				Schema:        1,
+				ZeroThreshold: 0.01,
+				ZeroCount:     5.5,
+				Count:         3493.3,
+				Sum:           2349209.324,
+				PositiveSpans: []Span{
+					{-2, 1},
+					{2, 3},
+				},
+				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1},
+				NegativeSpans: []Span{
+					{3, 2},
+					{3, 2},
+				},
+				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000},
+			},
+			`{count:3493.3, sum:2.349209324e+06, [-22.62741699796952,-16):1000, [-16,-11.31370849898476):123400, [-4,-2.82842712474619):3, [-2.82842712474619,-2):3.1, [-0.01,0.01]:5.5, (0.35355339059327373,0.5]:1, (1,1.414213562373095]:3.3, (1.414213562373095,2]:4.2, (2,2.82842712474619]:0.1}`,
+		},
+		{
+			"custom buckets histogram",
+			&FloatHistogram{
+				Schema: CustomBucketsSchema,
+				Count:  3493.3,
+				Sum:    2349209.324,
+				PositiveSpans: []Span{
+					{0, 1},
+					{2, 4},
+				},
+				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1, 5},
+				CustomBounds:    []float64{1, 2, 5, 10, 15, 20},
+			},
+			`{count:3493.3, sum:2.349209324e+06, [-Inf,1]:1, (5,10]:3.3, (10,15]:4.2, (15,20]:0.1, (20,+Inf]:5}`,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			require.NoError(t, c.fh.Validate())
+			require.Equal(t, c.expected, c.fh.String())
+		})
+	}
+}
+
 func BenchmarkFloatHistogramAllBucketIterator(b *testing.B) {
 	rng := rand.New(rand.NewSource(0))
 
