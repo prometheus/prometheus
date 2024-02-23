@@ -26,6 +26,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/grafana/regexp"
 	"github.com/stretchr/testify/require"
 
@@ -36,17 +37,19 @@ import (
 
 func TestMemPostings_addFor(t *testing.T) {
 	p := NewMemPostings()
-	p.m[allPostingsKey.Name] = map[string][]storage.SeriesRef{}
-	p.m[allPostingsKey.Name][allPostingsKey.Value] = []storage.SeriesRef{1, 2, 3, 4, 6, 7, 8}
+	slot := xxhash.Sum64String(allPostingsKey.Name) % shardCount
+	p.m[slot].series[allPostingsKey.Name] = map[string][]storage.SeriesRef{}
+	p.m[slot].series[allPostingsKey.Name][allPostingsKey.Value] = []storage.SeriesRef{1, 2, 3, 4, 6, 7, 8}
 
 	p.addFor(5, allPostingsKey)
 
-	require.Equal(t, []storage.SeriesRef{1, 2, 3, 4, 5, 6, 7, 8}, p.m[allPostingsKey.Name][allPostingsKey.Value])
+	require.Equal(t, []storage.SeriesRef{1, 2, 3, 4, 5, 6, 7, 8}, p.m[slot].series[allPostingsKey.Name][allPostingsKey.Value])
 }
 
 func TestMemPostings_ensureOrder(t *testing.T) {
 	p := NewUnorderedMemPostings()
-	p.m["a"] = map[string][]storage.SeriesRef{}
+	slot := xxhash.Sum64String("a") % shardCount
+	p.m[slot].series["a"] = map[string][]storage.SeriesRef{}
 
 	for i := 0; i < 100; i++ {
 		l := make([]storage.SeriesRef, 100)
@@ -55,17 +58,19 @@ func TestMemPostings_ensureOrder(t *testing.T) {
 		}
 		v := strconv.Itoa(i)
 
-		p.m["a"][v] = l
+		p.m[slot].series["a"][v] = l
 	}
 
 	p.EnsureOrder(0)
 
-	for _, e := range p.m {
-		for _, l := range e {
-			ok := sort.SliceIsSorted(l, func(i, j int) bool {
-				return l[i] < l[j]
-			})
-			require.True(t, ok, "postings list %v is not sorted", l)
+	for i := range p.m {
+		for _, e := range p.m[i].series {
+			for _, l := range e {
+				ok := sort.SliceIsSorted(l, func(i, j int) bool {
+					return l[i] < l[j]
+				})
+				require.True(t, ok, "postings list %v is not sorted", l)
+			}
 		}
 	}
 }
@@ -100,7 +105,8 @@ func BenchmarkMemPostings_ensureOrder(b *testing.B) {
 			// Generate postings.
 			for l := 0; l < testData.numLabels; l++ {
 				labelName := strconv.Itoa(l)
-				p.m[labelName] = map[string][]storage.SeriesRef{}
+				slot := xxhash.Sum64String(labelName) % shardCount
+				p.m[slot].series[labelName] = map[string][]storage.SeriesRef{}
 
 				for v := 0; v < testData.numValuesPerLabel; v++ {
 					refs := make([]storage.SeriesRef, testData.numRefsPerValue)
@@ -109,7 +115,7 @@ func BenchmarkMemPostings_ensureOrder(b *testing.B) {
 					}
 
 					labelValue := strconv.Itoa(v)
-					p.m[labelName][labelValue] = refs
+					p.m[slot].series[labelName][labelValue] = refs
 				}
 			}
 
@@ -1474,4 +1480,70 @@ func TestMemPostings_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 	})
 	require.Error(t, p.Err())
 	require.Equal(t, failAfter+1, ctx.Count()) // Plus one for the Err() call that puts the error in the result.
+}
+
+// This benchmark tries to test concurrent calls to MemPostings.Add().
+// It generates a bunch of time series with random labels and measures the time needed to add them to the index.
+func BenchmarkMemPostings_Add(b *testing.B) {
+	const seriesCount = 1_000 // The number of time series to add in each goroutine.
+	const labelsCount = 10    // The number of lables per time series.
+	const goroutines = 10     // The number of goroutines.
+
+	builder := labels.NewBuilder(labels.EmptyLabels())
+
+	series := [goroutines][seriesCount]struct {
+		id storage.SeriesRef
+		ls labels.Labels
+	}{}
+
+	// Generates a random string of given length.
+	randomString := func(n int) string {
+		chars := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
+		b := make([]rune, n)
+		for i := range b {
+			b[i] = chars[rand.Intn(len(chars))]
+		}
+		return string(b)
+	}
+
+	// Build a list of time series to append for each goroutine.
+	for g := 0; g < goroutines; g++ {
+		for i := 0; i < seriesCount; i++ {
+			// Each time series will have a few base labels.
+			builder.Reset(labels.FromStrings(
+				"cluster", "dev", // Single common label shared by all time series.
+				"job", fmt.Sprintf("job%d", i%10), // A common label with 10 unique values spread over all time series.
+				"instance", fmt.Sprintf("instance%d", i%256), // A common label with 256 unique values spread over all time series.
+			))
+			// And then we will generate a number of random label/value pairs.
+			for j := 0; j < labelsCount; j++ {
+				builder.Set(fmt.Sprintf("%s%d", randomString(10), j), fmt.Sprintf("%s%d", randomString(20), j))
+			}
+			series[g][i] = struct {
+				id storage.SeriesRef
+				ls labels.Labels
+			}{
+				id: storage.SeriesRef(g*seriesCount + i),
+				ls: builder.Labels(),
+			}
+		}
+	}
+
+	run := func(p *MemPostings, g int, wg *sync.WaitGroup) {
+		for _, s := range series[g] {
+			p.Add(s.id, s.ls)
+		}
+		wg.Done()
+	}
+
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		wg := &sync.WaitGroup{}
+		p := NewMemPostings()
+		for g := 0; g < goroutines; g++ {
+			wg.Add(1)
+			go run(p, g, wg)
+		}
+		wg.Wait()
+	}
 }
