@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -32,17 +33,19 @@ import (
 
 func TestMemPostings_addFor(t *testing.T) {
 	p := NewMemPostings()
-	p.m[allPostingsKey.Name] = map[string][]storage.SeriesRef{}
-	p.m[allPostingsKey.Name][allPostingsKey.Value] = []storage.SeriesRef{1, 2, 3, 4, 6, 7, 8}
+	slot := xxhash.Sum64String(allPostingsKey.Name) % shardCount
+	p.m[slot].series[allPostingsKey.Name] = map[string][]storage.SeriesRef{}
+	p.m[slot].series[allPostingsKey.Name][allPostingsKey.Value] = []storage.SeriesRef{1, 2, 3, 4, 6, 7, 8}
 
 	p.addFor(5, allPostingsKey)
 
-	require.Equal(t, []storage.SeriesRef{1, 2, 3, 4, 5, 6, 7, 8}, p.m[allPostingsKey.Name][allPostingsKey.Value])
+	require.Equal(t, []storage.SeriesRef{1, 2, 3, 4, 5, 6, 7, 8}, p.m[slot].series[allPostingsKey.Name][allPostingsKey.Value])
 }
 
 func TestMemPostings_ensureOrder(t *testing.T) {
 	p := NewUnorderedMemPostings()
-	p.m["a"] = map[string][]storage.SeriesRef{}
+	slot := xxhash.Sum64String("a") % shardCount
+	p.m[slot].series["a"] = map[string][]storage.SeriesRef{}
 
 	for i := 0; i < 100; i++ {
 		l := make([]storage.SeriesRef, 100)
@@ -51,17 +54,19 @@ func TestMemPostings_ensureOrder(t *testing.T) {
 		}
 		v := fmt.Sprintf("%d", i)
 
-		p.m["a"][v] = l
+		p.m[slot].series["a"][v] = l
 	}
 
 	p.EnsureOrder(0)
 
-	for _, e := range p.m {
-		for _, l := range e {
-			ok := sort.SliceIsSorted(l, func(i, j int) bool {
-				return l[i] < l[j]
-			})
-			require.True(t, ok, "postings list %v is not sorted", l)
+	for _, shard := range p.m {
+		for _, e := range shard.series {
+			for _, l := range e {
+				ok := sort.SliceIsSorted(l, func(i, j int) bool {
+					return l[i] < l[j]
+				})
+				require.True(t, ok, "postings list %v is not sorted", l)
+			}
 		}
 	}
 }
@@ -96,7 +101,8 @@ func BenchmarkMemPostings_ensureOrder(b *testing.B) {
 			// Generate postings.
 			for l := 0; l < testData.numLabels; l++ {
 				labelName := strconv.Itoa(l)
-				p.m[labelName] = map[string][]storage.SeriesRef{}
+				slot := xxhash.Sum64String(labelName) % shardCount
+				p.m[slot].series[labelName] = map[string][]storage.SeriesRef{}
 
 				for v := 0; v < testData.numValuesPerLabel; v++ {
 					refs := make([]storage.SeriesRef, testData.numRefsPerValue)
@@ -105,7 +111,7 @@ func BenchmarkMemPostings_ensureOrder(b *testing.B) {
 					}
 
 					labelValue := strconv.Itoa(v)
-					p.m[labelName][labelValue] = refs
+					p.m[slot].series[labelName][labelValue] = refs
 				}
 			}
 
