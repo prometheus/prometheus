@@ -26,9 +26,22 @@ import (
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/util/testutil"
 )
+
+type expectedParse struct {
+	lset    labels.Labels
+	m       string
+	t       *int64
+	v       float64
+	typ     model.MetricType
+	help    string
+	unit    string
+	comment string
+	e       *exemplar.Exemplar
+}
 
 func TestPromParse(t *testing.T) {
 	input := `# HELP go_gc_duration_seconds A summary of the GC invocation durations.
@@ -63,15 +76,7 @@ testmetric{label="\"bar\""} 1`
 
 	int64p := func(x int64) *int64 { return &x }
 
-	exp := []struct {
-		lset    labels.Labels
-		m       string
-		t       *int64
-		v       float64
-		typ     model.MetricType
-		help    string
-		comment string
-	}{
+	exp := []expectedParse{
 		{
 			m:    "go_gc_duration_seconds",
 			help: "A summary of the GC invocation durations.",
@@ -179,6 +184,10 @@ testmetric{label="\"bar\""} 1`
 	}
 
 	p := NewPromParser([]byte(input), labels.NewSymbolTable())
+	checkParseResults(t, p, exp)
+}
+
+func checkParseResults(t *testing.T, p Parser, exp []expectedParse) {
 	i := 0
 
 	var res labels.Labels
@@ -201,6 +210,15 @@ testmetric{label="\"bar\""} 1`
 			require.Equal(t, exp[i].v, v)
 			testutil.RequireEqual(t, exp[i].lset, res)
 
+			var e exemplar.Exemplar
+			found := p.Exemplar(&e)
+			if exp[i].e == nil {
+				require.False(t, found)
+			} else {
+				require.True(t, found)
+				testutil.RequireEqual(t, *exp[i].e, e)
+			}
+
 		case EntryType:
 			m, typ := p.Type()
 			require.Equal(t, exp[i].m, string(m))
@@ -210,6 +228,11 @@ testmetric{label="\"bar\""} 1`
 			m, h := p.Help()
 			require.Equal(t, exp[i].m, string(m))
 			require.Equal(t, exp[i].help, string(h))
+
+		case EntryUnit:
+			m, u := p.Unit()
+			require.Equal(t, exp[i].m, string(m))
+			require.Equal(t, exp[i].unit, string(u))
 
 		case EntryComment:
 			require.Equal(t, exp[i].comment, string(p.Comment()))
@@ -241,15 +264,7 @@ func TestUTF8PromParse(t *testing.T) {
 {"go.gc_duration_seconds_count"} 99
 {"Heizölrückstoßabdämpfung 10€ metric with \"interesting\" {character\nchoices}","strange©™\n'quoted' \"name\""="6"} 10.0`
 
-	exp := []struct {
-		lset    labels.Labels
-		m       string
-		t       *int64
-		v       float64
-		typ     model.MetricType
-		help    string
-		comment string
-	}{
+	exp := []expectedParse{
 		{
 			m:    "go.gc_duration_seconds",
 			help: "A summary of the GC invocation durations.",
@@ -305,45 +320,7 @@ choices}`, "strange©™\n'quoted' \"name\"", "6"),
 	}
 
 	p := NewPromParser([]byte(input), labels.NewSymbolTable())
-	i := 0
-
-	var res labels.Labels
-
-	for {
-		et, err := p.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		require.NoError(t, err)
-
-		switch et {
-		case EntrySeries:
-			m, ts, v := p.Series()
-
-			p.Metric(&res)
-
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].t, ts)
-			require.Equal(t, exp[i].v, v)
-			testutil.RequireEqual(t, exp[i].lset, res)
-
-		case EntryType:
-			m, typ := p.Type()
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].typ, typ)
-
-		case EntryHelp:
-			m, h := p.Help()
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].help, string(h))
-
-		case EntryComment:
-			require.Equal(t, exp[i].comment, string(p.Comment()))
-		}
-
-		i++
-	}
-	require.Len(t, exp, i)
+	checkParseResults(t, p, exp)
 }
 
 func TestPromParseErrors(t *testing.T) {
