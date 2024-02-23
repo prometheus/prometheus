@@ -136,7 +136,7 @@ function App() {
         component={NavLink}
         to="/graph"
         className={classes.link}
-        leftSection={<IconChartAreaFilled size={16} />}
+        leftSection={<IconChartAreaFilled size={14} />}
       >
         Graph
       </Button>
@@ -144,7 +144,7 @@ function App() {
         component={NavLink}
         to="/alerts"
         className={classes.link}
-        leftSection={<IconBellFilled size={16} />}
+        leftSection={<IconBellFilled size={14} />}
       >
         Alerts
       </Button>
@@ -162,9 +162,9 @@ function App() {
                     to={p.path}
                     className={classes.link}
                     leftSection={p.icon}
-                    rightSection={<IconChevronDown size={16} />}
+                    rightSection={<IconChevronDown size={14} />}
                   >
-                    Status <IconChevronRight size={16} /> {p.title}
+                    Status <IconChevronRight size={14} /> {p.title}
                   </Button>
                 </Menu.Target>
               }
@@ -178,8 +178,8 @@ function App() {
                   component={NavLink}
                   to="/"
                   className={classes.link}
-                  leftSection={<IconFileAnalytics size={16} />}
-                  rightSection={<IconChevronDown size={16} />}
+                  leftSection={<IconFileAnalytics size={14} />}
+                  rightSection={<IconChevronDown size={14} />}
                   onClick={(e) => {
                     e.preventDefault();
                   }}
@@ -223,7 +223,7 @@ function App() {
         component="a"
         href="https://prometheus.io/docs/prometheus/latest/getting_started/"
         className={classes.link}
-        leftSection={<IconHelp size={16} />}
+        leftSection={<IconHelp size={14} />}
         target="_blank"
       >
         Help
