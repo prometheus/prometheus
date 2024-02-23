@@ -1056,6 +1056,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 		response              interface{}
 		responseLen           int
 		responseMetadataTotal int
+		responseAsJSON        string
 		errType               errorType
 		sorter                func(interface{})
 		metadata              []targetMetadata
@@ -2853,6 +2854,11 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 							test.zeroFunc(res.data)
 						}
 						assertAPIResponse(t, res.data, test.response)
+						if test.responseAsJSON != "" {
+							s, err := json.Marshal(res.data)
+							require.NoError(t, err)
+							require.Equal(t, test.responseAsJSON, string(s))
+						}
 					}
 				})
 			}
