@@ -1832,8 +1832,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					},
 				},
 			},
-			responseLen:    2,
-			responseAsJSON: `{"go_threads": [{"type":"gauge","unit":"","help":"Number of OS threads created"}], "prometheus_engine_query_duration_seconds": [{"type":"summary","unit":"","help":"Query Timings."}]}`,
+			responseLen: 2,
 		},
 		// With a limit for the number of metadata per metric.
 		{
@@ -1872,7 +1871,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					{Type: model.MetricTypeSummary, Help: "A summary of the GC invocation durations."},
 				},
 			},
-			responseAsJSON: `{"go_gc_duration_seconds":[{"type":"summary", "unit":"", "help":"A summary of the GC invocation durations."}],"go_threads": [{"type":"gauge", "unit":"", "help":"Number of OS threads created"}]}`,
+			responseAsJSON: `{"go_gc_duration_seconds":[{"help":"A summary of the GC invocation durations.","type":"summary","unit":""}],"go_threads": [{"type":"gauge","unit":"","help":"Number of OS threads created"}]}`,
 		},
 		// With a limit for the number of metadata per metric and per metric.
 		{
@@ -1996,6 +1995,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					{Type: model.MetricTypeGauge, Help: "Number of OS threads that were created."},
 				},
 			},
+			responseAsJSON: `{"go_threads": [{"type":"gauge","unit":"","help":"Number of OS threads created"},{"type":"gauge","unit":"","help":"Number of OS threads that were created."}]}`,
 			sorter: func(m interface{}) {
 				v := m.(map[string][]metadata.Metadata)["go_threads"]
 
