@@ -60,6 +60,10 @@ linters-settings:
           desc: "Use github.com/grafana/regexp instead of regexp"
         - pkg: "github.com/pkg/errors"
           desc: "Use 'errors' or 'fmt' instead of github.com/pkg/errors"
+        - pkg: "gzip"
+          desc: "Use github.com/klauspost/compress instead of gzip"
+        - pkg: "zlib"
+          desc: "Use github.com/klauspost/compress instead of zlib"
   errcheck:
     exclude-functions:
       # Don't flag lines such as "io.Copy(io.Discard, resp.Body)".

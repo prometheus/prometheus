@@ -569,7 +569,7 @@ func (client *azureClient) getScaleSetVMs(ctx context.Context, scaleSet armcompu
 }
 
 func mapFromVM(vm armcompute.VirtualMachine) virtualMachine {
-	osType := string(*vm.Properties.StorageProfile.OSDisk.OSType)
+	var osType string
 	tags := map[string]*string{}
 	networkInterfaces := []string{}
 	var computerName string
@@ -580,6 +580,12 @@ func mapFromVM(vm armcompute.VirtualMachine) virtualMachine {
 	}
 
 	if vm.Properties != nil {
+		if vm.Properties.StorageProfile != nil &&
+			vm.Properties.StorageProfile.OSDisk != nil &&
+			vm.Properties.StorageProfile.OSDisk.OSType != nil {
+			osType = string(*vm.Properties.StorageProfile.OSDisk.OSType)
+		}
+
 		if vm.Properties.NetworkProfile != nil {
 			for _, vmNIC := range vm.Properties.NetworkProfile.NetworkInterfaces {
 				networkInterfaces = append(networkInterfaces, *vmNIC.ID)
@@ -608,7 +614,7 @@ func mapFromVM(vm armcompute.VirtualMachine) virtualMachine {
 }
 
 func mapFromVMScaleSetVM(vm armcompute.VirtualMachineScaleSetVM, scaleSetName string) virtualMachine {
-	osType := string(*vm.Properties.StorageProfile.OSDisk.OSType)
+	var osType string
 	tags := map[string]*string{}
 	networkInterfaces := []string{}
 	var computerName string
@@ -619,6 +625,12 @@ func mapFromVMScaleSetVM(vm armcompute.VirtualMachineScaleSetVM, scaleSetName st
 	}
 
 	if vm.Properties != nil {
+		if vm.Properties.StorageProfile != nil &&
+			vm.Properties.StorageProfile.OSDisk != nil &&
+			vm.Properties.StorageProfile.OSDisk.OSType != nil {
+			osType = string(*vm.Properties.StorageProfile.OSDisk.OSType)
+		}
+
 		if vm.Properties.NetworkProfile != nil {
 			for _, vmNIC := range vm.Properties.NetworkProfile.NetworkInterfaces {
 				networkInterfaces = append(networkInterfaces, *vmNIC.ID)

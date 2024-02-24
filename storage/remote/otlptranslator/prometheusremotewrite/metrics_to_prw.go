@@ -23,9 +23,10 @@ type Settings struct {
 	DisableTargetInfo   bool
 	ExportCreatedMetric bool
 	AddMetricSuffixes   bool
+	SendMetadata        bool
 }
 
-// FromMetrics converts pmetric.Metrics to prometheus remote write format.
+// FromMetrics converts pmetric.Metrics to Prometheus remote write format.
 func FromMetrics(md pmetric.Metrics, settings Settings) (tsMap map[string]*prompb.TimeSeries, errs error) {
 	tsMap = make(map[string]*prompb.TimeSeries)
 
@@ -51,6 +52,8 @@ func FromMetrics(md pmetric.Metrics, settings Settings) (tsMap map[string]*promp
 					continue
 				}
 
+				promName := prometheustranslator.BuildCompliantName(metric, settings.Namespace, settings.AddMetricSuffixes)
+
 				// handle individual metric based on type
 				//exhaustive:enforce
 				switch metric.Type() {
@@ -60,7 +63,7 @@ func FromMetrics(md pmetric.Metrics, settings Settings) (tsMap map[string]*promp
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 					}
 					for x := 0; x < dataPoints.Len(); x++ {
-						addSingleGaugeNumberDataPoint(dataPoints.At(x), resource, metric, settings, tsMap)
+						addSingleGaugeNumberDataPoint(dataPoints.At(x), resource, metric, settings, tsMap, promName)
 					}
 				case pmetric.MetricTypeSum:
 					dataPoints := metric.Sum().DataPoints()
@@ -68,7 +71,7 @@ func FromMetrics(md pmetric.Metrics, settings Settings) (tsMap map[string]*promp
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 					}
 					for x := 0; x < dataPoints.Len(); x++ {
-						addSingleSumNumberDataPoint(dataPoints.At(x), resource, metric, settings, tsMap)
+						addSingleSumNumberDataPoint(dataPoints.At(x), resource, metric, settings, tsMap, promName)
 					}
 				case pmetric.MetricTypeHistogram:
 					dataPoints := metric.Histogram().DataPoints()
@@ -76,19 +79,18 @@ func FromMetrics(md pmetric.Metrics, settings Settings) (tsMap map[string]*promp
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 					}
 					for x := 0; x < dataPoints.Len(); x++ {
-						addSingleHistogramDataPoint(dataPoints.At(x), resource, metric, settings, tsMap)
+						addSingleHistogramDataPoint(dataPoints.At(x), resource, metric, settings, tsMap, promName)
 					}
 				case pmetric.MetricTypeExponentialHistogram:
 					dataPoints := metric.ExponentialHistogram().DataPoints()
 					if dataPoints.Len() == 0 {
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 					}
-					name := prometheustranslator.BuildCompliantName(metric, settings.Namespace, settings.AddMetricSuffixes)
 					for x := 0; x < dataPoints.Len(); x++ {
 						errs = multierr.Append(
 							errs,
 							addSingleExponentialHistogramDataPoint(
-								name,
+								promName,
 								dataPoints.At(x),
 								resource,
 								settings,
@@ -102,7 +104,7 @@ func FromMetrics(md pmetric.Metrics, settings Settings) (tsMap map[string]*promp
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 					}
 					for x := 0; x < dataPoints.Len(); x++ {
-						addSingleSummaryDataPoint(dataPoints.At(x), resource, metric, settings, tsMap)
+						addSingleSummaryDataPoint(dataPoints.At(x), resource, metric, settings, tsMap, promName)
 					}
 				default:
 					errs = multierr.Append(errs, errors.New("unsupported metric type"))
