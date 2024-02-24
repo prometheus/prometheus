@@ -37,6 +37,7 @@ import (
 	disv1 "k8s.io/api/discovery/v1"
 	networkv1 "k8s.io/api/networking/v1"
 	"k8s.io/api/networking/v1beta1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
@@ -485,8 +486,8 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			eps := NewEndpointSlice(
 				log.With(d.logger, "role", "endpointslice"),
 				informer,
-				cache.NewSharedInformer(slw, &apiv1.Service{}, resyncDisabled),
-				cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncDisabled),
+				d.mustNewSharedInformer(slw, &apiv1.Service{}, resyncDisabled),
+				d.mustNewSharedInformer(plw, &apiv1.Pod{}, resyncDisabled),
 				nodeInf,
 				d.metrics.eventCount,
 			)
@@ -545,8 +546,8 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			eps := NewEndpoints(
 				log.With(d.logger, "role", "endpoint"),
 				d.newEndpointsByNodeInformer(elw),
-				cache.NewSharedInformer(slw, &apiv1.Service{}, resyncDisabled),
-				cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncDisabled),
+				d.mustNewSharedInformer(slw, &apiv1.Service{}, resyncDisabled),
+				d.mustNewSharedInformer(plw, &apiv1.Pod{}, resyncDisabled),
 				nodeInf,
 				d.metrics.eventCount,
 			)
@@ -602,7 +603,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			}
 			svc := NewService(
 				log.With(d.logger, "role", "service"),
-				cache.NewSharedInformer(slw, &apiv1.Service{}, resyncDisabled),
+				d.mustNewSharedInformer(slw, &apiv1.Service{}, resyncDisabled),
 				d.metrics.eventCount,
 			)
 			d.discoverers = append(d.discoverers, svc)
@@ -641,7 +642,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 						return i.Watch(ctx, options)
 					},
 				}
-				informer = cache.NewSharedInformer(ilw, &networkv1.Ingress{}, resyncDisabled)
+				informer = d.mustNewSharedInformer(ilw, &networkv1.Ingress{}, resyncDisabled)
 			} else {
 				i := d.client.NetworkingV1beta1().Ingresses(namespace)
 				ilw := &cache.ListWatch{
@@ -656,7 +657,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 						return i.Watch(ctx, options)
 					},
 				}
-				informer = cache.NewSharedInformer(ilw, &v1beta1.Ingress{}, resyncDisabled)
+				informer = d.mustNewSharedInformer(ilw, &v1beta1.Ingress{}, resyncDisabled)
 			}
 			ingress := NewIngress(
 				log.With(d.logger, "role", "ingress"),
@@ -747,7 +748,7 @@ func (d *Discovery) newNodeInformer(ctx context.Context) cache.SharedInformer {
 			return d.client.CoreV1().Nodes().Watch(ctx, options)
 		},
 	}
-	return cache.NewSharedInformer(nlw, &apiv1.Node{}, resyncDisabled)
+	return d.mustNewSharedInformer(nlw, &apiv1.Node{}, resyncDisabled)
 }
 
 func (d *Discovery) newPodsByNodeInformer(plw *cache.ListWatch) cache.SharedIndexInformer {
@@ -762,7 +763,7 @@ func (d *Discovery) newPodsByNodeInformer(plw *cache.ListWatch) cache.SharedInde
 		}
 	}
 
-	return cache.NewSharedIndexInformer(plw, &apiv1.Pod{}, resyncDisabled, indexers)
+	return d.mustNewSharedIndexInformer(plw, &apiv1.Pod{}, resyncDisabled, indexers)
 }
 
 func (d *Discovery) newEndpointsByNodeInformer(plw *cache.ListWatch) cache.SharedIndexInformer {
@@ -783,7 +784,7 @@ func (d *Discovery) newEndpointsByNodeInformer(plw *cache.ListWatch) cache.Share
 		return pods, nil
 	}
 	if !d.attachMetadata.Node {
-		return cache.NewSharedIndexInformer(plw, &apiv1.Endpoints{}, resyncDisabled, indexers)
+		return d.mustNewSharedIndexInformer(plw, &apiv1.Endpoints{}, resyncDisabled, indexers)
 	}
 
 	indexers[nodeIndex] = func(obj interface{}) ([]string, error) {
@@ -809,13 +810,13 @@ func (d *Discovery) newEndpointsByNodeInformer(plw *cache.ListWatch) cache.Share
 		return nodes, nil
 	}
 
-	return cache.NewSharedIndexInformer(plw, &apiv1.Endpoints{}, resyncDisabled, indexers)
+	return d.mustNewSharedIndexInformer(plw, &apiv1.Endpoints{}, resyncDisabled, indexers)
 }
 
 func (d *Discovery) newEndpointSlicesByNodeInformer(plw *cache.ListWatch, object runtime.Object) cache.SharedIndexInformer {
 	indexers := make(map[string]cache.IndexFunc)
 	if !d.attachMetadata.Node {
-		cache.NewSharedIndexInformer(plw, &disv1.EndpointSlice{}, resyncDisabled, indexers)
+		d.mustNewSharedIndexInformer(plw, &disv1.EndpointSlice{}, resyncDisabled, indexers)
 	}
 
 	indexers[nodeIndex] = func(obj interface{}) ([]string, error) {
@@ -854,7 +855,80 @@ func (d *Discovery) newEndpointSlicesByNodeInformer(plw *cache.ListWatch, object
 		return nodes, nil
 	}
 
-	return cache.NewSharedIndexInformer(plw, object, resyncDisabled, indexers)
+	return d.mustNewSharedIndexInformer(plw, object, resyncDisabled, indexers)
+}
+
+func (d *Discovery) informerWatchErrorHandler(r *cache.Reflector, err error) {
+	d.metrics.failuresCount.Inc()
+	cache.DefaultWatchErrorHandler(r, err)
+}
+
+func (d *Discovery) mustNewSharedInformer(lw cache.ListerWatcher, exampleObject runtime.Object, defaultEventHandlerResyncPeriod time.Duration) cache.SharedInformer {
+	informer := cache.NewSharedInformer(lw, exampleObject, defaultEventHandlerResyncPeriod)
+	// Invoking SetWatchErrorHandler or SetTransform should fail only if the informer has been started beforehand.
+	// Such a scenario would suggest an incorrect use of the API, thus the panic.
+	if err := informer.SetWatchErrorHandler(d.informerWatchErrorHandler); err != nil {
+		panic(err)
+	}
+	if err := informer.SetTransform(XXX); err != nil {
+		panic(err)
+	}
+	return informer
+}
+
+func (d *Discovery) mustNewSharedIndexInformer(lw cache.ListerWatcher, exampleObject runtime.Object, defaultEventHandlerResyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
+	informer := cache.NewSharedIndexInformer(lw, exampleObject, defaultEventHandlerResyncPeriod, indexers)
+	// Invoking SetWatchErrorHandler or SetTransform should fail only if the informer has been started beforehand.
+	// Such a scenario would suggest an incorrect use of the API, thus the panic.
+	if err := informer.SetWatchErrorHandler(d.informerWatchErrorHandler); err != nil {
+		panic(err)
+	}
+	if err := informer.SetTransform(XXX); err != nil {
+		panic(err)
+	}
+	return informer
+}
+
+// TODO: doc + add test?.
+func XXX(obj interface{}) (interface{}, error) {
+	if accessor, err := meta.Accessor(obj); err == nil {
+		accessor.SetManagedFields(nil)
+		accessor.SetFinalizers(nil)
+	}
+
+	switch o := obj.(type) {
+	case *apiv1.Pod:
+		o.Spec.EphemeralContainers = nil
+		o.Spec.Tolerations = nil
+		o.Spec.Affinity = nil
+		o.Spec.TopologySpreadConstraints = nil
+		o.Spec.Volumes = []apiv1.Volume{}
+		for i := range o.Spec.Containers {
+			o.Spec.Containers[i].Command = nil
+			o.Spec.Containers[i].Args = nil
+			o.Spec.Containers[i].Env = nil
+			o.Spec.Containers[i].EnvFrom = nil
+			o.Spec.Containers[i].VolumeMounts = nil
+		}
+		// TODO: factorize.
+		for i := range o.Spec.InitContainers {
+			o.Spec.InitContainers[i].Command = nil
+			o.Spec.InitContainers[i].Args = nil
+			o.Spec.InitContainers[i].Env = nil
+			o.Spec.InitContainers[i].EnvFrom = nil
+			o.Spec.InitContainers[i].VolumeMounts = nil
+		}
+	case *apiv1.Service:
+		o.Spec.Selector = nil
+	case *apiv1.Node:
+		o.Spec.Taints = nil
+		o.Status.Images = nil
+		o.Status.NodeInfo = apiv1.NodeSystemInfo{}
+		o.Status.Capacity = nil
+		o.Status.Allocatable = nil
+	}
+
+	return obj, nil
 }
 
 func checkDiscoveryV1Supported(client kubernetes.Interface) (bool, error) {
