@@ -269,3 +269,13 @@ eval instant at 50m histogram_sum(sum(incr_sum_histogram))
 
 eval instant at 50m histogram_sum(sum(last_over_time(incr_sum_histogram[5m])))
     {} 30
+
+# Test Native histogram rate func
+load 5m
+    test_histogram {{schema:1 count:5 sum:20 buckets:[1 2 1 1]}}+{{schema:1 count:10 sum:5 buckets:[1 2 3 4]}}x10
+
+eval instant at 50m rate(test_histogram[5m])
+    {} {{schema:1 count:0.03333333333333333 sum:0.016666666666666666 buckets:[0.0033333333333333335 0.006666666666666667 0.01 0.013333333333333334]}}
+
+eval instant at 50m rate(test_histogram[10m])
+    {} {{schema:1 count:0.03333333333333333 sum:0.016666666666666666 buckets:[0.0033333333333333335 0.006666666666666667 0.01 0.013333333333333334]}}
