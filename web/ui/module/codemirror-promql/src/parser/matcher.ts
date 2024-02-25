@@ -20,10 +20,10 @@ import {
   Neq,
   NeqRegex,
   StringLiteral,
-  LegacyLabelMatcher,
-  NewLabelMatcher,
+  UnquotedLabelMatcher,
+  QuotedLabelMatcher,
   MetricNameLabelMatcher,
-  NewLabelName,
+  QuotedLabelName,
 } from '@prometheus-io/lezer-promql';
 import { EditorState } from '@codemirror/state';
 import { Matcher } from '../types';
@@ -36,14 +36,14 @@ function createMatcher(labelMatcher: SyntaxNode, state: EditorState): Matcher {
     return matcher;
   }
   switch (cursor.type.id) {
-    case NewLabelMatcher:
+    case QuotedLabelMatcher:
       if (!cursor.next()) {
         // weird case, that would mean the labelMatcher doesn't have any child.
         return matcher;
       }
       do {
         switch (cursor.type.id) {
-          case NewLabelName:
+          case QuotedLabelName:
             matcher.name = state.sliceDoc(cursor.from, cursor.to).slice(1, -1);
             break;
           case MatchOp:
@@ -58,7 +58,7 @@ function createMatcher(labelMatcher: SyntaxNode, state: EditorState): Matcher {
         }
       } while (cursor.nextSibling());
       break;
-    case LegacyLabelMatcher:
+    case UnquotedLabelMatcher:
       if (!cursor.next()) {
         // weird case, that would mean the labelMatcher doesn't have any child.
         return matcher;

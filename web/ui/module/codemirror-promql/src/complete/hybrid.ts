@@ -52,7 +52,7 @@ import {
   SubqueryExpr,
   Unless,
   VectorSelector,
-  LegacyLabelMatcher,
+  UnquotedLabelMatcher,
 } from '@prometheus-io/lezer-promql';
 import { Completion, CompletionContext, CompletionResult } from '@codemirror/autocomplete';
 import { EditorState } from '@codemirror/state';
@@ -182,7 +182,7 @@ export function computeStartCompletePosition(node: SyntaxNode, pos: number): num
   let start = node.from;
   if (node.type.id === LabelMatchers || node.type.id === GroupingLabels) {
     start = computeStartCompleteLabelPositionInLabelMatcherOrInGroupingLabel(node, pos);
-  } else if (node.type.id === FunctionCallBody || (node.type.id === StringLiteral && node.parent?.type.id === LegacyLabelMatcher)) {
+  } else if (node.type.id === FunctionCallBody || (node.type.id === StringLiteral && node.parent?.type.id === UnquotedLabelMatcher)) {
     // When the cursor is between bracket, quote, we need to increment the starting position to avoid to consider the open bracket/ first string.
     start++;
   } else if (
@@ -213,7 +213,7 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
         result.push({ kind: ContextKind.Duration });
         break;
       }
-      if (node.parent?.type.id === LegacyLabelMatcher) {
+      if (node.parent?.type.id === UnquotedLabelMatcher) {
         // In this case the current token is not itself a valid match op yet:
         //      metric_name{labelName!}
         result.push({ kind: ContextKind.MatchOp });
@@ -381,7 +381,7 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
         //      sum by (myL)
         // So we have to continue to autocomplete any kind of labelName
         result.push({ kind: ContextKind.LabelName });
-      } else if (node.parent?.type.id === LegacyLabelMatcher) {
+      } else if (node.parent?.type.id === UnquotedLabelMatcher) {
         // In that case we are in the given situation:
         //       metric_name{myL} or {myL}
         // so we have or to continue to autocomplete any kind of labelName or
@@ -390,7 +390,7 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
       }
       break;
     case StringLiteral:
-      if (node.parent?.type.id === LegacyLabelMatcher) {
+      if (node.parent?.type.id === UnquotedLabelMatcher) {
         // In this case we are in the given situation:
         //      metric_name{labelName=""}
         // So we can autocomplete the labelValue

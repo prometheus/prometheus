@@ -231,21 +231,21 @@ MatchOp {
 }
 
 LabelMatcher {
-  LegacyLabelMatcher |
-  NewLabelMatcher |
+  UnquotedLabelMatcher |
+  QuotedLabelMatcher |
   MetricNameLabelMatcher
 }
 
-LegacyLabelMatcher {
+UnquotedLabelMatcher {
     LabelName MatchOp StringLiteral
 }
 
-NewLabelMatcher {
-    NewLabelName MatchOp StringLiteral
+QuotedLabelMatcher {
+    QuotedLabelName MatchOp StringLiteral
 }
 
 MetricNameLabelMatcher {
-    NewLabelName
+    QuotedLabelName
 }
 
 StepInvariantExpr {
@@ -289,7 +289,7 @@ NumberLiteral  {
   }
   Identifier { (std.asciiLetter | "_" | ":") (std.asciiLetter | std.digit | "_" | ":" )*}
   LabelName { (std.asciiLetter | "_") (std.asciiLetter | std.digit | "_")* }
-  NewLabelName { '"' (![\\\n"] | "\\" _)* '"' }
+  QuotedLabelName { '"' (![\\\n"] | "\\" _)* '"' }
 
   // Operator
   Sub { "-" }
