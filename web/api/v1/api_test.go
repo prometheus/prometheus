@@ -1056,6 +1056,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 		response              interface{}
 		responseLen           int
 		responseMetadataTotal int
+		responseAsJSON        string
 		errType               errorType
 		sorter                func(interface{})
 		metadata              []targetMetadata
@@ -1714,6 +1715,9 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				"prometheus_engine_query_duration_seconds": {{Type: model.MetricTypeSummary, Help: "Query timings", Unit: ""}},
 				"go_info": {{Type: model.MetricTypeGauge, Help: "Information about the Go environment.", Unit: ""}},
 			},
+			responseAsJSON: `{"prometheus_engine_query_duration_seconds":[{"type":"summary","unit":"",
+"help":"Query timings"}], "go_info":[{"type":"gauge","unit":"",
+"help":"Information about the Go environment."}]}`,
 		},
 		// With duplicate metadata for a metric that comes from different targets.
 		{
@@ -1745,6 +1749,8 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			response: map[string][]metadata.Metadata{
 				"go_threads": {{Type: model.MetricTypeGauge, Help: "Number of OS threads created"}},
 			},
+			responseAsJSON: `{"go_threads": [{"type":"gauge","unit":"",
+"help":"Number of OS threads created"}]}`,
 		},
 		// With non-duplicate metadata for the same metric from different targets.
 		{
@@ -1779,6 +1785,9 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					{Type: model.MetricTypeGauge, Help: "Number of OS threads that were created."},
 				},
 			},
+			responseAsJSON: `{"go_threads": [{"type":"gauge","unit":"",
+"help":"Number of OS threads created"},{"type":"gauge","unit":"",
+"help":"Number of OS threads that were created."}]}`,
 			sorter: func(m interface{}) {
 				v := m.(map[string][]metadata.Metadata)["go_threads"]
 
@@ -1806,7 +1815,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						{
 							Metric: "prometheus_engine_query_duration_seconds",
 							Type:   model.MetricTypeSummary,
-							Help:   "Query Timmings.",
+							Help:   "Query Timings.",
 							Unit:   "",
 						},
 					},
@@ -1862,6 +1871,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					{Type: model.MetricTypeSummary, Help: "A summary of the GC invocation durations."},
 				},
 			},
+			responseAsJSON: `{"go_gc_duration_seconds":[{"help":"A summary of the GC invocation durations.","type":"summary","unit":""}],"go_threads": [{"type":"gauge","unit":"","help":"Number of OS threads created"}]}`,
 		},
 		// With a limit for the number of metadata per metric and per metric.
 		{
@@ -1985,6 +1995,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					{Type: model.MetricTypeGauge, Help: "Number of OS threads that were created."},
 				},
 			},
+			responseAsJSON: `{"go_threads": [{"type":"gauge","unit":"","help":"Number of OS threads created"},{"type":"gauge","unit":"","help":"Number of OS threads that were created."}]}`,
 			sorter: func(m interface{}) {
 				v := m.(map[string][]metadata.Metadata)["go_threads"]
 
@@ -2853,6 +2864,12 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 							test.zeroFunc(res.data)
 						}
 						assertAPIResponse(t, res.data, test.response)
+					}
+
+					if test.responseAsJSON != "" {
+						s, err := json.Marshal(res.data)
+						require.NoError(t, err)
+						require.JSONEq(t, test.responseAsJSON, string(s))
 					}
 				})
 			}
