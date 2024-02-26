@@ -94,6 +94,8 @@ require (
 	k8s.io/klog/v2 v2.120.1
 )
 
+require github.com/cockroachdb/swiss v0.0.0-20240218003604-fa7bdb1c8c21
+
 require (
 	cloud.google.com/go/compute v1.23.3 // indirect
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect

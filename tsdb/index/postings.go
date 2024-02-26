@@ -25,6 +25,7 @@ import (
 	"sync"
 
 	"github.com/bboreham/go-loser"
+	"github.com/cockroachdb/swiss"
 	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -55,14 +56,14 @@ var ensureOrderBatchPool = sync.Pool{
 // unordered batch fills on startup.
 type MemPostings struct {
 	mtx     sync.RWMutex
-	m       map[string]map[string][]storage.SeriesRef
+	m       map[string]*swiss.Map[string, []storage.SeriesRef]
 	ordered bool
 }
 
 // NewMemPostings returns a memPostings that's ready for reads and writes.
 func NewMemPostings() *MemPostings {
 	return &MemPostings{
-		m:       make(map[string]map[string][]storage.SeriesRef, 512),
+		m:       make(map[string]*swiss.Map[string, []storage.SeriesRef], 512),
 		ordered: true,
 	}
 }
@@ -71,7 +72,7 @@ func NewMemPostings() *MemPostings {
 // until EnsureOrder() was called once.
 func NewUnorderedMemPostings() *MemPostings {
 	return &MemPostings{
-		m:       make(map[string]map[string][]storage.SeriesRef, 512),
+		m:       make(map[string]*swiss.Map[string, []storage.SeriesRef], 512),
 		ordered: false,
 	}
 }
@@ -84,9 +85,10 @@ func (p *MemPostings) Symbols() StringIter {
 	symbols := make(map[string]struct{}, 512)
 	for n, e := range p.m {
 		symbols[n] = struct{}{}
-		for v := range e {
+		e.All(func(v string, _ []storage.SeriesRef) bool {
 			symbols[v] = struct{}{}
-		}
+			return true
+		})
 	}
 	p.mtx.RUnlock()
 
@@ -105,9 +107,10 @@ func (p *MemPostings) SortedKeys() []labels.Label {
 	keys := make([]labels.Label, 0, len(p.m))
 
 	for n, e := range p.m {
-		for v := range e {
+		e.All(func(v string, _ []storage.SeriesRef) bool {
 			keys = append(keys, labels.Label{Name: n, Value: v})
-		}
+			return true
+		})
 	}
 	p.mtx.RUnlock()
 
@@ -146,10 +149,16 @@ func (p *MemPostings) LabelValues(_ context.Context, name string) []string {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
 
-	values := make([]string, 0, len(p.m[name]))
-	for v := range p.m[name] {
-		values = append(values, v)
+	e := p.m[name]
+	if e == nil || e.Len() == 0 {
+		return nil
 	}
+
+	values := make([]string, 0, e.Len())
+	e.All(func(v string, _ []storage.SeriesRef) bool {
+		values = append(values, v)
+		return true
+	})
 	return values
 }
 
@@ -182,17 +191,18 @@ func (p *MemPostings) Stats(label string, limit int) *PostingsStats {
 		if n == "" {
 			continue
 		}
-		labels.push(Stat{Name: n, Count: uint64(len(e))})
-		numLabelPairs += len(e)
+		labels.push(Stat{Name: n, Count: uint64(e.Len())})
+		numLabelPairs += e.Len()
 		size = 0
-		for name, values := range e {
+		e.All(func(name string, values []storage.SeriesRef) bool {
 			if n == label {
 				metrics.push(Stat{Name: name, Count: uint64(len(values))})
 			}
 			seriesCnt := uint64(len(values))
 			labelValuePairs.push(Stat{Name: n + "=" + name, Count: seriesCnt})
 			size += uint64(len(name)) * seriesCnt
-		}
+			return true
+		})
 		labelValueLength.push(Stat{Name: n, Count: size})
 	}
 
@@ -213,7 +223,7 @@ func (p *MemPostings) Get(name, value string) Postings {
 	p.mtx.RLock()
 	l := p.m[name]
 	if l != nil {
-		lp = l[value]
+		lp, _ = l.Get(value)
 	}
 	p.mtx.RUnlock()
 
@@ -266,14 +276,15 @@ func (p *MemPostings) EnsureOrder(numberOfConcurrentProcesses int) {
 
 	nextJob := ensureOrderBatchPool.Get().(*[][]storage.SeriesRef)
 	for _, e := range p.m {
-		for _, l := range e {
+		e.All(func(_ string, l []storage.SeriesRef) bool {
 			*nextJob = append(*nextJob, l)
 
 			if len(*nextJob) >= ensureOrderBatchSize {
 				workc <- nextJob
 				nextJob = ensureOrderBatchPool.Get().(*[][]storage.SeriesRef)
 			}
-		}
+			return true
+		})
 	}
 
 	// If the last job was partially filled, we need to push it to workers too.
@@ -302,9 +313,10 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}) {
 	for _, n := range keys {
 		p.mtx.RLock()
 		vals = vals[:0]
-		for v := range p.m[n] {
+		p.m[n].All(func(v string, _ []storage.SeriesRef) bool {
 			vals = append(vals, v)
-		}
+			return true
+		})
 		p.mtx.RUnlock()
 
 		// For each posting we first analyse whether the postings list is affected by the deletes.
@@ -314,7 +326,8 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}) {
 			p.mtx.Lock()
 
 			found := false
-			for _, id := range p.m[n][l] {
+			srs, _ := p.m[n].Get(l)
+			for _, id := range srs {
 				if _, ok := deleted[id]; ok {
 					found = true
 					break
@@ -324,22 +337,22 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}) {
 				p.mtx.Unlock()
 				continue
 			}
-			repl := make([]storage.SeriesRef, 0, len(p.m[n][l]))
+			repl := make([]storage.SeriesRef, 0, len(srs))
 
-			for _, id := range p.m[n][l] {
+			for _, id := range srs {
 				if _, ok := deleted[id]; !ok {
 					repl = append(repl, id)
 				}
 			}
 			if len(repl) > 0 {
-				p.m[n][l] = repl
+				p.m[n].Put(l, repl)
 			} else {
-				delete(p.m[n], l)
+				p.m[n].Delete(l)
 			}
 			p.mtx.Unlock()
 		}
 		p.mtx.Lock()
-		if len(p.m[n]) == 0 {
+		if p.m[n].Len() == 0 {
 			delete(p.m, n)
 		}
 		p.mtx.Unlock()
@@ -352,10 +365,15 @@ func (p *MemPostings) Iter(f func(labels.Label, Postings) error) error {
 	defer p.mtx.RUnlock()
 
 	for n, e := range p.m {
-		for v, p := range e {
-			if err := f(labels.Label{Name: n, Value: v}, newListPostings(p...)); err != nil {
-				return err
+		var err error
+		e.All(func(v string, p []storage.SeriesRef) bool {
+			if err = f(labels.Label{Name: n, Value: v}, newListPostings(p...)); err != nil {
+				return false
 			}
+			return true
+		})
+		if err != nil {
+			return err
 		}
 	}
 	return nil
@@ -376,11 +394,12 @@ func (p *MemPostings) Add(id storage.SeriesRef, lset labels.Labels) {
 func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 	nm, ok := p.m[l.Name]
 	if !ok {
-		nm = map[string][]storage.SeriesRef{}
+		nm = swiss.New[string, []storage.SeriesRef](0)
 		p.m[l.Name] = nm
 	}
-	list := append(nm[l.Value], id)
-	nm[l.Value] = list
+	list, _ := nm.Get(l.Value)
+	list = append(list, id)
+	nm.Put(l.Value, list)
 
 	if !p.ordered {
 		return
