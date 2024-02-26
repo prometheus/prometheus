@@ -3643,13 +3643,13 @@ queue_config:
   # samples from the WAL. It is recommended to have enough capacity in each
   # shard to buffer several requests to keep throughput up while processing
   # occasional slow remote requests.
-  [ capacity: <int> | default = 2500 ]
+  [ capacity: <int> | default = 10000 ]
   # Maximum number of shards, i.e. amount of concurrency.
-  [ max_shards: <int> | default = 200 ]
+  [ max_shards: <int> | default = 50 ]
   # Minimum number of shards, i.e. amount of concurrency.
   [ min_shards: <int> | default = 1 ]
   # Maximum number of samples per send.
-  [ max_samples_per_send: <int> | default = 500]
+  [ max_samples_per_send: <int> | default = 2000]
   # Maximum time a sample will wait in buffer.
   [ batch_send_deadline: <duration> | default = 5s ]
   # Initial retry delay. Gets doubled for every retry.
