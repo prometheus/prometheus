@@ -7,6 +7,8 @@ import { Metric, Histogram } from '../../types/types';
 
 import moment from 'moment';
 
+import HistogramChart from './HistogramChart';
+
 export interface DataTableProps {
   data:
     | null
@@ -75,7 +77,13 @@ const DataTable: FC<DataTableProps> = ({ data, useLocalTime }) => {
               <SeriesName labels={s.metric} format={doFormat} />
             </td>
             <td>
-              {s.value && s.value[1]} <HistogramString h={s.histogram && s.histogram[1]} />
+              {s.value && s.value[1]}
+              {s.histogram && (
+                <>
+                  <HistogramChart histogram={s.histogram[1]} index={index} />
+                  {histogramTable(s.histogram[1])}
+                </>
+              )}
             </td>
           </tr>
         );
@@ -100,7 +108,7 @@ const DataTable: FC<DataTableProps> = ({ data, useLocalTime }) => {
               const printedDatetime = moment.unix(h[0]).toISOString(useLocalTime);
               return (
                 <React.Fragment key={-hisIdx}>
-                  <HistogramString h={h[1]} /> @{<span title={printedDatetime}>{h[0]}</span>}
+                  {histogramTable(h[1])} @{<span title={printedDatetime}>{h[0]}</span>}
                   <br />
                 </React.Fragment>
               );
@@ -159,6 +167,9 @@ const DataTable: FC<DataTableProps> = ({ data, useLocalTime }) => {
   );
 };
 
+const leftDelim = (br: number): string => (br === 3 || br === 1 ? '[' : '(');
+const rightDelim = (br: number): string => (br === 3 || br === 0 ? ']' : ')');
+
 export interface HistogramStringProps {
   h?: Histogram;
 }
@@ -184,4 +195,40 @@ export const HistogramString: FC<HistogramStringProps> = ({ h }) => {
   );
 };
 
+export const bucketRangeString = ([boundaryRule, leftBoundary, rightBoundary, _]: [
+  number,
+  string,
+  string,
+  string
+]): string => {
+  return `${leftDelim(boundaryRule)}${leftBoundary} -> ${rightBoundary}${rightDelim(boundaryRule)}`;
+};
+
+export const histogramTable = (h: Histogram): ReactNode => (
+  <Table size="xs" responsive bordered>
+    <thead>
+      <tr>
+        <th style={{ textAlign: 'center' }} colSpan={2}>
+          Histogram Sample
+        </th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th>count:</th>
+        <td>{h.count}</td>
+      </tr>
+      <tr>
+        <th>sum:</th>
+        <td>{h.sum}</td>
+      </tr>
+      {h.buckets?.map((b, i) => (
+        <tr key={i}>
+          <th>{bucketRangeString(b)}</th>
+          <td>{b[3]}</td>
+        </tr>
+      ))}
+    </tbody>
+  </Table>
+);
 export default DataTable;

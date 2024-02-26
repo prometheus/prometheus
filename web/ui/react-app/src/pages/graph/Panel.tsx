@@ -333,6 +333,7 @@ class Panel extends Component<PanelProps, PanelState> {
                 {options.type === 'table' && (
                   <>
                     <div className="table-controls">
+                      <p>BRUH</p>
                       <TimeInput
                         time={options.endTime}
                         useLocalTime={this.props.useLocalTime}
