@@ -105,7 +105,7 @@ var (
 
 	InvalidQuantileWarning              = fmt.Errorf("%w: quantile value should be between 0 and 1", PromQLWarning)
 	BadBucketLabelWarning               = fmt.Errorf("%w: bucket label %q is missing or has a malformed value", PromQLWarning, model.BucketLabel)
-	MixedFloatsHistogramsWarning        = fmt.Errorf("%w: encountered a mix of histograms and floats for ", PromQLWarning)
+	MixedFloatsHistogramsWarning        = fmt.Errorf("%w: encountered a mix of histograms and floats for", PromQLWarning)
 	MixedClassicNativeHistogramsWarning = fmt.Errorf("%w: vector contains a mix of classic and native histograms for metric name", PromQLWarning)
 	NativeHistogramNotCounterWarning    = fmt.Errorf("%w: this native histogram metric is not a counter:", PromQLWarning)
 	NativeHistogramNotGaugeWarning      = fmt.Errorf("%w: this native histogram metric is not a gauge:", PromQLWarning)
