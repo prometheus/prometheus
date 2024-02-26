@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !stringlabels
+//go:build !stringlabels && !dedupelabels
 
 package labels
 
@@ -371,6 +371,25 @@ func (ls Labels) ReleaseStrings(release func(string)) {
 	}
 }
 
+// Builder allows modifying Labels.
+type Builder struct {
+	base Labels
+	del  []string
+	add  []Label
+}
+
+// Reset clears all current state for the builder.
+func (b *Builder) Reset(base Labels) {
+	b.base = base
+	b.del = b.del[:0]
+	b.add = b.add[:0]
+	b.base.Range(func(l Label) {
+		if l.Value == "" {
+			b.del = append(b.del, l.Name)
+		}
+	})
+}
+
 // Labels returns the labels from the builder.
 // If no modifications were made, the original labels are returned.
 func (b *Builder) Labels() Labels {
@@ -401,9 +420,30 @@ type ScratchBuilder struct {
 	add Labels
 }
 
+// Symbol-table is no-op, just for api parity with dedupelabels.
+type SymbolTable struct{}
+
+func NewSymbolTable() *SymbolTable { return nil }
+
+func (t *SymbolTable) Len() int { return 0 }
+
 // NewScratchBuilder creates a ScratchBuilder initialized for Labels with n entries.
 func NewScratchBuilder(n int) ScratchBuilder {
 	return ScratchBuilder{add: make([]Label, 0, n)}
+}
+
+// NewBuilderWithSymbolTable creates a Builder, for api parity with dedupelabels.
+func NewBuilderWithSymbolTable(_ *SymbolTable) *Builder {
+	return NewBuilder(EmptyLabels())
+}
+
+// NewScratchBuilderWithSymbolTable creates a ScratchBuilder, for api parity with dedupelabels.
+func NewScratchBuilderWithSymbolTable(_ *SymbolTable, n int) ScratchBuilder {
+	return NewScratchBuilder(n)
+}
+
+func (b *ScratchBuilder) SetSymbolTable(_ *SymbolTable) {
+	// no-op
 }
 
 func (b *ScratchBuilder) Reset() {

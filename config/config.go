@@ -82,7 +82,7 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 		return cfg, nil
 	}
 
-	b := labels.ScratchBuilder{}
+	b := labels.NewScratchBuilder(0)
 	cfg.GlobalConfig.ExternalLabels.Range(func(v labels.Label) {
 		newV := os.Expand(v.Value, func(s string) string {
 			if s == "$" {
@@ -97,6 +97,7 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 		if newV != v.Value {
 			level.Debug(logger).Log("msg", "External label replaced", "label", v.Name, "input", v.Value, "output", newV)
 		}
+		// Note newV can be blank. https://github.com/prometheus/prometheus/issues/11024
 		b.Add(v.Name, newV)
 	})
 	cfg.GlobalConfig.ExternalLabels = b.Labels()

@@ -237,7 +237,7 @@ func TestCheckpoint(t *testing.T) {
 			require.NoError(t, err)
 			defer sr.Close()
 
-			var dec record.Decoder
+			dec := record.NewDecoder(labels.NewSymbolTable())
 			var series []record.RefSeries
 			var metadata []record.RefMetadata
 			r := NewReader(sr)

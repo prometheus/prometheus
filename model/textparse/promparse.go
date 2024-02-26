@@ -166,8 +166,11 @@ type PromParser struct {
 }
 
 // NewPromParser returns a new parser of the byte slice.
-func NewPromParser(b []byte) Parser {
-	return &PromParser{l: &promlexer{b: append(b, '\n')}}
+func NewPromParser(b []byte, st *labels.SymbolTable) Parser {
+	return &PromParser{
+		l:       &promlexer{b: append(b, '\n')},
+		builder: labels.NewScratchBuilderWithSymbolTable(st, 16),
+	}
 }
 
 // Series returns the bytes of the series, the timestamp if set, and the value

@@ -4031,7 +4031,7 @@ func TestOOOWALWrite(t *testing.T) {
 
 		var (
 			records []interface{}
-			dec     record.Decoder
+			dec     record.Decoder = record.NewDecoder(labels.NewSymbolTable())
 		)
 		for r.Next() {
 			rec := r.Record()
@@ -5390,7 +5390,7 @@ func TestWBLAndMmapReplay(t *testing.T) {
 		require.NoError(t, err)
 		sr, err := wlog.NewSegmentsReader(originalWblDir)
 		require.NoError(t, err)
-		var dec record.Decoder
+		dec := record.NewDecoder(labels.NewSymbolTable())
 		r, markers, addedRecs := wlog.NewReader(sr), 0, 0
 		for r.Next() {
 			rec := r.Record()
