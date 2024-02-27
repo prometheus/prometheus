@@ -410,10 +410,20 @@ func (p *MemPostings) PostingsForMatcher(ctx context.Context, pr PostingsReader,
 		return EmptyPostings()
 	}
 
-	var its []Postings
+	// Benchmarking shows that first copying the values into a slice and then matching over that is
+	// faster than matching over the map keys directly, at least on AMD64.
+	// However, when using a Swiss Table implementation instead of a standard map, it's performant.
+	vals := make([]string, 0, len(e))
 	for v, srs := range e {
-		if m.Matches(v) && len(srs) > 0 {
-			its = append(its, NewListPostings(srs))
+		if len(srs) > 0 {
+			vals = append(vals, v)
+		}
+	}
+
+	var its []Postings
+	for _, v := range vals {
+		if m.Matches(v) {
+			its = append(its, NewListPostings(e[v]))
 		}
 	}
 	p.mtx.RUnlock()
