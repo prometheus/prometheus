@@ -1732,6 +1732,34 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: `{'foo\'bar', 'a\\dos\\path'='boo\\urns'}`,
+		expected: &VectorSelector{
+			// When a metric is named inside the braces, the Name field is not set.
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, `foo'bar`),
+				MustLabelMatcher(labels.MatchEqual, `a\dos\path`, `boo\urns`),
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   40,
+			},
+		},
+	},
+	{
+		input: `{'foo\'bar', ` + "`" + `a\dos\path` + "`" + `="boo"}`,
+		expected: &VectorSelector{
+			// When a metric is named inside the braces, the Name field is not set.
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, `foo'bar`),
+				MustLabelMatcher(labels.MatchEqual, `a\dos\path`, "boo"),
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   32,
+			},
+		},
+	},
+	{
 		input: `{"foo", a="bc"}`,
 		expected: &VectorSelector{
 			// When a metric is named inside the braces, the Name field is not set.
