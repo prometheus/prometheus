@@ -285,7 +285,13 @@ class basic_istream : public std::istream {
         return 0;
       }
 
-      auto data_block_size = unpack_data_block_size(*reinterpret_cast<uint32_t*>(&data_block_header_.front() + header_size));
+      auto data_block_size = *reinterpret_cast<uint32_t*>(&data_block_header_.front() + header_size);
+      if (data_block_size == 0) {
+        [[unlikely]];
+        return 0;
+      }
+
+      data_block_size = unpack_data_block_size(data_block_size);
       header_size += LZ4F_BLOCK_HEADER_SIZE;
       return data_block_size + header_size;
     }
