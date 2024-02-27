@@ -123,13 +123,6 @@ func FromMap(m map[string]string) Labels {
 	return New(l...)
 }
 
-// Builder allows modifying Labels.
-type Builder struct {
-	base Labels
-	del  []string
-	add  []Label
-}
-
 // NewBuilder returns a new LabelsBuilder.
 func NewBuilder(base Labels) *Builder {
 	b := &Builder{
@@ -138,18 +131,6 @@ func NewBuilder(base Labels) *Builder {
 	}
 	b.Reset(base)
 	return b
-}
-
-// Reset clears all current state for the builder.
-func (b *Builder) Reset(base Labels) {
-	b.base = base
-	b.del = b.del[:0]
-	b.add = b.add[:0]
-	b.base.Range(func(l Label) {
-		if l.Value == "" {
-			b.del = append(b.del, l.Name)
-		}
-	})
 }
 
 // Del deletes the label of the given name.

@@ -55,18 +55,19 @@ func TestRemoteWriteHandler(t *testing.T) {
 	resp := recorder.Result()
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 
+	b := labels.NewScratchBuilder(0)
 	i := 0
 	j := 0
 	k := 0
 	for _, ts := range writeRequestFixture.Timeseries {
-		labels := labelProtosToLabels(ts.Labels)
+		labels := labelProtosToLabels(&b, ts.Labels)
 		for _, s := range ts.Samples {
 			requireEqual(t, mockSample{labels, s.Timestamp, s.Value}, appendable.samples[i])
 			i++
 		}
 
 		for _, e := range ts.Exemplars {
-			exemplarLabels := labelProtosToLabels(e.Labels)
+			exemplarLabels := labelProtosToLabels(&b, e.Labels)
 			requireEqual(t, mockExemplar{labels, exemplarLabels, e.Timestamp, e.Value}, appendable.exemplars[j])
 			j++
 		}

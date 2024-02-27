@@ -80,22 +80,22 @@ type Parser interface {
 //
 // This function always returns a valid parser, but might additionally
 // return an error if the content type cannot be parsed.
-func New(b []byte, contentType string, parseClassicHistograms bool) (Parser, error) {
+func New(b []byte, contentType string, parseClassicHistograms bool, st *labels.SymbolTable) (Parser, error) {
 	if contentType == "" {
-		return NewPromParser(b), nil
+		return NewPromParser(b, st), nil
 	}
 
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err != nil {
-		return NewPromParser(b), err
+		return NewPromParser(b, st), err
 	}
 	switch mediaType {
 	case "application/openmetrics-text":
-		return NewOpenMetricsParser(b), nil
+		return NewOpenMetricsParser(b, st), nil
 	case "application/vnd.google.protobuf":
-		return NewProtobufParser(b, parseClassicHistograms), nil
+		return NewProtobufParser(b, parseClassicHistograms, st), nil
 	default:
-		return NewPromParser(b), nil
+		return NewPromParser(b, st), nil
 	}
 }
 

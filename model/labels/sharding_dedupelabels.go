@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright 2024 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !stringlabels && !dedupelabels
+//go:build dedupelabels
 
 package labels
 
@@ -24,24 +24,29 @@ import (
 func StableHash(ls Labels) uint64 {
 	// Use xxhash.Sum64(b) for fast path as it's faster.
 	b := make([]byte, 0, 1024)
-	for i, v := range ls {
-		if len(b)+len(v.Name)+len(v.Value)+2 >= cap(b) {
-			// If labels entry is 1KB+ do not allocate whole entry.
+	for pos := 0; pos < len(ls.data); {
+		name, newPos := decodeString(ls.syms, ls.data, pos)
+		value, newPos := decodeString(ls.syms, ls.data, newPos)
+		if len(b)+len(name)+len(value)+2 >= cap(b) {
+			// If labels entry is 1KB+, hash the rest of them via Write().
 			h := xxhash.New()
 			_, _ = h.Write(b)
-			for _, v := range ls[i:] {
-				_, _ = h.WriteString(v.Name)
+			for pos < len(ls.data) {
+				name, pos = decodeString(ls.syms, ls.data, pos)
+				value, pos = decodeString(ls.syms, ls.data, pos)
+				_, _ = h.WriteString(name)
 				_, _ = h.Write(seps)
-				_, _ = h.WriteString(v.Value)
+				_, _ = h.WriteString(value)
 				_, _ = h.Write(seps)
 			}
 			return h.Sum64()
 		}
 
-		b = append(b, v.Name...)
+		b = append(b, name...)
 		b = append(b, seps[0])
-		b = append(b, v.Value...)
+		b = append(b, value...)
 		b = append(b, seps[0])
+		pos = newPos
 	}
 	return xxhash.Sum64(b)
 }

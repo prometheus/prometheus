@@ -279,6 +279,7 @@ func TestScrapePoolReload(t *testing.T) {
 		logger:        nil,
 		client:        http.DefaultClient,
 		metrics:       newTestScrapeMetrics(t),
+		symbolTable:   labels.NewSymbolTable(),
 	}
 
 	// Reloading a scrape pool with a new scrape configuration must stop all scrape
@@ -357,10 +358,11 @@ func TestScrapePoolReloadPreserveRelabeledIntervalTimeout(t *testing.T) {
 		loops: map[uint64]loop{
 			1: noopLoop(),
 		},
-		newLoop: newLoop,
-		logger:  nil,
-		client:  http.DefaultClient,
-		metrics: newTestScrapeMetrics(t),
+		newLoop:     newLoop,
+		logger:      nil,
+		client:      http.DefaultClient,
+		metrics:     newTestScrapeMetrics(t),
+		symbolTable: labels.NewSymbolTable(),
 	}
 
 	err := sp.reload(reloadCfg)
@@ -391,6 +393,7 @@ func TestScrapePoolTargetLimit(t *testing.T) {
 		logger:        log.NewNopLogger(),
 		client:        http.DefaultClient,
 		metrics:       newTestScrapeMetrics(t),
+		symbolTable:   labels.NewSymbolTable(),
 	}
 
 	tgs := []*targetgroup.Group{}
@@ -623,6 +626,7 @@ func TestScrapePoolScrapeLoopsStarted(t *testing.T) {
 		logger:        nil,
 		client:        http.DefaultClient,
 		metrics:       newTestScrapeMetrics(t),
+		symbolTable:   labels.NewSymbolTable(),
 	}
 
 	tgs := []*targetgroup.Group{
@@ -660,6 +664,7 @@ func newBasicScrapeLoop(t testing.TB, ctx context.Context, scraper scraper, app 
 		nopMutator,
 		app,
 		nil,
+		labels.NewSymbolTable(),
 		0,
 		true,
 		false,
@@ -799,6 +804,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		app,
+		nil,
 		nil,
 		0,
 		true,
@@ -942,6 +948,7 @@ func TestScrapeLoopMetadata(t *testing.T) {
 		nopMutator,
 		func(ctx context.Context) storage.Appender { return nopAppender{} },
 		cache,
+		labels.NewSymbolTable(),
 		0,
 		true,
 		false,
@@ -1470,7 +1477,7 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 	fakeRef := storage.SeriesRef(1)
 	expValue := float64(1)
 	metric := []byte(`metric{n="1"} 1`)
-	p, warning := textparse.New(metric, "", false)
+	p, warning := textparse.New(metric, "", false, labels.NewSymbolTable())
 	require.NoError(t, warning)
 
 	var lset labels.Labels

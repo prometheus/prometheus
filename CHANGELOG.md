@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.50.1 / 2024-02-26
+
+* [BUGFIX] API: Fix metadata API using wrong field names. #13633
+
 ## 2.50.0 / 2024-02-22
 
 * [CHANGE] Remote Write: Error `storage.ErrTooOldSample` is now generating HTTP error 400 instead of HTTP error 500. #13335

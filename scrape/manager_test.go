@@ -523,11 +523,12 @@ scrape_configs:
 		loops: map[uint64]loop{
 			1: noopLoop(),
 		},
-		newLoop: newLoop,
-		logger:  nil,
-		config:  cfg1.ScrapeConfigs[0],
-		client:  http.DefaultClient,
-		metrics: scrapeManager.metrics,
+		newLoop:     newLoop,
+		logger:      nil,
+		config:      cfg1.ScrapeConfigs[0],
+		client:      http.DefaultClient,
+		metrics:     scrapeManager.metrics,
+		symbolTable: labels.NewSymbolTable(),
 	}
 	scrapeManager.scrapePools = map[string]*scrapePool{
 		"job1": sp,

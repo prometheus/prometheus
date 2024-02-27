@@ -172,7 +172,7 @@ func readTestWAL(t testing.TB, dir string) (recs []interface{}) {
 		require.NoError(t, sr.Close())
 	}()
 
-	var dec record.Decoder
+	dec := record.NewDecoder(labels.NewSymbolTable())
 	r := wlog.NewReader(sr)
 
 	for r.Next() {
