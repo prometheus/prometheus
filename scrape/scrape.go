@@ -954,13 +954,14 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 	}
 }
 
-func (c *scrapeCache) get(met []byte) (*cacheEntry, bool) {
+func (c *scrapeCache) get(met []byte) (*cacheEntry, bool, bool) {
 	e, ok := c.series[string(met)]
 	if !ok {
-		return nil, false
+		return nil, false, false
 	}
+	alreadyScraped := e.lastIter == c.iter
 	e.lastIter = c.iter
-	return e, true
+	return e, true, alreadyScraped
 }
 
 func (c *scrapeCache) addRef(met []byte, ref storage.SeriesRef, lset labels.Labels, hash uint64) {
@@ -1512,13 +1513,13 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 loop:
 	for {
 		var (
-			et                                             textparse.Entry
-			sampleAdded, isHistogram, seriesAlreadyScraped bool
-			met                                            []byte
-			parsedTimestamp                                *int64
-			val                                            float64
-			h                                              *histogram.Histogram
-			fh                                             *histogram.FloatHistogram
+			et                       textparse.Entry
+			sampleAdded, isHistogram bool
+			met                      []byte
+			parsedTimestamp          *int64
+			val                      float64
+			h                        *histogram.Histogram
+			fh                       *histogram.FloatHistogram
 		)
 		if et, err = p.Next(); err != nil {
 			if errors.Is(err, io.EOF) {
@@ -1564,7 +1565,7 @@ loop:
 		if sl.cache.getDropped(met) {
 			continue
 		}
-		ce, ok := sl.cache.get(met)
+		ce, ok, seriesAlreadyScraped := sl.cache.get(met)
 		var (
 			ref  storage.SeriesRef
 			hash uint64
@@ -1610,7 +1611,6 @@ loop:
 			updateMetadata(lset, true)
 		}
 
-		_, seriesAlreadyScraped = sl.cache.seriesCur[hash]
 		if seriesAlreadyScraped {
 			err = storage.ErrDuplicateSampleForTimestamp
 		} else {
@@ -1882,7 +1882,7 @@ func (sl *scrapeLoop) reportStale(app storage.Appender, start time.Time) (err er
 }
 
 func (sl *scrapeLoop) addReportSample(app storage.Appender, s []byte, t int64, v float64, b *labels.Builder) error {
-	ce, ok := sl.cache.get(s)
+	ce, ok, _ := sl.cache.get(s)
 	var ref storage.SeriesRef
 	var lset labels.Labels
 	if ok {
