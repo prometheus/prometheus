@@ -16,8 +16,10 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"os"
 	"path/filepath"
@@ -703,6 +705,53 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 	displayHistogram("bytes per histogram chunk", histogramChunkSize, totalChunks)
 
 	displayHistogram("buckets per histogram chunk", histogramChunkBucketsCount, totalChunks)
+	return nil
+}
+
+func dumpSeries(ctx context.Context, path string, mint, maxt int64, match string) (err error) {
+	db, err := tsdb.OpenDBReadOnly(path, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		err = tsdb_errors.NewMulti(err, db.Close()).Err()
+	}()
+	q, err := db.Querier(mint, maxt)
+	if err != nil {
+		return err
+	}
+	defer q.Close()
+
+	matchers, err := parser.ParseMetricSelector(match)
+	if err != nil {
+		return err
+	}
+	ss := q.Select(ctx, false, nil, matchers...)
+
+	getSeriesID := func(in []byte) uint64 {
+		hash := fnv.New64()
+		_, _ = hash.Write(in)
+		return hash.Sum64()
+	}
+	seriesCache := make(map[uint64]struct{})
+	for ss.Next() {
+		series := ss.At()
+		lbs := series.Labels()
+		b, _ := json.Marshal(lbs)
+		id := getSeriesID(b)
+		if _, ok := seriesCache[id]; !ok {
+			fmt.Printf("%s\n", string(b))
+			seriesCache[id] = struct{}{}
+		}
+	}
+
+	if ws := ss.Warnings(); len(ws) > 0 {
+		return tsdb_errors.NewMulti(ws.AsErrors()...).Err()
+	}
+
+	if ss.Err() != nil {
+		return ss.Err()
+	}
 	return nil
 }
 

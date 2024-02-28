@@ -239,6 +239,12 @@ func main() {
 	dumpMaxTime := tsdbDumpCmd.Flag("max-time", "Maximum timestamp to dump.").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
 	dumpMatch := tsdbDumpCmd.Flag("match", "Series selector. Can be specified multiple times.").Default("{__name__=~'(?s:.*)'}").Strings()
 
+	tsdbDumpSeriesCmd := tsdbCmd.Command("dump-series", "Dump series from a TSDB.")
+	dumpSeriesPath := tsdbDumpSeriesCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
+	dumpSeriesMinTime := tsdbDumpSeriesCmd.Flag("min-time", "Minimum timestamp to dump.").Default(strconv.FormatInt(math.MinInt64, 10)).Int64()
+	dumpSeriesMaxTime := tsdbDumpSeriesCmd.Flag("max-time", "Maximum timestamp to dump.").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
+	dumpSeriesMatch := tsdbDumpSeriesCmd.Flag("match", "Series selector.").Default("{__name__=~'(?s:.*)'}").String()
+
 	importCmd := tsdbCmd.Command("create-blocks-from", "[Experimental] Import samples from input and produce TSDB blocks. Please refer to the storage docs for more details.")
 	importHumanReadable := importCmd.Flag("human-readable", "Print human readable values.").Short('r').Bool()
 	importQuiet := importCmd.Flag("quiet", "Do not print created blocks.").Short('q').Bool()
@@ -391,6 +397,8 @@ func main() {
 
 	case tsdbDumpCmd.FullCommand():
 		os.Exit(checkErr(dumpSamples(ctx, *dumpPath, *dumpMinTime, *dumpMaxTime, *dumpMatch)))
+	case tsdbDumpSeriesCmd.FullCommand():
+		os.Exit(checkErr(dumpSeries(ctx, *dumpSeriesPath, *dumpSeriesMinTime, *dumpSeriesMaxTime, *dumpSeriesMatch)))
 	// TODO(aSquare14): Work on adding support for custom block size.
 	case openMetricsImportCmd.FullCommand():
 		os.Exit(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable, *importQuiet, *maxBlockDuration))
