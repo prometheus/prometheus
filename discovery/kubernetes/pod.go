@@ -34,8 +34,9 @@ import (
 )
 
 const (
-	nodeIndex = "node"
-	podIndex  = "pod"
+	nodeIndex      = "node"
+	namespaceIndex = "namespace"
+	podIndex       = "pod"
 )
 
 // Pod discovers new pod targets.

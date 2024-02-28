@@ -21,15 +21,16 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/version"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
-
-	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -43,6 +44,16 @@ func TestMain(m *testing.M) {
 // makeDiscovery creates a kubernetes.Discovery instance for testing.
 func makeDiscovery(role Role, nsDiscovery NamespaceDiscovery, objects ...runtime.Object) (*Discovery, kubernetes.Interface) {
 	return makeDiscoveryWithVersion(role, nsDiscovery, "v1.22.0", objects...)
+}
+
+func makeNamespace(name string, labels, annotations map[string]string) *v1.Namespace {
+	return &v1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        name,
+			Labels:      labels,
+			Annotations: annotations,
+		},
+	}
 }
 
 // makeDiscoveryWithVersion creates a kubernetes.Discovery instance with the specified kubernetes version for testing.
