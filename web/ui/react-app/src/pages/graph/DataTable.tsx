@@ -87,14 +87,16 @@ const DataTable: FC<DataTableProps> = ({ data, useLocalTime }) => {
                 <>
                   <HistogramChart histogram={s.histogram[1]} index={index} scale={scale} />
                   <div className="summary-wrapper">
-                    <p>
-                      <strong>Total count:</strong> {s.histogram[1].count}
-                    </p>
-                    <p>
-                      <strong>Sum:</strong> {s.histogram[1].sum}
-                    </p>
-                    <div>
-                      <p>x-axis scale:</p>
+                    <div className="summary">
+                      <span>
+                        <strong>Total count:</strong> {s.histogram[1].count}
+                      </span>
+                      <span>
+                        <strong>Sum:</strong> {s.histogram[1].sum}
+                      </span>
+                    </div>
+                    <div className="summary">
+                      <span>x-axis scale:</span>
                       <ButtonGroup className="stacked-input" size="sm">
                         <Button
                           title="Show histogram on exponential scale"
