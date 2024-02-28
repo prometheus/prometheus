@@ -128,12 +128,17 @@ func TestChunkSeriesSetToSeriesSet(t *testing.T) {
 
 func TestListSeriesIteratorCopiesHistograms(t *testing.T) {
 	h := tsdbutil.GenerateTestHistogram(0)
-	fh := tsdbutil.GenerateTestFloatHistogram(1)
 	it := NewListSeriesIterator(samples{
 		hSample{0, h},
-		fhSample{1, fh},
 	})
 	require.NoError(t, testutil.VerifyChunkIteratorCopiesHistograms(h, it))
+}
+
+func TestListSeriesIteratorCopiesFloatHistograms(t *testing.T) {
+	fh := tsdbutil.GenerateTestFloatHistogram(0)
+	it := NewListSeriesIterator(samples{
+		fhSample{1, fh},
+	})
 	require.NoError(t, testutil.VerifyChunkIteratorCopiesFloatHistograms(fh, it))
 }
 

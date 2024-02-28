@@ -21,6 +21,7 @@ import (
 )
 
 // Test helper to ensure that the iterator copies histograms when iterating.
+// The helper will call it.Next() and check if the next value is a histogram.
 func VerifyChunkIteratorCopiesHistograms(h *histogram.Histogram, it chunkenc.Iterator) error {
 	originalCount := h.Count
 	if it.Next() != chunkenc.ValHistogram {
@@ -46,6 +47,7 @@ func VerifyChunkIteratorCopiesHistograms(h *histogram.Histogram, it chunkenc.Ite
 }
 
 // Test helper to ensure that the iterator copies float histograms when iterating.
+// The helper will call it.Next() and check if the next value is a float histogram.
 func VerifyChunkIteratorCopiesFloatHistograms(fh *histogram.FloatHistogram, it chunkenc.Iterator) error {
 	originalCount := fh.Count
 	if it.Next() != chunkenc.ValFloatHistogram {
