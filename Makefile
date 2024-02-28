@@ -156,7 +156,7 @@ update-all-go-deps:
 .PHONY: docker-curr-arch
 docker-curr-arch:
 	@echo ">> Building promu and crossbuilding"
-	$(MAKE) promu
+	$(MAKE) $(PROMU)
 	$(MAKE) npm_licenses
 	@echo ">> Running promu crossbuild"
 	promu crossbuild -p $(shell go env GOHOSTOS)/$(shell go env GOHOSTARCH)
