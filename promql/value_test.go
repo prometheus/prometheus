@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
 
 func TestVector_ContainsSameLabelset(t *testing.T) {
@@ -107,4 +108,15 @@ func TestMatrix_ContainsSameLabelset(t *testing.T) {
 			require.Equal(t, tc.expected, tc.matrix.ContainsSameLabelset())
 		})
 	}
+}
+
+func TestStorageSeriesIterator_CopiesHistograms(t *testing.T) {
+	h := tsdbutil.GenerateTestFloatHistogram(0)
+	series := Series{
+		Metric:     labels.FromStrings("__name__", "test"),
+		Floats:     nil,
+		Histograms: []HPoint{{T: 0, H: h}},
+	}
+	it := newStorageSeriesIterator(series)
+	tsdbutil.VerifyChunkIteratorCopiesFloatHistograms(t, h, it)
 }
