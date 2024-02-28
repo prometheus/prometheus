@@ -3285,13 +3285,13 @@ func TestFloatHistogramEquals(t *testing.T) {
 	cbh2 = cbh1.Copy()
 	cbh2.NegativeSpans = []Span{{Offset: 0, Length: 1}}
 	cbh2.NegativeBuckets = []float64{1}
-	equals(cbh1, *cbh2)
+	notEquals(cbh1, *cbh2)
 
 	// Has non-zero zero count and threshold for custom buckets schema.
 	cbh2 = cbh1.Copy()
 	cbh2.ZeroThreshold = 0.1
 	cbh2.ZeroCount = 10
-	equals(cbh1, *cbh2)
+	notEquals(cbh1, *cbh2)
 }
 
 func TestFloatHistogramSize(t *testing.T) {

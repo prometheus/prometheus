@@ -439,7 +439,9 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) (*FloatHistogram, error) {
 // but they must represent the same bucket layout to match.
 // Sum, Count, ZeroCount and bucket values are compared based on their bit patterns
 // because this method is about data equality rather than mathematical equality.
-// We ignore fields that are not used based on the exponential / custom buckets schema.
+// We ignore fields that are not used based on the exponential / custom buckets schema,
+// but check fields where differences may cause unintended behaviour even if they are not
+// supposed to be used according to the schema.
 func (h *FloatHistogram) Equals(h2 *FloatHistogram) bool {
 	if h2 == nil {
 		return false
@@ -455,17 +457,18 @@ func (h *FloatHistogram) Equals(h2 *FloatHistogram) bool {
 		if !floatBucketsMatch(h.CustomBounds, h2.CustomBounds) {
 			return false
 		}
-	} else {
-		if h.ZeroThreshold != h2.ZeroThreshold ||
-			math.Float64bits(h.ZeroCount) != math.Float64bits(h2.ZeroCount) {
-			return false
-		}
-		if !spansMatch(h.NegativeSpans, h2.NegativeSpans) {
-			return false
-		}
-		if !floatBucketsMatch(h.NegativeBuckets, h2.NegativeBuckets) {
-			return false
-		}
+	}
+
+	if h.ZeroThreshold != h2.ZeroThreshold ||
+		math.Float64bits(h.ZeroCount) != math.Float64bits(h2.ZeroCount) {
+		return false
+	}
+
+	if !spansMatch(h.NegativeSpans, h2.NegativeSpans) {
+		return false
+	}
+	if !floatBucketsMatch(h.NegativeBuckets, h2.NegativeBuckets) {
+		return false
 	}
 
 	if !spansMatch(h.PositiveSpans, h2.PositiveSpans) {

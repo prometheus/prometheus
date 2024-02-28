@@ -654,6 +654,13 @@ func TestHistogramEquals(t *testing.T) {
 		require.False(t, h1f.Equals(h2f))
 		require.False(t, h2f.Equals(h1f))
 	}
+	notEqualsUntilFloatConv := func(h1, h2 Histogram) {
+		require.False(t, h1.Equals(&h2))
+		require.False(t, h2.Equals(&h1))
+		h1f, h2f := h1.ToFloat(nil), h2.ToFloat(nil)
+		require.True(t, h1f.Equals(h2f))
+		require.True(t, h2f.Equals(h1f))
+	}
 
 	require.NoError(t, h1.Validate())
 
@@ -795,13 +802,13 @@ func TestHistogramEquals(t *testing.T) {
 	cbh2 = cbh1.Copy()
 	cbh2.NegativeSpans = []Span{{Offset: 0, Length: 1}}
 	cbh2.NegativeBuckets = []int64{1}
-	equals(cbh1, *cbh2)
+	notEqualsUntilFloatConv(cbh1, *cbh2)
 
 	// Has non-zero zero count and threshold for custom buckets schema.
 	cbh2 = cbh1.Copy()
 	cbh2.ZeroThreshold = 0.1
 	cbh2.ZeroCount = 10
-	equals(cbh1, *cbh2)
+	notEqualsUntilFloatConv(cbh1, *cbh2)
 }
 
 func TestHistogramCopy(t *testing.T) {
