@@ -755,6 +755,7 @@ load 10s
   metricWith3SampleEvery10Seconds{a="1",b="1"} 1+1x100
   metricWith3SampleEvery10Seconds{a="2",b="2"} 1+1x100
   metricWith3SampleEvery10Seconds{a="3",b="2"} 1+1x100
+  metricWith1HistogramsEvery10Seconds {{schema:1 count:5 sum:20 buckets:[1 2 1 1]}}+{{schema:1 count:10 sum:5 buckets:[1 2 3 4]}}x100
 `)
 	t.Cleanup(func() { storage.Close() })
 
@@ -788,6 +789,15 @@ load 10s
 		},
 		{
 			Query:        "metricWith1SampleEvery10Seconds",
+			Start:        time.Unix(21, 0),
+			PeakSamples:  1,
+			TotalSamples: 1, // 1 sample / 10 seconds
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				21000: 1,
+			},
+		},
+		{
+			Query:        "metricWith1HistogramEvery10Seconds",
 			Start:        time.Unix(21, 0),
 			PeakSamples:  1,
 			TotalSamples: 1, // 1 sample / 10 seconds
@@ -1041,7 +1051,7 @@ load 10s
 			End:          time.Unix(220, 0),
 			Interval:     5 * time.Second,
 			PeakSamples:  5,
-			TotalSamples: 4, // (1 sample / 10 seconds) * 4 steps
+			TotalSamples: 4, // 1 sample per query * 4 steps
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 1,
 				206000: 1,

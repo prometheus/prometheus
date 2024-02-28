@@ -1196,6 +1196,9 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 				if prepSeries != nil {
 					bufHelpers[i] = append(bufHelpers[i], seriesHelpers[i][si])
 				}
+				// Don't add histogram size here because we only
+				// copy the pointer above, not the whole
+				// histogram.
 				ev.currentSamples++
 				if ev.currentSamples > ev.maxSamples {
 					ev.error(ErrTooManySamples(env))
