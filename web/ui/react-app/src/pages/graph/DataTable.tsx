@@ -83,8 +83,8 @@ const DataTable: FC<DataTableProps> = ({ data, useLocalTime }) => {
               {s.histogram && (
                 <>
                   <HistogramChart histogram={s.histogram[1]} index={index} scale={scale} />
-                  <div className="summary-wrapper">
-                    <div className="summary">
+                  <div className="histogram-summary-wrapper">
+                    <div className="histogram-summary">
                       <span>
                         <strong>Total count:</strong> {s.histogram[1].count}
                       </span>
@@ -92,7 +92,7 @@ const DataTable: FC<DataTableProps> = ({ data, useLocalTime }) => {
                         <strong>Sum:</strong> {s.histogram[1].sum}
                       </span>
                     </div>
-                    <div className="summary">
+                    <div className="histogram-summary">
                       <span>x-axis scale:</span>
                       <ButtonGroup className="stacked-input" size="sm">
                         <Button

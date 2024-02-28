@@ -122,14 +122,14 @@ input[type='checkbox']:checked + label {
   color: $checked-checkbox-color;
 }
 
-.summary-wrapper {
+.histogram-summary-wrapper {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 10px;
 }
 
-.summary {
+.histogram-summary {
   display: flex;
   align-items: center;
   gap: 1rem;
@@ -228,8 +228,6 @@ input[type='checkbox']:checked + label {
   position: absolute;
   width: 100%;
   bottom: 0;
-  // background-color: #9090ff;
-  // border: 1px solid #aaaaff;
   background-color: #2db453;
   border: 1px solid #77de94;
   pointer-events: none;
