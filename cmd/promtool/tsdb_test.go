@@ -22,10 +22,12 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/tsdb"
 )
 
 func TestGenerateBucket(t *testing.T) {
@@ -52,7 +54,7 @@ func TestGenerateBucket(t *testing.T) {
 }
 
 // getDumpedSamples dumps samples and returns them.
-func getDumpedSamples(t *testing.T, path string, mint, maxt int64, match []string) string {
+func getDumpedSamples(t *testing.T, path string, mint, maxt int64, match []string, formatter SeriesSetFormatter) string {
 	t.Helper()
 
 	oldStdout := os.Stdout
@@ -65,6 +67,7 @@ func getDumpedSamples(t *testing.T, path string, mint, maxt int64, match []strin
 		mint,
 		maxt,
 		match,
+		formatter,
 	)
 	require.NoError(t, err)
 
@@ -74,6 +77,14 @@ func getDumpedSamples(t *testing.T, path string, mint, maxt int64, match []strin
 	var buf bytes.Buffer
 	io.Copy(&buf, r)
 	return buf.String()
+}
+
+func normalizeNewLine(b []byte) []byte {
+	if strings.Contains(runtime.GOOS, "windows") {
+		// We use "/n" while dumping on windows as well.
+		return bytes.ReplaceAll(b, []byte("\r\n"), []byte("\n"))
+	}
+	return b
 }
 
 func TestTSDBDump(t *testing.T) {
@@ -136,15 +147,48 @@ func TestTSDBDump(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dumpedMetrics := getDumpedSamples(t, storage.Dir(), tt.mint, tt.maxt, tt.match)
+			dumpedMetrics := getDumpedSamples(t, storage.Dir(), tt.mint, tt.maxt, tt.match, formatSeriesSet)
 			expectedMetrics, err := os.ReadFile(tt.expectedDump)
 			require.NoError(t, err)
-			if strings.Contains(runtime.GOOS, "windows") {
-				// We use "/n" while dumping on windows as well.
-				expectedMetrics = bytes.ReplaceAll(expectedMetrics, []byte("\r\n"), []byte("\n"))
-			}
+			expectedMetrics = normalizeNewLine(expectedMetrics)
 			// even though in case of one matcher samples are not sorted, the order in the cases above should stay the same.
 			require.Equal(t, string(expectedMetrics), dumpedMetrics)
 		})
 	}
+}
+
+func TestTSDBDumpOpenMetrics(t *testing.T) {
+	storage := promql.LoadedStorage(t, `
+		load 1m
+			my_counter{foo="bar", baz="abc"} 1 2 3 4 5
+			my_gauge{bar="foo", abc="baz"} 9 8 0 4 7
+	`)
+
+	expectedMetrics, err := os.ReadFile("testdata/dump-openmetrics-test.prom")
+	require.NoError(t, err)
+	expectedMetrics = normalizeNewLine(expectedMetrics)
+	dumpedMetrics := getDumpedSamples(t, storage.Dir(), math.MinInt64, math.MaxInt64, []string{"{__name__=~'(?s:.*)'}"}, formatSeriesSetOpenMetrics)
+	require.Equal(t, string(expectedMetrics), dumpedMetrics)
+}
+
+func TestTSDBDumpOpenMetricsRoundTrip(t *testing.T) {
+	initialMetrics, err := os.ReadFile("testdata/dump-openmetrics-roundtrip-test.prom")
+	require.NoError(t, err)
+	initialMetrics = normalizeNewLine(initialMetrics)
+
+	dbDir := t.TempDir()
+	// Import samples from OM format
+	err = backfill(5000, initialMetrics, dbDir, false, false, 2*time.Hour)
+	require.NoError(t, err)
+	db, err := tsdb.Open(dbDir, nil, nil, tsdb.DefaultOptions(), nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
+
+	// Dump the blocks into OM format
+	dumpedMetrics := getDumpedSamples(t, dbDir, math.MinInt64, math.MaxInt64, []string{"{__name__=~'(?s:.*)'}"}, formatSeriesSetOpenMetrics)
+
+	// Should get back the initial metrics.
+	require.Equal(t, string(initialMetrics), dumpedMetrics)
 }
