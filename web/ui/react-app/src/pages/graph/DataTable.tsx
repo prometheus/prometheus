@@ -1,6 +1,6 @@
 import React, { FC, ReactNode } from 'react';
 
-import { Alert, Table } from 'reactstrap';
+import { Alert, Button, ButtonGroup, Table } from 'reactstrap';
 
 import SeriesName from './SeriesName';
 import { Metric, Histogram } from '../../types/types';
@@ -8,6 +8,9 @@ import { Metric, Histogram } from '../../types/types';
 import moment from 'moment';
 
 import HistogramChart from './HistogramChart';
+import { faChartLine, faChartArea, faBarChart } from '@fortawesome/free-solid-svg-icons';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { GraphDisplayMode } from './Panel';
 
 export interface DataTableProps {
   data:
@@ -56,6 +59,8 @@ const limitSeries = <S extends InstantSample | RangeSamples>(series: S[]): S[] =
 };
 
 const DataTable: FC<DataTableProps> = ({ data, useLocalTime }) => {
+  const [scale, setScale] = React.useState<'linear' | 'exponential'>('exponential');
+
   if (data === null) {
     return <Alert color="light">No data queried yet</Alert>;
   }
@@ -80,7 +85,34 @@ const DataTable: FC<DataTableProps> = ({ data, useLocalTime }) => {
               {s.value && s.value[1]}
               {s.histogram && (
                 <>
-                  <HistogramChart histogram={s.histogram[1]} index={index} />
+                  <HistogramChart histogram={s.histogram[1]} index={index} scale={scale} />
+                  <div className="summary-wrapper">
+                    <p>
+                      <strong>Total count:</strong> {s.histogram[1].count}
+                    </p>
+                    <p>
+                      <strong>Sum:</strong> {s.histogram[1].sum}
+                    </p>
+                    <div>
+                      <p>x-axis scale:</p>
+                      <ButtonGroup className="stacked-input" size="sm">
+                        <Button
+                          title="Show histogram on exponential scale"
+                          onClick={() => setScale('exponential')}
+                          active={scale === 'exponential'}
+                        >
+                          Exponential
+                        </Button>
+                        <Button
+                          title="Show histogram on linear scale"
+                          onClick={() => setScale('linear')}
+                          active={scale === 'linear'}
+                        >
+                          Linear
+                        </Button>
+                      </ButtonGroup>
+                    </div>
+                  </div>
                   {histogramTable(s.histogram[1])}
                 </>
               )}
@@ -215,16 +247,12 @@ export const histogramTable = (h: Histogram): ReactNode => (
     </thead>
     <tbody>
       <tr>
-        <th>count:</th>
-        <td>{h.count}</td>
-      </tr>
-      <tr>
-        <th>sum:</th>
-        <td>{h.sum}</td>
+        <th>Range</th>
+        <th>Count</th>
       </tr>
       {h.buckets?.map((b, i) => (
         <tr key={i}>
-          <th>{bucketRangeString(b)}</th>
+          <td>{bucketRangeString(b)}</td>
           <td>{b[3]}</td>
         </tr>
       ))}

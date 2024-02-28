@@ -122,6 +122,15 @@ input[type='checkbox']:checked + label {
   color: $checked-checkbox-color;
 }
 
+.summary-wrapper {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  margin-top: 10px;
+  padding: 10px;
+}
+
 .histogram-y-wrapper {
   display: flex;
   flex-wrap: nowrap;

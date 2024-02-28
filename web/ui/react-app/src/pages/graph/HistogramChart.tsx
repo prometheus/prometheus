@@ -3,13 +3,15 @@ import { UncontrolledTooltip } from 'reactstrap';
 import { Histogram } from '../../types/types';
 import { bucketRangeString } from './DataTable';
 
-const HistogramChart: FC<{ histogram: Histogram; index: number }> = ({ index, histogram }) => {
+type ScaleType = 'linear' | 'exponential';
+
+const HistogramChart: FC<{ histogram: Histogram; index: number; scale: ScaleType }> = ({ index, histogram, scale }) => {
   const { buckets } = histogram;
   const rangeMax = buckets ? parseFloat(buckets[buckets.length - 1][2]) : 0;
   const countMax = buckets ? buckets.map((b) => parseFloat(b[3])).reduce((a, b) => Math.max(a, b)) : 0;
   const formatter = Intl.NumberFormat('en', { notation: 'compact' });
-  const newbucks = buckets?.filter((b) => parseFloat(b[1]) >= 0);
-  console.log(newbucks);
+  const positiveBuckets = buckets?.filter((b) => parseFloat(b[1]) >= 0); // we only want to show buckets with range >= 0
+  const xLabelTicks = scale === 'linear' ? [0.25, 0.5, 0.75, 1] : [1];
   return (
     <div className="histogram-y-wrapper">
       <div className="histogram-y-labels">
@@ -32,42 +34,51 @@ const HistogramChart: FC<{ histogram: Histogram; index: number }> = ({ index, hi
               <div className="histogram-x-tick" style={{ left: i * 100 + '%' }}></div>
             </React.Fragment>
           ))}
-          {newbucks?.map((b, bIdx) => (
-            <React.Fragment key={bIdx}>
-              <div
-                id={`bucket-${index}-${bIdx}-${Math.ceil(parseFloat(b[3]) * 100)}`}
-                className="histogram-bucket-slot"
-                style={{
-                  left: (bIdx / newbucks.length) * 100 + '%',
-                  width: 100 / newbucks.length + '%',
-                }}
-              >
+          {positiveBuckets?.map((b, bIdx) => {
+            const bucketIdx = `bucket-${index}-${bIdx}-${Math.ceil(parseFloat(b[3]) * 100)}`;
+            const bucketLeft =
+              scale === 'linear' ? (parseFloat(b[1]) / rangeMax) * 100 + '%' : (bIdx / positiveBuckets.length) * 100 + '%';
+            const bucketWidth =
+              scale === 'linear'
+                ? ((parseFloat(b[2]) - parseFloat(b[1])) / rangeMax) * 100 + '%'
+                : 100 / positiveBuckets.length + '%';
+            return (
+              <React.Fragment key={bIdx}>
                 <div
-                  id={`bucket-${index}-${bIdx}-${Math.ceil(parseFloat(b[3]) * 100)}`}
-                  className="histogram-bucket"
+                  id={bucketIdx}
+                  className="histogram-bucket-slot"
                   style={{
-                    height: (parseFloat(b[3]) / countMax) * 100 + '%',
+                    left: bucketLeft,
+                    width: bucketWidth,
                   }}
-                ></div>
-                <UncontrolledTooltip
-                  style={{ maxWidth: 'unset', padding: 10, textAlign: 'left' }}
-                  placement="bottom"
-                  target={`bucket-${index}-${bIdx}-${Math.ceil(parseFloat(b[3]) * 100)}`}
                 >
-                  <strong>range:</strong> {bucketRangeString(b)}
-                  <br />
-                  <strong>count:</strong> {b[3]}
-                </UncontrolledTooltip>
-              </div>
-            </React.Fragment>
-          ))}
+                  <div
+                    id={bucketIdx}
+                    className="histogram-bucket"
+                    style={{
+                      height: (parseFloat(b[3]) / countMax) * 100 + '%',
+                    }}
+                  ></div>
+                  <UncontrolledTooltip
+                    style={{ maxWidth: 'unset', padding: 10, textAlign: 'left' }}
+                    placement="bottom"
+                    target={bucketIdx}
+                  >
+                    <strong>range:</strong> {bucketRangeString(b)}
+                    <br />
+                    <strong>count:</strong> {b[3]}
+                  </UncontrolledTooltip>
+                </div>
+              </React.Fragment>
+            );
+          })}
           <div className="histogram-axes"></div>
         </div>
         <div className="histogram-x-labels">
           <div key={0} className="histogram-x-label" style={{ width: 0 }}>
             0
           </div>
-          {[1].map((i) => (
+          {xLabelTicks.map((i) => (
             <div key={i} className="histogram-x-label">
               <div style={{ position: 'absolute', right: i === 1 ? 0 : -18 }}>{formatter.format(rangeMax * i)}</div>
             </div>
