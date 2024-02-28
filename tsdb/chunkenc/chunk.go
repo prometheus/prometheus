@@ -131,18 +131,18 @@ type Iterator interface {
 	// At returns the current timestamp/value pair if the value is a float.
 	// Before the iterator has advanced, the behaviour is unspecified.
 	At() (int64, float64)
-	// AtHistogram returns the current timestamp/value pair if the value is a
+	// AtHistogram returns a copy(!) of the current timestamp/value pair if the value is a
 	// histogram with integer counts. Before the iterator has advanced, the behaviour
 	// is unspecified.
-	// The method accepts an optional Histogram object which will be
+	// The method accepts an optional Histogram object which may be
 	// reused when not nil. Otherwise, a new Histogram object will be allocated.
 	AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram)
-	// AtFloatHistogram returns the current timestamp/value pair if the
+	// AtFloatHistogram returns a copy(!) of the current timestamp/value pair if the
 	// value is a histogram with floating-point counts. It also works if the
 	// value is a histogram with integer counts, in which case a
 	// FloatHistogram copy of the histogram is returned. Before the iterator
 	// has advanced, the behaviour is unspecified.
-	// The method accepts an optional FloatHistogram object which will be
+	// The method accepts an optional FloatHistogram object which may be
 	// reused when not nil. Otherwise, a new FloatHistogram object will be allocated.
 	AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram)
 	// AtT returns the current timestamp.
