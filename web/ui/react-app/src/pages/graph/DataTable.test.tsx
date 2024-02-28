@@ -71,7 +71,7 @@ describe('DataTable', () => {
       const table = dataTable.find(Table);
       table.find('tr').forEach((row, idx) => {
         expect(row.find(SeriesName)).toHaveLength(1);
-        expect(row.find('td').at(1).text()).toEqual(`${idx} <HistogramChart />`);
+        expect(row.find('td').at(1).text()).toEqual(`${idx}`);
       });
     });
   });
