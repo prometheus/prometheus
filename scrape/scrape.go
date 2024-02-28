@@ -660,7 +660,7 @@ func appender(app storage.Appender, sampleLimit, bucketLimit int, maxSchema int3
 		}
 	}
 
-	if maxSchema < nativeHistogramMaxSchema {
+	if maxSchema < histogram.ExponentialSchemaMax {
 		app = &maxSchemaAppender{
 			Appender:  app,
 			maxSchema: maxSchema,
@@ -1956,10 +1956,10 @@ func pickSchema(bucketFactor float64) int32 {
 	}
 	floor := math.Floor(-math.Log2(math.Log2(bucketFactor)))
 	switch {
-	case floor >= float64(nativeHistogramMaxSchema):
-		return nativeHistogramMaxSchema
-	case floor <= float64(nativeHistogramMinSchema):
-		return nativeHistogramMinSchema
+	case floor >= float64(histogram.ExponentialSchemaMax):
+		return histogram.ExponentialSchemaMax
+	case floor <= float64(histogram.ExponentialSchemaMin):
+		return histogram.ExponentialSchemaMin
 	default:
 		return int32(floor)
 	}
