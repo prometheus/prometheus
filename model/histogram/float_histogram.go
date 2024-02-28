@@ -58,7 +58,7 @@ type FloatHistogram struct {
 	CustomBounds []float64
 }
 
-func (h *FloatHistogram) HasCustomBounds() bool {
+func (h *FloatHistogram) UsesCustomBuckets() bool {
 	return h.Schema == CustomBucketsSchema
 }
 
@@ -71,7 +71,7 @@ func (h *FloatHistogram) Copy() *FloatHistogram {
 		Sum:              h.Sum,
 	}
 
-	if h.HasCustomBounds() {
+	if h.UsesCustomBuckets() {
 		c.CustomBounds = h.CustomBounds
 	} else {
 		c.ZeroThreshold = h.ZeroThreshold
@@ -107,7 +107,7 @@ func (h *FloatHistogram) CopyTo(to *FloatHistogram) {
 	to.Count = h.Count
 	to.Sum = h.Sum
 
-	if h.HasCustomBounds() {
+	if h.UsesCustomBuckets() {
 		to.ZeroThreshold = 0
 		to.ZeroCount = 0
 
@@ -143,8 +143,8 @@ func (h *FloatHistogram) CopyToSchema(targetSchema int32) *FloatHistogram {
 		// Fast path.
 		return h.Copy()
 	}
-	if h.HasCustomBounds() {
-		panic(fmt.Errorf("cannot reduce resolution to %d when there are custom bounds", targetSchema))
+	if h.UsesCustomBuckets() {
+		panic(fmt.Errorf("cannot reduce resolution to %d when there are custom buckets", targetSchema))
 	}
 	if targetSchema == CustomBucketsSchema {
 		panic("cannot reduce resolution to custom buckets schema")
@@ -248,8 +248,8 @@ func (h *FloatHistogram) TestExpression() string {
 
 // ZeroBucket returns the zero bucket.
 func (h *FloatHistogram) ZeroBucket() Bucket[float64] {
-	if h.HasCustomBounds() {
-		panic("histograms with custom bounds have no zero bucket")
+	if h.UsesCustomBuckets() {
+		panic("histograms with custom buckets have no zero bucket")
 	}
 	return Bucket[float64]{
 		Lower:          -h.ZeroThreshold,
@@ -308,10 +308,10 @@ func (h *FloatHistogram) Div(scalar float64) *FloatHistogram {
 //
 // This method returns a pointer to the receiving histogram for convenience.
 func (h *FloatHistogram) Add(other *FloatHistogram) (*FloatHistogram, error) {
-	if h.HasCustomBounds() != other.HasCustomBounds() {
+	if h.UsesCustomBuckets() != other.UsesCustomBuckets() {
 		return nil, ErrHistogramsIncompatibleSchema
 	}
-	if h.HasCustomBounds() && !floatBucketsMatch(h.CustomBounds, other.CustomBounds) {
+	if h.UsesCustomBuckets() && !floatBucketsMatch(h.CustomBounds, other.CustomBounds) {
 		return nil, ErrHistogramsIncompatibleBounds
 	}
 
@@ -339,7 +339,7 @@ func (h *FloatHistogram) Add(other *FloatHistogram) (*FloatHistogram, error) {
 		// TODO(trevorwhitney): Actually issue the warning as soon as the plumbing for it is in place
 	}
 
-	if !h.HasCustomBounds() {
+	if !h.UsesCustomBuckets() {
 		otherZeroCount := h.reconcileZeroBuckets(other)
 		h.ZeroCount += otherZeroCount
 	}
@@ -353,7 +353,7 @@ func (h *FloatHistogram) Add(other *FloatHistogram) (*FloatHistogram, error) {
 		otherPositiveBuckets = other.PositiveBuckets
 	)
 
-	if h.HasCustomBounds() {
+	if h.UsesCustomBuckets() {
 		h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, false, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
 		return h, nil
 	}
@@ -384,14 +384,14 @@ func (h *FloatHistogram) Add(other *FloatHistogram) (*FloatHistogram, error) {
 
 // Sub works like Add but subtracts the other histogram.
 func (h *FloatHistogram) Sub(other *FloatHistogram) (*FloatHistogram, error) {
-	if h.HasCustomBounds() != other.HasCustomBounds() {
+	if h.UsesCustomBuckets() != other.UsesCustomBuckets() {
 		return nil, ErrHistogramsIncompatibleSchema
 	}
-	if h.HasCustomBounds() && !floatBucketsMatch(h.CustomBounds, other.CustomBounds) {
+	if h.UsesCustomBuckets() && !floatBucketsMatch(h.CustomBounds, other.CustomBounds) {
 		return nil, ErrHistogramsIncompatibleBounds
 	}
 
-	if !h.HasCustomBounds() {
+	if !h.UsesCustomBuckets() {
 		otherZeroCount := h.reconcileZeroBuckets(other)
 		h.ZeroCount -= otherZeroCount
 	}
@@ -405,7 +405,7 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) (*FloatHistogram, error) {
 		otherPositiveBuckets = other.PositiveBuckets
 	)
 
-	if h.HasCustomBounds() {
+	if h.UsesCustomBuckets() {
 		h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
 		return h, nil
 	}
@@ -453,7 +453,7 @@ func (h *FloatHistogram) Equals(h2 *FloatHistogram) bool {
 		return false
 	}
 
-	if h.HasCustomBounds() {
+	if h.UsesCustomBuckets() {
 		if !floatBucketsMatch(h.CustomBounds, h2.CustomBounds) {
 			return false
 		}
@@ -593,7 +593,7 @@ func (h *FloatHistogram) DetectReset(previous *FloatHistogram) bool {
 	if h.Count < previous.Count {
 		return true
 	}
-	if h.HasCustomBounds() != previous.HasCustomBounds() || (h.HasCustomBounds() && !floatBucketsMatch(h.CustomBounds, previous.CustomBounds)) {
+	if h.UsesCustomBuckets() != previous.UsesCustomBuckets() || (h.UsesCustomBuckets() && !floatBucketsMatch(h.CustomBounds, previous.CustomBounds)) {
 		// Mark that something has changed or that the application has been restarted. However, this does
 		// not matter so much since the change in schema will be handled directly in the chunks and PromQL
 		// functions.
@@ -752,7 +752,7 @@ func (h *FloatHistogram) AllReverseBucketIterator() BucketIterator[float64] {
 // create false positives here.
 func (h *FloatHistogram) Validate() error {
 	var nCount, pCount float64
-	if h.HasCustomBounds() {
+	if h.UsesCustomBuckets() {
 		if err := checkHistogramCustomBounds(h.CustomBounds, h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
 			return fmt.Errorf("custom buckets: %w", err)
 		}
@@ -919,10 +919,10 @@ func (h *FloatHistogram) reconcileZeroBuckets(other *FloatHistogram) float64 {
 func (h *FloatHistogram) floatBucketIterator(
 	positive bool, absoluteStartValue float64, targetSchema int32,
 ) floatBucketIterator {
-	if h.HasCustomBounds() && targetSchema != h.Schema {
+	if h.UsesCustomBuckets() && targetSchema != h.Schema {
 		panic(fmt.Errorf("cannot merge from custom buckets schema to exponential schema"))
 	}
-	if !h.HasCustomBounds() && targetSchema == CustomBucketsSchema {
+	if !h.UsesCustomBuckets() && targetSchema == CustomBucketsSchema {
 		panic(fmt.Errorf("cannot merge from exponential buckets schema to custom schema"))
 	}
 	if targetSchema > h.Schema {
@@ -1311,8 +1311,8 @@ func floatBucketsMatch(b1, b2 []float64) bool {
 // ReduceResolution reduces the float histogram's spans, buckets into target schema.
 // The target schema must be smaller than the current float histogram's schema.
 func (h *FloatHistogram) ReduceResolution(targetSchema int32) *FloatHistogram {
-	if h.HasCustomBounds() {
-		panic("cannot reduce resolution when there are custom bounds")
+	if h.UsesCustomBuckets() {
+		panic("cannot reduce resolution when there are custom buckets")
 	}
 	if targetSchema == CustomBucketsSchema {
 		panic("cannot reduce resolution to custom buckets schema")

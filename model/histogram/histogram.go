@@ -88,7 +88,7 @@ type Span struct {
 	Length uint32
 }
 
-func (h *Histogram) HasCustomBounds() bool {
+func (h *Histogram) UsesCustomBuckets() bool {
 	return h.Schema == CustomBucketsSchema
 }
 
@@ -101,7 +101,7 @@ func (h *Histogram) Copy() *Histogram {
 		Sum:              h.Sum,
 	}
 
-	if h.HasCustomBounds() {
+	if h.UsesCustomBuckets() {
 		c.CustomBounds = h.CustomBounds
 	} else {
 		c.ZeroThreshold = h.ZeroThreshold
@@ -137,7 +137,7 @@ func (h *Histogram) CopyTo(to *Histogram) {
 	to.Count = h.Count
 	to.Sum = h.Sum
 
-	if h.HasCustomBounds() {
+	if h.UsesCustomBuckets() {
 		to.ZeroThreshold = 0
 		to.ZeroCount = 0
 
@@ -198,8 +198,8 @@ func (h *Histogram) String() string {
 
 // ZeroBucket returns the zero bucket.
 func (h *Histogram) ZeroBucket() Bucket[uint64] {
-	if h.HasCustomBounds() {
-		panic("histograms with custom bounds have no zero bucket")
+	if h.UsesCustomBuckets() {
+		panic("histograms with custom buckets have no zero bucket")
 	}
 	return Bucket[uint64]{
 		Lower:          -h.ZeroThreshold,
@@ -254,7 +254,7 @@ func (h *Histogram) Equals(h2 *Histogram) bool {
 		return false
 	}
 
-	if h.HasCustomBounds() {
+	if h.UsesCustomBuckets() {
 		if !floatBucketsMatch(h.CustomBounds, h2.CustomBounds) {
 			return false
 		}
@@ -370,7 +370,7 @@ func (h *Histogram) ToFloat(fh *FloatHistogram) *FloatHistogram {
 	fh.Count = float64(h.Count)
 	fh.Sum = h.Sum
 
-	if h.HasCustomBounds() {
+	if h.UsesCustomBuckets() {
 		fh.ZeroThreshold = 0
 		fh.ZeroCount = 0
 		fh.NegativeSpans = clearIfNotNil(fh.NegativeSpans)
@@ -429,7 +429,7 @@ func clearIfNotNil[T any](items []T) []T {
 // the total h.Count).
 func (h *Histogram) Validate() error {
 	var nCount, pCount uint64
-	if h.HasCustomBounds() {
+	if h.UsesCustomBuckets() {
 		if err := checkHistogramCustomBounds(h.CustomBounds, h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
 			return fmt.Errorf("custom buckets: %w", err)
 		}
@@ -611,8 +611,8 @@ func (c *cumulativeBucketIterator) At() Bucket[uint64] {
 // ReduceResolution reduces the histogram's spans, buckets into target schema.
 // The target schema must be smaller than the current histogram's schema.
 func (h *Histogram) ReduceResolution(targetSchema int32) *Histogram {
-	if h.HasCustomBounds() {
-		panic("cannot reduce resolution when there are custom bounds")
+	if h.UsesCustomBuckets() {
+		panic("cannot reduce resolution when there are custom buckets")
 	}
 	if targetSchema == CustomBucketsSchema {
 		panic("cannot reduce resolution to custom buckets schema")
