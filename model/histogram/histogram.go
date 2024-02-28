@@ -89,7 +89,7 @@ type Span struct {
 }
 
 func (h *Histogram) UsesCustomBuckets() bool {
-	return h.Schema == CustomBucketsSchema
+	return IsCustomBucketsSchema(h.Schema)
 }
 
 // Copy returns a deep copy of the Histogram.
@@ -614,7 +614,7 @@ func (h *Histogram) ReduceResolution(targetSchema int32) *Histogram {
 	if h.UsesCustomBuckets() {
 		panic("cannot reduce resolution when there are custom buckets")
 	}
-	if targetSchema == CustomBucketsSchema {
+	if IsCustomBucketsSchema(targetSchema) {
 		panic("cannot reduce resolution to custom buckets schema")
 	}
 	if targetSchema >= h.Schema {

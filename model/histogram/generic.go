@@ -20,7 +20,11 @@ import (
 	"strings"
 )
 
-const CustomBucketsSchema = 127
+const (
+	ExponentialSchemaMax int32 = 8
+	ExponentialSchemaMin int32 = -4
+	CustomBucketsSchema  int32 = 127
+)
 
 var (
 	ErrHistogramCountNotBigEnough     = errors.New("histogram's observation count should be at least the number of observations found in the buckets")
@@ -33,6 +37,14 @@ var (
 	ErrHistogramsIncompatibleSchema   = errors.New("cannot apply this operation on histograms with a mix of exponential and custom bucket schemas")
 	ErrHistogramsIncompatibleBounds   = errors.New("cannot apply this operation on custom buckets histograms with different custom bounds")
 )
+
+func IsCustomBucketsSchema(s int32) bool {
+	return s == CustomBucketsSchema
+}
+
+func IsExponentialSchema(s int32) bool {
+	return s >= ExponentialSchemaMin && s <= ExponentialSchemaMax
+}
 
 // BucketCount is a type constraint for the count in a bucket, which can be
 // float64 (for type FloatHistogram) or uint64 (for type Histogram).
@@ -142,7 +154,7 @@ func (b *baseBucketIterator[BC, IBC]) at(schema int32) Bucket[BC] {
 		bucket.Lower = -getBound(b.currIdx, schema, b.customBounds)
 		bucket.Upper = -getBound(b.currIdx-1, schema, b.customBounds)
 	}
-	if schema == CustomBucketsSchema {
+	if IsCustomBucketsSchema(schema) {
 		bucket.LowerInclusive = b.currIdx == 0
 		bucket.UpperInclusive = true
 	} else {
@@ -435,7 +447,7 @@ func checkHistogramCustomBounds(bounds []float64, spans []Span, numBuckets int) 
 }
 
 func getBound(idx, schema int32, customBounds []float64) float64 {
-	if schema == CustomBucketsSchema {
+	if IsCustomBucketsSchema(schema) {
 		length := int32(len(customBounds))
 		switch {
 		case idx > length || idx < -1:

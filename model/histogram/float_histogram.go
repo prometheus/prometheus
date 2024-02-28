@@ -59,7 +59,7 @@ type FloatHistogram struct {
 }
 
 func (h *FloatHistogram) UsesCustomBuckets() bool {
-	return h.Schema == CustomBucketsSchema
+	return IsCustomBucketsSchema(h.Schema)
 }
 
 // Copy returns a deep copy of the Histogram.
@@ -146,7 +146,7 @@ func (h *FloatHistogram) CopyToSchema(targetSchema int32) *FloatHistogram {
 	if h.UsesCustomBuckets() {
 		panic(fmt.Errorf("cannot reduce resolution to %d when there are custom buckets", targetSchema))
 	}
-	if targetSchema == CustomBucketsSchema {
+	if IsCustomBucketsSchema(targetSchema) {
 		panic("cannot reduce resolution to custom buckets schema")
 	}
 	if targetSchema > h.Schema {
@@ -922,7 +922,7 @@ func (h *FloatHistogram) floatBucketIterator(
 	if h.UsesCustomBuckets() && targetSchema != h.Schema {
 		panic(fmt.Errorf("cannot merge from custom buckets schema to exponential schema"))
 	}
-	if !h.UsesCustomBuckets() && targetSchema == CustomBucketsSchema {
+	if !h.UsesCustomBuckets() && IsCustomBucketsSchema(targetSchema) {
 		panic(fmt.Errorf("cannot merge from exponential buckets schema to custom schema"))
 	}
 	if targetSchema > h.Schema {
@@ -1074,7 +1074,7 @@ func (i *floatBucketIterator) Next() bool {
 
 	// Skip buckets before absoluteStartValue for exponential schemas.
 	// TODO(beorn7): Maybe do something more efficient than this recursive call.
-	if !i.boundReachedStartValue && i.targetSchema != CustomBucketsSchema && getBoundExponential(i.currIdx, i.targetSchema) <= i.absoluteStartValue {
+	if !i.boundReachedStartValue && IsExponentialSchema(i.targetSchema) && getBoundExponential(i.currIdx, i.targetSchema) <= i.absoluteStartValue {
 		return i.Next()
 	}
 	i.boundReachedStartValue = true
@@ -1195,7 +1195,7 @@ func addBuckets(
 	for _, spanB := range spansB {
 		indexB += spanB.Offset
 		for j := 0; j < int(spanB.Length); j++ {
-			if lowerThanThreshold && schema != CustomBucketsSchema && getBoundExponential(indexB, schema) <= threshold {
+			if lowerThanThreshold && IsExponentialSchema(schema) && getBoundExponential(indexB, schema) <= threshold {
 				goto nextLoop
 			}
 			lowerThanThreshold = false
@@ -1314,7 +1314,7 @@ func (h *FloatHistogram) ReduceResolution(targetSchema int32) *FloatHistogram {
 	if h.UsesCustomBuckets() {
 		panic("cannot reduce resolution when there are custom buckets")
 	}
-	if targetSchema == CustomBucketsSchema {
+	if IsCustomBucketsSchema(targetSchema) {
 		panic("cannot reduce resolution to custom buckets schema")
 	}
 	if targetSchema >= h.Schema {
