@@ -141,8 +141,8 @@ func (h *Histogram) CopyTo(to *Histogram) {
 		to.ZeroThreshold = 0
 		to.ZeroCount = 0
 
-		to.NegativeSpans = nil
-		to.NegativeBuckets = nil
+		to.NegativeSpans = clearIfNotNil(to.NegativeSpans)
+		to.NegativeBuckets = clearIfNotNil(to.NegativeBuckets)
 
 		to.CustomBounds = h.CustomBounds
 	} else {
@@ -155,7 +155,7 @@ func (h *Histogram) CopyTo(to *Histogram) {
 		to.NegativeBuckets = resize(to.NegativeBuckets, len(h.NegativeBuckets))
 		copy(to.NegativeBuckets, h.NegativeBuckets)
 
-		to.CustomBounds = nil
+		to.CustomBounds = clearIfNotNil(to.CustomBounds)
 	}
 
 	to.PositiveSpans = resize(to.PositiveSpans, len(h.PositiveSpans))
@@ -371,8 +371,8 @@ func (h *Histogram) ToFloat(fh *FloatHistogram) *FloatHistogram {
 	if h.HasCustomBounds() {
 		fh.ZeroThreshold = 0
 		fh.ZeroCount = 0
-		fh.NegativeSpans = nil
-		fh.NegativeBuckets = nil
+		fh.NegativeSpans = clearIfNotNil(fh.NegativeSpans)
+		fh.NegativeBuckets = clearIfNotNil(fh.NegativeBuckets)
 		fh.CustomBounds = h.CustomBounds
 	} else {
 		fh.ZeroThreshold = h.ZeroThreshold
@@ -387,7 +387,7 @@ func (h *Histogram) ToFloat(fh *FloatHistogram) *FloatHistogram {
 			currentNegative += float64(b)
 			fh.NegativeBuckets[i] = currentNegative
 		}
-		fh.CustomBounds = nil
+		fh.CustomBounds = clearIfNotNil(fh.CustomBounds)
 	}
 
 	fh.PositiveSpans = resize(fh.PositiveSpans, len(h.PositiveSpans))
@@ -410,6 +410,13 @@ func resize[T any](items []T, n int) []T {
 	return items[:n]
 }
 
+func clearIfNotNil[T any](items []T) []T {
+	if items == nil {
+		return nil
+	}
+	return items[:0]
+}
+
 // Validate validates consistency between span and bucket slices. Also, buckets are checked
 // against negative values. We check to make sure there are no unexpected fields or field values
 // based on the exponential / custom buckets schema.
@@ -430,10 +437,10 @@ func (h *Histogram) Validate() error {
 		if h.ZeroThreshold != 0 {
 			return fmt.Errorf("custom buckets: must have zero threshold of 0")
 		}
-		if h.NegativeSpans != nil {
+		if len(h.NegativeSpans) > 0 {
 			return fmt.Errorf("custom buckets: must not have negative spans")
 		}
-		if h.NegativeBuckets != nil {
+		if len(h.NegativeBuckets) > 0 {
 			return fmt.Errorf("custom buckets: must not have negative buckets")
 		}
 	} else {

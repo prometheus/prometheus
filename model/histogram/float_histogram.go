@@ -111,8 +111,8 @@ func (h *FloatHistogram) CopyTo(to *FloatHistogram) {
 		to.ZeroThreshold = 0
 		to.ZeroCount = 0
 
-		to.NegativeSpans = nil
-		to.NegativeBuckets = nil
+		to.NegativeSpans = clearIfNotNil(to.NegativeSpans)
+		to.NegativeBuckets = clearIfNotNil(to.NegativeBuckets)
 
 		to.CustomBounds = h.CustomBounds
 	} else {
@@ -125,7 +125,7 @@ func (h *FloatHistogram) CopyTo(to *FloatHistogram) {
 		to.NegativeBuckets = resize(to.NegativeBuckets, len(h.NegativeBuckets))
 		copy(to.NegativeBuckets, h.NegativeBuckets)
 
-		to.CustomBounds = nil
+		to.CustomBounds = clearIfNotNil(to.CustomBounds)
 	}
 
 	to.PositiveSpans = resize(to.PositiveSpans, len(h.PositiveSpans))
@@ -758,10 +758,10 @@ func (h *FloatHistogram) Validate() error {
 		if h.ZeroThreshold != 0 {
 			return fmt.Errorf("custom buckets: must have zero threshold of 0")
 		}
-		if h.NegativeSpans != nil {
+		if len(h.NegativeSpans) > 0 {
 			return fmt.Errorf("custom buckets: must not have negative spans")
 		}
-		if h.NegativeBuckets != nil {
+		if len(h.NegativeBuckets) > 0 {
 			return fmt.Errorf("custom buckets: must not have negative buckets")
 		}
 	} else {
