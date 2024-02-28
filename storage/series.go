@@ -123,14 +123,22 @@ func (it *listSeriesIterator) At() (int64, float64) {
 	return s.T(), s.F()
 }
 
-func (it *listSeriesIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
+func (it *listSeriesIterator) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
 	s := it.samples.Get(it.idx)
-	return s.T(), s.H()
+	if h == nil {
+		return s.T(), s.H().Copy()
+	}
+	s.H().CopyTo(h)
+	return s.T(), h
 }
 
-func (it *listSeriesIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+func (it *listSeriesIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	s := it.samples.Get(it.idx)
-	return s.T(), s.FH()
+	if fh == nil {
+		return s.T(), s.FH().Copy()
+	}
+	s.FH().CopyTo(fh)
+	return s.T(), fh
 }
 
 func (it *listSeriesIterator) AtT() int64 {

@@ -776,11 +776,11 @@ func (it *mockSampleIterator) At() (int64, float64) {
 }
 
 func (it *mockSampleIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
-	return it.s[it.idx].T(), it.s[it.idx].H()
+	return it.s[it.idx].T(), it.s[it.idx].H().Copy()
 }
 
 func (it *mockSampleIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
-	return it.s[it.idx].T(), it.s[it.idx].FH()
+	return it.s[it.idx].T(), it.s[it.idx].FH().Copy()
 }
 
 func (it *mockSampleIterator) AtT() int64 {
