@@ -15,12 +15,8 @@ package tsdbutil
 
 import (
 	"math"
-	"testing"
-
-	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 func GenerateTestHistograms(n int) (r []*histogram.Histogram) {
@@ -141,40 +137,4 @@ func SetFloatHistogramNotCounterReset(h *histogram.FloatHistogram) *histogram.Fl
 func SetFloatHistogramCounterReset(h *histogram.FloatHistogram) *histogram.FloatHistogram {
 	h.CounterResetHint = histogram.CounterReset
 	return h
-}
-
-// Ensure that the iterator copies histograms when iterating.
-func VerifyChunkIteratorCopiesHistograms(t *testing.T, h *histogram.Histogram, it chunkenc.Iterator) {
-	originalCount := h.Count
-	require.Equal(t, chunkenc.ValHistogram, it.Next())
-	// Get a copy.
-	_, hCopy := it.AtHistogram(nil)
-	// Copy into a new histogram.
-	hCopy2 := &histogram.Histogram{}
-	_, hCopy2 = it.AtHistogram(hCopy2)
-
-	// Change the original
-	h.Count = originalCount + 1
-
-	// Ensure that the copy is not affected.
-	require.Equal(t, originalCount, hCopy.Count, "Copied histogram count should not change when original is modified")
-	require.Equal(t, originalCount, hCopy2.Count, "Copied to histogram count should not change when original is modified")
-}
-
-// Ensure that the iterator copies float histograms when iterating.
-func VerifyChunkIteratorCopiesFloatHistograms(t *testing.T, fh *histogram.FloatHistogram, it chunkenc.Iterator) {
-	originalCount := fh.Count
-	require.Equal(t, chunkenc.ValFloatHistogram, it.Next())
-	// Get a copy.
-	_, hCopy := it.AtFloatHistogram(nil)
-	// Copy into a new histogram.
-	hCopy2 := &histogram.FloatHistogram{}
-	_, hCopy2 = it.AtFloatHistogram(hCopy2)
-
-	// Change the original
-	fh.Count = originalCount + 1
-
-	// Ensure that the copy is not affected.
-	require.Equal(t, originalCount, hCopy.Count, "Copied histogram count should not change when original is modified")
-	require.Equal(t, originalCount, hCopy2.Count, "Copied to histogram count should not change when original is modified")
 }

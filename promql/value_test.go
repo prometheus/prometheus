@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/testutil"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
 
@@ -118,5 +119,5 @@ func TestStorageSeriesIterator_CopiesHistograms(t *testing.T) {
 		Histograms: []HPoint{{T: 0, H: h}},
 	}
 	it := newStorageSeriesIterator(series)
-	tsdbutil.VerifyChunkIteratorCopiesFloatHistograms(t, h, it)
+	require.NoError(t, testutil.VerifyChunkIteratorCopiesFloatHistograms(h, it))
 }

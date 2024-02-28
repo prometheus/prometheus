@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/testutil"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
 
@@ -132,8 +133,8 @@ func TestListSeriesIteratorCopiesHistograms(t *testing.T) {
 		hSample{0, h},
 		fhSample{1, fh},
 	})
-	tsdbutil.VerifyChunkIteratorCopiesHistograms(t, h, it)
-	tsdbutil.VerifyChunkIteratorCopiesFloatHistograms(t, fh, it)
+	require.NoError(t, testutil.VerifyChunkIteratorCopiesHistograms(h, it))
+	require.NoError(t, testutil.VerifyChunkIteratorCopiesFloatHistograms(fh, it))
 }
 
 type histogramTest struct {
