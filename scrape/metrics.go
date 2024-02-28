@@ -208,7 +208,7 @@ func newScrapeMetrics(reg prometheus.Registerer) (*scrapeMetrics, error) {
 	)
 	sm.targetScrapeNativeHistogramBucketLimit = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name: "prometheus_target_scrapes_exceeded_native_histogram_bucket_limit_total",
+			Name: "prometheus_target_scrapes_exceeded_nativehistogram_bucket_limit_total",
 			Help: "Total number of scrapes that hit the native histogram bucket limit and were rejected.",
 		},
 	)
