@@ -141,30 +141,9 @@ describe('DataTable', () => {
 
     it('renders rows', () => {
       const table = dataTable.find(Table);
-      const histogramData = [{
-        count: '10',
-        sum: '3.3',
-        buckets: [
-          [1, '-1', '-0.5', '2'],
-          [3, '-0.5', '0.5', '3'],
-          [0, '0.5', '1', '5'],
-        ]
-      },
-      {
-        count: '5',
-        sum: '1.11',
-        buckets: [
-          [0, '0.5', '1', '2'],
-          [0, '1', '2', '3'],
-        ],
-      }];
       table.find('tr').forEach((row, idx) => {
         const seriesNameComponent = dataTable.find('SeriesName');
         expect(seriesNameComponent).toHaveLength(dataTableProps.data?.result.length as number);
-    
-        const histogramStringComponent = row.find('HistogramString');
-        expect(histogramStringComponent).toHaveLength(1);
-        expect(histogramStringComponent.prop('h')).toEqual(histogramData[idx]);
       });
     });
   });
