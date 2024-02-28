@@ -257,6 +257,7 @@ func (h *FloatHistogram) ZeroBucket() Bucket[float64] {
 		LowerInclusive: true,
 		UpperInclusive: true,
 		Count:          h.ZeroCount,
+		// Index is irrelevant for the zero bucket.
 	}
 }
 
@@ -1132,14 +1133,7 @@ func (i *allFloatBucketIterator) Next() bool {
 	case 0:
 		i.state = 1
 		if i.h.ZeroCount > 0 {
-			i.currBucket = Bucket[float64]{
-				Lower:          -i.h.ZeroThreshold,
-				Upper:          i.h.ZeroThreshold,
-				LowerInclusive: true,
-				UpperInclusive: true,
-				Count:          i.h.ZeroCount,
-				// Index is irrelevant for the zero bucket.
-			}
+			i.currBucket = i.h.ZeroBucket()
 			return true
 		}
 		return i.Next()

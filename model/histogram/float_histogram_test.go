@@ -3129,6 +3129,26 @@ func TestFloatCustomBucketsIterators(t *testing.T) {
 				{Lower: 500, Upper: math.Inf(1), LowerInclusive: false, UpperInclusive: true, Count: 55, Index: 5},
 			},
 		},
+		{
+			h: FloatHistogram{
+				Count:  622,
+				Sum:    10008.4,
+				Schema: CustomBucketsSchema,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 1},
+					{Offset: 1, Length: 1},
+				},
+				PositiveBuckets: []float64{100, 344, 123, 55},
+				CustomBounds:    []float64{-10, -5, 0, 10, 25},
+			},
+			expPositiveBuckets: []Bucket[float64]{
+				{Lower: math.Inf(-1), Upper: -10, LowerInclusive: true, UpperInclusive: true, Count: 100, Index: 0},
+				{Lower: -10, Upper: -5, LowerInclusive: false, UpperInclusive: true, Count: 344, Index: 1},
+				{Lower: 0, Upper: 10, LowerInclusive: false, UpperInclusive: true, Count: 123, Index: 3},
+				{Lower: 25, Upper: math.Inf(1), LowerInclusive: false, UpperInclusive: true, Count: 55, Index: 5},
+			},
+		},
 	}
 
 	for i, c := range cases {
@@ -3236,6 +3256,42 @@ func TestFloatHistogramEquals(t *testing.T) {
 	hNegBucketNaN.NegativeBuckets[0] = math.NaN()
 	notEquals(h1, *hNegBucketNaN)
 	equals(*hNegBucketNaN, *hNegBucketNaN)
+
+	// Custom bounds are defined for exponential schema.
+	hCustom := h1.Copy()
+	hCustom.CustomBounds = []float64{1, 2, 3}
+	equals(h1, *hCustom)
+
+	cbh1 := FloatHistogram{
+		Schema:          CustomBucketsSchema,
+		Count:           2.2,
+		Sum:             9.7,
+		PositiveSpans:   []Span{{0, 1}},
+		PositiveBuckets: []float64{3},
+		CustomBounds:    []float64{1, 2, 3},
+	}
+
+	require.NoError(t, cbh1.Validate())
+
+	cbh2 := cbh1.Copy()
+	equals(cbh1, *cbh2)
+
+	// Has different custom bounds for custom buckets schema.
+	cbh2 = cbh1.Copy()
+	cbh2.CustomBounds = []float64{1, 2, 3, 4}
+	notEquals(cbh1, *cbh2)
+
+	// Has non-empty negative spans and buckets for custom buckets schema.
+	cbh2 = cbh1.Copy()
+	cbh2.NegativeSpans = []Span{{Offset: 0, Length: 1}}
+	cbh2.NegativeBuckets = []float64{1}
+	equals(cbh1, *cbh2)
+
+	// Has non-zero zero count and threshold for custom buckets schema.
+	cbh2 = cbh1.Copy()
+	cbh2.ZeroThreshold = 0.1
+	cbh2.ZeroCount = 10
+	equals(cbh1, *cbh2)
 }
 
 func TestFloatHistogramSize(t *testing.T) {

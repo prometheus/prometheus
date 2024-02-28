@@ -624,7 +624,7 @@ func TestCustomBucketsHistogramToFloat(t *testing.T) {
 func TestHistogramEquals(t *testing.T) {
 	h1 := Histogram{
 		Schema:        3,
-		Count:         61,
+		Count:         62,
 		Sum:           2.7,
 		ZeroThreshold: 0.1,
 		ZeroCount:     42,
@@ -654,6 +654,8 @@ func TestHistogramEquals(t *testing.T) {
 		require.False(t, h1f.Equals(h2f))
 		require.False(t, h2f.Equals(h1f))
 	}
+
+	require.NoError(t, h1.Validate())
 
 	h2 := h1.Copy()
 	equals(h1, *h2)
@@ -761,6 +763,45 @@ func TestHistogramEquals(t *testing.T) {
 
 	// Sum StaleNaN vs regular NaN.
 	notEquals(*hStale, *hNaN)
+
+	// Has non-empty custom bounds for exponential schema.
+	hCustom := h1.Copy()
+	hCustom.CustomBounds = []float64{1, 2, 3}
+	equals(h1, *hCustom)
+
+	cbh1 := Histogram{
+		Schema: CustomBucketsSchema,
+		Count:  10,
+		Sum:    2.7,
+		PositiveSpans: []Span{
+			{Offset: 0, Length: 4},
+			{Offset: 10, Length: 3},
+		},
+		PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 0},
+		CustomBounds:    []float64{0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 20, 25, 50, 75, 100, 200, 250, 500, 1000},
+	}
+
+	require.NoError(t, cbh1.Validate())
+
+	cbh2 := cbh1.Copy()
+	equals(cbh1, *cbh2)
+
+	// Has different custom bounds for custom buckets schema.
+	cbh2 = cbh1.Copy()
+	cbh2.CustomBounds = []float64{0.1, 0.2, 0.5}
+	notEquals(cbh1, *cbh2)
+
+	// Has non-empty negative spans and buckets for custom buckets schema.
+	cbh2 = cbh1.Copy()
+	cbh2.NegativeSpans = []Span{{Offset: 0, Length: 1}}
+	cbh2.NegativeBuckets = []int64{1}
+	equals(cbh1, *cbh2)
+
+	// Has non-zero zero count and threshold for custom buckets schema.
+	cbh2 = cbh1.Copy()
+	cbh2.ZeroThreshold = 0.1
+	cbh2.ZeroCount = 10
+	equals(cbh1, *cbh2)
 }
 
 func TestHistogramCopy(t *testing.T) {
