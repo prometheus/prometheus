@@ -23,13 +23,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"sync"
 
 	"github.com/dennwc/varint"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"

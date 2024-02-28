@@ -64,6 +64,8 @@ linters-settings:
           desc: "Use github.com/klauspost/compress instead of gzip"
         - pkg: "zlib"
           desc: "Use github.com/klauspost/compress instead of zlib"
+        - pkg: "golang.org/x/exp/slices"
+          desc: "Use 'slices' instead."
   errcheck:
     exclude-functions:
       # Don't flag lines such as "io.Copy(io.Discard, resp.Body)".

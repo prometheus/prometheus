@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/pprof"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,7 +32,6 @@ import (
 
 	"github.com/alecthomas/units"
 	"github.com/go-kit/log"
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"

@@ -17,11 +17,11 @@ package labels
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"unsafe"
 
 	"github.com/cespare/xxhash/v2"
-	"golang.org/x/exp/slices"
 )
 
 // Labels is implemented by a single flat string holding name/value pairs.

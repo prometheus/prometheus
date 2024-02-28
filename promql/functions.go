@@ -16,6 +16,7 @@ package promql
 import (
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,7 +25,6 @@ import (
 	"github.com/facette/natsort"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/common/model"
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
