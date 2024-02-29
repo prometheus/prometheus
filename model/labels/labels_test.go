@@ -785,24 +785,25 @@ func BenchmarkLabels_Hash(b *testing.B) {
 	}
 }
 
+var benchmarkLabels = []Label{
+	{"job", "node"},
+	{"instance", "123.123.1.211:9090"},
+	{"path", "/api/v1/namespaces/<namespace>/deployments/<name>"},
+	{"method", "GET"},
+	{"namespace", "system"},
+	{"status", "500"},
+	{"prometheus", "prometheus-core-1"},
+	{"datacenter", "eu-west-1"},
+	{"pod_name", "abcdef-99999-defee"},
+}
+
 func BenchmarkBuilder(b *testing.B) {
-	m := []Label{
-		{"job", "node"},
-		{"instance", "123.123.1.211:9090"},
-		{"path", "/api/v1/namespaces/<namespace>/deployments/<name>"},
-		{"method", "GET"},
-		{"namespace", "system"},
-		{"status", "500"},
-		{"prometheus", "prometheus-core-1"},
-		{"datacenter", "eu-west-1"},
-		{"pod_name", "abcdef-99999-defee"},
-	}
 
 	var l Labels
 	builder := NewBuilder(EmptyLabels())
 	for i := 0; i < b.N; i++ {
 		builder.Reset(EmptyLabels())
-		for _, l := range m {
+		for _, l := range benchmarkLabels {
 			builder.Set(l.Name, l.Value)
 		}
 		l = builder.Labels()
@@ -811,18 +812,7 @@ func BenchmarkBuilder(b *testing.B) {
 }
 
 func BenchmarkLabels_Copy(b *testing.B) {
-	m := map[string]string{
-		"job":        "node",
-		"instance":   "123.123.1.211:9090",
-		"path":       "/api/v1/namespaces/<namespace>/deployments/<name>",
-		"method":     "GET",
-		"namespace":  "system",
-		"status":     "500",
-		"prometheus": "prometheus-core-1",
-		"datacenter": "eu-west-1",
-		"pod_name":   "abcdef-99999-defee",
-	}
-	l := FromMap(m)
+	l := New(benchmarkLabels...)
 
 	for i := 0; i < b.N; i++ {
 		l = l.Copy()
