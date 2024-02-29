@@ -565,6 +565,63 @@ func TestReader_PostingsForMatcher(t *testing.T) {
 	require.NoError(t, err)
 
 	symbols := map[string]struct{}{}
+	var syms []string
+
+	testPostingsForMatcher(t, func(t *testing.T, series []labels.Labels) indexReader {
+		t.Helper()
+
+		for _, ls := range series {
+			ls.Range(func(l labels.Label) {
+				symbols[l.Name] = struct{}{}
+				symbols[l.Value] = struct{}{}
+			})
+		}
+
+		for s := range symbols {
+			syms = append(syms, s)
+		}
+		sort.Strings(syms)
+		for _, s := range syms {
+			require.NoError(t, iw.AddSymbol(s))
+		}
+
+		for i, s := range series {
+			require.NoError(t, iw.AddSeries(storage.SeriesRef(i), s))
+		}
+		require.NoError(t, iw.Close())
+
+		ir, err := NewFileReader(fn)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, ir.Close())
+		})
+
+		return blockIndexReader{
+			r: ir,
+		}
+	})
+}
+
+type blockIndexReader struct {
+	r *Reader
+}
+
+func (ir blockIndexReader) Labels(sr storage.SeriesRef, builder *labels.ScratchBuilder) error {
+	return ir.r.Series(sr, builder, nil)
+}
+
+func (ir blockIndexReader) PostingsForMatcher(ctx context.Context, matcher *labels.Matcher) Postings {
+	return ir.r.PostingsForMatcher(ctx, matcher)
+}
+
+type indexReader interface {
+	PostingsForMatcher(context.Context, *labels.Matcher) Postings
+	Labels(storage.SeriesRef, *labels.ScratchBuilder) error
+}
+
+func testPostingsForMatcher(t *testing.T, setUp func(*testing.T, []labels.Labels) indexReader) {
+	t.Helper()
+
 	// These have to be ordered
 	series := []labels.Labels{
 		labels.FromStrings("i", "a", "n", "1"),
@@ -573,31 +630,8 @@ func TestReader_PostingsForMatcher(t *testing.T) {
 		labels.FromStrings("n", "2"),
 		labels.FromStrings("n", "2.5"),
 	}
-	for _, ls := range series {
-		ls.Range(func(l labels.Label) {
-			symbols[l.Name] = struct{}{}
-			symbols[l.Value] = struct{}{}
-		})
-	}
-	var syms []string
-	for s := range symbols {
-		syms = append(syms, s)
-	}
-	sort.Strings(syms)
-	for _, s := range syms {
-		require.NoError(t, iw.AddSymbol(s))
-	}
 
-	for i, s := range series {
-		require.NoError(t, iw.AddSeries(storage.SeriesRef(i), s))
-	}
-	require.NoError(t, iw.Close())
-
-	ir, err := NewFileReader(fn)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, ir.Close())
-	})
+	ir := setUp(t, series)
 
 	testCases := []struct {
 		matcher *labels.Matcher
@@ -734,11 +768,11 @@ func TestReader_PostingsForMatcher(t *testing.T) {
 				exp[l.String()] = struct{}{}
 			}
 
-			it := ir.PostingsForMatcher(ctx, tc.matcher)
+			it := ir.PostingsForMatcher(context.Background(), tc.matcher)
 
 			var builder labels.ScratchBuilder
 			for it.Next() {
-				require.NoError(t, ir.Series(it.At(), &builder, nil))
+				require.NoError(t, ir.Labels(it.At(), &builder))
 				lbls := builder.Labels()
 				_, ok := exp[lbls.String()]
 				require.True(t, ok, "Got unexpected label set %s", lbls.String())
