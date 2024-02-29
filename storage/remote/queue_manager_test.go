@@ -520,6 +520,69 @@ func TestShouldReshard(t *testing.T) {
 	}
 }
 
+// TestDisableReshardOnRetry asserts that resharding should be disabled when a
+// recoverable error is returned from remote_write.
+func TestDisableReshardOnRetry(t *testing.T) {
+	onStoredContext, onStoreCalled := context.WithCancel(context.Background())
+	defer onStoreCalled()
+
+	var (
+		fakeSamples, fakeSeries = createTimeseries(100, 100)
+
+		cfg        = config.DefaultQueueConfig
+		mcfg       = config.DefaultMetadataConfig
+		retryAfter = time.Second
+
+		metrics = newQueueManagerMetrics(nil, "", "")
+
+		client = &MockWriteClient{
+			StoreFunc: func(ctx context.Context, b []byte, i int) error {
+				onStoreCalled()
+
+				return RecoverableError{
+					error:      fmt.Errorf("fake error"),
+					retryAfter: model.Duration(retryAfter),
+				}
+			},
+			NameFunc:     func() string { return "mock" },
+			EndpointFunc: func() string { return "http://fake:9090/api/v1/write" },
+		}
+	)
+
+	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), newHighestTimestampMetric(), nil, false, false)
+	m.StoreSeries(fakeSeries, 0)
+
+	// Attempt to samples while the manager is running. We immediately stop the
+	// manager after the recoverable error is generated to prevent the manager
+	// from resharding itself.
+	m.Start()
+	{
+		m.Append(fakeSamples)
+
+		select {
+		case <-onStoredContext.Done():
+		case <-time.After(time.Minute):
+			require.FailNow(t, "timed out waiting for client to be sent metrics")
+		}
+	}
+	m.Stop()
+
+	require.Eventually(t, func() bool {
+		// Force m.lastSendTimestamp to be current so the last send timestamp isn't
+		// the reason resharding is disabled.
+		m.lastSendTimestamp.Store(time.Now().Unix())
+		return m.shouldReshard(m.numShards+1) == false
+	}, time.Minute, 10*time.Millisecond, "shouldReshard was never disabled")
+
+	// After 2x retryAfter, resharding should be enabled again.
+	require.Eventually(t, func() bool {
+		// Force m.lastSendTimestamp to be current so the last send timestamp isn't
+		// the reason resharding is disabled.
+		m.lastSendTimestamp.Store(time.Now().Unix())
+		return m.shouldReshard(m.numShards+1) == true
+	}, time.Minute, retryAfter, "shouldReshard should have been re-enabled")
+}
+
 func createTimeseries(numSamples, numSeries int, extraLabels ...labels.Label) ([]record.RefSample, []record.RefSeries) {
 	samples := make([]record.RefSample, 0, numSamples)
 	series := make([]record.RefSeries, 0, numSeries)
@@ -843,6 +906,18 @@ func NewNopWriteClient() *NopWriteClient                           { return &Nop
 func (c *NopWriteClient) Store(context.Context, []byte, int) error { return nil }
 func (c *NopWriteClient) Name() string                             { return "nopwriteclient" }
 func (c *NopWriteClient) Endpoint() string                         { return "http://test-remote.com/1234" }
+
+type MockWriteClient struct {
+	StoreFunc    func(context.Context, []byte, int) error
+	NameFunc     func() string
+	EndpointFunc func() string
+}
+
+func (c *MockWriteClient) Store(ctx context.Context, bb []byte, n int) error {
+	return c.StoreFunc(ctx, bb, n)
+}
+func (c *MockWriteClient) Name() string     { return c.NameFunc() }
+func (c *MockWriteClient) Endpoint() string { return c.EndpointFunc() }
 
 // Extra labels to make a more realistic workload - taken from Kubernetes' embedded cAdvisor metrics.
 var extraLabels []labels.Label = []labels.Label{

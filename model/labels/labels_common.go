@@ -16,10 +16,10 @@ package labels
 import (
 	"bytes"
 	"encoding/json"
+	"slices"
 	"strconv"
 
 	"github.com/prometheus/common/model"
-	"golang.org/x/exp/slices"
 )
 
 const (

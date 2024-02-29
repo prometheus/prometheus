@@ -4315,6 +4315,8 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 
 				ts := idx0 * int64(10*time.Minute/time.Millisecond)
 				app := storage.Appender(context.Background())
+				_, err := app.Append(0, labels.FromStrings("__name__", "float_series", "idx", "0"), ts, 42)
+				require.NoError(t, err)
 				for idx1, h := range c.histograms {
 					lbls := labels.FromStrings("__name__", seriesName, "idx", fmt.Sprintf("%d", idx1))
 					// Since we mutate h later, we need to create a copy here.
@@ -4344,16 +4346,30 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 
 					res := qry.Exec(context.Background())
 					require.NoError(t, res.Err)
+					require.Empty(t, res.Warnings)
 
 					vector, err := res.Vector()
 					require.NoError(t, err)
 
 					testutil.RequireEqual(t, exp, vector)
 				}
+				queryAndCheckAnnotations := func(queryString string, ts int64, expWarnings annotations.Annotations) {
+					qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(ts))
+					require.NoError(t, err)
+
+					res := qry.Exec(context.Background())
+					require.NoError(t, res.Err)
+					require.Equal(t, expWarnings, res.Warnings)
+				}
 
 				// sum().
 				queryString := fmt.Sprintf("sum(%s)", seriesName)
 				queryAndCheck(queryString, ts, []Sample{{T: ts, H: &c.expected, Metric: labels.EmptyLabels()}})
+
+				queryString = `sum({idx="0"})`
+				var annos annotations.Annotations
+				annos.Add(annotations.NewMixedFloatsHistogramsAggWarning(posrange.PositionRange{Start: 4, End: 13}))
+				queryAndCheckAnnotations(queryString, ts, annos)
 
 				// + operator.
 				queryString = fmt.Sprintf(`%s{idx="0"}`, seriesName)
