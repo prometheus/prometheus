@@ -606,6 +606,7 @@ type blockIndexReader struct {
 	r *Reader
 }
 
+// Labels adds label pairs belonging to the series identified by sr, to builder.
 func (ir blockIndexReader) Labels(sr storage.SeriesRef, builder *labels.ScratchBuilder) error {
 	return ir.r.Series(sr, builder, nil)
 }
