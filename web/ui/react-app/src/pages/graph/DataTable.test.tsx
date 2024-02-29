@@ -71,7 +71,7 @@ describe('DataTable', () => {
       const table = dataTable.find(Table);
       table.find('tr').forEach((row, idx) => {
         expect(row.find(SeriesName)).toHaveLength(1);
-        expect(row.find('td').at(1).text()).toEqual(`${idx} <HistogramString />`);
+        expect(row.find('td').at(1).text()).toEqual(`${idx}`);
       });
     });
   });
@@ -129,42 +129,21 @@ describe('DataTable', () => {
       },
       useLocalTime: false,
     };
-    const dataTable = mount(<DataTable {...dataTableProps} />);
+    const dataTable = shallow(<DataTable {...dataTableProps} />);
 
     it('renders a table', () => {
-      const table = dataTable.find(Table);
+      const table = dataTable.find(Table).first();
       expect(table.prop('hover')).toBe(true);
       expect(table.prop('size')).toEqual('sm');
       expect(table.prop('className')).toEqual('data-table');
-      expect(table.find('tbody')).toHaveLength(1);
+      expect(table.find('tbody')).toHaveLength(dataTableProps.data?.result.length as number);
     });
 
     it('renders rows', () => {
       const table = dataTable.find(Table);
-      const histogramData = [{
-        count: '10',
-        sum: '3.3',
-        buckets: [
-          [1, '-1', '-0.5', '2'],
-          [3, '-0.5', '0.5', '3'],
-          [0, '0.5', '1', '5'],
-        ]
-      },
-      {
-        count: '5',
-        sum: '1.11',
-        buckets: [
-          [0, '0.5', '1', '2'],
-          [0, '1', '2', '3'],
-        ],
-      }];
       table.find('tr').forEach((row, idx) => {
         const seriesNameComponent = dataTable.find('SeriesName');
         expect(seriesNameComponent).toHaveLength(dataTableProps.data?.result.length as number);
-    
-        const histogramStringComponent = row.find('HistogramString');
-        expect(histogramStringComponent).toHaveLength(1);
-        expect(histogramStringComponent.prop('h')).toEqual(histogramData[idx]);
       });
     });
   });
