@@ -158,12 +158,5 @@ docker-curr-arch:
 	@echo ">> Building promu and crossbuilding"
 	$(MAKE) $(PROMU)
 	$(MAKE) npm_licenses
-	@echo ">> Running promu crossbuild"
-	promu crossbuild -p $(shell go env GOHOSTOS)/$(shell go env GOHOSTARCH)
-	@echo ">> Building promu and crossbuilding"
-	$(MAKE) promu
-	docker build -t "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$(shell go env GOHOSTARCH):$(SANITIZED_DOCKER_IMAGE_TAG)" \
-		-f $(DOCKERFILE_PATH) \
-		--build-arg ARCH="$(shell go env GOHOSTARCH)" \
-		--build-arg OS="$(shell go env GOHOSTOS)" \
-		$(DOCKERBUILD_CONTEXT)
+	$(PROMU) crossbuild -p $(shell go env GOHOSTOS)/$(shell go env GOHOSTARCH)
+	$(MAKE) common-docker-$(GOHOSTARCH)
