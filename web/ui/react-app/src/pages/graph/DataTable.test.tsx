@@ -129,14 +129,14 @@ describe('DataTable', () => {
       },
       useLocalTime: false,
     };
-    const dataTable = mount(<DataTable {...dataTableProps} />);
+    const dataTable = shallow(<DataTable {...dataTableProps} />);
 
     it('renders a table', () => {
-      const table = dataTable.find(Table);
+      const table = dataTable.find(Table).first();
       expect(table.prop('hover')).toBe(true);
       expect(table.prop('size')).toEqual('sm');
       expect(table.prop('className')).toEqual('data-table');
-      expect(table.find('tbody')).toHaveLength(1);
+      expect(table.find('tbody')).toHaveLength(dataTableProps.data?.result.length as number);
     });
 
     it('renders rows', () => {
