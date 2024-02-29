@@ -805,7 +805,6 @@ var benchmarkLabels = []Label{
 }
 
 func BenchmarkBuilder(b *testing.B) {
-
 	var l Labels
 	builder := NewBuilder(EmptyLabels())
 	for i := 0; i < b.N; i++ {
