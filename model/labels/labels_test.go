@@ -43,6 +43,13 @@ func TestLabels_String(t *testing.T) {
 	}
 }
 
+func BenchmarkString(b *testing.B) {
+	ls := New(benchmarkLabels...)
+	for i := 0; i < b.N; i++ {
+		_ = ls.String()
+	}
+}
+
 func TestLabels_MatchLabels(t *testing.T) {
 	labels := FromStrings(
 		"__name__", "ALERTS",
