@@ -1391,6 +1391,16 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 		// Missing match[] query params in series requests.
 		{
 			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{"test_metric1"},
+				"limit":   []string{"1"},
+			},
+			response: []labels.Labels{
+				labels.FromStrings("__name__", "test_metric1", "foo", "bar"),
+			},
+		},
+		{
+			endpoint: api.series,
 			errType:  errorBadData,
 		},
 		{
@@ -2660,6 +2670,19 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					"boo",
 				},
 			},
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"match[]": []string{"test_metric4"},
+					"limit":   []string{"1"},
+				},
+				response: []string{
+					"bar",
+				},
+			},
 			// Label names.
 			{
 				endpoint: api.labelNames,
@@ -2798,6 +2821,14 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					"end":     []string{"100000000"},
 				},
 				response: []string{"__name__", "foo"},
+			},
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"match[]": []string{"test_metric2"},
+					"limit":   []string{"1"},
+				},
+				response: []string{"__name__"},
 			},
 		}...)
 	}

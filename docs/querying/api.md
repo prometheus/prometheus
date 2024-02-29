@@ -256,6 +256,7 @@ URL query parameters:
   series to return. At least one `match[]` argument must be provided.
 - `start=<rfc3339 | unix_timestamp>`: Start timestamp.
 - `end=<rfc3339 | unix_timestamp>`: End timestamp.
+- `limit=<number>`: Maximum number of returned series. Optional.
 
 You can URL-encode these parameters directly in the request body by using the `POST` method and
 `Content-Type: application/x-www-form-urlencoded` header. This is useful when specifying a large
@@ -306,6 +307,7 @@ URL query parameters:
 - `end=<rfc3339 | unix_timestamp>`: End timestamp. Optional.
 - `match[]=<series_selector>`: Repeated series selector argument that selects the
   series from which to read the label names. Optional.
+- `limit=<number>`: Maximum number of returned series. Optional.
 
 
 The `data` section of the JSON response is a list of string label names.
@@ -356,6 +358,7 @@ URL query parameters:
 - `end=<rfc3339 | unix_timestamp>`: End timestamp. Optional.
 - `match[]=<series_selector>`: Repeated series selector argument that selects the
   series from which to read the label values. Optional.
+- `limit=<number>`: Maximum number of returned series. Optional.
 
 
 The `data` section of the JSON response is a list of string label values.
