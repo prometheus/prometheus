@@ -621,7 +621,16 @@ func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
 		}
 	}
 	if err := app.Commit(); err != nil {
-		level.Warn(g.logger).Log("msg", "Stale sample appending for previous configuration failed", "err", err)
+		switch {
+		case errors.Is(err, storage.ErrOutOfOrderSample),
+			errors.Is(err, storage.ErrTooOldSample),
+			errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
+			// Do not count these in logging, as this is expected if series
+			// is exposed from a different rule.
+			g.staleSeries = nil
+		default:
+			level.Warn(g.logger).Log("msg", "Stale sample appending for previous configuration failed", "err", err)
+		}
 	} else {
 		g.staleSeries = nil
 	}
