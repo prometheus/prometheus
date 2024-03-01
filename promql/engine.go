@@ -1295,7 +1295,7 @@ func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping 
 	originalNumSamples := ev.currentSamples
 	var warnings annotations.Annotations
 
-	// param is the number k for topk/bottomk.
+	// param is the number k for topk/bottomk, or q for quantile.
 	var param float64
 	if aggExpr.Param != nil {
 		val, ws := ev.eval(aggExpr.Param)
@@ -2698,26 +2698,29 @@ type groupedAggregation struct {
 
 // aggregation evaluates an aggregation operation on a Vector. The provided grouping labels
 // must be sorted.
-func (ev *evaluator) aggregation(e *parser.AggregateExpr, grouping []string, param interface{}, inputMatrix Matrix, seriesHelper []EvalSeriesHelper, enh *EvalNodeHelper, seriess map[uint64]Series) (Matrix, annotations.Annotations) {
+func (ev *evaluator) aggregation(e *parser.AggregateExpr, grouping []string, q float64, inputMatrix Matrix, seriesHelper []EvalSeriesHelper, enh *EvalNodeHelper, seriess map[uint64]Series) (Matrix, annotations.Annotations) {
 	op := e.Op
 	without := e.Without
 	var annos annotations.Annotations
 	result := map[uint64]*groupedAggregation{}
 	orderedResult := []*groupedAggregation{}
-	var k int64
+	k := 1
 	if op == parser.TOPK || op == parser.BOTTOMK {
-		f := param.(float64)
-		if !convertibleToInt64(f) {
-			ev.errorf("Scalar value %v overflows int64", f)
+		if !convertibleToInt64(q) {
+			ev.errorf("Scalar value %v overflows int64", q)
 		}
-		k = int64(f)
+		k = int(q)
+		if k > len(inputMatrix) {
+			k = len(inputMatrix)
+		}
 		if k < 1 {
 			return nil, annos
 		}
 	}
-	var q float64
 	if op == parser.QUANTILE {
-		q = param.(float64)
+		if math.IsNaN(q) || q < 0 || q > 1 {
+			annos.Add(annotations.NewInvalidQuantileWarning(q, e.Param.PositionRange()))
+		}
 	}
 
 	for si, series := range inputMatrix {
@@ -2766,25 +2769,17 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, grouping []string, par
 				newAgg.groupCount = 0
 			}
 
-			inputVecLen := int64(len(inputMatrix))
-			resultSize := k
-			switch {
-			case k > inputVecLen:
-				resultSize = inputVecLen
-			case k == 0:
-				resultSize = 1
-			}
 			switch op {
 			case parser.STDVAR, parser.STDDEV:
 				newAgg.floatValue = 0
 			case parser.TOPK, parser.QUANTILE:
-				newAgg.heap = make(vectorByValueHeap, 1, resultSize)
+				newAgg.heap = make(vectorByValueHeap, 1, k)
 				newAgg.heap[0] = Sample{
 					F:      s.F,
 					Metric: s.Metric,
 				}
 			case parser.BOTTOMK:
-				newAgg.reverseHeap = make(vectorByReverseValueHeap, 1, resultSize)
+				newAgg.reverseHeap = make(vectorByReverseValueHeap, 1, k)
 				newAgg.reverseHeap[0] = Sample{
 					F:      s.F,
 					Metric: s.Metric,
@@ -2876,7 +2871,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, grouping []string, par
 		case parser.TOPK:
 			// We build a heap of up to k elements, with the smallest element at heap[0].
 			switch {
-			case int64(len(group.heap)) < k:
+			case len(group.heap) < k:
 				heap.Push(&group.heap, &Sample{
 					F:      s.F,
 					Metric: s.Metric,
@@ -2895,7 +2890,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, grouping []string, par
 		case parser.BOTTOMK:
 			// We build a heap of up to k elements, with the biggest element at heap[0].
 			switch {
-			case int64(len(group.reverseHeap)) < k:
+			case len(group.reverseHeap) < k:
 				heap.Push(&group.reverseHeap, &Sample{
 					F:      s.F,
 					Metric: s.Metric,
@@ -2999,9 +2994,6 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, grouping []string, par
 			continue // Bypass default append.
 
 		case parser.QUANTILE:
-			if math.IsNaN(q) || q < 0 || q > 1 {
-				annos.Add(annotations.NewInvalidQuantileWarning(q, e.Param.PositionRange()))
-			}
 			aggr.floatValue = quantile(q, aggr.heap)
 
 		case parser.SUM:
