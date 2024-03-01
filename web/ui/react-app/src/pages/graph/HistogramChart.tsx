@@ -17,6 +17,9 @@ const HistogramChart: FC<{ histogram: Histogram; index: number; scale: ScaleType
   const rangeMax = buckets ? parseFloat(buckets[buckets.length - 1][2]) : 0;
   const rangeMin = buckets ? parseFloat(buckets[0][1]) : 0;
 
+  // The count of a histogram bucket is represented by the frequency distribution (FD) rather than its height.
+  // This means it considers both the count and the width of the bar. The FD is calculated as the count divided by
+  // the width (range) of the bucket. Therefore, we can set a height proportional to fd.
   const fds = buckets
     ? buckets.map((b) => {
         return parseFloat(b[3]) / (parseFloat(b[2]) - parseFloat(b[1]));
@@ -118,7 +121,7 @@ interface RenderHistogramProps {
 const RenderHistogramBars: FC<RenderHistogramProps> = ({ buckets, scale, rangeMin, rangeMax, index, fds, fdMax }) => {
   return (
     <React.Fragment>
-      {buckets?.map((b, bIdx) => {
+      {buckets.map((b, bIdx) => {
         const bucketIdx = `bucket-${index}-${bIdx}-${Math.ceil(parseFloat(b[3]) * 100)}`;
         const bucketLeft =
           scale === 'linear'
