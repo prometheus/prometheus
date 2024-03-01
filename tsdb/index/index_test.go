@@ -557,19 +557,17 @@ func TestReaderWithInvalidBuffer(t *testing.T) {
 }
 
 func TestReader_PostingsForMatcher(t *testing.T) {
-	dir := t.TempDir()
-	fn := filepath.Join(dir, indexFilename)
-	ctx := context.Background()
-
-	iw, err := NewWriter(ctx, fn)
-	require.NoError(t, err)
-
-	symbols := map[string]struct{}{}
-	var syms []string
-
 	testPostingsForMatcher(t, func(t *testing.T, series []labels.Labels) indexReader {
 		t.Helper()
 
+		dir := t.TempDir()
+		fn := filepath.Join(dir, indexFilename)
+		ctx := context.Background()
+
+		iw, err := NewWriter(ctx, fn)
+		require.NoError(t, err)
+
+		symbols := map[string]struct{}{}
 		for _, ls := range series {
 			ls.Range(func(l labels.Label) {
 				symbols[l.Name] = struct{}{}
@@ -577,6 +575,7 @@ func TestReader_PostingsForMatcher(t *testing.T) {
 			})
 		}
 
+		var syms []string
 		for s := range symbols {
 			syms = append(syms, s)
 		}
@@ -611,6 +610,7 @@ func (ir blockIndexReader) Labels(sr storage.SeriesRef, builder *labels.ScratchB
 	return ir.r.Series(sr, builder, nil)
 }
 
+// PostingsForMatcher wraps ir.r.PostingsForMatcher.
 func (ir blockIndexReader) PostingsForMatcher(ctx context.Context, matcher *labels.Matcher) Postings {
 	return ir.r.PostingsForMatcher(ctx, matcher)
 }
@@ -620,6 +620,8 @@ type indexReader interface {
 	Labels(storage.SeriesRef, *labels.ScratchBuilder) error
 }
 
+// testPostingsForMatcher is a utility function that executes the PostingsForMatcher test suite for an indexReader
+// returned by the setUp function.
 func testPostingsForMatcher(t *testing.T, setUp func(*testing.T, []labels.Labels) indexReader) {
 	t.Helper()
 

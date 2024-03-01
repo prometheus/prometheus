@@ -1003,6 +1003,7 @@ type mockPostingsReader struct {
 	mp *MemPostings
 }
 
+// Postings returns Postings for each label name/value combination.
 func (pr mockPostingsReader) Postings(ctx context.Context, name string, values ...string) (Postings, error) {
 	res := make([]Postings, 0, len(values))
 	for _, value := range values {
@@ -1013,11 +1014,13 @@ func (pr mockPostingsReader) Postings(ctx context.Context, name string, values .
 	return Merge(ctx, res...), nil
 }
 
+// PostingsForMatcher wraps pr.mp.PostingsForMatcher.
 func (pr mockPostingsReader) PostingsForMatcher(ctx context.Context, matcher *labels.Matcher) Postings {
 	return pr.mp.PostingsForMatcher(ctx, pr, matcher)
 }
 
 // Labels adds label pairs belonging to the series identified by sr, to builder.
+// The builder is made to sort its labels.
 func (pr mockPostingsReader) Labels(sr storage.SeriesRef, builder *labels.ScratchBuilder) error {
 	for name, valueMap := range pr.mp.m {
 		if name == "" {
