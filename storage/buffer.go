@@ -240,6 +240,8 @@ func (s fhSample) Type() chunkenc.ValueType {
 type sampleRing struct {
 	delta int64
 
+	reuseHistograms bool
+
 	// Lookback buffers. We use iBuf for mixed samples, but one of the three
 	// concrete ones for homogenous samples. (Only one of the four bufs is
 	// allowed to be populated!) This avoids the overhead of the interface
@@ -385,7 +387,7 @@ func (it *SampleRingIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (in
 		it.fh.CopyTo(fh)
 		return it.t, fh
 	}
-	return it.t, it.fh.Copy()
+	return it.t, it.fh
 }
 
 func (it *SampleRingIterator) AtT() int64 {
@@ -680,10 +682,14 @@ func addH(s hSample, buf []hSample, r *sampleRing) []hSample {
 	}
 
 	buf[r.i].t = s.t
-	if buf[r.i].h == nil {
-		buf[r.i].h = s.h.Copy()
+	if r.reuseHistograms {
+		if buf[r.i].h == nil {
+			buf[r.i].h = s.h.Copy()
+		} else {
+			s.h.CopyTo(buf[r.i].h)
+		}
 	} else {
-		s.h.CopyTo(buf[r.i].h)
+		buf[r.i].h = s.h
 	}
 	r.l++
 
@@ -724,10 +730,14 @@ func addFH(s fhSample, buf []fhSample, r *sampleRing) []fhSample {
 	}
 
 	buf[r.i].t = s.t
-	if buf[r.i].fh == nil {
-		buf[r.i].fh = s.fh.Copy()
+	if r.reuseHistograms {
+		if buf[r.i].fh == nil {
+			buf[r.i].fh = s.fh.Copy()
+		} else {
+			s.fh.CopyTo(buf[r.i].fh)
+		}
 	} else {
-		s.fh.CopyTo(buf[r.i].fh)
+		buf[r.i].fh = s.fh
 	}
 	r.l++
 

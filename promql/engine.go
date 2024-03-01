@@ -1016,6 +1016,7 @@ type evaluator struct {
 	lookbackDelta            time.Duration
 	samplesStats             *stats.QuerySamples
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
+	reuseHistograms          bool
 }
 
 // errorf causes a panic with the input formatted into an error.
@@ -2152,10 +2153,19 @@ loop:
 					histograms = getMatrixSelectorHPoints()
 				}
 				n := len(histograms)
-				if n < cap(histograms) {
-					histograms = histograms[:n+1]
+				if ev.reuseHistograms {
+					if n < cap(histograms) {
+						histograms = histograms[:n+1]
+					} else {
+						histograms = append(histograms, HPoint{H: &histogram.FloatHistogram{}})
+					}
 				} else {
-					histograms = append(histograms, HPoint{H: &histogram.FloatHistogram{}})
+					if n < cap(histograms) {
+						histograms = histograms[:n+1]
+						histograms[n].H = nil
+					} else {
+						histograms = append(histograms, HPoint{})
+					}
 				}
 				histograms[n].T, histograms[n].H = buf.AtFloatHistogram(histograms[n].H)
 				if value.IsStaleNaN(histograms[n].H.Sum) {
@@ -2195,10 +2205,19 @@ loop:
 			histograms = getMatrixSelectorHPoints()
 		}
 		n := len(histograms)
-		if n < cap(histograms) {
-			histograms = histograms[:n+1]
+		if ev.reuseHistograms {
+			if n < cap(histograms) {
+				histograms = histograms[:n+1]
+			} else {
+				histograms = append(histograms, HPoint{H: &histogram.FloatHistogram{}})
+			}
 		} else {
-			histograms = append(histograms, HPoint{H: &histogram.FloatHistogram{}})
+			if n < cap(histograms) {
+				histograms = histograms[:n+1]
+				histograms[n].H = nil
+			} else {
+				histograms = append(histograms, HPoint{})
+			}
 		}
 		histograms[n].T, histograms[n].H = it.AtFloatHistogram(histograms[n].H)
 		if value.IsStaleNaN(histograms[n].H.Sum) {
