@@ -17,9 +17,12 @@ const HistogramChart: FC<{ histogram: Histogram; index: number; scale: ScaleType
   const rangeMax = buckets ? parseFloat(buckets[buckets.length - 1][2]) : 0;
   const rangeMin = buckets ? parseFloat(buckets[0][1]) : 0;
 
-  // The count of a histogram bucket is represented by the frequency distribution (FD) rather than its height.
-  // This means it considers both the count and the width of the bar. The FD is calculated as the count divided by
-  // the width (range) of the bucket. Therefore, we can set a height proportional to fd.
+  // The count of a histogram bucket is represented by its area rather than its height. This means it considers
+  // both the count and the width (range) of the bucket. For this, we can set the height of the bucket proportional
+  // to its frequency density (fd). The fd is the count of the bucket divided by the width of the bucket.
+
+  // Frequency density histograms are necessary when the bucekts are of unequal width. If the buckets are collected in
+  // intervals of equal width, then there is no difference between frequency and frequency density histograms.
   const fds = buckets
     ? buckets.map((b) => {
         return parseFloat(b[3]) / (parseFloat(b[2]) - parseFloat(b[1]));
