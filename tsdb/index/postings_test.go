@@ -1030,6 +1030,7 @@ func (pr mockPostingsReader) Labels(sr storage.SeriesRef, builder *labels.Scratc
 		}
 	}
 
+	builder.Sort()
 	return nil
 }
 
