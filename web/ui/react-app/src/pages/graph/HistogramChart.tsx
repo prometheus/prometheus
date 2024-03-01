@@ -93,18 +93,11 @@ const HistogramChart: FC<{ histogram: Histogram; index: number; scale: ScaleType
         </div>
         <div className="histogram-x-labels">
           <div className="histogram-x-label">
-            {rangeMin >= 0 ? (
-              <React.Fragment>
-                <div style={{ position: 'absolute', left: 0 }}>{formatter.format(rangeMin)}</div>
-                <div style={{ position: 'absolute', right: 0 }}>{formatter.format(rangeMax)}</div>
-              </React.Fragment>
-            ) : (
-              <React.Fragment>
-                <div style={{ position: 'absolute', left: 0 }}>{formatter.format(rangeMin)}</div>
-                <div style={{ position: 'absolute', left: zeroAxisLeft }}>0</div>
-                <div style={{ position: 'absolute', right: 0 }}>{formatter.format(rangeMax)}</div>
-              </React.Fragment>
-            )}
+            <React.Fragment>
+              <div style={{ position: 'absolute', left: 0 }}>{formatter.format(rangeMin)}</div>
+              {rangeMin < 0 && <div style={{ position: 'absolute', left: zeroAxisLeft }}>0</div>}
+              <div style={{ position: 'absolute', right: 0 }}>{formatter.format(rangeMax)}</div>
+            </React.Fragment>
           </div>
         </div>
       </div>
