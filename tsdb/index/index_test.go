@@ -774,7 +774,7 @@ func testPostingsForMatcher(t *testing.T, setUp func(*testing.T, []labels.Labels
 			it := ir.PostingsForMatcher(context.Background(), tc.matcher)
 
 			for it.Next() {
-				var builder labels.ScratchBuilder
+				builder := labels.NewScratchBuilder(0)
 				require.NoError(t, ir.Labels(it.At(), &builder))
 				lbls := builder.Labels()
 				_, ok := exp[lbls.String()]
