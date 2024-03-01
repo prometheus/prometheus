@@ -31,7 +31,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/otel"
@@ -1080,8 +1079,6 @@ type EvalNodeHelper struct {
 	Dmn map[uint64]labels.Labels
 	// funcHistogramQuantile for classic histograms.
 	signatureToMetricWithBuckets map[string]*metricWithBuckets
-	// label_replace.
-	regex *regexp.Regexp
 
 	lb           *labels.Builder
 	lblBuf       []byte
@@ -1409,6 +1406,15 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 				break
 			}
 		}
+
+		// Special handling for functions that work on series not samples.
+		switch e.Func.Name {
+		case "label_replace":
+			return ev.evalLabelReplace(e.Args)
+		case "label_join":
+			return ev.evalLabelJoin(e.Args)
+		}
+
 		if !matrixArg {
 			// Does not have a matrix argument.
 			return ev.rangeEval(nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
