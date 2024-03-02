@@ -1287,7 +1287,7 @@ func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping 
 	originalNumSamples := ev.currentSamples
 	var warnings annotations.Annotations
 
-	// param is the number k for topk/bottomk.
+	// param is the number k for topk/bottomk, or q for quantile.
 	var param float64
 	if aggExpr.Param != nil {
 		val, ws := ev.eval(aggExpr.Param)
@@ -2700,17 +2700,16 @@ type groupedAggregation struct {
 
 // aggregation evaluates an aggregation operation on a Vector. The provided grouping labels
 // must be sorted.
-func (ev *evaluator) aggregation(e *parser.AggregateExpr, param interface{}, inputMatrix Matrix, seriesToResult []int, orderedResult []*groupedAggregation, enh *EvalNodeHelper, seriess map[uint64]Series) (Matrix, annotations.Annotations) {
+func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix Matrix, seriesToResult []int, orderedResult []*groupedAggregation, enh *EvalNodeHelper, seriess map[uint64]Series) (Matrix, annotations.Annotations) {
 	op := e.Op
 	var annos annotations.Annotations
 	seen := make([]bool, len(orderedResult)) // Which output groups were seen in the input at this timestamp.
 	k := 1
 	if op == parser.TOPK || op == parser.BOTTOMK {
-		f := param.(float64)
-		if !convertibleToInt64(f) {
-			ev.errorf("Scalar value %v overflows int64", f)
+		if !convertibleToInt64(q) {
+			ev.errorf("Scalar value %v overflows int64", q)
 		}
-		k = int(f)
+		k = int(q)
 		if k > int(len(inputMatrix)) {
 			k = int(len(inputMatrix))
 		}
@@ -2718,9 +2717,10 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, param interface{}, inp
 			return nil, annos
 		}
 	}
-	var q float64
 	if op == parser.QUANTILE {
-		q = param.(float64)
+		if math.IsNaN(q) || q < 0 || q > 1 {
+			annos.Add(annotations.NewInvalidQuantileWarning(q, e.Param.PositionRange()))
+		}
 	}
 
 	for si, series := range inputMatrix {
@@ -2991,9 +2991,6 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, param interface{}, inp
 			continue // Bypass default append.
 
 		case parser.QUANTILE:
-			if math.IsNaN(q) || q < 0 || q > 1 {
-				annos.Add(annotations.NewInvalidQuantileWarning(q, e.Param.PositionRange()))
-			}
 			aggr.floatValue = quantile(q, aggr.heap)
 
 		case parser.SUM:
