@@ -718,40 +718,148 @@ scrape_configs:
 // TestManagerCTZeroIngestion tests scrape manager for CT cases.
 func TestManagerCTZeroIngestion(t *testing.T) {
 	const mName = "expected_counter"
+	protobufContentType := `application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited`
+	openMetricsTextContentType := `application/openmetrics-text; version=0.0.1`
 
 	for _, tc := range []struct {
 		name                  string
-		counterSample         *dto.Counter
+		contentType           string
 		enableCTZeroIngestion bool
 
-		expectedValues []float64
+		// protobufSamples and omTextSamples are mutually exclusive.
+		// They must be aligned with contentType.
+		protobufSamples *dto.Counter
+		omTextSamples   string
+
+		expectedValues map[string][]float64
 	}{
 		{
-			name: "disabled with CT on counter",
-			counterSample: &dto.Counter{
+			name:        "disabled with CT on counter",
+			contentType: protobufContentType,
+			protobufSamples: &dto.Counter{
 				Value: proto.Float64(1.0),
 				// Timestamp does not matter as long as it exists in this test.
 				CreatedTimestamp: timestamppb.Now(),
 			},
-			expectedValues: []float64{1.0},
+			expectedValues: map[string][]float64{
+				mName: {1.0},
+			},
 		},
 		{
-			name: "enabled with CT on counter",
-			counterSample: &dto.Counter{
+			name:        "protobuf/enabled with CT on counter",
+			contentType: protobufContentType,
+			protobufSamples: &dto.Counter{
 				Value: proto.Float64(1.0),
 				// Timestamp does not matter as long as it exists in this test.
 				CreatedTimestamp: timestamppb.Now(),
 			},
 			enableCTZeroIngestion: true,
-			expectedValues:        []float64{0.0, 1.0},
+			expectedValues: map[string][]float64{
+				mName: {0.0, 1.0},
+			},
 		},
 		{
-			name: "enabled without CT on counter",
-			counterSample: &dto.Counter{
+			name:        "protobuf/enabled without CT on counter",
+			contentType: protobufContentType,
+			protobufSamples: &dto.Counter{
 				Value: proto.Float64(1.0),
 			},
 			enableCTZeroIngestion: true,
-			expectedValues:        []float64{1.0},
+			expectedValues: map[string][]float64{
+				mName: {1.0},
+			},
+		},
+		{
+			name:        "OM-Text/counter without total suffix",
+			contentType: openMetricsTextContentType,
+			omTextSamples: fmt.Sprintf(`# HELP %s A counter
+# TYPE %s counter
+%s 1.0
+%s_created 1000.0
+# EOF`, mName, mName, mName, mName),
+			enableCTZeroIngestion: true,
+			expectedValues: map[string][]float64{
+				mName: {0.0, 1.0},
+			},
+		},
+		{
+			name:        "OM-Text/counter with total suffix",
+			contentType: openMetricsTextContentType,
+			omTextSamples: fmt.Sprintf(`# HELP %s A counter
+# TYPE %s counter
+%s_total 1.0
+%s_created 1000.0
+# EOF`, mName, mName, mName, mName),
+			enableCTZeroIngestion: true,
+			expectedValues: map[string][]float64{
+				mName + "_total": {0.0, 1.0},
+			},
+		},
+		{
+			name:        "OM-Text/counter with total and unit suffixes",
+			contentType: openMetricsTextContentType,
+			omTextSamples: fmt.Sprintf(`# HELP %s_seconds A counter
+# TYPE %s_seconds counter
+# UNIT %s_seconds seconds
+%s_seconds_total 1.0
+%s_seconds_created 1000.0
+# EOF`, mName, mName, mName, mName, mName),
+			enableCTZeroIngestion: true,
+			expectedValues: map[string][]float64{
+				mName + "_seconds_total": {0.0, 1.0},
+			},
+		},
+		{
+			name:        "OM-Text/unknown type",
+			contentType: openMetricsTextContentType,
+			omTextSamples: fmt.Sprintf(`%s_total 1.0
+%s_total_created 1000.0
+# EOF`, mName, mName),
+			enableCTZeroIngestion: true,
+			expectedValues: map[string][]float64{
+				mName + "_total":         {1.0},
+				mName + "_total_created": {1000.0},
+			},
+		},
+		{
+			name:        "OM-Text/created line unrelated to previous metric",
+			contentType: openMetricsTextContentType,
+			omTextSamples: fmt.Sprintf(`# HELP %s A counter
+# TYPE %s counter
+%s 1.0
+unrelatedmetric_created 1000.0
+# EOF`, mName, mName, mName),
+			enableCTZeroIngestion: true,
+			expectedValues: map[string][]float64{
+				mName:                     {1.0},
+				"unrelatedmetric_created": {1000.0},
+			},
+		},
+		{
+			name:        "OM-Text/created line after a gauge",
+			contentType: openMetricsTextContentType,
+			omTextSamples: fmt.Sprintf(`# HELP %s A gauge
+# TYPE %s gauge
+%s 1.0
+%s_created 1000.0
+# EOF`, mName, mName, mName, mName),
+			enableCTZeroIngestion: true,
+			expectedValues: map[string][]float64{
+				mName:              {1.0},
+				mName + "_created": {1000.0},
+			},
+		},
+		{
+			name:        "OM-Text/unrelated metrics without created lines",
+			contentType: openMetricsTextContentType,
+			omTextSamples: fmt.Sprintf(`%s_total 1.0
+unrelatedmetrics_total 1000.0
+# EOF`, mName),
+			enableCTZeroIngestion: true,
+			expectedValues: map[string][]float64{
+				mName + "_total":         {1.0},
+				"unrelatedmetrics_total": {1000.0},
+			},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -786,14 +894,17 @@ func TestManagerCTZeroIngestion(t *testing.T) {
 					fail := true
 					once.Do(func() {
 						fail = false
-						w.Header().Set("Content-Type", `application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited`)
-
-						ctrType := dto.MetricType_COUNTER
-						w.Write(protoMarshalDelimited(t, &dto.MetricFamily{
-							Name:   proto.String(mName),
-							Type:   &ctrType,
-							Metric: []*dto.Metric{{Counter: tc.counterSample}},
-						}))
+						w.Header().Set("Content-Type", tc.contentType)
+						if tc.contentType == protobufContentType {
+							ctrType := dto.MetricType_COUNTER
+							w.Write(protoMarshalDelimited(t, &dto.MetricFamily{
+								Name:   proto.String(mName),
+								Type:   &ctrType,
+								Metric: []*dto.Metric{{Counter: tc.protobufSamples}},
+							}))
+						} else {
+							w.Write([]byte(tc.omTextSamples))
+						}
 					})
 
 					if fail {
@@ -822,14 +933,18 @@ func TestManagerCTZeroIngestion(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 			defer cancel()
 			require.NoError(t, runutil.Retry(100*time.Millisecond, ctx.Done(), func() error {
-				if countFloatSamples(app, mName) != len(tc.expectedValues) {
-					return fmt.Errorf("expected %v samples", tc.expectedValues)
+				for mName, expectedValues := range tc.expectedValues {
+					if countFloatSamples(app, mName) != len(expectedValues) {
+						return fmt.Errorf("expected %v samples for metric %s", expectedValues, mName)
+					}
 				}
 				return nil
 			}), "after 1 minute")
 			scrapeManager.Stop()
 
-			require.Equal(t, tc.expectedValues, getResultFloats(app, mName))
+			for mName, expectedValues := range tc.expectedValues {
+				require.Equal(t, expectedValues, getResultFloats(app, mName))
+			}
 		})
 	}
 }
