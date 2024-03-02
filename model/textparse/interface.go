@@ -85,7 +85,7 @@ func New(b []byte, contentType string, parseClassicHistograms bool, st *labels.S
 		return NewPromParser(b, st), nil
 	}
 
-	mediaType, _, err := mime.ParseMediaType(contentType)
+	mediaType, err := ParseMediaType(contentType)
 	if err != nil {
 		return NewPromParser(b, st), err
 	}
@@ -97,6 +97,11 @@ func New(b []byte, contentType string, parseClassicHistograms bool, st *labels.S
 	default:
 		return NewPromParser(b, st), nil
 	}
+}
+
+func ParseMediaType(contentType string) (string, error) {
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	return mediaType, err
 }
 
 // Entry represents the type of a parsed entry.

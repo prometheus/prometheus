@@ -1458,6 +1458,9 @@ type appendErrors struct {
 }
 
 func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
+	// No need to check for error since it's checked again in textparse.New below.
+	mediaType, _ := textparse.ParseMediaType(contentType)
+
 	p, err := textparse.New(b, contentType, sl.scrapeClassicHistograms, sl.symbolTable)
 	if err != nil {
 		level.Debug(sl.l).Log(
@@ -1514,32 +1517,51 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 		sl.cache.iterDone(len(b) > 0)
 	}()
 
+	var (
+		skipCallNextEntry bool
+		foundEOF          bool
+		et                textparse.Entry
+		trimedMetric      []byte
+	)
 loop:
 	for {
+		// When parsing created timestamps from OpenMetrics text format,
+		// it is possible that we find EOF early. Therefore we break the loop.
+		if foundEOF {
+			break
+		}
 		var (
-			et                       textparse.Entry
 			sampleAdded, isHistogram bool
 			met                      []byte
 			parsedTimestamp          *int64
 			val                      float64
+			typ                      model.MetricType
+			help                     []byte
+			unit                     []byte
 			h                        *histogram.Histogram
 			fh                       *histogram.FloatHistogram
 		)
-		if et, err = p.Next(); err != nil {
-			if errors.Is(err, io.EOF) {
-				err = nil
+		if !skipCallNextEntry {
+			if et, err = p.Next(); err != nil {
+				if errors.Is(err, io.EOF) {
+					err = nil
+				}
+				break
 			}
-			break
 		}
+		skipCallNextEntry = false
 		switch et {
 		case textparse.EntryType:
-			sl.cache.setType(p.Type())
+			trimedMetric, typ = p.Type()
+			sl.cache.setType(trimedMetric, typ)
 			continue
 		case textparse.EntryHelp:
-			sl.cache.setHelp(p.Help())
+			trimedMetric, help = p.Help()
+			sl.cache.setHelp(trimedMetric, help)
 			continue
 		case textparse.EntryUnit:
-			sl.cache.setUnit(p.Unit())
+			trimedMetric, unit = p.Unit()
+			sl.cache.setUnit(trimedMetric, unit)
 			continue
 		case textparse.EntryComment:
 			continue
@@ -1618,12 +1640,23 @@ loop:
 		if seriesAlreadyScraped {
 			err = storage.ErrDuplicateSampleForTimestamp
 		} else {
-			if ctMs := p.CreatedTimestamp(); sl.enableCTZeroIngestion && ctMs != nil {
-				ref, err = app.AppendCTZeroSample(ref, lset, t, *ctMs)
-				if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) { // OOO is a common case, ignoring completely for now.
-					// CT is an experimental feature. For now, we don't need to fail the
-					// scrape on errors updating the created timestamp, log debug.
-					level.Debug(sl.l).Log("msg", "Error when appending CT in scrape loop", "series", string(met), "ct", *ctMs, "t", t, "err", err)
+			if sl.enableCTZeroIngestion {
+				switch mediaType {
+				case "application/openmetrics-text":
+					ref, skipCallNextEntry, err = sl.tryAppendOMCTZeroSample(p.(*textparse.OpenMetricsParser), app, string(trimedMetric), ref, lset, t, met)
+					if err != nil && errors.Is(err, io.EOF) {
+						err = nil
+						foundEOF = true
+					}
+				default:
+					if ctMs := p.CreatedTimestamp(); ctMs != nil {
+						ref, err = app.AppendCTZeroSample(ref, lset, t, *ctMs)
+						if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) { // OOO is a common case, ignoring completely for now.
+							// CT is an experimental feature. For now, we don't need to fail the
+							// scrape on errors updating the created timestamp, log debug.
+							level.Debug(sl.l).Log("msg", "Error when appending CT in scrape loop", "series", string(met), "ct", *ctMs, "t", t, "err", err)
+						}
+					}
 				}
 			}
 
@@ -1795,6 +1828,60 @@ func (sl *scrapeLoop) checkAddError(met []byte, err error, sampleLimitErr, bucke
 	default:
 		return false, err
 	}
+}
+
+// tryAppendOMCTZeroSample tries to append a created timestamp sample to the appender.
+// The OpenMetrics parser is used to parse the _created line, and, due to the behavior
+// of OpenMetrics-text, we need to parse the next line to verify if it's a valid
+// created timestamp or not.
+//
+// This particular behavior can potentially have side effects on the scrape loop.
+// 1) If we try to parse the next line and we find EOF we need to stop the loop, but not
+// before finishing the append of the regular sample. This behavior can be checked by verifying
+// the returned error.
+// 2) If the next line is not a created timestamp, in the next loop we need to skip parsing
+// the next line since we're already in the right position for the next iteration.
+//
+// The function returns a boolean indicating if we should skip calling the Next() method
+// in the next iteration.
+func (sl *scrapeLoop) tryAppendOMCTZeroSample(p *textparse.OpenMetricsParser,
+	app storage.Appender,
+	metricName string,
+	ref storage.SeriesRef,
+	lset labels.Labels,
+	t int64,
+	met []byte,
+) (storage.SeriesRef, bool, error) {
+	et, err := p.Next()
+	if err != nil {
+		return ref, false, err
+	}
+	if et != textparse.EntrySeries {
+		// If the next entry is not a series, it means it's not a _created line.
+		return ref, true, nil
+	}
+
+	ctMs := p.CreatedTimestamp()
+	if ctMs == nil {
+		// If the returned int is nil, it means it's not a _created line.
+		return ref, true, nil
+	}
+	// Before appending the sample, we need to verify if the _created line is related to the previous series.
+	var lsetCt labels.Labels
+	p.Metric(&lsetCt)
+	nameCt := lsetCt.Get(labels.MetricName)
+	if len(metricName) > 0 && nameCt[:len(nameCt)-8] != metricName {
+		// If it doesn't match, we're parsing a new series that happens to end with _created suffix
+		// but is not related to the previous entry.
+		return ref, true, nil
+	}
+	ref, err = app.AppendCTZeroSample(ref, lset, t, *ctMs)
+	if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) { // OOO is a common case, ignoring completely for now.
+		// CT is an experimental feature. For now, we don't need to fail the
+		// scrape on errors updating the created timestamp, log debug.
+		level.Debug(sl.l).Log("msg", "Error when appending CT in scrape loop", "series", string(met), "ct", *ctMs, "t", t, "err", err)
+	}
+	return ref, false, err
 }
 
 // The constants are suffixed with the invalid \xff unicode rune to avoid collisions

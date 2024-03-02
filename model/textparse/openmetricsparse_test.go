@@ -64,7 +64,10 @@ _metric_starting_with_underscore 1
 testmetric{_label_starting_with_underscore="foo"} 1
 testmetric{label="\"bar\""} 1
 # TYPE foo counter
-foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
+foo_total 17.0 1520879607.789 # {id="counter-test"} 5
+foo_created 1000
+foo_total{a="b"} 17.0 1520879607.789 # {id="counter-test"} 5
+foo_created{a="b"} 1000`
 
 	input += "\n# HELP metric foo\x00bar"
 	input += "\nnull_byte_metric{a=\"abc\x00\"} 1"
@@ -225,6 +228,14 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 			lset: labels.FromStrings("__name__", "foo_total"),
 			t:    int64p(1520879607789),
 			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "counter-test"), Value: 5},
+			ct:   1000,
+		}, {
+			m:    "foo_total{a=\"b\"}",
+			v:    17,
+			lset: labels.FromStrings("__name__", "foo_total", "a", "b"),
+			t:    int64p(1520879607789),
+			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "counter-test"), Value: 5},
+			ct:   1000,
 		}, {
 			m:    "metric",
 			help: "foo\x00bar",

@@ -219,9 +219,28 @@ func (p *OpenMetricsParser) Exemplar(e *exemplar.Exemplar) bool {
 	return true
 }
 
-// CreatedTimestamp returns nil as it's not implemented yet.
-// TODO(bwplotka): https://github.com/prometheus/prometheus/issues/12980
+// For OpenMetrics text, the created timestamp is exposed as it was an extra metric.
+// The difference between an usual metric and the created timestamp is that for
+// the created timestamp, the metric name ends with "_created".
+//
+// Created timestamps are always exposed right after the metric they are
+// associated with. The parser cannot be used for such verification, so it is expected
+// that the caller knows the order of the metrics and calls this function accordingly.
 func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
+	if p.mtype == model.MetricTypeGauge ||
+		p.mtype == model.MetricTypeInfo ||
+		p.mtype == model.MetricTypeStateset ||
+		p.mtype == model.MetricTypeUnknown ||
+		p.mtype == "" {
+		return nil
+	}
+	var labels labels.Labels
+	p.Metric(&labels)
+	name := labels.Get(model.MetricNameLabel)
+	if name[len(name)-8:] == "_created" {
+		ct := int64(p.val)
+		return &ct
+	}
 	return nil
 }
 
