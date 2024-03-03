@@ -1257,17 +1257,7 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 			} else {
 				ss = seriesAndTimestamp{Series{Metric: sample.Metric}, ts}
 			}
-			if sample.H == nil {
-				if ss.Floats == nil {
-					ss.Floats = getFPointSlice(numSteps)
-				}
-				ss.Floats = append(ss.Floats, FPoint{T: ts, F: sample.F})
-			} else {
-				if ss.Histograms == nil {
-					ss.Histograms = getHPointSlice(numSteps)
-				}
-				ss.Histograms = append(ss.Histograms, HPoint{T: ts, H: sample.H})
-			}
+			addToSeries(&ss.Series, enh.Ts, sample.F, sample.H, numSteps)
 			seriess[h] = ss
 		}
 	}
@@ -2938,17 +2928,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			if !ok {
 				ss = Series{Metric: lbls}
 			}
-			if h == nil {
-				if ss.Floats == nil {
-					ss.Floats = getFPointSlice(numSteps)
-				}
-				ss.Floats = append(ss.Floats, FPoint{T: enh.Ts, F: f})
-			} else {
-				if ss.Histograms == nil {
-					ss.Histograms = getHPointSlice(numSteps)
-				}
-				ss.Histograms = append(ss.Histograms, HPoint{T: enh.Ts, H: h})
-			}
+			addToSeries(&ss, enh.Ts, f, h, numSteps)
 			seriess[hash] = ss
 		}
 	}
@@ -3062,6 +3042,20 @@ func (ev *evaluator) aggregationCountValues(e *parser.AggregateExpr, grouping []
 		})
 	}
 	return enh.Out, nil
+}
+
+func addToSeries(ss *Series, ts int64, f float64, h *histogram.FloatHistogram, numSteps int) {
+	if h == nil {
+		if ss.Floats == nil {
+			ss.Floats = getFPointSlice(numSteps)
+		}
+		ss.Floats = append(ss.Floats, FPoint{T: ts, F: f})
+	} else {
+		if ss.Histograms == nil {
+			ss.Histograms = getHPointSlice(numSteps)
+		}
+		ss.Histograms = append(ss.Histograms, HPoint{T: ts, H: h})
+	}
 }
 
 // groupingKey builds and returns the grouping key for the given metric and
