@@ -1251,17 +1251,7 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 			} else {
 				ss = seriesAndTimestamp{Series{Metric: sample.Metric}, ts}
 			}
-			if sample.H == nil {
-				if ss.Floats == nil {
-					ss.Floats = getFPointSlice(numSteps)
-				}
-				ss.Floats = append(ss.Floats, FPoint{T: ts, F: sample.F})
-			} else {
-				if ss.Histograms == nil {
-					ss.Histograms = getHPointSlice(numSteps)
-				}
-				ss.Histograms = append(ss.Histograms, HPoint{T: ts, H: sample.H})
-			}
+			addToSeries(&ss.Series, enh.Ts, sample.F, sample.H, numSteps)
 			seriess[h] = ss
 		}
 	}
@@ -1283,29 +1273,12 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 	return mat, warnings
 }
 
-func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping []string) (Matrix, annotations.Annotations) {
+func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping []string, inputMatrix Matrix, param float64) (Matrix, annotations.Annotations) {
 	originalNumSamples := ev.currentSamples
 	var warnings annotations.Annotations
 
-	// param is the number k for topk/bottomk, or q for quantile.
-	var param float64
-	if aggExpr.Param != nil {
-		val, ws := ev.eval(aggExpr.Param)
-		warnings.Merge(ws)
-		param = val.(Matrix)[0].Floats[0].F
-	}
-	// Now fetch the data to be aggregated.
-	// ev.currentSamples will be updated to the correct value within the ev.eval call.
-	val, ws := ev.eval(aggExpr.Expr)
-	warnings.Merge(ws)
-	inputMatrix := val.(Matrix)
-
-	// Keep a copy of the original point slice so that it can be returned to the pool.
-	origMatrix := inputMatrix
-
-	biggestLen := len(inputMatrix)
 	enh := &EvalNodeHelper{}
-	seriess := make(map[uint64]Series, biggestLen) // Output series by series hash.
+
 	tempNumSamples := ev.currentSamples
 
 	// Create a mapping from input series to output groups.
@@ -1313,6 +1286,7 @@ func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping 
 	groupToResultIndex := make(map[uint64]int)
 	seriesToResult := make([]int, len(inputMatrix))
 	orderedResult := make([]*groupedAggregation, 0, 16)
+	var result Matrix
 
 	for si, series := range inputMatrix {
 		var groupingKey uint64
@@ -1320,13 +1294,22 @@ func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping 
 		index, ok := groupToResultIndex[groupingKey]
 		// Add a new group if it doesn't exist.
 		if !ok {
-			m := generateGroupingLabels(enh, series.Metric, aggExpr.Without, sortedGrouping)
-			newAgg := &groupedAggregation{labels: m}
+			if aggExpr.Op != parser.TOPK && aggExpr.Op != parser.BOTTOMK {
+				m := generateGroupingLabels(enh, series.Metric, aggExpr.Without, sortedGrouping)
+				result = append(result, Series{Metric: m})
+			}
+			newAgg := &groupedAggregation{}
 			index = len(orderedResult)
 			groupToResultIndex[groupingKey] = index
 			orderedResult = append(orderedResult, newAgg)
 		}
 		seriesToResult[si] = index
+	}
+
+	var seriess map[uint64]Series
+	switch aggExpr.Op {
+	case parser.TOPK, parser.BOTTOMK:
+		seriess = make(map[uint64]Series, len(inputMatrix)) // Output series by series hash.
 	}
 
 	for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
@@ -1338,42 +1321,36 @@ func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping 
 
 		// Make the function call.
 		enh.Ts = ts
-		result, ws := ev.aggregation(aggExpr, param, inputMatrix, seriesToResult, orderedResult, enh, seriess)
+		var ws annotations.Annotations
+		switch aggExpr.Op {
+		case parser.TOPK, parser.BOTTOMK:
+			result, ws = ev.aggregationK(aggExpr, param, inputMatrix, seriesToResult, orderedResult, enh, seriess)
+			// If this could be an instant query, shortcut so as not to change sort order.
+			if ev.endTimestamp == ev.startTimestamp {
+				ev.currentSamples = originalNumSamples + result.TotalSamples()
+				ev.samplesStats.UpdatePeak(ev.currentSamples)
+				return result, warnings
+			}
+		default:
+			ws = ev.aggregation(aggExpr, param, inputMatrix, result, seriesToResult, orderedResult, enh)
+		}
 
 		warnings.Merge(ws)
-
-		vecNumSamples := result.TotalSamples()
-		ev.currentSamples += vecNumSamples
-		// When we reset currentSamples to tempNumSamples during the next iteration of the loop it also
-		// needs to include the samples from the result here, as they're still in memory.
-		tempNumSamples += vecNumSamples
-		ev.samplesStats.UpdatePeak(ev.currentSamples)
 
 		if ev.currentSamples > ev.maxSamples {
 			ev.error(ErrTooManySamples(env))
 		}
+	}
 
-		// If this could be an instant query, shortcut so as not to change sort order.
-		if ev.endTimestamp == ev.startTimestamp {
-			ev.currentSamples = originalNumSamples + result.TotalSamples()
-			ev.samplesStats.UpdatePeak(ev.currentSamples)
-			return result, warnings
+	// Assemble the output matrix. By the time we get here we know we don't have too many samples.
+	switch aggExpr.Op {
+	case parser.TOPK, parser.BOTTOMK:
+		result = make(Matrix, 0, len(seriess))
+		for _, ss := range seriess {
+			result = append(result, ss)
 		}
 	}
-
-	// Reuse the original point slice.
-	for _, s := range origMatrix {
-		putFPointSlice(s.Floats)
-		putHPointSlice(s.Histograms)
-	}
-	// Assemble the output matrix. By the time we get here we know we don't have too many samples.
-	mat := make(Matrix, 0, len(seriess))
-	for _, ss := range seriess {
-		mat = append(mat, ss)
-	}
-	ev.currentSamples = originalNumSamples + mat.TotalSamples()
-	ev.samplesStats.UpdatePeak(ev.currentSamples)
-	return mat, warnings
+	return result, warnings
 }
 
 // evalSubquery evaluates given SubqueryExpr and returns an equivalent
@@ -1437,7 +1414,36 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 			}, e.Expr)
 		}
 
-		return ev.rangeEvalAgg(e, sortedGrouping)
+		var warnings annotations.Annotations
+		originalNumSamples := ev.currentSamples
+		// param is the number k for topk/bottomk, or q for quantile.
+		var fParam float64
+		if param != nil {
+			val, ws := ev.eval(param)
+			warnings.Merge(ws)
+			fParam = val.(Matrix)[0].Floats[0].F
+		}
+		// Now fetch the data to be aggregated.
+		// ev.currentSamples will be updated to the correct value within the ev.eval call.
+		val, ws := ev.eval(e.Expr)
+		warnings.Merge(ws)
+		inputMatrix := val.(Matrix)
+
+		// Keep a copy of the original point slice so that it can be returned to the pool.
+		origMatrix := make(Matrix, len(inputMatrix))
+		copy(origMatrix, inputMatrix)
+		result, ws := ev.rangeEvalAgg(e, sortedGrouping, inputMatrix, fParam)
+		warnings.Merge(ws)
+		ev.currentSamples = originalNumSamples + result.TotalSamples()
+		ev.samplesStats.UpdatePeak(ev.currentSamples)
+
+		// Reuse the original point slice.
+		for _, s := range origMatrix {
+			putFPointSlice(s.Floats)
+			putHPointSlice(s.Histograms)
+		}
+
+		return result, ws
 
 	case *parser.Call:
 		call := FunctionCalls[e.Func.Name]
@@ -2698,56 +2704,27 @@ type groupedAggregation struct {
 	reverseHeap    vectorByReverseValueHeap
 }
 
-// aggregation evaluates an aggregation operation on a Vector. The provided grouping labels
-// must be sorted.
-func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix Matrix, seriesToResult []int, orderedResult []*groupedAggregation, enh *EvalNodeHelper, seriess map[uint64]Series) (Matrix, annotations.Annotations) {
+// aggregation evaluates an aggregation operation on a Vector.
+func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix, outputMatrix Matrix, seriesToResult []int, orderedResult []*groupedAggregation, enh *EvalNodeHelper) annotations.Annotations {
 	op := e.Op
 	var annos annotations.Annotations
 	seen := make([]bool, len(orderedResult)) // Which output groups were seen in the input at this timestamp.
-	k := 1
-	if op == parser.TOPK || op == parser.BOTTOMK {
-		if !convertibleToInt64(q) {
-			ev.errorf("Scalar value %v overflows int64", q)
-		}
-		k = int(q)
-		if k > int(len(inputMatrix)) {
-			k = int(len(inputMatrix))
-		}
-		if k < 1 {
-			return nil, annos
-		}
-	}
 	if op == parser.QUANTILE {
 		if math.IsNaN(q) || q < 0 || q > 1 {
 			annos.Add(annotations.NewInvalidQuantileWarning(q, e.Param.PositionRange()))
 		}
 	}
 
-	for si, series := range inputMatrix {
-		var s Sample
-
-		switch {
-		case len(series.Floats) > 0 && series.Floats[0].T == enh.Ts:
-			s = Sample{Metric: series.Metric, F: series.Floats[0].F, T: enh.Ts}
-			// Move input vectors forward so we don't have to re-scan the same
-			// past points at the next step.
-			inputMatrix[si].Floats = series.Floats[1:]
-		case len(series.Histograms) > 0 && series.Histograms[0].T == enh.Ts:
-			s = Sample{Metric: series.Metric, H: series.Histograms[0].H, T: enh.Ts}
-			inputMatrix[si].Histograms = series.Histograms[1:]
-		default:
+	for si := range inputMatrix {
+		s, ok := ev.nextSample(enh.Ts, inputMatrix, si)
+		if !ok {
 			continue
-		}
-		ev.currentSamples++
-		if ev.currentSamples > ev.maxSamples {
-			ev.error(ErrTooManySamples(env))
 		}
 
 		group := orderedResult[seriesToResult[si]]
 		// Initialize this group if it's the first time we've seen it.
 		if !seen[seriesToResult[si]] {
 			*group = groupedAggregation{
-				labels:     group.labels,
 				floatValue: s.F,
 				floatMean:  s.F,
 				groupCount: 1,
@@ -2768,15 +2745,9 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			switch op {
 			case parser.STDVAR, parser.STDDEV:
 				group.floatValue = 0
-			case parser.TOPK, parser.QUANTILE:
-				group.heap = make(vectorByValueHeap, 1, k)
+			case parser.QUANTILE:
+				group.heap = make(vectorByValueHeap, 1)
 				group.heap[0] = Sample{
-					F:      s.F,
-					Metric: s.Metric,
-				}
-			case parser.BOTTOMK:
-				group.reverseHeap = make(vectorByReverseValueHeap, 1, k)
-				group.reverseHeap[0] = Sample{
 					F:      s.F,
 					Metric: s.Metric,
 				}
@@ -2862,6 +2833,150 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				group.floatValue += delta * (s.F - group.floatMean)
 			}
 
+		case parser.QUANTILE:
+			group.heap = append(group.heap, s)
+
+		default:
+			panic(fmt.Errorf("expected aggregation operator but got %q", op))
+		}
+	}
+
+	// Construct the output matrix from the aggregated groups.
+	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
+
+	for ri, aggr := range orderedResult {
+		if !seen[ri] {
+			continue
+		}
+		switch op {
+		case parser.AVG:
+			if aggr.hasFloat && aggr.hasHistogram {
+				// We cannot aggregate histogram sample with a float64 sample.
+				annos.Add(annotations.NewMixedFloatsHistogramsAggWarning(e.Expr.PositionRange()))
+				continue
+			}
+			if aggr.hasHistogram {
+				aggr.histogramValue = aggr.histogramMean.Compact(0)
+			} else {
+				aggr.floatValue = aggr.floatMean
+			}
+
+		case parser.COUNT:
+			aggr.floatValue = float64(aggr.groupCount)
+
+		case parser.STDVAR:
+			aggr.floatValue /= float64(aggr.groupCount)
+
+		case parser.STDDEV:
+			aggr.floatValue = math.Sqrt(aggr.floatValue / float64(aggr.groupCount))
+
+		case parser.QUANTILE:
+			aggr.floatValue = quantile(q, aggr.heap)
+
+		case parser.SUM:
+			if aggr.hasFloat && aggr.hasHistogram {
+				// We cannot aggregate histogram sample with a float64 sample.
+				annos.Add(annotations.NewMixedFloatsHistogramsAggWarning(e.Expr.PositionRange()))
+				continue
+			}
+			if aggr.hasHistogram {
+				aggr.histogramValue.Compact(0)
+			}
+		default:
+			// For other aggregations, we already have the right value.
+		}
+
+		ss := &outputMatrix[ri]
+		addToSeries(ss, enh.Ts, aggr.floatValue, aggr.histogramValue, numSteps)
+	}
+
+	return annos
+}
+
+func addToSeries(ss *Series, ts int64, f float64, h *histogram.FloatHistogram, numSteps int) {
+	if h == nil {
+		if ss.Floats == nil {
+			ss.Floats = getFPointSlice(numSteps)
+		}
+		ss.Floats = append(ss.Floats, FPoint{T: ts, F: f})
+	} else {
+		if ss.Histograms == nil {
+			ss.Histograms = getHPointSlice(numSteps)
+		}
+		ss.Histograms = append(ss.Histograms, HPoint{T: ts, H: h})
+	}
+}
+
+func (ev *evaluator) nextSample(ts int64, inputMatrix Matrix, si int) (Sample, bool) {
+	var s Sample
+	series := &inputMatrix[si]
+
+	switch {
+	case len(series.Floats) > 0 && series.Floats[0].T == ts:
+		s = Sample{Metric: series.Metric, F: series.Floats[0].F, T: ts}
+		// Move input vectors forward so we don't have to re-scan the same
+		// past points at the next step.
+		inputMatrix[si].Floats = series.Floats[1:]
+	case len(series.Histograms) > 0 && series.Histograms[0].T == ts:
+		s = Sample{Metric: series.Metric, H: series.Histograms[0].H, T: ts}
+		inputMatrix[si].Histograms = series.Histograms[1:]
+	default:
+		return Sample{}, false
+	}
+	ev.currentSamples++
+	if ev.currentSamples > ev.maxSamples {
+		ev.error(ErrTooManySamples(env))
+	}
+	return s, true
+}
+
+// aggregationK evaluates topk or bottomk on a Vector.
+func (ev *evaluator) aggregationK(e *parser.AggregateExpr, q float64, inputMatrix Matrix, seriesToResult []int, orderedResult []*groupedAggregation, enh *EvalNodeHelper, seriess map[uint64]Series) (Matrix, annotations.Annotations) {
+	op := e.Op
+	var annos annotations.Annotations
+	seen := make([]bool, len(orderedResult)) // Which output groups were seen in the input at this timestamp.
+	k := 1
+	if !convertibleToInt64(q) {
+		ev.errorf("Scalar value %v overflows int64", q)
+	}
+	k = int(q)
+	if k > int(len(inputMatrix)) {
+		k = int(len(inputMatrix))
+	}
+	if k < 1 {
+		return nil, annos
+	}
+
+	for si := range inputMatrix {
+		s, ok := ev.nextSample(enh.Ts, inputMatrix, si)
+		if !ok {
+			continue
+		}
+
+		group := orderedResult[seriesToResult[si]]
+		// Initialize this group if it's the first time we've seen it.
+		if !seen[seriesToResult[si]] {
+			*group = groupedAggregation{}
+
+			switch op {
+			case parser.TOPK:
+				group.heap = make(vectorByValueHeap, 1, k)
+				group.heap[0] = Sample{
+					F:      s.F,
+					Metric: s.Metric,
+				}
+			case parser.BOTTOMK:
+				group.reverseHeap = make(vectorByReverseValueHeap, 1, k)
+				group.reverseHeap[0] = Sample{
+					F:      s.F,
+					Metric: s.Metric,
+				}
+			}
+			seen[seriesToResult[si]] = true
+			continue
+		}
+
+		switch op {
 		case parser.TOPK:
 			// We build a heap of up to k elements, with the smallest element at heap[0].
 			switch {
@@ -2900,9 +3015,6 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				}
 			}
 
-		case parser.QUANTILE:
-			group.heap = append(group.heap, s)
-
 		default:
 			panic(fmt.Errorf("expected aggregation operator but got %q", op))
 		}
@@ -2930,17 +3042,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			if !ok {
 				ss = Series{Metric: lbls}
 			}
-			if h == nil {
-				if ss.Floats == nil {
-					ss.Floats = getFPointSlice(numSteps)
-				}
-				ss.Floats = append(ss.Floats, FPoint{T: enh.Ts, F: f})
-			} else {
-				if ss.Histograms == nil {
-					ss.Histograms = getHPointSlice(numSteps)
-				}
-				ss.Histograms = append(ss.Histograms, HPoint{T: enh.Ts, H: h})
-			}
+			addToSeries(&ss, enh.Ts, f, h, numSteps)
 			seriess[hash] = ss
 		}
 	}
@@ -2949,27 +3051,6 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			continue
 		}
 		switch op {
-		case parser.AVG:
-			if aggr.hasFloat && aggr.hasHistogram {
-				// We cannot aggregate histogram sample with a float64 sample.
-				annos.Add(annotations.NewMixedFloatsHistogramsAggWarning(e.Expr.PositionRange()))
-				continue
-			}
-			if aggr.hasHistogram {
-				aggr.histogramValue = aggr.histogramMean.Compact(0)
-			} else {
-				aggr.floatValue = aggr.floatMean
-			}
-
-		case parser.COUNT:
-			aggr.floatValue = float64(aggr.groupCount)
-
-		case parser.STDVAR:
-			aggr.floatValue /= float64(aggr.groupCount)
-
-		case parser.STDDEV:
-			aggr.floatValue = math.Sqrt(aggr.floatValue / float64(aggr.groupCount))
-
 		case parser.TOPK:
 			// The heap keeps the lowest value on top, so reverse it.
 			if len(aggr.heap) > 1 {
@@ -2978,7 +3059,6 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			for _, v := range aggr.heap {
 				add(v.Metric, v.F, nil)
 			}
-			continue // Bypass default append.
 
 		case parser.BOTTOMK:
 			// The heap keeps the highest value on top, so reverse it.
@@ -2988,25 +3068,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			for _, v := range aggr.reverseHeap {
 				add(v.Metric, v.F, nil)
 			}
-			continue // Bypass default append.
-
-		case parser.QUANTILE:
-			aggr.floatValue = quantile(q, aggr.heap)
-
-		case parser.SUM:
-			if aggr.hasFloat && aggr.hasHistogram {
-				// We cannot aggregate histogram sample with a float64 sample.
-				annos.Add(annotations.NewMixedFloatsHistogramsAggWarning(e.Expr.PositionRange()))
-				continue
-			}
-			if aggr.hasHistogram {
-				aggr.histogramValue.Compact(0)
-			}
-		default:
-			// For other aggregations, we already have the right value.
 		}
-
-		add(aggr.labels, aggr.floatValue, aggr.histogramValue)
 	}
 
 	return mat, annos
