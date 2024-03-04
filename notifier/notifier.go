@@ -350,7 +350,7 @@ func (n *Manager) Send(alerts ...*Alert) {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 
-	alerts = n.relabelAlerts(alerts)
+	alerts = relabelAlerts(n.opts.RelabelConfigs, n.opts.ExternalLabels, alerts)
 	if len(alerts) == 0 {
 		return
 	}
@@ -378,20 +378,19 @@ func (n *Manager) Send(alerts ...*Alert) {
 	n.setMore()
 }
 
-// Attach external labels and process relabelling rules.
-func (n *Manager) relabelAlerts(alerts []*Alert) []*Alert {
+func relabelAlerts(relabelConfigs []*relabel.Config, externalLabels labels.Labels, alerts []*Alert) []*Alert {
 	lb := labels.NewBuilder(labels.EmptyLabels())
 	var relabeledAlerts []*Alert
 
 	for _, a := range alerts {
 		lb.Reset(a.Labels)
-		n.opts.ExternalLabels.Range(func(l labels.Label) {
+		externalLabels.Range(func(l labels.Label) {
 			if a.Labels.Get(l.Name) == "" {
 				lb.Set(l.Name, l.Value)
 			}
 		})
 
-		keep := relabel.ProcessBuilder(lb, n.opts.RelabelConfigs...)
+		keep := relabel.ProcessBuilder(lb, relabelConfigs...)
 		if !keep {
 			continue
 		}
@@ -473,17 +472,30 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 	)
 	for _, ams := range amSets {
 		var (
-			payload []byte
-			err     error
+			payload  []byte
+			err      error
+			amAlerts = alerts
 		)
 
 		ams.mtx.RLock()
+
+		if len(ams.cfg.AlertRelabelConfigs) > 0 {
+			amAlerts = relabelAlerts(ams.cfg.AlertRelabelConfigs, labels.Labels{}, alerts)
+			// TODO(nabokihms): figure out the right way to cache marshalled alerts.
+			//   Now it works well only for happy cases.
+			v1Payload = nil
+			v2Payload = nil
+
+			if len(amAlerts) == 0 {
+				continue
+			}
+		}
 
 		switch ams.cfg.APIVersion {
 		case config.AlertmanagerAPIVersionV1:
 			{
 				if v1Payload == nil {
-					v1Payload, err = json.Marshal(alerts)
+					v1Payload, err = json.Marshal(amAlerts)
 					if err != nil {
 						level.Error(n.logger).Log("msg", "Encoding alerts for Alertmanager API v1 failed", "err", err)
 						ams.mtx.RUnlock()
@@ -496,7 +508,7 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 		case config.AlertmanagerAPIVersionV2:
 			{
 				if v2Payload == nil {
-					openAPIAlerts := alertsToOpenAPIAlerts(alerts)
+					openAPIAlerts := alertsToOpenAPIAlerts(amAlerts)
 
 					v2Payload, err = json.Marshal(openAPIAlerts)
 					if err != nil {
@@ -527,13 +539,13 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 
 			go func(client *http.Client, url string) {
 				if err := n.sendOne(ctx, client, url, payload); err != nil {
-					level.Error(n.logger).Log("alertmanager", url, "count", len(alerts), "msg", "Error sending alert", "err", err)
+					level.Error(n.logger).Log("alertmanager", url, "count", len(amAlerts), "msg", "Error sending alert", "err", err)
 					n.metrics.errors.WithLabelValues(url).Inc()
 				} else {
 					numSuccess.Inc()
 				}
 				n.metrics.latency.WithLabelValues(url).Observe(time.Since(begin).Seconds())
-				n.metrics.sent.WithLabelValues(url).Add(float64(len(alerts)))
+				n.metrics.sent.WithLabelValues(url).Add(float64(len(amAlerts)))
 
 				wg.Done()
 			}(ams.client, am.url().String())

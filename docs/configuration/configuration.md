@@ -3518,6 +3518,10 @@ static_configs:
 # List of Alertmanager relabel configurations.
 relabel_configs:
   [ - <relabel_config> ... ]
+
+# List of alert relabel configurations.
+alert_relabel_configs:
+  [ - <relabel_config> ... ]
 ```
 
 ### `<remote_write>`
