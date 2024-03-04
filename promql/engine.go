@@ -2945,13 +2945,12 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, q float64, inputMatri
 	op := e.Op
 	var annos annotations.Annotations
 	seen := make([]bool, len(orderedResult)) // Which output groups were seen in the input at this timestamp.
-	k := 1
 	if !convertibleToInt64(q) {
 		ev.errorf("Scalar value %v overflows int64", q)
 	}
-	k = int(q)
-	if k > int(len(inputMatrix)) {
-		k = int(len(inputMatrix))
+	k := int(q)
+	if k > len(inputMatrix) {
+		k = len(inputMatrix)
 	}
 	if k < 1 {
 		return nil, annos
