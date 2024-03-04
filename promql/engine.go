@@ -2970,16 +2970,10 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, q float64, inputMatri
 			switch op {
 			case parser.TOPK:
 				group.heap = make(vectorByValueHeap, 1, k)
-				group.heap[0] = Sample{
-					F:      s.F,
-					Metric: s.Metric,
-				}
+				group.heap[0] = s
 			case parser.BOTTOMK:
 				group.reverseHeap = make(vectorByReverseValueHeap, 1, k)
-				group.reverseHeap[0] = Sample{
-					F:      s.F,
-					Metric: s.Metric,
-				}
+				group.reverseHeap[0] = s
 			}
 			seen[seriesToResult[si]] = true
 			continue
@@ -2990,16 +2984,10 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, q float64, inputMatri
 			// We build a heap of up to k elements, with the smallest element at heap[0].
 			switch {
 			case len(group.heap) < k:
-				heap.Push(&group.heap, &Sample{
-					F:      s.F,
-					Metric: s.Metric,
-				})
+				heap.Push(&group.heap, &s)
 			case group.heap[0].F < s.F || (math.IsNaN(group.heap[0].F) && !math.IsNaN(s.F)):
 				// This new element is bigger than the previous smallest element - overwrite that.
-				group.heap[0] = Sample{
-					F:      s.F,
-					Metric: s.Metric,
-				}
+				group.heap[0] = s
 				if k > 1 {
 					heap.Fix(&group.heap, 0) // Maintain the heap invariant.
 				}
@@ -3009,16 +2997,10 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, q float64, inputMatri
 			// We build a heap of up to k elements, with the biggest element at heap[0].
 			switch {
 			case len(group.reverseHeap) < k:
-				heap.Push(&group.reverseHeap, &Sample{
-					F:      s.F,
-					Metric: s.Metric,
-				})
+				heap.Push(&group.reverseHeap, &s)
 			case group.reverseHeap[0].F > s.F || (math.IsNaN(group.reverseHeap[0].F) && !math.IsNaN(s.F)):
 				// This new element is smaller than the previous biggest element - overwrite that.
-				group.reverseHeap[0] = Sample{
-					F:      s.F,
-					Metric: s.Metric,
-				}
+				group.reverseHeap[0] = s
 				if k > 1 {
 					heap.Fix(&group.reverseHeap, 0) // Maintain the heap invariant.
 				}
