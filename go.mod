@@ -35,7 +35,7 @@ require (
 	github.com/grafana/regexp v0.0.0-20221122212121-6b5c0a4cb7fd
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
 	github.com/hashicorp/consul/api v1.27.0
-	github.com/hashicorp/nomad/api v0.0.0-20230721134942-515895c7690c // Not upgrading this for now due to https://github.com/prometheus/prometheus/pull/13255#issuecomment-1845237409
+	github.com/hashicorp/nomad/api v0.0.0-20240301140728-96acddbc131f
 	github.com/hetznercloud/hcloud-go/v2 v2.6.0
 	github.com/ionos-cloud/sdk-go/v6 v6.1.11
 	github.com/json-iterator/go v1.1.12
