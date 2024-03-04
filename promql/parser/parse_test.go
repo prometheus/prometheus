@@ -2153,6 +2153,96 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: `foo[3ms] @ 2.345`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name:      "foo",
+				Timestamp: makeInt64Pointer(2345),
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			Range:  3 * time.Millisecond,
+			EndPos: 16,
+		},
+	},
+	{
+		input: `foo[4s180ms] @ 2.345`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name:      "foo",
+				Timestamp: makeInt64Pointer(2345),
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			Range:  4*time.Second + 180*time.Millisecond,
+			EndPos: 20,
+		},
+	},
+	{
+		input: `foo[4.18] @ 2.345`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name:      "foo",
+				Timestamp: makeInt64Pointer(2345),
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			Range:  4*time.Second + 180*time.Millisecond,
+			EndPos: 17,
+		},
+	},
+	{
+		input: `foo[4s18ms] @ 2.345`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name:      "foo",
+				Timestamp: makeInt64Pointer(2345),
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			Range:  4*time.Second + 18*time.Millisecond,
+			EndPos: 19,
+		},
+	},
+	{
+		input: `foo[4.018] @ 2.345`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name:      "foo",
+				Timestamp: makeInt64Pointer(2345),
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			Range:  4*time.Second + 18*time.Millisecond,
+			EndPos: 18,
+		},
+	},
+	{
 		input: `test{a="b"}[5y] @ 1603774699`,
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
@@ -2245,7 +2335,7 @@ var testExpr = []struct {
 	{
 		input:  `some_metric[5m] OFFSET`,
 		fail:   true,
-		errMsg: "unexpected end of input in offset, expected duration",
+		errMsg: "unexpected end of input in offset, expected integer or duration",
 	},
 	{
 		input:  `some_metric OFFSET 1m[5m]`,

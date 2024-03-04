@@ -849,10 +849,6 @@ func parseDuration(ds string) (time.Duration, error) {
 	return time.Duration(dur), nil
 }
 
-func (p *parser) parseNumberLiteral(ts float64) time.Duration {
-	return time.Duration(ts * float64(time.Second))
-}
-
 // parseGenerated invokes the yacc generated parser.
 // The generated parser gets the provided startSymbol injected into
 // the lexer stream, based on which grammar will be used.
