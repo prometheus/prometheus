@@ -306,50 +306,51 @@ func (r *sampleRing) reset() {
 	r.iBuf = r.iBuf[:0]
 }
 
-// Returns the current iterator. Invalidates previously returned iterators.
+// Resets and returns the iterator. Invalidates previously returned iterators.
 func (r *sampleRing) iterator() *SampleRingIterator {
-	r.it.r = r
-	r.it.i = -1
+	r.it.reset(r)
 	return &r.it
 }
 
 // SampleRingIterator is returned by BufferedSeriesIterator.Buffer() and can be
 // used to iterate samples buffered in the lookback window.
 type SampleRingIterator struct {
-	r        *sampleRing
-	i        int
-	t        int64
-	f        float64
-	h        *histogram.Histogram
-	fh       *histogram.FloatHistogram
-	currType chunkenc.ValueType
+	r  *sampleRing
+	i  int
+	t  int64
+	f  float64
+	h  *histogram.Histogram
+	fh *histogram.FloatHistogram
+}
+
+func (it *SampleRingIterator) reset(r *sampleRing) {
+	it.r = r
+	it.i = -1
+	it.h = nil
+	it.fh = nil
 }
 
 func (it *SampleRingIterator) Next() chunkenc.ValueType {
 	it.i++
-	it.currType = chunkenc.ValNone
 	if it.i >= it.r.l {
-		return it.currType
+		return chunkenc.ValNone
 	}
 	switch it.r.bufInUse {
 	case fBuf:
 		s := it.r.atF(it.i)
 		it.t = s.t
 		it.f = s.f
-		it.currType = chunkenc.ValFloat
+		return chunkenc.ValFloat
 	case hBuf:
 		s := it.r.atH(it.i)
 		it.t = s.t
 		it.h = s.h
-		it.currType = chunkenc.ValHistogram
+		return chunkenc.ValHistogram
 	case fhBuf:
 		s := it.r.atFH(it.i)
 		it.t = s.t
 		it.fh = s.fh
-		it.currType = chunkenc.ValFloatHistogram
-	}
-	if it.currType != chunkenc.ValNone {
-		return it.currType
+		return chunkenc.ValFloatHistogram
 	}
 	s := it.r.at(it.i)
 	it.t = s.T()
@@ -357,31 +358,24 @@ func (it *SampleRingIterator) Next() chunkenc.ValueType {
 	case chunkenc.ValHistogram:
 		it.h = s.H()
 		it.fh = nil
-		it.currType = chunkenc.ValHistogram
+		return chunkenc.ValHistogram
 	case chunkenc.ValFloatHistogram:
 		it.fh = s.FH()
 		it.h = nil
-		it.currType = chunkenc.ValFloatHistogram
+		return chunkenc.ValFloatHistogram
 	default:
 		it.f = s.F()
-		it.currType = chunkenc.ValFloat
+		return chunkenc.ValFloat
 	}
-	return it.currType
 }
 
 // At returns the current float element of the iterator.
 func (it *SampleRingIterator) At() (int64, float64) {
-	if it.currType != chunkenc.ValFloat {
-		panic(fmt.Sprintf("SampleRingIterator: impossible to read a float, current value type is %v", it.currType))
-	}
 	return it.t, it.f
 }
 
 // AtHistogram returns the current histogram element of the iterator.
 func (it *SampleRingIterator) AtHistogram() (int64, *histogram.Histogram) {
-	if it.currType != chunkenc.ValHistogram {
-		panic(fmt.Sprintf("SampleRingIterator: impossible to read a histogram, current value type is %v", it.currType))
-	}
 	return it.t, it.h
 }
 
@@ -390,17 +384,14 @@ func (it *SampleRingIterator) AtHistogram() (int64, *histogram.Histogram) {
 // An optional histogram.FloatHistogram can be provided to avoid allocating a new
 // object for the conversion.
 func (it *SampleRingIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
-	if it.currType != chunkenc.ValHistogram && it.currType != chunkenc.ValFloatHistogram {
-		panic(fmt.Sprintf("SampleRingIterator: impossible to read a float histogram, current value type is %v", it.currType))
+	if it.fh == nil {
+		return it.t, it.h.ToFloat(fh)
 	}
-	if it.currType == chunkenc.ValFloatHistogram {
-		if fh != nil {
-			it.fh.CopyTo(fh)
-			return it.t, fh
-		}
-		return it.t, it.fh.Copy()
+	if fh != nil {
+		it.fh.CopyTo(fh)
+		return it.t, fh
 	}
-	return it.t, it.h.ToFloat(fh)
+	return it.t, it.fh.Copy()
 }
 
 func (it *SampleRingIterator) AtT() int64 {
