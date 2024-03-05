@@ -21,17 +21,21 @@ import (
 
 func writeHistogramChunkLayout(
 	b *bstream, schema int32, zeroThreshold float64,
-	positiveSpans, negativeSpans []histogram.Span,
+	positiveSpans, negativeSpans []histogram.Span, customBounds []float64,
 ) {
 	putZeroThreshold(b, zeroThreshold)
 	putVarbitInt(b, int64(schema))
 	putHistogramChunkLayoutSpans(b, positiveSpans)
 	putHistogramChunkLayoutSpans(b, negativeSpans)
+	if histogram.IsCustomBucketsSchema(schema) {
+		putHistogramChunkLayoutCustomBounds(b, customBounds)
+	}
 }
 
 func readHistogramChunkLayout(b *bstreamReader) (
 	schema int32, zeroThreshold float64,
 	positiveSpans, negativeSpans []histogram.Span,
+	customBounds []float64,
 	err error,
 ) {
 	zeroThreshold, err = readZeroThreshold(b)
@@ -53,6 +57,13 @@ func readHistogramChunkLayout(b *bstreamReader) (
 	negativeSpans, err = readHistogramChunkLayoutSpans(b)
 	if err != nil {
 		return
+	}
+
+	if histogram.IsCustomBucketsSchema(schema) {
+		customBounds, err = readHistogramChunkLayoutCustomBounds(b)
+		if err != nil {
+			return
+		}
 	}
 
 	return
@@ -90,6 +101,30 @@ func readHistogramChunkLayoutSpans(b *bstreamReader) ([]histogram.Span, error) {
 		})
 	}
 	return spans, nil
+}
+
+func putHistogramChunkLayoutCustomBounds(b *bstream, customBounds []float64) {
+	putVarbitUint(b, uint64(len(customBounds)))
+	for _, bound := range customBounds {
+		putCustomBound(b, bound)
+	}
+}
+
+func readHistogramChunkLayoutCustomBounds(b *bstreamReader) ([]float64, error) {
+	var customBounds []float64
+	num, err := readVarbitUint(b)
+	if err != nil {
+		return nil, err
+	}
+	for i := 0; i < int(num); i++ {
+		bound, err := readCustomBound(b)
+		if err != nil {
+			return nil, err
+		}
+
+		customBounds = append(customBounds, bound)
+	}
+	return customBounds, nil
 }
 
 // putZeroThreshold writes the zero threshold to the bstream. It stores typical
@@ -137,6 +172,43 @@ func readZeroThreshold(br *bstreamReader) (float64, error) {
 		return math.Float64frombits(v), nil
 	default:
 		return math.Ldexp(0.5, int(b)-243), nil
+	}
+}
+
+// putCustomBound writes the custom bound to the bstream. It stores whole number
+// values from 0 to 254 (inclusive) in just one byte, but needs 9 bytes for other
+// values like negative numbers, whole numbers greater than or equal to 255, or
+// floats. In detail:
+//   - If the bound is >= 0 and <= 254, store it as a byte.
+//   - Otherwise, store 255 as a single byte, followed by the 8 bytes of
+//     the bound as a float64, i.e. taking 9 bytes in total.
+//
+// This assumes that negative bounds, bounds >= 255, and non-whole number bounds
+// are less common.
+func putCustomBound(b *bstream, f float64) {
+	if f < 0 || f > 254 || f != math.Trunc(f) {
+		b.writeByte(255)
+		b.writeBits(math.Float64bits(f), 64)
+		return
+	}
+	b.writeByte(byte(f))
+}
+
+// readCustomBound reads the custom bound written with putCustomBound.
+func readCustomBound(br *bstreamReader) (float64, error) {
+	b, err := br.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	switch b {
+	case 255:
+		v, err := br.readBits(64)
+		if err != nil {
+			return 0, err
+		}
+		return math.Float64frombits(v), nil
+	default:
+		return float64(b), nil
 	}
 }
 
