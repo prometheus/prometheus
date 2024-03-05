@@ -119,7 +119,7 @@ func newTestHTTPServerBuilder(expected *[]*Alert, errc chan<- error, u, p string
 
 		b, err := io.ReadAll(r.Body)
 		if err != nil {
-			err = fmt.Errorf("error reading body: %v", err)
+			err = fmt.Errorf("error reading body: %w", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
