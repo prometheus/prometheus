@@ -943,6 +943,16 @@ describe('promql operations', () => {
         },
       ],
     },
+    {
+      expr: `{'foo\`metric':'bar'}`, // eslint-disable-line
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: '{`foo\"metric`=`bar`}', // eslint-disable-line
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
   ];
   testCases.forEach((value) => {
     const state = createEditorState(value.expr);

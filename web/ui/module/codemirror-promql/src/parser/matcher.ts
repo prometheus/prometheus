@@ -38,7 +38,7 @@ function createMatcher(labelMatcher: SyntaxNode, state: EditorState): Matcher {
   switch (cursor.type.id) {
     case QuotedLabelMatcher:
       if (!cursor.next()) {
-        // weird case, that would mean the labelMatcher doesn't have any child.
+        // weird case, that would mean the QuotedLabelMatcher doesn't have any child.
         return matcher;
       }
       do {
@@ -60,7 +60,7 @@ function createMatcher(labelMatcher: SyntaxNode, state: EditorState): Matcher {
       break;
     case UnquotedLabelMatcher:
       if (!cursor.next()) {
-        // weird case, that would mean the labelMatcher doesn't have any child.
+        // weird case, that would mean the UnquotedLabelMatcher doesn't have any child.
         return matcher;
       }
       do {

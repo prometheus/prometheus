@@ -289,7 +289,11 @@ NumberLiteral  {
   }
   Identifier { (std.asciiLetter | "_" | ":") (std.asciiLetter | std.digit | "_" | ":" )*}
   LabelName { (std.asciiLetter | "_") (std.asciiLetter | std.digit | "_")* }
-  QuotedLabelName { '"' (![\\\n"] | "\\" _)* '"' }
+  QuotedLabelName {
+    '"' (![\\\n"] | "\\" _)* '"' |
+    "'" (![\\\n'] | "\\" _)* "'" |
+    "`" ![`]* "`"
+  }
 
   // Operator
   Sub { "-" }
