@@ -42,6 +42,7 @@ import (
 	"github.com/mwitkow/go-conntrack"
 	"github.com/oklog/run"
 	"github.com/prometheus/client_golang/prometheus"
+	versioncollector "github.com/prometheus/client_golang/prometheus/collectors/version"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promlog"
 	promlogflag "github.com/prometheus/common/promlog/flag"
@@ -99,7 +100,7 @@ var (
 )
 
 func init() {
-	prometheus.MustRegister(version.NewCollector(strings.ReplaceAll(appName, "-", "_")))
+	prometheus.MustRegister(versioncollector.NewCollector(strings.ReplaceAll(appName, "-", "_")))
 
 	var err error
 	defaultRetentionDuration, err = model.ParseDuration(defaultRetentionString)

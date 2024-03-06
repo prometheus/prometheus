@@ -50,9 +50,9 @@ require (
 	github.com/oklog/ulid v1.3.1
 	github.com/ovh/go-ovh v1.4.3
 	github.com/prometheus/alertmanager v0.27.0
-	github.com/prometheus/client_golang v1.18.0
-	github.com/prometheus/client_model v0.5.0
-	github.com/prometheus/common v0.47.0
+	github.com/prometheus/client_golang v1.19.0
+	github.com/prometheus/client_model v0.6.0
+	github.com/prometheus/common v0.49.1-0.20240306132007-4199f18c3e92
 	github.com/prometheus/common/assets v0.2.0
 	github.com/prometheus/common/sigv4 v0.1.0
 	github.com/prometheus/exporter-toolkit v0.11.0
