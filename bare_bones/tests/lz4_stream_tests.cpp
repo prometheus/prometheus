@@ -68,7 +68,7 @@ TEST_F(LZ4OStreamFixture, TestFlush) {
   EXPECT_GT(length_after_flush, headers_length);
 }
 
-TEST_F(LZ4OStreamFixture, NoEndingMarkAtClose) {
+TEST_F(LZ4OStreamFixture, NoEndMarkAtClose) {
   // Arrange
   const auto headers_length = string_stream_.view().length();
 
@@ -190,6 +190,27 @@ TEST_F(LZ4IStreamFixture, InvalidDataBlock) {
 
   // Assert
   EXPECT_THROW(lz4istream_.read(&decoded[0], decoded.size()), std::runtime_error);
+}
+
+TEST_F(LZ4IStreamFixture, StopReadingAfterEndMark) {
+  // Arrange
+  constexpr size_t data_size = 1024;
+  std::string data(data_size, 'a');
+  std::string decoded(data_size, '\0');
+  uint32_t end_mark = 0;
+  uint32_t crc32 = 0x01020304;
+
+  // Act
+  lz4ostream_ << data << std::flush;
+  auto buffer_size = string_stream_.view().length();
+
+  string_stream_.str(
+      string_stream_.str().append(reinterpret_cast<const char*>(&end_mark), sizeof(end_mark)).append(reinterpret_cast<const char*>(&crc32), sizeof(crc32)));
+
+  // Assert
+  EXPECT_NO_THROW(lz4istream_.read(&decoded[0], decoded.size()));
+  EXPECT_THROW(lz4istream_.read(&decoded[0], 1), std::runtime_error);
+  EXPECT_EQ(buffer_size + sizeof(end_mark), string_stream_.tellg());
 }
 
 class LZ4StreamUsageFixture : public testing::Test {
