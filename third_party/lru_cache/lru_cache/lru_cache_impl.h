@@ -310,7 +310,7 @@ class LruCacheImpl {
   }
 
   const Value& insert(const Key& key, Value new_value) {
-    if (max_size() == size()) {
+    if (size() >= max_size()) {
       // Cache is full, drop the last entry and replace it.
       return replace_oldest_entry(key, std::move(new_value));
     }
@@ -329,7 +329,7 @@ class LruCacheImpl {
 
     node_type& node = value_list_[index];
     map().erase(node.key());
-    dropped_entry_callback_(std::move(node.key()), std::move(node.value()));
+    dropped_entry_callback_(node.key(), std::move(node.value()));
     value_list_.erase(index);
   }
 
@@ -339,7 +339,7 @@ class LruCacheImpl {
     node_type& oldest_node = value_list_.oldest();
     Key old_key = oldest_node.key();
     map().erase(oldest_node.key());
-    dropped_entry_callback_(std::move(oldest_node.key()), std::move(oldest_node.value()));
+    dropped_entry_callback_(oldest_node.key(), std::move(oldest_node.value()));
     map().emplace(key, value_list_.oldest_index());
     return value_list_.replace_oldest_entry(old_key, key, std::move(new_value));
   }
