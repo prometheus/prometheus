@@ -8,9 +8,9 @@ jobs:
   test_go:
     name: Go tests
     runs-on: ubuntu-latest
-    # Whenever the Go version is updated here, .promu.yml
-    # should also be updated.
     container:
+      # Whenever the Go version is updated here, .promu.yml
+      # should also be updated.
       image: quay.io/prometheus/golang-builder:1.22-base
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
@@ -26,6 +26,17 @@ jobs:
       - uses: ./.github/promci/actions/check_proto
         with:
           version: "3.15.8"
+
+  test_go_oldest:
+    name: Go tests with previous Go version
+    runs-on: ubuntu-latest
+    container:
+      # The go version in this image should be N-1 wrt test_go.
+      image: quay.io/prometheus/golang-builder:1.21-base
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - run: make build
+      - run: make test GO_ONLY=1
 
   test_ui:
     name: UI tests
@@ -62,25 +73,13 @@ jobs:
           go test $TestTargets -vet=off -v
         shell: powershell
 
-  test_golang_oldest:
-    name: Go tests with previous Go version
-    runs-on: ubuntu-latest
-    # The go verson in this image should be N-1 wrt test_go.
-    container:
-      image: quay.io/prometheus/golang-builder:1.21-base
-    steps:
-      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
-      - run: make build
-      - run: go test ./tsdb/...
-      - run: go test ./tsdb/ -test.tsdb-isolation=false
-
   test_mixins:
     name: Mixins tests
     runs-on: ubuntu-latest
     # Whenever the Go version is updated here, .promu.yml
     # should also be updated.
     container:
-      image: quay.io/prometheus/golang-builder:1.21-base
+      image: quay.io/prometheus/golang-builder:1.22-base
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       - run: go install ./cmd/promtool/.
