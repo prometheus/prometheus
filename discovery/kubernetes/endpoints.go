@@ -39,9 +39,9 @@ type Endpoints struct {
 	serviceInf            cache.SharedInformer
 	podInf                cache.SharedInformer
 	nodeInf               cache.SharedInformer
+	withNamespaceMetadata bool
 	namespaceInf          cache.SharedInformer
 	withNodeMetadata      bool
-	withNamespaceMetadata bool
 
 	podStore       cache.Store
 	endpointsStore cache.Store
@@ -75,8 +75,8 @@ func NewEndpoints(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node, n
 		podInf:                pod,
 		podStore:              pod.GetStore(),
 		nodeInf:               node,
-		namespaceInf:          namespace,
 		withNodeMetadata:      node != nil,
+		namespaceInf:          namespace,
 		withNamespaceMetadata: namespace != nil,
 		queue:                 workqueue.NewNamed(RoleEndpoint.String()),
 	}
@@ -256,6 +256,9 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	if e.withNodeMetadata {
 		cacheSyncs = append(cacheSyncs, e.nodeInf.HasSynced)
 	}
+	if e.withNamespaceMetadata {
+		cacheSyncs = append(cacheSyncs, e.namespaceInf.HasSynced)
+	}
 
 	if !cache.WaitForCacheSync(ctx.Done(), cacheSyncs...) {
 		if !errors.Is(ctx.Err(), context.Canceled) {
@@ -382,7 +385,7 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
 		if e.withNamespaceMetadata {
 			target = addNamespaceLabels(target, e.namespaceInf, e.logger, &eps.Namespace)
 		}
-
+		
 		pod := e.resolvePodRef(addr.TargetRef)
 		if pod == nil {
 			// This target is not a Pod, so don't continue with Pod specific logic.

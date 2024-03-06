@@ -485,12 +485,18 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				nodeInf = d.newNodeInformer(context.Background())
 				go nodeInf.Run(ctx.Done())
 			}
+			var namespaceInf cache.SharedInformer
+			if d.attachMetadata.Namespace {
+				namespaceInf = d.newNamespaceInformer(context.Background())
+				go namespaceInf.Run(ctx.Done())
+			}
 			eps := NewEndpointSlice(
 				log.With(d.logger, "role", "endpointslice"),
 				informer,
 				cache.NewSharedInformer(slw, &apiv1.Service{}, resyncDisabled),
 				cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncDisabled),
 				nodeInf,
+				namespaceInf,
 				d.metrics.eventCount,
 			)
 			d.discoverers = append(d.discoverers, eps)
