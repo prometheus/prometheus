@@ -18,10 +18,20 @@ jobs:
       - uses: ./.github/promci/actions/setup_environment
       - run: make GOOPTS=--tags=stringlabels GO_ONLY=1 SKIP_GOLANGCI_LINT=1
       - run: go test --tags=stringlabels ./tsdb/ -test.tsdb-isolation=false
-      - run: go test --tags=dedupelabels ./...
-      - run: GOARCH=386 go test ./cmd/prometheus
       - run: make -C documentation/examples/remote_storage
       - run: make -C documentation/examples
+
+  test_go_more:
+    name: More Go tests
+    runs-on: ubuntu-latest
+    container:
+      image: quay.io/prometheus/golang-builder:1.22-base
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: prometheus/promci@3cb0c3871f223bd5ce1226995bd52ffb314798b6 # v0.1.0
+      - uses: ./.github/promci/actions/setup_environment
+      - run: go test --tags=dedupelabels ./...
+      - run: GOARCH=386 go test ./cmd/prometheus
       - uses: ./.github/promci/actions/check_proto
         with:
           version: "3.15.8"
