@@ -229,7 +229,7 @@ func (h *Head) putExemplarBuffer(b []exemplarWithSeriesRef) {
 	if b == nil {
 		return
 	}
-	for i := range b { // Zero out to avoid retaining label data
+	for i := range b { // Zero out to avoid retaining label data.
 		b[i].exemplar.Labels = labels.EmptyLabels()
 	}
 
