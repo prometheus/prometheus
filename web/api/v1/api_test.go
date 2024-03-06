@@ -1054,7 +1054,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 		params                map[string]string
 		query                 url.Values
 		response              interface{}
-		responseLen           int
+		responseLen           int // If nonzero, check only the length; `response` is ignored.
 		responseMetadataTotal int
 		responseAsJSON        string
 		errType               errorType
@@ -1388,17 +1388,16 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				labels.FromStrings("__name__", "test_metric2", "foo", "boo"),
 			},
 		},
-		// Missing match[] query params in series requests.
+		// Series request with limit.
 		{
 			endpoint: api.series,
 			query: url.Values{
 				"match[]": []string{"test_metric1"},
 				"limit":   []string{"1"},
 			},
-			response: []labels.Labels{
-				labels.FromStrings("__name__", "test_metric1", "foo", "bar"),
-			},
+			responseLen: 1, // API does not specify which particular value will come back.
 		},
+		// Missing match[] query params in series requests.
 		{
 			endpoint: api.series,
 			errType:  errorBadData,
@@ -2670,18 +2669,16 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					"boo",
 				},
 			},
+			// Label values with limit.
 			{
 				endpoint: api.labelValues,
 				params: map[string]string{
-					"name": "foo",
+					"name": "__name__",
 				},
 				query: url.Values{
-					"match[]": []string{"test_metric4"},
-					"limit":   []string{"1"},
+					"limit": []string{"2"},
 				},
-				response: []string{
-					"bar",
-				},
+				responseLen: 2, // API does not specify which particular values will come back.
 			},
 			// Label names.
 			{
@@ -2822,13 +2819,13 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				},
 				response: []string{"__name__", "foo"},
 			},
+			// Label names with limit.
 			{
 				endpoint: api.labelNames,
 				query: url.Values{
-					"match[]": []string{"test_metric2"},
-					"limit":   []string{"1"},
+					"limit": []string{"2"},
 				},
-				response: []string{"__name__"},
+				responseLen: 2, // API does not specify which particular values will come back.
 			},
 		}...)
 	}
