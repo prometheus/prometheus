@@ -3,6 +3,7 @@ import {
   Button,
   Group,
   InputBase,
+  Loader,
   Menu,
   rem,
   useComputedColorScheme,
@@ -58,7 +59,8 @@ import {
   IconTerminal,
   IconTrash,
 } from "@tabler/icons-react";
-import { removePanel } from "../../state/queryPageSlice";
+import { useAPIQuery } from "../../api/api";
+import { notifications } from "@mantine/notifications";
 
 const promqlExtension = new PromQLExtension();
 
@@ -121,6 +123,44 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
     setExpr(initialExpr);
   }, [initialExpr]);
 
+  const {
+    data: formatResult,
+    error: formatError,
+    isFetching: isFormatting,
+    refetch: formatQuery,
+  } = useAPIQuery<string>({
+    key: expr,
+    path: "format_query",
+    params: {
+      query: expr,
+    },
+    enabled: false,
+  });
+
+  useEffect(() => {
+    if (formatError) {
+      notifications.show({
+        color: "red",
+        title: "Error formatting query",
+        message: formatError.message,
+      });
+      return;
+    }
+
+    if (formatResult) {
+      if (formatResult.status !== "success") {
+        // TODO: Remove this case and handle it in useAPIQuery instead!
+        return;
+      }
+      setExpr(formatResult.data);
+      notifications.show({
+        color: "green",
+        title: "Expression formatted",
+        message: "Expression formatted successfully!",
+      });
+    }
+  }, [formatResult, formatError]);
+
   // TODO: make dynamic:
   const enableAutocomplete = true;
   const enableLinter = true;
@@ -150,7 +190,9 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
   return (
     <Group align="flex-start" wrap="nowrap" gap="xs">
       <InputBase<any>
-        leftSection={<IconTerminal />}
+        leftSection={
+          isFormatting ? <Loader size="xs" color="gray.5" /> : <IconTerminal />
+        }
         rightSection={
           <Menu shadow="md" width={200}>
             <Menu.Target>
@@ -177,6 +219,13 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
                   <IconAlignJustified
                     style={{ width: rem(14), height: rem(14) }}
                   />
+                }
+                onClick={() => formatQuery()}
+                disabled={
+                  isFormatting ||
+                  expr === "" ||
+                  (formatResult?.status === "success" &&
+                    expr === formatResult.data)
                 }
               >
                 Format expression
