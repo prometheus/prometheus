@@ -576,7 +576,11 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			nodeInformer = d.newNodeInformer(ctx)
 			go nodeInformer.Run(ctx.Done())
 		}
-
+		var namespaceInformer cache.SharedInformer
+		if d.attachMetadata.Namespace {
+			namespaceInformer = d.newNamespaceInformer(ctx)
+			go namespaceInformer.Run(ctx.Done())
+		}
 		for _, namespace := range namespaces {
 			p := d.client.CoreV1().Pods(namespace)
 			plw := &cache.ListWatch{
@@ -595,6 +599,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				log.With(d.logger, "role", "pod"),
 				d.newPodsByNodeInformer(plw),
 				nodeInformer,
+				namespaceInformer,
 				d.metrics.eventCount,
 			)
 			d.discoverers = append(d.discoverers, pod)
