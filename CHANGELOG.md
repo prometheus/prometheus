@@ -1,5 +1,37 @@
 # Changelog
 
+## 2.51.0-rc.0 / 2024-03-07
+
+This version is built with Go 1.22.1.
+
+There is a new optional build tag "dedupelabels", which should reduce memory consumption (#12304).
+It is off by default; there will be an optional alternative image to try it out.
+
+* [BUGFIX] PromQL: Constrain extrapolation in rate() to half of sample interval #13725
+* [CHANGE] Scraping: Always align scrapes even if tolerance is bigger than 1% of scrape interval #13624
+* [FEATURE] Alerting: Relabel rules for AlertManagerConfig; allows routing alerts to different alertmanagers #12551
+* [FEATURE] API: add limit param to series, label-names and label-values APIs #13396
+* [FEATURE] UI (experimental native histograms): Add native histogram chart to Table view #13658
+* [FEATURE] Promtool: Add a "tsdb dump-openmetrics" to dump in OpemMetrics format. #13194
+* [FEATURE] PromQL (experimental native histograms): Add histogram_avg function #13467
+* [ENHANCEMENT] Rules: Evaluate independent rules concurrently #12946, #13527
+* [ENHANCEMENT] Scraping (experimental native histograms): Support exemplars #13488
+* [ENHANCEMENT] Remote Write: Disable resharding during active retry backoffs #13562
+* [ENHANCEMENT] Observability: Add 'type' label to prometheus_tsdb_head_out_of_order_samples_appended_total #13607
+* [ENHANCEMENT] API: Faster generation of targets into JSON #13469, #13484
+* [ENHANCEMENT] Scraping, API: Use faster compression library #10782
+* [ENHANCEMENT] OpenTelemetry: Performance improvements in OTLP parsing #13627
+* [ENHANCEMENT] TSDB: Use cheaper Mutex on series #13473
+* [ENHANCEMENT] PromQL: Optimisations to reduce CPU and memory #13448, #13536
+* [BUGFIX] API: Metadata API using wrong JSON field names #13633
+* [BUGFIX] Remote Write: Stop slowing down when a new WAL segment is created #13583, #13628
+* [BUGFIX] PromQL: Fix wrongly scoped range vectors with @ modifier #13559
+* [BUGFIX] Kubernetes SD: Pod status changes were not discovered by Endpoints service discovery #13337
+* [BUGFIX] Azure SD: Don't crash when given a ScaleSetVM with missing details #13578
+* [BUGFIX] Remote Write: Fix signing for AWS sigv4 transport #13497
+* [BUGFIX] Observability: Exemplars emitted by Prometheus use "trace_id" not "traceID" #13589
+* [BUGFIX] Observability: Fix PrometheusNotIngestingSamples alert in mixin #13505
+
 ## 2.50.1 / 2024-02-26
 
 * [BUGFIX] API: Fix metadata API using wrong field names. #13633
