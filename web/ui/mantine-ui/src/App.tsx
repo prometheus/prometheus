@@ -1,10 +1,14 @@
 import "@mantine/core/styles.css";
 import "@mantine/code-highlight/styles.css";
+import "@mantine/notifications/styles.css";
+import "@mantine/dates/styles.css";
 import classes from "./App.module.css";
 import PrometheusLogo from "./images/prometheus-logo.svg";
 
 import {
+  ActionIcon,
   AppShell,
+  Box,
   Burger,
   Button,
   Group,
@@ -17,18 +21,19 @@ import {
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import {
+  IconAdjustments,
   IconBellFilled,
-  IconChartAreaFilled,
   IconChevronDown,
   IconChevronRight,
   IconCloudDataConnection,
   IconDatabase,
+  IconDatabaseSearch,
   IconFileAnalytics,
   IconFlag,
   IconHeartRateMonitor,
-  IconHelp,
   IconInfoCircle,
   IconServerCog,
+  IconSettings,
 } from "@tabler/icons-react";
 import {
   BrowserRouter,
@@ -37,23 +42,24 @@ import {
   Route,
   Routes,
 } from "react-router-dom";
-import Graph from "./pages/graph";
-import Alerts from "./pages/alerts";
 import { IconTable } from "@tabler/icons-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 // import { ReactQueryDevtools } from "react-query/devtools";
-import Rules from "./pages/rules";
-import Targets from "./pages/targets";
-import ServiceDiscovery from "./pages/service-discovery";
-import Status from "./pages/status";
-import TSDBStatus from "./pages/tsdb-status";
-import Flags from "./pages/flags";
-import Config from "./pages/config";
+import QueryPage from "./pages/query/QueryPage";
+import AlertsPage from "./pages/AlertsPage";
+import RulesPage from "./pages/RulesPage";
+import TargetsPage from "./pages/TargetsPage";
+import ServiceDiscoveryPage from "./pages/ServiceDiscoveryPage";
+import StatusPage from "./pages/StatusPage";
+import TSDBStatusPage from "./pages/TSDBStatusPage";
+import FlagsPage from "./pages/FlagsPage";
+import ConfigPage from "./pages/ConfigPage";
+import AgentPage from "./pages/AgentPage";
 import { Suspense, useContext } from "react";
-import ErrorBoundary from "./error-boundary";
-import { ThemeSelector } from "./theme-selector";
+import ErrorBoundary from "./ErrorBoundary";
+import { ThemeSelector } from "./ThemeSelector";
 import { SettingsContext } from "./settings";
-import Agent from "./pages/agent";
+import { Notifications } from "@mantine/notifications";
 
 const queryClient = new QueryClient();
 
@@ -62,13 +68,13 @@ const monitoringStatusPages = [
     title: "Targets",
     path: "/targets",
     icon: <IconHeartRateMonitor style={{ width: rem(14), height: rem(14) }} />,
-    element: <Targets />,
+    element: <TargetsPage />,
   },
   {
     title: "Rules",
     path: "/rules",
     icon: <IconTable style={{ width: rem(14), height: rem(14) }} />,
-    element: <Rules />,
+    element: <RulesPage />,
   },
   {
     title: "Service discovery",
@@ -76,7 +82,7 @@ const monitoringStatusPages = [
     icon: (
       <IconCloudDataConnection style={{ width: rem(14), height: rem(14) }} />
     ),
-    element: <ServiceDiscovery />,
+    element: <ServiceDiscoveryPage />,
   },
 ];
 
@@ -85,25 +91,25 @@ const serverStatusPages = [
     title: "Runtime & build information",
     path: "/status",
     icon: <IconInfoCircle style={{ width: rem(14), height: rem(14) }} />,
-    element: <Status />,
+    element: <StatusPage />,
   },
   {
     title: "TSDB status",
     path: "/tsdb-status",
     icon: <IconDatabase style={{ width: rem(14), height: rem(14) }} />,
-    element: <TSDBStatus />,
+    element: <TSDBStatusPage />,
   },
   {
     title: "Command-line flags",
     path: "/flags",
     icon: <IconFlag style={{ width: rem(14), height: rem(14) }} />,
-    element: <Flags />,
+    element: <FlagsPage />,
   },
   {
     title: "Configuration",
     path: "/config",
     icon: <IconServerCog style={{ width: rem(14), height: rem(14) }} />,
-    element: <Config />,
+    element: <ConfigPage />,
   },
 ];
 
@@ -126,6 +132,9 @@ const theme = createTheme({
   },
 });
 
+const navLinkIconSize = 15;
+const navLinkXPadding = "md";
+
 function App() {
   const [opened, { toggle }] = useDisclosure();
   const { agentMode } = useContext(SettingsContext);
@@ -134,17 +143,19 @@ function App() {
     <>
       <Button
         component={NavLink}
-        to="/graph"
+        to="/query"
         className={classes.link}
-        leftSection={<IconChartAreaFilled size={14} />}
+        leftSection={<IconDatabaseSearch size={navLinkIconSize} />}
+        px={navLinkXPadding}
       >
-        Graph
+        Query
       </Button>
       <Button
         component={NavLink}
         to="/alerts"
         className={classes.link}
-        leftSection={<IconBellFilled size={14} />}
+        leftSection={<IconBellFilled size={navLinkIconSize} />}
+        px={navLinkXPadding}
       >
         Alerts
       </Button>
@@ -162,9 +173,10 @@ function App() {
                     to={p.path}
                     className={classes.link}
                     leftSection={p.icon}
-                    rightSection={<IconChevronDown size={14} />}
+                    rightSection={<IconChevronDown size={navLinkIconSize} />}
+                    px={navLinkXPadding}
                   >
-                    Status <IconChevronRight size={14} /> {p.title}
+                    Status <IconChevronRight size={navLinkIconSize} /> {p.title}
                   </Button>
                 </Menu.Target>
               }
@@ -178,11 +190,12 @@ function App() {
                   component={NavLink}
                   to="/"
                   className={classes.link}
-                  leftSection={<IconFileAnalytics size={14} />}
-                  rightSection={<IconChevronDown size={14} />}
+                  leftSection={<IconFileAnalytics size={navLinkIconSize} />}
+                  rightSection={<IconChevronDown size={navLinkIconSize} />}
                   onClick={(e) => {
                     e.preventDefault();
                   }}
+                  px={navLinkXPadding}
                 >
                   Status
                 </Button>
@@ -219,21 +232,24 @@ function App() {
         </Menu.Dropdown>
       </Menu>
 
-      <Button
+      {/* <Button
         component="a"
         href="https://prometheus.io/docs/prometheus/latest/getting_started/"
         className={classes.link}
-        leftSection={<IconHelp size={14} />}
+        leftSection={<IconHelp size={navLinkIconSize} />}
         target="_blank"
+        px={navLinkXPadding}
       >
         Help
-      </Button>
+      </Button> */}
     </>
   );
 
   return (
     <BrowserRouter>
       <MantineProvider defaultColorScheme="auto" theme={theme}>
+        <Notifications position="top-right" />
+
         <QueryClientProvider client={queryClient}>
           <AppShell
             header={{ height: 56 }}
@@ -246,13 +262,37 @@ function App() {
           >
             <AppShell.Header bg="rgb(65, 73, 81)" c="#fff">
               <Group h="100%" px="md">
-                <Group style={{ flex: 1 }}>
-                  <Group gap={10}>
+                <Group style={{ flex: 1 }} justify="space-between">
+                  <Group gap={10} w={150}>
                     <img src={PrometheusLogo} height={30} />
                     <Text fz={20}>Prometheus{agentMode && " Agent"}</Text>
                   </Group>
-                  <Group ml="lg" gap={12} visibleFrom="sm">
+                  <Group gap={12} visibleFrom="sm">
                     {navLinks}
+                  </Group>
+                  <Group w={180} justify="flex-end">
+                    {<ThemeSelector />}
+                    <Menu shadow="md" width={200}>
+                      <Menu.Target>
+                        <ActionIcon
+                          // variant=""
+                          color="gray"
+                          aria-label="Settings"
+                          size="md"
+                        >
+                          <IconSettings size={navLinkIconSize} />
+                        </ActionIcon>
+                      </Menu.Target>
+                      <Menu.Dropdown>
+                        <Menu.Item
+                          component={NavLink}
+                          to="/"
+                          leftSection={<IconAdjustments />}
+                        >
+                          Settings
+                        </Menu.Item>
+                      </Menu.Dropdown>
+                    </Menu>
                   </Group>
                 </Group>
                 <Burger
@@ -262,7 +302,6 @@ function App() {
                   size="sm"
                   color="gray.2"
                 />
-                {<ThemeSelector />}
               </Group>
             </AppShell.Header>
 
@@ -273,20 +312,30 @@ function App() {
             <AppShell.Main>
               <ErrorBoundary key={location.pathname}>
                 <Suspense
-                  fallback={Array.from(Array(10), (_, i) => (
-                    <Skeleton key={i} height={40} mb={15} width={1000} />
-                  ))}
+                  fallback={
+                    <Box mt="lg">
+                      {Array.from(Array(10), (_, i) => (
+                        <Skeleton
+                          key={i}
+                          height={40}
+                          mb={15}
+                          width={1000}
+                          mx="auto"
+                        />
+                      ))}
+                    </Box>
+                  }
                 >
                   <Routes>
                     <Route
                       path="/"
                       element={
-                        <Navigate to={agentMode ? "/agent" : "/graph"} />
+                        <Navigate to={agentMode ? "/agent" : "/query"} />
                       }
                     />
-                    <Route path="/graph" element={<Graph />} />
-                    <Route path="/agent" element={<Agent />} />
-                    <Route path="/alerts" element={<Alerts />} />
+                    <Route path="/query" element={<QueryPage />} />
+                    <Route path="/agent" element={<AgentPage />} />
+                    <Route path="/alerts" element={<AlertsPage />} />
                     {allStatusPages.map((p) => (
                       <Route key={p.path} path={p.path} element={p.element} />
                     ))}

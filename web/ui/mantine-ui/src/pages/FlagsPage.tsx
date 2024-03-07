@@ -16,7 +16,7 @@ import {
   IconChevronUp,
   IconSearch,
 } from "@tabler/icons-react";
-import classes from "./flags.module.css";
+import classes from "./FlagsPage.module.css";
 import { useSuspenseAPIQuery } from "../api/api";
 
 interface RowData {
@@ -82,11 +82,8 @@ function sortData(
   );
 }
 
-export default function Flags() {
+export default function FlagsPage() {
   const { data } = useSuspenseAPIQuery<Record<string, string>>(`/status/flags`);
-
-  // const { response, error, isLoading } =
-  //   useFetchAPI<Record<string, string>>(`/status/flags`);
 
   const flags = Object.entries(data.data).map(([flag, value]) => ({
     flag,
@@ -125,7 +122,7 @@ export default function Flags() {
   ));
 
   return (
-    <Card shadow="xs" maw={1000} withBorder>
+    <Card shadow="xs" maw={1000} mx="auto" mt="lg" withBorder>
       <TextInput
         placeholder="Filter by flag name or value"
         mb="md"

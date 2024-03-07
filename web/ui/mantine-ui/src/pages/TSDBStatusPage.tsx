@@ -1,8 +1,8 @@
 import { Stack, Card, Group, Table, Text } from "@mantine/core";
 import { useSuspenseAPIQuery } from "../api/api";
-import { TSDBMap } from "../api/response-types/tsdb-status";
+import { TSDBMap } from "../api/responseTypes/tsdbStatus";
 
-export default function TSDBStatus() {
+export default function TSDBStatusPage() {
   const {
     data: {
       data: {
@@ -35,7 +35,7 @@ export default function TSDBStatus() {
   ];
 
   return (
-    <Stack gap="md" maw={1000}>
+    <Stack gap="lg" maw={1000} mx="auto" mt="lg">
       {[
         {
           title: "TSDB Head Status",

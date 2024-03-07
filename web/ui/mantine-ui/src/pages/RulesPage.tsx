@@ -1,6 +1,6 @@
 import { Alert, Badge, Card, Group, Table, Text, Tooltip } from "@mantine/core";
 // import { useQuery } from "react-query";
-import { formatRelative, humanizeDuration, now } from "../lib/time-format";
+import { formatRelative, humanizeDuration, now } from "../lib/formatTime";
 import {
   IconAlertTriangle,
   IconBell,
@@ -10,9 +10,9 @@ import {
   IconRepeat,
 } from "@tabler/icons-react";
 import { useSuspenseAPIQuery } from "../api/api";
-import { RulesMap } from "../api/response-types/rules";
-import badgeClasses from "../badge.module.css";
-import RuleDefinition from "../rule-definition";
+import { RulesMap } from "../api/responseTypes/rules";
+import badgeClasses from "../Badge.module.css";
+import RuleDefinition from "../RuleDefinition";
 
 const healthBadgeClass = (state: string) => {
   switch (state) {
@@ -27,7 +27,7 @@ const healthBadgeClass = (state: string) => {
   }
 };
 
-export default function Rules() {
+export default function RulesPage() {
   const { data } = useSuspenseAPIQuery<RulesMap>(`/rules`);
 
   return (

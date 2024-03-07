@@ -2,7 +2,7 @@ import { Card, Group, Text } from "@mantine/core";
 import { IconSpy } from "@tabler/icons-react";
 import { FC } from "react";
 
-const Agent: FC = () => {
+const AgentPage: FC = () => {
   return (
     <Card shadow="xs" withBorder radius="md" p="md">
       <Group wrap="nowrap" align="center" ml="xs" mb="sm" gap="xs">
@@ -24,4 +24,4 @@ const Agent: FC = () => {
   );
 };
 
-export default Agent;
+export default AgentPage;

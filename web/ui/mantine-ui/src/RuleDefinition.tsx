@@ -1,20 +1,10 @@
-import {
-  Alert,
-  Badge,
-  Card,
-  Group,
-  useComputedColorScheme,
-} from "@mantine/core";
-import {
-  IconAlertTriangle,
-  IconClockPause,
-  IconClockPlay,
-} from "@tabler/icons-react";
+import { Badge, Card, Group, useComputedColorScheme } from "@mantine/core";
+import { IconClockPause, IconClockPlay } from "@tabler/icons-react";
 import { FC } from "react";
-import { formatDuration } from "./lib/time-format";
+import { formatDuration } from "./lib/formatTime";
 import codeboxClasses from "./codebox.module.css";
-import badgeClasses from "./badge.module.css";
-import { Rule } from "./api/response-types/rules";
+import badgeClasses from "./Badge.module.css";
+import { Rule } from "./api/responseTypes/rules";
 import CodeMirror, { EditorView } from "@uiw/react-codemirror";
 import { syntaxHighlighting } from "@codemirror/language";
 import {

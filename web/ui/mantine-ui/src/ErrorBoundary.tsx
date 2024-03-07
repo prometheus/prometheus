@@ -32,6 +32,9 @@ class ErrorBoundary extends Component<Props, State> {
           color="red"
           title="Error querying page data"
           icon={<IconAlertTriangle size={14} />}
+          maw={500}
+          mx="auto"
+          mt="lg"
         >
           <strong>Error:</strong> {this.state.error.message}
         </Alert>

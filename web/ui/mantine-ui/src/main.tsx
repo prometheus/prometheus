@@ -2,6 +2,8 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.tsx";
 import { Settings, SettingsContext } from "./settings.ts";
+import store from "./state/store.ts";
+import { Provider } from "react-redux";
 
 // Declared/defined in public/index.html, value replaced by Prometheus when serving bundle.
 declare const GLOBAL_CONSOLES_LINK: string;
@@ -22,7 +24,9 @@ const settings: Settings = {
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <SettingsContext.Provider value={settings}>
-      <App />
+      <Provider store={store}>
+        <App />
+      </Provider>
     </SettingsContext.Provider>
   </React.StrictMode>
 );

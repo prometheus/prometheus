@@ -3,6 +3,10 @@ import { EditorView } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 
 export const baseTheme = EditorView.theme({
+  ".cm-content": {
+    paddingTop: "3px",
+    paddingBottom: "0px",
+  },
   "&.cm-editor": {
     "&.cm-focused": {
       outline: "none",

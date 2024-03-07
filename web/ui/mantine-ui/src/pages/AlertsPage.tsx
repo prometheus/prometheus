@@ -10,14 +10,16 @@ import {
   Switch,
 } from "@mantine/core";
 import { useSuspenseAPIQuery } from "../api/api";
-import { AlertingRulesMap } from "../api/response-types/rules";
-import badgeClasses from "../badge.module.css";
-import RuleDefinition from "../rule-definition";
-import { formatRelative, now } from "../lib/time-format";
+import { AlertingRulesMap } from "../api/responseTypes/rules";
+import badgeClasses from "../Badge.module.css";
+import RuleDefinition from "../RuleDefinition";
+import { formatRelative, now } from "../lib/formatTime";
 import { Fragment, useState } from "react";
 
-export default function Alerts() {
-  const { data } = useSuspenseAPIQuery<AlertingRulesMap>(`/rules?type=alert`);
+export default function AlertsPage() {
+  const { data } = useSuspenseAPIQuery<AlertingRulesMap>(`/rules`, {
+    type: "alert",
+  });
   const [showAnnotations, setShowAnnotations] = useState(false);
 
   const ruleStatsCount = {
@@ -67,7 +69,18 @@ export default function Alerts() {
               ).length;
 
               return (
-                <Accordion.Item key={j} value={j.toString()}>
+                <Accordion.Item
+                  key={j}
+                  value={j.toString()}
+                  style={{
+                    borderLeft:
+                      numFiring > 0
+                        ? "5px solid var(--mantine-color-red-4)"
+                        : numPending > 0
+                        ? "5px solid var(--mantine-color-orange-5)"
+                        : "5px solid var(--mantine-color-green-4)",
+                  }}
+                >
                   <Accordion.Control>
                     <Group wrap="nowrap" justify="space-between" mr="lg">
                       <Text>{r.name}</Text>

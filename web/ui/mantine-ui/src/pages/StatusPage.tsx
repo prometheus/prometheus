@@ -27,14 +27,14 @@ const statusConfig: Record<
   storageRetention: { title: "Storage retention" },
 };
 
-export default function Status() {
+export default function StatusPage() {
   const { data: buildinfo } =
     useSuspenseAPIQuery<Record<string, string>>(`/status/buildinfo`);
   const { data: runtimeinfo } =
     useSuspenseAPIQuery<Record<string, string>>(`/status/runtimeinfo`);
 
   return (
-    <Stack gap="md" maw={1000}>
+    <Stack gap="lg" maw={1000} mx="auto" mt="lg">
       <Card shadow="xs" withBorder radius="md" p="md">
         <Group wrap="nowrap" align="center" ml="xs" mb="sm" gap="xs">
           <IconWall size={22} />
