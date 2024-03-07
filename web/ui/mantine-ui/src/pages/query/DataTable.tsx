@@ -113,7 +113,7 @@ const DataTable: FC<TableProps> = ({ expr, evalTime, retriggerIdx }) => {
         }}
         styles={{ loader: { width: "100%", height: "100%" } }}
       />
-      <Table highlightOnHover>
+      <Table highlightOnHover fz="xs">
         <Table.Tbody>
           {resultType === "vector" ? (
             limitSeries<InstantSample>(result).map((s, idx) => (
