@@ -469,10 +469,6 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 	}
 }
 
-// TestOOOHeadChunkReader_Chunk tests that the Chunk method works as expected.
-// It does so by appending out of order samples to the db and then initializing
-// an OOOHeadChunkReader to read chunks from it.
-//
 //nolint:revive // unexported-return.
 func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 	opts := DefaultOptions()
@@ -822,7 +818,8 @@ func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 			db := newTestDBWithOpts(t, opts)
 
 			app := db.Appender(context.Background())
-			s1Ref, _, _ := scenario.appendFunc(app, s1, tc.firstInOrderSampleAt, tc.firstInOrderSampleAt/1*time.Minute.Milliseconds())
+			s1Ref, _, err := scenario.appendFunc(app, s1, tc.firstInOrderSampleAt, tc.firstInOrderSampleAt/1*time.Minute.Milliseconds())
+			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
 			// OOO few samples for s1.
@@ -838,7 +835,7 @@ func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 			ir := NewOOOHeadIndexReader(db.head, tc.queryMinT, tc.queryMaxT, 0)
 			var chks []chunks.Meta
 			var b labels.ScratchBuilder
-			err := ir.Series(s1Ref, &b, &chks)
+			err = ir.Series(s1Ref, &b, &chks)
 			require.NoError(t, err)
 			require.Equal(t, len(tc.expChunksSamples), len(chks))
 
@@ -851,7 +848,7 @@ func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 
 				it := iterable.Iterator(nil)
 				resultSamples := samplesFromIterator(t, it)
-				compareSamples(t, s1.String(), tc.expChunksSamples[i], resultSamples, true)
+				requireEqualSamples(t, s1.String(), tc.expChunksSamples[i], resultSamples, true)
 			}
 		})
 	}
@@ -873,15 +870,6 @@ func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 	}
 }
 
-// TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding tests
-// that if a query comes and performs a Series() call followed by a Chunks() call
-// the response is consistent with the data seen by Series() even if the OOO
-// head receives more samples before Chunks() is called.
-// An example:
-//   - Response A comes from: Series() then Chunk()
-//   - Response B comes from : Series(), in parallel new samples added to the head, then Chunk()
-//   - A == B
-//
 //nolint:revive // unexported-return.
 func testOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(t *testing.T, scenario sampleTypeScenario) {
 	opts := DefaultOptions()
@@ -1054,7 +1042,7 @@ func testOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 
 				it := iterable.Iterator(nil)
 				resultSamples := samplesFromIterator(t, it)
-				compareSamples(t, s1.String(), tc.expChunksSamples[i], resultSamples, true)
+				requireEqualSamples(t, s1.String(), tc.expChunksSamples[i], resultSamples, true)
 			}
 		})
 	}

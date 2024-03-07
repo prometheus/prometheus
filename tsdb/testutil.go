@@ -44,6 +44,7 @@ type sampleTypeScenario struct {
 	sampleFunc func(ts, value int64) sample
 }
 
+// TODO: native histogram sample types will be added as part of out-of-order native histogram support; see #11220.
 var sampleTypeScenarios = map[string]sampleTypeScenario{
 	float: {
 		sampleType: sampleMetricTypeFloat,
@@ -102,12 +103,12 @@ var sampleTypeScenarios = map[string]sampleTypeScenario{
 	// },
 }
 
-// requireEqualSamples checks that the actual series are equal to the expected ones. It ignores the counter reset hints for histograms.
-func requireEqualSamples(t *testing.T, expected, actual map[string][]chunks.Sample, ignoreCounterResets bool) {
+// requireEqualSeries checks that the actual series are equal to the expected ones. It ignores the counter reset hints for histograms.
+func requireEqualSeries(t *testing.T, expected, actual map[string][]chunks.Sample, ignoreCounterResets bool) {
 	for name, expectedItem := range expected {
 		actualItem, ok := actual[name]
 		require.True(t, ok, "Expected series %s not found", name)
-		compareSamples(t, name, expectedItem, actualItem, ignoreCounterResets)
+		requireEqualSamples(t, name, expectedItem, actualItem, ignoreCounterResets)
 	}
 	for name := range actual {
 		_, ok := expected[name]
@@ -122,12 +123,12 @@ func requireEqualOOOSamples(t *testing.T, expectedSamples int, db *DB) {
 		"number of ooo appended samples mismatch")
 }
 
-func compareSamples(t *testing.T, name string, expected, actual []chunks.Sample, ignoreCounterResets bool) {
-	require.Equal(t, len(expected), len(actual), "Length not expected for %s", name)
+func requireEqualSamples(t *testing.T, name string, expected, actual []chunks.Sample, ignoreCounterResets bool) {
+	require.Equal(t, len(expected), len(actual), "Length not equal to expected for %s", name)
 	for i, s := range expected {
 		expectedSample := s
 		actualSample := actual[i]
-		require.Equal(t, expectedSample.T(), expectedSample.T(), "Different timestamps for %s[%d]", name, i)
+		require.Equal(t, expectedSample.T(), actualSample.T(), "Different timestamps for %s[%d]", name, i)
 		require.Equal(t, expectedSample.Type().String(), actualSample.Type().String(), "Different types for %s[%d] at ts %d", name, i, expectedSample.T())
 		switch {
 		case s.H() != nil:

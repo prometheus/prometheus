@@ -4572,7 +4572,7 @@ func testOOOCompaction(t *testing.T, scenario sampleTypeScenario) {
 		require.NoError(t, err)
 
 		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
-		requireEqualSamples(t, expRes, actRes, true)
+		requireEqualSeries(t, expRes, actRes, true)
 	}
 
 	verifyDBSamples() // Before any compaction.
@@ -4639,7 +4639,7 @@ func testOOOCompaction(t *testing.T, scenario sampleTypeScenario) {
 		require.NoError(t, err)
 
 		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
-		requireEqualSamples(t, expRes, actRes, true)
+		requireEqualSeries(t, expRes, actRes, true)
 	}
 
 	// Checking for expected data in the blocks.
@@ -4779,7 +4779,7 @@ func testOOOCompactionWithNormalCompaction(t *testing.T, scenario sampleTypeScen
 		require.NoError(t, err)
 
 		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
-		requireEqualSamples(t, expRes, actRes, true)
+		requireEqualSeries(t, expRes, actRes, true)
 	}
 
 	// Checking for expected data in the blocks.
@@ -4888,7 +4888,7 @@ func testOOOCompactionWithDisabledWriteLog(t *testing.T, scenario sampleTypeScen
 		require.NoError(t, err)
 
 		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
-		requireEqualSamples(t, expRes, actRes, true)
+		requireEqualSeries(t, expRes, actRes, true)
 	}
 
 	// Checking for expected data in the blocks.
@@ -4990,7 +4990,7 @@ func testOOOQueryAfterRestartWithSnapshotAndRemovedWBL(t *testing.T, scenario sa
 		require.NoError(t, err)
 
 		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
-		requireEqualSamples(t, expRes, actRes, true)
+		requireEqualSeries(t, expRes, actRes, true)
 	}
 
 	// Checking for expected ooo data from mmap chunks.
@@ -5262,7 +5262,7 @@ func testOOOAppendAndQuery(t *testing.T, scenario sampleTypeScenario) {
 				expSamples[k] = append(expSamples[k], s)
 			}
 		}
-		requireEqualSamples(t, expSamples, seriesSet, true)
+		requireEqualSeries(t, expSamples, seriesSet, true)
 		requireEqualOOOSamples(t, totalSamples-2, db)
 	}
 
@@ -5379,7 +5379,7 @@ func testOOODisabled(t *testing.T, scenario sampleTypeScenario) {
 	require.NoError(t, err)
 
 	seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar."))
-	requireEqualSamples(t, expSamples, seriesSet, true)
+	requireEqualSeries(t, expSamples, seriesSet, true)
 	requireEqualOOOSamples(t, 0, db)
 	require.Equal(t, float64(failedSamples),
 		prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(scenario.sampleType))+prom_testutil.ToFloat64(db.head.metrics.outOfBoundSamples.WithLabelValues(scenario.sampleType)),
@@ -5446,7 +5446,7 @@ func testWBLAndMmapReplay(t *testing.T, scenario sampleTypeScenario) {
 			})
 			exp[k] = v
 		}
-		requireEqualSamples(t, exp, seriesSet, true)
+		requireEqualSeries(t, exp, seriesSet, true)
 	}
 
 	// In-order samples.
@@ -5712,7 +5712,7 @@ func testOOOCompactionFailure(t *testing.T, scenario sampleTypeScenario) {
 		q, err := NewBlockQuerier(block, math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
 		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
-		requireEqualSamples(t, expRes, actRes, true)
+		requireEqualSeries(t, expRes, actRes, true)
 	}
 
 	// Checking for expected data in the blocks.
@@ -5948,7 +5948,7 @@ func testOOOMmapCorruption(t *testing.T, scenario sampleTypeScenario) {
 		require.NoError(t, err)
 
 		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
-		requireEqualSamples(t, expRes, actRes, true)
+		requireEqualSeries(t, expRes, actRes, true)
 	}
 
 	verifySamples(allSamples)
@@ -6076,7 +6076,7 @@ func testOutOfOrderRuntimeConfig(t *testing.T, scenario sampleTypeScenario) {
 		require.NoError(t, err)
 
 		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
-		requireEqualSamples(t, expRes, actRes, true)
+		requireEqualSeries(t, expRes, actRes, true)
 	}
 
 	doOOOCompaction := func(t *testing.T, db *DB) {
@@ -6287,7 +6287,7 @@ func testNoGapAfterRestartWithOOO(t *testing.T, scenario sampleTypeScenario) {
 		require.NoError(t, err)
 
 		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
-		requireEqualSamples(t, expRes, actRes, true)
+		requireEqualSeries(t, expRes, actRes, true)
 	}
 
 	cases := []struct {
@@ -6415,7 +6415,7 @@ func testWblReplayAfterOOODisableAndRestart(t *testing.T, scenario sampleTypeSce
 		require.NoError(t, err)
 
 		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
-		requireEqualSamples(t, expRes, actRes, true)
+		requireEqualSeries(t, expRes, actRes, true)
 	}
 
 	verifySamples(allSamples)
