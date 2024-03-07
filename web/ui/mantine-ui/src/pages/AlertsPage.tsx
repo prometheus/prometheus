@@ -17,8 +17,11 @@ import { formatRelative, now } from "../lib/formatTime";
 import { Fragment, useState } from "react";
 
 export default function AlertsPage() {
-  const { data } = useSuspenseAPIQuery<AlertingRulesMap>(`/rules`, {
-    type: "alert",
+  const { data } = useSuspenseAPIQuery<AlertingRulesMap>({
+    path: `/rules`,
+    params: {
+      type: "alert",
+    },
   });
   const [showAnnotations, setShowAnnotations] = useState(false);
 

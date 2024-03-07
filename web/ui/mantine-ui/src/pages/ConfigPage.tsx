@@ -1,17 +1,14 @@
 import { CodeHighlight } from "@mantine/code-highlight";
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useSuspenseAPIQuery } from "../api/api";
+import ConfigResult from "../api/responseTypes/config";
 
 export default function ConfigPage() {
   const {
     data: {
       data: { yaml },
     },
-  } = useSuspenseQuery<{ data: { yaml: string } }>({
-    queryKey: ["config"],
-    queryFn: () => {
-      return fetch("/api/v1/status/config").then((res) => res.json());
-    },
-  });
+  } = useSuspenseAPIQuery<ConfigResult>({ path: `/status/config` });
+
   return (
     <CodeHighlight
       code={yaml}

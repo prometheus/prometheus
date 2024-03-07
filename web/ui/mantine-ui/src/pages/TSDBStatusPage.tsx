@@ -13,7 +13,7 @@ export default function TSDBStatusPage() {
         seriesCountByLabelValuePair,
       },
     },
-  } = useSuspenseAPIQuery<TSDBMap>(`/status/tsdb`);
+  } = useSuspenseAPIQuery<TSDBMap>({ path: `/status/tsdb` });
 
   const unixToTime = (unix: number): string => {
     try {

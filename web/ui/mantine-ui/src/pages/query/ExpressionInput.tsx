@@ -148,10 +148,6 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
     }
 
     if (formatResult) {
-      if (formatResult.status !== "success") {
-        // TODO: Remove this case and handle it in useAPIQuery instead!
-        return;
-      }
       setExpr(formatResult.data);
       notifications.show({
         color: "green",
@@ -222,10 +218,7 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
                 }
                 onClick={() => formatQuery()}
                 disabled={
-                  isFormatting ||
-                  expr === "" ||
-                  (formatResult?.status === "success" &&
-                    expr === formatResult.data)
+                  isFormatting || expr === "" || expr === formatResult?.data
                 }
               >
                 Format expression

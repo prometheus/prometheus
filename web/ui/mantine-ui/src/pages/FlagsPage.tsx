@@ -83,7 +83,9 @@ function sortData(
 }
 
 export default function FlagsPage() {
-  const { data } = useSuspenseAPIQuery<Record<string, string>>(`/status/flags`);
+  const { data } = useSuspenseAPIQuery<Record<string, string>>({
+    path: `/status/flags`,
+  });
 
   const flags = Object.entries(data.data).map(([flag, value]) => ({
     flag,

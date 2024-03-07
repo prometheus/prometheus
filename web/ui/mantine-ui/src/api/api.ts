@@ -16,79 +16,79 @@ export type ErrorAPIResponse = {
 
 export type APIResponse<T> = SuccessAPIResponse<T> | ErrorAPIResponse;
 
-export const useAPIQuery = <T>({
-  key,
-  path,
-  params,
-  enabled,
-}: {
+const createQueryFn =
+  <T>({ path, params }: { path: string; params?: Record<string, string> }) =>
+  async ({ signal }: { signal: AbortSignal }) => {
+    const queryString = params
+      ? `?${new URLSearchParams(params).toString()}`
+      : "";
+
+    try {
+      const res = await fetch(`/${API_PATH}/${path}${queryString}`, {
+        cache: "no-store",
+        credentials: "same-origin",
+        signal,
+      });
+
+      if (
+        !res.ok &&
+        !res.headers.get("content-type")?.startsWith("application/json")
+      ) {
+        // For example, Prometheus may send a 503 Service Unavailable response
+        // with a "text/plain" content type when it's starting up. But the API
+        // may also respond with a JSON error message and the same error code.
+        throw new Error(res.statusText);
+      }
+
+      const apiRes = (await res.json()) as APIResponse<T>;
+
+      if (apiRes.status === "error") {
+        throw new Error(
+          apiRes.error !== undefined
+            ? apiRes.error
+            : 'missing "error" field in response JSON'
+        );
+      }
+
+      return apiRes as SuccessAPIResponse<T>;
+    } catch (error) {
+      if (!(error instanceof Error)) {
+        throw new Error("Unknown error");
+      }
+
+      switch (error.name) {
+        case "TypeError":
+          throw new Error("Network error or unable to reach the server");
+        case "SyntaxError":
+          throw new Error("Invalid JSON response");
+        default:
+          throw error;
+      }
+    }
+  };
+
+type QueryOptions = {
   key?: string;
   path: string;
   params?: Record<string, string>;
   enabled?: boolean;
-}) =>
-  useQuery<APIResponse<T>>({
-    queryKey: [key || path],
+};
+
+export const useAPIQuery = <T>({ key, path, params, enabled }: QueryOptions) =>
+  useQuery<SuccessAPIResponse<T>>({
+    queryKey: key ? [key] : [path, params],
     retry: false,
     refetchOnWindowFocus: false,
     gcTime: 0,
     enabled,
-    queryFn: async ({ signal }) => {
-      const queryString = params
-        ? `?${new URLSearchParams(params).toString()}`
-        : "";
-      return (
-        fetch(`/${API_PATH}/${path}${queryString}`, {
-          cache: "no-store",
-          credentials: "same-origin",
-          signal,
-        })
-          // TODO: think about how to check API errors here, if this code remains in use.
-          .then((res) => {
-            if (!res.ok) {
-              throw new Error(res.statusText);
-            }
-            return res;
-          })
-          .then((res) => res.json() as Promise<APIResponse<T>>)
-      );
-    },
+    queryFn: createQueryFn({ path, params }),
   });
 
-export const useSuspenseAPIQuery = <T>(
-  path: string,
-  params?: Record<string, string>
-) =>
+export const useSuspenseAPIQuery = <T>({ key, path, params }: QueryOptions) =>
   useSuspenseQuery<SuccessAPIResponse<T>>({
-    queryKey: [path],
+    queryKey: key ? [key] : [path, params],
     retry: false,
     refetchOnWindowFocus: false,
     gcTime: 0,
-    queryFn: ({ signal }) => {
-      const queryString = params
-        ? `?${new URLSearchParams(params).toString()}`
-        : "";
-      return (
-        fetch(`/${API_PATH}/${path}${queryString}`, {
-          cache: "no-store",
-          credentials: "same-origin",
-          signal,
-        })
-          // Introduce 3 seconds delay to simulate slow network.
-          // .then(
-          //   (res) =>
-          //     new Promise<typeof res>((resolve) =>
-          //       setTimeout(() => resolve(res), 2000)
-          //     )
-          // )
-          // TODO: think about how to check API errors here, if this code remains in use.
-          .then((res) => {
-            if (!res.ok) {
-              throw new Error(res.statusText);
-            }
-            return res;
-          })
-          .then((res) => res.json() as Promise<SuccessAPIResponse<T>>)
-      );
-    },
+    queryFn: createQueryFn({ path, params }),
   });

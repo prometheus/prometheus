@@ -81,11 +81,6 @@ const DataTable: FC<TableProps> = ({ expr, evalTime, retriggerIdx }) => {
     return <Alert variant="transparent">No data queried yet</Alert>;
   }
 
-  if (data.status !== "success") {
-    // TODO: Remove this case and handle it in useAPIQuery instead!
-    return null;
-  }
-
   const { result, resultType } = data.data;
 
   if (result.length === 0) {

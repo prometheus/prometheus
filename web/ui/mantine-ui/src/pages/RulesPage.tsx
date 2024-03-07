@@ -28,7 +28,7 @@ const healthBadgeClass = (state: string) => {
 };
 
 export default function RulesPage() {
-  const { data } = useSuspenseAPIQuery<RulesMap>(`/rules`);
+  const { data } = useSuspenseAPIQuery<RulesMap>({ path: `/rules` });
 
   return (
     <>

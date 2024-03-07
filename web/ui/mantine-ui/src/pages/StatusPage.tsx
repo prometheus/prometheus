@@ -28,10 +28,12 @@ const statusConfig: Record<
 };
 
 export default function StatusPage() {
-  const { data: buildinfo } =
-    useSuspenseAPIQuery<Record<string, string>>(`/status/buildinfo`);
-  const { data: runtimeinfo } =
-    useSuspenseAPIQuery<Record<string, string>>(`/status/runtimeinfo`);
+  const { data: buildinfo } = useSuspenseAPIQuery<Record<string, string>>({
+    path: `/status/buildinfo`,
+  });
+  const { data: runtimeinfo } = useSuspenseAPIQuery<Record<string, string>>({
+    path: `/status/runtimeinfo`,
+  });
 
   return (
     <Stack gap="lg" maw={1000} mx="auto" mt="lg">
