@@ -19,6 +19,7 @@ import { FC, useState } from "react";
 import { useAppDispatch, useAppSelector } from "../../state/hooks";
 import {
   GraphDisplayMode,
+  removePanel,
   setExpr,
   setVisualizer,
 } from "../../state/queryPageSlice";
@@ -44,7 +45,7 @@ const QueryPanel: FC<PanelProps> = ({ idx }) => {
   const dispatch = useAppDispatch();
 
   return (
-    <Stack gap={0} mt="sm">
+    <Stack gap="lg" mt="sm">
       <ExpressionInput
         initialExpr={panel.expr}
         executeQuery={(expr: string) => {
@@ -52,7 +53,7 @@ const QueryPanel: FC<PanelProps> = ({ idx }) => {
           dispatch(setExpr({ idx, expr }));
         }}
       />
-      <Tabs mt="md" defaultValue="table" keepMounted={false}>
+      <Tabs defaultValue="table" keepMounted={false}>
         <Tabs.List>
           <Tabs.Tab value="table" leftSection={<IconTable style={iconStyle} />}>
             Table
@@ -61,7 +62,7 @@ const QueryPanel: FC<PanelProps> = ({ idx }) => {
             Graph
           </Tabs.Tab>
         </Tabs.List>
-        <Tabs.Panel p="sm" value="table">
+        <Tabs.Panel pt="sm" value="table">
           <Stack gap="lg" mt="sm">
             <TimeInput
               time={panel.visualizer.endTime}
@@ -84,7 +85,7 @@ const QueryPanel: FC<PanelProps> = ({ idx }) => {
           </Stack>
         </Tabs.Panel>
         <Tabs.Panel
-          p="sm"
+          pt="sm"
           value="graph"
           // style={{ border: "1px solid lightgrey", borderTop: "none" }}
         >

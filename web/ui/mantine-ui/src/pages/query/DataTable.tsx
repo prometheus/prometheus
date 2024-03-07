@@ -8,6 +8,7 @@ import {
 } from "../../api/responseTypes/query";
 import SeriesName from "./SeriesName";
 import { useAPIQuery } from "../../api/api";
+import classes from "./DataTable.module.css";
 
 const maxFormattableSeries = 1000;
 const maxDisplayableSeries = 10000;
@@ -102,7 +103,7 @@ const DataTable: FC<TableProps> = ({ expr, evalTime, retriggerIdx }) => {
   const doFormat = result.length <= maxFormattableSeries;
 
   return (
-    <Box pos="relative" mt="lg">
+    <Box pos="relative" className={classes.tableWrapper}>
       <LoadingOverlay
         visible={isFetching}
         zIndex={1000}
@@ -120,7 +121,7 @@ const DataTable: FC<TableProps> = ({ expr, evalTime, retriggerIdx }) => {
                 <Table.Td>
                   <SeriesName labels={s.metric} format={doFormat} />
                 </Table.Td>
-                <Table.Td>
+                <Table.Td className={classes.numberCell}>
                   {s.value && s.value[1]}
                   {s.histogram && "TODO HISTOGRAM DISPLAY"}
                 </Table.Td>
@@ -132,7 +133,7 @@ const DataTable: FC<TableProps> = ({ expr, evalTime, retriggerIdx }) => {
                 <Table.Td>
                   <SeriesName labels={s.metric} format={doFormat} />
                 </Table.Td>
-                <Table.Td>
+                <Table.Td className={classes.numberCell}>
                   {s.values &&
                     s.values.map((v, idx) => (
                       <div key={idx}>
@@ -145,7 +146,7 @@ const DataTable: FC<TableProps> = ({ expr, evalTime, retriggerIdx }) => {
           ) : resultType === "scalar" ? (
             <Table.Tr>
               <Table.Td>Scalar value</Table.Td>
-              <Table.Td>{result[1]}</Table.Td>
+              <Table.Td className={classes.numberCell}>{result[1]}</Table.Td>
             </Table.Tr>
           ) : resultType === "string" ? (
             <Table.Tr>
@@ -157,9 +158,6 @@ const DataTable: FC<TableProps> = ({ expr, evalTime, retriggerIdx }) => {
               color="red"
               title="Invalid query response"
               icon={<IconAlertTriangle size={14} />}
-              maw={500}
-              mx="auto"
-              mt="lg"
             >
               Invalid result value type
             </Alert>
