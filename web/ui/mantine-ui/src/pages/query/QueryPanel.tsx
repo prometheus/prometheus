@@ -52,6 +52,9 @@ const QueryPanel: FC<PanelProps> = ({ idx }) => {
           setRetriggerIdx((idx) => idx + 1);
           dispatch(setExpr({ idx, expr }));
         }}
+        removePanel={() => {
+          dispatch(removePanel(idx));
+        }}
       />
       <Tabs defaultValue="table" keepMounted={false}>
         <Tabs.List>

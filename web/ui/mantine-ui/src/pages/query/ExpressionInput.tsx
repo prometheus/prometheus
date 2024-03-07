@@ -58,6 +58,7 @@ import {
   IconTerminal,
   IconTrash,
 } from "@tabler/icons-react";
+import { removePanel } from "../../state/queryPageSlice";
 
 const promqlExtension = new PromQLExtension();
 
@@ -106,11 +107,13 @@ export class HistoryCompleteStrategy implements CompleteStrategy {
 interface ExpressionInputProps {
   initialExpr: string;
   executeQuery: (expr: string) => void;
+  removePanel: () => void;
 }
 
 const ExpressionInput: FC<ExpressionInputProps> = ({
   initialExpr,
   executeQuery,
+  removePanel,
 }) => {
   const theme = useComputedColorScheme();
   const [expr, setExpr] = useState(initialExpr);
@@ -183,6 +186,7 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
                 leftSection={
                   <IconTrash style={{ width: rem(14), height: rem(14) }} />
                 }
+                onClick={removePanel}
               >
                 Remove query
               </Menu.Item>
