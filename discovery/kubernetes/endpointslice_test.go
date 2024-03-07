@@ -45,11 +45,17 @@ func protocolptr(p corev1.Protocol) *corev1.Protocol {
 	return &p
 }
 
-func makeEndpointSliceV1() *v1.EndpointSlice {
+func makeEndpointSliceV1(namespace ...string) *v1.EndpointSlice {
+	var namespaceName string
+	if len(namespace) == 0 {
+		namespaceName = "default"
+	} else {
+		namespaceName = namespace[0]
+	}
 	return &v1.EndpointSlice{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testendpoints",
-			Namespace: "default",
+			Namespace: namespaceName,
 			Labels: map[string]string{
 				v1.LabelServiceName: "testendpoints",
 			},
@@ -110,11 +116,17 @@ func makeEndpointSliceV1() *v1.EndpointSlice {
 	}
 }
 
-func makeEndpointSliceV1beta1() *v1beta1.EndpointSlice {
+func makeEndpointSliceV1beta1(namespace ...string) *v1beta1.EndpointSlice {
+	var namespaceName string
+	if len(namespace) == 0 {
+		namespaceName = "default"
+	} else {
+		namespaceName = namespace[0]
+	}
 	return &v1beta1.EndpointSlice{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testendpoints",
-			Namespace: "default",
+			Namespace: namespaceName,
 			Labels: map[string]string{
 				v1beta1.LabelServiceName: "testendpoints",
 			},
@@ -979,105 +991,6 @@ func TestEndpointsSlicesDiscoveryWithNodeMetadata(t *testing.T) {
 	}.Run(t)
 }
 
-
-func TestEndpointsSlicesDiscoveryWithNamespaceMetadata(t *testing.T) {
-	metadataConfig := AttachMetadataConfig{Namespace: true}
-	namespaceName := "prom-test"
-	namespaceLabels := map[string]string{"foo": "bar"}
-	namespaceAnnotations := map[string]string{"bar": "foo"}
-	namespace := makeNamespace(namespaceName, namespaceLabels, namespaceAnnotations)
-	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "testendpoints",
-			Namespace: namespaceName,
-			Labels: map[string]string{
-				"app/name": "test",
-			},
-		},
-	}
-	
-	objs := []runtime.Object{makeEndpointSliceV1(), namespace, svc}
-	n, _ := makeDiscoveryWithMetadata(RoleEndpointSlice, NamespaceDiscovery{}, metadataConfig, objs...)
-
-	k8sDiscoveryTest{
-		discovery:        n,
-		expectedMaxItems: 1,
-		expectedRes: map[string]*targetgroup.Group{
-			"endpointslice/default/testendpoints": {
-				Targets: []model.LabelSet{
-					{
-						"__address__": "1.2.3.4:9000",
-						"__meta_kubernetes_endpointslice_address_target_kind":                "",
-						"__meta_kubernetes_endpointslice_address_target_name":                "",
-						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":          "true",
-						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":        "true",
-						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating":    "false",
-						"__meta_kubernetes_endpointslice_endpoint_hostname":                  "testendpoint1",
-						"__meta_kubernetes_endpointslice_endpoint_topology_present_topology": "true",
-						"__meta_kubernetes_endpointslice_endpoint_topology_topology":         "value",
-						"__meta_kubernetes_endpointslice_port":                               "9000",
-						"__meta_kubernetes_endpointslice_port_app_protocol":                  "http",
-						"__meta_kubernetes_endpointslice_port_name":                          "testport",
-						"__meta_kubernetes_endpointslice_port_protocol":                      "TCP",
-						// "__meta_kubernetes_node_label_az":                                    "us-east1",
-						// "__meta_kubernetes_node_labelpresent_az":                             "true",
-						"__meta_kubernetes_node_name":                                        "foobar",
-					},
-					{
-						"__address__": "2.3.4.5:9000",
-						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
-						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
-						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
-						"__meta_kubernetes_endpointslice_port":                            "9000",
-						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
-						"__meta_kubernetes_endpointslice_port_name":                       "testport",
-						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
-					},
-					{
-						"__address__": "3.4.5.6:9000",
-						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "false",
-						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
-						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "true",
-						"__meta_kubernetes_endpointslice_port":                            "9000",
-						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
-						"__meta_kubernetes_endpointslice_port_name":                       "testport",
-						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
-					},
-					{
-						"__address__": "4.5.6.7:9000",
-						"__meta_kubernetes_endpointslice_address_target_kind":             "Node",
-						"__meta_kubernetes_endpointslice_address_target_name":             "barbaz",
-						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
-						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
-						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
-						"__meta_kubernetes_endpointslice_port":                            "9000",
-						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
-						"__meta_kubernetes_endpointslice_port_name":                       "testport",
-						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
-						// "__meta_kubernetes_node_label_az":                                 "us-west2",
-						// "__meta_kubernetes_node_labelpresent_az":                          "true",
-						"__meta_kubernetes_node_name":                                     "barbaz",
-					},
-				},
-				Labels: model.LabelSet{
-					"__meta_kubernetes_endpointslice_address_type":                            "IPv4",
-					"__meta_kubernetes_endpointslice_name":                                    "testendpoints",
-					"__meta_kubernetes_endpointslice_label_kubernetes_io_service_name":        "testendpoints",
-					"__meta_kubernetes_endpointslice_labelpresent_kubernetes_io_service_name": "true",
-					"__meta_kubernetes_endpointslice_annotation_test_annotation":              "test",
-					"__meta_kubernetes_endpointslice_annotationpresent_test_annotation":       "true",
-					"__meta_kubernetes_namespace":                                             "default",
-					"__meta_kubernetes_service_label_app_name":                                "test",
-					"__meta_kubernetes_service_labelpresent_app_name":                         "true",
-					"__meta_kubernetes_service_name":                                          "testendpoints",
-				},
-				Source: "endpointslice/default/testendpoints",
-			},
-		},
-	}.Run(t)
-}
-
-
 func TestEndpointsSlicesDiscoveryWithUpdatedNodeMetadata(t *testing.T) {
 	metadataConfig := AttachMetadataConfig{Node: true}
 	nodeLabels1 := map[string]string{"az": "us-east1"}
@@ -1173,6 +1086,232 @@ func TestEndpointsSlicesDiscoveryWithUpdatedNodeMetadata(t *testing.T) {
 					"__meta_kubernetes_service_name":                                          "testendpoints",
 				},
 				Source: "endpointslice/default/testendpoints",
+			},
+		},
+	}.Run(t)
+}
+
+func TestEndpointsSlicesDiscoveryWithNamespaceMetadata(t *testing.T) {
+	metadataConfig := AttachMetadataConfig{Namespace: true}
+	namespaceName := "prom-test"
+	namespaceLabels := map[string]string{"foo": "bar"}
+	namespaceAnnotations := map[string]string{"bar": "foo"}
+	namespace := makeNamespace(namespaceName, namespaceLabels, namespaceAnnotations)
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "testendpoints",
+			Namespace: namespaceName,
+			Labels: map[string]string{
+				"app/name": "test",
+			},
+		},
+	}
+
+	objs := []runtime.Object{makeEndpointSliceV1(namespaceName), namespace, svc}
+	n, _ := makeDiscoveryWithMetadata(RoleEndpointSlice, NamespaceDiscovery{}, metadataConfig, objs...)
+
+	k8sDiscoveryTest{
+		discovery:        n,
+		expectedMaxItems: 1,
+		expectedRes: map[string]*targetgroup.Group{
+			"endpointslice/prom-test/testendpoints": {
+				Targets: []model.LabelSet{
+					{
+						"__address__": "1.2.3.4:9000",
+						"__meta_kubernetes_endpointslice_address_target_kind":                "",
+						"__meta_kubernetes_endpointslice_address_target_name":                "",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":          "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":        "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating":    "false",
+						"__meta_kubernetes_endpointslice_endpoint_hostname":                  "testendpoint1",
+						"__meta_kubernetes_endpointslice_endpoint_topology_present_topology": "true",
+						"__meta_kubernetes_endpointslice_endpoint_topology_topology":         "value",
+						"__meta_kubernetes_endpointslice_port":                               "9000",
+						"__meta_kubernetes_endpointslice_port_app_protocol":                  "http",
+						"__meta_kubernetes_endpointslice_port_name":                          "testport",
+						"__meta_kubernetes_endpointslice_port_protocol":                      "TCP",
+						"__meta_kubernetes_namespace_label_foo":                              "bar",
+						"__meta_kubernetes_namespace_labelpresent_foo":                       "true",
+						"__meta_kubernetes_namespace_annotation_bar":                         "foo",
+						"__meta_kubernetes_namespace_annotationpresent_bar":                  "true",
+						"__meta_kubernetes_namespace_name":                                   "prom-test",
+					},
+					{
+						"__address__": "2.3.4.5:9000",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_port":                            "9000",
+						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
+						"__meta_kubernetes_endpointslice_port_name":                       "testport",
+						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
+						"__meta_kubernetes_namespace_label_foo":                           "bar",
+						"__meta_kubernetes_namespace_labelpresent_foo":                    "true",
+						"__meta_kubernetes_namespace_annotation_bar":                      "foo",
+						"__meta_kubernetes_namespace_annotationpresent_bar":               "true",
+						"__meta_kubernetes_namespace_name":                                "prom-test",
+					},
+					{
+						"__address__": "3.4.5.6:9000",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "false",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "true",
+						"__meta_kubernetes_endpointslice_port":                            "9000",
+						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
+						"__meta_kubernetes_endpointslice_port_name":                       "testport",
+						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
+						"__meta_kubernetes_namespace_label_foo":                           "bar",
+						"__meta_kubernetes_namespace_labelpresent_foo":                    "true",
+						"__meta_kubernetes_namespace_annotation_bar":                      "foo",
+						"__meta_kubernetes_namespace_annotationpresent_bar":               "true",
+						"__meta_kubernetes_namespace_name":                                "prom-test",
+					},
+					{
+						"__address__": "4.5.6.7:9000",
+						"__meta_kubernetes_endpointslice_address_target_kind":             "Node",
+						"__meta_kubernetes_endpointslice_address_target_name":             "barbaz",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_port":                            "9000",
+						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
+						"__meta_kubernetes_endpointslice_port_name":                       "testport",
+						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
+						"__meta_kubernetes_namespace_label_foo":                           "bar",
+						"__meta_kubernetes_namespace_labelpresent_foo":                    "true",
+						"__meta_kubernetes_namespace_annotation_bar":                      "foo",
+						"__meta_kubernetes_namespace_annotationpresent_bar":               "true",
+						"__meta_kubernetes_namespace_name":                                "prom-test",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_endpointslice_address_type":                            "IPv4",
+					"__meta_kubernetes_endpointslice_name":                                    "testendpoints",
+					"__meta_kubernetes_endpointslice_label_kubernetes_io_service_name":        "testendpoints",
+					"__meta_kubernetes_endpointslice_labelpresent_kubernetes_io_service_name": "true",
+					"__meta_kubernetes_endpointslice_annotation_test_annotation":              "test",
+					"__meta_kubernetes_endpointslice_annotationpresent_test_annotation":       "true",
+					"__meta_kubernetes_namespace":                                             "prom-test",
+					"__meta_kubernetes_service_label_app_name":                                "test",
+					"__meta_kubernetes_service_labelpresent_app_name":                         "true",
+					"__meta_kubernetes_service_name":                                          "testendpoints",
+				},
+				Source: "endpointslice/prom-test/testendpoints",
+			},
+		},
+	}.Run(t)
+}
+
+func TestEndpointsSlicesDiscoveryWithUpdatedNamespaceMetadata(t *testing.T) {
+	metadataConfig := AttachMetadataConfig{Namespace: true}
+	namespaceName := "prom-test"
+	namespaceLabels := map[string]string{"foo": "bar"}
+	namespaceAnnotations := map[string]string{"bar": "foo"}
+	namespace := makeNamespace(namespaceName, namespaceLabels, namespaceAnnotations)
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "testendpoints",
+			Namespace: namespaceName,
+			Labels: map[string]string{
+				"app/name": "test",
+			},
+		},
+	}
+
+	objs := []runtime.Object{makeEndpointSliceV1(namespaceName), namespace, svc}
+	n, c := makeDiscoveryWithMetadata(RoleEndpointSlice, NamespaceDiscovery{}, metadataConfig, objs...)
+
+	k8sDiscoveryTest{
+		discovery:        n,
+		expectedMaxItems: 2,
+		afterStart: func() {
+			namespace.Labels["foo"] = "foobar"
+			c.CoreV1().Namespaces().Update(context.Background(), namespace, metav1.UpdateOptions{})
+		},
+		expectedRes: map[string]*targetgroup.Group{
+			"endpointslice/prom-test/testendpoints": {
+				Targets: []model.LabelSet{
+					{
+						"__address__": "1.2.3.4:9000",
+						"__meta_kubernetes_endpointslice_address_target_kind":                "",
+						"__meta_kubernetes_endpointslice_address_target_name":                "",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":          "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":        "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating":    "false",
+						"__meta_kubernetes_endpointslice_endpoint_hostname":                  "testendpoint1",
+						"__meta_kubernetes_endpointslice_endpoint_topology_present_topology": "true",
+						"__meta_kubernetes_endpointslice_endpoint_topology_topology":         "value",
+						"__meta_kubernetes_endpointslice_port":                               "9000",
+						"__meta_kubernetes_endpointslice_port_app_protocol":                  "http",
+						"__meta_kubernetes_endpointslice_port_name":                          "testport",
+						"__meta_kubernetes_endpointslice_port_protocol":                      "TCP",
+						"__meta_kubernetes_namespace_label_foo":                              "bar",
+						"__meta_kubernetes_namespace_labelpresent_foo":                       "true",
+						"__meta_kubernetes_namespace_annotation_bar":                         "foo",
+						"__meta_kubernetes_namespace_annotationpresent_bar":                  "true",
+						"__meta_kubernetes_namespace_name":                                   "prom-test",
+					},
+					{
+						"__address__": "2.3.4.5:9000",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_port":                            "9000",
+						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
+						"__meta_kubernetes_endpointslice_port_name":                       "testport",
+						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
+						"__meta_kubernetes_namespace_label_foo":                           "bar",
+						"__meta_kubernetes_namespace_labelpresent_foo":                    "true",
+						"__meta_kubernetes_namespace_annotation_bar":                      "foo",
+						"__meta_kubernetes_namespace_annotationpresent_bar":               "true",
+						"__meta_kubernetes_namespace_name":                                "prom-test",
+					},
+					{
+						"__address__": "3.4.5.6:9000",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "false",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "true",
+						"__meta_kubernetes_endpointslice_port":                            "9000",
+						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
+						"__meta_kubernetes_endpointslice_port_name":                       "testport",
+						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
+						"__meta_kubernetes_namespace_label_foo":                           "bar",
+						"__meta_kubernetes_namespace_labelpresent_foo":                    "true",
+						"__meta_kubernetes_namespace_annotation_bar":                      "foo",
+						"__meta_kubernetes_namespace_annotationpresent_bar":               "true",
+						"__meta_kubernetes_namespace_name":                                "prom-test",
+					},
+					{
+						"__address__": "4.5.6.7:9000",
+						"__meta_kubernetes_endpointslice_address_target_kind":             "Node",
+						"__meta_kubernetes_endpointslice_address_target_name":             "barbaz",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_port":                            "9000",
+						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
+						"__meta_kubernetes_endpointslice_port_name":                       "testport",
+						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
+						"__meta_kubernetes_namespace_label_foo":                           "bar",
+						"__meta_kubernetes_namespace_labelpresent_foo":                    "true",
+						"__meta_kubernetes_namespace_annotation_bar":                      "foo",
+						"__meta_kubernetes_namespace_annotationpresent_bar":               "true",
+						"__meta_kubernetes_namespace_name":                                "prom-test",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_endpointslice_address_type":                            "IPv4",
+					"__meta_kubernetes_endpointslice_name":                                    "testendpoints",
+					"__meta_kubernetes_endpointslice_label_kubernetes_io_service_name":        "testendpoints",
+					"__meta_kubernetes_endpointslice_labelpresent_kubernetes_io_service_name": "true",
+					"__meta_kubernetes_endpointslice_annotation_test_annotation":              "test",
+					"__meta_kubernetes_endpointslice_annotationpresent_test_annotation":       "true",
+					"__meta_kubernetes_namespace":                                             "prom-test",
+					"__meta_kubernetes_service_label_app_name":                                "test",
+					"__meta_kubernetes_service_labelpresent_app_name":                         "true",
+					"__meta_kubernetes_service_name":                                          "testendpoints",
+				},
+				Source: "endpointslice/prom-test/testendpoints",
 			},
 		},
 	}.Run(t)
