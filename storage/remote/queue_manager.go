@@ -214,12 +214,15 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		ConstLabels: constLabels,
 	})
 	m.sentBatchDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Namespace:   namespace,
-		Subsystem:   subsystem,
-		Name:        "sent_batch_duration_seconds",
-		Help:        "Duration of send calls to the remote storage.",
-		Buckets:     append(prometheus.DefBuckets, 25, 60, 120, 300),
-		ConstLabels: constLabels,
+		Namespace:                       namespace,
+		Subsystem:                       subsystem,
+		Name:                            "sent_batch_duration_seconds",
+		Help:                            "Duration of send calls to the remote storage.",
+		Buckets:                         append(prometheus.DefBuckets, 25, 60, 120, 300),
+		ConstLabels:                     constLabels,
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
 	})
 	m.highestSentTimestamp = &maxTimestamp{
 		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{

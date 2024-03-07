@@ -319,8 +319,11 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		return float64(db.blocks[0].meta.MinTime)
 	})
 	m.tombCleanTimer = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name: "prometheus_tsdb_tombstone_cleanup_seconds",
-		Help: "The time taken to recompact blocks to remove tombstones.",
+		Name:                            "prometheus_tsdb_tombstone_cleanup_seconds",
+		Help:                            "The time taken to recompact blocks to remove tombstones.",
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
 	})
 	m.blocksBytes = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "prometheus_tsdb_storage_blocks_bytes",
