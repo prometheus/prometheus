@@ -22,7 +22,6 @@ It is off by default; there will be an optional alternative image to try it out.
 * [ENHANCEMENT] Scraping, API: Use faster compression library #10782
 * [ENHANCEMENT] OpenTelemetry: Performance improvements in OTLP parsing #13627
 * [ENHANCEMENT] PromQL: Optimisations to reduce CPU and memory #13448, #13536
-* [BUGFIX] API: Metadata API using wrong JSON field names #13633
 * [BUGFIX] PromQL: Constrain extrapolation in rate() to half of sample interval #13725
 * [BUGFIX] Remote Write: Stop slowing down when a new WAL segment is created #13583, #13628
 * [BUGFIX] PromQL: Fix wrongly scoped range vectors with @ modifier #13559
