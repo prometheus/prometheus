@@ -1,4 +1,4 @@
-import { Group, ActionIcon } from "@mantine/core";
+import { Group, ActionIcon, CloseButton } from "@mantine/core";
 import { DatesProvider, DateTimePicker } from "@mantine/dates";
 import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
 import { FC } from "react";
@@ -22,21 +22,12 @@ const TimeInput: FC<TimeInputProps> = ({
 
   return (
     <Group gap={5}>
-      <ActionIcon
-        size="lg"
-        variant="subtle"
-        title="Decrease time"
-        aria-label="Decrease time"
-        onClick={() => onChangeTime(baseTime() - range / 2)}
-      >
-        <IconChevronLeft style={iconStyle} />
-      </ActionIcon>
       <DatesProvider settings={{ timezone: "UTC" }}>
         <DateTimePicker
-          w={180}
+          w={230}
           valueFormat="YYYY-MM-DD HH:mm:ss"
           withSeconds
-          clearable
+          // clearable
           value={time !== null ? new Date(time) : undefined}
           onChange={(value) => onChangeTime(value ? value.getTime() : null)}
           aria-label={description}
@@ -46,17 +37,47 @@ const TimeInput: FC<TimeInputProps> = ({
               onChangeTime(baseTime());
             }
           }}
+          leftSection={
+            <ActionIcon
+              size="lg"
+              color="gray"
+              variant="transparent"
+              title="Decrease time"
+              aria-label="Decrease time"
+              onClick={() => onChangeTime(baseTime() - range / 2)}
+            >
+              <IconChevronLeft style={iconStyle} />
+            </ActionIcon>
+          }
+          styles={{ section: { width: "unset" } }}
+          rightSection={
+            <>
+              {time && (
+                <CloseButton
+                  variant="transparent"
+                  color="gray"
+                  onMouseDown={(event) => event.preventDefault()}
+                  tabIndex={-1}
+                  onClick={() => {
+                    onChangeTime(null);
+                  }}
+                  size="xs"
+                />
+              )}
+              <ActionIcon
+                size="lg"
+                color="gray"
+                variant="transparent"
+                title="Increase time"
+                aria-label="Increase time"
+                onClick={() => onChangeTime(baseTime() + range / 2)}
+              >
+                <IconChevronRight style={iconStyle} />
+              </ActionIcon>
+            </>
+          }
         />
       </DatesProvider>
-      <ActionIcon
-        size="lg"
-        variant="subtle"
-        title="Increase time"
-        aria-label="Increase time"
-        onClick={() => onChangeTime(baseTime() + range / 2)}
-      >
-        <IconChevronRight style={iconStyle} />
-      </ActionIcon>
     </Group>
   );
 };

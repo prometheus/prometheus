@@ -69,14 +69,6 @@ const RangeInput: FC<RangeInputProps> = ({ range, onChangeRange }) => {
 
   return (
     <Group gap={5}>
-      <ActionIcon
-        size="lg"
-        variant="subtle"
-        aria-label="Decrease range"
-        onClick={decreaseRange}
-      >
-        <IconMinus style={iconStyle} />
-      </ActionIcon>
       <Input
         value={rangeInput}
         onChange={(event) => setRangeInput(event.currentTarget.value)}
@@ -85,16 +77,32 @@ const RangeInput: FC<RangeInputProps> = ({ range, onChangeRange }) => {
           event.key === "Enter" && onChangeRangeInput(rangeInput)
         }
         aria-label="Range"
-        style={{ width: rangeInput.length + 3 + "ch" }}
+        style={{ width: `calc(43px + ${rangeInput.length + 3}ch)` }}
+        leftSection={
+          <ActionIcon
+            size="lg"
+            variant="transparent"
+            color="gray"
+            aria-label="Decrease range"
+            onClick={decreaseRange}
+          >
+            <IconMinus style={iconStyle} />
+          </ActionIcon>
+        }
+        rightSection={
+          <ActionIcon
+            size="lg"
+            variant="transparent"
+            color="gray"
+            aria-label="Increase range"
+            onClick={increaseRange}
+          >
+            <IconPlus style={iconStyle} />
+          </ActionIcon>
+        }
+        leftSectionPointerEvents="all"
+        rightSectionPointerEvents="all"
       />
-      <ActionIcon
-        size="lg"
-        variant="subtle"
-        aria-label="Increase range"
-        onClick={increaseRange}
-      >
-        <IconPlus style={iconStyle} />
-      </ActionIcon>
     </Group>
   );
 };
