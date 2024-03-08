@@ -3011,14 +3011,10 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, q float64, inputMatri
 		mat = make(Matrix, 0, len(orderedResult))
 	}
 
-	add := func(lbls labels.Labels, f float64, h *histogram.FloatHistogram) {
+	add := func(lbls labels.Labels, f float64) {
 		// If this could be an instant query, add directly to the matrix so the result is in consistent order.
 		if ev.endTimestamp == ev.startTimestamp {
-			if h == nil {
-				mat = append(mat, Series{Metric: lbls, Floats: []FPoint{{T: enh.Ts, F: f}}})
-			} else {
-				mat = append(mat, Series{Metric: lbls, Histograms: []HPoint{{T: enh.Ts, H: h}}})
-			}
+			mat = append(mat, Series{Metric: lbls, Floats: []FPoint{{T: enh.Ts, F: f}}})
 		} else {
 			// Otherwise the results are added into seriess elements.
 			hash := lbls.Hash()
@@ -3026,7 +3022,7 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, q float64, inputMatri
 			if !ok {
 				ss = Series{Metric: lbls}
 			}
-			addToSeries(&ss, enh.Ts, f, h, numSteps)
+			addToSeries(&ss, enh.Ts, f, nil, numSteps)
 			seriess[hash] = ss
 		}
 	}
@@ -3041,7 +3037,7 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, q float64, inputMatri
 				sort.Sort(sort.Reverse(aggr.heap))
 			}
 			for _, v := range aggr.heap {
-				add(v.Metric, v.F, nil)
+				add(v.Metric, v.F)
 			}
 
 		case parser.BOTTOMK:
@@ -3050,7 +3046,7 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, q float64, inputMatri
 				sort.Sort(sort.Reverse(aggr.reverseHeap))
 			}
 			for _, v := range aggr.reverseHeap {
-				add(v.Metric, v.F, nil)
+				add(v.Metric, v.F)
 			}
 		}
 	}
