@@ -14,6 +14,7 @@ jobs:
       image: quay.io/prometheus/golang-builder:1.22-base
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
       - uses: prometheus/promci@3cb0c3871f223bd5ce1226995bd52ffb314798b6 # v0.1.0
       - uses: ./.github/promci/actions/setup_environment
         with:
@@ -30,6 +31,7 @@ jobs:
       image: quay.io/prometheus/golang-builder:1.22-base
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
       - uses: prometheus/promci@3cb0c3871f223bd5ce1226995bd52ffb314798b6 # v0.1.0
       - uses: ./.github/promci/actions/setup_environment
         with:
@@ -48,6 +50,7 @@ jobs:
       image: quay.io/prometheus/golang-builder:1.21-base
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
       - run: make build
       - run: make test GO_ONLY=1
 
@@ -118,6 +121,7 @@ jobs:
         thread: [ 0, 1, 2 ]
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
       - uses: prometheus/promci@3cb0c3871f223bd5ce1226995bd52ffb314798b6 # v0.1.0
       - uses: ./.github/promci/actions/build
         with:
@@ -141,6 +145,7 @@ jobs:
     # should also be updated.
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
       - uses: prometheus/promci@3cb0c3871f223bd5ce1226995bd52ffb314798b6 # v0.1.0
       - uses: ./.github/promci/actions/build
         with:
