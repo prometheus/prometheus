@@ -22,23 +22,13 @@ const limitSeries = <S extends InstantSample | RangeSamples>(
   return series;
 };
 
-export interface TableProps {
+export interface DataTableProps {
   expr: string;
   evalTime: number | null;
   retriggerIdx: number;
 }
 
-const DataTable: FC<TableProps> = ({ expr, evalTime, retriggerIdx }) => {
-  // const now = useMemo(() => Date.now() / 1000, [retriggerIdx]);
-  // const { data, error, isFetching, isLoading } = useInstantQueryQuery(
-  //   {
-  //     query: expr,
-  //     time: evalTime !== null ? evalTime / 1000 : now,
-  //   },
-  //   { skip: !expr }
-  // );
-
-  // const now = useMemo(() => Date.now() / 1000, [retriggerIdx]);
+const DataTable: FC<DataTableProps> = ({ expr, evalTime, retriggerIdx }) => {
   const { data, error, isFetching, isLoading, refetch } =
     useAPIQuery<InstantQueryResult>({
       key: useId(),
@@ -85,11 +75,7 @@ const DataTable: FC<TableProps> = ({ expr, evalTime, retriggerIdx }) => {
 
   if (result.length === 0) {
     return (
-      <Alert
-        // color="light"
-        title="Empty query result"
-        icon={<IconInfoCircle size={14} />}
-      >
+      <Alert title="Empty query result" icon={<IconInfoCircle size={14} />}>
         This query returned no data.
       </Alert>
     );
