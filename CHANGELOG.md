@@ -7,8 +7,8 @@ This version is built with Go 1.22.1.
 There is a new optional build tag "dedupelabels", which should reduce memory consumption (#12304).
 It is off by default; there will be an optional alternative image to try it out.
 
-* [CHANGE] Scraping: Always align scrapes even if tolerance is bigger than 1% of scrape interval #13624
-* [FEATURE] Alerting: Relabel rules for AlertManagerConfig; allows routing alerts to different alertmanagers #12551
+* [CHANGE] Scraping: Do experimental timestamp alignment even if tolerance is bigger than 1% of scrape interval #13624, #13737
+* [FEATURE] Alerting: Relabel rules for AlertManagerConfig; allows routing alerts to different alertmanagers #12551, #13735
 * [FEATURE] API: add limit param to series, label-names and label-values APIs #13396
 * [FEATURE] UI (experimental native histograms): Add native histogram chart to Table view #13658
 * [FEATURE] Promtool: Add a "tsdb dump-openmetrics" to dump in OpemMetrics format. #13194
@@ -16,6 +16,7 @@ It is off by default; there will be an optional alternative image to try it out.
 * [ENHANCEMENT] Rules: Evaluate independent rules concurrently #12946, #13527
 * [ENHANCEMENT] Scraping (experimental native histograms): Support exemplars #13488
 * [ENHANCEMENT] Remote Write: Disable resharding during active retry backoffs #13562
+* [ENHANCEMENT] Observability: Add native histograms to latency/duration metrics #13681
 * [ENHANCEMENT] Observability: Add 'type' label to prometheus_tsdb_head_out_of_order_samples_appended_total #13607
 * [ENHANCEMENT] API: Faster generation of targets into JSON #13469, #13484
 * [ENHANCEMENT] Scraping, API: Use faster compression library #10782
