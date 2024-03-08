@@ -14,10 +14,13 @@
 package azure
 
 import (
+	"context"
+	"fmt"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v4"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 )
@@ -380,4 +383,36 @@ func TestNewAzureResourceFromID(t *testing.T) {
 		require.Equal(t, tc.expected.Name, actual.Name)
 		require.Equal(t, tc.expected.ResourceGroupName, actual.ResourceGroupName)
 	}
+}
+
+type mockAzureClient struct {
+	networkInterface *armnetwork.Interface
+}
+
+var _ client = &mockAzureClient{}
+
+func (*mockAzureClient) getVMs(ctx context.Context, resourceGroup string) ([]virtualMachine, error) {
+	return nil, nil
+}
+
+func (*mockAzureClient) getScaleSets(ctx context.Context, resourceGroup string) ([]armcompute.VirtualMachineScaleSet, error) {
+	return nil, nil
+}
+
+func (*mockAzureClient) getScaleSetVMs(ctx context.Context, scaleSet armcompute.VirtualMachineScaleSet) ([]virtualMachine, error) {
+	return nil, nil
+}
+
+func (m *mockAzureClient) getVMNetworkInterfaceByID(ctx context.Context, networkInterfaceID string) (*armnetwork.Interface, error) {
+	if networkInterfaceID == "" {
+		return nil, fmt.Errorf("parameter networkInterfaceID cannot be empty")
+	}
+	return m.networkInterface, nil
+}
+
+func (m *mockAzureClient) getVMScaleSetVMNetworkInterfaceByID(ctx context.Context, networkInterfaceID, scaleSetName, instanceID string) (*armnetwork.Interface, error) {
+	if scaleSetName == "" {
+		return nil, fmt.Errorf("parameter virtualMachineScaleSetName cannot be empty")
+	}
+	return m.networkInterface, nil
 }
