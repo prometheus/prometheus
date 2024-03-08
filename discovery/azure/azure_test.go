@@ -21,12 +21,17 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v4"
+	cache "github.com/Code-Hex/go-generics-cache"
+	"github.com/Code-Hex/go-generics-cache/policy/lru"
+	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 )
 
 func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m)
+	goleak.VerifyTestMain(m,
+		goleak.IgnoreTopFunction("github.com/Code-Hex/go-generics-cache.(*janitor).run.func1"),
+	)
 }
 
 func TestMapFromVMWithEmptyTags(t *testing.T) {
@@ -80,6 +85,91 @@ func TestMapFromVMWithEmptyTags(t *testing.T) {
 	actualVM := mapFromVM(testVM)
 
 	require.Equal(t, expectedVM, actualVM)
+}
+
+func TestVMToLabelSet(t *testing.T) {
+	id := "/subscriptions/00000000-0000-0000-0000-000000000000/test"
+	name := "name"
+	size := "size"
+	vmSize := armcompute.VirtualMachineSizeTypes(size)
+	osType := armcompute.OperatingSystemTypesLinux
+	vmType := "type"
+	location := "westeurope"
+	computerName := "computer_name"
+	networkID := "/subscriptions/00000000-0000-0000-0000-000000000000/network1"
+	ipAddress := "10.20.30.40"
+	primary := true
+	networkProfile := armcompute.NetworkProfile{
+		NetworkInterfaces: []*armcompute.NetworkInterfaceReference{
+			{
+				ID:         &networkID,
+				Properties: &armcompute.NetworkInterfaceReferenceProperties{Primary: &primary},
+			},
+		},
+	}
+	properties := &armcompute.VirtualMachineProperties{
+		OSProfile: &armcompute.OSProfile{
+			ComputerName: &computerName,
+		},
+		StorageProfile: &armcompute.StorageProfile{
+			OSDisk: &armcompute.OSDisk{
+				OSType: &osType,
+			},
+		},
+		NetworkProfile: &networkProfile,
+		HardwareProfile: &armcompute.HardwareProfile{
+			VMSize: &vmSize,
+		},
+	}
+
+	testVM := armcompute.VirtualMachine{
+		ID:         &id,
+		Name:       &name,
+		Type:       &vmType,
+		Location:   &location,
+		Tags:       nil,
+		Properties: properties,
+	}
+
+	expectedVM := virtualMachine{
+		ID:                id,
+		Name:              name,
+		ComputerName:      computerName,
+		Type:              vmType,
+		Location:          location,
+		OsType:            "Linux",
+		Tags:              map[string]*string{},
+		NetworkInterfaces: []string{networkID},
+		Size:              size,
+	}
+
+	actualVM := mapFromVM(testVM)
+
+	require.Equal(t, expectedVM, actualVM)
+
+	cfg := DefaultSDConfig
+	d := &Discovery{
+		cfg:    &cfg,
+		logger: log.NewNopLogger(),
+		cache:  cache.New(cache.AsLRU[string, *armnetwork.Interface](lru.WithCapacity(5))),
+	}
+	network := armnetwork.Interface{
+		Name: &networkID,
+		Properties: &armnetwork.InterfacePropertiesFormat{
+			Primary: &primary,
+			IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
+				{Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
+					PrivateIPAddress: &ipAddress,
+				}},
+			},
+		},
+	}
+	client := &mockAzureClient{
+		networkInterface: &network,
+	}
+	labelSet, err := d.vmToLabelSet(context.Background(), client, actualVM)
+	require.NoError(t, err)
+	require.Len(t, labelSet, 11)
 }
 
 func TestMapFromVMWithEmptyOSType(t *testing.T) {
