@@ -1434,6 +1434,14 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 		param := unwrapStepInvariantExpr(e.Param)
 		unwrapParenExpr(&param)
 		if s, ok := param.(*parser.StringLiteral); ok {
+			valueLabel := s.Val
+			if !model.LabelName(valueLabel).IsValid() {
+				ev.errorf("invalid label name %q", valueLabel)
+			}
+			if !e.Without {
+				sortedGrouping = append(sortedGrouping, valueLabel)
+				slices.Sort(sortedGrouping)
+			}
 			return ev.rangeEval(nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 				return ev.aggregationCountValues(e, sortedGrouping, s.Val, v[0].(Vector), enh)
 			}, e.Expr)
@@ -3056,14 +3064,6 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int, inputMatrix Ma
 
 func (ev *evaluator) aggregationCountValues(e *parser.AggregateExpr, grouping []string, valueLabel string, vec Vector, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	result := map[uint64]*groupedAggregation{}
-	orderedResult := []*groupedAggregation{}
-	if !model.LabelName(valueLabel).IsValid() {
-		ev.errorf("invalid label name %q", valueLabel)
-	}
-	if !e.Without {
-		grouping = append(grouping, valueLabel)
-		slices.Sort(grouping)
-	}
 
 	var buf []byte
 	for _, s := range vec {
@@ -3080,13 +3080,10 @@ func (ev *evaluator) aggregationCountValues(e *parser.AggregateExpr, grouping []
 		group, ok := result[groupingKey]
 		// Add a new group if it doesn't exist.
 		if !ok {
-			newAgg := &groupedAggregation{
+			result[groupingKey] = &groupedAggregation{
 				labels:     generateGroupingLabels(enh, metric, e.Without, grouping),
 				groupCount: 1,
 			}
-
-			result[groupingKey] = newAgg
-			orderedResult = append(orderedResult, newAgg)
 			continue
 		}
 
@@ -3094,7 +3091,7 @@ func (ev *evaluator) aggregationCountValues(e *parser.AggregateExpr, grouping []
 	}
 
 	// Construct the result Vector from the aggregated groups.
-	for _, aggr := range orderedResult {
+	for _, aggr := range result {
 		enh.Out = append(enh.Out, Sample{
 			Metric: aggr.labels,
 			F:      float64(aggr.groupCount),
