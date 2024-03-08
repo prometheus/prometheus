@@ -481,14 +481,11 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 
 		if len(ams.cfg.AlertRelabelConfigs) > 0 {
 			amAlerts = relabelAlerts(ams.cfg.AlertRelabelConfigs, labels.Labels{}, alerts)
-			// TODO(nabokihms): figure out the right way to cache marshalled alerts.
-			//   Now it works well only for happy cases.
-			v1Payload = nil
-			v2Payload = nil
-
 			if len(amAlerts) == 0 {
 				continue
 			}
+			// We can't use the cached values from previous iteration.
+			v1Payload, v2Payload = nil, nil
 		}
 
 		switch ams.cfg.APIVersion {
@@ -529,6 +526,11 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 				ams.mtx.RUnlock()
 				return false
 			}
+		}
+
+		if len(ams.cfg.AlertRelabelConfigs) > 0 {
+			// We can't use the cached values on the next iteration.
+			v1Payload, v2Payload = nil, nil
 		}
 
 		for _, am := range ams.ams {
