@@ -27,6 +27,7 @@ import DataTable from "./DataTable";
 import TimeInput from "./TimeInput";
 import RangeInput from "./RangeInput";
 import ExpressionInput from "./ExpressionInput";
+import Graph from "./Graph";
 
 export interface PanelProps {
   idx: number;
@@ -107,7 +108,6 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
                   )
                 }
               />
-
               <TimeInput
                 time={panel.visualizer.endTime}
                 range={panel.visualizer.range}
@@ -203,17 +203,15 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
             /> */}
           </Group>
           <Space h="lg" />
-          <Center
-            style={{
-              height: 450,
-              backgroundColor: "#fbfbfb",
-              border: "2px dotted #e7e7e7",
-              fontSize: 20,
-              color: "#999",
-            }}
-          >
-            GRAPH PLACEHOLDER
-          </Center>
+          <Graph
+            expr={panel.expr}
+            endTime={panel.visualizer.endTime}
+            range={panel.visualizer.range}
+            resolution={panel.visualizer.resolution}
+            showExemplars={panel.visualizer.showExemplars}
+            displayMode={panel.visualizer.displayMode}
+            retriggerIdx={retriggerIdx}
+          />
         </Tabs.Panel>
       </Tabs>
       {/* Link button to remove this panel. */}
