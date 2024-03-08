@@ -481,14 +481,11 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 
 		if len(ams.cfg.AlertRelabelConfigs) > 0 {
 			amAlerts = relabelAlerts(ams.cfg.AlertRelabelConfigs, labels.Labels{}, alerts)
-			// TODO(nabokihms): figure out the right way to cache marshalled alerts.
-			//   Now it works well only for happy cases.
-			v1Payload = nil
-			v2Payload = nil
-
 			if len(amAlerts) == 0 {
 				continue
 			}
+			// We can't use the cached values from previous iteration.
+			v1Payload, v2Payload = nil, nil
 		}
 
 		switch ams.cfg.APIVersion {
@@ -531,15 +528,20 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 			}
 		}
 
+		if len(ams.cfg.AlertRelabelConfigs) > 0 {
+			// We can't use the cached values on the next iteration.
+			v1Payload, v2Payload = nil, nil
+		}
+
 		for _, am := range ams.ams {
 			wg.Add(1)
 
 			ctx, cancel := context.WithTimeout(n.ctx, time.Duration(ams.cfg.Timeout))
 			defer cancel()
 
-			go func(client *http.Client, url string) {
+			go func(ctx context.Context, client *http.Client, url string, payload []byte, count int) {
 				if err := n.sendOne(ctx, client, url, payload); err != nil {
-					level.Error(n.logger).Log("alertmanager", url, "count", len(amAlerts), "msg", "Error sending alert", "err", err)
+					level.Error(n.logger).Log("alertmanager", url, "count", count, "msg", "Error sending alert", "err", err)
 					n.metrics.errors.WithLabelValues(url).Inc()
 				} else {
 					numSuccess.Inc()
@@ -548,7 +550,7 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 				n.metrics.sent.WithLabelValues(url).Add(float64(len(amAlerts)))
 
 				wg.Done()
-			}(ams.client, am.url().String())
+			}(ctx, ams.client, am.url().String(), payload, len(amAlerts))
 		}
 
 		ams.mtx.RUnlock()
