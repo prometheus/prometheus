@@ -1349,6 +1349,16 @@ func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping 
 		for _, ss := range seriess {
 			result = append(result, ss)
 		}
+	default:
+		// Remove empty result rows.
+		dst := 0
+		for _, series := range result {
+			if len(series.Floats) > 0 || len(series.Histograms) > 0 {
+				result[dst] = series
+				dst++
+			}
+		}
+		result = result[:dst]
 	}
 	return result, warnings
 }
