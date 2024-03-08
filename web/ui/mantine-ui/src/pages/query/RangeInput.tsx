@@ -77,7 +77,7 @@ const RangeInput: FC<RangeInputProps> = ({ range, onChangeRange }) => {
           event.key === "Enter" && onChangeRangeInput(rangeInput)
         }
         aria-label="Range"
-        style={{ width: `calc(43px + ${rangeInput.length + 3}ch)` }}
+        style={{ width: `calc(44px + ${rangeInput.length + 3}ch)` }}
         leftSection={
           <ActionIcon
             size="lg"
