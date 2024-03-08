@@ -30,12 +30,13 @@ import ExpressionInput from "./ExpressionInput";
 
 export interface PanelProps {
   idx: number;
+  metricNames: string[];
 }
 
 // TODO: This is duplicated everywhere, unify it.
 const iconStyle = { width: "0.9rem", height: "0.9rem" };
 
-const QueryPanel: FC<PanelProps> = ({ idx }) => {
+const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
   // Used to indicate to the selected display component that it should retrigger
   // the query, even if the expression has not changed (e.g. when the user presses
   // the "Execute" button or hits <Enter> again).
@@ -48,6 +49,7 @@ const QueryPanel: FC<PanelProps> = ({ idx }) => {
     <Stack gap="lg" mt="sm">
       <ExpressionInput
         initialExpr={panel.expr}
+        metricNames={metricNames}
         executeQuery={(expr: string) => {
           setRetriggerIdx((idx) => idx + 1);
           dispatch(setExpr({ idx, expr }));

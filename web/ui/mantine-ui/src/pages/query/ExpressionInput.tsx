@@ -108,12 +108,14 @@ export class HistoryCompleteStrategy implements CompleteStrategy {
 
 interface ExpressionInputProps {
   initialExpr: string;
+  metricNames: string[];
   executeQuery: (expr: string) => void;
   removePanel: () => void;
 }
 
 const ExpressionInput: FC<ExpressionInputProps> = ({
   initialExpr,
+  metricNames,
   executeQuery,
   removePanel,
 }) => {
@@ -175,13 +177,13 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
           newCompleteStrategy({
             remote: {
               url: pathPrefix,
-              //cache: { initialMetricList: metricNames },
+              cache: { initialMetricList: metricNames },
             },
           }),
           queryHistory
         ),
       });
-  }, []); // TODO: Make this depend on external settings changes, maybe use dynamic config compartment again.
+  }, [metricNames, enableAutocomplete, enableLinter, queryHistory]); // TODO: Make this depend on external settings changes, maybe use dynamic config compartment again.
 
   return (
     <Group align="flex-start" wrap="nowrap" gap="xs">
