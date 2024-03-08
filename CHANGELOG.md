@@ -27,7 +27,7 @@ It is off by default; there will be an optional alternative image to try it out.
 * [BUGFIX] Remote Write: Stop slowing down when a new WAL segment is created #13583, #13628
 * [BUGFIX] PromQL: Fix wrongly scoped range vectors with @ modifier #13559
 * [BUGFIX] Kubernetes SD: Pod status changes were not discovered by Endpoints service discovery #13337
-* [BUGFIX] Azure SD: Don't crash when given a ScaleSetVM with missing details #13578
+* [BUGFIX] Azure SD: Fix 'error: parameter virtualMachineScaleSetName cannot be empty' (#13702)
 * [BUGFIX] Remote Write: Fix signing for AWS sigv4 transport #13497
 * [BUGFIX] Observability: Exemplars emitted by Prometheus use "trace_id" not "traceID" #13589
 
