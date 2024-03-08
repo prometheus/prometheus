@@ -60,8 +60,25 @@ import ErrorBoundary from "./ErrorBoundary";
 import { ThemeSelector } from "./ThemeSelector";
 import { SettingsContext } from "./settings";
 import { Notifications } from "@mantine/notifications";
+import { useAppDispatch } from "./state/hooks";
+import { updateSettings } from "./state/settingsSlice";
 
 const queryClient = new QueryClient();
+
+const mainNavPages = [
+  {
+    title: "Query",
+    path: "/query",
+    icon: <IconDatabaseSearch style={{ width: rem(14), height: rem(14) }} />,
+    element: <QueryPage />,
+  },
+  {
+    title: "Alerts",
+    path: "/alerts",
+    icon: <IconBellFilled style={{ width: rem(14), height: rem(14) }} />,
+    element: <AlertsPage />,
+  },
+];
 
 const monitoringStatusPages = [
   {
@@ -114,6 +131,7 @@ const serverStatusPages = [
 ];
 
 const allStatusPages = [...monitoringStatusPages, ...serverStatusPages];
+const allPages = [...mainNavPages, ...allStatusPages];
 
 const theme = createTheme({
   colors: {
@@ -132,6 +150,21 @@ const theme = createTheme({
   },
 });
 
+// This dynamically/generically determines the pathPrefix by stripping the first known
+// endpoint suffix from the window location path. It works out of the box for both direct
+// hosting and reverse proxy deployments with no additional configurations required.
+const getPathPrefix = (path: string) => {
+  if (path.endsWith("/")) {
+    path = path.slice(0, -1);
+  }
+
+  const pagePath = allPages.find((p) => path.endsWith(p.path))?.path;
+  if (pagePath === undefined) {
+    throw new Error(`Could not find base path for ${path}`);
+  }
+  return path.slice(0, path.length - pagePath.length);
+};
+
 const navLinkIconSize = 15;
 const navLinkXPadding = "md";
 
@@ -139,26 +172,24 @@ function App() {
   const [opened, { toggle }] = useDisclosure();
   const { agentMode } = useContext(SettingsContext);
 
+  const pathPrefix = getPathPrefix(window.location.pathname);
+  const dispatch = useAppDispatch();
+  dispatch(updateSettings({ pathPrefix }));
+
   const navLinks = (
     <>
-      <Button
-        component={NavLink}
-        to="/query"
-        className={classes.link}
-        leftSection={<IconDatabaseSearch size={navLinkIconSize} />}
-        px={navLinkXPadding}
-      >
-        Query
-      </Button>
-      <Button
-        component={NavLink}
-        to="/alerts"
-        className={classes.link}
-        leftSection={<IconBellFilled size={navLinkIconSize} />}
-        px={navLinkXPadding}
-      >
-        Alerts
-      </Button>
+      {mainNavPages.map((p) => (
+        <Button
+          key={p.path}
+          component={NavLink}
+          to={p.path}
+          className={classes.link}
+          leftSection={p.icon}
+          px={navLinkXPadding}
+        >
+          {p.title}
+        </Button>
+      ))}
 
       <Menu shadow="md" width={230}>
         <Routes>
@@ -246,7 +277,7 @@ function App() {
   );
 
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={pathPrefix}>
       <MantineProvider defaultColorScheme="auto" theme={theme}>
         <Notifications position="top-right" />
 

@@ -1,9 +1,11 @@
 import { configureStore } from "@reduxjs/toolkit";
 import queryPageSlice from "./queryPageSlice";
 import { prometheusApi } from "./api";
+import settingsSlice from "./settingsSlice";
 
 const store = configureStore({
   reducer: {
+    settings: settingsSlice,
     queryPage: queryPageSlice,
     [prometheusApi.reducerPath]: prometheusApi.reducer,
   },

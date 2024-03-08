@@ -1,4 +1,5 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
+import { useAppSelector } from "../state/hooks";
 
 export const API_PATH = "api/v1";
 
@@ -17,18 +18,29 @@ export type ErrorAPIResponse = {
 export type APIResponse<T> = SuccessAPIResponse<T> | ErrorAPIResponse;
 
 const createQueryFn =
-  <T>({ path, params }: { path: string; params?: Record<string, string> }) =>
+  <T>({
+    pathPrefix,
+    path,
+    params,
+  }: {
+    pathPrefix: string;
+    path: string;
+    params?: Record<string, string>;
+  }) =>
   async ({ signal }: { signal: AbortSignal }) => {
     const queryString = params
       ? `?${new URLSearchParams(params).toString()}`
       : "";
 
     try {
-      const res = await fetch(`/${API_PATH}/${path}${queryString}`, {
-        cache: "no-store",
-        credentials: "same-origin",
-        signal,
-      });
+      const res = await fetch(
+        `${pathPrefix}/${API_PATH}${path}${queryString}`,
+        {
+          cache: "no-store",
+          credentials: "same-origin",
+          signal,
+        }
+      );
 
       if (
         !res.ok &&
@@ -74,21 +86,32 @@ type QueryOptions = {
   enabled?: boolean;
 };
 
-export const useAPIQuery = <T>({ key, path, params, enabled }: QueryOptions) =>
-  useQuery<SuccessAPIResponse<T>>({
+export const useAPIQuery = <T>({
+  key,
+  path,
+  params,
+  enabled,
+}: QueryOptions) => {
+  const pathPrefix = useAppSelector((state) => state.settings.pathPrefix);
+
+  return useQuery<SuccessAPIResponse<T>>({
     queryKey: key ? [key] : [path, params],
     retry: false,
     refetchOnWindowFocus: false,
     gcTime: 0,
     enabled,
-    queryFn: createQueryFn({ path, params }),
+    queryFn: createQueryFn({ pathPrefix, path, params }),
   });
+};
 
-export const useSuspenseAPIQuery = <T>({ key, path, params }: QueryOptions) =>
-  useSuspenseQuery<SuccessAPIResponse<T>>({
+export const useSuspenseAPIQuery = <T>({ key, path, params }: QueryOptions) => {
+  const pathPrefix = useAppSelector((state) => state.settings.pathPrefix);
+
+  return useSuspenseQuery<SuccessAPIResponse<T>>({
     queryKey: key ? [key] : [path, params],
     retry: false,
     refetchOnWindowFocus: false,
     gcTime: 0,
-    queryFn: createQueryFn({ path, params }),
+    queryFn: createQueryFn({ pathPrefix, path, params }),
   });
+};
