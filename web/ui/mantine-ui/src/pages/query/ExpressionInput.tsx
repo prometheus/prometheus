@@ -132,7 +132,7 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
     refetch: formatQuery,
   } = useAPIQuery<string>({
     key: expr,
-    path: "format_query",
+    path: "/format_query",
     params: {
       query: expr,
     },
