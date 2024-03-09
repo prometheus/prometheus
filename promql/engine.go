@@ -2733,7 +2733,6 @@ type groupedAggregation struct {
 	floatValue     float64
 	histogramValue *histogram.FloatHistogram
 	floatMean      float64
-	histogramMean  *histogram.FloatHistogram
 	groupCount     int
 	heap           vectorByValueHeap
 	reverseHeap    vectorByReverseValueHeap
@@ -2762,20 +2761,14 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				floatMean:  f,
 				groupCount: 1,
 			}
-			switch {
-			case h == nil:
-				group.hasFloat = true
-			case op == parser.SUM:
-				group.histogramValue = h.Copy()
-				group.hasHistogram = true
-			case op == parser.AVG:
-				group.histogramMean = h.Copy()
-				group.hasHistogram = true
-			case op == parser.STDVAR || op == parser.STDDEV:
-				group.groupCount = 0
-			}
-
 			switch op {
+			case parser.SUM, parser.AVG:
+				if h == nil {
+					group.hasFloat = true
+				} else {
+					group.histogramValue = h.Copy()
+					group.hasHistogram = true
+				}
 			case parser.STDVAR, parser.STDDEV:
 				group.floatValue = 0
 			case parser.QUANTILE:
@@ -2807,11 +2800,11 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			group.groupCount++
 			if h != nil {
 				group.hasHistogram = true
-				if group.histogramMean != nil {
+				if group.histogramValue != nil {
 					left := h.Copy().Div(float64(group.groupCount))
-					right := group.histogramMean.Copy().Div(float64(group.groupCount))
+					right := group.histogramValue.Copy().Div(float64(group.groupCount))
 					toAdd := left.Sub(right)
-					group.histogramMean.Add(toAdd)
+					group.histogramValue.Add(toAdd)
 				}
 				// Otherwise the aggregation contained floats
 				// previously and will be invalid anyway. No
@@ -2886,7 +2879,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				continue
 			}
 			if aggr.hasHistogram {
-				aggr.histogramValue = aggr.histogramMean.Compact(0)
+				aggr.histogramValue = aggr.histogramValue.Compact(0)
 			} else {
 				aggr.floatValue = aggr.floatMean
 			}
