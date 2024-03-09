@@ -2735,6 +2735,9 @@ type groupedAggregation struct {
 	heap           vectorByValueHeap
 }
 
+// aggregation evaluates an aggregation operation at one timestep on a Matrix.
+// outputMatrix is already populated with grouping labels; groups is one-to-one with outputMatrix.
+// seriesToResult maps inputMatrix indexes to outputMatrix indexes.
 func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix, outputMatrix Matrix, seriesToResult []int, groups []groupedAggregation, enh *EvalNodeHelper) annotations.Annotations {
 	op := e.Op
 	var annos annotations.Annotations
@@ -2944,7 +2947,7 @@ func (ev *evaluator) nextSample(ts int64, inputMatrix Matrix, si int) (Sample, b
 	return Sample{Metric: inputMatrix[si].Metric, F: f, H: h, T: ts}, ok
 }
 
-// aggregationK evaluates topk or bottomk on a Vector.
+// aggregationK evaluates topk or bottomk at one timestep on a Matrix.
 func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int, inputMatrix Matrix, seriesToResult []int, groups []groupedAggregation, enh *EvalNodeHelper, seriess map[uint64]Series) (Matrix, annotations.Annotations) {
 	op := e.Op
 	var annos annotations.Annotations
