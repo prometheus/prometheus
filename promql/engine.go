@@ -1464,7 +1464,6 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 			fParam = val.(Matrix)[0].Floats[0].F
 		}
 		// Now fetch the data to be aggregated.
-		// ev.currentSamples will be updated to the correct value within the ev.eval call.
 		val, ws := ev.eval(e.Expr)
 		warnings.Merge(ws)
 		inputMatrix := val.(Matrix)
