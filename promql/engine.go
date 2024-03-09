@@ -2728,6 +2728,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 }
 
 type groupedAggregation struct {
+	seen           bool // Was this output groups seen in the input at this timestamp.
 	hasFloat       bool // Has at least 1 float64 sample aggregated.
 	hasHistogram   bool // Has at least 1 histogram sample aggregated.
 	floatValue     float64
@@ -2744,7 +2745,9 @@ type groupedAggregation struct {
 func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix, outputMatrix Matrix, seriesToResult []int, groups []groupedAggregation, enh *EvalNodeHelper) annotations.Annotations {
 	op := e.Op
 	var annos annotations.Annotations
-	seen := make([]bool, len(groups)) // Which output groups were seen in the input at this timestamp.
+	for i := range groups {
+		groups[i].seen = false
+	}
 
 	for si := range inputMatrix {
 		f, h, ok := ev.nextValues(enh.Ts, &inputMatrix[si])
@@ -2754,8 +2757,9 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 
 		group := &groups[seriesToResult[si]]
 		// Initialize this group if it's the first time we've seen it.
-		if !seen[seriesToResult[si]] {
+		if !group.seen {
 			*group = groupedAggregation{
+				seen:       true,
 				floatValue: f,
 				floatMean:  f,
 				groupCount: 1,
@@ -2776,7 +2780,6 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			case parser.GROUP:
 				group.floatValue = 1
 			}
-			seen[seriesToResult[si]] = true
 			continue
 		}
 
@@ -2867,7 +2870,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 
 	for ri, aggr := range groups {
-		if !seen[ri] {
+		if !aggr.seen {
 			continue
 		}
 		switch op {
@@ -2924,7 +2927,9 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int, inputMatrix Ma
 	op := e.Op
 	var s Sample
 	var annos annotations.Annotations
-	seen := make([]bool, len(groups)) // Which output groups were seen in the input at this timestamp.
+	for i := range groups {
+		groups[i].seen = false
+	}
 
 	for si := range inputMatrix {
 		f, _, ok := ev.nextValues(enh.Ts, &inputMatrix[si])
@@ -2935,12 +2940,12 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int, inputMatrix Ma
 
 		group := &groups[seriesToResult[si]]
 		// Initialize this group if it's the first time we've seen it.
-		if !seen[seriesToResult[si]] {
+		if !group.seen {
 			*group = groupedAggregation{
+				seen: true,
 				heap: make(vectorByValueHeap, 1, k),
 			}
 			group.heap[0] = s
-			seen[seriesToResult[si]] = true
 			continue
 		}
 
@@ -2998,8 +3003,8 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int, inputMatrix Ma
 			seriess[hash] = ss
 		}
 	}
-	for ri, aggr := range groups {
-		if !seen[ri] {
+	for _, aggr := range groups {
+		if !aggr.seen {
 			continue
 		}
 		switch op {
