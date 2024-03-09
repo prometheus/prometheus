@@ -1433,17 +1433,18 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 		unwrapParenExpr(&e.Param)
 		param := unwrapStepInvariantExpr(e.Param)
 		unwrapParenExpr(&param)
-		if s, ok := param.(*parser.StringLiteral); ok {
-			valueLabel := s.Val
-			if !model.LabelName(valueLabel).IsValid() {
+
+		if e.Op == parser.COUNT_VALUES {
+			valueLabel := param.(*parser.StringLiteral)
+			if !model.LabelName(valueLabel.Val).IsValid() {
 				ev.errorf("invalid label name %q", valueLabel)
 			}
 			if !e.Without {
-				sortedGrouping = append(sortedGrouping, valueLabel)
+				sortedGrouping = append(sortedGrouping, valueLabel.Val)
 				slices.Sort(sortedGrouping)
 			}
 			return ev.rangeEval(nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-				return ev.aggregationCountValues(e, sortedGrouping, s.Val, v[0].(Vector), enh)
+				return ev.aggregationCountValues(e, sortedGrouping, valueLabel.Val, v[0].(Vector), enh)
 			}, e.Expr)
 		}
 
