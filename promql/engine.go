@@ -1285,9 +1285,9 @@ func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping 
 	buf := make([]byte, 0, 1024)
 	groupToResultIndex := make(map[uint64]int)
 	seriesToResult := make([]int, len(inputMatrix))
-	orderedResult := make([]*groupedAggregation, 0, 16)
 	var result Matrix
 
+	groupCount := 0
 	for si, series := range inputMatrix {
 		var groupingKey uint64
 		groupingKey, buf = generateGroupingKey(series.Metric, sortedGrouping, aggExpr.Without, buf)
@@ -1298,13 +1298,13 @@ func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping 
 				m := generateGroupingLabels(enh, series.Metric, aggExpr.Without, sortedGrouping)
 				result = append(result, Series{Metric: m})
 			}
-			newAgg := &groupedAggregation{}
-			index = len(orderedResult)
+			index = groupCount
 			groupToResultIndex[groupingKey] = index
-			orderedResult = append(orderedResult, newAgg)
+			groupCount++
 		}
 		seriesToResult[si] = index
 	}
+	groups := make([]groupedAggregation, groupCount)
 
 	var k int
 	var seriess map[uint64]Series
@@ -1339,7 +1339,7 @@ func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping 
 		var ws annotations.Annotations
 		switch aggExpr.Op {
 		case parser.TOPK, parser.BOTTOMK:
-			result, ws = ev.aggregationK(aggExpr, k, inputMatrix, seriesToResult, orderedResult, enh, seriess)
+			result, ws = ev.aggregationK(aggExpr, k, inputMatrix, seriesToResult, groups, enh, seriess)
 			// If this could be an instant query, shortcut so as not to change sort order.
 			if ev.endTimestamp == ev.startTimestamp {
 				ev.currentSamples = originalNumSamples + result.TotalSamples()
@@ -1347,7 +1347,7 @@ func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping 
 				return result, warnings
 			}
 		default:
-			ws = ev.aggregation(aggExpr, param, inputMatrix, result, seriesToResult, orderedResult, enh)
+			ws = ev.aggregation(aggExpr, param, inputMatrix, result, seriesToResult, groups, enh)
 		}
 
 		warnings.Merge(ws)
@@ -2734,11 +2734,10 @@ type groupedAggregation struct {
 	heap           vectorByValueHeap
 }
 
-// aggregation evaluates an aggregation operation on a Vector.
-func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix, outputMatrix Matrix, seriesToResult []int, orderedResult []*groupedAggregation, enh *EvalNodeHelper) annotations.Annotations {
+func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix, outputMatrix Matrix, seriesToResult []int, groups []groupedAggregation, enh *EvalNodeHelper) annotations.Annotations {
 	op := e.Op
 	var annos annotations.Annotations
-	seen := make([]bool, len(orderedResult)) // Which output groups were seen in the input at this timestamp.
+	seen := make([]bool, len(groups)) // Which output groups were seen in the input at this timestamp.
 
 	for si := range inputMatrix {
 		f, h, ok := ev.nextValues(enh.Ts, &inputMatrix[si])
@@ -2746,7 +2745,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			continue
 		}
 
-		group := orderedResult[seriesToResult[si]]
+		group := &groups[seriesToResult[si]]
 		// Initialize this group if it's the first time we've seen it.
 		if !seen[seriesToResult[si]] {
 			*group = groupedAggregation{
@@ -2860,7 +2859,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 	// Construct the output matrix from the aggregated groups.
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 
-	for ri, aggr := range orderedResult {
+	for ri, aggr := range groups {
 		if !seen[ri] {
 			continue
 		}
@@ -2943,10 +2942,10 @@ func (ev *evaluator) nextSample(ts int64, inputMatrix Matrix, si int) (Sample, b
 }
 
 // aggregationK evaluates topk or bottomk on a Vector.
-func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int, inputMatrix Matrix, seriesToResult []int, orderedResult []*groupedAggregation, enh *EvalNodeHelper, seriess map[uint64]Series) (Matrix, annotations.Annotations) {
+func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int, inputMatrix Matrix, seriesToResult []int, groups []groupedAggregation, enh *EvalNodeHelper, seriess map[uint64]Series) (Matrix, annotations.Annotations) {
 	op := e.Op
 	var annos annotations.Annotations
-	seen := make([]bool, len(orderedResult)) // Which output groups were seen in the input at this timestamp.
+	seen := make([]bool, len(groups)) // Which output groups were seen in the input at this timestamp.
 
 	for si := range inputMatrix {
 		s, ok := ev.nextSample(enh.Ts, inputMatrix, si)
@@ -2954,7 +2953,7 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int, inputMatrix Ma
 			continue
 		}
 
-		group := orderedResult[seriesToResult[si]]
+		group := &groups[seriesToResult[si]]
 		// Initialize this group if it's the first time we've seen it.
 		if !seen[seriesToResult[si]] {
 			*group = groupedAggregation{
@@ -3001,7 +3000,7 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int, inputMatrix Ma
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 	var mat Matrix
 	if ev.endTimestamp == ev.startTimestamp {
-		mat = make(Matrix, 0, len(orderedResult))
+		mat = make(Matrix, 0, len(groups))
 	}
 
 	add := func(lbls labels.Labels, f float64) {
@@ -3019,7 +3018,7 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int, inputMatrix Ma
 			seriess[hash] = ss
 		}
 	}
-	for ri, aggr := range orderedResult {
+	for ri, aggr := range groups {
 		if !seen[ri] {
 			continue
 		}
