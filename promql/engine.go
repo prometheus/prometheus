@@ -2921,6 +2921,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 // For a range query, aggregates output in the seriess map.
 func (ev *evaluator) aggregationK(e *parser.AggregateExpr, q float64, inputMatrix Matrix, seriesToResult []int, orderedResult []*groupedAggregation, enh *EvalNodeHelper, seriess map[uint64]Series) (Matrix, annotations.Annotations) {
 	op := e.Op
+	var s Sample
 	var annos annotations.Annotations
 	seen := make([]bool, len(orderedResult)) // Which output groups were seen in the input at this timestamp.
 	if !convertibleToInt64(q) {
@@ -2935,10 +2936,11 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, q float64, inputMatri
 	}
 
 	for si := range inputMatrix {
-		s, ok := ev.nextSample(enh.Ts, inputMatrix, si)
+		f, _, ok := ev.nextValues(enh.Ts, &inputMatrix[si])
 		if !ok {
 			continue
 		}
+		s = Sample{Metric: inputMatrix[si].Metric, F: f}
 
 		group := orderedResult[seriesToResult[si]]
 		// Initialize this group if it's the first time we've seen it.
@@ -3109,15 +3111,6 @@ func (ev *evaluator) nextValues(ts int64, series *Series) (f float64, h *histogr
 		return f, h, false
 	}
 	return f, h, true
-}
-
-func (ev *evaluator) nextSample(ts int64, inputMatrix Matrix, si int) (Sample, bool) {
-	f, h, ok := ev.nextValues(ts, &inputMatrix[si])
-	ev.currentSamples++
-	if ev.currentSamples > ev.maxSamples {
-		ev.error(ErrTooManySamples(env))
-	}
-	return Sample{Metric: inputMatrix[si].Metric, F: f, H: h, T: ts}, ok
 }
 
 // groupingKey builds and returns the grouping key for the given metric and
