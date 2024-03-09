@@ -3279,7 +3279,7 @@ anchored on both ends. To un-anchor the regex, use `.*<regex>.*`.
   does not match, no replacement takes place.
 * `lowercase`: Maps the concatenated `source_labels` to their lower case.
 * `uppercase`: Maps the concatenated `source_labels` to their upper case.
-* `keep`: Drop targets for which `regex` does not match the concatenated `source_labels`.
+* `keep`: Keep targets for which `regex` does not match the concatenated `source_labels`.
 * `drop`: Drop targets for which `regex` matches the concatenated `source_labels`.
 * `keepequal`: Drop targets for which the concatenated `source_labels` do not match `target_label`.
 * `dropequal`: Drop targets for which the concatenated `source_labels` do match `target_label`.
