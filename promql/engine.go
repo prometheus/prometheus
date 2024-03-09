@@ -1274,6 +1274,15 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 }
 
 func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping []string, inputMatrix Matrix, param float64) (Matrix, annotations.Annotations) {
+	// Keep a copy of the original point slice so that it can be returned to the pool.
+	origMatrix := slices.Clone(inputMatrix)
+	defer func() {
+		for _, s := range origMatrix {
+			putFPointSlice(s.Floats)
+			putHPointSlice(s.Histograms)
+		}
+	}()
+
 	originalNumSamples := ev.currentSamples
 	var warnings annotations.Annotations
 
@@ -1463,19 +1472,10 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 		warnings.Merge(ws)
 		inputMatrix := val.(Matrix)
 
-		// Keep a copy of the original point slice so that it can be returned to the pool.
-		origMatrix := make(Matrix, len(inputMatrix))
-		copy(origMatrix, inputMatrix)
 		result, ws := ev.rangeEvalAgg(e, sortedGrouping, inputMatrix, fParam)
 		warnings.Merge(ws)
 		ev.currentSamples = originalNumSamples + result.TotalSamples()
 		ev.samplesStats.UpdatePeak(ev.currentSamples)
-
-		// Reuse the original point slice.
-		for _, s := range origMatrix {
-			putFPointSlice(s.Floats)
-			putHPointSlice(s.Histograms)
-		}
 
 		return result, ws
 
