@@ -2942,6 +2942,7 @@ func addToSeries(ss *Series, ts int64, f float64, h *histogram.FloatHistogram, n
 // aggregationK evaluates topk or bottomk at one timestep on a Matrix.
 func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int, inputMatrix Matrix, seriesToResult []int, groups []groupedAggregation, enh *EvalNodeHelper, seriess map[uint64]Series) (Matrix, annotations.Annotations) {
 	op := e.Op
+	var s Sample
 	var annos annotations.Annotations
 	for i := range groups {
 		groups[i].seen = false
@@ -2952,7 +2953,7 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int, inputMatrix Ma
 		if !ok {
 			continue
 		}
-		s := Sample{Metric: inputMatrix[si].Metric, F: f}
+		s = Sample{Metric: inputMatrix[si].Metric, F: f}
 
 		group := &groups[seriesToResult[si]]
 		// Initialize this group if it's the first time we've seen it.
