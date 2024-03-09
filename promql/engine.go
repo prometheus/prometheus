@@ -1474,7 +1474,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 		ev.currentSamples = originalNumSamples + result.TotalSamples()
 		ev.samplesStats.UpdatePeak(ev.currentSamples)
 
-		return result, ws
+		return result, warnings
 
 	case *parser.Call:
 		call := FunctionCalls[e.Func.Name]
