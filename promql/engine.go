@@ -2736,6 +2736,20 @@ type groupedAggregation struct {
 	heap           vectorByValueHeap
 }
 
+func (ev *evaluator) nextValues(ts int64, series *Series) (f float64, h *histogram.FloatHistogram, b bool) {
+	switch {
+	case len(series.Floats) > 0 && series.Floats[0].T == ts:
+		f = series.Floats[0].F
+		series.Floats = series.Floats[1:] // Move input vectors forward
+	case len(series.Histograms) > 0 && series.Histograms[0].T == ts:
+		h = series.Histograms[0].H
+		series.Histograms = series.Histograms[1:]
+	default:
+		return f, h, false
+	}
+	return f, h, true
+}
+
 // aggregation evaluates an aggregation operation at one timestep on a Matrix.
 // outputMatrix is already populated with grouping labels; groups is one-to-one with outputMatrix.
 // seriesToResult maps inputMatrix indexes to outputMatrix indexes.
@@ -2927,20 +2941,6 @@ func addToSeries(ss *Series, ts int64, f float64, h *histogram.FloatHistogram, n
 		}
 		ss.Histograms = append(ss.Histograms, HPoint{T: ts, H: h})
 	}
-}
-
-func (ev *evaluator) nextValues(ts int64, series *Series) (f float64, h *histogram.FloatHistogram, b bool) {
-	switch {
-	case len(series.Floats) > 0 && series.Floats[0].T == ts:
-		f = series.Floats[0].F
-		series.Floats = series.Floats[1:] // Move input vectors forward
-	case len(series.Histograms) > 0 && series.Histograms[0].T == ts:
-		h = series.Histograms[0].H
-		series.Histograms = series.Histograms[1:]
-	default:
-		return f, h, false
-	}
-	return f, h, true
 }
 
 // aggregationK evaluates topk or bottomk at one timestep on a Matrix.
