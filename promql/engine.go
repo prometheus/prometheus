@@ -2942,11 +2942,6 @@ func (ev *evaluator) nextValues(ts int64, series *Series) (f float64, h *histogr
 	return f, h, true
 }
 
-func (ev *evaluator) nextSample(ts int64, inputMatrix Matrix, si int) (Sample, bool) {
-	f, h, ok := ev.nextValues(ts, &inputMatrix[si])
-	return Sample{Metric: inputMatrix[si].Metric, F: f, H: h, T: ts}, ok
-}
-
 // aggregationK evaluates topk or bottomk at one timestep on a Matrix.
 func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int, inputMatrix Matrix, seriesToResult []int, groups []groupedAggregation, enh *EvalNodeHelper, seriess map[uint64]Series) (Matrix, annotations.Annotations) {
 	op := e.Op
@@ -2956,10 +2951,11 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int, inputMatrix Ma
 	}
 
 	for si := range inputMatrix {
-		s, ok := ev.nextSample(enh.Ts, inputMatrix, si)
+		f, _, ok := ev.nextValues(enh.Ts, &inputMatrix[si])
 		if !ok {
 			continue
 		}
+		s := Sample{Metric: inputMatrix[si].Metric, F: f}
 
 		group := &groups[seriesToResult[si]]
 		// Initialize this group if it's the first time we've seen it.
