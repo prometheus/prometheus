@@ -1283,7 +1283,6 @@ func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping 
 		}
 	}()
 
-	originalNumSamples := ev.currentSamples
 	var warnings annotations.Annotations
 
 	enh := &EvalNodeHelper{}
@@ -1351,8 +1350,6 @@ func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping 
 			result, ws = ev.aggregationK(aggExpr, k, inputMatrix, seriesToResult, groups, enh, seriess)
 			// If this could be an instant query, shortcut so as not to change sort order.
 			if ev.endTimestamp == ev.startTimestamp {
-				ev.currentSamples = originalNumSamples + result.TotalSamples()
-				ev.samplesStats.UpdatePeak(ev.currentSamples)
 				return result, warnings
 			}
 		default:
