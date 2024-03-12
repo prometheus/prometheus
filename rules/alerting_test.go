@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -82,6 +83,67 @@ func TestAlertingRuleState(t *testing.T) {
 		rule.active = test.active
 		got := rule.State()
 		require.Equal(t, test.want, got, "test case %d unexpected AlertState, want:%d got:%d", i, test.want, got)
+	}
+}
+
+func TestAlertingRuleTemplateWithHistogram(t *testing.T) {
+	h := histogram.FloatHistogram{
+		Schema:        0,
+		Count:         30,
+		Sum:           1111.1,
+		ZeroThreshold: 0.001,
+		ZeroCount:     2,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 1},
+			{Offset: 1, Length: 5},
+		},
+		PositiveBuckets: []float64{1, 1, 2, 1, 1, 1},
+		NegativeSpans: []histogram.Span{
+			{Offset: 1, Length: 4},
+			{Offset: 4, Length: 3},
+		},
+		NegativeBuckets: []float64{-2, 2, 2, 7, 5, 5, 2},
+	}
+
+	q := func(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
+		return []promql.Sample{{H: &h}}, nil
+	}
+
+	expr, err := parser.ParseExpr("foo")
+	require.NoError(t, err)
+
+	rule := NewAlertingRule(
+		"HistogramAsValue",
+		expr,
+		time.Minute,
+		0,
+		labels.FromStrings("histogram", "{{ $value }}"),
+		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
+	)
+
+	evalTime := time.Now()
+	res, err := rule.Eval(context.TODO(), evalTime, q, nil, 0)
+	require.NoError(t, err)
+
+	require.Len(t, res, 2)
+	for _, smpl := range res {
+		smplName := smpl.Metric.Get("__name__")
+		if smplName == "ALERTS" {
+			result := promql.Sample{
+				Metric: labels.FromStrings(
+					"__name__", "ALERTS",
+					"alertname", "HistogramAsValue",
+					"alertstate", "pending",
+					"histogram", h.String(),
+				),
+				T: timestamp.FromTime(evalTime),
+				F: 1,
+			}
+			testutil.RequireEqual(t, result, smpl)
+		} else {
+			// If not 'ALERTS', it has to be 'ALERTS_FOR_STATE'.
+			require.Equal(t, "ALERTS_FOR_STATE", smplName)
+		}
 	}
 }
 

@@ -355,18 +355,24 @@ func NewTemplateExpander(
 }
 
 // AlertTemplateData returns the interface to be used in expanding the template.
-func AlertTemplateData(labels, externalLabels map[string]string, externalURL string, value float64) interface{} {
-	return struct {
+func AlertTemplateData(labels, externalLabels map[string]string, externalURL string, smpl promql.Sample) interface{} {
+	res := struct {
 		Labels         map[string]string
 		ExternalLabels map[string]string
 		ExternalURL    string
-		Value          float64
+		Value          interface{}
 	}{
 		Labels:         labels,
 		ExternalLabels: externalLabels,
 		ExternalURL:    externalURL,
-		Value:          value,
+		Value:          smpl.F,
 	}
+
+	if smpl.H != nil {
+		res.Value = smpl.H
+	}
+
+	return res
 }
 
 // Funcs adds the functions in fm to the Expander's function map.
