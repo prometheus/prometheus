@@ -1,0 +1,8 @@
+groups:
+- name: example
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+    for: 5m
+  limit: 10
+  alert_limit: 100
