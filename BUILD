@@ -219,7 +219,8 @@ cc_library(
         ":bare_bones_headers",
         ":prometheus",
         ":wal",
-        "@lru_cache//:lru_cache"
+        "@lru_cache//:lru_cache",
+        "@snappy//:snappy"
     ]
 )
 
