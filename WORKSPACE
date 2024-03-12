@@ -226,3 +226,10 @@ local_repository(
     name = "lru_cache",
     path = "third_party/lru_cache",
 )
+
+git_repository(
+    name = "snappy",
+    remote = "https://github.com/google/snappy",
+    commit = "27f34a580be4a3becf5f8c0cba13433f53c21337",
+    shallow_since = "1689185568 -0700",
+)
