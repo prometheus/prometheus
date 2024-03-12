@@ -233,15 +233,24 @@ cc_binary(
     linkshared = True,
 )
 
-cc_test(
-    name = "cls_wal_test",
+cc_library(
+    name = "cls_wal_test_modules",
     srcs = glob([
-        "ceph/cls/cls_wal/tests/**/*.cpp",
-        "ceph/cls/cls_wal/tests/**/*.hpp"
+        "ceph/cls/cls_wal/tests/**/*.cpp"
+    ]),
+    hdrs = glob([
+       "ceph/cls/cls_wal/tests/**/*.h"
     ]),
     deps = [
         ":cls_wal_modules",
         ":ceph_sdk",
         "@gtest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "cls_wal_test",
+    deps = [
+        ":cls_wal_test_modules"
     ]
 )

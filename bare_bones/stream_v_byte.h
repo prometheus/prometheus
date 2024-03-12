@@ -612,7 +612,7 @@ class Sequence {
  public:
   using value_type = typename Codec::value_type;
 
-  [[nodiscard]] uint32_t allocated_memory() const noexcept { return keys_.size() + data_.size(); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return keys_.allocated_memory() + data_.allocated_memory(); }
 
  private:
   [[nodiscard]] inline __attribute__((always_inline)) uint32_t next_size(uint32_t size) const noexcept {

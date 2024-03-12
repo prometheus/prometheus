@@ -635,6 +635,7 @@ class BasicDecoder {
   int64_t created_at_tsns_ = 0;
   int64_t encoded_at_tsns_ = 0;
   BasicEncoderVersion encoder_version_;
+  uint64_t samples_ = 0;
 
   void clear_segment() {
     segment_gorilla_ts_bitseq_.clear();
@@ -645,8 +646,6 @@ class BasicDecoder {
     segment_ts_crc_.clear();
     segment_v_crc_.clear();
   }
-
-  uint64_t samples_ = 0;
 
   template <typename InputStream>
   static auto read_uuid(InputStream& in) {
@@ -744,6 +743,11 @@ class BasicDecoder {
     encoder_version_ = version;
   }
   PROMPP_ALWAYS_INLINE void invalidate() noexcept { encoder_version_ = BasicEncoderVersion::kUnknown; }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept {
+    return label_sets_.allocated_memory() + gorilla_.allocated_memory() + lz4stream_.allocated_memory() + segment_gorilla_ts_bitseq_.allocated_memory() +
+           segment_gorilla_v_bitseq_.allocated_memory() + segment_ls_id_delta_rle_seq_.allocated_memory() + segment_ts_delta_rle_seq_.allocated_memory();
+  }
 
   // label sets' comparison is expensive, so it must be explicitly compared
   // as a byte streams.

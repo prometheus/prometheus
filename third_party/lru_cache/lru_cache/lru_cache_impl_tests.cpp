@@ -32,78 +32,89 @@ class NodeLruCacheFixtureWith3Items : public NodeLruCacheFixture {
   Cache cache_{3};
 
   void SetUp() override {
-    cache_.insert("1", "1");
-    cache_.insert("2", "2");
-    cache_.insert("3", "3");
+    cache_.insert("key_1", "value_1");
+    cache_.insert("key_2", "value_2");
+    cache_.insert("key_3", "value_3");
   }
 };
 
-TEST_F(NodeLruCacheFixtureWith3Items, RemoveNonExistingElement) {
+TEST_F(NodeLruCacheFixtureWith3Items, EraseNonExistingElement) {
   // Arrange
 
   // Act
-  cache_.erase("4");
+  cache_.erase("key_4");
 
   // Assert
   EXPECT_EQ(3U, cache_.size());
 }
 
-TEST_F(NodeLruCacheFixtureWith3Items, RemoveOldestElement) {
+TEST_F(NodeLruCacheFixtureWith3Items, EraseOldestElement) {
   // Arrange
 
   // Act
-  cache_.erase("1");
+  cache_.erase("key_1");
   auto it = cache_.rbegin();
 
   // Assert
   EXPECT_EQ(2U, cache_.size());
-  EXPECT_EQ("2", it++->second);
-  EXPECT_EQ("3", it++->second);
+  EXPECT_EQ("value_2", it++->second);
+  EXPECT_EQ("value_3", it++->second);
   EXPECT_EQ(cache_.rend(), it);
 }
 
-TEST_F(NodeLruCacheFixtureWith3Items, RemoveLatestElement) {
+TEST_F(NodeLruCacheFixtureWith3Items, EraseLatestElement) {
   // Arrange
 
   // Act
-  cache_.erase("3");
+  cache_.erase("key_3");
   auto it = cache_.rbegin();
 
   // Assert
   EXPECT_EQ(2U, cache_.size());
-  EXPECT_EQ("1", it++->second);
-  EXPECT_EQ("2", it++->second);
+  EXPECT_EQ("value_1", it++->second);
+  EXPECT_EQ("value_2", it++->second);
   EXPECT_EQ(cache_.rend(), it);
 }
 
-TEST_F(NodeLruCacheFixtureWith3Items, RemoveMiddleElement) {
+TEST_F(NodeLruCacheFixtureWith3Items, EraseMiddleElement) {
   // Arrange
 
   // Act
-  cache_.erase("2");
+  cache_.erase("key_2");
   auto it = cache_.rbegin();
 
   // Assert
   EXPECT_EQ(2U, cache_.size());
-  EXPECT_EQ("1", it++->second);
-  EXPECT_EQ("3", it++->second);
+  EXPECT_EQ("value_1", it++->second);
+  EXPECT_EQ("value_3", it++->second);
   EXPECT_EQ(cache_.rend(), it);
 }
 
-TEST_F(NodeLruCacheFixtureWith3Items, AppendAfterRemoveLatestElement) {
+TEST_F(NodeLruCacheFixtureWith3Items, AppendAfterEraseLatestElement) {
   // Arrange
 
   // Act
-  cache_.erase("3");
-  cache_.insert("4", "4");
+  cache_.erase("key_3");
+  cache_.insert("key_4", "value_4");
   auto it = cache_.rbegin();
 
   // Assert
   EXPECT_EQ(3U, cache_.size());
-  EXPECT_EQ("1", it++->second);
-  EXPECT_EQ("2", it++->second);
-  EXPECT_EQ("4", it++->second);
+  EXPECT_EQ("value_1", it++->second);
+  EXPECT_EQ("value_2", it++->second);
+  EXPECT_EQ("value_4", it++->second);
   EXPECT_EQ(cache_.rend(), it);
+}
+
+TEST_F(NodeLruCacheFixtureWith3Items, OldestTest) {
+  // Arrange
+
+  // Act
+  auto oldest = cache_.oldest();
+
+  // Assert
+  EXPECT_EQ("key_1", oldest.first);
+  EXPECT_EQ("value_1", oldest.second);
 }
 
 }  // namespace

@@ -81,6 +81,7 @@ http_archive(
     strip_prefix = "lz4-1.9.2",
     patches = [
         "//third_party/patches/lz4:lz4frame.h.patch",
+        "//third_party/patches/lz4:lz4frame.c.patch",
         "//third_party/patches/lz4:lz4hc.c.patch",
     ],
     build_file = "//third_party:lz4.BUILD",

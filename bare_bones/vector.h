@@ -1,8 +1,8 @@
 #pragma once
 
-#include <assert.h>
 #include <algorithm>
 #include <bit>
+#include <cassert>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -11,11 +11,22 @@
 
 #include "exception.h"
 #include "memory.h"
+#include "preprocess.h"
 #include "stacktrace.h"
 #include "streams.h"
 #include "type_traits.h"
 
 namespace BareBones {
+
+template <class T>
+concept have_allocated_memory = requires(const T& t) {
+  { t.allocated_memory() };
+};
+
+template <class T>
+concept dereferencable_have_allocated_memory = requires(const T& t) {
+  { t->allocated_memory() };
+};
 
 template <class T>
 class Vector {
@@ -151,6 +162,16 @@ class Vector {
   inline __attribute__((always_inline)) size_t size() const noexcept { return size_; }
 
   inline __attribute__((always_inline)) size_t capacity() const noexcept { return data_.size(); }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept {
+    if constexpr (have_allocated_memory<value_type>) {
+      return data_.allocated_memory() + std::accumulate(begin(), end(), 0, [](size_t memory, const auto& item) { return memory += item.allocated_memory(); });
+    } else if constexpr (dereferencable_have_allocated_memory<value_type>) {
+      return data_.allocated_memory() + std::accumulate(begin(), end(), 0, [](size_t memory, const auto& item) { return memory += item->allocated_memory(); });
+    } else {
+      return data_.allocated_memory();
+    }
+  }
 
   inline __attribute__((always_inline)) void push_back(const T& item) noexcept {
     auto pos = size_;
