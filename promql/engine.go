@@ -1856,7 +1856,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 	panic(fmt.Errorf("unhandled expression of type: %T", expr))
 }
 
-// reuseOrGetFPointSlices reuses the space from previous slice to create new slice if the former has lots of room.
+// reuseOrGetHPointSlices reuses the space from previous slice to create new slice if the former has lots of room.
 // The previous slices capacity is adjusted so when it is re-used from the pool it doesn't overflow into the new one.
 func reuseOrGetHPointSlices(prevSS *Series, numSteps int) (r []HPoint) {
 	if prevSS != nil && cap(prevSS.Histograms)-2*len(prevSS.Histograms) > 0 {
