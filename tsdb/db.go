@@ -1369,6 +1369,13 @@ func (db *DB) compactHead(head *RangeHead) error {
 func (db *DB) compactBlocks() (err error) {
 	// Check for compactions of multiple blocks.
 	for {
+		// If we have a lot of blocks to compact the whole process might take
+		// long enough that we end up with a HEAD block that needs to be written.
+		// Check if that's the case and stop compactions early.
+		if db.head.compactable() {
+			return nil
+		}
+
 		plan, err := db.compactor.Plan(db.dir)
 		if err != nil {
 			return fmt.Errorf("plan compaction: %w", err)
