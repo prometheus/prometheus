@@ -16,6 +16,7 @@
 #include "bit.h"
 #include "exception.h"
 #include "memory.h"
+#include "preprocess.h"
 #include "streams.h"
 #include "type_traits.h"
 
@@ -37,6 +38,8 @@ class BitSequence {
 
  public:
   inline __attribute__((always_inline)) size_t size() const noexcept { return size_; }
+
+  PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return data_.allocated_memory(); }
 
   inline __attribute__((always_inline)) bool empty() const noexcept { return !size_; }
 

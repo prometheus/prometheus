@@ -9,3 +9,15 @@
  #else
  #  define LZ4FLIB_API
  #endif
+
+--- lib/lz4frame.h
++++ lib/lz4frame.h
+@@ -467,7 +467,7 @@ LZ4FLIB_API size_t LZ4F_decompress(LZ4F_dctx* dctx,
+  *  and start a new one using same context resources. */
+ LZ4FLIB_API void LZ4F_resetDecompressionContext(LZ4F_dctx* dctx);   /* always successful */
+
+-
++size_t LZ4F_allocated_memory(LZ4F_dctx* dctx);
+
+ #if defined (__cplusplus)
+ }

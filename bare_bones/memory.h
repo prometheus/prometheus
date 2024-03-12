@@ -138,6 +138,8 @@ class Memory {
   inline __attribute__((always_inline)) bool empty() const noexcept { return !size_; }
 
   inline __attribute__((always_inline)) size_t size() const noexcept { return size_; }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return size_ * sizeof(T); }
 };
 
 template <class T>

@@ -330,7 +330,7 @@ class EncodedSequence {
     return 1 + sizeof(Encoding::id<E>::value) + data_.save_size();
   }
 
-  [[nodiscard]] uint32_t allocated_memory() const noexcept { return data_.allocated_memory(); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return data_.allocated_memory(); }
 
   template <OutputStream S>
   friend S& operator<<(S& out, EncodedSequence& seq) {

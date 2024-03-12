@@ -317,6 +317,10 @@ class LabelNameSet {
 
       return std::min(this->symbols_table.remainder_size(), remainder_for_symbols);
     }
+
+    [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept {
+      return symbols_table.allocated_memory() + symbols_ids_sequences.allocated_memory();
+    }
   };
 
   inline __attribute__((always_inline)) LabelNameSet() noexcept = default;
@@ -381,20 +385,18 @@ class LabelSet {
   uint32_t pos_;
 
  public:
-  using symbols_table_type = SymbolsTableType;
-  using symbols_tables_type = BareBones::Vector<std::unique_ptr<symbols_table_type>>;
+  using symbols_tables_type = BareBones::Vector<std::unique_ptr<SymbolsTableType>>;
   using symbols_ids_sequences_type = BareBones::Vector<uint8_t>;
-  using label_name_sets_table_type = LabelNameSetsTableType;
 
   // NOLINTNEXTLINE(readability-identifier-naming)
   struct data_type {
    private:
     class Checkpoint {
       using SerializationMode = BareBones::SnugComposite::SerializationMode;
-      using symbols_checkpoints_type = BareBones::Vector<typename symbols_table_type::checkpoint_type>;
+      using symbols_checkpoints_type = BareBones::Vector<typename SymbolsTableType::checkpoint_type>;
 
       uint32_t size_;
-      typename label_name_sets_table_type::checkpoint_type label_name_sets_table_checkpoint_;
+      typename LabelNameSetsTableType::checkpoint_type label_name_sets_table_checkpoint_;
       symbols_checkpoints_type symbols_tables_checkpoints_;
 
      public:
@@ -407,11 +409,11 @@ class LabelSet {
 
       inline __attribute__((always_inline)) uint32_t size() const noexcept { return size_; }
 
-      inline __attribute__((always_inline)) typename label_name_sets_table_type::checkpoint_type const label_name_sets() const noexcept {
+      inline __attribute__((always_inline)) typename LabelNameSetsTableType::checkpoint_type const label_name_sets() const noexcept {
         return label_name_sets_table_checkpoint_;
       }
 
-      inline __attribute__((always_inline)) const BareBones::Vector<typename symbols_table_type::checkpoint_type> symbols() const noexcept {
+      inline __attribute__((always_inline)) const BareBones::Vector<typename SymbolsTableType::checkpoint_type> symbols() const noexcept {
         return symbols_tables_checkpoints_;
       }
 
@@ -523,7 +525,7 @@ class LabelSet {
         // symbols tables
         if (from != nullptr) {
           for (uint32_t i = 0; i < symbols_tables_checkpoints_.size(); ++i) {
-            const typename symbols_table_type::checkpoint_type* from_checkpoint = nullptr;
+            const typename SymbolsTableType::checkpoint_type* from_checkpoint = nullptr;
             if (i < from->symbols_tables_checkpoints_.size()) {
               from_checkpoint = &from->symbols_tables_checkpoints_[i];
             }
@@ -552,7 +554,7 @@ class LabelSet {
    public:
     symbols_tables_type symbols_tables;
     symbols_ids_sequences_type symbols_ids_sequences;
-    label_name_sets_table_type label_name_sets_table;
+    LabelNameSetsTableType label_name_sets_table;
     data_type() noexcept = default;
     data_type(const data_type&) = delete;
     data_type(data_type&&) = delete;
@@ -627,7 +629,7 @@ class LabelSet {
 
       // read tables
       auto original_symbols_tables_size = symbols_tables.size();
-      BareBones::Vector<std::pair<uint32_t, typename LabelSet::symbols_table_type::checkpoint_type>> symbols_tables_checkpoints;
+      BareBones::Vector<std::pair<uint32_t, typename SymbolsTableType::checkpoint_type>> symbols_tables_checkpoints;
       auto sg3 = std::experimental::scope_fail([&]() {
         for (const auto& [id, checkpoint] : symbols_tables_checkpoints) {
           symbols_tables[id]->rollback(checkpoint);
@@ -651,7 +653,7 @@ class LabelSet {
 
           symbols_tables.reserve(size_will_be_at_least);
           for (auto j = symbols_tables.size(); j != size_will_be_at_least; ++j) {
-            symbols_tables.emplace_back(std::make_unique<symbols_table_type>());
+            symbols_tables.emplace_back(std::make_unique<SymbolsTableType>());
           }
 
           // just to be 100% sure
@@ -684,6 +686,10 @@ class LabelSet {
       }
       return std::min({remainder_for_label_sets_table, remainder_for_symbols_ids_sequences, remainder_for_symbol_table});
     }
+
+    [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept {
+      return symbols_tables.allocated_memory() + symbols_ids_sequences.allocated_memory() + label_name_sets_table.allocated_memory();
+    }
   };
 
   inline __attribute__((always_inline)) LabelSet() noexcept = default;
@@ -696,7 +702,7 @@ class LabelSet {
 
     // resize, if there are new symbols (in lns table)
     for (auto i = data.symbols_tables.size(); i < data.label_name_sets_table.data().symbols_table.size(); ++i) {
-      data.symbols_tables.emplace_back(new symbols_table_type());
+      data.symbols_tables.emplace_back(new SymbolsTableType());
     }
     assert(data.symbols_tables.size() == data.label_name_sets_table.data().symbols_table.size());
 
@@ -711,7 +717,7 @@ class LabelSet {
 
   // NOLINTNEXTLINE(readability-identifier-naming)
   class composite_type {
-    using label_name_set_type = typename label_name_sets_table_type::value_type;
+    using label_name_set_type = typename LabelNameSetsTableType::value_type;
     using values_iterator_type = BareBones::StreamVByte::DecodeIterator<BareBones::StreamVByte::Codec1234, symbols_ids_sequences_type::const_iterator>;
     using values_iterator_sentinel_type = BareBones::StreamVByte::DecodeIteratorSentinel;
 

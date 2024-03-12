@@ -179,6 +179,8 @@ class basic_istream : public std::istream {
     clear();
   }
 
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return buffer_.allocated_memory(); }
+
  private:
   class input_buffer : public std::streambuf {
    public:
@@ -220,6 +222,8 @@ class basic_istream : public std::istream {
       stream_ = stream;
       set_pointers(0);
     }
+
+    [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return LZ4F_allocated_memory(ctx_); }
 
    private:
     std::array<char, DecompressedBufferSize> decompressed_buffer_;

@@ -242,6 +242,8 @@ class DecodingTable {
 
   inline __attribute__((always_inline)) uint32_t size() const noexcept { return items_.size(); }
 
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return data_.allocated_memory() + items_.allocated_memory(); }
+
   inline __attribute__((always_inline)) const data_type& data() const noexcept { return data_; }
 
   inline __attribute__((always_inline)) const auto& items() const noexcept { return items_; }
@@ -518,6 +520,10 @@ class EncodingBimap : public DecodingTable<Filament> {
     }
 
     Base::rollback(s);
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept {
+    return DecodingTable<Filament>::allocated_memory() + set_.capacity() * sizeof(typename Base::Proxy);
   }
 };
 

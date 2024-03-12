@@ -321,16 +321,22 @@ class LruCacheImpl {
     return value;
   }
 
-  void erase(const Key& key) {
+  bool erase(const Key& key) {
     IndexType index = index_of(key);
     if (index == INVALID_INDEX) {
-      return;
+      return false;
     }
 
     node_type& node = value_list_[index];
     map().erase(node.key());
     dropped_entry_callback_(node.key(), std::move(node.value()));
     value_list_.erase(index);
+    return true;
+  }
+
+  std::pair<const Key&, const Value&> oldest() {
+    auto& oldest = value_list_.oldest();
+    return {oldest.key(), oldest.value()};
   }
 
  private:
