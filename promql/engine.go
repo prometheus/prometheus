@@ -115,6 +115,12 @@ func (e ErrStorage) Error() string {
 	return e.Err.Error()
 }
 
+// QueryEngine defines the interface for the *promql.Engine, so it can be replaced, wrapped or mocked.
+type QueryEngine interface {
+	NewInstantQuery(ctx context.Context, q storage.Queryable, opts QueryOpts, qs string, ts time.Time) (Query, error)
+	NewRangeQuery(ctx context.Context, q storage.Queryable, opts QueryOpts, qs string, start, end time.Time, interval time.Duration) (Query, error)
+}
+
 // QueryLogger is an interface that can be used to log all the queries logged
 // by the engine.
 type QueryLogger interface {
