@@ -155,19 +155,18 @@ message Histogram {
     double count_float = 2;
   }
   double sum = 3; // Sum of observations in the histogram.
+
   // The schema defines the bucket schema. Currently, valid numbers
-  // are -53 and numbers in range of -4 <= n <= 8.
+  // are -53 and numbers in range of -4 <= n <= 8. More valid numbers might be
+  // added in future for new bucketing layouts.
   //
-  // The schema equal to -54 (0xCB in hex) means custom bounds a
+  // The schema equal to -53 means custom buckets. See
+  // custom_values field description for more details.
   //
-  // They are all for base-2 bucket schemas, where 1
+  // Values between -4 and 8 represent base-2 bucket schema, where 1
   // is a bucket boundary in each case, and then each power of two is
-  // divided into 2^n logarithmic buckets. Or in other words, each
-  // bucket boundary is the previous boundary times 2^(2^-n). In the
-  // future, more bucket schemas may be added using numbers < -4 or >
-  // 8.
-  // TODO(bwplotka): Explain schema semantics for custom_bounds (custom histograms)
-  // once designed.
+  // divided into 2^n (n is schema value) logarithmic buckets. Or in other words,
+  // each bucket boundary is the previous boundary times 2^(2^-n).
   sint32 schema             = 4;
   double zero_threshold     = 5; // Breadth of the zero bucket.
   oneof zero_count { // Count in zero bucket.
@@ -184,9 +183,10 @@ message Histogram {
   repeated double negative_counts    = 10; // Absolute count of each bucket.
 
   // Positive Buckets.
-  // In case of "custom_bounds" use, the positive buckets are interpreted as follows:
-  // * The span offset+length points to an the index of the custom_bound array
-  // or +Inf if pointing to outside the array.
+  //
+  // In case of custom buckets (-53 schema value) the positive buckets are interpreted as follows:
+  // * The span offset+length points to an the index of the custom_values array
+  // or +Inf if pointing to the len or array.
   // * The counts and deltas have the same meaning as for exponential histograms.
   repeated BucketSpan positive_spans = 11 [(gogoproto.nullable) = false];
   // Use either "positive_deltas" or "positive_counts", the former for
@@ -201,10 +201,12 @@ message Histogram {
   // for conversion from/to time.Time to Prometheus timestamp.
   int64 timestamp = 15;
 
-  // custom_bounds specify monotonically increasing upper inclusive boundary for
-  // the bucket counts with arbitrary widths for this histogram. In other words,
-  // custom_bounds represents custom, explicit bucketing that could have been
-  // converted from classic histograms.
+  // custom_values is an additional field used by non-exponential bucketing layouts.
+  //
+  // For custom buckets (-53 schema value) custom_values specify monotonically
+  // increasing upper inclusive boundary for the bucket counts with arbitrary
+  // widths for this histogram. In other words, custom_values represents custom,
+  // explicit bucketing that could have been converted from the classic histograms.
   //
   // Those bounds are then referenced by spans in positive_spans with corresponding positive
   // counts of deltas (refer to positive_spans for more details). This way we can
@@ -214,7 +216,7 @@ message Histogram {
   // Note that for custom bounds, even negative observations are placed in the positive
   // counts to simplify the implementation and avoid ambiguity of where to place
   // an underflow bucket (for example (-2, 1]. Therefore negative buckets and
-  // the zero bucket are unused, if scheme indicates custom bucketing.
+  // the zero bucket are unused, if schema indicates custom bucketing.
   //
   // For each upper boundary the previous boundary represent the lower exclusive
   // boundary for that bucket. The first element is the upper inclusive boundary
@@ -226,7 +228,7 @@ message Histogram {
   //
   // The last element is a lower bound for the implicit +Inf bucket (the overflow
   // bucket).
-  repeated double custom_bounds = 16;
+  repeated double custom_values = 16;
 }
 
 // A BucketSpan defines a number of consecutive buckets with their
