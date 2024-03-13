@@ -208,6 +208,10 @@ common-tarball: promu
 	@echo ">> building release tarball"
 	$(PROMU) tarball --prefix $(PREFIX) $(BIN_DIR)
 
+.PHONY: common-docker-repo-name
+common-docker-repo-name:
+	@echo "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)"
+
 .PHONY: common-docker $(BUILD_DOCKER_ARCHS)
 common-docker: $(BUILD_DOCKER_ARCHS)
 $(BUILD_DOCKER_ARCHS): common-docker-%:
