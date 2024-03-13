@@ -78,24 +78,24 @@ type Parser interface {
 
 // New returns a new parser of the byte slice.
 //
-// This function always returns a valid parser, but might additionally
-// return an error if the content type cannot be parsed.
-func New(b []byte, contentType string, parseClassicHistograms bool, st *labels.SymbolTable) (Parser, error) {
+// This function always returns a valid parser and the identified content-type,
+// but might additionally return an error if the content type cannot be parsed.
+func New(b []byte, contentType string, parseClassicHistograms bool, st *labels.SymbolTable) (Parser, string, error) {
 	if contentType == "" {
-		return NewPromParser(b, st), nil
+		return NewPromParser(b, st), "", nil
 	}
 
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err != nil {
-		return NewPromParser(b, st), err
+		return NewPromParser(b, st), "", err
 	}
 	switch mediaType {
 	case "application/openmetrics-text":
-		return NewOpenMetricsParser(b, st), nil
+		return NewOpenMetricsParser(b, st), mediaType, nil
 	case "application/vnd.google.protobuf":
-		return NewProtobufParser(b, parseClassicHistograms, st), nil
+		return NewProtobufParser(b, parseClassicHistograms, st), mediaType, nil
 	default:
-		return NewPromParser(b, st), nil
+		return NewPromParser(b, st), mediaType, nil
 	}
 }
 
