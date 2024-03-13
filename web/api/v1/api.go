@@ -882,6 +882,9 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 	warnings := set.Warnings()
 
 	for set.Next() {
+		if err := ctx.Err(); err != nil {
+			return apiFuncResult{nil, contextErr(err), nil, nil}
+		}
 		metrics = append(metrics, set.At().Labels())
 
 		if len(metrics) >= limit {
@@ -894,6 +897,17 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 	}
 
 	return apiFuncResult{metrics, nil, warnings, closer}
+}
+
+func contextErr(err error) *apiError {
+	switch {
+	case errors.Is(err, context.Canceled):
+		return &apiError{errorCanceled, err}
+	case errors.Is(err, context.DeadlineExceeded):
+		return &apiError{errorTimeout, err}
+	default:
+		return &apiError{errorExec, err}
+	}
 }
 
 func (api *API) dropSeries(_ *http.Request) apiFuncResult {
