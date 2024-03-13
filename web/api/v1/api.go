@@ -883,7 +883,7 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 
 	for set.Next() {
 		if err := ctx.Err(); err != nil {
-			return apiFuncResult{nil, contextErr(err), nil, nil}
+			return apiFuncResult{nil, contextErr(err), warnings, closer}
 		}
 		metrics = append(metrics, set.At().Labels())
 
