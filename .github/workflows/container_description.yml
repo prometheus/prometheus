@@ -5,7 +5,7 @@ on:
     paths:
       - "README.md"
       - ".github/workflows/container_description.yml"
-  branches: [ main, master ]
+    branches: [ main, master ]
 
 permissions:
   contents: read
