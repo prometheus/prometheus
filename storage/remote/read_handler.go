@@ -202,34 +202,40 @@ func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.Re
 				return err
 			}
 
-			querier, err := h.queryable.ChunkQuerier(query.StartTimestampMs, query.EndTimestampMs)
-			if err != nil {
-				return err
-			}
-			defer func() {
-				if err := querier.Close(); err != nil {
-					level.Warn(h.logger).Log("msg", "Error on chunk querier close", "err", err.Error())
+			chunks := func() storage.ChunkSeriesSet {
+				querier, err := h.queryable.ChunkQuerier(query.StartTimestampMs, query.EndTimestampMs)
+				if err != nil {
+					return storage.ErrChunkSeriesSet(err)
 				}
-			}()
+				defer func() {
+					if err := querier.Close(); err != nil {
+						level.Warn(h.logger).Log("msg", "Error on chunk querier close", "err", err.Error())
+					}
+				}()
 
-			var hints *storage.SelectHints
-			if query.Hints != nil {
-				hints = &storage.SelectHints{
-					Start:    query.Hints.StartMs,
-					End:      query.Hints.EndMs,
-					Step:     query.Hints.StepMs,
-					Func:     query.Hints.Func,
-					Grouping: query.Hints.Grouping,
-					Range:    query.Hints.RangeMs,
-					By:       query.Hints.By,
+				var hints *storage.SelectHints
+				if query.Hints != nil {
+					hints = &storage.SelectHints{
+						Start:    query.Hints.StartMs,
+						End:      query.Hints.EndMs,
+						Step:     query.Hints.StepMs,
+						Func:     query.Hints.Func,
+						Grouping: query.Hints.Grouping,
+						Range:    query.Hints.RangeMs,
+						By:       query.Hints.By,
+					}
 				}
+				return querier.Select(ctx, true, hints, filteredMatchers...)
+			}()
+			if err := chunks.Err(); err != nil {
+				return err
 			}
 
 			ws, err := StreamChunkedReadResponses(
 				NewChunkedWriter(w, f),
 				int64(i),
 				// The streaming API has to provide the series sorted.
-				querier.Select(ctx, true, hints, filteredMatchers...),
+				chunks,
 				sortedExternalLabels,
 				h.remoteReadMaxBytesInFrame,
 				h.marshalPool,
