@@ -1,4 +1,13 @@
-import { Alert, Badge, Card, Group, Table, Text, Tooltip } from "@mantine/core";
+import {
+  Alert,
+  Badge,
+  Card,
+  Group,
+  Stack,
+  Table,
+  Text,
+  Tooltip,
+} from "@mantine/core";
 // import { useQuery } from "react-query";
 import { formatRelative, humanizeDuration, now } from "../lib/formatTime";
 import {
@@ -57,7 +66,7 @@ export default function RulesPage() {
                   styles={{ label: { textTransform: "none" } }}
                   leftSection={<IconRefresh size={12} />}
                 >
-                  {formatRelative(g.lastEvaluation, now())}
+                  last run {formatRelative(g.lastEvaluation, now())}
                 </Badge>
               </Tooltip>
               <Tooltip label="Duration of last group evaluation" withArrow>
@@ -67,17 +76,17 @@ export default function RulesPage() {
                   styles={{ label: { textTransform: "none" } }}
                   leftSection={<IconHourglass size={12} />}
                 >
-                  {humanizeDuration(parseFloat(g.evaluationTime) * 1000)}
+                  took {humanizeDuration(parseFloat(g.evaluationTime) * 1000)}
                 </Badge>
               </Tooltip>
               <Tooltip label="Group evaluation interval" withArrow>
                 <Badge
-                  variant="light"
+                  variant="transparent"
                   className={badgeClasses.statsBadge}
                   styles={{ label: { textTransform: "none" } }}
                   leftSection={<IconRepeat size={12} />}
                 >
-                  {humanizeDuration(parseFloat(g.interval) * 1000)}
+                  every {humanizeDuration(parseFloat(g.interval) * 1000)}{" "}
                 </Badge>
               </Tooltip>
             </Group>
