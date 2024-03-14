@@ -19,6 +19,7 @@ George Krajcsovits (<gyorgy.krajcsovits@grafana.com> / @krajorama)
     * `module`: Augustin Husson (<husson.augustin@gmail.com> @nexucis)
 * `Makefile` and related build configuration: Simon Pasquier (<pasquier.simon@gmail.com> / @simonpasquier), Ben Kochie (<superq@gmail.com> / @SuperQ)
 
+Bryan Boreham (<bjboreham@gmail.com> / @bboreham) and Ayoub Mrini (<ayoubmrini424@gmail.com> / @machine424) are general maintainers.
 
 For the sake of brevity, not all subtrees are explicitly listed. Due to the
 size of this repository, the natural changes in focus of maintainers over time,
