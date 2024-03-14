@@ -14,10 +14,10 @@ build:
         all:
             - netgo
             - builtinassets
-            - stringlabels
+            - dedupelabels
         windows:
             - builtinassets
-            - stringlabels
+            - dedupelabels
     ldflags: |
         -X github.com/prometheus/common/version.Version={{.Version}}
         -X github.com/prometheus/common/version.Revision={{.Revision}}
