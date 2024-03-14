@@ -536,7 +536,7 @@ type Histogram struct {
 	//
 	// In case of custom buckets (-53 schema value) the positive buckets are interpreted as follows:
 	// * The span offset+length points to an the index of the custom_values array
-	// or +Inf if pointing to the len or array.
+	// or +Inf if pointing to the len of the array.
 	// * The counts and deltas have the same meaning as for exponential histograms.
 	PositiveSpans []BucketSpan `protobuf:"bytes,11,rep,name=positive_spans,json=positiveSpans,proto3" json:"positive_spans"`
 	// Use either "positive_deltas" or "positive_counts", the former for
@@ -552,7 +552,7 @@ type Histogram struct {
 	// custom_values is an additional field used by non-exponential bucketing layouts.
 	//
 	// For custom buckets (-53 schema value) custom_values specify monotonically
-	// increasing upper inclusive boundary for the bucket counts with arbitrary
+	// increasing upper inclusive boundaries for the bucket counts with arbitrary
 	// widths for this histogram. In other words, custom_values represents custom,
 	// explicit bucketing that could have been converted from the classic histograms.
 	//
@@ -563,8 +563,8 @@ type Histogram struct {
 	//
 	// Note that for custom bounds, even negative observations are placed in the positive
 	// counts to simplify the implementation and avoid ambiguity of where to place
-	// an underflow bucket (for example (-2, 1]. Therefore negative buckets and
-	// the zero bucket are unused, if schema indicates custom bucketing.
+	// an underflow bucket, e.g. (-2, 1]. Therefore negative buckets and
+	// the zero bucket are unused, if the schema indicates custom bucketing.
 	//
 	// For each upper boundary the previous boundary represent the lower exclusive
 	// boundary for that bucket. The first element is the upper inclusive boundary
@@ -574,8 +574,8 @@ type Histogram struct {
 	// observations, but in practice, native histogram rendering will show both with
 	// or without first upper boundary 0 and no negative counts as the same case.
 	//
-	// The last element is a lower bound for the implicit +Inf bucket (the overflow
-	// bucket).
+	// The last element is not only the upper inclusive bound of the last regular
+	// bucket, but implicitly the lower exclusive bound of the +Inf bucket.
 	CustomValues         []float64 `protobuf:"fixed64,16,rep,packed,name=custom_values,json=customValues,proto3" json:"custom_values,omitempty"`
 	XXX_NoUnkeyedLiteral struct{}  `json:"-"`
 	XXX_unrecognized     []byte    `json:"-"`
