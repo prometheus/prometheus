@@ -43,7 +43,8 @@
 
 .healthUnknown {
   background-color: light-dark(
-    var(--mantine-color-gray-1),
-    var(--mantine-color-gray-9)
+    var(--mantine-color-gray-2),
+    var(--mantine-color-gray-7)
   );
+  color: light-dark(var(--mantine-color-gray-8), var(--mantine-color-gray-4));
 }
