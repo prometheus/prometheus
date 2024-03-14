@@ -7,6 +7,7 @@ import PrometheusLogo from "./images/prometheus-logo.svg";
 
 import {
   ActionIcon,
+  Affix,
   AppShell,
   Box,
   Burger,
@@ -16,12 +17,14 @@ import {
   Menu,
   Skeleton,
   Text,
+  Transition,
   createTheme,
   rem,
 } from "@mantine/core";
-import { useDisclosure } from "@mantine/hooks";
+import { useDisclosure, useWindowScroll } from "@mantine/hooks";
 import {
   IconAdjustments,
+  IconArrowUp,
   IconBellFilled,
   IconChevronDown,
   IconChevronRight,
@@ -169,6 +172,7 @@ const navLinkIconSize = 15;
 const navLinkXPadding = "md";
 
 function App() {
+  const [scroll, scrollTo] = useWindowScroll();
   const [opened, { toggle }] = useDisclosure();
   const { agentMode } = useContext(SettingsContext);
 
@@ -373,6 +377,23 @@ function App() {
                   </Routes>
                 </Suspense>
               </ErrorBoundary>
+              <Affix position={{ bottom: 20, right: 20 }}>
+                <Transition transition="slide-up" mounted={scroll.y > 0}>
+                  {(transitionStyles) => (
+                    <Button
+                      leftSection={
+                        <IconArrowUp
+                          style={{ width: rem(16), height: rem(16) }}
+                        />
+                      }
+                      style={transitionStyles}
+                      onClick={() => scrollTo({ y: 0 })}
+                    >
+                      Scroll to top
+                    </Button>
+                  )}
+                </Transition>
+              </Affix>
             </AppShell.Main>
           </AppShell>
           {/* <ReactQueryDevtools initialIsOpen={false} /> */}
