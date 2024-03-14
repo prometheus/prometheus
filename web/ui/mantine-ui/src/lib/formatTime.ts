@@ -83,30 +83,33 @@ export function parseTime(timeText: string): number {
 export const now = (): number => dayjs().valueOf();
 
 export const humanizeDuration = (milliseconds: number): string => {
-  const sign = milliseconds < 0 ? "-" : "";
-  const unsignedMillis = milliseconds < 0 ? -1 * milliseconds : milliseconds;
-  const duration = dayjs.duration(unsignedMillis, "ms");
+  if (milliseconds === 0) {
+    return "0s";
+  }
+
+  const duration = dayjs.duration(Math.abs(milliseconds), "ms");
   const ms = Math.floor(duration.milliseconds());
   const s = Math.floor(duration.seconds());
   const m = Math.floor(duration.minutes());
   const h = Math.floor(duration.hours());
   const d = Math.floor(duration.asDays());
+  const parts: string[] = [];
   if (d !== 0) {
-    return `${sign}${d}d ${h}h ${m}m ${s}s`;
+    parts.push(`${d}d`);
   }
   if (h !== 0) {
-    return `${sign}${h}h ${m}m ${s}s`;
+    parts.push(`${h}h`);
   }
   if (m !== 0) {
-    return `${sign}${m}m ${s}s`;
+    parts.push(`${m}m`);
   }
   if (s !== 0) {
-    return `${sign}${s}.${ms}s`;
+    parts.push(`${s}s`);
   }
-  if (unsignedMillis > 0) {
-    return `${sign}${unsignedMillis.toFixed(3)}ms`;
+  if (ms !== 0) {
+    parts.push(`${ms}ms`);
   }
-  return "0s";
+  return (milliseconds < 0 ? "-" : "") + parts.join(" ");
 };
 
 export const formatRelative = (
