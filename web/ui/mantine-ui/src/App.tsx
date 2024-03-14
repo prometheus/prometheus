@@ -162,10 +162,7 @@ const getPathPrefix = (path: string) => {
   }
 
   const pagePath = allPages.find((p) => path.endsWith(p.path))?.path;
-  if (pagePath === undefined) {
-    throw new Error(`Could not find base path for ${path}`);
-  }
-  return path.slice(0, path.length - pagePath.length);
+  return path.slice(0, path.length - (pagePath || "").length);
 };
 
 const navLinkXPadding = "md";
