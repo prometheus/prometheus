@@ -1010,10 +1010,11 @@ func setupRemote(s storage.Storage) *httptest.Server {
 			var hints *storage.SelectHints
 			if query.Hints != nil {
 				hints = &storage.SelectHints{
-					Start: query.Hints.StartMs,
-					End:   query.Hints.EndMs,
-					Step:  query.Hints.StepMs,
-					Func:  query.Hints.Func,
+					Start:         query.Hints.StartMs,
+					End:           query.Hints.EndMs,
+					Step:          query.Hints.StepMs,
+					Func:          query.Hints.Func,
+					LookbackDelta: query.Hints.LookbackDeltaMs,
 				}
 			}
 
