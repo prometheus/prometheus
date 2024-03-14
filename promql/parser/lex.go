@@ -897,7 +897,7 @@ func (l *Lexer) scanNumber() bool {
 		l.accept("+-")
 		l.acceptRun("0123456789")
 	}
-	// empty string is not a valid number
+	// Empty string is not a valid number.
 	if l.pos == initialPos {
 		return false
 	}

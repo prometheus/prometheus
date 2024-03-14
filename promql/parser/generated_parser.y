@@ -425,7 +425,7 @@ offset_expr: expr OFFSET number_duration_literal
                             $$ = $1
                         }
                 | expr OFFSET error
-                        { yylex.(*parser).unexpected("offset", "integer or duration"); $$ = $1 }
+                        { yylex.(*parser).unexpected("offset", "number or duration"); $$ = $1 }
                 ;
 /*
  * @ modifiers.
@@ -501,11 +501,11 @@ subquery_expr   : expr LEFT_BRACKET number_duration_literal COLON number_duratio
                 | expr LEFT_BRACKET number_duration_literal COLON number_duration_literal error
                         { yylex.(*parser).unexpected("subquery selector", "\"]\""); $$ = $1 }
                 | expr LEFT_BRACKET number_duration_literal COLON error
-                        { yylex.(*parser).unexpected("subquery selector", "number/duration or \"]\""); $$ = $1 }
+                        { yylex.(*parser).unexpected("subquery selector", "number or duration or \"]\""); $$ = $1 }
                 | expr LEFT_BRACKET number_duration_literal error
                         { yylex.(*parser).unexpected("subquery or range", "\":\" or \"]\""); $$ = $1 }
                 | expr LEFT_BRACKET error
-		        { yylex.(*parser).unexpected("subquery selector", "number/duration"); $$ = $1 }
+		        { yylex.(*parser).unexpected("subquery selector", "number or duration"); $$ = $1 }
                 ;
 
 /*
@@ -894,7 +894,21 @@ number_duration_literal  : NUMBER
                         }
                 ;
 
-number          : NUMBER { $$ = yylex.(*parser).number($1.Val) } ;
+number          : NUMBER
+                {
+		  $$ = yylex.(*parser).number($1.Val)
+		}
+                | DURATION
+		{
+		  var err error
+		  var dur time.Duration
+		  dur, err = parseDuration($1.Val)
+		  if err != nil {
+		      yylex.(*parser).addParseErr($1.PositionRange(), err)
+		  }
+		  $$ = dur.Seconds()
+		}
+                ;
 
 signed_number   : ADD number { $$ = $2 }
                 | SUB number { $$ = -$2 }
