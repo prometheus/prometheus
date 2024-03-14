@@ -32,7 +32,7 @@ jobs:
 
   PushQuayIoReadme:
     runs-on: ubuntu-latest
-    name: Push README to Docker Hub
+    name: Push README to quay.io
     steps:
       - name: git checkout
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
