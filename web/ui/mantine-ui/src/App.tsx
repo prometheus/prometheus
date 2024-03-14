@@ -191,7 +191,7 @@ function App() {
         </Button>
       ))}
 
-      <Menu shadow="md" width={230}>
+      <Menu shadow="md" width={240}>
         <Routes>
           {allStatusPages.map((p) => (
             <Route
