@@ -61,6 +61,7 @@ import {
 } from "@tabler/icons-react";
 import { useAPIQuery } from "../../api/api";
 import { notifications } from "@mantine/notifications";
+import { useAppSelector } from "../../state/hooks";
 
 const promqlExtension = new PromQLExtension();
 
@@ -120,6 +121,12 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
   removePanel,
 }) => {
   const theme = useComputedColorScheme();
+  const {
+    pathPrefix,
+    enableAutocomplete,
+    enableSyntaxHighlighting,
+    enableLinter,
+  } = useAppSelector((state) => state.settings);
   const [expr, setExpr] = useState(initialExpr);
   useEffect(() => {
     setExpr(initialExpr);
@@ -159,11 +166,6 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
     }
   }, [formatResult, formatError]);
 
-  // TODO: make dynamic:
-  const enableAutocomplete = true;
-  const enableLinter = true;
-  const pathPrefix = "";
-  // const metricNames = ...
   const queryHistory = [] as string[];
 
   // (Re)initialize editor based on settings / setting changes.
@@ -183,7 +185,7 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
           queryHistory
         ),
       });
-  }, [metricNames, enableAutocomplete, enableLinter, queryHistory]); // TODO: Make this depend on external settings changes, maybe use dynamic config compartment again.
+  }, [pathPrefix, metricNames, enableAutocomplete, enableLinter, queryHistory]); // TODO: Make this depend on external settings changes, maybe use dynamic config compartment again.
 
   return (
     <Group align="flex-start" wrap="nowrap" gap="xs">
@@ -262,9 +264,11 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
             ...lintKeymap,
           ]),
           placeholder("Enter expression (press Shift+Enter for newlines)"),
-          syntaxHighlighting(
-            theme === "light" ? promqlHighlighter : darkPromqlHighlighter
-          ),
+          enableSyntaxHighlighting
+            ? syntaxHighlighting(
+                theme === "light" ? promqlHighlighter : darkPromqlHighlighter
+              )
+            : [],
           promqlExtension.asExtension(),
           theme === "light" ? lightTheme : darkTheme,
           keymap.of([
