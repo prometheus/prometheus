@@ -186,7 +186,7 @@ message Histogram {
   //
   // In case of custom buckets (-53 schema value) the positive buckets are interpreted as follows:
   // * The span offset+length points to an the index of the custom_values array
-  // or +Inf if pointing to the len or array.
+  // or +Inf if pointing to the len of array.
   // * The counts and deltas have the same meaning as for exponential histograms.
   repeated BucketSpan positive_spans = 11 [(gogoproto.nullable) = false];
   // Use either "positive_deltas" or "positive_counts", the former for
