@@ -68,17 +68,19 @@ import { updateSettings } from "./state/settingsSlice";
 
 const queryClient = new QueryClient();
 
+const navIconStyle = { width: rem(15), height: rem(15) };
+
 const mainNavPages = [
   {
     title: "Query",
     path: "/query",
-    icon: <IconDatabaseSearch style={{ width: rem(14), height: rem(14) }} />,
+    icon: <IconDatabaseSearch style={navIconStyle} />,
     element: <QueryPage />,
   },
   {
     title: "Alerts",
     path: "/alerts",
-    icon: <IconBellFilled style={{ width: rem(14), height: rem(14) }} />,
+    icon: <IconBellFilled style={navIconStyle} />,
     element: <AlertsPage />,
   },
 ];
@@ -87,21 +89,19 @@ const monitoringStatusPages = [
   {
     title: "Targets",
     path: "/targets",
-    icon: <IconHeartRateMonitor style={{ width: rem(14), height: rem(14) }} />,
+    icon: <IconHeartRateMonitor style={navIconStyle} />,
     element: <TargetsPage />,
   },
   {
     title: "Rules",
     path: "/rules",
-    icon: <IconTable style={{ width: rem(14), height: rem(14) }} />,
+    icon: <IconTable style={navIconStyle} />,
     element: <RulesPage />,
   },
   {
     title: "Service discovery",
     path: "/service-discovery",
-    icon: (
-      <IconCloudDataConnection style={{ width: rem(14), height: rem(14) }} />
-    ),
+    icon: <IconCloudDataConnection style={navIconStyle} />,
     element: <ServiceDiscoveryPage />,
   },
 ];
@@ -110,25 +110,25 @@ const serverStatusPages = [
   {
     title: "Runtime & build information",
     path: "/status",
-    icon: <IconInfoCircle style={{ width: rem(14), height: rem(14) }} />,
+    icon: <IconInfoCircle style={navIconStyle} />,
     element: <StatusPage />,
   },
   {
     title: "TSDB status",
     path: "/tsdb-status",
-    icon: <IconDatabase style={{ width: rem(14), height: rem(14) }} />,
+    icon: <IconDatabase style={navIconStyle} />,
     element: <TSDBStatusPage />,
   },
   {
     title: "Command-line flags",
     path: "/flags",
-    icon: <IconFlag style={{ width: rem(14), height: rem(14) }} />,
+    icon: <IconFlag style={navIconStyle} />,
     element: <FlagsPage />,
   },
   {
     title: "Configuration",
     path: "/config",
-    icon: <IconServerCog style={{ width: rem(14), height: rem(14) }} />,
+    icon: <IconServerCog style={navIconStyle} />,
     element: <ConfigPage />,
   },
 ];
@@ -168,7 +168,6 @@ const getPathPrefix = (path: string) => {
   return path.slice(0, path.length - pagePath.length);
 };
 
-const navLinkIconSize = 15;
 const navLinkXPadding = "md";
 
 function App() {
@@ -208,10 +207,10 @@ function App() {
                     to={p.path}
                     className={classes.link}
                     leftSection={p.icon}
-                    rightSection={<IconChevronDown size={navLinkIconSize} />}
+                    rightSection={<IconChevronDown style={navIconStyle} />}
                     px={navLinkXPadding}
                   >
-                    Status <IconChevronRight size={navLinkIconSize} /> {p.title}
+                    Status <IconChevronRight style={navIconStyle} /> {p.title}
                   </Button>
                 </Menu.Target>
               }
@@ -225,8 +224,8 @@ function App() {
                   component={NavLink}
                   to="/"
                   className={classes.link}
-                  leftSection={<IconFileAnalytics size={navLinkIconSize} />}
-                  rightSection={<IconChevronDown size={navLinkIconSize} />}
+                  leftSection={<IconFileAnalytics style={navIconStyle} />}
+                  rightSection={<IconChevronDown style={navIconStyle} />}
                   onClick={(e) => {
                     e.preventDefault();
                   }}
@@ -271,7 +270,7 @@ function App() {
         component="a"
         href="https://prometheus.io/docs/prometheus/latest/getting_started/"
         className={classes.link}
-        leftSection={<IconHelp size={navLinkIconSize} />}
+        leftSection={<IconHelp style={navIconStyle} />}
         target="_blank"
         px={navLinkXPadding}
       >
