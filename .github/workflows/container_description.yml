@@ -14,6 +14,7 @@ jobs:
   PushDockerHubReadme:
     runs-on: ubuntu-latest
     name: Push README to Docker Hub
+    if: github.repository == 'prometheus/prometheus'
     steps:
       - name: git checkout
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
@@ -33,6 +34,7 @@ jobs:
   PushQuayIoReadme:
     runs-on: ubuntu-latest
     name: Push README to quay.io
+    if: github.repository == 'prometheus/prometheus'
     steps:
       - name: git checkout
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
