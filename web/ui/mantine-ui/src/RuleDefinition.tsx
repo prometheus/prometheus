@@ -22,7 +22,7 @@ const RuleDefinition: FC<{ rule: Rule }> = ({ rule }) => {
 
   return (
     <>
-      <Card p="xs" className={codeboxClasses.codebox} radius="sm" shadow="none">
+      <Card p="xs" className={codeboxClasses.codebox} shadow="xs">
         <CodeMirror
           basicSetup={false}
           value={rule.query}

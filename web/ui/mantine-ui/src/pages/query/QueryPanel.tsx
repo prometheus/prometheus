@@ -47,7 +47,7 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
   const dispatch = useAppDispatch();
 
   return (
-    <Stack gap="lg" mt="sm">
+    <Stack gap="lg">
       <ExpressionInput
         initialExpr={panel.expr}
         metricNames={metricNames}

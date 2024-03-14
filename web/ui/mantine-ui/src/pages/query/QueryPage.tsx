@@ -1,4 +1,4 @@
-import { Alert, Button, Notification, Stack, rem } from "@mantine/core";
+import { Alert, Box, Button, Notification, Stack, rem } from "@mantine/core";
 import {
   IconAlertCircle,
   IconAlertTriangle,
@@ -40,13 +40,12 @@ export default function QueryPage() {
 
       const browserTime = new Date().getTime() / 1000;
       const serverTime = timeResult.data.result[0];
-      console.log(browserTime, serverTime, Math.abs(browserTime - serverTime));
       setTimeDelta(Math.abs(browserTime - serverTime));
     }
   }, [timeResult]);
 
   return (
-    <>
+    <Box mt="xs">
       <Stack gap="sm">
         {metricNamesError && (
           <Alert
@@ -107,6 +106,6 @@ export default function QueryPage() {
       >
         Add query
       </Button>
-    </>
+    </Box>
   );
 }

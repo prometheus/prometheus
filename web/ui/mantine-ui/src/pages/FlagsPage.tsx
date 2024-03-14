@@ -124,7 +124,7 @@ export default function FlagsPage() {
   ));
 
   return (
-    <Card shadow="xs" maw={1000} mx="auto" mt="lg" withBorder>
+    <Card shadow="xs" maw={1000} mx="auto" mt="xs" withBorder>
       <TextInput
         placeholder="Filter by flag name or value"
         mb="md"

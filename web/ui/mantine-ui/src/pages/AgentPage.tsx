@@ -4,7 +4,7 @@ import { FC } from "react";
 
 const AgentPage: FC = () => {
   return (
-    <Card shadow="xs" withBorder radius="md" p="md">
+    <Card shadow="xs" withBorder p="md" mt="xs">
       <Group wrap="nowrap" align="center" ml="xs" mb="sm" gap="xs">
         <IconSpy size={22} />
         <Text fz="xl" fw={600}>

@@ -35,7 +35,7 @@ export default function TSDBStatusPage() {
   ];
 
   return (
-    <Stack gap="lg" maw={1000} mx="auto" mt="lg">
+    <Stack gap="lg" maw={1000} mx="auto" mt="xs">
       {[
         {
           title: "TSDB Head Status",
@@ -64,7 +64,7 @@ export default function TSDBStatusPage() {
           formatAsCode: true,
         },
       ].map(({ title, unit = "Count", stats, formatAsCode }) => (
-        <Card shadow="xs" withBorder radius="md" p="md">
+        <Card shadow="xs" withBorder p="md">
           <Group wrap="nowrap" align="center" ml="xs" mb="sm" gap="xs">
             <Text fz="xl" fw={600}>
               {title}

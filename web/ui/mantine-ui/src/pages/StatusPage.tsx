@@ -36,8 +36,8 @@ export default function StatusPage() {
   });
 
   return (
-    <Stack gap="lg" maw={1000} mx="auto" mt="lg">
-      <Card shadow="xs" withBorder radius="md" p="md">
+    <Stack gap="lg" maw={1000} mx="auto" mt="xs">
+      <Card shadow="xs" withBorder p="md">
         <Group wrap="nowrap" align="center" ml="xs" mb="sm" gap="xs">
           <IconWall size={22} />
           <Text fz="xl" fw={600}>
@@ -55,7 +55,7 @@ export default function StatusPage() {
           </Table.Tbody>
         </Table>
       </Card>
-      <Card shadow="xs" withBorder radius="md" p="md">
+      <Card shadow="xs" withBorder p="md">
         <Group wrap="nowrap" align="center" ml="xs" mb="sm" gap="xs">
           <IconRun size={22} />
           <Text fz="xl" fw={600}>

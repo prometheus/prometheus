@@ -31,12 +31,11 @@ export default function RulesPage() {
   const { data } = useSuspenseAPIQuery<RulesMap>({ path: `/rules` });
 
   return (
-    <>
+    <Stack mt="xs">
       {data.data.groups.map((g, i) => (
         <Card
           shadow="xs"
           withBorder
-          radius="md"
           p="md"
           mb="md"
           key={i} // TODO: Find a stable and definitely unique key.
@@ -153,6 +152,6 @@ export default function RulesPage() {
           </Table>
         </Card>
       ))}
-    </>
+    </Stack>
   );
 }

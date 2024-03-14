@@ -13,11 +13,11 @@ export default function ConfigPage() {
     <CodeHighlight
       code={yaml}
       language="yaml"
-      miw="30vw"
+      miw="50vw"
       w="fit-content"
       maw="calc(100vw - 75px)"
       mx="auto"
-      mt="lg"
+      mt="xs"
     />
   );
 }
