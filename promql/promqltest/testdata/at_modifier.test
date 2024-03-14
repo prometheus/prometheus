@@ -10,6 +10,14 @@ eval instant at 10s metric @ 100
   metric{job="1"} 10
   metric{job="2"} 20
 
+eval instant at 10s metric @ 100s
+  metric{job="1"} 10
+  metric{job="2"} 20
+
+eval instant at 10s metric @ 1m40s
+  metric{job="1"} 10
+  metric{job="2"} 20
+
 eval instant at 10s metric @ 100 offset 50s
   metric{job="1"} 5
   metric{job="2"} 10

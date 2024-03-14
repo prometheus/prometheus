@@ -2279,6 +2279,24 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: `some_metric[5m] @ 1m`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name:      "some_metric",
+				Timestamp: makeInt64Pointer(60000),
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   11,
+				},
+			},
+			Range:  5 * time.Minute,
+			EndPos: 20,
+		},
+	},
+	{
 		input:  `foo[5mm]`,
 		fail:   true,
 		errMsg: "bad number or duration syntax: \"5mm\"",
@@ -2335,17 +2353,12 @@ var testExpr = []struct {
 	{
 		input:  `some_metric[5m] OFFSET`,
 		fail:   true,
-		errMsg: "unexpected end of input in offset, expected integer or duration",
+		errMsg: "unexpected end of input in offset, expected number or duration",
 	},
 	{
 		input:  `some_metric OFFSET 1m[5m]`,
 		fail:   true,
 		errMsg: "1:22: parse error: no offset modifiers allowed before range",
-	},
-	{
-		input:  `some_metric[5m] @ 1m`,
-		fail:   true,
-		errMsg: "1:19: parse error: unexpected duration \"1m\" in @, expected timestamp",
 	},
 	{
 		input:  `some_metric[5m] @`,
@@ -3031,6 +3044,11 @@ var testExpr = []struct {
 		errMsg: "illegal character U+002E '.' in escape sequence",
 	},
 	// Subquery.
+	{
+		input:  `foo{bar="baz"}[`,
+		fail:   true,
+		errMsg: `1:16: parse error: bad number or duration syntax: ""`,
+	},
 	{
 		input: `foo{bar="baz"}[10m:6s]`,
 		expected: &SubqueryExpr{

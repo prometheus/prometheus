@@ -969,7 +969,7 @@ func (l *Lexer) scanNumber() bool {
 		// Handle digits at the end since we already consumed before this loop.
 		l.acceptRun(digitPattern)
 	}
-	// empty string is not a valid number
+	// Empty string is not a valid number.
 	if l.pos == initialPos {
 		return false
 	}
