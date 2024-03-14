@@ -12,10 +12,14 @@ import {
   Box,
   Burger,
   Button,
+  Checkbox,
+  Fieldset,
   Group,
   MantineProvider,
   Menu,
+  Popover,
   Skeleton,
+  Stack,
   Text,
   Transition,
   createTheme,
@@ -65,6 +69,7 @@ import { SettingsContext } from "./settings";
 import { Notifications } from "@mantine/notifications";
 import { useAppDispatch } from "./state/hooks";
 import { updateSettings } from "./state/settingsSlice";
+import SettingsMenu from "./SettingsMenu";
 
 const queryClient = new QueryClient();
 
@@ -294,36 +299,18 @@ function App() {
             <AppShell.Header bg="rgb(65, 73, 81)" c="#fff">
               <Group h="100%" px="md">
                 <Group style={{ flex: 1 }} justify="space-between">
-                  <Group gap={10} w={150}>
-                    <img src={PrometheusLogo} height={30} />
-                    <Text fz={20}>Prometheus{agentMode && " Agent"}</Text>
+                  <Group gap={65}>
+                    <Group gap={10}>
+                      <img src={PrometheusLogo} height={30} />
+                      <Text fz={20}>Prometheus{agentMode && " Agent"}</Text>
+                    </Group>
+                    <Group gap={12} visibleFrom="sm">
+                      {navLinks}
+                    </Group>
                   </Group>
-                  <Group gap={12} visibleFrom="sm">
-                    {navLinks}
-                  </Group>
-                  <Group w={180} justify="flex-end">
-                    {<ThemeSelector />}
-                    <Menu shadow="md" width={200}>
-                      <Menu.Target>
-                        <ActionIcon
-                          // variant=""
-                          color="gray"
-                          aria-label="Settings"
-                          size="md"
-                        >
-                          <IconSettings size={navLinkIconSize} />
-                        </ActionIcon>
-                      </Menu.Target>
-                      <Menu.Dropdown>
-                        <Menu.Item
-                          component={NavLink}
-                          to="/"
-                          leftSection={<IconAdjustments />}
-                        >
-                          Settings
-                        </Menu.Item>
-                      </Menu.Dropdown>
-                    </Menu>
+                  <Group visibleFrom="xs">
+                    <ThemeSelector />
+                    <SettingsMenu />
                   </Group>
                 </Group>
                 <Burger
@@ -338,6 +325,10 @@ function App() {
 
             <AppShell.Navbar py="md" px={4} bg="rgb(65, 73, 81)" c="#fff">
               {navLinks}
+              <Group mt="md" hiddenFrom="xs" justify="center">
+                <ThemeSelector />
+                <SettingsMenu />
+              </Group>
             </AppShell.Navbar>
 
             <AppShell.Main>

@@ -2,10 +2,22 @@ import { PayloadAction, createSlice } from "@reduxjs/toolkit";
 
 interface Settings {
   pathPrefix: string;
+  useLocalTime: boolean;
+  enableQueryHistory: boolean;
+  enableAutocomplete: boolean;
+  enableSyntaxHighlighting: boolean;
+  enableLinter: boolean;
+  showAnnotations: boolean;
 }
 
 const initialState: Settings = {
   pathPrefix: "",
+  useLocalTime: false,
+  enableQueryHistory: false,
+  enableAutocomplete: true,
+  enableSyntaxHighlighting: true,
+  enableLinter: true,
+  showAnnotations: false,
 };
 
 export const settingsSlice = createSlice({
