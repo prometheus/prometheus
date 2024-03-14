@@ -4,6 +4,7 @@ import App from "./App.tsx";
 import { Settings, SettingsContext } from "./settings.ts";
 import store from "./state/store.ts";
 import { Provider } from "react-redux";
+import "./fonts/codicon.ttf";
 
 // Declared/defined in public/index.html, value replaced by Prometheus when serving bundle.
 declare const GLOBAL_CONSOLES_LINK: string;
