@@ -2463,7 +2463,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_linode_specs_vcpus`: the number of VCPUS this linode has access to
 * `__meta_linode_specs_transfer_bytes`: the amount of network transfer the linode instance is allotted each month
 * `__meta_linode_extra_ips`: a list of all extra IPv4 addresses assigned to the linode instance joined by the tag separator
-* `__meta_linode_ipv6_ranges`: a list of IPv6 ranges with mask assitned to the linpde instance joined by the tag separator
+* `__meta_linode_ipv6_ranges`: a list of IPv6 ranges with mask assigned to the linode instance joined by the tag separator
 
 ```yaml
 # Authentication information used to authenticate to the API server.
