@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.51.0-rc.1+dedupelabels / 2024-03-14
+
+Special release candidate build that incorporates performance improvements using
+the `dedupelabels` Go tag. The new labels data structure deduplicates label names
+and values via symbol or intern tables, reducing memory usage.
+
 ## 2.51.0-rc.0 / 2024-03-07
 
 This version is built with Go 1.22.1.
