@@ -61,19 +61,18 @@ func (m *SDMock) HandleLinodeInstancesList() {
 		w.Header().Set("content-type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 
-		if r.Header.Get("X-Filter") == "{\"region\": \"us-east\"}" {
-			// Write out us-east data only
-			fmt.Fprint(w, instances_us_east)
-		} else if r.Header.Get("X-Filter") == "{\"region\": \"ca-central\"}" {
-			// Write out ca-central data only
-			fmt.Fprint(w, instances_ca_central)
-		} else { // Region not specified, show all
-			fmt.Fprint(w, instances_all)
+		switch fltr := r.Header.Get("X-Filter"); fltr {
+		case "{\"region\": \"us-east\"}":
+			fmt.Fprint(w, instancesUsEast)
+		case "{\"region\": \"ca-central\"}":
+			fmt.Fprint(w, instancesCaCentral)
+		default:
+			fmt.Fprint(w, instancesAll)
 		}
 	})
 }
 
-// HandleLinodeNetworking/ipv6/ranges mocks linode networking ipv6 ranges endpoint
+// HandleLinodeNetworking/ipv6/ranges mocks linode networking ipv6 ranges endpoint.
 func (m *SDMock) HandleLinodeNetworkingIPv6Ranges() {
 	m.Mux.HandleFunc("/v4/networking/ipv6/ranges", func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != fmt.Sprintf("Bearer %s", tokenID) {
@@ -84,15 +83,13 @@ func (m *SDMock) HandleLinodeNetworkingIPv6Ranges() {
 		w.Header().Set("content-type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 
-		if r.Header.Get("X-Filter") == "{\"region\": \"us-east\"}" {
-			// Write out us-east data only
-			fmt.Fprint(w, networking_ipv6_ranges_us_east)
-		} else if r.Header.Get("X-Filter") == "{\"region\": \"ca-central\"}" {
-			// Write out ca-central data only
-			fmt.Fprint(w, networking_ipv6_ranges_ca_central)
-		} else {
-			// Region not specified, show all
-			fmt.Fprint(w, networking_ipv6_ranges_all)
+		switch fltr := r.Header.Get("X-Filter"); fltr {
+		case "{\"region\": \"us-east\"}":
+			fmt.Fprint(w, networkingIpv6RangesUsEast)
+		case "{\"region\": \"ca-central\"}":
+			fmt.Fprint(w, networkingIpv6RangesCaCentral)
+		default:
+			fmt.Fprint(w, networkingIpv6RangesAll)
 		}
 	})
 }
@@ -108,14 +105,13 @@ func (m *SDMock) HandleLinodeNetworkingIPs() {
 		w.Header().Set("content-type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 
-		if r.Header.Get("X-Filter") == "{\"region\": \"us-east\"}" {
-			// Write out us-east data only
-			fmt.Fprint(w, networking_ips_us_east)
-		} else if r.Header.Get("X-Filter") == "{\"region\": \"ca-central\"}" {
-			// Write out ca-central data only
-			fmt.Fprint(w, networking_ips_ca_central)
-		} else { // Region not specified, show all
-			fmt.Fprint(w, networking_ips_all)
+		switch fltr := r.Header.Get("X-Filter"); fltr {
+		case "{\"region\": \"us-east\"}":
+			fmt.Fprint(w, networkingIpsUsEast)
+		case "{\"region\": \"ca-central\"}":
+			fmt.Fprint(w, networkingIpsCaCentral)
+		default:
+			fmt.Fprint(w, networkingIpsAll)
 		}
 	})
 }

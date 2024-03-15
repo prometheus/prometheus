@@ -15,8 +15,8 @@ package linode
 
 const tokenID = "7b2c56dd51edd90952c1b94c472b94b176f20c5c777e376849edd8ad1c6c03bb"
 
-// Networking IPs constants
-const networking_ips_us_east = `
+// Networking IPs constants.
+const networkingIpsUsEast = `
 {
   "page": 1,
   "pages": 1,
@@ -124,7 +124,7 @@ const networking_ips_us_east = `
   ]
 }`
 
-const networking_ips_ca_central = `
+const networkingIpsCaCentral = `
 {
   "page": 1,
   "pages": 1,
@@ -155,7 +155,7 @@ const networking_ips_ca_central = `
   ]
 }`
 
-const networking_ips_all = `
+const networkingIpsAll = `
 {
   "page": 1,
   "pages": 1,
@@ -307,8 +307,8 @@ const networking_ips_all = `
   ]
 }`
 
-// IPv6 Ranges constants
-const networking_ipv6_ranges_us_east = `
+// IPv6 Ranges constants.
+const networkingIpv6RangesUsEast = `
 {
   "data": [
     {
@@ -323,7 +323,7 @@ const networking_ipv6_ranges_us_east = `
   "results": 1
 }`
 
-const networking_ipv6_ranges_ca_central = `
+const networkingIpv6RangesCaCentral = `
 {
   "data": [
     {
@@ -338,7 +338,7 @@ const networking_ipv6_ranges_ca_central = `
   "results": 1
 }`
 
-const networking_ipv6_ranges_all = `
+const networkingIpv6RangesAll = `
 {
   "data": [
     {
@@ -359,8 +359,8 @@ const networking_ipv6_ranges_all = `
   "results": 2
 }`
 
-// Instances
-const instances_us_east = `
+// Instances.
+const instancesUsEast = `
 {
   "data": [
     {
@@ -458,7 +458,7 @@ const instances_us_east = `
   "results": 2
 }`
 
-const instances_ca_central = `
+const instancesCaCentral = `
 {
   "data": [
     {
@@ -509,7 +509,7 @@ const instances_ca_central = `
   "results": 1
 }`
 
-const instances_all = `
+const instancesAll = `
 {
   "data": [
     {
