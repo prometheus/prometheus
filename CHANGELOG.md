@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.54.0+dedupelabels / 2024-08-09
+
+Special release candidate build that incorporates performance improvements using
+the `dedupelabels` Go tag. The new labels data structure deduplicates label names
+and values via symbol or intern tables, trading off ~10% higher CPU usage for lower
+memory usage.
+
 ## 2.54.0 / 2024-08-09
 
 Release 2.54 brings a release candidate of a major new version of [Remote Write: 2.0](https://prometheus.io/docs/specs/remote_write_spec_2_0/).
