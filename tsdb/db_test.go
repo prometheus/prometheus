@@ -1966,6 +1966,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		// Should be set to init values if no WAL or blocks exist so far.
 		require.Equal(t, int64(math.MaxInt64), db.head.MinTime())
 		require.Equal(t, int64(math.MinInt64), db.head.MaxTime())
+		require.False(t, db.head.initialized())
 
 		// First added sample initializes the writable range.
 		ctx := context.Background()
@@ -1975,6 +1976,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 
 		require.Equal(t, int64(1000), db.head.MinTime())
 		require.Equal(t, int64(1000), db.head.MaxTime())
+		require.True(t, db.head.initialized())
 	})
 	t.Run("wal-only", func(t *testing.T) {
 		dir := t.TempDir()
@@ -2003,6 +2005,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 
 		require.Equal(t, int64(5000), db.head.MinTime())
 		require.Equal(t, int64(15000), db.head.MaxTime())
+		require.True(t, db.head.initialized())
 	})
 	t.Run("existing-block", func(t *testing.T) {
 		dir := t.TempDir()
@@ -2015,6 +2018,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 
 		require.Equal(t, int64(2000), db.head.MinTime())
 		require.Equal(t, int64(2000), db.head.MaxTime())
+		require.True(t, db.head.initialized())
 	})
 	t.Run("existing-block-and-wal", func(t *testing.T) {
 		dir := t.TempDir()
@@ -2047,6 +2051,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 
 		require.Equal(t, int64(6000), db.head.MinTime())
 		require.Equal(t, int64(15000), db.head.MaxTime())
+		require.True(t, db.head.initialized())
 		// Check that old series has been GCed.
 		require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.series))
 	})

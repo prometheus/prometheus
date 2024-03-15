@@ -1074,7 +1074,7 @@ func (h *Head) SetMinValidTime(minValidTime int64) {
 
 // Truncate removes old data before mint from the head and WAL.
 func (h *Head) Truncate(mint int64) (err error) {
-	initialized := h.isInitialized()
+	initialized := h.initialized()
 	if err := h.truncateMemory(mint); err != nil {
 		return err
 	}
@@ -1100,7 +1100,7 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 		}
 	}()
 
-	initialized := h.isInitialized()
+	initialized := h.initialized()
 
 	if h.MinTime() >= mint && initialized {
 		return nil
@@ -1615,16 +1615,16 @@ func (h *Head) MaxOOOTime() int64 {
 	return h.maxOOOTime.Load()
 }
 
-// isInitialized returns true if the head has a MinTime and MaxTime set, false otherwise.
-func (h *Head) isInitialized() bool {
-	return h.MinTime() != math.MaxInt64 && h.MaxTime() != math.MinInt64
+// initialized returns true if the head has a MinTime set, false otherwise.
+func (h *Head) initialized() bool {
+	return h.MinTime() != math.MaxInt64
 }
 
 // compactable returns whether the head has a compactable range.
 // The head has a compactable range when the head time range is 1.5 times the chunk range.
 // The 0.5 acts as a buffer of the appendable window.
 func (h *Head) compactable() bool {
-	if !h.isInitialized() {
+	if !h.initialized() {
 		return false
 	}
 

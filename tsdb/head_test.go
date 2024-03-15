@@ -3066,22 +3066,6 @@ func TestHeadExemplars(t *testing.T) {
 	require.NoError(t, head.Close())
 }
 
-func TestHeadMinMaxTimeNotSet(t *testing.T) {
-	head, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
-	defer func() {
-		require.NoError(t, head.Close())
-	}()
-
-	require.False(t, head.isInitialized())
-
-	app := head.Appender(context.Background())
-	_, err := app.Append(0, labels.FromStrings("a", "b"), 100, 100)
-	require.NoError(t, err)
-	require.NoError(t, app.Commit())
-
-	require.True(t, head.isInitialized())
-}
-
 func BenchmarkHeadLabelValuesWithMatchers(b *testing.B) {
 	chunkRange := int64(2000)
 	head, _ := newTestHead(b, chunkRange, wlog.CompressionNone, false)
