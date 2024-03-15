@@ -24,7 +24,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -2207,22 +2206,6 @@ func blockDirs(dir string) ([]string, error) {
 		}
 	}
 	return dirs, nil
-}
-
-func sequenceFiles(dir string) ([]string, error) {
-	files, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, err
-	}
-	var res []string
-
-	for _, fi := range files {
-		if _, err := strconv.ParseUint(fi.Name(), 10, 64); err != nil {
-			continue
-		}
-		res = append(res, filepath.Join(dir, fi.Name()))
-	}
-	return res, nil
 }
 
 func exponential(d, min, max time.Duration) time.Duration {
