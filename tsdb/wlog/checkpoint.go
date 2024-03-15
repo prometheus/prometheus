@@ -224,8 +224,8 @@ func Checkpoint(logger log.Logger, w *WL, from, to int, keep func(id chunks.Head
 			if len(repl) > 0 {
 				buf = enc.HistogramSamples(repl, buf)
 			}
-			stats.TotalSamples += len(samples)
-			stats.DroppedSamples += len(samples) - len(repl)
+			stats.TotalSamples += len(histogramSamples)
+			stats.DroppedSamples += len(histogramSamples) - len(repl)
 
 		case record.Tombstones:
 			tstones, err = dec.Tombstones(rec, tstones)
