@@ -63,10 +63,10 @@ const (
 
 	// This is our events filter; when polling for changes, we care only about
 	// events since our last refresh.
-	// Docs: https://www.linode.com/docs/api/account/#events-list
+	// Docs: https://www.linode.com/docs/api/account/#events-list.
 	filterTemplate = `{"created": {"+gte": "%s"}}`
 
-	// Optional region filtering
+	// Optional region filtering.
 	regionFilterTemplate = `{"region": "%s"}`
 )
 
@@ -236,7 +236,7 @@ func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, erro
 		PageSize: 500,
 	}
 
-	// If region filter provided, use it to constrain results
+	// If region filter provided, use it to constrain results.
 	if d.region != "" {
 		opts.Filter = fmt.Sprintf(regionFilterTemplate, d.region)
 	}
