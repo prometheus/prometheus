@@ -3072,14 +3072,14 @@ func TestHeadMinMaxTimeNotSet(t *testing.T) {
 		require.NoError(t, head.Close())
 	}()
 
-	require.True(t, head.isUninitialized())
+	require.False(t, head.isInitialized())
 
 	app := head.Appender(context.Background())
 	_, err := app.Append(0, labels.FromStrings("a", "b"), 100, 100)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
-	require.False(t, head.isUninitialized())
+	require.True(t, head.isInitialized())
 }
 
 func BenchmarkHeadLabelValuesWithMatchers(b *testing.B) {

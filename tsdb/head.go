@@ -1074,11 +1074,11 @@ func (h *Head) SetMinValidTime(minValidTime int64) {
 
 // Truncate removes old data before mint from the head and WAL.
 func (h *Head) Truncate(mint int64) (err error) {
-	uninitialized := h.isUninitialized()
+	initialized := h.isInitialized()
 	if err := h.truncateMemory(mint); err != nil {
 		return err
 	}
-	if uninitialized {
+	if !initialized {
 		return nil
 	}
 	return h.truncateWAL(mint)
@@ -1100,9 +1100,9 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 		}
 	}()
 
-	uninitialized := h.isUninitialized()
+	initialized := h.isInitialized()
 
-	if h.MinTime() >= mint && !uninitialized {
+	if h.MinTime() >= mint && initialized {
 		return nil
 	}
 
@@ -1113,7 +1113,7 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 	defer h.memTruncationInProcess.Store(false)
 
 	// We wait for pending queries to end that overlap with this truncation.
-	if !uninitialized {
+	if initialized {
 		h.WaitForPendingReadersInTimeRange(h.MinTime(), mint)
 	}
 
@@ -1127,7 +1127,7 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 
 	// This was an initial call to Truncate after loading blocks on startup.
 	// We haven't read back the WAL yet, so do not attempt to truncate it.
-	if uninitialized {
+	if !initialized {
 		return nil
 	}
 
@@ -1615,16 +1615,16 @@ func (h *Head) MaxOOOTime() int64 {
 	return h.maxOOOTime.Load()
 }
 
-// isUninitialized returns true if the head does not yet have a MinTime or MaxTime set, false otherwise.
-func (h *Head) isUninitialized() bool {
-	return h.MinTime() == math.MaxInt64 || h.MaxTime() == math.MinInt64
+// isInitialized returns true if the head has a MinTime and MaxTime set, false otherwise.
+func (h *Head) isInitialized() bool {
+	return h.MinTime() != math.MaxInt64 && h.MaxTime() != math.MinInt64
 }
 
 // compactable returns whether the head has a compactable range.
 // The head has a compactable range when the head time range is 1.5 times the chunk range.
 // The 0.5 acts as a buffer of the appendable window.
 func (h *Head) compactable() bool {
-	if h.isUninitialized() {
+	if !h.isInitialized() {
 		return false
 	}
 
