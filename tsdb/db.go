@@ -2225,23 +2225,6 @@ func sequenceFiles(dir string) ([]string, error) {
 	return res, nil
 }
 
-func nextSequenceFile(dir string) (string, int, error) {
-	files, err := os.ReadDir(dir)
-	if err != nil {
-		return "", 0, err
-	}
-
-	i := uint64(0)
-	for _, f := range files {
-		j, err := strconv.ParseUint(f.Name(), 10, 64)
-		if err != nil {
-			continue
-		}
-		i = j
-	}
-	return filepath.Join(dir, fmt.Sprintf("%0.6d", i+1)), int(i + 1), nil
-}
-
 func exponential(d, min, max time.Duration) time.Duration {
 	d *= 2
 	if d < min {
