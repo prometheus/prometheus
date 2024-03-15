@@ -232,18 +232,13 @@ func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, erro
 	tg := &targetgroup.Group{
 		Source: "Linode",
 	}
-	var opts linodego.ListOptions
+	opts := linodego.ListOptions{
+		PageSize: 500,
+	}
 
 	// If region filter provided, use it to constrain results
 	if d.region != "" {
-                opts = linodego.ListOptions{
-                       PageSize:    500,
-                       Filter:      fmt.Sprintf(regionFilterTemplate, d.region),
-                }
-	} else {
-                opts = linodego.ListOptions{
-                       PageSize:    500,
-                }
+                opts.Filter = fmt.Sprintf(regionFilterTemplate, d.region)
 	}
 
 	// Gather all linode instances.
@@ -317,7 +312,7 @@ func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, erro
 			}
 			for _, ipv6Range := range ipv6RangeList {
 				if ipv6Range.RouteTarget == slaac {
-					ip6cidr := ipv6Range.Range + "/" + strconv.Itoa(ipv6Range.Prefix)
+					ip6cidr := fmt.Sprintf("%s/%d",ipv6Range.Range, ipv6Range.Prefix)
 					ipv6Ranges = append(ipv6Ranges, ip6cidr)
 				}
 			}
