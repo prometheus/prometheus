@@ -188,7 +188,6 @@ func TestLinodeSDRefresh(t *testing.T) {
 	}
 }
 
-
 func TestLinodeSDRefreshRegionUsEast(t *testing.T) {
 	sdmock := &LinodeSDTestSuite{}
 	sdmock.SetupTest(t)

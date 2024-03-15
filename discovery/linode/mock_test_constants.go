@@ -15,6 +15,7 @@ package linode
 
 const tokenID = "7b2c56dd51edd90952c1b94c472b94b176f20c5c777e376849edd8ad1c6c03bb"
 
+// Networking IPs constants
 const networking_ips_us_east = `
 {
   "page": 1,
@@ -153,7 +154,6 @@ const networking_ips_ca_central = `
     }
   ]
 }`
-
 
 const networking_ips_all = `
 {
@@ -308,7 +308,6 @@ const networking_ips_all = `
 }`
 
 // IPv6 Ranges constants
-
 const networking_ipv6_ranges_us_east = `
 {
   "data": [
@@ -361,7 +360,6 @@ const networking_ipv6_ranges_all = `
 }`
 
 // Instances
-
 const instances_us_east = `
 {
   "data": [

@@ -62,20 +62,20 @@ func (m *SDMock) HandleLinodeInstancesList() {
 		w.WriteHeader(http.StatusOK)
 
 		if r.Header.Get("X-Filter") == "{\"region\": \"us-east\"}" {
-                        // Write out us-east data only
+			// Write out us-east data only
 			fmt.Fprint(w, instances_us_east)
 		} else if r.Header.Get("X-Filter") == "{\"region\": \"ca-central\"}" {
-                        // Write out ca-central data only
-                        fmt.Fprint(w, instances_ca_central)
+			// Write out ca-central data only
+			fmt.Fprint(w, instances_ca_central)
 		} else { // Region not specified, show all
 			fmt.Fprint(w, instances_all)
 		}
 	})
 }
 
-//HandleLinodeNetworking/ipv6/ranges mocks linode networking ipv6 ranges endpoint
+// HandleLinodeNetworking/ipv6/ranges mocks linode networking ipv6 ranges endpoint
 func (m *SDMock) HandleLinodeNetworkingIPv6Ranges() {
-	m.Mux.HandleFunc("/v4/networking/ipv6/ranges", func( w http.ResponseWriter, r *http.Request) {
+	m.Mux.HandleFunc("/v4/networking/ipv6/ranges", func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != fmt.Sprintf("Bearer %s", tokenID) {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
@@ -112,8 +112,8 @@ func (m *SDMock) HandleLinodeNetworkingIPs() {
 			// Write out us-east data only
 			fmt.Fprint(w, networking_ips_us_east)
 		} else if r.Header.Get("X-Filter") == "{\"region\": \"ca-central\"}" {
-                        // Write out ca-central data only
-                        fmt.Fprint(w, networking_ips_ca_central)
+			// Write out ca-central data only
+			fmt.Fprint(w, networking_ips_ca_central)
 		} else { // Region not specified, show all
 			fmt.Fprint(w, networking_ips_all)
 		}

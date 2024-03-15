@@ -238,7 +238,7 @@ func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, erro
 
 	// If region filter provided, use it to constrain results
 	if d.region != "" {
-                opts.Filter = fmt.Sprintf(regionFilterTemplate, d.region)
+		opts.Filter = fmt.Sprintf(regionFilterTemplate, d.region)
 	}
 
 	// Gather all linode instances.
@@ -271,7 +271,7 @@ func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, erro
 			privateIPv4, publicIPv4, publicIPv6             string
 			privateIPv4RDNS, publicIPv4RDNS, publicIPv6RDNS string
 			backupsStatus                                   string
-			extraIPs,ipv6Ranges                             []string
+			extraIPs, ipv6Ranges                            []string
 		)
 
 		for _, ip := range instance.IPv4 {
@@ -312,7 +312,7 @@ func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, erro
 			}
 			for _, ipv6Range := range ipv6RangeList {
 				if ipv6Range.RouteTarget == slaac {
-					ip6cidr := fmt.Sprintf("%s/%d",ipv6Range.Range, ipv6Range.Prefix)
+					ip6cidr := fmt.Sprintf("%s/%d", ipv6Range.Range, ipv6Range.Prefix)
 					ipv6Ranges = append(ipv6Ranges, ip6cidr)
 				}
 			}
