@@ -65,6 +65,7 @@ const (
 	azureLabelMachineSize          = azureLabel + "machine_size"
 
 	authMethodOAuth           = "OAuth"
+	authMethodSDK             = "SDK"
 	authMethodManagedIdentity = "ManagedIdentity"
 )
 
@@ -164,8 +165,8 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		}
 	}
 
-	if c.AuthenticationMethod != authMethodOAuth && c.AuthenticationMethod != authMethodManagedIdentity {
-		return fmt.Errorf("unknown authentication_type %q. Supported types are %q or %q", c.AuthenticationMethod, authMethodOAuth, authMethodManagedIdentity)
+	if c.AuthenticationMethod != authMethodOAuth && c.AuthenticationMethod != authMethodManagedIdentity && c.AuthenticationMethod != authMethodSDK {
+		return fmt.Errorf("unknown authentication_type %q. Supported types are %q, %q or %q", c.AuthenticationMethod, authMethodOAuth, authMethodManagedIdentity, authMethodSDK)
 	}
 
 	return c.HTTPClientConfig.Validate()
@@ -294,6 +295,16 @@ func newCredential(cfg SDConfig, policyClientOptions policy.ClientOptions) (azco
 			return nil, err
 		}
 		credential = azcore.TokenCredential(secretCredential)
+	case authMethodSDK:
+		options := &azidentity.DefaultAzureCredentialOptions{ClientOptions: policyClientOptions}
+		if len(cfg.TenantID) != 0 {
+			options.TenantID = cfg.TenantID
+		}
+		sdkCredential, err := azidentity.NewDefaultAzureCredential(options)
+		if err != nil {
+			return nil, err
+		}
+		credential = azcore.TokenCredential(sdkCredential)
 	}
 	return credential, nil
 }
