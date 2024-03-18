@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"slices"
 	"strings"
+	"unsafe"
 
 	"github.com/cespare/xxhash/v2"
 )
@@ -486,4 +487,9 @@ func (b *ScratchBuilder) Labels() Labels {
 // Callers must ensure that there are no other references to ls, or any strings fetched from it.
 func (b *ScratchBuilder) Overwrite(ls *Labels) {
 	*ls = append((*ls)[:0], b.add...)
+}
+
+// SizeOfLabels returns the approximate space required for n copies of a label.
+func SizeOfLabels(value string, n uint64) uint64 {
+	return (uint64(len(value)) + uint64(unsafe.Sizeof(value))) * n
 }

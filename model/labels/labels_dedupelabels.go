@@ -815,3 +815,8 @@ func (b *ScratchBuilder) Overwrite(ls *Labels) {
 	ls.syms = b.syms.nameTable
 	ls.data = yoloString(b.overwriteBuffer)
 }
+
+// SizeOfLabels returns the approximate space required for n copies of a label.
+func SizeOfLabels(value string, n uint64) uint64 {
+	return uint64(len(value)) + n*2 // Assuming most symbol-table entries are 2 bytes long.
+}

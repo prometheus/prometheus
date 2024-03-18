@@ -694,3 +694,8 @@ func NewScratchBuilderWithSymbolTable(_ *SymbolTable, n int) ScratchBuilder {
 func (b *ScratchBuilder) SetSymbolTable(_ *SymbolTable) {
 	// no-op
 }
+
+// SizeOfLabels returns the approximate space required for n copies of a label.
+func SizeOfLabels(value string, n uint64) uint64 {
+	return uint64(len(value)+sizeVarint(uint64(len(value)))) * n
+}
