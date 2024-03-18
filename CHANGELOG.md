@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.45.4 / 2024-03-18
+
+* [BUGFIX] Remote read: Release querier resources before encoding the results. #13777
+
 ## 2.45.3 / 2024-01-24
 
 This release contains security fixes in dependencies and has been built with go1.21.6. #13450.
