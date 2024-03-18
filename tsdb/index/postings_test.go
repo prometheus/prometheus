@@ -939,7 +939,7 @@ func BenchmarkPostings_Stats(b *testing.B) {
 	}
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		p.Stats("__name__", 10)
+		p.Stats("__name__", 10, labels.SizeOfLabels)
 	}
 }
 
@@ -954,7 +954,7 @@ func TestMemPostingsStats(t *testing.T) {
 	p.Add(2, labels.FromStrings("label", "value1"))
 
 	// call the Stats method to calculate the cardinality statistics
-	stats := p.Stats("label", 10)
+	stats := p.Stats("label", 10, func(s string, n uint64) uint64 { return uint64(len(s)) * n })
 
 	// assert that the expected statistics were calculated
 	require.Equal(t, uint64(2), stats.CardinalityMetricsStats[0].Count)
