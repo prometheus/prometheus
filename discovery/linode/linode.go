@@ -311,10 +311,10 @@ func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, erro
 				}
 			}
 			for _, ipv6Range := range ipv6RangeList {
-				if ipv6Range.RouteTarget == slaac {
-					ip6cidr := fmt.Sprintf("%s/%d", ipv6Range.Range, ipv6Range.Prefix)
-					ipv6Ranges = append(ipv6Ranges, ip6cidr)
+				if ipv6Range.RouteTarget != slaac {
+					continue
 				}
+				ipv6Ranges = append(ipv6Ranges, fmt.Sprintf("%s/%d", ipv6Range.Range, ipv6Range.Prefix))
 			}
 		}
 
