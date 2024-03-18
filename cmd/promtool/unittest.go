@@ -18,6 +18,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -40,9 +42,12 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
+var deleteFiles []string
+
 // RulesUnitTest does unit testing of rules based on the unit testing files provided.
 // More info about the file format can be found in the docs.
 func RulesUnitTest(queryOpts promql.LazyLoaderOpts, runStrings []string, diffFlag bool, files ...string) int {
+	defer cleanupFiles()
 	failed := false
 
 	var run *regexp.Regexp
@@ -67,6 +72,15 @@ func RulesUnitTest(queryOpts promql.LazyLoaderOpts, runStrings []string, diffFla
 		return failureExitCode
 	}
 	return successExitCode
+}
+
+func cleanupFiles() {
+	for _, file := range deleteFiles {
+		if err := os.Remove(file); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to remove temp file %q: %v", file, err)
+		}
+	}
+	deleteFiles = nil
 }
 
 func ruleUnitTest(filename string, queryOpts promql.LazyLoaderOpts, run *regexp.Regexp, diffFlag bool) []error {
@@ -158,6 +172,33 @@ func resolveAndGlobFilepaths(baseDir string, utf *unitTestFile) error {
 			fmt.Fprintln(os.Stderr, "  WARNING: no file match pattern", rf)
 		}
 		globbedFiles = append(globbedFiles, m...)
+		for i, file := range globbedFiles {
+			stat, err := os.Stat(file)
+			if err == nil && stat.Mode()&(fs.ModeDevice|fs.ModeNamedPipe) != 0 {
+				// Not a regular file (e.g. piped input), we'll copy it to a temp file
+				// and replace the filename with it.
+				f, err := os.CreateTemp("", "promtool-stdin")
+				if err != nil {
+					return fmt.Errorf("creating temp file failed: %w", err)
+				}
+				inFile, err := os.Open(file)
+				if err != nil {
+					return fmt.Errorf("reading input %s failed: %w", file, err)
+				}
+				if n, err := io.Copy(f, inFile); n == 0 || err != nil {
+					if n == 0 {
+						// An empty rule file is normally accepted, however unless the user
+						// sets -o pipefail in their shell it's very easy for a failing
+						// command to result in an empty rule input and then not fail in an
+						// obvious way, so make it clear here.
+						err = io.EOF
+					}
+					return fmt.Errorf("copying input %s failed: %w", file, err)
+				}
+				globbedFiles[i] = f.Name()
+				deleteFiles = append(deleteFiles, f.Name())
+			}
+		}
 	}
 	utf.RuleFiles = globbedFiles
 	return nil
