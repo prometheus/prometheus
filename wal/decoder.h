@@ -15,6 +15,11 @@
 #include "third_party/protozero/pbf_writer.hpp"
 #include "wal.h"
 
+template <class T>
+concept have_segment_id = requires(const T& t) {
+  { t.segment_id };
+};
+
 namespace PromPP::WAL {
 class Decoder {
  private:
@@ -32,7 +37,7 @@ class Decoder {
     process_segment(reader_, out, stats);
   }
 
-  template <class Output, class Stats, bool include_segment_id = true>
+  template <class Output, class Stats>
   PROMPP_ALWAYS_INLINE static void process_segment(Reader& reader, Output& out, Stats& stats) {
     protozero::basic_pbf_writer<Output> pb_message(out);
     uint32_t processed_series = 0;
@@ -47,7 +52,7 @@ class Decoder {
     stats.samples = reader.samples() - samples_before;
     stats.series = processed_series;
 
-    if constexpr (include_segment_id) {
+    if constexpr (have_segment_id<Stats>) {
       stats.segment_id = reader.last_processed_segment();
     }
   }
@@ -77,4 +82,4 @@ class Decoder {
     stats->segment_id = reader_.last_processed_segment();
   }
 };
-};  // namespace PromPP::WAL
+}  // namespace PromPP::WAL
