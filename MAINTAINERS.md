@@ -16,6 +16,7 @@ General maintainers:
 George Krajcsovits (<gyorgy.krajcsovits@grafana.com> / @krajorama)
 * `storage`
   * `remote`: Callum Styan (<callumstyan@gmail.com> / @cstyan), Bartłomiej Płotka (<bwplotka@gmail.com> / @bwplotka), Tom Wilkie (<tom.wilkie@gmail.com> / @tomwilkie)
+    * `otlptranslator`: Arve Knudsen (<arve.knudsen@gmail.com> / @aknuds1), Jesús Vázquez (<jesus.vazquez@grafana.com> / @jesusvazquez)
 * `tsdb`: Ganesh Vernekar (<ganesh@grafana.com> / @codesome), Bartłomiej Płotka (<bwplotka@gmail.com> / @bwplotka), Jesús Vázquez (<jesus.vazquez@grafana.com> / @jesusvazquez)
   * `agent`: Robert Fratto (<robert.fratto@grafana.com> / @rfratto)
 * `web`
