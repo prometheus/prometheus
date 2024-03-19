@@ -1,8 +1,8 @@
 # Changelog
 
-## 2.51.0-rc.0+dedupelabels / 2024-03-14
+## 2.51.0+dedupelabels / 2024-03-19
 
-Special release candidate build that incorporates performance improvements using
+Special release build that incorporates performance improvements using
 the `dedupelabels` Go tag. The new labels data structure deduplicates label names
 and values via symbol or intern tables, reducing memory usage.
 
@@ -17,7 +17,7 @@ It is off by default; there will be an optional alternative image to try it out.
 * [FEATURE] Alerting: Relabel rules for AlertManagerConfig; allows routing alerts to different alertmanagers #12551, #13735
 * [FEATURE] API: add limit param to series, label-names and label-values APIs #13396
 * [FEATURE] UI (experimental native histograms): Add native histogram chart to Table view #13658
-* [FEATURE] Promtool: Add a "tsdb dump-openmetrics" to dump in OpemMetrics format. #13194
+* [FEATURE] Promtool: Add a "tsdb dump-openmetrics" to dump in OpenMetrics format. #13194
 * [FEATURE] PromQL (experimental native histograms): Add histogram_avg function #13467
 * [ENHANCEMENT] Rules: Evaluate independent rules concurrently #12946, #13527
 * [ENHANCEMENT] Scraping (experimental native histograms): Support exemplars #13488
