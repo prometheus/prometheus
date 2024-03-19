@@ -54,7 +54,7 @@ type Histogram struct {
 	// They are all for base-2 bucket schemas, where 1 is a bucket boundary in
 	// each case, and then each power of two is divided into 2^n logarithmic buckets.
 	// Or in other words, each bucket boundary is the previous boundary times
-	// 2^(2^-n). Another valid schema number is 127 for custom buckets, defined by
+	// 2^(2^-n). Another valid schema number is -53 for custom buckets, defined by
 	// the CustomBounds field.
 	Schema int32
 	// Width of the zero bucket.
@@ -74,8 +74,8 @@ type Histogram struct {
 	// Holds the custom (usually upper) bounds for bucket definitions, otherwise nil.
 	// This slice is interned, to be treated as immutable and copied by reference.
 	// These numbers should be strictly increasing. This field is only used when the
-	// schema is 127, and the ZeroThreshold, ZeroCount, NegativeSpans and NegativeBuckets
-	// fields are not used.
+	// schema is for custom buckets, and the ZeroThreshold, ZeroCount, NegativeSpans
+	// and NegativeBuckets fields are not used.
 	CustomBounds []float64
 }
 

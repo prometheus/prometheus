@@ -23,7 +23,7 @@ import (
 const (
 	ExponentialSchemaMax int32 = 8
 	ExponentialSchemaMin int32 = -4
-	CustomBucketsSchema  int32 = 127
+	CustomBucketsSchema  int32 = -53
 )
 
 var (
