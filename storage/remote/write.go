@@ -192,6 +192,24 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			continue
 		}
 
+		// Work out what protocol and compression to use for this endpoint
+		// Default to Remote Write Version1
+		rwFormat := Version1
+		switch rwConf.ProtocolVersion {
+		case Version1:
+			// We use the standard value as there's no negotiation to be had
+		case Version2:
+			// If this newer remote write format is enabled then we need to probe the remote server
+			// to work out the desired protocol version and compressions
+			// The value of the header is kept in the client so no need to see it here
+			rwFormat = Version2
+			_, err := c.GetProtoVersions(context.Background()) // TODO(alexg) - better ctx to pass?
+			if err != nil {
+				// TODO(alexg) - Log an error based on this?
+				// TODO(alexg) - if we get 405 (MethodNotAllowed) then we should default to 1.0 (and downgrade rwFormat)?
+			}
+		}
+
 		// Redacted to remove any passwords in the URL (that are
 		// technically accepted but not recommended) since this is
 		// only used for metric labels.
@@ -214,7 +232,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rws.scraper,
 			rwConf.SendExemplars,
 			rwConf.SendNativeHistograms,
-			rwConf.ProtocolVersion,
+			rwFormat,
 		)
 		// Keep track of which queues are new so we know which to start.
 		newHashes = append(newHashes, hash)
