@@ -19,7 +19,7 @@ jobs:
       - name: git checkout
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       - name: Set docker hub repo name
-        run: echo "DOCKER_REPO_NAME=$(make common-docker-repo-name)" >> $GITHUB_ENV
+        run: echo "DOCKER_REPO_NAME=$(make docker-repo-name)" >> $GITHUB_ENV
       - name: Push README to Dockerhub
         uses: christian-korneck/update-container-description-action@d36005551adeaba9698d8d67a296bd16fa91f8e8 # v1
         env:
@@ -41,7 +41,7 @@ jobs:
       - name: Set quay.io org name
         run: echo "DOCKER_REPO=$(echo quay.io/${GITHUB_REPOSITORY_OWNER} | tr -d '-')" >> $GITHUB_ENV
       - name: Set quay.io repo name
-        run: echo "DOCKER_REPO_NAME=$(make common-docker-repo-name)" >> $GITHUB_ENV
+        run: echo "DOCKER_REPO_NAME=$(make docker-repo-name)" >> $GITHUB_ENV
       - name: Push README to quay.io
         uses: christian-korneck/update-container-description-action@d36005551adeaba9698d8d67a296bd16fa91f8e8 # v1
         env:
@@ -50,6 +50,3 @@ jobs:
           destination_container_repo: ${{ env.DOCKER_REPO_NAME }}
           provider: quay
           readme_file: 'README.md'
-
-
-
