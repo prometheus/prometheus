@@ -14,9 +14,12 @@
 package linode
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -43,114 +46,34 @@ func (m *SDMock) Endpoint() string {
 func (m *SDMock) Setup() {
 	m.Mux = http.NewServeMux()
 	m.Server = httptest.NewServer(m.Mux)
+	m.t.Cleanup(m.Server.Close)
+	m.SetupHandlers()
 }
 
-// ShutdownServer creates the mock server.
-func (m *SDMock) ShutdownServer() {
-	m.Server.Close()
-}
+// SetupHandlers for endpoints of interest
+func (m *SDMock) SetupHandlers() {
+	for _, handler := range []string{"/v4/account/events", "/v4/linode/instances", "/v4/networking/ips", "/v4/networking/ipv6/ranges"} {
+		m.Mux.HandleFunc(handler, func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("Authorization") != fmt.Sprintf("Bearer %s", tokenID) {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			x_filter := struct {
+				Region string `json:"region"`
+			}{}
+			json.Unmarshal([]byte(r.Header.Get("X-Filter")), &x_filter)
 
-// HandleLinodeInstancesList mocks linode instances list.
-func (m *SDMock) HandleLinodeInstancesList() {
-	m.Mux.HandleFunc("/v4/linode/instances", func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != fmt.Sprintf("Bearer %s", tokenID) {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-
-		w.Header().Set("content-type", "application/json; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-
-		switch fltr := r.Header.Get("X-Filter"); fltr {
-		case "{\"region\": \"us-east\"}":
-			fmt.Fprint(w, instancesUsEast)
-		case "{\"region\": \"ca-central\"}":
-			fmt.Fprint(w, instancesCaCentral)
-		default:
-			fmt.Fprint(w, instancesAll)
-		}
-	})
-}
-
-// HandleLinodeNetworking/ipv6/ranges mocks linode networking ipv6 ranges endpoint.
-func (m *SDMock) HandleLinodeNetworkingIPv6Ranges() {
-	m.Mux.HandleFunc("/v4/networking/ipv6/ranges", func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != fmt.Sprintf("Bearer %s", tokenID) {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-
-		w.Header().Set("content-type", "application/json; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-
-		switch fltr := r.Header.Get("X-Filter"); fltr {
-		case "{\"region\": \"us-east\"}":
-			fmt.Fprint(w, networkingIpv6RangesUsEast)
-		case "{\"region\": \"ca-central\"}":
-			fmt.Fprint(w, networkingIpv6RangesCaCentral)
-		default:
-			fmt.Fprint(w, networkingIpv6RangesAll)
-		}
-	})
-}
-
-// HandleLinodeNetworkingIPs mocks linode networking ips endpoint.
-func (m *SDMock) HandleLinodeNetworkingIPs() {
-	m.Mux.HandleFunc("/v4/networking/ips", func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != fmt.Sprintf("Bearer %s", tokenID) {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-
-		w.Header().Set("content-type", "application/json; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-
-		switch fltr := r.Header.Get("X-Filter"); fltr {
-		case "{\"region\": \"us-east\"}":
-			fmt.Fprint(w, networkingIpsUsEast)
-		case "{\"region\": \"ca-central\"}":
-			fmt.Fprint(w, networkingIpsCaCentral)
-		default:
-			fmt.Fprint(w, networkingIpsAll)
-		}
-	})
-}
-
-// HandleLinodeAccountEvents mocks linode the account/events endpoint.
-func (m *SDMock) HandleLinodeAccountEvents() {
-	m.Mux.HandleFunc("/v4/account/events", func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != fmt.Sprintf("Bearer %s", tokenID) {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-
-		if r.Header.Get("X-Filter") == "" {
-			// This should never happen; if the client sends an events request without
-			// a filter, cause it to fail. The error below is not a real response from
-			// the API, but should aid in debugging failed tests.
-			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprint(w, `
-{
-	"errors": [
-		{
-			"reason": "Request missing expected X-Filter headers"
-		}
-	]
-}`,
-			)
-			return
-		}
-
-		w.Header().Set("content-type", "application/json; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-
-		fmt.Fprint(w, `
-{
-	"data": [],
-	"results": 0,
-	"pages": 1,
-	"page": 1
-}`,
-		)
-	})
+			directory := "testdata/no_region_filter"
+			if x_filter.Region != "" { // Validate region filter matches test criteria.
+				directory = "testdata/" + x_filter.Region
+			}
+			if response, err := os.ReadFile(filepath.Join(directory, r.URL.Path+".json")); err == nil {
+				w.Header().Add("content-type", "application/json; charset=utf-8")
+				w.WriteHeader(http.StatusOK)
+				w.Write(response)
+				return
+			}
+			w.WriteHeader(http.StatusInternalServerError)
+		})
+	}
 }
