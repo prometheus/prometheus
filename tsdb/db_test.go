@@ -689,10 +689,10 @@ func TestDB_BeyondTimeRetention(t *testing.T) {
 		require.NoError(t, db.Close())
 	}()
 
-	// We have 4 blocks, 3 of which are beyond the retention duration.
+	// We have 4 blocks, 3 of which are beyond or at the retention duration.
 	metas := []BlockMeta{
 		{MinTime: 300, MaxTime: 500},
-		{MinTime: 200, MaxTime: 300},
+		{MinTime: 200, MaxTime: 400},
 		{MinTime: 100, MaxTime: 200},
 		{MinTime: 0, MaxTime: 100},
 	}

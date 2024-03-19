@@ -1608,7 +1608,7 @@ func BeyondTimeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struc
 
 	deletable = make(map[ulid.ULID]struct{})
 	for i, block := range blocks {
-		// The difference between the first block and this block is larger than
+		// The difference between the first block and this block is greater than or equal to
 		// the retention period so any blocks after that are added as deletable.
 		if i > 0 && blocks[0].Meta().MaxTime-block.Meta().MaxTime >= db.opts.RetentionDuration {
 			for _, b := range blocks[i:] {
