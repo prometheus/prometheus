@@ -179,12 +179,17 @@ func TestContentNegotiation(t *testing.T) {
 				c.expectSamples(samples, series)
 			}
 			qm.Append(samples)
+
 			if !tc.success {
 				// We just need to sleep for a bit to give it time to run
 				time.Sleep(2 * time.Second)
+				// But we still need to check for data with no delay to avoid race
+				c.waitForExpectedData(t, 0*time.Second)
 			} else {
-				c.waitForExpectedData(t, 2*time.Second)
+				// We expected data so wait for it
+				c.waitForExpectedData(t, 5*time.Second)
 			}
+
 			require.Equal(t, len(c.sendAttempts), len(tc.steps))
 			for i, s := range c.sendAttempts {
 				require.Equal(t, s, tc.steps[i].attemptString)
