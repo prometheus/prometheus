@@ -3568,6 +3568,9 @@ func TestReturnAPIError(t *testing.T) {
 		}, {
 			err:      errors.New("exec error"),
 			expected: errorExec,
+		}, {
+			err:      context.Canceled,
+			expected: errorCanceled,
 		},
 	}
 
