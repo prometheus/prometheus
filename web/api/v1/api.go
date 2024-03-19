@@ -883,7 +883,7 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 
 	for set.Next() {
 		if err := ctx.Err(); err != nil {
-			return apiFuncResult{nil, contextErr(err), warnings, closer}
+			return apiFuncResult{nil, returnAPIError(err), warnings, closer}
 		}
 		metrics = append(metrics, set.At().Labels())
 
@@ -897,17 +897,6 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 	}
 
 	return apiFuncResult{metrics, nil, warnings, closer}
-}
-
-func contextErr(err error) *apiError {
-	switch {
-	case errors.Is(err, context.Canceled):
-		return &apiError{errorCanceled, err}
-	case errors.Is(err, context.DeadlineExceeded):
-		return &apiError{errorTimeout, err}
-	default:
-		return &apiError{errorExec, err}
-	}
 }
 
 func (api *API) dropSeries(_ *http.Request) apiFuncResult {
