@@ -1315,6 +1315,8 @@ func (c *TestWriteClient) GetProtoVersions(_ context.Context) (string, error) {
 }
 
 func (c *TestWriteClient) GetLastRWHeader() string {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
 	c.currstep++
 	if len(c.steps) > 0 {
 		return c.steps[c.currstep].lastRWHeader
