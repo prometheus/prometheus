@@ -882,6 +882,9 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 	warnings := set.Warnings()
 
 	for set.Next() {
+		if err := ctx.Err(); err != nil {
+			return apiFuncResult{nil, returnAPIError(err), warnings, closer}
+		}
 		metrics = append(metrics, set.At().Labels())
 
 		if len(metrics) >= limit {
