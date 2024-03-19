@@ -33,11 +33,11 @@ func TestLinodeSDRefresh(t *testing.T) {
 	sdmock.Setup()
 
 	tests := map[string]struct {
-		region       string
-		target_count int
-		want         []model.LabelSet
+		region      string
+		targetCount int
+		want        []model.LabelSet
 	}{
-		"no_region": {region: "", target_count: 4, want: []model.LabelSet{
+		"no_region": {region: "", targetCount: 4, want: []model.LabelSet{
 			{
 				"__address__":                        model.LabelValue("45.33.82.151:80"),
 				"__meta_linode_instance_id":          model.LabelValue("26838044"),
@@ -139,7 +139,7 @@ func TestLinodeSDRefresh(t *testing.T) {
 				"__meta_linode_ipv6_ranges":          model.LabelValue(",2600:3c03:e000:123::/64,"),
 			},
 		}},
-		"us-east": {region: "us-east", target_count: 2, want: []model.LabelSet{
+		"us-east": {region: "us-east", targetCount: 2, want: []model.LabelSet{
 			{
 				"__address__":                        model.LabelValue("45.33.82.151:80"),
 				"__meta_linode_instance_id":          model.LabelValue("26838044"),
@@ -192,7 +192,7 @@ func TestLinodeSDRefresh(t *testing.T) {
 				"__meta_linode_ipv6_ranges":          model.LabelValue(",2600:3c03:e000:123::/64,"),
 			},
 		}},
-		"us-central": {region: "ca-central", target_count: 1, want: []model.LabelSet{
+		"us-central": {region: "ca-central", targetCount: 1, want: []model.LabelSet{
 			{
 				"__address__":                        model.LabelValue("192.53.120.25:80"),
 				"__meta_linode_instance_id":          model.LabelValue("26837938"),
@@ -252,7 +252,7 @@ func TestLinodeSDRefresh(t *testing.T) {
 		tg := tgs[0]
 		require.NotNil(t, tg)
 		require.NotNil(t, tg.Targets)
-		require.Len(t, tg.Targets, tc.target_count)
+		require.Len(t, tg.Targets, tc.targetCount)
 
 		for i, lbls := range tc.want {
 			t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
