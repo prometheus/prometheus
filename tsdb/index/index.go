@@ -1829,7 +1829,7 @@ func NewStringListIter(s []string) StringIter {
 	return &stringListIter{l: s}
 }
 
-// symbolsIter implements StringIter.
+// stringListIter implements StringIter.
 type stringListIter struct {
 	l   []string
 	cur string

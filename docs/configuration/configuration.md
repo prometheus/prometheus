@@ -600,8 +600,10 @@ See below for the configuration options for Azure discovery:
 # The Azure environment.
 [ environment: <string> | default = AzurePublicCloud ]
 
-# The authentication method, either OAuth or ManagedIdentity.
+# The authentication method, either OAuth, ManagedIdentity or SDK.
 # See https://docs.microsoft.com/en-us/azure/active-directory/managed-identities-azure-resources/overview
+# SDK authentication method uses environment variables by default.
+# See https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication
 [ authentication_method: <string> | default = OAuth]
 # The subscription ID. Always required.
 subscription_id: <string>
@@ -3617,6 +3619,11 @@ azuread:
   [ oauth:
       [ client_id: <string> ]
       [ client_secret: <string> ]
+      [ tenant_id: <string> ] ]
+
+  # Azure SDK auth.
+  # See https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication
+  [ sdk:
       [ tenant_id: <string> ] ]
 
 # Configures the remote write request's TLS settings.

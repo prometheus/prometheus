@@ -1,6 +1,10 @@
 # Maintainers
 
-Julien Pivotto (<roidelapluie@prometheus.io> / @roidelapluie) and Levi Harrison (<levi@leviharrison.dev> / @LeviHarrison) are the main/default maintainers, some parts of the codebase have other maintainers:
+General maintainers:
+* Bryan Boreham (bjboreham@gmail.com / @bboreham)
+* Levi Harrison (levi@leviharrison.dev / @LeviHarrison)
+* Ayoub Mrini (ayoubmrini424@gmail.com / @machine424)
+* Julien Pivotto (roidelapluie@prometheus.io / @roidelapluie)
 
 * `cmd`
   * `promtool`: David Leadbeater (<dgl@dgl.cx> / @dgl)
@@ -18,7 +22,6 @@ George Krajcsovits (<gyorgy.krajcsovits@grafana.com> / @krajorama)
   * `ui`: Julius Volz (<julius.volz@gmail.com> / @juliusv)
     * `module`: Augustin Husson (<husson.augustin@gmail.com> @nexucis)
 * `Makefile` and related build configuration: Simon Pasquier (<pasquier.simon@gmail.com> / @simonpasquier), Ben Kochie (<superq@gmail.com> / @SuperQ)
-
 
 For the sake of brevity, not all subtrees are explicitly listed. Due to the
 size of this repository, the natural changes in focus of maintainers over time,

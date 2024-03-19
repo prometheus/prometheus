@@ -3881,8 +3881,6 @@ type fakeEngine struct {
 	query fakeQuery
 }
 
-func (e *fakeEngine) SetQueryLogger(promql.QueryLogger) {}
-
 func (e *fakeEngine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
 	return &e.query, nil
 }
