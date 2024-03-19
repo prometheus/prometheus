@@ -373,7 +373,7 @@ func TestWriteReadHistogramChunkLayout(t *testing.T) {
 		schema                       int32
 		zeroThreshold                float64
 		positiveSpans, negativeSpans []histogram.Span
-		customBounds                 []float64
+		customValues                 []float64
 	}{
 		{
 			schema:        3,
@@ -427,14 +427,14 @@ func TestWriteReadHistogramChunkLayout(t *testing.T) {
 			schema:        histogram.CustomBucketsSchema,
 			positiveSpans: []histogram.Span{{Offset: -4, Length: 3}, {Offset: 2, Length: 42}},
 			negativeSpans: nil,
-			customBounds:  []float64{-5, -2.5, 0, 0.1, 0.25, 0.5, 1, 2, 5, 10, 25, 50, 100, 255, 500, 1000},
+			customValues:  []float64{-5, -2.5, 0, 0.1, 0.25, 0.5, 1, 2, 5, 10, 25, 50, 100, 255, 500, 1000},
 		},
 	}
 
 	bs := bstream{}
 
 	for _, l := range layouts {
-		writeHistogramChunkLayout(&bs, l.schema, l.zeroThreshold, l.positiveSpans, l.negativeSpans, l.customBounds)
+		writeHistogramChunkLayout(&bs, l.schema, l.zeroThreshold, l.positiveSpans, l.negativeSpans, l.customValues)
 	}
 
 	bsr := newBReader(bs.bytes())
@@ -446,7 +446,7 @@ func TestWriteReadHistogramChunkLayout(t *testing.T) {
 		require.Equal(t, want.zeroThreshold, gotZeroThreshold)
 		require.Equal(t, want.positiveSpans, gotPositiveSpans)
 		require.Equal(t, want.negativeSpans, gotNegativeSpans)
-		require.Equal(t, want.customBounds, gotCustomBounds)
+		require.Equal(t, want.customValues, gotCustomBounds)
 	}
 }
 

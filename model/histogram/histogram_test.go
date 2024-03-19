@@ -80,7 +80,7 @@ func TestHistogramString(t *testing.T) {
 					{Offset: 0, Length: 3},
 				},
 				PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 0},
-				CustomBounds:    []float64{1, 2, 5, 10, 15, 20, 25, 50},
+				CustomValues:    []float64{1, 2, 5, 10, 15, 20, 25, 50},
 			},
 			expectedString: "{count:19, sum:2.7, [-Inf,1]:1, (1,2]:3, (2,5]:1, (5,10]:2, (10,15]:1, (15,20]:1, (20,25]:1}",
 		},
@@ -231,7 +231,7 @@ func TestCumulativeBucketIterator(t *testing.T) {
 					{Offset: 1, Length: 2},
 				},
 				PositiveBuckets: []int64{1, 1, -1, 0},
-				CustomBounds:    []float64{5, 10, 20, 50},
+				CustomValues:    []float64{5, 10, 20, 50},
 			},
 			expectedBuckets: []Bucket[uint64]{
 				{Lower: math.Inf(-1), Upper: 5, Count: 1, LowerInclusive: true, UpperInclusive: true, Index: 0},
@@ -411,7 +411,7 @@ func TestRegularBucketIterator(t *testing.T) {
 					{Offset: 1, Length: 2},
 				},
 				PositiveBuckets: []int64{1, 1, -1, 0},
-				CustomBounds:    []float64{5, 10, 20, 50},
+				CustomValues:    []float64{5, 10, 20, 50},
 			},
 			expectedPositiveBuckets: []Bucket[uint64]{
 				{Lower: math.Inf(-1), Upper: 5, Count: 1, LowerInclusive: true, UpperInclusive: true, Index: 0},
@@ -430,7 +430,7 @@ func TestRegularBucketIterator(t *testing.T) {
 					{Offset: 1, Length: 2},
 				},
 				PositiveBuckets: []int64{1, 1, -1, 0},
-				CustomBounds:    []float64{0, 10, 20, 50},
+				CustomValues:    []float64{0, 10, 20, 50},
 			},
 			expectedPositiveBuckets: []Bucket[uint64]{
 				{Lower: math.Inf(-1), Upper: 0, Count: 1, LowerInclusive: true, UpperInclusive: true, Index: 0},
@@ -448,7 +448,7 @@ func TestRegularBucketIterator(t *testing.T) {
 					{Offset: 0, Length: 5},
 				},
 				PositiveBuckets: []int64{1, 1, 0, -1, 0},
-				CustomBounds:    []float64{-5, 0, 20, 50},
+				CustomValues:    []float64{-5, 0, 20, 50},
 			},
 			expectedPositiveBuckets: []Bucket[uint64]{
 				{Lower: math.Inf(-1), Upper: -5, Count: 1, LowerInclusive: true, UpperInclusive: true, Index: 0},
@@ -563,7 +563,7 @@ func TestCustomBucketsHistogramToFloat(t *testing.T) {
 			{Offset: 0, Length: 3},
 		},
 		PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 0},
-		CustomBounds:    []float64{5, 10, 20, 50, 100, 500},
+		CustomValues:    []float64{5, 10, 20, 50, 100, 500},
 	}
 	cases := []struct {
 		name string
@@ -773,7 +773,7 @@ func TestHistogramEquals(t *testing.T) {
 
 	// Has non-empty custom bounds for exponential schema.
 	hCustom := h1.Copy()
-	hCustom.CustomBounds = []float64{1, 2, 3}
+	hCustom.CustomValues = []float64{1, 2, 3}
 	equals(h1, *hCustom)
 
 	cbh1 := Histogram{
@@ -785,7 +785,7 @@ func TestHistogramEquals(t *testing.T) {
 			{Offset: 10, Length: 3},
 		},
 		PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 0},
-		CustomBounds:    []float64{0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 20, 25, 50, 75, 100, 200, 250, 500, 1000},
+		CustomValues:    []float64{0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 20, 25, 50, 75, 100, 200, 250, 500, 1000},
 	}
 
 	require.NoError(t, cbh1.Validate())
@@ -795,7 +795,7 @@ func TestHistogramEquals(t *testing.T) {
 
 	// Has different custom bounds for custom buckets schema.
 	cbh2 = cbh1.Copy()
-	cbh2.CustomBounds = []float64{0.1, 0.2, 0.5}
+	cbh2.CustomValues = []float64{0.1, 0.2, 0.5}
 	notEquals(cbh1, *cbh2)
 
 	// Has non-empty negative spans and buckets for custom buckets schema.
@@ -853,13 +853,13 @@ func TestHistogramCopy(t *testing.T) {
 				Schema:          CustomBucketsSchema,
 				PositiveSpans:   []Span{{-2, 1}},
 				PositiveBuckets: []int64{1, 3, -3, 42},
-				CustomBounds:    []float64{5, 10, 15},
+				CustomValues:    []float64{5, 10, 15},
 			},
 			expected: &Histogram{
 				Schema:          CustomBucketsSchema,
 				PositiveSpans:   []Span{{-2, 1}},
 				PositiveBuckets: []int64{1, 3, -3, 42},
-				CustomBounds:    []float64{5, 10, 15},
+				CustomValues:    []float64{5, 10, 15},
 			},
 		},
 	}
@@ -918,13 +918,13 @@ func TestHistogramCopyTo(t *testing.T) {
 				Schema:          CustomBucketsSchema,
 				PositiveSpans:   []Span{{-2, 1}},
 				PositiveBuckets: []int64{1, 3, -3, 42},
-				CustomBounds:    []float64{5, 10, 15},
+				CustomValues:    []float64{5, 10, 15},
 			},
 			expected: &Histogram{
 				Schema:          CustomBucketsSchema,
 				PositiveSpans:   []Span{{-2, 1}},
 				PositiveBuckets: []int64{1, 3, -3, 42},
-				CustomBounds:    []float64{5, 10, 15},
+				CustomValues:    []float64{5, 10, 15},
 			},
 		},
 	}
@@ -1214,14 +1214,14 @@ func TestHistogramCompact(t *testing.T) {
 				Schema:          CustomBucketsSchema,
 				PositiveSpans:   []Span{{-2, 1}, {2, 3}},
 				PositiveBuckets: []int64{1, 3, -3, 42},
-				CustomBounds:    []float64{5, 10, 15},
+				CustomValues:    []float64{5, 10, 15},
 			},
 			0,
 			&Histogram{
 				Schema:          CustomBucketsSchema,
 				PositiveSpans:   []Span{{-2, 1}, {2, 3}},
 				PositiveBuckets: []int64{1, 3, -3, 42},
-				CustomBounds:    []float64{5, 10, 15},
+				CustomValues:    []float64{5, 10, 15},
 			},
 		},
 		{
@@ -1230,14 +1230,14 @@ func TestHistogramCompact(t *testing.T) {
 				Schema:          CustomBucketsSchema,
 				PositiveSpans:   []Span{{-2, 1}, {0, 3}, {0, 1}},
 				PositiveBuckets: []int64{1, 3, -3, 42, 3},
-				CustomBounds:    []float64{5, 10, 15, 20},
+				CustomValues:    []float64{5, 10, 15, 20},
 			},
 			0,
 			&Histogram{
 				Schema:          CustomBucketsSchema,
 				PositiveSpans:   []Span{{-2, 5}},
 				PositiveBuckets: []int64{1, 3, -3, 42, 3},
-				CustomBounds:    []float64{5, 10, 15, 20},
+				CustomValues:    []float64{5, 10, 15, 20},
 			},
 		},
 		{
@@ -1246,14 +1246,14 @@ func TestHistogramCompact(t *testing.T) {
 				Schema:          CustomBucketsSchema,
 				PositiveSpans:   []Span{{-2, 2}, {2, 0}, {3, 3}},
 				PositiveBuckets: []int64{1, 3, -3, 42, 3},
-				CustomBounds:    []float64{5, 10, 15, 20},
+				CustomValues:    []float64{5, 10, 15, 20},
 			},
 			0,
 			&Histogram{
 				Schema:          CustomBucketsSchema,
 				PositiveSpans:   []Span{{-2, 2}, {5, 3}},
 				PositiveBuckets: []int64{1, 3, -3, 42, 3},
-				CustomBounds:    []float64{5, 10, 15, 20},
+				CustomValues:    []float64{5, 10, 15, 20},
 			},
 		},
 		{
@@ -1262,14 +1262,14 @@ func TestHistogramCompact(t *testing.T) {
 				Schema:          CustomBucketsSchema,
 				PositiveSpans:   []Span{{-2, 2}, {2, 0}, {2, 0}, {2, 0}, {3, 3}},
 				PositiveBuckets: []int64{1, 3, -3, 42, 3},
-				CustomBounds:    []float64{5, 10, 15, 20},
+				CustomValues:    []float64{5, 10, 15, 20},
 			},
 			0,
 			&Histogram{
 				Schema:          CustomBucketsSchema,
 				PositiveSpans:   []Span{{-2, 2}, {9, 3}},
 				PositiveBuckets: []int64{1, 3, -3, 42, 3},
-				CustomBounds:    []float64{5, 10, 15, 20},
+				CustomValues:    []float64{5, 10, 15, 20},
 			},
 		},
 		{
@@ -1278,14 +1278,14 @@ func TestHistogramCompact(t *testing.T) {
 				Schema:          CustomBucketsSchema,
 				PositiveSpans:   []Span{{-4, 6}, {3, 6}},
 				PositiveBuckets: []int64{0, 0, 1, 3, -4, 0, 1, 42, 3, -46, 0, 0},
-				CustomBounds:    []float64{5, 10, 15, 20},
+				CustomValues:    []float64{5, 10, 15, 20},
 			},
 			0,
 			&Histogram{
 				Schema:          CustomBucketsSchema,
 				PositiveSpans:   []Span{{-2, 2}, {5, 3}},
 				PositiveBuckets: []int64{1, 3, -3, 42, 3},
-				CustomBounds:    []float64{5, 10, 15, 20},
+				CustomValues:    []float64{5, 10, 15, 20},
 			},
 		},
 	}
@@ -1454,7 +1454,7 @@ func TestHistogramValidation(t *testing.T) {
 					{Offset: 1, Length: 2},
 				},
 				PositiveBuckets: []int64{1, 1, -1, 0},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			errMsg:    `histogram with exponential schema must not have custom bounds`,
 			skipFloat: true, // Converting to float will remove the wrong fields so only the float version will pass validation
@@ -1476,7 +1476,7 @@ func TestHistogramValidation(t *testing.T) {
 					{Offset: 1, Length: 2},
 				},
 				NegativeBuckets: []int64{1, 1, -1, 0},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			errMsg:    `custom buckets: must have zero count of 0`,
 			skipFloat: true, // Converting to float will remove the wrong fields so only the float version will pass validation
@@ -1491,7 +1491,7 @@ func TestHistogramValidation(t *testing.T) {
 					{Offset: 1, Length: 2},
 				},
 				PositiveBuckets: []int64{1, 1, -1, 0},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			errMsg: `custom buckets: span number 1 with offset -1: histogram has a span whose offset is negative`,
 		},
@@ -1505,7 +1505,7 @@ func TestHistogramValidation(t *testing.T) {
 					{Offset: -1, Length: 2},
 				},
 				PositiveBuckets: []int64{1, 1, -1, 0},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			errMsg: `custom buckets: span number 2 with offset -1: histogram has a span whose offset is negative`,
 		},
@@ -1519,7 +1519,7 @@ func TestHistogramValidation(t *testing.T) {
 					{Offset: 1, Length: 2},
 				},
 				PositiveBuckets: []int64{1, 1, -1},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			errMsg: `custom buckets: spans need 4 buckets, have 3 buckets: histogram spans specify different number of buckets than provided`,
 		},
@@ -1533,7 +1533,7 @@ func TestHistogramValidation(t *testing.T) {
 					{Offset: 1, Length: 2},
 				},
 				PositiveBuckets: []int64{1, 1, -1, 0},
-				CustomBounds:    []float64{1, 2, 3},
+				CustomValues:    []float64{1, 2, 3},
 			},
 			errMsg: `custom buckets: only 3 custom bounds defined which is insufficient to cover total span length of 5: histogram custom bounds are too few`,
 		},
@@ -1547,7 +1547,7 @@ func TestHistogramValidation(t *testing.T) {
 					{Offset: 1, Length: 2},
 				},
 				PositiveBuckets: []int64{1, 1, -1, 0},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 		},
 		"valid custom buckets histogram with extra bounds": {
@@ -1560,7 +1560,7 @@ func TestHistogramValidation(t *testing.T) {
 					{Offset: 1, Length: 2},
 				},
 				PositiveBuckets: []int64{1, 1, -1, 0},
-				CustomBounds:    []float64{1, 2, 3, 4, 5, 6, 7, 8},
+				CustomValues:    []float64{1, 2, 3, 4, 5, 6, 7, 8},
 			},
 		},
 	}

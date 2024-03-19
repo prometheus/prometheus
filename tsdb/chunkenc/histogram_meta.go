@@ -21,21 +21,21 @@ import (
 
 func writeHistogramChunkLayout(
 	b *bstream, schema int32, zeroThreshold float64,
-	positiveSpans, negativeSpans []histogram.Span, customBounds []float64,
+	positiveSpans, negativeSpans []histogram.Span, customValues []float64,
 ) {
 	putZeroThreshold(b, zeroThreshold)
 	putVarbitInt(b, int64(schema))
 	putHistogramChunkLayoutSpans(b, positiveSpans)
 	putHistogramChunkLayoutSpans(b, negativeSpans)
 	if histogram.IsCustomBucketsSchema(schema) {
-		putHistogramChunkLayoutCustomBounds(b, customBounds)
+		putHistogramChunkLayoutCustomBounds(b, customValues)
 	}
 }
 
 func readHistogramChunkLayout(b *bstreamReader) (
 	schema int32, zeroThreshold float64,
 	positiveSpans, negativeSpans []histogram.Span,
-	customBounds []float64,
+	customValues []float64,
 	err error,
 ) {
 	zeroThreshold, err = readZeroThreshold(b)
@@ -60,7 +60,7 @@ func readHistogramChunkLayout(b *bstreamReader) (
 	}
 
 	if histogram.IsCustomBucketsSchema(schema) {
-		customBounds, err = readHistogramChunkLayoutCustomBounds(b)
+		customValues, err = readHistogramChunkLayoutCustomBounds(b)
 		if err != nil {
 			return
 		}
@@ -103,15 +103,15 @@ func readHistogramChunkLayoutSpans(b *bstreamReader) ([]histogram.Span, error) {
 	return spans, nil
 }
 
-func putHistogramChunkLayoutCustomBounds(b *bstream, customBounds []float64) {
-	putVarbitUint(b, uint64(len(customBounds)))
-	for _, bound := range customBounds {
+func putHistogramChunkLayoutCustomBounds(b *bstream, customValues []float64) {
+	putVarbitUint(b, uint64(len(customValues)))
+	for _, bound := range customValues {
 		putCustomBound(b, bound)
 	}
 }
 
 func readHistogramChunkLayoutCustomBounds(b *bstreamReader) ([]float64, error) {
-	var customBounds []float64
+	var customValues []float64
 	num, err := readVarbitUint(b)
 	if err != nil {
 		return nil, err
@@ -122,9 +122,9 @@ func readHistogramChunkLayoutCustomBounds(b *bstreamReader) ([]float64, error) {
 			return nil, err
 		}
 
-		customBounds = append(customBounds, bound)
+		customValues = append(customValues, bound)
 	}
-	return customBounds, nil
+	return customValues, nil
 }
 
 // putZeroThreshold writes the zero threshold to the bstream. It stores typical

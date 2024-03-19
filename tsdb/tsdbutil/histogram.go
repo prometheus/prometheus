@@ -69,7 +69,7 @@ func GenerateTestCustomBucketsHistogram(i int) *histogram.Histogram {
 			{Offset: 1, Length: 2},
 		},
 		PositiveBuckets: []int64{int64(i + 1), 1, -1, 0},
-		CustomBounds:    []float64{0, 1, 2, 3, 4},
+		CustomValues:    []float64{0, 1, 2, 3, 4},
 	}
 }
 
@@ -129,7 +129,7 @@ func GenerateTestCustomBucketsFloatHistogram(i int) *histogram.FloatHistogram {
 			{Offset: 1, Length: 2},
 		},
 		PositiveBuckets: []float64{float64(i + 1), float64(i + 2), float64(i + 1), float64(i + 1)},
-		CustomBounds:    []float64{0, 1, 2, 3, 4},
+		CustomValues:    []float64{0, 1, 2, 3, 4},
 	}
 }
 

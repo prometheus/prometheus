@@ -308,7 +308,7 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 			{Offset: 1, Length: 1},
 		},
 		PositiveBuckets: []float64{6, 3, 3, 2, 4, 5, 1},
-		CustomBounds:    []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20},
+		CustomValues:    []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20},
 	}
 
 	setup := func(h *histogram.FloatHistogram) (Chunk, *FloatHistogramAppender, int64, *histogram.FloatHistogram) {
@@ -558,7 +558,7 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 	{ // Custom buckets, change only in custom bounds.
 		c, hApp, ts, h1 := setup(cbh)
 		h2 := h1.Copy()
-		h2.CustomBounds = []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21}
+		h2.CustomValues = []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21}
 		_, _, ok, _ := hApp.appendable(h2)
 		require.False(t, ok)
 
@@ -808,7 +808,7 @@ func TestFloatHistogramChunkAppendableWithEmptySpan(t *testing.T) {
 					{Offset: 0, Length: 3},
 				},
 				PositiveBuckets: []float64{1, 2, 1, 1, 1, 1, 1},
-				CustomBounds:    []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+				CustomValues:    []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
 			},
 			h2: &histogram.FloatHistogram{
 				Schema: histogram.CustomBucketsSchema,
@@ -820,7 +820,7 @@ func TestFloatHistogramChunkAppendableWithEmptySpan(t *testing.T) {
 					{Offset: 0, Length: 3},
 				},
 				PositiveBuckets: []float64{1, 3, 1, 2, 1, 1, 1},
-				CustomBounds:    []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+				CustomValues:    []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
 			},
 		},
 	}
@@ -879,7 +879,7 @@ func TestFloatHistogramChunkAppendableGauge(t *testing.T) {
 			{Offset: 1, Length: 1},
 		},
 		PositiveBuckets: []float64{6, 3, 3, 2, 4, 5, 1},
-		CustomBounds:    []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20},
+		CustomValues:    []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20},
 	}
 
 	setup := func(h *histogram.FloatHistogram) (Chunk, *FloatHistogramAppender, int64, *histogram.FloatHistogram) {
@@ -1088,7 +1088,7 @@ func TestFloatHistogramChunkAppendableGauge(t *testing.T) {
 	{ // Custom buckets, change only in custom bounds.
 		c, hApp, ts, h1 := setup(cbh)
 		h2 := h1.Copy()
-		h2.CustomBounds = []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21}
+		h2.CustomValues = []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21}
 		_, _, _, _, _, _, ok := hApp.appendableGauge(h2)
 		require.False(t, ok)
 
@@ -1183,7 +1183,7 @@ func TestFloatHistogramAppendOnlyErrors(t *testing.T) {
 
 		// Add erroring histogram.
 		h2 := h.Copy()
-		h2.CustomBounds = []float64{0, 1, 2, 3, 4, 5, 6, 7}
+		h2.CustomValues = []float64{0, 1, 2, 3, 4, 5, 6, 7}
 		c, isRecoded, _, err = app.AppendFloatHistogram(nil, 2, h2, true)
 		require.Nil(t, c)
 		require.False(t, isRecoded)

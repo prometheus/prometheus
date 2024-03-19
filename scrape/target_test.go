@@ -481,7 +481,7 @@ func TestBucketLimitAppender(t *testing.T) {
 			{Offset: 0, Length: 3},
 		},
 		PositiveBuckets: []int64{3, 0, 0},
-		CustomBounds:    []float64{1, 2, 3},
+		CustomValues:    []float64{1, 2, 3},
 	}
 
 	cases := []struct {
@@ -592,7 +592,7 @@ func TestMaxSchemaAppender(t *testing.T) {
 			{Offset: 0, Length: 3},
 		},
 		PositiveBuckets: []int64{3, 0, 0},
-		CustomBounds:    []float64{1, 2, 3},
+		CustomValues:    []float64{1, 2, 3},
 	}
 
 	cases := []struct {

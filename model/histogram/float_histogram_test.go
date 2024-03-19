@@ -139,7 +139,7 @@ func TestFloatHistogramMul(t *testing.T) {
 				Sum:             2349209.324,
 				PositiveSpans:   []Span{{0, 1}, {2, 3}},
 				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1},
-				CustomBounds:    []float64{1, 2, 3},
+				CustomValues:    []float64{1, 2, 3},
 			},
 			1,
 			&FloatHistogram{
@@ -148,7 +148,7 @@ func TestFloatHistogramMul(t *testing.T) {
 				Sum:             2349209.324,
 				PositiveSpans:   []Span{{0, 1}, {2, 3}},
 				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1},
-				CustomBounds:    []float64{1, 2, 3},
+				CustomValues:    []float64{1, 2, 3},
 			},
 		},
 		{
@@ -159,7 +159,7 @@ func TestFloatHistogramMul(t *testing.T) {
 				Sum:             23,
 				PositiveSpans:   []Span{{0, 2}, {1, 3}},
 				PositiveBuckets: []float64{1, 0, 3, 4, 7},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			3,
 			&FloatHistogram{
@@ -168,7 +168,7 @@ func TestFloatHistogramMul(t *testing.T) {
 				Sum:             69,
 				PositiveSpans:   []Span{{0, 2}, {1, 3}},
 				PositiveBuckets: []float64{3, 0, 9, 12, 21},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 		},
 	}
@@ -224,13 +224,13 @@ func TestFloatHistogramCopy(t *testing.T) {
 				Schema:          CustomBucketsSchema,
 				PositiveSpans:   []Span{{0, 1}},
 				PositiveBuckets: []float64{1, 3, -3, 42},
-				CustomBounds:    []float64{1, 2, 3},
+				CustomValues:    []float64{1, 2, 3},
 			},
 			expected: &FloatHistogram{
 				Schema:          CustomBucketsSchema,
 				PositiveSpans:   []Span{{0, 1}},
 				PositiveBuckets: []float64{1, 3, -3, 42},
-				CustomBounds:    []float64{1, 2, 3},
+				CustomValues:    []float64{1, 2, 3},
 			},
 		},
 	}
@@ -289,13 +289,13 @@ func TestFloatHistogramCopyTo(t *testing.T) {
 				Schema:          CustomBucketsSchema,
 				PositiveSpans:   []Span{{0, 1}},
 				PositiveBuckets: []float64{1, 3, -3, 42},
-				CustomBounds:    []float64{1, 2, 3},
+				CustomValues:    []float64{1, 2, 3},
 			},
 			expected: &FloatHistogram{
 				Schema:          CustomBucketsSchema,
 				PositiveSpans:   []Span{{0, 1}},
 				PositiveBuckets: []float64{1, 3, -3, 42},
-				CustomBounds:    []float64{1, 2, 3},
+				CustomValues:    []float64{1, 2, 3},
 			},
 		},
 	}
@@ -417,7 +417,7 @@ func TestFloatHistogramDiv(t *testing.T) {
 				Sum:             2349209.324,
 				PositiveSpans:   []Span{{0, 1}, {2, 3}},
 				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1},
-				CustomBounds:    []float64{1, 2, 3},
+				CustomValues:    []float64{1, 2, 3},
 			},
 			1,
 			&FloatHistogram{
@@ -426,7 +426,7 @@ func TestFloatHistogramDiv(t *testing.T) {
 				Sum:             2349209.324,
 				PositiveSpans:   []Span{{0, 1}, {2, 3}},
 				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1},
-				CustomBounds:    []float64{1, 2, 3},
+				CustomValues:    []float64{1, 2, 3},
 			},
 		},
 		{
@@ -437,7 +437,7 @@ func TestFloatHistogramDiv(t *testing.T) {
 				Sum:             23,
 				PositiveSpans:   []Span{{0, 2}, {1, 3}},
 				PositiveBuckets: []float64{1, 0, 3, 4, 7},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			2,
 			&FloatHistogram{
@@ -446,7 +446,7 @@ func TestFloatHistogramDiv(t *testing.T) {
 				Sum:             11.5,
 				PositiveSpans:   []Span{{0, 2}, {1, 3}},
 				PositiveBuckets: []float64{0.5, 0, 1.5, 2, 3.5},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 		},
 	}
@@ -1051,7 +1051,7 @@ func TestFloatHistogramDetectReset(t *testing.T) {
 			"no buckets to some buckets with custom bounds",
 			&FloatHistogram{
 				Schema:       CustomBucketsSchema,
-				CustomBounds: []float64{1, 2, 3},
+				CustomValues: []float64{1, 2, 3},
 			},
 			&FloatHistogram{
 				Schema:          CustomBucketsSchema,
@@ -1059,7 +1059,7 @@ func TestFloatHistogramDetectReset(t *testing.T) {
 				Sum:             2349209.324,
 				PositiveSpans:   []Span{{0, 1}, {2, 3}},
 				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1},
-				CustomBounds:    []float64{1, 2, 3},
+				CustomValues:    []float64{1, 2, 3},
 			},
 			false,
 		},
@@ -1071,11 +1071,11 @@ func TestFloatHistogramDetectReset(t *testing.T) {
 				Sum:             2349209.324,
 				PositiveSpans:   []Span{{0, 1}, {2, 3}},
 				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1},
-				CustomBounds:    []float64{1, 2, 3},
+				CustomValues:    []float64{1, 2, 3},
 			},
 			&FloatHistogram{
 				Schema:       CustomBucketsSchema,
-				CustomBounds: []float64{1, 2, 3},
+				CustomValues: []float64{1, 2, 3},
 			},
 			true,
 		},
@@ -1087,7 +1087,7 @@ func TestFloatHistogramDetectReset(t *testing.T) {
 				Sum:             2349209.324,
 				PositiveSpans:   []Span{{0, 1}, {2, 3}},
 				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			&FloatHistogram{
 				Schema:          CustomBucketsSchema,
@@ -1095,7 +1095,7 @@ func TestFloatHistogramDetectReset(t *testing.T) {
 				Sum:             2349209.324,
 				PositiveSpans:   []Span{{0, 2}, {1, 3}},
 				PositiveBuckets: []float64{1, 1.23, 3.3, 4.2, 0.1},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			false,
 		},
@@ -1107,7 +1107,7 @@ func TestFloatHistogramDetectReset(t *testing.T) {
 				Sum:             2349209.324,
 				PositiveSpans:   []Span{{0, 2}, {1, 3}},
 				PositiveBuckets: []float64{1, 1.23, 3.3, 4.2, 0.1},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			&FloatHistogram{
 				Schema:          CustomBucketsSchema,
@@ -1115,7 +1115,7 @@ func TestFloatHistogramDetectReset(t *testing.T) {
 				Sum:             2349209.324,
 				PositiveSpans:   []Span{{0, 1}, {2, 3}},
 				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			true,
 		},
@@ -1127,7 +1127,7 @@ func TestFloatHistogramDetectReset(t *testing.T) {
 				Sum:             2349209.324,
 				PositiveSpans:   []Span{{0, 2}, {1, 3}},
 				PositiveBuckets: []float64{1, 0, 3.3, 4.2, 0.1},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			&FloatHistogram{
 				Schema:          CustomBucketsSchema,
@@ -1135,7 +1135,7 @@ func TestFloatHistogramDetectReset(t *testing.T) {
 				Sum:             2349209.324,
 				PositiveSpans:   []Span{{0, 1}, {2, 3}},
 				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			false,
 		},
@@ -1147,7 +1147,7 @@ func TestFloatHistogramDetectReset(t *testing.T) {
 				Sum:             2349209.324,
 				PositiveSpans:   []Span{{0, 2}, {1, 3}},
 				PositiveBuckets: []float64{1, 0, 3.3, 4.2, 0.1},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			&FloatHistogram{
 				Schema:          CustomBucketsSchema,
@@ -1155,7 +1155,7 @@ func TestFloatHistogramDetectReset(t *testing.T) {
 				Sum:             2349209.324,
 				PositiveSpans:   []Span{{0, 2}, {1, 3}},
 				PositiveBuckets: []float64{1, 0, 3.3, 4.3, 0.1},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			false,
 		},
@@ -1167,7 +1167,7 @@ func TestFloatHistogramDetectReset(t *testing.T) {
 				Sum:             2349209.324,
 				PositiveSpans:   []Span{{0, 2}, {1, 3}},
 				PositiveBuckets: []float64{1, 0, 3.3, 4.2, 0.1},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			&FloatHistogram{
 				Schema:          CustomBucketsSchema,
@@ -1175,7 +1175,7 @@ func TestFloatHistogramDetectReset(t *testing.T) {
 				Sum:             2349209.324,
 				PositiveSpans:   []Span{{0, 2}, {1, 3}},
 				PositiveBuckets: []float64{1, 0, 3.3, 4.1, 0.1},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			true,
 		},
@@ -1478,14 +1478,14 @@ func TestFloatHistogramCompact(t *testing.T) {
 				Schema:          CustomBucketsSchema,
 				PositiveSpans:   []Span{{0, 1}, {2, 3}},
 				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1},
-				CustomBounds:    []float64{1, 2, 3},
+				CustomValues:    []float64{1, 2, 3},
 			},
 			0,
 			&FloatHistogram{
 				Schema:          CustomBucketsSchema,
 				PositiveSpans:   []Span{{0, 1}, {2, 3}},
 				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1},
-				CustomBounds:    []float64{1, 2, 3},
+				CustomValues:    []float64{1, 2, 3},
 			},
 		},
 		{
@@ -1494,14 +1494,14 @@ func TestFloatHistogramCompact(t *testing.T) {
 				Schema:          CustomBucketsSchema,
 				PositiveSpans:   []Span{{0, 1}, {0, 3}, {0, 1}},
 				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1, 3.3},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			0,
 			&FloatHistogram{
 				Schema:          CustomBucketsSchema,
 				PositiveSpans:   []Span{{0, 5}},
 				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1, 3.3},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 		},
 		{
@@ -1510,14 +1510,14 @@ func TestFloatHistogramCompact(t *testing.T) {
 				Schema:          CustomBucketsSchema,
 				PositiveSpans:   []Span{{0, 2}, {2, 0}, {2, 0}, {2, 0}, {3, 3}},
 				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1, 3.3},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			0,
 			&FloatHistogram{
 				Schema:          CustomBucketsSchema,
 				PositiveSpans:   []Span{{0, 2}, {9, 3}},
 				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1, 3.3},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 		},
 		{
@@ -1526,14 +1526,14 @@ func TestFloatHistogramCompact(t *testing.T) {
 				Schema:          CustomBucketsSchema,
 				PositiveSpans:   []Span{{0, 4}, {5, 6}},
 				PositiveBuckets: []float64{0, 0, 1, 3.3, 4.2, 0.1, 3.3, 0, 0, 0},
-				CustomBounds:    []float64{1, 2, 3, 4, 5, 6, 7, 8, 9},
+				CustomValues:    []float64{1, 2, 3, 4, 5, 6, 7, 8, 9},
 			},
 			0,
 			&FloatHistogram{
 				Schema:          CustomBucketsSchema,
 				PositiveSpans:   []Span{{2, 2}, {5, 3}},
 				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1, 3.3},
-				CustomBounds:    []float64{1, 2, 3, 4, 5, 6, 7, 8, 9},
+				CustomValues:    []float64{1, 2, 3, 4, 5, 6, 7, 8, 9},
 			},
 		},
 	}
@@ -2009,7 +2009,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				Sum:             2.345,
 				PositiveSpans:   []Span{{0, 2}, {1, 3}},
 				PositiveBuckets: []float64{1, 0, 3, 4, 7},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			&FloatHistogram{
 				Schema:          CustomBucketsSchema,
@@ -2017,7 +2017,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				Sum:             1.234,
 				PositiveSpans:   []Span{{0, 2}, {1, 3}},
 				PositiveBuckets: []float64{0, 0, 2, 3, 6},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			&FloatHistogram{
 				Schema:          CustomBucketsSchema,
@@ -2025,7 +2025,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				Sum:             3.579,
 				PositiveSpans:   []Span{{0, 2}, {1, 3}},
 				PositiveBuckets: []float64{1, 0, 5, 7, 13},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			"",
 		},
@@ -2037,7 +2037,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				Sum:             2.345,
 				PositiveSpans:   []Span{{0, 2}, {1, 1}, {0, 2}},
 				PositiveBuckets: []float64{1, 0, 3, 4, 7},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			&FloatHistogram{
 				Schema:          CustomBucketsSchema,
@@ -2045,7 +2045,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				Sum:             1.234,
 				PositiveSpans:   []Span{{0, 2}, {1, 2}, {0, 1}},
 				PositiveBuckets: []float64{0, 0, 2, 3, 6},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			&FloatHistogram{
 				Schema:          CustomBucketsSchema,
@@ -2053,7 +2053,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				Sum:             3.579,
 				PositiveSpans:   []Span{{0, 2}, {1, 1}, {0, 2}},
 				PositiveBuckets: []float64{1, 0, 5, 7, 13},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			"",
 		},
@@ -2065,7 +2065,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				Sum:             2.345,
 				PositiveSpans:   []Span{{0, 2}, {2, 3}},
 				PositiveBuckets: []float64{1, 0, 3, 4, 7},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			&FloatHistogram{
 				Schema:          CustomBucketsSchema,
@@ -2073,7 +2073,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				Sum:             1.234,
 				PositiveSpans:   []Span{{2, 2}, {3, 3}},
 				PositiveBuckets: []float64{5, 4, 2, 3, 6},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			&FloatHistogram{
 				Schema:          CustomBucketsSchema,
@@ -2081,7 +2081,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				Sum:             3.579,
 				PositiveSpans:   []Span{{0, 4}, {0, 6}},
 				PositiveBuckets: []float64{1, 0, 5, 4, 3, 4, 7, 2, 3, 6},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			"",
 		},
@@ -2093,7 +2093,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				Sum:             1.234,
 				PositiveSpans:   []Span{{2, 2}, {3, 3}},
 				PositiveBuckets: []float64{5, 4, 2, 3, 6},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			&FloatHistogram{
 				Schema:          CustomBucketsSchema,
@@ -2101,7 +2101,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				Sum:             2.345,
 				PositiveSpans:   []Span{{0, 2}, {2, 3}},
 				PositiveBuckets: []float64{1, 0, 3, 4, 7},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			&FloatHistogram{
 				Schema:          CustomBucketsSchema,
@@ -2109,7 +2109,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				Sum:             3.579,
 				PositiveSpans:   []Span{{0, 4}, {0, 6}},
 				PositiveBuckets: []float64{1, 0, 5, 4, 3, 4, 7, 2, 3, 6},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			"",
 		},
@@ -2121,7 +2121,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				Sum:             2.345,
 				PositiveSpans:   []Span{{0, 2}, {2, 3}},
 				PositiveBuckets: []float64{1, 0, 3, 4, 7},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			&FloatHistogram{
 				Schema:          CustomBucketsSchema,
@@ -2129,7 +2129,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				Sum:             1.234,
 				PositiveSpans:   []Span{{1, 4}, {0, 3}},
 				PositiveBuckets: []float64{5, 4, 2, 3, 6, 2, 5},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			&FloatHistogram{
 				Schema:          CustomBucketsSchema,
@@ -2137,7 +2137,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				Sum:             3.579,
 				PositiveSpans:   []Span{{0, 4}, {0, 4}},
 				PositiveBuckets: []float64{1, 5, 4, 2, 6, 10, 9, 5},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			"",
 		},
@@ -2149,7 +2149,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				Sum:             1.234,
 				PositiveSpans:   []Span{{1, 4}, {0, 3}},
 				PositiveBuckets: []float64{5, 4, 2, 3, 6, 2, 5},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			&FloatHistogram{
 				Schema:          CustomBucketsSchema,
@@ -2157,7 +2157,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				Sum:             2.345,
 				PositiveSpans:   []Span{{0, 2}, {2, 3}},
 				PositiveBuckets: []float64{1, 0, 3, 4, 7},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			&FloatHistogram{
 				Schema:          CustomBucketsSchema,
@@ -2165,7 +2165,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				Sum:             3.579,
 				PositiveSpans:   []Span{{0, 4}, {0, 4}},
 				PositiveBuckets: []float64{1, 5, 4, 2, 6, 10, 9, 5},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			"",
 		},
@@ -2177,7 +2177,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				Sum:             2.345,
 				PositiveSpans:   []Span{{0, 2}, {1, 3}},
 				PositiveBuckets: []float64{1, 0, 3, 4, 7},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			&FloatHistogram{
 				Schema:          CustomBucketsSchema,
@@ -2185,7 +2185,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				Sum:             1.234,
 				PositiveSpans:   []Span{{0, 2}, {1, 3}},
 				PositiveBuckets: []float64{0, 0, 2, 3, 6},
-				CustomBounds:    []float64{1, 2, 3, 4, 5},
+				CustomValues:    []float64{1, 2, 3, 4, 5},
 			},
 			nil,
 			"cannot apply this operation on custom buckets histograms with different custom bounds",
@@ -2209,7 +2209,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 				Sum:             12,
 				PositiveSpans:   []Span{{0, 2}, {1, 3}},
 				PositiveBuckets: []float64{0, 0, 2, 3, 6},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			nil,
 			"cannot apply this operation on histograms with a mix of exponential and custom bucket schemas",
@@ -2342,7 +2342,7 @@ func TestFloatHistogramSub(t *testing.T) {
 				Sum:             23,
 				PositiveSpans:   []Span{{0, 2}, {1, 3}},
 				PositiveBuckets: []float64{1, 0, 3, 4, 7},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			&FloatHistogram{
 				Schema:          CustomBucketsSchema,
@@ -2350,7 +2350,7 @@ func TestFloatHistogramSub(t *testing.T) {
 				Sum:             12,
 				PositiveSpans:   []Span{{0, 2}, {1, 3}},
 				PositiveBuckets: []float64{0, 0, 2, 3, 6},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			&FloatHistogram{
 				Schema:          CustomBucketsSchema,
@@ -2358,7 +2358,7 @@ func TestFloatHistogramSub(t *testing.T) {
 				Sum:             11,
 				PositiveSpans:   []Span{{0, 2}, {1, 3}},
 				PositiveBuckets: []float64{1, 0, 1, 1, 1},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			"",
 		},
@@ -2370,7 +2370,7 @@ func TestFloatHistogramSub(t *testing.T) {
 				Sum:             23,
 				PositiveSpans:   []Span{{0, 2}, {1, 3}},
 				PositiveBuckets: []float64{1, 0, 3, 4, 7},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			&FloatHistogram{
 				Schema:          CustomBucketsSchema,
@@ -2378,7 +2378,7 @@ func TestFloatHistogramSub(t *testing.T) {
 				Sum:             12,
 				PositiveSpans:   []Span{{0, 2}, {1, 3}},
 				PositiveBuckets: []float64{0, 0, 2, 3, 6},
-				CustomBounds:    []float64{1, 2, 3, 4, 5},
+				CustomValues:    []float64{1, 2, 3, 4, 5},
 			},
 			nil,
 			"cannot apply this operation on custom buckets histograms with different custom bounds",
@@ -2402,7 +2402,7 @@ func TestFloatHistogramSub(t *testing.T) {
 				Sum:             12,
 				PositiveSpans:   []Span{{0, 2}, {1, 3}},
 				PositiveBuckets: []float64{0, 0, 2, 3, 6},
-				CustomBounds:    []float64{1, 2, 3, 4},
+				CustomValues:    []float64{1, 2, 3, 4},
 			},
 			nil,
 			"cannot apply this operation on histograms with a mix of exponential and custom bucket schemas",
@@ -2521,7 +2521,7 @@ func TestFloatHistogramCopyToSchema(t *testing.T) {
 				Schema:          CustomBucketsSchema,
 				PositiveSpans:   []Span{{0, 3}, {5, 5}},
 				PositiveBuckets: []float64{1, 0, 0, 3, 2, 2, 3, 4},
-				CustomBounds:    []float64{1, 2, 3, 4, 5, 6, 7},
+				CustomValues:    []float64{1, 2, 3, 4, 5, 6, 7},
 			},
 			&FloatHistogram{
 				Count:           30,
@@ -2529,7 +2529,7 @@ func TestFloatHistogramCopyToSchema(t *testing.T) {
 				Schema:          CustomBucketsSchema,
 				PositiveSpans:   []Span{{0, 3}, {5, 5}},
 				PositiveBuckets: []float64{1, 0, 0, 3, 2, 2, 3, 4},
-				CustomBounds:    []float64{1, 2, 3, 4, 5, 6, 7},
+				CustomValues:    []float64{1, 2, 3, 4, 5, 6, 7},
 			},
 		},
 	}
@@ -3120,7 +3120,7 @@ func TestFloatCustomBucketsIterators(t *testing.T) {
 					{Offset: 1, Length: 1},
 				},
 				PositiveBuckets: []float64{100, 344, 123, 55},
-				CustomBounds:    []float64{10, 25, 50, 100, 500},
+				CustomValues:    []float64{10, 25, 50, 100, 500},
 			},
 			expPositiveBuckets: []Bucket[float64]{
 				{Lower: math.Inf(-1), Upper: 10, LowerInclusive: true, UpperInclusive: true, Count: 100, Index: 0},
@@ -3140,7 +3140,7 @@ func TestFloatCustomBucketsIterators(t *testing.T) {
 					{Offset: 1, Length: 1},
 				},
 				PositiveBuckets: []float64{100, 344, 123, 55},
-				CustomBounds:    []float64{-10, -5, 0, 10, 25},
+				CustomValues:    []float64{-10, -5, 0, 10, 25},
 			},
 			expPositiveBuckets: []Bucket[float64]{
 				{Lower: math.Inf(-1), Upper: -10, LowerInclusive: true, UpperInclusive: true, Count: 100, Index: 0},
@@ -3259,7 +3259,7 @@ func TestFloatHistogramEquals(t *testing.T) {
 
 	// Custom bounds are defined for exponential schema.
 	hCustom := h1.Copy()
-	hCustom.CustomBounds = []float64{1, 2, 3}
+	hCustom.CustomValues = []float64{1, 2, 3}
 	equals(h1, *hCustom)
 
 	cbh1 := FloatHistogram{
@@ -3268,7 +3268,7 @@ func TestFloatHistogramEquals(t *testing.T) {
 		Sum:             9.7,
 		PositiveSpans:   []Span{{0, 1}},
 		PositiveBuckets: []float64{3},
-		CustomBounds:    []float64{1, 2, 3},
+		CustomValues:    []float64{1, 2, 3},
 	}
 
 	require.NoError(t, cbh1.Validate())
@@ -3278,7 +3278,7 @@ func TestFloatHistogramEquals(t *testing.T) {
 
 	// Has different custom bounds for custom buckets schema.
 	cbh2 = cbh1.Copy()
-	cbh2.CustomBounds = []float64{1, 2, 3, 4}
+	cbh2.CustomValues = []float64{1, 2, 3, 4}
 	notEquals(cbh1, *cbh2)
 
 	// Has non-empty negative spans and buckets for custom buckets schema.
@@ -3313,7 +3313,7 @@ func TestFloatHistogramSize(t *testing.T) {
 				PositiveBuckets:  nil,         // 24 bytes.
 				NegativeSpans:    nil,         // 24 bytes.
 				NegativeBuckets:  nil,         // 24 bytes.
-				CustomBounds:     nil,         // 24 bytes.
+				CustomValues:     nil,         // 24 bytes.
 			},
 			8 + 4 + 4 + 8 + 8 + 8 + 8 + 24 + 24 + 24 + 24 + 24,
 		},
@@ -3335,7 +3335,7 @@ func TestFloatHistogramSize(t *testing.T) {
 					{3, 2},  // 2 * 4 bytes.
 					{3, 2}}, //  2 * 4 bytes.
 				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000}, // 24 bytes + 4 * 8 bytes.
-				CustomBounds:    nil,                              // 24 bytes.
+				CustomValues:    nil,                              // 24 bytes.
 			},
 			8 + 4 + 4 + 8 + 8 + 8 + 8 + (24 + 2*4 + 2*4) + (24 + 2*4 + 2*4) + (24 + 4*8) + (24 + 4*8) + 24,
 		},
@@ -3355,7 +3355,7 @@ func TestFloatHistogramSize(t *testing.T) {
 				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1}, // 24 bytes + 4 * 8 bytes.
 				NegativeSpans:   nil,                         // 24 bytes.
 				NegativeBuckets: nil,                         // 24 bytes.
-				CustomBounds:    []float64{1, 2, 3},          // 24 bytes + 3 * 8 bytes.
+				CustomValues:    []float64{1, 2, 3},          // 24 bytes + 3 * 8 bytes.
 			},
 			8 + 4 + 4 + 8 + 8 + 8 + 8 + (24 + 2*4 + 2*4) + (24 + 4*8) + 24 + 24 + (24 + 3*8),
 		},
@@ -3406,7 +3406,7 @@ func TestFloatHistogramString(t *testing.T) {
 					{2, 4},
 				},
 				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1, 5},
-				CustomBounds:    []float64{1, 2, 5, 10, 15, 20},
+				CustomValues:    []float64{1, 2, 5, 10, 15, 20},
 			},
 			`{count:3493.3, sum:2.349209324e+06, [-Inf,1]:1, (5,10]:3.3, (10,15]:4.2, (15,20]:0.1, (20,+Inf]:5}`,
 		},
