@@ -58,14 +58,14 @@ func (m *SDMock) SetupHandlers() {
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
-			x_filter := struct {
+			xFilter := struct {
 				Region string `json:"region"`
 			}{}
-			json.Unmarshal([]byte(r.Header.Get("X-Filter")), &x_filter)
+			json.Unmarshal([]byte(r.Header.Get("X-Filter")), &xFilter)
 
 			directory := "testdata/no_region_filter"
-			if x_filter.Region != "" { // Validate region filter matches test criteria.
-				directory = "testdata/" + x_filter.Region
+			if xFilter.Region != "" { // Validate region filter matches test criteria.
+				directory = "testdata/" + xFilter.Region
 			}
 			if response, err := os.ReadFile(filepath.Join(directory, r.URL.Path+".json")); err == nil {
 				w.Header().Add("content-type", "application/json; charset=utf-8")
