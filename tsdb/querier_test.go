@@ -2550,10 +2550,24 @@ func BenchmarkSetMatcher(b *testing.B) {
 		},
 		{
 			numBlocks:                   1,
+			numSeries:                   1,
+			numSamplesPerSeriesPerBlock: 10,
+			cardinality:                 100,
+			pattern:                     "1|2|3|4|5|(6.*|7.*)|8|9|10",
+		},
+		{
+			numBlocks:                   1,
 			numSeries:                   15,
 			numSamplesPerSeriesPerBlock: 10,
 			cardinality:                 100,
 			pattern:                     "1|2|3|4|5|6|7|8|9|10",
+		},
+		{
+			numBlocks:                   1,
+			numSeries:                   15,
+			numSamplesPerSeriesPerBlock: 10,
+			cardinality:                 100,
+			pattern:                     "1|2|3|4|5|6.*|7|8|9|10",
 		},
 		{
 			numBlocks:                   1,
@@ -2605,6 +2619,34 @@ func BenchmarkSetMatcher(b *testing.B) {
 			numSamplesPerSeriesPerBlock: 10,
 			cardinality:                 1000000,
 			pattern:                     "1|2|3|4|5|6|7|8|9|10",
+		},
+		{
+			numBlocks:                   1,
+			numSeries:                   100000,
+			numSamplesPerSeriesPerBlock: 10,
+			cardinality:                 100000,
+			pattern:                     "1|2|3|4|5|(6.*|7)|8|9|10",
+		},
+		{
+			numBlocks:                   1,
+			numSeries:                   500000,
+			numSamplesPerSeriesPerBlock: 10,
+			cardinality:                 500000,
+			pattern:                     "1|2|3|4|5|6.*|7|8|9|10",
+		},
+		{
+			numBlocks:                   10,
+			numSeries:                   500000,
+			numSamplesPerSeriesPerBlock: 10,
+			cardinality:                 500000,
+			pattern:                     "1|2|3|4|5|6.*|7|8|9|10",
+		},
+		{
+			numBlocks:                   1,
+			numSeries:                   1000000,
+			numSamplesPerSeriesPerBlock: 10,
+			cardinality:                 1000000,
+			pattern:                     "1|2|3|4|5|6.*|7|8|9|10",
 		},
 	}
 
@@ -2948,6 +2990,43 @@ func TestPostingsForMatchers(t *testing.T) {
 		{
 			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", "2|2\\.5")},
 			exp: []labels.Labels{
+				labels.FromStrings("n", "2"),
+				labels.FromStrings("n", "2.5"),
+			},
+		},
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", "2|2.5")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "2"),
+				labels.FromStrings("n", "2.5"),
+			},
+		},
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", "1|2.*")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1"),
+				labels.FromStrings("n", "1", "i", "a"),
+				labels.FromStrings("n", "1", "i", "b"),
+				labels.FromStrings("n", "2"),
+				labels.FromStrings("n", "2.5"),
+			},
+		},
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", "1|(2.*)")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1"),
+				labels.FromStrings("n", "1", "i", "a"),
+				labels.FromStrings("n", "1", "i", "b"),
+				labels.FromStrings("n", "2"),
+				labels.FromStrings("n", "2.5"),
+			},
+		},
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", "1|(2|2.5)")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1"),
+				labels.FromStrings("n", "1", "i", "a"),
+				labels.FromStrings("n", "1", "i", "b"),
 				labels.FromStrings("n", "2"),
 				labels.FromStrings("n", "2.5"),
 			},
