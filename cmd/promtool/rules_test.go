@@ -118,7 +118,7 @@ func TestBackfillRuleIntegration(t *testing.T) {
 				}
 
 				opts := tsdb.DefaultOptions()
-				db, err := tsdb.Open(tmpDir, nil, nil, opts, nil)
+				db, err := tsdb.Open(context.Background(), tmpDir, nil, nil, opts, nil)
 				require.NoError(t, err)
 
 				blocks := db.Blocks()
@@ -245,7 +245,7 @@ func TestBackfillLabels(t *testing.T) {
 	}
 
 	opts := tsdb.DefaultOptions()
-	db, err := tsdb.Open(tmpDir, nil, nil, opts, nil)
+	db, err := tsdb.Open(context.Background(), tmpDir, nil, nil, opts, nil)
 	require.NoError(t, err)
 
 	q, err := db.Querier(math.MinInt64, math.MaxInt64)

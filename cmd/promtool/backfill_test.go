@@ -699,7 +699,7 @@ after_eof 1 2
 			require.NoError(t, err)
 			options := tsdb.DefaultOptions()
 			options.RetentionDuration = int64(10 * 365 * 24 * time.Hour / time.Millisecond) // maximum duration tests require a long retention
-			db, err := tsdb.Open(outputDir, nil, nil, options, nil)
+			db, err := tsdb.Open(context.Background(), outputDir, nil, nil, options, nil)
 			require.NoError(t, err)
 			defer func() {
 				require.NoError(t, db.Close())

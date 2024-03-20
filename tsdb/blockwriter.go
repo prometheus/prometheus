@@ -79,7 +79,7 @@ func (w *BlockWriter) initHead() error {
 	}
 
 	w.head = h
-	return w.head.Init(math.MinInt64)
+	return w.head.Init(context.Background(), math.MinInt64)
 }
 
 // Appender returns a new appender on the database.
