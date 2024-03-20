@@ -175,23 +175,22 @@ func readZeroThreshold(br *bstreamReader) (float64, error) {
 	}
 }
 
-// putCustomBound writes the custom bound to the bstream. It stores whole number
-// values from 0 to 254 (inclusive) in just one byte, but needs 9 bytes for other
-// values like negative numbers, whole numbers greater than or equal to 255, or
-// floats. In detail:
-//   - If the bound is >= 0 and <= 254, store it as a byte.
+// putCustomBound writes the custom bound to the bstream. It stores values from 0 to
+// 0.254 (inclusive) that are multiples of 0.001 in just one byte, but needs 9 bytes
+// for other values like negative numbers, numbers greater than 0.254, or numbers that
+// are not a multiple of 0.001, on the assumption that they are less common. In detail:
+//   - Multiply the bound by 1000, without rounding.
+//   - If the multiplied bound is >= 0, <= 254 and a whole number, store it as a byte.
 //   - Otherwise, store 255 as a single byte, followed by the 8 bytes of
-//     the bound as a float64, i.e. taking 9 bytes in total.
-//
-// This assumes that negative bounds, bounds >= 255, and non-whole number bounds
-// are less common.
+//     the original bound as a float64, i.e. taking 9 bytes in total.
 func putCustomBound(b *bstream, f float64) {
-	if f < 0 || f > 254 || f != math.Trunc(f) {
+	tf := f * 1000
+	if tf < 0 || tf > 254 || tf != math.Trunc(tf) {
 		b.writeByte(255)
 		b.writeBits(math.Float64bits(f), 64)
 		return
 	}
-	b.writeByte(byte(f))
+	b.writeByte(byte(tf))
 }
 
 // readCustomBound reads the custom bound written with putCustomBound.
@@ -208,7 +207,7 @@ func readCustomBound(br *bstreamReader) (float64, error) {
 		}
 		return math.Float64frombits(v), nil
 	default:
-		return float64(b), nil
+		return float64(b) / 1000, nil
 	}
 }
 
