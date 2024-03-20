@@ -6,6 +6,7 @@ General maintainers:
 * Ayoub Mrini (ayoubmrini424@gmail.com / @machine424)
 * Julien Pivotto (roidelapluie@prometheus.io / @roidelapluie)
 
+Maintainers for specific parts of the codebase:
 * `cmd`
   * `promtool`: David Leadbeater (<dgl@dgl.cx> / @dgl)
 * `discovery`
