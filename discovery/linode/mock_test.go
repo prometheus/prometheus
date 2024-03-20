@@ -13,7 +13,6 @@
 
 package linode
 
-
 import (
 	"encoding/json"
 	"fmt"
