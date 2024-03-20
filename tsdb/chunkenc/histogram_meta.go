@@ -175,39 +175,49 @@ func readZeroThreshold(br *bstreamReader) (float64, error) {
 	}
 }
 
+// isWholeWhenMultiplied checks to see if the number when multiplied by 1000 can
+// be converted into an integer without losing precision.
+func isWholeWhenMultiplied(in float64) bool {
+	i := uint(math.Round(in * 1000))
+	out := float64(i) / 1000
+	return in == out
+}
+
 // putCustomBound writes the custom bound to the bstream. It stores values from 0 to
-// 0.254 (inclusive) that are multiples of 0.001 in just one byte, but needs 9 bytes
-// for other values like negative numbers, numbers greater than 0.254, or numbers that
-// are not a multiple of 0.001, on the assumption that they are less common. In detail:
+// 16.382 (inclusive) that are multiples of 0.001 in an unsigned var int of up to 2 bytes,
+// but needs 1 bit + 8 bytes for other values like negative numbers, numbers greater than
+// 16.382, or numbers that are not a multiple of 0.001, on the assumption that they are
+// less common. In detail:
 //   - Multiply the bound by 1000, without rounding.
-//   - If the multiplied bound is >= 0, <= 254 and a whole number, store it as a byte.
-//   - Otherwise, store 255 as a single byte, followed by the 8 bytes of
-//     the original bound as a float64, i.e. taking 9 bytes in total.
+//   - If the multiplied bound is >= 0, <= 16382 and a whole number, store it as an
+//     unsigned var int.
+//   - Otherwise, store 0 as an unsigned var int, followed by the 8 bytes of the original
+//     bound as a float64.
 func putCustomBound(b *bstream, f float64) {
 	tf := f * 1000
-	if tf < 0 || tf > 254 || tf != math.Trunc(tf) {
-		b.writeByte(255)
+	if tf < 0 || tf > 16382 || !isWholeWhenMultiplied(f) {
+		b.putUvarint(0)
 		b.writeBits(math.Float64bits(f), 64)
 		return
 	}
-	b.writeByte(byte(tf))
+	b.putUvarint(uint64(math.Round(tf) + 1))
 }
 
 // readCustomBound reads the custom bound written with putCustomBound.
 func readCustomBound(br *bstreamReader) (float64, error) {
-	b, err := br.ReadByte()
+	b, err := br.readUvarint()
 	if err != nil {
 		return 0, err
 	}
 	switch b {
-	case 255:
+	case 0:
 		v, err := br.readBits(64)
 		if err != nil {
 			return 0, err
 		}
 		return math.Float64frombits(v), nil
 	default:
-		return float64(b) / 1000, nil
+		return float64(b-1) / 1000, nil
 	}
 }
 

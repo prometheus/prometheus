@@ -429,6 +429,24 @@ func TestWriteReadHistogramChunkLayout(t *testing.T) {
 			negativeSpans: nil,
 			customValues:  []float64{-5, -2.5, 0, 0.1, 0.25, 0.5, 1, 2, 5, 10, 25, 50, 100, 255, 500, 1000},
 		},
+		{
+			schema:        histogram.CustomBucketsSchema,
+			positiveSpans: []histogram.Span{{Offset: -4, Length: 3}, {Offset: 2, Length: 42}},
+			negativeSpans: nil,
+			customValues:  []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 25.0, 50.0, 100.0},
+		},
+		{
+			schema:        histogram.CustomBucketsSchema,
+			positiveSpans: []histogram.Span{{Offset: -4, Length: 3}, {Offset: 2, Length: 42}},
+			negativeSpans: nil,
+			customValues:  []float64{0.001, 0.002, 0.004, 0.008, 0.016, 0.032, 0.064, 0.128, 0.256, 0.512, 1.024, 2.048, 4.096, 8.192},
+		},
+		{
+			schema:        histogram.CustomBucketsSchema,
+			positiveSpans: []histogram.Span{{Offset: -4, Length: 3}, {Offset: 2, Length: 42}},
+			negativeSpans: nil,
+			customValues:  []float64{1.001, 1.023, 2.01, 4.007, 4.095, 8.001, 8.19, 16.24},
+		},
 	}
 
 	bs := bstream{}
