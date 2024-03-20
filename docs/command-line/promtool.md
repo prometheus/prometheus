@@ -582,6 +582,32 @@ Dump samples from a TSDB.
 
 
 
+##### `promtool tsdb dump-openmetrics`
+
+[Experimental] Dump samples from a TSDB into OpenMetrics format. Native histograms are not dumped.
+
+
+
+###### Flags
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| <code class="text-nowrap">--min-time</code> | Minimum timestamp to dump. | `-9223372036854775808` |
+| <code class="text-nowrap">--max-time</code> | Maximum timestamp to dump. | `9223372036854775807` |
+| <code class="text-nowrap">--match</code> | Series selector. Can be specified multiple times. | `{__name__=~'(?s:.*)'}` |
+
+
+
+
+###### Arguments
+
+| Argument | Description | Default |
+| --- | --- | --- |
+| db path | Database path (default is data/). | `data/` |
+
+
+
+
 ##### `promtool tsdb create-blocks-from`
 
 [Experimental] Import samples from input and produce TSDB blocks. Please refer to the storage docs for more details.

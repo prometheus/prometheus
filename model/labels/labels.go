@@ -17,10 +17,10 @@ package labels
 
 import (
 	"bytes"
+	"slices"
 	"strings"
 
 	"github.com/cespare/xxhash/v2"
-	"golang.org/x/exp/slices"
 )
 
 // Labels is a sorted set of labels. Order has to be guaranteed upon

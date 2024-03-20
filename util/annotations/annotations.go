@@ -105,7 +105,7 @@ var (
 
 	InvalidQuantileWarning              = fmt.Errorf("%w: quantile value should be between 0 and 1", PromQLWarning)
 	BadBucketLabelWarning               = fmt.Errorf("%w: bucket label %q is missing or has a malformed value", PromQLWarning, model.BucketLabel)
-	MixedFloatsHistogramsWarning        = fmt.Errorf("%w: encountered a mix of histograms and floats for metric name", PromQLWarning)
+	MixedFloatsHistogramsWarning        = fmt.Errorf("%w: encountered a mix of histograms and floats for", PromQLWarning)
 	MixedClassicNativeHistogramsWarning = fmt.Errorf("%w: vector contains a mix of classic and native histograms for metric name", PromQLWarning)
 	NativeHistogramNotCounterWarning    = fmt.Errorf("%w: this native histogram metric is not a counter:", PromQLWarning)
 	NativeHistogramNotGaugeWarning      = fmt.Errorf("%w: this native histogram metric is not a gauge:", PromQLWarning)
@@ -155,7 +155,16 @@ func NewBadBucketLabelWarning(metricName, label string, pos posrange.PositionRan
 func NewMixedFloatsHistogramsWarning(metricName string, pos posrange.PositionRange) error {
 	return annoErr{
 		PositionRange: pos,
-		Err:           fmt.Errorf("%w %q", MixedFloatsHistogramsWarning, metricName),
+		Err:           fmt.Errorf("%w metric name %q", MixedFloatsHistogramsWarning, metricName),
+	}
+}
+
+// NewMixedFloatsHistogramsAggWarning is used when the queried series includes both
+// float samples and histogram samples in an aggregation.
+func NewMixedFloatsHistogramsAggWarning(pos posrange.PositionRange) error {
+	return annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w aggregation", MixedFloatsHistogramsWarning),
 	}
 }
 

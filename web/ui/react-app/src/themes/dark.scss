@@ -19,6 +19,10 @@ $clear-time-btn-bg: $secondary;
 
 $checked-checkbox-color: #60a5fa;
 
+$histogram-chart-axis-color: $gray-700;
+$histogram-chart-grid-color: $gray-600;
+$histogram-chart-hover-color: $gray-400;
+
 .bootstrap-dark {
   @import './shared';
 }

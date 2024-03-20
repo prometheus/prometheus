@@ -681,6 +681,34 @@ func TestDB_Snapshot(t *testing.T) {
 	require.Equal(t, 1000.0, sum)
 }
 
+func TestDB_BeyondTimeRetention(t *testing.T) {
+	opts := DefaultOptions()
+	opts.RetentionDuration = 100
+	db := openTestDB(t, opts, nil)
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
+
+	// We have 4 blocks, 3 of which are beyond the retention duration.
+	metas := []BlockMeta{
+		{MinTime: 300, MaxTime: 500},
+		{MinTime: 200, MaxTime: 300},
+		{MinTime: 100, MaxTime: 200},
+		{MinTime: 0, MaxTime: 100},
+	}
+
+	for _, m := range metas {
+		createBlock(t, db.Dir(), genSeries(1, 1, m.MinTime, m.MaxTime))
+	}
+
+	// Reloading should truncate the 3 blocks which are >= the retention period.
+	require.NoError(t, db.reloadBlocks())
+	blocks := db.Blocks()
+	require.Len(t, blocks, 1)
+	require.Equal(t, metas[0].MinTime, blocks[0].Meta().MinTime)
+	require.Equal(t, metas[0].MaxTime, blocks[0].Meta().MaxTime)
+}
+
 // TestDB_Snapshot_ChunksOutsideOfCompactedRange ensures that a snapshot removes chunks samples
 // that are outside the set block time range.
 // See https://github.com/prometheus/prometheus/issues/5105
@@ -3598,7 +3626,7 @@ func testChunkQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChun
 	// just to iterate through the bytes slice. We don't really care the reason why
 	// we read this data, we just need to read it to make sure the memory address
 	// of the []byte is still valid.
-	chkCRC32 := newCRC32()
+	chkCRC32 := crc32.New(crc32.MakeTable(crc32.Castagnoli))
 	for _, chunk := range chunks {
 		chkCRC32.Reset()
 		_, err := chkCRC32.Write(chunk.Bytes())

@@ -229,6 +229,9 @@ func (h *Head) putExemplarBuffer(b []exemplarWithSeriesRef) {
 	if b == nil {
 		return
 	}
+	for i := range b { // Zero out to avoid retaining label data.
+		b[i].exemplar.Labels = labels.EmptyLabels()
+	}
 
 	h.exemplarsPool.Put(b[:0])
 }
@@ -278,6 +281,9 @@ func (h *Head) getSeriesBuffer() []*memSeries {
 }
 
 func (h *Head) putSeriesBuffer(b []*memSeries) {
+	for i := range b { // Zero out to avoid retaining data.
+		b[i] = nil
+	}
 	h.seriesPool.Put(b[:0])
 }
 

@@ -17,9 +17,9 @@ import (
 	"context"
 	"errors"
 	"math"
+	"slices"
 
 	"github.com/oklog/ulid"
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"

@@ -48,29 +48,29 @@ var scenarios = map[string]struct {
 }{
 	"empty": {
 		params: "",
-		code:   200,
+		code:   http.StatusOK,
 		body:   ``,
 	},
 	"match nothing": {
 		params: "match[]=does_not_match_anything",
-		code:   200,
+		code:   http.StatusOK,
 		body:   ``,
 	},
 	"invalid params from the beginning": {
 		params: "match[]=-not-a-valid-metric-name",
-		code:   400,
+		code:   http.StatusBadRequest,
 		body: `1:1: parse error: unexpected <op:->
 `,
 	},
 	"invalid params somewhere in the middle": {
 		params: "match[]=not-a-valid-metric-name",
-		code:   400,
+		code:   http.StatusBadRequest,
 		body: `1:4: parse error: unexpected <op:->
 `,
 	},
 	"test_metric1": {
 		params: "match[]=test_metric1",
-		code:   200,
+		code:   http.StatusOK,
 		body: `# TYPE test_metric1 untyped
 test_metric1{foo="bar",instance="i"} 10000 6000000
 test_metric1{foo="boo",instance="i"} 1 6000000
@@ -78,33 +78,33 @@ test_metric1{foo="boo",instance="i"} 1 6000000
 	},
 	"test_metric2": {
 		params: "match[]=test_metric2",
-		code:   200,
+		code:   http.StatusOK,
 		body: `# TYPE test_metric2 untyped
 test_metric2{foo="boo",instance="i"} 1 6000000
 `,
 	},
 	"test_metric_without_labels": {
 		params: "match[]=test_metric_without_labels",
-		code:   200,
+		code:   http.StatusOK,
 		body: `# TYPE test_metric_without_labels untyped
 test_metric_without_labels{instance=""} 1001 6000000
 `,
 	},
 	"test_stale_metric": {
 		params: "match[]=test_metric_stale",
-		code:   200,
+		code:   http.StatusOK,
 		body:   ``,
 	},
 	"test_old_metric": {
 		params: "match[]=test_metric_old",
-		code:   200,
+		code:   http.StatusOK,
 		body: `# TYPE test_metric_old untyped
 test_metric_old{instance=""} 981 5880000
 `,
 	},
 	"{foo='boo'}": {
 		params: "match[]={foo='boo'}",
-		code:   200,
+		code:   http.StatusOK,
 		body: `# TYPE test_metric1 untyped
 test_metric1{foo="boo",instance="i"} 1 6000000
 # TYPE test_metric2 untyped
@@ -113,7 +113,7 @@ test_metric2{foo="boo",instance="i"} 1 6000000
 	},
 	"two matchers": {
 		params: "match[]=test_metric1&match[]=test_metric2",
-		code:   200,
+		code:   http.StatusOK,
 		body: `# TYPE test_metric1 untyped
 test_metric1{foo="bar",instance="i"} 10000 6000000
 test_metric1{foo="boo",instance="i"} 1 6000000
@@ -123,7 +123,7 @@ test_metric2{foo="boo",instance="i"} 1 6000000
 	},
 	"two matchers with overlap": {
 		params: "match[]={__name__=~'test_metric1'}&match[]={foo='bar'}",
-		code:   200,
+		code:   http.StatusOK,
 		body: `# TYPE test_metric1 untyped
 test_metric1{foo="bar",instance="i"} 10000 6000000
 test_metric1{foo="boo",instance="i"} 1 6000000
@@ -131,7 +131,7 @@ test_metric1{foo="boo",instance="i"} 1 6000000
 	},
 	"everything": {
 		params: "match[]={__name__=~'.%2b'}", // '%2b' is an URL-encoded '+'.
-		code:   200,
+		code:   http.StatusOK,
 		body: `# TYPE test_metric1 untyped
 test_metric1{foo="bar",instance="i"} 10000 6000000
 test_metric1{foo="boo",instance="i"} 1 6000000
@@ -145,7 +145,7 @@ test_metric_without_labels{instance=""} 1001 6000000
 	},
 	"empty label value matches everything that doesn't have that label": {
 		params: "match[]={foo='',__name__=~'.%2b'}",
-		code:   200,
+		code:   http.StatusOK,
 		body: `# TYPE test_metric_old untyped
 test_metric_old{instance=""} 981 5880000
 # TYPE test_metric_without_labels untyped
@@ -154,7 +154,7 @@ test_metric_without_labels{instance=""} 1001 6000000
 	},
 	"empty label value for a label that doesn't exist at all, matches everything": {
 		params: "match[]={bar='',__name__=~'.%2b'}",
-		code:   200,
+		code:   http.StatusOK,
 		body: `# TYPE test_metric1 untyped
 test_metric1{foo="bar",instance="i"} 10000 6000000
 test_metric1{foo="boo",instance="i"} 1 6000000
@@ -169,7 +169,7 @@ test_metric_without_labels{instance=""} 1001 6000000
 	"external labels are added if not already present": {
 		params:         "match[]={__name__=~'.%2b'}", // '%2b' is an URL-encoded '+'.
 		externalLabels: labels.FromStrings("foo", "baz", "zone", "ie"),
-		code:           200,
+		code:           http.StatusOK,
 		body: `# TYPE test_metric1 untyped
 test_metric1{foo="bar",instance="i",zone="ie"} 10000 6000000
 test_metric1{foo="boo",instance="i",zone="ie"} 1 6000000
@@ -186,7 +186,7 @@ test_metric_without_labels{foo="baz",instance="",zone="ie"} 1001 6000000
 		// know what it does anyway.
 		params:         "match[]={__name__=~'.%2b'}", // '%2b' is an URL-encoded '+'.
 		externalLabels: labels.FromStrings("instance", "baz"),
-		code:           200,
+		code:           http.StatusOK,
 		body: `# TYPE test_metric1 untyped
 test_metric1{foo="bar",instance="i"} 10000 6000000
 test_metric1{foo="boo",instance="i"} 1 6000000
@@ -390,7 +390,6 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 	require.Equal(t, http.StatusOK, res.Code)
 	body, err := io.ReadAll(res.Body)
 	require.NoError(t, err)
-
 	p := textparse.NewProtobufParser(body, false, labels.NewSymbolTable())
 	var actVec promql.Vector
 	metricFamilies := 0

@@ -71,8 +71,8 @@ type Parser interface {
 	// if the scrape protocol or metric type does not support created timestamps.
 	CreatedTimestamp() *int64
 
-	// Next advances the parser to the next sample. It returns false if no
-	// more samples were read or an error occurred.
+	// Next advances the parser to the next sample.
+	// It returns (EntryInvalid, io.EOF) if no samples were read.
 	Next() (Entry, error)
 }
 

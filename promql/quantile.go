@@ -15,9 +15,8 @@ package promql
 
 import (
 	"math"
+	"slices"
 	"sort"
-
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"

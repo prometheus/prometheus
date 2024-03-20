@@ -17,12 +17,12 @@ package labels
 
 import (
 	"bytes"
+	"slices"
 	"strings"
 	"sync"
 	"unsafe"
 
 	"github.com/cespare/xxhash/v2"
-	"golang.org/x/exp/slices"
 )
 
 // Labels is implemented by a SymbolTable and string holding name/value

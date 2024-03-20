@@ -594,7 +594,7 @@ func BenchmarkParse(b *testing.B) {
 				for i := 0; i < b.N; i += promtestdataSampleCount {
 					decSamples := make(model.Vector, 0, 50)
 					sdec := expfmt.SampleDecoder{
-						Dec: expfmt.NewDecoder(bytes.NewReader(buf), expfmt.FmtText),
+						Dec: expfmt.NewDecoder(bytes.NewReader(buf), expfmt.NewFormat(expfmt.TypeTextPlain)),
 						Opts: &expfmt.DecodeOptions{
 							Timestamp: model.TimeFromUnixNano(0),
 						},

@@ -98,6 +98,41 @@ func alertsEqual(a, b []*Alert) error {
 	return nil
 }
 
+func newTestHTTPServerBuilder(expected *[]*Alert, errc chan<- error, u, p string, status *atomic.Int32) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var err error
+		defer func() {
+			if err == nil {
+				return
+			}
+			select {
+			case errc <- err:
+			default:
+			}
+		}()
+		user, pass, _ := r.BasicAuth()
+		if user != u || pass != p {
+			err = fmt.Errorf("unexpected user/password: %s/%s != %s/%s", user, pass, u, p)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		b, err := io.ReadAll(r.Body)
+		if err != nil {
+			err = fmt.Errorf("error reading body: %w", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		var alerts []*Alert
+		err = json.Unmarshal(b, &alerts)
+		if err == nil {
+			err = alertsEqual(*expected, alerts)
+		}
+		w.WriteHeader(int(status.Load()))
+	}))
+}
+
 func TestHandlerSendAll(t *testing.T) {
 	var (
 		errc             = make(chan error, 1)
@@ -107,42 +142,8 @@ func TestHandlerSendAll(t *testing.T) {
 	status1.Store(int32(http.StatusOK))
 	status2.Store(int32(http.StatusOK))
 
-	newHTTPServer := func(u, p string, status *atomic.Int32) *httptest.Server {
-		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var err error
-			defer func() {
-				if err == nil {
-					return
-				}
-				select {
-				case errc <- err:
-				default:
-				}
-			}()
-			user, pass, _ := r.BasicAuth()
-			if user != u || pass != p {
-				err = fmt.Errorf("unexpected user/password: %s/%s != %s/%s", user, pass, u, p)
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-
-			b, err := io.ReadAll(r.Body)
-			if err != nil {
-				err = fmt.Errorf("error reading body: %w", err)
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-
-			var alerts []*Alert
-			err = json.Unmarshal(b, &alerts)
-			if err == nil {
-				err = alertsEqual(expected, alerts)
-			}
-			w.WriteHeader(int(status.Load()))
-		}))
-	}
-	server1 := newHTTPServer("prometheus", "testing_password", &status1)
-	server2 := newHTTPServer("", "", &status2)
+	server1 := newTestHTTPServerBuilder(&expected, errc, "prometheus", "testing_password", &status1)
+	server2 := newTestHTTPServerBuilder(&expected, errc, "", "", &status2)
 	defer server1.Close()
 	defer server2.Close()
 
@@ -210,6 +211,90 @@ func TestHandlerSendAll(t *testing.T) {
 
 	status2.Store(int32(http.StatusInternalServerError))
 	require.False(t, h.sendAll(h.queue...), "all sends succeeded unexpectedly")
+	checkNoErr()
+}
+
+func TestHandlerSendAllRemapPerAm(t *testing.T) {
+	var (
+		errc      = make(chan error, 1)
+		expected1 = make([]*Alert, 0, maxBatchSize)
+		expected2 = make([]*Alert, 0, maxBatchSize)
+
+		status1, status2 atomic.Int32
+	)
+	status1.Store(int32(http.StatusOK))
+	status2.Store(int32(http.StatusOK))
+
+	server1 := newTestHTTPServerBuilder(&expected1, errc, "", "", &status1)
+	server2 := newTestHTTPServerBuilder(&expected2, errc, "", "", &status2)
+
+	defer server1.Close()
+	defer server2.Close()
+
+	h := NewManager(&Options{}, nil)
+	h.alertmanagers = make(map[string]*alertmanagerSet)
+
+	am1Cfg := config.DefaultAlertmanagerConfig
+	am1Cfg.Timeout = model.Duration(time.Second)
+
+	am2Cfg := config.DefaultAlertmanagerConfig
+	am2Cfg.Timeout = model.Duration(time.Second)
+	am2Cfg.AlertRelabelConfigs = []*relabel.Config{
+		{
+			SourceLabels: model.LabelNames{"alertnamedrop"},
+			Action:       "drop",
+			Regex:        relabel.MustNewRegexp(".+"),
+		},
+	}
+
+	h.alertmanagers["1"] = &alertmanagerSet{
+		ams: []alertmanager{
+			alertmanagerMock{
+				urlf: func() string { return server1.URL },
+			},
+		},
+		cfg: &am1Cfg,
+	}
+
+	h.alertmanagers["2"] = &alertmanagerSet{
+		ams: []alertmanager{
+			alertmanagerMock{
+				urlf: func() string { return server2.URL },
+			},
+		},
+		cfg: &am2Cfg,
+	}
+
+	for i := range make([]struct{}, maxBatchSize/2) {
+		h.queue = append(h.queue, &Alert{
+			Labels: labels.FromStrings("alertname", fmt.Sprintf("%d", i)),
+		})
+		h.queue = append(h.queue, &Alert{
+			Labels: labels.FromStrings("alertnamedrop", fmt.Sprintf("%d", i)),
+		})
+
+		expected1 = append(expected1, &Alert{
+			Labels: labels.FromStrings("alertname", fmt.Sprintf("%d", i)),
+		})
+		expected1 = append(expected1, &Alert{
+			Labels: labels.FromStrings("alertnamedrop", fmt.Sprintf("%d", i)),
+		})
+
+		expected2 = append(expected2, &Alert{
+			Labels: labels.FromStrings("alertname", fmt.Sprintf("%d", i)),
+		})
+	}
+
+	checkNoErr := func() {
+		t.Helper()
+		select {
+		case err := <-errc:
+			require.NoError(t, err)
+		default:
+		}
+	}
+
+	require.True(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
 	checkNoErr()
 }
 

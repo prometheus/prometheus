@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -37,7 +38,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
@@ -177,13 +177,6 @@ type TSDBAdminStats interface {
 	WALReplayStatus() (tsdb.WALReplayStatus, error)
 }
 
-// QueryEngine defines the interface for the *promql.Engine, so it can be replaced, wrapped or mocked.
-type QueryEngine interface {
-	SetQueryLogger(l promql.QueryLogger)
-	NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error)
-	NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error)
-}
-
 type QueryOpts interface {
 	EnablePerStepStats() bool
 	LookbackDelta() time.Duration
@@ -193,7 +186,7 @@ type QueryOpts interface {
 // them using the provided storage and query engine.
 type API struct {
 	Queryable         storage.SampleAndChunkQueryable
-	QueryEngine       QueryEngine
+	QueryEngine       promql.QueryEngine
 	ExemplarQueryable storage.ExemplarQueryable
 
 	scrapePoolsRetriever  func(context.Context) ScrapePoolsRetriever
@@ -226,7 +219,7 @@ type API struct {
 
 // NewAPI returns an initialized API type.
 func NewAPI(
-	qe QueryEngine,
+	qe promql.QueryEngine,
 	q storage.SampleAndChunkQueryable,
 	ap storage.Appendable,
 	eq storage.ExemplarQueryable,
@@ -644,6 +637,11 @@ func returnAPIError(err error) *apiError {
 }
 
 func (api *API) labelNames(r *http.Request) apiFuncResult {
+	limit, err := parseLimitParam(r.FormValue("limit"))
+	if err != nil {
+		return invalidParamError(err, "limit")
+	}
+
 	start, err := parseTimeParam(r, "start", MinTime)
 	if err != nil {
 		return invalidParamError(err, "start")
@@ -703,6 +701,11 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 	if names == nil {
 		names = []string{}
 	}
+
+	if len(names) >= limit {
+		names = names[:limit]
+		warnings = warnings.Add(errors.New("results truncated due to limit"))
+	}
 	return apiFuncResult{names, nil, warnings, nil}
 }
 
@@ -712,6 +715,11 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 
 	if !model.LabelNameRE.MatchString(name) {
 		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("invalid label name: %q", name)}, nil, nil}
+	}
+
+	limit, err := parseLimitParam(r.FormValue("limit"))
+	if err != nil {
+		return invalidParamError(err, "limit")
 	}
 
 	start, err := parseTimeParam(r, "start", MinTime)
@@ -783,6 +791,11 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 
 	slices.Sort(vals)
 
+	if len(vals) >= limit {
+		vals = vals[:limit]
+		warnings = warnings.Add(errors.New("results truncated due to limit"))
+	}
+
 	return apiFuncResult{vals, nil, warnings, closer}
 }
 
@@ -807,6 +820,11 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 	}
 	if len(r.Form["match[]"]) == 0 {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.New("no match[] parameter provided")}, nil, nil}
+	}
+
+	limit, err := parseLimitParam(r.FormValue("limit"))
+	if err != nil {
+		return invalidParamError(err, "limit")
 	}
 
 	start, err := parseTimeParam(r, "start", MinTime)
@@ -860,11 +878,20 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 	}
 
 	metrics := []labels.Labels{}
-	for set.Next() {
-		metrics = append(metrics, set.At().Labels())
-	}
 
 	warnings := set.Warnings()
+
+	for set.Next() {
+		if err := ctx.Err(); err != nil {
+			return apiFuncResult{nil, returnAPIError(err), warnings, closer}
+		}
+		metrics = append(metrics, set.At().Labels())
+
+		if len(metrics) >= limit {
+			warnings.Add(errors.New("results truncated due to limit"))
+			return apiFuncResult{metrics, nil, warnings, closer}
+		}
+	}
 	if set.Err() != nil {
 		return apiFuncResult{nil, returnAPIError(set.Err()), warnings, closer}
 	}
@@ -1866,4 +1893,21 @@ OUTER:
 		return nil, errors.New("match[] must contain at least one non-empty matcher")
 	}
 	return matcherSets, nil
+}
+
+func parseLimitParam(limitStr string) (limit int, err error) {
+	limit = math.MaxInt
+	if limitStr == "" {
+		return limit, nil
+	}
+
+	limit, err = strconv.Atoi(limitStr)
+	if err != nil {
+		return limit, err
+	}
+	if limit <= 0 {
+		return limit, errors.New("limit must be positive")
+	}
+
+	return limit, nil
 }

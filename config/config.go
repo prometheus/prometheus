@@ -941,6 +941,8 @@ type AlertmanagerConfig struct {
 
 	// List of Alertmanager relabel configurations.
 	RelabelConfigs []*relabel.Config `yaml:"relabel_configs,omitempty"`
+	// Relabel alerts before sending to the specific alertmanager.
+	AlertRelabelConfigs []*relabel.Config `yaml:"alert_relabel_configs,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -980,6 +982,12 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 	for _, rlcfg := range c.RelabelConfigs {
 		if rlcfg == nil {
 			return errors.New("empty or null Alertmanager target relabeling rule")
+		}
+	}
+
+	for _, rlcfg := range c.AlertRelabelConfigs {
+		if rlcfg == nil {
+			return errors.New("empty or null Alertmanager alert relabeling rule")
 		}
 	}
 

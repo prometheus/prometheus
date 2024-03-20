@@ -39,7 +39,7 @@ const (
 	testTokenString   = "testTokenString"
 )
 
-var testTokenExpiry = time.Now().Add(5 * time.Second)
+func testTokenExpiry() time.Time { return time.Now().Add(5 * time.Second) }
 
 type AzureAdTestSuite struct {
 	suite.Suite
@@ -94,7 +94,7 @@ func (ad *AzureAdTestSuite) TestAzureAdRoundTripper() {
 
 		testToken := &azcore.AccessToken{
 			Token:     testTokenString,
-			ExpiresOn: testTokenExpiry,
+			ExpiresOn: testTokenExpiry(),
 		}
 
 		ad.mockCredential.On("GetToken", mock.Anything, mock.Anything).Return(*testToken, nil)
@@ -145,7 +145,7 @@ func TestAzureAdConfig(t *testing.T) {
 		// Missing managedidentiy or oauth field.
 		{
 			filename: "testdata/azuread_bad_configmissing.yaml",
-			err:      "must provide an Azure Managed Identity or Azure OAuth in the Azure AD config",
+			err:      "must provide an Azure Managed Identity, Azure OAuth or Azure SDK in the Azure AD config",
 		},
 		// Invalid managedidentity client id.
 		{
@@ -162,6 +162,11 @@ func TestAzureAdConfig(t *testing.T) {
 			filename: "testdata/azuread_bad_twoconfig.yaml",
 			err:      "cannot provide both Azure Managed Identity and Azure OAuth in the Azure AD config",
 		},
+		// Invalid config when both sdk and oauth is provided.
+		{
+			filename: "testdata/azuread_bad_oauthsdkconfig.yaml",
+			err:      "cannot provide both Azure OAuth and Azure SDK in the Azure AD config",
+		},
 		// Valid config with missing  optionally cloud field.
 		{
 			filename: "testdata/azuread_good_cloudmissing.yaml",
@@ -173,6 +178,10 @@ func TestAzureAdConfig(t *testing.T) {
 		// Valid Oauth config.
 		{
 			filename: "testdata/azuread_good_oauth.yaml",
+		},
+		// Valid SDK config.
+		{
+			filename: "testdata/azuread_good_sdk.yaml",
 		},
 	}
 	for _, c := range cases {
@@ -232,6 +241,16 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 			},
 			err: "Cloud is not specified or is incorrect: ",
 		},
+		// Invalid tokenProvider for SDK.
+		{
+			cfg: &AzureADConfig{
+				Cloud: "PublicAzure",
+				SDK: &SDKConfig{
+					TenantID: dummyTenantID,
+				},
+			},
+			err: "Cloud is not specified or is incorrect: ",
+		},
 		// Valid tokenProvider for managedidentity.
 		{
 			cfg: &AzureADConfig{
@@ -252,6 +271,15 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 				},
 			},
 		},
+		// Valid tokenProvider for SDK.
+		{
+			cfg: &AzureADConfig{
+				Cloud: "AzurePublic",
+				SDK: &SDKConfig{
+					TenantID: dummyTenantID,
+				},
+			},
+		},
 	}
 	mockGetTokenCallCounter := 1
 	for _, c := range cases {
@@ -264,11 +292,11 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 		} else {
 			testToken := &azcore.AccessToken{
 				Token:     testTokenString,
-				ExpiresOn: testTokenExpiry,
+				ExpiresOn: testTokenExpiry(),
 			}
 
 			s.mockCredential.On("GetToken", mock.Anything, mock.Anything).Return(*testToken, nil).Once().
-				On("GetToken", mock.Anything, mock.Anything).Return(getToken(), nil)
+				On("GetToken", mock.Anything, mock.Anything).Return(getToken(), nil).Once()
 
 			actualTokenProvider, actualErr := newTokenProvider(c.cfg, s.mockCredential)
 

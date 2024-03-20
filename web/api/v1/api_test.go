@@ -1054,7 +1054,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 		params                map[string]string
 		query                 url.Values
 		response              interface{}
-		responseLen           int
+		responseLen           int // If nonzero, check only the length; `response` is ignored.
 		responseMetadataTotal int
 		responseAsJSON        string
 		errType               errorType
@@ -1387,6 +1387,15 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			response: []labels.Labels{
 				labels.FromStrings("__name__", "test_metric2", "foo", "boo"),
 			},
+		},
+		// Series request with limit.
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{"test_metric1"},
+				"limit":   []string{"1"},
+			},
+			responseLen: 1, // API does not specify which particular value will come back.
 		},
 		// Missing match[] query params in series requests.
 		{
@@ -2660,6 +2669,17 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					"boo",
 				},
 			},
+			// Label values with limit.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "__name__",
+				},
+				query: url.Values{
+					"limit": []string{"2"},
+				},
+				responseLen: 2, // API does not specify which particular values will come back.
+			},
 			// Label names.
 			{
 				endpoint: api.labelNames,
@@ -2798,6 +2818,14 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					"end":     []string{"100000000"},
 				},
 				response: []string{"__name__", "foo"},
+			},
+			// Label names with limit.
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"limit": []string{"2"},
+				},
+				responseLen: 2, // API does not specify which particular values will come back.
 			},
 		}...)
 	}
@@ -3540,6 +3568,9 @@ func TestReturnAPIError(t *testing.T) {
 		}, {
 			err:      errors.New("exec error"),
 			expected: errorExec,
+		}, {
+			err:      context.Canceled,
+			expected: errorCanceled,
 		},
 	}
 
@@ -3852,8 +3883,6 @@ func TestQueryTimeout(t *testing.T) {
 type fakeEngine struct {
 	query fakeQuery
 }
-
-func (e *fakeEngine) SetQueryLogger(promql.QueryLogger) {}
 
 func (e *fakeEngine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
 	return &e.query, nil
