@@ -13,6 +13,7 @@
 
 package linode
 
+
 import (
 	"encoding/json"
 	"fmt"
@@ -22,6 +23,8 @@ import (
 	"path/filepath"
 	"testing"
 )
+
+const tokenID = "7b2c56dd51edd90952c1b94c472b94b176f20c5c777e376849edd8ad1c6c03bb"
 
 // SDMock is the interface for the Linode mock.
 type SDMock struct {
@@ -50,7 +53,7 @@ func (m *SDMock) Setup() {
 	m.SetupHandlers()
 }
 
-// SetupHandlers for endpoints of interest
+// SetupHandlers for endpoints of interest.
 func (m *SDMock) SetupHandlers() {
 	for _, handler := range []string{"/v4/account/events", "/v4/linode/instances", "/v4/networking/ips", "/v4/networking/ipv6/ranges"} {
 		m.Mux.HandleFunc(handler, func(w http.ResponseWriter, r *http.Request) {
