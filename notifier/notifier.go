@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strings"
 	"sync"
 	"time"
 
@@ -624,16 +625,79 @@ type alertmanager interface {
 	url() *url.URL
 }
 
-type alertmanagerLabels struct{ labels.Labels }
+type alertmanagerLabels struct {
+	labels           labels.Labels
+	discoveredLabels labels.Labels
+}
 
 const pathLabel = "__alerts_path__"
 
 func (a alertmanagerLabels) url() *url.URL {
 	return &url.URL{
-		Scheme: a.Get(model.SchemeLabel),
-		Host:   a.Get(model.AddressLabel),
-		Path:   a.Get(pathLabel),
+		Scheme: a.labels.Get(model.SchemeLabel),
+		Host:   a.labels.Get(model.AddressLabel),
+		Path:   a.labels.Get(pathLabel),
 	}
+}
+
+type Target struct {
+	discoveredLabels labels.Labels
+	labels           labels.Labels
+}
+
+func NewTarget(labels, discoveredLabels labels.Labels) Target {
+	return Target{labels: labels, discoveredLabels: discoveredLabels}
+}
+
+func (a Target) Labels() labels.Labels {
+	lb := labels.NewBuilder(labels.EmptyLabels())
+	a.labels.Range(func(l labels.Label) {
+		if !strings.HasPrefix(l.Name, model.ReservedLabelPrefix) {
+			lb.Set(l.Name, l.Value)
+		}
+	})
+	url := url.URL{
+		Scheme: a.labels.Get(model.SchemeLabel),
+		Host:   a.labels.Get(model.AddressLabel),
+		Path:   a.labels.Get(pathLabel),
+	}
+	instance := url.String()
+	if instance != "" {
+		lb.Set(model.InstanceLabel, instance)
+	}
+	return lb.Labels()
+}
+
+func (a Target) DiscoveredLabels() labels.Labels {
+	lb := labels.NewBuilder(labels.EmptyLabels())
+	a.discoveredLabels.Range(func(l labels.Label) {
+		lb.Set(l.Name, l.Value)
+	})
+	return lb.Labels()
+}
+
+func (n *Manager) TargetsAll() map[string][]Target {
+	n.mtx.Lock()
+	defer n.mtx.Unlock()
+	targets := make(map[string][]Target, len(n.alertmanagers))
+	for key, am := range n.alertmanagers {
+		tars := make([]Target, 0, len(am.ams))
+		for _, a := range am.ams {
+			alb := a.(alertmanagerLabels)
+			tars = append(tars, Target{labels: alb.labels, discoveredLabels: alb.discoveredLabels})
+		}
+		targets[key] = tars
+		if len(am.droppedAms) == 0 {
+			continue
+		}
+		dropTars := make([]Target, 0, len(am.droppedAms))
+		for _, a := range am.droppedAms {
+			alb := a.(alertmanagerLabels)
+			dropTars = append(dropTars, Target{labels: alb.labels, discoveredLabels: alb.discoveredLabels})
+		}
+		targets[key] = append(targets[key], dropTars...)
+	}
+	return targets
 }
 
 // alertmanagerSet contains a set of Alertmanagers discovered via a group of service
@@ -746,7 +810,7 @@ func AlertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig
 		preRelabel := lb.Labels()
 		keep := relabel.ProcessBuilder(lb, cfg.RelabelConfigs...)
 		if !keep {
-			droppedAlertManagers = append(droppedAlertManagers, alertmanagerLabels{preRelabel})
+			droppedAlertManagers = append(droppedAlertManagers, alertmanagerLabels{labels: preRelabel, discoveredLabels: preRelabel})
 			continue
 		}
 
@@ -755,7 +819,7 @@ func AlertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig
 			return nil, nil, err
 		}
 
-		res = append(res, alertmanagerLabels{lb.Labels()})
+		res = append(res, alertmanagerLabels{labels: lb.Labels(), discoveredLabels: preRelabel})
 	}
 	return res, droppedAlertManagers, nil
 }
