@@ -1694,8 +1694,7 @@ func createLabelsForAbsentFunction(expr parser.Expr) labels.Labels {
 }
 
 func stringFromArg(e parser.Expr) string {
-	tmp := unwrapStepInvariantExpr(e) // Unwrap StepInvariant
-	unwrapParenExpr(&tmp)             // Optionally unwrap ParenExpr
+	tmp := unwrapStepInvariantAndParenExprs(&e) // Unwrap StepInvariant
 	return tmp.(*parser.StringLiteral).Val
 }
 
