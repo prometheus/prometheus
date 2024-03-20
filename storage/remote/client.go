@@ -47,7 +47,8 @@ const maxErrMsgLen = 1024
 
 var UserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
-var ErrStatusBadRequest = errors.New("HTTP StatusBadRequest")       // 400
+var ErrStatusBadRequest = errors.New("HTTP StatusBadRequest") // 400
+
 var ErrStatusNotAcceptable = errors.New("HTTP StatusNotAcceptable") // 406
 
 var (

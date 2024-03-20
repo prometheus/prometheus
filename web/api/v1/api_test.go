@@ -358,8 +358,10 @@ func TestHeadEndpoint(t *testing.T) {
 		},
 	} {
 		r := route.New()
-		api := &API{remoteWriteHeadHandler: remote.NewWriteHeadHandler(log.NewNopLogger(), nil, tc.rwFormat),
-			ready: func(f http.HandlerFunc) http.HandlerFunc { return f }}
+		api := &API{
+			remoteWriteHeadHandler: remote.NewWriteHeadHandler(log.NewNopLogger(), nil, tc.rwFormat),
+			ready:                  func(f http.HandlerFunc) http.HandlerFunc { return f },
+		}
 		api.Register(r)
 
 		s := httptest.NewServer(r)
