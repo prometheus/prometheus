@@ -277,6 +277,9 @@ func New(ls ...Label) Labels {
 
 // FromStrings creates new labels from pairs of strings.
 func FromStrings(ss ...string) Labels {
+	if len(ss) == 0 {
+		return EmptyLabels()
+	}
 	if len(ss)%2 != 0 {
 		panic("invalid number of strings")
 	}
