@@ -1514,12 +1514,13 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 func TestSparseHistogramSpaceSavings(t *testing.T) {
 	t.Skip()
 
-	cases := []struct {
+	type testcase struct {
 		numSeriesPerSchema int
 		numBuckets         int
 		numSpans           int
 		gapBetweenSpans    int
-	}{
+	}
+	cases := []testcase{
 		{1, 15, 1, 0},
 		{1, 50, 1, 0},
 		{1, 100, 1, 0},
@@ -1631,7 +1632,7 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 				}()
 
 				wg.Add(1)
-				go func() {
+				go func(c testcase) {
 					defer wg.Done()
 
 					// Ingest histograms the old way.
@@ -1679,7 +1680,7 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 					oldULID, err = compactor.Write(oldHead.opts.ChunkDirRoot, oldHead, mint, maxt, nil)
 					require.NoError(t, err)
 					require.NotEqual(t, ulid.ULID{}, oldULID)
-				}()
+				}(c)
 
 				wg.Wait()
 

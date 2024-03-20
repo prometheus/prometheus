@@ -2609,51 +2609,53 @@ func BenchmarkSetMatcher(b *testing.B) {
 	}
 
 	for _, c := range cases {
-		dir := b.TempDir()
+		b.Run("", func(b *testing.B) {
+			dir := b.TempDir()
 
-		var (
-			blocks          []*Block
-			prefilledLabels []map[string]string
-			generatedSeries []storage.Series
-		)
-		for i := int64(0); i < int64(c.numBlocks); i++ {
-			mint := i * int64(c.numSamplesPerSeriesPerBlock)
-			maxt := mint + int64(c.numSamplesPerSeriesPerBlock) - 1
-			if len(prefilledLabels) == 0 {
-				generatedSeries = genSeries(c.numSeries, 10, mint, maxt)
-				for _, s := range generatedSeries {
-					prefilledLabels = append(prefilledLabels, s.Labels().Map())
+			var (
+				blocks          []*Block
+				prefilledLabels []map[string]string
+				generatedSeries []storage.Series
+			)
+			for i := int64(0); i < int64(c.numBlocks); i++ {
+				mint := i * int64(c.numSamplesPerSeriesPerBlock)
+				maxt := mint + int64(c.numSamplesPerSeriesPerBlock) - 1
+				if len(prefilledLabels) == 0 {
+					generatedSeries = genSeries(c.numSeries, 10, mint, maxt)
+					for _, s := range generatedSeries {
+						prefilledLabels = append(prefilledLabels, s.Labels().Map())
+					}
+				} else {
+					generatedSeries = populateSeries(prefilledLabels, mint, maxt)
 				}
-			} else {
-				generatedSeries = populateSeries(prefilledLabels, mint, maxt)
+				block, err := OpenBlock(nil, createBlock(b, dir, generatedSeries), nil)
+				require.NoError(b, err)
+				blocks = append(blocks, block)
+				defer block.Close()
 			}
-			block, err := OpenBlock(nil, createBlock(b, dir, generatedSeries), nil)
-			require.NoError(b, err)
-			blocks = append(blocks, block)
-			defer block.Close()
-		}
 
-		qblocks := make([]storage.Querier, 0, len(blocks))
-		for _, blk := range blocks {
-			q, err := NewBlockQuerier(blk, math.MinInt64, math.MaxInt64)
-			require.NoError(b, err)
-			qblocks = append(qblocks, q)
-		}
+			qblocks := make([]storage.Querier, 0, len(blocks))
+			for _, blk := range blocks {
+				q, err := NewBlockQuerier(blk, math.MinInt64, math.MaxInt64)
+				require.NoError(b, err)
+				qblocks = append(qblocks, q)
+			}
 
-		sq := storage.NewMergeQuerier(qblocks, nil, storage.ChainedSeriesMerge)
-		defer sq.Close()
+			sq := storage.NewMergeQuerier(qblocks, nil, storage.ChainedSeriesMerge)
+			defer sq.Close()
 
-		benchMsg := fmt.Sprintf("nSeries=%d,nBlocks=%d,cardinality=%d,pattern=\"%s\"", c.numSeries, c.numBlocks, c.cardinality, c.pattern)
-		b.Run(benchMsg, func(b *testing.B) {
-			b.ResetTimer()
-			b.ReportAllocs()
-			for n := 0; n < b.N; n++ {
-				ss := sq.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchRegexp, "test", c.pattern))
-				for ss.Next() {
+			benchMsg := fmt.Sprintf("nSeries=%d,nBlocks=%d,cardinality=%d,pattern=\"%s\"", c.numSeries, c.numBlocks, c.cardinality, c.pattern)
+			b.Run(benchMsg, func(b *testing.B) {
+				b.ResetTimer()
+				b.ReportAllocs()
+				for n := 0; n < b.N; n++ {
+					ss := sq.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchRegexp, "test", c.pattern))
+					for ss.Next() {
+					}
+					require.NoError(b, ss.Err())
+					require.Empty(b, ss.Warnings())
 				}
-				require.NoError(b, ss.Err())
-				require.Empty(b, ss.Warnings())
-			}
+			})
 		})
 	}
 }
