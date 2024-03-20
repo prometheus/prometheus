@@ -5820,11 +5820,11 @@ func TestHeadAppender_AppendCTZeroSample(t *testing.T) {
 	}
 }
 
-func TestHeadCompactableDoesNotRequireOverflow(t *testing.T) {
-	// Set a chunk range of 1 to ensure that Head.compactable() doesn't require
-	// the default min (math.MaxInt64) and max (math.MinInt64) timestamps for the
-	// head before any samples are added to overflow to return correct results.
-	// See https://github.com/prometheus/prometheus/pull/13755
+func TestHeadCompactableDoesNotCompactEmptyHead(t *testing.T) {
+	// Use a chunk range of 1 here so that if we attempted to determine if the head
+	// was compactable using default values for min and max times, `Head.compactable()`
+	// would return true which is incorrect. This test verifies that we short-circuit
+	// the check when the head has not yet had any samples added.
 	head, _ := newTestHead(t, 1, wlog.CompressionNone, false)
 	defer func() {
 		require.NoError(t, head.Close())
