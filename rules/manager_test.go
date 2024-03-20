@@ -1901,7 +1901,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
 
-		ruleCount := 4
+		ruleCount := 12
 		opts := optsFactory(storage, &maxInflight, &inflightQueries, 0)
 
 		// Configure concurrency settings.
@@ -1910,7 +1910,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 		opts.RuleConcurrencyController = nil
 		ruleManager := NewManager(opts)
 
-		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, []string{"fixtures/rules_multiple.yaml"}...)
+		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, []string{"fixtures/rules_multiple_many.yaml"}...)
 		require.Empty(t, errs)
 		require.Len(t, groups, 1)
 
@@ -1937,7 +1937,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
 
-		ruleCount := 6
+		ruleCount := 12
 		opts := optsFactory(storage, &maxInflight, &inflightQueries, 0)
 
 		// Configure concurrency settings.
@@ -1946,7 +1946,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 		opts.RuleConcurrencyController = nil
 		ruleManager := NewManager(opts)
 
-		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, []string{"fixtures/rules_multiple_independent.yaml"}...)
+		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, []string{"fixtures/rules_multiple_independent_many.yaml"}...)
 		require.Empty(t, errs)
 		require.Len(t, groups, 1)
 

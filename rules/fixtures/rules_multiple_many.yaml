@@ -1,0 +1,30 @@
+groups:
+  - name: test
+    rules:
+      # independents
+      - record: job:http_requests:rate1m
+        expr: sum by (job)(rate(http_requests_total[1m]))
+      - record: job:http_requests:rate5m
+        expr: sum by (job)(rate(http_requests_total[5m]))
+      - record: job:http_requests:rate15m
+        expr: sum by (job)(rate(http_requests_total[15m]))
+      - record: job:http_requests:rate30m
+        expr: sum by (job)(rate(http_requests_total[30m]))
+      - record: job:http_requests:rate1h
+        expr: sum by (job)(rate(http_requests_total[1h]))
+      - record: job:http_requests:rate2h
+        expr: sum by (job)(rate(http_requests_total[2h]))
+      - record: job:http_requests:rate4h
+        expr: sum by (job)(rate(http_requests_total[4h]))
+      - record: job:http_requests:rate8h
+        expr: sum by (job)(rate(http_requests_total[8h]))
+      - record: job:http_requests:rate16h
+        expr: sum by (job)(rate(http_requests_total[16h]))
+      - record: job:http_requests:rate32h
+        expr: sum by (job)(rate(http_requests_total[32h]))
+
+      # dependents
+      - record: job:http_requests:rate15m
+        expr: sum by (job)(rate(http_requests_total[15m]))
+      - record: TooManyRequests
+        expr: job:http_requests:rate15m > 100
