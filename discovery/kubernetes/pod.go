@@ -113,15 +113,15 @@ func NewPod(l log.Logger, pods cache.SharedIndexInformer, nodes, namespaces cach
 		_, err = p.namespaceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc: func(o interface{}) {
 				namespace := o.(*apiv1.Namespace)
-				p.enqueuePodsForNode(namespace.Name)
+				p.enqueuePodsForNamespace(namespace.Name)
 			},
 			UpdateFunc: func(_, o interface{}) {
 				namespace := o.(*apiv1.Namespace)
-				p.enqueuePodsForNode(namespace.Name)
+				p.enqueuePodsForNamespace(namespace.Name)
 			},
 			DeleteFunc: func(o interface{}) {
 				namespace := o.(*apiv1.Namespace)
-				p.enqueuePodsForNode(namespace.Name)
+				p.enqueuePodsForNamespace(namespace.Name)
 			},
 		})
 		if err != nil {
@@ -297,7 +297,7 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 	}
 
 	if p.withNamespaceMetadata {
-		tg.Labels = addNamespaceLabels(tg.Labels, p.namespaceInf, p.logger, &pod.Namespace)
+		tg.Labels = addNamespaceLabels(tg.Labels, p.namespaceInf, p.logger, &(pod.Namespace))
 	}
 
 	containers := append(pod.Spec.Containers, pod.Spec.InitContainers...)
@@ -349,6 +349,18 @@ func (p *Pod) enqueuePodsForNode(nodeName string) {
 	pods, err := p.podInf.GetIndexer().ByIndex(nodeIndex, nodeName)
 	if err != nil {
 		level.Error(p.logger).Log("msg", "Error getting pods for node", "node", nodeName, "err", err)
+		return
+	}
+
+	for _, pod := range pods {
+		p.enqueue(pod.(*apiv1.Pod))
+	}
+}
+
+func (p *Pod) enqueuePodsForNamespace(namespaceName string) {
+	pods, err :=  p.podInf.GetIndexer().ByIndex(namespaceIndex, namespaceName)
+	if err != nil {
+		level.Error(p.logger).Log("msg", "Error getting pods for namespace", "namespace", namespaceName, "err", err)
 		return
 	}
 
