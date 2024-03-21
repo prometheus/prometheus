@@ -48,24 +48,24 @@ linters-settings:
     rules:
       main:
         deny:
-        - pkg: "sync/atomic"
-          desc: "Use go.uber.org/atomic instead of sync/atomic"
-        - pkg: "github.com/stretchr/testify/assert"
-          desc: "Use github.com/stretchr/testify/require instead of github.com/stretchr/testify/assert"
-        - pkg: "github.com/go-kit/kit/log"
-          desc: "Use github.com/go-kit/log instead of github.com/go-kit/kit/log"
-        - pkg: "io/ioutil"
-          desc: "Use corresponding 'os' or 'io' functions instead."
-        - pkg: "regexp"
-          desc: "Use github.com/grafana/regexp instead of regexp"
-        - pkg: "github.com/pkg/errors"
-          desc: "Use 'errors' or 'fmt' instead of github.com/pkg/errors"
-        - pkg: "gzip"
-          desc: "Use github.com/klauspost/compress instead of gzip"
-        - pkg: "zlib"
-          desc: "Use github.com/klauspost/compress instead of zlib"
-        - pkg: "golang.org/x/exp/slices"
-          desc: "Use 'slices' instead."
+          - pkg: "sync/atomic"
+            desc: "Use go.uber.org/atomic instead of sync/atomic"
+          - pkg: "github.com/stretchr/testify/assert"
+            desc: "Use github.com/stretchr/testify/require instead of github.com/stretchr/testify/assert"
+          - pkg: "github.com/go-kit/kit/log"
+            desc: "Use github.com/go-kit/log instead of github.com/go-kit/kit/log"
+          - pkg: "io/ioutil"
+            desc: "Use corresponding 'os' or 'io' functions instead."
+          - pkg: "regexp"
+            desc: "Use github.com/grafana/regexp instead of regexp"
+          - pkg: "github.com/pkg/errors"
+            desc: "Use 'errors' or 'fmt' instead of github.com/pkg/errors"
+          - pkg: "gzip"
+            desc: "Use github.com/klauspost/compress instead of gzip"
+          - pkg: "zlib"
+            desc: "Use github.com/klauspost/compress instead of zlib"
+          - pkg: "golang.org/x/exp/slices"
+            desc: "Use 'slices' instead."
   errcheck:
     exclude-functions:
       # Don't flag lines such as "io.Copy(io.Discard, resp.Body)".
@@ -135,4 +135,3 @@ linters-settings:
       - require-error
       - suite-dont-use-pkg
       - suite-extra-assert-call
- 
