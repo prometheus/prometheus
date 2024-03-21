@@ -156,3 +156,103 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 		}
 	}
 }
+
+func TestRunTest(t *testing.T) {
+	testData := `
+load 5m
+	http_requests{job="api-server", instance="0", group="production"}	0+10x10
+	http_requests{job="api-server", instance="1", group="production"}	0+20x10
+	http_requests{job="api-server", instance="0", group="canary"}		0+30x10
+	http_requests{job="api-server", instance="1", group="canary"}		0+40x10
+`
+
+	testCases := map[string]struct {
+		input         string
+		expectedError string
+	}{
+		"instant query with expected result": {
+			input: testData + `
+eval instant at 5m sum by (group) (http_requests)
+	{group="production"} 30
+	{group="canary"} 70
+`,
+		},
+		"instant query with incorrect result": {
+			input: testData + `
+eval instant at 5m sum by (group) (http_requests)
+	{group="production"} 30
+	{group="canary"} 80
+`,
+			expectedError: `error in eval sum by (group) (http_requests) (line 8): expected 80 for {group="canary"} but got 70`,
+		},
+		"instant query, but result has an unexpected series": {
+			input: testData + `
+eval instant at 5m sum by (group) (http_requests)
+	{group="production"} 30
+`,
+			expectedError: `error in eval sum by (group) (http_requests) (line 8): unexpected metric {group="canary"} in result`,
+		},
+		"instant query, but result is missing a series": {
+			input: testData + `
+eval instant at 5m sum by (group) (http_requests)
+	{group="production"} 30
+	{group="canary"} 70
+	{group="test"} 100
+`,
+			expectedError: `error in eval sum by (group) (http_requests) (line 8): expected metric {group="test"} with 3: [100.000000] not found`,
+		},
+		"instant query expected to fail, and query fails": {
+			input: `
+load 5m
+  testmetric1{src="a",dst="b"} 0
+  testmetric2{src="a",dst="b"} 1
+
+eval_fail instant at 0m ceil({__name__=~'testmetric1|testmetric2'})
+`,
+		},
+		"instant query expected to fail, but query succeeds": {
+			input:         `eval_fail instant at 0s vector(0)`,
+			expectedError: `expected error evaluating query "vector(0)" (line 1) but got none`,
+		},
+		"instant query with results expected to match provided order, and result is in expected order": {
+			input: testData + `
+eval_ordered instant at 50m sort(http_requests)
+	http_requests{group="production", instance="0", job="api-server"} 100
+	http_requests{group="production", instance="1", job="api-server"} 200
+	http_requests{group="canary", instance="0", job="api-server"} 300
+	http_requests{group="canary", instance="1", job="api-server"} 400
+`,
+		},
+		"instant query with results expected to match provided order, but result is out of order": {
+			input: testData + `
+eval_ordered instant at 50m sort(http_requests)
+	http_requests{group="production", instance="0", job="api-server"} 100
+	http_requests{group="production", instance="1", job="api-server"} 200
+	http_requests{group="canary", instance="1", job="api-server"} 400
+	http_requests{group="canary", instance="0", job="api-server"} 300
+`,
+			expectedError: `error in eval sort(http_requests) (line 8): expected metric {__name__="http_requests", group="canary", instance="0", job="api-server"} with [300.000000] at position 4 but was at 3`,
+		},
+		"instant query with results expected to match provided order, but result has an unexpected series": {
+			input: testData + `
+eval_ordered instant at 50m sort(http_requests)
+	http_requests{group="production", instance="0", job="api-server"} 100
+	http_requests{group="production", instance="1", job="api-server"} 200
+	http_requests{group="canary", instance="0", job="api-server"} 300
+`,
+			expectedError: `error in eval sort(http_requests) (line 8): unexpected metric {__name__="http_requests", group="canary", instance="1", job="api-server"} in result`,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			err := runTest(t, testCase.input, newTestEngine())
+
+			if testCase.expectedError == "" {
+				require.NoError(t, err)
+			} else {
+				require.EqualError(t, err, testCase.expectedError)
+			}
+		})
+	}
+}
