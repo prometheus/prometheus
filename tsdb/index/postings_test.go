@@ -1282,3 +1282,37 @@ func BenchmarkListPostings(b *testing.B) {
 		})
 	}
 }
+
+func BenchmarkMemPostings_Add(b *testing.B) {
+	var series []struct {
+		id   storage.SeriesRef
+		lset labels.Labels
+	}
+	for i := 0; i < 1000; i++ {
+		series = append(series, struct {
+			id   storage.SeriesRef
+			lset labels.Labels
+		}{
+			id: storage.SeriesRef(i),
+			lset: labels.FromStrings(
+				"job", fmt.Sprintf("job%d", i%100),
+				"instance", fmt.Sprintf("instance%d", i),
+				"cluster", "dev",
+				"label1", fmt.Sprintf("value%d", i%5),
+				"label2", fmt.Sprintf("value%d", i%5),
+				"label3", fmt.Sprintf("value%d", i%5),
+				"label4", fmt.Sprintf("value%d", i%5),
+				"label5", fmt.Sprintf("value%d", i%5),
+			),
+		})
+	}
+
+	p := NewMemPostings()
+
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		for i := 0; i < len(series); i++ {
+			p.Add(series[i].id, series[i].lset)
+		}
+	}
+}
