@@ -49,7 +49,7 @@ endif
 GOTEST := $(GO) test
 GOTEST_DIR :=
 ifneq ($(CIRCLE_JOB),)
-ifneq ($(shell command -v gotestsum > /dev/null),)
+ifneq ($(shell command -v gotestsum 2> /dev/null),)
 	GOTEST_DIR := test-results
 	GOTEST := gotestsum --junitfile $(GOTEST_DIR)/unit-tests.xml --
 endif
@@ -182,7 +182,7 @@ endif
 .PHONY: common-yamllint
 common-yamllint:
 	@echo ">> running yamllint on all YAML files in the repository"
-ifeq (, $(shell command -v yamllint > /dev/null))
+ifeq (, $(shell command -v yamllint 2> /dev/null))
 	@echo "yamllint not installed so skipping"
 else
 	yamllint .
