@@ -90,8 +90,14 @@ func RunBuiltinTests(t *testing.T, engine engineQuerier) {
 
 // RunTest parses and runs the test against the provided engine.
 func RunTest(t testutil.T, input string, engine engineQuerier) {
+	require.NoError(t, runTest(t, input, engine))
+}
+
+func runTest(t testutil.T, input string, engine engineQuerier) error {
 	test, err := newTest(t, input)
-	require.NoError(t, err)
+	if err != nil {
+		return err
+	}
 
 	defer func() {
 		if test.storage != nil {
@@ -103,10 +109,14 @@ func RunTest(t testutil.T, input string, engine engineQuerier) {
 	}()
 
 	for _, cmd := range test.cmds {
-		// TODO(fabxc): aggregate command errors, yield diffs for result
-		// comparison errors.
-		require.NoError(t, test.exec(cmd, engine))
+		if err := test.exec(cmd, engine); err != nil {
+			// TODO(fabxc): aggregate command errors, yield diffs for result
+			// comparison errors.
+			return err
+		}
 	}
+
+	return nil
 }
 
 // test is a sequence of read and write commands that are run
