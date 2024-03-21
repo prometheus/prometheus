@@ -546,13 +546,13 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				}
 			}
 			if numOutOfOrder > 0 {
-				level.Warn(logger).Log("msg", "Error on ingesting out-of-order result from rule evaluation", "numDropped", numOutOfOrder)
+				level.Warn(logger).Log("msg", "Error on ingesting out-of-order result from rule evaluation", "num_dropped", numOutOfOrder)
 			}
 			if numTooOld > 0 {
-				level.Warn(logger).Log("msg", "Error on ingesting too old result from rule evaluation", "numDropped", numTooOld)
+				level.Warn(logger).Log("msg", "Error on ingesting too old result from rule evaluation", "num_dropped", numTooOld)
 			}
 			if numDuplicates > 0 {
-				level.Warn(logger).Log("msg", "Error on ingesting results from rule evaluation with different value but same timestamp", "numDropped", numDuplicates)
+				level.Warn(logger).Log("msg", "Error on ingesting results from rule evaluation with different value but same timestamp", "num_dropped", numDuplicates)
 			}
 
 			for metric, lset := range g.seriesInPreviousEval[i] {
