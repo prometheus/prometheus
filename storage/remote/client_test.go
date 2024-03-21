@@ -73,7 +73,7 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 		c, err := NewWriteClient(hash, conf)
 		require.NoError(t, err)
 
-		err = c.Store(context.Background(), []byte{}, 0)
+		err = c.Store(context.Background(), []byte{}, 0, Version1, "snappy")
 		if test.err != nil {
 			require.EqualError(t, err, test.err.Error())
 		} else {
@@ -133,7 +133,7 @@ func TestClientRetryAfter(t *testing.T) {
 			c := getClient(getClientConfig(serverURL, tc.retryOnRateLimit))
 
 			var recErr RecoverableError
-			err = c.Store(context.Background(), []byte{}, 0)
+			err = c.Store(context.Background(), []byte{}, 0, Version1, "snappy")
 			require.Equal(t, tc.expectedRecoverable, errors.As(err, &recErr), "Mismatch in expected recoverable error status.")
 			if tc.expectedRecoverable {
 				require.Equal(t, tc.expectedRetryAfter, recErr.retryAfter)
@@ -203,7 +203,7 @@ func TestClientHeaders(t *testing.T) {
 	c, err := NewWriteClient("c", conf)
 	require.NoError(t, err)
 
-	err = c.Store(context.Background(), []byte{}, 0)
+	err = c.Store(context.Background(), []byte{}, 0, Version1, "snappy")
 	require.NoError(t, err)
 
 	require.True(t, called, "The remote server wasn't called")
