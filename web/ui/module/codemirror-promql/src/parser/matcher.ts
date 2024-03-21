@@ -22,7 +22,6 @@ import {
   StringLiteral,
   UnquotedLabelMatcher,
   QuotedLabelMatcher,
-  MetricNameLabelMatcher,
   QuotedLabelName,
 } from '@prometheus-io/lezer-promql';
 import { EditorState } from '@codemirror/state';
@@ -31,10 +30,6 @@ import { Matcher } from '../types';
 function createMatcher(labelMatcher: SyntaxNode, state: EditorState): Matcher {
   const matcher = new Matcher(0, '', '');
   const cursor = labelMatcher.cursor();
-  if (!cursor.next()) {
-    // weird case, that would mean the labelMatcher doesn't have any child.
-    return matcher;
-  }
   switch (cursor.type.id) {
     case QuotedLabelMatcher:
       if (!cursor.next()) {
@@ -80,7 +75,7 @@ function createMatcher(labelMatcher: SyntaxNode, state: EditorState): Matcher {
         }
       } while (cursor.nextSibling());
       break;
-    case MetricNameLabelMatcher:
+    case QuotedLabelName:
       matcher.name = '__name__';
       matcher.value = state.sliceDoc(cursor.from, cursor.to).slice(1, -1);
       matcher.type = EqlSingle;

@@ -220,7 +220,7 @@ VectorSelector {
 }
 
 LabelMatchers {
-  "{" (LabelMatcher ("," LabelMatcher)* ","?)? "}"
+  "{" ((UnquotedLabelMatcher | QuotedLabelMatcher | QuotedLabelName)("," (UnquotedLabelMatcher | QuotedLabelMatcher | QuotedLabelName))* ","?)? "}"
 }
 
 MatchOp {
@@ -230,22 +230,12 @@ MatchOp {
   NeqRegex
 }
 
-LabelMatcher {
-  UnquotedLabelMatcher |
-  QuotedLabelMatcher |
-  MetricNameLabelMatcher
-}
-
 UnquotedLabelMatcher {
     LabelName MatchOp StringLiteral
 }
 
 QuotedLabelMatcher {
     QuotedLabelName MatchOp StringLiteral
-}
-
-MetricNameLabelMatcher {
-    QuotedLabelName
 }
 
 StepInvariantExpr {

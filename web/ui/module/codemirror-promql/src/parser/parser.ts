@@ -27,7 +27,6 @@ import {
   Gte,
   Gtr,
   Identifier,
-  LabelMatcher,
   LabelMatchers,
   Lss,
   Lte,
@@ -36,11 +35,14 @@ import {
   Or,
   ParenExpr,
   Quantile,
+  QuotedLabelMatcher,
+  QuotedLabelName,
   StepInvariantExpr,
   SubqueryExpr,
   Topk,
   UnaryExpr,
   Unless,
+  UnquotedLabelMatcher,
   VectorSelector,
 } from '@prometheus-io/lezer-promql';
 import { containsAtLeastOneChild } from './path-finder';
@@ -282,7 +284,11 @@ export class Parser {
 
   private checkVectorSelector(node: SyntaxNode): void {
     const matchList = node.getChild(LabelMatchers);
-    const labelMatchers = buildLabelMatchers(matchList ? matchList.getChildren(LabelMatcher) : [], this.state);
+    const labelMatcherOpts = [QuotedLabelName, QuotedLabelMatcher, UnquotedLabelMatcher];
+    let labelMatchers: Matcher[] = [];
+    for (const labelMatcherOpt of labelMatcherOpts) {
+      labelMatchers = labelMatchers.concat(buildLabelMatchers(matchList ? matchList.getChildren(labelMatcherOpt) : [], this.state));
+    }
     let vectorSelectorName = '';
     // VectorSelector ( Identifier )
     // https://github.com/promlabs/lezer-promql/blob/71e2f9fa5ae6f5c5547d5738966cd2512e6b99a8/src/promql.grammar#L200
