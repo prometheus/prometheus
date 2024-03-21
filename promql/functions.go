@@ -1116,6 +1116,9 @@ func funcHistogramStdDev(vals []parser.Value, args parser.Expressions, enh *Eval
 				val = 0
 			} else {
 				val = math.Sqrt(bucket.Upper * bucket.Lower)
+				if bucket.Upper < 0 && bucket.Lower < 0 {
+					val = -val
+				}
 			}
 			delta := val - mean
 			variance, cVariance = kahanSumInc(bucket.Count*delta*delta, variance, cVariance)
@@ -1149,6 +1152,9 @@ func funcHistogramStdVar(vals []parser.Value, args parser.Expressions, enh *Eval
 				val = 0
 			} else {
 				val = math.Sqrt(bucket.Upper * bucket.Lower)
+				if bucket.Upper < 0 && bucket.Lower < 0 {
+					val = -val
+				}
 			}
 			delta := val - mean
 			variance, cVariance = kahanSumInc(bucket.Count*delta*delta, variance, cVariance)
