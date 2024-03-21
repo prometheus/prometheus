@@ -242,6 +242,14 @@ func (c *Client) GetProtoVersions(ctx context.Context) (string, error) {
 
 	// Check for an error
 	if httpResp.StatusCode != 200 {
+		if httpResp.StatusCode == 405 {
+			// If we get a 405 (MethodNotAllowed) error then it means the endpoint doesn't
+			// understand Remote Write 2.0, so we allow the lastRWHeader to be overwritten
+			// even if it is blank
+			// This will make subsequent sends use RemoteWrite 1.0 until the endpoint gives
+			// a response that confirms it can speak 2.0
+			c.lastRWHeader = promHeader
+		}
 		return promHeader, fmt.Errorf(httpResp.Status)
 	}
 
