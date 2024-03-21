@@ -72,7 +72,7 @@ func LoadedStorage(t testutil.T, input string) *teststorage.TestStorage {
 }
 
 // RunBuiltinTests runs an acceptance test suite against the provided engine.
-func RunBuiltinTests(t *testing.T, engine engineQuerier) {
+func RunBuiltinTests(t *testing.T, engine QueryEngine) {
 	t.Cleanup(func() { parser.EnableExperimentalFunctions = false })
 	parser.EnableExperimentalFunctions = true
 
@@ -89,11 +89,11 @@ func RunBuiltinTests(t *testing.T, engine engineQuerier) {
 }
 
 // RunTest parses and runs the test against the provided engine.
-func RunTest(t testutil.T, input string, engine engineQuerier) {
+func RunTest(t testutil.T, input string, engine QueryEngine) {
 	require.NoError(t, runTest(t, input, engine))
 }
 
-func runTest(t testutil.T, input string, engine engineQuerier) error {
+func runTest(t testutil.T, input string, engine QueryEngine) error {
 	test, err := newTest(t, input)
 	if err != nil {
 		return err
@@ -146,11 +146,6 @@ func newTest(t testutil.T, input string) (*test, error) {
 
 //go:embed testdata
 var testsFs embed.FS
-
-type engineQuerier interface {
-	NewRangeQuery(ctx context.Context, q storage.Queryable, opts QueryOpts, qs string, start, end time.Time, interval time.Duration) (Query, error)
-	NewInstantQuery(ctx context.Context, q storage.Queryable, opts QueryOpts, qs string, ts time.Time) (Query, error)
-}
 
 func raise(line int, format string, v ...interface{}) error {
 	return &parser.ParseErr{
@@ -571,7 +566,7 @@ func atModifierTestCases(exprStr string, evalTime time.Time) ([]atModifierTestCa
 }
 
 // exec processes a single step of the test.
-func (t *test) exec(tc testCommand, engine engineQuerier) error {
+func (t *test) exec(tc testCommand, engine QueryEngine) error {
 	switch cmd := tc.(type) {
 	case *clearCmd:
 		t.clear()
