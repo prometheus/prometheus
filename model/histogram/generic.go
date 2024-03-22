@@ -23,7 +23,7 @@ import (
 const (
 	ExponentialSchemaMax int32 = 8
 	ExponentialSchemaMin int32 = -4
-	CustomBucketsSchema  int32 = 127
+	CustomBucketsSchema  int32 = -53
 )
 
 var (
@@ -134,7 +134,7 @@ type baseBucketIterator[BC BucketCount, IBC InternalBucketCount] struct {
 	currCount IBC   // Count in the current bucket.
 	currIdx   int32 // The actual bucket index.
 
-	customBounds []float64 // Bounds (usually upper) for histograms with custom buckets.
+	customValues []float64 // Bounds (usually upper) for histograms with custom buckets.
 }
 
 func (b *baseBucketIterator[BC, IBC]) At() Bucket[BC] {
@@ -148,11 +148,11 @@ func (b *baseBucketIterator[BC, IBC]) at(schema int32) Bucket[BC] {
 		Index: b.currIdx,
 	}
 	if b.positive {
-		bucket.Upper = getBound(b.currIdx, schema, b.customBounds)
-		bucket.Lower = getBound(b.currIdx-1, schema, b.customBounds)
+		bucket.Upper = getBound(b.currIdx, schema, b.customValues)
+		bucket.Lower = getBound(b.currIdx-1, schema, b.customValues)
 	} else {
-		bucket.Lower = -getBound(b.currIdx, schema, b.customBounds)
-		bucket.Upper = -getBound(b.currIdx-1, schema, b.customBounds)
+		bucket.Lower = -getBound(b.currIdx, schema, b.customValues)
+		bucket.Upper = -getBound(b.currIdx-1, schema, b.customValues)
 	}
 	if IsCustomBucketsSchema(schema) {
 		bucket.LowerInclusive = b.currIdx == 0
@@ -446,9 +446,9 @@ func checkHistogramCustomBounds(bounds []float64, spans []Span, numBuckets int) 
 	return nil
 }
 
-func getBound(idx, schema int32, customBounds []float64) float64 {
+func getBound(idx, schema int32, customValues []float64) float64 {
 	if IsCustomBucketsSchema(schema) {
-		length := int32(len(customBounds))
+		length := int32(len(customValues))
 		switch {
 		case idx > length || idx < -1:
 			panic(fmt.Errorf("index %d out of bounds for custom bounds of length %d", idx, length))
@@ -457,7 +457,7 @@ func getBound(idx, schema int32, customBounds []float64) float64 {
 		case idx == -1:
 			return math.Inf(-1)
 		default:
-			return customBounds[idx]
+			return customValues[idx]
 		}
 	}
 	return getBoundExponential(idx, schema)

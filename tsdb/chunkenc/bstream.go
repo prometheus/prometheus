@@ -113,6 +113,16 @@ func (b *bstream) writeBits(u uint64, nbits int) {
 	}
 }
 
+// wrapper for the standard library's PutUvarint to make it work
+// with our bstream.
+func (b *bstream) putUvarint(x uint64) {
+	buf := make([]byte, 2)
+	l := binary.PutUvarint(buf, x)
+	for i := 0; i < l; i++ {
+		b.writeByte(buf[i])
+	}
+}
+
 type bstreamReader struct {
 	stream       []byte
 	streamOffset int // The offset from which read the next byte from the stream.
@@ -256,4 +266,10 @@ func (b *bstreamReader) loadNextBuffer(nbits uint8) bool {
 	b.valid = uint8(nbytes * 8)
 
 	return true
+}
+
+// wrapper for the standard library's ReadUvarint to make it work
+// with our bstream.
+func (b *bstreamReader) readUvarint() (uint64, error) {
+	return binary.ReadUvarint(b)
 }

@@ -21,17 +21,21 @@ import (
 
 func writeHistogramChunkLayout(
 	b *bstream, schema int32, zeroThreshold float64,
-	positiveSpans, negativeSpans []histogram.Span,
+	positiveSpans, negativeSpans []histogram.Span, customValues []float64,
 ) {
 	putZeroThreshold(b, zeroThreshold)
 	putVarbitInt(b, int64(schema))
 	putHistogramChunkLayoutSpans(b, positiveSpans)
 	putHistogramChunkLayoutSpans(b, negativeSpans)
+	if histogram.IsCustomBucketsSchema(schema) {
+		putHistogramChunkLayoutCustomBounds(b, customValues)
+	}
 }
 
 func readHistogramChunkLayout(b *bstreamReader) (
 	schema int32, zeroThreshold float64,
 	positiveSpans, negativeSpans []histogram.Span,
+	customValues []float64,
 	err error,
 ) {
 	zeroThreshold, err = readZeroThreshold(b)
@@ -53,6 +57,13 @@ func readHistogramChunkLayout(b *bstreamReader) (
 	negativeSpans, err = readHistogramChunkLayoutSpans(b)
 	if err != nil {
 		return
+	}
+
+	if histogram.IsCustomBucketsSchema(schema) {
+		customValues, err = readHistogramChunkLayoutCustomBounds(b)
+		if err != nil {
+			return
+		}
 	}
 
 	return
@@ -90,6 +101,30 @@ func readHistogramChunkLayoutSpans(b *bstreamReader) ([]histogram.Span, error) {
 		})
 	}
 	return spans, nil
+}
+
+func putHistogramChunkLayoutCustomBounds(b *bstream, customValues []float64) {
+	putVarbitUint(b, uint64(len(customValues)))
+	for _, bound := range customValues {
+		putCustomBound(b, bound)
+	}
+}
+
+func readHistogramChunkLayoutCustomBounds(b *bstreamReader) ([]float64, error) {
+	var customValues []float64
+	num, err := readVarbitUint(b)
+	if err != nil {
+		return nil, err
+	}
+	for i := 0; i < int(num); i++ {
+		bound, err := readCustomBound(b)
+		if err != nil {
+			return nil, err
+		}
+
+		customValues = append(customValues, bound)
+	}
+	return customValues, nil
 }
 
 // putZeroThreshold writes the zero threshold to the bstream. It stores typical
@@ -137,6 +172,52 @@ func readZeroThreshold(br *bstreamReader) (float64, error) {
 		return math.Float64frombits(v), nil
 	default:
 		return math.Ldexp(0.5, int(b)-243), nil
+	}
+}
+
+// isWholeWhenMultiplied checks to see if the number when multiplied by 1000 can
+// be converted into an integer without losing precision.
+func isWholeWhenMultiplied(in float64) bool {
+	i := uint(math.Round(in * 1000))
+	out := float64(i) / 1000
+	return in == out
+}
+
+// putCustomBound writes the custom bound to the bstream. It stores values from 0 to
+// 16.382 (inclusive) that are multiples of 0.001 in an unsigned var int of up to 2 bytes,
+// but needs 1 bit + 8 bytes for other values like negative numbers, numbers greater than
+// 16.382, or numbers that are not a multiple of 0.001, on the assumption that they are
+// less common. In detail:
+//   - Multiply the bound by 1000, without rounding.
+//   - If the multiplied bound is >= 0, <= 16382 and a whole number, store it as an
+//     unsigned var int.
+//   - Otherwise, store 0 as an unsigned var int, followed by the 8 bytes of the original
+//     bound as a float64.
+func putCustomBound(b *bstream, f float64) {
+	tf := f * 1000
+	if tf < 0 || tf > 16382 || !isWholeWhenMultiplied(f) {
+		b.putUvarint(0)
+		b.writeBits(math.Float64bits(f), 64)
+		return
+	}
+	b.putUvarint(uint64(math.Round(tf) + 1))
+}
+
+// readCustomBound reads the custom bound written with putCustomBound.
+func readCustomBound(br *bstreamReader) (float64, error) {
+	b, err := br.readUvarint()
+	if err != nil {
+		return 0, err
+	}
+	switch b {
+	case 0:
+		v, err := br.readBits(64)
+		if err != nil {
+			return 0, err
+		}
+		return math.Float64frombits(v), nil
+	default:
+		return float64(b-1) / 1000, nil
 	}
 }
 
