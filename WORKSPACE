@@ -202,9 +202,9 @@ http_archive(
 
 http_archive(
     name = "ceph",
-    url = "https://github.com/ceph/ceph/archive/refs/tags/v19.0.0.tar.gz",
-    sha256 = "e08b8f1df525fe70d693b916dc6bf7e8f60cf0836c5f0dd1ec5a31b051a4c288",
-    strip_prefix = "ceph-19.0.0/",
+    url = "https://github.com/ceph/ceph/archive/refs/tags/v16.2.10.tar.gz",
+    sha256 = "03fdfd75a591b3f8e2c8a9466ec4dcf04b98641d6a0d04a71c07de37b4b137bd",
+    strip_prefix = "ceph-16.2.10/",
     build_file = "//third_party:ceph/ceph.BUILD",
     patch_args = ["-p1"],
     patches = [

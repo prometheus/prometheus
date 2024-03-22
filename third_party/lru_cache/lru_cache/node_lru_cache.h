@@ -145,6 +145,7 @@ class NodeLruCache : public internal::LruCacheImpl<NodeLruCache<Key, Value, Valu
       : Base(std::move(value_provider), std::move(dropped_entry_callback)), max_size_(max_size), nodes_(map_) {}
 
   size_t max_size() const { return max_size_; }
+  void set_max_size(size_t max_size) noexcept { max_size_ = max_size; }
 
  protected:
   NodeContainer& node_container() { return nodes_; }
@@ -160,7 +161,7 @@ class NodeLruCache : public internal::LruCacheImpl<NodeLruCache<Key, Value, Valu
   }
 
  private:
-  const size_t max_size_;
+  size_t max_size_;
   Map map_;
   NodeContainer nodes_;
 };
