@@ -281,7 +281,10 @@ eval_ordered instant at 50m sort(http_requests)
 `,
 			expectedError: `error in eval sort(http_requests) (line 8): unexpected metric {__name__="http_requests", group="canary", instance="1", job="api-server"} in result`,
 		},
-
+		"instant query with invalid timestamp": {
+			input:         `eval instant at abc123 vector(0)`,
+			expectedError: `error in eval vector(0) (line 1): invalid timestamp definition "abc123": not a valid duration string: "abc123"`,
+		},
 		"range query with expected result": {
 			input: testData + `
 eval range from 0 to 10m step 5m sum by (group) (http_requests)
