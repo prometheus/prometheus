@@ -535,18 +535,18 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 			}
 
 			if len(expectedFloats) != len(s.Floats) || len(expectedHistograms) != len(s.Histograms) {
-				return fmt.Errorf("expected %v float points and %v histogram points for %s, but got %v float points %v and %v histogram points %v", len(expectedFloats), len(expectedHistograms), ev.metrics[hash], len(s.Floats), s.Floats, len(s.Histograms), s.Histograms)
+				return fmt.Errorf("expected %v float points and %v histogram points for %s, but got %s", len(expectedFloats), len(expectedHistograms), ev.metrics[hash], formatSeriesResult(s))
 			}
 
 			for i, expected := range expectedFloats {
 				actual := s.Floats[i]
 
 				if expected.T != actual.T {
-					return fmt.Errorf("expected float value at index %v for %s to have timestamp %v, but it had timestamp %v in result with %v float points %v and %v histogram points %v", i, ev.metrics[hash], expected.T, actual.T, len(s.Floats), s.Floats, len(s.Histograms), s.Histograms)
+					return fmt.Errorf("expected float value at index %v for %s to have timestamp %v, but it had timestamp %v (result has %s)", i, ev.metrics[hash], expected.T, actual.T, formatSeriesResult(s))
 				}
 
 				if !almostEqual(actual.F, expected.F, defaultEpsilon) {
-					return fmt.Errorf("expected float value at index %v (t=%v) for %s to be %v, but got %v in result with %v float points %v and %v histogram points %v", i, actual.T, ev.metrics[hash], expected.F, actual.F, len(s.Floats), s.Floats, len(s.Histograms), s.Histograms)
+					return fmt.Errorf("expected float value at index %v (t=%v) for %s to be %v, but got %v (result has %s)", i, actual.T, ev.metrics[hash], expected.F, actual.F, formatSeriesResult(s))
 				}
 			}
 
@@ -554,11 +554,11 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 				actual := s.Histograms[i]
 
 				if expected.T != actual.T {
-					return fmt.Errorf("expected histogram value at index %v for %s to have timestamp %v, but it had timestamp %v in result with %v float points %v and %v histogram points %v", i, ev.metrics[hash], expected.T, actual.T, len(s.Floats), s.Floats, len(s.Histograms), s.Histograms)
+					return fmt.Errorf("expected histogram value at index %v for %s to have timestamp %v, but it had timestamp %v (result has %s)", i, ev.metrics[hash], expected.T, actual.T, formatSeriesResult(s))
 				}
 
 				if !actual.H.Equals(expected.H) {
-					return fmt.Errorf("expected histogram value at index %v (t=%v) for %s to be %v, but got %v in result with %v float points %v and %v histogram points %v", i, actual.T, ev.metrics[hash], expected.H, actual.H, len(s.Floats), s.Floats, len(s.Histograms), s.Histograms)
+					return fmt.Errorf("expected histogram value at index %v (t=%v) for %s to be %v, but got %v (result has %s)", i, actual.T, ev.metrics[hash], expected.H, actual.H, formatSeriesResult(s))
 				}
 			}
 
@@ -630,20 +630,19 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 	return nil
 }
 
-func formatFloatAndHistogramPoints(floats []FPoint, histograms []HPoint) string {
-	if len(histograms) == 0 && len(floats) == 0 {
-		return "[]"
+func formatSeriesResult(s Series) string {
+	floatPlural := "s"
+	histogramPlural := "s"
+
+	if len(s.Floats) == 1 {
+		floatPlural = ""
 	}
 
-	if len(histograms) != 0 && len(floats) != 0 {
-		return fmt.Sprintf("floats: %v, histograms: %v", floats, histograms)
+	if len(s.Histograms) == 1 {
+		histogramPlural = ""
 	}
 
-	if len(histograms) != 0 {
-		return fmt.Sprintf("%v", histograms)
-	}
-
-	return fmt.Sprintf("%v", floats)
+	return fmt.Sprintf("%v float point%s %v and %v histogram point%s %v", len(s.Floats), floatPlural, s.Floats, len(s.Histograms), histogramPlural, s.Histograms)
 }
 
 // HistogramTestExpression returns TestExpression() for the given histogram or "" if the histogram is nil.
