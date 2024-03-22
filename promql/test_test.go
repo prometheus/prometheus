@@ -359,7 +359,7 @@ eval range from 0 to 10m step 5m sum by (group) (http_requests)
 	{group="canary"} 0 70 140
 	{group="test"} 0 100 200
 `,
-			expectedError: `error in eval sum by (group) (http_requests) (line 8): expected metric {group="test"} with 3: [0.000000 100.000000 200.000000] not found`,
+			expectedError: `error in eval sum by (group) (http_requests) (line 8): expected metric {group="test"} not found`,
 		},
 		"range query expected to fail, and query fails": {
 			input: `

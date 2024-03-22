@@ -564,13 +564,9 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 
 		}
 
-		for hash, expVals := range ev.expected {
+		for hash, _ := range ev.expected {
 			if !seen[hash] {
-				fmt.Println("matrix result", len(val), ev.expr)
-				for _, ss := range val {
-					fmt.Println("    ", ss.Metric, ss.Floats)
-				}
-				return fmt.Errorf("expected metric %s with %v not found", ev.metrics[hash], expVals)
+				return fmt.Errorf("expected metric %s not found", ev.metrics[hash])
 			}
 		}
 
