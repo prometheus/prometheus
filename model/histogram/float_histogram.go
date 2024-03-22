@@ -72,7 +72,10 @@ func (h *FloatHistogram) Copy() *FloatHistogram {
 	}
 
 	if h.UsesCustomBuckets() {
-		c.CustomValues = h.CustomValues
+		if len(h.CustomValues) != 0 {
+			c.CustomValues = make([]float64, len(h.CustomValues))
+			copy(c.CustomValues, h.CustomValues)
+		}
 	} else {
 		c.ZeroThreshold = h.ZeroThreshold
 		c.ZeroCount = h.ZeroCount
@@ -114,7 +117,8 @@ func (h *FloatHistogram) CopyTo(to *FloatHistogram) {
 		to.NegativeSpans = clearIfNotNil(to.NegativeSpans)
 		to.NegativeBuckets = clearIfNotNil(to.NegativeBuckets)
 
-		to.CustomValues = h.CustomValues
+		to.CustomValues = resize(to.CustomValues, len(h.CustomValues))
+		copy(to.CustomValues, h.CustomValues)
 	} else {
 		to.ZeroThreshold = h.ZeroThreshold
 		to.ZeroCount = h.ZeroCount
