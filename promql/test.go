@@ -587,7 +587,13 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 			}
 			exp0 := exp.vals[0]
 			expH := exp0.Histogram
-			if (expH == nil) != (v.H == nil) || (expH != nil && !expH.Equals(v.H)) {
+			if expH == nil && v.H != nil {
+				return fmt.Errorf("expected float value %v for %s but got histogram %s", exp0, v.Metric, HistogramTestExpression(v.H))
+			}
+			if expH != nil && v.H == nil {
+				return fmt.Errorf("expected histogram %s for %s but got float value %v", HistogramTestExpression(expH), v.Metric, v.F)
+			}
+			if expH != nil && !expH.Equals(v.H) {
 				return fmt.Errorf("expected %v for %s but got %s", HistogramTestExpression(expH), v.Metric, HistogramTestExpression(v.H))
 			}
 			if !almostEqual(exp0.Value, v.F, defaultEpsilon) {

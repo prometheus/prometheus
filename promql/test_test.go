@@ -170,20 +170,59 @@ load 5m
 		input         string
 		expectedError string
 	}{
-		"instant query with expected result": {
+		"instant query with expected float result": {
 			input: testData + `
 eval instant at 5m sum by (group) (http_requests)
 	{group="production"} 30
 	{group="canary"} 70
 `,
 		},
-		"instant query with incorrect result": {
+		"instant query with unexpected float result": {
 			input: testData + `
 eval instant at 5m sum by (group) (http_requests)
 	{group="production"} 30
 	{group="canary"} 80
 `,
 			expectedError: `error in eval sum by (group) (http_requests) (line 8): expected 80 for {group="canary"} but got 70`,
+		},
+		"instant query with expected histogram result": {
+			input: `
+load 5m
+	testmetric {{schema:-1 sum:4 count:1 buckets:[1] offset:1}}
+
+eval instant at 0 testmetric
+	testmetric {{schema:-1 sum:4 count:1 buckets:[1] offset:1}}
+`,
+		},
+		"instant query with unexpected histogram result": {
+			input: `
+load 5m
+	testmetric {{schema:-1 sum:4 count:1 buckets:[1] offset:1}}
+
+eval instant at 0 testmetric
+	testmetric {{schema:-1 sum:6 count:1 buckets:[1] offset:1}}
+`,
+			expectedError: `error in eval testmetric (line 5): expected {{schema:-1 count:1 sum:6 offset:1 buckets:[1]}} for {__name__="testmetric"} but got {{schema:-1 count:1 sum:4 offset:1 buckets:[1]}}`,
+		},
+		"instant query with float value returned when histogram expected": {
+			input: `
+load 5m
+	testmetric 2
+
+eval instant at 0 testmetric
+	testmetric {{}}
+`,
+			expectedError: `error in eval testmetric (line 5): expected histogram {{}} for {__name__="testmetric"} but got float value 2`,
+		},
+		"instant query with histogram returned when float expected": {
+			input: `
+load 5m
+	testmetric {{}}
+
+eval instant at 0 testmetric
+	testmetric 2
+`,
+			expectedError: `error in eval testmetric (line 5): expected float value 2.000000 for {__name__="testmetric"} but got histogram {{}}`,
 		},
 		"instant query, but result has an unexpected series": {
 			input: testData + `
@@ -250,7 +289,7 @@ eval range from 0 to 10m step 5m sum by (group) (http_requests)
 	{group="canary"} 0 70 140
 `,
 		},
-		"range query with incorrect float value": {
+		"range query with unexpected float value": {
 			input: testData + `
 eval range from 0 to 10m step 5m sum by (group) (http_requests)
 	{group="production"} 0 30 60
