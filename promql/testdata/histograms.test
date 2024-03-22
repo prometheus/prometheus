@@ -25,6 +25,25 @@ load 5m
 	testhistogram2_bucket{le="6"}	 0+3x10
 	testhistogram2_bucket{le="+Inf"} 0+3x10
 
+# Another test histogram, where there are 0 counts where there is
+# an infinite bound, allowing us to calculate standard deviation
+# and variance properly.
+load 5m
+	testhistogram3_bucket{le="0", start="positive"}	0+0x10
+	testhistogram3_bucket{le="0.1", start="positive"}	0+5x10
+	testhistogram3_bucket{le=".2", start="positive"}		0+7x10
+	testhistogram3_bucket{le="1e0", start="positive"}	0+11x10
+	testhistogram3_bucket{le="+Inf", start="positive"}	0+11x10
+	testhistogram3_sum{start="positive"}	0+33x10
+	testhistogram3_count{start="positive"}	0+11x10
+	testhistogram3_bucket{le="-.25", start="negative"}	0+0x10
+	testhistogram3_bucket{le="-.2", start="negative"}	0+1x10
+	testhistogram3_bucket{le="-0.1", start="negative"}	0+2x10
+	testhistogram3_bucket{le="0.3", start="negative"}	0+2x10
+	testhistogram3_bucket{le="+Inf", start="negative"}	0+2x10
+	testhistogram3_sum{start="negative"}	0+8x10
+	testhistogram3_count{start="negative"}	0+2x10
+
 # Now a more realistic histogram per job and instance to test aggregation.
 load 5m
 	request_duration_seconds_bucket{job="job1", instance="ins1", le="0.1"}	0+1x10
@@ -50,6 +69,63 @@ load 5m
 	mixed_bucket{job="job1", instance="ins2", le="+inf"}	0+0x10
 	mixed_bucket{job="job1", instance="ins2", le="+Inf"}	0+0x10
 
+# Test histogram_count.
+eval instant at 50m histogram_count(testhistogram3)
+	{start="positive"} 110
+	{start="negative"} 20
+
+# Test histogram_sum.
+eval instant at 50m histogram_sum(testhistogram3)
+	{start="positive"} 330
+	{start="negative"} 80
+
+# Test histogram_avg.
+eval instant at 50m histogram_avg(testhistogram3)
+	{start="positive"} 3
+	{start="negative"} 4
+
+# Test histogram_stddev.
+eval instant at 50m histogram_stddev(testhistogram3)
+	{start="positive"} 2.8189265757336734
+	{start="negative"} 4.182715937754936
+
+# Test histogram_stdvar.
+eval instant at 50m histogram_stdvar(testhistogram3)
+	{start="positive"} 7.946347039377573
+	{start="negative"} 17.495112615949154
+
+# Test histogram_fraction.
+
+eval instant at 50m histogram_fraction(0, 0.2, testhistogram3)
+	{start="positive"} 0.6363636363636364
+	{start="negative"} 0
+	
+eval instant at 50m histogram_fraction(0, 0.2, rate(testhistogram3[5m]))
+	{start="positive"} 0.6363636363636364
+	{start="negative"} 0
+
+# Test histogram_quantile.
+
+eval instant at 50m histogram_quantile(0, testhistogram3_bucket)
+	{start="positive"} 0
+	{start="negative"} -0.25
+
+eval instant at 50m histogram_quantile(0.25, testhistogram3_bucket)
+	{start="positive"} 0.055
+	{start="negative"} -0.225
+
+eval instant at 50m histogram_quantile(0.5, testhistogram3_bucket)
+	{start="positive"} 0.125
+	{start="negative"} -0.2
+
+eval instant at 50m histogram_quantile(0.75, testhistogram3_bucket)
+	{start="positive"} 0.45
+	{start="negative"} -0.15
+
+eval instant at 50m histogram_quantile(1, testhistogram3_bucket)
+	{start="positive"} 1
+	{start="negative"} -0.1
+
 # Quantile too low.
 eval instant at 50m histogram_quantile(-0.1, testhistogram_bucket)
 	{start="positive"} -Inf
@@ -65,12 +141,9 @@ eval instant at 50m histogram_quantile(NaN, testhistogram_bucket)
 	{start="positive"} NaN
 	{start="negative"} NaN
 
-# Quantile value in lowest bucket, which is positive.
-eval instant at 50m histogram_quantile(0, testhistogram_bucket{start="positive"})
+# Quantile value in lowest bucket.
+eval instant at 50m histogram_quantile(0, testhistogram_bucket)
 	{start="positive"} 0
-
-# Quantile value in lowest bucket, which is negative.
-eval instant at 50m histogram_quantile(0, testhistogram_bucket{start="negative"})
 	{start="negative"} -0.2
 
 # Quantile value in highest bucket.
@@ -232,4 +305,4 @@ load 5m
 	request_duration_seconds2_bucket{job="job1", instance="ins1", le="0.2"}	0+3x10
 	request_duration_seconds2_bucket{job="job1", instance="ins1", le="+Inf"}	0+4x10
 
-eval_fail instant at 50m histogram_quantile(0.99, {__name__=~"request_duration.*"})
+eval_fail instant at 50m histogram_quantile(0.99, {__name__=~"request_duration_seconds\\d*_bucket$"})
