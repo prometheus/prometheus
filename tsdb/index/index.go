@@ -113,6 +113,8 @@ type symbolCacheEntry struct {
 
 type PostingsEncoder func(*encoding.Encbuf, []uint32) error
 
+type PostingsDecoder func(b []byte) (int, Postings, error)
+
 // Writer implements the IndexWriter interface for the standard
 // serialization format.
 type Writer struct {
@@ -1151,17 +1153,17 @@ func (b realByteSlice) Sub(start, end int) ByteSlice {
 
 // NewReader returns a new index reader on the given byte slice. It automatically
 // handles different format versions.
-func NewReader(b ByteSlice) (*Reader, error) {
-	return newReader(b, io.NopCloser(nil))
+func NewReader(b ByteSlice, decoder PostingsDecoder) (*Reader, error) {
+	return newReader(b, io.NopCloser(nil), decoder)
 }
 
 // NewFileReader returns a new index reader against the given index file.
-func NewFileReader(path string) (*Reader, error) {
+func NewFileReader(path string, decoder PostingsDecoder) (*Reader, error) {
 	f, err := fileutil.OpenMmapFile(path)
 	if err != nil {
 		return nil, err
 	}
-	r, err := newReader(realByteSlice(f.Bytes()), f)
+	r, err := newReader(realByteSlice(f.Bytes()), f, decoder)
 	if err != nil {
 		return nil, tsdb_errors.NewMulti(
 			err,
@@ -1172,7 +1174,7 @@ func NewFileReader(path string) (*Reader, error) {
 	return r, nil
 }
 
-func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
+func newReader(b ByteSlice, c io.Closer, postingsDecoder PostingsDecoder) (*Reader, error) {
 	r := &Reader{
 		b:        b,
 		c:        c,
@@ -1269,7 +1271,10 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 		r.nameSymbols[off] = k
 	}
 
-	r.dec = &Decoder{LookupSymbol: r.lookupSymbol}
+	if postingsDecoder == nil {
+		postingsDecoder = DecodePostingsRaw
+	}
+	r.dec = &Decoder{LookupSymbol: r.lookupSymbol, Postings: postingsDecoder}
 
 	return r, nil
 }
@@ -1852,10 +1857,11 @@ func (s stringListIter) Err() error { return nil }
 // by them if there's demand.
 type Decoder struct {
 	LookupSymbol func(context.Context, uint32) (string, error)
+	Postings     PostingsDecoder
 }
 
-// Postings returns a postings list for b and its number of elements.
-func (dec *Decoder) Postings(b []byte) (int, Postings, error) {
+// DecodePostingsRaw returns a postings list for b and its number of elements.
+func DecodePostingsRaw(b []byte) (int, Postings, error) {
 	d := encoding.Decbuf{B: b}
 	n := d.Be32int()
 	l := d.Get()

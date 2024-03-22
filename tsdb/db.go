@@ -84,6 +84,7 @@ func DefaultOptions() *Options {
 		OutOfOrderCapMax:            DefaultOutOfOrderCapMax,
 		EnableOverlappingCompaction: true,
 		EnableSharding:              false,
+		PostingsDecoderFactory:      DefaultPostingsDecoderFactory,
 	}
 }
 
@@ -189,6 +190,10 @@ type Options struct {
 
 	// EnableSharding enables query sharding support in TSDB.
 	EnableSharding bool
+
+	// PostingsDecoderFactory allows users to customize postings decoders based on BlockMeta.
+	// By default, DefaultPostingsDecoderFactory will be used to create raw posting decoder.
+	PostingsDecoderFactory PostingsDecoderFactory
 }
 
 type BlocksToDeleteFunc func(blocks []*Block) map[ulid.ULID]struct{}
@@ -570,7 +575,7 @@ func (db *DBReadOnly) Blocks() ([]BlockReader, error) {
 		return nil, ErrClosed
 	default:
 	}
-	loadable, corrupted, err := openBlocks(db.logger, db.dir, nil, nil)
+	loadable, corrupted, err := openBlocks(db.logger, db.dir, nil, nil, DefaultPostingsDecoderFactory)
 	if err != nil {
 		return nil, err
 	}
@@ -668,7 +673,7 @@ func (db *DBReadOnly) LastBlockID() (string, error) {
 }
 
 // Block returns a block reader by given block id.
-func (db *DBReadOnly) Block(blockID string) (BlockReader, error) {
+func (db *DBReadOnly) Block(blockID string, postingsDecoderFactory PostingsDecoderFactory) (BlockReader, error) {
 	select {
 	case <-db.closed:
 		return nil, ErrClosed
@@ -680,7 +685,7 @@ func (db *DBReadOnly) Block(blockID string) (BlockReader, error) {
 		return nil, fmt.Errorf("invalid block ID %s", blockID)
 	}
 
-	block, err := OpenBlock(db.logger, filepath.Join(db.dir, blockID), nil)
+	block, err := OpenBlock(db.logger, filepath.Join(db.dir, blockID), nil, postingsDecoderFactory)
 	if err != nil {
 		return nil, err
 	}
@@ -830,6 +835,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	db.compactor, err = NewLeveledCompactorWithOptions(ctx, r, l, rngs, db.chunkPool, LeveledCompactorOptions{
 		MaxBlockChunkSegmentSize:    opts.MaxBlockChunkSegmentSize,
 		EnableOverlappingCompaction: opts.EnableOverlappingCompaction,
+		PD:                          opts.PostingsDecoderFactory,
 	})
 	if err != nil {
 		cancel()
@@ -1436,7 +1442,7 @@ func (db *DB) reloadBlocks() (err error) {
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
 
-	loadable, corrupted, err := openBlocks(db.logger, db.dir, db.blocks, db.chunkPool)
+	loadable, corrupted, err := openBlocks(db.logger, db.dir, db.blocks, db.chunkPool, db.opts.PostingsDecoderFactory)
 	if err != nil {
 		return err
 	}
@@ -1528,7 +1534,7 @@ func (db *DB) reloadBlocks() (err error) {
 	return nil
 }
 
-func openBlocks(l log.Logger, dir string, loaded []*Block, chunkPool chunkenc.Pool) (blocks []*Block, corrupted map[ulid.ULID]error, err error) {
+func openBlocks(l log.Logger, dir string, loaded []*Block, chunkPool chunkenc.Pool, postingsDecoderFactory PostingsDecoderFactory) (blocks []*Block, corrupted map[ulid.ULID]error, err error) {
 	bDirs, err := blockDirs(dir)
 	if err != nil {
 		return nil, nil, fmt.Errorf("find blocks: %w", err)
@@ -1545,7 +1551,7 @@ func openBlocks(l log.Logger, dir string, loaded []*Block, chunkPool chunkenc.Po
 		// See if we already have the block in memory or open it otherwise.
 		block, open := getBlock(loaded, meta.ULID)
 		if !open {
-			block, err = OpenBlock(l, bDir, chunkPool)
+			block, err = OpenBlock(l, bDir, chunkPool, postingsDecoderFactory)
 			if err != nil {
 				corrupted[meta.ULID] = err
 				continue
