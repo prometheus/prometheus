@@ -564,7 +564,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 
 		}
 
-		for hash, _ := range ev.expected {
+		for hash := range ev.expected {
 			if !seen[hash] {
 				return fmt.Errorf("expected metric %s not found", ev.metrics[hash])
 			}
