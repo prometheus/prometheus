@@ -15,10 +15,10 @@ package histogram
 
 import (
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"golang.org/x/exp/slices"
 )
 
 func TestGetBoundExponential(t *testing.T) {

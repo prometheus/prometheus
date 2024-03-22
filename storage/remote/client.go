@@ -64,11 +64,14 @@ var (
 	)
 	remoteReadQueryDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "read_request_duration_seconds",
-			Help:      "Histogram of the latency for remote read requests.",
-			Buckets:   append(prometheus.DefBuckets, 25, 60),
+			Namespace:                       namespace,
+			Subsystem:                       subsystem,
+			Name:                            "read_request_duration_seconds",
+			Help:                            "Histogram of the latency for remote read requests.",
+			Buckets:                         append(prometheus.DefBuckets, 25, 60),
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		},
 		[]string{remoteName, endpoint},
 	)

@@ -71,15 +71,28 @@ clear
 load 5m
 	http_requests{path="/foo"}	0+10x10
 	http_requests{path="/bar"}	0+10x5 0+10x5
+	http_requests{path="/dings"}   10+10x10
+	http_requests{path="/bumms"}    1+10x10
 
 # Tests for increase().
 eval instant at 50m increase(http_requests[50m])
-	{path="/foo"} 100
-	{path="/bar"}  90
+	{path="/foo"}   100
+	{path="/bar"}    90
+	{path="/dings"} 100
+	{path="/bumms"} 100
 
+# "foo" and "bar" are already at value 0 at t=0, so no extrapolation
+# happens. "dings" has value 10 at t=0 and would reach 0 at t=-5m. The
+# normal extrapolation by half a sample interval only goes to
+# t=-2m30s, so that's not yet reaching a negative value and therefore
+# chosen. However, "bumms" has value 1 at t=0 and would reach 0 at
+# t=-30s. Here the extrapolation to t=-2m30s would reach a negative
+# value, and therefore the extrapolation happens only by 30s.
 eval instant at 50m increase(http_requests[100m])
-	{path="/foo"} 100
-	{path="/bar"}  90
+	{path="/foo"}   100
+	{path="/bar"}    90
+	{path="/dings"} 105
+	{path="/bumms"} 101
 
 clear
 
@@ -133,13 +146,15 @@ load 4m
 	testcounter_zero_cutoff{start="4m"}	240+240x10
 	testcounter_zero_cutoff{start="5m"}	300+240x10
 
-# Zero cutoff for left-side extrapolation.
+# Zero cutoff for left-side extrapolation happens until we
+# reach half a sampling interval (2m). Beyond that, we only
+# extrapolate by half a sampling interval.
 eval instant at 10m rate(testcounter_zero_cutoff[20m])
 	{start="0m"} 0.5
 	{start="1m"} 0.55
 	{start="2m"} 0.6
-	{start="3m"} 0.65
-	{start="4m"} 0.7
+	{start="3m"} 0.6
+	{start="4m"} 0.6
 	{start="5m"} 0.6
 
 # Normal half-interval cutoff for left-side extrapolation.
