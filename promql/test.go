@@ -359,11 +359,11 @@ func (cmd *loadCmd) append(a storage.Appender) error {
 }
 
 func getHistogramMetricBase(m labels.Labels, suffix string) (labels.Labels, uint64) {
-	mName := m.Get("__name__")
-	mMap := m.Map()
-	delete(mMap, "le")
-	mMap["__name__"] = strings.TrimSuffix(mName, suffix)
-	baseM := labels.FromMap(mMap)
+	mName := m.Get(labels.MetricName)
+	baseM := labels.NewBuilder(m).
+		Set(labels.MetricName, strings.TrimSuffix(mName, suffix)).
+		Del(labels.BucketLabel).
+		Labels()
 	hash := baseM.Hash()
 	return baseM, hash
 }
@@ -381,10 +381,10 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 	// and organise them by timestamp.
 	for hash, smpls := range cmd.defs {
 		m := cmd.metrics[hash]
-		mName := m.Get("__name__")
+		mName := m.Get(labels.MetricName)
 		switch {
-		case strings.HasSuffix(mName, "_bucket") && m.Has("le"):
-			le, err := strconv.ParseFloat(m.Get("le"), 64)
+		case strings.HasSuffix(mName, "_bucket") && m.Has(labels.BucketLabel):
+			le, err := strconv.ParseFloat(m.Get(labels.BucketLabel), 64)
 			if err != nil {
 				continue
 			}
