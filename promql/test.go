@@ -757,9 +757,9 @@ func (t *test) exec(tc testCommand, engine QueryEngine) error {
 func (t *test) execEval(cmd *evalCmd, engine QueryEngine) error {
 	if cmd.isRange {
 		return t.execRangeEval(cmd, engine)
-	} else {
-		return t.execInstantEval(cmd, engine)
 	}
+
+	return t.execInstantEval(cmd, engine)
 }
 
 func (t *test) execRangeEval(cmd *evalCmd, engine QueryEngine) error {
