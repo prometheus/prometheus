@@ -196,28 +196,33 @@ func isWholeWhenMultiplied(in float64) bool {
 func putCustomBound(b *bstream, f float64) {
 	tf := f * 1000
 	if tf < 0 || tf > 16382 || !isWholeWhenMultiplied(f) {
-		b.putUvarint(0)
+		b.writeBit(zero)
 		b.writeBits(math.Float64bits(f), 64)
 		return
 	}
+	b.writeBit(one)
 	b.putUvarint(uint64(math.Round(tf) + 1))
 }
 
 // readCustomBound reads the custom bound written with putCustomBound.
 func readCustomBound(br *bstreamReader) (float64, error) {
-	b, err := br.readUvarint()
+	b, err := br.readBit()
 	if err != nil {
 		return 0, err
 	}
 	switch b {
-	case 0:
+	case zero:
 		v, err := br.readBits(64)
 		if err != nil {
 			return 0, err
 		}
 		return math.Float64frombits(v), nil
 	default:
-		return float64(b-1) / 1000, nil
+		v, err := br.readUvarint()
+		if err != nil {
+			return 0, err
+		}
+		return float64(v-1) / 1000, nil
 	}
 }
 
