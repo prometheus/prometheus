@@ -3496,7 +3496,7 @@ func TestNativeHistogram_HistogramStdDevVar(t *testing.T) {
 				},
 				NegativeBuckets: []int64{1, 0},
 			},
-			stdVar: 1544.8582535368798, // actual variance: 1738.4082
+			stdVar: 1844.4651144196398, // actual variance: 1738.4082
 		},
 		{
 			name: "-50, -8, 0, 3, 8, 9, 100, NaN",
