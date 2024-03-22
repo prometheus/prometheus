@@ -128,7 +128,7 @@ func (c *HistogramChunk) Appender() (Appender, error) {
 		zThreshold:    it.zThreshold,
 		pSpans:        it.pSpans,
 		nSpans:        it.nSpans,
-		cusValues:     it.cusValues,
+		customValues:  it.customValues,
 		t:             it.t,
 		cnt:           it.cnt,
 		zCnt:          it.zCnt,
@@ -196,7 +196,7 @@ type HistogramAppender struct {
 	schema         int32
 	zThreshold     float64
 	pSpans, nSpans []histogram.Span
-	cusValues      []float64
+	customValues   []float64
 
 	// Although we intend to start new chunks on counter resets, we still
 	// have to handle negative deltas for gauge histograms. Therefore, even
@@ -283,7 +283,7 @@ func (a *HistogramAppender) appendable(h *histogram.Histogram) (
 		return
 	}
 
-	if histogram.IsCustomBucketsSchema(h.Schema) && !histogram.FloatBucketsMatch(h.CustomValues, a.cusValues) {
+	if histogram.IsCustomBucketsSchema(h.Schema) && !histogram.FloatBucketsMatch(h.CustomValues, a.customValues) {
 		counterReset = true
 		return
 	}
@@ -355,7 +355,7 @@ func (a *HistogramAppender) appendableGauge(h *histogram.Histogram) (
 		return
 	}
 
-	if histogram.IsCustomBucketsSchema(h.Schema) && !histogram.FloatBucketsMatch(h.CustomValues, a.cusValues) {
+	if histogram.IsCustomBucketsSchema(h.Schema) && !histogram.FloatBucketsMatch(h.CustomValues, a.customValues) {
 		return
 	}
 
@@ -469,10 +469,10 @@ func (a *HistogramAppender) appendHistogram(t int64, h *histogram.Histogram) {
 			a.nSpans = nil
 		}
 		if len(h.CustomValues) > 0 {
-			a.cusValues = make([]float64, len(h.CustomValues))
-			copy(a.cusValues, h.CustomValues)
+			a.customValues = make([]float64, len(h.CustomValues))
+			copy(a.customValues, h.CustomValues)
 		} else {
-			a.cusValues = nil
+			a.customValues = nil
 		}
 
 		numPBuckets, numNBuckets := countSpans(h.PositiveSpans), countSpans(h.NegativeSpans)
@@ -757,7 +757,7 @@ type histogramIterator struct {
 	schema         int32
 	zThreshold     float64
 	pSpans, nSpans []histogram.Span
-	cusValues      []float64
+	customValues   []float64
 
 	// For the fields that are tracked as deltas and ultimately dod's.
 	t                            int64
@@ -814,7 +814,7 @@ func (it *histogramIterator) AtHistogram(h *histogram.Histogram) (int64, *histog
 			NegativeSpans:    it.nSpans,
 			PositiveBuckets:  it.pBuckets,
 			NegativeBuckets:  it.nBuckets,
-			CustomValues:     it.cusValues,
+			CustomValues:     it.customValues,
 		}
 	}
 
@@ -837,8 +837,8 @@ func (it *histogramIterator) AtHistogram(h *histogram.Histogram) (int64, *histog
 	h.NegativeBuckets = resize(h.NegativeBuckets, len(it.nBuckets))
 	copy(h.NegativeBuckets, it.nBuckets)
 
-	h.CustomValues = resize(h.CustomValues, len(it.cusValues))
-	copy(h.CustomValues, it.cusValues)
+	h.CustomValues = resize(h.CustomValues, len(it.customValues))
+	copy(h.CustomValues, it.customValues)
 
 	return it.t, h
 }
@@ -860,7 +860,7 @@ func (it *histogramIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int
 			NegativeSpans:    it.nSpans,
 			PositiveBuckets:  it.pFloatBuckets,
 			NegativeBuckets:  it.nFloatBuckets,
-			CustomValues:     it.cusValues,
+			CustomValues:     it.customValues,
 		}
 	}
 
@@ -891,8 +891,8 @@ func (it *histogramIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int
 		fh.NegativeBuckets[i] = currentNegative
 	}
 
-	fh.CustomValues = resize(fh.CustomValues, len(it.cusValues))
-	copy(fh.CustomValues, it.cusValues)
+	fh.CustomValues = resize(fh.CustomValues, len(it.customValues))
+	copy(fh.CustomValues, it.customValues)
 
 	return it.t, fh
 }
@@ -952,7 +952,7 @@ func (it *histogramIterator) Next() ValueType {
 		// The first read is responsible for reading the chunk layout
 		// and for initializing fields that depend on it. We give
 		// counter reset info at chunk level, hence we discard it here.
-		schema, zeroThreshold, posSpans, negSpans, cusValues, err := readHistogramChunkLayout(&it.br)
+		schema, zeroThreshold, posSpans, negSpans, customValues, err := readHistogramChunkLayout(&it.br)
 		if err != nil {
 			it.err = err
 			return ValNone
@@ -960,7 +960,7 @@ func (it *histogramIterator) Next() ValueType {
 		it.schema = schema
 		it.zThreshold = zeroThreshold
 		it.pSpans, it.nSpans = posSpans, negSpans
-		it.cusValues = cusValues
+		it.customValues = customValues
 		numPBuckets, numNBuckets := countSpans(posSpans), countSpans(negSpans)
 		// The code below recycles existing slices in case this iterator
 		// was reset and already has slices of a sufficient capacity.
