@@ -704,8 +704,6 @@ func parseNumber(s string) (float64, error) {
 // LazyLoader lazily loads samples into storage.
 // This is specifically implemented for unit testing of rules.
 type LazyLoader struct {
-	testutil.T
-
 	loadCmd *loadCmd
 
 	storage          storage.Storage
@@ -727,13 +725,15 @@ type LazyLoaderOpts struct {
 }
 
 // NewLazyLoader returns an initialized empty LazyLoader.
-func NewLazyLoader(t testutil.T, input string, opts LazyLoaderOpts) (*LazyLoader, error) {
+func NewLazyLoader(input string, opts LazyLoaderOpts) (*LazyLoader, error) {
 	ll := &LazyLoader{
-		T:    t,
 		opts: opts,
 	}
 	err := ll.parse(input)
-	ll.clear()
+	if err != nil {
+		return nil, err
+	}
+	err = ll.clear()
 	return ll, err
 }
 
@@ -761,15 +761,20 @@ func (ll *LazyLoader) parse(input string) error {
 }
 
 // clear the current test storage of all inserted samples.
-func (ll *LazyLoader) clear() {
+func (ll *LazyLoader) clear() error {
 	if ll.storage != nil {
-		err := ll.storage.Close()
-		require.NoError(ll.T, err, "Unexpected error while closing test storage.")
+		if err := ll.storage.Close(); err != nil {
+			return fmt.Errorf("closing test storage: %w", err)
+		}
 	}
 	if ll.cancelCtx != nil {
 		ll.cancelCtx()
 	}
-	ll.storage = teststorage.New(ll)
+	var err error
+	ll.storage, err = teststorage.NewWithError()
+	if err != nil {
+		return err
+	}
 
 	opts := EngineOpts{
 		Logger:                   nil,
@@ -783,6 +788,7 @@ func (ll *LazyLoader) clear() {
 
 	ll.queryEngine = NewEngine(opts)
 	ll.context, ll.cancelCtx = context.WithCancel(context.Background())
+	return nil
 }
 
 // appendTill appends the defined time series to the storage till the given timestamp (in milliseconds).
@@ -836,8 +842,7 @@ func (ll *LazyLoader) Storage() storage.Storage {
 }
 
 // Close closes resources associated with the LazyLoader.
-func (ll *LazyLoader) Close() {
+func (ll *LazyLoader) Close() error {
 	ll.cancelCtx()
-	err := ll.storage.Close()
-	require.NoError(ll.T, err, "Unexpected error while closing test storage.")
+	return ll.storage.Close()
 }
