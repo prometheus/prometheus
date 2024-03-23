@@ -35,6 +35,7 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -816,8 +817,7 @@ type scrapeLoop struct {
 	honorTimestamps          bool
 	trackTimestampsStaleness bool
 	enableCompression        bool
-	forcedErr                error
-	forcedErrMtx             sync.Mutex
+	forcedErr                atomic.Value
 	sampleLimit              int
 	bucketLimit              int
 	maxSchema                int32
@@ -1359,15 +1359,19 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 }
 
 func (sl *scrapeLoop) setForcedError(err error) {
-	sl.forcedErrMtx.Lock()
-	defer sl.forcedErrMtx.Unlock()
-	sl.forcedErr = err
+	if err == nil {
+		return
+	}
+
+	sl.forcedErr.Store(err)
 }
 
 func (sl *scrapeLoop) getForcedError() error {
-	sl.forcedErrMtx.Lock()
-	defer sl.forcedErrMtx.Unlock()
-	return sl.forcedErr
+	if err := sl.forcedErr.Load(); err != nil {
+		return err.(error)
+	}
+
+	return nil
 }
 
 func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, interval time.Duration) {
