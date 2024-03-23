@@ -1386,6 +1386,9 @@ func (ev *evaluator) evalLabelJoin(args parser.Expressions) (parser.Value, annot
 		}
 		srcLabels[i-3] = src
 	}
+	if !model.LabelName(dst).IsValid() {
+		panic(fmt.Errorf("invalid destination label name in label_join(): %s", dst))
+	}
 
 	val, ws := ev.eval(args[0])
 	matrix := val.(Matrix)
