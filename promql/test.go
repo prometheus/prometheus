@@ -278,6 +278,8 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 
 	switch mod {
 	case "ordered":
+		// Ordered results are not supported for range queries, but the regex for range query commands does not allow
+		// asserting an ordered result, so we don't need to do any error checking here.
 		cmd.ordered = true
 	case "fail":
 		cmd.fail = true
