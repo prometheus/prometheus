@@ -529,9 +529,10 @@ func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQue
 		if err := head.Init(maxBlockTime); err != nil {
 			return nil, fmt.Errorf("read WAL: %w", err)
 		}
-		// Set the wal to nil to disable all wal operations.
+		// Set the wal and the wbl to nil to disable related operations.
 		// This is mainly to avoid blocking when closing the head.
 		head.wal = nil
+		head.wbl = nil
 	}
 
 	db.closers = append(db.closers, head)
