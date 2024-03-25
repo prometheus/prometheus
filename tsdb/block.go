@@ -107,6 +107,11 @@ type IndexReader interface {
 	Close() error
 }
 
+type ExtendedIndexReader interface {
+	IndexReader
+	PostingsForMatchers(ctx context.Context, ms ...*labels.Matcher) (index.Postings, error)
+}
+
 // ChunkWriter serializes a time block of chunked series data.
 type ChunkWriter interface {
 	// WriteChunks writes several chunks. The Chunk field of the ChunkMetas
@@ -323,12 +328,28 @@ type Block struct {
 	numBytesMeta      int64
 }
 
+type IndexReaderWrapFunc func(reader *index.Reader) IndexReader
+
+type OpenBlockOptions struct {
+	IndexReaderWrapFunc IndexReaderWrapFunc
+}
+
 // OpenBlock opens the block in the directory. It can be passed a chunk pool, which is used
 // to instantiate chunk structs.
 func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool) (pb *Block, err error) {
+	return OpenBlockWithOptions(logger, dir, pool, OpenBlockOptions{})
+}
+
+func OpenBlockWithOptions(logger log.Logger, dir string, pool chunkenc.Pool, ops OpenBlockOptions) (pb *Block, err error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
+	if ops.IndexReaderWrapFunc == nil {
+		ops.IndexReaderWrapFunc = func(reader *index.Reader) IndexReader {
+			return reader
+		}
+	}
+
 	var closers []io.Closer
 	defer func() {
 		if err != nil {
@@ -362,7 +383,7 @@ func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool) (pb *Block, er
 		dir:               dir,
 		meta:              *meta,
 		chunkr:            cr,
-		indexr:            ir,
+		indexr:            ops.IndexReaderWrapFunc(ir),
 		tombstones:        tr,
 		symbolTableSize:   ir.SymbolTableSize(),
 		logger:            logger,
@@ -547,6 +568,15 @@ func (r blockIndexReader) LabelValueFor(ctx context.Context, id storage.SeriesRe
 // The names returned are sorted.
 func (r blockIndexReader) LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([]string, error) {
 	return r.ir.LabelNamesFor(ctx, ids...)
+}
+
+func (r blockIndexReader) PostingsForMatchers(ctx context.Context, ms ...*labels.Matcher) (index.Postings, error) {
+	extendedReader, ok := r.ir.(ExtendedIndexReader)
+	if !ok {
+		return nil, fmt.Errorf("missing methods for ExtendedIndexReader")
+	}
+
+	return extendedReader.PostingsForMatchers(ctx, ms...)
 }
 
 type blockTombstoneReader struct {
