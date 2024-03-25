@@ -451,3 +451,59 @@ eval range from 0 to 5m step 5m testmetric
 		})
 	}
 }
+
+func TestAssertMatrixSorted(t *testing.T) {
+	testCases := map[string]struct {
+		matrix        Matrix
+		expectedError string
+	}{
+		"empty matrix": {
+			matrix: Matrix{},
+		},
+		"matrix with one series": {
+			matrix: Matrix{
+				Series{Metric: labels.FromStrings("the_label", "value_1")},
+			},
+		},
+		"matrix with two series, series in sorted order": {
+			matrix: Matrix{
+				Series{Metric: labels.FromStrings("the_label", "value_1")},
+				Series{Metric: labels.FromStrings("the_label", "value_2")},
+			},
+		},
+		"matrix with two series, series in reverse order": {
+			matrix: Matrix{
+				Series{Metric: labels.FromStrings("the_label", "value_2")},
+				Series{Metric: labels.FromStrings("the_label", "value_1")},
+			},
+			expectedError: `matrix results should always be sorted by labels, but matrix is not sorted: series at index 1 with labels {the_label="value_1"} sorts before series at index 0 with labels {the_label="value_2"}`,
+		},
+		"matrix with three series, series in sorted order": {
+			matrix: Matrix{
+				Series{Metric: labels.FromStrings("the_label", "value_1")},
+				Series{Metric: labels.FromStrings("the_label", "value_2")},
+				Series{Metric: labels.FromStrings("the_label", "value_3")},
+			},
+		},
+		"matrix with three series, series not in sorted order": {
+			matrix: Matrix{
+				Series{Metric: labels.FromStrings("the_label", "value_1")},
+				Series{Metric: labels.FromStrings("the_label", "value_3")},
+				Series{Metric: labels.FromStrings("the_label", "value_2")},
+			},
+			expectedError: `matrix results should always be sorted by labels, but matrix is not sorted: series at index 2 with labels {the_label="value_2"} sorts before series at index 1 with labels {the_label="value_3"}`,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			err := assertMatrixSorted(testCase.matrix)
+
+			if testCase.expectedError == "" {
+				require.NoError(t, err)
+			} else {
+				require.EqualError(t, err, testCase.expectedError)
+			}
+		})
+	}
+}

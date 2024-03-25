@@ -508,6 +508,10 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 			return fmt.Errorf("expected ordered result, but query returned a matrix")
 		}
 
+		if err := assertMatrixSorted(val); err != nil {
+			return err
+		}
+
 		seen := map[uint64]bool{}
 		for _, s := range val {
 			hash := s.Metric.Hash()
@@ -824,10 +828,14 @@ func (t *test) execInstantEval(cmd *evalCmd, engine QueryEngine) error {
 		}
 		defer q.Close()
 		if cmd.ordered {
-			// Ordering isn't defined for range queries.
+			// Range queries are always sorted by labels, so skip this test case that expects results in a particular order.
 			continue
 		}
 		mat := rangeRes.Value.(Matrix)
+		if err := assertMatrixSorted(mat); err != nil {
+			return err
+		}
+
 		vec := make(Vector, 0, len(mat))
 		for _, series := range mat {
 			// We expect either Floats or Histograms.
@@ -851,6 +859,23 @@ func (t *test) execInstantEval(cmd *evalCmd, engine QueryEngine) error {
 		}
 		if err != nil {
 			return fmt.Errorf("error in %s %s (line %d) range mode: %w", cmd, iq.expr, cmd.line, err)
+		}
+	}
+
+	return nil
+}
+
+func assertMatrixSorted(m Matrix) error {
+	if len(m) <= 1 {
+		return nil
+	}
+
+	for i, s := range m[:len(m)-1] {
+		nextIndex := i + 1
+		nextMetric := m[nextIndex].Metric
+
+		if labels.Compare(s.Metric, nextMetric) > 0 {
+			return fmt.Errorf("matrix results should always be sorted by labels, but matrix is not sorted: series at index %v with labels %s sorts before series at index %v with labels %s", nextIndex, nextMetric, i, s.Metric)
 		}
 	}
 
