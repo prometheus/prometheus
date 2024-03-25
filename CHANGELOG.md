@@ -2,8 +2,73 @@
 
 ## unreleased
 
-* [ENHANCEMENT] TSDB: Make the wlog watcher read segments synchronously when not tailing. #13224
-* [BUGFIX] Agent: Participate in notify calls. #13223
+* [CHANGE] TSDB: Fix the predicate checking for blocks which are beyond the retention period to include the ones right at the retention boundary. #9633
+
+## 2.51.0 / 2024-03-18
+
+This version is built with Go 1.22.1.
+
+There is a new optional build tag "dedupelabels", which should reduce memory consumption (#12304).
+It is off by default; there will be an optional alternative image to try it out.
+
+* [CHANGE] Scraping: Do experimental timestamp alignment even if tolerance is bigger than 1% of scrape interval #13624, #13737
+* [FEATURE] Alerting: Relabel rules for AlertManagerConfig; allows routing alerts to different alertmanagers #12551, #13735
+* [FEATURE] API: add limit param to series, label-names and label-values APIs #13396
+* [FEATURE] UI (experimental native histograms): Add native histogram chart to Table view #13658
+* [FEATURE] Promtool: Add a "tsdb dump-openmetrics" to dump in OpenMetrics format. #13194
+* [FEATURE] PromQL (experimental native histograms): Add histogram_avg function #13467
+* [ENHANCEMENT] Rules: Evaluate independent rules concurrently #12946, #13527
+* [ENHANCEMENT] Scraping (experimental native histograms): Support exemplars #13488
+* [ENHANCEMENT] Remote Write: Disable resharding during active retry backoffs #13562
+* [ENHANCEMENT] Observability: Add native histograms to latency/duration metrics #13681
+* [ENHANCEMENT] Observability: Add 'type' label to prometheus_tsdb_head_out_of_order_samples_appended_total #13607
+* [ENHANCEMENT] API: Faster generation of targets into JSON #13469, #13484
+* [ENHANCEMENT] Scraping, API: Use faster compression library #10782
+* [ENHANCEMENT] OpenTelemetry: Performance improvements in OTLP parsing #13627
+* [ENHANCEMENT] PromQL: Optimisations to reduce CPU and memory #13448, #13536
+* [BUGFIX] PromQL: Constrain extrapolation in rate() to half of sample interval #13725
+* [BUGFIX] Remote Write: Stop slowing down when a new WAL segment is created #13583, #13628
+* [BUGFIX] PromQL: Fix wrongly scoped range vectors with @ modifier #13559
+* [BUGFIX] Kubernetes SD: Pod status changes were not discovered by Endpoints service discovery #13337
+* [BUGFIX] Azure SD: Fix 'error: parameter virtualMachineScaleSetName cannot be empty' (#13702)
+* [BUGFIX] Remote Write: Fix signing for AWS sigv4 transport #13497
+* [BUGFIX] Observability: Exemplars emitted by Prometheus use "trace_id" not "traceID" #13589
+
+## 2.50.1 / 2024-02-26
+
+* [BUGFIX] API: Fix metadata API using wrong field names. #13633
+
+## 2.50.0 / 2024-02-22
+
+* [CHANGE] Remote Write: Error `storage.ErrTooOldSample` is now generating HTTP error 400 instead of HTTP error 500. #13335
+* [FEATURE] Remote Write: Drop old inmemory samples. Activated using the config entry `sample_age_limit`. #13002
+* [FEATURE] **Experimental**: Add support for ingesting zeros as created timestamps. (enabled under the feature-flag `created-timestamp-zero-ingestion`). #12733 #13279
+* [FEATURE] Promtool: Add `analyze` histograms command. #12331
+* [FEATURE] TSDB/compaction: Add a way to enable overlapping compaction. #13282 #13393 #13398
+* [FEATURE] Add automatic memory limit handling. Activated using the feature flag. `auto-gomemlimit` #13395
+* [ENHANCEMENT] Promtool: allow specifying multiple matchers in `promtool tsdb dump`. #13296
+* [ENHANCEMENT] PromQL: Restore more efficient version of `NewPossibleNonCounterInfo` annotation. #13022
+* [ENHANCEMENT] Kuma SD: Extend configuration to allow users to specify client ID. #13278
+* [ENHANCEMENT] PromQL: Use natural sort in `sort_by_label` and `sort_by_label_desc`. This is **experimental**. #13411
+* [ENHANCEMENT] Native Histograms: support `native_histogram_min_bucket_factor` in scrape_config. #13222
+* [ENHANCEMENT] Native Histograms: Issue warning if histogramRate is applied to the wrong kind of histogram. #13392
+* [ENHANCEMENT] TSDB: Make transaction isolation data structures smaller. #13015
+* [ENHANCEMENT] TSDB/postings: Optimize merge using Loser Tree. #12878
+* [ENHANCEMENT] TSDB: Simplify internal series delete function. #13261
+* [ENHANCEMENT] Agent: Performance improvement by making the global hash lookup table smaller. #13262
+* [ENHANCEMENT] PromQL: faster execution of metric functions, e.g. abs(), rate() #13446
+* [ENHANCEMENT] TSDB: Optimize label values with matchers by taking shortcuts. #13426
+* [ENHANCEMENT] Kubernetes SD: Check preconditions earlier and avoid unnecessary checks or iterations in kube_sd. #13408
+* [ENHANCEMENT] Promtool: Improve visibility for `promtool test rules` with JSON colored formatting. #13342
+* [ENHANCEMENT] Consoles: Exclude iowait and steal from CPU Utilisation. #9593
+* [ENHANCEMENT] Various improvements and optimizations on Native Histograms. #13267, #13215, #13276 #13289, #13340
+* [BUGFIX] Scraping: Fix quality value in HTTP Accept header. #13313
+* [BUGFIX] UI: Fix usage of the function `time()` that was crashing. #13371
+* [BUGFIX] Azure SD: Fix SD crashing when it finds a VM scale set. #13578
+
+## 2.49.1 / 2024-01-15
+
+* [BUGFIX] TSDB: Fixed a wrong `q=` value in scrape accept header #13313
 
 ## 2.49.0 / 2024-01-15
 

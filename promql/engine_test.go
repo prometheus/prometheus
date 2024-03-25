@@ -38,6 +38,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/teststorage"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestMain(m *testing.M) {
@@ -754,6 +755,7 @@ load 10s
   metricWith3SampleEvery10Seconds{a="1",b="1"} 1+1x100
   metricWith3SampleEvery10Seconds{a="2",b="2"} 1+1x100
   metricWith3SampleEvery10Seconds{a="3",b="2"} 1+1x100
+  metricWith1HistogramEvery10Seconds {{schema:1 count:5 sum:20 buckets:[1 2 1 1]}}+{{schema:1 count:10 sum:5 buckets:[1 2 3 4]}}x100
 `)
 	t.Cleanup(func() { storage.Close() })
 
@@ -795,11 +797,29 @@ load 10s
 			},
 		},
 		{
+			Query:        "metricWith1HistogramEvery10Seconds",
+			Start:        time.Unix(21, 0),
+			PeakSamples:  12,
+			TotalSamples: 12, // 1 histogram sample of size 12 / 10 seconds
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				21000: 12,
+			},
+		},
+		{
 			// timestamp function has a special handling.
 			Query:        "timestamp(metricWith1SampleEvery10Seconds)",
 			Start:        time.Unix(21, 0),
 			PeakSamples:  2,
 			TotalSamples: 1, // 1 sample / 10 seconds
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				21000: 1,
+			},
+		},
+		{
+			Query:        "timestamp(metricWith1HistogramEvery10Seconds)",
+			Start:        time.Unix(21, 0),
+			PeakSamples:  13, // histogram size 12 + 1 extra because of timestamp
+			TotalSamples: 1,  // 1 float sample (because of timestamp) / 10 seconds
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				21000: 1,
 			},
@@ -877,10 +897,19 @@ load 10s
 			},
 		},
 		{
+			Query:        "metricWith1HistogramEvery10Seconds[60s]",
+			Start:        time.Unix(201, 0),
+			PeakSamples:  72,
+			TotalSamples: 72, // 1 histogram (size 12) / 10 seconds * 60 seconds
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				201000: 72,
+			},
+		},
+		{
 			Query:        "max_over_time(metricWith1SampleEvery10Seconds[59s])[20s:5s]",
 			Start:        time.Unix(201, 0),
 			PeakSamples:  10,
-			TotalSamples: 24, // (1 sample / 10 seconds * 60 seconds) * 60/5 (using 59s so we always return 6 samples
+			TotalSamples: 24, // (1 sample / 10 seconds * 60 seconds) * 20/5 (using 59s so we always return 6 samples
 			// as if we run a query on 00 looking back 60 seconds we will return 7 samples;
 			// see next test).
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
@@ -891,10 +920,20 @@ load 10s
 			Query:        "max_over_time(metricWith1SampleEvery10Seconds[60s])[20s:5s]",
 			Start:        time.Unix(201, 0),
 			PeakSamples:  11,
-			TotalSamples: 26, // (1 sample / 10 seconds * 60 seconds) + 2 as
+			TotalSamples: 26, // (1 sample / 10 seconds * 60 seconds) * 4 + 2 as
 			// max_over_time(metricWith1SampleEvery10Seconds[60s]) @ 190 and 200 will return 7 samples.
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 26,
+			},
+		},
+		{
+			Query:        "max_over_time(metricWith1HistogramEvery10Seconds[60s])[20s:5s]",
+			Start:        time.Unix(201, 0),
+			PeakSamples:  72,
+			TotalSamples: 312, // (1 histogram (size 12) / 10 seconds * 60 seconds) * 4 + 2 * 12 as
+			// max_over_time(metricWith1SampleEvery10Seconds[60s]) @ 190 and 200 will return 7 samples.
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				201000: 312,
 			},
 		},
 		{
@@ -904,6 +943,15 @@ load 10s
 			TotalSamples: 4, // @ modifier force the evaluation to at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 1 series
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 4,
+			},
+		},
+		{
+			Query:        "metricWith1HistogramEvery10Seconds[60s] @ 30",
+			Start:        time.Unix(201, 0),
+			PeakSamples:  48,
+			TotalSamples: 48, // @ modifier force the evaluation to at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 1 series
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				201000: 48,
 			},
 		},
 		{
@@ -1034,13 +1082,42 @@ load 10s
 			},
 		},
 		{
-			// timestamp function as a special handling
+			Query:        `metricWith1HistogramEvery10Seconds`,
+			Start:        time.Unix(204, 0),
+			End:          time.Unix(223, 0),
+			Interval:     5 * time.Second,
+			PeakSamples:  48,
+			TotalSamples: 48, // 1 histogram (size 12) per query * 4 steps
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				204000: 12, // aligned to the step time, not the sample time
+				209000: 12,
+				214000: 12,
+				219000: 12,
+			},
+		},
+		{
+			// timestamp function has a special handling
 			Query:        "timestamp(metricWith1SampleEvery10Seconds)",
 			Start:        time.Unix(201, 0),
 			End:          time.Unix(220, 0),
 			Interval:     5 * time.Second,
 			PeakSamples:  5,
-			TotalSamples: 4, // (1 sample / 10 seconds) * 4 steps
+			TotalSamples: 4, // 1 sample per query * 4 steps
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				201000: 1,
+				206000: 1,
+				211000: 1,
+				216000: 1,
+			},
+		},
+		{
+			// timestamp function has a special handling
+			Query:        "timestamp(metricWith1HistogramEvery10Seconds)",
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(220, 0),
+			Interval:     5 * time.Second,
+			PeakSamples:  16,
+			TotalSamples: 4, // 1 sample per query * 4 steps
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 1,
 				206000: 1,
@@ -1631,7 +1708,7 @@ load 1ms
 				sort.Sort(expMat)
 				sort.Sort(res.Value.(Matrix))
 			}
-			require.Equal(t, c.result, res.Value, "query %q failed", c.query)
+			testutil.RequireEqual(t, c.result, res.Value, "query %q failed", c.query)
 		})
 	}
 }
@@ -1956,7 +2033,7 @@ func TestSubquerySelector(t *testing.T) {
 					require.Equal(t, c.Result.Err, res.Err)
 					mat := res.Value.(Matrix)
 					sort.Sort(mat)
-					require.Equal(t, c.Result.Value, mat)
+					testutil.RequireEqual(t, c.Result.Value, mat)
 				})
 			}
 		})
@@ -2001,7 +2078,7 @@ load 1m
 
 	res := qry.Exec(context.Background())
 	require.NoError(t, res.Err)
-	require.Equal(t, expectedResult, res.Value)
+	testutil.RequireEqual(t, expectedResult, res.Value)
 }
 
 type FakeQueryLogger struct {
@@ -3147,7 +3224,7 @@ func TestRangeQuery(t *testing.T) {
 
 			res := qry.Exec(context.Background())
 			require.NoError(t, res.Err)
-			require.Equal(t, c.Result, res.Value)
+			testutil.RequireEqual(t, c.Result, res.Value)
 		})
 	}
 }
@@ -4314,6 +4391,8 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 
 				ts := idx0 * int64(10*time.Minute/time.Millisecond)
 				app := storage.Appender(context.Background())
+				_, err := app.Append(0, labels.FromStrings("__name__", "float_series", "idx", "0"), ts, 42)
+				require.NoError(t, err)
 				for idx1, h := range c.histograms {
 					lbls := labels.FromStrings("__name__", seriesName, "idx", fmt.Sprintf("%d", idx1))
 					// Since we mutate h later, we need to create a copy here.
@@ -4343,16 +4422,30 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 
 					res := qry.Exec(context.Background())
 					require.NoError(t, res.Err)
+					require.Empty(t, res.Warnings)
 
 					vector, err := res.Vector()
 					require.NoError(t, err)
 
-					require.Equal(t, exp, vector)
+					testutil.RequireEqual(t, exp, vector)
+				}
+				queryAndCheckAnnotations := func(queryString string, ts int64, expWarnings annotations.Annotations) {
+					qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(ts))
+					require.NoError(t, err)
+
+					res := qry.Exec(context.Background())
+					require.NoError(t, res.Err)
+					require.Equal(t, expWarnings, res.Warnings)
 				}
 
 				// sum().
 				queryString := fmt.Sprintf("sum(%s)", seriesName)
 				queryAndCheck(queryString, ts, []Sample{{T: ts, H: &c.expected, Metric: labels.EmptyLabels()}})
+
+				queryString = `sum({idx="0"})`
+				var annos annotations.Annotations
+				annos.Add(annotations.NewMixedFloatsHistogramsAggWarning(posrange.PositionRange{Start: 4, End: 13}))
+				queryAndCheckAnnotations(queryString, ts, annos)
 
 				// + operator.
 				queryString = fmt.Sprintf(`%s{idx="0"}`, seriesName)
@@ -4605,7 +4698,7 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 						}
 					}
 
-					require.Equal(t, exp, vector)
+					testutil.RequireEqual(t, exp, vector)
 				}
 
 				// - operator.
@@ -4753,7 +4846,7 @@ func TestNativeHistogram_MulDivOperator(t *testing.T) {
 					vector, err := res.Vector()
 					require.NoError(t, err)
 
-					require.Equal(t, exp, vector)
+					testutil.RequireEqual(t, exp, vector)
 				}
 
 				// histogram * scalar.

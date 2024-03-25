@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/util/testutil"
 
 	dto "github.com/prometheus/prometheus/prompb/io/prometheus/client"
 )
@@ -596,6 +597,105 @@ metric: <
 >
 
 `,
+		`name: "test_histogram_with_native_histogram_exemplars"
+help: "A histogram with native histogram exemplars."
+type: HISTOGRAM
+metric: <
+  histogram: <
+    sample_count: 175
+    sample_sum: 0.0008280461746287094
+    bucket: <
+      cumulative_count: 2
+      upper_bound: -0.0004899999999999998
+    >
+    bucket: <
+      cumulative_count: 4
+      upper_bound: -0.0003899999999999998
+      exemplar: <
+	    label: <
+	      name: "dummyID"
+	      value: "59727"
+	    >
+	    value: -0.00039
+	    timestamp: <
+	      seconds: 1625851155
+	      nanos: 146848499
+	    >
+      >
+    >
+    bucket: <
+      cumulative_count: 16
+      upper_bound: -0.0002899999999999998
+      exemplar: <
+	    label: <
+	      name: "dummyID"
+	      value: "5617"
+	    >
+	    value: -0.00029
+      >
+    >
+    schema: 3
+    zero_threshold: 2.938735877055719e-39
+    zero_count: 2
+    negative_span: <
+      offset: -162
+      length: 1
+    >
+    negative_span: <
+      offset: 23
+      length: 4
+    >
+    negative_delta: 1
+    negative_delta: 3
+    negative_delta: -2
+    negative_delta: -1
+    negative_delta: 1
+    positive_span: <
+      offset: -161
+      length: 1
+    >
+    positive_span: <
+      offset: 8
+      length: 3
+    >
+    positive_delta: 1
+    positive_delta: 2
+    positive_delta: -1
+    positive_delta: -1
+    exemplars: <
+      label: <
+        name: "dummyID"
+        value: "59780"
+      >
+      value: -0.00039
+      timestamp: <
+        seconds: 1625851155
+        nanos: 146848499
+      >
+    >
+    exemplars: <
+      label: <
+        name: "dummyID"
+        value: "5617"
+      >
+      value: -0.00029
+    >
+    exemplars: <
+      label: <
+        name: "dummyID"
+        value: "59772"
+      >
+      value: -0.00052
+      timestamp: <
+        seconds: 1625851160
+        nanos: 156848499
+      >
+    >
+  >
+  timestamp_ms: 1234568
+>
+
+`,
 	}
 
 	varintBuf := make([]byte, binary.MaxVarintLen32)
@@ -643,7 +743,7 @@ func TestProtobufParse(t *testing.T) {
 	}{
 		{
 			name:   "ignore classic buckets of native histograms",
-			parser: NewProtobufParser(inputBuf.Bytes(), false),
+			parser: NewProtobufParser(inputBuf.Bytes(), false, labels.NewSymbolTable()),
 			expected: []parseResult{
 				{
 					m:    "go_build_info",
@@ -1140,11 +1240,47 @@ func TestProtobufParse(t *testing.T) {
 						"__name__", "test_gaugehistogram_with_createdtimestamp",
 					),
 				},
+				{
+					m:    "test_histogram_with_native_histogram_exemplars",
+					help: "A histogram with native histogram exemplars.",
+				},
+				{
+					m:   "test_histogram_with_native_histogram_exemplars",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m: "test_histogram_with_native_histogram_exemplars",
+					t: 1234568,
+					shs: &histogram.Histogram{
+						Count:         175,
+						ZeroCount:     2,
+						Sum:           0.0008280461746287094,
+						ZeroThreshold: 2.938735877055719e-39,
+						Schema:        3,
+						PositiveSpans: []histogram.Span{
+							{Offset: -161, Length: 1},
+							{Offset: 8, Length: 3},
+						},
+						NegativeSpans: []histogram.Span{
+							{Offset: -162, Length: 1},
+							{Offset: 23, Length: 4},
+						},
+						PositiveBuckets: []int64{1, 2, -1, -1},
+						NegativeBuckets: []int64{1, 3, -2, -1, 1},
+					},
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_with_native_histogram_exemplars",
+					),
+					e: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "59780"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
+						{Labels: labels.FromStrings("dummyID", "59772"), Value: -0.00052, HasTs: true, Ts: 1625851160156},
+					},
+				},
 			},
 		},
 		{
 			name:   "parse classic and native buckets",
-			parser: NewProtobufParser(inputBuf.Bytes(), true),
+			parser: NewProtobufParser(inputBuf.Bytes(), true, labels.NewSymbolTable()),
 			expected: []parseResult{
 				{ // 0
 					m:    "go_build_info",
@@ -1958,6 +2094,100 @@ func TestProtobufParse(t *testing.T) {
 						"__name__", "test_gaugehistogram_with_createdtimestamp",
 					),
 				},
+				{ // 94
+					m:    "test_histogram_with_native_histogram_exemplars",
+					help: "A histogram with native histogram exemplars.",
+				},
+				{ // 95
+					m:   "test_histogram_with_native_histogram_exemplars",
+					typ: model.MetricTypeHistogram,
+				},
+				{ // 96
+					m: "test_histogram_with_native_histogram_exemplars",
+					t: 1234568,
+					shs: &histogram.Histogram{
+						Count:         175,
+						ZeroCount:     2,
+						Sum:           0.0008280461746287094,
+						ZeroThreshold: 2.938735877055719e-39,
+						Schema:        3,
+						PositiveSpans: []histogram.Span{
+							{Offset: -161, Length: 1},
+							{Offset: 8, Length: 3},
+						},
+						NegativeSpans: []histogram.Span{
+							{Offset: -162, Length: 1},
+							{Offset: 23, Length: 4},
+						},
+						PositiveBuckets: []int64{1, 2, -1, -1},
+						NegativeBuckets: []int64{1, 3, -2, -1, 1},
+					},
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_with_native_histogram_exemplars",
+					),
+					e: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "59780"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
+						{Labels: labels.FromStrings("dummyID", "59772"), Value: -0.00052, HasTs: true, Ts: 1625851160156},
+					},
+				},
+				{ // 97
+					m: "test_histogram_with_native_histogram_exemplars_count",
+					t: 1234568,
+					v: 175,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_with_native_histogram_exemplars_count",
+					),
+				},
+				{ // 98
+					m: "test_histogram_with_native_histogram_exemplars_sum",
+					t: 1234568,
+					v: 0.0008280461746287094,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_with_native_histogram_exemplars_sum",
+					),
+				},
+				{ // 99
+					m: "test_histogram_with_native_histogram_exemplars_bucket\xffle\xff-0.0004899999999999998",
+					t: 1234568,
+					v: 2,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_with_native_histogram_exemplars_bucket",
+						"le", "-0.0004899999999999998",
+					),
+				},
+				{ // 100
+					m: "test_histogram_with_native_histogram_exemplars_bucket\xffle\xff-0.0003899999999999998",
+					t: 1234568,
+					v: 4,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_with_native_histogram_exemplars_bucket",
+						"le", "-0.0003899999999999998",
+					),
+					e: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
+					},
+				},
+				{ // 101
+					m: "test_histogram_with_native_histogram_exemplars_bucket\xffle\xff-0.0002899999999999998",
+					t: 1234568,
+					v: 16,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_with_native_histogram_exemplars_bucket",
+						"le", "-0.0002899999999999998",
+					),
+					e: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
+					},
+				},
+				{ // 102
+					m: "test_histogram_with_native_histogram_exemplars_bucket\xffle\xff+Inf",
+					t: 1234568,
+					v: 175,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_with_native_histogram_exemplars_bucket",
+						"le", "+Inf",
+					),
+				},
 			},
 		},
 	}
@@ -1993,12 +2223,12 @@ func TestProtobufParse(t *testing.T) {
 						require.Equal(t, int64(0), exp[i].t, "i: %d", i)
 					}
 					require.Equal(t, exp[i].v, v, "i: %d", i)
-					require.Equal(t, exp[i].lset, res, "i: %d", i)
+					testutil.RequireEqual(t, exp[i].lset, res, "i: %d", i)
 					if len(exp[i].e) == 0 {
 						require.False(t, eFound, "i: %d", i)
 					} else {
 						require.True(t, eFound, "i: %d", i)
-						require.Equal(t, exp[i].e[0], e, "i: %d", i)
+						testutil.RequireEqual(t, exp[i].e[0], e, "i: %d", i)
 						require.False(t, p.Exemplar(&e), "too many exemplars returned, i: %d", i)
 					}
 					if exp[i].ct != 0 {
@@ -2017,7 +2247,7 @@ func TestProtobufParse(t *testing.T) {
 					} else {
 						require.Equal(t, int64(0), exp[i].t, "i: %d", i)
 					}
-					require.Equal(t, exp[i].lset, res, "i: %d", i)
+					testutil.RequireEqual(t, exp[i].lset, res, "i: %d", i)
 					require.Equal(t, exp[i].m, string(m), "i: %d", i)
 					if shs != nil {
 						require.Equal(t, exp[i].shs, shs, "i: %d", i)
@@ -2026,7 +2256,7 @@ func TestProtobufParse(t *testing.T) {
 					}
 					j := 0
 					for e := (exemplar.Exemplar{}); p.Exemplar(&e); j++ {
-						require.Equal(t, exp[i].e[j], e, "i: %d", i)
+						testutil.RequireEqual(t, exp[i].e[j], e, "i: %d", i)
 						e = exemplar.Exemplar{}
 					}
 					require.Len(t, exp[i].e, j, "not enough exemplars found, i: %d", i)

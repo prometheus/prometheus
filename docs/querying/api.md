@@ -256,6 +256,7 @@ URL query parameters:
   series to return. At least one `match[]` argument must be provided.
 - `start=<rfc3339 | unix_timestamp>`: Start timestamp.
 - `end=<rfc3339 | unix_timestamp>`: End timestamp.
+- `limit=<number>`: Maximum number of returned series. Optional.
 
 You can URL-encode these parameters directly in the request body by using the `POST` method and
 `Content-Type: application/x-www-form-urlencoded` header. This is useful when specifying a large
@@ -306,6 +307,7 @@ URL query parameters:
 - `end=<rfc3339 | unix_timestamp>`: End timestamp. Optional.
 - `match[]=<series_selector>`: Repeated series selector argument that selects the
   series from which to read the label names. Optional.
+- `limit=<number>`: Maximum number of returned series. Optional.
 
 
 The `data` section of the JSON response is a list of string label names.
@@ -356,6 +358,7 @@ URL query parameters:
 - `end=<rfc3339 | unix_timestamp>`: End timestamp. Optional.
 - `match[]=<series_selector>`: Repeated series selector argument that selects the
   series from which to read the label values. Optional.
+- `limit=<number>`: Maximum number of returned series. Optional.
 
 
 The `data` section of the JSON response is a list of string label values.
@@ -404,7 +407,7 @@ $ curl -g 'http://localhost:9090/api/v1/query_exemplars?query=test_exemplar_metr
             "exemplars": [
                 {
                     "labels": {
-                        "traceID": "EpTxMJ40fUus7aGY"
+                        "trace_id": "EpTxMJ40fUus7aGY"
                     },
                     "value": "6",
                     "timestamp": 1600096945.479
@@ -421,14 +424,14 @@ $ curl -g 'http://localhost:9090/api/v1/query_exemplars?query=test_exemplar_metr
             "exemplars": [
                 {
                     "labels": {
-                        "traceID": "Olp9XHlq763ccsfa"
+                        "trace_id": "Olp9XHlq763ccsfa"
                     },
                     "value": "19",
                     "timestamp": 1600096955.479
                 },
                 {
                     "labels": {
-                        "traceID": "hCtjygkIHwAN9vs4"
+                        "trace_id": "hCtjygkIHwAN9vs4"
                     },
                     "value": "20",
                     "timestamp": 1600096965.489

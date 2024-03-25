@@ -52,7 +52,7 @@ type histogramRecord struct {
 	fh  *histogram.FloatHistogram
 }
 
-func (h *Head) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk) (err error) {
+func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk) (err error) {
 	// Track number of samples that referenced a series we don't know about
 	// for error reporting.
 	var unknownRefs atomic.Uint64
@@ -69,7 +69,6 @@ func (h *Head) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.
 		processors     = make([]walSubsetProcessor, concurrency)
 		exemplarsInput chan record.RefExemplar
 
-		dec             record.Decoder
 		shards          = make([][]record.RefSample, concurrency)
 		histogramShards = make([][]histogramRecord, concurrency)
 
@@ -137,6 +136,7 @@ func (h *Head) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.
 	go func() {
 		defer close(decoded)
 		var err error
+		dec := record.NewDecoder(syms)
 		for r.Next() {
 			rec := r.Record()
 			switch dec.Type(rec) {
@@ -645,7 +645,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 	return unknownRefs, unknownHistogramRefs, mmapOverlappingChunks
 }
 
-func (h *Head) loadWBL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, lastMmapRef chunks.ChunkDiskMapperRef) (err error) {
+func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, lastMmapRef chunks.ChunkDiskMapperRef) (err error) {
 	// Track number of samples, m-map markers, that referenced a series we don't know about
 	// for error reporting.
 	var unknownRefs, mmapMarkerUnknownRefs atomic.Uint64
@@ -657,7 +657,7 @@ func (h *Head) loadWBL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.
 		concurrency = h.opts.WALReplayConcurrency
 		processors  = make([]wblSubsetProcessor, concurrency)
 
-		dec    record.Decoder
+		dec    = record.NewDecoder(syms)
 		shards = make([][]record.RefSample, concurrency)
 
 		decodedCh   = make(chan interface{}, 10)
@@ -1360,7 +1360,8 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 		errChan          = make(chan error, concurrency)
 		refSeries        map[chunks.HeadSeriesRef]*memSeries
 		exemplarBuf      []record.RefExemplar
-		dec              record.Decoder
+		syms             = labels.NewSymbolTable() // New table for the whole snapshot.
+		dec              = record.NewDecoder(syms)
 	)
 
 	wg.Add(concurrency)

@@ -788,10 +788,11 @@ func (m *mockWriter) Write(p []byte) (n int, err error) {
 type mockChunkSeriesSet struct {
 	chunkedSeries []*prompb.ChunkedSeries
 	index         int
+	builder       labels.ScratchBuilder
 }
 
 func newMockChunkSeriesSet(ss []*prompb.ChunkedSeries) storage.ChunkSeriesSet {
-	return &mockChunkSeriesSet{chunkedSeries: ss, index: -1}
+	return &mockChunkSeriesSet{chunkedSeries: ss, index: -1, builder: labels.NewScratchBuilder(0)}
 }
 
 func (c *mockChunkSeriesSet) Next() bool {
@@ -801,7 +802,7 @@ func (c *mockChunkSeriesSet) Next() bool {
 
 func (c *mockChunkSeriesSet) At() storage.ChunkSeries {
 	return &storage.ChunkSeriesEntry{
-		Lset: labelProtosToLabels(c.chunkedSeries[c.index].Labels),
+		Lset: labelProtosToLabels(&c.builder, c.chunkedSeries[c.index].Labels),
 		ChunkIteratorFn: func(chunks.Iterator) chunks.Iterator {
 			return &mockChunkIterator{
 				chunks: c.chunkedSeries[c.index].Chunks,

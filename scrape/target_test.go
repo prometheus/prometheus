@@ -42,7 +42,8 @@ const (
 func TestTargetLabels(t *testing.T) {
 	target := newTestTarget("example.com:80", 0, labels.FromStrings("job", "some_job", "foo", "bar"))
 	want := labels.FromStrings(model.JobLabel, "some_job", "foo", "bar")
-	got := target.Labels()
+	b := labels.NewScratchBuilder(0)
+	got := target.Labels(&b)
 	require.Equal(t, want, got)
 	i := 0
 	target.LabelsRange(func(l labels.Label) {
@@ -77,9 +78,7 @@ func TestTargetOffset(t *testing.T) {
 	buckets := make([]int, interval/bucketSize)
 
 	for _, offset := range offsets {
-		if offset < 0 || offset >= interval {
-			t.Fatalf("Offset %v out of bounds", offset)
-		}
+		require.InDelta(t, time.Duration(0), offset, float64(interval), "Offset %v out of bounds.", offset)
 
 		bucket := offset / bucketSize
 		buckets[bucket]++
@@ -98,9 +97,7 @@ func TestTargetOffset(t *testing.T) {
 			diff = -diff
 		}
 
-		if float64(diff)/float64(avg) > tolerance {
-			t.Fatalf("Bucket out of tolerance bounds")
-		}
+		require.LessOrEqual(t, float64(diff)/float64(avg), tolerance, "Bucket out of tolerance bounds.")
 	}
 }
 
@@ -150,9 +147,7 @@ func TestNewHTTPBearerToken(t *testing.T) {
 			func(w http.ResponseWriter, r *http.Request) {
 				expected := "Bearer 1234"
 				received := r.Header.Get("Authorization")
-				if expected != received {
-					t.Fatalf("Authorization header was not set correctly: expected '%v', got '%v'", expected, received)
-				}
+				require.Equal(t, expected, received, "Authorization header was not set correctly.")
 			},
 		),
 	)
@@ -162,13 +157,9 @@ func TestNewHTTPBearerToken(t *testing.T) {
 		BearerToken: "1234",
 	}
 	c, err := config_util.NewClientFromConfig(cfg, "test")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	_, err = c.Get(server.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 }
 
 func TestNewHTTPBearerTokenFile(t *testing.T) {
@@ -177,9 +168,7 @@ func TestNewHTTPBearerTokenFile(t *testing.T) {
 			func(w http.ResponseWriter, r *http.Request) {
 				expected := "Bearer 12345"
 				received := r.Header.Get("Authorization")
-				if expected != received {
-					t.Fatalf("Authorization header was not set correctly: expected '%v', got '%v'", expected, received)
-				}
+				require.Equal(t, expected, received, "Authorization header was not set correctly.")
 			},
 		),
 	)
@@ -189,13 +178,9 @@ func TestNewHTTPBearerTokenFile(t *testing.T) {
 		BearerTokenFile: "testdata/bearertoken.txt",
 	}
 	c, err := config_util.NewClientFromConfig(cfg, "test")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	_, err = c.Get(server.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 }
 
 func TestNewHTTPBasicAuth(t *testing.T) {
@@ -203,9 +188,9 @@ func TestNewHTTPBasicAuth(t *testing.T) {
 		http.HandlerFunc(
 			func(w http.ResponseWriter, r *http.Request) {
 				username, password, ok := r.BasicAuth()
-				if !(ok && username == "user" && password == "password123") {
-					t.Fatalf("Basic authorization header was not set correctly: expected '%v:%v', got '%v:%v'", "user", "password123", username, password)
-				}
+				require.True(t, ok, "Basic authorization header was not set correctly.")
+				require.Equal(t, "user", username)
+				require.Equal(t, "password123", password)
 			},
 		),
 	)
@@ -218,13 +203,9 @@ func TestNewHTTPBasicAuth(t *testing.T) {
 		},
 	}
 	c, err := config_util.NewClientFromConfig(cfg, "test")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	_, err = c.Get(server.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 }
 
 func TestNewHTTPCACert(t *testing.T) {
@@ -246,13 +227,9 @@ func TestNewHTTPCACert(t *testing.T) {
 		},
 	}
 	c, err := config_util.NewClientFromConfig(cfg, "test")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	_, err = c.Get(server.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 }
 
 func TestNewHTTPClientCert(t *testing.T) {
@@ -279,13 +256,9 @@ func TestNewHTTPClientCert(t *testing.T) {
 		},
 	}
 	c, err := config_util.NewClientFromConfig(cfg, "test")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	_, err = c.Get(server.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 }
 
 func TestNewHTTPWithServerName(t *testing.T) {
@@ -308,13 +281,9 @@ func TestNewHTTPWithServerName(t *testing.T) {
 		},
 	}
 	c, err := config_util.NewClientFromConfig(cfg, "test")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	_, err = c.Get(server.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 }
 
 func TestNewHTTPWithBadServerName(t *testing.T) {
@@ -337,31 +306,23 @@ func TestNewHTTPWithBadServerName(t *testing.T) {
 		},
 	}
 	c, err := config_util.NewClientFromConfig(cfg, "test")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	_, err = c.Get(server.URL)
-	if err == nil {
-		t.Fatal("Expected error, got nil.")
-	}
+	require.Error(t, err)
 }
 
 func newTLSConfig(certName string, t *testing.T) *tls.Config {
 	tlsConfig := &tls.Config{}
 	caCertPool := x509.NewCertPool()
 	caCert, err := os.ReadFile(caCertPath)
-	if err != nil {
-		t.Fatalf("Couldn't set up TLS server: %v", err)
-	}
+	require.NoError(t, err, "Couldn't read CA cert.")
 	caCertPool.AppendCertsFromPEM(caCert)
 	tlsConfig.RootCAs = caCertPool
 	tlsConfig.ServerName = "127.0.0.1"
 	certPath := fmt.Sprintf("testdata/%s.cer", certName)
 	keyPath := fmt.Sprintf("testdata/%s.key", certName)
 	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
-	if err != nil {
-		t.Errorf("Unable to use specified server cert (%s) & key (%v): %s", certPath, keyPath, err)
-	}
+	require.NoError(t, err, "Unable to use specified server cert (%s) & key (%v).", certPath, keyPath)
 	tlsConfig.Certificates = []tls.Certificate{cert}
 	return tlsConfig
 }
@@ -375,9 +336,7 @@ func TestNewClientWithBadTLSConfig(t *testing.T) {
 		},
 	}
 	_, err := config_util.NewClientFromConfig(cfg, "test")
-	if err == nil {
-		t.Fatalf("Expected error, got nil.")
-	}
+	require.Error(t, err)
 }
 
 func TestTargetsFromGroup(t *testing.T) {
@@ -389,15 +348,9 @@ func TestTargetsFromGroup(t *testing.T) {
 	}
 	lb := labels.NewBuilder(labels.EmptyLabels())
 	targets, failures := TargetsFromGroup(&targetgroup.Group{Targets: []model.LabelSet{{}, {model.AddressLabel: "localhost:9090"}}}, &cfg, false, nil, lb)
-	if len(targets) != 1 {
-		t.Fatalf("Expected 1 target, got %v", len(targets))
-	}
-	if len(failures) != 1 {
-		t.Fatalf("Expected 1 failure, got %v", len(failures))
-	}
-	if failures[0].Error() != expectedError {
-		t.Fatalf("Expected error %s, got %s", expectedError, failures[0])
-	}
+	require.Len(t, targets, 1)
+	require.Len(t, failures, 1)
+	require.EqualError(t, failures[0], expectedError)
 }
 
 func BenchmarkTargetsFromGroup(b *testing.B) {

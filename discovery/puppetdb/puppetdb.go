@@ -171,7 +171,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.Discovere
 	d.Discovery = refresh.NewDiscovery(
 		refresh.Options{
 			Logger:              logger,
-			Mech:                "http",
+			Mech:                "puppetdb",
 			Interval:            time.Duration(conf.RefreshInterval),
 			RefreshF:            d.refresh,
 			MetricsInstantiator: m.refreshMetrics,

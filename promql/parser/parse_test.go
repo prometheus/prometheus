@@ -26,6 +26,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/util/testutil"
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
@@ -468,6 +469,22 @@ var testExpr = []struct {
 				PosRange: posrange.PositionRange{
 					Start: 2,
 					End:   13,
+				},
+			},
+			StartPos: 1,
+		},
+	},
+	{
+		input: ` +{"some_metric"}`,
+		expected: &UnaryExpr{
+			Op: ADD,
+			Expr: &VectorSelector{
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 2,
+					End:   17,
 				},
 			},
 			StartPos: 1,
@@ -1702,6 +1719,61 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: `{"foo"}`,
+		expected: &VectorSelector{
+			// When a metric is named inside the braces, the Name field is not set.
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   7,
+			},
+		},
+	},
+	{
+		input: `{'foo\'bar', 'a\\dos\\path'='boo\\urns'}`,
+		expected: &VectorSelector{
+			// When a metric is named inside the braces, the Name field is not set.
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, `foo'bar`),
+				MustLabelMatcher(labels.MatchEqual, `a\dos\path`, `boo\urns`),
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   40,
+			},
+		},
+	},
+	{
+		input: `{'foo\'bar', ` + "`" + `a\dos\path` + "`" + `="boo"}`,
+		expected: &VectorSelector{
+			// When a metric is named inside the braces, the Name field is not set.
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, `foo'bar`),
+				MustLabelMatcher(labels.MatchEqual, `a\dos\path`, "boo"),
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   32,
+			},
+		},
+	},
+	{
+		input: `{"foo", a="bc"}`,
+		expected: &VectorSelector{
+			// When a metric is named inside the braces, the Name field is not set.
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				MustLabelMatcher(labels.MatchEqual, "a", "bc"),
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   15,
+			},
+		},
+	},
+	{
 		input: `foo{NaN='bc'}`,
 		expected: &VectorSelector{
 			Name: "foo",
@@ -1747,6 +1819,23 @@ var testExpr = []struct {
 		},
 	},
 	{
+		// Metric name in the middle of selector list is fine.
+		input: `{a="b", foo!="bar", "foo", test=~"test", bar!~"baz"}`,
+		expected: &VectorSelector{
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, "a", "b"),
+				MustLabelMatcher(labels.MatchNotEqual, "foo", "bar"),
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				MustLabelMatcher(labels.MatchRegexp, "test", "test"),
+				MustLabelMatcher(labels.MatchNotRegexp, "bar", "baz"),
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   52,
+			},
+		},
+	},
+	{
 		input: `foo{a="b", foo!="bar", test=~"test", bar!~"baz",}`,
 		expected: &VectorSelector{
 			Name: "foo",
@@ -1760,6 +1849,48 @@ var testExpr = []struct {
 			PosRange: posrange.PositionRange{
 				Start: 0,
 				End:   49,
+			},
+		},
+	},
+	{
+		// Specifying __name__ twice inside the braces is ok.
+		input: `{__name__=~"bar", __name__!~"baz"}`,
+		expected: &VectorSelector{
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchRegexp, model.MetricNameLabel, "bar"),
+				MustLabelMatcher(labels.MatchNotRegexp, model.MetricNameLabel, "baz"),
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   34,
+			},
+		},
+	},
+	{
+		// Specifying __name__ with equality twice inside the braces is even allowed.
+		input: `{__name__="bar", __name__="baz"}`,
+		expected: &VectorSelector{
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "bar"),
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "baz"),
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   32,
+			},
+		},
+	},
+	{
+		// Because the above are allowed, this is also allowed.
+		input: `{"bar", __name__="baz"}`,
+		expected: &VectorSelector{
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "bar"),
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "baz"),
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   23,
 			},
 		},
 	},
@@ -1845,6 +1976,8 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "vector selector must contain at least one non-empty matcher",
 	},
+	// Although {"bar", __name__="baz"} is allowed (see above), specifying a
+	// metric name inside and outside the braces is not.
 	{
 		input:  `foo{__name__="bar"}`,
 		fail:   true,
@@ -1869,6 +2002,11 @@ var testExpr = []struct {
 		input:  `foo{__name__="bar" lol}`,
 		fail:   true,
 		errMsg: `unexpected identifier "lol" in label matching, expected "," or "}"`,
+	},
+	{
+		input:  `foo{"a"=}`,
+		fail:   true,
+		errMsg: `unexpected "}" in label matching, expected string`,
 	},
 	// Test matrix selector.
 	{
@@ -4042,7 +4180,7 @@ func TestParseSeries(t *testing.T) {
 
 		if !test.fail {
 			require.NoError(t, err)
-			require.Equal(t, test.expectedMetric, metric, "error on input '%s'", test.input)
+			testutil.RequireEqual(t, test.expectedMetric, metric, "error on input '%s'", test.input)
 			require.Equal(t, test.expectedValues, vals, "error in input '%s'", test.input)
 		} else {
 			require.Error(t, err)

@@ -40,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/util/runutil"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestPopulateLabels(t *testing.T) {
@@ -449,8 +450,8 @@ func TestPopulateLabels(t *testing.T) {
 			require.NoError(t, err)
 		}
 		require.Equal(t, c.in, in)
-		require.Equal(t, c.res, res)
-		require.Equal(t, c.resOrig, orig)
+		testutil.RequireEqual(t, c.res, res)
+		testutil.RequireEqual(t, c.resOrig, orig)
 	}
 }
 
@@ -458,9 +459,9 @@ func loadConfiguration(t testing.TB, c string) *config.Config {
 	t.Helper()
 
 	cfg := &config.Config{}
-	if err := yaml.UnmarshalStrict([]byte(c), cfg); err != nil {
-		t.Fatalf("Unable to load YAML config: %s", err)
-	}
+	err := yaml.UnmarshalStrict([]byte(c), cfg)
+	require.NoError(t, err, "Unable to load YAML config.")
+
 	return cfg
 }
 
@@ -522,53 +523,50 @@ scrape_configs:
 		loops: map[uint64]loop{
 			1: noopLoop(),
 		},
-		newLoop: newLoop,
-		logger:  nil,
-		config:  cfg1.ScrapeConfigs[0],
-		client:  http.DefaultClient,
-		metrics: scrapeManager.metrics,
+		newLoop:     newLoop,
+		logger:      nil,
+		config:      cfg1.ScrapeConfigs[0],
+		client:      http.DefaultClient,
+		metrics:     scrapeManager.metrics,
+		symbolTable: labels.NewSymbolTable(),
 	}
 	scrapeManager.scrapePools = map[string]*scrapePool{
 		"job1": sp,
 	}
 
 	// Apply the initial configuration.
-	if err := scrapeManager.ApplyConfig(cfg1); err != nil {
-		t.Fatalf("unable to apply configuration: %s", err)
-	}
+	err = scrapeManager.ApplyConfig(cfg1)
+	require.NoError(t, err, "Unable to apply configuration.")
 	select {
 	case <-ch:
-		t.Fatal("reload happened")
+		require.FailNow(t, "Reload happened.")
 	default:
 	}
 
 	// Apply a configuration for which the reload fails.
-	if err := scrapeManager.ApplyConfig(cfg2); err == nil {
-		t.Fatalf("expecting error but got none")
-	}
+	err = scrapeManager.ApplyConfig(cfg2)
+	require.Error(t, err, "Expecting error but got none.")
 	select {
 	case <-ch:
-		t.Fatal("reload happened")
+		require.FailNow(t, "Reload happened.")
 	default:
 	}
 
 	// Apply a configuration for which the reload succeeds.
-	if err := scrapeManager.ApplyConfig(cfg3); err != nil {
-		t.Fatalf("unable to apply configuration: %s", err)
-	}
+	err = scrapeManager.ApplyConfig(cfg3)
+	require.NoError(t, err, "Unable to apply configuration.")
 	select {
 	case <-ch:
 	default:
-		t.Fatal("reload didn't happen")
+		require.FailNow(t, "Reload didn't happen.")
 	}
 
 	// Re-applying the same configuration shouldn't trigger a reload.
-	if err := scrapeManager.ApplyConfig(cfg3); err != nil {
-		t.Fatalf("unable to apply configuration: %s", err)
-	}
+	err = scrapeManager.ApplyConfig(cfg3)
+	require.NoError(t, err, "Unable to apply configuration.")
 	select {
 	case <-ch:
-		t.Fatal("reload happened")
+		require.FailNow(t, "Reload happened.")
 	default:
 	}
 }
@@ -595,7 +593,7 @@ func TestManagerTargetsUpdates(t *testing.T) {
 		select {
 		case ts <- tgSent:
 		case <-time.After(10 * time.Millisecond):
-			t.Error("Scrape manager's channel remained blocked after the set threshold.")
+			require.Fail(t, "Scrape manager's channel remained blocked after the set threshold.")
 		}
 	}
 
@@ -609,7 +607,7 @@ func TestManagerTargetsUpdates(t *testing.T) {
 	select {
 	case <-m.triggerReload:
 	default:
-		t.Error("No scrape loops reload was triggered after targets update.")
+		require.Fail(t, "No scrape loops reload was triggered after targets update.")
 	}
 }
 
@@ -622,9 +620,8 @@ global:
 `
 
 		cfg := &config.Config{}
-		if err := yaml.UnmarshalStrict([]byte(cfgText), cfg); err != nil {
-			t.Fatalf("Unable to load YAML config cfgYaml: %s", err)
-		}
+		err := yaml.UnmarshalStrict([]byte(cfgText), cfg)
+		require.NoError(t, err, "Unable to load YAML config cfgYaml.")
 
 		return cfg
 	}
@@ -636,25 +633,18 @@ global:
 
 	// Load the first config.
 	cfg1 := getConfig("ha1")
-	if err := scrapeManager.setOffsetSeed(cfg1.GlobalConfig.ExternalLabels); err != nil {
-		t.Error(err)
-	}
+	err = scrapeManager.setOffsetSeed(cfg1.GlobalConfig.ExternalLabels)
+	require.NoError(t, err)
 	offsetSeed1 := scrapeManager.offsetSeed
 
-	if offsetSeed1 == 0 {
-		t.Error("Offset seed has to be a hash of uint64")
-	}
+	require.NotZero(t, offsetSeed1, "Offset seed has to be a hash of uint64.")
 
 	// Load the first config.
 	cfg2 := getConfig("ha2")
-	if err := scrapeManager.setOffsetSeed(cfg2.GlobalConfig.ExternalLabels); err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, scrapeManager.setOffsetSeed(cfg2.GlobalConfig.ExternalLabels))
 	offsetSeed2 := scrapeManager.offsetSeed
 
-	if offsetSeed1 == offsetSeed2 {
-		t.Error("Offset seed should not be the same on different set of external labels")
-	}
+	require.NotEqual(t, offsetSeed1, offsetSeed2, "Offset seed should not be the same on different set of external labels.")
 }
 
 func TestManagerScrapePools(t *testing.T) {

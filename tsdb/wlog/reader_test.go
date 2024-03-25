@@ -182,16 +182,13 @@ func TestReader(t *testing.T) {
 					t.Logf("record %d", j)
 					rec := r.Record()
 
-					if j >= len(c.exp) {
-						t.Fatal("received more records than expected")
-					}
+					require.Less(t, j, len(c.exp), "received more records than expected")
 					require.Equal(t, c.exp[j], rec, "Bytes within record did not match expected Bytes")
 				}
-				if !c.fail && r.Err() != nil {
-					t.Fatalf("unexpected error: %s", r.Err())
-				}
-				if c.fail && r.Err() == nil {
-					t.Fatalf("expected error but got none")
+				if !c.fail {
+					require.NoError(t, r.Err())
+				} else {
+					require.Error(t, r.Err())
 				}
 			})
 		}

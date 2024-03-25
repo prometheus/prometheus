@@ -358,9 +358,7 @@ func TestInvalidFile(t *testing.T) {
 
 			// Verify that we've received nothing.
 			time.Sleep(defaultWait)
-			if runner.lastReceive().After(now) {
-				t.Fatalf("unexpected targets received: %v", runner.targets())
-			}
+			require.False(t, runner.lastReceive().After(now), "unexpected targets received: %v", runner.targets())
 		})
 	}
 }

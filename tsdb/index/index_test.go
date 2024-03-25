@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc32"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"sort"
@@ -206,7 +205,7 @@ func TestIndexRW_Postings(t *testing.T) {
 
 		require.NoError(t, err)
 		require.Empty(t, c)
-		require.Equal(t, series[i], builder.Labels())
+		testutil.RequireEqual(t, series[i], builder.Labels())
 	}
 	require.NoError(t, p.Err())
 
@@ -242,6 +241,58 @@ func TestIndexRW_Postings(t *testing.T) {
 	}, labelIndices)
 
 	require.NoError(t, ir.Close())
+
+	t.Run("ShardedPostings()", func(t *testing.T) {
+		ir, err := NewFileReader(fn)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, ir.Close())
+		})
+
+		// List all postings for a given label value. This is what we expect to get
+		// in output from all shards.
+		p, err = ir.Postings(ctx, "a", "1")
+		require.NoError(t, err)
+
+		var expected []storage.SeriesRef
+		for p.Next() {
+			expected = append(expected, p.At())
+		}
+		require.NoError(t, p.Err())
+		require.NotEmpty(t, expected)
+
+		// Query the same postings for each shard.
+		const shardCount = uint64(4)
+		actualShards := make(map[uint64][]storage.SeriesRef)
+		actualPostings := make([]storage.SeriesRef, 0, len(expected))
+
+		for shardIndex := uint64(0); shardIndex < shardCount; shardIndex++ {
+			p, err = ir.Postings(ctx, "a", "1")
+			require.NoError(t, err)
+
+			p = ir.ShardedPostings(p, shardIndex, shardCount)
+			for p.Next() {
+				ref := p.At()
+
+				actualShards[shardIndex] = append(actualShards[shardIndex], ref)
+				actualPostings = append(actualPostings, ref)
+			}
+			require.NoError(t, p.Err())
+		}
+
+		// We expect the postings merged out of shards is the exact same of the non sharded ones.
+		require.ElementsMatch(t, expected, actualPostings)
+
+		// We expect the series in each shard are the expected ones.
+		for shardIndex, ids := range actualShards {
+			for _, id := range ids {
+				var lbls labels.ScratchBuilder
+
+				require.NoError(t, ir.Series(id, &lbls, nil))
+				require.Equal(t, shardIndex, labels.StableHash(lbls.Labels())%shardCount)
+			}
+		}
+	})
 }
 
 func TestPostingsMany(t *testing.T) {
@@ -355,15 +406,17 @@ func TestPersistence_index_e2e(t *testing.T) {
 
 	var input indexWriterSeriesSlice
 
+	ref := uint64(0)
 	// Generate ChunkMetas for every label set.
 	for i, lset := range lbls {
 		var metas []chunks.Meta
 
 		for j := 0; j <= (i % 20); j++ {
+			ref++
 			metas = append(metas, chunks.Meta{
 				MinTime: int64(j * 10000),
-				MaxTime: int64((j + 1) * 10000),
-				Ref:     chunks.ChunkRef(rand.Uint64()),
+				MaxTime: int64((j+1)*10000) - 1,
+				Ref:     chunks.ChunkRef(ref),
 				Chunk:   chunkenc.NewXORChunk(),
 			})
 		}
@@ -435,7 +488,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 
 			err = mi.Series(expp.At(), &eBuilder, &expchks)
 			require.NoError(t, err)
-			require.Equal(t, eBuilder.Labels(), builder.Labels())
+			testutil.RequireEqual(t, eBuilder.Labels(), builder.Labels())
 			require.Equal(t, expchks, chks)
 		}
 		require.False(t, expp.Next(), "Expected no more postings for %q=%q", p.Name, p.Value)
@@ -565,7 +618,104 @@ func TestSymbols(t *testing.T) {
 	require.NoError(t, iter.Err())
 }
 
+func BenchmarkReader_ShardedPostings(b *testing.B) {
+	const (
+		numSeries = 10000
+		numShards = 16
+	)
+
+	dir, err := os.MkdirTemp("", "benchmark_reader_sharded_postings")
+	require.NoError(b, err)
+	defer func() {
+		require.NoError(b, os.RemoveAll(dir))
+	}()
+
+	ctx := context.Background()
+
+	// Generate an index.
+	fn := filepath.Join(dir, indexFilename)
+
+	iw, err := NewWriter(ctx, fn)
+	require.NoError(b, err)
+
+	for i := 1; i <= numSeries; i++ {
+		require.NoError(b, iw.AddSymbol(fmt.Sprintf("%10d", i)))
+	}
+	require.NoError(b, iw.AddSymbol("const"))
+	require.NoError(b, iw.AddSymbol("unique"))
+
+	for i := 1; i <= numSeries; i++ {
+		require.NoError(b, iw.AddSeries(storage.SeriesRef(i),
+			labels.FromStrings("const", fmt.Sprintf("%10d", 1), "unique", fmt.Sprintf("%10d", i))))
+	}
+
+	require.NoError(b, iw.Close())
+
+	b.ResetTimer()
+
+	// Create a reader to read back all postings from the index.
+	ir, err := NewFileReader(fn)
+	require.NoError(b, err)
+
+	b.ResetTimer()
+
+	for n := 0; n < b.N; n++ {
+		allPostings, err := ir.Postings(ctx, "const", fmt.Sprintf("%10d", 1))
+		require.NoError(b, err)
+
+		ir.ShardedPostings(allPostings, uint64(n%numShards), numShards)
+	}
+}
+
 func TestDecoder_Postings_WrongInput(t *testing.T) {
 	_, _, err := (&Decoder{}).Postings([]byte("the cake is a lie"))
 	require.Error(t, err)
+}
+
+func TestChunksRefOrdering(t *testing.T) {
+	dir := t.TempDir()
+
+	idx, err := NewWriter(context.Background(), filepath.Join(dir, "index"))
+	require.NoError(t, err)
+
+	require.NoError(t, idx.AddSymbol("1"))
+	require.NoError(t, idx.AddSymbol("2"))
+	require.NoError(t, idx.AddSymbol("__name__"))
+
+	c50 := chunks.Meta{Ref: 50}
+	c100 := chunks.Meta{Ref: 100}
+	c200 := chunks.Meta{Ref: 200}
+
+	require.NoError(t, idx.AddSeries(1, labels.FromStrings("__name__", "1"), c100))
+	require.EqualError(t, idx.AddSeries(2, labels.FromStrings("__name__", "2"), c50), "unsorted chunk reference: 50, previous: 100")
+	require.NoError(t, idx.AddSeries(2, labels.FromStrings("__name__", "2"), c200))
+	require.NoError(t, idx.Close())
+}
+
+func TestChunksTimeOrdering(t *testing.T) {
+	dir := t.TempDir()
+
+	idx, err := NewWriter(context.Background(), filepath.Join(dir, "index"))
+	require.NoError(t, err)
+
+	require.NoError(t, idx.AddSymbol("1"))
+	require.NoError(t, idx.AddSymbol("2"))
+	require.NoError(t, idx.AddSymbol("__name__"))
+
+	require.NoError(t, idx.AddSeries(1, labels.FromStrings("__name__", "1"),
+		chunks.Meta{Ref: 1, MinTime: 0, MaxTime: 10}, // Also checks that first chunk can have MinTime: 0.
+		chunks.Meta{Ref: 2, MinTime: 11, MaxTime: 20},
+		chunks.Meta{Ref: 3, MinTime: 21, MaxTime: 30},
+	))
+
+	require.EqualError(t, idx.AddSeries(1, labels.FromStrings("__name__", "2"),
+		chunks.Meta{Ref: 10, MinTime: 0, MaxTime: 10},
+		chunks.Meta{Ref: 20, MinTime: 10, MaxTime: 20},
+	), "chunk minT 10 is not higher than previous chunk maxT 10")
+
+	require.EqualError(t, idx.AddSeries(1, labels.FromStrings("__name__", "2"),
+		chunks.Meta{Ref: 10, MinTime: 100, MaxTime: 30},
+	), "chunk maxT 30 is less than minT 100")
+
+	require.NoError(t, idx.Close())
 }

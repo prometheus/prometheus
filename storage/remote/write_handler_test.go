@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -35,6 +36,7 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestRemoteWriteHandler(t *testing.T) {
@@ -53,29 +55,30 @@ func TestRemoteWriteHandler(t *testing.T) {
 	resp := recorder.Result()
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 
+	b := labels.NewScratchBuilder(0)
 	i := 0
 	j := 0
 	k := 0
 	for _, ts := range writeRequestFixture.Timeseries {
-		labels := labelProtosToLabels(ts.Labels)
+		labels := labelProtosToLabels(&b, ts.Labels)
 		for _, s := range ts.Samples {
-			require.Equal(t, mockSample{labels, s.Timestamp, s.Value}, appendable.samples[i])
+			requireEqual(t, mockSample{labels, s.Timestamp, s.Value}, appendable.samples[i])
 			i++
 		}
 
 		for _, e := range ts.Exemplars {
-			exemplarLabels := labelProtosToLabels(e.Labels)
-			require.Equal(t, mockExemplar{labels, exemplarLabels, e.Timestamp, e.Value}, appendable.exemplars[j])
+			exemplarLabels := labelProtosToLabels(&b, e.Labels)
+			requireEqual(t, mockExemplar{labels, exemplarLabels, e.Timestamp, e.Value}, appendable.exemplars[j])
 			j++
 		}
 
 		for _, hp := range ts.Histograms {
 			if hp.IsFloatHistogram() {
 				fh := FloatHistogramProtoToFloatHistogram(hp)
-				require.Equal(t, mockHistogram{labels, hp.Timestamp, nil, fh}, appendable.histograms[k])
+				requireEqual(t, mockHistogram{labels, hp.Timestamp, nil, fh}, appendable.histograms[k])
 			} else {
 				h := HistogramProtoToHistogram(hp)
-				require.Equal(t, mockHistogram{labels, hp.Timestamp, h, nil}, appendable.histograms[k])
+				requireEqual(t, mockHistogram{labels, hp.Timestamp, h, nil}, appendable.histograms[k])
 			}
 
 			k++
@@ -204,6 +207,7 @@ func TestCommitErr(t *testing.T) {
 }
 
 func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
+	b.Skip("Not a valid benchmark (does not count to b.N)")
 	dir := b.TempDir()
 
 	opts := tsdb.DefaultOptions()
@@ -290,6 +294,13 @@ type mockHistogram struct {
 	t  int64
 	h  *histogram.Histogram
 	fh *histogram.FloatHistogram
+}
+
+// Wrapper to instruct go-cmp package to compare a list of structs with unexported fields.
+func requireEqual(t *testing.T, expected, actual interface{}, msgAndArgs ...interface{}) {
+	testutil.RequireEqualWithOptions(t, expected, actual,
+		[]cmp.Option{cmp.AllowUnexported(mockSample{}), cmp.AllowUnexported(mockExemplar{}), cmp.AllowUnexported(mockHistogram{})},
+		msgAndArgs...)
 }
 
 func (m *mockAppendable) Appender(_ context.Context) storage.Appender {

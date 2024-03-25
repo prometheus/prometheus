@@ -11,6 +11,9 @@ eval instant at 5m histogram_count(empty_histogram)
 eval instant at 5m histogram_sum(empty_histogram)
 	{} 0
 
+eval instant at 5m histogram_avg(empty_histogram)
+	{} NaN
+
 eval instant at 5m histogram_fraction(-Inf, +Inf, empty_histogram)
 	{} NaN
 
@@ -30,6 +33,10 @@ eval instant at 5m histogram_count(single_histogram)
 # histogram_sum extracts the sum property from the histogram.
 eval instant at 5m histogram_sum(single_histogram)
 	{} 5
+
+# histogram_avg calculates the average from sum and count properties.
+eval instant at 5m histogram_avg(single_histogram)
+	{} 1.25
 
 # We expect half of the values to fall in the range 1 < x <= 2.
 eval instant at 5m histogram_fraction(1, 2, single_histogram)
@@ -55,6 +62,9 @@ eval instant at 5m histogram_count(multi_histogram)
 eval instant at 5m histogram_sum(multi_histogram)
 	{} 5
 
+eval instant at 5m histogram_avg(multi_histogram)
+	{} 1.25
+
 eval instant at 5m histogram_fraction(1, 2, multi_histogram)
 	{} 0.5
 
@@ -68,6 +78,9 @@ eval instant at 50m histogram_count(multi_histogram)
 
 eval instant at 50m histogram_sum(multi_histogram)
 	{} 5
+
+eval instant at 50m histogram_avg(multi_histogram)
+	{} 1.25
 
 eval instant at 50m histogram_fraction(1, 2, multi_histogram)
 	{} 0.5
@@ -89,6 +102,9 @@ eval instant at 5m histogram_count(incr_histogram)
 eval instant at 5m histogram_sum(incr_histogram)
 	{} 6
 
+eval instant at 5m histogram_avg(incr_histogram)
+	{} 1.2
+
 # We expect 3/5ths of the values to fall in the range 1 < x <= 2.
 eval instant at 5m histogram_fraction(1, 2, incr_histogram)
 	{} 0.6
@@ -105,6 +121,9 @@ eval instant at 50m histogram_count(incr_histogram)
 
 eval instant at 50m histogram_sum(incr_histogram)
 	{} 24
+
+eval instant at 50m histogram_avg(incr_histogram)
+    {} 1.7142857142857142
 
 # We expect 12/14ths of the values to fall in the range 1 < x <= 2.
 eval instant at 50m histogram_fraction(1, 2, incr_histogram)
@@ -140,6 +159,9 @@ eval instant at 5m histogram_count(low_res_histogram)
 eval instant at 5m histogram_sum(low_res_histogram)
 	{} 8
 
+eval instant at 5m histogram_avg(low_res_histogram)
+	{} 1.6
+
 # We expect all values to fall into the lower-resolution bucket with the range 1 < x <= 4.
 eval instant at 5m histogram_fraction(1, 4, low_res_histogram)
 	{} 1
@@ -155,6 +177,9 @@ eval instant at 5m histogram_count(single_zero_histogram)
 	{} 1
 
 eval instant at 5m histogram_sum(single_zero_histogram)
+	{} 0.25
+
+eval instant at 5m histogram_avg(single_zero_histogram)
 	{} 0.25
 
 # When only the zero bucket is populated, or there are negative buckets, the distribution is assumed to be equally
@@ -179,6 +204,9 @@ eval instant at 5m histogram_count(negative_histogram)
 eval instant at 5m histogram_sum(negative_histogram)
 	{} -5
 
+eval instant at 5m histogram_avg(negative_histogram)
+	{} -1.25
+
 # We expect half of the values to fall in the range -2 < x <= -1.
 eval instant at 5m histogram_fraction(-2, -1, negative_histogram)
 	{} 0.5
@@ -199,6 +227,9 @@ eval instant at 10m histogram_count(two_samples_histogram)
 eval instant at 10m histogram_sum(two_samples_histogram)
 	{} -4
 
+eval instant at 10m histogram_avg(two_samples_histogram)
+	{} -1
+
 eval instant at 10m histogram_fraction(-2, -1, two_samples_histogram)
 	{} 0.5
 
@@ -217,6 +248,9 @@ eval instant at 5m histogram_count(balanced_histogram)
 eval instant at 5m histogram_sum(balanced_histogram)
 	{} 0
 
+eval instant at 5m histogram_avg(balanced_histogram)
+	{} 0
+
 eval instant at 5m histogram_fraction(0, 4, balanced_histogram)
 	{} 0.5
 
@@ -224,3 +258,14 @@ eval instant at 5m histogram_fraction(0, 4, balanced_histogram)
 # the first populated bucket after the span of empty buckets.
 eval instant at 5m histogram_quantile(0.5, balanced_histogram)
 	{} 0.5
+
+# Add histogram to test sum(last_over_time) regression
+load 5m
+    incr_sum_histogram{number="1"} {{schema:0 sum:0 count:0 buckets:[1]}}+{{schema:0 sum:1 count:1 buckets:[1]}}x10
+    incr_sum_histogram{number="2"} {{schema:0 sum:0 count:0 buckets:[1]}}+{{schema:0 sum:2 count:1 buckets:[1]}}x10
+
+eval instant at 50m histogram_sum(sum(incr_sum_histogram))
+    {} 30
+
+eval instant at 50m histogram_sum(sum(last_over_time(incr_sum_histogram[5m])))
+    {} 30

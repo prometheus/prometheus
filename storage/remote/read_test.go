@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestNoDuplicateReadConfigs(t *testing.T) {
@@ -194,6 +195,7 @@ func TestSeriesSetFilter(t *testing.T) {
 type mockedRemoteClient struct {
 	got   *prompb.Query
 	store []*prompb.TimeSeries
+	b     labels.ScratchBuilder
 }
 
 func (c *mockedRemoteClient) Read(_ context.Context, query *prompb.Query) (*prompb.QueryResult, error) {
@@ -209,7 +211,7 @@ func (c *mockedRemoteClient) Read(_ context.Context, query *prompb.Query) (*prom
 
 	q := &prompb.QueryResult{}
 	for _, s := range c.store {
-		l := labelProtosToLabels(s.Labels)
+		l := labelProtosToLabels(&c.b, s.Labels)
 		var notMatch bool
 
 		for _, m := range matchers {
@@ -241,6 +243,7 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 			{Labels: []prompb.Label{{Name: "a", Value: "b3"}, {Name: "region", Value: "us"}}},
 			{Labels: []prompb.Label{{Name: "a", Value: "b2"}, {Name: "region", Value: "europe"}}},
 		},
+		b: labels.NewScratchBuilder(0),
 	}
 
 	for _, tc := range []struct {
@@ -484,7 +487,7 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 				got = append(got, ss.At().Labels())
 			}
 			require.NoError(t, ss.Err())
-			require.Equal(t, tc.expectedSeries, got)
+			testutil.RequireEqual(t, tc.expectedSeries, got)
 		})
 	}
 }

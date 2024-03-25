@@ -142,6 +142,9 @@ type AlertingRule struct {
 	active map[uint64]*Alert
 
 	logger log.Logger
+
+	noDependentRules  *atomic.Bool
+	noDependencyRules *atomic.Bool
 }
 
 // NewAlertingRule constructs a new AlertingRule.
@@ -168,6 +171,8 @@ func NewAlertingRule(
 		evaluationTimestamp: atomic.NewTime(time.Time{}),
 		evaluationDuration:  atomic.NewDuration(0),
 		lastError:           atomic.NewError(nil),
+		noDependentRules:    atomic.NewBool(false),
+		noDependencyRules:   atomic.NewBool(false),
 	}
 }
 
@@ -317,6 +322,22 @@ func (r *AlertingRule) Restored() bool {
 	return r.restored.Load()
 }
 
+func (r *AlertingRule) SetNoDependentRules(noDependentRules bool) {
+	r.noDependentRules.Store(noDependentRules)
+}
+
+func (r *AlertingRule) NoDependentRules() bool {
+	return r.noDependentRules.Load()
+}
+
+func (r *AlertingRule) SetNoDependencyRules(noDependencyRules bool) {
+	r.noDependencyRules.Store(noDependencyRules)
+}
+
+func (r *AlertingRule) NoDependencyRules() bool {
+	return r.noDependencyRules.Load()
+}
+
 // resolvedRetention is the duration for which a resolved alert instance
 // is kept in memory state and consequently repeatedly sent to the AlertManager.
 const resolvedRetention = 15 * time.Minute
@@ -335,6 +356,8 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 	// or update the expression value for existing elements.
 	resultFPs := map[uint64]struct{}{}
 
+	lb := labels.NewBuilder(labels.EmptyLabels())
+	sb := labels.NewScratchBuilder(0)
 	var vec promql.Vector
 	alerts := make(map[uint64]*Alert, len(res))
 	for _, smpl := range res {
@@ -370,14 +393,14 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 			return result
 		}
 
-		lb := labels.NewBuilder(smpl.Metric).Del(labels.MetricName)
-
+		lb.Reset(smpl.Metric)
+		lb.Del(labels.MetricName)
 		r.labels.Range(func(l labels.Label) {
 			lb.Set(l.Name, expand(l.Value))
 		})
 		lb.Set(labels.AlertName, r.Name())
 
-		sb := labels.ScratchBuilder{}
+		sb.Reset()
 		r.annotations.Range(func(a labels.Label) {
 			sb.Add(a.Name, expand(a.Value))
 		})

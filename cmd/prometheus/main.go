@@ -42,6 +42,7 @@ import (
 	"github.com/mwitkow/go-conntrack"
 	"github.com/oklog/run"
 	"github.com/prometheus/client_golang/prometheus"
+	versioncollector "github.com/prometheus/client_golang/prometheus/collectors/version"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promlog"
 	promlogflag "github.com/prometheus/common/promlog/flag"
@@ -99,7 +100,7 @@ var (
 )
 
 func init() {
-	prometheus.MustRegister(version.NewCollector(strings.ReplaceAll(appName, "-", "_")))
+	prometheus.MustRegister(versioncollector.NewCollector(strings.ReplaceAll(appName, "-", "_")))
 
 	var err error
 	defaultRetentionDuration, err = model.ParseDuration(defaultRetentionString)
@@ -137,6 +138,7 @@ type flagConfig struct {
 	forGracePeriod      model.Duration
 	outageTolerance     model.Duration
 	resendDelay         model.Duration
+	maxConcurrentEvals  int64
 	web                 web.Options
 	scrape              scrape.Options
 	tsdb                tsdbOptions
@@ -157,6 +159,7 @@ type flagConfig struct {
 	enablePerStepStats         bool
 	enableAutoGOMAXPROCS       bool
 	enableAutoGOMEMLIMIT       bool
+	enableConcurrentRuleEval   bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -203,6 +206,9 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "auto-gomemlimit":
 				c.enableAutoGOMEMLIMIT = true
 				level.Info(logger).Log("msg", "Automatically set GOMEMLIMIT to match Linux container or system memory limit")
+			case "concurrent-rule-eval":
+				c.enableConcurrentRuleEval = true
+				level.Info(logger).Log("msg", "Experimental concurrent rule evaluation enabled.")
 			case "no-default-scrape-port":
 				c.scrape.NoDefaultPort = true
 				level.Info(logger).Log("msg", "No default port will be appended to scrape targets' addresses.")
@@ -410,6 +416,9 @@ func main() {
 
 	serverOnlyFlag(a, "rules.alert.resend-delay", "Minimum amount of time to wait before resending an alert to Alertmanager.").
 		Default("1m").SetValue(&cfg.resendDelay)
+
+	serverOnlyFlag(a, "rules.max-concurrent-evals", "Global concurrency limit for independent rules that can run concurrently.").
+		Default("4").Int64Var(&cfg.maxConcurrentEvals)
 
 	a.Flag("scrape.adjust-timestamps", "Adjust scrape timestamps by up to `scrape.timestamp-tolerance` to align them to the intended schedule. See https://github.com/prometheus/prometheus/issues/7846 for more context. Experimental. This flag will be removed in a future release.").
 		Hidden().Default("true").BoolVar(&scrape.AlignScrapeTimestamps)
@@ -749,17 +758,19 @@ func main() {
 		queryEngine = promql.NewEngine(opts)
 
 		ruleManager = rules.NewManager(&rules.ManagerOptions{
-			Appendable:      fanoutStorage,
-			Queryable:       localStorage,
-			QueryFunc:       rules.EngineQueryFunc(queryEngine, fanoutStorage),
-			NotifyFunc:      rules.SendAlerts(notifierManager, cfg.web.ExternalURL.String()),
-			Context:         ctxRule,
-			ExternalURL:     cfg.web.ExternalURL,
-			Registerer:      prometheus.DefaultRegisterer,
-			Logger:          log.With(logger, "component", "rule manager"),
-			OutageTolerance: time.Duration(cfg.outageTolerance),
-			ForGracePeriod:  time.Duration(cfg.forGracePeriod),
-			ResendDelay:     time.Duration(cfg.resendDelay),
+			Appendable:             fanoutStorage,
+			Queryable:              localStorage,
+			QueryFunc:              rules.EngineQueryFunc(queryEngine, fanoutStorage),
+			NotifyFunc:             rules.SendAlerts(notifierManager, cfg.web.ExternalURL.String()),
+			Context:                ctxRule,
+			ExternalURL:            cfg.web.ExternalURL,
+			Registerer:             prometheus.DefaultRegisterer,
+			Logger:                 log.With(logger, "component", "rule manager"),
+			OutageTolerance:        time.Duration(cfg.outageTolerance),
+			ForGracePeriod:         time.Duration(cfg.forGracePeriod),
+			ResendDelay:            time.Duration(cfg.resendDelay),
+			MaxConcurrentEvals:     cfg.maxConcurrentEvals,
+			ConcurrentEvalsEnabled: cfg.enableConcurrentRuleEval,
 		})
 	}
 
@@ -949,8 +960,8 @@ func main() {
 			func() error {
 				// Don't forget to release the reloadReady channel so that waiting blocks can exit normally.
 				select {
-				case <-term:
-					level.Warn(logger).Log("msg", "Received SIGTERM, exiting gracefully...")
+				case sig := <-term:
+					level.Warn(logger).Log("msg", "Received an OS signal, exiting gracefully...", "signal", sig.String())
 					reloadReady.Close()
 				case <-webHandler.Quit():
 					level.Warn(logger).Log("msg", "Received termination request via web service, exiting gracefully...")

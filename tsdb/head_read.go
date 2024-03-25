@@ -18,10 +18,10 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"sync"
 
 	"github.com/go-kit/log/level"
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -149,7 +149,35 @@ func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 	return index.NewListPostings(ep)
 }
 
+// ShardedPostings implements IndexReader. This function returns an failing postings list if sharding
+// has not been enabled in the Head.
+func (h *headIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings {
+	if !h.head.opts.EnableSharding {
+		return index.ErrPostings(errors.New("sharding is disabled"))
+	}
+
+	out := make([]storage.SeriesRef, 0, 128)
+
+	for p.Next() {
+		s := h.head.series.getByID(chunks.HeadSeriesRef(p.At()))
+		if s == nil {
+			level.Debug(h.head.logger).Log("msg", "Looked up series not found")
+			continue
+		}
+
+		// Check if the series belong to the shard.
+		if s.shardHash%shardCount != shardIndex {
+			continue
+		}
+
+		out = append(out, storage.SeriesRef(s.ref))
+	}
+
+	return index.NewListPostings(out)
+}
+
 // Series returns the series for the given reference.
+// Chunks are skipped if chks is nil.
 func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	s := h.head.series.getByID(chunks.HeadSeriesRef(ref))
 
@@ -158,6 +186,10 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchB
 		return storage.ErrNotFound
 	}
 	builder.Assign(s.lset)
+
+	if chks == nil {
+		return nil
+	}
 
 	s.Lock()
 	defer s.Unlock()
@@ -682,7 +714,7 @@ func (s *memSeries) iterator(id chunks.HeadChunkID, c chunkenc.Chunk, isoState *
 
 		// Removing the extra transactionIDs that are relevant for samples that
 		// come after this chunk, from the total transactionIDs.
-		appendIDsToConsider := s.txs.txIDCount - (totalSamples - (previousSamples + numSamples))
+		appendIDsToConsider := int(s.txs.txIDCount) - (totalSamples - (previousSamples + numSamples))
 
 		// Iterate over the appendIDs, find the first one that the isolation state says not
 		// to return.

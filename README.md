@@ -149,7 +149,7 @@ We are publishing our Remote Write protobuf independently at
 You can use that as a library:
 
 ```shell
-go get go.buf.build/protocolbuffers/go/prometheus/prometheus
+go get buf.build/gen/go/prometheus/prometheus/protocolbuffers/go@latest
 ```
 
 This is experimental.

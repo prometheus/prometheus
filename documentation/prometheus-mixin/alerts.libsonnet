@@ -122,7 +122,7 @@
             alert: 'PrometheusNotIngestingSamples',
             expr: |||
               (
-                rate(prometheus_tsdb_head_samples_appended_total{%(prometheusSelector)s}[5m]) <= 0
+                sum without(type) (rate(prometheus_tsdb_head_samples_appended_total{%(prometheusSelector)s}[5m])) <= 0
               and
                 (
                   sum without(scrape_job) (prometheus_target_metadata_cache_entries{%(prometheusSelector)s}) > 0

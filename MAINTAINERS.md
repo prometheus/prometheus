@@ -1,15 +1,23 @@
 # Maintainers
 
-Julien Pivotto (<roidelapluie@prometheus.io> / @roidelapluie) and Levi Harrison (<levi@leviharrison.dev> / @LeviHarrison) are the main/default maintainers, some parts of the codebase have other maintainers:
+General maintainers:
+* Bryan Boreham (bjboreham@gmail.com / @bboreham)
+* Levi Harrison (levi@leviharrison.dev / @LeviHarrison)
+* Ayoub Mrini (ayoubmrini424@gmail.com / @machine424)
+* Julien Pivotto (roidelapluie@prometheus.io / @roidelapluie)
 
+Maintainers for specific parts of the codebase:
 * `cmd`
   * `promtool`: David Leadbeater (<dgl@dgl.cx> / @dgl)
 * `discovery`
   * `k8s`: Frederic Branczyk (<fbranczyk@gmail.com> / @brancz)
 * `documentation`
   * `prometheus-mixin`: Matthias Loibl (<mail@matthiasloibl.com> / @metalmatze)
+* `model/histogram` and other code related to native histograms: Björn Rabenstein (<beorn@grafana.com> / @beorn7), 
+George Krajcsovits (<gyorgy.krajcsovits@grafana.com> / @krajorama)
 * `storage`
   * `remote`: Callum Styan (<callumstyan@gmail.com> / @cstyan), Bartłomiej Płotka (<bwplotka@gmail.com> / @bwplotka), Tom Wilkie (<tom.wilkie@gmail.com> / @tomwilkie)
+    * `otlptranslator`: Arve Knudsen (<arve.knudsen@gmail.com> / @aknuds1), Jesús Vázquez (<jesus.vazquez@grafana.com> / @jesusvazquez)
 * `tsdb`: Ganesh Vernekar (<ganesh@grafana.com> / @codesome), Bartłomiej Płotka (<bwplotka@gmail.com> / @bwplotka), Jesús Vázquez (<jesus.vazquez@grafana.com> / @jesusvazquez)
   * `agent`: Robert Fratto (<robert.fratto@grafana.com> / @rfratto)
 * `web`

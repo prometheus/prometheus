@@ -357,12 +357,12 @@ func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var p ChunkQuerier
 			if tc.primaryChkQuerierSeries != nil {
-				p = &mockChunkQurier{toReturn: tc.primaryChkQuerierSeries}
+				p = &mockChunkQuerier{toReturn: tc.primaryChkQuerierSeries}
 			}
 
 			var qs []ChunkQuerier
 			for _, in := range tc.chkQuerierSeries {
-				qs = append(qs, &mockChunkQurier{toReturn: in})
+				qs = append(qs, &mockChunkQuerier{toReturn: in})
 			}
 			qs = append(qs, tc.extraQueriers...)
 
@@ -934,7 +934,7 @@ func (m *mockQuerier) Select(_ context.Context, sortSeries bool, _ *SelectHints,
 	return NewMockSeriesSet(cpy...)
 }
 
-type mockChunkQurier struct {
+type mockChunkQuerier struct {
 	LabelQuerier
 
 	toReturn []ChunkSeries
@@ -948,7 +948,7 @@ func (a chunkSeriesByLabel) Less(i, j int) bool {
 	return labels.Compare(a[i].Labels(), a[j].Labels()) < 0
 }
 
-func (m *mockChunkQurier) Select(_ context.Context, sortSeries bool, _ *SelectHints, _ ...*labels.Matcher) ChunkSeriesSet {
+func (m *mockChunkQuerier) Select(_ context.Context, sortSeries bool, _ *SelectHints, _ ...*labels.Matcher) ChunkSeriesSet {
 	cpy := make([]ChunkSeries, len(m.toReturn))
 	copy(cpy, m.toReturn)
 	if sortSeries {
