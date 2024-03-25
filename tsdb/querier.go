@@ -79,6 +79,10 @@ func (q *blockBaseQuerier) LabelValues(ctx context.Context, name string, matcher
 	return res, nil, err
 }
 
+func (q *blockBaseQuerier) LabelValuesStream(name string, matchers ...*labels.Matcher) storage.LabelValues {
+	return q.index.LabelValuesStream(name, matchers...)
+}
+
 func (q *blockBaseQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	res, err := q.index.LabelNames(ctx, matchers...)
 	return res, nil, err
@@ -289,7 +293,7 @@ func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matc
 				its = append(its, it)
 			}
 		default: // l=""
-			// If the matchers for a labelname selects an empty value, it selects all
+			// If a matcher for a labelname selects an empty value, it selects all
 			// the series which don't have the label name set too. See:
 			// https://github.com/prometheus/prometheus/issues/3575 and
 			// https://github.com/prometheus/prometheus/pull/3578#issuecomment-351653555

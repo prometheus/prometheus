@@ -95,6 +95,60 @@ func BenchmarkQuerier(b *testing.B) {
 	})
 }
 
+func BenchmarkIndexReader_LabelValuesStream(b *testing.B) {
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChunkDirRoot = b.TempDir()
+	h, err := NewHead(nil, nil, nil, nil, opts, nil)
+	require.NoError(b, err)
+	b.Cleanup(func() {
+		require.NoError(b, h.Close())
+	})
+
+	app := h.Appender(context.Background())
+	addSeries := func(l labels.Labels) {
+		app.Append(0, l, 0, 0)
+	}
+
+	for n := 0; n < 10; n++ {
+		for i := 0; i < 100000; i++ {
+			addSeries(labels.FromStrings("i", strconv.Itoa(i)+postingsBenchSuffix, "n", strconv.Itoa(n)+postingsBenchSuffix, "j", "foo", "i_times_n", strconv.Itoa(i*n)))
+			// Have some series that won't be matched, to properly test inverted matches.
+			addSeries(labels.FromStrings("i", strconv.Itoa(i)+postingsBenchSuffix, "n", strconv.Itoa(n)+postingsBenchSuffix, "j", "bar"))
+			addSeries(labels.FromStrings("i", strconv.Itoa(i)+postingsBenchSuffix, "n", "0_"+strconv.Itoa(n)+postingsBenchSuffix, "j", "bar"))
+			addSeries(labels.FromStrings("i", strconv.Itoa(i)+postingsBenchSuffix, "n", "1_"+strconv.Itoa(n)+postingsBenchSuffix, "j", "bar"))
+			addSeries(labels.FromStrings("i", strconv.Itoa(i)+postingsBenchSuffix, "n", "2_"+strconv.Itoa(n)+postingsBenchSuffix, "j", "foo"))
+		}
+	}
+	require.NoError(b, app.Commit())
+
+	b.Run("Head", func(b *testing.B) {
+		ir, err := h.Index()
+		require.NoError(b, err)
+		b.Cleanup(func() {
+			require.NoError(b, ir.Close())
+		})
+
+		benchmarkLabelValuesStream(b, ir)
+	})
+
+	b.Run("Block", func(b *testing.B) {
+		blockdir := createBlockFromHead(b, b.TempDir(), h)
+		block, err := OpenBlock(nil, blockdir, nil)
+		require.NoError(b, err)
+		b.Cleanup(func() {
+			require.NoError(b, block.Close())
+		})
+		ir, err := block.Index()
+		require.NoError(b, err)
+		b.Cleanup(func() {
+			require.NoError(b, ir.Close())
+		})
+
+		benchmarkLabelValuesStream(b, ir)
+	})
+}
+
 func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 	ctx := context.Background()
 
@@ -227,6 +281,68 @@ func benchmarkLabelValuesWithMatchers(b *testing.B, ir IndexReader) {
 			for i := 0; i < b.N; i++ {
 				_, err := labelValuesWithMatchers(ctx, ir, c.labelName, c.matchers...)
 				require.NoError(b, err)
+			}
+		})
+	}
+}
+
+func benchmarkLabelValuesStream(b *testing.B, ir IndexReader) {
+	i1 := labels.MustNewMatcher(labels.MatchEqual, "i", "1")
+	iStar := labels.MustNewMatcher(labels.MatchRegexp, "i", "^.*$")
+	jNotFoo := labels.MustNewMatcher(labels.MatchNotEqual, "j", "foo")
+	jXXXYYY := labels.MustNewMatcher(labels.MatchRegexp, "j", "XXX|YYY")
+	jXplus := labels.MustNewMatcher(labels.MatchRegexp, "j", "X.+")
+	n1 := labels.MustNewMatcher(labels.MatchEqual, "n", "1"+postingsBenchSuffix)
+	nX := labels.MustNewMatcher(labels.MatchNotEqual, "n", "X"+postingsBenchSuffix)
+	// XXX: This is badly defined, i.e. it advertises as matching on "n", but matches on "i"
+	nPlus := labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")
+	primesTimes := labels.MustNewMatcher(labels.MatchEqual, "i_times_n", "533701") // = 76243*7, ie. multiplication of primes. It will match a single i*n combination.
+	nonPrimesTimes := labels.MustNewMatcher(labels.MatchEqual, "i_times_n", "20")  // 1*20, 2*10, 4*5, 5*4
+	times12 := labels.MustNewMatcher(labels.MatchRegexp, "i_times_n", "12.*")
+
+	cases := []struct {
+		name      string
+		labelName string
+		matchers  []*labels.Matcher
+	}{
+		// For blocks, this is 27% faster and uses 99.99% less memory.
+		{`i with i="1"`, "i", []*labels.Matcher{i1}},
+		// i has 100k values.
+		// For blocks, this is 89% slower and uses 57% more memory.
+		{`i with n="1"`, "i", []*labels.Matcher{n1}},
+		// For blocks, this is 98% faster and uses 99.99% less memory.
+		{`i with n="^.+$"`, "i", []*labels.Matcher{nPlus}},
+		// For blocks, this is 5% slower and uses 9% less memory.
+		{`i with n="1",j!="foo"`, "i", []*labels.Matcher{n1, jNotFoo}},
+		// For blocks, this is 998% slower and uses 950% more memory.
+		{`i with n="1",j=~"X.+"`, "i", []*labels.Matcher{n1, jXplus}},
+		// For blocks, this is 998% slower and uses 950% more memory.
+		{`i with n="1",j=~"XXX|YYY"`, "i", []*labels.Matcher{n1, jXXXYYY}},
+		// For blocks, this is about the same speed and uses 9% less memory.
+		{`i with n="X",j!="foo"`, "i", []*labels.Matcher{nX, jNotFoo}},
+		// For blocks, this is 7% slower and uses 8% less memory.
+		{`i with n="1",i=~"^.*$",j!="foo"`, "i", []*labels.Matcher{n1, iStar, jNotFoo}},
+		// For blocks, this is 2377% slower and uses 950% more memory.
+		{`i with i_times_n=533701`, "i", []*labels.Matcher{primesTimes}},
+		// For blocks, this is 2098% slower and uses 949% more memory.
+		{`i with i_times_n=20`, "i", []*labels.Matcher{nonPrimesTimes}},
+		// For blocks, this is 43% faster and uses 21% more memory.
+		{`i with i_times_n=~"12.*""`, "i", []*labels.Matcher{times12}},
+		// For blocks, this is 369% slower and uses 12% more memory.
+		// n has 10 values.
+		{`n with j!="foo"`, "n", []*labels.Matcher{jNotFoo}},
+		// For blocks, this is 12% faster and uses 11% less memory.
+		{`n with i="1"`, "n", []*labels.Matcher{i1}},
+	}
+
+	for _, c := range cases {
+		b.Run(c.name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				it := ir.LabelValuesStream(c.labelName, c.matchers...)
+				for it.Next() {
+				}
+				require.NoError(b, it.Err())
+				require.Empty(b, it.Warnings())
 			}
 		})
 	}
