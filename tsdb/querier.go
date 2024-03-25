@@ -19,8 +19,6 @@ import (
 	"fmt"
 	"math"
 	"slices"
-	"strings"
-	"unicode/utf8"
 
 	"github.com/oklog/ulid"
 
@@ -34,20 +32,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/util/annotations"
 )
-
-// Bitmap used by func isRegexMetaCharacter to check whether a character needs to be escaped.
-var regexMetaCharacterBytes [16]byte
-
-// isRegexMetaCharacter reports whether byte b needs to be escaped.
-func isRegexMetaCharacter(b byte) bool {
-	return b < utf8.RuneSelf && regexMetaCharacterBytes[b%16]&(1<<(b/16)) != 0
-}
-
-func init() {
-	for _, b := range []byte(`.+*?()|[]{}^$`) {
-		regexMetaCharacterBytes[b%16] |= 1 << (b / 16)
-	}
-}
 
 type blockBaseQuerier struct {
 	blockID    ulid.ULID
@@ -195,55 +179,6 @@ func (q *blockChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *
 	return NewBlockChunkSeriesSet(q.blockID, q.index, q.chunks, q.tombstones, p, mint, maxt, disableTrimming)
 }
 
-func findSetMatches(pattern string) []string {
-	// Return empty matches if the wrapper from Prometheus is missing.
-	if len(pattern) < 6 || pattern[:4] != "^(?:" || pattern[len(pattern)-2:] != ")$" {
-		return nil
-	}
-	escaped := false
-	sets := []*strings.Builder{{}}
-	init := 4
-	end := len(pattern) - 2
-	// If the regex is wrapped in a group we can remove the first and last parentheses
-	if pattern[init] == '(' && pattern[end-1] == ')' {
-		init++
-		end--
-	}
-	for i := init; i < end; i++ {
-		if escaped {
-			switch {
-			case isRegexMetaCharacter(pattern[i]):
-				sets[len(sets)-1].WriteByte(pattern[i])
-			case pattern[i] == '\\':
-				sets[len(sets)-1].WriteByte('\\')
-			default:
-				return nil
-			}
-			escaped = false
-		} else {
-			switch {
-			case isRegexMetaCharacter(pattern[i]):
-				if pattern[i] == '|' {
-					sets = append(sets, &strings.Builder{})
-				} else {
-					return nil
-				}
-			case pattern[i] == '\\':
-				escaped = true
-			default:
-				sets[len(sets)-1].WriteByte(pattern[i])
-			}
-		}
-	}
-	matches := make([]string, 0, len(sets))
-	for _, s := range sets {
-		if s.Len() > 0 {
-			matches = append(matches, s.String())
-		}
-	}
-	return matches
-}
-
 // PostingsForMatchers assembles a single postings iterator against the index reader
 // based on the given matchers. The resulting postings are not ordered by series.
 func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matcher) (index.Postings, error) {
@@ -321,9 +256,9 @@ func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matc
 					return nil, err
 				}
 
-				it, err := postingsForMatcher(ctx, ix, inverse)
-				if err != nil {
-					return nil, err
+				it := ix.PostingsForMatcher(ctx, inverse)
+				if it.Err() != nil {
+					return nil, it.Err()
 				}
 				notIts = append(notIts, it)
 			case isNot && !matchesEmpty: // l!=""
@@ -343,10 +278,10 @@ func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matc
 				}
 				its = append(its, it)
 			default: // l="a"
-				// Non-Not matcher, use normal postingsForMatcher.
-				it, err := postingsForMatcher(ctx, ix, m)
-				if err != nil {
-					return nil, err
+				// Non-Not matcher, use normal PostingsForMatcher.
+				it := ix.PostingsForMatcher(ctx, m)
+				if it.Err() != nil {
+					return nil, it.Err()
 				}
 				if index.IsEmptyPostingsType(it) {
 					return index.EmptyPostings(), nil
@@ -375,48 +310,13 @@ func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matc
 	return it, nil
 }
 
-func postingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Matcher) (index.Postings, error) {
-	// This method will not return postings for missing labels.
-
-	// Fast-path for equal matching.
-	if m.Type == labels.MatchEqual {
-		return ix.Postings(ctx, m.Name, m.Value)
-	}
-
-	// Fast-path for set matching.
-	if m.Type == labels.MatchRegexp {
-		setMatches := findSetMatches(m.GetRegexString())
-		if len(setMatches) > 0 {
-			return ix.Postings(ctx, m.Name, setMatches...)
-		}
-	}
-
-	vals, err := ix.LabelValues(ctx, m.Name)
-	if err != nil {
-		return nil, err
-	}
-
-	var res []string
-	for _, val := range vals {
-		if m.Matches(val) {
-			res = append(res, val)
-		}
-	}
-
-	if len(res) == 0 {
-		return index.EmptyPostings(), nil
-	}
-
-	return ix.Postings(ctx, m.Name, res...)
-}
-
 // inversePostingsForMatcher returns the postings for the series with the label name set but not matching the matcher.
 func inversePostingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Matcher) (index.Postings, error) {
 	// Fast-path for MatchNotRegexp matching.
 	// Inverse of a MatchNotRegexp is MatchRegexp (double negation).
 	// Fast-path for set matching.
 	if m.Type == labels.MatchNotRegexp {
-		setMatches := findSetMatches(m.GetRegexString())
+		setMatches := labels.FindSetMatches(m.GetRegexString())
 		if len(setMatches) > 0 {
 			return ix.Postings(ctx, m.Name, setMatches...)
 		}

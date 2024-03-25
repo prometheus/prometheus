@@ -510,6 +510,84 @@ func TestLabelNamesWithMatchers(t *testing.T) {
 	}
 }
 
+func TestBlockIndexReader_PostingsForMatcher(t *testing.T) {
+	tmpdir := t.TempDir()
+	ctx := context.Background()
+
+	seriesEntries := []storage.Series{
+		storage.NewListSeries(labels.FromStrings(
+			"a", "1", "b", "1",
+		), []chunks.Sample{sample{100, 0, nil, nil}}),
+		storage.NewListSeries(labels.FromStrings(
+			"a", "1", "b", "2",
+		), []chunks.Sample{sample{100, 0, nil, nil}}),
+		storage.NewListSeries(labels.FromStrings(
+			"a", "1", "b", "3",
+		), []chunks.Sample{sample{100, 0, nil, nil}}),
+		storage.NewListSeries(labels.FromStrings(
+			"a", "1", "b", "4",
+		), []chunks.Sample{sample{100, 0, nil, nil}}),
+		storage.NewListSeries(labels.FromStrings(
+			"a", "1", "b", "5",
+		), []chunks.Sample{sample{100, 0, nil, nil}}),
+		storage.NewListSeries(labels.FromStrings(
+			"a", "2", "b", "5",
+		), []chunks.Sample{sample{100, 0, nil, nil}}),
+	}
+	blockDir := createBlock(t, tmpdir, seriesEntries)
+	files, err := sequenceFiles(chunkDir(blockDir))
+	require.NoError(t, err)
+	require.NotEmpty(t, files, "No chunk created")
+
+	block, err := OpenBlock(nil, blockDir, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, block.Close())
+	})
+
+	cases := []struct {
+		matcher       *labels.Matcher
+		expSeriesRefs []storage.SeriesRef
+	}{
+		{
+			matcher:       labels.MustNewMatcher(labels.MatchEqual, "a", "1"),
+			expSeriesRefs: []storage.SeriesRef{2, 3, 4, 5, 6},
+		},
+		{
+			matcher:       labels.MustNewMatcher(labels.MatchRegexp, "b", ".*"),
+			expSeriesRefs: []storage.SeriesRef{2, 3, 4, 5, 6, 7},
+		},
+		{
+			matcher:       labels.MustNewMatcher(labels.MatchRegexp, "b", "1|2"),
+			expSeriesRefs: []storage.SeriesRef{2, 3},
+		},
+		{
+			// Test case for double quoted regex matcher
+			matcher:       labels.MustNewMatcher(labels.MatchRegexp, "b", "^(?:3|4)$"),
+			expSeriesRefs: []storage.SeriesRef{4, 5},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.matcher.String(), func(t *testing.T) {
+			ir, err := block.Index()
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				require.NoError(t, ir.Close())
+			})
+
+			it := ir.PostingsForMatcher(ctx, tc.matcher)
+
+			var srs []storage.SeriesRef
+			for it.Next() {
+				srs = append(srs, it.At())
+			}
+
+			require.NoError(t, it.Err())
+			require.Equal(t, tc.expSeriesRefs, srs)
+		})
+	}
+}
+
 // createBlock creates a block with given set of series and returns its dir.
 func createBlock(tb testing.TB, dir string, series []storage.Series) string {
 	blockDir, err := CreateBlock(series, dir, 0, log.NewNopLogger())

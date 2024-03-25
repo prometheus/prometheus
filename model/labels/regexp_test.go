@@ -98,6 +98,56 @@ func TestOptimizeConcatRegex(t *testing.T) {
 	}
 }
 
+// Refer to https://github.com/prometheus/prometheus/issues/2651.
+func TestFindSetMatches(t *testing.T) {
+	cases := []struct {
+		pattern string
+		exp     []string
+	}{
+		// Single value, coming from a `bar=~"foo"` selector.
+		{
+			pattern: "^(?:foo)$",
+			exp: []string{
+				"foo",
+			},
+		},
+		// Simple sets.
+		{
+			pattern: "^(?:foo|bar|baz)$",
+			exp: []string{
+				"foo",
+				"bar",
+				"baz",
+			},
+		},
+		// Simple sets containing escaped characters.
+		{
+			pattern: "^(?:fo\\.o|bar\\?|\\^baz)$",
+			exp: []string{
+				"fo.o",
+				"bar?",
+				"^baz",
+			},
+		},
+		// Simple sets containing special characters without escaping.
+		{
+			pattern: "^(?:fo.o|bar?|^baz)$",
+			exp:     nil,
+		},
+		// Missing wrapper.
+		{
+			pattern: "foo|bar|baz",
+			exp:     nil,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.pattern, func(t *testing.T) {
+			require.Equal(t, c.exp, FindSetMatches(c.pattern), "Evaluating %s, unexpected result.", c.pattern)
+		})
+	}
+}
+
 func BenchmarkFastRegexMatcher(b *testing.B) {
 	var (
 		x = strings.Repeat("x", 50)
