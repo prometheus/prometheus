@@ -14,11 +14,11 @@
 package labels
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/grafana/regexp"
 	"github.com/grafana/regexp/syntax"
-	"golang.org/x/exp/slices"
 )
 
 const (
