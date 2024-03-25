@@ -87,7 +87,7 @@ func NewManager(ctx context.Context, logger log.Logger, registerer prometheus.Re
 	}
 	mgr := &Manager{
 		logger:      logger,
-		syncCh:      make(chan map[string][]*targetgroup.Group),
+		syncCh:      make(chan map[string][]*targetgroup.Group, 1),
 		targets:     make(map[poolKey]map[string]*targetgroup.Group),
 		ctx:         ctx,
 		updatert:    5 * time.Second,
