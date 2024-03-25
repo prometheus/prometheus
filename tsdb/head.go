@@ -620,6 +620,7 @@ func (h *Head) Init(minValidTime int64) error {
 	refSeries := make(map[chunks.HeadSeriesRef]*memSeries)
 
 	snapshotLoaded := false
+	var chunkSnapshotLoadDuration time.Duration
 	if h.opts.EnableMemorySnapshotOnShutdown {
 		level.Info(h.logger).Log("msg", "Chunk snapshot is enabled, replaying from the snapshot")
 		// If there are any WAL files, there should be at least one WAL file with an index that is current or newer
@@ -650,7 +651,8 @@ func (h *Head) Init(minValidTime int64) error {
 			snapIdx, snapOffset, refSeries, err = h.loadChunkSnapshot()
 			if err == nil {
 				snapshotLoaded = true
-				level.Info(h.logger).Log("msg", "Chunk snapshot loading time", "duration", time.Since(start).String())
+				chunkSnapshotLoadDuration = time.Since(start)
+				level.Info(h.logger).Log("msg", "Chunk snapshot loading time", "duration", chunkSnapshotLoadDuration.String())
 			}
 			if err != nil {
 				snapIdx, snapOffset = -1, 0
@@ -672,6 +674,8 @@ func (h *Head) Init(minValidTime int64) error {
 		oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk
 		lastMmapRef      chunks.ChunkDiskMapperRef
 		err              error
+
+		mmapChunkReplayDuration time.Duration
 	)
 	if snapshotLoaded || h.wal != nil {
 		// If snapshot was not loaded and if there is no WAL, then m-map chunks will be discarded
@@ -695,7 +699,8 @@ func (h *Head) Init(minValidTime int64) error {
 				return err
 			}
 		}
-		level.Info(h.logger).Log("msg", "On-disk memory mappable chunks replay completed", "duration", time.Since(mmapChunkReplayStart).String())
+		mmapChunkReplayDuration = time.Since(mmapChunkReplayStart)
+		level.Info(h.logger).Log("msg", "On-disk memory mappable chunks replay completed", "duration", mmapChunkReplayDuration.String())
 	}
 
 	if h.wal == nil {
@@ -817,6 +822,8 @@ func (h *Head) Init(minValidTime int64) error {
 		"checkpoint_replay_duration", checkpointReplayDuration.String(),
 		"wal_replay_duration", walReplayDuration.String(),
 		"wbl_replay_duration", wblReplayDuration.String(),
+		"chunk_snapshot_replay_duration", chunkSnapshotLoadDuration.String(),
+		"mmap_chunk_replay_duration", mmapChunkReplayDuration.String(),
 		"total_replay_duration", totalReplayDuration.String(),
 	)
 
