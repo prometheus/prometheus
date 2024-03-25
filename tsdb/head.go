@@ -822,7 +822,7 @@ func (h *Head) Init(minValidTime int64) error {
 		"checkpoint_replay_duration", checkpointReplayDuration.String(),
 		"wal_replay_duration", walReplayDuration.String(),
 		"wbl_replay_duration", wblReplayDuration.String(),
-		"chunk_snapshot_replay_duration", chunkSnapshotLoadDuration.String(),
+		"chunk_snapshot_load_duration", chunkSnapshotLoadDuration.String(),
 		"mmap_chunk_replay_duration", mmapChunkReplayDuration.String(),
 		"total_replay_duration", totalReplayDuration.String(),
 	)
