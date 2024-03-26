@@ -811,7 +811,7 @@ func TestNewEqualMultiStringMatcher(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			matcher := newEqualMultiStringMatcher(testData.caseSensitive, len(testData.values))
+			matcher := newEqualMultiStringMatcher(testData.caseSensitive, len(testData.values), 0, 0)
 			for _, v := range testData.values {
 				matcher.add(v)
 			}
@@ -864,7 +864,7 @@ func TestEqualMultiStringMatcher_Matches(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			matcher := newEqualMultiStringMatcher(testData.caseSensitive, len(testData.values))
+			matcher := newEqualMultiStringMatcher(testData.caseSensitive, len(testData.values), 0, 0)
 			for _, v := range testData.values {
 				matcher.add(v)
 			}
@@ -890,7 +890,7 @@ func TestFindEqualStringMatchers(t *testing.T) {
 		ok = findEqualStringMatchers(input, func(matcher *equalStringMatcher) bool {
 			matches = append(matches, match{matcher.s, matcher.caseSensitive})
 			return true
-		})
+		}, nil)
 		return
 	}
 
@@ -1204,10 +1204,16 @@ func visitStringMatcher(matcher StringMatcher, callback func(matcher StringMatch
 		}
 
 	// No nested matchers for the following ones.
+	case *equalMultiStringMapMatcher:
+		for _, prefixes := range casted.prefixes {
+			for _, matcher := range prefixes {
+				visitStringMatcher(matcher, callback)
+			}
+		}
+
 	case emptyStringMatcher:
 	case *equalStringMatcher:
 	case *equalMultiStringSliceMatcher:
-	case *equalMultiStringMapMatcher:
 	case anyStringWithoutNewlineMatcher:
 	case *anyNonEmptyStringMatcher:
 	case trueMatcher:
