@@ -349,7 +349,8 @@ func (ls Labels) DropMetricName() Labels {
 			if i == 0 { // Make common case fast with no allocations.
 				return ls[1:]
 			}
-			return append(ls[:i], ls[i+1:]...)
+			// Remove spare capacity from original Labels to avoid modifying them.
+			return append(ls[:i:i], ls[i+1:]...)
 		}
 	}
 	return ls
