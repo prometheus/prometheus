@@ -220,12 +220,14 @@ func TestCheckpoint(t *testing.T) {
 			}
 			require.NoError(t, w.Close())
 
-			_, err = Checkpoint(log.NewNopLogger(), w, 100, 106, func(x chunks.HeadSeriesRef) bool {
+			stats, err := Checkpoint(log.NewNopLogger(), w, 100, 106, func(x chunks.HeadSeriesRef) bool {
 				return x%2 == 0
 			}, last/2)
 			require.NoError(t, err)
 			require.NoError(t, w.Truncate(107))
 			require.NoError(t, DeleteCheckpoints(w.Dir(), 106))
+			require.Equal(t, histogramsInWAL+samplesInWAL, stats.TotalSamples)
+			require.Greater(t, stats.DroppedSamples, 0)
 
 			// Only the new checkpoint should be left.
 			files, err := os.ReadDir(dir)
