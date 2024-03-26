@@ -201,29 +201,24 @@ func putCustomBound(b *bstream, f float64) {
 		b.writeBits(math.Float64bits(f), 64)
 		return
 	}
-	b.writeBit(one)
 	putVarbitUint(b, uint64(math.Round(tf)+1))
 }
 
 // readCustomBound reads the custom bound written with putCustomBound.
 func readCustomBound(br *bstreamReader) (float64, error) {
-	b, err := br.readBit()
+	b, err := readVarbitUint(br)
 	if err != nil {
 		return 0, err
 	}
 	switch b {
-	case zero:
+	case 0:
 		v, err := br.readBits(64)
 		if err != nil {
 			return 0, err
 		}
 		return math.Float64frombits(v), nil
 	default:
-		v, err := readVarbitUint(br)
-		if err != nil {
-			return 0, err
-		}
-		return float64(v-1) / 1000, nil
+		return float64(b-1) / 1000, nil
 	}
 }
 
