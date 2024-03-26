@@ -14,6 +14,7 @@
 package labels
 
 import (
+	"math"
 	"slices"
 	"strings"
 	"unicode"
@@ -337,7 +338,7 @@ func optimizeAlternatingLiterals(s string) (StringMatcher, []string) {
 		return nil, nil
 	}
 
-	multiMatcher := newEqualMultiStringMatcher(true, estimatedAlternates)
+	multiMatcher := newEqualMultiStringMatcher(true, estimatedAlternates, 0, 0)
 
 	for end := strings.IndexByte(s, '|'); end > -1; end = strings.IndexByte(s, '|') {
 		// Split the string into the next literal and the remainder
@@ -732,17 +733,20 @@ func (m *equalStringMatcher) Matches(s string) bool {
 type multiStringMatcherBuilder interface {
 	StringMatcher
 	add(s string)
+	addPrefix(*literalPrefixStringMatcher)
 	setMatches() []string
 }
 
-func newEqualMultiStringMatcher(caseSensitive bool, estimatedSize int) multiStringMatcherBuilder {
+func newEqualMultiStringMatcher(caseSensitive bool, estimatedSize, estimatedPrefixes, minPrefixLength int) multiStringMatcherBuilder {
 	// If the estimated size is low enough, it's faster to use a slice instead of a map.
-	if estimatedSize < minEqualMultiStringMatcherMapThreshold {
+	if estimatedSize < minEqualMultiStringMatcherMapThreshold && estimatedPrefixes == 0 {
 		return &equalMultiStringSliceMatcher{caseSensitive: caseSensitive, values: make([]string, 0, estimatedSize)}
 	}
 
 	return &equalMultiStringMapMatcher{
 		values:        make(map[string]struct{}, estimatedSize),
+		prefixes:      make(map[string][]*literalPrefixStringMatcher, estimatedPrefixes),
+		minPrefixLen:  minPrefixLength,
 		caseSensitive: caseSensitive,
 	}
 }
@@ -756,6 +760,10 @@ type equalMultiStringSliceMatcher struct {
 
 func (m *equalMultiStringSliceMatcher) add(s string) {
 	m.values = append(m.values, s)
+}
+
+func (m *equalMultiStringSliceMatcher) addPrefix(p *literalPrefixStringMatcher) {
+	panic("not implemented")
 }
 
 func (m *equalMultiStringSliceMatcher) setMatches() []string {
@@ -783,8 +791,10 @@ func (m *equalMultiStringSliceMatcher) Matches(s string) bool {
 type equalMultiStringMapMatcher struct {
 	// values contains values to match a string against. If the matching is case insensitive,
 	// the values here must be lowercase.
-	values map[string]struct{}
+	values   map[string]struct{}
+	prefixes map[string][]*literalPrefixStringMatcher
 
+	minPrefixLen  int
 	caseSensitive bool
 }
 
@@ -796,8 +806,17 @@ func (m *equalMultiStringMapMatcher) add(s string) {
 	m.values[s] = struct{}{}
 }
 
+func (m *equalMultiStringMapMatcher) addPrefix(p *literalPrefixStringMatcher) {
+	s := p.prefix[:m.minPrefixLen]
+	if !m.caseSensitive {
+		s = strings.ToLower(s)
+	}
+
+	m.prefixes[s] = append(m.prefixes[s], p)
+}
+
 func (m *equalMultiStringMapMatcher) setMatches() []string {
-	if len(m.values) >= maxSetMatches {
+	if len(m.values) >= maxSetMatches || len(m.prefixes) > 0 {
 		return nil
 	}
 
@@ -813,8 +832,17 @@ func (m *equalMultiStringMapMatcher) Matches(s string) bool {
 		s = toNormalisedLower(s)
 	}
 
-	_, ok := m.values[s]
-	return ok
+	if _, ok := m.values[s]; ok {
+		return true
+	}
+	if m.minPrefixLen > 0 && len(s) >= m.minPrefixLen {
+		for _, matcher := range m.prefixes[s[:m.minPrefixLen]] {
+			if matcher.Matches(s) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // toNormalisedLower normalise the input string using "Unicode Normalization Form D" and then convert
@@ -906,6 +934,8 @@ func optimizeEqualStringMatchers(input StringMatcher, threshold int) StringMatch
 		caseSensitive    bool
 		caseSensitiveSet bool
 		numValues        int
+		numPrefixes      int
+		minPrefixLength  = math.MaxInt
 	)
 
 	// Analyse the input StringMatcher to count the number of occurrences
@@ -922,25 +952,43 @@ func optimizeEqualStringMatchers(input StringMatcher, threshold int) StringMatch
 		numValues++
 		return true
 	}
+	prefixCallback := func(matcher *literalPrefixStringMatcher) bool {
+		// Ensure we don't have mixed case sensitivity.
+		if caseSensitiveSet && caseSensitive != matcher.prefixCaseSensitive {
+			return false
+		} else if !caseSensitiveSet {
+			caseSensitive = matcher.prefixCaseSensitive
+			caseSensitiveSet = true
+		}
+		if len(matcher.prefix) < minPrefixLength {
+			minPrefixLength = len(matcher.prefix)
+		}
 
-	if !findEqualStringMatchers(input, analyseCallback) {
+		numPrefixes++
+		return true
+	}
+
+	if !findEqualStringMatchers(input, analyseCallback, prefixCallback) {
 		return input
 	}
 
 	// If the number of values found is less than the threshold, then we should skip the optimization.
-	if numValues < threshold {
+	if (numValues + numPrefixes) < threshold {
 		return input
 	}
 
 	// Parse again the input StringMatcher to extract all values and storing them.
 	// We can skip the case sensitivity check because we've already checked it and
 	// if the code reach this point then it means all matchers have the same case sensitivity.
-	multiMatcher := newEqualMultiStringMatcher(caseSensitive, numValues)
+	multiMatcher := newEqualMultiStringMatcher(caseSensitive, numValues, numPrefixes, minPrefixLength)
 
 	// Ignore the return value because we already iterated over the input StringMatcher
 	// and it was all good.
 	findEqualStringMatchers(input, func(matcher *equalStringMatcher) bool {
 		multiMatcher.add(matcher.s)
+		return true
+	}, func(matcher *literalPrefixStringMatcher) bool {
+		multiMatcher.addPrefix(matcher)
 		return true
 	})
 
@@ -950,7 +998,7 @@ func optimizeEqualStringMatchers(input StringMatcher, threshold int) StringMatch
 // findEqualStringMatchers analyze the input StringMatcher and calls the callback for each
 // equalStringMatcher found. Returns true if and only if the input StringMatcher is *only*
 // composed by an alternation of equalStringMatcher.
-func findEqualStringMatchers(input StringMatcher, callback func(matcher *equalStringMatcher) bool) bool {
+func findEqualStringMatchers(input StringMatcher, callback func(matcher *equalStringMatcher) bool, prefixCallback func(matcher *literalPrefixStringMatcher) bool) bool {
 	orInput, ok := input.(orStringMatcher)
 	if !ok {
 		return false
@@ -959,12 +1007,17 @@ func findEqualStringMatchers(input StringMatcher, callback func(matcher *equalSt
 	for _, m := range orInput {
 		switch casted := m.(type) {
 		case orStringMatcher:
-			if !findEqualStringMatchers(m, callback) {
+			if !findEqualStringMatchers(m, callback, prefixCallback) {
 				return false
 			}
 
 		case *equalStringMatcher:
 			if !callback(casted) {
+				return false
+			}
+
+		case *literalPrefixStringMatcher:
+			if prefixCallback == nil || !prefixCallback(casted) {
 				return false
 			}
 
