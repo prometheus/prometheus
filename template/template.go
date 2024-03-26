@@ -57,7 +57,7 @@ func init() {
 // A version of vector that's easier to use from templates.
 type sample struct {
 	Labels map[string]string
-	Value  float64
+	Value  interface{}
 }
 type queryResult []*sample
 
@@ -95,6 +95,9 @@ func query(ctx context.Context, q string, ts time.Time, queryFn QueryFunc) (quer
 		s := sample{
 			Value:  v.F,
 			Labels: v.Metric.Map(),
+		}
+		if v.H != nil {
+			s.Value = v.H
 		}
 		result[n] = &s
 	}
@@ -160,7 +163,7 @@ func NewTemplateExpander(
 			"label": func(label string, s *sample) string {
 				return s.Labels[label]
 			},
-			"value": func(s *sample) float64 {
+			"value": func(s *sample) interface{} {
 				return s.Value
 			},
 			"strvalue": func(s *sample) string {
