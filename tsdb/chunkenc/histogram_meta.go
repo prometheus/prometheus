@@ -201,7 +201,7 @@ func putCustomBound(b *bstream, f float64) {
 		b.writeBits(math.Float64bits(f), 64)
 		return
 	}
-	putVarbitUint(b, uint64(math.Round(tf)+1))
+	putVarbitUint(b, uint64(math.Round(tf))+1)
 }
 
 // readCustomBound reads the custom bound written with putCustomBound.
