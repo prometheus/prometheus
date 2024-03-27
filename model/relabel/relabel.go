@@ -141,7 +141,7 @@ func (c *Config) Validate() error {
 	}
 
 	if c.Action == DropEqual || c.Action == KeepEqual {
-		if c.Regex != DefaultRelabelConfig.Regex ||
+		if c.Regex.String() != DefaultRelabelConfig.Regex.String() ||
 			c.Modulus != DefaultRelabelConfig.Modulus ||
 			c.Separator != DefaultRelabelConfig.Separator ||
 			c.Replacement != DefaultRelabelConfig.Replacement {
