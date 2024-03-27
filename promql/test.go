@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io/fs"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -411,6 +412,154 @@ func (cmd *loadCmd) append(a storage.Appender) error {
 		m := cmd.metrics[h]
 
 		for _, s := range smpls {
+			if err := appendSample(a, s, m); err != nil {
+				return err
+			}
+		}
+	}
+	return cmd.appendCustomHistogram(a)
+}
+
+func getHistogramMetricBase(m labels.Labels, suffix string) (labels.Labels, uint64) {
+	mName := m.Get("__name__")
+	mMap := m.Map()
+	delete(mMap, "le")
+	mMap["__name__"] = strings.TrimSuffix(mName, suffix)
+	baseM := labels.FromMap(mMap)
+	hash := baseM.Hash()
+	return baseM, hash
+}
+
+// if classic histograms are defined, convert them into native histograms with custom
+// bounds and append the defined time series to the storage.
+func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
+	histMetrics := map[uint64]labels.Labels{}
+	histUpperBounds := map[uint64][]float64{}
+	histBucketCountsByTs := map[uint64]map[int64]map[float64]float64{}
+	histCountsByTs := map[uint64]map[int64]float64{}
+	histSumsByTs := map[uint64]map[int64]float64{}
+
+	// Go through all the time series to collate classic histogram data
+	// and organise them by timestamp.
+	for hash, smpls := range cmd.defs {
+		m := cmd.metrics[hash]
+		mName := m.Get("__name__")
+		switch {
+		case strings.HasSuffix(mName, "_bucket") && m.Has("le"):
+			le, err := strconv.ParseFloat(m.Get("le"), 64)
+			if err != nil {
+				continue
+			}
+			m2, m2hash := getHistogramMetricBase(m, "_bucket")
+			histMetrics[m2hash] = m2
+			histUpperBounds[m2hash] = append(histUpperBounds[m2hash], le)
+			_, exists := histBucketCountsByTs[m2hash]
+			if !exists {
+				histBucketCountsByTs[m2hash] = map[int64]map[float64]float64{}
+			}
+			for _, s := range smpls {
+				_, exists := histBucketCountsByTs[m2hash][s.T]
+				if !exists {
+					histBucketCountsByTs[m2hash][s.T] = map[float64]float64{}
+				}
+				if s.H == nil {
+					histBucketCountsByTs[m2hash][s.T][le] = s.F
+				}
+			}
+		case strings.HasSuffix(mName, "_count"):
+			m2, m2hash := getHistogramMetricBase(m, "_count")
+			histMetrics[m2hash] = m2
+			_, exists := histCountsByTs[m2hash]
+			if !exists {
+				histCountsByTs[m2hash] = map[int64]float64{}
+			}
+			for _, s := range smpls {
+				if s.H == nil {
+					histCountsByTs[m2hash][s.T] = s.F
+				}
+			}
+		case strings.HasSuffix(mName, "_sum"):
+			m2, m2hash := getHistogramMetricBase(m, "_sum")
+			histMetrics[m2hash] = m2
+			_, exists := histSumsByTs[m2hash]
+			if !exists {
+				histSumsByTs[m2hash] = map[int64]float64{}
+			}
+			for _, s := range smpls {
+				if s.H == nil {
+					histSumsByTs[m2hash][s.T] = s.F
+				}
+			}
+		}
+	}
+
+	// Convert the collated classic histogram data into native histograms
+	// with custom bounds and append them to the storage.
+	for hash, upperBounds0 := range histUpperBounds {
+		m, exists := histMetrics[hash]
+		if !exists {
+			continue
+		}
+		sort.Float64s(upperBounds0)
+		upperBounds := make([]float64, 0, len(upperBounds0))
+		prevLe := -372.4869 // assuming that the lowest bound is never this value
+		for _, le := range upperBounds0 {
+			if le != prevLe { // deduplicate
+				upperBounds = append(upperBounds, le)
+				prevLe = le
+			}
+		}
+		var customBounds []float64
+		if upperBounds[len(upperBounds)-1] == math.Inf(1) {
+			customBounds = upperBounds[:len(upperBounds)-1]
+		} else {
+			customBounds = upperBounds
+		}
+		fhBase := &histogram.FloatHistogram{
+			Count:  0,
+			Sum:    0,
+			Schema: histogram.CustomBucketsSchema,
+			PositiveSpans: []histogram.Span{
+				{Offset: 0, Length: uint32(len(upperBounds))},
+			},
+			CustomValues: customBounds,
+		}
+		ts := make([]int64, 0, len(histBucketCountsByTs[hash]))
+		for t := range histBucketCountsByTs[hash] {
+			ts = append(ts, t)
+		}
+		sort.Slice(ts, func(i, j int) bool { return ts[i] < ts[j] })
+		for _, t := range ts {
+			fh := fhBase.Copy()
+			counts := make([]float64, 0, len(upperBounds))
+			var prevCount, total float64
+			for _, le := range upperBounds {
+				currCount, exists := histBucketCountsByTs[hash][t][le]
+				if !exists {
+					currCount = 0
+				}
+				count := currCount - prevCount
+				counts = append(counts, count)
+				total += count
+				prevCount = currCount
+			}
+			sum, exists := histSumsByTs[hash][t]
+			if exists {
+				fh.Sum = sum
+			}
+			explicitCount, exists := histCountsByTs[hash][t]
+			if exists {
+				total = explicitCount
+			}
+			fh.Count = total
+			fh.PositiveBuckets = counts
+			// s := Sample{Metric: m, T: t, H: fh}
+			// fmt.Printf("end s: %v\n", s)
+			s := Sample{T: t, H: fh}
+			// fmt.Printf("end m s: %v %v\n", m, s)
+			if err := s.H.Validate(); err != nil {
+				continue
+			}
 			if err := appendSample(a, s, m); err != nil {
 				return err
 			}
