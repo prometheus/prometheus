@@ -184,20 +184,20 @@ func isWholeWhenMultiplied(in float64) bool {
 }
 
 // putCustomBound writes a custom bound to the bstream. It stores values from
-// 0 to 33554.430 (inclusive) that are multiples of 0.001 in an unsigned var
-// int of up to 4 bytes, but needs 1 bit + 8 bytes for other values like
+// 0 to 33554.430 (inclusive) that are multiples of 0.001 in unsigned varbit
+// encoding of up to 4 bytes, but needs 1 bit + 8 bytes for other values like
 // negative numbers, numbers greater than 33554.430, or numbers that are not
 // a multiple of 0.001, on the assumption that they are less common. In detail:
 //   - Multiply the bound by 1000, without rounding.
 //   - If the multiplied bound is >= 0, <= 33554430 and a whole number,
-//     add 1 and store it as an unsigned var int. All these numbers are greater
-//     than 0, so the leading bit of the var int is always 1!
+//     add 1 and store it in unsigned varbit encoding. All these numbers are
+//     greater than 0, so the leading bit of the varbit is always 1!
 //   - Otherwise, store a 0 bit, followed by the 8 bytes of the original
 //     bound as a float64.
 //
-// When reading the values, we can first read an unsigned var int, if it's 0,
-// then we read the next 8 bytes as a float64, otherwise we can convert the var
-// int to a float64 by subtracting 1 and dividing by 1000.
+// When reading the values, we can first decode a value as unsigned varbit,
+// if it's 0, then we read the next 8 bytes as a float64, otherwise
+// we can convert the value to a float64 by subtracting 1 and dividing by 1000.
 func putCustomBound(b *bstream, f float64) {
 	tf := f * 1000
 	// 33554431-1 comes from the maximum that can be stored in a varint in 4
