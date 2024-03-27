@@ -300,6 +300,12 @@ describe('analyzeCompletion test', () => {
       expectedContext: [{ kind: ContextKind.LabelName, metricName: '' }],
     },
     {
+      title: 'continue to autocomplete quoted labelName associated to a metric',
+      expr: '{"metric_"}',
+      pos: 10, // cursor is between the bracket after the string metric_
+      expectedContext: [{ kind: ContextKind.MetricName, metricName: 'metric_' }],
+    },
+    {
       title: 'autocomplete the labelValue with metricName + labelName',
       expr: 'metric_name{labelName=""}',
       pos: 23, // cursor is between the quotes
@@ -337,6 +343,30 @@ describe('analyzeCompletion test', () => {
               name: 'labelName',
               type: Neq,
               value: '',
+            },
+          ],
+        },
+      ],
+    },
+    {
+      title: 'autocomplete the labelValue with metricName + quoted labelName',
+      expr: 'metric_name{labelName="labelValue", "labelName"!=""}',
+      pos: 50, // cursor is between the quotes
+      expectedContext: [
+        {
+          kind: ContextKind.LabelValue,
+          metricName: 'metric_name',
+          labelName: 'labelName',
+          matchers: [
+            {
+              name: 'labelName',
+              type: Neq,
+              value: '',
+            },
+            {
+              name: 'labelName',
+              type: EqlSingle,
+              value: 'labelValue',
             },
           ],
         },
@@ -426,6 +456,12 @@ describe('analyzeCompletion test', () => {
       expr: 'metric_name{labelName!}',
       pos: 22, // cursor is after '!'
       expectedContext: [{ kind: ContextKind.MatchOp }],
+    },
+    {
+      title: 'autocomplete matchOp 3',
+      expr: 'metric_name{"labelName"!}',
+      pos: 24, // cursor is after '!'
+      expectedContext: [{ kind: ContextKind.BinOp }],
     },
     {
       title: 'autocomplete duration with offset',

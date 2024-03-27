@@ -220,7 +220,7 @@ VectorSelector {
 }
 
 LabelMatchers {
-  "{" (LabelMatcher ("," LabelMatcher)* ","?)? "}"
+  "{" ((UnquotedLabelMatcher | QuotedLabelMatcher | QuotedLabelName)("," (UnquotedLabelMatcher | QuotedLabelMatcher | QuotedLabelName))* ","?)? "}"
 }
 
 MatchOp {
@@ -230,8 +230,12 @@ MatchOp {
   NeqRegex
 }
 
-LabelMatcher {
-  LabelName MatchOp StringLiteral
+UnquotedLabelMatcher {
+    LabelName MatchOp StringLiteral
+}
+
+QuotedLabelMatcher {
+    QuotedLabelName MatchOp StringLiteral
 }
 
 StepInvariantExpr {
@@ -275,6 +279,11 @@ NumberLiteral  {
   }
   Identifier { (std.asciiLetter | "_" | ":") (std.asciiLetter | std.digit | "_" | ":" )*}
   LabelName { (std.asciiLetter | "_") (std.asciiLetter | std.digit | "_")* }
+  QuotedLabelName {
+    '"' (![\\\n"] | "\\" _)* '"' |
+    "'" (![\\\n'] | "\\" _)* "'" |
+    "`" ![`]* "`"
+  }
 
   // Operator
   Sub { "-" }
