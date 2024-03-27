@@ -767,7 +767,7 @@ func (t *test) execEval(cmd *evalCmd, engine QueryEngine) error {
 func (t *test) execRangeEval(cmd *evalCmd, engine QueryEngine) error {
 	q, err := engine.NewRangeQuery(t.context, t.storage, nil, cmd.expr, cmd.start, cmd.end, cmd.step)
 	if err != nil {
-		return err
+		return fmt.Errorf("error creating range query for %q (line %d): %w", cmd.expr, cmd.line, err)
 	}
 	res := q.Exec(t.context)
 	if res.Err != nil {
@@ -798,7 +798,7 @@ func (t *test) execInstantEval(cmd *evalCmd, engine QueryEngine) error {
 	for _, iq := range queries {
 		q, err := engine.NewInstantQuery(t.context, t.storage, nil, iq.expr, iq.evalTime)
 		if err != nil {
-			return err
+			return fmt.Errorf("error creating instant query for %q (line %d): %w", cmd.expr, cmd.line, err)
 		}
 		defer q.Close()
 		res := q.Exec(t.context)
@@ -820,7 +820,7 @@ func (t *test) execInstantEval(cmd *evalCmd, engine QueryEngine) error {
 		// by checking against the middle step.
 		q, err = engine.NewRangeQuery(t.context, t.storage, nil, iq.expr, iq.evalTime.Add(-time.Minute), iq.evalTime.Add(time.Minute), time.Minute)
 		if err != nil {
-			return err
+			return fmt.Errorf("error creating range query for %q (line %d): %w", cmd.expr, cmd.line, err)
 		}
 		rangeRes := q.Exec(t.context)
 		if rangeRes.Err != nil {
