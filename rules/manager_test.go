@@ -1399,7 +1399,7 @@ func TestNativeHistogramsInRecordingRules(t *testing.T) {
 
 	expHist := hists[0].ToFloat(nil)
 	for _, h := range hists[1:] {
-		expHist = expHist.Add(h.ToFloat(nil))
+		expHist, _ = expHist.Add(h.ToFloat(nil))
 	}
 
 	it := s.Iterator(nil)
