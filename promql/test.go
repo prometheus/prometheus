@@ -45,7 +45,7 @@ var (
 	minNormal = math.Float64frombits(0x0010000000000000) // The smallest positive normal value of type float64.
 
 	patSpace       = regexp.MustCompile("[\t ]+")
-	patLoad        = regexp.MustCompile(`^load\s+(.+?)$`)
+	patLoad        = regexp.MustCompile(`^load(?:_(with_nhcb))?\s+(.+?)$`)
 	patEvalInstant = regexp.MustCompile(`^eval(?:_(fail|ordered))?\s+instant\s+(?:at\s+(.+?))?\s+(.+)$`)
 	patEvalRange   = regexp.MustCompile(`^eval(?:_(fail))?\s+range\s+from\s+(.+)\s+to\s+(.+)\s+step\s+(.+?)\s+(.+)$`)
 )
@@ -164,15 +164,18 @@ func raise(line int, format string, v ...interface{}) error {
 
 func parseLoad(lines []string, i int) (int, *loadCmd, error) {
 	if !patLoad.MatchString(lines[i]) {
-		return i, nil, raise(i, "invalid load command. (load <step:duration>)")
+		return i, nil, raise(i, "invalid load command. (load[_with_nhcb] <step:duration>)")
 	}
 	parts := patLoad.FindStringSubmatch(lines[i])
-
-	gap, err := model.ParseDuration(parts[1])
+	var (
+		withNhcb = parts[1] == "with_nhcb"
+		step     = parts[2]
+	)
+	gap, err := model.ParseDuration(step)
 	if err != nil {
-		return i, nil, raise(i, "invalid step definition %q: %s", parts[1], err)
+		return i, nil, raise(i, "invalid step definition %q: %s", step, err)
 	}
-	cmd := newLoadCmd(time.Duration(gap))
+	cmd := newLoadCmd(time.Duration(gap), withNhcb)
 	for i+1 < len(lines) {
 		i++
 		defLine := lines[i]
@@ -339,7 +342,7 @@ func (t *test) parse(input string) error {
 		switch c := strings.ToLower(patSpace.Split(l, 2)[0]); {
 		case c == "clear":
 			cmd = &clearCmd{}
-		case c == "load":
+		case strings.HasPrefix(c, "load"):
 			i, cmd, err = parseLoad(lines, i)
 		case strings.HasPrefix(c, "eval"):
 			i, cmd, err = t.parseEval(lines, i)
@@ -371,14 +374,16 @@ type loadCmd struct {
 	metrics   map[uint64]labels.Labels
 	defs      map[uint64][]Sample
 	exemplars map[uint64][]exemplar.Exemplar
+	withNhcb  bool
 }
 
-func newLoadCmd(gap time.Duration) *loadCmd {
+func newLoadCmd(gap time.Duration, withNhcb bool) *loadCmd {
 	return &loadCmd{
 		gap:       gap,
 		metrics:   map[uint64]labels.Labels{},
 		defs:      map[uint64][]Sample{},
 		exemplars: map[uint64][]exemplar.Exemplar{},
+		withNhcb:  withNhcb,
 	}
 }
 
@@ -417,7 +422,10 @@ func (cmd *loadCmd) append(a storage.Appender) error {
 			}
 		}
 	}
-	return cmd.appendCustomHistogram(a)
+	if cmd.withNhcb {
+		return cmd.appendCustomHistogram(a)
+	}
+	return nil
 }
 
 func getHistogramMetricBase(m labels.Labels, suffix string) (labels.Labels, uint64) {
@@ -558,7 +566,7 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 			s := Sample{T: t, H: fh}
 			// fmt.Printf("end m s: %v %v\n", m, s)
 			if err := s.H.Validate(); err != nil {
-				continue
+				return err
 			}
 			if err := appendSample(a, s, m); err != nil {
 				return err
@@ -1124,7 +1132,7 @@ func (ll *LazyLoader) parse(input string) error {
 		if len(l) == 0 {
 			continue
 		}
-		if strings.ToLower(patSpace.Split(l, 2)[0]) == "load" {
+		if strings.HasPrefix(strings.ToLower(patSpace.Split(l, 2)[0]), "load") {
 			_, cmd, err := parseLoad(lines, i)
 			if err != nil {
 				return err

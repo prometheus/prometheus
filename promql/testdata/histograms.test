@@ -5,7 +5,7 @@
 # server has to cope with it.
 
 # Test histogram.
-load 5m
+load_with_nhcb 5m
 	testhistogram_bucket{le="0.1", start="positive"}	0+5x10
 	testhistogram_bucket{le=".2", start="positive"}		0+7x10
 	testhistogram_bucket{le="1e0", start="positive"}	0+11x10
@@ -18,7 +18,7 @@ load 5m
 # Another test histogram, where q(1/6), q(1/2), and q(5/6) are each in
 # the middle of a bucket and should therefore be 1, 3, and 5,
 # respectively.
-load 5m
+load_with_nhcb 5m
 	testhistogram2_bucket{le="0"}	 0+0x10
 	testhistogram2_bucket{le="2"}	 0+1x10
 	testhistogram2_bucket{le="4"}    0+2x10
@@ -28,7 +28,7 @@ load 5m
 # Another test histogram, where there are 0 counts where there is
 # an infinite bound, allowing us to calculate standard deviation
 # and variance properly.
-load 5m
+load_with_nhcb 5m
 	testhistogram3_bucket{le="0", start="positive"}	0+0x10
 	testhistogram3_bucket{le="0.1", start="positive"}	0+5x10
 	testhistogram3_bucket{le=".2", start="positive"}		0+7x10
@@ -45,7 +45,7 @@ load 5m
 	testhistogram3_count{start="negative"}	0+2x10
 
 # Now a more realistic histogram per job and instance to test aggregation.
-load 5m
+load_with_nhcb 5m
 	request_duration_seconds_bucket{job="job1", instance="ins1", le="0.1"}	0+1x10
 	request_duration_seconds_bucket{job="job1", instance="ins1", le="0.2"}	0+3x10
 	request_duration_seconds_bucket{job="job1", instance="ins1", le="+Inf"}	0+4x10
@@ -60,7 +60,7 @@ load 5m
 	request_duration_seconds_bucket{job="job2", instance="ins2", le="+Inf"}	0+9x10
 
 # Different le representations in one histogram.
-load 5m
+load_with_nhcb 5m
 	mixed_bucket{job="job1", instance="ins1", le="0.1"}	0+1x10
 	mixed_bucket{job="job1", instance="ins1", le="0.2"}	0+1x10
 	mixed_bucket{job="job1", instance="ins1", le="2e-1"}	0+1x10
@@ -290,7 +290,7 @@ eval instant at 50m histogram_quantile(1, rate(mixed_bucket[5m]))
 	{instance="ins1", job="job1"} 0.2
 	{instance="ins2", job="job1"} NaN
 
-load 5m
+load_with_nhcb 5m
 	empty_bucket{le="0.1", job="job1", instance="ins1"}    0x10
 	empty_bucket{le="0.2", job="job1", instance="ins1"}    0x10
 	empty_bucket{le="+Inf", job="job1", instance="ins1"}   0x10
@@ -300,7 +300,7 @@ eval instant at 50m histogram_quantile(0.2, rate(empty_bucket[5m]))
 
 # Load a duplicate histogram with a different name to test failure scenario on multiple histograms with the same label set
 # https://github.com/prometheus/prometheus/issues/9910
-load 5m
+load_with_nhcb 5m
 	request_duration_seconds2_bucket{job="job1", instance="ins1", le="0.1"}	0+1x10
 	request_duration_seconds2_bucket{job="job1", instance="ins1", le="0.2"}	0+3x10
 	request_duration_seconds2_bucket{job="job1", instance="ins1", le="+Inf"}	0+4x10
