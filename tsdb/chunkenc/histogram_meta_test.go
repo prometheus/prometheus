@@ -427,7 +427,7 @@ func TestWriteReadHistogramChunkLayout(t *testing.T) {
 			schema:        histogram.CustomBucketsSchema,
 			positiveSpans: []histogram.Span{{Offset: -4, Length: 3}, {Offset: 2, Length: 42}},
 			negativeSpans: nil,
-			customValues:  []float64{-5, -2.5, 0, 0.1, 0.25, 0.5, 1, 2, 5, 10, 25, 50, 100, 255, 500, 1000},
+			customValues:  []float64{-5, -2.5, 0, 0.1, 0.25, 0.5, 1, 2, 5, 10, 25, 50, 100, 255, 500, 1000, 50000, 1e7},
 		},
 		{
 			schema:        histogram.CustomBucketsSchema,
