@@ -606,10 +606,6 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 		}
 		for fp, expVals := range ev.expected {
 			if !seen[fp] {
-				fmt.Println("vector result", len(val), ev.expr)
-				for _, ss := range val {
-					fmt.Println("    ", ss.Metric, ss.T, ss.F)
-				}
 				return fmt.Errorf("expected metric %s with %v not found", ev.metrics[fp], expVals)
 			}
 		}
