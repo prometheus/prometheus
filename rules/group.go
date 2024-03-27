@@ -58,6 +58,7 @@ type Group struct {
 	lastEvalTimestamp    time.Time // Time slot used for most recent evaluation.
 
 	shouldRestore bool
+	active        bool
 
 	markStale   bool
 	done        chan struct{}
@@ -74,6 +75,8 @@ type Group struct {
 
 	// concurrencyController controls the rules evaluation concurrency.
 	concurrencyController RuleConcurrencyController
+
+	evalRuleGroupFunc EvaluateRuleGroup
 }
 
 // GroupEvalIterationFunc is used to implement and extend rule group
@@ -82,6 +85,11 @@ type Group struct {
 // evaluate the rules in the group at that point in time.
 // DefaultEvalIterationFunc is the default implementation.
 type GroupEvalIterationFunc func(ctx context.Context, g *Group, evalTimestamp time.Time)
+
+// EvaluateRuleGroup will be used to determine if a rule group
+// needs to be evaluated or deactivated. Deactivating a rule group will
+// reset the metrics but not unload the rule group.
+type EvaluateRuleGroup func(ctx context.Context, g *Group, evalTimestamp time.Time, doneCh <-chan struct{}) bool
 
 type GroupOptions struct {
 	Name, File        string
@@ -92,6 +100,7 @@ type GroupOptions struct {
 	Opts              *ManagerOptions
 	done              chan struct{}
 	EvalIterationFunc GroupEvalIterationFunc
+	EvalRuleGroupFunc EvaluateRuleGroup
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
@@ -117,6 +126,11 @@ func NewGroup(o GroupOptions) *Group {
 		evalIterationFunc = DefaultEvalIterationFunc
 	}
 
+	evalRuleGroupFunc := o.EvalRuleGroupFunc
+	if evalRuleGroupFunc == nil {
+		evalRuleGroupFunc = DefaultEvaluateRuleGroupFunc
+	}
+
 	concurrencyController := o.Opts.RuleConcurrencyController
 	if concurrencyController == nil {
 		concurrencyController = sequentialRuleEvalController{}
@@ -136,8 +150,10 @@ func NewGroup(o GroupOptions) *Group {
 		terminated:            make(chan struct{}),
 		logger:                log.With(o.Opts.Logger, "file", o.File, "group", o.Name),
 		metrics:               metrics,
+		active:                true,
 		evalIterationFunc:     evalIterationFunc,
 		concurrencyController: concurrencyController,
+		evalRuleGroupFunc:     evalRuleGroupFunc,
 	}
 }
 
@@ -163,6 +179,42 @@ func (g *Group) Interval() time.Duration { return g.interval }
 func (g *Group) Limit() int { return g.limit }
 
 func (g *Group) Logger() log.Logger { return g.logger }
+
+func (g *Group) reset() {
+	n := GroupKey(g.file, g.name)
+	if m := g.metrics; m != nil {
+		m.GroupInterval.DeleteLabelValues(n)
+		m.GroupLastEvalTime.DeleteLabelValues(n)
+		m.GroupLastDuration.DeleteLabelValues(n)
+		m.GroupRules.DeleteLabelValues(n)
+		m.GroupSamples.DeleteLabelValues((n))
+
+		m.GroupLastEvalTime.WithLabelValues(n)
+		m.GroupLastDuration.WithLabelValues(n)
+		m.GroupRules.WithLabelValues(n).Set(float64(len(g.Rules())))
+		m.GroupSamples.WithLabelValues(n)
+		m.GroupInterval.WithLabelValues(n).Set(g.interval.Seconds())
+	}
+	g.seriesInPreviousEval = make([]map[string]labels.Labels, len(g.Rules()))
+	g.shouldRestore = true
+	g.staleSeries = nil
+	for _, rule := range g.Rules() {
+		rule.SetHealth(HealthUnknown)
+		rule.SetEvaluationTimestamp(time.Time{})
+		rule.SetEvaluationDuration(0)
+		rule.SetLastError(nil)
+
+		alertRule, ok := rule.(*AlertingRule)
+		if !ok {
+			continue
+		}
+		alertRule.active = map[uint64]*Alert{}
+		alertRule.SetRestored(false)
+	}
+	g.setLastEvaluation(time.Time{})
+	g.setEvaluationTime(0)
+	g.setLastEvalTimestamp(time.Time{})
+}
 
 func (g *Group) run(ctx context.Context) {
 	defer close(g.terminated)
@@ -211,7 +263,11 @@ func (g *Group) run(ctx context.Context) {
 		}(time.Now())
 	}()
 
-	g.evalIterationFunc(ctx, g, evalTimestamp)
+	if g.evalRuleGroupFunc(ctx, g, evalTimestamp, g.done) {
+		g.evalIterationFunc(ctx, g, evalTimestamp)
+	} else {
+		g.active = false
+	}
 	if g.shouldRestore {
 		// If we have to restore, we wait for another Eval to finish.
 		// The reason behind this is, during first eval (or before it)
@@ -222,16 +278,21 @@ func (g *Group) run(ctx context.Context) {
 			return
 		case <-tick.C:
 			missed := (time.Since(evalTimestamp) / g.interval) - 1
-			if missed > 0 {
-				g.metrics.IterationsMissed.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
-				g.metrics.IterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
-			}
 			evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
-			g.evalIterationFunc(ctx, g, evalTimestamp)
+			if g.evalRuleGroupFunc(ctx, g, evalTimestamp, g.done) {
+				if missed > 0 && g.active {
+					g.metrics.IterationsMissed.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
+					g.metrics.IterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
+				}
+				g.active = true
+				g.evalIterationFunc(ctx, g, evalTimestamp)
+				g.RestoreForState(time.Now())
+				g.shouldRestore = false
+			} else {
+				g.active = false
+				g.reset()
+			}
 		}
-
-		g.RestoreForState(time.Now())
-		g.shouldRestore = false
 	}
 
 	for {
@@ -244,13 +305,22 @@ func (g *Group) run(ctx context.Context) {
 				return
 			case <-tick.C:
 				missed := (time.Since(evalTimestamp) / g.interval) - 1
-				if missed > 0 {
+				evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
+				if !g.evalRuleGroupFunc(ctx, g, evalTimestamp, g.done) {
+					g.reset()
+					g.active = false
+					continue
+				}
+				if missed > 0 && g.active {
 					g.metrics.IterationsMissed.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
 					g.metrics.IterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
 				}
-				evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
-
+				g.active = true
 				g.evalIterationFunc(ctx, g, evalTimestamp)
+				if g.shouldRestore {
+					g.RestoreForState(time.Now())
+					g.shouldRestore = false
+				}
 			}
 		}
 	}
