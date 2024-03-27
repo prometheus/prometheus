@@ -41,6 +41,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -3630,4 +3631,138 @@ func TestScrapeLoopSeriesAddedDuplicates(t *testing.T) {
 	require.NoError(t, err)
 	value := metric.GetCounter().GetValue()
 	require.Equal(t, 4.0, value)
+}
+
+// This tests running a full scrape loop and checking that the scrape option
+// `native_histogram_min_bucket_factor` is used correctly.
+func TestNativeHistogramMaxSchemaSet(t *testing.T) {
+	testcases := map[string]struct {
+		minBucketFactor string
+		expectedSchema  int32
+	}{
+		"min factor not specified": {
+			minBucketFactor: "",
+			expectedSchema:  3, // Factor 1.09.
+		},
+		"min factor 1": {
+			minBucketFactor: "native_histogram_min_bucket_factor: 1",
+			expectedSchema:  3, // Factor 1.09.
+		},
+		"min factor 2": {
+			minBucketFactor: "native_histogram_min_bucket_factor: 2",
+			expectedSchema:  0, // Factor 2.00.
+		},
+	}
+	for name, tc := range testcases {
+		t.Run(name, func(t *testing.T) {
+			testNativeHistogramMaxSchemaSet(t, tc.minBucketFactor, tc.expectedSchema)
+		})
+	}
+}
+
+func testNativeHistogramMaxSchemaSet(t *testing.T, minBucketFactor string, expectedSchema int32) {
+	// Create a ProtoBuf message to serve as a Prometheus metric.
+	nativeHistogram := prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace:                      "testing",
+			Name:                           "example_native_histogram",
+			Help:                           "This is used for testing",
+			NativeHistogramBucketFactor:    1.1,
+			NativeHistogramMaxBucketNumber: 100,
+		},
+	)
+	registry := prometheus.NewRegistry()
+	registry.Register(nativeHistogram)
+	nativeHistogram.Observe(1.0)
+	nativeHistogram.Observe(1.0)
+	nativeHistogram.Observe(1.0)
+	nativeHistogram.Observe(10.0) // in different bucket since > 1*1.1.
+	nativeHistogram.Observe(10.0)
+
+	gathered, err := registry.Gather()
+	require.NoError(t, err)
+	require.NotEmpty(t, gathered)
+
+	histogramMetricFamily := gathered[0]
+	buffer := protoMarshalDelimited(t, histogramMetricFamily)
+
+	// Create a HTTP server to serve /metrics via ProtoBuf
+	metricsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", `application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited`)
+		w.Write(buffer)
+	}))
+	defer metricsServer.Close()
+
+	// Create a scrape loop with the HTTP server as the target.
+	configStr := fmt.Sprintf(`
+global:
+  scrape_interval: 1s
+  scrape_timeout: 1s
+scrape_configs:
+  - job_name: test
+    %s
+    static_configs:
+      - targets: [%s]
+`, minBucketFactor, strings.ReplaceAll(metricsServer.URL, "http://", ""))
+
+	s := teststorage.New(t)
+	defer s.Close()
+	s.DB.EnableNativeHistograms()
+	reg := prometheus.NewRegistry()
+
+	mng, err := NewManager(nil, nil, s, reg)
+	require.NoError(t, err)
+	cfg, err := config.Load(configStr, false, log.NewNopLogger())
+	require.NoError(t, err)
+	mng.ApplyConfig(cfg)
+	tsets := make(chan map[string][]*targetgroup.Group)
+	go func() {
+		err = mng.Run(tsets)
+		require.NoError(t, err)
+	}()
+	defer mng.Stop()
+
+	// Get the static targets and apply them to the scrape manager.
+	require.Len(t, cfg.ScrapeConfigs, 1)
+	scrapeCfg := cfg.ScrapeConfigs[0]
+	require.Len(t, scrapeCfg.ServiceDiscoveryConfigs, 1)
+	staticDiscovery, ok := scrapeCfg.ServiceDiscoveryConfigs[0].(discovery.StaticConfig)
+	require.True(t, ok)
+	require.Len(t, staticDiscovery, 1)
+	tsets <- map[string][]*targetgroup.Group{"test": staticDiscovery}
+
+	// Wait for the scrape loop to scrape the target.
+	require.Eventually(t, func() bool {
+		q, err := s.Querier(0, math.MaxInt64)
+		require.NoError(t, err)
+		seriesS := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "testing_example_native_histogram"))
+		countSeries := 0
+		for seriesS.Next() {
+			countSeries++
+		}
+		return countSeries > 0
+	}, 15*time.Second, 100*time.Millisecond)
+
+	// Check that native histogram schema is as expected.
+	q, err := s.Querier(0, math.MaxInt64)
+	require.NoError(t, err)
+	seriesS := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "testing_example_native_histogram"))
+	histogramSamples := []*histogram.Histogram{}
+	for seriesS.Next() {
+		series := seriesS.At()
+		it := series.Iterator(nil)
+		for vt := it.Next(); vt != chunkenc.ValNone; vt = it.Next() {
+			if vt != chunkenc.ValHistogram {
+				// don't care about other samples
+				continue
+			}
+			_, h := it.AtHistogram(nil)
+			histogramSamples = append(histogramSamples, h)
+		}
+	}
+	require.NoError(t, seriesS.Err())
+	require.NotEmpty(t, histogramSamples)
+	for _, h := range histogramSamples {
+		require.Equal(t, expectedSchema, h.Schema)
+	}
 }
