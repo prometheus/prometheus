@@ -1158,7 +1158,7 @@ func funcHistogramStdVar(vals []parser.Value, args parser.Expressions, enh *Eval
 				val = 0
 			} else {
 				val = math.Sqrt(bucket.Upper * bucket.Lower)
-				if bucket.Upper < 0 && bucket.Lower < 0 {
+				if bucket.Upper < 0 {
 					val = -val
 				}
 			}
