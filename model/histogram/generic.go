@@ -34,6 +34,7 @@ var (
 	ErrHistogramSpansBucketsMismatch  = errors.New("histogram spans specify different number of buckets than provided")
 	ErrHistogramCustomBucketsMismatch = errors.New("histogram custom bounds are too few")
 	ErrHistogramCustomBucketsInvalid  = errors.New("histogram custom bounds must be in strictly increasing order")
+	ErrHistogramCustomBucketsInfinite = errors.New("histogram custom bounds must be finite")
 	ErrHistogramsIncompatibleSchema   = errors.New("cannot apply this operation on histograms with a mix of exponential and custom bucket schemas")
 	ErrHistogramsIncompatibleBounds   = errors.New("cannot apply this operation on custom buckets histograms with different custom bounds")
 )
@@ -425,6 +426,9 @@ func checkHistogramCustomBounds(bounds []float64, spans []Span, numBuckets int) 
 			return fmt.Errorf("previous bound is %f and current is %f: %w", prev, curr, ErrHistogramCustomBucketsInvalid)
 		}
 		prev = curr
+	}
+	if prev == math.Inf(1) {
+		return fmt.Errorf("last +Inf bound must not be explicitly defined: %w", ErrHistogramCustomBucketsInfinite)
 	}
 
 	var spanBuckets int
