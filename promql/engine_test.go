@@ -3514,7 +3514,39 @@ func TestNativeHistogram_HistogramStdDevVar(t *testing.T) {
 				},
 				NegativeBuckets: []int64{1, 0},
 			},
-			stdVar: 1544.8582535368798, // actual variance: 1738.4082
+			stdVar: 1844.4651144196398, // actual variance: 1738.4082
+		},
+		{
+			name: "-100000, -10000, -1000, -888, -888, -100, -50, -9, -8, -3",
+			h: &histogram.Histogram{
+				Count:     10,
+				ZeroCount: 0,
+				Sum:       -112946,
+				Schema:    0,
+				NegativeSpans: []histogram.Span{
+					{Offset: 2, Length: 3},
+					{Offset: 1, Length: 2},
+					{Offset: 2, Length: 1},
+					{Offset: 3, Length: 1},
+					{Offset: 2, Length: 1},
+				},
+				NegativeBuckets: []int64{1, 0, 0, 0, 0, 2, -2, 0},
+			},
+			stdVar: 759352122.1939945, // actual variance: 882690990
+		},
+		{
+			name: "-10 x10",
+			h: &histogram.Histogram{
+				Count:     10,
+				ZeroCount: 0,
+				Sum:       -100,
+				Schema:    0,
+				NegativeSpans: []histogram.Span{
+					{Offset: 4, Length: 1},
+				},
+				NegativeBuckets: []int64{10},
+			},
+			stdVar: 1.725830020304794, // actual variance: 0
 		},
 		{
 			name: "-50, -8, 0, 3, 8, 9, 100, NaN",
