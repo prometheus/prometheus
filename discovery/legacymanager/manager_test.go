@@ -733,7 +733,6 @@ func verifyPresence(t *testing.T, tSets map[poolKey]map[string]*targetgroup.Grou
 	t.Helper()
 	if _, ok := tSets[poolKey]; !ok {
 		t.Fatalf("'%s' should be present in Pool keys: %v", poolKey, tSets)
-		return
 	}
 
 	match := false

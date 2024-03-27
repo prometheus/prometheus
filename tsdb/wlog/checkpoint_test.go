@@ -125,6 +125,20 @@ func TestCheckpoint(t *testing.T) {
 			PositiveBuckets: []int64{int64(i + 1), 1, -1, 0},
 		}
 	}
+	makeFloatHistogram := func(i int) *histogram.FloatHistogram {
+		return &histogram.FloatHistogram{
+			Count:         5 + float64(i*4),
+			ZeroCount:     2 + float64(i),
+			ZeroThreshold: 0.001,
+			Sum:           18.4 * float64(i+1),
+			Schema:        1,
+			PositiveSpans: []histogram.Span{
+				{Offset: 0, Length: 2},
+				{Offset: 1, Length: 2},
+			},
+			PositiveBuckets: []float64{float64(i + 1), 1, -1, 0},
+		}
+	}
 
 	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
 		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
@@ -154,7 +168,7 @@ func TestCheckpoint(t *testing.T) {
 			w, err = NewSize(nil, nil, dir, 64*1024, compress)
 			require.NoError(t, err)
 
-			samplesInWAL, histogramsInWAL := 0, 0
+			samplesInWAL, histogramsInWAL, floatHistogramsInWAL := 0, 0, 0
 			var last int64
 			for i := 0; ; i++ {
 				_, n, err := Segments(w.Dir())
@@ -200,6 +214,15 @@ func TestCheckpoint(t *testing.T) {
 				}, nil)
 				require.NoError(t, w.Log(b))
 				histogramsInWAL += 4
+				fh := makeFloatHistogram(i)
+				b = enc.FloatHistogramSamples([]record.RefFloatHistogramSample{
+					{Ref: 0, T: last, FH: fh},
+					{Ref: 1, T: last + 10000, FH: fh},
+					{Ref: 2, T: last + 20000, FH: fh},
+					{Ref: 3, T: last + 30000, FH: fh},
+				}, nil)
+				require.NoError(t, w.Log(b))
+				floatHistogramsInWAL += 4
 
 				b = enc.Exemplars([]record.RefExemplar{
 					{Ref: 1, T: last, V: float64(i), Labels: labels.FromStrings("trace_id", fmt.Sprintf("trace-%d", i))},
@@ -220,12 +243,14 @@ func TestCheckpoint(t *testing.T) {
 			}
 			require.NoError(t, w.Close())
 
-			_, err = Checkpoint(log.NewNopLogger(), w, 100, 106, func(x chunks.HeadSeriesRef) bool {
+			stats, err := Checkpoint(log.NewNopLogger(), w, 100, 106, func(x chunks.HeadSeriesRef) bool {
 				return x%2 == 0
 			}, last/2)
 			require.NoError(t, err)
 			require.NoError(t, w.Truncate(107))
 			require.NoError(t, DeleteCheckpoints(w.Dir(), 106))
+			require.Equal(t, histogramsInWAL+floatHistogramsInWAL+samplesInWAL, stats.TotalSamples)
+			require.Greater(t, stats.DroppedSamples, 0)
 
 			// Only the new checkpoint should be left.
 			files, err := os.ReadDir(dir)
@@ -242,7 +267,7 @@ func TestCheckpoint(t *testing.T) {
 			var metadata []record.RefMetadata
 			r := NewReader(sr)
 
-			samplesInCheckpoint, histogramsInCheckpoint := 0, 0
+			samplesInCheckpoint, histogramsInCheckpoint, floatHistogramsInCheckpoint := 0, 0, 0
 			for r.Next() {
 				rec := r.Record()
 
@@ -264,6 +289,13 @@ func TestCheckpoint(t *testing.T) {
 						require.GreaterOrEqual(t, h.T, last/2, "histogram with wrong timestamp")
 					}
 					histogramsInCheckpoint += len(histograms)
+				case record.FloatHistogramSamples:
+					floatHistograms, err := dec.FloatHistogramSamples(rec, nil)
+					require.NoError(t, err)
+					for _, h := range floatHistograms {
+						require.GreaterOrEqual(t, h.T, last/2, "float histogram with wrong timestamp")
+					}
+					floatHistogramsInCheckpoint += len(floatHistograms)
 				case record.Exemplars:
 					exemplars, err := dec.Exemplars(rec, nil)
 					require.NoError(t, err)
@@ -281,6 +313,8 @@ func TestCheckpoint(t *testing.T) {
 			require.Less(t, float64(samplesInCheckpoint)/float64(samplesInWAL), 0.8)
 			require.Greater(t, float64(histogramsInCheckpoint)/float64(histogramsInWAL), 0.5)
 			require.Less(t, float64(histogramsInCheckpoint)/float64(histogramsInWAL), 0.8)
+			require.Greater(t, float64(floatHistogramsInCheckpoint)/float64(floatHistogramsInWAL), 0.5)
+			require.Less(t, float64(floatHistogramsInCheckpoint)/float64(floatHistogramsInWAL), 0.8)
 
 			expectedRefSeries := []record.RefSeries{
 				{Ref: 0, Labels: labels.FromStrings("a", "b", "c", "0")},

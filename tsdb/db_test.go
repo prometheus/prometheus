@@ -681,34 +681,6 @@ func TestDB_Snapshot(t *testing.T) {
 	require.Equal(t, 1000.0, sum)
 }
 
-func TestDB_BeyondTimeRetention(t *testing.T) {
-	opts := DefaultOptions()
-	opts.RetentionDuration = 100
-	db := openTestDB(t, opts, nil)
-	defer func() {
-		require.NoError(t, db.Close())
-	}()
-
-	// We have 4 blocks, 3 of which are beyond the retention duration.
-	metas := []BlockMeta{
-		{MinTime: 300, MaxTime: 500},
-		{MinTime: 200, MaxTime: 300},
-		{MinTime: 100, MaxTime: 200},
-		{MinTime: 0, MaxTime: 100},
-	}
-
-	for _, m := range metas {
-		createBlock(t, db.Dir(), genSeries(1, 1, m.MinTime, m.MaxTime))
-	}
-
-	// Reloading should truncate the 3 blocks which are >= the retention period.
-	require.NoError(t, db.reloadBlocks())
-	blocks := db.Blocks()
-	require.Len(t, blocks, 1)
-	require.Equal(t, metas[0].MinTime, blocks[0].Meta().MinTime)
-	require.Equal(t, metas[0].MaxTime, blocks[0].Meta().MaxTime)
-}
-
 // TestDB_Snapshot_ChunksOutsideOfCompactedRange ensures that a snapshot removes chunks samples
 // that are outside the set block time range.
 // See https://github.com/prometheus/prometheus/issues/5105
@@ -1491,34 +1463,66 @@ func (*mockCompactorFailing) CompactOOO(string, *OOOCompactionHead) (result []ul
 }
 
 func TestTimeRetention(t *testing.T) {
-	db := openTestDB(t, nil, []int64{1000})
-	defer func() {
-		require.NoError(t, db.Close())
-	}()
-
-	blocks := []*BlockMeta{
-		{MinTime: 500, MaxTime: 900}, // Oldest block
-		{MinTime: 1000, MaxTime: 1500},
-		{MinTime: 1500, MaxTime: 2000}, // Newest Block
+	testCases := []struct {
+		name              string
+		blocks            []*BlockMeta
+		expBlocks         []*BlockMeta
+		retentionDuration int64
+	}{
+		{
+			name: "Block max time delta greater than retention duration",
+			blocks: []*BlockMeta{
+				{MinTime: 500, MaxTime: 900}, // Oldest block, beyond retention
+				{MinTime: 1000, MaxTime: 1500},
+				{MinTime: 1500, MaxTime: 2000}, // Newest block
+			},
+			expBlocks: []*BlockMeta{
+				{MinTime: 1000, MaxTime: 1500},
+				{MinTime: 1500, MaxTime: 2000},
+			},
+			retentionDuration: 1000,
+		},
+		{
+			name: "Block max time delta equal to retention duration",
+			blocks: []*BlockMeta{
+				{MinTime: 500, MaxTime: 900},   // Oldest block
+				{MinTime: 1000, MaxTime: 1500}, // Coinciding exactly with the retention duration.
+				{MinTime: 1500, MaxTime: 2000}, // Newest block
+			},
+			expBlocks: []*BlockMeta{
+				{MinTime: 1500, MaxTime: 2000},
+			},
+			retentionDuration: 500,
+		},
 	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := openTestDB(t, nil, []int64{1000})
+			defer func() {
+				require.NoError(t, db.Close())
+			}()
 
-	for _, m := range blocks {
-		createBlock(t, db.Dir(), genSeries(10, 10, m.MinTime, m.MaxTime))
+			for _, m := range tc.blocks {
+				createBlock(t, db.Dir(), genSeries(10, 10, m.MinTime, m.MaxTime))
+			}
+
+			require.NoError(t, db.reloadBlocks())       // Reload the db to register the new blocks.
+			require.Len(t, db.Blocks(), len(tc.blocks)) // Ensure all blocks are registered.
+
+			db.opts.RetentionDuration = tc.retentionDuration
+			// Reloading should truncate the blocks which are >= the retention duration vs the first block.
+			require.NoError(t, db.reloadBlocks())
+
+			actBlocks := db.Blocks()
+
+			require.Equal(t, 1, int(prom_testutil.ToFloat64(db.metrics.timeRetentionCount)), "metric retention count mismatch")
+			require.Len(t, actBlocks, len(tc.expBlocks))
+			for i, eb := range tc.expBlocks {
+				require.Equal(t, eb.MinTime, actBlocks[i].meta.MinTime)
+				require.Equal(t, eb.MaxTime, actBlocks[i].meta.MaxTime)
+			}
+		})
 	}
-
-	require.NoError(t, db.reloadBlocks())           // Reload the db to register the new blocks.
-	require.Equal(t, len(blocks), len(db.Blocks())) // Ensure all blocks are registered.
-
-	db.opts.RetentionDuration = blocks[2].MaxTime - blocks[1].MinTime
-	require.NoError(t, db.reloadBlocks())
-
-	expBlocks := blocks[1:]
-	actBlocks := db.Blocks()
-
-	require.Equal(t, 1, int(prom_testutil.ToFloat64(db.metrics.timeRetentionCount)), "metric retention count mismatch")
-	require.Equal(t, len(expBlocks), len(actBlocks))
-	require.Equal(t, expBlocks[0].MaxTime, actBlocks[0].meta.MaxTime)
-	require.Equal(t, expBlocks[len(expBlocks)-1].MaxTime, actBlocks[len(actBlocks)-1].meta.MaxTime)
 }
 
 func TestRetentionDurationMetric(t *testing.T) {
@@ -1994,6 +1998,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		// Should be set to init values if no WAL or blocks exist so far.
 		require.Equal(t, int64(math.MaxInt64), db.head.MinTime())
 		require.Equal(t, int64(math.MinInt64), db.head.MaxTime())
+		require.False(t, db.head.initialized())
 
 		// First added sample initializes the writable range.
 		ctx := context.Background()
@@ -2003,6 +2008,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 
 		require.Equal(t, int64(1000), db.head.MinTime())
 		require.Equal(t, int64(1000), db.head.MaxTime())
+		require.True(t, db.head.initialized())
 	})
 	t.Run("wal-only", func(t *testing.T) {
 		dir := t.TempDir()
@@ -2031,6 +2037,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 
 		require.Equal(t, int64(5000), db.head.MinTime())
 		require.Equal(t, int64(15000), db.head.MaxTime())
+		require.True(t, db.head.initialized())
 	})
 	t.Run("existing-block", func(t *testing.T) {
 		dir := t.TempDir()
@@ -2043,6 +2050,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 
 		require.Equal(t, int64(2000), db.head.MinTime())
 		require.Equal(t, int64(2000), db.head.MaxTime())
+		require.True(t, db.head.initialized())
 	})
 	t.Run("existing-block-and-wal", func(t *testing.T) {
 		dir := t.TempDir()
@@ -2075,6 +2083,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 
 		require.Equal(t, int64(6000), db.head.MinTime())
 		require.Equal(t, int64(15000), db.head.MaxTime())
+		require.True(t, db.head.initialized())
 		// Check that old series has been GCed.
 		require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.series))
 	})

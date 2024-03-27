@@ -733,7 +733,6 @@ func verifySyncedPresence(t *testing.T, tGroups map[string][]*targetgroup.Group,
 	t.Helper()
 	if _, ok := tGroups[key]; !ok {
 		t.Fatalf("'%s' should be present in Group map keys: %v", key, tGroups)
-		return
 	}
 	match := false
 	var mergedTargets string

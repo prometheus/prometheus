@@ -1154,11 +1154,17 @@ func funcHistogramStdDev(vals []parser.Value, args parser.Expressions, enh *Eval
 		it := sample.H.AllBucketIterator()
 		for it.Next() {
 			bucket := it.At()
+			if bucket.Count == 0 {
+				continue
+			}
 			var val float64
 			if bucket.Lower <= 0 && 0 <= bucket.Upper {
 				val = 0
 			} else {
 				val = math.Sqrt(bucket.Upper * bucket.Lower)
+				if bucket.Upper < 0 {
+					val = -val
+				}
 			}
 			delta := val - mean
 			variance, cVariance = kahanSumInc(bucket.Count*delta*delta, variance, cVariance)
@@ -1187,11 +1193,17 @@ func funcHistogramStdVar(vals []parser.Value, args parser.Expressions, enh *Eval
 		it := sample.H.AllBucketIterator()
 		for it.Next() {
 			bucket := it.At()
+			if bucket.Count == 0 {
+				continue
+			}
 			var val float64
 			if bucket.Lower <= 0 && 0 <= bucket.Upper {
 				val = 0
 			} else {
 				val = math.Sqrt(bucket.Upper * bucket.Lower)
+				if bucket.Upper < 0 {
+					val = -val
+				}
 			}
 			delta := val - mean
 			variance, cVariance = kahanSumInc(bucket.Count*delta*delta, variance, cVariance)
@@ -1428,6 +1440,9 @@ func (ev *evaluator) evalLabelJoin(args parser.Expressions) (parser.Value, annot
 			panic(fmt.Errorf("invalid source label name in label_join(): %s", src))
 		}
 		srcLabels[i-3] = src
+	}
+	if !model.LabelName(dst).IsValid() {
+		panic(fmt.Errorf("invalid destination label name in label_join(): %s", dst))
 	}
 
 	val, ws := ev.eval(args[0])
