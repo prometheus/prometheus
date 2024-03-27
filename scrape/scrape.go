@@ -427,6 +427,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 		bodySizeLimit = int64(sp.config.BodySizeLimit)
 		sampleLimit   = int(sp.config.SampleLimit)
 		bucketLimit   = int(sp.config.NativeHistogramBucketLimit)
+		maxSchema     = pickSchema(sp.config.NativeHistogramMinBucketFactor)
 		labelLimits   = &labelLimits{
 			labelLimit:            int(sp.config.LabelLimit),
 			labelNameLengthLimit:  int(sp.config.LabelNameLengthLimit),
@@ -464,6 +465,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 				scraper:                  s,
 				sampleLimit:              sampleLimit,
 				bucketLimit:              bucketLimit,
+				maxSchema:                maxSchema,
 				labelLimits:              labelLimits,
 				honorLabels:              honorLabels,
 				honorTimestamps:          honorTimestamps,
