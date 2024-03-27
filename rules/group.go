@@ -42,6 +42,16 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
+// groupState indicates whether a rule group is active or inactive.
+// Callers can use the Active() method to check the current state of the rule group.
+type groupState int
+
+const (
+	GroupStateInactive groupState = iota
+
+	GroupStateActive
+)
+
 // Group is a set of rules that have a logical relation.
 type Group struct {
 	name                 string
@@ -59,6 +69,7 @@ type Group struct {
 	lastEvalTimestamp    time.Time // Time slot used for most recent evaluation.
 
 	shouldRestore bool
+	state         groupState
 
 	markStale   bool
 	done        chan struct{}
@@ -75,6 +86,9 @@ type Group struct {
 
 	// concurrencyController controls the rules evaluation concurrency.
 	concurrencyController RuleConcurrencyController
+
+	// defaults to DefaultEvaluateRuleGroupFunc.
+	shouldEvaluateRuleGroupFunc ShouldEvaluateRuleGroupFunc
 }
 
 // GroupEvalIterationFunc is used to implement and extend rule group
@@ -83,6 +97,11 @@ type Group struct {
 // evaluate the rules in the group at that point in time.
 // DefaultEvalIterationFunc is the default implementation.
 type GroupEvalIterationFunc func(ctx context.Context, g *Group, evalTimestamp time.Time)
+
+// ShouldEvaluateRuleGroupFunc will be used to determine if a rule group
+// needs to be evaluated or deactivated. Deactivating a rule group will
+// reset metrics, and the internal state of rules but not unload the rule group.
+type ShouldEvaluateRuleGroupFunc func(ctx context.Context, g *Group, evalTimestamp time.Time, doneCh <-chan struct{}) bool
 
 type GroupOptions struct {
 	Name, File        string
@@ -94,6 +113,13 @@ type GroupOptions struct {
 	QueryOffset       *time.Duration
 	done              chan struct{}
 	EvalIterationFunc GroupEvalIterationFunc
+
+	// If set, this function is invoked during each evaluation iteration. If the function returns false,
+	// the rule group evaluation is skipped, and the internal state is reset. If the function returns true
+	// or is not set, the evaluation proceeds as usual. When the same rule groups are loaded into multiple
+	// Prometheus instances, callers can use this function to decide which instances should evaluate the
+	// rule group and which ones should skip evaluation
+	ShouldEvaluateRuleGroupFunc ShouldEvaluateRuleGroupFunc
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
@@ -119,28 +145,35 @@ func NewGroup(o GroupOptions) *Group {
 		evalIterationFunc = DefaultEvalIterationFunc
 	}
 
+	shouldEvalRuleGroupFunc := o.ShouldEvaluateRuleGroupFunc
+	if shouldEvalRuleGroupFunc == nil {
+		shouldEvalRuleGroupFunc = AlwaysTrueShouldEvaluateFunc
+	}
+
 	concurrencyController := o.Opts.RuleConcurrencyController
 	if concurrencyController == nil {
 		concurrencyController = sequentialRuleEvalController{}
 	}
 
 	return &Group{
-		name:                  o.Name,
-		file:                  o.File,
-		interval:              o.Interval,
-		queryOffset:           o.QueryOffset,
-		limit:                 o.Limit,
-		rules:                 o.Rules,
-		shouldRestore:         o.ShouldRestore,
-		opts:                  o.Opts,
-		seriesInPreviousEval:  make([]map[string]labels.Labels, len(o.Rules)),
-		done:                  make(chan struct{}),
-		managerDone:           o.done,
-		terminated:            make(chan struct{}),
-		logger:                log.With(o.Opts.Logger, "file", o.File, "group", o.Name),
-		metrics:               metrics,
-		evalIterationFunc:     evalIterationFunc,
-		concurrencyController: concurrencyController,
+		name:                        o.Name,
+		file:                        o.File,
+		interval:                    o.Interval,
+		queryOffset:                 o.QueryOffset,
+		limit:                       o.Limit,
+		rules:                       o.Rules,
+		shouldRestore:               o.ShouldRestore,
+		opts:                        o.Opts,
+		seriesInPreviousEval:        make([]map[string]labels.Labels, len(o.Rules)),
+		done:                        make(chan struct{}),
+		managerDone:                 o.done,
+		terminated:                  make(chan struct{}),
+		logger:                      log.With(o.Opts.Logger, "file", o.File, "group", o.Name),
+		metrics:                     metrics,
+		state:                       GroupStateActive,
+		evalIterationFunc:           evalIterationFunc,
+		concurrencyController:       concurrencyController,
+		shouldEvaluateRuleGroupFunc: shouldEvalRuleGroupFunc,
 	}
 }
 
@@ -166,6 +199,74 @@ func (g *Group) Interval() time.Duration { return g.interval }
 func (g *Group) Limit() int { return g.limit }
 
 func (g *Group) Logger() log.Logger { return g.logger }
+
+func (g *Group) reset() {
+	n := GroupKey(g.file, g.name)
+	if m := g.metrics; m != nil {
+		m.GroupLastEvalTime.WithLabelValues(n).Set(0)
+		m.GroupLastDuration.WithLabelValues(n).Set(0)
+		m.GroupSamples.WithLabelValues(n).Set(0)
+	}
+
+	for _, rule := range g.Rules() {
+		rule.SetHealth(HealthUnknown)
+		rule.SetEvaluationTimestamp(time.Time{})
+		rule.SetEvaluationDuration(0)
+		rule.SetLastError(nil)
+
+		alertRule, ok := rule.(*AlertingRule)
+		if !ok {
+			continue
+		}
+		alertRule.active = map[uint64]*Alert{}
+		alertRule.SetRestored(false)
+	}
+	g.setLastEvaluation(time.Time{})
+	g.setEvaluationTime(0)
+	g.setLastEvalTimestamp(time.Time{})
+	g.setShouldRestore(true)
+
+	g.seriesInPreviousEval = make([]map[string]labels.Labels, len(g.Rules()))
+	g.staleSeries = nil
+}
+
+func (g *Group) evaluate(ctx context.Context, evalTimestamp time.Time, missed time.Duration) {
+	if missed > 0 {
+		g.metrics.IterationsMissed.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
+		g.metrics.IterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
+	}
+	if g.shouldEvaluateRuleGroupFunc(ctx, g, evalTimestamp, g.done) {
+		g.setState(GroupStateActive)
+		g.evalIterationFunc(ctx, g, evalTimestamp)
+		return
+	}
+	g.reset()
+	g.setState(GroupStateInactive)
+}
+
+func (g *Group) requiresRestoration() bool {
+	g.mtx.Lock()
+	defer g.mtx.Unlock()
+	return g.shouldRestore
+}
+
+func (g *Group) setShouldRestore(shouldRestore bool) {
+	g.mtx.Lock()
+	defer g.mtx.Unlock()
+	g.shouldRestore = shouldRestore
+}
+
+func (g *Group) Active() bool {
+	g.mtx.Lock()
+	defer g.mtx.Unlock()
+	return g.state == GroupStateActive
+}
+
+func (g *Group) setState(state groupState) {
+	g.mtx.Lock()
+	defer g.mtx.Unlock()
+	g.state = state
+}
 
 func (g *Group) run(ctx context.Context) {
 	defer close(g.terminated)
@@ -214,32 +315,7 @@ func (g *Group) run(ctx context.Context) {
 		}(time.Now())
 	}()
 
-	g.evalIterationFunc(ctx, g, evalTimestamp)
-	if g.shouldRestore {
-		// If we have to restore, we wait for another Eval to finish.
-		// The reason behind this is, during first eval (or before it)
-		// we might not have enough data scraped, and recording rules would not
-		// have updated the latest values, on which some alerts might depend.
-		select {
-		case <-g.done:
-			return
-		case <-tick.C:
-			missed := (time.Since(evalTimestamp) / g.interval) - 1
-			if missed > 0 {
-				g.metrics.IterationsMissed.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
-				g.metrics.IterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
-			}
-			evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
-			g.evalIterationFunc(ctx, g, evalTimestamp)
-		}
-
-		restoreStartTime := time.Now()
-		g.RestoreForState(restoreStartTime)
-		totalRestoreTimeSeconds := time.Since(restoreStartTime).Seconds()
-		g.metrics.GroupLastRestoreDuration.WithLabelValues(GroupKey(g.file, g.name)).Set(totalRestoreTimeSeconds)
-		level.Debug(g.logger).Log("msg", "'for' state restoration completed", "duration_seconds", totalRestoreTimeSeconds)
-		g.shouldRestore = false
-	}
+	g.evaluate(ctx, evalTimestamp, 0)
 
 	for {
 		select {
@@ -251,13 +327,20 @@ func (g *Group) run(ctx context.Context) {
 				return
 			case <-tick.C:
 				missed := (time.Since(evalTimestamp) / g.interval) - 1
-				if missed > 0 {
-					g.metrics.IterationsMissed.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
-					g.metrics.IterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
-				}
 				evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
-
-				g.evalIterationFunc(ctx, g, evalTimestamp)
+				g.evaluate(ctx, evalTimestamp, missed)
+				// If we have to restore, we wait for another Eval to finish.
+				// The reason behind this is, during first eval (or before it)
+				// we might not have enough data scraped, and recording rules would not
+				// have updated the latest values, on which some alerts might depend.
+				if g.requiresRestoration() && g.Active() {
+					restoreStartTime := time.Now()
+					g.RestoreForState(restoreStartTime)
+					totalRestoreTimeSeconds := time.Since(restoreStartTime).Seconds()
+					g.metrics.GroupLastRestoreDuration.WithLabelValues(GroupKey(g.file, g.name)).Set(totalRestoreTimeSeconds)
+					level.Debug(g.logger).Log("msg", "'for' state restoration completed", "duration_seconds", totalRestoreTimeSeconds)
+					g.setShouldRestore(false)
+				}
 			}
 		}
 	}

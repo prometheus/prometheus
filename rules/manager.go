@@ -87,6 +87,10 @@ func DefaultEvalIterationFunc(ctx context.Context, g *Group, evalTimestamp time.
 	g.setLastEvalTimestamp(evalTimestamp)
 }
 
+func AlwaysTrueShouldEvaluateFunc(ctx context.Context, g *Group, evalTimestamp time.Time, doneCh <-chan struct{}) bool {
+	return true
+}
+
 // The Manager manages recording and alerting rules.
 type Manager struct {
 	opts     *ManagerOptions
@@ -190,11 +194,11 @@ func (m *Manager) Stop() {
 
 // Update the rule manager's state as the config requires. If
 // loading the new rules failed the old rule set is restored.
-func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string, groupEvalIterationFunc GroupEvalIterationFunc) error {
+func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string, groupEvalIterationFunc GroupEvalIterationFunc, evalRuleGroupFunc ShouldEvaluateRuleGroupFunc) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
-	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, groupEvalIterationFunc, files...)
+	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, groupEvalIterationFunc, evalRuleGroupFunc, files...)
 
 	if errs != nil {
 		for _, e := range errs {
@@ -279,7 +283,7 @@ func (FileLoader) Parse(query string) (parser.Expr, error) { return parser.Parse
 
 // LoadGroups reads groups from a list of files.
 func (m *Manager) LoadGroups(
-	interval time.Duration, externalLabels labels.Labels, externalURL string, groupEvalIterationFunc GroupEvalIterationFunc, filenames ...string,
+	interval time.Duration, externalLabels labels.Labels, externalURL string, groupEvalIterationFunc GroupEvalIterationFunc, evalRuleGroupFunc ShouldEvaluateRuleGroupFunc, filenames ...string,
 ) (map[string]*Group, []error) {
 	groups := make(map[string]*Group)
 
@@ -330,16 +334,17 @@ func (m *Manager) LoadGroups(
 			m.opts.RuleDependencyController.AnalyseRules(rules)
 
 			groups[GroupKey(fn, rg.Name)] = NewGroup(GroupOptions{
-				Name:              rg.Name,
-				File:              fn,
-				Interval:          itv,
-				Limit:             rg.Limit,
-				Rules:             rules,
-				ShouldRestore:     shouldRestore,
-				Opts:              m.opts,
-				QueryOffset:       (*time.Duration)(rg.QueryOffset),
-				done:              m.done,
-				EvalIterationFunc: groupEvalIterationFunc,
+				Name:                        rg.Name,
+				File:                        fn,
+				Interval:                    itv,
+				Limit:                       rg.Limit,
+				Rules:                       rules,
+				ShouldRestore:               shouldRestore,
+				Opts:                        m.opts,
+				QueryOffset:                 (*time.Duration)(rg.QueryOffset),
+				done:                        m.done,
+				EvalIterationFunc:           groupEvalIterationFunc,
+				ShouldEvaluateRuleGroupFunc: evalRuleGroupFunc,
 			})
 		}
 	}

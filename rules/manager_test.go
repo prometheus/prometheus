@@ -26,6 +26,8 @@ import (
 	"testing"
 	"time"
 
+	io_prometheus_client "github.com/prometheus/client_model/go"
+
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -191,6 +193,193 @@ func TestAlertingRule(t *testing.T) {
 			require.Zero(t, aa.Labels.Get(model.MetricNameLabel), "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
 		}
 	}
+}
+
+func TestDeactivate(t *testing.T) {
+	metricNames := []string{
+		"prometheus_rule_evaluations_total",
+		"prometheus_rule_group_iterations_total",
+		"prometheus_rule_group_iterations_missed_total",
+		"prometheus_rule_group_last_evaluation_samples",
+	}
+
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+    		http_requests{job="app-server", instance="0", group="canary", severity="overwrite-me"}	75 85  95 105 105  95  85
+			http_requests{job="app-server", instance="1", group="canary", severity="overwrite-me"}	80 90 100 110 120 130 140
+	`)
+	t.Cleanup(func() {
+		storage.Close()
+	})
+
+	expr, err := parser.ParseExpr(`http_requests{group="canary", job="app-server"} < 100`)
+	require.NoError(t, err)
+
+	newRule := NewAlertingRule(
+		"HTTPRequestRateLow",
+		expr,
+		time.Minute,
+		0,
+		labels.FromStrings("severity", "{{\"c\"}}ritical"),
+		labels.EmptyLabels(), labels.EmptyLabels(), "", false, nil,
+	)
+
+	recordingRule := NewRecordingRule(
+		"HTTPRequestRate",
+		expr,
+		labels.EmptyLabels())
+
+	var ruleGroupActive atomic.Bool
+	var iterations atomic.Int32
+	var shouldMissEval atomic.Bool
+
+	ruleGroupActive.Store(true)
+	shouldMissEval.Store(false)
+	evalChan := make(chan struct{})
+	stopEvalChan := make(chan struct{})
+
+	evalRuleGroupFunc := func(ctx context.Context, g *Group, evalTimestamp time.Time, doneCh <-chan struct{}) bool {
+		res := ruleGroupActive.Load()
+		if !res {
+			evalChan <- struct{}{}
+		}
+		return res
+	}
+
+	evalIterationFunc := func(ctx context.Context, g *Group, evalTimestamp time.Time) {
+		iterations.Add(1)
+		if shouldMissEval.Load() {
+			time.Sleep(2 * g.interval)
+			DefaultEvalIterationFunc(ctx, g, evalTimestamp)
+			evalChan <- struct{}{}
+			return
+		}
+		modifiedTS := time.Unix(0, 0).Add(time.Duration(iterations.Load()) * time.Second)
+		DefaultEvalIterationFunc(ctx, g, modifiedTS)
+		evalChan <- struct{}{}
+	}
+
+	registry := prometheus.NewRegistry()
+
+	opts := &ManagerOptions{
+		ExternalURL:     nil,
+		QueryFunc:       EngineQueryFunc(testEngine, storage),
+		NotifyFunc:      func(ctx context.Context, expr string, alerts ...*Alert) {},
+		Context:         context.Background(),
+		Appendable:      storage,
+		Queryable:       storage,
+		Logger:          log.NewNopLogger(),
+		OutageTolerance: 30 * time.Minute,
+		ForGracePeriod:  10 * time.Minute,
+		Registerer:      registry,
+		Metrics:         nil,
+	}
+
+	group := NewGroup(GroupOptions{
+		Name:                        "active-passive",
+		Interval:                    time.Second,
+		Rules:                       []Rule{newRule, recordingRule},
+		ShouldRestore:               true,
+		Opts:                        opts,
+		EvalIterationFunc:           evalIterationFunc,
+		ShouldEvaluateRuleGroupFunc: evalRuleGroupFunc,
+	})
+
+	gatherMetrics := func() (map[string]float64, error) {
+		ms, err := registry.Gather()
+		if err != nil {
+			return nil, err
+		}
+		result := make(map[string]float64)
+		for _, m := range ms {
+			for _, mn := range metricNames {
+				if m.GetName() == mn {
+					if m.GetType() == io_prometheus_client.MetricType_COUNTER {
+						for _, k := range m.GetMetric() {
+							result[m.GetName()] = k.Counter.GetValue()
+						}
+					}
+					if m.GetType() == io_prometheus_client.MetricType_GAUGE {
+						for _, k := range m.GetMetric() {
+							result[m.GetName()] = k.Gauge.GetValue()
+						}
+					}
+				}
+			}
+		}
+		return result, nil
+	}
+
+	ctx := context.Background()
+	go func(ctx context.Context) {
+		group.run(ctx)
+	}(ctx)
+
+	<-evalChan
+	<-evalChan
+	require.False(t, group.GetLastEvalTimestamp().IsZero())
+	require.False(t, group.requiresRestoration())
+	metrics, err := gatherMetrics()
+	require.NoError(t, err)
+	require.Equal(t, float64(4), metrics[metricNames[0]])
+	require.Equal(t, float64(2), metrics[metricNames[1]])
+	require.Equal(t, float64(0), metrics[metricNames[2]])
+	require.Equal(t, float64(2), metrics[metricNames[3]])
+	require.Equal(t, int32(2), iterations.Load())
+
+	// deactivate
+	ruleGroupActive.Swap(false)
+	<-evalChan
+	// check
+	metrics, err = gatherMetrics()
+	require.NoError(t, err)
+	require.True(t, group.GetLastEvalTimestamp().IsZero())
+	require.True(t, group.requiresRestoration())
+	require.Equal(t, float64(4), metrics[metricNames[0]])
+	require.Equal(t, float64(2), metrics[metricNames[1]])
+	require.Equal(t, float64(0), metrics[metricNames[2]])
+	require.Equal(t, float64(0), metrics[metricNames[3]])
+	require.Equal(t, int32(2), iterations.Load()) // verify evaluation did not occur
+
+	// enable
+	ruleGroupActive.Swap(true)
+	<-evalChan
+	metrics, err = gatherMetrics()
+	require.NoError(t, err)
+	require.False(t, group.GetLastEvalTimestamp().IsZero())
+	require.False(t, group.requiresRestoration())
+	require.True(t, group.Active())
+	require.Equal(t, float64(6), metrics[metricNames[0]])
+	require.Equal(t, float64(3), metrics[metricNames[1]])
+	require.Equal(t, float64(0), metrics[metricNames[2]])
+	require.Equal(t, float64(2), metrics[metricNames[3]])
+	require.Equal(t, int32(3), iterations.Load())
+
+	shouldMissEval.Swap(true)
+	<-evalChan
+
+	metrics, err = gatherMetrics()
+	require.NoError(t, err)
+	require.False(t, group.GetLastEvalTimestamp().IsZero())
+	require.False(t, group.requiresRestoration())
+	require.True(t, group.Active())
+	require.Equal(t, float64(8), metrics[metricNames[0]])
+	require.GreaterOrEqual(t, metrics[metricNames[1]], float64(4))
+	require.Equal(t, float64(1), metrics[metricNames[2]])
+
+	// need to continuously drain the evalChan in a separate goroutine
+	go func() {
+		for {
+			select {
+			case <-evalChan:
+			case <-stopEvalChan:
+				return
+			}
+		}
+	}()
+
+	group.stop()
+	stopEvalChan <- struct{}{}
 }
 
 func TestForStateAddSamples(t *testing.T) {
@@ -645,7 +834,7 @@ groups:
 		},
 	})
 	m.start()
-	err = m.Update(time.Second, []string{fname}, labels.EmptyLabels(), "", nil)
+	err = m.Update(time.Second, []string{fname}, labels.EmptyLabels(), "", nil, nil)
 	require.NoError(t, err)
 
 	rgs := m.RuleGroups()
@@ -784,7 +973,7 @@ func TestUpdate(t *testing.T) {
 	ruleManager.start()
 	defer ruleManager.Stop()
 
-	err := ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil)
+	err := ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, ruleManager.groups, "expected non-empty rule groups")
 	ogs := map[string]*Group{}
@@ -795,7 +984,7 @@ func TestUpdate(t *testing.T) {
 		ogs[h] = g
 	}
 
-	err = ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil)
+	err = ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil, nil)
 	require.NoError(t, err)
 	for h, g := range ruleManager.groups {
 		for _, actual := range g.seriesInPreviousEval {
@@ -814,7 +1003,7 @@ func TestUpdate(t *testing.T) {
 	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
 
-	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, labels.EmptyLabels(), "", nil)
+	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, labels.EmptyLabels(), "", nil, nil)
 	require.NoError(t, err)
 
 	for h, g := range ruleManager.groups {
@@ -892,7 +1081,7 @@ func reloadAndValidate(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, 
 	tmpFile.Seek(0, 0)
 	_, err = tmpFile.Write(bs)
 	require.NoError(t, err)
-	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, labels.EmptyLabels(), "", nil)
+	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, labels.EmptyLabels(), "", nil, nil)
 	require.NoError(t, err)
 	for h, g := range ruleManager.groups {
 		if ogs[h] == g {
@@ -1037,7 +1226,7 @@ func TestMetricsUpdate(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		err := ruleManager.Update(time.Second, c.files, labels.EmptyLabels(), "", nil)
+		err := ruleManager.Update(time.Second, c.files, labels.EmptyLabels(), "", nil, nil)
 		require.NoError(t, err)
 		time.Sleep(2 * time.Second)
 		require.Equal(t, c.metrics, countMetrics(), "test %d: invalid count of metrics", i)
@@ -1111,7 +1300,7 @@ func TestGroupStalenessOnRemoval(t *testing.T) {
 
 	var totalStaleNaN int
 	for i, c := range cases {
-		err := ruleManager.Update(time.Second, c.files, labels.EmptyLabels(), "", nil)
+		err := ruleManager.Update(time.Second, c.files, labels.EmptyLabels(), "", nil, nil)
 		require.NoError(t, err)
 		time.Sleep(3 * time.Second)
 		totalStaleNaN += c.staleNaN
@@ -1153,11 +1342,11 @@ func TestMetricsStalenessOnManagerShutdown(t *testing.T) {
 		}
 	}()
 
-	err := ruleManager.Update(2*time.Second, files, labels.EmptyLabels(), "", nil)
+	err := ruleManager.Update(2*time.Second, files, labels.EmptyLabels(), "", nil, nil)
 	time.Sleep(4 * time.Second)
 	require.NoError(t, err)
 	start := time.Now()
-	err = ruleManager.Update(3*time.Second, files[:0], labels.EmptyLabels(), "", nil)
+	err = ruleManager.Update(3*time.Second, files[:0], labels.EmptyLabels(), "", nil, nil)
 	require.NoError(t, err)
 	ruleManager.Stop()
 	stopped = true
@@ -1480,7 +1669,7 @@ func TestManager_LoadGroups_ShouldCheckWhetherEachRuleHasDependentsAndDependenci
 	})
 
 	t.Run("load a mix of dependent and independent rules", func(t *testing.T) {
-		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, []string{"fixtures/rules_multiple.yaml"}...)
+		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, nil, []string{"fixtures/rules_multiple.yaml"}...)
 		require.Empty(t, errs)
 		require.Len(t, groups, 1)
 
@@ -1515,7 +1704,7 @@ func TestManager_LoadGroups_ShouldCheckWhetherEachRuleHasDependentsAndDependenci
 	})
 
 	t.Run("load only independent rules", func(t *testing.T) {
-		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, []string{"fixtures/rules_multiple_independent.yaml"}...)
+		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, nil, []string{"fixtures/rules_multiple_independent.yaml"}...)
 		require.Empty(t, errs)
 		require.Len(t, groups, 1)
 
@@ -1856,7 +2045,7 @@ func TestDependencyMapUpdatesOnGroupUpdate(t *testing.T) {
 	ruleManager.start()
 	defer ruleManager.Stop()
 
-	err := ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil)
+	err := ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, ruleManager.groups, "expected non-empty rule groups")
 
@@ -1869,7 +2058,7 @@ func TestDependencyMapUpdatesOnGroupUpdate(t *testing.T) {
 	}
 
 	// Update once without changing groups.
-	err = ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil)
+	err = ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil, nil)
 	require.NoError(t, err)
 	for h, g := range ruleManager.groups {
 		depMap := buildDependencyMap(g.rules)
@@ -1884,7 +2073,7 @@ func TestDependencyMapUpdatesOnGroupUpdate(t *testing.T) {
 
 	// Groups will be recreated when updated.
 	files[0] = "fixtures/rules_dependencies.yaml"
-	err = ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil)
+	err = ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil, nil)
 	require.NoError(t, err)
 
 	for h, g := range ruleManager.groups {
@@ -1927,7 +2116,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 		t.Cleanup(cancel)
 
 		ruleManager := NewManager(optsFactory(storage, &maxInflight, &inflightQueries, 0))
-		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, []string{"fixtures/rules_multiple.yaml"}...)
+		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, nil, []string{"fixtures/rules_multiple.yaml"}...)
 		require.Empty(t, errs)
 		require.Len(t, groups, 1)
 
@@ -1965,7 +2154,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 		opts.RuleConcurrencyController = nil
 		ruleManager := NewManager(opts)
 
-		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, []string{"fixtures/rules_multiple.yaml"}...)
+		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, nil, []string{"fixtures/rules_multiple.yaml"}...)
 		require.Empty(t, errs)
 		require.Len(t, groups, 1)
 
@@ -2001,7 +2190,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 		opts.RuleConcurrencyController = nil
 		ruleManager := NewManager(opts)
 
-		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, []string{"fixtures/rules_multiple_independent.yaml"}...)
+		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, nil, []string{"fixtures/rules_multiple_independent.yaml"}...)
 		require.Empty(t, errs)
 		require.Len(t, groups, 1)
 
@@ -2037,7 +2226,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 		opts.RuleConcurrencyController = nil
 		ruleManager := NewManager(opts)
 
-		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, []string{"fixtures/rules_multiple_independent.yaml"}...)
+		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, nil, []string{"fixtures/rules_multiple_independent.yaml"}...)
 		require.Empty(t, errs)
 		require.Len(t, groups, 1)
 
@@ -2073,7 +2262,7 @@ func TestBoundedRuleEvalConcurrency(t *testing.T) {
 
 	ruleManager := NewManager(optsFactory(storage, &maxInflight, &inflightQueries, maxConcurrency))
 
-	groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, files...)
+	groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, nil, files...)
 	require.Empty(t, errs)
 	require.Len(t, groups, groupCount)
 
