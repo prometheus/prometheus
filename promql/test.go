@@ -563,7 +563,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 					return fmt.Errorf("expected histogram value at index %v for %s to have timestamp %v, but it had timestamp %v (result has %s)", i, ev.metrics[hash], expected.T, actual.T, formatSeriesResult(s))
 				}
 
-				if !actual.H.Equals(expected.H) {
+				if !actual.H.Equals(expected.H.Compact(0)) {
 					return fmt.Errorf("expected histogram value at index %v (t=%v) for %s to be %v, but got %v (result has %s)", i, actual.T, ev.metrics[hash], expected.H, actual.H, formatSeriesResult(s))
 				}
 			}
@@ -595,7 +595,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 			if expH != nil && v.H == nil {
 				return fmt.Errorf("expected histogram %s for %s but got float value %v", HistogramTestExpression(expH), v.Metric, v.F)
 			}
-			if expH != nil && !expH.Equals(v.H) {
+			if expH != nil && !expH.Compact(0).Equals(v.H) {
 				return fmt.Errorf("expected %v for %s but got %s", HistogramTestExpression(expH), v.Metric, HistogramTestExpression(v.H))
 			}
 			if !almostEqual(exp0.Value, v.F, defaultEpsilon) {
@@ -606,10 +606,6 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 		}
 		for fp, expVals := range ev.expected {
 			if !seen[fp] {
-				fmt.Println("vector result", len(val), ev.expr)
-				for _, ss := range val {
-					fmt.Println("    ", ss.Metric, ss.T, ss.F)
-				}
 				return fmt.Errorf("expected metric %s with %v not found", ev.metrics[fp], expVals)
 			}
 		}
