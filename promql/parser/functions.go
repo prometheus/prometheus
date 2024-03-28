@@ -425,6 +425,17 @@ var Functions = map[string]*Function{
 	},
 }
 
+func AddFunction(name string, inputTypes []ValueType) {
+	if _, ok := Functions[name]; ok {
+		return
+	}
+	Functions[name] = &Function{
+		Name:       name,
+		ArgTypes:   inputTypes,
+		ReturnType: ValueTypeVector,
+	}
+}
+
 // getFunction returns a predefined Function object for the given name.
 func getFunction(name string, functions map[string]*Function) (*Function, bool) {
 	function, ok := functions[name]

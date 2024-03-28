@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage/remote/azuread"
 )
 
@@ -219,6 +220,9 @@ var (
 	DefaultExemplarsConfig = ExemplarsConfig{
 		MaxExemplars: 100000,
 	}
+
+	// DefaultUDFConfig is the default UDF configuration.
+	DefaultUDFConfig = UDFConfig{}
 )
 
 // Config is the top-level configuration for Prometheus's config files.
@@ -233,6 +237,8 @@ type Config struct {
 
 	RemoteWriteConfigs []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
 	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
+
+	UDFConfigs []*UDFConfig `yaml:"udfs,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -1194,6 +1200,57 @@ func (c *RemoteReadConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
 	// Thus we just do its validation here.
 	return c.HTTPClientConfig.Validate()
+}
+
+// UDFConfig is the configuration for user-defined functions (UDFs) in PromQL.
+type UDFConfig struct {
+	Name       string             `yaml:"name"`
+	InputTypes []parser.ValueType `yaml:"input_types"`
+	Modules    []string           `yaml:"modules,omitempty"`
+	UseUtil    bool               `yaml:"util,omitempty"`
+	Src        string             `yaml:"src"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *UDFConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultUDFConfig
+	type plain UDFConfig
+	if err := unmarshal((*plain)(c)); err != nil {
+		return err
+	}
+	if c.Name == "" {
+		return errors.New("name for UDF is empty")
+	}
+	if c.Src == "" {
+		return errors.New("source code for UDF is empty")
+	}
+	if err := ValidateUDFInputTypes(c.InputTypes); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ValidateUDFInputTypes(inputTypes []parser.ValueType) error {
+	if len(inputTypes) == 0 {
+		return errors.New("must have at least 1 input type for UDF")
+	}
+	switch inputTypes[0] {
+	case parser.ValueTypeMatrix:
+		for _, t := range inputTypes[1:] {
+			if t != parser.ValueTypeScalar {
+				return fmt.Errorf("additional input arguments for matrix-based UDF must be scalar, but got %s", t)
+			}
+		}
+	case parser.ValueTypeVector:
+		for _, t := range inputTypes[1:] {
+			if t != parser.ValueTypeScalar && t != parser.ValueTypeString {
+				return fmt.Errorf("additional input arguments for vector-based UDF must be scalar or string, but got %s", t)
+			}
+		}
+	default:
+		return fmt.Errorf("first input argument for UDF must be matrix or vector, but got %s", inputTypes[0])
+	}
+	return nil
 }
 
 func filePath(filename string) string {
