@@ -516,7 +516,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 		for _, s := range val {
 			hash := s.Metric.Hash()
 			if _, ok := ev.metrics[hash]; !ok {
-				return fmt.Errorf("unexpected metric %s in result", s.Metric)
+				return fmt.Errorf("unexpected metric %s in result, has %s", s.Metric, formatSeriesResult(s))
 			}
 			seen[hash] = true
 			exp := ev.expected[hash]
@@ -581,7 +581,11 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 		for pos, v := range val {
 			fp := v.Metric.Hash()
 			if _, ok := ev.metrics[fp]; !ok {
-				return fmt.Errorf("unexpected metric %s in result", v.Metric)
+				if v.H != nil {
+					return fmt.Errorf("unexpected metric %s in result, has value %v", v.Metric, v.H)
+				}
+
+				return fmt.Errorf("unexpected metric %s in result, has value %v", v.Metric, v.F)
 			}
 			exp := ev.expected[fp]
 			if ev.ordered && exp.pos != pos+1 {
