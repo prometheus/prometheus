@@ -48,6 +48,8 @@ type Group struct {
 	file                 string
 	interval             time.Duration
 	limit                int
+	seriesLimit          int
+	alertLimit           int
 	rules                []Rule
 	seriesInPreviousEval []map[string]labels.Labels // One per Rule.
 	staleSeries          []labels.Labels
@@ -87,6 +89,8 @@ type GroupOptions struct {
 	Name, File        string
 	Interval          time.Duration
 	Limit             int
+	SeriesLimit       int
+	AlertLimit        int
 	Rules             []Rule
 	ShouldRestore     bool
 	Opts              *ManagerOptions
@@ -127,6 +131,8 @@ func NewGroup(o GroupOptions) *Group {
 		file:                  o.File,
 		interval:              o.Interval,
 		limit:                 o.Limit,
+		seriesLimit:           o.SeriesLimit,
+		alertLimit:            o.AlertLimit,
 		rules:                 o.Rules,
 		shouldRestore:         o.ShouldRestore,
 		opts:                  o.Opts,
@@ -161,6 +167,12 @@ func (g *Group) Interval() time.Duration { return g.interval }
 
 // Limit returns the group's limit.
 func (g *Group) Limit() int { return g.limit }
+
+// SeriesLimit returns the group's series limit.
+func (g *Group) SeriesLimit() int { return g.seriesLimit }
+
+// AlertLimit returns the group's alert limit.
+func (g *Group) AlertLimit() int { return g.alertLimit }
 
 func (g *Group) Logger() log.Logger { return g.logger }
 
@@ -469,7 +481,26 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 			g.metrics.EvalTotal.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
 
-			vector, err := rule.Eval(ctx, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit())
+			// determine whether the rule is a recording rule or alerting rule and decide what the limit is based on that.
+			// if the rule has a series limit, use that, otherwise use the group limit.
+			// if the rule has an alert limit, use that, otherwise use the group limit.
+			var limit int
+			switch rule.(type) {
+			case *RecordingRule:
+				if g.SeriesLimit() > 0 {
+					limit = g.SeriesLimit()
+				} else {
+					limit = g.Limit()
+				}
+			case *AlertingRule:
+				if g.AlertLimit() > 0 {
+					limit = g.AlertLimit()
+				} else {
+					limit = g.Limit()
+				}
+			}
+
+			vector, err := rule.Eval(ctx, ts, g.opts.QueryFunc, g.opts.ExternalURL, limit)
 			if err != nil {
 				rule.SetHealth(HealthBad)
 				rule.SetLastError(err)
@@ -753,6 +784,14 @@ func (g *Group) Equals(ng *Group) bool {
 	}
 
 	if g.limit != ng.limit {
+		return false
+	}
+
+	if g.seriesLimit != ng.seriesLimit {
+		return false
+	}
+
+	if g.alertLimit != ng.alertLimit {
 		return false
 	}
 

@@ -128,6 +128,20 @@ func (g *RuleGroups) Validate(node ruleGroups) (errs []error) {
 				})
 			}
 		}
+
+		if g.AlertLimit > 0 && g.Limit != 0 && g.Limit < g.AlertLimit {
+			errs = append(
+				errs,
+				fmt.Errorf("%d:%d: alert_limit must not be greater than the total limit", node.Groups[j].Line, node.Groups[j].Column),
+			)
+		}
+
+		if g.SeriesLimit > 0 && g.Limit != 0 && g.Limit < g.SeriesLimit {
+			errs = append(
+				errs,
+				fmt.Errorf("%d:%d: series_limit must not be greater than the total limit", node.Groups[j].Line, node.Groups[j].Column),
+			)
+		}
 	}
 
 	return errs
@@ -135,10 +149,12 @@ func (g *RuleGroups) Validate(node ruleGroups) (errs []error) {
 
 // RuleGroup is a list of sequentially evaluated recording and alerting rules.
 type RuleGroup struct {
-	Name     string         `yaml:"name"`
-	Interval model.Duration `yaml:"interval,omitempty"`
-	Limit    int            `yaml:"limit,omitempty"`
-	Rules    []RuleNode     `yaml:"rules"`
+	Name        string         `yaml:"name"`
+	Interval    model.Duration `yaml:"interval,omitempty"`
+	Limit       int            `yaml:"limit,omitempty"`
+	SeriesLimit int            `yaml:"series_limit,omitempty"`
+	AlertLimit  int            `yaml:"alert_limit,omitempty"`
+	Rules       []RuleNode     `yaml:"rules"`
 }
 
 // Rule describes an alerting or recording rule.

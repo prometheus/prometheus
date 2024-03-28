@@ -333,6 +333,8 @@ func (m *Manager) LoadGroups(
 				File:              fn,
 				Interval:          itv,
 				Limit:             rg.Limit,
+				SeriesLimit:       rg.SeriesLimit,
+				AlertLimit:        rg.AlertLimit,
 				Rules:             rules,
 				ShouldRestore:     shouldRestore,
 				Opts:              m.opts,

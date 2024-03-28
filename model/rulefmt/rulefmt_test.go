@@ -81,6 +81,14 @@ func TestParseFileFailure(t *testing.T) {
 			filename: "record_and_keep_firing_for.bad.yaml",
 			errMsg:   "invalid field 'keep_firing_for' in recording rule",
 		},
+		{
+			filename: "invalid_alerts_limit.yaml",
+			errMsg:   "alert_limit must not be greater than the total limit",
+		},
+		{
+			filename: "invalid_series_limit.yaml",
+			errMsg:   "series_limit must not be greater than the total limit",
+		},
 	}
 
 	for _, c := range table {
@@ -159,6 +167,32 @@ groups:
       description: "{{$labels.quantile * 100}}"
 `,
 			shouldPass: false,
+		},
+		{
+			// limit is undefined but alert_limit is set
+			ruleString: `
+groups:
+- name: example
+  rules:
+    - alert: InstanceDown
+      expr: up == 0
+      for: 5m
+  alert_limit: 100
+      `,
+			shouldPass: true,
+		},
+		{
+			// limit is undefined but series_limit is set
+			ruleString: `
+groups:
+- name: example
+  rules:
+    - alert: InstanceDown
+      expr: up == 0
+      for: 5m
+  series_limit: 100
+      `,
+			shouldPass: true,
 		},
 	}
 
