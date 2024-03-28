@@ -138,7 +138,7 @@ func (h *Head) Appender(_ context.Context) storage.Appender {
 
 	// The head cache might not have a starting point yet. The init appender
 	// picks up the first appended timestamp as the base.
-	if h.MinTime() == math.MaxInt64 {
+	if !h.initialized() {
 		return &initAppender{
 			head: h,
 		}
@@ -191,7 +191,7 @@ func (h *Head) appendableMinValidTime() int64 {
 // AppendableMinValidTime returns the minimum valid time for samples to be appended to the Head.
 // Returns false if Head hasn't been initialized yet and the minimum time isn't known yet.
 func (h *Head) AppendableMinValidTime() (int64, bool) {
-	if h.MinTime() == math.MaxInt64 {
+	if !h.initialized() {
 		return 0, false
 	}
 

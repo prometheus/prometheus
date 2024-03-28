@@ -177,13 +177,6 @@ type TSDBAdminStats interface {
 	WALReplayStatus() (tsdb.WALReplayStatus, error)
 }
 
-// QueryEngine defines the interface for the *promql.Engine, so it can be replaced, wrapped or mocked.
-type QueryEngine interface {
-	SetQueryLogger(l promql.QueryLogger)
-	NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error)
-	NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error)
-}
-
 type QueryOpts interface {
 	EnablePerStepStats() bool
 	LookbackDelta() time.Duration
@@ -193,7 +186,7 @@ type QueryOpts interface {
 // them using the provided storage and query engine.
 type API struct {
 	Queryable         storage.SampleAndChunkQueryable
-	QueryEngine       QueryEngine
+	QueryEngine       promql.QueryEngine
 	ExemplarQueryable storage.ExemplarQueryable
 
 	scrapePoolsRetriever  func(context.Context) ScrapePoolsRetriever
@@ -226,7 +219,7 @@ type API struct {
 
 // NewAPI returns an initialized API type.
 func NewAPI(
-	qe QueryEngine,
+	qe promql.QueryEngine,
 	q storage.SampleAndChunkQueryable,
 	ap storage.Appendable,
 	eq storage.ExemplarQueryable,
@@ -889,6 +882,9 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 	warnings := set.Warnings()
 
 	for set.Next() {
+		if err := ctx.Err(); err != nil {
+			return apiFuncResult{nil, returnAPIError(err), warnings, closer}
+		}
 		metrics = append(metrics, set.At().Labels())
 
 		if len(metrics) >= limit {

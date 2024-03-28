@@ -1,5 +1,9 @@
 # Changelog
 
+## unreleased
+
+* [CHANGE] TSDB: Fix the predicate checking for blocks which are beyond the retention period to include the ones right at the retention boundary. #9633
+
 ## 2.51.1 / 2024-03-27
 
 Bugfix release.

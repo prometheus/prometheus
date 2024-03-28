@@ -2658,54 +2658,6 @@ func BenchmarkSetMatcher(b *testing.B) {
 	}
 }
 
-// Refer to https://github.com/prometheus/prometheus/issues/2651.
-func TestFindSetMatches(t *testing.T) {
-	cases := []struct {
-		pattern string
-		exp     []string
-	}{
-		// Single value, coming from a `bar=~"foo"` selector.
-		{
-			pattern: "^(?:foo)$",
-			exp: []string{
-				"foo",
-			},
-		},
-		// Simple sets.
-		{
-			pattern: "^(?:foo|bar|baz)$",
-			exp: []string{
-				"foo",
-				"bar",
-				"baz",
-			},
-		},
-		// Simple sets containing escaped characters.
-		{
-			pattern: "^(?:fo\\.o|bar\\?|\\^baz)$",
-			exp: []string{
-				"fo.o",
-				"bar?",
-				"^baz",
-			},
-		},
-		// Simple sets containing special characters without escaping.
-		{
-			pattern: "^(?:fo.o|bar?|^baz)$",
-			exp:     nil,
-		},
-		// Missing wrapper.
-		{
-			pattern: "foo|bar|baz",
-			exp:     nil,
-		},
-	}
-
-	for _, c := range cases {
-		require.Equal(t, c.exp, findSetMatches(c.pattern), "Evaluating %s, unexpected result.", c.pattern)
-	}
-}
-
 func TestPostingsForMatchers(t *testing.T) {
 	ctx := context.Background()
 
@@ -3310,7 +3262,7 @@ func TestPostingsForMatcher(t *testing.T) {
 		{
 			// Test case for double quoted regex matcher
 			matcher:  labels.MustNewMatcher(labels.MatchRegexp, "test", "^(?:a|b)$"),
-			hasError: true,
+			hasError: false,
 		},
 	}
 
