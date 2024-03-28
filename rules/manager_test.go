@@ -728,7 +728,7 @@ func TestUpdate(t *testing.T) {
 	ruleManager.start()
 	defer ruleManager.Stop()
 
-	err := ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil)
+	err := ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, ruleManager.groups, "expected non-empty rule groups")
 	ogs := map[string]*Group{}
@@ -739,7 +739,7 @@ func TestUpdate(t *testing.T) {
 		ogs[h] = g
 	}
 
-	err = ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil)
+	err = ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil, nil)
 	require.NoError(t, err)
 	for h, g := range ruleManager.groups {
 		for _, actual := range g.seriesInPreviousEval {
@@ -758,7 +758,7 @@ func TestUpdate(t *testing.T) {
 	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
 
-	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, labels.EmptyLabels(), "", nil)
+	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, labels.EmptyLabels(), "", nil, nil)
 	require.NoError(t, err)
 
 	for h, g := range ruleManager.groups {
@@ -836,7 +836,7 @@ func reloadAndValidate(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, 
 	tmpFile.Seek(0, 0)
 	_, err = tmpFile.Write(bs)
 	require.NoError(t, err)
-	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, labels.EmptyLabels(), "", nil)
+	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, labels.EmptyLabels(), "", nil, nil)
 	require.NoError(t, err)
 	for h, g := range ruleManager.groups {
 		if ogs[h] == g {
@@ -981,7 +981,7 @@ func TestMetricsUpdate(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		err := ruleManager.Update(time.Second, c.files, labels.EmptyLabels(), "", nil)
+		err := ruleManager.Update(time.Second, c.files, labels.EmptyLabels(), "", nil, nil)
 		require.NoError(t, err)
 		time.Sleep(2 * time.Second)
 		require.Equal(t, c.metrics, countMetrics(), "test %d: invalid count of metrics", i)
@@ -1055,7 +1055,7 @@ func TestGroupStalenessOnRemoval(t *testing.T) {
 
 	var totalStaleNaN int
 	for i, c := range cases {
-		err := ruleManager.Update(time.Second, c.files, labels.EmptyLabels(), "", nil)
+		err := ruleManager.Update(time.Second, c.files, labels.EmptyLabels(), "", nil, nil)
 		require.NoError(t, err)
 		time.Sleep(3 * time.Second)
 		totalStaleNaN += c.staleNaN
@@ -1097,11 +1097,11 @@ func TestMetricsStalenessOnManagerShutdown(t *testing.T) {
 		}
 	}()
 
-	err := ruleManager.Update(2*time.Second, files, labels.EmptyLabels(), "", nil)
+	err := ruleManager.Update(2*time.Second, files, labels.EmptyLabels(), "", nil, nil)
 	time.Sleep(4 * time.Second)
 	require.NoError(t, err)
 	start := time.Now()
-	err = ruleManager.Update(3*time.Second, files[:0], labels.EmptyLabels(), "", nil)
+	err = ruleManager.Update(3*time.Second, files[:0], labels.EmptyLabels(), "", nil, nil)
 	require.NoError(t, err)
 	ruleManager.Stop()
 	stopped = true
@@ -1424,7 +1424,7 @@ func TestManager_LoadGroups_ShouldCheckWhetherEachRuleHasDependentsAndDependenci
 	})
 
 	t.Run("load a mix of dependent and independent rules", func(t *testing.T) {
-		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, []string{"fixtures/rules_multiple.yaml"}...)
+		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, nil, []string{"fixtures/rules_multiple.yaml"}...)
 		require.Empty(t, errs)
 		require.Len(t, groups, 1)
 
@@ -1459,7 +1459,7 @@ func TestManager_LoadGroups_ShouldCheckWhetherEachRuleHasDependentsAndDependenci
 	})
 
 	t.Run("load only independent rules", func(t *testing.T) {
-		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, []string{"fixtures/rules_multiple_independent.yaml"}...)
+		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, nil, []string{"fixtures/rules_multiple_independent.yaml"}...)
 		require.Empty(t, errs)
 		require.Len(t, groups, 1)
 
@@ -1800,7 +1800,7 @@ func TestDependencyMapUpdatesOnGroupUpdate(t *testing.T) {
 	ruleManager.start()
 	defer ruleManager.Stop()
 
-	err := ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil)
+	err := ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, ruleManager.groups, "expected non-empty rule groups")
 
@@ -1813,7 +1813,7 @@ func TestDependencyMapUpdatesOnGroupUpdate(t *testing.T) {
 	}
 
 	// Update once without changing groups.
-	err = ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil)
+	err = ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil, nil)
 	require.NoError(t, err)
 	for h, g := range ruleManager.groups {
 		depMap := buildDependencyMap(g.rules)
@@ -1829,7 +1829,7 @@ func TestDependencyMapUpdatesOnGroupUpdate(t *testing.T) {
 
 	// Groups will be recreated when updated.
 	files[0] = "fixtures/rules_dependencies.yaml"
-	err = ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil)
+	err = ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil, nil)
 	require.NoError(t, err)
 
 	for h, g := range ruleManager.groups {
@@ -1872,7 +1872,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 		t.Cleanup(cancel)
 
 		ruleManager := NewManager(optsFactory(storage, &maxInflight, &inflightQueries, 0))
-		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, []string{"fixtures/rules_multiple.yaml"}...)
+		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, nil, []string{"fixtures/rules_multiple.yaml"}...)
 		require.Empty(t, errs)
 		require.Len(t, groups, 1)
 
@@ -1910,7 +1910,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 		opts.RuleConcurrencyController = nil
 		ruleManager := NewManager(opts)
 
-		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, []string{"fixtures/rules_multiple.yaml"}...)
+		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, nil, []string{"fixtures/rules_multiple.yaml"}...)
 		require.Empty(t, errs)
 		require.Len(t, groups, 1)
 
@@ -1946,7 +1946,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 		opts.RuleConcurrencyController = nil
 		ruleManager := NewManager(opts)
 
-		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, []string{"fixtures/rules_multiple_independent.yaml"}...)
+		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, nil, []string{"fixtures/rules_multiple_independent.yaml"}...)
 		require.Empty(t, errs)
 		require.Len(t, groups, 1)
 
@@ -1983,7 +1983,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 		opts.RuleConcurrencyController = nil
 		ruleManager := NewManager(opts)
 
-		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, []string{"fixtures/rules_multiple_independent.yaml"}...)
+		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, nil, []string{"fixtures/rules_multiple_independent.yaml"}...)
 		require.Empty(t, errs)
 		require.Len(t, groups, 1)
 
@@ -2019,7 +2019,7 @@ func TestBoundedRuleEvalConcurrency(t *testing.T) {
 
 	ruleManager := NewManager(optsFactory(storage, &maxInflight, &inflightQueries, maxConcurrency))
 
-	groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, files...)
+	groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, nil, files...)
 	require.Empty(t, errs)
 	require.Len(t, groups, groupCount)
 
