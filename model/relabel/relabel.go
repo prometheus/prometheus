@@ -17,6 +17,7 @@ import (
 	"crypto/md5"
 	"encoding/binary"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/grafana/regexp"
@@ -290,7 +291,7 @@ func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
 		hash := md5.Sum([]byte(val))
 		// Use only the last 8 bytes of the hash to give the same result as earlier versions of this code.
 		mod := binary.BigEndian.Uint64(hash[8:]) % cfg.Modulus
-		lb.Set(cfg.TargetLabel, fmt.Sprintf("%d", mod))
+		lb.Set(cfg.TargetLabel, strconv.FormatUint(mod, 10))
 	case LabelMap:
 		lb.Range(func(l labels.Label) {
 			if cfg.Regex.MatchString(l.Name) {
