@@ -516,7 +516,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 		for _, s := range val {
 			hash := s.Metric.Hash()
 			if _, ok := ev.metrics[hash]; !ok {
-				return fmt.Errorf("unexpected metric %s in result", s.Metric)
+				return fmt.Errorf("unexpected metric %s in result, has %s", s.Metric, formatSeriesResult(s))
 			}
 			seen[hash] = true
 			exp := ev.expected[hash]
@@ -581,7 +581,11 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 		for pos, v := range val {
 			fp := v.Metric.Hash()
 			if _, ok := ev.metrics[fp]; !ok {
-				return fmt.Errorf("unexpected metric %s in result", v.Metric)
+				if v.H != nil {
+					return fmt.Errorf("unexpected metric %s in result, has value %v", v.Metric, v.H)
+				}
+
+				return fmt.Errorf("unexpected metric %s in result, has value %v", v.Metric, v.F)
 			}
 			exp := ev.expected[fp]
 			if ev.ordered && exp.pos != pos+1 {
@@ -763,7 +767,7 @@ func (t *test) execEval(cmd *evalCmd, engine QueryEngine) error {
 func (t *test) execRangeEval(cmd *evalCmd, engine QueryEngine) error {
 	q, err := engine.NewRangeQuery(t.context, t.storage, nil, cmd.expr, cmd.start, cmd.end, cmd.step)
 	if err != nil {
-		return err
+		return fmt.Errorf("error creating range query for %q (line %d): %w", cmd.expr, cmd.line, err)
 	}
 	res := q.Exec(t.context)
 	if res.Err != nil {
@@ -794,7 +798,7 @@ func (t *test) execInstantEval(cmd *evalCmd, engine QueryEngine) error {
 	for _, iq := range queries {
 		q, err := engine.NewInstantQuery(t.context, t.storage, nil, iq.expr, iq.evalTime)
 		if err != nil {
-			return err
+			return fmt.Errorf("error creating instant query for %q (line %d): %w", cmd.expr, cmd.line, err)
 		}
 		defer q.Close()
 		res := q.Exec(t.context)
@@ -816,7 +820,7 @@ func (t *test) execInstantEval(cmd *evalCmd, engine QueryEngine) error {
 		// by checking against the middle step.
 		q, err = engine.NewRangeQuery(t.context, t.storage, nil, iq.expr, iq.evalTime.Add(-time.Minute), iq.evalTime.Add(time.Minute), time.Minute)
 		if err != nil {
-			return err
+			return fmt.Errorf("error creating range query for %q (line %d): %w", cmd.expr, cmd.line, err)
 		}
 		rangeRes := q.Exec(t.context)
 		if rangeRes.Err != nil {
