@@ -607,15 +607,17 @@ func (s *chunkedSeriesSet) Warnings() annotations.Annotations {
 	return nil
 }
 
-// chunkedSeries implements storage.Series.
 type chunkedSeries struct {
 	labels     []prompb.Label
 	chunks     []prompb.Chunk
 	mint, maxt int64
 }
 
+var _ storage.Series = &chunkedSeries{}
+
 func (s *chunkedSeries) Labels() labels.Labels {
-	return labelProtosToLabels(s.labels)
+	b := labels.NewScratchBuilder(len(s.labels))
+	return labelProtosToLabels(&b, s.labels)
 }
 
 func (s *chunkedSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
@@ -627,7 +629,6 @@ func (s *chunkedSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
 	return newChunkedSeriesIterator(s.chunks, s.mint, s.maxt)
 }
 
-// chunkedSeriesIterator implements chunkenc.Iterator.
 type chunkedSeriesIterator struct {
 	chunks     []prompb.Chunk
 	idx        int
@@ -637,6 +638,8 @@ type chunkedSeriesIterator struct {
 
 	err error
 }
+
+var _ chunkenc.Iterator = &chunkedSeriesIterator{}
 
 func newChunkedSeriesIterator(chunks []prompb.Chunk, mint, maxt int64) *chunkedSeriesIterator {
 	it := &chunkedSeriesIterator{}
@@ -740,12 +743,12 @@ func (it *chunkedSeriesIterator) At() (ts int64, v float64) {
 	return it.cur.At()
 }
 
-func (it *chunkedSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
-	return it.cur.AtHistogram()
+func (it *chunkedSeriesIterator) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
+	return it.cur.AtHistogram(h)
 }
 
-func (it *chunkedSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
-	return it.cur.AtFloatHistogram()
+func (it *chunkedSeriesIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+	return it.cur.AtFloatHistogram(fh)
 }
 
 func (it *chunkedSeriesIterator) AtT() int64 {
