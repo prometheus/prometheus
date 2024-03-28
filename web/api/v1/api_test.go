@@ -1032,6 +1032,9 @@ func setupRemote(s storage.Storage) *httptest.Server {
 			}
 		}
 
+		w.Header().Set("Content-Type", "application/x-protobuf")
+		w.Header().Set("Content-Encoding", "snappy")
+
 		if err := remote.EncodeReadResponse(&resp, w); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

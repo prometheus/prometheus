@@ -26,10 +26,6 @@ import (
 	"github.com/gogo/protobuf/proto"
 )
 
-// DefaultChunkedReadLimit is the default value for the maximum size of the protobuf frame client allows.
-// 50MB is the default. This is equivalent to ~100k full XOR chunks and average labelset.
-const DefaultChunkedReadLimit = 5e+7
-
 // The table gets initialized with sync.Once but may still cause a race
 // with any other use of the crc32 package anywhere. Thus we initialize it
 // before.
