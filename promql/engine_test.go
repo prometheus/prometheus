@@ -966,7 +966,7 @@ load 10s
 		{
 			Query:        "sum by (b) (max_over_time(metricWith3SampleEvery10Seconds[60s] @ 30))",
 			Start:        time.Unix(201, 0),
-			PeakSamples:  8,
+			PeakSamples:  7,
 			TotalSamples: 12, // @ modifier force the evaluation to at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 3 series
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 12,
