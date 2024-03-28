@@ -1373,6 +1373,7 @@ func (db *DB) compactBlocks() (err error) {
 		// long enough that we end up with a HEAD block that needs to be written.
 		// Check if that's the case and stop compactions early.
 		if db.head.compactable() {
+			level.Warn(db.logger).Log("msg", "aborting block compactions to persit the head block")
 			return nil
 		}
 
