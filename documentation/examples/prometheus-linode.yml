@@ -12,6 +12,7 @@ scrape_configs:
     linode_sd_configs:
       - authorization:
           credentials: "<replace with a Personal Access Token with linodes:read_only, ips:read_only, and events:read_only access>"
+        region: "us-east"
     relabel_configs:
       # Only scrape targets that have a tag 'monitoring'.
       - source_labels: [__meta_linode_tags]
