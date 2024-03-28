@@ -16,6 +16,7 @@ const HistogramChart: FC<{ histogram: Histogram; index: number; scale: ScaleType
 
   const rangeMax = buckets ? parseFloat(buckets[buckets.length - 1][2]) : 0;
   const rangeMin = buckets ? parseFloat(buckets[0][1]) : 0;
+  const countMax = buckets ? buckets.map((b) => parseFloat(b[3])).reduce((a, b) => Math.max(a, b)) : 0;
 
   // The count of a histogram bucket is represented by its area rather than its height. This means it considers
   // both the count and the width (range) of the bucket. For this, we can set the height of the bucket proportional
@@ -62,7 +63,7 @@ const HistogramChart: FC<{ histogram: Histogram; index: number; scale: ScaleType
       <div className="histogram-y-labels">
         {[1, 0.75, 0.5, 0.25].map((i) => (
           <div key={i} className="histogram-y-label">
-            {formatter.format(fdMax * i)}
+            {scale === 'linear' ? '' : formatter.format(countMax * i)}
           </div>
         ))}
         <div key={0} className="histogram-y-label" style={{ height: 0 }}>
@@ -92,6 +93,7 @@ const HistogramChart: FC<{ histogram: Histogram; index: number; scale: ScaleType
               index={index}
               fds={fds}
               fdMax={fdMax}
+              countMax={countMax}
             />
           )}
 
@@ -119,9 +121,19 @@ interface RenderHistogramProps {
   index: number;
   fds: number[];
   fdMax: number;
+  countMax: number;
 }
 
-const RenderHistogramBars: FC<RenderHistogramProps> = ({ buckets, scale, rangeMin, rangeMax, index, fds, fdMax }) => {
+const RenderHistogramBars: FC<RenderHistogramProps> = ({
+  buckets,
+  scale,
+  rangeMin,
+  rangeMax,
+  index,
+  fds,
+  fdMax,
+  countMax,
+}) => {
   return (
     <React.Fragment>
       {buckets.map((b, bIdx) => {
@@ -134,6 +146,8 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({ buckets, scale, rangeMi
           scale === 'linear'
             ? ((parseFloat(b[2]) - parseFloat(b[1])) / (rangeMax - rangeMin)) * 100 + '%'
             : 100 / buckets.length + '%';
+        const bucketHeight =
+          scale === 'linear' ? (fds[bIdx] / fdMax) * 100 + '%' : (parseFloat(b[3]) / countMax) * 100 + '%';
         return (
           <React.Fragment key={bIdx}>
             <div
@@ -148,7 +162,7 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({ buckets, scale, rangeMi
                 id={bucketIdx}
                 className="histogram-bucket"
                 style={{
-                  height: (fds[bIdx] / fdMax) * 100 + '%',
+                  height: bucketHeight,
                 }}
               ></div>
               <UncontrolledTooltip
