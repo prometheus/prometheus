@@ -939,11 +939,13 @@ func TestTargetSetTargetGroupsPresentOnConfigChange(t *testing.T) {
 	discoveryManager.ApplyConfig(c)
 
 	// Original targets should be present as soon as possible.
+	// An empty list should be sent for prometheus2 to drop any stale targets
 	syncedTargets = <-discoveryManager.SyncCh()
 	mu.Unlock()
-	require.Len(t, syncedTargets, 1)
+	require.Len(t, syncedTargets, 2)
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
 	require.Len(t, syncedTargets["prometheus"], 1)
+	require.Empty(t, syncedTargets["prometheus2g"])
 
 	// prometheus2 configs should be ready on second sync.
 	syncedTargets = <-discoveryManager.SyncCh()
@@ -1078,21 +1080,19 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	require.Len(t, syncedTargets["prometheus"], 1)
 
 	c["prometheus"] = Configs{
-		StaticConfig{{}},
+		StaticConfig{{Source: "0"}},
 	}
 	discoveryManager.ApplyConfig(c)
 
 	syncedTargets = <-discoveryManager.SyncCh()
+	require.Len(t, discoveryManager.targets, 1)
 	p = pk("static", "prometheus", 1)
 	targetGroups, ok := discoveryManager.targets[p]
-	require.True(t, ok, "'%v' should be present in target groups", p)
-	group, ok := targetGroups[""]
-	require.True(t, ok, "missing '' key in target groups %v", targetGroups)
+	require.True(t, ok, "'%v' should be present in targets", p)
+	require.Len(t, targetGroups, 0, "'%v' should no longer have any associtated target groups", p)
 
-	require.Empty(t, group.Targets, "Invalid number of targets.")
-	require.Len(t, syncedTargets, 1)
-	require.Len(t, syncedTargets["prometheus"], 1)
-	require.Nil(t, syncedTargets["prometheus"][0].Labels)
+	require.Len(t, syncedTargets, 1, "an update with empty targetGroups should be sent.")
+	require.Len(t, syncedTargets["prometheus"], 0)
 }
 
 func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
@@ -1275,6 +1275,7 @@ func TestCoordinationWithReceiver(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "1"}},
 							},
 						},
+						"mock1": {},
 					},
 				},
 				{
