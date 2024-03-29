@@ -219,17 +219,19 @@ func TestHandlerSendAllRemapPerAm(t *testing.T) {
 		errc      = make(chan error, 1)
 		expected1 = make([]*Alert, 0, maxBatchSize)
 		expected2 = make([]*Alert, 0, maxBatchSize)
+		expected3 = make([]*Alert, 0)
 
-		status1, status2 atomic.Int32
+		statusOK atomic.Int32
 	)
-	status1.Store(int32(http.StatusOK))
-	status2.Store(int32(http.StatusOK))
+	statusOK.Store(int32(http.StatusOK))
 
-	server1 := newTestHTTPServerBuilder(&expected1, errc, "", "", &status1)
-	server2 := newTestHTTPServerBuilder(&expected2, errc, "", "", &status2)
+	server1 := newTestHTTPServerBuilder(&expected1, errc, "", "", &statusOK)
+	server2 := newTestHTTPServerBuilder(&expected2, errc, "", "", &statusOK)
+	server3 := newTestHTTPServerBuilder(&expected3, errc, "", "", &statusOK)
 
 	defer server1.Close()
 	defer server2.Close()
+	defer server3.Close()
 
 	h := NewManager(&Options{}, nil)
 	h.alertmanagers = make(map[string]*alertmanagerSet)
@@ -247,38 +249,68 @@ func TestHandlerSendAllRemapPerAm(t *testing.T) {
 		},
 	}
 
-	h.alertmanagers["1"] = &alertmanagerSet{
-		ams: []alertmanager{
-			alertmanagerMock{
-				urlf: func() string { return server1.URL },
-			},
+	am3Cfg := config.DefaultAlertmanagerConfig
+	am3Cfg.Timeout = model.Duration(time.Second)
+	am3Cfg.AlertRelabelConfigs = []*relabel.Config{
+		{
+			SourceLabels: model.LabelNames{"alertname"},
+			Action:       "drop",
+			Regex:        relabel.MustNewRegexp(".+"),
 		},
-		cfg: &am1Cfg,
 	}
 
-	h.alertmanagers["2"] = &alertmanagerSet{
-		ams: []alertmanager{
-			alertmanagerMock{
-				urlf: func() string { return server2.URL },
+	h.alertmanagers = map[string]*alertmanagerSet{
+		// Drop no alerts.
+		"1": {
+			ams: []alertmanager{
+				alertmanagerMock{
+					urlf: func() string { return server1.URL },
+				},
 			},
+			cfg: &am1Cfg,
 		},
-		cfg: &am2Cfg,
+		// Drop only alerts with the "alertnamedrop" label.
+		"2": {
+			ams: []alertmanager{
+				alertmanagerMock{
+					urlf: func() string { return server2.URL },
+				},
+			},
+			cfg: &am2Cfg,
+		},
+		// Drop all alerts.
+		"3": {
+			ams: []alertmanager{
+				alertmanagerMock{
+					urlf: func() string { return server3.URL },
+				},
+			},
+			cfg: &am3Cfg,
+		},
+		// Empty list of Alertmanager endpoints.
+		"4": {
+			ams: []alertmanager{},
+			cfg: &config.DefaultAlertmanagerConfig,
+		},
 	}
 
 	for i := range make([]struct{}, maxBatchSize/2) {
-		h.queue = append(h.queue, &Alert{
-			Labels: labels.FromStrings("alertname", fmt.Sprintf("%d", i)),
-		})
-		h.queue = append(h.queue, &Alert{
-			Labels: labels.FromStrings("alertnamedrop", fmt.Sprintf("%d", i)),
-		})
+		h.queue = append(h.queue,
+			&Alert{
+				Labels: labels.FromStrings("alertname", fmt.Sprintf("%d", i)),
+			},
+			&Alert{
+				Labels: labels.FromStrings("alertname", "test", "alertnamedrop", fmt.Sprintf("%d", i)),
+			},
+		)
 
-		expected1 = append(expected1, &Alert{
-			Labels: labels.FromStrings("alertname", fmt.Sprintf("%d", i)),
-		})
-		expected1 = append(expected1, &Alert{
-			Labels: labels.FromStrings("alertnamedrop", fmt.Sprintf("%d", i)),
-		})
+		expected1 = append(expected1,
+			&Alert{
+				Labels: labels.FromStrings("alertname", fmt.Sprintf("%d", i)),
+			}, &Alert{
+				Labels: labels.FromStrings("alertname", "test", "alertnamedrop", fmt.Sprintf("%d", i)),
+			},
+		)
 
 		expected2 = append(expected2, &Alert{
 			Labels: labels.FromStrings("alertname", fmt.Sprintf("%d", i)),
@@ -296,6 +328,13 @@ func TestHandlerSendAllRemapPerAm(t *testing.T) {
 
 	require.True(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
 	checkNoErr()
+
+	// Verify that individual locks are released.
+	for k := range h.alertmanagers {
+		h.alertmanagers[k].mtx.Lock()
+		h.alertmanagers[k].ams = nil
+		h.alertmanagers[k].mtx.Unlock()
+	}
 }
 
 func TestCustomDo(t *testing.T) {

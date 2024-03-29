@@ -471,6 +471,10 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 		numSuccess atomic.Uint64
 	)
 	for _, ams := range amSets {
+		if len(ams.ams) == 0 {
+			continue
+		}
+
 		var (
 			payload  []byte
 			err      error
@@ -482,6 +486,7 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 		if len(ams.cfg.AlertRelabelConfigs) > 0 {
 			amAlerts = relabelAlerts(ams.cfg.AlertRelabelConfigs, labels.Labels{}, alerts)
 			if len(amAlerts) == 0 {
+				ams.mtx.RUnlock()
 				continue
 			}
 			// We can't use the cached values from previous iteration.
