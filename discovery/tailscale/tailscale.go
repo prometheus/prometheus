@@ -160,10 +160,10 @@ func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.Discovere
 
 	d.Discovery = refresh.NewDiscovery(
 		refresh.Options{
-			Logger:   logger,
-			Mech:     "tailscale",
-			Interval: time.Duration(conf.RefreshInterval),
-			RefreshF: d.refresh,
+			Logger:              logger,
+			Mech:                "tailscale",
+			Interval:            time.Duration(conf.RefreshInterval),
+			RefreshF:            d.refresh,
 			MetricsInstantiator: m.refreshMetrics,
 		},
 	)
