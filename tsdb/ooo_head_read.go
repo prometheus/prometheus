@@ -42,6 +42,13 @@ type OOOHeadIndexReader struct {
 	lastGarbageCollectedMmapRef chunks.ChunkDiskMapperRef
 }
 
+var _ chunkenc.Iterable = &mergedOOOChunks{}
+
+// mergedOOOChunks holds the list of iterables for overlapping chunks.
+type mergedOOOChunks struct {
+	chunkIterables []chunkenc.Iterable
+}
+
 func NewOOOHeadIndexReader(head *Head, mint, maxt int64, lastGarbageCollectedMmapRef chunks.ChunkDiskMapperRef) *OOOHeadIndexReader {
 	hr := &headIndexReader{
 		head: head,
