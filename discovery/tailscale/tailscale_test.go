@@ -27,9 +27,7 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-var (
-	tailscaleTestAPIKey = "tskey-foo-bar"
-)
+var tailscaleTestAPIKey = "tskey-foo-bar"
 
 func TestTailscaleRefresh(t *testing.T) {
 	mock := httptest.NewServer(http.HandlerFunc(MockTailscaleAPI))
