@@ -82,7 +82,7 @@ assets-tarball: assets
 .PHONY: parser
 parser:
 	@echo ">> running goyacc to generate the .go file."
-ifeq (, $(shell command -v goyacc > /dev/null))
+ifeq (, $(shell command -v goyacc 2> /dev/null))
 	@echo "goyacc not installed so skipping"
 	@echo "To install: go install golang.org/x/tools/cmd/goyacc@v0.6.0"
 else

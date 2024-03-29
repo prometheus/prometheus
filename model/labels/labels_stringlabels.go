@@ -363,13 +363,11 @@ func Compare(a, b Labels) int {
 
 	// Now we know that there is some difference before the end of a and b.
 	// Go back through the fields and find which field that difference is in.
-	firstCharDifferent := i
-	for i = 0; ; {
-		size, nextI := decodeSize(a.data, i)
-		if nextI+size > firstCharDifferent {
-			break
-		}
+	firstCharDifferent, i := i, 0
+	size, nextI := decodeSize(a.data, i)
+	for nextI+size <= firstCharDifferent {
 		i = nextI + size
+		size, nextI = decodeSize(a.data, i)
 	}
 	// Difference is inside this entry.
 	aStr, _ := decodeString(a.data, i)

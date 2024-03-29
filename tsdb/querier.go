@@ -316,7 +316,7 @@ func inversePostingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Ma
 	// Inverse of a MatchNotRegexp is MatchRegexp (double negation).
 	// Fast-path for set matching.
 	if m.Type == labels.MatchNotRegexp {
-		setMatches := labels.FindSetMatches(m.GetRegexString())
+		setMatches := m.SetMatches()
 		if len(setMatches) > 0 {
 			return ix.Postings(ctx, m.Name, setMatches...)
 		}

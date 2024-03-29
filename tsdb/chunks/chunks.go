@@ -202,15 +202,6 @@ func ChunkFromSamplesGeneric(s Samples) (Meta, error) {
 	}, nil
 }
 
-// PopulatedChunk creates a chunk populated with samples every second starting at minTime.
-func PopulatedChunk(numSamples int, minTime int64) (Meta, error) {
-	samples := make([]Sample, numSamples)
-	for i := 0; i < numSamples; i++ {
-		samples[i] = sample{t: minTime + int64(i*1000), f: 1.0}
-	}
-	return ChunkFromSamples(samples)
-}
-
 // ChunkMetasToSamples converts a slice of chunk meta data to a slice of samples.
 // Used in tests to compare the content of chunks.
 func ChunkMetasToSamples(chunks []Meta) (result []Sample) {

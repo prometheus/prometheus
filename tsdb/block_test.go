@@ -209,6 +209,22 @@ func TestCorruptedChunk(t *testing.T) {
 	}
 }
 
+func sequenceFiles(dir string) ([]string, error) {
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var res []string
+
+	for _, fi := range files {
+		if _, err := strconv.ParseUint(fi.Name(), 10, 64); err != nil {
+			continue
+		}
+		res = append(res, filepath.Join(dir, fi.Name()))
+	}
+	return res, nil
+}
+
 func TestLabelValuesWithMatchers(t *testing.T) {
 	tmpdir := t.TempDir()
 	ctx := context.Background()

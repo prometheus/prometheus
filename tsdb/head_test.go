@@ -5819,3 +5819,16 @@ func TestHeadAppender_AppendCTZeroSample(t *testing.T) {
 		require.Equal(t, chunkenc.ValNone, it.Next())
 	}
 }
+
+func TestHeadCompactableDoesNotCompactEmptyHead(t *testing.T) {
+	// Use a chunk range of 1 here so that if we attempted to determine if the head
+	// was compactable using default values for min and max times, `Head.compactable()`
+	// would return true which is incorrect. This test verifies that we short-circuit
+	// the check when the head has not yet had any samples added.
+	head, _ := newTestHead(t, 1, wlog.CompressionNone, false)
+	defer func() {
+		require.NoError(t, head.Close())
+	}()
+
+	require.False(t, head.compactable())
+}

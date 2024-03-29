@@ -947,7 +947,7 @@ func fastPostingsForMatcher(ctx context.Context, pr PostingsReader, m *labels.Ma
 
 	// Fast-path for set matching.
 	if m.Type == labels.MatchRegexp {
-		setMatches := labels.FindSetMatches(m.GetRegexString())
+		setMatches := m.SetMatches()
 		if len(setMatches) > 0 {
 			p, err := pr.Postings(ctx, m.Name, setMatches...)
 			if err != nil {

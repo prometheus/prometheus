@@ -90,7 +90,7 @@ can modify the `./promql/parser/generated_parser.y.go` manually.
 ```golang
 // As of writing this was somewhere around line 600.
 var (
-	yyDebug        = 0 // This can be be a number 0 -> 5.
+	yyDebug        = 0 // This can be a number 0 -> 5.
 	yyErrorVerbose = false  // This can be set to true.
 )
 
