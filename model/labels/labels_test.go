@@ -25,20 +25,20 @@ import (
 
 func TestLabels_String(t *testing.T) {
 	cases := []struct {
-		lables   Labels
+		labels   Labels
 		expected string
 	}{
 		{
-			lables:   FromStrings("t1", "t1", "t2", "t2"),
+			labels:   FromStrings("t1", "t1", "t2", "t2"),
 			expected: "{t1=\"t1\", t2=\"t2\"}",
 		},
 		{
-			lables:   Labels{},
+			labels:   Labels{},
 			expected: "{}",
 		},
 	}
 	for _, c := range cases {
-		str := c.lables.String()
+		str := c.labels.String()
 		require.Equal(t, c.expected, str)
 	}
 }

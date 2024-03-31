@@ -1045,7 +1045,7 @@ func visitStringMatcher(matcher StringMatcher, callback func(matcher StringMatch
 			visitStringMatcher(entry, callback)
 		}
 
-	// No nested matchers for the folling ones.
+	// No nested matchers for the following ones.
 	case emptyStringMatcher:
 	case *equalStringMatcher:
 	case *equalMultiStringSliceMatcher:
