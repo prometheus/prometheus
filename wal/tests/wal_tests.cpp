@@ -202,6 +202,8 @@ TEST_F(Wal, BasicEncoderBasicDecoder) {
   }
 
   EXPECT_EQ(writer.samples(), 0);
+  auto writer_earliest_sample = writer.buffer().earliest_sample();
+  auto writer_latest_sample = writer.buffer().latest_sample();
 
   PromPP::WAL::BasicDecoder<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap> reader{PromPP::WAL::BasicEncoderVersion::kV3};
   std::stringstream stream_buffer;
@@ -241,6 +243,8 @@ TEST_F(Wal, BasicEncoderBasicDecoder) {
   EXPECT_EQ(outcomes_reader_samples.size(), etalons_samples.size());
 
   EXPECT_EQ(reader.samples(), NUM_VALUES);
+  EXPECT_EQ(writer_earliest_sample, reader.earliest_sample());
+  EXPECT_EQ(writer_latest_sample, reader.latest_sample());
 }
 
 TEST_F(Wal, Snapshots) {
