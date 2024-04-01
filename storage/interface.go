@@ -49,7 +49,8 @@ var (
 	// NOTE(bwplotka): This can be both an instrumentation failure or commonly expected
 	// behaviour, and we currently don't have a way to determine this. As a result
 	// it's recommended to ignore this error for now.
-	ErrOutOfOrderCT = fmt.Errorf("created timestamp out of order, ignoring")
+	ErrOutOfOrderCT      = fmt.Errorf("created timestamp out of order, ignoring")
+	ErrCTNewerThanSample = fmt.Errorf("CT is newer or the same as sample's timestamp, ignoring")
 )
 
 // SeriesRef is a generic series reference. In prometheus it is either a
