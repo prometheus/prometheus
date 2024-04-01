@@ -36,7 +36,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
 	github.com/hashicorp/consul/api v1.28.2
 	github.com/hashicorp/nomad/api v0.0.0-20240306004928-3e7191ccb702
-	github.com/hetznercloud/hcloud-go/v2 v2.6.0
+	github.com/hetznercloud/hcloud-go/v2 v2.7.0
 	github.com/ionos-cloud/sdk-go/v6 v6.1.11
 	github.com/json-iterator/go v1.1.12
 	github.com/klauspost/compress v1.17.7
