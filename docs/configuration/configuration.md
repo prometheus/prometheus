@@ -121,6 +121,12 @@ global:
   # that will be kept in memory. 0 means no limit.
   [ keep_dropped_targets: <int> | default = 0 ]
 
+runtime:
+  # Configure the Go garbage collector GOGC parameter
+  # See: https://tip.golang.org/doc/gc-guide#GOGC
+  # Lowering this number increases CPU usage.
+  [ gogc: <int> | default = 50 ]
+
 # Rule files specifies a list of globs. Rules and alerts are read from
 # all matching files.
 rule_files:

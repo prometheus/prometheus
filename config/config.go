@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -151,6 +152,11 @@ var (
 		ScrapeProtocols: DefaultScrapeProtocols,
 	}
 
+	DefaultRuntimeConfig = RuntimeConfig{
+		// Go runtime tuning.
+		GoGC: 50,
+	}
+
 	// DefaultScrapeConfig is the default scrape configuration.
 	DefaultScrapeConfig = ScrapeConfig{
 		// ScrapeTimeout, ScrapeInterval and ScrapeProtocols default to the configured globals.
@@ -225,6 +231,7 @@ var (
 // Config is the top-level configuration for Prometheus's config files.
 type Config struct {
 	GlobalConfig      GlobalConfig    `yaml:"global"`
+	Runtime           RuntimeConfig   `yaml:"runtime,omitempty"`
 	AlertingConfig    AlertingConfig  `yaml:"alerting,omitempty"`
 	RuleFiles         []string        `yaml:"rule_files,omitempty"`
 	ScrapeConfigFiles []string        `yaml:"scrape_config_files,omitempty"`
@@ -333,6 +340,14 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// We have to restore it here.
 	if c.GlobalConfig.isZero() {
 		c.GlobalConfig = DefaultGlobalConfig
+	}
+
+	// If a runtime block was open but empty the default runtime config is overwritten.
+	// We have to restore it here.
+	if c.Runtime.isZero() {
+		c.Runtime = DefaultRuntimeConfig
+		// Use the GOGC env var value if the runtime section is empty.
+		c.Runtime.GoGC = getGoGCEnv()
 	}
 
 	for _, rf := range c.RuleFiles {
@@ -562,6 +577,17 @@ func (c *GlobalConfig) isZero() bool {
 		c.RuleQueryOffset == 0 &&
 		c.QueryLogFile == "" &&
 		c.ScrapeProtocols == nil
+}
+
+// RuntimeConfig configures the values for the process behavior.
+type RuntimeConfig struct {
+	// The Go garbage collection target percentage.
+	GoGC int `yaml:"gogc,omitempty"`
+}
+
+// isZero returns true iff the global config is the zero value.
+func (c *RuntimeConfig) isZero() bool {
+	return c.GoGC == 0
 }
 
 type ScrapeConfigs struct {
@@ -1210,4 +1236,20 @@ func filePath(filename string) string {
 
 func fileErr(filename string, err error) error {
 	return fmt.Errorf("%q: %w", filePath(filename), err)
+}
+
+func getGoGCEnv() int {
+	goGCEnv := os.Getenv("GOGC")
+	// If the GOGC env var is set, use the same logic as upstream Go.
+	if goGCEnv != "" {
+		// Special case for GOGC=off.
+		if strings.ToLower(goGCEnv) == "off" {
+			return -1
+		}
+		i, err := strconv.Atoi(goGCEnv)
+		if err == nil {
+			return i
+		}
+	}
+	return DefaultRuntimeConfig.GoGC
 }
