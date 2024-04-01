@@ -142,7 +142,7 @@ class BasicEncoder {
       ++samples_count_;
 
       earliest_sample_ = std::min(smpl.timestamp(), earliest_sample_);
-      latest_sample_ = std::max(smpl.timestamp(), earliest_sample_);
+      latest_sample_ = std::max(smpl.timestamp(), latest_sample_);
 
       if (ls_id >= singular_.size()) {
         singular_.resize(ls_id + 1 + 512);
@@ -632,8 +632,10 @@ class BasicDecoder {
   BareBones::CRC32 segment_v_crc_;
   uint16_t shard_id_ = 0;
   uint8_t pow_two_of_total_shards_ = 0;
-  int64_t created_at_tsns_ = 0;
-  int64_t encoded_at_tsns_ = 0;
+  Primitives::Timestamp created_at_tsns_ = 0;
+  Primitives::Timestamp encoded_at_tsns_ = 0;
+  Primitives::Timestamp earliest_sample_ = std::numeric_limits<Primitives::Timestamp>::max();
+  Primitives::Timestamp latest_sample_ = 0;
   BasicEncoderVersion encoder_version_;
   uint64_t samples_ = 0;
 
@@ -829,6 +831,9 @@ class BasicDecoder {
 
   inline __attribute__((always_inline)) int64_t encoded_at_tsns() const { return encoded_at_tsns_; }
 
+  inline __attribute__((always_inline)) Primitives::Timestamp earliest_sample() const noexcept { return earliest_sample_; }
+  inline __attribute__((always_inline)) Primitives::Timestamp latest_sample() const noexcept { return latest_sample_; }
+
   template <class InputStream>
   friend InputStream& operator>>(InputStream& in, BasicDecoder& wal) {
     wal.load_segment(in);
@@ -871,7 +876,11 @@ class BasicDecoder {
         ++ts_i;
         ++samples_;
 
-        func(ls_id, g.last_timestamp() + ts_base_, g.last_value());
+        auto timestamp = g.last_timestamp() + ts_base_;
+        earliest_sample_ = std::min(timestamp, earliest_sample_);
+        latest_sample_ = std::max(timestamp, latest_sample_);
+
+        func(ls_id, timestamp, g.last_value());
       }
 
       // there are remaining timestamps in Decoder/segment (ls_id), which is unexpected.
@@ -921,8 +930,11 @@ class BasicDecoder {
         v_crc << g.last_value();
 
         ++samples_;
+        auto timestamp = g.last_timestamp() + ts_base_;
+        earliest_sample_ = std::min(timestamp, earliest_sample_);
+        latest_sample_ = std::max(timestamp, latest_sample_);
 
-        func(ls_id, g.last_timestamp() + ts_base_, g.last_value());
+        func(ls_id, timestamp, g.last_value());
       }
 
       if (g_ts_bitseq_reader.left() != 0) {
