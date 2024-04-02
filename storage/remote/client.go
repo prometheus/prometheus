@@ -88,9 +88,8 @@ func init() {
 
 // Client allows reading and writing from/to a remote HTTP endpoint.
 type Client struct {
-	remoteName   string                   // Used to differentiate clients in metrics.
-	urlString    string                   // url.String()
-	rwFormat     config.RemoteWriteFormat // For write clients, ignored for read clients.
+	remoteName   string // Used to differentiate clients in metrics.
+	urlString    string // url.String()
 	lastRWHeader string
 	Client       *http.Client
 	timeout      time.Duration
@@ -173,7 +172,6 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 	httpClient.Transport = otelhttp.NewTransport(t)
 
 	return &Client{
-		rwFormat:         conf.RemoteWriteFormat,
 		remoteName:       name,
 		urlString:        conf.URL.String(),
 		Client:           httpClient,
@@ -206,17 +204,14 @@ type RecoverableError struct {
 }
 
 // Attempt a HEAD request against a remote write endpoint to see what it supports.
-func (c *Client) GetProtoVersions(ctx context.Context) (string, error) {
-	// If we are in Version1 mode then don't even bother
-	if c.rwFormat == Version1 {
-		return RemoteWriteVersion1HeaderValue, nil
-	}
+func (c *Client) probeRemoteVersions(ctx context.Context) error {
+	// We assume we are in Version2 mode otherwise we shouldn't be calling this
 
 	httpReq, err := http.NewRequest("HEAD", c.urlString, nil)
 	if err != nil {
 		// Errors from NewRequest are from unparsable URLs, so are not
 		// recoverable.
-		return "", err
+		return err
 	}
 
 	// Set the version header to be nice
@@ -229,7 +224,7 @@ func (c *Client) GetProtoVersions(ctx context.Context) (string, error) {
 	httpResp, err := c.Client.Do(httpReq.WithContext(ctx))
 	if err != nil {
 		// We don't attempt a retry here
-		return "", err
+		return err
 	}
 
 	// See if we got a header anyway
@@ -250,11 +245,11 @@ func (c *Client) GetProtoVersions(ctx context.Context) (string, error) {
 			// a response that confirms it can speak 2.0
 			c.lastRWHeader = promHeader
 		}
-		return promHeader, fmt.Errorf(httpResp.Status)
+		return fmt.Errorf(httpResp.Status)
 	}
 
-	// All ok, return header and no error
-	return promHeader, nil
+	// All ok, return no error
+	return nil
 }
 
 // Store sends a batch of samples to the HTTP endpoint, the request is the proto marshalled
@@ -448,8 +443,8 @@ func NewTestClient(name, url string) WriteClient {
 	return &TestClient{name: name, url: url}
 }
 
-func (c *TestClient) GetProtoVersions(_ context.Context) (string, error) {
-	return "2.0;snappy,0.1.0", nil
+func (c *TestClient) probeRemoteVersions(_ context.Context) error {
+	return nil
 }
 
 func (c *TestClient) Store(_ context.Context, req []byte, _ int, _ config.RemoteWriteFormat, _ string) error {

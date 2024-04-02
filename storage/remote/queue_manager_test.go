@@ -1317,8 +1317,8 @@ func (c *TestWriteClient) Endpoint() string {
 	return "http://test-remote.com/1234"
 }
 
-func (c *TestWriteClient) GetProtoVersions(_ context.Context) (string, error) {
-	return "2.0;snappy,0.1.0", nil
+func (c *TestWriteClient) probeRemoteVersions(_ context.Context) error {
+	return nil
 }
 
 func (c *TestWriteClient) GetLastRWHeader() string {
@@ -1361,8 +1361,8 @@ func (c *TestBlockingWriteClient) Endpoint() string {
 	return "http://test-remote-blocking.com/1234"
 }
 
-func (c *TestBlockingWriteClient) GetProtoVersions(_ context.Context) (string, error) {
-	return "2.0;snappy,0.1.0", nil
+func (c *TestBlockingWriteClient) probeRemoteVersions(_ context.Context) error {
+	return nil
 }
 
 func (c *TestBlockingWriteClient) GetLastRWHeader() string {
@@ -1378,8 +1378,8 @@ func (c *NopWriteClient) Store(context.Context, []byte, int, config.RemoteWriteF
 }
 func (c *NopWriteClient) Name() string     { return "nopwriteclient" }
 func (c *NopWriteClient) Endpoint() string { return "http://test-remote.com/1234" }
-func (c *NopWriteClient) GetProtoVersions(_ context.Context) (string, error) {
-	return "2.0;snappy,0.1.0", nil
+func (c *NopWriteClient) probeRemoteVersions(_ context.Context) error {
+	return nil
 }
 func (c *NopWriteClient) GetLastRWHeader() string { return "2.0;snappy,0.1.0" }
 

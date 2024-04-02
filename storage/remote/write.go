@@ -203,8 +203,8 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			// If this newer remote write format is enabled then we need to probe the remote server
 			// to work out the desired protocol version and compressions
 			// The value of the header is kept in the client so no need to see it here
-			_, _ = c.GetProtoVersions(context.Background())
-			// TODO(alexg): Since they're never used should I remove the return values of GetProtoVersion()?
+			_ = c.probeRemoteVersions(context.Background())
+			// We ignore any error here, at some point we may choose to log it
 		}
 
 		// Redacted to remove any passwords in the URL (that are

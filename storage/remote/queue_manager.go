@@ -395,7 +395,7 @@ type WriteClient interface {
 	// Endpoint is the remote read or write endpoint for the storage client.
 	Endpoint() string
 	// Get the protocol versions supported by the endpoint
-	GetProtoVersions(ctx context.Context) (string, error)
+	probeRemoteVersions(ctx context.Context) error
 	// Get the last RW header received from the endpoint
 	GetLastRWHeader() string
 }
