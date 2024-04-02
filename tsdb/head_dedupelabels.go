@@ -16,6 +16,9 @@
 package tsdb
 
 import (
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+
 	"github.com/prometheus/prometheus/model/labels"
 )
 
@@ -24,4 +27,41 @@ func (s *memSeries) labels() labels.Labels {
 	s.Lock()
 	defer s.Unlock()
 	return s.lset
+}
+
+// RebuildSymbolTable goes through all the series in h, build a SymbolTable with all names and values,
+// replace each series' Labels with one using that SymbolTable.
+func (h *Head) RebuildSymbolTable(logger log.Logger) *labels.SymbolTable {
+	level.Info(logger).Log("msg", "RebuildSymbolTable starting")
+	st := labels.NewSymbolTable()
+	builder := labels.NewScratchBuilderWithSymbolTable(st, 0)
+	rebuildLabels := func(lbls labels.Labels) labels.Labels {
+		builder.Reset()
+		lbls.Range(func(l labels.Label) {
+			builder.Add(l.Name, l.Value)
+		})
+		return builder.Labels()
+	}
+
+	for i := 0; i < h.series.size; i++ {
+		h.series.locks[i].Lock()
+
+		for _, s := range h.series.hashes[i].unique {
+			s.Lock()
+			s.lset = rebuildLabels(s.lset)
+			s.Unlock()
+		}
+
+		for _, all := range h.series.hashes[i].conflicts {
+			for _, s := range all {
+				s.Lock()
+				s.lset = rebuildLabels(s.lset)
+				s.Unlock()
+			}
+		}
+
+		h.series.locks[i].Unlock()
+	}
+	level.Info(logger).Log("msg", "RebuildSymbolTable finished", "size", st.Len())
+	return st
 }
