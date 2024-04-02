@@ -214,7 +214,6 @@ func (c *Client) probeRemoteVersions(ctx context.Context) error {
 		return err
 	}
 
-	// Set the version header to be nice
 	httpReq.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
 	httpReq.Header.Set("User-Agent", UserAgent)
 
