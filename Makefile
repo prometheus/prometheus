@@ -112,6 +112,7 @@ tarball: npm_licenses common-tarball
 .PHONY: docker
 docker: npm_licenses common-docker
 
+.PHONY: plugins/plugins.go
 plugins/plugins.go: plugins.yml plugins/generate.go
 	@echo ">> creating plugins list"
 	$(GO) generate -tags plugins ./plugins
