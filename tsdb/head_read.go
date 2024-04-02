@@ -582,10 +582,6 @@ func (s *memSeries) oooMergedChunks(meta chunks.Meta, cdm *chunks.ChunkDiskMappe
 	return mc, nil
 }
 
-func (o mergedOOOChunks) Iterator(iterator chunkenc.Iterator) chunkenc.Iterator {
-	return storage.ChainSampleIteratorFromIterables(iterator, o.chunkIterables)
-}
-
 var _ chunkenc.Iterable = &boundedIterable{}
 
 // boundedIterable is an implementation of chunkenc.Iterable that uses a
