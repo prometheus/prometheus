@@ -34,6 +34,7 @@ type scrapeMetrics struct {
 	targetScrapePoolExceededTargetLimit prometheus.Counter
 	targetScrapePoolTargetLimit         *prometheus.GaugeVec
 	targetScrapePoolTargetsAdded        *prometheus.GaugeVec
+	targetScrapePoolSymbolTableItems    *prometheus.GaugeVec
 	targetSyncIntervalLength            *prometheus.SummaryVec
 	targetSyncFailed                    *prometheus.CounterVec
 
@@ -126,6 +127,13 @@ func newScrapeMetrics(reg prometheus.Registerer) (*scrapeMetrics, error) {
 		prometheus.GaugeOpts{
 			Name: "prometheus_target_scrape_pool_targets",
 			Help: "Current number of targets in this scrape pool.",
+		},
+		[]string{"scrape_job"},
+	)
+	sm.targetScrapePoolSymbolTableItems = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "prometheus_target_scrape_pool_symboltable_items",
+			Help: "Current number of symbols in table for this scrape pool.",
 		},
 		[]string{"scrape_job"},
 	)
@@ -234,6 +242,7 @@ func newScrapeMetrics(reg prometheus.Registerer) (*scrapeMetrics, error) {
 		sm.targetScrapePoolExceededTargetLimit,
 		sm.targetScrapePoolTargetLimit,
 		sm.targetScrapePoolTargetsAdded,
+		sm.targetScrapePoolSymbolTableItems,
 		sm.targetSyncFailed,
 		// Used by targetScraper.
 		sm.targetScrapeExceededBodySizeLimit,
