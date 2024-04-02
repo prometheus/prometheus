@@ -369,6 +369,7 @@ func (sp *scrapePool) checkSymbolTable() {
 		if sp.initialSymbolTableLen == 0 {
 			sp.initialSymbolTableLen = sp.symbolTable.Len()
 		} else if sp.symbolTable.Len() > 2*sp.initialSymbolTableLen {
+			level.Info(sp.logger).Log("msg", "Recreating symbol table", "job", sp.config.JobName, "initialLength", sp.initialSymbolTableLen, "length", sp.symbolTable.Len())
 			sp.symbolTable = labels.NewSymbolTable()
 			sp.initialSymbolTableLen = 0
 		}
