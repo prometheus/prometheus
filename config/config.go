@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -957,6 +958,7 @@ func (a AlertmanagerConfigs) ToMap() map[string]*AlertmanagerConfig {
 
 // AlertmanagerAPIVersion represents a version of the
 // github.com/prometheus/alertmanager/api, e.g. 'v1' or 'v2'.
+// V1 is current deprecated and no longer supported.
 type AlertmanagerAPIVersion string
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -986,7 +988,7 @@ const (
 )
 
 var SupportedAlertmanagerAPIVersions = []AlertmanagerAPIVersion{
-	AlertmanagerAPIVersionV1, AlertmanagerAPIVersionV2,
+	AlertmanagerAPIVersionV2,
 }
 
 // AlertmanagerConfig configures how Alertmanagers can be discovered and communicated with.
@@ -1039,6 +1041,11 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 
 	if httpClientConfigAuthEnabled && c.SigV4Config != nil {
 		return fmt.Errorf("at most one of basic_auth, authorization, oauth2, & sigv4 must be configured")
+	}
+
+	// Disallow config using AM V1 API.
+	if !slices.Contains(SupportedAlertmanagerAPIVersions, c.APIVersion) {
+		return fmt.Errorf("invalid Alertmanager API version '%v', expected one of '%v'", c.APIVersion, SupportedAlertmanagerAPIVersions)
 	}
 
 	// Check for users putting URLs in target groups.
