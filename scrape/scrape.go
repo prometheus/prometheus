@@ -376,6 +376,7 @@ func (sp *scrapePool) checkSymbolTable() {
 		} else if sp.symbolTable.Len() > 2*sp.initialSymbolTableLen {
 			sp.symbolTable = labels.NewSymbolTable()
 			sp.initialSymbolTableLen = 0
+			sp.restartLoops(false) // To drop all caches.
 		}
 		sp.lastSymbolTableCheck = time.Now()
 	}
