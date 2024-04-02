@@ -357,7 +357,11 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	sp.metrics.targetReloadIntervalLength.WithLabelValues(interval.String()).Observe(
 		time.Since(start).Seconds(),
 	)
+	return nil
+}
 
+// Must be called with sp.mtx held.
+func (sp *scrapePool) checkSymbolTable() {
 	// Here we take steps to clear out the symbol table if it has grown a lot.
 	// After waiting some time for things to settle, we take the size of the symbol-table.
 	// If, after some more time, the table has grown to twice that size, we start a new one.
@@ -371,8 +375,6 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 		}
 		sp.lastSymbolTableCheck = time.Now()
 	}
-
-	return nil
 }
 
 // Sync converts target groups into actual scrape targets and synchronizes
@@ -412,6 +414,7 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 	sp.metrics.targetScrapePoolSymbolTableItems.WithLabelValues(sp.config.JobName).Set(float64(sp.symbolTable.Len()))
 	sp.targetMtx.Unlock()
 	sp.sync(all)
+	sp.checkSymbolTable()
 
 	sp.metrics.targetSyncIntervalLength.WithLabelValues(sp.config.JobName).Observe(
 		time.Since(start).Seconds(),
