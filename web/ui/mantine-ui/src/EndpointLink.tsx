@@ -1,5 +1,5 @@
 import { Anchor, Badge, Group } from "@mantine/core";
-import React, { FC } from "react";
+import { FC } from "react";
 
 export interface EndpointLinkProps {
   endpoint: string;

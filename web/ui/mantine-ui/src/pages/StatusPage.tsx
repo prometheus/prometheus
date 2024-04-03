@@ -12,7 +12,8 @@ const statusConfig: Record<
 > = {
   startTime: {
     title: "Start time",
-    formatValue: (v: string) => formatTimestamp(new Date(v).valueOf() / 1000),
+    formatValue: (v: string) =>
+      formatTimestamp(new Date(v).valueOf() / 1000, false), // TODO: Set useLocalTime parameter correctly.
   },
   CWD: { title: "Working directory" },
   reloadConfigSuccess: {

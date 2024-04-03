@@ -38,8 +38,6 @@ const Graph: FC<GraphProps> = ({
   endTime,
   range,
   resolution,
-  showExemplars,
-  displayMode,
   retriggerIdx,
 }) => {
   const realEndTime = (endTime !== null ? endTime : Date.now()) / 1000;

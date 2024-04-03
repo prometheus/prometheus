@@ -3,7 +3,6 @@ import { IconClockPause, IconClockPlay } from "@tabler/icons-react";
 import { FC } from "react";
 import { formatPrometheusDuration } from "./lib/formatTime";
 import codeboxClasses from "./codebox.module.css";
-import badgeClasses from "./Badge.module.css";
 import { Rule } from "./api/responseTypes/rules";
 import CodeMirror, { EditorView } from "@uiw/react-codemirror";
 import { syntaxHighlighting } from "@codemirror/language";

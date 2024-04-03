@@ -5,7 +5,6 @@ import {
   Card,
   Group,
   Stack,
-  Table,
   Text,
   Tooltip,
 } from "@mantine/core";

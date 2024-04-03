@@ -1,20 +1,15 @@
-import { FC, useState } from "react";
+import { FC } from "react";
 import {
-  Badge,
   CheckIcon,
-  CloseButton,
   Combobox,
   ComboboxChevron,
   ComboboxClearButton,
   Group,
-  Input,
-  MantineColor,
   Pill,
-  PillGroup,
   PillsInput,
   useCombobox,
 } from "@mantine/core";
-import { IconActivity, IconFilter } from "@tabler/icons-react";
+import { IconActivity } from "@tabler/icons-react";
 
 interface StatePillProps extends React.ComponentPropsWithoutRef<"div"> {
   value: string;

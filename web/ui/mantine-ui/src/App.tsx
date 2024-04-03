@@ -6,21 +6,15 @@ import classes from "./App.module.css";
 import PrometheusLogo from "./images/prometheus-logo.svg";
 
 import {
-  ActionIcon,
   Affix,
-  Anchor,
   AppShell,
   Box,
   Burger,
   Button,
-  Checkbox,
-  Fieldset,
   Group,
   MantineProvider,
   Menu,
-  Popover,
   Skeleton,
-  Stack,
   Text,
   Transition,
   createTheme,
@@ -28,7 +22,6 @@ import {
 } from "@mantine/core";
 import { useDisclosure, useWindowScroll } from "@mantine/hooks";
 import {
-  IconAdjustments,
   IconArrowUp,
   IconBellFilled,
   IconChevronDown,
@@ -41,7 +34,6 @@ import {
   IconHeartRateMonitor,
   IconInfoCircle,
   IconServerCog,
-  IconSettings,
 } from "@tabler/icons-react";
 import {
   BrowserRouter,
@@ -53,7 +45,6 @@ import {
 } from "react-router-dom";
 import { IconTable } from "@tabler/icons-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-// import { ReactQueryDevtools } from "react-query/devtools";
 import QueryPage from "./pages/query/QueryPage";
 import AlertsPage from "./pages/AlertsPage";
 import RulesPage from "./pages/RulesPage";

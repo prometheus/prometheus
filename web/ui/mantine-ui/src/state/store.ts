@@ -1,6 +1,5 @@
 import { configureStore } from "@reduxjs/toolkit";
 import queryPageSlice from "./queryPageSlice";
-import { prometheusApi } from "./api";
 import settingsSlice from "./settingsSlice";
 import targetsPageSlice from "./targetsPageSlice";
 import alertsPageSlice from "./alertsPageSlice";
@@ -12,12 +11,9 @@ const store = configureStore({
     queryPage: queryPageSlice,
     targetsPage: targetsPageSlice,
     alertsPage: alertsPageSlice,
-    [prometheusApi.reducerPath]: prometheusApi.reducer,
   },
   middleware: (getDefaultMiddleware) =>
-    getDefaultMiddleware()
-      .prepend(localStorageMiddleware.middleware)
-      .concat(prometheusApi.middleware),
+    getDefaultMiddleware().prepend(localStorageMiddleware.middleware),
 });
 
 // Infer the `RootState` and `AppDispatch` types from the store itself

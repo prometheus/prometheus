@@ -40,7 +40,6 @@ const newDefaultPanel = (): Panel => ({
   visualizer: {
     activeTab: "table",
     endTime: null,
-    // endTime: 1709414194000,
     range: 3600 * 1000,
     resolution: null,
     displayMode: GraphDisplayMode.Lines,

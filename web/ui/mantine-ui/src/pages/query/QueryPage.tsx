@@ -1,9 +1,8 @@
-import { Alert, Box, Button, Notification, Stack, rem } from "@mantine/core";
+import { Alert, Box, Button, Stack, rem } from "@mantine/core";
 import {
   IconAlertCircle,
   IconAlertTriangle,
   IconPlus,
-  IconX,
 } from "@tabler/icons-react";
 import { useAppDispatch, useAppSelector } from "../../state/hooks";
 import { addPanel } from "../../state/queryPageSlice";

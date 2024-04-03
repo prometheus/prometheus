@@ -2,9 +2,7 @@ import {
   Accordion,
   ActionIcon,
   Alert,
-  Anchor,
   Badge,
-  Card,
   Group,
   Input,
   RingProgress,
@@ -27,7 +25,6 @@ import { Target, TargetsResult } from "../api/responseTypes/targets";
 import React from "react";
 import badgeClasses from "../Badge.module.css";
 import {
-  formatPrometheusDuration,
   humanizeDurationRelative,
   humanizeDuration,
   now,
