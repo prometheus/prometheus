@@ -47,7 +47,6 @@ export const baseTheme = EditorView.theme({
   },
 
   ".cm-tooltip.cm-completionInfo": {
-    marginTop: "-11px",
     padding: "10px",
     fontFamily:
       "'Open Sans', 'Lucida Sans Unicode', 'Lucida Grande', sans-serif;",
@@ -67,6 +66,7 @@ export const baseTheme = EditorView.theme({
       borderStyle: "solid",
       borderColor: "transparent",
     },
+    marginTop: "-11px",
     marginLeft: "12px",
   },
   ".cm-completionInfo.cm-completionInfo-left": {
@@ -80,9 +80,23 @@ export const baseTheme = EditorView.theme({
       borderStyle: "solid",
       borderColor: "transparent",
     },
+    marginTop: "-11px",
     marginRight: "12px",
   },
-
+  ".cm-completionInfo.cm-completionInfo-right-narrow": {
+    "&:before": {
+      content: "' '",
+      height: "0",
+      position: "absolute",
+      width: "0",
+      top: "-20px",
+      borderWidth: "10px",
+      borderStyle: "solid",
+      borderColor: "transparent",
+    },
+    marginTop: "10px",
+    marginLeft: "150px",
+  },
   ".cm-completionMatchedText": {
     textDecoration: "none",
     fontWeight: "bold",
@@ -172,6 +186,11 @@ export const lightTheme = EditorView.theme(
         borderRightColor: "#d6ebff",
       },
     },
+    ".cm-tooltip > .cm-completionInfo.cm-completionInfo-right-narrow": {
+      "&:before": {
+        borderBottomColor: "#d6ebff",
+      },
+    },
     ".cm-tooltip > .cm-completionInfo.cm-completionInfo-left": {
       "&:before": {
         borderLeftColor: "#d6ebff",
@@ -228,6 +247,11 @@ export const darkTheme = EditorView.theme(
     ".cm-tooltip > .cm-completionInfo.cm-completionInfo-right": {
       "&:before": {
         borderRightColor: "#333338",
+      },
+    },
+    ".cm-tooltip > .cm-completionInfo.cm-completionInfo-right-narrow": {
+      "&:before": {
+        borderBottomColor: "#333338",
       },
     },
     ".cm-tooltip > .cm-completionInfo.cm-completionInfo-left": {
