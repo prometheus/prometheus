@@ -1,4 +1,5 @@
 import {
+  Accordion,
   Alert,
   Badge,
   Card,
@@ -9,12 +10,17 @@ import {
   Tooltip,
 } from "@mantine/core";
 // import { useQuery } from "react-query";
-import { formatRelative, humanizeDuration, now } from "../lib/formatTime";
+import {
+  humanizeDurationRelative,
+  humanizeDuration,
+  now,
+} from "../lib/formatTime";
 import {
   IconAlertTriangle,
   IconBell,
   IconDatabaseImport,
   IconHourglass,
+  IconInfoCircle,
   IconRefresh,
   IconRepeat,
 } from "@tabler/icons-react";
@@ -32,7 +38,7 @@ const healthBadgeClass = (state: string) => {
     case "unknown":
       return badgeClasses.healthUnknown;
     default:
-      return "orange";
+      throw new Error("Unknown rule health state");
   }
 };
 
@@ -41,6 +47,11 @@ export default function RulesPage() {
 
   return (
     <Stack mt="xs">
+      {data.data.groups.length === 0 && (
+        <Alert title="No rule groups" icon={<IconInfoCircle size={14} />}>
+          No rule groups configured.
+        </Alert>
+      )}
       {data.data.groups.map((g, i) => (
         <Card
           shadow="xs"
@@ -66,7 +77,7 @@ export default function RulesPage() {
                   styles={{ label: { textTransform: "none" } }}
                   leftSection={<IconRefresh size={12} />}
                 >
-                  last run {formatRelative(g.lastEvaluation, now())}
+                  last run {humanizeDurationRelative(g.lastEvaluation, now())}
                 </Badge>
               </Tooltip>
               <Tooltip label="Duration of last group evaluation" withArrow>
@@ -91,21 +102,34 @@ export default function RulesPage() {
               </Tooltip>
             </Group>
           </Group>
-          <Table>
-            <Table.Tbody>
-              {g.rules.map((r) => (
-                // TODO: Find a stable and definitely unique key.
-                <Table.Tr key={r.name}>
-                  <Table.Td p="md" py="xl" valign="top">
+          {g.rules.length === 0 && (
+            <Alert title="No rules" icon={<IconInfoCircle size={14} />}>
+              No rules in rule group.
+            </Alert>
+          )}
+          <Accordion multiple variant="separated">
+            {g.rules.map((r, j) => (
+              <Accordion.Item
+                key={j}
+                value={j.toString()}
+                style={{
+                  borderLeft:
+                    r.health === "err"
+                      ? "5px solid var(--mantine-color-red-4)"
+                      : r.health === "unknown"
+                      ? "5px solid var(--mantine-color-gray-5)"
+                      : "5px solid var(--mantine-color-green-4)",
+                }}
+              >
+                <Accordion.Control>
+                  <Group wrap="nowrap" justify="space-between" mr="lg">
                     <Group gap="xs" wrap="nowrap">
                       {r.type === "alerting" ? (
-                        <IconBell size={14} />
+                        <IconBell size={15} />
                       ) : (
-                        <IconDatabaseImport size={14} />
+                        <IconDatabaseImport size={15} />
                       )}
-                      <Text fz="sm" fw={600}>
-                        {r.name}
-                      </Text>
+                      <Text>{r.name}</Text>
                     </Group>
                     <Group mt="md" gap="xs">
                       <Badge className={healthBadgeClass(r.health)}>
@@ -120,7 +144,7 @@ export default function RulesPage() {
                             styles={{ label: { textTransform: "none" } }}
                             leftSection={<IconRefresh size={12} />}
                           >
-                            {formatRelative(r.lastEvaluation, now())}
+                            {humanizeDurationRelative(r.lastEvaluation, now())}
                           </Badge>
                         </Tooltip>
 
@@ -141,24 +165,24 @@ export default function RulesPage() {
                         </Tooltip>
                       </Group>
                     </Group>
-                  </Table.Td>
-                  <Table.Td p="md" py="xl">
-                    <RuleDefinition rule={r} />
-                    {r.lastError && (
-                      <Alert
-                        color="red"
-                        mt="sm"
-                        title="Rule failed to evaluate"
-                        icon={<IconAlertTriangle size={14} />}
-                      >
-                        <strong>Error:</strong> {r.lastError}
-                      </Alert>
-                    )}
-                  </Table.Td>
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
+                  </Group>
+                </Accordion.Control>
+                <Accordion.Panel>
+                  <RuleDefinition rule={r} />
+                  {r.lastError && (
+                    <Alert
+                      color="red"
+                      mt="sm"
+                      title="Rule failed to evaluate"
+                      icon={<IconAlertTriangle size={14} />}
+                    >
+                      <strong>Error:</strong> {r.lastError}
+                    </Alert>
+                  )}
+                </Accordion.Panel>
+              </Accordion.Item>
+            ))}
+          </Accordion>
         </Card>
       ))}
     </Stack>

@@ -13,7 +13,7 @@ type CommonRuleFields = {
   name: string;
   query: string;
   evaluationTime: string;
-  health: string;
+  health: "ok" | "unknown" | "err";
   lastError?: string;
   lastEvaluation: string;
 };
