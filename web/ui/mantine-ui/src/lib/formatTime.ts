@@ -4,7 +4,7 @@ dayjs.extend(duration);
 import utc from "dayjs/plugin/utc";
 dayjs.extend(utc);
 
-export const parseDuration = (durationStr: string): number | null => {
+export const parsePrometheusDuration = (durationStr: string): number | null => {
   if (durationStr === "") {
     return null;
   }
@@ -44,7 +44,7 @@ export const parseDuration = (durationStr: string): number | null => {
   return dur;
 };
 
-export const formatDuration = (d: number): string => {
+export const formatPrometheusDuration = (d: number): string => {
   let ms = d;
   let r = "";
   if (ms === 0) {
@@ -87,6 +87,7 @@ export const humanizeDuration = (milliseconds: number): string => {
     return "0s";
   }
 
+  const sign = milliseconds < 0 ? "-" : "";
   const duration = dayjs.duration(Math.abs(milliseconds), "ms");
   const ms = Math.floor(duration.milliseconds());
   const s = Math.floor(duration.seconds());
@@ -104,15 +105,18 @@ export const humanizeDuration = (milliseconds: number): string => {
     parts.push(`${m}m`);
   }
   if (s !== 0) {
-    parts.push(`${s}s`);
+    if (ms !== 0) {
+      parts.push(`${s}.${ms}s`);
+    } else {
+      parts.push(`${s}s`);
+    }
+  } else if (milliseconds !== 0) {
+    parts.push(`${milliseconds.toFixed(3)}ms`);
   }
-  if (ms !== 0) {
-    parts.push(`${ms}ms`);
-  }
-  return (milliseconds < 0 ? "-" : "") + parts.join(" ");
+  return sign + parts.join(" ");
 };
 
-export const formatRelative = (
+export const humanizeDurationRelative = (
   startStr: string,
   end: number,
   suffix: string = " ago"
@@ -123,3 +127,8 @@ export const formatRelative = (
   }
   return humanizeDuration(end - start) + suffix;
 };
+
+export const formatTimestamp = (t: number, useLocalTime: boolean) =>
+  useLocalTime
+    ? dayjs.unix(t).tz(dayjs.tz.guess()).format()
+    : dayjs.unix(t).utc().format();
