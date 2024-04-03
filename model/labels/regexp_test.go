@@ -100,7 +100,7 @@ func TestFastRegexMatcher_MatchString(t *testing.T) {
 		r := r
 		for _, v := range testValues {
 			v := v
-			t.Run(r+` on "`+v+`"`, func(t *testing.T) {
+			t.Run(readable(r)+` on "`+readable(v)+`"`, func(t *testing.T) {
 				t.Parallel()
 				m, err := NewFastRegexMatcher(r)
 				require.NoError(t, err)
@@ -109,6 +109,14 @@ func TestFastRegexMatcher_MatchString(t *testing.T) {
 			})
 		}
 	}
+}
+
+func readable(s string) string {
+	const maxReadableStringLen = 40
+	if len(s) < maxReadableStringLen {
+		return s
+	}
+	return s[:maxReadableStringLen] + "..."
 }
 
 func TestOptimizeConcatRegex(t *testing.T) {
