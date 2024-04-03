@@ -81,7 +81,7 @@ var reactRouterAgentPaths = []string{
 // Paths that are handled by the React router when the Agent mode is not set.
 var reactRouterServerPaths = []string{
 	"/alerts",
-	"/graph",
+	"/query",
 	"/rules",
 	"/tsdb-status",
 }
@@ -361,7 +361,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		router = router.WithPrefix(o.RoutePrefix)
 	}
 
-	homePage := "/graph"
+	homePage := "/query"
 	if o.IsAgent {
 		homePage = "/agent"
 	}
