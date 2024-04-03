@@ -2,6 +2,7 @@ import { Group, ActionIcon, CloseButton } from "@mantine/core";
 import { DatesProvider, DateTimePicker } from "@mantine/dates";
 import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
 import { FC } from "react";
+import { useAppSelector } from "../../state/hooks";
 
 interface TimeInputProps {
   time: number | null; // Timestamp in milliseconds.
@@ -19,10 +20,11 @@ const TimeInput: FC<TimeInputProps> = ({
   onChangeTime,
 }) => {
   const baseTime = () => (time !== null ? time : Date.now().valueOf());
+  const useLocalTime = useAppSelector((state) => state.settings.useLocalTime);
 
   return (
     <Group gap={5}>
-      <DatesProvider settings={{ timezone: "UTC" }}>
+      <DatesProvider settings={{ timezone: useLocalTime ? undefined : "UTC" }}>
         <DateTimePicker
           w={230}
           valueFormat="YYYY-MM-DD HH:mm:ss"

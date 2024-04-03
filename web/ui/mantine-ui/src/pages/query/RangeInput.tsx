@@ -1,7 +1,10 @@
 import { FC, useState } from "react";
 import { ActionIcon, Group, Input } from "@mantine/core";
 import { IconMinus, IconPlus } from "@tabler/icons-react";
-import { formatDuration, parseDuration } from "../../lib/formatTime";
+import {
+  formatPrometheusDuration,
+  parsePrometheusDuration,
+} from "../../lib/formatTime";
 
 interface RangeInputProps {
   range: number;
@@ -36,12 +39,14 @@ const rangeSteps = [
 const RangeInput: FC<RangeInputProps> = ({ range, onChangeRange }) => {
   // TODO: Make sure that when "range" changes externally (like via the URL),
   // the input is updated, either via useEffect() or some better architecture.
-  const [rangeInput, setRangeInput] = useState<string>(formatDuration(range));
+  const [rangeInput, setRangeInput] = useState<string>(
+    formatPrometheusDuration(range)
+  );
 
   const onChangeRangeInput = (rangeText: string): void => {
-    const newRange = parseDuration(rangeText);
+    const newRange = parsePrometheusDuration(rangeText);
     if (newRange === null) {
-      setRangeInput(formatDuration(range));
+      setRangeInput(formatPrometheusDuration(range));
     } else {
       onChangeRange(newRange);
     }
@@ -50,7 +55,7 @@ const RangeInput: FC<RangeInputProps> = ({ range, onChangeRange }) => {
   const increaseRange = (): void => {
     for (const step of rangeSteps) {
       if (range < step) {
-        setRangeInput(formatDuration(step));
+        setRangeInput(formatPrometheusDuration(step));
         onChangeRange(step);
         return;
       }
@@ -60,7 +65,7 @@ const RangeInput: FC<RangeInputProps> = ({ range, onChangeRange }) => {
   const decreaseRange = (): void => {
     for (const step of rangeSteps.slice().reverse()) {
       if (range > step) {
-        setRangeInput(formatDuration(step));
+        setRangeInput(formatPrometheusDuration(step));
         onChangeRange(step);
         return;
       }

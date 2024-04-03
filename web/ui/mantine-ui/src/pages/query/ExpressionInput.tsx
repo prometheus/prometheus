@@ -189,6 +189,8 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
 
   return (
     <Group align="flex-start" wrap="nowrap" gap="xs">
+      {/* TODO: For wrapped long lines, the input grows in width more and more, the
+          longer the line is. Figure out why and fix it. */}
       <InputBase<any>
         leftSection={
           isFormatting ? <Loader size="xs" color="gray.5" /> : <IconTerminal />

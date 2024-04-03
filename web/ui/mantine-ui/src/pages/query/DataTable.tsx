@@ -9,6 +9,11 @@ import {
 import SeriesName from "./SeriesName";
 import { useAPIQuery } from "../../api/api";
 import classes from "./DataTable.module.css";
+import dayjs from "dayjs";
+import timezone from "dayjs/plugin/timezone";
+import { useAppSelector } from "../../state/hooks";
+import { formatTimestamp } from "../../lib/formatTime";
+dayjs.extend(timezone);
 
 const maxFormattableSeries = 1000;
 const maxDisplayableSeries = 10000;
@@ -43,6 +48,8 @@ const DataTable: FC<DataTableProps> = ({ expr, evalTime, retriggerIdx }) => {
   useEffect(() => {
     expr !== "" && refetch();
   }, [retriggerIdx, refetch, expr, evalTime]);
+
+  const useLocalTime = useAppSelector((state) => state.settings.useLocalTime);
 
   // Show a skeleton only on the first load, not on subsequent ones.
   if (isLoading) {
@@ -118,7 +125,12 @@ const DataTable: FC<DataTableProps> = ({ expr, evalTime, retriggerIdx }) => {
                   {s.values &&
                     s.values.map((v, idx) => (
                       <div key={idx}>
-                        {v[1]} @ {v[0]}
+                        {v[1]} @{" "}
+                        {
+                          <span title={formatTimestamp(v[0], useLocalTime)}>
+                            {v[0]}
+                          </span>
+                        }
                       </div>
                     ))}
                 </Table.Td>

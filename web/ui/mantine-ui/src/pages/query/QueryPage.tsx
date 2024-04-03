@@ -46,47 +46,46 @@ export default function QueryPage() {
 
   return (
     <Box mt="xs">
-      <Stack gap="sm">
-        {metricNamesError && (
-          <Alert
-            icon={
-              <IconAlertTriangle style={{ width: rem(14), height: rem(14) }} />
-            }
-            color="red"
-            title="Error fetching metrics list"
-            withCloseButton
-          >
-            Unable to fetch list of metric names: {metricNamesError.message}
-          </Alert>
-        )}
-        {timeError && (
-          <Alert
-            icon={
-              <IconAlertTriangle style={{ width: rem(14), height: rem(14) }} />
-            }
-            color="red"
-            title="Error fetching server time"
-            withCloseButton
-          >
-            {timeError.message}
-          </Alert>
-        )}
-        {timeDelta > 30 && (
-          <Alert
-            title="Server time is out of sync"
-            color="red"
-            icon={
-              <IconAlertCircle style={{ width: rem(14), height: rem(14) }} />
-            }
-            onClose={() => setTimeDelta(0)}
-          >
-            Detected a time difference of{" "}
-            <strong>{humanizeDuration(timeDelta * 1000)}</strong> between your
-            browser and the server. You may see unexpected time-shifted query
-            results due to the time drift.
-          </Alert>
-        )}
-      </Stack>
+      {metricNamesError && (
+        <Alert
+          mb="sm"
+          icon={
+            <IconAlertTriangle style={{ width: rem(14), height: rem(14) }} />
+          }
+          color="red"
+          title="Error fetching metrics list"
+          withCloseButton
+        >
+          Unable to fetch list of metric names: {metricNamesError.message}
+        </Alert>
+      )}
+      {timeError && (
+        <Alert
+          mb="sm"
+          icon={
+            <IconAlertTriangle style={{ width: rem(14), height: rem(14) }} />
+          }
+          color="red"
+          title="Error fetching server time"
+          withCloseButton
+        >
+          {timeError.message}
+        </Alert>
+      )}
+      {timeDelta > 30 && (
+        <Alert
+          mb="sm"
+          title="Server time is out of sync"
+          color="red"
+          icon={<IconAlertCircle style={{ width: rem(14), height: rem(14) }} />}
+          onClose={() => setTimeDelta(0)}
+        >
+          Detected a time difference of{" "}
+          <strong>{humanizeDuration(timeDelta * 1000)}</strong> between your
+          browser and the server. You may see unexpected time-shifted query
+          results due to the time drift.
+        </Alert>
+      )}
 
       <Stack gap="xl">
         {panels.map((p, idx) => (

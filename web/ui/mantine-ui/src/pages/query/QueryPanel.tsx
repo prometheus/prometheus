@@ -214,18 +214,6 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
           />
         </Tabs.Panel>
       </Tabs>
-      {/* Link button to remove this panel. */}
-      {/* <Group justify="right">
-        <Button
-          variant="subtle"
-          size="sm"
-          fw={500}
-          // color="red"
-          onClick={() => dispatch(removePanel(idx))}
-        >
-          Remove query
-        </Button>
-      </Group> */}
     </Stack>
   );
 };
