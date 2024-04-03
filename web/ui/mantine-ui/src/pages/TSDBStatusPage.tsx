@@ -1,6 +1,8 @@
 import { Stack, Card, Group, Table, Text } from "@mantine/core";
 import { useSuspenseAPIQuery } from "../api/api";
 import { TSDBMap } from "../api/responseTypes/tsdbStatus";
+import { useAppSelector } from "../state/hooks";
+import { formatTimestamp } from "../lib/formatTime";
 
 export default function TSDBStatusPage() {
   const {
@@ -15,23 +17,27 @@ export default function TSDBStatusPage() {
     },
   } = useSuspenseAPIQuery<TSDBMap>({ path: `/status/tsdb` });
 
+  const useLocalTime = useAppSelector((state) => state.settings.useLocalTime);
+
   const unixToTime = (unix: number): string => {
-    try {
-      return `${new Date(unix).toISOString()} (${unix})`;
-    } catch {
+    const formatted = formatTimestamp(unix, useLocalTime);
+    if (formatted === "Invalid Date") {
       if (numSeries === 0) {
         return "No datapoints yet";
       }
       return `Error parsing time (${unix})`;
     }
+
+    return formatted;
   };
+
   const { chunkCount, numSeries, numLabelPairs, minTime, maxTime } = headStats;
   const stats = [
     { name: "Number of Series", value: numSeries },
     { name: "Number of Chunks", value: chunkCount },
     { name: "Number of Label Pairs", value: numLabelPairs },
-    { name: "Current Min Time", value: `${unixToTime(minTime)}` },
-    { name: "Current Max Time", value: `${unixToTime(maxTime)}` },
+    { name: "Current Min Time", value: `${unixToTime(minTime / 1000)}` },
+    { name: "Current Max Time", value: `${unixToTime(maxTime / 1000)}` },
   ];
 
   return (

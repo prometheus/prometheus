@@ -1,6 +1,7 @@
 import { Card, Group, Stack, Table, Text } from "@mantine/core";
 import { useSuspenseAPIQuery } from "../api/api";
 import { IconRun, IconWall } from "@tabler/icons-react";
+import { formatTimestamp } from "../lib/formatTime";
 
 const statusConfig: Record<
   string,
@@ -11,7 +12,7 @@ const statusConfig: Record<
 > = {
   startTime: {
     title: "Start time",
-    formatValue: (v: string) => new Date(v).toUTCString(),
+    formatValue: (v: string) => formatTimestamp(new Date(v).valueOf() / 1000),
   },
   CWD: { title: "Working directory" },
   reloadConfigSuccess: {
