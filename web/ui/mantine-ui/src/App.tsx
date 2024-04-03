@@ -8,6 +8,7 @@ import PrometheusLogo from "./images/prometheus-logo.svg";
 import {
   ActionIcon,
   Affix,
+  Anchor,
   AppShell,
   Box,
   Burger,
@@ -44,6 +45,7 @@ import {
 } from "@tabler/icons-react";
 import {
   BrowserRouter,
+  Link,
   NavLink,
   Navigate,
   Route,
@@ -92,13 +94,13 @@ const mainNavPages = [
 
 const monitoringStatusPages = [
   {
-    title: "Targets",
+    title: "Target health",
     path: "/targets",
     icon: <IconHeartRateMonitor style={navIconStyle} />,
     element: <TargetsPage />,
   },
   {
-    title: "Rules",
+    title: "Rule health",
     path: "/rules",
     icon: <IconTable style={navIconStyle} />,
     element: <RulesPage />,
@@ -300,10 +302,15 @@ function App() {
               <Group h="100%" px="md">
                 <Group style={{ flex: 1 }} justify="space-between">
                   <Group gap={65}>
-                    <Group gap={10}>
-                      <img src={PrometheusLogo} height={30} />
-                      <Text fz={20}>Prometheus{agentMode && " Agent"}</Text>
-                    </Group>
+                    <Link
+                      to="/"
+                      style={{ textDecoration: "none", color: "white" }}
+                    >
+                      <Group gap={10}>
+                        <img src={PrometheusLogo} height={30} />
+                        <Text fz={20}>Prometheus{agentMode && " Agent"}</Text>
+                      </Group>
+                    </Link>
                     <Group gap={12} visibleFrom="sm">
                       {navLinks}
                     </Group>
