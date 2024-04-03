@@ -46,5 +46,5 @@
     var(--mantine-color-gray-2),
     var(--mantine-color-gray-7)
   );
-  color: light-dark(var(--mantine-color-gray-8), var(--mantine-color-gray-4));
+  color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-4));
 }
