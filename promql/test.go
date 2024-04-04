@@ -491,6 +491,30 @@ func newTempHistogram() tempHistogram {
 	}
 }
 
+func processClassicHistogramSeries(m labels.Labels, suffix string, histMap map[uint64]tempHistogramWrapper, smpls []Sample, updateHistWrapper func(*tempHistogramWrapper), updateHist func(*tempHistogram, float64)) {
+	m2, m2hash := getHistogramMetricBase(m, suffix)
+	histWrapper, exists := histMap[m2hash]
+	if !exists {
+		histWrapper = newTempHistogramWrapper()
+	}
+	histWrapper.metric = m2
+	if updateHistWrapper != nil {
+		updateHistWrapper(&histWrapper)
+	}
+	for _, s := range smpls {
+		if s.H != nil {
+			continue
+		}
+		hist, exists := histWrapper.histByTs[s.T]
+		if !exists {
+			hist = newTempHistogram()
+		}
+		updateHist(&hist, s.F)
+		histWrapper.histByTs[s.T] = hist
+	}
+	histMap[m2hash] = histWrapper
+}
+
 // if classic histograms are defined, convert them into native histograms with custom
 // bounds and append the defined time series to the storage.
 func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
@@ -507,62 +531,19 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 			if err != nil {
 				continue
 			}
-			m2, m2hash := getHistogramMetricBase(m, "_bucket")
-			histWrapper, exists := histMap[m2hash]
-			if !exists {
-				histWrapper = newTempHistogramWrapper()
-			}
-			histWrapper.metric = m2
-			histWrapper.upperBounds = append(histWrapper.upperBounds, le)
-			for _, s := range smpls {
-				if s.H != nil {
-					continue
-				}
-				_, exists := histWrapper.histByTs[s.T]
-				if !exists {
-					histWrapper.histByTs[s.T] = newTempHistogram()
-				}
-				histWrapper.histByTs[s.T].bucketCounts[le] = s.F
-			}
-			histMap[m2hash] = histWrapper
+			processClassicHistogramSeries(m, "_bucket", histMap, smpls, func(histWrapper *tempHistogramWrapper) {
+				histWrapper.upperBounds = append(histWrapper.upperBounds, le)
+			}, func(hist *tempHistogram, f float64) {
+				hist.bucketCounts[le] = f
+			})
 		case strings.HasSuffix(mName, "_count"):
-			m2, m2hash := getHistogramMetricBase(m, "_count")
-			histWrapper, exists := histMap[m2hash]
-			if !exists {
-				histWrapper = newTempHistogramWrapper()
-			}
-			histWrapper.metric = m2
-			for _, s := range smpls {
-				if s.H != nil {
-					continue
-				}
-				hist, exists := histWrapper.histByTs[s.T]
-				if !exists {
-					hist = newTempHistogram()
-				}
-				hist.count = s.F
-				histWrapper.histByTs[s.T] = hist
-			}
-			histMap[m2hash] = histWrapper
+			processClassicHistogramSeries(m, "_count", histMap, smpls, nil, func(hist *tempHistogram, f float64) {
+				hist.count = f
+			})
 		case strings.HasSuffix(mName, "_sum"):
-			m2, m2hash := getHistogramMetricBase(m, "_sum")
-			histWrapper, exists := histMap[m2hash]
-			if !exists {
-				histWrapper = newTempHistogramWrapper()
-			}
-			histWrapper.metric = m2
-			for _, s := range smpls {
-				if s.H != nil {
-					continue
-				}
-				hist, exists := histWrapper.histByTs[s.T]
-				if !exists {
-					hist = newTempHistogram()
-				}
-				hist.sum = s.F
-				histWrapper.histByTs[s.T] = hist
-			}
-			histMap[m2hash] = histWrapper
+			processClassicHistogramSeries(m, "_sum", histMap, smpls, nil, func(hist *tempHistogram, f float64) {
+				hist.sum = f
+			})
 		}
 	}
 
