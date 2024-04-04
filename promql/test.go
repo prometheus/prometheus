@@ -466,14 +466,24 @@ func getHistogramMetricBase(m labels.Labels, suffix string) (labels.Labels, uint
 	return baseM, hash
 }
 
+type tempHistogram struct {
+	bucketCounts map[float64]float64
+	count        float64
+	sum          float64
+}
+
+func newTempHistogram() tempHistogram {
+	return tempHistogram{
+		bucketCounts: map[float64]float64{},
+	}
+}
+
 // if classic histograms are defined, convert them into native histograms with custom
 // bounds and append the defined time series to the storage.
 func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 	histMetrics := map[uint64]labels.Labels{}
 	histUpperBounds := map[uint64][]float64{}
-	histBucketCountsByTs := map[uint64]map[int64]map[float64]float64{}
-	histCountsByTs := map[uint64]map[int64]float64{}
-	histSumsByTs := map[uint64]map[int64]float64{}
+	histByTs := map[uint64]map[int64]tempHistogram{}
 
 	// Go through all the time series to collate classic histogram data
 	// and organise them by timestamp.
@@ -489,42 +499,55 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 			m2, m2hash := getHistogramMetricBase(m, "_bucket")
 			histMetrics[m2hash] = m2
 			histUpperBounds[m2hash] = append(histUpperBounds[m2hash], le)
-			_, exists := histBucketCountsByTs[m2hash]
+			_, exists := histByTs[m2hash]
 			if !exists {
-				histBucketCountsByTs[m2hash] = map[int64]map[float64]float64{}
+				histByTs[m2hash] = map[int64]tempHistogram{}
 			}
 			for _, s := range smpls {
-				_, exists := histBucketCountsByTs[m2hash][s.T]
+				if s.H != nil {
+					continue
+				}
+				_, exists := histByTs[m2hash][s.T]
 				if !exists {
-					histBucketCountsByTs[m2hash][s.T] = map[float64]float64{}
+					histByTs[m2hash][s.T] = newTempHistogram()
 				}
-				if s.H == nil {
-					histBucketCountsByTs[m2hash][s.T][le] = s.F
-				}
+				histByTs[m2hash][s.T].bucketCounts[le] = s.F
 			}
 		case strings.HasSuffix(mName, "_count"):
 			m2, m2hash := getHistogramMetricBase(m, "_count")
 			histMetrics[m2hash] = m2
-			_, exists := histCountsByTs[m2hash]
+			_, exists := histByTs[m2hash]
 			if !exists {
-				histCountsByTs[m2hash] = map[int64]float64{}
+				histByTs[m2hash] = map[int64]tempHistogram{}
 			}
 			for _, s := range smpls {
-				if s.H == nil {
-					histCountsByTs[m2hash][s.T] = s.F
+				if s.H != nil {
+					continue
 				}
+				hist, exists := histByTs[m2hash][s.T]
+				if !exists {
+					hist = newTempHistogram()
+				}
+				hist.count = s.F
+				histByTs[m2hash][s.T] = hist
 			}
 		case strings.HasSuffix(mName, "_sum"):
 			m2, m2hash := getHistogramMetricBase(m, "_sum")
 			histMetrics[m2hash] = m2
-			_, exists := histSumsByTs[m2hash]
+			_, exists := histByTs[m2hash]
 			if !exists {
-				histSumsByTs[m2hash] = map[int64]float64{}
+				histByTs[m2hash] = map[int64]tempHistogram{}
 			}
 			for _, s := range smpls {
-				if s.H == nil {
-					histSumsByTs[m2hash][s.T] = s.F
+				if s.H != nil {
+					continue
 				}
+				hist, exists := histByTs[m2hash][s.T]
+				if !exists {
+					hist = newTempHistogram()
+				}
+				hist.sum = s.F
+				histByTs[m2hash][s.T] = hist
 			}
 		}
 	}
@@ -560,17 +583,21 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 			},
 			CustomValues: customBounds,
 		}
-		ts := make([]int64, 0, len(histBucketCountsByTs[hash]))
-		for t := range histBucketCountsByTs[hash] {
+		ts := make([]int64, 0, len(histByTs[hash]))
+		for t := range histByTs[hash] {
 			ts = append(ts, t)
 		}
 		sort.Slice(ts, func(i, j int) bool { return ts[i] < ts[j] })
 		for _, t := range ts {
+			hist, exists := histByTs[hash][t]
+			if !exists {
+				continue
+			}
 			fh := fhBase.Copy()
 			counts := make([]float64, 0, len(upperBounds))
 			var prevCount, total float64
 			for _, le := range upperBounds {
-				currCount, exists := histBucketCountsByTs[hash][t][le]
+				currCount, exists := hist.bucketCounts[le]
 				if !exists {
 					currCount = 0
 				}
@@ -579,13 +606,9 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 				total += count
 				prevCount = currCount
 			}
-			sum, exists := histSumsByTs[hash][t]
-			if exists {
-				fh.Sum = sum
-			}
-			explicitCount, exists := histCountsByTs[hash][t]
-			if exists {
-				total = explicitCount
+			fh.Sum = hist.sum
+			if hist.count != 0 {
+				total = hist.count
 			}
 			fh.Count = total
 			fh.PositiveBuckets = counts
