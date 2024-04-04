@@ -394,15 +394,15 @@ type WriteClient interface {
 	Name() string
 	// Endpoint is the remote read or write endpoint for the storage client.
 	Endpoint() string
-	// Get the protocol versions supported by the endpoint
+	// Get the protocol versions supported by the endpoint.
 	probeRemoteVersions(ctx context.Context) error
-	// Get the last RW header received from the endpoint
+	// Get the last RW header received from the endpoint.
 	GetLastRWHeader() string
 }
 
 const (
 	Version1 config.RemoteWriteFormat = iota // 1.0, 0.1, etc.
-	Version2                                 // symbols are indices into an array of strings
+	Version2                                 // symbols are indices into an array of strings.
 )
 
 // QueueManager manages a queue of samples to be sent to the Storage
@@ -576,7 +576,7 @@ func (t *QueueManager) AppendWatcherMetadata(ctx context.Context, metadata []scr
 func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []prompb.MetricMetadata, pBuf *proto.Buffer) error {
 	// Build the WriteRequest with no samples.
 
-	// Get compression to use from content negotiation based on last header seen (defaults to snappy)
+	// Get compression to use from content negotiation based on last header seen (defaults to snappy).
 	compression, _ := negotiateRWProto(t.rwFormat, t.storeClient.GetLastRWHeader())
 
 	req, _, _, err := buildWriteRequest(t.logger, nil, metadata, pBuf, nil, nil, compression)
@@ -1500,26 +1500,25 @@ func (q *queue) newBatch(capacity int) []timeSeries {
 
 func negotiateRWProto(rwFormat config.RemoteWriteFormat, lastHeaderSeen string) (string, config.RemoteWriteFormat) {
 	if rwFormat == Version1 {
-		// If we're only handling Version1 then all we can do is that with snappy compression
+		// If we're only handling Version1 then all we can do is that with snappy compression.
 		return "snappy", Version1
 	}
 	if rwFormat != Version2 {
 		// If we get here then someone has added a new RemoteWriteFormat value but hasn't
-		// fixed this function to handle it
-		// panic!
+		// fixed this function to handle it. Panic!
 		panic(fmt.Sprintf("Unhandled RemoteWriteFormat %q", rwFormat))
 	}
 	if lastHeaderSeen == "" {
-		// We haven't had a valid header, so we just default to 0.1.0/snappy
+		// We haven't had a valid header, so we just default to "0.1.0/snappy".
 		return "snappy", Version1
 	}
 	// We can currently handle:
 	// "2.0;snappy"
 	// "0.1.0" - implicit compression of snappy
-	// lastHeaderSeen should contain a list of tuples
-	// If we find a match to something we can handle then we can return that
+	// lastHeaderSeen should contain a list of tuples.
+	// If we find a match to something we can handle then we can return that.
 	for _, tuple := range strings.Split(lastHeaderSeen, ",") {
-		// Remove spaces from the tuple
+		// Remove spaces from the tuple.
 		curr := strings.ReplaceAll(tuple, " ", "")
 		switch curr {
 		case "2.0;snappy":
@@ -1529,7 +1528,7 @@ func negotiateRWProto(rwFormat config.RemoteWriteFormat, lastHeaderSeen string) 
 		}
 	}
 
-	// Otherwise we have to default to "0.1.0"
+	// Otherwise we have to default to "0.1.0".
 	return "snappy", Version1
 }
 
@@ -1626,20 +1625,20 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			if !ok {
 				return
 			}
-			// Resend logic on 406
-			// ErrStatusNotAcceptable is a new error defined in client.go
+			// Resend logic on 406.
+			// ErrStatusNotAcceptable is a new error defined in client.go.
 
-			// Work out what version to send based on the last header seen and the QM's rwFormat setting
-			// TODO(alexg) - see comments below about retry/renegotiate design
+			// Work out what version to send based on the last header seen and the QM's rwFormat setting.
+			// TODO(alexg) - see comments below about retry/renegotiate design.
 			for attemptNos := 1; attemptNos <= 3; attemptNos++ {
 				lastHeaderSeen := s.qm.storeClient.GetLastRWHeader()
 				compression, rwFormat := negotiateRWProto(s.qm.rwFormat, lastHeaderSeen)
 				sendErr := attemptBatchSend(batch, rwFormat, compression, false)
 				if sendErr == nil || !(errors.Is(sendErr, ErrStatusNotAcceptable) || errors.Is(sendErr, ErrStatusBadRequest)) {
-					// It wasn't an error, or wasn't a 406 or 400 so we can just stop trying
+					// It wasn't an error, or wasn't a 406 or 400 so we can just stop trying.
 					break
 				}
-				// If we get either of the two errors (406, 400) we loop and re-negotiate
+				// If we get either of the two errors (406, 400) we loop and re-negotiate.
 			}
 
 			queue.ReturnForReuse(batch)
@@ -1651,15 +1650,15 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			batch := queue.Batch()
 			if len(batch) > 0 {
 				for attemptNos := 1; attemptNos <= 3; attemptNos++ {
-					// Work out what version to send based on the last header seen and the QM's rwFormat setting
+					// Work out what version to send based on the last header seen and the QM's rwFormat setting.
 					lastHeaderSeen := s.qm.storeClient.GetLastRWHeader()
 					compression, rwFormat := negotiateRWProto(s.qm.rwFormat, lastHeaderSeen)
 					sendErr := attemptBatchSend(batch, rwFormat, compression, true)
 					if sendErr == nil || !(errors.Is(sendErr, ErrStatusNotAcceptable) || errors.Is(sendErr, ErrStatusBadRequest)) {
-						// It wasn't an error, or wasn't a 406 or 400 so we can just stop trying
+						// It wasn't an error, or wasn't a 406 or 400 so we can just stop trying.
 						break
 					}
-					// If we get either of the two errors (406, 400) we loop and re-negotiate
+					// If we get either of the two errors (406, 400) we loop and re-negotiate.
 				}
 				// TODO(alexg) - the question here is whether we use the 3rd attempt to ensure we
 				// Consider a server that erroneously reports it can handle "0.2.0/snappy" even in the 406/400 errors when that data is sent in that format
@@ -1720,7 +1719,7 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 	err := s.sendSamplesWithBackoff(ctx, samples, sampleCount, exemplarCount, histogramCount, 0, pBuf, buf, compression)
 	s.updateMetrics(ctx, err, sampleCount, exemplarCount, histogramCount, 0, time.Since(begin))
 
-	// Return the error in case it is a 406 and we need to reformat the data
+	// Return the error in case it is a 406 and we need to reformat the data.
 	return err
 }
 
@@ -1729,7 +1728,7 @@ func (s *shards) sendV2Samples(ctx context.Context, samples []writev2.TimeSeries
 	err := s.sendV2SamplesWithBackoff(ctx, samples, labels, sampleCount, exemplarCount, histogramCount, metadataCount, pBuf, buf, compression)
 	s.updateMetrics(ctx, err, sampleCount, exemplarCount, histogramCount, metadataCount, time.Since(begin))
 
-	// Return the error in case it is a 406 and we need to reformat the data
+	// Return the error in case it is a 406 and we need to reformat the data.
 	return err
 }
 
@@ -2095,6 +2094,22 @@ func buildTimeSeries(timeSeries []prompb.TimeSeries, filter func(prompb.TimeSeri
 	return highest, lowest, timeSeries, droppedSamples, droppedExemplars, droppedHistograms
 }
 
+func compressPayload(tmpbuf *[]byte, inp []byte, compression string) ([]byte, error) {
+	var compressed []byte
+
+	switch compression {
+	case "snappy":
+		compressed = snappy.Encode(*tmpbuf, inp)
+		if n := snappy.MaxEncodedLen(len(inp)); n > len(*tmpbuf) {
+			// grow the buffer for the next time
+			*tmpbuf = make([]byte, n)
+		}
+		return compressed, nil
+	default:
+		return compressed, fmt.Errorf("Unknown compression scheme [%s]", compression)
+	}
+}
+
 func buildWriteRequest(logger log.Logger, timeSeries []prompb.TimeSeries, metadata []prompb.MetricMetadata, pBuf *proto.Buffer, buf *[]byte, filter func(prompb.TimeSeries) bool, compression string) ([]byte, int64, int64, error) {
 	highest, lowest, timeSeries,
 		droppedSamples, droppedExemplars, droppedHistograms := buildTimeSeries(timeSeries, filter)
@@ -2128,16 +2143,11 @@ func buildWriteRequest(logger log.Logger, timeSeries []prompb.TimeSeries, metada
 
 	var compressed []byte
 
-	switch compression {
-	case "snappy":
-		compressed = snappy.Encode(*buf, pBuf.Bytes())
-		if n := snappy.MaxEncodedLen(len(pBuf.Bytes())); n > len(*buf) {
-			// grow the buffer for the next time
-			*buf = make([]byte, n)
-		}
-	default:
-		return nil, highest, lowest, fmt.Errorf("Unknown compression scheme [%s]", compression)
+	compressed, err = compressPayload(buf, pBuf.Bytes(), compression)
+	if err != nil {
+		return nil, highest, lowest, err
 	}
+
 	return compressed, highest, lowest, nil
 }
 
@@ -2205,15 +2215,9 @@ func buildV2WriteRequest(logger log.Logger, samples []writev2.TimeSeries, labels
 
 	var compressed []byte
 
-	switch compression {
-	case "snappy":
-		compressed = snappy.Encode(*buf, data)
-		if n := snappy.MaxEncodedLen(len(data)); n > len(*buf) {
-			// grow the buffer for the next time
-			*buf = make([]byte, n)
-		}
-	default:
-		return nil, highest, lowest, fmt.Errorf("Unknown compression scheme [%s]", compression)
+	compressed, err = compressPayload(buf, data, compression)
+	if err != nil {
+		return nil, highest, lowest, err
 	}
 
 	return compressed, highest, lowest, nil

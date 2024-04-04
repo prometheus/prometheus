@@ -51,19 +51,19 @@ func TestRemoteWriteHeadHandler(t *testing.T) {
 	resp := recorder.Result()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	// Check header is expected value
+	// Check header is expected value.
 	protHeader := resp.Header.Get(RemoteWriteVersionHeader)
 	require.Equal(t, "2.0;snappy,0.1.0", protHeader)
 }
 
 func TestRemoteWriteHandlerMinimizedMissingContentEncoding(t *testing.T) {
-	// Send a v2 request without a "Content-Encoding:" header -> 406
+	// Send a v2 request without a "Content-Encoding:" header -> 406.
 	buf, _, _, err := buildV2WriteRequest(log.NewNopLogger(), writeRequestMinimizedFixture.Timeseries, writeRequestMinimizedFixture.Symbols, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
 	req, err := http.NewRequest("", "", bytes.NewReader(buf))
 	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
-	// Do not provide "Content-Encoding: snappy" header
+	// Do not provide "Content-Encoding: snappy" header.
 	// req.Header.Set("Content-Encoding", "snappy")
 	require.NoError(t, err)
 
@@ -74,12 +74,12 @@ func TestRemoteWriteHandlerMinimizedMissingContentEncoding(t *testing.T) {
 	handler.ServeHTTP(recorder, req)
 
 	resp := recorder.Result()
-	// Should give us a 406
+	// Should give us a 406.
 	require.Equal(t, http.StatusNotAcceptable, resp.StatusCode)
 }
 
 func TestRemoteWriteHandlerInvalidCompression(t *testing.T) {
-	// Send a v2 request without an unhandled compression scheme -> 406
+	// Send a v2 request without an unhandled compression scheme -> 406.
 	buf, _, _, err := buildV2WriteRequest(log.NewNopLogger(), writeRequestMinimizedFixture.Timeseries, writeRequestMinimizedFixture.Symbols, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
@@ -95,12 +95,12 @@ func TestRemoteWriteHandlerInvalidCompression(t *testing.T) {
 	handler.ServeHTTP(recorder, req)
 
 	resp := recorder.Result()
-	// Expect a 406
+	// Expect a 406.
 	require.Equal(t, http.StatusNotAcceptable, resp.StatusCode)
 }
 
 func TestRemoteWriteHandlerInvalidVersion(t *testing.T) {
-	// Send a protocol version number that isn't recognised/supported -> 406
+	// Send a protocol version number that isn't recognised/supported -> 406.
 	buf, _, _, err := buildV2WriteRequest(log.NewNopLogger(), writeRequestMinimizedFixture.Timeseries, writeRequestMinimizedFixture.Symbols, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
@@ -115,7 +115,7 @@ func TestRemoteWriteHandlerInvalidVersion(t *testing.T) {
 	handler.ServeHTTP(recorder, req)
 
 	resp := recorder.Result()
-	// Expect a 406
+	// Expect a 406.
 	require.Equal(t, http.StatusNotAcceptable, resp.StatusCode)
 }
 
@@ -135,7 +135,7 @@ func TestRemoteWriteHandler(t *testing.T) {
 	resp := recorder.Result()
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 
-	// Check header is expected value
+	// Check header is expected value.
 	protHeader := resp.Header.Get(RemoteWriteVersionHeader)
 	require.Equal(t, "0.1.0", protHeader)
 
@@ -175,7 +175,7 @@ func TestRemoteWriteHandlerMinimizedFormat(t *testing.T) {
 
 	req, err := http.NewRequest("", "", bytes.NewReader(buf))
 	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
-	// Must provide "Content-Encoding: snappy" header
+	// Must provide "Content-Encoding: snappy" header.
 	req.Header.Set("Content-Encoding", "snappy")
 	require.NoError(t, err)
 
@@ -188,7 +188,7 @@ func TestRemoteWriteHandlerMinimizedFormat(t *testing.T) {
 	resp := recorder.Result()
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 
-	// Check header is expected value
+	// Check header is expected value.
 	protHeader := resp.Header.Get(RemoteWriteVersionHeader)
 	require.Equal(t, "2.0;snappy,0.1.0", protHeader)
 
@@ -196,7 +196,7 @@ func TestRemoteWriteHandlerMinimizedFormat(t *testing.T) {
 	j := 0
 	k := 0
 	// the reduced write request is equivalent to the write request fixture.
-	// we can use it for
+	// we can use it for.
 	for _, ts := range writeRequestMinimizedFixture.Timeseries {
 		ls := labelProtosV2ToLabels(ts.LabelsRefs, writeRequestMinimizedFixture.Symbols)
 		for _, s := range ts.Samples {

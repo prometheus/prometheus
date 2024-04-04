@@ -297,7 +297,7 @@ func NewAPI(
 	}
 
 	if rwEnabled {
-		// TODO(alexg) - Two phase rwFormat rollout needs to create handlers with flag for advertising
+		// TODO(alexg) - Two phase rwFormat rollout needs to create handlers with flag for advertising.
 		// For rollout we do two phases:
 		// 0. (Before) no flags set
 		// 1. (During) support new protocols but don't advertise

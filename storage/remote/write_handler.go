@@ -45,7 +45,7 @@ const (
 )
 
 func rwHeaderNameValues(rwFormat config.RemoteWriteFormat) map[string]string {
-	// Return the correct remote write header name/values based on provided rwFormat
+	// Return the correct remote write header name/values based on provided rwFormat.
 	ret := make(map[string]string, 1)
 
 	switch rwFormat {
@@ -54,9 +54,9 @@ func rwHeaderNameValues(rwFormat config.RemoteWriteFormat) map[string]string {
 	case Version2:
 		// We need to add the supported protocol definitions in order:
 		tuples := make([]string, 0, 2)
-		// Add 2.0;snappy
+		// Add "2.0;snappy".
 		tuples = append(tuples, RemoteWriteVersion20HeaderValue+";snappy")
-		// Add default 0.1.0
+		// Add default "0.1.0".
 		tuples = append(tuples, RemoteWriteVersion1HeaderValue)
 		ret[RemoteWriteVersionHeader] = strings.Join(tuples, ",")
 	}
@@ -68,8 +68,8 @@ type writeHeadHandler struct {
 
 	remoteWrite20HeadRequests prometheus.Counter
 
-	// Experimental feature, new remote write proto format
-	// The handler will accept the new format, but it can still accept the old one
+	// Experimental feature, new remote write proto format.
+	// The handler will accept the new format, but it can still accept the old one.
 	rwFormat config.RemoteWriteFormat
 }
 
@@ -91,9 +91,9 @@ func NewWriteHeadHandler(logger log.Logger, reg prometheus.Registerer, rwFormat 
 }
 
 func (h *writeHeadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Send a response to the HEAD request based on the format supported
+	// Send a response to the HEAD request based on the format supported.
 
-	// Add appropriate header values for the specific rwFormat
+	// Add appropriate header values for the specific rwFormat.
 	for hName, hValue := range rwHeaderNameValues(h.rwFormat) {
 		w.Header().Set(hName, hValue)
 	}
@@ -107,8 +107,8 @@ type writeHandler struct {
 
 	samplesWithInvalidLabelsTotal prometheus.Counter
 
-	// Experimental feature, new remote write proto format
-	// The handler will accept the new format, but it can still accept the old one
+	// Experimental feature, new remote write proto format.
+	// The handler will accept the new format, but it can still accept the old one.
 	rwFormat config.RemoteWriteFormat
 }
 
@@ -135,36 +135,36 @@ func NewWriteHandler(logger log.Logger, reg prometheus.Registerer, appendable st
 func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var err error
 
-	// Set the header(s) in the response based on the rwFormat the server supports
+	// Set the header(s) in the response based on the rwFormat the server supports.
 	for hName, hValue := range rwHeaderNameValues(h.rwFormat) {
 		w.Header().Set(hName, hValue)
 	}
 
-	// Parse the headers to work out how to handle this
+	// Parse the headers to work out how to handle this.
 	contentEncoding := r.Header.Get("Content-Encoding")
 	protoVer := r.Header.Get(RemoteWriteVersionHeader)
 
 	switch protoVer {
 	case "":
-		// No header provided, assume 0.1.0 as everything that relies on later
+		// No header provided, assume 0.1.0 as everything that relies on later.
 		protoVer = RemoteWriteVersion1HeaderValue
 	case RemoteWriteVersion1HeaderValue, RemoteWriteVersion20HeaderValue:
-		// We know this header, woo
+		// We know this header, woo.
 	default:
-		// We have a version in the header but it is not one we recognise
+		// We have a version in the header but it is not one we recognise.
 		// TODO(alexg) - make a proper error for this?
 		level.Error(h.logger).Log("msg", "Error decoding remote write request", "err", "Unknown remote write version in headers", "ver", protoVer)
-		// Return a 406 so that the client can choose a more appropriate protocol to use
+		// Return a 406 so that the client can choose a more appropriate protocol to use.
 		http.Error(w, "Unknown remote write version in headers", http.StatusNotAcceptable)
 		return
 	}
 
-	// Deal with 0.1.0 clients that forget to send Content-Encoding
+	// Deal with 0.1.0 clients that forget to send Content-Encoding.
 	if protoVer == RemoteWriteVersion1HeaderValue && contentEncoding == "" {
 		contentEncoding = "snappy"
 	}
 
-	// Read the request body
+	// Read the request body.
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		level.Error(h.logger).Log("msg", "Error decoding remote write request", "err", err.Error())
@@ -172,7 +172,7 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Deal with contentEncoding first
+	// Deal with contentEncoding first.
 	var decompressed []byte
 
 	switch contentEncoding {
@@ -185,13 +185,13 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	default:
 		level.Error(h.logger).Log("msg", "Error decoding remote write request", "err", "Unsupported Content-Encoding", "contentEncoding", contentEncoding)
-		// Return a 406 so that the client can choose a more appropriate protocol to use
+		// Return a 406 so that the client can choose a more appropriate protocol to use.
 		http.Error(w, "Unsupported Content-Encoding", http.StatusNotAcceptable)
 		return
 	}
 
-	// Now we have a decompressed buffer we can unmarshal it
-	// At this point we are happy with the version but need to check the encoding
+	// Now we have a decompressed buffer we can unmarshal it.
+	// At this point we are happy with the version but need to check the encoding.
 	switch protoVer {
 	case RemoteWriteVersion1HeaderValue:
 		var req prompb.WriteRequest
@@ -202,7 +202,7 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		err = h.write(r.Context(), &req)
 	case RemoteWriteVersion20HeaderValue:
-		// 2.0 request
+		// 2.0 request.
 		var reqMinStr writev2.WriteRequest
 		if err := proto.Unmarshal(decompressed, &reqMinStr); err != nil {
 			level.Error(h.logger).Log("msg", "Error decoding remote write request", "err", err.Error())
