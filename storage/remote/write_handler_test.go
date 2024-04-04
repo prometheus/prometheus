@@ -39,94 +39,15 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-func TestRemoteWriteHeadHandler(t *testing.T) {
-	handler := NewWriteHeadHandler(log.NewNopLogger(), nil, Version2)
-
-	req, err := http.NewRequest(http.MethodHead, "", nil)
-	require.NoError(t, err)
-
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, req)
-
-	resp := recorder.Result()
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-
-	// Check header is expected value.
-	protHeader := resp.Header.Get(RemoteWriteVersionHeader)
-	require.Equal(t, "2.0;snappy,0.1.0", protHeader)
-}
-
-func TestRemoteWriteHandlerMinimizedMissingContentEncoding(t *testing.T) {
-	// Send a v2 request without a "Content-Encoding:" header -> 406.
-	buf, _, _, err := buildV2WriteRequest(log.NewNopLogger(), writeRequestMinimizedFixture.Timeseries, writeRequestMinimizedFixture.Symbols, nil, nil, nil, "snappy")
-	require.NoError(t, err)
-
-	req, err := http.NewRequest("", "", bytes.NewReader(buf))
-	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
-	// Do not provide "Content-Encoding: snappy" header.
-	// req.Header.Set("Content-Encoding", "snappy")
-	require.NoError(t, err)
-
-	appendable := &mockAppendable{}
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version2)
-
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, req)
-
-	resp := recorder.Result()
-	// Should give us a 406.
-	require.Equal(t, http.StatusNotAcceptable, resp.StatusCode)
-}
-
-func TestRemoteWriteHandlerInvalidCompression(t *testing.T) {
-	// Send a v2 request without an unhandled compression scheme -> 406.
-	buf, _, _, err := buildV2WriteRequest(log.NewNopLogger(), writeRequestMinimizedFixture.Timeseries, writeRequestMinimizedFixture.Symbols, nil, nil, nil, "snappy")
-	require.NoError(t, err)
-
-	req, err := http.NewRequest("", "", bytes.NewReader(buf))
-	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
-	req.Header.Set("Content-Encoding", "zstd")
-	require.NoError(t, err)
-
-	appendable := &mockAppendable{}
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version2)
-
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, req)
-
-	resp := recorder.Result()
-	// Expect a 406.
-	require.Equal(t, http.StatusNotAcceptable, resp.StatusCode)
-}
-
-func TestRemoteWriteHandlerInvalidVersion(t *testing.T) {
-	// Send a protocol version number that isn't recognised/supported -> 406.
-	buf, _, _, err := buildV2WriteRequest(log.NewNopLogger(), writeRequestMinimizedFixture.Timeseries, writeRequestMinimizedFixture.Symbols, nil, nil, nil, "snappy")
-	require.NoError(t, err)
-
-	req, err := http.NewRequest("", "", bytes.NewReader(buf))
-	req.Header.Set(RemoteWriteVersionHeader, "3.0")
-	require.NoError(t, err)
-
-	appendable := &mockAppendable{}
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version2)
-
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, req)
-
-	resp := recorder.Result()
-	// Expect a 406.
-	require.Equal(t, http.StatusNotAcceptable, resp.StatusCode)
-}
-
 func TestRemoteWriteHandler(t *testing.T) {
-	buf, _, _, err := buildWriteRequest(nil, writeRequestFixture.Timeseries, nil, nil, nil, nil, "snappy")
+	buf, _, _, err := buildWriteRequest(nil, writeRequestFixture.Timeseries, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	req, err := http.NewRequest("", "", bytes.NewReader(buf))
 	require.NoError(t, err)
 
 	appendable := &mockAppendable{}
+	// TODO: test with other proto format(s)
 	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version1)
 
 	recorder := httptest.NewRecorder()
@@ -134,10 +55,6 @@ func TestRemoteWriteHandler(t *testing.T) {
 
 	resp := recorder.Result()
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
-
-	// Check header is expected value.
-	protHeader := resp.Header.Get(RemoteWriteVersionHeader)
-	require.Equal(t, "0.1.0", protHeader)
 
 	i := 0
 	j := 0
@@ -170,27 +87,22 @@ func TestRemoteWriteHandler(t *testing.T) {
 }
 
 func TestRemoteWriteHandlerMinimizedFormat(t *testing.T) {
-	buf, _, _, err := buildV2WriteRequest(log.NewNopLogger(), writeRequestMinimizedFixture.Timeseries, writeRequestMinimizedFixture.Symbols, nil, nil, nil, "snappy")
+	buf, _, _, err := buildV2WriteRequest(log.NewNopLogger(), writeRequestMinimizedFixture.Timeseries, writeRequestMinimizedFixture.Symbols, nil, nil, nil)
 	require.NoError(t, err)
 
 	req, err := http.NewRequest("", "", bytes.NewReader(buf))
-	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
-	// Must provide "Content-Encoding: snappy" header.
-	req.Header.Set("Content-Encoding", "snappy")
+	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion2HeaderValue)
 	require.NoError(t, err)
 
 	appendable := &mockAppendable{}
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version2)
+	// TODO: test with other proto format(s)
+	handler := NewWriteHandler(nil, nil, appendable, Version2)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
 
 	resp := recorder.Result()
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
-
-	// Check header is expected value.
-	protHeader := resp.Header.Get(RemoteWriteVersionHeader)
-	require.Equal(t, "2.0;snappy,0.1.0", protHeader)
 
 	i := 0
 	j := 0
@@ -230,7 +142,7 @@ func TestOutOfOrderSample(t *testing.T) {
 	buf, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
 		Labels:  []prompb.Label{{Name: "__name__", Value: "test_metric"}},
 		Samples: []prompb.Sample{{Value: 1, Timestamp: 0}},
-	}}, nil, nil, nil, nil, "snappy")
+	}}, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	req, err := http.NewRequest("", "", bytes.NewReader(buf))
@@ -256,7 +168,7 @@ func TestOutOfOrderExemplar(t *testing.T) {
 	buf, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
 		Labels:    []prompb.Label{{Name: "__name__", Value: "test_metric"}},
 		Exemplars: []prompb.Exemplar{{Labels: []prompb.Label{{Name: "foo", Value: "bar"}}, Value: 1, Timestamp: 0}},
-	}}, nil, nil, nil, nil, "snappy")
+	}}, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	req, err := http.NewRequest("", "", bytes.NewReader(buf))
@@ -280,7 +192,7 @@ func TestOutOfOrderHistogram(t *testing.T) {
 	buf, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
 		Labels:     []prompb.Label{{Name: "__name__", Value: "test_metric"}},
 		Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat(nil))},
-	}}, nil, nil, nil, nil, "snappy")
+	}}, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	req, err := http.NewRequest("", "", bytes.NewReader(buf))
@@ -310,7 +222,7 @@ func BenchmarkRemoteWritehandler(b *testing.B) {
 				{Name: "test_label_name_" + num, Value: labelValue + num},
 			},
 			Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram)},
-		}}, nil, nil, nil, nil, "snappy")
+		}}, nil, nil, nil, nil)
 		require.NoError(b, err)
 		req, err := http.NewRequest("", "", bytes.NewReader(buf))
 		require.NoError(b, err)
@@ -329,7 +241,7 @@ func BenchmarkRemoteWritehandler(b *testing.B) {
 }
 
 func TestCommitErr(t *testing.T) {
-	buf, _, _, err := buildWriteRequest(nil, writeRequestFixture.Timeseries, nil, nil, nil, nil, "snappy")
+	buf, _, _, err := buildWriteRequest(nil, writeRequestFixture.Timeseries, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	req, err := http.NewRequest("", "", bytes.NewReader(buf))
@@ -368,7 +280,7 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 	// TODO: test with other proto format(s)
 	handler := NewWriteHandler(log.NewNopLogger(), nil, db.Head(), Version1)
 
-	buf, _, _, err := buildWriteRequest(nil, genSeriesWithSample(1000, 200*time.Minute.Milliseconds()), nil, nil, nil, nil, "snappy")
+	buf, _, _, err := buildWriteRequest(nil, genSeriesWithSample(1000, 200*time.Minute.Milliseconds()), nil, nil, nil, nil)
 	require.NoError(b, err)
 
 	req, err := http.NewRequest("", "", bytes.NewReader(buf))
@@ -381,7 +293,7 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 
 	var bufRequests [][]byte
 	for i := 0; i < 100; i++ {
-		buf, _, _, err = buildWriteRequest(nil, genSeriesWithSample(1000, int64(80+i)*time.Minute.Milliseconds()), nil, nil, nil, nil, "snappy")
+		buf, _, _, err = buildWriteRequest(nil, genSeriesWithSample(1000, int64(80+i)*time.Minute.Milliseconds()), nil, nil, nil, nil)
 		require.NoError(b, err)
 		bufRequests = append(bufRequests, buf)
 	}
