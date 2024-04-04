@@ -237,12 +237,7 @@ func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matc
 		}
 		switch {
 		case m.Name == "" && m.Value == "": // Special-case for AllPostings, used in tests at least.
-			k, v := index.AllPostingsKey()
-			allPostings, err := ix.Postings(ctx, k, v)
-			if err != nil {
-				return nil, err
-			}
-			its = append(its, allPostings)
+			// Does nothing since AllPostings already added due to hasSubtractingMatchers.
 		case labelMustBeSet[m.Name]:
 			// If this matcher must be non-empty, we can be smarter.
 			matchesEmpty := m.Matches("")
