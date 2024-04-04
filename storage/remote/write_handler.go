@@ -152,7 +152,6 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// We know this header, woo.
 	default:
 		// We have a version in the header but it is not one we recognise.
-		// TODO(alexg) - make a proper error for this?
 		level.Error(h.logger).Log("msg", "Error decoding remote write request", "err", "Unknown remote write version in headers", "ver", protoVer)
 		// Return a 406 so that the client can choose a more appropriate protocol to use.
 		http.Error(w, "Unknown remote write version in headers", http.StatusNotAcceptable)

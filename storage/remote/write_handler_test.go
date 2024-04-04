@@ -196,7 +196,7 @@ func TestRemoteWriteHandlerMinimizedFormat(t *testing.T) {
 	j := 0
 	k := 0
 	// the reduced write request is equivalent to the write request fixture.
-	// we can use it for.
+	// we can use it for
 	for _, ts := range writeRequestMinimizedFixture.Timeseries {
 		ls := labelProtosV2ToLabels(ts.LabelsRefs, writeRequestMinimizedFixture.Symbols)
 		for _, s := range ts.Samples {
