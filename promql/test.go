@@ -44,17 +44,35 @@ import (
 var (
 	minNormal = math.Float64frombits(0x0010000000000000) // The smallest positive normal value of type float64.
 
-	patSpace                = regexp.MustCompile("[\t ]+")
-	patLoad                 = regexp.MustCompile(`^load(?:_(with_nhcb))?\s+(.+?)$`)
-	patEvalInstant          = regexp.MustCompile(`^eval(?:_(with_nhcb))?(?:_(fail|ordered))?\s+instant\s+(?:at\s+(.+?))?\s+(.+)$`)
-	patEvalRange            = regexp.MustCompile(`^eval(?:_(fail))?\s+range\s+from\s+(.+)\s+to\s+(.+)\s+step\s+(.+?)\s+(.+)$`)
-	histogramBucketReplacer = strings.NewReplacer(
-		"_bucket", "",
-		" by (le)", "",
-		"(le, ", "(",
-		", le, ", ", ",
-		", le)", ")",
-	)
+	patSpace                    = regexp.MustCompile("[\t ]+")
+	patLoad                     = regexp.MustCompile(`^load(?:_(with_nhcb))?\s+(.+?)$`)
+	patEvalInstant              = regexp.MustCompile(`^eval(?:_(with_nhcb))?(?:_(fail|ordered))?\s+instant\s+(?:at\s+(.+?))?\s+(.+)$`)
+	patEvalRange                = regexp.MustCompile(`^eval(?:_(fail))?\s+range\s+from\s+(.+)\s+to\s+(.+)\s+step\s+(.+?)\s+(.+)$`)
+	histogramBucketReplacements = []struct {
+		pattern *regexp.Regexp
+		repl    string
+	}{
+		{
+			pattern: regexp.MustCompile(`_bucket\b`),
+			repl:    "",
+		},
+		{
+			pattern: regexp.MustCompile(`\s+by\s+\(le\)`),
+			repl:    "",
+		},
+		{
+			pattern: regexp.MustCompile(`\(le,\s*`),
+			repl:    "(",
+		},
+		{
+			pattern: regexp.MustCompile(`,\s*le,\s*`),
+			repl:    ", ",
+		},
+		{
+			pattern: regexp.MustCompile(`,\s*le\)`),
+			repl:    ")",
+		},
+	}
 )
 
 const (
@@ -971,7 +989,9 @@ func (t *test) execInstantEval(cmd *evalCmd, engine QueryEngine) error {
 			if !strings.Contains(iq.expr, "_bucket") {
 				return fmt.Errorf("expected _bucket in the expression %q", iq.expr)
 			}
-			iq.expr = histogramBucketReplacer.Replace(iq.expr)
+			for _, rep := range histogramBucketReplacements {
+				iq.expr = rep.pattern.ReplaceAllString(iq.expr, rep.repl)
+			}
 			if err := t.runInstantQuery(iq, cmd, engine); err != nil {
 				return err
 			}
