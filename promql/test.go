@@ -466,6 +466,19 @@ func getHistogramMetricBase(m labels.Labels, suffix string) (labels.Labels, uint
 	return baseM, hash
 }
 
+type tempHistogramWrapper struct {
+	metric      labels.Labels
+	upperBounds []float64
+	histByTs    map[int64]tempHistogram
+}
+
+func newTempHistogramWrapper() tempHistogramWrapper {
+	return tempHistogramWrapper{
+		upperBounds: []float64{},
+		histByTs:    map[int64]tempHistogram{},
+	}
+}
+
 type tempHistogram struct {
 	bucketCounts map[float64]float64
 	count        float64
@@ -481,9 +494,7 @@ func newTempHistogram() tempHistogram {
 // if classic histograms are defined, convert them into native histograms with custom
 // bounds and append the defined time series to the storage.
 func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
-	histMetrics := map[uint64]labels.Labels{}
-	histUpperBounds := map[uint64][]float64{}
-	histByTs := map[uint64]map[int64]tempHistogram{}
+	histMap := map[uint64]tempHistogramWrapper{}
 
 	// Go through all the time series to collate classic histogram data
 	// and organise them by timestamp.
@@ -497,72 +508,71 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 				continue
 			}
 			m2, m2hash := getHistogramMetricBase(m, "_bucket")
-			histMetrics[m2hash] = m2
-			histUpperBounds[m2hash] = append(histUpperBounds[m2hash], le)
-			_, exists := histByTs[m2hash]
+			histWrapper, exists := histMap[m2hash]
 			if !exists {
-				histByTs[m2hash] = map[int64]tempHistogram{}
+				histWrapper = newTempHistogramWrapper()
 			}
+			histWrapper.metric = m2
+			histWrapper.upperBounds = append(histWrapper.upperBounds, le)
 			for _, s := range smpls {
 				if s.H != nil {
 					continue
 				}
-				_, exists := histByTs[m2hash][s.T]
+				_, exists := histWrapper.histByTs[s.T]
 				if !exists {
-					histByTs[m2hash][s.T] = newTempHistogram()
+					histWrapper.histByTs[s.T] = newTempHistogram()
 				}
-				histByTs[m2hash][s.T].bucketCounts[le] = s.F
+				histWrapper.histByTs[s.T].bucketCounts[le] = s.F
 			}
+			histMap[m2hash] = histWrapper
 		case strings.HasSuffix(mName, "_count"):
 			m2, m2hash := getHistogramMetricBase(m, "_count")
-			histMetrics[m2hash] = m2
-			_, exists := histByTs[m2hash]
+			histWrapper, exists := histMap[m2hash]
 			if !exists {
-				histByTs[m2hash] = map[int64]tempHistogram{}
+				histWrapper = newTempHistogramWrapper()
 			}
+			histWrapper.metric = m2
 			for _, s := range smpls {
 				if s.H != nil {
 					continue
 				}
-				hist, exists := histByTs[m2hash][s.T]
+				hist, exists := histWrapper.histByTs[s.T]
 				if !exists {
 					hist = newTempHistogram()
 				}
 				hist.count = s.F
-				histByTs[m2hash][s.T] = hist
+				histWrapper.histByTs[s.T] = hist
 			}
+			histMap[m2hash] = histWrapper
 		case strings.HasSuffix(mName, "_sum"):
 			m2, m2hash := getHistogramMetricBase(m, "_sum")
-			histMetrics[m2hash] = m2
-			_, exists := histByTs[m2hash]
+			histWrapper, exists := histMap[m2hash]
 			if !exists {
-				histByTs[m2hash] = map[int64]tempHistogram{}
+				histWrapper = newTempHistogramWrapper()
 			}
+			histWrapper.metric = m2
 			for _, s := range smpls {
 				if s.H != nil {
 					continue
 				}
-				hist, exists := histByTs[m2hash][s.T]
+				hist, exists := histWrapper.histByTs[s.T]
 				if !exists {
 					hist = newTempHistogram()
 				}
 				hist.sum = s.F
-				histByTs[m2hash][s.T] = hist
+				histWrapper.histByTs[s.T] = hist
 			}
+			histMap[m2hash] = histWrapper
 		}
 	}
 
 	// Convert the collated classic histogram data into native histograms
 	// with custom bounds and append them to the storage.
-	for hash, upperBounds0 := range histUpperBounds {
-		m, exists := histMetrics[hash]
-		if !exists {
-			continue
-		}
-		sort.Float64s(upperBounds0)
-		upperBounds := make([]float64, 0, len(upperBounds0))
+	for _, histWrapper := range histMap {
+		sort.Float64s(histWrapper.upperBounds)
+		upperBounds := make([]float64, 0, len(histWrapper.upperBounds))
 		prevLe := -372.4869 // assuming that the lowest bound is never this value
-		for _, le := range upperBounds0 {
+		for _, le := range histWrapper.upperBounds {
 			if le != prevLe { // deduplicate
 				upperBounds = append(upperBounds, le)
 				prevLe = le
@@ -583,13 +593,13 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 			},
 			CustomValues: customBounds,
 		}
-		ts := make([]int64, 0, len(histByTs[hash]))
-		for t := range histByTs[hash] {
+		ts := make([]int64, 0, len(histWrapper.histByTs))
+		for t := range histWrapper.histByTs {
 			ts = append(ts, t)
 		}
 		sort.Slice(ts, func(i, j int) bool { return ts[i] < ts[j] })
 		for _, t := range ts {
-			hist, exists := histByTs[hash][t]
+			hist, exists := histWrapper.histByTs[t]
 			if !exists {
 				continue
 			}
@@ -619,7 +629,7 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 			if err := s.H.Validate(); err != nil {
 				return err
 			}
-			if err := appendSample(a, s, m); err != nil {
+			if err := appendSample(a, s, histWrapper.metric); err != nil {
 				return err
 			}
 		}
