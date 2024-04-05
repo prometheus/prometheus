@@ -464,7 +464,7 @@ func (db *DBReadOnly) FlushWAL(dir string) (returnErr error) {
 	}
 	// Add +1 millisecond to block maxt because block intervals are half-open: [b.MinTime, b.MaxTime).
 	// Because of this block intervals are always +1 than the total samples it includes.
-	_, err = compactor.Write(dir, rh, mint, maxt+1, false, nil)
+	_, err = compactor.Write(dir, rh, mint, maxt+1, nil)
 	if err != nil {
 		return fmt.Errorf("writing WAL: %w", err)
 	}
@@ -1299,10 +1299,12 @@ func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID
 		}
 	}()
 
+	meta := &BlockMeta{}
+	meta.Compaction.SetOutOfOrder()
 	for t := blockSize * (oooHeadMint / blockSize); t <= oooHeadMaxt; t += blockSize {
 		mint, maxt := t, t+blockSize
 		// Block intervals are half-open: [b.MinTime, b.MaxTime). Block intervals are always +1 than the total samples it includes.
-		uid, err := db.compactor.Write(dest, oooHead.CloneForTimeRange(mint, maxt-1), mint, maxt, true, nil)
+		uid, err := db.compactor.Write(dest, oooHead.CloneForTimeRange(mint, maxt-1), mint, maxt, meta)
 		if err != nil {
 			return nil, err
 		}
@@ -1330,7 +1332,7 @@ func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID
 // compactHead compacts the given RangeHead.
 // The compaction mutex should be held before calling this method.
 func (db *DB) compactHead(head *RangeHead) error {
-	uid, err := db.compactor.Write(db.dir, head, head.MinTime(), head.BlockMaxTime(), false, nil)
+	uid, err := db.compactor.Write(db.dir, head, head.MinTime(), head.BlockMaxTime(), nil)
 	if err != nil {
 		return fmt.Errorf("persist head block: %w", err)
 	}
@@ -1885,7 +1887,7 @@ func (db *DB) Snapshot(dir string, withHead bool) error {
 	head := NewRangeHead(db.head, mint, maxt)
 	// Add +1 millisecond to block maxt because block intervals are half-open: [b.MinTime, b.MaxTime).
 	// Because of this block intervals are always +1 than the total samples it includes.
-	if _, err := db.compactor.Write(dir, head, mint, maxt+1, false, nil); err != nil {
+	if _, err := db.compactor.Write(dir, head, mint, maxt+1, nil); err != nil {
 		return fmt.Errorf("snapshot head block: %w", err)
 	}
 	return nil

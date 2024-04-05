@@ -525,7 +525,7 @@ func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
 
 	// Add +1 millisecond to block maxt because block intervals are half-open: [b.MinTime, b.MaxTime).
 	// Because of this block intervals are always +1 than the total samples it includes.
-	ulid, err := compactor.Write(dir, head, head.MinTime(), head.MaxTime()+1, false, nil)
+	ulid, err := compactor.Write(dir, head, head.MinTime(), head.MaxTime()+1, nil)
 	require.NoError(tb, err)
 	return filepath.Join(dir, ulid.String())
 }
@@ -538,7 +538,7 @@ func createBlockFromOOOHead(tb testing.TB, dir string, head *OOOCompactionHead) 
 
 	// Add +1 millisecond to block maxt because block intervals are half-open: [b.MinTime, b.MaxTime).
 	// Because of this block intervals are always +1 than the total samples it includes.
-	ulid, err := compactor.Write(dir, head, head.MinTime(), head.MaxTime()+1, true, nil)
+	ulid, err := compactor.Write(dir, head, head.MinTime(), head.MaxTime()+1, nil)
 	require.NoError(tb, err)
 	return filepath.Join(dir, ulid.String())
 }
