@@ -79,6 +79,8 @@ class TestSnugCompositesStringFilament {
       resize(size() + size_to_load);
       in.read(begin() + first_to_load_i, size_to_load);
     }
+
+    void shrink_to(uint32_t size) { resize(size); }
   };
 
   using composite_type = std::string_view;
@@ -330,4 +332,70 @@ TYPED_TEST(SnugComposite, should_write_the_same_wal_after_rollback) {
   wal2 << (checkpoint2 - checkpoint) << std::flush;
   ASSERT_EQ(wal1.str(), wal2.str());
 }
+
+class EncodingTableFixture : public testing::Test {
+ protected:
+  BareBones::SnugComposite::EncodingTable<TestSnugCompositesStringFilament> table_;
+};
+
+TEST_F(EncodingTableFixture, Emplace) {
+  // Arrange
+
+  // Act
+  auto id1 = table_.emplace("1");
+  auto id2 = table_.emplace("2");
+
+  // Assert
+  EXPECT_EQ(0U, id1);
+  EXPECT_EQ(1U, id2);
+}
+
+TEST_F(EncodingTableFixture, Checkpoint) {
+  // Arrange
+  table_.emplace("1");
+
+  // Act
+  auto checkpoint = table_.checkpoint();
+
+  // Assert
+  EXPECT_EQ(1U, checkpoint.size());
+}
+
+TEST_F(EncodingTableFixture, ShrinkToCheckpointSize) {
+  // Arrange
+  table_.emplace("1");
+
+  // Act
+  table_.shrink_to_checkpoint_size(table_.checkpoint());
+
+  // Assert
+  EXPECT_EQ(0U, table_.size());
+}
+
+TEST_F(EncodingTableFixture, EmplaceAfterShrinkToCheckpointSize) {
+  // Arrange
+  table_.emplace("1");
+
+  // Act
+  table_.shrink_to_checkpoint_size(table_.checkpoint());
+  auto id = table_.emplace("1");
+
+  // Assert
+  EXPECT_EQ(1U, table_.size());
+  EXPECT_EQ(1U, id);
+}
+
+TEST_F(EncodingTableFixture, ShrinkToOutdatedCheckpoint) {
+  // Arrange
+  table_.emplace("1");
+  auto checkpoint = table_.checkpoint();
+
+  // Act
+  table_.shrink_to_checkpoint_size(checkpoint);
+  table_.emplace("2");
+
+  // Assert
+  EXPECT_THROW(table_.shrink_to_checkpoint_size(checkpoint), BareBones::Exception);
+}
+
 }  // namespace

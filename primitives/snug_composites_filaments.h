@@ -395,13 +395,18 @@ class LabelSet {
       using SerializationMode = BareBones::SnugComposite::SerializationMode;
       using symbols_checkpoints_type = BareBones::Vector<typename SymbolsTableType::checkpoint_type>;
 
+      const data_type* data_;
+      uint32_t next_item_index_;
       uint32_t size_;
       typename LabelNameSetsTableType::checkpoint_type label_name_sets_table_checkpoint_;
       symbols_checkpoints_type symbols_tables_checkpoints_;
 
      public:
-      explicit inline __attribute__((always_inline)) Checkpoint(data_type const& data) noexcept
-          : size_(data.symbols_ids_sequences.size()), label_name_sets_table_checkpoint_(data.label_name_sets_table.checkpoint()) {
+      explicit inline __attribute__((always_inline)) Checkpoint(const data_type& data) noexcept
+          : data_(&data),
+            next_item_index_(data.next_item_index_),
+            size_(data.symbols_ids_sequences.size()),
+            label_name_sets_table_checkpoint_(data.label_name_sets_table.checkpoint()) {
         for (const auto& symbols_table : data.symbols_tables) {
           symbols_tables_checkpoints_.emplace_back(symbols_table->checkpoint());
         }
@@ -429,16 +434,19 @@ class LabelSet {
         // write pos of first seq in the portion, if we are writing delta
         uint32_t first_to_save = 0;
         if (from != nullptr) {
-          first_to_save = from->size_;
+          first_to_save = from->next_item_index_;
           out.write(reinterpret_cast<const char*>(&first_to_save), sizeof(first_to_save));
         }
+        uint32_t first_item_index_in_ids_sequence = data_->next_item_index() - data_->symbols_ids_sequences.size();
+        assert(first_to_save >= first_item_index_in_ids_sequence);
 
         // write  size
-        uint32_t size_to_save = size_ - first_to_save;
+        uint32_t size_to_save = next_item_index_ - first_to_save;
         out.write(reinterpret_cast<char*>(&size_to_save), sizeof(size_to_save));
 
         // write data
-        out.write(reinterpret_cast<const char*>(&data.symbols_ids_sequences[first_to_save]), sizeof(data.symbols_ids_sequences[first_to_save]) * size_to_save);
+        out.write(reinterpret_cast<const char*>(&data.symbols_ids_sequences[first_to_save - first_item_index_in_ids_sequence]),
+                  sizeof(data.symbols_ids_sequences[0]) * size_to_save);
 
         // write label name sets table
         if (from != nullptr) {
@@ -555,6 +563,7 @@ class LabelSet {
     symbols_tables_type symbols_tables;
     symbols_ids_sequences_type symbols_ids_sequences;
     LabelNameSetsTableType label_name_sets_table;
+    uint32_t next_item_index_{};
     data_type() noexcept = default;
     data_type(const data_type&) = delete;
     data_type(data_type&&) = delete;
@@ -562,6 +571,12 @@ class LabelSet {
     data_type& operator=(data_type&&) = delete;
 
     using checkpoint_type = Checkpoint;
+
+    PROMPP_ALWAYS_INLINE void shrink_to(uint32_t size) {
+      assert(size < symbols_ids_sequences.size());
+
+      symbols_ids_sequences.resize(size);
+    }
 
     inline __attribute__((always_inline)) auto checkpoint() const noexcept { return Checkpoint(*this); }
 
@@ -617,6 +632,7 @@ class LabelSet {
       auto sg1 = std::experimental::scope_fail([&]() { symbols_ids_sequences.resize(original_size); });
       symbols_ids_sequences.resize(original_size + size_to_load);
       in.read(reinterpret_cast<char*>(&symbols_ids_sequences[first_to_load_i]), size_to_load * sizeof(symbols_ids_sequences[first_to_load_i]));
+      next_item_index_ += size_to_load;
 
       // read label name sets table
       auto label_name_sets_table_checkpoint = label_name_sets_table.checkpoint();
@@ -690,6 +706,8 @@ class LabelSet {
     [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept {
       return symbols_tables.allocated_memory() + symbols_ids_sequences.allocated_memory() + label_name_sets_table.allocated_memory();
     }
+
+    [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t next_item_index() const noexcept { return next_item_index_; }
   };
 
   inline __attribute__((always_inline)) LabelSet() noexcept = default;
@@ -708,11 +726,14 @@ class LabelSet {
 
     auto lns = data.label_name_sets_table[lns_id_];
     auto lns_i = lns.begin();
+    auto size_before = data.symbols_ids_sequences.size();
     auto i = BareBones::StreamVByte::back_inserter<BareBones::StreamVByte::Codec1234>(data.symbols_ids_sequences, lns.size());
     for (auto [_, label_value] : label_set) {
       *i++ = data.symbols_tables[lns_i.id()]->find_or_emplace(label_value);
       lns_i++;
     }
+
+    data.next_item_index_ += data.symbols_ids_sequences.size() - size_before;
   }
 
   // NOLINTNEXTLINE(readability-identifier-naming)

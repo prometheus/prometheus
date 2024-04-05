@@ -148,4 +148,135 @@ TEST_F(SnugCompositesFilaments, LabelSet) {
 
   EXPECT_EQ(hash_value(outcomes), hash_value(etalons));
 }
+
+class EncodingTableLabelSetFixture : public testing::Test {
+ protected:
+  using FillamentLabelSet =
+      PromPP::Primitives::SnugComposites::Filaments::LabelSet<BareBones::SnugComposite::EncodingBimap<PromPP::Primitives::SnugComposites::Filaments::Symbol>,
+                                                            BareBones::SnugComposite::EncodingBimap<PromPP::Primitives::SnugComposites::Filaments::LabelNameSet<
+                                                                BareBones::SnugComposite::EncodingBimap<PromPP::Primitives::SnugComposites::Filaments::Symbol>>>>;
+
+  BareBones::SnugComposite::EncodingTable<FillamentLabelSet> encoding_table_;
+  BareBones::SnugComposite::DecodingTable<FillamentLabelSet> decoding_table_;
+  std::array<LabelSetForTest, 3> ls_;
+
+  void SetUp() override {
+    ls_[0].emplace_back("1", "1");
+    ls_[0].emplace_back("2", "2");
+
+    ls_[1].emplace_back("3", "3");
+
+    ls_[2].emplace_back("4", "4");
+  }
+
+  auto create_and_load_checkpoint(BareBones::SnugComposite::EncodingTable<FillamentLabelSet>::checkpoint_type* from) {
+    auto checkpoint = encoding_table_.checkpoint();
+    std::stringstream ss;
+    checkpoint.save(ss, from);
+    decoding_table_.load(ss);
+
+    return checkpoint;
+  }
+
+  void check_decoding_table() {
+    ASSERT_EQ(3U, decoding_table_.size());
+    {
+      auto composite = decoding_table_.items()[0].composite(decoding_table_.data());
+      ASSERT_EQ(2U, composite.size());
+      auto it = composite.begin();
+      EXPECT_EQ((std::pair<std::string_view, std::string_view>("1", "1")), *it++);
+      EXPECT_EQ((std::pair<std::string_view, std::string_view>("2", "2")), *it);
+    }
+    {
+      auto composite = decoding_table_.items()[1].composite(decoding_table_.data());
+      ASSERT_EQ(1U, composite.size());
+      EXPECT_EQ((std::pair<std::string_view, std::string_view>("3", "3")), *composite.begin());
+    }
+    {
+      auto composite = decoding_table_.items()[2].composite(decoding_table_.data());
+      ASSERT_EQ(1U, composite.size());
+      EXPECT_EQ((std::pair<std::string_view, std::string_view>("4", "4")), *composite.begin());
+    }
+  }
+};
+
+TEST_F(EncodingTableLabelSetFixture, ShrinkAndLoad) {
+  // Arrange
+
+  // Act
+  {
+    encoding_table_.emplace(ls_[0]);
+    encoding_table_.emplace(ls_[1]);
+    auto checkpoint = create_and_load_checkpoint(nullptr);
+    encoding_table_.shrink_to_checkpoint_size(checkpoint);
+  }
+  {
+    auto empty_checkpoint = encoding_table_.checkpoint();
+    encoding_table_.emplace(ls_[2]);
+    auto checkpoint = create_and_load_checkpoint(&empty_checkpoint);
+    encoding_table_.shrink_to_checkpoint_size(checkpoint);
+  }
+
+  // Assert
+  check_decoding_table();
+}
+
+TEST_F(EncodingTableLabelSetFixture, LoadWithoutShrink) {
+  // Arrange
+
+  // Act
+  {
+    encoding_table_.emplace(ls_[0]);
+    encoding_table_.emplace(ls_[1]);
+    create_and_load_checkpoint(nullptr);
+  }
+  {
+    auto empty_checkpoint = encoding_table_.checkpoint();
+    encoding_table_.emplace(ls_[2]);
+    create_and_load_checkpoint(&empty_checkpoint);
+  }
+
+  // Assert
+  check_decoding_table();
+}
+
+TEST_F(EncodingTableLabelSetFixture, EmptyCheckpointWithShrink) {
+  // Arrange
+
+  // Act
+  {
+    encoding_table_.emplace(ls_[0]);
+    encoding_table_.emplace(ls_[1]);
+    encoding_table_.emplace(ls_[2]);
+    auto checkpoint = create_and_load_checkpoint(nullptr);
+    encoding_table_.shrink_to_checkpoint_size(checkpoint);
+  }
+  {
+    auto empty_checkpoint = encoding_table_.checkpoint();
+    create_and_load_checkpoint(&empty_checkpoint);
+  }
+
+  // Assert
+  check_decoding_table();
+}
+
+TEST_F(EncodingTableLabelSetFixture, EmptyCheckpointWithoutShrink) {
+  // Arrange
+
+  // Act
+  {
+    encoding_table_.emplace(ls_[0]);
+    encoding_table_.emplace(ls_[1]);
+    encoding_table_.emplace(ls_[2]);
+    create_and_load_checkpoint(nullptr);
+  }
+  {
+    auto empty_checkpoint = encoding_table_.checkpoint();
+    create_and_load_checkpoint(&empty_checkpoint);
+  }
+
+  // Assert
+  check_decoding_table();
+}
+
 }  // namespace
