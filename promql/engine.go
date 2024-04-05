@@ -2730,7 +2730,6 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 type groupedAggregation struct {
 	hasFloat       bool // Has at least 1 float64 sample aggregated.
 	hasHistogram   bool // Has at least 1 histogram sample aggregated.
-	labels         labels.Labels
 	floatValue     float64
 	histogramValue *histogram.FloatHistogram
 	floatMean      float64
@@ -3044,8 +3043,11 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int, inputMatrix Ma
 // aggregationK evaluates count_values on vec.
 // Outputs as many series per group as there are values in the input.
 func (ev *evaluator) aggregationCountValues(e *parser.AggregateExpr, grouping []string, valueLabel string, vec Vector, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	result := map[uint64]*groupedAggregation{}
-	orderedResult := []*groupedAggregation{}
+	type groupCount struct {
+		labels labels.Labels
+		count  int
+	}
+	result := map[uint64]*groupCount{}
 
 	var buf []byte
 	for _, s := range vec {
@@ -3062,24 +3064,21 @@ func (ev *evaluator) aggregationCountValues(e *parser.AggregateExpr, grouping []
 		group, ok := result[groupingKey]
 		// Add a new group if it doesn't exist.
 		if !ok {
-			newAgg := &groupedAggregation{
-				labels:     generateGroupingLabels(enh, metric, e.Without, grouping),
-				groupCount: 1,
+			result[groupingKey] = &groupCount{
+				labels: generateGroupingLabels(enh, metric, e.Without, grouping),
+				count:  1,
 			}
-
-			result[groupingKey] = newAgg
-			orderedResult = append(orderedResult, newAgg)
 			continue
 		}
 
-		group.groupCount++
+		group.count++
 	}
 
 	// Construct the result Vector from the aggregated groups.
-	for _, aggr := range orderedResult {
+	for _, aggr := range result {
 		enh.Out = append(enh.Out, Sample{
 			Metric: aggr.labels,
-			F:      float64(aggr.groupCount),
+			F:      float64(aggr.count),
 		})
 	}
 	return enh.Out, nil
