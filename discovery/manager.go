@@ -120,6 +120,16 @@ func Name(n string) func(*Manager) {
 	}
 }
 
+// Updatert sets the updatert of the manager.
+// Used to speed up tests.
+func Updatert(u time.Duration) func(*Manager) {
+	return func(m *Manager) {
+		m.mtx.Lock()
+		defer m.mtx.Unlock()
+		m.updatert = u
+	}
+}
+
 // HTTPClientOptions sets the list of HTTP client options to expose to
 // Discoverers. It is up to Discoverers to choose to use the options provided.
 func HTTPClientOptions(opts ...config.HTTPClientOption) func(*Manager) {
@@ -195,9 +205,7 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 	m.metrics.FailedConfigs.Set(float64(failedCount))
 
 	var (
-		wg sync.WaitGroup
-		// keep shows if we keep any providers after reload.
-		keep         bool
+		wg           sync.WaitGroup
 		newProviders []*Provider
 	)
 	for _, prov := range m.providers {
@@ -211,13 +219,12 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 			continue
 		}
 		newProviders = append(newProviders, prov)
-		// refTargets keeps reference targets used to populate new subs' targets
+		// refTargets keeps reference targets used to populate new subs' targets as they should be the same.
 		var refTargets map[string]*targetgroup.Group
 		prov.mu.Lock()
 
 		m.targetsMtx.Lock()
 		for s := range prov.subs {
-			keep = true
 			refTargets = m.targets[poolKey{s, prov.name}]
 			// Remove obsolete subs' targets.
 			if _, ok := prov.newSubs[s]; !ok {
@@ -250,7 +257,9 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 	// While startProvider does pull the trigger, it may take some time to do so, therefore
 	// we pull the trigger as soon as possible so that downstream managers can populate their state.
 	// See https://github.com/prometheus/prometheus/pull/8639 for details.
-	if keep {
+	// This also helps making the downstream managers drop stale targets as soon as possible.
+	// See https://github.com/prometheus/prometheus/pull/13147 for details.
+	if len(m.providers) > 0 {
 		select {
 		case m.triggerSend <- struct{}{}:
 		default:
@@ -271,7 +280,9 @@ func (m *Manager) StartCustomProvider(ctx context.Context, name string, worker D
 			name: {},
 		},
 	}
+	m.mtx.Lock()
 	m.providers = append(m.providers, p)
+	m.mtx.Unlock()
 	m.startProvider(ctx, p)
 }
 
@@ -386,19 +397,33 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 	tSets := map[string][]*targetgroup.Group{}
 	n := map[string]int{}
 
+	m.mtx.RLock()
 	m.targetsMtx.Lock()
-	defer m.targetsMtx.Unlock()
-	for pkey, tsets := range m.targets {
-		for _, tg := range tsets {
-			// Even if the target group 'tg' is empty we still need to send it to the 'Scrape manager'
-			// to signal that it needs to stop all scrape loops for this target set.
-			tSets[pkey.setName] = append(tSets[pkey.setName], tg)
-			n[pkey.setName] += len(tg.Targets)
+	for _, p := range m.providers {
+		p.mu.RLock()
+		for s := range p.subs {
+			// Send empty lists for subs without any targets to make sure old stale targets are dropped by consumers.
+			// See: https://github.com/prometheus/prometheus/issues/12858 for details.
+			if _, ok := tSets[s]; !ok {
+				tSets[s] = []*targetgroup.Group{}
+				n[s] = 0
+			}
+			if tsets, ok := m.targets[poolKey{s, p.name}]; ok {
+				for _, tg := range tsets {
+					tSets[s] = append(tSets[s], tg)
+					n[s] += len(tg.Targets)
+				}
+			}
 		}
+		p.mu.RUnlock()
 	}
+	m.targetsMtx.Unlock()
+	m.mtx.RUnlock()
+
 	for setName, v := range n {
 		m.metrics.DiscoveredTargets.WithLabelValues(setName).Set(float64(v))
 	}
+
 	return tSets
 }
 
