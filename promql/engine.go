@@ -3081,12 +3081,12 @@ func addToSeries(ss *Series, ts int64, f float64, h *histogram.FloatHistogram, n
 			ss.Floats = getFPointSlice(numSteps)
 		}
 		ss.Floats = append(ss.Floats, FPoint{T: ts, F: f})
-	} else {
-		if ss.Histograms == nil {
-			ss.Histograms = getHPointSlice(numSteps)
-		}
-		ss.Histograms = append(ss.Histograms, HPoint{T: ts, H: h})
+		return
 	}
+	if ss.Histograms == nil {
+		ss.Histograms = getHPointSlice(numSteps)
+	}
+	ss.Histograms = append(ss.Histograms, HPoint{T: ts, H: h})
 }
 
 func (ev *evaluator) nextValues(ts int64, series *Series) (f float64, h *histogram.FloatHistogram, b bool) {
