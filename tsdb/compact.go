@@ -548,17 +548,13 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, b
 	meta.Compaction.Level = 1
 	meta.Compaction.Sources = []ulid.ULID{uid}
 
-	ooo := false
 	if base != nil {
 		meta.Compaction.Parents = []BlockDesc{
 			{ULID: base.ULID, MinTime: base.MinTime, MaxTime: base.MaxTime},
 		}
 		if base.Compaction.FromOutOfOrder() {
-		  meta.Compaction.SetOutOfOrder()
+			meta.Compaction.SetOutOfOrder()
 		}
-	}
-	if ooo {
-		meta.Compaction.SetOutOfOrder()
 	}
 
 	err := c.write(dest, meta, DefaultBlockPopulator{}, b)
