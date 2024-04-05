@@ -787,13 +787,16 @@ func (m *equalMultiStringSliceMatcher) Matches(s string) bool {
 	return false
 }
 
-// equalMultiStringMapMatcher matches a string exactly against a map of valid values.
+// equalMultiStringMapMatcher matches a string exactly against a map of valid values
+// or against a set of prefix matchers.
 type equalMultiStringMapMatcher struct {
 	// values contains values to match a string against. If the matching is case insensitive,
 	// the values here must be lowercase.
-	values   map[string]struct{}
+	values map[string]struct{}
+	// prefixes maps strings, all of length minPrefixLen, to sets of matchers to check the rest of the string.
+	// If the matching is case insensitive, prefixes are all lowercase.
 	prefixes map[string][]*literalPrefixStringMatcher
-
+	// minPrefixLen can be zero, meaning there are no prefix matchers.
 	minPrefixLen  int
 	caseSensitive bool
 }
@@ -807,6 +810,9 @@ func (m *equalMultiStringMapMatcher) add(s string) {
 }
 
 func (m *equalMultiStringMapMatcher) addPrefix(p *literalPrefixStringMatcher) {
+	if m.minPrefixLen == 0 {
+		panic("addPrefix called when no prefix length defined")
+	}
 	s := p.prefix[:m.minPrefixLen]
 	if !m.caseSensitive {
 		s = strings.ToLower(s)
