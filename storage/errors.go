@@ -33,7 +33,7 @@ func (e errDuplicateSampleForTimestamp) Error() string {
 	if e.timestamp == 0 {
 		return "duplicate sample for timestamp"
 	}
-	return fmt.Sprintf("duplicate sample for timestamp %d: existing %g, new value %g", e.timestamp, e.existing, e.newValue)
+	return fmt.Sprintf("duplicate sample for timestamp %d; overrides not allowed: existing %g, new value %g", e.timestamp, e.existing, e.newValue)
 }
 
 // Every errDuplicateSampleForTimestamp compares equal to the global ErrDuplicateSampleForTimestamp.
