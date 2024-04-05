@@ -582,7 +582,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, b
 		"maxt", meta.MaxTime,
 		"ulid", meta.ULID,
 		"duration", time.Since(start),
-		"ooo", ooo,
+		"ooo", meta.Compaction.FromOutOfOrder(),
 	)
 	return uid, nil
 }
