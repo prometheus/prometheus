@@ -60,7 +60,7 @@ type Compactor interface {
 
 	// Write persists a Block into a directory.
 	// No Block is written when resulting Block has 0 samples, and returns empty ulid.ULID{}.
-	Write(dest string, b BlockReader, mint, maxt int64, parent *BlockMeta) (ulid.ULID, error)
+	Write(dest string, b BlockReader, mint, maxt int64, ooo bool, parent *BlockMeta) (ulid.ULID, error)
 
 	// Compact runs compaction against the provided directories. Must
 	// only be called concurrently with results of Plan().
@@ -535,7 +535,7 @@ func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string,
 	return uid, errs.Err()
 }
 
-func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, parent *BlockMeta) (ulid.ULID, error) {
+func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, ooo bool, parent *BlockMeta) (ulid.ULID, error) {
 	start := time.Now()
 
 	uid := ulid.MustNew(ulid.Now(), rand.Reader)
@@ -547,6 +547,9 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, p
 	}
 	meta.Compaction.Level = 1
 	meta.Compaction.Sources = []ulid.ULID{uid}
+	if ooo {
+		meta.Compaction.SetOutOfOrder()
+	}
 
 	if parent != nil {
 		meta.Compaction.Parents = []BlockDesc{
@@ -575,7 +578,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, p
 		"maxt", meta.MaxTime,
 		"ulid", meta.ULID,
 		"duration", time.Since(start),
-		"ooo", meta.Compaction.FromOutOfOrder(),
+		"ooo", ooo,
 	)
 	return uid, nil
 }
