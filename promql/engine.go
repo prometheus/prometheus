@@ -2721,24 +2721,10 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 		}
 	}
 
-	for si, series := range inputMatrix {
-		var s Sample
-
-		switch {
-		case len(series.Floats) > 0 && series.Floats[0].T == enh.Ts:
-			s = Sample{Metric: series.Metric, F: series.Floats[0].F, T: enh.Ts}
-			// Move input vectors forward so we don't have to re-scan the same
-			// past points at the next step.
-			inputMatrix[si].Floats = series.Floats[1:]
-		case len(series.Histograms) > 0 && series.Histograms[0].T == enh.Ts:
-			s = Sample{Metric: series.Metric, H: series.Histograms[0].H, T: enh.Ts}
-			inputMatrix[si].Histograms = series.Histograms[1:]
-		default:
+	for si := range inputMatrix {
+		s, ok := ev.nextSample(enh.Ts, inputMatrix, si)
+		if !ok {
 			continue
-		}
-		ev.currentSamples++
-		if ev.currentSamples > ev.maxSamples {
-			ev.error(ErrTooManySamples(env))
 		}
 
 		group := orderedResult[seriesToResult[si]]
@@ -3056,6 +3042,29 @@ func addToSeries(ss *Series, ts int64, f float64, h *histogram.FloatHistogram, n
 		}
 		ss.Histograms = append(ss.Histograms, HPoint{T: ts, H: h})
 	}
+}
+
+func (ev *evaluator) nextValues(ts int64, series *Series) (f float64, h *histogram.FloatHistogram, b bool) {
+	switch {
+	case len(series.Floats) > 0 && series.Floats[0].T == ts:
+		f = series.Floats[0].F
+		series.Floats = series.Floats[1:] // Move input vectors forward
+	case len(series.Histograms) > 0 && series.Histograms[0].T == ts:
+		h = series.Histograms[0].H
+		series.Histograms = series.Histograms[1:]
+	default:
+		return f, h, false
+	}
+	return f, h, true
+}
+
+func (ev *evaluator) nextSample(ts int64, inputMatrix Matrix, si int) (Sample, bool) {
+	f, h, ok := ev.nextValues(ts, &inputMatrix[si])
+	ev.currentSamples++
+	if ev.currentSamples > ev.maxSamples {
+		ev.error(ErrTooManySamples(env))
+	}
+	return Sample{Metric: inputMatrix[si].Metric, F: f, H: h, T: ts}, ok
 }
 
 // groupingKey builds and returns the grouping key for the given metric and
