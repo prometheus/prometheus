@@ -182,6 +182,12 @@ func (q *blockChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *
 // PostingsForMatchers assembles a single postings iterator against the index reader
 // based on the given matchers. The resulting postings are not ordered by series.
 func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matcher) (index.Postings, error) {
+	if len(ms) == 1 && ms[0].Name == "" && ms[0].Value == "" {
+		k, v := index.AllPostingsKey()
+		allPostings, err := ix.Postings(ctx, k, v)
+		return allPostings, err
+	}
+
 	var its, notIts []index.Postings
 	// See which label must be non-empty.
 	// Optimization for case like {l=~".", l!="1"}.
@@ -237,7 +243,12 @@ func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matc
 		}
 		switch {
 		case m.Name == "" && m.Value == "": // Special-case for AllPostings, used in tests at least.
-			// Does nothing since AllPostings already added due to hasSubtractingMatchers.
+			k, v := index.AllPostingsKey()
+			allPostings, err := ix.Postings(ctx, k, v)
+			if err != nil {
+				return nil, err
+			}
+			its = append(its, allPostings)
 		case labelMustBeSet[m.Name]:
 			// If this matcher must be non-empty, we can be smarter.
 			matchesEmpty := m.Matches("")
