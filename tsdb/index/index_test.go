@@ -335,45 +335,6 @@ func TestPostingsMany(t *testing.T) {
 	}
 }
 
-// createFileReader creates a reader for a temporary index file, which input has been written to.
-// It returns the reader, the index filename and the symbol map.
-func createFileReader(ctx context.Context, tb testing.TB, input indexWriterSeriesSlice) (*Reader, string, map[string]struct{}) {
-	tb.Helper()
-
-	fn := filepath.Join(tb.TempDir(), indexFilename)
-
-	iw, err := NewWriter(ctx, fn)
-	require.NoError(tb, err)
-
-	symbols := map[string]struct{}{}
-	for _, s := range input {
-		s.labels.Range(func(l labels.Label) {
-			symbols[l.Name] = struct{}{}
-			symbols[l.Value] = struct{}{}
-		})
-	}
-
-	syms := []string{}
-	for s := range symbols {
-		syms = append(syms, s)
-	}
-	sort.Strings(syms)
-	for _, s := range syms {
-		require.NoError(tb, iw.AddSymbol(s))
-	}
-	for i, s := range input {
-		require.NoError(tb, iw.AddSeries(storage.SeriesRef(i), s.labels, s.chunks...))
-	}
-	require.NoError(tb, iw.Close())
-
-	ir, err := NewFileReader(fn)
-	require.NoError(tb, err)
-	tb.Cleanup(func() {
-		require.NoError(tb, ir.Close())
-	})
-	return ir, fn, symbols
-}
-
 func TestPersistence_index_e2e(t *testing.T) {
 	ctx := context.Background()
 	lbls, err := labels.ReadLabels(filepath.Join("..", "testdata", "20kseries.json"), 20000)
@@ -767,4 +728,43 @@ func TestChunksTimeOrdering(t *testing.T) {
 	), "chunk maxT 30 is less than minT 100")
 
 	require.NoError(t, idx.Close())
+}
+
+// createFileReader creates a reader for a temporary index file, which input has been written to.
+// It returns the reader, the index filename and the symbol map.
+func createFileReader(ctx context.Context, tb testing.TB, input indexWriterSeriesSlice) (*Reader, string, map[string]struct{}) {
+	tb.Helper()
+
+	fn := filepath.Join(tb.TempDir(), indexFilename)
+
+	iw, err := NewWriter(ctx, fn)
+	require.NoError(tb, err)
+
+	symbols := map[string]struct{}{}
+	for _, s := range input {
+		s.labels.Range(func(l labels.Label) {
+			symbols[l.Name] = struct{}{}
+			symbols[l.Value] = struct{}{}
+		})
+	}
+
+	syms := []string{}
+	for s := range symbols {
+		syms = append(syms, s)
+	}
+	slices.Sort(syms)
+	for _, s := range syms {
+		require.NoError(tb, iw.AddSymbol(s))
+	}
+	for i, s := range input {
+		require.NoError(tb, iw.AddSeries(storage.SeriesRef(i), s.labels, s.chunks...))
+	}
+	require.NoError(tb, iw.Close())
+
+	ir, err := NewFileReader(fn)
+	require.NoError(tb, err)
+	tb.Cleanup(func() {
+		require.NoError(tb, ir.Close())
+	})
+	return ir, fn, symbols
 }
