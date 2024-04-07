@@ -605,153 +605,36 @@ func TestReader_PostingsForLabelMatching(t *testing.T) {
 func testPostingsForLabelMatching(t *testing.T, setUp func(*testing.T, []labels.Labels) any) {
 	t.Helper()
 
-	// These have to be ordered
-	series := []labels.Labels{
-		labels.FromStrings("i", "a", "n", "1"),
-		labels.FromStrings("i", "b", "n", "1"),
-		labels.FromStrings("n", "1"),
-		labels.FromStrings("n", "2"),
-		labels.FromStrings("n", "2.5"),
-	}
+	ir := setUp(t, PostingsForLabelMatchingTestSeries)
 
-	ir := setUp(t, series)
-
-	testCases := []struct {
-		matcher *labels.Matcher
-		exp     []labels.Labels
-	}{
-		// Simple equals.
-		{
-			matcher: labels.MustNewMatcher(labels.MatchEqual, "n", "1"),
-			exp: []labels.Labels{
-				labels.FromStrings("n", "1"),
-				labels.FromStrings("n", "1", "i", "a"),
-				labels.FromStrings("n", "1", "i", "b"),
-			},
+	// Add cases which have a different outcome for PostingsForLabelMatching than for PostingsForMatchers.
+	// since the former will only return postings for the matcher's label.
+	testCases := append(PostingsForLabelMatchingTestCases,
+		PostingsForLabelMatchingTestCase{
+			Matcher: labels.MustNewMatcher(labels.MatchEqual, "missing", ""),
+			Exp:     []labels.Labels{},
 		},
-		{
-			// PostingsForLabelMatching will only return postings for the matcher's label.
-			matcher: labels.MustNewMatcher(labels.MatchEqual, "missing", ""),
-			exp:     []labels.Labels{},
+		PostingsForLabelMatchingTestCase{
+			Matcher: labels.MustNewMatcher(labels.MatchRegexp, "i", "^$"),
+			Exp:     []labels.Labels{},
 		},
-		// Not equals.
-		{
-			matcher: labels.MustNewMatcher(labels.MatchNotEqual, "n", "1"),
-			exp: []labels.Labels{
-				labels.FromStrings("n", "2"),
-				labels.FromStrings("n", "2.5"),
-			},
+		PostingsForLabelMatchingTestCase{
+			Matcher: labels.MustNewMatcher(labels.MatchRegexp, "i", "c||d"),
+			Exp:     []labels.Labels{},
 		},
-		{
-			matcher: labels.MustNewMatcher(labels.MatchNotEqual, "i", ""),
-			exp: []labels.Labels{
-				labels.FromStrings("n", "1", "i", "a"),
-				labels.FromStrings("n", "1", "i", "b"),
-			},
+		PostingsForLabelMatchingTestCase{
+			Matcher: labels.MustNewMatcher(labels.MatchRegexp, "i", "(c||d)"),
+			Exp:     []labels.Labels{},
 		},
-		{
-			matcher: labels.MustNewMatcher(labels.MatchNotEqual, "missing", ""),
-			exp:     []labels.Labels{},
-		},
-		// Regexp.
-		{
-			matcher: labels.MustNewMatcher(labels.MatchRegexp, "n", "^1$"),
-			exp: []labels.Labels{
-				labels.FromStrings("n", "1"),
-				labels.FromStrings("n", "1", "i", "a"),
-				labels.FromStrings("n", "1", "i", "b"),
-			},
-		},
-		{
-			// PostingsForLabelMatching will only return postings for the matcher's label.
-			matcher: labels.MustNewMatcher(labels.MatchRegexp, "i", "^$"),
-			exp:     []labels.Labels{},
-		},
-		// Not regexp.
-		{
-			matcher: labels.MustNewMatcher(labels.MatchNotRegexp, "n", "^1$"),
-			exp: []labels.Labels{
-				labels.FromStrings("n", "2"),
-				labels.FromStrings("n", "2.5"),
-			},
-		},
-		{
-			matcher: labels.MustNewMatcher(labels.MatchNotRegexp, "n", "1"),
-			exp: []labels.Labels{
-				labels.FromStrings("n", "2"),
-				labels.FromStrings("n", "2.5"),
-			},
-		},
-		{
-			matcher: labels.MustNewMatcher(labels.MatchNotRegexp, "n", "1|2.5"),
-			exp: []labels.Labels{
-				labels.FromStrings("n", "2"),
-			},
-		},
-		{
-			matcher: labels.MustNewMatcher(labels.MatchNotRegexp, "n", "(1|2.5)"),
-			exp: []labels.Labels{
-				labels.FromStrings("n", "2"),
-			},
-		},
-		// Set optimization for regexp.
-		// Refer to https://github.com/prometheus/prometheus/issues/2651.
-		{
-			matcher: labels.MustNewMatcher(labels.MatchRegexp, "n", "1|2"),
-			exp: []labels.Labels{
-				labels.FromStrings("n", "1"),
-				labels.FromStrings("n", "1", "i", "a"),
-				labels.FromStrings("n", "1", "i", "b"),
-				labels.FromStrings("n", "2"),
-			},
-		},
-		{
-			matcher: labels.MustNewMatcher(labels.MatchRegexp, "i", "a|b"),
-			exp: []labels.Labels{
-				labels.FromStrings("n", "1", "i", "a"),
-				labels.FromStrings("n", "1", "i", "b"),
-			},
-		},
-		{
-			matcher: labels.MustNewMatcher(labels.MatchRegexp, "i", "(a|b)"),
-			exp: []labels.Labels{
-				labels.FromStrings("n", "1", "i", "a"),
-				labels.FromStrings("n", "1", "i", "b"),
-			},
-		},
-		{
-			matcher: labels.MustNewMatcher(labels.MatchRegexp, "n", "x1|2"),
-			exp: []labels.Labels{
-				labels.FromStrings("n", "2"),
-			},
-		},
-		{
-			matcher: labels.MustNewMatcher(labels.MatchRegexp, "n", "2|2\\.5"),
-			exp: []labels.Labels{
-				labels.FromStrings("n", "2"),
-				labels.FromStrings("n", "2.5"),
-			},
-		},
-		// Empty value.
-		{
-			// PostingsForLabelMatching will only return postings having a matching label.
-			matcher: labels.MustNewMatcher(labels.MatchRegexp, "i", "c||d"),
-			exp:     []labels.Labels{},
-		},
-		{
-			// PostingsForLabelMatching will only return postings having a matching label.
-			matcher: labels.MustNewMatcher(labels.MatchRegexp, "i", "(c||d)"),
-			exp:     []labels.Labels{},
-		},
-	}
+	)
 	for _, tc := range testCases {
-		t.Run(tc.matcher.String(), func(t *testing.T) {
+		t.Run(tc.Matcher.String(), func(t *testing.T) {
 			exp := map[string]struct{}{}
-			for _, l := range tc.exp {
+			for _, l := range tc.Exp {
 				exp[l.String()] = struct{}{}
 			}
 
-			it := matchPostings(t, ir, tc.matcher)
+			it := matchPostings(t, ir, tc.Matcher)
 			for it.Next() {
 				verifyLabels(t, ir, it.At(), exp)
 			}
