@@ -205,12 +205,22 @@ describe('promql operations', () => {
       expectedDiag: [] as Diagnostic[],
     },
     {
+      expr: 'foo and on(test,"blub") bar',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
       expr: 'foo and on() bar',
       expectedValueType: ValueType.vector,
       expectedDiag: [] as Diagnostic[],
     },
     {
       expr: 'foo and ignoring(test,blub) bar',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'foo and ignoring(test,"blub") bar',
       expectedValueType: ValueType.vector,
       expectedDiag: [] as Diagnostic[],
     },
@@ -226,6 +236,11 @@ describe('promql operations', () => {
     },
     {
       expr: 'foo / on(test,blub) group_left(bar) bar',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'foo / on(test,blub) group_left("bar") bar',
       expectedValueType: ValueType.vector,
       expectedDiag: [] as Diagnostic[],
     },

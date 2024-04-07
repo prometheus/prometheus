@@ -380,7 +380,12 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
       result.push({ kind: ContextKind.LabelName, metricName: getMetricNameInVectorSelector(node, state) });
       break;
     case QuotedLabelName:
-      if (node.parent?.type.id === LabelMatchers) {
+      if (node.parent?.type.id === GroupingLabels) {
+        // In this case we are in the given situation:
+        //      sum by ("myL")
+        // So we have to continue to autocomplete any kind of labelName
+        result.push({ kind: ContextKind.LabelName });
+      } else if (node.parent?.type.id === LabelMatchers) {
         // In that case we are in the given situation:
         //       {""} or {"metric_"}
         // since this is for the QuotedMetricName we need to continue to autocomplete for the metric names

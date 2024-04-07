@@ -252,6 +252,12 @@ describe('analyzeCompletion test', () => {
       expectedContext: [{ kind: ContextKind.LabelName }],
     },
     {
+      title: 'continue to autocomplete QuotedLabelName in aggregate modifier',
+      expr: 'sum by ("myL")',
+      pos: 12, // cursor is between the bracket after the string myL
+      expectedContext: [{ kind: ContextKind.LabelName }],
+    },
+    {
       title: 'autocomplete labelName in a list',
       expr: 'sum by (myLabel1,)',
       pos: 17, // cursor is between the bracket after the string myLab
@@ -261,6 +267,12 @@ describe('analyzeCompletion test', () => {
       title: 'autocomplete labelName in a list 2',
       expr: 'sum by (myLabel1, myLab)',
       pos: 23, // cursor is between the bracket after the string myLab
+      expectedContext: [{ kind: ContextKind.LabelName }],
+    },
+    {
+      title: 'autocomplete labelName in a list 2',
+      expr: 'sum by ("myLabel1", "myLab")',
+      pos: 27, // cursor is between the bracket after the string myLab
       expectedContext: [{ kind: ContextKind.LabelName }],
     },
     {

@@ -112,6 +112,54 @@ PromQL(
     )
 )
 
+# Quoted label name in grouping labels
+
+sum by("job", mode) (test_metric) / on("job") group_left sum by("job")(test_metric)
+
+==>
+
+PromQL(
+    BinaryExpr(
+        AggregateExpr(
+          AggregateOp(Sum),
+          AggregateModifier(
+            By,
+            GroupingLabels(
+                QuotedLabelName,
+                LabelName
+            )
+          ),
+          FunctionCallBody(
+                VectorSelector(
+                  Identifier
+                )
+          )
+      ),
+      Div,
+        MatchingModifierClause(
+          On,
+          GroupingLabels(
+              QuotedLabelName
+          )
+          GroupLeft
+        ),
+        AggregateExpr(
+          AggregateOp(Sum),
+          AggregateModifier(
+            By,
+            GroupingLabels(
+                QuotedLabelName
+            )
+          ),
+          FunctionCallBody(
+                VectorSelector(
+                  Identifier
+                )
+          )
+        )
+    )
+)
+
 # Case insensitivity for aggregations and binop modifiers.
 
 SuM BY(testlabel1) (testmetric1) / IGNOring(testlabel2) AVG withOUT(testlabel3) (testmetric2)
