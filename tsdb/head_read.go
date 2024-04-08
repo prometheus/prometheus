@@ -122,7 +122,7 @@ func (h *headIndexReader) Postings(ctx context.Context, name string, values ...s
 }
 
 func (h *headIndexReader) PostingsForLabelMatching(ctx context.Context, m *labels.Matcher) index.Postings {
-	return h.head.postings.PostingsForLabelMatching(ctx, h, m)
+	return h.head.postings.PostingsForLabelMatching(ctx, h.Postings, m)
 }
 
 func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {

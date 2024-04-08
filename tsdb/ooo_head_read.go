@@ -172,7 +172,7 @@ func (oh *OOOHeadIndexReader) series(ref storage.SeriesRef, builder *labels.Scra
 // PostingsForLabelMatching needs to be overridden so that the right IndexReader
 // implementation gets passed down.
 func (oh *OOOHeadIndexReader) PostingsForLabelMatching(ctx context.Context, m *labels.Matcher) index.Postings {
-	return oh.head.postings.PostingsForLabelMatching(ctx, oh, m)
+	return oh.head.postings.PostingsForLabelMatching(ctx, oh.Postings, m)
 }
 
 // LabelValues needs to be overridden from the headIndexReader implementation due
