@@ -1124,15 +1124,6 @@ type Reader struct {
 	version int
 }
 
-// PostingsReader provides reading of postings.
-type PostingsReader interface {
-	// Postings returns the postings list iterator for the label pairs.
-	// The Postings here contain the offsets to the series inside the index.
-	// Found IDs are not strictly required to point to a valid Series, e.g.
-	// during background garbage collections. Input values must be sorted.
-	Postings(ctx context.Context, name string, values ...string) (Postings, error)
-}
-
 type postingOffset struct {
 	value string
 	off   int
@@ -1777,7 +1768,7 @@ func (r *Reader) Postings(ctx context.Context, name string, values ...string) (P
 }
 
 func (r *Reader) PostingsForMatcher(ctx context.Context, m *labels.Matcher) Postings {
-	if p, ok := fastPostingsForMatcher(ctx, r, m); ok {
+	if p, ok := fastPostingsForMatcher(ctx, r.Postings, m); ok {
 		return p
 	}
 

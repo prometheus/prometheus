@@ -20,7 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
-	"slices"
 	"sort"
 	"strconv"
 	"testing"
@@ -999,55 +998,15 @@ func TestMemPostings_Delete(t *testing.T) {
 	require.Empty(t, expanded, "expected empty postings, got %v", expanded)
 }
 
-type mockPostingsReader struct {
-	mp *MemPostings
-}
-
-// Postings returns Postings for each label name/value combination.
-func (pr mockPostingsReader) Postings(ctx context.Context, name string, values ...string) (Postings, error) {
-	res := make([]Postings, 0, len(values))
-	for _, value := range values {
-		if p := pr.mp.Get(name, value); !IsEmptyPostingsType(p) {
-			res = append(res, p)
-		}
-	}
-	return Merge(ctx, res...), nil
-}
-
-// PostingsForMatcher wraps pr.mp.PostingsForMatcher.
-func (pr mockPostingsReader) PostingsForMatcher(ctx context.Context, matcher *labels.Matcher) Postings {
-	return pr.mp.PostingsForMatcher(ctx, pr, matcher)
-}
-
-// Labels adds label pairs belonging to the series identified by sr, to builder.
-// The builder is made to sort its labels.
-func (pr mockPostingsReader) Labels(sr storage.SeriesRef, builder *labels.ScratchBuilder) error {
-	for name, valueMap := range pr.mp.m {
-		if name == "" {
-			continue
-		}
-		for value, srs := range valueMap {
-			if slices.Contains(srs, sr) {
-				builder.Add(name, value)
-			}
-		}
-	}
-
-	builder.Sort()
-	return nil
-}
-
 func TestMemPostings_PostingsForMatcher(t *testing.T) {
-	testPostingsForMatcher(t, func(t *testing.T, series []labels.Labels) indexReader {
+	testPostingsForMatcher(t, func(t *testing.T, series []labels.Labels) any {
 		t.Helper()
 
 		p := NewMemPostings()
 		for i, lbls := range series {
 			p.Add(storage.SeriesRef(i+1), lbls)
 		}
-		return mockPostingsReader{
-			mp: p,
-		}
+		return p
 	})
 }
 

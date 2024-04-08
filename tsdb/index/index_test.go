@@ -20,6 +20,7 @@ import (
 	"hash/crc32"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"testing"
 
@@ -557,7 +558,7 @@ func TestReaderWithInvalidBuffer(t *testing.T) {
 }
 
 func TestReader_PostingsForMatcher(t *testing.T) {
-	testPostingsForMatcher(t, func(t *testing.T, series []labels.Labels) indexReader {
+	testPostingsForMatcher(t, func(t *testing.T, series []labels.Labels) any {
 		t.Helper()
 
 		dir := t.TempDir()
@@ -594,35 +595,14 @@ func TestReader_PostingsForMatcher(t *testing.T) {
 		t.Cleanup(func() {
 			require.NoError(t, ir.Close())
 		})
-
-		return blockIndexReader{
-			r: ir,
-		}
+		return ir
 	})
-}
-
-type blockIndexReader struct {
-	r *Reader
-}
-
-// Labels adds label pairs belonging to the series identified by sr, to builder.
-func (ir blockIndexReader) Labels(sr storage.SeriesRef, builder *labels.ScratchBuilder) error {
-	return ir.r.Series(sr, builder, nil)
-}
-
-// PostingsForMatcher wraps ir.r.PostingsForMatcher.
-func (ir blockIndexReader) PostingsForMatcher(ctx context.Context, matcher *labels.Matcher) Postings {
-	return ir.r.PostingsForMatcher(ctx, matcher)
-}
-
-type indexReader interface {
-	PostingsForMatcher(context.Context, *labels.Matcher) Postings
-	Labels(storage.SeriesRef, *labels.ScratchBuilder) error
 }
 
 // testPostingsForMatcher is a utility function that executes the PostingsForMatcher test suite for an indexReader
 // returned by the setUp function.
-func testPostingsForMatcher(t *testing.T, setUp func(*testing.T, []labels.Labels) indexReader) {
+// setUp should return either a *Reader or a *MemPostings.
+func testPostingsForMatcher(t *testing.T, setUp func(*testing.T, []labels.Labels) any) {
 	t.Helper()
 
 	// These have to be ordered
@@ -771,15 +751,9 @@ func testPostingsForMatcher(t *testing.T, setUp func(*testing.T, []labels.Labels
 				exp[l.String()] = struct{}{}
 			}
 
-			it := ir.PostingsForMatcher(context.Background(), tc.matcher)
-
+			it := getPostingsForMatcher(t, ir, tc.matcher)
 			for it.Next() {
-				builder := labels.NewScratchBuilder(0)
-				require.NoError(t, ir.Labels(it.At(), &builder))
-				lbls := builder.Labels()
-				_, ok := exp[lbls.String()]
-				require.True(t, ok, "Got unexpected label set %s", lbls.String())
-				delete(exp, lbls.String())
+				verifyLabels(t, ir, it.At(), exp)
 			}
 			require.NoError(t, it.Err())
 
@@ -790,6 +764,60 @@ func testPostingsForMatcher(t *testing.T, setUp func(*testing.T, []labels.Labels
 			require.Empty(t, remaining, "Didn't find all expected label sets")
 		})
 	}
+}
+
+// getPostingsForMatcher returns the result of ir's PostingsForMatcher method.
+func getPostingsForMatcher(t *testing.T, ir any, matcher *labels.Matcher) Postings {
+	t.Helper()
+	switch v := ir.(type) {
+	case *Reader:
+		return v.PostingsForMatcher(context.Background(), matcher)
+	case *MemPostings:
+		postings := func(ctx context.Context, name string, values ...string) (Postings, error) {
+			res := make([]Postings, 0, len(values))
+			for _, value := range values {
+				if p := v.Get(name, value); !IsEmptyPostingsType(p) {
+					res = append(res, p)
+				}
+			}
+			return Merge(ctx, res...), nil
+		}
+		return v.PostingsForMatcher(context.Background(), postings, matcher)
+	default:
+		t.Fatalf("unsupported type %T", ir)
+	}
+	return nil
+}
+
+// verifyLabels verifies that ir's labels for sr are in exp.
+// When a label set is found in exp, it's deleted from the latter.
+func verifyLabels(t *testing.T, ir any, sr storage.SeriesRef, exp map[string]struct{}) {
+	t.Helper()
+
+	builder := labels.NewScratchBuilder(0)
+	switch v := ir.(type) {
+	case *Reader:
+		require.NoError(t, v.Series(sr, &builder, nil))
+	case *MemPostings:
+		for name, valueMap := range v.m {
+			if name == "" {
+				continue
+			}
+			for value, srs := range valueMap {
+				if slices.Contains(srs, sr) {
+					builder.Add(name, value)
+				}
+			}
+		}
+	default:
+		t.Fatalf("unsupported type %T", ir)
+	}
+
+	builder.Sort()
+	lbls := builder.Labels()
+	_, ok := exp[lbls.String()]
+	require.True(t, ok, "Got unexpected label set %s", lbls.String())
+	delete(exp, lbls.String())
 }
 
 // TestNewFileReaderErrorNoOpenFiles ensures that in case of an error no file remains open.
