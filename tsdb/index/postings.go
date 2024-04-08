@@ -412,7 +412,6 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, postings fun
 
 	// Benchmarking shows that first copying the values into a slice and then matching over that is
 	// faster than matching over the map keys directly, at least on AMD64.
-	// However, when using a Swiss Table implementation instead of a standard map, it's performant.
 	vals := make([]string, 0, len(e))
 	for v, srs := range e {
 		if len(srs) > 0 {
