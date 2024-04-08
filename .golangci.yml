@@ -26,6 +26,7 @@ linters:
     - testifylint
     - unconvert
     - unused
+    - whitespace
 
 issues:
   max-same-issues: 0

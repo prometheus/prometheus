@@ -1215,7 +1215,6 @@ func TestHeadDeleteSimple(t *testing.T) {
 				for _, smpl := range smplsAll {
 					_, err := app.Append(0, lblsDefault, smpl.t, smpl.f)
 					require.NoError(t, err)
-
 				}
 				require.NoError(t, app.Commit())
 
@@ -1229,7 +1228,6 @@ func TestHeadDeleteSimple(t *testing.T) {
 				for _, smpl := range c.addSamples {
 					_, err := app.Append(0, lblsDefault, smpl.t, smpl.f)
 					require.NoError(t, err)
-
 				}
 				require.NoError(t, app.Commit())
 
@@ -3851,7 +3849,6 @@ func TestChunkSnapshot(t *testing.T) {
 	}
 
 	{ // Additional data to only include in WAL and m-mapped chunks and not snapshot. This mimics having an old snapshot on disk.
-
 		// Add more samples.
 		app := head.Appender(context.Background())
 		for i := 1; i <= numSeries; i++ {

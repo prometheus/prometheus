@@ -567,7 +567,6 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 					return fmt.Errorf("expected histogram value at index %v (t=%v) for %s to be %v, but got %v (result has %s)", i, actual.T, ev.metrics[hash], expected.H, actual.H, formatSeriesResult(s))
 				}
 			}
-
 		}
 
 		for hash := range ev.expected {

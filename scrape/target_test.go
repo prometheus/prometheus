@@ -592,7 +592,6 @@ func TestMaxSchemaAppender(t *testing.T) {
 					_, err = app.AppendHistogram(0, lbls, ts, nil, fh)
 					require.Equal(t, c.expectSchema, fh.Schema)
 					require.NoError(t, err)
-
 				} else {
 					h := c.h.Copy()
 					_, err = app.AppendHistogram(0, lbls, ts, h, nil)

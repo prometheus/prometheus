@@ -1275,7 +1275,6 @@ func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts
 		// encoding. So we cut a new chunk with the expected encoding.
 		c = s.cutNewHeadChunk(t, e, o.chunkRange)
 		chunkCreated = true
-
 	}
 
 	numSamples := c.chunk.NumSamples()
