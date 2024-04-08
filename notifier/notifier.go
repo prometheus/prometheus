@@ -590,7 +590,7 @@ func labelsToOpenAPILabelSet(modelLabelSet labels.Labels) models.LabelSet {
 }
 
 func (n *Manager) sendOne(ctx context.Context, c *http.Client, url string, b []byte) error {
-	req, err := http.NewRequest("POST", url, bytes.NewReader(b))
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(b))
 	if err != nil {
 		return err
 	}
