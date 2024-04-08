@@ -374,7 +374,7 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 	}
 }
 
-func TestOOOHeadIndexReader_PostingsForMatcher(t *testing.T) {
+func TestOOOHeadIndexReader_PostingsForLabelMatching(t *testing.T) {
 	getMemPostings := func() *index.MemPostings {
 		mp := index.NewMemPostings()
 		mp.Add(1, labels.FromStrings("a", "1", "b", "1"))
@@ -419,7 +419,7 @@ func TestOOOHeadIndexReader_PostingsForMatcher(t *testing.T) {
 				require.NoError(t, r.Close())
 			})
 
-			it := r.PostingsForMatcher(ctx, tc.matcher)
+			it := r.PostingsForLabelMatching(ctx, tc.matcher)
 			var srs []storage.SeriesRef
 			for it.Next() {
 				srs = append(srs, it.At())

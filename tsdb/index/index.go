@@ -1767,8 +1767,8 @@ func (r *Reader) Postings(ctx context.Context, name string, values ...string) (P
 	return Merge(ctx, res...), nil
 }
 
-func (r *Reader) PostingsForMatcher(ctx context.Context, m *labels.Matcher) Postings {
-	if p, ok := fastPostingsForMatcher(ctx, r.Postings, m); ok {
+func (r *Reader) PostingsForLabelMatching(ctx context.Context, m *labels.Matcher) Postings {
+	if p, ok := fastPostingsForLabelMatching(ctx, r.Postings, m); ok {
 		return p
 	}
 

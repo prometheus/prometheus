@@ -256,7 +256,7 @@ func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matc
 					return nil, err
 				}
 
-				it := ix.PostingsForMatcher(ctx, inverse)
+				it := ix.PostingsForLabelMatching(ctx, inverse)
 				if it.Err() != nil {
 					return nil, it.Err()
 				}
@@ -278,8 +278,8 @@ func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matc
 				}
 				its = append(its, it)
 			default: // l="a"
-				// Non-Not matcher, use normal PostingsForMatcher.
-				it := ix.PostingsForMatcher(ctx, m)
+				// Non-Not matcher, use normal PostingsForLabelMatching.
+				it := ix.PostingsForLabelMatching(ctx, m)
 				if it.Err() != nil {
 					return nil, it.Err()
 				}

@@ -2326,7 +2326,7 @@ func (m mockIndex) SortedPostings(p index.Postings) index.Postings {
 	return index.NewListPostings(ep)
 }
 
-func (m mockIndex) PostingsForMatcher(ctx context.Context, matcher *labels.Matcher) index.Postings {
+func (m mockIndex) PostingsForLabelMatching(ctx context.Context, matcher *labels.Matcher) index.Postings {
 	var res []index.Postings
 	for l, srs := range m.postings {
 		if l.Name == matcher.Name && matcher.Matches(l.Value) {

@@ -397,8 +397,8 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 	}
 }
 
-func (p *MemPostings) PostingsForMatcher(ctx context.Context, postings func(context.Context, string, ...string) (Postings, error), m *labels.Matcher) Postings {
-	if p, ok := fastPostingsForMatcher(ctx, postings, m); ok {
+func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, postings func(context.Context, string, ...string) (Postings, error), m *labels.Matcher) Postings {
+	if p, ok := fastPostingsForLabelMatching(ctx, postings, m); ok {
 		return p
 	}
 
@@ -933,9 +933,9 @@ func (h *postingsWithIndexHeap) Pop() interface{} {
 	return x
 }
 
-// fastPostingsForMatcher tries fast-paths for getting postings for a given matcher.
+// fastPostingsForLabelMatching tries fast-paths for getting postings for a given matcher.
 // If a fast-path was chosen, the resulting Postings and true are returned. Otherwise nil and false are returned.
-func fastPostingsForMatcher(ctx context.Context, postings func(context.Context, string, ...string) (Postings, error), m *labels.Matcher) (Postings, bool) {
+func fastPostingsForLabelMatching(ctx context.Context, postings func(context.Context, string, ...string) (Postings, error), m *labels.Matcher) (Postings, bool) {
 	// Fast-path for equal matching.
 	if m.Type == labels.MatchEqual {
 		p, err := postings(ctx, m.Name, m.Value)

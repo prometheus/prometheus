@@ -998,8 +998,8 @@ func TestMemPostings_Delete(t *testing.T) {
 	require.Empty(t, expanded, "expected empty postings, got %v", expanded)
 }
 
-func TestMemPostings_PostingsForMatcher(t *testing.T) {
-	testPostingsForMatcher(t, func(t *testing.T, series []labels.Labels) any {
+func TestMemPostings_PostingsForLabelMatching(t *testing.T) {
+	testPostingsForLabelMatching(t, func(t *testing.T, series []labels.Labels) any {
 		t.Helper()
 
 		p := NewMemPostings()

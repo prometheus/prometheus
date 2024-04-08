@@ -77,9 +77,9 @@ type IndexReader interface {
 	// during background garbage collections. Input values must be sorted.
 	Postings(ctx context.Context, name string, values ...string) (index.Postings, error)
 
-	// PostingsForMatcher returns a sorted iterator over postings having a label matching the provided label matcher.
+	// PostingsForLabelMatching returns a sorted iterator over postings having a label matching the provided label matcher.
 	// If no postings are found having a label with the correct name and matching value, an empty iterator is returned.
-	PostingsForMatcher(ctx context.Context, m *labels.Matcher) index.Postings
+	PostingsForLabelMatching(ctx context.Context, m *labels.Matcher) index.Postings
 
 	// SortedPostings returns a postings list that is reordered to be sorted
 	// by the label set of the underlying series.
@@ -522,8 +522,8 @@ func (r blockIndexReader) Postings(ctx context.Context, name string, values ...s
 	return p, nil
 }
 
-func (r blockIndexReader) PostingsForMatcher(ctx context.Context, m *labels.Matcher) index.Postings {
-	return r.ir.PostingsForMatcher(ctx, m)
+func (r blockIndexReader) PostingsForLabelMatching(ctx context.Context, m *labels.Matcher) index.Postings {
+	return r.ir.PostingsForLabelMatching(ctx, m)
 }
 
 func (r blockIndexReader) SortedPostings(p index.Postings) index.Postings {

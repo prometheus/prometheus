@@ -510,7 +510,7 @@ func TestLabelNamesWithMatchers(t *testing.T) {
 	}
 }
 
-func TestBlockIndexReader_PostingsForMatcher(t *testing.T) {
+func TestBlockIndexReader_PostingsForLabelMatching(t *testing.T) {
 	tmpdir := t.TempDir()
 	ctx := context.Background()
 
@@ -575,7 +575,7 @@ func TestBlockIndexReader_PostingsForMatcher(t *testing.T) {
 				require.NoError(t, ir.Close())
 			})
 
-			it := ir.PostingsForMatcher(ctx, tc.matcher)
+			it := ir.PostingsForLabelMatching(ctx, tc.matcher)
 
 			var srs []storage.SeriesRef
 			for it.Next() {

@@ -557,8 +557,8 @@ func TestReaderWithInvalidBuffer(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestReader_PostingsForMatcher(t *testing.T) {
-	testPostingsForMatcher(t, func(t *testing.T, series []labels.Labels) any {
+func TestReader_PostingsForLabelMatching(t *testing.T) {
+	testPostingsForLabelMatching(t, func(t *testing.T, series []labels.Labels) any {
 		t.Helper()
 
 		dir := t.TempDir()
@@ -599,10 +599,10 @@ func TestReader_PostingsForMatcher(t *testing.T) {
 	})
 }
 
-// testPostingsForMatcher is a utility function that executes the PostingsForMatcher test suite for an indexReader
+// testPostingsForLabelMatching is a utility function that executes the PostingsForLabelMatching test suite for an index reader
 // returned by the setUp function.
 // setUp should return either a *Reader or a *MemPostings.
-func testPostingsForMatcher(t *testing.T, setUp func(*testing.T, []labels.Labels) any) {
+func testPostingsForLabelMatching(t *testing.T, setUp func(*testing.T, []labels.Labels) any) {
 	t.Helper()
 
 	// These have to be ordered
@@ -630,7 +630,7 @@ func testPostingsForMatcher(t *testing.T, setUp func(*testing.T, []labels.Labels
 			},
 		},
 		{
-			// PostingsForMatcher will only return postings for the matcher's label.
+			// PostingsForLabelMatching will only return postings for the matcher's label.
 			matcher: labels.MustNewMatcher(labels.MatchEqual, "missing", ""),
 			exp:     []labels.Labels{},
 		},
@@ -663,7 +663,7 @@ func testPostingsForMatcher(t *testing.T, setUp func(*testing.T, []labels.Labels
 			},
 		},
 		{
-			// PostingsForMatcher will only return postings for the matcher's label.
+			// PostingsForLabelMatching will only return postings for the matcher's label.
 			matcher: labels.MustNewMatcher(labels.MatchRegexp, "i", "^$"),
 			exp:     []labels.Labels{},
 		},
@@ -734,12 +734,12 @@ func testPostingsForMatcher(t *testing.T, setUp func(*testing.T, []labels.Labels
 		},
 		// Empty value.
 		{
-			// PostingsForMatcher will only return postings having a matching label.
+			// PostingsForLabelMatching will only return postings having a matching label.
 			matcher: labels.MustNewMatcher(labels.MatchRegexp, "i", "c||d"),
 			exp:     []labels.Labels{},
 		},
 		{
-			// PostingsForMatcher will only return postings having a matching label.
+			// PostingsForLabelMatching will only return postings having a matching label.
 			matcher: labels.MustNewMatcher(labels.MatchRegexp, "i", "(c||d)"),
 			exp:     []labels.Labels{},
 		},
@@ -751,7 +751,7 @@ func testPostingsForMatcher(t *testing.T, setUp func(*testing.T, []labels.Labels
 				exp[l.String()] = struct{}{}
 			}
 
-			it := getPostingsForMatcher(t, ir, tc.matcher)
+			it := matchPostings(t, ir, tc.matcher)
 			for it.Next() {
 				verifyLabels(t, ir, it.At(), exp)
 			}
@@ -766,12 +766,12 @@ func testPostingsForMatcher(t *testing.T, setUp func(*testing.T, []labels.Labels
 	}
 }
 
-// getPostingsForMatcher returns the result of ir's PostingsForMatcher method.
-func getPostingsForMatcher(t *testing.T, ir any, matcher *labels.Matcher) Postings {
+// matchPostings returns the result of ir's PostingsForLabelMatching method.
+func matchPostings(t *testing.T, ir any, matcher *labels.Matcher) Postings {
 	t.Helper()
 	switch v := ir.(type) {
 	case *Reader:
-		return v.PostingsForMatcher(context.Background(), matcher)
+		return v.PostingsForLabelMatching(context.Background(), matcher)
 	case *MemPostings:
 		postings := func(ctx context.Context, name string, values ...string) (Postings, error) {
 			res := make([]Postings, 0, len(values))
@@ -782,7 +782,7 @@ func getPostingsForMatcher(t *testing.T, ir any, matcher *labels.Matcher) Postin
 			}
 			return Merge(ctx, res...), nil
 		}
-		return v.PostingsForMatcher(context.Background(), postings, matcher)
+		return v.PostingsForLabelMatching(context.Background(), postings, matcher)
 	default:
 		t.Fatalf("unsupported type %T", ir)
 	}
