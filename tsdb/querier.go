@@ -184,8 +184,7 @@ func (q *blockChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *
 func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matcher) (index.Postings, error) {
 	if len(ms) == 1 && ms[0].Name == "" && ms[0].Value == "" {
 		k, v := index.AllPostingsKey()
-		allPostings, err := ix.Postings(ctx, k, v)
-		return allPostings, err
+		return ix.Postings(ctx, k, v)
 	}
 
 	var its, notIts []index.Postings
