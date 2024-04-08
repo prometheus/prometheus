@@ -113,8 +113,8 @@ eval instant at 50m http_requests{job="api-server", group="canary"}
 	http_requests{group="canary", instance="0", job="api-server"} 300
 	http_requests{group="canary", instance="1", job="api-server"} 400
 
-eval instant at 50m http_requests{job="api-server", group="canary"} + rate(http_requests{job="api-server"}[5m]) * 5 * 60
-	{group="canary", instance="0", job="api-server"} 330
+eval instant at 50m http_requests{job="api-server", group="canary"} + rate(http_requests{job="api-server"}[10m]) * 5 * 60
+    {group="canary", instance="0", job="api-server"} 330
 	{group="canary", instance="1", job="api-server"} 440
 
 eval instant at 50m rate(http_requests[25m]) * 25 * 60

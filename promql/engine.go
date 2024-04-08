@@ -2207,20 +2207,20 @@ func (ev *evaluator) matrixIterSlice(
 	mintFloats, mintHistograms := mint, mint
 
 	// First floats...
-	if len(floats) > 0 && floats[len(floats)-1].T >= mint {
+	if len(floats) > 0 && floats[len(floats)-1].T > mint {
 		// There is an overlap between previous and current ranges, retain common
 		// points. In most such cases:
 		//   (a) the overlap is significantly larger than the eval step; and/or
 		//   (b) the number of samples is relatively small.
 		// so a linear search will be as fast as a binary search.
 		var drop int
-		for drop = 0; floats[drop].T < mint; drop++ {
+		for drop = 0; floats[drop].T <= mint; drop++ {
 		}
 		ev.currentSamples -= drop
 		copy(floats, floats[drop:])
 		floats = floats[:len(floats)-drop]
 		// Only append points with timestamps after the last timestamp we have.
-		mintFloats = floats[len(floats)-1].T + 1
+		mintFloats = floats[len(floats)-1].T
 	} else {
 		ev.currentSamples -= len(floats)
 		if floats != nil {
@@ -2229,14 +2229,14 @@ func (ev *evaluator) matrixIterSlice(
 	}
 
 	// ...then the same for histograms. TODO(beorn7): Use generics?
-	if len(histograms) > 0 && histograms[len(histograms)-1].T >= mint {
+	if len(histograms) > 0 && histograms[len(histograms)-1].T > mint {
 		// There is an overlap between previous and current ranges, retain common
 		// points. In most such cases:
 		//   (a) the overlap is significantly larger than the eval step; and/or
 		//   (b) the number of samples is relatively small.
 		// so a linear search will be as fast as a binary search.
 		var drop int
-		for drop = 0; histograms[drop].T < mint; drop++ {
+		for drop = 0; histograms[drop].T <= mint; drop++ {
 		}
 		// Rotate the buffer around the drop index so that points before mint can be
 		// reused to store new histograms.
@@ -2247,7 +2247,7 @@ func (ev *evaluator) matrixIterSlice(
 		histograms = histograms[:len(histograms)-drop]
 		ev.currentSamples -= totalHPointSize(histograms)
 		// Only append points with timestamps after the last timestamp we have.
-		mintHistograms = histograms[len(histograms)-1].T + 1
+		mintHistograms = histograms[len(histograms)-1].T
 	} else {
 		ev.currentSamples -= totalHPointSize(histograms)
 		if histograms != nil {
@@ -2271,7 +2271,7 @@ loop:
 		case chunkenc.ValFloatHistogram, chunkenc.ValHistogram:
 			t := buf.AtT()
 			// Values in the buffer are guaranteed to be smaller than maxt.
-			if t >= mintHistograms {
+			if t > mintHistograms {
 				if histograms == nil {
 					histograms = getMatrixSelectorHPoints()
 				}
@@ -2297,7 +2297,7 @@ loop:
 				continue loop
 			}
 			// Values in the buffer are guaranteed to be smaller than maxt.
-			if t >= mintFloats {
+			if t > mintFloats {
 				ev.currentSamples++
 				if ev.currentSamples > ev.maxSamples {
 					ev.error(ErrTooManySamples(env))

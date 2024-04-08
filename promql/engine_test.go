@@ -20,7 +20,6 @@ import (
 	"math"
 	"os"
 	"sort"
-	"strconv"
 	"testing"
 	"time"
 
@@ -35,6 +34,8 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/util/almost"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/teststorage"
@@ -927,22 +928,20 @@ load 10s
 			},
 		},
 		{
-			Query:        "max_over_time(metricWith1SampleEvery10Seconds[59s])[20s:5s]",
+			Query:        "max_over_time(metricWith1SampleEvery10Seconds[60s])[20s:5s]",
 			Start:        time.Unix(201, 0),
 			PeakSamples:  10,
-			TotalSamples: 24, // (1 sample / 10 seconds * 60 seconds) * 20/5 (using 59s so we always return 6 samples
-			// as if we run a query on 00 looking back 60 seconds we will return 7 samples;
-			// see next test).
+			TotalSamples: 24, // (1 sample / 10 seconds * 60 seconds) * 4
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 24,
 			},
 		},
 		{
-			Query:        "max_over_time(metricWith1SampleEvery10Seconds[60s])[20s:5s]",
+			Query:        "max_over_time(metricWith1SampleEvery10Seconds[61s])[20s:5s]",
 			Start:        time.Unix(201, 0),
 			PeakSamples:  11,
 			TotalSamples: 26, // (1 sample / 10 seconds * 60 seconds) * 4 + 2 as
-			// max_over_time(metricWith1SampleEvery10Seconds[60s]) @ 190 and 200 will return 7 samples.
+			// max_over_time(metricWith1SampleEvery10Seconds[61s]) @ 190 and 200 will return 7 samples.
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 26,
 			},
@@ -951,10 +950,9 @@ load 10s
 			Query:        "max_over_time(metricWith1HistogramEvery10Seconds[60s])[20s:5s]",
 			Start:        time.Unix(201, 0),
 			PeakSamples:  72,
-			TotalSamples: 312, // (1 histogram (size 12) / 10 seconds * 60 seconds) * 4 + 2 * 12 as
-			// max_over_time(metricWith1SampleEvery10Seconds[60s]) @ 190 and 200 will return 7 samples.
+			TotalSamples: 288, // (1 histogram (size 12) / 10 seconds * 60 seconds) * 4
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 312,
+				201000: 288,
 			},
 		},
 		{
@@ -1419,23 +1417,23 @@ load 10s
 		},
 		{
 			// The peak samples in memory is during the first evaluation:
-			//   - Subquery takes 22 samples, 11 for each bigmetric,
-			//   - Result is calculated per series where the series samples is buffered, hence 11 more here.
+			//   - Subquery takes 22 samples, 11 for each bigmetric, but samples on the left bound won't be evaluated
+			//   - Result is calculated per series where the series samples is buffered, hence 10 more here.
 			//   - The result of two series is added before the last series buffer is discarded, so 2 more here.
-			//   Hence at peak it is 22 (subquery) + 11 (buffer of a series) + 2 (result from 2 series).
+			//   Hence at peak it is 22 (subquery) + 10 (buffer of a series) + 2 (result from 2 series).
 			// The subquery samples and the buffer is discarded before duplicating.
 			Query:      `rate(bigmetric[10s:1s] @ 10)`,
-			MaxSamples: 35,
+			MaxSamples: 34,
 			Start:      time.Unix(0, 0),
 			End:        time.Unix(10, 0),
 			Interval:   5 * time.Second,
 		},
 		{
 			// Here the reasoning is same as above. But LHS and RHS are done one after another.
-			// So while one of them takes 35 samples at peak, we need to hold the 2 sample
+			// So while one of them takes 34 samples at peak, we need to hold the 2 sample
 			// result of the other till then.
 			Query:      `rate(bigmetric[10s:1s] @ 10) + rate(bigmetric[10s:1s] @ 30)`,
-			MaxSamples: 37,
+			MaxSamples: 36,
 			Start:      time.Unix(0, 0),
 			End:        time.Unix(10, 0),
 			Interval:   5 * time.Second,
@@ -1444,20 +1442,20 @@ load 10s
 			// promql.Sample as above but with only 1 part as step invariant.
 			// Here the peak is caused by the non-step invariant part as it touches more time range.
 			// Hence at peak it is 2*21 (subquery from 0s to 20s)
-			//                     + 11 (buffer of a series per evaluation)
+			//                     + 10 (buffer of a series per evaluation)
 			//                     + 6 (result from 2 series at 3 eval times).
 			Query:      `rate(bigmetric[10s:1s]) + rate(bigmetric[10s:1s] @ 30)`,
-			MaxSamples: 59,
+			MaxSamples: 58,
 			Start:      time.Unix(10, 0),
 			End:        time.Unix(20, 0),
 			Interval:   5 * time.Second,
 		},
 		{
 			// Nested subquery.
-			// We saw that innermost rate takes 35 samples which is still the peak
+			// We saw that innermost rate takes 34 samples which is still the peak
 			// since the other two subqueries just duplicate the result.
 			Query:      `rate(rate(bigmetric[10s:1s] @ 10)[100s:25s] @ 1000)[100s:20s] @ 2000`,
-			MaxSamples: 35,
+			MaxSamples: 34,
 			Start:      time.Unix(10, 0),
 		},
 		{
@@ -1571,11 +1569,11 @@ load 1ms
 			start: 10,
 			result: promql.Matrix{
 				promql.Series{
-					Floats: []promql.FPoint{{F: 28, T: 280000}, {F: 29, T: 290000}, {F: 30, T: 300000}},
+					Floats: []promql.FPoint{{F: 29, T: 290000}, {F: 30, T: 300000}},
 					Metric: lbls1,
 				},
 				promql.Series{
-					Floats: []promql.FPoint{{F: 56, T: 280000}, {F: 58, T: 290000}, {F: 60, T: 300000}},
+					Floats: []promql.FPoint{{F: 58, T: 290000}, {F: 60, T: 300000}},
 					Metric: lbls2,
 				},
 			},
@@ -1584,7 +1582,7 @@ load 1ms
 			start: 100,
 			result: promql.Matrix{
 				promql.Series{
-					Floats: []promql.FPoint{{F: 3, T: -2000}, {F: 2, T: -1000}, {F: 1, T: 0}},
+					Floats: []promql.FPoint{{F: 2, T: -1000}, {F: 1, T: 0}},
 					Metric: lblsneg,
 				},
 			},
@@ -1593,7 +1591,7 @@ load 1ms
 			start: 100,
 			result: promql.Matrix{
 				promql.Series{
-					Floats: []promql.FPoint{{F: 504, T: -503000}, {F: 503, T: -502000}, {F: 502, T: -501000}, {F: 501, T: -500000}},
+					Floats: []promql.FPoint{{F: 503, T: -502000}, {F: 502, T: -501000}, {F: 501, T: -500000}},
 					Metric: lblsneg,
 				},
 			},
@@ -1602,7 +1600,7 @@ load 1ms
 			start: 100,
 			result: promql.Matrix{
 				promql.Series{
-					Floats: []promql.FPoint{{F: 2342, T: 2342}, {F: 2343, T: 2343}, {F: 2344, T: 2344}, {F: 2345, T: 2345}},
+					Floats: []promql.FPoint{{F: 2343, T: 2343}, {F: 2344, T: 2344}, {F: 2345, T: 2345}},
 					Metric: lblsms,
 				},
 			},
@@ -3059,27 +3057,27 @@ func TestRangeQuery(t *testing.T) {
 	}{
 		{
 			Name: "sum_over_time with all values",
-			Load: `load 30s
+			Load: `load 15s
               bar 0 1 10 100 1000`,
 			Query: "sum_over_time(bar[30s])",
 			Result: promql.Matrix{
 				promql.Series{
-					Floats: []promql.FPoint{{F: 0, T: 0}, {F: 11, T: 60000}, {F: 1100, T: 120000}},
+					Floats: []promql.FPoint{{F: 0, T: 0}, {F: 11, T: 30000}, {F: 1100, T: 60000}},
 					Metric: labels.EmptyLabels(),
 				},
 			},
 			Start:    time.Unix(0, 0),
-			End:      time.Unix(120, 0),
-			Interval: 60 * time.Second,
+			End:      time.Unix(60, 0),
+			Interval: 30 * time.Second,
 		},
 		{
 			Name: "sum_over_time with trailing values",
-			Load: `load 30s
+			Load: `load 15s
               bar 0 1 10 100 1000 0 0 0 0`,
 			Query: "sum_over_time(bar[30s])",
 			Result: promql.Matrix{
 				promql.Series{
-					Floats: []promql.FPoint{{F: 0, T: 0}, {F: 11, T: 60000}, {F: 1100, T: 120000}},
+					Floats: []promql.FPoint{{F: 0, T: 0}, {F: 1100, T: 60000}, {F: 0, T: 120000}},
 					Metric: labels.EmptyLabels(),
 				},
 			},
@@ -3094,7 +3092,7 @@ func TestRangeQuery(t *testing.T) {
 			Query: "sum_over_time(bar[30s])",
 			Result: promql.Matrix{
 				promql.Series{
-					Floats: []promql.FPoint{{F: 0, T: 0}, {F: 11, T: 60000}, {F: 1100, T: 120000}, {F: 110000, T: 180000}, {F: 11000000, T: 240000}},
+					Floats: []promql.FPoint{{F: 0, T: 0}, {F: 10, T: 60000}, {F: 1000, T: 120000}, {F: 100000, T: 180000}, {F: 10000000, T: 240000}},
 					Metric: labels.EmptyLabels(),
 				},
 			},
@@ -3104,18 +3102,18 @@ func TestRangeQuery(t *testing.T) {
 		},
 		{
 			Name: "sum_over_time with all values random",
-			Load: `load 30s
+			Load: `load 15s
               bar 5 17 42 2 7 905 51`,
 			Query: "sum_over_time(bar[30s])",
 			Result: promql.Matrix{
 				promql.Series{
-					Floats: []promql.FPoint{{F: 5, T: 0}, {F: 59, T: 60000}, {F: 9, T: 120000}, {F: 956, T: 180000}},
+					Floats: []promql.FPoint{{F: 5, T: 0}, {F: 59, T: 30000}, {F: 9, T: 60000}, {F: 956, T: 90000}},
 					Metric: labels.EmptyLabels(),
 				},
 			},
 			Start:    time.Unix(0, 0),
-			End:      time.Unix(180, 0),
-			Interval: 60 * time.Second,
+			End:      time.Unix(90, 0),
+			Interval: 30 * time.Second,
 		},
 		{
 			Name: "metric query",
@@ -3205,6 +3203,1076 @@ func TestRangeQuery(t *testing.T) {
 			require.NoError(t, res.Err)
 			testutil.RequireEqual(t, c.Result, res.Value)
 		})
+	}
+}
+
+func TestNativeHistogramRate(t *testing.T) {
+	// TODO(beorn7): Integrate histograms into the PromQL testing framework
+	// and write more tests there.
+	engine := newTestEngine()
+	storage := teststorage.New(t)
+	t.Cleanup(func() { storage.Close() })
+
+	seriesName := "sparse_histogram_series"
+	lbls := labels.FromStrings("__name__", seriesName)
+
+	app := storage.Appender(context.Background())
+	for i, h := range tsdbutil.GenerateTestHistograms(100) {
+		_, err := app.AppendHistogram(0, lbls, int64(i)*int64(15*time.Second/time.Millisecond), h, nil)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	queryString := fmt.Sprintf("rate(%s[45s])", seriesName)
+	t.Run("instant_query", func(t *testing.T) {
+		qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(int64(5*time.Minute/time.Millisecond)))
+		require.NoError(t, err)
+		res := qry.Exec(context.Background())
+		require.NoError(t, res.Err)
+		vector, err := res.Vector()
+		require.NoError(t, err)
+		require.Len(t, vector, 1)
+		actualHistogram := vector[0].H
+		expectedHistogram := &histogram.FloatHistogram{
+			CounterResetHint: histogram.GaugeType,
+			Schema:           1,
+			ZeroThreshold:    0.001,
+			ZeroCount:        1. / 15.,
+			Count:            9. / 15.,
+			Sum:              1.226666666666667,
+			PositiveSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+			PositiveBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+			NegativeSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+			NegativeBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+		}
+		require.Equal(t, expectedHistogram, actualHistogram)
+	})
+
+	t.Run("range_query", func(t *testing.T) {
+		step := 30 * time.Second
+		start := timestamp.Time(int64(5 * time.Minute / time.Millisecond))
+		end := start.Add(step)
+		qry, err := engine.NewRangeQuery(context.Background(), storage, nil, queryString, start, end, step)
+		require.NoError(t, err)
+		res := qry.Exec(context.Background())
+		require.NoError(t, res.Err)
+		matrix, err := res.Matrix()
+		require.NoError(t, err)
+		require.Len(t, matrix, 1)
+		require.Len(t, matrix[0].Histograms, 2)
+		actualHistograms := matrix[0].Histograms
+		expectedHistograms := []promql.HPoint{{
+			T: 300000,
+			H: &histogram.FloatHistogram{
+				CounterResetHint: histogram.GaugeType,
+				Schema:           1,
+				ZeroThreshold:    0.001,
+				ZeroCount:        1. / 15.,
+				Count:            9. / 15.,
+				Sum:              1.226666666666667,
+				PositiveSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+				PositiveBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+				NegativeSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+				NegativeBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+			},
+		}, {
+			T: 330000,
+			H: &histogram.FloatHistogram{
+				CounterResetHint: histogram.GaugeType,
+				Schema:           1,
+				ZeroThreshold:    0.001,
+				ZeroCount:        1. / 15.,
+				Count:            9. / 15.,
+				Sum:              1.226666666666667,
+				PositiveSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+				PositiveBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+				NegativeSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+				NegativeBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+			},
+		}}
+		require.Equal(t, expectedHistograms, actualHistograms)
+	})
+}
+
+func TestNativeFloatHistogramRate(t *testing.T) {
+	// TODO(beorn7): Integrate histograms into the PromQL testing framework
+	// and write more tests there.
+	engine := newTestEngine()
+	storage := teststorage.New(t)
+	t.Cleanup(func() { storage.Close() })
+
+	seriesName := "sparse_histogram_series"
+	lbls := labels.FromStrings("__name__", seriesName)
+
+	app := storage.Appender(context.Background())
+	for i, fh := range tsdbutil.GenerateTestFloatHistograms(100) {
+		_, err := app.AppendHistogram(0, lbls, int64(i)*int64(15*time.Second/time.Millisecond), nil, fh)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	queryString := fmt.Sprintf("rate(%s[61s])", seriesName)
+	qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(int64(5*time.Minute/time.Millisecond)))
+	require.NoError(t, err)
+	res := qry.Exec(context.Background())
+	require.NoError(t, res.Err)
+	vector, err := res.Vector()
+	require.NoError(t, err)
+	require.Len(t, vector, 1)
+	actualHistogram := vector[0].H
+	expectedHistogram := &histogram.FloatHistogram{
+		CounterResetHint: histogram.GaugeType,
+		Schema:           1,
+		ZeroThreshold:    0.001,
+		ZeroCount:        1. / 15.,
+		Count:            9. / 15.,
+		Sum:              1.226666666666667,
+		PositiveSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+		PositiveBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+		NegativeSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+		NegativeBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+	}
+	require.Equal(t, expectedHistogram, actualHistogram)
+}
+
+func TestNativeHistogram_HistogramCountAndSum(t *testing.T) {
+	// TODO(codesome): Integrate histograms into the PromQL testing framework
+	// and write more tests there.
+	h := &histogram.Histogram{
+		Count:         24,
+		ZeroCount:     4,
+		ZeroThreshold: 0.001,
+		Sum:           100,
+		Schema:        0,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []int64{2, 1, -2, 3},
+		NegativeSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		NegativeBuckets: []int64{2, 1, -2, 3},
+	}
+	for _, floatHisto := range []bool{true, false} {
+		t.Run(fmt.Sprintf("floatHistogram=%t", floatHisto), func(t *testing.T) {
+			engine := newTestEngine()
+			storage := teststorage.New(t)
+			t.Cleanup(func() { storage.Close() })
+
+			seriesName := "sparse_histogram_series"
+			lbls := labels.FromStrings("__name__", seriesName)
+
+			ts := int64(10 * time.Minute / time.Millisecond)
+			app := storage.Appender(context.Background())
+			var err error
+			if floatHisto {
+				_, err = app.AppendHistogram(0, lbls, ts, nil, h.ToFloat(nil))
+			} else {
+				_, err = app.AppendHistogram(0, lbls, ts, h, nil)
+			}
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			queryString := fmt.Sprintf("histogram_count(%s)", seriesName)
+			qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(ts))
+			require.NoError(t, err)
+
+			res := qry.Exec(context.Background())
+			require.NoError(t, res.Err)
+
+			vector, err := res.Vector()
+			require.NoError(t, err)
+
+			require.Len(t, vector, 1)
+			require.Nil(t, vector[0].H)
+			if floatHisto {
+				require.Equal(t, h.ToFloat(nil).Count, vector[0].F)
+			} else {
+				require.Equal(t, float64(h.Count), vector[0].F)
+			}
+
+			queryString = fmt.Sprintf("histogram_sum(%s)", seriesName)
+			qry, err = engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(ts))
+			require.NoError(t, err)
+
+			res = qry.Exec(context.Background())
+			require.NoError(t, res.Err)
+
+			vector, err = res.Vector()
+			require.NoError(t, err)
+
+			require.Len(t, vector, 1)
+			require.Nil(t, vector[0].H)
+			if floatHisto {
+				require.Equal(t, h.ToFloat(nil).Sum, vector[0].F)
+			} else {
+				require.Equal(t, h.Sum, vector[0].F)
+			}
+		})
+	}
+}
+
+func TestNativeHistogram_HistogramStdDevVar(t *testing.T) {
+	// TODO(codesome): Integrate histograms into the PromQL testing framework
+	// and write more tests there.
+	testCases := []struct {
+		name   string
+		h      *histogram.Histogram
+		stdVar float64
+	}{
+		{
+			name: "1, 2, 3, 4 low-res",
+			h: &histogram.Histogram{
+				Count:  4,
+				Sum:    10,
+				Schema: 2,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 1},
+					{Offset: 3, Length: 1},
+					{Offset: 2, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 0, 0, 0},
+			},
+			stdVar: 1.163807968526718, // actual variance: 1.25
+		},
+		{
+			name: "1, 2, 3, 4 hi-res",
+			h: &histogram.Histogram{
+				Count:  4,
+				Sum:    10,
+				Schema: 8,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 1},
+					{Offset: 255, Length: 1},
+					{Offset: 149, Length: 1},
+					{Offset: 105, Length: 1},
+				},
+				PositiveBuckets: []int64{1, 0, 0, 0},
+			},
+			stdVar: 1.2471347737158793, // actual variance: 1.25
+		},
+		{
+			name: "-50, -8, 0, 3, 8, 9, 100",
+			h: &histogram.Histogram{
+				Count:     7,
+				ZeroCount: 1,
+				Sum:       62,
+				Schema:    3,
+				PositiveSpans: []histogram.Span{
+					{Offset: 13, Length: 1},
+					{Offset: 10, Length: 1},
+					{Offset: 1, Length: 1},
+					{Offset: 27, Length: 1},
+				},
+				PositiveBuckets: []int64{1, 0, 0, 0},
+				NegativeSpans: []histogram.Span{
+					{Offset: 24, Length: 1},
+					{Offset: 21, Length: 1},
+				},
+				NegativeBuckets: []int64{1, 0},
+			},
+			stdVar: 1844.4651144196398, // actual variance: 1738.4082
+		},
+		{
+			name: "-100000, -10000, -1000, -888, -888, -100, -50, -9, -8, -3",
+			h: &histogram.Histogram{
+				Count:     10,
+				ZeroCount: 0,
+				Sum:       -112946,
+				Schema:    0,
+				NegativeSpans: []histogram.Span{
+					{Offset: 2, Length: 3},
+					{Offset: 1, Length: 2},
+					{Offset: 2, Length: 1},
+					{Offset: 3, Length: 1},
+					{Offset: 2, Length: 1},
+				},
+				NegativeBuckets: []int64{1, 0, 0, 0, 0, 2, -2, 0},
+			},
+			stdVar: 759352122.1939945, // actual variance: 882690990
+		},
+		{
+			name: "-10 x10",
+			h: &histogram.Histogram{
+				Count:     10,
+				ZeroCount: 0,
+				Sum:       -100,
+				Schema:    0,
+				NegativeSpans: []histogram.Span{
+					{Offset: 4, Length: 1},
+				},
+				NegativeBuckets: []int64{10},
+			},
+			stdVar: 1.725830020304794, // actual variance: 0
+		},
+		{
+			name: "-50, -8, 0, 3, 8, 9, 100, NaN",
+			h: &histogram.Histogram{
+				Count:     8,
+				ZeroCount: 1,
+				Sum:       math.NaN(),
+				Schema:    3,
+				PositiveSpans: []histogram.Span{
+					{Offset: 13, Length: 1},
+					{Offset: 10, Length: 1},
+					{Offset: 1, Length: 1},
+					{Offset: 27, Length: 1},
+				},
+				PositiveBuckets: []int64{1, 0, 0, 0},
+				NegativeSpans: []histogram.Span{
+					{Offset: 24, Length: 1},
+					{Offset: 21, Length: 1},
+				},
+				NegativeBuckets: []int64{1, 0},
+			},
+			stdVar: math.NaN(),
+		},
+		{
+			name: "-50, -8, 0, 3, 8, 9, 100, +Inf",
+			h: &histogram.Histogram{
+				Count:     7,
+				ZeroCount: 1,
+				Sum:       math.Inf(1),
+				Schema:    3,
+				PositiveSpans: []histogram.Span{
+					{Offset: 13, Length: 1},
+					{Offset: 10, Length: 1},
+					{Offset: 1, Length: 1},
+					{Offset: 27, Length: 1},
+				},
+				PositiveBuckets: []int64{1, 0, 0, 0},
+				NegativeSpans: []histogram.Span{
+					{Offset: 24, Length: 1},
+					{Offset: 21, Length: 1},
+				},
+				NegativeBuckets: []int64{1, 0},
+			},
+			stdVar: math.NaN(),
+		},
+	}
+	for _, tc := range testCases {
+		for _, floatHisto := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s floatHistogram=%t", tc.name, floatHisto), func(t *testing.T) {
+				engine := newTestEngine()
+				storage := teststorage.New(t)
+				t.Cleanup(func() { storage.Close() })
+
+				seriesName := "sparse_histogram_series"
+				lbls := labels.FromStrings("__name__", seriesName)
+
+				ts := int64(10 * time.Minute / time.Millisecond)
+				app := storage.Appender(context.Background())
+				var err error
+				if floatHisto {
+					_, err = app.AppendHistogram(0, lbls, ts, nil, tc.h.ToFloat(nil))
+				} else {
+					_, err = app.AppendHistogram(0, lbls, ts, tc.h, nil)
+				}
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+
+				queryString := fmt.Sprintf("histogram_stdvar(%s)", seriesName)
+				qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(ts))
+				require.NoError(t, err)
+
+				res := qry.Exec(context.Background())
+				require.NoError(t, res.Err)
+
+				vector, err := res.Vector()
+				require.NoError(t, err)
+
+				require.Len(t, vector, 1)
+				require.Nil(t, vector[0].H)
+				require.InEpsilon(t, tc.stdVar, vector[0].F, 1e-12)
+
+				queryString = fmt.Sprintf("histogram_stddev(%s)", seriesName)
+				qry, err = engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(ts))
+				require.NoError(t, err)
+
+				res = qry.Exec(context.Background())
+				require.NoError(t, res.Err)
+
+				vector, err = res.Vector()
+				require.NoError(t, err)
+
+				require.Len(t, vector, 1)
+				require.Nil(t, vector[0].H)
+				require.InEpsilon(t, math.Sqrt(tc.stdVar), vector[0].F, 1e-12)
+			})
+		}
+	}
+}
+
+func TestNativeHistogram_HistogramQuantile(t *testing.T) {
+	// TODO(codesome): Integrate histograms into the PromQL testing framework
+	// and write more tests there.
+	type subCase struct {
+		quantile string
+		value    float64
+	}
+
+	cases := []struct {
+		text string
+		// Histogram to test.
+		h *histogram.Histogram
+		// Different quantiles to test for this histogram.
+		subCases []subCase
+	}{
+		{
+			text: "all positive buckets with zero bucket",
+			h: &histogram.Histogram{
+				Count:         12,
+				ZeroCount:     2,
+				ZeroThreshold: 0.001,
+				Sum:           100, // Does not matter.
+				Schema:        0,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{2, 1, -2, 3},
+			},
+			subCases: []subCase{
+				{
+					quantile: "1.0001",
+					value:    math.Inf(1),
+				},
+				{
+					quantile: "1",
+					value:    16,
+				},
+				{
+					quantile: "0.99",
+					value:    15.759999999999998,
+				},
+				{
+					quantile: "0.9",
+					value:    13.600000000000001,
+				},
+				{
+					quantile: "0.6",
+					value:    4.799999999999997,
+				},
+				{
+					quantile: "0.5",
+					value:    1.6666666666666665,
+				},
+				{ // Zero bucket.
+					quantile: "0.1",
+					value:    0.0006000000000000001,
+				},
+				{
+					quantile: "0",
+					value:    0,
+				},
+				{
+					quantile: "-1",
+					value:    math.Inf(-1),
+				},
+			},
+		},
+		{
+			text: "all negative buckets with zero bucket",
+			h: &histogram.Histogram{
+				Count:         12,
+				ZeroCount:     2,
+				ZeroThreshold: 0.001,
+				Sum:           100, // Does not matter.
+				Schema:        0,
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []int64{2, 1, -2, 3},
+			},
+			subCases: []subCase{
+				{
+					quantile: "1.0001",
+					value:    math.Inf(1),
+				},
+				{ // Zero bucket.
+					quantile: "1",
+					value:    0,
+				},
+				{ // Zero bucket.
+					quantile: "0.99",
+					value:    -6.000000000000048e-05,
+				},
+				{ // Zero bucket.
+					quantile: "0.9",
+					value:    -0.0005999999999999996,
+				},
+				{
+					quantile: "0.5",
+					value:    -1.6666666666666667,
+				},
+				{
+					quantile: "0.1",
+					value:    -13.6,
+				},
+				{
+					quantile: "0",
+					value:    -16,
+				},
+				{
+					quantile: "-1",
+					value:    math.Inf(-1),
+				},
+			},
+		},
+		{
+			text: "both positive and negative buckets with zero bucket",
+			h: &histogram.Histogram{
+				Count:         24,
+				ZeroCount:     4,
+				ZeroThreshold: 0.001,
+				Sum:           100, // Does not matter.
+				Schema:        0,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{2, 1, -2, 3},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []int64{2, 1, -2, 3},
+			},
+			subCases: []subCase{
+				{
+					quantile: "1.0001",
+					value:    math.Inf(1),
+				},
+				{
+					quantile: "1",
+					value:    16,
+				},
+				{
+					quantile: "0.99",
+					value:    15.519999999999996,
+				},
+				{
+					quantile: "0.9",
+					value:    11.200000000000003,
+				},
+				{
+					quantile: "0.7",
+					value:    1.2666666666666657,
+				},
+				{ // Zero bucket.
+					quantile: "0.55",
+					value:    0.0006000000000000005,
+				},
+				{ // Zero bucket.
+					quantile: "0.5",
+					value:    0,
+				},
+				{ // Zero bucket.
+					quantile: "0.45",
+					value:    -0.0005999999999999996,
+				},
+				{
+					quantile: "0.3",
+					value:    -1.266666666666667,
+				},
+				{
+					quantile: "0.1",
+					value:    -11.2,
+				},
+				{
+					quantile: "0.01",
+					value:    -15.52,
+				},
+				{
+					quantile: "0",
+					value:    -16,
+				},
+				{
+					quantile: "-1",
+					value:    math.Inf(-1),
+				},
+			},
+		},
+	}
+
+	engine := newTestEngine()
+	storage := teststorage.New(t)
+	t.Cleanup(func() { storage.Close() })
+	idx := int64(0)
+	for _, floatHisto := range []bool{true, false} {
+		for _, c := range cases {
+			t.Run(fmt.Sprintf("%s floatHistogram=%t", c.text, floatHisto), func(t *testing.T) {
+				seriesName := "sparse_histogram_series"
+				lbls := labels.FromStrings("__name__", seriesName)
+				ts := idx * int64(10*time.Minute/time.Millisecond)
+				app := storage.Appender(context.Background())
+				var err error
+				if floatHisto {
+					_, err = app.AppendHistogram(0, lbls, ts, nil, c.h.ToFloat(nil))
+				} else {
+					_, err = app.AppendHistogram(0, lbls, ts, c.h, nil)
+				}
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+
+				for j, sc := range c.subCases {
+					t.Run(fmt.Sprintf("%d %s", j, sc.quantile), func(t *testing.T) {
+						queryString := fmt.Sprintf("histogram_quantile(%s, %s)", sc.quantile, seriesName)
+						qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(ts))
+						require.NoError(t, err)
+
+						res := qry.Exec(context.Background())
+						require.NoError(t, res.Err)
+
+						vector, err := res.Vector()
+						require.NoError(t, err)
+
+						require.Len(t, vector, 1)
+						require.Nil(t, vector[0].H)
+						require.True(t, almost.Equal(sc.value, vector[0].F, defaultEpsilon))
+					})
+				}
+				idx++
+			})
+		}
+	}
+}
+
+func TestNativeHistogram_HistogramFraction(t *testing.T) {
+	// TODO(codesome): Integrate histograms into the PromQL testing framework
+	// and write more tests there.
+	type subCase struct {
+		lower, upper string
+		value        float64
+	}
+
+	invariantCases := []subCase{
+		{
+			lower: "42",
+			upper: "3.1415",
+			value: 0,
+		},
+		{
+			lower: "0",
+			upper: "0",
+			value: 0,
+		},
+		{
+			lower: "0.000001",
+			upper: "0.000001",
+			value: 0,
+		},
+		{
+			lower: "42",
+			upper: "42",
+			value: 0,
+		},
+		{
+			lower: "-3.1",
+			upper: "-3.1",
+			value: 0,
+		},
+		{
+			lower: "3.1415",
+			upper: "NaN",
+			value: math.NaN(),
+		},
+		{
+			lower: "NaN",
+			upper: "42",
+			value: math.NaN(),
+		},
+		{
+			lower: "NaN",
+			upper: "NaN",
+			value: math.NaN(),
+		},
+		{
+			lower: "-Inf",
+			upper: "+Inf",
+			value: 1,
+		},
+	}
+
+	cases := []struct {
+		text string
+		// Histogram to test.
+		h *histogram.Histogram
+		// Different ranges to test for this histogram.
+		subCases []subCase
+	}{
+		{
+			text: "empty histogram",
+			h:    &histogram.Histogram{},
+			subCases: []subCase{
+				{
+					lower: "3.1415",
+					upper: "42",
+					value: math.NaN(),
+				},
+			},
+		},
+		{
+			text: "all positive buckets with zero bucket",
+			h: &histogram.Histogram{
+				Count:         12,
+				ZeroCount:     2,
+				ZeroThreshold: 0.001,
+				Sum:           100, // Does not matter.
+				Schema:        0,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{2, 1, -2, 3}, // Abs: 2, 3, 1, 4
+			},
+			subCases: append([]subCase{
+				{
+					lower: "0",
+					upper: "+Inf",
+					value: 1,
+				},
+				{
+					lower: "-Inf",
+					upper: "0",
+					value: 0,
+				},
+				{
+					lower: "-0.001",
+					upper: "0",
+					value: 0,
+				},
+				{
+					lower: "0",
+					upper: "0.001",
+					value: 2. / 12.,
+				},
+				{
+					lower: "0",
+					upper: "0.0005",
+					value: 1. / 12.,
+				},
+				{
+					lower: "0.001",
+					upper: "inf",
+					value: 10. / 12.,
+				},
+				{
+					lower: "-inf",
+					upper: "-0.001",
+					value: 0,
+				},
+				{
+					lower: "1",
+					upper: "2",
+					value: 3. / 12.,
+				},
+				{
+					lower: "1.5",
+					upper: "2",
+					value: 1.5 / 12.,
+				},
+				{
+					lower: "1",
+					upper: "8",
+					value: 4. / 12.,
+				},
+				{
+					lower: "1",
+					upper: "6",
+					value: 3.5 / 12.,
+				},
+				{
+					lower: "1.5",
+					upper: "6",
+					value: 2. / 12.,
+				},
+				{
+					lower: "-2",
+					upper: "-1",
+					value: 0,
+				},
+				{
+					lower: "-2",
+					upper: "-1.5",
+					value: 0,
+				},
+				{
+					lower: "-8",
+					upper: "-1",
+					value: 0,
+				},
+				{
+					lower: "-6",
+					upper: "-1",
+					value: 0,
+				},
+				{
+					lower: "-6",
+					upper: "-1.5",
+					value: 0,
+				},
+			}, invariantCases...),
+		},
+		{
+			text: "all negative buckets with zero bucket",
+			h: &histogram.Histogram{
+				Count:         12,
+				ZeroCount:     2,
+				ZeroThreshold: 0.001,
+				Sum:           100, // Does not matter.
+				Schema:        0,
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []int64{2, 1, -2, 3},
+			},
+			subCases: append([]subCase{
+				{
+					lower: "0",
+					upper: "+Inf",
+					value: 0,
+				},
+				{
+					lower: "-Inf",
+					upper: "0",
+					value: 1,
+				},
+				{
+					lower: "-0.001",
+					upper: "0",
+					value: 2. / 12.,
+				},
+				{
+					lower: "0",
+					upper: "0.001",
+					value: 0,
+				},
+				{
+					lower: "-0.0005",
+					upper: "0",
+					value: 1. / 12.,
+				},
+				{
+					lower: "0.001",
+					upper: "inf",
+					value: 0,
+				},
+				{
+					lower: "-inf",
+					upper: "-0.001",
+					value: 10. / 12.,
+				},
+				{
+					lower: "1",
+					upper: "2",
+					value: 0,
+				},
+				{
+					lower: "1.5",
+					upper: "2",
+					value: 0,
+				},
+				{
+					lower: "1",
+					upper: "8",
+					value: 0,
+				},
+				{
+					lower: "1",
+					upper: "6",
+					value: 0,
+				},
+				{
+					lower: "1.5",
+					upper: "6",
+					value: 0,
+				},
+				{
+					lower: "-2",
+					upper: "-1",
+					value: 3. / 12.,
+				},
+				{
+					lower: "-2",
+					upper: "-1.5",
+					value: 1.5 / 12.,
+				},
+				{
+					lower: "-8",
+					upper: "-1",
+					value: 4. / 12.,
+				},
+				{
+					lower: "-6",
+					upper: "-1",
+					value: 3.5 / 12.,
+				},
+				{
+					lower: "-6",
+					upper: "-1.5",
+					value: 2. / 12.,
+				},
+			}, invariantCases...),
+		},
+		{
+			text: "both positive and negative buckets with zero bucket",
+			h: &histogram.Histogram{
+				Count:         24,
+				ZeroCount:     4,
+				ZeroThreshold: 0.001,
+				Sum:           100, // Does not matter.
+				Schema:        0,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{2, 1, -2, 3},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []int64{2, 1, -2, 3},
+			},
+			subCases: append([]subCase{
+				{
+					lower: "0",
+					upper: "+Inf",
+					value: 0.5,
+				},
+				{
+					lower: "-Inf",
+					upper: "0",
+					value: 0.5,
+				},
+				{
+					lower: "-0.001",
+					upper: "0",
+					value: 2. / 24,
+				},
+				{
+					lower: "0",
+					upper: "0.001",
+					value: 2. / 24.,
+				},
+				{
+					lower: "-0.0005",
+					upper: "0.0005",
+					value: 2. / 24.,
+				},
+				{
+					lower: "0.001",
+					upper: "inf",
+					value: 10. / 24.,
+				},
+				{
+					lower: "-inf",
+					upper: "-0.001",
+					value: 10. / 24.,
+				},
+				{
+					lower: "1",
+					upper: "2",
+					value: 3. / 24.,
+				},
+				{
+					lower: "1.5",
+					upper: "2",
+					value: 1.5 / 24.,
+				},
+				{
+					lower: "1",
+					upper: "8",
+					value: 4. / 24.,
+				},
+				{
+					lower: "1",
+					upper: "6",
+					value: 3.5 / 24.,
+				},
+				{
+					lower: "1.5",
+					upper: "6",
+					value: 2. / 24.,
+				},
+				{
+					lower: "-2",
+					upper: "-1",
+					value: 3. / 24.,
+				},
+				{
+					lower: "-2",
+					upper: "-1.5",
+					value: 1.5 / 24.,
+				},
+				{
+					lower: "-8",
+					upper: "-1",
+					value: 4. / 24.,
+				},
+				{
+					lower: "-6",
+					upper: "-1",
+					value: 3.5 / 24.,
+				},
+				{
+					lower: "-6",
+					upper: "-1.5",
+					value: 2. / 24.,
+				},
+			}, invariantCases...),
+		},
+	}
+	idx := int64(0)
+	for _, floatHisto := range []bool{true, false} {
+		for _, c := range cases {
+			t.Run(fmt.Sprintf("%s floatHistogram=%t", c.text, floatHisto), func(t *testing.T) {
+				engine := newTestEngine()
+				storage := teststorage.New(t)
+				t.Cleanup(func() { storage.Close() })
+
+				seriesName := "sparse_histogram_series"
+				lbls := labels.FromStrings("__name__", seriesName)
+
+				ts := idx * int64(10*time.Minute/time.Millisecond)
+				app := storage.Appender(context.Background())
+				var err error
+				if floatHisto {
+					_, err = app.AppendHistogram(0, lbls, ts, nil, c.h.ToFloat(nil))
+				} else {
+					_, err = app.AppendHistogram(0, lbls, ts, c.h, nil)
+				}
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+
+				for j, sc := range c.subCases {
+					t.Run(fmt.Sprintf("%d %s %s", j, sc.lower, sc.upper), func(t *testing.T) {
+						queryString := fmt.Sprintf("histogram_fraction(%s, %s, %s)", sc.lower, sc.upper, seriesName)
+						qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(ts))
+						require.NoError(t, err)
+
+						res := qry.Exec(context.Background())
+						require.NoError(t, res.Err)
+
+						vector, err := res.Vector()
+						require.NoError(t, err)
+
+						require.Len(t, vector, 1)
+						require.Nil(t, vector[0].H)
+						if math.IsNaN(sc.value) {
+							require.True(t, math.IsNaN(vector[0].F))
+							return
+						}
+						require.Equal(t, sc.value, vector[0].F)
+					})
+				}
+				idx++
+			})
+		}
 	}
 }
 
@@ -3335,7 +4403,7 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 				_, err := app.Append(0, labels.FromStrings("__name__", "float_series", "idx", "0"), ts, 42)
 				require.NoError(t, err)
 				for idx1, h := range c.histograms {
-					lbls := labels.FromStrings("__name__", seriesName, "idx", strconv.Itoa(idx1))
+					lbls := labels.FromStrings("__name__", seriesName, "idx", fmt.Sprintf("%d", idx1))
 					// Since we mutate h later, we need to create a copy here.
 					var err error
 					if floatHisto {
@@ -3403,8 +4471,8 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 				queryString = fmt.Sprintf("avg(%s)", seriesName)
 				queryAndCheck(queryString, ts, []promql.Sample{{T: ts, H: &c.expectedAvg, Metric: labels.EmptyLabels()}})
 
-				offset := int64(len(c.histograms) - 1)
-				newTs := ts + offset*int64(time.Minute/time.Millisecond)
+				offset := len(c.histograms)
+				newTs := ts + int64(time.Minute/time.Millisecond)*int64(offset-1)
 
 				// sum_over_time().
 				queryString = fmt.Sprintf("sum_over_time(%s[%dm:1m])", seriesNameOverTime, offset)
@@ -3607,7 +4675,7 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 				ts := idx0 * int64(10*time.Minute/time.Millisecond)
 				app := storage.Appender(context.Background())
 				for idx1, h := range c.histograms {
-					lbls := labels.FromStrings("__name__", seriesName, "idx", strconv.Itoa(idx1))
+					lbls := labels.FromStrings("__name__", seriesName, "idx", fmt.Sprintf("%d", idx1))
 					// Since we mutate h later, we need to create a copy here.
 					var err error
 					if floatHisto {
