@@ -3236,7 +3236,7 @@ are set to the scheme and metrics path of the target respectively. The `__param_
 label is set to the value of the first passed URL parameter called `<name>`.
 
 The `__scrape_interval__` and `__scrape_timeout__` labels are set to the target's
-interval and timeout. This is **experimental** and could change in the future.
+interval and timeout.
 
 Additional labels prefixed with `__meta_` may be available during the
 relabeling phase. They are set by the service discovery mechanism that provided

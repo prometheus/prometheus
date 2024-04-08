@@ -198,13 +198,6 @@ func (h *Head) AppendableMinValidTime() (int64, bool) {
 	return h.appendableMinValidTime(), true
 }
 
-func max(a, b int64) int64 {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 func (h *Head) getAppendBuffer() []record.RefSample {
 	b := h.appendPool.Get()
 	if b == nil {
