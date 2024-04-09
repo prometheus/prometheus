@@ -1299,25 +1299,17 @@ func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID
 		}
 	}()
 
+	meta := &BlockMeta{}
+	meta.Compaction.SetOutOfOrder()
 	for t := blockSize * (oooHeadMint / blockSize); t <= oooHeadMaxt; t += blockSize {
 		mint, maxt := t, t+blockSize
 		// Block intervals are half-open: [b.MinTime, b.MaxTime). Block intervals are always +1 than the total samples it includes.
-		uid, err := db.compactor.Write(dest, oooHead.CloneForTimeRange(mint, maxt-1), mint, maxt, nil)
+		uid, err := db.compactor.Write(dest, oooHead.CloneForTimeRange(mint, maxt-1), mint, maxt, meta)
 		if err != nil {
 			return nil, err
 		}
 		if uid.Compare(ulid.ULID{}) != 0 {
 			ulids = append(ulids, uid)
-			blockDir := filepath.Join(dest, uid.String())
-			meta, _, err := readMetaFile(blockDir)
-			if err != nil {
-				return ulids, fmt.Errorf("read meta: %w", err)
-			}
-			meta.Compaction.SetOutOfOrder()
-			_, err = writeMetaFile(db.logger, blockDir, meta)
-			if err != nil {
-				return ulids, fmt.Errorf("write meta: %w", err)
-			}
 		}
 	}
 

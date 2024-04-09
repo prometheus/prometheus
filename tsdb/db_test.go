@@ -1441,7 +1441,7 @@ func (c *mockCompactorFailing) Write(dest string, _ BlockReader, _, _ int64, _ *
 	c.blocks = append(c.blocks, block)
 
 	// Now check that all expected blocks are actually persisted on disk.
-	// This way we make sure that the we have some blocks that are supposed to be removed.
+	// This way we make sure that we have some blocks that are supposed to be removed.
 	var expectedBlocks []string
 	for _, b := range c.blocks {
 		expectedBlocks = append(expectedBlocks, filepath.Join(dest, b.Meta().ULID.String()))
