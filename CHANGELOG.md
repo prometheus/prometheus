@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.51.2 / 2024-04-09
+
+Bugfix release.
+
+[BUGFIX] Notifier: could hang when using relabeling on alerts #13861
+
 ## 2.51.1 / 2024-03-27
 
 Bugfix release.
