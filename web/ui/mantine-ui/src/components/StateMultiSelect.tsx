@@ -9,7 +9,7 @@ import {
   PillsInput,
   useCombobox,
 } from "@mantine/core";
-import { IconActivity } from "@tabler/icons-react";
+import { IconHeartRateMonitor } from "@tabler/icons-react";
 
 interface StatePillProps extends React.ComponentPropsWithoutRef<"div"> {
   value: string;
@@ -78,7 +78,7 @@ export const StateMultiSelect: FC<StateMultiSelectProps> = ({
           pointer
           onClick={() => combobox.toggleDropdown()}
           miw={200}
-          leftSection={<IconActivity size={14} />}
+          leftSection={<IconHeartRateMonitor size={14} />}
           rightSection={
             values.length > 0 ? (
               <ComboboxClearButton onClear={() => onChange([])} />
