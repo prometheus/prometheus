@@ -1763,7 +1763,7 @@ func (r *Reader) Postings(ctx context.Context, name string, values ...string) (P
 
 func (r *Reader) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) Postings {
 	if r.version == FormatV1 {
-		return r.postingsForMatcherV1(ctx, name, match)
+		return r.postingsForLabelMatchingV1(ctx, name, match)
 	}
 
 	e := r.postings[name]
@@ -1791,7 +1791,7 @@ func (r *Reader) PostingsForLabelMatching(ctx context.Context, name string, matc
 	return Merge(ctx, its...)
 }
 
-func (r *Reader) postingsForMatcherV1(ctx context.Context, name string, match func(string) bool) Postings {
+func (r *Reader) postingsForLabelMatchingV1(ctx context.Context, name string, match func(string) bool) Postings {
 	e := r.postingsV1[name]
 	if len(e) == 0 {
 		return EmptyPostings()
