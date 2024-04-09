@@ -998,18 +998,6 @@ func TestMemPostings_Delete(t *testing.T) {
 	require.Empty(t, expanded, "expected empty postings, got %v", expanded)
 }
 
-func TestMemPostings_PostingsForLabelMatching(t *testing.T) {
-	testPostingsForLabelMatching(t, func(t *testing.T, series []labels.Labels) any {
-		t.Helper()
-
-		p := NewMemPostings()
-		for i, lbls := range series {
-			p.Add(storage.SeriesRef(i+1), lbls)
-		}
-		return p
-	})
-}
-
 func TestFindIntersectingPostings(t *testing.T) {
 	t.Run("multiple intersections", func(t *testing.T) {
 		p := NewListPostings([]storage.SeriesRef{10, 15, 20, 25, 30, 35, 40, 45, 50})

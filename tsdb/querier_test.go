@@ -2326,10 +2326,10 @@ func (m mockIndex) SortedPostings(p index.Postings) index.Postings {
 	return index.NewListPostings(ep)
 }
 
-func (m mockIndex) PostingsForLabelMatching(ctx context.Context, matcher *labels.Matcher) index.Postings {
+func (m mockIndex) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) index.Postings {
 	var res []index.Postings
 	for l, srs := range m.postings {
-		if l.Name == matcher.Name && matcher.Matches(l.Value) {
+		if l.Name == name && match(l.Value) {
 			res = append(res, index.NewListPostings(srs))
 		}
 	}
@@ -2682,19 +2682,26 @@ func TestPostingsForMatchers(t *testing.T) {
 	}()
 
 	app := h.Appender(context.Background())
-	for _, ls := range index.PostingsForLabelMatchingTestSeries {
-		app.Append(0, ls, 0, 0)
-	}
+	app.Append(0, labels.FromStrings("n", "1"), 0, 0)
+	app.Append(0, labels.FromStrings("n", "1", "i", "a"), 0, 0)
+	app.Append(0, labels.FromStrings("n", "1", "i", "b"), 0, 0)
+	app.Append(0, labels.FromStrings("n", "2"), 0, 0)
+	app.Append(0, labels.FromStrings("n", "2.5"), 0, 0)
 	require.NoError(t, app.Commit())
 
-	// Cases with several matchers and single matchers where the outcome differs from index.PostingsForLabelMatching.
-	// We can re-use single-matcher cases where the outcome is the same as for index.PostingsForLabelMatching, since
-	// the latter is used by PostingsForMatchers.
-	type testCase struct {
+	cases := []struct {
 		matchers []*labels.Matcher
 		exp      []labels.Labels
-	}
-	cases := []testCase{
+	}{
+		// Simple equals.
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "n", "1")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1"),
+				labels.FromStrings("n", "1", "i", "a"),
+				labels.FromStrings("n", "1", "i", "b"),
+			},
+		},
 		{
 			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "n", "1"), labels.MustNewMatcher(labels.MatchEqual, "i", "a")},
 			exp: []labels.Labels{
@@ -2717,6 +2724,24 @@ func TestPostingsForMatchers(t *testing.T) {
 		},
 		// Not equals.
 		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "n", "1")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "2"),
+				labels.FromStrings("n", "2.5"),
+			},
+		},
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "i", "")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1", "i", "a"),
+				labels.FromStrings("n", "1", "i", "b"),
+			},
+		},
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "missing", "")},
+			exp:      []labels.Labels{},
+		},
+		{
 			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "n", "1"), labels.MustNewMatcher(labels.MatchNotEqual, "i", "a")},
 			exp: []labels.Labels{
 				labels.FromStrings("n", "1"),
@@ -2731,6 +2756,14 @@ func TestPostingsForMatchers(t *testing.T) {
 			},
 		},
 		// Regex.
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", "^1$")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1"),
+				labels.FromStrings("n", "1", "i", "a"),
+				labels.FromStrings("n", "1", "i", "b"),
+			},
+		},
 		{
 			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "n", "1"), labels.MustNewMatcher(labels.MatchRegexp, "i", "^a$")},
 			exp: []labels.Labels{
@@ -2775,6 +2808,32 @@ func TestPostingsForMatchers(t *testing.T) {
 		},
 		// Not regex.
 		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, "n", "^1$")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "2"),
+				labels.FromStrings("n", "2.5"),
+			},
+		},
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, "n", "1")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "2"),
+				labels.FromStrings("n", "2.5"),
+			},
+		},
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, "n", "1|2.5")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "2"),
+			},
+		},
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, "n", "(1|2.5)")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "2"),
+			},
+		},
+		{
 			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "n", "1"), labels.MustNewMatcher(labels.MatchNotRegexp, "i", "^a$")},
 			exp: []labels.Labels{
 				labels.FromStrings("n", "1"),
@@ -2817,6 +2876,44 @@ func TestPostingsForMatchers(t *testing.T) {
 				labels.FromStrings("n", "1", "i", "a"),
 			},
 		},
+		// Set optimization for Regex.
+		// Refer to https://github.com/prometheus/prometheus/issues/2651.
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", "1|2")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1"),
+				labels.FromStrings("n", "1", "i", "a"),
+				labels.FromStrings("n", "1", "i", "b"),
+				labels.FromStrings("n", "2"),
+			},
+		},
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "a|b")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1", "i", "a"),
+				labels.FromStrings("n", "1", "i", "b"),
+			},
+		},
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "(a|b)")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1", "i", "a"),
+				labels.FromStrings("n", "1", "i", "b"),
+			},
+		},
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", "x1|2")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "2"),
+			},
+		},
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", "2|2\\.5")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "2"),
+				labels.FromStrings("n", "2.5"),
+			},
+		},
 		// Empty value.
 		{
 			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "c||d")},
@@ -2834,13 +2931,6 @@ func TestPostingsForMatchers(t *testing.T) {
 				labels.FromStrings("n", "2.5"),
 			},
 		},
-	}
-	// Add test cases in common with index.PostingsForLabelMatching.
-	for _, c := range index.PostingsForLabelMatchingTestCases {
-		cases = append(cases, testCase{
-			matchers: []*labels.Matcher{c.Matcher},
-			exp:      c.Exp,
-		})
 	}
 
 	ir, err := h.Index()
@@ -3110,6 +3200,96 @@ func benchQuery(b *testing.B, expExpansions int, q storage.Querier, selectors la
 		require.Empty(b, ss.Warnings())
 		require.Equal(b, expExpansions, actualExpansions)
 		require.NoError(b, ss.Err())
+	}
+}
+
+// mockMatcherIndex is used to check if the regex matcher works as expected.
+type mockMatcherIndex struct{}
+
+func (m mockMatcherIndex) Symbols() index.StringIter { return nil }
+
+func (m mockMatcherIndex) Close() error { return nil }
+
+// SortedLabelValues will return error if it is called.
+func (m mockMatcherIndex) SortedLabelValues(context.Context, string, ...*labels.Matcher) ([]string, error) {
+	return []string{}, errors.New("sorted label values called")
+}
+
+// LabelValues will return error if it is called.
+func (m mockMatcherIndex) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, error) {
+	return []string{}, errors.New("label values called")
+}
+
+func (m mockMatcherIndex) LabelValueFor(context.Context, storage.SeriesRef, string) (string, error) {
+	return "", errors.New("label value for called")
+}
+
+func (m mockMatcherIndex) LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([]string, error) {
+	return nil, errors.New("label names for for called")
+}
+
+func (m mockMatcherIndex) Postings(context.Context, string, ...string) (index.Postings, error) {
+	return index.EmptyPostings(), nil
+}
+
+func (m mockMatcherIndex) SortedPostings(p index.Postings) index.Postings {
+	return index.EmptyPostings()
+}
+
+func (m mockMatcherIndex) ShardedPostings(ps index.Postings, shardIndex, shardCount uint64) index.Postings {
+	return ps
+}
+
+func (m mockMatcherIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
+	return nil
+}
+
+func (m mockMatcherIndex) LabelNames(context.Context, ...*labels.Matcher) ([]string, error) {
+	return []string{}, nil
+}
+
+func (m mockMatcherIndex) PostingsForLabelMatching(context.Context, string, func(string) bool) index.Postings {
+	return index.ErrPostings(fmt.Errorf("PostingsForLabelMatching called"))
+}
+
+func TestPostingsForMatcher(t *testing.T) {
+	ctx := context.Background()
+
+	cases := []struct {
+		matcher  *labels.Matcher
+		hasError bool
+	}{
+		{
+			// Equal label matcher will just return.
+			matcher:  labels.MustNewMatcher(labels.MatchEqual, "test", "test"),
+			hasError: false,
+		},
+		{
+			// Regex matcher which doesn't have '|' will call Labelvalues()
+			matcher:  labels.MustNewMatcher(labels.MatchRegexp, "test", ".*"),
+			hasError: true,
+		},
+		{
+			matcher:  labels.MustNewMatcher(labels.MatchRegexp, "test", "a|b"),
+			hasError: false,
+		},
+		{
+			// Test case for double quoted regex matcher
+			matcher:  labels.MustNewMatcher(labels.MatchRegexp, "test", "^(?:a|b)$"),
+			hasError: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.matcher.String(), func(t *testing.T) {
+			ir := &mockMatcherIndex{}
+			_, err := postingsForMatcher(ctx, ir, tc.matcher)
+			if tc.hasError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
 	}
 }
 

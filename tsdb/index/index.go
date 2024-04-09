@@ -1761,16 +1761,12 @@ func (r *Reader) Postings(ctx context.Context, name string, values ...string) (P
 	return Merge(ctx, res...), nil
 }
 
-func (r *Reader) PostingsForLabelMatching(ctx context.Context, m *labels.Matcher) Postings {
-	if p, ok := fastPostingsForLabelMatching(ctx, r.Postings, m); ok {
-		return p
-	}
-
+func (r *Reader) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) Postings {
 	if r.version == FormatV1 {
-		return r.postingsForMatcherV1(ctx, m)
+		return r.postingsForMatcherV1(ctx, name, match)
 	}
 
-	e := r.postings[m.Name]
+	e := r.postings[name]
 	if len(e) == 0 {
 		return EmptyPostings()
 	}
@@ -1778,7 +1774,7 @@ func (r *Reader) PostingsForLabelMatching(ctx context.Context, m *labels.Matcher
 	lastVal := e[len(e)-1].value
 	var its []Postings
 	if err := r.traversePostingOffsets(ctx, e[0].off, func(val string, postingsOff uint64) (bool, error) {
-		if m.Matches(val) {
+		if match(val) {
 			// We want this postings iterator since the value is a match
 			postingsDec := encoding.NewDecbufAt(r.b, int(postingsOff), castagnoliTable)
 			_, p, err := r.dec.PostingsFromDecbuf(postingsDec)
@@ -1795,15 +1791,15 @@ func (r *Reader) PostingsForLabelMatching(ctx context.Context, m *labels.Matcher
 	return Merge(ctx, its...)
 }
 
-func (r *Reader) postingsForMatcherV1(ctx context.Context, m *labels.Matcher) Postings {
-	e := r.postingsV1[m.Name]
+func (r *Reader) postingsForMatcherV1(ctx context.Context, name string, match func(string) bool) Postings {
+	e := r.postingsV1[name]
 	if len(e) == 0 {
 		return EmptyPostings()
 	}
 
 	var its []Postings
 	for val, offset := range e {
-		if !m.Matches(val) {
+		if !match(val) {
 			continue
 		}
 

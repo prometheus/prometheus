@@ -14,7 +14,6 @@
 package tsdb
 
 import (
-	"context"
 	"fmt"
 	"sync"
 	"testing"
@@ -22,10 +21,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/index"
 )
 
 func TestBoundedChunk(t *testing.T) {
@@ -552,65 +549,6 @@ func TestMemSeries_chunk(t *testing.T) {
 				require.Nil(t, chk, "got a non-nil chunk reference returned with an error")
 				require.Error(t, err)
 			}
-		})
-	}
-}
-
-func TestHeadIndexReader_PostingsForLabelMatching(t *testing.T) {
-	getMemPostings := func() *index.MemPostings {
-		mp := index.NewMemPostings()
-		mp.Add(1, labels.FromStrings("a", "1", "b", "1"))
-		mp.Add(2, labels.FromStrings("a", "1", "b", "2"))
-		mp.Add(3, labels.FromStrings("a", "1", "b", "3"))
-		mp.Add(4, labels.FromStrings("a", "1", "b", "4"))
-		mp.Add(5, labels.FromStrings("a", "1", "b", "5"))
-		mp.Add(6, labels.FromStrings("a", "2", "b", "5"))
-		return mp
-	}
-
-	cases := []struct {
-		matcher       *labels.Matcher
-		expSeriesRefs []storage.SeriesRef
-	}{
-		{
-			matcher:       labels.MustNewMatcher(labels.MatchEqual, "a", "1"),
-			expSeriesRefs: []storage.SeriesRef{1, 2, 3, 4, 5},
-		},
-		{
-			matcher:       labels.MustNewMatcher(labels.MatchRegexp, "b", ".*"),
-			expSeriesRefs: []storage.SeriesRef{1, 2, 3, 4, 5, 6},
-		},
-		{
-			matcher:       labels.MustNewMatcher(labels.MatchRegexp, "b", "1|2"),
-			expSeriesRefs: []storage.SeriesRef{1, 2},
-		},
-		{
-			// Test case for double quoted regex matcher
-			matcher:       labels.MustNewMatcher(labels.MatchRegexp, "b", "^(?:3|4)$"),
-			expSeriesRefs: []storage.SeriesRef{3, 4},
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.matcher.String(), func(t *testing.T) {
-			ctx := context.Background()
-			mp := getMemPostings()
-			r := &headIndexReader{
-				head: &Head{
-					postings: mp,
-				},
-			}
-			t.Cleanup(func() {
-				require.NoError(t, r.Close())
-			})
-
-			it := r.PostingsForLabelMatching(ctx, tc.matcher)
-			var srs []storage.SeriesRef
-			for it.Next() {
-				srs = append(srs, it.At())
-			}
-
-			require.NoError(t, it.Err())
-			require.Equal(t, tc.expSeriesRefs, srs)
 		})
 	}
 }

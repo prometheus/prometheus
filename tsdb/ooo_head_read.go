@@ -171,8 +171,8 @@ func (oh *OOOHeadIndexReader) series(ref storage.SeriesRef, builder *labels.Scra
 
 // PostingsForLabelMatching needs to be overridden so that the right IndexReader
 // implementation gets passed down.
-func (oh *OOOHeadIndexReader) PostingsForLabelMatching(ctx context.Context, m *labels.Matcher) index.Postings {
-	return oh.head.postings.PostingsForLabelMatching(ctx, oh.Postings, m)
+func (oh *OOOHeadIndexReader) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) index.Postings {
+	return oh.head.postings.PostingsForLabelMatching(ctx, name, match)
 }
 
 // LabelValues needs to be overridden from the headIndexReader implementation due
@@ -452,7 +452,7 @@ func (ir *OOOCompactionHeadIndexReader) Postings(_ context.Context, name string,
 	return index.NewListPostings(ir.ch.postings), nil
 }
 
-func (ir *OOOCompactionHeadIndexReader) PostingsForLabelMatching(context.Context, *labels.Matcher) index.Postings {
+func (ir *OOOCompactionHeadIndexReader) PostingsForLabelMatching(context.Context, string, func(string) bool) index.Postings {
 	return index.ErrPostings(errors.New("not supported"))
 }
 
