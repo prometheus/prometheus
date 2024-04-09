@@ -712,6 +712,16 @@ func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
 		seen[us] = struct{}{}
 		s.ams = append(s.ams, am)
 	}
+	// Now remove counters for any removed Alertmanagers
+	for _, am := range allAms {
+		us := am.url().String()
+		if _, ok := seen[us]; !ok {
+			continue
+		}
+		s.metrics.sent.DeleteLabelValues(us)
+		s.metrics.errors.DeleteLabelValues(us)
+		seen[us] = struct{}{}
+	}
 }
 
 func postPath(pre string, v config.AlertmanagerAPIVersion) string {
