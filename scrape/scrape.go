@@ -273,6 +273,15 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 
 	sp.metrics.targetScrapePoolTargetLimit.WithLabelValues(sp.config.JobName).Set(float64(sp.config.TargetLimit))
 
+	sp.restartLoops(reuseCache)
+	oldClient.CloseIdleConnections()
+	sp.metrics.targetReloadIntervalLength.WithLabelValues(time.Duration(sp.config.ScrapeInterval).String()).Observe(
+		time.Since(start).Seconds(),
+	)
+	return nil
+}
+
+func (sp *scrapePool) restartLoops(reuseCache bool) {
 	var (
 		wg            sync.WaitGroup
 		interval      = time.Duration(sp.config.ScrapeInterval)
@@ -313,7 +322,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 				client:               sp.client,
 				timeout:              timeout,
 				bodySizeLimit:        bodySizeLimit,
-				acceptHeader:         acceptHeader(cfg.ScrapeProtocols),
+				acceptHeader:         acceptHeader(sp.config.ScrapeProtocols),
 				acceptEncodingHeader: acceptEncodingHeader(enableCompression),
 			}
 			newLoop = sp.newLoop(scrapeLoopOptions{
@@ -352,11 +361,6 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	sp.targetMtx.Unlock()
 
 	wg.Wait()
-	oldClient.CloseIdleConnections()
-	sp.metrics.targetReloadIntervalLength.WithLabelValues(interval.String()).Observe(
-		time.Since(start).Seconds(),
-	)
-	return nil
 }
 
 // Must be called with sp.mtx held.
