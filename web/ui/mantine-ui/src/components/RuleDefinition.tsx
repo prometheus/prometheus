@@ -1,9 +1,9 @@
 import { Badge, Box, Card, Group, useComputedColorScheme } from "@mantine/core";
 import { IconClockPause, IconClockPlay } from "@tabler/icons-react";
 import { FC } from "react";
-import { formatPrometheusDuration } from "./lib/formatTime";
-import codeboxClasses from "./codebox.module.css";
-import { Rule } from "./api/responseTypes/rules";
+import { formatPrometheusDuration } from "../lib/formatTime";
+import codeboxClasses from "./RuleDefinition.module.css";
+import { Rule } from "../api/responseTypes/rules";
 import CodeMirror, { EditorView } from "@uiw/react-codemirror";
 import { syntaxHighlighting } from "@codemirror/language";
 import {
@@ -11,7 +11,7 @@ import {
   darkPromqlHighlighter,
   lightTheme,
   promqlHighlighter,
-} from "./codemirror/theme";
+} from "../codemirror/theme";
 import { PromQLExtension } from "@prometheus-io/codemirror-promql";
 import { LabelBadges } from "./LabelBadges";
 

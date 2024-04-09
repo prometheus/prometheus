@@ -23,6 +23,8 @@ export interface RangeSamples {
 export type SampleValue = [number, string];
 export type SampleHistogram = [number, Histogram];
 
+// Result type for /api/v1/query endpoint.
+// See: https://prometheus.io/docs/prometheus/latest/querying/api/#instant-queries
 export type InstantQueryResult =
   | {
       resultType: "vector";

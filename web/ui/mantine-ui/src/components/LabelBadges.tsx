@@ -1,7 +1,7 @@
 import { Badge, BadgeVariant, Group, MantineColor } from "@mantine/core";
 import { FC } from "react";
-import { escapeString } from "./lib/escapeString";
-import badgeClasses from "./Badge.module.css";
+import { escapeString } from "../lib/escapeString";
+import badgeClasses from "../Badge.module.css";
 
 export interface LabelBadgesProps {
   labels: Record<string, string>;

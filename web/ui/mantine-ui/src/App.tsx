@@ -56,13 +56,13 @@ import FlagsPage from "./pages/FlagsPage";
 import ConfigPage from "./pages/ConfigPage";
 import AgentPage from "./pages/AgentPage";
 import { Suspense, useContext } from "react";
-import ErrorBoundary from "./ErrorBoundary";
-import { ThemeSelector } from "./ThemeSelector";
+import ErrorBoundary from "./components/ErrorBoundary";
+import { ThemeSelector } from "./components/ThemeSelector";
 import { SettingsContext } from "./settings";
 import { Notifications } from "@mantine/notifications";
 import { useAppDispatch } from "./state/hooks";
 import { updateSettings } from "./state/settingsSlice";
-import SettingsMenu from "./SettingsMenu";
+import SettingsMenu from "./components/SettingsMenu";
 
 const queryClient = new QueryClient();
 

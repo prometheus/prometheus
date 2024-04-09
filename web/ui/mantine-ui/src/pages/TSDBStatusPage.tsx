@@ -1,6 +1,6 @@
 import { Stack, Card, Group, Table, Text } from "@mantine/core";
 import { useSuspenseAPIQuery } from "../api/api";
-import { TSDBMap } from "../api/responseTypes/tsdbStatus";
+import { TSDBStatusResult } from "../api/responseTypes/tsdbStatus";
 import { useAppSelector } from "../state/hooks";
 import { formatTimestamp } from "../lib/formatTime";
 
@@ -15,7 +15,7 @@ export default function TSDBStatusPage() {
         seriesCountByLabelValuePair,
       },
     },
-  } = useSuspenseAPIQuery<TSDBMap>({ path: `/status/tsdb` });
+  } = useSuspenseAPIQuery<TSDBStatusResult>({ path: `/status/tsdb` });
 
   const useLocalTime = useAppSelector((state) => state.settings.useLocalTime);
 

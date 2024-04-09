@@ -12,19 +12,19 @@ import {
   Alert,
 } from "@mantine/core";
 import { useSuspenseAPIQuery } from "../api/api";
-import { AlertingRulesMap } from "../api/responseTypes/rules";
+import { AlertingRulesResult } from "../api/responseTypes/rules";
 import badgeClasses from "../Badge.module.css";
-import RuleDefinition from "../RuleDefinition";
+import RuleDefinition from "../components/RuleDefinition";
 import { humanizeDurationRelative, now } from "../lib/formatTime";
 import { Fragment } from "react";
-import { StateMultiSelect } from "../StateMultiSelect";
+import { StateMultiSelect } from "../components/StateMultiSelect";
 import { useAppDispatch, useAppSelector } from "../state/hooks";
 import { IconInfoCircle, IconSearch } from "@tabler/icons-react";
-import { LabelBadges } from "../LabelBadges";
+import { LabelBadges } from "../components/LabelBadges";
 import { updateAlertFilters } from "../state/alertsPageSlice";
 
 export default function AlertsPage() {
-  const { data } = useSuspenseAPIQuery<AlertingRulesMap>({
+  const { data } = useSuspenseAPIQuery<AlertingRulesResult>({
     path: `/rules`,
     params: {
       type: "alert",

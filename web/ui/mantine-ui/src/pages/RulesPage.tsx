@@ -24,9 +24,9 @@ import {
   IconRepeat,
 } from "@tabler/icons-react";
 import { useSuspenseAPIQuery } from "../api/api";
-import { RulesMap } from "../api/responseTypes/rules";
+import { RulesResult } from "../api/responseTypes/rules";
 import badgeClasses from "../Badge.module.css";
-import RuleDefinition from "../RuleDefinition";
+import RuleDefinition from "../components/RuleDefinition";
 
 const healthBadgeClass = (state: string) => {
   switch (state) {
@@ -42,7 +42,7 @@ const healthBadgeClass = (state: string) => {
 };
 
 export default function RulesPage() {
-  const { data } = useSuspenseAPIQuery<RulesMap>({ path: `/rules` });
+  const { data } = useSuspenseAPIQuery<RulesResult>({ path: `/rules` });
 
   return (
     <Stack mt="xs">

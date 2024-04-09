@@ -11,7 +11,9 @@ interface HeadStats {
   maxTime: number;
 }
 
-export interface TSDBMap {
+// Result type for /api/v1/status/tsdb endpoint.
+// See: https://prometheus.io/docs/prometheus/latest/querying/api/#tsdb-stats
+export interface TSDBStatusResult {
   headStats: HeadStats;
   seriesCountByMetricName: Stats[];
   labelValueCountByLabelName: Stats[];

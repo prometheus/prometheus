@@ -50,10 +50,14 @@ type AlertingRuleGroup = Omit<RuleGroup, "rules"> & {
   rules: AlertingRule[];
 };
 
-export interface RulesMap {
+// Result type for /api/v1/alerts endpoint.
+// See: https://prometheus.io/docs/prometheus/latest/querying/api/#alerts
+export interface RulesResult {
   groups: RuleGroup[];
 }
 
-export interface AlertingRulesMap {
+// Same as RulesResult above, but can be used when the caller ensures via a
+// "type=alert" query parameter that all rules are alerting rules.
+export interface AlertingRulesResult {
   groups: AlertingRuleGroup[];
 }

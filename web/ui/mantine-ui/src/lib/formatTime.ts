@@ -4,6 +4,7 @@ dayjs.extend(duration);
 import utc from "dayjs/plugin/utc";
 dayjs.extend(utc);
 
+// Parse Prometheus-specific duration strings such as "5m" or "1d2h3m4s" into milliseconds.
 export const parsePrometheusDuration = (durationStr: string): number | null => {
   if (durationStr === "") {
     return null;
@@ -44,6 +45,7 @@ export const parsePrometheusDuration = (durationStr: string): number | null => {
   return dur;
 };
 
+// Format a duration in milliseconds into a Prometheus duration string like "1d2h3m4s".
 export const formatPrometheusDuration = (d: number): string => {
   let ms = d;
   let r = "";

@@ -1,8 +1,8 @@
 import { Popover, ActionIcon, Fieldset, Checkbox, Stack } from "@mantine/core";
 import { IconSettings } from "@tabler/icons-react";
 import { FC } from "react";
-import { useAppDispatch, useAppSelector } from "./state/hooks";
-import { updateSettings } from "./state/settingsSlice";
+import { useAppDispatch, useAppSelector } from "../state/hooks";
+import { updateSettings } from "../state/settingsSlice";
 
 const SettingsMenu: FC = () => {
   const {

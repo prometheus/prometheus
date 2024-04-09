@@ -18,7 +18,7 @@ import {
   IconLayoutNavbarExpand,
   IconSearch,
 } from "@tabler/icons-react";
-import { StateMultiSelect } from "../StateMultiSelect";
+import { StateMultiSelect } from "../components/StateMultiSelect";
 import { useSuspenseAPIQuery } from "../api/api";
 import { ScrapePoolsResult } from "../api/responseTypes/scrapePools";
 import { Target, TargetsResult } from "../api/responseTypes/targets";
@@ -29,14 +29,14 @@ import {
   humanizeDuration,
   now,
 } from "../lib/formatTime";
-import { LabelBadges } from "../LabelBadges";
+import { LabelBadges } from "../components/LabelBadges";
 import { useAppDispatch, useAppSelector } from "../state/hooks";
 import {
   setCollapsedPools,
   updateTargetFilters,
 } from "../state/targetsPageSlice";
-import EndpointLink from "../EndpointLink";
-import CustomInfiniteScroll from "../CustomInfiniteScroll";
+import EndpointLink from "../components/EndpointLink";
+import CustomInfiniteScroll from "../components/CustomInfiniteScroll";
 
 type ScrapePool = {
   targets: Target[];

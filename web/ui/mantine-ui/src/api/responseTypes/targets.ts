@@ -20,6 +20,8 @@ export interface DroppedTarget {
   discoveredLabels: Labels;
 }
 
+// Result type for /api/v1/targets endpoint.
+// See: https://prometheus.io/docs/prometheus/latest/querying/api/#targets
 export type TargetsResult = {
   activeTargets: Target[];
   droppedTargets: DroppedTarget[];
