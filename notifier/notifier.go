@@ -713,7 +713,7 @@ func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
 		seen[us] = struct{}{}
 		s.ams = append(s.ams, am)
 	}
-	// Now remove counters for any removed Alertmanagers
+	// Now remove counters for any removed Alertmanagers.
 	for _, am := range previousAms {
 		us := am.url().String()
 		if _, ok := seen[us]; ok {
