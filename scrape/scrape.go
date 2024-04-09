@@ -376,22 +376,10 @@ func (sp *scrapePool) checkSymbolTable() {
 			level.Info(sp.logger).Log("msg", "Recreating symbol table", "job", sp.config.JobName, "initialLength", sp.initialSymbolTableLen, "length", sp.symbolTable.Len())
 			sp.symbolTable = labels.NewSymbolTable()
 			sp.initialSymbolTableLen = 0
-			sp.dropAllCaches()
+			sp.restartLoops(false) // To drop all caches.
+			level.Info(sp.logger).Log("msg", "Finished restarting loops", "job", sp.config.JobName)
 		}
 		sp.lastSymbolTableCheck = time.Now()
-	}
-}
-
-// Must be called with sp.mtx held.
-func (sp *scrapePool) dropAllCaches() {
-	for _, loop := range sp.loops {
-		cache := loop.getCache()
-		if cache == nil {
-			continue
-		}
-		for s := range cache.series {
-			delete(cache.series, s)
-		}
 	}
 }
 
