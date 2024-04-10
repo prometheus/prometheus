@@ -1069,6 +1069,7 @@ func makeTestMetrics(n int) []byte {
 		fmt.Fprintf(&sb, "# HELP metric_a help text\n")
 		fmt.Fprintf(&sb, "metric_a{foo=\"%d\",bar=\"%d\"} 1\n", i, i*100)
 	}
+	fmt.Fprintf(&sb, "# EOF\n")
 	return sb.Bytes()
 }
 
@@ -2636,6 +2637,9 @@ func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
 	_, _, _, err := sl.append(slApp, []byte("test_metric{le=\"500\"} 1\ntest_metric{le=\"600\",le=\"700\"} 1\n"), "", time.Time{})
 	require.Error(t, err)
 	require.NoError(t, slApp.Rollback())
+	// We need to cycle staleness cache maps after a manual rollback. Otherwise they will have old entries in them,
+	// which would cause ErrDuplicateSampleForTimestamp errors on the next append.
+	sl.cache.iterDone(true)
 
 	q, err := s.Querier(time.Time{}.UnixNano(), 0)
 	require.NoError(t, err)
@@ -2972,7 +2976,7 @@ func TestReuseCacheRace(t *testing.T) {
 func TestCheckAddError(t *testing.T) {
 	var appErrs appendErrors
 	sl := scrapeLoop{l: log.NewNopLogger(), metrics: newTestScrapeMetrics(t)}
-	sl.checkAddError(nil, nil, nil, storage.ErrOutOfOrderSample, nil, nil, &appErrs)
+	sl.checkAddError(nil, storage.ErrOutOfOrderSample, nil, nil, &appErrs)
 	require.Equal(t, 1, appErrs.numOutOfOrder)
 }
 
@@ -3599,6 +3603,34 @@ func BenchmarkTargetScraperGzip(b *testing.B) {
 			}
 		})
 	}
+}
+
+// When a scrape contains multiple instances for the same time series we should increment
+// prometheus_target_scrapes_sample_duplicate_timestamp_total metric.
+func TestScrapeLoopSeriesAddedDuplicates(t *testing.T) {
+	ctx, sl := simpleTestScrapeLoop(t)
+
+	slApp := sl.appender(ctx)
+	total, added, seriesAdded, err := sl.append(slApp, []byte("test_metric 1\ntest_metric 2\ntest_metric 3\n"), "", time.Time{})
+	require.NoError(t, err)
+	require.NoError(t, slApp.Commit())
+	require.Equal(t, 3, total)
+	require.Equal(t, 3, added)
+	require.Equal(t, 1, seriesAdded)
+
+	slApp = sl.appender(ctx)
+	total, added, seriesAdded, err = sl.append(slApp, []byte("test_metric 1\ntest_metric 1\ntest_metric 1\n"), "", time.Time{})
+	require.NoError(t, err)
+	require.NoError(t, slApp.Commit())
+	require.Equal(t, 3, total)
+	require.Equal(t, 3, added)
+	require.Equal(t, 0, seriesAdded)
+
+	metric := dto.Metric{}
+	err = sl.metrics.targetScrapeSampleDuplicate.Write(&metric)
+	require.NoError(t, err)
+	value := metric.GetCounter().GetValue()
+	require.Equal(t, 4.0, value)
 }
 
 // This tests running a full scrape loop and checking that the scrape option

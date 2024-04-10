@@ -16,6 +16,7 @@ package labels
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -25,21 +26,28 @@ import (
 
 func TestLabels_String(t *testing.T) {
 	cases := []struct {
-		lables   Labels
+		labels   Labels
 		expected string
 	}{
 		{
-			lables:   FromStrings("t1", "t1", "t2", "t2"),
+			labels:   FromStrings("t1", "t1", "t2", "t2"),
 			expected: "{t1=\"t1\", t2=\"t2\"}",
 		},
 		{
-			lables:   Labels{},
+			labels:   Labels{},
 			expected: "{}",
 		},
 	}
 	for _, c := range cases {
-		str := c.lables.String()
+		str := c.labels.String()
 		require.Equal(t, c.expected, str)
+	}
+}
+
+func BenchmarkString(b *testing.B) {
+	ls := New(benchmarkLabels...)
+	for i := 0; i < b.N; i++ {
+		_ = ls.String()
 	}
 }
 
@@ -529,6 +537,16 @@ var comparisonBenchmarkScenarios = []struct {
 		FromStrings("aaa", "bbb", "ccc", "ddd", "eee", "fff", "ggg", "hhh", "iii", "jjj", "kkk", "lll", "mmm", "nnn", "ooo", "ppp", "qqq", "rrz"),
 		FromStrings("aaa", "bbb", "ccc", "ddd", "eee", "fff", "ggg", "hhh", "iii", "jjj", "kkk", "lll", "mmm", "nnn", "ooo", "ppp", "qqq", "rrr"),
 	},
+	{
+		"real long equal",
+		FromStrings("__name__", "kube_pod_container_status_last_terminated_exitcode", "cluster", "prod-af-north-0", " container", "prometheus", "instance", "kube-state-metrics-0:kube-state-metrics:ksm", "job", "kube-state-metrics/kube-state-metrics", " namespace", "observability-prometheus", "pod", "observability-prometheus-0", "uid", "d3ec90b2-4975-4607-b45d-b9ad64bb417e"),
+		FromStrings("__name__", "kube_pod_container_status_last_terminated_exitcode", "cluster", "prod-af-north-0", " container", "prometheus", "instance", "kube-state-metrics-0:kube-state-metrics:ksm", "job", "kube-state-metrics/kube-state-metrics", " namespace", "observability-prometheus", "pod", "observability-prometheus-0", "uid", "d3ec90b2-4975-4607-b45d-b9ad64bb417e"),
+	},
+	{
+		"real long different end",
+		FromStrings("__name__", "kube_pod_container_status_last_terminated_exitcode", "cluster", "prod-af-north-0", " container", "prometheus", "instance", "kube-state-metrics-0:kube-state-metrics:ksm", "job", "kube-state-metrics/kube-state-metrics", " namespace", "observability-prometheus", "pod", "observability-prometheus-0", "uid", "d3ec90b2-4975-4607-b45d-b9ad64bb417e"),
+		FromStrings("__name__", "kube_pod_container_status_last_terminated_exitcode", "cluster", "prod-af-north-0", " container", "prometheus", "instance", "kube-state-metrics-0:kube-state-metrics:ksm", "job", "kube-state-metrics/kube-state-metrics", " namespace", "observability-prometheus", "pod", "observability-prometheus-0", "uid", "deadbeef-0000-1111-2222-b9ad64bb417e"),
+	},
 }
 
 func BenchmarkLabels_Equals(b *testing.B) {
@@ -789,24 +807,24 @@ func BenchmarkLabels_Hash(b *testing.B) {
 	}
 }
 
-func BenchmarkBuilder(b *testing.B) {
-	m := []Label{
-		{"job", "node"},
-		{"instance", "123.123.1.211:9090"},
-		{"path", "/api/v1/namespaces/<namespace>/deployments/<name>"},
-		{"method", "GET"},
-		{"namespace", "system"},
-		{"status", "500"},
-		{"prometheus", "prometheus-core-1"},
-		{"datacenter", "eu-west-1"},
-		{"pod_name", "abcdef-99999-defee"},
-	}
+var benchmarkLabels = []Label{
+	{"job", "node"},
+	{"instance", "123.123.1.211:9090"},
+	{"path", "/api/v1/namespaces/<namespace>/deployments/<name>"},
+	{"method", http.MethodGet},
+	{"namespace", "system"},
+	{"status", "500"},
+	{"prometheus", "prometheus-core-1"},
+	{"datacenter", "eu-west-1"},
+	{"pod_name", "abcdef-99999-defee"},
+}
 
+func BenchmarkBuilder(b *testing.B) {
 	var l Labels
 	builder := NewBuilder(EmptyLabels())
 	for i := 0; i < b.N; i++ {
 		builder.Reset(EmptyLabels())
-		for _, l := range m {
+		for _, l := range benchmarkLabels {
 			builder.Set(l.Name, l.Value)
 		}
 		l = builder.Labels()
@@ -815,18 +833,7 @@ func BenchmarkBuilder(b *testing.B) {
 }
 
 func BenchmarkLabels_Copy(b *testing.B) {
-	m := map[string]string{
-		"job":        "node",
-		"instance":   "123.123.1.211:9090",
-		"path":       "/api/v1/namespaces/<namespace>/deployments/<name>",
-		"method":     "GET",
-		"namespace":  "system",
-		"status":     "500",
-		"prometheus": "prometheus-core-1",
-		"datacenter": "eu-west-1",
-		"pod_name":   "abcdef-99999-defee",
-	}
-	l := FromMap(m)
+	l := New(benchmarkLabels...)
 
 	for i := 0; i < b.N; i++ {
 		l = l.Copy()

@@ -726,7 +726,7 @@ var UserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
 func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
 	if s.req == nil {
-		req, err := http.NewRequest("GET", s.URL().String(), nil)
+		req, err := http.NewRequest(http.MethodGet, s.URL().String(), nil)
 		if err != nil {
 			return nil, err
 		}
@@ -956,13 +956,14 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 	}
 }
 
-func (c *scrapeCache) get(met []byte) (*cacheEntry, bool) {
+func (c *scrapeCache) get(met []byte) (*cacheEntry, bool, bool) {
 	e, ok := c.series[string(met)]
 	if !ok {
-		return nil, false
+		return nil, false, false
 	}
+	alreadyScraped := e.lastIter == c.iter
 	e.lastIter = c.iter
-	return e, true
+	return e, true, alreadyScraped
 }
 
 func (c *scrapeCache) addRef(met []byte, ref storage.SeriesRef, lset labels.Labels, hash uint64) {
@@ -1568,7 +1569,7 @@ loop:
 		if sl.cache.getDropped(met) {
 			continue
 		}
-		ce, ok := sl.cache.get(met)
+		ce, ok, seriesAlreadyScraped := sl.cache.get(met)
 		var (
 			ref  storage.SeriesRef
 			hash uint64
@@ -1577,6 +1578,7 @@ loop:
 		if ok {
 			ref = ce.ref
 			lset = ce.lset
+			hash = ce.hash
 
 			// Update metadata only if it changed in the current iteration.
 			updateMetadata(lset, false)
@@ -1613,25 +1615,36 @@ loop:
 			updateMetadata(lset, true)
 		}
 
-		if ctMs := p.CreatedTimestamp(); sl.enableCTZeroIngestion && ctMs != nil {
-			ref, err = app.AppendCTZeroSample(ref, lset, t, *ctMs)
-			if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) { // OOO is a common case, ignoring completely for now.
-				// CT is an experimental feature. For now, we don't need to fail the
-				// scrape on errors updating the created timestamp, log debug.
-				level.Debug(sl.l).Log("msg", "Error when appending CT in scrape loop", "series", string(met), "ct", *ctMs, "t", t, "err", err)
+		if seriesAlreadyScraped {
+			err = storage.ErrDuplicateSampleForTimestamp
+		} else {
+			if ctMs := p.CreatedTimestamp(); sl.enableCTZeroIngestion && ctMs != nil {
+				ref, err = app.AppendCTZeroSample(ref, lset, t, *ctMs)
+				if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) { // OOO is a common case, ignoring completely for now.
+					// CT is an experimental feature. For now, we don't need to fail the
+					// scrape on errors updating the created timestamp, log debug.
+					level.Debug(sl.l).Log("msg", "Error when appending CT in scrape loop", "series", string(met), "ct", *ctMs, "t", t, "err", err)
+				}
+			}
+
+			if isHistogram {
+				if h != nil {
+					ref, err = app.AppendHistogram(ref, lset, t, h, nil)
+				} else {
+					ref, err = app.AppendHistogram(ref, lset, t, nil, fh)
+				}
+			} else {
+				ref, err = app.Append(ref, lset, t, val)
 			}
 		}
 
-		if isHistogram {
-			if h != nil {
-				ref, err = app.AppendHistogram(ref, lset, t, h, nil)
-			} else {
-				ref, err = app.AppendHistogram(ref, lset, t, nil, fh)
+		if err == nil {
+			if (parsedTimestamp == nil || sl.trackTimestampsStaleness) && ce != nil {
+				sl.cache.trackStaleness(ce.hash, ce.lset)
 			}
-		} else {
-			ref, err = app.Append(ref, lset, t, val)
 		}
-		sampleAdded, err = sl.checkAddError(ce, met, parsedTimestamp, err, &sampleLimitErr, &bucketLimitErr, &appErrs)
+
+		sampleAdded, err = sl.checkAddError(met, err, &sampleLimitErr, &bucketLimitErr, &appErrs)
 		if err != nil {
 			if !errors.Is(err, storage.ErrNotFound) {
 				level.Debug(sl.l).Log("msg", "Unexpected error", "series", string(met), "err", err)
@@ -1652,6 +1665,8 @@ loop:
 
 		// Increment added even if there's an error so we correctly report the
 		// number of samples remaining after relabeling.
+		// We still report duplicated samples here since this number should be the exact number
+		// of time series exposed on a scrape after relabelling.
 		added++
 		exemplars = exemplars[:0] // Reset and reuse the exemplar slice.
 		for hasExemplar := p.Exemplar(&e); hasExemplar; hasExemplar = p.Exemplar(&e) {
@@ -1746,12 +1761,9 @@ loop:
 
 // Adds samples to the appender, checking the error, and then returns the # of samples added,
 // whether the caller should continue to process more samples, and any sample or bucket limit errors.
-func (sl *scrapeLoop) checkAddError(ce *cacheEntry, met []byte, tp *int64, err error, sampleLimitErr, bucketLimitErr *error, appErrs *appendErrors) (bool, error) {
+func (sl *scrapeLoop) checkAddError(met []byte, err error, sampleLimitErr, bucketLimitErr *error, appErrs *appendErrors) (bool, error) {
 	switch {
 	case err == nil:
-		if (tp == nil || sl.trackTimestampsStaleness) && ce != nil {
-			sl.cache.trackStaleness(ce.hash, ce.lset)
-		}
 		return true, nil
 	case errors.Is(err, storage.ErrNotFound):
 		return false, storage.ErrNotFound
@@ -1874,7 +1886,7 @@ func (sl *scrapeLoop) reportStale(app storage.Appender, start time.Time) (err er
 }
 
 func (sl *scrapeLoop) addReportSample(app storage.Appender, s []byte, t int64, v float64, b *labels.Builder) error {
-	ce, ok := sl.cache.get(s)
+	ce, ok, _ := sl.cache.get(s)
 	var ref storage.SeriesRef
 	var lset labels.Labels
 	if ok {

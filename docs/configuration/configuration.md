@@ -600,8 +600,10 @@ See below for the configuration options for Azure discovery:
 # The Azure environment.
 [ environment: <string> | default = AzurePublicCloud ]
 
-# The authentication method, either OAuth or ManagedIdentity.
+# The authentication method, either OAuth, ManagedIdentity or SDK.
 # See https://docs.microsoft.com/en-us/azure/active-directory/managed-identities-azure-resources/overview
+# SDK authentication method uses environment variables by default.
+# See https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication
 [ authentication_method: <string> | default = OAuth]
 # The subscription ID. Always required.
 subscription_id: <string>
@@ -2447,11 +2449,15 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_linode_private_ipv4`: the private IPv4 of the linode instance
 * `__meta_linode_public_ipv4`: the public IPv4 of the linode instance
 * `__meta_linode_public_ipv6`: the public IPv6 of the linode instance
+* `__meta_linode_private_ipv4_rdns`: the reverse DNS for the first private IPv4 of the linode instance
+* `__meta_linode_public_ipv4_rdns`: the reverse DNS for the first public IPv4 of the linode instance
+* `__meta_linode_public_ipv6_rdns`: the reverse DNS for the first public IPv6 of the linode instance
 * `__meta_linode_region`: the region of the linode instance
 * `__meta_linode_type`: the type of the linode instance
 * `__meta_linode_status`: the status of the linode instance
 * `__meta_linode_tags`: a list of tags of the linode instance joined by the tag separator
 * `__meta_linode_group`: the display group a linode instance is a member of
+* `__meta_linode_gpus`: the number of GPU's of the linode instance 
 * `__meta_linode_hypervisor`: the virtualization software powering the linode instance
 * `__meta_linode_backups`: the backup service status of the linode instance
 * `__meta_linode_specs_disk_bytes`: the amount of storage space the linode instance has access to
@@ -2459,6 +2465,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_linode_specs_vcpus`: the number of VCPUS this linode has access to
 * `__meta_linode_specs_transfer_bytes`: the amount of network transfer the linode instance is allotted each month
 * `__meta_linode_extra_ips`: a list of all extra IPv4 addresses assigned to the linode instance joined by the tag separator
+* `__meta_linode_ipv6_ranges`: a list of IPv6 ranges with mask assigned to the linode instance joined by the tag separator
 
 ```yaml
 # Authentication information used to authenticate to the API server.
@@ -2488,6 +2495,9 @@ authorization:
 # Cannot be used at the same time as basic_auth or authorization.
 oauth2:
   [ <oauth2> ]
+
+# Optional region to filter on.
+[ region: <string> ]
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
@@ -3226,7 +3236,7 @@ are set to the scheme and metrics path of the target respectively. The `__param_
 label is set to the value of the first passed URL parameter called `<name>`.
 
 The `__scrape_interval__` and `__scrape_timeout__` labels are set to the target's
-interval and timeout. This is **experimental** and could change in the future.
+interval and timeout.
 
 Additional labels prefixed with `__meta_` may be available during the
 relabeling phase. They are set by the service discovery mechanism that provided
@@ -3617,6 +3627,11 @@ azuread:
   [ oauth:
       [ client_id: <string> ]
       [ client_secret: <string> ]
+      [ tenant_id: <string> ] ]
+
+  # Azure SDK auth.
+  # See https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication
+  [ sdk:
       [ tenant_id: <string> ] ]
 
 # Configures the remote write request's TLS settings.

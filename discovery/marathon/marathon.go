@@ -339,7 +339,7 @@ type appListClient func(ctx context.Context, client *http.Client, url string) (*
 
 // fetchApps requests a list of applications from a marathon server.
 func fetchApps(ctx context.Context, client *http.Client, url string) (*appList, error) {
-	request, err := http.NewRequest("GET", url, nil)
+	request, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
