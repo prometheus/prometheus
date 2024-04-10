@@ -16,6 +16,7 @@ package labels
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -810,7 +811,7 @@ var benchmarkLabels = []Label{
 	{"job", "node"},
 	{"instance", "123.123.1.211:9090"},
 	{"path", "/api/v1/namespaces/<namespace>/deployments/<name>"},
-	{"method", "GET"},
+	{"method", http.MethodGet},
 	{"namespace", "system"},
 	{"status", "500"},
 	{"prometheus", "prometheus-core-1"},
