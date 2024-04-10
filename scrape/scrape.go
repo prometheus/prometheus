@@ -305,12 +305,12 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 		}
 
 		t := sp.activeTargets[fp]
-		interval, timeout, err := t.intervalAndTimeout(interval, timeout)
+		targetInterval, targetTimeout, err := t.intervalAndTimeout(interval, timeout)
 		var (
 			s = &targetScraper{
 				Target:               t,
 				client:               sp.client,
-				timeout:              timeout,
+				timeout:              targetTimeout,
 				bodySizeLimit:        bodySizeLimit,
 				acceptHeader:         acceptHeader(cfg.ScrapeProtocols),
 				acceptEncodingHeader: acceptEncodingHeader(enableCompression),
@@ -328,8 +328,8 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 				trackTimestampsStaleness: trackTimestampsStaleness,
 				mrc:                      mrc,
 				cache:                    cache,
-				interval:                 interval,
-				timeout:                  timeout,
+				interval:                 targetInterval,
+				timeout:                  targetTimeout,
 			})
 		)
 		if err != nil {
