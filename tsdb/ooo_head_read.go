@@ -169,12 +169,6 @@ func (oh *OOOHeadIndexReader) series(ref storage.SeriesRef, builder *labels.Scra
 	return nil
 }
 
-// PostingsForLabelMatching needs to be overridden so that the right IndexReader
-// implementation gets passed down.
-func (oh *OOOHeadIndexReader) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) index.Postings {
-	return oh.head.postings.PostingsForLabelMatching(ctx, name, match)
-}
-
 // LabelValues needs to be overridden from the headIndexReader implementation due
 // to the check that happens at the beginning where we make sure that the query
 // interval overlaps with the head minooot and maxooot.
