@@ -26,6 +26,7 @@ linters:
     - testifylint
     - unconvert
     - unused
+    - usestdlibvars
 
 issues:
   max-same-issues: 0

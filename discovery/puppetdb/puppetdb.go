@@ -189,7 +189,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		return nil, err
 	}
 
-	req, err := http.NewRequest("POST", d.url, bytes.NewBuffer(bodyBytes))
+	req, err := http.NewRequest(http.MethodPost, d.url, bytes.NewBuffer(bodyBytes))
 	if err != nil {
 		return nil, err
 	}
