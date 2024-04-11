@@ -561,7 +561,7 @@ var tests = []struct {
 				},
 				seriesDesc: true,
 			},
-			{ // series with sum as -Inf and count as NaN
+			{ // Series with sum as -Inf and count as NaN.
 				input: `{} {{buckets: [5 10 7] sum:Inf count:NaN}}`,
 				expected: []Item{
 					{LEFT_BRACE, 0, `{`},
