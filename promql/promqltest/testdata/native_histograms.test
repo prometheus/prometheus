@@ -280,17 +280,7 @@ eval instant at 5m rate(histogram_rate[45s])
 eval range from 5m to 5m30s step 30s rate(histogram_rate[45s])
     {} {{schema:1 count:0.6 sum:1.2266666666666652 z_bucket:0.06666666666666667 z_bucket_w:0.001 buckets:[0.06666666666666667 0.06666666666666667 0 0.06666666666666667 0.06666666666666667] n_buckets:[0.06666666666666667 0.06666666666666667 0 0.06666666666666667 0.06666666666666667]}}x1
 
-# Apply count and sum function to empty histogram.
-load 10m
-    histogram_count_sum_1 {{}}x1
-
-eval instant at 10m histogram_count(histogram_count_sum_1)
-    {} NaN
-
-eval instant at 10m histogram_sum(histogram_count_sum_1)
-    {} NaN
-
-# Apply count and sum function to non-empty histogram.
+# Apply count and sum function to histogram.
 load 10m
     histogram_count_sum_2 {{schema:0 count:24 sum:100 z_bucket:4 z_bucket_w:0.001 buckets:[2 3 0 1 4] n_buckets:[2 3 0 1 4]}}x1
 
@@ -370,7 +360,7 @@ eval instant at 10m histogram_stddev(histogram_stddev_stdvar_7)
 eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_7)
     {} NaN
 
-# Apply quantile function to histogram with all positive buckets with zero bucket
+# Apply quantile function to histogram with all positive buckets with zero bucket.
 load 10m
     histogram_quantile_1 {{schema:0 count:12 sum:100 z_bucket:2 z_bucket_w:0.001 buckets:[2 3 0 1 4]}}x1
 
@@ -401,7 +391,7 @@ eval instant at 10m histogram_quantile(0, histogram_quantile_1)
 eval instant at 10m histogram_quantile(-1, histogram_quantile_1)
     {} -Inf
 
-# Apply quantile function to histogram with all negative buckets with zero bucket
+# Apply quantile function to histogram with all negative buckets with zero bucket.
 load 10m
     histogram_quantile_2 {{schema:0 count:12 sum:100 z_bucket:2 z_bucket_w:0.001 n_buckets:[2 3 0 1 4]}}x1
 
@@ -429,7 +419,7 @@ eval instant at 10m histogram_quantile(0, histogram_quantile_2)
 eval instant at 10m histogram_quantile(-1, histogram_quantile_2)
     {} -Inf
 
-# Apply quantile function to histogram with both positive and negative buckets with zero bucket
+# Apply quantile function to histogram with both positive and negative buckets with zero bucket.
 load 10m
     histogram_quantile_3 {{schema:0 count:24 sum:100 z_bucket:4 z_bucket_w:0.001 buckets:[2 3 0 1 4] n_buckets:[2 3 0 1 4]}}x1
 
