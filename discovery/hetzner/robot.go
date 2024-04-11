@@ -122,7 +122,6 @@ func (d *robotDiscovery) refresh(context.Context) ([]*targetgroup.Group, error) 
 				labels[hetznerLabelPublicIPv6Network] = model.LabelValue(fmt.Sprintf("%s/%s", subnet.IP, subnet.Mask))
 				break
 			}
-
 		}
 		targets[i] = labels
 	}

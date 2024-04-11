@@ -135,7 +135,6 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 				}
 				return err
 			}
-
 		}
 
 		for _, ep := range ts.Exemplars {

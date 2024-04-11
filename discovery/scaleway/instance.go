@@ -190,7 +190,6 @@ func (d *instanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 
 			targets = append(targets, labels)
 		}
-
 	}
 
 	return []*targetgroup.Group{{Source: "scaleway", Targets: targets}}, nil

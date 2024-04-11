@@ -1323,7 +1323,6 @@ func DeleteChunkSnapshots(dir string, maxIndex, maxOffset int) error {
 				errs.Add(err)
 			}
 		}
-
 	}
 	return errs.Err()
 }

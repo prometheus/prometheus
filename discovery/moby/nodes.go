@@ -80,7 +80,6 @@ func (d *Discovery) refreshNodes(ctx context.Context) ([]*targetgroup.Group, err
 		labels[model.AddressLabel] = model.LabelValue(addr)
 
 		tg.Targets = append(tg.Targets, labels)
-
 	}
 	return []*targetgroup.Group{tg}, nil
 }

@@ -1766,7 +1766,6 @@ func OverlappingBlocks(bm []BlockMeta) Overlaps {
 	// Fetch the critical overlapped time range foreach overlap groups.
 	overlapGroups := Overlaps{}
 	for _, overlap := range overlaps {
-
 		minRange := TimeRange{Min: 0, Max: math.MaxInt64}
 		for _, b := range overlap {
 			if minRange.Max > b.MaxTime {

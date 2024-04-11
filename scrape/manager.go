@@ -185,7 +185,6 @@ func (m *Manager) reload() {
 			sp.Sync(groups)
 			wg.Done()
 		}(m.scrapePools[setName], groups)
-
 	}
 	m.mtxScrape.Unlock()
 	wg.Wait()
