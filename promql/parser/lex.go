@@ -570,7 +570,7 @@ Loop:
 				l.errorf("missing `:` for histogram descriptor")
 				break Loop
 			}
-			// current word is Inf or NaN
+			// Current word is Inf or NaN.
 			if desc, ok := key[strings.ToLower(word)]; ok {
 				if desc == NUMBER {
 					l.emit(desc)
