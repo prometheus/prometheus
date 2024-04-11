@@ -2064,8 +2064,7 @@ func (s sample) Type() chunkenc.ValueType {
 // memSeries is the in-memory representation of a series. None of its methods
 // are goroutine safe and it is the caller's responsibility to lock it.
 type memSeries struct {
-	sync.Mutex
-
+	// Members up to the Mutex are not changed after construction, so can be accessed without a lock.
 	ref  chunks.HeadSeriesRef
 	lset labels.Labels
 	meta *metadata.Metadata
@@ -2073,6 +2072,9 @@ type memSeries struct {
 	// Series labels hash to use for sharding purposes. The value is always 0 when sharding has not
 	// been explicitly enabled in TSDB.
 	shardHash uint64
+
+	// Everything after here should only be accessed with the lock held.
+	sync.Mutex
 
 	// Immutable chunks on disk that have not yet gone into a block, in order of ascending time stamps.
 	// When compaction runs, chunks get moved into a block and all pointers are shifted like so:
