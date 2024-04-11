@@ -137,6 +137,7 @@ func createPrometheusAPI(q storage.SampleAndChunkQueryable) *route.Router {
 		nil,
 		false,
 		remote.Version1,
+		"",
 		false, // Disable experimental reduce remote write proto support.
 	)
 

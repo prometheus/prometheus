@@ -40,7 +40,8 @@ import (
 )
 
 func TestRemoteWriteHeadHandler(t *testing.T) {
-	handler := NewWriteHeadHandler(log.NewNopLogger(), nil, Version2)
+	// HEAD request to a Version2 server with no override = 200 and "2.0/snappy"
+	handler := NewWriteHeadHandler(log.NewNopLogger(), nil, Version2, "")
 
 	req, err := http.NewRequest(http.MethodHead, "", nil)
 	require.NoError(t, err)
@@ -56,6 +57,24 @@ func TestRemoteWriteHeadHandler(t *testing.T) {
 	require.Equal(t, "2.0;snappy,0.1.0", protHeader)
 }
 
+func TestRemoteWriteHeadHandlerOverride(t *testing.T) {
+	// HEAD request to a Version2 server with an override of "0.1.0" = 200 and "0.1.0"
+	handler := NewWriteHeadHandler(log.NewNopLogger(), nil, Version2, "0.1.0")
+
+	req, err := http.NewRequest(http.MethodHead, "", nil)
+	require.NoError(t, err)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	resp := recorder.Result()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	// Check header is expected value.
+	protHeader := resp.Header.Get(RemoteWriteVersionHeader)
+	require.Equal(t, "0.1.0", protHeader)
+}
+
 func TestRemoteWriteHandlerMinimizedMissingContentEncoding(t *testing.T) {
 	// Send a v2 request without a "Content-Encoding:" header -> 406.
 	buf, _, _, err := buildV2WriteRequest(log.NewNopLogger(), writeRequestMinimizedFixture.Timeseries, writeRequestMinimizedFixture.Symbols, nil, nil, nil, "snappy")
@@ -68,7 +87,7 @@ func TestRemoteWriteHandlerMinimizedMissingContentEncoding(t *testing.T) {
 	require.NoError(t, err)
 
 	appendable := &mockAppendable{}
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version2)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version2, "")
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -89,7 +108,7 @@ func TestRemoteWriteHandlerInvalidCompression(t *testing.T) {
 	require.NoError(t, err)
 
 	appendable := &mockAppendable{}
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version2)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version2, "")
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -109,7 +128,7 @@ func TestRemoteWriteHandlerInvalidVersion(t *testing.T) {
 	require.NoError(t, err)
 
 	appendable := &mockAppendable{}
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version2)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version2, "")
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -127,7 +146,7 @@ func TestRemoteWriteHandler(t *testing.T) {
 	require.NoError(t, err)
 
 	appendable := &mockAppendable{}
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version1)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version1, "")
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -169,6 +188,65 @@ func TestRemoteWriteHandler(t *testing.T) {
 	}
 }
 
+func TestRemoteWriteHandlerMinimizedFormatOverride(t *testing.T) {
+	// As TestRemoteWriteHandlerMinimizedFormat but we send a v2 request to a Version2 server that is advertising it only
+	// does "0.1.0" (but will accept "2.0/snappy" obviously).
+	buf, _, _, err := buildV2WriteRequest(log.NewNopLogger(), writeRequestMinimizedFixture.Timeseries, writeRequestMinimizedFixture.Symbols, nil, nil, nil, "snappy")
+	require.NoError(t, err)
+
+	req, err := http.NewRequest("", "", bytes.NewReader(buf))
+	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
+	// Must provide "Content-Encoding: snappy" header.
+	req.Header.Set("Content-Encoding", "snappy")
+	require.NoError(t, err)
+
+	appendable := &mockAppendable{}
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version2, "0.1.0")
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	resp := recorder.Result()
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+
+	// Check header is expected value.
+	protHeader := resp.Header.Get(RemoteWriteVersionHeader)
+	require.Equal(t, "0.1.0", protHeader)
+
+	i := 0
+	j := 0
+	k := 0
+	// the reduced write request is equivalent to the write request fixture.
+	// we can use it for
+	for _, ts := range writeRequestMinimizedFixture.Timeseries {
+		ls := labelProtosV2ToLabels(ts.LabelsRefs, writeRequestMinimizedFixture.Symbols)
+		for _, s := range ts.Samples {
+			require.Equal(t, mockSample{ls, s.Timestamp, s.Value}, appendable.samples[i])
+			i++
+		}
+
+		for _, e := range ts.Exemplars {
+			exemplarLabels := labelProtosV2ToLabels(e.LabelsRefs, writeRequestMinimizedFixture.Symbols)
+			require.Equal(t, mockExemplar{ls, exemplarLabels, e.Timestamp, e.Value}, appendable.exemplars[j])
+			j++
+		}
+
+		for _, hp := range ts.Histograms {
+			if hp.IsFloatHistogram() {
+				fh := FloatHistogramProtoV2ToFloatHistogram(hp)
+				require.Equal(t, mockHistogram{ls, hp.Timestamp, nil, fh}, appendable.histograms[k])
+			} else {
+				h := HistogramProtoV2ToHistogram(hp)
+				require.Equal(t, mockHistogram{ls, hp.Timestamp, h, nil}, appendable.histograms[k])
+			}
+
+			k++
+		}
+
+		// todo: check for metadata
+	}
+}
+
 func TestRemoteWriteHandlerMinimizedFormat(t *testing.T) {
 	buf, _, _, err := buildV2WriteRequest(log.NewNopLogger(), writeRequestMinimizedFixture.Timeseries, writeRequestMinimizedFixture.Symbols, nil, nil, nil, "snappy")
 	require.NoError(t, err)
@@ -180,7 +258,7 @@ func TestRemoteWriteHandlerMinimizedFormat(t *testing.T) {
 	require.NoError(t, err)
 
 	appendable := &mockAppendable{}
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version2)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version2, "")
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -240,7 +318,7 @@ func TestOutOfOrderSample(t *testing.T) {
 		latestSample: 100,
 	}
 	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version1)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version1, "")
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -266,7 +344,7 @@ func TestOutOfOrderExemplar(t *testing.T) {
 		latestExemplar: 100,
 	}
 	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version1)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version1, "")
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -290,7 +368,7 @@ func TestOutOfOrderHistogram(t *testing.T) {
 		latestHistogram: 100,
 	}
 	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version1)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version1, "")
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -319,7 +397,7 @@ func BenchmarkRemoteWritehandler(b *testing.B) {
 
 	appendable := &mockAppendable{}
 	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version1)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version1, "")
 	recorder := httptest.NewRecorder()
 
 	b.ResetTimer()
@@ -339,7 +417,7 @@ func TestCommitErr(t *testing.T) {
 		commitErr: fmt.Errorf("commit error"),
 	}
 	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version1)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Version1, "")
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -366,7 +444,7 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 		require.NoError(b, db.Close())
 	})
 	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(log.NewNopLogger(), nil, db.Head(), Version1)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, db.Head(), Version1, "")
 
 	buf, _, _, err := buildWriteRequest(nil, genSeriesWithSample(1000, 200*time.Minute.Milliseconds()), nil, nil, nil, nil, "snappy")
 	require.NoError(b, err)

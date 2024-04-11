@@ -158,7 +158,9 @@ type flagConfig struct {
 	enablePerStepStats         bool
 	enableAutoGOMAXPROCS       bool
 	// todo: how to use the enable feature flag properly + use the remote format enum type
-	rwFormat                 int
+	rwFormat int
+	// Allow the header value sent to clients to be overridden during rollout/rollback
+	rwFormatHeaderAdvertise  string
 	enableAutoGOMEMLIMIT     bool
 	enableConcurrentRuleEval bool
 
@@ -456,6 +458,9 @@ func main() {
 
 	a.Flag("remote-write-format", "remote write proto format to use, valid options: 0 (1.0), 1 (reduced format), 3 (min64 format)").
 		Default("0").IntVar(&cfg.rwFormat)
+
+	a.Flag("remote-write-header-advertise-overide", "remote write header to send back for rollout/rollback phases").
+		Default("").StringVar(&cfg.rwFormatHeaderAdvertise)
 
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
 

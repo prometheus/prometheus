@@ -339,27 +339,37 @@ var sampleFlagMap = map[string]string{
 
 func TestHeadEndpoint(t *testing.T) {
 	for _, tc := range []struct {
-		name                string
-		rwFormat            config.RemoteWriteFormat
-		expectedStatusCode  int
-		expectedHeaderValue string
+		name                    string
+		rwFormat                config.RemoteWriteFormat
+		rwFormatHeaderAdvertise string
+		expectedStatusCode      int
+		expectedHeaderValue     string
 	}{
 		{
-			name:                "HEAD Version 1",
-			rwFormat:            remote.Version1,
-			expectedStatusCode:  http.StatusOK,
-			expectedHeaderValue: "0.1.0",
+			name:                    "HEAD Version 1",
+			rwFormat:                remote.Version1,
+			rwFormatHeaderAdvertise: "",
+			expectedStatusCode:      http.StatusOK,
+			expectedHeaderValue:     "0.1.0",
 		},
 		{
-			name:                "HEAD Version 2",
-			rwFormat:            remote.Version2,
-			expectedStatusCode:  http.StatusOK,
-			expectedHeaderValue: "2.0;snappy,0.1.0",
+			name:                    "HEAD Version 2",
+			rwFormat:                remote.Version2,
+			rwFormatHeaderAdvertise: "",
+			expectedStatusCode:      http.StatusOK,
+			expectedHeaderValue:     "2.0;snappy,0.1.0",
+		},
+		{
+			name:                    "HEAD Version 2",
+			rwFormat:                remote.Version2,
+			rwFormatHeaderAdvertise: "0.1.0",
+			expectedStatusCode:      http.StatusOK,
+			expectedHeaderValue:     "0.1.0",
 		},
 	} {
 		r := route.New()
 		api := &API{
-			remoteWriteHeadHandler: remote.NewWriteHeadHandler(log.NewNopLogger(), nil, tc.rwFormat),
+			remoteWriteHeadHandler: remote.NewWriteHeadHandler(log.NewNopLogger(), nil, tc.rwFormat, tc.rwFormatHeaderAdvertise),
 			ready:                  func(f http.HandlerFunc) http.HandlerFunc { return f },
 		}
 		api.Register(r)

@@ -44,9 +44,15 @@ const (
 	RemoteWriteVersion20HeaderValue = "2.0"
 )
 
-func rwHeaderNameValues(rwFormat config.RemoteWriteFormat) map[string]string {
+func rwHeaderNameValues(rwFormat config.RemoteWriteFormat, rwFormatHeaderAdvertise string) map[string]string {
 	// Return the correct remote write header name/values based on provided rwFormat.
 	ret := make(map[string]string, 1)
+
+	if rwFormatHeaderAdvertise != "" {
+		// If we have an override set then we return that
+		ret[RemoteWriteVersionHeader] = rwFormatHeaderAdvertise
+		return ret
+	}
 
 	switch rwFormat {
 	case Version1:
@@ -70,13 +76,15 @@ type writeHeadHandler struct {
 
 	// Experimental feature, new remote write proto format.
 	// The handler will accept the new format, but it can still accept the old one.
-	rwFormat config.RemoteWriteFormat
+	rwFormat                config.RemoteWriteFormat
+	rwFormatHeaderAdvertise string
 }
 
-func NewWriteHeadHandler(logger log.Logger, reg prometheus.Registerer, rwFormat config.RemoteWriteFormat) http.Handler {
+func NewWriteHeadHandler(logger log.Logger, reg prometheus.Registerer, rwFormat config.RemoteWriteFormat, rwFormatHeaderAdvertise string) http.Handler {
 	h := &writeHeadHandler{
-		logger:   logger,
-		rwFormat: rwFormat,
+		logger:                  logger,
+		rwFormat:                rwFormat,
+		rwFormatHeaderAdvertise: rwFormatHeaderAdvertise,
 		remoteWrite20HeadRequests: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "prometheus",
 			Subsystem: "api",
@@ -94,7 +102,7 @@ func (h *writeHeadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Send a response to the HEAD request based on the format supported.
 
 	// Add appropriate header values for the specific rwFormat.
-	for hName, hValue := range rwHeaderNameValues(h.rwFormat) {
+	for hName, hValue := range rwHeaderNameValues(h.rwFormat, h.rwFormatHeaderAdvertise) {
 		w.Header().Set(hName, hValue)
 	}
 
@@ -109,16 +117,18 @@ type writeHandler struct {
 
 	// Experimental feature, new remote write proto format.
 	// The handler will accept the new format, but it can still accept the old one.
-	rwFormat config.RemoteWriteFormat
+	rwFormat                config.RemoteWriteFormat
+	rwFormatHeaderAdvertise string
 }
 
 // NewWriteHandler creates a http.Handler that accepts remote write requests and
 // writes them to the provided appendable.
-func NewWriteHandler(logger log.Logger, reg prometheus.Registerer, appendable storage.Appendable, rwFormat config.RemoteWriteFormat) http.Handler {
+func NewWriteHandler(logger log.Logger, reg prometheus.Registerer, appendable storage.Appendable, rwFormat config.RemoteWriteFormat, rwFormatHeaderAdvertise string) http.Handler {
 	h := &writeHandler{
-		logger:     logger,
-		appendable: appendable,
-		rwFormat:   rwFormat,
+		logger:                  logger,
+		appendable:              appendable,
+		rwFormat:                rwFormat,
+		rwFormatHeaderAdvertise: rwFormatHeaderAdvertise,
 		samplesWithInvalidLabelsTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "prometheus",
 			Subsystem: "api",
@@ -136,7 +146,7 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var err error
 
 	// Set the header(s) in the response based on the rwFormat the server supports.
-	for hName, hValue := range rwHeaderNameValues(h.rwFormat) {
+	for hName, hValue := range rwHeaderNameValues(h.rwFormat, h.rwFormatHeaderAdvertise) {
 		w.Header().Set(hName, hValue)
 	}
 

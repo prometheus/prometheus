@@ -255,6 +255,7 @@ func NewAPI(
 	statsRenderer StatsRenderer,
 	rwEnabled bool,
 	rwFormat config.RemoteWriteFormat,
+	rwFormatHeaderAdvertise string,
 	otlpEnabled bool,
 ) *API {
 	a := &API{
@@ -309,8 +310,8 @@ func NewAPI(
 		// 1. (During) support new protocols but don't advertise
 		// <wait a suitable period for all sending clients to be aware that receiving servers no longer support 2.0>
 		// 2. (After) no flags set
-		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, rwFormat)
-		a.remoteWriteHeadHandler = remote.NewWriteHeadHandler(logger, registerer, rwFormat)
+		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, rwFormat, rwFormatHeaderAdvertise)
+		a.remoteWriteHeadHandler = remote.NewWriteHeadHandler(logger, registerer, rwFormat, rwFormatHeaderAdvertise)
 	}
 	if otlpEnabled {
 		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, ap)
