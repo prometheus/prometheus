@@ -2332,12 +2332,16 @@ func (h *Head) RebuildSymbolTable() *labels.SymbolTable {
 		h.series.locks[i].Lock()
 
 		for _, s := range h.series.hashes[i].unique {
+			s.Lock()
 			s.lset = rebuildLabels(s.lset)
+			s.Unlock()
 		}
 
 		for _, all := range h.series.hashes[i].conflicts {
 			for _, s := range all {
+				s.Lock()
 				s.lset = rebuildLabels(s.lset)
+				s.Unlock()
 			}
 		}
 
