@@ -17,7 +17,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -55,13 +54,22 @@ var UserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
 // A Remote Write 2.0 request sent to, for example, a Prometheus 2.50 receiver (which does
 // not understand Remote Write 2.0) will result in an HTTP 400 status code from the receiver.
-var ErrStatusBadRequest = errors.New("HTTP StatusBadRequest") // 400
 
 // A Remote Write 2.0 request sent to a remote write receiver may (depending on receiver version)
 // result in an HTTP 406 status code to indicate that it does not accept the protocol or
 // encoding of that request and that the sender should retry with a more suitable protocol
 // version or encoding.
-var ErrStatusNotAcceptable = errors.New("HTTP StatusNotAcceptable") // 406
+
+// We bundle any error we want to return to the queue manager to trigger a renegotiation into
+// this custom error.
+type ErrRenegotiate struct {
+	FirstLine  string
+	StatusCode int
+}
+
+func (r *ErrRenegotiate) Error() string {
+	return fmt.Sprintf("HTTP %d: msg: %s", r.StatusCode, r.FirstLine)
+}
 
 var (
 	remoteReadQueriesTotal = prometheus.NewCounterVec(
@@ -323,14 +331,11 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int, rwFormat co
 		case 400:
 			// Return an unrecoverable error to indicate the 400.
 			// This then gets passed up the chain so we can react to it properly.
-			// TODO(alexg) Do we want to include the first line of the message?
-			return ErrStatusBadRequest
+			return &ErrRenegotiate{line, httpResp.StatusCode}
 		case 406:
 			// Return an unrecoverable error to indicate the 406.
 			// This then gets passed up the chain so we can react to it properly.
-			// TODO(alexg) Do we want to include the first line of the message?
-			// TODO(alexg) Do we want to combine these two errors as one, with the statuscode and first line of message in the error?
-			return ErrStatusNotAcceptable
+			return &ErrRenegotiate{line, httpResp.StatusCode}
 		default:
 			// We want to end up returning a non-specific error.
 			err = fmt.Errorf("server returned HTTP status %s: %s", httpResp.Status, line)
