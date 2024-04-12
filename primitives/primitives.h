@@ -24,9 +24,9 @@ using Timestamp = int64_t;
 
 using LabelSetID = uint32_t;
 
-template <class LabelType>
+template <class LabelType, template <class> class Container = BareBones::Vector>
 class BasicLabelSet {
-  BareBones::Vector<LabelType> labels_;
+  Container<LabelType> labels_;
 
  public:
   using label_type = LabelType;
@@ -50,8 +50,8 @@ class BasicLabelSet {
 
   inline __attribute__((always_inline)) auto size() const noexcept { return labels_.size(); }
 
-  using iterator = typename BareBones::Vector<LabelType>::iterator;
-  using const_iterator = typename BareBones::Vector<LabelType>::const_iterator;
+  using iterator = typename Container<LabelType>::iterator;
+  using const_iterator = typename Container<LabelType>::const_iterator;
 
   inline __attribute__((always_inline)) const_iterator begin() const noexcept { return labels_.begin(); }
   inline __attribute__((always_inline)) iterator begin() noexcept { return labels_.begin(); }
@@ -78,21 +78,21 @@ class BasicLabelSet {
   }
 
   class Names {
-    const BareBones::Vector<LabelType>& labels_;
+    const Container<LabelType>& labels_;
 
     friend class BasicLabelSet;
     inline __attribute__((always_inline)) explicit Names(const BasicLabelSet& label_set) : labels_(label_set.labels_) {}
 
    public:
     class Iterator {
-      typename BareBones::Vector<LabelType>::const_iterator i_;
+      typename Container<LabelType>::const_iterator i_;
 
      public:
       using iterator_category = std::forward_iterator_tag;  // FIXME random_access
       using value_type = typename std::tuple_element<0, LabelType>::type;
       using difference_type = std::ptrdiff_t;
 
-      inline __attribute__((always_inline)) explicit Iterator(typename BareBones::Vector<LabelType>::const_iterator i = nullptr) noexcept : i_(i) {}
+      inline __attribute__((always_inline)) explicit Iterator(typename Container<LabelType>::const_iterator i = {}) noexcept : i_(i) {}
 
       inline __attribute__((always_inline)) Iterator& operator++() noexcept {
         ++i_;
@@ -107,7 +107,7 @@ class BasicLabelSet {
 
       inline __attribute__((always_inline)) bool operator==(const Iterator& o) const noexcept { return i_ == o.i_; }
 
-      inline __attribute__((always_inline)) const value_type& operator*() const noexcept { return *reinterpret_cast<const value_type*>(i_); }
+      inline __attribute__((always_inline)) const value_type& operator*() const noexcept { return i_->first; }
     };
 
     inline __attribute__((always_inline)) auto begin() const noexcept { return Iterator(labels_.begin()); }
@@ -138,7 +138,10 @@ class BasicLabelSet {
   inline __attribute__((always_inline)) Names names() const noexcept { return Names(*this); }
 };
 
-using LabelSet = BasicLabelSet<Label>;
+template <class Item>
+using StdVector = std::vector<Item>;
+
+using LabelSet = BasicLabelSet<Label, StdVector>;
 using LabelViewSet = BasicLabelSet<LabelView>;
 
 class Sample {
