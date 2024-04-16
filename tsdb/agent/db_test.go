@@ -28,16 +28,16 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/model/exemplar"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/storage/remote"
-	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/record"
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
-	"github.com/prometheus/prometheus/tsdb/wlog"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/emmalidtdg/prometheus/model/exemplar"
+	"github.com/emmalidtdg/prometheus/model/labels"
+	"github.com/emmalidtdg/prometheus/storage"
+	"github.com/emmalidtdg/prometheus/storage/remote"
+	"github.com/emmalidtdg/prometheus/tsdb"
+	"github.com/emmalidtdg/prometheus/tsdb/chunks"
+	"github.com/emmalidtdg/prometheus/tsdb/record"
+	"github.com/emmalidtdg/prometheus/tsdb/tsdbutil"
+	"github.com/emmalidtdg/prometheus/tsdb/wlog"
+	"github.com/emmalidtdg/prometheus/util/testutil"
 )
 
 func TestDB_InvalidSeries(t *testing.T) {

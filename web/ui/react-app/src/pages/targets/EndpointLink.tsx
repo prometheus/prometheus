@@ -14,7 +14,7 @@ const EndpointLink: FC<EndpointLinkProps> = ({ endpoint, globalUrl }) => {
     url = new URL(endpoint);
   } catch (err: unknown) {
     // In cases of IPv6 addresses with a Zone ID, URL may not be parseable.
-    // See https://github.com/prometheus/prometheus/issues/9760
+    // See https://github.com/emmalidtdg/prometheus/issues/9760
     // In this case, we attempt to prepare a synthetic URL with the
     // same query parameters, for rendering purposes.
     invalidURL = true;

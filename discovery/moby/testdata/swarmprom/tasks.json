@@ -971,7 +971,7 @@
           "com.docker.stack.namespace": "mon"
         },
         "Args": [
-          "--config.file=/etc/prometheus/prometheus.yml",
+          "--config.file=/etc/emmalidtdg/prometheus.yml",
           "--storage.tsdb.path=/prometheus",
           "--storage.tsdb.retention=24h"
         ],

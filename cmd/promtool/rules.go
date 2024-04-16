@@ -23,12 +23,12 @@ import (
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/rules"
-	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
+	"github.com/emmalidtdg/prometheus/model/labels"
+	"github.com/emmalidtdg/prometheus/model/timestamp"
+	"github.com/emmalidtdg/prometheus/rules"
+	"github.com/emmalidtdg/prometheus/storage"
+	"github.com/emmalidtdg/prometheus/tsdb"
+	tsdb_errors "github.com/emmalidtdg/prometheus/tsdb/errors"
 )
 
 const maxSamplesInMemory = 5000

@@ -17,11 +17,11 @@ import (
 	"math"
 	"testing"
 
-	"github.com/prometheus/prometheus/model/exemplar"
-	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/emmalidtdg/prometheus/model/exemplar"
+	"github.com/emmalidtdg/prometheus/model/histogram"
+	"github.com/emmalidtdg/prometheus/model/labels"
+	"github.com/emmalidtdg/prometheus/promql"
+	"github.com/emmalidtdg/prometheus/promql/parser"
 )
 
 func TestJsonCodec_Encode(t *testing.T) {

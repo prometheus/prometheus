@@ -28,7 +28,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 
-	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/emmalidtdg/prometheus/discovery/targetgroup"
 )
 
 // Ingress implements discovery of Kubernetes ingress.

@@ -93,8 +93,8 @@ export class Parser {
     }
   }
 
-  // checkAST is inspired of the same named method from prometheus/prometheus:
-  // https://github.com/prometheus/prometheus/blob/3470ee1fbf9d424784eb2613bab5ab0f14b4d222/promql/parser/parse.go#L433
+  // checkAST is inspired of the same named method from emmalidtdg/prometheus:
+  // https://github.com/emmalidtdg/prometheus/blob/3470ee1fbf9d424784eb2613bab5ab0f14b4d222/promql/parser/parse.go#L433
   checkAST(node: SyntaxNode | null): ValueType {
     if (!node) {
       return ValueType.none;
@@ -136,7 +136,7 @@ export class Parser {
           this.addDiagnostic(node, `@ modifier must be preceded by an instant selector vector or range vector selector or a subquery`);
         }
         // if you are looking at the Prometheus code, you will likely find that some checks are missing here.
-        // Specially the one checking if the timestamp after the `@` is ok: https://github.com/prometheus/prometheus/blob/ad5ed416ba635834370bfa06139258b31f8c33f9/promql/parser/parse.go#L722-L725
+        // Specially the one checking if the timestamp after the `@` is ok: https://github.com/emmalidtdg/prometheus/blob/ad5ed416ba635834370bfa06139258b31f8c33f9/promql/parser/parse.go#L722-L725
         // Since Javascript is managing the number as a float64 and so on 53 bits, we cannot validate that the maxInt64 number is a valid value.
         // So, to manage properly this issue, we would need to use the BigInt which is possible or by using ES2020.BigInt, or by using the lib: https://github.com/GoogleChromeLabs/jsbi.
         //   * Introducing a lib just for theses checks is quite overkilled

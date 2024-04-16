@@ -20,7 +20,7 @@ import (
 
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/emmalidtdg/prometheus/storage/remote"
 )
 
 func main() {

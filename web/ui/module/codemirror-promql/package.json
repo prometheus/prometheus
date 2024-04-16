@@ -14,7 +14,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/prometheus/prometheus.git"
+    "url": "git+https://github.com/emmalidtdg/prometheus.git"
   },
   "keywords": [
     "promql",
@@ -25,9 +25,9 @@
   "author": "Prometheus Authors <prometheus-developers@googlegroups.com>",
   "license": "Apache-2.0",
   "bugs": {
-    "url": "https://github.com/prometheus/prometheus/issues"
+    "url": "https://github.com/emmalidtdg/prometheus/issues"
   },
-  "homepage": "https://github.com/prometheus/prometheus/blob/main/web/ui/module/codemirror-promql/README.md",
+  "homepage": "https://github.com/emmalidtdg/prometheus/blob/main/web/ui/module/codemirror-promql/README.md",
   "dependencies": {
     "@prometheus-io/lezer-promql": "0.51.2",
     "lru-cache": "^7.18.3"

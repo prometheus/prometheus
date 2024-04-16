@@ -3,14 +3,14 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
-package prometheusremotewrite // import "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
+package prometheusremotewrite // import "github.com/emmalidtdg/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
 
 import (
 	"math"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/value"
-	"github.com/prometheus/prometheus/prompb"
+	"github.com/emmalidtdg/prometheus/model/value"
+	"github.com/emmalidtdg/prometheus/prompb"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 )

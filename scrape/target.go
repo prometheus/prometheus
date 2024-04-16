@@ -25,13 +25,13 @@ import (
 
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/relabel"
-	"github.com/prometheus/prometheus/model/value"
-	"github.com/prometheus/prometheus/storage"
+	"github.com/emmalidtdg/prometheus/config"
+	"github.com/emmalidtdg/prometheus/discovery/targetgroup"
+	"github.com/emmalidtdg/prometheus/model/histogram"
+	"github.com/emmalidtdg/prometheus/model/labels"
+	"github.com/emmalidtdg/prometheus/model/relabel"
+	"github.com/emmalidtdg/prometheus/model/value"
+	"github.com/emmalidtdg/prometheus/storage"
 )
 
 // TargetHealth describes the health state of a target.

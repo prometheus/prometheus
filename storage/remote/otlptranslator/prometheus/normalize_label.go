@@ -3,7 +3,7 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
-package prometheus // import "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
+package prometheus // import "github.com/emmalidtdg/prometheus/storage/remote/otlptranslator/prometheus"
 
 import (
 	"strings"

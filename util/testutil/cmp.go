@@ -20,7 +20,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/emmalidtdg/prometheus/model/labels"
 )
 
 // Replacement for require.Equal using go-cmp adapted for Prometheus data structures, instead of DeepEqual.

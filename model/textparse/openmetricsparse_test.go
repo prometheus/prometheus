@@ -20,8 +20,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/model/exemplar"
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/emmalidtdg/prometheus/model/exemplar"
+	"github.com/emmalidtdg/prometheus/model/labels"
 )
 
 func TestOpenMetricsParse(t *testing.T) {

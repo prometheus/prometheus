@@ -24,7 +24,7 @@ import (
 
 	"go.uber.org/atomic"
 
-	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/emmalidtdg/prometheus/promql/parser"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -34,12 +34,12 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/model/value"
-	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/emmalidtdg/prometheus/model/labels"
+	"github.com/emmalidtdg/prometheus/model/timestamp"
+	"github.com/emmalidtdg/prometheus/model/value"
+	"github.com/emmalidtdg/prometheus/promql"
+	"github.com/emmalidtdg/prometheus/storage"
+	"github.com/emmalidtdg/prometheus/tsdb/chunkenc"
 )
 
 // Group is a set of rules that have a logical relation.

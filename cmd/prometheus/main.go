@@ -53,31 +53,31 @@ import (
 	"k8s.io/klog"
 	klogv2 "k8s.io/klog/v2"
 
-	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/discovery"
-	"github.com/prometheus/prometheus/discovery/legacymanager"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/model/exemplar"
-	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/metadata"
-	"github.com/prometheus/prometheus/model/relabel"
-	"github.com/prometheus/prometheus/notifier"
-	_ "github.com/prometheus/prometheus/plugins" // Register plugins.
-	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/rules"
-	"github.com/prometheus/prometheus/scrape"
-	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/storage/remote"
-	"github.com/prometheus/prometheus/tracing"
-	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/tsdb/agent"
-	"github.com/prometheus/prometheus/tsdb/wlog"
-	"github.com/prometheus/prometheus/util/documentcli"
-	"github.com/prometheus/prometheus/util/logging"
-	prom_runtime "github.com/prometheus/prometheus/util/runtime"
-	"github.com/prometheus/prometheus/web"
+	"github.com/emmalidtdg/prometheus/config"
+	"github.com/emmalidtdg/prometheus/discovery"
+	"github.com/emmalidtdg/prometheus/discovery/legacymanager"
+	"github.com/emmalidtdg/prometheus/discovery/targetgroup"
+	"github.com/emmalidtdg/prometheus/model/exemplar"
+	"github.com/emmalidtdg/prometheus/model/histogram"
+	"github.com/emmalidtdg/prometheus/model/labels"
+	"github.com/emmalidtdg/prometheus/model/metadata"
+	"github.com/emmalidtdg/prometheus/model/relabel"
+	"github.com/emmalidtdg/prometheus/notifier"
+	_ "github.com/emmalidtdg/prometheus/plugins" // Register plugins.
+	"github.com/emmalidtdg/prometheus/promql"
+	"github.com/emmalidtdg/prometheus/promql/parser"
+	"github.com/emmalidtdg/prometheus/rules"
+	"github.com/emmalidtdg/prometheus/scrape"
+	"github.com/emmalidtdg/prometheus/storage"
+	"github.com/emmalidtdg/prometheus/storage/remote"
+	"github.com/emmalidtdg/prometheus/tracing"
+	"github.com/emmalidtdg/prometheus/tsdb"
+	"github.com/emmalidtdg/prometheus/tsdb/agent"
+	"github.com/emmalidtdg/prometheus/tsdb/wlog"
+	"github.com/emmalidtdg/prometheus/util/documentcli"
+	"github.com/emmalidtdg/prometheus/util/logging"
+	prom_runtime "github.com/emmalidtdg/prometheus/util/runtime"
+	"github.com/emmalidtdg/prometheus/web"
 )
 
 var (
@@ -420,10 +420,10 @@ func main() {
 	serverOnlyFlag(a, "rules.max-concurrent-evals", "Global concurrency limit for independent rules that can run concurrently.").
 		Default("4").Int64Var(&cfg.maxConcurrentEvals)
 
-	a.Flag("scrape.adjust-timestamps", "Adjust scrape timestamps by up to `scrape.timestamp-tolerance` to align them to the intended schedule. See https://github.com/prometheus/prometheus/issues/7846 for more context. Experimental. This flag will be removed in a future release.").
+	a.Flag("scrape.adjust-timestamps", "Adjust scrape timestamps by up to `scrape.timestamp-tolerance` to align them to the intended schedule. See https://github.com/emmalidtdg/prometheus/issues/7846 for more context. Experimental. This flag will be removed in a future release.").
 		Hidden().Default("true").BoolVar(&scrape.AlignScrapeTimestamps)
 
-	a.Flag("scrape.timestamp-tolerance", "Timestamp tolerance. See https://github.com/prometheus/prometheus/issues/7846 for more context. Experimental. This flag will be removed in a future release.").
+	a.Flag("scrape.timestamp-tolerance", "Timestamp tolerance. See https://github.com/emmalidtdg/prometheus/issues/7846 for more context. Experimental. This flag will be removed in a future release.").
 		Hidden().Default("2ms").DurationVar(&scrape.ScrapeTimestampTolerance)
 
 	serverOnlyFlag(a, "alertmanager.notification-queue-capacity", "The capacity of the queue for pending Alertmanager notifications.").

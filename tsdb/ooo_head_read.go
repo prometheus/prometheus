@@ -21,12 +21,12 @@ import (
 
 	"github.com/oklog/ulid"
 
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/prometheus/prometheus/tsdb/tombstones"
+	"github.com/emmalidtdg/prometheus/model/labels"
+	"github.com/emmalidtdg/prometheus/storage"
+	"github.com/emmalidtdg/prometheus/tsdb/chunkenc"
+	"github.com/emmalidtdg/prometheus/tsdb/chunks"
+	"github.com/emmalidtdg/prometheus/tsdb/index"
+	"github.com/emmalidtdg/prometheus/tsdb/tombstones"
 )
 
 var _ IndexReader = &OOOHeadIndexReader{}

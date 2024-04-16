@@ -21,8 +21,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 
-	"github.com/prometheus/prometheus/discovery"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/emmalidtdg/prometheus/discovery"
+	"github.com/emmalidtdg/prometheus/discovery/targetgroup"
 )
 
 type Options struct {

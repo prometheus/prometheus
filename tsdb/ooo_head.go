@@ -19,9 +19,9 @@ import (
 
 	"github.com/oklog/ulid"
 
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/tombstones"
+	"github.com/emmalidtdg/prometheus/tsdb/chunkenc"
+	"github.com/emmalidtdg/prometheus/tsdb/chunks"
+	"github.com/emmalidtdg/prometheus/tsdb/tombstones"
 )
 
 // OOOChunk maintains samples in time-ascending order.

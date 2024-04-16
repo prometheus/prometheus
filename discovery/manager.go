@@ -25,7 +25,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 
-	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/emmalidtdg/prometheus/discovery/targetgroup"
 )
 
 type poolKey struct {
@@ -256,7 +256,7 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 	// Currently downstream managers expect full target state upon config reload, so we must oblige.
 	// While startProvider does pull the trigger, it may take some time to do so, therefore
 	// we pull the trigger as soon as possible so that downstream managers can populate their state.
-	// See https://github.com/prometheus/prometheus/pull/8639 for details.
+	// See https://github.com/emmalidtdg/prometheus/pull/8639 for details.
 	if keep {
 		select {
 		case m.triggerSend <- struct{}{}:

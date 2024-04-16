@@ -32,8 +32,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
 
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
-	"github.com/prometheus/prometheus/util/testutil"
+	tsdb_errors "github.com/emmalidtdg/prometheus/tsdb/errors"
+	"github.com/emmalidtdg/prometheus/util/testutil"
 )
 
 type reader interface {

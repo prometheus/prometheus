@@ -18,7 +18,7 @@ Note: we cover the implementations as used in Prometheus.  Other projects may us
 Due to series churn, the set of actively used `HeadSeriesRef`s may be well above zero (e.g. 0-10M may not be used, and 10M-11M is active)
 
 Usage:
-* [`stripeSeries`](https://github.com/prometheus/prometheus/blob/fdbc40a9efcc8197a94f23f0e479b0b56e52d424/tsdb/head.go#L1292-L1298) (note: when you don't know a `HeadSeriesRef` for a series, you can also access it by a hash of the series' labels)
+* [`stripeSeries`](https://github.com/emmalidtdg/prometheus/blob/fdbc40a9efcc8197a94f23f0e479b0b56e52d424/tsdb/head.go#L1292-L1298) (note: when you don't know a `HeadSeriesRef` for a series, you can also access it by a hash of the series' labels)
 * WAL
 * `HeadChunkRef`s include them for addressing head chunks, as those are owned by the `memSeries`.
 
@@ -84,8 +84,8 @@ The `ChunkRef` types allow retrieving the chunk data as efficiently as possible.
 
 ## Used internally in TSDB
 
-* [`HeadChunkID`](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb/chunks#HeadChunkID) references a chunk of a `memSeries` (either an `mmappedChunk` or `headChunk`).
+* [`HeadChunkID`](https://pkg.go.dev/github.com/emmalidtdg/prometheus/tsdb/chunks#HeadChunkID) references a chunk of a `memSeries` (either an `mmappedChunk` or `headChunk`).
   If a caller has, for whatever reason, an "old" `HeadChunkID` that refers to a chunk that has been compacted into a block, querying the memSeries for it will not return any data.
-* [`ChunkDiskMapperRef`](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb/chunks#ChunkDiskMapperRef) is an 8 Byte integer.
+* [`ChunkDiskMapperRef`](https://pkg.go.dev/github.com/emmalidtdg/prometheus/tsdb/chunks#ChunkDiskMapperRef) is an 8 Byte integer.
   4 Bytes are used to refer to a chunks file number and 4 bytes serve as byte offset (similar to `BlockChunkRef`).  `mmappedChunk` provide this value such that callers can load the mmapped chunk from disk.
 

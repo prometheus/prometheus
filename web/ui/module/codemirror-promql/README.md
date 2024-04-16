@@ -241,9 +241,9 @@ Note: In case this parameter is provided, then the rest of the configuration is 
 
 ### Example
 
-* [ReactJS example](https://github.com/prometheus/prometheus/blob/431ea75a11ca165dad9dd5d629b3cf975f4c186b/web/ui/react-app/src/pages/graph/CMExpressionInput.tsx)
+* [ReactJS example](https://github.com/emmalidtdg/prometheus/blob/431ea75a11ca165dad9dd5d629b3cf975f4c186b/web/ui/react-app/src/pages/graph/CMExpressionInput.tsx)
 * [Angular example](https://github.com/perses/perses/blob/28b3bdac88b0ed7a4602f9c91106442eafcb6c34/internal/api/front/perses/src/app/project/prometheusrule/promql-editor/promql-editor.component.ts)
 
 ## License
 
-The code is licensed under an [Apache 2.0](https://github.com/prometheus/prometheus/blob/main/LICENSE) license.
+The code is licensed under an [Apache 2.0](https://github.com/emmalidtdg/prometheus/blob/main/LICENSE) license.

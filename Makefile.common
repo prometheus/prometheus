@@ -13,7 +13,7 @@
 
 
 # A common Makefile that includes rules to be reused in different prometheus projects.
-# !!! Open PRs only against the prometheus/prometheus/Makefile.common repository!
+# !!! Open PRs only against the emmalidtdg/prometheus/Makefile.common repository!
 
 # Example usage :
 # Create the main Makefile in the root project directory.

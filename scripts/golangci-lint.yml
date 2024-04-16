@@ -1,5 +1,5 @@
 ---
-# This action is synced from https://github.com/prometheus/prometheus
+# This action is synced from https://github.com/emmalidtdg/prometheus
 name: golangci-lint
 on:
   push:

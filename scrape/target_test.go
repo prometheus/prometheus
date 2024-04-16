@@ -29,10 +29,10 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/emmalidtdg/prometheus/config"
+	"github.com/emmalidtdg/prometheus/discovery/targetgroup"
+	"github.com/emmalidtdg/prometheus/model/histogram"
+	"github.com/emmalidtdg/prometheus/model/labels"
 )
 
 const (

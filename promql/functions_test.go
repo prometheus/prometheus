@@ -21,14 +21,14 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/util/teststorage"
+	"github.com/emmalidtdg/prometheus/model/labels"
+	"github.com/emmalidtdg/prometheus/model/timestamp"
+	"github.com/emmalidtdg/prometheus/promql/parser"
+	"github.com/emmalidtdg/prometheus/util/teststorage"
 )
 
 func TestDeriv(t *testing.T) {
-	// https://github.com/prometheus/prometheus/issues/2674#issuecomment-315439393
+	// https://github.com/emmalidtdg/prometheus/issues/2674#issuecomment-315439393
 	// This requires more precision than the usual test system offers,
 	// so we test it by hand.
 	storage := teststorage.New(t)
@@ -48,7 +48,7 @@ func TestDeriv(t *testing.T) {
 	start = 1493712816939
 	interval = 30 * 1000
 	// Introduce some timestamp jitter to test 0 slope case.
-	// https://github.com/prometheus/prometheus/issues/7180
+	// https://github.com/emmalidtdg/prometheus/issues/7180
 	for i = 0; i < 15; i++ {
 		jitter := 12 * i % 2
 		a.Append(0, metric, start+interval*i+jitter, 1)

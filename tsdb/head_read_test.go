@@ -20,9 +20,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/emmalidtdg/prometheus/model/labels"
+	"github.com/emmalidtdg/prometheus/tsdb/chunkenc"
+	"github.com/emmalidtdg/prometheus/tsdb/chunks"
 )
 
 func TestBoundedChunk(t *testing.T) {

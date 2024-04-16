@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/value"
-	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/emmalidtdg/prometheus/model/histogram"
+	"github.com/emmalidtdg/prometheus/model/labels"
+	"github.com/emmalidtdg/prometheus/model/value"
+	"github.com/emmalidtdg/prometheus/promql/parser/posrange"
 )
 
 type yySymType struct {

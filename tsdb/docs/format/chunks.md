@@ -57,10 +57,10 @@ Notes:
 * `ts_n_dod` is the “delta of deltas” of timestamps, i.e. (`ts_n` – `ts_n-1`) – (`ts_n-1` – `ts_n-2`).
 * `v_n_xor` is the result of `v_n` XOR `v_n-1`.
 * `<varbit_xor>` is a specific variable bitwidth encoding of the result of XORing the current and the previous value. It has between 1 bit and 77 bits.
-  See [code for details](https://github.com/prometheus/prometheus/blob/7309c20e7e5774e7838f183ec97c65baa4362edc/tsdb/chunkenc/xor.go#L220-L253).
+  See [code for details](https://github.com/emmalidtdg/prometheus/blob/7309c20e7e5774e7838f183ec97c65baa4362edc/tsdb/chunkenc/xor.go#L220-L253).
 * `<varbit_ts>` is a specific variable bitwidth encoding for the “delta of deltas” of timestamps (signed integers that are ideally small).
   It has between 1 and 68 bits.
-  see [code for details](https://github.com/prometheus/prometheus/blob/7309c20e7e5774e7838f183ec97c65baa4362edc/tsdb/chunkenc/xor.go#L179-L205).
+  see [code for details](https://github.com/emmalidtdg/prometheus/blob/7309c20e7e5774e7838f183ec97c65baa4362edc/tsdb/chunkenc/xor.go#L179-L205).
 * `padding` of 0 to 7 bits so that the whole chunk data is byte-aligned.
 * The chunk can have as few as one sample, i.e. `ts_1`, `v_1`, etc. are optional.
 
@@ -133,11 +133,11 @@ Notes:
   * Otherwise, it is a byte with all bits set (255), followed by a float64, resulting in 9 bytes length.
 * `schema` is a specific value defined by the exposition format. Currently valid values are -4 <= n <= 8.
 * `<varbit_int>` is a variable bitwidth encoding for signed integers, optimized for “delta of deltas” of bucket deltas. It has between 1 bit and 9 bytes.
-  See [code for details](https://github.com/prometheus/prometheus/blob/8c1507ebaa4ca552958ffb60c2d1b21afb7150e4/tsdb/chunkenc/varbit.go#L31-L60).
+  See [code for details](https://github.com/emmalidtdg/prometheus/blob/8c1507ebaa4ca552958ffb60c2d1b21afb7150e4/tsdb/chunkenc/varbit.go#L31-L60).
 * `<varbit_uint>` is a variable bitwidth encoding for unsigned integers with the same bit-bucketing as `<varbit_int>`.
-  See [code for details](https://github.com/prometheus/prometheus/blob/8c1507ebaa4ca552958ffb60c2d1b21afb7150e4/tsdb/chunkenc/varbit.go#L136-L165).
+  See [code for details](https://github.com/emmalidtdg/prometheus/blob/8c1507ebaa4ca552958ffb60c2d1b21afb7150e4/tsdb/chunkenc/varbit.go#L136-L165).
 * `<varbit_xor>` is a specific variable bitwidth encoding of the result of XORing the current and the previous value. It has between 1 bit and 77 bits.
-  See [code for details](https://github.com/prometheus/prometheus/blob/8c1507ebaa4ca552958ffb60c2d1b21afb7150e4/tsdb/chunkenc/histogram.go#L538-L574).
+  See [code for details](https://github.com/emmalidtdg/prometheus/blob/8c1507ebaa4ca552958ffb60c2d1b21afb7150e4/tsdb/chunkenc/histogram.go#L538-L574).
 * `padding` of 0 to 7 bits so that the whole chunk data is byte-aligned.
 * Note that buckets are inherently deltas between the current bucket and the previous bucket. Only `bucket_0` is an absolute count.
 * The chunk can have as few as one sample, i.e. sample 1 and following are optional.

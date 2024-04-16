@@ -18,9 +18,9 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/emmalidtdg/prometheus/model/labels"
+	"github.com/emmalidtdg/prometheus/promql"
+	"github.com/emmalidtdg/prometheus/promql/parser"
 )
 
 // RuleHealth describes the health state of a rule.

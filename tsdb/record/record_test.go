@@ -20,11 +20,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/tsdb/encoding"
-	"github.com/prometheus/prometheus/tsdb/tombstones"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/emmalidtdg/prometheus/model/histogram"
+	"github.com/emmalidtdg/prometheus/model/labels"
+	"github.com/emmalidtdg/prometheus/tsdb/encoding"
+	"github.com/emmalidtdg/prometheus/tsdb/tombstones"
+	"github.com/emmalidtdg/prometheus/util/testutil"
 )
 
 func TestRecord_EncodeDecode(t *testing.T) {

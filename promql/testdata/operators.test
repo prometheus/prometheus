@@ -228,7 +228,7 @@ eval instant at 50m http_requests{group="canary"} / ignoring(group) http_request
 	{instance="1", job="api-server"} 2
 	{instance="1", job="app-server"} 1.3333333333333333
 
-# https://github.com/prometheus/prometheus/issues/1489
+# https://github.com/emmalidtdg/prometheus/issues/1489
 eval instant at 50m http_requests AND ON (dummy) vector(1)
 	http_requests{group="canary", instance="0", job="api-server"} 300
 	http_requests{group="canary", instance="0", job="app-server"} 700

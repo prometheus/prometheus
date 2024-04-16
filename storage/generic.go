@@ -19,8 +19,8 @@ package storage
 import (
 	"context"
 
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/emmalidtdg/prometheus/model/labels"
+	"github.com/emmalidtdg/prometheus/util/annotations"
 )
 
 type genericQuerier interface {

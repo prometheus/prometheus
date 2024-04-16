@@ -21,8 +21,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/emmalidtdg/prometheus/model/labels"
+	"github.com/emmalidtdg/prometheus/tsdb/chunks"
 )
 
 func BenchmarkHeadStripeSeriesCreate(b *testing.B) {

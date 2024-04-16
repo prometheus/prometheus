@@ -14,7 +14,7 @@
 package uyuni
 
 import (
-	"github.com/prometheus/prometheus/discovery"
+	"github.com/emmalidtdg/prometheus/discovery"
 )
 
 var _ discovery.DiscovererMetrics = (*uyuniMetrics)(nil)

@@ -41,7 +41,7 @@ eval instant at 18000s rate(http_requests[40s]) - rate(http_requests[1m] offset 
 	{job="api-server", instance="0", group="canary"} 5
 	{job="api-server", instance="1", group="canary"} 0
 
-# https://github.com/prometheus/prometheus/issues/3575
+# https://github.com/emmalidtdg/prometheus/issues/3575
 eval instant at 0s http_requests{foo!="bar"}
 	http_requests{job="api-server", instance="0", group="production"} 0
 	http_requests{job="api-server", instance="1", group="production"} 0
@@ -64,7 +64,7 @@ eval instant at 0s http_requests{foo!~"bar", job="api-server", instance="1", x!=
 	http_requests{job="api-server", instance="1", group="production"} 0
 	http_requests{job="api-server", instance="1", group="canary"} 0
 
-# https://github.com/prometheus/prometheus/issues/7994
+# https://github.com/emmalidtdg/prometheus/issues/7994
 eval instant at 8000s rate(http_requests{group=~"(?i:PRO).*"}[1m])
 	{job="api-server", instance="0", group="production"} 1
 	{job="api-server", instance="1", group="production"} 2

@@ -14,7 +14,7 @@
 // This is copied and lightly edited from
 // github.com/prometheus/client_model/io/prometheus/client/metrics.proto
 // and finally converted to proto3 syntax to make it usable for the
-// gogo-protobuf approach taken within prometheus/prometheus.
+// gogo-protobuf approach taken within emmalidtdg/prometheus.
 
 syntax = "proto3";
 

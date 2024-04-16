@@ -79,7 +79,7 @@ jobs:
         with:
           go-version: 1.22.x
       - run: |
-          $TestTargets = go list ./... | Where-Object { $_ -NotMatch "(github.com/prometheus/prometheus/discovery.*|github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)"}
+          $TestTargets = go list ./... | Where-Object { $_ -NotMatch "(github.com/emmalidtdg/prometheus/discovery.*|github.com/emmalidtdg/prometheus/config|github.com/emmalidtdg/prometheus/web)"}
           go test $TestTargets -vet=off -v
         shell: powershell
 

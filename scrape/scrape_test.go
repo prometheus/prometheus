@@ -40,21 +40,21 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/discovery"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/model/exemplar"
-	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/relabel"
-	"github.com/prometheus/prometheus/model/textparse"
-	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/model/value"
-	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/util/pool"
-	"github.com/prometheus/prometheus/util/teststorage"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/emmalidtdg/prometheus/config"
+	"github.com/emmalidtdg/prometheus/discovery"
+	"github.com/emmalidtdg/prometheus/discovery/targetgroup"
+	"github.com/emmalidtdg/prometheus/model/exemplar"
+	"github.com/emmalidtdg/prometheus/model/histogram"
+	"github.com/emmalidtdg/prometheus/model/labels"
+	"github.com/emmalidtdg/prometheus/model/relabel"
+	"github.com/emmalidtdg/prometheus/model/textparse"
+	"github.com/emmalidtdg/prometheus/model/timestamp"
+	"github.com/emmalidtdg/prometheus/model/value"
+	"github.com/emmalidtdg/prometheus/storage"
+	"github.com/emmalidtdg/prometheus/tsdb/chunkenc"
+	"github.com/emmalidtdg/prometheus/util/pool"
+	"github.com/emmalidtdg/prometheus/util/teststorage"
+	"github.com/emmalidtdg/prometheus/util/testutil"
 )
 
 func TestMain(m *testing.M) {
@@ -1208,7 +1208,7 @@ func TestScrapeLoopCache(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	// Decreasing the scrape interval could make the test fail, as multiple scrapes might be initiated at identical millisecond timestamps.
-	// See https://github.com/prometheus/prometheus/issues/12727.
+	// See https://github.com/emmalidtdg/prometheus/issues/12727.
 	sl := newBasicScrapeLoop(t, ctx, scraper, app, 100*time.Millisecond)
 
 	numScrapes := 0

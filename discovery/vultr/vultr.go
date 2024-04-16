@@ -29,9 +29,9 @@ import (
 	"github.com/prometheus/common/version"
 	"github.com/vultr/govultr/v2"
 
-	"github.com/prometheus/prometheus/discovery"
-	"github.com/prometheus/prometheus/discovery/refresh"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/emmalidtdg/prometheus/discovery"
+	"github.com/emmalidtdg/prometheus/discovery/refresh"
+	"github.com/emmalidtdg/prometheus/discovery/targetgroup"
 )
 
 const (

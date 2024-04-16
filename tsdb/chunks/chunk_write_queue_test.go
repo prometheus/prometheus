@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/emmalidtdg/prometheus/tsdb/chunkenc"
 )
 
 func TestChunkWriteQueue_GettingChunkFromQueue(t *testing.T) {

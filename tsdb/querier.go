@@ -22,15 +22,15 @@ import (
 
 	"github.com/oklog/ulid"
 
-	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/tsdb/chunks"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
-	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/prometheus/prometheus/tsdb/tombstones"
-	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/emmalidtdg/prometheus/model/histogram"
+	"github.com/emmalidtdg/prometheus/model/labels"
+	"github.com/emmalidtdg/prometheus/storage"
+	"github.com/emmalidtdg/prometheus/tsdb/chunkenc"
+	"github.com/emmalidtdg/prometheus/tsdb/chunks"
+	tsdb_errors "github.com/emmalidtdg/prometheus/tsdb/errors"
+	"github.com/emmalidtdg/prometheus/tsdb/index"
+	"github.com/emmalidtdg/prometheus/tsdb/tombstones"
+	"github.com/emmalidtdg/prometheus/util/annotations"
 )
 
 type blockBaseQuerier struct {
@@ -291,8 +291,8 @@ func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matc
 		default: // l=""
 			// If the matchers for a labelname selects an empty value, it selects all
 			// the series which don't have the label name set too. See:
-			// https://github.com/prometheus/prometheus/issues/3575 and
-			// https://github.com/prometheus/prometheus/pull/3578#issuecomment-351653555
+			// https://github.com/emmalidtdg/prometheus/issues/3575 and
+			// https://github.com/emmalidtdg/prometheus/pull/3578#issuecomment-351653555
 			it, err := inversePostingsForMatcher(ctx, ix, m)
 			if err != nil {
 				return nil, err

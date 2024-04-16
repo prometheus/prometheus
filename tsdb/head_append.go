@@ -21,15 +21,15 @@ import (
 
 	"github.com/go-kit/log/level"
 
-	"github.com/prometheus/prometheus/model/exemplar"
-	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/metadata"
-	"github.com/prometheus/prometheus/model/value"
-	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/emmalidtdg/prometheus/model/exemplar"
+	"github.com/emmalidtdg/prometheus/model/histogram"
+	"github.com/emmalidtdg/prometheus/model/labels"
+	"github.com/emmalidtdg/prometheus/model/metadata"
+	"github.com/emmalidtdg/prometheus/model/value"
+	"github.com/emmalidtdg/prometheus/storage"
+	"github.com/emmalidtdg/prometheus/tsdb/chunkenc"
+	"github.com/emmalidtdg/prometheus/tsdb/chunks"
+	"github.com/emmalidtdg/prometheus/tsdb/record"
 )
 
 // initAppender is a helper to initialize the time bounds of the head
@@ -960,7 +960,7 @@ func (a *headAppender) Commit() (err error) {
 				// Sample is an exact duplicate of the last sample.
 				// NOTE: We can only detect updates if they clash with a sample in the OOOHeadChunk,
 				// not with samples in already flushed OOO chunks.
-				// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
+				// TODO(codesome): Add error reporting? It depends on addressing https://github.com/emmalidtdg/prometheus/discussions/10305.
 				floatsAppended--
 			}
 		default:

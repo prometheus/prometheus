@@ -160,7 +160,7 @@ func TestOptimizeConcatRegex(t *testing.T) {
 	}
 }
 
-// Refer to https://github.com/prometheus/prometheus/issues/2651.
+// Refer to https://github.com/emmalidtdg/prometheus/issues/2651.
 func TestFindSetMatches(t *testing.T) {
 	for _, c := range []struct {
 		pattern          string

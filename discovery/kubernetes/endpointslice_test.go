@@ -26,7 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/emmalidtdg/prometheus/discovery/targetgroup"
 )
 
 func strptr(str string) *string {
@@ -1409,7 +1409,7 @@ func TestEndpointSliceDiscoveryEmptyPodStatus(t *testing.T) {
 
 // TestEndpointSliceInfIndexersCount makes sure that RoleEndpointSlice discovery
 // sets up indexing for the main Kube informer only when needed.
-// See: https://github.com/prometheus/prometheus/pull/13554#discussion_r1490965817
+// See: https://github.com/emmalidtdg/prometheus/pull/13554#discussion_r1490965817
 func TestEndpointSliceInfIndexersCount(t *testing.T) {
 	tests := []struct {
 		name             string

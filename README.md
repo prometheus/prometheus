@@ -7,14 +7,14 @@ examples and guides.</p>
 
 <div align="center">
 
-[![CI](https://github.com/prometheus/prometheus/actions/workflows/ci.yml/badge.svg)](https://github.com/prometheus/prometheus/actions/workflows/ci.yml)
-[![Docker Repository on Quay](https://quay.io/repository/prometheus/prometheus/status)][quay]
+[![CI](https://github.com/emmalidtdg/prometheus/actions/workflows/ci.yml/badge.svg)](https://github.com/emmalidtdg/prometheus/actions/workflows/ci.yml)
+[![Docker Repository on Quay](https://quay.io/repository/emmalidtdg/prometheus/status)][quay]
 [![Docker Pulls](https://img.shields.io/docker/pulls/prom/prometheus.svg?maxAge=604800)][hub]
-[![Go Report Card](https://goreportcard.com/badge/github.com/prometheus/prometheus)](https://goreportcard.com/report/github.com/prometheus/prometheus)
+[![Go Report Card](https://goreportcard.com/badge/github.com/emmalidtdg/prometheus)](https://goreportcard.com/report/github.com/emmalidtdg/prometheus)
 [![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/486/badge)](https://bestpractices.coreinfrastructure.org/projects/486)
-[![Gitpod ready-to-code](https://img.shields.io/badge/Gitpod-ready--to--code-blue?logo=gitpod)](https://gitpod.io/#https://github.com/prometheus/prometheus)
+[![Gitpod ready-to-code](https://img.shields.io/badge/Gitpod-ready--to--code-blue?logo=gitpod)](https://gitpod.io/#https://github.com/emmalidtdg/prometheus)
 [![Fuzzing Status](https://oss-fuzz-build-logs.storage.googleapis.com/badges/prometheus.svg)](https://bugs.chromium.org/p/oss-fuzz/issues/list?sort=-opened&can=1&q=proj:prometheus)
-[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/prometheus/prometheus/badge)](https://securityscorecards.dev/viewer/?uri=github.com/prometheus/prometheus)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/emmalidtdg/prometheus/badge)](https://securityscorecards.dev/viewer/?uri=github.com/emmalidtdg/prometheus)
 
 </div>
 
@@ -52,7 +52,7 @@ chapter in the documentation for all the details.
 
 ### Docker images
 
-Docker images are available on [Quay.io](https://quay.io/repository/prometheus/prometheus) or [Docker Hub](https://hub.docker.com/r/prom/prometheus/).
+Docker images are available on [Quay.io](https://quay.io/repository/emmalidtdg/prometheus) or [Docker Hub](https://hub.docker.com/r/prom/prometheus/).
 
 You can launch a Prometheus container for trying it out with
 
@@ -73,7 +73,7 @@ To build Prometheus from source code, You need:
 Start by cloning the repository:
 
 ```bash
-git clone https://github.com/prometheus/prometheus.git
+git clone https://github.com/emmalidtdg/prometheus.git
 cd prometheus
 ```
 
@@ -81,7 +81,7 @@ You can use the `go` tool to build and install the `prometheus`
 and `promtool` binaries into your `GOPATH`:
 
 ```bash
-GO111MODULE=on go install github.com/prometheus/prometheus/cmd/...
+GO111MODULE=on go install github.com/emmalidtdg/prometheus/cmd/...
 prometheus --config.file=your_config.yml
 ```
 
@@ -91,7 +91,7 @@ read its web assets from local filesystem directories under `web/ui/static` and
 from the root of the cloned repository. Note also that these directories do not include the
 React UI unless it has been built explicitly using `make assets` or `make build`.
 
-An example of the above configuration file can be found [here.](https://github.com/prometheus/prometheus/blob/main/documentation/examples/prometheus.yml)
+An example of the above configuration file can be found [here.](https://github.com/emmalidtdg/prometheus/blob/main/documentation/examples/prometheus.yml)
 
 You can also build using `make build`, which will compile in the web assets so that
 Prometheus can be run from anywhere:
@@ -144,12 +144,12 @@ make common-docker-amd64
 ### Remote Write
 
 We are publishing our Remote Write protobuf independently at
-[buf.build](https://buf.build/prometheus/prometheus/assets).
+[buf.build](https://buf.build/emmalidtdg/prometheus/assets).
 
 You can use that as a library:
 
 ```shell
-go get buf.build/gen/go/prometheus/prometheus/protocolbuffers/go@latest
+go get buf.build/gen/go/emmalidtdg/prometheus/protocolbuffers/go@latest
 ```
 
 This is experimental.
@@ -163,7 +163,7 @@ Prometheus v2.y.z releases, we are publishing equivalent v0.y.z tags.
 Therefore, a user that would want to use Prometheus v2.35.0 as a library could do:
 
 ```shell
-go get github.com/prometheus/prometheus@v0.35.0
+go get github.com/emmalidtdg/prometheus@v0.35.0
 ```
 
 This solution makes it clear that we might break our internal Go APIs between
@@ -176,16 +176,16 @@ For more information on building, running, and developing on the React-based UI,
 
 ## More information
 
-* Godoc documentation is available via [pkg.go.dev](https://pkg.go.dev/github.com/prometheus/prometheus). Due to peculiarities of Go Modules, v2.x.y will be displayed as v0.x.y.
+* Godoc documentation is available via [pkg.go.dev](https://pkg.go.dev/github.com/emmalidtdg/prometheus). Due to peculiarities of Go Modules, v2.x.y will be displayed as v0.x.y.
 * See the [Community page](https://prometheus.io/community) for how to reach the Prometheus developers and users on various communication channels.
 
 ## Contributing
 
-Refer to [CONTRIBUTING.md](https://github.com/prometheus/prometheus/blob/main/CONTRIBUTING.md)
+Refer to [CONTRIBUTING.md](https://github.com/emmalidtdg/prometheus/blob/main/CONTRIBUTING.md)
 
 ## License
 
-Apache License 2.0, see [LICENSE](https://github.com/prometheus/prometheus/blob/main/LICENSE).
+Apache License 2.0, see [LICENSE](https://github.com/emmalidtdg/prometheus/blob/main/LICENSE).
 
 [hub]: https://hub.docker.com/r/prom/prometheus/
-[quay]: https://quay.io/repository/prometheus/prometheus
+[quay]: https://quay.io/repository/emmalidtdg/prometheus

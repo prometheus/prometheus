@@ -25,11 +25,11 @@ import (
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/record"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/emmalidtdg/prometheus/model/histogram"
+	"github.com/emmalidtdg/prometheus/model/labels"
+	"github.com/emmalidtdg/prometheus/tsdb/chunks"
+	"github.com/emmalidtdg/prometheus/tsdb/record"
+	"github.com/emmalidtdg/prometheus/util/testutil"
 )
 
 func TestLastCheckpoint(t *testing.T) {

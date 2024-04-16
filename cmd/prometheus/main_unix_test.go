@@ -25,7 +25,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/emmalidtdg/prometheus/util/testutil"
 )
 
 // As soon as prometheus starts responding to http request it should be able to

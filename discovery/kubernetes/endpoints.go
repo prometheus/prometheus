@@ -28,7 +28,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 
-	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/emmalidtdg/prometheus/discovery/targetgroup"
 )
 
 // Endpoints discovers new endpoint targets.
@@ -147,7 +147,7 @@ func NewEndpoints(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node ca
 			}
 
 			// the Pod's phase may change without triggering an update on the Endpoints/Service.
-			// https://github.com/prometheus/prometheus/issues/11305.
+			// https://github.com/emmalidtdg/prometheus/issues/11305.
 			if curPod.Status.Phase != oldPod.Status.Phase {
 				e.enqueuePod(namespacedName(curPod.Namespace, curPod.Name))
 			}

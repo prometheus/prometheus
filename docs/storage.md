@@ -163,7 +163,7 @@ The built-in remote write receiver can be enabled by setting the
 the remote write receiver endpoint is `/api/v1/write`.
 
 For details on the request and response messages, see the
-[remote storage protocol buffer definitions](https://github.com/prometheus/prometheus/blob/main/prompb/remote.proto).
+[remote storage protocol buffer definitions](https://github.com/emmalidtdg/prometheus/blob/main/prompb/remote.proto).
 
 Note that on the read path, Prometheus only fetches raw series data for a set of
 label selectors and time ranges from the remote end. All PromQL evaluation on the

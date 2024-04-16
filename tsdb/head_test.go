@@ -38,20 +38,20 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/model/exemplar"
-	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/value"
-	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/prometheus/prometheus/tsdb/record"
-	"github.com/prometheus/prometheus/tsdb/tombstones"
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
-	"github.com/prometheus/prometheus/tsdb/wlog"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/emmalidtdg/prometheus/config"
+	"github.com/emmalidtdg/prometheus/model/exemplar"
+	"github.com/emmalidtdg/prometheus/model/histogram"
+	"github.com/emmalidtdg/prometheus/model/labels"
+	"github.com/emmalidtdg/prometheus/model/value"
+	"github.com/emmalidtdg/prometheus/storage"
+	"github.com/emmalidtdg/prometheus/tsdb/chunkenc"
+	"github.com/emmalidtdg/prometheus/tsdb/chunks"
+	"github.com/emmalidtdg/prometheus/tsdb/index"
+	"github.com/emmalidtdg/prometheus/tsdb/record"
+	"github.com/emmalidtdg/prometheus/tsdb/tombstones"
+	"github.com/emmalidtdg/prometheus/tsdb/tsdbutil"
+	"github.com/emmalidtdg/prometheus/tsdb/wlog"
+	"github.com/emmalidtdg/prometheus/util/testutil"
 )
 
 // newTestHeadDefaultOptions returns the HeadOptions that should be used by default in unit tests.
@@ -3163,7 +3163,7 @@ func TestIteratorSeekIntoBuffer(t *testing.T) {
 	require.Equal(t, chunkenc.ValNone, it.Seek(7))
 }
 
-// Tests https://github.com/prometheus/prometheus/issues/8221.
+// Tests https://github.com/emmalidtdg/prometheus/issues/8221.
 func TestChunkNotFoundHeadGCRace(t *testing.T) {
 	db := newTestDB(t)
 	db.DisableCompactions()
@@ -3229,7 +3229,7 @@ func TestChunkNotFoundHeadGCRace(t *testing.T) {
 	wg.Wait()
 }
 
-// Tests https://github.com/prometheus/prometheus/issues/9079.
+// Tests https://github.com/emmalidtdg/prometheus/issues/9079.
 func TestDataMissingOnQueryDuringCompaction(t *testing.T) {
 	db := newTestDB(t)
 	db.DisableCompactions()
@@ -3943,7 +3943,7 @@ func TestChunkSnapshot(t *testing.T) {
 		head.opts.EnableMemorySnapshotOnShutdown = true // Enabled to read from snapshot.
 
 		// Disabling exemplars to check that it does not hard fail replay
-		// https://github.com/prometheus/prometheus/issues/9437#issuecomment-933285870.
+		// https://github.com/emmalidtdg/prometheus/issues/9437#issuecomment-933285870.
 		head.opts.EnableExemplarStorage = false
 		head.opts.MaxExemplars.Store(0)
 		expExemplars = expExemplars[:0]
@@ -4014,7 +4014,7 @@ func TestSnapshotError(t *testing.T) {
 	// Create new Head which should replay this snapshot.
 	w, err := wlog.NewSize(nil, nil, head.wal.Dir(), 32768, wlog.CompressionNone)
 	require.NoError(t, err)
-	// Testing https://github.com/prometheus/prometheus/issues/9437 with the registry.
+	// Testing https://github.com/emmalidtdg/prometheus/issues/9437 with the registry.
 	head, err = NewHead(prometheus.NewRegistry(), nil, w, nil, head.opts, nil)
 	require.NoError(t, err)
 	require.NoError(t, head.Init(math.MinInt64))
@@ -4500,7 +4500,7 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 	require.Equal(t, map[string][]chunks.Sample{lbls.String(): expResult}, series)
 }
 
-// Tests https://github.com/prometheus/prometheus/issues/9725.
+// Tests https://github.com/emmalidtdg/prometheus/issues/9725.
 func TestChunkSnapshotReplayBug(t *testing.T) {
 	dir := t.TempDir()
 	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, wlog.CompressionSnappy)
@@ -4849,7 +4849,7 @@ func (c *unsupportedChunk) Encoding() chunkenc.Encoding {
 	return EncUnsupportedXOR
 }
 
-// Tests https://github.com/prometheus/prometheus/issues/10277.
+// Tests https://github.com/emmalidtdg/prometheus/issues/10277.
 func TestMmapPanicAfterMmapReplayCorruption(t *testing.T) {
 	dir := t.TempDir()
 	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, wlog.CompressionNone)
@@ -4904,7 +4904,7 @@ func TestMmapPanicAfterMmapReplayCorruption(t *testing.T) {
 	require.NoError(t, h.Close())
 }
 
-// Tests https://github.com/prometheus/prometheus/issues/10277.
+// Tests https://github.com/emmalidtdg/prometheus/issues/10277.
 func TestReplayAfterMmapReplayError(t *testing.T) {
 	dir := t.TempDir()
 	var h *Head

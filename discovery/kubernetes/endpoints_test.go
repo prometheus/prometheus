@@ -23,7 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/emmalidtdg/prometheus/discovery/targetgroup"
 )
 
 func makeEndpoints() *v1.Endpoints {
@@ -971,7 +971,7 @@ func TestEndpointsDiscoveryEmptyPodStatus(t *testing.T) {
 }
 
 // TestEndpointsUpdatePod makes sure that Endpoints discovery detects underlying Pods changes.
-// See https://github.com/prometheus/prometheus/issues/11305 for more details.
+// See https://github.com/emmalidtdg/prometheus/issues/11305 for more details.
 func TestEndpointsDiscoveryUpdatePod(t *testing.T) {
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{

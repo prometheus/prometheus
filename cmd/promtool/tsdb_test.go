@@ -26,8 +26,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/tsdb"
+	"github.com/emmalidtdg/prometheus/promql"
+	"github.com/emmalidtdg/prometheus/tsdb"
 )
 
 func TestGenerateBucket(t *testing.T) {

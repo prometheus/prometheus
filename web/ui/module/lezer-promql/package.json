@@ -14,16 +14,16 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/prometheus/prometheus.git"
+    "url": "git+https://github.com/emmalidtdg/prometheus.git"
   },
   "keywords": [
     "lezer",
     "promql"
   ],
   "bugs": {
-    "url": "https://github.com/prometheus/prometheus/issues"
+    "url": "https://github.com/emmalidtdg/prometheus/issues"
   },
-  "homepage": "https://github.com/prometheus/prometheus/blob/main/web/ui/module/lezer-promql/README.md",
+  "homepage": "https://github.com/emmalidtdg/prometheus/blob/main/web/ui/module/lezer-promql/README.md",
   "scripts": {
     "build": "bash ./build.sh",
     "lint": "echo 'nothing to do'",

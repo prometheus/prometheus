@@ -29,13 +29,13 @@ import (
 	"github.com/prometheus/common/route"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/rules"
-	"github.com/prometheus/prometheus/scrape"
-	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/emmalidtdg/prometheus/config"
+	"github.com/emmalidtdg/prometheus/model/labels"
+	"github.com/emmalidtdg/prometheus/promql"
+	"github.com/emmalidtdg/prometheus/rules"
+	"github.com/emmalidtdg/prometheus/scrape"
+	"github.com/emmalidtdg/prometheus/storage"
+	"github.com/emmalidtdg/prometheus/util/annotations"
 )
 
 func TestApiStatusCodes(t *testing.T) {
@@ -209,14 +209,14 @@ func (t errorTestSeriesSet) Warnings() annotations.Annotations {
 	return nil
 }
 
-// DummyTargetRetriever implements github.com/prometheus/prometheus/web/api/v1.ScrapePoolsRetriever.
+// DummyTargetRetriever implements github.com/emmalidtdg/prometheus/web/api/v1.ScrapePoolsRetriever.
 type DummyScrapePoolsRetriever struct{}
 
 func (DummyScrapePoolsRetriever) ScrapePools() []string {
 	return []string{}
 }
 
-// DummyTargetRetriever implements github.com/prometheus/prometheus/web/api/v1.targetRetriever.
+// DummyTargetRetriever implements github.com/emmalidtdg/prometheus/web/api/v1.targetRetriever.
 type DummyTargetRetriever struct{}
 
 // TargetsActive implements targetRetriever.

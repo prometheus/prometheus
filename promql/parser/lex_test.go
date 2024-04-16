@@ -18,7 +18,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/emmalidtdg/prometheus/promql/parser/posrange"
 )
 
 type testCase struct {
@@ -158,7 +158,7 @@ var tests = []struct {
 				expected: []Item{{STRING, 0, "`test\\.expression`"}},
 			},
 			{
-				// See https://github.com/prometheus/prometheus/issues/939.
+				// See https://github.com/emmalidtdg/prometheus/issues/939.
 				input: ".٩",
 				fail:  true,
 			},

@@ -6,7 +6,7 @@ sort_rank: 12
 # Feature flags
 
 Here is a list of features that are disabled by default since they are breaking changes or are considered experimental.
-Their behaviour can change in future releases which will be communicated via the [release changelog](https://github.com/prometheus/prometheus/blob/main/CHANGELOG.md).
+Their behaviour can change in future releases which will be communicated via the [release changelog](https://github.com/emmalidtdg/prometheus/blob/main/CHANGELOG.md).
 
 You can enable them using the `--enable-feature` flag with a comma separated list of features.
 They may be enabled by default in future versions.

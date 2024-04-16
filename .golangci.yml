@@ -80,9 +80,9 @@ linters-settings:
       # Never check for logger errors.
       - (github.com/go-kit/log.Logger).Log
       # Never check for rollback errors as Rollback() is called when a previous error was detected.
-      - (github.com/prometheus/prometheus/storage.Appender).Rollback
+      - (github.com/emmalidtdg/prometheus/storage.Appender).Rollback
   goimports:
-    local-prefixes: github.com/prometheus/prometheus
+    local-prefixes: github.com/emmalidtdg/prometheus
   gofumpt:
     extra-rules: true
   revive:

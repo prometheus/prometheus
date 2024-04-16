@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/value"
+	"github.com/emmalidtdg/prometheus/model/histogram"
+	"github.com/emmalidtdg/prometheus/model/value"
 )
 
 // FloatHistogramChunk holds encoded sample data for a sparse, high-resolution

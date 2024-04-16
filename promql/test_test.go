@@ -20,8 +20,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/emmalidtdg/prometheus/model/labels"
+	"github.com/emmalidtdg/prometheus/tsdb/chunkenc"
 )
 
 func TestLazyLoader_WithSamplesTill(t *testing.T) {
@@ -101,7 +101,7 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 						},
 					},
 				},
-				{ // This tests fix for https://github.com/prometheus/prometheus/issues/5064.
+				{ // This tests fix for https://github.com/emmalidtdg/prometheus/issues/5064.
 					ts:             time.Unix(300, 0),
 					checkOnlyError: true,
 				},

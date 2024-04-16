@@ -51,16 +51,16 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/net/netutil"
 
-	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/notifier"
-	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/rules"
-	"github.com/prometheus/prometheus/scrape"
-	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/template"
-	"github.com/prometheus/prometheus/util/httputil"
-	api_v1 "github.com/prometheus/prometheus/web/api/v1"
-	"github.com/prometheus/prometheus/web/ui"
+	"github.com/emmalidtdg/prometheus/config"
+	"github.com/emmalidtdg/prometheus/notifier"
+	"github.com/emmalidtdg/prometheus/promql"
+	"github.com/emmalidtdg/prometheus/rules"
+	"github.com/emmalidtdg/prometheus/scrape"
+	"github.com/emmalidtdg/prometheus/storage"
+	"github.com/emmalidtdg/prometheus/template"
+	"github.com/emmalidtdg/prometheus/util/httputil"
+	api_v1 "github.com/emmalidtdg/prometheus/web/api/v1"
+	"github.com/emmalidtdg/prometheus/web/ui"
 )
 
 // Paths that are handled by the React / Reach router that should all be served the main React app's index.html.

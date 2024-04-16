@@ -28,8 +28,8 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 	"gopkg.in/yaml.v2"
 
-	"github.com/prometheus/prometheus/discovery"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/emmalidtdg/prometheus/discovery"
+	"github.com/emmalidtdg/prometheus/discovery/targetgroup"
 )
 
 var (

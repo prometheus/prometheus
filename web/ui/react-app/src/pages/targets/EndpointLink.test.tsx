@@ -30,7 +30,7 @@ describe('EndpointLink', () => {
     expect(targetLabel.length).toEqual(1);
   });
   // In cases of IPv6 addresses with a Zone ID, URL may not be parseable.
-  // See https://github.com/prometheus/prometheus/issues/9760
+  // See https://github.com/emmalidtdg/prometheus/issues/9760
   it('renders an anchor for IPv6 link with zone ID including labels for query params', () => {
     const endpoint =
       'http://[fe80::f1ee:adeb:371d:983%eth1]:9100/stats/prometheus?module=http_2xx&target=http://some-service';

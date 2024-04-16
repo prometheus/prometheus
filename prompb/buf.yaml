@@ -1,5 +1,5 @@
 version: v1
-name: buf.build/prometheus/prometheus
+name: buf.build/emmalidtdg/prometheus
 lint:
   ignore_only:
     ENUM_VALUE_PREFIX:

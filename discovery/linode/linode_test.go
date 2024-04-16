@@ -25,7 +25,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/discovery"
+	"github.com/emmalidtdg/prometheus/discovery"
 )
 
 func TestLinodeSDRefresh(t *testing.T) {

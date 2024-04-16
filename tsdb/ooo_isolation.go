@@ -17,7 +17,7 @@ import (
 	"container/list"
 	"sync"
 
-	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/emmalidtdg/prometheus/tsdb/chunks"
 )
 
 type oooIsolation struct {

@@ -18,7 +18,7 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/prometheus/prometheus/promql"
+	"github.com/emmalidtdg/prometheus/promql"
 )
 
 type pathParam struct{}

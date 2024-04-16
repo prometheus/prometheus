@@ -3,7 +3,7 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
-package prometheusremotewrite // import "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
+package prometheusremotewrite // import "github.com/emmalidtdg/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
 
 import (
 	"encoding/hex"
@@ -17,14 +17,14 @@ import (
 	"unicode/utf8"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/model/value"
-	"github.com/prometheus/prometheus/prompb"
+	"github.com/emmalidtdg/prometheus/model/timestamp"
+	"github.com/emmalidtdg/prometheus/model/value"
+	"github.com/emmalidtdg/prometheus/prompb"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	conventions "go.opentelemetry.io/collector/semconv/v1.6.1"
 
-	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
+	prometheustranslator "github.com/emmalidtdg/prometheus/storage/remote/otlptranslator/prometheus"
 )
 
 const (

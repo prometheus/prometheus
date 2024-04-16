@@ -59,7 +59,7 @@ Release cadence of first pre-releases being cut is 6 weeks.
 | v2.52          | 2024-04-22                                 | Arthur Silva Sens (GitHub: @ArthurSens)     |
 | v2.53          | 2024-06-03                                 | George Krajcsovits (GitHub: @krajorama)     |
 
-If you are interested in volunteering please create a pull request against the [prometheus/prometheus](https://github.com/prometheus/prometheus) repository and propose yourself for the release series of your choice.
+If you are interested in volunteering please create a pull request against the [emmalidtdg/prometheus](https://github.com/emmalidtdg/prometheus) repository and propose yourself for the release series of your choice.
 
 ## Release shepherd responsibilities
 
@@ -74,7 +74,7 @@ See the next section for details on cutting an individual release.
 
 ## How to cut an individual release
 
-These instructions are currently valid for the Prometheus server, i.e. the [prometheus/prometheus repository](https://github.com/prometheus/prometheus). Applicability to other Prometheus repositories depends on the current state of each repository. We aspire to unify the release procedures as much as possible.
+These instructions are currently valid for the Prometheus server, i.e. the [emmalidtdg/prometheus repository](https://github.com/emmalidtdg/prometheus). Applicability to other Prometheus repositories depends on the current state of each repository. We aspire to unify the release procedures as much as possible.
 
 ### Branch management and versioning strategy
 
@@ -95,7 +95,7 @@ Maintaining the release branches for older minor releases happens on a best effo
 A few days before a major or minor release, consider updating the dependencies.
 
 Note that we use [Dependabot](.github/dependabot.yml) to continuously update most things automatically. Therefore, most dependencies should be up to date.
-Check the [dependencies GitHub label](https://github.com/prometheus/prometheus/labels/dependencies) to see if there are any pending updates.
+Check the [dependencies GitHub label](https://github.com/emmalidtdg/prometheus/labels/dependencies) to see if there are any pending updates.
 
 This bot currently does not manage `+incompatible` and `v0.0.0` in the version specifier for Go modules.
 
@@ -112,7 +112,7 @@ This is also a good time to consider any experimental features and feature
 flags for promotion to stable or for deprecation or ultimately removal. Do any
 of these in pull requests, one per feature.
 
-> NOTE: As a validation step check if all security alerts are closed after this step: https://github.com/prometheus/prometheus/security/dependabot. Sometimes it's ok
+> NOTE: As a validation step check if all security alerts are closed after this step: https://github.com/emmalidtdg/prometheus/security/dependabot. Sometimes it's ok
 > if not critical and e.g. fix is not released yet (or it does not relate to 
 > upgrading) or when we are unaffected.
  

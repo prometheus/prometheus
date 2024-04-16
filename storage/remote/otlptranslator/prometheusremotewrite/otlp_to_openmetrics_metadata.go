@@ -3,13 +3,13 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
-package prometheusremotewrite // import "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
+package prometheusremotewrite // import "github.com/emmalidtdg/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
 
 import (
-	"github.com/prometheus/prometheus/prompb"
+	"github.com/emmalidtdg/prometheus/prompb"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
-	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
+	prometheustranslator "github.com/emmalidtdg/prometheus/storage/remote/otlptranslator/prometheus"
 )
 
 func otelMetricTypeToPromMetricType(otelMetric pmetric.Metric) prompb.MetricMetadata_MetricType {

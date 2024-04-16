@@ -16,7 +16,7 @@ package azure
 import (
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/prometheus/prometheus/discovery"
+	"github.com/emmalidtdg/prometheus/discovery"
 )
 
 var _ discovery.DiscovererMetrics = (*azureMetrics)(nil)

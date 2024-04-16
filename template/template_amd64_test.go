@@ -21,7 +21,7 @@ import (
 // Some test cases rely upon architecture-specific behaviors with respect
 // to numerical conversions. The logic remains the same across architectures,
 // but outputs can vary, so the cases are only run on amd64.
-// See https://github.com/prometheus/prometheus/issues/10185 for more details.
+// See https://github.com/emmalidtdg/prometheus/issues/10185 for more details.
 func TestTemplateExpansionAMD64(t *testing.T) {
 	testTemplateExpansion(t, []scenario{
 		{

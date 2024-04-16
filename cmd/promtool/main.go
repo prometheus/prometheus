@@ -47,19 +47,19 @@ import (
 	promconfig "github.com/prometheus/common/config"
 	"github.com/prometheus/common/expfmt"
 
-	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/discovery"
-	"github.com/prometheus/prometheus/discovery/file"
-	"github.com/prometheus/prometheus/discovery/kubernetes"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/rulefmt"
-	"github.com/prometheus/prometheus/notifier"
-	_ "github.com/prometheus/prometheus/plugins" // Register plugins.
-	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/scrape"
-	"github.com/prometheus/prometheus/util/documentcli"
+	"github.com/emmalidtdg/prometheus/config"
+	"github.com/emmalidtdg/prometheus/discovery"
+	"github.com/emmalidtdg/prometheus/discovery/file"
+	"github.com/emmalidtdg/prometheus/discovery/kubernetes"
+	"github.com/emmalidtdg/prometheus/discovery/targetgroup"
+	"github.com/emmalidtdg/prometheus/model/labels"
+	"github.com/emmalidtdg/prometheus/model/rulefmt"
+	"github.com/emmalidtdg/prometheus/notifier"
+	_ "github.com/emmalidtdg/prometheus/plugins" // Register plugins.
+	"github.com/emmalidtdg/prometheus/promql"
+	"github.com/emmalidtdg/prometheus/promql/parser"
+	"github.com/emmalidtdg/prometheus/scrape"
+	"github.com/emmalidtdg/prometheus/util/documentcli"
 )
 
 const (

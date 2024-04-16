@@ -20,7 +20,7 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
 
-	"github.com/prometheus/prometheus/util/strutil"
+	"github.com/emmalidtdg/prometheus/util/strutil"
 )
 
 const (

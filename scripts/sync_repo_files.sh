@@ -9,8 +9,8 @@ git_mail="prometheus-team@googlegroups.com"
 git_user="prombot"
 branch="repo_sync"
 commit_msg="Update common Prometheus files"
-pr_title="Synchronize common files from prometheus/prometheus"
-pr_msg="Propagating changes from prometheus/prometheus default branch."
+pr_title="Synchronize common files from emmalidtdg/prometheus"
+pr_msg="Propagating changes from emmalidtdg/prometheus default branch."
 orgs="prometheus prometheus-community"
 
 color_red='\e[31m'
@@ -173,7 +173,7 @@ process_repo() {
   # If we need to add an Actions file this directory needs to be present.
   mkdir -p "./.github/workflows"
 
-  # Update the files in target repo by one from prometheus/prometheus.
+  # Update the files in target repo by one from emmalidtdg/prometheus.
   for source_file in "${needs_update[@]}"; do
     target_filename="${source_file}"
     if [[ "${source_file}" == 'scripts/golangci-lint.yml' ]] ; then

@@ -18,7 +18,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/emmalidtdg/prometheus/model/labels"
 )
 
 func TestVector_ContainsSameLabelset(t *testing.T) {

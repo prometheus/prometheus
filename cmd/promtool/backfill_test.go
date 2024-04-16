@@ -22,11 +22,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/emmalidtdg/prometheus/model/labels"
+	"github.com/emmalidtdg/prometheus/storage"
+	"github.com/emmalidtdg/prometheus/tsdb"
+	"github.com/emmalidtdg/prometheus/tsdb/chunkenc"
+	"github.com/emmalidtdg/prometheus/util/testutil"
 )
 
 type backfillSample struct {
@@ -509,7 +509,7 @@ http_requests_total{code="400"} 1 1565166113.989
 				},
 			},
 		},
-		{ // For https://github.com/prometheus/prometheus/issues/8476.
+		{ // For https://github.com/emmalidtdg/prometheus/issues/8476.
 			ToParse: `# HELP http_requests_total The total number of HTTP requests.
 # TYPE http_requests_total counter
 http_requests_total{code="200"} 1021 0

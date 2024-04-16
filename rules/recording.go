@@ -22,10 +22,10 @@ import (
 	"go.uber.org/atomic"
 	"gopkg.in/yaml.v2"
 
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/rulefmt"
-	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/emmalidtdg/prometheus/model/labels"
+	"github.com/emmalidtdg/prometheus/model/rulefmt"
+	"github.com/emmalidtdg/prometheus/promql"
+	"github.com/emmalidtdg/prometheus/promql/parser"
 )
 
 // A RecordingRule records its vector expression into new timeseries.

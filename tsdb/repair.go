@@ -23,8 +23,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
-	"github.com/prometheus/prometheus/tsdb/fileutil"
+	tsdb_errors "github.com/emmalidtdg/prometheus/tsdb/errors"
+	"github.com/emmalidtdg/prometheus/tsdb/fileutil"
 )
 
 // repairBadIndexVersion repairs an issue in index and meta.json persistence introduced in

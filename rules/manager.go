@@ -28,13 +28,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/semaphore"
 
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/rulefmt"
-	"github.com/prometheus/prometheus/notifier"
-	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/strutil"
+	"github.com/emmalidtdg/prometheus/model/labels"
+	"github.com/emmalidtdg/prometheus/model/rulefmt"
+	"github.com/emmalidtdg/prometheus/notifier"
+	"github.com/emmalidtdg/prometheus/promql"
+	"github.com/emmalidtdg/prometheus/promql/parser"
+	"github.com/emmalidtdg/prometheus/storage"
+	"github.com/emmalidtdg/prometheus/util/strutil"
 )
 
 // QueryFunc processes PromQL queries.
