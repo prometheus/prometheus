@@ -198,7 +198,7 @@ class BasicEncoder {
   };
 
   struct __attribute__((__packed__)) EncoderWithID {
-    BareBones::Encoding::Gorilla::StreamEncoder encoder;
+    BareBones::Encoding::Gorilla::StreamEncoder<BareBones::Encoding::Gorilla::ZigZagTimestampEncoder> encoder;
     Primitives::LabelSetID id;
   };
 
@@ -234,7 +234,7 @@ class BasicEncoder {
   LabelSetsTable label_sets_;
   typename LabelSetsTable::checkpoint_type label_sets_checkpoint_;
   Buffer buffer_;
-  BareBones::Vector<BareBones::Encoding::Gorilla::StreamEncoder> gorilla_;
+  BareBones::Vector<BareBones::Encoding::Gorilla::StreamEncoder<BareBones::Encoding::Gorilla::ZigZagTimestampEncoder>> gorilla_;
   BareBones::LZ4Stream::ostream lz4stream_{nullptr};
 
   const uuids::uuid uuid_;
@@ -570,7 +570,7 @@ class BasicEncoder {
                                  (next_encoded_segment_ - 1), redundant_segment_id);
     }
 
-    BareBones::Vector<BareBones::Encoding::Gorilla::StreamDecoder> decoders;
+    BareBones::Vector<BareBones::Encoding::Gorilla::StreamDecoder<BareBones::Encoding::Gorilla::ZigZagTimestampDecoder>> decoders;
 
     // move out the encoders into decoders.
     for (auto&& encoder : encoders) {
@@ -614,7 +614,7 @@ class BasicEncoder {
 template <class LabelSetsTable = Primitives::SnugComposites::LabelSet::DecodingTable, size_t LZ4DecompressedBufferSize = 256>
 class BasicDecoder {
   LabelSetsTable label_sets_;
-  BareBones::Vector<BareBones::Encoding::Gorilla::StreamDecoder> gorilla_;
+  BareBones::Vector<BareBones::Encoding::Gorilla::StreamDecoder<BareBones::Encoding::Gorilla::ZigZagTimestampDecoder>> gorilla_;
   BareBones::LZ4Stream::basic_istream<LZ4DecompressedBufferSize> lz4stream_{nullptr};
 
   uuids::uuid uuid_;
@@ -815,7 +815,7 @@ class BasicDecoder {
 
   inline __attribute__((always_inline)) uint32_t series() const { return label_sets_.size(); }
 
-  inline __attribute__((always_inline)) const BareBones::Vector<BareBones::Encoding::Gorilla::StreamDecoder>& decoders() const { return gorilla_; }
+  inline __attribute__((always_inline)) const auto& decoders() const noexcept { return gorilla_; }
 
   /// \Returns Total processed samples count.
   /// \seealso \ref process_segment().

@@ -12,6 +12,7 @@
 #endif
 
 #include <scope_exit.h>
+#include <span>
 
 #include "bit.h"
 #include "exception.h"
@@ -37,9 +38,11 @@ class BitSequence {
   }
 
  public:
-  inline __attribute__((always_inline)) size_t size() const noexcept { return size_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t size() const noexcept { return size_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t size_in_bytes() const noexcept { return (size_ + 7) >> 3; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE std::span<const uint8_t> filled_bytes() const noexcept { return {data_.operator const uint8_t*(), size_ / 8}; }
 
-  PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return data_.allocated_memory(); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return data_.allocated_memory(); }
 
   inline __attribute__((always_inline)) bool empty() const noexcept { return !size_; }
 
@@ -261,7 +264,7 @@ class BitSequence {
 
   inline __attribute__((always_inline)) size_t save_size() const noexcept {
     // version is written and read by methods put() and get() and they write and read 1 byte
-    return 1 + sizeof(size_) + ((size_ + 7) >> 3);
+    return 1 + sizeof(size_) + size_in_bytes();
   }
 
   template <OutputStream S>
@@ -282,7 +285,7 @@ class BitSequence {
     }
 
     // write data
-    out.write(reinterpret_cast<const char*>(static_cast<const uint8_t*>(seq.data_)), (seq.size_ + 7) >> 3);
+    out.write(reinterpret_cast<const char*>(static_cast<const uint8_t*>(seq.data_)), seq.size_in_bytes());
 
     return out;
   }
@@ -318,7 +321,7 @@ class BitSequence {
 
     // read data
     seq.reserve_enough_memory();
-    in.read(reinterpret_cast<char*>(static_cast<uint8_t*>(seq.data_)), (seq.size_ + 7) >> 3);
+    in.read(reinterpret_cast<char*>(static_cast<uint8_t*>(seq.data_)), seq.size_in_bytes());
 
     return in;
   }
