@@ -66,7 +66,7 @@ func rwHeaderNameValues(rwFormat config.RemoteWriteFormat) map[string]string {
 type writeHeadHandler struct {
 	logger log.Logger
 
-	remoteWrite20HeadRequests prometheus.Counter
+	remoteWriteHeadRequests prometheus.Counter
 
 	// Experimental feature, new remote write proto format.
 	// The handler will accept the new format, but it can still accept the old one.
@@ -77,26 +77,28 @@ func NewWriteHeadHandler(logger log.Logger, reg prometheus.Registerer, rwFormat 
 	h := &writeHeadHandler{
 		logger:   logger,
 		rwFormat: rwFormat,
-		remoteWrite20HeadRequests: prometheus.NewCounter(prometheus.CounterOpts{
+		remoteWriteHeadRequests: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "prometheus",
 			Subsystem: "api",
-			Name:      "remote_write_20_head_requests",
-			Help:      "The number of remote write 2.0 head requests.",
+			Name:      "remote_write_head_requests",
+			Help:      "The number of remote write HEAD requests.",
 		}),
 	}
 	if reg != nil {
-		reg.MustRegister(h.remoteWrite20HeadRequests)
+		reg.MustRegister(h.remoteWriteHeadRequests)
 	}
 	return h
 }
 
+// Send a response to the HEAD request based on the format supported.
 func (h *writeHeadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Send a response to the HEAD request based on the format supported.
-
 	// Add appropriate header values for the specific rwFormat.
 	for hName, hValue := range rwHeaderNameValues(h.rwFormat) {
 		w.Header().Set(hName, hValue)
 	}
+
+	// Increment counter
+	h.remoteWriteHeadRequests.Inc()
 
 	w.WriteHeader(http.StatusOK)
 }

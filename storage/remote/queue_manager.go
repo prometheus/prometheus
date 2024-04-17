@@ -1625,20 +1625,18 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			if !ok {
 				return
 			}
-			// Resend logic on 406.
-			// ErrStatusNotAcceptable is a new error defined in client.go.
-
 			// Work out what version to send based on the last header seen and the QM's rwFormat setting.
-			// TODO(alexg) - see comments below about retry/renegotiate design.
 			for attemptNos := 1; attemptNos <= 3; attemptNos++ {
 				lastHeaderSeen := s.qm.storeClient.GetLastRWHeader()
 				compression, rwFormat := negotiateRWProto(s.qm.rwFormat, lastHeaderSeen)
 				sendErr := attemptBatchSend(batch, rwFormat, compression, false)
-				if sendErr == nil || !(errors.Is(sendErr, ErrStatusNotAcceptable) || errors.Is(sendErr, ErrStatusBadRequest)) {
-					// It wasn't an error, or wasn't a 406 or 400 so we can just stop trying.
+				pErr := &ErrRenegotiate{}
+				if sendErr == nil || !errors.As(sendErr, &pErr) {
+					// No error, or error wasn't a 406 or 400, so we can stop trying.
 					break
 				}
-				// If we get either of the two errors (406, 400) we loop and re-negotiate.
+				// If we get either of the two errors (406, 400) bundled in ErrRenegotiate we loop and re-negotiate.
+				// TODO(alexg) - add retry/renegotiate metrics here
 			}
 
 			queue.ReturnForReuse(batch)
@@ -1654,17 +1652,13 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 					lastHeaderSeen := s.qm.storeClient.GetLastRWHeader()
 					compression, rwFormat := negotiateRWProto(s.qm.rwFormat, lastHeaderSeen)
 					sendErr := attemptBatchSend(batch, rwFormat, compression, true)
-					if sendErr == nil || !(errors.Is(sendErr, ErrStatusNotAcceptable) || errors.Is(sendErr, ErrStatusBadRequest)) {
-						// It wasn't an error, or wasn't a 406 or 400 so we can just stop trying.
+					pErr := &ErrRenegotiate{}
+					if sendErr == nil || !errors.As(sendErr, &pErr) {
+						// No error, or error wasn't a 406 or 400, so we can stop trying.
 						break
 					}
-					// If we get either of the two errors (406, 400) we loop and re-negotiate.
+					// If we get either of the two errors (406, 400) bundled in ErrRenegotiate we loop and re-negotiate.
 				}
-				// TODO(alexg) - the question here is whether we use the 3rd attempt to ensure we
-				// Consider a server that erroneously reports it can handle "0.2.0/snappy" even in the 406/400 errors when that data is sent in that format
-				// Q: Do we always try downgrading to 1.0 at least once?
-				// Q: Do we limit our attempts to only try a particular protocol/encoding tuple once?
-				// Q: Is 3 a suitable limit?
 				// TODO(alexg) - add retry/renegotiate metrics here
 			}
 			queue.ReturnForReuse(batch)
