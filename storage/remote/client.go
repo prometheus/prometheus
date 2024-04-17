@@ -199,7 +199,7 @@ type RecoverableError struct {
 // Store sends a batch of samples to the HTTP endpoint, the request is the proto marshalled
 // and encoded bytes from codec.go.
 func (c *Client) Store(ctx context.Context, req []byte, attempt int) error {
-	httpReq, err := http.NewRequest("POST", c.urlString, bytes.NewReader(req))
+	httpReq, err := http.NewRequest(http.MethodPost, c.urlString, bytes.NewReader(req))
 	if err != nil {
 		// Errors from NewRequest are from unparsable URLs, so are not
 		// recoverable.
@@ -290,7 +290,7 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	}
 
 	compressed := snappy.Encode(nil, data)
-	httpReq, err := http.NewRequest("POST", c.urlString, bytes.NewReader(compressed))
+	httpReq, err := http.NewRequest(http.MethodPost, c.urlString, bytes.NewReader(compressed))
 	if err != nil {
 		return nil, fmt.Errorf("unable to create request: %w", err)
 	}

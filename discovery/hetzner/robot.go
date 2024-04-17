@@ -70,7 +70,7 @@ func newRobotDiscovery(conf *SDConfig, _ log.Logger) (*robotDiscovery, error) {
 }
 
 func (d *robotDiscovery) refresh(context.Context) ([]*targetgroup.Group, error) {
-	req, err := http.NewRequest("GET", d.endpoint+"/server", nil)
+	req, err := http.NewRequest(http.MethodGet, d.endpoint+"/server", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +122,6 @@ func (d *robotDiscovery) refresh(context.Context) ([]*targetgroup.Group, error) 
 				labels[hetznerLabelPublicIPv6Network] = model.LabelValue(fmt.Sprintf("%s/%s", subnet.IP, subnet.Mask))
 				break
 			}
-
 		}
 		targets[i] = labels
 	}

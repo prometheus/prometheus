@@ -311,7 +311,7 @@ func New(l log.Logger, metrics discovery.DiscovererMetrics, conf *SDConfig) (*Di
 		}
 	case conf.APIServer.URL == nil:
 		// Use the Kubernetes provided pod service account
-		// as described in https://kubernetes.io/docs/admin/service-accounts-admin/
+		// as described in https://kubernetes.io/docs/tasks/run-application/access-api-from-pod/#using-official-client-libraries
 		kcfg, err = rest.InClusterConfig()
 		if err != nil {
 			return nil, err

@@ -86,7 +86,7 @@ ifeq (, $(shell command -v goyacc 2> /dev/null))
 	@echo "goyacc not installed so skipping"
 	@echo "To install: go install golang.org/x/tools/cmd/goyacc@v0.6.0"
 else
-	goyacc -o promql/parser/generated_parser.y.go promql/parser/generated_parser.y
+	goyacc -l -o promql/parser/generated_parser.y.go promql/parser/generated_parser.y
 endif
 
 .PHONY: test

@@ -460,7 +460,6 @@ func TestLabelNamesWithMatchers(t *testing.T) {
 				"unique", fmt.Sprintf("value%d", i),
 			), []chunks.Sample{sample{100, 0, nil, nil}}))
 		}
-
 	}
 
 	blockDir := createBlock(t, tmpdir, seriesEntries)

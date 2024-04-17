@@ -583,7 +583,6 @@ func TestManagerTargetsUpdates(t *testing.T) {
 
 	tgSent := make(map[string][]*targetgroup.Group)
 	for x := 0; x < 10; x++ {
-
 		tgSent[strconv.Itoa(x)] = []*targetgroup.Group{
 			{
 				Source: strconv.Itoa(x),

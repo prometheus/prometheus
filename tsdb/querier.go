@@ -829,7 +829,6 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 				return true
 			}
 		}
-
 	}
 	return false
 }

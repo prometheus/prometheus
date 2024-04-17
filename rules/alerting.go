@@ -364,7 +364,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		// Provide the alert information to the template.
 		l := smpl.Metric.Map()
 
-		tmplData := template.AlertTemplateData(l, r.externalLabels, r.externalURL, smpl.F)
+		tmplData := template.AlertTemplateData(l, r.externalLabels, r.externalURL, smpl)
 		// Inject some convenience variables that are easier to remember for users
 		// who are not used to Go's templating system.
 		defs := []string{
