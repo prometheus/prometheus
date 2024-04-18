@@ -1,5 +1,5 @@
-import { ComponentType, useEffect, useState } from 'react';
-import InfiniteScroll from 'react-infinite-scroll-component';
+import { ComponentType, useEffect, useState } from "react";
+import InfiniteScroll from "react-infinite-scroll-component";
 
 const initialNumberOfItemsDisplayed = 50;
 
@@ -12,11 +12,15 @@ interface CustomInfiniteScrollProps<T> {
   child: ComponentType<InfiniteScrollItemsProps<T>>;
 }
 
-// eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
-const CustomInfiniteScroll = <T,>({ allItems, child }: CustomInfiniteScrollProps<T>) => {
+const CustomInfiniteScroll = <T,>({
+  allItems,
+  child,
+}: CustomInfiniteScrollProps<T>) => {
   const [items, setItems] = useState<T[]>(allItems.slice(0, 50));
   const [index, setIndex] = useState<number>(initialNumberOfItemsDisplayed);
-  const [hasMore, setHasMore] = useState<boolean>(allItems.length > initialNumberOfItemsDisplayed);
+  const [hasMore, setHasMore] = useState<boolean>(
+    allItems.length > initialNumberOfItemsDisplayed
+  );
   const Child = child;
 
   useEffect(() => {
@@ -40,7 +44,7 @@ const CustomInfiniteScroll = <T,>({ allItems, child }: CustomInfiniteScrollProps
       hasMore={hasMore}
       loader={<h4>loading...</h4>}
       dataLength={items.length}
-      height={items.length > 25 ? '75vh' : ''}
+      height={items.length > 25 ? "75vh" : ""}
     >
       <Child items={items} />
     </InfiniteScroll>

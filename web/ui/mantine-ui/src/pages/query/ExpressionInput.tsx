@@ -166,6 +166,8 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
     }
   }, [formatResult, formatError]);
 
+  // This is just a placeholder until query history is implemented, so disable the linter warning.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const queryHistory = [] as string[];
 
   // (Re)initialize editor based on settings / setting changes.
@@ -191,6 +193,7 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
     <Group align="flex-start" wrap="nowrap" gap="xs">
       {/* TODO: For wrapped long lines, the input grows in width more and more, the
           longer the line is. Figure out why and fix it. */}
+      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
       <InputBase<any>
         leftSection={
           isFormatting ? <Loader size="xs" color="gray.5" /> : <IconTerminal />

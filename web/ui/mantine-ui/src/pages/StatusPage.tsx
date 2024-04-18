@@ -7,22 +7,22 @@ const statusConfig: Record<
   string,
   {
     title?: string;
-    formatValue?: (v: any) => string;
+    formatValue?: (v: string | boolean) => string;
   }
 > = {
   startTime: {
     title: "Start time",
-    formatValue: (v: string) =>
-      formatTimestamp(new Date(v).valueOf() / 1000, false), // TODO: Set useLocalTime parameter correctly.
+    formatValue: (v: string | boolean) =>
+      formatTimestamp(new Date(v as string).valueOf() / 1000, false), // TODO: Set useLocalTime parameter correctly.
   },
   CWD: { title: "Working directory" },
   reloadConfigSuccess: {
     title: "Configuration reload",
-    formatValue: (v: boolean) => (v ? "Successful" : "Unsuccessful"),
+    formatValue: (v: string | boolean) => (v ? "Successful" : "Unsuccessful"),
   },
   lastConfigTime: {
     title: "Last successful configuration reload",
-    formatValue: (v: string) => new Date(v).toUTCString(),
+    formatValue: (v: string | boolean) => new Date(v as string).toUTCString(),
   },
   corruptionCount: { title: "WAL corruptions" },
   goroutineCount: { title: "Goroutines" },
