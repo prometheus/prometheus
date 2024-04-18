@@ -367,7 +367,7 @@ func TestHeadEndpoint(t *testing.T) {
 		s := httptest.NewServer(r)
 		defer s.Close()
 
-		req, err := http.NewRequest("HEAD", s.URL+"/write", nil)
+		req, err := http.NewRequest(http.MethodHead, s.URL+"/write", nil)
 		require.NoError(t, err, "Error creating HEAD request")
 		client := &http.Client{}
 		resp, err := client.Do(req)

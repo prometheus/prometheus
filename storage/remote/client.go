@@ -230,7 +230,7 @@ type RecoverableError struct {
 func (c *Client) probeRemoteVersions(ctx context.Context) error {
 	// We assume we are in Version2 mode otherwise we shouldn't be calling this.
 
-	httpReq, err := http.NewRequest("HEAD", c.urlString, nil)
+	httpReq, err := http.NewRequest(http.MethodHead, c.urlString, nil)
 	if err != nil {
 		// Errors from NewRequest are from unparsable URLs, so are not
 		// recoverable.
@@ -259,8 +259,8 @@ func (c *Client) probeRemoteVersions(ctx context.Context) error {
 	}
 
 	// Check for an error.
-	if httpResp.StatusCode != 200 {
-		if httpResp.StatusCode == 405 {
+	if httpResp.StatusCode != http.StatusOK {
+		if httpResp.StatusCode == http.StatusMethodNotAllowed {
 			// If we get a 405 (MethodNotAllowed) error then it means the endpoint doesn't
 			// understand Remote Write 2.0, so we allow the lastRWHeader to be overwritten
 			// even if it is blank.
@@ -331,11 +331,11 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int, rwFormat co
 			line = scanner.Text()
 		}
 		switch httpResp.StatusCode {
-		case 400:
+		case http.StatusBadRequest:
 			// Return an unrecoverable error to indicate the 400.
 			// This then gets passed up the chain so we can react to it properly.
 			return &ErrRenegotiate{line, httpResp.StatusCode}
-		case 406:
+		case http.StatusNotAcceptable:
 			// Return an unrecoverable error to indicate the 406.
 			// This then gets passed up the chain so we can react to it properly.
 			return &ErrRenegotiate{line, httpResp.StatusCode}

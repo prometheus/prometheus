@@ -486,7 +486,6 @@ func (h *writeHandler) writeMinStr(ctx context.Context, req *writev2.WriteReques
 		if _, err = app.UpdateMetadata(0, ls, m); err != nil {
 			level.Debug(h.logger).Log("msg", "error while updating metadata from remote write", "err", err)
 		}
-
 	}
 
 	if outOfOrderExemplarErrs > 0 {

@@ -926,7 +926,7 @@ func labelProtosToLabels(b *labels.ScratchBuilder, labelPairs []prompb.Label) la
 // labelProtosV2ToLabels transforms v2 proto labels references, which are uint32 values, into labels via
 // indexing into the symbols slice.
 func labelProtosV2ToLabels(labelRefs []uint32, symbols []string) labels.Labels {
-	b := labels.ScratchBuilder{}
+	b := labels.NewScratchBuilder(len(labelRefs))
 	for i := 0; i < len(labelRefs); i += 2 {
 		b.Add(symbols[labelRefs[i]], symbols[labelRefs[i+1]])
 	}
@@ -1145,7 +1145,6 @@ func MinimizedWriteRequestToWriteRequest(redReq *writev2.WriteRequest) (*prompb.
 			req.Timeseries[i].Histograms[j].ResetHint = prompb.Histogram_ResetHint(h.ResetHint)
 			req.Timeseries[i].Histograms[j].Timestamp = h.Timestamp
 		}
-
 	}
 	return req, nil
 }
