@@ -81,6 +81,7 @@ var reactRouterAgentPaths = []string{
 // Paths that are handled by the React router when the Agent mode is not set.
 var reactRouterServerPaths = []string{
 	"/alerts",
+	"/graph",
 	"/query",
 	"/rules",
 	"/tsdb-status",
@@ -251,6 +252,7 @@ type Options struct {
 	UserAssetsPath             string
 	ConsoleTemplatesPath       string
 	ConsoleLibrariesPath       string
+	UseNewUI                   bool
 	EnableLifecycle            bool
 	EnableAdminAPI             bool
 	PageTitle                  string
@@ -361,9 +363,12 @@ func New(logger log.Logger, o *Options) *Handler {
 		router = router.WithPrefix(o.RoutePrefix)
 	}
 
-	homePage := "/query"
+	homePage := "/graph"
 	if o.IsAgent {
 		homePage = "/agent"
+	}
+	if o.UseNewUI {
+		homePage = "/query"
 	}
 
 	readyf := h.testReady
@@ -371,6 +376,11 @@ func New(logger log.Logger, o *Options) *Handler {
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, path.Join(o.ExternalURL.Path, homePage), http.StatusFound)
 	})
+
+	reactAssetsRoot := "/static/react-app"
+	if h.options.UseNewUI {
+		reactAssetsRoot = "/static/mantine-ui"
+	}
 
 	// The console library examples at 'console_libraries/prom.lib' still depend on old asset files being served under `classic`.
 	router.Get("/classic/static/*filepath", func(w http.ResponseWriter, r *http.Request) {
@@ -389,7 +399,8 @@ func New(logger log.Logger, o *Options) *Handler {
 	router.Get("/consoles/*filepath", readyf(h.consoles))
 
 	serveReactApp := func(w http.ResponseWriter, r *http.Request) {
-		f, err := ui.Assets.Open("/static/react/index.html")
+		indexPath := reactAssetsRoot + "/index.html"
+		f, err := ui.Assets.Open(indexPath)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			fmt.Fprintf(w, "Error opening React index.html: %v", err)
@@ -426,8 +437,8 @@ func New(logger log.Logger, o *Options) *Handler {
 
 	// The favicon and manifest are bundled as part of the React app, but we want to serve
 	// them on the root.
-	for _, p := range []string{"/favicon.ico", "/manifest.json"} {
-		assetPath := "/static/react" + p
+	for _, p := range []string{"/favicon.svg", "/favicon.ico", "/manifest.json"} {
+		assetPath := reactAssetsRoot + p
 		router.Get(p, func(w http.ResponseWriter, r *http.Request) {
 			r.URL.Path = assetPath
 			fs := server.StaticFileServer(ui.Assets)
@@ -435,9 +446,13 @@ func New(logger log.Logger, o *Options) *Handler {
 		})
 	}
 
+	reactStaticAssetsDir := "/static"
+	if h.options.UseNewUI {
+		reactStaticAssetsDir = "/assets"
+	}
 	// Static files required by the React app.
-	router.Get("/assets/*filepath", func(w http.ResponseWriter, r *http.Request) {
-		r.URL.Path = path.Join("/static/react/assets", route.Param(r.Context(), "filepath"))
+	router.Get(reactStaticAssetsDir+"/*filepath", func(w http.ResponseWriter, r *http.Request) {
+		r.URL.Path = path.Join(reactAssetsRoot+reactStaticAssetsDir, route.Param(r.Context(), "filepath"))
 		fs := server.StaticFileServer(ui.Assets)
 		fs.ServeHTTP(w, r)
 	})

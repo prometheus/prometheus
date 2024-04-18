@@ -30,10 +30,19 @@ function buildModule() {
 }
 
 function buildReactApp() {
+  echo "build react-app"
+  cd react-app
+  npm run build
+  cd ..
+  rm -rf ./static/react-app
+  mv ./react-app/build ./static/react-app
+}
+
+function buildMantineUI() {
   echo "build mantine-ui"
   npm run build -w @prometheus-io/mantine-ui
-  rm -rf ./static/react
-  mv ./mantine-ui/dist ./static/react
+  rm -rf ./static/mantine-ui
+  mv ./mantine-ui/dist ./static/mantine-ui
 }
 
 for i in "$@"; do
@@ -41,6 +50,7 @@ for i in "$@"; do
   --all)
     buildModule
     buildReactApp
+    buildMantineUI
     shift
     ;;
   --build-module)

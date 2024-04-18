@@ -1,5 +1,5 @@
 {
-  "name": "@prometheus-io/app",
+  "name": "@prometheus-io/react-app",
   "version": "0.49.1",
   "private": true,
   "dependencies": {
@@ -68,7 +68,9 @@
     "@testing-library/react-hooks": "^7.0.2",
     "@types/enzyme": "^3.10.18",
     "@types/flot": "0.0.36",
+    "@types/jest": "^29.5.11",
     "@types/jquery": "^3.5.29",
+    "@types/node": "^20.10.4",
     "@types/react": "^17.0.71",
     "@types/react-copy-to-clipboard": "^5.0.7",
     "@types/react-dom": "^17.0.25",
@@ -78,8 +80,16 @@
     "@wojtekmaj/enzyme-adapter-react-17": "^0.8.0",
     "enzyme": "^3.11.0",
     "enzyme-to-json": "^3.6.2",
+    "eslint-config-prettier": "^8.10.0",
+    "eslint-config-react-app": "^7.0.1",
+    "eslint-plugin-prettier": "^4.2.1",
+    "jest-canvas-mock": "^2.5.2",
+    "jest-fetch-mock": "^3.0.3",
     "mutationobserver-shim": "^0.3.7",
-    "sinon": "^14.0.2"
+    "prettier": "^2.8.8",
+    "react-scripts": "^5.0.1",
+    "sinon": "^14.0.2",
+    "ts-jest": "^29.1.1"
   },
   "jest": {
     "snapshotSerializers": [

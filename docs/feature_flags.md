@@ -193,7 +193,7 @@ This should **only** be applied to metrics that currently produce such labels.
 `--enable-feature=otlp-write-receiver`
 
 The OTLP receiver allows Prometheus to accept [OpenTelemetry](https://opentelemetry.io/) metrics writes.
-Prometheus is best used as a Pull based system, and staleness, `up` metric, and other Pull enabled features 
+Prometheus is best used as a Pull based system, and staleness, `up` metric, and other Pull enabled features
 won't work when you push OTLP metrics.
 
 ## Experimental PromQL functions
@@ -224,3 +224,9 @@ When the `concurrent-rule-eval` feature flag is enabled, rules without any depen
 This has the potential to improve rule group evaluation latency and resource utilization at the expense of adding more concurrent query load.
 
 The number of concurrent rule evaluations can be configured with `--rules.max-concurrent-rule-evals`, which is set to `4` by default.
+
+## Experimental new web UI
+
+Enables the new experimental web UI instead of the old and stable web UI. The new UI is a complete rewrite and aims to be cleaner, less cluttered, and more modern under the hood. It is not feature complete yet and is still under active development.
+
+`--enable-feature=new-ui`
