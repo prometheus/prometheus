@@ -23,6 +23,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -559,5 +561,15 @@ func BenchmarkWAL_Log(b *testing.B) {
 			// do not show burst throughput well.
 			b.StopTimer()
 		})
+	}
+}
+
+func TestUnregisterMetrics(t *testing.T) {
+	reg := prometheus.NewRegistry()
+
+	for i := 0; i < 2; i++ {
+		wl, err := New(log.NewNopLogger(), reg, t.TempDir(), CompressionNone)
+		require.NoError(t, err)
+		require.NoError(t, wl.Close())
 	}
 }
