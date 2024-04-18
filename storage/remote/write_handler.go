@@ -259,20 +259,22 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 		err = app.Commit()
 	}()
 
+	b := labels.NewScratchBuilder(0)
 	for _, ts := range req.Timeseries {
-		ls := labelProtosToLabels(ts.Labels)
+		ls := labelProtosToLabels(&b, ts.Labels)
 		if !ls.IsValid() {
 			level.Warn(h.logger).Log("msg", "Invalid metric names or labels", "got", ls.String())
 			samplesWithInvalidLabels++
 			continue
 		}
+
 		err := h.appendSamples(app, ts.Samples, ls)
 		if err != nil {
 			return err
 		}
 
 		for _, ep := range ts.Exemplars {
-			e := exemplarProtoToExemplar(ep)
+			e := exemplarProtoToExemplar(&b, ep)
 			h.appendExemplar(app, e, ls, &outOfOrderExemplarErrs)
 		}
 
@@ -484,7 +486,6 @@ func (h *writeHandler) writeMinStr(ctx context.Context, req *writev2.WriteReques
 		if _, err = app.UpdateMetadata(0, ls, m); err != nil {
 			level.Debug(h.logger).Log("msg", "error while updating metadata from remote write", "err", err)
 		}
-
 	}
 
 	if outOfOrderExemplarErrs > 0 {

@@ -175,13 +175,18 @@ type testGroup struct {
 }
 
 // test performs the unit tests.
-func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]int, queryOpts promql.LazyLoaderOpts, diffFlag bool, ruleFiles ...string) []error {
+func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]int, queryOpts promql.LazyLoaderOpts, diffFlag bool, ruleFiles ...string) (outErr []error) {
 	// Setup testing suite.
-	suite, err := promql.NewLazyLoader(nil, tg.seriesLoadingString(), queryOpts)
+	suite, err := promql.NewLazyLoader(tg.seriesLoadingString(), queryOpts)
 	if err != nil {
 		return []error{err}
 	}
-	defer suite.Close()
+	defer func() {
+		err := suite.Close()
+		if err != nil {
+			outErr = append(outErr, err)
+		}
+	}()
 	suite.SubqueryInterval = evalInterval
 
 	// Load the rule files.

@@ -92,11 +92,14 @@ var (
 	)
 	remoteReadQueryDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "read_request_duration_seconds",
-			Help:      "Histogram of the latency for remote read requests.",
-			Buckets:   append(prometheus.DefBuckets, 25, 60),
+			Namespace:                       namespace,
+			Subsystem:                       subsystem,
+			Name:                            "read_request_duration_seconds",
+			Help:                            "Histogram of the latency for remote read requests.",
+			Buckets:                         append(prometheus.DefBuckets, 25, 60),
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		},
 		[]string{remoteName, endpoint},
 	)
@@ -227,7 +230,7 @@ type RecoverableError struct {
 func (c *Client) probeRemoteVersions(ctx context.Context) error {
 	// We assume we are in Version2 mode otherwise we shouldn't be calling this.
 
-	httpReq, err := http.NewRequest("HEAD", c.urlString, nil)
+	httpReq, err := http.NewRequest(http.MethodHead, c.urlString, nil)
 	if err != nil {
 		// Errors from NewRequest are from unparsable URLs, so are not
 		// recoverable.
@@ -256,8 +259,8 @@ func (c *Client) probeRemoteVersions(ctx context.Context) error {
 	}
 
 	// Check for an error.
-	if httpResp.StatusCode != 200 {
-		if httpResp.StatusCode == 405 {
+	if httpResp.StatusCode != http.StatusOK {
+		if httpResp.StatusCode == http.StatusMethodNotAllowed {
 			// If we get a 405 (MethodNotAllowed) error then it means the endpoint doesn't
 			// understand Remote Write 2.0, so we allow the lastRWHeader to be overwritten
 			// even if it is blank.
@@ -275,7 +278,7 @@ func (c *Client) probeRemoteVersions(ctx context.Context) error {
 // Store sends a batch of samples to the HTTP endpoint, the request is the proto marshalled
 // and encoded bytes from codec.go.
 func (c *Client) Store(ctx context.Context, req []byte, attempt int, rwFormat config.RemoteWriteFormat, compression string) error {
-	httpReq, err := http.NewRequest("POST", c.urlString, bytes.NewReader(req))
+	httpReq, err := http.NewRequest(http.MethodPost, c.urlString, bytes.NewReader(req))
 	if err != nil {
 		// Errors from NewRequest are from unparsable URLs, so are not
 		// recoverable.
@@ -328,11 +331,11 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int, rwFormat co
 			line = scanner.Text()
 		}
 		switch httpResp.StatusCode {
-		case 400:
+		case http.StatusBadRequest:
 			// Return an unrecoverable error to indicate the 400.
 			// This then gets passed up the chain so we can react to it properly.
 			return &ErrRenegotiate{line, httpResp.StatusCode}
-		case 406:
+		case http.StatusNotAcceptable:
 			// Return an unrecoverable error to indicate the 406.
 			// This then gets passed up the chain so we can react to it properly.
 			return &ErrRenegotiate{line, httpResp.StatusCode}
@@ -396,7 +399,7 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	}
 
 	compressed := snappy.Encode(nil, data)
-	httpReq, err := http.NewRequest("POST", c.urlString, bytes.NewReader(compressed))
+	httpReq, err := http.NewRequest(http.MethodPost, c.urlString, bytes.NewReader(compressed))
 	if err != nil {
 		return nil, fmt.Errorf("unable to create request: %w", err)
 	}

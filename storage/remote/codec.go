@@ -20,6 +20,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -28,7 +29,6 @@ import (
 	"github.com/golang/snappy"
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -178,12 +178,13 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 
 // FromQueryResult unpacks and sorts a QueryResult proto.
 func FromQueryResult(sortSeries bool, res *prompb.QueryResult) storage.SeriesSet {
+	b := labels.NewScratchBuilder(0)
 	series := make([]storage.Series, 0, len(res.Timeseries))
 	for _, ts := range res.Timeseries {
 		if err := validateLabelsAndMetricName(ts.Labels); err != nil {
 			return errSeriesSet{err: err}
 		}
-		lbls := labelProtosToLabels(ts.Labels)
+		lbls := labelProtosToLabels(&b, ts.Labels)
 		series = append(series, &concreteSeries{labels: lbls, floats: ts.Samples, histograms: ts.Histograms})
 	}
 
@@ -618,11 +619,11 @@ func FromLabelMatchers(matchers []*prompb.LabelMatcher) ([]*labels.Matcher, erro
 	return result, nil
 }
 
-func exemplarProtoToExemplar(ep prompb.Exemplar) exemplar.Exemplar {
+func exemplarProtoToExemplar(b *labels.ScratchBuilder, ep prompb.Exemplar) exemplar.Exemplar {
 	timestamp := ep.Timestamp
 
 	return exemplar.Exemplar{
-		Labels: labelProtosToLabels(ep.Labels),
+		Labels: labelProtosToLabels(b, ep.Labels),
 		Value:  ep.Value,
 		Ts:     timestamp,
 		HasTs:  timestamp != 0,
@@ -913,8 +914,8 @@ func LabelProtosToMetric(labelPairs []*prompb.Label) model.Metric {
 	return metric
 }
 
-func labelProtosToLabels(labelPairs []prompb.Label) labels.Labels {
-	b := labels.ScratchBuilder{}
+func labelProtosToLabels(b *labels.ScratchBuilder, labelPairs []prompb.Label) labels.Labels {
+	b.Reset()
 	for _, l := range labelPairs {
 		b.Add(l.Name, l.Value)
 	}
@@ -925,7 +926,7 @@ func labelProtosToLabels(labelPairs []prompb.Label) labels.Labels {
 // labelProtosV2ToLabels transforms v2 proto labels references, which are uint32 values, into labels via
 // indexing into the symbols slice.
 func labelProtosV2ToLabels(labelRefs []uint32, symbols []string) labels.Labels {
-	b := labels.ScratchBuilder{}
+	b := labels.NewScratchBuilder(len(labelRefs))
 	for i := 0; i < len(labelRefs); i += 2 {
 		b.Add(symbols[labelRefs[i]], symbols[labelRefs[i+1]])
 	}
@@ -1144,7 +1145,6 @@ func MinimizedWriteRequestToWriteRequest(redReq *writev2.WriteRequest) (*prompb.
 			req.Timeseries[i].Histograms[j].ResetHint = prompb.Histogram_ResetHint(h.ResetHint)
 			req.Timeseries[i].Histograms[j].Timestamp = h.Timestamp
 		}
-
 	}
 	return req, nil
 }

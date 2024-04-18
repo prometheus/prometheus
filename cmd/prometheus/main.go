@@ -42,6 +42,7 @@ import (
 	"github.com/mwitkow/go-conntrack"
 	"github.com/oklog/run"
 	"github.com/prometheus/client_golang/prometheus"
+	versioncollector "github.com/prometheus/client_golang/prometheus/collectors/version"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promlog"
 	promlogflag "github.com/prometheus/common/promlog/flag"
@@ -99,7 +100,7 @@ var (
 )
 
 func init() {
-	prometheus.MustRegister(version.NewCollector(strings.ReplaceAll(appName, "-", "_")))
+	prometheus.MustRegister(versioncollector.NewCollector(strings.ReplaceAll(appName, "-", "_")))
 
 	var err error
 	defaultRetentionDuration, err = model.ParseDuration(defaultRetentionString)
@@ -451,7 +452,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, auto-gomemlimit, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-at-modifier, promql-negative-offset, promql-per-step-stats, promql-experimental-functions, remote-write-receiver (DEPRECATED), extra-scrape-metrics, new-service-discovery-manager, auto-gomaxprocs, no-default-scrape-port, native-histograms, otlp-write-receiver, metadata-wal-records. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, auto-gomemlimit, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, remote-write-receiver (DEPRECATED), extra-scrape-metrics, new-service-discovery-manager, auto-gomaxprocs, no-default-scrape-port, native-histograms, otlp-write-receiver, created-timestamp-zero-ingestion, concurrent-rule-eval. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	a.Flag("remote-write-format", "remote write proto format to use, valid options: 0 (1.0), 1 (reduced format), 3 (min64 format)").
@@ -968,8 +969,8 @@ func main() {
 			func() error {
 				// Don't forget to release the reloadReady channel so that waiting blocks can exit normally.
 				select {
-				case <-term:
-					level.Warn(logger).Log("msg", "Received SIGTERM, exiting gracefully...")
+				case sig := <-term:
+					level.Warn(logger).Log("msg", "Received an OS signal, exiting gracefully...", "signal", sig.String())
 					reloadReady.Close()
 				case <-webHandler.Quit():
 					level.Warn(logger).Log("msg", "Received termination request via web service, exiting gracefully...")

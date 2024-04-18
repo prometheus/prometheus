@@ -1,7 +1,7 @@
 #!/bin/bash
 set -xe
 
-OTEL_VERSION=v0.88.0
+OTEL_VERSION=v0.95.0
 
 git clone https://github.com/open-telemetry/opentelemetry-collector-contrib ./tmp
 cd ./tmp
@@ -23,5 +23,5 @@ case $(sed --help 2>&1) in
   *)     set sed -i '';;
 esac
 
-"$@" -e 's#github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheus#github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus#g' ./prometheusremotewrite/*.go
+"$@" -e 's#github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheus#github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus#g' ./prometheusremotewrite/*.go ./prometheus/*.go
 "$@" -e '1s#^#// DO NOT EDIT. COPIED AS-IS. SEE ../README.md\n\n#g' ./prometheusremotewrite/*.go ./prometheus/*.go

@@ -131,6 +131,11 @@ func (m *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
 	}
 }
 
+// UnregisterMetrics unregisters manager metrics.
+func (m *Manager) UnregisterMetrics() {
+	m.metrics.Unregister()
+}
+
 func (m *Manager) reloader() {
 	reloadIntervalDuration := m.opts.DiscoveryReloadInterval
 	if reloadIntervalDuration < model.Duration(5*time.Second) {
@@ -182,7 +187,6 @@ func (m *Manager) reload() {
 			sp.Sync(groups)
 			wg.Done()
 		}(m.scrapePools[setName], groups)
-
 	}
 	m.mtxScrape.Unlock()
 	wg.Wait()

@@ -99,9 +99,9 @@ When enabled, GOMAXPROCS variable is automatically set to match Linux container 
 
 `--enable-feature=auto-gomemlimit`
 
-When enabled, the GOMEMLIMIT variable is automatically set to match the Linux container memory limit. If there is no container limit, or the process is runing outside of containers, the system memory total is used.
+When enabled, the GOMEMLIMIT variable is automatically set to match the Linux container memory limit. If there is no container limit, or the process is running outside of containers, the system memory total is used.
 
-There is also an additional tuning flag, `--auto-gomemlimit.ratio`, which allows controling how much of the memory is used for Prometheus. The remainder is reserved for memory outside the process. For example, kernel page cache. Page cache is important for Prometheus TSDB query performance. The default is `0.9`, which means 90% of the memory limit will be used for Prometheus.
+There is also an additional tuning flag, `--auto-gomemlimit.ratio`, which allows controlling how much of the memory is used for Prometheus. The remainder is reserved for memory outside the process. For example, kernel page cache. Page cache is important for Prometheus TSDB query performance. The default is `0.9`, which means 90% of the memory limit will be used for Prometheus.
 
 ## No default scrape port
 

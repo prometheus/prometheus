@@ -25,10 +25,9 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"unsafe"
-
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -1118,6 +1117,7 @@ type Reader struct {
 	symbols     *Symbols
 	nameSymbols map[uint32]string // Cache of the label name symbol lookups,
 	// as there are not many and they are half of all lookups.
+	st *labels.SymbolTable // TODO: see if we can merge this with nameSymbols.
 
 	dec *Decoder
 
@@ -1177,6 +1177,7 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 		b:        b,
 		c:        c,
 		postings: map[string][]postingOffset{},
+		st:       labels.NewSymbolTable(),
 	}
 
 	// Verify header.
@@ -1527,7 +1528,6 @@ func (r *Reader) LabelValues(ctx context.Context, name string, matchers ...*labe
 			values = append(values, k)
 		}
 		return values, nil
-
 	}
 	e, ok := r.postings[name]
 	if !ok {
@@ -1653,6 +1653,8 @@ func (r *Reader) Series(id storage.SeriesRef, builder *labels.ScratchBuilder, ch
 	if d.Err() != nil {
 		return d.Err()
 	}
+	builder.SetSymbolTable(r.st)
+	builder.Reset()
 	err := r.dec.Series(d.Get(), builder, chks)
 	if err != nil {
 		return fmt.Errorf("read series: %w", err)
@@ -1826,7 +1828,7 @@ func NewStringListIter(s []string) StringIter {
 	return &stringListIter{l: s}
 }
 
-// symbolsIter implements StringIter.
+// stringListIter implements StringIter.
 type stringListIter struct {
 	l   []string
 	cur string

@@ -80,13 +80,14 @@ type ProtobufParser struct {
 }
 
 // NewProtobufParser returns a parser for the payload in the byte slice.
-func NewProtobufParser(b []byte, parseClassicHistograms bool) Parser {
+func NewProtobufParser(b []byte, parseClassicHistograms bool, st *labels.SymbolTable) Parser {
 	return &ProtobufParser{
 		in:                     b,
 		state:                  EntryInvalid,
 		mf:                     &dto.MetricFamily{},
 		metricBytes:            &bytes.Buffer{},
 		parseClassicHistograms: parseClassicHistograms,
+		builder:                labels.NewScratchBuilderWithSymbolTable(st, 16),
 	}
 }
 

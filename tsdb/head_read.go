@@ -18,10 +18,10 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"sync"
 
 	"github.com/go-kit/log/level"
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -580,17 +580,6 @@ func (s *memSeries) oooMergedChunks(meta chunks.Meta, cdm *chunks.ChunkDiskMappe
 	}
 
 	return mc, nil
-}
-
-var _ chunkenc.Iterable = &mergedOOOChunks{}
-
-// mergedOOOChunks holds the list of iterables for overlapping chunks.
-type mergedOOOChunks struct {
-	chunkIterables []chunkenc.Iterable
-}
-
-func (o mergedOOOChunks) Iterator(iterator chunkenc.Iterator) chunkenc.Iterator {
-	return storage.ChainSampleIteratorFromIterables(iterator, o.chunkIterables)
 }
 
 var _ chunkenc.Iterable = &boundedIterable{}

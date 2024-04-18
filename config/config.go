@@ -82,7 +82,7 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 		return cfg, nil
 	}
 
-	b := labels.ScratchBuilder{}
+	b := labels.NewScratchBuilder(0)
 	cfg.GlobalConfig.ExternalLabels.Range(func(v labels.Label) {
 		newV := os.Expand(v.Value, func(s string) string {
 			if s == "$" {
@@ -97,6 +97,7 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 		if newV != v.Value {
 			level.Debug(logger).Log("msg", "External label replaced", "label", v.Name, "input", v.Value, "output", newV)
 		}
+		// Note newV can be blank. https://github.com/prometheus/prometheus/issues/11024
 		b.Add(v.Name, newV)
 	})
 	cfg.GlobalConfig.ExternalLabels = b.Labels()
@@ -940,6 +941,8 @@ type AlertmanagerConfig struct {
 
 	// List of Alertmanager relabel configurations.
 	RelabelConfigs []*relabel.Config `yaml:"relabel_configs,omitempty"`
+	// Relabel alerts before sending to the specific alertmanager.
+	AlertRelabelConfigs []*relabel.Config `yaml:"alert_relabel_configs,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -979,6 +982,12 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 	for _, rlcfg := range c.RelabelConfigs {
 		if rlcfg == nil {
 			return errors.New("empty or null Alertmanager target relabeling rule")
+		}
+	}
+
+	for _, rlcfg := range c.AlertRelabelConfigs {
+		if rlcfg == nil {
+			return errors.New("empty or null Alertmanager alert relabeling rule")
 		}
 	}
 

@@ -99,3 +99,12 @@ func NewManagerMetrics(registerer prometheus.Registerer, sdManagerName string) (
 
 	return m, nil
 }
+
+// Unregister unregisters all metrics.
+func (m *Metrics) Unregister(registerer prometheus.Registerer) {
+	registerer.Unregister(m.FailedConfigs)
+	registerer.Unregister(m.DiscoveredTargets)
+	registerer.Unregister(m.ReceivedUpdates)
+	registerer.Unregister(m.DelayedUpdates)
+	registerer.Unregister(m.SentUpdates)
+}

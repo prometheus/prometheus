@@ -336,7 +336,6 @@ func TestForStateAddSamples(t *testing.T) {
 		for _, aa := range rule.ActiveAlerts() {
 			require.Zero(t, aa.Labels.Get(model.MetricNameLabel), "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
 		}
-
 	}
 }
 
@@ -1824,7 +1823,6 @@ func TestDependencyMapUpdatesOnGroupUpdate(t *testing.T) {
 		} else {
 			require.Equal(t, orig[h], depMap)
 		}
-
 	}
 
 	// Groups will be recreated when updated.
@@ -1962,7 +1960,6 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 			require.Less(t, time.Since(start).Seconds(), (time.Duration(ruleCount) * artificialDelay).Seconds())
 			// Each rule produces one vector.
 			require.EqualValues(t, ruleCount, testutil.ToFloat64(group.metrics.GroupSamples))
-
 		}
 	})
 

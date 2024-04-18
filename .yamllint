@@ -1,5 +1,8 @@
 ---
 extends: default
+ignore: |
+  ui/react-app/node_modules
+  scripts/remotewrite11-bench
 
 rules:
   braces:
