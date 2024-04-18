@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/discovery/v1"
 	"k8s.io/api/discovery/v1beta1"
@@ -1404,4 +1405,42 @@ func TestEndpointSliceDiscoveryEmptyPodStatus(t *testing.T) {
 		expectedMaxItems: 0,
 		expectedRes:      map[string]*targetgroup.Group{},
 	}.Run(t)
+}
+
+// TestEndpointSliceInfIndexersCount makes sure that RoleEndpointSlice discovery
+// sets up indexing for the main Kube informer only when needed.
+// See: https://github.com/prometheus/prometheus/pull/13554#discussion_r1490965817
+func TestEndpointSliceInfIndexersCount(t *testing.T) {
+	tests := []struct {
+		name             string
+		withNodeMetadata bool
+	}{
+		{"with node metadata", true},
+		{"without node metadata", false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var (
+				n                    *Discovery
+				mainInfIndexersCount int
+			)
+			if tc.withNodeMetadata {
+				mainInfIndexersCount = 1
+				n, _ = makeDiscoveryWithMetadata(RoleEndpointSlice, NamespaceDiscovery{}, AttachMetadataConfig{Node: true})
+			} else {
+				n, _ = makeDiscovery(RoleEndpointSlice, NamespaceDiscovery{})
+			}
+
+			k8sDiscoveryTest{
+				discovery: n,
+				afterStart: func() {
+					n.RLock()
+					defer n.RUnlock()
+					require.Len(t, n.discoverers, 1)
+					require.Len(t, n.discoverers[0].(*EndpointSlice).endpointSliceInf.GetIndexer().GetIndexers(), mainInfIndexersCount)
+				},
+			}.Run(t)
+		})
+	}
 }

@@ -36,11 +36,11 @@ func TestMain(m *testing.M) {
 	testutil.TolerantVerifyLeak(m)
 }
 
-func NewTestMetrics(t *testing.T, reg prometheus.Registerer) (*RefreshMetricsManager, map[string]DiscovererMetrics) {
+func NewTestMetrics(t *testing.T, reg prometheus.Registerer) (RefreshMetricsManager, map[string]DiscovererMetrics) {
 	refreshMetrics := NewRefreshMetrics(reg)
 	sdMetrics, err := RegisterSDMetrics(reg, refreshMetrics)
 	require.NoError(t, err)
-	return &refreshMetrics, sdMetrics
+	return refreshMetrics, sdMetrics
 }
 
 // TestTargetUpdatesOrder checks that the target updates are received in the expected order.
@@ -733,7 +733,6 @@ func verifySyncedPresence(t *testing.T, tGroups map[string][]*targetgroup.Group,
 	t.Helper()
 	if _, ok := tGroups[key]; !ok {
 		t.Fatalf("'%s' should be present in Group map keys: %v", key, tGroups)
-		return
 	}
 	match := false
 	var mergedTargets string
@@ -1541,4 +1540,25 @@ func (t *testDiscoverer) Run(ctx context.Context, up chan<- []*targetgroup.Group
 func (t *testDiscoverer) update(tgs []*targetgroup.Group) {
 	<-t.ready
 	t.up <- tgs
+}
+
+func TestUnregisterMetrics(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	// Check that all metrics can be unregistered, allowing a second manager to be created.
+	for i := 0; i < 2; i++ {
+		ctx, cancel := context.WithCancel(context.Background())
+
+		refreshMetrics, sdMetrics := NewTestMetrics(t, reg)
+
+		discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
+		// discoveryManager will be nil if there was an error configuring metrics.
+		require.NotNil(t, discoveryManager)
+		// Unregister all metrics.
+		discoveryManager.UnregisterMetrics()
+		for _, sdMetric := range sdMetrics {
+			sdMetric.Unregister()
+		}
+		refreshMetrics.Unregister()
+		cancel()
+	}
 }

@@ -942,10 +942,73 @@ func TestShouldReshard(t *testing.T) {
 	}
 }
 
+// TestDisableReshardOnRetry asserts that resharding should be disabled when a
+// recoverable error is returned from remote_write.
+func TestDisableReshardOnRetry(t *testing.T) {
+	onStoredContext, onStoreCalled := context.WithCancel(context.Background())
+	defer onStoreCalled()
+
+	var (
+		fakeSamples, fakeSeries = createTimeseries(100, 100)
+
+		cfg        = config.DefaultQueueConfig
+		mcfg       = config.DefaultMetadataConfig
+		retryAfter = time.Second
+
+		metrics = newQueueManagerMetrics(nil, "", "")
+
+		client = &MockWriteClient{
+			StoreFunc: func(ctx context.Context, b []byte, i int) error {
+				onStoreCalled()
+
+				return RecoverableError{
+					error:      fmt.Errorf("fake error"),
+					retryAfter: model.Duration(retryAfter),
+				}
+			},
+			NameFunc:     func() string { return "mock" },
+			EndpointFunc: func() string { return "http://fake:9090/api/v1/write" },
+		}
+	)
+
+	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), newHighestTimestampMetric(), nil, false, false, Version1)
+	m.StoreSeries(fakeSeries, 0)
+
+	// Attempt to samples while the manager is running. We immediately stop the
+	// manager after the recoverable error is generated to prevent the manager
+	// from resharding itself.
+	m.Start()
+	{
+		m.Append(fakeSamples)
+
+		select {
+		case <-onStoredContext.Done():
+		case <-time.After(time.Minute):
+			require.FailNow(t, "timed out waiting for client to be sent metrics")
+		}
+	}
+	m.Stop()
+
+	require.Eventually(t, func() bool {
+		// Force m.lastSendTimestamp to be current so the last send timestamp isn't
+		// the reason resharding is disabled.
+		m.lastSendTimestamp.Store(time.Now().Unix())
+		return m.shouldReshard(m.numShards+1) == false
+	}, time.Minute, 10*time.Millisecond, "shouldReshard was never disabled")
+
+	// After 2x retryAfter, resharding should be enabled again.
+	require.Eventually(t, func() bool {
+		// Force m.lastSendTimestamp to be current so the last send timestamp isn't
+		// the reason resharding is disabled.
+		m.lastSendTimestamp.Store(time.Now().Unix())
+		return m.shouldReshard(m.numShards+1) == true
+	}, time.Minute, retryAfter, "shouldReshard should have been re-enabled")
+}
+
 func createTimeseries(numSamples, numSeries int, extraLabels ...labels.Label) ([]record.RefSample, []record.RefSeries) {
 	samples := make([]record.RefSample, 0, numSamples)
 	series := make([]record.RefSeries, 0, numSeries)
-	lb := labels.ScratchBuilder{}
+	lb := labels.NewScratchBuilder(1 + len(extraLabels))
 	for i := 0; i < numSeries; i++ {
 		name := fmt.Sprintf("test_metric_%d", i)
 		for j := 0; j < numSamples; j++ {
@@ -1280,12 +1343,14 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, attemptNos int, r
 		c.sendAttempts = append(c.sendAttempts, attemptString+","+fmt.Sprintf("%s", err))
 		return err
 	}
-
+	builder := labels.NewScratchBuilder(0)
+	count := 0
 	for _, ts := range reqProto.Timeseries {
-		ls := labelProtosToLabels(ts.Labels)
-		seriesName := ls.Get("__name__")
-		if len(ts.Samples) > 0 {
-			c.receivedSamples[seriesName] = append(c.receivedSamples[seriesName], ts.Samples...)
+		labels := labelProtosToLabels(&builder, ts.Labels)
+		seriesName := labels.Get("__name__")
+		for _, sample := range ts.Samples {
+			count++
+			c.receivedSamples[seriesName] = append(c.receivedSamples[seriesName], sample)
 		}
 		if len(ts.Exemplars) > 0 {
 			c.receivedExemplars[seriesName] = append(c.receivedExemplars[seriesName], ts.Exemplars...)
@@ -1380,6 +1445,26 @@ func (c *NopWriteClient) probeRemoteVersions(_ context.Context) error {
 	return nil
 }
 func (c *NopWriteClient) GetLastRWHeader() string { return "2.0;snappy,0.1.0" }
+
+type MockWriteClient struct {
+	StoreFunc    func(context.Context, []byte, int) error
+	NameFunc     func() string
+	EndpointFunc func() string
+}
+
+func (c *MockWriteClient) Store(ctx context.Context, bb []byte, n int, _ config.RemoteWriteFormat, _ string) error {
+	return c.StoreFunc(ctx, bb, n)
+}
+func (c *MockWriteClient) Name() string     { return c.NameFunc() }
+func (c *MockWriteClient) Endpoint() string { return c.EndpointFunc() }
+
+// TODO(bwplotka): Mock it if needed.
+func (c *MockWriteClient) GetLastRWHeader() string { return "2.0;snappy,0.1.0" }
+
+// TODO(bwplotka): Mock it if needed.
+func (c *MockWriteClient) probeRemoteVersions(_ context.Context) error {
+	return nil
+}
 
 // Extra labels to make a more realistic workload - taken from Kubernetes' embedded cAdvisor metrics.
 var extraLabels []labels.Label = []labels.Label{
@@ -2083,7 +2168,7 @@ func createTimeseriesWithOldSamples(numSamples, numSeries int, extraLabels ...la
 	newSamples := make([]record.RefSample, 0, numSamples)
 	samples := make([]record.RefSample, 0, numSamples)
 	series := make([]record.RefSeries, 0, numSeries)
-	lb := labels.ScratchBuilder{}
+	lb := labels.NewScratchBuilder(1 + len(extraLabels))
 	for i := 0; i < numSeries; i++ {
 		name := fmt.Sprintf("test_metric_%d", i)
 		// We create half of the samples in the past.

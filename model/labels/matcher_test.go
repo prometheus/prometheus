@@ -14,13 +14,14 @@
 package labels
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
 func mustNewMatcher(t *testing.T, mType MatchType, value string) *Matcher {
-	m, err := NewMatcher(mType, "", value)
+	m, err := NewMatcher(mType, "test_label_name", value)
 	require.NoError(t, err)
 	return m
 }
@@ -81,6 +82,21 @@ func TestMatcher(t *testing.T) {
 			value:   "foo-bar",
 			match:   false,
 		},
+		{
+			matcher: mustNewMatcher(t, MatchRegexp, "$*bar"),
+			value:   "foo-bar",
+			match:   false,
+		},
+		{
+			matcher: mustNewMatcher(t, MatchRegexp, "bar^+"),
+			value:   "foo-bar",
+			match:   false,
+		},
+		{
+			matcher: mustNewMatcher(t, MatchRegexp, "$+bar"),
+			value:   "foo-bar",
+			match:   false,
+		},
 	}
 
 	for _, test := range tests {
@@ -115,6 +131,82 @@ func TestInverse(t *testing.T) {
 		result, err := test.matcher.Inverse()
 		require.NoError(t, err)
 		require.Equal(t, test.expected.Type, result.Type)
+	}
+}
+
+func TestPrefix(t *testing.T) {
+	for i, tc := range []struct {
+		matcher *Matcher
+		prefix  string
+	}{
+		{
+			matcher: mustNewMatcher(t, MatchEqual, "abc"),
+			prefix:  "",
+		},
+		{
+			matcher: mustNewMatcher(t, MatchNotEqual, "abc"),
+			prefix:  "",
+		},
+		{
+			matcher: mustNewMatcher(t, MatchRegexp, "abc.+"),
+			prefix:  "abc",
+		},
+		{
+			matcher: mustNewMatcher(t, MatchRegexp, "abcd|abc.+"),
+			prefix:  "abc",
+		},
+		{
+			matcher: mustNewMatcher(t, MatchNotRegexp, "abcd|abc.+"),
+			prefix:  "abc",
+		},
+		{
+			matcher: mustNewMatcher(t, MatchRegexp, "abc(def|ghj)|ab|a."),
+			prefix:  "a",
+		},
+		{
+			matcher: mustNewMatcher(t, MatchRegexp, "foo.+bar|foo.*baz"),
+			prefix:  "foo",
+		},
+		{
+			matcher: mustNewMatcher(t, MatchRegexp, "abc|.*"),
+			prefix:  "",
+		},
+		{
+			matcher: mustNewMatcher(t, MatchRegexp, "abc|def"),
+			prefix:  "",
+		},
+		{
+			matcher: mustNewMatcher(t, MatchRegexp, ".+def"),
+			prefix:  "",
+		},
+	} {
+		t.Run(fmt.Sprintf("%d: %s", i, tc.matcher), func(t *testing.T) {
+			require.Equal(t, tc.prefix, tc.matcher.Prefix())
+		})
+	}
+}
+
+func TestIsRegexOptimized(t *testing.T) {
+	for i, tc := range []struct {
+		matcher          *Matcher
+		isRegexOptimized bool
+	}{
+		{
+			matcher:          mustNewMatcher(t, MatchEqual, "abc"),
+			isRegexOptimized: false,
+		},
+		{
+			matcher:          mustNewMatcher(t, MatchRegexp, "."),
+			isRegexOptimized: false,
+		},
+		{
+			matcher:          mustNewMatcher(t, MatchRegexp, "abc.+"),
+			isRegexOptimized: true,
+		},
+	} {
+		t.Run(fmt.Sprintf("%d: %s", i, tc.matcher), func(t *testing.T) {
+			require.Equal(t, tc.isRegexOptimized, tc.matcher.IsRegexOptimized())
+		})
 	}
 }
 

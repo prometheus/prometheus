@@ -16,11 +16,11 @@ package tsdb
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"unicode/utf8"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"

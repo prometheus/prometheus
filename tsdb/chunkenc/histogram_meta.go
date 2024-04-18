@@ -73,7 +73,6 @@ func readHistogramChunkLayoutSpans(b *bstreamReader) ([]histogram.Span, error) {
 		return nil, err
 	}
 	for i := 0; i < int(num); i++ {
-
 		length, err := readVarbitUint(b)
 		if err != nil {
 			return nil, err

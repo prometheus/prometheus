@@ -172,7 +172,7 @@ func readTestWAL(t testing.TB, dir string) (recs []interface{}) {
 		require.NoError(t, sr.Close())
 	}()
 
-	var dec record.Decoder
+	dec := record.NewDecoder(labels.NewSymbolTable())
 	r := wlog.NewReader(sr)
 
 	for r.Next() {
@@ -1215,7 +1215,6 @@ func TestHeadDeleteSimple(t *testing.T) {
 				for _, smpl := range smplsAll {
 					_, err := app.Append(0, lblsDefault, smpl.t, smpl.f)
 					require.NoError(t, err)
-
 				}
 				require.NoError(t, app.Commit())
 
@@ -1229,7 +1228,6 @@ func TestHeadDeleteSimple(t *testing.T) {
 				for _, smpl := range c.addSamples {
 					_, err := app.Append(0, lblsDefault, smpl.t, smpl.f)
 					require.NoError(t, err)
-
 				}
 				require.NoError(t, app.Commit())
 
@@ -3851,7 +3849,6 @@ func TestChunkSnapshot(t *testing.T) {
 	}
 
 	{ // Additional data to only include in WAL and m-mapped chunks and not snapshot. This mimics having an old snapshot on disk.
-
 		// Add more samples.
 		app := head.Appender(context.Background())
 		for i := 1; i <= numSeries; i++ {
@@ -5818,4 +5815,17 @@ func TestHeadAppender_AppendCTZeroSample(t *testing.T) {
 		}
 		require.Equal(t, chunkenc.ValNone, it.Next())
 	}
+}
+
+func TestHeadCompactableDoesNotCompactEmptyHead(t *testing.T) {
+	// Use a chunk range of 1 here so that if we attempted to determine if the head
+	// was compactable using default values for min and max times, `Head.compactable()`
+	// would return true which is incorrect. This test verifies that we short-circuit
+	// the check when the head has not yet had any samples added.
+	head, _ := newTestHead(t, 1, wlog.CompressionNone, false)
+	defer func() {
+		require.NoError(t, head.Close())
+	}()
+
+	require.False(t, head.compactable())
 }

@@ -14,6 +14,7 @@
 package teststorage
 
 import (
+	"fmt"
 	"os"
 	"time"
 
@@ -30,8 +31,18 @@ import (
 // New returns a new TestStorage for testing purposes
 // that removes all associated files on closing.
 func New(t testutil.T) *TestStorage {
+	stor, err := NewWithError()
+	require.NoError(t, err)
+	return stor
+}
+
+// NewWithError returns a new TestStorage for user facing tests, which reports
+// errors directly.
+func NewWithError() (*TestStorage, error) {
 	dir, err := os.MkdirTemp("", "test_storage")
-	require.NoError(t, err, "unexpected error while opening test directory")
+	if err != nil {
+		return nil, fmt.Errorf("opening test directory: %w", err)
+	}
 
 	// Tests just load data for a series sequentially. Thus we
 	// need a long appendable window.
@@ -41,13 +52,17 @@ func New(t testutil.T) *TestStorage {
 	opts.RetentionDuration = 0
 	opts.EnableNativeHistograms = true
 	db, err := tsdb.Open(dir, nil, nil, opts, tsdb.NewDBStats())
-	require.NoError(t, err, "unexpected error while opening test storage")
+	if err != nil {
+		return nil, fmt.Errorf("opening test storage: %w", err)
+	}
 	reg := prometheus.NewRegistry()
 	eMetrics := tsdb.NewExemplarMetrics(reg)
 
 	es, err := tsdb.NewCircularExemplarStorage(10, eMetrics)
-	require.NoError(t, err, "unexpected error while opening test exemplar storage")
-	return &TestStorage{DB: db, exemplarStorage: es, dir: dir}
+	if err != nil {
+		return nil, fmt.Errorf("opening test exemplar storage: %w", err)
+	}
+	return &TestStorage{DB: db, exemplarStorage: es, dir: dir}, nil
 }
 
 type TestStorage struct {
