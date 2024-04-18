@@ -43,6 +43,7 @@ import (
 	"github.com/oklog/run"
 	"github.com/prometheus/client_golang/prometheus"
 	versioncollector "github.com/prometheus/client_golang/prometheus/collectors/version"
+	common_config "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promlog"
 	promlogflag "github.com/prometheus/common/promlog/flag"
@@ -68,6 +69,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
+	"github.com/prometheus/prometheus/secrets"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tracing"
@@ -160,6 +162,7 @@ type flagConfig struct {
 	enableAutoGOMAXPROCS       bool
 	enableAutoGOMEMLIMIT       bool
 	enableConcurrentRuleEval   bool
+	enableSecretProviders      bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -228,6 +231,9 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 				config.DefaultConfig.GlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				level.Info(logger).Log("msg", "Experimental created timestamp zero ingestion enabled. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
+			case "secret-providers":
+				c.enableSecretProviders = true
+				level.Info(logger).Log("msg", "Experimental secret providers enabled")
 			case "":
 				continue
 			case "promql-at-modifier", "promql-negative-offset":
@@ -636,6 +642,8 @@ func main() {
 		ctxWeb, cancelWeb = context.WithCancel(context.Background())
 		ctxRule           = context.Background()
 
+		ctxSecrets = context.Background()
+
 		notifierManager = notifier.NewManager(&cfg.notifier, log.With(logger, "component", "notifier"))
 
 		ctxScrape, cancelScrape = context.WithCancel(context.Background())
@@ -698,6 +706,20 @@ func main() {
 			discoveryManagerNotify = discMgr
 		}
 	}
+
+	var secretManager *secrets.Manager
+	if cfg.enableSecretProviders {
+		manager := secrets.NewManager(
+			ctxSecrets,
+			secrets.ProviderOptions{
+				Logger: log.With(logger, "component", "secret manager"),
+			},
+			prometheus.DefaultRegisterer,
+		)
+		secretManager = &manager
+	}
+
+	cfg.scrape.HTTPClientOptions = append(cfg.scrape.HTTPClientOptions, common_config.WithSecretManager(secretManager))
 
 	scrapeManager, err := scrape.NewManager(
 		&cfg.scrape,
@@ -871,6 +893,17 @@ func main() {
 					c[v.JobName] = v.ServiceDiscoveryConfigs
 				}
 				return discoveryManagerScrape.ApplyConfig(c)
+			},
+		}, {
+			name: "secret",
+			reloader: func(cfg *config.Config) error {
+				if secretManager == nil {
+					if cfg.SecretProviders != nil && len(*cfg.SecretProviders) > 0 {
+						return errors.New("secret providers are disabled")
+					}
+					return nil
+				}
+				return secretManager.ApplyConfig(*cfg.SecretProviders)
 			},
 		}, {
 			name:     "notify",

@@ -1998,6 +1998,10 @@ var expectedErrors = []struct {
 		filename: "scrape_config_files_scrape_protocols2.bad.yml",
 		errMsg:   `parsing YAML file testdata/scrape_config_files_scrape_protocols2.bad.yml: duplicated protocol in scrape_protocols, got [OpenMetricsText1.0.0 PrometheusProto OpenMetricsText1.0.0] for scrape config with job name "node"`,
 	},
+	{
+		filename: "secret_provider.bad.missing_provider_config.yml",
+		errMsg:   "expected secret provider but found none",
+	},
 }
 
 func TestBadConfigs(t *testing.T) {
