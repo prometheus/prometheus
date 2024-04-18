@@ -1998,6 +1998,10 @@ var expectedErrors = []struct {
 		filename: "scrape_config_files_scrape_protocols2.bad.yml",
 		errMsg:   `parsing YAML file testdata/scrape_config_files_scrape_protocols2.bad.yml: duplicated protocol in scrape_protocols, got [OpenMetricsText1.0.0 PrometheusProto OpenMetricsText1.0.0] for scrape config with job name "node"`,
 	},
+	{
+		filename: "secret_provider.bad.missing_provider_config.yml",
+		errMsg:   "expected secret provider but found none",
+	},
 }
 
 func TestBadConfigs(t *testing.T) {
@@ -2261,3 +2265,56 @@ func TestScrapeConfigDisableCompression(t *testing.T) {
 
 	require.False(t, got.ScrapeConfigs[0].EnableCompression)
 }
+
+// // TODO: This test really belongs elsewhere.
+// func TestSecretProvidersInline(t *testing.T) {
+// 	actual, err := LoadFile("testdata/secret_providers_inline.good.yml", false, false, log.NewNopLogger())
+// 	require.NoError(t, err)
+
+// 	exp := Config{
+// 		SecretProviders: secrets.Configs{
+// 			{
+// 				Type: "inline",
+// 				Secrets: []secrets.SecretConfig[any]{
+// 					{
+// 						Name: "s1",
+// 						Config: inline.SecretConfig{
+// 							Data: "abc",
+// 						},
+// 					},
+// 					{
+// 						Name: "s2",
+// 						Config: inline.SecretConfig{
+// 							Data: "xyz",
+// 						},
+// 					},
+// 				},
+// 			},
+// 		},
+// 	}
+// 	require.Equal(t, exp, actual)
+// }
+
+// func TestSecretProviders(t *testing.T) {
+// 	validBinarySecret := &corev1.Secret{
+// 		ObjectMeta: metav1.ObjectMeta{
+// 			Namespace: "ns1",
+// 			Name:      "s1",
+// 		},
+// 		Data: map[string][]byte{
+// 			"k1": []byte("Hello world!"),
+// 			"k2": []byte("Foo"),
+// 		},
+// 	}
+// 	validTextSecret := &corev1.Secret{
+// 		ObjectMeta: metav1.ObjectMeta{
+// 			Namespace: "ns2",
+// 			Name:      "s1",
+// 		},
+// 		StringData: map[string]string{
+// 			"k1": "Bar",
+// 		},
+// 	}
+// 	fake.NewSimpleClientset(validBinarySecret, validTextSecret)
+// 	// TODO: Insert client into secret provider.
+// }
