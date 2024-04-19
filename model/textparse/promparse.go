@@ -166,8 +166,11 @@ type PromParser struct {
 }
 
 // NewPromParser returns a new parser of the byte slice.
-func NewPromParser(b []byte) Parser {
-	return &PromParser{l: &promlexer{b: append(b, '\n')}}
+func NewPromParser(b []byte, st *labels.SymbolTable) Parser {
+	return &PromParser{
+		l:       &promlexer{b: append(b, '\n')},
+		builder: labels.NewScratchBuilderWithSymbolTable(st, 16),
+	}
 }
 
 // Series returns the bytes of the series, the timestamp if set, and the value
@@ -277,8 +280,8 @@ func (p *PromParser) parseError(exp string, got token) error {
 	return fmt.Errorf("%s, got %q (%q) while parsing: %q", exp, p.l.b[p.l.start:e], got, p.l.b[p.start:e])
 }
 
-// Next advances the parser to the next sample. It returns false if no
-// more samples were read or an error occurred.
+// Next advances the parser to the next sample.
+// It returns (EntryInvalid, io.EOF) if no samples were read.
 func (p *PromParser) Next() (Entry, error) {
 	var err error
 

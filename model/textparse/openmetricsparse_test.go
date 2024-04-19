@@ -14,7 +14,6 @@
 package textparse
 
 import (
-	"errors"
 	"io"
 	"testing"
 
@@ -23,7 +22,6 @@ import (
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestOpenMetricsParse(t *testing.T) {
@@ -74,17 +72,7 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 
 	int64p := func(x int64) *int64 { return &x }
 
-	exp := []struct {
-		lset    labels.Labels
-		m       string
-		t       *int64
-		v       float64
-		typ     model.MetricType
-		help    string
-		unit    string
-		comment string
-		e       *exemplar.Exemplar
-	}{
+	exp := []expectedParse{
 		{
 			m:    "go_gc_duration_seconds",
 			help: "A summary of the GC invocation durations.",
@@ -247,58 +235,8 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 		},
 	}
 
-	p := NewOpenMetricsParser([]byte(input))
-	i := 0
-
-	var res labels.Labels
-
-	for {
-		et, err := p.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		require.NoError(t, err)
-
-		switch et {
-		case EntrySeries:
-			m, ts, v := p.Series()
-
-			var e exemplar.Exemplar
-			p.Metric(&res)
-			found := p.Exemplar(&e)
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].t, ts)
-			require.Equal(t, exp[i].v, v)
-			testutil.RequireEqual(t, exp[i].lset, res)
-			if exp[i].e == nil {
-				require.False(t, found)
-			} else {
-				require.True(t, found)
-				testutil.RequireEqual(t, *exp[i].e, e)
-			}
-
-		case EntryType:
-			m, typ := p.Type()
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].typ, typ)
-
-		case EntryHelp:
-			m, h := p.Help()
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].help, string(h))
-
-		case EntryUnit:
-			m, u := p.Unit()
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].unit, string(u))
-
-		case EntryComment:
-			require.Equal(t, exp[i].comment, string(p.Comment()))
-		}
-
-		i++
-	}
-	require.Len(t, exp, i)
+	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable())
+	checkParseResults(t, p, exp)
 }
 
 func TestUTF8OpenMetricsParse(t *testing.T) {
@@ -322,17 +260,7 @@ func TestUTF8OpenMetricsParse(t *testing.T) {
 
 	input += "\n# EOF\n"
 
-	exp := []struct {
-		lset    labels.Labels
-		m       string
-		t       *int64
-		v       float64
-		typ     model.MetricType
-		help    string
-		unit    string
-		comment string
-		e       *exemplar.Exemplar
-	}{
+	exp := []expectedParse{
 		{
 			m:    "go.gc_duration_seconds",
 			help: "A summary of the GC invocation durations.",
@@ -378,58 +306,8 @@ choices}`, "strange©™\n'quoted' \"name\"", "6"),
 		},
 	}
 
-	p := NewOpenMetricsParser([]byte(input))
-	i := 0
-
-	var res labels.Labels
-
-	for {
-		et, err := p.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		require.NoError(t, err)
-
-		switch et {
-		case EntrySeries:
-			m, ts, v := p.Series()
-
-			var e exemplar.Exemplar
-			p.Metric(&res)
-			found := p.Exemplar(&e)
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].t, ts)
-			require.Equal(t, exp[i].v, v)
-			require.Equal(t, exp[i].lset, res)
-			if exp[i].e == nil {
-				require.False(t, found)
-			} else {
-				require.True(t, found)
-				require.Equal(t, *exp[i].e, e)
-			}
-
-		case EntryType:
-			m, typ := p.Type()
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].typ, typ)
-
-		case EntryHelp:
-			m, h := p.Help()
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].help, string(h))
-
-		case EntryUnit:
-			m, u := p.Unit()
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].unit, string(u))
-
-		case EntryComment:
-			require.Equal(t, exp[i].comment, string(p.Comment()))
-		}
-
-		i++
-	}
-	require.Len(t, exp, i)
+	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable())
+	checkParseResults(t, p, exp)
 }
 
 func TestOpenMetricsParseErrors(t *testing.T) {
@@ -727,7 +605,7 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		p := NewOpenMetricsParser([]byte(c.input))
+		p := NewOpenMetricsParser([]byte(c.input), labels.NewSymbolTable())
 		var err error
 		for err == nil {
 			_, err = p.Next()
@@ -792,7 +670,7 @@ func TestOMNullByteHandling(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		p := NewOpenMetricsParser([]byte(c.input))
+		p := NewOpenMetricsParser([]byte(c.input), labels.NewSymbolTable())
 		var err error
 		for err == nil {
 			_, err = p.Next()

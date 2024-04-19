@@ -42,7 +42,8 @@ const (
 func TestTargetLabels(t *testing.T) {
 	target := newTestTarget("example.com:80", 0, labels.FromStrings("job", "some_job", "foo", "bar"))
 	want := labels.FromStrings(model.JobLabel, "some_job", "foo", "bar")
-	got := target.Labels()
+	b := labels.NewScratchBuilder(0)
+	got := target.Labels(&b)
 	require.Equal(t, want, got)
 	i := 0
 	target.LabelsRange(func(l labels.Label) {
@@ -591,7 +592,6 @@ func TestMaxSchemaAppender(t *testing.T) {
 					_, err = app.AppendHistogram(0, lbls, ts, nil, fh)
 					require.Equal(t, c.expectSchema, fh.Schema)
 					require.NoError(t, err)
-
 				} else {
 					h := c.h.Copy()
 					_, err = app.AppendHistogram(0, lbls, ts, h, nil)
