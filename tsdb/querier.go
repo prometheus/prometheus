@@ -331,20 +331,18 @@ func postingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Matcher) 
 		return nil, err
 	}
 
-	i := 0
+	res := vals[:0]
 	for _, val := range vals {
 		if m.Matches(val) {
-			vals[i] = val
-			i++
+			res = append(res, val)
 		}
 	}
 
-	vals = vals[0:i]
-	if len(vals) == 0 {
+	if len(res) == 0 {
 		return index.EmptyPostings(), nil
 	}
 
-	return ix.Postings(ctx, m.Name, vals...)
+	return ix.Postings(ctx, m.Name, res...)
 }
 
 // inversePostingsForMatcher returns the postings for the series with the label name set but not matching the matcher.
@@ -370,7 +368,7 @@ func inversePostingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Ma
 		return nil, err
 	}
 
-	var res []string
+	res := vals[:0]
 	// If the inverse match is ="", we just want all the values.
 	if m.Type == labels.MatchEqual && m.Value == "" {
 		res = vals
