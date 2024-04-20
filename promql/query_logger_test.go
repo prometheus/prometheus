@@ -110,10 +110,7 @@ func TestMMapFile(t *testing.T) {
 	filename := file.Name()
 	defer os.Remove(filename)
 
-	fileAsBytes, closer, err := getMMapedFile(filename, 2, nil)
-	if err != nil {
-		t.Cleanup(func() { closer.Close() })
-	}
+	fileAsBytes, _, err := getMMapedFile(filename, 2, nil)
 
 	require.NoError(t, err)
 	copy(fileAsBytes, "ab")
