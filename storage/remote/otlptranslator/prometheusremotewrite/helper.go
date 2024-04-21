@@ -442,10 +442,8 @@ func mostRecentTimestampInMetric(metric pmetric.Metric) pcommon.Timestamp {
 }
 
 func maxTimestamp(a, b pcommon.Timestamp) pcommon.Timestamp {
-	if a > b {
-		return a
-	}
-	return b
+	resultTimestamp := max(a, b)
+	return resultTimestamp
 }
 
 // addSingleSummaryDataPoint converts pt to len(QuantileValues) + 2 samples.
