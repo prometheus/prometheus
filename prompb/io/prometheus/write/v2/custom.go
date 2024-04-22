@@ -25,7 +25,7 @@ func (h Histogram) IsFloatHistogram() bool {
 	return ok
 }
 
-func (m *WriteRequest) OptimizedMarshal(dst []byte) ([]byte, error) {
+func (m *Request) OptimizedMarshal(dst []byte) ([]byte, error) {
 	siz := m.Size()
 	if cap(dst) < siz {
 		dst = make([]byte, siz)
@@ -41,7 +41,7 @@ func (m *WriteRequest) OptimizedMarshal(dst []byte) ([]byte, error) {
 
 // OptimizedMarshalToSizedBuffer is mostly a copy of the generated MarshalToSizedBuffer,
 // but calls OptimizedMarshalToSizedBuffer on the timeseries.
-func (m *WriteRequest) OptimizedMarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *Request) OptimizedMarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int

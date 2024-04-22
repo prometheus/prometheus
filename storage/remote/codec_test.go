@@ -27,7 +27,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
-	writev2 "github.com/prometheus/prometheus/prompb/write/v2"
+	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -77,7 +77,7 @@ var writeRequestFixture = &prompb.WriteRequest{
 }
 
 // writeRequestMinimizedFixture represents the same request as writeRequestFixture, but using the minimized representation.
-var writeRequestMinimizedFixture = func() *writev2.WriteRequest {
+var writeRequestMinimizedFixture = func() *writev2.Request {
 	st := newRwSymbolTable()
 	var labels []uint32
 	for _, s := range []string{
@@ -97,7 +97,7 @@ var writeRequestMinimizedFixture = func() *writev2.WriteRequest {
 		st.RefStr(s)
 	}
 
-	return &writev2.WriteRequest{
+	return &writev2.Request{
 		Timeseries: []writev2.TimeSeries{
 			{
 				LabelsRefs: labels,

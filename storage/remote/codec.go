@@ -35,7 +35,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/prompb"
-	writev2 "github.com/prometheus/prometheus/prompb/write/v2"
+	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -1059,7 +1059,7 @@ func DecodeOTLPWriteRequest(r *http.Request) (pmetricotlp.ExportRequest, error) 
 	return otlpReq, nil
 }
 
-func DecodeMinimizedWriteRequestStr(r io.Reader) (*writev2.WriteRequest, error) {
+func DecodeMinimizedWriteRequestStr(r io.Reader) (*writev2.Request, error) {
 	compressed, err := io.ReadAll(r)
 	if err != nil {
 		return nil, err
@@ -1070,7 +1070,7 @@ func DecodeMinimizedWriteRequestStr(r io.Reader) (*writev2.WriteRequest, error) 
 		return nil, err
 	}
 
-	var req writev2.WriteRequest
+	var req writev2.Request
 	if err := proto.Unmarshal(reqBuf, &req); err != nil {
 		return nil, err
 	}
@@ -1078,7 +1078,7 @@ func DecodeMinimizedWriteRequestStr(r io.Reader) (*writev2.WriteRequest, error) 
 	return &req, nil
 }
 
-func MinimizedWriteRequestToWriteRequest(redReq *writev2.WriteRequest) (*prompb.WriteRequest, error) {
+func MinimizedWriteRequestToWriteRequest(redReq *writev2.Request) (*prompb.WriteRequest, error) {
 	req := &prompb.WriteRequest{
 		Timeseries: make([]prompb.TimeSeries, len(redReq.Timeseries)),
 		// TODO handle metadata?
