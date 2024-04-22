@@ -515,6 +515,34 @@ func processClassicHistogramSeries(m labels.Labels, suffix string, histMap map[u
 	histMap[m2hash] = histWrapper
 }
 
+func processUpperBoundsAndCreateBaseHistogram(upperBounds0 []float64) ([]float64, *histogram.FloatHistogram) {
+	sort.Float64s(upperBounds0)
+	upperBounds := make([]float64, 0, len(upperBounds0))
+	prevLe := math.Inf(-1)
+	for _, le := range upperBounds0 {
+		if le != prevLe { // deduplicate
+			upperBounds = append(upperBounds, le)
+			prevLe = le
+		}
+	}
+	var customBounds []float64
+	if upperBounds[len(upperBounds)-1] == math.Inf(1) {
+		customBounds = upperBounds[:len(upperBounds)-1]
+	} else {
+		customBounds = upperBounds
+	}
+	return upperBounds, &histogram.FloatHistogram{
+		Count:  0,
+		Sum:    0,
+		Schema: histogram.CustomBucketsSchema,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: uint32(len(upperBounds))},
+		},
+		PositiveBuckets: make([]float64, len(upperBounds)),
+		CustomValues:    customBounds,
+	}
+}
+
 // if classic histograms are defined, convert them into native histograms with custom
 // bounds and append the defined time series to the storage.
 func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
@@ -528,7 +556,7 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 		switch {
 		case strings.HasSuffix(mName, "_bucket") && m.Has(labels.BucketLabel):
 			le, err := strconv.ParseFloat(m.Get(labels.BucketLabel), 64)
-			if err != nil {
+			if err != nil || math.IsNaN(le) {
 				continue
 			}
 			processClassicHistogramSeries(m, "_bucket", histMap, smpls, func(histWrapper *tempHistogramWrapper) {
@@ -550,50 +578,18 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 	// Convert the collated classic histogram data into native histograms
 	// with custom bounds and append them to the storage.
 	for _, histWrapper := range histMap {
-		sort.Float64s(histWrapper.upperBounds)
-		upperBounds := make([]float64, 0, len(histWrapper.upperBounds))
-		prevLe := -372.4869 // assuming that the lowest bound is never this value
-		for _, le := range histWrapper.upperBounds {
-			if le != prevLe { // deduplicate
-				upperBounds = append(upperBounds, le)
-				prevLe = le
-			}
-		}
-		var customBounds []float64
-		if upperBounds[len(upperBounds)-1] == math.Inf(1) {
-			customBounds = upperBounds[:len(upperBounds)-1]
-		} else {
-			customBounds = upperBounds
-		}
-		fhBase := &histogram.FloatHistogram{
-			Count:  0,
-			Sum:    0,
-			Schema: histogram.CustomBucketsSchema,
-			PositiveSpans: []histogram.Span{
-				{Offset: 0, Length: uint32(len(upperBounds))},
-			},
-			CustomValues: customBounds,
-		}
-		ts := make([]int64, 0, len(histWrapper.histByTs))
-		for t := range histWrapper.histByTs {
-			ts = append(ts, t)
-		}
-		sort.Slice(ts, func(i, j int) bool { return ts[i] < ts[j] })
-		for _, t := range ts {
-			hist, exists := histWrapper.histByTs[t]
-			if !exists {
-				continue
-			}
+		upperBounds, fhBase := processUpperBoundsAndCreateBaseHistogram(histWrapper.upperBounds)
+		samples := make([]Sample, 0, len(histWrapper.histByTs))
+		for t, hist := range histWrapper.histByTs {
 			fh := fhBase.Copy()
-			counts := make([]float64, 0, len(upperBounds))
 			var prevCount, total float64
-			for _, le := range upperBounds {
+			for i, le := range upperBounds {
 				currCount, exists := hist.bucketCounts[le]
 				if !exists {
 					currCount = 0
 				}
 				count := currCount - prevCount
-				counts = append(counts, count)
+				fh.PositiveBuckets[i] = count
 				total += count
 				prevCount = currCount
 			}
@@ -602,14 +598,14 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 				total = hist.count
 			}
 			fh.Count = total
-			fh.PositiveBuckets = counts
-			// s := Sample{Metric: m, T: t, H: fh}
-			// fmt.Printf("end s: %v\n", s)
-			s := Sample{T: t, H: fh}
-			// fmt.Printf("end m s: %v %v\n", m, s)
+			s := Sample{T: t, H: fh.Compact(0)}
 			if err := s.H.Validate(); err != nil {
 				return err
 			}
+			samples = append(samples, s)
+		}
+		sort.Slice(samples, func(i, j int) bool { return samples[i].T < samples[j].T })
+		for _, s := range samples {
 			if err := appendSample(a, s, histWrapper.metric); err != nil {
 				return err
 			}
