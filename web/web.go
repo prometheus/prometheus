@@ -244,28 +244,28 @@ type Options struct {
 	Version               *PrometheusVersion
 	Flags                 map[string]string
 
-	ListenAddress              string
-	CORSOrigin                 *regexp.Regexp
-	ReadTimeout                time.Duration
-	MaxConnections             int
-	ExternalURL                *url.URL
-	RoutePrefix                string
-	UseLocalAssets             bool
-	UserAssetsPath             string
-	ConsoleTemplatesPath       string
-	ConsoleLibrariesPath       string
-	EnableLifecycle            bool
-	EnableAdminAPI             bool
-	PageTitle                  string
-	RemoteReadSampleLimit      int
-	RemoteReadConcurrencyLimit int
-	RemoteReadBytesInFrame     int
-	EnableRemoteWriteReceiver  bool
-	EnableOTLPWriteReceiver    bool
-	IsAgent                    bool
-	AppName                    string
-	// TODO(cstyan): should this change to a list of tuples, maybe via the content negotiation PR?
-	RemoteWriteFormat config.RemoteWriteFormat
+	ListenAddress                   string
+	CORSOrigin                      *regexp.Regexp
+	ReadTimeout                     time.Duration
+	MaxConnections                  int
+	ExternalURL                     *url.URL
+	RoutePrefix                     string
+	UseLocalAssets                  bool
+	UserAssetsPath                  string
+	ConsoleTemplatesPath            string
+	ConsoleLibrariesPath            string
+	EnableLifecycle                 bool
+	EnableAdminAPI                  bool
+	PageTitle                       string
+	RemoteReadSampleLimit           int
+	RemoteReadConcurrencyLimit      int
+	RemoteReadBytesInFrame          int
+	EnableRemoteWriteReceiver       bool
+	RemoteWriteReceiverProtoTypes   []config.RemoteWriteProtoType
+	RemoteWriteReceiverCompressions []config.RemoteWriteCompression
+	EnableOTLPWriteReceiver         bool
+	IsAgent                         bool
+	AppName                         string
 
 	Gatherer   prometheus.Gatherer
 	Registerer prometheus.Registerer
@@ -355,7 +355,8 @@ func New(logger log.Logger, o *Options) *Handler {
 		o.Registerer,
 		nil,
 		o.EnableRemoteWriteReceiver,
-		o.RemoteWriteFormat,
+		o.RemoteWriteReceiverProtoTypes,
+		o.RemoteWriteReceiverCompressions,
 		o.EnableOTLPWriteReceiver,
 	)
 

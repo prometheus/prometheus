@@ -158,10 +158,8 @@ type flagConfig struct {
 	enableNewSDManager         bool
 	enablePerStepStats         bool
 	enableAutoGOMAXPROCS       bool
-	// todo: how to use the enable feature flag properly + use the remote format enum type
-	rwFormat                 int
-	enableAutoGOMEMLIMIT     bool
-	enableConcurrentRuleEval bool
+	enableAutoGOMEMLIMIT       bool
+	enableConcurrentRuleEval   bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -314,6 +312,12 @@ func main() {
 	a.Flag("web.enable-remote-write-receiver", "Enable API endpoint accepting remote write requests.").
 		Default("false").BoolVar(&cfg.web.EnableRemoteWriteReceiver)
 
+	a.Flag("web.remote-write-receiver.protobuf-types", fmt.Sprintf("List of accepted remote write 2.0 content types to advertise to senders, ordered by the preference. Note that the final decision is on the sender. Supported list values: %v", config.DefaultRemoteWriteProtoTypes.String())).
+		Default(config.DefaultRemoteWriteProtoTypes.Strings()...).SetValue(rwProtoTypeFlagValue(&cfg.web.RemoteWriteReceiverProtoTypes))
+
+	a.Flag("web.remote-write-receiver.compressions", fmt.Sprintf("List of accepted remote write 2.0 content encodings (compressions) to advertise to senders, ordered by the preference. Note that the final decision is on the sender. Supported list values: %v", config.DefaultRemoteWriteCompressions.String())).
+		Default(config.DefaultRemoteWriteCompressions.Strings()...).SetValue(rwCompressionFlagValue(&cfg.web.RemoteWriteReceiverCompressions))
+
 	a.Flag("web.console.templates", "Path to the console template directory, available at /consoles.").
 		Default("consoles").StringVar(&cfg.web.ConsoleTemplatesPath)
 
@@ -454,9 +458,6 @@ func main() {
 
 	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, auto-gomemlimit, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, remote-write-receiver (DEPRECATED), extra-scrape-metrics, new-service-discovery-manager, auto-gomaxprocs, no-default-scrape-port, native-histograms, otlp-write-receiver, created-timestamp-zero-ingestion, concurrent-rule-eval. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
-
-	a.Flag("remote-write-format", "remote write proto format to use, valid options: 0 (1.0), 1 (reduced format), 3 (min64 format)").
-		Default("0").IntVar(&cfg.rwFormat)
 
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
 
@@ -820,7 +821,6 @@ func main() {
 		cfg.web.Flags[f.Name] = f.Value.String()
 	}
 
-	cfg.web.RemoteWriteFormat = config.RemoteWriteFormat(cfg.rwFormat)
 	// Depends on cfg.web.ScrapeManager so needs to be after cfg.web.ScrapeManager = scrapeManager.
 	webHandler := web.New(log.With(logger, "component", "web"), &cfg.web)
 
@@ -1736,4 +1736,64 @@ type discoveryManager interface {
 	ApplyConfig(cfg map[string]discovery.Configs) error
 	Run() error
 	SyncCh() <-chan map[string][]*targetgroup.Group
+}
+
+// TODO(bwplotka): Add unit test.
+type rwProtoTypeFlagParser struct {
+	types *[]config.RemoteWriteProtoType
+}
+
+func rwProtoTypeFlagValue(types *[]config.RemoteWriteProtoType) kingpin.Value {
+	return &rwProtoTypeFlagParser{types: types}
+}
+
+func (p *rwProtoTypeFlagParser) IsCumulative() bool {
+	return true
+}
+
+func (p *rwProtoTypeFlagParser) String() string {
+	ss := make([]string, 0, len(*p.types))
+	for _, t := range *p.types {
+		ss = append(ss, string(t))
+	}
+	return strings.Join(ss, ",")
+}
+
+func (p *rwProtoTypeFlagParser) Set(opt string) error {
+	t := config.RemoteWriteProtoType(opt)
+	if err := t.Validate(); err != nil {
+		return err
+	}
+	*p.types = append(*p.types, t)
+	return nil
+}
+
+// TODO(bwplotka): Add unit test.
+type rwCompressionFlagParser struct {
+	types *[]config.RemoteWriteCompression
+}
+
+func rwCompressionFlagValue(types *[]config.RemoteWriteCompression) kingpin.Value {
+	return &rwCompressionFlagParser{types: types}
+}
+
+func (p *rwCompressionFlagParser) IsCumulative() bool {
+	return true
+}
+
+func (p *rwCompressionFlagParser) String() string {
+	ss := make([]string, 0, len(*p.types))
+	for _, t := range *p.types {
+		ss = append(ss, string(t))
+	}
+	return strings.Join(ss, ",")
+}
+
+func (p *rwCompressionFlagParser) Set(opt string) error {
+	t := config.RemoteWriteCompression(opt)
+	if err := t.Validate(); err != nil {
+		return err
+	}
+	*p.types = append(*p.types, t)
+	return nil
 }

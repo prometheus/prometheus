@@ -172,7 +172,10 @@ var (
 
 	// DefaultRemoteWriteConfig is the default remote write configuration.
 	DefaultRemoteWriteConfig = RemoteWriteConfig{
-		RemoteTimeout:    model.Duration(30 * time.Second),
+		RemoteTimeout: model.Duration(30 * time.Second),
+		ProtobufTypes: DefaultRemoteWriteProtoTypes,
+		Compressions:  DefaultRemoteWriteCompressions,
+
 		QueueConfig:      DefaultQueueConfig,
 		MetadataConfig:   DefaultMetadataConfig,
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
@@ -1025,22 +1028,18 @@ func CheckTargetAddress(address model.LabelValue) error {
 	return nil
 }
 
-// This needs to live here rather than in the remote package to avoid an import cycle.
-type RemoteWriteFormat int64
-
 // RemoteWriteConfig is the configuration for writing to remote storage.
 type RemoteWriteConfig struct {
-	URL                  *config.URL       `yaml:"url"`
-	RemoteTimeout        model.Duration    `yaml:"remote_timeout,omitempty"`
-	Headers              map[string]string `yaml:"headers,omitempty"`
-	WriteRelabelConfigs  []*relabel.Config `yaml:"write_relabel_configs,omitempty"`
-	Name                 string            `yaml:"name,omitempty"`
-	SendExemplars        bool              `yaml:"send_exemplars,omitempty"`
-	SendNativeHistograms bool              `yaml:"send_native_histograms,omitempty"`
-	ProtocolVersion      RemoteWriteFormat `yaml:"remote_write_version,omitempty"`
+	URL                  *config.URL              `yaml:"url"`
+	RemoteTimeout        model.Duration           `yaml:"remote_timeout,omitempty"`
+	Headers              map[string]string        `yaml:"headers,omitempty"`
+	WriteRelabelConfigs  []*relabel.Config        `yaml:"write_relabel_configs,omitempty"`
+	Name                 string                   `yaml:"name,omitempty"`
+	SendExemplars        bool                     `yaml:"send_exemplars,omitempty"`
+	SendNativeHistograms bool                     `yaml:"send_native_histograms,omitempty"`
+	ProtobufTypes        []RemoteWriteProtoType   `yaml:"proto_types,omitempty"`
+	Compressions         []RemoteWriteCompression `yaml:"compressions,omitempty"`
 
-	// We cannot do proper Go type embedding below as the parser will then parse
-	// values arbitrarily into the overflow maps of further-down types.
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 	QueueConfig      QueueConfig             `yaml:"queue_config,omitempty"`
 	MetadataConfig   MetadataConfig          `yaml:"metadata_config,omitempty"`
@@ -1070,6 +1069,20 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	}
 	if err := validateHeaders(c.Headers); err != nil {
 		return err
+	}
+
+	if c.ProtobufTypes == nil {
+		c.ProtobufTypes = DefaultRemoteWriteProtoTypes
+	}
+	if err := validateRemoteWriteProtoTypes(c.ProtobufTypes); err != nil {
+		return fmt.Errorf("invalid protobuf_types value: %w", err)
+	}
+
+	if c.Compressions == nil {
+		c.Compressions = DefaultRemoteWriteCompressions
+	}
+	if err := validateRemoteWriteCompressions(c.Compressions); err != nil {
+		return fmt.Errorf("invalid compressions value: %w", err)
 	}
 
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
