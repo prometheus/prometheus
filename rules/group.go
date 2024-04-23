@@ -676,7 +676,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 		}
 
 		// No results for this alert rule.
-		if err == nil {
+		if sset == nil {
 			level.Debug(g.logger).Log("msg", "Failed to find a series to restore the 'for' state", labels.AlertName, alertRule.Name())
 			continue
 		}

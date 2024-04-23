@@ -281,8 +281,8 @@ func (r *AlertingRule) QueryforStateSeries(ctx context.Context, q storage.Querie
 		}
 		matchers = append(matchers, mt)
 	})
-	sset := q.Select(ctx, false, nil, matchers...)
 
+	sset := q.Select(ctx, false, nil, matchers...)
 	return sset, sset.Err()
 }
 
