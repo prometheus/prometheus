@@ -664,19 +664,32 @@ func (g *Group) RestoreForState(ts time.Time) {
 			continue
 		}
 
+		sset, err := alertRule.QueryforStateSeries(g.opts.Context, q)
+		if err != nil {
+			level.Error(g.logger).Log(
+				"msg", "Failed to restore 'for' state",
+				labels.AlertName, alertRule.Name(),
+				"stage", "Select",
+				"err", err,
+			)
+			continue
+		}
+
+		// No results for this alert rule.
+		if err == nil {
+			level.Debug(g.logger).Log("msg", "Failed to find a series to restore the 'for' state", labels.AlertName, alertRule.Name())
+			continue
+		}
+
 		alertRule.ForEachActiveAlert(func(a *Alert) {
 			var s storage.Series
 
-			s, err := alertRule.QueryforStateSeries(g.opts.Context, a, q)
-			if err != nil {
-				// Querier Warnings are ignored. We do not care unless we have an error.
-				level.Error(g.logger).Log(
-					"msg", "Failed to restore 'for' state",
-					labels.AlertName, alertRule.Name(),
-					"stage", "Select",
-					"err", err,
-				)
-				return
+			// Find the series for the given alert from the set.
+			for sset.Next() {
+				if sset.At().Labels().Hash() == a.Labels.Hash() {
+					s = sset.At()
+					break
+				}
 			}
 
 			if s == nil {
