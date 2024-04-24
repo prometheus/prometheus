@@ -683,6 +683,42 @@ func TestBlockQuerierDelete(t *testing.T) {
 	}
 }
 
+func TestBlockQuerierWithExtendedIndexReader(t *testing.T) {
+	err := fmt.Errorf("test error")
+
+	bq := blockQuerier{
+		blockBaseQuerier: &blockBaseQuerier{
+			index:      newMockExtendedIndex(err),
+			chunks:     mockChunkReader(make(map[chunks.ChunkRef]chunkenc.Chunk)),
+			tombstones: tombstones.NewMemTombstones(),
+
+			mint: 1,
+			maxt: 10,
+		},
+	}
+
+	ss := bq.Select(context.Background(), false, nil, nil)
+	defer func() { require.NoError(t, bq.Close()) }()
+
+	require.Equal(t, err, ss.Err())
+
+	cq := blockChunkQuerier{
+		blockBaseQuerier: &blockBaseQuerier{
+			index:      newMockExtendedIndex(err),
+			chunks:     mockChunkReader(make(map[chunks.ChunkRef]chunkenc.Chunk)),
+			tombstones: tombstones.NewMemTombstones(),
+
+			mint: 1,
+			maxt: 10,
+		},
+	}
+
+	cs := cq.Select(context.Background(), false, nil, nil)
+	defer func() { require.NoError(t, cq.Close()) }()
+
+	require.Equal(t, err, cs.Err())
+}
+
 type fakeChunksReader struct {
 	ChunkReader
 	chks      map[chunks.ChunkRef]chunkenc.Chunk
@@ -2386,6 +2422,22 @@ func (m mockIndex) LabelNames(_ context.Context, matchers ...*labels.Matcher) ([
 	}
 	sort.Strings(l)
 	return l, nil
+}
+
+type mockExtendedIndex struct {
+	mockIndex
+	err error
+}
+
+func newMockExtendedIndex(err error) mockExtendedIndex {
+	return mockExtendedIndex{
+		mockIndex: newMockIndex(),
+		err: err,
+	}
+}
+
+func (m mockExtendedIndex) PostingsForMatchers(ctx context.Context, ms ...*labels.Matcher) (index.Postings, error) {
+	return nil, m.err
 }
 
 func BenchmarkQueryIterator(b *testing.B) {

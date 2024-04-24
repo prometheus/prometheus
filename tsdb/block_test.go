@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
@@ -87,6 +88,27 @@ func BenchmarkOpenBlock(b *testing.B) {
 			require.NoError(b, block.Close())
 		}
 	})
+}
+
+func TestOpenBlockWithOptions(t *testing.T) {
+	tmpdir := t.TempDir()
+	blockDir := createBlock(t, tmpdir, genSeries(10, 1, 1, 100))
+	wrapFuncCalled := false
+
+	block, err := OpenBlockWithOptions(nil, blockDir, nil, OpenBlockOptions{
+		IndexReaderWrapFunc: func(reader *index.Reader) IndexReader {
+			wrapFuncCalled = true
+			return reader
+		},
+	})
+
+	require.NoError(t, err)
+	defer func() { require.NoError(t, block.Close()) }()
+
+	indexReader, err := block.Index()
+	require.NoError(t, err)
+	require.True(t, wrapFuncCalled)
+	defer func() { require.NoError(t, indexReader.Close()) }()
 }
 
 func TestCorruptedChunk(t *testing.T) {
