@@ -543,7 +543,7 @@ func processUpperBoundsAndCreateBaseHistogram(upperBounds0 []float64) ([]float64
 	}
 }
 
-// if classic histograms are defined, convert them into native histograms with custom
+// If classic histograms are defined, convert them into native histograms with custom
 // bounds and append the defined time series to the storage.
 func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 	histMap := map[uint64]tempHistogramWrapper{}
