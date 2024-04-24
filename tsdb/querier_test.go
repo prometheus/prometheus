@@ -2432,7 +2432,7 @@ type mockExtendedIndex struct {
 func newMockExtendedIndex(err error) mockExtendedIndex {
 	return mockExtendedIndex{
 		mockIndex: newMockIndex(),
-		err: err,
+		err:       err,
 	}
 }
 
