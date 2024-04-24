@@ -681,15 +681,15 @@ func (g *Group) RestoreForState(ts time.Time) {
 			continue
 		}
 
-		result := map[string]storage.Series{}
+		seriesByLabels := map[string]storage.Series{}
 		for sset.Next() {
-			result[sset.At().Labels().DropMetricName().String()] = sset.At()
+			seriesByLabels[sset.At().Labels().DropMetricName().String()] = sset.At()
 		}
 
 		alertRule.ForEachActiveAlert(func(a *Alert) {
 			var s storage.Series
 
-			s, ok := result[a.Labels.String()]
+			s, ok := seriesByLabels[a.Labels.String()]
 			if !ok {
 				return
 			}
