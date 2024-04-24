@@ -845,7 +845,6 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) error {
 			} else {
 				c.receivedHistograms[seriesName] = append(c.receivedHistograms[seriesName], histogram)
 			}
-
 		}
 	}
 	if c.withWaitGroup {

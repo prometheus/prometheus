@@ -239,7 +239,7 @@ const hypervisorListBody = `
 // HandleHypervisorListSuccessfully mocks os-hypervisors detail call.
 func (m *SDMock) HandleHypervisorListSuccessfully() {
 	m.Mux.HandleFunc("/os-hypervisors/detail", func(w http.ResponseWriter, r *http.Request) {
-		testMethod(m.t, r, "GET")
+		testMethod(m.t, r, http.MethodGet)
 		testHeader(m.t, r, "X-Auth-Token", tokenID)
 
 		w.Header().Add("Content-Type", "application/json")
@@ -536,7 +536,7 @@ const serverListBody = `
 // HandleServerListSuccessfully mocks server detail call.
 func (m *SDMock) HandleServerListSuccessfully() {
 	m.Mux.HandleFunc("/servers/detail", func(w http.ResponseWriter, r *http.Request) {
-		testMethod(m.t, r, "GET")
+		testMethod(m.t, r, http.MethodGet)
 		testHeader(m.t, r, "X-Auth-Token", tokenID)
 
 		w.Header().Add("Content-Type", "application/json")
@@ -575,7 +575,7 @@ const listOutput = `
 // HandleFloatingIPListSuccessfully mocks floating ips call.
 func (m *SDMock) HandleFloatingIPListSuccessfully() {
 	m.Mux.HandleFunc("/os-floating-ips", func(w http.ResponseWriter, r *http.Request) {
-		testMethod(m.t, r, "GET")
+		testMethod(m.t, r, http.MethodGet)
 		testHeader(m.t, r, "X-Auth-Token", tokenID)
 
 		w.Header().Add("Content-Type", "application/json")

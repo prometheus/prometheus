@@ -583,7 +583,6 @@ func TestManagerTargetsUpdates(t *testing.T) {
 
 	tgSent := make(map[string][]*targetgroup.Group)
 	for x := 0; x < 10; x++ {
-
 		tgSent[strconv.Itoa(x)] = []*targetgroup.Group{
 			{
 				Source: strconv.Itoa(x),
@@ -856,4 +855,17 @@ func getResultFloats(app *collectResultAppender, expectedMetricName string) (res
 		}
 	}
 	return result
+}
+
+func TestUnregisterMetrics(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	// Check that all metrics can be unregistered, allowing a second manager to be created.
+	for i := 0; i < 2; i++ {
+		opts := Options{}
+		manager, err := NewManager(&opts, nil, nil, reg)
+		require.NotNil(t, manager)
+		require.NoError(t, err)
+		// Unregister all metrics.
+		manager.UnregisterMetrics()
+	}
 }

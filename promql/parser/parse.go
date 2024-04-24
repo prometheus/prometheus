@@ -258,7 +258,6 @@ func ParseSeriesDesc(input string) (labels labels.Labels, values []SequenceValue
 
 		labels = result.labels
 		values = result.values
-
 	}
 
 	if len(p.parseErrors) != 0 {

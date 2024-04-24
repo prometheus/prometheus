@@ -16,6 +16,7 @@ package labels
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -25,20 +26,20 @@ import (
 
 func TestLabels_String(t *testing.T) {
 	cases := []struct {
-		lables   Labels
+		labels   Labels
 		expected string
 	}{
 		{
-			lables:   FromStrings("t1", "t1", "t2", "t2"),
+			labels:   FromStrings("t1", "t1", "t2", "t2"),
 			expected: "{t1=\"t1\", t2=\"t2\"}",
 		},
 		{
-			lables:   Labels{},
+			labels:   Labels{},
 			expected: "{}",
 		},
 	}
 	for _, c := range cases {
-		str := c.lables.String()
+		str := c.labels.String()
 		require.Equal(t, c.expected, str)
 	}
 }
@@ -810,7 +811,7 @@ var benchmarkLabels = []Label{
 	{"job", "node"},
 	{"instance", "123.123.1.211:9090"},
 	{"path", "/api/v1/namespaces/<namespace>/deployments/<name>"},
-	{"method", "GET"},
+	{"method", http.MethodGet},
 	{"namespace", "system"},
 	{"status", "500"},
 	{"prometheus", "prometheus-core-1"},

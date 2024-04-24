@@ -712,7 +712,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 		for _, s := range val {
 			hash := s.Metric.Hash()
 			if _, ok := ev.metrics[hash]; !ok {
-				return fmt.Errorf("unexpected metric %s in result", s.Metric)
+				return fmt.Errorf("unexpected metric %s in result, has %s", s.Metric, formatSeriesResult(s))
 			}
 			seen[hash] = true
 			exp := ev.expected[hash]
@@ -759,11 +759,10 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 					return fmt.Errorf("expected histogram value at index %v for %s to have timestamp %v, but it had timestamp %v (result has %s)", i, ev.metrics[hash], expected.T, actual.T, formatSeriesResult(s))
 				}
 
-				if !actual.H.Equals(expected.H) {
+				if !actual.H.Equals(expected.H.Compact(0)) {
 					return fmt.Errorf("expected histogram value at index %v (t=%v) for %s to be %v, but got %v (result has %s)", i, actual.T, ev.metrics[hash], expected.H, actual.H, formatSeriesResult(s))
 				}
 			}
-
 		}
 
 		for hash := range ev.expected {
@@ -777,7 +776,11 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 		for pos, v := range val {
 			fp := v.Metric.Hash()
 			if _, ok := ev.metrics[fp]; !ok {
-				return fmt.Errorf("unexpected metric %s in result", v.Metric)
+				if v.H != nil {
+					return fmt.Errorf("unexpected metric %s in result, has value %v", v.Metric, v.H)
+				}
+
+				return fmt.Errorf("unexpected metric %s in result, has value %v", v.Metric, v.F)
 			}
 			exp := ev.expected[fp]
 			if ev.ordered && exp.pos != pos+1 {
@@ -791,7 +794,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 			if expH != nil && v.H == nil {
 				return fmt.Errorf("expected histogram %s for %s but got float value %v", HistogramTestExpression(expH), v.Metric, v.F)
 			}
-			if expH != nil && !expH.Equals(v.H) {
+			if expH != nil && !expH.Compact(0).Equals(v.H) {
 				return fmt.Errorf("expected %v for %s but got %s", HistogramTestExpression(expH), v.Metric, HistogramTestExpression(v.H))
 			}
 			if !almostEqual(exp0.Value, v.F, defaultEpsilon) {
@@ -802,10 +805,6 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 		}
 		for fp, expVals := range ev.expected {
 			if !seen[fp] {
-				fmt.Println("vector result", len(val), ev.expr)
-				for _, ss := range val {
-					fmt.Println("    ", ss.Metric, ss.T, ss.F)
-				}
 				return fmt.Errorf("expected metric %s with %v not found", ev.metrics[fp], expVals)
 			}
 		}
@@ -963,7 +962,7 @@ func (t *test) execEval(cmd *evalCmd, engine QueryEngine) error {
 func (t *test) execRangeEval(cmd *evalCmd, engine QueryEngine) error {
 	q, err := engine.NewRangeQuery(t.context, t.storage, nil, cmd.expr, cmd.start, cmd.end, cmd.step)
 	if err != nil {
-		return err
+		return fmt.Errorf("error creating range query for %q (line %d): %w", cmd.expr, cmd.line, err)
 	}
 	res := q.Exec(t.context)
 	if res.Err != nil {
@@ -1013,7 +1012,7 @@ func (t *test) execInstantEval(cmd *evalCmd, engine QueryEngine) error {
 func (t *test) runInstantQuery(iq atModifierTestCase, cmd *evalCmd, engine QueryEngine) error {
 	q, err := engine.NewInstantQuery(t.context, t.storage, nil, iq.expr, iq.evalTime)
 	if err != nil {
-		return err
+		return fmt.Errorf("error creating instant query for %q (line %d): %w", cmd.expr, cmd.line, err)
 	}
 	defer q.Close()
 	res := q.Exec(t.context)
@@ -1035,7 +1034,7 @@ func (t *test) runInstantQuery(iq atModifierTestCase, cmd *evalCmd, engine Query
 	// by checking against the middle step.
 	q, err = engine.NewRangeQuery(t.context, t.storage, nil, iq.expr, iq.evalTime.Add(-time.Minute), iq.evalTime.Add(time.Minute), time.Minute)
 	if err != nil {
-		return err
+		return fmt.Errorf("error creating range query for %q (line %d): %w", cmd.expr, cmd.line, err)
 	}
 	rangeRes := q.Exec(t.context)
 	if rangeRes.Err != nil {

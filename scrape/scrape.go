@@ -726,7 +726,7 @@ var UserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
 func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
 	if s.req == nil {
-		req, err := http.NewRequest("GET", s.URL().String(), nil)
+		req, err := http.NewRequest(http.MethodGet, s.URL().String(), nil)
 		if err != nil {
 			return nil, err
 		}

@@ -2118,11 +2118,14 @@ Available meta labels:
   * `__meta_kubernetes_endpointslice_address_target_kind`: Kind of the referenced object.
   * `__meta_kubernetes_endpointslice_address_target_name`: Name of referenced object.
   * `__meta_kubernetes_endpointslice_address_type`: The ip protocol family of the address of the target.
-  * `__meta_kubernetes_endpointslice_endpoint_conditions_ready`:  Set to `true` or `false` for the referenced endpoint's ready state.
-  * `__meta_kubernetes_endpointslice_endpoint_conditions_serving`:  Set to `true` or `false` for the referenced endpoint's serving state.
-  * `__meta_kubernetes_endpointslice_endpoint_conditions_terminating`:  Set to `true` or `false` for the referenced endpoint's terminating state.
-  * `__meta_kubernetes_endpointslice_endpoint_topology_kubernetes_io_hostname`:  Name of the node hosting the referenced endpoint.
+  * `__meta_kubernetes_endpointslice_endpoint_conditions_ready`: Set to `true` or `false` for the referenced endpoint's ready state.
+  * `__meta_kubernetes_endpointslice_endpoint_conditions_serving`: Set to `true` or `false` for the referenced endpoint's serving state.
+  * `__meta_kubernetes_endpointslice_endpoint_conditions_terminating`: Set to `true` or `false` for the referenced endpoint's terminating state.
+  * `__meta_kubernetes_endpointslice_endpoint_topology_kubernetes_io_hostname`: Name of the node hosting the referenced endpoint.
   * `__meta_kubernetes_endpointslice_endpoint_topology_present_kubernetes_io_hostname`: Flag that shows if the referenced object has a kubernetes.io/hostname annotation.
+  * `__meta_kubernetes_endpointslice_endpoint_hostname`: Hostname of the referenced endpoint.
+  * `__meta_kubernetes_endpointslice_endpoint_node_name`: Name of the Node hosting the referenced endpoint.
+  * `__meta_kubernetes_endpointslice_endpoint_zone`: Zone the referenced endpoint exists in (only available when using the `discovery.k8s.io/v1` API group).
   * `__meta_kubernetes_endpointslice_port`: Port of the referenced endpoint.
   * `__meta_kubernetes_endpointslice_port_name`: Named port of the referenced endpoint.
   * `__meta_kubernetes_endpointslice_port_protocol`: Protocol of the referenced endpoint.
@@ -2449,11 +2452,15 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_linode_private_ipv4`: the private IPv4 of the linode instance
 * `__meta_linode_public_ipv4`: the public IPv4 of the linode instance
 * `__meta_linode_public_ipv6`: the public IPv6 of the linode instance
+* `__meta_linode_private_ipv4_rdns`: the reverse DNS for the first private IPv4 of the linode instance
+* `__meta_linode_public_ipv4_rdns`: the reverse DNS for the first public IPv4 of the linode instance
+* `__meta_linode_public_ipv6_rdns`: the reverse DNS for the first public IPv6 of the linode instance
 * `__meta_linode_region`: the region of the linode instance
 * `__meta_linode_type`: the type of the linode instance
 * `__meta_linode_status`: the status of the linode instance
 * `__meta_linode_tags`: a list of tags of the linode instance joined by the tag separator
 * `__meta_linode_group`: the display group a linode instance is a member of
+* `__meta_linode_gpus`: the number of GPU's of the linode instance 
 * `__meta_linode_hypervisor`: the virtualization software powering the linode instance
 * `__meta_linode_backups`: the backup service status of the linode instance
 * `__meta_linode_specs_disk_bytes`: the amount of storage space the linode instance has access to
@@ -2461,6 +2468,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_linode_specs_vcpus`: the number of VCPUS this linode has access to
 * `__meta_linode_specs_transfer_bytes`: the amount of network transfer the linode instance is allotted each month
 * `__meta_linode_extra_ips`: a list of all extra IPv4 addresses assigned to the linode instance joined by the tag separator
+* `__meta_linode_ipv6_ranges`: a list of IPv6 ranges with mask assigned to the linode instance joined by the tag separator
 
 ```yaml
 # Authentication information used to authenticate to the API server.
@@ -2490,6 +2498,9 @@ authorization:
 # Cannot be used at the same time as basic_auth or authorization.
 oauth2:
   [ <oauth2> ]
+
+# Optional region to filter on.
+[ region: <string> ]
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
@@ -3228,7 +3239,7 @@ are set to the scheme and metrics path of the target respectively. The `__param_
 label is set to the value of the first passed URL parameter called `<name>`.
 
 The `__scrape_interval__` and `__scrape_timeout__` labels are set to the target's
-interval and timeout. This is **experimental** and could change in the future.
+interval and timeout.
 
 Additional labels prefixed with `__meta_` may be available during the
 relabeling phase. They are set by the service discovery mechanism that provided

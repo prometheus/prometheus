@@ -21,12 +21,16 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/version"
+	"k8s.io/apimachinery/pkg/watch"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
+	kubetesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -311,6 +315,42 @@ func TestCheckNetworkingV1Supported(t *testing.T) {
 				require.NoError(t, err)
 			}
 			require.Equal(t, tc.wantSupported, supported)
+		})
+	}
+}
+
+func TestFailuresCountMetric(t *testing.T) {
+	tests := []struct {
+		role             Role
+		minFailedWatches int
+	}{
+		{RoleNode, 1},
+		{RolePod, 1},
+		{RoleService, 1},
+		{RoleEndpoint, 3},
+		{RoleEndpointSlice, 3},
+		{RoleIngress, 1},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(string(tc.role), func(t *testing.T) {
+			t.Parallel()
+
+			n, c := makeDiscovery(tc.role, NamespaceDiscovery{})
+			// The counter is initialized and no failures at the beginning.
+			require.Equal(t, float64(0), prom_testutil.ToFloat64(n.metrics.failuresCount))
+
+			// Simulate an error on watch requests.
+			c.Discovery().(*fakediscovery.FakeDiscovery).PrependWatchReactor("*", func(action kubetesting.Action) (bool, watch.Interface, error) {
+				return true, nil, apierrors.NewUnauthorized("unauthorized")
+			})
+
+			// Start the discovery.
+			k8sDiscoveryTest{discovery: n}.Run(t)
+
+			// At least the errors of the initial watches should be caught (watches are retried on errors).
+			require.GreaterOrEqual(t, prom_testutil.ToFloat64(n.metrics.failuresCount), float64(tc.minFailedWatches))
 		})
 	}
 }

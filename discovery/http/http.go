@@ -150,7 +150,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger, clientOpts []config.HTTPCli
 }
 
 func (d *Discovery) Refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	req, err := http.NewRequest("GET", d.url, nil)
+	req, err := http.NewRequest(http.MethodGet, d.url, nil)
 	if err != nil {
 		return nil, err
 	}

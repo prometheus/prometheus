@@ -409,7 +409,7 @@ func generateOTLPWriteRequest(t *testing.T) pmetricotlp.ExportRequest {
 
 	// Generate One Counter, One Gauge, One Histogram, One Exponential-Histogram
 	// with resource attributes: service.name="test-service", service.instance.id="test-instance", host.name="test-host"
-	// with metric attibute: foo.bar="baz"
+	// with metric attribute: foo.bar="baz"
 
 	timestamp := time.Now()
 
