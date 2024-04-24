@@ -377,7 +377,6 @@ func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
 				actChks, actErr := ExpandChunks(actualSeries.Iterator(nil))
 				require.Equal(t, expErr, actErr)
 				require.Equal(t, expChks, actChks)
-
 			}
 			require.NoError(t, merged.Err())
 			require.False(t, tc.expected.Next(), "Expected Next() to be false")

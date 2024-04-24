@@ -26,6 +26,8 @@ linters:
     - testifylint
     - unconvert
     - unused
+    - usestdlibvars
+    - whitespace
 
 issues:
   max-same-issues: 0

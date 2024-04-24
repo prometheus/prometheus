@@ -85,7 +85,7 @@ func TestCompressionHandler_Gzip(t *testing.T) {
 		},
 	}
 
-	req, _ := http.NewRequest("GET", server.URL+"/foo_endpoint", nil)
+	req, _ := http.NewRequest(http.MethodGet, server.URL+"/foo_endpoint", nil)
 	req.Header.Set(acceptEncodingHeader, gzipEncoding)
 
 	resp, err := client.Do(req)
@@ -120,7 +120,7 @@ func TestCompressionHandler_Deflate(t *testing.T) {
 		},
 	}
 
-	req, _ := http.NewRequest("GET", server.URL+"/foo_endpoint", nil)
+	req, _ := http.NewRequest(http.MethodGet, server.URL+"/foo_endpoint", nil)
 	req.Header.Set(acceptEncodingHeader, deflateEncoding)
 
 	resp, err := client.Do(req)

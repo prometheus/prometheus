@@ -291,7 +291,6 @@ func parseServersetMember(data []byte, path string) (model.LabelSet, error) {
 			endpoint.Host)
 		labels[serversetEndpointLabelPrefix+"_port_"+cleanName] = model.LabelValue(
 			fmt.Sprintf("%d", endpoint.Port))
-
 	}
 
 	labels[serversetStatusLabel] = model.LabelValue(member.Status)
