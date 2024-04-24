@@ -230,9 +230,11 @@ func (g *Group) run(ctx context.Context) {
 			g.evalIterationFunc(ctx, g, evalTimestamp)
 		}
 
-		now := time.Now()
-		g.RestoreForState(now)
-		g.metrics.GroupLastRestoreDuration.WithLabelValues(GroupKey(g.file, g.name)).Set(time.Since(now).Seconds())
+		restoreStartTime := time.Now()
+		g.RestoreForState(restoreStartTime)
+		totalRestoreTimeSeconds := time.Since(restoreStartTime).Seconds()
+		g.metrics.GroupLastRestoreDuration.WithLabelValues(GroupKey(g.file, g.name)).Set(totalRestoreTimeSeconds)
+		level.Debug(g.logger).Log("msg", "'for' state restoration completed", "duration_seconds", totalRestoreTimeSeconds)
 		g.shouldRestore = false
 	}
 
