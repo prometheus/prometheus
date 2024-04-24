@@ -1044,5 +1044,5 @@ func TestAlertingRule_ActiveAlertsCount(t *testing.T) {
 	al := &Alert{State: StateFiring, Labels: lbls, ActiveAt: time.Now()}
 	rule.active[h] = al
 
-	require.Equal(t, 1, t rule.ActiveAlertsCount())
+	require.Equal(t, 1, rule.ActiveAlertsCount())
 }
