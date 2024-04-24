@@ -450,7 +450,13 @@ func (pb *Block) Index() (IndexReader, error) {
 	if err := pb.startRead(); err != nil {
 		return nil, err
 	}
-	return blockIndexReader{ir: pb.indexr, b: pb}, nil
+
+	indexReader := blockIndexReader{ir: pb.indexr, b: pb}
+
+	if _, ok := pb.indexr.(ExtendedIndexReader); ok {
+		return extendedBlockIndexReader{blockIndexReader: indexReader}, nil
+	}
+	return indexReader, nil
 }
 
 // Chunks returns a new ChunkReader against the block data.
@@ -570,7 +576,11 @@ func (r blockIndexReader) LabelNamesFor(ctx context.Context, ids ...storage.Seri
 	return r.ir.LabelNamesFor(ctx, ids...)
 }
 
-func (r blockIndexReader) PostingsForMatchers(ctx context.Context, ms ...*labels.Matcher) (index.Postings, error) {
+type extendedBlockIndexReader struct {
+	blockIndexReader
+}
+
+func (r extendedBlockIndexReader) PostingsForMatchers(ctx context.Context, ms ...*labels.Matcher) (index.Postings, error) {
 	extendedReader, ok := r.ir.(ExtendedIndexReader)
 	if !ok {
 		return nil, fmt.Errorf("missing methods for ExtendedIndexReader")
