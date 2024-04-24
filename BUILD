@@ -212,14 +212,39 @@ cc_library(
 )
 
 cc_library(
+    name = "cls_common",
+    hdrs = glob(["ceph/cls/common/**/*.h"]),
+    includes = ["./ceph/cls"],
+    deps = [
+        ":ceph_sdk",
+        "@lru_cache//:lru_cache",
+    ],
+)
+
+cc_test(
+    name = "cls_common_test",
+    srcs = glob([
+        "ceph/cls/common/tests/**/*.cpp"
+    ]),
+    deps = [
+        ":cls_common",
+        "@gtest//:gtest_main",
+    ]
+)
+
+cc_library(
     name = "cls_wal_modules",
-    hdrs = glob(["ceph/cls/cls_wal/modules/**/*.h", "ceph/cls/cls_wal/constants.h"]),
+    hdrs = glob([
+        "ceph/cls/cls_wal/modules/**/*.h",
+        "ceph/cls/cls_wal/constants.h",
+        "ceph/cls/cls_wal/tests/**/*.h"
+    ]),
     includes = ["ceph/cls/cls_wal"],
     deps = [
         ":bare_bones_headers",
         ":prometheus",
         ":wal",
-        "@lru_cache//:lru_cache",
+        ":cls_common",
         "@snappy//:snappy"
     ]
 )
@@ -228,30 +253,18 @@ cc_binary(
     name = "cls_wal",
     srcs = glob(["ceph/cls/cls_wal/*.cpp"]),
     deps = [
-        ":cls_wal_modules",
-        ":ceph_sdk",
+        ":cls_wal_modules"
     ],
     linkshared = True,
 )
 
-cc_library(
-    name = "cls_wal_test_modules",
+cc_test(
+    name = "cls_wal_test",
     srcs = glob([
         "ceph/cls/cls_wal/tests/**/*.cpp"
     ]),
-    hdrs = glob([
-       "ceph/cls/cls_wal/tests/**/*.h"
-    ]),
     deps = [
         ":cls_wal_modules",
-        ":ceph_sdk",
         "@gtest//:gtest_main",
-    ],
-)
-
-cc_test(
-    name = "cls_wal_test",
-    deps = [
-        ":cls_wal_test_modules"
     ]
 )
