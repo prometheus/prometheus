@@ -874,7 +874,7 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 			prometheus.GaugeOpts{
 				Namespace: namespace,
 				Name:      "rule_group_last_restore_duration_seconds",
-				Help:      "The duration of the last rule group restoration.",
+				Help:      "The duration of the last alert rules alerts restoration using the `ALERTS_FOR_STATE` series.",
 			},
 			[]string{"rule_group"},
 		),
