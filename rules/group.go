@@ -230,7 +230,11 @@ func (g *Group) run(ctx context.Context) {
 			g.evalIterationFunc(ctx, g, evalTimestamp)
 		}
 
-		g.RestoreForState(time.Now())
+		restoreStartTime := time.Now()
+		g.RestoreForState(restoreStartTime)
+		totalRestoreTimeSeconds := time.Since(restoreStartTime).Seconds()
+		g.metrics.GroupLastRestoreDuration.WithLabelValues(GroupKey(g.file, g.name)).Set(totalRestoreTimeSeconds)
+		level.Debug(g.logger).Log("msg", "'for' state restoration completed", "duration_seconds", totalRestoreTimeSeconds)
 		g.shouldRestore = false
 	}
 
@@ -779,17 +783,18 @@ const namespace = "prometheus"
 
 // Metrics for rule evaluation.
 type Metrics struct {
-	EvalDuration        prometheus.Summary
-	IterationDuration   prometheus.Summary
-	IterationsMissed    *prometheus.CounterVec
-	IterationsScheduled *prometheus.CounterVec
-	EvalTotal           *prometheus.CounterVec
-	EvalFailures        *prometheus.CounterVec
-	GroupInterval       *prometheus.GaugeVec
-	GroupLastEvalTime   *prometheus.GaugeVec
-	GroupLastDuration   *prometheus.GaugeVec
-	GroupRules          *prometheus.GaugeVec
-	GroupSamples        *prometheus.GaugeVec
+	EvalDuration             prometheus.Summary
+	IterationDuration        prometheus.Summary
+	IterationsMissed         *prometheus.CounterVec
+	IterationsScheduled      *prometheus.CounterVec
+	EvalTotal                *prometheus.CounterVec
+	EvalFailures             *prometheus.CounterVec
+	GroupInterval            *prometheus.GaugeVec
+	GroupLastEvalTime        *prometheus.GaugeVec
+	GroupLastDuration        *prometheus.GaugeVec
+	GroupLastRestoreDuration *prometheus.GaugeVec
+	GroupRules               *prometheus.GaugeVec
+	GroupSamples             *prometheus.GaugeVec
 }
 
 // NewGroupMetrics creates a new instance of Metrics and registers it with the provided registerer,
@@ -865,6 +870,14 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 			},
 			[]string{"rule_group"},
 		),
+		GroupLastRestoreDuration: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: namespace,
+				Name:      "rule_group_last_restore_duration_seconds",
+				Help:      "The duration of the last alert rules alerts restoration using the `ALERTS_FOR_STATE` series.",
+			},
+			[]string{"rule_group"},
+		),
 		GroupRules: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Namespace: namespace,
@@ -894,6 +907,7 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 			m.GroupInterval,
 			m.GroupLastEvalTime,
 			m.GroupLastDuration,
+			m.GroupLastRestoreDuration,
 			m.GroupRules,
 			m.GroupSamples,
 		)
