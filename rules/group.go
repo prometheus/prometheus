@@ -681,7 +681,8 @@ func (g *Group) RestoreForState(ts time.Time) {
 			continue
 		}
 
-		seriesByLabels := map[string]storage.Series{}
+		// While not technically the same number of series we expect, it's as good of an approximation as any.
+		seriesByLabels := make(map[string]storage.Series, alertRule.ActiveAlertsCount())
 		for sset.Next() {
 			seriesByLabels[sset.At().Labels().DropMetricName().String()] = sset.At()
 		}

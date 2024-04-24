@@ -542,6 +542,13 @@ func (r *AlertingRule) ForEachActiveAlert(f func(*Alert)) {
 	}
 }
 
+func (r *AlertingRule) ActiveAlertsCount() int {
+	r.activeMtx.Lock()
+	defer r.activeMtx.Unlock()
+
+	return len(r.active)
+}
+
 func (r *AlertingRule) sendAlerts(ctx context.Context, ts time.Time, resendDelay, interval time.Duration, notifyFunc NotifyFunc) {
 	alerts := []*Alert{}
 	r.ForEachActiveAlert(func(alert *Alert) {

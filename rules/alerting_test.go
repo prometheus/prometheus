@@ -1027,3 +1027,22 @@ func TestAlertingRule_SetNoDependencyRules(t *testing.T) {
 	rule.SetNoDependencyRules(true)
 	require.True(t, rule.NoDependencyRules())
 }
+
+func TestAlertingRule_ActiveAlertsCount(t *testing.T) {
+	rule := NewAlertingRule(
+		"TestRule",
+		nil,
+		time.Minute,
+		0,
+		labels.FromStrings("severity", "critical"),
+		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
+	)
+
+	// Set an active alert.
+	lbls := labels.FromStrings("a1", "1")
+	h := lbls.Hash()
+	al := &Alert{State: StateFiring, Labels: lbls, ActiveAt: time.Now()}
+	rule.active[h] = al
+
+	require.Equal(t, 1, t rule.ActiveAlertsCount())
+}
