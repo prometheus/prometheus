@@ -681,21 +681,18 @@ func (g *Group) RestoreForState(ts time.Time) {
 			continue
 		}
 
+		result := map[uint64]storage.Series{}
+		for sset.Next() {
+			result[sset.At().Labels().DropMetricName().Hash()] = sset.At()
+		}
+
 		alertRule.ForEachActiveAlert(func(a *Alert) {
 			var s storage.Series
 
-			// Find the series for the given alert from the set.
-			for sset.Next() {
-				if sset.At().Labels().Hash() == a.Labels.Hash() {
-					s = sset.At()
-					break
-				}
-			}
-
-			if s == nil {
+			s, ok := result[a.Labels.Hash()]
+			if !ok {
 				return
 			}
-
 			// Series found for the 'for' state.
 			var t int64
 			var v float64

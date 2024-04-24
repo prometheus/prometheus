@@ -710,19 +710,21 @@ func TestQueryForStateSeries(t *testing.T) {
 			labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
 		)
 
-		alert := &Alert{
-			State:       0,
-			Labels:      labels.EmptyLabels(),
-			Annotations: labels.EmptyLabels(),
-			Value:       0,
-			ActiveAt:    time.Time{},
-			FiredAt:     time.Time{},
-			ResolvedAt:  time.Time{},
-			LastSentAt:  time.Time{},
-			ValidUntil:  time.Time{},
-		}
+		sample := rule.forStateSample(nil, time.Time{}, 0)
+		var matchersCount int
+		sample.Metric.Range(func(l labels.Label) {
+			matchersCount++
+		})
 
-		series, err := rule.QueryforStateSeries(context.Background(), alert, querier)
+		seriesSet, err := rule.QueryforStateSeries(context.Background(), querier)
+
+		var series storage.Series
+		for seriesSet.Next() {
+			if seriesSet.At().Labels().Len() == matchersCount {
+				series = seriesSet.At()
+				break
+			}
+		}
 
 		require.Equal(t, tst.expectedSeries, series)
 		require.Equal(t, tst.expectedError, err)
