@@ -1171,6 +1171,21 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				},
 			},
 		},
+		// Test empty matrix result
+		{
+			endpoint: api.queryRange,
+			query: url.Values{
+				"query": []string{"bottomk(2, notExists)"},
+				"start": []string{"0"},
+				"end":   []string{"2"},
+				"step":  []string{"1"},
+			},
+			response: &QueryData{
+				ResultType: parser.ValueTypeMatrix,
+				Result:     promql.Matrix{},
+			},
+			responseAsJSON: `{"resultType":"matrix","result":[]}`,
+		},
 		// Missing query params in range queries.
 		{
 			endpoint: api.queryRange,

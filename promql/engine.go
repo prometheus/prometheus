@@ -1298,7 +1298,7 @@ func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping 
 	buf := make([]byte, 0, 1024)
 	groupToResultIndex := make(map[uint64]int)
 	seriesToResult := make([]int, len(inputMatrix))
-	var result Matrix
+	result := Matrix{}
 
 	groupCount := 0
 	for si, series := range inputMatrix {
@@ -1331,7 +1331,7 @@ func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping 
 			k = len(inputMatrix)
 		}
 		if k < 1 {
-			return nil, warnings
+			return Matrix{}, warnings
 		}
 		seriess = make(map[uint64]Series, len(inputMatrix)) // Output series by series hash.
 	case parser.QUANTILE:
@@ -2983,7 +2983,7 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int, inputMatrix Ma
 
 	// Construct the result from the aggregated groups.
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
-	var mat Matrix
+	mat := Matrix{}
 	if ev.endTimestamp == ev.startTimestamp {
 		mat = make(Matrix, 0, len(groups))
 	}
