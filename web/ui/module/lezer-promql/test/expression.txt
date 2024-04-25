@@ -125,7 +125,7 @@ PromQL(
           AggregateModifier(
             By,
             GroupingLabels(
-                QuotedLabelName,
+                QuotedLabelName(StringLiteral),
                 LabelName
             )
           ),
@@ -139,7 +139,7 @@ PromQL(
         MatchingModifierClause(
           On,
           GroupingLabels(
-              QuotedLabelName
+              QuotedLabelName(StringLiteral)
           )
           GroupLeft
         ),
@@ -148,7 +148,7 @@ PromQL(
           AggregateModifier(
             By,
             GroupingLabels(
-                QuotedLabelName
+                QuotedLabelName(StringLiteral)
             )
           ),
           FunctionCallBody(
@@ -668,18 +668,18 @@ PromQL(BinaryExpr(NumberLiteral,Add,BinaryExpr(VectorSelector(Identifier),Atan2,
 {"metric_name"}
 
 ==>
-PromQL(VectorSelector(LabelMatchers(QuotedLabelName)))
+PromQL(VectorSelector(LabelMatchers(QuotedLabelName(StringLiteral))))
 
 # Testing quoted label name
 
 {"foo"="bar"}
 
 ==>
-PromQL(VectorSelector(LabelMatchers(QuotedLabelMatcher(QuotedLabelName, MatchOp(EqlSingle), StringLiteral))))
+PromQL(VectorSelector(LabelMatchers(QuotedLabelMatcher(QuotedLabelName(StringLiteral), MatchOp(EqlSingle), StringLiteral))))
 
 # Testing quoted metric name and label name
 
 {"metric_name", "foo"="bar"}
 
 ==>
-PromQL(VectorSelector(LabelMatchers(QuotedLabelName, QuotedLabelMatcher(QuotedLabelName, MatchOp(EqlSingle), StringLiteral))))
+PromQL(VectorSelector(LabelMatchers(QuotedLabelName(StringLiteral), QuotedLabelMatcher(QuotedLabelName(StringLiteral), MatchOp(EqlSingle), StringLiteral))))

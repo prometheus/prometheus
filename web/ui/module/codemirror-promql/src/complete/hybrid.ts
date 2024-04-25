@@ -379,19 +379,6 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
       // so we have or to autocomplete any kind of labelName or to autocomplete only the labelName associated to the metric
       result.push({ kind: ContextKind.LabelName, metricName: getMetricNameInVectorSelector(node, state) });
       break;
-    case QuotedLabelName:
-      if (node.parent?.type.id === GroupingLabels) {
-        // In this case we are in the given situation:
-        //      sum by ("myL")
-        // So we have to continue to autocomplete any kind of labelName
-        result.push({ kind: ContextKind.LabelName });
-      } else if (node.parent?.type.id === LabelMatchers) {
-        // In that case we are in the given situation:
-        //       {""} or {"metric_"}
-        // since this is for the QuotedMetricName we need to continue to autocomplete for the metric names
-        result.push({ kind: ContextKind.MetricName, metricName: state.sliceDoc(node.from, node.to).slice(1, -1) });
-      }
-      break;
     case LabelName:
       if (node.parent?.type.id === GroupingLabels) {
         // In this case we are in the given situation:
@@ -435,6 +422,16 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
           labelName: labelName,
           matchers: labelMatchers,
         });
+      } else if (node.parent?.parent?.type.id === GroupingLabels) {
+        // In this case we are in the given situation:
+        //      sum by ("myL")
+        // So we have to continue to autocomplete any kind of labelName
+        result.push({ kind: ContextKind.LabelName });
+      } else if (node.parent?.parent?.type.id === LabelMatchers) {
+        // In that case we are in the given situation:
+        //       {""} or {"metric_"}
+        // since this is for the QuotedMetricName we need to continue to autocomplete for the metric names
+        result.push({ kind: ContextKind.MetricName, metricName: state.sliceDoc(node.from, node.to).slice(1, -1) });
       }
       break;
     case NumberLiteral:

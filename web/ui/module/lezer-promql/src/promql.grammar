@@ -238,6 +238,10 @@ QuotedLabelMatcher {
     QuotedLabelName MatchOp StringLiteral
 }
 
+QuotedLabelName {
+    StringLiteral
+}
+
 StepInvariantExpr {
   expr At ( NumberLiteral | AtModifierPreprocessors "(" ")" )
 }
@@ -279,11 +283,6 @@ NumberLiteral  {
   }
   Identifier { (std.asciiLetter | "_" | ":") (std.asciiLetter | std.digit | "_" | ":" )*}
   LabelName { (std.asciiLetter | "_") (std.asciiLetter | std.digit | "_")* }
-  QuotedLabelName {
-    '"' (![\\\n"] | "\\" _)* '"' |
-    "'" (![\\\n'] | "\\" _)* "'" |
-    "`" ![`]* "`"
-  }
 
   // Operator
   Sub { "-" }
