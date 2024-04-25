@@ -28,19 +28,54 @@ class BitSequence {
   size_t max_size_for_current_data_size_ = 0;
   Memory<uint8_t> data_;
 
-  inline __attribute__((always_inline)) void reserve_enough_memory() noexcept {
-    if (__builtin_expect(size_ >= max_size_for_current_data_size_, false)) {
-      // always reserve at least 28 extra bytes at the tail, because read/write can touch
-      // up to 12 bytes and we allow "from" to be up to 16 bytes (128 bit) ahead
-      data_.grow_to_fit_at_least_and_fill_with_zeros((size_ + 28 * 8 + 7) << 3);
-      max_size_for_current_data_size_ = (data_.size() << 3) - 28 * 8;
+  PROMPP_ALWAYS_INLINE void reserve_enough_memory_if_needed() noexcept {
+    if (size_ >= max_size_for_current_data_size_) {
+      [[unlikely]];
+      reserve_memory(size_);
+    }
+  }
+
+  PROMPP_ALWAYS_INLINE void reserve_memory(size_t bits_count) noexcept {
+    // always reserve at least 28 extra bytes at the tail, because read/write can touch
+    // up to 12 bytes and we allow "from" to be up to 16 bytes (128 bit) ahead
+    data_.grow_to_fit_at_least_and_fill_with_zeros((bits_count + 28 * 8 + 7) << 3);
+    max_size_for_current_data_size_ = (data_.size() << 3) - 28 * 8;
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint8_t unfilled_bits_count() const noexcept { return 8 - (size_ % 8); }
+
+  PROMPP_ALWAYS_INLINE static void zero_bits(uint8_t& byte, uint8_t bits_count) noexcept {
+    static constexpr uint8_t kFilledByte = 0b11111111;
+
+    if (bits_count < 8) {
+      byte &= kFilledByte >> bits_count;
     }
   }
 
  public:
+  BitSequence() = default;
+  BitSequence(const BitSequence&) = default;
+  BitSequence(BitSequence&&) noexcept = default;
+
+  PROMPP_ALWAYS_INLINE BitSequence(const BitSequence& other, size_t bits_count) : size_(bits_count) {
+    if (!other.empty()) {
+      reserve_memory(other.size_);
+    }
+
+    if (!empty()) {
+      auto bytes = size_in_bytes();
+      std::memcpy(data_, other.data_, bytes);
+      zero_bits(data_[bytes - 1], unfilled_bits_count());
+    }
+  }
+
+  BitSequence& operator=(const BitSequence&) = default;
+  BitSequence& operator=(BitSequence&&) noexcept = default;
+
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t size() const noexcept { return size_; }
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t size_in_bytes() const noexcept { return (size_ + 7) >> 3; }
   [[nodiscard]] PROMPP_ALWAYS_INLINE std::span<const uint8_t> filled_bytes() const noexcept { return {data_.operator const uint8_t*(), size_ / 8}; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE std::span<const uint8_t> bytes() const noexcept { return {data_.operator const uint8_t*(), data_.size()}; }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return data_.allocated_memory(); }
 
@@ -55,7 +90,7 @@ class BitSequence {
   inline __attribute__((always_inline)) void push_back_bits_u64(uint8_t size, uint64_t data) noexcept {
     assert(size <= 64);
 
-    reserve_enough_memory();
+    reserve_enough_memory_if_needed();
 
     *reinterpret_cast<uint64_t*>(data_ + (size_ >> 3)) |= data << (size_ & 0b111u);
     *reinterpret_cast<uint64_t*>(data_ + (size_ >> 3) + 4) |= data >> (32 - (size_ & 0b111u));
@@ -66,7 +101,7 @@ class BitSequence {
   inline __attribute__((always_inline)) void push_back_bits_u32(uint8_t size, uint32_t data) noexcept {
     assert(size <= 32);
 
-    reserve_enough_memory();
+    reserve_enough_memory_if_needed();
 
     *reinterpret_cast<uint64_t*>(data_ + (size_ >> 3)) |= data << (size_ & 0b111u);
 
@@ -78,12 +113,12 @@ class BitSequence {
   inline __attribute__((always_inline)) void push_back_u32(uint64_t data) noexcept { push_back_bits_u32(32, data); }
 
   inline __attribute__((always_inline)) void push_back_single_zero_bit() noexcept {
-    reserve_enough_memory();
+    reserve_enough_memory_if_needed();
     ++size_;
   }
 
   inline __attribute__((always_inline)) void push_back_single_one_bit() noexcept {
-    reserve_enough_memory();
+    reserve_enough_memory_if_needed();
     *reinterpret_cast<uint32_t*>(data_ + (size_ >> 3)) |= 0b1u << (size_ & 0b111u);
     ++size_;
   }
@@ -198,6 +233,9 @@ class BitSequence {
     }
 
     inline __attribute__((always_inline)) uint64_t left() const noexcept { return i_ <= size_ ? size_ - i_ : 0; }
+
+    [[nodiscard]] PROMPP_ALWAYS_INLINE bool eof() const noexcept { return i_ == size_; }
+    [[nodiscard]] PROMPP_ALWAYS_INLINE uint64_t position() const noexcept { return i_; }
 
     inline __attribute__((always_inline)) uint32_t consume_bits_u32(uint8_t size) noexcept {
       uint32_t res = read_bits_u32(size);
@@ -320,7 +358,7 @@ class BitSequence {
     }
 
     // read data
-    seq.reserve_enough_memory();
+    seq.reserve_enough_memory_if_needed();
     in.read(reinterpret_cast<char*>(static_cast<uint8_t*>(seq.data_)), seq.size_in_bytes());
 
     return in;

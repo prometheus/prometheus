@@ -132,4 +132,52 @@ TEST_F(BitSequence, D64Svbyte2468) {
   EXPECT_TRUE(bitseq.empty());
   EXPECT_EQ(bitseq.size(), 0);
 }
+
+struct CopyWithSizeConstructorCase {
+  uint8_t bits_count;
+  uint32_t expected;
+};
+
+class BitSequenceCopyWithSizeConstructorFixture : public testing::TestWithParam<CopyWithSizeConstructorCase> {};
+
+TEST_P(BitSequenceCopyWithSizeConstructorFixture, Test) {
+  // Arrange
+  BareBones::BitSequence stream;
+  stream.push_back_u32(std::numeric_limits<uint32_t>::max());
+
+  // Act
+  BareBones::BitSequence stream2(stream, GetParam().bits_count);
+
+  // Assert
+  ASSERT_EQ(GetParam().bits_count, stream2.size());
+  EXPECT_EQ(GetParam().expected, *reinterpret_cast<const uint32_t*>(stream2.bytes().data()));
+}
+
+INSTANTIATE_TEST_SUITE_P(Tests,
+                         BitSequenceCopyWithSizeConstructorFixture,
+                         testing::Values(CopyWithSizeConstructorCase{.bits_count = 0, .expected = 0b0},
+                                         CopyWithSizeConstructorCase{.bits_count = 1, .expected = 0b1},
+                                         CopyWithSizeConstructorCase{.bits_count = 2, .expected = 0b11},
+                                         CopyWithSizeConstructorCase{.bits_count = 3, .expected = 0b111},
+                                         CopyWithSizeConstructorCase{.bits_count = 4, .expected = 0b1111},
+                                         CopyWithSizeConstructorCase{.bits_count = 5, .expected = 0b11111},
+                                         CopyWithSizeConstructorCase{.bits_count = 6, .expected = 0b111111},
+                                         CopyWithSizeConstructorCase{.bits_count = 7, .expected = 0b1111111},
+                                         CopyWithSizeConstructorCase{.bits_count = 8, .expected = 0b11111111},
+                                         CopyWithSizeConstructorCase{.bits_count = 9, .expected = 0b111111111},
+                                         CopyWithSizeConstructorCase{.bits_count = 16, .expected = 0b1111111111111111},
+                                         CopyWithSizeConstructorCase{.bits_count = 32, .expected = std::numeric_limits<uint32_t>::max()}));
+
+TEST_F(BitSequenceCopyWithSizeConstructorFixture, SourceStreamIsEmpty) {
+  // Arrange
+  BareBones::BitSequence stream;
+
+  // Act
+  BareBones::BitSequence stream2(stream, 0);
+
+  // Assert
+  EXPECT_TRUE(stream2.empty());
+  EXPECT_TRUE(stream2.bytes().empty());
+}
+
 }  // namespace

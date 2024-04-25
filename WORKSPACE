@@ -202,9 +202,9 @@ http_archive(
 
 http_archive(
     name = "ceph",
-    url = "https://github.com/ceph/ceph/archive/refs/tags/v16.2.10.tar.gz",
-    sha256 = "03fdfd75a591b3f8e2c8a9466ec4dcf04b98641d6a0d04a71c07de37b4b137bd",
-    strip_prefix = "ceph-16.2.10/",
+    url = "https://github.com/ceph/ceph/archive/refs/tags/v17.2.7.tar.gz",
+    sha256 = "5b9d53b038bb050f123070e903bebedfd4a19df63af2f8ba348f3f2c09ce2ecc",
+    strip_prefix = "ceph-17.2.7/",
     build_file = "//third_party:ceph/ceph.BUILD",
     patch_args = ["-p1"],
     patches = [
@@ -232,4 +232,24 @@ git_repository(
     remote = "https://github.com/google/snappy",
     commit = "27f34a580be4a3becf5f8c0cba13433f53c21337",
     shallow_since = "1689185568 -0700",
+)
+
+http_archive(
+    name = "re2",
+    url = "https://github.com/google/re2/archive/refs/tags/2024-02-01.tar.gz",
+    sha256 = "cd191a311b84fcf37310e5cd876845b4bf5aee76fdd755008eef3b6478ce07bb",
+    strip_prefix = "re2-2024-02-01/",
+    patches = [
+        "//third_party/patches/re2:no-werror.patch",
+    ],
+)
+
+local_repository(
+    name = "cedar",
+    path = "third_party/cedar",
+)
+
+local_repository(
+    name = "xcdat",
+    path = "third_party/xcdat",
 )

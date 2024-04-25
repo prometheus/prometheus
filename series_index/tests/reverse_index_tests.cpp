@@ -1,12 +1,12 @@
 #include <gmock/gmock.h>
 
-#include "primitives/series_reverse_index.h"
+#include "series_index/reverse_index.h"
 
 namespace {
 
-using PromPP::Primitives::CompactSeriesIdSequence;
-using PromPP::Primitives::LabelReverseIndex;
-using PromPP::Primitives::SeriesReverseIndex;
+using series_index::CompactSeriesIdSequence;
+using series_index::LabelReverseIndex;
+using series_index::SeriesReverseIndex;
 
 class CompactSeriesIdSequenceFixture : public testing::Test {};
 

@@ -7,7 +7,7 @@
 #include "bare_bones/preprocess.h"
 #include "bare_bones/vector.h"
 
-namespace PromPP::Primitives {
+namespace series_index {
 
 static constexpr uint32_t kOptimalPreAllocationElementsCount = 8;
 
@@ -52,7 +52,7 @@ class CompactSeriesIdSequence {
     ++elements_count_;
   }
 
-  [[nodiscard]] uint32_t allocated_memory() const noexcept {
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept {
     if (type_ == Type::kArray) {
       return 0;
     }
@@ -87,16 +87,16 @@ class CompactSeriesIdSequence {
   }
 };
 
-}  // namespace PromPP::Primitives
+}  // namespace series_index
 
 namespace BareBones {
 
 template <>
-struct IsTriviallyReallocatable<PromPP::Primitives::CompactSeriesIdSequence> : std::true_type {};
+struct IsTriviallyReallocatable<series_index::CompactSeriesIdSequence> : std::true_type {};
 
 }  // namespace BareBones
 
-namespace PromPP::Primitives {
+namespace series_index {
 
 class LabelReverseIndex {
  public:
@@ -117,31 +117,23 @@ class LabelReverseIndex {
   }
   [[nodiscard]] PROMPP_ALWAYS_INLINE const CompactSeriesIdSequence* get_all() const noexcept { return &all_series_; }
 
-  [[nodiscard]] uint32_t allocated_memory() const noexcept {
-    uint32_t allocated_memory = all_series_.allocated_memory();
-    for (auto& series_sequence : series_by_value_) {
-      allocated_memory += series_sequence.allocated_memory();
-    }
-
-    allocated_memory += series_by_value_.capacity() * sizeof(CompactSeriesIdSequence);
-    return allocated_memory;
-  }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return all_series_.allocated_memory() + series_by_value_.allocated_memory(); }
 
  private:
   CompactSeriesIdSequence all_series_{CompactSeriesIdSequence::Type::kSequence};
   BareBones::Vector<CompactSeriesIdSequence> series_by_value_;
 };
 
-}  // namespace PromPP::Primitives
+}  // namespace series_index
 
 namespace BareBones {
 
 template <>
-struct IsTriviallyReallocatable<PromPP::Primitives::LabelReverseIndex> : std::true_type {};
+struct IsTriviallyReallocatable<series_index::LabelReverseIndex> : std::true_type {};
 
 }  // namespace BareBones
 
-namespace PromPP::Primitives {
+namespace series_index {
 
 class SeriesReverseIndex {
  public:
@@ -156,25 +148,17 @@ class SeriesReverseIndex {
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE bool exists(uint32_t label_name_id) const noexcept { return label_name_id < labels_by_name_.size(); }
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE const CompactSeriesIdSequence* get(uint32_t label_name_id) {
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const CompactSeriesIdSequence* get(uint32_t label_name_id) const {
     return exists(label_name_id) ? labels_by_name_[label_name_id].get_all() : nullptr;
   }
-  [[nodiscard]] PROMPP_ALWAYS_INLINE const CompactSeriesIdSequence* get(uint32_t label_name_id, uint32_t label_value_id) {
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const CompactSeriesIdSequence* get(uint32_t label_name_id, uint32_t label_value_id) const {
     return exists(label_name_id) ? labels_by_name_[label_name_id].get(label_value_id) : nullptr;
   }
 
-  [[nodiscard]] uint32_t allocated_memory() const noexcept {
-    uint32_t allocated_memory = 0;
-    for (auto& label : labels_by_name_) {
-      allocated_memory += label.allocated_memory();
-    }
-
-    allocated_memory += labels_by_name_.capacity() * sizeof(LabelReverseIndex);
-    return allocated_memory;
-  }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return labels_by_name_.allocated_memory(); }
 
  private:
   BareBones::Vector<LabelReverseIndex> labels_by_name_;
 };
 
-}  // namespace PromPP::Primitives
+}  // namespace series_index
