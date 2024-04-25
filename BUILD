@@ -67,7 +67,7 @@ cc_binary(
 
 cc_library(
     name = "primitives",
-    hdrs = glob(["primitives/*.h"]),
+    hdrs = glob(["primitives/**/*.h"]),
     deps = [
         ":bare_bones",
     ],
@@ -168,6 +168,8 @@ cc_library(
     deps = [
         ":wal",
         ":prometheus",
+        ":primitives",
+        ":series_index",
         "@gtest//:gtest_main",
         "//third_party:third_party",
     ],
@@ -207,6 +209,7 @@ cc_library(
     includes = ["./ceph"],
     deps = [
         "@ceph//:ceph",
+        "@snappy//:snappy",
         ":bare_bones_headers"
     ],
 )
@@ -244,8 +247,8 @@ cc_library(
         ":bare_bones_headers",
         ":prometheus",
         ":wal",
-        ":cls_common",
-        "@snappy//:snappy"
+        ":series_index",
+        ":cls_common"
     ]
 )
 
@@ -265,6 +268,30 @@ cc_test(
     ]),
     deps = [
         ":cls_wal_modules",
+        "@gtest//:gtest_main",
+    ]
+)
+
+cc_library(
+    name = "series_index",
+    hdrs = glob(["series_index/**/*.h"]),
+    deps = [
+        ":bare_bones_headers",
+        ":prometheus",
+        ":wal",
+        "@cedar",
+        "@xcdat",
+        "@re2"
+    ]
+)
+
+cc_test(
+    name = "series_index_test",
+    srcs = glob([
+        "series_index/tests/**/*.cpp",
+    ]),
+    deps = [
+        ":series_index",
         "@gtest//:gtest_main",
     ]
 )

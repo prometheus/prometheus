@@ -44,6 +44,14 @@ class Vector {
   using const_iterator = const T*;
 
   Vector() noexcept = default;
+  Vector(std::initializer_list<T> values) {
+    reserve(values.size());
+
+    for (auto it = values.begin(); it != values.end(); ++it) {
+      new (data_ + size_) T(std::move(*it));
+      ++size_;
+    }
+  }
   Vector(Vector&& o) noexcept : data_(std::move(o.data_)), size_(o.size_) { o.size_ = 0; }
   Vector(const Vector& o) noexcept : size_(o.size_) {
     if constexpr (IsTriviallyCopyable<T>::value) {
@@ -156,9 +164,11 @@ class Vector {
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept {
     if constexpr (BareBones::concepts::have_allocated_memory<value_type>) {
-      return data_.allocated_memory() + std::accumulate(begin(), end(), 0, [](size_t memory, const auto& item) { return memory += item.allocated_memory(); });
+      return data_.allocated_memory() +
+             std::accumulate(begin(), end(), 0, [](size_t memory, const auto& item) PROMPP_LAMBDA_INLINE { return memory += item.allocated_memory(); });
     } else if constexpr (BareBones::concepts::dereferenceable_have_allocated_memory<value_type>) {
-      return data_.allocated_memory() + std::accumulate(begin(), end(), 0, [](size_t memory, const auto& item) { return memory += item->allocated_memory(); });
+      return data_.allocated_memory() +
+             std::accumulate(begin(), end(), 0, [](size_t memory, const auto& item) PROMPP_LAMBDA_INLINE { return memory += item->allocated_memory(); });
     } else {
       return data_.allocated_memory();
     }

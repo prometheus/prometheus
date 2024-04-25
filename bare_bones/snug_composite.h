@@ -654,6 +654,7 @@ class OrderedEncodingBimap : public DecodingTable<Filament> {
   using Set = phmap::btree_set<typename Base::Proxy, typename Base::LessComparator>;
   Set set_;
 
+ protected:
   inline __attribute__((always_inline)) virtual void after_items_load(uint32_t first_loaded_id) noexcept {
     for (auto id = first_loaded_id; id != Base::items_.size(); ++id) {
       set_.emplace(typename Base::Proxy(id));

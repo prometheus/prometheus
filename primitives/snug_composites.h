@@ -25,8 +25,10 @@ using EncodingBimapWithOrderedAccessToSymbols = BareBones::SnugComposite::Encodi
 }  // namespace LabelNameSet
 
 namespace LabelSet {
-using DecodingTable = BareBones::SnugComposite::DecodingTable<Filaments::LabelSet<Symbol::DecodingTable, LabelNameSet::DecodingTable>>;
-using EncodingBimap = BareBones::SnugComposite::EncodingBimap<Filaments::LabelSet<Symbol::EncodingBimap, LabelNameSet::EncodingBimap>>;
+using DecodingTableFilament = Filaments::LabelSet<Symbol::DecodingTable, LabelNameSet::DecodingTable>;
+using DecodingTable = BareBones::SnugComposite::DecodingTable<DecodingTableFilament>;
+using EncodingBimapFilament = Filaments::LabelSet<Symbol::EncodingBimap, LabelNameSet::EncodingBimap>;
+using EncodingBimap = BareBones::SnugComposite::EncodingBimap<EncodingBimapFilament>;
 using ParallelEncodingBimap = BareBones::SnugComposite::ParallelEncodingBimap<Filaments::LabelSet<Symbol::EncodingBimap, LabelNameSet::EncodingBimap>>;
 using OrderedEncodingBimap =
     BareBones::SnugComposite::OrderedEncodingBimap<Filaments::LabelSet<Symbol::OrderedEncodingBimap, LabelNameSet::OrderedEncodingBimap>>;

@@ -116,4 +116,17 @@ TEST_F(BareBonesVectorAllocatedMemoryFixture, DereferencableWithAllocatedMemoryM
   EXPECT_EQ(vector.capacity() * sizeof(Vector::value_type) + vector.size() * kObjectAllocatedMemory, allocated_memory);
 }
 
+TEST(BareBonesVector, InitializerListConstructor) {
+  // Arrange
+
+  // Act
+  Vector<std::string> vector{"123", "456", "789"};
+
+  // Assert
+  EXPECT_EQ(3U, vector.size());
+  EXPECT_EQ("123", vector[0]);
+  EXPECT_EQ("456", vector[1]);
+  EXPECT_EQ("789", vector[2]);
+}
+
 }  // namespace

@@ -205,7 +205,8 @@ TEST_F(Wal, BasicEncoderBasicDecoder) {
   auto writer_earliest_sample = writer.buffer().earliest_sample();
   auto writer_latest_sample = writer.buffer().latest_sample();
 
-  PromPP::WAL::BasicDecoder<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap> reader{PromPP::WAL::BasicEncoderVersion::kV3};
+  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap encoding_bimap;
+  PromPP::WAL::BasicDecoder<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap> reader{encoding_bimap, PromPP::WAL::BasicEncoderVersion::kV3};
   std::stringstream stream_buffer;
 
   // save wal
@@ -251,7 +252,8 @@ TEST_F(Wal, Snapshots) {
   using WALEncoder = PromPP::WAL::BasicEncoder<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>;
   using WALDecoder = PromPP::WAL::BasicDecoder<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>;
   WALEncoder encoder(2, 3);
-  WALDecoder decoder{PromPP::WAL::BasicEncoderVersion::kV3};
+  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap encoding_bimap;
+  WALDecoder decoder{encoding_bimap, PromPP::WAL::BasicEncoderVersion::kV3};
   std::stringstream writer_stream;
   std::vector<std::unique_ptr<WALEncoder::Redundant>> redundants;
   std::ofstream devnull("/dev/null");
@@ -279,7 +281,8 @@ TEST_F(Wal, Snapshots) {
   EXPECT_GT(stream_buffer.tellp(), 0);
 
   // read wal from snapshot
-  WALDecoder decoder2{PromPP::WAL::BasicEncoderVersion::kV3};
+  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap encoding_bimap2;
+  WALDecoder decoder2{encoding_bimap2, PromPP::WAL::BasicEncoderVersion::kV3};
   decoder2.load_snapshot(stream_buffer);
 
   EXPECT_GT(stream_buffer.tellg(), 0);

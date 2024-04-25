@@ -31,6 +31,19 @@ class BasicLabelSet {
  public:
   using label_type = LabelType;
 
+  BasicLabelSet() = default;
+  BasicLabelSet(std::initializer_list<LabelType> values) {
+    for (auto& label : values) {
+      add(label);
+    }
+  }
+
+  BasicLabelSet(const BasicLabelSet&) = default;
+  BasicLabelSet(BasicLabelSet&&) noexcept = default;
+
+  BasicLabelSet& operator=(const BasicLabelSet&) = default;
+  BasicLabelSet& operator=(BasicLabelSet&&) noexcept = default;
+
   inline __attribute__((always_inline)) void clear() noexcept { labels_.clear(); }
 
   inline __attribute__((always_inline)) void add(const LabelType& label) noexcept {

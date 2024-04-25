@@ -613,9 +613,9 @@ class BasicEncoder {
 
 template <class LabelSetsTable = Primitives::SnugComposites::LabelSet::DecodingTable, size_t LZ4DecompressedBufferSize = 256>
 class BasicDecoder {
-  LabelSetsTable label_sets_;
   BareBones::Vector<BareBones::Encoding::Gorilla::StreamDecoder<BareBones::Encoding::Gorilla::ZigZagTimestampDecoder>> gorilla_;
   BareBones::LZ4Stream::basic_istream<LZ4DecompressedBufferSize> lz4stream_{nullptr};
+  LabelSetsTable& label_sets_;
 
   uuids::uuid uuid_;
   uint32_t last_processed_segment_ = std::numeric_limits<uint32_t>::max();
@@ -735,7 +735,7 @@ class BasicDecoder {
   }
 
  public:
-  explicit BasicDecoder(BasicEncoderVersion encoder_version) : encoder_version_(encoder_version) {}
+  BasicDecoder(LabelSetsTable& label_sets, BasicEncoderVersion encoder_version) : label_sets_(label_sets), encoder_version_(encoder_version) {}
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_empty() const noexcept { return last_processed_segment_ == std::numeric_limits<uint32_t>::max(); }
   [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_valid() const noexcept { return encoder_version_ != BasicEncoderVersion::kUnknown; }
@@ -747,7 +747,7 @@ class BasicDecoder {
   PROMPP_ALWAYS_INLINE void invalidate() noexcept { encoder_version_ = BasicEncoderVersion::kUnknown; }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept {
-    return label_sets_.allocated_memory() + gorilla_.allocated_memory() + lz4stream_.allocated_memory() + segment_gorilla_ts_bitseq_.allocated_memory() +
+    return gorilla_.allocated_memory() + lz4stream_.allocated_memory() + segment_gorilla_ts_bitseq_.allocated_memory() +
            segment_gorilla_v_bitseq_.allocated_memory() + segment_ls_id_delta_rle_seq_.allocated_memory() + segment_ts_delta_rle_seq_.allocated_memory();
   }
 
@@ -842,7 +842,7 @@ class BasicDecoder {
 
   template <class Callback>
     requires std::is_invocable_v<Callback, Primitives::LabelSetID, Primitives::Timestamp, Primitives::Sample::value_type>
-  __attribute__((flatten)) void process_segment(Callback func) {
+  __attribute__((flatten)) void process_segment(Callback&& func) {
     if (__builtin_expect(segment_gorilla_v_bitseq_.empty(), false))
       return;
 
@@ -968,7 +968,7 @@ class BasicDecoder {
 
   template <class Callback>
     requires std::is_invocable_v<Callback, label_set_type, Primitives::Timestamp, Primitives::Sample::value_type>
-  __attribute__((flatten)) void process_segment(Callback func) {
+  __attribute__((flatten)) void process_segment(Callback&& func) {
     process_segment([&](Primitives::LabelSetID ls_id, Primitives::Timestamp ts, Primitives::Sample::value_type v) {
       const auto& label_set = label_sets_[ls_id];
 
@@ -980,7 +980,7 @@ class BasicDecoder {
 
   template <class Callback>
     requires std::is_invocable_v<Callback, timeseries_type>
-  __attribute__((flatten)) void process_segment(Callback func) {
+  __attribute__((flatten)) void process_segment(Callback&& func) {
     Primitives::BasicTimeseries<typename LabelSetsTable::value_type*> timeseries;
 
     typename LabelSetsTable::value_type last_ls;  // composite_type

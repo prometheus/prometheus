@@ -4,6 +4,8 @@
 #define PROMPP_ALWAYS_INLINE inline PROMPP_ATTRIBUTE_INLINE
 #define PROMPP_LAMBDA_INLINE PROMPP_ATTRIBUTE_INLINE
 
+#define PROMPP_ATTRIBUTE_PACKED __attribute__((__packed__))
+
 #define PROMPP_STRINGIFY(a) #a
 
 #ifdef __clang__

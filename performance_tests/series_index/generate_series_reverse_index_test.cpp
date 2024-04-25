@@ -3,7 +3,7 @@
 #include <chrono>
 
 #include "performance_tests/dummy_wal.h"
-#include "primitives/series_reverse_index.h"
+#include "series_index/reverse_index.h"
 #include "wal/wal.h"
 
 namespace performance_tests::series_index {
@@ -13,7 +13,7 @@ void GenerateSeriesReverseIndex::execute([[maybe_unused]] const Config& config, 
   DummyWal dummy_wal(input_file_full_name(config));
 
   PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap label_set_bitmap;
-  PromPP::Primitives::SeriesReverseIndex series_reverse_index;
+  ::series_index::SeriesReverseIndex series_reverse_index;
   uint32_t previous_label_id = std::numeric_limits<uint32_t>::max();
   std::chrono::nanoseconds add_index_time{};
   while (dummy_wal.read_next_segment()) {

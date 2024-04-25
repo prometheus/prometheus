@@ -21,12 +21,43 @@ concept have_segment_id = requires(const T& t) {
 };
 
 namespace PromPP::WAL {
+
+template <class BasicDecoder, class Output>
+class TimeseriesProtobufWriter {
+ public:
+  TimeseriesProtobufWriter(BasicDecoder& decoder, Output& out) : pb_message_(out), decoder_(decoder), samples_before_(decoder_.samples()) {}
+
+  PROMPP_ALWAYS_INLINE void operator()(Reader::timeseries_type timeseries) {
+    Prometheus::RemoteWrite::write_timeseries(pb_message_, timeseries);
+    ++processed_series_;
+  }
+
+  template <class Stats>
+  PROMPP_ALWAYS_INLINE void get_statistic(Stats& stats) {
+    stats.created_at = decoder_.created_at_tsns();
+    stats.encoded_at = decoder_.encoded_at_tsns();
+    stats.samples = decoder_.samples() - samples_before_;
+    stats.series = processed_series_;
+
+    if constexpr (have_segment_id<Stats>) {
+      stats.segment_id = decoder_.last_processed_segment();
+    }
+  }
+
+ private:
+  protozero::basic_pbf_writer<Output> pb_message_;
+  BasicDecoder& decoder_;
+  uint64_t samples_before_;
+  uint32_t processed_series_{};
+};
+
 class Decoder {
  private:
+  Primitives::SnugComposites::LabelSet::DecodingTable label_set_;
   Reader reader_;
 
  public:
-  explicit PROMPP_ALWAYS_INLINE Decoder(BasicEncoderVersion encoder_version) noexcept : reader_(encoder_version) {}
+  explicit PROMPP_ALWAYS_INLINE Decoder(BasicEncoderVersion encoder_version) noexcept : reader_(label_set_, encoder_version) {}
 
   // decode - decoding incoming data and make protbuf.
   template <class Input, class Output, class Stats>
@@ -34,27 +65,9 @@ class Decoder {
     std::ispanstream inspan(std::string_view(in.data(), in.size()));
     inspan >> reader_;
 
-    process_segment(reader_, out, stats);
-  }
-
-  template <class Output, class Stats>
-  PROMPP_ALWAYS_INLINE static void process_segment(Reader& reader, Output& out, Stats& stats) {
-    protozero::basic_pbf_writer<Output> pb_message(out);
-    uint32_t processed_series = 0;
-    uint64_t samples_before = reader.samples();
-    reader.process_segment([&](Reader::timeseries_type timeseries) PROMPP_LAMBDA_INLINE {
-      Prometheus::RemoteWrite::write_timeseries(pb_message, timeseries);
-      ++processed_series;
-    });
-
-    stats.created_at = reader.created_at_tsns();
-    stats.encoded_at = reader.encoded_at_tsns();
-    stats.samples = reader.samples() - samples_before;
-    stats.series = processed_series;
-
-    if constexpr (have_segment_id<Stats>) {
-      stats.segment_id = reader.last_processed_segment();
-    }
+    TimeseriesProtobufWriter<Reader, Output> protobuf_writer(reader_, out);
+    reader_.process_segment(protobuf_writer);
+    protobuf_writer.get_statistic(stats);
   }
 
   // decode_dry - decoding incoming data without protbuf.
@@ -82,4 +95,5 @@ class Decoder {
     stats->segment_id = reader_.last_processed_segment();
   }
 };
+
 }  // namespace PromPP::WAL
