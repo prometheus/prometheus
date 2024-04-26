@@ -6,6 +6,8 @@
 
 namespace {
 
+using BareBones::CompactBitSequence;
+
 const size_t NUM_VALUES = 1000;
 
 std::vector<uint64_t> generate_uint64_vector() {
@@ -46,11 +48,11 @@ TEST_F(BitSequence, SingleBit) {
   EXPECT_FALSE(bitseq.empty());
 
   auto bitseq_reader = bitseq.reader();
-  uint32_t outcome = bitseq_reader.read_bits_u32(0, 1);
+  uint32_t outcome = bitseq_reader.read_bits_u32(1);
   EXPECT_EQ(outcome, 0);
 
   bitseq_reader.ff(1);
-  outcome = bitseq_reader.read_bits_u32(0, 1);
+  outcome = bitseq_reader.read_bits_u32(1);
   EXPECT_EQ(outcome, 1);
   bitseq_reader.ff(1);
 
@@ -178,6 +180,103 @@ TEST_F(BitSequenceCopyWithSizeConstructorFixture, SourceStreamIsEmpty) {
   // Assert
   EXPECT_TRUE(stream2.empty());
   EXPECT_TRUE(stream2.bytes().empty());
+}
+
+class CompactBitSequenceFixture : public testing::Test {
+ protected:
+  CompactBitSequence stream_;
+};
+
+TEST_F(CompactBitSequenceFixture, MoveConstructor) {
+  // Arrange
+  stream_.push_back_single_one_bit();
+
+  // Act
+  auto stream2 = std::move(stream_);
+
+  // Assert
+  EXPECT_EQ(0U, stream_.size_in_bits());
+  ASSERT_TRUE(stream_.bytes().empty());
+
+  EXPECT_EQ(1U, stream2.size_in_bits());
+  ASSERT_FALSE(stream2.bytes().empty());
+  EXPECT_EQ(0b1U, stream2.bytes()[0]);
+}
+
+TEST_F(CompactBitSequenceFixture, MoveOperator) {
+  // Arrange
+  stream_.push_back_single_one_bit();
+
+  // Act
+  CompactBitSequence stream2;
+  stream2.push_back_single_one_bit();
+  stream2 = std::move(stream_);
+
+  // Assert
+  EXPECT_EQ(0U, stream_.size_in_bits());
+  ASSERT_TRUE(stream_.bytes().empty());
+
+  EXPECT_EQ(1U, stream2.size_in_bits());
+  ASSERT_FALSE(stream2.bytes().empty());
+  EXPECT_EQ(0b1U, stream2.bytes()[0]);
+}
+
+TEST_F(CompactBitSequenceFixture, PushOnebit) {
+  // Arrange
+
+  // Act
+  stream_.push_back_single_zero_bit();
+  stream_.push_back_single_one_bit();
+  stream_.push_back_single_zero_bit();
+  stream_.push_back_single_one_bit();
+  stream_.push_back_single_zero_bit();
+  stream_.push_back_single_one_bit();
+  stream_.push_back_single_zero_bit();
+  stream_.push_back_single_one_bit();
+
+  // Assert
+  EXPECT_EQ(8U, stream_.size_in_bits());
+  EXPECT_EQ(0b10101010, stream_.filled_bytes()[0]);
+}
+
+TEST_F(CompactBitSequenceFixture, PushUint32) {
+  // Arrange
+
+  // Act
+  stream_.push_back_single_zero_bit();
+  stream_.push_back_bits_u32(32, 0b10101010101010101010101010101010);
+  auto bytes = stream_.bytes<uint32_t>().data();
+
+  // Assert
+  ASSERT_EQ(33U, stream_.size_in_bits());
+  EXPECT_EQ(0b01010101010101010101010101010100ULL, bytes[0]);
+  EXPECT_EQ(0b1UL, bytes[1]);
+}
+
+TEST_F(CompactBitSequenceFixture, PushUint64) {
+  // Arrange
+
+  // Act
+  stream_.push_back_single_zero_bit();
+  stream_.push_back_u64(0b1010101010101010101010101010101010101010101010101010101010101010);
+  auto bytes = stream_.bytes<uint64_t>().data();
+
+  // Assert
+  ASSERT_EQ(65U, stream_.size_in_bits());
+  EXPECT_EQ(0b0101010101010101010101010101010101010101010101010101010101010100ULL, bytes[0]);
+  EXPECT_EQ(0b1ULL, bytes[1]);
+}
+
+TEST_F(CompactBitSequenceFixture, PushUint64_2) {
+  // Arrange
+
+  // Act
+  stream_.push_back_u64(0b1010101010101010101010101010101010101010101010101010101010101010);
+  auto bytes = stream_.bytes<uint64_t>().data();
+
+  // Assert
+  ASSERT_EQ(64U, stream_.size_in_bits());
+  EXPECT_EQ(0b1010101010101010101010101010101010101010101010101010101010101010, bytes[0]);
 }
 
 }  // namespace
