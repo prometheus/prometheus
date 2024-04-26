@@ -228,10 +228,28 @@ type wlMetrics struct {
 	currentSegment  prometheus.Gauge
 	writesFailed    prometheus.Counter
 	walFileSize     prometheus.GaugeFunc
+
+	r prometheus.Registerer
+}
+
+func (w *wlMetrics) Unregister() {
+	if w.r == nil {
+		return
+	}
+	w.r.Unregister(w.fsyncDuration)
+	w.r.Unregister(w.pageFlushes)
+	w.r.Unregister(w.pageCompletions)
+	w.r.Unregister(w.truncateFail)
+	w.r.Unregister(w.truncateTotal)
+	w.r.Unregister(w.currentSegment)
+	w.r.Unregister(w.writesFailed)
+	w.r.Unregister(w.walFileSize)
 }
 
 func newWLMetrics(w *WL, r prometheus.Registerer) *wlMetrics {
-	m := &wlMetrics{}
+	m := &wlMetrics{
+		r: r,
+	}
 
 	m.fsyncDuration = prometheus.NewSummary(prometheus.SummaryOpts{
 		Name:       "fsync_duration_seconds",
@@ -877,6 +895,8 @@ func (w *WL) Close() (err error) {
 	if err := w.segment.Close(); err != nil {
 		level.Error(w.logger).Log("msg", "close previous segment", "err", err)
 	}
+
+	w.metrics.Unregister()
 	w.closed = true
 	return nil
 }

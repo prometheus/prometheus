@@ -178,6 +178,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 			opts.interval,
 			opts.timeout,
 			opts.scrapeClassicHistograms,
+			options.EnableNativeHistogramsIngestion,
 			options.EnableCreatedTimestampZeroIngestion,
 			options.ExtraMetrics,
 			options.EnableMetadataStorage,
@@ -827,7 +828,10 @@ type scrapeLoop struct {
 	interval                 time.Duration
 	timeout                  time.Duration
 	scrapeClassicHistograms  bool
-	enableCTZeroIngestion    bool
+
+	// Feature flagged options.
+	enableNativeHistogramIngestion bool
+	enableCTZeroIngestion          bool
 
 	appender            func(ctx context.Context) storage.Appender
 	symbolTable         *labels.SymbolTable
@@ -1123,6 +1127,7 @@ func newScrapeLoop(ctx context.Context,
 	interval time.Duration,
 	timeout time.Duration,
 	scrapeClassicHistograms bool,
+	enableNativeHistogramIngestion bool,
 	enableCTZeroIngestion bool,
 	reportExtraMetrics bool,
 	appendMetadataToWAL bool,
@@ -1153,33 +1158,34 @@ func newScrapeLoop(ctx context.Context,
 	}
 
 	sl := &scrapeLoop{
-		scraper:                  sc,
-		buffers:                  buffers,
-		cache:                    cache,
-		appender:                 appender,
-		symbolTable:              symbolTable,
-		sampleMutator:            sampleMutator,
-		reportSampleMutator:      reportSampleMutator,
-		stopped:                  make(chan struct{}),
-		offsetSeed:               offsetSeed,
-		l:                        l,
-		parentCtx:                ctx,
-		appenderCtx:              appenderCtx,
-		honorTimestamps:          honorTimestamps,
-		trackTimestampsStaleness: trackTimestampsStaleness,
-		enableCompression:        enableCompression,
-		sampleLimit:              sampleLimit,
-		bucketLimit:              bucketLimit,
-		maxSchema:                maxSchema,
-		labelLimits:              labelLimits,
-		interval:                 interval,
-		timeout:                  timeout,
-		scrapeClassicHistograms:  scrapeClassicHistograms,
-		enableCTZeroIngestion:    enableCTZeroIngestion,
-		reportExtraMetrics:       reportExtraMetrics,
-		appendMetadataToWAL:      appendMetadataToWAL,
-		metrics:                  metrics,
-		skipOffsetting:           skipOffsetting,
+		scraper:                        sc,
+		buffers:                        buffers,
+		cache:                          cache,
+		appender:                       appender,
+		symbolTable:                    symbolTable,
+		sampleMutator:                  sampleMutator,
+		reportSampleMutator:            reportSampleMutator,
+		stopped:                        make(chan struct{}),
+		offsetSeed:                     offsetSeed,
+		l:                              l,
+		parentCtx:                      ctx,
+		appenderCtx:                    appenderCtx,
+		honorTimestamps:                honorTimestamps,
+		trackTimestampsStaleness:       trackTimestampsStaleness,
+		enableCompression:              enableCompression,
+		sampleLimit:                    sampleLimit,
+		bucketLimit:                    bucketLimit,
+		maxSchema:                      maxSchema,
+		labelLimits:                    labelLimits,
+		interval:                       interval,
+		timeout:                        timeout,
+		scrapeClassicHistograms:        scrapeClassicHistograms,
+		enableNativeHistogramIngestion: enableNativeHistogramIngestion,
+		enableCTZeroIngestion:          enableCTZeroIngestion,
+		reportExtraMetrics:             reportExtraMetrics,
+		appendMetadataToWAL:            appendMetadataToWAL,
+		metrics:                        metrics,
+		skipOffsetting:                 skipOffsetting,
 	}
 	sl.ctx, sl.cancel = context.WithCancel(ctx)
 
@@ -1627,7 +1633,7 @@ loop:
 				}
 			}
 
-			if isHistogram {
+			if isHistogram && sl.enableNativeHistogramIngestion {
 				if h != nil {
 					ref, err = app.AppendHistogram(ref, lset, t, h, nil)
 				} else {

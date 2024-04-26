@@ -2118,11 +2118,14 @@ Available meta labels:
   * `__meta_kubernetes_endpointslice_address_target_kind`: Kind of the referenced object.
   * `__meta_kubernetes_endpointslice_address_target_name`: Name of referenced object.
   * `__meta_kubernetes_endpointslice_address_type`: The ip protocol family of the address of the target.
-  * `__meta_kubernetes_endpointslice_endpoint_conditions_ready`:  Set to `true` or `false` for the referenced endpoint's ready state.
-  * `__meta_kubernetes_endpointslice_endpoint_conditions_serving`:  Set to `true` or `false` for the referenced endpoint's serving state.
-  * `__meta_kubernetes_endpointslice_endpoint_conditions_terminating`:  Set to `true` or `false` for the referenced endpoint's terminating state.
-  * `__meta_kubernetes_endpointslice_endpoint_topology_kubernetes_io_hostname`:  Name of the node hosting the referenced endpoint.
+  * `__meta_kubernetes_endpointslice_endpoint_conditions_ready`: Set to `true` or `false` for the referenced endpoint's ready state.
+  * `__meta_kubernetes_endpointslice_endpoint_conditions_serving`: Set to `true` or `false` for the referenced endpoint's serving state.
+  * `__meta_kubernetes_endpointslice_endpoint_conditions_terminating`: Set to `true` or `false` for the referenced endpoint's terminating state.
+  * `__meta_kubernetes_endpointslice_endpoint_topology_kubernetes_io_hostname`: Name of the node hosting the referenced endpoint.
   * `__meta_kubernetes_endpointslice_endpoint_topology_present_kubernetes_io_hostname`: Flag that shows if the referenced object has a kubernetes.io/hostname annotation.
+  * `__meta_kubernetes_endpointslice_endpoint_hostname`: Hostname of the referenced endpoint.
+  * `__meta_kubernetes_endpointslice_endpoint_node_name`: Name of the Node hosting the referenced endpoint.
+  * `__meta_kubernetes_endpointslice_endpoint_zone`: Zone the referenced endpoint exists in (only available when using the `discovery.k8s.io/v1` API group).
   * `__meta_kubernetes_endpointslice_port`: Port of the referenced endpoint.
   * `__meta_kubernetes_endpointslice_port_name`: Named port of the referenced endpoint.
   * `__meta_kubernetes_endpointslice_port_protocol`: Protocol of the referenced endpoint.
