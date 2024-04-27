@@ -85,7 +85,7 @@ Prometheus has several flags that configure local storage. The most important ar
 
 - `--storage.tsdb.path`: Where Prometheus writes its database. Defaults to `data/`.
 - `--storage.tsdb.retention.time`: How long to retain samples in storage. When this flag is
-  set it overrides `storage.tsdb.retention`. If neither this flag nor `storage.tsdb.retention`
+  set, it overrides `storage.tsdb.retention`. If neither this flag nor `storage.tsdb.retention`
   nor `storage.tsdb.retention.size` is set, the retention time defaults to `15d`.
   Units Supported: y, w, d, h, m, s, ms.
 - `--storage.tsdb.retention.size`: The maximum number of bytes of storage blocks to retain.
