@@ -87,7 +87,7 @@ Prometheus has several flags that configure local storage. The most important ar
 - `--storage.tsdb.retention.time`: How long to retain samples in storage. When this flag is
   set, it overrides `storage.tsdb.retention`. If neither this flag nor `storage.tsdb.retention`
   nor `storage.tsdb.retention.size` is set, the retention time defaults to `15d`.
-  Units Supported: y, w, d, h, m, s, ms.
+  Supported units: y, w, d, h, m, s, ms.
 - `--storage.tsdb.retention.size`: The maximum number of bytes of storage blocks to retain.
   The oldest data will be removed first. Defaults to `0` or disabled. Units supported:
   B, KB, MB, GB, TB, PB, EB. Ex: "512MB". Based on powers-of-2, so 1KB is 1024B. Only
