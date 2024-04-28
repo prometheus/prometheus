@@ -15,7 +15,6 @@ package v1
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -35,6 +34,7 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 
 	"github.com/go-kit/log"
+	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -910,6 +910,7 @@ func TestStats(t *testing.T) {
 				require.IsType(t, &QueryData{}, i)
 				qd := i.(*QueryData)
 				require.NotNil(t, qd.Stats)
+				json := jsoniter.ConfigCompatibleWithStandardLibrary
 				j, err := json.Marshal(qd.Stats)
 				require.NoError(t, err)
 				require.JSONEq(t, `{"custom":"Custom Value"}`, string(j))
@@ -2895,6 +2896,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					}
 
 					if test.responseAsJSON != "" {
+						json := jsoniter.ConfigCompatibleWithStandardLibrary
 						s, err := json.Marshal(res.data)
 						require.NoError(t, err)
 						require.JSONEq(t, test.responseAsJSON, string(s))
