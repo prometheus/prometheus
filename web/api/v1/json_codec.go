@@ -25,6 +25,8 @@ import (
 )
 
 func init() {
+	jsoniter.RegisterTypeEncoderFunc("promql.Vector", unsafeMarshalVectorJSON, neverEmpty)
+	jsoniter.RegisterTypeEncoderFunc("promql.Matrix", unsafeMarshalMatrixJSON, neverEmpty)
 	jsoniter.RegisterTypeEncoderFunc("promql.Series", unsafeMarshalSeriesJSON, neverEmpty)
 	jsoniter.RegisterTypeEncoderFunc("promql.Sample", unsafeMarshalSampleJSON, neverEmpty)
 	jsoniter.RegisterTypeEncoderFunc("promql.FPoint", unsafeMarshalFPointJSON, neverEmpty)
@@ -233,4 +235,24 @@ func marshalLabelsJSON(lbls labels.Labels, stream *jsoniter.Stream) {
 func labelsIsEmpty(ptr unsafe.Pointer) bool {
 	labelsPtr := (*labels.Labels)(ptr)
 	return labelsPtr.IsEmpty()
+}
+
+// Marshal a Vector as `[sample,sample,...]` - empty Vector is `[]`.
+func unsafeMarshalVectorJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
+	v := *((*promql.Vector)(ptr))
+	stream.WriteArrayStart()
+	for _, s := range v {
+		marshalSampleJSON(s, stream)
+	}
+	stream.WriteArrayEnd()
+}
+
+// Marshal a Matrix as `[series,series,...]` - empty Matrix is `[]`.
+func unsafeMarshalMatrixJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
+	m := *((*promql.Matrix)(ptr))
+	stream.WriteArrayStart()
+	for _, s := range m {
+		marshalSeriesJSON(s, stream)
+	}
+	stream.WriteArrayEnd()
 }
