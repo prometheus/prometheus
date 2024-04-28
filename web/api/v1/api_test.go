@@ -2892,7 +2892,9 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						if test.zeroFunc != nil {
 							test.zeroFunc(res.data)
 						}
-						assertAPIResponse(t, res.data, test.response)
+						if test.response != nil {
+							assertAPIResponse(t, res.data, test.response)
+						}
 					}
 
 					if test.responseAsJSON != "" {
