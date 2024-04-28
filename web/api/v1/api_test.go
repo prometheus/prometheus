@@ -3292,18 +3292,7 @@ func TestRespondError(t *testing.T) {
 	require.Equal(t, want, have, "Return code %d expected in error response but got %d", want, have)
 	h := resp.Header.Get("Content-Type")
 	require.Equal(t, "application/json", h, "Expected Content-Type %q but got %q", "application/json", h)
-
-	var res Response
-	err = json.Unmarshal(body, &res)
-	require.NoError(t, err, "Error unmarshaling JSON body")
-
-	exp := &Response{
-		Status:    statusError,
-		Data:      "test",
-		ErrorType: errorTimeout,
-		Error:     "message",
-	}
-	require.Equal(t, exp, &res)
+	require.JSONEq(t, `{"status": "error", "data": "test", "errorType": "timeout", "error": "message"}`, string(body))
 }
 
 func TestParseTimeParam(t *testing.T) {
