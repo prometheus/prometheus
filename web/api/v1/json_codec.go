@@ -25,11 +25,11 @@ import (
 )
 
 func init() {
-	jsoniter.RegisterTypeEncoderFunc("promql.Series", marshalSeriesJSON, marshalSeriesJSONIsEmpty)
-	jsoniter.RegisterTypeEncoderFunc("promql.Sample", marshalSampleJSON, marshalSampleJSONIsEmpty)
-	jsoniter.RegisterTypeEncoderFunc("promql.FPoint", marshalFPointJSON, marshalPointJSONIsEmpty)
-	jsoniter.RegisterTypeEncoderFunc("promql.HPoint", marshalHPointJSON, marshalPointJSONIsEmpty)
-	jsoniter.RegisterTypeEncoderFunc("exemplar.Exemplar", marshalExemplarJSON, marshalExemplarJSONEmpty)
+	jsoniter.RegisterTypeEncoderFunc("promql.Series", marshalSeriesJSON, neverEmpty)
+	jsoniter.RegisterTypeEncoderFunc("promql.Sample", marshalSampleJSON, neverEmpty)
+	jsoniter.RegisterTypeEncoderFunc("promql.FPoint", marshalFPointJSON, neverEmpty)
+	jsoniter.RegisterTypeEncoderFunc("promql.HPoint", marshalHPointJSON, neverEmpty)
+	jsoniter.RegisterTypeEncoderFunc("exemplar.Exemplar", marshalExemplarJSON, neverEmpty)
 	jsoniter.RegisterTypeEncoderFunc("labels.Labels", unsafeMarshalLabelsJSON, labelsIsEmpty)
 }
 
@@ -97,7 +97,8 @@ func marshalSeriesJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	stream.WriteObjectEnd()
 }
 
-func marshalSeriesJSONIsEmpty(unsafe.Pointer) bool {
+// In the Prometheus API we render an empty object as `[]` or similar.
+func neverEmpty(unsafe.Pointer) bool {
 	return false
 }
 
@@ -145,10 +146,6 @@ func marshalSampleJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	stream.WriteObjectEnd()
 }
 
-func marshalSampleJSONIsEmpty(unsafe.Pointer) bool {
-	return false
-}
-
 // marshalFPointJSON writes `[ts, "1.234"]`.
 func marshalFPointJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	p := *((*promql.FPoint)(ptr))
@@ -167,10 +164,6 @@ func marshalHPointJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	stream.WriteMore()
 	jsonutil.MarshalHistogram(p.H, stream)
 	stream.WriteArrayEnd()
-}
-
-func marshalPointJSONIsEmpty(unsafe.Pointer) bool {
-	return false
 }
 
 // marshalExemplarJSON writes.
@@ -199,10 +192,6 @@ func marshalExemplarJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	jsonutil.MarshalTimestamp(p.Ts, stream)
 
 	stream.WriteObjectEnd()
-}
-
-func marshalExemplarJSONEmpty(unsafe.Pointer) bool {
-	return false
 }
 
 func unsafeMarshalLabelsJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
