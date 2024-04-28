@@ -1172,6 +1172,25 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				},
 			},
 		},
+		// Test empty vector result
+		{
+			endpoint: api.query,
+			query: url.Values{
+				"query": []string{"bottomk(2, notExists)"},
+			},
+			responseAsJSON: `{"resultType":"vector","result":[]}`,
+		},
+		// Test empty matrix result
+		{
+			endpoint: api.queryRange,
+			query: url.Values{
+				"query": []string{"bottomk(2, notExists)"},
+				"start": []string{"0"},
+				"end":   []string{"2"},
+				"step":  []string{"1"},
+			},
+			responseAsJSON: `{"resultType":"matrix","result":[]}`,
+		},
 		// Missing query params in range queries.
 		{
 			endpoint: api.queryRange,
