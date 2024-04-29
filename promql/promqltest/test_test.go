@@ -49,7 +49,7 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 						{
 							Metric: labels.FromStrings("__name__", "metric1"),
 							Floats: []promql.FPoint{
-								{0, 1}, {10000, 2}, {20000, 3}, {30000, 4}, {40000, 5},
+								{T: 0, F: 1}, {T: 10000, F: 2}, {T: 20000, F: 3}, {T: 30000, F: 4}, {T: 40000, F: 5},
 							},
 						},
 					},
@@ -60,7 +60,7 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 						{
 							Metric: labels.FromStrings("__name__", "metric1"),
 							Floats: []promql.FPoint{
-								{0, 1}, {10000, 2}, {20000, 3}, {30000, 4}, {40000, 5},
+								{T: 0, F: 1}, {T: 10000, F: 2}, {T: 20000, F: 3}, {T: 30000, F: 4}, {T: 40000, F: 5},
 							},
 						},
 					},
@@ -71,7 +71,7 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 						{
 							Metric: labels.FromStrings("__name__", "metric1"),
 							Floats: []promql.FPoint{
-								{0, 1}, {10000, 2}, {20000, 3}, {30000, 4}, {40000, 5}, {50000, 6}, {60000, 7},
+								{T: 0, F: 1}, {T: 10000, F: 2}, {T: 20000, F: 3}, {T: 30000, F: 4}, {T: 40000, F: 5}, {T: 50000, F: 6}, {T: 60000, F: 7},
 							},
 						},
 					},
@@ -91,13 +91,13 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 						{
 							Metric: labels.FromStrings("__name__", "metric1"),
 							Floats: []promql.FPoint{
-								{0, 1}, {10000, 1}, {20000, 1}, {30000, 1}, {40000, 1}, {50000, 1},
+								{T: 0, F: 1}, {T: 10000, F: 1}, {T: 20000, F: 1}, {T: 30000, F: 1}, {T: 40000, F: 1}, {T: 50000, F: 1},
 							},
 						},
 						{
 							Metric: labels.FromStrings("__name__", "metric2"),
 							Floats: []promql.FPoint{
-								{0, 1}, {10000, 2}, {20000, 3}, {30000, 4}, {40000, 5}, {50000, 6}, {60000, 7}, {70000, 8},
+								{T: 0, F: 1}, {T: 10000, F: 2}, {T: 20000, F: 3}, {T: 30000, F: 4}, {T: 40000, F: 5}, {T: 50000, F: 6}, {T: 60000, F: 7}, {T: 70000, F: 8},
 							},
 						},
 					},
