@@ -34,6 +34,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/teststorage"
@@ -201,7 +202,7 @@ test_metric_without_labels{instance="baz"} 1001 6000000
 }
 
 func TestFederation(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			test_metric1{foo="bar",instance="i"}    0+100x100
 			test_metric1{foo="boo",instance="i"}    1+0x100

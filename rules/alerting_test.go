@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -148,7 +149,7 @@ func TestAlertingRuleTemplateWithHistogram(t *testing.T) {
 }
 
 func TestAlertingRuleLabelsUpdate(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70 stale
 	`)
@@ -252,7 +253,7 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 }
 
 func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70
 	`)
@@ -345,7 +346,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 }
 
 func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70
 	`)
@@ -438,7 +439,7 @@ func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
 }
 
 func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70
 	`)
@@ -492,7 +493,7 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 }
 
 func TestAlertingRuleQueryInTemplate(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			http_requests{job="app-server", instance="0"}	70 85 70 70
 	`)
@@ -601,7 +602,7 @@ func TestAlertingRuleDuplicate(t *testing.T) {
 }
 
 func TestAlertingRuleLimit(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			metric{label="1"} 1
 			metric{label="2"} 1
@@ -783,7 +784,7 @@ func TestSendAlertsDontAffectActiveAlerts(t *testing.T) {
 }
 
 func TestKeepFiringFor(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70 10x5
 	`)
@@ -893,7 +894,7 @@ func TestKeepFiringFor(t *testing.T) {
 }
 
 func TestPendingAndKeepFiringFor(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 10x10
 	`)
