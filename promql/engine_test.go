@@ -4999,7 +4999,7 @@ metric 0 1 2
 			if c.engineLookback != 0 {
 				engine.lookbackDelta = c.engineLookback
 			}
-			opts := NewPrometheusQueryOpts(false, c.queryLookback)
+			opts := promql.NewPrometheusQueryOpts(false, c.queryLookback)
 			qry, err := engine.NewInstantQuery(context.Background(), storage, opts, query, c.ts)
 			require.NoError(t, err)
 
