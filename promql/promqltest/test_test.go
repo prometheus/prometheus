@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package promql
+package promqltest
 
 import (
 	"math"
@@ -21,14 +21,15 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 func TestLazyLoader_WithSamplesTill(t *testing.T) {
 	type testCase struct {
 		ts             time.Time
-		series         []Series // Each series is checked separately. Need not mention all series here.
-		checkOnlyError bool     // If this is true, series is not checked.
+		series         []promql.Series // Each series is checked separately. Need not mention all series here.
+		checkOnlyError bool            // If this is true, series is not checked.
 	}
 
 	cases := []struct {
@@ -44,10 +45,10 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 			testCases: []testCase{
 				{
 					ts: time.Unix(40, 0),
-					series: []Series{
+					series: []promql.Series{
 						{
 							Metric: labels.FromStrings("__name__", "metric1"),
-							Floats: []FPoint{
+							Floats: []promql.FPoint{
 								{0, 1}, {10000, 2}, {20000, 3}, {30000, 4}, {40000, 5},
 							},
 						},
@@ -55,10 +56,10 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 				},
 				{
 					ts: time.Unix(10, 0),
-					series: []Series{
+					series: []promql.Series{
 						{
 							Metric: labels.FromStrings("__name__", "metric1"),
-							Floats: []FPoint{
+							Floats: []promql.FPoint{
 								{0, 1}, {10000, 2}, {20000, 3}, {30000, 4}, {40000, 5},
 							},
 						},
@@ -66,10 +67,10 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 				},
 				{
 					ts: time.Unix(60, 0),
-					series: []Series{
+					series: []promql.Series{
 						{
 							Metric: labels.FromStrings("__name__", "metric1"),
-							Floats: []FPoint{
+							Floats: []promql.FPoint{
 								{0, 1}, {10000, 2}, {20000, 3}, {30000, 4}, {40000, 5}, {50000, 6}, {60000, 7},
 							},
 						},
@@ -86,16 +87,16 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 			testCases: []testCase{
 				{ // Adds all samples of metric1.
 					ts: time.Unix(70, 0),
-					series: []Series{
+					series: []promql.Series{
 						{
 							Metric: labels.FromStrings("__name__", "metric1"),
-							Floats: []FPoint{
+							Floats: []promql.FPoint{
 								{0, 1}, {10000, 1}, {20000, 1}, {30000, 1}, {40000, 1}, {50000, 1},
 							},
 						},
 						{
 							Metric: labels.FromStrings("__name__", "metric2"),
-							Floats: []FPoint{
+							Floats: []promql.FPoint{
 								{0, 1}, {10000, 2}, {20000, 3}, {30000, 4}, {40000, 5}, {50000, 6}, {60000, 7}, {70000, 8},
 							},
 						},
@@ -140,13 +141,13 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 					require.False(t, ss.Next(), "Expecting only 1 series")
 
 					// Convert `storage.Series` to `promql.Series`.
-					got := Series{
+					got := promql.Series{
 						Metric: storageSeries.Labels(),
 					}
 					it := storageSeries.Iterator(nil)
 					for it.Next() == chunkenc.ValFloat {
 						t, v := it.At()
-						got.Floats = append(got.Floats, FPoint{T: t, F: v})
+						got.Floats = append(got.Floats, promql.FPoint{T: t, F: v})
 					}
 					require.NoError(t, it.Err())
 
@@ -450,7 +451,7 @@ eval range from 0 to 5m step 5m testmetric
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			err := runTest(t, testCase.input, newTestEngine())
+			err := runTest(t, testCase.input, NewTestEngine())
 
 			if testCase.expectedError == "" {
 				require.NoError(t, err)
@@ -463,42 +464,42 @@ eval range from 0 to 5m step 5m testmetric
 
 func TestAssertMatrixSorted(t *testing.T) {
 	testCases := map[string]struct {
-		matrix        Matrix
+		matrix        promql.Matrix
 		expectedError string
 	}{
 		"empty matrix": {
-			matrix: Matrix{},
+			matrix: promql.Matrix{},
 		},
 		"matrix with one series": {
-			matrix: Matrix{
-				Series{Metric: labels.FromStrings("the_label", "value_1")},
+			matrix: promql.Matrix{
+				promql.Series{Metric: labels.FromStrings("the_label", "value_1")},
 			},
 		},
 		"matrix with two series, series in sorted order": {
-			matrix: Matrix{
-				Series{Metric: labels.FromStrings("the_label", "value_1")},
-				Series{Metric: labels.FromStrings("the_label", "value_2")},
+			matrix: promql.Matrix{
+				promql.Series{Metric: labels.FromStrings("the_label", "value_1")},
+				promql.Series{Metric: labels.FromStrings("the_label", "value_2")},
 			},
 		},
 		"matrix with two series, series in reverse order": {
-			matrix: Matrix{
-				Series{Metric: labels.FromStrings("the_label", "value_2")},
-				Series{Metric: labels.FromStrings("the_label", "value_1")},
+			matrix: promql.Matrix{
+				promql.Series{Metric: labels.FromStrings("the_label", "value_2")},
+				promql.Series{Metric: labels.FromStrings("the_label", "value_1")},
 			},
 			expectedError: `matrix results should always be sorted by labels, but matrix is not sorted: series at index 1 with labels {the_label="value_1"} sorts before series at index 0 with labels {the_label="value_2"}`,
 		},
 		"matrix with three series, series in sorted order": {
-			matrix: Matrix{
-				Series{Metric: labels.FromStrings("the_label", "value_1")},
-				Series{Metric: labels.FromStrings("the_label", "value_2")},
-				Series{Metric: labels.FromStrings("the_label", "value_3")},
+			matrix: promql.Matrix{
+				promql.Series{Metric: labels.FromStrings("the_label", "value_1")},
+				promql.Series{Metric: labels.FromStrings("the_label", "value_2")},
+				promql.Series{Metric: labels.FromStrings("the_label", "value_3")},
 			},
 		},
 		"matrix with three series, series not in sorted order": {
-			matrix: Matrix{
-				Series{Metric: labels.FromStrings("the_label", "value_1")},
-				Series{Metric: labels.FromStrings("the_label", "value_3")},
-				Series{Metric: labels.FromStrings("the_label", "value_2")},
+			matrix: promql.Matrix{
+				promql.Series{Metric: labels.FromStrings("the_label", "value_1")},
+				promql.Series{Metric: labels.FromStrings("the_label", "value_3")},
+				promql.Series{Metric: labels.FromStrings("the_label", "value_2")},
 			},
 			expectedError: `matrix results should always be sorted by labels, but matrix is not sorted: series at index 2 with labels {the_label="value_2"} sorts before series at index 1 with labels {the_label="value_3"}`,
 		},
