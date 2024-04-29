@@ -22,20 +22,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
 func newTestEngine() *Engine {
-	return NewEngine(EngineOpts{
-		Logger:                   nil,
-		Reg:                      nil,
-		MaxSamples:               10000,
-		Timeout:                  100 * time.Second,
-		NoStepSubqueryIntervalFn: func(int64) int64 { return durationMilliseconds(1 * time.Minute) },
-		EnableAtModifier:         true,
-		EnableNegativeOffset:     true,
-		EnablePerStepStats:       true,
-	})
+	return promqltest.NewTestEngine(false, 0, promqltest.DefaultMaxSamplesPerQuery)
 }
 
 func TestEvaluations(t *testing.T) {

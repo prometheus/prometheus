@@ -49,7 +49,8 @@ var (
 )
 
 const (
-	defaultEpsilon = 0.000001 // Relative error allowed for sample values.
+	defaultEpsilon            = 0.000001 // Relative error allowed for sample values.
+	DefaultMaxSamplesPerQuery = 10000
 )
 
 var testStartTime = time.Unix(0, 0).UTC()
@@ -69,6 +70,20 @@ func LoadedStorage(t testutil.T, input string) *teststorage.TestStorage {
 		}
 	}
 	return test.storage
+}
+
+func NewTestEngine(enablePerStepStats bool, lookbackDelta time.Duration, maxSamples int) *promql.Engine {
+	return promql.NewEngine(promql.EngineOpts{
+		Logger:                   nil,
+		Reg:                      nil,
+		MaxSamples:               DefaultMaxSamplesPerQuery,
+		Timeout:                  100 * time.Second,
+		NoStepSubqueryIntervalFn: func(int64) int64 { return durationMilliseconds(1 * time.Minute) },
+		EnableAtModifier:         true,
+		EnableNegativeOffset:     true,
+		EnablePerStepStats:       enablePerStepStats,
+		LookbackDelta:            lookbackDelta,
+	})
 }
 
 // RunBuiltinTests runs an acceptance test suite against the provided engine.
