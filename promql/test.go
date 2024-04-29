@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"math"
 	"strconv"
 	"strings"
 	"testing"
@@ -36,13 +35,12 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/almost"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
 var (
-	minNormal = math.Float64frombits(0x0010000000000000) // The smallest positive normal value of type float64.
-
 	patSpace       = regexp.MustCompile("[\t ]+")
 	patLoad        = regexp.MustCompile(`^load\s+(.+?)$`)
 	patEvalInstant = regexp.MustCompile(`^eval(?:_(fail|ordered))?\s+instant\s+(?:at\s+(.+?))?\s+(.+)$`)
@@ -551,7 +549,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 					return fmt.Errorf("expected float value at index %v for %s to have timestamp %v, but it had timestamp %v (result has %s)", i, ev.metrics[hash], expected.T, actual.T, formatSeriesResult(s))
 				}
 
-				if !almostEqual(actual.F, expected.F, defaultEpsilon) {
+				if !almost.Equal(actual.F, expected.F, defaultEpsilon) {
 					return fmt.Errorf("expected float value at index %v (t=%v) for %s to be %v, but got %v (result has %s)", i, actual.T, ev.metrics[hash], expected.F, actual.F, formatSeriesResult(s))
 				}
 			}
@@ -601,7 +599,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 			if expH != nil && !expH.Compact(0).Equals(v.H) {
 				return fmt.Errorf("expected %v for %s but got %s", HistogramTestExpression(expH), v.Metric, HistogramTestExpression(v.H))
 			}
-			if !almostEqual(exp0.Value, v.F, defaultEpsilon) {
+			if !almost.Equal(exp0.Value, v.F, defaultEpsilon) {
 				return fmt.Errorf("expected %v for %s but got %v", exp0.Value, v.Metric, v.F)
 			}
 
@@ -621,7 +619,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 		if exp0.Histogram != nil {
 			return fmt.Errorf("expected Histogram %v but got scalar %s", exp0.Histogram.TestExpression(), val.String())
 		}
-		if !almostEqual(exp0.Value, val.V, defaultEpsilon) {
+		if !almost.Equal(exp0.Value, val.V, defaultEpsilon) {
 			return fmt.Errorf("expected Scalar %v but got %v", val.V, exp0.Value)
 		}
 
@@ -892,29 +890,6 @@ func (t *test) clear() {
 	}
 	t.storage = teststorage.New(t)
 	t.context, t.cancelCtx = context.WithCancel(context.Background())
-}
-
-// almostEqual returns true if a and b differ by less than their sum
-// multiplied by epsilon.
-func almostEqual(a, b, epsilon float64) bool {
-	// NaN has no equality but for testing we still want to know whether both values
-	// are NaN.
-	if math.IsNaN(a) && math.IsNaN(b) {
-		return true
-	}
-
-	// Cf. http://floating-point-gui.de/errors/comparison/
-	if a == b {
-		return true
-	}
-
-	absSum := math.Abs(a) + math.Abs(b)
-	diff := math.Abs(a - b)
-
-	if a == 0 || b == 0 || absSum < minNormal {
-		return diff < epsilon*minNormal
-	}
-	return diff/math.Min(absSum, math.MaxFloat64) < epsilon
 }
 
 func parseNumber(s string) (float64, error) {

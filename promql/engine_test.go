@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/util/almost"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/teststorage"
@@ -3873,7 +3874,7 @@ func TestNativeHistogram_HistogramQuantile(t *testing.T) {
 
 						require.Len(t, vector, 1)
 						require.Nil(t, vector[0].H)
-						require.True(t, almostEqual(sc.value, vector[0].F, defaultEpsilon))
+						require.True(t, almost.Equal(sc.value, vector[0].F, defaultEpsilon))
 					})
 				}
 				idx++
