@@ -143,6 +143,19 @@ jobs:
         with:
           parallelism: 12
           thread: ${{ matrix.thread }}
+  check_generated_parser:
+    name: Check generated parser
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633 # v4.1.2
+      - name: Install Go
+        uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
+        with:
+          cache: false
+          go-version: 1.22.x
+      - name: Run goyacc and check for diff
+        run: make install-goyacc check-generated-parser
   golangci:
     name: golangci-lint
     runs-on: ubuntu-latest
