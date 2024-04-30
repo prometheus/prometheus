@@ -10,7 +10,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-// Provenance-includes-location: https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/translator/prometheusremotewrite/metrics_to_prw.go
+// Provenance-includes-location: https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/95e8f8fdc2a9dc87230406c9a3cf02be4fd68bea/pkg/translator/prometheusremotewrite/metrics_to_prw.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: Copyright The OpenTelemetry Authors.
 
@@ -19,6 +19,8 @@ package prometheusremotewrite
 import (
 	"errors"
 	"fmt"
+	"sort"
+	"strconv"
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -38,9 +40,33 @@ type Settings struct {
 }
 
 // FromMetrics converts pmetric.Metrics to Prometheus remote write format.
-func FromMetrics(md pmetric.Metrics, settings Settings) (tsMap map[string]*prompb.TimeSeries, errs error) {
-	tsMap = make(map[string]*prompb.TimeSeries)
+func FromMetrics(md pmetric.Metrics, settings Settings) (map[string]*prompb.TimeSeries, error) {
+	c := newPrometheusConverter()
+	errs := c.fromMetrics(md, settings)
+	tss := c.timeSeries()
+	out := make(map[string]*prompb.TimeSeries, len(tss))
+	for i := range tss {
+		out[strconv.Itoa(i)] = &tss[i]
+	}
 
+	return out, errs
+}
+
+// prometheusConverter converts from OTel write format to Prometheus write format.
+type prometheusConverter struct {
+	unique    map[uint64]*prompb.TimeSeries
+	conflicts map[uint64][]*prompb.TimeSeries
+}
+
+func newPrometheusConverter() *prometheusConverter {
+	return &prometheusConverter{
+		unique:    map[uint64]*prompb.TimeSeries{},
+		conflicts: map[uint64][]*prompb.TimeSeries{},
+	}
+}
+
+// fromMetrics converts pmetric.Metrics to Prometheus remote write format.
+func (c *prometheusConverter) fromMetrics(md pmetric.Metrics, settings Settings) (errs error) {
 	resourceMetricsSlice := md.ResourceMetrics()
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
 		resourceMetrics := resourceMetricsSlice.At(i)
@@ -50,8 +76,7 @@ func FromMetrics(md pmetric.Metrics, settings Settings) (tsMap map[string]*promp
 		// use with the "target" info metric
 		var mostRecentTimestamp pcommon.Timestamp
 		for j := 0; j < scopeMetricsSlice.Len(); j++ {
-			scopeMetrics := scopeMetricsSlice.At(j)
-			metricSlice := scopeMetrics.Metrics()
+			metricSlice := scopeMetricsSlice.At(j).Metrics()
 
 			// TODO: decide if instrumentation library information should be exported as labels
 			for k := 0; k < metricSlice.Len(); k++ {
@@ -65,65 +90,125 @@ func FromMetrics(md pmetric.Metrics, settings Settings) (tsMap map[string]*promp
 
 				promName := prometheustranslator.BuildCompliantName(metric, settings.Namespace, settings.AddMetricSuffixes)
 
-				// handle individual metric based on type
+				// handle individual metrics based on type
 				//exhaustive:enforce
 				switch metric.Type() {
 				case pmetric.MetricTypeGauge:
 					dataPoints := metric.Gauge().DataPoints()
 					if dataPoints.Len() == 0 {
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
+						break
 					}
-					for x := 0; x < dataPoints.Len(); x++ {
-						addSingleGaugeNumberDataPoint(dataPoints.At(x), resource, metric, settings, tsMap, promName)
-					}
+					c.addGaugeNumberDataPoints(dataPoints, resource, settings, promName)
 				case pmetric.MetricTypeSum:
 					dataPoints := metric.Sum().DataPoints()
 					if dataPoints.Len() == 0 {
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
+						break
 					}
-					for x := 0; x < dataPoints.Len(); x++ {
-						addSingleSumNumberDataPoint(dataPoints.At(x), resource, metric, settings, tsMap, promName)
-					}
+					c.addSumNumberDataPoints(dataPoints, resource, metric, settings, promName)
 				case pmetric.MetricTypeHistogram:
 					dataPoints := metric.Histogram().DataPoints()
 					if dataPoints.Len() == 0 {
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
+						break
 					}
-					for x := 0; x < dataPoints.Len(); x++ {
-						addSingleHistogramDataPoint(dataPoints.At(x), resource, metric, settings, tsMap, promName)
-					}
+					c.addHistogramDataPoints(dataPoints, resource, settings, promName)
 				case pmetric.MetricTypeExponentialHistogram:
 					dataPoints := metric.ExponentialHistogram().DataPoints()
 					if dataPoints.Len() == 0 {
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
+						break
 					}
-					for x := 0; x < dataPoints.Len(); x++ {
-						errs = multierr.Append(
-							errs,
-							addSingleExponentialHistogramDataPoint(
-								promName,
-								dataPoints.At(x),
-								resource,
-								settings,
-								tsMap,
-							),
-						)
-					}
+					errs = multierr.Append(errs, c.addExponentialHistogramDataPoints(
+						dataPoints,
+						resource,
+						settings,
+						promName,
+					))
 				case pmetric.MetricTypeSummary:
 					dataPoints := metric.Summary().DataPoints()
 					if dataPoints.Len() == 0 {
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
+						break
 					}
-					for x := 0; x < dataPoints.Len(); x++ {
-						addSingleSummaryDataPoint(dataPoints.At(x), resource, metric, settings, tsMap, promName)
-					}
+					c.addSummaryDataPoints(dataPoints, resource, settings, promName)
 				default:
 					errs = multierr.Append(errs, errors.New("unsupported metric type"))
 				}
 			}
 		}
-		addResourceTargetInfo(resource, settings, mostRecentTimestamp, tsMap)
+		addResourceTargetInfo(resource, settings, mostRecentTimestamp, c)
 	}
 
 	return
+}
+
+// timeSeries returns a slice of the prompb.TimeSeries that were converted from OTel format.
+func (c *prometheusConverter) timeSeries() []prompb.TimeSeries {
+	conflicts := 0
+	for _, ts := range c.conflicts {
+		conflicts += len(ts)
+	}
+	allTS := make([]prompb.TimeSeries, 0, len(c.unique)+conflicts)
+	for _, ts := range c.unique {
+		allTS = append(allTS, *ts)
+	}
+	for _, cTS := range c.conflicts {
+		for _, ts := range cTS {
+			allTS = append(allTS, *ts)
+		}
+	}
+
+	return allTS
+}
+
+func isSameMetric(ts *prompb.TimeSeries, lbls []prompb.Label) bool {
+	if len(ts.Labels) != len(lbls) {
+		return false
+	}
+	for i, l := range ts.Labels {
+		if l.Name != ts.Labels[i].Name || l.Value != ts.Labels[i].Value {
+			return false
+		}
+	}
+	return true
+}
+
+// addExemplars adds exemplars for the dataPoint. For each exemplar, if it can find a bucket bound corresponding to its value,
+// the exemplar is added to the bucket bound's time series, provided that the time series' has samples.
+func (c *prometheusConverter) addExemplars(dataPoint pmetric.HistogramDataPoint, bucketBounds []bucketBoundsData) {
+	if len(bucketBounds) == 0 {
+		return
+	}
+
+	exemplars := getPromExemplars(dataPoint)
+	if len(exemplars) == 0 {
+		return
+	}
+
+	sort.Sort(byBucketBoundsData(bucketBounds))
+	for _, exemplar := range exemplars {
+		for _, bound := range bucketBounds {
+			if len(bound.ts.Samples) > 0 && exemplar.Value <= bound.bound {
+				bound.ts.Exemplars = append(bound.ts.Exemplars, exemplar)
+				break
+			}
+		}
+	}
+}
+
+// addSample finds a TimeSeries that corresponds to lbls, and adds sample to it.
+// If there is no corresponding TimeSeries already, it's created.
+// The corresponding TimeSeries is returned.
+// If either lbls is nil/empty or sample is nil, nothing is done.
+func (c *prometheusConverter) addSample(sample *prompb.Sample, lbls []prompb.Label) *prompb.TimeSeries {
+	if sample == nil || len(lbls) == 0 {
+		// This shouldn't happen
+		return nil
+	}
+
+	ts, _ := c.getOrCreateTimeSeries(lbls)
+	ts.Samples = append(ts.Samples, *sample)
+	return ts
 }
