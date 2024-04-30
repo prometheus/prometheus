@@ -29,7 +29,7 @@ const (
 	maxSetMatches = 256
 
 	// The minimum number of alternate values a regex should have to trigger
-	// the optimization done by optimizeEqualStringMatchers() and so use a map
+	// the optimization done by optimizeEqualOrPrefixStringMatchers() and so use a map
 	// to match values instead of iterating over a list. This value has
 	// been computed running BenchmarkOptimizeEqualStringMatchers.
 	minEqualMultiStringMatcherMapThreshold = 16
@@ -413,7 +413,7 @@ func stringMatcherFromRegexp(re *syntax.Regexp) StringMatcher {
 	clearBeginEndText(re)
 
 	m := stringMatcherFromRegexpInternal(re)
-	m = optimizeEqualStringMatchers(m, minEqualMultiStringMatcherMapThreshold)
+	m = optimizeEqualOrPrefixStringMatchers(m, minEqualMultiStringMatcherMapThreshold)
 
 	return m
 }
@@ -762,7 +762,7 @@ func (m *equalMultiStringSliceMatcher) add(s string) {
 	m.values = append(m.values, s)
 }
 
-func (m *equalMultiStringSliceMatcher) addPrefix(p *literalPrefixStringMatcher) {
+func (m *equalMultiStringSliceMatcher) addPrefix(_ *literalPrefixStringMatcher) {
 	panic("not implemented")
 }
 
@@ -813,6 +813,13 @@ func (m *equalMultiStringMapMatcher) addPrefix(p *literalPrefixStringMatcher) {
 	if m.minPrefixLen == 0 {
 		panic("addPrefix called when no prefix length defined")
 	}
+	if len(p.prefix) < m.minPrefixLen {
+		panic("addPrefix called with a too short prefix")
+	}
+	if m.caseSensitive != p.prefixCaseSensitive {
+		panic("addPrefix called with a prefix whose case sensitivity is different than the expected one")
+	}
+
 	s := p.prefix[:m.minPrefixLen]
 	if !m.caseSensitive {
 		s = strings.ToLower(s)
@@ -931,11 +938,13 @@ func (m trueMatcher) Matches(_ string) bool {
 	return true
 }
 
-// optimizeEqualStringMatchers optimize a specific case where all matchers are made by an
-// alternation (orStringMatcher) of strings checked for equality (equalStringMatcher). In
-// this specific case, when we have many strings to match against we can use a map instead
+// optimizeEqualOrPrefixStringMatchers optimize a specific case where all matchers are made by an
+// alternation (orStringMatcher) of strings checked for equality (equalStringMatcher) or
+// with a literal prefix (literalPrefixStringMatcher).
+//
+// In this specific case, when we have many strings to match against we can use a map instead
 // of iterating over the list of strings.
-func optimizeEqualStringMatchers(input StringMatcher, threshold int) StringMatcher {
+func optimizeEqualOrPrefixStringMatchers(input StringMatcher, threshold int) StringMatcher {
 	var (
 		caseSensitive    bool
 		caseSensitiveSet bool
@@ -946,7 +955,7 @@ func optimizeEqualStringMatchers(input StringMatcher, threshold int) StringMatch
 
 	// Analyse the input StringMatcher to count the number of occurrences
 	// and ensure all of them have the same case sensitivity.
-	analyseCallback := func(matcher *equalStringMatcher) bool {
+	analyseEqualMatcherCallback := func(matcher *equalStringMatcher) bool {
 		// Ensure we don't have mixed case sensitivity.
 		if caseSensitiveSet && caseSensitive != matcher.caseSensitive {
 			return false
@@ -958,7 +967,8 @@ func optimizeEqualStringMatchers(input StringMatcher, threshold int) StringMatch
 		numValues++
 		return true
 	}
-	prefixCallback := func(matcher *literalPrefixStringMatcher) bool {
+
+	analysePrefixMatcherCallback := func(matcher *literalPrefixStringMatcher) bool {
 		// Ensure we don't have mixed case sensitivity.
 		if caseSensitiveSet && caseSensitive != matcher.prefixCaseSensitive {
 			return false
@@ -974,7 +984,7 @@ func optimizeEqualStringMatchers(input StringMatcher, threshold int) StringMatch
 		return true
 	}
 
-	if !findEqualStringMatchers(input, analyseCallback, prefixCallback) {
+	if !findEqualOrPrefixStringMatchers(input, analyseEqualMatcherCallback, analysePrefixMatcherCallback) {
 		return input
 	}
 
@@ -990,7 +1000,7 @@ func optimizeEqualStringMatchers(input StringMatcher, threshold int) StringMatch
 
 	// Ignore the return value because we already iterated over the input StringMatcher
 	// and it was all good.
-	findEqualStringMatchers(input, func(matcher *equalStringMatcher) bool {
+	findEqualOrPrefixStringMatchers(input, func(matcher *equalStringMatcher) bool {
 		multiMatcher.add(matcher.s)
 		return true
 	}, func(matcher *literalPrefixStringMatcher) bool {
@@ -1001,10 +1011,12 @@ func optimizeEqualStringMatchers(input StringMatcher, threshold int) StringMatch
 	return multiMatcher
 }
 
-// findEqualStringMatchers analyze the input StringMatcher and calls the callback for each
-// equalStringMatcher found. Returns true if and only if the input StringMatcher is *only*
-// composed by an alternation of equalStringMatcher.
-func findEqualStringMatchers(input StringMatcher, callback func(matcher *equalStringMatcher) bool, prefixCallback func(matcher *literalPrefixStringMatcher) bool) bool {
+// findEqualOrPrefixStringMatchers analyze the input StringMatcher and calls the equalMatcherCallback for each
+// equalStringMatcher found, and prefixMatcherCallback for each literalPrefixStringMatcher found.
+//
+// Returns true if and only if the input StringMatcher is *only* composed by an alternation of equalStringMatcher and/or
+// literalPrefixStringMatcher. Returns false if prefixMatcherCallback is nil and a literalPrefixStringMatcher is encountered.
+func findEqualOrPrefixStringMatchers(input StringMatcher, equalMatcherCallback func(matcher *equalStringMatcher) bool, prefixMatcherCallback func(matcher *literalPrefixStringMatcher) bool) bool {
 	orInput, ok := input.(orStringMatcher)
 	if !ok {
 		return false
@@ -1013,22 +1025,22 @@ func findEqualStringMatchers(input StringMatcher, callback func(matcher *equalSt
 	for _, m := range orInput {
 		switch casted := m.(type) {
 		case orStringMatcher:
-			if !findEqualStringMatchers(m, callback, prefixCallback) {
+			if !findEqualOrPrefixStringMatchers(m, equalMatcherCallback, prefixMatcherCallback) {
 				return false
 			}
 
 		case *equalStringMatcher:
-			if !callback(casted) {
+			if !equalMatcherCallback(casted) {
 				return false
 			}
 
 		case *literalPrefixStringMatcher:
-			if prefixCallback == nil || !prefixCallback(casted) {
+			if prefixMatcherCallback == nil || !prefixMatcherCallback(casted) {
 				return false
 			}
 
 		default:
-			// It's not an equal string matcher, so we have to stop searching
+			// It's not an equal or prefix string matcher, so we have to stop searching
 			// cause this optimization can't be applied.
 			return false
 		}
