@@ -219,7 +219,7 @@ func isValidAggregationTemporality(metric pmetric.Metric) bool {
 	return false
 }
 
-func (c *prometheusConverter) addHistogramDataPoints(dataPoints pmetric.HistogramDataPointSlice,
+func (c *PrometheusConverter) addHistogramDataPoints(dataPoints pmetric.HistogramDataPointSlice,
 	resource pcommon.Resource, settings Settings, baseName string) {
 	for x := 0; x < dataPoints.Len(); x++ {
 		pt := dataPoints.At(x)
@@ -395,7 +395,7 @@ func mostRecentTimestampInMetric(metric pmetric.Metric) pcommon.Timestamp {
 	return ts
 }
 
-func (c *prometheusConverter) addSummaryDataPoints(dataPoints pmetric.SummaryDataPointSlice, resource pcommon.Resource,
+func (c *PrometheusConverter) addSummaryDataPoints(dataPoints pmetric.SummaryDataPointSlice, resource pcommon.Resource,
 	settings Settings, baseName string) {
 	for x := 0; x < dataPoints.Len(); x++ {
 		pt := dataPoints.At(x)
@@ -468,7 +468,7 @@ func createLabels(name string, baseLabels []prompb.Label, extras ...string) []pr
 
 // getOrCreateTimeSeries returns the time series corresponding to the label set if existent, and false.
 // Otherwise it creates a new one and returns that, and true.
-func (c *prometheusConverter) getOrCreateTimeSeries(lbls []prompb.Label) (*prompb.TimeSeries, bool) {
+func (c *PrometheusConverter) getOrCreateTimeSeries(lbls []prompb.Label) (*prompb.TimeSeries, bool) {
 	h := timeSeriesSignature(lbls)
 	ts := c.unique[h]
 	if ts != nil {
@@ -504,7 +504,7 @@ func (c *prometheusConverter) getOrCreateTimeSeries(lbls []prompb.Label) (*promp
 // addTimeSeriesIfNeeded adds a corresponding time series if it doesn't already exist.
 // If the time series doesn't already exist, it gets added with startTimestamp for its value and timestamp for its timestamp,
 // both converted to milliseconds.
-func (c *prometheusConverter) addTimeSeriesIfNeeded(lbls []prompb.Label, startTimestamp pcommon.Timestamp, timestamp pcommon.Timestamp) {
+func (c *PrometheusConverter) addTimeSeriesIfNeeded(lbls []prompb.Label, startTimestamp pcommon.Timestamp, timestamp pcommon.Timestamp) {
 	ts, created := c.getOrCreateTimeSeries(lbls)
 	if created {
 		ts.Samples = []prompb.Sample{
@@ -518,7 +518,7 @@ func (c *prometheusConverter) addTimeSeriesIfNeeded(lbls []prompb.Label, startTi
 }
 
 // addResourceTargetInfo converts the resource to the target info metric.
-func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timestamp pcommon.Timestamp, converter *prometheusConverter) {
+func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timestamp pcommon.Timestamp, converter *PrometheusConverter) {
 	if settings.DisableTargetInfo || timestamp == 0 {
 		return
 	}
