@@ -96,12 +96,14 @@ func getMMapedFile(filename string, filesize int, logger log.Logger) ([]byte, io
 
 	err = file.Truncate(int64(filesize))
 	if err != nil {
+		file.Close()
 		level.Error(logger).Log("msg", "Error setting filesize.", "filesize", filesize, "err", err)
 		return nil, nil, err
 	}
 
 	fileAsBytes, err := mmap.Map(file, mmap.RDWR, 0)
 	if err != nil {
+		file.Close()
 		level.Error(logger).Log("msg", "Failed to mmap", "file", filename, "Attempted size", filesize, "err", err)
 		return nil, nil, err
 	}
