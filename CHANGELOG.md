@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.45.5 / 2024-05-02
+
+* [BUGFIX] tsdb/agent: ensure that new series get written to WAL on rollback. #12592
+* [BUGFIX] Remote write: Avoid a race condition when applying configuration. #13135
+
 ## 2.45.4 / 2024-03-18
 
 * [BUGFIX] Remote read: Release querier resources before encoding the results. #13777
