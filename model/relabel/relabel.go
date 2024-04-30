@@ -111,15 +111,6 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return c.Validate()
 }
 
-// MarshalYAML implements the yaml.Marshaler interface.
-func (c Config) MarshalYAML() (interface{}, error) {
-	// Omit the regex if it is the default regex as it was not provided in the first place.
-	if c.Regex == DefaultRelabelConfig.Regex {
-		c.Regex.Regexp = nil
-	}
-	return c, nil
-}
-
 func (c *Config) Validate() error {
 	if c.Action == "" {
 		return fmt.Errorf("relabel action cannot be empty")
@@ -212,6 +203,11 @@ func (re Regexp) MarshalYAML() (interface{}, error) {
 		return re.String(), nil
 	}
 	return nil, nil
+}
+
+// IsZero implements the yaml.IsZeroer interface.
+func (re Regexp) IsZero() bool {
+	return re.Regexp == DefaultRelabelConfig.Regex.Regexp
 }
 
 // String returns the original string used to compile the regular expression.
