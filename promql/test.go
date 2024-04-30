@@ -46,8 +46,8 @@ var (
 
 	patSpace                    = regexp.MustCompile("[\t ]+")
 	patLoad                     = regexp.MustCompile(`^load(?:_(with_nhcb))?\s+(.+?)$`)
-	patEvalInstant              = regexp.MustCompile(`^eval(?:_(with_nhcb))?(?:_(fail|ordered))?\s+instant\s+(?:at\s+(.+?))?\s+(.+)$`)
-	patEvalRange                = regexp.MustCompile(`^eval(?:_(fail))?\s+range\s+from\s+(.+)\s+to\s+(.+)\s+step\s+(.+?)\s+(.+)$`)
+	patEvalInstant              = regexp.MustCompile(`^eval(?:_(with_nhcb))?(?:_(fail|warn|ordered))?\s+instant\s+(?:at\s+(.+?))?\s+(.+)$`)
+	patEvalRange                = regexp.MustCompile(`^eval(?:_(fail|warn))?\s+range\s+from\s+(.+)\s+to\s+(.+)\s+step\s+(.+?)\s+(.+)$`)
 	histogramBucketReplacements = []struct {
 		pattern *regexp.Regexp
 		repl    string
@@ -233,7 +233,7 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 	rangeParts := patEvalRange.FindStringSubmatch(lines[i])
 
 	if instantParts == nil && rangeParts == nil {
-		return i, nil, raise(i, "invalid evaluation command. Must be either 'eval[_with_nhcb][_fail|_ordered] instant [at <offset:duration>] <query>' or 'eval[_fail] range from <from> to <to> step <step> <query>'")
+		return i, nil, raise(i, "invalid evaluation command. Must be either 'eval[_with_nhcb][_fail|_warn|_ordered] instant [at <offset:duration>] <query>' or 'eval[_fail|_warn] range from <from> to <to> step <step> <query>'")
 	}
 
 	isInstant := instantParts != nil
@@ -314,6 +314,8 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 		cmd.ordered = true
 	case "fail":
 		cmd.fail = true
+	case "warn":
+		cmd.warn = true
 	}
 	cmd.withNhcb = withNhcb
 
@@ -636,9 +638,9 @@ type evalCmd struct {
 	step  time.Duration
 	line  int
 
-	isRange       bool // if false, instant query
-	fail, ordered bool
-	withNhcb      bool
+	isRange             bool // if false, instant query
+	fail, warn, ordered bool
+	withNhcb            bool
 
 	metrics  map[uint64]labels.Labels
 	expected map[uint64]entry
@@ -965,6 +967,13 @@ func (t *test) execRangeEval(cmd *evalCmd, engine QueryEngine) error {
 		return fmt.Errorf("error creating range query for %q (line %d): %w", cmd.expr, cmd.line, err)
 	}
 	res := q.Exec(t.context)
+	countWarnings, _ := res.Warnings.CountWarningsAndInfo()
+	if !cmd.warn && countWarnings > 0 {
+		return fmt.Errorf("unexpected warnings evaluating query %q (line %d): %v", cmd.expr, cmd.line, res.Warnings)
+	}
+	if cmd.warn && countWarnings == 0 {
+		return fmt.Errorf("expected warnings evaluating query %q (line %d) but got none", cmd.expr, cmd.line)
+	}
 	if res.Err != nil {
 		if cmd.fail {
 			return nil
@@ -996,7 +1005,7 @@ func (t *test) execInstantEval(cmd *evalCmd, engine QueryEngine) error {
 		}
 		if cmd.withNhcb {
 			if !strings.Contains(iq.expr, "_bucket") {
-				return fmt.Errorf("expected _bucket in the expression %q", iq.expr)
+				return fmt.Errorf("expected '_bucket' in the expression %q", iq.expr)
 			}
 			for _, rep := range histogramBucketReplacements {
 				iq.expr = rep.pattern.ReplaceAllString(iq.expr, rep.repl)
@@ -1016,6 +1025,13 @@ func (t *test) runInstantQuery(iq atModifierTestCase, cmd *evalCmd, engine Query
 	}
 	defer q.Close()
 	res := q.Exec(t.context)
+	countWarnings, _ := res.Warnings.CountWarningsAndInfo()
+	if !cmd.warn && countWarnings > 0 {
+		return fmt.Errorf("unexpected warnings evaluating query %q (line %d): %v", iq.expr, cmd.line, res.Warnings)
+	}
+	if cmd.warn && countWarnings == 0 {
+		return fmt.Errorf("expected warnings evaluating query %q (line %d) but got none", iq.expr, cmd.line)
+	}
 	if res.Err != nil {
 		if cmd.fail {
 			return nil

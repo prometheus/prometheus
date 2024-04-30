@@ -94,6 +94,19 @@ func (a Annotations) AsStrings(query string, maxAnnos int) []string {
 	return arr
 }
 
+func (a Annotations) CountWarningsAndInfo() (int, int) {
+	var countWarnings, countInfo int
+	for _, err := range a {
+		if errors.Is(err, PromQLWarning) {
+			countWarnings++
+		}
+		if errors.Is(err, PromQLInfo) {
+			countInfo++
+		}
+	}
+	return countWarnings, countInfo
+}
+
 //nolint:revive // error-naming.
 var (
 	// Currently there are only 2 types, warnings and info.

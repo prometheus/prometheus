@@ -127,17 +127,17 @@ eval_with_nhcb instant at 50m histogram_quantile(1, testhistogram3_bucket)
 	{start="negative"} -0.1
 
 # Quantile too low.
-eval_with_nhcb instant at 50m histogram_quantile(-0.1, testhistogram_bucket)
+eval_with_nhcb_warn instant at 50m histogram_quantile(-0.1, testhistogram_bucket)
 	{start="positive"} -Inf
 	{start="negative"} -Inf
 
 # Quantile too high.
-eval_with_nhcb instant at 50m histogram_quantile(1.01, testhistogram_bucket)
+eval_with_nhcb_warn instant at 50m histogram_quantile(1.01, testhistogram_bucket)
 	{start="positive"} +Inf
 	{start="negative"} +Inf
 
 # Quantile invalid.
-eval_with_nhcb instant at 50m histogram_quantile(NaN, testhistogram_bucket)
+eval_with_nhcb_warn instant at 50m histogram_quantile(NaN, testhistogram_bucket)
 	{start="positive"} NaN
 	{start="negative"} NaN
 
