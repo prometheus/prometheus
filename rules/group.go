@@ -18,6 +18,7 @@ import (
 	"errors"
 	"math"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -74,6 +75,7 @@ type Group struct {
 
 	// concurrencyController controls the rules evaluation concurrency.
 	concurrencyController RuleConcurrencyController
+	AlertStore            AlertStore
 }
 
 // GroupEvalIterationFunc is used to implement and extend rule group
@@ -92,6 +94,7 @@ type GroupOptions struct {
 	Opts              *ManagerOptions
 	done              chan struct{}
 	EvalIterationFunc GroupEvalIterationFunc
+	AlertStore        AlertStore
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
@@ -122,6 +125,10 @@ func NewGroup(o GroupOptions) *Group {
 		concurrencyController = sequentialRuleEvalController{}
 	}
 
+	if o.AlertStore == nil {
+		o.AlertStore = noopStore{}
+	}
+
 	return &Group{
 		name:                  o.Name,
 		file:                  o.File,
@@ -138,6 +145,7 @@ func NewGroup(o GroupOptions) *Group {
 		metrics:               metrics,
 		evalIterationFunc:     evalIterationFunc,
 		concurrencyController: concurrencyController,
+		AlertStore:            o.AlertStore,
 	}
 }
 
@@ -301,6 +309,22 @@ func (g *Group) HasAlertingRules() bool {
 	for _, rule := range g.rules {
 		if _, ok := rule.(*AlertingRule); ok {
 			return true
+		}
+	}
+	return false
+}
+
+// HasAlertingRules returns true if the group contains at least one AlertingRule
+// that uses keep_firing_for clause.
+func (g *Group) HasAlertingRulesToRestore() bool {
+	g.mtx.Lock()
+	defer g.mtx.Unlock()
+
+	for _, rule := range g.rules {
+		if ar, ok := rule.(*AlertingRule); ok {
+			if ar.keepFiringFor > 0 {
+				return true
+			}
 		}
 	}
 	return false
@@ -473,7 +497,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 			g.metrics.EvalTotal.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
 
-			vector, err := rule.Eval(ctx, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit())
+			vector, err := rule.Eval(ctx, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit(), g.alertStoreFunc(i))
 			if err != nil {
 				rule.SetHealth(HealthBad)
 				rule.SetLastError(err)
@@ -1040,4 +1064,49 @@ func buildDependencyMap(rules []Rule) dependencyMap {
 
 func isRuleEligibleForConcurrentExecution(rule Rule) bool {
 	return rule.NoDependentRules() && rule.NoDependencyRules()
+}
+
+type StoreFunc func(context.Context, string, []*Alert) error
+
+func (g *Group) alertStoreFunc(ruleOrder int) StoreFunc {
+	return func(ctx context.Context, rule string, alerts []*Alert) error {
+		alertsForRule := make([]*Alert, 0)
+		for _, a := range alerts {
+			alertsForRule = append(alertsForRule, a)
+		}
+		err := g.AlertStore.SetAlerts(GroupKey(g.File(), g.Name()), rule, ruleOrder, alertsForRule)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+}
+
+func (g *Group) RestoreKeepFiringForState(ts time.Time) {
+	level.Debug(g.logger).Log("msg", "Restoring group state", "time", ts)
+	allAlerts, err := g.AlertStore.GetAlerts(GroupKey(g.File(), g.Name()))
+	if err != nil {
+		level.Error(g.logger).Log("msg", "Failed to get alerts from store, proceeding without restoring state", "err", err)
+		return
+	}
+	for order, rule := range g.rules {
+		if ar, ok := rule.(*AlertingRule); ok {
+			alerts := make(map[uint64]*Alert)
+			ruleKey := rule.Name() + strconv.Itoa(order)
+			alertsForRule, ok := allAlerts[ruleKey]
+			if !ok {
+				// No alerts found for rule
+				continue
+			}
+			for _, storedAlert := range alertsForRule {
+				if storedAlert == nil {
+					continue
+				}
+				hash := storedAlert.Labels.Hash()
+				alerts[hash] = storedAlert
+			}
+			level.Debug(g.logger).Log("msg", "Restoring active alerts for", "rule", rule.Name())
+			ar.SetActiveAlerts(alerts)
+		}
+	}
 }

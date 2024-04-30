@@ -48,6 +48,7 @@ import (
 	promlogflag "github.com/prometheus/common/promlog/flag"
 	"github.com/prometheus/common/version"
 	toolkit_web "github.com/prometheus/exporter-toolkit/web"
+	"github.com/prometheus/prometheus/alertstore"
 	"go.uber.org/atomic"
 	"go.uber.org/automaxprocs/maxprocs"
 	"k8s.io/klog"
@@ -132,23 +133,24 @@ func agentOnlyFlag(app *kingpin.Application, name, help string) *kingpin.FlagCla
 type flagConfig struct {
 	configFile string
 
-	agentStoragePath    string
-	serverStoragePath   string
-	notifier            notifier.Options
-	forGracePeriod      model.Duration
-	outageTolerance     model.Duration
-	resendDelay         model.Duration
-	maxConcurrentEvals  int64
-	web                 web.Options
-	scrape              scrape.Options
-	tsdb                tsdbOptions
-	agent               agentOptions
-	lookbackDelta       model.Duration
-	webTimeout          model.Duration
-	queryTimeout        model.Duration
-	queryConcurrency    int
-	queryMaxSamples     int
-	RemoteFlushDeadline model.Duration
+	agentStoragePath      string
+	serverStoragePath     string
+	notifier              notifier.Options
+	forGracePeriod        model.Duration
+	outageTolerance       model.Duration
+	resendDelay           model.Duration
+	maxConcurrentEvals    int64
+	web                   web.Options
+	scrape                scrape.Options
+	tsdb                  tsdbOptions
+	agent                 agentOptions
+	lookbackDelta         model.Duration
+	webTimeout            model.Duration
+	queryTimeout          model.Duration
+	queryConcurrency      int
+	queryMaxSamples       int
+	RemoteFlushDeadline   model.Duration
+	alertsOutageTolerance model.Duration
 
 	featureList   []string
 	memlimitRatio float64
@@ -160,6 +162,7 @@ type flagConfig struct {
 	enableAutoGOMAXPROCS       bool
 	enableAutoGOMEMLIMIT       bool
 	enableConcurrentRuleEval   bool
+	enableAlertStore           bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -228,6 +231,9 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 				config.DefaultConfig.GlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				level.Info(logger).Log("msg", "Experimental created timestamp zero ingestion enabled. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
+			case "alert-persistence-store":
+				c.enableAlertStore = true
+				level.Info(logger).Log("msg", "Experimental ruler alert persistence enabled, restores \"keep_firing_for\" state across restarts")
 			case "":
 				continue
 			case "promql-at-modifier", "promql-negative-offset":
@@ -417,6 +423,9 @@ func main() {
 
 	serverOnlyFlag(a, "rules.alert.resend-delay", "Minimum amount of time to wait before resending an alert to Alertmanager.").
 		Default("1m").SetValue(&cfg.resendDelay)
+
+	serverOnlyFlag(a, "rules.alert.keepfiringfor-outage-tolerance", "Max time to tolerate prometheus outage for restoring \"keep_firing_for\" state of alert.").
+		Default("1h").SetValue(&cfg.alertsOutageTolerance)
 
 	serverOnlyFlag(a, "rules.max-concurrent-evals", "Global concurrency limit for independent rules that can run concurrently.").
 		Default("4").Int64Var(&cfg.maxConcurrentEvals)
@@ -758,6 +767,18 @@ func main() {
 
 		queryEngine = promql.NewEngine(opts)
 
+		var store rules.AlertStore
+		if cfg.enableAlertStore {
+			store, err = alertstore.NewBadgerDB(cfg.serverStoragePath+"alerts/", log.With(logger, "component", "alert store"), time.Duration(cfg.alertsOutageTolerance))
+			defer store.Close()
+			if err != nil {
+				level.Warn(logger).Log("msg", "error initializing alert store, disabling feature", "err", err)
+				cfg.enableAlertStore = false
+			} else {
+				level.Info(logger).Log("msg", "enabling alert persistence store")
+			}
+		}
+
 		ruleManager = rules.NewManager(&rules.ManagerOptions{
 			Appendable:             fanoutStorage,
 			Queryable:              localStorage,
@@ -772,6 +793,7 @@ func main() {
 			ResendDelay:            time.Duration(cfg.resendDelay),
 			MaxConcurrentEvals:     cfg.maxConcurrentEvals,
 			ConcurrentEvalsEnabled: cfg.enableConcurrentRuleEval,
+			AlertStore:             store,
 		})
 	}
 

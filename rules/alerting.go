@@ -338,7 +338,7 @@ const resolvedRetention = 15 * time.Minute
 
 // Eval evaluates the rule expression and then creates pending alerts and fires
 // or removes previously pending alerts accordingly.
-func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, externalURL *url.URL, limit int) (promql.Vector, error) {
+func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, externalURL *url.URL, limit int, storeFunc StoreFunc) (promql.Vector, error) {
 	ctx = NewOriginContext(ctx, NewRuleDetail(r))
 
 	res, err := query(ctx, r.vector.String(), ts)
@@ -432,6 +432,8 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		r.active[h] = a
 	}
 
+	// only store alerts that are using keepFiringSince
+	alertsToStore := make([]*Alert, 0)
 	var numActivePending int
 	// Check if any pending alerts should be removed or fire now. Write out alert timeseries.
 	for fp, a := range r.active {
@@ -449,6 +451,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 				if ts.Sub(a.KeepFiringSince) < r.keepFiringFor {
 					keepFiring = true
 				}
+				alertsToStore = append(alertsToStore, a)
 			}
 
 			// If the alert is resolved (was firing but is now inactive) keep it for
@@ -489,6 +492,10 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		}
 	}
 
+	if len(alertsToStore) > 0 {
+		storeFunc(ctx, r.Name(), alertsToStore)
+	}
+
 	if limit > 0 && numActivePending > limit {
 		r.active = map[uint64]*Alert{}
 		return nil, fmt.Errorf("exceeded limit of %d with %d alerts", limit, numActivePending)
@@ -521,6 +528,13 @@ func (r *AlertingRule) ActiveAlerts() []*Alert {
 		}
 	}
 	return res
+}
+
+// SetActiveAlerts updates the active alerts of the alerting rule.
+func (r *AlertingRule) SetActiveAlerts(alerts map[uint64]*Alert) {
+	r.activeMtx.Lock()
+	defer r.activeMtx.Unlock()
+	r.active = alerts
 }
 
 // currentAlerts returns all instances of alerts for this rule. This may include
