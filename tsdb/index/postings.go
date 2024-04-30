@@ -164,7 +164,7 @@ type PostingsStats struct {
 
 // Stats calculates the cardinality statistics from postings.
 // Caller can pass in a function which computes the space required for n series with a given label.
-func (p *MemPostings) Stats(label string, limit int, bytes func(string, uint64) uint64) *PostingsStats {
+func (p *MemPostings) Stats(label string, limit int, labelSizeFunc func(string, string, uint64) uint64) *PostingsStats {
 	var size uint64
 	p.mtx.RLock()
 
@@ -192,7 +192,7 @@ func (p *MemPostings) Stats(label string, limit int, bytes func(string, uint64) 
 			}
 			seriesCnt := uint64(len(values))
 			labelValuePairs.push(Stat{Name: n + "=" + name, Count: seriesCnt})
-			size += bytes(name, seriesCnt)
+			size += labelSizeFunc(n, name, seriesCnt)
 		}
 		labelValueLength.push(Stat{Name: n, Count: size})
 	}
