@@ -369,37 +369,30 @@ func mostRecentTimestampInMetric(metric pmetric.Metric) pcommon.Timestamp {
 	case pmetric.MetricTypeGauge:
 		dataPoints := metric.Gauge().DataPoints()
 		for x := 0; x < dataPoints.Len(); x++ {
-			ts = maxTimestamp(ts, dataPoints.At(x).Timestamp())
+			ts = max(ts, dataPoints.At(x).Timestamp())
 		}
 	case pmetric.MetricTypeSum:
 		dataPoints := metric.Sum().DataPoints()
 		for x := 0; x < dataPoints.Len(); x++ {
-			ts = maxTimestamp(ts, dataPoints.At(x).Timestamp())
+			ts = max(ts, dataPoints.At(x).Timestamp())
 		}
 	case pmetric.MetricTypeHistogram:
 		dataPoints := metric.Histogram().DataPoints()
 		for x := 0; x < dataPoints.Len(); x++ {
-			ts = maxTimestamp(ts, dataPoints.At(x).Timestamp())
+			ts = max(ts, dataPoints.At(x).Timestamp())
 		}
 	case pmetric.MetricTypeExponentialHistogram:
 		dataPoints := metric.ExponentialHistogram().DataPoints()
 		for x := 0; x < dataPoints.Len(); x++ {
-			ts = maxTimestamp(ts, dataPoints.At(x).Timestamp())
+			ts = max(ts, dataPoints.At(x).Timestamp())
 		}
 	case pmetric.MetricTypeSummary:
 		dataPoints := metric.Summary().DataPoints()
 		for x := 0; x < dataPoints.Len(); x++ {
-			ts = maxTimestamp(ts, dataPoints.At(x).Timestamp())
+			ts = max(ts, dataPoints.At(x).Timestamp())
 		}
 	}
 	return ts
-}
-
-func maxTimestamp(a, b pcommon.Timestamp) pcommon.Timestamp {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 func (c *prometheusConverter) addSummaryDataPoints(dataPoints pmetric.SummaryDataPointSlice, resource pcommon.Resource,
