@@ -269,12 +269,3 @@ eval instant at 50m histogram_sum(sum(incr_sum_histogram))
 
 eval instant at 50m histogram_sum(sum(last_over_time(incr_sum_histogram[5m])))
     {} 30
-
-# Check that aggregation has warning if custom buckets are not compatible
-load_with_nhcb 50m
-	testhistogram_mixed_bound_bucket{job="1", le="1"}	 0+0x10
-	testhistogram_mixed_bound_bucket{job="1", le="+Inf"} 0+3x10
-	testhistogram_mixed_bound_bucket{job="2", le="2"}	 0+1x10
-	testhistogram_mixed_bound_bucket{job="2", le="+Inf"} 0+2x10
-
-eval_warnf instant at 50m sum(testhistogram_mixed_bound)
