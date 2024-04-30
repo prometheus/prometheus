@@ -711,16 +711,12 @@ func TestQueryForStateSeries(t *testing.T) {
 		)
 
 		sample := rule.forStateSample(nil, time.Time{}, 0)
-		var matchersCount int
-		sample.Metric.Range(func(l labels.Label) {
-			matchersCount++
-		})
 
 		seriesSet, err := rule.QueryForStateSeries(context.Background(), querier)
 
 		var series storage.Series
 		for seriesSet.Next() {
-			if seriesSet.At().Labels().Len() == matchersCount {
+			if seriesSet.At().Labels().Len() == sample.Metric.Len() {
 				series = seriesSet.At()
 				break
 			}
