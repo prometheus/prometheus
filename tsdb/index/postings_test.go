@@ -954,7 +954,7 @@ func TestMemPostingsStats(t *testing.T) {
 	p.Add(2, labels.FromStrings("label", "value1"))
 
 	// call the Stats method to calculate the cardinality statistics
-	stats := p.Stats("label", 10, func(s string, n uint64) uint64 { return uint64(len(s)) * n })
+	stats := p.Stats("label", 10, func(name, value string, n uint64) uint64 { return uint64(len(name)+len(value)) * n })
 
 	// assert that the expected statistics were calculated
 	require.Equal(t, uint64(2), stats.CardinalityMetricsStats[0].Count)
@@ -963,7 +963,7 @@ func TestMemPostingsStats(t *testing.T) {
 	require.Equal(t, uint64(3), stats.CardinalityLabelStats[0].Count)
 	require.Equal(t, "label", stats.CardinalityLabelStats[0].Name)
 
-	require.Equal(t, uint64(24), stats.LabelValueStats[0].Count)
+	require.Equal(t, uint64(44), stats.LabelValueStats[0].Count)
 	require.Equal(t, "label", stats.LabelValueStats[0].Name)
 
 	require.Equal(t, uint64(2), stats.LabelValuePairsStats[0].Count)
