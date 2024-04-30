@@ -1597,7 +1597,15 @@ and serves as an interface to plug in custom service discovery mechanisms.
 
 It reads a set of files containing a list of zero or more
 `<static_config>`s. Changes to all defined files are detected via disk watches
-and applied immediately. Files may be provided in YAML or JSON format. Only
+and applied immediately. 
+
+Note that while individual files are watched for changes,
+the containing directory is also implicitly watched in order to detect
+new files that match configured patterns. This may cause issues if watched files
+are placed in a directory with a very large number of files, as these will all 
+count as open files.
+
+Files may be provided in YAML or JSON format. Only
 changes resulting in well-formed target groups are applied.
 
 Files must contain a list of static configs, using these formats:
