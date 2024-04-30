@@ -716,7 +716,7 @@ func TestQueryForStateSeries(t *testing.T) {
 			matchersCount++
 		})
 
-		seriesSet, err := rule.QueryforStateSeries(context.Background(), querier)
+		seriesSet, err := rule.QueryForStateSeries(context.Background(), querier)
 
 		var series storage.Series
 		for seriesSet.Next() {

@@ -664,7 +664,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 			continue
 		}
 
-		sset, err := alertRule.QueryforStateSeries(g.opts.Context, q)
+		sset, err := alertRule.QueryForStateSeries(g.opts.Context, q)
 		if err != nil {
 			level.Error(g.logger).Log(
 				"msg", "Failed to restore 'for' state",
