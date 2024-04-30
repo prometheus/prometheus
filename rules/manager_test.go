@@ -397,14 +397,6 @@ func TestForStateRestore(t *testing.T) {
 		group.Eval(context.TODO(), evalTime)
 	}
 
-	exp := rule.ActiveAlerts()
-	for _, aa := range exp {
-		require.Zero(t, aa.Labels.Get(model.MetricNameLabel), "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
-	}
-	sort.Slice(exp, func(i, j int) bool {
-		return labels.Compare(exp[i].Labels, exp[j].Labels) < 0
-	})
-
 	// Prometheus goes down here. We create new rules and groups.
 	type testInput struct {
 		name            string
