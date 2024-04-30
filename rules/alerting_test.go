@@ -1038,6 +1038,8 @@ func TestAlertingRule_ActiveAlertsCount(t *testing.T) {
 		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
 	)
 
+	require.Equal(t, 0, rule.ActiveAlertsCount())
+
 	// Set an active alert.
 	lbls := labels.FromStrings("a1", "1")
 	h := lbls.Hash()
