@@ -401,7 +401,7 @@ func TestForStateRestore(t *testing.T) {
 	type testInput struct {
 		name            string
 		restoreDuration time.Duration
-		alerts          []*Alert
+		expectedAlerts  []*Alert
 
 		num          int
 		noRestore    bool
@@ -414,7 +414,7 @@ func TestForStateRestore(t *testing.T) {
 		{
 			name:            "normal restore (alerts were not firing)",
 			restoreDuration: 15 * time.Minute,
-			alerts:          rule.ActiveAlerts(),
+			expectedAlerts:  rule.ActiveAlerts(),
 			downDuration:    10 * time.Minute,
 		},
 		{
@@ -426,12 +426,12 @@ func TestForStateRestore(t *testing.T) {
 		{
 			name:            "no active alerts",
 			restoreDuration: 50 * time.Minute,
-			alerts:          []*Alert{},
+			expectedAlerts:  []*Alert{},
 		},
 		{
 			name:            "test the grace period",
 			restoreDuration: 25 * time.Minute,
-			alerts:          []*Alert{},
+			expectedAlerts:  []*Alert{},
 			gracePeriod:     true,
 			before: func() {
 				for _, duration := range []time.Duration{10 * time.Minute, 15 * time.Minute, 20 * time.Minute} {
@@ -496,7 +496,7 @@ func TestForStateRestore(t *testing.T) {
 					require.Equal(t, opts.ForGracePeriod, e.ActiveAt.Add(alertForDuration).Sub(restoreTime))
 				}
 			default:
-				exp := tt.alerts
+				exp := tt.expectedAlerts
 				require.Equal(t, len(exp), len(got))
 				sortAlerts(exp)
 				sortAlerts(got)
