@@ -14,36 +14,36 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: Copyright The OpenTelemetry Authors.
 
-package prometheusremotewrite
+package {{.Package}}
 
 import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
-	"github.com/prometheus/prometheus/prompb"
+	"{{.PbPackagePath}}"
 	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
 )
 
-func otelMetricTypeToPromMetricType(otelMetric pmetric.Metric) prompb.MetricMetadata_MetricType {
+func otelMetricTypeToPromMetricType(otelMetric pmetric.Metric) {{.PbPackage}}.MetricMetadata_MetricType {
 	switch otelMetric.Type() {
 	case pmetric.MetricTypeGauge:
-		return prompb.MetricMetadata_GAUGE
+		return {{.PbPackage}}.{{.GaugeType}}
 	case pmetric.MetricTypeSum:
-		metricType := prompb.MetricMetadata_GAUGE
+		metricType := {{.PbPackage}}.{{.GaugeType}}
 		if otelMetric.Sum().IsMonotonic() {
-			metricType = prompb.MetricMetadata_COUNTER
+			metricType = {{.PbPackage}}.{{.CounterType}}
 		}
 		return metricType
 	case pmetric.MetricTypeHistogram:
-		return prompb.MetricMetadata_HISTOGRAM
+		return {{.PbPackage}}.{{.HistogramType}}
 	case pmetric.MetricTypeSummary:
-		return prompb.MetricMetadata_SUMMARY
+		return {{.PbPackage}}.{{.SummaryType}}
 	case pmetric.MetricTypeExponentialHistogram:
-		return prompb.MetricMetadata_HISTOGRAM
+		return {{.PbPackage}}.{{.HistogramType}}
 	}
-	return prompb.MetricMetadata_UNKNOWN
+	return {{.PbPackage}}.{{.UnknownType}}
 }
 
-func OtelMetricsToMetadata(md pmetric.Metrics, addMetricSuffixes bool) []*prompb.MetricMetadata {
+func OtelMetricsToMetadata(md pmetric.Metrics, addMetricSuffixes bool) []*{{.PbPackage}}.MetricMetadata {
 	resourceMetricsSlice := md.ResourceMetrics()
 
 	metadataLength := 0
@@ -54,7 +54,7 @@ func OtelMetricsToMetadata(md pmetric.Metrics, addMetricSuffixes bool) []*prompb
 		}
 	}
 
-	var metadata = make([]*prompb.MetricMetadata, 0, metadataLength)
+	var metadata = make([]*{{.PbPackage}}.MetricMetadata, 0, metadataLength)
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
 		resourceMetrics := resourceMetricsSlice.At(i)
 		scopeMetricsSlice := resourceMetrics.ScopeMetrics()
@@ -63,7 +63,7 @@ func OtelMetricsToMetadata(md pmetric.Metrics, addMetricSuffixes bool) []*prompb
 			scopeMetrics := scopeMetricsSlice.At(j)
 			for k := 0; k < scopeMetrics.Metrics().Len(); k++ {
 				metric := scopeMetrics.Metrics().At(k)
-				entry := prompb.MetricMetadata{
+				entry := {{.PbPackage}}.MetricMetadata{
 					Type:             otelMetricTypeToPromMetricType(metric),
 					MetricFamilyName: prometheustranslator.BuildCompliantName(metric, "", addMetricSuffixes),
 					Help:             metric.Description(),
