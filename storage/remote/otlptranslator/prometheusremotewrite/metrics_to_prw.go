@@ -20,7 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strconv"
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -39,34 +38,21 @@ type Settings struct {
 	SendMetadata        bool
 }
 
-// FromMetrics converts pmetric.Metrics to Prometheus remote write format.
-func FromMetrics(md pmetric.Metrics, settings Settings) (map[string]*prompb.TimeSeries, error) {
-	c := newPrometheusConverter()
-	errs := c.fromMetrics(md, settings)
-	tss := c.timeSeries()
-	out := make(map[string]*prompb.TimeSeries, len(tss))
-	for i := range tss {
-		out[strconv.Itoa(i)] = &tss[i]
-	}
-
-	return out, errs
-}
-
-// prometheusConverter converts from OTel write format to Prometheus write format.
-type prometheusConverter struct {
+// PrometheusConverter converts from OTel write format to Prometheus write format.
+type PrometheusConverter struct {
 	unique    map[uint64]*prompb.TimeSeries
 	conflicts map[uint64][]*prompb.TimeSeries
 }
 
-func newPrometheusConverter() *prometheusConverter {
-	return &prometheusConverter{
+func NewPrometheusConverter() *PrometheusConverter {
+	return &PrometheusConverter{
 		unique:    map[uint64]*prompb.TimeSeries{},
 		conflicts: map[uint64][]*prompb.TimeSeries{},
 	}
 }
 
-// fromMetrics converts pmetric.Metrics to Prometheus remote write format.
-func (c *prometheusConverter) fromMetrics(md pmetric.Metrics, settings Settings) (errs error) {
+// FromMetrics converts pmetric.Metrics to Prometheus remote write format.
+func (c *PrometheusConverter) FromMetrics(md pmetric.Metrics, settings Settings) (errs error) {
 	resourceMetricsSlice := md.ResourceMetrics()
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
 		resourceMetrics := resourceMetricsSlice.At(i)
@@ -144,8 +130,8 @@ func (c *prometheusConverter) fromMetrics(md pmetric.Metrics, settings Settings)
 	return
 }
 
-// timeSeries returns a slice of the prompb.TimeSeries that were converted from OTel format.
-func (c *prometheusConverter) timeSeries() []prompb.TimeSeries {
+// TimeSeries returns a slice of the prompb.TimeSeries that were converted from OTel format.
+func (c *PrometheusConverter) TimeSeries() []prompb.TimeSeries {
 	conflicts := 0
 	for _, ts := range c.conflicts {
 		conflicts += len(ts)
@@ -177,7 +163,7 @@ func isSameMetric(ts *prompb.TimeSeries, lbls []prompb.Label) bool {
 
 // addExemplars adds exemplars for the dataPoint. For each exemplar, if it can find a bucket bound corresponding to its value,
 // the exemplar is added to the bucket bound's time series, provided that the time series' has samples.
-func (c *prometheusConverter) addExemplars(dataPoint pmetric.HistogramDataPoint, bucketBounds []bucketBoundsData) {
+func (c *PrometheusConverter) addExemplars(dataPoint pmetric.HistogramDataPoint, bucketBounds []bucketBoundsData) {
 	if len(bucketBounds) == 0 {
 		return
 	}
@@ -202,7 +188,7 @@ func (c *prometheusConverter) addExemplars(dataPoint pmetric.HistogramDataPoint,
 // If there is no corresponding TimeSeries already, it's created.
 // The corresponding TimeSeries is returned.
 // If either lbls is nil/empty or sample is nil, nothing is done.
-func (c *prometheusConverter) addSample(sample *prompb.Sample, lbls []prompb.Label) *prompb.TimeSeries {
+func (c *PrometheusConverter) addSample(sample *prompb.Sample, lbls []prompb.Label) *prompb.TimeSeries {
 	if sample == nil || len(lbls) == 0 {
 		// This shouldn't happen
 		return nil
