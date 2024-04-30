@@ -15,6 +15,7 @@ package v1
 
 import (
 	"context"
+	"crypto/sha1"
 	"errors"
 	"fmt"
 	"math"
@@ -167,6 +168,17 @@ type apiFuncResult struct {
 }
 
 type apiFunc func(r *http.Request) apiFuncResult
+
+type listRulesPaginationRequest struct {
+	MaxAlerts     int32
+	MaxRuleGroups int32
+	NextToken     string
+}
+
+type parsePaginationError struct {
+	err       error
+	parameter string
+}
 
 // TSDBAdminStats defines the tsdb interfaces used by the v1 API for admin operations as well as statistics.
 type TSDBAdminStats interface {
@@ -1329,6 +1341,12 @@ type RuleDiscovery struct {
 	RuleGroups []*RuleGroup `json:"groups"`
 }
 
+// PaginatedRuleDiscovery has info for all rules with pagination.
+type PaginatedRuleDiscovery struct {
+	RuleGroups []*RuleGroup `json:"groups"`
+	NextToken  string       `json:"nextToken"`
+}
+
 // RuleGroup has info for rules which are part of a group.
 type RuleGroup struct {
 	Name string `json:"name"`
@@ -1361,6 +1379,29 @@ type AlertingRule struct {
 	LastEvaluation time.Time        `json:"lastEvaluation"`
 	// Type of an alertingRule is always "alerting".
 	Type string `json:"type"`
+}
+
+type AlertingRulePaginated struct {
+	// State can be "pending", "firing", "inactive".
+	State          string           `json:"state"`
+	Name           string           `json:"name"`
+	Query          string           `json:"query"`
+	Duration       float64          `json:"duration"`
+	KeepFiringFor  float64          `json:"keepFiringFor"`
+	Labels         labels.Labels    `json:"labels"`
+	Annotations    labels.Labels    `json:"annotations"`
+	AlertInfo      *AlertsPaginated `json:"alertInfo"`
+	Health         rules.RuleHealth `json:"health"`
+	LastError      string           `json:"lastError,omitempty"`
+	EvaluationTime float64          `json:"evaluationTime"`
+	LastEvaluation time.Time        `json:"lastEvaluation"`
+	// Type of an alertingRule is always "alerting".
+	Type string `json:"type"`
+}
+
+type AlertsPaginated struct {
+	Alerts  []*Alert `json:"alerts"`
+	HasMore bool     `json:"hasMore"`
 }
 
 type RecordingRule struct {
@@ -1408,6 +1449,15 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 		return invalidParamError(err, "exclude_alerts")
 	}
 
+	paginationRequest, parseErr := parseListRulesPaginationRequest(r)
+	if parseErr != nil {
+		return invalidParamError(parseErr.err, parseErr.parameter)
+	}
+
+	if paginationRequest != nil {
+		sort.Sort(GroupStateDescs(ruleGroups))
+	}
+
 	rgs := make([]*RuleGroup, 0, len(ruleGroups))
 	for _, grp := range ruleGroups {
 		if len(rgSet) > 0 {
@@ -1420,6 +1470,12 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 			if _, ok := fSet[grp.File()]; !ok {
 				continue
 			}
+		}
+
+		// Skip the rule group if the next token is set and hasn't arrived the nextToken item yet.
+		groupID := getRuleGroupNextToken(grp.File(), grp.Name())
+		if paginationRequest != nil && len(paginationRequest.NextToken) > 0 && paginationRequest.NextToken >= groupID {
+			continue
 		}
 
 		apiRuleGroup := &RuleGroup{
@@ -1453,20 +1509,47 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 				if !excludeAlerts {
 					activeAlerts = rulesAlertsToAPIAlerts(rule.ActiveAlerts())
 				}
-				enrichedRule = AlertingRule{
-					State:          rule.State().String(),
-					Name:           rule.Name(),
-					Query:          rule.Query().String(),
-					Duration:       rule.HoldDuration().Seconds(),
-					KeepFiringFor:  rule.KeepFiringFor().Seconds(),
-					Labels:         rule.Labels(),
-					Annotations:    rule.Annotations(),
-					Alerts:         activeAlerts,
-					Health:         rule.Health(),
-					LastError:      lastError,
-					EvaluationTime: rule.GetEvaluationDuration().Seconds(),
-					LastEvaluation: rule.GetEvaluationTimestamp(),
-					Type:           "alerting",
+				hasMore := false
+				if paginationRequest != nil && paginationRequest.MaxAlerts >= 0 && len(rule.ActiveAlerts()) > int(paginationRequest.MaxAlerts) {
+					activeAlerts = activeAlerts[:int(paginationRequest.MaxAlerts)]
+					hasMore = true
+				}
+
+				if paginationRequest != nil {
+					enrichedRule = AlertingRulePaginated{
+						State:         rule.State().String(),
+						Name:          rule.Name(),
+						Query:         rule.Query().String(),
+						Duration:      rule.HoldDuration().Seconds(),
+						KeepFiringFor: rule.KeepFiringFor().Seconds(),
+						Labels:        rule.Labels(),
+						Annotations:   rule.Annotations(),
+						AlertInfo: &AlertsPaginated{
+							Alerts:  activeAlerts,
+							HasMore: hasMore,
+						},
+						Health:         rule.Health(),
+						LastError:      lastError,
+						EvaluationTime: rule.GetEvaluationDuration().Seconds(),
+						LastEvaluation: rule.GetEvaluationTimestamp(),
+						Type:           "alerting",
+					}
+				} else {
+					enrichedRule = AlertingRule{
+						State:          rule.State().String(),
+						Name:           rule.Name(),
+						Query:          rule.Query().String(),
+						Duration:       rule.HoldDuration().Seconds(),
+						KeepFiringFor:  rule.KeepFiringFor().Seconds(),
+						Labels:         rule.Labels(),
+						Annotations:    rule.Annotations(),
+						Alerts:         activeAlerts,
+						Health:         rule.Health(),
+						LastError:      lastError,
+						EvaluationTime: rule.GetEvaluationDuration().Seconds(),
+						LastEvaluation: rule.GetEvaluationTimestamp(),
+						Type:           "alerting",
+					}
 				}
 			case *rules.RecordingRule:
 				if !returnRecording {
@@ -1497,6 +1580,15 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 			rgs = append(rgs, apiRuleGroup)
 		}
 	}
+
+	if paginationRequest != nil {
+		paginatedRes := &PaginatedRuleDiscovery{RuleGroups: make([]*RuleGroup, 0, len(ruleGroups))}
+		returnGroups, nextToken := TruncateGroupInfos(rgs, int(paginationRequest.MaxRuleGroups))
+		paginatedRes.RuleGroups = returnGroups
+		paginatedRes.NextToken = nextToken
+		return apiFuncResult{paginatedRes, nil, nil, nil}
+	}
+
 	res.RuleGroups = rgs
 	return apiFuncResult{res, nil, nil, nil}
 }
@@ -1513,6 +1605,77 @@ func parseExcludeAlerts(r *http.Request) (bool, error) {
 		return false, fmt.Errorf("error converting exclude_alerts: %w", err)
 	}
 	return excludeAlerts, nil
+}
+
+func parseListRulesPaginationRequest(r *http.Request) (*listRulesPaginationRequest, *parsePaginationError) {
+	var (
+		returnMaxAlert      = int32(-1)
+		returnMaxRuleGroups = int32(-1)
+		returnNextToken     = ""
+	)
+
+	if r.URL.Query().Get("maxAlerts") != "" {
+		maxAlert, err := strconv.ParseInt(r.URL.Query().Get("maxAlerts"), 10, 32)
+		if err != nil || maxAlert < 0 {
+			return nil, &parsePaginationError{
+				err:       fmt.Errorf("maxAlerts need to be a valid number and larger than 0: %w", err),
+				parameter: "maxAlerts",
+			}
+		}
+		returnMaxAlert = int32(maxAlert)
+	}
+
+	if r.URL.Query().Get("maxRuleGroups") != "" {
+		maxRuleGroups, err := strconv.ParseInt(r.URL.Query().Get("maxRuleGroups"), 10, 32)
+		if err != nil || maxRuleGroups < 0 {
+			return nil, &parsePaginationError{
+				err:       fmt.Errorf("maxRuleGroups need to be a valid number and larger than 0: %w", err),
+				parameter: "maxAlerts",
+			}
+		}
+		returnMaxRuleGroups = int32(maxRuleGroups)
+	}
+
+	if r.URL.Query().Get("nextToken") != "" {
+		returnNextToken = r.URL.Query().Get("nextToken")
+	}
+
+	if returnMaxRuleGroups >= 0 || returnMaxAlert >= 0 || returnNextToken != "" {
+		return &listRulesPaginationRequest{
+			MaxRuleGroups: returnMaxRuleGroups,
+			MaxAlerts:     returnMaxAlert,
+			NextToken:     returnNextToken,
+		}, nil
+	}
+
+	return nil, nil
+}
+
+func TruncateGroupInfos(groupInfos []*RuleGroup, maxRuleGroups int) ([]*RuleGroup, string) {
+	resultNumber := 0
+	var returnPaginationToken string
+	returnGroupDescs := make([]*RuleGroup, 0, len(groupInfos))
+	for _, groupInfo := range groupInfos {
+		// Add the rule group to the return slice if the maxRuleGroups is not hit
+		if maxRuleGroups < 0 || resultNumber < maxRuleGroups {
+			returnGroupDescs = append(returnGroupDescs, groupInfo)
+			resultNumber++
+			continue
+		}
+
+		// Return the next token if there is more aggregation group
+		if maxRuleGroups > 0 && resultNumber == maxRuleGroups {
+			returnPaginationToken = getRuleGroupNextToken(returnGroupDescs[maxRuleGroups-1].File, returnGroupDescs[maxRuleGroups-1].Name)
+			break
+		}
+	}
+	return returnGroupDescs, returnPaginationToken
+}
+
+func getRuleGroupNextToken(namespace, group string) string {
+	h := sha1.New()
+	h.Write([]byte(namespace + ";" + group))
+	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
 type prometheusConfig struct {
@@ -1911,3 +2074,11 @@ func parseLimitParam(limitStr string) (limit int, err error) {
 
 	return limit, nil
 }
+
+type GroupStateDescs []*rules.Group
+
+func (gi GroupStateDescs) Swap(i, j int) { gi[i], gi[j] = gi[j], gi[i] }
+func (gi GroupStateDescs) Less(i, j int) bool {
+	return getRuleGroupNextToken(gi[i].File(), gi[i].Name()) < getRuleGroupNextToken(gi[j].File(), gi[j].Name())
+}
+func (gi GroupStateDescs) Len() int { return len(gi) }
