@@ -408,7 +408,7 @@ func TestForStateRestore(t *testing.T) {
 	// Prometheus goes down here. We create new rules and groups.
 	type testInput struct {
 		restoreDuration time.Duration
-		alerts          []*Alert
+		expectedAlerts  []*Alert
 
 		num          int
 		noRestore    bool
@@ -420,7 +420,7 @@ func TestForStateRestore(t *testing.T) {
 		{
 			// Normal restore (alerts were not firing).
 			restoreDuration: 15 * time.Minute,
-			alerts:          rule.ActiveAlerts(),
+			expectedAlerts:  rule.ActiveAlerts(),
 			downDuration:    10 * time.Minute,
 		},
 		{
@@ -432,26 +432,44 @@ func TestForStateRestore(t *testing.T) {
 		{
 			// No active alerts.
 			restoreDuration: 50 * time.Minute,
-			alerts:          []*Alert{},
+			expectedAlerts:  []*Alert{},
+		},
+		{
+			name:            "test the grace period",
+			restoreDuration: 25 * time.Minute,
+			expectedAlerts:  []*Alert{},
+			gracePeriod:     true,
+			before: func() {
+				for _, duration := range []time.Duration{10 * time.Minute, 15 * time.Minute, 20 * time.Minute} {
+					evalTime := baseTime.Add(duration)
+					group.Eval(context.TODO(), evalTime)
+				}
+			},
+			num: 2,
 		},
 	}
 
-	testFunc := func(tst testInput) {
-		newRule := NewAlertingRule(
-			"HTTPRequestRateLow",
-			expr,
-			alertForDuration,
-			0,
-			labels.FromStrings("severity", "critical"),
-			labels.EmptyLabels(), labels.EmptyLabels(), "", false, nil,
-		)
-		newGroup := NewGroup(GroupOptions{
-			Name:          "default",
-			Interval:      time.Second,
-			Rules:         []Rule{newRule},
-			ShouldRestore: true,
-			Opts:          opts,
-		})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.before != nil {
+				tt.before()
+			}
+
+			newRule := NewAlertingRule(
+				"HTTPRequestRateLow",
+				expr,
+				alertForDuration,
+				0,
+				labels.FromStrings("severity", "critical"),
+				labels.EmptyLabels(), labels.EmptyLabels(), "", false, nil,
+			)
+			newGroup := NewGroup(GroupOptions{
+				Name:          "default",
+				Interval:      time.Second,
+				Rules:         []Rule{newRule},
+				ShouldRestore: true,
+				Opts:          opts,
+			})
 
 		newGroups := make(map[string]*Group)
 		newGroups["default;"] = newGroup
@@ -470,25 +488,26 @@ func TestForStateRestore(t *testing.T) {
 			return labels.Compare(got[i].Labels, got[j].Labels) < 0
 		})
 
-		// Checking if we have restored it correctly.
-		switch {
-		case tst.noRestore:
-			require.Len(t, got, tst.num)
-			for _, e := range got {
-				require.Equal(t, e.ActiveAt, restoreTime)
-			}
-		case tst.gracePeriod:
-			require.Len(t, got, tst.num)
-			for _, e := range got {
-				require.Equal(t, opts.ForGracePeriod, e.ActiveAt.Add(alertForDuration).Sub(restoreTime))
-			}
-		default:
-			exp := tst.alerts
-			require.Equal(t, len(exp), len(got))
-			sortAlerts(exp)
-			sortAlerts(got)
-			for i, e := range exp {
-				require.Equal(t, e.Labels, got[i].Labels)
+			// Checking if we have restored it correctly.
+			switch {
+			case tt.noRestore:
+				require.Len(t, got, tt.num)
+				for _, e := range got {
+					require.Equal(t, e.ActiveAt, restoreTime)
+				}
+			case tt.gracePeriod:
+
+				require.Len(t, got, tt.num)
+				for _, e := range got {
+					require.Equal(t, opts.ForGracePeriod, e.ActiveAt.Add(alertForDuration).Sub(restoreTime))
+				}
+			default:
+				exp := tt.expectedAlerts
+				require.Equal(t, len(exp), len(got))
+				sortAlerts(exp)
+				sortAlerts(got)
+				for i, e := range exp {
+					require.Equal(t, e.Labels, got[i].Labels)
 
 				// Difference in time should be within 1e6 ns, i.e. 1ms
 				// (due to conversion between ns & ms, float64 & int64).
