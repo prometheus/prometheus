@@ -817,6 +817,6 @@ func (b *ScratchBuilder) Overwrite(ls *Labels) {
 }
 
 // SizeOfLabels returns the approximate space required for n copies of a label.
-func SizeOfLabels(value string, n uint64) uint64 {
-	return uint64(len(value)) + n*2 // Assuming most symbol-table entries are 2 bytes long.
+func SizeOfLabels(name, value string, n uint64) uint64 {
+	return uint64(len(name)+len(value)) + n*4 // Assuming most symbol-table entries are 2 bytes long.
 }
