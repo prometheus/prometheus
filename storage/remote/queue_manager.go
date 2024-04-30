@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"math"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -397,10 +396,6 @@ type WriteClient interface {
 	Name() string
 	// Endpoint is the remote read or write endpoint for the storage client.
 	Endpoint() string
-	// Get the protocol versions supported by the endpoint.
-	probeRemoteVersions(ctx context.Context) error
-	// Get the last RW header received from the endpoint.
-	GetLastRWHeader() string
 }
 
 const (
@@ -582,7 +577,7 @@ func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []p
 	// Build the WriteRequest with no samples.
 
 	// Get compression to use from content negotiation based on last header seen (defaults to snappy).
-	compression, _ := negotiateRWProto(t.rwFormat, t.storeClient.GetLastRWHeader())
+	compression := "snappy"
 
 	req, _, _, err := buildWriteRequest(t.logger, nil, metadata, pBuf, nil, nil, compression)
 	if err != nil {
@@ -1510,40 +1505,6 @@ func (q *queue) newBatch(capacity int) []timeSeries {
 	return make([]timeSeries, 0, capacity)
 }
 
-func negotiateRWProto(rwFormat config.RemoteWriteFormat, lastHeaderSeen string) (string, config.RemoteWriteFormat) {
-	if rwFormat == Version1 {
-		// If we're only handling Version1 then all we can do is that with snappy compression.
-		return "snappy", Version1
-	}
-	if rwFormat != Version2 {
-		// If we get here then someone has added a new RemoteWriteFormat value but hasn't
-		// fixed this function to handle it. Panic!
-		panic(fmt.Sprintf("Unhandled RemoteWriteFormat %q", rwFormat))
-	}
-	if lastHeaderSeen == "" {
-		// We haven't had a valid header, so we just default to "0.1.0/snappy".
-		return "snappy", Version1
-	}
-	// We can currently handle:
-	// "2.0;snappy"
-	// "0.1.0" - implicit compression of snappy
-	// lastHeaderSeen should contain a list of tuples.
-	// If we find a match to something we can handle then we can return that.
-	for _, tuple := range strings.Split(lastHeaderSeen, ",") {
-		// Remove spaces from the tuple.
-		curr := strings.ReplaceAll(tuple, " ", "")
-		switch curr {
-		case "2.0;snappy":
-			return "snappy", Version2
-		case "0.1.0":
-			return "snappy", Version1
-		}
-	}
-
-	// Otherwise we have to default to "0.1.0".
-	return "snappy", Version1
-}
-
 func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 	defer func() {
 		if s.running.Dec() == 0 {
@@ -1637,17 +1598,13 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			if !ok {
 				return
 			}
-			// Work out what version to send based on the last header seen and the QM's rwFormat setting.
-			for attemptNos := 1; attemptNos <= 3; attemptNos++ {
-				lastHeaderSeen := s.qm.storeClient.GetLastRWHeader()
-				compression, rwFormat := negotiateRWProto(s.qm.rwFormat, lastHeaderSeen)
-				sendErr := attemptBatchSend(batch, rwFormat, compression, false)
-				pErr := &ErrRenegotiate{}
-				if sendErr == nil || !errors.As(sendErr, &pErr) {
-					// No error, or error wasn't a 406 or 400, so we can stop trying.
-					break
-				}
-				// If we get either of the two errors (406, 400) bundled in ErrRenegotiate we loop and re-negotiate.
+			compression := "snappy"
+			rwFormat := s.qm.rwFormat
+			// TODO(alexg): Need to get rwFormat from somewhere
+			sendErr := attemptBatchSend(batch, rwFormat, compression, false)
+			pErr := &ErrRenegotiate{}
+			if sendErr != nil && errors.As(sendErr, &pErr) {
+				// If we get either of the two errors (415, 400) bundled in ErrRenegotiate we want to log and metric
 				// TODO(alexg) - add retry/renegotiate metrics here
 			}
 
@@ -1659,19 +1616,15 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 		case <-timer.C:
 			batch := queue.Batch()
 			if len(batch) > 0 {
-				for attemptNos := 1; attemptNos <= 3; attemptNos++ {
-					// Work out what version to send based on the last header seen and the QM's rwFormat setting.
-					lastHeaderSeen := s.qm.storeClient.GetLastRWHeader()
-					compression, rwFormat := negotiateRWProto(s.qm.rwFormat, lastHeaderSeen)
-					sendErr := attemptBatchSend(batch, rwFormat, compression, true)
-					pErr := &ErrRenegotiate{}
-					if sendErr == nil || !errors.As(sendErr, &pErr) {
-						// No error, or error wasn't a 406 or 400, so we can stop trying.
-						break
-					}
-					// If we get either of the two errors (406, 400) bundled in ErrRenegotiate we loop and re-negotiate.
+				compression := "snappy"
+				// TODO(alexg): Need to get rwFormat from somewhere
+				rwFormat := s.qm.rwFormat
+				sendErr := attemptBatchSend(batch, rwFormat, compression, false)
+				pErr := &ErrRenegotiate{}
+				if sendErr != nil && errors.As(sendErr, &pErr) {
+					// If we get either of the two errors (415, 400) bundled in ErrRenegotiate we want to log and metric
+					// TODO(alexg) - add retry/renegotiate metrics here
 				}
-				// TODO(alexg) - add retry/renegotiate metrics here
 			}
 			queue.ReturnForReuse(batch)
 			timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
@@ -1725,7 +1678,7 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 	err := s.sendSamplesWithBackoff(ctx, samples, sampleCount, exemplarCount, histogramCount, 0, pBuf, buf, compression)
 	s.updateMetrics(ctx, err, sampleCount, exemplarCount, histogramCount, 0, time.Since(begin))
 
-	// Return the error in case it is a 406 and we need to reformat the data.
+	// Return the error in case it is a 415 and we need to reformat the data.
 	return err
 }
 
@@ -1734,7 +1687,7 @@ func (s *shards) sendV2Samples(ctx context.Context, samples []writev2.TimeSeries
 	err := s.sendV2SamplesWithBackoff(ctx, samples, labels, sampleCount, exemplarCount, histogramCount, metadataCount, pBuf, buf, compression)
 	s.updateMetrics(ctx, err, sampleCount, exemplarCount, histogramCount, metadataCount, time.Since(begin))
 
-	// Return the error in case it is a 406 and we need to reformat the data.
+	// Return the error in case it is a 415 and we need to reformat the data.
 	return err
 }
 

@@ -56,7 +56,7 @@ var UserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 // not understand Remote Write 2.0) will result in an HTTP 400 status code from the receiver.
 
 // A Remote Write 2.0 request sent to a remote write receiver may (depending on receiver version)
-// result in an HTTP 406 status code to indicate that it does not accept the protocol or
+// result in an HTTP 415 status code to indicate that it does not accept the protocol or
 // encoding of that request and that the sender should retry with a more suitable protocol
 // version or encoding.
 
@@ -226,55 +226,6 @@ type RecoverableError struct {
 	retryAfter model.Duration
 }
 
-// Attempt a HEAD request against a remote write endpoint to see what it supports.
-func (c *Client) probeRemoteVersions(ctx context.Context) error {
-	// We assume we are in Version2 mode otherwise we shouldn't be calling this.
-
-	httpReq, err := http.NewRequest(http.MethodHead, c.urlString, nil)
-	if err != nil {
-		// Errors from NewRequest are from unparsable URLs, so are not
-		// recoverable.
-		return err
-	}
-
-	// Set the version header to be nice.
-	httpReq.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
-	httpReq.Header.Set("User-Agent", UserAgent)
-
-	ctx, cancel := context.WithTimeout(ctx, c.timeout)
-	defer cancel()
-
-	httpResp, err := c.Client.Do(httpReq.WithContext(ctx))
-	if err != nil {
-		// We don't attempt a retry here.
-		return err
-	}
-
-	// See if we got a header anyway.
-	promHeader := httpResp.Header.Get(RemoteWriteVersionHeader)
-
-	// Only update lastRWHeader if the X-Prometheus-Remote-Write header is not blank.
-	if promHeader != "" {
-		c.lastRWHeader = promHeader
-	}
-
-	// Check for an error.
-	if httpResp.StatusCode != http.StatusOK {
-		if httpResp.StatusCode == http.StatusMethodNotAllowed {
-			// If we get a 405 (MethodNotAllowed) error then it means the endpoint doesn't
-			// understand Remote Write 2.0, so we allow the lastRWHeader to be overwritten
-			// even if it is blank.
-			// This will make subsequent sends use RemoteWrite 1.0 until the endpoint gives
-			// a response that confirms it can speak 2.0.
-			c.lastRWHeader = promHeader
-		}
-		return fmt.Errorf(httpResp.Status)
-	}
-
-	// All ok, return no error.
-	return nil
-}
-
 // Store sends a batch of samples to the HTTP endpoint, the request is the proto marshalled
 // and encoded bytes from codec.go.
 func (c *Client) Store(ctx context.Context, req []byte, attempt int, rwFormat config.RemoteWriteFormat, compression string) error {
@@ -335,8 +286,8 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int, rwFormat co
 			// Return an unrecoverable error to indicate the 400.
 			// This then gets passed up the chain so we can react to it properly.
 			return &ErrRenegotiate{line, httpResp.StatusCode}
-		case http.StatusNotAcceptable:
-			// Return an unrecoverable error to indicate the 406.
+		case http.StatusUnsupportedMediaType:
+			// Return an unrecoverable error to indicate the 415.
 			// This then gets passed up the chain so we can react to it properly.
 			return &ErrRenegotiate{line, httpResp.StatusCode}
 		default:
@@ -375,10 +326,6 @@ func (c Client) Name() string {
 // Endpoint is the remote read or write endpoint.
 func (c Client) Endpoint() string {
 	return c.urlString
-}
-
-func (c *Client) GetLastRWHeader() string {
-	return c.lastRWHeader
 }
 
 // Read reads from a remote endpoint.
@@ -463,10 +410,6 @@ func NewTestClient(name, url string) WriteClient {
 	return &TestClient{name: name, url: url}
 }
 
-func (c *TestClient) probeRemoteVersions(_ context.Context) error {
-	return nil
-}
-
 func (c *TestClient) Store(_ context.Context, req []byte, _ int, _ config.RemoteWriteFormat, _ string) error {
 	r := rand.Intn(200-100) + 100
 	time.Sleep(time.Duration(r) * time.Millisecond)
@@ -479,8 +422,4 @@ func (c *TestClient) Name() string {
 
 func (c *TestClient) Endpoint() string {
 	return c.url
-}
-
-func (c *TestClient) GetLastRWHeader() string {
-	return "2.0;snappy,0.1.0"
 }

@@ -39,25 +39,8 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-func TestRemoteWriteHeadHandler(t *testing.T) {
-	handler := NewWriteHeadHandler(log.NewNopLogger(), nil, Version2)
-
-	req, err := http.NewRequest(http.MethodHead, "", nil)
-	require.NoError(t, err)
-
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, req)
-
-	resp := recorder.Result()
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-
-	// Check header is expected value.
-	protHeader := resp.Header.Get(RemoteWriteVersionHeader)
-	require.Equal(t, "2.0;snappy,0.1.0", protHeader)
-}
-
 func TestRemoteWriteHandlerMinimizedMissingContentEncoding(t *testing.T) {
-	// Send a v2 request without a "Content-Encoding:" header -> 406.
+	// Send a v2 request without a "Content-Encoding:" header -> 415.
 	buf, _, _, err := buildV2WriteRequest(log.NewNopLogger(), writeRequestMinimizedFixture.Timeseries, writeRequestMinimizedFixture.Symbols, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
@@ -74,12 +57,12 @@ func TestRemoteWriteHandlerMinimizedMissingContentEncoding(t *testing.T) {
 	handler.ServeHTTP(recorder, req)
 
 	resp := recorder.Result()
-	// Should give us a 406.
-	require.Equal(t, http.StatusNotAcceptable, resp.StatusCode)
+	// Should give us a 415.
+	require.Equal(t, http.StatusUnsupportedMediaType, resp.StatusCode)
 }
 
 func TestRemoteWriteHandlerInvalidCompression(t *testing.T) {
-	// Send a v2 request without an unhandled compression scheme -> 406.
+	// Send a v2 request without an unhandled compression scheme -> 415.
 	buf, _, _, err := buildV2WriteRequest(log.NewNopLogger(), writeRequestMinimizedFixture.Timeseries, writeRequestMinimizedFixture.Symbols, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
@@ -95,12 +78,12 @@ func TestRemoteWriteHandlerInvalidCompression(t *testing.T) {
 	handler.ServeHTTP(recorder, req)
 
 	resp := recorder.Result()
-	// Expect a 406.
-	require.Equal(t, http.StatusNotAcceptable, resp.StatusCode)
+	// Expect a 415.
+	require.Equal(t, http.StatusUnsupportedMediaType, resp.StatusCode)
 }
 
 func TestRemoteWriteHandlerInvalidVersion(t *testing.T) {
-	// Send a protocol version number that isn't recognised/supported -> 406.
+	// Send a protocol version number that isn't recognised/supported -> 415.
 	buf, _, _, err := buildV2WriteRequest(log.NewNopLogger(), writeRequestMinimizedFixture.Timeseries, writeRequestMinimizedFixture.Symbols, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
@@ -115,8 +98,8 @@ func TestRemoteWriteHandlerInvalidVersion(t *testing.T) {
 	handler.ServeHTTP(recorder, req)
 
 	resp := recorder.Result()
-	// Expect a 406.
-	require.Equal(t, http.StatusNotAcceptable, resp.StatusCode)
+	// Expect a 415.
+	require.Equal(t, http.StatusUnsupportedMediaType, resp.StatusCode)
 }
 
 func TestRemoteWriteHandler(t *testing.T) {

@@ -63,146 +63,6 @@ func newHighestTimestampMetric() *maxTimestamp {
 	}
 }
 
-type contentNegotiationStep struct {
-	lastRWHeader  string
-	compression   string
-	behaviour     error // or nil
-	attemptString string
-}
-
-func TestContentNegotiation(t *testing.T) {
-	testcases := []struct {
-		name       string
-		success    bool
-		qmRwFormat config.RemoteWriteFormat
-		rwFormat   config.RemoteWriteFormat
-		steps      []contentNegotiationStep
-	}{
-		// Test a simple case where the v2 request we send is processed first time.
-		{
-			success: true, name: "v2 happy path", qmRwFormat: Version2, rwFormat: Version2, steps: []contentNegotiationStep{
-				{lastRWHeader: "2.0;snappy,0.1.0", compression: "snappy", behaviour: nil, attemptString: "0,1,snappy,ok"},
-			},
-		},
-		// Test a simple case where the v1 request we send is processed first time.
-		{
-			success: true, name: "v1 happy path", qmRwFormat: Version1, rwFormat: Version1, steps: []contentNegotiationStep{
-				{lastRWHeader: "0.1.0", compression: "snappy", behaviour: nil, attemptString: "0,0,snappy,ok"},
-			},
-		},
-		// Test a case where the v1 request has a temporary delay but goes through on retry.
-		// There is no content re-negotiation between first and retry attempts.
-		{
-			success: true, name: "v1 happy path with one 5xx retry", qmRwFormat: Version1, rwFormat: Version1, steps: []contentNegotiationStep{
-				{lastRWHeader: "0.1.0", compression: "snappy", behaviour: RecoverableError{fmt.Errorf("Pretend 500"), 1}, attemptString: "0,0,snappy,Pretend 500"},
-				{lastRWHeader: "0.1.0", compression: "snappy", behaviour: nil, attemptString: "1,0,snappy,ok"},
-			},
-		},
-		// Repeat the above test but with v2. The request has a temporary delay but goes through on retry.
-		// There is no content re-negotiation between first and retry attempts.
-		{
-			success: true, name: "v2 happy path with one 5xx retry", qmRwFormat: Version2, rwFormat: Version2, steps: []contentNegotiationStep{
-				{lastRWHeader: "2.0;snappy,0.1.0", compression: "snappy", behaviour: RecoverableError{fmt.Errorf("Pretend 500"), 1}, attemptString: "0,1,snappy,Pretend 500"},
-				{lastRWHeader: "2.0;snappy,0.1.0", compression: "snappy", behaviour: nil, attemptString: "1,1,snappy,ok"},
-			},
-		},
-		// Now test where the server suddenly stops speaking 2.0 and we need to downgrade.
-		{
-			success: true, name: "v2 request to v2 server that has downgraded via 406", qmRwFormat: Version2, rwFormat: Version2, steps: []contentNegotiationStep{
-				{lastRWHeader: "2.0;snappy,0.1.0", compression: "snappy", behaviour: &ErrRenegotiate{"", 406}, attemptString: "0,1,snappy,HTTP 406: msg: "},
-				{lastRWHeader: "0.1.0", compression: "snappy", behaviour: nil, attemptString: "0,0,snappy,ok"},
-			},
-		},
-		// Now test where the server suddenly stops speaking 2.0 and we need to downgrade because it returns a 400.
-		{
-			success: true, name: "v2 request to v2 server that has downgraded via 400", qmRwFormat: Version2, rwFormat: Version2, steps: []contentNegotiationStep{
-				{lastRWHeader: "2.0;snappy,0.1.0", compression: "snappy", behaviour: &ErrRenegotiate{"", 400}, attemptString: "0,1,snappy,HTTP 400: msg: "},
-				{lastRWHeader: "0.1.0", compression: "snappy", behaviour: nil, attemptString: "0,0,snappy,ok"},
-			},
-		},
-		// Now test where the server flip flops between "2.0;snappy" and "0.1.0" only.
-		{
-			success: false, name: "flip flopping", qmRwFormat: Version2, rwFormat: Version2, steps: []contentNegotiationStep{
-				{lastRWHeader: "2.0;snappy", compression: "snappy", behaviour: &ErrRenegotiate{"", 406}, attemptString: "0,1,snappy,HTTP 406: msg: "},
-				{lastRWHeader: "0.1.0", compression: "snappy", behaviour: &ErrRenegotiate{"", 406}, attemptString: "0,0,snappy,HTTP 406: msg: "},
-				{lastRWHeader: "2.0;snappy", compression: "snappy", behaviour: &ErrRenegotiate{"", 406}, attemptString: "0,1,snappy,HTTP 406: msg: "},
-				// There's no 4th attempt as we do a maximum of 3 sending attempts (not counting retries).
-			},
-		},
-	}
-
-	queueConfig := config.DefaultQueueConfig
-	queueConfig.BatchSendDeadline = model.Duration(100 * time.Millisecond)
-	queueConfig.MaxShards = 1
-
-	// We need to set URL's so that metric creation doesn't panic.
-	writeConfig := baseRemoteWriteConfig("http://test-storage.com")
-	writeConfig.QueueConfig = queueConfig
-
-	conf := &config.Config{
-		GlobalConfig: config.DefaultGlobalConfig,
-		RemoteWriteConfigs: []*config.RemoteWriteConfig{
-			writeConfig,
-		},
-	}
-
-	for _, tc := range testcases {
-		t.Run(tc.name, func(t *testing.T) {
-			dir := t.TempDir()
-			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, true)
-			defer s.Close()
-
-			var (
-				series   []record.RefSeries
-				metadata []record.RefMetadata
-				samples  []record.RefSample
-			)
-
-			// Generates same series in both cases.
-			samples, series = createTimeseries(1, 1)
-			metadata = createSeriesMetadata(series)
-
-			// Apply new config.
-			queueConfig.Capacity = len(samples)
-			queueConfig.MaxSamplesPerSend = len(samples)
-			// For now we only ever have a single rw config in this test.
-			conf.RemoteWriteConfigs[0].ProtocolVersion = tc.qmRwFormat
-			require.NoError(t, s.ApplyConfig(conf))
-			hash, err := toHash(writeConfig)
-			require.NoError(t, err)
-			qm := s.rws.queues[hash]
-
-			c := NewTestWriteClient(tc.rwFormat)
-			c.setSteps(tc.steps) // set expected behaviour.
-			qm.SetClient(c)
-
-			qm.StoreSeries(series, 0)
-			qm.StoreMetadata(metadata)
-
-			// Did we expect some data back?
-			if tc.success {
-				c.expectSamples(samples, series)
-			}
-			qm.Append(samples)
-
-			if !tc.success {
-				// We just need to sleep for a bit to give it time to run.
-				time.Sleep(2 * time.Second)
-				// But we still need to check for data with no delay to avoid race.
-				c.waitForExpectedData(t, 0*time.Second)
-			} else {
-				// We expected data so wait for it.
-				c.waitForExpectedData(t, 5*time.Second)
-			}
-
-			require.Equal(t, len(c.sendAttempts), len(tc.steps))
-			for i, s := range c.sendAttempts {
-				require.Equal(t, s, tc.steps[i].attemptString)
-			}
-		})
-	}
-}
-
 func TestSampleDelivery(t *testing.T) {
 	testcases := []struct {
 		name            string
@@ -968,9 +828,6 @@ type TestWriteClient struct {
 	mtx                     sync.Mutex
 	buf                     []byte
 	rwFormat                config.RemoteWriteFormat
-	sendAttempts            []string
-	steps                   []contentNegotiationStep
-	currstep                int
 	retry                   bool
 }
 
@@ -981,12 +838,6 @@ func NewTestWriteClient(rwFormat config.RemoteWriteFormat) *TestWriteClient {
 		receivedMetadata: map[string][]prompb.MetricMetadata{},
 		rwFormat:         rwFormat,
 	}
-}
-
-func (c *TestWriteClient) setSteps(steps []contentNegotiationStep) {
-	c.steps = steps
-	c.currstep = -1 // incremented by GetLastRWHeader()
-	c.retry = false
 }
 
 func (c *TestWriteClient) expectSamples(ss []record.RefSample, series []record.RefSeries) {
@@ -1108,21 +959,6 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, attemptNos int, r
 		return err
 	}
 
-	attemptString := fmt.Sprintf("%d,%d,%s", attemptNos, rwFormat, compression)
-
-	if attemptNos > 0 {
-		// If this is a second attempt then we need to bump to the next step otherwise we loop.
-		c.currstep++
-	}
-
-	// Check if we've been told to return something for this config.
-	if len(c.steps) > 0 {
-		if err = c.steps[c.currstep].behaviour; err != nil {
-			c.sendAttempts = append(c.sendAttempts, attemptString+","+fmt.Sprintf("%s", err))
-			return err
-		}
-	}
-
 	var reqProto *prompb.WriteRequest
 	switch rwFormat {
 	case Version1:
@@ -1136,10 +972,6 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, attemptNos int, r
 		}
 	}
 
-	if err != nil {
-		c.sendAttempts = append(c.sendAttempts, attemptString+","+fmt.Sprintf("%s", err))
-		return err
-	}
 	builder := labels.NewScratchBuilder(0)
 	count := 0
 	for _, ts := range reqProto.Timeseries {
@@ -1165,7 +997,6 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, attemptNos int, r
 	}
 
 	c.writesReceived++
-	c.sendAttempts = append(c.sendAttempts, attemptString+",ok")
 	return nil
 }
 
@@ -1175,20 +1006,6 @@ func (c *TestWriteClient) Name() string {
 
 func (c *TestWriteClient) Endpoint() string {
 	return "http://test-remote.com/1234"
-}
-
-func (c *TestWriteClient) probeRemoteVersions(_ context.Context) error {
-	return nil
-}
-
-func (c *TestWriteClient) GetLastRWHeader() string {
-	c.mtx.Lock()
-	defer c.mtx.Unlock()
-	c.currstep++
-	if len(c.steps) > 0 {
-		return c.steps[c.currstep].lastRWHeader
-	}
-	return "2.0;snappy,0.1.0"
 }
 
 // TestBlockingWriteClient is a queue_manager WriteClient which will block
@@ -1221,14 +1038,6 @@ func (c *TestBlockingWriteClient) Endpoint() string {
 	return "http://test-remote-blocking.com/1234"
 }
 
-func (c *TestBlockingWriteClient) probeRemoteVersions(_ context.Context) error {
-	return nil
-}
-
-func (c *TestBlockingWriteClient) GetLastRWHeader() string {
-	return "2.0;snappy,0.1.0"
-}
-
 // For benchmarking the send and not the receive side.
 type NopWriteClient struct{}
 
@@ -1238,10 +1047,6 @@ func (c *NopWriteClient) Store(context.Context, []byte, int, config.RemoteWriteF
 }
 func (c *NopWriteClient) Name() string     { return "nopwriteclient" }
 func (c *NopWriteClient) Endpoint() string { return "http://test-remote.com/1234" }
-func (c *NopWriteClient) probeRemoteVersions(_ context.Context) error {
-	return nil
-}
-func (c *NopWriteClient) GetLastRWHeader() string { return "2.0;snappy,0.1.0" }
 
 type MockWriteClient struct {
 	StoreFunc    func(context.Context, []byte, int) error
@@ -1254,14 +1059,6 @@ func (c *MockWriteClient) Store(ctx context.Context, bb []byte, n int, _ config.
 }
 func (c *MockWriteClient) Name() string     { return c.NameFunc() }
 func (c *MockWriteClient) Endpoint() string { return c.EndpointFunc() }
-
-// TODO(bwplotka): Mock it if needed.
-func (c *MockWriteClient) GetLastRWHeader() string { return "2.0;snappy,0.1.0" }
-
-// TODO(bwplotka): Mock it if needed.
-func (c *MockWriteClient) probeRemoteVersions(_ context.Context) error {
-	return nil
-}
 
 // Extra labels to make a more realistic workload - taken from Kubernetes' embedded cAdvisor metrics.
 var extraLabels []labels.Label = []labels.Label{

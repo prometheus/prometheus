@@ -63,46 +63,6 @@ func rwHeaderNameValues(rwFormat config.RemoteWriteFormat) map[string]string {
 	return ret
 }
 
-type writeHeadHandler struct {
-	logger log.Logger
-
-	remoteWriteHeadRequests prometheus.Counter
-
-	// Experimental feature, new remote write proto format.
-	// The handler will accept the new format, but it can still accept the old one.
-	rwFormat config.RemoteWriteFormat
-}
-
-func NewWriteHeadHandler(logger log.Logger, reg prometheus.Registerer, rwFormat config.RemoteWriteFormat) http.Handler {
-	h := &writeHeadHandler{
-		logger:   logger,
-		rwFormat: rwFormat,
-		remoteWriteHeadRequests: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: "prometheus",
-			Subsystem: "api",
-			Name:      "remote_write_head_requests",
-			Help:      "The number of remote write HEAD requests.",
-		}),
-	}
-	if reg != nil {
-		reg.MustRegister(h.remoteWriteHeadRequests)
-	}
-	return h
-}
-
-// Send a response to the HEAD request based on the format supported.
-func (h *writeHeadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Add appropriate header values for the specific rwFormat.
-	for hName, hValue := range rwHeaderNameValues(h.rwFormat) {
-		w.Header().Set(hName, hValue)
-	}
-
-	// Increment counter
-	h.remoteWriteHeadRequests.Inc()
-
-	w.WriteHeader(http.StatusOK)
-}
-
 type writeHandler struct {
 	logger     log.Logger
 	appendable storage.Appendable
@@ -155,8 +115,8 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		// We have a version in the header but it is not one we recognise.
 		level.Error(h.logger).Log("msg", "Error decoding remote write request", "err", "Unknown remote write version in headers", "ver", protoVer)
-		// Return a 406 so that the client can choose a more appropriate protocol to use.
-		http.Error(w, "Unknown remote write version in headers", http.StatusNotAcceptable)
+		// Return a 415 so that the client can choose a more appropriate protocol to use.
+		http.Error(w, "Unknown remote write version in headers", http.StatusUnsupportedMediaType)
 		return
 	}
 
@@ -186,8 +146,8 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	default:
 		level.Error(h.logger).Log("msg", "Error decoding remote write request", "err", "Unsupported Content-Encoding", "contentEncoding", contentEncoding)
-		// Return a 406 so that the client can choose a more appropriate protocol to use.
-		http.Error(w, "Unsupported Content-Encoding", http.StatusNotAcceptable)
+		// Return a 415 so that the client can choose a more appropriate protocol to use.
+		http.Error(w, "Unsupported Content-Encoding", http.StatusUnsupportedMediaType)
 		return
 	}
 

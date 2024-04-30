@@ -191,21 +191,8 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			delete(rws.queues, hash)
 			continue
 		}
-
-		// Work out what protocol and compression to use for this endpoint.
-		// Default to Remote Write Version1.
+		// TODO(alexg): Remote Write version for this endpoint to come from config
 		rwFormat := Version1
-		switch rwConf.ProtocolVersion {
-		case Version1:
-			// We use the standard value as there's no negotiation to be had.
-		case Version2:
-			rwFormat = Version2
-			// If this newer remote write format is enabled then we need to probe the remote server
-			// to work out the desired protocol version and compressions.
-			// The value of the header is kept in the client so no need to see it here.
-			_ = c.probeRemoteVersions(context.Background())
-			// We ignore any error here, at some point we may choose to log it.
-		}
 
 		// Redacted to remove any passwords in the URL (that are
 		// technically accepted but not recommended) since this is
