@@ -15,6 +15,23 @@
 // Provenance-includes-copyright: Copyright The OpenTelemetry Authors.
 
 package prometheusremotewrite
+// Copyright 2024 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// Provenance-includes-location: https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/95e8f8fdc2a9dc87230406c9a3cf02be4fd68bea/pkg/translator/prometheusremotewrite/helper.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: Copyright The OpenTelemetry Authors.
+
+package prometheusremotewrite
 
 import (
 	"encoding/hex"
@@ -22,16 +39,22 @@ import (
 	"log"
 	"math"
 	"slices"
+	"slices"
 	"sort"
 	"strconv"
 	"time"
 	"unicode/utf8"
 
 	"github.com/cespare/xxhash/v2"
+	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	conventions "go.opentelemetry.io/collector/semconv/v1.6.1"
+
+	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/model/value"
+	"github.com/prometheus/prometheus/prompb"
 
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
@@ -62,6 +85,7 @@ const (
 
 type bucketBoundsData struct {
 	ts    *prompb.TimeSeries
+	ts    *prompb.TimeSeries
 	bound float64
 }
 
@@ -81,7 +105,11 @@ func (a ByLabelName) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 
 // timeSeriesSignature returns a hashed label set signature.
 // The label slice should not contain duplicate label names; this method sorts the slice by label name before creating
+// timeSeriesSignature returns a hashed label set signature.
+// The label slice should not contain duplicate label names; this method sorts the slice by label name before creating
 // the signature.
+// The algorithm is the same as in Prometheus' labels.StableHash function.
+func timeSeriesSignature(labels []prompb.Label) uint64 {
 // The algorithm is the same as in Prometheus' labels.StableHash function.
 func timeSeriesSignature(labels []prompb.Label) uint64 {
 	sort.Sort(ByLabelName(labels))
@@ -106,13 +134,43 @@ func timeSeriesSignature(labels []prompb.Label) uint64 {
 		b = append(b, seps[0])
 		b = append(b, v.Value...)
 		b = append(b, seps[0])
+	// Use xxhash.Sum64(b) for fast path as it's faster.
+	b := make([]byte, 0, 1024)
+	for i, v := range labels {
+		if len(b)+len(v.Name)+len(v.Value)+2 >= cap(b) {
+			// If labels entry is 1KB+ do not allocate whole entry.
+			h := xxhash.New()
+			_, _ = h.Write(b)
+			for _, v := range labels[i:] {
+				_, _ = h.WriteString(v.Name)
+				_, _ = h.Write(seps)
+				_, _ = h.WriteString(v.Value)
+				_, _ = h.Write(seps)
+			}
+			return h.Sum64()
+		}
+
+		b = append(b, v.Name...)
+		b = append(b, seps[0])
+		b = append(b, v.Value...)
+		b = append(b, seps[0])
 	}
+	return xxhash.Sum64(b)
 	return xxhash.Sum64(b)
 }
 
 var seps = []byte{'\xff'}
 
+var seps = []byte{'\xff'}
+
 // createAttributes creates a slice of Prometheus Labels with OTLP attributes and pairs of string values.
+// Unpaired string values are ignored. String pairs overwrite OTLP labels if collisions happen and
+// if logOnOverwrite is true, the overwrite is logged. Resulting label names are sanitized.
+func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externalLabels map[string]string,
+	ignoreAttrs []string, logOnOverwrite bool, extras ...string) []prompb.Label {
+	resourceAttrs := resource.Attributes()
+	serviceName, haveServiceName := resourceAttrs.Get(conventions.AttributeServiceName)
+	instance, haveInstanceID := resourceAttrs.Get(conventions.AttributeServiceInstanceID)
 // Unpaired string values are ignored. String pairs overwrite OTLP labels if collisions happen and
 // if logOnOverwrite is true, the overwrite is logged. Resulting label names are sanitized.
 func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externalLabels map[string]string,
@@ -140,7 +198,13 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externa
 	labels := make([]prompb.Label, 0, maxLabelCount)
 	// XXX: Should we always drop service namespace/service name/service instance ID from the labels
 	// (as they get mapped to other Prometheus labels)?
+	labels := make([]prompb.Label, 0, maxLabelCount)
+	// XXX: Should we always drop service namespace/service name/service instance ID from the labels
+	// (as they get mapped to other Prometheus labels)?
 	attributes.Range(func(key string, value pcommon.Value) bool {
+		if !slices.Contains(ignoreAttrs, key) {
+			labels = append(labels, prompb.Label{Name: key, Value: value.AsString()})
+		}
 		if !slices.Contains(ignoreAttrs, key) {
 			labels = append(labels, prompb.Label{Name: key, Value: value.AsString()})
 		}
@@ -160,6 +224,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externa
 	// Map service.name + service.namespace to job
 	if haveServiceName {
 		val := serviceName.AsString()
+		if serviceNamespace, ok := resourceAttrs.Get(conventions.AttributeServiceNamespace); ok {
 		if serviceNamespace, ok := resourceAttrs.Get(conventions.AttributeServiceNamespace); ok {
 			val = fmt.Sprintf("%s/%s", serviceNamespace.AsString(), val)
 		}
@@ -184,6 +249,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externa
 		}
 		_, found := l[extras[i]]
 		if found && logOnOverwrite {
+		if found && logOnOverwrite {
 			log.Println("label " + extras[i] + " is overwritten. Check if Prometheus reserved labels are used.")
 		}
 		// internal labels should be maintained
@@ -195,10 +261,13 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externa
 	}
 
 	labels = labels[:0]
+	labels = labels[:0]
 	for k, v := range l {
+		labels = append(labels, prompb.Label{Name: k, Value: v})
 		labels = append(labels, prompb.Label{Name: k, Value: v})
 	}
 
+	return labels
 	return labels
 }
 
@@ -219,7 +288,7 @@ func isValidAggregationTemporality(metric pmetric.Metric) bool {
 	return false
 }
 
-func (c *PrometheusConverter) addHistogramDataPoints(dataPoints pmetric.HistogramDataPointSlice,
+func (c *prometheusConverter) addHistogramDataPoints(dataPoints pmetric.HistogramDataPointSlice,
 	resource pcommon.Resource, settings Settings, baseName string) {
 	for x := 0; x < dataPoints.Len(); x++ {
 		pt := dataPoints.At(x)
@@ -237,12 +306,34 @@ func (c *PrometheusConverter) addHistogramDataPoints(dataPoints pmetric.Histogra
 			if pt.Flags().NoRecordedValue() {
 				sum.Value = math.Float64frombits(value.StaleNaN)
 			}
+		// If the sum is unset, it indicates the _sum metric point should be
+		// omitted
+		if pt.HasSum() {
+			// treat sum as a sample in an individual TimeSeries
+			sum := &prompb.Sample{
+				Value:     pt.Sum(),
+				Timestamp: timestamp,
+			}
+			if pt.Flags().NoRecordedValue() {
+				sum.Value = math.Float64frombits(value.StaleNaN)
+			}
 
+			sumlabels := createLabels(baseName+sumStr, baseLabels)
+			c.addSample(sum, sumlabels)
 			sumlabels := createLabels(baseName+sumStr, baseLabels)
 			c.addSample(sum, sumlabels)
 
 		}
+		}
 
+		// treat count as a sample in an individual TimeSeries
+		count := &prompb.Sample{
+			Value:     float64(pt.Count()),
+			Timestamp: timestamp,
+		}
+		if pt.Flags().NoRecordedValue() {
+			count.Value = math.Float64frombits(value.StaleNaN)
+		}
 		// treat count as a sample in an individual TimeSeries
 		count := &prompb.Sample{
 			Value:     float64(pt.Count()),
@@ -254,12 +345,31 @@ func (c *PrometheusConverter) addHistogramDataPoints(dataPoints pmetric.Histogra
 
 		countlabels := createLabels(baseName+countStr, baseLabels)
 		c.addSample(count, countlabels)
+		countlabels := createLabels(baseName+countStr, baseLabels)
+		c.addSample(count, countlabels)
 
+		// cumulative count for conversion to cumulative histogram
+		var cumulativeCount uint64
 		// cumulative count for conversion to cumulative histogram
 		var cumulativeCount uint64
 
 		var bucketBounds []bucketBoundsData
+		var bucketBounds []bucketBoundsData
 
+		// process each bound, based on histograms proto definition, # of buckets = # of explicit bounds + 1
+		for i := 0; i < pt.ExplicitBounds().Len() && i < pt.BucketCounts().Len(); i++ {
+			bound := pt.ExplicitBounds().At(i)
+			cumulativeCount += pt.BucketCounts().At(i)
+			bucket := &prompb.Sample{
+				Value:     float64(cumulativeCount),
+				Timestamp: timestamp,
+			}
+			if pt.Flags().NoRecordedValue() {
+				bucket.Value = math.Float64frombits(value.StaleNaN)
+			}
+			boundStr := strconv.FormatFloat(bound, 'f', -1, 64)
+			labels := createLabels(baseName+bucketStr, baseLabels, leStr, boundStr)
+			ts := c.addSample(bucket, labels)
 		// process each bound, based on histograms proto definition, # of buckets = # of explicit bounds + 1
 		for i := 0; i < pt.ExplicitBounds().Len() && i < pt.BucketCounts().Len(); i++ {
 			bound := pt.ExplicitBounds().At(i)
@@ -288,10 +398,30 @@ func (c *PrometheusConverter) addHistogramDataPoints(dataPoints pmetric.Histogra
 		}
 		infLabels := createLabels(baseName+bucketStr, baseLabels, leStr, pInfStr)
 		ts := c.addSample(infBucket, infLabels)
+			bucketBounds = append(bucketBounds, bucketBoundsData{ts: ts, bound: bound})
+		}
+		// add le=+Inf bucket
+		infBucket := &prompb.Sample{
+			Timestamp: timestamp,
+		}
+		if pt.Flags().NoRecordedValue() {
+			infBucket.Value = math.Float64frombits(value.StaleNaN)
+		} else {
+			infBucket.Value = float64(pt.Count())
+		}
+		infLabels := createLabels(baseName+bucketStr, baseLabels, leStr, pInfStr)
+		ts := c.addSample(infBucket, infLabels)
 
 		bucketBounds = append(bucketBounds, bucketBoundsData{ts: ts, bound: math.Inf(1)})
 		c.addExemplars(pt, bucketBounds)
+		bucketBounds = append(bucketBounds, bucketBoundsData{ts: ts, bound: math.Inf(1)})
+		c.addExemplars(pt, bucketBounds)
 
+		startTimestamp := pt.StartTimestamp()
+		if settings.ExportCreatedMetric && startTimestamp != 0 {
+			labels := createLabels(baseName+createdSuffix, baseLabels)
+			c.addTimeSeriesIfNeeded(labels, startTimestamp, pt.Timestamp())
+		}
 		startTimestamp := pt.StartTimestamp()
 		if settings.ExportCreatedMetric && startTimestamp != 0 {
 			labels := createLabels(baseName+createdSuffix, baseLabels)
@@ -395,13 +525,31 @@ func mostRecentTimestampInMetric(metric pmetric.Metric) pcommon.Timestamp {
 	return ts
 }
 
-func (c *PrometheusConverter) addSummaryDataPoints(dataPoints pmetric.SummaryDataPointSlice, resource pcommon.Resource,
+func maxTimestamp(a, b pcommon.Timestamp) pcommon.Timestamp {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func (c *prometheusConverter) addSummaryDataPoints(dataPoints pmetric.SummaryDataPointSlice, resource pcommon.Resource,
 	settings Settings, baseName string) {
 	for x := 0; x < dataPoints.Len(); x++ {
 		pt := dataPoints.At(x)
 		timestamp := convertTimeStamp(pt.Timestamp())
 		baseLabels := createAttributes(resource, pt.Attributes(), settings.ExternalLabels, nil, false)
 
+		// treat sum as a sample in an individual TimeSeries
+		sum := &prompb.Sample{
+			Value:     pt.Sum(),
+			Timestamp: timestamp,
+		}
+		if pt.Flags().NoRecordedValue() {
+			sum.Value = math.Float64frombits(value.StaleNaN)
+		}
+		// sum and count of the summary should append suffix to baseName
+		sumlabels := createLabels(baseName+sumStr, baseLabels)
+		c.addSample(sum, sumlabels)
 		// treat sum as a sample in an individual TimeSeries
 		sum := &prompb.Sample{
 			Value:     pt.Sum(),
@@ -424,7 +572,31 @@ func (c *PrometheusConverter) addSummaryDataPoints(dataPoints pmetric.SummaryDat
 		}
 		countlabels := createLabels(baseName+countStr, baseLabels)
 		c.addSample(count, countlabels)
+		// treat count as a sample in an individual TimeSeries
+		count := &prompb.Sample{
+			Value:     float64(pt.Count()),
+			Timestamp: timestamp,
+		}
+		if pt.Flags().NoRecordedValue() {
+			count.Value = math.Float64frombits(value.StaleNaN)
+		}
+		countlabels := createLabels(baseName+countStr, baseLabels)
+		c.addSample(count, countlabels)
 
+		// process each percentile/quantile
+		for i := 0; i < pt.QuantileValues().Len(); i++ {
+			qt := pt.QuantileValues().At(i)
+			quantile := &prompb.Sample{
+				Value:     qt.Value(),
+				Timestamp: timestamp,
+			}
+			if pt.Flags().NoRecordedValue() {
+				quantile.Value = math.Float64frombits(value.StaleNaN)
+			}
+			percentileStr := strconv.FormatFloat(qt.Quantile(), 'f', -1, 64)
+			qtlabels := createLabels(baseName, baseLabels, quantileStr, percentileStr)
+			c.addSample(quantile, qtlabels)
+		}
 		// process each percentile/quantile
 		for i := 0; i < pt.QuantileValues().Len(); i++ {
 			qt := pt.QuantileValues().At(i)
@@ -468,7 +640,7 @@ func createLabels(name string, baseLabels []prompb.Label, extras ...string) []pr
 
 // getOrCreateTimeSeries returns the time series corresponding to the label set if existent, and false.
 // Otherwise it creates a new one and returns that, and true.
-func (c *PrometheusConverter) getOrCreateTimeSeries(lbls []prompb.Label) (*prompb.TimeSeries, bool) {
+func (c *prometheusConverter) getOrCreateTimeSeries(lbls []prompb.Label) (*prompb.TimeSeries, bool) {
 	h := timeSeriesSignature(lbls)
 	ts := c.unique[h]
 	if ts != nil {
@@ -504,7 +676,7 @@ func (c *PrometheusConverter) getOrCreateTimeSeries(lbls []prompb.Label) (*promp
 // addTimeSeriesIfNeeded adds a corresponding time series if it doesn't already exist.
 // If the time series doesn't already exist, it gets added with startTimestamp for its value and timestamp for its timestamp,
 // both converted to milliseconds.
-func (c *PrometheusConverter) addTimeSeriesIfNeeded(lbls []prompb.Label, startTimestamp pcommon.Timestamp, timestamp pcommon.Timestamp) {
+func (c *prometheusConverter) addTimeSeriesIfNeeded(lbls []prompb.Label, startTimestamp pcommon.Timestamp, timestamp pcommon.Timestamp) {
 	ts, created := c.getOrCreateTimeSeries(lbls)
 	if created {
 		ts.Samples = []prompb.Sample{
@@ -518,7 +690,7 @@ func (c *PrometheusConverter) addTimeSeriesIfNeeded(lbls []prompb.Label, startTi
 }
 
 // addResourceTargetInfo converts the resource to the target info metric.
-func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timestamp pcommon.Timestamp, converter *PrometheusConverter) {
+func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timestamp pcommon.Timestamp, converter *prometheusConverter) {
 	if settings.DisableTargetInfo || timestamp == 0 {
 		return
 	}
@@ -534,12 +706,27 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timesta
 		_, haveAttr := attributes.Get(a)
 		if haveAttr {
 			nonIdentifyingAttrsCount--
+
+	attributes := resource.Attributes()
+	identifyingAttrs := []string{
+		conventions.AttributeServiceNamespace,
+		conventions.AttributeServiceName,
+		conventions.AttributeServiceInstanceID,
+	}
+	nonIdentifyingAttrsCount := attributes.Len()
+	for _, a := range identifyingAttrs {
+		_, haveAttr := attributes.Get(a)
+		if haveAttr {
+			nonIdentifyingAttrsCount--
 		}
+	}
+	if nonIdentifyingAttrsCount == 0 {
 	}
 	if nonIdentifyingAttrsCount == 0 {
 		// If we only have job + instance, then target_info isn't useful, so don't add it.
 		return
 	}
+
 
 	name := targetMetricName
 	if len(settings.Namespace) > 0 {
@@ -560,11 +747,27 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timesta
 		return
 	}
 
+
+	labels := createAttributes(resource, attributes, settings.ExternalLabels, identifyingAttrs, false, model.MetricNameLabel, name)
+	haveIdentifier := false
+	for _, l := range labels {
+		if l.Name == model.JobLabel || l.Name == model.InstanceLabel {
+			haveIdentifier = true
+			break
+		}
+	}
+
+	if !haveIdentifier {
+		// We need at least one identifying label to generate target_info.
+		return
+	}
+
 	sample := &prompb.Sample{
 		Value: float64(1),
 		// convert ns to ms
 		Timestamp: convertTimeStamp(timestamp),
 	}
+	converter.addSample(sample, labels)
 	converter.addSample(sample, labels)
 }
 
