@@ -337,48 +337,6 @@ var sampleFlagMap = map[string]string{
 	"flag2": "value2",
 }
 
-func TestHeadEndpoint(t *testing.T) {
-	for _, tc := range []struct {
-		name                string
-		rwFormat            config.RemoteWriteFormat
-		expectedStatusCode  int
-		expectedHeaderValue string
-	}{
-		{
-			name:                "HEAD Version 1",
-			rwFormat:            remote.Version1,
-			expectedStatusCode:  http.StatusOK,
-			expectedHeaderValue: "0.1.0",
-		},
-		{
-			name:                "HEAD Version 2",
-			rwFormat:            remote.Version2,
-			expectedStatusCode:  http.StatusOK,
-			expectedHeaderValue: "2.0;snappy,0.1.0",
-		},
-	} {
-		r := route.New()
-		api := &API{
-			remoteWriteHeadHandler: remote.NewWriteHeadHandler(log.NewNopLogger(), nil, tc.rwFormat),
-			ready:                  func(f http.HandlerFunc) http.HandlerFunc { return f },
-		}
-		api.Register(r)
-
-		s := httptest.NewServer(r)
-		defer s.Close()
-
-		req, err := http.NewRequest(http.MethodHead, s.URL+"/write", nil)
-		require.NoError(t, err, "Error creating HEAD request")
-		client := &http.Client{}
-		resp, err := client.Do(req)
-		require.NoError(t, err, "Error executing HEAD request")
-		require.Equal(t, tc.expectedStatusCode, resp.StatusCode)
-
-		promHeader := resp.Header.Get(remote.RemoteWriteVersionHeader)
-		require.Equal(t, tc.expectedHeaderValue, promHeader)
-	}
-}
-
 func TestEndpoints(t *testing.T) {
 	storage := promql.LoadedStorage(t, `
 		load 1m
