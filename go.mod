@@ -11,7 +11,7 @@ require (
 	github.com/KimMachineGun/automemlimit v0.6.0
 	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/alecthomas/units v0.0.0-20231202071711-9a357b53e9c9
-	github.com/aws/aws-sdk-go v1.51.24
+	github.com/aws/aws-sdk-go v1.51.25
 	github.com/bboreham/go-loser v0.0.0-20230920113527-fcc2c21820a3
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/dennwc/varint v1.0.0
@@ -36,7 +36,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
 	github.com/hashicorp/consul/api v1.28.2
 	github.com/hashicorp/nomad/api v0.0.0-20240418183417-ea5f2f6748c7
-	github.com/hetznercloud/hcloud-go/v2 v2.7.1
+	github.com/hetznercloud/hcloud-go/v2 v2.7.2
 	github.com/ionos-cloud/sdk-go/v6 v6.1.11
 	github.com/json-iterator/go v1.1.12
 	github.com/klauspost/compress v1.17.8

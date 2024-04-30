@@ -2952,9 +2952,10 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_scaleway_instance_type`: commercial type of the server
 * `__meta_scaleway_instance_zone`: the zone of the server (ex: `fr-par-1`, complete list [here](https://developers.scaleway.com/en/products/instance/api/#introduction))
 
-This role uses the private IPv4 address by default. This can be
+This role uses the first address it finds in the following order: private IPv4, public IPv4, public IPv6. This can be
 changed with relabeling, as demonstrated in [the Prometheus scaleway-sd
 configuration file](/documentation/examples/prometheus-scaleway.yml).
+Should an instance have no address before relabeling, it will not be added to the target list and you will not be able to relabel it.
 
 #### Baremetal role
 

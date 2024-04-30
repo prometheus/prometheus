@@ -457,8 +457,17 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 				}
 			}
 
-			// If the alert was previously firing, keep it around for a given
-			// retention time so it is reported as resolved to the AlertManager.
+			// If the alert is resolved (was firing but is now inactive) keep it for
+			// at least the retention period. This is important for a number of reasons:
+			//
+			// 1. It allows for Prometheus to be more resilient to network issues that
+			//    would otherwise prevent a resolved alert from being reported as resolved
+			//    to Alertmanager.
+			//
+			// 2. It helps reduce the chance of resolved notifications being lost if
+			//    Alertmanager crashes or restarts between receiving the resolved alert
+			//    from Prometheus and sending the resolved notification. This tends to
+			//    occur for routes with large Group intervals.
 			if a.State == StatePending || (!a.ResolvedAt.IsZero() && ts.Sub(a.ResolvedAt) > resolvedRetention) {
 				delete(r.active, fp)
 			}
