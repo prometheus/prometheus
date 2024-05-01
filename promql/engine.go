@@ -1092,8 +1092,7 @@ type EvalNodeHelper struct {
 	matchedSigs  map[string]map[uint64]struct{}
 	resultMetric map[string]labels.Labels
 
-	// optimisations for step invariant series
-	stepInvariant       []bool
+	// Slice of signature sets, indexed by index of exprs passed to rangeEval.
 	stepInvariantSigSet []map[string]struct{}
 }
 
@@ -1145,7 +1144,6 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 	}
 	enh := &EvalNodeHelper{
 		Out:                 make(Vector, 0, biggestLen),
-		stepInvariant:       make([]bool, len(exprs)),
 		stepInvariantSigSet: make([]map[string]struct{}, len(exprs)),
 	}
 	type seriesAndTimestamp struct {
@@ -1174,7 +1172,6 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 				prepSeries(series.Metric, &seriesHelpers[i][si])
 			}
 			if _, si := e.(*parser.StepInvariantExpr); si {
-				enh.stepInvariant[i] = true
 				enh.stepInvariantSigSet[i] = map[string]struct{}{}
 			}
 		}
@@ -2377,7 +2374,9 @@ func (ev *evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching,
 
 	compareAgainst := map[string]struct{}{}
 	switch {
-	case enh.stepInvariant[0]:
+	// Check if LHS is step invariant.
+	case enh.stepInvariantSigSet[0] != nil:
+		// If so, check if we have already populated the signature set for lhs.
 		if len(enh.stepInvariantSigSet[0]) == 0 {
 			for _, sh := range lhsh {
 				enh.stepInvariantSigSet[0][sh.signature] = struct{}{}
@@ -2386,7 +2385,9 @@ func (ev *evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching,
 		compareAgainst = enh.stepInvariantSigSet[0]
 		iterate = rhsh
 		vectors = rhs
-	case enh.stepInvariant[1]:
+	// Check if RHS is step invariant.
+	case enh.stepInvariantSigSet[1] != nil:
+		// If so, check if we have already populated the signature set for rhs.
 		if len(enh.stepInvariantSigSet[1]) == 0 {
 			for _, sh := range rhsh {
 				enh.stepInvariantSigSet[1][sh.signature] = struct{}{}
@@ -2401,7 +2402,6 @@ func (ev *evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching,
 		}
 		iterate = lhsh
 		vectors = lhs
-
 	}
 
 	for i, ls := range vectors {
@@ -2426,9 +2426,12 @@ func (ev *evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, 
 	}
 
 	leftSigs := map[string]struct{}{}
+
 	// Add everything from the left-hand-side Vector.
-	if enh.stepInvariant[0] {
-		// LHS is step invariant.
+	enh.Out = append(enh.Out, lhs...)
+
+	// Check if LHS is step invariant.
+	if enh.stepInvariantSigSet[0] != nil {
 		if len(enh.stepInvariantSigSet[0]) == 0 {
 			for _, sh := range lhsh {
 				enh.stepInvariantSigSet[0][sh.signature] = struct{}{}
@@ -2441,18 +2444,10 @@ func (ev *evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, 
 		}
 	}
 
-	// Add everything from the left-hand-side Vector.
-	enh.Out = append(enh.Out, lhs...)
-
 	// Add all right-hand side elements which have not been added from the left-hand side.
 	for j, rs := range rhs {
 		if _, ok := leftSigs[rhsh[j].signature]; !ok {
 			enh.Out = append(enh.Out, rs)
-		}
-
-		// Short circuit after first sample if the rhs is step invariant
-		if enh.stepInvariant[1] {
-			break
 		}
 	}
 	return enh.Out
@@ -2462,6 +2457,7 @@ func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatchi
 	if matching.Card != parser.CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
+
 	// Short-circuit: empty rhs means we will return everything in lhs;
 	// empty lhs means we will return empty - don't need to build a map.
 	if len(lhs) == 0 || len(rhs) == 0 {
@@ -2470,8 +2466,8 @@ func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatchi
 	}
 
 	rightSigs := map[string]struct{}{}
-	if enh.stepInvariant[1] {
-		// RHS is step invariant.
+	// Check if RHS is step invariant.
+	if enh.stepInvariantSigSet[1] != nil {
 		if len(enh.stepInvariantSigSet[1]) == 0 {
 			for _, sh := range rhsh {
 				enh.stepInvariantSigSet[1][sh.signature] = struct{}{}
@@ -2487,11 +2483,6 @@ func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatchi
 	for i, ls := range lhs {
 		if _, ok := rightSigs[lhsh[i].signature]; !ok {
 			enh.Out = append(enh.Out, ls)
-		}
-
-		// Short circuit after first sample if the lhs is step invariant
-		if enh.stepInvariant[0] {
-			break
 		}
 	}
 	return enh.Out
