@@ -265,3 +265,29 @@ groups:
         summary: "Instance {{ $labels.instance }} down"
         description: "{{ $labels.instance }} of job {{ $labels.job }} has been down for more than 5 minutes."
 ```
+
+### Unit testing rules from other sources
+
+Since Prometheus 2.52 it is possible to use a special file such as `/dev/stdin`
+in `rule_files`. This can be used to test rules which originate from templating
+systems or are otherwise not present as raw rules in files.
+
+For example in test.yaml:
+
+```
+rule_files:
+  - /dev/stdin
+
+tests:
+[...]
+```
+
+Then run:
+
+```
+$ yq .spec rules-k8s-manifest.yaml | ./promtool test rules tesr.yaml
+```
+
+(Where yq is the [yq YAML processor tool](https://mikefarah.gitbook.io/yq) and
+rules-k8s-manifest.yaml is a file of rules formatted as a PrometheusRule CRD
+for [prometheus-operator](https://prometheus-operator.dev/)).
