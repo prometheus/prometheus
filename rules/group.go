@@ -230,7 +230,11 @@ func (g *Group) run(ctx context.Context) {
 			g.evalIterationFunc(ctx, g, evalTimestamp)
 		}
 
-		g.RestoreForState(time.Now())
+		restoreStartTime := time.Now()
+		g.RestoreForState(restoreStartTime)
+		totalRestoreTimeSeconds := time.Since(restoreStartTime).Seconds()
+		g.metrics.GroupLastRestoreDuration.WithLabelValues(GroupKey(g.file, g.name)).Set(totalRestoreTimeSeconds)
+		level.Debug(g.logger).Log("msg", "'for' state restoration completed", "duration_seconds", totalRestoreTimeSeconds)
 		g.shouldRestore = false
 	}
 
@@ -660,25 +664,36 @@ func (g *Group) RestoreForState(ts time.Time) {
 			continue
 		}
 
+		sset, err := alertRule.QueryForStateSeries(g.opts.Context, q)
+		if err != nil {
+			level.Error(g.logger).Log(
+				"msg", "Failed to restore 'for' state",
+				labels.AlertName, alertRule.Name(),
+				"stage", "Select",
+				"err", err,
+			)
+			continue
+		}
+
+		// While not technically the same number of series we expect, it's as good of an approximation as any.
+		seriesByLabels := make(map[string]storage.Series, alertRule.ActiveAlertsCount())
+		for sset.Next() {
+			seriesByLabels[sset.At().Labels().DropMetricName().String()] = sset.At()
+		}
+
+		// No results for this alert rule.
+		if len(seriesByLabels) == 0 {
+			level.Debug(g.logger).Log("msg", "Failed to find a series to restore the 'for' state", labels.AlertName, alertRule.Name())
+			continue
+		}
+
 		alertRule.ForEachActiveAlert(func(a *Alert) {
 			var s storage.Series
 
-			s, err := alertRule.QueryforStateSeries(g.opts.Context, a, q)
-			if err != nil {
-				// Querier Warnings are ignored. We do not care unless we have an error.
-				level.Error(g.logger).Log(
-					"msg", "Failed to restore 'for' state",
-					labels.AlertName, alertRule.Name(),
-					"stage", "Select",
-					"err", err,
-				)
+			s, ok := seriesByLabels[a.Labels.String()]
+			if !ok {
 				return
 			}
-
-			if s == nil {
-				return
-			}
-
 			// Series found for the 'for' state.
 			var t int64
 			var v float64
@@ -779,17 +794,18 @@ const namespace = "prometheus"
 
 // Metrics for rule evaluation.
 type Metrics struct {
-	EvalDuration        prometheus.Summary
-	IterationDuration   prometheus.Summary
-	IterationsMissed    *prometheus.CounterVec
-	IterationsScheduled *prometheus.CounterVec
-	EvalTotal           *prometheus.CounterVec
-	EvalFailures        *prometheus.CounterVec
-	GroupInterval       *prometheus.GaugeVec
-	GroupLastEvalTime   *prometheus.GaugeVec
-	GroupLastDuration   *prometheus.GaugeVec
-	GroupRules          *prometheus.GaugeVec
-	GroupSamples        *prometheus.GaugeVec
+	EvalDuration             prometheus.Summary
+	IterationDuration        prometheus.Summary
+	IterationsMissed         *prometheus.CounterVec
+	IterationsScheduled      *prometheus.CounterVec
+	EvalTotal                *prometheus.CounterVec
+	EvalFailures             *prometheus.CounterVec
+	GroupInterval            *prometheus.GaugeVec
+	GroupLastEvalTime        *prometheus.GaugeVec
+	GroupLastDuration        *prometheus.GaugeVec
+	GroupLastRestoreDuration *prometheus.GaugeVec
+	GroupRules               *prometheus.GaugeVec
+	GroupSamples             *prometheus.GaugeVec
 }
 
 // NewGroupMetrics creates a new instance of Metrics and registers it with the provided registerer,
@@ -865,6 +881,14 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 			},
 			[]string{"rule_group"},
 		),
+		GroupLastRestoreDuration: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: namespace,
+				Name:      "rule_group_last_restore_duration_seconds",
+				Help:      "The duration of the last alert rules alerts restoration using the `ALERTS_FOR_STATE` series.",
+			},
+			[]string{"rule_group"},
+		),
 		GroupRules: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Namespace: namespace,
@@ -894,6 +918,7 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 			m.GroupInterval,
 			m.GroupLastEvalTime,
 			m.GroupLastDuration,
+			m.GroupLastRestoreDuration,
 			m.GroupRules,
 			m.GroupSamples,
 		)

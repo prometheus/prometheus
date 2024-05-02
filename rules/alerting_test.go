@@ -710,19 +710,17 @@ func TestQueryForStateSeries(t *testing.T) {
 			labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
 		)
 
-		alert := &Alert{
-			State:       0,
-			Labels:      labels.EmptyLabels(),
-			Annotations: labels.EmptyLabels(),
-			Value:       0,
-			ActiveAt:    time.Time{},
-			FiredAt:     time.Time{},
-			ResolvedAt:  time.Time{},
-			LastSentAt:  time.Time{},
-			ValidUntil:  time.Time{},
-		}
+		sample := rule.forStateSample(nil, time.Time{}, 0)
 
-		series, err := rule.QueryforStateSeries(context.Background(), alert, querier)
+		seriesSet, err := rule.QueryForStateSeries(context.Background(), querier)
+
+		var series storage.Series
+		for seriesSet.Next() {
+			if seriesSet.At().Labels().Len() == sample.Metric.Len() {
+				series = seriesSet.At()
+				break
+			}
+		}
 
 		require.Equal(t, tst.expectedSeries, series)
 		require.Equal(t, tst.expectedError, err)
@@ -1024,4 +1022,25 @@ func TestAlertingRule_SetNoDependencyRules(t *testing.T) {
 
 	rule.SetNoDependencyRules(true)
 	require.True(t, rule.NoDependencyRules())
+}
+
+func TestAlertingRule_ActiveAlertsCount(t *testing.T) {
+	rule := NewAlertingRule(
+		"TestRule",
+		nil,
+		time.Minute,
+		0,
+		labels.FromStrings("severity", "critical"),
+		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
+	)
+
+	require.Equal(t, 0, rule.ActiveAlertsCount())
+
+	// Set an active alert.
+	lbls := labels.FromStrings("a1", "1")
+	h := lbls.Hash()
+	al := &Alert{State: StateFiring, Labels: lbls, ActiveAt: time.Now()}
+	rule.active[h] = al
+
+	require.Equal(t, 1, rule.ActiveAlertsCount())
 }
