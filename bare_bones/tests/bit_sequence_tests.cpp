@@ -2,22 +2,9 @@
 
 #include <gtest/gtest.h>
 
-#include <bits/alloc_traits.h>
-#include <type_traits>
-
-#include <unordered_map>
-
-#include "bare_bones/allocator.h"
 #include "bare_bones/bit_sequence.h"
 
 namespace {
-
-struct Item {
-  enum ValueEncodingType { kConstant, kRLE, kGorilla };
-
-  ValueEncodingType value_encoding_type;
-  uint32_t encoder_id;
-};
 
 using BareBones::CompactBitSequence;
 

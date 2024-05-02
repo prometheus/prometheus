@@ -12,6 +12,7 @@ using BareBones::Encoding::Gorilla::StreamDecoder;
 using BareBones::Encoding::Gorilla::StreamEncoder;
 using BareBones::Encoding::Gorilla::TimestampDecoder;
 using BareBones::Encoding::Gorilla::TimestampEncoder;
+using BareBones::Encoding::Gorilla::ValuesEncoder;
 using BareBones::Encoding::Gorilla::ZigZagTimestampDecoder;
 using BareBones::Encoding::Gorilla::ZigZagTimestampEncoder;
 
@@ -124,7 +125,7 @@ samples_sequence_type generate_samples_with_nan() {
 struct Gorilla : public testing::TestWithParam<samples_sequence_type> {};
 
 TEST_P(Gorilla, EncodeDecode) {
-  StreamEncoder<ZigZagTimestampEncoder> encoder;
+  StreamEncoder<ZigZagTimestampEncoder, ValuesEncoder> encoder;
   StreamDecoder<ZigZagTimestampDecoder> decoder;
   BitSequence ts_bitseq;
   BitSequence v_bitseq;
@@ -184,7 +185,7 @@ struct StreamEncoderCase {
 class StreamEncoderDecoderFixture : public testing::TestWithParam<StreamEncoderCase> {
  protected:
   BitSequence sequence_;
-  StreamEncoder<TimestampEncoder> encoder_;
+  StreamEncoder<TimestampEncoder, ValuesEncoder> encoder_;
   StreamDecoder<TimestampDecoder> decoder_;
 };
 

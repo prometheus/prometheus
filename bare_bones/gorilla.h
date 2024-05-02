@@ -339,7 +339,6 @@ class StreamDecoder;
 template <TimestampEncoderInterface TimestampEncoder, ValuesEncoderInterface ValuesEncoder>
 class PROMPP_ATTRIBUTE_PACKED StreamEncoder {
   EncoderState state_;
-  [[no_unique_address]] ValuesEncoder values_encoder_;
 
   template <TimestampDecoderInterface T>
   friend class StreamDecoder;
@@ -354,7 +353,7 @@ class PROMPP_ATTRIBUTE_PACKED StreamEncoder {
       state_.last_ts = ts;
 
       TimestampEncoder::encode(state_.last_ts, ts_bitseq);
-      values_encoder_.encode_first(state_, v, v_bitseq);
+      ValuesEncoder::encode_first(state_, v, v_bitseq);
 
       state_.state = EncoderState::FIRST_ENCODED;
     } else if (state_.state == EncoderState::FIRST_ENCODED) {
@@ -362,14 +361,14 @@ class PROMPP_ATTRIBUTE_PACKED StreamEncoder {
       state_.last_ts = ts;
 
       TimestampEncoder::encode_delta(state_.last_ts_delta, ts_bitseq);
-      values_encoder_.encode(state_, v, v_bitseq);
+      ValuesEncoder::encode(state_, v, v_bitseq);
 
       state_.state = EncoderState::SECOND_ENCODED;
     } else {
       const int64_t ts_delta = ts - state_.last_ts;
 
       TimestampEncoder::encode_delta_of_delta(ts_delta - state_.last_ts_delta, ts_bitseq);
-      values_encoder_.encode(state_, v, v_bitseq);
+      ValuesEncoder::encode(state_, v, v_bitseq);
 
       state_.last_ts_delta = ts_delta;
       state_.last_ts = ts;

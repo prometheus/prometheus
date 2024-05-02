@@ -198,7 +198,7 @@ class BasicEncoder {
   };
 
   struct __attribute__((__packed__)) EncoderWithID {
-    BareBones::Encoding::Gorilla::StreamEncoder<BareBones::Encoding::Gorilla::ZigZagTimestampEncoder> encoder;
+    BareBones::Encoding::Gorilla::StreamEncoder<BareBones::Encoding::Gorilla::ZigZagTimestampEncoder, BareBones::Encoding::Gorilla::ValuesEncoder> encoder;
     Primitives::LabelSetID id;
   };
 
@@ -208,8 +208,9 @@ class BasicEncoder {
     typename LabelSetsTable::checkpoint_type label_sets_checkpoint;
     BareBones::Vector<EncoderWithID> encoders;
 
-    inline __attribute__((always_inline))
-    Redundant(uint32_t _segment, typename LabelSetsTable::checkpoint_type _label_sets_checkpoint, uint32_t _encoders_count)
+    inline __attribute__((always_inline)) Redundant(uint32_t _segment,
+                                                    typename LabelSetsTable::checkpoint_type _label_sets_checkpoint,
+                                                    uint32_t _encoders_count)
         : segment(_segment), encoders_count(_encoders_count), label_sets_checkpoint(_label_sets_checkpoint) {}
   };
 
@@ -234,7 +235,9 @@ class BasicEncoder {
   LabelSetsTable label_sets_;
   typename LabelSetsTable::checkpoint_type label_sets_checkpoint_;
   Buffer buffer_;
-  BareBones::Vector<BareBones::Encoding::Gorilla::StreamEncoder<BareBones::Encoding::Gorilla::ZigZagTimestampEncoder>> gorilla_;
+  BareBones::Vector<
+      BareBones::Encoding::Gorilla::StreamEncoder<BareBones::Encoding::Gorilla::ZigZagTimestampEncoder, BareBones::Encoding::Gorilla::ValuesEncoder>>
+      gorilla_;
   BareBones::LZ4Stream::ostream lz4stream_{nullptr};
 
   const uuids::uuid uuid_;
