@@ -18,18 +18,38 @@ inline __attribute__((always_inline)) bool isstalenan(double v) noexcept {
   return std::bit_cast<uint64_t>(v) == 0x7ff0000000000002ull;
 }
 
+struct PROMPP_ATTRIBUTE_PACKED TimestampEncoderState {
+  int64_t last_ts{};
+  int64_t last_ts_delta{};  // for stream gorilla samples might not be ordered
+
+  bool operator==(const TimestampEncoderState&) const noexcept = default;
+};
+
 template <class TimestampEncoder>
-concept TimestampEncoderInterface = requires(BitSequence& sequence) {
-  { TimestampEncoder::encode(int64_t(), sequence) };
-  { TimestampEncoder::encode_delta(int64_t(), sequence) };
-  { TimestampEncoder::encode_delta_of_delta(int64_t(), sequence) };
+concept TimestampEncoderInterface = requires(TimestampEncoderState& state, BitSequence& sequence) {
+  { TimestampEncoder::encode(state, int64_t(), sequence) };
+  { TimestampEncoder::encode_delta(state, int64_t(), sequence) };
+  { TimestampEncoder::encode_delta_of_delta(state, int64_t(), sequence) };
 };
 
 class ZigZagTimestampEncoder {
  public:
-  PROMPP_ALWAYS_INLINE static void encode(int64_t ts, BitSequence& stream) { stream.push_back_u64_svbyte_0248(ZigZag::encode(ts)); }
-  PROMPP_ALWAYS_INLINE static void encode_delta(int64_t delta, BitSequence& stream) { stream.push_back_u64_svbyte_2468(ZigZag::encode(delta)); }
-  PROMPP_ALWAYS_INLINE static void encode_delta_of_delta(int64_t delta_of_delta, BitSequence& stream) {
+  PROMPP_ALWAYS_INLINE static void encode(TimestampEncoderState& state, int64_t ts, BitSequence& stream) {
+    state.last_ts = ts;
+
+    stream.push_back_u64_svbyte_0248(ZigZag::encode(ts));
+  }
+
+  PROMPP_ALWAYS_INLINE static void encode_delta(TimestampEncoderState& state, int64_t ts, BitSequence& stream) {
+    state.last_ts_delta = ts - state.last_ts;
+    state.last_ts = ts;
+
+    stream.push_back_u64_svbyte_2468(ZigZag::encode(state.last_ts_delta));
+  }
+
+  PROMPP_ALWAYS_INLINE static void encode_delta_of_delta(TimestampEncoderState& state, int64_t ts, BitSequence& stream) {
+    auto ts_delta = ts - state.last_ts;
+    const int64_t delta_of_delta = ts_delta - state.last_ts_delta;
     const uint64_t ts_dod_zigzag = ZigZag::encode(delta_of_delta);
 
     if (ts_dod_zigzag == 0) {
@@ -52,20 +72,27 @@ class ZigZagTimestampEncoder {
         stream.push_back_u64_svbyte_2468(ts_dod_zigzag);
       }
     }
+
+    state.last_ts_delta = ts_delta;
+    state.last_ts = ts;
   }
 };
 
 static constexpr size_t kMaxVarintLength = 10;
 
-struct PROMPP_ATTRIBUTE_PACKED EncoderState {
-  int64_t last_ts{};
-  int64_t last_ts_delta{};  // for stream gorilla samples might not be ordered
-
+struct PROMPP_ATTRIBUTE_PACKED ValuesEncoderState {
   double last_v{};
   uint8_t last_v_xor_length{};
   uint8_t last_v_xor_leading_z{};
   uint8_t last_v_xor_trailing_z{};
   uint8_t v_xor_waste_bits_written{};
+
+  bool operator==(const ValuesEncoderState&) const noexcept = default;
+};
+
+struct PROMPP_ATTRIBUTE_PACKED EncoderState {
+  TimestampEncoderState timestamp_encoder;
+  ValuesEncoderState values_encoder;
 
   enum : uint8_t { INITIAL = 0, FIRST_ENCODED = 1, SECOND_ENCODED = 2 } state = INITIAL;
 
@@ -86,11 +113,11 @@ struct PROMPP_ATTRIBUTE_PACKED DecoderState {
   DecoderState(const DecoderState&) = default;
   DecoderState(DecoderState&&) noexcept = default;
   explicit DecoderState(const EncoderState& encoder_state)
-      : last_ts(encoder_state.last_ts),
-        last_ts_delta(encoder_state.last_ts_delta),
-        last_v(encoder_state.last_v),
-        last_v_xor_length(encoder_state.last_v_xor_length),
-        last_v_xor_trailing_z(encoder_state.last_v_xor_trailing_z),
+      : last_ts(encoder_state.timestamp_encoder.last_ts),
+        last_ts_delta(encoder_state.timestamp_encoder.last_ts_delta),
+        last_v(encoder_state.values_encoder.last_v),
+        last_v_xor_length(encoder_state.values_encoder.last_v_xor_length),
+        last_v_xor_trailing_z(encoder_state.values_encoder.last_v_xor_trailing_z),
         state(static_cast<decltype(state)>(encoder_state.state)) {}
 
   DecoderState& operator=(const DecoderState&) = default;
@@ -101,15 +128,27 @@ struct PROMPP_ATTRIBUTE_PACKED DecoderState {
 
 class TimestampEncoder {
  public:
-  PROMPP_ALWAYS_INLINE static void encode(int64_t ts, BitSequence& stream) {
+  template <class BitSequence>
+  PROMPP_ALWAYS_INLINE static void encode(TimestampEncoderState& state, int64_t ts, BitSequence& stream) {
+    state.last_ts = ts;
+
     uint8_t varint_buffer[kMaxVarintLength]{};
     push_varint_buffer(varint_buffer, write_varint(varint_buffer, ts), stream);
   }
-  PROMPP_ALWAYS_INLINE static void encode_delta(int64_t delta, BitSequence& stream) {
+
+  template <class BitSequence>
+  PROMPP_ALWAYS_INLINE static void encode_delta(TimestampEncoderState& state, int64_t ts, BitSequence& stream) {
+    state.last_ts_delta = ts - state.last_ts;
+    state.last_ts = ts;
+
     uint8_t varint_buffer[kMaxVarintLength]{};
-    push_varint_buffer(varint_buffer, write_varint(varint_buffer, std::bit_cast<uint64_t>(delta)), stream);
+    push_varint_buffer(varint_buffer, write_varint(varint_buffer, std::bit_cast<uint64_t>(state.last_ts_delta)), stream);
   }
-  PROMPP_ALWAYS_INLINE static void encode_delta_of_delta(int64_t delta_of_delta, BitSequence& stream) {
+
+  template <class BitSequence>
+  PROMPP_ALWAYS_INLINE static void encode_delta_of_delta(TimestampEncoderState& state, int64_t ts, BitSequence& stream) {
+    auto ts_delta = ts - state.last_ts;
+    const int64_t delta_of_delta = ts_delta - state.last_ts_delta;
     const auto ts_dod_zigzag = std::bit_cast<uint64_t>(delta_of_delta);
 
     if (ts_dod_zigzag == 0) {
@@ -132,9 +171,13 @@ class TimestampEncoder {
         stream.push_back_u64(ts_dod_zigzag);
       }
     }
+
+    state.last_ts_delta = ts_delta;
+    state.last_ts = ts;
   }
 
  private:
+  template <class BitSequence>
   PROMPP_ALWAYS_INLINE static void push_varint_buffer(const uint8_t* buffer, size_t bytes, BitSequence& stream) {
     if (bytes <= sizeof(uint64_t)) {
       stream.push_back_bits_u64(bytes * 8, *reinterpret_cast<const uint64_t*>(buffer));
@@ -258,20 +301,22 @@ class TimestampDecoder {
 };
 
 template <class ValuesEncoder>
-concept ValuesEncoderInterface = requires(ValuesEncoder& encoder, BitSequence& sequence, EncoderState& state) {
+concept ValuesEncoderInterface = requires(ValuesEncoder& encoder, BitSequence& sequence, ValuesEncoderState& state) {
   { encoder.encode_first(state, double(), sequence) };
   { encoder.encode(state, double(), sequence) };
 };
 
 class PROMPP_ATTRIBUTE_PACKED ValuesEncoder {
  public:
-  PROMPP_ALWAYS_INLINE static void encode_first(EncoderState& state, double v, BitSequence& stream) noexcept {
+  template <class BitSequence>
+  PROMPP_ALWAYS_INLINE static void encode_first(ValuesEncoderState& state, double v, BitSequence& stream) noexcept {
     state.last_v = v;
 
     stream.push_back_d64_svbyte_0468(v);
   }
 
-  PROMPP_ALWAYS_INLINE static void encode(EncoderState& state, double v, BitSequence& stream) noexcept {
+  template <class BitSequence>
+  PROMPP_ALWAYS_INLINE static void encode(ValuesEncoderState& state, double v, BitSequence& stream) noexcept {
     uint64_t v_xor = std::bit_cast<uint64_t>(state.last_v) ^ std::bit_cast<uint64_t>(v);
 
     state.last_v = v;
@@ -344,44 +389,35 @@ class PROMPP_ATTRIBUTE_PACKED StreamEncoder {
   friend class StreamDecoder;
 
  public:
-  [[nodiscard]] PROMPP_ALWAYS_INLINE int64_t last_timestamp() const noexcept { return state_.last_ts; }
-  [[nodiscard]] PROMPP_ALWAYS_INLINE double last_value() const noexcept { return state_.last_v; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE int64_t last_timestamp() const noexcept { return state_.timestamp_encoder.last_ts; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE double last_value() const noexcept { return state_.values_encoder.last_v; }
   [[nodiscard]] PROMPP_ALWAYS_INLINE const EncoderState& state() const noexcept { return state_; }
 
+  template <class BitSequence>
   inline __attribute__((always_inline)) void encode(int64_t ts, double v, BitSequence& ts_bitseq, BitSequence& v_bitseq) noexcept {
     if (state_.state == EncoderState::INITIAL) {
-      state_.last_ts = ts;
-
-      TimestampEncoder::encode(state_.last_ts, ts_bitseq);
-      ValuesEncoder::encode_first(state_, v, v_bitseq);
+      TimestampEncoder::encode(state_.timestamp_encoder, ts, ts_bitseq);
+      ValuesEncoder::encode_first(state_.values_encoder, v, v_bitseq);
 
       state_.state = EncoderState::FIRST_ENCODED;
     } else if (state_.state == EncoderState::FIRST_ENCODED) {
-      state_.last_ts_delta = ts - state_.last_ts;
-      state_.last_ts = ts;
-
-      TimestampEncoder::encode_delta(state_.last_ts_delta, ts_bitseq);
-      ValuesEncoder::encode(state_, v, v_bitseq);
+      TimestampEncoder::encode_delta(state_.timestamp_encoder, ts, ts_bitseq);
+      ValuesEncoder::encode(state_.values_encoder, v, v_bitseq);
 
       state_.state = EncoderState::SECOND_ENCODED;
     } else {
-      const int64_t ts_delta = ts - state_.last_ts;
-
-      TimestampEncoder::encode_delta_of_delta(ts_delta - state_.last_ts_delta, ts_bitseq);
-      ValuesEncoder::encode(state_, v, v_bitseq);
-
-      state_.last_ts_delta = ts_delta;
-      state_.last_ts = ts;
+      TimestampEncoder::encode_delta_of_delta(state_.timestamp_encoder, ts, ts_bitseq);
+      ValuesEncoder::encode(state_.values_encoder, v, v_bitseq);
     }
   }
 
   PROMPP_ALWAYS_INLINE void reset(const DecoderState& state) noexcept {
-    state_.last_ts = state.last_ts;
-    state_.last_ts_delta = state.last_ts_delta;
-    state_.last_v = state.last_v;
-    state_.last_v_xor_length = state.last_v_xor_length;
-    state_.last_v_xor_trailing_z = state.last_v_xor_trailing_z;
-    state_.v_xor_waste_bits_written = 0;
+    state_.timestamp_encoder.last_ts = state.last_ts;
+    state_.timestamp_encoder.last_ts_delta = state.last_ts_delta;
+    state_.values_encoder.last_v = state.last_v;
+    state_.values_encoder.last_v_xor_length = state.last_v_xor_length;
+    state_.values_encoder.last_v_xor_trailing_z = state.last_v_xor_trailing_z;
+    state_.values_encoder.v_xor_waste_bits_written = 0;
     state_.state = static_cast<decltype(state_.state)>(state.state);
   }
 };
