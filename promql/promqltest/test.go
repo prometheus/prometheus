@@ -306,6 +306,12 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 			i--
 			break
 		}
+
+		if cmd.fail && strings.HasPrefix(defLine, "expected_message") {
+			cmd.expectedFailMessage = strings.TrimSpace(strings.TrimPrefix(defLine, "expected_message"))
+			break
+		}
+
 		if f, err := parseNumber(defLine); err == nil {
 			cmd.expect(0, parser.SequenceValue{Value: f})
 			break
@@ -455,8 +461,9 @@ type evalCmd struct {
 	step  time.Duration
 	line  int
 
-	isRange       bool // if false, instant query
-	fail, ordered bool
+	isRange             bool // if false, instant query
+	fail, ordered       bool
+	expectedFailMessage string
 
 	metrics  map[uint64]labels.Labels
 	expected map[uint64]entry
@@ -795,6 +802,10 @@ func (t *test) execRangeEval(cmd *evalCmd, engine promql.QueryEngine) error {
 	res := q.Exec(t.context)
 	if res.Err != nil {
 		if cmd.fail {
+			if cmd.expectedFailMessage != "" && cmd.expectedFailMessage != res.Err.Error() {
+				return fmt.Errorf("expected error %q evaluating query %q (line %d), but got: %s", cmd.expectedFailMessage, cmd.expr, cmd.line, res.Err.Error())
+			}
+
 			return nil
 		}
 
@@ -827,6 +838,10 @@ func (t *test) execInstantEval(cmd *evalCmd, engine promql.QueryEngine) error {
 		res := q.Exec(t.context)
 		if res.Err != nil {
 			if cmd.fail {
+				if cmd.expectedFailMessage != "" && cmd.expectedFailMessage != res.Err.Error() {
+					return fmt.Errorf("expected error %q evaluating query %q (line %d), but got: %s", cmd.expectedFailMessage, iq.expr, cmd.line, res.Err.Error())
+				}
+
 				continue
 			}
 			return fmt.Errorf("error evaluating query %q (line %d): %w", iq.expr, cmd.line, res.Err)
