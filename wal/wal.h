@@ -573,8 +573,8 @@ class BasicEncoder {
     BareBones::Vector<BareBones::Encoding::Gorilla::StreamDecoder<BareBones::Encoding::Gorilla::ZigZagTimestampDecoder>> decoders;
 
     // move out the encoders into decoders.
-    for (auto&& encoder : encoders) {
-      decoders.emplace_back(std::move(encoder));
+    for (auto& encoder : encoders) {
+      decoders.emplace_back(encoder.state());
     }
 
     auto original_exceptions = out.exceptions();
