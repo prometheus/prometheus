@@ -672,6 +672,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 				"stage", "Select",
 				"err", err,
 			)
+			alertRule.SetRestored(true)
 			continue
 		}
 
@@ -684,6 +685,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 		// No results for this alert rule.
 		if len(seriesByLabels) == 0 {
 			level.Debug(g.logger).Log("msg", "Failed to find a series to restore the 'for' state", labels.AlertName, alertRule.Name())
+			alertRule.SetRestored(true)
 			continue
 		}
 

@@ -482,6 +482,9 @@ func TestForStateRestore(t *testing.T) {
 				return labels.Compare(got[i].Labels, got[j].Labels) < 0
 			})
 
+			// In all cases, we expect the restoration process to have completed.
+			require.Truef(t, newRule.Restored(), "expected the rule restoration proccess to have completed")
+
 			// Checking if we have restored it correctly.
 			switch {
 			case tt.noRestore:
