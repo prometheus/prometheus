@@ -2,6 +2,10 @@
 
 ## unreleased
 
+## 2.52.0-rc.1 / 2024-05-03
+
+* [BUGFIX] API: Fix missing comma during JSON encoding of API results. #14047
+
 ## 2.52.0-rc.0 / 2024-04-22
 
 * [CHANGE] TSDB: Fix the predicate checking for blocks which are beyond the retention period to include the ones right at the retention boundary. #9633
