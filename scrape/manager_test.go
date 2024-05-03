@@ -22,6 +22,7 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/exp/slices"
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/config"
@@ -702,4 +703,52 @@ scrape_configs:
 
 	reload(scrapeManager, cfg2)
 	require.ElementsMatch(t, []string{"job1", "job3"}, scrapeManager.ScrapePools())
+}
+
+func TestManagerDisableEndOfRunStalenessMarkers(t *testing.T) {
+	configForJob := func(jobName string) *config.ScrapeConfig {
+		return &config.ScrapeConfig{
+			JobName:        jobName,
+			ScrapeInterval: model.Duration(1 * time.Minute),
+			ScrapeTimeout:  model.Duration(1 * time.Minute),
+		}
+	}
+
+	cfg := &config.Config{ScrapeConfigs: []*config.ScrapeConfig{
+		configForJob("one"),
+		configForJob("two"),
+	}}
+
+	m := NewManager(&Options{}, nil, &nopAppendable{})
+	defer m.Stop()
+	require.NoError(t, m.ApplyConfig(cfg))
+
+	// Pass targets to the manager.
+	tgs := map[string][]*targetgroup.Group{
+		"one": {{Targets: []model.LabelSet{{"__address__": "h1"}, {"__address__": "h2"}, {"__address__": "h3"}}}},
+		"two": {{Targets: []model.LabelSet{{"__address__": "h4"}}}},
+	}
+	m.updateTsets(tgs)
+	m.reload()
+
+	activeTargets := m.TargetsActive()
+	targetsToDisable := []*Target{
+		activeTargets["one"][0],
+		activeTargets["one"][2],
+		NewTarget(labels.FromStrings("__address__", "h4"), labels.EmptyLabels(), nil), // non-existent target.
+	}
+
+	// Disable end of run staleness markers for some targets.
+	m.DisableEndOfRunStalenessMarkers("one", targetsToDisable)
+	// This should be a no-op
+	m.DisableEndOfRunStalenessMarkers("non-existent-job", targetsToDisable)
+
+	// Check that the end of run staleness markers are disabled for the correct targets.
+	for _, group := range []string{"one", "two"} {
+		for _, tg := range activeTargets[group] {
+			loop := m.scrapePools[group].loops[tg.hash()].(*scrapeLoop)
+			expectedDisabled := slices.Contains(targetsToDisable, tg)
+			require.Equal(t, expectedDisabled, loop.disabledEndOfRunStalenessMarkers.Load())
+		}
+	}
 }
