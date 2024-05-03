@@ -672,6 +672,9 @@ func (g *Group) RestoreForState(ts time.Time) {
 				"stage", "Select",
 				"err", err,
 			)
+			// Even if we failed to query the `ALERT_FOR_STATE` series, we currently have no way to retry the restore process.
+			// So the best we can do is mark the rule as restored and let it eventually fire.
+			alertRule.SetRestored(true)
 			continue
 		}
 
@@ -683,7 +686,8 @@ func (g *Group) RestoreForState(ts time.Time) {
 
 		// No results for this alert rule.
 		if len(seriesByLabels) == 0 {
-			level.Debug(g.logger).Log("msg", "Failed to find a series to restore the 'for' state", labels.AlertName, alertRule.Name())
+			level.Debug(g.logger).Log("msg", "No series found to restore the 'for' state of the alert rule", labels.AlertName, alertRule.Name())
+			alertRule.SetRestored(true)
 			continue
 		}
 
