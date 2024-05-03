@@ -379,3 +379,14 @@ func (m *Manager) TargetsDroppedCounts() map[string]int {
 	}
 	return counts
 }
+
+// DisableEndOfRunStalenessMarkers disables the end-of-run staleness markers for the provided targets in the given
+// targetSet. When the end-of-run staleness is disabled for a target, when it goes away, there will be no staleness
+// markers written for its series.
+func (m *Manager) DisableEndOfRunStalenessMarkers(targetSet string, targets []*Target) {
+	m.mtxScrape.Lock()
+	defer m.mtxScrape.Unlock()
+	if pool, ok := m.scrapePools[targetSet]; ok {
+		pool.disableEndOfRunStalenessMarkers(targets)
+	}
+}
