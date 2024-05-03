@@ -483,7 +483,7 @@ func TestForStateRestore(t *testing.T) {
 			})
 
 			// In all cases, we expect the restoration process to have completed.
-			require.Truef(t, newRule.Restored(), "expected the rule restoration proccess to have completed")
+			require.Truef(t, newRule.Restored(), "expected the rule restoration process to have completed")
 
 			// Checking if we have restored it correctly.
 			switch {
