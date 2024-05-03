@@ -3817,3 +3817,68 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrapeForTimestampedMetrics(t *
 	require.True(t, value.IsStaleNaN(appender.resultFloats[6].f),
 		"Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(appender.resultFloats[6].f))
 }
+
+func TestScrapeLoopDisableStalenessMarkerInjection(t *testing.T) {
+	var (
+		loopDone = make(chan struct{}, 1)
+		appender = &collectResultAppender{}
+		scraper  = &testScraper{}
+		app      = func(ctx context.Context) storage.Appender { return appender }
+	)
+
+	sl := newScrapeLoop(context.Background(),
+		scraper,
+		nil, nil,
+		nopMutator,
+		nopMutator,
+		app,
+		nil,
+		0,
+		true,
+		false,
+		0, 0,
+		nil,
+		10*time.Millisecond,
+		time.Hour,
+		false,
+		false,
+		false,
+		nil,
+		false,
+	)
+
+	// Count scrapes and terminate loop after 2 scrapes.
+	numScrapes, maxScrapes := 0, 2
+	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
+		numScrapes++
+		if numScrapes >= maxScrapes {
+			go sl.stop()
+			<-sl.ctx.Done()
+		}
+		if _, err := w.Write([]byte("metric_a 42\n")); err != nil {
+			return err
+		}
+		return ctx.Err()
+	}
+
+	go func() {
+		sl.run(nil)
+		loopDone <- struct{}{}
+	}()
+
+	// Disable end of run staleness markers.
+	sl.disableEndOfRunStalenessMarkers()
+
+	select {
+	case <-loopDone:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("Scrape loop didn't stop.")
+	}
+
+	// No stale markers should be appended, since they were disabled.
+	for _, s := range appender.resultFloats {
+		if value.IsStaleNaN(s.f) {
+			t.Fatalf("Got stale NaN samples while end of run staleness is disabled: %x", math.Float64bits(s.f))
+		}
+	}
+}
