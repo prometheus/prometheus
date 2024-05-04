@@ -676,8 +676,7 @@ func atModifierTestCases(exprStr string, evalTime time.Time) ([]atModifierTestCa
 	// If there is a subquery, then the selectors inside it don't get the @ timestamp.
 	// If any selector already has the @ timestamp set, then it is untouched.
 	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
-		_, _, subqTs := subqueryTimes(path)
-		if subqTs != nil {
+		if hasAtModifier(path) {
 			// There is a subquery with timestamp in the path,
 			// hence don't change any timestamps further.
 			return nil
@@ -725,6 +724,17 @@ func atModifierTestCases(exprStr string, evalTime time.Time) ([]atModifierTestCa
 	}
 
 	return testCases, nil
+}
+
+func hasAtModifier(path []parser.Node) bool {
+	for _, node := range path {
+		if n, ok := node.(*parser.SubqueryExpr); ok {
+			if n.Timestamp != nil {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // exec processes a single step of the test.
