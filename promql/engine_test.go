@@ -1289,13 +1289,10 @@ load 10s
 		},
 	}
 
-	engine := newTestEngine()
-	engine.enablePerStepStats = true
-	origMaxSamples := engine.maxSamplesPerQuery
 	for _, c := range cases {
 		t.Run(c.Query, func(t *testing.T) {
 			opts := promql.NewPrometheusQueryOpts(true, 0)
-			engine.maxSamplesPerQuery = origMaxSamples
+			engine := promqltest.NewTestEngine(true, 0, promqltest.DefaultMaxSamplesPerQuery)
 
 			runQuery := func(expErr error) *stats.Statistics {
 				var err error
@@ -1322,7 +1319,7 @@ load 10s
 			if c.SkipMaxCheck {
 				return
 			}
-			engine.maxSamplesPerQuery = stats.Samples.PeakSamples - 1
+			engine = promqltest.NewTestEngine(true, 0, stats.Samples.PeakSamples-1)
 			runQuery(promql.ErrTooManySamples(env))
 		})
 	}
@@ -1496,11 +1493,11 @@ load 10s
 			}
 
 			// Within limit.
-			engine.maxSamplesPerQuery = c.MaxSamples
+			engine = promqltest.NewTestEngine(false, 0, c.MaxSamples)
 			testFunc(nil)
 
 			// Exceeding limit.
-			engine.maxSamplesPerQuery = c.MaxSamples - 1
+			engine = promqltest.NewTestEngine(false, 0, c.MaxSamples-1)
 			testFunc(promql.ErrTooManySamples(env))
 		})
 	}
@@ -4956,13 +4953,10 @@ metric 0 1 2
 	for _, c := range cases {
 		c := c
 		t.Run(c.name, func(t *testing.T) {
-			engine := newTestEngine()
+			engine := promqltest.NewTestEngine(false, c.engineLookback, promqltest.DefaultMaxSamplesPerQuery)
 			storage := promqltest.LoadedStorage(t, load)
 			t.Cleanup(func() { storage.Close() })
 
-			if c.engineLookback != 0 {
-				engine.lookbackDelta = c.engineLookback
-			}
 			opts := promql.NewPrometheusQueryOpts(false, c.queryLookback)
 			qry, err := engine.NewInstantQuery(context.Background(), storage, opts, query, c.ts)
 			require.NoError(t, err)

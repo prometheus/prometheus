@@ -32,7 +32,7 @@ func newTestEngine() *promql.Engine {
 }
 
 func TestEvaluations(t *testing.T) {
-	RunBuiltinTests(t, newTestEngine())
+	promqltest.RunBuiltinTests(t, newTestEngine())
 }
 
 // Run a lot of queries at the same time, to check for race conditions.

@@ -76,7 +76,7 @@ func NewTestEngine(enablePerStepStats bool, lookbackDelta time.Duration, maxSamp
 	return promql.NewEngine(promql.EngineOpts{
 		Logger:                   nil,
 		Reg:                      nil,
-		MaxSamples:               DefaultMaxSamplesPerQuery,
+		MaxSamples:               maxSamples,
 		Timeout:                  100 * time.Second,
 		NoStepSubqueryIntervalFn: func(int64) int64 { return durationMilliseconds(1 * time.Minute) },
 		EnableAtModifier:         true,
