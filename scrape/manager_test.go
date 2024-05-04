@@ -616,6 +616,31 @@ func TestManagerTargetsUpdates(t *testing.T) {
 	}
 }
 
+func BenchmarkManagerReload(b *testing.B) {
+	opts := Options{}
+	testRegistry := prometheus.NewRegistry()
+	m, err := NewManager(&opts, nil, nil, testRegistry)
+	require.NoError(b, err)
+
+	m.scrapePools = map[string]*scrapePool{}
+	sp := &scrapePool{
+		activeTargets: map[uint64]*Target{},
+	}
+
+	for i := 0; i < b.N; i++ {
+		sp.activeTargets[uint64(i)] = &Target{
+			discoveredLabels: labels.FromStrings("__address__", fmt.Sprintf("foo-%d", i)),
+			labels:           labels.FromStrings("label_key", fmt.Sprintf("foo-%d", i)),
+		}
+	}
+
+	m.scrapePools["default"] = sp
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		m.reload()
+	}
+}
+
 func TestManagerDuplicateAfterRelabellingWarning(t *testing.T) {
 	var output []interface{}
 	logger := log.Logger(log.LoggerFunc(func(keyvals ...interface{}) error {
