@@ -177,6 +177,7 @@ func (m *Manager) reloader() {
 func (m *Manager) reload() {
 	m.mtxScrape.Lock()
 	var wg sync.WaitGroup
+
 	for setName, groups := range m.targetSets {
 		if _, ok := m.scrapePools[setName]; !ok {
 			scrapeConfig, ok := m.scrapeConfigs[setName]
@@ -222,9 +223,10 @@ func (m *Manager) warnIfTargetsRelabelledToSameLabels() {
 	activeTargets := make(map[uint64]*Target)
 	for _, scrapePool := range m.scrapePools {
 		for _, target := range scrapePool.activeTargets {
-			t, ok := activeTargets[target.labels.Hash()]
+			lHash := target.labels.Hash()
+			t, ok := activeTargets[lHash]
 			if !ok {
-				activeTargets[target.labels.Hash()] = target
+				activeTargets[lHash] = target
 				continue
 			}
 			level.Warn(m.logger).Log(
