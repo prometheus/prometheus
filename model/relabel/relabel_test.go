@@ -876,6 +876,16 @@ replacement: $1
 action: keepequal
 `,
 		},
+		{
+			name: "Default regex provided",
+			inputYaml: `source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_port]
+separator: ;
+regex: (.*)
+target_label: __meta_kubernetes_pod_container_port_number
+replacement: $1
+action: replace
+`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
