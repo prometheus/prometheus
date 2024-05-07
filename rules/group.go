@@ -607,13 +607,15 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 }
 
 func (g *Group) EvaluationDelay() time.Duration {
-	evaluationDelay := time.Duration(0)
 	if g.evaluationDelay != nil {
-		evaluationDelay = *g.evaluationDelay
-	} else if g.opts.DefaultEvaluationDelay != nil {
-		evaluationDelay = g.opts.DefaultEvaluationDelay()
+		return *g.evaluationDelay
 	}
-	return evaluationDelay
+
+	if g.opts.DefaultEvaluationDelay != nil {
+		return g.opts.DefaultEvaluationDelay()
+	}
+
+	return time.Duration(0)
 }
 
 func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
@@ -621,9 +623,10 @@ func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
 		return
 	}
 	app := g.opts.Appendable.Appender(ctx)
+	evaluationDelay := g.EvaluationDelay()
 	for _, s := range g.staleSeries {
 		// Rule that produced series no longer configured, mark it stale.
-		_, err := app.Append(0, s, timestamp.FromTime(ts), math.Float64frombits(value.StaleNaN))
+		_, err := app.Append(0, s, timestamp.FromTime(ts.Add(-evaluationDelay)), math.Float64frombits(value.StaleNaN))
 		unwrappedErr := errors.Unwrap(err)
 		if unwrappedErr == nil {
 			unwrappedErr = err
