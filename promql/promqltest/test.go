@@ -72,8 +72,8 @@ func LoadedStorage(t testutil.T, input string) *teststorage.TestStorage {
 	return test.storage
 }
 
-func NewTestEngine(enablePerStepStats bool, lookbackDelta time.Duration, maxSamples int) *promql.Engine {
-	return promql.NewEngine(promql.EngineOpts{
+func NewTestEngine(t *testing.T, enablePerStepStats bool, lookbackDelta time.Duration, maxSamples int) *promql.Engine {
+	ng := promql.NewEngine(promql.EngineOpts{
 		Logger:                   nil,
 		Reg:                      nil,
 		MaxSamples:               maxSamples,
@@ -84,6 +84,10 @@ func NewTestEngine(enablePerStepStats bool, lookbackDelta time.Duration, maxSamp
 		EnablePerStepStats:       enablePerStepStats,
 		LookbackDelta:            lookbackDelta,
 	})
+	t.Cleanup(func() {
+		require.NoError(t, ng.Close())
+	})
+	return ng
 }
 
 // RunBuiltinTests runs an acceptance test suite against the provided engine.
@@ -1073,7 +1077,11 @@ func (ll *LazyLoader) Storage() storage.Storage {
 // Close closes resources associated with the LazyLoader.
 func (ll *LazyLoader) Close() error {
 	ll.cancelCtx()
-	return ll.storage.Close()
+	err := ll.queryEngine.Close()
+	if sErr := ll.storage.Close(); sErr != nil {
+		return errors.Join(sErr, err)
+	}
+	return err
 }
 
 func makeInt64Pointer(val int64) *int64 {

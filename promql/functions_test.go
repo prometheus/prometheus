@@ -40,6 +40,9 @@ func TestDeriv(t *testing.T) {
 		Timeout:    10 * time.Second,
 	}
 	engine := promql.NewEngine(opts)
+	t.Cleanup(func() {
+		require.NoError(t, engine.Close())
+	})
 
 	a := storage.Appender(context.Background())
 

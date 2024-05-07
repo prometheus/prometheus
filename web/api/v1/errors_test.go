@@ -86,7 +86,7 @@ func TestApiStatusCodes(t *testing.T) {
 			"error from seriesset": errorTestQueryable{q: errorTestQuerier{s: errorTestSeriesSet{err: tc.err}}},
 		} {
 			t.Run(fmt.Sprintf("%s/%s", name, k), func(t *testing.T) {
-				r := createPrometheusAPI(q)
+				r := createPrometheusAPI(t, q)
 				rec := httptest.NewRecorder()
 
 				req := httptest.NewRequest(http.MethodGet, "/api/v1/query?query=up", nil)
@@ -100,13 +100,18 @@ func TestApiStatusCodes(t *testing.T) {
 	}
 }
 
-func createPrometheusAPI(q storage.SampleAndChunkQueryable) *route.Router {
+func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable) *route.Router {
+	t.Helper()
+
 	engine := promql.NewEngine(promql.EngineOpts{
 		Logger:             log.NewNopLogger(),
 		Reg:                nil,
 		ActiveQueryTracker: nil,
 		MaxSamples:         100,
 		Timeout:            5 * time.Second,
+	})
+	t.Cleanup(func() {
+		require.NoError(t, engine.Close())
 	})
 
 	api := NewAPI(
