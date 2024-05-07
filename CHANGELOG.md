@@ -2,11 +2,7 @@
 
 ## unreleased
 
-## 2.52.0-rc.1 / 2024-05-03
-
-* [BUGFIX] API: Fix missing comma during JSON encoding of API results. #14047
-
-## 2.52.0-rc.0 / 2024-04-22
+## 2.52.0 / 2024-05-07
 
 * [CHANGE] TSDB: Fix the predicate checking for blocks which are beyond the retention period to include the ones right at the retention boundary. #9633
 * [FEATURE] Kubernetes SD: Add a new metric `prometheus_sd_kubernetes_failures_total` to track failed requests to Kubernetes API. #13554
