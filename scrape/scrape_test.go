@@ -678,6 +678,7 @@ func newBasicScrapeLoop(t testing.TB, ctx context.Context, scraper scraper, app 
 		false,
 		false,
 		false,
+		false,
 		nil,
 		false,
 		newTestScrapeMetrics(t),
@@ -815,6 +816,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		nil,
 		time.Second,
 		time.Hour,
+		false,
 		false,
 		false,
 		false,
@@ -958,6 +960,7 @@ func TestScrapeLoopMetadata(t *testing.T) {
 		nil,
 		0,
 		0,
+		false,
 		false,
 		false,
 		false,
@@ -1571,6 +1574,7 @@ func TestScrapeLoop_HistogramBucketLimit(t *testing.T) {
 	app := &bucketLimitAppender{Appender: resApp, limit: 2}
 
 	sl := newBasicScrapeLoop(t, context.Background(), nil, func(ctx context.Context) storage.Appender { return app }, 0)
+	sl.enableNativeHistogramIngestion = true
 	sl.sampleMutator = func(l labels.Labels) labels.Labels {
 		if l.Has("deleteme") {
 			return labels.EmptyLabels()
@@ -1797,14 +1801,15 @@ func TestScrapeLoopAppendStalenessIfTrackTimestampStaleness(t *testing.T) {
 
 func TestScrapeLoopAppendExemplar(t *testing.T) {
 	tests := []struct {
-		title                   string
-		scrapeClassicHistograms bool
-		scrapeText              string
-		contentType             string
-		discoveryLabels         []string
-		floats                  []floatSample
-		histograms              []histogramSample
-		exemplars               []exemplar.Exemplar
+		title                           string
+		scrapeClassicHistograms         bool
+		enableNativeHistogramsIngestion bool
+		scrapeText                      string
+		contentType                     string
+		discoveryLabels                 []string
+		floats                          []floatSample
+		histograms                      []histogramSample
+		exemplars                       []exemplar.Exemplar
 	}{
 		{
 			title:           "Metric without exemplars",
@@ -1862,6 +1867,8 @@ metric_total{n="2"} 2 # {t="2"} 2.0 20000
 		},
 		{
 			title: "Native histogram with three exemplars",
+
+			enableNativeHistogramsIngestion: true,
 			scrapeText: `name: "test_histogram"
 help: "Test histogram with many buckets removed to keep it manageable in size."
 type: HISTOGRAM
@@ -1976,6 +1983,8 @@ metric: <
 		},
 		{
 			title: "Native histogram with three exemplars scraped as classic histogram",
+
+			enableNativeHistogramsIngestion: true,
 			scrapeText: `name: "test_histogram"
 help: "Test histogram with many buckets removed to keep it manageable in size."
 type: HISTOGRAM
@@ -2115,6 +2124,7 @@ metric: <
 			}
 
 			sl := newBasicScrapeLoop(t, context.Background(), nil, func(ctx context.Context) storage.Appender { return app }, 0)
+			sl.enableNativeHistogramIngestion = test.enableNativeHistogramsIngestion
 			sl.sampleMutator = func(l labels.Labels) labels.Labels {
 				return mutateSampleLabels(l, discoveryLabels, false, nil)
 			}
@@ -3710,7 +3720,7 @@ scrape_configs:
 	s.DB.EnableNativeHistograms()
 	reg := prometheus.NewRegistry()
 
-	mng, err := NewManager(nil, nil, s, reg)
+	mng, err := NewManager(&Options{EnableNativeHistogramsIngestion: true}, nil, s, reg)
 	require.NoError(t, err)
 	cfg, err := config.Load(configStr, false, log.NewNopLogger())
 	require.NoError(t, err)
