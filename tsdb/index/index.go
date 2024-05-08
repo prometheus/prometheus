@@ -168,7 +168,7 @@ type TOC struct {
 	PostingsTable     uint64
 }
 
-// NewTOCFromByteSlice returns parsed TOC from given index byte slice.
+// NewTOCFromByteSlice returns a parsed TOC from the given index byte slice.
 func NewTOCFromByteSlice(bs ByteSlice) (*TOC, error) {
 	if bs.Len() < indexTOCLen {
 		return nil, encoding.ErrInvalidSize
