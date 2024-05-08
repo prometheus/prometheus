@@ -566,6 +566,15 @@ func (p *parser) buildHistogramFromMap(desc *map[string]interface{}) *histogram.
 			p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing z_bucket_w number: %v", val)
 		}
 	}
+	val, ok = (*desc)["custom_values"]
+	if ok {
+		customValues, ok := val.([]float64)
+		if ok {
+			output.CustomValues = customValues
+		} else {
+			p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing custom_values: %v", val)
+		}
+	}
 
 	buckets, spans := p.buildHistogramBucketsAndSpans(desc, "buckets", "offset")
 	output.PositiveBuckets = buckets

@@ -225,6 +225,9 @@ func (h *FloatHistogram) TestExpression() string {
 	if m.ZeroThreshold != 0 {
 		res = append(res, fmt.Sprintf("z_bucket_w:%g", m.ZeroThreshold))
 	}
+	if m.UsesCustomBuckets() {
+		res = append(res, fmt.Sprintf("custom_values:%g", m.CustomValues))
+	}
 
 	addBuckets := func(kind, bucketsKey, offsetKey string, buckets []float64, spans []Span) []string {
 		if len(spans) > 1 {

@@ -127,17 +127,17 @@ eval_with_nhcb instant at 50m histogram_quantile(1, testhistogram3_bucket)
 	{start="negative"} -0.1
 
 # Quantile too low.
-eval_with_nhcb instant at 50m histogram_quantile(-0.1, testhistogram_bucket)
+eval_with_nhcb_warn instant at 50m histogram_quantile(-0.1, testhistogram_bucket)
 	{start="positive"} -Inf
 	{start="negative"} -Inf
 
 # Quantile too high.
-eval_with_nhcb instant at 50m histogram_quantile(1.01, testhistogram_bucket)
+eval_with_nhcb_warn instant at 50m histogram_quantile(1.01, testhistogram_bucket)
 	{start="positive"} +Inf
 	{start="negative"} +Inf
 
 # Quantile invalid.
-eval_with_nhcb instant at 50m histogram_quantile(NaN, testhistogram_bucket)
+eval_with_nhcb_warn instant at 50m histogram_quantile(NaN, testhistogram_bucket)
 	{start="positive"} NaN
 	{start="negative"} NaN
 
@@ -253,6 +253,9 @@ eval_with_nhcb instant at 50m histogram_quantile(0.5, rate(request_duration_seco
 	{instance="ins2", job="job1"} 0.13333333333333333
 	{instance="ins1", job="job2"} 0.1
 	{instance="ins2", job="job2"} 0.11666666666666667
+
+eval instant at 50m sum(request_duration_seconds)
+	{} {{schema:-53 count:250 custom_values:[0.1 0.2] buckets:[100 90 60]}}
 
 # A histogram with nonmonotonic bucket counts. This may happen when recording
 # rule evaluation or federation races scrape ingestion, causing some buckets

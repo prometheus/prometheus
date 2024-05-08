@@ -269,3 +269,18 @@ eval instant at 50m histogram_sum(sum(incr_sum_histogram))
 
 eval instant at 50m histogram_sum(sum(last_over_time(incr_sum_histogram[5m])))
     {} 30
+
+
+
+# Test native histograms with custom buckets.
+load 5m
+	custom_buckets_histogram	{{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1 2 1]}}x10
+
+eval instant at 5m histogram_fraction(5, 10, custom_buckets_histogram)
+	{} 0.5
+
+eval instant at 5m histogram_quantile(0.5, custom_buckets_histogram)
+	{} 7.5
+
+eval instant at 5m sum(custom_buckets_histogram)
+	{} {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1 2 1]}}
