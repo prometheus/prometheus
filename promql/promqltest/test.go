@@ -312,6 +312,15 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 			break
 		}
 
+		if cmd.fail && strings.HasPrefix(defLine, "expected_fail_pattern") {
+			pattern := strings.TrimSpace(strings.TrimPrefix(defLine, "expected_fail_pattern"))
+			cmd.expectedFailPattern, err = regexp.Compile(pattern)
+			if err != nil {
+				return i, nil, formatErr("invalid regexp '%s' for expected_fail_pattern: %w", pattern, err)
+			}
+			break
+		}
+
 		if f, err := parseNumber(defLine); err == nil {
 			cmd.expect(0, parser.SequenceValue{Value: f})
 			break
@@ -464,6 +473,7 @@ type evalCmd struct {
 	isRange             bool // if false, instant query
 	fail, ordered       bool
 	expectedFailMessage string
+	expectedFailPattern *regexp.Regexp
 
 	metrics  map[uint64]labels.Labels
 	expected map[uint64]entry
@@ -653,13 +663,21 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 }
 
 func (ev *evalCmd) checkExpectedFailure(actual error) error {
-	if ev.expectedFailMessage == "" || ev.expectedFailMessage == actual.Error() {
-		// We're not expecting a particular error, or we got the error we expected.
-		// This test passes.
-		return nil
+	if ev.expectedFailMessage != "" {
+		if ev.expectedFailMessage != actual.Error() {
+			return fmt.Errorf("expected error %q evaluating query %q (line %d), but got: %s", ev.expectedFailMessage, ev.expr, ev.line, actual.Error())
+		}
 	}
 
-	return fmt.Errorf("expected error %q evaluating query %q (line %d), but got: %s", ev.expectedFailMessage, ev.expr, ev.line, actual.Error())
+	if ev.expectedFailPattern != nil {
+		if !ev.expectedFailPattern.MatchString(actual.Error()) {
+			return fmt.Errorf("expected error matching pattern %q evaluating query %q (line %d), but got: %s", ev.expectedFailPattern.String(), ev.expr, ev.line, actual.Error())
+		}
+	}
+
+	// We're not expecting a particular error, or we got the error we expected.
+	// This test passes.
+	return nil
 }
 
 func formatSeriesResult(s promql.Series) string {
