@@ -158,7 +158,7 @@ type Writer struct {
 	postingsEncoder PostingsEncoder
 }
 
-// TOC represents index Table Of Content that states where each section of index starts.
+// TOC represents the index Table Of Contents that states where each section of the index starts.
 type TOC struct {
 	Symbols           uint64
 	Series            uint64
@@ -168,7 +168,7 @@ type TOC struct {
 	PostingsTable     uint64
 }
 
-// NewTOCFromByteSlice return parsed TOC from given index byte slice.
+// NewTOCFromByteSlice returns a parsed TOC from the given index byte slice.
 func NewTOCFromByteSlice(bs ByteSlice) (*TOC, error) {
 	if bs.Len() < indexTOCLen {
 		return nil, encoding.ErrInvalidSize
