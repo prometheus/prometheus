@@ -307,8 +307,8 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 			break
 		}
 
-		if cmd.fail && strings.HasPrefix(defLine, "expected_message") {
-			cmd.expectedFailMessage = strings.TrimSpace(strings.TrimPrefix(defLine, "expected_message"))
+		if cmd.fail && strings.HasPrefix(defLine, "expected_fail_message") {
+			cmd.expectedFailMessage = strings.TrimSpace(strings.TrimPrefix(defLine, "expected_fail_message"))
 			break
 		}
 

@@ -270,7 +270,7 @@ load 5m
 	testmetric2{src="a",dst="b"} 1
 
 eval_fail instant at 0m ceil({__name__=~'testmetric1|testmetric2'})
-	expected_message vector cannot contain metrics with the same labelset
+	expected_fail_message vector cannot contain metrics with the same labelset
 `,
 		},
 		"instant query expected to fail with specific error message, and query fails with a different error": {
@@ -280,7 +280,7 @@ load 5m
 	testmetric2{src="a",dst="b"} 1
 
 eval_fail instant at 0m ceil({__name__=~'testmetric1|testmetric2'})
-	expected_message something else went wrong
+	expected_fail_message something else went wrong
 `,
 			expectedError: `expected error "something else went wrong" evaluating query "ceil({__name__=~'testmetric1|testmetric2'})" (line 6), but got: vector cannot contain metrics with the same labelset`,
 		},
@@ -412,7 +412,7 @@ load 5m
 	testmetric2{src="a",dst="b"} 1
 
 eval_fail range from 0 to 10m step 5m ceil({__name__=~'testmetric1|testmetric2'})
-	expected_message vector cannot contain metrics with the same labelset
+	expected_fail_message vector cannot contain metrics with the same labelset
 `,
 		},
 		"range query expected to fail with specific error message, and query fails with a different error": {
@@ -422,7 +422,7 @@ load 5m
 	testmetric2{src="a",dst="b"} 1
 
 eval_fail range from 0 to 10m step 5m ceil({__name__=~'testmetric1|testmetric2'})
-	expected_message something else went wrong
+	expected_fail_message something else went wrong
 `,
 			expectedError: `expected error "something else went wrong" evaluating query "ceil({__name__=~'testmetric1|testmetric2'})" (line 6), but got: vector cannot contain metrics with the same labelset`,
 		},
