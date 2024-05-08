@@ -233,7 +233,7 @@ func ChunkMetasToSamples(chunks []Meta) (result []Sample) {
 // Iterator iterates over the chunks of a single time series.
 type Iterator interface {
 	// At returns the current meta.
-	// It depends on implementation whether the chunk is populated or not.
+	// It depends on the implementation whether the chunk is populated or not.
 	At() Meta
 	// Next advances the iterator by one.
 	Next() bool
