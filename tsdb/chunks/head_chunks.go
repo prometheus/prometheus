@@ -188,8 +188,8 @@ func (f *chunkPos) bytesToWriteForChunk(chkLen uint64) uint64 {
 	return bytes
 }
 
-// ChunkDiskMapper is for writing the Head block chunks to the disk
-// and access chunks via mmapped file.
+// ChunkDiskMapper is for writing the Head block chunks to disk
+// and access chunks via mmapped files.
 type ChunkDiskMapper struct {
 	/// Writer.
 	dir             *os.File
@@ -231,7 +231,7 @@ type ChunkDiskMapper struct {
 	closed bool
 }
 
-// mmappedChunkFile provides mmapp access to an entire head chunks file that holds many chunks.
+// mmappedChunkFile provides mmap access to an entire head chunks file that holds many chunks.
 type mmappedChunkFile struct {
 	byteSlice ByteSlice
 	maxt      int64 // Max timestamp among all of this file's chunks.
@@ -240,7 +240,7 @@ type mmappedChunkFile struct {
 // NewChunkDiskMapper returns a new ChunkDiskMapper against the given directory
 // using the default head chunk file duration.
 // NOTE: 'IterateAllChunks' method needs to be called at least once after creating ChunkDiskMapper
-// to set the maxt of all the file.
+// to set the maxt of all files.
 func NewChunkDiskMapper(reg prometheus.Registerer, dir string, pool chunkenc.Pool, writeBufferSize, writeQueueSize int) (*ChunkDiskMapper, error) {
 	// Validate write buffer size.
 	if writeBufferSize < MinWriteBufferSize || writeBufferSize > MaxWriteBufferSize {
@@ -425,7 +425,7 @@ func repairLastChunkFile(files map[int]string) (_ map[int]string, returnErr erro
 	return files, nil
 }
 
-// WriteChunk writes the chunk to the disk.
+// WriteChunk writes the chunk to disk.
 // The returned chunk ref is the reference from where the chunk encoding starts for the chunk.
 func (cdm *ChunkDiskMapper) WriteChunk(seriesRef HeadSeriesRef, mint, maxt int64, chk chunkenc.Chunk, isOOO bool, callback func(err error)) (chkRef ChunkDiskMapperRef) {
 	// cdm.evtlPosMtx must be held to serialize the calls to cdm.evtlPos.getNextChunkRef() and the writing of the chunk (either with or without queue).
@@ -784,7 +784,7 @@ func (cdm *ChunkDiskMapper) Chunk(ref ChunkDiskMapperRef) (chunkenc.Chunk, error
 // IterateAllChunks iterates all mmappedChunkFiles (in order of head chunk file name/number) and all the chunks within it
 // and runs the provided function with information about each chunk. It returns on the first error encountered.
 // NOTE: This method needs to be called at least once after creating ChunkDiskMapper
-// to set the maxt of all the file.
+// to set the maxt of all files.
 func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chunkRef ChunkDiskMapperRef, mint, maxt int64, numSamples uint16, encoding chunkenc.Encoding, isOOO bool) error) (err error) {
 	cdm.writePathMtx.Lock()
 	defer cdm.writePathMtx.Unlock()
@@ -904,7 +904,7 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 	return nil
 }
 
-// Truncate deletes the head chunk files whose file number is less than given fileNo.
+// Truncate deletes the head chunk files with numbers less than the given fileNo.
 func (cdm *ChunkDiskMapper) Truncate(fileNo uint32) error {
 	cdm.readPathMtx.RLock()
 
