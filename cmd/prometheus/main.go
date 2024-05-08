@@ -422,7 +422,7 @@ func main() {
 	serverOnlyFlag(a, "rules.max-concurrent-evals", "Global concurrency limit for independent rules that can run concurrently.").
 		Default("4").Int64Var(&cfg.maxConcurrentEvals)
 
-	serverOnlyFlag(a, "rules.evaluation-delay", "Duration to delay the evaluation of rules to ensure the underlying metrics have been received").
+	serverOnlyFlag(a, "rules.evaluation-delay", "Duration to delay the evaluation of rules to ensure the underlying metrics have been received.").
 		Default("0m").SetValue(&cfg.evaluationDelay)
 
 	a.Flag("scrape.adjust-timestamps", "Adjust scrape timestamps by up to `scrape.timestamp-tolerance` to align them to the intended schedule. See https://github.com/prometheus/prometheus/issues/7846 for more context. Experimental. This flag will be removed in a future release.").
