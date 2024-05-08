@@ -10,6 +10,11 @@ eval instant at 50m resets(http_requests[5m])
 	{path="/bar"} 0
 	{path="/biz"} 0
 
+eval instant at 50m resets(http_requests[300])
+	{path="/foo"} 0
+	{path="/bar"} 0
+	{path="/biz"} 0
+
 eval instant at 50m resets(http_requests[20m])
 	{path="/foo"} 1
 	{path="/bar"} 0
@@ -239,8 +244,14 @@ eval instant at 50m deriv(testcounter_reset_middle[100m])
 eval instant at 50m predict_linear(testcounter_reset_middle[50m], 3600)
 	{} 76.81818181818181
 
+eval instant at 50m predict_linear(testcounter_reset_middle[50m], 1h)
+	{} 76.81818181818181
+
 # intercept at t = 3000+3600 = 6600
 eval instant at 50m predict_linear(testcounter_reset_middle[50m] @ 3000, 3600)
+	{} 76.81818181818181
+
+eval instant at 50m predict_linear(testcounter_reset_middle[50m] @ 3000, 1h)
 	{} 76.81818181818181
 
 # intercept at t = 600+3600 = 4200
