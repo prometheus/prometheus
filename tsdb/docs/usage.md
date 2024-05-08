@@ -1,6 +1,6 @@
 # Usage
 
-TSDB can be - and is - used by other applications such as [Cortex](https://cortexmetrics.io/), [Thanos](https://thanos.io/) and [Grafana Mimir](https://grafana.com/oss/mimir/).
+TSDB can be - and is - used by other applications such as [Cortex](https://cortexmetrics.io/), [Thanos](https://thanos.io/), and [Grafana Mimir](https://grafana.com/oss/mimir/).
 This directory contains documentation for any developers who wish to work on or with TSDB.
 
 For a full example of instantiating a database, adding and querying data, see the [tsdb example in the docs](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb).
