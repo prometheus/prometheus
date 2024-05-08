@@ -478,7 +478,7 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 		// the batch is too large to fit in the current segment.
 		cutNewBatch := (i != 0) && (batchSize+SegmentHeaderSize > w.segmentSize)
 
-		// When the segment already has some data
+		// If the segment already has some data then
 		// the first batch size calculation should account for that.
 		if firstBatch && w.n > SegmentHeaderSize {
 			cutNewBatch = batchSize+w.n > w.segmentSize
