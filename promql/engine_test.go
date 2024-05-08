@@ -818,8 +818,8 @@ load 10s
 		{
 			Query:        "timestamp(metricWith1HistogramEvery10Seconds)",
 			Start:        time.Unix(21, 0),
-			PeakSamples:  15, // histogram size 13 + 1 extra because Sample overhead + 1 float result
-			TotalSamples: 1,  // 1 float sample (because of timestamp) / 10 seconds
+			PeakSamples:  2,
+			TotalSamples: 1, // 1 float sample (because of timestamp) / 10 seconds
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				21000: 1,
 			},
@@ -1116,8 +1116,8 @@ load 10s
 			Start:        time.Unix(201, 0),
 			End:          time.Unix(220, 0),
 			Interval:     5 * time.Second,
-			PeakSamples:  18, // 13 histogram size + 1 extra because of Sample overhead + 4 float results
-			TotalSamples: 4,  // 1 sample per query * 4 steps
+			PeakSamples:  5,
+			TotalSamples: 4, // 1 sample per query * 4 steps
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 1,
 				206000: 1,
