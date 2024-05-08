@@ -652,6 +652,16 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 	return nil
 }
 
+func (ev *evalCmd) checkExpectedFailure(actual error) error {
+	if ev.expectedFailMessage == "" || ev.expectedFailMessage == actual.Error() {
+		// We're not expecting a particular error, or we got the error we expected.
+		// This test passes.
+		return nil
+	}
+
+	return fmt.Errorf("expected error %q evaluating query %q (line %d), but got: %s", ev.expectedFailMessage, ev.expr, ev.line, actual.Error())
+}
+
 func formatSeriesResult(s promql.Series) string {
 	floatPlural := "s"
 	histogramPlural := "s"
@@ -802,11 +812,7 @@ func (t *test) execRangeEval(cmd *evalCmd, engine promql.QueryEngine) error {
 	res := q.Exec(t.context)
 	if res.Err != nil {
 		if cmd.fail {
-			if cmd.expectedFailMessage != "" && cmd.expectedFailMessage != res.Err.Error() {
-				return fmt.Errorf("expected error %q evaluating query %q (line %d), but got: %s", cmd.expectedFailMessage, cmd.expr, cmd.line, res.Err.Error())
-			}
-
-			return nil
+			return cmd.checkExpectedFailure(res.Err)
 		}
 
 		return fmt.Errorf("error evaluating query %q (line %d): %w", cmd.expr, cmd.line, res.Err)
@@ -838,8 +844,8 @@ func (t *test) execInstantEval(cmd *evalCmd, engine promql.QueryEngine) error {
 		res := q.Exec(t.context)
 		if res.Err != nil {
 			if cmd.fail {
-				if cmd.expectedFailMessage != "" && cmd.expectedFailMessage != res.Err.Error() {
-					return fmt.Errorf("expected error %q evaluating query %q (line %d), but got: %s", cmd.expectedFailMessage, iq.expr, cmd.line, res.Err.Error())
+				if err := cmd.checkExpectedFailure(res.Err); err != nil {
+					return err
 				}
 
 				continue
