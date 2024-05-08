@@ -36,13 +36,14 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
+	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
+
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
-	writev2 "github.com/prometheus/prometheus/prompb/write/v2"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
@@ -1129,7 +1130,7 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, attemptNos int, r
 		reqProto = &prompb.WriteRequest{}
 		err = proto.Unmarshal(reqBuf, reqProto)
 	case Version2:
-		var reqMin writev2.WriteRequest
+		var reqMin writev2.Request
 		err = proto.Unmarshal(reqBuf, &reqMin)
 		if err == nil {
 			reqProto, err = MinimizedWriteRequestToWriteRequest(&reqMin)

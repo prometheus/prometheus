@@ -23,7 +23,7 @@ func TestOptimizedMarshal(t *testing.T) {
 
 	tests := []struct {
 		name string
-		m    *WriteRequest
+		m    *Request
 	}{
 		// {
 		// 	name: "empty",
@@ -31,7 +31,7 @@ func TestOptimizedMarshal(t *testing.T) {
 		// },
 		{
 			name: "simple",
-			m: &WriteRequest{
+			m: &Request{
 				Timeseries: []TimeSeries{
 					{
 						LabelsRefs: []uint32{
@@ -90,7 +90,7 @@ func TestOptimizedMarshal(t *testing.T) {
 			require.Equal(t, expected, got)
 
 			// round trip
-			m := &WriteRequest{}
+			m := &Request{}
 			require.NoError(t, m.Unmarshal(got))
 			require.Equal(t, tt.m, m)
 		})

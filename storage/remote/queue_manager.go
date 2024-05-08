@@ -34,6 +34,8 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 	"go.uber.org/atomic"
 
+	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
+
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -41,7 +43,6 @@ import (
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
-	writev2 "github.com/prometheus/prometheus/prompb/write/v2"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
@@ -2233,7 +2234,7 @@ func buildV2WriteRequest(logger log.Logger, samples []writev2.TimeSeries, labels
 		level.Debug(logger).Log("msg", "dropped data due to their age", "droppedSamples", droppedSamples, "droppedExemplars", droppedExemplars, "droppedHistograms", droppedHistograms)
 	}
 
-	req := &writev2.WriteRequest{
+	req := &writev2.Request{
 		Symbols:    labels,
 		Timeseries: timeSeries,
 	}
