@@ -206,7 +206,7 @@ type DB struct {
 	compactor      Compactor
 	blocksToDelete BlocksToDeleteFunc
 
-	// Mutex that must be held when modifying the general block layout or lastGarbageCollectedMmapRef.
+	// mtx must be held when modifying the general block layout or lastGarbageCollectedMmapRef.
 	mtx    sync.RWMutex
 	blocks []*Block
 
