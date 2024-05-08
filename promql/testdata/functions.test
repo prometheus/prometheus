@@ -764,6 +764,14 @@ eval instant at 1m avg_over_time(metric10[1m])
 eval instant at 1m sum_over_time(metric10[1m])/count_over_time(metric10[1m])
   {} 0
 
+# Test if very big intermediate values cause loss of detail.
+clear
+load 10s
+  metric 1 1e100 1 -1e100
+
+eval instant at 1m sum_over_time(metric[1m])
+  {} 2
+
 # Tests for stddev_over_time and stdvar_over_time.
 clear
 load 10s
