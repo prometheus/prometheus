@@ -254,6 +254,9 @@ eval_with_nhcb instant at 50m histogram_quantile(0.5, rate(request_duration_seco
 	{instance="ins1", job="job2"} 0.1
 	{instance="ins2", job="job2"} 0.11666666666666667
 
+eval instant at 50m sum(request_duration_seconds)
+	{} {{schema:-53 count:250 custom_values:[0.1 0.2] buckets:[100 90 60]}}
+
 # A histogram with nonmonotonic bucket counts. This may happen when recording
 # rule evaluation or federation races scrape ingestion, causing some buckets
 # counts to be derived from fewer samples.
