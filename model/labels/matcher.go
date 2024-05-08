@@ -78,7 +78,20 @@ func MustNewMatcher(mt MatchType, name, val string) *Matcher {
 }
 
 func (m *Matcher) String() string {
-	return fmt.Sprintf("%s%s%q", m.Name, m.Type, m.Value)
+	if !m.shouldQuoteName() {
+		return fmt.Sprintf("%s%s%q", m.Name, m.Type, m.Value)
+	}
+	return fmt.Sprintf("%q%s%q", m.Name, m.Type, m.Value)
+}
+
+func (m *Matcher) shouldQuoteName() bool {
+	for i, c := range m.Name {
+		if c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (i > 0 && c >= '0' && c <= '9') {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 // Matches returns whether the matcher matches the given string value.
