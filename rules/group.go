@@ -664,25 +664,40 @@ func (g *Group) RestoreForState(ts time.Time) {
 			continue
 		}
 
+		sset, err := alertRule.QueryForStateSeries(g.opts.Context, q)
+		if err != nil {
+			level.Error(g.logger).Log(
+				"msg", "Failed to restore 'for' state",
+				labels.AlertName, alertRule.Name(),
+				"stage", "Select",
+				"err", err,
+			)
+			// Even if we failed to query the `ALERT_FOR_STATE` series, we currently have no way to retry the restore process.
+			// So the best we can do is mark the rule as restored and let it eventually fire.
+			alertRule.SetRestored(true)
+			continue
+		}
+
+		// While not technically the same number of series we expect, it's as good of an approximation as any.
+		seriesByLabels := make(map[string]storage.Series, alertRule.ActiveAlertsCount())
+		for sset.Next() {
+			seriesByLabels[sset.At().Labels().DropMetricName().String()] = sset.At()
+		}
+
+		// No results for this alert rule.
+		if len(seriesByLabels) == 0 {
+			level.Debug(g.logger).Log("msg", "No series found to restore the 'for' state of the alert rule", labels.AlertName, alertRule.Name())
+			alertRule.SetRestored(true)
+			continue
+		}
+
 		alertRule.ForEachActiveAlert(func(a *Alert) {
 			var s storage.Series
 
-			s, err := alertRule.QueryforStateSeries(g.opts.Context, a, q)
-			if err != nil {
-				// Querier Warnings are ignored. We do not care unless we have an error.
-				level.Error(g.logger).Log(
-					"msg", "Failed to restore 'for' state",
-					labels.AlertName, alertRule.Name(),
-					"stage", "Select",
-					"err", err,
-				)
+			s, ok := seriesByLabels[a.Labels.String()]
+			if !ok {
 				return
 			}
-
-			if s == nil {
-				return
-			}
-
 			// Series found for the 'for' state.
 			var t int64
 			var v float64

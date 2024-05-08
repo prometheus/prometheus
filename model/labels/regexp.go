@@ -16,6 +16,7 @@ package labels
 import (
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/grafana/regexp"
 	"github.com/grafana/regexp/syntax"
@@ -827,8 +828,7 @@ type zeroOrOneCharacterStringMatcher struct {
 }
 
 func (m *zeroOrOneCharacterStringMatcher) Matches(s string) bool {
-	// Zero or one.
-	if len(s) > 1 {
+	if moreThanOneRune(s) {
 		return false
 	}
 
@@ -838,6 +838,27 @@ func (m *zeroOrOneCharacterStringMatcher) Matches(s string) bool {
 	}
 
 	return s[0] != '\n'
+}
+
+// moreThanOneRune returns true if there are more than one runes in the string.
+// It doesn't check whether the string is valid UTF-8.
+// The return value should be always equal to utf8.RuneCountInString(s) > 1,
+// but the function is optimized for the common case where the string prefix is ASCII.
+func moreThanOneRune(s string) bool {
+	// If len(s) is exactly one or zero, there can't be more than one rune.
+	// Exit through this path quickly.
+	if len(s) <= 1 {
+		return false
+	}
+
+	// There's one or more bytes:
+	// If first byte is ASCII then there are multiple runes if there are more bytes after that.
+	if s[0] < utf8.RuneSelf {
+		return len(s) > 1
+	}
+
+	// Less common case: first is a multibyte rune.
+	return utf8.RuneCountInString(s) > 1
 }
 
 // trueMatcher is a stringMatcher which matches any string (always returns true).
