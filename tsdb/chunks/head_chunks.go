@@ -904,7 +904,7 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 	return nil
 }
 
-// Truncate deletes the head chunk files which file numbers are less than given fileNo.
+// Truncate deletes the head chunk files with numbers less than the given fileNo.
 func (cdm *ChunkDiskMapper) Truncate(fileNo uint32) error {
 	cdm.readPathMtx.RLock()
 
