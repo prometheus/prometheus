@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
@@ -505,6 +506,86 @@ func TestLabelNamesWithMatchers(t *testing.T) {
 			actualNames, err := indexReader.LabelNames(ctx, tt.matchers...)
 			require.NoError(t, err)
 			require.Equal(t, tt.expectedNames, actualNames)
+		})
+	}
+}
+
+func TestBlockIndexReader_PostingsForLabelMatching(t *testing.T) {
+	testPostingsForLabelMatching(t, 2, func(t *testing.T, series []labels.Labels) IndexReader {
+		var seriesEntries []storage.Series
+		for _, s := range series {
+			seriesEntries = append(seriesEntries, storage.NewListSeries(s, []chunks.Sample{sample{100, 0, nil, nil}}))
+		}
+
+		blockDir := createBlock(t, t.TempDir(), seriesEntries)
+		files, err := sequenceFiles(chunkDir(blockDir))
+		require.NoError(t, err)
+		require.NotEmpty(t, files, "No chunk created.")
+
+		block, err := OpenBlock(nil, blockDir, nil)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, block.Close()) })
+
+		ir, err := block.Index()
+		require.NoError(t, err)
+		return ir
+	})
+}
+
+func testPostingsForLabelMatching(t *testing.T, offset storage.SeriesRef, setUp func(*testing.T, []labels.Labels) IndexReader) {
+	t.Helper()
+
+	ctx := context.Background()
+	series := []labels.Labels{
+		labels.FromStrings("n", "1"),
+		labels.FromStrings("n", "1", "i", "a"),
+		labels.FromStrings("n", "1", "i", "b"),
+		labels.FromStrings("n", "2"),
+		labels.FromStrings("n", "2.5"),
+	}
+	ir := setUp(t, series)
+	t.Cleanup(func() {
+		require.NoError(t, ir.Close())
+	})
+
+	testCases := []struct {
+		name      string
+		labelName string
+		match     func(string) bool
+		exp       []storage.SeriesRef
+	}{
+		{
+			name:      "n=1",
+			labelName: "n",
+			match: func(val string) bool {
+				return val == "1"
+			},
+			exp: []storage.SeriesRef{offset + 1, offset + 2, offset + 3},
+		},
+		{
+			name:      "n=2",
+			labelName: "n",
+			match: func(val string) bool {
+				return val == "2"
+			},
+			exp: []storage.SeriesRef{offset + 4},
+		},
+		{
+			name:      "missing label",
+			labelName: "missing",
+			match: func(val string) bool {
+				return true
+			},
+			exp: nil,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := ir.PostingsForLabelMatching(ctx, tc.labelName, tc.match)
+			require.NotNil(t, p)
+			srs, err := index.ExpandPostings(p)
+			require.NoError(t, err)
+			require.Equal(t, tc.exp, srs)
 		})
 	}
 }
