@@ -87,8 +87,9 @@ type Options struct {
 	// Optional HTTP client options to use when scraping.
 	HTTPClientOptions []config_util.HTTPClientOption
 
-	// private option for testability.
+	// private options for testability.
 	skipOffsetting bool
+	skipReloader   bool
 }
 
 // Manager maintains a set of scrape pools and manages start/stop cycles
@@ -114,7 +115,9 @@ type Manager struct {
 // Run receives and saves target set updates and triggers the scraping loops reloading.
 // Reloading happens in the background so that it doesn't block receiving targets updates.
 func (m *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
-	go m.reloader()
+	if !m.opts.skipReloader {
+		go m.reloader()
+	}
 	for {
 		select {
 		case ts := <-tsets:
