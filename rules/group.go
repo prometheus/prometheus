@@ -125,10 +125,6 @@ func NewGroup(o GroupOptions) *Group {
 		concurrencyController = sequentialRuleEvalController{}
 	}
 
-	if o.AlertStore == nil {
-		o.AlertStore = noopStore{}
-	}
-
 	return &Group{
 		name:                  o.Name,
 		file:                  o.File,
@@ -1070,11 +1066,7 @@ type StoreFunc func(context.Context, string, []*Alert) error
 
 func (g *Group) alertStoreFunc(ruleOrder int) StoreFunc {
 	return func(ctx context.Context, rule string, alerts []*Alert) error {
-		alertsForRule := make([]*Alert, 0)
-		for _, a := range alerts {
-			alertsForRule = append(alertsForRule, a)
-		}
-		err := g.AlertStore.SetAlerts(GroupKey(g.File(), g.Name()), rule, ruleOrder, alertsForRule)
+		err := g.AlertStore.SetAlerts(GroupKey(g.File(), g.Name()), rule, ruleOrder, alerts)
 		if err != nil {
 			return err
 		}
@@ -1083,10 +1075,9 @@ func (g *Group) alertStoreFunc(ruleOrder int) StoreFunc {
 }
 
 func (g *Group) RestoreKeepFiringForState(ts time.Time) {
-	level.Debug(g.logger).Log("msg", "Restoring group state", "time", ts)
 	allAlerts, err := g.AlertStore.GetAlerts(GroupKey(g.File(), g.Name()))
 	if err != nil {
-		level.Error(g.logger).Log("msg", "Failed to get alerts from store, proceeding without restoring state", "err", err)
+		level.Warn(g.logger).Log("msg", "Failed to get alerts from store, proceeding without restoring state", "err", err)
 		return
 	}
 	for order, rule := range g.rules {

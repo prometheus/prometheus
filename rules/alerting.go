@@ -493,7 +493,10 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 	}
 
 	if len(alertsToStore) > 0 {
-		storeFunc(ctx, r.Name(), alertsToStore)
+		err := storeFunc(ctx, r.Name(), alertsToStore)
+		if err != nil {
+			level.Warn(r.logger).Log("msg", "Storing alerts failed", "err", err)
+		}
 	}
 
 	if limit > 0 && numActivePending > limit {

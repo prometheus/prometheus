@@ -150,6 +150,9 @@ func NewManager(o *ManagerOptions) *Manager {
 	if o.RuleDependencyController == nil {
 		o.RuleDependencyController = ruleDependencyController{}
 	}
+	if o.AlertStore == nil {
+		o.AlertStore = NoopStore{}
+	}
 
 	m := &Manager{
 		groups:     map[string]*Group{},
@@ -188,6 +191,9 @@ func (m *Manager) Stop() {
 	// Shut down the groups waiting multiple evaluation intervals to write
 	// staleness markers.
 	close(m.done)
+
+	level.Info(m.logger).Log("msg", "Closing alerts store...")
+	m.alertStore.Close()
 
 	level.Info(m.logger).Log("msg", "Rule manager stopped")
 }

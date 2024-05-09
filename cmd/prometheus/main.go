@@ -48,12 +48,12 @@ import (
 	promlogflag "github.com/prometheus/common/promlog/flag"
 	"github.com/prometheus/common/version"
 	toolkit_web "github.com/prometheus/exporter-toolkit/web"
-	"github.com/prometheus/prometheus/alertstore"
 	"go.uber.org/atomic"
 	"go.uber.org/automaxprocs/maxprocs"
 	"k8s.io/klog"
 	klogv2 "k8s.io/klog/v2"
 
+	"github.com/prometheus/prometheus/alertstore"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/legacymanager"
@@ -766,11 +766,10 @@ func main() {
 		}
 
 		queryEngine = promql.NewEngine(opts)
-
 		var store rules.AlertStore
+		store = rules.NoopStore{}
 		if cfg.enableAlertStore {
 			store, err = alertstore.NewBadgerDB(cfg.serverStoragePath+"alerts/", log.With(logger, "component", "alert store"), time.Duration(cfg.alertsOutageTolerance))
-			defer store.Close()
 			if err != nil {
 				level.Warn(logger).Log("msg", "error initializing alert store, disabling feature", "err", err)
 				cfg.enableAlertStore = false

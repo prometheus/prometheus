@@ -52,7 +52,7 @@ type BadgerDB struct {
 // NewBadgerDB returns a new initialized BadgerDB database implementing the AlertStore
 // interface. If the database cannot be initialized, an error will be returned.
 func NewBadgerDB(dataDir string, logger log.Logger, ttl time.Duration) (*BadgerDB, error) {
-	if err := os.MkdirAll(dataDir, 0774); err != nil {
+	if err := os.MkdirAll(dataDir, 0o774); err != nil {
 		return nil, err
 	}
 
@@ -77,7 +77,7 @@ func NewBadgerDB(dataDir string, logger log.Logger, ttl time.Duration) (*BadgerD
 // SetAlerts stores the alerts for a rule. Returns an error if storing fails.
 // A rule is uniquely identified using a combination of groupKey,
 // rule name and order it appears in the group.
-func (bdb *BadgerDB) SetAlerts(groupKey string, rule string, ruleOrder int, alerts []*rules.Alert) error {
+func (bdb *BadgerDB) SetAlerts(groupKey, rule string, ruleOrder int, alerts []*rules.Alert) error {
 	key := getKey(groupKey, rule, ruleOrder)
 	value, err := json.Marshal(alerts)
 	if err != nil {
@@ -188,6 +188,6 @@ func parseKey(k []byte) (string, error) {
 }
 
 // key = file;group;ruleName+ruleOrder.
-func getKey(groupKey string, rule string, ruleOrder int) []byte {
+func getKey(groupKey, rule string, ruleOrder int) []byte {
 	return []byte(groupKey + ";" + rule + strconv.Itoa(ruleOrder))
 }
