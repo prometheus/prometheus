@@ -148,15 +148,15 @@ func (m *Manager) reloader() {
 
 	for {
 		select {
+		case <-m.triggerReload:
+			m.reload()
+		case <-m.graceShut:
+			return
+		}
+		select {
 		case <-m.graceShut:
 			return
 		case <-ticker.C:
-			select {
-			case <-m.triggerReload:
-				m.reload()
-			case <-m.graceShut:
-				return
-			}
 		}
 	}
 }
