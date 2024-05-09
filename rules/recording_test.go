@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -111,7 +112,7 @@ var ruleEvalTestScenarios = []struct {
 }
 
 func setUpRuleEvalTest(t require.TestingT) *teststorage.TestStorage {
-	return promql.LoadedStorage(t, `
+	return promqltest.LoadedStorage(t, `
 		load 1m
 			metric{label_a="1",label_b="3"} 1
 			metric{label_a="2",label_b="4"} 10
@@ -178,7 +179,7 @@ func TestRuleEvalDuplicate(t *testing.T) {
 }
 
 func TestRecordingRuleLimit(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			metric{label="1"} 1
 			metric{label="2"} 1
