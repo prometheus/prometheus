@@ -312,11 +312,11 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 			break
 		}
 
-		if cmd.fail && strings.HasPrefix(defLine, "expected_fail_pattern") {
-			pattern := strings.TrimSpace(strings.TrimPrefix(defLine, "expected_fail_pattern"))
-			cmd.expectedFailPattern, err = regexp.Compile(pattern)
+		if cmd.fail && strings.HasPrefix(defLine, "expected_fail_regexp") {
+			pattern := strings.TrimSpace(strings.TrimPrefix(defLine, "expected_fail_regexp"))
+			cmd.expectedFailRegexp, err = regexp.Compile(pattern)
 			if err != nil {
-				return i, nil, formatErr("invalid regexp '%s' for expected_fail_pattern: %w", pattern, err)
+				return i, nil, formatErr("invalid regexp '%s' for expected_fail_regexp: %w", pattern, err)
 			}
 			break
 		}
@@ -473,7 +473,7 @@ type evalCmd struct {
 	isRange             bool // if false, instant query
 	fail, ordered       bool
 	expectedFailMessage string
-	expectedFailPattern *regexp.Regexp
+	expectedFailRegexp  *regexp.Regexp
 
 	metrics  map[uint64]labels.Labels
 	expected map[uint64]entry
@@ -669,9 +669,9 @@ func (ev *evalCmd) checkExpectedFailure(actual error) error {
 		}
 	}
 
-	if ev.expectedFailPattern != nil {
-		if !ev.expectedFailPattern.MatchString(actual.Error()) {
-			return fmt.Errorf("expected error matching pattern %q evaluating query %q (line %d), but got: %s", ev.expectedFailPattern.String(), ev.expr, ev.line, actual.Error())
+	if ev.expectedFailRegexp != nil {
+		if !ev.expectedFailRegexp.MatchString(actual.Error()) {
+			return fmt.Errorf("expected error matching pattern %q evaluating query %q (line %d), but got: %s", ev.expectedFailRegexp.String(), ev.expr, ev.line, actual.Error())
 		}
 	}
 
