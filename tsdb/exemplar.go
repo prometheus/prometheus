@@ -111,7 +111,7 @@ func NewExemplarMetrics(reg prometheus.Registerer) *ExemplarMetrics {
 	return &m
 }
 
-// NewCircularExemplarStorage creates an circular in memory exemplar storage.
+// NewCircularExemplarStorage creates a circular in memory exemplar storage.
 // If we assume the average case 95 bytes per exemplar we can fit 5651272 exemplars in
 // 1GB of extra memory, accounting for the fact that this is heap allocated space.
 // If len <= 0, then the exemplar storage is essentially a noop storage but can later be
