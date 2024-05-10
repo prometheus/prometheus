@@ -310,12 +310,17 @@ func (h *Head) resetInMemoryState() error {
 		return err
 	}
 
+	if h.series != nil {
+		// reset the existing series to make sure we call the appropriated hooks
+		h.series.reset()
+	}
+
+	h.series = newStripeSeries(h.opts.StripeSize, h.opts.SeriesCallback)
 	h.iso = newIsolation(h.opts.IsolationDisabled)
 	h.oooIso = newOOOIsolation()
-
+	h.numSeries.Store(0)
 	h.exemplarMetrics = em
 	h.exemplars = es
-	h.series = newStripeSeries(h.opts.StripeSize, h.opts.SeriesCallback)
 	h.postings = index.NewUnorderedMemPostings()
 	h.tombstones = tombstones.NewMemTombstones()
 	h.deleted = map[chunks.HeadSeriesRef]int{}
@@ -1851,6 +1856,31 @@ func newStripeSeries(stripeSize int, seriesCallback SeriesLifecycleCallback) *st
 		}
 	}
 	return s
+}
+
+// reset should reset the stripeSeries and appropriately trigger the associated hooks.
+// note: This method simply resets the stripeSeries struct to its initial state without
+// performing any operations on the chunks.
+func (s *stripeSeries) reset() {
+	deletedFromPrevStripe := 0
+	// Run through all series shard by shard, and call Delete worrk.
+	for i := 0; i < s.size; i++ {
+		s.locks[i].Lock()
+		deletedForCallback := make(map[chunks.HeadSeriesRef]labels.Labels, deletedFromPrevStripe)
+		for _, all := range s.hashes[i].conflicts {
+			for _, series := range all {
+				deletedForCallback[series.ref] = series.lset
+			}
+		}
+		for _, series := range s.hashes[i].unique {
+			deletedForCallback[series.ref] = series.lset
+		}
+		s.locks[i].Unlock()
+		s.hashes[i] = seriesHashmap{}
+		s.seriesLifecycleCallback.PostDeletion(deletedForCallback)
+		deletedFromPrevStripe = len(deletedForCallback)
+	}
+	s.series = make([]map[chunks.HeadSeriesRef]*memSeries, s.size)
 }
 
 // gc garbage collects old chunks that are strictly before mint and removes
