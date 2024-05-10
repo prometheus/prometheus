@@ -220,7 +220,15 @@ func (m *Manager) reload() {
 }
 
 func (m *Manager) warnIfTargetsRelabelledToSameLabels() {
-	activeTargets := make(map[uint64]*Target)
+	m.mtxScrape.Lock()
+	defer m.mtxScrape.Unlock()
+
+	totalTargets := 0
+	for _, scrapePool := range m.scrapePools {
+		totalTargets += len(scrapePool.activeTargets)
+	}
+
+	activeTargets := make(map[uint64]*Target, totalTargets)
 	for _, scrapePool := range m.scrapePools {
 		for _, target := range scrapePool.activeTargets {
 			lHash := target.labels.Hash()
