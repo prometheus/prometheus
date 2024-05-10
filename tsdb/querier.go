@@ -354,8 +354,10 @@ func inversePostingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Ma
 	}
 
 	res := vals[:0]
-	// If the inverse match is ="", we just want all the values.
-	if m.Type == labels.MatchEqual && m.Value == "" {
+	// Only = and =~ cases are left.
+	// If the inverse match is ="" or =~"", we just want all the values.
+	// https://github.com/prometheus/prometheus/blob/main/model/labels/regexp.go#L680
+	if m.Value == "" {
 		res = vals
 	} else {
 		for _, val := range vals {
