@@ -691,7 +691,7 @@ func TestMatchRegex(t *testing.T) {
 		{"foo${bar}foo", true},
 	}
 	for _, test := range tests {
-		require.Equal(t, test.valid, relabel.RelabelTarget.Match([]byte(test.str)),
+		require.Equal(t, test.valid, relabel.Target.Match([]byte(test.str)),
 			"Expected %q to be %v", test.str, test.valid)
 	}
 }
