@@ -25,7 +25,7 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-func TestRelabel(t *testing.T) {
+func TestProcess(t *testing.T) {
 	tests := []struct {
 		input   labels.Labels
 		relabel []*Config
@@ -695,7 +695,7 @@ func TestTargetLabelValidity(t *testing.T) {
 	}
 }
 
-func BenchmarkRelabel(b *testing.B) {
+func BenchmarkProcess(b *testing.B) {
 	tests := []struct {
 		name   string
 		lbls   labels.Labels
