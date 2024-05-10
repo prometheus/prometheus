@@ -965,3 +965,59 @@ func (it *floatHistogramIterator) readXor(v *float64, leading, trailing *uint8) 
 	}
 	return true
 }
+
+type histogramStat int
+
+const (
+	statSum   = iota
+	statCount = 1
+)
+
+type floatHistogramStatsDecoder struct {
+	it   *floatHistogramIterator
+	stat histogramStat
+}
+
+func newFloatHistogramStatsDecoder(it *floatHistogramIterator, stat histogramStat) *floatHistogramStatsDecoder {
+	return &floatHistogramStatsDecoder{
+		it:   it,
+		stat: stat,
+	}
+}
+
+func (f floatHistogramStatsDecoder) Next() ValueType {
+	if f.it.Next() == ValFloatHistogram {
+		return ValFloat
+	}
+	return ValNone
+}
+
+func (f floatHistogramStatsDecoder) Seek(t int64) ValueType {
+	if f.it.Seek(t) == ValFloatHistogram {
+		return ValFloat
+	}
+	return ValNone
+}
+
+func (f floatHistogramStatsDecoder) At() (int64, float64) {
+	switch f.stat {
+	case statCount:
+		return f.it.t, f.it.cnt.value
+	case statSum:
+		return f.it.t, f.it.sum.value
+	default:
+		panic(fmt.Sprintf("unknown stat type %d", f.stat))
+	}
+}
+
+func (f floatHistogramStatsDecoder) AtT() int64 { return f.it.t }
+
+func (f floatHistogramStatsDecoder) Err() error { return f.it.err }
+
+func (f floatHistogramStatsDecoder) AtHistogram(_ *histogram.Histogram) (int64, *histogram.Histogram) {
+	panic("cannot call floatHistogramStatsDecoder.AtHistogram")
+}
+
+func (f floatHistogramStatsDecoder) AtFloatHistogram(_ *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+	panic("cannot call floatHistogramStatsDecoder.AtFloatHistogram")
+}
