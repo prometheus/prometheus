@@ -20,7 +20,6 @@ import (
 	"strings"
 	"unicode"
 
-	"go.opentelemetry.io/collector/featuregate"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 )
 
@@ -78,13 +77,6 @@ var perUnitMap = map[string]string{
 	"y":  "year",
 }
 
-var normalizeNameGate = featuregate.GlobalRegistry().MustRegister(
-	"pkg.translator.prometheus.NormalizeName",
-	featuregate.StageBeta,
-	featuregate.WithRegisterDescription("Controls whether metrics names are automatically normalized to follow Prometheus naming convention"),
-	featuregate.WithRegisterReferenceURL("https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/8950"),
-)
-
 // BuildCompliantName builds a Prometheus-compliant metric name for the specified metric
 //
 // Metric name is prefixed with specified namespace and underscore (if any).
@@ -97,7 +89,7 @@ func BuildCompliantName(metric pmetric.Metric, namespace string, addMetricSuffix
 	var metricName string
 
 	// Full normalization following standard Prometheus naming conventions
-	if addMetricSuffixes && normalizeNameGate.IsEnabled() {
+	if addMetricSuffixes {
 		return normalizeName(metric, namespace)
 	}
 
