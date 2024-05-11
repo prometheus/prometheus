@@ -214,12 +214,12 @@ func (ce *CircularExemplarStorage) ValidateExemplar(l labels.Labels, e exemplar.
 	// Optimize by moving the lock to be per series (& benchmark it).
 	ce.lock.RLock()
 	defer ce.lock.RUnlock()
-	return ce.validateExemplar(seriesLabels, e, false)
+	return ce.validateExemplar(ce.index[string(seriesLabels)], e, false)
 }
 
 // Not thread safe. The appended parameters tells us whether this is an external validation, or internal
 // as a result of an AddExemplar call, in which case we should update any relevant metrics.
-func (ce *CircularExemplarStorage) validateExemplar(key []byte, e exemplar.Exemplar, appended bool) error {
+func (ce *CircularExemplarStorage) validateExemplar(idx *indexEntry, e exemplar.Exemplar, appended bool) error {
 	if len(ce.exemplars) == 0 {
 		return storage.ErrExemplarsDisabled
 	}
@@ -239,8 +239,7 @@ func (ce *CircularExemplarStorage) validateExemplar(key []byte, e exemplar.Exemp
 		return err
 	}
 
-	idx, ok := ce.index[string(key)]
-	if !ok {
+	if idx == nil {
 		return nil
 	}
 
@@ -362,7 +361,8 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 	ce.lock.Lock()
 	defer ce.lock.Unlock()
 
-	err := ce.validateExemplar(seriesLabels, e, true)
+	idx, ok := ce.index[string(seriesLabels)]
+	err := ce.validateExemplar(idx, e, true)
 	if err != nil {
 		if errors.Is(err, storage.ErrDuplicateExemplar) {
 			// Duplicate exemplar, noop.
@@ -371,7 +371,6 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 		return err
 	}
 
-	idx, ok := ce.index[string(seriesLabels)]
 	if !ok {
 		idx = &indexEntry{oldest: ce.nextIndex, seriesLabels: l}
 		ce.index[string(seriesLabels)] = idx
