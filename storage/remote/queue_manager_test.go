@@ -376,6 +376,7 @@ func TestReshardWithoutStartStop(t *testing.T) {
 	for i := 1; i < len(samples)/config.DefaultQueueConfig.Capacity; i++ {
 		successful := m.shards.reshard(i)
 		require.True(t, successful, "reshard not successful")
+		require.Equal(t, float64(i), client_testutil.ToFloat64(m.shards.qm.metrics.numShards), "Mismatch in num shards metric")
 		time.Sleep(100 * time.Millisecond)
 	}
 
@@ -478,6 +479,7 @@ func TestReshardPartialBatchWithoutStartStop(t *testing.T) {
 			time.Sleep(batchSendDeadline)
 			successful := m.shards.reshard(1)
 			require.True(t, successful, "reshard not successful")
+			require.Equal(t, 1.0, client_testutil.ToFloat64(m.shards.qm.metrics.numShards), "Mismatch in num shards metric")
 			done <- struct{}{}
 		}()
 		select {

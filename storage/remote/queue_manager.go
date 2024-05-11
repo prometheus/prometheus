@@ -1267,18 +1267,10 @@ func (s *shards) reshard(numShards int) bool {
 		newQueues[i] = newQueue(s.qm.cfg.MaxSamplesPerSend, s.qm.cfg.Capacity)
 	}
 
-	for _, queue := range s.queues {
-		queue.batchMtx.Lock()
-
-		for _, ts := range queue.batch {
-			queueIndex := uint64(ts.ref) % uint64(len(newQueues))
-			added := newQueues[queueIndex].Append(ts)
-			if !added {
-				// We are not able to add, we can revert to the start/stop loop.
-				queue.batchMtx.Unlock()
-				return false
-			}
-		}
+	successful := s.redistributeSamples(newQueues)
+	// We are not able to redistribute, we can revert to the start/stop loop.
+	if !successful {
+		return false
 	}
 
 	// We have successfully moved all the samples, now can delete the old queues.
@@ -1304,7 +1296,22 @@ func (s *shards) reshard(numShards int) bool {
 	for i := 0; i < numShards; i++ {
 		go s.runShard(hardShutdownCtx, i, newQueues[i])
 	}
+	s.qm.metrics.numShards.Set(float64(numShards))
+	return true
+}
 
+func (s *shards) redistributeSamples(newQueues []*queue) bool {
+	for _, queue := range s.queues {
+		queue.batchMtx.Lock()
+		for _, ts := range queue.batch {
+			queueIndex := uint64(ts.ref) % uint64(len(newQueues))
+			added := newQueues[queueIndex].Append(ts)
+			if !added {
+				queue.batchMtx.Unlock()
+				return false
+			}
+		}
+	}
 	return true
 }
 
