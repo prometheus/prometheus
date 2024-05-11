@@ -311,10 +311,11 @@ func (ce *CircularExemplarStorage) Resize(l int64) int {
 		// This way we don't migrate exemplars that would just be overwritten when migrating later exemplars.
 		startIndex := (oldNextIndex - count + int64(len(oldBuffer))) % int64(len(oldBuffer))
 
+		var buf [1024]byte
 		for i := int64(0); i < count; i++ {
 			idx := (startIndex + i) % int64(len(oldBuffer))
 			if oldBuffer[idx].ref != nil {
-				ce.migrate(&oldBuffer[idx])
+				ce.migrate(&oldBuffer[idx], buf[:])
 				migrated++
 			}
 		}
@@ -328,9 +329,8 @@ func (ce *CircularExemplarStorage) Resize(l int64) int {
 
 // migrate is like AddExemplar but reuses existing structs. Expected to be called in batch and requires
 // external lock and does not compute metrics.
-func (ce *CircularExemplarStorage) migrate(entry *circularBufferEntry) {
-	var buf [1024]byte
-	seriesLabels := entry.ref.seriesLabels.Bytes(buf[:])
+func (ce *CircularExemplarStorage) migrate(entry *circularBufferEntry, buf []byte) {
+	seriesLabels := entry.ref.seriesLabels.Bytes(buf[:0])
 
 	idx, ok := ce.index[string(seriesLabels)]
 	if !ok {
