@@ -371,11 +371,12 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 		return err
 	}
 
-	_, ok := ce.index[string(seriesLabels)]
+	idx, ok := ce.index[string(seriesLabels)]
 	if !ok {
-		ce.index[string(seriesLabels)] = &indexEntry{oldest: ce.nextIndex, seriesLabels: l}
+		idx = &indexEntry{oldest: ce.nextIndex, seriesLabels: l}
+		ce.index[string(seriesLabels)] = idx
 	} else {
-		ce.exemplars[ce.index[string(seriesLabels)].newest].next = ce.nextIndex
+		ce.exemplars[idx.newest].next = ce.nextIndex
 	}
 
 	if prev := ce.exemplars[ce.nextIndex]; prev == nil {
@@ -383,13 +384,13 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 	} else {
 		// There exists an exemplar already on this ce.nextIndex entry,
 		// drop it, to make place for others.
-		var buf [1024]byte
-		prevLabels := prev.ref.seriesLabels.Bytes(buf[:])
 		if prev.next == noExemplar {
 			// Last item for this series, remove index entry.
+			var buf [1024]byte
+			prevLabels := prev.ref.seriesLabels.Bytes(buf[:])
 			delete(ce.index, string(prevLabels))
 		} else {
-			ce.index[string(prevLabels)].oldest = prev.next
+			prev.ref.oldest = prev.next
 		}
 	}
 
@@ -397,8 +398,8 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 	// since this is the first exemplar stored for this series.
 	ce.exemplars[ce.nextIndex].next = noExemplar
 	ce.exemplars[ce.nextIndex].exemplar = e
-	ce.exemplars[ce.nextIndex].ref = ce.index[string(seriesLabels)]
-	ce.index[string(seriesLabels)].newest = ce.nextIndex
+	ce.exemplars[ce.nextIndex].ref = idx
+	idx.newest = ce.nextIndex
 
 	ce.nextIndex = (ce.nextIndex + 1) % len(ce.exemplars)
 
