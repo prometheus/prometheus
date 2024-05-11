@@ -482,8 +482,11 @@ func BenchmarkResizeExemplars(b *testing.B) {
 				require.NoError(b, err)
 				es := exs.(*CircularExemplarStorage)
 
+				var l labels.Labels
 				for i := 0; i < int(float64(tc.startSize)*float64(1.5)); i++ {
-					l := labels.FromStrings("service", strconv.Itoa(i))
+					if i%100 == 0 {
+						l = labels.FromStrings("service", strconv.Itoa(i))
+					}
 
 					err = es.AddExemplar(l, exemplar.Exemplar{Value: float64(i), Ts: int64(i)})
 					if err != nil {
