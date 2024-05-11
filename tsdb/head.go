@@ -2347,5 +2347,9 @@ func (h *Head) RebuildSymbolTable() *labels.SymbolTable {
 
 		h.series.locks[i].Unlock()
 	}
+
+	if e, ok := h.exemplars.(interface{ ResetSymbolTable(*labels.SymbolTable) }); ok {
+		e.ResetSymbolTable(st)
+	}
 	return st
 }
