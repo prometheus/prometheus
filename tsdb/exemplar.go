@@ -37,7 +37,7 @@ const (
 
 type CircularExemplarStorage struct {
 	lock      sync.RWMutex
-	exemplars []*circularBufferEntry
+	exemplars []circularBufferEntry
 	nextIndex int
 	metrics   *ExemplarMetrics
 
@@ -121,7 +121,7 @@ func NewCircularExemplarStorage(length int64, m *ExemplarMetrics) (ExemplarStora
 		length = 0
 	}
 	c := &CircularExemplarStorage{
-		exemplars: make([]*circularBufferEntry, length),
+		exemplars: make([]circularBufferEntry, length),
 		index:     make(map[string]*indexEntry, length/estimatedExemplarsPerSeries),
 		metrics:   m,
 	}
@@ -292,7 +292,7 @@ func (ce *CircularExemplarStorage) Resize(l int64) int {
 	oldBuffer := ce.exemplars
 	oldNextIndex := int64(ce.nextIndex)
 
-	ce.exemplars = make([]*circularBufferEntry, l)
+	ce.exemplars = make([]circularBufferEntry, l)
 	ce.index = make(map[string]*indexEntry, l/estimatedExemplarsPerSeries)
 	ce.nextIndex = 0
 
@@ -313,8 +313,8 @@ func (ce *CircularExemplarStorage) Resize(l int64) int {
 
 		for i := int64(0); i < count; i++ {
 			idx := (startIndex + i) % int64(len(oldBuffer))
-			if entry := oldBuffer[idx]; entry != nil {
-				ce.migrate(entry)
+			if oldBuffer[idx].ref != nil {
+				ce.migrate(&oldBuffer[idx])
 				migrated++
 			}
 		}
@@ -344,7 +344,7 @@ func (ce *CircularExemplarStorage) migrate(entry *circularBufferEntry) {
 	idx.newest = ce.nextIndex
 
 	entry.next = noExemplar
-	ce.exemplars[ce.nextIndex] = entry
+	ce.exemplars[ce.nextIndex] = *entry
 
 	ce.nextIndex = (ce.nextIndex + 1) % len(ce.exemplars)
 }
@@ -379,9 +379,7 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 		ce.exemplars[idx.newest].next = ce.nextIndex
 	}
 
-	if prev := ce.exemplars[ce.nextIndex]; prev == nil {
-		ce.exemplars[ce.nextIndex] = &circularBufferEntry{}
-	} else {
+	if prev := &ce.exemplars[ce.nextIndex]; prev.ref != nil {
 		// There exists an exemplar already on this ce.nextIndex entry,
 		// drop it, to make place for others.
 		if prev.next == noExemplar {
@@ -417,15 +415,15 @@ func (ce *CircularExemplarStorage) computeMetrics() {
 		return
 	}
 
-	if next := ce.exemplars[ce.nextIndex]; next != nil {
+	if ce.exemplars[ce.nextIndex].ref != nil {
 		ce.metrics.exemplarsInStorage.Set(float64(len(ce.exemplars)))
-		ce.metrics.lastExemplarsTs.Set(float64(next.exemplar.Ts) / 1000)
+		ce.metrics.lastExemplarsTs.Set(float64(ce.exemplars[ce.nextIndex].exemplar.Ts) / 1000)
 		return
 	}
 
 	// We did not yet fill the buffer.
 	ce.metrics.exemplarsInStorage.Set(float64(ce.nextIndex))
-	if ce.exemplars[0] != nil {
+	if ce.exemplars[0].ref != nil {
 		ce.metrics.lastExemplarsTs.Set(float64(ce.exemplars[0].exemplar.Ts) / 1000)
 	}
 }
@@ -439,7 +437,7 @@ func (ce *CircularExemplarStorage) IterateExemplars(f func(seriesLabels labels.L
 	idx := ce.nextIndex
 	l := len(ce.exemplars)
 	for i := 0; i < l; i, idx = i+1, (idx+1)%l {
-		if ce.exemplars[idx] == nil {
+		if ce.exemplars[idx].ref == nil {
 			continue
 		}
 		err := f(ce.exemplars[idx].ref.seriesLabels, ce.exemplars[idx].exemplar)
