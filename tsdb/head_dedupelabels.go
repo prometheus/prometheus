@@ -62,6 +62,34 @@ func (h *Head) RebuildSymbolTable(logger log.Logger) *labels.SymbolTable {
 
 		h.series.locks[i].Unlock()
 	}
+	type withReset interface{ ResetSymbolTable(*labels.SymbolTable) }
+	if e, ok := h.exemplars.(withReset); ok {
+		e.ResetSymbolTable(st)
+	}
 	level.Info(logger).Log("msg", "RebuildSymbolTable finished", "size", st.Len())
 	return st
+}
+
+func (ce *CircularExemplarStorage) ResetSymbolTable(st *labels.SymbolTable) {
+	builder := labels.NewScratchBuilderWithSymbolTable(st, 0)
+	rebuildLabels := func(lbls labels.Labels) labels.Labels {
+		builder.Reset()
+		lbls.Range(func(l labels.Label) {
+			builder.Add(l.Name, l.Value)
+		})
+		return builder.Labels()
+	}
+
+	ce.lock.RLock()
+	defer ce.lock.RUnlock()
+
+	for _, v := range ce.index {
+		v.seriesLabels = rebuildLabels(v.seriesLabels)
+	}
+	for i := range ce.exemplars {
+		if ce.exemplars[i].ref == nil {
+			continue
+		}
+		ce.exemplars[i].exemplar.Labels = rebuildLabels(ce.exemplars[i].exemplar.Labels)
+	}
 }
