@@ -794,7 +794,7 @@ func (m *equalMultiStringMapMatcher) Matches(s string) bool {
 		return ok
 	}
 	for k := range m.values {
-		val, _ := regexp.MatchString(k, s)
+		val := strings.EqualFold(k, s)
 		if val {
 			return true
 		}
