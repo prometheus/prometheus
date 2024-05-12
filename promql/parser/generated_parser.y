@@ -459,16 +459,19 @@ matrix_binary_ops : binary_op number_literal
 		    {
 		      $$ = yylex.(*parser).addMatrixBinaryOp($1, $2, $3)
 		    }
+                   | binary_op error
+		     {
+		       yylex.(*parser).unexpected("range selector binary ops", "number literal");
+		       $$ = nil
+		     }
                    ;
 
 matrix_selector : expr LEFT_BRACKET duration RIGHT_BRACKET
                         {
-			  /* fmt.Printf("in G, %d, $4.Pos %+v\n", yylex.(*parser).lastClosing, $4.Pos) */
-			    $$, _ = yylex.(*parser).parseMatrixSelector($1, $2, $3, $4, nil, $4.Pos + 1)
+			  $$, _ = yylex.(*parser).parseMatrixSelector($1, $2, $3, $4, nil, $4.Pos + 1)
                         }
                 | expr LEFT_BRACKET duration RIGHT_BRACKET matrix_binary_ops
 		        {
-			  /* fmt.Printf("in G new, %d\n", yylex.(*parser).lastClosing) */
 		          $$, _ = yylex.(*parser).parseMatrixSelector($1, $2, $3, $4, $5, $4.Pos)
    	                }
                 ;

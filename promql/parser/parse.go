@@ -827,10 +827,7 @@ func (p *parser) addMatrixBinaryOp(op Item, num Node, binOps Node) *MatrixSelect
 		binaryOps.ops = []*MatrixSelectorBinOp{}
 	}
 
-	numberLiteral, ok := num.(*NumberLiteral)
-	if !ok {
-		p.addParseErrf(p.yyParser.lval.item.PositionRange(), "expected number literal %+v", num)
-	}
+	numberLiteral, _ := num.(*NumberLiteral)
 
 	binaryOps.ops = append(
 		[]*MatrixSelectorBinOp{{op.Typ, numberLiteral}},

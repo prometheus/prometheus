@@ -2075,14 +2075,14 @@ var testExpr = []struct {
 			},
 			BinaryOps: &MatrixSelectorBinOps{
 				ops: []*MatrixSelectorBinOp{
-					&MatrixSelectorBinOp{
+					{
 						MUL,
 						&NumberLiteral{
 							Val:      5,
 							PosRange: posrange.PositionRange{Start: 13, End: 14},
 						},
 					},
-					&MatrixSelectorBinOp{
+					{
 						GTR,
 						&NumberLiteral{
 							Val:      1.1,
@@ -2115,6 +2115,39 @@ var testExpr = []struct {
 			},
 			Range:  5 * time.Hour,
 			EndPos: 18,
+		},
+	},
+	{
+		input: "test[5h] > 1.1 OFFSET 5m",
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name:           "test",
+				OriginalOffset: 5 * time.Minute,
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   4,
+				},
+			},
+			Range: 5 * time.Hour,
+			BinaryOps: &MatrixSelectorBinOps{
+				ops: []*MatrixSelectorBinOp{
+					{
+						GTR,
+						&NumberLiteral{
+							Val:      1.1,
+							PosRange: posrange.PositionRange{Start: 11, End: 14},
+						},
+					},
+				},
+				PosRange: posrange.PositionRange{
+					Start: 11,
+					End:   14,
+				},
+			},
+			EndPos: 24,
 		},
 	},
 	{
@@ -2702,7 +2735,7 @@ var testExpr = []struct {
 		},
 	},
 	{
-		input: "rate(some_metric[5m])", // foobar
+		input: "rate(some_metric[5m])",
 		expected: &Call{
 			Func: MustGetFunction("rate"),
 			Args: Expressions{
@@ -2724,6 +2757,47 @@ var testExpr = []struct {
 			PosRange: posrange.PositionRange{
 				Start: 0,
 				End:   21,
+			},
+		},
+	},
+	{
+		input: "rate(some_metric[5m] != 0)",
+		expected: &Call{
+			Func: MustGetFunction("rate"),
+			Args: Expressions{
+				&MatrixSelector{
+					VectorSelector: &VectorSelector{
+						Name: "some_metric",
+						LabelMatchers: []*labels.Matcher{
+							MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+						},
+						PosRange: posrange.PositionRange{
+							Start: 5,
+							End:   16,
+						},
+					},
+					Range: 5 * time.Minute,
+					BinaryOps: &MatrixSelectorBinOps{
+						ops: []*MatrixSelectorBinOp{
+							{
+								NEQ,
+								&NumberLiteral{
+									Val:      0,
+									PosRange: posrange.PositionRange{Start: 24, End: 25},
+								},
+							},
+						},
+						PosRange: posrange.PositionRange{
+							Start: 24,
+							End:   25,
+						},
+					},
+					EndPos: 25,
+				},
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   26,
 			},
 		},
 	},
@@ -2782,6 +2856,11 @@ var testExpr = []struct {
 		input:  "floor()",
 		fail:   true,
 		errMsg: "expected 1 argument(s) in call to \"floor\", got 0",
+	},
+	{
+		input:  "rate(some_metric[5m] != )",
+		fail:   true,
+		errMsg: "unexpected \")\" in range selector binary ops, expected number literal",
 	},
 	{
 		input:  "floor(some_metric, other_metric)",
