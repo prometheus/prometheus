@@ -161,7 +161,7 @@ START_METRIC_SELECTOR
 // Type definitions for grammar rules.
 %type <matchers> label_match_list
 %type <matcher> label_matcher
-%type <item> aggregate_op grouping_label match_op maybe_label metric_identifier unary_op at_modifier_preprocessors string_identifier
+%type <item> aggregate_op grouping_label match_op maybe_label metric_identifier unary_op at_modifier_preprocessors string_identifier binary_op
 %type <labels> label_set metric
 %type <lblList> label_set_list
 %type <label> label_set_item
@@ -173,7 +173,7 @@ START_METRIC_SELECTOR
 %type <int> int
 %type <uint> uint
 %type <float> number series_value signed_number signed_or_unsigned_number
-%type <node> step_invariant_expr aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_literal offset_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector
+%type <node> step_invariant_expr aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_literal offset_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector matrix_binary_ops
 %type <duration> duration maybe_duration
 
 %start start
@@ -449,16 +449,28 @@ at_modifier_preprocessors: START | END;
  * Subquery and range selectors.
  */
 
-/* binary_op : ADD | DIV | EQLC | GTE | GTR | LSS | LTE | MOD | MUL | NEQ | POW | SUB; */
+binary_op : ADD | DIV | EQLC | GTE | GTR | LSS | LTE | MOD | MUL | NEQ | POW | SUB;
 
-/* matrix_binary_op : binary_op number_literal */
-/*                    | binary_op number_literal matrix_binary_op; */
+matrix_binary_ops : binary_op number_literal
+                    {
+                      $$ = yylex.(*parser).addMatrixBinaryOp($1, $2, &MatrixSelectorBinOps{nil, $2.PositionRange()})
+                    }
+                   | binary_op number_literal matrix_binary_ops
+		    {
+		      $$ = yylex.(*parser).addMatrixBinaryOp($1, $2, $3)
+		    }
+                   ;
 
 matrix_selector : expr LEFT_BRACKET duration RIGHT_BRACKET
                         {
-			  $$, _ = yylex.(*parser).parseMatrixSelector($1, $2, $3, $4)
+			  /* fmt.Printf("in G, %d, $4.Pos %+v\n", yylex.(*parser).lastClosing, $4.Pos) */
+			    $$, _ = yylex.(*parser).parseMatrixSelector($1, $2, $3, $4, nil, $4.Pos + 1)
                         }
-                /* | expr LEFT_BRACKET duration RIGHT_BRACKET matrix_binary_op */
+                | expr LEFT_BRACKET duration RIGHT_BRACKET matrix_binary_ops
+		        {
+			  /* fmt.Printf("in G new, %d\n", yylex.(*parser).lastClosing) */
+		          $$, _ = yylex.(*parser).parseMatrixSelector($1, $2, $3, $4, $5, $4.Pos)
+   	                }
                 ;
 
 

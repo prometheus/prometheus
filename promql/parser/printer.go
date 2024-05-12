@@ -120,6 +120,14 @@ func (node *Call) String() string {
 	return fmt.Sprintf("%s(%s)", node.Func.Name, node.Args)
 }
 
+func (node *MatrixSelectorBinOps) String() string {
+	res := ""
+	for _, op := range node.ops {
+		res += op.i.String()
+	}
+	return res
+}
+
 func (node *MatrixSelector) String() string {
 	// Copy the Vector selector before changing the offset
 	vecSelector := *node.VectorSelector.(*VectorSelector)
@@ -146,7 +154,12 @@ func (node *MatrixSelector) String() string {
 	vecSelector.Timestamp = nil
 	vecSelector.StartOrEnd = 0
 
-	str := fmt.Sprintf("%s[%s]%s%s", vecSelector.String(), model.Duration(node.Range), at, offset)
+	binaryOps := ""
+	if node.BinaryOps != nil {
+		binaryOps = node.BinaryOps.String()
+	}
+
+	str := fmt.Sprintf("%s[%s]%s%s%s", vecSelector.String(), model.Duration(node.Range), at, offset, binaryOps)
 
 	vecSelector.OriginalOffset, vecSelector.Timestamp, vecSelector.StartOrEnd = offsetVal, atVal, preproc
 

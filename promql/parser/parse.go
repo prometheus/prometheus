@@ -821,8 +821,33 @@ func (p *parser) unquoteString(s string) string {
 	return unquoted
 }
 
-func (p *parser) parseMatrixSelector(vectorSelector Node, leftBracket Item, duration time.Duration, rightBracket Item) (*MatrixSelector, error) {
+func (p *parser) addMatrixBinaryOp(op Item, num Node, binOps Node) *MatrixSelectorBinOps {
+	binaryOps, _ := binOps.(*MatrixSelectorBinOps)
+	if binaryOps.ops == nil {
+		binaryOps.ops = []*MatrixSelectorBinOp{}
+	}
+
+	numberLiteral, ok := num.(*NumberLiteral)
+	if !ok {
+		p.addParseErrf(p.yyParser.lval.item.PositionRange(), "expected number literal %+v", num)
+	}
+
+	binaryOps.ops = append(
+		[]*MatrixSelectorBinOp{{op.Typ, numberLiteral}},
+		binaryOps.ops...,
+	)
+
+	binaryOps.PosRange = posrange.PositionRange{
+		Start: num.PositionRange().Start,
+		End:   binaryOps.ops[len(binaryOps.ops)-1].n.PosRange.End,
+	}
+
+	return binaryOps
+}
+
+func (p *parser) parseMatrixSelector(vectorSelector Node, leftBracket Item, duration time.Duration, rightBracket Item, binOps Node, lastClosing posrange.Pos) (*MatrixSelector, error) {
 	var errMsg string
+	binaryOps, _ := binOps.(*MatrixSelectorBinOps)
 	vs, ok := vectorSelector.(*VectorSelector)
 
 	if !ok {
@@ -838,10 +863,15 @@ func (p *parser) parseMatrixSelector(vectorSelector Node, leftBracket Item, dura
 		p.addParseErrf(errRange, errMsg)
 	}
 
+	if binaryOps != nil {
+		lastClosing = binaryOps.PosRange.End
+	}
+
 	return &MatrixSelector{
 		VectorSelector: vectorSelector.(Expr),
 		Range:          duration,
-		EndPos:         p.lastClosing,
+		BinaryOps:      binaryOps,
+		EndPos:         lastClosing,
 	}, nil
 }
 

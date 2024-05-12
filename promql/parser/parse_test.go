@@ -2061,6 +2061,45 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: `foo[5m30s] * 5 > 1.1`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			BinaryOps: &MatrixSelectorBinOps{
+				ops: []*MatrixSelectorBinOp{
+					&MatrixSelectorBinOp{
+						MUL,
+						&NumberLiteral{
+							Val:      5,
+							PosRange: posrange.PositionRange{Start: 13, End: 14},
+						},
+					},
+					&MatrixSelectorBinOp{
+						GTR,
+						&NumberLiteral{
+							Val:      1.1,
+							PosRange: posrange.PositionRange{Start: 17, End: 20},
+						},
+					},
+				},
+				PosRange: posrange.PositionRange{
+					Start: 13,
+					End:   20,
+				},
+			},
+			Range:  5*time.Minute + 30*time.Second,
+			EndPos: 20,
+		},
+	},
+	{
 		input: "test[5h] OFFSET 5m",
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
@@ -2646,7 +2685,24 @@ var testExpr = []struct {
 		},
 	},
 	{
-		input: "rate(some_metric[5m])",
+		input: "some_metric[5m]",
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "some_metric",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   11,
+				},
+			},
+			Range:  5 * time.Minute,
+			EndPos: 15,
+		},
+	},
+	{
+		input: "rate(some_metric[5m])", // foobar
 		expected: &Call{
 			Func: MustGetFunction("rate"),
 			Args: Expressions{

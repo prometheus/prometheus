@@ -119,6 +119,10 @@ func (e *MatrixSelector) Pretty(level int) string {
 	return getCommonPrefixIndent(level, e)
 }
 
+func (e *MatrixSelectorBinOps) Pretty(level int) string {
+	return getCommonPrefixIndent(level, e)
+}
+
 func (e *SubqueryExpr) Pretty(level int) string {
 	if !needsSplit(e) {
 		return e.String()
