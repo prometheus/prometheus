@@ -449,30 +449,18 @@ at_modifier_preprocessors: START | END;
  * Subquery and range selectors.
  */
 
+/* binary_op : ADD | DIV | EQLC | GTE | GTR | LSS | LTE | MOD | MUL | NEQ | POW | SUB; */
+
+/* matrix_binary_op : binary_op number_literal */
+/*                    | binary_op number_literal matrix_binary_op; */
+
 matrix_selector : expr LEFT_BRACKET duration RIGHT_BRACKET
                         {
-                        var errMsg string
-                        vs, ok := $1.(*VectorSelector)
-                        if !ok{
-                                errMsg = "ranges only allowed for vector selectors"
-                        } else if vs.OriginalOffset != 0{
-                                errMsg = "no offset modifiers allowed before range"
-                        } else if vs.Timestamp != nil {
-                                errMsg = "no @ modifiers allowed before range"
+			  $$, _ = yylex.(*parser).parseMatrixSelector($1, $2, $3, $4)
                         }
-
-                        if errMsg != ""{
-                                errRange := mergeRanges(&$2, &$4)
-                                yylex.(*parser).addParseErrf(errRange, errMsg)
-                        }
-
-                        $$ = &MatrixSelector{
-                                VectorSelector: $1.(Expr),
-                                Range: $3,
-                                EndPos: yylex.(*parser).lastClosing,
-                        }
-                        }
+                /* | expr LEFT_BRACKET duration RIGHT_BRACKET matrix_binary_op */
                 ;
+
 
 subquery_expr   : expr LEFT_BRACKET duration COLON maybe_duration RIGHT_BRACKET
                         {

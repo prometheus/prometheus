@@ -821,6 +821,30 @@ func (p *parser) unquoteString(s string) string {
 	return unquoted
 }
 
+func (p *parser) parseMatrixSelector(vectorSelector Node, leftBracket Item, duration time.Duration, rightBracket Item) (*MatrixSelector, error) {
+	var errMsg string
+	vs, ok := vectorSelector.(*VectorSelector)
+
+	if !ok {
+		errMsg = "ranges only allowed for vector selectors"
+	} else if vs.OriginalOffset != 0 {
+		errMsg = "no offset modifiers allowed before range"
+	} else if vs.Timestamp != nil {
+		errMsg = "no @ modifiers allowed before range"
+	}
+
+	if errMsg != "" {
+		errRange := mergeRanges(&leftBracket, &rightBracket)
+		p.addParseErrf(errRange, errMsg)
+	}
+
+	return &MatrixSelector{
+		VectorSelector: vectorSelector.(Expr),
+		Range:          duration,
+		EndPos:         p.lastClosing,
+	}, nil
+}
+
 func parseDuration(ds string) (time.Duration, error) {
 	dur, err := model.ParseDuration(ds)
 	if err != nil {
