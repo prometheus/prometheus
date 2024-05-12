@@ -245,6 +245,7 @@ func (sp *scrapePool) stop() {
 		sp.metrics.targetScrapePoolSyncsCounter.DeleteLabelValues(sp.config.JobName)
 		sp.metrics.targetScrapePoolTargetLimit.DeleteLabelValues(sp.config.JobName)
 		sp.metrics.targetScrapePoolTargetsAdded.DeleteLabelValues(sp.config.JobName)
+		sp.metrics.targetScrapePoolSymbolTableItems.DeleteLabelValues(sp.config.JobName)
 		sp.metrics.targetSyncIntervalLength.DeleteLabelValues(sp.config.JobName)
 		sp.metrics.targetSyncFailed.DeleteLabelValues(sp.config.JobName)
 	}
@@ -272,6 +273,15 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 
 	sp.metrics.targetScrapePoolTargetLimit.WithLabelValues(sp.config.JobName).Set(float64(sp.config.TargetLimit))
 
+	sp.restartLoops(reuseCache)
+	oldClient.CloseIdleConnections()
+	sp.metrics.targetReloadIntervalLength.WithLabelValues(time.Duration(sp.config.ScrapeInterval).String()).Observe(
+		time.Since(start).Seconds(),
+	)
+	return nil
+}
+
+func (sp *scrapePool) restartLoops(reuseCache bool) {
 	var (
 		wg            sync.WaitGroup
 		interval      = time.Duration(sp.config.ScrapeInterval)
@@ -312,7 +322,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 				client:               sp.client,
 				timeout:              timeout,
 				bodySizeLimit:        bodySizeLimit,
-				acceptHeader:         acceptHeader(cfg.ScrapeProtocols),
+				acceptHeader:         acceptHeader(sp.config.ScrapeProtocols),
 				acceptEncodingHeader: acceptEncodingHeader(enableCompression),
 			}
 			newLoop = sp.newLoop(scrapeLoopOptions{
@@ -351,11 +361,10 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	sp.targetMtx.Unlock()
 
 	wg.Wait()
-	oldClient.CloseIdleConnections()
-	sp.metrics.targetReloadIntervalLength.WithLabelValues(interval.String()).Observe(
-		time.Since(start).Seconds(),
-	)
+}
 
+// Must be called with sp.mtx held.
+func (sp *scrapePool) checkSymbolTable() {
 	// Here we take steps to clear out the symbol table if it has grown a lot.
 	// After waiting some time for things to settle, we take the size of the symbol-table.
 	// If, after some more time, the table has grown to twice that size, we start a new one.
@@ -364,13 +373,14 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 		if sp.initialSymbolTableLen == 0 {
 			sp.initialSymbolTableLen = sp.symbolTable.Len()
 		} else if sp.symbolTable.Len() > 2*sp.initialSymbolTableLen {
+			level.Info(sp.logger).Log("msg", "Recreating symbol table", "job", sp.config.JobName, "initialLength", sp.initialSymbolTableLen, "length", sp.symbolTable.Len())
 			sp.symbolTable = labels.NewSymbolTable()
 			sp.initialSymbolTableLen = 0
+			sp.restartLoops(false) // To drop all caches.
+			level.Info(sp.logger).Log("msg", "Finished restarting loops", "job", sp.config.JobName)
 		}
 		sp.lastSymbolTableCheck = time.Now()
 	}
-
-	return nil
 }
 
 // Sync converts target groups into actual scrape targets and synchronizes
@@ -407,8 +417,10 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 			}
 		}
 	}
+	sp.metrics.targetScrapePoolSymbolTableItems.WithLabelValues(sp.config.JobName).Set(float64(sp.symbolTable.Len()))
 	sp.targetMtx.Unlock()
 	sp.sync(all)
+	sp.checkSymbolTable()
 
 	sp.metrics.targetSyncIntervalLength.WithLabelValues(sp.config.JobName).Observe(
 		time.Since(start).Seconds(),

@@ -1361,6 +1361,11 @@ func (db *DB) compactHead(head *RangeHead) error {
 	if err = db.head.truncateMemory(head.BlockMaxTime()); err != nil {
 		return fmt.Errorf("head memory truncate: %w", err)
 	}
+
+	level.Info(db.logger).Log("msg", "RebuildSymbolTable starting")
+	st := db.head.RebuildSymbolTable()
+	level.Info(db.logger).Log("msg", "RebuildSymbolTable finished", "addr", fmt.Sprintf("%p", st), "size", st.Len())
+
 	return nil
 }
 

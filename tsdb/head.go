@@ -1733,12 +1733,12 @@ type seriesHashmap struct {
 
 func (m *seriesHashmap) get(hash uint64, lset labels.Labels) *memSeries {
 	if s, found := m.unique[hash]; found {
-		if labels.Equal(s.lset, lset) {
+		if labels.Equal(s.labels(), lset) {
 			return s
 		}
 	}
 	for _, s := range m.conflicts[hash] {
-		if labels.Equal(s.lset, lset) {
+		if labels.Equal(s.labels(), lset) {
 			return s
 		}
 	}
@@ -1746,7 +1746,7 @@ func (m *seriesHashmap) get(hash uint64, lset labels.Labels) *memSeries {
 }
 
 func (m *seriesHashmap) set(hash uint64, s *memSeries) {
-	if existing, found := m.unique[hash]; !found || labels.Equal(existing.lset, s.lset) {
+	if existing, found := m.unique[hash]; !found || labels.Equal(existing.labels(), s.labels()) {
 		m.unique[hash] = s
 		return
 	}
@@ -1755,7 +1755,7 @@ func (m *seriesHashmap) set(hash uint64, s *memSeries) {
 	}
 	l := m.conflicts[hash]
 	for i, prev := range l {
-		if labels.Equal(prev.lset, s.lset) {
+		if labels.Equal(prev.labels(), s.labels()) {
 			l[i] = s
 			return
 		}
@@ -1904,7 +1904,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
 		s.hashes[hashShard].del(hash, series.ref)
 		delete(s.series[refShard], series.ref)
-		deletedForCallback[series.ref] = series.lset
+		deletedForCallback[series.ref] = series.lset // OK to access lset; series is locked at the top of this function.
 	}
 
 	// Run through all series shard by shard, checking which should be deleted.
@@ -1987,7 +1987,7 @@ func (s *stripeSeries) getOrSet(hash uint64, lset labels.Labels, createSeries fu
 	}
 	// Setting the series in the s.hashes marks the creation of series
 	// as any further calls to this methods would return that series.
-	s.seriesLifecycleCallback.PostCreation(series.lset)
+	s.seriesLifecycleCallback.PostCreation(series.labels())
 
 	i = uint64(series.ref) & uint64(s.size-1)
 
@@ -2028,15 +2028,18 @@ func (s sample) Type() chunkenc.ValueType {
 // memSeries is the in-memory representation of a series. None of its methods
 // are goroutine safe and it is the caller's responsibility to lock it.
 type memSeries struct {
-	sync.Mutex
-
+	// Members up to the Mutex are not changed after construction, so can be accessed without a lock.
 	ref  chunks.HeadSeriesRef
-	lset labels.Labels
 	meta *metadata.Metadata
 
 	// Series labels hash to use for sharding purposes. The value is always 0 when sharding has not
 	// been explicitly enabled in TSDB.
 	shardHash uint64
+
+	sync.Mutex
+
+	// Everything after here should only be accessed with the lock.
+	lset labels.Labels
 
 	// Immutable chunks on disk that have not yet gone into a block, in order of ascending time stamps.
 	// When compaction runs, chunks get moved into a block and all pointers are shifted like so:
@@ -2098,6 +2101,13 @@ func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64,
 		s.txs = newTxRing(0)
 	}
 	return s
+}
+
+// Helper method to access labels under lock.
+func (s *memSeries) labels() labels.Labels {
+	s.Lock()
+	defer s.Unlock()
+	return s.lset
 }
 
 func (s *memSeries) minTime() int64 {
@@ -2303,4 +2313,43 @@ func (h *Head) updateWALReplayStatusRead(current int) {
 	defer h.stats.WALReplayStatus.Unlock()
 
 	h.stats.WALReplayStatus.Current = current
+}
+
+// Go through all the series in h, build a SymbolTable with all names and values,
+// replace each series' Labels with one using that SymbolTable.
+func (h *Head) RebuildSymbolTable() *labels.SymbolTable {
+	st := labels.NewSymbolTable()
+	builder := labels.NewScratchBuilderWithSymbolTable(st, 0)
+	rebuildLabels := func(lbls labels.Labels) labels.Labels {
+		builder.Reset()
+		lbls.Range(func(l labels.Label) {
+			builder.Add(l.Name, l.Value)
+		})
+		return builder.Labels()
+	}
+
+	for i := 0; i < h.series.size; i++ {
+		h.series.locks[i].Lock()
+
+		for _, s := range h.series.hashes[i].unique {
+			s.Lock()
+			s.lset = rebuildLabels(s.lset)
+			s.Unlock()
+		}
+
+		for _, all := range h.series.hashes[i].conflicts {
+			for _, s := range all {
+				s.Lock()
+				s.lset = rebuildLabels(s.lset)
+				s.Unlock()
+			}
+		}
+
+		h.series.locks[i].Unlock()
+	}
+
+	if e, ok := h.exemplars.(interface{ ResetSymbolTable(*labels.SymbolTable) }); ok {
+		e.ResetSymbolTable(st)
+	}
+	return st
 }
