@@ -1628,7 +1628,9 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 					maxt := ts - offset
 					mint := maxt - selRange
 					floats, histograms = ev.matrixIterSlice(it, mint, maxt, floats, histograms)
+					floats = ApplyBinaryOps(sel.BinaryOps, floats)
 				}
+
 				if len(floats)+len(histograms) == 0 {
 					continue
 				}
@@ -2182,14 +2184,36 @@ func (ev *evaluator) matrixSelector(node *parser.MatrixSelector) (Matrix, annota
 		totalSize := int64(len(ss.Floats)) + int64(totalHPointSize(ss.Histograms))
 		ev.samplesStats.IncrementSamplesAtTimestamp(ev.startTimestamp, totalSize)
 
-		if totalSize > 0 {
+		ss.Floats = ApplyBinaryOps(node.BinaryOps, ss.Floats)
+		if int64(len(ss.Floats)) > 0 {
 			matrix = append(matrix, ss)
 		} else {
 			putFPointSlice(ss.Floats)
 			putHPointSlice(ss.Histograms)
 		}
 	}
+
 	return matrix, ws
+}
+
+func ApplyBinaryOps(binaryOps *parser.MatrixSelectorBinOps, fPoint []FPoint) []FPoint {
+	if binaryOps == nil || len(binaryOps.Ops) == 0 {
+		return fPoint
+	}
+
+	for _, op := range binaryOps.Ops {
+		runningFPoint := getFPointSlice(len(fPoint))
+		for _, pt := range fPoint {
+			res, _, keep := vectorElemBinop(op.Op, pt.F, op.Num.Val, nil, nil)
+			if keep {
+				runningFPoint = append(runningFPoint, FPoint{T: pt.T, F: res})
+			}
+		}
+		putFPointSlice(fPoint)
+		fPoint = runningFPoint
+	}
+
+	return fPoint
 }
 
 // matrixIterSlice populates a matrix vector covering the requested range for a
