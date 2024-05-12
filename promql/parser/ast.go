@@ -120,12 +120,12 @@ type Call struct {
 }
 
 type MatrixSelectorBinOp struct {
-	i ItemType
-	n *NumberLiteral
+	Op  ItemType
+	Num *NumberLiteral
 }
 
 type MatrixSelectorBinOps struct {
-	ops []*MatrixSelectorBinOp
+	Ops []*MatrixSelectorBinOp
 
 	PosRange posrange.PositionRange
 }

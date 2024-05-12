@@ -2074,7 +2074,7 @@ var testExpr = []struct {
 				},
 			},
 			BinaryOps: &MatrixSelectorBinOps{
-				ops: []*MatrixSelectorBinOp{
+				Ops: []*MatrixSelectorBinOp{
 					{
 						MUL,
 						&NumberLiteral{
@@ -2133,7 +2133,7 @@ var testExpr = []struct {
 			},
 			Range: 5 * time.Hour,
 			BinaryOps: &MatrixSelectorBinOps{
-				ops: []*MatrixSelectorBinOp{
+				Ops: []*MatrixSelectorBinOp{
 					{
 						GTR,
 						&NumberLiteral{
@@ -2778,7 +2778,7 @@ var testExpr = []struct {
 					},
 					Range: 5 * time.Minute,
 					BinaryOps: &MatrixSelectorBinOps{
-						ops: []*MatrixSelectorBinOp{
+						Ops: []*MatrixSelectorBinOp{
 							{
 								NEQ,
 								&NumberLiteral{

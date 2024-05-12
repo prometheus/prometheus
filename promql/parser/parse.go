@@ -823,20 +823,20 @@ func (p *parser) unquoteString(s string) string {
 
 func (p *parser) addMatrixBinaryOp(op Item, num Node, binOps Node) *MatrixSelectorBinOps {
 	binaryOps, _ := binOps.(*MatrixSelectorBinOps)
-	if binaryOps.ops == nil {
-		binaryOps.ops = []*MatrixSelectorBinOp{}
+	if binaryOps.Ops == nil {
+		binaryOps.Ops = []*MatrixSelectorBinOp{}
 	}
 
 	numberLiteral, _ := num.(*NumberLiteral)
 
-	binaryOps.ops = append(
+	binaryOps.Ops = append(
 		[]*MatrixSelectorBinOp{{op.Typ, numberLiteral}},
-		binaryOps.ops...,
+		binaryOps.Ops...,
 	)
 
 	binaryOps.PosRange = posrange.PositionRange{
 		Start: num.PositionRange().Start,
-		End:   binaryOps.ops[len(binaryOps.ops)-1].n.PosRange.End,
+		End:   binaryOps.Ops[len(binaryOps.Ops)-1].Num.PosRange.End,
 	}
 
 	return binaryOps

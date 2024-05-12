@@ -122,8 +122,8 @@ func (node *Call) String() string {
 
 func (node *MatrixSelectorBinOps) String() string {
 	res := ""
-	for _, op := range node.ops {
-		res += op.i.String()
+	for _, op := range node.Ops {
+		res += op.Op.String()
 	}
 	return res
 }
