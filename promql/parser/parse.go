@@ -821,7 +821,7 @@ func (p *parser) unquoteString(s string) string {
 	return unquoted
 }
 
-func (p *parser) addMatrixBinaryOp(op Item, num Node, binOps Node) *MatrixSelectorBinOps {
+func (p *parser) addMatrixBinaryOp(op Item, num, binOps Node) *MatrixSelectorBinOps {
 	binaryOps, _ := binOps.(*MatrixSelectorBinOps)
 	if binaryOps.Ops == nil {
 		binaryOps.Ops = []*MatrixSelectorBinOp{}
@@ -849,10 +849,13 @@ func (p *parser) parseMatrixSelector(vectorSelector Node, leftBracket Item, dura
 
 	if !ok {
 		errMsg = "ranges only allowed for vector selectors"
-	} else if vs.OriginalOffset != 0 {
-		errMsg = "no offset modifiers allowed before range"
-	} else if vs.Timestamp != nil {
-		errMsg = "no @ modifiers allowed before range"
+	} else {
+		switch {
+		case vs.OriginalOffset != 0:
+			errMsg = "no offset modifiers allowed before range"
+		case vs.Timestamp != nil:
+			errMsg = "no @ modifiers allowed before range"
+		}
 	}
 
 	if errMsg != "" {
