@@ -168,4 +168,20 @@ TEST_F(BitsetFixture, ResetInSecondUint64) {
   EXPECT_FALSE(bs_[64]);
 }
 
+TEST_F(BitsetFixture, TestResetCorrectness) {
+  // Arrange
+  bs_.resize(3);
+
+  // Act
+  bs_.set(0);
+  bs_.set(1);
+  bs_.set(2);
+  bs_.reset(1);
+
+  // Assert
+  EXPECT_TRUE(bs_[0]);
+  EXPECT_FALSE(bs_[1]);
+  EXPECT_TRUE(bs_[2]);
+}
+
 }  // namespace
