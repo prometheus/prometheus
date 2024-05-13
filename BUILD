@@ -170,6 +170,7 @@ cc_library(
         ":prometheus",
         ":primitives",
         ":series_index",
+        ":series_data",
         "@gtest//:gtest_main",
         "//third_party:third_party",
     ],
@@ -292,6 +293,25 @@ cc_test(
     ]),
     deps = [
         ":series_index",
+        "@gtest//:gtest_main",
+    ]
+)
+
+cc_library(
+    name = "series_data",
+    hdrs = glob(["series_data/**/*.h"]),
+    deps = [
+        ":bare_bones_headers",
+    ]
+)
+
+cc_test(
+    name = "series_data_test",
+    srcs = glob([
+        "series_data/tests/**/*.cpp",
+    ]),
+    deps = [
+        ":series_data",
         "@gtest//:gtest_main",
     ]
 )

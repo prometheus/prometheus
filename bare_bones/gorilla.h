@@ -90,11 +90,16 @@ struct PROMPP_ATTRIBUTE_PACKED ValuesEncoderState {
   bool operator==(const ValuesEncoderState&) const noexcept = default;
 };
 
+enum class GorillaState : uint8_t {
+  kFirstPoint = 0,
+  kSecondPoint = 1,
+  kOtherPoint = 2,
+};
+
 struct PROMPP_ATTRIBUTE_PACKED EncoderState {
   TimestampEncoderState timestamp_encoder;
   ValuesEncoderState values_encoder;
-
-  enum : uint8_t { INITIAL = 0, FIRST_ENCODED = 1, SECOND_ENCODED = 2 } state = INITIAL;
+  GorillaState state{GorillaState::kFirstPoint};
 
   bool operator==(const EncoderState&) const noexcept = default;
 };
@@ -107,7 +112,7 @@ struct PROMPP_ATTRIBUTE_PACKED DecoderState {
   uint8_t last_v_xor_length{};
   uint8_t last_v_xor_trailing_z{};
 
-  enum : uint8_t { INITIAL = 0, FIRST_DECODED = 1, SECOND_DECODED = 2 } state = INITIAL;
+  GorillaState state{GorillaState::kFirstPoint};
 
   DecoderState() = default;
   DecoderState(const DecoderState&) = default;
@@ -395,16 +400,16 @@ class PROMPP_ATTRIBUTE_PACKED StreamEncoder {
 
   template <class BitSequence>
   inline __attribute__((always_inline)) void encode(int64_t ts, double v, BitSequence& ts_bitseq, BitSequence& v_bitseq) noexcept {
-    if (state_.state == EncoderState::INITIAL) {
+    if (state_.state == GorillaState::kFirstPoint) {
       TimestampEncoder::encode(state_.timestamp_encoder, ts, ts_bitseq);
       ValuesEncoder::encode_first(state_.values_encoder, v, v_bitseq);
 
-      state_.state = EncoderState::FIRST_ENCODED;
-    } else if (state_.state == EncoderState::FIRST_ENCODED) {
+      state_.state = GorillaState::kSecondPoint;
+    } else if (state_.state == GorillaState::kSecondPoint) {
       TimestampEncoder::encode_delta(state_.timestamp_encoder, ts, ts_bitseq);
       ValuesEncoder::encode(state_.values_encoder, v, v_bitseq);
 
-      state_.state = EncoderState::SECOND_ENCODED;
+      state_.state = GorillaState::kOtherPoint;
     } else {
       TimestampEncoder::encode_delta_of_delta(state_.timestamp_encoder, ts, ts_bitseq);
       ValuesEncoder::encode(state_.values_encoder, v, v_bitseq);
@@ -534,19 +539,19 @@ class PROMPP_ATTRIBUTE_PACKED StreamDecoder {
   [[nodiscard]] PROMPP_ALWAYS_INLINE double last_value() const noexcept { return state_.last_v; }
 
   inline __attribute__((always_inline)) void decode(int64_t ts, BitSequence::Reader& v_bitseq) noexcept {
-    if (__builtin_expect(state_.state == DecoderState::INITIAL, false)) {
+    if (__builtin_expect(state_.state == GorillaState::kFirstPoint, false)) {
       state_.last_ts = ts;
 
       state_.last_v = v_bitseq.consume_d64_svbyte_0468();
 
-      state_.state = DecoderState::FIRST_DECODED;
-    } else if (__builtin_expect(state_.state == DecoderState::FIRST_DECODED, false)) {
+      state_.state = GorillaState::kSecondPoint;
+    } else if (__builtin_expect(state_.state == GorillaState::kSecondPoint, false)) {
       state_.last_ts_delta = std::bit_cast<int64_t>(ts) - std::bit_cast<int64_t>(state_.last_ts);
       state_.last_ts = ts;
 
       decode_value(v_bitseq);
 
-      state_.state = DecoderState::SECOND_DECODED;
+      state_.state = GorillaState::kOtherPoint;
     } else {
       state_.last_ts_delta = std::bit_cast<int64_t>(ts) - std::bit_cast<int64_t>(state_.last_ts);
       state_.last_ts = ts;
@@ -556,19 +561,19 @@ class PROMPP_ATTRIBUTE_PACKED StreamDecoder {
   }
 
   inline __attribute__((always_inline)) void decode(BitSequence::Reader& ts_bitseq, BitSequence::Reader& v_bitseq) noexcept {
-    if (__builtin_expect(state_.state == DecoderState::INITIAL, false)) {
+    if (__builtin_expect(state_.state == GorillaState::kFirstPoint, false)) {
       state_.last_ts = TimestampDecoder::decode(ts_bitseq);
 
       state_.last_v = v_bitseq.consume_d64_svbyte_0468();
 
-      state_.state = DecoderState::FIRST_DECODED;
-    } else if (__builtin_expect(state_.state == DecoderState::FIRST_DECODED, false)) {
+      state_.state = GorillaState::kSecondPoint;
+    } else if (__builtin_expect(state_.state == GorillaState::kSecondPoint, false)) {
       state_.last_ts_delta = TimestampDecoder::decode_delta(ts_bitseq);
       state_.last_ts += state_.last_ts_delta;
 
       decode_value(v_bitseq);
 
-      state_.state = DecoderState::SECOND_DECODED;
+      state_.state = GorillaState::kOtherPoint;
     } else {
       uint32_t buf = ts_bitseq.read_u32();
 

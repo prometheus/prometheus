@@ -70,6 +70,11 @@ class Bitset {
     data_[v >> 6] |= (1ull << (v & 0x3F));
   }
 
+  void reset(uint32_t v) noexcept {
+    assert(v < size_);
+    data_[v >> 6] &= ~(1ull << (v & 0x3F));
+  }
+
   inline __attribute__((always_inline)) bool operator[](uint32_t v) const noexcept {
     assert(v < size_);
     return (data_[v >> 6] & (1ull << (v & 0x3F))) > 0;
@@ -134,6 +139,8 @@ class Bitset {
 
   inline __attribute__((always_inline)) auto begin() const noexcept { return Iterator(data_, size_); }
   inline __attribute__((always_inline)) auto end() const noexcept { return IteratorSentinel(); }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return data_.allocated_memory(); }
 };
 
 template <>

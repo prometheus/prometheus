@@ -33,7 +33,12 @@ PROMPP_ALWAYS_INLINE constexpr size_t to_bytes(size_t bits) noexcept {
 class PROMPP_ATTRIBUTE_PACKED CompactBitSequence {
  public:
   CompactBitSequence() = default;
-  CompactBitSequence(const CompactBitSequence& other) = delete;
+  CompactBitSequence(const CompactBitSequence& other)
+      : memory_(reinterpret_cast<uint8_t*>(std::malloc(other.allocated_memory()))),
+        size_in_bits_(other.size_in_bits_),
+        allocation_size_index_(other.allocation_size_index_) {
+    std::memcpy(memory_, other.memory_, other.allocated_memory());
+  }
   CompactBitSequence(CompactBitSequence&& other) noexcept
       : memory_(other.memory_), size_in_bits_(other.size_in_bits_), allocation_size_index_(std::exchange(other.allocation_size_index_, 0)) {
     other.memory_ = nullptr;
@@ -57,7 +62,13 @@ class PROMPP_ATTRIBUTE_PACKED CompactBitSequence {
     return *this;
   }
 
-  ~CompactBitSequence() { std::free(memory_); }
+  ~CompactBitSequence() {
+    std::free(memory_);
+    memory_ = nullptr;
+
+    size_in_bits_ = 0;
+    allocation_size_index_ = 0;
+  }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t size_in_bits() const noexcept { return size_in_bits_; }
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t size_in_bytes() const noexcept { return to_bytes(size_in_bits_ + 7); }
@@ -114,18 +125,18 @@ class PROMPP_ATTRIBUTE_PACKED CompactBitSequence {
   }
 
  private:
-  static constexpr size_t kAllocationSizesBits[] = {to_bits(0),    to_bits(32),   to_bits(64),   to_bits(96),   to_bits(128),  to_bits(192),  to_bits(256),
-                                                    to_bits(384),  to_bits(512),  to_bits(640),  to_bits(768),  to_bits(1024), to_bits(1152), to_bits(1280),
-                                                    to_bits(1408), to_bits(1536), to_bits(2048), to_bits(2176), to_bits(2304), to_bits(2432), to_bits(2560),
-                                                    to_bits(3076), to_bits(3584), to_bits(4096), to_bits(4608), to_bits(5120), to_bits(5632), to_bits(6144),
-                                                    to_bits(6656), to_bits(7168), to_bits(7680), to_bits(8192)};
+  static constexpr uint32_t kAllocationSizesBits[] = {to_bits(0),    to_bits(32),   to_bits(64),   to_bits(96),   to_bits(128),  to_bits(192),  to_bits(256),
+                                                      to_bits(384),  to_bits(512),  to_bits(640),  to_bits(768),  to_bits(1024), to_bits(1152), to_bits(1280),
+                                                      to_bits(1408), to_bits(1536), to_bits(2048), to_bits(2176), to_bits(2304), to_bits(2432), to_bits(2560),
+                                                      to_bits(3076), to_bits(3584), to_bits(4096), to_bits(4608), to_bits(5120), to_bits(5632), to_bits(6144),
+                                                      to_bits(6656), to_bits(7168), to_bits(7680), to_bits(8192)};
   static constexpr uint32_t kReservedSizeBits = to_bits(sizeof(uint64_t) + 1);
 
   uint8_t* memory_{};
   uint32_t size_in_bits_{};
   uint8_t allocation_size_index_{};
 
-  PROMPP_ALWAYS_INLINE void reserve_enough_memory_if_needed() noexcept {
+  void reserve_enough_memory_if_needed() noexcept {
     auto old_size = kAllocationSizesBits[allocation_size_index_];
     if (size_in_bits_ + kReservedSizeBits > old_size) {
       [[unlikely]];
