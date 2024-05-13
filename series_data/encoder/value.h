@@ -1,5 +1,6 @@
 #pragma once
 
+#include "allocation_sizes_table.h"
 #include "bare_bones/gorilla.h"
 
 namespace series_data::encoder::value {
@@ -58,7 +59,7 @@ class PROMPP_ATTRIBUTE_PACKED GorillaEncoder {
 
  private:
   BareBones::Encoding::Gorilla::ValuesEncoderState state_;
-  BareBones::CompactBitSequence stream_;
+  BareBones::CompactBitSequence<kAllocationSizesTable> stream_;
 };
 
 enum class EncodingType : uint8_t {

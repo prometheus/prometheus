@@ -2,6 +2,7 @@
 
 #include "parallel_hashmap/phmap.h"
 
+#include "allocation_sizes_table.h"
 #include "bare_bones/allocator.h"
 #include "bare_bones/gorilla.h"
 #include "bare_bones/vector_with_holes.h"
@@ -29,7 +30,7 @@ class PROMPP_ATTRIBUTE_PACKED TimestampEncoder {
 
  private:
   BareBones::Encoding::Gorilla::TimestampEncoderState encoder_state_;
-  BareBones::CompactBitSequence stream_;
+  BareBones::CompactBitSequence<kAllocationSizesTable> stream_;
   uint32_t count_{1};
 };
 
