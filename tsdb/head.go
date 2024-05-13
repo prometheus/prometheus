@@ -1193,7 +1193,7 @@ func (h *Head) SetMinValidTime(minValidTime int64) {
 // Truncate removes old data before mint from the head and WAL.
 func (h *Head) Truncate(mint int64) (err error) {
 	initialized := h.initialized()
-	if err := h.truncateMemory(mint); err != nil {
+	if err := h.truncateMemory(context.Background(), mint); err != nil {
 		return err
 	}
 	if !initialized {
@@ -1208,7 +1208,7 @@ func (h *Head) OverlapsClosedInterval(mint, maxt int64) bool {
 }
 
 // truncateMemory removes old data before mint from the head.
-func (h *Head) truncateMemory(mint int64) (err error) {
+func (h *Head) truncateMemory(ctx context.Context, mint int64) (err error) {
 	h.chunkSnapshotMtx.Lock()
 	defer h.chunkSnapshotMtx.Unlock()
 
@@ -1236,7 +1236,9 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 
 	// We wait for pending queries to end that overlap with this truncation.
 	if initialized {
-		h.WaitForPendingReadersInTimeRange(h.MinTime(), mint)
+		if err := h.WaitForPendingReadersInTimeRange(ctx, h.MinTime(), mint); err != nil {
+			return err
+		}
 	}
 
 	h.minTime.Store(mint)
@@ -1258,7 +1260,7 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 }
 
 // truncateStaleSeries removes the provided series as long as they are still stale.
-func (h *Head) truncateStaleSeries(seriesRefs []storage.SeriesRef, maxt int64) error {
+func (h *Head) truncateStaleSeries(ctx context.Context, seriesRefs []storage.SeriesRef, maxt int64) error {
 	h.chunkSnapshotMtx.Lock()
 	defer h.chunkSnapshotMtx.Unlock()
 
@@ -1266,7 +1268,9 @@ func (h *Head) truncateStaleSeries(seriesRefs []storage.SeriesRef, maxt int64) e
 		return nil
 	}
 
-	h.WaitForPendingReadersInTimeRange(h.MinTime(), maxt)
+	if err := h.WaitForPendingReadersInTimeRange(ctx, h.MinTime(), maxt); err != nil {
+		return err
+	}
 
 	deleted := h.gcStaleSeries(seriesRefs, maxt)
 
@@ -1290,7 +1294,7 @@ func (h *Head) truncateStaleSeries(seriesRefs []storage.SeriesRef, maxt int64) e
 // WaitForPendingReadersInTimeRange waits for queries overlapping with given range to finish querying.
 // The query timeout limits the max wait time of this function implicitly.
 // The mint is inclusive and maxt is the truncation time hence exclusive.
-func (h *Head) WaitForPendingReadersInTimeRange(mint, maxt int64) {
+func (h *Head) WaitForPendingReadersInTimeRange(ctx context.Context, mint, maxt int64) error {
 	maxt-- // Making it inclusive before checking overlaps.
 	overlaps := func() bool {
 		o := false
@@ -1305,23 +1309,35 @@ func (h *Head) WaitForPendingReadersInTimeRange(mint, maxt int64) {
 		return o
 	}
 	for overlaps() {
+		if err := ctx.Err(); err != nil {
+			return context.Cause(ctx)
+		}
 		time.Sleep(500 * time.Millisecond)
 	}
+	return nil
 }
 
 // WaitForPendingReadersForOOOChunksAtOrBefore is like WaitForPendingReadersInTimeRange, except it waits for
 // queries touching OOO chunks less than or equal to chunk to finish querying.
-func (h *Head) WaitForPendingReadersForOOOChunksAtOrBefore(chunk chunks.ChunkDiskMapperRef) {
+func (h *Head) WaitForPendingReadersForOOOChunksAtOrBefore(ctx context.Context, chunk chunks.ChunkDiskMapperRef) error {
 	for h.oooIso.HasOpenReadsAtOrBefore(chunk) {
+		if err := ctx.Err(); err != nil {
+			return context.Cause(ctx)
+		}
 		time.Sleep(500 * time.Millisecond)
 	}
+	return nil
 }
 
 // WaitForAppendersOverlapping waits for appends overlapping maxt to finish.
-func (h *Head) WaitForAppendersOverlapping(maxt int64) {
+func (h *Head) WaitForAppendersOverlapping(ctx context.Context, maxt int64) error {
 	for maxt >= h.iso.lowestAppendTime() {
+		if err := ctx.Err(); err != nil {
+			return context.Cause(ctx)
+		}
 		time.Sleep(500 * time.Millisecond)
 	}
+	return nil
 }
 
 // IsQuerierCollidingWithTruncation returns if the current querier needs to be closed and if a new querier
@@ -1484,10 +1500,12 @@ func (h *Head) truncateWAL(mint int64) error {
 //
 // The caller is responsible for ensuring that no further queriers will be created that reference chunks less
 // than or equal to newMinOOOMmapRef before calling truncateOOO.
-func (h *Head) truncateOOO(lastWBLFile int, newMinOOOMmapRef chunks.ChunkDiskMapperRef) error {
+func (h *Head) truncateOOO(ctx context.Context, lastWBLFile int, newMinOOOMmapRef chunks.ChunkDiskMapperRef) error {
 	curMinOOOMmapRef := chunks.ChunkDiskMapperRef(h.minOOOMmapRef.Load())
 	if newMinOOOMmapRef.GreaterThan(curMinOOOMmapRef) {
-		h.WaitForPendingReadersForOOOChunksAtOrBefore(newMinOOOMmapRef)
+		if err := h.WaitForPendingReadersForOOOChunksAtOrBefore(ctx, newMinOOOMmapRef); err != nil {
+			return err
+		}
 		h.minOOOMmapRef.Store(uint64(newMinOOOMmapRef))
 
 		if err := h.truncateSeriesAndChunkDiskMapper("truncateOOO"); err != nil {

@@ -937,7 +937,7 @@ func TestHead_WALMultiRef_StaleDeletion_ChunkGaugeNotNegative(t *testing.T) {
 
 	// Truncate stale series: removes ref1 from the head and writes a
 	// [MinInt64, MaxInt64] tombstone record to the WAL.
-	require.NoError(t, head.truncateStaleSeries([]storage.SeriesRef{ref1}, 3500))
+	require.NoError(t, head.truncateStaleSeries(t.Context(), []storage.SeriesRef{ref1}, 3500))
 
 	// Append a single sample with the same labels to create ref2.
 	// Ref2 has 0 m-mapped chunks, fewer than ref1's 3.
@@ -4080,7 +4080,7 @@ func TestWaitForPendingReadersInTimeRange(t *testing.T) {
 				synctest.Test(t, func(t *testing.T) {
 					var waitOver atomic.Bool
 					go func() {
-						db.head.WaitForPendingReadersInTimeRange(truncMint, truncMaxt)
+						db.head.WaitForPendingReadersInTimeRange(t.Context(), truncMint, truncMaxt)
 						waitOver.Store(true)
 					}()
 
@@ -6261,7 +6261,7 @@ func testHeadMinOOOTimeUpdate(t *testing.T, scenario sampleTypeScenario) {
 	require.Equal(t, 295*time.Minute.Milliseconds(), h.MinOOOTime())
 
 	// Allowed window for OOO is >=290, which is before the earliest ooo sample 295, so it gets set to the lower value.
-	require.NoError(t, h.truncateOOO(0, 1))
+	require.NoError(t, h.truncateOOO(t.Context(), 0, 1))
 	require.Equal(t, 290*time.Minute.Milliseconds(), h.MinOOOTime())
 
 	appendSample(310) // In-order sample.
@@ -6270,7 +6270,7 @@ func testHeadMinOOOTimeUpdate(t *testing.T, scenario sampleTypeScenario) {
 
 	// Now the OOO sample 295 was not gc'ed yet. And allowed window for OOO is now >=300.
 	// So the lowest among them, 295, is set as minOOOTime.
-	require.NoError(t, h.truncateOOO(0, 2))
+	require.NoError(t, h.truncateOOO(t.Context(), 0, 2))
 	require.Equal(t, 295*time.Minute.Milliseconds(), h.MinOOOTime())
 }
 
@@ -7993,7 +7993,7 @@ func TestWALReplayRaceWithStaleSeriesCompaction(t *testing.T) {
 		require.NotNil(t, ms)
 		staleRefs = append(staleRefs, storage.SeriesRef(ms.ref))
 	}
-	require.NoError(t, head.truncateStaleSeries(staleRefs, 300))
+	require.NoError(t, head.truncateStaleSeries(t.Context(), staleRefs, 300))
 	require.Equal(t, uint64(0), head.NumStaleSeries())
 	require.Equal(t, uint64(0), head.NumSeries())
 
@@ -8600,7 +8600,7 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		readyBefore := mmapReadyCounter()
 
 		// Use truncateStaleSeries which calls gcStaleSeries internally.
-		require.NoError(t, h.truncateStaleSeries(
+		require.NoError(t, h.truncateStaleSeries(t.Context(),
 			[]storage.SeriesRef{storage.SeriesRef(sB.ref)}, ts,
 		))
 		requireCounterConsistent("after truncateStaleSeries")

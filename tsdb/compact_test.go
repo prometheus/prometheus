@@ -2090,7 +2090,7 @@ func TestDelayedCompaction(t *testing.T) {
 			require.NotZero(t, getDelayStart())
 
 			// Trigger a manual compaction.
-			require.NoError(t, db.CompactHead(NewRangeHead(db.Head(), 0, 50.0)))
+			require.NoError(t, db.CompactHead(t.Context(), NewRangeHead(db.Head(), 0, 50.0)))
 			require.Equal(t, 4.0, compactorRanCount(db))
 
 			// Re-trigger an auto compaction.

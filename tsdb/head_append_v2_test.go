@@ -1447,7 +1447,7 @@ func TestWaitForPendingReadersInTimeRange_AppenderV2(t *testing.T) {
 				synctest.Test(t, func(t *testing.T) {
 					var waitOver atomic.Bool
 					go func() {
-						db.head.WaitForPendingReadersInTimeRange(truncMint, truncMaxt)
+						db.head.WaitForPendingReadersInTimeRange(t.Context(), truncMint, truncMaxt)
 						waitOver.Store(true)
 					}()
 
@@ -3442,7 +3442,7 @@ func testHeadMinOOOTimeUpdateAppenderV2(t *testing.T, scenario sampleTypeScenari
 	require.Equal(t, 295*time.Minute.Milliseconds(), h.MinOOOTime())
 
 	// Allowed window for OOO is >=290, which is before the earliest ooo sample 295, so it gets set to the lower value.
-	require.NoError(t, h.truncateOOO(0, 1))
+	require.NoError(t, h.truncateOOO(t.Context(), 0, 1))
 	require.Equal(t, 290*time.Minute.Milliseconds(), h.MinOOOTime())
 
 	appendSample(310) // In-order sample.
@@ -3451,7 +3451,7 @@ func testHeadMinOOOTimeUpdateAppenderV2(t *testing.T, scenario sampleTypeScenari
 
 	// Now the OOO sample 295 was not gc'ed yet. And allowed window for OOO is now >=300.
 	// So the lowest among them, 295, is set as minOOOTime.
-	require.NoError(t, h.truncateOOO(0, 2))
+	require.NoError(t, h.truncateOOO(t.Context(), 0, 2))
 	require.Equal(t, 295*time.Minute.Milliseconds(), h.MinOOOTime())
 }
 
