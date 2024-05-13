@@ -791,7 +791,15 @@ func (m *equalMultiStringMapMatcher) Matches(s string) bool {
 	}
 
 	_, ok := m.values[s]
-	return ok
+	if ok || m.caseSensitive {
+		return ok
+	}
+	for k := range m.values {
+		if strings.EqualFold(s, k) {
+			return true
+		}
+	}
+	return false
 }
 
 // anyStringWithoutNewlineMatcher is a stringMatcher which matches any string
