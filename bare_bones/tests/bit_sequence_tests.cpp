@@ -184,7 +184,9 @@ TEST_F(BitSequenceCopyWithSizeConstructorFixture, SourceStreamIsEmpty) {
 
 class CompactBitSequenceFixture : public testing::Test {
  protected:
-  CompactBitSequence stream_;
+  static constexpr std::array kAllocationSizesBits = {0U, 32U * 8};
+
+  CompactBitSequence<kAllocationSizesBits> stream_;
 };
 
 TEST_F(CompactBitSequenceFixture, MoveConstructor) {
@@ -208,7 +210,7 @@ TEST_F(CompactBitSequenceFixture, MoveOperator) {
   stream_.push_back_single_one_bit();
 
   // Act
-  CompactBitSequence stream2;
+  decltype(stream_) stream2;
   stream2.push_back_single_one_bit();
   stream2 = std::move(stream_);
 

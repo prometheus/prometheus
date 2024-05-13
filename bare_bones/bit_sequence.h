@@ -30,8 +30,11 @@ PROMPP_ALWAYS_INLINE constexpr size_t to_bytes(size_t bits) noexcept {
   return bits / 8;
 }
 
+template <std::array kAllocationSizesBits>
 class PROMPP_ATTRIBUTE_PACKED CompactBitSequence {
  public:
+  static_assert(std::is_same_v<typename decltype(kAllocationSizesBits)::value_type, uint32_t>);
+
   CompactBitSequence() = default;
   CompactBitSequence(const CompactBitSequence& other) = delete;
   CompactBitSequence(CompactBitSequence&& other) noexcept
@@ -105,20 +108,15 @@ class PROMPP_ATTRIBUTE_PACKED CompactBitSequence {
   PROMPP_ALWAYS_INLINE void push_back_d64_svbyte_0468(double val) noexcept {
     // for double skip trail z instead of lead z
 
-    uint8_t size_in_bytes = ((64 + 15 - std::countr_zero(std::bit_cast<uint64_t>(val))) >> 3) & 0b1110;
+    uint8_t size_in_bytes = to_bytes(64 + 15 - std::countr_zero(std::bit_cast<uint64_t>(val))) & 0b1110;
     size_in_bytes += static_cast<bool>(size_in_bytes & 0b111) << 1;
     const uint8_t code = (size_in_bytes >> 1) - (size_in_bytes != 0);
 
     push_back_bits_u32(2, code);
-    push_back_bits_u64(size_in_bytes << 3, (std::bit_cast<uint64_t>(val)) >> (64 - (size_in_bytes << 3)));
+    push_back_bits_u64(to_bits(size_in_bytes), (std::bit_cast<uint64_t>(val)) >> (64 - to_bits(size_in_bytes)));
   }
 
  private:
-  static constexpr size_t kAllocationSizesBits[] = {to_bits(0),    to_bits(32),   to_bits(64),   to_bits(96),   to_bits(128),  to_bits(192),  to_bits(256),
-                                                    to_bits(384),  to_bits(512),  to_bits(640),  to_bits(768),  to_bits(1024), to_bits(1152), to_bits(1280),
-                                                    to_bits(1408), to_bits(1536), to_bits(2048), to_bits(2176), to_bits(2304), to_bits(2432), to_bits(2560),
-                                                    to_bits(3076), to_bits(3584), to_bits(4096), to_bits(4608), to_bits(5120), to_bits(5632), to_bits(6144),
-                                                    to_bits(6656), to_bits(7168), to_bits(7680), to_bits(8192)};
   static constexpr uint32_t kReservedSizeBits = to_bits(sizeof(uint64_t) + 1);
 
   uint8_t* memory_{};
