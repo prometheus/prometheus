@@ -627,7 +627,7 @@ func BenchmarkManagerReload(b *testing.B) {
 		activeTargets: map[uint64]*Target{},
 	}
 
-	for i := 0; i < b.N; i++ {
+	for i := 0; i < 10000; i++ {
 		sp.activeTargets[uint64(i)] = &Target{
 			discoveredLabels: labels.FromStrings("__address__", fmt.Sprintf("foo-%d", i)),
 			labels:           labels.FromStrings("label_key", fmt.Sprintf("foo-%d", i)),
