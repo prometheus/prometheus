@@ -158,7 +158,7 @@ type Writer struct {
 	postingsEncoder PostingsEncoder
 }
 
-// TOC represents index Table Of Content that states where each section of index starts.
+// TOC represents the index Table Of Contents that states where each section of the index starts.
 type TOC struct {
 	Symbols           uint64
 	Series            uint64
@@ -168,7 +168,7 @@ type TOC struct {
 	PostingsTable     uint64
 }
 
-// NewTOCFromByteSlice return parsed TOC from given index byte slice.
+// NewTOCFromByteSlice returns a parsed TOC from the given index byte slice.
 func NewTOCFromByteSlice(bs ByteSlice) (*TOC, error) {
 	if bs.Len() < indexTOCLen {
 		return nil, encoding.ErrInvalidSize
@@ -1536,36 +1536,14 @@ func (r *Reader) LabelValues(ctx context.Context, name string, matchers ...*labe
 	if len(e) == 0 {
 		return nil, nil
 	}
+
 	values := make([]string, 0, len(e)*symbolFactor)
-
-	d := encoding.NewDecbufAt(r.b, int(r.toc.PostingsTable), nil)
-	d.Skip(e[0].off)
 	lastVal := e[len(e)-1].value
-
-	skip := 0
-	for d.Err() == nil && ctx.Err() == nil {
-		if skip == 0 {
-			// These are always the same number of bytes,
-			// and it's faster to skip than parse.
-			skip = d.Len()
-			d.Uvarint()      // Keycount.
-			d.UvarintBytes() // Label name.
-			skip -= d.Len()
-		} else {
-			d.Skip(skip)
-		}
-		s := yoloString(d.UvarintBytes()) // Label value.
-		values = append(values, s)
-		if s == lastVal {
-			break
-		}
-		d.Uvarint64() // Offset.
-	}
-	if d.Err() != nil {
-		return nil, fmt.Errorf("get postings offset entry: %w", d.Err())
-	}
-
-	return values, ctx.Err()
+	err := r.traversePostingOffsets(ctx, e[0].off, func(val string, _ uint64) (bool, error) {
+		values = append(values, val)
+		return val != lastVal, nil
+	})
+	return values, err
 }
 
 // LabelNamesFor returns all the label names for the series referred to by IDs.
@@ -1662,6 +1640,44 @@ func (r *Reader) Series(id storage.SeriesRef, builder *labels.ScratchBuilder, ch
 	return nil
 }
 
+// traversePostingOffsets traverses r's posting offsets table, starting at off, and calls cb with every label value and postings offset.
+// If cb returns false (or an error), the traversing is interrupted.
+func (r *Reader) traversePostingOffsets(ctx context.Context, off int, cb func(string, uint64) (bool, error)) error {
+	// Don't Crc32 the entire postings offset table, this is very slow
+	// so hope any issues were caught at startup.
+	d := encoding.NewDecbufAt(r.b, int(r.toc.PostingsTable), nil)
+	d.Skip(off)
+	skip := 0
+	ctxErr := ctx.Err()
+	for d.Err() == nil && ctxErr == nil {
+		if skip == 0 {
+			// These are always the same number of bytes,
+			// and it's faster to skip than to parse.
+			skip = d.Len()
+			d.Uvarint()      // Keycount.
+			d.UvarintBytes() // Label name.
+			skip -= d.Len()
+		} else {
+			d.Skip(skip)
+		}
+		v := yoloString(d.UvarintBytes()) // Label value.
+		postingsOff := d.Uvarint64()      // Offset.
+		if ok, err := cb(v, postingsOff); err != nil {
+			return err
+		} else if !ok {
+			break
+		}
+		ctxErr = ctx.Err()
+	}
+	if d.Err() != nil {
+		return fmt.Errorf("get postings offset entry: %w", d.Err())
+	}
+	if ctxErr != nil {
+		return fmt.Errorf("get postings offset entry: %w", ctxErr)
+	}
+	return nil
+}
+
 func (r *Reader) Postings(ctx context.Context, name string, values ...string) (Postings, error) {
 	if r.version == FormatV1 {
 		e, ok := r.postingsV1[name]
@@ -1696,7 +1712,6 @@ func (r *Reader) Postings(ctx context.Context, name string, values ...string) (P
 
 	slices.Sort(values) // Values must be in order so we can step through the table on disk.
 	res := make([]Postings, 0, len(values))
-	skip := 0
 	valueIndex := 0
 	for valueIndex < len(values) && values[valueIndex] < e[0].value {
 		// Discard values before the start.
@@ -1714,33 +1729,15 @@ func (r *Reader) Postings(ctx context.Context, name string, values ...string) (P
 			// Need to look from previous entry.
 			i--
 		}
-		// Don't Crc32 the entire postings offset table, this is very slow
-		// so hope any issues were caught at startup.
-		d := encoding.NewDecbufAt(r.b, int(r.toc.PostingsTable), nil)
-		d.Skip(e[i].off)
 
-		// Iterate on the offset table.
-		var postingsOff uint64 // The offset into the postings table.
-		for d.Err() == nil && ctx.Err() == nil {
-			if skip == 0 {
-				// These are always the same number of bytes,
-				// and it's faster to skip than parse.
-				skip = d.Len()
-				d.Uvarint()      // Keycount.
-				d.UvarintBytes() // Label name.
-				skip -= d.Len()
-			} else {
-				d.Skip(skip)
-			}
-			v := d.UvarintBytes()       // Label value.
-			postingsOff = d.Uvarint64() // Offset.
-			for string(v) >= value {
-				if string(v) == value {
+		if err := r.traversePostingOffsets(ctx, e[i].off, func(val string, postingsOff uint64) (bool, error) {
+			for val >= value {
+				if val == value {
 					// Read from the postings table.
 					d2 := encoding.NewDecbufAt(r.b, int(postingsOff), castagnoliTable)
 					_, p, err := r.dec.Postings(d2.Get())
 					if err != nil {
-						return nil, fmt.Errorf("decode postings: %w", err)
+						return false, fmt.Errorf("decode postings: %w", err)
 					}
 					res = append(res, p)
 				}
@@ -1752,18 +1749,70 @@ func (r *Reader) Postings(ctx context.Context, name string, values ...string) (P
 			}
 			if i+1 == len(e) || value >= e[i+1].value || valueIndex == len(values) {
 				// Need to go to a later postings offset entry, if there is one.
-				break
+				return false, nil
 			}
-		}
-		if d.Err() != nil {
-			return nil, fmt.Errorf("get postings offset entry: %w", d.Err())
-		}
-		if ctx.Err() != nil {
-			return nil, fmt.Errorf("get postings offset entry: %w", ctx.Err())
+			return true, nil
+		}); err != nil {
+			return nil, err
 		}
 	}
 
 	return Merge(ctx, res...), nil
+}
+
+func (r *Reader) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) Postings {
+	if r.version == FormatV1 {
+		return r.postingsForLabelMatchingV1(ctx, name, match)
+	}
+
+	e := r.postings[name]
+	if len(e) == 0 {
+		return EmptyPostings()
+	}
+
+	lastVal := e[len(e)-1].value
+	var its []Postings
+	if err := r.traversePostingOffsets(ctx, e[0].off, func(val string, postingsOff uint64) (bool, error) {
+		if match(val) {
+			// We want this postings iterator since the value is a match
+			postingsDec := encoding.NewDecbufAt(r.b, int(postingsOff), castagnoliTable)
+			_, p, err := r.dec.PostingsFromDecbuf(postingsDec)
+			if err != nil {
+				return false, fmt.Errorf("decode postings: %w", err)
+			}
+			its = append(its, p)
+		}
+		return val != lastVal, nil
+	}); err != nil {
+		return ErrPostings(err)
+	}
+
+	return Merge(ctx, its...)
+}
+
+func (r *Reader) postingsForLabelMatchingV1(ctx context.Context, name string, match func(string) bool) Postings {
+	e := r.postingsV1[name]
+	if len(e) == 0 {
+		return EmptyPostings()
+	}
+
+	var its []Postings
+	for val, offset := range e {
+		if !match(val) {
+			continue
+		}
+
+		// Read from the postings table.
+		d := encoding.NewDecbufAt(r.b, int(offset), castagnoliTable)
+		_, p, err := r.dec.PostingsFromDecbuf(d)
+		if err != nil {
+			return ErrPostings(fmt.Errorf("decode postings: %w", err))
+		}
+
+		its = append(its, p)
+	}
+
+	return Merge(ctx, its...)
 }
 
 // SortedPostings returns the given postings list reordered so that the backing series
@@ -1856,6 +1905,11 @@ type Decoder struct {
 // Postings returns a postings list for b and its number of elements.
 func (dec *Decoder) Postings(b []byte) (int, Postings, error) {
 	d := encoding.Decbuf{B: b}
+	return dec.PostingsFromDecbuf(d)
+}
+
+// PostingsFromDecbuf returns a postings list for d and its number of elements.
+func (dec *Decoder) PostingsFromDecbuf(d encoding.Decbuf) (int, Postings, error) {
 	n := d.Be32int()
 	l := d.Get()
 	if d.Err() != nil {

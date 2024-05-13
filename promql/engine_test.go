@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package promql
+package promql_test
 
 import (
 	"context"
@@ -23,22 +23,29 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
-
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/util/almost"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
+)
+
+const (
+	env                  = "query execution"
+	defaultLookbackDelta = 5 * time.Minute
+	defaultEpsilon       = 0.000001 // Relative error allowed for sample values.
 )
 
 func TestMain(m *testing.M) {
@@ -51,10 +58,10 @@ func TestQueryConcurrency(t *testing.T) {
 	dir, err := os.MkdirTemp("", "test_concurrency")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir)
-	queryTracker := NewActiveQueryTracker(dir, maxConcurrency, nil)
+	queryTracker := promql.NewActiveQueryTracker(dir, maxConcurrency, nil)
 	t.Cleanup(queryTracker.Close)
 
-	opts := EngineOpts{
+	opts := promql.EngineOpts{
 		Logger:             nil,
 		Reg:                nil,
 		MaxSamples:         10,
@@ -62,7 +69,7 @@ func TestQueryConcurrency(t *testing.T) {
 		ActiveQueryTracker: queryTracker,
 	}
 
-	engine := NewEngine(opts)
+	engine := promql.NewEngine(opts)
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 
@@ -85,7 +92,7 @@ func TestQueryConcurrency(t *testing.T) {
 	}
 
 	for i := 0; i < maxConcurrency; i++ {
-		q := engine.newTestQuery(f)
+		q := engine.NewTestQuery(f)
 		go q.Exec(ctx)
 		select {
 		case <-processing:
@@ -95,7 +102,7 @@ func TestQueryConcurrency(t *testing.T) {
 		}
 	}
 
-	q := engine.newTestQuery(f)
+	q := engine.NewTestQuery(f)
 	go q.Exec(ctx)
 
 	select {
@@ -121,18 +128,33 @@ func TestQueryConcurrency(t *testing.T) {
 	}
 }
 
+// contextDone returns an error if the context was canceled or timed out.
+func contextDone(ctx context.Context, env string) error {
+	if err := ctx.Err(); err != nil {
+		switch {
+		case errors.Is(err, context.Canceled):
+			return promql.ErrQueryCanceled(env)
+		case errors.Is(err, context.DeadlineExceeded):
+			return promql.ErrQueryTimeout(env)
+		default:
+			return err
+		}
+	}
+	return nil
+}
+
 func TestQueryTimeout(t *testing.T) {
-	opts := EngineOpts{
+	opts := promql.EngineOpts{
 		Logger:     nil,
 		Reg:        nil,
 		MaxSamples: 10,
 		Timeout:    5 * time.Millisecond,
 	}
-	engine := NewEngine(opts)
+	engine := promql.NewEngine(opts)
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 
-	query := engine.newTestQuery(func(ctx context.Context) error {
+	query := engine.NewTestQuery(func(ctx context.Context) error {
 		time.Sleep(100 * time.Millisecond)
 		return contextDone(ctx, "test statement execution")
 	})
@@ -140,20 +162,20 @@ func TestQueryTimeout(t *testing.T) {
 	res := query.Exec(ctx)
 	require.Error(t, res.Err, "expected timeout error but got none")
 
-	var e ErrQueryTimeout
+	var e promql.ErrQueryTimeout
 	require.ErrorAs(t, res.Err, &e, "expected timeout error but got: %s", res.Err)
 }
 
-const errQueryCanceled = ErrQueryCanceled("test statement execution")
+const errQueryCanceled = promql.ErrQueryCanceled("test statement execution")
 
 func TestQueryCancel(t *testing.T) {
-	opts := EngineOpts{
+	opts := promql.EngineOpts{
 		Logger:     nil,
 		Reg:        nil,
 		MaxSamples: 10,
 		Timeout:    10 * time.Second,
 	}
-	engine := NewEngine(opts)
+	engine := promql.NewEngine(opts)
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 
@@ -161,13 +183,13 @@ func TestQueryCancel(t *testing.T) {
 	block := make(chan struct{})
 	processing := make(chan struct{})
 
-	query1 := engine.newTestQuery(func(ctx context.Context) error {
+	query1 := engine.NewTestQuery(func(ctx context.Context) error {
 		processing <- struct{}{}
 		<-block
 		return contextDone(ctx, "test statement execution")
 	})
 
-	var res *Result
+	var res *promql.Result
 
 	go func() {
 		res = query1.Exec(ctx)
@@ -183,7 +205,7 @@ func TestQueryCancel(t *testing.T) {
 	require.Equal(t, errQueryCanceled, res.Err)
 
 	// Canceling a query before starting it must have no effect.
-	query2 := engine.newTestQuery(func(ctx context.Context) error {
+	query2 := engine.NewTestQuery(func(ctx context.Context) error {
 		return contextDone(ctx, "test statement execution")
 	})
 
@@ -221,14 +243,14 @@ func (e errSeriesSet) Err() error                        { return e.err }
 func (e errSeriesSet) Warnings() annotations.Annotations { return nil }
 
 func TestQueryError(t *testing.T) {
-	opts := EngineOpts{
+	opts := promql.EngineOpts{
 		Logger:     nil,
 		Reg:        nil,
 		MaxSamples: 10,
 		Timeout:    10 * time.Second,
 	}
-	engine := NewEngine(opts)
-	errStorage := ErrStorage{errors.New("storage error")}
+	engine := promql.NewEngine(opts)
+	errStorage := promql.ErrStorage{errors.New("storage error")}
 	queryable := storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
 		return &errQuerier{err: errStorage}, nil
 	})
@@ -270,7 +292,7 @@ func (h *hintRecordingQuerier) Select(ctx context.Context, sortSeries bool, hint
 }
 
 func TestSelectHintsSetCorrectly(t *testing.T) {
-	opts := EngineOpts{
+	opts := promql.EngineOpts{
 		Logger:           nil,
 		Reg:              nil,
 		MaxSamples:       10,
@@ -561,11 +583,11 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 		},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
-			engine := NewEngine(opts)
+			engine := promql.NewEngine(opts)
 			hintsRecorder := &noopHintRecordingQueryable{}
 
 			var (
-				query Query
+				query promql.Query
 				err   error
 			)
 			ctx := context.Background()
@@ -586,13 +608,13 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 }
 
 func TestEngineShutdown(t *testing.T) {
-	opts := EngineOpts{
+	opts := promql.EngineOpts{
 		Logger:     nil,
 		Reg:        nil,
 		MaxSamples: 10,
 		Timeout:    10 * time.Second,
 	}
-	engine := NewEngine(opts)
+	engine := promql.NewEngine(opts)
 	ctx, cancelCtx := context.WithCancel(context.Background())
 
 	block := make(chan struct{})
@@ -605,13 +627,13 @@ func TestEngineShutdown(t *testing.T) {
 		<-block
 		return contextDone(ctx, "test statement execution")
 	}
-	query1 := engine.newTestQuery(f)
+	query1 := engine.NewTestQuery(f)
 
 	// Stopping the engine must cancel the base context. While executing queries is
 	// still possible, their context is canceled from the beginning and execution should
 	// terminate immediately.
 
-	var res *Result
+	var res *promql.Result
 	go func() {
 		res = query1.Exec(ctx)
 		processing <- struct{}{}
@@ -625,7 +647,7 @@ func TestEngineShutdown(t *testing.T) {
 	require.Error(t, res.Err, "expected error on shutdown during query but got none")
 	require.Equal(t, errQueryCanceled, res.Err)
 
-	query2 := engine.newTestQuery(func(context.Context) error {
+	query2 := engine.NewTestQuery(func(context.Context) error {
 		require.FailNow(t, "reached query execution unexpectedly")
 		return nil
 	})
@@ -635,12 +657,12 @@ func TestEngineShutdown(t *testing.T) {
 	res2 := query2.Exec(ctx)
 	require.Error(t, res2.Err, "expected error on querying with canceled context but got none")
 
-	var e ErrQueryCanceled
+	var e promql.ErrQueryCanceled
 	require.ErrorAs(t, res2.Err, &e, "expected cancellation error but got: %s", res2.Err)
 }
 
 func TestEngineEvalStmtTimestamps(t *testing.T) {
-	storage := LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 load 10s
   metric 1 2
 `)
@@ -657,13 +679,13 @@ load 10s
 		// Instant queries.
 		{
 			Query:  "1",
-			Result: Scalar{V: 1, T: 1000},
+			Result: promql.Scalar{V: 1, T: 1000},
 			Start:  time.Unix(1, 0),
 		},
 		{
 			Query: "metric",
-			Result: Vector{
-				Sample{
+			Result: promql.Vector{
+				promql.Sample{
 					F:      1,
 					T:      1000,
 					Metric: labels.FromStrings("__name__", "metric"),
@@ -673,9 +695,9 @@ load 10s
 		},
 		{
 			Query: "metric[20s]",
-			Result: Matrix{
-				Series{
-					Floats: []FPoint{{F: 1, T: 0}, {F: 2, T: 10000}},
+			Result: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 1, T: 0}, {F: 2, T: 10000}},
 					Metric: labels.FromStrings("__name__", "metric"),
 				},
 			},
@@ -684,9 +706,9 @@ load 10s
 		// Range queries.
 		{
 			Query: "1",
-			Result: Matrix{
-				Series{
-					Floats: []FPoint{{F: 1, T: 0}, {F: 1, T: 1000}, {F: 1, T: 2000}},
+			Result: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 1, T: 0}, {F: 1, T: 1000}, {F: 1, T: 2000}},
 					Metric: labels.EmptyLabels(),
 				},
 			},
@@ -696,9 +718,9 @@ load 10s
 		},
 		{
 			Query: "metric",
-			Result: Matrix{
-				Series{
-					Floats: []FPoint{{F: 1, T: 0}, {F: 1, T: 1000}, {F: 1, T: 2000}},
+			Result: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 1, T: 0}, {F: 1, T: 1000}, {F: 1, T: 2000}},
 					Metric: labels.FromStrings("__name__", "metric"),
 				},
 			},
@@ -708,9 +730,9 @@ load 10s
 		},
 		{
 			Query: "metric",
-			Result: Matrix{
-				Series{
-					Floats: []FPoint{{F: 1, T: 0}, {F: 1, T: 5000}, {F: 2, T: 10000}},
+			Result: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 1, T: 0}, {F: 1, T: 5000}, {F: 2, T: 10000}},
 					Metric: labels.FromStrings("__name__", "metric"),
 				},
 			},
@@ -727,7 +749,7 @@ load 10s
 	for i, c := range cases {
 		t.Run(fmt.Sprintf("%d query=%s", i, c.Query), func(t *testing.T) {
 			var err error
-			var qry Query
+			var qry promql.Query
 			engine := newTestEngine()
 			if c.Interval == 0 {
 				qry, err = engine.NewInstantQuery(context.Background(), storage, nil, c.Query, c.Start)
@@ -749,7 +771,7 @@ load 10s
 }
 
 func TestQueryStatistics(t *testing.T) {
-	storage := LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 load 10s
   metricWith1SampleEvery10Seconds 1+1x100
   metricWith3SampleEvery10Seconds{a="1",b="1"} 1+1x100
@@ -818,8 +840,8 @@ load 10s
 		{
 			Query:        "timestamp(metricWith1HistogramEvery10Seconds)",
 			Start:        time.Unix(21, 0),
-			PeakSamples:  13, // histogram size 12 + 1 extra because of timestamp
-			TotalSamples: 1,  // 1 float sample (because of timestamp) / 10 seconds
+			PeakSamples:  2,
+			TotalSamples: 1, // 1 float sample (because of timestamp) / 10 seconds
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				21000: 1,
 			},
@@ -1116,7 +1138,7 @@ load 10s
 			Start:        time.Unix(201, 0),
 			End:          time.Unix(220, 0),
 			Interval:     5 * time.Second,
-			PeakSamples:  16,
+			PeakSamples:  5,
 			TotalSamples: 4, // 1 sample per query * 4 steps
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 1,
@@ -1267,17 +1289,14 @@ load 10s
 		},
 	}
 
-	engine := newTestEngine()
-	engine.enablePerStepStats = true
-	origMaxSamples := engine.maxSamplesPerQuery
 	for _, c := range cases {
 		t.Run(c.Query, func(t *testing.T) {
-			opts := NewPrometheusQueryOpts(true, 0)
-			engine.maxSamplesPerQuery = origMaxSamples
+			opts := promql.NewPrometheusQueryOpts(true, 0)
+			engine := promqltest.NewTestEngine(true, 0, promqltest.DefaultMaxSamplesPerQuery)
 
 			runQuery := func(expErr error) *stats.Statistics {
 				var err error
-				var qry Query
+				var qry promql.Query
 				if c.Interval == 0 {
 					qry, err = engine.NewInstantQuery(context.Background(), storage, opts, c.Query, c.Start)
 				} else {
@@ -1300,14 +1319,14 @@ load 10s
 			if c.SkipMaxCheck {
 				return
 			}
-			engine.maxSamplesPerQuery = stats.Samples.PeakSamples - 1
-			runQuery(ErrTooManySamples(env))
+			engine = promqltest.NewTestEngine(true, 0, stats.Samples.PeakSamples-1)
+			runQuery(promql.ErrTooManySamples(env))
 		})
 	}
 }
 
 func TestMaxQuerySamples(t *testing.T) {
-	storage := LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 load 10s
   metric 1+1x100
   bigmetric{a="1"} 1+1x100
@@ -1423,7 +1442,7 @@ load 10s
 			Interval:   5 * time.Second,
 		},
 		{
-			// Sample as above but with only 1 part as step invariant.
+			// promql.Sample as above but with only 1 part as step invariant.
 			// Here the peak is caused by the non-step invariant part as it touches more time range.
 			// Hence at peak it is 2*21 (subquery from 0s to 20s)
 			//                     + 11 (buffer of a series per evaluation)
@@ -1456,7 +1475,7 @@ load 10s
 			engine := newTestEngine()
 			testFunc := func(expError error) {
 				var err error
-				var qry Query
+				var qry promql.Query
 				if c.Interval == 0 {
 					qry, err = engine.NewInstantQuery(context.Background(), storage, nil, c.Query, c.Start)
 				} else {
@@ -1474,19 +1493,19 @@ load 10s
 			}
 
 			// Within limit.
-			engine.maxSamplesPerQuery = c.MaxSamples
+			engine = promqltest.NewTestEngine(false, 0, c.MaxSamples)
 			testFunc(nil)
 
 			// Exceeding limit.
-			engine.maxSamplesPerQuery = c.MaxSamples - 1
-			testFunc(ErrTooManySamples(env))
+			engine = promqltest.NewTestEngine(false, 0, c.MaxSamples-1)
+			testFunc(promql.ErrTooManySamples(env))
 		})
 	}
 }
 
 func TestAtModifier(t *testing.T) {
 	engine := newTestEngine()
-	storage := LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 load 10s
   metric{job="1"} 0+1x1000
   metric{job="2"} 0+2x1000
@@ -1530,137 +1549,137 @@ load 1ms
 		{ // Time of the result is the evaluation time.
 			query: `metric_neg @ 0`,
 			start: 100,
-			result: Vector{
-				Sample{F: 1, T: 100000, Metric: lblsneg},
+			result: promql.Vector{
+				promql.Sample{F: 1, T: 100000, Metric: lblsneg},
 			},
 		}, {
 			query: `metric_neg @ -200`,
 			start: 100,
-			result: Vector{
-				Sample{F: 201, T: 100000, Metric: lblsneg},
+			result: promql.Vector{
+				promql.Sample{F: 201, T: 100000, Metric: lblsneg},
 			},
 		}, {
 			query: `metric{job="2"} @ 50`,
 			start: -2, end: 2, interval: 1,
-			result: Matrix{
-				Series{
-					Floats: []FPoint{{F: 10, T: -2000}, {F: 10, T: -1000}, {F: 10, T: 0}, {F: 10, T: 1000}, {F: 10, T: 2000}},
+			result: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 10, T: -2000}, {F: 10, T: -1000}, {F: 10, T: 0}, {F: 10, T: 1000}, {F: 10, T: 2000}},
 					Metric: lbls2,
 				},
 			},
 		}, { // Timestamps for matrix selector does not depend on the evaluation time.
 			query: "metric[20s] @ 300",
 			start: 10,
-			result: Matrix{
-				Series{
-					Floats: []FPoint{{F: 28, T: 280000}, {F: 29, T: 290000}, {F: 30, T: 300000}},
+			result: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 28, T: 280000}, {F: 29, T: 290000}, {F: 30, T: 300000}},
 					Metric: lbls1,
 				},
-				Series{
-					Floats: []FPoint{{F: 56, T: 280000}, {F: 58, T: 290000}, {F: 60, T: 300000}},
+				promql.Series{
+					Floats: []promql.FPoint{{F: 56, T: 280000}, {F: 58, T: 290000}, {F: 60, T: 300000}},
 					Metric: lbls2,
 				},
 			},
 		}, {
 			query: `metric_neg[2s] @ 0`,
 			start: 100,
-			result: Matrix{
-				Series{
-					Floats: []FPoint{{F: 3, T: -2000}, {F: 2, T: -1000}, {F: 1, T: 0}},
+			result: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 3, T: -2000}, {F: 2, T: -1000}, {F: 1, T: 0}},
 					Metric: lblsneg,
 				},
 			},
 		}, {
 			query: `metric_neg[3s] @ -500`,
 			start: 100,
-			result: Matrix{
-				Series{
-					Floats: []FPoint{{F: 504, T: -503000}, {F: 503, T: -502000}, {F: 502, T: -501000}, {F: 501, T: -500000}},
+			result: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 504, T: -503000}, {F: 503, T: -502000}, {F: 502, T: -501000}, {F: 501, T: -500000}},
 					Metric: lblsneg,
 				},
 			},
 		}, {
 			query: `metric_ms[3ms] @ 2.345`,
 			start: 100,
-			result: Matrix{
-				Series{
-					Floats: []FPoint{{F: 2342, T: 2342}, {F: 2343, T: 2343}, {F: 2344, T: 2344}, {F: 2345, T: 2345}},
+			result: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 2342, T: 2342}, {F: 2343, T: 2343}, {F: 2344, T: 2344}, {F: 2345, T: 2345}},
 					Metric: lblsms,
 				},
 			},
 		}, {
 			query: "metric[100s:25s] @ 300",
 			start: 100,
-			result: Matrix{
-				Series{
-					Floats: []FPoint{{F: 20, T: 200000}, {F: 22, T: 225000}, {F: 25, T: 250000}, {F: 27, T: 275000}, {F: 30, T: 300000}},
+			result: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 20, T: 200000}, {F: 22, T: 225000}, {F: 25, T: 250000}, {F: 27, T: 275000}, {F: 30, T: 300000}},
 					Metric: lbls1,
 				},
-				Series{
-					Floats: []FPoint{{F: 40, T: 200000}, {F: 44, T: 225000}, {F: 50, T: 250000}, {F: 54, T: 275000}, {F: 60, T: 300000}},
+				promql.Series{
+					Floats: []promql.FPoint{{F: 40, T: 200000}, {F: 44, T: 225000}, {F: 50, T: 250000}, {F: 54, T: 275000}, {F: 60, T: 300000}},
 					Metric: lbls2,
 				},
 			},
 		}, {
 			query: "metric_neg[50s:25s] @ 0",
 			start: 100,
-			result: Matrix{
-				Series{
-					Floats: []FPoint{{F: 51, T: -50000}, {F: 26, T: -25000}, {F: 1, T: 0}},
+			result: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 51, T: -50000}, {F: 26, T: -25000}, {F: 1, T: 0}},
 					Metric: lblsneg,
 				},
 			},
 		}, {
 			query: "metric_neg[50s:25s] @ -100",
 			start: 100,
-			result: Matrix{
-				Series{
-					Floats: []FPoint{{F: 151, T: -150000}, {F: 126, T: -125000}, {F: 101, T: -100000}},
+			result: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 151, T: -150000}, {F: 126, T: -125000}, {F: 101, T: -100000}},
 					Metric: lblsneg,
 				},
 			},
 		}, {
 			query: `metric_ms[100ms:25ms] @ 2.345`,
 			start: 100,
-			result: Matrix{
-				Series{
-					Floats: []FPoint{{F: 2250, T: 2250}, {F: 2275, T: 2275}, {F: 2300, T: 2300}, {F: 2325, T: 2325}},
+			result: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 2250, T: 2250}, {F: 2275, T: 2275}, {F: 2300, T: 2300}, {F: 2325, T: 2325}},
 					Metric: lblsms,
 				},
 			},
 		}, {
 			query: `metric_topk and topk(1, sum_over_time(metric_topk[50s] @ 100))`,
 			start: 50, end: 80, interval: 10,
-			result: Matrix{
-				Series{
-					Floats: []FPoint{{F: 995, T: 50000}, {F: 994, T: 60000}, {F: 993, T: 70000}, {F: 992, T: 80000}},
+			result: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 995, T: 50000}, {F: 994, T: 60000}, {F: 993, T: 70000}, {F: 992, T: 80000}},
 					Metric: lblstopk3,
 				},
 			},
 		}, {
 			query: `metric_topk and topk(1, sum_over_time(metric_topk[50s] @ 5000))`,
 			start: 50, end: 80, interval: 10,
-			result: Matrix{
-				Series{
-					Floats: []FPoint{{F: 10, T: 50000}, {F: 12, T: 60000}, {F: 14, T: 70000}, {F: 16, T: 80000}},
+			result: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 10, T: 50000}, {F: 12, T: 60000}, {F: 14, T: 70000}, {F: 16, T: 80000}},
 					Metric: lblstopk2,
 				},
 			},
 		}, {
 			query: `metric_topk and topk(1, sum_over_time(metric_topk[50s] @ end()))`,
 			start: 70, end: 100, interval: 10,
-			result: Matrix{
-				Series{
-					Floats: []FPoint{{F: 993, T: 70000}, {F: 992, T: 80000}, {F: 991, T: 90000}, {F: 990, T: 100000}},
+			result: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 993, T: 70000}, {F: 992, T: 80000}, {F: 991, T: 90000}, {F: 990, T: 100000}},
 					Metric: lblstopk3,
 				},
 			},
 		}, {
 			query: `metric_topk and topk(1, sum_over_time(metric_topk[50s] @ start()))`,
 			start: 100, end: 130, interval: 10,
-			result: Matrix{
-				Series{
-					Floats: []FPoint{{F: 990, T: 100000}, {F: 989, T: 110000}, {F: 988, T: 120000}, {F: 987, T: 130000}},
+			result: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 990, T: 100000}, {F: 989, T: 110000}, {F: 988, T: 120000}, {F: 987, T: 130000}},
 					Metric: lblstopk3,
 				},
 			},
@@ -1669,9 +1688,9 @@ load 1ms
 			// The trick here is that the query range should be > lookback delta.
 			query: `timestamp(metric_timestamp @ 3600)`,
 			start: 0, end: 7 * 60, interval: 60,
-			result: Matrix{
-				Series{
-					Floats: []FPoint{
+			result: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{
 						{F: 3600, T: 0},
 						{F: 3600, T: 60 * 1000},
 						{F: 3600, T: 2 * 60 * 1000},
@@ -1694,7 +1713,7 @@ load 1ms
 			}
 			start, end, interval := time.Unix(c.start, 0), time.Unix(c.end, 0), time.Duration(c.interval)*time.Second
 			var err error
-			var qry Query
+			var qry promql.Query
 			if c.end == 0 {
 				qry, err = engine.NewInstantQuery(context.Background(), storage, nil, c.query, start)
 			} else {
@@ -1704,76 +1723,19 @@ load 1ms
 
 			res := qry.Exec(context.Background())
 			require.NoError(t, res.Err)
-			if expMat, ok := c.result.(Matrix); ok {
+			if expMat, ok := c.result.(promql.Matrix); ok {
 				sort.Sort(expMat)
-				sort.Sort(res.Value.(Matrix))
+				sort.Sort(res.Value.(promql.Matrix))
 			}
 			testutil.RequireEqual(t, c.result, res.Value, "query %q failed", c.query)
 		})
 	}
 }
 
-func TestRecoverEvaluatorRuntime(t *testing.T) {
-	var output []interface{}
-	logger := log.Logger(log.LoggerFunc(func(keyvals ...interface{}) error {
-		output = append(output, keyvals...)
-		return nil
-	}))
-	ev := &evaluator{logger: logger}
-
-	expr, _ := parser.ParseExpr("sum(up)")
-
-	var err error
-
-	defer func() {
-		require.EqualError(t, err, "unexpected error: runtime error: index out of range [123] with length 0")
-		require.Contains(t, output, "sum(up)")
-	}()
-	defer ev.recover(expr, nil, &err)
-
-	// Cause a runtime panic.
-	var a []int
-	a[123] = 1
-}
-
-func TestRecoverEvaluatorError(t *testing.T) {
-	ev := &evaluator{logger: log.NewNopLogger()}
-	var err error
-
-	e := errors.New("custom error")
-
-	defer func() {
-		require.EqualError(t, err, e.Error())
-	}()
-	defer ev.recover(nil, nil, &err)
-
-	panic(e)
-}
-
-func TestRecoverEvaluatorErrorWithWarnings(t *testing.T) {
-	ev := &evaluator{logger: log.NewNopLogger()}
-	var err error
-	var ws annotations.Annotations
-
-	warnings := annotations.New().Add(errors.New("custom warning"))
-	e := errWithWarnings{
-		err:      errors.New("custom error"),
-		warnings: warnings,
-	}
-
-	defer func() {
-		require.EqualError(t, err, e.Error())
-		require.Equal(t, warnings, ws, "wrong warning message")
-	}()
-	defer ev.recover(nil, &ws, &err)
-
-	panic(e)
-}
-
 func TestSubquerySelector(t *testing.T) {
 	type caseType struct {
 		Query  string
-		Result Result
+		Result promql.Result
 		Start  time.Time
 	}
 
@@ -1787,11 +1749,11 @@ func TestSubquerySelector(t *testing.T) {
 			cases: []caseType{
 				{
 					Query: "metric[20s:10s]",
-					Result: Result{
+					Result: promql.Result{
 						nil,
-						Matrix{
-							Series{
-								Floats: []FPoint{{F: 1, T: 0}, {F: 2, T: 10000}},
+						promql.Matrix{
+							promql.Series{
+								Floats: []promql.FPoint{{F: 1, T: 0}, {F: 2, T: 10000}},
 								Metric: labels.FromStrings("__name__", "metric"),
 							},
 						},
@@ -1801,11 +1763,11 @@ func TestSubquerySelector(t *testing.T) {
 				},
 				{
 					Query: "metric[20s:5s]",
-					Result: Result{
+					Result: promql.Result{
 						nil,
-						Matrix{
-							Series{
-								Floats: []FPoint{{F: 1, T: 0}, {F: 1, T: 5000}, {F: 2, T: 10000}},
+						promql.Matrix{
+							promql.Series{
+								Floats: []promql.FPoint{{F: 1, T: 0}, {F: 1, T: 5000}, {F: 2, T: 10000}},
 								Metric: labels.FromStrings("__name__", "metric"),
 							},
 						},
@@ -1815,11 +1777,11 @@ func TestSubquerySelector(t *testing.T) {
 				},
 				{
 					Query: "metric[20s:5s] offset 2s",
-					Result: Result{
+					Result: promql.Result{
 						nil,
-						Matrix{
-							Series{
-								Floats: []FPoint{{F: 1, T: 0}, {F: 1, T: 5000}, {F: 2, T: 10000}},
+						promql.Matrix{
+							promql.Series{
+								Floats: []promql.FPoint{{F: 1, T: 0}, {F: 1, T: 5000}, {F: 2, T: 10000}},
 								Metric: labels.FromStrings("__name__", "metric"),
 							},
 						},
@@ -1829,11 +1791,11 @@ func TestSubquerySelector(t *testing.T) {
 				},
 				{
 					Query: "metric[20s:5s] offset 6s",
-					Result: Result{
+					Result: promql.Result{
 						nil,
-						Matrix{
-							Series{
-								Floats: []FPoint{{F: 1, T: 0}, {F: 1, T: 5000}, {F: 2, T: 10000}},
+						promql.Matrix{
+							promql.Series{
+								Floats: []promql.FPoint{{F: 1, T: 0}, {F: 1, T: 5000}, {F: 2, T: 10000}},
 								Metric: labels.FromStrings("__name__", "metric"),
 							},
 						},
@@ -1843,11 +1805,11 @@ func TestSubquerySelector(t *testing.T) {
 				},
 				{
 					Query: "metric[20s:5s] offset 4s",
-					Result: Result{
+					Result: promql.Result{
 						nil,
-						Matrix{
-							Series{
-								Floats: []FPoint{{F: 2, T: 15000}, {F: 2, T: 20000}, {F: 2, T: 25000}, {F: 2, T: 30000}},
+						promql.Matrix{
+							promql.Series{
+								Floats: []promql.FPoint{{F: 2, T: 15000}, {F: 2, T: 20000}, {F: 2, T: 25000}, {F: 2, T: 30000}},
 								Metric: labels.FromStrings("__name__", "metric"),
 							},
 						},
@@ -1857,11 +1819,11 @@ func TestSubquerySelector(t *testing.T) {
 				},
 				{
 					Query: "metric[20s:5s] offset 5s",
-					Result: Result{
+					Result: promql.Result{
 						nil,
-						Matrix{
-							Series{
-								Floats: []FPoint{{F: 2, T: 10000}, {F: 2, T: 15000}, {F: 2, T: 20000}, {F: 2, T: 25000}, {F: 2, T: 30000}},
+						promql.Matrix{
+							promql.Series{
+								Floats: []promql.FPoint{{F: 2, T: 10000}, {F: 2, T: 15000}, {F: 2, T: 20000}, {F: 2, T: 25000}, {F: 2, T: 30000}},
 								Metric: labels.FromStrings("__name__", "metric"),
 							},
 						},
@@ -1871,11 +1833,11 @@ func TestSubquerySelector(t *testing.T) {
 				},
 				{
 					Query: "metric[20s:5s] offset 6s",
-					Result: Result{
+					Result: promql.Result{
 						nil,
-						Matrix{
-							Series{
-								Floats: []FPoint{{F: 2, T: 10000}, {F: 2, T: 15000}, {F: 2, T: 20000}, {F: 2, T: 25000}},
+						promql.Matrix{
+							promql.Series{
+								Floats: []promql.FPoint{{F: 2, T: 10000}, {F: 2, T: 15000}, {F: 2, T: 20000}, {F: 2, T: 25000}},
 								Metric: labels.FromStrings("__name__", "metric"),
 							},
 						},
@@ -1885,11 +1847,11 @@ func TestSubquerySelector(t *testing.T) {
 				},
 				{
 					Query: "metric[20s:5s] offset 7s",
-					Result: Result{
+					Result: promql.Result{
 						nil,
-						Matrix{
-							Series{
-								Floats: []FPoint{{F: 2, T: 10000}, {F: 2, T: 15000}, {F: 2, T: 20000}, {F: 2, T: 25000}},
+						promql.Matrix{
+							promql.Series{
+								Floats: []promql.FPoint{{F: 2, T: 10000}, {F: 2, T: 15000}, {F: 2, T: 20000}, {F: 2, T: 25000}},
 								Metric: labels.FromStrings("__name__", "metric"),
 							},
 						},
@@ -1908,11 +1870,11 @@ func TestSubquerySelector(t *testing.T) {
 			cases: []caseType{
 				{ // Normal selector.
 					Query: `http_requests{group=~"pro.*",instance="0"}[30s:10s]`,
-					Result: Result{
+					Result: promql.Result{
 						nil,
-						Matrix{
-							Series{
-								Floats: []FPoint{{F: 9990, T: 9990000}, {F: 10000, T: 10000000}, {F: 100, T: 10010000}, {F: 130, T: 10020000}},
+						promql.Matrix{
+							promql.Series{
+								Floats: []promql.FPoint{{F: 9990, T: 9990000}, {F: 10000, T: 10000000}, {F: 100, T: 10010000}, {F: 130, T: 10020000}},
 								Metric: labels.FromStrings("__name__", "http_requests", "job", "api-server", "instance", "0", "group", "production"),
 							},
 						},
@@ -1922,11 +1884,11 @@ func TestSubquerySelector(t *testing.T) {
 				},
 				{ // Default step.
 					Query: `http_requests{group=~"pro.*",instance="0"}[5m:]`,
-					Result: Result{
+					Result: promql.Result{
 						nil,
-						Matrix{
-							Series{
-								Floats: []FPoint{{F: 9840, T: 9840000}, {F: 9900, T: 9900000}, {F: 9960, T: 9960000}, {F: 130, T: 10020000}, {F: 310, T: 10080000}},
+						promql.Matrix{
+							promql.Series{
+								Floats: []promql.FPoint{{F: 9840, T: 9840000}, {F: 9900, T: 9900000}, {F: 9960, T: 9960000}, {F: 130, T: 10020000}, {F: 310, T: 10080000}},
 								Metric: labels.FromStrings("__name__", "http_requests", "job", "api-server", "instance", "0", "group", "production"),
 							},
 						},
@@ -1936,11 +1898,11 @@ func TestSubquerySelector(t *testing.T) {
 				},
 				{ // Checking if high offset (>LookbackDelta) is being taken care of.
 					Query: `http_requests{group=~"pro.*",instance="0"}[5m:] offset 20m`,
-					Result: Result{
+					Result: promql.Result{
 						nil,
-						Matrix{
-							Series{
-								Floats: []FPoint{{F: 8640, T: 8640000}, {F: 8700, T: 8700000}, {F: 8760, T: 8760000}, {F: 8820, T: 8820000}, {F: 8880, T: 8880000}},
+						promql.Matrix{
+							promql.Series{
+								Floats: []promql.FPoint{{F: 8640, T: 8640000}, {F: 8700, T: 8700000}, {F: 8760, T: 8760000}, {F: 8820, T: 8820000}, {F: 8880, T: 8880000}},
 								Metric: labels.FromStrings("__name__", "http_requests", "job", "api-server", "instance", "0", "group", "production"),
 							},
 						},
@@ -1950,23 +1912,23 @@ func TestSubquerySelector(t *testing.T) {
 				},
 				{
 					Query: `rate(http_requests[1m])[15s:5s]`,
-					Result: Result{
+					Result: promql.Result{
 						nil,
-						Matrix{
-							Series{
-								Floats: []FPoint{{F: 3, T: 7985000}, {F: 3, T: 7990000}, {F: 3, T: 7995000}, {F: 3, T: 8000000}},
+						promql.Matrix{
+							promql.Series{
+								Floats: []promql.FPoint{{F: 3, T: 7985000}, {F: 3, T: 7990000}, {F: 3, T: 7995000}, {F: 3, T: 8000000}},
 								Metric: labels.FromStrings("job", "api-server", "instance", "0", "group", "canary"),
 							},
-							Series{
-								Floats: []FPoint{{F: 4, T: 7985000}, {F: 4, T: 7990000}, {F: 4, T: 7995000}, {F: 4, T: 8000000}},
+							promql.Series{
+								Floats: []promql.FPoint{{F: 4, T: 7985000}, {F: 4, T: 7990000}, {F: 4, T: 7995000}, {F: 4, T: 8000000}},
 								Metric: labels.FromStrings("job", "api-server", "instance", "1", "group", "canary"),
 							},
-							Series{
-								Floats: []FPoint{{F: 1, T: 7985000}, {F: 1, T: 7990000}, {F: 1, T: 7995000}, {F: 1, T: 8000000}},
+							promql.Series{
+								Floats: []promql.FPoint{{F: 1, T: 7985000}, {F: 1, T: 7990000}, {F: 1, T: 7995000}, {F: 1, T: 8000000}},
 								Metric: labels.FromStrings("job", "api-server", "instance", "0", "group", "production"),
 							},
-							Series{
-								Floats: []FPoint{{F: 2, T: 7985000}, {F: 2, T: 7990000}, {F: 2, T: 7995000}, {F: 2, T: 8000000}},
+							promql.Series{
+								Floats: []promql.FPoint{{F: 2, T: 7985000}, {F: 2, T: 7990000}, {F: 2, T: 7995000}, {F: 2, T: 8000000}},
 								Metric: labels.FromStrings("job", "api-server", "instance", "1", "group", "production"),
 							},
 						},
@@ -1976,11 +1938,11 @@ func TestSubquerySelector(t *testing.T) {
 				},
 				{
 					Query: `sum(http_requests{group=~"pro.*"})[30s:10s]`,
-					Result: Result{
+					Result: promql.Result{
 						nil,
-						Matrix{
-							Series{
-								Floats: []FPoint{{F: 270, T: 90000}, {F: 300, T: 100000}, {F: 330, T: 110000}, {F: 360, T: 120000}},
+						promql.Matrix{
+							promql.Series{
+								Floats: []promql.FPoint{{F: 270, T: 90000}, {F: 300, T: 100000}, {F: 330, T: 110000}, {F: 360, T: 120000}},
 								Metric: labels.EmptyLabels(),
 							},
 						},
@@ -1990,11 +1952,11 @@ func TestSubquerySelector(t *testing.T) {
 				},
 				{
 					Query: `sum(http_requests)[40s:10s]`,
-					Result: Result{
+					Result: promql.Result{
 						nil,
-						Matrix{
-							Series{
-								Floats: []FPoint{{F: 800, T: 80000}, {F: 900, T: 90000}, {F: 1000, T: 100000}, {F: 1100, T: 110000}, {F: 1200, T: 120000}},
+						promql.Matrix{
+							promql.Series{
+								Floats: []promql.FPoint{{F: 800, T: 80000}, {F: 900, T: 90000}, {F: 1000, T: 100000}, {F: 1100, T: 110000}, {F: 1200, T: 120000}},
 								Metric: labels.EmptyLabels(),
 							},
 						},
@@ -2004,11 +1966,11 @@ func TestSubquerySelector(t *testing.T) {
 				},
 				{
 					Query: `(sum(http_requests{group=~"p.*"})+sum(http_requests{group=~"c.*"}))[20s:5s]`,
-					Result: Result{
+					Result: promql.Result{
 						nil,
-						Matrix{
-							Series{
-								Floats: []FPoint{{F: 1000, T: 100000}, {F: 1000, T: 105000}, {F: 1100, T: 110000}, {F: 1100, T: 115000}, {F: 1200, T: 120000}},
+						promql.Matrix{
+							promql.Series{
+								Floats: []promql.FPoint{{F: 1000, T: 100000}, {F: 1000, T: 105000}, {F: 1100, T: 110000}, {F: 1100, T: 115000}, {F: 1200, T: 120000}},
 								Metric: labels.EmptyLabels(),
 							},
 						},
@@ -2021,7 +1983,7 @@ func TestSubquerySelector(t *testing.T) {
 	} {
 		t.Run("", func(t *testing.T) {
 			engine := newTestEngine()
-			storage := LoadedStorage(t, tst.loadString)
+			storage := promqltest.LoadedStorage(t, tst.loadString)
 			t.Cleanup(func() { storage.Close() })
 
 			for _, c := range tst.cases {
@@ -2031,7 +1993,7 @@ func TestSubquerySelector(t *testing.T) {
 
 					res := qry.Exec(context.Background())
 					require.Equal(t, c.Result.Err, res.Err)
-					mat := res.Value.(Matrix)
+					mat := res.Value.(promql.Matrix)
 					sort.Sort(mat)
 					testutil.RequireEqual(t, c.Result.Value, mat)
 				})
@@ -2042,7 +2004,7 @@ func TestSubquerySelector(t *testing.T) {
 
 func TestTimestampFunction_StepsMoreOftenThanSamples(t *testing.T) {
 	engine := newTestEngine()
-	storage := LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 load 1m
   metric 0+1x1000
 `)
@@ -2054,20 +2016,20 @@ load 1m
 	interval := time.Second
 
 	// We expect the value to be 0 for t=0s to t=59s (inclusive), then 60 for t=60s and t=61s.
-	expectedPoints := []FPoint{}
+	expectedPoints := []promql.FPoint{}
 
 	for t := 0; t <= 59; t++ {
-		expectedPoints = append(expectedPoints, FPoint{F: 0, T: int64(t * 1000)})
+		expectedPoints = append(expectedPoints, promql.FPoint{F: 0, T: int64(t * 1000)})
 	}
 
 	expectedPoints = append(
 		expectedPoints,
-		FPoint{F: 60, T: 60_000},
-		FPoint{F: 60, T: 61_000},
+		promql.FPoint{F: 60, T: 60_000},
+		promql.FPoint{F: 60, T: 61_000},
 	)
 
-	expectedResult := Matrix{
-		Series{
+	expectedResult := promql.Matrix{
+		promql.Series{
 			Floats: expectedPoints,
 			Metric: labels.EmptyLabels(),
 		},
@@ -2104,25 +2066,25 @@ func (f *FakeQueryLogger) Log(l ...interface{}) error {
 }
 
 func TestQueryLogger_basic(t *testing.T) {
-	opts := EngineOpts{
+	opts := promql.EngineOpts{
 		Logger:     nil,
 		Reg:        nil,
 		MaxSamples: 10,
 		Timeout:    10 * time.Second,
 	}
-	engine := NewEngine(opts)
+	engine := promql.NewEngine(opts)
 
 	queryExec := func() {
 		ctx, cancelCtx := context.WithCancel(context.Background())
 		defer cancelCtx()
-		query := engine.newTestQuery(func(ctx context.Context) error {
+		query := engine.NewTestQuery(func(ctx context.Context) error {
 			return contextDone(ctx, "test statement execution")
 		})
 		res := query.Exec(ctx)
 		require.NoError(t, res.Err)
 	}
 
-	// Query works without query log initialized.
+	// promql.Query works without query log initialized.
 	queryExec()
 
 	f1 := NewFakeQueryLogger()
@@ -2155,21 +2117,21 @@ func TestQueryLogger_basic(t *testing.T) {
 }
 
 func TestQueryLogger_fields(t *testing.T) {
-	opts := EngineOpts{
+	opts := promql.EngineOpts{
 		Logger:     nil,
 		Reg:        nil,
 		MaxSamples: 10,
 		Timeout:    10 * time.Second,
 	}
-	engine := NewEngine(opts)
+	engine := promql.NewEngine(opts)
 
 	f1 := NewFakeQueryLogger()
 	engine.SetQueryLogger(f1)
 
 	ctx, cancelCtx := context.WithCancel(context.Background())
-	ctx = NewOriginContext(ctx, map[string]interface{}{"foo": "bar"})
+	ctx = promql.NewOriginContext(ctx, map[string]interface{}{"foo": "bar"})
 	defer cancelCtx()
-	query := engine.newTestQuery(func(ctx context.Context) error {
+	query := engine.NewTestQuery(func(ctx context.Context) error {
 		return contextDone(ctx, "test statement execution")
 	})
 
@@ -2184,22 +2146,22 @@ func TestQueryLogger_fields(t *testing.T) {
 }
 
 func TestQueryLogger_error(t *testing.T) {
-	opts := EngineOpts{
+	opts := promql.EngineOpts{
 		Logger:     nil,
 		Reg:        nil,
 		MaxSamples: 10,
 		Timeout:    10 * time.Second,
 	}
-	engine := NewEngine(opts)
+	engine := promql.NewEngine(opts)
 
 	f1 := NewFakeQueryLogger()
 	engine.SetQueryLogger(f1)
 
 	ctx, cancelCtx := context.WithCancel(context.Background())
-	ctx = NewOriginContext(ctx, map[string]interface{}{"foo": "bar"})
+	ctx = promql.NewOriginContext(ctx, map[string]interface{}{"foo": "bar"})
 	defer cancelCtx()
 	testErr := errors.New("failure")
-	query := engine.newTestQuery(func(ctx context.Context) error {
+	query := engine.NewTestQuery(func(ctx context.Context) error {
 		return testErr
 	})
 
@@ -3005,7 +2967,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 		t.Run(test.input, func(t *testing.T) {
 			expr, err := parser.ParseExpr(test.input)
 			require.NoError(t, err)
-			expr = PreprocessExpr(expr, startTime, endTime)
+			expr = promql.PreprocessExpr(expr, startTime, endTime)
 			if test.outputTest {
 				require.Equal(t, test.input, expr.String(), "error on input '%s'", test.input)
 			}
@@ -3016,64 +2978,64 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 
 func TestEngineOptsValidation(t *testing.T) {
 	cases := []struct {
-		opts     EngineOpts
+		opts     promql.EngineOpts
 		query    string
 		fail     bool
 		expError error
 	}{
 		{
-			opts:  EngineOpts{EnableAtModifier: false},
-			query: "metric @ 100", fail: true, expError: ErrValidationAtModifierDisabled,
+			opts:  promql.EngineOpts{EnableAtModifier: false},
+			query: "metric @ 100", fail: true, expError: promql.ErrValidationAtModifierDisabled,
 		}, {
-			opts:  EngineOpts{EnableAtModifier: false},
-			query: "rate(metric[1m] @ 100)", fail: true, expError: ErrValidationAtModifierDisabled,
+			opts:  promql.EngineOpts{EnableAtModifier: false},
+			query: "rate(metric[1m] @ 100)", fail: true, expError: promql.ErrValidationAtModifierDisabled,
 		}, {
-			opts:  EngineOpts{EnableAtModifier: false},
-			query: "rate(metric[1h:1m] @ 100)", fail: true, expError: ErrValidationAtModifierDisabled,
+			opts:  promql.EngineOpts{EnableAtModifier: false},
+			query: "rate(metric[1h:1m] @ 100)", fail: true, expError: promql.ErrValidationAtModifierDisabled,
 		}, {
-			opts:  EngineOpts{EnableAtModifier: false},
-			query: "metric @ start()", fail: true, expError: ErrValidationAtModifierDisabled,
+			opts:  promql.EngineOpts{EnableAtModifier: false},
+			query: "metric @ start()", fail: true, expError: promql.ErrValidationAtModifierDisabled,
 		}, {
-			opts:  EngineOpts{EnableAtModifier: false},
-			query: "rate(metric[1m] @ start())", fail: true, expError: ErrValidationAtModifierDisabled,
+			opts:  promql.EngineOpts{EnableAtModifier: false},
+			query: "rate(metric[1m] @ start())", fail: true, expError: promql.ErrValidationAtModifierDisabled,
 		}, {
-			opts:  EngineOpts{EnableAtModifier: false},
-			query: "rate(metric[1h:1m] @ start())", fail: true, expError: ErrValidationAtModifierDisabled,
+			opts:  promql.EngineOpts{EnableAtModifier: false},
+			query: "rate(metric[1h:1m] @ start())", fail: true, expError: promql.ErrValidationAtModifierDisabled,
 		}, {
-			opts:  EngineOpts{EnableAtModifier: false},
-			query: "metric @ end()", fail: true, expError: ErrValidationAtModifierDisabled,
+			opts:  promql.EngineOpts{EnableAtModifier: false},
+			query: "metric @ end()", fail: true, expError: promql.ErrValidationAtModifierDisabled,
 		}, {
-			opts:  EngineOpts{EnableAtModifier: false},
-			query: "rate(metric[1m] @ end())", fail: true, expError: ErrValidationAtModifierDisabled,
+			opts:  promql.EngineOpts{EnableAtModifier: false},
+			query: "rate(metric[1m] @ end())", fail: true, expError: promql.ErrValidationAtModifierDisabled,
 		}, {
-			opts:  EngineOpts{EnableAtModifier: false},
-			query: "rate(metric[1h:1m] @ end())", fail: true, expError: ErrValidationAtModifierDisabled,
+			opts:  promql.EngineOpts{EnableAtModifier: false},
+			query: "rate(metric[1h:1m] @ end())", fail: true, expError: promql.ErrValidationAtModifierDisabled,
 		}, {
-			opts:  EngineOpts{EnableAtModifier: true},
+			opts:  promql.EngineOpts{EnableAtModifier: true},
 			query: "metric @ 100",
 		}, {
-			opts:  EngineOpts{EnableAtModifier: true},
+			opts:  promql.EngineOpts{EnableAtModifier: true},
 			query: "rate(metric[1m] @ start())",
 		}, {
-			opts:  EngineOpts{EnableAtModifier: true},
+			opts:  promql.EngineOpts{EnableAtModifier: true},
 			query: "rate(metric[1h:1m] @ end())",
 		}, {
-			opts:  EngineOpts{EnableNegativeOffset: false},
-			query: "metric offset -1s", fail: true, expError: ErrValidationNegativeOffsetDisabled,
+			opts:  promql.EngineOpts{EnableNegativeOffset: false},
+			query: "metric offset -1s", fail: true, expError: promql.ErrValidationNegativeOffsetDisabled,
 		}, {
-			opts:  EngineOpts{EnableNegativeOffset: true},
+			opts:  promql.EngineOpts{EnableNegativeOffset: true},
 			query: "metric offset -1s",
 		}, {
-			opts:  EngineOpts{EnableAtModifier: true, EnableNegativeOffset: true},
+			opts:  promql.EngineOpts{EnableAtModifier: true, EnableNegativeOffset: true},
 			query: "metric @ 100 offset -2m",
 		}, {
-			opts:  EngineOpts{EnableAtModifier: true, EnableNegativeOffset: true},
+			opts:  promql.EngineOpts{EnableAtModifier: true, EnableNegativeOffset: true},
 			query: "metric offset -2m @ 100",
 		},
 	}
 
 	for _, c := range cases {
-		eng := NewEngine(c.opts)
+		eng := promql.NewEngine(c.opts)
 		_, err1 := eng.NewInstantQuery(context.Background(), nil, nil, c.query, time.Unix(10, 0))
 		_, err2 := eng.NewRangeQuery(context.Background(), nil, nil, c.query, time.Unix(0, 0), time.Unix(10, 0), time.Second)
 		if c.fail {
@@ -3101,9 +3063,9 @@ func TestRangeQuery(t *testing.T) {
 			Load: `load 30s
               bar 0 1 10 100 1000`,
 			Query: "sum_over_time(bar[30s])",
-			Result: Matrix{
-				Series{
-					Floats: []FPoint{{F: 0, T: 0}, {F: 11, T: 60000}, {F: 1100, T: 120000}},
+			Result: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 0, T: 0}, {F: 11, T: 60000}, {F: 1100, T: 120000}},
 					Metric: labels.EmptyLabels(),
 				},
 			},
@@ -3116,9 +3078,9 @@ func TestRangeQuery(t *testing.T) {
 			Load: `load 30s
               bar 0 1 10 100 1000 0 0 0 0`,
 			Query: "sum_over_time(bar[30s])",
-			Result: Matrix{
-				Series{
-					Floats: []FPoint{{F: 0, T: 0}, {F: 11, T: 60000}, {F: 1100, T: 120000}},
+			Result: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 0, T: 0}, {F: 11, T: 60000}, {F: 1100, T: 120000}},
 					Metric: labels.EmptyLabels(),
 				},
 			},
@@ -3131,9 +3093,9 @@ func TestRangeQuery(t *testing.T) {
 			Load: `load 30s
               bar 0 1 10 100 1000 10000 100000 1000000 10000000`,
 			Query: "sum_over_time(bar[30s])",
-			Result: Matrix{
-				Series{
-					Floats: []FPoint{{F: 0, T: 0}, {F: 11, T: 60000}, {F: 1100, T: 120000}, {F: 110000, T: 180000}, {F: 11000000, T: 240000}},
+			Result: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 0, T: 0}, {F: 11, T: 60000}, {F: 1100, T: 120000}, {F: 110000, T: 180000}, {F: 11000000, T: 240000}},
 					Metric: labels.EmptyLabels(),
 				},
 			},
@@ -3146,9 +3108,9 @@ func TestRangeQuery(t *testing.T) {
 			Load: `load 30s
               bar 5 17 42 2 7 905 51`,
 			Query: "sum_over_time(bar[30s])",
-			Result: Matrix{
-				Series{
-					Floats: []FPoint{{F: 5, T: 0}, {F: 59, T: 60000}, {F: 9, T: 120000}, {F: 956, T: 180000}},
+			Result: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 5, T: 0}, {F: 59, T: 60000}, {F: 9, T: 120000}, {F: 956, T: 180000}},
 					Metric: labels.EmptyLabels(),
 				},
 			},
@@ -3161,9 +3123,9 @@ func TestRangeQuery(t *testing.T) {
 			Load: `load 30s
               metric 1+1x4`,
 			Query: "metric",
-			Result: Matrix{
-				Series{
-					Floats: []FPoint{{F: 1, T: 0}, {F: 3, T: 60000}, {F: 5, T: 120000}},
+			Result: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 1, T: 0}, {F: 3, T: 60000}, {F: 5, T: 120000}},
 					Metric: labels.FromStrings("__name__", "metric"),
 				},
 			},
@@ -3176,9 +3138,9 @@ func TestRangeQuery(t *testing.T) {
 			Load: `load 30s
               metric 1+1x8`,
 			Query: "metric",
-			Result: Matrix{
-				Series{
-					Floats: []FPoint{{F: 1, T: 0}, {F: 3, T: 60000}, {F: 5, T: 120000}},
+			Result: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 1, T: 0}, {F: 3, T: 60000}, {F: 5, T: 120000}},
 					Metric: labels.FromStrings("__name__", "metric"),
 				},
 			},
@@ -3192,16 +3154,16 @@ func TestRangeQuery(t *testing.T) {
 							foo{job="1"} 1+1x4
 							bar{job="2"} 1+1x4`,
 			Query: `foo > 2 or bar`,
-			Result: Matrix{
-				Series{
-					Floats: []FPoint{{F: 1, T: 0}, {F: 3, T: 60000}, {F: 5, T: 120000}},
+			Result: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 1, T: 0}, {F: 3, T: 60000}, {F: 5, T: 120000}},
 					Metric: labels.FromStrings(
 						"__name__", "bar",
 						"job", "2",
 					),
 				},
-				Series{
-					Floats: []FPoint{{F: 3, T: 60000}, {F: 5, T: 120000}},
+				promql.Series{
+					Floats: []promql.FPoint{{F: 3, T: 60000}, {F: 5, T: 120000}},
 					Metric: labels.FromStrings(
 						"__name__", "foo",
 						"job", "1",
@@ -3217,9 +3179,9 @@ func TestRangeQuery(t *testing.T) {
 			Load: `load 30s
 							requests{job="1", __address__="bar"} 100`,
 			Query: `requests * 2`,
-			Result: Matrix{
-				Series{
-					Floats: []FPoint{{F: 200, T: 0}, {F: 200, T: 60000}, {F: 200, T: 120000}},
+			Result: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 200, T: 0}, {F: 200, T: 60000}, {F: 200, T: 120000}},
 					Metric: labels.FromStrings(
 						"__address__", "bar",
 						"job", "1",
@@ -3234,7 +3196,7 @@ func TestRangeQuery(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.Name, func(t *testing.T) {
 			engine := newTestEngine()
-			storage := LoadedStorage(t, c.Load)
+			storage := promqltest.LoadedStorage(t, c.Load)
 			t.Cleanup(func() { storage.Close() })
 
 			qry, err := engine.NewRangeQuery(context.Background(), storage, nil, c.Query, c.Start, c.End, c.Interval)
@@ -3302,7 +3264,7 @@ func TestNativeHistogramRate(t *testing.T) {
 		require.Len(t, matrix, 1)
 		require.Len(t, matrix[0].Histograms, 2)
 		actualHistograms := matrix[0].Histograms
-		expectedHistograms := []HPoint{{
+		expectedHistograms := []promql.HPoint{{
 			T: 300000,
 			H: &histogram.FloatHistogram{
 				CounterResetHint: histogram.GaugeType,
@@ -3873,7 +3835,7 @@ func TestNativeHistogram_HistogramQuantile(t *testing.T) {
 
 						require.Len(t, vector, 1)
 						require.Nil(t, vector[0].H)
-						require.True(t, almostEqual(sc.value, vector[0].F, defaultEpsilon))
+						require.True(t, almost.Equal(sc.value, vector[0].F, defaultEpsilon))
 					})
 				}
 				idx++
@@ -4466,7 +4428,7 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 				}
 				require.NoError(t, app.Commit())
 
-				queryAndCheck := func(queryString string, ts int64, exp Vector) {
+				queryAndCheck := func(queryString string, ts int64, exp promql.Vector) {
 					qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(ts))
 					require.NoError(t, err)
 
@@ -4490,7 +4452,7 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 
 				// sum().
 				queryString := fmt.Sprintf("sum(%s)", seriesName)
-				queryAndCheck(queryString, ts, []Sample{{T: ts, H: &c.expected, Metric: labels.EmptyLabels()}})
+				queryAndCheck(queryString, ts, []promql.Sample{{T: ts, H: &c.expected, Metric: labels.EmptyLabels()}})
 
 				queryString = `sum({idx="0"})`
 				var annos annotations.Annotations
@@ -4502,26 +4464,26 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 				for idx := 1; idx < len(c.histograms); idx++ {
 					queryString += fmt.Sprintf(` + ignoring(idx) %s{idx="%d"}`, seriesName, idx)
 				}
-				queryAndCheck(queryString, ts, []Sample{{T: ts, H: &c.expected, Metric: labels.EmptyLabels()}})
+				queryAndCheck(queryString, ts, []promql.Sample{{T: ts, H: &c.expected, Metric: labels.EmptyLabels()}})
 
 				// count().
 				queryString = fmt.Sprintf("count(%s)", seriesName)
-				queryAndCheck(queryString, ts, []Sample{{T: ts, F: 4, Metric: labels.EmptyLabels()}})
+				queryAndCheck(queryString, ts, []promql.Sample{{T: ts, F: 4, Metric: labels.EmptyLabels()}})
 
 				// avg().
 				queryString = fmt.Sprintf("avg(%s)", seriesName)
-				queryAndCheck(queryString, ts, []Sample{{T: ts, H: &c.expectedAvg, Metric: labels.EmptyLabels()}})
+				queryAndCheck(queryString, ts, []promql.Sample{{T: ts, H: &c.expectedAvg, Metric: labels.EmptyLabels()}})
 
 				offset := int64(len(c.histograms) - 1)
 				newTs := ts + offset*int64(time.Minute/time.Millisecond)
 
 				// sum_over_time().
 				queryString = fmt.Sprintf("sum_over_time(%s[%dm:1m])", seriesNameOverTime, offset)
-				queryAndCheck(queryString, newTs, []Sample{{T: newTs, H: &c.expected, Metric: labels.EmptyLabels()}})
+				queryAndCheck(queryString, newTs, []promql.Sample{{T: newTs, H: &c.expected, Metric: labels.EmptyLabels()}})
 
 				// avg_over_time().
 				queryString = fmt.Sprintf("avg_over_time(%s[%dm:1m])", seriesNameOverTime, offset)
-				queryAndCheck(queryString, newTs, []Sample{{T: newTs, H: &c.expectedAvg, Metric: labels.EmptyLabels()}})
+				queryAndCheck(queryString, newTs, []promql.Sample{{T: newTs, H: &c.expectedAvg, Metric: labels.EmptyLabels()}})
 			})
 			idx0++
 		}
@@ -4728,7 +4690,7 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 				}
 				require.NoError(t, app.Commit())
 
-				queryAndCheck := func(queryString string, exp Vector) {
+				queryAndCheck := func(queryString string, exp promql.Vector) {
 					qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(ts))
 					require.NoError(t, err)
 
@@ -4756,7 +4718,7 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 				for idx := 1; idx < len(c.histograms); idx++ {
 					queryString += fmt.Sprintf(` - ignoring(idx) %s{idx="%d"}`, seriesName, idx)
 				}
-				queryAndCheck(queryString, []Sample{{T: ts, H: &c.expected, Metric: labels.EmptyLabels()}})
+				queryAndCheck(queryString, []promql.Sample{{T: ts, H: &c.expected, Metric: labels.EmptyLabels()}})
 			})
 		}
 		idx0++
@@ -4886,7 +4848,7 @@ func TestNativeHistogram_MulDivOperator(t *testing.T) {
 				require.NoError(t, err)
 				require.NoError(t, app.Commit())
 
-				queryAndCheck := func(queryString string, exp Vector) {
+				queryAndCheck := func(queryString string, exp promql.Vector) {
 					qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(ts))
 					require.NoError(t, err)
 
@@ -4901,27 +4863,27 @@ func TestNativeHistogram_MulDivOperator(t *testing.T) {
 
 				// histogram * scalar.
 				queryString := fmt.Sprintf(`%s * %f`, seriesName, c.scalar)
-				queryAndCheck(queryString, []Sample{{T: ts, H: &c.expectedMul, Metric: labels.EmptyLabels()}})
+				queryAndCheck(queryString, []promql.Sample{{T: ts, H: &c.expectedMul, Metric: labels.EmptyLabels()}})
 
 				// scalar * histogram.
 				queryString = fmt.Sprintf(`%f * %s`, c.scalar, seriesName)
-				queryAndCheck(queryString, []Sample{{T: ts, H: &c.expectedMul, Metric: labels.EmptyLabels()}})
+				queryAndCheck(queryString, []promql.Sample{{T: ts, H: &c.expectedMul, Metric: labels.EmptyLabels()}})
 
 				// histogram * float.
 				queryString = fmt.Sprintf(`%s * %s`, seriesName, floatSeriesName)
-				queryAndCheck(queryString, []Sample{{T: ts, H: &c.expectedMul, Metric: labels.EmptyLabels()}})
+				queryAndCheck(queryString, []promql.Sample{{T: ts, H: &c.expectedMul, Metric: labels.EmptyLabels()}})
 
 				// float * histogram.
 				queryString = fmt.Sprintf(`%s * %s`, floatSeriesName, seriesName)
-				queryAndCheck(queryString, []Sample{{T: ts, H: &c.expectedMul, Metric: labels.EmptyLabels()}})
+				queryAndCheck(queryString, []promql.Sample{{T: ts, H: &c.expectedMul, Metric: labels.EmptyLabels()}})
 
 				// histogram / scalar.
 				queryString = fmt.Sprintf(`%s / %f`, seriesName, c.scalar)
-				queryAndCheck(queryString, []Sample{{T: ts, H: &c.expectedDiv, Metric: labels.EmptyLabels()}})
+				queryAndCheck(queryString, []promql.Sample{{T: ts, H: &c.expectedDiv, Metric: labels.EmptyLabels()}})
 
 				// histogram / float.
 				queryString = fmt.Sprintf(`%s / %s`, seriesName, floatSeriesName)
-				queryAndCheck(queryString, []Sample{{T: ts, H: &c.expectedDiv, Metric: labels.EmptyLabels()}})
+				queryAndCheck(queryString, []promql.Sample{{T: ts, H: &c.expectedDiv, Metric: labels.EmptyLabels()}})
 			})
 			idx0++
 		}
@@ -4991,20 +4953,17 @@ metric 0 1 2
 	for _, c := range cases {
 		c := c
 		t.Run(c.name, func(t *testing.T) {
-			engine := newTestEngine()
-			storage := LoadedStorage(t, load)
+			engine := promqltest.NewTestEngine(false, c.engineLookback, promqltest.DefaultMaxSamplesPerQuery)
+			storage := promqltest.LoadedStorage(t, load)
 			t.Cleanup(func() { storage.Close() })
 
-			if c.engineLookback != 0 {
-				engine.lookbackDelta = c.engineLookback
-			}
-			opts := NewPrometheusQueryOpts(false, c.queryLookback)
+			opts := promql.NewPrometheusQueryOpts(false, c.queryLookback)
 			qry, err := engine.NewInstantQuery(context.Background(), storage, opts, query, c.ts)
 			require.NoError(t, err)
 
 			res := qry.Exec(context.Background())
 			require.NoError(t, res.Err)
-			vec, ok := res.Value.(Vector)
+			vec, ok := res.Value.(promql.Vector)
 			require.True(t, ok)
 			if c.expectSamples {
 				require.NotEmpty(t, vec)
@@ -5013,4 +4972,10 @@ metric 0 1 2
 			}
 		})
 	}
+}
+
+func makeInt64Pointer(val int64) *int64 {
+	valp := new(int64)
+	*valp = val
+	return valp
 }

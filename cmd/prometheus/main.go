@@ -217,6 +217,7 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 				level.Info(logger).Log("msg", "Experimental PromQL functions enabled.")
 			case "native-histograms":
 				c.tsdb.EnableNativeHistograms = true
+				c.scrape.EnableNativeHistogramsIngestion = true
 				// Change relevant global variables. Hacky, but it's hard to pass a new option or default to unmarshallers.
 				config.DefaultConfig.GlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
@@ -417,7 +418,7 @@ func main() {
 	serverOnlyFlag(a, "rules.alert.resend-delay", "Minimum amount of time to wait before resending an alert to Alertmanager.").
 		Default("1m").SetValue(&cfg.resendDelay)
 
-	serverOnlyFlag(a, "rules.max-concurrent-evals", "Global concurrency limit for independent rules that can run concurrently.When changing the value for rules.max-concurrent-evals please adjust the value for query.max-concurrency as the rules manager uses the same query engine than the API:").
+	serverOnlyFlag(a, "rules.max-concurrent-evals", "Global concurrency limit for independent rules that can run concurrently.When set, \"query.max-concurrency\" may need to be adjusted accordingly.").
 		Default("4").Int64Var(&cfg.maxConcurrentEvals)
 
 	a.Flag("scrape.adjust-timestamps", "Adjust scrape timestamps by up to `scrape.timestamp-tolerance` to align them to the intended schedule. See https://github.com/prometheus/prometheus/issues/7846 for more context. Experimental. This flag will be removed in a future release.").

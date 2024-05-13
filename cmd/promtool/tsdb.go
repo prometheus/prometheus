@@ -838,6 +838,10 @@ func backfillOpenMetrics(path, outputDir string, humanReadable, quiet bool, maxB
 }
 
 func displayHistogram(dataType string, datas []int, total int) {
+	if len(datas) == 0 {
+		fmt.Printf("%s: N/A\n\n", dataType)
+		return
+	}
 	slices.Sort(datas)
 	start, end, step := generateBucket(datas[0], datas[len(datas)-1])
 	sum := 0

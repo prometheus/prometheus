@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -148,7 +149,7 @@ func TestAlertingRuleTemplateWithHistogram(t *testing.T) {
 }
 
 func TestAlertingRuleLabelsUpdate(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70 stale
 	`)
@@ -252,7 +253,7 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 }
 
 func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70
 	`)
@@ -345,7 +346,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 }
 
 func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70
 	`)
@@ -438,7 +439,7 @@ func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
 }
 
 func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70
 	`)
@@ -492,7 +493,7 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 }
 
 func TestAlertingRuleQueryInTemplate(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			http_requests{job="app-server", instance="0"}	70 85 70 70
 	`)
@@ -601,7 +602,7 @@ func TestAlertingRuleDuplicate(t *testing.T) {
 }
 
 func TestAlertingRuleLimit(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			metric{label="1"} 1
 			metric{label="2"} 1
@@ -710,19 +711,17 @@ func TestQueryForStateSeries(t *testing.T) {
 			labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
 		)
 
-		alert := &Alert{
-			State:       0,
-			Labels:      labels.EmptyLabels(),
-			Annotations: labels.EmptyLabels(),
-			Value:       0,
-			ActiveAt:    time.Time{},
-			FiredAt:     time.Time{},
-			ResolvedAt:  time.Time{},
-			LastSentAt:  time.Time{},
-			ValidUntil:  time.Time{},
-		}
+		sample := rule.forStateSample(nil, time.Time{}, 0)
 
-		series, err := rule.QueryforStateSeries(context.Background(), alert, querier)
+		seriesSet, err := rule.QueryForStateSeries(context.Background(), querier)
+
+		var series storage.Series
+		for seriesSet.Next() {
+			if seriesSet.At().Labels().Len() == sample.Metric.Len() {
+				series = seriesSet.At()
+				break
+			}
+		}
 
 		require.Equal(t, tst.expectedSeries, series)
 		require.Equal(t, tst.expectedError, err)
@@ -785,7 +784,7 @@ func TestSendAlertsDontAffectActiveAlerts(t *testing.T) {
 }
 
 func TestKeepFiringFor(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70 10x5
 	`)
@@ -895,7 +894,7 @@ func TestKeepFiringFor(t *testing.T) {
 }
 
 func TestPendingAndKeepFiringFor(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 10x10
 	`)
@@ -1024,4 +1023,25 @@ func TestAlertingRule_SetNoDependencyRules(t *testing.T) {
 
 	rule.SetNoDependencyRules(true)
 	require.True(t, rule.NoDependencyRules())
+}
+
+func TestAlertingRule_ActiveAlertsCount(t *testing.T) {
+	rule := NewAlertingRule(
+		"TestRule",
+		nil,
+		time.Minute,
+		0,
+		labels.FromStrings("severity", "critical"),
+		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
+	)
+
+	require.Equal(t, 0, rule.ActiveAlertsCount())
+
+	// Set an active alert.
+	lbls := labels.FromStrings("a1", "1")
+	h := lbls.Hash()
+	al := &Alert{State: StateFiring, Labels: lbls, ActiveAt: time.Now()}
+	rule.active[h] = al
+
+	require.Equal(t, 1, rule.ActiveAlertsCount())
 }
