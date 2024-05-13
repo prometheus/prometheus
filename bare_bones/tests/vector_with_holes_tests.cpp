@@ -15,7 +15,7 @@ class ValueOnHeap {
     value_ = nullptr;
   }
 
-  operator const T&() const noexcept { return *value_; }
+  PROMPP_ALWAYS_INLINE bool operator==(const uint32_t value) const noexcept { return value == *value_; }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return sizeof(T); }
 
