@@ -81,6 +81,9 @@ type Options struct {
 
 	// NoLockfile disables creation and consideration of a lock file.
 	NoLockfile bool
+
+	// RejectOOOSamples enables rejecting out of order samples.
+	RejectOOOSamples bool
 }
 
 // DefaultOptions used for the WAL storage. They are reasonable for setups using
@@ -94,6 +97,7 @@ func DefaultOptions() *Options {
 		MinWALTime:        DefaultMinWALTime,
 		MaxWALTime:        DefaultMaxWALTime,
 		NoLockfile:        false,
+		RejectOOOSamples:  false,
 	}
 }
 
@@ -812,6 +816,11 @@ func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v flo
 	series.Lock()
 	defer series.Unlock()
 
+	if a.opts.RejectOOOSamples && t < series.lastTs {
+		a.metrics.totalOutOfOrderSamples.Inc()
+		return 0, storage.ErrOutOfOrderSample
+	}
+
 	// NOTE: always modify pendingSamples and sampleSeries together.
 	a.pendingSamples = append(a.pendingSamples, record.RefSample{
 		Ref: series.ref,
@@ -934,6 +943,11 @@ func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int
 
 	series.Lock()
 	defer series.Unlock()
+
+	if a.opts.RejectOOOSamples && t < series.lastTs {
+		a.metrics.totalOutOfOrderSamples.Inc()
+		return 0, storage.ErrOutOfOrderSample
+	}
 
 	switch {
 	case h != nil:

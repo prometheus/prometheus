@@ -397,6 +397,9 @@ func main() {
 	agentOnlyFlag(a, "storage.agent.no-lockfile", "Do not create lockfile in data directory.").
 		Default("false").BoolVar(&cfg.agent.NoLockfile)
 
+	agentOnlyFlag(a, "storage.agent.reject-out-of-order-samples", "Reject out-of-order samples.").
+		Default("false").BoolVar(&cfg.agent.RejectOOOSamples)
+
 	a.Flag("storage.remote.flush-deadline", "How long to wait flushing sample on shutdown or config reload.").
 		Default("1m").PlaceHolder("<duration>").SetValue(&cfg.RemoteFlushDeadline)
 
@@ -1215,6 +1218,7 @@ func main() {
 					"TruncateFrequency", cfg.agent.TruncateFrequency,
 					"MinWALTime", cfg.agent.MinWALTime,
 					"MaxWALTime", cfg.agent.MaxWALTime,
+					"RejectOOOSamples", cfg.agent.RejectOOOSamples,
 				)
 
 				localStorage.Set(db, 0)
@@ -1707,6 +1711,7 @@ type agentOptions struct {
 	TruncateFrequency      model.Duration
 	MinWALTime, MaxWALTime model.Duration
 	NoLockfile             bool
+	RejectOOOSamples       bool
 }
 
 func (opts agentOptions) ToAgentOptions() agent.Options {
@@ -1718,6 +1723,7 @@ func (opts agentOptions) ToAgentOptions() agent.Options {
 		MinWALTime:        durationToInt64Millis(time.Duration(opts.MinWALTime)),
 		MaxWALTime:        durationToInt64Millis(time.Duration(opts.MaxWALTime)),
 		NoLockfile:        opts.NoLockfile,
+		RejectOOOSamples:  opts.RejectOOOSamples,
 	}
 }
 

@@ -879,6 +879,35 @@ func TestDBAllowOOOSamples(t *testing.T) {
 	require.NoError(t, db.Close())
 }
 
+func TestDBRejectOOOSamples(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	opts := DefaultOptions()
+	opts.RejectOOOSamples = true
+	s := createTestAgentDB(t, reg, opts)
+	app := s.Appender(context.TODO())
+
+	lbls := labelsForTest(t.Name()+"_histogram", 1)
+	lset := labels.New(lbls[0]...)
+	_, err := app.AppendHistogram(0, lset, 1, tsdbutil.GenerateTestHistograms(1)[0], nil)
+	err = app.Commit()
+	require.NoError(t, err)
+	_, err = app.AppendHistogram(0, lset, 0, tsdbutil.GenerateTestHistograms(1)[0], nil)
+	require.ErrorIs(t, err, storage.ErrOutOfOrderSample, "should reject OOO samples")
+
+	lbls = labelsForTest(t.Name()+"_histogram", 1)
+	lset = labels.New(lbls[0]...)
+	_, err = app.Append(0, lset, 1, 0)
+	err = app.Commit()
+	require.NoError(t, err)
+	_, err = app.Append(0, lset, 0, 0)
+	require.ErrorIs(t, err, storage.ErrOutOfOrderSample, "should reject OOO samples")
+
+	m := gatherFamily(t, reg, "prometheus_agent_samples_appended_total")
+	require.Equal(t, float64(1), m.Metric[0].Counter.GetValue(), "agent wal mismatch of total appended samples")
+	require.Equal(t, float64(1), m.Metric[1].Counter.GetValue(), "agent wal mismatch of total appended histograms")
+	require.NoError(t, s.Close())
+}
+
 func BenchmarkCreateSeries(b *testing.B) {
 	s := createTestAgentDB(b, nil, DefaultOptions())
 	defer s.Close()
