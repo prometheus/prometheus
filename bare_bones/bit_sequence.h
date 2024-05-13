@@ -23,18 +23,17 @@
 
 namespace BareBones {
 
-PROMPP_ALWAYS_INLINE constexpr size_t to_bits(size_t bytes) noexcept {
-  return bytes * 8;
-}
-PROMPP_ALWAYS_INLINE constexpr size_t to_bytes(size_t bits) noexcept {
-  return bits / 8;
-}
+struct AllocationSize {
+  uint32_t bits;
+  uint32_t bytes;
 
-template <std::array kAllocationSizesBits>
+  explicit constexpr AllocationSize(uint32_t size_in_bytes) : bits(Bit::to_bits(size_in_bytes)), bytes(size_in_bytes) {}
+};
+
+template <std::array kAllocationSizesTable>
+  requires std::is_same_v<typename decltype(kAllocationSizesTable)::value_type, AllocationSize>
 class PROMPP_ATTRIBUTE_PACKED CompactBitSequence {
  public:
-  static_assert(std::is_same_v<typename decltype(kAllocationSizesBits)::value_type, uint32_t>);
-
   CompactBitSequence() = default;
   CompactBitSequence(const CompactBitSequence& other)
       : memory_(reinterpret_cast<uint8_t*>(std::malloc(other.allocated_memory()))),
@@ -73,10 +72,10 @@ class PROMPP_ATTRIBUTE_PACKED CompactBitSequence {
     allocation_size_index_ = 0;
   }
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t size_in_bits() const noexcept { return size_in_bits_; }
-  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t size_in_bytes() const noexcept { return to_bytes(size_in_bits_ + 7); }
-  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return to_bytes(kAllocationSizesBits[allocation_size_index_]); }
-  [[nodiscard]] PROMPP_ALWAYS_INLINE std::span<const uint8_t> filled_bytes() const noexcept { return {memory_, to_bytes(size_in_bits_)}; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t size_in_bits() const noexcept { return size_in_bits_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t size_in_bytes() const noexcept { return Bit::to_bytes(size_in_bits_ + 7); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t allocated_memory() const noexcept { return kAllocationSizesTable[allocation_size_index_].bytes; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE std::span<const uint8_t> filled_bytes() const noexcept { return {memory_, Bit::to_bytes(size_in_bits_)}; }
   template <class T>
   [[nodiscard]] PROMPP_ALWAYS_INLINE std::span<const T> bytes() const noexcept {
     return {reinterpret_cast<T*>(memory_), allocated_memory() / sizeof(T)};
@@ -95,7 +94,7 @@ class PROMPP_ATTRIBUTE_PACKED CompactBitSequence {
   }
 
   PROMPP_ALWAYS_INLINE void push_back_bits_u32(uint32_t size, uint32_t data) noexcept {
-    assert(size <= to_bits(sizeof(uint32_t)));
+    assert(size <= Bit::to_bits(sizeof(uint32_t)));
 
     reserve_enough_memory_if_needed();
     *unfilled_memory<uint64_t>() |= static_cast<uint64_t>(data) << unfilled_bits_in_byte();
@@ -105,7 +104,7 @@ class PROMPP_ATTRIBUTE_PACKED CompactBitSequence {
   PROMPP_ALWAYS_INLINE void push_back_u64(uint64_t data) noexcept { push_back_bits_u64(64, data); }
 
   PROMPP_ALWAYS_INLINE void push_back_bits_u64(uint32_t size, uint64_t data) noexcept {
-    assert(size <= to_bits(sizeof(uint64_t)));
+    assert(size <= Bit::to_bits(sizeof(uint64_t)));
 
     reserve_enough_memory_if_needed();
 
@@ -119,37 +118,37 @@ class PROMPP_ATTRIBUTE_PACKED CompactBitSequence {
   PROMPP_ALWAYS_INLINE void push_back_d64_svbyte_0468(double val) noexcept {
     // for double skip trail z instead of lead z
 
-    uint8_t size_in_bytes = to_bytes(64 + 15 - std::countr_zero(std::bit_cast<uint64_t>(val))) & 0b1110;
+    uint8_t size_in_bytes = Bit::to_bytes(64 + 15 - std::countr_zero(std::bit_cast<uint64_t>(val))) & 0b1110;
     size_in_bytes += static_cast<bool>(size_in_bytes & 0b111) << 1;
     const uint8_t code = (size_in_bytes >> 1) - (size_in_bytes != 0);
 
     push_back_bits_u32(2, code);
-    push_back_bits_u64(to_bits(size_in_bytes), (std::bit_cast<uint64_t>(val)) >> (64 - to_bits(size_in_bytes)));
+    push_back_bits_u64(Bit::to_bits(size_in_bytes), (std::bit_cast<uint64_t>(val)) >> (64 - Bit::to_bits(size_in_bytes)));
   }
 
  private:
-  static constexpr uint32_t kReservedSizeBits = to_bits(sizeof(uint64_t) + 1);
+  static constexpr uint32_t kReservedSizeBits = Bit::to_bits(sizeof(uint64_t) + 1);
 
   uint8_t* memory_{};
   uint32_t size_in_bits_{};
   uint8_t allocation_size_index_{};
 
   void reserve_enough_memory_if_needed() noexcept {
-    auto old_size = kAllocationSizesBits[allocation_size_index_];
-    if (size_in_bits_ + kReservedSizeBits > old_size) {
+    const auto& old_size = kAllocationSizesTable[allocation_size_index_];
+    if (size_in_bits_ + kReservedSizeBits > old_size.bits) {
       [[unlikely]];
       ++allocation_size_index_;
-      assert(allocation_size_index_ < std::size(kAllocationSizesBits));
+      assert(allocation_size_index_ < std::size(kAllocationSizesTable));
 
-      auto new_size = to_bytes(kAllocationSizesBits[allocation_size_index_]);
+      auto new_size = kAllocationSizesTable[allocation_size_index_].bytes;
       memory_ = reinterpret_cast<uint8_t*>(std::realloc(memory_, new_size));
-      std::memset(memory_ + to_bytes(old_size), 0, new_size - to_bytes(old_size));
+      std::memset(memory_ + old_size.bytes, 0, new_size - old_size.bytes);
     }
   }
 
   template <class T>
   [[nodiscard]] PROMPP_ALWAYS_INLINE T* unfilled_memory() const noexcept {
-    return reinterpret_cast<T*>(memory_ + to_bytes(size_in_bits_));
+    return reinterpret_cast<T*>(memory_ + Bit::to_bytes(size_in_bits_));
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t unfilled_bits_in_byte() const noexcept { return size_in_bits_ % 8; }

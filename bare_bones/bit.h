@@ -4,11 +4,15 @@
 #include <bit>
 #include <cassert>
 #include <cstdint>
+
+#include "preprocess.h"
+
 #ifdef __x86_64__
 #include <x86intrin.h>
 #endif
 
 namespace BareBones::Bit {
+
 static_assert(std::endian::native == std::endian::little, "big endian arch is not yet supported");
 
 inline __attribute__((always_inline)) uint32_t bextr(uint32_t src, uint32_t start, uint32_t len) noexcept {
@@ -40,4 +44,15 @@ inline __attribute__((always_inline)) uint64_t bextr(uint64_t src, uint32_t star
   return (src >> start) & lut[len];
 #endif
 }
+
+template <class T>
+PROMPP_ALWAYS_INLINE constexpr T to_bits(T bytes) noexcept {
+  return bytes * 8;
+}
+
+template <class T>
+PROMPP_ALWAYS_INLINE constexpr T to_bytes(T bits) noexcept {
+  return bits / 8;
+}
+
 }  // namespace BareBones::Bit
