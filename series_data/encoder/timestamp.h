@@ -13,22 +13,24 @@ class PROMPP_ATTRIBUTE_PACKED TimestampEncoder {
   explicit TimestampEncoder(int64_t timestamp) { BareBones::Encoding::Gorilla::TimestampEncoder::encode(encoder_state_, timestamp, stream_); }
 
   void encode(int64_t timestamp) {
-    if (state_ == BareBones::Encoding::Gorilla::GorillaState::kSecondPoint) {
+    if (count_ == 1) {
       [[unlikely]];
       BareBones::Encoding::Gorilla::TimestampEncoder::encode_delta(encoder_state_, timestamp, stream_);
-      state_ = BareBones::Encoding::Gorilla::GorillaState::kOtherPoint;
     } else {
       BareBones::Encoding::Gorilla::TimestampEncoder::encode_delta_of_delta(encoder_state_, timestamp, stream_);
     }
+
+    ++count_;
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return stream_.allocated_memory(); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t count() const noexcept { return count_; }
   [[nodiscard]] PROMPP_ALWAYS_INLINE int64_t last_timestamp() const noexcept { return encoder_state_.last_ts; }
 
  private:
   BareBones::Encoding::Gorilla::TimestampEncoderState encoder_state_;
   BareBones::CompactBitSequence stream_;
-  BareBones::Encoding::Gorilla::GorillaState state_{BareBones::Encoding::Gorilla::GorillaState::kSecondPoint};
+  uint32_t count_{1};
 };
 
 using StateId = uint32_t;
@@ -160,6 +162,7 @@ class Encoder {
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return states_allocated_memory_ + states_.allocated_memory(); }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE const TimestampEncoder& get_encoder(StateId state_id) const noexcept { return states_[state_id].encoder; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE TimestampEncoder& get_encoder(StateId state_id) noexcept { return states_[state_id].encoder; }
 
  public:
   BareBones::VectorWithHoles<State> states_;

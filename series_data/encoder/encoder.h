@@ -6,7 +6,6 @@
 namespace series_data::encoder {
 
 struct PROMPP_ATTRIBUTE_PACKED EncoderData {
-  uint32_t count{};
   union PROMPP_ATTRIBUTE_PACKED {
     value::Uint32ConstantEncoder uint32_constant;
     uint32_t double_constant_encoder_id;
@@ -33,8 +32,6 @@ class Encoder {
     data.timestamp_encoder_state_id = timestamp_encoder_.encode(data.timestamp_encoder_state_id, timestamp);
 
     encode_value(data, value);
-
-    ++data.count;
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept {
@@ -85,8 +82,7 @@ class Encoder {
   }
 
   PROMPP_ALWAYS_INLINE void switch_to_two_constant_encoder(EncoderData& data, double value1, double value2) {
-    auto count = data.count;
-    auto& encoder = two_double_constant_encoders_.emplace_back(value1, value2, count);
+    auto& encoder = two_double_constant_encoders_.emplace_back(value1, value2, timestamp_encoder_.get_encoder(data.timestamp_encoder_state_id).count() - 1);
     data.values_encoding_type = value::EncodingType::kTwoDoubleConstant;
     data.values_encoder_data.two_double_constant_encoder_id = two_double_constant_encoders_.index_of(encoder);
   }
@@ -97,7 +93,7 @@ class Encoder {
       gorilla_encoder.encode(encoder.value1());
     }
 
-    auto value2_count = data.count - encoder.value1_count();
+    auto value2_count = timestamp_encoder_.get_encoder(data.timestamp_encoder_state_id).count() - encoder.value1_count() - 1;
     for (uint32_t i = 0; i < value2_count; ++i) {
       gorilla_encoder.encode(encoder.value2());
     }
