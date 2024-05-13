@@ -37,6 +37,7 @@ var (
 		".*foo",
 		"^.*foo$",
 		"^.+foo$",
+		".?",
 		".*",
 		".+",
 		"foo.+",
@@ -89,6 +90,12 @@ var (
 
 		// Values matching / not matching the test regexps on long alternations.
 		"zQPbMkNO", "zQPbMkNo", "jyyfj00j0061", "jyyfj00j006", "jyyfj00j00612", "NNSPdvMi", "NNSPdvMiXXX", "NNSPdvMixxx", "nnSPdvMi", "nnSPdvMiXXX",
+
+		// Invalid utf8
+		"\xfefoo",
+		"foo\xfe",
+		"\xfd",
+		"\xff\xff",
 	}
 )
 
