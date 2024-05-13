@@ -21,6 +21,7 @@ linters:
     - goimports
     - misspell
     - nolintlint
+    - perfsprint
     - predeclared
     - revive
     - testifylint
