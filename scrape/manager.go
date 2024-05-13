@@ -173,7 +173,6 @@ func (m *Manager) reloader() {
 func (m *Manager) reload() {
 	m.mtxScrape.Lock()
 	var wg sync.WaitGroup
-
 	for setName, groups := range m.targetSets {
 		if _, ok := m.scrapePools[setName]; !ok {
 			scrapeConfig, ok := m.scrapeConfigs[setName]
@@ -202,7 +201,6 @@ func (m *Manager) reload() {
 		}
 
 		wg.Add(1)
-
 		// Run the sync in parallel as these take a while and at high load can't catch up.
 		go func(sp *scrapePool, groups []*targetgroup.Group) {
 			sp.Sync(groups)
