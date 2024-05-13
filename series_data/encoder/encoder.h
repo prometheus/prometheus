@@ -29,7 +29,7 @@ namespace series_data::encoder {
 class Encoder {
  public:
   void encode(uint32_t ls_id, int64_t timestamp, double value) {
-    auto& data = (encoders_data_.size() <= ls_id) ? encoders_data_.emplace_back() : encoders_data_[ls_id];
+    auto& data = (encoders_data_.size() > ls_id) ? encoders_data_[ls_id] : encoders_data_.emplace_back();
     data.timestamp_encoder_state_id = timestamp_encoder_.encode(data.timestamp_encoder_state_id, timestamp);
 
     encode_value(data, value);
@@ -68,18 +68,15 @@ class Encoder {
         switch_to_two_constant_encoder(data, data.values_encoder_data.uint32_constant.value(), value);
       }
     } else if (data.values_encoding_type == value::EncodingType::kDoubleConstant) {
-      auto& encoder = double_constant_encoders_[data.values_encoder_data.double_constant_encoder_id];
-      if (!encoder.encode(value)) {
+      if (auto& encoder = double_constant_encoders_[data.values_encoder_data.double_constant_encoder_id]; !encoder.encode(value)) {
         auto encoder_id = data.values_encoder_data.double_constant_encoder_id;
         switch_to_two_constant_encoder(data, encoder.value(), value);
         double_constant_encoders_.erase(encoder_id);
       }
     } else if (data.values_encoding_type == value::EncodingType::kTwoDoubleConstant) {
-      auto& encoder = two_double_constant_encoders_[data.values_encoder_data.two_double_constant_encoder_id];
-      if (!encoder.encode(value)) {
+      if (auto& encoder = two_double_constant_encoders_[data.values_encoder_data.two_double_constant_encoder_id]; !encoder.encode(value)) {
         auto encoder_id = data.values_encoder_data.two_double_constant_encoder_id;
-        switch_to_gorilla(data, encoder);
-        gorilla_encoders_[data.values_encoder_data.gorilla_encoder_id].encode(value);
+        switch_to_gorilla(data, encoder, value);
         two_double_constant_encoders_.erase(encoder_id);
       }
     } else if (data.values_encoding_type == value::EncodingType::kGorilla) {
@@ -94,7 +91,7 @@ class Encoder {
     data.values_encoder_data.two_double_constant_encoder_id = two_double_constant_encoders_.index_of(encoder);
   }
 
-  void switch_to_gorilla(EncoderData& data, const value::TwoDoubleConstantEncoder& encoder) {
+  void switch_to_gorilla(EncoderData& data, const value::TwoDoubleConstantEncoder& encoder, double value) {
     auto& gorilla_encoder = gorilla_encoders_.emplace_back(encoder.value1());
     for (uint32_t i = 1; i < encoder.value1_count(); ++i) {
       gorilla_encoder.encode(encoder.value1());
@@ -104,6 +101,8 @@ class Encoder {
     for (uint32_t i = 0; i < value2_count; ++i) {
       gorilla_encoder.encode(encoder.value2());
     }
+
+    gorilla_encoder.encode(value);
 
     data.values_encoding_type = value::EncodingType::kGorilla;
     data.values_encoder_data.gorilla_encoder_id = gorilla_encoders_.size() - 1;

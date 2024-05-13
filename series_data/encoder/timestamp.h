@@ -73,10 +73,11 @@ class Hash {
 
   explicit Hash(const BareBones::VectorWithHoles<State>& states) : states_(states) {}
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t operator()(const TimestampKey& key) const noexcept { return hash(key.timestamp, key.state_id); }
   [[nodiscard]] PROMPP_ALWAYS_INLINE static size_t hash(int64_t timestamp, StateId state_id) noexcept {
     return std::bit_cast<uint64_t>(timestamp) | (static_cast<uint64_t>(state_id) << 44);
   }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t operator()(const TimestampKey& key) const noexcept { return hash(key.timestamp, key.state_id); }
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t operator()(const Key& key) const noexcept {
     return hash(states_[key.state_id].encoder.last_timestamp(), key.previous_state_id);
   }
@@ -106,12 +107,8 @@ class EqualTo {
 
 }  // namespace series_data::encoder::timestamp
 
-namespace BareBones {
-
 template <>
-struct IsTriviallyReallocatable<series_data::encoder::timestamp::State> : std::true_type {};
-
-}  // namespace BareBones
+struct BareBones::IsTriviallyReallocatable<series_data::encoder::timestamp::State> : std::true_type {};
 
 namespace series_data::encoder::timestamp {
 

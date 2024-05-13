@@ -100,7 +100,7 @@ class VectorWithHoles {
  private:
   using Item = VectorWithHolesImpl::ItemOrHole<T>;
 
-  BareBones::Vector<VectorWithHolesImpl::ItemOrHole<T>> vector_;
+  BareBones::Vector<Item> vector_;
   BareBones::Bitset item_index_set_;
   uint32_t next_hole_{std::numeric_limits<uint32_t>::max()};
 };
