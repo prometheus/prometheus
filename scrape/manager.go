@@ -228,13 +228,14 @@ func (m *Manager) warnIfTargetsRelabelledToSameLabels() {
 		totalTargets += len(scrapePool.activeTargets)
 	}
 
-	activeTargets := make(map[uint64]*Target, totalTargets)
+	activeTargets := make(map[string]*Target, totalTargets)
+	buf := [1024]byte{}
 	for _, scrapePool := range m.scrapePools {
 		for _, target := range scrapePool.activeTargets {
-			lHash := target.labels.Hash()
-			t, ok := activeTargets[lHash]
+			lStr := string(target.labels.Bytes(buf[:]))
+			t, ok := activeTargets[lStr]
 			if !ok {
-				activeTargets[lHash] = target
+				activeTargets[lStr] = target
 				continue
 			}
 			level.Warn(m.logger).Log(
