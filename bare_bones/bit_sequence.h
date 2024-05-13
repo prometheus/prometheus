@@ -25,9 +25,10 @@ namespace BareBones {
 
 struct AllocationSize {
   uint32_t bits;
-  uint32_t bytes;
 
-  explicit constexpr AllocationSize(uint32_t size_in_bytes) : bits(Bit::to_bits(size_in_bytes)), bytes(size_in_bytes) {}
+  explicit constexpr AllocationSize(uint32_t size_in_bytes) : bits(Bit::to_bits(size_in_bytes)) {}
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE constexpr uint32_t bytes() const noexcept { return Bit::to_bytes(bits); }
 };
 
 template <std::array kAllocationSizesTable>
@@ -63,7 +64,7 @@ class PROMPP_ATTRIBUTE_PACKED CompactBitSequence {
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t size_in_bits() const noexcept { return size_in_bits_; }
   [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t size_in_bytes() const noexcept { return Bit::to_bytes(size_in_bits_ + 7); }
-  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t allocated_memory() const noexcept { return kAllocationSizesTable[allocation_size_index_].bytes; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t allocated_memory() const noexcept { return kAllocationSizesTable[allocation_size_index_].bytes(); }
   [[nodiscard]] PROMPP_ALWAYS_INLINE std::span<const uint8_t> filled_bytes() const noexcept { return {memory_, Bit::to_bytes(size_in_bits_)}; }
   template <class T>
   [[nodiscard]] PROMPP_ALWAYS_INLINE std::span<const T> bytes() const noexcept {
@@ -123,15 +124,15 @@ class PROMPP_ATTRIBUTE_PACKED CompactBitSequence {
   uint8_t allocation_size_index_{};
 
   PROMPP_ALWAYS_INLINE void reserve_enough_memory_if_needed() noexcept {
-    const auto& old_size = kAllocationSizesTable[allocation_size_index_];
+    auto old_size = kAllocationSizesTable[allocation_size_index_];
     if (size_in_bits_ + kReservedSizeBits > old_size.bits) {
       [[unlikely]];
       ++allocation_size_index_;
       assert(allocation_size_index_ < std::size(kAllocationSizesTable));
 
-      auto new_size = kAllocationSizesTable[allocation_size_index_].bytes;
+      auto new_size = kAllocationSizesTable[allocation_size_index_].bytes();
       memory_ = reinterpret_cast<uint8_t*>(std::realloc(memory_, new_size));
-      std::memset(memory_ + old_size.bytes, 0, new_size - old_size.bytes);
+      std::memset(memory_ + old_size.bytes(), 0, new_size - old_size.bytes());
     }
   }
 
