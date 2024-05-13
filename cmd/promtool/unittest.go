@@ -573,7 +573,7 @@ func (la labelsAndAnnotations) String() string {
 	}
 	s := "[\n0:" + indentLines("\n"+la[0].String(), "  ")
 	for i, l := range la[1:] {
-		s += ",\n" + fmt.Sprintf("%d", i+1) + ":" + indentLines("\n"+l.String(), "  ")
+		s += ",\n" + strconv.Itoa(i+1) + ":" + indentLines("\n"+l.String(), "  ")
 	}
 	s += "\n]"
 

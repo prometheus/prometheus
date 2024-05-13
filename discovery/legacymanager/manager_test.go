@@ -720,7 +720,7 @@ func staticConfig(addrs ...string) discovery.StaticConfig {
 	var cfg discovery.StaticConfig
 	for i, addr := range addrs {
 		cfg = append(cfg, &targetgroup.Group{
-			Source: fmt.Sprint(i),
+			Source: strconv.Itoa(i),
 			Targets: []model.LabelSet{
 				{model.AddressLabel: model.LabelValue(addr)},
 			},
