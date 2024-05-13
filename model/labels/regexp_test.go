@@ -968,6 +968,23 @@ func TestZeroOrOneCharacterStringMatcher(t *testing.T) {
 		require.False(t, matcher.Matches(emoji1+"x"))
 		require.False(t, matcher.Matches(emoji1+emoji2))
 	})
+
+	t.Run("invalid unicode", func(t *testing.T) {
+		// Just for reference, we also compare to what `^.?$` regular expression matches.
+		re := regexp.MustCompile("^.?$")
+		matcher := &zeroOrOneCharacterStringMatcher{matchNL: true}
+
+		requireMatches := func(s string, expected bool) {
+			t.Helper()
+			require.Equal(t, expected, matcher.Matches(s))
+			require.Equal(t, re.MatchString(s), matcher.Matches(s))
+		}
+
+		requireMatches("\xff", true)
+		requireMatches("x\xff", false)
+		requireMatches("\xffx", false)
+		requireMatches("\xff\xfe", false)
+	})
 }
 
 func BenchmarkZeroOrOneCharacterStringMatcher(b *testing.B) {

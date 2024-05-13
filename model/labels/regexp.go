@@ -829,7 +829,11 @@ type zeroOrOneCharacterStringMatcher struct {
 
 func (m *zeroOrOneCharacterStringMatcher) Matches(s string) bool {
 	// If there's more than one rune in the string, then it can't match.
-	if _, size := utf8.DecodeRuneInString(s); size < len(s) {
+	if r, size := utf8.DecodeRuneInString(s); r == utf8.RuneError {
+		// Size is 0 for empty strings, 1 for invalid rune.
+		// Empty string matches, invalid rune matches if there isn't anything else.
+		return size == len(s)
+	} else if size < len(s) {
 		return false
 	}
 
