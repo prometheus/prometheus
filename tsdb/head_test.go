@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -4019,7 +4020,8 @@ func TestSnapshotError(t *testing.T) {
 	c := &countSeriesLifecycleCallback{}
 	opts := head.opts
 	opts.SeriesCallback = c
-	head, err = NewHead(prometheus.NewRegistry(), nil, w, nil, head.opts, nil)
+	r := prometheus.NewRegistry()
+	head, err = NewHead(r, nil, w, nil, head.opts, nil)
 	require.NoError(t, err)
 	require.NoError(t, head.Init(math.MinInt64))
 
@@ -4035,6 +4037,15 @@ func TestSnapshotError(t *testing.T) {
 	tm, err = head.tombstones.Get(1)
 	require.NoError(t, err)
 	require.Empty(t, tm)
+
+	require.NoError(t, prom_testutil.GatherAndCompare(r, bytes.NewBufferString(`
+		# HELP prometheus_tsdb_head_series_created_total Total number of series created in the head
+		# TYPE prometheus_tsdb_head_series_created_total counter
+		prometheus_tsdb_head_series_created_total 2
+		# HELP prometheus_tsdb_head_series_removed_total Total number of series removed in the head
+		# TYPE prometheus_tsdb_head_series_removed_total counter
+		prometheus_tsdb_head_series_removed_total 2
+	`), "prometheus_tsdb_head_series_removed_total", "prometheus_tsdb_head_series_created_total"))
 }
 
 func TestHistogramMetrics(t *testing.T) {

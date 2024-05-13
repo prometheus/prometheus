@@ -312,7 +312,8 @@ func (h *Head) resetInMemoryState() error {
 
 	if h.series != nil {
 		// reset the existing series to make sure we call the appropriated hooks
-		h.series.reset()
+		// and increment the series removed metrics
+		h.metrics.seriesRemoved.Add(float64(h.series.reset()))
 	}
 
 	h.series = newStripeSeries(h.opts.StripeSize, h.opts.SeriesCallback)
@@ -1861,9 +1862,9 @@ func newStripeSeries(stripeSize int, seriesCallback SeriesLifecycleCallback) *st
 // reset should reset the stripeSeries and appropriately trigger the associated hooks.
 // note: This method simply resets the stripeSeries struct to its initial state without
 // performing any operations on the chunks.
-func (s *stripeSeries) reset() {
+func (s *stripeSeries) reset() int {
 	deletedFromPrevStripe := 0
-	// Run through all series shard by shard, and call Delete worrk.
+	totalSeries := 0
 	for i := 0; i < s.size; i++ {
 		s.locks[i].Lock()
 		deletedForCallback := make(map[chunks.HeadSeriesRef]labels.Labels, deletedFromPrevStripe)
@@ -1878,9 +1879,11 @@ func (s *stripeSeries) reset() {
 		s.locks[i].Unlock()
 		s.hashes[i] = seriesHashmap{}
 		s.seriesLifecycleCallback.PostDeletion(deletedForCallback)
+		totalSeries += len(deletedForCallback)
 		deletedFromPrevStripe = len(deletedForCallback)
 	}
 	s.series = make([]map[chunks.HeadSeriesRef]*memSeries, s.size)
+	return totalSeries
 }
 
 // gc garbage collects old chunks that are strictly before mint and removes
