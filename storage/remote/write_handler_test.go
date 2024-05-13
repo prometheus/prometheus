@@ -16,6 +16,7 @@ package remote
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -192,7 +193,7 @@ func TestCommitErr(t *testing.T) {
 	require.NoError(t, err)
 
 	appendable := &mockAppendable{
-		commitErr: fmt.Errorf("commit error"),
+		commitErr: errors.New("commit error"),
 	}
 	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable)
 
@@ -322,7 +323,7 @@ func (m *mockAppendable) Commit() error {
 }
 
 func (*mockAppendable) Rollback() error {
-	return fmt.Errorf("not implemented")
+	return errors.New("not implemented")
 }
 
 func (m *mockAppendable) AppendExemplar(_ storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {

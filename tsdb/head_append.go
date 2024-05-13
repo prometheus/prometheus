@@ -387,7 +387,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 // storage.CreatedTimestampAppender.AppendCTZeroSample for further documentation.
 func (a *headAppender) AppendCTZeroSample(ref storage.SeriesRef, lset labels.Labels, t, ct int64) (storage.SeriesRef, error) {
 	if ct >= t {
-		return 0, fmt.Errorf("CT is newer or the same as sample's timestamp, ignoring")
+		return 0, errors.New("CT is newer or the same as sample's timestamp, ignoring")
 	}
 
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))

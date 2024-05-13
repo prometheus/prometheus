@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -158,7 +159,7 @@ type EC2Discovery struct {
 func NewEC2Discovery(conf *EC2SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*EC2Discovery, error) {
 	m, ok := metrics.(*ec2Metrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	if logger == nil {
@@ -279,7 +280,7 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 				if inst.PrivateDnsName != nil {
 					labels[ec2LabelPrivateDNS] = model.LabelValue(*inst.PrivateDnsName)
 				}
-				addr := net.JoinHostPort(*inst.PrivateIpAddress, fmt.Sprintf("%d", d.cfg.Port))
+				addr := net.JoinHostPort(*inst.PrivateIpAddress, strconv.Itoa(d.cfg.Port))
 				labels[model.AddressLabel] = model.LabelValue(addr)
 
 				if inst.Platform != nil {

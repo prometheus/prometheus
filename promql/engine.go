@@ -100,15 +100,15 @@ type (
 )
 
 func (e ErrQueryTimeout) Error() string {
-	return fmt.Sprintf("query timed out in %s", string(e))
+	return "query timed out in " + string(e)
 }
 
 func (e ErrQueryCanceled) Error() string {
-	return fmt.Sprintf("query was canceled in %s", string(e))
+	return "query was canceled in %s" + string(e)
 }
 
 func (e ErrTooManySamples) Error() string {
-	return fmt.Sprintf("query processing would load too many samples into memory in %s", string(e))
+	return "query processing would load too many samples into memory in %s" + string(e)
 }
 
 func (e ErrStorage) Error() string {
@@ -1949,7 +1949,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 		}
 		for i := range mat {
 			if len(mat[i].Floats)+len(mat[i].Histograms) != 1 {
-				panic(fmt.Errorf("unexpected number of samples"))
+				panic(errors.New("unexpected number of samples"))
 			}
 			for ts := ev.startTimestamp + ev.interval; ts <= ev.endTimestamp; ts += ev.interval {
 				if len(mat[i].Floats) > 0 {

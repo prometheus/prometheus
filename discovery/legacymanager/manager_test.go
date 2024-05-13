@@ -15,7 +15,7 @@ package legacymanager
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"sort"
 	"strconv"
 	"testing"
@@ -720,7 +720,7 @@ func staticConfig(addrs ...string) discovery.StaticConfig {
 	var cfg discovery.StaticConfig
 	for i, addr := range addrs {
 		cfg = append(cfg, &targetgroup.Group{
-			Source: fmt.Sprint(i),
+			Source: strconv.Itoa(i),
 			Targets: []model.LabelSet{
 				{model.AddressLabel: model.LabelValue(addr)},
 			},
@@ -945,9 +945,9 @@ func TestGaugeFailedConfigs(t *testing.T) {
 
 	c := map[string]discovery.Configs{
 		"prometheus": {
-			errorConfig{fmt.Errorf("tests error 0")},
-			errorConfig{fmt.Errorf("tests error 1")},
-			errorConfig{fmt.Errorf("tests error 2")},
+			errorConfig{errors.New("tests error 0")},
+			errorConfig{errors.New("tests error 1")},
+			errorConfig{errors.New("tests error 2")},
 		},
 	}
 	discoveryManager.ApplyConfig(c)

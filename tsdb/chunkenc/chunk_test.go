@@ -132,7 +132,7 @@ func TestPool(t *testing.T) {
 		{
 			name:     "invalid encoding",
 			encoding: EncNone,
-			expErr:   fmt.Errorf(`invalid chunk encoding "none"`),
+			expErr:   errors.New(`invalid chunk encoding "none"`),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -93,7 +93,7 @@ func newBaremetalDiscovery(conf *SDConfig) (*baremetalDiscovery, error) {
 			Transport: rt,
 			Timeout:   time.Duration(conf.RefreshInterval),
 		}),
-		scw.WithUserAgent(fmt.Sprintf("Prometheus/%s", version.Version)),
+		scw.WithUserAgent("Prometheus/"+version.Version),
 		scw.WithProfile(profile),
 	)
 	if err != nil {

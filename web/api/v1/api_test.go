@@ -25,6 +25,7 @@ import (
 	"reflect"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -577,7 +578,7 @@ func TestGetSeries(t *testing.T) {
 			matchers:          []string{`{foo="boo"}`, `{foo="baz"}`},
 			expectedErrorType: errorExec,
 			api: &API{
-				Queryable: errorTestQueryable{err: fmt.Errorf("generic")},
+				Queryable: errorTestQueryable{err: errors.New("generic")},
 			},
 		},
 		{
@@ -585,7 +586,7 @@ func TestGetSeries(t *testing.T) {
 			matchers:          []string{`{foo="boo"}`, `{foo="baz"}`},
 			expectedErrorType: errorInternal,
 			api: &API{
-				Queryable: errorTestQueryable{err: promql.ErrStorage{Err: fmt.Errorf("generic")}},
+				Queryable: errorTestQueryable{err: promql.ErrStorage{Err: errors.New("generic")}},
 			},
 		},
 	} {
@@ -679,7 +680,7 @@ func TestQueryExemplars(t *testing.T) {
 			name:              "should return errorExec upon genetic error",
 			expectedErrorType: errorExec,
 			api: &API{
-				ExemplarQueryable: errorTestQueryable{err: fmt.Errorf("generic")},
+				ExemplarQueryable: errorTestQueryable{err: errors.New("generic")},
 			},
 			query: url.Values{
 				"query": []string{`test_metric3{foo="boo"} - test_metric4{foo="bar"}`},
@@ -691,7 +692,7 @@ func TestQueryExemplars(t *testing.T) {
 			name:              "should return errorInternal err type is ErrStorage",
 			expectedErrorType: errorInternal,
 			api: &API{
-				ExemplarQueryable: errorTestQueryable{err: promql.ErrStorage{Err: fmt.Errorf("generic")}},
+				ExemplarQueryable: errorTestQueryable{err: promql.ErrStorage{Err: errors.New("generic")}},
 			},
 			query: url.Values{
 				"query": []string{`test_metric3{foo="boo"} - test_metric4{foo="bar"}`},
@@ -789,7 +790,7 @@ func TestLabelNames(t *testing.T) {
 			matchers:          []string{`{foo="boo"}`, `{foo="baz"}`},
 			expectedErrorType: errorExec,
 			api: &API{
-				Queryable: errorTestQueryable{err: fmt.Errorf("generic")},
+				Queryable: errorTestQueryable{err: errors.New("generic")},
 			},
 		},
 		{
@@ -797,7 +798,7 @@ func TestLabelNames(t *testing.T) {
 			matchers:          []string{`{foo="boo"}`, `{foo="baz"}`},
 			expectedErrorType: errorInternal,
 			api: &API{
-				Queryable: errorTestQueryable{err: promql.ErrStorage{Err: fmt.Errorf("generic")}},
+				Queryable: errorTestQueryable{err: promql.ErrStorage{Err: errors.New("generic")}},
 			},
 		},
 	} {
@@ -2866,7 +2867,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			r.RemoteAddr = "127.0.0.1:20201"
 			return r, err
 		}
-		r, err := http.NewRequest(m, fmt.Sprintf("http://example.com?%s", q.Encode()), nil)
+		r, err := http.NewRequest(m, "http://example.com?%s"+q.Encode(), nil)
 		r.RemoteAddr = "127.0.0.1:20201"
 		return r, err
 	}
@@ -3171,7 +3172,7 @@ func TestAdminEndpoints(t *testing.T) {
 			}
 
 			endpoint := tc.endpoint(api)
-			req, err := http.NewRequest(tc.method, fmt.Sprintf("?%s", tc.values.Encode()), nil)
+			req, err := http.NewRequest(tc.method, "?%s"+tc.values.Encode(), nil)
 			require.NoError(t, err)
 
 			res := setUnavailStatusOnTSDBNotReady(endpoint(req))
@@ -3544,10 +3545,10 @@ func TestTSDBStatus(t *testing.T) {
 		},
 	} {
 		tc := tc
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			api := &API{db: tc.db, gatherer: prometheus.DefaultGatherer}
 			endpoint := tc.endpoint(api)
-			req, err := http.NewRequest(tc.method, fmt.Sprintf("?%s", tc.values.Encode()), nil)
+			req, err := http.NewRequest(tc.method, "?%s"+tc.values.Encode(), nil)
 			require.NoError(t, err, "Error when creating test request")
 			res := endpoint(req)
 			assertAPIError(t, res.err, tc.errType)
@@ -3877,7 +3878,7 @@ func TestQueryTimeout(t *testing.T) {
 				"timeout": []string{"1s"},
 			}
 			ctx := context.Background()
-			req, err := http.NewRequest(tc.method, fmt.Sprintf("http://example.com?%s", query.Encode()), nil)
+			req, err := http.NewRequest(tc.method, "http://example.com?%s"+query.Encode(), nil)
 			require.NoError(t, err)
 			req.RemoteAddr = "127.0.0.1:20201"
 

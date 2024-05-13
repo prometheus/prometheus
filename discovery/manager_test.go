@@ -15,6 +15,7 @@ package discovery
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -720,7 +721,7 @@ func staticConfig(addrs ...string) StaticConfig {
 	var cfg StaticConfig
 	for i, addr := range addrs {
 		cfg = append(cfg, &targetgroup.Group{
-			Source: fmt.Sprint(i),
+			Source: strconv.Itoa(i),
 			Targets: []model.LabelSet{
 				{model.AddressLabel: model.LabelValue(addr)},
 			},
@@ -1209,9 +1210,9 @@ func TestGaugeFailedConfigs(t *testing.T) {
 
 	c := map[string]Configs{
 		"prometheus": {
-			errorConfig{fmt.Errorf("tests error 0")},
-			errorConfig{fmt.Errorf("tests error 1")},
-			errorConfig{fmt.Errorf("tests error 2")},
+			errorConfig{errors.New("tests error 0")},
+			errorConfig{errors.New("tests error 1")},
+			errorConfig{errors.New("tests error 2")},
 		},
 	}
 	discoveryManager.ApplyConfig(c)

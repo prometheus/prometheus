@@ -15,6 +15,7 @@ package digitalocean
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -114,7 +115,7 @@ type Discovery struct {
 func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
 	m, ok := metrics.(*digitaloceanMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	d := &Discovery{
@@ -131,7 +132,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.Discovere
 			Transport: rt,
 			Timeout:   time.Duration(conf.RefreshInterval),
 		},
-		godo.SetUserAgent(fmt.Sprintf("Prometheus/%s", version.Version)),
+		godo.SetUserAgent("Prometheus/"+version.Version),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error setting up digital ocean agent: %w", err)
@@ -177,7 +178,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		}
 
 		labels := model.LabelSet{
-			doLabelID:          model.LabelValue(fmt.Sprintf("%d", droplet.ID)),
+			doLabelID:          model.LabelValue(strconv.Itoa(droplet.ID)),
 			doLabelName:        model.LabelValue(droplet.Name),
 			doLabelImage:       model.LabelValue(droplet.Image.Slug),
 			doLabelImageName:   model.LabelValue(droplet.Image.Name),

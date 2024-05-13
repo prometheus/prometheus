@@ -17,6 +17,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/binary"
+	"errors"
 	"flag"
 	"fmt"
 	"hash/crc32"
@@ -1065,7 +1066,7 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 
 			for i := int64(0); i < 155; i++ {
 				app := db.Appender(context.Background())
-				ref, err := app.Append(0, labels.FromStrings("wal"+fmt.Sprintf("%d", i), "size"), i, rand.Float64())
+				ref, err := app.Append(0, labels.FromStrings("wal"+strconv.FormatInt(i, 10), "size"), i, rand.Float64())
 				require.NoError(t, err)
 				for j := int64(1); j <= 78; j++ {
 					_, err := app.Append(ref, labels.EmptyLabels(), i+j, rand.Float64())
@@ -1432,7 +1433,7 @@ func (*mockCompactorFailing) Plan(string) ([]string, error) {
 
 func (c *mockCompactorFailing) Write(dest string, _ BlockReader, _, _ int64, _ *BlockMeta) (ulid.ULID, error) {
 	if len(c.blocks) >= c.max {
-		return ulid.ULID{}, fmt.Errorf("the compactor already did the maximum allowed blocks so it is time to fail")
+		return ulid.ULID{}, errors.New("the compactor already did the maximum allowed blocks so it is time to fail")
 	}
 
 	block, err := OpenBlock(nil, createBlock(c.t, dest, genSeries(1, 1, 0, 1)), nil)
@@ -1459,7 +1460,7 @@ func (*mockCompactorFailing) Compact(string, []string, []*Block) (ulid.ULID, err
 }
 
 func (*mockCompactorFailing) CompactOOO(string, *OOOCompactionHead) (result []ulid.ULID, err error) {
-	return nil, fmt.Errorf("mock compaction failing CompactOOO")
+	return nil, errors.New("mock compaction failing CompactOOO")
 }
 
 func TestTimeRetention(t *testing.T) {
@@ -4955,7 +4956,7 @@ func Test_Querier_OOOQuery(t *testing.T) {
 		},
 	}
 	for _, tc := range tests {
-		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
+		t.Run("name="+tc.name, func(t *testing.T) {
 			db := openTestDB(t, opts, nil)
 			db.DisableCompactions()
 			defer func() {
@@ -5039,7 +5040,7 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 		},
 	}
 	for _, tc := range tests {
-		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
+		t.Run("name="+tc.name, func(t *testing.T) {
 			db := openTestDB(t, opts, nil)
 			db.DisableCompactions()
 			defer func() {

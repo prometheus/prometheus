@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -62,7 +63,7 @@ var (
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
 	matchContentType = regexp.MustCompile(`^(?i:application\/json(;\s*charset=("utf-8"|utf-8))?)$`)
-	userAgent        = fmt.Sprintf("Prometheus/%s", version.Version)
+	userAgent        = "Prometheus/" + version.Version
 )
 
 func init() {
@@ -108,20 +109,20 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if c.URL == "" {
-		return fmt.Errorf("URL is missing")
+		return errors.New("URL is missing")
 	}
 	parsedURL, err := url.Parse(c.URL)
 	if err != nil {
 		return err
 	}
 	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-		return fmt.Errorf("URL scheme must be 'http' or 'https'")
+		return errors.New("URL scheme must be 'http' or 'https'")
 	}
 	if parsedURL.Host == "" {
-		return fmt.Errorf("host is missing in URL")
+		return errors.New("host is missing in URL")
 	}
 	if c.Query == "" {
-		return fmt.Errorf("query missing")
+		return errors.New("query missing")
 	}
 	return c.HTTPClientConfig.Validate()
 }
@@ -141,7 +142,7 @@ type Discovery struct {
 func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
 	m, ok := metrics.(*puppetdbMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	if logger == nil {
@@ -237,7 +238,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 			pdbLabelResource:    model.LabelValue(resource.Resource),
 			pdbLabelType:        model.LabelValue(resource.Type),
 			pdbLabelTitle:       model.LabelValue(resource.Title),
-			pdbLabelExported:    model.LabelValue(fmt.Sprintf("%t", resource.Exported)),
+			pdbLabelExported:    model.LabelValue(strconv.FormatBool(resource.Exported)),
 			pdbLabelFile:        model.LabelValue(resource.File),
 			pdbLabelEnvironment: model.LabelValue(resource.Environment),
 		}

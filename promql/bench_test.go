@@ -422,7 +422,7 @@ func BenchmarkParser(b *testing.B) {
 		})
 	}
 	for _, c := range errCases {
-		name := fmt.Sprintf("%s (should fail)", c)
+		name := c + " (should fail)"
 		b.Run(name, func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {

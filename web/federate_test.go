@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -341,8 +342,8 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 	}
 	app := db.Appender(context.Background())
 	for i := 0; i < 6; i++ {
-		l := labels.FromStrings("__name__", "test_metric", "foo", fmt.Sprintf("%d", i))
-		expL := labels.FromStrings("__name__", "test_metric", "instance", "", "foo", fmt.Sprintf("%d", i))
+		l := labels.FromStrings("__name__", "test_metric", "foo", strconv.Itoa(i))
+		expL := labels.FromStrings("__name__", "test_metric", "instance", "", "foo", strconv.Itoa(i))
 		var err error
 		switch i {
 		case 0, 3:

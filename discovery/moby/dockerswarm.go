@@ -15,6 +15,7 @@ package moby
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -37,7 +38,7 @@ const (
 	swarmLabel = model.MetaLabelPrefix + "dockerswarm_"
 )
 
-var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+var userAgent = "Prometheus/" + version.Version
 
 // DefaultDockerSwarmSDConfig is the default Docker Swarm SD configuration.
 var DefaultDockerSwarmSDConfig = DockerSwarmSDConfig{
@@ -99,7 +100,7 @@ func (c *DockerSwarmSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) e
 		return err
 	}
 	if c.Host == "" {
-		return fmt.Errorf("host missing")
+		return errors.New("host missing")
 	}
 	if _, err = url.Parse(c.Host); err != nil {
 		return err
@@ -107,7 +108,7 @@ func (c *DockerSwarmSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) e
 	switch c.Role {
 	case "services", "nodes", "tasks":
 	case "":
-		return fmt.Errorf("role missing (one of: tasks, services, nodes)")
+		return errors.New("role missing (one of: tasks, services, nodes)")
 	default:
 		return fmt.Errorf("invalid role %s, expected tasks, services, or nodes", c.Role)
 	}
@@ -128,7 +129,7 @@ type Discovery struct {
 func NewDiscovery(conf *DockerSwarmSDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
 	m, ok := metrics.(*dockerswarmMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	d := &Discovery{

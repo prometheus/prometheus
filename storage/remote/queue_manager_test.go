@@ -15,6 +15,7 @@ package remote
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -468,7 +469,7 @@ func TestReleaseNoninternedString(t *testing.T) {
 		m.StoreSeries([]record.RefSeries{
 			{
 				Ref:    chunks.HeadSeriesRef(i),
-				Labels: labels.FromStrings("asdf", fmt.Sprintf("%d", i)),
+				Labels: labels.FromStrings("asdf", strconv.Itoa(i)),
 			},
 		}, 0)
 		m.SeriesReset(1)
@@ -540,7 +541,7 @@ func TestDisableReshardOnRetry(t *testing.T) {
 				onStoreCalled()
 
 				return RecoverableError{
-					error:      fmt.Errorf("fake error"),
+					error:      errors.New("fake error"),
 					retryAfter: model.Duration(retryAfter),
 				}
 			},

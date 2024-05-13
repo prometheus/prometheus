@@ -98,7 +98,7 @@ func mockIONOSServers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Path != fmt.Sprintf("%s/datacenters/%s/servers", ionoscloud.DefaultIonosBasePath, ionosTestDatacenterID) {
-		http.Error(w, fmt.Sprintf("bad url: %s", r.URL.Path), http.StatusNotFound)
+		http.Error(w, "bad url: %s"+r.URL.Path, http.StatusNotFound)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

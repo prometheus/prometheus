@@ -16,7 +16,9 @@ package relabel
 import (
 	"crypto/md5"
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/grafana/regexp"
@@ -113,10 +115,10 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 func (c *Config) Validate() error {
 	if c.Action == "" {
-		return fmt.Errorf("relabel action cannot be empty")
+		return errors.New("relabel action cannot be empty")
 	}
 	if c.Modulus == 0 && c.Action == HashMod {
-		return fmt.Errorf("relabel configuration for hashmod requires non-zero modulus")
+		return errors.New("relabel configuration for hashmod requires non-zero modulus")
 	}
 	if (c.Action == Replace || c.Action == HashMod || c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && c.TargetLabel == "" {
 		return fmt.Errorf("relabel configuration for %s action requires 'target_label' value", c.Action)
@@ -290,7 +292,7 @@ func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
 		hash := md5.Sum([]byte(val))
 		// Use only the last 8 bytes of the hash to give the same result as earlier versions of this code.
 		mod := binary.BigEndian.Uint64(hash[8:]) % cfg.Modulus
-		lb.Set(cfg.TargetLabel, fmt.Sprintf("%d", mod))
+		lb.Set(cfg.TargetLabel, strconv.FormatUint(mod, 10))
 	case LabelMap:
 		lb.Range(func(l labels.Label) {
 			if cfg.Regex.MatchString(l.Name) {

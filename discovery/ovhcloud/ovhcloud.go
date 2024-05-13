@@ -151,7 +151,7 @@ func newRefresher(conf *SDConfig, logger log.Logger) (refresher, error) {
 func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*refresh.Discovery, error) {
 	m, ok := metrics.(*ovhcloudMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	r, err := newRefresher(conf, logger)

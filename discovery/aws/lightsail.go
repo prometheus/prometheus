@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -132,7 +133,7 @@ type LightsailDiscovery struct {
 func NewLightsailDiscovery(conf *LightsailSDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*LightsailDiscovery, error) {
 	m, ok := metrics.(*lightsailMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	if logger == nil {
@@ -229,7 +230,7 @@ func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 			lightsailLabelRegion:              model.LabelValue(d.cfg.Region),
 		}
 
-		addr := net.JoinHostPort(*inst.PrivateIpAddress, fmt.Sprintf("%d", d.cfg.Port))
+		addr := net.JoinHostPort(*inst.PrivateIpAddress, strconv.Itoa(d.cfg.Port))
 		labels[model.AddressLabel] = model.LabelValue(addr)
 
 		if inst.PublicIpAddress != nil {

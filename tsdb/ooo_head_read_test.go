@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -490,7 +491,7 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			Ref: 0x1000000, Chunk: chunkenc.Chunk(nil), MinTime: 100, MaxTime: 300,
 		})
 		require.Nil(t, iterable)
-		require.Equal(t, err, fmt.Errorf("not found"))
+		require.Equal(t, err, errors.New("not found"))
 		require.Nil(t, c)
 	})
 
@@ -828,7 +829,7 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
+		t.Run("name="+tc.name, func(t *testing.T) {
 			db := newTestDBWithOpts(t, opts)
 
 			app := db.Appender(context.Background())
@@ -993,7 +994,7 @@ func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 	}
 
 	for _, tc := range tests {
-		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
+		t.Run("name="+tc.name, func(t *testing.T) {
 			db := newTestDBWithOpts(t, opts)
 
 			app := db.Appender(context.Background())
@@ -1124,7 +1125,7 @@ func TestSortByMinTimeAndMinRef(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
+		t.Run("name="+tc.name, func(t *testing.T) {
 			slices.SortFunc(tc.input, refLessByMinTimeAndMinRef)
 			require.Equal(t, tc.exp, tc.input)
 		})
@@ -1188,7 +1189,7 @@ func TestSortMetaByMinTimeAndMinRef(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
+		t.Run("name="+tc.name, func(t *testing.T) {
 			slices.SortFunc(tc.inputMetas, lessByMinTimeAndMinRef)
 			require.Equal(t, tc.expMetas, tc.inputMetas)
 		})

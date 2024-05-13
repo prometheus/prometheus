@@ -662,7 +662,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 				histogramChunkSize = append(histogramChunkSize, len(chk.Bytes()))
 				fhchk, ok := chk.(*chunkenc.FloatHistogramChunk)
 				if !ok {
-					return fmt.Errorf("chunk is not FloatHistogramChunk")
+					return errors.New("chunk is not FloatHistogramChunk")
 				}
 				it := fhchk.Iterator(nil)
 				bucketCount := 0
@@ -677,7 +677,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 				histogramChunkSize = append(histogramChunkSize, len(chk.Bytes()))
 				hchk, ok := chk.(*chunkenc.HistogramChunk)
 				if !ok {
-					return fmt.Errorf("chunk is not HistogramChunk")
+					return errors.New("chunk is not HistogramChunk")
 				}
 				it := hchk.Iterator(nil)
 				bucketCount := 0
@@ -856,9 +856,9 @@ func displayHistogram(dataType string, datas []int, total int) {
 	}
 	avg := sum / len(datas)
 	fmt.Printf("%s (min/avg/max): %d/%d/%d\n", dataType, datas[0], avg, datas[len(datas)-1])
-	maxLeftLen := strconv.Itoa(len(fmt.Sprintf("%d", end)))
-	maxRightLen := strconv.Itoa(len(fmt.Sprintf("%d", end+step)))
-	maxCountLen := strconv.Itoa(len(fmt.Sprintf("%d", maxCount)))
+	maxLeftLen := strconv.Itoa(len(strconv.Itoa(end)))
+	maxRightLen := strconv.Itoa(len(strconv.Itoa(end + step)))
+	maxCountLen := strconv.Itoa(len(strconv.Itoa(maxCount)))
 	for bucket, count := range buckets {
 		percentage := 100.0 * count / total
 		fmt.Printf("[%"+maxLeftLen+"d, %"+maxRightLen+"d]: %"+maxCountLen+"d %s\n", bucket*step+start+1, (bucket+1)*step+start, count, strings.Repeat("#", percentage))

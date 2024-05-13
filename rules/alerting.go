@@ -15,6 +15,7 @@ package rules
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -405,7 +406,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		resultFPs[h] = struct{}{}
 
 		if _, ok := alerts[h]; ok {
-			return nil, fmt.Errorf("vector contains metrics with the same labelset after applying alert labels")
+			return nil, errors.New("vector contains metrics with the same labelset after applying alert labels")
 		}
 
 		alerts[h] = &Alert{
@@ -590,7 +591,7 @@ func (r *AlertingRule) String() string {
 
 	byt, err := yaml.Marshal(ar)
 	if err != nil {
-		return fmt.Sprintf("error marshaling alerting rule: %s", err.Error())
+		return "error marshaling alerting rule: " + err.Error()
 	}
 
 	return string(byt)

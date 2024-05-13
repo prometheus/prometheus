@@ -43,7 +43,7 @@ var (
 		RefreshInterval:  model.Duration(60 * time.Second),
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
-	userAgent        = fmt.Sprintf("Prometheus/%s", version.Version)
+	userAgent        = "Prometheus/" + version.Version
 	matchContentType = regexp.MustCompile(`^(?i:application\/json(;\s*charset=("utf-8"|utf-8))?)$`)
 )
 
@@ -85,17 +85,17 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if c.URL == "" {
-		return fmt.Errorf("URL is missing")
+		return errors.New("URL is missing")
 	}
 	parsedURL, err := url.Parse(c.URL)
 	if err != nil {
 		return err
 	}
 	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-		return fmt.Errorf("URL scheme must be 'http' or 'https'")
+		return errors.New("URL scheme must be 'http' or 'https'")
 	}
 	if parsedURL.Host == "" {
-		return fmt.Errorf("host is missing in URL")
+		return errors.New("host is missing in URL")
 	}
 	return c.HTTPClientConfig.Validate()
 }
@@ -117,7 +117,7 @@ type Discovery struct {
 func NewDiscovery(conf *SDConfig, logger log.Logger, clientOpts []config.HTTPClientOption, metrics discovery.DiscovererMetrics) (*Discovery, error) {
 	m, ok := metrics.(*httpMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	if logger == nil {

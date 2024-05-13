@@ -15,7 +15,7 @@ package azure
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -495,14 +495,14 @@ func (*mockAzureClient) getScaleSetVMs(ctx context.Context, scaleSet armcompute.
 
 func (m *mockAzureClient) getVMNetworkInterfaceByID(ctx context.Context, networkInterfaceID string) (*armnetwork.Interface, error) {
 	if networkInterfaceID == "" {
-		return nil, fmt.Errorf("parameter networkInterfaceID cannot be empty")
+		return nil, errors.New("parameter networkInterfaceID cannot be empty")
 	}
 	return m.networkInterface, nil
 }
 
 func (m *mockAzureClient) getVMScaleSetVMNetworkInterfaceByID(ctx context.Context, networkInterfaceID, scaleSetName, instanceID string) (*armnetwork.Interface, error) {
 	if scaleSetName == "" {
-		return nil, fmt.Errorf("parameter virtualMachineScaleSetName cannot be empty")
+		return nil, errors.New("parameter virtualMachineScaleSetName cannot be empty")
 	}
 	return m.networkInterface, nil
 }

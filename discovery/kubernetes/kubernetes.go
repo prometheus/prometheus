@@ -65,7 +65,7 @@ const (
 
 var (
 	// Http header.
-	userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+	userAgent = "Prometheus/" + version.Version
 	// DefaultSDConfig is the default Kubernetes SD configuration.
 	DefaultSDConfig = SDConfig{
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
@@ -177,7 +177,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if c.Role == "" {
-		return fmt.Errorf("role missing (one of: pod, service, endpoints, endpointslice, node, ingress)")
+		return errors.New("role missing (one of: pod, service, endpoints, endpointslice, node, ingress)")
 	}
 	err = c.HTTPClientConfig.Validate()
 	if err != nil {
@@ -185,20 +185,20 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 	if c.APIServer.URL != nil && c.KubeConfig != "" {
 		// Api-server and kubeconfig_file are mutually exclusive
-		return fmt.Errorf("cannot use 'kubeconfig_file' and 'api_server' simultaneously")
+		return errors.New("cannot use 'kubeconfig_file' and 'api_server' simultaneously")
 	}
 	if c.KubeConfig != "" && !reflect.DeepEqual(c.HTTPClientConfig, config.DefaultHTTPClientConfig) {
 		// Kubeconfig_file and custom http config are mutually exclusive
-		return fmt.Errorf("cannot use a custom HTTP client configuration together with 'kubeconfig_file'")
+		return errors.New("cannot use a custom HTTP client configuration together with 'kubeconfig_file'")
 	}
 	if c.APIServer.URL == nil && !reflect.DeepEqual(c.HTTPClientConfig, config.DefaultHTTPClientConfig) {
-		return fmt.Errorf("to use custom HTTP client configuration please provide the 'api_server' URL explicitly")
+		return errors.New("to use custom HTTP client configuration please provide the 'api_server' URL explicitly")
 	}
 	if c.APIServer.URL != nil && c.NamespaceDiscovery.IncludeOwnNamespace {
-		return fmt.Errorf("cannot use 'api_server' and 'namespaces.own_namespace' simultaneously")
+		return errors.New("cannot use 'api_server' and 'namespaces.own_namespace' simultaneously")
 	}
 	if c.KubeConfig != "" && c.NamespaceDiscovery.IncludeOwnNamespace {
-		return fmt.Errorf("cannot use 'kubeconfig_file' and 'namespaces.own_namespace' simultaneously")
+		return errors.New("cannot use 'kubeconfig_file' and 'namespaces.own_namespace' simultaneously")
 	}
 
 	foundSelectorRoles := make(map[Role]struct{})
@@ -292,7 +292,7 @@ func (d *Discovery) getNamespaces() []string {
 func New(l log.Logger, metrics discovery.DiscovererMetrics, conf *SDConfig) (*Discovery, error) {
 	m, ok := metrics.(*kubernetesMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	if l == nil {
@@ -756,7 +756,7 @@ func (d *Discovery) newPodsByNodeInformer(plw *cache.ListWatch) cache.SharedInde
 		indexers[nodeIndex] = func(obj interface{}) ([]string, error) {
 			pod, ok := obj.(*apiv1.Pod)
 			if !ok {
-				return nil, fmt.Errorf("object is not a pod")
+				return nil, errors.New("object is not a pod")
 			}
 			return []string{pod.Spec.NodeName}, nil
 		}
@@ -770,7 +770,7 @@ func (d *Discovery) newEndpointsByNodeInformer(plw *cache.ListWatch) cache.Share
 	indexers[podIndex] = func(obj interface{}) ([]string, error) {
 		e, ok := obj.(*apiv1.Endpoints)
 		if !ok {
-			return nil, fmt.Errorf("object is not endpoints")
+			return nil, errors.New("object is not endpoints")
 		}
 		var pods []string
 		for _, target := range e.Subsets {
@@ -789,7 +789,7 @@ func (d *Discovery) newEndpointsByNodeInformer(plw *cache.ListWatch) cache.Share
 	indexers[nodeIndex] = func(obj interface{}) ([]string, error) {
 		e, ok := obj.(*apiv1.Endpoints)
 		if !ok {
-			return nil, fmt.Errorf("object is not endpoints")
+			return nil, errors.New("object is not endpoints")
 		}
 		var nodes []string
 		for _, target := range e.Subsets {
@@ -848,7 +848,7 @@ func (d *Discovery) newEndpointSlicesByNodeInformer(plw *cache.ListWatch, object
 				}
 			}
 		default:
-			return nil, fmt.Errorf("object is not an endpointslice")
+			return nil, errors.New("object is not an endpointslice")
 		}
 
 		return nodes, nil

@@ -15,7 +15,6 @@ package tsdb
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"testing"
 
@@ -129,7 +128,7 @@ func TestBoundedChunk(t *testing.T) {
 		},
 	}
 	for _, tc := range tests {
-		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
+		t.Run("name="+tc.name, func(t *testing.T) {
 			iterable := boundedIterable{tc.inputChunk, tc.inputMinT, tc.inputMaxT}
 
 			var samples []sample

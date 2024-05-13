@@ -20,6 +20,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -70,7 +71,7 @@ const (
 )
 
 var (
-	userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+	userAgent = "Prometheus/" + version.Version
 
 	// DefaultSDConfig is the default Azure SD configuration.
 	DefaultSDConfig = SDConfig{
@@ -185,7 +186,7 @@ type Discovery struct {
 func NewDiscovery(cfg *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
 	m, ok := metrics.(*azureMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	if logger == nil {
@@ -492,7 +493,7 @@ func (d *Discovery) vmToLabelSet(ctx context.Context, client client, vm virtualM
 				}
 				if ip.Properties != nil && ip.Properties.PrivateIPAddress != nil {
 					labels[azureLabelMachinePrivateIP] = model.LabelValue(*ip.Properties.PrivateIPAddress)
-					address := net.JoinHostPort(*ip.Properties.PrivateIPAddress, fmt.Sprintf("%d", d.port))
+					address := net.JoinHostPort(*ip.Properties.PrivateIPAddress, strconv.Itoa(d.port))
 					labels[model.AddressLabel] = model.LabelValue(address)
 					return labels, nil
 				}

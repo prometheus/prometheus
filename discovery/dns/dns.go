@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -120,7 +121,7 @@ type Discovery struct {
 func NewDiscovery(conf SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
 	m, ok := metrics.(*dnsMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	if logger == nil {
@@ -200,7 +201,7 @@ func (d *Discovery) refreshOne(ctx context.Context, name string, ch chan<- *targ
 
 	tg := &targetgroup.Group{}
 	hostPort := func(a string, p int) model.LabelValue {
-		return model.LabelValue(net.JoinHostPort(a, fmt.Sprintf("%d", p)))
+		return model.LabelValue(net.JoinHostPort(a, strconv.Itoa(p)))
 	}
 
 	for _, record := range response.Answer {
@@ -209,7 +210,7 @@ func (d *Discovery) refreshOne(ctx context.Context, name string, ch chan<- *targ
 		switch addr := record.(type) {
 		case *dns.SRV:
 			dnsSrvRecordTarget = model.LabelValue(addr.Target)
-			dnsSrvRecordPort = model.LabelValue(fmt.Sprintf("%d", addr.Port))
+			dnsSrvRecordPort = model.LabelValue(strconv.FormatUint(uint64(addr.Port), 10))
 
 			// Remove the final dot from rooted DNS names to make them look more usual.
 			addr.Target = strings.TrimRight(addr.Target, ".")

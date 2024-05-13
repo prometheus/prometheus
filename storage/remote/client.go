@@ -41,7 +41,7 @@ import (
 
 const maxErrMsgLen = 1024
 
-var UserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+var UserAgent = "Prometheus/" + version.Version
 
 var (
 	remoteReadQueriesTotal = prometheus.NewCounterVec(

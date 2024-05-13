@@ -49,7 +49,7 @@ func TestMemPostings_ensureOrder(t *testing.T) {
 		for j := range l {
 			l[j] = storage.SeriesRef(rand.Uint64())
 		}
-		v := fmt.Sprintf("%d", i)
+		v := strconv.Itoa(i)
 
 		p.m["a"][v] = l
 	}
@@ -390,7 +390,7 @@ func BenchmarkMerge(t *testing.B) {
 
 	its := make([]Postings, len(refs))
 	for _, nSeries := range []int{1, 10, 100, 1000, 10000, 100000} {
-		t.Run(fmt.Sprint(nSeries), func(bench *testing.B) {
+		t.Run(strconv.Itoa(nSeries), func(bench *testing.B) {
 			ctx := context.Background()
 			for i := 0; i < bench.N; i++ {
 				// Reset the ListPostings to their original values each time round the loop.

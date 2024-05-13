@@ -143,7 +143,7 @@ type Discovery struct {
 func NewDiscovery(conf SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
 	m, ok := metrics.(*marathonMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "marathon_sd")
@@ -505,7 +505,7 @@ func targetEndpoint(task *task, port uint32, containerNet bool) string {
 		host = task.Host
 	}
 
-	return net.JoinHostPort(host, fmt.Sprintf("%d", port))
+	return net.JoinHostPort(host, strconv.FormatUint(uint64(port), 10))
 }
 
 // Get a list of ports and a list of labels from a PortMapping.

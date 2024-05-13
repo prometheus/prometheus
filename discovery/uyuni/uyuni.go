@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
@@ -214,7 +215,7 @@ func getEndpointInfoForSystems(
 func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
 	m, ok := metrics.(*uyuniMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	apiURL, err := url.Parse(conf.Server)
@@ -269,7 +270,7 @@ func (d *Discovery) getEndpointLabels(
 		model.AddressLabel:       model.LabelValue(addr),
 		uyuniLabelMinionHostname: model.LabelValue(networkInfo.Hostname),
 		uyuniLabelPrimaryFQDN:    model.LabelValue(networkInfo.PrimaryFQDN),
-		uyuniLablelSystemID:      model.LabelValue(fmt.Sprintf("%d", endpoint.SystemID)),
+		uyuniLablelSystemID:      model.LabelValue(strconv.Itoa(endpoint.SystemID)),
 		uyuniLablelGroups:        model.LabelValue(strings.Join(managedGroupNames, d.separator)),
 		uyuniLablelEndpointName:  model.LabelValue(endpoint.EndpointName),
 		uyuniLablelExporter:      model.LabelValue(endpoint.ExporterName),

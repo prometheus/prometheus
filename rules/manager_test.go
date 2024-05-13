@@ -15,10 +15,10 @@ package rules
 
 import (
 	"context"
-	"fmt"
 	"math"
 	"os"
 	"sort"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -785,7 +785,7 @@ func TestUpdate(t *testing.T) {
 	// Change group rules and reload.
 	for i, g := range rgs.Groups {
 		for j, r := range g.Rules {
-			rgs.Groups[i].Rules[j].Expr.SetString(fmt.Sprintf("%s * 0", r.Expr.Value))
+			rgs.Groups[i].Rules[j].Expr.SetString(r.Expr.Value + " * 0")
 		}
 	}
 	reloadAndValidate(rgs, t, tmpFile, ruleManager, ogs)
@@ -1361,7 +1361,7 @@ func TestNativeHistogramsInRecordingRules(t *testing.T) {
 	ts := time.Now()
 	app := db.Appender(context.Background())
 	for i, h := range hists {
-		l := labels.FromStrings("__name__", "histogram_metric", "idx", fmt.Sprintf("%d", i))
+		l := labels.FromStrings("__name__", "histogram_metric", "idx", strconv.Itoa(i))
 		_, err := app.AppendHistogram(0, l, ts.UnixMilli(), h.Copy(), nil)
 		require.NoError(t, err)
 	}

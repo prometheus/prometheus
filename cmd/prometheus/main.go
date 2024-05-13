@@ -111,7 +111,7 @@ func init() {
 
 // serverOnlyFlag creates server-only kingpin flag.
 func serverOnlyFlag(app *kingpin.Application, name, help string) *kingpin.FlagClause {
-	return app.Flag(name, fmt.Sprintf("%s Use with server mode only.", help)).
+	return app.Flag(name, help+" Use with server mode only.").
 		PreAction(func(parseContext *kingpin.ParseContext) error {
 			// This will be invoked only if flag is actually provided by user.
 			serverOnlyFlags = append(serverOnlyFlags, "--"+name)
@@ -121,7 +121,7 @@ func serverOnlyFlag(app *kingpin.Application, name, help string) *kingpin.FlagCl
 
 // agentOnlyFlag creates agent-only kingpin flag.
 func agentOnlyFlag(app *kingpin.Application, name, help string) *kingpin.FlagClause {
-	return app.Flag(name, fmt.Sprintf("%s Use with agent mode only.", help)).
+	return app.Flag(name, help+" Use with agent mode only.").
 		PreAction(func(parseContext *kingpin.ParseContext) error {
 			// This will be invoked only if flag is actually provided by user.
 			agentOnlyFlags = append(agentOnlyFlags, "--"+name)

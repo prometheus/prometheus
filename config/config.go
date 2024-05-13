@@ -960,7 +960,7 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
-	// Thus we just do its validation here.
+	// Thus, we just do its validation here.
 	if err := c.HTTPClientConfig.Validate(); err != nil {
 		return err
 	}
@@ -969,7 +969,7 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 		c.HTTPClientConfig.Authorization != nil || c.HTTPClientConfig.OAuth2 != nil
 
 	if httpClientConfigAuthEnabled && c.SigV4Config != nil {
-		return fmt.Errorf("at most one of basic_auth, authorization, oauth2, & sigv4 must be configured")
+		return errors.New("at most one of basic_auth, authorization, oauth2, & sigv4 must be configured")
 	}
 
 	// Check for users putting URLs in target groups.
@@ -1079,11 +1079,11 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 		c.HTTPClientConfig.Authorization != nil || c.HTTPClientConfig.OAuth2 != nil
 
 	if httpClientConfigAuthEnabled && (c.SigV4Config != nil || c.AzureADConfig != nil) {
-		return fmt.Errorf("at most one of basic_auth, authorization, oauth2, sigv4, & azuread must be configured")
+		return errors.New("at most one of basic_auth, authorization, oauth2, sigv4, & azuread must be configured")
 	}
 
 	if c.SigV4Config != nil && c.AzureADConfig != nil {
-		return fmt.Errorf("at most one of basic_auth, authorization, oauth2, sigv4, & azuread must be configured")
+		return errors.New("at most one of basic_auth, authorization, oauth2, sigv4, & azuread must be configured")
 	}
 
 	return nil

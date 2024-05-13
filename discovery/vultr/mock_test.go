@@ -55,7 +55,7 @@ const APIKey = "ABCBTDG35OTGH2UKCC3S6CNMDUPCN3ZWSGFQ"
 // HandleInstanceList mocks vultr instances list.
 func (m *SDMock) HandleInstanceList() {
 	m.Mux.HandleFunc("/v2/instances", func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != fmt.Sprintf("Bearer %s", APIKey) {
+		if r.Header.Get("Authorization") != "Bearer %s"+APIKey {
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}

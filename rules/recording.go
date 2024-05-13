@@ -15,6 +15,7 @@ package rules
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"time"
@@ -104,7 +105,7 @@ func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFu
 	// Check that the rule does not produce identical metrics after applying
 	// labels.
 	if vector.ContainsSameLabelset() {
-		return nil, fmt.Errorf("vector contains metrics with the same labelset after applying rule labels")
+		return nil, errors.New("vector contains metrics with the same labelset after applying rule labels")
 	}
 
 	numSeries := len(vector)

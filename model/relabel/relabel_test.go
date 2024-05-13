@@ -14,7 +14,7 @@
 package relabel
 
 import (
-	"fmt"
+	"strconv"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -657,7 +657,7 @@ func TestRelabelValidate(t *testing.T) {
 		},
 	}
 	for i, test := range tests {
-		t.Run(fmt.Sprint(i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			err := test.config.Validate()
 			if test.expected == "" {
 				require.NoError(t, err)
