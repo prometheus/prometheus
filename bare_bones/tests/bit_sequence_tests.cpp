@@ -6,6 +6,7 @@
 
 namespace {
 
+using BareBones::AllocationSize;
 using BareBones::CompactBitSequence;
 
 const size_t NUM_VALUES = 1000;
@@ -184,9 +185,9 @@ TEST_F(BitSequenceCopyWithSizeConstructorFixture, SourceStreamIsEmpty) {
 
 class CompactBitSequenceFixture : public testing::Test {
  protected:
-  static constexpr std::array kAllocationSizesBits = {0U, 32U * 8};
+  static constexpr std::array kAllocationSizesTable = {AllocationSize{0U}, AllocationSize{32U}};
 
-  CompactBitSequence<kAllocationSizesBits> stream_;
+  CompactBitSequence<kAllocationSizesTable> stream_;
 };
 
 TEST_F(CompactBitSequenceFixture, MoveConstructor) {
