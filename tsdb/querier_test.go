@@ -3643,7 +3643,7 @@ func TestQueryWithOneChunkCompletelyDeleted(t *testing.T) {
 func TestReader_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 	ir := mockReaderOfLabels{}
 
-	ctx := &testutil.MockContextErrAfter{Context: context.Background(), FailAfter: 5}
+	ctx := &testutil.MockContextErrAfter{FailAfter: 5}
 	_, err := labelValuesWithMatchers(ctx, ir, "__name__", labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
 
 	require.Error(t, err)
@@ -3653,7 +3653,7 @@ func TestReader_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 func TestReader_InversePostingsForMatcherHonorsContextCancel(t *testing.T) {
 	ir := mockReaderOfLabels{}
 
-	ctx := &testutil.MockContextErrAfter{Context: context.Background(), FailAfter: 5}
+	ctx := &testutil.MockContextErrAfter{FailAfter: 5}
 	_, err := inversePostingsForMatcher(ctx, ir, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
 
 	require.Error(t, err)

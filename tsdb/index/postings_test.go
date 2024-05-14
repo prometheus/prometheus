@@ -1291,7 +1291,7 @@ func TestMemPostings_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 		memP.Add(storage.SeriesRef(i), labels.FromStrings("__name__", fmt.Sprintf("%4d", i)))
 	}
 
-	ctx := &testutil.MockContextErrAfter{Context: context.Background(), FailAfter: 50}
+	ctx := &testutil.MockContextErrAfter{FailAfter: 50}
 	p := memP.PostingsForLabelMatching(ctx, "__name__", func(string) bool {
 		return true
 	})

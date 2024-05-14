@@ -49,7 +49,7 @@ func (c *MockContext) Value(interface{}) interface{} {
 // MockContextErrAfter is a MockContext that will return an error after a certain
 // number of calls to Err().
 type MockContextErrAfter struct {
-	context.Context
+	MockContext
 	count     atomic.Uint64
 	FailAfter uint64
 }
@@ -59,7 +59,7 @@ func (c *MockContextErrAfter) Err() error {
 	if c.count.Load() > c.FailAfter {
 		return context.Canceled
 	}
-	return c.Context.Err()
+	return c.MockContext.Err()
 }
 
 func (c *MockContextErrAfter) Count() uint64 {
