@@ -1216,3 +1216,80 @@ func TestAlerstRelabelingIsIsolated(t *testing.T) {
 	require.True(t, h.sendAll(h.queue...))
 	checkNoErr()
 }
+
+// Regression test for https://github.com/prometheus/prometheus/issues/7676
+// The test creates a black hole alertmanager that never responds to any requests.
+// The alertmanager_config.timeout is set to infinite (1 year).
+// We check that the notifier does not hang and throughput is not affected.
+func TestNotifierQueueIndependentOfFailedAlertmanager(t *testing.T) {
+	stopBlackHole := make(chan struct{})
+	blackHoleAM := newBlackHoleAlertmanager(stopBlackHole)
+	defer close(stopBlackHole)
+
+	doneAlertReceive := make(chan struct{})
+	immediateAM := newImmediateAlertManager(doneAlertReceive)
+
+	h := NewManager(&Options{}, model.UTF8Validation, nil)
+
+	h.alertmanagers = make(map[string]*alertmanagerSet)
+
+	amCfg := config.DefaultAlertmanagerConfig
+	amCfg.Timeout = model.Duration(time.Hour * 24 * 365)
+
+	h.alertmanagers["1"] = &alertmanagerSet{
+		ams: []alertmanager{
+			alertmanagerMock{
+				urlf: func() string { return blackHoleAM.URL },
+			},
+		},
+		cfg: &amCfg,
+	}
+
+	h.alertmanagers["2"] = &alertmanagerSet{
+		ams: []alertmanager{
+			alertmanagerMock{
+				urlf: func() string { return immediateAM.URL },
+			},
+		},
+		cfg: &amCfg,
+	}
+
+	h.queue = append(h.queue, &Alert{
+		Labels: labels.FromStrings("alertname", "test"),
+	})
+
+	doneSendAll := make(chan struct{})
+	go func() {
+		h.sendAll(h.queue...)
+		close(doneSendAll)
+	}()
+
+	select {
+	case <-doneAlertReceive:
+		// This is the happy case, the alert was received by the immediate alertmanager.
+	case <-time.After(30 * time.Second):
+		t.Fatal("Timeout waiting for alert to be received by immediate alertmanager")
+	}
+
+	select {
+	case <-doneSendAll:
+		// This is the happy case, the sendAll function returned.
+	case <-time.After(30 * time.Second):
+		t.Fatal("Timeout waiting for sendAll to return")
+	}
+}
+
+func newBlackHoleAlertmanager(stop <-chan struct{}) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Do nothing, wait to be canceled.
+		<-stop
+		w.WriteHeader(http.StatusOK)
+	}))
+}
+
+func newImmediateAlertManager(done chan<- struct{}) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		close(done)
+	}))
+}
