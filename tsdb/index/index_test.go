@@ -750,17 +750,3 @@ func TestReader_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 	require.Error(t, p.Err())
 	require.GreaterOrEqual(t, ctx.Count(), uint64(500))
 }
-
-type MockContextErrCall struct {
-	context.Context
-	count     int
-	failAfter int
-}
-
-func (c *MockContextErrCall) Err() error {
-	c.count++
-	if c.count > c.failAfter {
-		return context.Canceled
-	}
-	return c.Context.Err()
-}
