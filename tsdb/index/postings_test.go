@@ -1286,12 +1286,12 @@ func BenchmarkListPostings(b *testing.B) {
 
 func TestMemPostings_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 	memP := NewMemPostings()
-
-	for i := 1; i <= 10000; i++ {
+	seriesCount := 10 * checkContextEveryNIterations
+	for i := 1; i <= seriesCount; i++ {
 		memP.Add(storage.SeriesRef(i), labels.FromStrings("__name__", fmt.Sprintf("%4d", i)))
 	}
 
-	failAfter := uint64(50)
+	failAfter := uint64(seriesCount / 2 / checkContextEveryNIterations)
 	ctx := &testutil.MockContextErrAfter{FailAfter: failAfter}
 	p := memP.PostingsForLabelMatching(ctx, "__name__", func(string) bool {
 		return true

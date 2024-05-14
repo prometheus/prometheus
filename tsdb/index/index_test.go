@@ -726,12 +726,13 @@ func TestReader_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 	idx, err := NewWriter(context.Background(), filepath.Join(dir, "index"))
 	require.NoError(t, err)
 
-	for i := 1; i <= 1000; i++ {
+	seriesCount := 1000
+	for i := 1; i <= seriesCount; i++ {
 		require.NoError(t, idx.AddSymbol(fmt.Sprintf("%4d", i)))
 	}
 	require.NoError(t, idx.AddSymbol("__name__"))
 
-	for i := 1; i <= 1000; i++ {
+	for i := 1; i <= seriesCount; i++ {
 		require.NoError(t, idx.AddSeries(storage.SeriesRef(i), labels.FromStrings("__name__", fmt.Sprintf("%4d", i)),
 			chunks.Meta{Ref: 1, MinTime: 0, MaxTime: 10},
 		))
@@ -743,7 +744,7 @@ func TestReader_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 	require.NoError(t, err)
 	defer ir.Close()
 
-	failAfter := uint64(500)
+	failAfter := uint64(seriesCount / 2) // Fail after processing half of the series.
 	ctx := &testutil.MockContextErrAfter{FailAfter: failAfter}
 	p := ir.PostingsForLabelMatching(ctx, "__name__", func(string) bool {
 		return true

@@ -3643,7 +3643,7 @@ func TestQueryWithOneChunkCompletelyDeleted(t *testing.T) {
 func TestReader_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 	ir := mockReaderOfLabels{}
 
-	failAfter := uint64(5)
+	failAfter := uint64(mockReaderOfLabelsSeriesCount / 2 / checkContextEveryNIterations)
 	ctx := &testutil.MockContextErrAfter{FailAfter: failAfter}
 	_, err := labelValuesWithMatchers(ctx, ir, "__name__", labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".+"))
 
@@ -3654,7 +3654,7 @@ func TestReader_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 func TestReader_InversePostingsForMatcherHonorsContextCancel(t *testing.T) {
 	ir := mockReaderOfLabels{}
 
-	failAfter := uint64(5)
+	failAfter := uint64(mockReaderOfLabelsSeriesCount / 2 / checkContextEveryNIterations)
 	ctx := &testutil.MockContextErrAfter{FailAfter: failAfter}
 	_, err := inversePostingsForMatcher(ctx, ir, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
 
@@ -3664,8 +3664,10 @@ func TestReader_InversePostingsForMatcherHonorsContextCancel(t *testing.T) {
 
 type mockReaderOfLabels struct{}
 
+const mockReaderOfLabelsSeriesCount = checkContextEveryNIterations * 10
+
 func (m mockReaderOfLabels) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, error) {
-	return make([]string, 1000), nil
+	return make([]string, mockReaderOfLabelsSeriesCount), nil
 }
 
 func (m mockReaderOfLabels) LabelValueFor(context.Context, storage.SeriesRef, string) (string, error) {
