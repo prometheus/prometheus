@@ -719,3 +719,48 @@ func TestChunksTimeOrdering(t *testing.T) {
 
 	require.NoError(t, idx.Close())
 }
+
+func TestReader_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
+	dir := t.TempDir()
+
+	idx, err := NewWriter(context.Background(), filepath.Join(dir, "index"))
+	require.NoError(t, err)
+
+	for i := 1; i <= 1000; i++ {
+		require.NoError(t, idx.AddSymbol(fmt.Sprintf("%4d", i)))
+	}
+	require.NoError(t, idx.AddSymbol("__name__"))
+
+	for i := 1; i <= 1000; i++ {
+		require.NoError(t, idx.AddSeries(storage.SeriesRef(i), labels.FromStrings("__name__", fmt.Sprintf("%4d", i)),
+			chunks.Meta{Ref: 1, MinTime: 0, MaxTime: 10},
+		))
+	}
+
+	require.NoError(t, idx.Close())
+
+	ir, err := NewFileReader(filepath.Join(dir, "index"))
+	require.NoError(t, err)
+	defer ir.Close()
+
+	ctx := &testutil.MockContextErrAfter{Context: context.Background(), FailAfter: 500}
+	p := ir.PostingsForLabelMatching(ctx, "__name__", func(string) bool {
+		return true
+	})
+	require.Error(t, p.Err())
+	require.GreaterOrEqual(t, ctx.Count(), uint64(500))
+}
+
+type MockContextErrCall struct {
+	context.Context
+	count     int
+	failAfter int
+}
+
+func (c *MockContextErrCall) Err() error {
+	c.count++
+	if c.count > c.failAfter {
+		return context.Canceled
+	}
+	return c.Context.Err()
+}

@@ -28,6 +28,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestMemPostings_addFor(t *testing.T) {
@@ -1281,4 +1282,19 @@ func BenchmarkListPostings(b *testing.B) {
 			}
 		})
 	}
+}
+
+func TestMemPostings_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
+	memP := NewMemPostings()
+
+	for i := 1; i <= 10000; i++ {
+		memP.Add(storage.SeriesRef(i), labels.FromStrings("__name__", fmt.Sprintf("%4d", i)))
+	}
+
+	ctx := &testutil.MockContextErrAfter{Context: context.Background(), FailAfter: 50}
+	p := memP.PostingsForLabelMatching(ctx, "__name__", func(string) bool {
+		return true
+	})
+	require.Error(t, p.Err())
+	require.GreaterOrEqual(t, ctx.Count(), uint64(50))
 }
