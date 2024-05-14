@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package promql
+package promql_test
 
 import (
 	"context"
@@ -23,13 +23,14 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
-func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *Engine, interval, numIntervals int) error {
+func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *promql.Engine, interval, numIntervals int) error {
 	ctx := context.Background()
 
 	metrics := []labels.Labels{}
@@ -249,13 +250,13 @@ func BenchmarkRangeQuery(b *testing.B) {
 	stor := teststorage.New(b)
 	stor.DB.DisableCompactions() // Don't want auto-compaction disrupting timings.
 	defer stor.Close()
-	opts := EngineOpts{
+	opts := promql.EngineOpts{
 		Logger:     nil,
 		Reg:        nil,
 		MaxSamples: 50000000,
 		Timeout:    100 * time.Second,
 	}
-	engine := NewEngine(opts)
+	engine := promql.NewEngine(opts)
 
 	const interval = 10000 // 10s interval.
 	// A day of data plus 10k steps.
@@ -324,7 +325,7 @@ func BenchmarkNativeHistograms(b *testing.B) {
 		},
 	}
 
-	opts := EngineOpts{
+	opts := promql.EngineOpts{
 		Logger:               nil,
 		Reg:                  nil,
 		MaxSamples:           50000000,
@@ -338,7 +339,7 @@ func BenchmarkNativeHistograms(b *testing.B) {
 
 	for _, tc := range cases {
 		b.Run(tc.name, func(b *testing.B) {
-			ng := NewEngine(opts)
+			ng := promql.NewEngine(opts)
 			for i := 0; i < b.N; i++ {
 				qry, err := ng.NewRangeQuery(context.Background(), testStorage, nil, tc.query, start, end, step)
 				if err != nil {

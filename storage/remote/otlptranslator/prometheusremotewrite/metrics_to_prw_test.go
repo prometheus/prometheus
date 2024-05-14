@@ -64,7 +64,7 @@ func BenchmarkPrometheusConverter_FromMetrics(b *testing.B) {
 	}
 }
 
-func createExportRequest(resourceAttributeCount int, histogramCount int, nonHistogramCount int, labelsPerMetric int, exemplarsPerSeries int) pmetricotlp.ExportRequest {
+func createExportRequest(resourceAttributeCount, histogramCount, nonHistogramCount, labelsPerMetric, exemplarsPerSeries int) pmetricotlp.ExportRequest {
 	request := pmetricotlp.NewExportRequest()
 
 	rm := request.Metrics().ResourceMetrics().AppendEmpty()

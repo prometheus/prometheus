@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package promql
+package promql_test
 
 import (
 	"context"
@@ -22,37 +22,30 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
-func newTestEngine() *Engine {
-	return NewEngine(EngineOpts{
-		Logger:                   nil,
-		Reg:                      nil,
-		MaxSamples:               10000,
-		Timeout:                  100 * time.Second,
-		NoStepSubqueryIntervalFn: func(int64) int64 { return durationMilliseconds(1 * time.Minute) },
-		EnableAtModifier:         true,
-		EnableNegativeOffset:     true,
-		EnablePerStepStats:       true,
-	})
+func newTestEngine() *promql.Engine {
+	return promqltest.NewTestEngine(false, 0, promqltest.DefaultMaxSamplesPerQuery)
 }
 
 func TestEvaluations(t *testing.T) {
-	RunBuiltinTests(t, newTestEngine())
+	promqltest.RunBuiltinTests(t, newTestEngine())
 }
 
 // Run a lot of queries at the same time, to check for race conditions.
 func TestConcurrentRangeQueries(t *testing.T) {
 	stor := teststorage.New(t)
 	defer stor.Close()
-	opts := EngineOpts{
+	opts := promql.EngineOpts{
 		Logger:     nil,
 		Reg:        nil,
 		MaxSamples: 50000000,
 		Timeout:    100 * time.Second,
 	}
-	engine := NewEngine(opts)
+	engine := promql.NewEngine(opts)
 
 	const interval = 10000 // 10s interval.
 	// A day of data plus 10k steps.
