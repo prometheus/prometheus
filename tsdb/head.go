@@ -313,7 +313,7 @@ func (h *Head) resetInMemoryState() error {
 	if h.series != nil {
 		// reset the existing series to make sure we call the appropriated hooks
 		// and increment the series removed metrics
-		h.metrics.seriesRemoved.Add(float64(h.series.reset()))
+		h.metrics.seriesRemoved.Add(float64(h.series.flush()))
 	}
 
 	h.series = newStripeSeries(h.opts.StripeSize, h.opts.SeriesCallback)
@@ -1859,29 +1859,18 @@ func newStripeSeries(stripeSize int, seriesCallback SeriesLifecycleCallback) *st
 	return s
 }
 
-// reset should reset the stripeSeries and appropriately trigger the associated hooks.
+// flush should flush the stripeSeries and appropriately trigger the associated hooks.
 // note: This method simply resets the stripeSeries struct to its initial state without
 // performing any operations on the chunks.
-func (s *stripeSeries) reset() int {
-	deletedFromPrevStripe := 0
+func (s *stripeSeries) flush() int {
 	totalSeries := 0
-	for i := 0; i < s.size; i++ {
-		s.locks[i].Lock()
-		deletedForCallback := make(map[chunks.HeadSeriesRef]labels.Labels, deletedFromPrevStripe)
-		for _, all := range s.hashes[i].conflicts {
-			for _, series := range all {
-				deletedForCallback[series.ref] = series.lset
-			}
-		}
-		for _, series := range s.hashes[i].unique {
-			deletedForCallback[series.ref] = series.lset
-		}
-		s.locks[i].Unlock()
-		s.hashes[i] = seriesHashmap{}
-		s.seriesLifecycleCallback.PostDeletion(deletedForCallback)
-		totalSeries += len(deletedForCallback)
-		deletedFromPrevStripe = len(deletedForCallback)
-	}
+	s.iter(func(_ int, _ uint64, series *memSeries, flushedForCallback map[chunks.HeadSeriesRef]labels.Labels) {
+		// All series should be flushed
+		flushedForCallback[series.ref] = series.lset
+	}, func(flushedForCallback map[chunks.HeadSeriesRef]labels.Labels) {
+		totalSeries += len(flushedForCallback)
+		s.seriesLifecycleCallback.PostDeletion(flushedForCallback)
+	})
 	s.series = make([]map[chunks.HeadSeriesRef]*memSeries, s.size)
 	return totalSeries
 }
@@ -1894,11 +1883,10 @@ func (s *stripeSeries) reset() int {
 // minMmapFile is the min mmap file number seen in the series (in-order and out-of-order) after gc'ing the series.
 func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (_ map[storage.SeriesRef]struct{}, _ int, _, _ int64, minMmapFile int) {
 	var (
-		deleted                     = map[storage.SeriesRef]struct{}{}
-		rmChunks                    = 0
-		actualMint            int64 = math.MaxInt64
-		minOOOTime            int64 = math.MaxInt64
-		deletedFromPrevStripe       = 0
+		deleted          = map[storage.SeriesRef]struct{}{}
+		rmChunks         = 0
+		actualMint int64 = math.MaxInt64
+		minOOOTime int64 = math.MaxInt64
 	)
 	minMmapFile = math.MaxInt32
 
@@ -1956,33 +1944,40 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		deletedForCallback[series.ref] = series.lset
 	}
 
-	// Run through all series shard by shard, checking which should be deleted.
-	for i := 0; i < s.size; i++ {
-		deletedForCallback := make(map[chunks.HeadSeriesRef]labels.Labels, deletedFromPrevStripe)
-		s.locks[i].Lock()
-
-		// Delete conflicts first so seriesHashmap.del doesn't move them to the `unique` field,
-		// after deleting `unique`.
-		for hash, all := range s.hashes[i].conflicts {
-			for _, series := range all {
-				check(i, hash, series, deletedForCallback)
-			}
-		}
-		for hash, series := range s.hashes[i].unique {
-			check(i, hash, series, deletedForCallback)
-		}
-
-		s.locks[i].Unlock()
-
+	s.iter(func(i int, hash uint64, series *memSeries, deletedForCallback map[chunks.HeadSeriesRef]labels.Labels) {
+		check(i, hash, series, deletedForCallback)
+	}, func(deletedForCallback map[chunks.HeadSeriesRef]labels.Labels) {
 		s.seriesLifecycleCallback.PostDeletion(deletedForCallback)
-		deletedFromPrevStripe = len(deletedForCallback)
-	}
+	})
 
 	if actualMint == math.MaxInt64 {
 		actualMint = mint
 	}
 
 	return deleted, rmChunks, actualMint, minOOOTime, minMmapFile
+}
+
+func (s *stripeSeries) iter(f func(int, uint64, *memSeries, map[chunks.HeadSeriesRef]labels.Labels), endShard func(map[chunks.HeadSeriesRef]labels.Labels)) {
+	seriesSetFromPrevStripe := 0
+	// Run through all series shard by shard
+	for i := 0; i < s.size; i++ {
+		seriesSet := make(map[chunks.HeadSeriesRef]labels.Labels, seriesSetFromPrevStripe)
+		s.locks[i].Lock()
+		// Iterate conflicts first so seriesHashmap.del doesn't move them to the `unique` field,
+		// after deleting `unique`.
+		for hash, all := range s.hashes[i].conflicts {
+			for _, series := range all {
+				f(i, hash, series, seriesSet)
+			}
+		}
+
+		for hash, series := range s.hashes[i].unique {
+			f(i, hash, series, seriesSet)
+		}
+		s.locks[i].Unlock()
+		endShard(seriesSet)
+		seriesSetFromPrevStripe = len(seriesSet)
+	}
 }
 
 func (s *stripeSeries) getByID(id chunks.HeadSeriesRef) *memSeries {
