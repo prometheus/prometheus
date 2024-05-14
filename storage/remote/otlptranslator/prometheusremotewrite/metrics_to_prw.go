@@ -38,7 +38,7 @@ type Settings struct {
 	SendMetadata        bool
 }
 
-// PrometheusConverter converts from OTel write format to Prometheus write format.
+// PrometheusConverter converts from OTel write format to Prometheus remote write format.
 type PrometheusConverter struct {
 	unique    map[uint64]*prompb.TimeSeries
 	conflicts map[uint64][]*prompb.TimeSeries
@@ -128,25 +128,6 @@ func (c *PrometheusConverter) FromMetrics(md pmetric.Metrics, settings Settings)
 	}
 
 	return
-}
-
-// TimeSeries returns a slice of the prompb.TimeSeries that were converted from OTel format.
-func (c *PrometheusConverter) TimeSeries() []prompb.TimeSeries {
-	conflicts := 0
-	for _, ts := range c.conflicts {
-		conflicts += len(ts)
-	}
-	allTS := make([]prompb.TimeSeries, 0, len(c.unique)+conflicts)
-	for _, ts := range c.unique {
-		allTS = append(allTS, *ts)
-	}
-	for _, cTS := range c.conflicts {
-		for _, ts := range cTS {
-			allTS = append(allTS, *ts)
-		}
-	}
-
-	return allTS
 }
 
 func isSameMetric(ts *prompb.TimeSeries, lbls []prompb.Label) bool {

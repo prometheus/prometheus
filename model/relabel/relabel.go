@@ -48,7 +48,7 @@ const (
 	Drop Action = "drop"
 	// KeepEqual drops targets for which the input does not match the target.
 	KeepEqual Action = "keepequal"
-	// Drop drops targets for which the input does match the target.
+	// DropEqual drops targets for which the input does match the target.
 	DropEqual Action = "dropequal"
 	// HashMod sets a label to the modulus of a hash of labels.
 	HashMod Action = "hashmod"

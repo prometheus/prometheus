@@ -61,7 +61,7 @@ func putVarbitInt(b *bstream, val int64) {
 	}
 }
 
-// readVarbitInt reads an int64 encoced with putVarbitInt.
+// readVarbitInt reads an int64 encoded with putVarbitInt.
 func readVarbitInt(b *bstreamReader) (int64, error) {
 	var d byte
 	for i := 0; i < 8; i++ {
@@ -166,7 +166,7 @@ func putVarbitUint(b *bstream, val uint64) {
 	}
 }
 
-// readVarbitUint reads a uint64 encoced with putVarbitUint.
+// readVarbitUint reads a uint64 encoded with putVarbitUint.
 func readVarbitUint(b *bstreamReader) (uint64, error) {
 	var d byte
 	for i := 0; i < 8; i++ {

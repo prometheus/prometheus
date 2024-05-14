@@ -56,8 +56,8 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
 	_ "github.com/prometheus/prometheus/plugins" // Register plugins.
-	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/util/documentcli"
 )
@@ -377,7 +377,7 @@ func main() {
 
 	case testRulesCmd.FullCommand():
 		os.Exit(RulesUnitTest(
-			promql.LazyLoaderOpts{
+			promqltest.LazyLoaderOpts{
 				EnableAtModifier:     true,
 				EnableNegativeOffset: true,
 			},
