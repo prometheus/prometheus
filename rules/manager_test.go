@@ -2043,7 +2043,7 @@ func TestBoundedRuleEvalConcurrency(t *testing.T) {
 	require.EqualValues(t, maxInflight.Load(), int32(maxConcurrency)+int32(groupCount))
 }
 
-const artificialDelay = 10 * time.Millisecond
+const artificialDelay = 15 * time.Millisecond
 
 func optsFactory(storage storage.Storage, maxInflight, inflightQueries *atomic.Int32, maxConcurrent int64) *ManagerOptions {
 	var inflightMu sync.Mutex
