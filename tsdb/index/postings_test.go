@@ -1291,10 +1291,11 @@ func TestMemPostings_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 		memP.Add(storage.SeriesRef(i), labels.FromStrings("__name__", fmt.Sprintf("%4d", i)))
 	}
 
-	ctx := &testutil.MockContextErrAfter{FailAfter: 50}
+	failAfter := uint64(50)
+	ctx := &testutil.MockContextErrAfter{FailAfter: failAfter}
 	p := memP.PostingsForLabelMatching(ctx, "__name__", func(string) bool {
 		return true
 	})
 	require.Error(t, p.Err())
-	require.Equal(t, uint64(52), ctx.Count())
+	require.Equal(t, failAfter+1, ctx.Count()) // Plus one for the Err() call that puts the error in the result.
 }

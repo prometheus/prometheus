@@ -3643,21 +3643,23 @@ func TestQueryWithOneChunkCompletelyDeleted(t *testing.T) {
 func TestReader_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 	ir := mockReaderOfLabels{}
 
-	ctx := &testutil.MockContextErrAfter{FailAfter: 5}
-	_, err := labelValuesWithMatchers(ctx, ir, "__name__", labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
+	failAfter := uint64(5)
+	ctx := &testutil.MockContextErrAfter{FailAfter: failAfter}
+	_, err := labelValuesWithMatchers(ctx, ir, "__name__", labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".+"))
 
 	require.Error(t, err)
-	require.Equal(t, uint64(7), ctx.Count())
+	require.Equal(t, failAfter+1, ctx.Count()) // Plus one for the Err() call that puts the error in the result.
 }
 
 func TestReader_InversePostingsForMatcherHonorsContextCancel(t *testing.T) {
 	ir := mockReaderOfLabels{}
 
-	ctx := &testutil.MockContextErrAfter{FailAfter: 5}
+	failAfter := uint64(5)
+	ctx := &testutil.MockContextErrAfter{FailAfter: failAfter}
 	_, err := inversePostingsForMatcher(ctx, ir, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
 
 	require.Error(t, err)
-	require.Equal(t, uint64(7), ctx.Count())
+	require.Equal(t, failAfter+1, ctx.Count()) // Plus one for the Err() call that puts the error in the result.
 }
 
 type mockReaderOfLabels struct{}

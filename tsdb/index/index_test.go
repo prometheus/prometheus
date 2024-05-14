@@ -743,10 +743,11 @@ func TestReader_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 	require.NoError(t, err)
 	defer ir.Close()
 
-	ctx := &testutil.MockContextErrAfter{FailAfter: 500}
+	failAfter := uint64(500)
+	ctx := &testutil.MockContextErrAfter{FailAfter: failAfter}
 	p := ir.PostingsForLabelMatching(ctx, "__name__", func(string) bool {
 		return true
 	})
 	require.Error(t, p.Err())
-	require.Equal(t, uint64(501), ctx.Count())
+	require.Equal(t, failAfter, ctx.Count())
 }
