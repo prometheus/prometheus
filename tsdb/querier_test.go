@@ -3647,7 +3647,7 @@ func TestReader_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 	_, err := labelValuesWithMatchers(ctx, ir, "__name__", labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
 
 	require.Error(t, err)
-	require.GreaterOrEqual(t, ctx.Count(), uint64(5))
+	require.Equal(t, uint64(7), ctx.Count())
 }
 
 func TestReader_InversePostingsForMatcherHonorsContextCancel(t *testing.T) {
@@ -3657,7 +3657,7 @@ func TestReader_InversePostingsForMatcherHonorsContextCancel(t *testing.T) {
 	_, err := inversePostingsForMatcher(ctx, ir, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
 
 	require.Error(t, err)
-	require.GreaterOrEqual(t, ctx.Count(), uint64(5))
+	require.Equal(t, uint64(7), ctx.Count())
 }
 
 type mockReaderOfLabels struct{}

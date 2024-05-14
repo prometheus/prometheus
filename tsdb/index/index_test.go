@@ -748,5 +748,5 @@ func TestReader_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 		return true
 	})
 	require.Error(t, p.Err())
-	require.GreaterOrEqual(t, ctx.Count(), uint64(500))
+	require.Equal(t, uint64(501), ctx.Count())
 }

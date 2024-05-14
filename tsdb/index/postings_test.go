@@ -1296,5 +1296,5 @@ func TestMemPostings_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 		return true
 	})
 	require.Error(t, p.Err())
-	require.GreaterOrEqual(t, ctx.Count(), uint64(50))
+	require.Equal(t, uint64(52), ctx.Count())
 }
