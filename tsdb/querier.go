@@ -33,6 +33,9 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
+// checkContextEveryNIterations is used in some tight loops to check if the context is done.
+const checkContextEveryNIterations = 100
+
 type blockBaseQuerier struct {
 	blockID    ulid.ULID
 	index      IndexReader
@@ -360,7 +363,7 @@ func inversePostingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Ma
 	} else {
 		count := 1
 		for _, val := range vals {
-			if count%100 == 0 && ctx.Err() != nil {
+			if count%checkContextEveryNIterations == 0 && ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
 			count++
@@ -394,7 +397,7 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, ma
 		filteredValues := allValues[:0]
 		count := 1
 		for _, v := range allValues {
-			if count%100 == 0 && ctx.Err() != nil {
+			if count%checkContextEveryNIterations == 0 && ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
 			count++
