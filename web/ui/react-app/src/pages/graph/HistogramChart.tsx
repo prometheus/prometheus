@@ -191,7 +191,7 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
           scale === 'linear'
             ? ((left - rangeMin) / (rangeMax - rangeMin)) * 100 + '%'
             : left < 0
-            ? (-(Math.log(Math.abs(left)) - startNegative) / widthTotal) * 100 + '%' // negative buckets boundary
+            ? (-(Math.log(Math.abs(left)) + startNegative) / widthTotal) * 100 + '%' // negative buckets boundary
             : ((Math.log(left) - startPositive + bw + widthNegative) / widthTotal) * 100 + '%'; // positive buckets boundary
         const bucketHeight = scale === 'linear' ? (fds[bIdx] / fdMax) * 100 + '%' : (count / countMax) * 100 + '%';
 
