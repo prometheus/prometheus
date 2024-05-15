@@ -613,28 +613,17 @@ func TestChunksTimeOrdering(t *testing.T) {
 }
 
 func TestReader_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
-	dir := t.TempDir()
-
-	idx, err := NewWriter(context.Background(), filepath.Join(dir, "index"))
-	require.NoError(t, err)
-
-	seriesCount := 1000
-	for i := 1; i <= seriesCount; i++ {
-		require.NoError(t, idx.AddSymbol(fmt.Sprintf("%4d", i)))
+	const seriesCount = 1000
+	var input indexWriterSeriesSlice
+	for i := 1; i < seriesCount; i++ {
+		input = append(input, &indexWriterSeries{
+			labels: labels.FromStrings("__name__", fmt.Sprintf("%4d", i)),
+			chunks: []chunks.Meta{
+				{Ref: 1, MinTime: 0, MaxTime: 10},
+			},
+		})
 	}
-	require.NoError(t, idx.AddSymbol("__name__"))
-
-	for i := 1; i <= seriesCount; i++ {
-		require.NoError(t, idx.AddSeries(storage.SeriesRef(i), labels.FromStrings("__name__", fmt.Sprintf("%4d", i)),
-			chunks.Meta{Ref: 1, MinTime: 0, MaxTime: 10},
-		))
-	}
-
-	require.NoError(t, idx.Close())
-
-	ir, err := NewFileReader(filepath.Join(dir, "index"))
-	require.NoError(t, err)
-	defer ir.Close()
+	ir, _, _ := createFileReader(context.Background(), t, input)
 
 	failAfter := uint64(seriesCount / 2) // Fail after processing half of the series.
 	ctx := &testutil.MockContextErrAfter{FailAfter: failAfter}
