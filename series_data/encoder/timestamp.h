@@ -27,6 +27,7 @@ class PROMPP_ATTRIBUTE_PACKED TimestampEncoder {
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return stream_.allocated_memory(); }
   [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t count() const noexcept { return count_; }
   [[nodiscard]] PROMPP_ALWAYS_INLINE int64_t last_timestamp() const noexcept { return encoder_state_.last_ts; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE BareBones::BitSequenceReader reader() const noexcept { return stream_.reader(); }
 
  private:
   BareBones::Encoding::Gorilla::TimestampEncoderState encoder_state_;
@@ -160,10 +161,19 @@ class Encoder {
     return state_id;
   }
 
+  PROMPP_ALWAYS_INLINE void erase(StateId state_id) {
+    auto& state = states_[state_id];
+    if (--state.reference_count == 0) {
+      state_transitions_.erase(state.timestamp_key());
+      states_.erase(state_id);
+    }
+  }
+
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return states_allocated_memory_ + states_.allocated_memory(); }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE const TimestampEncoder& get_encoder(StateId state_id) const noexcept { return states_[state_id].encoder; }
   [[nodiscard]] PROMPP_ALWAYS_INLINE TimestampEncoder& get_encoder(StateId state_id) noexcept { return states_[state_id].encoder; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_unique_state(StateId state_id) noexcept { return states_[state_id].previous_state_id == state_id; }
 
  public:
   BareBones::VectorWithHoles<State> states_;

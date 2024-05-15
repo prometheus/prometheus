@@ -62,6 +62,18 @@ class PROMPP_ATTRIBUTE_PACKED ValuesGorillaEncoder {
   BareBones::CompactBitSequence<kAllocationSizesTable> stream_;
 };
 
+class PROMPP_ATTRIBUTE_PACKED GorillaEncoder {
+ public:
+  PROMPP_ALWAYS_INLINE void encode(int64_t timestamp, double value) { encoder_.encode(timestamp, value, stream_, stream_); }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return stream_.allocated_memory(); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE auto& encoder() const noexcept { return encoder_; }
+
+ private:
+  BareBones::Encoding::Gorilla::StreamEncoder<BareBones::Encoding::Gorilla::TimestampEncoder, BareBones::Encoding::Gorilla::ValuesEncoder> encoder_;
+  BareBones::CompactBitSequence<kAllocationSizesTable> stream_;
+};
+
 }  // namespace series_data::encoder::value
 
 template <>
@@ -72,3 +84,6 @@ struct BareBones::IsTriviallyReallocatable<series_data::encoder::value::ValuesGo
 
 template <>
 struct BareBones::IsTriviallyReallocatable<series_data::encoder::value::TwoDoubleConstantEncoder> : std::true_type {};
+
+template <>
+struct BareBones::IsTriviallyReallocatable<series_data::encoder::value::GorillaEncoder> : std::true_type {};

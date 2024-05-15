@@ -11,6 +11,7 @@ enum class ChunkType : uint8_t {
   kDoubleConstant,
   kTwoDoubleConstant,
   kValuesGorilla,
+  kGorilla,
 };
 
 struct PROMPP_ATTRIBUTE_PACKED DataChunk {
@@ -19,6 +20,7 @@ struct PROMPP_ATTRIBUTE_PACKED DataChunk {
     uint32_t double_constant;
     uint32_t two_double_constant;
     uint32_t values_gorilla;
+    uint32_t gorilla;
   } encoder{.double_constant = 0};
   timestamp::StateId timestamp_encoder_state_id{timestamp::kInvalidStateId};
   ChunkType type{ChunkType::kUnknown};
@@ -34,24 +36,28 @@ namespace series_data::encoder {
 class Encoder {
  public:
   void encode(uint32_t ls_id, int64_t timestamp, double value) {
-    auto& chunk = (encoders_data_.size() > ls_id) ? encoders_data_[ls_id] : encoders_data_.emplace_back();
-    chunk.timestamp_encoder_state_id = timestamp_encoder_.encode(chunk.timestamp_encoder_state_id, timestamp);
-
-    encode_value(chunk, value);
+    auto& chunk = (chunks_.size() > ls_id) ? chunks_[ls_id] : chunks_.emplace_back();
+    if (chunk.type != ChunkType::kGorilla) {
+      chunk.timestamp_encoder_state_id = timestamp_encoder_.encode(chunk.timestamp_encoder_state_id, timestamp);
+      encode_value(chunk, value);
+    } else {
+      gorilla_encoders_[chunk.encoder.gorilla].encode(timestamp, value);
+    }
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept {
-    return encoders_data_.allocated_memory() + double_constant_encoders_.allocated_memory() + two_double_constant_encoders_.allocated_memory() +
-           values_gorilla_encoders_.allocated_memory() + timestamp_encoder_.allocated_memory();
+    return chunks_.allocated_memory() + double_constant_encoders_.allocated_memory() + two_double_constant_encoders_.allocated_memory() +
+           values_gorilla_encoders_.allocated_memory() + gorilla_encoders_.allocated_memory() + timestamp_encoder_.allocated_memory();
   }
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE const BareBones::Vector<DataChunk>& encoders_data() const noexcept { return encoders_data_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const BareBones::Vector<DataChunk>& chunks() const noexcept { return chunks_; }
 
  public:
-  BareBones::Vector<DataChunk> encoders_data_;
+  BareBones::Vector<DataChunk> chunks_;
   BareBones::VectorWithHoles<value::DoubleConstantEncoder> double_constant_encoders_;
   BareBones::VectorWithHoles<value::TwoDoubleConstantEncoder> two_double_constant_encoders_;
   BareBones::Vector<value::ValuesGorillaEncoder> values_gorilla_encoders_;
+  BareBones::Vector<value::GorillaEncoder> gorilla_encoders_;
   timestamp::Encoder timestamp_encoder_;
 
   void encode_value(DataChunk& chunk, double value) {
@@ -79,7 +85,11 @@ class Encoder {
     } else if (chunk.type == ChunkType::kTwoDoubleConstant) {
       if (auto& encoder = two_double_constant_encoders_[chunk.encoder.two_double_constant]; !encoder.encode(value)) {
         auto encoder_id = chunk.encoder.two_double_constant;
-        switch_to_values_gorilla(chunk, encoder, value);
+        if (!timestamp_encoder_.is_unique_state(chunk.timestamp_encoder_state_id)) {
+          switch_to_values_gorilla(chunk, encoder, value);
+        } else {
+          switch_to_gorilla(chunk, encoder, value);
+        }
         two_double_constant_encoders_.erase(encoder_id);
       }
     } else if (chunk.type == ChunkType::kValuesGorilla) {
@@ -93,21 +103,50 @@ class Encoder {
     chunk.encoder.two_double_constant = two_double_constant_encoders_.index_of(encoder);
   }
 
-  void switch_to_values_gorilla(DataChunk& data, const value::TwoDoubleConstantEncoder& encoder, double value) {
-    auto& gorilla_encoder = values_gorilla_encoders_.emplace_back(encoder.value1());
-    for (uint32_t i = 1; i < encoder.value1_count(); ++i) {
-      gorilla_encoder.encode(encoder.value1());
+  void switch_to_values_gorilla(DataChunk& data, const value::TwoDoubleConstantEncoder& constant_encoder, double value) {
+    auto& encoder = values_gorilla_encoders_.emplace_back(constant_encoder.value1());
+    for (uint32_t i = 1; i < constant_encoder.value1_count(); ++i) {
+      encoder.encode(constant_encoder.value1());
     }
 
-    auto value2_count = timestamp_encoder_.get_encoder(data.timestamp_encoder_state_id).count() - encoder.value1_count() - 1;
+    auto value2_count = timestamp_encoder_.get_encoder(data.timestamp_encoder_state_id).count() - constant_encoder.value1_count() - 1;
     for (uint32_t i = 0; i < value2_count; ++i) {
-      gorilla_encoder.encode(encoder.value2());
+      encoder.encode(constant_encoder.value2());
     }
 
-    gorilla_encoder.encode(value);
+    encoder.encode(value);
 
     data.type = ChunkType::kValuesGorilla;
     data.encoder.values_gorilla = values_gorilla_encoders_.size() - 1;
+  }
+
+  void switch_to_gorilla(DataChunk& chunk, const value::TwoDoubleConstantEncoder& constant_encoder, double value) {
+    auto& encoder = gorilla_encoders_.emplace_back();
+    chunk.type = ChunkType::kGorilla;
+    chunk.encoder.gorilla = gorilla_encoders_.size() - 1;
+
+    auto& timestamp_encoder = timestamp_encoder_.get_encoder(chunk.timestamp_encoder_state_id);
+    auto timestamp_reader = timestamp_encoder.reader();
+    auto value2_count = timestamp_encoder.count() - constant_encoder.value1_count();
+
+    BareBones::Encoding::Gorilla::TimestampEncoderState state;
+    BareBones::Encoding::Gorilla::TimestampDecoder::decode(state, timestamp_reader);
+    encoder.encode(state.last_ts, constant_encoder.value1());
+
+    BareBones::Encoding::Gorilla::TimestampDecoder::decode_delta(state, timestamp_reader);
+    for (uint32_t i = 1; i < constant_encoder.value1_count(); ++i) {
+      encoder.encode(state.last_ts, constant_encoder.value1());
+      BareBones::Encoding::Gorilla::TimestampDecoder::decode_delta_of_delta(state, timestamp_reader);
+    }
+
+    for (uint32_t i = 0; i < value2_count; ++i) {
+      encoder.encode(state.last_ts, constant_encoder.value2());
+      BareBones::Encoding::Gorilla::TimestampDecoder::decode_delta_of_delta(state, timestamp_reader);
+    }
+
+    encoder.encode(state.last_ts, value);
+
+    timestamp_encoder_.erase(chunk.timestamp_encoder_state_id);
   }
 };
 
