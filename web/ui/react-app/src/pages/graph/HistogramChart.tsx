@@ -49,12 +49,12 @@ const HistogramChart: FC<{ histogram: Histogram; index: number; scale: ScaleType
   const minPositive = buckets ? parseFloat(buckets[closestToZero.closestIdx + 1][1]) : 0;
   const maxNegative = buckets ? parseFloat(buckets[closestToZero.closestIdx - 1][2]) : 0;
   const minNegative = buckets ? parseFloat(buckets[0][1]) : 0;
-  const startNegative = buckets ? Math.log(Math.abs(minNegative)) : 0; //start_neg
-  const endNegative = buckets ? Math.log(Math.abs(maxNegative)) : 0; //end_neg
+  const startNegative = buckets ? -Math.log(Math.abs(minNegative)) : 0; //start_neg
+  const endNegative = buckets ? -Math.log(Math.abs(maxNegative)) : 0; //end_neg
   const startPositive = buckets ? Math.log(minPositive) : 0; //start_pos
   const endPositive = buckets ? Math.log(maxPositive) : 0; //end_pos
 
-  const widthNegative = startNegative - endNegative; //width_neg
+  const widthNegative = endNegative - startNegative; //width_neg
   const widthPositive = endPositive - startPositive; //width_pos
   const widthTotal = widthNegative + expBucketWidth + widthPositive; //width_total
 
@@ -191,7 +191,7 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
           scale === 'linear'
             ? ((left - rangeMin) / (rangeMax - rangeMin)) * 100 + '%'
             : left < 0
-            ? (Math.log(Math.abs(left)) - startNegative / widthTotal) * 100 + '%' // negative buckets boundary
+            ? (-(Math.log(Math.abs(left)) - startNegative) / widthTotal) * 100 + '%' // negative buckets boundary
             : (Math.log(left) - startPositive + bw + widthNegative / widthTotal) * 100 + '%'; // positive buckets boundary
         const bucketHeight = scale === 'linear' ? (fds[bIdx] / fdMax) * 100 + '%' : (count / countMax) * 100 + '%';
 
