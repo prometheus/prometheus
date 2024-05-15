@@ -573,7 +573,9 @@ class BasicEncoder {
                                  (next_encoded_segment_ - 1), redundant_segment_id);
     }
 
-    BareBones::Vector<BareBones::Encoding::Gorilla::StreamDecoder<BareBones::Encoding::Gorilla::ZigZagTimestampDecoder>> decoders;
+    BareBones::Vector<
+        BareBones::Encoding::Gorilla::StreamDecoder<BareBones::Encoding::Gorilla::ZigZagTimestampDecoder, BareBones::Encoding::Gorilla::ValuesDecoder>>
+        decoders;
 
     // move out the encoders into decoders.
     for (auto& encoder : encoders) {
@@ -616,7 +618,9 @@ class BasicEncoder {
 
 template <class LabelSetsTable = Primitives::SnugComposites::LabelSet::DecodingTable, size_t LZ4DecompressedBufferSize = 256>
 class BasicDecoder {
-  BareBones::Vector<BareBones::Encoding::Gorilla::StreamDecoder<BareBones::Encoding::Gorilla::ZigZagTimestampDecoder>> gorilla_;
+  BareBones::Vector<
+      BareBones::Encoding::Gorilla::StreamDecoder<BareBones::Encoding::Gorilla::ZigZagTimestampDecoder, BareBones::Encoding::Gorilla::ValuesDecoder>>
+      gorilla_;
   BareBones::LZ4Stream::basic_istream<LZ4DecompressedBufferSize> lz4stream_{nullptr};
   LabelSetsTable& label_sets_;
 

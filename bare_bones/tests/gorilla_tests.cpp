@@ -12,6 +12,7 @@ using BareBones::Encoding::Gorilla::StreamDecoder;
 using BareBones::Encoding::Gorilla::StreamEncoder;
 using BareBones::Encoding::Gorilla::TimestampDecoder;
 using BareBones::Encoding::Gorilla::TimestampEncoder;
+using BareBones::Encoding::Gorilla::ValuesDecoder;
 using BareBones::Encoding::Gorilla::ValuesEncoder;
 using BareBones::Encoding::Gorilla::ZigZagTimestampDecoder;
 using BareBones::Encoding::Gorilla::ZigZagTimestampEncoder;
@@ -126,7 +127,7 @@ struct Gorilla : public testing::TestWithParam<samples_sequence_type> {};
 
 TEST_P(Gorilla, EncodeDecode) {
   StreamEncoder<ZigZagTimestampEncoder, ValuesEncoder> encoder;
-  StreamDecoder<ZigZagTimestampDecoder> decoder;
+  StreamDecoder<ZigZagTimestampDecoder, ValuesDecoder> decoder;
   BitSequence ts_bitseq;
   BitSequence v_bitseq;
 
@@ -186,7 +187,7 @@ class StreamEncoderDecoderFixture : public testing::TestWithParam<StreamEncoderC
  protected:
   BitSequence sequence_;
   StreamEncoder<TimestampEncoder, ValuesEncoder> encoder_;
-  StreamDecoder<TimestampDecoder> decoder_;
+  StreamDecoder<TimestampDecoder, ValuesDecoder> decoder_;
 };
 
 TEST_P(StreamEncoderDecoderFixture, Encode) {
@@ -266,7 +267,7 @@ class PrometheusStreamEncoderFixture : public testing::TestWithParam<PrometheusS
  protected:
   BitSequence sequence_;
   PrometheusStreamEncoder<TimestampEncoder, TimestampDecoder> encoder_;
-  StreamDecoder<TimestampDecoder> decoder_;
+  StreamDecoder<TimestampDecoder, ValuesDecoder> decoder_;
 };
 
 TEST_P(PrometheusStreamEncoderFixture, Test) {
