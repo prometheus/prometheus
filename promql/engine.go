@@ -980,6 +980,11 @@ func checkAndExpandSeriesSet(ctx context.Context, expr parser.Expr) (annotations
 			return nil, nil
 		}
 		series, ws, err := expandSeriesSet(ctx, e.UnexpandedSeriesSet)
+		if e.SkipHistogramBuckets {
+			for i := range series {
+				series[i] = newHistogramStatsSeries(series[i])
+			}
+		}
 		e.Series = series
 		return ws, err
 	}
@@ -3179,6 +3184,8 @@ func unwrapStepInvariantExpr(e parser.Expr) parser.Expr {
 // PreprocessExpr wraps all possible step invariant parts of the given expression with
 // StepInvariantExpr. It also resolves the preprocessors.
 func PreprocessExpr(expr parser.Expr, start, end time.Time) parser.Expr {
+	detectHistogramStatsDecoding(expr)
+
 	isStepInvariant := preprocessExprHelper(expr, start, end)
 	if isStepInvariant {
 		return newStepInvariantExpr(expr)
@@ -3313,8 +3320,45 @@ func setOffsetForAtModifier(evalTime int64, expr parser.Expr) {
 	})
 }
 
+func detectHistogramStatsDecoding(expr parser.Expr) {
+	var readHistogramStats bool
+	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
+		switch n := node.(type) {
+		case *parser.VectorSelector:
+			n.SkipHistogramBuckets = readHistogramStats
+
+		case *parser.MatrixSelector:
+			vs := n.VectorSelector.(*parser.VectorSelector)
+			vs.SkipHistogramBuckets = readHistogramStats
+
+		case *parser.Call:
+			if n.Func.Name == "histogram_count" || n.Func.Name == "histogram_sum" {
+				readHistogramStats = true
+				return nil
+			}
+			if n.Func.Name == "histogram_quantile" || n.Func.Name == "histogram_fraction" {
+				readHistogramStats = false
+				return nil
+			}
+		}
+		return nil
+	})
+}
+
 func makeInt64Pointer(val int64) *int64 {
 	valp := new(int64)
 	*valp = val
 	return valp
+}
+
+type histogramStatsSeries struct {
+	storage.Series
+}
+
+func newHistogramStatsSeries(series storage.Series) *histogramStatsSeries {
+	return &histogramStatsSeries{Series: series}
+}
+
+func (s histogramStatsSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
+	return chunkenc.NewHistogramStatsIterator(s.Series.Iterator(it))
 }

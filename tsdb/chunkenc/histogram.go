@@ -1121,3 +1121,71 @@ func resize[T any](items []T, n int) []T {
 	}
 	return items[:n]
 }
+
+type histogramStatsIterator struct {
+	Iterator
+	hReader  *histogram.Histogram
+	fhReader *histogram.FloatHistogram
+}
+
+func NewHistogramStatsIterator(it Iterator) Iterator {
+	return histogramStatsIterator{
+		Iterator: it,
+		hReader:  &histogram.Histogram{},
+		fhReader: &histogram.FloatHistogram{},
+	}
+}
+
+func (f histogramStatsIterator) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
+	var t int64
+	t, f.hReader = f.Iterator.AtHistogram(f.hReader)
+	if value.IsStaleNaN(f.hReader.Sum) {
+		return t, &histogram.Histogram{Sum: f.hReader.Sum}
+	}
+
+	if h == nil {
+		return t, &histogram.Histogram{
+			CounterResetHint: f.hReader.CounterResetHint,
+			Count:            f.hReader.Count,
+			ZeroCount:        f.hReader.ZeroCount,
+			Sum:              f.hReader.Sum,
+			ZeroThreshold:    f.hReader.ZeroThreshold,
+			Schema:           f.hReader.Schema,
+		}
+	}
+
+	h.CounterResetHint = f.fhReader.CounterResetHint
+	h.Count = f.hReader.Count
+	h.ZeroCount = f.hReader.ZeroCount
+	h.Sum = f.hReader.Sum
+	h.ZeroThreshold = f.hReader.ZeroThreshold
+	h.Schema = f.hReader.Schema
+	return t, h
+}
+
+func (f histogramStatsIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+	var t int64
+	t, f.fhReader = f.Iterator.AtFloatHistogram(f.fhReader)
+	if value.IsStaleNaN(f.fhReader.Sum) {
+		return f.Iterator.AtT(), &histogram.FloatHistogram{Sum: f.fhReader.Sum}
+	}
+
+	if fh == nil {
+		return t, &histogram.FloatHistogram{
+			CounterResetHint: f.fhReader.CounterResetHint,
+			Count:            f.fhReader.Count,
+			ZeroCount:        f.fhReader.ZeroCount,
+			Sum:              f.fhReader.Sum,
+			ZeroThreshold:    f.fhReader.ZeroThreshold,
+			Schema:           f.fhReader.Schema,
+		}
+	}
+
+	fh.CounterResetHint = f.fhReader.CounterResetHint
+	fh.Schema = f.fhReader.Schema
+	fh.ZeroThreshold = f.fhReader.ZeroThreshold
+	fh.ZeroCount = f.fhReader.ZeroCount
+	fh.Count = f.fhReader.Count
+	fh.Sum = f.fhReader.Sum
+	return t, fh
+}

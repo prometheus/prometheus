@@ -323,6 +323,14 @@ func BenchmarkNativeHistograms(b *testing.B) {
 			name:  "sum rate with long rate interval",
 			query: "sum(rate(native_histogram_series[20m]))",
 		},
+		{
+			name:  "histogram_count with short rate interval",
+			query: "histogram_count(sum(rate(native_histogram_series[2m])))",
+		},
+		{
+			name:  "histogram_count with long rate interval",
+			query: "histogram_count(sum(rate(native_histogram_series[20m])))",
+		},
 	}
 
 	opts := promql.EngineOpts{
