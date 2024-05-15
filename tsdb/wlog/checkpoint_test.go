@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -232,10 +233,10 @@ func TestCheckpoint(t *testing.T) {
 				// Write changing metadata for each series. In the end, only the latest
 				// version should end up in the checkpoint.
 				b = enc.Metadata([]record.RefMetadata{
-					{Ref: 0, Unit: fmt.Sprintf("%d", last), Help: fmt.Sprintf("%d", last)},
-					{Ref: 1, Unit: fmt.Sprintf("%d", last), Help: fmt.Sprintf("%d", last)},
-					{Ref: 2, Unit: fmt.Sprintf("%d", last), Help: fmt.Sprintf("%d", last)},
-					{Ref: 3, Unit: fmt.Sprintf("%d", last), Help: fmt.Sprintf("%d", last)},
+					{Ref: 0, Unit: strconv.FormatInt(last, 10), Help: strconv.FormatInt(last, 10)},
+					{Ref: 1, Unit: strconv.FormatInt(last, 10), Help: strconv.FormatInt(last, 10)},
+					{Ref: 2, Unit: strconv.FormatInt(last, 10), Help: strconv.FormatInt(last, 10)},
+					{Ref: 3, Unit: strconv.FormatInt(last, 10), Help: strconv.FormatInt(last, 10)},
 				}, nil)
 				require.NoError(t, w.Log(b))
 
@@ -324,8 +325,8 @@ func TestCheckpoint(t *testing.T) {
 			testutil.RequireEqual(t, expectedRefSeries, series)
 
 			expectedRefMetadata := []record.RefMetadata{
-				{Ref: 0, Unit: fmt.Sprintf("%d", last-100), Help: fmt.Sprintf("%d", last-100)},
-				{Ref: 2, Unit: fmt.Sprintf("%d", last-100), Help: fmt.Sprintf("%d", last-100)},
+				{Ref: 0, Unit: strconv.FormatInt(last-100, 10), Help: strconv.FormatInt(last-100, 10)},
+				{Ref: 2, Unit: strconv.FormatInt(last-100, 10), Help: strconv.FormatInt(last-100, 10)},
 				{Ref: 4, Unit: "unit", Help: "help"},
 			}
 			sort.Slice(metadata, func(i, j int) bool { return metadata[i].Ref < metadata[j].Ref })

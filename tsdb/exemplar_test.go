@@ -416,7 +416,7 @@ func BenchmarkAddExemplar(b *testing.B) {
 	exLabels := labels.FromStrings("trace_id", "89620921")
 
 	for _, n := range []int{10000, 100000, 1000000} {
-		b.Run(fmt.Sprintf("%d", n), func(b *testing.B) {
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
 			for j := 0; j < b.N; j++ {
 				b.StopTimer()
 				exs, err := NewCircularExemplarStorage(int64(n), eMetrics)
