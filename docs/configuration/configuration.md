@@ -2682,6 +2682,16 @@ The following meta labels are available on targets during [relabeling](#relabel_
 [ server: <host> ]
 [ tag_separator: <string> | default = ,]
 
+# An optional list of services for which targets are retrieved. If omitted, all services
+# are scraped. If the list is not empty, then only the services in this list are scrapped.
+services: [ - <string> ]
+
+# An optional list of tags used to filter nodes for a given service. Services must contain all tags in the list.
+# If services are omitted while tags is included, then only services with the tags in this list are scrapped.
+# If services and tags are both included, then for a service to be scrapped the service name must be in the services
+# list and the service instance must have all the tags from the tags list.
+tags: [ - <string> ]
+
 # Authentication information used to authenticate to the nomad server.
 # Note that `basic_auth`, `authorization` and `oauth2` options are
 # mutually exclusive.

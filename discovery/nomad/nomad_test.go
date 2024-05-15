@@ -20,6 +20,9 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
+
+	"github.com/prometheus/common/config"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
@@ -186,4 +189,63 @@ func TestNomadSDRefresh(t *testing.T) {
 		"__meta_nomad_tags":            model.LabelValue(",metrics,"),
 	}
 	require.Equal(t, lbls, tg.Targets[0])
+}
+
+func TestNomadSDServiceFiltering(t *testing.T) {
+	sdmock := &NomadSDTestSuite{}
+	sdmock.SetupTest(t)
+	t.Cleanup(sdmock.TearDownSuite)
+
+	endpoint, err := url.Parse(sdmock.Mock.Endpoint())
+	require.NoError(t, err)
+	testCases := []struct {
+		name string
+		cfg  SDConfig
+	}{
+		{
+			name: "Filter Out Service Because Of Missing Tags",
+			cfg:  newConfig([]string{"notatag"}, []string{"hashicups"}),
+		},
+		{
+			name: "Filter Out Service Because Of Missing Service Name",
+			cfg:  newConfig([]string{"metrics"}, []string{"notaservice"}),
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.cfg.Server = endpoint.String()
+			reg := prometheus.NewRegistry()
+			refreshMetrics := discovery.NewRefreshMetrics(reg)
+			metrics := tc.cfg.NewDiscovererMetrics(reg, refreshMetrics)
+			require.NoError(t, metrics.Register())
+			defer func() {
+				metrics.Unregister()
+				refreshMetrics.Unregister()
+			}()
+			d, err := NewDiscovery(&tc.cfg, log.NewNopLogger(), metrics)
+			require.NoError(t, err)
+
+			tgs, err := d.refresh(context.Background())
+			require.NoError(t, err)
+			require.Len(t, tgs, 1)
+
+			tg := tgs[0]
+			require.NotNil(t, tg)
+			require.Nil(t, tg.Targets)
+		})
+	}
+}
+
+func newConfig(tags, services []string) SDConfig {
+	return SDConfig{
+		AllowStale:       true,
+		HTTPClientConfig: config.DefaultHTTPClientConfig,
+		Namespace:        "default",
+		RefreshInterval:  model.Duration(60 * time.Second),
+		Region:           "global",
+		Server:           "http://localhost:4646",
+		TagSeparator:     ",",
+		Tags:             tags,
+		Services:         services,
+	}
 }
