@@ -21,6 +21,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -94,9 +95,14 @@ func TestQueryConcurrency(t *testing.T) {
 		return nil
 	}
 
+	var wg sync.WaitGroup
 	for i := 0; i < maxConcurrency; i++ {
 		q := engine.NewTestQuery(f)
-		go q.Exec(ctx)
+		wg.Add(1)
+		go func() {
+			q.Exec(ctx)
+			wg.Done()
+		}()
 		select {
 		case <-processing:
 			// Expected.
@@ -106,7 +112,11 @@ func TestQueryConcurrency(t *testing.T) {
 	}
 
 	q := engine.NewTestQuery(f)
-	go q.Exec(ctx)
+	wg.Add(1)
+	go func() {
+		q.Exec(ctx)
+		wg.Done()
+	}()
 
 	select {
 	case <-processing:
@@ -129,6 +139,8 @@ func TestQueryConcurrency(t *testing.T) {
 	for i := 0; i < maxConcurrency; i++ {
 		block <- struct{}{}
 	}
+
+	wg.Wait()
 }
 
 // contextDone returns an error if the context was canceled or timed out.
