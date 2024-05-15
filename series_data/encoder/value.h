@@ -49,9 +49,9 @@ class PROMPP_ATTRIBUTE_PACKED TwoDoubleConstantEncoder {
   uint32_t value1_count_;
 };
 
-class PROMPP_ATTRIBUTE_PACKED GorillaEncoder {
+class PROMPP_ATTRIBUTE_PACKED ValuesGorillaEncoder {
  public:
-  explicit GorillaEncoder(double value) { BareBones::Encoding::Gorilla::ValuesEncoder::encode_first(state_, value, stream_); }
+  explicit ValuesGorillaEncoder(double value) { BareBones::Encoding::Gorilla::ValuesEncoder::encode_first(state_, value, stream_); }
 
   PROMPP_ALWAYS_INLINE void encode(double value) { BareBones::Encoding::Gorilla::ValuesEncoder::encode(state_, value, stream_); }
 
@@ -62,25 +62,13 @@ class PROMPP_ATTRIBUTE_PACKED GorillaEncoder {
   BareBones::CompactBitSequence<kAllocationSizesTable> stream_;
 };
 
-enum class EncodingType : uint8_t {
-  kUnknown,
-  kUint32Constant,
-  kDoubleConstant,
-  kTwoDoubleConstant,
-  kGorilla,
-};
-
 }  // namespace series_data::encoder::value
 
-namespace BareBones {
+template <>
+struct BareBones::IsTriviallyReallocatable<series_data::encoder::value::DoubleConstantEncoder> : std::true_type {};
 
 template <>
-struct IsTriviallyReallocatable<series_data::encoder::value::DoubleConstantEncoder> : std::true_type {};
+struct BareBones::IsTriviallyReallocatable<series_data::encoder::value::ValuesGorillaEncoder> : std::true_type {};
 
 template <>
-struct IsTriviallyReallocatable<series_data::encoder::value::GorillaEncoder> : std::true_type {};
-
-template <>
-struct IsTriviallyReallocatable<series_data::encoder::value::TwoDoubleConstantEncoder> : std::true_type {};
-
-}  // namespace BareBones
+struct BareBones::IsTriviallyReallocatable<series_data::encoder::value::TwoDoubleConstantEncoder> : std::true_type {};

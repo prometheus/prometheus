@@ -42,11 +42,11 @@ void GorillaPrometheusStreamEncoder::execute(const Config& config, Metrics& metr
   size_t two_double_constants_count = 0;
   size_t gorilla_count = 0;
   for (auto& gg : encoder.encoders_data()) {
-    if (gg.values_encoding_type == series_data::encoder::value::EncodingType::kUint32Constant) {
+    if (gg.type == series_data::encoder::ChunkType::kUint32Constant) {
       ++constants_count;
-    } else if (gg.values_encoding_type == series_data::encoder::value::EncodingType::kDoubleConstant) {
+    } else if (gg.type == series_data::encoder::ChunkType::kDoubleConstant) {
       ++double_constants_count;
-    } else if (gg.values_encoding_type == series_data::encoder::value::EncodingType::kTwoDoubleConstant) {
+    } else if (gg.type == series_data::encoder::ChunkType::kTwoDoubleConstant) {
       ++two_double_constants_count;
     } else {
       ++gorilla_count;

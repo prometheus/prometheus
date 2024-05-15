@@ -5,90 +5,96 @@
 
 namespace series_data::encoder {
 
-struct PROMPP_ATTRIBUTE_PACKED EncoderData {
-  union PROMPP_ATTRIBUTE_PACKED {
-    value::Uint32ConstantEncoder uint32_constant;
-    uint32_t double_constant_encoder_id;
-    uint32_t two_double_constant_encoder_id;
-    uint32_t gorilla_encoder_id;
-  } values_encoder_data{.double_constant_encoder_id = 0};
-  timestamp::StateId timestamp_encoder_state_id{timestamp::kInvalidStateId};
-  value::EncodingType values_encoding_type{value::EncodingType::kUnknown};
+enum class ChunkType : uint8_t {
+  kUnknown,
+  kUint32Constant,
+  kDoubleConstant,
+  kTwoDoubleConstant,
+  kValuesGorilla,
 };
 
-using EncoderDataList = BareBones::Vector<EncoderData>;
+struct PROMPP_ATTRIBUTE_PACKED DataChunk {
+  union PROMPP_ATTRIBUTE_PACKED {
+    value::Uint32ConstantEncoder uint32_constant;
+    uint32_t double_constant;
+    uint32_t two_double_constant;
+    uint32_t values_gorilla;
+  } encoder{.double_constant = 0};
+  timestamp::StateId timestamp_encoder_state_id{timestamp::kInvalidStateId};
+  ChunkType type{ChunkType::kUnknown};
+};
 
 }  // namespace series_data::encoder
 
 template <>
-struct BareBones::IsTriviallyReallocatable<series_data::encoder::EncoderData> : std::true_type {};
+struct BareBones::IsTriviallyReallocatable<series_data::encoder::DataChunk> : std::true_type {};
 
 namespace series_data::encoder {
 
 class Encoder {
  public:
   void encode(uint32_t ls_id, int64_t timestamp, double value) {
-    auto& data = (encoders_data_.size() > ls_id) ? encoders_data_[ls_id] : encoders_data_.emplace_back();
-    data.timestamp_encoder_state_id = timestamp_encoder_.encode(data.timestamp_encoder_state_id, timestamp);
+    auto& chunk = (encoders_data_.size() > ls_id) ? encoders_data_[ls_id] : encoders_data_.emplace_back();
+    chunk.timestamp_encoder_state_id = timestamp_encoder_.encode(chunk.timestamp_encoder_state_id, timestamp);
 
-    encode_value(data, value);
+    encode_value(chunk, value);
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept {
-    return encoders_data_.allocated_memory() + gorilla_encoders_.allocated_memory() + double_constant_encoders_.allocated_memory() +
-           two_double_constant_encoders_.allocated_memory() + timestamp_encoder_.allocated_memory();
+    return encoders_data_.allocated_memory() + double_constant_encoders_.allocated_memory() + two_double_constant_encoders_.allocated_memory() +
+           values_gorilla_encoders_.allocated_memory() + timestamp_encoder_.allocated_memory();
   }
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE const EncoderDataList& encoders_data() const noexcept { return encoders_data_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const BareBones::Vector<DataChunk>& encoders_data() const noexcept { return encoders_data_; }
 
  public:
-  EncoderDataList encoders_data_;
-  BareBones::Vector<value::GorillaEncoder> gorilla_encoders_;
+  BareBones::Vector<DataChunk> encoders_data_;
   BareBones::VectorWithHoles<value::DoubleConstantEncoder> double_constant_encoders_;
   BareBones::VectorWithHoles<value::TwoDoubleConstantEncoder> two_double_constant_encoders_;
+  BareBones::Vector<value::ValuesGorillaEncoder> values_gorilla_encoders_;
   timestamp::Encoder timestamp_encoder_;
 
-  void encode_value(EncoderData& data, double value) {
-    if (data.values_encoding_type == value::EncodingType::kUnknown) {
+  void encode_value(DataChunk& chunk, double value) {
+    if (chunk.type == ChunkType::kUnknown) {
       [[unlikely]];
 
       if (value::Uint32ConstantEncoder::can_be_encoded(value)) {
-        data.values_encoding_type = value::EncodingType::kUint32Constant;
-        new (&data.values_encoder_data) value::Uint32ConstantEncoder(value);
+        chunk.type = ChunkType::kUint32Constant;
+        new (&chunk.encoder) value::Uint32ConstantEncoder(value);
       } else {
-        data.values_encoding_type = value::EncodingType::kDoubleConstant;
+        chunk.type = ChunkType::kDoubleConstant;
         auto& encoder = double_constant_encoders_.emplace_back(value);
-        data.values_encoder_data.double_constant_encoder_id = double_constant_encoders_.index_of(encoder);
+        chunk.encoder.double_constant = double_constant_encoders_.index_of(encoder);
       }
-    } else if (data.values_encoding_type == value::EncodingType::kUint32Constant) {
-      if (!data.values_encoder_data.uint32_constant.encode(value)) {
-        switch_to_two_constant_encoder(data, data.values_encoder_data.uint32_constant.value(), value);
+    } else if (chunk.type == ChunkType::kUint32Constant) {
+      if (!chunk.encoder.uint32_constant.encode(value)) {
+        switch_to_two_constant_encoder(chunk, chunk.encoder.uint32_constant.value(), value);
       }
-    } else if (data.values_encoding_type == value::EncodingType::kDoubleConstant) {
-      if (auto& encoder = double_constant_encoders_[data.values_encoder_data.double_constant_encoder_id]; !encoder.encode(value)) {
-        auto encoder_id = data.values_encoder_data.double_constant_encoder_id;
-        switch_to_two_constant_encoder(data, encoder.value(), value);
+    } else if (chunk.type == ChunkType::kDoubleConstant) {
+      if (auto& encoder = double_constant_encoders_[chunk.encoder.double_constant]; !encoder.encode(value)) {
+        auto encoder_id = chunk.encoder.double_constant;
+        switch_to_two_constant_encoder(chunk, encoder.value(), value);
         double_constant_encoders_.erase(encoder_id);
       }
-    } else if (data.values_encoding_type == value::EncodingType::kTwoDoubleConstant) {
-      if (auto& encoder = two_double_constant_encoders_[data.values_encoder_data.two_double_constant_encoder_id]; !encoder.encode(value)) {
-        auto encoder_id = data.values_encoder_data.two_double_constant_encoder_id;
-        switch_to_gorilla(data, encoder, value);
+    } else if (chunk.type == ChunkType::kTwoDoubleConstant) {
+      if (auto& encoder = two_double_constant_encoders_[chunk.encoder.two_double_constant]; !encoder.encode(value)) {
+        auto encoder_id = chunk.encoder.two_double_constant;
+        switch_to_values_gorilla(chunk, encoder, value);
         two_double_constant_encoders_.erase(encoder_id);
       }
-    } else if (data.values_encoding_type == value::EncodingType::kGorilla) {
-      gorilla_encoders_[data.values_encoder_data.gorilla_encoder_id].encode(value);
+    } else if (chunk.type == ChunkType::kValuesGorilla) {
+      values_gorilla_encoders_[chunk.encoder.values_gorilla].encode(value);
     }
   }
 
-  PROMPP_ALWAYS_INLINE void switch_to_two_constant_encoder(EncoderData& data, double value1, double value2) {
-    auto& encoder = two_double_constant_encoders_.emplace_back(value1, value2, timestamp_encoder_.get_encoder(data.timestamp_encoder_state_id).count() - 1);
-    data.values_encoding_type = value::EncodingType::kTwoDoubleConstant;
-    data.values_encoder_data.two_double_constant_encoder_id = two_double_constant_encoders_.index_of(encoder);
+  PROMPP_ALWAYS_INLINE void switch_to_two_constant_encoder(DataChunk& chunk, double value1, double value2) {
+    auto& encoder = two_double_constant_encoders_.emplace_back(value1, value2, timestamp_encoder_.get_encoder(chunk.timestamp_encoder_state_id).count() - 1);
+    chunk.type = ChunkType::kTwoDoubleConstant;
+    chunk.encoder.two_double_constant = two_double_constant_encoders_.index_of(encoder);
   }
 
-  void switch_to_gorilla(EncoderData& data, const value::TwoDoubleConstantEncoder& encoder, double value) {
-    auto& gorilla_encoder = gorilla_encoders_.emplace_back(encoder.value1());
+  void switch_to_values_gorilla(DataChunk& data, const value::TwoDoubleConstantEncoder& encoder, double value) {
+    auto& gorilla_encoder = values_gorilla_encoders_.emplace_back(encoder.value1());
     for (uint32_t i = 1; i < encoder.value1_count(); ++i) {
       gorilla_encoder.encode(encoder.value1());
     }
@@ -100,8 +106,8 @@ class Encoder {
 
     gorilla_encoder.encode(value);
 
-    data.values_encoding_type = value::EncodingType::kGorilla;
-    data.values_encoder_data.gorilla_encoder_id = gorilla_encoders_.size() - 1;
+    data.type = ChunkType::kValuesGorilla;
+    data.encoder.values_gorilla = values_gorilla_encoders_.size() - 1;
   }
 };
 
