@@ -31,6 +31,115 @@ struct AllocationSize {
   [[nodiscard]] PROMPP_ALWAYS_INLINE constexpr uint32_t bytes() const noexcept { return Bit::to_bytes(bits); }
 };
 
+class BitSequenceReader {
+ public:
+  BitSequenceReader(const Memory<uint8_t>::const_iterator begin, uint64_t size) noexcept : begin_(begin), size_(size) {}
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t read_bits_u32(uint8_t size) const noexcept {
+    assert(size <= 32);
+    return Bit::bextr(*reinterpret_cast<const uint64_t*>(begin_ + (i_ >> 3)), i_ & 0b111, size);
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint64_t read_bits_u56(uint8_t size) const noexcept {
+    assert(size <= 56);
+    return Bit::bextr(*reinterpret_cast<const uint64_t*>(begin_ + (i_ >> 3)), i_ & 0b111, size);
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint64_t read_bits_u64(uint8_t size) const noexcept {
+    assert(size <= 64);
+    return Bit::bextr(Bit::bextr(*reinterpret_cast<const uint64_t*>(begin_ + (i_ >> 3)), i_ & 0b111, 8 - (i_ & 0b111)) |
+                          (Bit::bextr(*reinterpret_cast<const uint64_t*>(begin_ + (i_ >> 3) + 1), 0, 64) << (8 - (i_ & 0b111))),
+                      0, size);
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t read_u32() const noexcept { return *reinterpret_cast<const uint64_t*>(begin_ + (i_ >> 3)) >> (i_ & 0b111); }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint64_t read_u56() const noexcept {
+    return Bit::bextr(*reinterpret_cast<const uint64_t*>(begin_ + (i_ >> 3)), i_ & 0b111, 56);
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint64_t read_u64() const noexcept {
+    return Bit::bextr(*reinterpret_cast<const uint64_t*>(begin_ + (i_ >> 3)), i_ & 0b111, 8 - (i_ & 0b111)) |
+           (Bit::bextr(*reinterpret_cast<const uint64_t*>(begin_ + (i_ >> 3) + 1), 0, 64) << (8 - (i_ & 0b111)));
+  }
+
+  PROMPP_ALWAYS_INLINE void ff(uint64_t size) noexcept {
+    // it is sufficient to check range only here, because it is not allowed to read more than 28 bytes ahead of
+    // i_ before calling ff and function reserve_enough_memory always reserve extra 28 bytes on the tail
+    assert(i_ + size <= size_);
+
+    i_ += size;
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint64_t left() const noexcept { return i_ <= size_ ? size_ - i_ : 0; }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool eof() const noexcept { return i_ == size_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint64_t position() const noexcept { return i_; }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t consume_bits_u32(uint8_t size) noexcept {
+    uint32_t res = read_bits_u32(size);
+    ff(size);
+    return res;
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint64_t consume_bits_u56(uint8_t size) noexcept {
+    uint64_t res = read_bits_u56(size);
+    ff(size);
+    return res;
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint64_t consume_bits_u64(uint8_t size) noexcept {
+    uint64_t res = read_bits_u64(size);
+    ff(size);
+    return res;
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t consume_u32() noexcept {
+    uint32_t res = read_u32();
+    ff(32);
+    return res;
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint64_t consume_u56() noexcept {
+    uint64_t res = read_u56();
+    ff(56);
+    return res;
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint64_t consume_u64() noexcept {
+    uint64_t res = read_u64();
+    ff(64);
+    return res;
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint64_t consume_u64_svbyte_2468() noexcept {
+    const uint8_t code = consume_bits_u32(2);
+    const uint8_t size_in_bits = (code + 1) << (1 + 3);
+
+    return consume_bits_u64(size_in_bits);
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint64_t consume_u64_svbyte_0248() noexcept {
+    const uint8_t code = consume_bits_u32(2);
+    const uint8_t size_in_bits = (code + (code == 3)) << (1 + 3);
+
+    return consume_bits_u64(size_in_bits);
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE double consume_d64_svbyte_0468() noexcept {
+    const uint8_t code = consume_bits_u32(2);
+    const uint8_t size_in_bits = (code + (code != 0)) << (1 + 3);
+
+    uint64_t res = consume_bits_u64(size_in_bits) << (64 - size_in_bits);
+    return std::bit_cast<double>(res);
+  }
+
+ private:
+  const uint8_t* begin_;
+  uint64_t i_ = 0;
+  const uint64_t size_;
+};
+
 template <std::array kAllocationSizesTable>
   requires std::is_same_v<typename decltype(kAllocationSizesTable)::value_type, AllocationSize>
 class PROMPP_ATTRIBUTE_PACKED CompactBitSequence {
@@ -82,6 +191,8 @@ class PROMPP_ATTRIBUTE_PACKED CompactBitSequence {
     return {reinterpret_cast<T*>(memory_), allocated_memory() / sizeof(T)};
   }
   [[nodiscard]] PROMPP_ALWAYS_INLINE std::span<const uint8_t> bytes() const noexcept { return bytes<uint8_t>(); }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE BitSequenceReader reader() const noexcept { return {memory_, size_in_bits_}; };
 
   PROMPP_ALWAYS_INLINE void push_back_single_zero_bit() noexcept {
     reserve_enough_memory_if_needed();
@@ -286,115 +397,7 @@ class BitSequence {
     push_back_bits_u64(size_in_bytes << 3, (std::bit_cast<uint64_t>(val)) >> (64 - (size_in_bytes << 3)));
   }
 
-  class Reader {
-    const Memory<uint8_t>::const_iterator begin_;
-    uint64_t i_ = 0;
-    const uint64_t size_;
-
-   public:
-    inline __attribute__((always_inline)) uint32_t read_bits_u32(uint8_t size) const noexcept {
-      assert(size <= 32);
-      return Bit::bextr(*reinterpret_cast<const uint64_t*>(begin_ + (i_ >> 3)), i_ & 0b111, size);
-    }
-
-    inline __attribute__((always_inline)) uint64_t read_bits_u56(uint8_t size) const noexcept {
-      assert(size <= 56);
-      return Bit::bextr(*reinterpret_cast<const uint64_t*>(begin_ + (i_ >> 3)), i_ & 0b111, size);
-    }
-
-    inline __attribute__((always_inline)) uint64_t read_bits_u64(uint8_t size) const noexcept {
-      assert(size <= 64);
-      return Bit::bextr(Bit::bextr(*reinterpret_cast<const uint64_t*>(begin_ + (i_ >> 3)), i_ & 0b111, 32) |
-                            (Bit::bextr(*reinterpret_cast<const uint64_t*>(begin_ + (i_ >> 3) + 4), i_ & 0b111, 32) << 32),
-                        0, size);
-    }
-
-    inline __attribute__((always_inline)) uint32_t read_u32() const noexcept { return *reinterpret_cast<const uint64_t*>(begin_ + (i_ >> 3)) >> (i_ & 0b111); }
-
-    inline __attribute__((always_inline)) uint64_t read_u56() const noexcept {
-      return Bit::bextr(*reinterpret_cast<const uint64_t*>(begin_ + (i_ >> 3)), i_ & 0b111, 56);
-    }
-
-    inline __attribute__((always_inline)) uint64_t read_u64() const noexcept {
-      return Bit::bextr(*reinterpret_cast<const uint64_t*>(begin_ + (i_ >> 3)), i_ & 0b111, 32) |
-             (Bit::bextr(*reinterpret_cast<const uint64_t*>(begin_ + (i_ >> 3) + 4), i_ & 0b111, 32) << 32);
-    }
-
-    inline __attribute__((always_inline)) void ff(uint64_t size) noexcept {
-      // it is sufficient to check range only here, because it is not allowed to read more than 28 bytes ahead of
-      // i_ before calling ff and function reserve_enough_memory always reserve extra 28 bytes on the tail
-      assert(i_ + size <= size_);
-
-      i_ += size;
-    }
-
-    inline __attribute__((always_inline)) uint64_t left() const noexcept { return i_ <= size_ ? size_ - i_ : 0; }
-
-    [[nodiscard]] PROMPP_ALWAYS_INLINE bool eof() const noexcept { return i_ == size_; }
-    [[nodiscard]] PROMPP_ALWAYS_INLINE uint64_t position() const noexcept { return i_; }
-
-    inline __attribute__((always_inline)) uint32_t consume_bits_u32(uint8_t size) noexcept {
-      uint32_t res = read_bits_u32(size);
-      ff(size);
-      return res;
-    }
-
-    inline __attribute__((always_inline)) uint64_t consume_bits_u56(uint8_t size) noexcept {
-      uint64_t res = read_bits_u56(size);
-      ff(size);
-      return res;
-    }
-
-    inline __attribute__((always_inline)) uint64_t consume_bits_u64(uint8_t size) noexcept {
-      uint64_t res = read_bits_u64(size);
-      ff(size);
-      return res;
-    }
-
-    inline __attribute__((always_inline)) uint32_t consume_u32() noexcept {
-      uint32_t res = read_u32();
-      ff(32);
-      return res;
-    }
-
-    inline __attribute__((always_inline)) uint64_t consume_u56() noexcept {
-      uint64_t res = read_u56();
-      ff(56);
-      return res;
-    }
-
-    inline __attribute__((always_inline)) uint64_t consume_u64() noexcept {
-      uint64_t res = read_u64();
-      ff(64);
-      return res;
-    }
-
-    inline __attribute__((always_inline)) uint64_t consume_u64_svbyte_2468() noexcept {
-      const uint8_t code = consume_bits_u32(2);
-      const uint8_t size_in_bits = (code + 1) << (1 + 3);
-
-      return consume_bits_u64(size_in_bits);
-    }
-
-    inline __attribute__((always_inline)) uint64_t consume_u64_svbyte_0248() noexcept {
-      const uint8_t code = consume_bits_u32(2);
-      const uint8_t size_in_bits = (code + (code == 3)) << (1 + 3);
-
-      return consume_bits_u64(size_in_bits);
-    }
-
-    inline __attribute__((always_inline)) double consume_d64_svbyte_0468() noexcept {
-      const uint8_t code = consume_bits_u32(2);
-      const uint8_t size_in_bits = (code + (code != 0)) << (1 + 3);
-
-      uint64_t res = consume_bits_u64(size_in_bits) << (64 - size_in_bits);
-      return std::bit_cast<double>(res);
-    }
-
-    Reader(const Memory<uint8_t>::const_iterator begin, uint64_t size) noexcept : begin_(begin), size_(size) {}
-  };
-
-  inline __attribute__((always_inline)) Reader reader() const noexcept { return Reader(data_, size_); }
+  inline __attribute__((always_inline)) BitSequenceReader reader() const noexcept { return {data_, size_}; }
 
   inline __attribute__((always_inline)) size_t save_size() const noexcept {
     // version is written and read by methods put() and get() and they write and read 1 byte
