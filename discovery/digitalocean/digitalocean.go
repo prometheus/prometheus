@@ -177,7 +177,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		}
 
 		labels := model.LabelSet{
-			doLabelID:          model.LabelValue(fmt.Sprintf("%d", droplet.ID)),
+			doLabelID:          model.LabelValue(strconv.Itoa(droplet.ID)),
 			doLabelName:        model.LabelValue(droplet.Name),
 			doLabelImage:       model.LabelValue(droplet.Image.Slug),
 			doLabelImageName:   model.LabelValue(droplet.Image.Name),

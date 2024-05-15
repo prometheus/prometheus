@@ -28,6 +28,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestMemPostings_addFor(t *testing.T) {
@@ -49,7 +50,7 @@ func TestMemPostings_ensureOrder(t *testing.T) {
 		for j := range l {
 			l[j] = storage.SeriesRef(rand.Uint64())
 		}
-		v := fmt.Sprintf("%d", i)
+		v := strconv.Itoa(i)
 
 		p.m["a"][v] = l
 	}
@@ -390,7 +391,7 @@ func BenchmarkMerge(t *testing.B) {
 
 	its := make([]Postings, len(refs))
 	for _, nSeries := range []int{1, 10, 100, 1000, 10000, 100000} {
-		t.Run(fmt.Sprint(nSeries), func(bench *testing.B) {
+		t.Run(strconv.Itoa(nSeries), func(bench *testing.B) {
 			ctx := context.Background()
 			for i := 0; i < bench.N; i++ {
 				// Reset the ListPostings to their original values each time round the loop.
@@ -1281,4 +1282,20 @@ func BenchmarkListPostings(b *testing.B) {
 			}
 		})
 	}
+}
+
+func TestMemPostings_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
+	memP := NewMemPostings()
+	seriesCount := 10 * checkContextEveryNIterations
+	for i := 1; i <= seriesCount; i++ {
+		memP.Add(storage.SeriesRef(i), labels.FromStrings("__name__", fmt.Sprintf("%4d", i)))
+	}
+
+	failAfter := uint64(seriesCount / 2 / checkContextEveryNIterations)
+	ctx := &testutil.MockContextErrAfter{FailAfter: failAfter}
+	p := memP.PostingsForLabelMatching(ctx, "__name__", func(string) bool {
+		return true
+	})
+	require.Error(t, p.Err())
+	require.Equal(t, failAfter+1, ctx.Count()) // Plus one for the Err() call that puts the error in the result.
 }

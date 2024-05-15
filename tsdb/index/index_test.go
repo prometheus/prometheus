@@ -612,6 +612,39 @@ func TestChunksTimeOrdering(t *testing.T) {
 	require.NoError(t, idx.Close())
 }
 
+func TestReader_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
+	dir := t.TempDir()
+
+	idx, err := NewWriter(context.Background(), filepath.Join(dir, "index"))
+	require.NoError(t, err)
+
+	seriesCount := 1000
+	for i := 1; i <= seriesCount; i++ {
+		require.NoError(t, idx.AddSymbol(fmt.Sprintf("%4d", i)))
+	}
+	require.NoError(t, idx.AddSymbol("__name__"))
+
+	for i := 1; i <= seriesCount; i++ {
+		require.NoError(t, idx.AddSeries(storage.SeriesRef(i), labels.FromStrings("__name__", fmt.Sprintf("%4d", i)),
+			chunks.Meta{Ref: 1, MinTime: 0, MaxTime: 10},
+		))
+	}
+
+	require.NoError(t, idx.Close())
+
+	ir, err := NewFileReader(filepath.Join(dir, "index"))
+	require.NoError(t, err)
+	defer ir.Close()
+
+	failAfter := uint64(seriesCount / 2) // Fail after processing half of the series.
+	ctx := &testutil.MockContextErrAfter{FailAfter: failAfter}
+	p := ir.PostingsForLabelMatching(ctx, "__name__", func(string) bool {
+		return true
+	})
+	require.Error(t, p.Err())
+	require.Equal(t, failAfter, ctx.Count())
+}
+
 // createFileReader creates a Reader for a temporary index file, which input has been written to.
 // It returns the Reader, the index filename and the symbol map.
 func createFileReader(ctx context.Context, tb testing.TB, input indexWriterSeriesSlice) (*Reader, string, map[string]struct{}) {

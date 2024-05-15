@@ -20,6 +20,7 @@ import (
 	"math"
 	"os"
 	"sort"
+	"strconv"
 	"testing"
 	"time"
 
@@ -4406,7 +4407,7 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 				_, err := app.Append(0, labels.FromStrings("__name__", "float_series", "idx", "0"), ts, 42)
 				require.NoError(t, err)
 				for idx1, h := range c.histograms {
-					lbls := labels.FromStrings("__name__", seriesName, "idx", fmt.Sprintf("%d", idx1))
+					lbls := labels.FromStrings("__name__", seriesName, "idx", strconv.Itoa(idx1))
 					// Since we mutate h later, we need to create a copy here.
 					var err error
 					if floatHisto {
@@ -4678,7 +4679,7 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 				ts := idx0 * int64(10*time.Minute/time.Millisecond)
 				app := storage.Appender(context.Background())
 				for idx1, h := range c.histograms {
-					lbls := labels.FromStrings("__name__", seriesName, "idx", fmt.Sprintf("%d", idx1))
+					lbls := labels.FromStrings("__name__", seriesName, "idx", strconv.Itoa(idx1))
 					// Since we mutate h later, we need to create a copy here.
 					var err error
 					if floatHisto {
