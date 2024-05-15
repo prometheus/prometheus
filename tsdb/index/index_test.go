@@ -634,8 +634,8 @@ func TestReader_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 	require.Equal(t, failAfter, ctx.Count())
 }
 
-// createFileReader creates a Reader for a temporary index file, which input has been written to.
-// It returns the Reader, the index filename and the symbol map.
+// createFileReader creates a temporary index file. It writes the provided input to this file.
+// It returns a Reader for this file, the file's name, and the symbol map.
 func createFileReader(ctx context.Context, tb testing.TB, input indexWriterSeriesSlice) (*Reader, string, map[string]struct{}) {
 	tb.Helper()
 
