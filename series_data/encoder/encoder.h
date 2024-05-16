@@ -118,32 +118,39 @@ class Encoder {
   }
 
   void switch_to_gorilla(DataChunk& chunk, const value::TwoDoubleConstantEncoder& constant_encoder, double value) {
-    auto& encoder = gorilla_encoders_.emplace_back();
-    chunk.type = ChunkType::kGorilla;
-    chunk.encoder.gorilla = gorilla_encoders_.size() - 1;
-
     auto& timestamp_encoder = timestamp_encoder_.get_encoder(chunk.timestamp_encoder_state_id);
     auto timestamp_reader = timestamp_encoder.reader();
-    auto value2_count = timestamp_encoder.count() - constant_encoder.value1_count();
-
+    auto value2_count = timestamp_encoder.count() - constant_encoder.value1_count() - 1;
     BareBones::Encoding::Gorilla::TimestampEncoderState state;
+
     BareBones::Encoding::Gorilla::TimestampDecoder::decode(state, timestamp_reader);
-    encoder.encode(state.last_ts, constant_encoder.value1());
+    auto& encoder = gorilla_encoders_.emplace_back(static_cast<int64_t>(state.last_ts), constant_encoder.value1());
 
     BareBones::Encoding::Gorilla::TimestampDecoder::decode_delta(state, timestamp_reader);
-    for (uint32_t i = 1; i < constant_encoder.value1_count(); ++i) {
-      encoder.encode(state.last_ts, constant_encoder.value1());
-      BareBones::Encoding::Gorilla::TimestampDecoder::decode_delta_of_delta(state, timestamp_reader);
+    if (constant_encoder.value1_count() > 1) {
+      encoder.encode_second(state.last_ts, constant_encoder.value1());
+
+      for (uint32_t i = 2; i < constant_encoder.value1_count(); ++i) {
+        BareBones::Encoding::Gorilla::TimestampDecoder::decode_delta_of_delta(state, timestamp_reader);
+        encoder.encode(state.last_ts, constant_encoder.value1());
+      }
+    } else {
+      encoder.encode_second(state.last_ts, constant_encoder.value2());
+      --value2_count;
     }
 
     for (uint32_t i = 0; i < value2_count; ++i) {
-      encoder.encode(state.last_ts, constant_encoder.value2());
       BareBones::Encoding::Gorilla::TimestampDecoder::decode_delta_of_delta(state, timestamp_reader);
+      encoder.encode(state.last_ts, constant_encoder.value2());
     }
 
+    BareBones::Encoding::Gorilla::TimestampDecoder::decode_delta_of_delta(state, timestamp_reader);
     encoder.encode(state.last_ts, value);
 
     timestamp_encoder_.erase(chunk.timestamp_encoder_state_id);
+
+    chunk.type = ChunkType::kGorilla;
+    chunk.encoder.gorilla = gorilla_encoders_.size() - 1;
   }
 };
 

@@ -69,13 +69,29 @@ class PROMPP_ATTRIBUTE_PACKED ValuesGorillaEncoder {
 
 class PROMPP_ATTRIBUTE_PACKED GorillaEncoder {
  public:
-  PROMPP_ALWAYS_INLINE void encode(int64_t timestamp, double value) { encoder_.encode(timestamp, value, stream_, stream_); }
+  PROMPP_ALWAYS_INLINE GorillaEncoder(int64_t timestamp, double value) {
+    TimestampEncoder::encode(timestamp_state_, timestamp, stream_);
+    ValuesEncoder::encode_first(values_state_, value, stream_);
+  }
+
+  PROMPP_ALWAYS_INLINE void encode_second(int64_t timestamp, double value) {
+    TimestampEncoder::encode_delta(timestamp_state_, timestamp, stream_);
+    ValuesEncoder::encode(values_state_, value, stream_);
+  }
+
+  PROMPP_ALWAYS_INLINE void encode(int64_t timestamp, double value) {
+    TimestampEncoder::encode_delta_of_delta(timestamp_state_, timestamp, stream_);
+    ValuesEncoder::encode(values_state_, value, stream_);
+  }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return stream_.allocated_memory(); }
-  [[nodiscard]] PROMPP_ALWAYS_INLINE auto& encoder() const noexcept { return encoder_; }
 
  private:
-  BareBones::Encoding::Gorilla::StreamEncoder<BareBones::Encoding::Gorilla::TimestampEncoder, BareBones::Encoding::Gorilla::ValuesEncoder> encoder_;
+  using TimestampEncoder = BareBones::Encoding::Gorilla::TimestampEncoder;
+  using ValuesEncoder = BareBones::Encoding::Gorilla::ValuesEncoder;
+
+  BareBones::Encoding::Gorilla::TimestampEncoderState timestamp_state_;
+  BareBones::Encoding::Gorilla::ValuesEncoderState values_state_;
   BareBones::CompactBitSequence<kAllocationSizesTable> stream_;
 };
 
