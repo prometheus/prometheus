@@ -347,6 +347,14 @@ class ValuesEncoder {
   }
 
   template <class BitSequence>
+  PROMPP_ALWAYS_INLINE static void encode_first(ValuesEncoderState& state, double v, uint32_t count, BitSequence& stream) noexcept {
+    assert(count >= 1);
+
+    encode_first(state, v, stream);
+    stream.push_back_single_zero_bit(count - 1);
+  }
+
+  template <class BitSequence>
   static void encode(ValuesEncoderState& state, double v, BitSequence& stream) noexcept {
     uint64_t v_xor = std::bit_cast<uint64_t>(state.last_v) ^ std::bit_cast<uint64_t>(v);
 
@@ -406,6 +414,14 @@ class ValuesEncoder {
 
     stream.push_back_bits_u32(1 + 1 + 5 + 6, 0b11 | (v_xor_leading_z << (1 + 1)) | (v_xor_length << (1 + 1 + 5)));
     stream.push_back_bits_u64(state.last_v_xor_length, v_xor >> state.last_v_xor_trailing_z);
+  }
+
+  template <class BitSequence>
+  PROMPP_ALWAYS_INLINE static void encode(ValuesEncoderState& state, double v, uint32_t count, BitSequence& stream) noexcept {
+    assert(count >= 1);
+
+    encode(state, v, stream);
+    stream.push_back_single_zero_bit(count - 1);
   }
 };
 

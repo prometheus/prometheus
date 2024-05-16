@@ -51,9 +51,14 @@ class PROMPP_ATTRIBUTE_PACKED TwoDoubleConstantEncoder {
 
 class PROMPP_ATTRIBUTE_PACKED ValuesGorillaEncoder {
  public:
-  explicit ValuesGorillaEncoder(double value) { BareBones::Encoding::Gorilla::ValuesEncoder::encode_first(state_, value, stream_); }
+  PROMPP_ALWAYS_INLINE explicit ValuesGorillaEncoder(double value, uint32_t count) {
+    BareBones::Encoding::Gorilla::ValuesEncoder::encode_first(state_, value, count, stream_);
+  }
+  PROMPP_ALWAYS_INLINE explicit ValuesGorillaEncoder(double value) { BareBones::Encoding::Gorilla::ValuesEncoder::encode_first(state_, value, stream_); }
 
   PROMPP_ALWAYS_INLINE void encode(double value) { BareBones::Encoding::Gorilla::ValuesEncoder::encode(state_, value, stream_); }
+
+  PROMPP_ALWAYS_INLINE void encode(double value, uint32_t count) { BareBones::Encoding::Gorilla::ValuesEncoder::encode(state_, value, count, stream_); }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return stream_.allocated_memory(); }
 

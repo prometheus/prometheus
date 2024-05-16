@@ -37,11 +37,12 @@ class Encoder {
  public:
   void encode(uint32_t ls_id, int64_t timestamp, double value) {
     auto& chunk = (chunks_.size() > ls_id) ? chunks_[ls_id] : chunks_.emplace_back();
-    if (chunk.type != ChunkType::kGorilla) {
+    if (chunk.type == ChunkType::kGorilla) {
+      [[unlikely]];
+      gorilla_encoders_[chunk.encoder.gorilla].encode(timestamp, value);
+    } else {
       chunk.timestamp_encoder_state_id = timestamp_encoder_.encode(chunk.timestamp_encoder_state_id, timestamp);
       encode_value(chunk, value);
-    } else {
-      gorilla_encoders_[chunk.encoder.gorilla].encode(timestamp, value);
     }
   }
 
@@ -85,10 +86,11 @@ class Encoder {
     } else if (chunk.type == ChunkType::kTwoDoubleConstant) {
       if (auto& encoder = two_double_constant_encoders_[chunk.encoder.two_double_constant]; !encoder.encode(value)) {
         auto encoder_id = chunk.encoder.two_double_constant;
-        if (!timestamp_encoder_.is_unique_state(chunk.timestamp_encoder_state_id)) {
-          switch_to_values_gorilla(chunk, encoder, value);
-        } else {
+        if (timestamp_encoder_.is_unique_state(chunk.timestamp_encoder_state_id)) {
+          [[unlikely]];
           switch_to_gorilla(chunk, encoder, value);
+        } else {
+          switch_to_values_gorilla(chunk, encoder, value);
         }
         two_double_constant_encoders_.erase(encoder_id);
       }
@@ -104,15 +106,10 @@ class Encoder {
   }
 
   void switch_to_values_gorilla(DataChunk& data, const value::TwoDoubleConstantEncoder& constant_encoder, double value) {
-    auto& encoder = values_gorilla_encoders_.emplace_back(constant_encoder.value1());
-    for (uint32_t i = 1; i < constant_encoder.value1_count(); ++i) {
-      encoder.encode(constant_encoder.value1());
-    }
+    auto& encoder = values_gorilla_encoders_.emplace_back(constant_encoder.value1(), constant_encoder.value1_count());
 
     auto value2_count = timestamp_encoder_.get_encoder(data.timestamp_encoder_state_id).count() - constant_encoder.value1_count() - 1;
-    for (uint32_t i = 0; i < value2_count; ++i) {
-      encoder.encode(constant_encoder.value2());
-    }
+    encoder.encode(constant_encoder.value2(), value2_count);
 
     encoder.encode(value);
 

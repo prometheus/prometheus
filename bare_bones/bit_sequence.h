@@ -28,6 +28,9 @@ struct AllocationSize {
 
   explicit constexpr AllocationSize(uint32_t size_in_bytes) : bits(Bit::to_bits(size_in_bytes)) {}
 
+  PROMPP_ALWAYS_INLINE friend bool operator>(AllocationSize a, uint32_t b) noexcept { return a.bits > b; }
+  PROMPP_ALWAYS_INLINE friend bool operator>(uint32_t a, AllocationSize b) noexcept { return a > b.bits; }
+
   [[nodiscard]] PROMPP_ALWAYS_INLINE constexpr uint32_t bytes() const noexcept { return Bit::to_bytes(bits); }
 };
 
@@ -199,6 +202,11 @@ class PROMPP_ATTRIBUTE_PACKED CompactBitSequence {
     ++size_in_bits_;
   }
 
+  PROMPP_ALWAYS_INLINE void push_back_single_zero_bit(uint32_t count) noexcept {
+    reserve_enough_memory_if_needed(count);
+    size_in_bits_ += count;
+  }
+
   PROMPP_ALWAYS_INLINE void push_back_single_one_bit() noexcept {
     reserve_enough_memory_if_needed();
     *unfilled_memory<uint32_t>() |= 0b1u << unfilled_bits_in_byte();
@@ -251,6 +259,24 @@ class PROMPP_ATTRIBUTE_PACKED CompactBitSequence {
       [[unlikely]];
       ++allocation_size_index_;
       assert(allocation_size_index_ < std::size(kAllocationSizesTable));
+
+      auto new_size = kAllocationSizesTable[allocation_size_index_].bytes();
+      memory_ = reinterpret_cast<uint8_t*>(std::realloc(memory_, new_size));
+      std::memset(memory_ + old_size.bytes(), 0, new_size - old_size.bytes());
+    }
+  }
+
+  void reserve_enough_memory_if_needed(uint32_t needed_size) noexcept {
+    needed_size += size_in_bits_;
+    auto new_allocation_size_index = allocation_size_index_;
+    while (needed_size > kAllocationSizesTable[new_allocation_size_index]) {
+      ++new_allocation_size_index;
+    }
+
+    if (new_allocation_size_index > allocation_size_index_) {
+      auto old_size = kAllocationSizesTable[allocation_size_index_];
+      allocation_size_index_ = new_allocation_size_index;
+      assert(new_allocation_size_index < std::size(kAllocationSizesTable));
 
       auto new_size = kAllocationSizesTable[allocation_size_index_].bytes();
       memory_ = reinterpret_cast<uint8_t*>(std::realloc(memory_, new_size));
