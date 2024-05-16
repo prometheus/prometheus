@@ -194,8 +194,8 @@ func TestAlertingRule(t *testing.T) {
 }
 
 func TestForStateAddSamples(t *testing.T) {
-	for _, evalDelay := range []time.Duration{0, time.Minute} {
-		t.Run(fmt.Sprintf("evalDelay %s", evalDelay.String()), func(t *testing.T) {
+	for _, queryOffset := range []time.Duration{0, time.Minute} {
+		t.Run(fmt.Sprintf("queryOffset %s", queryOffset.String()), func(t *testing.T) {
 			storage := promqltest.LoadedStorage(t, `
 		load 5m
 			http_requests{job="app-server", instance="0", group="canary", severity="overwrite-me"}	75 85  95 105 105  95  85
@@ -303,7 +303,7 @@ func TestForStateAddSamples(t *testing.T) {
 			var forState float64
 			for i, test := range tests {
 				t.Logf("case %d", i)
-				evalTime := baseTime.Add(test.time).Add(evalDelay)
+				evalTime := baseTime.Add(test.time).Add(queryOffset)
 
 				if test.persistThisTime {
 					forState = float64(evalTime.Unix())
@@ -312,7 +312,7 @@ func TestForStateAddSamples(t *testing.T) {
 					forState = float64(value.StaleNaN)
 				}
 
-				res, err := rule.Eval(context.TODO(), evalDelay, evalTime, EngineQueryFunc(testEngine, storage), nil, 0)
+				res, err := rule.Eval(context.TODO(), queryOffset, evalTime, EngineQueryFunc(testEngine, storage), nil, 0)
 				require.NoError(t, err)
 
 				var filteredRes promql.Vector // After removing 'ALERTS' samples.
@@ -326,7 +326,7 @@ func TestForStateAddSamples(t *testing.T) {
 					}
 				}
 				for i := range test.result {
-					test.result[i].T = timestamp.FromTime(evalTime.Add(-evalDelay))
+					test.result[i].T = timestamp.FromTime(evalTime.Add(-queryOffset))
 					// Updating the expected 'for' state.
 					if test.result[i].F >= 0 {
 						test.result[i].F = forState
@@ -355,8 +355,8 @@ func sortAlerts(items []*Alert) {
 }
 
 func TestForStateRestore(t *testing.T) {
-	for _, evalDelay := range []time.Duration{0, time.Minute} {
-		t.Run(fmt.Sprintf("evalDelay %s", evalDelay.String()), func(t *testing.T) {
+	for _, queryOffset := range []time.Duration{0, time.Minute} {
+		t.Run(fmt.Sprintf("queryOffset %s", queryOffset.String()), func(t *testing.T) {
 			storage := promqltest.LoadedStorage(t, `
 		load 5m
 		http_requests{job="app-server", instance="0", group="canary", severity="overwrite-me"}	75  85 50 0 0 25 0 0 40 0 120
@@ -473,13 +473,13 @@ func TestForStateRestore(t *testing.T) {
 						Rules:           []Rule{newRule},
 						ShouldRestore:   true,
 						Opts:            opts,
-						EvaluationDelay: &evalDelay,
+						RuleQueryOffset: &queryOffset,
 					})
 
 					newGroups := make(map[string]*Group)
 					newGroups["default;"] = newGroup
 
-					restoreTime := baseTime.Add(tt.restoreDuration).Add(evalDelay)
+					restoreTime := baseTime.Add(tt.restoreDuration).Add(queryOffset)
 					// First eval before restoration.
 					newGroup.Eval(context.TODO(), restoreTime)
 					// Restore happens here.
@@ -519,7 +519,7 @@ func TestForStateRestore(t *testing.T) {
 
 							// Difference in time should be within 1e6 ns, i.e. 1ms
 							// (due to conversion between ns & ms, float64 & int64).
-							activeAtDiff := evalDelay.Seconds() + float64(e.ActiveAt.Unix()+int64(tt.downDuration/time.Second)-got[i].ActiveAt.Unix())
+							activeAtDiff := queryOffset.Seconds() + float64(e.ActiveAt.Unix()+int64(tt.downDuration/time.Second)-got[i].ActiveAt.Unix())
 							require.Equal(t, 0.0, math.Abs(activeAtDiff), "'for' state restored time is wrong")
 						}
 					}
@@ -530,7 +530,7 @@ func TestForStateRestore(t *testing.T) {
 }
 
 func TestStaleness(t *testing.T) {
-	for _, evalDelay := range []time.Duration{0, time.Minute} {
+	for _, queryOffset := range []time.Duration{0, time.Minute} {
 		st := teststorage.New(t)
 		defer st.Close()
 		engineOpts := promql.EngineOpts{
@@ -557,7 +557,7 @@ func TestStaleness(t *testing.T) {
 			Rules:           []Rule{rule},
 			ShouldRestore:   true,
 			Opts:            opts,
-			EvaluationDelay: &evalDelay,
+			RuleQueryOffset: &queryOffset,
 		})
 
 		// A time series that has two samples and then goes stale.
@@ -572,9 +572,9 @@ func TestStaleness(t *testing.T) {
 		ctx := context.Background()
 
 		// Execute 3 times, 1 second apart.
-		group.Eval(ctx, time.Unix(0, 0).Add(evalDelay))
-		group.Eval(ctx, time.Unix(1, 0).Add(evalDelay))
-		group.Eval(ctx, time.Unix(2, 0).Add(evalDelay))
+		group.Eval(ctx, time.Unix(0, 0).Add(queryOffset))
+		group.Eval(ctx, time.Unix(1, 0).Add(queryOffset))
+		group.Eval(ctx, time.Unix(2, 0).Add(queryOffset))
 
 		querier, err := st.Querier(0, 2000)
 		require.NoError(t, err)
@@ -623,13 +623,13 @@ func readSeriesSet(ss storage.SeriesSet) (map[string][]promql.FPoint, error) {
 	return result, ss.Err()
 }
 
-func TestGroup_EvaluationDelay(t *testing.T) {
+func TestGroup_QueryOffset(t *testing.T) {
 	config := `
 groups:
   - name: group1
-    evaluation_delay: 2m
+    query_offset: 2m
   - name: group2
-    evaluation_delay: 0s
+    query_offset: 0s
   - name: group3
 `
 
@@ -640,7 +640,7 @@ groups:
 
 	m := NewManager(&ManagerOptions{
 		Logger: log.NewNopLogger(),
-		DefaultEvaluationDelay: func() time.Duration {
+		DefaultRuleQueryOffset: func() time.Duration {
 			return time.Minute
 		},
 	})
@@ -654,11 +654,11 @@ groups:
 	})
 
 	// From config.
-	require.Equal(t, 2*time.Minute, rgs[0].EvaluationDelay())
+	require.Equal(t, 2*time.Minute, rgs[0].RuleQueryOffset())
 	// Setting 0 in config is detected.
-	require.Equal(t, time.Duration(0), rgs[1].EvaluationDelay())
+	require.Equal(t, time.Duration(0), rgs[1].RuleQueryOffset())
 	// Default when nothing is set.
-	require.Equal(t, time.Minute, rgs[2].EvaluationDelay())
+	require.Equal(t, time.Minute, rgs[2].RuleQueryOffset())
 
 	m.Stop()
 }

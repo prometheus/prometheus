@@ -86,8 +86,8 @@ name: <string>
 # rule can produce. 0 is no limit.
 [ limit: <int> | default = 0 ]
 
-# Delay rule evaluation of this particular group by the specified duration.
-[ evaluation_delay: <duration> | default = rules.evaluation_delay ]
+# Offset the rule evaluation of this particular group by the specified duration.
+[ query_offset: <duration> | default = global.rule_query_offset ]
 
 rules:
   [ - <rule> ... ]
