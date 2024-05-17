@@ -3320,26 +3320,30 @@ func setOffsetForAtModifier(evalTime int64, expr parser.Expr) {
 	})
 }
 
+// detectHistogramStatsDecoding modifies the expression by setting the
+// SkipHistogramBuckets field in those vector selectors for which it is safe to
+// return only histogram statistics (sum and count), excluding histogram spans
+// and buckets. The function can be treated as an optimization and does is not
+// required for correctness.
 func detectHistogramStatsDecoding(expr parser.Expr) {
-	var readHistogramStats bool
 	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
 		switch n := node.(type) {
 		case *parser.VectorSelector:
-			n.SkipHistogramBuckets = readHistogramStats
-
-		case *parser.MatrixSelector:
-			vs := n.VectorSelector.(*parser.VectorSelector)
-			vs.SkipHistogramBuckets = readHistogramStats
-
-		case *parser.Call:
-			if n.Func.Name == "histogram_count" || n.Func.Name == "histogram_sum" {
-				readHistogramStats = true
-				return nil
+			for _, p := range path {
+				call, ok := p.(*parser.Call)
+				if !ok {
+					continue
+				}
+				if call.Func.Name == "histogram_count" || call.Func.Name == "histogram_sum" {
+					n.SkipHistogramBuckets = true
+					break
+				}
+				if call.Func.Name == "histogram_quantile" || call.Func.Name == "histogram_fraction" {
+					n.SkipHistogramBuckets = false
+					break
+				}
 			}
-			if n.Func.Name == "histogram_quantile" || n.Func.Name == "histogram_fraction" {
-				readHistogramStats = false
-				return nil
-			}
+			return fmt.Errorf("stop")
 		}
 		return nil
 	})

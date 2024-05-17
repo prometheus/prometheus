@@ -1147,19 +1147,13 @@ func (f histogramStatsIterator) AtHistogram(h *histogram.Histogram) (int64, *his
 		return t, &histogram.Histogram{
 			CounterResetHint: f.hReader.CounterResetHint,
 			Count:            f.hReader.Count,
-			ZeroCount:        f.hReader.ZeroCount,
 			Sum:              f.hReader.Sum,
-			ZeroThreshold:    f.hReader.ZeroThreshold,
-			Schema:           f.hReader.Schema,
 		}
 	}
 
-	h.CounterResetHint = f.fhReader.CounterResetHint
+	h.CounterResetHint = f.hReader.CounterResetHint
 	h.Count = f.hReader.Count
-	h.ZeroCount = f.hReader.ZeroCount
 	h.Sum = f.hReader.Sum
-	h.ZeroThreshold = f.hReader.ZeroThreshold
-	h.Schema = f.hReader.Schema
 	return t, h
 }
 
@@ -1174,17 +1168,11 @@ func (f histogramStatsIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (
 		return t, &histogram.FloatHistogram{
 			CounterResetHint: f.fhReader.CounterResetHint,
 			Count:            f.fhReader.Count,
-			ZeroCount:        f.fhReader.ZeroCount,
 			Sum:              f.fhReader.Sum,
-			ZeroThreshold:    f.fhReader.ZeroThreshold,
-			Schema:           f.fhReader.Schema,
 		}
 	}
 
 	fh.CounterResetHint = f.fhReader.CounterResetHint
-	fh.Schema = f.fhReader.Schema
-	fh.ZeroThreshold = f.fhReader.ZeroThreshold
-	fh.ZeroCount = f.fhReader.ZeroCount
 	fh.Count = f.fhReader.Count
 	fh.Sum = f.fhReader.Sum
 	return t, fh
