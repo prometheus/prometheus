@@ -160,7 +160,7 @@ type LeveledCompactorOptions struct {
 	// If it is nil then the default encoder is used. At the moment that is the "raw" encoder. See index.EncodePostingsRaw for more.
 	PE index.PostingsEncoder
 	// PD specifies the postings decoder factory to return different postings decoder based on BlockMeta. It is called when opening a block or opening the index file.
-	// If it is nil then the default decoder is used. At the moment that is the "raw" decoder. See index.DecodePostingsRaw for more.
+	// If it is nil then a default decoder is used, compatible with Prometheus v2.
 	PD PostingsDecoderFactory
 	// MaxBlockChunkSegmentSize is the max block chunk segment size. If it is 0 then the default chunks.DefaultChunkSegmentSize is used.
 	MaxBlockChunkSegmentSize int64
