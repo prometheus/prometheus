@@ -23,7 +23,7 @@ The following binary arithmetic operators exist in Prometheus:
 * `^` (power/exponentiation)
 
 Binary arithmetic operators are defined between scalar/scalar, vector/scalar,
-and vector/vector value pairs.
+vector/vector and range vector/scalar value pairs.
 
 **Between two scalars**, the behavior is obvious: they evaluate to another
 scalar that is the result of the operator applied to both scalar operands.
@@ -39,6 +39,11 @@ in the right-hand vector. The result is propagated into the result vector with t
 grouping labels becoming the output label set. The metric name is dropped. Entries
 for which no matching entry in the right-hand vector can be found are not part of
 the result.
+
+**Between a range vector and a scalar**, the operator is applied to the
+value of every data sample in the range vector. E.g. if a time series range vector
+is multiplied by 2, the result is another range vector in which every sample value of
+the original vector is multiplied by 2. The metric name is not dropped.
 
 ### Trigonometric binary operators
 
@@ -61,10 +66,10 @@ The following binary comparison operators exist in Prometheus:
 * `>=` (greater-or-equal)
 * `<=` (less-or-equal)
 
-Comparison operators are defined between scalar/scalar, vector/scalar,
-and vector/vector value pairs. By default they filter. Their behavior can be
-modified by providing `bool` after the operator, which will return `0` or `1`
-for the value rather than filtering.
+Comparison operators are defined between scalar/scalar, vector/scalar, vector/vector
+and range vector/scalar value pairs. By default they filter. Except for range vector/scalar,
+the behavior can be modified by providing `bool` after the operator, which will return
+`0` or `1` for the value rather than filtering.
 
 **Between two scalars**, the `bool` modifier must be provided and these
 operators result in another scalar that is either `0` (`false`) or `1`
@@ -86,6 +91,11 @@ If the `bool` modifier is provided, vector elements that would have been
 dropped instead have the value `0` and vector elements that would be kept have
 the value `1`, with the grouping labels again becoming the output label set.
 The metric name is dropped if the `bool` modifier is provided.
+
+**Between a range vector and a scalar**, these operators are applied to the
+value of every data sample in the vector, and vector elements between which the
+comparison result is `false` get dropped from the result vector. The metric name
+is not dropped.
 
 ### Logical/set binary operators
 
