@@ -397,9 +397,6 @@ func main() {
 	agentOnlyFlag(a, "storage.agent.no-lockfile", "Do not create lockfile in data directory.").
 		Default("false").BoolVar(&cfg.agent.NoLockfile)
 
-	agentOnlyFlag(a, "storage.agent.reject-out-of-order-samples", "Reject out-of-order samples.").
-		Default("false").BoolVar(&cfg.agent.RejectOOOSamples)
-
 	a.Flag("storage.remote.flush-deadline", "How long to wait flushing sample on shutdown or config reload.").
 		Default("1m").PlaceHolder("<duration>").SetValue(&cfg.RemoteFlushDeadline)
 
@@ -1183,6 +1180,7 @@ func main() {
 	if agentMode {
 		// WAL storage.
 		opts := cfg.agent.ToAgentOptions()
+		opts.SetOutOfOrderTimeWindow(cfg.tsdb.OutOfOrderTimeWindow)
 		cancel := make(chan struct{})
 		g.Add(
 			func() error {
@@ -1712,6 +1710,7 @@ type agentOptions struct {
 	MinWALTime, MaxWALTime model.Duration
 	NoLockfile             bool
 	RejectOOOSamples       bool
+	OutOfOrderTimeWindow   int64
 }
 
 func (opts agentOptions) ToAgentOptions() agent.Options {
@@ -1723,7 +1722,6 @@ func (opts agentOptions) ToAgentOptions() agent.Options {
 		MinWALTime:        durationToInt64Millis(time.Duration(opts.MinWALTime)),
 		MaxWALTime:        durationToInt64Millis(time.Duration(opts.MaxWALTime)),
 		NoLockfile:        opts.NoLockfile,
-		RejectOOOSamples:  opts.RejectOOOSamples,
 	}
 }
 

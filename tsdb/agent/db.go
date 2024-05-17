@@ -82,22 +82,29 @@ type Options struct {
 	// NoLockfile disables creation and consideration of a lock file.
 	NoLockfile bool
 
-	// RejectOOOSamples enables rejecting out of order samples.
-	RejectOOOSamples bool
+	// OutOfOrderTimeWindow specifies how much out of order is allowed, if any.
+	OutOfOrderTimeWindow int64
+}
+
+func (o *Options) SetOutOfOrderTimeWindow(outOfOrderTimeWindow int64) {
+	if outOfOrderTimeWindow < 0 {
+		return
+	}
+	o.OutOfOrderTimeWindow = outOfOrderTimeWindow
 }
 
 // DefaultOptions used for the WAL storage. They are reasonable for setups using
 // millisecond-precision timestamps.
 func DefaultOptions() *Options {
 	return &Options{
-		WALSegmentSize:    wlog.DefaultSegmentSize,
-		WALCompression:    wlog.CompressionNone,
-		StripeSize:        tsdb.DefaultStripeSize,
-		TruncateFrequency: DefaultTruncateFrequency,
-		MinWALTime:        DefaultMinWALTime,
-		MaxWALTime:        DefaultMaxWALTime,
-		NoLockfile:        false,
-		RejectOOOSamples:  false,
+		WALSegmentSize:       wlog.DefaultSegmentSize,
+		WALCompression:       wlog.CompressionNone,
+		StripeSize:           tsdb.DefaultStripeSize,
+		TruncateFrequency:    DefaultTruncateFrequency,
+		MinWALTime:           DefaultMinWALTime,
+		MaxWALTime:           DefaultMaxWALTime,
+		NoLockfile:           false,
+		OutOfOrderTimeWindow: 0,
 	}
 }
 
@@ -816,7 +823,7 @@ func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v flo
 	series.Lock()
 	defer series.Unlock()
 
-	if a.opts.RejectOOOSamples && t < series.lastTs {
+	if t <= a.minTs(series.lastTs) {
 		a.metrics.totalOutOfOrderSamples.Inc()
 		return 0, storage.ErrOutOfOrderSample
 	}
@@ -944,7 +951,7 @@ func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int
 	series.Lock()
 	defer series.Unlock()
 
-	if a.opts.RejectOOOSamples && t < series.lastTs {
+	if t <= a.minTs(series.lastTs) {
 		a.metrics.totalOutOfOrderSamples.Inc()
 		return 0, storage.ErrOutOfOrderSample
 	}
@@ -1116,4 +1123,14 @@ func (a *appender) logSeries() error {
 	}
 
 	return nil
+}
+
+// mintTs returns the minimum timestamp that a sample can have
+// and is needed for preventing underflow.
+func (a *appender) minTs(lastTs int64) int64 {
+	if lastTs < math.MinInt64+a.opts.OutOfOrderTimeWindow {
+		return math.MinInt64
+	}
+
+	return lastTs - a.opts.OutOfOrderTimeWindow
 }
