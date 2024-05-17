@@ -146,7 +146,7 @@ func TestIndexRW_Create_Open(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, iw.Close())
 
-	ir, err := NewFileReader(fn, nil)
+	ir, err := NewFileReader(fn, DecodePostingsRaw)
 	require.NoError(t, err)
 	require.NoError(t, ir.Close())
 
@@ -157,7 +157,7 @@ func TestIndexRW_Create_Open(t *testing.T) {
 	require.NoError(t, err)
 	f.Close()
 
-	_, err = NewFileReader(dir, nil)
+	_, err = NewFileReader(dir, DecodePostingsRaw)
 	require.Error(t, err)
 }
 
@@ -218,7 +218,7 @@ func TestIndexRW_Postings(t *testing.T) {
 	}, labelIndices)
 
 	t.Run("ShardedPostings()", func(t *testing.T) {
-		ir, err := NewFileReader(fn, nil)
+		ir, err := NewFileReader(fn, DecodePostingsRaw)
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, ir.Close())
@@ -481,7 +481,7 @@ func TestNewFileReaderErrorNoOpenFiles(t *testing.T) {
 	err := os.WriteFile(idxName, []byte("corrupted contents"), 0o666)
 	require.NoError(t, err)
 
-	_, err = NewFileReader(idxName, nil)
+	_, err = NewFileReader(idxName, DecodePostingsRaw)
 	require.Error(t, err)
 
 	// dir.Close will fail on Win if idxName fd is not closed on error path.
@@ -665,7 +665,7 @@ func createFileReader(ctx context.Context, tb testing.TB, input indexWriterSerie
 	}
 	require.NoError(tb, iw.Close())
 
-	ir, err := NewFileReader(fn)
+	ir, err := NewFileReader(fn, DecodePostingsRaw)
 	require.NoError(tb, err)
 	tb.Cleanup(func() {
 		require.NoError(tb, ir.Close())
