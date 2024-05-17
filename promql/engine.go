@@ -3327,25 +3327,26 @@ func setOffsetForAtModifier(evalTime int64, expr parser.Expr) {
 // required for correctness.
 func detectHistogramStatsDecoding(expr parser.Expr) {
 	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
-		switch n := node.(type) {
-		case *parser.VectorSelector:
-			for _, p := range path {
-				call, ok := p.(*parser.Call)
-				if !ok {
-					continue
-				}
-				if call.Func.Name == "histogram_count" || call.Func.Name == "histogram_sum" {
-					n.SkipHistogramBuckets = true
-					break
-				}
-				if call.Func.Name == "histogram_quantile" || call.Func.Name == "histogram_fraction" {
-					n.SkipHistogramBuckets = false
-					break
-				}
-			}
-			return fmt.Errorf("stop")
+		n, ok := (node).(*parser.VectorSelector)
+		if !ok {
+			return nil
 		}
-		return nil
+
+		for _, p := range path {
+			call, ok := p.(*parser.Call)
+			if !ok {
+				continue
+			}
+			if call.Func.Name == "histogram_count" || call.Func.Name == "histogram_sum" {
+				n.SkipHistogramBuckets = true
+				break
+			}
+			if call.Func.Name == "histogram_quantile" || call.Func.Name == "histogram_fraction" {
+				n.SkipHistogramBuckets = false
+				break
+			}
+		}
+		return fmt.Errorf("stop")
 	})
 }
 
