@@ -882,7 +882,7 @@ func TestDBAllowOOOSamples(t *testing.T) {
 	require.NoError(t, db.Close())
 }
 
-func TestDBRejectOOOSamples(t *testing.T) {
+func TestDBOutOfOrderTimeWindow(t *testing.T) {
 	tc := []struct {
 		outOfOrderTimeWindow, firstTs, secondTs int64
 		reject                                  bool
