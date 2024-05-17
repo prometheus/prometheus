@@ -522,7 +522,7 @@ func TestBlockIndexReader_PostingsForLabelMatching(t *testing.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, files, "No chunk created.")
 
-		block, err := OpenBlock(nil, blockDir, nil)
+		block, err := OpenBlock(nil, blockDir, nil, nil)
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, block.Close()) })
 
