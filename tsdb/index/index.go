@@ -53,7 +53,7 @@ const (
 	seriesByteAlign = 16
 
 	// checkContextEveryNIterations is used in some tight loops to check if the context is done.
-	checkContextEveryNIterations = 100
+	checkContextEveryNIterations = 128
 )
 
 type indexWriterSeries struct {
