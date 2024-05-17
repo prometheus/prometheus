@@ -123,7 +123,7 @@ func (node *Call) String() string {
 func (node *MatrixSelectorBinOps) String() string {
 	res := ""
 	for _, op := range node.Ops {
-		res += op.Op.String()
+		res += fmt.Sprintf(" %s %s", op.Op.String(), op.Num.String())
 	}
 	return res
 }
@@ -159,7 +159,7 @@ func (node *MatrixSelector) String() string {
 		binaryOps = node.BinaryOps.String()
 	}
 
-	str := fmt.Sprintf("%s[%s]%s%s%s", vecSelector.String(), model.Duration(node.Range), at, offset, binaryOps)
+	str := fmt.Sprintf("%s[%s]%s%s%s", vecSelector.String(), model.Duration(node.Range), binaryOps, at, offset)
 
 	vecSelector.OriginalOffset, vecSelector.Timestamp, vecSelector.StartOrEnd = offsetVal, atVal, preproc
 

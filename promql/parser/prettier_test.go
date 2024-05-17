@@ -205,6 +205,12 @@ func TestCallExprPretty(t *testing.T) {
 )`,
 		},
 		{
+			in: `rate(foo[1m] != 0)`,
+			out: `rate(
+  foo[1m] != 0
+)`,
+		},
+		{
 			in: `sum_over_time(foo[1m])`,
 			out: `sum_over_time(
   foo[1m]
@@ -222,6 +228,15 @@ func TestCallExprPretty(t *testing.T) {
   0.9,
   rate(
     foo[1m]
+  )
+)`,
+		},
+		{
+			in: `histogram_quantile(0.9, rate(foo[1m] > 1 > 2))`,
+			out: `histogram_quantile(
+  0.9,
+  rate(
+    foo[1m] > 1 > 2
   )
 )`,
 		},
@@ -403,11 +418,11 @@ func TestExprPretty(t *testing.T) {
 )`,
 		},
 		{
-			in: `histogram_quantile(0.9, rate(foo[1m] @ start()))`,
+			in: `histogram_quantile(0.9, rate(foo[1m] != 0 @ start()))`,
 			out: `histogram_quantile(
   0.9,
   rate(
-    foo[1m] @ start()
+    foo[1m] != 0 @ start()
   )
 )`,
 		},
@@ -513,14 +528,14 @@ func TestExprPretty(t *testing.T) {
 )`,
 		},
 		{
-			in: `(node_timex_offset_seconds > 0.05 and deriv(node_timex_offset_seconds[5m]) >= 0) or (node_timex_offset_seconds < -0.05 and deriv(node_timex_offset_seconds[5m]) <= 0)`,
+			in: `(node_timex_offset_seconds > 0.05 and deriv(node_timex_offset_seconds[5m] != 0) >= 0) or (node_timex_offset_seconds < -0.05 and deriv(node_timex_offset_seconds[5m]) <= 0)`,
 			out: `  (
         node_timex_offset_seconds
       >
         0.05
     and
         deriv(
-          node_timex_offset_seconds[5m]
+          node_timex_offset_seconds[5m] != 0
         )
       >=
         0
