@@ -2061,7 +2061,7 @@ var testExpr = []struct {
 		},
 	},
 	{
-		input: `foo[5m30s] * 5 > 1.1`,
+		input: `foo[5m30s] * 5 > 1.1 atan2 10.1`,
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
 				Name: "foo",
@@ -2089,14 +2089,21 @@ var testExpr = []struct {
 							PosRange: posrange.PositionRange{Start: 17, End: 20},
 						},
 					},
+					{
+						ATAN2,
+						&NumberLiteral{
+							Val:      10.1,
+							PosRange: posrange.PositionRange{Start: 27, End: 31},
+						},
+					},
 				},
 				PosRange: posrange.PositionRange{
 					Start: 13,
-					End:   20,
+					End:   31,
 				},
 			},
 			Range:  5*time.Minute + 30*time.Second,
-			EndPos: 20,
+			EndPos: 31,
 		},
 	},
 	{

@@ -449,7 +449,7 @@ at_modifier_preprocessors: START | END;
  * Subquery and range selectors.
  */
 
-binary_op : ADD | DIV | EQLC | GTE | GTR | LSS | LTE | MOD | MUL | NEQ | POW | SUB;
+binary_op : ADD | DIV | EQLC | GTE | GTR | LSS | LTE | MOD | MUL | NEQ | POW | SUB | ATAN2;
 
 matrix_binary_ops : binary_op number_literal
                     {

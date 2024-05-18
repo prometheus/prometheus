@@ -5055,6 +5055,11 @@ func TestApplyBinaryOps(t *testing.T) {
 			[]float64{0.0, 1.0, 2.0},
 		},
 		{
+			[]op{{parser.ATAN2, 1.0}},
+			[]float64{0.0, 1.0},
+			[]float64{0, math.Pi / 4},
+		},
+		{
 			[]op{{parser.MUL, 2}, {parser.SUB, 1}, {parser.ADD, 5}, {parser.EQLC, 10}},
 			[]float64{1.0, 2.0, 3.0},
 			[]float64{10.0},
