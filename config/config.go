@@ -145,6 +145,7 @@ var (
 		ScrapeInterval:     model.Duration(1 * time.Minute),
 		ScrapeTimeout:      model.Duration(10 * time.Second),
 		EvaluationInterval: model.Duration(1 * time.Minute),
+		RuleQueryOffset:    model.Duration(0 * time.Minute),
 		// When native histogram feature flag is enabled, ScrapeProtocols default
 		// changes to DefaultNativeHistogramScrapeProtocols.
 		ScrapeProtocols: DefaultScrapeProtocols,
