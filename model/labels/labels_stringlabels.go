@@ -310,6 +310,13 @@ func yoloBytes(s string) (b []byte) {
 	return
 }
 
+// NewWithReadyData returns a new Labels with ready data.
+// The caller has to guarantee that data has been encoded.
+// Only stringlabels needs this method.
+func NewWithReadyData(data string) *Labels {
+	return &Labels{data: data}
+}
+
 // New returns a sorted Labels from the given labels.
 // The caller has to guarantee that all label names are unique.
 func New(ls ...Label) Labels {
