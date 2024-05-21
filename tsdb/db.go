@@ -383,16 +383,25 @@ var ErrClosed = errors.New("db already closed")
 // Current implementation doesn't support concurrency so
 // all API calls should happen in the same go routine.
 type DBReadOnly struct {
-	logger  log.Logger
-	dir     string
-	closers []io.Closer
-	closed  chan struct{}
+	logger     log.Logger
+	dir        string
+	sandboxDir string
+	closers    []io.Closer
+	closed     chan struct{}
 }
 
 // OpenDBReadOnly opens DB in the given directory for read only operations.
-func OpenDBReadOnly(dir string, l log.Logger) (*DBReadOnly, error) {
+func OpenDBReadOnly(dir, sandboxDirRoot string, l log.Logger) (*DBReadOnly, error) {
 	if _, err := os.Stat(dir); err != nil {
 		return nil, fmt.Errorf("opening the db dir: %w", err)
+	}
+
+	if sandboxDirRoot == "" {
+		sandboxDirRoot = dir
+	}
+	sandboxDir, err := os.MkdirTemp(sandboxDirRoot, "tmp_dbro_sandbox")
+	if err != nil {
+		return nil, fmt.Errorf("setting up sandbox dir: %w", err)
 	}
 
 	if l == nil {
@@ -400,9 +409,10 @@ func OpenDBReadOnly(dir string, l log.Logger) (*DBReadOnly, error) {
 	}
 
 	return &DBReadOnly{
-		logger: l,
-		dir:    dir,
-		closed: make(chan struct{}),
+		logger:     l,
+		dir:        dir,
+		sandboxDir: sandboxDir,
+		closed:     make(chan struct{}),
 	}, nil
 }
 
@@ -491,7 +501,14 @@ func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQue
 	}
 
 	opts := DefaultHeadOptions()
-	opts.ChunkDirRoot = db.dir
+	// Hard link the chunk files to a dir in db.sandboxDir in case the Head needs to truncate some of them
+	// or cut new ones while replaying the WAL.
+	// See https://github.com/prometheus/prometheus/issues/11618.
+	err = chunks.HardLinkChunkFiles(mmappedChunksDir(db.dir), mmappedChunksDir(db.sandboxDir))
+	if err != nil {
+		return nil, err
+	}
+	opts.ChunkDirRoot = db.sandboxDir
 	head, err := NewHead(nil, db.logger, nil, nil, opts, NewHeadStats())
 	if err != nil {
 		return nil, err
@@ -519,7 +536,7 @@ func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQue
 			}
 		}
 		opts := DefaultHeadOptions()
-		opts.ChunkDirRoot = db.dir
+		opts.ChunkDirRoot = db.sandboxDir
 		head, err = NewHead(nil, db.logger, w, wbl, opts, NewHeadStats())
 		if err != nil {
 			return nil, err
@@ -690,8 +707,14 @@ func (db *DBReadOnly) Block(blockID string) (BlockReader, error) {
 	return block, nil
 }
 
-// Close all block readers.
+// Close all block readers and delete the sandbox dir.
 func (db *DBReadOnly) Close() error {
+	defer func() {
+		// Delete the temporary sandbox directory that was created when opening the DB.
+		if err := os.RemoveAll(db.sandboxDir); err != nil {
+			level.Error(db.logger).Log("msg", "delete sandbox dir", "err", err)
+		}
+	}()
 	select {
 	case <-db.closed:
 		return ErrClosed
