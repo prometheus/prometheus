@@ -2247,6 +2247,9 @@ attach_metadata:
 # Attaches node metadata to discovered targets. Valid for roles: pod, endpoints, endpointslice.
 # When set to true, Prometheus must have permissions to get Nodes.
   [ node: <boolean> | default = false ]
+# Attaches namespace metadata to discovered targets. Valid for roles: pod, endpoints, endpointslice.
+# When set to true, Prometheus must have permissions to get Namespaces.
+  [ namespace: <boolean> | default = false ]
 ```
 
 See [this example Prometheus configuration file](/documentation/examples/prometheus-kubernetes.yml)

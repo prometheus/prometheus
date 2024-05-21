@@ -95,11 +95,15 @@ func makeMultiPortPods() *v1.Pod {
 	}
 }
 
-func makePods() *v1.Pod {
+func makePods(namespace ...string) *v1.Pod {
+	namespaceName := "default"
+	if len(namespace) == 1 {
+		namespaceName = namespace[0]
+	}
 	return &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testpod",
-			Namespace: "default",
+			Namespace: namespaceName,
 			UID:       types.UID("abc123"),
 		},
 		Spec: v1.PodSpec{
@@ -232,6 +236,19 @@ func expectedPodTargetGroupsWithNodeMeta(ns, nodeName string, nodeLabels map[str
 		for k, v := range nodeLabels {
 			tg.Labels[model.LabelName("__meta_kubernetes_node_label_"+k)] = lv(v)
 			tg.Labels[model.LabelName("__meta_kubernetes_node_labelpresent_"+k)] = lv("true")
+		}
+	}
+
+	return result
+}
+
+func expectedPodTargetGroupsWithNamespaceMeta(ns string, namespaceLabels map[string]string) map[string]*targetgroup.Group {
+	result := expectedPodTargetGroups(ns)
+	for _, tg := range result {
+		tg.Labels["__meta_kubernetes_namespace_name"] = lv(ns)
+		for k, v := range namespaceLabels {
+			tg.Labels[model.LabelName("__meta_kubernetes_namespace_label_"+k)] = lv(v)
+			tg.Labels[model.LabelName("__meta_kubernetes_namespace_labelpresent_"+k)] = lv("true")
 		}
 	}
 
@@ -505,5 +522,51 @@ func TestPodDiscoveryWithNodeMetadataUpdateNode(t *testing.T) {
 		},
 		expectedMaxItems: 2,
 		expectedRes:      expectedPodTargetGroupsWithNodeMeta("default", "testnode", nodeLbls),
+	}.Run(t)
+}
+
+func TestPodDiscoveryWithNamespaceMetadata(t *testing.T) {
+	attachMetadata := AttachMetadataConfig{Namespace: true}
+	namespaceName := "prom-test"
+	namespaceLabels := map[string]string{"foo": "bar"}
+	namespaceAnnotations := map[string]string{}
+	n, c := makeDiscoveryWithMetadata(RolePod, NamespaceDiscovery{}, attachMetadata)
+	namespace := makeNamespace(namespaceName, namespaceLabels, namespaceAnnotations)
+	c.CoreV1().Namespaces().Create(context.Background(), namespace, metav1.CreateOptions{})
+
+	k8sDiscoveryTest{
+		discovery: n,
+		afterStart: func() {
+			pods := makePods(namespaceName)
+			c.CoreV1().Pods(pods.Namespace).Create(context.Background(), pods, metav1.CreateOptions{})
+		},
+		expectedMaxItems: 1,
+		expectedRes:      expectedPodTargetGroupsWithNamespaceMeta("prom-test", namespaceLabels),
+	}.Run(t)
+}
+
+func TestPodDiscoveryWithNamespaceMetadataUpdateNode(t *testing.T) {
+	namespaceName := "prom-test"
+	namespaceLabels := map[string]string{"foo": "bar"}
+	updatedNamespaceLabels := map[string]string{"bar": "foo"}
+	namespaceAnnotations := map[string]string{}
+	attachMetadata := AttachMetadataConfig{Namespace: true}
+	n, c := makeDiscoveryWithMetadata(RolePod, NamespaceDiscovery{}, attachMetadata)
+
+	k8sDiscoveryTest{
+		discovery: n,
+		beforeRun: func() {
+			namespace := makeNamespace(namespaceName, namespaceLabels, namespaceAnnotations)
+			c.CoreV1().Namespaces().Create(context.Background(), namespace, metav1.CreateOptions{})
+		},
+		afterStart: func() {
+			pods := makePods(namespaceName)
+			c.CoreV1().Pods(pods.Namespace).Create(context.Background(), pods, metav1.CreateOptions{})
+
+			namespace := makeNamespace(namespaceName, updatedNamespaceLabels, namespaceAnnotations)
+			c.CoreV1().Namespaces().Update(context.Background(), namespace, metav1.UpdateOptions{})
+		},
+		expectedMaxItems: 1,
+		expectedRes:      expectedPodTargetGroupsWithNamespaceMeta("prom-test", namespaceLabels),
 	}.Run(t)
 }

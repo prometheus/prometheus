@@ -82,6 +82,7 @@ type Role string
 // The valid options for Role.
 const (
 	RoleNode          Role = "node"
+	RoleNamespace     Role = "namespace"
 	RolePod           Role = "pod"
 	RoleService       Role = "service"
 	RoleEndpoint      Role = "endpoints"
@@ -144,6 +145,7 @@ func (c *SDConfig) SetDirectory(dir string) {
 
 type roleSelector struct {
 	node          resourceSelector
+	namespace     resourceSelector
 	pod           resourceSelector
 	service       resourceSelector
 	endpoints     resourceSelector
@@ -165,7 +167,8 @@ type resourceSelector struct {
 // AttachMetadataConfig is the configuration for attaching additional metadata
 // coming from nodes on which the targets are scheduled.
 type AttachMetadataConfig struct {
-	Node bool `yaml:"node"`
+	Node      bool `yaml:"node"`
+	Namespace bool `yaml:"node"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -482,12 +485,18 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				nodeInf = d.newNodeInformer(context.Background())
 				go nodeInf.Run(ctx.Done())
 			}
+			var namespaceInf cache.SharedInformer
+			if d.attachMetadata.Namespace {
+				namespaceInf = d.newNamespaceInformer(context.Background())
+				go namespaceInf.Run(ctx.Done())
+			}
 			eps := NewEndpointSlice(
 				log.With(d.logger, "role", "endpointslice"),
 				informer,
 				d.mustNewSharedInformer(slw, &apiv1.Service{}, resyncDisabled),
 				d.mustNewSharedInformer(plw, &apiv1.Pod{}, resyncDisabled),
 				nodeInf,
+				namespaceInf,
 				d.metrics.eventCount,
 			)
 			d.discoverers = append(d.discoverers, eps)
@@ -541,6 +550,11 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				nodeInf = d.newNodeInformer(ctx)
 				go nodeInf.Run(ctx.Done())
 			}
+			var namespaceInf cache.SharedInformer
+			if d.attachMetadata.Namespace {
+				namespaceInf = d.newNamespaceInformer(ctx)
+				go namespaceInf.Run(ctx.Done())
+			}
 
 			eps := NewEndpoints(
 				log.With(d.logger, "role", "endpoint"),
@@ -548,6 +562,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				d.mustNewSharedInformer(slw, &apiv1.Service{}, resyncDisabled),
 				d.mustNewSharedInformer(plw, &apiv1.Pod{}, resyncDisabled),
 				nodeInf,
+				namespaceInf,
 				d.metrics.eventCount,
 			)
 			d.discoverers = append(d.discoverers, eps)
@@ -561,7 +576,11 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			nodeInformer = d.newNodeInformer(ctx)
 			go nodeInformer.Run(ctx.Done())
 		}
-
+		var namespaceInformer cache.SharedInformer
+		if d.attachMetadata.Namespace {
+			namespaceInformer = d.newNamespaceInformer(ctx)
+			go namespaceInformer.Run(ctx.Done())
+		}
 		for _, namespace := range namespaces {
 			p := d.client.CoreV1().Pods(namespace)
 			plw := &cache.ListWatch{
@@ -580,6 +599,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				log.With(d.logger, "role", "pod"),
 				d.newPodsByNodeInformer(plw),
 				nodeInformer,
+				namespaceInformer,
 				d.metrics.eventCount,
 			)
 			d.discoverers = append(d.discoverers, pod)
@@ -748,6 +768,22 @@ func (d *Discovery) newNodeInformer(ctx context.Context) cache.SharedInformer {
 		},
 	}
 	return d.mustNewSharedInformer(nlw, &apiv1.Node{}, resyncDisabled)
+}
+
+func (d *Discovery) newNamespaceInformer(ctx context.Context) cache.SharedInformer {
+	nlw := &cache.ListWatch{
+		ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+			options.FieldSelector = d.selectors.namespace.field
+			options.LabelSelector = d.selectors.namespace.label
+			return d.client.CoreV1().Namespaces().List(ctx, options)
+		},
+		WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+			options.FieldSelector = d.selectors.node.field
+			options.LabelSelector = d.selectors.node.label
+			return d.client.CoreV1().Namespaces().Watch(ctx, options)
+		},
+	}
+	return cache.NewSharedInformer(nlw, &apiv1.Node{}, resyncDisabled)
 }
 
 func (d *Discovery) newPodsByNodeInformer(plw *cache.ListWatch) cache.SharedIndexInformer {

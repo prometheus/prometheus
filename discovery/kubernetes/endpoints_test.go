@@ -26,12 +26,16 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
-func makeEndpoints() *v1.Endpoints {
+const (
+	defaultTestNamespace = "default"
+)
+
+func makeEndpoints(namespace string) *v1.Endpoints {
 	nodeName := "foobar"
 	return &v1.Endpoints{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testendpoints",
-			Namespace: "default",
+			Namespace: namespace,
 			Annotations: map[string]string{
 				"test.annotation": "test",
 			},
@@ -100,7 +104,7 @@ func TestEndpointsDiscoveryBeforeRun(t *testing.T) {
 	k8sDiscoveryTest{
 		discovery: n,
 		beforeRun: func() {
-			obj := makeEndpoints()
+			obj := makeEndpoints(defaultTestNamespace)
 			c.CoreV1().Endpoints(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
 		},
 		expectedMaxItems: 1,
@@ -137,7 +141,7 @@ func TestEndpointsDiscoveryBeforeRun(t *testing.T) {
 					},
 				},
 				Labels: model.LabelSet{
-					"__meta_kubernetes_namespace":                                   "default",
+					"__meta_kubernetes_namespace":                                   defaultTestNamespace,
 					"__meta_kubernetes_endpoints_name":                              "testendpoints",
 					"__meta_kubernetes_endpoints_annotation_test_annotation":        "test",
 					"__meta_kubernetes_endpoints_annotationpresent_test_annotation": "true",
@@ -152,7 +156,7 @@ func TestEndpointsDiscoveryAdd(t *testing.T) {
 	obj := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testpod",
-			Namespace: "default",
+			Namespace: defaultTestNamespace,
 			UID:       types.UID("deadbeef"),
 		},
 		Spec: v1.PodSpec{
@@ -195,7 +199,7 @@ func TestEndpointsDiscoveryAdd(t *testing.T) {
 			obj := &v1.Endpoints{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "testendpoints",
-					Namespace: "default",
+					Namespace: defaultTestNamespace,
 				},
 				Subsets: []v1.EndpointSubset{
 					{
@@ -205,7 +209,7 @@ func TestEndpointsDiscoveryAdd(t *testing.T) {
 								TargetRef: &v1.ObjectReference{
 									Kind:      "Pod",
 									Name:      "testpod",
-									Namespace: "default",
+									Namespace: defaultTestNamespace,
 								},
 							},
 						},
@@ -263,7 +267,7 @@ func TestEndpointsDiscoveryAdd(t *testing.T) {
 				},
 				Labels: model.LabelSet{
 					"__meta_kubernetes_endpoints_name": "testendpoints",
-					"__meta_kubernetes_namespace":      "default",
+					"__meta_kubernetes_namespace":      defaultTestNamespace,
 				},
 				Source: "endpoints/default/testendpoints",
 			},
@@ -272,12 +276,12 @@ func TestEndpointsDiscoveryAdd(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryDelete(t *testing.T) {
-	n, c := makeDiscovery(RoleEndpoint, NamespaceDiscovery{}, makeEndpoints())
+	n, c := makeDiscovery(RoleEndpoint, NamespaceDiscovery{}, makeEndpoints(defaultTestNamespace))
 
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
-			obj := makeEndpoints()
+			obj := makeEndpoints(defaultTestNamespace)
 			c.CoreV1().Endpoints(obj.Namespace).Delete(context.Background(), obj.Name, metav1.DeleteOptions{})
 		},
 		expectedMaxItems: 2,
@@ -290,7 +294,7 @@ func TestEndpointsDiscoveryDelete(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryUpdate(t *testing.T) {
-	n, c := makeDiscovery(RoleEndpoint, NamespaceDiscovery{}, makeEndpoints())
+	n, c := makeDiscovery(RoleEndpoint, NamespaceDiscovery{}, makeEndpoints(defaultTestNamespace))
 
 	k8sDiscoveryTest{
 		discovery: n,
@@ -298,7 +302,7 @@ func TestEndpointsDiscoveryUpdate(t *testing.T) {
 			obj := &v1.Endpoints{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "testendpoints",
-					Namespace: "default",
+					Namespace: defaultTestNamespace,
 				},
 				Subsets: []v1.EndpointSubset{
 					{
@@ -351,7 +355,7 @@ func TestEndpointsDiscoveryUpdate(t *testing.T) {
 					},
 				},
 				Labels: model.LabelSet{
-					"__meta_kubernetes_namespace":      "default",
+					"__meta_kubernetes_namespace":      defaultTestNamespace,
 					"__meta_kubernetes_endpoints_name": "testendpoints",
 				},
 				Source: "endpoints/default/testendpoints",
@@ -361,7 +365,7 @@ func TestEndpointsDiscoveryUpdate(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryEmptySubsets(t *testing.T) {
-	n, c := makeDiscovery(RoleEndpoint, NamespaceDiscovery{}, makeEndpoints())
+	n, c := makeDiscovery(RoleEndpoint, NamespaceDiscovery{}, makeEndpoints(defaultTestNamespace))
 
 	k8sDiscoveryTest{
 		discovery: n,
@@ -369,7 +373,7 @@ func TestEndpointsDiscoveryEmptySubsets(t *testing.T) {
 			obj := &v1.Endpoints{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "testendpoints",
-					Namespace: "default",
+					Namespace: defaultTestNamespace,
 				},
 				Subsets: []v1.EndpointSubset{},
 			}
@@ -379,7 +383,7 @@ func TestEndpointsDiscoveryEmptySubsets(t *testing.T) {
 		expectedRes: map[string]*targetgroup.Group{
 			"endpoints/default/testendpoints": {
 				Labels: model.LabelSet{
-					"__meta_kubernetes_namespace":      "default",
+					"__meta_kubernetes_namespace":      defaultTestNamespace,
 					"__meta_kubernetes_endpoints_name": "testendpoints",
 				},
 				Source: "endpoints/default/testendpoints",
@@ -389,7 +393,7 @@ func TestEndpointsDiscoveryEmptySubsets(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryWithService(t *testing.T) {
-	n, c := makeDiscovery(RoleEndpoint, NamespaceDiscovery{}, makeEndpoints())
+	n, c := makeDiscovery(RoleEndpoint, NamespaceDiscovery{}, makeEndpoints(defaultTestNamespace))
 
 	k8sDiscoveryTest{
 		discovery: n,
@@ -397,7 +401,7 @@ func TestEndpointsDiscoveryWithService(t *testing.T) {
 			obj := &v1.Service{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "testendpoints",
-					Namespace: "default",
+					Namespace: defaultTestNamespace,
 					Labels: map[string]string{
 						"app/name": "test",
 					},
@@ -439,7 +443,7 @@ func TestEndpointsDiscoveryWithService(t *testing.T) {
 					},
 				},
 				Labels: model.LabelSet{
-					"__meta_kubernetes_namespace":                                   "default",
+					"__meta_kubernetes_namespace":                                   defaultTestNamespace,
 					"__meta_kubernetes_endpoints_name":                              "testendpoints",
 					"__meta_kubernetes_service_label_app_name":                      "test",
 					"__meta_kubernetes_service_labelpresent_app_name":               "true",
@@ -454,7 +458,7 @@ func TestEndpointsDiscoveryWithService(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryWithServiceUpdate(t *testing.T) {
-	n, c := makeDiscovery(RoleEndpoint, NamespaceDiscovery{}, makeEndpoints())
+	n, c := makeDiscovery(RoleEndpoint, NamespaceDiscovery{}, makeEndpoints(defaultTestNamespace))
 
 	k8sDiscoveryTest{
 		discovery: n,
@@ -462,7 +466,7 @@ func TestEndpointsDiscoveryWithServiceUpdate(t *testing.T) {
 			obj := &v1.Service{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "testendpoints",
-					Namespace: "default",
+					Namespace: defaultTestNamespace,
 					Labels: map[string]string{
 						"app/name": "test",
 					},
@@ -474,7 +478,7 @@ func TestEndpointsDiscoveryWithServiceUpdate(t *testing.T) {
 			obj := &v1.Service{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "testendpoints",
-					Namespace: "default",
+					Namespace: defaultTestNamespace,
 					Labels: map[string]string{
 						"app/name":  "svc",
 						"component": "testing",
@@ -517,7 +521,7 @@ func TestEndpointsDiscoveryWithServiceUpdate(t *testing.T) {
 					},
 				},
 				Labels: model.LabelSet{
-					"__meta_kubernetes_namespace":                                   "default",
+					"__meta_kubernetes_namespace":                                   defaultTestNamespace,
 					"__meta_kubernetes_endpoints_name":                              "testendpoints",
 					"__meta_kubernetes_service_label_app_name":                      "svc",
 					"__meta_kubernetes_service_labelpresent_app_name":               "true",
@@ -542,13 +546,13 @@ func TestEndpointsDiscoveryWithNodeMetadata(t *testing.T) {
 	svc := &v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testendpoints",
-			Namespace: "default",
+			Namespace: defaultTestNamespace,
 			Labels: map[string]string{
 				"app/name": "test",
 			},
 		},
 	}
-	n, _ := makeDiscoveryWithMetadata(RoleEndpoint, NamespaceDiscovery{}, metadataConfig, makeEndpoints(), svc, node1, node2)
+	n, _ := makeDiscoveryWithMetadata(RoleEndpoint, NamespaceDiscovery{}, metadataConfig, makeEndpoints(defaultTestNamespace), svc, node1, node2)
 
 	k8sDiscoveryTest{
 		discovery:        n,
@@ -592,7 +596,7 @@ func TestEndpointsDiscoveryWithNodeMetadata(t *testing.T) {
 					},
 				},
 				Labels: model.LabelSet{
-					"__meta_kubernetes_namespace":                                   "default",
+					"__meta_kubernetes_namespace":                                   defaultTestNamespace,
 					"__meta_kubernetes_endpoints_name":                              "testendpoints",
 					"__meta_kubernetes_service_label_app_name":                      "test",
 					"__meta_kubernetes_service_labelpresent_app_name":               "true",
@@ -615,13 +619,13 @@ func TestEndpointsDiscoveryWithUpdatedNodeMetadata(t *testing.T) {
 	svc := &v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testendpoints",
-			Namespace: "default",
+			Namespace: defaultTestNamespace,
 			Labels: map[string]string{
 				"app/name": "test",
 			},
 		},
 	}
-	n, c := makeDiscoveryWithMetadata(RoleEndpoint, NamespaceDiscovery{}, metadataConfig, makeEndpoints(), node1, node2, svc)
+	n, c := makeDiscoveryWithMetadata(RoleEndpoint, NamespaceDiscovery{}, metadataConfig, makeEndpoints(defaultTestNamespace), node1, node2, svc)
 
 	k8sDiscoveryTest{
 		discovery: n,
@@ -669,7 +673,7 @@ func TestEndpointsDiscoveryWithUpdatedNodeMetadata(t *testing.T) {
 					},
 				},
 				Labels: model.LabelSet{
-					"__meta_kubernetes_namespace":                                   "default",
+					"__meta_kubernetes_namespace":                                   defaultTestNamespace,
 					"__meta_kubernetes_endpoints_name":                              "testendpoints",
 					"__meta_kubernetes_service_label_app_name":                      "test",
 					"__meta_kubernetes_service_labelpresent_app_name":               "true",
@@ -683,8 +687,186 @@ func TestEndpointsDiscoveryWithUpdatedNodeMetadata(t *testing.T) {
 	}.Run(t)
 }
 
+func TestEndpointsDiscoveryWithNamespaceMetadata(t *testing.T) {
+	metadataConfig := AttachMetadataConfig{Namespace: true}
+	namespaceName := "prom-test"
+	namespaceLabels := map[string]string{"foo": "bar"}
+	namespaceAnnotations := map[string]string{"bar": "foo"}
+	namespace := makeNamespace(namespaceName, namespaceLabels, namespaceAnnotations)
+	svc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "testendpoints",
+			Namespace: namespaceName,
+			Labels: map[string]string{
+				"app/name": "test",
+			},
+		},
+	}
+	n, _ := makeDiscoveryWithMetadata(RoleEndpoint, NamespaceDiscovery{}, metadataConfig, makeEndpoints(namespaceName), svc, namespace)
+
+	k8sDiscoveryTest{
+		discovery:        n,
+		expectedMaxItems: 1,
+		expectedRes: map[string]*targetgroup.Group{
+			"endpoints/prom-test/testendpoints": {
+				Targets: []model.LabelSet{
+					{
+						"__address__":                                       "1.2.3.4:9000",
+						"__meta_kubernetes_endpoint_hostname":               "testendpoint1",
+						"__meta_kubernetes_endpoint_node_name":              "foobar",
+						"__meta_kubernetes_endpoint_port_name":              "testport",
+						"__meta_kubernetes_endpoint_port_protocol":          "TCP",
+						"__meta_kubernetes_endpoint_ready":                  "true",
+						"__meta_kubernetes_namespace_label_foo":             "bar",
+						"__meta_kubernetes_namespace_labelpresent_foo":      "true",
+						"__meta_kubernetes_namespace_annotation_bar":        "foo",
+						"__meta_kubernetes_namespace_annotationpresent_bar": "true",
+						"__meta_kubernetes_namespace_name":                  "prom-test",
+					},
+					{
+						"__address__":                                       "2.3.4.5:9001",
+						"__meta_kubernetes_endpoint_port_name":              "testport",
+						"__meta_kubernetes_endpoint_port_protocol":          "TCP",
+						"__meta_kubernetes_endpoint_ready":                  "true",
+						"__meta_kubernetes_namespace_label_foo":             "bar",
+						"__meta_kubernetes_namespace_labelpresent_foo":      "true",
+						"__meta_kubernetes_namespace_annotation_bar":        "foo",
+						"__meta_kubernetes_namespace_annotationpresent_bar": "true",
+						"__meta_kubernetes_namespace_name":                  "prom-test",
+					},
+					{
+						"__address__":                                       "2.3.4.5:9001",
+						"__meta_kubernetes_endpoint_port_name":              "testport",
+						"__meta_kubernetes_endpoint_port_protocol":          "TCP",
+						"__meta_kubernetes_endpoint_ready":                  "false",
+						"__meta_kubernetes_namespace_label_foo":             "bar",
+						"__meta_kubernetes_namespace_labelpresent_foo":      "true",
+						"__meta_kubernetes_namespace_annotation_bar":        "foo",
+						"__meta_kubernetes_namespace_annotationpresent_bar": "true",
+						"__meta_kubernetes_namespace_name":                  "prom-test",
+					},
+					{
+						"__address__": "6.7.8.9:9002",
+						"__meta_kubernetes_endpoint_address_target_kind":    "Node",
+						"__meta_kubernetes_endpoint_address_target_name":    "barbaz",
+						"__meta_kubernetes_endpoint_port_name":              "testport",
+						"__meta_kubernetes_endpoint_port_protocol":          "TCP",
+						"__meta_kubernetes_endpoint_ready":                  "true",
+						"__meta_kubernetes_namespace_label_foo":             "bar",
+						"__meta_kubernetes_namespace_labelpresent_foo":      "true",
+						"__meta_kubernetes_namespace_annotation_bar":        "foo",
+						"__meta_kubernetes_namespace_annotationpresent_bar": "true",
+						"__meta_kubernetes_namespace_name":                  "prom-test",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_namespace":                                   "prom-test",
+					"__meta_kubernetes_endpoints_name":                              "testendpoints",
+					"__meta_kubernetes_service_label_app_name":                      "test",
+					"__meta_kubernetes_service_labelpresent_app_name":               "true",
+					"__meta_kubernetes_service_name":                                "testendpoints",
+					"__meta_kubernetes_endpoints_annotation_test_annotation":        "test",
+					"__meta_kubernetes_endpoints_annotationpresent_test_annotation": "true",
+				},
+				Source: "endpoints/prom-test/testendpoints",
+			},
+		},
+	}.Run(t)
+}
+
+func TestEndpointsDiscoveryWithUpdatedNamespaceMetadata(t *testing.T) {
+	metadataConfig := AttachMetadataConfig{Namespace: true}
+	namespaceName := "prom-test"
+	namespaceLabels := map[string]string{"foo": "bar"}
+	namespaceAnnotations := map[string]string{"bar": "foo"}
+	namespace := makeNamespace(namespaceName, namespaceLabels, namespaceAnnotations)
+	svc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "testendpoints",
+			Namespace: namespaceName,
+			Labels: map[string]string{
+				"app/name": "test",
+			},
+		},
+	}
+	n, c := makeDiscoveryWithMetadata(RoleEndpoint, NamespaceDiscovery{}, metadataConfig, makeEndpoints(namespaceName), svc, namespace)
+
+	k8sDiscoveryTest{
+		discovery:        n,
+		expectedMaxItems: 1,
+		afterStart: func() {
+			namespace.Labels["foo"] = "foobar"
+			c.CoreV1().Namespaces().Update(context.Background(), namespace, metav1.UpdateOptions{})
+		},
+		expectedRes: map[string]*targetgroup.Group{
+			"endpoints/prom-test/testendpoints": {
+				Targets: []model.LabelSet{
+					{
+						"__address__":                                       "1.2.3.4:9000",
+						"__meta_kubernetes_endpoint_hostname":               "testendpoint1",
+						"__meta_kubernetes_endpoint_node_name":              "foobar",
+						"__meta_kubernetes_endpoint_port_name":              "testport",
+						"__meta_kubernetes_endpoint_port_protocol":          "TCP",
+						"__meta_kubernetes_endpoint_ready":                  "true",
+						"__meta_kubernetes_namespace_label_foo":             "bar",
+						"__meta_kubernetes_namespace_labelpresent_foo":      "true",
+						"__meta_kubernetes_namespace_annotation_bar":        "foo",
+						"__meta_kubernetes_namespace_annotationpresent_bar": "true",
+						"__meta_kubernetes_namespace_name":                  "prom-test",
+					},
+					{
+						"__address__":                                       "2.3.4.5:9001",
+						"__meta_kubernetes_endpoint_port_name":              "testport",
+						"__meta_kubernetes_endpoint_port_protocol":          "TCP",
+						"__meta_kubernetes_endpoint_ready":                  "true",
+						"__meta_kubernetes_namespace_label_foo":             "bar",
+						"__meta_kubernetes_namespace_labelpresent_foo":      "true",
+						"__meta_kubernetes_namespace_annotation_bar":        "foo",
+						"__meta_kubernetes_namespace_annotationpresent_bar": "true",
+						"__meta_kubernetes_namespace_name":                  "prom-test",
+					},
+					{
+						"__address__":                                       "2.3.4.5:9001",
+						"__meta_kubernetes_endpoint_port_name":              "testport",
+						"__meta_kubernetes_endpoint_port_protocol":          "TCP",
+						"__meta_kubernetes_endpoint_ready":                  "false",
+						"__meta_kubernetes_namespace_label_foo":             "bar",
+						"__meta_kubernetes_namespace_labelpresent_foo":      "true",
+						"__meta_kubernetes_namespace_annotation_bar":        "foo",
+						"__meta_kubernetes_namespace_annotationpresent_bar": "true",
+						"__meta_kubernetes_namespace_name":                  "prom-test",
+					},
+					{
+						"__address__": "6.7.8.9:9002",
+						"__meta_kubernetes_endpoint_address_target_kind":    "Node",
+						"__meta_kubernetes_endpoint_address_target_name":    "barbaz",
+						"__meta_kubernetes_endpoint_port_name":              "testport",
+						"__meta_kubernetes_endpoint_port_protocol":          "TCP",
+						"__meta_kubernetes_endpoint_ready":                  "true",
+						"__meta_kubernetes_namespace_label_foo":             "bar",
+						"__meta_kubernetes_namespace_labelpresent_foo":      "true",
+						"__meta_kubernetes_namespace_annotation_bar":        "foo",
+						"__meta_kubernetes_namespace_annotationpresent_bar": "true",
+						"__meta_kubernetes_namespace_name":                  "prom-test",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_namespace":                                   "prom-test",
+					"__meta_kubernetes_endpoints_name":                              "testendpoints",
+					"__meta_kubernetes_service_label_app_name":                      "test",
+					"__meta_kubernetes_service_labelpresent_app_name":               "true",
+					"__meta_kubernetes_service_name":                                "testendpoints",
+					"__meta_kubernetes_endpoints_annotation_test_annotation":        "test",
+					"__meta_kubernetes_endpoints_annotationpresent_test_annotation": "true",
+				},
+				Source: "endpoints/prom-test/testendpoints",
+			},
+		},
+	}.Run(t)
+}
+
 func TestEndpointsDiscoveryNamespaces(t *testing.T) {
-	epOne := makeEndpoints()
+	epOne := makeEndpoints(defaultTestNamespace)
 	epOne.Namespace = "ns1"
 	objs := []runtime.Object{
 		epOne,
@@ -834,10 +1016,10 @@ func TestEndpointsDiscoveryNamespaces(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryOwnNamespace(t *testing.T) {
-	epOne := makeEndpoints()
+	epOne := makeEndpoints(defaultTestNamespace)
 	epOne.Namespace = "own-ns"
 
-	epTwo := makeEndpoints()
+	epTwo := makeEndpoints(defaultTestNamespace)
 	epTwo.Namespace = "non-own-ns"
 
 	podOne := &v1.Pod{
@@ -928,7 +1110,7 @@ func TestEndpointsDiscoveryOwnNamespace(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryEmptyPodStatus(t *testing.T) {
-	ep := makeEndpoints()
+	ep := makeEndpoints(defaultTestNamespace)
 	ep.Namespace = "ns"
 
 	pod := &v1.Pod{
@@ -976,7 +1158,7 @@ func TestEndpointsDiscoveryUpdatePod(t *testing.T) {
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testpod",
-			Namespace: "default",
+			Namespace: defaultTestNamespace,
 			UID:       types.UID("deadbeef"),
 		},
 		Spec: v1.PodSpec{
@@ -1012,7 +1194,7 @@ func TestEndpointsDiscoveryUpdatePod(t *testing.T) {
 		&v1.Endpoints{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "testendpoints",
-				Namespace: "default",
+				Namespace: defaultTestNamespace,
 			},
 			Subsets: []v1.EndpointSubset{
 				{
@@ -1024,7 +1206,7 @@ func TestEndpointsDiscoveryUpdatePod(t *testing.T) {
 							TargetRef: &v1.ObjectReference{
 								Kind:      "Pod",
 								Name:      "testpod",
-								Namespace: "default",
+								Namespace: defaultTestNamespace,
 							},
 						},
 					},
@@ -1081,7 +1263,7 @@ func TestEndpointsDiscoveryUpdatePod(t *testing.T) {
 					},
 				},
 				Labels: model.LabelSet{
-					"__meta_kubernetes_namespace":      "default",
+					"__meta_kubernetes_namespace":      defaultTestNamespace,
 					"__meta_kubernetes_endpoints_name": "testendpoints",
 				},
 				Source: "endpoints/default/testendpoints",
