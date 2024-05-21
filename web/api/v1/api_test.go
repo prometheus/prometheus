@@ -1060,6 +1060,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 		responseLen           int // If nonzero, check only the length; `response` is ignored.
 		responseMetadataTotal int
 		responseAsJSON        string
+		warningsCount         int
 		errType               errorType
 		sorter                func(interface{})
 		metadata              []targetMetadata
@@ -1417,7 +1418,17 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				"match[]": []string{"test_metric1"},
 				"limit":   []string{"1"},
 			},
-			responseLen: 1, // API does not specify which particular value will come back.
+			responseLen:   1, // API does not specify which particular value will come back.
+			warningsCount: 1,
+		},
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{"test_metric1"},
+				"limit":   []string{"2"},
+			},
+			responseLen:   2, // API does not specify which particular value will come back.
+			warningsCount: 0, // No warnings if limit isn't exceeded.
 		},
 		// Missing match[] query params in series requests.
 		{
@@ -2700,7 +2711,19 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				query: url.Values{
 					"limit": []string{"2"},
 				},
-				responseLen: 2, // API does not specify which particular values will come back.
+				responseLen:   2, // API does not specify which particular values will come back.
+				warningsCount: 1,
+			},
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "__name__",
+				},
+				query: url.Values{
+					"limit": []string{"4"},
+				},
+				responseLen:   4, // API does not specify which particular values will come back.
+				warningsCount: 0, // No warnings if limit isn't exceeded.
 			},
 			// Label names.
 			{
@@ -2847,7 +2870,16 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				query: url.Values{
 					"limit": []string{"2"},
 				},
-				responseLen: 2, // API does not specify which particular values will come back.
+				responseLen:   2, // API does not specify which particular values will come back.
+				warningsCount: 1,
+			},
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"limit": []string{"3"},
+				},
+				responseLen:   3, // API does not specify which particular values will come back.
+				warningsCount: 0, // No warnings if limit isn't exceeded.
 			},
 		}...)
 	}
@@ -2924,6 +2956,8 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						require.NoError(t, err)
 						require.JSONEq(t, test.responseAsJSON, string(s))
 					}
+
+					require.Len(t, res.warnings, test.warningsCount)
 				})
 			}
 		})
