@@ -34,7 +34,7 @@ message Request {
   // items in a Request message, like labels and metadata items. To decode
   // each of those items, referenced, by "ref(s)" suffix, you need to lookup the
   // actual string by index from symbols array. The order of strings is up to
-  // the client, server should not assume any particular encoding.
+  // the sender. The receiver should not assume any particular encoding.
   repeated string symbols = 1;
   // timeseries represents an array of distinct series with 0 or more samples.
   repeated TimeSeries timeseries = 2 [(gogoproto.nullable) = false];
@@ -44,7 +44,7 @@ message Request {
 message TimeSeries {
   // labels_refs is a list of label name-value pair references, encoded
   // as indices to the Request.symbols array. This list's length is always
-  // a multiple of two, and the underlying labels should be sorted.
+  // a multiple of two, and the underlying labels should be sorted lexicographically.
   //
   // Note that there might be multiple TimeSeries objects in the same
   // Requests with the same labels e.g. for different exemplars, metadata
@@ -52,7 +52,7 @@ message TimeSeries {
   repeated uint32 labels_refs = 1;
 
   // Timeseries messages can either specify samples or (native) histogram samples
-  // (histogram field), but not both. For typical clients (~real-time metric
+  // (histogram field), but not both. For typical sender (real-time metric
   // streaming), in healthy cases, there will be only one sample or histogram.
   //
   // Samples and histograms are sorted by timestamp (older first).
@@ -86,7 +86,7 @@ message TimeSeries {
 message Exemplar {
   // labels_refs is a list of label name-value pair references, encoded
   // as indices to the Request.symbols array. This list's len is always
-  // a multiple of 2, and the underlying labels should be sorted.
+  // a multiple of 2, and the underlying labels should be sorted lexicographically.
   repeated uint32 labels_refs = 1;
   // value represents an exact example value. This can be useful when the exemplar
   // is attached to a histogram, which only gives an estimated value through buckets.
