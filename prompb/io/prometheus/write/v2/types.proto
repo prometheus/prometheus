@@ -21,8 +21,9 @@ option go_package = "writev2";
 import "gogoproto/gogo.proto";
 
 // Request represents a request to write the given timeseries to a remote destination.
-// This was introduced in the Remote Write 2.0 specification:
+// This message was introduced in the Remote Write 2.0 specification:
 // https://prometheus.io/docs/concepts/remote_write_spec_2_0/
+//
 // The canonical Content-Type request header value for this message is
 // "application/x-protobuf;proto=io.prometheus.write.v2.Request"
 //
@@ -31,10 +32,13 @@ import "gogoproto/gogo.proto";
 // the serialized message). See: https://github.com/prometheus/prometheus/issues/11908
 message Request {
   // symbols contains a de-duplicated array of string elements used for various
-  // items in a Request message, like labels and metadata items. To decode
-  // each of those items, referenced, by "ref(s)" suffix, you need to lookup the
-  // actual string by index from symbols array. The order of strings is up to
-  // the sender. The receiver should not assume any particular encoding.
+  // items in a Request message, like labels and metadata items. For the sender's convenience
+  // around empty values for optional fields like unit_ref, symbols array MUST start with
+  // empty string.
+  //
+  // To decode each of the symbolized strings, referenced, by "ref(s)" suffix, you
+  // need to lookup the actual string by index from symbols array. The order of
+  // strings is up to the sender. The receiver should not assume any particular encoding.
   repeated string symbols = 1;
   // timeseries represents an array of distinct series with 0 or more samples.
   repeated TimeSeries timeseries = 2 [(gogoproto.nullable) = false];
@@ -52,7 +56,7 @@ message TimeSeries {
   repeated uint32 labels_refs = 1;
 
   // Timeseries messages can either specify samples or (native) histogram samples
-  // (histogram field), but not both. For typical sender (real-time metric
+  // (histogram field), but not both. For a typical sender (real-time metric
   // streaming), in healthy cases, there will be only one sample or histogram.
   //
   // Samples and histograms are sorted by timestamp (older first).
@@ -67,7 +71,11 @@ message TimeSeries {
 
   // created_timestamp represents an optional created timestamp associated with
   // this series' samples in ms format, typically for counter or histogram type
-  // metrics. Note that some servers might require this and in return fail to
+  // metrics. Created timestamp represents the time when the counter started
+  // counting (sometimes referred to as start timestamp), which can increase
+  // the accuracy of query results.
+  //
+  // Note that some receivers might require this and in return fail to
   // ingest such samples within the Request.
   //
   // For Go, see github.com/prometheus/prometheus/model/timestamp/timestamp.go
@@ -84,14 +92,16 @@ message TimeSeries {
 // It is typically used to attach an example trace or request ID associated with
 // the metric changes.
 message Exemplar {
-  // labels_refs is a list of label name-value pair references, encoded
+  // labels_refs is an optional list of label name-value pair references, encoded
   // as indices to the Request.symbols array. This list's len is always
   // a multiple of 2, and the underlying labels should be sorted lexicographically.
+  // If the exemplar references a trace it should use the `trace_id` label name, as a best practice.
   repeated uint32 labels_refs = 1;
   // value represents an exact example value. This can be useful when the exemplar
   // is attached to a histogram, which only gives an estimated value through buckets.
   double value = 2;
-  // timestamp represents an optional timestamp of the example in ms.
+  // timestamp represents an optional timestamp of the sample in ms.
+  //
   // For Go, see github.com/prometheus/prometheus/model/timestamp/timestamp.go
   // for conversion from/to time.Time to Prometheus timestamp.
   //
@@ -107,6 +117,7 @@ message Sample {
   // value of the sample.
   double value = 1;
   // timestamp represents timestamp of the sample in ms.
+  //
   // For Go, see github.com/prometheus/prometheus/model/timestamp/timestamp.go
   // for conversion from/to time.Time to Prometheus timestamp.
   int64 timestamp = 2;
@@ -115,7 +126,7 @@ message Sample {
 // Metadata represents the metadata associated with the given series' samples.
 message Metadata {
   enum MetricType {
-    METRIC_TYPE_UNSPECIFIED        = 0;
+    METRIC_TYPE_UNSPECIFIED    = 0;
     METRIC_TYPE_COUNTER        = 1;
     METRIC_TYPE_GAUGE          = 2;
     METRIC_TYPE_HISTOGRAM      = 3;
@@ -126,10 +137,12 @@ message Metadata {
   }
   MetricType type = 1;
   // help_ref is a reference to the Request.symbols array representing help
-  // text for the metric.
+  // text for the metric. Help is optional, reference should point to an empty string in
+  // such a case.
   uint32 help_ref = 3;
-  // unit_ref is a reference to the Request.symbols array representing unit
-  // for the metric.
+  // unit_ref is a reference to the Request.symbols array representing a unit
+  // for the metric. Unit is optional, reference should point to an empty string in
+  // such a case.
   uint32 unit_ref = 4;
 }
 
@@ -194,6 +207,7 @@ message Histogram {
 
   ResetHint reset_hint               = 14;
   // timestamp represents timestamp of the sample in ms.
+  //
   // For Go, see github.com/prometheus/prometheus/model/timestamp/timestamp.go
   // for conversion from/to time.Time to Prometheus timestamp.
   int64 timestamp = 15;
