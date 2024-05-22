@@ -344,7 +344,7 @@ func main() {
 		SetValue(&oldFlagRetentionDuration)
 
 	serverOnlyFlag(a, "storage.tsdb.retention.time", "How long to retain samples in storage. When this flag is set it overrides \"storage.tsdb.retention\". If neither this flag nor \"storage.tsdb.retention\" nor \"storage.tsdb.retention.size\" is set, the retention time defaults to "+defaultRetentionString+". Units Supported: y, w, d, h, m, s, ms.").
-		SetValue(&newFlagRetentionDuration)
+		Default("15d").SetValue(&newFlagRetentionDuration)
 
 	serverOnlyFlag(a, "storage.tsdb.retention.size", "Maximum number of bytes that can be stored for blocks. A unit is required, supported units: B, KB, MB, GB, TB, PB, EB. Ex: \"512MB\". Based on powers-of-2, so 1KB is 1024B.").
 		BytesVar(&cfg.tsdb.MaxBytes)
