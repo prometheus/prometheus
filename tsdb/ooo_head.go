@@ -19,6 +19,7 @@ import (
 
 	"github.com/oklog/ulid"
 
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
@@ -29,16 +30,28 @@ import (
 // Samples are stored uncompressed to allow easy sorting.
 // Perhaps we can be more efficient later.
 type OOOChunk struct {
-	samples []sample
+	samples    []sample
+	tombstones *tombstones.MemTombstones
+	seriesRef  storage.SeriesRef
 }
 
 func NewOOOChunk() *OOOChunk {
-	return &OOOChunk{samples: make([]sample, 0, 4)}
+	// return &OOOChunk{samples: make([]sample, 0, 4)}
+	return &OOOChunk{
+		samples:    make([]sample, 0, 4),
+		tombstones: tombstones.NewMemTombstones(),
+	}
 }
 
 // Insert inserts the sample such that order is maintained.
-// Returns false if insert was not possible due to the same timestamp already existing.
+// Returns false if insert was not possible due to the same timestamp already existing
+// or the timestamp falls within a tombstone interval.
 func (o *OOOChunk) Insert(t int64, v float64) bool {
+	// Check if this timestamp is in a tombstone interval before inserting.
+	if o.tombstones.HasTimestamp(o.seriesRef, t) {
+		return false
+	}
+
 	// Although out-of-order samples can be out-of-order amongst themselves, we
 	// are opinionated and expect them to be usually in-order meaning we could
 	// try to append at the end first if the new timestamp is higher than the
@@ -116,16 +129,18 @@ type OOORangeHead struct {
 	mint, maxt int64
 
 	isoState *oooIsolationState
+	tombstones tombstones.Reader
 }
 
 func NewOOORangeHead(head *Head, mint, maxt int64, minRef chunks.ChunkDiskMapperRef) *OOORangeHead {
 	isoState := head.oooIso.TrackReadAfter(minRef)
 
 	return &OOORangeHead{
-		head:     head,
-		mint:     mint,
-		maxt:     maxt,
+		head:           head,
+		mint:           mint,
+		maxt:           maxt,
 		isoState: isoState,
+		tombstones: head.tombstones,
 	}
 }
 
@@ -138,9 +153,8 @@ func (oh *OOORangeHead) Chunks() (ChunkReader, error) {
 }
 
 func (oh *OOORangeHead) Tombstones() (tombstones.Reader, error) {
-	// As stated in the design doc https://docs.google.com/document/d/1Kppm7qL9C-BJB1j6yb6-9ObG3AbdZnFUBYPNNWwDBYM/edit?usp=sharing
-	// Tombstones are not supported for out of order metrics.
-	return tombstones.NewMemTombstones(), nil
+	// Return the tombstones from the main head.
+	return oh.tombstones, nil
 }
 
 var oooRangeHeadULID = ulid.MustParse("0000000000XXXX000RANGEHEAD")
