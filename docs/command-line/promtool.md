@@ -585,7 +585,7 @@ Dump samples from a TSDB.
 
 ##### `promtool tsdb dump-openmetrics`
 
-[Experimental] Dump samples from a TSDB into OpenMetrics format. Native histograms are not dumped.
+[Experimental] Dump samples from a TSDB into OpenMetrics text format, excluding native histograms and staleness markers, which are not representable in OpenMetrics.
 
 
 
