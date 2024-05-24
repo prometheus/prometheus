@@ -4007,7 +4007,7 @@ func TestSnapshotError(t *testing.T) {
 	require.NoError(t, err)
 	f, err := os.OpenFile(path.Join(snapDir, files[0].Name()), os.O_RDWR, 0)
 	require.NoError(t, err)
-	// create snapshot backup to be restored on future test cases
+	// Create snapshot backup to be restored on future test cases.
 	snapshotBackup, err := io.ReadAll(f)
 	require.NoError(t, err)
 	_, err = f.WriteAt([]byte{0b11111111}, 18)
