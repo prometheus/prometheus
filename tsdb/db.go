@@ -1336,12 +1336,14 @@ func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID
 	for t := blockSize * (oooHeadMint / blockSize); t <= oooHeadMaxt; t += blockSize {
 		mint, maxt := t, t+blockSize
 		// Block intervals are half-open: [b.MinTime, b.MaxTime). Block intervals are always +1 than the total samples it includes.
-		uid, err := db.compactor.Write(dest, oooHead.CloneForTimeRange(mint, maxt-1), mint, maxt, meta)
+		uids, err := db.compactor.Write(dest, oooHead.CloneForTimeRange(mint, maxt-1), mint, maxt, meta)
 		if err != nil {
 			return nil, err
 		}
-		if uid.Compare(ulid.ULID{}) != 0 {
-			ulids = append(ulids, uid)
+		for _, uid := range uids {
+			if uid.Compare(ulid.ULID{}) != 0 {
+				ulids = append(ulids, uid)
+			}
 		}
 	}
 
@@ -1364,19 +1366,19 @@ func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID
 // compactHead compacts the given RangeHead.
 // The compaction mutex should be held before calling this method.
 func (db *DB) compactHead(head *RangeHead) error {
-	uid, err := db.compactor.Write(db.dir, head, head.MinTime(), head.BlockMaxTime(), nil)
+	uids, err := db.compactor.Write(db.dir, head, head.MinTime(), head.BlockMaxTime(), nil)
 	if err != nil {
 		return fmt.Errorf("persist head block: %w", err)
 	}
 
 	if err := db.reloadBlocks(); err != nil {
-		if errRemoveAll := os.RemoveAll(filepath.Join(db.dir, uid.String())); errRemoveAll != nil {
-			return tsdb_errors.NewMulti(
-				fmt.Errorf("reloadBlocks blocks: %w", err),
-				fmt.Errorf("delete persisted head block after failed db reloadBlocks:%s: %w", uid, errRemoveAll),
-			).Err()
+		multiErr := tsdb_errors.NewMulti(fmt.Errorf("reloadBlocks blocks: %w", err))
+		for _, uid := range uids {
+			if errRemoveAll := os.RemoveAll(filepath.Join(db.dir, uid.String())); errRemoveAll != nil {
+				multiErr.Add(fmt.Errorf("delete persisted head block after failed db reloadBlocks:%s: %w", uid, errRemoveAll))
+			}
 		}
-		return fmt.Errorf("reloadBlocks blocks: %w", err)
+		return multiErr.Err()
 	}
 	if err = db.head.truncateMemory(head.BlockMaxTime()); err != nil {
 		return fmt.Errorf("head memory truncate: %w", err)
@@ -1541,12 +1543,15 @@ func (db *DB) reloadBlocks() (err error) {
 	oldBlocks := db.blocks
 	db.blocks = toLoad
 
-	blockMetas := make([]BlockMeta, 0, len(toLoad))
-	for _, b := range toLoad {
-		blockMetas = append(blockMetas, b.Meta())
-	}
-	if overlaps := OverlappingBlocks(blockMetas); len(overlaps) > 0 {
-		level.Warn(db.logger).Log("msg", "Overlapping blocks found during reloadBlocks", "detail", overlaps.String())
+	// Only check overlapping blocks when overlapping compaction is enabled.
+	if db.opts.EnableOverlappingCompaction {
+		blockMetas := make([]BlockMeta, 0, len(toLoad))
+		for _, b := range toLoad {
+			blockMetas = append(blockMetas, b.Meta())
+		}
+		if overlaps := OverlappingBlocks(blockMetas); len(overlaps) > 0 {
+			level.Warn(db.logger).Log("msg", "Overlapping blocks found during reloadBlocks", "detail", overlaps.String())
+		}
 	}
 
 	// Append blocks to old, deletable blocks, so we can close them.
@@ -2149,7 +2154,7 @@ func (db *DB) CleanTombstones() (err error) {
 		cleanUpCompleted = true
 
 		for _, pb := range db.Blocks() {
-			uid, safeToDelete, cleanErr := pb.CleanTombstones(db.Dir(), db.compactor)
+			uids, safeToDelete, cleanErr := pb.CleanTombstones(db.Dir(), db.compactor)
 			if cleanErr != nil {
 				return fmt.Errorf("clean tombstones: %s: %w", pb.Dir(), cleanErr)
 			}
@@ -2173,10 +2178,12 @@ func (db *DB) CleanTombstones() (err error) {
 			}
 
 			// Delete new block if it was created.
-			if uid != nil && *uid != (ulid.ULID{}) {
-				dir := filepath.Join(db.Dir(), uid.String())
-				if err := os.RemoveAll(dir); err != nil {
-					level.Error(db.logger).Log("msg", "failed to delete block after failed `CleanTombstones`", "dir", dir, "err", err)
+			for _, uid := range uids {
+				if uid.Compare(ulid.ULID{}) != 0 {
+					dir := filepath.Join(db.Dir(), uid.String())
+					if err := os.RemoveAll(dir); err != nil {
+						level.Error(db.logger).Log("msg", "failed to delete block after failed `CleanTombstones`", "dir", dir, "err", err)
+					}
 				}
 			}
 			if err != nil {

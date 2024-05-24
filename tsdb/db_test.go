@@ -1431,9 +1431,9 @@ func (*mockCompactorFailing) Plan(string) ([]string, error) {
 	return nil, nil
 }
 
-func (c *mockCompactorFailing) Write(dest string, _ BlockReader, _, _ int64, _ *BlockMeta) (ulid.ULID, error) {
+func (c *mockCompactorFailing) Write(dest string, _ BlockReader, _, _ int64, _ *BlockMeta) ([]ulid.ULID, error) {
 	if len(c.blocks) >= c.max {
-		return ulid.ULID{}, fmt.Errorf("the compactor already did the maximum allowed blocks so it is time to fail")
+		return []ulid.ULID{}, fmt.Errorf("the compactor already did the maximum allowed blocks so it is time to fail")
 	}
 
 	block, err := OpenBlock(nil, createBlock(c.t, dest, genSeries(1, 1, 0, 1)), nil)
@@ -1452,7 +1452,7 @@ func (c *mockCompactorFailing) Write(dest string, _ BlockReader, _, _ int64, _ *
 
 	require.Equal(c.t, expectedBlocks, actualBlockDirs)
 
-	return block.Meta().ULID, nil
+	return []ulid.ULID{block.Meta().ULID}, nil
 }
 
 func (*mockCompactorFailing) Compact(string, []string, []*Block) (ulid.ULID, error) {
@@ -7069,7 +7069,7 @@ func requireEqualOOOSamples(t *testing.T, expectedSamples int, db *DB) {
 type mockCompactorFn struct {
 	planFn    func() ([]string, error)
 	compactFn func() (ulid.ULID, error)
-	writeFn   func() (ulid.ULID, error)
+	writeFn   func() ([]ulid.ULID, error)
 }
 
 func (c *mockCompactorFn) Plan(_ string) ([]string, error) {
@@ -7080,7 +7080,7 @@ func (c *mockCompactorFn) Compact(_ string, _ []string, _ []*Block) (ulid.ULID, 
 	return c.compactFn()
 }
 
-func (c *mockCompactorFn) Write(_ string, _ BlockReader, _, _ int64, _ *BlockMeta) (ulid.ULID, error) {
+func (c *mockCompactorFn) Write(_ string, _ BlockReader, _, _ int64, _ *BlockMeta) ([]ulid.ULID, error) {
 	return c.writeFn()
 }
 
@@ -7115,8 +7115,8 @@ func TestAbortBlockCompactions(t *testing.T) {
 		compactFn: func() (ulid.ULID, error) {
 			return ulid.ULID{}, nil
 		},
-		writeFn: func() (ulid.ULID, error) {
-			return ulid.ULID{}, nil
+		writeFn: func() ([]ulid.ULID, error) {
+			return []ulid.ULID{}, nil
 		},
 	}
 
