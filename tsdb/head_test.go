@@ -4031,7 +4031,7 @@ func TestSnapshotError(t *testing.T) {
 	require.Empty(t, tm)
 	require.NoError(t, head.Close())
 
-	// test corruption in the middle of the snapshot
+	// Test corruption in the middle of the snapshot.
 	f, err = os.OpenFile(path.Join(snapDir, files[0].Name()), os.O_RDWR, 0)
 	require.NoError(t, err)
 	_, err = f.WriteAt(snapshotBackup, 0)
