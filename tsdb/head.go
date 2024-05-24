@@ -313,7 +313,11 @@ func (h *Head) resetInMemoryState() error {
 	if h.series != nil {
 		// reset the existing series to make sure we call the appropriated hooks
 		// and increment the series removed metrics
-		h.metrics.seriesRemoved.Add(float64(h.series.flush()))
+		fs := h.series.iterForDeletion(func(_ int, _ uint64, s *memSeries, flushedForCallback map[chunks.HeadSeriesRef]labels.Labels) {
+			// All series should be flushed
+			flushedForCallback[s.ref] = s.lset
+		})
+		h.metrics.seriesRemoved.Add(float64(fs))
 	}
 
 	h.series = newStripeSeries(h.opts.StripeSize, h.opts.SeriesCallback)
@@ -1859,22 +1863,6 @@ func newStripeSeries(stripeSize int, seriesCallback SeriesLifecycleCallback) *st
 	return s
 }
 
-// flush should flush the stripeSeries and appropriately trigger the associated hooks.
-// note: This method simply resets the stripeSeries struct to its initial state without
-// performing any operations on the chunks.
-func (s *stripeSeries) flush() int {
-	totalSeries := 0
-	s.iter(func(_ int, _ uint64, series *memSeries, flushedForCallback map[chunks.HeadSeriesRef]labels.Labels) {
-		// All series should be flushed
-		flushedForCallback[series.ref] = series.lset
-	}, func(flushedForCallback map[chunks.HeadSeriesRef]labels.Labels) {
-		totalSeries += len(flushedForCallback)
-		s.seriesLifecycleCallback.PostDeletion(flushedForCallback)
-	})
-	s.series = make([]map[chunks.HeadSeriesRef]*memSeries, s.size)
-	return totalSeries
-}
-
 // gc garbage collects old chunks that are strictly before mint and removes
 // series entirely that have no chunks left.
 // note: returning map[chunks.HeadSeriesRef]struct{} would be more accurate,
@@ -1944,11 +1932,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		deletedForCallback[series.ref] = series.lset
 	}
 
-	s.iter(func(i int, hash uint64, series *memSeries, deletedForCallback map[chunks.HeadSeriesRef]labels.Labels) {
-		check(i, hash, series, deletedForCallback)
-	}, func(deletedForCallback map[chunks.HeadSeriesRef]labels.Labels) {
-		s.seriesLifecycleCallback.PostDeletion(deletedForCallback)
-	})
+	s.iterForDeletion(check)
 
 	if actualMint == math.MaxInt64 {
 		actualMint = mint
@@ -1957,8 +1941,12 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 	return deleted, rmChunks, actualMint, minOOOTime, minMmapFile
 }
 
-func (s *stripeSeries) iter(f func(int, uint64, *memSeries, map[chunks.HeadSeriesRef]labels.Labels), endShard func(map[chunks.HeadSeriesRef]labels.Labels)) {
+// The iterForDeletion function iterates through all series, invoking the checkDeletedFunc for each.
+// The checkDeletedFunc takes a map as input and should add to it all series that were deleted and should be included
+// when invoking the PostDeletion hook.
+func (s *stripeSeries) iterForDeletion(checkDeletedFunc func(int, uint64, *memSeries, map[chunks.HeadSeriesRef]labels.Labels)) int {
 	seriesSetFromPrevStripe := 0
+	totalDeletedSeries := 0
 	// Run through all series shard by shard
 	for i := 0; i < s.size; i++ {
 		seriesSet := make(map[chunks.HeadSeriesRef]labels.Labels, seriesSetFromPrevStripe)
@@ -1967,17 +1955,19 @@ func (s *stripeSeries) iter(f func(int, uint64, *memSeries, map[chunks.HeadSerie
 		// after deleting `unique`.
 		for hash, all := range s.hashes[i].conflicts {
 			for _, series := range all {
-				f(i, hash, series, seriesSet)
+				checkDeletedFunc(i, hash, series, seriesSet)
 			}
 		}
 
 		for hash, series := range s.hashes[i].unique {
-			f(i, hash, series, seriesSet)
+			checkDeletedFunc(i, hash, series, seriesSet)
 		}
 		s.locks[i].Unlock()
-		endShard(seriesSet)
+		s.seriesLifecycleCallback.PostDeletion(seriesSet)
+		totalDeletedSeries += len(seriesSet)
 		seriesSetFromPrevStripe = len(seriesSet)
 	}
+	return totalDeletedSeries
 }
 
 func (s *stripeSeries) getByID(id chunks.HeadSeriesRef) *memSeries {

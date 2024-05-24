@@ -14,7 +14,6 @@
 package tsdb
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -4008,8 +4007,10 @@ func TestSnapshotError(t *testing.T) {
 	require.NoError(t, err)
 	f, err := os.OpenFile(path.Join(snapDir, files[0].Name()), os.O_RDWR, 0)
 	require.NoError(t, err)
-	// lets corrupt middle of the snapshot, so we can replay some entries
-	_, err = f.WriteAt([]byte{0b11111111}, 300)
+	// create snapshot backup to be restored on future test cases
+	snapshotBackup, err := io.ReadAll(f)
+	require.NoError(t, err)
+	_, err = f.WriteAt([]byte{0b11111111}, 18)
 	require.NoError(t, err)
 	require.NoError(t, f.Close())
 
@@ -4017,11 +4018,35 @@ func TestSnapshotError(t *testing.T) {
 	w, err := wlog.NewSize(nil, nil, head.wal.Dir(), 32768, wlog.CompressionNone)
 	require.NoError(t, err)
 	// Testing https://github.com/prometheus/prometheus/issues/9437 with the registry.
+	head, err = NewHead(prometheus.NewRegistry(), nil, w, nil, head.opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, head.Init(math.MinInt64))
+
+	// There should be no series in the memory after snapshot error since WAL was removed.
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal))
+	require.Equal(t, uint64(0), head.NumSeries())
+	require.Nil(t, head.series.getByHash(lbls.Hash(), lbls))
+	tm, err = head.tombstones.Get(1)
+	require.NoError(t, err)
+	require.Empty(t, tm)
+	require.NoError(t, head.Close())
+
+	// test corruption in the middle of the snapshot
+	f, err = os.OpenFile(path.Join(snapDir, files[0].Name()), os.O_RDWR, 0)
+	require.NoError(t, err)
+	_, err = f.WriteAt(snapshotBackup, 0)
+	require.NoError(t, err)
+	_, err = f.WriteAt([]byte{0b11111111}, 300)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
 	c := &countSeriesLifecycleCallback{}
 	opts := head.opts
 	opts.SeriesCallback = c
-	r := prometheus.NewRegistry()
-	head, err = NewHead(r, nil, w, nil, head.opts, nil)
+
+	w, err = wlog.NewSize(nil, nil, head.wal.Dir(), 32768, wlog.CompressionNone)
+	require.NoError(t, err)
+	head, err = NewHead(prometheus.NewRegistry(), nil, w, nil, head.opts, nil)
 	require.NoError(t, err)
 	require.NoError(t, head.Init(math.MinInt64))
 
@@ -4034,18 +4059,9 @@ func TestSnapshotError(t *testing.T) {
 	// In such instances, we need to ensure that we also trigger the delete hooks when resetting the memory.
 	require.Equal(t, int64(2), c.created.Load())
 	require.Equal(t, int64(2), c.deleted.Load())
-	tm, err = head.tombstones.Get(1)
-	require.NoError(t, err)
-	require.Empty(t, tm)
 
-	require.NoError(t, prom_testutil.GatherAndCompare(r, bytes.NewBufferString(`
-		# HELP prometheus_tsdb_head_series_created_total Total number of series created in the head
-		# TYPE prometheus_tsdb_head_series_created_total counter
-		prometheus_tsdb_head_series_created_total 2
-		# HELP prometheus_tsdb_head_series_removed_total Total number of series removed in the head
-		# TYPE prometheus_tsdb_head_series_removed_total counter
-		prometheus_tsdb_head_series_removed_total 2
-	`), "prometheus_tsdb_head_series_removed_total", "prometheus_tsdb_head_series_created_total"))
+	require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.seriesRemoved))
+	require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.seriesCreated))
 }
 
 func TestHistogramMetrics(t *testing.T) {
