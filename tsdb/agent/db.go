@@ -816,7 +816,7 @@ func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v flo
 	series.Lock()
 	defer series.Unlock()
 
-	if t <= a.minTs(series.lastTs) {
+	if t <= a.minValidTime(series.lastTs) {
 		a.metrics.totalOutOfOrderSamples.Inc()
 		return 0, storage.ErrOutOfOrderSample
 	}
@@ -944,7 +944,7 @@ func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int
 	series.Lock()
 	defer series.Unlock()
 
-	if t <= a.minTs(series.lastTs) {
+	if t <= a.minValidTime(series.lastTs) {
 		a.metrics.totalOutOfOrderSamples.Inc()
 		return 0, storage.ErrOutOfOrderSample
 	}
@@ -1120,7 +1120,7 @@ func (a *appender) logSeries() error {
 
 // mintTs returns the minimum timestamp that a sample can have
 // and is needed for preventing underflow.
-func (a *appender) minTs(lastTs int64) int64 {
+func (a *appender) minValidTime(lastTs int64) int64 {
 	if lastTs < math.MinInt64+a.opts.OutOfOrderTimeWindow {
 		return math.MinInt64
 	}
