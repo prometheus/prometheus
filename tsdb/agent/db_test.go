@@ -763,7 +763,7 @@ func TestDBAllowOOOSamples(t *testing.T) {
 
 	reg := prometheus.NewRegistry()
 	opts := DefaultOptions()
-	opts.SetOutOfOrderTimeWindow(math.MaxInt64)
+	opts.OutOfOrderTimeWindow = math.MaxInt64
 	s := createTestAgentDB(t, reg, opts)
 	app := s.Appender(context.TODO())
 
@@ -885,27 +885,22 @@ func TestDBAllowOOOSamples(t *testing.T) {
 func TestDBOutOfOrderTimeWindow(t *testing.T) {
 	tc := []struct {
 		outOfOrderTimeWindow, firstTs, secondTs int64
-		reject                                  bool
+		expectedError                           error
 	}{
-		{0, 100, 101, false},
-		{0, 100, 100, true},
-		{0, 100, 99, true},
-		{100, 100, 1, false},
-		{100, 100, 0, true},
+		{0, 100, 101, nil},
+		{0, 100, 100, storage.ErrOutOfOrderSample},
+		{0, 100, 99, storage.ErrOutOfOrderSample},
+		{100, 100, 1, nil},
+		{100, 100, 0, storage.ErrOutOfOrderSample},
 	}
 
 	for _, c := range tc {
-		t.Run(fmt.Sprintf("outOfOrderTimeWindow=%d, firstTs=%d, secondTs=%d, reject=%t", c.outOfOrderTimeWindow, c.firstTs, c.secondTs, c.reject), func(t *testing.T) {
+		t.Run(fmt.Sprintf("outOfOrderTimeWindow=%d, firstTs=%d, secondTs=%d, expectedError=%s", c.outOfOrderTimeWindow, c.firstTs, c.secondTs, c.expectedError), func(t *testing.T) {
 			reg := prometheus.NewRegistry()
 			opts := DefaultOptions()
-			opts.SetOutOfOrderTimeWindow(c.outOfOrderTimeWindow)
+			opts.OutOfOrderTimeWindow = c.outOfOrderTimeWindow
 			s := createTestAgentDB(t, reg, opts)
 			app := s.Appender(context.TODO())
-
-			var expectedErr error
-			if c.reject {
-				expectedErr = storage.ErrOutOfOrderSample
-			}
 
 			lbls := labelsForTest(t.Name()+"_histogram", 1)
 			lset := labels.New(lbls[0]...)
@@ -914,7 +909,7 @@ func TestDBOutOfOrderTimeWindow(t *testing.T) {
 			err = app.Commit()
 			require.NoError(t, err)
 			_, err = app.AppendHistogram(0, lset, c.secondTs, tsdbutil.GenerateTestHistograms(1)[0], nil)
-			require.ErrorIs(t, err, expectedErr)
+			require.ErrorIs(t, err, c.expectedError)
 
 			lbls = labelsForTest(t.Name(), 1)
 			lset = labels.New(lbls[0]...)
@@ -923,10 +918,10 @@ func TestDBOutOfOrderTimeWindow(t *testing.T) {
 			err = app.Commit()
 			require.NoError(t, err)
 			_, err = app.Append(0, lset, c.secondTs, 0)
-			require.ErrorIs(t, err, expectedErr)
+			require.ErrorIs(t, err, c.expectedError)
 
 			expectedAppendedSamples := float64(2)
-			if c.reject {
+			if c.expectedError != nil {
 				expectedAppendedSamples = 1
 			}
 			m := gatherFamily(t, reg, "prometheus_agent_samples_appended_total")

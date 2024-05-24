@@ -86,13 +86,6 @@ type Options struct {
 	OutOfOrderTimeWindow int64
 }
 
-func (o *Options) SetOutOfOrderTimeWindow(outOfOrderTimeWindow int64) {
-	if outOfOrderTimeWindow < 0 {
-		return
-	}
-	o.OutOfOrderTimeWindow = outOfOrderTimeWindow
-}
-
 // DefaultOptions used for the WAL storage. They are reasonable for setups using
 // millisecond-precision timestamps.
 func DefaultOptions() *Options {
