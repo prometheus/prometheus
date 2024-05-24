@@ -16,10 +16,10 @@ package labels
 import (
 	"bytes"
 	"encoding/json"
+	"slices"
 	"strconv"
 
 	"github.com/prometheus/common/model"
-	"golang.org/x/exp/slices"
 )
 
 const (
@@ -39,7 +39,8 @@ type Label struct {
 }
 
 func (ls Labels) String() string {
-	var b bytes.Buffer
+	var bytea [1024]byte // On stack to avoid memory allocation while building the output.
+	b := bytes.NewBuffer(bytea[:0])
 
 	b.WriteByte('{')
 	i := 0
@@ -50,7 +51,7 @@ func (ls Labels) String() string {
 		}
 		b.WriteString(l.Name)
 		b.WriteByte('=')
-		b.WriteString(strconv.Quote(l.Value))
+		b.Write(strconv.AppendQuote(b.AvailableBuffer(), l.Value))
 		i++
 	})
 	b.WriteByte('}')
@@ -123,13 +124,6 @@ func FromMap(m map[string]string) Labels {
 	return New(l...)
 }
 
-// Builder allows modifying Labels.
-type Builder struct {
-	base Labels
-	del  []string
-	add  []Label
-}
-
 // NewBuilder returns a new LabelsBuilder.
 func NewBuilder(base Labels) *Builder {
 	b := &Builder{
@@ -138,18 +132,6 @@ func NewBuilder(base Labels) *Builder {
 	}
 	b.Reset(base)
 	return b
-}
-
-// Reset clears all current state for the builder.
-func (b *Builder) Reset(base Labels) {
-	b.base = base
-	b.del = b.del[:0]
-	b.add = b.add[:0]
-	b.base.Range(func(l Label) {
-		if l.Value == "" {
-			b.del = append(b.del, l.Name)
-		}
-	})
 }
 
 // Del deletes the label of the given name.

@@ -19,16 +19,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-var (
-	clientGoRequestMetrics  = &clientGoRequestMetricAdapter{}
-	clientGoWorkloadMetrics = &clientGoWorkqueueMetricsProvider{}
-)
-
-func init() {
-	clientGoRequestMetrics.RegisterWithK8sGoClient()
-	clientGoWorkloadMetrics.RegisterWithK8sGoClient()
-}
-
 // Metrics to be used with a discovery manager.
 type Metrics struct {
 	FailedConfigs     prometheus.Gauge
@@ -38,7 +28,7 @@ type Metrics struct {
 	SentUpdates       prometheus.Counter
 }
 
-func NewMetrics(registerer prometheus.Registerer, sdManagerName string) (*Metrics, error) {
+func NewManagerMetrics(registerer prometheus.Registerer, sdManagerName string) (*Metrics, error) {
 	m := &Metrics{}
 
 	m.FailedConfigs = prometheus.NewGauge(
@@ -98,4 +88,13 @@ func NewMetrics(registerer prometheus.Registerer, sdManagerName string) (*Metric
 	}
 
 	return m, nil
+}
+
+// Unregister unregisters all metrics.
+func (m *Metrics) Unregister(registerer prometheus.Registerer) {
+	registerer.Unregister(m.FailedConfigs)
+	registerer.Unregister(m.DiscoveredTargets)
+	registerer.Unregister(m.ReceivedUpdates)
+	registerer.Unregister(m.DelayedUpdates)
+	registerer.Unregister(m.SentUpdates)
 }

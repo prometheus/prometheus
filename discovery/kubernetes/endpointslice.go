@@ -265,7 +265,9 @@ const (
 	endpointSliceEndpointConditionsReadyLabel       = metaLabelPrefix + "endpointslice_endpoint_conditions_ready"
 	endpointSliceEndpointConditionsServingLabel     = metaLabelPrefix + "endpointslice_endpoint_conditions_serving"
 	endpointSliceEndpointConditionsTerminatingLabel = metaLabelPrefix + "endpointslice_endpoint_conditions_terminating"
+	endpointSliceEndpointZoneLabel                  = metaLabelPrefix + "endpointslice_endpoint_zone"
 	endpointSliceEndpointHostnameLabel              = metaLabelPrefix + "endpointslice_endpoint_hostname"
+	endpointSliceEndpointNodenameLabel              = metaLabelPrefix + "endpointslice_endpoint_node_name"
 	endpointSliceAddressTargetKindLabel             = metaLabelPrefix + "endpointslice_address_target_kind"
 	endpointSliceAddressTargetNameLabel             = metaLabelPrefix + "endpointslice_address_target_name"
 	endpointSliceEndpointTopologyLabelPrefix        = metaLabelPrefix + "endpointslice_endpoint_topology_"
@@ -338,6 +340,14 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 			target[model.LabelName(endpointSliceAddressTargetNameLabel)] = lv(ep.targetRef().Name)
 		}
 
+		if ep.nodename() != nil {
+			target[endpointSliceEndpointNodenameLabel] = lv(*ep.nodename())
+		}
+
+		if ep.zone() != nil {
+			target[model.LabelName(endpointSliceEndpointZoneLabel)] = lv(*ep.zone())
+		}
+
 		for k, v := range ep.topology() {
 			ln := strutil.SanitizeLabelName(k)
 			target[model.LabelName(endpointSliceEndpointTopologyLabelPrefix+ln)] = lv(v)
@@ -358,7 +368,7 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 			tg.Targets = append(tg.Targets, target)
 			return
 		}
-		s := pod.Namespace + "/" + pod.Name
+		s := namespacedName(pod.Namespace, pod.Name)
 
 		sp, ok := seenPods[s]
 		if !ok {
@@ -405,6 +415,11 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 	// For all seen pods, check all container ports. If they were not covered
 	// by one of the service endpoints, generate targets for them.
 	for _, pe := range seenPods {
+		// PodIP can be empty when a pod is starting or has been evicted.
+		if len(pe.pod.Status.PodIP) == 0 {
+			continue
+		}
+
 		for _, c := range pe.pod.Spec.Containers {
 			for _, cport := range c.Ports {
 				hasSeenPort := func() bool {
@@ -422,21 +437,18 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 					continue
 				}
 
-				// PodIP can be empty when a pod is starting or has been evicted.
-				if len(pe.pod.Status.PodIP) != 0 {
-					a := net.JoinHostPort(pe.pod.Status.PodIP, strconv.FormatUint(uint64(cport.ContainerPort), 10))
-					ports := strconv.FormatUint(uint64(cport.ContainerPort), 10)
+				a := net.JoinHostPort(pe.pod.Status.PodIP, strconv.FormatUint(uint64(cport.ContainerPort), 10))
+				ports := strconv.FormatUint(uint64(cport.ContainerPort), 10)
 
-					target := model.LabelSet{
-						model.AddressLabel:            lv(a),
-						podContainerNameLabel:         lv(c.Name),
-						podContainerImageLabel:        lv(c.Image),
-						podContainerPortNameLabel:     lv(cport.Name),
-						podContainerPortNumberLabel:   lv(ports),
-						podContainerPortProtocolLabel: lv(string(cport.Protocol)),
-					}
-					tg.Targets = append(tg.Targets, target.Merge(podLabels(pe.pod)))
+				target := model.LabelSet{
+					model.AddressLabel:            lv(a),
+					podContainerNameLabel:         lv(c.Name),
+					podContainerImageLabel:        lv(c.Image),
+					podContainerPortNameLabel:     lv(cport.Name),
+					podContainerPortNumberLabel:   lv(ports),
+					podContainerPortProtocolLabel: lv(string(cport.Protocol)),
 				}
+				tg.Targets = append(tg.Targets, target.Merge(podLabels(pe.pod)))
 			}
 		}
 	}

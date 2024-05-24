@@ -16,9 +16,8 @@ package histogram
 import (
 	"fmt"
 	"math"
+	"slices"
 	"strings"
-
-	"golang.org/x/exp/slices"
 )
 
 // CounterResetHint contains the known information about a counter reset,
@@ -83,7 +82,14 @@ type Span struct {
 
 // Copy returns a deep copy of the Histogram.
 func (h *Histogram) Copy() *Histogram {
-	c := *h
+	c := Histogram{
+		CounterResetHint: h.CounterResetHint,
+		Schema:           h.Schema,
+		ZeroThreshold:    h.ZeroThreshold,
+		ZeroCount:        h.ZeroCount,
+		Count:            h.Count,
+		Sum:              h.Sum,
+	}
 
 	if len(h.PositiveSpans) != 0 {
 		c.PositiveSpans = make([]Span, len(h.PositiveSpans))
@@ -103,6 +109,29 @@ func (h *Histogram) Copy() *Histogram {
 	}
 
 	return &c
+}
+
+// CopyTo makes a deep copy into the given Histogram object.
+// The destination object has to be a non-nil pointer.
+func (h *Histogram) CopyTo(to *Histogram) {
+	to.CounterResetHint = h.CounterResetHint
+	to.Schema = h.Schema
+	to.ZeroThreshold = h.ZeroThreshold
+	to.ZeroCount = h.ZeroCount
+	to.Count = h.Count
+	to.Sum = h.Sum
+
+	to.PositiveSpans = resize(to.PositiveSpans, len(h.PositiveSpans))
+	copy(to.PositiveSpans, h.PositiveSpans)
+
+	to.NegativeSpans = resize(to.NegativeSpans, len(h.NegativeSpans))
+	copy(to.NegativeSpans, h.NegativeSpans)
+
+	to.PositiveBuckets = resize(to.PositiveBuckets, len(h.PositiveBuckets))
+	copy(to.PositiveBuckets, h.PositiveBuckets)
+
+	to.NegativeBuckets = resize(to.NegativeBuckets, len(h.NegativeBuckets))
+	copy(to.NegativeBuckets, h.NegativeBuckets)
 }
 
 // String returns a string representation of the Histogram.

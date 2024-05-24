@@ -105,8 +105,10 @@ var (
 
 	InvalidQuantileWarning              = fmt.Errorf("%w: quantile value should be between 0 and 1", PromQLWarning)
 	BadBucketLabelWarning               = fmt.Errorf("%w: bucket label %q is missing or has a malformed value", PromQLWarning, model.BucketLabel)
-	MixedFloatsHistogramsWarning        = fmt.Errorf("%w: encountered a mix of histograms and floats for metric name", PromQLWarning)
+	MixedFloatsHistogramsWarning        = fmt.Errorf("%w: encountered a mix of histograms and floats for", PromQLWarning)
 	MixedClassicNativeHistogramsWarning = fmt.Errorf("%w: vector contains a mix of classic and native histograms for metric name", PromQLWarning)
+	NativeHistogramNotCounterWarning    = fmt.Errorf("%w: this native histogram metric is not a counter:", PromQLWarning)
+	NativeHistogramNotGaugeWarning      = fmt.Errorf("%w: this native histogram metric is not a gauge:", PromQLWarning)
 
 	PossibleNonCounterInfo                  = fmt.Errorf("%w: metric might not be a counter, name does not end in _total/_sum/_count/_bucket:", PromQLInfo)
 	HistogramQuantileForcedMonotonicityInfo = fmt.Errorf("%w: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name", PromQLInfo)
@@ -153,7 +155,16 @@ func NewBadBucketLabelWarning(metricName, label string, pos posrange.PositionRan
 func NewMixedFloatsHistogramsWarning(metricName string, pos posrange.PositionRange) error {
 	return annoErr{
 		PositionRange: pos,
-		Err:           fmt.Errorf("%w %q", MixedFloatsHistogramsWarning, metricName),
+		Err:           fmt.Errorf("%w metric name %q", MixedFloatsHistogramsWarning, metricName),
+	}
+}
+
+// NewMixedFloatsHistogramsAggWarning is used when the queried series includes both
+// float samples and histogram samples in an aggregation.
+func NewMixedFloatsHistogramsAggWarning(pos posrange.PositionRange) error {
+	return annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w aggregation", MixedFloatsHistogramsWarning),
 	}
 }
 
@@ -163,6 +174,24 @@ func NewMixedClassicNativeHistogramsWarning(metricName string, pos posrange.Posi
 	return annoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w %q", MixedClassicNativeHistogramsWarning, metricName),
+	}
+}
+
+// NewNativeHistogramNotCounterWarning is used when histogramRate is called
+// with isCounter set to true on a gauge histogram.
+func NewNativeHistogramNotCounterWarning(metricName string, pos posrange.PositionRange) error {
+	return annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w %q", NativeHistogramNotCounterWarning, metricName),
+	}
+}
+
+// NewNativeHistogramNotGaugeWarning is used when histogramRate is called
+// with isCounter set to false on a counter histogram.
+func NewNativeHistogramNotGaugeWarning(metricName string, pos posrange.PositionRange) error {
+	return annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w %q", NativeHistogramNotGaugeWarning, metricName),
 	}
 }
 

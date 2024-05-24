@@ -18,11 +18,9 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"strings"
-	"unicode/utf8"
+	"slices"
 
 	"github.com/oklog/ulid"
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -35,19 +33,8 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
-// Bitmap used by func isRegexMetaCharacter to check whether a character needs to be escaped.
-var regexMetaCharacterBytes [16]byte
-
-// isRegexMetaCharacter reports whether byte b needs to be escaped.
-func isRegexMetaCharacter(b byte) bool {
-	return b < utf8.RuneSelf && regexMetaCharacterBytes[b%16]&(1<<(b/16)) != 0
-}
-
-func init() {
-	for _, b := range []byte(`.+*?()|[]{}^$`) {
-		regexMetaCharacterBytes[b%16] |= 1 << (b / 16)
-	}
-}
+// checkContextEveryNIterations is used in some tight loops to check if the context is done.
+const checkContextEveryNIterations = 100
 
 type blockBaseQuerier struct {
 	blockID    ulid.ULID
@@ -131,10 +118,14 @@ func (q *blockQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 	mint := q.mint
 	maxt := q.maxt
 	disableTrimming := false
+	sharded := hints != nil && hints.ShardCount > 0
 
 	p, err := PostingsForMatchers(ctx, q.index, ms...)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
+	}
+	if sharded {
+		p = q.index.ShardedPostings(p, hints.ShardIndex, hints.ShardCount)
 	}
 	if sortSeries {
 		p = q.index.SortedPostings(p)
@@ -171,6 +162,8 @@ func (q *blockChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *
 	mint := q.mint
 	maxt := q.maxt
 	disableTrimming := false
+	sharded := hints != nil && hints.ShardCount > 0
+
 	if hints != nil {
 		mint = hints.Start
 		maxt = hints.End
@@ -180,59 +173,13 @@ func (q *blockChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *
 	if err != nil {
 		return storage.ErrChunkSeriesSet(err)
 	}
+	if sharded {
+		p = q.index.ShardedPostings(p, hints.ShardIndex, hints.ShardCount)
+	}
 	if sortSeries {
 		p = q.index.SortedPostings(p)
 	}
 	return NewBlockChunkSeriesSet(q.blockID, q.index, q.chunks, q.tombstones, p, mint, maxt, disableTrimming)
-}
-
-func findSetMatches(pattern string) []string {
-	// Return empty matches if the wrapper from Prometheus is missing.
-	if len(pattern) < 6 || pattern[:4] != "^(?:" || pattern[len(pattern)-2:] != ")$" {
-		return nil
-	}
-	escaped := false
-	sets := []*strings.Builder{{}}
-	init := 4
-	end := len(pattern) - 2
-	// If the regex is wrapped in a group we can remove the first and last parentheses
-	if pattern[init] == '(' && pattern[end-1] == ')' {
-		init++
-		end--
-	}
-	for i := init; i < end; i++ {
-		if escaped {
-			switch {
-			case isRegexMetaCharacter(pattern[i]):
-				sets[len(sets)-1].WriteByte(pattern[i])
-			case pattern[i] == '\\':
-				sets[len(sets)-1].WriteByte('\\')
-			default:
-				return nil
-			}
-			escaped = false
-		} else {
-			switch {
-			case isRegexMetaCharacter(pattern[i]):
-				if pattern[i] == '|' {
-					sets = append(sets, &strings.Builder{})
-				} else {
-					return nil
-				}
-			case pattern[i] == '\\':
-				escaped = true
-			default:
-				sets[len(sets)-1].WriteByte(pattern[i])
-			}
-		}
-	}
-	matches := make([]string, 0, len(sets))
-	for _, s := range sets {
-		if s.Len() > 0 {
-			matches = append(matches, s.String())
-		}
-	}
-	return matches
 }
 
 // PostingsForMatchers assembles a single postings iterator against the index reader
@@ -376,29 +323,14 @@ func postingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Matcher) 
 
 	// Fast-path for set matching.
 	if m.Type == labels.MatchRegexp {
-		setMatches := findSetMatches(m.GetRegexString())
+		setMatches := m.SetMatches()
 		if len(setMatches) > 0 {
 			return ix.Postings(ctx, m.Name, setMatches...)
 		}
 	}
 
-	vals, err := ix.LabelValues(ctx, m.Name)
-	if err != nil {
-		return nil, err
-	}
-
-	var res []string
-	for _, val := range vals {
-		if m.Matches(val) {
-			res = append(res, val)
-		}
-	}
-
-	if len(res) == 0 {
-		return index.EmptyPostings(), nil
-	}
-
-	return ix.Postings(ctx, m.Name, res...)
+	it := ix.PostingsForLabelMatching(ctx, m.Name, m.Matches)
+	return it, it.Err()
 }
 
 // inversePostingsForMatcher returns the postings for the series with the label name set but not matching the matcher.
@@ -407,7 +339,7 @@ func inversePostingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Ma
 	// Inverse of a MatchNotRegexp is MatchRegexp (double negation).
 	// Fast-path for set matching.
 	if m.Type == labels.MatchNotRegexp {
-		setMatches := findSetMatches(m.GetRegexString())
+		setMatches := m.SetMatches()
 		if len(setMatches) > 0 {
 			return ix.Postings(ctx, m.Name, setMatches...)
 		}
@@ -424,12 +356,17 @@ func inversePostingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Ma
 		return nil, err
 	}
 
-	var res []string
+	res := vals[:0]
 	// If the inverse match is ="", we just want all the values.
 	if m.Type == labels.MatchEqual && m.Value == "" {
 		res = vals
 	} else {
+		count := 1
 		for _, val := range vals {
+			if count%checkContextEveryNIterations == 0 && ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			count++
 			if !m.Matches(val) {
 				res = append(res, val)
 			}
@@ -440,11 +377,6 @@ func inversePostingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Ma
 }
 
 func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, matchers ...*labels.Matcher) ([]string, error) {
-	p, err := PostingsForMatchers(ctx, r, matchers...)
-	if err != nil {
-		return nil, fmt.Errorf("fetching postings for matchers: %w", err)
-	}
-
 	allValues, err := r.LabelValues(ctx, name)
 	if err != nil {
 		return nil, fmt.Errorf("fetching values of label %s: %w", name, err)
@@ -453,20 +385,41 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, ma
 	// If we have a matcher for the label name, we can filter out values that don't match
 	// before we fetch postings. This is especially useful for labels with many values.
 	// e.g. __name__ with a selector like {__name__="xyz"}
+	hasMatchersForOtherLabels := false
 	for _, m := range matchers {
 		if m.Name != name {
+			hasMatchersForOtherLabels = true
 			continue
 		}
 
 		// re-use the allValues slice to avoid allocations
 		// this is safe because the iteration is always ahead of the append
 		filteredValues := allValues[:0]
+		count := 1
 		for _, v := range allValues {
+			if count%checkContextEveryNIterations == 0 && ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			count++
 			if m.Matches(v) {
 				filteredValues = append(filteredValues, v)
 			}
 		}
 		allValues = filteredValues
+	}
+
+	if len(allValues) == 0 {
+		return nil, nil
+	}
+
+	// If we don't have any matchers for other labels, then we're done.
+	if !hasMatchersForOtherLabels {
+		return allValues, nil
+	}
+
+	p, err := PostingsForMatchers(ctx, r, matchers...)
+	if err != nil {
+		return nil, fmt.Errorf("fetching postings for matchers: %w", err)
 	}
 
 	valuesPostings := make([]index.Postings, len(allValues))
@@ -809,12 +762,12 @@ func (p *populateWithDelSeriesIterator) At() (int64, float64) {
 	return p.curr.At()
 }
 
-func (p *populateWithDelSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
-	return p.curr.AtHistogram()
+func (p *populateWithDelSeriesIterator) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
+	return p.curr.AtHistogram(h)
 }
 
-func (p *populateWithDelSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
-	return p.curr.AtFloatHistogram()
+func (p *populateWithDelSeriesIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+	return p.curr.AtFloatHistogram(fh)
 }
 
 func (p *populateWithDelSeriesIterator) AtT() int64 {
@@ -889,7 +842,6 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 				return true
 			}
 		}
-
 	}
 	return false
 }
@@ -926,7 +878,7 @@ func (p *populateWithDelChunkSeriesIterator) populateCurrForSingleChunk() bool {
 				break
 			}
 			var h *histogram.Histogram
-			t, h = p.currDelIter.AtHistogram()
+			t, h = p.currDelIter.AtHistogram(nil)
 			_, _, app, err = app.AppendHistogram(nil, t, h, true)
 			if err != nil {
 				break
@@ -957,7 +909,7 @@ func (p *populateWithDelChunkSeriesIterator) populateCurrForSingleChunk() bool {
 				break
 			}
 			var h *histogram.FloatHistogram
-			t, h = p.currDelIter.AtFloatHistogram()
+			t, h = p.currDelIter.AtFloatHistogram(nil)
 			_, _, app, err = app.AppendFloatHistogram(nil, t, h, true)
 			if err != nil {
 				break
@@ -1043,7 +995,7 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 		case chunkenc.ValHistogram:
 			{
 				var v *histogram.Histogram
-				t, v = p.currDelIter.AtHistogram()
+				t, v = p.currDelIter.AtHistogram(nil)
 				// No need to set prevApp as AppendHistogram will set the
 				// counter reset header for the appender that's returned.
 				newChunk, recoded, app, err = app.AppendHistogram(nil, t, v, false)
@@ -1051,7 +1003,7 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 		case chunkenc.ValFloatHistogram:
 			{
 				var v *histogram.FloatHistogram
-				t, v = p.currDelIter.AtFloatHistogram()
+				t, v = p.currDelIter.AtFloatHistogram(nil)
 				// No need to set prevApp as AppendHistogram will set the
 				// counter reset header for the appender that's returned.
 				newChunk, recoded, app, err = app.AppendFloatHistogram(nil, t, v, false)
@@ -1222,13 +1174,13 @@ func (it *DeletedIterator) At() (int64, float64) {
 	return it.Iter.At()
 }
 
-func (it *DeletedIterator) AtHistogram() (int64, *histogram.Histogram) {
-	t, h := it.Iter.AtHistogram()
+func (it *DeletedIterator) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
+	t, h := it.Iter.AtHistogram(h)
 	return t, h
 }
 
-func (it *DeletedIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
-	t, h := it.Iter.AtFloatHistogram()
+func (it *DeletedIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+	t, h := it.Iter.AtFloatHistogram(fh)
 	return t, h
 }
 

@@ -22,12 +22,15 @@ import (
 	"math/rand"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 
+	"github.com/grafana/regexp"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestMemPostings_addFor(t *testing.T) {
@@ -49,7 +52,7 @@ func TestMemPostings_ensureOrder(t *testing.T) {
 		for j := range l {
 			l[j] = storage.SeriesRef(rand.Uint64())
 		}
-		v := fmt.Sprintf("%d", i)
+		v := strconv.Itoa(i)
 
 		p.m["a"][v] = l
 	}
@@ -61,9 +64,7 @@ func TestMemPostings_ensureOrder(t *testing.T) {
 			ok := sort.SliceIsSorted(l, func(i, j int) bool {
 				return l[i] < l[j]
 			})
-			if !ok {
-				t.Fatalf("postings list %v is not sorted", l)
-			}
+			require.True(t, ok, "postings list %v is not sorted", l)
 		}
 	}
 }
@@ -214,9 +215,7 @@ func TestIntersect(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run("", func(t *testing.T) {
-			if c.res == nil {
-				t.Fatal("intersect result expectancy cannot be nil")
-			}
+			require.NotNil(t, c.res, "intersect result expectancy cannot be nil")
 
 			expected, err := ExpandPostings(c.res)
 			require.NoError(t, err)
@@ -228,9 +227,7 @@ func TestIntersect(t *testing.T) {
 				return
 			}
 
-			if i == EmptyPostings() {
-				t.Fatal("intersect unexpected result: EmptyPostings sentinel")
-			}
+			require.NotEqual(t, EmptyPostings(), i, "intersect unexpected result: EmptyPostings sentinel")
 
 			res, err := ExpandPostings(i)
 			require.NoError(t, err)
@@ -396,7 +393,7 @@ func BenchmarkMerge(t *testing.B) {
 
 	its := make([]Postings, len(refs))
 	for _, nSeries := range []int{1, 10, 100, 1000, 10000, 100000} {
-		t.Run(fmt.Sprint(nSeries), func(bench *testing.B) {
+		t.Run(strconv.Itoa(nSeries), func(bench *testing.B) {
 			ctx := context.Background()
 			for i := 0; i < bench.N; i++ {
 				// Reset the ListPostings to their original values each time round the loop.
@@ -501,9 +498,7 @@ func TestMergedPostings(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run("", func(t *testing.T) {
-			if c.res == nil {
-				t.Fatal("merge result expectancy cannot be nil")
-			}
+			require.NotNil(t, c.res, "merge result expectancy cannot be nil")
 
 			ctx := context.Background()
 
@@ -517,9 +512,7 @@ func TestMergedPostings(t *testing.T) {
 				return
 			}
 
-			if m == EmptyPostings() {
-				t.Fatal("merge unexpected result: EmptyPostings sentinel")
-			}
+			require.NotEqual(t, EmptyPostings(), m, "merge unexpected result: EmptyPostings sentinel")
 
 			res, err := ExpandPostings(m)
 			require.NoError(t, err)
@@ -897,9 +890,7 @@ func TestWithoutPostings(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run("", func(t *testing.T) {
-			if c.res == nil {
-				t.Fatal("without result expectancy cannot be nil")
-			}
+			require.NotNil(t, c.res, "without result expectancy cannot be nil")
 
 			expected, err := ExpandPostings(c.res)
 			require.NoError(t, err)
@@ -911,9 +902,7 @@ func TestWithoutPostings(t *testing.T) {
 				return
 			}
 
-			if w == EmptyPostings() {
-				t.Fatal("without unexpected result: EmptyPostings sentinel")
-			}
+			require.NotEqual(t, EmptyPostings(), w, "without unexpected result: EmptyPostings sentinel")
 
 			res, err := ExpandPostings(w)
 			require.NoError(t, err)
@@ -1295,4 +1284,72 @@ func BenchmarkListPostings(b *testing.B) {
 			}
 		})
 	}
+}
+
+func slowRegexpString() string {
+	nums := map[int]struct{}{}
+	for i := 10_000; i < 20_000; i++ {
+		if i%3 == 0 {
+			nums[i] = struct{}{}
+		}
+	}
+
+	var sb strings.Builder
+	sb.WriteString(".*(9999")
+	for i := range nums {
+		sb.WriteString("|")
+		sb.WriteString(strconv.Itoa(i))
+	}
+	sb.WriteString(").*")
+	return sb.String()
+}
+
+func BenchmarkMemPostings_PostingsForLabelMatching(b *testing.B) {
+	fast := regexp.MustCompile("^(100|200)$")
+	slowRegexp := "^" + slowRegexpString() + "$"
+	b.Logf("Slow regexp length = %d", len(slowRegexp))
+	slow := regexp.MustCompile(slowRegexp)
+
+	for _, labelValueCount := range []int{1_000, 10_000, 100_000} {
+		b.Run(fmt.Sprintf("labels=%d", labelValueCount), func(b *testing.B) {
+			mp := NewMemPostings()
+			for i := 0; i < labelValueCount; i++ {
+				mp.Add(storage.SeriesRef(i), labels.FromStrings("label", strconv.Itoa(i)))
+			}
+
+			fp, err := ExpandPostings(mp.PostingsForLabelMatching(context.Background(), "label", fast.MatchString))
+			require.NoError(b, err)
+			b.Logf("Fast matcher matches %d series", len(fp))
+			b.Run("matcher=fast", func(b *testing.B) {
+				for i := 0; i < b.N; i++ {
+					mp.PostingsForLabelMatching(context.Background(), "label", fast.MatchString).Next()
+				}
+			})
+
+			sp, err := ExpandPostings(mp.PostingsForLabelMatching(context.Background(), "label", slow.MatchString))
+			require.NoError(b, err)
+			b.Logf("Slow matcher matches %d series", len(sp))
+			b.Run("matcher=slow", func(b *testing.B) {
+				for i := 0; i < b.N; i++ {
+					mp.PostingsForLabelMatching(context.Background(), "label", slow.MatchString).Next()
+				}
+			})
+		})
+	}
+}
+
+func TestMemPostings_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
+	memP := NewMemPostings()
+	seriesCount := 10 * checkContextEveryNIterations
+	for i := 1; i <= seriesCount; i++ {
+		memP.Add(storage.SeriesRef(i), labels.FromStrings("__name__", fmt.Sprintf("%4d", i)))
+	}
+
+	failAfter := uint64(seriesCount / 2 / checkContextEveryNIterations)
+	ctx := &testutil.MockContextErrAfter{FailAfter: failAfter}
+	p := memP.PostingsForLabelMatching(ctx, "__name__", func(string) bool {
+		return true
+	})
+	require.Error(t, p.Err())
+	require.Equal(t, failAfter+1, ctx.Count()) // Plus one for the Err() call that puts the error in the result.
 }

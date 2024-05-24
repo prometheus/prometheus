@@ -84,7 +84,7 @@ func TestDB_InvalidSeries(t *testing.T) {
 	})
 }
 
-func createTestAgentDB(t *testing.T, reg prometheus.Registerer, opts *Options) *DB {
+func createTestAgentDB(t testing.TB, reg prometheus.Registerer, opts *Options) *DB {
 	t.Helper()
 
 	dbDir := t.TempDir()
@@ -184,7 +184,7 @@ func TestCommit(t *testing.T) {
 	// Read records from WAL and check for expected count of series, samples, and exemplars.
 	var (
 		r   = wlog.NewReader(sr)
-		dec record.Decoder
+		dec = record.NewDecoder(labels.NewSymbolTable())
 
 		walSeriesCount, walSamplesCount, walExemplarsCount, walHistogramCount, walFloatHistogramCount int
 	)
@@ -293,7 +293,7 @@ func TestRollback(t *testing.T) {
 	// Read records from WAL and check for expected count of series and samples.
 	var (
 		r   = wlog.NewReader(sr)
-		dec record.Decoder
+		dec = record.NewDecoder(labels.NewSymbolTable())
 
 		walSeriesCount, walSamplesCount, walHistogramCount, walFloatHistogramCount, walExemplarsCount int
 	)
@@ -737,7 +737,7 @@ func TestStorage_DuplicateExemplarsIgnored(t *testing.T) {
 	defer sr.Close()
 	r := wlog.NewReader(sr)
 
-	var dec record.Decoder
+	dec := record.NewDecoder(labels.NewSymbolTable())
 	for r.Next() {
 		rec := r.Record()
 		if dec.Type(rec) == record.Exemplars {
@@ -877,4 +877,22 @@ func TestDBAllowOOOSamples(t *testing.T) {
 	require.Equal(t, float64(40), m.Metric[0].Counter.GetValue(), "agent wal mismatch of total appended samples")
 	require.Equal(t, float64(80), m.Metric[1].Counter.GetValue(), "agent wal mismatch of total appended histograms")
 	require.NoError(t, db.Close())
+}
+
+func BenchmarkCreateSeries(b *testing.B) {
+	s := createTestAgentDB(b, nil, DefaultOptions())
+	defer s.Close()
+
+	app := s.Appender(context.Background()).(*appender)
+	lbls := make([]labels.Labels, b.N)
+
+	for i, l := range labelsForTest("benchmark", b.N) {
+		lbls[i] = labels.New(l...)
+	}
+
+	b.ResetTimer()
+
+	for _, l := range lbls {
+		app.getOrCreate(l)
+	}
 }

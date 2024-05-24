@@ -15,6 +15,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -23,6 +24,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/pprof"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,7 +33,7 @@ import (
 
 	"github.com/alecthomas/units"
 	"github.com/go-kit/log"
-	"golang.org/x/exp/slices"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -148,8 +150,7 @@ func benchmarkWrite(outPath, samplesFile string, numMetrics, numScrapes int) err
 }
 
 func (b *writeBenchmark) ingestScrapes(lbls []labels.Labels, scrapeCount int) (uint64, error) {
-	var mu sync.Mutex
-	var total uint64
+	var total atomic.Uint64
 
 	for i := 0; i < scrapeCount; i += 100 {
 		var wg sync.WaitGroup
@@ -164,22 +165,21 @@ func (b *writeBenchmark) ingestScrapes(lbls []labels.Labels, scrapeCount int) (u
 
 			wg.Add(1)
 			go func() {
+				defer wg.Done()
+
 				n, err := b.ingestScrapesShard(batch, 100, int64(timeDelta*i))
 				if err != nil {
 					// exitWithError(err)
 					fmt.Println(" err", err)
 				}
-				mu.Lock()
-				total += n
-				mu.Unlock()
-				wg.Done()
+				total.Add(n)
 			}()
 		}
 		wg.Wait()
 	}
 	fmt.Println("ingestion completed")
 
-	return total, nil
+	return total.Load(), nil
 }
 
 func (b *writeBenchmark) ingestScrapesShard(lbls []labels.Labels, scrapeCount int, baset int64) (uint64, error) {
@@ -338,7 +338,7 @@ func readPrometheusLabels(r io.Reader, n int) ([]labels.Labels, error) {
 }
 
 func listBlocks(path string, humanReadable bool) error {
-	db, err := tsdb.OpenDBReadOnly(path, nil)
+	db, err := tsdb.OpenDBReadOnly(path, "", nil)
 	if err != nil {
 		return err
 	}
@@ -393,7 +393,7 @@ func getFormatedBytes(bytes int64, humanReadable bool) string {
 }
 
 func openBlock(path, blockID string) (*tsdb.DBReadOnly, tsdb.BlockReader, error) {
-	db, err := tsdb.OpenDBReadOnly(path, nil)
+	db, err := tsdb.OpenDBReadOnly(path, "", nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -667,7 +667,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 				it := fhchk.Iterator(nil)
 				bucketCount := 0
 				for it.Next() == chunkenc.ValFloatHistogram {
-					_, f := it.AtFloatHistogram()
+					_, f := it.AtFloatHistogram(nil)
 					bucketCount += len(f.PositiveBuckets)
 					bucketCount += len(f.NegativeBuckets)
 				}
@@ -682,7 +682,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 				it := hchk.Iterator(nil)
 				bucketCount := 0
 				for it.Next() == chunkenc.ValHistogram {
-					_, f := it.AtHistogram()
+					_, f := it.AtHistogram(nil)
 					bucketCount += len(f.PositiveBuckets)
 					bucketCount += len(f.NegativeBuckets)
 				}
@@ -706,8 +706,10 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 	return nil
 }
 
-func dumpSamples(ctx context.Context, path string, mint, maxt int64, match string) (err error) {
-	db, err := tsdb.OpenDBReadOnly(path, nil)
+type SeriesSetFormatter func(series storage.SeriesSet) error
+
+func dumpSamples(ctx context.Context, dbDir, sandboxDirRoot string, mint, maxt int64, match []string, formatter SeriesSetFormatter) (err error) {
+	db, err := tsdb.OpenDBReadOnly(dbDir, sandboxDirRoot, nil)
 	if err != nil {
 		return err
 	}
@@ -720,31 +722,25 @@ func dumpSamples(ctx context.Context, path string, mint, maxt int64, match strin
 	}
 	defer q.Close()
 
-	matchers, err := parser.ParseMetricSelector(match)
+	matcherSets, err := parser.ParseMetricSelectors(match)
 	if err != nil {
 		return err
 	}
-	ss := q.Select(ctx, false, nil, matchers...)
 
-	for ss.Next() {
-		series := ss.At()
-		lbs := series.Labels()
-		it := series.Iterator(nil)
-		for it.Next() == chunkenc.ValFloat {
-			ts, val := it.At()
-			fmt.Printf("%s %g %d\n", lbs, val, ts)
+	var ss storage.SeriesSet
+	if len(matcherSets) > 1 {
+		var sets []storage.SeriesSet
+		for _, mset := range matcherSets {
+			sets = append(sets, q.Select(ctx, true, nil, mset...))
 		}
-		for it.Next() == chunkenc.ValFloatHistogram {
-			ts, fh := it.AtFloatHistogram()
-			fmt.Printf("%s %s %d\n", lbs, fh.String(), ts)
-		}
-		for it.Next() == chunkenc.ValHistogram {
-			ts, h := it.AtHistogram()
-			fmt.Printf("%s %s %d\n", lbs, h.String(), ts)
-		}
-		if it.Err() != nil {
-			return ss.Err()
-		}
+		ss = storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
+	} else {
+		ss = q.Select(ctx, false, nil, matcherSets[0]...)
+	}
+
+	err = formatter(ss)
+	if err != nil {
+		return err
 	}
 
 	if ws := ss.Warnings(); len(ws) > 0 {
@@ -754,6 +750,68 @@ func dumpSamples(ctx context.Context, path string, mint, maxt int64, match strin
 	if ss.Err() != nil {
 		return ss.Err()
 	}
+	return nil
+}
+
+func formatSeriesSet(ss storage.SeriesSet) error {
+	for ss.Next() {
+		series := ss.At()
+		lbs := series.Labels()
+		it := series.Iterator(nil)
+		for it.Next() == chunkenc.ValFloat {
+			ts, val := it.At()
+			fmt.Printf("%s %g %d\n", lbs, val, ts)
+		}
+		for it.Next() == chunkenc.ValFloatHistogram {
+			ts, fh := it.AtFloatHistogram(nil)
+			fmt.Printf("%s %s %d\n", lbs, fh.String(), ts)
+		}
+		for it.Next() == chunkenc.ValHistogram {
+			ts, h := it.AtHistogram(nil)
+			fmt.Printf("%s %s %d\n", lbs, h.String(), ts)
+		}
+		if it.Err() != nil {
+			return ss.Err()
+		}
+	}
+	return nil
+}
+
+// CondensedString is labels.Labels.String() without spaces after the commas.
+func CondensedString(ls labels.Labels) string {
+	var b bytes.Buffer
+
+	b.WriteByte('{')
+	i := 0
+	ls.Range(func(l labels.Label) {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(l.Name)
+		b.WriteByte('=')
+		b.WriteString(strconv.Quote(l.Value))
+		i++
+	})
+	b.WriteByte('}')
+	return b.String()
+}
+
+func formatSeriesSetOpenMetrics(ss storage.SeriesSet) error {
+	for ss.Next() {
+		series := ss.At()
+		lbs := series.Labels()
+		metricName := lbs.Get(labels.MetricName)
+		lbs = lbs.DropMetricName()
+		it := series.Iterator(nil)
+		for it.Next() == chunkenc.ValFloat {
+			ts, val := it.At()
+			fmt.Printf("%s%s %g %.3f\n", metricName, CondensedString(lbs), val, float64(ts)/1000)
+		}
+		if it.Err() != nil {
+			return ss.Err()
+		}
+	}
+	fmt.Println("# EOF")
 	return nil
 }
 
@@ -780,6 +838,10 @@ func backfillOpenMetrics(path, outputDir string, humanReadable, quiet bool, maxB
 }
 
 func displayHistogram(dataType string, datas []int, total int) {
+	if len(datas) == 0 {
+		fmt.Printf("%s: N/A\n\n", dataType)
+		return
+	}
 	slices.Sort(datas)
 	start, end, step := generateBucket(datas[0], datas[len(datas)-1])
 	sum := 0
@@ -794,9 +856,9 @@ func displayHistogram(dataType string, datas []int, total int) {
 	}
 	avg := sum / len(datas)
 	fmt.Printf("%s (min/avg/max): %d/%d/%d\n", dataType, datas[0], avg, datas[len(datas)-1])
-	maxLeftLen := strconv.Itoa(len(fmt.Sprintf("%d", end)))
-	maxRightLen := strconv.Itoa(len(fmt.Sprintf("%d", end+step)))
-	maxCountLen := strconv.Itoa(len(fmt.Sprintf("%d", maxCount)))
+	maxLeftLen := strconv.Itoa(len(strconv.Itoa(end)))
+	maxRightLen := strconv.Itoa(len(strconv.Itoa(end + step)))
+	maxCountLen := strconv.Itoa(len(strconv.Itoa(maxCount)))
 	for bucket, count := range buckets {
 		percentage := 100.0 * count / total
 		fmt.Printf("[%"+maxLeftLen+"d, %"+maxRightLen+"d]: %"+maxCountLen+"d %s\n", bucket*step+start+1, (bucket+1)*step+start, count, strings.Repeat("#", percentage))

@@ -311,7 +311,7 @@ func TestDebugHandler(t *testing.T) {
 
 		w := httptest.NewRecorder()
 
-		req, err := http.NewRequest("GET", tc.url, nil)
+		req, err := http.NewRequest(http.MethodGet, tc.url, nil)
 
 		require.NoError(t, err)
 
@@ -335,7 +335,7 @@ func TestHTTPMetrics(t *testing.T) {
 		t.Helper()
 		w := httptest.NewRecorder()
 
-		req, err := http.NewRequest("GET", "/-/ready", nil)
+		req, err := http.NewRequest(http.MethodGet, "/-/ready", nil)
 		require.NoError(t, err)
 
 		handler.router.ServeHTTP(w, req)
@@ -440,7 +440,7 @@ func TestShutdownWithStaleConnection(t *testing.T) {
 	select {
 	case <-closed:
 	case <-time.After(timeout + 5*time.Second):
-		t.Fatalf("Server still running after read timeout.")
+		require.FailNow(t, "Server still running after read timeout.")
 	}
 }
 
@@ -502,7 +502,7 @@ func TestHandleMultipleQuitRequests(t *testing.T) {
 	select {
 	case <-closed:
 	case <-time.After(5 * time.Second):
-		t.Fatalf("Server still running after 5 seconds.")
+		require.FailNow(t, "Server still running after 5 seconds.")
 	}
 }
 

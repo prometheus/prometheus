@@ -208,6 +208,20 @@ func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
 	return m, err
 }
 
+// ParseMetricSelectors parses a list of provided textual metric selectors into lists of
+// label matchers.
+func ParseMetricSelectors(matchers []string) (m [][]*labels.Matcher, err error) {
+	var matcherSets [][]*labels.Matcher
+	for _, s := range matchers {
+		matchers, err := ParseMetricSelector(s)
+		if err != nil {
+			return nil, err
+		}
+		matcherSets = append(matcherSets, matchers)
+	}
+	return matcherSets, nil
+}
+
 // SequenceValue is an omittable value in a sequence of time series values.
 type SequenceValue struct {
 	Value     float64
@@ -244,7 +258,6 @@ func ParseSeriesDesc(input string) (labels labels.Labels, values []SequenceValue
 
 		labels = result.labels
 		values = result.values
-
 	}
 
 	if len(p.parseErrors) != 0 {
@@ -403,6 +416,8 @@ func (p *parser) newBinaryExpression(lhs Node, op Item, modifiers, rhs Node) *Bi
 }
 
 func (p *parser) assembleVectorSelector(vs *VectorSelector) {
+	// If the metric name was set outside the braces, add a matcher for it.
+	// If the metric name was inside the braces we don't need to do anything.
 	if vs.Name != "" {
 		nameMatcher, err := labels.NewMatcher(labels.MatchEqual, labels.MetricName, vs.Name)
 		if err != nil {
@@ -776,7 +791,6 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 			// metric name is a non-empty matcher.
 			break
 		}
-
 		// A Vector selector must contain at least one non-empty matcher to prevent
 		// implicit selection of all metrics (e.g. by a typo).
 		notEmpty := false
@@ -853,6 +867,15 @@ func (p *parser) newLabelMatcher(label, operator, value Item) *labels.Matcher {
 	m, err := labels.NewMatcher(matchType, label.Val, val)
 	if err != nil {
 		p.addParseErr(mergeRanges(&label, &value), err)
+	}
+
+	return m
+}
+
+func (p *parser) newMetricNameMatcher(value Item) *labels.Matcher {
+	m, err := labels.NewMatcher(labels.MatchEqual, labels.MetricName, value.Val)
+	if err != nil {
+		p.addParseErr(value.PositionRange(), err)
 	}
 
 	return m

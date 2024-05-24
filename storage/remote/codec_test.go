@@ -20,11 +20,11 @@ import (
 	"testing"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -278,31 +278,31 @@ func TestConcreteSeriesIterator_HistogramSamples(t *testing.T) {
 
 	// Seek to the first sample with ts=1.
 	require.Equal(t, chunkenc.ValHistogram, it.Seek(1))
-	ts, v := it.AtHistogram()
+	ts, v := it.AtHistogram(nil)
 	require.Equal(t, int64(1), ts)
 	require.Equal(t, histograms[0], v)
 
 	// Seek one further, next sample still has ts=1.
 	require.Equal(t, chunkenc.ValHistogram, it.Next())
-	ts, v = it.AtHistogram()
+	ts, v = it.AtHistogram(nil)
 	require.Equal(t, int64(1), ts)
 	require.Equal(t, histograms[1], v)
 
 	// Seek again to 1 and make sure we stay where we are.
 	require.Equal(t, chunkenc.ValHistogram, it.Seek(1))
-	ts, v = it.AtHistogram()
+	ts, v = it.AtHistogram(nil)
 	require.Equal(t, int64(1), ts)
 	require.Equal(t, histograms[1], v)
 
 	// Another seek.
 	require.Equal(t, chunkenc.ValHistogram, it.Seek(3))
-	ts, v = it.AtHistogram()
+	ts, v = it.AtHistogram(nil)
 	require.Equal(t, int64(3), ts)
 	require.Equal(t, histograms[3], v)
 
 	// And we don't go back.
 	require.Equal(t, chunkenc.ValHistogram, it.Seek(2))
-	ts, v = it.AtHistogram()
+	ts, v = it.AtHistogram(nil)
 	require.Equal(t, int64(3), ts)
 	require.Equal(t, histograms[3], v)
 
@@ -347,12 +347,12 @@ func TestConcreteSeriesIterator_FloatAndHistogramSamples(t *testing.T) {
 		fh *histogram.FloatHistogram
 	)
 	require.Equal(t, chunkenc.ValHistogram, it.Next())
-	ts, h = it.AtHistogram()
+	ts, h = it.AtHistogram(nil)
 	require.Equal(t, int64(1), ts)
 	require.Equal(t, histograms[0], h)
 
 	require.Equal(t, chunkenc.ValHistogram, it.Next())
-	ts, h = it.AtHistogram()
+	ts, h = it.AtHistogram(nil)
 	require.Equal(t, int64(2), ts)
 	require.Equal(t, histograms[1], h)
 
@@ -393,13 +393,13 @@ func TestConcreteSeriesIterator_FloatAndHistogramSamples(t *testing.T) {
 	require.Equal(t, 8., v)
 
 	require.Equal(t, chunkenc.ValHistogram, it.Next())
-	ts, h = it.AtHistogram()
+	ts, h = it.AtHistogram(nil)
 	require.Equal(t, int64(16), ts)
 	require.Equal(t, histograms[10], h)
 
 	// Getting a float histogram from an int histogram works.
 	require.Equal(t, chunkenc.ValHistogram, it.Next())
-	ts, fh = it.AtFloatHistogram()
+	ts, fh = it.AtFloatHistogram(nil)
 	require.Equal(t, int64(17), ts)
 	expected := HistogramProtoToFloatHistogram(HistogramToHistogramProto(int64(17), histograms[11]))
 	require.Equal(t, expected, fh)
@@ -488,17 +488,17 @@ func TestMergeLabels(t *testing.T) {
 func TestMetricTypeToMetricTypeProto(t *testing.T) {
 	tc := []struct {
 		desc     string
-		input    textparse.MetricType
+		input    model.MetricType
 		expected prompb.MetricMetadata_MetricType
 	}{
 		{
 			desc:     "with a single-word metric",
-			input:    textparse.MetricTypeCounter,
+			input:    model.MetricTypeCounter,
 			expected: prompb.MetricMetadata_COUNTER,
 		},
 		{
 			desc:     "with a two-word metric",
-			input:    textparse.MetricTypeStateset,
+			input:    model.MetricTypeStateset,
 			expected: prompb.MetricMetadata_STATESET,
 		},
 		{
@@ -517,7 +517,7 @@ func TestMetricTypeToMetricTypeProto(t *testing.T) {
 }
 
 func TestDecodeWriteRequest(t *testing.T) {
-	buf, _, err := buildWriteRequest(writeRequestFixture.Timeseries, nil, nil, nil)
+	buf, _, _, err := buildWriteRequest(nil, writeRequestFixture.Timeseries, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	actual, err := DecodeWriteRequest(bytes.NewReader(buf))
@@ -788,10 +788,11 @@ func (m *mockWriter) Write(p []byte) (n int, err error) {
 type mockChunkSeriesSet struct {
 	chunkedSeries []*prompb.ChunkedSeries
 	index         int
+	builder       labels.ScratchBuilder
 }
 
 func newMockChunkSeriesSet(ss []*prompb.ChunkedSeries) storage.ChunkSeriesSet {
-	return &mockChunkSeriesSet{chunkedSeries: ss, index: -1}
+	return &mockChunkSeriesSet{chunkedSeries: ss, index: -1, builder: labels.NewScratchBuilder(0)}
 }
 
 func (c *mockChunkSeriesSet) Next() bool {
@@ -801,7 +802,7 @@ func (c *mockChunkSeriesSet) Next() bool {
 
 func (c *mockChunkSeriesSet) At() storage.ChunkSeries {
 	return &storage.ChunkSeriesEntry{
-		Lset: labelProtosToLabels(c.chunkedSeries[c.index].Labels),
+		Lset: labelProtosToLabels(&c.builder, c.chunkedSeries[c.index].Labels),
 		ChunkIteratorFn: func(chunks.Iterator) chunks.Iterator {
 			return &mockChunkIterator{
 				chunks: c.chunkedSeries[c.index].Chunks,

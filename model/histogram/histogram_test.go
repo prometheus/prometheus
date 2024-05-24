@@ -14,8 +14,8 @@
 package histogram
 
 import (
-	"fmt"
 	"math"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -72,7 +72,7 @@ func TestHistogramString(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			actualString := c.histogram.String()
 			require.Equal(t, c.expectedString, actualString)
 		})
@@ -211,7 +211,7 @@ func TestCumulativeBucketIterator(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			it := c.histogram.CumulativeBucketIterator()
 			actualBuckets := make([]Bucket[uint64], 0, len(c.expectedBuckets))
 			for it.Next() {
@@ -371,7 +371,7 @@ func TestRegularBucketIterator(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			it := c.histogram.PositiveBucketIterator()
 			actualPositiveBuckets := make([]Bucket[uint64], 0, len(c.expectedPositiveBuckets))
 			for it.Next() {
@@ -602,6 +602,128 @@ func TestHistogramEquals(t *testing.T) {
 
 	// Sum StaleNaN vs regular NaN.
 	notEquals(*hStale, *hNaN)
+}
+
+func TestHistogramCopy(t *testing.T) {
+	cases := []struct {
+		name     string
+		orig     *Histogram
+		expected *Histogram
+	}{
+		{
+			name:     "without buckets",
+			orig:     &Histogram{},
+			expected: &Histogram{},
+		},
+		{
+			name: "with buckets",
+			orig: &Histogram{
+				PositiveSpans:   []Span{{-2, 1}},
+				PositiveBuckets: []int64{1, 3, -3, 42},
+				NegativeSpans:   []Span{{3, 2}},
+				NegativeBuckets: []int64{5, 3, 1.234e5, 1000},
+			},
+			expected: &Histogram{
+				PositiveSpans:   []Span{{-2, 1}},
+				PositiveBuckets: []int64{1, 3, -3, 42},
+				NegativeSpans:   []Span{{3, 2}},
+				NegativeBuckets: []int64{5, 3, 1.234e5, 1000},
+			},
+		},
+		{
+			name: "with empty buckets and non empty capacity",
+			orig: &Histogram{
+				PositiveSpans:   make([]Span, 0, 1),
+				PositiveBuckets: make([]int64, 0, 1),
+				NegativeSpans:   make([]Span, 0, 1),
+				NegativeBuckets: make([]int64, 0, 1),
+			},
+			expected: &Histogram{},
+		},
+	}
+
+	for _, tcase := range cases {
+		t.Run(tcase.name, func(t *testing.T) {
+			hCopy := tcase.orig.Copy()
+
+			// Modify a primitive value in the original histogram.
+			tcase.orig.Sum++
+			require.Equal(t, tcase.expected, hCopy)
+			assertDeepCopyHSpans(t, tcase.orig, hCopy, tcase.expected)
+		})
+	}
+}
+
+func TestHistogramCopyTo(t *testing.T) {
+	cases := []struct {
+		name     string
+		orig     *Histogram
+		expected *Histogram
+	}{
+		{
+			name:     "without buckets",
+			orig:     &Histogram{},
+			expected: &Histogram{},
+		},
+		{
+			name: "with buckets",
+			orig: &Histogram{
+				PositiveSpans:   []Span{{-2, 1}},
+				PositiveBuckets: []int64{1, 3, -3, 42},
+				NegativeSpans:   []Span{{3, 2}},
+				NegativeBuckets: []int64{5, 3, 1.234e5, 1000},
+			},
+			expected: &Histogram{
+				PositiveSpans:   []Span{{-2, 1}},
+				PositiveBuckets: []int64{1, 3, -3, 42},
+				NegativeSpans:   []Span{{3, 2}},
+				NegativeBuckets: []int64{5, 3, 1.234e5, 1000},
+			},
+		},
+		{
+			name: "with empty buckets and non empty capacity",
+			orig: &Histogram{
+				PositiveSpans:   make([]Span, 0, 1),
+				PositiveBuckets: make([]int64, 0, 1),
+				NegativeSpans:   make([]Span, 0, 1),
+				NegativeBuckets: make([]int64, 0, 1),
+			},
+			expected: &Histogram{},
+		},
+	}
+
+	for _, tcase := range cases {
+		t.Run(tcase.name, func(t *testing.T) {
+			hCopy := &Histogram{}
+			tcase.orig.CopyTo(hCopy)
+
+			// Modify a primitive value in the original histogram.
+			tcase.orig.Sum++
+			require.Equal(t, tcase.expected, hCopy)
+			assertDeepCopyHSpans(t, tcase.orig, hCopy, tcase.expected)
+		})
+	}
+}
+
+func assertDeepCopyHSpans(t *testing.T, orig, hCopy, expected *Histogram) {
+	// Do an in-place expansion of an original spans slice.
+	orig.PositiveSpans = expandSpans(orig.PositiveSpans)
+	orig.PositiveSpans[len(orig.PositiveSpans)-1] = Span{1, 2}
+
+	hCopy.PositiveSpans = expandSpans(hCopy.PositiveSpans)
+	expected.PositiveSpans = expandSpans(expected.PositiveSpans)
+	// Expand the copy spans and assert that modifying the original has not affected the copy.
+	require.Equal(t, expected, hCopy)
+}
+
+func expandSpans(spans []Span) []Span {
+	n := len(spans)
+	if cap(spans) > n {
+		spans = spans[:n+1]
+	} else {
+		spans = append(spans, Span{})
+	}
+	return spans
 }
 
 func TestHistogramCompact(t *testing.T) {

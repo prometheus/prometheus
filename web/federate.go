@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 
@@ -26,7 +27,6 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -65,14 +65,10 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	var matcherSets [][]*labels.Matcher
-	for _, s := range req.Form["match[]"] {
-		matchers, err := parser.ParseMetricSelector(s)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		matcherSets = append(matcherSets, matchers)
+	matcherSets, err := parser.ParseMetricSelectors(req.Form["match[]"])
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	var (
@@ -127,7 +123,7 @@ Loop:
 		case chunkenc.ValFloat:
 			t, f = it.At()
 		case chunkenc.ValFloatHistogram, chunkenc.ValHistogram:
-			t, fh = it.AtFloatHistogram()
+			t, fh = it.AtFloatHistogram(nil)
 		default:
 			sample, ok := it.PeekBack(1)
 			if !ok {
@@ -193,8 +189,9 @@ Loop:
 	)
 	for _, s := range vec {
 		isHistogram := s.H != nil
+		formatType := format.FormatType()
 		if isHistogram &&
-			format != expfmt.FmtProtoDelim && format != expfmt.FmtProtoText && format != expfmt.FmtProtoCompact {
+			formatType != expfmt.TypeProtoDelim && formatType != expfmt.TypeProtoText && formatType != expfmt.TypeProtoCompact {
 			// Can't serve the native histogram.
 			// TODO(codesome): Serve them when other protocols get the native histogram support.
 			continue

@@ -17,12 +17,12 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -410,7 +410,7 @@ func TestOOOHeadChunkReader_LabelValues(t *testing.T) {
 			queryMinT:  math.MinInt64,
 			queryMaxT:  math.MaxInt64,
 			expValues1: []string{"bar1"},
-			expValues2: []string{},
+			expValues2: nil,
 			expValues3: []string{"bar1", "bar2"},
 			expValues4: []string{"bar1", "bar2"},
 		},
@@ -419,7 +419,7 @@ func TestOOOHeadChunkReader_LabelValues(t *testing.T) {
 			queryMinT:  90,
 			queryMaxT:  90,
 			expValues1: []string{"bar1"},
-			expValues2: []string{},
+			expValues2: nil,
 			expValues3: []string{"bar1", "bar2"},
 			expValues4: []string{"bar1", "bar2"},
 		},

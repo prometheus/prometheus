@@ -38,6 +38,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 // TODO(bwplotka): Replace those mocks with remote.concreteSeriesSet.
@@ -775,11 +776,11 @@ func (it *mockSampleIterator) At() (int64, float64) {
 	return it.s[it.idx].T(), it.s[it.idx].F()
 }
 
-func (it *mockSampleIterator) AtHistogram() (int64, *histogram.Histogram) {
+func (it *mockSampleIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	return it.s[it.idx].T(), it.s[it.idx].H()
 }
 
-func (it *mockSampleIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+func (it *mockSampleIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	return it.s[it.idx].T(), it.s[it.idx].FH()
 }
 
@@ -1822,12 +1823,12 @@ func checkCurrVal(t *testing.T, valType chunkenc.ValueType, it *populateWithDelS
 		require.Equal(t, int64(expectedTs), ts)
 		require.Equal(t, float64(expectedValue), v)
 	case chunkenc.ValHistogram:
-		ts, h := it.AtHistogram()
+		ts, h := it.AtHistogram(nil)
 		require.Equal(t, int64(expectedTs), ts)
 		h.CounterResetHint = histogram.UnknownCounterReset
 		require.Equal(t, tsdbutil.GenerateTestHistogram(expectedValue), h)
 	case chunkenc.ValFloatHistogram:
-		ts, h := it.AtFloatHistogram()
+		ts, h := it.AtFloatHistogram(nil)
 		require.Equal(t, int64(expectedTs), ts)
 		h.CounterResetHint = histogram.UnknownCounterReset
 		require.Equal(t, tsdbutil.GenerateTestFloatHistogram(expectedValue), h)
@@ -2326,6 +2327,37 @@ func (m mockIndex) SortedPostings(p index.Postings) index.Postings {
 	return index.NewListPostings(ep)
 }
 
+func (m mockIndex) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) index.Postings {
+	var res []index.Postings
+	for l, srs := range m.postings {
+		if l.Name == name && match(l.Value) {
+			res = append(res, index.NewListPostings(srs))
+		}
+	}
+	return index.Merge(ctx, res...)
+}
+
+func (m mockIndex) ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings {
+	out := make([]storage.SeriesRef, 0, 128)
+
+	for p.Next() {
+		ref := p.At()
+		s, ok := m.series[ref]
+		if !ok {
+			continue
+		}
+
+		// Check if the series belong to the shard.
+		if s.l.Hash()%shardCount != shardIndex {
+			continue
+		}
+
+		out = append(out, ref)
+	}
+
+	return index.NewListPostings(out)
+}
+
 func (m mockIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	s, ok := m.series[ref]
 	if !ok {
@@ -2637,69 +2669,6 @@ func BenchmarkSetMatcher(b *testing.B) {
 	}
 }
 
-// Refer to https://github.com/prometheus/prometheus/issues/2651.
-func TestFindSetMatches(t *testing.T) {
-	cases := []struct {
-		pattern string
-		exp     []string
-	}{
-		// Single value, coming from a `bar=~"foo"` selector.
-		{
-			pattern: "^(?:foo)$",
-			exp: []string{
-				"foo",
-			},
-		},
-		// Simple sets.
-		{
-			pattern: "^(?:foo|bar|baz)$",
-			exp: []string{
-				"foo",
-				"bar",
-				"baz",
-			},
-		},
-		// Simple sets containing escaped characters.
-		{
-			pattern: "^(?:fo\\.o|bar\\?|\\^baz)$",
-			exp: []string{
-				"fo.o",
-				"bar?",
-				"^baz",
-			},
-		},
-		// Simple sets containing special characters without escaping.
-		{
-			pattern: "^(?:fo.o|bar?|^baz)$",
-			exp:     nil,
-		},
-		// Missing wrapper.
-		{
-			pattern: "foo|bar|baz",
-			exp:     nil,
-		},
-	}
-
-	for _, c := range cases {
-		matches := findSetMatches(c.pattern)
-		if len(c.exp) == 0 {
-			if len(matches) != 0 {
-				t.Errorf("Evaluating %s, unexpected result %v", c.pattern, matches)
-			}
-		} else {
-			if len(matches) != len(c.exp) {
-				t.Errorf("Evaluating %s, length of result not equal to exp", c.pattern)
-			} else {
-				for i := 0; i < len(c.exp); i++ {
-					if c.exp[i] != matches[i] {
-						t.Errorf("Evaluating %s, unexpected result %s", c.pattern, matches[i])
-					}
-				}
-			}
-		}
-	}
-}
-
 func TestPostingsForMatchers(t *testing.T) {
 	ctx := context.Background()
 
@@ -2995,9 +2964,7 @@ func TestPostingsForMatchers(t *testing.T) {
 				}
 			}
 			require.NoError(t, p.Err())
-			if len(exp) != 0 {
-				t.Errorf("Evaluating %v, missing results %+v", c.matchers, exp)
-			}
+			require.Empty(t, exp, "Evaluating %v", c.matchers)
 		})
 	}
 }
@@ -3080,9 +3047,7 @@ func TestClose(t *testing.T) {
 	createBlock(t, dir, genSeries(1, 1, 10, 20))
 
 	db, err := Open(dir, nil, nil, DefaultOptions(), nil)
-	if err != nil {
-		t.Fatalf("Opening test storage failed: %s", err)
-	}
+	require.NoError(t, err, "Opening test storage failed: %s")
 	defer func() {
 		require.NoError(t, db.Close())
 	}()
@@ -3272,12 +3237,20 @@ func (m mockMatcherIndex) SortedPostings(p index.Postings) index.Postings {
 	return index.EmptyPostings()
 }
 
+func (m mockMatcherIndex) ShardedPostings(ps index.Postings, shardIndex, shardCount uint64) index.Postings {
+	return ps
+}
+
 func (m mockMatcherIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	return nil
 }
 
 func (m mockMatcherIndex) LabelNames(context.Context, ...*labels.Matcher) ([]string, error) {
 	return []string{}, nil
+}
+
+func (m mockMatcherIndex) PostingsForLabelMatching(context.Context, string, func(string) bool) index.Postings {
+	return index.ErrPostings(fmt.Errorf("PostingsForLabelMatching called"))
 }
 
 func TestPostingsForMatcher(t *testing.T) {
@@ -3304,18 +3277,20 @@ func TestPostingsForMatcher(t *testing.T) {
 		{
 			// Test case for double quoted regex matcher
 			matcher:  labels.MustNewMatcher(labels.MatchRegexp, "test", "^(?:a|b)$"),
-			hasError: true,
+			hasError: false,
 		},
 	}
 
 	for _, tc := range cases {
-		ir := &mockMatcherIndex{}
-		_, err := postingsForMatcher(ctx, ir, tc.matcher)
-		if tc.hasError {
-			require.Error(t, err)
-		} else {
-			require.NoError(t, err)
-		}
+		t.Run(tc.matcher.String(), func(t *testing.T) {
+			ir := &mockMatcherIndex{}
+			_, err := postingsForMatcher(ctx, ir, tc.matcher)
+			if tc.hasError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
 	}
 }
 
@@ -3663,4 +3638,78 @@ func TestQueryWithOneChunkCompletelyDeleted(t *testing.T) {
 	}
 	require.NoError(t, css.Err())
 	require.Equal(t, 1, seriesCount)
+}
+
+func TestReader_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
+	ir := mockReaderOfLabels{}
+
+	failAfter := uint64(mockReaderOfLabelsSeriesCount / 2 / checkContextEveryNIterations)
+	ctx := &testutil.MockContextErrAfter{FailAfter: failAfter}
+	_, err := labelValuesWithMatchers(ctx, ir, "__name__", labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".+"))
+
+	require.Error(t, err)
+	require.Equal(t, failAfter+1, ctx.Count()) // Plus one for the Err() call that puts the error in the result.
+}
+
+func TestReader_InversePostingsForMatcherHonorsContextCancel(t *testing.T) {
+	ir := mockReaderOfLabels{}
+
+	failAfter := uint64(mockReaderOfLabelsSeriesCount / 2 / checkContextEveryNIterations)
+	ctx := &testutil.MockContextErrAfter{FailAfter: failAfter}
+	_, err := inversePostingsForMatcher(ctx, ir, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
+
+	require.Error(t, err)
+	require.Equal(t, failAfter+1, ctx.Count()) // Plus one for the Err() call that puts the error in the result.
+}
+
+type mockReaderOfLabels struct{}
+
+const mockReaderOfLabelsSeriesCount = checkContextEveryNIterations * 10
+
+func (m mockReaderOfLabels) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, error) {
+	return make([]string, mockReaderOfLabelsSeriesCount), nil
+}
+
+func (m mockReaderOfLabels) LabelValueFor(context.Context, storage.SeriesRef, string) (string, error) {
+	panic("LabelValueFor called")
+}
+
+func (m mockReaderOfLabels) SortedLabelValues(context.Context, string, ...*labels.Matcher) ([]string, error) {
+	panic("SortedLabelValues called")
+}
+
+func (m mockReaderOfLabels) Close() error {
+	return nil
+}
+
+func (m mockReaderOfLabels) LabelNames(context.Context, ...*labels.Matcher) ([]string, error) {
+	panic("LabelNames called")
+}
+
+func (m mockReaderOfLabels) LabelNamesFor(context.Context, ...storage.SeriesRef) ([]string, error) {
+	panic("LabelNamesFor called")
+}
+
+func (m mockReaderOfLabels) PostingsForLabelMatching(context.Context, string, func(string) bool) index.Postings {
+	panic("PostingsForLabelMatching called")
+}
+
+func (m mockReaderOfLabels) Postings(context.Context, string, ...string) (index.Postings, error) {
+	panic("Postings called")
+}
+
+func (m mockReaderOfLabels) ShardedPostings(index.Postings, uint64, uint64) index.Postings {
+	panic("Postings called")
+}
+
+func (m mockReaderOfLabels) SortedPostings(index.Postings) index.Postings {
+	panic("SortedPostings called")
+}
+
+func (m mockReaderOfLabels) Series(storage.SeriesRef, *labels.ScratchBuilder, *[]chunks.Meta) error {
+	panic("Series called")
+}
+
+func (m mockReaderOfLabels) Symbols() index.StringIter {
+	panic("Series called")
 }

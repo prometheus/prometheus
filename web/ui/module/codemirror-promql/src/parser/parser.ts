@@ -27,7 +27,6 @@ import {
   Gte,
   Gtr,
   Identifier,
-  LabelMatcher,
   LabelMatchers,
   Lss,
   Lte,
@@ -36,11 +35,14 @@ import {
   Or,
   ParenExpr,
   Quantile,
+  QuotedLabelMatcher,
+  QuotedLabelName,
   StepInvariantExpr,
   SubqueryExpr,
   Topk,
   UnaryExpr,
   Unless,
+  UnquotedLabelMatcher,
   VectorSelector,
 } from '@prometheus-io/lezer-promql';
 import { containsAtLeastOneChild } from './path-finder';
@@ -282,7 +284,11 @@ export class Parser {
 
   private checkVectorSelector(node: SyntaxNode): void {
     const matchList = node.getChild(LabelMatchers);
-    const labelMatchers = buildLabelMatchers(matchList ? matchList.getChildren(LabelMatcher) : [], this.state);
+    const labelMatcherOpts = [QuotedLabelName, QuotedLabelMatcher, UnquotedLabelMatcher];
+    let labelMatchers: Matcher[] = [];
+    for (const labelMatcherOpt of labelMatcherOpts) {
+      labelMatchers = labelMatchers.concat(buildLabelMatchers(matchList ? matchList.getChildren(labelMatcherOpt) : [], this.state));
+    }
     let vectorSelectorName = '';
     // VectorSelector ( Identifier )
     // https://github.com/promlabs/lezer-promql/blob/71e2f9fa5ae6f5c5547d5738966cd2512e6b99a8/src/promql.grammar#L200
@@ -301,6 +307,14 @@ export class Parser {
       // adding the metric name as a Matcher to avoid a false positive for this kind of expression:
       // foo{bare=''}
       labelMatchers.push(new Matcher(EqlSingle, '__name__', vectorSelectorName));
+    } else {
+      // In this case when metric name is not set outside the braces
+      // It is checking whether metric name is set twice like in :
+      // {__name__:"foo", "foo"}, {"foo", "bar"}
+      const labelMatchersMetricName = labelMatchers.filter((lm) => lm.name === '__name__');
+      if (labelMatchersMetricName.length > 1) {
+        this.addDiagnostic(node, `metric name must not be set twice: ${labelMatchersMetricName[0].value} or ${labelMatchersMetricName[1].value}`);
+      }
     }
 
     // A Vector selector must contain at least one non-empty matcher to prevent

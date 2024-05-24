@@ -81,6 +81,8 @@ type Options struct {
 	// Option to enable the ingestion of the created timestamp as a synthetic zero sample.
 	// See: https://github.com/prometheus/proposals/blob/main/proposals/2023-06-13_created-timestamp.md
 	EnableCreatedTimestampZeroIngestion bool
+	// Option to enable the ingestion of native histograms.
+	EnableNativeHistogramsIngestion bool
 
 	// Optional HTTP client options to use when scraping.
 	HTTPClientOptions []config_util.HTTPClientOption
@@ -127,6 +129,11 @@ func (m *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
 			return nil
 		}
 	}
+}
+
+// UnregisterMetrics unregisters manager metrics.
+func (m *Manager) UnregisterMetrics() {
+	m.metrics.Unregister()
 }
 
 func (m *Manager) reloader() {
@@ -180,7 +187,6 @@ func (m *Manager) reload() {
 			sp.Sync(groups)
 			wg.Done()
 		}(m.scrapePools[setName], groups)
-
 	}
 	m.mtxScrape.Unlock()
 	wg.Wait()
@@ -288,24 +294,10 @@ func (m *Manager) TargetsActive() map[string][]*Target {
 	m.mtxScrape.Lock()
 	defer m.mtxScrape.Unlock()
 
-	var (
-		wg  sync.WaitGroup
-		mtx sync.Mutex
-	)
-
 	targets := make(map[string][]*Target, len(m.scrapePools))
-	wg.Add(len(m.scrapePools))
 	for tset, sp := range m.scrapePools {
-		// Running in parallel limits the blocking time of scrapePool to scrape
-		// interval when there's an update from SD.
-		go func(tset string, sp *scrapePool) {
-			mtx.Lock()
-			targets[tset] = sp.ActiveTargets()
-			mtx.Unlock()
-			wg.Done()
-		}(tset, sp)
+		targets[tset] = sp.ActiveTargets()
 	}
-	wg.Wait()
 	return targets
 }
 

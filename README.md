@@ -14,7 +14,7 @@ examples and guides.</p>
 [![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/486/badge)](https://bestpractices.coreinfrastructure.org/projects/486)
 [![Gitpod ready-to-code](https://img.shields.io/badge/Gitpod-ready--to--code-blue?logo=gitpod)](https://gitpod.io/#https://github.com/prometheus/prometheus)
 [![Fuzzing Status](https://oss-fuzz-build-logs.storage.googleapis.com/badges/prometheus.svg)](https://bugs.chromium.org/p/oss-fuzz/issues/list?sort=-opened&can=1&q=proj:prometheus)
-[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/prometheus/prometheus/badge)](https://api.securityscorecards.dev/projects/github.com/prometheus/prometheus)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/prometheus/prometheus/badge)](https://securityscorecards.dev/viewer/?uri=github.com/prometheus/prometheus)
 
 </div>
 
@@ -149,7 +149,7 @@ We are publishing our Remote Write protobuf independently at
 You can use that as a library:
 
 ```shell
-go get go.buf.build/protocolbuffers/go/prometheus/prometheus
+go get buf.build/gen/go/prometheus/prometheus/protocolbuffers/go@latest
 ```
 
 This is experimental.
