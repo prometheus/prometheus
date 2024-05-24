@@ -1,0 +1,34 @@
+# based on https://github.com/open-telemetry/opentelemetry-lambda/blob/main/.github/workflows/close-stale.yaml
+# The idea of this workflow is to close issues that are no longer relevant
+name: 'Close stale issues and PRs'
+on:
+  schedule:
+    # for fairness create notifications 12h apart
+    - cron: "42 3,15 * * 1-5" # Run at an arbitrary time on weekdays.
+
+permissions:
+  issues: write
+  pull-requests: write
+env:
+  DAYS_BEFORE_STALE: 365
+  DAYS_BEFORE_CLOSE: 60
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@v9
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          stale-issue-message: 'This issue was marked stale. It will be closed in ${{ env.DAYS_BEFORE_CLOSE }} if it continues without additional activity.'
+          close-issue-message: 'Closed as inactive. Feel free to reopen if this issue is still relevant.'
+
+          stale-pr-message: 'This PR was marked stale. It will be closed in ${{ env.DAYS_BEFORE_CLOSE }} days if it continues without additional activity.'
+          close-pr-message: 'Closed as inactive. Feel free to reopen if this PR is still being worked on.'
+
+          days-before-stale: ${{ env.DAYS_BEFORE_STALE }}
+          days-before-close: ${{ env.DAYS_BEFORE_STALE }}
+          # This label has to be manually applied
+          exempt-issue-labels: 'Never Stale'
+          # We want the backlog to be processed slowly so that we don't overload people with notifications
+          operations-per-run: 10
