@@ -1963,7 +1963,7 @@ func (s *stripeSeries) iter(f func(int, uint64, *memSeries, map[chunks.HeadSerie
 	for i := 0; i < s.size; i++ {
 		seriesSet := make(map[chunks.HeadSeriesRef]labels.Labels, seriesSetFromPrevStripe)
 		s.locks[i].Lock()
-		// Iterate conflicts first so seriesHashmap.del doesn't move them to the `unique` field,
+		// Iterate conflicts first so f doesn't move them to the `unique` field,
 		// after deleting `unique`.
 		for hash, all := range s.hashes[i].conflicts {
 			for _, series := range all {
