@@ -402,6 +402,28 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 }
 
 func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) Postings {
+	if match == nil {
+		// All postings are requested, no filtering.
+		p.mtx.RLock()
+
+		e := p.m[name]
+		if len(e) == 0 {
+			p.mtx.RUnlock()
+			return EmptyPostings()
+		}
+
+		its := make([]Postings, 0, len(e))
+		for _, refs := range e {
+			if len(refs) > 0 {
+				its = append(its, NewListPostings(refs))
+			}
+		}
+
+		// Let the mutex go before merging.
+		p.mtx.RUnlock()
+		return Merge(ctx, its...)
+	}
+
 	// We'll copy the values into a slice and then match over that,
 	// this way we don't need to hold the mutex while we're matching,
 	// which can be slow (seconds) if the match function is a huge regex.
@@ -413,7 +435,7 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 			return ErrPostings(ctx.Err())
 		}
 
-		if match(vals[i]) {
+		if match == nil || match(vals[i]) {
 			i++
 			continue
 		}

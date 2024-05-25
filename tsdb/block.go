@@ -79,6 +79,7 @@ type IndexReader interface {
 	Postings(ctx context.Context, name string, values ...string) (index.Postings, error)
 
 	// PostingsForLabelMatching returns a sorted iterator over postings having a label with the given name and a value for which match returns true.
+	// If match is nil, all postings for the label name are included.
 	// If no postings are found having at least one matching label, an empty iterator is returned.
 	PostingsForLabelMatching(ctx context.Context, name string, match func(value string) bool) index.Postings
 
