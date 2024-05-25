@@ -351,6 +351,15 @@ func inversePostingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Ma
 		return ix.Postings(ctx, m.Name, m.Value)
 	}
 
+	// If the inverse match is ="", we just want all the values.
+	if m.Type == labels.MatchEqual && m.Value == "" {
+		vals, err := ix.LabelValues(ctx, m.Name)
+		if err != nil {
+			return nil, err
+		}
+		return ix.Postings(ctx, m.Name, vals...)
+	}
+
 	it := ix.PostingsForLabelMatching(ctx, m.Name, func(s string) bool {
 		return !m.Matches(s)
 	})
