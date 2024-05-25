@@ -363,29 +363,16 @@ func inversePostingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Ma
 		return ix.Postings(ctx, m.Name, m.Value)
 	}
 
-	vals, err := ix.LabelValues(ctx, m.Name)
-	if err != nil {
-		return nil, err
+	// If inverse matching the empty string, we just want all the values.
+	if (m.Value == "" && (m.Type == labels.MatchRegexp || m.Type == labels.MatchEqual)) || (m.Type == labels.MatchRegexp && m.Value == "^$") {
+		it := ix.PostingsForLabelMatching(ctx, m.Name, nil)
+		return it, it.Err()
 	}
 
-	res := vals[:0]
-	// If the match before inversion was !="" or !~"", we just want all the values.
-	if m.Value == "" && (m.Type == labels.MatchRegexp || m.Type == labels.MatchEqual) {
-		res = vals
-	} else {
-		count := 1
-		for _, val := range vals {
-			if count%checkContextEveryNIterations == 0 && ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			count++
-			if !m.Matches(val) {
-				res = append(res, val)
-			}
-		}
-	}
-
-	return ix.Postings(ctx, m.Name, res...)
+	it := ix.PostingsForLabelMatching(ctx, m.Name, func(s string) bool {
+		return !m.Matches(s)
+	})
+	return it, it.Err()
 }
 
 func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, matchers ...*labels.Matcher) ([]string, error) {
