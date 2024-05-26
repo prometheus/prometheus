@@ -499,6 +499,8 @@ func (ng *Engine) newQuery(q storage.Queryable, qs string, opts QueryOpts, start
 	if lookbackDelta <= 0 {
 		lookbackDelta = ng.lookbackDelta
 	}
+	// lookback shall ignore the sample falling on the left bound
+	lookbackDelta -= time.Duration(time.Millisecond.Nanoseconds() * 1)
 
 	es := &parser.EvalStmt{
 		Start:         start,
