@@ -3365,5 +3365,5 @@ func newHistogramStatsSeries(series storage.Series) *histogramStatsSeries {
 }
 
 func (s histogramStatsSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
-	return chunkenc.NewHistogramStatsIterator(s.Series.Iterator(it))
+	return NewHistogramStatsIterator(s.Series.Iterator(it))
 }
