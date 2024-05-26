@@ -196,7 +196,7 @@ type Options struct {
 	// BlockQuerierFunc is a function to return storage.Querier from a BlockReader.
 	BlockQuerierFunc BlockQuerierFunc
 
-	// BlockQuerierFunc is a function to return storage.ChunkQuerier from a BlockReader.
+	// BlockChunkQuerierFunc is a function to return storage.ChunkQuerier from a BlockReader.
 	BlockChunkQuerierFunc BlockChunkQuerierFunc
 }
 
