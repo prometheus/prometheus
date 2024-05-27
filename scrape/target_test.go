@@ -21,6 +21,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -67,7 +68,7 @@ func TestTargetOffset(t *testing.T) {
 	// Calculate offsets for 10000 different targets.
 	for i := range offsets {
 		target := newTestTarget("example.com:80", 0, labels.FromStrings(
-			"label", fmt.Sprintf("%d", i),
+			"label", strconv.Itoa(i),
 		))
 		offsets[i] = target.offset(interval, offsetSeed)
 	}

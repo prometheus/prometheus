@@ -19,6 +19,7 @@ import (
 	"math"
 	"os"
 	"sort"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -1361,7 +1362,7 @@ func TestNativeHistogramsInRecordingRules(t *testing.T) {
 	ts := time.Now()
 	app := db.Appender(context.Background())
 	for i, h := range hists {
-		l := labels.FromStrings("__name__", "histogram_metric", "idx", fmt.Sprintf("%d", i))
+		l := labels.FromStrings("__name__", "histogram_metric", "idx", strconv.Itoa(i))
 		_, err := app.AppendHistogram(0, l, ts.UnixMilli(), h.Copy(), nil)
 		require.NoError(t, err)
 	}
@@ -2043,7 +2044,7 @@ func TestBoundedRuleEvalConcurrency(t *testing.T) {
 	require.EqualValues(t, maxInflight.Load(), int32(maxConcurrency)+int32(groupCount))
 }
 
-const artificialDelay = 10 * time.Millisecond
+const artificialDelay = 15 * time.Millisecond
 
 func optsFactory(storage storage.Storage, maxInflight, inflightQueries *atomic.Int32, maxConcurrent int64) *ManagerOptions {
 	var inflightMu sync.Mutex

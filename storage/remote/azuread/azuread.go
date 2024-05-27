@@ -75,7 +75,7 @@ type AzureADConfig struct { //nolint:revive // exported.
 	// OAuth is the oauth config that is being used to authenticate.
 	OAuth *OAuthConfig `yaml:"oauth,omitempty"`
 
-	// OAuth is the oauth config that is being used to authenticate.
+	// SDK is the SDK config that is being used to authenticate.
 	SDK *SDKConfig `yaml:"sdk,omitempty"`
 
 	// Cloud is the Azure cloud in which the service is running. Example: AzurePublic/AzureGovernment/AzureChina.

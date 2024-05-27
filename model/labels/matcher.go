@@ -14,7 +14,8 @@
 package labels
 
 import (
-	"fmt"
+	"bytes"
+	"strconv"
 )
 
 // MatchType is an enum for label matching types.
@@ -78,7 +79,29 @@ func MustNewMatcher(mt MatchType, name, val string) *Matcher {
 }
 
 func (m *Matcher) String() string {
-	return fmt.Sprintf("%s%s%q", m.Name, m.Type, m.Value)
+	// Start a buffer with a pre-allocated size on stack to cover most needs.
+	var bytea [1024]byte
+	b := bytes.NewBuffer(bytea[:0])
+
+	if m.shouldQuoteName() {
+		b.Write(strconv.AppendQuote(b.AvailableBuffer(), m.Name))
+	} else {
+		b.WriteString(m.Name)
+	}
+	b.WriteString(m.Type.String())
+	b.Write(strconv.AppendQuote(b.AvailableBuffer(), m.Value))
+
+	return b.String()
+}
+
+func (m *Matcher) shouldQuoteName() bool {
+	for i, c := range m.Name {
+		if c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (i > 0 && c >= '0' && c <= '9') {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 // Matches returns whether the matcher matches the given string value.

@@ -21,6 +21,7 @@ linters:
     - goimports
     - misspell
     - nolintlint
+    - perfsprint
     - predeclared
     - revive
     - testifylint
@@ -44,7 +45,9 @@ issues:
     - linters:
         - godot
       source: "^// ==="
-
+    - linters:
+        - perfsprint
+      text: "fmt.Sprintf can be replaced with string addition"
 linters-settings:
   depguard:
     rules:
@@ -85,6 +88,9 @@ linters-settings:
     local-prefixes: github.com/prometheus/prometheus
   gofumpt:
     extra-rules: true
+  perfsprint:
+     # Optimizes `fmt.Errorf`.
+    errorf: false
   revive:
     # By default, revive will enable only the linting rules that are named in the configuration file.
     # So, it's needed to explicitly set in configuration all required rules.

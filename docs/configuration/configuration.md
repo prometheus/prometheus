@@ -1467,6 +1467,7 @@ For OVHcloud's [public cloud instances](https://www.ovhcloud.com/en/public-cloud
 * `__meta_ovhcloud_dedicated_server_ipv6`: the IPv6 of the server
 * `__meta_ovhcloud_dedicated_server_link_speed`: the link speed of the server
 * `__meta_ovhcloud_dedicated_server_name`: the name of the server
+* `__meta_ovhcloud_dedicated_server_no_intervention`: whether datacenter intervention is disabled for the server
 * `__meta_ovhcloud_dedicated_server_os`: the operating system of the server
 * `__meta_ovhcloud_dedicated_server_rack`: the rack of the server
 * `__meta_ovhcloud_dedicated_server_reverse`: the reverse DNS name of the server
@@ -3673,7 +3674,8 @@ queue_config:
   [ min_shards: <int> | default = 1 ]
   # Maximum number of samples per send.
   [ max_samples_per_send: <int> | default = 2000]
-  # Maximum time a sample will wait in buffer.
+  # Maximum time a sample will wait for a send. The sample might wait less
+  # if the buffer is full. Further time might pass due to potential retries.
   [ batch_send_deadline: <duration> | default = 5s ]
   # Initial retry delay. Gets doubled for every retry.
   [ min_backoff: <duration> | default = 30ms ]

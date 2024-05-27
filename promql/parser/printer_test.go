@@ -138,6 +138,16 @@ func TestExprString(t *testing.T) {
 		{
 			in: `{__name__="",a="x"}`,
 		},
+		{
+			in: `{"a.b"="c"}`,
+		},
+		{
+			in: `{"0"="1"}`,
+		},
+		{
+			in:  `{"_0"="1"}`,
+			out: `{_0="1"}`,
+		},
 	}
 
 	for _, test := range inputs {
