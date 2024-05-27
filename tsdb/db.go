@@ -255,9 +255,9 @@ type DB struct {
 
 	registerer prometheus.Registerer
 
-	blockQuerierFunc func(b BlockReader, mint, maxt int64) (storage.Querier, error)
+	blockQuerierFunc BlockQuerierFunc
 
-	blockChunkQuerierFunc func(b BlockReader, mint, maxt int64) (storage.ChunkQuerier, error)
+	blockChunkQuerierFunc BlockChunkQuerierFunc
 }
 
 type dbMetrics struct {
