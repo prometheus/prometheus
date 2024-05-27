@@ -16,6 +16,8 @@ package promql
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -35,6 +37,8 @@ type ActiveQueryTracker struct {
 	closer        io.Closer
 	maxConcurrent int
 }
+
+var _ io.Closer = &ActiveQueryTracker{}
 
 type Entry struct {
 	Query     string `json:"query"`
@@ -83,6 +87,23 @@ func logUnfinishedQueries(filename string, filesize int, logger log.Logger) {
 	}
 }
 
+type mmapedFile struct {
+	f io.Closer
+	m mmap.MMap
+}
+
+func (f *mmapedFile) Close() error {
+	err := f.m.Unmap()
+	if err != nil {
+		err = fmt.Errorf("mmapedFile: unmapping: %w", err)
+	}
+	if fErr := f.f.Close(); fErr != nil {
+		return errors.Join(fmt.Errorf("close mmapedFile.f: %w", fErr), err)
+	}
+
+	return err
+}
+
 func getMMapedFile(filename string, filesize int, logger log.Logger) ([]byte, io.Closer, error) {
 	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o666)
 	if err != nil {
@@ -108,7 +129,7 @@ func getMMapedFile(filename string, filesize int, logger log.Logger) ([]byte, io
 		return nil, nil, err
 	}
 
-	return fileAsBytes, file, err
+	return fileAsBytes, &mmapedFile{f: file, m: fileAsBytes}, err
 }
 
 func NewActiveQueryTracker(localStoragePath string, maxConcurrent int, logger log.Logger) *ActiveQueryTracker {
@@ -204,9 +225,13 @@ func (tracker ActiveQueryTracker) Insert(ctx context.Context, query string) (int
 	}
 }
 
-func (tracker *ActiveQueryTracker) Close() {
+// Close closes tracker.
+func (tracker *ActiveQueryTracker) Close() error {
 	if tracker == nil || tracker.closer == nil {
-		return
+		return nil
 	}
-	tracker.closer.Close()
+	if err := tracker.closer.Close(); err != nil {
+		return fmt.Errorf("close ActiveQueryTracker.closer: %w", err)
+	}
+	return nil
 }
