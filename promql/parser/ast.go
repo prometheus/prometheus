@@ -200,7 +200,7 @@ type VectorSelector struct {
 	// eval time, and subquery offsets in the AST tree.
 	Offset               time.Duration
 	Timestamp            *int64
-	SkipHistogramBuckets bool     // Set when do not need to decode native histogram buckets for evaluating a query.
+	SkipHistogramBuckets bool     // Set when decoding native histogram buckets is not needed for query evaluation.
 	StartOrEnd           ItemType // Set when @ is used with start() or end()
 	LabelMatchers        []*labels.Matcher
 

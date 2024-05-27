@@ -3323,7 +3323,7 @@ func setOffsetForAtModifier(evalTime int64, expr parser.Expr) {
 // detectHistogramStatsDecoding modifies the expression by setting the
 // SkipHistogramBuckets field in those vector selectors for which it is safe to
 // return only histogram statistics (sum and count), excluding histogram spans
-// and buckets. The function can be treated as an optimization and does is not
+// and buckets. The function can be treated as an optimization and is not
 // required for correctness.
 func detectHistogramStatsDecoding(expr parser.Expr) {
 	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {

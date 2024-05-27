@@ -34,18 +34,19 @@ func (f *histogramStatsIterator) AtHistogram(h *histogram.Histogram) (int64, *hi
 	}
 
 	if h == nil {
-		f.setLastH(f.hReader)
 		h = &histogram.Histogram{
 			CounterResetHint: f.getResetHint(f.hReader),
 			Count:            f.hReader.Count,
 			Sum:              f.hReader.Sum,
 		}
+		f.setLastH(f.hReader)
 		return t, h
 	}
 
 	h.CounterResetHint = f.getResetHint(f.hReader)
 	h.Count = f.hReader.Count
 	h.Sum = f.hReader.Sum
+	f.setLastH(f.hReader)
 	return t, h
 }
 
@@ -54,20 +55,23 @@ func (f *histogramStatsIterator) AtFloatHistogram(fh *histogram.FloatHistogram) 
 	t, f.fhReader = f.Iterator.AtFloatHistogram(f.fhReader)
 	if value.IsStaleNaN(f.fhReader.Sum) {
 		f.setLastFH(f.fhReader)
-		return f.Iterator.AtT(), &histogram.FloatHistogram{Sum: f.fhReader.Sum}
+		return t, &histogram.FloatHistogram{Sum: f.fhReader.Sum}
 	}
 
 	if fh == nil {
-		return t, &histogram.FloatHistogram{
+		fh = &histogram.FloatHistogram{
 			CounterResetHint: f.getFloatResetHint(f.fhReader.CounterResetHint),
 			Count:            f.fhReader.Count,
 			Sum:              f.fhReader.Sum,
 		}
+		f.setLastFH(f.fhReader)
+		return t, fh
 	}
 
 	fh.CounterResetHint = f.getFloatResetHint(f.fhReader.CounterResetHint)
 	fh.Count = f.fhReader.Count
 	fh.Sum = f.fhReader.Sum
+	f.setLastFH(f.fhReader)
 	return t, fh
 }
 
