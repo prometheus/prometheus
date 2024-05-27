@@ -19,6 +19,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/grafana/regexp"
 	"github.com/grafana/regexp/syntax"
@@ -36,6 +37,7 @@ var (
 		".*foo",
 		"^.*foo$",
 		"^.+foo$",
+		".?",
 		".*",
 		".+",
 		"foo.+",
@@ -88,6 +90,12 @@ var (
 
 		// Values matching / not matching the test regexps on long alternations.
 		"zQPbMkNO", "zQPbMkNo", "jyyfj00j0061", "jyyfj00j006", "jyyfj00j00612", "NNSPdvMi", "NNSPdvMiXXX", "NNSPdvMixxx", "nnSPdvMi", "nnSPdvMiXXX",
+
+		// Invalid utf8
+		"\xfefoo",
+		"foo\xfe",
+		"\xfd",
+		"\xff\xff",
 	}
 )
 
@@ -926,19 +934,91 @@ func BenchmarkOptimizeEqualStringMatchers(b *testing.B) {
 }
 
 func TestZeroOrOneCharacterStringMatcher(t *testing.T) {
-	matcher := &zeroOrOneCharacterStringMatcher{matchNL: true}
-	require.True(t, matcher.Matches(""))
-	require.True(t, matcher.Matches("x"))
-	require.True(t, matcher.Matches("\n"))
-	require.False(t, matcher.Matches("xx"))
-	require.False(t, matcher.Matches("\n\n"))
+	t.Run("match newline", func(t *testing.T) {
+		matcher := &zeroOrOneCharacterStringMatcher{matchNL: true}
+		require.True(t, matcher.Matches(""))
+		require.True(t, matcher.Matches("x"))
+		require.True(t, matcher.Matches("\n"))
+		require.False(t, matcher.Matches("xx"))
+		require.False(t, matcher.Matches("\n\n"))
+	})
 
-	matcher = &zeroOrOneCharacterStringMatcher{matchNL: false}
-	require.True(t, matcher.Matches(""))
-	require.True(t, matcher.Matches("x"))
-	require.False(t, matcher.Matches("\n"))
-	require.False(t, matcher.Matches("xx"))
-	require.False(t, matcher.Matches("\n\n"))
+	t.Run("do not match newline", func(t *testing.T) {
+		matcher := &zeroOrOneCharacterStringMatcher{matchNL: false}
+		require.True(t, matcher.Matches(""))
+		require.True(t, matcher.Matches("x"))
+		require.False(t, matcher.Matches("\n"))
+		require.False(t, matcher.Matches("xx"))
+		require.False(t, matcher.Matches("\n\n"))
+	})
+
+	t.Run("unicode", func(t *testing.T) {
+		// Just for documentation purposes, emoji1 is 1 rune, emoji2 is 2 runes.
+		// Having this in mind, will make future readers fixing tests easier.
+		emoji1 := "😀"
+		emoji2 := "❤️"
+		require.Equal(t, 1, utf8.RuneCountInString(emoji1))
+		require.Equal(t, 2, utf8.RuneCountInString(emoji2))
+
+		matcher := &zeroOrOneCharacterStringMatcher{matchNL: true}
+		require.True(t, matcher.Matches(emoji1))
+		require.False(t, matcher.Matches(emoji2))
+		require.False(t, matcher.Matches(emoji1+emoji1))
+		require.False(t, matcher.Matches("x"+emoji1))
+		require.False(t, matcher.Matches(emoji1+"x"))
+		require.False(t, matcher.Matches(emoji1+emoji2))
+	})
+
+	t.Run("invalid unicode", func(t *testing.T) {
+		// Just for reference, we also compare to what `^.?$` regular expression matches.
+		re := regexp.MustCompile("^.?$")
+		matcher := &zeroOrOneCharacterStringMatcher{matchNL: true}
+
+		requireMatches := func(s string, expected bool) {
+			t.Helper()
+			require.Equal(t, expected, matcher.Matches(s))
+			require.Equal(t, re.MatchString(s), matcher.Matches(s))
+		}
+
+		requireMatches("\xff", true)
+		requireMatches("x\xff", false)
+		requireMatches("\xffx", false)
+		requireMatches("\xff\xfe", false)
+	})
+}
+
+func BenchmarkZeroOrOneCharacterStringMatcher(b *testing.B) {
+	type benchCase struct {
+		str     string
+		matches bool
+	}
+
+	emoji1 := "😀"
+	emoji2 := "❤️"
+	cases := []benchCase{
+		{"", true},
+		{"x", true},
+		{"\n", true},
+		{"xx", false},
+		{"\n\n", false},
+		{emoji1, true},
+		{emoji2, false},
+		{emoji1 + emoji1, false},
+		{strings.Repeat("x", 100), false},
+		{strings.Repeat(emoji1, 100), false},
+		{strings.Repeat(emoji2, 100), false},
+	}
+
+	matcher := &zeroOrOneCharacterStringMatcher{matchNL: true}
+	b.ResetTimer()
+
+	for n := 0; n < b.N; n++ {
+		c := cases[n%len(cases)]
+		got := matcher.Matches(c.str)
+		if got != c.matches {
+			b.Fatalf("unexpected result for %q: got %t, want %t", c.str, got, c.matches)
+		}
+	}
 }
 
 func TestLiteralPrefixStringMatcher(t *testing.T) {

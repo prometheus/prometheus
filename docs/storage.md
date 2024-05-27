@@ -197,6 +197,9 @@ or time-series database to Prometheus. To do so, the user must first convert the
 source data into [OpenMetrics](https://openmetrics.io/) format, which is the
 input format for the backfilling as described below.
 
+Note that native histograms and staleness markers are not supported by this
+procedure, as they cannot be represented in the OpenMetrics format.
+
 ### Usage
 
 Backfilling can be used via the Promtool command line. Promtool will write the blocks

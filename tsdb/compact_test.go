@@ -1298,7 +1298,7 @@ func TestCancelCompactions(t *testing.T) {
 		// This checks that the `context.Canceled` error is properly checked at all levels:
 		// - tsdb_errors.NewMulti() should have the Is() method implemented for correct checks.
 		// - callers should check with errors.Is() instead of ==.
-		readOnlyDB, err := OpenDBReadOnly(tmpdirCopy, log.NewNopLogger())
+		readOnlyDB, err := OpenDBReadOnly(tmpdirCopy, "", log.NewNopLogger())
 		require.NoError(t, err)
 		blocks, err := readOnlyDB.Blocks()
 		require.NoError(t, err)

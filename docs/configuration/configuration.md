@@ -1467,6 +1467,7 @@ For OVHcloud's [public cloud instances](https://www.ovhcloud.com/en/public-cloud
 * `__meta_ovhcloud_dedicated_server_ipv6`: the IPv6 of the server
 * `__meta_ovhcloud_dedicated_server_link_speed`: the link speed of the server
 * `__meta_ovhcloud_dedicated_server_name`: the name of the server
+* `__meta_ovhcloud_dedicated_server_no_intervention`: whether datacenter intervention is disabled for the server
 * `__meta_ovhcloud_dedicated_server_os`: the operating system of the server
 * `__meta_ovhcloud_dedicated_server_rack`: the rack of the server
 * `__meta_ovhcloud_dedicated_server_reverse`: the reverse DNS name of the server
