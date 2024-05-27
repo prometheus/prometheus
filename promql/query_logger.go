@@ -16,6 +16,7 @@ package promql
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -93,14 +94,14 @@ type mmapedFile struct {
 
 func (f *mmapedFile) Close() error {
 	err := f.m.Unmap()
-	if fErr := f.f.Close(); fErr != nil && err == nil {
-		return fmt.Errorf("close mmapedFile.f: %w", fErr)
+	if err != nil {
+		err = fmt.Errorf("mmapedFile: unmapping: %w", err)
+	}
+	if fErr := f.f.Close(); fErr != nil {
+		return errors.Join(fmt.Errorf("close mmapedFile.f: %w", fErr), err)
 	}
 
-	if err != nil {
-		return fmt.Errorf("mmapedFile: unmapping: %w", err)
-	}
-	return nil
+	return err
 }
 
 func getMMapedFile(filename string, filesize int, logger log.Logger) ([]byte, io.Closer, error) {
