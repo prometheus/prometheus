@@ -2973,8 +2973,10 @@ func assertAPIError(t *testing.T, got *apiError, exp errorType) {
 	t.Helper()
 
 	if exp == errorNone {
+		//nolint:testifylint
 		require.Nil(t, got)
 	} else {
+		//nolint:testifylint
 		require.NotNil(t, got)
 		require.Equal(t, exp, got.typ, "(%q)", got)
 	}

@@ -4574,7 +4574,7 @@ func TestOOOCompaction(t *testing.T) {
 		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
 		require.NoError(t, err)
 		require.False(t, created)
-		require.Greater(t, ms.ooo.oooHeadChunk.chunk.NumSamples(), 0)
+		require.Positive(t, ms.ooo.oooHeadChunk.chunk.NumSamples())
 		require.Len(t, ms.ooo.oooMmappedChunks, 14) // 7 original, 7 duplicate.
 	}
 	checkNonEmptyOOOChunk(series1)
@@ -4715,7 +4715,7 @@ func TestOOOCompactionWithNormalCompaction(t *testing.T) {
 		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
 		require.NoError(t, err)
 		require.False(t, created)
-		require.Greater(t, ms.ooo.oooHeadChunk.chunk.NumSamples(), 0)
+		require.Positive(t, ms.ooo.oooHeadChunk.chunk.NumSamples())
 	}
 
 	// If the normal Head is not compacted, the OOO head compaction does not take place.
@@ -4816,7 +4816,7 @@ func TestOOOCompactionWithDisabledWriteLog(t *testing.T) {
 		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
 		require.NoError(t, err)
 		require.False(t, created)
-		require.Greater(t, ms.ooo.oooHeadChunk.chunk.NumSamples(), 0)
+		require.Positive(t, ms.ooo.oooHeadChunk.chunk.NumSamples())
 	}
 
 	// If the normal Head is not compacted, the OOO head compaction does not take place.
@@ -5517,8 +5517,8 @@ func TestWBLAndMmapReplay(t *testing.T) {
 			addedRecs++
 			require.NoError(t, newWbl.Log(rec))
 		}
-		require.Greater(t, markers, 0)
-		require.Greater(t, addedRecs, 0)
+		require.Positive(t, markers)
+		require.Positive(t, addedRecs)
 		require.NoError(t, newWbl.Close())
 		require.NoError(t, sr.Close())
 		require.NoError(t, os.RemoveAll(wblDir))
