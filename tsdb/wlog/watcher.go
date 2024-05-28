@@ -625,6 +625,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				w.writer.AppendHistograms(histogramsToSend)
 				histogramsToSend = histogramsToSend[:0]
 			}
+
 		case record.FloatHistogramSamples:
 			// Skip if experimental "histograms over remote write" is not enabled.
 			if !w.sendHistograms {
@@ -652,11 +653,13 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				w.writer.AppendFloatHistograms(floatHistogramsToSend)
 				floatHistogramsToSend = floatHistogramsToSend[:0]
 			}
-		case record.Tombstones:
 
-		default:
+		case record.Unknown:
 			// Could be corruption, or reading from a WAL from a newer Prometheus.
 			w.recordDecodeFailsMetric.Inc()
+
+		default:
+			// We're not interested in other types of records.
 		}
 	}
 	if err := r.Err(); err != nil {
