@@ -47,7 +47,7 @@ issues:
       source: "^// ==="
     - linters:
         - perfsprint
-      text: "fmt.Sprintf can be replaced with string addition"
+      text: "fmt.Sprintf can be replaced with string concatenation"
 linters-settings:
   depguard:
     rules:
