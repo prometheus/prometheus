@@ -251,7 +251,7 @@ func TestCheckpoint(t *testing.T) {
 			require.NoError(t, w.Truncate(107))
 			require.NoError(t, DeleteCheckpoints(w.Dir(), 106))
 			require.Equal(t, histogramsInWAL+floatHistogramsInWAL+samplesInWAL, stats.TotalSamples)
-			require.Greater(t, stats.DroppedSamples, 0)
+			require.Positive(t, stats.DroppedSamples)
 
 			// Only the new checkpoint should be left.
 			files, err := os.ReadDir(dir)

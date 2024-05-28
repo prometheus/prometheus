@@ -3557,7 +3557,7 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 		expMmapChunks = append(expMmapChunks, &cpy)
 	}
 	expHeadChunkSamples := ms.headChunks.chunk.NumSamples()
-	require.Greater(t, expHeadChunkSamples, 0)
+	require.Positive(t, expHeadChunkSamples)
 
 	// Series with mix of histograms and float.
 	s2 := labels.FromStrings("a", "b2")
@@ -4638,7 +4638,7 @@ func TestChunkSnapshotTakenAfterIncompleteSnapshot(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, "", name)
 	require.Equal(t, 0, idx)
-	require.Greater(t, offset, 0)
+	require.Positive(t, offset)
 }
 
 // TestWBLReplay checks the replay at a low level.
