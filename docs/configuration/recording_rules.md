@@ -86,7 +86,7 @@ name: <string>
 # rule can produce. 0 is no limit.
 [ limit: <int> | default = 0 ]
 
-# Offset the rule evaluation of this particular group by the specified duration.
+# Offset the rule evaluation timestamp of this particular group by the specified duration into the past.
 [ query_offset: <duration> | default = global.rule_query_offset ]
 
 rules:
