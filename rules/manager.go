@@ -337,7 +337,7 @@ func (m *Manager) LoadGroups(
 				Rules:             rules,
 				ShouldRestore:     shouldRestore,
 				Opts:              m.opts,
-				RuleQueryOffset:   (*time.Duration)(rg.QueryOffset),
+				QueryOffset:       (*time.Duration)(rg.QueryOffset),
 				done:              m.done,
 				EvalIterationFunc: groupEvalIterationFunc,
 			})

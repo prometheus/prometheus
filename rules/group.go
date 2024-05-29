@@ -91,7 +91,7 @@ type GroupOptions struct {
 	Rules             []Rule
 	ShouldRestore     bool
 	Opts              *ManagerOptions
-	RuleQueryOffset   *time.Duration
+	QueryOffset       *time.Duration
 	done              chan struct{}
 	EvalIterationFunc GroupEvalIterationFunc
 }
@@ -128,7 +128,7 @@ func NewGroup(o GroupOptions) *Group {
 		name:                  o.Name,
 		file:                  o.File,
 		interval:              o.Interval,
-		queryOffset:           o.RuleQueryOffset,
+		queryOffset:           o.QueryOffset,
 		limit:                 o.Limit,
 		rules:                 o.Rules,
 		shouldRestore:         o.ShouldRestore,
@@ -446,7 +446,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		wg           sync.WaitGroup
 	)
 
-	ruleQueryOffset := g.RuleQueryOffset()
+	ruleQueryOffset := g.QueryOffset()
 
 	for i, rule := range g.rules {
 		select {
@@ -606,7 +606,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 	g.cleanupStaleSeries(ctx, ts)
 }
 
-func (g *Group) RuleQueryOffset() time.Duration {
+func (g *Group) QueryOffset() time.Duration {
 	if g.queryOffset != nil {
 		return *g.queryOffset
 	}
@@ -623,7 +623,7 @@ func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
 		return
 	}
 	app := g.opts.Appendable.Appender(ctx)
-	queryOffset := g.RuleQueryOffset()
+	queryOffset := g.QueryOffset()
 	for _, s := range g.staleSeries {
 		// Rule that produced series no longer configured, mark it stale.
 		_, err := app.Append(0, s, timestamp.FromTime(ts.Add(-queryOffset)), math.Float64frombits(value.StaleNaN))

@@ -468,12 +468,12 @@ func TestForStateRestore(t *testing.T) {
 						labels.EmptyLabels(), labels.EmptyLabels(), "", false, nil,
 					)
 					newGroup := NewGroup(GroupOptions{
-						Name:            "default",
-						Interval:        time.Second,
-						Rules:           []Rule{newRule},
-						ShouldRestore:   true,
-						Opts:            opts,
-						RuleQueryOffset: &queryOffset,
+						Name:          "default",
+						Interval:      time.Second,
+						Rules:         []Rule{newRule},
+						ShouldRestore: true,
+						Opts:          opts,
+						QueryOffset:   &queryOffset,
 					})
 
 					newGroups := make(map[string]*Group)
@@ -552,12 +552,12 @@ func TestStaleness(t *testing.T) {
 		require.NoError(t, err)
 		rule := NewRecordingRule("a_plus_one", expr, labels.Labels{})
 		group := NewGroup(GroupOptions{
-			Name:            "default",
-			Interval:        time.Second,
-			Rules:           []Rule{rule},
-			ShouldRestore:   true,
-			Opts:            opts,
-			RuleQueryOffset: &queryOffset,
+			Name:          "default",
+			Interval:      time.Second,
+			Rules:         []Rule{rule},
+			ShouldRestore: true,
+			Opts:          opts,
+			QueryOffset:   &queryOffset,
 		})
 
 		// A time series that has two samples and then goes stale.
@@ -654,11 +654,11 @@ groups:
 	})
 
 	// From config.
-	require.Equal(t, 2*time.Minute, rgs[0].RuleQueryOffset())
+	require.Equal(t, 2*time.Minute, rgs[0].QueryOffset())
 	// Setting 0 in config is detected.
-	require.Equal(t, time.Duration(0), rgs[1].RuleQueryOffset())
+	require.Equal(t, time.Duration(0), rgs[1].QueryOffset())
 	// Default when nothing is set.
-	require.Equal(t, time.Minute, rgs[2].RuleQueryOffset())
+	require.Equal(t, time.Minute, rgs[2].QueryOffset())
 
 	m.Stop()
 }
