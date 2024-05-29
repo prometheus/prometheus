@@ -71,7 +71,7 @@ global:
   # How frequently to evaluate rules.
   [ evaluation_interval: <duration> | default = 1m ]
                         
-  # Initial delay before starting the evaluation of rules to ensure the underlying metrics have been received.
+  # Offset the rule evaluation timestamp of this particular group by the specified duration into the past to ensure the underlying metrics have been received.
   # Metric availability delays are more likely to occur when Prometheus is running as a remote write target, but can also occur when there's anomalies with scraping.
   [ rule_query_offset: <duration> | default = 0s ]
 

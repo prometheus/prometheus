@@ -398,7 +398,7 @@ type GlobalConfig struct {
 	ScrapeProtocols []ScrapeProtocol `yaml:"scrape_protocols,omitempty"`
 	// How frequently to evaluate rules by default.
 	EvaluationInterval model.Duration `yaml:"evaluation_interval,omitempty"`
-	// Initial delay before starting the evaluation of rules to ensure the underlying metrics have been received.
+	// Offset the rule evaluation timestamp of this particular group by the specified duration into the past to ensure the underlying metrics have been received.
 	RuleQueryOffset model.Duration `yaml:"rule_query_offset"`
 	// File to which PromQL queries are logged.
 	QueryLogFile string `yaml:"query_log_file,omitempty"`
