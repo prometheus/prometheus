@@ -357,8 +357,8 @@ func inversePostingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Ma
 	}
 
 	res := vals[:0]
-	// If the inverse match is ="", we just want all the values.
-	if m.Type == labels.MatchEqual && m.Value == "" {
+	// If the match before inversion was !="" or !~"", we just want all the values.
+	if m.Value == "" && (m.Type == labels.MatchRegexp || m.Type == labels.MatchEqual) {
 		res = vals
 	} else {
 		count := 1
