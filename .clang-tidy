@@ -4,7 +4,7 @@ Checks: >
   google-*,-google-readability-todo,-google-readability-braces-around-statements,-google-readability-avoid-underscore-in-googletest-name,
   performance-*,
 WarningsAsErrors: '*'
-HeaderFilterRegex: '.*/(bare_bones|primitives|prometheus|wal|ceph)/.*'
+HeaderFilterRegex: '(bare_bones|primitives|prometheus|wal|ceph|series_index)/.*'
 AnalyzeTemporaryDtors: false
 FormatStyle: file
 CheckOptions:
