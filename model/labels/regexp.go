@@ -20,6 +20,7 @@ import (
 
 	"github.com/grafana/regexp"
 	"github.com/grafana/regexp/syntax"
+	"golang.org/x/text/unicode/norm"
 )
 
 const (
@@ -766,7 +767,7 @@ type equalMultiStringMapMatcher struct {
 
 func (m *equalMultiStringMapMatcher) add(s string) {
 	if !m.caseSensitive {
-		s = strings.ToLower(s)
+		s = strings.ToLower(norm.NFKD.String(s))
 	}
 
 	m.values[s] = struct{}{}
@@ -786,7 +787,7 @@ func (m *equalMultiStringMapMatcher) setMatches() []string {
 
 func (m *equalMultiStringMapMatcher) Matches(s string) bool {
 	if !m.caseSensitive {
-		s = strings.ToLower(s)
+		s = strings.ToLower(norm.NFKD.String(s))
 	}
 
 	_, ok := m.values[s]
