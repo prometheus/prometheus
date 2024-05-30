@@ -14,7 +14,7 @@ eval instant at 5m sum_over_time(metric[50s:10s])
 
 # Series becomes stale at 5m10s (5m after last sample)
 # Hence subquery gets a single sample at 5m10s.
-eval instant at 6m sum_over_time(metric[60s:10s])
+eval instant at 5m59s sum_over_time(metric[60s:10s])
   {} 2
 
 eval instant at 10s rate(metric[20s:10s])

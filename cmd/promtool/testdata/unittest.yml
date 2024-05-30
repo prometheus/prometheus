@@ -89,11 +89,11 @@ tests:
 
       # Ensure lookback delta is respected, when a value is missing.
       - expr: timestamp(test_missing)
-        eval_time: 5m
+        eval_time: 4m59s
         exp_samples:
           - value: 0
       - expr: timestamp(test_missing)
-        eval_time: 5m1s
+        eval_time: 5m
         exp_samples: []
 
   # Minimal test case to check edge case of a single sample.

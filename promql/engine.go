@@ -499,8 +499,6 @@ func (ng *Engine) newQuery(q storage.Queryable, qs string, opts QueryOpts, start
 	if lookbackDelta <= 0 {
 		lookbackDelta = ng.lookbackDelta
 	}
-	// lookback shall ignore the sample falling on the left bound
-	lookbackDelta -= time.Duration(time.Millisecond.Nanoseconds() * 1)
 
 	es := &parser.EvalStmt{
 		Start:         start,
@@ -884,11 +882,17 @@ func getTimeRangesForSelector(s *parser.EvalStmt, n *parser.VectorSelector, path
 	}
 
 	if evalRange == 0 {
-		start -= durationMilliseconds(s.LookbackDelta)
+		// Reduce the start by one fewer ms than the lookback delta
+		// because wo want to exclude samples that are precisely the
+		// lookback delta before the eval time.
+		start -= durationMilliseconds(s.LookbackDelta) - 1
 	} else {
-		// For all matrix queries we want to ensure that we have (end-start) + range selected
-		// this way we have `range` data before the start time
-		start -= durationMilliseconds(evalRange)
+		// For all matrix queries we want to ensure that we have
+		// (end-start) + range selected this way we have `range` data
+		// before the start time. We subtract one from the range to
+		// exclude samples positioned directly at the lower boundary of
+		// the range.
+		start -= durationMilliseconds(evalRange) - 1
 	}
 
 	offsetMilliseconds := durationMilliseconds(n.OriginalOffset)
@@ -2013,7 +2017,7 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(vs *parser.Vec
 	seriesIterators := make([]*storage.MemoizedSeriesIterator, len(vs.Series))
 	for i, s := range vs.Series {
 		it := s.Iterator(nil)
-		seriesIterators[i] = storage.NewMemoizedIterator(it, durationMilliseconds(ev.lookbackDelta))
+		seriesIterators[i] = storage.NewMemoizedIterator(it, durationMilliseconds(ev.lookbackDelta)-1)
 	}
 
 	return ev.rangeEval(nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
@@ -2075,7 +2079,7 @@ func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, no
 	if valueType == chunkenc.ValNone || t > refTime {
 		var ok bool
 		t, v, h, ok = it.PeekPrev()
-		if !ok || t < refTime-durationMilliseconds(ev.lookbackDelta) {
+		if !ok || t <= refTime-durationMilliseconds(ev.lookbackDelta) {
 			return 0, 0, nil, false
 		}
 	}
