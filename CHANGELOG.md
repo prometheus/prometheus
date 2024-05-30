@@ -2,6 +2,10 @@
 
 ## unreleased
 
+## 2.52.1 / 2024-05-29
+
+* [BUGFIX] Linode SD: Fix partial fetch when discovery would return more than 500 elements. #14141
+
 ## 2.52.0 / 2024-05-07
 
 * [CHANGE] TSDB: Fix the predicate checking for blocks which are beyond the retention period to include the ones right at the retention boundary. #9633
