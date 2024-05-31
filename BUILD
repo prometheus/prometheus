@@ -315,3 +315,41 @@ cc_test(
         "@gtest//:gtest_main",
     ]
 )
+
+cc_library(
+    name = "cls_block_catalog_modules",
+    hdrs = glob([
+        "ceph/cls/block_catalog/modules/**/*.h",
+         "ceph/cls/block_catalog/constants.h",
+         "ceph/cls/block_catalog/perf_counters.h",
+         "ceph/cls/block_catalog/tests/**/*.h"
+         ]),
+    includes = ["ceph/cls/block_catalog"],
+    deps = [
+        ":bare_bones_headers",
+        ":prometheus",
+        ":cls_common",
+    ]
+)
+
+cc_binary(
+    name = "cls_block_catalog",
+    srcs = glob([
+        "ceph/cls/block_catalog/*.cpp",
+        ]),
+    deps = [
+        ":cls_block_catalog_modules",
+    ],
+    linkshared = True,
+)
+
+cc_test(
+    name = "cls_block_catalog_test",
+    srcs = glob([
+        "ceph/cls/block_catalog/tests/**/*.cpp",
+    ]),
+    deps = [
+        ":cls_block_catalog_modules",
+        "@gtest//:gtest_main",
+    ]
+)

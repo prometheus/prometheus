@@ -68,6 +68,8 @@ class Decoder {
     TimeseriesProtobufWriter<Reader, Output> protobuf_writer(reader_, out);
     reader_.process_segment(protobuf_writer);
     protobuf_writer.get_statistic(stats);
+    stats.earliest_block_timestamp = reader_.earliest_sample();
+    stats.latest_block_timestamp = reader_.latest_sample();
   }
 
   // decode_dry - decoding incoming data without protbuf.
