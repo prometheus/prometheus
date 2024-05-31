@@ -201,6 +201,8 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
         const count = parseFloat(b[3]);
         const bucketIdx = `bucket-${index}-${bIdx}-${Math.ceil(parseFloat(b[3]) * 100)}`;
 
+        const expBucketWidth = Math.abs(Math.log(Math.abs(right)) - Math.log(Math.abs(left))); //bw
+
         let bucketWidth = '';
         let bucketLeft = '';
         let bucketHeight = '';
@@ -212,7 +214,7 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
             bucketHeight = (fds[bIdx] / fdMax) * 100 + '%';
             break;
           case 'exponential':
-            bucketWidth = (bw / widthTotal) * 100 + '%';
+            bucketWidth = ((expBucketWidth === 0 ? bw : expBucketWidth) / widthTotal) * 100 + '%';
             if (left < 0) {
               // negative buckets boundary
               bucketLeft = (-(Math.log(Math.abs(left)) + startNegative) / widthTotal) * 100 + '%';
