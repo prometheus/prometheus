@@ -174,20 +174,25 @@ func (d *instanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 			labels[instanceTagsLabel] = model.LabelValue(tags)
 		}
 
+		addr := ""
 		if server.IPv6 != nil {
 			labels[instancePublicIPv6Label] = model.LabelValue(server.IPv6.Address.String())
+			addr = server.IPv6.Address.String()
 		}
 
 		if server.PublicIP != nil {
 			labels[instancePublicIPv4Label] = model.LabelValue(server.PublicIP.Address.String())
+			addr = server.PublicIP.Address.String()
 		}
 
 		if server.PrivateIP != nil {
 			labels[instancePrivateIPv4Label] = model.LabelValue(*server.PrivateIP)
+			addr = *server.PrivateIP
+		}
 
-			addr := net.JoinHostPort(*server.PrivateIP, strconv.FormatUint(uint64(d.port), 10))
+		if addr != "" {
+			addr := net.JoinHostPort(addr, strconv.FormatUint(uint64(d.port), 10))
 			labels[model.AddressLabel] = model.LabelValue(addr)
-
 			targets = append(targets, labels)
 		}
 	}

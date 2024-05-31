@@ -16,6 +16,7 @@ package labels
 import (
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/grafana/regexp"
 	"github.com/grafana/regexp/syntax"
@@ -827,8 +828,12 @@ type zeroOrOneCharacterStringMatcher struct {
 }
 
 func (m *zeroOrOneCharacterStringMatcher) Matches(s string) bool {
-	// Zero or one.
-	if len(s) > 1 {
+	// If there's more than one rune in the string, then it can't match.
+	if r, size := utf8.DecodeRuneInString(s); r == utf8.RuneError {
+		// Size is 0 for empty strings, 1 for invalid rune.
+		// Empty string matches, invalid rune matches if there isn't anything else.
+		return size == len(s)
+	} else if size < len(s) {
 		return false
 	}
 

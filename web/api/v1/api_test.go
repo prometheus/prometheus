@@ -25,6 +25,7 @@ import (
 	"reflect"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -49,6 +50,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
@@ -338,7 +340,7 @@ var sampleFlagMap = map[string]string{
 }
 
 func TestEndpoints(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			test_metric1{foo="bar"} 0+100x100
 			test_metric1{foo="boo"} 1+0x100
@@ -502,7 +504,7 @@ func (b byLabels) Less(i, j int) bool { return labels.Compare(b[i], b[j]) < 0 }
 func TestGetSeries(t *testing.T) {
 	// TestEndpoints doesn't have enough label names to test api.labelNames
 	// endpoint properly. Hence we test it separately.
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			test_metric1{foo1="bar", baz="abc"} 0+100x100
 			test_metric1{foo2="boo"} 1+0x100
@@ -606,7 +608,7 @@ func TestGetSeries(t *testing.T) {
 
 func TestQueryExemplars(t *testing.T) {
 	start := time.Unix(0, 0)
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			test_metric1{foo="bar"} 0+100x100
 			test_metric1{foo="boo"} 1+0x100
@@ -725,7 +727,7 @@ func TestQueryExemplars(t *testing.T) {
 func TestLabelNames(t *testing.T) {
 	// TestEndpoints doesn't have enough label names to test api.labelNames
 	// endpoint properly. Hence we test it separately.
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			test_metric1{foo1="bar", baz="abc"} 0+100x100
 			test_metric1{foo2="boo"} 1+0x100
@@ -1058,6 +1060,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 		responseLen           int // If nonzero, check only the length; `response` is ignored.
 		responseMetadataTotal int
 		responseAsJSON        string
+		warningsCount         int
 		errType               errorType
 		sorter                func(interface{})
 		metadata              []targetMetadata
@@ -1415,7 +1418,17 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				"match[]": []string{"test_metric1"},
 				"limit":   []string{"1"},
 			},
-			responseLen: 1, // API does not specify which particular value will come back.
+			responseLen:   1, // API does not specify which particular value will come back.
+			warningsCount: 1,
+		},
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{"test_metric1"},
+				"limit":   []string{"2"},
+			},
+			responseLen:   2, // API does not specify which particular value will come back.
+			warningsCount: 0, // No warnings if limit isn't exceeded.
 		},
 		// Missing match[] query params in series requests.
 		{
@@ -2698,7 +2711,19 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				query: url.Values{
 					"limit": []string{"2"},
 				},
-				responseLen: 2, // API does not specify which particular values will come back.
+				responseLen:   2, // API does not specify which particular values will come back.
+				warningsCount: 1,
+			},
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "__name__",
+				},
+				query: url.Values{
+					"limit": []string{"4"},
+				},
+				responseLen:   4, // API does not specify which particular values will come back.
+				warningsCount: 0, // No warnings if limit isn't exceeded.
 			},
 			// Label names.
 			{
@@ -2845,7 +2870,16 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				query: url.Values{
 					"limit": []string{"2"},
 				},
-				responseLen: 2, // API does not specify which particular values will come back.
+				responseLen:   2, // API does not specify which particular values will come back.
+				warningsCount: 1,
+			},
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"limit": []string{"3"},
+				},
+				responseLen:   3, // API does not specify which particular values will come back.
+				warningsCount: 0, // No warnings if limit isn't exceeded.
 			},
 		}...)
 	}
@@ -2922,6 +2956,8 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						require.NoError(t, err)
 						require.JSONEq(t, test.responseAsJSON, string(s))
 					}
+
+					require.Len(t, res.warnings, test.warningsCount)
 				})
 			}
 		})
@@ -2937,8 +2973,10 @@ func assertAPIError(t *testing.T, got *apiError, exp errorType) {
 	t.Helper()
 
 	if exp == errorNone {
+		//nolint:testifylint
 		require.Nil(t, got)
 	} else {
+		//nolint:testifylint
 		require.NotNil(t, got)
 		require.Equal(t, exp, got.typ, "(%q)", got)
 	}
@@ -3543,7 +3581,7 @@ func TestTSDBStatus(t *testing.T) {
 		},
 	} {
 		tc := tc
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			api := &API{db: tc.db, gatherer: prometheus.DefaultGatherer}
 			endpoint := tc.endpoint(api)
 			req, err := http.NewRequest(tc.method, fmt.Sprintf("?%s", tc.values.Encode()), nil)
@@ -3835,7 +3873,7 @@ func TestExtractQueryOpts(t *testing.T) {
 
 // Test query timeout parameter.
 func TestQueryTimeout(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			test_metric1{foo="bar"} 0+100x100
 	`)

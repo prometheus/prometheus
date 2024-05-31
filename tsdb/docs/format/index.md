@@ -40,7 +40,7 @@ Most of the sections described below start with a `len` field. It always specifi
 
 ### Symbol Table
 
-The symbol table holds a sorted list of deduplicated strings that occurred in label pairs of the stored series. They can be referenced from subsequent sections and significantly reduce the total index size.
+The symbol table holds a sorted list of deduplicated strings that occur in label pairs of the stored series. They can be referenced from subsequent sections and significantly reduce the total index size.
 
 The section contains a sequence of the string entries, each prefixed with the string's length in raw bytes. All strings are utf-8 encoded.
 Strings are referenced by sequential indexing. The strings are sorted in lexicographically ascending order.

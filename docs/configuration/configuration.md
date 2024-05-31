@@ -70,6 +70,10 @@ global:
 
   # How frequently to evaluate rules.
   [ evaluation_interval: <duration> | default = 1m ]
+                        
+  # Offset the rule evaluation timestamp of this particular group by the specified duration into the past to ensure the underlying metrics have been received.
+  # Metric availability delays are more likely to occur when Prometheus is running as a remote write target, but can also occur when there's anomalies with scraping.
+  [ rule_query_offset: <duration> | default = 0s ]
 
   # The labels to add to any time series or alerts when communicating with
   # external systems (federation, remote storage, Alertmanager).
@@ -1349,7 +1353,7 @@ interface.
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
 * `__meta_openstack_address_pool`: the pool of the private IP.
-* `__meta_openstack_instance_flavor`: the flavor of the OpenStack instance.
+* `__meta_openstack_instance_flavor`: the flavor ID of the OpenStack instance.
 * `__meta_openstack_instance_id`: the OpenStack instance ID.
 * `__meta_openstack_instance_image`: the ID of the image the OpenStack instance is using.
 * `__meta_openstack_instance_name`: the OpenStack instance name.
@@ -1357,7 +1361,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_openstack_private_ip`: the private IP of the OpenStack instance.
 * `__meta_openstack_project_id`: the project (tenant) owning this instance.
 * `__meta_openstack_public_ip`: the public IP of the OpenStack instance.
-* `__meta_openstack_tag_<tagkey>`: each tag value of the instance.
+* `__meta_openstack_tag_<key>`: each metadata item of the instance, with any unsupported characters converted to an underscore.
 * `__meta_openstack_user_id`: the user account owning the tenant.
 
 See below for the configuration options for OpenStack discovery:
@@ -1467,6 +1471,7 @@ For OVHcloud's [public cloud instances](https://www.ovhcloud.com/en/public-cloud
 * `__meta_ovhcloud_dedicated_server_ipv6`: the IPv6 of the server
 * `__meta_ovhcloud_dedicated_server_link_speed`: the link speed of the server
 * `__meta_ovhcloud_dedicated_server_name`: the name of the server
+* `__meta_ovhcloud_dedicated_server_no_intervention`: whether datacenter intervention is disabled for the server
 * `__meta_ovhcloud_dedicated_server_os`: the operating system of the server
 * `__meta_ovhcloud_dedicated_server_rack`: the rack of the server
 * `__meta_ovhcloud_dedicated_server_reverse`: the reverse DNS name of the server
@@ -2952,9 +2957,10 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_scaleway_instance_type`: commercial type of the server
 * `__meta_scaleway_instance_zone`: the zone of the server (ex: `fr-par-1`, complete list [here](https://developers.scaleway.com/en/products/instance/api/#introduction))
 
-This role uses the private IPv4 address by default. This can be
+This role uses the first address it finds in the following order: private IPv4, public IPv4, public IPv6. This can be
 changed with relabeling, as demonstrated in [the Prometheus scaleway-sd
 configuration file](/documentation/examples/prometheus-scaleway.yml).
+Should an instance have no address before relabeling, it will not be added to the target list and you will not be able to relabel it.
 
 #### Baremetal role
 
@@ -3672,7 +3678,8 @@ queue_config:
   [ min_shards: <int> | default = 1 ]
   # Maximum number of samples per send.
   [ max_samples_per_send: <int> | default = 2000]
-  # Maximum time a sample will wait in buffer.
+  # Maximum time a sample will wait for a send. The sample might wait less
+  # if the buffer is full. Further time might pass due to potential retries.
   [ batch_send_deadline: <duration> | default = 5s ]
   # Initial retry delay. Gets doubled for every retry.
   [ min_backoff: <duration> | default = 30ms ]

@@ -573,7 +573,8 @@ func (ng *Engine) validateOpts(expr parser.Expr) error {
 	return validationErr
 }
 
-func (ng *Engine) newTestQuery(f func(context.Context) error) Query {
+// NewTestQuery: inject special behaviour into Query for testing.
+func (ng *Engine) NewTestQuery(f func(context.Context) error) Query {
 	qry := &query{
 		q:           "test statement",
 		stmt:        parser.TestStmt(f),
@@ -2024,25 +2025,21 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(vs *parser.Vec
 		vec := make(Vector, 0, len(vs.Series))
 		for i, s := range vs.Series {
 			it := seriesIterators[i]
-			t, f, h, ok := ev.vectorSelectorSingle(it, vs, enh.Ts)
-			if ok {
-				vec = append(vec, Sample{
-					Metric: s.Labels(),
-					T:      t,
-					F:      f,
-					H:      h,
-				})
-				histSize := 0
-				if h != nil {
-					histSize := h.Size() / 16 // 16 bytes per sample.
-					ev.currentSamples += histSize
-				}
-				ev.currentSamples++
+			t, _, _, ok := ev.vectorSelectorSingle(it, vs, enh.Ts)
+			if !ok {
+				continue
+			}
 
-				ev.samplesStats.IncrementSamplesAtTimestamp(enh.Ts, int64(1+histSize))
-				if ev.currentSamples > ev.maxSamples {
-					ev.error(ErrTooManySamples(env))
-				}
+			// Note that we ignore the sample values because call only cares about the timestamp.
+			vec = append(vec, Sample{
+				Metric: s.Labels(),
+				T:      t,
+			})
+
+			ev.currentSamples++
+			ev.samplesStats.IncrementSamplesAtTimestamp(enh.Ts, 1)
+			if ev.currentSamples > ev.maxSamples {
+				ev.error(ErrTooManySamples(env))
 			}
 		}
 		ev.samplesStats.UpdatePeak(ev.currentSamples)
