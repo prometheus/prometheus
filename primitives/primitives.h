@@ -52,7 +52,7 @@ class BasicLabelSet {
     } else if (__builtin_expect(std::get<0>(label) == std::get<0>(labels_.back()), false)) {
       std::get<1>(labels_.back()) = std::get<1>(label);
     } else {
-      auto i = std::lower_bound(labels_.begin(), labels_.end(), std::get<0>(label), [](const LabelType& a, const SymbolView& b) { return std::get<0>(a) < b; });
+      auto i = std::lower_bound(labels_.begin(), labels_.end(), std::get<0>(label), [](const LabelType& a, const auto& b) { return std::get<0>(a) < b; });
       if (__builtin_expect(std::get<0>(*i) == std::get<0>(label), false)) {
         std::get<1>(*i) = std::get<1>(label);
       } else {
@@ -295,3 +295,8 @@ struct tuple_element<1, PromPP::Primitives::Sample> {
   using type = double;
 };
 }  // namespace std
+
+// namespace BareBones {
+// template <>
+// struct IsTriviallyReallocatable<PromPP::Primitives::String> : std::true_type {};
+// }  // namespace BareBones

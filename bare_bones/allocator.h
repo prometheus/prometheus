@@ -19,6 +19,7 @@ class Allocator {
 
   constexpr Allocator& operator=(const Allocator&) = delete;
   constexpr Allocator& operator=(Allocator&&) noexcept = delete;
+  constexpr bool operator==(const Allocator& other) const noexcept { return &allocated_memory_ == &other.allocated_memory_; };
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE constexpr T* allocate(std::size_t n) {
     allocated_memory_ += n * sizeof(T);
