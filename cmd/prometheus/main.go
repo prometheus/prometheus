@@ -42,6 +42,7 @@ import (
 	"github.com/mwitkow/go-conntrack"
 	"github.com/oklog/run"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	versioncollector "github.com/prometheus/client_golang/prometheus/collectors/version"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promlog"
@@ -252,6 +253,18 @@ func main() {
 		newFlagRetentionDuration model.Duration
 	)
 
+	// Unregister the default GoCollector, and reregister with our defaults.
+	if prometheus.Unregister(collectors.NewGoCollector()) {
+		prometheus.MustRegister(
+			collectors.NewGoCollector(
+				collectors.WithGoCollectorRuntimeMetrics(
+					collectors.MetricsGC,
+					collectors.MetricsScheduler,
+				),
+			),
+		)
+	}
+
 	cfg := flagConfig{
 		notifier: notifier.Options{
 			Registerer: prometheus.DefaultRegisterer,
@@ -418,7 +431,7 @@ func main() {
 	serverOnlyFlag(a, "rules.alert.resend-delay", "Minimum amount of time to wait before resending an alert to Alertmanager.").
 		Default("1m").SetValue(&cfg.resendDelay)
 
-	serverOnlyFlag(a, "rules.max-concurrent-evals", "Global concurrency limit for independent rules that can run concurrently.").
+	serverOnlyFlag(a, "rules.max-concurrent-evals", "Global concurrency limit for independent rules that can run concurrently. When set, \"query.max-concurrency\" may need to be adjusted accordingly.").
 		Default("4").Int64Var(&cfg.maxConcurrentEvals)
 
 	a.Flag("scrape.adjust-timestamps", "Adjust scrape timestamps by up to `scrape.timestamp-tolerance` to align them to the intended schedule. See https://github.com/prometheus/prometheus/issues/7846 for more context. Experimental. This flag will be removed in a future release.").
@@ -772,6 +785,9 @@ func main() {
 			ResendDelay:            time.Duration(cfg.resendDelay),
 			MaxConcurrentEvals:     cfg.maxConcurrentEvals,
 			ConcurrentEvalsEnabled: cfg.enableConcurrentRuleEval,
+			DefaultRuleQueryOffset: func() time.Duration {
+				return time.Duration(cfgFile.GlobalConfig.RuleQueryOffset)
+			},
 		})
 	}
 

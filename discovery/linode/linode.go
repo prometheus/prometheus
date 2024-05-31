@@ -325,7 +325,7 @@ func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, erro
 		}
 
 		labels := model.LabelSet{
-			linodeLabelID:                 model.LabelValue(fmt.Sprintf("%d", instance.ID)),
+			linodeLabelID:                 model.LabelValue(strconv.Itoa(instance.ID)),
 			linodeLabelName:               model.LabelValue(instance.Label),
 			linodeLabelImage:              model.LabelValue(instance.Image),
 			linodeLabelPrivateIPv4:        model.LabelValue(privateIPv4),
@@ -338,13 +338,13 @@ func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, erro
 			linodeLabelType:               model.LabelValue(instance.Type),
 			linodeLabelStatus:             model.LabelValue(instance.Status),
 			linodeLabelGroup:              model.LabelValue(instance.Group),
-			linodeLabelGPUs:               model.LabelValue(fmt.Sprintf("%d", instance.Specs.GPUs)),
+			linodeLabelGPUs:               model.LabelValue(strconv.Itoa(instance.Specs.GPUs)),
 			linodeLabelHypervisor:         model.LabelValue(instance.Hypervisor),
 			linodeLabelBackups:            model.LabelValue(backupsStatus),
-			linodeLabelSpecsDiskBytes:     model.LabelValue(fmt.Sprintf("%d", int64(instance.Specs.Disk)<<20)),
-			linodeLabelSpecsMemoryBytes:   model.LabelValue(fmt.Sprintf("%d", int64(instance.Specs.Memory)<<20)),
-			linodeLabelSpecsVCPUs:         model.LabelValue(fmt.Sprintf("%d", instance.Specs.VCPUs)),
-			linodeLabelSpecsTransferBytes: model.LabelValue(fmt.Sprintf("%d", int64(instance.Specs.Transfer)<<20)),
+			linodeLabelSpecsDiskBytes:     model.LabelValue(strconv.FormatInt(int64(instance.Specs.Disk)<<20, 10)),
+			linodeLabelSpecsMemoryBytes:   model.LabelValue(strconv.FormatInt(int64(instance.Specs.Memory)<<20, 10)),
+			linodeLabelSpecsVCPUs:         model.LabelValue(strconv.Itoa(instance.Specs.VCPUs)),
+			linodeLabelSpecsTransferBytes: model.LabelValue(strconv.FormatInt(int64(instance.Specs.Transfer)<<20, 10)),
 		}
 
 		addr := net.JoinHostPort(publicIPv4, strconv.FormatUint(uint64(d.port), 10))

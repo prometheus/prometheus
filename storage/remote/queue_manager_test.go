@@ -468,7 +468,7 @@ func TestReleaseNoninternedString(t *testing.T) {
 		m.StoreSeries([]record.RefSeries{
 			{
 				Ref:    chunks.HeadSeriesRef(i),
-				Labels: labels.FromStrings("asdf", fmt.Sprintf("%d", i)),
+				Labels: labels.FromStrings("asdf", strconv.Itoa(i)),
 			},
 		}, 0)
 		m.SeriesReset(1)
