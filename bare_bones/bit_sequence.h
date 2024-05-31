@@ -189,7 +189,10 @@ class PROMPP_ATTRIBUTE_PACKED CompactBitSequence {
     return *this;
   }
 
-  ~CompactBitSequence() { std::free(memory_); }
+  ~CompactBitSequence() {
+    std::free(memory_);
+    memory_ = nullptr;
+  }
 
   PROMPP_ALWAYS_INLINE bool operator==(const CompactBitSequence& other) const noexcept {
     return size_in_bits_ == other.size_in_bits_ && memcmp(memory_, other.memory_, size_in_bytes()) == 0;
