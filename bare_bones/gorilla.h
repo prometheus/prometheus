@@ -12,10 +12,19 @@
 namespace BareBones {
 namespace Encoding::Gorilla {
 
+enum class ValueType : uint8_t {
+  kStaleNan = 0,
+  kValue,
+};
+
 constexpr double STALE_NAN = std::bit_cast<double>(0x7ff0000000000002ull);
 
-inline __attribute__((always_inline)) bool isstalenan(double v) noexcept {
+constexpr PROMPP_ALWAYS_INLINE bool isstalenan(double v) noexcept {
   return std::bit_cast<uint64_t>(v) == 0x7ff0000000000002ull;
+}
+
+constexpr PROMPP_ALWAYS_INLINE ValueType get_value_type(double value) noexcept {
+  return isstalenan(value) ? ValueType::kStaleNan : ValueType::kValue;
 }
 
 struct PROMPP_ATTRIBUTE_PACKED TimestampEncoderState {
@@ -23,6 +32,11 @@ struct PROMPP_ATTRIBUTE_PACKED TimestampEncoderState {
   int64_t last_ts_delta{};  // for stream gorilla samples might not be ordered
 
   bool operator==(const TimestampEncoderState&) const noexcept = default;
+
+  PROMPP_ALWAYS_INLINE void reset() noexcept {
+    last_ts = {};
+    last_ts_delta = {};
+  }
 };
 
 template <class TimestampEncoder>
@@ -32,14 +46,25 @@ concept TimestampEncoderInterface = requires(TimestampEncoderState& state, BitSe
   { TimestampEncoder::encode_delta_of_delta(state, int64_t(), sequence) } -> std::same_as<void>;
 };
 
+struct DodSignificantLengths {
+  uint8_t first;
+  uint8_t second;
+  uint8_t third;
+};
+
+static constexpr DodSignificantLengths kDefaultDogSignificantLengths = DodSignificantLengths{.first = 5, .second = 15, .third = 18};
+
+template <DodSignificantLengths kDogSignificantLengths = kDefaultDogSignificantLengths>
 class ZigZagTimestampEncoder {
  public:
+  template <class BitSequence>
   PROMPP_ALWAYS_INLINE static void encode(TimestampEncoderState& state, int64_t ts, BitSequence& stream) {
     state.last_ts = ts;
 
     stream.push_back_u64_svbyte_0248(ZigZag::encode(ts));
   }
 
+  template <class BitSequence>
   PROMPP_ALWAYS_INLINE static void encode_delta(TimestampEncoderState& state, int64_t ts, BitSequence& stream) {
     state.last_ts_delta = ts - state.last_ts;
     state.last_ts = ts;
@@ -47,34 +72,82 @@ class ZigZagTimestampEncoder {
     stream.push_back_u64_svbyte_2468(ZigZag::encode(state.last_ts_delta));
   }
 
+  template <class BitSequence>
   PROMPP_ALWAYS_INLINE static void encode_delta_of_delta(TimestampEncoderState& state, int64_t ts, BitSequence& stream) {
     auto ts_delta = ts - state.last_ts;
     const int64_t delta_of_delta = ts_delta - state.last_ts_delta;
     const uint64_t ts_dod_zigzag = ZigZag::encode(delta_of_delta);
 
+    encode_delta_of_delta<BitSequence>(ts_dod_zigzag, stream);
+
+    state.last_ts_delta = ts_delta;
+    state.last_ts = ts;
+  }
+
+  template <class BitSequence>
+  PROMPP_ALWAYS_INLINE static void encode_delta_of_delta(uint64_t ts_dod_zigzag, BitSequence& stream) {
     if (ts_dod_zigzag == 0) {
       stream.push_back_single_zero_bit();
     } else {
       uint8_t ts_dod_significant_len = 64 - std::countl_zero(ts_dod_zigzag);
 
-      if (ts_dod_significant_len <= 5) {
+      if (ts_dod_significant_len <= kDogSignificantLengths.first) {
         // 1->0
-        stream.push_back_bits_u32(2 + 5, 0b01 | (ts_dod_zigzag << 2));
-      } else if (ts_dod_significant_len <= 15) {
+        stream.push_back_bits_u32(2 + kDogSignificantLengths.first, 0b01 | (ts_dod_zigzag << 2));
+      } else if (ts_dod_significant_len <= kDogSignificantLengths.second) {
         // 1->1->0
-        stream.push_back_bits_u32(3 + 15, 0b011 | (ts_dod_zigzag << 3));
-      } else if (ts_dod_significant_len <= 18) {
+        stream.push_back_bits_u32(3 + kDogSignificantLengths.second, 0b011 | (ts_dod_zigzag << 3));
+      } else if (ts_dod_significant_len <= kDogSignificantLengths.third) {
         // 1->1->1->0
-        stream.push_back_bits_u32(4 + 18, 0b0111 | (ts_dod_zigzag << 4));
+        stream.push_back_bits_u32(4 + kDogSignificantLengths.third, 0b0111 | (ts_dod_zigzag << 4));
       } else {
         // 1->1->1->1
         stream.push_back_bits_u32(4, 0b1111);
         stream.push_back_u64_svbyte_2468(ts_dod_zigzag);
       }
     }
+  }
 
-    state.last_ts_delta = ts_delta;
-    state.last_ts = ts;
+  template <class BitSequence>
+  PROMPP_ALWAYS_INLINE static void encode_delta_of_delta_with_stale_nan(TimestampEncoderState& state, double timestamp, BitSequence& stream) {
+    if (isstalenan(timestamp)) {
+      [[unlikely]];
+      stream.push_back_bits_u32(5, 0b11111);
+    } else {
+      auto ts = static_cast<int64_t>(timestamp);
+      auto ts_delta = ts - state.last_ts;
+      const int64_t delta_of_delta = ts_delta - state.last_ts_delta;
+      const uint64_t ts_dod_zigzag = ZigZag::encode(delta_of_delta);
+
+      encode_delta_of_delta_with_stale_nan<BitSequence>(ts_dod_zigzag, stream);
+
+      state.last_ts_delta = ts_delta;
+      state.last_ts = ts;
+    }
+  }
+
+  template <class BitSequence>
+  PROMPP_ALWAYS_INLINE static void encode_delta_of_delta_with_stale_nan(uint64_t ts_dod_zigzag, BitSequence& stream) {
+    if (ts_dod_zigzag == 0) {
+      stream.push_back_single_zero_bit();
+    } else {
+      uint8_t ts_dod_significant_len = 64 - std::countl_zero(ts_dod_zigzag);
+
+      if (ts_dod_significant_len <= kDogSignificantLengths.first) {
+        // 1->0
+        stream.push_back_bits_u32(2 + kDogSignificantLengths.first, 0b01 | (ts_dod_zigzag << 2));
+      } else if (ts_dod_significant_len <= kDogSignificantLengths.second) {
+        // 1->1->0
+        stream.push_back_bits_u32(3 + kDogSignificantLengths.second, 0b011 | (ts_dod_zigzag << 3));
+      } else if (ts_dod_significant_len <= kDogSignificantLengths.third) {
+        // 1->1->1->0
+        stream.push_back_bits_u32(4 + kDogSignificantLengths.third, 0b0111 | (ts_dod_zigzag << 4));
+      } else {
+        // 1->1->1->1
+        stream.push_back_bits_u32(5, 0b01111);
+        stream.push_back_u64_svbyte_2468(ts_dod_zigzag);
+      }
+    }
   }
 };
 
@@ -88,6 +161,14 @@ struct PROMPP_ATTRIBUTE_PACKED ValuesEncoderState {
   uint8_t v_xor_waste_bits_written{};
 
   bool operator==(const ValuesEncoderState&) const noexcept = default;
+
+  PROMPP_ALWAYS_INLINE void reset() {
+    last_v = {};
+    last_v_xor_length = {};
+    last_v_xor_leading_z = {};
+    last_v_xor_trailing_z = {};
+    v_xor_waste_bits_written = {};
+  }
 };
 
 struct PROMPP_ATTRIBUTE_PACKED ValuesDecoderState {
@@ -187,10 +268,10 @@ class TimestampEncoder {
   template <class BitSequence>
   PROMPP_ALWAYS_INLINE static void push_varint_buffer(const uint8_t* buffer, size_t bytes, BitSequence& stream) {
     if (bytes <= sizeof(uint64_t)) {
-      stream.push_back_bits_u64(bytes * 8, *reinterpret_cast<const uint64_t*>(buffer));
+      stream.push_back_bits_u64(BareBones::Bit::to_bits(bytes), *reinterpret_cast<const uint64_t*>(buffer));
     } else {
-      stream.push_back_bits_u64(sizeof(uint64_t) * 8, *reinterpret_cast<const uint64_t*>(buffer));
-      stream.push_back_bits_u32((bytes - sizeof(uint64_t)) * 8, *reinterpret_cast<const uint16_t*>(buffer + sizeof(uint64_t)));
+      stream.push_back_bits_u64(BareBones::Bit::to_bits(sizeof(uint64_t)), *reinterpret_cast<const uint64_t*>(buffer));
+      stream.push_back_bits_u32(BareBones::Bit::to_bits(bytes - sizeof(uint64_t)), *reinterpret_cast<const uint16_t*>(buffer + sizeof(uint64_t)));
     }
   }
 
@@ -221,6 +302,7 @@ concept TimestampDecoderInterface = requires(TimestampEncoderState& state, BitSe
   { TimestampDecoder::decode_delta_of_delta(state, reader) } -> std::same_as<void>;
 };
 
+template <DodSignificantLengths kDogSignificantLengths = kDefaultDogSignificantLengths>
 class ZigZagTimestampDecoder {
  public:
   PROMPP_ALWAYS_INLINE static void decode(TimestampEncoderState& state, BitSequenceReader& reader) {
@@ -238,16 +320,16 @@ class ZigZagTimestampDecoder {
 
       if ((buf & 0b10) == 0) {
         // 1->0 -> 5bit
-        dod_zigzag = Bit::bextr(buf, 2, 5);
-        reader.ff(2 + 5);
+        dod_zigzag = Bit::bextr(buf, 2, kDogSignificantLengths.first);
+        reader.ff(2 + kDogSignificantLengths.first);
       } else if ((buf & 0b100) == 0) {
         // 1->1->0 -> 15bit
-        dod_zigzag = Bit::bextr(buf, 3, 15);
-        reader.ff(3 + 15);
+        dod_zigzag = Bit::bextr(buf, 3, kDogSignificantLengths.second);
+        reader.ff(3 + kDogSignificantLengths.second);
       } else if ((buf & 0b1000) == 0) {
         // 1->1->1->0 -> 18bit
-        dod_zigzag = Bit::bextr(buf, 4, 18);
-        reader.ff(4 + 18);
+        dod_zigzag = Bit::bextr(buf, 4, kDogSignificantLengths.third);
+        reader.ff(4 + kDogSignificantLengths.third);
       } else {
         // 1->1->1->1 -> 64bit
         reader.ff(4);
@@ -261,11 +343,48 @@ class ZigZagTimestampDecoder {
 
     state.last_ts += state.last_ts_delta;
   }
+
+  PROMPP_ALWAYS_INLINE static ValueType decode_delta_of_delta_with_stale_nan(TimestampEncoderState& state, BitSequenceReader& reader) {
+    uint32_t buf = reader.read_u32();
+
+    if (buf & 0b1) {
+      uint64_t dod_zigzag;
+
+      if ((buf & 0b10) == 0) {
+        // 1->0 -> 5bit
+        dod_zigzag = Bit::bextr(buf, 2, kDogSignificantLengths.first);
+        reader.ff(2 + kDogSignificantLengths.first);
+      } else if ((buf & 0b100) == 0) {
+        // 1->1->0 -> 15bit
+        dod_zigzag = Bit::bextr(buf, 3, kDogSignificantLengths.second);
+        reader.ff(3 + kDogSignificantLengths.second);
+      } else if ((buf & 0b1000) == 0) {
+        // 1->1->1->0 -> 18bit
+        dod_zigzag = Bit::bextr(buf, 4, kDogSignificantLengths.third);
+        reader.ff(4 + kDogSignificantLengths.third);
+      } else if ((buf & 0b10000) == 0) {
+        // 1->1->1->1 -> 64bit
+        reader.ff(5);
+        dod_zigzag = reader.consume_u64_svbyte_2468();
+      } else {
+        reader.ff(5);
+        return ValueType::kStaleNan;
+      }
+
+      state.last_ts_delta += ZigZag::decode(dod_zigzag);
+    } else {
+      reader.ff(1);
+    }
+
+    state.last_ts += state.last_ts_delta;
+    return ValueType::kValue;
+  }
 };
 
 class TimestampDecoder {
  public:
   PROMPP_ALWAYS_INLINE static void decode(TimestampEncoderState& state, BitSequenceReader& reader) { state.last_ts = read_varint(reader); }
+  PROMPP_ALWAYS_INLINE static int64_t decode(BitSequenceReader& reader) { return read_varint(reader); }
   PROMPP_ALWAYS_INLINE static void decode_delta(TimestampEncoderState& state, BitSequenceReader& reader) {
     state.last_ts_delta = std::bit_cast<int64_t>(read_var_uint(reader));
     state.last_ts += state.last_ts_delta;
@@ -576,7 +695,7 @@ class PROMPP_ATTRIBUTE_PACKED PrometheusStreamEncoder {
   }
 };
 
-static_assert(sizeof(StreamEncoder<ZigZagTimestampEncoder, ValuesEncoder>) == 29);
+static_assert(sizeof(StreamEncoder<ZigZagTimestampEncoder<>, ValuesEncoder>) == 29);
 static_assert(sizeof(PrometheusStreamEncoder<TimestampEncoder, TimestampDecoder>) == 29);
 
 template <TimestampDecoderInterface TimestampDecoder, ValuesDecoderInterface ValuesDecoder>
@@ -644,7 +763,7 @@ class PROMPP_ATTRIBUTE_PACKED StreamDecoder {
   bool operator==(const StreamDecoder& decoder) const = default;
 };
 
-static_assert(sizeof(StreamDecoder<ZigZagTimestampDecoder, ValuesDecoder>) == 27);
+static_assert(sizeof(StreamDecoder<ZigZagTimestampDecoder<>, ValuesDecoder>) == 27);
 
 }  // namespace Encoding::Gorilla
 

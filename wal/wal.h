@@ -198,7 +198,7 @@ class BasicEncoder {
   };
 
   struct __attribute__((__packed__)) EncoderWithID {
-    BareBones::Encoding::Gorilla::StreamEncoder<BareBones::Encoding::Gorilla::ZigZagTimestampEncoder, BareBones::Encoding::Gorilla::ValuesEncoder> encoder;
+    BareBones::Encoding::Gorilla::StreamEncoder<BareBones::Encoding::Gorilla::ZigZagTimestampEncoder<>, BareBones::Encoding::Gorilla::ValuesEncoder> encoder;
     Primitives::LabelSetID id;
   };
 
@@ -236,7 +236,7 @@ class BasicEncoder {
   typename LabelSetsTable::checkpoint_type label_sets_checkpoint_;
   Buffer buffer_;
   BareBones::Vector<
-      BareBones::Encoding::Gorilla::StreamEncoder<BareBones::Encoding::Gorilla::ZigZagTimestampEncoder, BareBones::Encoding::Gorilla::ValuesEncoder>>
+      BareBones::Encoding::Gorilla::StreamEncoder<BareBones::Encoding::Gorilla::ZigZagTimestampEncoder<>, BareBones::Encoding::Gorilla::ValuesEncoder>>
       gorilla_;
   BareBones::LZ4Stream::ostream lz4stream_{nullptr};
 
@@ -574,7 +574,7 @@ class BasicEncoder {
     }
 
     BareBones::Vector<
-        BareBones::Encoding::Gorilla::StreamDecoder<BareBones::Encoding::Gorilla::ZigZagTimestampDecoder, BareBones::Encoding::Gorilla::ValuesDecoder>>
+        BareBones::Encoding::Gorilla::StreamDecoder<BareBones::Encoding::Gorilla::ZigZagTimestampDecoder<>, BareBones::Encoding::Gorilla::ValuesDecoder>>
         decoders;
 
     // move out the encoders into decoders.
@@ -619,7 +619,7 @@ class BasicEncoder {
 template <class LabelSetsTable = Primitives::SnugComposites::LabelSet::DecodingTable, size_t LZ4DecompressedBufferSize = 256>
 class BasicDecoder {
   BareBones::Vector<
-      BareBones::Encoding::Gorilla::StreamDecoder<BareBones::Encoding::Gorilla::ZigZagTimestampDecoder, BareBones::Encoding::Gorilla::ValuesDecoder>>
+      BareBones::Encoding::Gorilla::StreamDecoder<BareBones::Encoding::Gorilla::ZigZagTimestampDecoder<>, BareBones::Encoding::Gorilla::ValuesDecoder>>
       gorilla_;
   BareBones::LZ4Stream::basic_istream<LZ4DecompressedBufferSize> lz4stream_{nullptr};
   LabelSetsTable& label_sets_;

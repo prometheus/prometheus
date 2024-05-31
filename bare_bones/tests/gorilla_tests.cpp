@@ -7,6 +7,7 @@
 namespace {
 
 using BareBones::BitSequence;
+using BareBones::BitSequenceReader;
 using BareBones::Encoding::Gorilla::PrometheusStreamEncoder;
 using BareBones::Encoding::Gorilla::StreamDecoder;
 using BareBones::Encoding::Gorilla::StreamEncoder;
@@ -126,8 +127,8 @@ samples_sequence_type generate_samples_with_nan() {
 struct Gorilla : public testing::TestWithParam<samples_sequence_type> {};
 
 TEST_P(Gorilla, EncodeDecode) {
-  StreamEncoder<ZigZagTimestampEncoder, ValuesEncoder> encoder;
-  StreamDecoder<ZigZagTimestampDecoder, ValuesDecoder> decoder;
+  StreamEncoder<ZigZagTimestampEncoder<>, ValuesEncoder> encoder;
+  StreamDecoder<ZigZagTimestampDecoder<>, ValuesDecoder> decoder;
   BitSequence ts_bitseq;
   BitSequence v_bitseq;
 
