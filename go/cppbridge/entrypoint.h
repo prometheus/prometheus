@@ -60,6 +60,8 @@ void prompp_wal_decoder_dtor(void* args);
  *     samples    uint32 // number of samples in segment
  *     series     uint32 // number of series in segment
  *     segment_id uint32 // processed segment id
+ *     earliest_block_timestamp int64 // min timestamp in block
+ *     latest_block_timestamp inte64 // max timestamp in block
  *     protobuf   []byte // decoded RemoteWrite protobuf content
  *     error      []byte // error string if thrown
  * }
