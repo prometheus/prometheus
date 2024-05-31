@@ -25,11 +25,13 @@ type ProtobufStats interface {
 
 // DecodedSegmentStats - stats data for decoded segment.
 type DecodedSegmentStats struct {
-	createdAt int64
-	encodedAt int64
-	samples   uint32
-	series    uint32
-	segmentID uint32
+	createdAt              int64
+	encodedAt              int64
+	samples                uint32
+	series                 uint32
+	segmentID              uint32
+	earliestBlockTimestamp int64
+	latestBlockTimestamp   int64
 }
 
 var _ ProtobufStats = (*DecodedSegmentStats)(nil)
@@ -59,6 +61,14 @@ func (s DecodedSegmentStats) Series() uint32 {
 	return s.series
 }
 
+func (s DecodedSegmentStats) EarliestBlockTimestamp() int64 {
+	return s.earliestBlockTimestamp
+}
+
+func (s DecodedSegmentStats) LatestBlockTimestamp() int64 {
+	return s.latestBlockTimestamp
+}
+
 // ProtobufContent - decoded to RemoteWrite protobuf segment
 type ProtobufContent interface {
 	frames.WritePayload
@@ -67,6 +77,8 @@ type ProtobufContent interface {
 	Samples() uint32
 	SegmentID() uint32
 	Series() uint32
+	EarliestBlockTimestamp() int64
+	LatestBlockTimestamp() int64
 	UnmarshalTo(proto.Unmarshaler) error
 }
 
