@@ -752,6 +752,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		case parser.ValueTypeScalar:
 			return Scalar{V: mat[0].Floats[0].F, T: start}, warnings, nil
 		case parser.ValueTypeMatrix:
+			ng.sortMatrixResult(ctx, query, mat)
 			return mat, warnings, nil
 		default:
 			panic(fmt.Errorf("promql.Engine.exec: unexpected expression type %q", s.Expr.Type()))
@@ -790,11 +791,15 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 	}
 
 	// TODO(fabxc): where to ensure metric labels are a copy from the storage internals.
+	ng.sortMatrixResult(ctx, query, mat)
+
+	return mat, warnings, nil
+}
+
+func (ng *Engine) sortMatrixResult(ctx context.Context, query *query, mat Matrix) {
 	sortSpanTimer, _ := query.stats.GetSpanTimer(ctx, stats.ResultSortTime, ng.metrics.queryResultSort)
 	sort.Sort(mat)
 	sortSpanTimer.Finish()
-
-	return mat, warnings, nil
 }
 
 // subqueryTimes returns the sum of offsets and ranges of all subqueries in the path.
