@@ -134,7 +134,7 @@ void GorillaPrometheusStreamEncoder::execute(const Config& config, Metrics& metr
     ++ls_id;
   }
 
-  for (auto& [chunk_ls_id, chunks] : encoder.storage().finalized_chunks_) {
+  for (auto& [chunk_ls_id, chunks] : encoder.storage().finalized_chunks) {
     for (auto& chunk : chunks) {
       ++finalized_chunks_info[static_cast<size_t>(chunk.encoding_type)].count;
     }
