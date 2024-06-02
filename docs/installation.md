@@ -97,6 +97,20 @@ docker run -p 9090:9090 my-prometheus
 A more advanced option is to render the configuration dynamically on start
 with some tooling or even have a daemon update it periodically.
 
+### Overriding command line parameters
+
+The Docker image is started with a number of default command line parameters:
+
+```
+--config.file=/etc/prometheus/prometheus.yml
+--storage.tsdb.path=/prometheus
+--web.console.libraries=/usr/share/prometheus/console_libraries
+--web.console.templates=/usr/share/prometheus/consoles
+```
+
+If you want to add extra command line parameters to the `docker run` command,
+you will need to re-add these yourself as they will be overwritten.
+
 ## Using configuration management systems
 
 If you prefer using configuration management systems you might be interested in
