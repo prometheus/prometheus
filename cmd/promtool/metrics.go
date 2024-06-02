@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"google.golang.org/protobuf/proto"
 	"io"
 	"net/http"
 	"net/url"
@@ -108,7 +109,7 @@ func parseAndPushMetrics(client *remote.Client, data []byte, labels map[string]s
 		return false
 	}
 
-	raw, err := metricsData.Marshal()
+	raw, err := proto.Marshal(metricsData)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "  FAILED:", err)
 		return false

@@ -23,7 +23,7 @@ import (
 )
 
 var writeRequestFixture = &prompb.WriteRequest{
-	Metadata: []prompb.MetricMetadata{
+	Metadata: []*prompb.MetricMetadata{
 		{
 			MetricFamilyName: "http_request_duration_seconds",
 			Type:             3,
@@ -45,111 +45,111 @@ var writeRequestFixture = &prompb.WriteRequest{
 			Help:             "This is a test metric.",
 		},
 	},
-	Timeseries: []prompb.TimeSeries{
+	Timeseries: []*prompb.TimeSeries{
 		{
-			Labels: []prompb.Label{
+			Labels: []*prompb.Label{
 				{Name: "__name__", Value: "http_request_duration_seconds_bucket"},
 				{Name: "job", Value: "promtool"},
 				{Name: "le", Value: "0.1"},
 			},
-			Samples: []prompb.Sample{{Value: 33444, Timestamp: 1}},
+			Samples: []*prompb.Sample{{Value: 33444, Timestamp: 1}},
 		},
 		{
-			Labels: []prompb.Label{
+			Labels: []*prompb.Label{
 				{Name: "__name__", Value: "http_request_duration_seconds_bucket"},
 				{Name: "job", Value: "promtool"},
 				{Name: "le", Value: "0.5"},
 			},
-			Samples: []prompb.Sample{{Value: 129389, Timestamp: 1}},
+			Samples: []*prompb.Sample{{Value: 129389, Timestamp: 1}},
 		},
 		{
-			Labels: []prompb.Label{
+			Labels: []*prompb.Label{
 				{Name: "__name__", Value: "http_request_duration_seconds_bucket"},
 				{Name: "job", Value: "promtool"},
 				{Name: "le", Value: "1"},
 			},
-			Samples: []prompb.Sample{{Value: 133988, Timestamp: 1}},
+			Samples: []*prompb.Sample{{Value: 133988, Timestamp: 1}},
 		},
 		{
-			Labels: []prompb.Label{
+			Labels: []*prompb.Label{
 				{Name: "__name__", Value: "http_request_duration_seconds_bucket"},
 				{Name: "job", Value: "promtool"},
 				{Name: "le", Value: "+Inf"},
 			},
-			Samples: []prompb.Sample{{Value: 144320, Timestamp: 1}},
+			Samples: []*prompb.Sample{{Value: 144320, Timestamp: 1}},
 		},
 		{
-			Labels: []prompb.Label{
+			Labels: []*prompb.Label{
 				{Name: "__name__", Value: "http_request_duration_seconds_sum"},
 				{Name: "job", Value: "promtool"},
 			},
-			Samples: []prompb.Sample{{Value: 53423, Timestamp: 1}},
+			Samples: []*prompb.Sample{{Value: 53423, Timestamp: 1}},
 		},
 		{
-			Labels: []prompb.Label{
+			Labels: []*prompb.Label{
 				{Name: "__name__", Value: "http_request_duration_seconds_count"},
 				{Name: "job", Value: "promtool"},
 			},
-			Samples: []prompb.Sample{{Value: 144320, Timestamp: 1}},
+			Samples: []*prompb.Sample{{Value: 144320, Timestamp: 1}},
 		},
 		{
-			Labels: []prompb.Label{
+			Labels: []*prompb.Label{
 				{Name: "__name__", Value: "http_requests_total"},
 				{Name: "code", Value: "200"},
 				{Name: "job", Value: "promtool"},
 				{Name: "method", Value: "post"},
 			},
-			Samples: []prompb.Sample{{Value: 1027, Timestamp: 1395066363000}},
+			Samples: []*prompb.Sample{{Value: 1027, Timestamp: 1395066363000}},
 		},
 		{
-			Labels: []prompb.Label{
+			Labels: []*prompb.Label{
 				{Name: "__name__", Value: "http_requests_total"},
 				{Name: "code", Value: "400"},
 				{Name: "job", Value: "promtool"},
 				{Name: "method", Value: "post"},
 			},
-			Samples: []prompb.Sample{{Value: 3, Timestamp: 1395066363000}},
+			Samples: []*prompb.Sample{{Value: 3, Timestamp: 1395066363000}},
 		},
 		{
-			Labels: []prompb.Label{
+			Labels: []*prompb.Label{
 				{Name: "__name__", Value: "rpc_duration_seconds"},
 				{Name: "job", Value: "promtool"},
 				{Name: "quantile", Value: "0.01"},
 			},
-			Samples: []prompb.Sample{{Value: 3102, Timestamp: 1}},
+			Samples: []*prompb.Sample{{Value: 3102, Timestamp: 1}},
 		},
 		{
-			Labels: []prompb.Label{
+			Labels: []*prompb.Label{
 				{Name: "__name__", Value: "rpc_duration_seconds"},
 				{Name: "job", Value: "promtool"},
 				{Name: "quantile", Value: "0.5"},
 			},
-			Samples: []prompb.Sample{{Value: 4773, Timestamp: 1}},
+			Samples: []*prompb.Sample{{Value: 4773, Timestamp: 1}},
 		},
 		{
-			Labels: []prompb.Label{
+			Labels: []*prompb.Label{
 				{Name: "__name__", Value: "rpc_duration_seconds"},
 				{Name: "job", Value: "promtool"},
 				{Name: "quantile", Value: "0.99"},
 			},
-			Samples: []prompb.Sample{{Value: 76656, Timestamp: 1}},
+			Samples: []*prompb.Sample{{Value: 76656, Timestamp: 1}},
 		},
 		{
-			Labels: []prompb.Label{
+			Labels: []*prompb.Label{
 				{Name: "__name__", Value: "rpc_duration_seconds_sum"},
 				{Name: "job", Value: "promtool"},
 			},
-			Samples: []prompb.Sample{{Value: 1.7560473e+07, Timestamp: 1}},
+			Samples: []*prompb.Sample{{Value: 1.7560473e+07, Timestamp: 1}},
 		},
 		{
-			Labels: []prompb.Label{
+			Labels: []*prompb.Label{
 				{Name: "__name__", Value: "rpc_duration_seconds_count"},
 				{Name: "job", Value: "promtool"},
 			},
-			Samples: []prompb.Sample{{Value: 2693, Timestamp: 1}},
+			Samples: []*prompb.Sample{{Value: 2693, Timestamp: 1}},
 		},
 		{
-			Labels: []prompb.Label{
+			Labels: []*prompb.Label{
 				{Name: "__name__", Value: "test_metric1"},
 				{Name: "b", Value: "c"},
 				{Name: "baz", Value: "qux"},
@@ -157,10 +157,10 @@ var writeRequestFixture = &prompb.WriteRequest{
 				{Name: "foo", Value: "bar"},
 				{Name: "job", Value: "promtool"},
 			},
-			Samples: []prompb.Sample{{Value: 1, Timestamp: 1}},
+			Samples: []*prompb.Sample{{Value: 1, Timestamp: 1}},
 		},
 		{
-			Labels: []prompb.Label{
+			Labels: []*prompb.Label{
 				{Name: "__name__", Value: "test_metric1"},
 				{Name: "b", Value: "c"},
 				{Name: "baz", Value: "qux"},
@@ -168,7 +168,7 @@ var writeRequestFixture = &prompb.WriteRequest{
 				{Name: "foo", Value: "bar"},
 				{Name: "job", Value: "promtool"},
 			},
-			Samples: []prompb.Sample{{Value: 2, Timestamp: 1}},
+			Samples: []*prompb.Sample{{Value: 2, Timestamp: 1}},
 		},
 	},
 }

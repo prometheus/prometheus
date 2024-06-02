@@ -87,9 +87,9 @@ func TestRemoteWriteHandler(t *testing.T) {
 }
 
 func TestOutOfOrderSample(t *testing.T) {
-	buf, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
-		Labels:  []prompb.Label{{Name: "__name__", Value: "test_metric"}},
-		Samples: []prompb.Sample{{Value: 1, Timestamp: 0}},
+	buf, _, _, err := buildWriteRequest(nil, []*prompb.TimeSeries{{
+		Labels:  []*prompb.Label{{Name: "__name__", Value: "test_metric"}},
+		Samples: []*prompb.Sample{{Value: 1, Timestamp: 0}},
 	}}, nil, nil, nil, nil)
 	require.NoError(t, err)
 
@@ -112,9 +112,9 @@ func TestOutOfOrderSample(t *testing.T) {
 // don't fail on ingestion errors since the exemplar storage is
 // still experimental.
 func TestOutOfOrderExemplar(t *testing.T) {
-	buf, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
-		Labels:    []prompb.Label{{Name: "__name__", Value: "test_metric"}},
-		Exemplars: []prompb.Exemplar{{Labels: []prompb.Label{{Name: "foo", Value: "bar"}}, Value: 1, Timestamp: 0}},
+	buf, _, _, err := buildWriteRequest(nil, []*prompb.TimeSeries{{
+		Labels:    []*prompb.Label{{Name: "__name__", Value: "test_metric"}},
+		Exemplars: []*prompb.Exemplar{{Labels: []*prompb.Label{{Name: "foo", Value: "bar"}}, Value: 1, Timestamp: 0}},
 	}}, nil, nil, nil, nil)
 	require.NoError(t, err)
 
@@ -135,9 +135,9 @@ func TestOutOfOrderExemplar(t *testing.T) {
 }
 
 func TestOutOfOrderHistogram(t *testing.T) {
-	buf, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
-		Labels:     []prompb.Label{{Name: "__name__", Value: "test_metric"}},
-		Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat(nil))},
+	buf, _, _, err := buildWriteRequest(nil, []*prompb.TimeSeries{{
+		Labels:     []*prompb.Label{{Name: "__name__", Value: "test_metric"}},
+		Histograms: []*prompb.Histogram{HistogramToHistogramProto(0, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat(nil))},
 	}}, nil, nil, nil, nil)
 	require.NoError(t, err)
 
@@ -161,12 +161,12 @@ func BenchmarkRemoteWritehandler(b *testing.B) {
 	reqs := []*http.Request{}
 	for i := 0; i < b.N; i++ {
 		num := strings.Repeat(strconv.Itoa(i), 16)
-		buf, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
-			Labels: []prompb.Label{
+		buf, _, _, err := buildWriteRequest(nil, []*prompb.TimeSeries{{
+			Labels: []*prompb.Label{
 				{Name: "__name__", Value: "test_metric"},
 				{Name: "test_label_name_" + num, Value: labelValue + num},
 			},
-			Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram)},
+			Histograms: []*prompb.Histogram{HistogramToHistogramProto(0, &testHistogram)},
 		}}, nil, nil, nil, nil)
 		require.NoError(b, err)
 		req, err := http.NewRequest("", "", bytes.NewReader(buf))
@@ -253,12 +253,12 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 	}
 }
 
-func genSeriesWithSample(numSeries int, ts int64) []prompb.TimeSeries {
-	var series []prompb.TimeSeries
+func genSeriesWithSample(numSeries int, ts int64) []*prompb.TimeSeries {
+	var series []*prompb.TimeSeries
 	for i := 0; i < numSeries; i++ {
-		s := prompb.TimeSeries{
-			Labels:  []prompb.Label{{Name: "__name__", Value: fmt.Sprintf("test_metric_%d", i)}},
-			Samples: []prompb.Sample{{Value: float64(i), Timestamp: ts}},
+		s := &prompb.TimeSeries{
+			Labels:  []*prompb.Label{{Name: "__name__", Value: fmt.Sprintf("test_metric_%d", i)}},
+			Samples: []*prompb.Sample{{Value: float64(i), Timestamp: ts}},
 		}
 		series = append(series, s)
 	}

@@ -16,10 +16,10 @@ package remote
 import (
 	"bytes"
 	"fmt"
+	"google.golang.org/protobuf/proto"
 	"sync"
 	"testing"
 
-	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
@@ -46,42 +46,42 @@ var testHistogram = histogram.Histogram{
 }
 
 var writeRequestFixture = &prompb.WriteRequest{
-	Timeseries: []prompb.TimeSeries{
+	Timeseries: []*prompb.TimeSeries{
 		{
-			Labels: []prompb.Label{
+			Labels: []*prompb.Label{
 				{Name: "__name__", Value: "test_metric1"},
 				{Name: "b", Value: "c"},
 				{Name: "baz", Value: "qux"},
 				{Name: "d", Value: "e"},
 				{Name: "foo", Value: "bar"},
 			},
-			Samples:    []prompb.Sample{{Value: 1, Timestamp: 0}},
-			Exemplars:  []prompb.Exemplar{{Labels: []prompb.Label{{Name: "f", Value: "g"}}, Value: 1, Timestamp: 0}},
-			Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat(nil))},
+			Samples:    []*prompb.Sample{{Value: 1, Timestamp: 0}},
+			Exemplars:  []*prompb.Exemplar{{Labels: []*prompb.Label{{Name: "f", Value: "g"}}, Value: 1, Timestamp: 0}},
+			Histograms: []*prompb.Histogram{HistogramToHistogramProto(0, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat(nil))},
 		},
 		{
-			Labels: []prompb.Label{
+			Labels: []*prompb.Label{
 				{Name: "__name__", Value: "test_metric1"},
 				{Name: "b", Value: "c"},
 				{Name: "baz", Value: "qux"},
 				{Name: "d", Value: "e"},
 				{Name: "foo", Value: "bar"},
 			},
-			Samples:    []prompb.Sample{{Value: 2, Timestamp: 1}},
-			Exemplars:  []prompb.Exemplar{{Labels: []prompb.Label{{Name: "h", Value: "i"}}, Value: 2, Timestamp: 1}},
-			Histograms: []prompb.Histogram{HistogramToHistogramProto(2, &testHistogram), FloatHistogramToHistogramProto(3, testHistogram.ToFloat(nil))},
+			Samples:    []*prompb.Sample{{Value: 2, Timestamp: 1}},
+			Exemplars:  []*prompb.Exemplar{{Labels: []*prompb.Label{{Name: "h", Value: "i"}}, Value: 2, Timestamp: 1}},
+			Histograms: []*prompb.Histogram{HistogramToHistogramProto(2, &testHistogram), FloatHistogramToHistogramProto(3, testHistogram.ToFloat(nil))},
 		},
 	},
 }
 
 func TestValidateLabelsAndMetricName(t *testing.T) {
 	tests := []struct {
-		input       []prompb.Label
+		input       []*prompb.Label
 		expectedErr string
 		description string
 	}{
 		{
-			input: []prompb.Label{
+			input: []*prompb.Label{
 				{Name: "__name__", Value: "name"},
 				{Name: "labelName", Value: "labelValue"},
 			},
@@ -89,7 +89,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 			description: "regular labels",
 		},
 		{
-			input: []prompb.Label{
+			input: []*prompb.Label{
 				{Name: "__name__", Value: "name"},
 				{Name: "_labelName", Value: "labelValue"},
 			},
@@ -97,7 +97,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 			description: "label name with _",
 		},
 		{
-			input: []prompb.Label{
+			input: []*prompb.Label{
 				{Name: "__name__", Value: "name"},
 				{Name: "@labelName", Value: "labelValue"},
 			},
@@ -105,7 +105,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 			description: "label name with @",
 		},
 		{
-			input: []prompb.Label{
+			input: []*prompb.Label{
 				{Name: "__name__", Value: "name"},
 				{Name: "123labelName", Value: "labelValue"},
 			},
@@ -113,7 +113,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 			description: "label name starts with numbers",
 		},
 		{
-			input: []prompb.Label{
+			input: []*prompb.Label{
 				{Name: "__name__", Value: "name"},
 				{Name: "", Value: "labelValue"},
 			},
@@ -121,7 +121,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 			description: "label name is empty string",
 		},
 		{
-			input: []prompb.Label{
+			input: []*prompb.Label{
 				{Name: "__name__", Value: "name"},
 				{Name: "labelName", Value: string([]byte{0xff})},
 			},
@@ -129,14 +129,14 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 			description: "label value is an invalid UTF-8 value",
 		},
 		{
-			input: []prompb.Label{
+			input: []*prompb.Label{
 				{Name: "__name__", Value: "@invalid_name"},
 			},
 			expectedErr: "invalid metric name: @invalid_name",
 			description: "metric name starts with @",
 		},
 		{
-			input: []prompb.Label{
+			input: []*prompb.Label{
 				{Name: "__name__", Value: "name1"},
 				{Name: "__name__", Value: "name2"},
 			},
@@ -144,7 +144,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 			description: "duplicate label names",
 		},
 		{
-			input: []prompb.Label{
+			input: []*prompb.Label{
 				{Name: "label1", Value: "name"},
 				{Name: "label2", Value: "name"},
 			},
@@ -152,7 +152,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 			description: "duplicate label values",
 		},
 		{
-			input: []prompb.Label{
+			input: []*prompb.Label{
 				{Name: "", Value: "name"},
 				{Name: "label2", Value: "name"},
 			},
@@ -177,11 +177,11 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 func TestConcreteSeriesSet(t *testing.T) {
 	series1 := &concreteSeries{
 		labels: labels.FromStrings("foo", "bar"),
-		floats: []prompb.Sample{{Value: 1, Timestamp: 2}},
+		floats: []*prompb.Sample{{Value: 1, Timestamp: 2}},
 	}
 	series2 := &concreteSeries{
 		labels: labels.FromStrings("foo", "baz"),
-		floats: []prompb.Sample{{Value: 3, Timestamp: 4}},
+		floats: []*prompb.Sample{{Value: 3, Timestamp: 4}},
 	}
 	c := &concreteSeriesSet{
 		series: []storage.Series{series1, series2},
@@ -211,7 +211,7 @@ func TestConcreteSeriesClonesLabels(t *testing.T) {
 func TestConcreteSeriesIterator_FloatSamples(t *testing.T) {
 	series := &concreteSeries{
 		labels: labels.FromStrings("foo", "bar"),
-		floats: []prompb.Sample{
+		floats: []*prompb.Sample{
 			{Value: 1, Timestamp: 1},
 			{Value: 1.5, Timestamp: 1},
 			{Value: 2, Timestamp: 2},
@@ -259,7 +259,7 @@ func TestConcreteSeriesIterator_FloatSamples(t *testing.T) {
 
 func TestConcreteSeriesIterator_HistogramSamples(t *testing.T) {
 	histograms := tsdbutil.GenerateTestHistograms(5)
-	histProtos := make([]prompb.Histogram, len(histograms))
+	histProtos := make([]*prompb.Histogram, len(histograms))
 	for i, h := range histograms {
 		// Results in ts sequence of 1, 1, 2, 3, 4.
 		var ts int64
@@ -316,7 +316,7 @@ func TestConcreteSeriesIterator_FloatAndHistogramSamples(t *testing.T) {
 	// Series starts as histograms, then transitions to floats at ts=8 (with an overlap from ts=8 to ts=10), then
 	// transitions back to histograms at ts=16.
 	histograms := tsdbutil.GenerateTestHistograms(15)
-	histProtos := make([]prompb.Histogram, len(histograms))
+	histProtos := make([]*prompb.Histogram, len(histograms))
 	for i, h := range histograms {
 		if i < 10 {
 			histProtos[i] = HistogramToHistogramProto(int64(i+1), h)
@@ -326,7 +326,7 @@ func TestConcreteSeriesIterator_FloatAndHistogramSamples(t *testing.T) {
 	}
 	series := &concreteSeries{
 		labels: labels.FromStrings("foo", "bar"),
-		floats: []prompb.Sample{
+		floats: []*prompb.Sample{
 			{Value: 1, Timestamp: 8},
 			{Value: 2, Timestamp: 9},
 			{Value: 3, Timestamp: 10},
@@ -418,11 +418,11 @@ func TestConcreteSeriesIterator_FloatAndHistogramSamples(t *testing.T) {
 
 func TestFromQueryResultWithDuplicates(t *testing.T) {
 	ts1 := prompb.TimeSeries{
-		Labels: []prompb.Label{
+		Labels: []*prompb.Label{
 			{Name: "foo", Value: "bar"},
 			{Name: "foo", Value: "def"},
 		},
-		Samples: []prompb.Sample{
+		Samples: []*prompb.Sample{
 			{Value: 0.0, Timestamp: 0},
 		},
 	}
@@ -468,17 +468,17 @@ func TestNegotiateResponseType(t *testing.T) {
 
 func TestMergeLabels(t *testing.T) {
 	for _, tc := range []struct {
-		primary, secondary, expected []prompb.Label
+		primary, secondary, expected []*prompb.Label
 	}{
 		{
-			primary:   []prompb.Label{{Name: "aaa", Value: "foo"}, {Name: "bbb", Value: "foo"}, {Name: "ddd", Value: "foo"}},
-			secondary: []prompb.Label{{Name: "bbb", Value: "bar"}, {Name: "ccc", Value: "bar"}},
-			expected:  []prompb.Label{{Name: "aaa", Value: "foo"}, {Name: "bbb", Value: "foo"}, {Name: "ccc", Value: "bar"}, {Name: "ddd", Value: "foo"}},
+			primary:   []*prompb.Label{{Name: "aaa", Value: "foo"}, {Name: "bbb", Value: "foo"}, {Name: "ddd", Value: "foo"}},
+			secondary: []*prompb.Label{{Name: "bbb", Value: "bar"}, {Name: "ccc", Value: "bar"}},
+			expected:  []*prompb.Label{{Name: "aaa", Value: "foo"}, {Name: "bbb", Value: "foo"}, {Name: "ccc", Value: "bar"}, {Name: "ddd", Value: "foo"}},
 		},
 		{
-			primary:   []prompb.Label{{Name: "bbb", Value: "bar"}, {Name: "ccc", Value: "bar"}},
-			secondary: []prompb.Label{{Name: "aaa", Value: "foo"}, {Name: "bbb", Value: "foo"}, {Name: "ddd", Value: "foo"}},
-			expected:  []prompb.Label{{Name: "aaa", Value: "foo"}, {Name: "bbb", Value: "bar"}, {Name: "ccc", Value: "bar"}, {Name: "ddd", Value: "foo"}},
+			primary:   []*prompb.Label{{Name: "bbb", Value: "bar"}, {Name: "ccc", Value: "bar"}},
+			secondary: []*prompb.Label{{Name: "aaa", Value: "foo"}, {Name: "bbb", Value: "foo"}, {Name: "ddd", Value: "foo"}},
+			expected:  []*prompb.Label{{Name: "aaa", Value: "foo"}, {Name: "bbb", Value: "bar"}, {Name: "ccc", Value: "bar"}, {Name: "ddd", Value: "foo"}},
 		},
 	} {
 		require.Equal(t, tc.expected, MergeLabels(tc.primary, tc.secondary))
@@ -528,8 +528,8 @@ func TestDecodeWriteRequest(t *testing.T) {
 func TestNilHistogramProto(*testing.T) {
 	// This function will panic if it impromperly handles nil
 	// values, causing the test to fail.
-	HistogramProtoToHistogram(prompb.Histogram{})
-	HistogramProtoToFloatHistogram(prompb.Histogram{})
+	HistogramProtoToHistogram(&prompb.Histogram{})
+	HistogramProtoToFloatHistogram(&prompb.Histogram{})
 }
 
 func exampleHistogram() histogram.Histogram {
@@ -553,14 +553,14 @@ func exampleHistogram() histogram.Histogram {
 	}
 }
 
-func exampleHistogramProto() prompb.Histogram {
-	return prompb.Histogram{
+func exampleHistogramProto() *prompb.Histogram {
+	return &prompb.Histogram{
 		Count:         &prompb.Histogram_CountInt{CountInt: 19},
 		Sum:           2.7,
 		Schema:        0,
 		ZeroThreshold: 0,
 		ZeroCount:     &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
-		NegativeSpans: []prompb.BucketSpan{
+		NegativeSpans: []*prompb.BucketSpan{
 			{
 				Offset: 0,
 				Length: 5,
@@ -575,7 +575,7 @@ func exampleHistogramProto() prompb.Histogram {
 			},
 		},
 		NegativeDeltas: []int64{1, 2, -2, 1, -1, 0},
-		PositiveSpans: []prompb.BucketSpan{
+		PositiveSpans: []*prompb.BucketSpan{
 			{
 				Offset: 0,
 				Length: 4,
@@ -651,14 +651,14 @@ func exampleFloatHistogram() histogram.FloatHistogram {
 	}
 }
 
-func exampleFloatHistogramProto() prompb.Histogram {
-	return prompb.Histogram{
+func exampleFloatHistogramProto() *prompb.Histogram {
+	return &prompb.Histogram{
 		Count:         &prompb.Histogram_CountFloat{CountFloat: 19},
 		Sum:           2.7,
 		Schema:        0,
 		ZeroThreshold: 0,
 		ZeroCount:     &prompb.Histogram_ZeroCountFloat{ZeroCountFloat: 0},
-		NegativeSpans: []prompb.BucketSpan{
+		NegativeSpans: []*prompb.BucketSpan{
 			{
 				Offset: 0,
 				Length: 5,
@@ -673,7 +673,7 @@ func exampleFloatHistogramProto() prompb.Histogram {
 			},
 		},
 		NegativeCounts: []float64{1, 2, -2, 1, -1, 0},
-		PositiveSpans: []prompb.BucketSpan{
+		PositiveSpans: []*prompb.BucketSpan{
 			{
 				Offset: 0,
 				Length: 4,
@@ -731,21 +731,21 @@ func TestFloatHistogramToProtoConvert(t *testing.T) {
 func TestStreamResponse(t *testing.T) {
 	lbs1 := labelsToLabelsProto(labels.FromStrings("instance", "localhost1", "job", "demo1"), nil)
 	lbs2 := labelsToLabelsProto(labels.FromStrings("instance", "localhost2", "job", "demo2"), nil)
-	chunk := prompb.Chunk{
+	chunk := &prompb.Chunk{
 		Type: prompb.Chunk_XOR,
 		Data: make([]byte, 100),
 	}
-	lbSize, chunkSize := 0, chunk.Size()
+	lbSize, chunkSize := 0, proto.Size(chunk)
 	for _, lb := range lbs1 {
-		lbSize += lb.Size()
+		lbSize += proto.Size(lb)
 	}
 	maxBytesInFrame := lbSize + chunkSize*2
 	testData := []*prompb.ChunkedSeries{{
 		Labels: lbs1,
-		Chunks: []prompb.Chunk{chunk, chunk, chunk, chunk},
+		Chunks: []*prompb.Chunk{chunk, chunk, chunk, chunk},
 	}, {
 		Labels: lbs2,
-		Chunks: []prompb.Chunk{chunk, chunk, chunk, chunk},
+		Chunks: []*prompb.Chunk{chunk, chunk, chunk, chunk},
 	}}
 	css := newMockChunkSeriesSet(testData)
 	writer := mockWriter{}
@@ -758,16 +758,16 @@ func TestStreamResponse(t *testing.T) {
 	require.NoError(t, err)
 	expectData := []*prompb.ChunkedSeries{{
 		Labels: lbs1,
-		Chunks: []prompb.Chunk{chunk, chunk},
+		Chunks: []*prompb.Chunk{chunk, chunk},
 	}, {
 		Labels: lbs1,
-		Chunks: []prompb.Chunk{chunk, chunk},
+		Chunks: []*prompb.Chunk{chunk, chunk},
 	}, {
 		Labels: lbs2,
-		Chunks: []prompb.Chunk{chunk, chunk},
+		Chunks: []*prompb.Chunk{chunk, chunk},
 	}, {
 		Labels: lbs2,
-		Chunks: []prompb.Chunk{chunk, chunk},
+		Chunks: []*prompb.Chunk{chunk, chunk},
 	}}
 	require.Equal(t, expectData, writer.actual)
 }
@@ -819,7 +819,7 @@ func (c *mockChunkSeriesSet) Err() error {
 }
 
 type mockChunkIterator struct {
-	chunks []prompb.Chunk
+	chunks []*prompb.Chunk
 	index  int
 }
 

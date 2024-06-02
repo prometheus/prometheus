@@ -18,20 +18,28 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"io"
 	"math"
 	"strings"
+	"time"
 	"unicode/utf8"
 
-	"github.com/gogo/protobuf/proto"
-	"github.com/gogo/protobuf/types"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
-
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"google.golang.org/protobuf/proto"
+)
 
-	dto "github.com/prometheus/prometheus/prompb/io/prometheus/client"
+const (
+	// Seconds field of the earliest valid Timestamp.
+	// This is time.Date(1, 1, 1, 0, 0, 0, 0, time.UTC).Unix().
+	minValidSeconds = -62135596800
+	// Seconds field just after the latest valid Timestamp.
+	// This is time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC).Unix().
+	maxValidSeconds = 253402300800
 )
 
 // ProtobufParser is a very inefficient way of unmarshaling the old Prometheus
@@ -382,7 +390,7 @@ func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
 // CreatedTimestamp returns CT or nil if CT is not present or
 // invalid (as timestamp e.g. negative value) on counters, summaries or histograms.
 func (p *ProtobufParser) CreatedTimestamp() *int64 {
-	var ct *types.Timestamp
+	var ct *timestamppb.Timestamp
 	switch p.mf.GetType() {
 	case dto.MetricType_COUNTER:
 		ct = p.mf.GetMetric()[p.metricPos].GetCounter().GetCreatedTimestamp()
@@ -392,7 +400,7 @@ func (p *ProtobufParser) CreatedTimestamp() *int64 {
 		ct = p.mf.GetMetric()[p.metricPos].GetHistogram().GetCreatedTimestamp()
 	default:
 	}
-	ctAsTime, err := types.TimestampFromProto(ct)
+	ctAsTime, err := timestampFromProto(ct)
 	if err != nil {
 		// Errors means ct == nil or invalid timestamp, which we silently ignore.
 		return nil
@@ -590,7 +598,7 @@ func readDelimited(b []byte, mf *dto.MetricFamily) (n int, err error) {
 	if len(b) == 0 {
 		return 0, io.EOF
 	}
-	messageLength, varIntLength := proto.DecodeVarint(b)
+	messageLength, varIntLength := binary.Uvarint(b)
 	if varIntLength == 0 || varIntLength > binary.MaxVarintLen32 {
 		return 0, errInvalidVarint
 	}
@@ -599,7 +607,7 @@ func readDelimited(b []byte, mf *dto.MetricFamily) (n int, err error) {
 		return 0, fmt.Errorf("protobufparse: insufficient length of buffer, expected at least %d bytes, got %d bytes", totalLength, len(b))
 	}
 	mf.Reset()
-	return totalLength, mf.Unmarshal(b[varIntLength:totalLength])
+	return totalLength, proto.Unmarshal(b[varIntLength:totalLength], mf)
 }
 
 // formatOpenMetricsFloat works like the usual Go string formatting of a fleat
@@ -641,4 +649,30 @@ func isNativeHistogram(h *dto.Histogram) bool {
 		len(h.GetNegativeSpan()) > 0 ||
 		h.GetZeroThreshold() > 0 ||
 		h.GetZeroCount() > 0
+}
+
+func validateTimestamp(ts *timestamppb.Timestamp) error {
+	if ts == nil {
+		return errors.New("timestamp: nil Timestamp")
+	}
+	if ts.Seconds < minValidSeconds {
+		return fmt.Errorf("timestamp: %#v before 0001-01-01", ts)
+	}
+	if ts.Seconds >= maxValidSeconds {
+		return fmt.Errorf("timestamp: %#v after 10000-01-01", ts)
+	}
+	if ts.Nanos < 0 || ts.Nanos >= 1e9 {
+		return fmt.Errorf("timestamp: %#v: nanos not in range [0, 1e9)", ts)
+	}
+	return nil
+}
+
+func timestampFromProto(ts *timestamppb.Timestamp) (time.Time, error) {
+	var t time.Time
+	if ts == nil {
+		t = time.Unix(0, 0).UTC() // treat nil like the empty Timestamp
+	} else {
+		t = time.Unix(ts.Seconds, int64(ts.Nanos)).UTC()
+	}
+	return t, validateTimestamp(ts)
 }

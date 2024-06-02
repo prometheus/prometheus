@@ -130,7 +130,7 @@ func (c *PrometheusConverter) FromMetrics(md pmetric.Metrics, settings Settings)
 	return
 }
 
-func isSameMetric(ts *prompb.TimeSeries, lbls []prompb.Label) bool {
+func isSameMetric(ts *prompb.TimeSeries, lbls []*prompb.Label) bool {
 	if len(ts.Labels) != len(lbls) {
 		return false
 	}
@@ -169,13 +169,13 @@ func (c *PrometheusConverter) addExemplars(dataPoint pmetric.HistogramDataPoint,
 // If there is no corresponding TimeSeries already, it's created.
 // The corresponding TimeSeries is returned.
 // If either lbls is nil/empty or sample is nil, nothing is done.
-func (c *PrometheusConverter) addSample(sample *prompb.Sample, lbls []prompb.Label) *prompb.TimeSeries {
+func (c *PrometheusConverter) addSample(sample *prompb.Sample, lbls []*prompb.Label) *prompb.TimeSeries {
 	if sample == nil || len(lbls) == 0 {
 		// This shouldn't happen
 		return nil
 	}
 
 	ts, _ := c.getOrCreateTimeSeries(lbls)
-	ts.Samples = append(ts.Samples, *sample)
+	ts.Samples = append(ts.Samples, sample)
 	return ts
 }
