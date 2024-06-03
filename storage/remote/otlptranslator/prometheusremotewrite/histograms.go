@@ -37,7 +37,7 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(dataPoints pmetr
 		lbls := createAttributes(
 			resource,
 			pt.Attributes(),
-			settings.ExternalLabels,
+			settings,
 			nil,
 			true,
 			model.MetricNameLabel,
