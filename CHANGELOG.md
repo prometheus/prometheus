@@ -10,11 +10,11 @@
 * [BUGFIX] OTLP: Don't generate target_info unless at least one identifying label is defined. #13991
 * [BUGFIX] OTLP: Don't generate target_info unless there are metrics. #13991
 
-## 2.52.0-rc.1 / 2024-05-03
+## 2.52.1 / 2024-05-29
 
-* [BUGFIX] API: Fix missing comma during JSON encoding of API results. #14047
+* [BUGFIX] Linode SD: Fix partial fetch when discovery would return more than 500 elements. #14141
 
-## 2.52.0-rc.0 / 2024-04-22
+## 2.52.0 / 2024-05-07
 
 * [CHANGE] TSDB: Fix the predicate checking for blocks which are beyond the retention period to include the ones right at the retention boundary. #9633
 * [FEATURE] Kubernetes SD: Add a new metric `prometheus_sd_kubernetes_failures_total` to track failed requests to Kubernetes API. #13554
