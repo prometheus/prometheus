@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	commonTemplates "github.com/prometheus/common/helpers/templates"
+
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/strutil"
 )
