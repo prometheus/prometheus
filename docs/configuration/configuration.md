@@ -152,6 +152,10 @@ alerting:
 remote_write:
   [ - <remote_write> ... ]
 
+# Settings related to the OTLP receiver feature.
+otlp:
+  [ promote_resource_attributes: [<string>, ...] | default = [ ] ]
+
 # Settings related to the remote read feature.
 remote_read:
   [ - <remote_read> ... ]

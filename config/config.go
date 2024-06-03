@@ -227,6 +227,9 @@ var (
 	DefaultExemplarsConfig = ExemplarsConfig{
 		MaxExemplars: 100000,
 	}
+
+	// DefaultOTLPConfig is the default OTLP configuration.
+	DefaultOTLPConfig = OTLPConfig{}
 )
 
 // Config is the top-level configuration for Prometheus's config files.
@@ -242,6 +245,7 @@ type Config struct {
 
 	RemoteWriteConfigs []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
 	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
+	OTLPConfig         OTLPConfig           `yaml:"otlp,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -1303,4 +1307,16 @@ func getGoGCEnv() int {
 		}
 	}
 	return DefaultRuntimeConfig.GoGC
+}
+
+// OTLPConfig is the configuration for writing to the OTLP endpoint.
+type OTLPConfig struct {
+	PromoteResourceAttributes []string `yaml:"promote_resource_attributes,omitempty"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *OTLPConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultOTLPConfig
+	type plain OTLPConfig
+	return unmarshal((*plain)(c))
 }
