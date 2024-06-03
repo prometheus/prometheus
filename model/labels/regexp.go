@@ -389,9 +389,8 @@ func optimizeConcatRegex(r *syntax.Regexp) (prefix, suffix string, contains []st
 	}
 
 	// If contains any literal which is not a prefix/suffix, we keep track of
-	// all the ones which are case sensitive.
+	// all the ones which are case-sensitive.
 	for i := 1; i < len(sub)-1; i++ {
-		// TODO if it's case insensitive we should return an contains list or is it safe to keep searching for case sensitive ones?
 		if sub[i].Op == syntax.OpLiteral && (sub[i].Flags&syntax.FoldCase) == 0 {
 			contains = append(contains, string(sub[i].Rune))
 		}
