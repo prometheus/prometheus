@@ -809,6 +809,7 @@ func toNormalisedLower(s string) string {
 		c := s[i]
 		if isASCII && c >= utf8.RuneSelf {
 			isASCII = false
+			break
 		}
 		if 'A' <= c && c <= 'Z' {
 			c += 'a' - 'A'
