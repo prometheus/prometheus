@@ -1553,6 +1553,13 @@ func (s *shards) sendSamples(ctx context.Context, samples []timeSeries, sampleCo
 // sendSamples to the remote storage with backoff for recoverable errors.
 func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []timeSeries, sampleCount, exemplarCount, histogramCount int, pBuf, buf *[]byte) error {
 	// Build the WriteRequest with no metadata.
+	ts := make([]*prompb.TimeSeries, len(samples))
+	for index := 0; index < len(ts); index++ {
+		ts[index] = &prompb.TimeSeries{}
+	}
+	s.populateTimeSeries(samples, ts)
+	_, _, _, err := buildWriteRequest(s.qm.logger, ts, nil, *pBuf, *buf, nil)
+
 	highest, lowest := highestAndLowestTimeStamp(samples)
 	req, err := samplesToCompressedProtobuf(samples, *pBuf, *buf, s.qm.logger, nil)
 	s.qm.buildRequestLimitTimestamp.Store(lowest)
@@ -1630,7 +1637,6 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []timeSerie
 
 	s.qm.metrics.sentBytesTotal.Add(float64(reqSize))
 	s.qm.metrics.highestSentTimestamp.Set(float64(highest / 1000))
-
 	return err
 }
 
@@ -1845,8 +1851,8 @@ func buildWriteRequest(logger log.Logger, timeSeries []*prompb.TimeSeries, metad
 	if cap(pBuf) < proto.Size(req) {
 		pBuf = make([]byte, proto.Size(req))
 	}
-	opts := proto.MarshalOptions{Deterministic: true}
-	pBuf, err := opts.MarshalAppend(pBuf, req)
+	pBuf = pBuf[:0]
+	pBuf, err := proto.MarshalOptions{}.MarshalAppend(pBuf, req)
 	if err != nil {
 		return nil, highest, lowest, err
 	}

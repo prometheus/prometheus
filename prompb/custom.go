@@ -31,11 +31,7 @@ func (r *ChunkedReadResponse) PooledMarshal(p *sync.Pool) ([]byte, error) {
 	size := proto.Size(r)
 	data, ok := p.Get().(*[]byte)
 	if ok && cap(*data) >= size {
-		opts := proto.MarshalOptions{
-			AllowPartial:  true,
-			Deterministic: true,
-		}
-		out, err := opts.MarshalAppend((*data)[:size], r)
+		out, err := proto.MarshalOptions{}.MarshalAppend((*data)[:0], r)
 		if err != nil {
 			return nil, err
 		}

@@ -247,7 +247,7 @@ func marshalHistogramToSizedBuffer(h *histogram.Histogram, timestamp int64, data
 	}
 	if len(h.NegativeBuckets) > 0 {
 		base := i
-		for index := len(h.NegativeBuckets); index >= 0; index-- {
+		for index := len(h.NegativeBuckets) - 1; index >= 0; index-- {
 			i = encodeVarint(data, i, encodeZigZag64(h.NegativeBuckets[index]))
 		}
 		i = encodeVarint(data, i, uint64(base-i))
@@ -266,7 +266,7 @@ func marshalHistogramToSizedBuffer(h *histogram.Histogram, timestamp int64, data
 	}
 	if len(h.PositiveBuckets) > 0 {
 		base := i
-		for index := len(h.PositiveBuckets); index >= 0; index-- {
+		for index := len(h.PositiveBuckets) - 1; index >= 0; index-- {
 			i = encodeVarint(data, i, encodeZigZag64(h.PositiveBuckets[index]))
 		}
 		i = encodeVarint(data, i, uint64(base-i))
@@ -329,7 +329,7 @@ func marshalFloatHistogramToSizedBuffer(fh *histogram.FloatHistogram, timestamp 
 		data[i] = histogramNegativeSpansTag
 	}
 	if len(fh.NegativeBuckets) > 0 {
-		for index := len(fh.NegativeBuckets); index >= 0; index-- {
+		for index := len(fh.NegativeBuckets) - 1; index >= 0; index-- {
 			i -= 8
 			encoding_binary.LittleEndian.PutUint64(data[i:], math.Float64bits(fh.NegativeBuckets[index]))
 		}
@@ -348,7 +348,7 @@ func marshalFloatHistogramToSizedBuffer(fh *histogram.FloatHistogram, timestamp 
 		data[i] = histogramPositiveSpansTag
 	}
 	if len(fh.PositiveBuckets) > 0 {
-		for index := len(fh.PositiveBuckets); index >= 0; index-- {
+		for index := len(fh.PositiveBuckets) - 1; index >= 0; index-- {
 			i -= 8
 			encoding_binary.LittleEndian.PutUint64(data[i:], math.Float64bits(fh.PositiveBuckets[index]))
 		}
@@ -429,6 +429,7 @@ func encodeVarint(data []byte, offset int, v uint64) int {
 func encodeSize(data []byte, offset, v int) int {
 	if v < 1<<7 {
 		offset--
+		//fmt.Println("offset:", offset)
 		data[offset] = uint8(v)
 		return offset
 	}
@@ -495,7 +496,7 @@ func histogramSize(timestamp int64, h *histogram.Histogram) (size int) {
 	}
 	// schema
 	if h.Schema != 0 {
-		size += 1 + sizeVarint(uint64(h.Schema))
+		size += 1 + sizeVarint(encodeZigZag32(h.Schema))
 	}
 	// zeroThreshold
 	if h.ZeroThreshold != 0 {
@@ -543,7 +544,7 @@ func floatHistogramSize(timestamp int64, fh *histogram.FloatHistogram) (size int
 	}
 	// schema
 	if fh.Schema != 0 {
-		size += 1 + sizeVarint(uint64(fh.Schema))
+		size += 1 + sizeVarint(encodeZigZag32(fh.Schema))
 	}
 	// zeroThreshold
 	if fh.ZeroThreshold != 0 {
@@ -577,10 +578,10 @@ func floatHistogramSize(timestamp int64, fh *histogram.FloatHistogram) (size int
 func bucketSpansSize(spans []histogram.Span) (size int) {
 	bucketSpanSize := func(span histogram.Span) (spanSize int) {
 		if span.Offset != 0 {
-			spanSize += sizeVarint(uint64(span.Offset))
+			spanSize += 1 + sizeVarint(encodeZigZag32(span.Offset))
 		}
 		if span.Length != 0 {
-			spanSize += sizeVarint(uint64(span.Length))
+			spanSize += 1 + sizeVarint(uint64(span.Length))
 		}
 		return spanSize
 	}
@@ -590,6 +591,10 @@ func bucketSpansSize(spans []histogram.Span) (size int) {
 		size += 1 + sizeVarint(uint64(spanSize)) + spanSize
 	}
 	return size
+}
+
+func encodeZigZag32(n int32) uint64 {
+	return uint64((n << 1) ^ (n >> 31))
 }
 
 func encodeZigZag64(n int64) uint64 {

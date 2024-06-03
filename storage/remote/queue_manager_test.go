@@ -27,13 +27,13 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/client_golang/prometheus"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"

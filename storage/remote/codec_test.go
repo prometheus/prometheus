@@ -522,7 +522,7 @@ func TestDecodeWriteRequest(t *testing.T) {
 
 	actual, err := DecodeWriteRequest(bytes.NewReader(buf))
 	require.NoError(t, err)
-	require.Equal(t, writeRequestFixture, actual)
+	require.True(t, proto.Equal(writeRequestFixture, actual))
 }
 
 func TestNilHistogramProto(*testing.T) {
@@ -769,7 +769,10 @@ func TestStreamResponse(t *testing.T) {
 		Labels: lbs2,
 		Chunks: []*prompb.Chunk{chunk, chunk},
 	}}
-	require.Equal(t, expectData, writer.actual)
+	require.Equal(t, len(expectData), len(writer.actual))
+	for index := 0; index < len(expectData); index++ {
+		require.True(t, proto.Equal(expectData[index], writer.actual[index]), index)
+	}
 }
 
 type mockWriter struct {
