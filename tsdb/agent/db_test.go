@@ -879,6 +879,92 @@ func TestDBAllowOOOSamples(t *testing.T) {
 	require.NoError(t, db.Close())
 }
 
+func TestAppendCTZeroSample(t *testing.T) {
+	type appendableSamples struct {
+		ts  int64
+		val float64
+		ct  int64
+	}
+	for _, tc := range []struct {
+		name              string
+		appendableSamples []appendableSamples
+		appendedSamples   float64
+		expectedSamples   []model.Sample
+	}{
+		{
+			name: "In order ct+normal sample",
+			appendableSamples: []appendableSamples{
+				{ts: 100, val: 10, ct: 1},
+			},
+			appendedSamples: 2,
+			expectedSamples: []model.Sample{
+				{Timestamp: 1, Value: 0},
+				{Timestamp: 100, Value: 10},
+			},
+		},
+		{
+			name: "Consecutive appends with same ct ignore ct",
+			appendableSamples: []appendableSamples{
+				{ts: 100, val: 10, ct: 1},
+				{ts: 101, val: 10, ct: 1},
+			},
+			appendedSamples: 3,
+			expectedSamples: []model.Sample{
+				{Timestamp: 1, Value: 0},
+				{Timestamp: 100, Value: 10},
+				{Timestamp: 101, Value: 10},
+			},
+		},
+		{
+			name: "Consecutive appends with newer ct do not ignore ct",
+			appendableSamples: []appendableSamples{
+				{ts: 100, val: 10, ct: 1},
+				{ts: 102, val: 10, ct: 101},
+			},
+			appendedSamples: 4,
+			expectedSamples: []model.Sample{
+				{Timestamp: 1, Value: 0},
+				{Timestamp: 100, Value: 10},
+				{Timestamp: 101, Value: 0},
+				{Timestamp: 102, Value: 10},
+			},
+		},
+		{
+			name: "CT equals to previous sample timestamp is ignored",
+			appendableSamples: []appendableSamples{
+				{ts: 100, val: 10, ct: 1},
+				{ts: 101, val: 10, ct: 100},
+			},
+			appendedSamples: 3,
+			expectedSamples: []model.Sample{
+				{Timestamp: 1, Value: 0},
+				{Timestamp: 100, Value: 10},
+				{Timestamp: 101, Value: 10},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reg := prometheus.NewRegistry()
+			db := createTestAgentDB(t, reg, DefaultOptions())
+			app := db.Appender(context.Background())
+			lbls := labels.FromStrings("foo", "bar")
+
+			for _, sample := range tc.appendableSamples {
+				_, err := app.AppendCTZeroSample(0, lbls, sample.ts, sample.ct)
+				if err != nil {
+					require.ErrorIs(t, err, storage.ErrOutOfOrderCT)
+				}
+				_, err = app.Append(0, lbls, sample.ts, sample.val)
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+			}
+			m := gatherFamily(t, reg, "prometheus_agent_samples_appended_total")
+			require.Equal(t, tc.appendedSamples, m.Metric[0].Counter.GetValue(), "agent wal mismatch of total appended samples")
+			require.NoError(t, db.Close())
+		})
+	}
+}
+
 func BenchmarkCreateSeries(b *testing.B) {
 	s := createTestAgentDB(b, nil, DefaultOptions())
 	defer s.Close()
