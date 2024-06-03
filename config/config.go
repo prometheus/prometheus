@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/secrets"
 	"github.com/prometheus/prometheus/storage/remote/azuread"
 )
 
@@ -224,13 +225,14 @@ var (
 
 // Config is the top-level configuration for Prometheus's config files.
 type Config struct {
-	GlobalConfig      GlobalConfig    `yaml:"global"`
-	AlertingConfig    AlertingConfig  `yaml:"alerting,omitempty"`
-	RuleFiles         []string        `yaml:"rule_files,omitempty"`
-	ScrapeConfigFiles []string        `yaml:"scrape_config_files,omitempty"`
-	ScrapeConfigs     []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
-	StorageConfig     StorageConfig   `yaml:"storage,omitempty"`
-	TracingConfig     TracingConfig   `yaml:"tracing,omitempty"`
+	GlobalConfig      GlobalConfig     `yaml:"global"`
+	AlertingConfig    AlertingConfig   `yaml:"alerting,omitempty"`
+	RuleFiles         []string         `yaml:"rule_files,omitempty"`
+	ScrapeConfigFiles []string         `yaml:"scrape_config_files,omitempty"`
+	ScrapeConfigs     []*ScrapeConfig  `yaml:"scrape_configs,omitempty"`
+	StorageConfig     StorageConfig    `yaml:"storage,omitempty"`
+	TracingConfig     TracingConfig    `yaml:"tracing,omitempty"`
+	SecretProviders   *secrets.Configs `yaml:"secrets,omitempty"`
 
 	RemoteWriteConfigs []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
 	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
