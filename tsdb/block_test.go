@@ -58,14 +58,14 @@ func TestSetCompactionFailed(t *testing.T) {
 	tmpdir := t.TempDir()
 
 	blockDir := createBlock(t, tmpdir, genSeries(1, 1, 0, 1))
-	b, err := OpenBlock(nil, blockDir, nil)
+	b, err := OpenBlock(nil, blockDir, nil, nil)
 	require.NoError(t, err)
 	require.False(t, b.meta.Compaction.Failed)
 	require.NoError(t, b.setCompactionFailed())
 	require.True(t, b.meta.Compaction.Failed)
 	require.NoError(t, b.Close())
 
-	b, err = OpenBlock(nil, blockDir, nil)
+	b, err = OpenBlock(nil, blockDir, nil, nil)
 	require.NoError(t, err)
 	require.True(t, b.meta.Compaction.Failed)
 	require.NoError(t, b.Close())
@@ -73,7 +73,7 @@ func TestSetCompactionFailed(t *testing.T) {
 
 func TestCreateBlock(t *testing.T) {
 	tmpdir := t.TempDir()
-	b, err := OpenBlock(nil, createBlock(t, tmpdir, genSeries(1, 1, 0, 10)), nil)
+	b, err := OpenBlock(nil, createBlock(t, tmpdir, genSeries(1, 1, 0, 10)), nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, b.Close())
 }
@@ -83,7 +83,7 @@ func BenchmarkOpenBlock(b *testing.B) {
 	blockDir := createBlock(b, tmpdir, genSeries(1e6, 20, 0, 10))
 	b.Run("benchmark", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			block, err := OpenBlock(nil, blockDir, nil)
+			block, err := OpenBlock(nil, blockDir, nil, nil)
 			require.NoError(b, err)
 			require.NoError(b, block.Close())
 		}
@@ -189,7 +189,7 @@ func TestCorruptedChunk(t *testing.T) {
 			require.NoError(t, f.Close())
 
 			// Check open err.
-			b, err := OpenBlock(nil, blockDir, nil)
+			b, err := OpenBlock(nil, blockDir, nil, nil)
 			if tc.openErr != nil {
 				require.Equal(t, tc.openErr.Error(), err.Error())
 				return
@@ -244,7 +244,7 @@ func TestLabelValuesWithMatchers(t *testing.T) {
 	require.NotEmpty(t, files, "No chunk created.")
 
 	// Check open err.
-	block, err := OpenBlock(nil, blockDir, nil)
+	block, err := OpenBlock(nil, blockDir, nil, nil)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, block.Close()) }()
 
@@ -324,7 +324,7 @@ func TestBlockSize(t *testing.T) {
 	// Create a block and compare the reported size vs actual disk size.
 	{
 		blockDirInit = createBlock(t, tmpdir, genSeries(10, 1, 1, 100))
-		blockInit, err = OpenBlock(nil, blockDirInit, nil)
+		blockInit, err = OpenBlock(nil, blockDirInit, nil, nil)
 		require.NoError(t, err)
 		defer func() {
 			require.NoError(t, blockInit.Close())
@@ -348,7 +348,7 @@ func TestBlockSize(t *testing.T) {
 		require.NoError(t, err)
 		blockDirAfterCompact, err := c.Compact(tmpdir, []string{blockInit.Dir()}, nil)
 		require.NoError(t, err)
-		blockAfterCompact, err := OpenBlock(nil, filepath.Join(tmpdir, blockDirAfterCompact.String()), nil)
+		blockAfterCompact, err := OpenBlock(nil, filepath.Join(tmpdir, blockDirAfterCompact.String()), nil, nil)
 		require.NoError(t, err)
 		defer func() {
 			require.NoError(t, blockAfterCompact.Close())
@@ -379,7 +379,7 @@ func TestReadIndexFormatV1(t *testing.T) {
 	*/
 
 	blockDir := filepath.Join("testdata", "index_format_v1")
-	block, err := OpenBlock(nil, blockDir, nil)
+	block, err := OpenBlock(nil, blockDir, nil, nil)
 	require.NoError(t, err)
 
 	q, err := NewBlockQuerier(block, 0, 1000)
@@ -416,7 +416,7 @@ func BenchmarkLabelValuesWithMatchers(b *testing.B) {
 	require.NotEmpty(b, files, "No chunk created.")
 
 	// Check open err.
-	block, err := OpenBlock(nil, blockDir, nil)
+	block, err := OpenBlock(nil, blockDir, nil, nil)
 	require.NoError(b, err)
 	defer func() { require.NoError(b, block.Close()) }()
 
@@ -468,7 +468,7 @@ func TestLabelNamesWithMatchers(t *testing.T) {
 	require.NotEmpty(t, files, "No chunk created.")
 
 	// Check open err.
-	block, err := OpenBlock(nil, blockDir, nil)
+	block, err := OpenBlock(nil, blockDir, nil, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, block.Close()) })
 
@@ -522,7 +522,7 @@ func TestBlockIndexReader_PostingsForLabelMatching(t *testing.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, files, "No chunk created.")
 
-		block, err := OpenBlock(nil, blockDir, nil)
+		block, err := OpenBlock(nil, blockDir, nil, nil)
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, block.Close()) })
 
