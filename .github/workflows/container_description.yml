@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - "README.md"
+      - "README-containers.md"
       - ".github/workflows/container_description.yml"
     branches: [ main, master ]
 
@@ -29,7 +30,6 @@ jobs:
           destination_container_repo: ${{ env.DOCKER_REPO_NAME }}
           provider: dockerhub
           short_description: ${{ env.DOCKER_REPO_NAME }}
-          readme_file: 'README.md'
 
   PushQuayIoReadme:
     runs-on: ubuntu-latest
@@ -49,4 +49,3 @@ jobs:
         with:
           destination_container_repo: ${{ env.DOCKER_REPO_NAME }}
           provider: quay
-          readme_file: 'README.md'
