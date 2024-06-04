@@ -1341,9 +1341,7 @@ func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID
 			return nil, err
 		}
 		for _, uid := range uids {
-			if uid.Compare(ulid.ULID{}) != 0 {
-				ulids = append(ulids, uid)
-			}
+			ulids = append(ulids, uid)
 		}
 	}
 
@@ -1413,14 +1411,16 @@ func (db *DB) compactBlocks() (err error) {
 		default:
 		}
 
-		uid, err := db.compactor.Compact(db.dir, plan, db.blocks)
+		uids, err := db.compactor.Compact(db.dir, plan, db.blocks)
 		if err != nil {
 			return fmt.Errorf("compact %s: %w", plan, err)
 		}
 
 		if err := db.reloadBlocks(); err != nil {
-			if err := os.RemoveAll(filepath.Join(db.dir, uid.String())); err != nil {
-				return fmt.Errorf("delete compacted block after failed db reloadBlocks:%s: %w", uid, err)
+			for _, uid := range uids {
+				if err := os.RemoveAll(filepath.Join(db.dir, uid.String())); err != nil {
+					return fmt.Errorf("delete compacted block after failed db reloadBlocks:%s: %w", uid, err)
+				}
 			}
 			return fmt.Errorf("reloadBlocks blocks: %w", err)
 		}
@@ -2179,11 +2179,9 @@ func (db *DB) CleanTombstones() (err error) {
 
 			// Delete new block if it was created.
 			for _, uid := range uids {
-				if uid.Compare(ulid.ULID{}) != 0 {
-					dir := filepath.Join(db.Dir(), uid.String())
-					if err := os.RemoveAll(dir); err != nil {
-						level.Error(db.logger).Log("msg", "failed to delete block after failed `CleanTombstones`", "dir", dir, "err", err)
-					}
+				dir := filepath.Join(db.Dir(), uid.String())
+				if err := os.RemoveAll(dir); err != nil {
+					level.Error(db.logger).Log("msg", "failed to delete block after failed `CleanTombstones`", "dir", dir, "err", err)
 				}
 			}
 			if err != nil {

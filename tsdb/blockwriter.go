@@ -110,6 +110,11 @@ func (w *BlockWriter) Flush(ctx context.Context) (ulid.ULID, error) {
 		return ulid.ULID{}, fmt.Errorf("compactor write: %w", err)
 	}
 
+	// No block was produced. Caller is responsible to check empty
+	// ulid.ULID based on its use case.
+	if len(ids) == 0 {
+		return ulid.ULID{}, nil
+	}
 	return ids[0], nil
 }
 

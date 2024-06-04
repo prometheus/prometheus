@@ -59,18 +59,22 @@ type Compactor interface {
 	Plan(dir string) ([]string, error)
 
 	// Write persists one or more Blocks into a directory.
-	// When a resulting Block has 0 samples then its result will be an empty ulid.ULID{}.
+	// No Block is written when resulting Block has 0 samples and returns an empty slice.
+	// Prometheus always return one or no block. The interface allows returning more than one
+	// block for downstream users to experiment with compactor.
 	Write(dest string, b BlockReader, mint, maxt int64, base *BlockMeta) ([]ulid.ULID, error)
 
 	// Compact runs compaction against the provided directories. Must
 	// only be called concurrently with results of Plan().
 	// Can optionally pass a list of already open blocks,
 	// to avoid having to reopen them.
-	// When resulting Block has 0 samples
+	// Prometheus always return one or no block. The interface allows returning more than one
+	// block for downstream users to experiment with compactor.
+	// When one resulting Block has 0 samples
 	//  * No block is written.
 	//  * The source dirs are marked Deletable.
-	//  * Returns empty ulid.ULID{}.
-	Compact(dest string, dirs []string, open []*Block) (ulid.ULID, error)
+	//  * Block is not included in the result.
+	Compact(dest string, dirs []string, open []*Block) ([]ulid.ULID, error)
 }
 
 // LeveledCompactor implements the Compactor interface.
@@ -441,11 +445,11 @@ func CompactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 
 // Compact creates a new block in the compactor's directory from the blocks in the
 // provided directories.
-func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (uid ulid.ULID, err error) {
+func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) ([]ulid.ULID, error) {
 	return c.CompactWithBlockPopulator(dest, dirs, open, DefaultBlockPopulator{})
 }
 
-func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string, open []*Block, blockPopulator BlockPopulator) (uid ulid.ULID, err error) {
+func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string, open []*Block, blockPopulator BlockPopulator) ([]ulid.ULID, error) {
 	var (
 		blocks []BlockReader
 		bs     []*Block
@@ -457,7 +461,7 @@ func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string,
 	for _, d := range dirs {
 		meta, _, err := readMetaFile(d)
 		if err != nil {
-			return uid, err
+			return []ulid.ULID{}, err
 		}
 
 		var b *Block
@@ -475,7 +479,7 @@ func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string,
 			var err error
 			b, err = OpenBlock(c.logger, d, c.chunkPool)
 			if err != nil {
-				return uid, err
+				return []ulid.ULID{}, err
 			}
 			defer b.Close()
 		}
@@ -486,10 +490,10 @@ func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string,
 		uids = append(uids, meta.ULID.String())
 	}
 
-	uid = ulid.MustNew(ulid.Now(), rand.Reader)
+	uid := ulid.MustNew(ulid.Now(), rand.Reader)
 
 	meta := CompactBlockMetas(uid, metas...)
-	err = c.write(dest, meta, blockPopulator, blocks...)
+	err := c.write(dest, meta, blockPopulator, blocks...)
 	if err == nil {
 		if meta.Stats.NumSamples == 0 {
 			for _, b := range bs {
@@ -521,7 +525,7 @@ func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string,
 				"duration", time.Since(start),
 			)
 		}
-		return uid, nil
+		return []ulid.ULID{uid}, nil
 	}
 
 	errs := tsdb_errors.NewMulti(err)
@@ -533,7 +537,7 @@ func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string,
 		}
 	}
 
-	return uid, errs.Err()
+	return []ulid.ULID{uid}, errs.Err()
 }
 
 func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, base *BlockMeta) ([]ulid.ULID, error) {
@@ -560,7 +564,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, b
 
 	err := c.write(dest, meta, DefaultBlockPopulator{}, b)
 	if err != nil {
-		return []ulid.ULID{uid}, err
+		return []ulid.ULID{}, err
 	}
 
 	if meta.Stats.NumSamples == 0 {
@@ -570,7 +574,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, b
 			"maxt", meta.MaxTime,
 			"duration", time.Since(start),
 		)
-		return []ulid.ULID{{}}, nil
+		return []ulid.ULID{}, nil
 	}
 
 	level.Info(c.logger).Log(
@@ -652,7 +656,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 	}
 	closers = append(closers, indexw)
 
-	if err := blockPopulator.PopulateBlock(c.ctx, c.metrics, c.logger, c.chunkPool, c.mergeFunc, blocks, meta, indexw, chunkw, AllSortedPostings); err != nil {
+	if err := blockPopulator.PopulateBlock(c.ctx, c.metrics, c.logger, c.chunkPool, c.mergeFunc, blocks, meta, indexw, chunkw); err != nil {
 		return fmt.Errorf("populate block: %w", err)
 	}
 
@@ -718,20 +722,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 }
 
 type BlockPopulator interface {
-	PopulateBlock(ctx context.Context, metrics *CompactorMetrics, logger log.Logger, chunkPool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc, blocks []BlockReader, meta *BlockMeta, indexw IndexWriter, chunkw ChunkWriter, postingsFunc IndexReaderPostingsFunc) error
-}
-
-// IndexReaderPostingsFunc is a function to get a posting iterator from a given index reader.
-type IndexReaderPostingsFunc func(ctx context.Context, reader IndexReader) index.Postings
-
-// AllSortedPostings returns a sorted all posting iterator from the input index reader.
-func AllSortedPostings(ctx context.Context, reader IndexReader) index.Postings {
-	k, v := index.AllPostingsKey()
-	all, err := reader.Postings(ctx, k, v)
-	if err != nil {
-		return index.ErrPostings(err)
-	}
-	return reader.SortedPostings(all)
+	PopulateBlock(ctx context.Context, metrics *CompactorMetrics, logger log.Logger, chunkPool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc, blocks []BlockReader, meta *BlockMeta, indexw IndexWriter, chunkw ChunkWriter) error
 }
 
 type DefaultBlockPopulator struct{}
@@ -739,7 +730,7 @@ type DefaultBlockPopulator struct{}
 // PopulateBlock fills the index and chunk writers with new data gathered as the union
 // of the provided blocks. It returns meta information for the new block.
 // It expects sorted blocks input by mint.
-func (c DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *CompactorMetrics, logger log.Logger, chunkPool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc, blocks []BlockReader, meta *BlockMeta, indexw IndexWriter, chunkw ChunkWriter, postingsFunc IndexReaderPostingsFunc) (err error) {
+func (c DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *CompactorMetrics, logger log.Logger, chunkPool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc, blocks []BlockReader, meta *BlockMeta, indexw IndexWriter, chunkw ChunkWriter) (err error) {
 	if len(blocks) == 0 {
 		return errors.New("cannot populate block from no readers")
 	}
@@ -797,9 +788,14 @@ func (c DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compa
 		}
 		closers = append(closers, tombsr)
 
-		postings := postingsFunc(ctx, indexr)
+		k, v := index.AllPostingsKey()
+		all, err := indexr.Postings(ctx, k, v)
+		if err != nil {
+			return err
+		}
+		all = indexr.SortedPostings(all)
 		// Blocks meta is half open: [min, max), so subtract 1 to ensure we don't hold samples with exact meta.MaxTime timestamp.
-		sets = append(sets, NewBlockChunkSeriesSet(b.Meta().ULID, indexr, chunkr, tombsr, postings, meta.MinTime, meta.MaxTime-1, false))
+		sets = append(sets, NewBlockChunkSeriesSet(b.Meta().ULID, indexr, chunkr, tombsr, all, meta.MinTime, meta.MaxTime-1, false))
 		syms := indexr.Symbols()
 		if i == 0 {
 			symbols = syms

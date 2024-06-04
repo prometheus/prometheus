@@ -38,7 +38,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
-	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
@@ -494,7 +493,6 @@ func TestCompaction_populateBlock(t *testing.T) {
 		inputSeriesSamples [][]seriesSamples
 		compactMinTime     int64
 		compactMaxTime     int64 // When not defined the test runner sets a default of math.MaxInt64.
-		irPostingsFunc     IndexReaderPostingsFunc
 		expSeriesSamples   []seriesSamples
 		expErr             error
 	}{
@@ -963,60 +961,6 @@ func TestCompaction_populateBlock(t *testing.T) {
 				},
 			},
 		},
-		{
-			title: "Populate from single block with index reader postings function selecting different series. Expect empty block.",
-			inputSeriesSamples: [][]seriesSamples{
-				{
-					{
-						lset:   map[string]string{"a": "b"},
-						chunks: [][]sample{{{t: 0}, {t: 10}}, {{t: 11}, {t: 20}}},
-					},
-				},
-			},
-			irPostingsFunc: func(ctx context.Context, reader IndexReader) index.Postings {
-				p, err := reader.Postings(ctx, "a", "c")
-				if err != nil {
-					return index.EmptyPostings()
-				}
-				return reader.SortedPostings(p)
-			},
-		},
-		{
-			title: "Populate from single block with index reader postings function selecting one series. Expect partial block.",
-			inputSeriesSamples: [][]seriesSamples{
-				{
-					{
-						lset:   map[string]string{"a": "b"},
-						chunks: [][]sample{{{t: 0}, {t: 10}}, {{t: 11}, {t: 20}}},
-					},
-					{
-						lset:   map[string]string{"a": "c"},
-						chunks: [][]sample{{{t: 0}, {t: 10}}, {{t: 11}, {t: 20}}},
-					},
-					{
-						lset:   map[string]string{"a": "d"},
-						chunks: [][]sample{{{t: 0}, {t: 10}}, {{t: 11}, {t: 20}}},
-					},
-				},
-			},
-			irPostingsFunc: func(ctx context.Context, reader IndexReader) index.Postings {
-				p, err := reader.Postings(ctx, "a", "c", "d")
-				if err != nil {
-					return index.EmptyPostings()
-				}
-				return reader.SortedPostings(p)
-			},
-			expSeriesSamples: []seriesSamples{
-				{
-					lset:   map[string]string{"a": "c"},
-					chunks: [][]sample{{{t: 0}, {t: 10}}, {{t: 11}, {t: 20}}},
-				},
-				{
-					lset:   map[string]string{"a": "d"},
-					chunks: [][]sample{{{t: 0}, {t: 10}}, {{t: 11}, {t: 20}}},
-				},
-			},
-		},
 	} {
 		t.Run(tc.title, func(t *testing.T) {
 			blocks := make([]BlockReader, 0, len(tc.inputSeriesSamples))
@@ -1038,11 +982,7 @@ func TestCompaction_populateBlock(t *testing.T) {
 
 			iw := &mockIndexWriter{}
 			blockPopulator := DefaultBlockPopulator{}
-			irPostingsFunc := AllSortedPostings
-			if tc.irPostingsFunc != nil {
-				irPostingsFunc = tc.irPostingsFunc
-			}
-			err = blockPopulator.PopulateBlock(c.ctx, c.metrics, c.logger, c.chunkPool, c.mergeFunc, blocks, meta, iw, nopChunkWriter{}, irPostingsFunc)
+			err = blockPopulator.PopulateBlock(c.ctx, c.metrics, c.logger, c.chunkPool, c.mergeFunc, blocks, meta, iw, nopChunkWriter{})
 			if tc.expErr != nil {
 				require.Error(t, err)
 				require.Equal(t, tc.expErr.Error(), err.Error())
@@ -1546,7 +1486,7 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 			require.NoError(t, err)
 			ids, err := compactor.Write(head.opts.ChunkDirRoot, head, mint, maxt, nil)
 			require.NoError(t, err)
-			require.NotEqual(t, ulid.ULID{}, ids[0])
+			require.Len(t, ids, 1)
 
 			// Open the block and query it and check the histograms.
 			block, err := OpenBlock(nil, path.Join(head.opts.ChunkDirRoot, ids[0].String()), nil)
@@ -1688,7 +1628,7 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 					require.NoError(t, err)
 					sparseULIDs, err = compactor.Write(sparseHead.opts.ChunkDirRoot, sparseHead, mint, maxt, nil)
 					require.NoError(t, err)
-					require.NotEqual(t, ulid.ULID{}, sparseULIDs[0])
+					require.Len(t, sparseULIDs, 1)
 				}()
 
 				wg.Add(1)
@@ -1739,7 +1679,7 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 					require.NoError(t, err)
 					oldULIDs, err = compactor.Write(oldHead.opts.ChunkDirRoot, oldHead, mint, maxt, nil)
 					require.NoError(t, err)
-					require.NotEqual(t, ulid.ULID{}, oldULIDs[0])
+					require.Len(t, oldULIDs, 1)
 				}()
 
 				wg.Wait()

@@ -346,9 +346,10 @@ func TestBlockSize(t *testing.T) {
 
 		c, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{0}, nil, nil)
 		require.NoError(t, err)
-		blockDirAfterCompact, err := c.Compact(tmpdir, []string{blockInit.Dir()}, nil)
+		blockDirsAfterCompact, err := c.Compact(tmpdir, []string{blockInit.Dir()}, nil)
 		require.NoError(t, err)
-		blockAfterCompact, err := OpenBlock(nil, filepath.Join(tmpdir, blockDirAfterCompact.String()), nil)
+		require.Len(t, blockDirsAfterCompact, 1)
+		blockAfterCompact, err := OpenBlock(nil, filepath.Join(tmpdir, blockDirsAfterCompact[0].String()), nil)
 		require.NoError(t, err)
 		defer func() {
 			require.NoError(t, blockAfterCompact.Close())
@@ -607,6 +608,7 @@ func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
 	// Because of this block intervals are always +1 than the total samples it includes.
 	ulids, err := compactor.Write(dir, head, head.MinTime(), head.MaxTime()+1, nil)
 	require.NoError(tb, err)
+	require.Len(tb, ulids, 1)
 	return filepath.Join(dir, ulids[0].String())
 }
 
@@ -620,6 +622,7 @@ func createBlockFromOOOHead(tb testing.TB, dir string, head *OOOCompactionHead) 
 	// Because of this block intervals are always +1 than the total samples it includes.
 	ulids, err := compactor.Write(dir, head, head.MinTime(), head.MaxTime()+1, nil)
 	require.NoError(tb, err)
+	require.Len(tb, ulids, 1)
 	return filepath.Join(dir, ulids[0].String())
 }
 

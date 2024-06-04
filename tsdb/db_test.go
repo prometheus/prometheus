@@ -1455,8 +1455,8 @@ func (c *mockCompactorFailing) Write(dest string, _ BlockReader, _, _ int64, _ *
 	return []ulid.ULID{block.Meta().ULID}, nil
 }
 
-func (*mockCompactorFailing) Compact(string, []string, []*Block) (ulid.ULID, error) {
-	return ulid.ULID{}, nil
+func (*mockCompactorFailing) Compact(string, []string, []*Block) ([]ulid.ULID, error) {
+	return []ulid.ULID{}, nil
 }
 
 func (*mockCompactorFailing) CompactOOO(string, *OOOCompactionHead) (result []ulid.ULID, err error) {
@@ -6804,9 +6804,9 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 		for _, b := range blocks {
 			blockDirs = append(blockDirs, b.Dir())
 		}
-		id, err := db.compactor.Compact(db.Dir(), blockDirs, blocks)
+		ids, err := db.compactor.Compact(db.Dir(), blockDirs, blocks)
 		require.NoError(t, err)
-		require.NotEqual(t, ulid.ULID{}, id)
+		require.Len(t, ids, 1)
 		require.NoError(t, db.reload())
 		require.Len(t, db.Blocks(), 1)
 
@@ -7068,7 +7068,7 @@ func requireEqualOOOSamples(t *testing.T, expectedSamples int, db *DB) {
 
 type mockCompactorFn struct {
 	planFn    func() ([]string, error)
-	compactFn func() (ulid.ULID, error)
+	compactFn func() ([]ulid.ULID, error)
 	writeFn   func() ([]ulid.ULID, error)
 }
 
@@ -7076,7 +7076,7 @@ func (c *mockCompactorFn) Plan(_ string) ([]string, error) {
 	return c.planFn()
 }
 
-func (c *mockCompactorFn) Compact(_ string, _ []string, _ []*Block) (ulid.ULID, error) {
+func (c *mockCompactorFn) Compact(_ string, _ []string, _ []*Block) ([]ulid.ULID, error) {
 	return c.compactFn()
 }
 
@@ -7112,8 +7112,8 @@ func TestAbortBlockCompactions(t *testing.T) {
 			// Our custom Plan() will always return something to compact.
 			return []string{"1", "2", "3"}, nil
 		},
-		compactFn: func() (ulid.ULID, error) {
-			return ulid.ULID{}, nil
+		compactFn: func() ([]ulid.ULID, error) {
+			return []ulid.ULID{}, nil
 		},
 		writeFn: func() ([]ulid.ULID, error) {
 			return []ulid.ULID{}, nil
