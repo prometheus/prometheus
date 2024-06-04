@@ -1340,9 +1340,7 @@ func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID
 		if err != nil {
 			return nil, err
 		}
-		for _, uid := range uids {
-			ulids = append(ulids, uid)
-		}
+		ulids = append(ulids, uids...)
 	}
 
 	if len(ulids) == 0 {
