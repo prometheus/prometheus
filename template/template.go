@@ -32,7 +32,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
-	commonTemplates "github.com/prometheus/common/helpers/templates"
+	common_templates "github.com/prometheus/common/helpers/templates"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -265,7 +265,7 @@ func NewTemplateExpander(
 				}
 				return fmt.Sprintf("%.4g%s", v, prefix), nil
 			},
-			"humanizeDuration": commonTemplates.HumanizeDuration,
+			"humanizeDuration": common_templates.HumanizeDuration,
 			"humanizePercentage": func(i interface{}) (string, error) {
 				v, err := convertToFloat(i)
 				if err != nil {
