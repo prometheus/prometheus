@@ -941,6 +941,15 @@ func hasSuffixCaseInsensitive(s, suffix string) bool {
 }
 
 func containsInOrder(s string, contains []string) bool {
+	// Optimization for the case we only have to look for 1 substring.
+	if len(contains) == 1 {
+		return strings.Contains(s, contains[0])
+	}
+
+	return containsInOrderMulti(s, contains)
+}
+
+func containsInOrderMulti(s string, contains []string) bool {
 	offset := 0
 
 	for _, substr := range contains {
