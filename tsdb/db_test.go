@@ -7135,11 +7135,11 @@ func TestNewCompactorFunc(t *testing.T) {
 			planFn: func() ([]string, error) {
 				return []string{block1.String(), block2.String()}, nil
 			},
-			compactFn: func() (ulid.ULID, error) {
-				return block1, nil
+			compactFn: func() ([]ulid.ULID, error) {
+				return []ulid.ULID{block1}, nil
 			},
-			writeFn: func() (ulid.ULID, error) {
-				return block2, nil
+			writeFn: func() ([]ulid.ULID, error) {
+				return []ulid.ULID{block2}, nil
 			},
 		}, nil
 	}
