@@ -214,10 +214,6 @@ func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer
 	if pe == nil {
 		pe = index.EncodePostingsRaw
 	}
-	pd := opts.PD
-	if pd == nil {
-		pd = DefaultPostingsDecoderFactory
-	}
 	return &LeveledCompactor{
 		ranges:                      ranges,
 		chunkPool:                   pool,
@@ -227,7 +223,7 @@ func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer
 		maxBlockChunkSegmentSize:    maxBlockChunkSegmentSize,
 		mergeFunc:                   mergeFunc,
 		postingsEncoder:             pe,
-		postingsDecoderFactory:      pd,
+		postingsDecoderFactory:      opts.PD,
 		enableOverlappingCompaction: opts.EnableOverlappingCompaction,
 	}, nil
 }
