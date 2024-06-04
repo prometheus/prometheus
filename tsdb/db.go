@@ -190,7 +190,7 @@ type Options struct {
 	// EnableSharding enables query sharding support in TSDB.
 	EnableSharding bool
 
-	// NewCompactorFunc is a function which initializes a TSDB compactor.
+	// NewCompactorFunc is a function that returns a TSDB compactor.
 	NewCompactorFunc NewCompactorFunc
 }
 
