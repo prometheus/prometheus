@@ -125,6 +125,8 @@ api_url: %s
 			"__meta_scaleway_instance_organization_id":        "20b3d507-96ac-454c-a795-bc731b46b12f",
 			"__meta_scaleway_instance_project_id":             "20b3d507-96ac-454c-a795-bc731b46b12f",
 			"__meta_scaleway_instance_public_ipv4":            "51.158.183.115",
+			"__meta_scaleway_instance_public_ipv4_addresses":  ",51.158.183.115,",
+			"__meta_scaleway_instance_public_ipv6_addresses":  ",2001:bc8:1640:1568:dc00:ff:fe21:91b,",
 			"__meta_scaleway_instance_region":                 "nl-ams",
 			"__meta_scaleway_instance_security_group_id":      "984414da-9fc2-49c0-a925-fed6266fe092",
 			"__meta_scaleway_instance_security_group_name":    "Default security group",
