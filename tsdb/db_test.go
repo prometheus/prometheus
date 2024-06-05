@@ -503,7 +503,7 @@ func TestAmendHistogramDatapointCausesError(t *testing.T) {
 	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, 0)
 	require.NoError(t, err)
 	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, 1)
-	require.Equal(t, storage.ErrDuplicateSampleForTimestamp, err)
+	require.ErrorIs(t, err, storage.ErrDuplicateSampleForTimestamp)
 	require.NoError(t, app.Rollback())
 
 	h := histogram.Histogram{
@@ -579,7 +579,7 @@ func TestNonDuplicateNaNDatapointsCausesAmendError(t *testing.T) {
 
 	app = db.Appender(ctx)
 	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, math.Float64frombits(0x7ff0000000000002))
-	require.Equal(t, storage.ErrDuplicateSampleForTimestamp, err)
+	require.ErrorIs(t, err, storage.ErrDuplicateSampleForTimestamp)
 }
 
 func TestEmptyLabelsetCausesError(t *testing.T) {
@@ -7124,4 +7124,36 @@ func TestAbortBlockCompactions(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, db.head.compactable(), "head should be compactable")
 	require.Equal(t, 4, compactions, "expected 4 compactions to be completed")
+}
+
+func TestNewCompactorFunc(t *testing.T) {
+	opts := DefaultOptions()
+	block1 := ulid.MustNew(1, nil)
+	block2 := ulid.MustNew(2, nil)
+	opts.NewCompactorFunc = func(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error) {
+		return &mockCompactorFn{
+			planFn: func() ([]string, error) {
+				return []string{block1.String(), block2.String()}, nil
+			},
+			compactFn: func() (ulid.ULID, error) {
+				return block1, nil
+			},
+			writeFn: func() (ulid.ULID, error) {
+				return block2, nil
+			},
+		}, nil
+	}
+	db := openTestDB(t, opts, nil)
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
+	plans, err := db.compactor.Plan("")
+	require.NoError(t, err)
+	require.Equal(t, []string{block1.String(), block2.String()}, plans)
+	ulid, err := db.compactor.Compact("", nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, block1, ulid)
+	ulid, err = db.compactor.Write("", nil, 0, 1, nil)
+	require.NoError(t, err)
+	require.Equal(t, block2, ulid)
 }

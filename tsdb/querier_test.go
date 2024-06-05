@@ -2809,6 +2809,13 @@ func TestPostingsForMatchers(t *testing.T) {
 		},
 		// Not regex.
 		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, "i", "")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1", "i", "a"),
+				labels.FromStrings("n", "1", "i", "b"),
+			},
+		},
+		{
 			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, "n", "^1$")},
 			exp: []labels.Labels{
 				labels.FromStrings("n", "2"),
