@@ -30,6 +30,9 @@ jobs:
           destination_container_repo: ${{ env.DOCKER_REPO_NAME }}
           provider: dockerhub
           short_description: ${{ env.DOCKER_REPO_NAME }}
+          # Empty string results in README-containers.md being pushed if it
+          # exists. Otherwise, README.md is pushed.
+          readme_file: ''
 
   PushQuayIoReadme:
     runs-on: ubuntu-latest
@@ -49,3 +52,6 @@ jobs:
         with:
           destination_container_repo: ${{ env.DOCKER_REPO_NAME }}
           provider: quay
+          # Empty string results in README-containers.md being pushed if it
+          # exists. Otherwise, README.md is pushed.
+          readme_file: ''
