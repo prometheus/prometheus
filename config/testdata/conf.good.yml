@@ -14,6 +14,9 @@ global:
     monitor: codelab
     foo: bar
 
+runtime:
+  gogc: 42
+
 rule_files:
   - "first.rules"
   - "my/*.rules"
