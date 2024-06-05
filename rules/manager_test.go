@@ -195,7 +195,7 @@ func TestAlertingRule(t *testing.T) {
 
 func TestForStateAddSamples(t *testing.T) {
 	for _, queryOffset := range []time.Duration{0, time.Minute} {
-		t.Run(fmt.Sprintf("queryOffset %s", queryOffset.String()), func(t *testing.T) {
+		t.Run("queryOffset"+queryOffset.String(), func(t *testing.T) {
 			storage := promqltest.LoadedStorage(t, `
 		load 5m
 			http_requests{job="app-server", instance="0", group="canary", severity="overwrite-me"}	75 85  95 105 105  95  85
