@@ -31,10 +31,18 @@ production deployments it is highly recommended to use a
 [named volume](https://docs.docker.com/storage/volumes/)
 to ease managing the data on Prometheus upgrades.
 
-To provide your own configuration, there are several options. Here are
-two examples.
+### Setting command line parameters
+
+The Docker image is started with a number of default command line parameters, which
+can be found in the Dockerfile corresponding to your Prometheus version.
+
+If you want to add extra command line parameters to the `docker run` command,
+you will need to re-add these yourself as they will be overwritten.
 
 ### Volumes & bind-mount
+
+To provide your own configuration, there are several options. Here are
+two examples.
 
 Bind-mount your `prometheus.yml` from the host by running:
 
@@ -96,20 +104,6 @@ docker run -p 9090:9090 my-prometheus
 
 A more advanced option is to render the configuration dynamically on start
 with some tooling or even have a daemon update it periodically.
-
-### Overriding command line parameters
-
-The Docker image is started with a number of default command line parameters:
-
-```
---config.file=/etc/prometheus/prometheus.yml
---storage.tsdb.path=/prometheus
---web.console.libraries=/usr/share/prometheus/console_libraries
---web.console.templates=/usr/share/prometheus/consoles
-```
-
-If you want to add extra command line parameters to the `docker run` command,
-you will need to re-add these yourself as they will be overwritten.
 
 ## Using configuration management systems
 
