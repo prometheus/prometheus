@@ -79,7 +79,7 @@
     "enzyme": "^3.11.0",
     "enzyme-to-json": "^3.6.2",
     "mutationobserver-shim": "^0.3.7",
-    "sinon": "^14.0.2"
+    "sinon": "^18.0.0"
   },
   "jest": {
     "snapshotSerializers": [
