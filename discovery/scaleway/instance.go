@@ -175,14 +175,14 @@ func (d *instanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 		}
 
 		addr := ""
-		if server.IPv6 != nil {
-			labels[instancePublicIPv6Label] = model.LabelValue(server.IPv6.Address.String())
-			addr = server.IPv6.Address.String()
+		if server.IPv6 != nil {  //nolint:staticcheck see comments in https://github.com/prometheus/prometheus/pull/14212
+			labels[instancePublicIPv6Label] = model.LabelValue(server.IPv6.Address.String())  //nolint:staticcheck see comments in https://github.com/prometheus/prometheus/pull/14212
+			addr = server.IPv6.Address.String()  //nolint:staticcheck see comments in https://github.com/prometheus/prometheus/pull/14212
 		}
 
-		if server.PublicIP != nil {
-			labels[instancePublicIPv4Label] = model.LabelValue(server.PublicIP.Address.String())
-			addr = server.PublicIP.Address.String()
+		if server.PublicIP != nil {  //nolint:staticcheck see comments in https://github.com/prometheus/prometheus/pull/14212
+			labels[instancePublicIPv4Label] = model.LabelValue(server.PublicIP.Address.String())  //nolint:staticcheck see comments in https://github.com/prometheus/prometheus/pull/14212
+			addr = server.PublicIP.Address.String()  //nolint:staticcheck see comments in https://github.com/prometheus/prometheus/pull/14212
 		}
 
 		if server.PrivateIP != nil {
