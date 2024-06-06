@@ -34,7 +34,7 @@ to ease managing the data on Prometheus upgrades.
 ### Setting command line parameters
 
 The Docker image is started with a number of default command line parameters, which
-can be found in the Dockerfile corresponding to your Prometheus version.
+can be found in the [Dockerfile](https://github.com/prometheus/prometheus/blob/main/Dockerfile) (adjust the link to correspond with the version in use).
 
 If you want to add extra command line parameters to the `docker run` command,
 you will need to re-add these yourself as they will be overwritten.
