@@ -104,13 +104,6 @@ var (
 		"\xfd",
 		"\xff\xff",
 	}
-	toNormalisedLowerTestCases = map[string]string{
-		"foo":                      "foo",
-		"AAAAAAAAAAAAAAAAAAAAAAAA": "aaaaaaaaaaaaaaaaaaaaaaaa",
-		"cccccccccccccccccccccccC": "cccccccccccccccccccccccc",
-		"ſſſſſſſſſſſſſſſſſſſſſſſſS": "sssssssssssssssssssssssss",
-		"ſſAſſa": "ssassa",
-	}
 )
 
 func TestFastRegexMatcher_MatchString(t *testing.T) {
@@ -297,6 +290,52 @@ func BenchmarkFastRegexMatcher(b *testing.B) {
 				for _, text := range texts {
 					_ = m.MatchString(text)
 				}
+			}
+		})
+	}
+}
+
+func BenchmarkToNormalizedLower(b *testing.B) {
+	benchCase := func(l int, uppercase string, asciiOnly bool, alt int) string {
+		chars := "abcdefghijklmnopqrstuvwxyz"
+		if !asciiOnly {
+			chars = "aаbбcвdгeдfеgёhжiзjиkйlкmлnмoнpоqпrрsсtтuуvфwхxцyчzш"
+		}
+		// Swap the alphabet to make alternatives.
+		chars = chars[alt%len(chars):] + chars[:alt%len(chars)]
+
+		str := strings.Repeat(chars, l/len(chars)+1)[:l]
+		switch uppercase {
+		case "first":
+			return strings.ToUpper(str[:1]) + str[1:]
+		case "last":
+			return str[:len(str)-1] + strings.ToUpper(str[len(str)-1:])
+		case "all":
+			return strings.ToUpper(str)
+		case "none":
+			return str
+		default:
+			panic("invalid uppercase")
+		}
+	}
+
+	for _, l := range []int{10, 100, 1000, 4000} {
+		b.Run(fmt.Sprintf("length=%d", l), func(b *testing.B) {
+			for _, uppercase := range []string{"none", "first", "last", "all"} {
+				b.Run("uppercase="+uppercase, func(b *testing.B) {
+					for _, asciiOnly := range []bool{true, false} {
+						b.Run(fmt.Sprintf("ascii=%t", asciiOnly), func(b *testing.B) {
+							inputs := make([]string, 10)
+							for i := range inputs {
+								inputs[i] = benchCase(l, uppercase, asciiOnly, i)
+							}
+							b.ResetTimer()
+							for n := 0; n < b.N; n++ {
+								toNormalisedLower(inputs[n%len(inputs)])
+							}
+						})
+					}
+				})
 			}
 		})
 	}
@@ -1168,7 +1207,14 @@ func visitStringMatcher(matcher StringMatcher, callback func(matcher StringMatch
 }
 
 func TestToNormalisedLower(t *testing.T) {
-	for input, expectedOutput := range toNormalisedLowerTestCases {
+	testCases := map[string]string{
+		"foo":                      "foo",
+		"AAAAAAAAAAAAAAAAAAAAAAAA": "aaaaaaaaaaaaaaaaaaaaaaaa",
+		"cccccccccccccccccccccccC": "cccccccccccccccccccccccc",
+		"ſſſſſſſſſſſſſſſſſſſſſſſſS": "sssssssssssssssssssssssss",
+		"ſſAſſa": "ssassa",
+	}
+	for input, expectedOutput := range testCases {
 		require.Equal(t, expectedOutput, toNormalisedLower(input))
 	}
 }
