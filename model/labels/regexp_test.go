@@ -81,10 +81,15 @@ var (
 		".*foo.?",
 		".?foo.+",
 		"foo.?|bar",
+		// Concat of literals and wildcards.
+		".*-.*-.*-.*-.*",
+		"(.+)-(.+)-(.+)-(.+)-(.+)",
+		"((.*))(?i:f)((.*))o((.*))o((.*))",
+		"((.*))f((.*))(?i:o)((.*))o((.*))",
 	}
 	values = []string{
 		"foo", " foo bar", "bar", "buzz\nbar", "bar foo", "bfoo", "\n", "\nfoo", "foo\n", "hello foo world", "hello foo\n world", "",
-		"FOO", "Foo", "OO", "Oo", "\nfoo\n", strings.Repeat("f", 20), "prometheus", "prometheus_api_v1", "prometheus_api_v1_foo",
+		"FOO", "Foo", "fOo", "foO", "OO", "Oo", "\nfoo\n", strings.Repeat("f", 20), "prometheus", "prometheus_api_v1", "prometheus_api_v1_foo",
 		"10.0.1.20", "10.0.2.10", "10.0.3.30", "10.0.4.40",
 		"foofoo0", "foofoo", "😀foo0",
 
@@ -132,29 +137,29 @@ func TestOptimizeConcatRegex(t *testing.T) {
 		regex    string
 		prefix   string
 		suffix   string
-		contains string
+		contains []string
 	}{
-		{regex: "foo(hello|bar)", prefix: "foo", suffix: "", contains: ""},
-		{regex: "foo(hello|bar)world", prefix: "foo", suffix: "world", contains: ""},
-		{regex: "foo.*", prefix: "foo", suffix: "", contains: ""},
-		{regex: "foo.*hello.*bar", prefix: "foo", suffix: "bar", contains: "hello"},
-		{regex: ".*foo", prefix: "", suffix: "foo", contains: ""},
-		{regex: "^.*foo$", prefix: "", suffix: "foo", contains: ""},
-		{regex: ".*foo.*", prefix: "", suffix: "", contains: "foo"},
-		{regex: ".*foo.*bar.*", prefix: "", suffix: "", contains: "foo"},
-		{regex: ".*(foo|bar).*", prefix: "", suffix: "", contains: ""},
-		{regex: ".*[abc].*", prefix: "", suffix: "", contains: ""},
-		{regex: ".*((?i)abc).*", prefix: "", suffix: "", contains: ""},
-		{regex: ".*(?i:abc).*", prefix: "", suffix: "", contains: ""},
-		{regex: "(?i:abc).*", prefix: "", suffix: "", contains: ""},
-		{regex: ".*(?i:abc)", prefix: "", suffix: "", contains: ""},
-		{regex: ".*(?i:abc)def.*", prefix: "", suffix: "", contains: "def"},
-		{regex: "(?i).*(?-i:abc)def", prefix: "", suffix: "", contains: "abc"},
-		{regex: ".*(?msU:abc).*", prefix: "", suffix: "", contains: "abc"},
-		{regex: "[aA]bc.*", prefix: "", suffix: "", contains: "bc"},
-		{regex: "^5..$", prefix: "5", suffix: "", contains: ""},
-		{regex: "^release.*", prefix: "release", suffix: "", contains: ""},
-		{regex: "^env-[0-9]+laio[1]?[^0-9].*", prefix: "env-", suffix: "", contains: "laio"},
+		{regex: "foo(hello|bar)", prefix: "foo", suffix: "", contains: nil},
+		{regex: "foo(hello|bar)world", prefix: "foo", suffix: "world", contains: nil},
+		{regex: "foo.*", prefix: "foo", suffix: "", contains: nil},
+		{regex: "foo.*hello.*bar", prefix: "foo", suffix: "bar", contains: []string{"hello"}},
+		{regex: ".*foo", prefix: "", suffix: "foo", contains: nil},
+		{regex: "^.*foo$", prefix: "", suffix: "foo", contains: nil},
+		{regex: ".*foo.*", prefix: "", suffix: "", contains: []string{"foo"}},
+		{regex: ".*foo.*bar.*", prefix: "", suffix: "", contains: []string{"foo", "bar"}},
+		{regex: ".*(foo|bar).*", prefix: "", suffix: "", contains: nil},
+		{regex: ".*[abc].*", prefix: "", suffix: "", contains: nil},
+		{regex: ".*((?i)abc).*", prefix: "", suffix: "", contains: nil},
+		{regex: ".*(?i:abc).*", prefix: "", suffix: "", contains: nil},
+		{regex: "(?i:abc).*", prefix: "", suffix: "", contains: nil},
+		{regex: ".*(?i:abc)", prefix: "", suffix: "", contains: nil},
+		{regex: ".*(?i:abc)def.*", prefix: "", suffix: "", contains: []string{"def"}},
+		{regex: "(?i).*(?-i:abc)def", prefix: "", suffix: "", contains: []string{"abc"}},
+		{regex: ".*(?msU:abc).*", prefix: "", suffix: "", contains: []string{"abc"}},
+		{regex: "[aA]bc.*", prefix: "", suffix: "", contains: []string{"bc"}},
+		{regex: "^5..$", prefix: "5", suffix: "", contains: nil},
+		{regex: "^release.*", prefix: "release", suffix: "", contains: nil},
+		{regex: "^env-[0-9]+laio[1]?[^0-9].*", prefix: "env-", suffix: "", contains: []string{"laio"}},
 	}
 
 	for _, c := range cases {
@@ -1087,6 +1092,15 @@ func TestHasSuffixCaseInsensitive(t *testing.T) {
 	require.True(t, hasSuffixCaseInsensitive("marco", "marco"))
 	require.False(t, hasSuffixCaseInsensitive("marco", "a"))
 	require.False(t, hasSuffixCaseInsensitive("marco", "abcdefghi"))
+}
+
+func TestContainsInOrder(t *testing.T) {
+	require.True(t, containsInOrder("abcdefghilmno", []string{"ab", "cd", "no"}))
+	require.True(t, containsInOrder("abcdefghilmno", []string{"def", "hil"}))
+
+	require.False(t, containsInOrder("abcdefghilmno", []string{"ac"}))
+	require.False(t, containsInOrder("abcdefghilmno", []string{"ab", "cd", "de"}))
+	require.False(t, containsInOrder("abcdefghilmno", []string{"cd", "ab"}))
 }
 
 func getTestNameFromRegexp(re string) string {
