@@ -42,7 +42,7 @@
     "@lezer/highlight": "^1.2.0",
     "@lezer/lr": "^1.4.1",
     "isomorphic-fetch": "^3.0.0",
-    "nock": "^13.4.0"
+    "nock": "^13.5.4"
   },
   "peerDependencies": {
     "@codemirror/autocomplete": "^6.4.0",
