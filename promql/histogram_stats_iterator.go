@@ -22,69 +22,79 @@ import (
 type histogramStatsIterator struct {
 	chunkenc.Iterator
 
-	hReader *histogram.Histogram
-	lastH   *histogram.Histogram
+	currentH *histogram.Histogram
+	lastH    *histogram.Histogram
 
-	fhReader *histogram.FloatHistogram
-	lastFH   *histogram.FloatHistogram
+	currentFH *histogram.FloatHistogram
+	lastFH    *histogram.FloatHistogram
 }
 
+// NewHistogramStatsIterator creates an iterator which returns histogram objects
+// which have only their sum and count values populated. The iterator handles
+// counter reset detection internally and sets the counter reset hint accordingly
+// in each returned histogram objects.
 func NewHistogramStatsIterator(it chunkenc.Iterator) chunkenc.Iterator {
 	return &histogramStatsIterator{
-		Iterator: it,
-		hReader:  &histogram.Histogram{},
-		fhReader: &histogram.FloatHistogram{},
+		Iterator:  it,
+		currentH:  &histogram.Histogram{},
+		currentFH: &histogram.FloatHistogram{},
 	}
 }
 
+// AtHistogram returns the next timestamp/histogram pair. The counter reset
+// detection is guaranteed to be correct only when the caller does not switch
+// between AtHistogram and AtFloatHistogram calls.
 func (f *histogramStatsIterator) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
 	var t int64
-	t, f.hReader = f.Iterator.AtHistogram(f.hReader)
-	if value.IsStaleNaN(f.hReader.Sum) {
-		f.setLastH(f.hReader)
-		h = &histogram.Histogram{Sum: f.hReader.Sum}
+	t, f.currentH = f.Iterator.AtHistogram(f.currentH)
+	if value.IsStaleNaN(f.currentH.Sum) {
+		f.setLastH(f.currentH)
+		h = &histogram.Histogram{Sum: f.currentH.Sum}
 		return t, h
 	}
 
 	if h == nil {
 		h = &histogram.Histogram{
-			CounterResetHint: f.getResetHint(f.hReader),
-			Count:            f.hReader.Count,
-			Sum:              f.hReader.Sum,
+			CounterResetHint: f.getResetHint(f.currentH),
+			Count:            f.currentH.Count,
+			Sum:              f.currentH.Sum,
 		}
-		f.setLastH(f.hReader)
+		f.setLastH(f.currentH)
 		return t, h
 	}
 
-	h.CounterResetHint = f.getResetHint(f.hReader)
-	h.Count = f.hReader.Count
-	h.Sum = f.hReader.Sum
-	f.setLastH(f.hReader)
+	h.CounterResetHint = f.getResetHint(f.currentH)
+	h.Count = f.currentH.Count
+	h.Sum = f.currentH.Sum
+	f.setLastH(f.currentH)
 	return t, h
 }
 
+// AtFloatHistogram returns the next timestamp/float histogram pair. The counter
+// reset detection is guaranteed to be correct only when the caller does not
+// switch between AtHistogram and AtFloatHistogram calls.
 func (f *histogramStatsIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	var t int64
-	t, f.fhReader = f.Iterator.AtFloatHistogram(f.fhReader)
-	if value.IsStaleNaN(f.fhReader.Sum) {
-		f.setLastFH(f.fhReader)
-		return t, &histogram.FloatHistogram{Sum: f.fhReader.Sum}
+	t, f.currentFH = f.Iterator.AtFloatHistogram(f.currentFH)
+	if value.IsStaleNaN(f.currentFH.Sum) {
+		f.setLastFH(f.currentFH)
+		return t, &histogram.FloatHistogram{Sum: f.currentFH.Sum}
 	}
 
 	if fh == nil {
 		fh = &histogram.FloatHistogram{
-			CounterResetHint: f.getFloatResetHint(f.fhReader.CounterResetHint),
-			Count:            f.fhReader.Count,
-			Sum:              f.fhReader.Sum,
+			CounterResetHint: f.getFloatResetHint(f.currentFH.CounterResetHint),
+			Count:            f.currentFH.Count,
+			Sum:              f.currentFH.Sum,
 		}
-		f.setLastFH(f.fhReader)
+		f.setLastFH(f.currentFH)
 		return t, fh
 	}
 
-	fh.CounterResetHint = f.getFloatResetHint(f.fhReader.CounterResetHint)
-	fh.Count = f.fhReader.Count
-	fh.Sum = f.fhReader.Sum
-	f.setLastFH(f.fhReader)
+	fh.CounterResetHint = f.getFloatResetHint(f.currentFH.CounterResetHint)
+	fh.Count = f.currentFH.Count
+	fh.Sum = f.currentFH.Sum
+	f.setLastFH(f.currentFH)
 	return t, fh
 }
 
@@ -112,7 +122,7 @@ func (f *histogramStatsIterator) getFloatResetHint(hint histogram.CounterResetHi
 		return histogram.NotCounterReset
 	}
 
-	if f.fhReader.DetectReset(f.lastFH) {
+	if f.currentFH.DetectReset(f.lastFH) {
 		return histogram.CounterReset
 	}
 	return histogram.NotCounterReset
