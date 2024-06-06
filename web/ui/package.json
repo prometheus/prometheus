@@ -18,7 +18,7 @@
   "devDependencies": {
     "@types/jest": "^29.5.12",
     "@types/node": "^20.14.2",
-    "eslint-config-prettier": "^8.10.0",
+    "eslint-config-prettier": "^9.1.0",
     "eslint-config-react-app": "^7.0.1",
     "eslint-plugin-prettier": "^4.2.1",
     "jest-canvas-mock": "^2.5.2",
