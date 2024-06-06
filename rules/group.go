@@ -793,6 +793,10 @@ func (g *Group) Equals(ng *Group) bool {
 		return false
 	}
 
+	if ((g.queryOffset == nil) != (ng.queryOffset == nil)) || (g.queryOffset != nil && ng.queryOffset != nil && *g.queryOffset != *ng.queryOffset) {
+		return false
+	}
+
 	if len(g.rules) != len(ng.rules) {
 		return false
 	}
