@@ -647,7 +647,7 @@ Outer:
 
 // CleanTombstones will remove the tombstones and rewrite the block (only if there are any tombstones).
 // If there was a rewrite, then it returns the ULID of new blocks written, else nil.
-// If a resultant block is empty (tombstones covered the whole block), then it deletes the new block and return nil UID.
+// If a resultant block is empty (tombstones covered the whole block), then it returns an empty slice.
 // It returns a boolean indicating if the parent block can be deleted safely of not.
 func (pb *Block) CleanTombstones(dest string, c Compactor) ([]ulid.ULID, bool, error) {
 	numStones := 0

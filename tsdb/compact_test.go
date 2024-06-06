@@ -1846,3 +1846,21 @@ func TestCompactBlockMetas(t *testing.T) {
 	}
 	require.Equal(t, expected, output)
 }
+
+func TestCompactEmptyResultBlockWithTombstone(t *testing.T) {
+	ctx := context.Background()
+	tmpdir := t.TempDir()
+	blockDir := createBlock(t, tmpdir, genSeries(1, 1, 0, 10))
+	block, err := OpenBlock(nil, blockDir, nil)
+	require.NoError(t, err)
+	// Write tombstone covering the whole block.
+	err = block.Delete(ctx, 0, 10, labels.MustNewMatcher(labels.MatchEqual, defaultLabelName, "0"))
+	require.NoError(t, err)
+
+	c, err := NewLeveledCompactor(ctx, nil, log.NewNopLogger(), []int64{0}, nil, nil)
+	require.NoError(t, err)
+
+	ulids, err := c.Compact(tmpdir, []string{blockDir}, []*Block{block})
+	require.NoError(t, err)
+	require.Nil(t, ulids)
+}

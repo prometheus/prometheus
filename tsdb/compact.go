@@ -461,7 +461,7 @@ func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string,
 	for _, d := range dirs {
 		meta, _, err := readMetaFile(d)
 		if err != nil {
-			return []ulid.ULID{}, err
+			return nil, err
 		}
 
 		var b *Block
@@ -479,7 +479,7 @@ func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string,
 			var err error
 			b, err = OpenBlock(c.logger, d, c.chunkPool)
 			if err != nil {
-				return []ulid.ULID{}, err
+				return nil, err
 			}
 			defer b.Close()
 		}
@@ -507,24 +507,24 @@ func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string,
 				}
 				b.numBytesMeta = n
 			}
-			uid = ulid.ULID{}
 			level.Info(c.logger).Log(
 				"msg", "compact blocks resulted in empty block",
 				"count", len(blocks),
 				"sources", fmt.Sprintf("%v", uids),
 				"duration", time.Since(start),
 			)
-		} else {
-			level.Info(c.logger).Log(
-				"msg", "compact blocks",
-				"count", len(blocks),
-				"mint", meta.MinTime,
-				"maxt", meta.MaxTime,
-				"ulid", meta.ULID,
-				"sources", fmt.Sprintf("%v", uids),
-				"duration", time.Since(start),
-			)
+			return nil, nil
 		}
+
+		level.Info(c.logger).Log(
+			"msg", "compact blocks",
+			"count", len(blocks),
+			"mint", meta.MinTime,
+			"maxt", meta.MaxTime,
+			"ulid", meta.ULID,
+			"sources", fmt.Sprintf("%v", uids),
+			"duration", time.Since(start),
+		)
 		return []ulid.ULID{uid}, nil
 	}
 
@@ -537,7 +537,7 @@ func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string,
 		}
 	}
 
-	return []ulid.ULID{uid}, errs.Err()
+	return nil, errs.Err()
 }
 
 func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, base *BlockMeta) ([]ulid.ULID, error) {
@@ -564,7 +564,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, b
 
 	err := c.write(dest, meta, DefaultBlockPopulator{}, b)
 	if err != nil {
-		return []ulid.ULID{}, err
+		return nil, err
 	}
 
 	if meta.Stats.NumSamples == 0 {
@@ -574,7 +574,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, b
 			"maxt", meta.MaxTime,
 			"duration", time.Since(start),
 		)
-		return []ulid.ULID{}, nil
+		return nil, nil
 	}
 
 	level.Info(c.logger).Log(
