@@ -12,13 +12,11 @@ This release changes the default for GOGC, the Go runtime control for the trade-
 * [ENHANCEMENT] Rules: Add `rule_group_last_restore_duration_seconds` metric to measure the time it takes to restore a rule group. #13974
 * [ENHANCEMENT] OTLP: Improve remote write format translation performance by using label set hashes for metric identifiers instead of string based ones. #14006 #13991
 * [ENHANCEMENT] TSDB: Optimize querying with regexp matchers. #13620
-* [BUGFIX] OTLP: Don't generate target_info unless at least one identifying label is defined. #13991
-* [BUGFIX] OTLP: Don't generate target_info unless there are metrics. #13991
-* [BUGFIX] Native histograms: Decouple native histogram ingestions and protobuf parsing that lead to errors when using created timestamp feature. #13987
+* [BUGFIX] OTLP: Don't generate target_info unless there are metrics and at least one identifying label is defined. #13991
+* [BUGFIX] Scrape: Do no try to ingest native histograms when the native histograms feature is turned off. This happened when protobuf scrape was enabled by for example the created time feature. #13987
 * [BUGFIX] Scaleway SD: Use the instance's public IP if no private IP is available as the `__address__` meta label. #13941
 * [BUGFIX] Query logger: Do not leak file descriptors on error. #13948
 * [BUGFIX] TSDB: Let queries with heavy regex matches be cancelled and not use up the CPU. #14096 #14103 #14118 #14199
-* [BUGFIX] UI: Allow users to opt-out of the multi-cluster setup for the main Prometheus dashboard, in environments where it isn't applicable. #14062
 * [BUGFIX] API: Do not warn if result count is equal to the limit, only when exceeding the limit for the series, label-names and label-values APIs. #14116
 * [BUGFIX] TSDB: Fix head stats and hooks when replaying a corrupted snapshot. #14079
 
