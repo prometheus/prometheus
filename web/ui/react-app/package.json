@@ -37,7 +37,7 @@
     "react-router-dom": "^5.3.4",
     "react-test-renderer": "^17.0.2",
     "reactstrap": "^8.10.1",
-    "sanitize-html": "^2.11.0",
+    "sanitize-html": "^2.13.0",
     "sass": "1.77.4",
     "tempusdominus-bootstrap-4": "^5.39.2",
     "tempusdominus-core": "^5.19.3"
@@ -73,7 +73,7 @@
     "@types/react-copy-to-clipboard": "^5.0.7",
     "@types/react-dom": "^17.0.25",
     "@types/react-router-dom": "^5.3.3",
-    "@types/sanitize-html": "^2.9.5",
+    "@types/sanitize-html": "^2.11.0",
     "@types/sinon": "^10.0.20",
     "@wojtekmaj/enzyme-adapter-react-17": "^0.8.0",
     "enzyme": "^3.11.0",
