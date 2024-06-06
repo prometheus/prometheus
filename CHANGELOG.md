@@ -2,6 +2,8 @@
 
 ## unreleased
 
+## 2.53.0-rc.0 / 2024-06-06
+
 This release changes the default for GOGC, the Go runtime control for the trade-off between excess memory use and CPU usage. We have found that Prometheus operates with minimal additional CPU usage, but greatly reduced memory by adjusting the upstream Go default from 100 to 50.
 
 * [CHANGE] Rules: Execute 1 query instead of N (where N is the number of alerts within alert rule) when restoring alerts. #13980
