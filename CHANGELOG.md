@@ -14,7 +14,7 @@ This release changes the default for GOGC, the Go runtime control for the trade-
 * [ENHANCEMENT] TSDB: Optimize querying with regexp matchers. #13620
 * [BUGFIX] OTLP: Don't generate target_info unless at least one identifying label is defined. #13991
 * [BUGFIX] OTLP: Don't generate target_info unless there are metrics. #13991
-* [BUGFIX] Native histograms: dDcouple native histogram ingestions and protobuf parsing that lead to errors when using created timestamp feature. #13987
+* [BUGFIX] Native histograms: Decouple native histogram ingestions and protobuf parsing that lead to errors when using created timestamp feature. #13987
 * [BUGFIX] Scaleway SD: Use the instance's public IP if no private IP is available as the `__address__` meta label. #13941
 * [BUGFIX] Query logger: Do not leak file descriptors on error. #13948
 * [BUGFIX] TSDB: Let queries with heavy regex matches be cancelled and not use up the CPU. #14096 #14103 #14118 #14199
