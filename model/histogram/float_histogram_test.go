@@ -3152,7 +3152,7 @@ func TestFloatCustomBucketsIterators(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			{
 				it := c.h.AllBucketIterator()
 				for i, b := range c.expPositiveBuckets {
