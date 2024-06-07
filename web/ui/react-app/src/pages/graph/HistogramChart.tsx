@@ -56,10 +56,19 @@ const HistogramChart: FC<{ histogram: Histogram; index: number; scale: ScaleType
   const widthPositive = endPositive - startPositive; //width_pos
   const widthTotal = widthNegative + expBucketWidth + widthPositive; //width_total
 
-  const zeroAxisLeft =
-    scale === 'linear'
-      ? ((0 - rangeMin) / (rangeMax - rangeMin)) * 100 + '%'
-      : ((widthNegative + 0.5 * expBucketWidth) / widthTotal) * 100 + '%';
+  const zeroAxisLeft = findZeroAxisLeft();
+
+  function findZeroAxisLeft() {
+    if (scale === 'linear') {
+      return ((0 - rangeMin) / (rangeMax - rangeMin)) * 100 + '%';
+    } else {
+      if (zeroBucketIdx === -1) {
+        // if there is no zero bucket, we must zero axis between buckets around zero
+        return (widthNegative / widthTotal) * 100 + '%';
+      }
+      return ((widthNegative + 0.5 * expBucketWidth) / widthTotal) * 100 + '%';
+    }
+  }
 
   function findZeroBucket(buckets: [number, string, string, string][]): {
     zeroBucket: [number, string, string, string];
@@ -211,6 +220,20 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
           case 'linear':
             bucketWidth = ((right - left) / (rangeMax - rangeMin)) * 100 + '%';
             bucketLeft = ((left - rangeMin) / (rangeMax - rangeMin)) * 100 + '%';
+            console.log(
+              bucketIdx,
+              'LINbucketleft= (',
+              left,
+              '-',
+              rangeMin,
+              ')/(',
+              rangeMax,
+              '-',
+              rangeMin,
+              ')=',
+              bucketLeft
+            );
+
             bucketHeight = (fds[bIdx] / fdMax) * 100 + '%';
             break;
           case 'exponential':
@@ -218,13 +241,41 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
             if (left < 0) {
               // negative buckets boundary
               bucketLeft = (-(Math.log(Math.abs(left)) + startNegative) / widthTotal) * 100 + '%';
+              console.log(
+                bucketIdx,
+                'EXPbucketleftNEG= (',
+                -Math.log(Math.abs(left)),
+                '+',
+                startNegative,
+                ')/(',
+                widthTotal,
+                ')=',
+                bucketLeft
+              );
             } else {
               // positive buckets boundary
               bucketLeft = ((Math.log(left) - startPositive + bw + widthNegative) / widthTotal) * 100 + '%';
+              console.log(
+                bucketIdx,
+                'EXPbucketleftPOS= (',
+                Math.log(left),
+                '-',
+                startPositive,
+                '+',
+                bw,
+                '+',
+                widthNegative,
+                ')/(',
+                widthTotal,
+                ')=',
+                bucketLeft
+              );
             }
             if (left < 0 && right > 0) {
               bucketLeft = (widthNegative / widthTotal) * 100 + '%';
+              console.log(bucketIdx, 'EXPbucketleftZERO= (', widthNegative, ')/(', widthTotal, ')=', bucketLeft);
             }
+
             bucketHeight = (count / countMax) * 100 + '%';
             break;
           default:
