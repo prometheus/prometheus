@@ -5,11 +5,6 @@ import { bucketRangeString } from './DataTable';
 
 type ScaleType = 'linear' | 'exponential';
 
-type closestToZeroType = {
-  closest: number;
-  closestIdx: number;
-};
-
 const HistogramChart: FC<{ histogram: Histogram; index: number; scale: ScaleType }> = ({ index, histogram, scale }) => {
   const { buckets } = histogram;
   if (!buckets) {
@@ -36,27 +31,52 @@ const HistogramChart: FC<{ histogram: Histogram; index: number; scale: ScaleType
     return parseFloat(b[3]) / (parseFloat(b[2]) - parseFloat(b[1]));
   });
   const fdMax = fds.reduce((a, b) => Math.max(a, b));
-  const closestToZero = findClosestToZero(buckets.map((b) => parseFloat(b[1])));
   const { zeroBucket, zeroBucketIdx } = findZeroBucket(buckets);
   console.log('ZERO BUCKET IS', zeroBucket);
 
-  const maxPositive = parseFloat(buckets[buckets.length - 1][2]);
-  const minPositive =
-    zeroBucketIdx !== -1 ? parseFloat(buckets[zeroBucketIdx + 1][1]) : parseFloat(buckets[closestToZero.closestIdx + 1][1]);
-  const maxNegative =
-    zeroBucketIdx !== -1 ? parseFloat(buckets[zeroBucketIdx - 1][2]) : parseFloat(buckets[closestToZero.closestIdx][2]);
+  const maxPositive = parseFloat(buckets[buckets.length - 1][2]) > 0 ? parseFloat(buckets[buckets.length - 1][2]) : 0;
+  const minPositive = findMinPositive();
+  const maxNegative = findMaxNegative();
   console.log('MAX NEGATIVE', maxNegative, 'MIN POSITIVE', minPositive, 'MAX POSITIVE', maxPositive);
-  const minNegative = parseFloat(buckets[0][1]);
-  const startNegative = -Math.log(Math.abs(minNegative)); //start_neg
-  const endNegative = -Math.log(Math.abs(maxNegative)); //end_neg
-  const startPositive = Math.log(minPositive); //start_pos
-  const endPositive = Math.log(maxPositive); //end_pos
+  const minNegative = parseFloat(buckets[0][1]) < 0 ? parseFloat(buckets[0][1]) : 0;
+  const startNegative = minNegative !== 0 ? -Math.log(Math.abs(minNegative)) : 0; //start_neg
+  const endNegative = maxNegative !== 0 ? -Math.log(Math.abs(maxNegative)) : 0; //end_neg
+  const startPositive = minPositive !== 0 ? Math.log(minPositive) : 0; //start_pos
+  const endPositive = maxPositive !== 0 ? Math.log(maxPositive) : 0; //end_pos
 
   const widthNegative = endNegative - startNegative; //width_neg
   const widthPositive = endPositive - startPositive; //width_pos
   const widthTotal = widthNegative + expBucketWidth + widthPositive; //width_total
 
   const zeroAxisLeft = findZeroAxisLeft();
+  const zeroAxis = showZeroAxis();
+
+  function findMinPositive() {
+    if (buckets) {
+      for (let i = 0; i < buckets.length; i++) {
+        if (parseFloat(buckets[i][1]) > 0) {
+          return parseFloat(buckets[i][1]);
+        }
+      }
+      return 0; // all buckets are negative
+    }
+    return 0; // no buckets
+  }
+
+  function findMaxNegative() {
+    if (buckets) {
+      for (let i = 0; i < buckets.length; i++) {
+        if (parseFloat(buckets[i][2]) > 0) {
+          if (i === 0) {
+            return 0; // all buckets are positive
+          }
+          return parseFloat(buckets[i - 1][2]); // return the last negative bucket
+        }
+      }
+      return parseFloat(buckets[buckets.length - 1][2]); // all buckets are negative
+    }
+    return 0; // no buckets
+  }
 
   function findZeroAxisLeft() {
     if (scale === 'linear') {
@@ -66,8 +86,18 @@ const HistogramChart: FC<{ histogram: Histogram; index: number; scale: ScaleType
         // if there is no zero bucket, we must zero axis between buckets around zero
         return (widthNegative / widthTotal) * 100 + '%';
       }
-      return ((widthNegative + 0.5 * expBucketWidth) / widthTotal) * 100 + '%';
+      if ((widthNegative + 0.5 * expBucketWidth) / widthTotal > 0) {
+        return ((widthNegative + 0.5 * expBucketWidth) / widthTotal) * 100 + '%';
+      } else {
+        return '0%';
+      }
     }
+  }
+  function showZeroAxis() {
+    if (parseFloat(zeroAxisLeft.slice(0, -1)) > 5) {
+      return true;
+    }
+    return false;
   }
 
   function findZeroBucket(buckets: [number, string, string, string][]): {
@@ -82,27 +112,6 @@ const HistogramChart: FC<{ histogram: Histogram; index: number; scale: ScaleType
       }
     }
     return { zeroBucket: [-1, '', '', ''], zeroBucketIdx: -1 };
-  }
-
-  function findClosestToZero(numbers: number[]): closestToZeroType {
-    let closest = numbers[0];
-    let closestIdx = 0;
-    let minDistance = Math.abs(numbers[0]);
-
-    for (let i = 1; i < numbers.length; i++) {
-      const distance = Math.abs(numbers[i]);
-
-      if (distance < minDistance) {
-        closest = numbers[i];
-        minDistance = distance;
-        closestIdx = i;
-      } else if (distance === minDistance && numbers[i] > 0) {
-        closest = numbers[i];
-        closestIdx = i;
-      }
-    }
-
-    return { closest, closestIdx };
   }
 
   return (
@@ -157,7 +166,7 @@ const HistogramChart: FC<{ histogram: Histogram; index: number; scale: ScaleType
           <div className="histogram-x-label">
             <React.Fragment>
               <div style={{ position: 'absolute', left: 0 }}>{formatter.format(rangeMin)}</div>
-              {rangeMin < 0 && <div style={{ position: 'absolute', left: zeroAxisLeft }}>0</div>}
+              {rangeMin < 0 && zeroAxis && <div style={{ position: 'absolute', left: zeroAxisLeft }}>0</div>}
               <div style={{ position: 'absolute', right: 0 }}>{formatter.format(rangeMax)}</div>
             </React.Fragment>
           </div>
