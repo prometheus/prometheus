@@ -33,6 +33,9 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
+// checkContextEveryNIterations is used in some tight loops to check if the context is done.
+const checkContextEveryNIterations = 100
+
 type blockBaseQuerier struct {
 	blockID    ulid.ULID
 	index      IndexReader
@@ -354,11 +357,16 @@ func inversePostingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Ma
 	}
 
 	res := vals[:0]
-	// If the inverse match is ="", we just want all the values.
-	if m.Type == labels.MatchEqual && m.Value == "" {
+	// If the match before inversion was !="" or !~"", we just want all the values.
+	if m.Value == "" && (m.Type == labels.MatchRegexp || m.Type == labels.MatchEqual) {
 		res = vals
 	} else {
+		count := 1
 		for _, val := range vals {
+			if count%checkContextEveryNIterations == 0 && ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			count++
 			if !m.Matches(val) {
 				res = append(res, val)
 			}
@@ -387,7 +395,12 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, ma
 		// re-use the allValues slice to avoid allocations
 		// this is safe because the iteration is always ahead of the append
 		filteredValues := allValues[:0]
+		count := 1
 		for _, v := range allValues {
+			if count%checkContextEveryNIterations == 0 && ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			count++
 			if m.Matches(v) {
 				filteredValues = append(filteredValues, v)
 			}

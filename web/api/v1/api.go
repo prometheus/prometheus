@@ -116,9 +116,11 @@ type RulesRetriever interface {
 	AlertingRules() []*rules.AlertingRule
 }
 
+// StatsRenderer converts engine statistics into a format suitable for the API.
 type StatsRenderer func(context.Context, *stats.Statistics, string) stats.QueryStats
 
-func defaultStatsRenderer(_ context.Context, s *stats.Statistics, param string) stats.QueryStats {
+// DefaultStatsRenderer is the default stats renderer for the API.
+func DefaultStatsRenderer(_ context.Context, s *stats.Statistics, param string) stats.QueryStats {
 	if param != "" {
 		return stats.NewQueryStats(s)
 	}
@@ -272,7 +274,7 @@ func NewAPI(
 		buildInfo:        buildInfo,
 		gatherer:         gatherer,
 		isAgent:          isAgent,
-		statsRenderer:    defaultStatsRenderer,
+		statsRenderer:    DefaultStatsRenderer,
 
 		remoteReadHandler: remote.NewReadHandler(logger, registerer, q, configFunc, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame),
 	}
@@ -461,7 +463,7 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	// Optional stats field in response if parameter "stats" is not empty.
 	sr := api.statsRenderer
 	if sr == nil {
-		sr = defaultStatsRenderer
+		sr = DefaultStatsRenderer
 	}
 	qs := sr(ctx, qry.Stats(), r.FormValue("stats"))
 
@@ -563,7 +565,7 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	// Optional stats field in response if parameter "stats" is not empty.
 	sr := api.statsRenderer
 	if sr == nil {
-		sr = defaultStatsRenderer
+		sr = DefaultStatsRenderer
 	}
 	qs := sr(ctx, qry.Stats(), r.FormValue("stats"))
 
@@ -702,7 +704,7 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 		names = []string{}
 	}
 
-	if len(names) >= limit {
+	if len(names) > limit {
 		names = names[:limit]
 		warnings = warnings.Add(errors.New("results truncated due to limit"))
 	}
@@ -791,7 +793,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 
 	slices.Sort(vals)
 
-	if len(vals) >= limit {
+	if len(vals) > limit {
 		vals = vals[:limit]
 		warnings = warnings.Add(errors.New("results truncated due to limit"))
 	}
@@ -887,7 +889,8 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 		}
 		metrics = append(metrics, set.At().Labels())
 
-		if len(metrics) >= limit {
+		if len(metrics) > limit {
+			metrics = metrics[:limit]
 			warnings.Add(errors.New("results truncated due to limit"))
 			return apiFuncResult{metrics, nil, warnings, closer}
 		}

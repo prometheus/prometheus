@@ -77,10 +77,9 @@ func (rule *RecordingRule) Labels() labels.Labels {
 }
 
 // Eval evaluates the rule and then overrides the metric names and labels accordingly.
-func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, _ *url.URL, limit int) (promql.Vector, error) {
+func (rule *RecordingRule) Eval(ctx context.Context, queryOffset time.Duration, ts time.Time, query QueryFunc, _ *url.URL, limit int) (promql.Vector, error) {
 	ctx = NewOriginContext(ctx, NewRuleDetail(rule))
-
-	vector, err := query(ctx, rule.vector.String(), ts)
+	vector, err := query(ctx, rule.vector.String(), ts.Add(-queryOffset))
 	if err != nil {
 		return nil, err
 	}

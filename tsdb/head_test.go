@@ -3383,7 +3383,7 @@ func TestWaitForPendingReadersInTimeRange(t *testing.T) {
 func TestAppendHistogram(t *testing.T) {
 	l := labels.FromStrings("a", "b")
 	for _, numHistograms := range []int{1, 10, 150, 200, 250, 300} {
-		t.Run(fmt.Sprintf("%d", numHistograms), func(t *testing.T) {
+		t.Run(strconv.Itoa(numHistograms), func(t *testing.T) {
 			head, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
 			t.Cleanup(func() {
 				require.NoError(t, head.Close())
@@ -3557,7 +3557,7 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 		expMmapChunks = append(expMmapChunks, &cpy)
 	}
 	expHeadChunkSamples := ms.headChunks.chunk.NumSamples()
-	require.Greater(t, expHeadChunkSamples, 0)
+	require.Positive(t, expHeadChunkSamples)
 
 	// Series with mix of histograms and float.
 	s2 := labels.FromStrings("a", "b2")
@@ -3692,7 +3692,7 @@ func TestChunkSnapshot(t *testing.T) {
 		e := ex{
 			seriesLabels: lbls,
 			e: exemplar.Exemplar{
-				Labels: labels.FromStrings("trace_id", fmt.Sprintf("%d", rand.Int())),
+				Labels: labels.FromStrings("trace_id", strconv.Itoa(rand.Int())),
 				Value:  rand.Float64(),
 				Ts:     ts,
 			},
@@ -4007,6 +4007,9 @@ func TestSnapshotError(t *testing.T) {
 	require.NoError(t, err)
 	f, err := os.OpenFile(path.Join(snapDir, files[0].Name()), os.O_RDWR, 0)
 	require.NoError(t, err)
+	// Create snapshot backup to be restored on future test cases.
+	snapshotBackup, err := io.ReadAll(f)
+	require.NoError(t, err)
 	_, err = f.WriteAt([]byte{0b11111111}, 18)
 	require.NoError(t, err)
 	require.NoError(t, f.Close())
@@ -4021,10 +4024,44 @@ func TestSnapshotError(t *testing.T) {
 
 	// There should be no series in the memory after snapshot error since WAL was removed.
 	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal))
+	require.Equal(t, uint64(0), head.NumSeries())
 	require.Nil(t, head.series.getByHash(lbls.Hash(), lbls))
 	tm, err = head.tombstones.Get(1)
 	require.NoError(t, err)
 	require.Empty(t, tm)
+	require.NoError(t, head.Close())
+
+	// Test corruption in the middle of the snapshot.
+	f, err = os.OpenFile(path.Join(snapDir, files[0].Name()), os.O_RDWR, 0)
+	require.NoError(t, err)
+	_, err = f.WriteAt(snapshotBackup, 0)
+	require.NoError(t, err)
+	_, err = f.WriteAt([]byte{0b11111111}, 300)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	c := &countSeriesLifecycleCallback{}
+	opts := head.opts
+	opts.SeriesCallback = c
+
+	w, err = wlog.NewSize(nil, nil, head.wal.Dir(), 32768, wlog.CompressionNone)
+	require.NoError(t, err)
+	head, err = NewHead(prometheus.NewRegistry(), nil, w, nil, head.opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, head.Init(math.MinInt64))
+
+	// There should be no series in the memory after snapshot error since WAL was removed.
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal))
+	require.Nil(t, head.series.getByHash(lbls.Hash(), lbls))
+	require.Equal(t, uint64(0), head.NumSeries())
+
+	// Since the snapshot could replay certain series, we continue invoking the create hooks.
+	// In such instances, we need to ensure that we also trigger the delete hooks when resetting the memory.
+	require.Equal(t, int64(2), c.created.Load())
+	require.Equal(t, int64(2), c.deleted.Load())
+
+	require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.seriesRemoved))
+	require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.seriesCreated))
 }
 
 func TestHistogramMetrics(t *testing.T) {
@@ -4601,7 +4638,7 @@ func TestChunkSnapshotTakenAfterIncompleteSnapshot(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, "", name)
 	require.Equal(t, 0, idx)
-	require.Greater(t, offset, 0)
+	require.Positive(t, offset)
 }
 
 // TestWBLReplay checks the replay at a low level.
@@ -5032,7 +5069,7 @@ func TestOOOAppendWithNoSeries(t *testing.T) {
 		require.Equal(t, expSamples, ms.headChunks.chunk.NumSamples())
 	}
 
-	newLabels := func(idx int) labels.Labels { return labels.FromStrings("foo", fmt.Sprintf("%d", idx)) }
+	newLabels := func(idx int) labels.Labels { return labels.FromStrings("foo", strconv.Itoa(idx)) }
 
 	s1 := newLabels(1)
 	appendSample(s1, 300) // At 300m.
@@ -5828,4 +5865,15 @@ func TestHeadCompactableDoesNotCompactEmptyHead(t *testing.T) {
 	}()
 
 	require.False(t, head.compactable())
+}
+
+type countSeriesLifecycleCallback struct {
+	created atomic.Int64
+	deleted atomic.Int64
+}
+
+func (c *countSeriesLifecycleCallback) PreCreation(labels.Labels) error { return nil }
+func (c *countSeriesLifecycleCallback) PostCreation(labels.Labels)      { c.created.Inc() }
+func (c *countSeriesLifecycleCallback) PostDeletion(s map[chunks.HeadSeriesRef]labels.Labels) {
+	c.deleted.Add(int64(len(s)))
 }

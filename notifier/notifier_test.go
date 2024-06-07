@@ -74,7 +74,7 @@ func TestHandlerNextBatch(t *testing.T) {
 
 	for i := range make([]struct{}, 2*maxBatchSize+1) {
 		h.queue = append(h.queue, &Alert{
-			Labels: labels.FromStrings("alertname", fmt.Sprintf("%d", i)),
+			Labels: labels.FromStrings("alertname", strconv.Itoa(i)),
 		})
 	}
 
@@ -186,10 +186,10 @@ func TestHandlerSendAll(t *testing.T) {
 
 	for i := range make([]struct{}, maxBatchSize) {
 		h.queue = append(h.queue, &Alert{
-			Labels: labels.FromStrings("alertname", fmt.Sprintf("%d", i)),
+			Labels: labels.FromStrings("alertname", strconv.Itoa(i)),
 		})
 		expected = append(expected, &Alert{
-			Labels: labels.FromStrings("alertname", fmt.Sprintf("%d", i)),
+			Labels: labels.FromStrings("alertname", strconv.Itoa(i)),
 		})
 	}
 
@@ -297,23 +297,23 @@ func TestHandlerSendAllRemapPerAm(t *testing.T) {
 	for i := range make([]struct{}, maxBatchSize/2) {
 		h.queue = append(h.queue,
 			&Alert{
-				Labels: labels.FromStrings("alertname", fmt.Sprintf("%d", i)),
+				Labels: labels.FromStrings("alertname", strconv.Itoa(i)),
 			},
 			&Alert{
-				Labels: labels.FromStrings("alertname", "test", "alertnamedrop", fmt.Sprintf("%d", i)),
+				Labels: labels.FromStrings("alertname", "test", "alertnamedrop", strconv.Itoa(i)),
 			},
 		)
 
 		expected1 = append(expected1,
 			&Alert{
-				Labels: labels.FromStrings("alertname", fmt.Sprintf("%d", i)),
+				Labels: labels.FromStrings("alertname", strconv.Itoa(i)),
 			}, &Alert{
-				Labels: labels.FromStrings("alertname", "test", "alertnamedrop", fmt.Sprintf("%d", i)),
+				Labels: labels.FromStrings("alertname", "test", "alertnamedrop", strconv.Itoa(i)),
 			},
 		)
 
 		expected2 = append(expected2, &Alert{
-			Labels: labels.FromStrings("alertname", fmt.Sprintf("%d", i)),
+			Labels: labels.FromStrings("alertname", strconv.Itoa(i)),
 		})
 	}
 
@@ -502,7 +502,7 @@ func TestHandlerQueuing(t *testing.T) {
 	var alerts []*Alert
 	for i := range make([]struct{}, 20*maxBatchSize) {
 		alerts = append(alerts, &Alert{
-			Labels: labels.FromStrings("alertname", fmt.Sprintf("%d", i)),
+			Labels: labels.FromStrings("alertname", strconv.Itoa(i)),
 		})
 	}
 
@@ -762,7 +762,7 @@ func TestHangingNotifier(t *testing.T) {
 			var alerts []*Alert
 			for i := range make([]struct{}, 20*maxBatchSize) {
 				alerts = append(alerts, &Alert{
-					Labels: labels.FromStrings("alertname", fmt.Sprintf("%d", i)),
+					Labels: labels.FromStrings("alertname", strconv.Itoa(i)),
 				})
 			}
 

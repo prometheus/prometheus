@@ -25,6 +25,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"sync"
@@ -502,7 +503,7 @@ func TestAmendHistogramDatapointCausesError(t *testing.T) {
 	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, 0)
 	require.NoError(t, err)
 	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, 1)
-	require.Equal(t, storage.ErrDuplicateSampleForTimestamp, err)
+	require.ErrorIs(t, err, storage.ErrDuplicateSampleForTimestamp)
 	require.NoError(t, app.Rollback())
 
 	h := histogram.Histogram{
@@ -578,7 +579,7 @@ func TestNonDuplicateNaNDatapointsCausesAmendError(t *testing.T) {
 
 	app = db.Appender(ctx)
 	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, math.Float64frombits(0x7ff0000000000002))
-	require.Equal(t, storage.ErrDuplicateSampleForTimestamp, err)
+	require.ErrorIs(t, err, storage.ErrDuplicateSampleForTimestamp)
 }
 
 func TestEmptyLabelsetCausesError(t *testing.T) {
@@ -1065,7 +1066,7 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 
 			for i := int64(0); i < 155; i++ {
 				app := db.Appender(context.Background())
-				ref, err := app.Append(0, labels.FromStrings("wal"+fmt.Sprintf("%d", i), "size"), i, rand.Float64())
+				ref, err := app.Append(0, labels.FromStrings("wal"+strconv.Itoa(int(i)), "size"), i, rand.Float64())
 				require.NoError(t, err)
 				for j := int64(1); j <= 78; j++ {
 					_, err := app.Append(ref, labels.EmptyLabels(), i+j, rand.Float64())
@@ -2494,7 +2495,7 @@ func TestDBReadOnly(t *testing.T) {
 	}
 
 	// Open a read only db and ensure that the API returns the same result as the normal DB.
-	dbReadOnly, err := OpenDBReadOnly(dbDir, logger)
+	dbReadOnly, err := OpenDBReadOnly(dbDir, "", logger)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, dbReadOnly.Close()) }()
 
@@ -2548,10 +2549,14 @@ func TestDBReadOnly(t *testing.T) {
 // TestDBReadOnlyClosing ensures that after closing the db
 // all api methods return an ErrClosed.
 func TestDBReadOnlyClosing(t *testing.T) {
-	dbDir := t.TempDir()
-	db, err := OpenDBReadOnly(dbDir, log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr)))
+	sandboxDir := t.TempDir()
+	db, err := OpenDBReadOnly(t.TempDir(), sandboxDir, log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr)))
 	require.NoError(t, err)
+	// The sandboxDir was there.
+	require.DirExists(t, db.sandboxDir)
 	require.NoError(t, db.Close())
+	// The sandboxDir was deleted when closing.
+	require.NoDirExists(t, db.sandboxDir)
 	require.Equal(t, db.Close(), ErrClosed)
 	_, err = db.Blocks()
 	require.Equal(t, err, ErrClosed)
@@ -2587,7 +2592,7 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 	}
 
 	// Flush WAL.
-	db, err := OpenDBReadOnly(dbDir, logger)
+	db, err := OpenDBReadOnly(dbDir, "", logger)
 	require.NoError(t, err)
 
 	flush := t.TempDir()
@@ -2595,7 +2600,7 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 	require.NoError(t, db.Close())
 
 	// Reopen the DB from the flushed WAL block.
-	db, err = OpenDBReadOnly(flush, logger)
+	db, err = OpenDBReadOnly(flush, "", logger)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, db.Close()) }()
 	blocks, err := db.Blocks()
@@ -2622,6 +2627,80 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 	require.NoError(t, seriesSet.Err())
 	require.Empty(t, seriesSet.Warnings())
 	require.Equal(t, 1000.0, sum)
+}
+
+func TestDBReadOnly_Querier_NoAlteration(t *testing.T) {
+	countChunks := func(dir string) int {
+		files, err := os.ReadDir(mmappedChunksDir(dir))
+		require.NoError(t, err)
+		return len(files)
+	}
+
+	dirHash := func(dir string) (hash []byte) {
+		// Windows requires the DB to be closed: "xxx\lock: The process cannot access the file because it is being used by another process."
+		// But closing the DB alters the directory in this case (it'll cut a new chunk).
+		if runtime.GOOS != "windows" {
+			hash = testutil.DirHash(t, dir)
+		}
+		return
+	}
+
+	spinUpQuerierAndCheck := func(dir, sandboxDir string, chunksCount int) {
+		dBDirHash := dirHash(dir)
+		// Bootsrap a RO db from the same dir and set up a querier.
+		dbReadOnly, err := OpenDBReadOnly(dir, sandboxDir, nil)
+		require.NoError(t, err)
+		require.Equal(t, chunksCount, countChunks(dir))
+		q, err := dbReadOnly.Querier(math.MinInt, math.MaxInt)
+		require.NoError(t, err)
+		require.NoError(t, q.Close())
+		require.NoError(t, dbReadOnly.Close())
+		// The RO Head doesn't alter RW db chunks_head/.
+		require.Equal(t, chunksCount, countChunks(dir))
+		require.Equal(t, dirHash(dir), dBDirHash)
+	}
+
+	t.Run("doesn't cut chunks while replaying WAL", func(t *testing.T) {
+		db := openTestDB(t, nil, nil)
+		defer func() {
+			require.NoError(t, db.Close())
+		}()
+
+		// Append until the first mmaped head chunk.
+		for i := 0; i < 121; i++ {
+			app := db.Appender(context.Background())
+			_, err := app.Append(0, labels.FromStrings("foo", "bar"), int64(i), 0)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+		}
+
+		spinUpQuerierAndCheck(db.dir, t.TempDir(), 0)
+
+		// The RW Head should have no problem cutting its own chunk,
+		// this also proves that a chunk needed to be cut.
+		require.NotPanics(t, func() { db.ForceHeadMMap() })
+		require.Equal(t, 1, countChunks(db.dir))
+	})
+
+	t.Run("doesn't truncate corrupted chunks", func(t *testing.T) {
+		db := openTestDB(t, nil, nil)
+		require.NoError(t, db.Close())
+
+		// Simulate a corrupted chunk: without a header.
+		_, err := os.Create(path.Join(mmappedChunksDir(db.dir), "000001"))
+		require.NoError(t, err)
+
+		spinUpQuerierAndCheck(db.dir, t.TempDir(), 1)
+
+		// The RW Head should have no problem truncating its corrupted file:
+		// this proves that the chunk needed to be truncated.
+		db, err = Open(db.dir, nil, nil, nil, nil)
+		defer func() {
+			require.NoError(t, db.Close())
+		}()
+		require.NoError(t, err)
+		require.Equal(t, 0, countChunks(db.dir))
+	})
 }
 
 func TestDBCannotSeePartialCommits(t *testing.T) {
@@ -4495,7 +4574,7 @@ func TestOOOCompaction(t *testing.T) {
 		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
 		require.NoError(t, err)
 		require.False(t, created)
-		require.Greater(t, ms.ooo.oooHeadChunk.chunk.NumSamples(), 0)
+		require.Positive(t, ms.ooo.oooHeadChunk.chunk.NumSamples())
 		require.Len(t, ms.ooo.oooMmappedChunks, 14) // 7 original, 7 duplicate.
 	}
 	checkNonEmptyOOOChunk(series1)
@@ -4636,7 +4715,7 @@ func TestOOOCompactionWithNormalCompaction(t *testing.T) {
 		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
 		require.NoError(t, err)
 		require.False(t, created)
-		require.Greater(t, ms.ooo.oooHeadChunk.chunk.NumSamples(), 0)
+		require.Positive(t, ms.ooo.oooHeadChunk.chunk.NumSamples())
 	}
 
 	// If the normal Head is not compacted, the OOO head compaction does not take place.
@@ -4737,7 +4816,7 @@ func TestOOOCompactionWithDisabledWriteLog(t *testing.T) {
 		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
 		require.NoError(t, err)
 		require.False(t, created)
-		require.Greater(t, ms.ooo.oooHeadChunk.chunk.NumSamples(), 0)
+		require.Positive(t, ms.ooo.oooHeadChunk.chunk.NumSamples())
 	}
 
 	// If the normal Head is not compacted, the OOO head compaction does not take place.
@@ -5438,8 +5517,8 @@ func TestWBLAndMmapReplay(t *testing.T) {
 			addedRecs++
 			require.NoError(t, newWbl.Log(rec))
 		}
-		require.Greater(t, markers, 0)
-		require.Greater(t, addedRecs, 0)
+		require.Positive(t, markers)
+		require.Positive(t, addedRecs)
 		require.NoError(t, newWbl.Close())
 		require.NoError(t, sr.Close())
 		require.NoError(t, os.RemoveAll(wblDir))
@@ -7045,4 +7124,36 @@ func TestAbortBlockCompactions(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, db.head.compactable(), "head should be compactable")
 	require.Equal(t, 4, compactions, "expected 4 compactions to be completed")
+}
+
+func TestNewCompactorFunc(t *testing.T) {
+	opts := DefaultOptions()
+	block1 := ulid.MustNew(1, nil)
+	block2 := ulid.MustNew(2, nil)
+	opts.NewCompactorFunc = func(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error) {
+		return &mockCompactorFn{
+			planFn: func() ([]string, error) {
+				return []string{block1.String(), block2.String()}, nil
+			},
+			compactFn: func() (ulid.ULID, error) {
+				return block1, nil
+			},
+			writeFn: func() (ulid.ULID, error) {
+				return block2, nil
+			},
+		}, nil
+	}
+	db := openTestDB(t, opts, nil)
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
+	plans, err := db.compactor.Plan("")
+	require.NoError(t, err)
+	require.Equal(t, []string{block1.String(), block2.String()}, plans)
+	ulid, err := db.compactor.Compact("", nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, block1, ulid)
+	ulid, err = db.compactor.Write("", nil, 0, 1, nil)
+	require.NoError(t, err)
+	require.Equal(t, block2, ulid)
 }

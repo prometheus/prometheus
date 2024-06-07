@@ -344,6 +344,21 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 			i--
 			break
 		}
+
+		if cmd.fail && strings.HasPrefix(defLine, "expected_fail_message") {
+			cmd.expectedFailMessage = strings.TrimSpace(strings.TrimPrefix(defLine, "expected_fail_message"))
+			break
+		}
+
+		if cmd.fail && strings.HasPrefix(defLine, "expected_fail_regexp") {
+			pattern := strings.TrimSpace(strings.TrimPrefix(defLine, "expected_fail_regexp"))
+			cmd.expectedFailRegexp, err = regexp.Compile(pattern)
+			if err != nil {
+				return i, nil, formatErr("invalid regexp '%s' for expected_fail_regexp: %w", pattern, err)
+			}
+			break
+		}
+
 		if f, err := parseNumber(defLine); err == nil {
 			cmd.expect(0, parser.SequenceValue{Value: f})
 			break
@@ -659,6 +674,8 @@ type evalCmd struct {
 	isRange             bool // if false, instant query
 	fail, warn, ordered bool
 	withNHCB            bool
+	expectedFailMessage string
+	expectedFailRegexp  *regexp.Regexp
 
 	metrics  map[uint64]labels.Labels
 	expected map[uint64]entry
@@ -847,6 +864,24 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 	return nil
 }
 
+func (ev *evalCmd) checkExpectedFailure(actual error) error {
+	if ev.expectedFailMessage != "" {
+		if ev.expectedFailMessage != actual.Error() {
+			return fmt.Errorf("expected error %q evaluating query %q (line %d), but got: %s", ev.expectedFailMessage, ev.expr, ev.line, actual.Error())
+		}
+	}
+
+	if ev.expectedFailRegexp != nil {
+		if !ev.expectedFailRegexp.MatchString(actual.Error()) {
+			return fmt.Errorf("expected error matching pattern %q evaluating query %q (line %d), but got: %s", ev.expectedFailRegexp.String(), ev.expr, ev.line, actual.Error())
+		}
+	}
+
+	// We're not expecting a particular error, or we got the error we expected.
+	// This test passes.
+	return nil
+}
+
 func formatSeriesResult(s promql.Series) string {
 	floatPlural := "s"
 	histogramPlural := "s"
@@ -1004,7 +1039,7 @@ func (t *test) execRangeEval(cmd *evalCmd, engine promql.QueryEngine) error {
 	}
 	if res.Err != nil {
 		if cmd.fail {
-			return nil
+			return cmd.checkExpectedFailure(res.Err)
 		}
 
 		return fmt.Errorf("error evaluating query %q (line %d): %w", cmd.expr, cmd.line, res.Err)
@@ -1071,6 +1106,10 @@ func (t *test) runInstantQuery(iq atModifierTestCase, cmd *evalCmd, engine promq
 	}
 	if res.Err != nil {
 		if cmd.fail {
+			if err := cmd.checkExpectedFailure(res.Err); err != nil {
+				return err
+			}
+
 			return nil
 		}
 		return fmt.Errorf("error evaluating query %q (line %d): %w", iq.expr, cmd.line, res.Err)
