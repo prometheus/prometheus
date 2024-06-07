@@ -502,15 +502,15 @@ func getHistogramMetricBase(m labels.Labels, suffix string) (labels.Labels, uint
 }
 
 type tempHistogramWrapper struct {
-	metric      labels.Labels
-	upperBounds []float64
-	histByTs    map[int64]tempHistogram
+	metric        labels.Labels
+	upperBounds   []float64
+	histogramByTs map[int64]tempHistogram
 }
 
 func newTempHistogramWrapper() tempHistogramWrapper {
 	return tempHistogramWrapper{
-		upperBounds: []float64{},
-		histByTs:    map[int64]tempHistogram{},
+		upperBounds:   []float64{},
+		histogramByTs: map[int64]tempHistogram{},
 	}
 }
 
@@ -526,28 +526,28 @@ func newTempHistogram() tempHistogram {
 	}
 }
 
-func processClassicHistogramSeries(m labels.Labels, suffix string, histMap map[uint64]tempHistogramWrapper, smpls []promql.Sample, updateHistWrapper func(*tempHistogramWrapper), updateHist func(*tempHistogram, float64)) {
+func processClassicHistogramSeries(m labels.Labels, suffix string, histogramMap map[uint64]tempHistogramWrapper, smpls []promql.Sample, updateHistogramWrapper func(*tempHistogramWrapper), updateHistogram func(*tempHistogram, float64)) {
 	m2, m2hash := getHistogramMetricBase(m, suffix)
-	histWrapper, exists := histMap[m2hash]
+	histogramWrapper, exists := histogramMap[m2hash]
 	if !exists {
-		histWrapper = newTempHistogramWrapper()
+		histogramWrapper = newTempHistogramWrapper()
 	}
-	histWrapper.metric = m2
-	if updateHistWrapper != nil {
-		updateHistWrapper(&histWrapper)
+	histogramWrapper.metric = m2
+	if updateHistogramWrapper != nil {
+		updateHistogramWrapper(&histogramWrapper)
 	}
 	for _, s := range smpls {
 		if s.H != nil {
 			continue
 		}
-		hist, exists := histWrapper.histByTs[s.T]
+		histogram, exists := histogramWrapper.histogramByTs[s.T]
 		if !exists {
-			hist = newTempHistogram()
+			histogram = newTempHistogram()
 		}
-		updateHist(&hist, s.F)
-		histWrapper.histByTs[s.T] = hist
+		updateHistogram(&histogram, s.F)
+		histogramWrapper.histogramByTs[s.T] = histogram
 	}
-	histMap[m2hash] = histWrapper
+	histogramMap[m2hash] = histogramWrapper
 }
 
 func processUpperBoundsAndCreateBaseHistogram(upperBounds0 []float64) ([]float64, *histogram.FloatHistogram) {
@@ -581,7 +581,7 @@ func processUpperBoundsAndCreateBaseHistogram(upperBounds0 []float64) ([]float64
 // If classic histograms are defined, convert them into native histograms with custom
 // bounds and append the defined time series to the storage.
 func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
-	histMap := map[uint64]tempHistogramWrapper{}
+	histogramMap := map[uint64]tempHistogramWrapper{}
 
 	// Go through all the time series to collate classic histogram data
 	// and organise them by timestamp.
@@ -594,32 +594,32 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 			if err != nil || math.IsNaN(le) {
 				continue
 			}
-			processClassicHistogramSeries(m, "_bucket", histMap, smpls, func(histWrapper *tempHistogramWrapper) {
-				histWrapper.upperBounds = append(histWrapper.upperBounds, le)
-			}, func(hist *tempHistogram, f float64) {
-				hist.bucketCounts[le] = f
+			processClassicHistogramSeries(m, "_bucket", histogramMap, smpls, func(histogramWrapper *tempHistogramWrapper) {
+				histogramWrapper.upperBounds = append(histogramWrapper.upperBounds, le)
+			}, func(histogram *tempHistogram, f float64) {
+				histogram.bucketCounts[le] = f
 			})
 		case strings.HasSuffix(mName, "_count"):
-			processClassicHistogramSeries(m, "_count", histMap, smpls, nil, func(hist *tempHistogram, f float64) {
-				hist.count = f
+			processClassicHistogramSeries(m, "_count", histogramMap, smpls, nil, func(histogram *tempHistogram, f float64) {
+				histogram.count = f
 			})
 		case strings.HasSuffix(mName, "_sum"):
-			processClassicHistogramSeries(m, "_sum", histMap, smpls, nil, func(hist *tempHistogram, f float64) {
-				hist.sum = f
+			processClassicHistogramSeries(m, "_sum", histogramMap, smpls, nil, func(histogram *tempHistogram, f float64) {
+				histogram.sum = f
 			})
 		}
 	}
 
 	// Convert the collated classic histogram data into native histograms
 	// with custom bounds and append them to the storage.
-	for _, histWrapper := range histMap {
-		upperBounds, fhBase := processUpperBoundsAndCreateBaseHistogram(histWrapper.upperBounds)
-		samples := make([]promql.Sample, 0, len(histWrapper.histByTs))
-		for t, hist := range histWrapper.histByTs {
+	for _, histogramWrapper := range histogramMap {
+		upperBounds, fhBase := processUpperBoundsAndCreateBaseHistogram(histogramWrapper.upperBounds)
+		samples := make([]promql.Sample, 0, len(histogramWrapper.histogramByTs))
+		for t, histogram := range histogramWrapper.histogramByTs {
 			fh := fhBase.Copy()
 			var prevCount, total float64
 			for i, le := range upperBounds {
-				currCount, exists := hist.bucketCounts[le]
+				currCount, exists := histogram.bucketCounts[le]
 				if !exists {
 					currCount = 0
 				}
@@ -628,9 +628,9 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 				total += count
 				prevCount = currCount
 			}
-			fh.Sum = hist.sum
-			if hist.count != 0 {
-				total = hist.count
+			fh.Sum = histogram.sum
+			if histogram.count != 0 {
+				total = histogram.count
 			}
 			fh.Count = total
 			s := promql.Sample{T: t, H: fh.Compact(0)}
@@ -641,7 +641,7 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 		}
 		sort.Slice(samples, func(i, j int) bool { return samples[i].T < samples[j].T })
 		for _, s := range samples {
-			if err := appendSample(a, s, histWrapper.metric); err != nil {
+			if err := appendSample(a, s, histogramWrapper.metric); err != nil {
 				return err
 			}
 		}
