@@ -82,6 +82,12 @@ const HistogramChart: FC<{ histogram: Histogram; index: number; scale: ScaleType
     if (scale === 'linear') {
       return ((0 - rangeMin) / (rangeMax - rangeMin)) * 100 + '%';
     } else {
+      if (maxNegative === 0) {
+        return '0%';
+      }
+      if (minPositive === 0) {
+        return '100%';
+      }
       if (zeroBucketIdx === -1) {
         // if there is no zero bucket, we must zero axis between buckets around zero
         return (widthNegative / widthTotal) * 100 + '%';
@@ -94,7 +100,8 @@ const HistogramChart: FC<{ histogram: Histogram; index: number; scale: ScaleType
     }
   }
   function showZeroAxis() {
-    if (parseFloat(zeroAxisLeft.slice(0, -1)) > 5) {
+    const axisNumber = parseFloat(zeroAxisLeft.slice(0, -1));
+    if (5 < axisNumber && axisNumber < 95) {
       return true;
     }
     return false;
