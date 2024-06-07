@@ -222,15 +222,13 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
               // positive buckets boundary
               bucketLeft = ((Math.log(left) - startPositive + bw + widthNegative) / widthTotal) * 100 + '%';
             }
+            if (left < 0 && right > 0) {
+              bucketLeft = (widthNegative / widthTotal) * 100 + '%';
+            }
             bucketHeight = (count / countMax) * 100 + '%';
             break;
           default:
             console.error('Invalid scale type');
-        }
-
-        // zero bucket
-        if (left < 0 && right > 0) {
-          bucketLeft = (widthNegative / widthTotal) * 100 + '%';
         }
 
         console.log(
@@ -262,7 +260,11 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
           widthNegative,
           '\n',
           'startPositive',
-          startPositive
+          startPositive,
+          'rangeMax',
+          rangeMax,
+          'rangeMin',
+          rangeMin
         );
         return (
           <React.Fragment key={bIdx}>
