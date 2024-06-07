@@ -63,6 +63,10 @@ load 1m
 Each `load` command is additive - it does not replace any data loaded in a previous `load` command.
 Use `clear` to remove all loaded data.
 
+### Native histograms with custom buckets (NHCB)
+
+When loading a batch of classic histogram float series, you can optionally append the suffix `_with_nhcb` to convert them to native histograms with custom buckets and load both the original float series and the new histogram series.
+
 ## `clear` command
 
 `clear` removes all data previously loaded with `load` commands.
@@ -125,4 +129,15 @@ eval_fail instant at 1m ceil({__name__=~'testmetric1|testmetric2'})
 # Assert that the query fails with an error message matching the regexp provided.
 eval_fail instant at 1m ceil({__name__=~'testmetric1|testmetric2'})
     expected_fail_regexp (vector cannot contain metrics .*|something else went wrong)
+```
+
+### Native histograms with custom buckets (NHCB)
+
+For native histogram with custom buckets (NHCB) series that have been loaded with `load_with_nhcb`, you can use `eval_with_nhcb` instead on the queries of the classic histogram float bucket series to run additional queries on the
+NHCB version. We use best effort heuristics to convert the query to its NHCB equivalent, and raise an error if it looks like the conversion was not effective.
+
+For example, `eval_with_nhcb instant at 50m histogram_quantile(0.3, sum(rate(request_duration_seconds_bucket[5m])) by (le, job))` is shorthand for running these queries:
+```
+eval instant at 50m histogram_quantile(0.3, sum(rate(request_duration_seconds_bucket[5m])) by (le, job)) # Classic histogram
+eval instant at 50m histogram_quantile(0.3, sum(rate(request_duration_seconds[5m])) by (job)) # NHCB
 ```
