@@ -158,10 +158,10 @@ const HistogramChart: FC<{ histogram: Histogram; index: number; scale: ScaleType
               fdMax={fdMax}
               countMax={countMax}
               bw={expBucketWidth}
-              maxPositive={maxPositive}
+              minPositive={minPositive}
+              maxNegative={maxNegative}
               startPositive={startPositive}
               startNegative={startNegative}
-              endPositive={endPositive}
               widthNegative={widthNegative}
               widthTotal={widthTotal}
             />
@@ -193,10 +193,10 @@ interface RenderHistogramProps {
   fdMax: number;
   countMax: number;
   bw: number;
-  maxPositive: number;
+  minPositive: number;
+  maxNegative: number;
   startPositive: number;
   startNegative: number;
-  endPositive: number;
   widthNegative: number;
   widthTotal: number;
 }
@@ -211,10 +211,10 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
   fdMax,
   countMax,
   bw,
-  maxPositive,
+  minPositive,
+  maxNegative,
   startPositive,
   startNegative,
-  endPositive,
   widthNegative,
   widthTotal,
 }) => {
@@ -253,10 +253,14 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
             bucketHeight = (fds[bIdx] / fdMax) * 100 + '%';
             break;
           case 'exponential':
-            bucketWidth = ((expBucketWidth === 0 ? bw : expBucketWidth) / widthTotal) * 100 + '%';
+            let adjust = 0; // if buckets are all positive/negative, we need to adjust the width and positioning accordingly
+            if (minPositive === 0 || maxNegative === 0) {
+              adjust = bw;
+            }
+            bucketWidth = ((expBucketWidth === 0 ? bw : expBucketWidth) / (widthTotal - adjust)) * 100 + '%';
             if (left < 0) {
               // negative buckets boundary
-              bucketLeft = (-(Math.log(Math.abs(left)) + startNegative) / widthTotal) * 100 + '%';
+              bucketLeft = (-(Math.log(Math.abs(left)) + startNegative) / (widthTotal - adjust)) * 100 + '%';
               console.log(
                 bucketIdx,
                 'EXPbucketleftNEG= (',
@@ -270,7 +274,8 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
               );
             } else {
               // positive buckets boundary
-              bucketLeft = ((Math.log(left) - startPositive + bw + widthNegative) / widthTotal) * 100 + '%';
+              bucketLeft =
+                ((Math.log(left) - startPositive + bw + widthNegative - adjust) / (widthTotal - adjust)) * 100 + '%';
               console.log(
                 bucketIdx,
                 'EXPbucketleftPOS= (',
