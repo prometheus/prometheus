@@ -11,6 +11,7 @@
 
 #include <scope_exit.h>
 
+#include "bare_bones/allocator.h"
 #include "bare_bones/exception.h"
 #include "bare_bones/streams.h"
 #include "bare_bones/vector.h"
@@ -486,9 +487,11 @@ class EncodingTable : private DecodingTable<Filament> {
   using Base::size;
 
   template <class Class>
-  PROMPP_ALWAYS_INLINE uint32_t emplace(const Class& c) {
-    Base::items_.emplace_back(Base::data_, c);
-    return ++id_;
+  PROMPP_ALWAYS_INLINE uint32_t find_or_emplace(const Class& c) noexcept {
+    return *set_.lazy_emplace(c, [&](const auto& ctor) {
+      Base::items_.emplace_back(Base::data_, c);
+      ctor(++id_);
+    });
   }
 
   PROMPP_ALWAYS_INLINE auto checkpoint() const noexcept { return checkpoint_type(*this, next_item_index()); }
@@ -501,11 +504,16 @@ class EncodingTable : private DecodingTable<Filament> {
 
     Base::items_.resize(0);
     Base::data_.shrink_to(0);
+    set_.clear();
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t next_item_index() const noexcept { return id_ + 1; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return Base::allocated_memory() + set_allocated_memory_; }
 
  private:
+  uint32_t set_allocated_memory_{};
+  phmap::flat_hash_set<typename Base::Proxy, typename Base::Hasher, typename Base::EqualityComparator, BareBones::Allocator<typename Base::Proxy, uint32_t>>
+      set_{{}, 0, Base::hasher_, Base::equality_comparator_, BareBones::Allocator<typename Base::Proxy, uint32_t>{set_allocated_memory_}};
   uint32_t id_ = std::numeric_limits<uint32_t>::max();
 };
 
