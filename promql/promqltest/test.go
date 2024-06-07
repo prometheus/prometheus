@@ -48,6 +48,9 @@ var (
 	patLoad                     = regexp.MustCompile(`^load(?:_(with_nhcb))?\s+(.+?)$`)
 	patEvalInstant              = regexp.MustCompile(`^eval(?:_(with_nhcb))?(?:_(fail|warn|ordered))?\s+instant\s+(?:at\s+(.+?))?\s+(.+)$`)
 	patEvalRange                = regexp.MustCompile(`^eval(?:_(fail|warn))?\s+range\s+from\s+(.+)\s+to\s+(.+)\s+step\s+(.+?)\s+(.+)$`)
+	patWhitespace               = regexp.MustCompile(`\s+`)
+	patBucket                   = regexp.MustCompile(`_bucket\b`)
+	patLE                       = regexp.MustCompile(`\ble\b`)
 	histogramBucketReplacements = []struct {
 		pattern *regexp.Regexp
 		repl    string
@@ -57,19 +60,19 @@ var (
 			repl:    "",
 		},
 		{
-			pattern: regexp.MustCompile(`\s+by\s+\(le\)`),
+			pattern: regexp.MustCompile(`\s+by\s+\(\s*le\s*\)`),
 			repl:    "",
 		},
 		{
-			pattern: regexp.MustCompile(`\(le,\s*`),
+			pattern: regexp.MustCompile(`\(\s*le\s*,\s*`),
 			repl:    "(",
 		},
 		{
-			pattern: regexp.MustCompile(`,\s*le,\s*`),
+			pattern: regexp.MustCompile(`,\s*le\s*,\s*`),
 			repl:    ", ",
 		},
 		{
-			pattern: regexp.MustCompile(`,\s*le\)`),
+			pattern: regexp.MustCompile(`,\s*le\s*\)`),
 			repl:    ")",
 		},
 	}
@@ -1030,10 +1033,19 @@ func (t *test) execInstantEval(cmd *evalCmd, engine promql.QueryEngine) error {
 		}
 		if cmd.withNHCB {
 			if !strings.Contains(iq.expr, "_bucket") {
-				return fmt.Errorf("expected '_bucket' in the expression %q", iq.expr)
+				return fmt.Errorf("expected '_bucket' in the expression '%q'", iq.expr)
 			}
+			origExpr := iq.expr
 			for _, rep := range histogramBucketReplacements {
 				iq.expr = rep.pattern.ReplaceAllString(iq.expr, rep.repl)
+			}
+			switch {
+			case patWhitespace.ReplaceAllString(iq.expr, "") == patWhitespace.ReplaceAllString(origExpr, ""):
+				return fmt.Errorf("query rewrite of '%q' had no effect", iq.expr)
+			case patBucket.MatchString(iq.expr):
+				return fmt.Errorf("rewritten query '%q' still has '_bucket'", iq.expr)
+			case patLE.MatchString(iq.expr):
+				return fmt.Errorf("rewritten query '%q' still has 'le'", iq.expr)
 			}
 			if err := t.runInstantQuery(iq, cmd, engine); err != nil {
 				return err
