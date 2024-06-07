@@ -6,15 +6,15 @@
 
 namespace BareBones {
 
-template <class T>
+template <class T, class CounterType = size_t>
 class Allocator {
  public:
   using value_type = T;
 
-  explicit constexpr Allocator(size_t& allocated_memory) : allocated_memory_(allocated_memory) {}
+  explicit constexpr Allocator(CounterType& allocated_memory) : allocated_memory_(allocated_memory) {}
   constexpr Allocator(const Allocator&) = default;
-  template <class AnyType>
-  explicit constexpr Allocator(const Allocator<AnyType>& other) : allocated_memory_(other.allocated_memory_) {}
+  template <class AnyType, class CounterType2>
+  explicit constexpr Allocator(const Allocator<AnyType, CounterType2>& other) : allocated_memory_(other.allocated_memory_) {}
   constexpr Allocator(Allocator&&) noexcept = default;
 
   constexpr Allocator& operator=(const Allocator&) = delete;
@@ -22,21 +22,21 @@ class Allocator {
   constexpr bool operator==(const Allocator& other) const noexcept { return &allocated_memory_ == &other.allocated_memory_; };
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE constexpr T* allocate(std::size_t n) {
-    allocated_memory_ += n * sizeof(T);
+    allocated_memory_ += static_cast<CounterType>(n * sizeof(T));
     return std::allocator<T>{}.allocate(n);
   }
   PROMPP_ALWAYS_INLINE void deallocate(T* p, std::size_t n) {
     std::allocator<T>{}.deallocate(p, n);
-    allocated_memory_ -= n * sizeof(T);
+    allocated_memory_ -= static_cast<CounterType>(n * sizeof(T));
   }
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return allocated_memory_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE CounterType allocated_memory() const noexcept { return allocated_memory_; }
 
  private:
-  template <class AnyType>
+  template <class AnyType, class CounterType2>
   friend class Allocator;
 
-  size_t& allocated_memory_;
+  CounterType& allocated_memory_;
 };
 
 }  // namespace BareBones

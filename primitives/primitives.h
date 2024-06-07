@@ -16,7 +16,7 @@ namespace Primitives {
 using Symbol = std::string;
 using SymbolView = std::string_view;
 
-// FIXME Label and LabelView should be convertable and comparable
+// FIXME Label and LabelView should be convertable
 using Label = std::pair<Symbol, Symbol>;
 using LabelView = std::pair<SymbolView, SymbolView>;
 
@@ -282,6 +282,23 @@ using TimeseriesSemiview = BasicTimeseries<LabelViewSet, BareBones::Vector<Sampl
 }  // namespace PromPP
 
 namespace std {
+
+PROMPP_ALWAYS_INLINE constexpr bool operator==(const PromPP::Primitives::LabelView& label_view, const PromPP::Primitives::Label& label) noexcept {
+  return label_view.first == label.first && label_view.second == label.second;
+}
+
+PROMPP_ALWAYS_INLINE constexpr bool operator==(const PromPP::Primitives::Label& label, const PromPP::Primitives::LabelView& label_view) noexcept {
+  return label_view == label;
+}
+
+PROMPP_ALWAYS_INLINE constexpr bool operator!=(const PromPP::Primitives::LabelView& label_view, const PromPP::Primitives::Label& label) noexcept {
+  return !(label_view == label);
+}
+
+PROMPP_ALWAYS_INLINE constexpr bool operator!=(const PromPP::Primitives::Label& label, const PromPP::Primitives::LabelView& label_view) noexcept {
+  return !(label_view == label);
+}
+
 template <>
 struct tuple_size<PromPP::Primitives::Sample> : std::integral_constant<std::size_t, 2> {};
 

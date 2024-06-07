@@ -2,9 +2,15 @@
 
 #include "gtest/gtest.h"
 
+#include "primitives/primitives.h"
 #include "primitives/snug_composites_filaments.h"
 
 namespace {
+
+using FillamentLabelSet =
+    PromPP::Primitives::SnugComposites::Filaments::LabelSet<BareBones::SnugComposite::EncodingBimap<PromPP::Primitives::SnugComposites::Filaments::Symbol>,
+                                                          BareBones::SnugComposite::EncodingBimap<PromPP::Primitives::SnugComposites::Filaments::LabelNameSet<
+                                                              BareBones::SnugComposite::EncodingBimap<PromPP::Primitives::SnugComposites::Filaments::Symbol>>>>;
 
 class NamesSetForTest : public std::vector<std::string> {
   using Base = std::vector<std::string>;
@@ -122,11 +128,6 @@ TEST_F(SnugCompositesFilaments, LabelNamesSet) {
 }
 
 TEST_F(SnugCompositesFilaments, LabelSet) {
-  using FillamentLabelSet =
-      PromPP::Primitives::SnugComposites::Filaments::LabelSet<BareBones::SnugComposite::EncodingBimap<PromPP::Primitives::SnugComposites::Filaments::Symbol>,
-                                                            BareBones::SnugComposite::EncodingBimap<PromPP::Primitives::SnugComposites::Filaments::LabelNameSet<
-                                                                BareBones::SnugComposite::EncodingBimap<PromPP::Primitives::SnugComposites::Filaments::Symbol>>>>;
-
   FillamentLabelSet::data_type data;
   const LabelSetForTest etalons = generate_label_set();
 
@@ -151,11 +152,6 @@ TEST_F(SnugCompositesFilaments, LabelSet) {
 
 class EncodingTableLabelSetFixture : public testing::Test {
  protected:
-  using FillamentLabelSet =
-      PromPP::Primitives::SnugComposites::Filaments::LabelSet<BareBones::SnugComposite::EncodingBimap<PromPP::Primitives::SnugComposites::Filaments::Symbol>,
-                                                            BareBones::SnugComposite::EncodingBimap<PromPP::Primitives::SnugComposites::Filaments::LabelNameSet<
-                                                                BareBones::SnugComposite::EncodingBimap<PromPP::Primitives::SnugComposites::Filaments::Symbol>>>>;
-
   BareBones::SnugComposite::EncodingTable<FillamentLabelSet> encoding_table_;
   BareBones::SnugComposite::DecodingTable<FillamentLabelSet> decoding_table_;
   std::array<LabelSetForTest, 3> ls_;
@@ -205,14 +201,14 @@ TEST_F(EncodingTableLabelSetFixture, ShrinkAndLoad) {
 
   // Act
   {
-    encoding_table_.emplace(ls_[0]);
-    encoding_table_.emplace(ls_[1]);
+    encoding_table_.find_or_emplace(ls_[0]);
+    encoding_table_.find_or_emplace(ls_[1]);
     auto checkpoint = create_and_load_checkpoint(nullptr);
     encoding_table_.shrink_to_checkpoint_size(checkpoint);
   }
   {
     auto empty_checkpoint = encoding_table_.checkpoint();
-    encoding_table_.emplace(ls_[2]);
+    encoding_table_.find_or_emplace(ls_[2]);
     auto checkpoint = create_and_load_checkpoint(&empty_checkpoint);
     encoding_table_.shrink_to_checkpoint_size(checkpoint);
   }
@@ -226,13 +222,13 @@ TEST_F(EncodingTableLabelSetFixture, LoadWithoutShrink) {
 
   // Act
   {
-    encoding_table_.emplace(ls_[0]);
-    encoding_table_.emplace(ls_[1]);
+    encoding_table_.find_or_emplace(ls_[0]);
+    encoding_table_.find_or_emplace(ls_[1]);
     create_and_load_checkpoint(nullptr);
   }
   {
     auto empty_checkpoint = encoding_table_.checkpoint();
-    encoding_table_.emplace(ls_[2]);
+    encoding_table_.find_or_emplace(ls_[2]);
     create_and_load_checkpoint(&empty_checkpoint);
   }
 
@@ -245,9 +241,9 @@ TEST_F(EncodingTableLabelSetFixture, EmptyCheckpointWithShrink) {
 
   // Act
   {
-    encoding_table_.emplace(ls_[0]);
-    encoding_table_.emplace(ls_[1]);
-    encoding_table_.emplace(ls_[2]);
+    encoding_table_.find_or_emplace(ls_[0]);
+    encoding_table_.find_or_emplace(ls_[1]);
+    encoding_table_.find_or_emplace(ls_[2]);
     auto checkpoint = create_and_load_checkpoint(nullptr);
     encoding_table_.shrink_to_checkpoint_size(checkpoint);
   }
@@ -265,9 +261,9 @@ TEST_F(EncodingTableLabelSetFixture, EmptyCheckpointWithoutShrink) {
 
   // Act
   {
-    encoding_table_.emplace(ls_[0]);
-    encoding_table_.emplace(ls_[1]);
-    encoding_table_.emplace(ls_[2]);
+    encoding_table_.find_or_emplace(ls_[0]);
+    encoding_table_.find_or_emplace(ls_[1]);
+    encoding_table_.find_or_emplace(ls_[2]);
     create_and_load_checkpoint(nullptr);
   }
   {
