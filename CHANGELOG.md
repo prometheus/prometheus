@@ -12,7 +12,7 @@ This release changes the default for GOGC, the Go runtime control for the trade-
 
 * [CHANGE] Rules: Execute 1 query instead of N (where N is the number of alerts within alert rule) when restoring alerts. #13980 #14048
 * [CHANGE] Runtime: Change GOGC threshold from 100 to 50 #14176
-* [FEATURE] Rules: Add new option `query_offset` for each rule group via rule group configuration file and `rule_query_offset` as part of the global configuration to have more resilience for remote write delays. #14061 #14216 #14273
+* [FEATURE] Rules: Add new option `query_offset` for each rule group via rule group configuration file and `rule_query_offset` as part of the global configuration to have more resilience for remote write delays. #14061 #14216
 * [ENHANCEMENT] Rules: Add `rule_group_last_restore_duration_seconds` metric to measure the time it takes to restore a rule group. #13974
 * [ENHANCEMENT] OTLP: Improve remote write format translation performance by using label set hashes for metric identifiers instead of string based ones. #14006 #13991
 * [ENHANCEMENT] TSDB: Optimize querying with regexp matchers. #13620
