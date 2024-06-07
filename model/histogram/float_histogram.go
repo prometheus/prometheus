@@ -30,7 +30,7 @@ import (
 type FloatHistogram struct {
 	// Counter reset information.
 	CounterResetHint CounterResetHint
-	// Currently valid schema numbers are -4 <= n <= 8 for exponential buckets,
+	// Currently valid schema numbers are -4 <= n <= 8 for exponential buckets.
 	// They are all for base-2 bucket schemas, where 1 is a bucket boundary in
 	// each case, and then each power of two is divided into 2^n logarithmic buckets.
 	// Or in other words, each bucket boundary is the previous boundary times
@@ -54,7 +54,7 @@ type FloatHistogram struct {
 	// This slice is interned, to be treated as immutable and copied by reference.
 	// These numbers should be strictly increasing. This field is only used when the
 	// schema is for custom buckets, and the ZeroThreshold, ZeroCount, NegativeSpans
-	// and NegativeBuckets fields are not used.
+	// and NegativeBuckets fields are not used in that case.
 	CustomValues []float64
 }
 
@@ -141,7 +141,8 @@ func (h *FloatHistogram) CopyTo(to *FloatHistogram) {
 
 // CopyToSchema works like Copy, but the returned deep copy has the provided
 // target schema, which must be ≤ the original schema (i.e. it must have a lower
-// resolution).
+// resolution). This method panics if a custom buckets schema is used in the
+// receiving FloatHistogram or as the provided targetSchema.
 func (h *FloatHistogram) CopyToSchema(targetSchema int32) *FloatHistogram {
 	if targetSchema == h.Schema {
 		// Fast path.
@@ -253,7 +254,7 @@ func (h *FloatHistogram) TestExpression() string {
 	return "{{" + strings.Join(res, " ") + "}}"
 }
 
-// ZeroBucket returns the zero bucket.
+// ZeroBucket returns the zero bucket. This method panics if the schema is for custom buckets.
 func (h *FloatHistogram) ZeroBucket() Bucket[float64] {
 	if h.UsesCustomBuckets() {
 		panic("histograms with custom buckets have no zero bucket")
@@ -922,7 +923,8 @@ func (h *FloatHistogram) reconcileZeroBuckets(other *FloatHistogram) float64 {
 //
 // targetSchema must be ≤ the schema of FloatHistogram (and of course within the
 // legal values for schemas in general). The buckets are merged to match the
-// targetSchema prior to iterating (without mutating FloatHistogram).
+// targetSchema prior to iterating (without mutating FloatHistogram), but custom buckets
+// schemas cannot be merged with other schemas.
 func (h *FloatHistogram) floatBucketIterator(
 	positive bool, absoluteStartValue float64, targetSchema int32,
 ) floatBucketIterator {
@@ -1317,6 +1319,8 @@ func FloatBucketsMatch(b1, b2 []float64) bool {
 
 // ReduceResolution reduces the float histogram's spans, buckets into target schema.
 // The target schema must be smaller than the current float histogram's schema.
+// This will panic if the histogram has custom buckets or if the target schema is
+// a custom buckets schema.
 func (h *FloatHistogram) ReduceResolution(targetSchema int32) *FloatHistogram {
 	if h.UsesCustomBuckets() {
 		panic("cannot reduce resolution when there are custom buckets")

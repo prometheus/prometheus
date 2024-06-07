@@ -777,3 +777,10 @@ func reduceResolution[IBC InternalBucketCount](
 
 	return targetSpans, targetBuckets
 }
+
+func clearIfNotNil[T any](items []T) []T {
+	if items == nil {
+		return nil
+	}
+	return items[:0]
+}

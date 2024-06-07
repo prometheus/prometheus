@@ -74,7 +74,7 @@ type Histogram struct {
 	// This slice is interned, to be treated as immutable and copied by reference.
 	// These numbers should be strictly increasing. This field is only used when the
 	// schema is for custom buckets, and the ZeroThreshold, ZeroCount, NegativeSpans
-	// and NegativeBuckets fields are not used.
+	// and NegativeBuckets fields are not used in that case.
 	CustomValues []float64
 }
 
@@ -199,7 +199,7 @@ func (h *Histogram) String() string {
 	return sb.String()
 }
 
-// ZeroBucket returns the zero bucket.
+// ZeroBucket returns the zero bucket. This method panics if the schema is for custom buckets.
 func (h *Histogram) ZeroBucket() Bucket[uint64] {
 	if h.UsesCustomBuckets() {
 		panic("histograms with custom buckets have no zero bucket")
@@ -417,13 +417,6 @@ func resize[T any](items []T, n int) []T {
 	return items[:n]
 }
 
-func clearIfNotNil[T any](items []T) []T {
-	if items == nil {
-		return nil
-	}
-	return items[:0]
-}
-
 // Validate validates consistency between span and bucket slices. Also, buckets are checked
 // against negative values. We check to make sure there are no unexpected fields or field values
 // based on the exponential / custom buckets schema.
@@ -615,6 +608,8 @@ func (c *cumulativeBucketIterator) At() Bucket[uint64] {
 
 // ReduceResolution reduces the histogram's spans, buckets into target schema.
 // The target schema must be smaller than the current histogram's schema.
+// This will panic if the histogram has custom buckets or if the target schema is
+// a custom buckets schema.
 func (h *Histogram) ReduceResolution(targetSchema int32) *Histogram {
 	if h.UsesCustomBuckets() {
 		panic("cannot reduce resolution when there are custom buckets")

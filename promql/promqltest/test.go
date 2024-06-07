@@ -208,14 +208,14 @@ func parseLoad(lines []string, i int) (int, *loadCmd, error) {
 	}
 	parts := patLoad.FindStringSubmatch(lines[i])
 	var (
-		withNhcb = parts[1] == "with_nhcb"
+		withNHCB = parts[1] == "with_nhcb"
 		step     = parts[2]
 	)
 	gap, err := model.ParseDuration(step)
 	if err != nil {
 		return i, nil, raise(i, "invalid step definition %q: %s", step, err)
 	}
-	cmd := newLoadCmd(time.Duration(gap), withNhcb)
+	cmd := newLoadCmd(time.Duration(gap), withNHCB)
 	for i+1 < len(lines) {
 		i++
 		defLine := lines[i]
@@ -253,12 +253,12 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 
 	isInstant := instantParts != nil
 
-	var withNhcb bool
+	var withNHCB bool
 	var mod string
 	var expr string
 
 	if isInstant {
-		withNhcb = instantParts[1] == "with_nhcb"
+		withNHCB = instantParts[1] == "with_nhcb"
 		mod = instantParts[2]
 		expr = instantParts[4]
 	} else {
@@ -332,7 +332,7 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 	case "warn":
 		cmd.warn = true
 	}
-	cmd.withNhcb = withNhcb
+	cmd.withNHCB = withNHCB
 
 	for j := 1; i+1 < len(lines); j++ {
 		i++
@@ -419,16 +419,16 @@ type loadCmd struct {
 	metrics   map[uint64]labels.Labels
 	defs      map[uint64][]promql.Sample
 	exemplars map[uint64][]exemplar.Exemplar
-	withNhcb  bool
+	withNHCB  bool
 }
 
-func newLoadCmd(gap time.Duration, withNhcb bool) *loadCmd {
+func newLoadCmd(gap time.Duration, withNHCB bool) *loadCmd {
 	return &loadCmd{
 		gap:       gap,
 		metrics:   map[uint64]labels.Labels{},
 		defs:      map[uint64][]promql.Sample{},
 		exemplars: map[uint64][]exemplar.Exemplar{},
-		withNhcb:  withNhcb,
+		withNHCB:  withNHCB,
 	}
 }
 
@@ -467,7 +467,7 @@ func (cmd *loadCmd) append(a storage.Appender) error {
 			}
 		}
 	}
-	if cmd.withNhcb {
+	if cmd.withNHCB {
 		return cmd.appendCustomHistogram(a)
 	}
 	return nil
@@ -535,11 +535,11 @@ func processClassicHistogramSeries(m labels.Labels, suffix string, histMap map[u
 func processUpperBoundsAndCreateBaseHistogram(upperBounds0 []float64) ([]float64, *histogram.FloatHistogram) {
 	sort.Float64s(upperBounds0)
 	upperBounds := make([]float64, 0, len(upperBounds0))
-	prevLe := math.Inf(-1)
+	prevLE := math.Inf(-1)
 	for _, le := range upperBounds0 {
-		if le != prevLe { // deduplicate
+		if le != prevLE { // deduplicate
 			upperBounds = append(upperBounds, le)
-			prevLe = le
+			prevLE = le
 		}
 	}
 	var customBounds []float64
@@ -655,7 +655,7 @@ type evalCmd struct {
 
 	isRange             bool // if false, instant query
 	fail, warn, ordered bool
-	withNhcb            bool
+	withNHCB            bool
 
 	metrics  map[uint64]labels.Labels
 	expected map[uint64]entry
@@ -1028,7 +1028,7 @@ func (t *test) execInstantEval(cmd *evalCmd, engine promql.QueryEngine) error {
 		if err := t.runInstantQuery(iq, cmd, engine); err != nil {
 			return err
 		}
-		if cmd.withNhcb {
+		if cmd.withNHCB {
 			if !strings.Contains(iq.expr, "_bucket") {
 				return fmt.Errorf("expected '_bucket' in the expression %q", iq.expr)
 			}
