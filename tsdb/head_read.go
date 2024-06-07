@@ -277,7 +277,9 @@ func (h *headIndexReader) LabelNamesFor(ctx context.Context, ids ...storage.Seri
 		}
 		memSeries := h.head.series.getByID(chunks.HeadSeriesRef(id))
 		if memSeries == nil {
-			return nil, storage.ErrNotFound
+			// Series not found, this happens during compaction,
+			// when series was garbage collected after the caller got the series IDs.
+			continue
 		}
 		memSeries.lset.Range(func(lbl labels.Label) {
 			namesMap[lbl.Name] = struct{}{}
