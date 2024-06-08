@@ -294,10 +294,29 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}) {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
 
+	// Collect all keys relevant for deletion once. New keys added afterwards
+	// can by definition not be affected by any of the given deletes.
+	keys := make([]string, 0, len(p.m))
+	maxVals := 0
 	for n := range p.m {
+		keys = append(keys, n)
+		if len(p.m[n]) > maxVals {
+			maxVals = len(p.m[n])
+		}
+	}
+
+	vals := make([]string, 0, maxVals)
+	for _, n := range keys {
+		// Copy the values and iterate the copy: if we unlock in the loop below,
+		// another goroutine might modify the map while we are part-way through it.
+		vals = vals[:0]
+		for v := range p.m[n] {
+			vals = append(vals, v)
+		}
+
 		// For each posting we first analyse whether the postings list is affected by the deletes.
 		// If yes, we actually reallocate a new postings list.
-		for l := range p.m[n] {
+		for _, l := range vals {
 			found := false
 			for _, id := range p.m[n][l] {
 				if _, ok := deleted[id]; ok {
