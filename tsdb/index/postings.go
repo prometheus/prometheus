@@ -315,24 +315,34 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}) {
 		}
 
 		// For each posting we first analyse whether the postings list is affected by the deletes.
-		// If yes, we actually reallocate a new postings list.
-		for _, l := range vals {
-			found := false
+		// If no, we remove the label value from the vals list.
+		// This way we only need to Lock once later.
+	values:
+		for i := 0; i < len(vals); {
+			l := vals[i]
 			for _, id := range p.m[n][l] {
 				if _, ok := deleted[id]; ok {
-					found = true
-					break
+					i++
+					continue values
 				}
 			}
-			if !found {
-				continue
-			}
+			// This label value doesn't contain deleted ids, so no need to process it later.
+			// We we continue with the next one, which is the last one in the list.
+			vals[i], vals = vals[len(vals)-1], vals[:len(vals)-1]
+		}
 
+		// If no label values have deleted ids, just continue.
+		if len(vals) == 0 {
+			continue
+		}
+
+		// The only vals left here are the ones that contain deleted ids.
+		// Now we take the write lock and remove the ids.
+		p.mtx.RUnlock()
+		p.mtx.Lock()
+		for _, l := range vals {
 			repl := make([]storage.SeriesRef, 0, len(p.m[n][l]))
 
-			// Only take the write lock when there's actually something to write.
-			p.mtx.RUnlock()
-			p.mtx.Lock()
 			for _, id := range p.m[n][l] {
 				if _, ok := deleted[id]; !ok {
 					repl = append(repl, id)
@@ -343,20 +353,14 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}) {
 			} else {
 				delete(p.m[n], l)
 			}
-			p.mtx.Unlock()
-			p.mtx.RLock()
 		}
 
+		// Delete the key if we removed all values.
 		if len(p.m[n]) == 0 {
-			p.mtx.RUnlock()
-			p.mtx.Lock()
-			// Check again, someone might have written in between.
-			if len(p.m[n]) == 0 {
-				delete(p.m, n)
-			}
-			p.mtx.Unlock()
-			p.mtx.RLock()
+			delete(p.m, n)
 		}
+		p.mtx.Unlock()
+		p.mtx.RLock()
 	}
 }
 
