@@ -23,6 +23,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/grafana/regexp"
@@ -999,6 +1000,100 @@ func TestMemPostings_Delete(t *testing.T) {
 	expanded, err = ExpandPostings(deleted)
 	require.NoError(t, err)
 	require.Empty(t, expanded, "expected empty postings, got %v", expanded)
+}
+
+func BenchmarkMemPostings_Delete(b *testing.B) {
+	internedItoa := map[int]string{}
+	var mtx sync.RWMutex
+	itoa := func(i int) string {
+		mtx.RLock()
+		s, ok := internedItoa[i]
+		mtx.RUnlock()
+		if ok {
+			return s
+		}
+		mtx.Lock()
+		s = strconv.Itoa(i)
+		internedItoa[i] = s
+		mtx.Unlock()
+		return s
+	}
+
+	const total = 1e6
+	prepare := func() *MemPostings {
+		var ref storage.SeriesRef
+		next := func() storage.SeriesRef {
+			ref++
+			return ref
+		}
+
+		p := NewMemPostings()
+		nameValues := make([]string, 0, 100)
+		for i := 0; i < total; i++ {
+			nameValues = nameValues[:0]
+
+			// A thousand labels like lbl_x_of_1000, each with total/1000 values
+			thousand := "lbl_" + itoa(i%1000) + "_of_1000"
+			nameValues = append(nameValues, thousand, itoa(i/1000))
+			// A hundred labels like lbl_x_of_100, each with total/100 values.
+			hundred := "lbl_" + itoa(i%100) + "_of_100"
+			nameValues = append(nameValues, hundred, itoa(i/100))
+
+			if i < 100 {
+				ten := "lbl_" + itoa(i%10) + "_of_10"
+				nameValues = append(nameValues, ten, itoa(i%10))
+			}
+
+			p.Add(next(), labels.FromStrings(append(nameValues, "first", "a", "second", "a", "third", "a")...))
+		}
+		return p
+	}
+
+	for _, refs := range []int{1, 100, 10_000} {
+		b.Run(fmt.Sprintf("refs=%d", refs), func(b *testing.B) {
+			for _, reads := range []int{0, 1, 10} {
+				b.Run(fmt.Sprintf("readers=%d", reads), func(b *testing.B) {
+					if b.N > total/refs {
+						// Just to make sure that benchmark still makes sense.
+						panic("benchmark not prepared")
+					}
+
+					p := prepare()
+					stop := make(chan struct{})
+					wg := sync.WaitGroup{}
+					for i := 0; i < reads; i++ {
+						wg.Add(1)
+						go func(i int) {
+							lbl := "lbl_" + itoa(i) + "_of_100"
+							defer wg.Done()
+							for {
+								select {
+								case <-stop:
+									return
+								default:
+									// Get a random value of this label.
+									p.Get(lbl, itoa(rand.Intn(10000))).Next()
+								}
+							}
+						}(i)
+					}
+					b.Cleanup(func() {
+						close(stop)
+						wg.Wait()
+					})
+
+					b.ResetTimer()
+					for n := 0; n < b.N; n++ {
+						deleted := map[storage.SeriesRef]struct{}{}
+						for i := 0; i < refs; i++ {
+							deleted[storage.SeriesRef(n*refs+i)] = struct{}{}
+						}
+						p.Delete(deleted)
+					}
+				})
+			}
+		})
+	}
 }
 
 func TestFindIntersectingPostings(t *testing.T) {
