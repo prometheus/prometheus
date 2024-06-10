@@ -167,7 +167,27 @@ func TestAzureAdConfig(t *testing.T) {
 			filename: "testdata/azuread_bad_oauthsdkconfig.yaml",
 			err:      "cannot provide both Azure OAuth and Azure SDK in the Azure AD config",
 		},
-		// Valid config with missing  optionally cloud field.
+		// Invalid config when both cloud and AAD Endpoint is provided.
+		{
+			filename: "testdata/azuread_bad_cloudaadendpoint.yaml",
+			err:      "cannot provide both cloud name and AAD Endpoint/Token Audience in the Azure AD config",
+		},
+		// Invalid config when both cloud and Token Audience is provided.
+		{
+			filename: "testdata/azuread_bad_cloudtokenaudience.yaml",
+			err:      "cannot provide both cloud name and AAD Endpoint/Token Audience in the Azure AD config",
+		},
+		// Invalid config when AAD Endpoint provided but Token Audience is missing.
+		{
+			filename: "testdata/azuread_bad_aadendpointmissing.yaml",
+			err:      "must provide both AAD Endpoint and Token Audience when either are provided in the Azure AD config",
+		},
+		// Invalid config when Token Audiene provided but AAD Endpoint is missing.
+		{
+			filename: "testdata/azuread_bad_tokenaudiencemissing.yaml",
+			err:      "must provide both AAD Endpoint and Token Audience when either are provided in the Azure AD config",
+		},
+		// Valid config with missing optionally cloud field.
 		{
 			filename: "testdata/azuread_good_cloudmissing.yaml",
 		},
@@ -182,6 +202,10 @@ func TestAzureAdConfig(t *testing.T) {
 		// Valid SDK config.
 		{
 			filename: "testdata/azuread_good_sdk.yaml",
+		},
+		// Valid AAD Endpoint/Token Audience config.
+		{
+			filename: "testdata/azuread_good_aadendpoint_tokenaudience.yaml",
 		},
 	}
 	for _, c := range cases {

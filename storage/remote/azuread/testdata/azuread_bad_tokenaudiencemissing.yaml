@@ -1,0 +1,3 @@
+aad_endpoint: https://login.microsoftonline.com/
+managed_identity:
+  client_id: 00000000-0000-0000-0000-000000000000
