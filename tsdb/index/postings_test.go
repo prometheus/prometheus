@@ -1435,6 +1435,28 @@ func BenchmarkMemPostings_PostingsForLabelMatching(b *testing.B) {
 	}
 }
 
+func TestMemPostings_PostingsForLabelMatching(t *testing.T) {
+	mp := NewMemPostings()
+	mp.Add(1, labels.FromStrings("foo", "1"))
+	mp.Add(2, labels.FromStrings("foo", "2"))
+	mp.Add(3, labels.FromStrings("foo", "3"))
+	mp.Add(4, labels.FromStrings("foo", "4"))
+
+	isEven := func(v string) bool {
+		iv, err := strconv.Atoi(v)
+		if err != nil {
+			panic(err)
+		}
+		return iv%2 == 0
+	}
+
+	p := mp.PostingsForLabelMatching(context.Background(), "foo", isEven)
+	require.NoError(t, p.Err())
+	refs, err := ExpandPostings(p)
+	require.NoError(t, err)
+	require.Equal(t, []storage.SeriesRef{2, 4}, refs)
+}
+
 func TestMemPostings_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 	memP := NewMemPostings()
 	seriesCount := 10 * checkContextEveryNIterations
