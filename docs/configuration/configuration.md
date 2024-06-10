@@ -1599,11 +1599,12 @@ It reads a set of files containing a list of zero or more
 `<static_config>`s. Changes to all defined files are detected via disk watches
 and applied immediately. 
 
-Note that while individual files are watched for changes,
-the containing directory is also implicitly watched in order to detect
-new files that match configured patterns. This may cause issues if watched files
-are placed in a directory with a very large number of files, as these will all 
-count as open files.
+While those individual files are watched for changes,
+the parent directory is also watched implicitly. This is to handle [atomic
+renaming](https://github.com/fsnotify/fsnotify/blob/c1467c02fba575afdb5f4201072ab8403bbf00f4/README.md?plain=1#L128) efficiently and to detect new files that match the configured globs.
+This may cause issues if the parent directory contains a large number of other files,
+as each of these files will be watched too, even though the events related
+to them are not relevant.
 
 Files may be provided in YAML or JSON format. Only
 changes resulting in well-formed target groups are applied.
