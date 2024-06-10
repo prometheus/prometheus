@@ -36,6 +36,7 @@ const (
 	AzureChina      = "AzureChina"
 	AzureGovernment = "AzureGovernment"
 	AzurePublic     = "AzurePublic"
+	AzureCustom     = "AzureCustom"
 )
 
 // Audiences.
@@ -82,6 +83,12 @@ type AzureADConfig struct { //nolint:revive // exported.
 
 	// Cloud is the Azure cloud in which the service is running. Example: AzurePublic/AzureGovernment/AzureChina.
 	Cloud string `yaml:"cloud,omitempty"`
+
+	// AAD Endpoint to authenticate against. Example: https://login.microsoftonline.com/
+	AadEndpoint string `yaml:"aad_endpoint,omitempty"`
+
+	// Audience to acquire token for. Example: https://monitor.azure.com/.default
+	TokenAudience string `yaml:"token_audience,omitempty"`
 }
 
 // azureADRoundTripper is used to store the roundtripper and the tokenprovider.
@@ -105,11 +112,25 @@ type tokenProvider struct {
 
 // Validate validates config values provided.
 func (c *AzureADConfig) Validate() error {
-	if c.Cloud == "" {
-		c.Cloud = AzurePublic
+	if c.Cloud != "" && (c.AadEndpoint != "" || c.TokenAudience != "") {
+		return fmt.Errorf("cannot provide both cloud name and AAD Endpoint/Token Audience in the Azure AD config")
 	}
 
-	if c.Cloud != AzureChina && c.Cloud != AzureGovernment && c.Cloud != AzurePublic {
+	if (c.AadEndpoint != "" && c.TokenAudience == "") || (c.AadEndpoint == "" && c.TokenAudience != "") {
+		return fmt.Errorf("must provide both AAD Endpoint and Token Audience when either are provided in the Azure AD config")
+	}
+
+	if c.Cloud == AzureCustom {
+		return fmt.Errorf("cannot provide cloud AzureCustom in the Azure AD config")
+	}
+
+	if c.Cloud == "" && c.AadEndpoint == "" && c.TokenAudience == "" {
+		c.Cloud = AzurePublic
+	} else if c.AadEndpoint != "" && c.TokenAudience != "" {
+		c.Cloud = AzureCustom
+	}
+
+	if c.Cloud != AzureChina && c.Cloud != AzureGovernment && c.Cloud != AzurePublic && c.Cloud != AzureCustom {
 		return fmt.Errorf("must provide a cloud in the Azure AD config")
 	}
 
@@ -225,7 +246,7 @@ func (rt *azureADRoundTripper) RoundTrip(req *http.Request) (*http.Response, err
 func newTokenCredential(cfg *AzureADConfig) (azcore.TokenCredential, error) {
 	var cred azcore.TokenCredential
 	var err error
-	cloudConfiguration, err := getCloudConfiguration(cfg.Cloud)
+	cloudConfiguration, err := cfg.getCloudConfiguration()
 	if err != nil {
 		return nil, err
 	}
@@ -290,7 +311,7 @@ func newSDKTokenCredential(clientOpts *azcore.ClientOptions, sdkConfig *SDKConfi
 // newTokenProvider helps to fetch accessToken for different types of credential. This also takes care of
 // refreshing the accessToken before expiry. This accessToken is attached to the Authorization header while making requests.
 func newTokenProvider(cfg *AzureADConfig, cred azcore.TokenCredential) (*tokenProvider, error) {
-	audience, err := getAudience(cfg.Cloud)
+	audience, err := cfg.getAudience()
 	if err != nil {
 		return nil, err
 	}
@@ -359,29 +380,35 @@ func (tokenProvider *tokenProvider) updateRefreshTime(accessToken azcore.AccessT
 }
 
 // getAudience returns audiences for different clouds.
-func getAudience(cloud string) (string, error) {
-	switch strings.ToLower(cloud) {
+func (cfg *AzureADConfig) getAudience() (string, error) {
+	switch strings.ToLower(cfg.Cloud) {
 	case strings.ToLower(AzureChina):
 		return IngestionChinaAudience, nil
 	case strings.ToLower(AzureGovernment):
 		return IngestionGovernmentAudience, nil
 	case strings.ToLower(AzurePublic):
 		return IngestionPublicAudience, nil
+	case strings.ToLower(AzureCustom):
+		return cfg.TokenAudience, nil
 	default:
-		return "", errors.New("Cloud is not specified or is incorrect: " + cloud)
+		return "", errors.New("Cloud is not specified or is incorrect: " + cfg.Cloud)
 	}
 }
 
 // getCloudConfiguration returns the cloud Configuration which contains AAD endpoint for different clouds.
-func getCloudConfiguration(c string) (cloud.Configuration, error) {
-	switch strings.ToLower(c) {
+func (cfg *AzureADConfig) getCloudConfiguration() (cloud.Configuration, error) {
+	switch strings.ToLower(cfg.Cloud) {
 	case strings.ToLower(AzureChina):
 		return cloud.AzureChina, nil
 	case strings.ToLower(AzureGovernment):
 		return cloud.AzureGovernment, nil
 	case strings.ToLower(AzurePublic):
 		return cloud.AzurePublic, nil
+	case strings.ToLower(AzureCustom):
+		return cloud.Configuration{
+			ActiveDirectoryAuthorityHost: cfg.AadEndpoint, Services: map[cloud.ServiceName]cloud.ServiceConfiguration{},
+		}, nil
 	default:
-		return cloud.Configuration{}, errors.New("Cloud is not specified or is incorrect: " + c)
+		return cloud.Configuration{}, errors.New("Cloud is not specified or is incorrect: " + cfg.Cloud)
 	}
 }
