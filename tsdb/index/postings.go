@@ -289,8 +289,13 @@ func (p *MemPostings) EnsureOrder(numberOfConcurrentProcesses int) {
 
 // Delete removes all ids in the given map from the postings lists.
 func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}) {
-	// Take the optimistic read lock for the entire method,
+	// We will take an optimistic read lock for the entire method,
 	// and only lock for writing when we actually find something to delete.
+	//
+	// Each SeriesRef can appear in several Postings.
+	// To change each one, we need to know the label name and value that it is indexed under.
+	// We iterate over all label names, then for each name all values,
+	// and look for individual series to be deleted.
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
 
@@ -328,8 +333,8 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}) {
 			}
 
 			if !found {
-				// This label value doesn't contain deleted ids, so no need to process it later.
-				// We we continue with the next one, which is the last one in the list.
+				// Didn't match, bring the last value to this position, make the slice shorter and check again.
+				// The order of the slice doesn't matter as it comes from a map iteration.
 				vals[i], vals = vals[len(vals)-1], vals[:len(vals)-1]
 			}
 		}
