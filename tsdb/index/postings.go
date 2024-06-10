@@ -403,9 +403,6 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 	// which can be slow (seconds) if the match function is a huge regex.
 	// Holding this lock prevents new series from being added (slows down the write path)
 	// and blocks the compaction process.
-	//
-	// Also, benchmarking shows that first copying the values into a slice and then matching over that is
-	// faster than matching over the map keys directly, at least on AMD64.
 	vals := p.labelValues(name)
 	for i, count := 0, 1; i < len(vals); count++ {
 		if count%checkContextEveryNIterations == 0 && ctx.Err() != nil {
