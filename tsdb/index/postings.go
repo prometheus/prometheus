@@ -317,18 +317,21 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}) {
 		// For each posting we first analyse whether the postings list is affected by the deletes.
 		// If no, we remove the label value from the vals list.
 		// This way we only need to Lock once later.
-	values:
 		for i := 0; i < len(vals); {
-			l := vals[i]
-			for _, id := range p.m[n][l] {
+			found := false
+			for _, id := range p.m[n][vals[i]] {
 				if _, ok := deleted[id]; ok {
 					i++
-					continue values
+					found = true
+					break
 				}
 			}
-			// This label value doesn't contain deleted ids, so no need to process it later.
-			// We we continue with the next one, which is the last one in the list.
-			vals[i], vals = vals[len(vals)-1], vals[:len(vals)-1]
+
+			if !found {
+				// This label value doesn't contain deleted ids, so no need to process it later.
+				// We we continue with the next one, which is the last one in the list.
+				vals[i], vals = vals[len(vals)-1], vals[:len(vals)-1]
+			}
 		}
 
 		// If no label values have deleted ids, just continue.
