@@ -2915,7 +2915,14 @@ azuread:
   # The Azure Cloud. Options are 'AzurePublic', 'AzureChina', or 'AzureGovernment'.
   [ cloud: <string> | default = AzurePublic ]
 
-  # Azure User-assigned Managed identity.
+  # The AAD Endpoint/Token Audience. Cannot be used with `cloud` configuration.
+  # Use for clouds other than 'AzurePublic', 'AzureChina', or 'AzureGovernment'.
+  # aad_endpoint such as https://login.microsoftonline.com/
+  [ aad_endpoint: <string> | default = "" ]
+  # token_audience such as https://monitor.azure.com/.default
+  [ token_audience: <string> | default = "" ]
+
+# Azure User-assigned Managed identity.
   [ managed_identity:
       [ client_id: <string> ] ]  
 
