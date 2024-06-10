@@ -398,15 +398,7 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 }
 
 func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) Postings {
-	p.mtx.RLock()
-
-	e := p.m[name]
-	if len(e) == 0 {
-		p.mtx.RUnlock()
-		return EmptyPostings()
-	}
-
-	// We'll copy the the values into a slice and then match over that,
+	// We'll copy the values into a slice and then match over that,
 	// this way we don't need to hold the mutex while we're matching,
 	// which can be slow (seconds) if the match function is a huge regex.
 	// Holding this lock prevents new series from being added (slows down the write path)
@@ -414,15 +406,7 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 	//
 	// Also, benchmarking shows that first copying the values into a slice and then matching over that is
 	// faster than matching over the map keys directly, at least on AMD64.
-	vals := make([]string, 0, len(e))
-	for v, srs := range e {
-		if len(srs) > 0 {
-			vals = append(vals, v)
-		}
-	}
-
-	p.mtx.RUnlock()
-
+	vals := p.labelValues(name)
 	for i, count := 0, 1; i < len(vals); count++ {
 		if count%checkContextEveryNIterations == 0 && ctx.Err() != nil {
 			return ErrPostings(ctx.Err())
@@ -438,7 +422,7 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 		vals[i], vals = vals[len(vals)-1], vals[:len(vals)-1]
 	}
 
-	// If none matched, no need to grab the lock again.
+	// If none matched (or this label had no values), no need to grab the lock again.
 	if len(vals) == 0 {
 		return EmptyPostings()
 	}
@@ -446,6 +430,7 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 	// Now `vals` only contains the values that matched, get their postings.
 	var its []Postings
 	p.mtx.RLock()
+	e := p.m[name]
 	for _, v := range vals {
 		if refs, ok := e[v]; ok {
 			// Some of the values may have been garbage-collected in the meantime this is fine, we'll just skip them.
@@ -459,6 +444,27 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 	p.mtx.RUnlock()
 
 	return Merge(ctx, its...)
+}
+
+// labelValues returns a slice of label values for the given label name.
+// It will take the read lock.
+func (p *MemPostings) labelValues(name string) []string {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+
+	e := p.m[name]
+	if len(e) == 0 {
+		return nil
+	}
+
+	vals := make([]string, 0, len(e))
+	for v, srs := range e {
+		if len(srs) > 0 {
+			vals = append(vals, v)
+		}
+	}
+
+	return vals
 }
 
 // ExpandPostings returns the postings expanded as a slice.
