@@ -36,7 +36,7 @@ const (
 	// histograms (repeated Histogram) has field value 4 in TimeSeries
 	histogramsTag = 0x22
 	// count_int (uint64) has field value 1 in Histogram
-	histogramCountIntTag = 0x9
+	histogramCountIntTag = 0x8
 	// count_float (double) has field value 2 in Histogram
 	histogramCountFloatTag = 0x11
 	// sum (double) has field value 3 in Histogram
@@ -108,6 +108,7 @@ func marshalTimeSeriesToSizedBuffer(t *timeSeries, data []byte) (int, error) {
 		}
 		i -= size
 		i = encodeVarint(data, i, uint64(size))
+		i--
 		data[i] = exemplarTag
 	case tHistogram:
 		size, err := marshalHistogramToSizedBuffer(t.histogram, t.timestamp, data[:i])
@@ -116,6 +117,7 @@ func marshalTimeSeriesToSizedBuffer(t *timeSeries, data []byte) (int, error) {
 		}
 		i -= size
 		i = encodeVarint(data, i, uint64(size))
+		i--
 		data[i] = histogramsTag
 	case tFloatHistogram:
 		size, err := marshalFloatHistogramToSizedBuffer(t.floatHistogram, t.timestamp, data[:i])
@@ -124,6 +126,7 @@ func marshalTimeSeriesToSizedBuffer(t *timeSeries, data []byte) (int, error) {
 		}
 		i -= size
 		i = encodeVarint(data, i, uint64(size))
+		i--
 		data[i] = histogramsTag
 	}
 	size, err := marshalLabelsToSizedBuffer(t.seriesLabels, data[:i])
@@ -220,7 +223,7 @@ func marshalHistogramToSizedBuffer(h *histogram.Histogram, timestamp int64, data
 		data[i] = histogramSumTag
 	}
 	if h.Schema != 0 {
-		i = encodeVarint(data, i, uint64(h.Schema))
+		i = encodeVarint(data, i, encodeZigZag32(h.Schema))
 		i--
 		data[i] = histogramSchemaTag
 	}
@@ -302,7 +305,7 @@ func marshalFloatHistogramToSizedBuffer(fh *histogram.FloatHistogram, timestamp 
 		data[i] = histogramSumTag
 	}
 	if fh.Schema != 0 {
-		i = encodeVarint(data, i, uint64(fh.Schema))
+		i = encodeVarint(data, i, encodeZigZag32(fh.Schema))
 		i--
 		data[i] = histogramSchemaTag
 	}
