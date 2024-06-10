@@ -324,7 +324,8 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}) {
 		// This way we only need to Lock once later.
 		for i := 0; i < len(vals); {
 			found := false
-			for _, id := range p.m[n][vals[i]] {
+			refs := p.m[n][vals[i]]
+			for _, id := range refs {
 				if _, ok := deleted[id]; ok {
 					i++
 					found = true
