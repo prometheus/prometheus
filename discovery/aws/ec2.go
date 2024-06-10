@@ -334,6 +334,8 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 							ipv6addrs = append(ipv6addrs, *ipv6addr.Ipv6Address)
 							if *ipv6addr.IsPrimaryIpv6 {
 								// we might have to extend the slice with more than one element
+								// that could leave empty strings in the list which is intentional
+								// to keep the position/device index information
 								for int64(len(primaryipv6addrs)) <= *eni.Attachment.DeviceIndex {
 									primaryipv6addrs = append(primaryipv6addrs, "")
 								}
