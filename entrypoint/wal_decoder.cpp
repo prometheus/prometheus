@@ -40,8 +40,8 @@ extern "C" void prompp_wal_decoder_decode(void* args, void* res) {
     uint32_t samples;
     uint32_t series;
     uint32_t segment_id;
-    PromPP::Primitives::Timestamp earliest_block_timestamp;
-    PromPP::Primitives::Timestamp latest_block_timestamp;
+    PromPP::Primitives::Timestamp earliest_block_sample;
+    PromPP::Primitives::Timestamp latest_block_sample;
     PromPP::Primitives::Go::Slice<char> protobuf;
     PromPP::Primitives::Go::Slice<char> error;
   };
