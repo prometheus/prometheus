@@ -38,6 +38,8 @@ class TimeseriesProtobufWriter {
     stats.encoded_at = decoder_.encoded_at_tsns();
     stats.samples = decoder_.samples() - samples_before_;
     stats.series = processed_series_;
+    stats.earliest_block_sample = decoder_.earliest_sample();
+    stats.latest_block_sample = decoder_.latest_sample();
 
     if constexpr (have_segment_id<Stats>) {
       stats.segment_id = decoder_.last_processed_segment();
@@ -68,8 +70,6 @@ class Decoder {
     TimeseriesProtobufWriter<Reader, Output> protobuf_writer(reader_, out);
     reader_.process_segment(protobuf_writer);
     protobuf_writer.get_statistic(stats);
-    stats.earliest_block_timestamp = reader_.earliest_sample();
-    stats.latest_block_timestamp = reader_.latest_sample();
   }
 
   // decode_dry - decoding incoming data without protbuf.
