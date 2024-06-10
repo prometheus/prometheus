@@ -415,18 +415,44 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 		}
 	}
 
-	var its []Postings
-	count := 1
-	for _, v := range vals {
+	// We don't need to hold the mutex while we're matching,
+	// which can be slow (seconds) if the match function is a huge regex.
+	// Holding this lock prevents new series from being added (slows down the write path) and blocks the compaction process.
+	p.mtx.RUnlock()
+
+	for i, count := 0, 1; i < len(vals); count++ {
 		if count%checkContextEveryNIterations == 0 && ctx.Err() != nil {
-			p.mtx.RUnlock()
 			return ErrPostings(ctx.Err())
 		}
-		count++
-		if match(v) {
-			its = append(its, NewListPostings(e[v]))
+
+		if match(vals[i]) {
+			i++
+			continue
+		}
+
+		// Didn't match, bring the last value to this position, make the slice shorter and check again.
+		// The order of the slice doesn't matter as it comes from a map iteration.
+		vals[i], vals = vals[len(vals)-1], vals[:len(vals)-1]
+	}
+
+	// If none matched, no need to grab the lock again.
+	if len(vals) == 0 {
+		return EmptyPostings()
+	}
+
+	// Now `vals` only contains the values that matched, get their postings.
+	var its []Postings
+	p.mtx.RLock()
+	for _, v := range vals {
+		if refs, ok := e[v]; ok {
+			// Some of the values may have been garbage-collected in the meantime this is fine, we'll just skip them.
+			// If we didn't let the mutex go, we'd have these postings here, but they would be pointing nowhere
+			// because there would be a `MemPostings.Delete()` call waiting for the lock to delete these labels,
+			// because the series were deleted already.
+			its = append(its, NewListPostings(refs))
 		}
 	}
+	// Let the mutex go before merging.
 	p.mtx.RUnlock()
 
 	return Merge(ctx, its...)
