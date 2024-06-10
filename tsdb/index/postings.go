@@ -428,7 +428,7 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 	}
 
 	// Now `vals` only contains the values that matched, get their postings.
-	var its []Postings
+	its := make([]Postings, 0, len(vals))
 	p.mtx.RLock()
 	e := p.m[name]
 	for _, v := range vals {
