@@ -406,7 +406,13 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 		return EmptyPostings()
 	}
 
-	// Benchmarking shows that first copying the values into a slice and then matching over that is
+	// We'll copy the the values into a slice and then match over that,
+	// this way we don't need to hold the mutex while we're matching,
+	// which can be slow (seconds) if the match function is a huge regex.
+	// Holding this lock prevents new series from being added (slows down the write path)
+	// and blocks the compaction process.
+	//
+	// Also, benchmarking shows that first copying the values into a slice and then matching over that is
 	// faster than matching over the map keys directly, at least on AMD64.
 	vals := make([]string, 0, len(e))
 	for v, srs := range e {
@@ -415,9 +421,6 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 		}
 	}
 
-	// We don't need to hold the mutex while we're matching,
-	// which can be slow (seconds) if the match function is a huge regex.
-	// Holding this lock prevents new series from being added (slows down the write path) and blocks the compaction process.
 	p.mtx.RUnlock()
 
 	for i, count := 0, 1; i < len(vals); count++ {
