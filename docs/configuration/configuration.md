@@ -125,7 +125,7 @@ runtime:
   # Configure the Go garbage collector GOGC parameter
   # See: https://tip.golang.org/doc/gc-guide#GOGC
   # Lowering this number increases CPU usage.
-  [ gogc: <int> | default = 50 ]
+  [ gogc: <int> | default = 75 ]
 
 # Rule files specifies a list of globs. Rules and alerts are read from
 # all matching files.
