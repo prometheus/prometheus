@@ -2,6 +2,10 @@
 
 ## unreleased
 
+This release changes the default for GOGC, the Go runtime control for the trade-off between excess memory use and CPU usage. We have found that Prometheus operates with minimal additional CPU usage, but greatly reduced memory by adjusting the upstream Go default from 100 to 75.
+
+* [CHANGE] Runtime: Change GOGC threshold from 50 to 75 #14285
+
 ## 2.53.0-rc.0 / 2024-06-06
 
 This release changes the default for GOGC, the Go runtime control for the trade-off between excess memory use and CPU usage. We have found that Prometheus operates with minimal additional CPU usage, but greatly reduced memory by adjusting the upstream Go default from 100 to 50.
