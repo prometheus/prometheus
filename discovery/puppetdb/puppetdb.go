@@ -237,7 +237,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 			pdbLabelResource:    model.LabelValue(resource.Resource),
 			pdbLabelType:        model.LabelValue(resource.Type),
 			pdbLabelTitle:       model.LabelValue(resource.Title),
-			pdbLabelExported:    model.LabelValue(fmt.Sprintf("%t", resource.Exported)),
+			pdbLabelExported:    model.LabelValue(strconv.FormatBool(resource.Exported)),
 			pdbLabelFile:        model.LabelValue(resource.File),
 			pdbLabelEnvironment: model.LabelValue(resource.Environment),
 		}

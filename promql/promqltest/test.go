@@ -48,6 +48,9 @@ var (
 	patLoad                     = regexp.MustCompile(`^load(?:_(with_nhcb))?\s+(.+?)$`)
 	patEvalInstant              = regexp.MustCompile(`^eval(?:_(with_nhcb))?(?:_(fail|warn|ordered))?\s+instant\s+(?:at\s+(.+?))?\s+(.+)$`)
 	patEvalRange                = regexp.MustCompile(`^eval(?:_(fail|warn))?\s+range\s+from\s+(.+)\s+to\s+(.+)\s+step\s+(.+?)\s+(.+)$`)
+	patWhitespace               = regexp.MustCompile(`\s+`)
+	patBucket                   = regexp.MustCompile(`_bucket\b`)
+	patLE                       = regexp.MustCompile(`\ble\b`)
 	histogramBucketReplacements = []struct {
 		pattern *regexp.Regexp
 		repl    string
@@ -57,19 +60,19 @@ var (
 			repl:    "",
 		},
 		{
-			pattern: regexp.MustCompile(`\s+by\s+\(le\)`),
+			pattern: regexp.MustCompile(`\s+by\s+\(\s*le\s*\)`),
 			repl:    "",
 		},
 		{
-			pattern: regexp.MustCompile(`\(le,\s*`),
+			pattern: regexp.MustCompile(`\(\s*le\s*,\s*`),
 			repl:    "(",
 		},
 		{
-			pattern: regexp.MustCompile(`,\s*le,\s*`),
+			pattern: regexp.MustCompile(`,\s*le\s*,\s*`),
 			repl:    ", ",
 		},
 		{
-			pattern: regexp.MustCompile(`,\s*le\)`),
+			pattern: regexp.MustCompile(`,\s*le\s*\)`),
 			repl:    ")",
 		},
 	}
@@ -208,14 +211,14 @@ func parseLoad(lines []string, i int) (int, *loadCmd, error) {
 	}
 	parts := patLoad.FindStringSubmatch(lines[i])
 	var (
-		withNhcb = parts[1] == "with_nhcb"
+		withNHCB = parts[1] == "with_nhcb"
 		step     = parts[2]
 	)
 	gap, err := model.ParseDuration(step)
 	if err != nil {
 		return i, nil, raise(i, "invalid step definition %q: %s", step, err)
 	}
-	cmd := newLoadCmd(time.Duration(gap), withNhcb)
+	cmd := newLoadCmd(time.Duration(gap), withNHCB)
 	for i+1 < len(lines) {
 		i++
 		defLine := lines[i]
@@ -253,12 +256,12 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 
 	isInstant := instantParts != nil
 
-	var withNhcb bool
+	var withNHCB bool
 	var mod string
 	var expr string
 
 	if isInstant {
-		withNhcb = instantParts[1] == "with_nhcb"
+		withNHCB = instantParts[1] == "with_nhcb"
 		mod = instantParts[2]
 		expr = instantParts[4]
 	} else {
@@ -332,7 +335,7 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 	case "warn":
 		cmd.warn = true
 	}
-	cmd.withNhcb = withNhcb
+	cmd.withNHCB = withNHCB
 
 	for j := 1; i+1 < len(lines); j++ {
 		i++
@@ -341,6 +344,21 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 			i--
 			break
 		}
+
+		if cmd.fail && strings.HasPrefix(defLine, "expected_fail_message") {
+			cmd.expectedFailMessage = strings.TrimSpace(strings.TrimPrefix(defLine, "expected_fail_message"))
+			break
+		}
+
+		if cmd.fail && strings.HasPrefix(defLine, "expected_fail_regexp") {
+			pattern := strings.TrimSpace(strings.TrimPrefix(defLine, "expected_fail_regexp"))
+			cmd.expectedFailRegexp, err = regexp.Compile(pattern)
+			if err != nil {
+				return i, nil, formatErr("invalid regexp '%s' for expected_fail_regexp: %w", pattern, err)
+			}
+			break
+		}
+
 		if f, err := parseNumber(defLine); err == nil {
 			cmd.expect(0, parser.SequenceValue{Value: f})
 			break
@@ -419,16 +437,16 @@ type loadCmd struct {
 	metrics   map[uint64]labels.Labels
 	defs      map[uint64][]promql.Sample
 	exemplars map[uint64][]exemplar.Exemplar
-	withNhcb  bool
+	withNHCB  bool
 }
 
-func newLoadCmd(gap time.Duration, withNhcb bool) *loadCmd {
+func newLoadCmd(gap time.Duration, withNHCB bool) *loadCmd {
 	return &loadCmd{
 		gap:       gap,
 		metrics:   map[uint64]labels.Labels{},
 		defs:      map[uint64][]promql.Sample{},
 		exemplars: map[uint64][]exemplar.Exemplar{},
-		withNhcb:  withNhcb,
+		withNHCB:  withNHCB,
 	}
 }
 
@@ -467,7 +485,7 @@ func (cmd *loadCmd) append(a storage.Appender) error {
 			}
 		}
 	}
-	if cmd.withNhcb {
+	if cmd.withNHCB {
 		return cmd.appendCustomHistogram(a)
 	}
 	return nil
@@ -484,15 +502,15 @@ func getHistogramMetricBase(m labels.Labels, suffix string) (labels.Labels, uint
 }
 
 type tempHistogramWrapper struct {
-	metric      labels.Labels
-	upperBounds []float64
-	histByTs    map[int64]tempHistogram
+	metric        labels.Labels
+	upperBounds   []float64
+	histogramByTs map[int64]tempHistogram
 }
 
 func newTempHistogramWrapper() tempHistogramWrapper {
 	return tempHistogramWrapper{
-		upperBounds: []float64{},
-		histByTs:    map[int64]tempHistogram{},
+		upperBounds:   []float64{},
+		histogramByTs: map[int64]tempHistogram{},
 	}
 }
 
@@ -508,38 +526,38 @@ func newTempHistogram() tempHistogram {
 	}
 }
 
-func processClassicHistogramSeries(m labels.Labels, suffix string, histMap map[uint64]tempHistogramWrapper, smpls []promql.Sample, updateHistWrapper func(*tempHistogramWrapper), updateHist func(*tempHistogram, float64)) {
+func processClassicHistogramSeries(m labels.Labels, suffix string, histogramMap map[uint64]tempHistogramWrapper, smpls []promql.Sample, updateHistogramWrapper func(*tempHistogramWrapper), updateHistogram func(*tempHistogram, float64)) {
 	m2, m2hash := getHistogramMetricBase(m, suffix)
-	histWrapper, exists := histMap[m2hash]
+	histogramWrapper, exists := histogramMap[m2hash]
 	if !exists {
-		histWrapper = newTempHistogramWrapper()
+		histogramWrapper = newTempHistogramWrapper()
 	}
-	histWrapper.metric = m2
-	if updateHistWrapper != nil {
-		updateHistWrapper(&histWrapper)
+	histogramWrapper.metric = m2
+	if updateHistogramWrapper != nil {
+		updateHistogramWrapper(&histogramWrapper)
 	}
 	for _, s := range smpls {
 		if s.H != nil {
 			continue
 		}
-		hist, exists := histWrapper.histByTs[s.T]
+		histogram, exists := histogramWrapper.histogramByTs[s.T]
 		if !exists {
-			hist = newTempHistogram()
+			histogram = newTempHistogram()
 		}
-		updateHist(&hist, s.F)
-		histWrapper.histByTs[s.T] = hist
+		updateHistogram(&histogram, s.F)
+		histogramWrapper.histogramByTs[s.T] = histogram
 	}
-	histMap[m2hash] = histWrapper
+	histogramMap[m2hash] = histogramWrapper
 }
 
 func processUpperBoundsAndCreateBaseHistogram(upperBounds0 []float64) ([]float64, *histogram.FloatHistogram) {
 	sort.Float64s(upperBounds0)
 	upperBounds := make([]float64, 0, len(upperBounds0))
-	prevLe := math.Inf(-1)
+	prevLE := math.Inf(-1)
 	for _, le := range upperBounds0 {
-		if le != prevLe { // deduplicate
+		if le != prevLE { // deduplicate
 			upperBounds = append(upperBounds, le)
-			prevLe = le
+			prevLE = le
 		}
 	}
 	var customBounds []float64
@@ -563,7 +581,7 @@ func processUpperBoundsAndCreateBaseHistogram(upperBounds0 []float64) ([]float64
 // If classic histograms are defined, convert them into native histograms with custom
 // bounds and append the defined time series to the storage.
 func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
-	histMap := map[uint64]tempHistogramWrapper{}
+	histogramMap := map[uint64]tempHistogramWrapper{}
 
 	// Go through all the time series to collate classic histogram data
 	// and organise them by timestamp.
@@ -576,32 +594,32 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 			if err != nil || math.IsNaN(le) {
 				continue
 			}
-			processClassicHistogramSeries(m, "_bucket", histMap, smpls, func(histWrapper *tempHistogramWrapper) {
-				histWrapper.upperBounds = append(histWrapper.upperBounds, le)
-			}, func(hist *tempHistogram, f float64) {
-				hist.bucketCounts[le] = f
+			processClassicHistogramSeries(m, "_bucket", histogramMap, smpls, func(histogramWrapper *tempHistogramWrapper) {
+				histogramWrapper.upperBounds = append(histogramWrapper.upperBounds, le)
+			}, func(histogram *tempHistogram, f float64) {
+				histogram.bucketCounts[le] = f
 			})
 		case strings.HasSuffix(mName, "_count"):
-			processClassicHistogramSeries(m, "_count", histMap, smpls, nil, func(hist *tempHistogram, f float64) {
-				hist.count = f
+			processClassicHistogramSeries(m, "_count", histogramMap, smpls, nil, func(histogram *tempHistogram, f float64) {
+				histogram.count = f
 			})
 		case strings.HasSuffix(mName, "_sum"):
-			processClassicHistogramSeries(m, "_sum", histMap, smpls, nil, func(hist *tempHistogram, f float64) {
-				hist.sum = f
+			processClassicHistogramSeries(m, "_sum", histogramMap, smpls, nil, func(histogram *tempHistogram, f float64) {
+				histogram.sum = f
 			})
 		}
 	}
 
 	// Convert the collated classic histogram data into native histograms
 	// with custom bounds and append them to the storage.
-	for _, histWrapper := range histMap {
-		upperBounds, fhBase := processUpperBoundsAndCreateBaseHistogram(histWrapper.upperBounds)
-		samples := make([]promql.Sample, 0, len(histWrapper.histByTs))
-		for t, hist := range histWrapper.histByTs {
+	for _, histogramWrapper := range histogramMap {
+		upperBounds, fhBase := processUpperBoundsAndCreateBaseHistogram(histogramWrapper.upperBounds)
+		samples := make([]promql.Sample, 0, len(histogramWrapper.histogramByTs))
+		for t, histogram := range histogramWrapper.histogramByTs {
 			fh := fhBase.Copy()
 			var prevCount, total float64
 			for i, le := range upperBounds {
-				currCount, exists := hist.bucketCounts[le]
+				currCount, exists := histogram.bucketCounts[le]
 				if !exists {
 					currCount = 0
 				}
@@ -610,9 +628,9 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 				total += count
 				prevCount = currCount
 			}
-			fh.Sum = hist.sum
-			if hist.count != 0 {
-				total = hist.count
+			fh.Sum = histogram.sum
+			if histogram.count != 0 {
+				total = histogram.count
 			}
 			fh.Count = total
 			s := promql.Sample{T: t, H: fh.Compact(0)}
@@ -623,7 +641,7 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 		}
 		sort.Slice(samples, func(i, j int) bool { return samples[i].T < samples[j].T })
 		for _, s := range samples {
-			if err := appendSample(a, s, histWrapper.metric); err != nil {
+			if err := appendSample(a, s, histogramWrapper.metric); err != nil {
 				return err
 			}
 		}
@@ -655,7 +673,9 @@ type evalCmd struct {
 
 	isRange             bool // if false, instant query
 	fail, warn, ordered bool
-	withNhcb            bool
+	withNHCB            bool
+	expectedFailMessage string
+	expectedFailRegexp  *regexp.Regexp
 
 	metrics  map[uint64]labels.Labels
 	expected map[uint64]entry
@@ -844,6 +864,24 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 	return nil
 }
 
+func (ev *evalCmd) checkExpectedFailure(actual error) error {
+	if ev.expectedFailMessage != "" {
+		if ev.expectedFailMessage != actual.Error() {
+			return fmt.Errorf("expected error %q evaluating query %q (line %d), but got: %s", ev.expectedFailMessage, ev.expr, ev.line, actual.Error())
+		}
+	}
+
+	if ev.expectedFailRegexp != nil {
+		if !ev.expectedFailRegexp.MatchString(actual.Error()) {
+			return fmt.Errorf("expected error matching pattern %q evaluating query %q (line %d), but got: %s", ev.expectedFailRegexp.String(), ev.expr, ev.line, actual.Error())
+		}
+	}
+
+	// We're not expecting a particular error, or we got the error we expected.
+	// This test passes.
+	return nil
+}
+
 func formatSeriesResult(s promql.Series) string {
 	floatPlural := "s"
 	histogramPlural := "s"
@@ -1001,7 +1039,7 @@ func (t *test) execRangeEval(cmd *evalCmd, engine promql.QueryEngine) error {
 	}
 	if res.Err != nil {
 		if cmd.fail {
-			return nil
+			return cmd.checkExpectedFailure(res.Err)
 		}
 
 		return fmt.Errorf("error evaluating query %q (line %d): %w", cmd.expr, cmd.line, res.Err)
@@ -1028,12 +1066,21 @@ func (t *test) execInstantEval(cmd *evalCmd, engine promql.QueryEngine) error {
 		if err := t.runInstantQuery(iq, cmd, engine); err != nil {
 			return err
 		}
-		if cmd.withNhcb {
+		if cmd.withNHCB {
 			if !strings.Contains(iq.expr, "_bucket") {
-				return fmt.Errorf("expected '_bucket' in the expression %q", iq.expr)
+				return fmt.Errorf("expected '_bucket' in the expression '%q'", iq.expr)
 			}
+			origExpr := iq.expr
 			for _, rep := range histogramBucketReplacements {
 				iq.expr = rep.pattern.ReplaceAllString(iq.expr, rep.repl)
+			}
+			switch {
+			case patWhitespace.ReplaceAllString(iq.expr, "") == patWhitespace.ReplaceAllString(origExpr, ""):
+				return fmt.Errorf("query rewrite of '%q' had no effect", iq.expr)
+			case patBucket.MatchString(iq.expr):
+				return fmt.Errorf("rewritten query '%q' still has '_bucket'", iq.expr)
+			case patLE.MatchString(iq.expr):
+				return fmt.Errorf("rewritten query '%q' still has 'le'", iq.expr)
 			}
 			if err := t.runInstantQuery(iq, cmd, engine); err != nil {
 				return err
@@ -1059,6 +1106,10 @@ func (t *test) runInstantQuery(iq atModifierTestCase, cmd *evalCmd, engine promq
 	}
 	if res.Err != nil {
 		if cmd.fail {
+			if err := cmd.checkExpectedFailure(res.Err); err != nil {
+				return err
+			}
+
 			return nil
 		}
 		return fmt.Errorf("error evaluating query %q (line %d): %w", iq.expr, cmd.line, res.Err)

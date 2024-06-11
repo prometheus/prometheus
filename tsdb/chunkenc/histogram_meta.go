@@ -199,7 +199,7 @@ func isWholeWhenMultiplied(in float64) bool {
 // we can convert the value to a float64 by subtracting 1 and dividing by 1000.
 func putCustomBound(b *bstream, f float64) {
 	tf := f * 1000
-	// 33554431-1 comes from the maximum that can be stored in a varint in 4
+	// 33554431-1 comes from the maximum that can be stored in a varbit in 4
 	// bytes, other values are stored in 8 bytes anyway.
 	if tf < 0 || tf > 33554430 || !isWholeWhenMultiplied(f) {
 		b.writeBit(zero)

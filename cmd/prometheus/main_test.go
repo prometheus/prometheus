@@ -24,6 +24,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -189,7 +190,7 @@ func TestSendAlerts(t *testing.T) {
 
 	for i, tc := range testCases {
 		tc := tc
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			senderFunc := senderFunc(func(alerts ...*notifier.Alert) {
 				require.NotEmpty(t, tc.in, "sender called with 0 alert")
 				require.Equal(t, tc.exp, alerts)

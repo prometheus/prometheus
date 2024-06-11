@@ -365,16 +365,22 @@ type bucketLimitAppender struct {
 
 func (app *bucketLimitAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	if h != nil {
+		if len(h.PositiveBuckets)+len(h.NegativeBuckets) > app.limit && h.Schema > histogram.ExponentialSchemaMax {
+			return 0, errBucketLimit
+		}
 		for len(h.PositiveBuckets)+len(h.NegativeBuckets) > app.limit {
-			if h.Schema <= histogram.ExponentialSchemaMin || h.Schema > histogram.ExponentialSchemaMax {
+			if h.Schema <= histogram.ExponentialSchemaMin {
 				return 0, errBucketLimit
 			}
 			h = h.ReduceResolution(h.Schema - 1)
 		}
 	}
 	if fh != nil {
+		if len(fh.PositiveBuckets)+len(fh.NegativeBuckets) > app.limit && fh.Schema > histogram.ExponentialSchemaMax {
+			return 0, errBucketLimit
+		}
 		for len(fh.PositiveBuckets)+len(fh.NegativeBuckets) > app.limit {
-			if fh.Schema <= histogram.ExponentialSchemaMin || fh.Schema > histogram.ExponentialSchemaMax {
+			if fh.Schema <= histogram.ExponentialSchemaMin {
 				return 0, errBucketLimit
 			}
 			fh = fh.ReduceResolution(fh.Schema - 1)

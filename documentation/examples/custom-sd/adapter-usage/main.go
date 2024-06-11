@@ -127,9 +127,9 @@ func (d *discovery) parseServiceNodes(resp *http.Response, name string) (*target
 		// since the service may be registered remotely through a different node.
 		var addr string
 		if node.ServiceAddress != "" {
-			addr = net.JoinHostPort(node.ServiceAddress, fmt.Sprintf("%d", node.ServicePort))
+			addr = net.JoinHostPort(node.ServiceAddress, strconv.Itoa(node.ServicePort))
 		} else {
-			addr = net.JoinHostPort(node.Address, fmt.Sprintf("%d", node.ServicePort))
+			addr = net.JoinHostPort(node.Address, strconv.Itoa(node.ServicePort))
 		}
 
 		target := model.LabelSet{model.AddressLabel: model.LabelValue(addr)}

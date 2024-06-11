@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -732,7 +733,7 @@ func TestScratchBuilder(t *testing.T) {
 			want: FromStrings("ddd", "444"),
 		},
 	} {
-		t.Run(fmt.Sprint(i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			b := NewScratchBuilder(len(tcase.add))
 			for _, lbl := range tcase.add {
 				b.Add(lbl.Name, lbl.Value)
