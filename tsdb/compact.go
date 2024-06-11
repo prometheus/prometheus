@@ -721,7 +721,7 @@ type BlockPopulator interface {
 	PopulateBlock(ctx context.Context, metrics *CompactorMetrics, logger log.Logger, chunkPool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc, blocks []BlockReader, meta *BlockMeta, indexw IndexWriter, chunkw ChunkWriter, postingsFunc IndexReaderPostingsFunc) error
 }
 
-// IndexReaderPostingsFunc is a function to get a posting iterator from a given index reader.
+// IndexReaderPostingsFunc is a function to get a sorted posting iterator from a given index reader.
 type IndexReaderPostingsFunc func(ctx context.Context, reader IndexReader) index.Postings
 
 // AllSortedPostings returns a sorted all posting iterator from the input index reader.
