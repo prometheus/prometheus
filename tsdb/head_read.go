@@ -267,15 +267,17 @@ func (h *headIndexReader) LabelValueFor(_ context.Context, id storage.SeriesRef,
 	return value, nil
 }
 
-// LabelNamesFor returns all the label names for the series referred to by IDs.
+// LabelNamesFor returns all the label names for the series referred to by the postings.
 // The names returned are sorted.
-func (h *headIndexReader) LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([]string, error) {
+func (h *headIndexReader) LabelNamesFor(ctx context.Context, series index.Postings) ([]string, error) {
 	namesMap := make(map[string]struct{})
-	for _, id := range ids {
-		if ctx.Err() != nil {
+	i := 0
+	for series.Next() {
+		i++
+		if i%checkContextEveryNIterations == 0 && ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		memSeries := h.head.series.getByID(chunks.HeadSeriesRef(id))
+		memSeries := h.head.series.getByID(chunks.HeadSeriesRef(series.At()))
 		if memSeries == nil {
 			// Series not found, this happens during compaction,
 			// when series was garbage collected after the caller got the series IDs.
@@ -284,6 +286,9 @@ func (h *headIndexReader) LabelNamesFor(ctx context.Context, ids ...storage.Seri
 		memSeries.lset.Range(func(lbl labels.Label) {
 			namesMap[lbl.Name] = struct{}{}
 		})
+	}
+	if err := series.Err(); err != nil {
+		return nil, err
 	}
 	names := make([]string, 0, len(namesMap))
 	for name := range namesMap {
