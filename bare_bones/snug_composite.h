@@ -3,6 +3,8 @@
 #include <fstream>
 #include <string_view>
 
+#include <cxxabi.h>
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Warray-bounds"
 #include <parallel_hashmap/btree.h>
@@ -298,10 +300,20 @@ class DecodingTable {
     if (mode == SerializationMode::DELTA) {
       in.read(reinterpret_cast<char*>(&first_to_load_i), sizeof(first_to_load_i));
     }
+
+    std::cout << "first_to_load_i_gg: " << first_to_load_i << ", items_.size(): " << items_.size() << ", mode: " << (int)mode << std::endl;
+
     if (first_to_load_i != items_.size()) {
       if (mode == SerializationMode::SNAPSHOT) {
         throw BareBones::Exception(0x7bcd6011e39bbabc, "Attempt to load snapshot into non-empty DecodingTable");
       } else if (first_to_load_i < items_.size()) {
+        std::cout << abi::__cxa_demangle(typeid(*this).name(), nullptr, nullptr, nullptr) << std::endl;
+
+        uint32_t size_to_load;
+        in.read(reinterpret_cast<char*>(&size_to_load), sizeof(size_to_load));
+
+        std::cout << "size_to_load_gg2: " << size_to_load << std::endl;
+
         throw BareBones::Exception(0x3387739a7b4f574a, "Attempt to load segment over existing DecodingTable data");
       } else {
         throw BareBones::Exception(0x4ece66e098927bc6,
@@ -313,6 +325,8 @@ class DecodingTable {
     // read size
     uint32_t size_to_load;
     in.read(reinterpret_cast<char*>(&size_to_load), sizeof(size_to_load));
+
+    std::cout << "size_to_load_gg: " << size_to_load << std::endl;
 
     // read is completed, if there are no items
     if (!size_to_load) {

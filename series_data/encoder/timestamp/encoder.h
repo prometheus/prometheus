@@ -26,7 +26,7 @@ class TimestampEncoder {
 class TimestampDecoder {
  public:
   explicit TimestampDecoder(BareBones::BitSequenceReader reader) : reader_(reader) {}
-
+  
   [[nodiscard]] PROMPP_ALWAYS_INLINE int64_t decode() noexcept {
     if (gorilla_state_ == GorillaState::kFirstPoint) {
       [[unlikely]];
@@ -41,6 +41,14 @@ class TimestampDecoder {
     }
 
     return state_.last_ts;
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool eof() const noexcept { return reader_.eof(); }
+
+  [[nodiscard]] static int64_t decode_first(BareBones::BitSequenceReader reader) noexcept {
+    BareBones::Encoding::Gorilla::TimestampEncoderState state;
+    Decoder::decode(state, reader);
+    return state.last_ts;
   }
 
   [[nodiscard]] static BareBones::Vector<int64_t> decode_all(BareBones::BitSequenceReader reader) noexcept {

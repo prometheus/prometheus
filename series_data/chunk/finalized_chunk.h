@@ -3,7 +3,6 @@
 #include <forward_list>
 
 #include "bare_bones/preprocess.h"
-#include "data_chunk.h"
 
 namespace series_data::chunk {
 
@@ -13,11 +12,24 @@ class FinalizedChunkList {
 
   explicit FinalizedChunkList(size_t& allocated_memory_) : chunks_(BareBones::Allocator<DataChunk>{allocated_memory_}) {}
 
-  template <class... Args>
-  DataChunk& emplace_back(Args&&... args) {
-    for (auto it = chunks_.before_begin(), next_it = it;; it = next_it) {
-      if (++next_it == chunks_.end()) {
-        return *chunks_.emplace_after(it, std::forward<Args>(args)...);
+  template <class GetFinalizedChunkFirstTimestamp>
+  DataChunk& emplace(chunk::DataChunk& chunk, GetFinalizedChunkFirstTimestamp&& get_finalized_chunk_first_timestamp) {
+    auto chunk_first_timestamp = get_finalized_chunk_first_timestamp(chunk);
+
+    auto it = chunks_.before_begin();
+    for (auto next_it = it;; it = next_it) {
+      if (++next_it == chunks_.end() || chunk_first_timestamp < get_finalized_chunk_first_timestamp(*next_it)) {
+        return *chunks_.emplace_after(it, chunk);
+      }
+    }
+  }
+
+  void erase(const chunk::DataChunk& chunk) noexcept {
+    auto it = chunks_.before_begin();
+    for (auto next_it = it;; it = next_it) {
+      if (&*++next_it == &chunk) {
+        chunks_.erase_after(it);
+        return;
       }
     }
   }

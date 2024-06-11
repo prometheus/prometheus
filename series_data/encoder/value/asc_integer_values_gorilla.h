@@ -77,52 +77,6 @@ class PROMPP_ATTRIBUTE_PACKED AscIntegerValuesGorillaEncoder {
   ValueType last_value_type_{ValueType::kValue};
 };
 
-class AscIntegerValuesGorillaDecoder {
- public:
-  explicit AscIntegerValuesGorillaDecoder(BareBones::BitSequenceReader reader) : reader_(reader) {}
-
-  PROMPP_ALWAYS_INLINE double decode() noexcept {
-    if (gorilla_state_ == GorillaState::kFirstPoint) {
-      [[unlikely]];
-
-      Decoder::decode(state_, reader_);
-      gorilla_state_ = GorillaState::kSecondPoint;
-    } else if (gorilla_state_ == GorillaState::kSecondPoint) {
-      [[unlikely]];
-
-      Decoder::decode_delta(state_, reader_);
-      gorilla_state_ = GorillaState::kOtherPoint;
-    } else {
-      if (auto type = Decoder::decode_delta_of_delta_with_stale_nan(state_, reader_); type == ValueType::kStaleNan) {
-        [[unlikely]];
-        return BareBones::Encoding::Gorilla::STALE_NAN;
-      }
-    }
-
-    return static_cast<double>(state_.last_ts);
-  }
-
-  [[nodiscard]] static BareBones::Vector<double> decode_all(BareBones::BitSequenceReader reader) noexcept {
-    BareBones::Vector<double> values;
-
-    AscIntegerValuesGorillaDecoder decoder(reader);
-    while (!decoder.reader_.eof()) {
-      values.emplace_back(decoder.decode());
-    }
-
-    return values;
-  }
-
- private:
-  using GorillaState = BareBones::Encoding::Gorilla::GorillaState;
-  using Decoder = BareBones::Encoding::Gorilla::ZigZagTimestampDecoder<kDodSignificantLengths>;
-  using ValueType = BareBones::Encoding::Gorilla::ValueType;
-
-  BareBones::Encoding::Gorilla::TimestampEncoderState state_;
-  BareBones::BitSequenceReader reader_;
-  BareBones::Encoding::Gorilla::GorillaState gorilla_state_{GorillaState::kFirstPoint};
-};
-
 }  // namespace series_data::encoder::value
 
 template <>

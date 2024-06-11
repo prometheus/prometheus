@@ -140,7 +140,7 @@ class BitSequenceReader {
  private:
   const uint8_t* begin_;
   uint64_t i_ = 0;
-  const uint64_t size_;
+  uint64_t size_;
 };
 
 template <std::array kAllocationSizesTable>

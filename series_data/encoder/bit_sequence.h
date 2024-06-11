@@ -28,11 +28,22 @@ struct PROMPP_ATTRIBUTE_PACKED BitSequenceWithItemsCount {
   PROMPP_ALWAYS_INLINE uint8_t inc_count() noexcept { return (*reinterpret_cast<uint8_t*>(stream.raw_bytes()))++; }
   [[nodiscard]] PROMPP_ALWAYS_INLINE BareBones::BitSequenceReader reader() const noexcept { return reader(stream); }
 
+  [[nodiscard]] PROMPP_ALWAYS_INLINE static uint8_t count(const CompactBitSequence& stream) noexcept {
+    return *reinterpret_cast<const uint8_t*>(stream.raw_bytes());
+  }
+
   [[nodiscard]] PROMPP_ALWAYS_INLINE static BareBones::BitSequenceReader reader(const CompactBitSequence& stream) noexcept {
     auto reader = stream.reader();
     reader.ff(BareBones::Bit::to_bits(sizeof(uint8_t)));
     return reader;
   }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return stream.allocated_memory(); }
+};
+
+struct PROMPP_ATTRIBUTE_PACKED RefCountableBitSequenceWithItemsCount {
+  encoder::BitSequenceWithItemsCount stream;
+  uint32_t reference_count{1};
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return stream.allocated_memory(); }
 };
@@ -44,3 +55,6 @@ struct BareBones::IsTriviallyReallocatable<series_data::encoder::BitSequenceWith
 
 template <>
 struct BareBones::IsTriviallyReallocatable<series_data::encoder::CompactBitSequence> : std::true_type {};
+
+template <>
+struct BareBones::IsTriviallyReallocatable<series_data::encoder::RefCountableBitSequenceWithItemsCount> : std::true_type {};

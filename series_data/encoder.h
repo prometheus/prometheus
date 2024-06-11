@@ -1,6 +1,7 @@
 #pragma once
 
 #include "data_storage.h"
+#include "decoder.h"
 
 namespace series_data {
 
@@ -9,14 +10,39 @@ inline constexpr uint8_t kSamplesPerChunkDefault = 240;
 template <uint8_t kSamplesPerChunk = kSamplesPerChunkDefault>
 class Encoder {
  public:
-  void encode(uint32_t ls_id, int64_t timestamp, double value) {
-    auto& chunk = (storage_.open_chunks.size() > ls_id) ? storage_.open_chunks[ls_id] : storage_.open_chunks.emplace_back();
+  PROMPP_ALWAYS_INLINE void encode(uint32_t ls_id, int64_t timestamp, double value) {
+    encode(ls_id, timestamp, value, storage_.open_chunks.size() > ls_id ? storage_.open_chunks[ls_id] : storage_.open_chunks.emplace_back());
+  }
+
+  void encode(uint32_t ls_id, int64_t timestamp, double value, chunk::DataChunk& chunk) {
     if (chunk.encoding_type == chunk::DataChunk::EncodingType::kGorilla) {
       [[unlikely]];
       encode_gorilla(ls_id, timestamp, value, chunk);
     } else {
       encode_timestamp_and_value_separately(ls_id, timestamp, value, chunk);
     }
+  }
+
+  void erase_finalized(uint32_t ls_id, const chunk::DataChunk& chunk) {
+    if (auto finalized_it = storage_.finalized_chunks.find(ls_id); finalized_it != storage_.finalized_chunks.end()) {
+      storage_.erase_chunk<chunk::DataChunk::Type::kFinalized>(chunk);
+      finalized_it->second.erase(chunk);
+    }
+  }
+
+  void finalize(uint32_t ls_id, chunk::DataChunk& chunk) {
+    if (chunk.encoding_type == chunk::DataChunk::EncodingType::kGorilla) {
+      [[unlikely]];
+      finalize_chunk(ls_id, chunk, encoder::timestamp::State::kInvalidId);
+    } else {
+      finalize_timestamp_state_and_chunk(ls_id, chunk);
+    }
+  }
+
+  void replace(uint32_t ls_id, const chunk::DataChunk& chunk) {
+    auto& open_chunk = storage_.open_chunks[ls_id];
+    storage_.erase_chunk<chunk::DataChunk::Type::kOpen>(open_chunk);
+    open_chunk = chunk;
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return storage_.allocated_memory(); }
@@ -51,6 +77,7 @@ class Encoder {
         if (auto finalized_stream_id = storage_.timestamp_encoder.process_finalized(chunk.timestamp_encoder_state_id);
             finalized_stream_id != encoder::timestamp::State::kInvalidId) {
           [[unlikely]];
+          ++storage_.finalized_timestamp_streams[finalized_stream_id].reference_count;
           finalize_chunk(ls_id, chunk, finalized_stream_id);
         } else if (state.stream_data.stream.count() >= kSamplesPerChunk) {
           [[unlikely]];
@@ -70,41 +97,60 @@ class Encoder {
       }
     }
 
+    if (ls_id == 1191360) {
+      std::cout << "value: " << value << ", type: " << (int)chunk.encoding_type
+                << ", can be encoded: " << encoder::value::Uint32ConstantEncoder::can_be_encoded(value)
+                << ", encoded_value: " << chunk.encoder.uint32_constant.value() << ", is_positive_int(value): " << encoder::value::is_positive_int(value)
+                << ", cmp: " << (static_cast<uint64_t>(value) <= std::numeric_limits<uint32_t>::max())
+                << ", static_cast<uint64_t>(value): " << static_cast<uint64_t>(__builtin_trunc(value)) << ", cmp2: " << (value == 1.84467e+19) << std::endl;
+
+      auto bytes = reinterpret_cast<const uint8_t*>(&value);
+      for (int i = 0; i < 8; ++i) {
+        printf("0x%.2X, ", static_cast<unsigned int>(bytes[i]));
+      }
+      printf("\n");
+    }
+
     encode_value(ls_id, chunk, timestamp, value);
+
     if (chunk.encoding_type != chunk::DataChunk::EncodingType::kGorilla) {
       chunk.timestamp_encoder_state_id = storage_.timestamp_encoder.encode(chunk.timestamp_encoder_state_id, timestamp);
     }
   }
 
   PROMPP_ALWAYS_INLINE void finalize_timestamp_state_and_chunk(uint32_t ls_id, chunk::DataChunk& chunk) {
-    auto finalized_timestamp_stream_id = storage_.finalized_timestamp_streams.size();
-    storage_.timestamp_encoder.finalize(chunk.timestamp_encoder_state_id, storage_.finalized_timestamp_streams.emplace_back(), finalized_timestamp_stream_id);
+    auto& finalized_timestamp_stream = storage_.finalized_timestamp_streams.emplace_back();
+    auto finalized_timestamp_stream_id = storage_.finalized_timestamp_streams.index_of(finalized_timestamp_stream);
+    storage_.timestamp_encoder.finalize(chunk.timestamp_encoder_state_id, finalized_timestamp_stream.stream, finalized_timestamp_stream_id);
     finalize_chunk(ls_id, chunk, finalized_timestamp_stream_id);
   }
 
   PROMPP_ALWAYS_INLINE void finalize_chunk(uint32_t ls_id, chunk::DataChunk& chunk, uint32_t finalized_timestamp_stream_id) {
-    auto& finalized_chunk = emplace_finalized_chunk(ls_id, chunk, finalized_timestamp_stream_id);
-
     if (chunk.encoding_type == chunk::DataChunk::EncodingType::kAscIntegerValuesGorilla) {
-      finalized_chunk.encoder.asc_integer_values_gorilla = storage_.finalized_data_streams.size();
-      storage_.finalized_data_streams.emplace_back(storage_.asc_integer_values_gorilla_encoders[chunk.encoder.asc_integer_values_gorilla].finalize_stream());
+      auto& finalized_stream = storage_.finalized_data_streams.emplace_back(
+          storage_.asc_integer_values_gorilla_encoders[chunk.encoder.asc_integer_values_gorilla].finalize_stream());
       storage_.asc_integer_values_gorilla_encoders.erase(chunk.encoder.asc_integer_values_gorilla);
+      chunk.encoder.asc_integer_values_gorilla = storage_.finalized_data_streams.index_of(finalized_stream);
     } else if (chunk.encoding_type == chunk::DataChunk::EncodingType::kValuesGorilla) {
-      finalized_chunk.encoder.values_gorilla = storage_.finalized_data_streams.size();
-      storage_.finalized_data_streams.emplace_back(storage_.values_gorilla_encoders[chunk.encoder.values_gorilla].finalize_stream());
+      auto& finalized_stream = storage_.finalized_data_streams.emplace_back(storage_.values_gorilla_encoders[chunk.encoder.values_gorilla].finalize_stream());
       storage_.values_gorilla_encoders.erase(chunk.encoder.values_gorilla);
+      chunk.encoder.values_gorilla = storage_.finalized_data_streams.index_of(finalized_stream);
     } else if (chunk.encoding_type == chunk::DataChunk::EncodingType::kGorilla) {
-      finalized_chunk.encoder.gorilla = storage_.finalized_data_streams.size();
-      storage_.finalized_data_streams.emplace_back(storage_.gorilla_encoders[chunk.encoder.gorilla].finalize_stream());
+      auto& finalized_stream = storage_.finalized_data_streams.emplace_back(storage_.gorilla_encoders[chunk.encoder.gorilla].finalize_stream());
       storage_.gorilla_encoders.erase(chunk.encoder.gorilla);
+      chunk.encoder.gorilla = storage_.finalized_data_streams.index_of(finalized_stream);
     }
 
+    chunk.timestamp_encoder_state_id = finalized_timestamp_stream_id;
+    emplace_finalized_chunk(ls_id, chunk);
     chunk.reset();
   }
 
-  PROMPP_ALWAYS_INLINE chunk::DataChunk& emplace_finalized_chunk(uint32_t ls_id, chunk::DataChunk& chunk, uint32_t finalized_timestamp_stream_id) {
+  PROMPP_ALWAYS_INLINE chunk::DataChunk& emplace_finalized_chunk(uint32_t ls_id, chunk::DataChunk& chunk) {
     return storage_.finalized_chunks.try_emplace(ls_id, storage_.finalized_chunks_map_allocated_memory)
-        .first->second.emplace_back(chunk, finalized_timestamp_stream_id);
+        .first->second.emplace(chunk, [this](const chunk::DataChunk& chunk) PROMPP_LAMBDA_INLINE {
+          return Decoder::get_chunk_first_timestamp<chunk::DataChunk::Type::kFinalized>(storage_, chunk);
+        });
   }
 
   PROMPP_ALWAYS_INLINE void encode_outdated_chunk(uint32_t ls_id, int64_t timestamp, double value) {
@@ -151,7 +197,7 @@ class Encoder {
     } else if (chunk.encoding_type == chunk::DataChunk::EncodingType::kAscIntegerValuesGorilla) {
       if (!storage_.asc_integer_values_gorilla_encoders[chunk.encoder.asc_integer_values_gorilla].encode(value)) {
         auto finalized_timestamp_stream_id = storage_.finalized_timestamp_streams.size();
-        storage_.timestamp_encoder.finalize_or_copy(chunk.timestamp_encoder_state_id, storage_.finalized_timestamp_streams.emplace_back(),
+        storage_.timestamp_encoder.finalize_or_copy(chunk.timestamp_encoder_state_id, storage_.finalized_timestamp_streams.emplace_back().stream,
                                                     finalized_timestamp_stream_id);
         finalize_chunk(ls_id, chunk, finalized_timestamp_stream_id);
 

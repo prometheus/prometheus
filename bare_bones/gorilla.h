@@ -384,7 +384,6 @@ class ZigZagTimestampDecoder {
 class TimestampDecoder {
  public:
   PROMPP_ALWAYS_INLINE static void decode(TimestampEncoderState& state, BitSequenceReader& reader) { state.last_ts = read_varint(reader); }
-  PROMPP_ALWAYS_INLINE static int64_t decode(BitSequenceReader& reader) { return read_varint(reader); }
   PROMPP_ALWAYS_INLINE static void decode_delta(TimestampEncoderState& state, BitSequenceReader& reader) {
     state.last_ts_delta = std::bit_cast<int64_t>(read_var_uint(reader));
     state.last_ts += state.last_ts_delta;

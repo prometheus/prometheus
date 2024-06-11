@@ -2,6 +2,7 @@
 
 #include "bare_bones/gorilla.h"
 #include "bit_sequence.h"
+#include "sample.h"
 
 namespace series_data::encoder {
 
@@ -48,40 +49,6 @@ class PROMPP_ATTRIBUTE_PACKED GorillaEncoder {
   BareBones::Encoding::Gorilla::TimestampEncoderState timestamp_state_;
   BareBones::Encoding::Gorilla::ValuesEncoderState values_state_;
   BitSequenceWithItemsCount stream_;
-};
-
-class GorillaDecoder {
- public:
-  struct Sample {
-    int64_t timestamp{};
-    double value{};
-
-    bool operator==(const Sample& other) const noexcept { return timestamp == other.timestamp && value::is_values_strictly_equals(value, other.value); }
-  };
-
-  using SampleList = BareBones::Vector<Sample>;
-
-  explicit GorillaDecoder(BareBones::BitSequenceReader& reader) : reader_(reader) {}
-
-  [[nodiscard]] PROMPP_ALWAYS_INLINE Sample decode() noexcept {
-    decoder_.decode(reader_, reader_);
-    return {.timestamp = decoder_.last_timestamp(), .value = decoder_.last_value()};
-  }
-
-  [[nodiscard]] static SampleList decode_all(BareBones::BitSequenceReader reader) noexcept {
-    BareBones::Vector<Sample> samples;
-
-    GorillaDecoder decoder(reader);
-    while (!decoder.reader_.eof()) {
-      samples.emplace_back(decoder.decode());
-    }
-
-    return samples;
-  }
-
- private:
-  BareBones::Encoding::Gorilla::StreamDecoder<BareBones::Encoding::Gorilla::ZigZagTimestampDecoder<>, BareBones::Encoding::Gorilla::ValuesDecoder> decoder_;
-  BareBones::BitSequenceReader& reader_;
 };
 
 }  // namespace series_data::encoder

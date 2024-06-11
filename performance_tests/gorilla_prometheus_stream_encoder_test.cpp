@@ -16,17 +16,9 @@ using BareBones::Encoding::Gorilla::StreamEncoder;
 using BareBones::Encoding::Gorilla::TimestampDecoder;
 using BareBones::Encoding::Gorilla::TimestampEncoder;
 using BareBones::Encoding::Gorilla::ValuesEncoder;
-
-struct Sample {
-  int64_t timestamp;
-  double value;
-
-  Sample(int64_t ts, double v) : timestamp(ts), value(v) {}
-
-  bool operator==(const Sample& other) const noexcept {
-    return timestamp == other.timestamp && std::bit_cast<uint64_t>(value) == std::bit_cast<uint64_t>(other.value);
-  }
-};
+using series_data::Decoder;
+using series_data::encoder::Sample;
+using series_data::encoder::SampleList;
 
 struct PROMPP_ATTRIBUTE_PACKED OutdatedSample {
   int64_t timestamp;
@@ -36,7 +28,64 @@ struct PROMPP_ATTRIBUTE_PACKED OutdatedSample {
   OutdatedSample(int64_t _timestamp, double _value, uint32_t _ls_id) : timestamp(_timestamp), value(_value), ls_id(_ls_id) {}
 };
 
+SampleList get_encoded_samples(const series_data::DataStorage& data_storage, uint32_t ls_id) {
+  SampleList result;
+  if (auto it = data_storage.finalized_chunks.find(ls_id); it != data_storage.finalized_chunks.end()) {
+    auto decoded_samples = Decoder::decode_chunks(data_storage, it->second, data_storage.open_chunks[ls_id]);
+    for (auto& samples : decoded_samples) {
+      result.reserve(result.size() + samples.size());
+      std::copy(samples.begin(), samples.end(), std::back_inserter(result));
+    }
+  } else {
+    result = Decoder::decode_chunk<series_data::chunk::DataChunk::Type::kOpen>(data_storage, data_storage.open_chunks[ls_id]);
+  }
+  return result;
+}
+
+void validate_encoded_chunks(const std::unordered_map<uint32_t, SampleList>& source_samples, const series_data::DataStorage& data_storage) {
+  for (auto& [ls_id, expected_samples] : source_samples) {
+    auto actual_samples = get_encoded_samples(data_storage, ls_id);
+    if (!std::ranges::equal(expected_samples, actual_samples)) {
+      std::cout << "Encoded samples for " << ls_id << " is not valid! type" << (int)data_storage.open_chunks[ls_id].encoding_type
+                << ", value: " << data_storage.open_chunks[ls_id].encoder.uint32_constant.value() << std::endl;
+
+      std::cout << "expected: " << std::endl;
+      for (auto& s : expected_samples) {
+        std::cout << s.timestamp << ", " << s.value << std::endl;
+
+        auto bytes = reinterpret_cast<const uint8_t*>(&s.value);
+        for (int i = 0; i < 8; ++i) {
+          printf("0x%.2X, ", static_cast<unsigned int>(bytes[i]));
+        }
+        printf("\n");
+
+        return;
+      }
+
+      std::cout << "actual: " << std::endl;
+      for (auto& s : actual_samples) {
+        std::cout << s.timestamp << ", " << s.value << std::endl;
+      }
+
+      return;
+    }
+  }
+}
+
 void GorillaPrometheusStreamEncoder::execute(const Config& config, Metrics& metrics) const {
+  //  double test_gg;
+  //  std::cin >> test_gg;
+  //  std::cout << test_gg << ", cmp: " << (test_gg == 1.84467e+19) << std::endl;
+
+  union GG {
+    uint8_t buffer[8];
+    double value;
+  };
+  GG gg{.value = 0};
+  gg.buffer[7] = 0x43;
+  gg.buffer[6] = 0xF0;
+  std::cout << gg.value << ", static_cast<uint64_t>: " << static_cast<uint64_t>(gg.value) << std::endl;
+
   DummyWal::Timeseries tmsr;
   DummyWal dummy_wal(input_file_full_name(config));
 
@@ -45,8 +94,9 @@ void GorillaPrometheusStreamEncoder::execute(const Config& config, Metrics& metr
   std::chrono::nanoseconds encode_time{};
   size_t samples_count = 0;
   uint32_t outdated_samples_count = 0;
-  [[maybe_unused]] std::unordered_map<uint32_t, std::vector<Sample>> source_samples;
+  std::unordered_map<uint32_t, SampleList> source_samples;
   BareBones::Vector<OutdatedSample> outdated_samples;
+
 #ifdef DUMP_LABELS
   std::unordered_set<std::string> names_set;
 #endif
@@ -55,9 +105,7 @@ void GorillaPrometheusStreamEncoder::execute(const Config& config, Metrics& metr
       auto ls_id = label_set_bitmap.find_or_emplace(tmsr.label_set());
       auto& sample = tmsr.samples()[0];
 
-#if 0
-      source_samples[ls_id].emplace_back(sample.timestamp(), sample.value());
-#endif
+      source_samples[ls_id].emplace_back(Sample{.timestamp = sample.timestamp(), .value = sample.value()});
 
 #ifdef DUMP_LABELS
       auto lss = label_set_bitmap[ls_id];
@@ -161,6 +209,8 @@ void GorillaPrometheusStreamEncoder::execute(const Config& config, Metrics& metr
   metrics << (Metric() << "gorilla_prometheus_stream_encoder_nanoseconds" << (encode_time.count() / (samples_count)));
 
   std::cout << "gorilla_prometheus_stream_encoder_nanoseconds: " << (encode_time.count() / (samples_count)) << std::endl;
+
+  validate_encoded_chunks(source_samples, encoder.storage());
 }
 
 }  // namespace performance_tests

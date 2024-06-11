@@ -5,7 +5,6 @@
 namespace {
 
 using BareBones::Encoding::Gorilla::STALE_NAN;
-using series_data::encoder::value::AscIntegerValuesGorillaDecoder;
 using series_data::encoder::value::AscIntegerValuesGorillaEncoder;
 
 struct CanBeEncodedCase {
@@ -93,33 +92,5 @@ INSTANTIATE_TEST_SUITE_P(ThreePoints,
 INSTANTIATE_TEST_SUITE_P(NonIntegerValue,
                          AscIntegerValuesGorillaEncoderIsActualFixture,
                          testing::Values(IsActualCase{.values = {-1.0, 0.0}, .value = -1.1, .expected = false}));
-
-struct UsageCase {
-  BareBones::Vector<double> values;
-};
-
-class AscIntegerValuesGorillaEncoderUsage : public testing::TestWithParam<UsageCase> {};
-
-TEST_P(AscIntegerValuesGorillaEncoderUsage, Test) {
-  // Arrange
-  auto& values = GetParam().values;
-  AscIntegerValuesGorillaEncoder encoder(values[0]);
-
-  // Act
-  encoder.encode_second(values[1]);
-  for (size_t i = 2; i < values.size(); ++i) {
-    encoder.encode(values[i]);
-  }
-  auto decoded = AscIntegerValuesGorillaDecoder::decode_all(encoder.stream().reader());
-
-  // Assert
-  EXPECT_TRUE(std::ranges::equal(values, decoded, [](double a, double b) { return std::bit_cast<uint64_t>(a) == std::bit_cast<uint64_t>(b); }));
-}
-
-INSTANTIATE_TEST_SUITE_P(Tests,
-                         AscIntegerValuesGorillaEncoderUsage,
-                         testing::Values(UsageCase{.values = {1.0, 2.0, 3.0}},
-                                         UsageCase{.values = {1.0, 2.0, STALE_NAN}},
-                                         UsageCase{.values = {1.0, 2.0, STALE_NAN, 3.0, STALE_NAN, 3.0}}));
 
 }  // namespace

@@ -7,6 +7,11 @@
 namespace series_data::chunk {
 
 struct PROMPP_ATTRIBUTE_PACKED DataChunk {
+  enum class Type {
+    kOpen = 0,
+    kFinalized,
+  };
+
   enum class EncodingType : uint8_t {
     kUnknown,
     kUint32Constant,
@@ -31,8 +36,17 @@ struct PROMPP_ATTRIBUTE_PACKED DataChunk {
   EncodingType encoding_type{EncodingType::kUnknown};
 
   DataChunk() = default;
-  DataChunk(const DataChunk& other, encoder::timestamp::State::Id finalized_stream_id)
-      : encoder{.double_constant = other.encoder.double_constant}, timestamp_encoder_state_id(finalized_stream_id), encoding_type(other.encoding_type) {}
+  DataChunk(const DataChunk&) noexcept = default;
+
+  DataChunk& operator=(const DataChunk& other) noexcept {
+    if (this != &other) {
+      encoder.double_constant = other.encoder.double_constant;
+      timestamp_encoder_state_id = other.timestamp_encoder_state_id;
+      encoding_type = other.encoding_type;
+    }
+
+    return *this;
+  }
 
   PROMPP_ALWAYS_INLINE void reset() noexcept {
     encoder.double_constant = 0;
@@ -42,3 +56,6 @@ struct PROMPP_ATTRIBUTE_PACKED DataChunk {
 };
 
 }  // namespace series_data::chunk
+
+template <>
+struct BareBones::IsTriviallyReallocatable<series_data::chunk::DataChunk> : std::true_type {};
