@@ -1110,7 +1110,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 							r.EvaluationTime = float64(0)
 							r.LastError = ""
 							r.Health = "ok"
-							for _, alert := range r.AlertInfo.Alerts {
+							for _, alert := range r.PartialAlerts.Alerts {
 								alert.ActiveAt = nil
 							}
 							ruleGroup.Rules[k] = r
@@ -2442,26 +2442,26 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						Limit:    0,
 						Rules: []Rule{
 							AlertingRulePaginated{
-								State:       "inactive",
-								Name:        "test_metric3",
-								Query:       "absent(test_metric3) != 1",
-								Duration:    1,
-								Labels:      labels.Labels{},
-								Annotations: labels.Labels{},
-								AlertInfo:   &AlertsPaginated{Alerts: []*Alert{}},
-								Health:      "ok",
-								Type:        "alerting",
+								State:         "inactive",
+								Name:          "test_metric3",
+								Query:         "absent(test_metric3) != 1",
+								Duration:      1,
+								Labels:        labels.Labels{},
+								Annotations:   labels.Labels{},
+								PartialAlerts: &PartialAlerts{Alerts: []*Alert{}},
+								Health:        "ok",
+								Type:          "alerting",
 							},
 							AlertingRulePaginated{
-								State:       "inactive",
-								Name:        "test_metric4",
-								Query:       "up == 1",
-								Duration:    1,
-								Labels:      labels.Labels{},
-								Annotations: labels.Labels{},
-								AlertInfo:   &AlertsPaginated{Alerts: []*Alert{}},
-								Health:      "ok",
-								Type:        "alerting",
+								State:         "inactive",
+								Name:          "test_metric4",
+								Query:         "up == 1",
+								Duration:      1,
+								Labels:        labels.Labels{},
+								Annotations:   labels.Labels{},
+								PartialAlerts: &PartialAlerts{Alerts: []*Alert{}},
+								Health:        "ok",
+								Type:          "alerting",
 							},
 							AlertingRulePaginated{
 								State:       "pending",
@@ -2470,7 +2470,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Duration:    1,
 								Labels:      labels.FromStrings("name", "tm5"),
 								Annotations: labels.Labels{},
-								AlertInfo: &AlertsPaginated{
+								PartialAlerts: &PartialAlerts{
 									Alerts: []*Alert{
 										{
 											Labels:      labels.FromStrings("alertname", "test_metric5", "name", "tm5"),
@@ -2510,26 +2510,26 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						Limit:    0,
 						Rules: []Rule{
 							AlertingRulePaginated{
-								State:       "inactive",
-								Name:        "test_metric3",
-								Query:       "absent(test_metric3) != 1",
-								Duration:    1,
-								Labels:      labels.Labels{},
-								Annotations: labels.Labels{},
-								AlertInfo:   &AlertsPaginated{Alerts: []*Alert{}},
-								Health:      "ok",
-								Type:        "alerting",
+								State:         "inactive",
+								Name:          "test_metric3",
+								Query:         "absent(test_metric3) != 1",
+								Duration:      1,
+								Labels:        labels.Labels{},
+								Annotations:   labels.Labels{},
+								PartialAlerts: &PartialAlerts{Alerts: []*Alert{}},
+								Health:        "ok",
+								Type:          "alerting",
 							},
 							AlertingRulePaginated{
-								State:       "inactive",
-								Name:        "test_metric4",
-								Query:       "up == 1",
-								Duration:    1,
-								Labels:      labels.Labels{},
-								Annotations: labels.Labels{},
-								AlertInfo:   &AlertsPaginated{Alerts: []*Alert{}},
-								Health:      "ok",
-								Type:        "alerting",
+								State:         "inactive",
+								Name:          "test_metric4",
+								Query:         "up == 1",
+								Duration:      1,
+								Labels:        labels.Labels{},
+								Annotations:   labels.Labels{},
+								PartialAlerts: &PartialAlerts{Alerts: []*Alert{}},
+								Health:        "ok",
+								Type:          "alerting",
 							},
 							AlertingRulePaginated{
 								State:       "pending",
@@ -2538,7 +2538,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Duration:    1,
 								Labels:      labels.FromStrings("name", "tm5"),
 								Annotations: labels.Labels{},
-								AlertInfo: &AlertsPaginated{
+								PartialAlerts: &PartialAlerts{
 									Alerts:  []*Alert{},
 									HasMore: true,
 								},
@@ -2561,15 +2561,15 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						Limit:    0,
 						Rules: []Rule{
 							AlertingRulePaginated{
-								State:       "inactive",
-								Name:        "test_metric3",
-								Query:       "absent(test_metric3) != 1",
-								Duration:    1,
-								Labels:      labels.Labels{},
-								Annotations: labels.Labels{},
-								AlertInfo:   &AlertsPaginated{Alerts: []*Alert{}},
-								Health:      "ok",
-								Type:        "alerting",
+								State:         "inactive",
+								Name:          "test_metric3",
+								Query:         "absent(test_metric3) != 1",
+								Duration:      1,
+								Labels:        labels.Labels{},
+								Annotations:   labels.Labels{},
+								PartialAlerts: &PartialAlerts{Alerts: []*Alert{}},
+								Health:        "ok",
+								Type:          "alerting",
 							},
 						},
 					},
