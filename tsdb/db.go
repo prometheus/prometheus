@@ -1415,13 +1415,13 @@ func (db *DB) compactBlocks() (err error) {
 		}
 
 		if err := db.reloadBlocks(); err != nil {
-			errs := tsdb_errors.NewMulti(err)
+			errs := tsdb_errors.NewMulti(fmt.Errorf("reloadBlocks blocks: %w", err))
 			for _, uid := range uids {
 				if errRemoveAll := os.RemoveAll(filepath.Join(db.dir, uid.String())); errRemoveAll != nil {
-					errs.Add(errRemoveAll)
+					errs.Add(fmt.Errorf("delete persisted block after failed db reloadBlocks:%s: %w", uid, errRemoveAll))
 				}
 			}
-			return fmt.Errorf("reloadBlocks blocks: %w", errs.Err())
+			return errs.Err()
 		}
 	}
 
