@@ -901,7 +901,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	db.metrics.maxBytes.Set(float64(maxBytes))
 	db.metrics.retentionDuration.Set((time.Duration(opts.RetentionDuration) * time.Millisecond).Seconds())
 
-	if err := db.reload(); err != nil {
+	if err := db.reload(context.Background()); err != nil {
 		return nil, err
 	}
 	// Set the min valid time for the ingested samples
@@ -1409,7 +1409,7 @@ func getBlock(allBlocks []*Block, id ulid.ULID) (*Block, bool) {
 }
 
 // reload reloads blocks and truncates the head and its WAL.
-func (db *DB) reload() error {
+func (db *DB) reload(ctx context.Context) error {
 	if err := db.reloadBlocks(); err != nil {
 		return fmt.Errorf("reloadBlocks: %w", err)
 	}
@@ -1417,7 +1417,7 @@ func (db *DB) reload() error {
 	if !ok {
 		return nil
 	}
-	if err := db.head.Truncate(maxt); err != nil {
+	if err := db.head.Truncate(ctx, maxt); err != nil {
 		return fmt.Errorf("head truncate: %w", err)
 	}
 	return nil

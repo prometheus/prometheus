@@ -6711,7 +6711,7 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 		}
 
 		require.Empty(t, db.Blocks())
-		require.NoError(t, db.reload())
+		require.NoError(t, db.reload(context.Background()))
 		require.Len(t, db.Blocks(), len(blockSeries))
 
 		q, err := db.Querier(math.MinInt64, math.MaxInt64)
@@ -6728,7 +6728,7 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 		id, err := db.compactor.Compact(db.Dir(), blockDirs, blocks)
 		require.NoError(t, err)
 		require.NotEqual(t, ulid.ULID{}, id)
-		require.NoError(t, db.reload())
+		require.NoError(t, db.reload(context.Background()))
 		require.Len(t, db.Blocks(), 1)
 
 		q, err = db.Querier(math.MinInt64, math.MaxInt64)

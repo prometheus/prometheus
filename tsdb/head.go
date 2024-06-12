@@ -1080,9 +1080,9 @@ func (h *Head) SetMinValidTime(minValidTime int64) {
 }
 
 // Truncate removes old data before mint from the head and WAL.
-func (h *Head) Truncate(mint int64) (err error) {
+func (h *Head) Truncate(ctx context.Context, mint int64) (err error) {
 	initialized := h.initialized()
-	if err := h.truncateMemory(context.Background(), mint); err != nil {
+	if err := h.truncateMemory(ctx, mint); err != nil {
 		return err
 	}
 	if !initialized {
