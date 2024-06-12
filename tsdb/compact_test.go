@@ -1863,4 +1863,5 @@ func TestCompactEmptyResultBlockWithTombstone(t *testing.T) {
 	ulids, err := c.Compact(tmpdir, []string{blockDir}, []*Block{block})
 	require.NoError(t, err)
 	require.Nil(t, ulids)
+	require.NoError(t, block.Close())
 }
