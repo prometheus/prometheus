@@ -655,6 +655,40 @@ func TestRelabelValidate(t *testing.T) {
 			},
 			expected: `"-${3}" is invalid 'target_label' for replace action`,
 		},
+		{
+			config: Config{
+				SourceLabels: model.LabelNames{"a"},
+				Separator:    DefaultRelabelConfig.Separator,
+				Regex:        DefaultRelabelConfig.Regex,
+				Modulus:      DefaultRelabelConfig.Modulus,
+				TargetLabel:  "b",
+				Replacement:  DefaultRelabelConfig.Replacement,
+				Action:       KeepEqual,
+			},
+		},
+		{
+			config: Config{
+				SourceLabels: model.LabelNames{"a"},
+				Separator:    DefaultRelabelConfig.Separator,
+				Regex:        MustNewRegexp(DefaultRelabelConfig.Regex.String()),
+				Modulus:      DefaultRelabelConfig.Modulus,
+				TargetLabel:  "b",
+				Replacement:  DefaultRelabelConfig.Replacement,
+				Action:       KeepEqual,
+			},
+		},
+		{
+			config: Config{
+				SourceLabels: model.LabelNames{"a"},
+				Separator:    DefaultRelabelConfig.Separator,
+				Regex:        MustNewRegexp("non-default"),
+				Modulus:      DefaultRelabelConfig.Modulus,
+				TargetLabel:  "b",
+				Replacement:  DefaultRelabelConfig.Replacement,
+				Action:       KeepEqual,
+			},
+			expected: "keepequal action requires only 'source_labels' and `target_label`, and no other fields",
+		},
 	}
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {

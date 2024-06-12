@@ -142,7 +142,7 @@ func (c *Config) Validate() error {
 	}
 
 	if c.Action == DropEqual || c.Action == KeepEqual {
-		if c.Regex != DefaultRelabelConfig.Regex ||
+		if !c.Regex.Equal(DefaultRelabelConfig.Regex) ||
 			c.Modulus != DefaultRelabelConfig.Modulus ||
 			c.Separator != DefaultRelabelConfig.Separator ||
 			c.Replacement != DefaultRelabelConfig.Replacement {
@@ -211,6 +211,15 @@ func (re Regexp) String() string {
 	str := re.Regexp.String()
 	// Trim the anchor `^(?:` prefix and `)$` suffix.
 	return str[4 : len(str)-2]
+}
+
+// Equal returns whether re and other have the same original string used to compile
+// the regular expression.
+func (re Regexp) Equal(other Regexp) bool {
+	if re.Regexp == nil || other.Regexp == nil {
+		return re.Regexp == nil && other.Regexp == nil
+	}
+	return re.Regexp.String() == other.Regexp.String()
 }
 
 // Process returns a relabeled version of the given label set. The relabel configurations
