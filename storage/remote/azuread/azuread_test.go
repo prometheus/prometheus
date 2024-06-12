@@ -71,7 +71,9 @@ func (ad *AzureAdTestSuite) TestAzureAdRoundTripper() {
 		// AzureAd roundtripper with ManagedIdentity.
 		{
 			cfg: &AzureADConfig{
-				Cloud: "AzurePublic",
+				Cloud: &AzureADCloudConfig{
+					Name: "AzurePublic",
+				},
 				ManagedIdentity: &ManagedIdentityConfig{
 					ClientID: dummyClientID,
 				},
@@ -80,7 +82,9 @@ func (ad *AzureAdTestSuite) TestAzureAdRoundTripper() {
 		// AzureAd roundtripper with OAuth.
 		{
 			cfg: &AzureADConfig{
-				Cloud: "AzurePublic",
+				Cloud: &AzureADCloudConfig{
+					Name: "AzurePublic",
+				},
 				OAuth: &OAuthConfig{
 					ClientID:     dummyClientID,
 					ClientSecret: dummyClientSecret,
@@ -167,25 +171,20 @@ func TestAzureAdConfig(t *testing.T) {
 			filename: "testdata/azuread_bad_oauthsdkconfig.yaml",
 			err:      "cannot provide both Azure OAuth and Azure SDK in the Azure AD config",
 		},
-		// Invalid config when both cloud and AAD Endpoint is provided.
-		{
-			filename: "testdata/azuread_bad_cloudaadendpoint.yaml",
-			err:      "cannot provide both cloud name and AAD Endpoint/Token Audience in the Azure AD config",
-		},
 		// Invalid config when both cloud and Token Audience is provided.
 		{
-			filename: "testdata/azuread_bad_cloudtokenaudience.yaml",
-			err:      "cannot provide both cloud name and AAD Endpoint/Token Audience in the Azure AD config",
+			filename: "testdata/azuread_bad_invalidcloudname.yaml",
+			err:      "cannot provide cloud name other than AzureCustom in the Azure AD cloud config",
 		},
 		// Invalid config when AAD Endpoint provided but Token Audience is missing.
 		{
 			filename: "testdata/azuread_bad_aadendpointmissing.yaml",
-			err:      "must provide both AAD Endpoint and Token Audience when either are provided in the Azure AD config",
+			err:      "must provide both AAD Endpoint and Token Audience when either are provided in the Azure AD cloud config",
 		},
 		// Invalid config when Token Audiene provided but AAD Endpoint is missing.
 		{
 			filename: "testdata/azuread_bad_tokenaudiencemissing.yaml",
-			err:      "must provide both AAD Endpoint and Token Audience when either are provided in the Azure AD config",
+			err:      "must provide both AAD Endpoint and Token Audience when either are provided in the Azure AD cloud config",
 		},
 		// Valid config with missing optionally cloud field.
 		{
@@ -246,7 +245,9 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 		// Invalid tokenProvider for managedidentity.
 		{
 			cfg: &AzureADConfig{
-				Cloud: "PublicAzure",
+				Cloud: &AzureADCloudConfig{
+					Name: "AzurePublic",
+				},
 				ManagedIdentity: &ManagedIdentityConfig{
 					ClientID: dummyClientID,
 				},
@@ -256,7 +257,9 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 		// Invalid tokenProvider for oauth.
 		{
 			cfg: &AzureADConfig{
-				Cloud: "PublicAzure",
+				Cloud: &AzureADCloudConfig{
+					Name: "AzurePublic",
+				},
 				OAuth: &OAuthConfig{
 					ClientID:     dummyClientID,
 					ClientSecret: dummyClientSecret,
@@ -268,7 +271,9 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 		// Invalid tokenProvider for SDK.
 		{
 			cfg: &AzureADConfig{
-				Cloud: "PublicAzure",
+				Cloud: &AzureADCloudConfig{
+					Name: "AzurePublic",
+				},
 				SDK: &SDKConfig{
 					TenantID: dummyTenantID,
 				},
@@ -278,7 +283,9 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 		// Valid tokenProvider for managedidentity.
 		{
 			cfg: &AzureADConfig{
-				Cloud: "AzurePublic",
+				Cloud: &AzureADCloudConfig{
+					Name: "AzurePublic",
+				},
 				ManagedIdentity: &ManagedIdentityConfig{
 					ClientID: dummyClientID,
 				},
@@ -287,7 +294,9 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 		// Valid tokenProvider for oauth.
 		{
 			cfg: &AzureADConfig{
-				Cloud: "AzurePublic",
+				Cloud: &AzureADCloudConfig{
+					Name: "AzurePublic",
+				},
 				OAuth: &OAuthConfig{
 					ClientID:     dummyClientID,
 					ClientSecret: dummyClientSecret,
@@ -298,7 +307,9 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 		// Valid tokenProvider for SDK.
 		{
 			cfg: &AzureADConfig{
-				Cloud: "AzurePublic",
+				Cloud: &AzureADCloudConfig{
+					Name: "AzurePublic",
+				},
 				SDK: &SDKConfig{
 					TenantID: dummyTenantID,
 				},
