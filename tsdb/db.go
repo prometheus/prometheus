@@ -1110,7 +1110,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 
 	// Calling db.reload() calls db.reloadBlocks() which requires cmtx to be locked.
 	db.cmtx.Lock()
-	if err := db.reload(); err != nil {
+	if err := db.reload(context.Background()); err != nil {
 		db.cmtx.Unlock()
 		return nil, err
 	}
@@ -1784,7 +1784,7 @@ func getBlock(allBlocks []*Block, id ulid.ULID) (*Block, bool) {
 
 // reload reloads blocks and truncates the head and its WAL.
 // The db.cmtx mutex should be held before calling this method.
-func (db *DB) reload() error {
+func (db *DB) reload(ctx context.Context) error {
 	if err := db.reloadBlocks(); err != nil {
 		return fmt.Errorf("reloadBlocks: %w", err)
 	}
@@ -1792,7 +1792,7 @@ func (db *DB) reload() error {
 	if !ok {
 		return nil
 	}
-	if err := db.head.Truncate(maxt); err != nil {
+	if err := db.head.Truncate(ctx, maxt); err != nil {
 		return fmt.Errorf("head truncate: %w", err)
 	}
 	return nil

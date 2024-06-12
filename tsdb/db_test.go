@@ -8761,7 +8761,7 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 		}
 
 		require.Empty(t, db.Blocks())
-		require.NoError(t, db.reload())
+		require.NoError(t, db.reload(context.Background()))
 		require.Len(t, db.Blocks(), len(blockSeries))
 
 		q, err := db.Querier(math.MinInt64, math.MaxInt64)
@@ -8778,7 +8778,7 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 		ids, err := db.compactor.Compact(db.Dir(), blockDirs, blocks)
 		require.NoError(t, err)
 		require.Len(t, ids, 1)
-		require.NoError(t, db.reload())
+		require.NoError(t, db.reload(t.Context()))
 		require.Len(t, db.Blocks(), 1)
 
 		q, err = db.Querier(math.MinInt64, math.MaxInt64)
@@ -9509,7 +9509,7 @@ func TestStaleSeriesCompaction(t *testing.T) {
 	require.Truef(t, m.Compaction.FromStaleSeries(), "stale series info not found in block meta")
 
 	// To make sure that Head is not truncated based on stale series block.
-	require.NoError(t, db.reload())
+	require.NoError(t, db.reload(t.Context()))
 
 	nonFirstH := h.Copy()
 	nonFirstH.CounterResetHint = histogram.NotCounterReset
