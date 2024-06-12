@@ -933,7 +933,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	db.metrics.maxBytes.Set(float64(maxBytes))
 	db.metrics.retentionDuration.Set((time.Duration(opts.RetentionDuration) * time.Millisecond).Seconds())
 
-	if err := db.reload(); err != nil {
+	if err := db.reload(context.Background()); err != nil {
 		return nil, err
 	}
 	// Set the min valid time for the ingested samples
@@ -1210,9 +1210,11 @@ func (db *DB) Compact(ctx context.Context) (returnErr error) {
 		// ensures that maxt is more than chunkRange/2 back from now, and
 		// head.appendableMinValidTime() ensures that no new appends can start within the compaction range.
 		// We do need to wait for any overlapping appenders that started previously to finish.
-		db.head.WaitForAppendersOverlapping(rh.MaxTime())
+		if err := db.head.WaitForAppendersOverlapping(ctx, rh.MaxTime()); err != nil {
+			return err
+		}
 
-		if err := db.compactHead(rh); err != nil {
+		if err := db.compactHead(ctx, rh); err != nil {
 			return fmt.Errorf("compact head: %w", err)
 		}
 		// Consider only successful compactions for WAL truncation.
@@ -1245,11 +1247,11 @@ func (db *DB) Compact(ctx context.Context) (returnErr error) {
 }
 
 // CompactHead compacts the given RangeHead.
-func (db *DB) CompactHead(head *RangeHead) error {
+func (db *DB) CompactHead(ctx context.Context, head *RangeHead) error {
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
 
-	if err := db.compactHead(head); err != nil {
+	if err := db.compactHead(ctx, head); err != nil {
 		return fmt.Errorf("compact head: %w", err)
 	}
 
@@ -1306,7 +1308,7 @@ func (db *DB) compactOOOHead(ctx context.Context) error {
 			db.mtx.Unlock()
 		}
 
-		if err := db.head.truncateOOO(lastWBLFile, minOOOMmapRef); err != nil {
+		if err := db.head.truncateOOO(ctx, lastWBLFile, minOOOMmapRef); err != nil {
 			return fmt.Errorf("truncate ooo wbl: %w", err)
 		}
 	}
@@ -1363,7 +1365,7 @@ func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID
 
 // compactHead compacts the given RangeHead.
 // The compaction mutex should be held before calling this method.
-func (db *DB) compactHead(head *RangeHead) error {
+func (db *DB) compactHead(ctx context.Context, head *RangeHead) error {
 	uid, err := db.compactor.Write(db.dir, head, head.MinTime(), head.BlockMaxTime(), nil)
 	if err != nil {
 		return fmt.Errorf("persist head block: %w", err)
@@ -1378,7 +1380,7 @@ func (db *DB) compactHead(head *RangeHead) error {
 		}
 		return fmt.Errorf("reloadBlocks blocks: %w", err)
 	}
-	if err = db.head.truncateMemory(head.BlockMaxTime()); err != nil {
+	if err = db.head.truncateMemory(ctx, head.BlockMaxTime()); err != nil {
 		return fmt.Errorf("head memory truncate: %w", err)
 	}
 	return nil
@@ -1439,7 +1441,7 @@ func getBlock(allBlocks []*Block, id ulid.ULID) (*Block, bool) {
 }
 
 // reload reloads blocks and truncates the head and its WAL.
-func (db *DB) reload() error {
+func (db *DB) reload(ctx context.Context) error {
 	if err := db.reloadBlocks(); err != nil {
 		return fmt.Errorf("reloadBlocks: %w", err)
 	}
@@ -1447,7 +1449,7 @@ func (db *DB) reload() error {
 	if !ok {
 		return nil
 	}
-	if err := db.head.Truncate(maxt); err != nil {
+	if err := db.head.Truncate(ctx, maxt); err != nil {
 		return fmt.Errorf("head truncate: %w", err)
 	}
 	return nil
