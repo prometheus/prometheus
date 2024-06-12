@@ -2912,15 +2912,15 @@ sigv4:
 # Optional AzureAD configuration.
 # Cannot be used at the same time as basic_auth, authorization, oauth2, sigv4 or google_iam.
 azuread:
-  # The Azure Cloud. Options are 'AzurePublic', 'AzureChina', or 'AzureGovernment'.
-  [ cloud: <string> | default = AzurePublic ]
-
-  # The AAD Endpoint/Token Audience. Cannot be used with `cloud` configuration.
-  # Use for clouds other than 'AzurePublic', 'AzureChina', or 'AzureGovernment'.
-  # aad_endpoint such as https://login.microsoftonline.com/
-  [ aad_endpoint: <string> | default = "" ]
-  # token_audience such as https://monitor.azure.com/.default
-  [ token_audience: <string> | default = "" ]
+  # The Azure Cloud. Options are 'AzurePublic', 'AzureChina', 'AzureGovernment', 
+  # or AzureADCloudConfig struct.
+  [ cloud: <string|AzureADCloudConfig> | default = AzurePublic
+      # Name must be AzureCustom when AzureADCloudConfig struct is used
+      [ name: <string> ]
+      # aad_endpoint such as https://login.microsoftonline.com/, required for AzureADCloudConfig struct
+      [ aad_endpoint: <string> | default = "" ]
+      # token_audience such as https://monitor.azure.com/.default, , required for AzureADCloudConfig struct
+      [ token_audience: <string> | default = "" ] ]
 
 # Azure User-assigned Managed identity.
   [ managed_identity:
