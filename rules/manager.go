@@ -26,8 +26,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/sync/semaphore"
-
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
@@ -35,6 +33,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/strutil"
+	"golang.org/x/sync/semaphore"
 )
 
 // QueryFunc processes PromQL queries.
@@ -85,6 +84,33 @@ func DefaultEvalIterationFunc(ctx context.Context, g *Group, evalTimestamp time.
 	g.setEvaluationTime(timeSinceStart)
 	g.setLastEvaluation(start)
 	g.setLastEvalTimestamp(evalTimestamp)
+
+	go func() {
+		g.alertStoreFunc(g)
+	}()
+}
+
+func DefaultAlertStoreFunc(g *Group) {
+	if g.alertStore == nil {
+		//feature disabled
+		return
+	}
+	// Write to file
+	for _, rule := range g.rules {
+		ar, ok := rule.(*AlertingRule)
+		if !ok {
+			continue
+		}
+		if ar.KeepFiringFor() != 0 {
+			alertsToStore := make([]*Alert, 0)
+			ar.ForEachActiveAlert(func(alert *Alert) {
+				if !alert.KeepFiringSince.IsZero() {
+					alertsToStore = append(alertsToStore, alert)
+				}
+			})
+			g.alertStore.SetAlerts(ar.GetAlertFingerprint(), alertsToStore)
+		}
+	}
 }
 
 // The Manager manages recording and alerting rules.
@@ -121,8 +147,8 @@ type ManagerOptions struct {
 	ConcurrentEvalsEnabled    bool
 	RuleConcurrencyController RuleConcurrencyController
 	RuleDependencyController  RuleDependencyController
-
-	Metrics *Metrics
+	AlertStore                AlertStore
+	Metrics                   *Metrics
 }
 
 // NewManager returns an implementation of Manager, ready to be started
@@ -188,13 +214,15 @@ func (m *Manager) Stop() {
 	level.Info(m.logger).Log("msg", "Rule manager stopped")
 }
 
+type AlertStateStoreFunc func(g *Group)
+
 // Update the rule manager's state as the config requires. If
 // loading the new rules failed the old rule set is restored.
-func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string, groupEvalIterationFunc GroupEvalIterationFunc) error {
+func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string, groupEvalIterationFunc GroupEvalIterationFunc, alertStateStoreFunc AlertStateStoreFunc) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
-	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, groupEvalIterationFunc, files...)
+	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, groupEvalIterationFunc, alertStateStoreFunc, files...)
 
 	if errs != nil {
 		for _, e := range errs {
@@ -279,7 +307,7 @@ func (FileLoader) Parse(query string) (parser.Expr, error) { return parser.Parse
 
 // LoadGroups reads groups from a list of files.
 func (m *Manager) LoadGroups(
-	interval time.Duration, externalLabels labels.Labels, externalURL string, groupEvalIterationFunc GroupEvalIterationFunc, filenames ...string,
+	interval time.Duration, externalLabels labels.Labels, externalURL string, groupEvalIterationFunc GroupEvalIterationFunc, alertStoreFunc AlertStateStoreFunc, filenames ...string,
 ) (map[string]*Group, []error) {
 	groups := make(map[string]*Group)
 
@@ -328,7 +356,6 @@ func (m *Manager) LoadGroups(
 
 			// Check dependencies between rules and store it on the Rule itself.
 			m.opts.RuleDependencyController.AnalyseRules(rules)
-
 			groups[GroupKey(fn, rg.Name)] = NewGroup(GroupOptions{
 				Name:              rg.Name,
 				File:              fn,
@@ -340,6 +367,8 @@ func (m *Manager) LoadGroups(
 				QueryOffset:       (*time.Duration)(rg.QueryOffset),
 				done:              m.done,
 				EvalIterationFunc: groupEvalIterationFunc,
+				AlertStoreFunc:    alertStoreFunc,
+				AlertStore:        m.opts.AlertStore,
 			})
 		}
 	}

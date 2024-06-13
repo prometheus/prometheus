@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
@@ -41,7 +42,6 @@ const (
 	alertMetricName = "ALERTS"
 	// AlertForStateMetricName is the metric name for 'for' state of alert.
 	alertForStateMetricName = "ALERTS_FOR_STATE"
-
 	// AlertStateLabel is the label name indicating the state of an alert.
 	alertStateLabel = "alertstate"
 )
@@ -593,4 +593,15 @@ func (r *AlertingRule) String() string {
 	}
 
 	return string(byt)
+}
+
+func (r *AlertingRule) GetAlertFingerprint() uint64 {
+	return xxhash.Sum64([]byte(r.String()))
+}
+
+// SetActiveAlerts updates the active alerts of the alerting rule.
+func (r *AlertingRule) SetActiveAlerts(alerts map[uint64]*Alert) {
+	r.activeMtx.Lock()
+	defer r.activeMtx.Unlock()
+	r.active = alerts
 }
