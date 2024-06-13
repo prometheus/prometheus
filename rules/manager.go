@@ -26,7 +26,6 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
-	"golang.org/x/sync/semaphore"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -35,6 +34,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/strutil"
+	"golang.org/x/sync/semaphore"
 )
 
 // QueryFunc processes PromQL queries.
@@ -86,6 +86,37 @@ func DefaultEvalIterationFunc(ctx context.Context, g *Group, evalTimestamp time.
 	g.setEvaluationTime(timeSinceStart)
 	g.setLastEvaluation(start)
 	g.setLastEvalTimestamp(evalTimestamp)
+
+	if g.alertStore != nil {
+		//feature enabled
+		go func() {
+			g.alertStoreFunc(g)
+		}()
+	}
+}
+
+// DefaultAlertStoreFunc is the default implementation of
+// AlertStateStoreFunc that is periodically invoked to store the state
+// of alerting rules in a group at a given point in time.
+func DefaultAlertStoreFunc(g *Group) {
+	for _, rule := range g.rules {
+		ar, ok := rule.(*AlertingRule)
+		if !ok {
+			continue
+		}
+		if ar.KeepFiringFor() != 0 {
+			alertsToStore := make([]*Alert, 0)
+			ar.ForEachActiveAlert(func(alert *Alert) {
+				if !alert.KeepFiringSince.IsZero() {
+					alertsToStore = append(alertsToStore, alert)
+				}
+			})
+			err := g.alertStore.SetAlerts(ar.GetFingerprint(GroupKey(g.File(), g.Name())), alertsToStore)
+			if err != nil {
+				g.logger.Error("Failed to store alerting rule state", "rule", ar.Name(), "err", err)
+			}
+		}
+	}
 }
 
 // The Manager manages recording and alerting rules.
@@ -122,8 +153,9 @@ type ManagerOptions struct {
 	ConcurrentEvalsEnabled    bool
 	RuleConcurrencyController RuleConcurrencyController
 	RuleDependencyController  RuleDependencyController
-
-	Metrics *Metrics
+	Metrics                   *Metrics
+	AlertStore                AlertStore
+	AlertStoreFunc            AlertStateStoreFunc
 }
 
 // NewManager returns an implementation of Manager, ready to be started
@@ -192,6 +224,8 @@ func (m *Manager) Stop() {
 
 	m.logger.Info("Rule manager stopped")
 }
+
+type AlertStateStoreFunc func(g *Group)
 
 // Update the rule manager's state as the config requires. If
 // loading the new rules failed the old rule set is restored.
@@ -343,7 +377,6 @@ func (m *Manager) LoadGroups(
 
 			// Check dependencies between rules and store it on the Rule itself.
 			m.opts.RuleDependencyController.AnalyseRules(rules)
-
 			groups[GroupKey(fn, rg.Name)] = NewGroup(GroupOptions{
 				Name:              rg.Name,
 				File:              fn,
@@ -355,6 +388,8 @@ func (m *Manager) LoadGroups(
 				QueryOffset:       (*time.Duration)(rg.QueryOffset),
 				done:              m.done,
 				EvalIterationFunc: groupEvalIterationFunc,
+				AlertStoreFunc:    m.opts.AlertStoreFunc,
+				AlertStore:        m.opts.AlertStore,
 			})
 		}
 	}
