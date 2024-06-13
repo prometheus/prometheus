@@ -61,8 +61,12 @@ A Prometheus server's data directory looks something like this:
 Note that a limitation of local storage is that it is not clustered or
 replicated. Thus, it is not arbitrarily scalable or durable in the face of
 drive or node outages and should be managed like any other single node
-database. The use of RAID is suggested for storage availability, and
-[snapshots](querying/api.md#snapshot) are recommended for backups. With proper
+database. 
+
+The use of RAID is suggested for storage availability, and
+[snapshots](querying/api.md#snapshot) are recommended for backups. Backups 
+made without snapshots run the risk of losing data that was recorded sync 
+the last WAL sync, which typically happens every two hours. With proper
 architecture, it is possible to retain years of data in local storage.
 
 Alternatively, external storage may be used via the
