@@ -209,8 +209,10 @@ func (d *instanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 		}
 
 		if server.PublicIP != nil { //nolint:staticcheck
-			labels[instancePublicIPv4Label] = model.LabelValue(server.PublicIP.Address.String()) //nolint:staticcheck
-			addr = server.PublicIP.Address.String()                                              //nolint:staticcheck
+			if server.PublicIP.Family != instance.ServerIPIPFamilyInet6 { //nolint:staticcheck
+				labels[instancePublicIPv4Label] = model.LabelValue(server.PublicIP.Address.String()) //nolint:staticcheck
+			}
+			addr = server.PublicIP.Address.String() //nolint:staticcheck
 		}
 
 		if server.PrivateIP != nil {
