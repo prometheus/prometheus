@@ -305,51 +305,26 @@ func (n *Manager) nextBatch() []*Alert {
 func (n *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) {
 	defer n.cancel()
 
-	var drainTimedOut <-chan time.Time
-	draining := false
+	n.runLoop(tsets)
+	n.drainQueue()
+}
 
-	startDraining := func() {
-		if draining {
-			return
-		}
-
-		drainTimedOut = time.After(n.opts.DrainTimeout)
-		draining = true
-	}
-
+func (n *Manager) runLoop(tsets <-chan map[string][]*targetgroup.Group) {
 	for {
 		// The select is split in two parts, such as we will first try to read
 		// new alertmanager targets if they are available, before sending new
 		// alerts.
 		select {
-		case <-drainTimedOut:
-			return
-
 		case <-n.stopAndDrainRequested:
-			if n.opts.DrainTimeout == 0 {
-				// No draining requested: just stop immediately.
-				return
-			}
-
-			startDraining()
-			continue
+			return
 
 		case ts := <-tsets:
 			n.reload(ts)
 
 		default:
 			select {
-			case <-drainTimedOut:
-				return
-
 			case <-n.stopAndDrainRequested:
-				if n.opts.DrainTimeout == 0 {
-					// No draining requested: just stop immediately.
-					return
-				}
-
-				startDraining()
-				continue
+				return
 
 			case ts := <-tsets:
 				n.reload(ts)
@@ -357,18 +332,40 @@ func (n *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) {
 			case <-n.more:
 			}
 		}
-		alerts := n.nextBatch()
 
-		if !n.sendAll(alerts...) {
-			n.metrics.dropped.Add(float64(len(alerts)))
-		}
+		n.sendOneBatch()
 
 		// If the queue still has items left, kick off the next iteration.
 		if n.queueLen() > 0 {
 			n.setMore()
-		} else if n.queueLen() == 0 && draining {
-			// Draining complete, nothing more to do.
+		}
+	}
+}
+
+func (n *Manager) sendOneBatch() {
+	alerts := n.nextBatch()
+
+	if !n.sendAll(alerts...) {
+		n.metrics.dropped.Add(float64(len(alerts)))
+	}
+}
+
+func (n *Manager) drainQueue() {
+	if n.opts.DrainTimeout == 0 {
+		// Draining disabled, we are done.
+		return
+	}
+
+	drainTimedOut := time.After(n.opts.DrainTimeout)
+
+	// Keep trying to send remaining notifications until we empty the queue or run out of time.
+	for n.queueLen() > 0 {
+		select {
+		case <-drainTimedOut:
 			return
+
+		default:
+			n.sendOneBatch()
 		}
 	}
 }
