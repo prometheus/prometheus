@@ -2222,3 +2222,185 @@ func TestLabels_FromMaps(t *testing.T) {
 
 	require.Equal(t, expected, mLabels, "unexpected labelset")
 }
+
+func TestKeepFiringForStateRestore(t *testing.T) {
+	testStorage := promqltest.LoadedStorage(t, `
+		load 5m
+		http_requests{job="app-server", instance="0", group="canary", severity="overwrite-me"}	75 0 0 0 0 0 0 0 
+		http_requests{job="app-server", instance="1", group="canary", severity="overwrite-me"}	100 0 0 0 0 0 0 0
+		http_requests_5xx{job="app-server", instance="2", group="canary", severity="overwrite-me"}	80 0 0 0 0 0 0 0
+	`)
+
+	testStoreFile := "testalertstore"
+
+	t.Cleanup(
+		func() {
+			testStorage.Close()
+			os.Remove(testStoreFile)
+		},
+	)
+
+	alertStore := NewFileStore(promslog.NewNopLogger(), testStoreFile)
+	ng := testEngine(t)
+	opts := &ManagerOptions{
+		QueryFunc:       EngineQueryFunc(ng, testStorage),
+		Appendable:      testStorage,
+		Queryable:       testStorage,
+		Context:         context.Background(),
+		Logger:          promslog.NewNopLogger(),
+		NotifyFunc:      func(ctx context.Context, expr string, alerts ...*Alert) {},
+		OutageTolerance: 30 * time.Minute,
+		ForGracePeriod:  10 * time.Minute,
+		AlertStore:      alertStore,
+	}
+
+	keepFiringForDuration := 30 * time.Minute
+	// Initial run before prometheus goes down.
+	expr, err := parser.ParseExpr(`http_requests{group="canary", job="app-server"} > 0`)
+	require.NoError(t, err)
+	expr2, err := parser.ParseExpr(`http_requests_5xx{group="canary", job="app-server"} > 0`)
+	require.NoError(t, err)
+
+	rule := NewAlertingRule(
+		"HTTPRequestRateLow",
+		expr,
+		0,
+		keepFiringForDuration,
+		labels.FromStrings("severity", "critical"),
+		labels.FromStrings("annotation1", "rule1"), labels.EmptyLabels(), "", true, nil,
+	)
+	keepFiringForDuration2 := 60 * time.Minute
+	rule2 := NewAlertingRule(
+		"HTTPRequestRateLow",
+		expr2,
+		0,
+		keepFiringForDuration2,
+		labels.FromStrings("severity", "critical"),
+		labels.FromStrings("annotation2", "rule2"), labels.EmptyLabels(), "", true, nil,
+	)
+
+	group := NewGroup(GroupOptions{
+		Name:           "default",
+		Interval:       time.Second,
+		Rules:          []Rule{rule, rule2},
+		ShouldRestore:  true,
+		Opts:           opts,
+		AlertStoreFunc: DefaultAlertStoreFunc,
+		AlertStore:     alertStore,
+	})
+
+	groups := make(map[string]*Group)
+	groups["default;"] = group
+
+	type testInput struct {
+		name            string
+		restoreDuration time.Duration
+		initialRuns     []time.Duration
+		alertsExpected  int
+	}
+
+	tests := []testInput{
+		{
+			name:            "normal restore - 3 alerts firing with keep_firing_for duration active",
+			restoreDuration: 30 * time.Minute,
+			initialRuns:     []time.Duration{0, 5 * time.Minute, 10 * time.Minute, 15 * time.Minute, 20 * time.Minute, 25 * time.Minute},
+			alertsExpected:  3,
+		},
+		{
+			name:            "restore after rule 1 keep firing for duration is over - 1 alert with keep_firing_for duration active",
+			restoreDuration: keepFiringForDuration + 10*time.Minute,
+			initialRuns:     []time.Duration{0, 5 * time.Minute, 10 * time.Minute, 15 * time.Minute, 20 * time.Minute, 50 * time.Minute},
+			alertsExpected:  1,
+		},
+		{
+			name:            "restore after keep firing for duration expires - 0 alerts active",
+			restoreDuration: 120 * time.Minute,
+			initialRuns:     []time.Duration{0, 5 * time.Minute, 10 * time.Minute, 15 * time.Minute, 20 * time.Minute, 110 * time.Minute},
+			alertsExpected:  0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			baseTime := time.Unix(0, 0)
+			for _, duration := range tt.initialRuns {
+				// Evaluating rule before restarting.
+				evalTime := baseTime.Add(duration)
+				group.Eval(opts.Context, evalTime)
+				group.setLastEvalTimestamp(evalTime)
+				// Manager will store alert state.
+				DefaultAlertStoreFunc(group)
+			}
+
+			exp := rule.ActiveAlerts()
+			exp2 := rule2.ActiveAlerts()
+			// Record alerts before restart.
+			expectedAlerts := [][]*Alert{exp, exp2}
+
+			// Prometheus goes down here. We create new rules and groups.
+			newRule := NewAlertingRule(
+				"HTTPRequestRateLow",
+				expr,
+				0,
+				keepFiringForDuration,
+				labels.FromStrings("severity", "critical"),
+				labels.FromStrings("annotation1", "rule1"), labels.EmptyLabels(), "", false, nil,
+			)
+			newRule2 := NewAlertingRule(
+				"HTTPRequestRateLow",
+				expr2,
+				0,
+				keepFiringForDuration2,
+				labels.FromStrings("severity", "critical"),
+				labels.FromStrings("annotation2", "rule2"), labels.EmptyLabels(), "", true, nil,
+			)
+			// Restart alert store
+			newAlertStore := NewFileStore(promslog.NewNopLogger(), testStoreFile)
+
+			newGroup := NewGroup(GroupOptions{
+				Name:           "default",
+				Interval:       time.Second,
+				Rules:          []Rule{newRule, newRule2},
+				ShouldRestore:  true,
+				Opts:           opts,
+				AlertStore:     newAlertStore,
+				AlertStoreFunc: DefaultAlertStoreFunc,
+			})
+
+			newGroups := make(map[string]*Group)
+			newGroups["default;"] = newGroup
+
+			restoreTime := baseTime.Add(tt.restoreDuration)
+
+			// First eval after restart.
+			newGroup.Eval(context.TODO(), restoreTime)
+
+			got := newRule.ActiveAlerts()
+			got2 := newRule2.ActiveAlerts()
+			require.Equal(t, len(exp), len(got))
+			require.Equal(t, len(exp2), len(got2))
+			require.Equal(t, tt.alertsExpected, len(got)+len(got2))
+
+			results := [][]*Alert{got, got2}
+
+			for i, result := range results {
+				sort.Slice(result, func(i, j int) bool {
+					return labels.Compare(got[i].Labels, got[j].Labels) < 0
+				})
+				sortAlerts(result)
+				sortAlerts(expectedAlerts[i])
+			}
+
+			for i, expected := range expectedAlerts {
+				got = results[i]
+				require.Equal(t, len(expected), len(got))
+				for j, alert := range expected {
+					require.Equal(t, alert.Labels, got[j].Labels)
+					require.Equal(t, alert.Annotations, got[j].Annotations)
+					require.Equal(t, alert.ActiveAt, got[j].ActiveAt)
+					require.Equal(t, alert.KeepFiringSince, got[j].KeepFiringSince)
+				}
+			}
+		})
+	}
+}

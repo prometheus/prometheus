@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/common/model"
 	"go.uber.org/atomic"
 	"gopkg.in/yaml.v2"
@@ -41,7 +42,6 @@ const (
 	alertMetricName = "ALERTS"
 	// AlertForStateMetricName is the metric name for 'for' state of alert.
 	alertForStateMetricName = "ALERTS_FOR_STATE"
-
 	// AlertStateLabel is the label name indicating the state of an alert.
 	alertStateLabel = "alertstate"
 )
@@ -593,4 +593,17 @@ func (r *AlertingRule) String() string {
 	}
 
 	return string(byt)
+}
+
+// GetFingerprint returns a hash to uniquely identify an alerting rule,
+// using a combination of rule config and the groupKey.
+func (r *AlertingRule) GetFingerprint(groupKey string) uint64 {
+	return xxhash.Sum64(append([]byte(r.String()), []byte(groupKey)...))
+}
+
+// SetActiveAlerts updates the active alerts of the alerting rule.
+func (r *AlertingRule) SetActiveAlerts(alerts map[uint64]*Alert) {
+	r.activeMtx.Lock()
+	defer r.activeMtx.Unlock()
+	r.active = alerts
 }
