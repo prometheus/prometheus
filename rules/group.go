@@ -72,7 +72,9 @@ type Group struct {
 	// defaults to DefaultEvalIterationFunc.
 	evalIterationFunc GroupEvalIterationFunc
 
-	appOpts *storage.AppendOptions
+	appOpts               *storage.AppendOptions
+	alertStoreFunc        AlertStateStoreFunc
+	alertStore            AlertStore
 }
 
 // GroupEvalIterationFunc is used to implement and extend rule group
@@ -92,6 +94,8 @@ type GroupOptions struct {
 	QueryOffset       *time.Duration
 	done              chan struct{}
 	EvalIterationFunc GroupEvalIterationFunc
+	AlertStoreFunc    AlertStateStoreFunc
+	AlertStore        AlertStore
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
@@ -122,6 +126,12 @@ func NewGroup(o GroupOptions) *Group {
 		evalIterationFunc = DefaultEvalIterationFunc
 	}
 
+	alertStoreFunc := o.AlertStoreFunc
+	//var alertStore *AlertStore
+	if alertStoreFunc == nil {
+		alertStoreFunc = DefaultAlertStoreFunc
+	}
+
 	if opts.Logger == nil {
 		opts.Logger = promslog.NewNopLogger()
 	}
@@ -143,6 +153,8 @@ func NewGroup(o GroupOptions) *Group {
 		metrics:              metrics,
 		evalIterationFunc:    evalIterationFunc,
 		appOpts:              &storage.AppendOptions{DiscardOutOfOrder: true},
+		alertStoreFunc:       alertStoreFunc,
+		alertStore:           o.AlertStore,
 	}
 }
 
@@ -530,6 +542,17 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 		g.metrics.EvalTotal.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
 
+		if g.alertStore != nil && g.lastEvalTimestamp.IsZero() {
+			// Restore alerts when feature is enabled and it is the first evaluation for the group
+			if ar, ok := rule.(*AlertingRule); ok {
+				restoredAlerts, _ := g.alertStore.GetAlerts(ar.GetFingerprint(GroupKey(g.File(), g.Name())))
+				if restoredAlerts != nil && len(restoredAlerts) > 0 {
+					ar.SetActiveAlerts(restoredAlerts)
+					logger.Info("Restored alerts from store", "rule", ar.name, "alerts", len(restoredAlerts))
+				}
+			}
+		}
+		
 		vector, err := rule.Eval(ctx, ruleQueryOffset, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit())
 		if err != nil {
 			rule.SetHealth(HealthBad)
