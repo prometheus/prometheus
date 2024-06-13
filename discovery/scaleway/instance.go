@@ -190,14 +190,12 @@ func (d *instanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 			}
 
 			if len(ipv6Addresses) > 0 {
-				addr = ipv6Addresses[0]
 				labels[instancePublicIPv6AddressesLabel] = model.LabelValue(
 					separator +
 						strings.Join(ipv6Addresses, separator) +
 						separator)
 			}
 			if len(ipv4Addresses) > 0 {
-				addr = ipv4Addresses[0]
 				labels[instancePublicIPv4AddressesLabel] = model.LabelValue(
 					separator +
 						strings.Join(ipv4Addresses, separator) +
