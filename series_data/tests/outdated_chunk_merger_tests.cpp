@@ -1,14 +1,18 @@
 #include <gtest/gtest.h>
 
 #include "series_data/decoder.h"
+#include "series_data/encoder.h"
 #include "series_data/outdated_chunk_merger.h"
+#include "series_data/outdated_sample_encoder.h"
 
 namespace {
 
 using BareBones::BitSequenceReader;
+using series_data::DataStorage;
 using series_data::Decoder;
 using series_data::Encoder;
 using series_data::OutdatedChunkMerger;
+using series_data::OutdatedSampleEncoder;
 using series_data::chunk::DataChunk;
 using series_data::chunk::FinalizedChunkList;
 using series_data::encoder::BitSequenceWithItemsCount;
@@ -27,13 +31,15 @@ class OutdatedChunkMergerTrait {
   using ExpectedSampleList = BareBones::Vector<Sample>;
   using ExpectedListOfSampleList = BareBones::Vector<ExpectedSampleList>;
 
-  Encoder<kSamplesPerChunkValue> encoder_;
-  OutdatedChunkMerger<kSamplesPerChunkValue> merger_{encoder_};
+  DataStorage storage_;
+  OutdatedSampleEncoder outdated_sample_encoder_{storage_};
+  Encoder<OutdatedSampleEncoder, kSamplesPerChunkValue> encoder_{storage_, outdated_sample_encoder_};
+  OutdatedChunkMerger<decltype(encoder_)> merger_{storage_, encoder_};
 
-  [[nodiscard]] const DataChunk& get_open_chunk(uint32_t ls_id) { return encoder_.storage().open_chunks[ls_id]; }
+  [[nodiscard]] const DataChunk& get_open_chunk(uint32_t ls_id) { return storage_.open_chunks[ls_id]; }
 
   [[nodiscard]] const FinalizedChunkList* get_finalized_chunks(uint32_t ls_id) const noexcept {
-    if (auto it = encoder_.storage().finalized_chunks.find(ls_id); it != encoder_.storage().finalized_chunks.end()) {
+    if (auto it = storage_.finalized_chunks.find(ls_id); it != storage_.finalized_chunks.end()) {
       return &it->second;
     }
 
@@ -75,7 +81,7 @@ TEST_P(OutdatedChunkMergerInOpenConstantChunkFixture, Test) {
           {.timestamp = 2, .value = GetParam()},
           {.timestamp = 3, .value = GetParam()},
       },
-      Decoder::decode_chunk<DataChunk::Type::kOpen>(encoder_.storage(), get_open_chunk(0))));
+      Decoder::decode_chunk<DataChunk::Type::kOpen>(storage_, get_open_chunk(0))));
 }
 
 INSTANTIATE_TEST_SUITE_P(Uint32ConstantChunk, OutdatedChunkMergerInOpenConstantChunkFixture, testing::Values(1.0));
@@ -106,7 +112,7 @@ TEST_F(OutdatedChunkMergerInOpenChunkFixture, MergeInTwoDoubleConstantsChunk) {
           {.timestamp = 2, .value = 1.1},
           {.timestamp = 3, .value = 1.1},
       },
-      Decoder::decode_chunk<DataChunk::Type::kOpen>(encoder_.storage(), get_open_chunk(0))));
+      Decoder::decode_chunk<DataChunk::Type::kOpen>(storage_, get_open_chunk(0))));
 }
 
 TEST_F(OutdatedChunkMergerInOpenChunkFixture, MergeInAscIntegerValuesGorillaChunk) {
@@ -132,7 +138,7 @@ TEST_F(OutdatedChunkMergerInOpenChunkFixture, MergeInAscIntegerValuesGorillaChun
           {.timestamp = 2, .value = 2.0},
           {.timestamp = 3, .value = 3.0},
       },
-      Decoder::decode_chunk<DataChunk::Type::kOpen>(encoder_.storage(), get_open_chunk(0))));
+      Decoder::decode_chunk<DataChunk::Type::kOpen>(storage_, get_open_chunk(0))));
 }
 
 TEST_F(OutdatedChunkMergerInOpenChunkFixture, MergeInValuesGorillaChunk) {
@@ -159,7 +165,7 @@ TEST_F(OutdatedChunkMergerInOpenChunkFixture, MergeInValuesGorillaChunk) {
           {.timestamp = 2, .value = 2.1},
           {.timestamp = 3, .value = 3.1},
       },
-      Decoder::decode_chunk<DataChunk::Type::kOpen>(encoder_.storage(), get_open_chunk(0))));
+      Decoder::decode_chunk<DataChunk::Type::kOpen>(storage_, get_open_chunk(0))));
 }
 
 TEST_F(OutdatedChunkMergerInOpenChunkFixture, MergeInGorillaChunk) {
@@ -185,7 +191,7 @@ TEST_F(OutdatedChunkMergerInOpenChunkFixture, MergeInGorillaChunk) {
           {.timestamp = 2, .value = 2.1},
           {.timestamp = 3, .value = 3.1},
       },
-      Decoder::decode_chunk<DataChunk::Type::kOpen>(encoder_.storage(), get_open_chunk(0))));
+      Decoder::decode_chunk<DataChunk::Type::kOpen>(storage_, get_open_chunk(0))));
 }
 
 class OutdatedChunkMergerInFinalizedConstantChunkFixture : public OutdatedChunkMergerTrait<4>, public testing::TestWithParam<double> {};
@@ -236,7 +242,7 @@ TEST_P(OutdatedChunkMergerInFinalizedConstantChunkFixture, Test) {
               {.timestamp = 17, .value = GetParam()},
           },
       },
-      Decoder::decode_chunks(encoder_.storage(), *finalized, get_open_chunk(0))));
+      Decoder::decode_chunks(storage_, *finalized, get_open_chunk(0))));
 }
 
 INSTANTIATE_TEST_SUITE_P(Uint32ConstantChunk, OutdatedChunkMergerInFinalizedConstantChunkFixture, testing::Values(1.0));
@@ -282,7 +288,7 @@ TEST_F(OutdatedChunkMergerInFinalizedChunkFixture, MergeInTwoDoubleConstantsChun
               {.timestamp = 11, .value = 1.2},
           },
       },
-      Decoder::decode_chunks(encoder_.storage(), *finalized, get_open_chunk(0))));
+      Decoder::decode_chunks(storage_, *finalized, get_open_chunk(0))));
 }
 
 TEST_F(OutdatedChunkMergerInFinalizedChunkFixture, MergeInAscIntegerValuesGorillaChunk) {
@@ -323,7 +329,7 @@ TEST_F(OutdatedChunkMergerInFinalizedChunkFixture, MergeInAscIntegerValuesGorill
               {.timestamp = 11, .value = 11.0},
           },
       },
-      Decoder::decode_chunks(encoder_.storage(), *finalized, get_open_chunk(0))));
+      Decoder::decode_chunks(storage_, *finalized, get_open_chunk(0))));
 }
 
 TEST_F(OutdatedChunkMergerInFinalizedChunkFixture, MergeInValuesGorillaChunk) {
@@ -365,7 +371,7 @@ TEST_F(OutdatedChunkMergerInFinalizedChunkFixture, MergeInValuesGorillaChunk) {
               {.timestamp = 5, .value = 5.1},
           },
       },
-      Decoder::decode_chunks(encoder_.storage(), *finalized, get_open_chunk(0))));
+      Decoder::decode_chunks(storage_, *finalized, get_open_chunk(0))));
 }
 
 TEST_F(OutdatedChunkMergerInFinalizedChunkFixture, MergeInGorillaChunk) {
@@ -403,7 +409,7 @@ TEST_F(OutdatedChunkMergerInFinalizedChunkFixture, MergeInGorillaChunk) {
               {.timestamp = 5, .value = 5.1},
           },
       },
-      Decoder::decode_chunks(encoder_.storage(), *finalized, get_open_chunk(0))));
+      Decoder::decode_chunks(storage_, *finalized, get_open_chunk(0))));
 }
 
 class OutdatedChunkMergerFixture : public OutdatedChunkMergerTrait<series_data::kSamplesPerChunkDefault>, public testing::Test {};
@@ -432,7 +438,7 @@ TEST_F(OutdatedChunkMergerFixture, UseLastValueForSameTimestampInOutdatedChunk) 
           {.timestamp = 2, .value = 2.1},
           {.timestamp = 3, .value = 3.1},
       },
-      Decoder::decode_chunk<DataChunk::Type::kOpen>(encoder_.storage(), get_open_chunk(0))));
+      Decoder::decode_chunk<DataChunk::Type::kOpen>(storage_, get_open_chunk(0))));
 }
 
 }  // namespace

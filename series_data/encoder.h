@@ -1,5 +1,6 @@
 #pragma once
 
+#include "concepts.h"
 #include "data_storage.h"
 #include "decoder.h"
 
@@ -7,9 +8,11 @@ namespace series_data {
 
 inline constexpr uint8_t kSamplesPerChunkDefault = 240;
 
-template <uint8_t kSamplesPerChunk = kSamplesPerChunkDefault>
+template <OutdatedSampleEncoderInterface OutdatedSampleEncoder, uint8_t kSamplesPerChunk = kSamplesPerChunkDefault>
 class Encoder {
  public:
+  Encoder(DataStorage& storage, OutdatedSampleEncoder& outdated_sample_encoder) : storage_(storage), outdated_sample_encoder_(outdated_sample_encoder) {}
+
   PROMPP_ALWAYS_INLINE void encode(uint32_t ls_id, int64_t timestamp, double value) {
     encode(ls_id, timestamp, value, storage_.open_chunks.size() > ls_id ? storage_.open_chunks[ls_id] : storage_.open_chunks.emplace_back());
   }
@@ -48,10 +51,9 @@ class Encoder {
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return storage_.allocated_memory(); }
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory(chunk::DataChunk::EncodingType type) const noexcept { return storage_.allocated_memory(type); }
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE const DataStorage& storage() const noexcept { return storage_; }
-
  private:
-  DataStorage storage_;
+  DataStorage& storage_;
+  OutdatedSampleEncoder& outdated_sample_encoder_;
 
   void encode_gorilla(uint32_t ls_id, int64_t timestamp, double value, chunk::DataChunk& chunk) {
     auto& encoder = storage_.gorilla_encoders[chunk.encoder.gorilla];
@@ -62,7 +64,7 @@ class Encoder {
         finalize_chunk(ls_id, chunk, encoder::timestamp::State::kInvalidId);
       }
     } else if (timestamp < encoder.timestamp() || !encoder.is_actual(value)) {
-      encode_outdated_chunk(ls_id, timestamp, value);
+      outdated_sample_encoder_.encode(ls_id, timestamp, value);
     }
   }
 
@@ -90,7 +92,7 @@ class Encoder {
           }
         }
 
-        encode_outdated_chunk(ls_id, timestamp, value);
+        outdated_sample_encoder_.encode(ls_id, timestamp, value);
         return;
       }
     }
@@ -135,12 +137,6 @@ class Encoder {
         .first->second.emplace(chunk, [this](const chunk::DataChunk& chunk) PROMPP_LAMBDA_INLINE {
           return Decoder::get_chunk_first_timestamp<chunk::DataChunk::Type::kFinalized>(storage_, chunk);
         });
-  }
-
-  PROMPP_ALWAYS_INLINE void encode_outdated_chunk(uint32_t ls_id, int64_t timestamp, double value) {
-    if (auto it = storage_.outdated_chunks_.try_emplace(ls_id, timestamp, value); !it.second) {
-      it.first->second.encode(timestamp, value);
-    }
   }
 
   void encode_value(uint32_t ls_id, chunk::DataChunk& chunk, int64_t timestamp, double value) {

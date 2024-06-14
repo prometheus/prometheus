@@ -8,6 +8,7 @@
 #include "performance_tests/dummy_wal.h"
 #include "primitives/snug_composites.h"
 #include "series_data/encoder.h"
+#include "series_data/outdated_sample_encoder.h"
 
 namespace performance_tests {
 
@@ -65,7 +66,9 @@ void GorillaPrometheusStreamEncoder::execute(const Config& config, Metrics& metr
   DummyWal dummy_wal(input_file_full_name(config));
 
   PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap label_set_bitmap;
-  series_data::Encoder encoder;
+  series_data::DataStorage storage;
+  series_data::OutdatedSampleEncoder outdated_sample_encoder{storage};
+  series_data::Encoder encoder{storage, outdated_sample_encoder};
   std::chrono::nanoseconds encode_time{};
   size_t samples_count = 0;
   uint32_t outdated_samples_count = 0;
@@ -152,12 +155,12 @@ void GorillaPrometheusStreamEncoder::execute(const Config& config, Metrics& metr
   auto finalized_chunks_info = chunks_info;
 
   [[maybe_unused]] uint32_t ls_id = 0;
-  for (auto& chunk : encoder.storage().open_chunks) {
+  for (auto& chunk : storage.open_chunks) {
     ++chunks_info[static_cast<size_t>(chunk.encoding_type)].count;
     ++ls_id;
   }
 
-  for (auto& [chunk_ls_id, chunks] : encoder.storage().finalized_chunks) {
+  for (auto& [chunk_ls_id, chunks] : storage.finalized_chunks) {
     for (auto& chunk : chunks) {
       ++finalized_chunks_info[static_cast<size_t>(chunk.encoding_type)].count;
     }
@@ -185,7 +188,7 @@ void GorillaPrometheusStreamEncoder::execute(const Config& config, Metrics& metr
 
   std::cout << "gorilla_prometheus_stream_encoder_nanoseconds: " << (encode_time.count() / (samples_count)) << std::endl;
 
-  validate_encoded_chunks(source_samples, encoder.storage());
+  validate_encoded_chunks(source_samples, storage);
 }
 
 }  // namespace performance_tests
