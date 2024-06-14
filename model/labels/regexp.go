@@ -798,19 +798,15 @@ func (m *equalMultiStringMapMatcher) Matches(s string) bool {
 // toNormalisedLower normalise the input string using "Unicode Normalization Form D" and then convert
 // it to lower case.
 func toNormalisedLower(s string) string {
-	var (
-		stackBuilder strings.Builder // This is where we'll point b once needed.
-		b            *strings.Builder
-	)
+	b := strings.Builder{}
 	for i, written := 0, 0; i < len(s); i++ {
 		c := s[i]
 		if c >= utf8.RuneSelf {
 			return strings.Map(unicode.ToLower, norm.NFKD.String(s))
 		}
 		if 'A' <= c && c <= 'Z' {
-			if b == nil {
-				// Init on first uppercase.
-				b = &stackBuilder
+			if written == 0 {
+				// Allocate on the heap only on first uppercase.
 				b.Grow(len(s))
 			}
 			if written < i {
@@ -821,7 +817,7 @@ func toNormalisedLower(s string) string {
 			written = i + 1
 		}
 	}
-	if b == nil {
+	if b.Len() == 0 {
 		// All were ASCII, and we didn't see an uppercase.
 		return s
 	}
