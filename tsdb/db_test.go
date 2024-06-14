@@ -1431,9 +1431,9 @@ func (*mockCompactorFailing) Plan(string) ([]string, error) {
 	return nil, nil
 }
 
-func (c *mockCompactorFailing) Write(dest string, _ BlockReader, _, _ int64, _ *BlockMeta) (ulid.ULID, error) {
+func (c *mockCompactorFailing) Write(dest string, _ BlockReader, _, _ int64, _ *BlockMeta) ([]ulid.ULID, error) {
 	if len(c.blocks) >= c.max {
-		return ulid.ULID{}, fmt.Errorf("the compactor already did the maximum allowed blocks so it is time to fail")
+		return []ulid.ULID{}, fmt.Errorf("the compactor already did the maximum allowed blocks so it is time to fail")
 	}
 
 	block, err := OpenBlock(nil, createBlock(c.t, dest, genSeries(1, 1, 0, 1)), nil)
@@ -1452,11 +1452,11 @@ func (c *mockCompactorFailing) Write(dest string, _ BlockReader, _, _ int64, _ *
 
 	require.Equal(c.t, expectedBlocks, actualBlockDirs)
 
-	return block.Meta().ULID, nil
+	return []ulid.ULID{block.Meta().ULID}, nil
 }
 
-func (*mockCompactorFailing) Compact(string, []string, []*Block) (ulid.ULID, error) {
-	return ulid.ULID{}, nil
+func (*mockCompactorFailing) Compact(string, []string, []*Block) ([]ulid.ULID, error) {
+	return []ulid.ULID{}, nil
 }
 
 func (*mockCompactorFailing) CompactOOO(string, *OOOCompactionHead) (result []ulid.ULID, err error) {
@@ -6804,9 +6804,9 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 		for _, b := range blocks {
 			blockDirs = append(blockDirs, b.Dir())
 		}
-		id, err := db.compactor.Compact(db.Dir(), blockDirs, blocks)
+		ids, err := db.compactor.Compact(db.Dir(), blockDirs, blocks)
 		require.NoError(t, err)
-		require.NotEqual(t, ulid.ULID{}, id)
+		require.Len(t, ids, 1)
 		require.NoError(t, db.reload())
 		require.Len(t, db.Blocks(), 1)
 
@@ -7068,19 +7068,19 @@ func requireEqualOOOSamples(t *testing.T, expectedSamples int, db *DB) {
 
 type mockCompactorFn struct {
 	planFn    func() ([]string, error)
-	compactFn func() (ulid.ULID, error)
-	writeFn   func() (ulid.ULID, error)
+	compactFn func() ([]ulid.ULID, error)
+	writeFn   func() ([]ulid.ULID, error)
 }
 
 func (c *mockCompactorFn) Plan(_ string) ([]string, error) {
 	return c.planFn()
 }
 
-func (c *mockCompactorFn) Compact(_ string, _ []string, _ []*Block) (ulid.ULID, error) {
+func (c *mockCompactorFn) Compact(_ string, _ []string, _ []*Block) ([]ulid.ULID, error) {
 	return c.compactFn()
 }
 
-func (c *mockCompactorFn) Write(_ string, _ BlockReader, _, _ int64, _ *BlockMeta) (ulid.ULID, error) {
+func (c *mockCompactorFn) Write(_ string, _ BlockReader, _, _ int64, _ *BlockMeta) ([]ulid.ULID, error) {
 	return c.writeFn()
 }
 
@@ -7112,11 +7112,11 @@ func TestAbortBlockCompactions(t *testing.T) {
 			// Our custom Plan() will always return something to compact.
 			return []string{"1", "2", "3"}, nil
 		},
-		compactFn: func() (ulid.ULID, error) {
-			return ulid.ULID{}, nil
+		compactFn: func() ([]ulid.ULID, error) {
+			return []ulid.ULID{}, nil
 		},
-		writeFn: func() (ulid.ULID, error) {
-			return ulid.ULID{}, nil
+		writeFn: func() ([]ulid.ULID, error) {
+			return []ulid.ULID{}, nil
 		},
 	}
 
@@ -7135,11 +7135,11 @@ func TestNewCompactorFunc(t *testing.T) {
 			planFn: func() ([]string, error) {
 				return []string{block1.String(), block2.String()}, nil
 			},
-			compactFn: func() (ulid.ULID, error) {
-				return block1, nil
+			compactFn: func() ([]ulid.ULID, error) {
+				return []ulid.ULID{block1}, nil
 			},
-			writeFn: func() (ulid.ULID, error) {
-				return block2, nil
+			writeFn: func() ([]ulid.ULID, error) {
+				return []ulid.ULID{block2}, nil
 			},
 		}, nil
 	}
@@ -7150,10 +7150,12 @@ func TestNewCompactorFunc(t *testing.T) {
 	plans, err := db.compactor.Plan("")
 	require.NoError(t, err)
 	require.Equal(t, []string{block1.String(), block2.String()}, plans)
-	ulid, err := db.compactor.Compact("", nil, nil)
+	ulids, err := db.compactor.Compact("", nil, nil)
 	require.NoError(t, err)
-	require.Equal(t, block1, ulid)
-	ulid, err = db.compactor.Write("", nil, 0, 1, nil)
+	require.Len(t, ulids, 1)
+	require.Equal(t, block1, ulids[0])
+	ulids, err = db.compactor.Write("", nil, 0, 1, nil)
 	require.NoError(t, err)
-	require.Equal(t, block2, ulid)
+	require.Len(t, ulids, 1)
+	require.Equal(t, block2, ulids[0])
 }

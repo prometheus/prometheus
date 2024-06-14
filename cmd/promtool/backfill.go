@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/oklog/ulid"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
@@ -189,6 +190,10 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 			switch {
 			case err == nil:
 				if quiet {
+					break
+				}
+				// Empty block, don't print.
+				if block.Compare(ulid.ULID{}) == 0 {
 					break
 				}
 				blocks, err := db.Blocks()

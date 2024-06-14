@@ -3813,6 +3813,10 @@ NOTE: Out-of-order ingestion is an experimental feature, but you do not need any
 # into the TSDB, i.e. it is an in-order sample or an out-of-order/out-of-bounds sample
 # that is within the out-of-order window, or (b) too-old, i.e. not in-order
 # and before the out-of-order window.
+#
+# When out_of_order_time_window is greater than 0, it also affects experimental agent. It allows 
+# the agent's WAL to accept out-of-order samples that fall within the specified time window relative 
+# to the timestamp of the last appended sample for the same series.
 [ out_of_order_time_window: <duration> | default = 0s ]
 ```
 
