@@ -798,39 +798,27 @@ func (m *equalMultiStringMapMatcher) Matches(s string) bool {
 // toNormalisedLower normalise the input string using "Unicode Normalization Form D" and then convert
 // it to lower case.
 func toNormalisedLower(s string) string {
-	// Check if the string is all ASCII chars and convert any upper case character to lower case character.
-	isASCII := true
-	var (
-		b   strings.Builder
-		pos int
-	)
+	b := strings.Builder{}
 	b.Grow(len(s))
-	for i := 0; i < len(s); i++ {
+	for i, written := 0, 0; i < len(s); i++ {
 		c := s[i]
-		if isASCII && c >= utf8.RuneSelf {
-			isASCII = false
-			break
+		if c >= utf8.RuneSelf {
+			// Not ASCII, so we need to normalise it and then convert to lower.
+			b.WriteString(s[written:])
+			return strings.Map(unicode.ToLower, norm.NFKD.String(b.String()))
 		}
 		if 'A' <= c && c <= 'Z' {
-			c += 'a' - 'A'
-			if pos < i {
-				b.WriteString(s[pos:i])
+			if written < i {
+				b.WriteString(s[written:i])
 			}
+			c += 'a' - 'A'
 			b.WriteByte(c)
-			pos = i + 1
+			written = i + 1
 		}
 	}
-	if pos < len(s) {
-		b.WriteString(s[pos:])
-	}
-
-	// Optimize for ASCII-only strings. In this case we don't have to do any normalization.
-	if isASCII {
-		return b.String()
-	}
-
-	// Normalise and convert to lower.
-	return strings.Map(unicode.ToLower, norm.NFKD.String(b.String()))
+	// Write the rest of the string, if any.
+	b.WriteString(s[b.Len():])
+	return b.String()
 }
 
 // anyStringWithoutNewlineMatcher is a stringMatcher which matches any string
