@@ -803,9 +803,7 @@ func toNormalisedLower(s string) string {
 	for i, written := 0, 0; i < len(s); i++ {
 		c := s[i]
 		if c >= utf8.RuneSelf {
-			// Not ASCII, so we need to normalise it and then convert to lower.
-			b.WriteString(s[written:])
-			return strings.Map(unicode.ToLower, norm.NFKD.String(b.String()))
+			return strings.Map(unicode.ToLower, norm.NFKD.String(s))
 		}
 		if 'A' <= c && c <= 'Z' {
 			if written < i {
