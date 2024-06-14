@@ -798,32 +798,23 @@ func (m *equalMultiStringMapMatcher) Matches(s string) bool {
 // toNormalisedLower normalise the input string using "Unicode Normalization Form D" and then convert
 // it to lower case.
 func toNormalisedLower(s string) string {
-	b := strings.Builder{}
-	for i, written := 0, 0; i < len(s); i++ {
+	var buf []byte
+	for i := 0; i < len(s); i++ {
 		c := s[i]
 		if c >= utf8.RuneSelf {
 			return strings.Map(unicode.ToLower, norm.NFKD.String(s))
 		}
 		if 'A' <= c && c <= 'Z' {
-			if written == 0 {
-				// Allocate on the heap only on first uppercase.
-				b.Grow(len(s))
+			if buf == nil {
+				buf = []byte(s)
 			}
-			if written < i {
-				b.WriteString(s[written:i])
-			}
-			c += 'a' - 'A'
-			b.WriteByte(c)
-			written = i + 1
+			buf[i] = c + 'a' - 'A'
 		}
 	}
-	if b.Len() == 0 {
-		// All were ASCII, and we didn't see an uppercase.
+	if buf == nil {
 		return s
 	}
-	// Write the rest of the string, if any.
-	b.WriteString(s[b.Len():])
-	return b.String()
+	return yoloString(buf)
 }
 
 // anyStringWithoutNewlineMatcher is a stringMatcher which matches any string
