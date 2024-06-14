@@ -48,44 +48,19 @@ void validate_encoded_chunks(const std::unordered_map<uint32_t, SampleList>& sou
     if (!std::ranges::equal(expected_samples, actual_samples)) {
       std::cout << "Encoded samples for " << ls_id << " is not valid! type" << (int)data_storage.open_chunks[ls_id].encoding_type
                 << ", value: " << data_storage.open_chunks[ls_id].encoder.uint32_constant.value() << std::endl;
+      std::cout << "expected samples size: " << expected_samples.size() << ", actual samples size: " << actual_samples.size() << std::endl;
 
-      std::cout << "expected: " << std::endl;
-      for (auto& s : expected_samples) {
-        std::cout << s.timestamp << ", " << s.value << std::endl;
-
-        auto bytes = reinterpret_cast<const uint8_t*>(&s.value);
-        for (int i = 0; i < 8; ++i) {
-          printf("0x%.2X, ", static_cast<unsigned int>(bytes[i]));
-        }
-        printf("\n");
-
-        return;
+      auto samples_for_print = std::min(expected_samples.size(), actual_samples.size());
+      for (size_t i = 0; i < samples_for_print; ++i) {
+        auto& expected = expected_samples[i];
+        auto& actual = actual_samples[i];
+        std::cout << expected.timestamp << ":" << actual.timestamp << ", " << expected.value << ":" << actual.value << std::endl;
       }
-
-      std::cout << "actual: " << std::endl;
-      for (auto& s : actual_samples) {
-        std::cout << s.timestamp << ", " << s.value << std::endl;
-      }
-
-      return;
     }
   }
 }
 
 void GorillaPrometheusStreamEncoder::execute(const Config& config, Metrics& metrics) const {
-  //  double test_gg;
-  //  std::cin >> test_gg;
-  //  std::cout << test_gg << ", cmp: " << (test_gg == 1.84467e+19) << std::endl;
-
-  union GG {
-    uint8_t buffer[8];
-    double value;
-  };
-  GG gg{.value = 0};
-  gg.buffer[7] = 0x43;
-  gg.buffer[6] = 0xF0;
-  std::cout << gg.value << ", static_cast<uint64_t>: " << static_cast<uint64_t>(gg.value) << std::endl;
-
   DummyWal::Timeseries tmsr;
   DummyWal dummy_wal(input_file_full_name(config));
 
@@ -104,8 +79,6 @@ void GorillaPrometheusStreamEncoder::execute(const Config& config, Metrics& metr
     while (dummy_wal.read_next(tmsr)) {
       auto ls_id = label_set_bitmap.find_or_emplace(tmsr.label_set());
       auto& sample = tmsr.samples()[0];
-
-      source_samples[ls_id].emplace_back(Sample{.timestamp = sample.timestamp(), .value = sample.value()});
 
 #ifdef DUMP_LABELS
       auto lss = label_set_bitmap[ls_id];
@@ -144,6 +117,8 @@ void GorillaPrometheusStreamEncoder::execute(const Config& config, Metrics& metr
         encoder.encode(ls_id, sample.timestamp(), sample.value());
         encode_time += std::chrono::steady_clock::now() - start_tm;
       }
+
+      source_samples[ls_id].emplace_back(Sample{.timestamp = sample.timestamp(), .value = sample.value()});
 
       ++samples_count;
     }

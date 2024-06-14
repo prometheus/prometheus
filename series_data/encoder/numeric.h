@@ -19,4 +19,13 @@ constexpr PROMPP_ALWAYS_INLINE bool is_values_strictly_equals(Number1 a, Number2
   return std::bit_cast<uint64_t>(a) == std::bit_cast<uint64_t>(b);
 }
 
+template <class Number1, class Number2>
+constexpr PROMPP_ALWAYS_INLINE bool is_in_bounds(double value, Number1 min, Number2 max) noexcept {
+  if (value < static_cast<double>(min)) {
+    return false;
+  }
+
+  return value <= static_cast<double>(max);
+}
+
 }  // namespace series_data::encoder::value

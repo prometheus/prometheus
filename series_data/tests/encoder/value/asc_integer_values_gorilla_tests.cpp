@@ -44,6 +44,33 @@ INSTANTIATE_TEST_SUITE_P(StaleNans,
                                          CanBeEncodedCase{.value1 = 0.0, .value1_count = 2, .value2 = STALE_NAN, .value3 = 3.0, .expected = true},
                                          CanBeEncodedCase{.value1 = 0.0, .value1_count = 1, .value2 = 1.0, .value3 = STALE_NAN, .expected = true}));
 
+INSTANTIATE_TEST_SUITE_P(
+    Int64Limits,
+    AscIntegerValuesGorillaEncoderCanBeEncodedFixture,
+    testing::Values(
+        CanBeEncodedCase{.value1 = static_cast<double>(std::numeric_limits<int32_t>::min()) - 1.0,
+                         .value1_count = 1,
+                         .value2 = 1.0,
+                         .value3 = 3.0,
+                         .expected = false},
+        CanBeEncodedCase{.value1 = static_cast<double>(std::numeric_limits<int32_t>::max()) + 1.0,
+                         .value1_count = 1,
+                         .value2 = 1.0,
+                         .value3 = 3.0,
+                         .expected = false},
+        CanBeEncodedCase{.value1 = -1.0, .value1_count = 1, .value2 = std::numeric_limits<int32_t>::max() + 1.0, .value3 = 3.0, .expected = false},
+        CanBeEncodedCase{.value1 = -1.0,
+                         .value1_count = 1,
+                         .value2 = 0.0,
+                         .value3 = static_cast<double>(std::numeric_limits<int32_t>::max()) + 1.0,
+                         .expected = false},
+        CanBeEncodedCase{.value1 = static_cast<double>(std::numeric_limits<int32_t>::min()), .value1_count = 1, .value2 = 0.0, .value3 = 1.0, .expected = true},
+        CanBeEncodedCase{.value1 = -1.0,
+                         .value1_count = 1,
+                         .value2 = static_cast<double>(std::numeric_limits<int32_t>::max() - 1),
+                         .value3 = static_cast<double>(std::numeric_limits<int32_t>::max()),
+                         .expected = true}));
+
 struct IsActualCase {
   BareBones::Vector<double> values;
   double value;

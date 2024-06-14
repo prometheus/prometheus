@@ -13,20 +13,18 @@ class PROMPP_ATTRIBUTE_PACKED AscIntegerValuesGorillaEncoder {
   PROMPP_ALWAYS_INLINE explicit AscIntegerValuesGorillaEncoder(double value) { Encoder::encode(state_, static_cast<int64_t>(value), stream_); }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE static bool can_be_encoded(double value1, uint8_t value1_count, double value2, double value3) {
-    static constexpr auto is_int_and_ge_than = [](double value2, double value1) PROMPP_LAMBDA_INLINE { return is_int(value2) && value2 >= value1; };
-
-    if (!is_int(value1)) {
+    if (!is_valid_int(value1)) {
       return false;
     }
 
     if (value1_count > 1) {
       if (BareBones::Encoding::Gorilla::isstalenan(value2)) {
         [[unlikely]];
-        return is_int_and_ge_than(value3, value1);
+        return is_valid_int_and_ge_than(value3, value1);
       }
     }
 
-    return is_int_and_ge_than(value2, value1) && (is_int_and_ge_than(value3, value2) || BareBones::Encoding::Gorilla::isstalenan(value3));
+    return is_valid_int_and_ge_than(value2, value1) && (is_valid_int_and_ge_than(value3, value2) || BareBones::Encoding::Gorilla::isstalenan(value3));
   }
 
   PROMPP_ALWAYS_INLINE void encode_second(double value) {
@@ -39,7 +37,7 @@ class PROMPP_ATTRIBUTE_PACKED AscIntegerValuesGorillaEncoder {
       [[unlikely]];
       last_value_type_ = ValueType::kStaleNan;
     } else {
-      if (!is_int(value) || static_cast<int64_t>(value) < state_.last_ts) {
+      if (!is_valid_int_and_ge_than(value, static_cast<double>(state_.last_ts))) {
         [[unlikely]];
         return false;
       }
@@ -68,13 +66,21 @@ class PROMPP_ATTRIBUTE_PACKED AscIntegerValuesGorillaEncoder {
     return stream;
   }
 
- private:
+ public:
   using Encoder = BareBones::Encoding::Gorilla::ZigZagTimestampEncoder<kDodSignificantLengths>;
   using ValueType = BareBones::Encoding::Gorilla::ValueType;
 
   BareBones::Encoding::Gorilla::TimestampEncoderState state_;
   CompactBitSequence stream_;
   ValueType last_value_type_{ValueType::kValue};
+
+  PROMPP_ALWAYS_INLINE static bool is_valid_int(double value) noexcept {
+    return is_int(value) && is_in_bounds(value, std::numeric_limits<int32_t>::min(), std::numeric_limits<int32_t>::max());
+  }
+
+  PROMPP_ALWAYS_INLINE static bool is_valid_int_and_ge_than(double value2, double value1) noexcept {
+    return is_int(value2) && is_in_bounds(value2, value1, std::numeric_limits<int32_t>::max());
+  }
 };
 
 }  // namespace series_data::encoder::value

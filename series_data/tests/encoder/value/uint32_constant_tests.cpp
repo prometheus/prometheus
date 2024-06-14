@@ -19,13 +19,6 @@ TEST_P(Uint32ConstantEncoderCanBeEncodedFixture, Test) {
   // Arrange
   auto& test_case = GetParam();
 
-  uint64_t gg = 0x43F0000000000000;
-  double value = 18446700000000000000.0;  // 1.84467e+19;
-  std::cin >> value;
-  // scanf("%lf", &value);
-  std::cout << std::bit_cast<double>(gg) << ", can be encoded: " << Uint32ConstantEncoder::can_be_encoded(std::bit_cast<double>(gg))
-            << ", uint64_t: " << static_cast<uint64_t>(value) << std::endl;
-
   // Act
   auto result = Uint32ConstantEncoder::can_be_encoded(test_case.value);
 

@@ -88,27 +88,11 @@ class Encoder {
           if (is_actual_value(chunk, value)) {
             return;
           }
-
-          // change encoder type if possible
         }
 
         encode_outdated_chunk(ls_id, timestamp, value);
         return;
       }
-    }
-
-    if (ls_id == 1191360) {
-      std::cout << "value: " << value << ", type: " << (int)chunk.encoding_type
-                << ", can be encoded: " << encoder::value::Uint32ConstantEncoder::can_be_encoded(value)
-                << ", encoded_value: " << chunk.encoder.uint32_constant.value() << ", is_positive_int(value): " << encoder::value::is_positive_int(value)
-                << ", cmp: " << (static_cast<uint64_t>(value) <= std::numeric_limits<uint32_t>::max())
-                << ", static_cast<uint64_t>(value): " << static_cast<uint64_t>(__builtin_trunc(value)) << ", cmp2: " << (value == 1.84467e+19) << std::endl;
-
-      auto bytes = reinterpret_cast<const uint8_t*>(&value);
-      for (int i = 0; i < 8; ++i) {
-        printf("0x%.2X, ", static_cast<unsigned int>(bytes[i]));
-      }
-      printf("\n");
     }
 
     encode_value(ls_id, chunk, timestamp, value);
