@@ -103,9 +103,9 @@ type IndexReader interface {
 	// storage.ErrNotFound is returned as error.
 	LabelValueFor(ctx context.Context, id storage.SeriesRef, label string) (string, error)
 
-	// LabelNamesFor returns all the label names for the series referred to by IDs.
+	// LabelNamesFor returns all the label names for the series referred to by the postings.
 	// The names returned are sorted.
-	LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([]string, error)
+	LabelNamesFor(ctx context.Context, postings index.Postings) ([]string, error)
 
 	// Close releases the underlying resources of the reader.
 	Close() error
@@ -551,10 +551,10 @@ func (r blockIndexReader) LabelValueFor(ctx context.Context, id storage.SeriesRe
 	return r.ir.LabelValueFor(ctx, id, label)
 }
 
-// LabelNamesFor returns all the label names for the series referred to by IDs.
+// LabelNamesFor returns all the label names for the series referred to by the postings.
 // The names returned are sorted.
-func (r blockIndexReader) LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([]string, error) {
-	return r.ir.LabelNamesFor(ctx, ids...)
+func (r blockIndexReader) LabelNamesFor(ctx context.Context, postings index.Postings) ([]string, error) {
+	return r.ir.LabelNamesFor(ctx, postings)
 }
 
 type blockTombstoneReader struct {
