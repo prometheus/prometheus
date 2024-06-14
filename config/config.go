@@ -37,7 +37,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/storage/remote/azuread"
-	"github.com/prometheus/prometheus/storage/remote/google_iam"
+	"github.com/prometheus/prometheus/storage/remote/googleiam"
 )
 
 var (
@@ -1115,12 +1115,12 @@ type RemoteWriteConfig struct {
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
-	HTTPClientConfig config.HTTPClientConfig     `yaml:",inline"`
-	QueueConfig      QueueConfig                 `yaml:"queue_config,omitempty"`
-	MetadataConfig   MetadataConfig              `yaml:"metadata_config,omitempty"`
-	SigV4Config      *sigv4.SigV4Config          `yaml:"sigv4,omitempty"`
-	AzureADConfig    *azuread.AzureADConfig      `yaml:"azuread,omitempty"`
-	GoogleIAMConfig  *google_iam.GoogleIAMConfig `yaml:"google_iam,omitempty"`
+	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
+	QueueConfig      QueueConfig             `yaml:"queue_config,omitempty"`
+	MetadataConfig   MetadataConfig          `yaml:"metadata_config,omitempty"`
+	SigV4Config      *sigv4.SigV4Config      `yaml:"sigv4,omitempty"`
+	AzureADConfig    *azuread.AzureADConfig  `yaml:"azuread,omitempty"`
+	GoogleIAMConfig  *googleiam.Config       `yaml:"google_iam,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -1158,12 +1158,7 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 		return err
 	}
 
-	err := validateAuthConfigs(c)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return validateAuthConfigs(c)
 }
 
 // validateAuthConfigs validates that at most one of basic_auth, authorization, oauth2, sigv4, azuread or google_iam must be configured.

@@ -11,7 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package google_iam
+// Package googleiam provides an http.RoundTripper that attaches an Google Cloud accessToken
+// to remote write requests.
+package googleiam
 
 import (
 	"context"
@@ -23,13 +25,13 @@ import (
 	apihttp "google.golang.org/api/transport/http"
 )
 
-type GoogleIAMConfig struct {
+type Config struct {
 	CredentialsFile string `yaml:"credentials_file,omitempty"`
 }
 
-// NewGoogleIAMRoundTripper creates a round tripper that adds Google Cloud Monitoring authorization to calls
+// NewRoundTripper creates a round tripper that adds Google Cloud Monitoring authorization to calls
 // using either a credentials file or the default credentials.
-func NewGoogleIAMRoundTripper(cfg *GoogleIAMConfig, next http.RoundTripper) (http.RoundTripper, error) {
+func NewRoundTripper(cfg *Config, next http.RoundTripper) (http.RoundTripper, error) {
 	if next == nil {
 		next = http.DefaultTransport
 	}
@@ -48,10 +50,5 @@ func NewGoogleIAMRoundTripper(cfg *GoogleIAMConfig, next http.RoundTripper) (htt
 		opts = append(opts, option.WithCredentials(creds))
 	}
 
-	transport, err := apihttp.NewTransport(ctx, next, opts...)
-	if err != nil {
-		return nil, err
-	}
-
-	return transport, nil
+	return apihttp.NewTransport(ctx, next, opts...)
 }
