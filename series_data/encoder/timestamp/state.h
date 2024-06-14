@@ -29,6 +29,14 @@ struct PROMPP_ATTRIBUTE_PACKED State {
   explicit State(Id previous_id) : previous_state_id(previous_id) {}
   State(const State& state, Id previous_id)
       : encoder_state(state.encoder_state), stream_data{.stream = state.stream_data.stream}, previous_state_id(previous_id) {}
+  State(State&& other) noexcept : encoder_state(other.encoder_state), previous_state_id(other.previous_state_id) {
+    if (!other.is_finalized()) {
+      [[likely]];
+      stream_data.stream = std::move(other.stream_data.stream);
+    } else {
+      stream_data.finalized_stream_id = other.stream_data.finalized_stream_id;
+    }
+  }
   ~State() {
     if (!is_finalized()) {
       [[likely]];

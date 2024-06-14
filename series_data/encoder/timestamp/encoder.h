@@ -97,7 +97,7 @@ class Encoder {
       if (old_value.reference_count > 1) {
         --old_value.reference_count;
 
-        auto& state = states_.emplace_back(old_value, state_id);
+        auto& state = states_.emplace_back(State(old_value, state_id));
         TimestampEncoder::encode(timestamp, state.stream_data.stream, state.encoder_state);
 
         state_id = states_.index_of(state);
