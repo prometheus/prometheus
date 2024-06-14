@@ -46,7 +46,7 @@ void validate_encoded_chunks(const std::unordered_map<uint32_t, SampleList>& sou
   for (auto& [ls_id, expected_samples] : source_samples) {
     auto actual_samples = get_encoded_samples(data_storage, ls_id);
     if (!std::ranges::equal(expected_samples, actual_samples)) {
-      std::cout << "Encoded samples for " << ls_id << " is not valid! type" << (int)data_storage.open_chunks[ls_id].encoding_type
+      std::cout << "Encoded samples for " << ls_id << " is not valid! type" << static_cast<int>(data_storage.open_chunks[ls_id].encoding_type)
                 << ", value: " << data_storage.open_chunks[ls_id].encoder.uint32_constant.value() << std::endl;
       std::cout << "expected samples size: " << expected_samples.size() << ", actual samples size: " << actual_samples.size() << std::endl;
 
