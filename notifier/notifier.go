@@ -307,6 +307,7 @@ func (n *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) {
 
 	n.runLoop(tsets)
 	n.drainQueue()
+	level.Info(n.logger).Log("msg", "Notification manager stopped")
 }
 
 func (n *Manager) runLoop(tsets <-chan map[string][]*targetgroup.Group) {
@@ -356,18 +357,22 @@ func (n *Manager) drainQueue() {
 		return
 	}
 
+	level.Info(n.logger).Log("msg", "Draining any remaining notifications...")
 	drainTimedOut := time.After(n.opts.DrainTimeout)
 
 	// Keep trying to send remaining notifications until we empty the queue or run out of time.
 	for n.queueLen() > 0 {
 		select {
 		case <-drainTimedOut:
+			level.Warn(n.logger).Log("msg", "Timed out draining remaining notifications, some notifications have been dropped", "droppedCount", n.queueLen())
 			return
 
 		default:
 			n.sendOneBatch()
 		}
 	}
+
+	level.Info(n.logger).Log("msg", "Remaining notifications drained")
 }
 
 func (n *Manager) reload(tgs map[string][]*targetgroup.Group) {
