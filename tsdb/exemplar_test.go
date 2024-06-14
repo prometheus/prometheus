@@ -415,27 +415,29 @@ func BenchmarkAddExemplar(b *testing.B) {
 	// before adding.
 	exLabels := labels.FromStrings("trace_id", "89620921")
 
-	for _, n := range []int{10000, 100000, 1000000} {
-		b.Run(strconv.Itoa(n), func(b *testing.B) {
-			for j := 0; j < b.N; j++ {
-				b.StopTimer()
-				exs, err := NewCircularExemplarStorage(int64(n), eMetrics)
-				require.NoError(b, err)
-				es := exs.(*CircularExemplarStorage)
-				var l labels.Labels
-				b.StartTimer()
+	for _, capacity := range []int{1000, 10000, 100000} {
+		for _, n := range []int{10000, 100000, 1000000} {
+			b.Run(fmt.Sprintf("%d/%d", n, capacity), func(b *testing.B) {
+				for j := 0; j < b.N; j++ {
+					b.StopTimer()
+					exs, err := NewCircularExemplarStorage(int64(capacity), eMetrics)
+					require.NoError(b, err)
+					es := exs.(*CircularExemplarStorage)
+					var l labels.Labels
+					b.StartTimer()
 
-				for i := 0; i < n; i++ {
-					if i%100 == 0 {
-						l = labels.FromStrings("service", strconv.Itoa(i))
-					}
-					err = es.AddExemplar(l, exemplar.Exemplar{Value: float64(i), Ts: int64(i), Labels: exLabels})
-					if err != nil {
-						require.NoError(b, err)
+					for i := 0; i < n; i++ {
+						if i%100 == 0 {
+							l = labels.FromStrings("service", strconv.Itoa(i))
+						}
+						err = es.AddExemplar(l, exemplar.Exemplar{Value: float64(i), Ts: int64(i), Labels: exLabels})
+						if err != nil {
+							require.NoError(b, err)
+						}
 					}
 				}
-			}
-		})
+			})
+		}
 	}
 }
 
@@ -480,8 +482,11 @@ func BenchmarkResizeExemplars(b *testing.B) {
 				require.NoError(b, err)
 				es := exs.(*CircularExemplarStorage)
 
+				var l labels.Labels
 				for i := 0; i < int(float64(tc.startSize)*float64(1.5)); i++ {
-					l := labels.FromStrings("service", strconv.Itoa(i))
+					if i%100 == 0 {
+						l = labels.FromStrings("service", strconv.Itoa(i))
+					}
 
 					err = es.AddExemplar(l, exemplar.Exemplar{Value: float64(i), Ts: int64(i)})
 					if err != nil {

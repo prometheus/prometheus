@@ -615,7 +615,7 @@ func TestChunksTimeOrdering(t *testing.T) {
 func TestReader_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 	const seriesCount = 1000
 	var input indexWriterSeriesSlice
-	for i := 1; i < seriesCount; i++ {
+	for i := 1; i <= seriesCount; i++ {
 		input = append(input, &indexWriterSeries{
 			labels: labels.FromStrings("__name__", fmt.Sprintf("%4d", i)),
 			chunks: []chunks.Meta{

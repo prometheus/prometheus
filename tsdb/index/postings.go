@@ -301,46 +301,72 @@ func (p *MemPostings) EnsureOrder(numberOfConcurrentProcesses int) {
 
 // Delete removes all ids in the given map from the postings lists.
 func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}) {
-	var keys, vals []string
+	// We will take an optimistic read lock for the entire method,
+	// and only lock for writing when we actually find something to delete.
+	//
+	// Each SeriesRef can appear in several Postings.
+	// To change each one, we need to know the label name and value that it is indexed under.
+	// We iterate over all label names, then for each name all values,
+	// and look for individual series to be deleted.
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
 
 	// Collect all keys relevant for deletion once. New keys added afterwards
 	// can by definition not be affected by any of the given deletes.
-	p.mtx.RLock()
+	keys := make([]string, 0, len(p.m))
+	maxVals := 0
 	for n := range p.m {
 		keys = append(keys, n)
+		if p.m[n].Count() > maxVals {
+			maxVals = p.m[n].Count()
+		}
 	}
-	p.mtx.RUnlock()
 
+	vals := make([]string, 0, maxVals)
 	for _, n := range keys {
-		p.mtx.RLock()
+		// Copy the values and iterate the copy: if we unlock in the loop below,
+		// another goroutine might modify the map while we are part-way through it.
 		vals = vals[:0]
 		p.m[n].Iter(func(v string, _ []storage.SeriesRef) bool {
 			vals = append(vals, v)
 			return false
 		})
-		p.mtx.RUnlock()
 
 		// For each posting we first analyse whether the postings list is affected by the deletes.
-		// If yes, we actually reallocate a new postings list.
-		for _, l := range vals {
-			// Only lock for processing one postings list so we don't block reads for too long.
-			p.mtx.Lock()
-
+		// If no, we remove the label value from the vals list.
+		// This way we only need to Lock once later.
+		for i := 0; i < len(vals); {
 			found := false
-			srs, _ := p.m[n].Get(l)
-			for _, id := range srs {
+			refs, _ := p.m[n].Get(vals[i])
+			for _, id := range refs {
 				if _, ok := deleted[id]; ok {
+					i++
 					found = true
 					break
 				}
 			}
-			if !found {
-				p.mtx.Unlock()
-				continue
-			}
-			repl := make([]storage.SeriesRef, 0, len(srs))
 
-			for _, id := range srs {
+			if !found {
+				// Didn't match, bring the last value to this position, make the slice shorter and check again.
+				// The order of the slice doesn't matter as it comes from a map iteration.
+				vals[i], vals = vals[len(vals)-1], vals[:len(vals)-1]
+			}
+		}
+
+		// If no label values have deleted ids, just continue.
+		if len(vals) == 0 {
+			continue
+		}
+
+		// The only vals left here are the ones that contain deleted ids.
+		// Now we take the write lock and remove the ids.
+		p.mtx.RUnlock()
+		p.mtx.Lock()
+		for _, l := range vals {
+			refs, _ := p.m[n].Get(l)
+			repl := make([]storage.SeriesRef, 0, len(refs))
+
+			for _, id := range refs {
 				if _, ok := deleted[id]; !ok {
 					repl = append(repl, id)
 				}
@@ -350,13 +376,14 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}) {
 			} else {
 				p.m[n].Delete(l)
 			}
-			p.mtx.Unlock()
 		}
-		p.mtx.Lock()
+
+		// Delete the key if we removed all values.
 		if p.m[n].Count() == 0 {
 			delete(p.m, n)
 		}
 		p.mtx.Unlock()
+		p.mtx.RLock()
 	}
 }
 
@@ -416,40 +443,75 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 }
 
 func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) Postings {
-	p.mtx.RLock()
+	// We'll copy the values into a slice and then match over that,
+	// this way we don't need to hold the mutex while we're matching,
+	// which can be slow (seconds) if the match function is a huge regex.
+	// Holding this lock prevents new series from being added (slows down the write path)
+	// and blocks the compaction process.
+	vals := p.labelValues(name)
+	for i, count := 0, 1; i < len(vals); count++ {
+		if count%checkContextEveryNIterations == 0 && ctx.Err() != nil {
+			return ErrPostings(ctx.Err())
+		}
 
+		if match(vals[i]) {
+			i++
+			continue
+		}
+
+		// Didn't match, bring the last value to this position, make the slice shorter and check again.
+		// The order of the slice doesn't matter as it comes from a map iteration.
+		vals[i], vals = vals[len(vals)-1], vals[:len(vals)-1]
+	}
+
+	// If none matched (or this label had no values), no need to grab the lock again.
+	if len(vals) == 0 {
+		return EmptyPostings()
+	}
+
+	// Now `vals` only contains the values that matched, get their postings.
+	its := make([]Postings, 0, len(vals))
+	p.mtx.RLock()
 	e := p.m[name]
 	if e == nil || e.Count() == 0 {
 		p.mtx.RUnlock()
 		return EmptyPostings()
 	}
-
-	count := 1
-	var its []Postings
-	var err error
-	e.Iter(func(v string, srs []storage.SeriesRef) bool {
-		if len(srs) == 0 {
-			return false
+	for _, v := range vals {
+		if refs, ok := e.Get(v); ok {
+			// Some of the values may have been garbage-collected in the meantime this is fine, we'll just skip them.
+			// If we didn't let the mutex go, we'd have these postings here, but they would be pointing nowhere
+			// because there would be a `MemPostings.Delete()` call waiting for the lock to delete these labels,
+			// because the series were deleted already.
+			its = append(its, NewListPostings(refs))
 		}
-
-		if count%checkContextEveryNIterations == 0 && ctx.Err() != nil {
-			err = ctx.Err()
-			return true
-		}
-
-		count++
-		if match(v) {
-			its = append(its, NewListPostings(srs))
-		}
-
-		return false
-	})
-	p.mtx.RUnlock()
-	if err != nil {
-		return ErrPostings(err)
 	}
+	// Let the mutex go before merging.
+	p.mtx.RUnlock()
 
 	return Merge(ctx, its...)
+}
+
+// labelValues returns a slice of label values for the given label name.
+// It will take the read lock.
+func (p *MemPostings) labelValues(name string) []string {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+
+	e := p.m[name]
+	if e.Count() == 0 {
+		return nil
+	}
+
+	vals := make([]string, 0, e.Count())
+	e.Iter(func(v string, srs []storage.SeriesRef) bool {
+		if len(srs) > 0 {
+			vals = append(vals, v)
+		}
+		return false
+	})
+
+	return vals
 }
 
 // ExpandPostings returns the postings expanded as a slice.

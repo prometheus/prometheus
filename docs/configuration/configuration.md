@@ -70,6 +70,10 @@ global:
 
   # How frequently to evaluate rules.
   [ evaluation_interval: <duration> | default = 1m ]
+                        
+  # Offset the rule evaluation timestamp of this particular group by the specified duration into the past to ensure the underlying metrics have been received.
+  # Metric availability delays are more likely to occur when Prometheus is running as a remote write target, but can also occur when there's anomalies with scraping.
+  [ rule_query_offset: <duration> | default = 0s ]
 
   # The labels to add to any time series or alerts when communicating with
   # external systems (federation, remote storage, Alertmanager).
@@ -116,6 +120,12 @@ global:
   # Limit per scrape config on the number of targets dropped by relabeling
   # that will be kept in memory. 0 means no limit.
   [ keep_dropped_targets: <int> | default = 0 ]
+
+runtime:
+  # Configure the Go garbage collector GOGC parameter
+  # See: https://tip.golang.org/doc/gc-guide#GOGC
+  # Lowering this number increases CPU usage.
+  [ gogc: <int> | default = 75 ]
 
 # Rule files specifies a list of globs. Rules and alerts are read from
 # all matching files.

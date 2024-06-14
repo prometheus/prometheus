@@ -11,6 +11,7 @@ updates:
       go.opentelemetry.io:
         patterns:
           - "go.opentelemetry.io/*"
+    open-pull-requests-limit: 20
   - package-ecosystem: "gomod"
     directory: "/documentation/examples/remote_storage"
     schedule:
@@ -19,6 +20,7 @@ updates:
     directory: "/web/ui"
     schedule:
       interval: "monthly"
+    open-pull-requests-limit: 20
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

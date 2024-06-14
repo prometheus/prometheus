@@ -28,6 +28,8 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -785,6 +787,9 @@ func main() {
 			ResendDelay:            time.Duration(cfg.resendDelay),
 			MaxConcurrentEvals:     cfg.maxConcurrentEvals,
 			ConcurrentEvalsEnabled: cfg.enableConcurrentRuleEval,
+			DefaultRuleQueryOffset: func() time.Duration {
+				return time.Duration(cfgFile.GlobalConfig.RuleQueryOffset)
+			},
 		})
 	}
 
@@ -1379,6 +1384,17 @@ func reloadConfig(filename string, expandExternalLabels, enableExemplarStorage b
 	}
 	if failed {
 		return fmt.Errorf("one or more errors occurred while applying the new configuration (--config.file=%q)", filename)
+	}
+
+	oldGoGC := debug.SetGCPercent(conf.Runtime.GoGC)
+	if oldGoGC != conf.Runtime.GoGC {
+		level.Info(logger).Log("msg", "updated GOGC", "old", oldGoGC, "new", conf.Runtime.GoGC)
+	}
+	// Write the new setting out to the ENV var for runtime API output.
+	if conf.Runtime.GoGC >= 0 {
+		os.Setenv("GOGC", strconv.Itoa(conf.Runtime.GoGC))
+	} else {
+		os.Setenv("GOGC", "off")
 	}
 
 	noStepSuqueryInterval.Set(conf.GlobalConfig.EvaluationInterval)

@@ -714,3 +714,20 @@ eval instant at 10m histogram_fraction(NaN, NaN, histogram_fraction_4)
 
 eval instant at 10m histogram_fraction(-Inf, +Inf, histogram_fraction_4)
     {} 1
+
+clear
+
+# Counter reset only noticeable in a single bucket.
+load 5m
+     reset_in_bucket {{schema:0 count:4 sum:5 buckets:[1 2 1]}} {{schema:0 count:5 sum:6 buckets:[1 1 3]}} {{schema:0 count:6 sum:7 buckets:[1 2 3]}}
+
+eval instant at 10m increase(reset_in_bucket[15m])
+     {} {{count:9 sum:10.5 buckets:[1.5 3 4.5]}}
+
+# The following two test the "fast path" where only sum and count is decoded.
+eval instant at 10m histogram_count(increase(reset_in_bucket[15m]))
+     {} 9
+
+eval instant at 10m histogram_sum(increase(reset_in_bucket[15m]))
+     {} 10.5
+

@@ -3222,6 +3222,82 @@ func TestRangeQuery(t *testing.T) {
 	}
 }
 
+func TestInstantQueryWithRangeVectorSelector(t *testing.T) {
+	engine := newTestEngine()
+
+	baseT := timestamp.Time(0)
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			some_metric{env="1"} 0+1x4
+			some_metric{env="2"} 0+2x4
+			some_metric_with_stale_marker 0 1 stale 3
+	`)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	testCases := map[string]struct {
+		expr     string
+		expected promql.Matrix
+		ts       time.Time
+	}{
+		"matches series with points in range": {
+			expr: "some_metric[1m]",
+			ts:   baseT.Add(2 * time.Minute),
+			expected: promql.Matrix{
+				{
+					Metric: labels.FromStrings("__name__", "some_metric", "env", "1"),
+					Floats: []promql.FPoint{
+						{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 1},
+						{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), F: 2},
+					},
+				},
+				{
+					Metric: labels.FromStrings("__name__", "some_metric", "env", "2"),
+					Floats: []promql.FPoint{
+						{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 2},
+						{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), F: 4},
+					},
+				},
+			},
+		},
+		"matches no series": {
+			expr:     "some_nonexistent_metric[1m]",
+			ts:       baseT,
+			expected: promql.Matrix{},
+		},
+		"no samples in range": {
+			expr:     "some_metric[1m]",
+			ts:       baseT.Add(20 * time.Minute),
+			expected: promql.Matrix{},
+		},
+		"metric with stale marker": {
+			expr: "some_metric_with_stale_marker[3m]",
+			ts:   baseT.Add(3 * time.Minute),
+			expected: promql.Matrix{
+				{
+					Metric: labels.FromStrings("__name__", "some_metric_with_stale_marker"),
+					Floats: []promql.FPoint{
+						{T: timestamp.FromTime(baseT), F: 0},
+						{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 1},
+						{T: timestamp.FromTime(baseT.Add(3 * time.Minute)), F: 3},
+					},
+				},
+			},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			q, err := engine.NewInstantQuery(context.Background(), storage, nil, testCase.expr, testCase.ts)
+			require.NoError(t, err)
+			defer q.Close()
+
+			res := q.Exec(context.Background())
+			require.NoError(t, res.Err)
+			testutil.RequireEqual(t, testCase.expected, res.Value)
+		})
+	}
+}
+
 func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 	// TODO(codesome): Integrate histograms into the PromQL testing framework
 	// and write more tests there.

@@ -189,7 +189,12 @@ type Options struct {
 
 	// EnableSharding enables query sharding support in TSDB.
 	EnableSharding bool
+
+	// NewCompactorFunc is a function that returns a TSDB compactor.
+	NewCompactorFunc NewCompactorFunc
 }
+
+type NewCompactorFunc func(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error)
 
 type BlocksToDeleteFunc func(blocks []*Block) map[ulid.ULID]struct{}
 
@@ -851,13 +856,17 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	db.compactor, err = NewLeveledCompactorWithOptions(ctx, r, l, rngs, db.chunkPool, LeveledCompactorOptions{
-		MaxBlockChunkSegmentSize:    opts.MaxBlockChunkSegmentSize,
-		EnableOverlappingCompaction: opts.EnableOverlappingCompaction,
-	})
+	if opts.NewCompactorFunc != nil {
+		db.compactor, err = opts.NewCompactorFunc(ctx, r, l, rngs, db.chunkPool, opts)
+	} else {
+		db.compactor, err = NewLeveledCompactorWithOptions(ctx, r, l, rngs, db.chunkPool, LeveledCompactorOptions{
+			MaxBlockChunkSegmentSize:    opts.MaxBlockChunkSegmentSize,
+			EnableOverlappingCompaction: opts.EnableOverlappingCompaction,
+		})
+	}
 	if err != nil {
 		cancel()
-		return nil, fmt.Errorf("create leveled compactor: %w", err)
+		return nil, fmt.Errorf("create compactor: %w", err)
 	}
 	db.compactCancel = cancel
 

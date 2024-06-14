@@ -263,6 +263,60 @@ eval_fail instant at 0m ceil({__name__=~'testmetric1|testmetric2'})
 			input:         `eval_fail instant at 0s vector(0)`,
 			expectedError: `expected error evaluating query "vector(0)" (line 1) but got none`,
 		},
+		"instant query expected to fail with specific error message, and query fails with that error": {
+			input: `
+load 5m
+	testmetric1{src="a",dst="b"} 0
+	testmetric2{src="a",dst="b"} 1
+
+eval_fail instant at 0m ceil({__name__=~'testmetric1|testmetric2'})
+	expected_fail_message vector cannot contain metrics with the same labelset
+`,
+		},
+		"instant query expected to fail with specific error message, and query fails with a different error": {
+			input: `
+load 5m
+	testmetric1{src="a",dst="b"} 0
+	testmetric2{src="a",dst="b"} 1
+
+eval_fail instant at 0m ceil({__name__=~'testmetric1|testmetric2'})
+	expected_fail_message something else went wrong
+`,
+			expectedError: `expected error "something else went wrong" evaluating query "ceil({__name__=~'testmetric1|testmetric2'})" (line 6), but got: vector cannot contain metrics with the same labelset`,
+		},
+
+		"instant query expected to fail with error matching pattern, and query fails with that error": {
+			input: `
+load 5m
+	testmetric1{src="a",dst="b"} 0
+	testmetric2{src="a",dst="b"} 1
+
+eval_fail instant at 0m ceil({__name__=~'testmetric1|testmetric2'})
+	expected_fail_regexp vector .* contain metrics
+`,
+		},
+		"instant query expected to fail with error matching pattern, and query fails with a different error": {
+			input: `
+load 5m
+	testmetric1{src="a",dst="b"} 0
+	testmetric2{src="a",dst="b"} 1
+
+eval_fail instant at 0m ceil({__name__=~'testmetric1|testmetric2'})
+	expected_fail_regexp something else went wrong
+`,
+			expectedError: `expected error matching pattern "something else went wrong" evaluating query "ceil({__name__=~'testmetric1|testmetric2'})" (line 6), but got: vector cannot contain metrics with the same labelset`,
+		},
+		"instant query expected to fail with error matching pattern, and pattern is not a valid regexp": {
+			input: `
+load 5m
+	testmetric1{src="a",dst="b"} 0
+	testmetric2{src="a",dst="b"} 1
+
+eval_fail instant at 0m ceil({__name__=~'testmetric1|testmetric2'})
+	expected_fail_regexp [
+`,
+			expectedError: `error in eval ceil({__name__=~'testmetric1|testmetric2'}) (line 7): invalid regexp '[' for expected_fail_regexp: error parsing regexp: missing closing ]: ` + "`[`",
+		},
 		"instant query with results expected to match provided order, and result is in expected order": {
 			input: testData + `
 eval_ordered instant at 50m sort(http_requests)
@@ -383,6 +437,59 @@ eval_fail range from 0 to 10m step 5m ceil({__name__=~'testmetric1|testmetric2'}
 		"range query expected to fail, but query succeeds": {
 			input:         `eval_fail range from 0 to 10m step 5m vector(0)`,
 			expectedError: `expected error evaluating query "vector(0)" (line 1) but got none`,
+		},
+		"range query expected to fail with specific error message, and query fails with that error": {
+			input: `
+load 5m
+	testmetric1{src="a",dst="b"} 0
+	testmetric2{src="a",dst="b"} 1
+
+eval_fail range from 0 to 10m step 5m ceil({__name__=~'testmetric1|testmetric2'})
+	expected_fail_message vector cannot contain metrics with the same labelset
+`,
+		},
+		"range query expected to fail with specific error message, and query fails with a different error": {
+			input: `
+load 5m
+	testmetric1{src="a",dst="b"} 0
+	testmetric2{src="a",dst="b"} 1
+
+eval_fail range from 0 to 10m step 5m ceil({__name__=~'testmetric1|testmetric2'})
+	expected_fail_message something else went wrong
+`,
+			expectedError: `expected error "something else went wrong" evaluating query "ceil({__name__=~'testmetric1|testmetric2'})" (line 6), but got: vector cannot contain metrics with the same labelset`,
+		},
+		"range query expected to fail with error matching pattern, and query fails with that error": {
+			input: `
+load 5m
+	testmetric1{src="a",dst="b"} 0
+	testmetric2{src="a",dst="b"} 1
+
+eval_fail range from 0 to 10m step 5m ceil({__name__=~'testmetric1|testmetric2'})
+	expected_fail_regexp vector .* contain metrics
+`,
+		},
+		"range query expected to fail with error matching pattern, and query fails with a different error": {
+			input: `
+load 5m
+	testmetric1{src="a",dst="b"} 0
+	testmetric2{src="a",dst="b"} 1
+
+eval_fail range from 0 to 10m step 5m ceil({__name__=~'testmetric1|testmetric2'})
+	expected_fail_regexp something else went wrong
+`,
+			expectedError: `expected error matching pattern "something else went wrong" evaluating query "ceil({__name__=~'testmetric1|testmetric2'})" (line 6), but got: vector cannot contain metrics with the same labelset`,
+		},
+		"range query expected to fail with error matching pattern, and pattern is not a valid regexp": {
+			input: `
+load 5m
+	testmetric1{src="a",dst="b"} 0
+	testmetric2{src="a",dst="b"} 1
+
+eval_fail range from 0 to 10m step 5m ceil({__name__=~'testmetric1|testmetric2'})
+	expected_fail_regexp [
+`,
+			expectedError: `error in eval ceil({__name__=~'testmetric1|testmetric2'}) (line 7): invalid regexp '[' for expected_fail_regexp: error parsing regexp: missing closing ]: ` + "`[`",
 		},
 		"range query with from and to timestamps in wrong order": {
 			input:         `eval range from 10m to 9m step 5m vector(0)`,

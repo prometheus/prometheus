@@ -1551,11 +1551,14 @@ func (r *Reader) LabelValues(ctx context.Context, name string, matchers ...*labe
 
 // LabelNamesFor returns all the label names for the series referred to by IDs.
 // The names returned are sorted.
-func (r *Reader) LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([]string, error) {
+func (r *Reader) LabelNamesFor(ctx context.Context, postings Postings) ([]string, error) {
 	// Gather offsetsMap the name offsetsMap in the symbol table first
 	offsetsMap := make(map[uint32]struct{})
-	for _, id := range ids {
-		if ctx.Err() != nil {
+	i := 0
+	for postings.Next() {
+		id := postings.At()
+
+		if i%checkContextEveryNIterations == 0 && ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
 
