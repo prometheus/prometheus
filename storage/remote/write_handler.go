@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -26,6 +27,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 	otlptranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
@@ -115,6 +117,9 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 
 	b := labels.NewScratchBuilder(0)
 	var exemplarErr error
+
+	currentTimestamp := timestamp.FromTime(time.Now())
+
 	for _, ts := range req.Timeseries {
 		labels := labelProtosToLabels(&b, ts.Labels)
 		if !labels.IsValid() {
@@ -124,7 +129,13 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 		}
 		var ref storage.SeriesRef
 		for _, s := range ts.Samples {
-			ref, err = app.Append(ref, labels, s.Timestamp, s.Value)
+			// check, if the histogram timestamp is in the past
+			if s.Timestamp <= currentTimestamp {
+				ref, err = app.Append(ref, labels, s.Timestamp, s.Value)
+			} else {
+				err = storage.ErrOutOfBounds
+			}
+
 			if err != nil {
 				unwrappedErr := errors.Unwrap(err)
 				if unwrappedErr == nil {
@@ -149,13 +160,19 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 		}
 
 		for _, hp := range ts.Histograms {
-			if hp.IsFloatHistogram() {
-				fhs := FloatHistogramProtoToFloatHistogram(hp)
-				_, err = app.AppendHistogram(0, labels, hp.Timestamp, nil, fhs)
+			// check, if the histogram timestamp is in the past
+			if hp.Timestamp <= currentTimestamp {
+				if hp.IsFloatHistogram() {
+					fhs := FloatHistogramProtoToFloatHistogram(hp)
+					_, err = app.AppendHistogram(0, labels, hp.Timestamp, nil, fhs)
+				} else {
+					hs := HistogramProtoToHistogram(hp)
+					_, err = app.AppendHistogram(0, labels, hp.Timestamp, hs, nil)
+				}
 			} else {
-				hs := HistogramProtoToHistogram(hp)
-				_, err = app.AppendHistogram(0, labels, hp.Timestamp, hs, nil)
+				err = storage.ErrOutOfBounds
 			}
+
 			if err != nil {
 				unwrappedErr := errors.Unwrap(err)
 				if unwrappedErr == nil {

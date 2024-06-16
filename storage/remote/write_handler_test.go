@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -108,6 +109,29 @@ func TestOutOfOrderSample(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
+// TestOutOfOrderSampleInFuture verifies that the handler fails when receiving a sample with future timestamp.
+func TestOutOfOrderSampleInFuture(t *testing.T) {
+	buf, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
+		Labels:  []prompb.Label{{Name: "__name__", Value: "test_metric"}},
+		Samples: []prompb.Sample{{Value: 1, Timestamp: math.MaxInt64}},
+	}}, nil, nil, nil, nil)
+	require.NoError(t, err)
+
+	req, err := http.NewRequest("", "", bytes.NewReader(buf))
+	require.NoError(t, err)
+
+	appendable := &mockAppendable{
+		latestSample: 100,
+	}
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	resp := recorder.Result()
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
 // This test case currently aims to verify that the WriteHandler endpoint
 // don't fail on ingestion errors since the exemplar storage is
 // still experimental.
@@ -138,6 +162,29 @@ func TestOutOfOrderHistogram(t *testing.T) {
 	buf, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
 		Labels:     []prompb.Label{{Name: "__name__", Value: "test_metric"}},
 		Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat(nil))},
+	}}, nil, nil, nil, nil)
+	require.NoError(t, err)
+
+	req, err := http.NewRequest("", "", bytes.NewReader(buf))
+	require.NoError(t, err)
+
+	appendable := &mockAppendable{
+		latestHistogram: 100,
+	}
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	resp := recorder.Result()
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
+// TestOutOfOrderHistogramInFuture verifies that the handler fails when receiving a histogram with future timestamp.
+func TestOutOfOrderHistogramInFuture(t *testing.T) {
+	buf, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
+		Labels:     []prompb.Label{{Name: "__name__", Value: "test_metric"}},
+		Histograms: []prompb.Histogram{HistogramToHistogramProto(math.MaxInt64-1, &testHistogram), FloatHistogramToHistogramProto(math.MaxInt64, testHistogram.ToFloat(nil))},
 	}}, nil, nil, nil, nil)
 	require.NoError(t, err)
 
