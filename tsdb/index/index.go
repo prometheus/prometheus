@@ -1559,8 +1559,10 @@ func (r *Reader) LabelNamesFor(ctx context.Context, postings Postings) ([]string
 		id := postings.At()
 		i++
 
-		if i%checkContextEveryNIterations == 0 && ctx.Err() != nil {
-			return nil, ctx.Err()
+		if i%checkContextEveryNIterations == 0 {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
 		}
 
 		offset := id
