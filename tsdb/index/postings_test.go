@@ -983,7 +983,7 @@ func TestMemPostings_Delete(t *testing.T) {
 		2: {},
 	}
 	affectedLabels := map[labels.Label]struct{}{
-		labels.Label{Name: "lbl1", Value: "b"}: {},
+		{Name: "lbl1", Value: "b"}: {},
 	}
 	p.Delete(deletedRefs, affectedLabels)
 	after := p.Get(allPostingsKey.Name, allPostingsKey.Value)
