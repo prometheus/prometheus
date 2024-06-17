@@ -32,8 +32,8 @@ class OutdatedChunkMergerTrait {
   using ExpectedListOfSampleList = BareBones::Vector<ExpectedSampleList>;
 
   DataStorage storage_;
-  OutdatedSampleEncoder outdated_sample_encoder_{storage_};
-  Encoder<OutdatedSampleEncoder, kSamplesPerChunkValue> encoder_{storage_, outdated_sample_encoder_};
+  OutdatedSampleEncoder<> outdated_sample_encoder_{storage_};
+  Encoder<decltype(outdated_sample_encoder_), kSamplesPerChunkValue> encoder_{storage_, outdated_sample_encoder_};
   OutdatedChunkMerger<decltype(encoder_)> merger_{storage_, encoder_};
 
   [[nodiscard]] const DataChunk& get_open_chunk(uint32_t ls_id) { return storage_.open_chunks[ls_id]; }

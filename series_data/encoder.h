@@ -6,18 +6,21 @@
 
 namespace series_data {
 
-inline constexpr uint8_t kSamplesPerChunkDefault = 240;
-
 template <OutdatedSampleEncoderInterface OutdatedSampleEncoder, uint8_t kSamplesPerChunk = kSamplesPerChunkDefault>
 class Encoder {
  public:
   Encoder(DataStorage& storage, OutdatedSampleEncoder& outdated_sample_encoder) : storage_(storage), outdated_sample_encoder_(outdated_sample_encoder) {}
 
   PROMPP_ALWAYS_INLINE void encode(uint32_t ls_id, int64_t timestamp, double value) {
-    encode(ls_id, timestamp, value, storage_.open_chunks.size() > ls_id ? storage_.open_chunks[ls_id] : storage_.open_chunks.emplace_back());
+    if (storage_.open_chunks.size() <= ls_id) {
+      [[unlikely]];
+      storage_.open_chunks.resize(ls_id + 1);
+    }
+
+    encode(ls_id, timestamp, value, storage_.open_chunks[ls_id]);
   }
 
-  void encode(uint32_t ls_id, int64_t timestamp, double value, chunk::DataChunk& chunk) {
+  PROMPP_ALWAYS_INLINE void encode(uint32_t ls_id, int64_t timestamp, double value, chunk::DataChunk& chunk) {
     if (chunk.encoding_type == chunk::DataChunk::EncodingType::kGorilla) {
       [[unlikely]];
       encode_gorilla(ls_id, timestamp, value, chunk);
@@ -59,12 +62,15 @@ class Encoder {
     auto& encoder = storage_.gorilla_encoders[chunk.encoder.gorilla];
     if (timestamp > encoder.timestamp()) {
       [[likely]];
-      if (encoder.encode(timestamp, value) >= kSamplesPerChunk) {
+      if (encoder.stream().count() >= kSamplesPerChunk) {
         [[unlikely]];
         finalize_chunk(ls_id, chunk, encoder::timestamp::State::kInvalidId);
+        encode_timestamp_and_value_separately(ls_id, timestamp, value, chunk);
+      } else {
+        encoder.encode(timestamp, value);
       }
     } else if (timestamp < encoder.timestamp() || !encoder.is_actual(value)) {
-      outdated_sample_encoder_.encode(ls_id, timestamp, value);
+      outdated_sample_encoder_.encode(*this, ls_id, timestamp, value);
     }
   }
 
@@ -92,7 +98,7 @@ class Encoder {
           }
         }
 
-        outdated_sample_encoder_.encode(ls_id, timestamp, value);
+        outdated_sample_encoder_.encode(*this, ls_id, timestamp, value);
         return;
       }
     }

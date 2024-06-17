@@ -14,7 +14,23 @@ class OutdatedChunkMerger {
 
   void merge() {
     for (auto& [ls_id, chunk] : storage_.outdated_chunks_) {
-      merge_outdated_chunk(ls_id, chunk);
+      merge(ls_id, chunk);
+    }
+
+    storage_.outdated_chunks_.clear();
+  }
+
+  void merge(uint32_t ls_id, const chunk::OutdatedChunk& chunk) {
+    auto decoded_samples = decode_samples(chunk);
+
+    SamplesSpan samples{decoded_samples.begin(), decoded_samples.end()};
+    auto& finalized_chunks = storage_.finalized_chunks;
+    if (auto finalized_chunks_it = finalized_chunks.find(ls_id); finalized_chunks_it != finalized_chunks.end()) {
+      merge_outdated_samples_in_finalized_chunks(ls_id, finalized_chunks_it->second, samples);
+    }
+
+    if (!samples.empty()) {
+      merge_outdated_samples<ChunkType::kOpen>(ls_id, storage_.open_chunks[ls_id], std::numeric_limits<int64_t>::max(), samples);
     }
   }
 
@@ -96,20 +112,6 @@ class OutdatedChunkMerger {
 
   DataStorage& storage_;
   Encoder& encoder_;
-
-  void merge_outdated_chunk(uint32_t ls_id, const chunk::OutdatedChunk& chunk) {
-    auto decoded_samples = decode_samples(chunk);
-
-    SamplesSpan samples{decoded_samples.begin(), decoded_samples.end()};
-    auto& finalized_chunks = storage_.finalized_chunks;
-    if (auto finalized_chunks_it = finalized_chunks.find(ls_id); finalized_chunks_it != finalized_chunks.end()) {
-      merge_outdated_samples_in_finalized_chunks(ls_id, finalized_chunks_it->second, samples);
-    }
-
-    if (!samples.empty()) {
-      merge_outdated_samples<ChunkType::kOpen>(ls_id, storage_.open_chunks[ls_id], std::numeric_limits<int64_t>::max(), samples);
-    }
-  }
 
   [[nodiscard]] static SampleList decode_samples(const chunk::OutdatedChunk& chunk) {
     SampleList samples = Decoder::decode_gorilla_chunk(chunk.stream().stream);
