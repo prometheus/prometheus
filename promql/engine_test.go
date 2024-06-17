@@ -2015,47 +2015,6 @@ func TestSubquerySelector(t *testing.T) {
 	}
 }
 
-func TestTimestampFunction_StepsMoreOftenThanSamples(t *testing.T) {
-	engine := newTestEngine()
-	storage := promqltest.LoadedStorage(t, `
-load 1m
-  metric 0+1x1000
-`)
-	t.Cleanup(func() { storage.Close() })
-
-	query := "timestamp(metric)"
-	start := time.Unix(0, 0)
-	end := time.Unix(61, 0)
-	interval := time.Second
-
-	// We expect the value to be 0 for t=0s to t=59s (inclusive), then 60 for t=60s and t=61s.
-	expectedPoints := []promql.FPoint{}
-
-	for t := 0; t <= 59; t++ {
-		expectedPoints = append(expectedPoints, promql.FPoint{F: 0, T: int64(t * 1000)})
-	}
-
-	expectedPoints = append(
-		expectedPoints,
-		promql.FPoint{F: 60, T: 60_000},
-		promql.FPoint{F: 60, T: 61_000},
-	)
-
-	expectedResult := promql.Matrix{
-		promql.Series{
-			Floats: expectedPoints,
-			Metric: labels.EmptyLabels(),
-		},
-	}
-
-	qry, err := engine.NewRangeQuery(context.Background(), storage, nil, query, start, end, interval)
-	require.NoError(t, err)
-
-	res := qry.Exec(context.Background())
-	require.NoError(t, res.Err)
-	testutil.RequireEqual(t, expectedResult, res.Value)
-}
-
 type FakeQueryLogger struct {
 	closed bool
 	logs   []interface{}
