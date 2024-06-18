@@ -672,7 +672,7 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 			p.addParseErrf(n.PositionRange(), "aggregation operator expected in aggregation expression but got %q", n.Op)
 		}
 		p.expectType(n.Expr, ValueTypeVector, "aggregation expression")
-		if n.Op == TOPK || n.Op == BOTTOMK || n.Op == QUANTILE {
+		if n.Op == TOPK || n.Op == BOTTOMK || n.Op == QUANTILE || n.Op == LIMITK || n.Op == LIMIT_RATIO {
 			p.expectType(n.Param, ValueTypeScalar, "aggregation parameter")
 		}
 		if n.Op == COUNT_VALUES {
