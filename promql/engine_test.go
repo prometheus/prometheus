@@ -1753,7 +1753,7 @@ func fullMatrix(jobs, start, end, interval, increase int) (promql.Matrix, []labe
 	var mat promql.Matrix
 	var lbls []labels.Labels
 	for job := 1; job <= jobs; job++ {
-		lbls = append(lbls, labels.FromStrings("__name__", "metric", "job", fmt.Sprintf("%d", job)))
+		lbls = append(lbls, labels.FromStrings("__name__", "metric", "job", strconv.Itoa(job)))
 		series := func(start, end, interval int) promql.Series {
 			var points []promql.FPoint
 			for i := start; i <= end; i += interval {
@@ -1762,7 +1762,7 @@ func fullMatrix(jobs, start, end, interval, increase int) (promql.Matrix, []labe
 			}
 			return promql.Series{
 				Floats: points,
-				Metric: labels.FromStrings("__name__", "metric", "job", fmt.Sprintf("%d", job)),
+				Metric: labels.FromStrings("__name__", "metric", "job", strconv.Itoa(job)),
 			}
 		}(start, end, interval)
 		mat = append(mat, series)
