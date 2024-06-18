@@ -1,4 +1,4 @@
-#include "gorilla_prometheus_stream_encoder_test.h"
+#include "series_data_encoder_test.h"
 
 #include <chrono>
 #include <unordered_set>
@@ -61,7 +61,7 @@ void validate_encoded_chunks(const std::unordered_map<uint32_t, SampleList>& sou
   }
 }
 
-void GorillaPrometheusStreamEncoder::execute(const Config& config, Metrics& metrics) const {
+void SeriesDataEncoder::execute(const Config& config, Metrics& metrics) const {
   DummyWal::Timeseries tmsr;
   DummyWal dummy_wal(input_file_full_name(config));
 

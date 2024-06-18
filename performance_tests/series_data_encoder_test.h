@@ -4,7 +4,7 @@
 
 namespace performance_tests {
 
-struct GorillaPrometheusStreamEncoder : TestWithInputOnly {
+struct SeriesDataEncoder : TestWithInputOnly {
   std::string input_file_base_name() const final { return "dummy_wal"; }
   bool has_output() const final { return false; }
   std::string output_file_base_name() const final { return ""; }
