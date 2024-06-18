@@ -1854,7 +1854,7 @@ load 10s
 				}
 				require.Equal(t, c.result, res.Value, "query %q failed for require.Equal()", c.query)
 			case c.resultIn != nil:
-				require.Equal(t, c.resultLen, len(res.Value.(promql.Matrix)), "query %q failed", c.query)
+				require.Len(t, res.Value.(promql.Matrix), c.resultLen, "query %q failed", c.query)
 				if expMat, ok := c.resultIn.(promql.Matrix); ok {
 					sort.Sort(expMat)
 					sort.Sort(res.Value.(promql.Matrix))

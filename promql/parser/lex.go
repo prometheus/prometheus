@@ -118,8 +118,8 @@ var key = map[string]ItemType{
 	"bottomk":      BOTTOMK,
 	"count_values": COUNT_VALUES,
 	"quantile":     QUANTILE,
-	"limitk": LIMITK,
-	"limit_ratio": LIMIT_RATIO,
+	"limitk":       LIMITK,
+	"limit_ratio":  LIMIT_RATIO,
 
 	// Keywords.
 	"offset":      OFFSET,
