@@ -24,24 +24,49 @@ struct PROMPP_ATTRIBUTE_PACKED State {
     uint32_t finalized_stream_id;
   } stream_data{.stream{}};
   uint32_t reference_count{1};
+  uint32_t child_count{0};
   Id previous_state_id{kInvalidId};
 
   explicit State(Id previous_id) : previous_state_id(previous_id) {}
-  State(const State& state, Id previous_id)
-      : encoder_state(state.encoder_state), stream_data{.stream = state.stream_data.stream}, previous_state_id(previous_id) {}
-  State(State&& other) noexcept : encoder_state(other.encoder_state), previous_state_id(other.previous_state_id) {
-    if (!other.is_finalized()) {
-      [[likely]];
-      stream_data.stream = std::move(other.stream_data.stream);
-    } else {
-      stream_data.finalized_stream_id = other.stream_data.finalized_stream_id;
-    }
-  }
   ~State() {
     if (!is_finalized()) {
       [[likely]];
       stream_data.destruct_stream();
     }
+  }
+
+  State& operator=(const State& other) noexcept {
+    if (&other != this) {
+      [[likely]];
+
+      if (!other.is_finalized()) {
+        [[likely]];
+        stream_data.stream = other.stream_data.stream;
+      } else {
+        stream_data.finalized_stream_id = other.stream_data.finalized_stream_id;
+      }
+
+      encoder_state = other.encoder_state;
+    }
+
+    return *this;
+  }
+
+  State& operator=(State&& other) noexcept {
+    if (&other != this) {
+      [[likely]];
+
+      if (!other.is_finalized()) {
+        [[likely]];
+        stream_data.stream = std::move(other.stream_data.stream);
+      } else {
+        stream_data.finalized_stream_id = other.stream_data.finalized_stream_id;
+      }
+
+      encoder_state = other.encoder_state;
+    }
+
+    return *this;
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_finalized() const noexcept { return encoder_state.last_ts_delta == kFinalizedState; }
@@ -57,6 +82,8 @@ struct PROMPP_ATTRIBUTE_PACKED State {
     encoder_state.last_ts_delta = kFinalizedState;
     return result;
   }
+
+  PROMPP_ALWAYS_INLINE void free_memory() noexcept { stream_data.stream.stream.clear(); }
 
  private:
   static constexpr auto kFinalizedState = std::numeric_limits<int64_t>::min();

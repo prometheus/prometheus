@@ -662,6 +662,7 @@ TEST_F(EncodeOutdatedChunkTestFixture, EncodeValuesGorillaActualSample) {
   encoder_.encode(0, 1, 1.1);
   encoder_.encode(1, 1, 1.1);
   encoder_.encode(0, 2, 2.1);
+  encoder_.encode(1, 2, 2.1);
   encoder_.encode(0, 3, STALE_NAN);
   encoder_.encode(0, 3, STALE_NAN);
 
@@ -677,6 +678,7 @@ TEST_F(EncodeOutdatedChunkTestFixture, EncodeValuesGorillaOutdatedSample) {
   encoder_.encode(0, 2, 1.1);
   encoder_.encode(1, 2, 1.1);
   encoder_.encode(0, 3, 2.1);
+  encoder_.encode(1, 3, 2.1);
   encoder_.encode(0, 4, STALE_NAN);
   encoder_.encode(0, 1, 1.0);
   encoder_.encode(0, 1, 1.1);

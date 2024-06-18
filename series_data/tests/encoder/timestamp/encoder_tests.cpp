@@ -49,9 +49,9 @@ TEST_F(TimestampEncoderFixture, TransitionToNewStateWithErasingPreviousState) {
 
   // Assert
   EXPECT_EQ(0U, first_state_id);
-  EXPECT_EQ(0U, state_id);
+  EXPECT_EQ(1U, state_id);
   EXPECT_EQ(102, encoder_.get_state(state_id).timestamp());
-  EXPECT_EQ(1U, encoder_.encode(State::kInvalidId, 102));
+  EXPECT_EQ(2U, encoder_.encode(State::kInvalidId, 102));
 }
 
 TEST_F(TimestampEncoderFixture, TransitionToExistingStateWithErasingPreviousState) {
@@ -64,10 +64,11 @@ TEST_F(TimestampEncoderFixture, TransitionToExistingStateWithErasingPreviousStat
   EXPECT_EQ(0U, encoder_.encode(State::kInvalidId, 101));
   EXPECT_EQ(1U, encoder_.encode(0, 102));
   EXPECT_EQ(1U, encoder_.encode(0, 102));
-  EXPECT_EQ(0U, encoder_.encode(1, 103));
-  EXPECT_EQ(0U, encoder_.encode(1, 103));
+  EXPECT_EQ(2U, encoder_.encode(1, 103));
+  EXPECT_EQ(2U, encoder_.encode(1, 103));
+  EXPECT_EQ(0U, encoder_.encode(State::kInvalidId, 104));
 
-  EXPECT_EQ(103, encoder_.get_state(0).timestamp());
+  EXPECT_EQ(104, encoder_.get_state(0).timestamp());
 }
 
 TEST_F(TimestampEncoderFixture, TransitionToExistingStateWithoutErasingPreviousState) {
@@ -83,7 +84,7 @@ TEST_F(TimestampEncoderFixture, TransitionToExistingStateWithoutErasingPreviousS
   EXPECT_EQ(1U, encoder_.encode(0, 102));
   EXPECT_EQ(2U, encoder_.encode(1, 103));
   EXPECT_EQ(2U, encoder_.encode(1, 103));
-  EXPECT_EQ(1U, encoder_.encode(2, 104));
+  EXPECT_EQ(3U, encoder_.encode(2, 104));
 
   EXPECT_EQ(101, encoder_.get_state(0).timestamp());
   EXPECT_EQ(103, encoder_.get_state(2).timestamp());

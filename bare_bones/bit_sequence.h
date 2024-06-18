@@ -198,6 +198,13 @@ class PROMPP_ATTRIBUTE_PACKED CompactBitSequence {
     return size_in_bits_ == other.size_in_bits_ && memcmp(memory_, other.memory_, size_in_bytes()) == 0;
   }
 
+  PROMPP_ALWAYS_INLINE void clear() noexcept {
+    size_in_bits_ = 0;
+    allocation_size_index_ = 0;
+    std::free(memory_);
+    memory_ = nullptr;
+  }
+
   [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t size_in_bits() const noexcept { return size_in_bits_; }
   [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t size_in_bytes() const noexcept { return Bit::to_bytes(size_in_bits_ + 7); }
   [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t allocated_memory() const noexcept {

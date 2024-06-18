@@ -26,7 +26,7 @@ class TimestampEncoder {
 class TimestampDecoder {
  public:
   explicit TimestampDecoder(BareBones::BitSequenceReader reader) : reader_(reader) {}
-  
+
   [[nodiscard]] PROMPP_ALWAYS_INLINE int64_t decode() noexcept {
     if (gorilla_state_ == GorillaState::kFirstPoint) {
       [[unlikely]];
@@ -93,20 +93,22 @@ class Encoder {
       TimestampEncoder::encode_first(timestamp, state.stream_data.stream, state.encoder_state);
       state_id = states_.index_of(state);
     } else {
-      auto& old_value = states_[state_id];
-      if (old_value.reference_count > 1) {
-        --old_value.reference_count;
+      auto& new_state = states_.emplace_back(state_id);
 
-        auto& state = states_.emplace_back(State(old_value, state_id));
-        TimestampEncoder::encode(timestamp, state.stream_data.stream, state.encoder_state);
+      auto& state = states_[state_id];
+      ++state.child_count;
 
-        state_id = states_.index_of(state);
+      if (state.reference_count > 1) {
+        [[likely]];
+        new_state = state;
       } else {
-        state_transitions_.erase(old_value);
-
-        old_value.previous_state_id = state_id;
-        TimestampEncoder::encode(timestamp, old_value.stream_data.stream, old_value.encoder_state);
+        new_state = std::move(state);
       }
+
+      decrease_reference_count(state, state_id);
+      state_id = states_.index_of(new_state);
+
+      TimestampEncoder::encode(timestamp, new_state.stream_data.stream, new_state.encoder_state);
     }
 
     state_transitions_.emplace(hash, previous_state_id, state_id);
@@ -119,8 +121,12 @@ class Encoder {
     auto& state = states_[state_id];
     if (--state.reference_count == 0) {
       stream = state.finalize(finalized_stream_id);
+
       state_transitions_.erase(state);
-      states_.erase(state_id);
+      decrease_previous_state_child_count(state_id, state.previous_state_id);
+      if (state.child_count == 0) {
+        states_.erase(state_id);
+      }
     } else {
       stream = state.stream_data.stream;
       stream.stream.shrink_to_fit();
@@ -151,7 +157,10 @@ class Encoder {
     return states_[state_id].stream_data.stream;
   }
   [[nodiscard]] PROMPP_ALWAYS_INLINE State& get_state(State::Id state_id) noexcept { return states_[state_id]; }
-  [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_unique_state(State::Id state_id) noexcept { return states_[state_id].previous_state_id == state_id; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_unique_state(State::Id state_id) noexcept {
+    auto& state = states_[state_id];
+    return state.reference_count == 1 && state.child_count == 0;
+  }
 
  public:
   BareBones::VectorWithHoles<State> states_;
@@ -160,7 +169,31 @@ class Encoder {
   PROMPP_ALWAYS_INLINE void decrease_reference_count(State& state, State::Id state_id) noexcept {
     if (--state.reference_count == 0) {
       state_transitions_.erase(state);
-      states_.erase(state_id);
+      decrease_previous_state_child_count(state_id, state.previous_state_id);
+      if (state.child_count == 0) {
+        states_.erase(state_id);
+      } else {
+        state.free_memory();
+      }
+    }
+  }
+
+  PROMPP_ALWAYS_INLINE void decrease_previous_state_child_count(uint32_t state_id, uint32_t previous_state_id) noexcept {
+    while (previous_state_id != State::kInvalidId) {
+      states_[state_id].previous_state_id = State::kInvalidId;
+      auto& previous_state = states_[previous_state_id];
+
+      assert(previous_state.child_count > 0);
+
+      if (--previous_state.child_count == 0 && previous_state.reference_count == 0) {
+        state_id = previous_state_id;
+        previous_state_id = previous_state.previous_state_id;
+
+        states_.erase(state_id);
+        continue;
+      }
+
+      return;
     }
   }
 };
