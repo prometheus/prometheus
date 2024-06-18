@@ -135,6 +135,19 @@ func TestExprString(t *testing.T) {
 		{
 			in: `a[1m] @ end()`,
 		},
+		{
+			in: `{__name__="",a="x"}`,
+		},
+		{
+			in: `{"a.b"="c"}`,
+		},
+		{
+			in: `{"0"="1"}`,
+		},
+		{
+			in:  `{"_0"="1"}`,
+			out: `{_0="1"}`,
+		},
 	}
 
 	for _, test := range inputs {
@@ -215,6 +228,16 @@ func TestVectorSelector_String(t *testing.T) {
 				},
 			},
 			expected: `{__name__="foobar"}`,
+		},
+		{
+			name: "empty name matcher",
+			vs: VectorSelector{
+				LabelMatchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, ""),
+					labels.MustNewMatcher(labels.MatchEqual, "a", "x"),
+				},
+			},
+			expected: `{__name__="",a="x"}`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

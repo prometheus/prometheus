@@ -70,6 +70,10 @@ global:
 
   # How frequently to evaluate rules.
   [ evaluation_interval: <duration> | default = 1m ]
+                        
+  # Offset the rule evaluation timestamp of this particular group by the specified duration into the past to ensure the underlying metrics have been received.
+  # Metric availability delays are more likely to occur when Prometheus is running as a remote write target, but can also occur when there's anomalies with scraping.
+  [ rule_query_offset: <duration> | default = 0s ]
 
   # The labels to add to any time series or alerts when communicating with
   # external systems (federation, remote storage, Alertmanager).
@@ -116,6 +120,12 @@ global:
   # Limit per scrape config on the number of targets dropped by relabeling
   # that will be kept in memory. 0 means no limit.
   [ keep_dropped_targets: <int> | default = 0 ]
+
+runtime:
+  # Configure the Go garbage collector GOGC parameter
+  # See: https://tip.golang.org/doc/gc-guide#GOGC
+  # Lowering this number increases CPU usage.
+  [ gogc: <int> | default = 75 ]
 
 # Rule files specifies a list of globs. Rules and alerts are read from
 # all matching files.
@@ -1349,7 +1359,7 @@ interface.
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
 * `__meta_openstack_address_pool`: the pool of the private IP.
-* `__meta_openstack_instance_flavor`: the flavor of the OpenStack instance.
+* `__meta_openstack_instance_flavor`: the flavor ID of the OpenStack instance.
 * `__meta_openstack_instance_id`: the OpenStack instance ID.
 * `__meta_openstack_instance_image`: the ID of the image the OpenStack instance is using.
 * `__meta_openstack_instance_name`: the OpenStack instance name.
@@ -1357,7 +1367,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_openstack_private_ip`: the private IP of the OpenStack instance.
 * `__meta_openstack_project_id`: the project (tenant) owning this instance.
 * `__meta_openstack_public_ip`: the public IP of the OpenStack instance.
-* `__meta_openstack_tag_<tagkey>`: each tag value of the instance.
+* `__meta_openstack_tag_<key>`: each metadata item of the instance, with any unsupported characters converted to an underscore.
 * `__meta_openstack_user_id`: the user account owning the tenant.
 
 See below for the configuration options for OpenStack discovery:
@@ -1467,6 +1477,7 @@ For OVHcloud's [public cloud instances](https://www.ovhcloud.com/en/public-cloud
 * `__meta_ovhcloud_dedicated_server_ipv6`: the IPv6 of the server
 * `__meta_ovhcloud_dedicated_server_link_speed`: the link speed of the server
 * `__meta_ovhcloud_dedicated_server_name`: the name of the server
+* `__meta_ovhcloud_dedicated_server_no_intervention`: whether datacenter intervention is disabled for the server
 * `__meta_ovhcloud_dedicated_server_os`: the operating system of the server
 * `__meta_ovhcloud_dedicated_server_rack`: the rack of the server
 * `__meta_ovhcloud_dedicated_server_reverse`: the reverse DNS name of the server
@@ -3682,7 +3693,8 @@ queue_config:
   [ min_shards: <int> | default = 1 ]
   # Maximum number of samples per send.
   [ max_samples_per_send: <int> | default = 2000]
-  # Maximum time a sample will wait in buffer.
+  # Maximum time a sample will wait for a send. The sample might wait less
+  # if the buffer is full. Further time might pass due to potential retries.
   [ batch_send_deadline: <duration> | default = 5s ]
   # Initial retry delay. Gets doubled for every retry.
   [ min_backoff: <duration> | default = 30ms ]
@@ -3810,6 +3822,10 @@ NOTE: Out-of-order ingestion is an experimental feature, but you do not need any
 # into the TSDB, i.e. it is an in-order sample or an out-of-order/out-of-bounds sample
 # that is within the out-of-order window, or (b) too-old, i.e. not in-order
 # and before the out-of-order window.
+#
+# When out_of_order_time_window is greater than 0, it also affects experimental agent. It allows 
+# the agent's WAL to accept out-of-order samples that fall within the specified time window relative 
+# to the timestamp of the last appended sample for the same series.
 [ out_of_order_time_window: <duration> | default = 0s ]
 ```
 

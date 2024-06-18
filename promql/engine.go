@@ -573,7 +573,8 @@ func (ng *Engine) validateOpts(expr parser.Expr) error {
 	return validationErr
 }
 
-func (ng *Engine) newTestQuery(f func(context.Context) error) Query {
+// NewTestQuery: inject special behaviour into Query for testing.
+func (ng *Engine) NewTestQuery(f func(context.Context) error) Query {
 	qry := &query{
 		q:           "test statement",
 		stmt:        parser.TestStmt(f),
@@ -751,6 +752,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		case parser.ValueTypeScalar:
 			return Scalar{V: mat[0].Floats[0].F, T: start}, warnings, nil
 		case parser.ValueTypeMatrix:
+			ng.sortMatrixResult(ctx, query, mat)
 			return mat, warnings, nil
 		default:
 			panic(fmt.Errorf("promql.Engine.exec: unexpected expression type %q", s.Expr.Type()))
@@ -789,11 +791,15 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 	}
 
 	// TODO(fabxc): where to ensure metric labels are a copy from the storage internals.
+	ng.sortMatrixResult(ctx, query, mat)
+
+	return mat, warnings, nil
+}
+
+func (ng *Engine) sortMatrixResult(ctx context.Context, query *query, mat Matrix) {
 	sortSpanTimer, _ := query.stats.GetSpanTimer(ctx, stats.ResultSortTime, ng.metrics.queryResultSort)
 	sort.Sort(mat)
 	sortSpanTimer.Finish()
-
-	return mat, warnings, nil
 }
 
 // subqueryTimes returns the sum of offsets and ranges of all subqueries in the path.
@@ -979,6 +985,11 @@ func checkAndExpandSeriesSet(ctx context.Context, expr parser.Expr) (annotations
 			return nil, nil
 		}
 		series, ws, err := expandSeriesSet(ctx, e.UnexpandedSeriesSet)
+		if e.SkipHistogramBuckets {
+			for i := range series {
+				series[i] = newHistogramStatsSeries(series[i])
+			}
+		}
 		e.Series = series
 		return ws, err
 	}
@@ -2024,25 +2035,21 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(vs *parser.Vec
 		vec := make(Vector, 0, len(vs.Series))
 		for i, s := range vs.Series {
 			it := seriesIterators[i]
-			t, f, h, ok := ev.vectorSelectorSingle(it, vs, enh.Ts)
-			if ok {
-				vec = append(vec, Sample{
-					Metric: s.Labels(),
-					T:      t,
-					F:      f,
-					H:      h,
-				})
-				histSize := 0
-				if h != nil {
-					histSize := h.Size() / 16 // 16 bytes per sample.
-					ev.currentSamples += histSize
-				}
-				ev.currentSamples++
+			t, _, _, ok := ev.vectorSelectorSingle(it, vs, enh.Ts)
+			if !ok {
+				continue
+			}
 
-				ev.samplesStats.IncrementSamplesAtTimestamp(enh.Ts, int64(1+histSize))
-				if ev.currentSamples > ev.maxSamples {
-					ev.error(ErrTooManySamples(env))
-				}
+			// Note that we ignore the sample values because call only cares about the timestamp.
+			vec = append(vec, Sample{
+				Metric: s.Labels(),
+				T:      t,
+			})
+
+			ev.currentSamples++
+			ev.samplesStats.IncrementSamplesAtTimestamp(enh.Ts, 1)
+			if ev.currentSamples > ev.maxSamples {
+				ev.error(ErrTooManySamples(env))
 			}
 		}
 		ev.samplesStats.UpdatePeak(ev.currentSamples)
@@ -3182,6 +3189,8 @@ func unwrapStepInvariantExpr(e parser.Expr) parser.Expr {
 // PreprocessExpr wraps all possible step invariant parts of the given expression with
 // StepInvariantExpr. It also resolves the preprocessors.
 func PreprocessExpr(expr parser.Expr, start, end time.Time) parser.Expr {
+	detectHistogramStatsDecoding(expr)
+
 	isStepInvariant := preprocessExprHelper(expr, start, end)
 	if isStepInvariant {
 		return newStepInvariantExpr(expr)
@@ -3316,8 +3325,50 @@ func setOffsetForAtModifier(evalTime int64, expr parser.Expr) {
 	})
 }
 
+// detectHistogramStatsDecoding modifies the expression by setting the
+// SkipHistogramBuckets field in those vector selectors for which it is safe to
+// return only histogram statistics (sum and count), excluding histogram spans
+// and buckets. The function can be treated as an optimization and is not
+// required for correctness.
+func detectHistogramStatsDecoding(expr parser.Expr) {
+	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
+		n, ok := (node).(*parser.VectorSelector)
+		if !ok {
+			return nil
+		}
+
+		for _, p := range path {
+			call, ok := p.(*parser.Call)
+			if !ok {
+				continue
+			}
+			if call.Func.Name == "histogram_count" || call.Func.Name == "histogram_sum" {
+				n.SkipHistogramBuckets = true
+				break
+			}
+			if call.Func.Name == "histogram_quantile" || call.Func.Name == "histogram_fraction" {
+				n.SkipHistogramBuckets = false
+				break
+			}
+		}
+		return fmt.Errorf("stop")
+	})
+}
+
 func makeInt64Pointer(val int64) *int64 {
 	valp := new(int64)
 	*valp = val
 	return valp
+}
+
+type histogramStatsSeries struct {
+	storage.Series
+}
+
+func newHistogramStatsSeries(series storage.Series) *histogramStatsSeries {
+	return &histogramStatsSeries{Series: series}
+}
+
+func (s histogramStatsSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
+	return NewHistogramStatsIterator(s.Series.Iterator(it))
 }

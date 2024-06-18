@@ -16,6 +16,7 @@ package promql
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/grafana/regexp"
@@ -104,26 +105,26 @@ func TestIndexReuse(t *testing.T) {
 }
 
 func TestMMapFile(t *testing.T) {
-	file, err := os.CreateTemp("", "mmapedFile")
+	dir := t.TempDir()
+	fpath := filepath.Join(dir, "mmapedFile")
+	const data = "ab"
+
+	fileAsBytes, closer, err := getMMapedFile(fpath, 2, nil)
 	require.NoError(t, err)
+	copy(fileAsBytes, data)
+	require.NoError(t, closer.Close())
 
-	filename := file.Name()
-	defer os.Remove(filename)
-
-	fileAsBytes, _, err := getMMapedFile(filename, 2, nil)
-
+	f, err := os.Open(fpath)
 	require.NoError(t, err)
-	copy(fileAsBytes, "ab")
-
-	f, err := os.Open(filename)
-	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = f.Close()
+	})
 
 	bytes := make([]byte, 4)
 	n, err := f.Read(bytes)
-	require.Equal(t, 2, n)
 	require.NoError(t, err, "Unexpected error while reading file.")
-
-	require.Equal(t, fileAsBytes, bytes[:2], "Mmap failed")
+	require.Equal(t, 2, n)
+	require.Equal(t, []byte(data), bytes[:2], "Mmap failed")
 }
 
 func TestParseBrokenJSON(t *testing.T) {
