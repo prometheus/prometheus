@@ -814,6 +814,80 @@ func TestHead_UnknownWALRecord(t *testing.T) {
 	require.NoError(t, head.Close())
 }
 
+// BenchmarkHead_Truncate is quite heavy, so consider running it with
+// -benchtime=10x or similar to get more stable and comparable results.
+func BenchmarkHead_Truncate(b *testing.B) {
+	const total = 1e6
+
+	prepare := func(b *testing.B, churn int) *Head {
+		h, _ := newTestHead(b, 1000, wlog.CompressionNone, false)
+		b.Cleanup(func() {
+			require.NoError(b, h.Close())
+		})
+
+		h.initTime(0)
+
+		internedItoa := map[int]string{}
+		var mtx sync.RWMutex
+		itoa := func(i int) string {
+			mtx.RLock()
+			s, ok := internedItoa[i]
+			mtx.RUnlock()
+			if ok {
+				return s
+			}
+			mtx.Lock()
+			s = strconv.Itoa(i)
+			internedItoa[i] = s
+			mtx.Unlock()
+			return s
+		}
+
+		allSeries := [total]labels.Labels{}
+		nameValues := make([]string, 0, 100)
+		for i := 0; i < total; i++ {
+			nameValues = nameValues[:0]
+
+			// A thousand labels like lbl_x_of_1000, each with total/1000 values
+			thousand := "lbl_" + itoa(i%1000) + "_of_1000"
+			nameValues = append(nameValues, thousand, itoa(i/1000))
+			// A hundred labels like lbl_x_of_100, each with total/100 values.
+			hundred := "lbl_" + itoa(i%100) + "_of_100"
+			nameValues = append(nameValues, hundred, itoa(i/100))
+
+			if i%13 == 0 {
+				ten := "lbl_" + itoa(i%10) + "_of_10"
+				nameValues = append(nameValues, ten, itoa(i%10))
+			}
+
+			allSeries[i] = labels.FromStrings(append(nameValues, "first", "a", "second", "a", "third", "a")...)
+			s, _, _ := h.getOrCreate(allSeries[i].Hash(), allSeries[i])
+			s.mmappedChunks = []*mmappedChunk{
+				{minTime: 1000 * int64(i/churn), maxTime: 999 + 1000*int64(i/churn)},
+			}
+		}
+
+		return h
+	}
+
+	for _, churn := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprintf("churn=%d", churn), func(b *testing.B) {
+			if b.N > total/churn {
+				// Just to make sure that benchmark still makes sense.
+				panic("benchmark not prepared")
+			}
+			h := prepare(b, churn)
+			b.ResetTimer()
+
+			for i := 0; i < b.N; i++ {
+				require.NoError(b, h.Truncate(1000*int64(i)))
+				// Make sure the benchmark is meaningful and it's actually truncating the expected amount of series.
+				require.Equal(b, total-churn*i, int(h.NumSeries()))
+			}
+		})
+	}
+}
+
 func TestHead_Truncate(t *testing.T) {
 	h, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
 	defer func() {
