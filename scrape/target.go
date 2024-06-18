@@ -365,6 +365,8 @@ type bucketLimitAppender struct {
 
 func (app *bucketLimitAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	if h != nil {
+		// Return with an early error if the histogram has too many buckets and the
+		// schema is not exponential, in which case we can't reduce the resolution.
 		if len(h.PositiveBuckets)+len(h.NegativeBuckets) > app.limit && !histogram.IsExponentialSchema(h.Schema) {
 			return 0, errBucketLimit
 		}
