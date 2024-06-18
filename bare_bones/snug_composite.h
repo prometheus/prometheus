@@ -3,8 +3,6 @@
 #include <fstream>
 #include <string_view>
 
-#include <cxxabi.h>
-
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Warray-bounds"
 #include <parallel_hashmap/btree.h>
@@ -300,7 +298,6 @@ class DecodingTable {
     if (mode == SerializationMode::DELTA) {
       in.read(reinterpret_cast<char*>(&first_to_load_i), sizeof(first_to_load_i));
     }
-
     if (first_to_load_i != items_.size()) {
       if (mode == SerializationMode::SNAPSHOT) {
         throw BareBones::Exception(0x7bcd6011e39bbabc, "Attempt to load snapshot into non-empty DecodingTable");
@@ -316,7 +313,7 @@ class DecodingTable {
     // read size
     uint32_t size_to_load;
     in.read(reinterpret_cast<char*>(&size_to_load), sizeof(size_to_load));
-    
+
     // read is completed, if there are no items
     if (!size_to_load) {
       return;
