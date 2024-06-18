@@ -158,7 +158,7 @@ func NewInvalidQuantileWarning(q float64, pos posrange.PositionRange) error {
 
 // NewInvalidQuantileWarning is used when the user specifies an invalid ratio
 // value, i.e. a float that is outside the range [-1, 1] or NaN.
-func NewInvalidRatioWarning(q float64, to float64, pos posrange.PositionRange) error {
+func NewInvalidRatioWarning(q, to float64, pos posrange.PositionRange) error {
 	return annoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w, got %g, capping to %g", InvalidRatioWarning, q, to),
