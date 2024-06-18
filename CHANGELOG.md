@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.45.6 / 2024-06-21
+
+This release contains security fixes in dependencies and has been built with go1.21.11. #14309.
+
 ## 2.45.5 / 2024-05-02
 
 * [BUGFIX] tsdb/agent: ensure that new series get written to WAL on rollback. #12592
