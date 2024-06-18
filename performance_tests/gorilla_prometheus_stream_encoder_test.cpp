@@ -47,11 +47,11 @@ void validate_encoded_chunks(const std::unordered_map<uint32_t, SampleList>& sou
   for (auto& [ls_id, expected_samples] : source_samples) {
     auto actual_samples = get_encoded_samples(data_storage, ls_id);
     if (!std::ranges::equal(expected_samples, actual_samples)) {
-      std::cout << "Encoded samples for " << ls_id << " is not valid! type" << static_cast<int>(data_storage.open_chunks[ls_id].encoding_type)
-                << ", value: " << data_storage.open_chunks[ls_id].encoder.uint32_constant.value() << std::endl;
-      std::cout << "expected samples size: " << expected_samples.size() << ", actual samples size: " << actual_samples.size() << std::endl;
+      std::cout << "Encoded samples for " << ls_id << " is not valid! type: " << static_cast<int>(data_storage.open_chunks[ls_id].encoding_type)
+                << ", value: " << data_storage.open_chunks[ls_id].encoder.uint32_constant.value() << ", expected samples size: " << expected_samples.size()
+                << ", actual samples size: " << actual_samples.size() << std::endl;
 
-      auto samples_for_print = std::min(expected_samples.size(), actual_samples.size());
+      auto samples_for_print = std::max(expected_samples.size(), actual_samples.size());
       for (size_t i = 0; i < samples_for_print; ++i) {
         auto& expected = expected_samples[i];
         auto& actual = actual_samples[i];
@@ -74,6 +74,14 @@ void GorillaPrometheusStreamEncoder::execute(const Config& config, Metrics& metr
   uint32_t outdated_samples_count = 0;
   std::unordered_map<uint32_t, SampleList> source_samples;
   BareBones::Vector<OutdatedSample> outdated_samples;
+
+  const auto encode_outdated_samples = [&outdated_samples, &encoder]() {
+    for (auto& sample : outdated_samples) {
+      encoder.encode(sample.ls_id, sample.timestamp, sample.value);
+    }
+
+    outdated_samples.clear();
+  };
 
 #ifdef DUMP_LABELS
   std::unordered_set<std::string> names_set;
@@ -126,10 +134,15 @@ void GorillaPrometheusStreamEncoder::execute(const Config& config, Metrics& metr
       ++samples_count;
     }
 
-    //    for (auto& sample : outdated_samples) {
-    //      encoder.encode(sample.ls_id, sample.timestamp, sample.value);
-    //    }
+    if (outdated_samples.size() >= 10000) {
+      encode_outdated_samples();
+    }
   }
+
+  encode_outdated_samples();
+
+  series_data::OutdatedChunkMerger merger{storage, encoder};
+  merger.merge();
 
 #ifdef DUMP_LABELS
   for (auto n : names_set) {

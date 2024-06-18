@@ -182,9 +182,9 @@ class Encoder {
       }
     } else if (chunk.encoding_type == chunk::DataChunk::EncodingType::kAscIntegerValuesGorilla) {
       if (!storage_.asc_integer_values_gorilla_encoders[chunk.encoder.asc_integer_values_gorilla].encode(value)) {
-        auto finalized_timestamp_stream_id = storage_.finalized_timestamp_streams.size();
-        storage_.timestamp_encoder.finalize_or_copy(chunk.timestamp_encoder_state_id, storage_.finalized_timestamp_streams.emplace_back().stream,
-                                                    finalized_timestamp_stream_id);
+        auto& finalized_timestamp_stream = storage_.finalized_timestamp_streams.emplace_back();
+        auto finalized_timestamp_stream_id = storage_.finalized_timestamp_streams.index_of(finalized_timestamp_stream);
+        storage_.timestamp_encoder.finalize_or_copy(chunk.timestamp_encoder_state_id, finalized_timestamp_stream.stream, finalized_timestamp_stream_id);
         finalize_chunk(ls_id, chunk, finalized_timestamp_stream_id);
 
         switch_to_double_constant_encoder(chunk, value);
