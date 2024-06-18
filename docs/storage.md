@@ -64,7 +64,7 @@ drive or node outages and should be managed like any other single node
 database. 
 
 [Snapshots](querying/api.md#snapshot) are recommended for backups. Backups 
-made without snapshots run the risk of losing data that was recorded sync 
+made without snapshots run the risk of losing data that was recorded since 
 the last WAL sync, which typically happens every two hours. With proper
 architecture, it is possible to retain years of data in local storage.
 
