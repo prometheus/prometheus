@@ -378,6 +378,8 @@ func (app *bucketLimitAppender) AppendHistogram(ref storage.SeriesRef, lset labe
 		}
 	}
 	if fh != nil {
+		// Return with an early error if the histogram has too many buckets and the
+		// schema is not exponential, in which case we can't reduce the resolution.
 		if len(fh.PositiveBuckets)+len(fh.NegativeBuckets) > app.limit && !histogram.IsExponentialSchema(fh.Schema) {
 			return 0, errBucketLimit
 		}
