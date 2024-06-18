@@ -148,10 +148,10 @@ class OutdatedChunkMerger {
     auto chunk = merge_outdated_samples_in_new_chunk<chunk_type>(ls_id, source_chunk, max_timestamp, samples);
 
     if constexpr (chunk_type == ChunkType::kFinalized) {
-      encoder_.finalize(ls_id, chunk);
-      encoder_.erase_finalized(ls_id, source_chunk);
+      ChunkFinalizer::finalize(storage_, ls_id, chunk);
+      erase_finalized_chunk(ls_id, source_chunk);
     } else {
-      encoder_.replace(ls_id, chunk);
+      replace_open_chunk(ls_id, chunk);
     }
   }
 
@@ -207,6 +207,19 @@ class OutdatedChunkMerger {
                            Decoder::create_decode_iterator<encoding_type, chunk_type>(storage_, source_chunk), decoder::DecodeIteratorSentinel{},
                            encode_iterator);
     samples = {begin, samples.end()};
+  }
+
+  void erase_finalized_chunk(uint32_t ls_id, const chunk::DataChunk& chunk) {
+    if (auto finalized_it = storage_.finalized_chunks.find(ls_id); finalized_it != storage_.finalized_chunks.end()) {
+      storage_.erase_chunk<chunk::DataChunk::Type::kFinalized>(chunk);
+      finalized_it->second.erase(chunk);
+    }
+  }
+
+  void replace_open_chunk(uint32_t ls_id, const chunk::DataChunk& chunk) {
+    auto& open_chunk = storage_.open_chunks[ls_id];
+    storage_.erase_chunk<chunk::DataChunk::Type::kOpen>(open_chunk);
+    open_chunk = chunk;
   }
 };
 

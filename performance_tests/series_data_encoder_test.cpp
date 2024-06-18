@@ -83,43 +83,10 @@ void SeriesDataEncoder::execute(const Config& config, Metrics& metrics) const {
     outdated_samples.clear();
   };
 
-#ifdef DUMP_LABELS
-  std::unordered_set<std::string> names_set;
-#endif
   while (dummy_wal.read_next_segment()) {
     while (dummy_wal.read_next(tmsr)) {
       auto ls_id = label_set_bitmap.find_or_emplace(tmsr.label_set());
       auto& sample = tmsr.samples()[0];
-
-#ifdef DUMP_LABELS
-      auto lss = label_set_bitmap[ls_id];
-      for (auto it = lss.begin(); it != lss.end(); ++it) {
-        names_set.emplace((*it).second);
-      }
-#endif
-
-#if 0
-      double ddd = std::numeric_limits<uint32_t>::max();
-      std::cout << ddd << std::endl;
-
-      uint64_t ggg = std::bit_cast<uint64_t>(ddd);
-      std::cout << "ok: " << (ggg <= std::numeric_limits<uint32_t>::max()) << std::endl;
-
-      uint8_t* bytes = reinterpret_cast<uint8_t*>(&ggg);
-      for (int i = 0; i < 8; ++i) {
-        printf("0x%.2X, ", static_cast<unsigned int>(bytes[i]));
-      }
-      printf("\n");
-
-      int64_t ggg2 = -1;
-      bytes = reinterpret_cast<uint8_t*>(&ggg2);
-      for (int i = 0; i < 8; ++i) {
-        printf("0x%.2X, ", static_cast<unsigned int>(bytes[i]));
-      }
-      printf("\n");
-
-      std::exit(0);
-#endif
 
       if (ls_id < 12000 && ++outdated_samples_count % 10 == 0 && false) {
         outdated_samples.emplace_back(sample.timestamp(), sample.value(), ls_id);
@@ -143,13 +110,6 @@ void SeriesDataEncoder::execute(const Config& config, Metrics& metrics) const {
 
   series_data::OutdatedChunkMerger merger{storage, encoder};
   merger.merge();
-
-#ifdef DUMP_LABELS
-  for (auto n : names_set) {
-    std::cout << n << std::endl;
-  }
-  std::exit(0);
-#endif
 
   struct ChunkInfo {
     series_data::chunk::DataChunk::EncodingType type;
@@ -179,18 +139,18 @@ void SeriesDataEncoder::execute(const Config& config, Metrics& metrics) const {
     }
   }
 
-  const auto print_chunks_info = [&encoder](std::string_view message, const auto& chunks_info) {
+  const auto print_chunks_info = [&storage](std::string_view message, const auto& chunks_info) {
     std::cout << "==========================" << std::endl;
     std::cout << message << ":" << std::endl;
     for (auto& info : chunks_info) {
       if (info.type != series_data::chunk::DataChunk::EncodingType::kUnknown) {
-        std::cout << info.name << "_count: " << info.count << ", allocated_memory: " << encoder.allocated_memory(info.type) << std::endl;
+        std::cout << info.name << "_count: " << info.count << ", allocated_memory: " << storage.allocated_memory(info.type) << std::endl;
       }
     }
     std::cout << "==========================" << std::endl << std::endl;
   };
 
-  auto allocated_memory = encoder.allocated_memory();
+  auto allocated_memory = storage.allocated_memory();
   std::cout << "allocated_memory: " << allocated_memory << std::endl;
 
   print_chunks_info("opened chunks", chunks_info);
