@@ -13,11 +13,11 @@ class OutdatedChunkMerger {
   OutdatedChunkMerger(DataStorage& storage, Encoder& encoder) : storage_(storage), encoder_(encoder) {}
 
   void merge() {
-    for (auto& [ls_id, chunk] : storage_.outdated_chunks_) {
+    for (auto& [ls_id, chunk] : storage_.outdated_chunks) {
       merge(ls_id, chunk);
     }
 
-    storage_.outdated_chunks_.clear();
+    storage_.outdated_chunks.clear();
   }
 
   void merge(uint32_t ls_id, const chunk::OutdatedChunk& chunk) {

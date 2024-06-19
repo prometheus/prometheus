@@ -27,7 +27,7 @@ struct DataStorage {
   size_t outdated_chunks_map_allocated_memory{};
   phmap::
       flat_hash_map<uint32_t, chunk::OutdatedChunk, std::hash<uint32_t>, std::equal_to<>, BareBones::Allocator<std::pair<const uint32_t, chunk::OutdatedChunk>>>
-          outdated_chunks_{{}, {}, BareBones::Allocator<std::pair<const uint32_t, chunk::OutdatedChunk>>{outdated_chunks_map_allocated_memory}};
+          outdated_chunks{{}, {}, BareBones::Allocator<std::pair<const uint32_t, chunk::OutdatedChunk>>{outdated_chunks_map_allocated_memory}};
 
   BareBones::VectorWithHoles<encoder::RefCountableBitSequenceWithItemsCount> finalized_timestamp_streams;
   BareBones::VectorWithHoles<encoder::CompactBitSequence> finalized_data_streams;
@@ -68,7 +68,7 @@ struct DataStorage {
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept {
     size_t outdated_chunks_allocated_memory = 0;
-    for (auto& [_, outdated_chunk] : outdated_chunks_) {
+    for (auto& [_, outdated_chunk] : outdated_chunks) {
       outdated_chunks_allocated_memory += outdated_chunk.allocated_memory();
     }
 

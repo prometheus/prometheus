@@ -41,7 +41,7 @@ class EncoderTestTrait {
     return nullptr;
   }
   [[nodiscard]] const OutdatedChunk* outdated_chunk(uint32_t ls_id) const noexcept {
-    if (auto it = storage_.outdated_chunks_.find(ls_id); it != storage_.outdated_chunks_.end()) {
+    if (auto it = storage_.outdated_chunks.find(ls_id); it != storage_.outdated_chunks.end()) {
       return &it->second;
     }
 
