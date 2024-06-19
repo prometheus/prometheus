@@ -137,7 +137,6 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 				return storage.ErrOutOfBounds
 			}
 			ref, err = app.Append(ref, labels, s.Timestamp, s.Value)
-
 			if err != nil {
 				unwrappedErr := errors.Unwrap(err)
 				if unwrappedErr == nil {
