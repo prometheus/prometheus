@@ -6,6 +6,8 @@
 
 namespace {
 
+using std::string_literals::operator""s;
+
 class TestSnugCompositesStringFilament {
   uint32_t pos_;
   uint32_t len_;
@@ -342,17 +344,29 @@ TEST_F(EncodingTableFixture, Emplace) {
   // Arrange
 
   // Act
-  auto id1 = table_.emplace("1");
-  auto id2 = table_.emplace("2");
+  auto id1 = table_.find_or_emplace("1"s);
+  auto id2 = table_.find_or_emplace("2"s);
 
   // Assert
   EXPECT_EQ(0U, id1);
   EXPECT_EQ(1U, id2);
 }
 
+TEST_F(EncodingTableFixture, EmplaceExisting) {
+  // Arrange
+
+  // Act
+  auto id1 = table_.find_or_emplace("1"s);
+  auto id2 = table_.find_or_emplace("1"s);
+
+  // Assert
+  EXPECT_EQ(0U, id1);
+  EXPECT_EQ(0U, id2);
+}
+
 TEST_F(EncodingTableFixture, Checkpoint) {
   // Arrange
-  table_.emplace("1");
+  table_.find_or_emplace("1"s);
 
   // Act
   auto checkpoint = table_.checkpoint();
@@ -363,7 +377,7 @@ TEST_F(EncodingTableFixture, Checkpoint) {
 
 TEST_F(EncodingTableFixture, ShrinkToCheckpointSize) {
   // Arrange
-  table_.emplace("1");
+  table_.find_or_emplace("1"s);
 
   // Act
   table_.shrink_to_checkpoint_size(table_.checkpoint());
@@ -374,25 +388,26 @@ TEST_F(EncodingTableFixture, ShrinkToCheckpointSize) {
 
 TEST_F(EncodingTableFixture, EmplaceAfterShrinkToCheckpointSize) {
   // Arrange
-  table_.emplace("1");
+  auto id_before = table_.find_or_emplace("1"s);
 
   // Act
   table_.shrink_to_checkpoint_size(table_.checkpoint());
-  auto id = table_.emplace("1");
+  auto id_after = table_.find_or_emplace("1"s);
 
   // Assert
+  EXPECT_EQ(0U, id_before);
   EXPECT_EQ(1U, table_.size());
-  EXPECT_EQ(1U, id);
+  EXPECT_EQ(1U, id_after);
 }
 
 TEST_F(EncodingTableFixture, ShrinkToOutdatedCheckpoint) {
   // Arrange
-  table_.emplace("1");
+  table_.find_or_emplace("1"s);
   auto checkpoint = table_.checkpoint();
 
   // Act
   table_.shrink_to_checkpoint_size(checkpoint);
-  table_.emplace("2");
+  table_.find_or_emplace("2"s);
 
   // Assert
   EXPECT_THROW(table_.shrink_to_checkpoint_size(checkpoint), BareBones::Exception);

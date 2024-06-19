@@ -39,6 +39,10 @@ struct LabelMatcher {
 
   PROMPP_ALWAYS_INLINE void invalidate() noexcept { type = Type::kUnknown; }
 
+  PROMPP_ALWAYS_INLINE void set_default_protobuf_values() noexcept {
+    type = Type::kExactMatch;
+  }
+
   auto operator<=>(const LabelMatcher&) const noexcept = default;
 };
 

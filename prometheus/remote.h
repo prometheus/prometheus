@@ -21,6 +21,7 @@ class Tag {
 class ProtobufReader {
  public:
   static bool read_label_matcher(protozero::pbf_reader reader, LabelMatcher& label_matcher) noexcept {
+    label_matcher.set_default_protobuf_values();
     return noexcept_read([&]() PROMPP_LAMBDA_INLINE {
       while (reader.next()) {
         switch (reader.tag()) {
