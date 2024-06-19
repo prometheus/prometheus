@@ -1755,6 +1755,7 @@ func fullMatrix(initialJobsNum, totalJobs, start, end, interval, increase int) p
 	mat, _ := fullMatrixWithLabels(initialJobsNum, totalJobs, start, end, interval, increase)
 	return mat
 }
+
 func fullMatrixWithLabels(initialJobsNum, totalJobs, start, end, interval, increase int) (promql.Matrix, []labels.Labels) {
 	var mat promql.Matrix
 	var lbls []labels.Labels
@@ -1794,7 +1795,7 @@ load 10s
 		start, end, interval int64 // Time in seconds.
 		expectError          bool
 		result               parser.Value
-		//resultIn             parser.Value
+		// resultIn             parser.Value
 		resultLen int // Required if resultIn is set
 	}{
 		{
@@ -1809,7 +1810,7 @@ load 10s
 			query: `limitk(1, metric)`,
 			start: 0, end: 20, interval: 10,
 			resultLen: 1,
-			//resultIn:  fullMatrix20,
+			// resultIn:  fullMatrix20,
 		},
 		{
 			// Limit==5 -> return full matrix (5 timeseries)
