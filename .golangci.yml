@@ -29,6 +29,7 @@ linters:
     - unused
     - usestdlibvars
     - whitespace
+    - loggercheck
 
 issues:
   max-same-issues: 0
