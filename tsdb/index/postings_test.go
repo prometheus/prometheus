@@ -979,9 +979,13 @@ func TestMemPostings_Delete(t *testing.T) {
 	p.Add(3, labels.FromStrings("lbl2", "a"))
 
 	before := p.Get(allPostingsKey.Name, allPostingsKey.Value)
-	p.Delete(map[storage.SeriesRef]struct{}{
+	deletedRefs := map[storage.SeriesRef]struct{}{
 		2: {},
-	})
+	}
+	affectedLabels := map[labels.Label]struct{}{
+		{Name: "lbl1", Value: "b"}: {},
+	}
+	p.Delete(deletedRefs, affectedLabels)
 	after := p.Get(allPostingsKey.Name, allPostingsKey.Value)
 
 	// Make sure postings gotten before the delete have the old data when
@@ -1022,33 +1026,23 @@ func BenchmarkMemPostings_Delete(b *testing.B) {
 	}
 
 	const total = 1e6
-	prepare := func() *MemPostings {
-		var ref storage.SeriesRef
-		next := func() storage.SeriesRef {
-			ref++
-			return ref
+	allSeries := [total]labels.Labels{}
+	nameValues := make([]string, 0, 100)
+	for i := 0; i < total; i++ {
+		nameValues = nameValues[:0]
+
+		// A thousand labels like lbl_x_of_1000, each with total/1000 values
+		thousand := "lbl_" + itoa(i%1000) + "_of_1000"
+		nameValues = append(nameValues, thousand, itoa(i/1000))
+		// A hundred labels like lbl_x_of_100, each with total/100 values.
+		hundred := "lbl_" + itoa(i%100) + "_of_100"
+		nameValues = append(nameValues, hundred, itoa(i/100))
+
+		if i < 100 {
+			ten := "lbl_" + itoa(i%10) + "_of_10"
+			nameValues = append(nameValues, ten, itoa(i%10))
 		}
-
-		p := NewMemPostings()
-		nameValues := make([]string, 0, 100)
-		for i := 0; i < total; i++ {
-			nameValues = nameValues[:0]
-
-			// A thousand labels like lbl_x_of_1000, each with total/1000 values
-			thousand := "lbl_" + itoa(i%1000) + "_of_1000"
-			nameValues = append(nameValues, thousand, itoa(i/1000))
-			// A hundred labels like lbl_x_of_100, each with total/100 values.
-			hundred := "lbl_" + itoa(i%100) + "_of_100"
-			nameValues = append(nameValues, hundred, itoa(i/100))
-
-			if i < 100 {
-				ten := "lbl_" + itoa(i%10) + "_of_10"
-				nameValues = append(nameValues, ten, itoa(i%10))
-			}
-
-			p.Add(next(), labels.FromStrings(append(nameValues, "first", "a", "second", "a", "third", "a")...))
-		}
-		return p
+		allSeries[i] = labels.FromStrings(append(nameValues, "first", "a", "second", "a", "third", "a")...)
 	}
 
 	for _, refs := range []int{1, 100, 10_000} {
@@ -1060,7 +1054,11 @@ func BenchmarkMemPostings_Delete(b *testing.B) {
 						panic("benchmark not prepared")
 					}
 
-					p := prepare()
+					p := NewMemPostings()
+					for i := range allSeries {
+						p.Add(storage.SeriesRef(i), allSeries[i])
+					}
+
 					stop := make(chan struct{})
 					wg := sync.WaitGroup{}
 					for i := 0; i < reads; i++ {
@@ -1086,11 +1084,16 @@ func BenchmarkMemPostings_Delete(b *testing.B) {
 
 					b.ResetTimer()
 					for n := 0; n < b.N; n++ {
-						deleted := map[storage.SeriesRef]struct{}{}
+						deleted := make(map[storage.SeriesRef]struct{}, refs)
+						affected := make(map[labels.Label]struct{}, refs)
 						for i := 0; i < refs; i++ {
-							deleted[storage.SeriesRef(n*refs+i)] = struct{}{}
+							ref := storage.SeriesRef(n*refs + i)
+							deleted[ref] = struct{}{}
+							allSeries[ref].Range(func(l labels.Label) {
+								affected[l] = struct{}{}
+							})
 						}
-						p.Delete(deleted)
+						p.Delete(deleted, affected)
 					}
 				})
 			}
