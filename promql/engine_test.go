@@ -1853,8 +1853,8 @@ load 10s
 				return
 			}
 			require.NoError(t, res.Err)
-			switch {
-			case c.result != nil:
+			// switch {
+			if c.result != nil {
 				if expMat, ok := c.result.(promql.Matrix); ok {
 					sort.Sort(expMat)
 					sort.Sort(res.Value.(promql.Matrix))
@@ -1873,6 +1873,7 @@ load 10s
 						}
 				*/
 			}
+			//}
 		})
 	}
 }
