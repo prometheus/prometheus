@@ -16,7 +16,7 @@ class OutdatedSampleEncoder {
       if (it.first->second.encode(timestamp, value) >= kMaxChunkSize) {
         OutdatedChunkMerger<Encoder> merger{storage_, encoder};
         merger.merge(ls_id, it.first->second);
-        storage_.outdated_chunks.erase(it);
+        storage_.outdated_chunks.erase(it.first);
       }
     }
   }
