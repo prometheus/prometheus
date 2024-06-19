@@ -62,6 +62,8 @@ func (s *DecoderSuite) TestDecodeV1() {
 	s.EqualValues(3, protocont.Samples())
 	s.EqualValues(1, protocont.Series())
 	s.EqualValues(0, protocont.SegmentID())
+	s.EqualValues(1654608420000, protocont.EarliestBlockSample())
+	s.EqualValues(1654608540000, protocont.LatestBlockSample())
 
 	s.T().Log("compare income and outcome protobuf")
 
@@ -90,6 +92,8 @@ func (s *DecoderSuite) TestDecodeV3() {
 	s.EqualValues(3, protocont.Samples())
 	s.EqualValues(1, protocont.Series())
 	s.EqualValues(0, protocont.SegmentID())
+	s.EqualValues(1654608420000, protocont.EarliestBlockSample())
+	s.EqualValues(1654608540000, protocont.LatestBlockSample())
 
 	s.T().Log("compare income and outcome protobuf")
 	buf, err := framestest.ReadPayload(protocont)
