@@ -130,11 +130,11 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 		var ref storage.SeriesRef
 		for _, s := range ts.Samples {
 			// check, if the histogram timestamp is in the past
-			if s.Timestamp <= currentTimestamp {
-				ref, err = app.Append(ref, labels, s.Timestamp, s.Value)
-			} else {
-				err = storage.ErrOutOfBounds
+			if s.Timestamp > currentTimestamp {
+				level.Error(h.logger).Log("msg", "Sample with future timestamp from remote write", "series", labels.String(), "timestamp", s.Timestamp)
+				return storage.ErrOutOfBounds
 			}
+			ref, err = app.Append(ref, labels, s.Timestamp, s.Value)
 
 			if err != nil {
 				unwrappedErr := errors.Unwrap(err)
