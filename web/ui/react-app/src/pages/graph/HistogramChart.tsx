@@ -2,6 +2,7 @@ import React, { FC } from 'react';
 import { UncontrolledTooltip } from 'reactstrap';
 import { Histogram } from '../../types/types';
 import { bucketRangeString } from './DataTable';
+import { parse } from 'path';
 
 type ScaleType = 'linear' | 'exponential';
 
@@ -57,6 +58,14 @@ const HistogramChart: FC<{ histogram: Histogram; index: number; scale: ScaleType
         if (parseFloat(buckets[i][1]) > 0) {
           return parseFloat(buckets[i][1]);
         }
+        if (parseFloat(buckets[i][1]) < 0 && parseFloat(buckets[i][2]) > 0) {
+          return parseFloat(buckets[i][2]);
+        }
+        if (i === buckets.length - 1) {
+          if (parseFloat(buckets[i][2]) > 0) {
+            return parseFloat(buckets[i][2]);
+          }
+        }
       }
       return 0; // all buckets are negative
     }
@@ -68,6 +77,9 @@ const HistogramChart: FC<{ histogram: Histogram; index: number; scale: ScaleType
       for (let i = 0; i < buckets.length; i++) {
         if (parseFloat(buckets[i][2]) > 0) {
           if (i === 0) {
+            if (parseFloat(buckets[i][1]) < 0) {
+              return parseFloat(buckets[i][1]); // return the first negative bucket
+            }
             return 0; // all buckets are positive
           }
           return parseFloat(buckets[i - 1][2]); // return the last negative bucket
