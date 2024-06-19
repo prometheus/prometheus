@@ -28,5 +28,5 @@
     "ts-jest": "^29.1.4",
     "typescript": "^4.9.5"
   },
-  "version": "0.52.1"
+  "version": "0.53.0"
 }
