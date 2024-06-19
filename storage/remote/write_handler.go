@@ -255,7 +255,7 @@ type timeLimitAppender struct {
 
 func (app *timeLimitAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	if t > app.maxTime {
-		return 0, storage.ErrOutOfBounds
+		return 0, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds)
 	}
 
 	ref, err := app.Appender.Append(ref, lset, t, v)
@@ -267,7 +267,7 @@ func (app *timeLimitAppender) Append(ref storage.SeriesRef, lset labels.Labels, 
 
 func (app *timeLimitAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	if t > app.maxTime {
-		return 0, storage.ErrOutOfBounds
+		return 0, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds)
 	}
 
 	ref, err := app.Appender.AppendHistogram(ref, l, t, h, fh)
