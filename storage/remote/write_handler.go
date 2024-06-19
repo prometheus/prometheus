@@ -23,86 +23,18 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-
-	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
-
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
-
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
+	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/storage"
 	otlptranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
 )
-
-const (
-	RemoteWriteVersionHeader        = "X-Prometheus-Remote-Write-Version"
-	RemoteWriteVersion1HeaderValue  = "0.1.0"
-	RemoteWriteVersion20HeaderValue = "2.0"
-)
-
-func rwHeaderNameValues(rwFormat config.RemoteWriteFormat) map[string]string {
-	// Return the correct remote write header name/values based on provided rwFormat.
-	ret := make(map[string]string, 1)
-
-	switch rwFormat {
-	case Version1:
-		ret[RemoteWriteVersionHeader] = RemoteWriteVersion1HeaderValue
-	case Version2:
-		// We need to add the supported protocol definitions in order:
-		tuples := make([]string, 0, 2)
-		// Add "2.0;snappy".
-		tuples = append(tuples, RemoteWriteVersion20HeaderValue+";snappy")
-		// Add default "0.1.0".
-		tuples = append(tuples, RemoteWriteVersion1HeaderValue)
-		ret[RemoteWriteVersionHeader] = strings.Join(tuples, ",")
-	}
-	return ret
-}
-
-type writeHeadHandler struct {
-	logger log.Logger
-
-	remoteWriteHeadRequests prometheus.Counter
-
-	// Experimental feature, new remote write proto format.
-	// The handler will accept the new format, but it can still accept the old one.
-	rwFormat config.RemoteWriteFormat
-}
-
-func NewWriteHeadHandler(logger log.Logger, reg prometheus.Registerer, rwFormat config.RemoteWriteFormat) http.Handler {
-	h := &writeHeadHandler{
-		logger:   logger,
-		rwFormat: rwFormat,
-		remoteWriteHeadRequests: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: "prometheus",
-			Subsystem: "api",
-			Name:      "remote_write_head_requests",
-			Help:      "The number of remote write HEAD requests.",
-		}),
-	}
-	if reg != nil {
-		reg.MustRegister(h.remoteWriteHeadRequests)
-	}
-	return h
-}
-
-// Send a response to the HEAD request based on the format supported.
-func (h *writeHeadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Add appropriate header values for the specific rwFormat.
-	for hName, hValue := range rwHeaderNameValues(h.rwFormat) {
-		w.Header().Set(hName, hValue)
-	}
-
-	// Increment counter
-	h.remoteWriteHeadRequests.Inc()
-
-	w.WriteHeader(http.StatusOK)
-}
 
 type writeHandler struct {
 	logger     log.Logger
@@ -110,18 +42,20 @@ type writeHandler struct {
 
 	samplesWithInvalidLabelsTotal prometheus.Counter
 
-	// Experimental feature, new remote write proto format.
-	// The handler will accept the new format, but it can still accept the old one.
-	rwFormat config.RemoteWriteFormat
+	acceptedProtoMsgs map[config.RemoteWriteProtoMsg]struct{}
 }
 
-// NewWriteHandler creates a http.Handler that accepts remote write requests and
-// writes them to the provided appendable.
-func NewWriteHandler(logger log.Logger, reg prometheus.Registerer, appendable storage.Appendable, rwFormat config.RemoteWriteFormat) http.Handler {
+// NewWriteHandler creates a http.Handler that accepts remote write requests with
+// the given message in acceptedProtoMsgs and writes them to the provided appendable.
+func NewWriteHandler(logger log.Logger, reg prometheus.Registerer, appendable storage.Appendable, acceptedProtoMsgs []config.RemoteWriteProtoMsg) http.Handler {
+	protoMsgs := map[config.RemoteWriteProtoMsg]struct{}{}
+	for _, acc := range acceptedProtoMsgs {
+		protoMsgs[acc] = struct{}{}
+	}
 	h := &writeHandler{
-		logger:     logger,
-		appendable: appendable,
-		rwFormat:   rwFormat,
+		logger:            logger,
+		appendable:        appendable,
+		acceptedProtoMsgs: protoMsgs,
 		samplesWithInvalidLabelsTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "prometheus",
 			Subsystem: "api",
@@ -135,35 +69,67 @@ func NewWriteHandler(logger log.Logger, reg prometheus.Registerer, appendable st
 	return h
 }
 
-func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	var err error
+func (h *writeHandler) parseProtoMsg(contentType string) (config.RemoteWriteProtoMsg, error) {
+	contentType = strings.TrimSpace(contentType)
 
-	// Set the header(s) in the response based on the rwFormat the server supports.
-	for hName, hValue := range rwHeaderNameValues(h.rwFormat) {
-		w.Header().Set(hName, hValue)
+	parts := strings.Split(contentType, ";")
+	if parts[0] != appProtoContentType {
+		return "", fmt.Errorf("expected %v as the first (media) part, got %v content-type", appProtoContentType, contentType)
+	}
+	// Parse potential https://www.rfc-editor.org/rfc/rfc9110#parameter
+	for _, p := range parts[1:] {
+		pair := strings.Split(p, "=")
+		if len(pair) != 2 {
+			return "", fmt.Errorf("as per https://www.rfc-editor.org/rfc/rfc9110#parameter expected parameters to be key-values, got %v in %v content-type", p, contentType)
+		}
+		if pair[0] == "proto" {
+			ret := config.RemoteWriteProtoMsg(pair[1])
+			if err := ret.Validate(); err != nil {
+				return "", fmt.Errorf("got %v content type; %w", contentType, err)
+			}
+			return ret, nil
+		}
+	}
+	// No "proto=" parameter, assuming v1.
+	return config.RemoteWriteProtoMsgV1, nil
+}
+
+func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	contentType := r.Header.Get("Content-Type")
+	if contentType == "" {
+		// Don't break yolo 1.0 clients if not needed. This is similar to what we did
+		// before 2.0: https://github.com/prometheus/prometheus/blob/d78253319daa62c8f28ed47e40bafcad2dd8b586/storage/remote/write_handler.go#L62
+		// We could give http.StatusUnsupportedMediaType, but let's assume 1.0 message by default.
+		contentType = appProtoContentType
 	}
 
-	// Parse the headers to work out how to handle this.
-	contentEncoding := r.Header.Get("Content-Encoding")
-	protoVer := r.Header.Get(RemoteWriteVersionHeader)
-
-	switch protoVer {
-	case "":
-		// No header provided, assume 0.1.0 as everything that relies on later.
-		protoVer = RemoteWriteVersion1HeaderValue
-	case RemoteWriteVersion1HeaderValue, RemoteWriteVersion20HeaderValue:
-		// We know this header, woo.
-	default:
-		// We have a version in the header but it is not one we recognise.
-		level.Error(h.logger).Log("msg", "Error decoding remote write request", "err", "Unknown remote write version in headers", "ver", protoVer)
-		// Return a 406 so that the client can choose a more appropriate protocol to use.
-		http.Error(w, "Unknown remote write version in headers", http.StatusNotAcceptable)
+	msg, err := h.parseProtoMsg(contentType)
+	if err != nil {
+		level.Error(h.logger).Log("msg", "Error decoding remote write request", "err", err)
+		http.Error(w, err.Error(), http.StatusUnsupportedMediaType)
 		return
 	}
 
-	// Deal with 0.1.0 clients that forget to send Content-Encoding.
-	if protoVer == RemoteWriteVersion1HeaderValue && contentEncoding == "" {
-		contentEncoding = "snappy"
+	if _, ok := h.acceptedProtoMsgs[msg]; !ok {
+		err := fmt.Errorf("%v protobuf message is not accepted by this server; accepted %v", msg, func() (ret []string) {
+			for k := range h.acceptedProtoMsgs {
+				ret = append(ret, string(k))
+			}
+			return ret
+		}())
+		level.Error(h.logger).Log("msg", "Error decoding remote write request", "err", err)
+		http.Error(w, err.Error(), http.StatusUnsupportedMediaType)
+	}
+
+	enc := r.Header.Get("Content-Encoding")
+	if enc == "" {
+		// Don't break yolo 1.0 clients if not needed. This is similar to what we did
+		// before 2.0: https://github.com/prometheus/prometheus/blob/d78253319daa62c8f28ed47e40bafcad2dd8b586/storage/remote/write_handler.go#L62
+		// We could give http.StatusUnsupportedMediaType, but let's assume snappy by default.
+	} else if enc != string(SnappyBlockCompression) {
+		err := fmt.Errorf("%v encoding (compression) is not accepted by this server; only %v is acceptable", enc, SnappyBlockCompression)
+		level.Error(h.logger).Log("msg", "Error decoding remote write request", "err", err)
+		http.Error(w, err.Error(), http.StatusUnsupportedMediaType)
 	}
 
 	// Read the request body.
@@ -174,44 +140,34 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Deal with contentEncoding first.
-	var decompressed []byte
-
-	switch contentEncoding {
-	case "snappy":
-		decompressed, err = snappy.Decode(nil, body)
-		if err != nil {
-			level.Error(h.logger).Log("msg", "Error decoding remote write request", "err", err.Error())
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-	default:
-		level.Error(h.logger).Log("msg", "Error decoding remote write request", "err", "Unsupported Content-Encoding", "contentEncoding", contentEncoding)
-		// Return a 406 so that the client can choose a more appropriate protocol to use.
-		http.Error(w, "Unsupported Content-Encoding", http.StatusNotAcceptable)
+	decompressed, err := snappy.Decode(nil, body)
+	if err != nil {
+		// TODO(bwplotka): Add more context to responded error?
+		level.Error(h.logger).Log("msg", "Error decompressing remote write request", "err", err.Error())
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// Now we have a decompressed buffer we can unmarshal it.
-	// At this point we are happy with the version but need to check the encoding.
-	switch protoVer {
-	case RemoteWriteVersion1HeaderValue:
+	switch msg {
+	case config.RemoteWriteProtoMsgV1:
 		var req prompb.WriteRequest
 		if err := proto.Unmarshal(decompressed, &req); err != nil {
-			level.Error(h.logger).Log("msg", "Error decoding remote write request", "err", err.Error())
+			// TODO(bwplotka): Add more context to responded error?
+			level.Error(h.logger).Log("msg", "Error decoding remote write request", "protobuf_message", msg, "err", err.Error())
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		err = h.write(r.Context(), &req)
-	case RemoteWriteVersion20HeaderValue:
-		// 2.0 request.
-		var reqMinStr writev2.Request
-		if err := proto.Unmarshal(decompressed, &reqMinStr); err != nil {
-			level.Error(h.logger).Log("msg", "Error decoding remote write request", "err", err.Error())
+	case config.RemoteWriteProtoMsgV2:
+		var req writev2.Request
+		if err := proto.Unmarshal(decompressed, &req); err != nil {
+			// TODO(bwplotka): Add more context to responded error?
+			level.Error(h.logger).Log("msg", "Error decoding remote write request", "protobuf_message", msg, "err", err.Error())
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		err = h.writeMinStr(r.Context(), &reqMinStr)
+		err = h.writeV2(r.Context(), &req)
 	}
 
 	switch {
@@ -295,6 +251,49 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	return nil
 }
 
+func (h *writeHandler) writeV2(ctx context.Context, req *writev2.Request) (err error) {
+	outOfOrderExemplarErrs := 0
+
+	app := h.appendable.Appender(ctx)
+	defer func() {
+		if err != nil {
+			_ = app.Rollback()
+			return
+		}
+		err = app.Commit()
+	}()
+
+	for _, ts := range req.Timeseries {
+		ls := writev2.DesymbolizeLabels(ts.LabelsRefs, req.Symbols)
+
+		err := h.appendSamplesV2(app, ts.Samples, ls)
+		if err != nil {
+			return err
+		}
+
+		for _, ep := range ts.Exemplars {
+			e := exemplarProtoV2ToExemplar(ep, req.Symbols)
+			h.appendExemplar(app, e, ls, &outOfOrderExemplarErrs)
+		}
+
+		err = h.appendHistogramsV2(app, ts.Histograms, ls)
+		if err != nil {
+			return err
+		}
+
+		m := metadataProtoV2ToMetadata(ts.Metadata, req.Symbols)
+		if _, err = app.UpdateMetadata(0, ls, m); err != nil {
+			level.Debug(h.logger).Log("msg", "error while updating metadata from remote write", "err", err)
+		}
+	}
+
+	if outOfOrderExemplarErrs > 0 {
+		_ = level.Warn(h.logger).Log("msg", "Error on ingesting out-of-order exemplars", "num_dropped", outOfOrderExemplarErrs)
+	}
+
+	return nil
+}
+
 func (h *writeHandler) appendExemplar(app storage.Appender, e exemplar.Exemplar, labels labels.Labels, outOfOrderExemplarErrs *int) {
 	_, err := app.AppendExemplar(0, labels, e)
 	err = h.checkAppendExemplarError(err, e, outOfOrderExemplarErrs)
@@ -323,7 +322,7 @@ func (h *writeHandler) appendSamples(app storage.Appender, ss []prompb.Sample, l
 	return nil
 }
 
-func (h *writeHandler) appendMinSamples(app storage.Appender, ss []writev2.Sample, labels labels.Labels) error {
+func (h *writeHandler) appendSamplesV2(app storage.Appender, ss []writev2.Sample, labels labels.Labels) error {
 	var ref storage.SeriesRef
 	var err error
 	for _, s := range ss {
@@ -368,14 +367,14 @@ func (h *writeHandler) appendHistograms(app storage.Appender, hh []prompb.Histog
 	return nil
 }
 
-func (h *writeHandler) appendMinHistograms(app storage.Appender, hh []writev2.Histogram, labels labels.Labels) error {
+func (h *writeHandler) appendHistogramsV2(app storage.Appender, hh []writev2.Histogram, labels labels.Labels) error {
 	var err error
 	for _, hp := range hh {
 		if hp.IsFloatHistogram() {
-			fhs := FloatMinHistogramProtoToFloatHistogram(hp)
+			fhs := FloatV2HistogramProtoToFloatHistogram(hp)
 			_, err = app.AppendHistogram(0, labels, hp.Timestamp, nil, fhs)
 		} else {
-			hs := MinHistogramProtoToHistogram(hp)
+			hs := V2HistogramProtoToHistogram(hp)
 			_, err = app.AppendHistogram(0, labels, hp.Timestamp, hs, nil)
 		}
 		if err != nil {
@@ -451,47 +450,4 @@ func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
-}
-
-func (h *writeHandler) writeMinStr(ctx context.Context, req *writev2.Request) (err error) {
-	outOfOrderExemplarErrs := 0
-
-	app := h.appendable.Appender(ctx)
-	defer func() {
-		if err != nil {
-			_ = app.Rollback()
-			return
-		}
-		err = app.Commit()
-	}()
-
-	for _, ts := range req.Timeseries {
-		ls := labelProtosV2ToLabels(ts.LabelsRefs, req.Symbols)
-
-		err := h.appendMinSamples(app, ts.Samples, ls)
-		if err != nil {
-			return err
-		}
-
-		for _, ep := range ts.Exemplars {
-			e := exemplarProtoV2ToExemplar(ep, req.Symbols)
-			h.appendExemplar(app, e, ls, &outOfOrderExemplarErrs)
-		}
-
-		err = h.appendMinHistograms(app, ts.Histograms, ls)
-		if err != nil {
-			return err
-		}
-
-		m := metadataProtoV2ToMetadata(ts.Metadata, req.Symbols)
-		if _, err = app.UpdateMetadata(0, ls, m); err != nil {
-			level.Debug(h.logger).Log("msg", "error while updating metadata from remote write", "err", err)
-		}
-	}
-
-	if outOfOrderExemplarErrs > 0 {
-		_ = level.Warn(h.logger).Log("msg", "Error on ingesting out-of-order exemplars", "num_dropped", outOfOrderExemplarErrs)
-	}
-
-	return nil
 }

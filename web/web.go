@@ -264,8 +264,8 @@ type Options struct {
 	EnableOTLPWriteReceiver    bool
 	IsAgent                    bool
 	AppName                    string
-	// TODO(cstyan): should this change to a list of tuples, maybe via the content negotiation PR?
-	RemoteWriteFormat config.RemoteWriteFormat
+
+	AcceptRemoteWriteProtoMsgs []config.RemoteWriteProtoMsg
 
 	Gatherer   prometheus.Gatherer
 	Registerer prometheus.Registerer
@@ -355,7 +355,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		o.Registerer,
 		nil,
 		o.EnableRemoteWriteReceiver,
-		o.RemoteWriteFormat,
+		o.AcceptRemoteWriteProtoMsgs,
 		o.EnableOTLPWriteReceiver,
 	)
 

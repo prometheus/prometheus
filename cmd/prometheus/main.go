@@ -158,10 +158,8 @@ type flagConfig struct {
 	enableNewSDManager         bool
 	enablePerStepStats         bool
 	enableAutoGOMAXPROCS       bool
-	// todo: how to use the enable feature flag properly + use the remote format enum type
-	rwFormat                 int
-	enableAutoGOMEMLIMIT     bool
-	enableConcurrentRuleEval bool
+	enableAutoGOMEMLIMIT       bool
+	enableConcurrentRuleEval   bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -311,8 +309,14 @@ func main() {
 	a.Flag("web.enable-admin-api", "Enable API endpoints for admin control actions.").
 		Default("false").BoolVar(&cfg.web.EnableAdminAPI)
 
+	// TODO(bwplotka): Moveo all remote receive flags to config.
+	// See https://github.com/prometheus/prometheus/pull/13968/files#r1577035002
 	a.Flag("web.enable-remote-write-receiver", "Enable API endpoint accepting remote write requests.").
 		Default("false").BoolVar(&cfg.web.EnableRemoteWriteReceiver)
+
+	supportedRemoteWriteProtoMsgs := config.RemoteWriteProtoMsgs{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2}
+	a.Flag("web.remote-write-receiver.accepted-protobuf-messages", fmt.Sprintf("List of the remote write protobuf messages to accept when receiving the remote writes. Supported values: %v", supportedRemoteWriteProtoMsgs.String())).
+		Default(supportedRemoteWriteProtoMsgs.Strings()...).SetValue(rwProtoMsgFlagValue(&cfg.web.AcceptRemoteWriteProtoMsgs))
 
 	a.Flag("web.console.templates", "Path to the console template directory, available at /consoles.").
 		Default("consoles").StringVar(&cfg.web.ConsoleTemplatesPath)
@@ -454,9 +458,6 @@ func main() {
 
 	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, auto-gomemlimit, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, remote-write-receiver (DEPRECATED), extra-scrape-metrics, new-service-discovery-manager, auto-gomaxprocs, no-default-scrape-port, native-histograms, otlp-write-receiver, created-timestamp-zero-ingestion, concurrent-rule-eval. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
-
-	a.Flag("remote-write-format", "remote write proto format to use, valid options: 0 (1.0), 1 (reduced format), 3 (min64 format)").
-		Default("0").IntVar(&cfg.rwFormat)
 
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
 
@@ -820,7 +821,6 @@ func main() {
 		cfg.web.Flags[f.Name] = f.Value.String()
 	}
 
-	cfg.web.RemoteWriteFormat = config.RemoteWriteFormat(cfg.rwFormat)
 	// Depends on cfg.web.ScrapeManager so needs to be after cfg.web.ScrapeManager = scrapeManager.
 	webHandler := web.New(log.With(logger, "component", "web"), &cfg.web)
 
@@ -1736,4 +1736,34 @@ type discoveryManager interface {
 	ApplyConfig(cfg map[string]discovery.Configs) error
 	Run() error
 	SyncCh() <-chan map[string][]*targetgroup.Group
+}
+
+// TODO(bwplotka): Add unit test.
+type rwProtoMsgFlagParser struct {
+	msgs *[]config.RemoteWriteProtoMsg
+}
+
+func rwProtoMsgFlagValue(msgs *[]config.RemoteWriteProtoMsg) kingpin.Value {
+	return &rwProtoMsgFlagParser{msgs: msgs}
+}
+
+func (p *rwProtoMsgFlagParser) IsCumulative() bool {
+	return true
+}
+
+func (p *rwProtoMsgFlagParser) String() string {
+	ss := make([]string, 0, len(*p.msgs))
+	for _, t := range *p.msgs {
+		ss = append(ss, string(t))
+	}
+	return strings.Join(ss, ",")
+}
+
+func (p *rwProtoMsgFlagParser) Set(opt string) error {
+	t := config.RemoteWriteProtoMsg(opt)
+	if err := t.Validate(); err != nil {
+		return err
+	}
+	*p.msgs = append(*p.msgs, t)
+	return nil
 }

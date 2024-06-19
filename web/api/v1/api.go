@@ -210,10 +210,9 @@ type API struct {
 	isAgent       bool
 	statsRenderer StatsRenderer
 
-	remoteWriteHeadHandler http.Handler
-	remoteWriteHandler     http.Handler
-	remoteReadHandler      http.Handler
-	otlpWriteHandler       http.Handler
+	remoteWriteHandler http.Handler
+	remoteReadHandler  http.Handler
+	otlpWriteHandler   http.Handler
 
 	codecs []Codec
 }
@@ -247,7 +246,7 @@ func NewAPI(
 	registerer prometheus.Registerer,
 	statsRenderer StatsRenderer,
 	rwEnabled bool,
-	rwFormat config.RemoteWriteFormat,
+	acceptRemoteWriteProtoMsgs []config.RemoteWriteProtoMsg,
 	otlpEnabled bool,
 ) *API {
 	a := &API{
@@ -290,20 +289,7 @@ func NewAPI(
 	}
 
 	if rwEnabled {
-		// TODO(alexg) - Two phase rwFormat rollout needs to create handlers with flag for advertising.
-		// For rollout we do two phases:
-		// 0. (Before) no flags set
-		// 1. (During) support new protocols but don't advertise
-		// <wait until all servers have rolled out and now support RW2.0>
-		// 2. (After) support new protocols and advertise
-		//
-		// For rollback the two phases are:
-		// 0. (Before) support new protocols and advertise
-		// 1. (During) support new protocols but don't advertise
-		// <wait a suitable period for all sending clients to be aware that receiving servers no longer support 2.0>
-		// 2. (After) no flags set
-		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, rwFormat)
-		a.remoteWriteHeadHandler = remote.NewWriteHeadHandler(logger, registerer, rwFormat)
+		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, acceptRemoteWriteProtoMsgs)
 	}
 	if otlpEnabled {
 		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, ap)
@@ -400,7 +386,6 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/walreplay", api.serveWALReplayStatus)
 	r.Post("/read", api.ready(api.remoteRead))
 	r.Post("/write", api.ready(api.remoteWrite))
-	r.Head("/write", api.remoteWriteHead)
 	r.Post("/otlp/v1/metrics", api.ready(api.otlpWrite))
 
 	r.Get("/alerts", wrapAgent(api.alerts))
@@ -1658,14 +1643,6 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 		api.remoteReadHandler.ServeHTTP(w, r)
 	} else {
 		http.Error(w, "not found", http.StatusNotFound)
-	}
-}
-
-func (api *API) remoteWriteHead(w http.ResponseWriter, r *http.Request) {
-	if api.remoteWriteHeadHandler != nil {
-		api.remoteWriteHeadHandler.ServeHTTP(w, r)
-	} else {
-		http.Error(w, "remote write receiver needs to be enabled with --web.enable-remote-write-receiver", http.StatusNotFound)
 	}
 }
 
