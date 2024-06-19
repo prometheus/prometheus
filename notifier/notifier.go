@@ -298,25 +298,14 @@ func (n *Manager) nextBatch() []*Alert {
 	return alerts
 }
 
-// Run dispatches notifications continuously.
-func (n *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) {
+// sendLoop continuously consumes the notifications queue and sends alerts to
+// the configured Alertmanagers.
+func (n *Manager) sendLoop() {
 	for {
-		// The select is split in two parts, such as we will first try to read
-		// new alertmanager targets if they are available, before sending new
-		// alerts.
 		select {
 		case <-n.ctx.Done():
 			return
-		case ts := <-tsets:
-			n.reload(ts)
-		default:
-			select {
-			case <-n.ctx.Done():
-				return
-			case ts := <-tsets:
-				n.reload(ts)
-			case <-n.more:
-			}
+		case <-n.more:
 		}
 		alerts := n.nextBatch()
 
@@ -326,6 +315,21 @@ func (n *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) {
 		// If the queue still has items left, kick off the next iteration.
 		if n.queueLen() > 0 {
 			n.setMore()
+		}
+	}
+}
+
+// Run receives updates of target groups and triggers a reload.
+// The dispatching of notifications occurs in the background to prevent blocking the receipt of target updates.
+// Refer to https://github.com/prometheus/prometheus/issues/13676 for more details.
+func (n *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) {
+	go n.sendLoop()
+	for {
+		select {
+		case <-n.ctx.Done():
+			return
+		case ts := <-tsets:
+			n.reload(ts)
 		}
 	}
 }
@@ -471,10 +475,6 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 		numSuccess atomic.Uint64
 	)
 	for _, ams := range amSets {
-		if len(ams.ams) == 0 {
-			continue
-		}
-
 		var (
 			payload  []byte
 			err      error
@@ -482,6 +482,11 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 		)
 
 		ams.mtx.RLock()
+
+		if len(ams.ams) == 0 {
+			ams.mtx.RUnlock()
+			continue
+		}
 
 		if len(ams.cfg.AlertRelabelConfigs) > 0 {
 			amAlerts = relabelAlerts(ams.cfg.AlertRelabelConfigs, labels.Labels{}, alerts)
