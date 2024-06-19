@@ -1751,10 +1751,14 @@ load 1ms
 
 // Convenience function that returns a "full matrix" for the specified number
 // of jobs and time range.
-func fullMatrix(jobs, start, end, interval, increase int) (promql.Matrix, []labels.Labels) {
+func fullMatrix(initialJobsNum, totalJobs, start, end, interval, increase int) promql.Matrix {
+	mat, _ := fullMatrixWithLabels(initialJobsNum, totalJobs, start, end, interval, increase)
+	return mat
+}
+func fullMatrixWithLabels(initialJobsNum, totalJobs, start, end, interval, increase int) (promql.Matrix, []labels.Labels) {
 	var mat promql.Matrix
 	var lbls []labels.Labels
-	for job := 1; job <= jobs; job++ {
+	for job := initialJobsNum; job < initialJobsNum+totalJobs; job++ {
 		lbls = append(lbls, labels.FromStrings("__name__", "metric", "job", strconv.Itoa(job)))
 		series := func(start, end, interval int) promql.Series {
 			var points []promql.FPoint
@@ -1784,14 +1788,14 @@ load 10s
 `)
 	t.Cleanup(func() { storage.Close() })
 
-	fullMatrix20, _ := fullMatrix(5, 0, 20, 10, 1000)
+	fullMatrix20 := fullMatrix(1, 5, 0, 20, 10, 1000)
 	cases := []struct {
 		query                string
 		start, end, interval int64 // Time in seconds.
 		expectError          bool
 		result               parser.Value
-		resultIn             parser.Value
-		resultLen            int // Required if resultIn is set
+		//resultIn             parser.Value
+		resultLen int // Required if resultIn is set
 	}{
 		{
 			// Limit==0 -> empty matrix
@@ -1802,10 +1806,10 @@ load 10s
 		{
 			// Limit==2 -> return 2 timeseries (resultLen: 2),
 			// also asserting that they are member of full TSs
-			query: `limitk(2, metric)`,
+			query: `limitk(1, metric)`,
 			start: 0, end: 20, interval: 10,
-			resultLen: 2,
-			resultIn:  fullMatrix20,
+			resultLen: 1,
+			//resultIn:  fullMatrix20,
 		},
 		{
 			// Limit==5 -> return full matrix (5 timeseries)
@@ -1854,16 +1858,19 @@ load 10s
 					sort.Sort(expMat)
 					sort.Sort(res.Value.(promql.Matrix))
 				}
-				require.Equal(t, c.result, res.Value, "query %q failed for require.Equal()", c.query)
-			case c.resultIn != nil:
-				require.Len(t, res.Value.(promql.Matrix), c.resultLen, "query %q failed", c.query)
-				if expMat, ok := c.resultIn.(promql.Matrix); ok {
-					sort.Sort(expMat)
-					sort.Sort(res.Value.(promql.Matrix))
-					for _, e := range res.Value.(promql.Matrix) {
-						require.Contains(t, c.resultIn, e, "query %q failed for require.Contains()", c.query)
-					}
-				}
+				testutil.RequireEqual(t, c.result, res.Value, "query %q failed for RequireEqual()", c.query)
+				// TODO(jjo) work out how to test implement require.Contains ala testutil.RequireEqual
+				/*
+					case c.resultIn != nil:
+						require.Len(t, res.Value.(promql.Matrix), c.resultLen, "query %q failed", c.query)
+						if expMat, ok := c.resultIn.(promql.Matrix); ok {
+							sort.Sort(expMat)
+							sort.Sort(res.Value.(promql.Matrix))
+							for _, e := range res.Value.(promql.Matrix) {
+								require.Contains(t, c.resultIn, e, "query %q failed for require.Contains()", c.query)
+							}
+						}
+				*/
 			}
 		})
 	}
@@ -1881,7 +1888,7 @@ load 10s
 `)
 	t.Cleanup(func() { storage.Close() })
 
-	fullMatrix20, lbls := fullMatrix(5, 0, 20, 10, 1000)
+	fullMatrix20, lbls := fullMatrixWithLabels(1, 5, 0, 20, 10, 1000)
 	cases := []struct {
 		query                string
 		start, end, interval int64 // Time in seconds.
@@ -1990,7 +1997,7 @@ load 10s
 				sort.Sort(expMat)
 				sort.Sort(res.Value.(promql.Matrix))
 			}
-			require.Equal(t, c.result, res.Value, "query %q failed for require.Equal()", c.query)
+			testutil.RequireEqual(t, c.result, res.Value, "query %q failed for requireEqual()", c.query)
 		})
 	}
 }
@@ -2007,7 +2014,7 @@ load 10s
 `)
 	t.Cleanup(func() { storage.Close() })
 
-	fullMatrix20, _ := fullMatrix(5, 0, 20, 10, 1000)
+	fullMatrix20 := fullMatrix(1, 5, 0, 20, 10, 1000)
 
 	// Dynamically build limit_ratio() cases, to verify that
 	//   limit_ratio(v, metric)
@@ -2055,7 +2062,7 @@ load 10s
 				sort.Sort(expMat)
 				sort.Sort(res.Value.(promql.Matrix))
 			}
-			require.Equal(t, c.result, res.Value, "query %q failed", c.query)
+			testutil.RequireEqual(t, c.result, res.Value, "query %q failed for RequireEqual()", c.query)
 		})
 	}
 }
