@@ -40,6 +40,8 @@ type writeHandler struct {
 	samplesWithInvalidLabelsTotal prometheus.Counter
 }
 
+const maxAheadTime = 10 * time.Minute
+
 // NewWriteHandler creates a http.Handler that accepts remote write requests and
 // writes them to the provided appendable.
 func NewWriteHandler(logger log.Logger, reg prometheus.Registerer, appendable storage.Appendable) http.Handler {
@@ -118,7 +120,7 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	b := labels.NewScratchBuilder(0)
 	var exemplarErr error
 
-	currentTimestamp := timestamp.FromTime(time.Now())
+	currentTimestamp := timestamp.FromTime(time.Now().Add(maxAheadTime))
 
 	for _, ts := range req.Timeseries {
 		labels := labelProtosToLabels(&b, ts.Labels)
