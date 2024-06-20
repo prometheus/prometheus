@@ -99,8 +99,9 @@ func (Histogram_ResetHint) EnumDescriptor() ([]byte, []int) {
 }
 
 // Request represents a request to write the given timeseries to a remote destination.
-// This was introduced in the Remote Write 2.0 specification:
+// This message was introduced in the Remote Write 2.0 specification:
 // https://prometheus.io/docs/concepts/remote_write_spec_2_0/
+//
 // The canonical Content-Type request header value for this message is
 // "application/x-protobuf;proto=io.prometheus.write.v2.Request"
 //
@@ -109,10 +110,13 @@ func (Histogram_ResetHint) EnumDescriptor() ([]byte, []int) {
 // the serialized message). See: https://github.com/prometheus/prometheus/issues/11908
 type Request struct {
 	// symbols contains a de-duplicated array of string elements used for various
-	// items in a Request message, like labels and metadata items. To decode
-	// each of those items, referenced, by "ref(s)" suffix, you need to lookup the
-	// actual string by index from symbols array. The order of strings is up to
-	// the client, server should not assume any particular encoding.
+	// items in a Request message, like labels and metadata items. For the sender's convenience
+	// around empty values for optional fields like unit_ref, symbols array MUST start with
+	// empty string.
+	//
+	// To decode each of the symbolized strings, referenced, by "ref(s)" suffix, you
+	// need to lookup the actual string by index from symbols array. The order of
+	// strings is up to the sender. The receiver should not assume any particular encoding.
 	Symbols []string `protobuf:"bytes,1,rep,name=symbols,proto3" json:"symbols,omitempty"`
 	// timeseries represents an array of distinct series with 0 or more samples.
 	Timeseries           []TimeSeries `protobuf:"bytes,2,rep,name=timeseries,proto3" json:"timeseries"`
@@ -172,14 +176,14 @@ func (m *Request) GetTimeseries() []TimeSeries {
 type TimeSeries struct {
 	// labels_refs is a list of label name-value pair references, encoded
 	// as indices to the Request.symbols array. This list's length is always
-	// a multiple of two, and the underlying labels should be sorted.
+	// a multiple of two, and the underlying labels should be sorted lexicographically.
 	//
 	// Note that there might be multiple TimeSeries objects in the same
 	// Requests with the same labels e.g. for different exemplars, metadata
 	// or created timestamp.
 	LabelsRefs []uint32 `protobuf:"varint,1,rep,packed,name=labels_refs,json=labelsRefs,proto3" json:"labels_refs,omitempty"`
 	// Timeseries messages can either specify samples or (native) histogram samples
-	// (histogram field), but not both. For typical clients (~real-time metric
+	// (histogram field), but not both. For a typical sender (real-time metric
 	// streaming), in healthy cases, there will be only one sample or histogram.
 	//
 	// Samples and histograms are sorted by timestamp (older first).
@@ -191,7 +195,11 @@ type TimeSeries struct {
 	Metadata Metadata `protobuf:"bytes,5,opt,name=metadata,proto3" json:"metadata"`
 	// created_timestamp represents an optional created timestamp associated with
 	// this series' samples in ms format, typically for counter or histogram type
-	// metrics. Note that some servers might require this and in return fail to
+	// metrics. Created timestamp represents the time when the counter started
+	// counting (sometimes referred to as start timestamp), which can increase
+	// the accuracy of query results.
+	//
+	// Note that some receivers might require this and in return fail to
 	// ingest such samples within the Request.
 	//
 	// For Go, see github.com/prometheus/prometheus/model/timestamp/timestamp.go
@@ -286,14 +294,16 @@ func (m *TimeSeries) GetCreatedTimestamp() int64 {
 // It is typically used to attach an example trace or request ID associated with
 // the metric changes.
 type Exemplar struct {
-	// labels_refs is a list of label name-value pair references, encoded
+	// labels_refs is an optional list of label name-value pair references, encoded
 	// as indices to the Request.symbols array. This list's len is always
-	// a multiple of 2, and the underlying labels should be sorted.
+	// a multiple of 2, and the underlying labels should be sorted lexicographically.
+	// If the exemplar references a trace it should use the `trace_id` label name, as a best practice.
 	LabelsRefs []uint32 `protobuf:"varint,1,rep,packed,name=labels_refs,json=labelsRefs,proto3" json:"labels_refs,omitempty"`
 	// value represents an exact example value. This can be useful when the exemplar
 	// is attached to a histogram, which only gives an estimated value through buckets.
 	Value float64 `protobuf:"fixed64,2,opt,name=value,proto3" json:"value,omitempty"`
-	// timestamp represents an optional timestamp of the example in ms.
+	// timestamp represents an optional timestamp of the sample in ms.
+	//
 	// For Go, see github.com/prometheus/prometheus/model/timestamp/timestamp.go
 	// for conversion from/to time.Time to Prometheus timestamp.
 	//
@@ -366,6 +376,7 @@ type Sample struct {
 	// value of the sample.
 	Value float64 `protobuf:"fixed64,1,opt,name=value,proto3" json:"value,omitempty"`
 	// timestamp represents timestamp of the sample in ms.
+	//
 	// For Go, see github.com/prometheus/prometheus/model/timestamp/timestamp.go
 	// for conversion from/to time.Time to Prometheus timestamp.
 	Timestamp            int64    `protobuf:"varint,2,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
@@ -425,10 +436,12 @@ func (m *Sample) GetTimestamp() int64 {
 type Metadata struct {
 	Type Metadata_MetricType `protobuf:"varint,1,opt,name=type,proto3,enum=io.prometheus.write.v2.Metadata_MetricType" json:"type,omitempty"`
 	// help_ref is a reference to the Request.symbols array representing help
-	// text for the metric.
+	// text for the metric. Help is optional, reference should point to an empty string in
+	// such a case.
 	HelpRef uint32 `protobuf:"varint,3,opt,name=help_ref,json=helpRef,proto3" json:"help_ref,omitempty"`
-	// unit_ref is a reference to the Request.symbols array representing unit
-	// for the metric.
+	// unit_ref is a reference to the Request.symbols array representing a unit
+	// for the metric. Unit is optional, reference should point to an empty string in
+	// such a case.
 	UnitRef              uint32   `protobuf:"varint,4,opt,name=unit_ref,json=unitRef,proto3" json:"unit_ref,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
@@ -541,6 +554,7 @@ type Histogram struct {
 	PositiveCounts []float64           `protobuf:"fixed64,13,rep,packed,name=positive_counts,json=positiveCounts,proto3" json:"positive_counts,omitempty"`
 	ResetHint      Histogram_ResetHint `protobuf:"varint,14,opt,name=reset_hint,json=resetHint,proto3,enum=io.prometheus.write.v2.Histogram_ResetHint" json:"reset_hint,omitempty"`
 	// timestamp represents timestamp of the sample in ms.
+	//
 	// For Go, see github.com/prometheus/prometheus/model/timestamp/timestamp.go
 	// for conversion from/to time.Time to Prometheus timestamp.
 	Timestamp int64 `protobuf:"varint,15,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
