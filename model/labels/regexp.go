@@ -16,10 +16,12 @@ package labels
 import (
 	"slices"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/grafana/regexp"
 	"github.com/grafana/regexp/syntax"
+	"golang.org/x/text/unicode/norm"
 )
 
 const (
@@ -766,7 +768,7 @@ type equalMultiStringMapMatcher struct {
 
 func (m *equalMultiStringMapMatcher) add(s string) {
 	if !m.caseSensitive {
-		s = strings.ToLower(s)
+		s = toNormalisedLower(s)
 	}
 
 	m.values[s] = struct{}{}
@@ -786,11 +788,33 @@ func (m *equalMultiStringMapMatcher) setMatches() []string {
 
 func (m *equalMultiStringMapMatcher) Matches(s string) bool {
 	if !m.caseSensitive {
-		s = strings.ToLower(s)
+		s = toNormalisedLower(s)
 	}
 
 	_, ok := m.values[s]
 	return ok
+}
+
+// toNormalisedLower normalise the input string using "Unicode Normalization Form D" and then convert
+// it to lower case.
+func toNormalisedLower(s string) string {
+	var buf []byte
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= utf8.RuneSelf {
+			return strings.Map(unicode.ToLower, norm.NFKD.String(s))
+		}
+		if 'A' <= c && c <= 'Z' {
+			if buf == nil {
+				buf = []byte(s)
+			}
+			buf[i] = c + 'a' - 'A'
+		}
+	}
+	if buf == nil {
+		return s
+	}
+	return yoloString(buf)
 }
 
 // anyStringWithoutNewlineMatcher is a stringMatcher which matches any string

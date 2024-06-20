@@ -1213,3 +1213,11 @@ eval instant at 5m log10(exp_root_log - 20)
 	{l="y"} -Inf
 
 clear
+
+# Test that timestamp() handles the scenario where there are more steps than samples.
+load 1m
+  metric 0+1x1000
+
+# We expect the value to be 0 for t=0s to t=59s (inclusive), then 60 for t=60s and t=61s.
+eval range from 0 to 61s step 1s timestamp(metric)
+  {} 0x59 60 60

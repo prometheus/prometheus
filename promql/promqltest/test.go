@@ -44,38 +44,10 @@ import (
 )
 
 var (
-	patSpace                    = regexp.MustCompile("[\t ]+")
-	patLoad                     = regexp.MustCompile(`^load(?:_(with_nhcb))?\s+(.+?)$`)
-	patEvalInstant              = regexp.MustCompile(`^eval(?:_(with_nhcb))?(?:_(fail|warn|ordered))?\s+instant\s+(?:at\s+(.+?))?\s+(.+)$`)
-	patEvalRange                = regexp.MustCompile(`^eval(?:_(fail|warn))?\s+range\s+from\s+(.+)\s+to\s+(.+)\s+step\s+(.+?)\s+(.+)$`)
-	patWhitespace               = regexp.MustCompile(`\s+`)
-	patBucket                   = regexp.MustCompile(`_bucket\b`)
-	patLE                       = regexp.MustCompile(`\ble\b`)
-	histogramBucketReplacements = []struct {
-		pattern *regexp.Regexp
-		repl    string
-	}{
-		{
-			pattern: regexp.MustCompile(`_bucket\b`),
-			repl:    "",
-		},
-		{
-			pattern: regexp.MustCompile(`\s+by\s+\(\s*le\s*\)`),
-			repl:    "",
-		},
-		{
-			pattern: regexp.MustCompile(`\(\s*le\s*,\s*`),
-			repl:    "(",
-		},
-		{
-			pattern: regexp.MustCompile(`,\s*le\s*,\s*`),
-			repl:    ", ",
-		},
-		{
-			pattern: regexp.MustCompile(`,\s*le\s*\)`),
-			repl:    ")",
-		},
-	}
+	patSpace       = regexp.MustCompile("[\t ]+")
+	patLoad        = regexp.MustCompile(`^load(?:_(with_nhcb))?\s+(.+?)$`)
+	patEvalInstant = regexp.MustCompile(`^eval(?:_(fail|warn|ordered))?\s+instant\s+(?:at\s+(.+?))?\s+(.+)$`)
+	patEvalRange   = regexp.MustCompile(`^eval(?:_(fail|warn))?\s+range\s+from\s+(.+)\s+to\s+(.+)\s+step\s+(.+?)\s+(.+)$`)
 )
 
 const (
@@ -251,19 +223,17 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 	rangeParts := patEvalRange.FindStringSubmatch(lines[i])
 
 	if instantParts == nil && rangeParts == nil {
-		return i, nil, raise(i, "invalid evaluation command. Must be either 'eval[_with_nhcb][_fail|_warn|_ordered] instant [at <offset:duration>] <query>' or 'eval[_fail|_warn] range from <from> to <to> step <step> <query>'")
+		return i, nil, raise(i, "invalid evaluation command. Must be either 'eval[_fail|_warn|_ordered] instant [at <offset:duration>] <query>' or 'eval[_fail|_warn] range from <from> to <to> step <step> <query>'")
 	}
 
 	isInstant := instantParts != nil
 
-	var withNHCB bool
 	var mod string
 	var expr string
 
 	if isInstant {
-		withNHCB = instantParts[1] == "with_nhcb"
-		mod = instantParts[2]
-		expr = instantParts[4]
+		mod = instantParts[1]
+		expr = instantParts[3]
 	} else {
 		mod = rangeParts[1]
 		expr = rangeParts[5]
@@ -291,7 +261,7 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 	var cmd *evalCmd
 
 	if isInstant {
-		at := instantParts[3]
+		at := instantParts[2]
 		offset, err := model.ParseDuration(at)
 		if err != nil {
 			return i, nil, formatErr("invalid timestamp definition %q: %s", at, err)
@@ -335,7 +305,6 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 	case "warn":
 		cmd.warn = true
 	}
-	cmd.withNHCB = withNHCB
 
 	for j := 1; i+1 < len(lines); j++ {
 		i++
@@ -673,7 +642,6 @@ type evalCmd struct {
 
 	isRange             bool // if false, instant query
 	fail, warn, ordered bool
-	withNHCB            bool
 	expectedFailMessage string
 	expectedFailRegexp  *regexp.Regexp
 
@@ -1065,26 +1033,6 @@ func (t *test) execInstantEval(cmd *evalCmd, engine promql.QueryEngine) error {
 	for _, iq := range queries {
 		if err := t.runInstantQuery(iq, cmd, engine); err != nil {
 			return err
-		}
-		if cmd.withNHCB {
-			if !strings.Contains(iq.expr, "_bucket") {
-				return fmt.Errorf("expected '_bucket' in the expression '%q'", iq.expr)
-			}
-			origExpr := iq.expr
-			for _, rep := range histogramBucketReplacements {
-				iq.expr = rep.pattern.ReplaceAllString(iq.expr, rep.repl)
-			}
-			switch {
-			case patWhitespace.ReplaceAllString(iq.expr, "") == patWhitespace.ReplaceAllString(origExpr, ""):
-				return fmt.Errorf("query rewrite of '%q' had no effect", iq.expr)
-			case patBucket.MatchString(iq.expr):
-				return fmt.Errorf("rewritten query '%q' still has '_bucket'", iq.expr)
-			case patLE.MatchString(iq.expr):
-				return fmt.Errorf("rewritten query '%q' still has 'le'", iq.expr)
-			}
-			if err := t.runInstantQuery(iq, cmd, engine); err != nil {
-				return err
-			}
 		}
 	}
 	return nil
