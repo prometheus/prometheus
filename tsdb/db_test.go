@@ -503,7 +503,7 @@ func TestAmendHistogramDatapointCausesError(t *testing.T) {
 	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, 0)
 	require.NoError(t, err)
 	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, 1)
-	require.Equal(t, storage.ErrDuplicateSampleForTimestamp, err)
+	require.ErrorIs(t, err, storage.ErrDuplicateSampleForTimestamp)
 	require.NoError(t, app.Rollback())
 
 	h := histogram.Histogram{
@@ -579,7 +579,7 @@ func TestNonDuplicateNaNDatapointsCausesAmendError(t *testing.T) {
 
 	app = db.Appender(ctx)
 	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, math.Float64frombits(0x7ff0000000000002))
-	require.Equal(t, storage.ErrDuplicateSampleForTimestamp, err)
+	require.ErrorIs(t, err, storage.ErrDuplicateSampleForTimestamp)
 }
 
 func TestEmptyLabelsetCausesError(t *testing.T) {
@@ -1431,9 +1431,9 @@ func (*mockCompactorFailing) Plan(string) ([]string, error) {
 	return nil, nil
 }
 
-func (c *mockCompactorFailing) Write(dest string, _ BlockReader, _, _ int64, _ *BlockMeta) (ulid.ULID, error) {
+func (c *mockCompactorFailing) Write(dest string, _ BlockReader, _, _ int64, _ *BlockMeta) ([]ulid.ULID, error) {
 	if len(c.blocks) >= c.max {
-		return ulid.ULID{}, fmt.Errorf("the compactor already did the maximum allowed blocks so it is time to fail")
+		return []ulid.ULID{}, fmt.Errorf("the compactor already did the maximum allowed blocks so it is time to fail")
 	}
 
 	block, err := OpenBlock(nil, createBlock(c.t, dest, genSeries(1, 1, 0, 1)), nil)
@@ -1452,11 +1452,11 @@ func (c *mockCompactorFailing) Write(dest string, _ BlockReader, _, _ int64, _ *
 
 	require.Equal(c.t, expectedBlocks, actualBlockDirs)
 
-	return block.Meta().ULID, nil
+	return []ulid.ULID{block.Meta().ULID}, nil
 }
 
-func (*mockCompactorFailing) Compact(string, []string, []*Block) (ulid.ULID, error) {
-	return ulid.ULID{}, nil
+func (*mockCompactorFailing) Compact(string, []string, []*Block) ([]ulid.ULID, error) {
+	return []ulid.ULID{}, nil
 }
 
 func (*mockCompactorFailing) CompactOOO(string, *OOOCompactionHead) (result []ulid.ULID, err error) {
@@ -4574,7 +4574,7 @@ func TestOOOCompaction(t *testing.T) {
 		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
 		require.NoError(t, err)
 		require.False(t, created)
-		require.Greater(t, ms.ooo.oooHeadChunk.chunk.NumSamples(), 0)
+		require.Positive(t, ms.ooo.oooHeadChunk.chunk.NumSamples())
 		require.Len(t, ms.ooo.oooMmappedChunks, 14) // 7 original, 7 duplicate.
 	}
 	checkNonEmptyOOOChunk(series1)
@@ -4715,7 +4715,7 @@ func TestOOOCompactionWithNormalCompaction(t *testing.T) {
 		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
 		require.NoError(t, err)
 		require.False(t, created)
-		require.Greater(t, ms.ooo.oooHeadChunk.chunk.NumSamples(), 0)
+		require.Positive(t, ms.ooo.oooHeadChunk.chunk.NumSamples())
 	}
 
 	// If the normal Head is not compacted, the OOO head compaction does not take place.
@@ -4816,7 +4816,7 @@ func TestOOOCompactionWithDisabledWriteLog(t *testing.T) {
 		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
 		require.NoError(t, err)
 		require.False(t, created)
-		require.Greater(t, ms.ooo.oooHeadChunk.chunk.NumSamples(), 0)
+		require.Positive(t, ms.ooo.oooHeadChunk.chunk.NumSamples())
 	}
 
 	// If the normal Head is not compacted, the OOO head compaction does not take place.
@@ -5517,8 +5517,8 @@ func TestWBLAndMmapReplay(t *testing.T) {
 			addedRecs++
 			require.NoError(t, newWbl.Log(rec))
 		}
-		require.Greater(t, markers, 0)
-		require.Greater(t, addedRecs, 0)
+		require.Positive(t, markers)
+		require.Positive(t, addedRecs)
 		require.NoError(t, newWbl.Close())
 		require.NoError(t, sr.Close())
 		require.NoError(t, os.RemoveAll(wblDir))
@@ -6804,9 +6804,9 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 		for _, b := range blocks {
 			blockDirs = append(blockDirs, b.Dir())
 		}
-		id, err := db.compactor.Compact(db.Dir(), blockDirs, blocks)
+		ids, err := db.compactor.Compact(db.Dir(), blockDirs, blocks)
 		require.NoError(t, err)
-		require.NotEqual(t, ulid.ULID{}, id)
+		require.Len(t, ids, 1)
 		require.NoError(t, db.reload())
 		require.Len(t, db.Blocks(), 1)
 
@@ -7068,19 +7068,19 @@ func requireEqualOOOSamples(t *testing.T, expectedSamples int, db *DB) {
 
 type mockCompactorFn struct {
 	planFn    func() ([]string, error)
-	compactFn func() (ulid.ULID, error)
-	writeFn   func() (ulid.ULID, error)
+	compactFn func() ([]ulid.ULID, error)
+	writeFn   func() ([]ulid.ULID, error)
 }
 
 func (c *mockCompactorFn) Plan(_ string) ([]string, error) {
 	return c.planFn()
 }
 
-func (c *mockCompactorFn) Compact(_ string, _ []string, _ []*Block) (ulid.ULID, error) {
+func (c *mockCompactorFn) Compact(_ string, _ []string, _ []*Block) ([]ulid.ULID, error) {
 	return c.compactFn()
 }
 
-func (c *mockCompactorFn) Write(_ string, _ BlockReader, _, _ int64, _ *BlockMeta) (ulid.ULID, error) {
+func (c *mockCompactorFn) Write(_ string, _ BlockReader, _, _ int64, _ *BlockMeta) ([]ulid.ULID, error) {
 	return c.writeFn()
 }
 
@@ -7112,11 +7112,11 @@ func TestAbortBlockCompactions(t *testing.T) {
 			// Our custom Plan() will always return something to compact.
 			return []string{"1", "2", "3"}, nil
 		},
-		compactFn: func() (ulid.ULID, error) {
-			return ulid.ULID{}, nil
+		compactFn: func() ([]ulid.ULID, error) {
+			return []ulid.ULID{}, nil
 		},
-		writeFn: func() (ulid.ULID, error) {
-			return ulid.ULID{}, nil
+		writeFn: func() ([]ulid.ULID, error) {
+			return []ulid.ULID{}, nil
 		},
 	}
 
@@ -7124,4 +7124,38 @@ func TestAbortBlockCompactions(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, db.head.compactable(), "head should be compactable")
 	require.Equal(t, 4, compactions, "expected 4 compactions to be completed")
+}
+
+func TestNewCompactorFunc(t *testing.T) {
+	opts := DefaultOptions()
+	block1 := ulid.MustNew(1, nil)
+	block2 := ulid.MustNew(2, nil)
+	opts.NewCompactorFunc = func(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error) {
+		return &mockCompactorFn{
+			planFn: func() ([]string, error) {
+				return []string{block1.String(), block2.String()}, nil
+			},
+			compactFn: func() ([]ulid.ULID, error) {
+				return []ulid.ULID{block1}, nil
+			},
+			writeFn: func() ([]ulid.ULID, error) {
+				return []ulid.ULID{block2}, nil
+			},
+		}, nil
+	}
+	db := openTestDB(t, opts, nil)
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
+	plans, err := db.compactor.Plan("")
+	require.NoError(t, err)
+	require.Equal(t, []string{block1.String(), block2.String()}, plans)
+	ulids, err := db.compactor.Compact("", nil, nil)
+	require.NoError(t, err)
+	require.Len(t, ulids, 1)
+	require.Equal(t, block1, ulids[0])
+	ulids, err = db.compactor.Write("", nil, 0, 1, nil)
+	require.NoError(t, err)
+	require.Len(t, ulids, 1)
+	require.Equal(t, block2, ulids[0])
 }

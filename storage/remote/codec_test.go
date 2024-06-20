@@ -729,8 +729,8 @@ func TestFloatHistogramToProtoConvert(t *testing.T) {
 }
 
 func TestStreamResponse(t *testing.T) {
-	lbs1 := labelsToLabelsProto(labels.FromStrings("instance", "localhost1", "job", "demo1"), nil)
-	lbs2 := labelsToLabelsProto(labels.FromStrings("instance", "localhost2", "job", "demo2"), nil)
+	lbs1 := LabelsToLabelsProto(labels.FromStrings("instance", "localhost1", "job", "demo1"), nil)
+	lbs2 := LabelsToLabelsProto(labels.FromStrings("instance", "localhost2", "job", "demo2"), nil)
 	chunk := prompb.Chunk{
 		Type: prompb.Chunk_XOR,
 		Data: make([]byte, 100),
@@ -802,7 +802,7 @@ func (c *mockChunkSeriesSet) Next() bool {
 
 func (c *mockChunkSeriesSet) At() storage.ChunkSeries {
 	return &storage.ChunkSeriesEntry{
-		Lset: labelProtosToLabels(&c.builder, c.chunkedSeries[c.index].Labels),
+		Lset: LabelProtosToLabels(&c.builder, c.chunkedSeries[c.index].Labels),
 		ChunkIteratorFn: func(chunks.Iterator) chunks.Iterator {
 			return &mockChunkIterator{
 				chunks: c.chunkedSeries[c.index].Chunks,

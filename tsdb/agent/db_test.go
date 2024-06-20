@@ -16,6 +16,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"math"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -761,7 +762,9 @@ func TestDBAllowOOOSamples(t *testing.T) {
 	)
 
 	reg := prometheus.NewRegistry()
-	s := createTestAgentDB(t, reg, DefaultOptions())
+	opts := DefaultOptions()
+	opts.OutOfOrderTimeWindow = math.MaxInt64
+	s := createTestAgentDB(t, reg, opts)
 	app := s.Appender(context.TODO())
 
 	// Let's add some samples in the [offset, offset+numDatapoints) range.
@@ -877,6 +880,56 @@ func TestDBAllowOOOSamples(t *testing.T) {
 	require.Equal(t, float64(40), m.Metric[0].Counter.GetValue(), "agent wal mismatch of total appended samples")
 	require.Equal(t, float64(80), m.Metric[1].Counter.GetValue(), "agent wal mismatch of total appended histograms")
 	require.NoError(t, db.Close())
+}
+
+func TestDBOutOfOrderTimeWindow(t *testing.T) {
+	tc := []struct {
+		outOfOrderTimeWindow, firstTs, secondTs int64
+		expectedError                           error
+	}{
+		{0, 100, 101, nil},
+		{0, 100, 100, storage.ErrOutOfOrderSample},
+		{0, 100, 99, storage.ErrOutOfOrderSample},
+		{100, 100, 1, nil},
+		{100, 100, 0, storage.ErrOutOfOrderSample},
+	}
+
+	for _, c := range tc {
+		t.Run(fmt.Sprintf("outOfOrderTimeWindow=%d, firstTs=%d, secondTs=%d, expectedError=%s", c.outOfOrderTimeWindow, c.firstTs, c.secondTs, c.expectedError), func(t *testing.T) {
+			reg := prometheus.NewRegistry()
+			opts := DefaultOptions()
+			opts.OutOfOrderTimeWindow = c.outOfOrderTimeWindow
+			s := createTestAgentDB(t, reg, opts)
+			app := s.Appender(context.TODO())
+
+			lbls := labelsForTest(t.Name()+"_histogram", 1)
+			lset := labels.New(lbls[0]...)
+			_, err := app.AppendHistogram(0, lset, c.firstTs, tsdbutil.GenerateTestHistograms(1)[0], nil)
+			require.NoError(t, err)
+			err = app.Commit()
+			require.NoError(t, err)
+			_, err = app.AppendHistogram(0, lset, c.secondTs, tsdbutil.GenerateTestHistograms(1)[0], nil)
+			require.ErrorIs(t, err, c.expectedError)
+
+			lbls = labelsForTest(t.Name(), 1)
+			lset = labels.New(lbls[0]...)
+			_, err = app.Append(0, lset, c.firstTs, 0)
+			require.NoError(t, err)
+			err = app.Commit()
+			require.NoError(t, err)
+			_, err = app.Append(0, lset, c.secondTs, 0)
+			require.ErrorIs(t, err, c.expectedError)
+
+			expectedAppendedSamples := float64(2)
+			if c.expectedError != nil {
+				expectedAppendedSamples = 1
+			}
+			m := gatherFamily(t, reg, "prometheus_agent_samples_appended_total")
+			require.Equal(t, expectedAppendedSamples, m.Metric[0].Counter.GetValue(), "agent wal mismatch of total appended samples")
+			require.Equal(t, expectedAppendedSamples, m.Metric[1].Counter.GetValue(), "agent wal mismatch of total appended histograms")
+			require.NoError(t, s.Close())
+		})
+	}
 }
 
 func BenchmarkCreateSeries(b *testing.B) {

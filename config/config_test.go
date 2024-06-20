@@ -76,6 +76,7 @@ const (
 	globLabelLimit            = 30
 	globLabelNameLengthLimit  = 200
 	globLabelValueLengthLimit = 200
+	globalGoGC                = 42
 )
 
 var expectedConf = &Config{
@@ -94,6 +95,10 @@ var expectedConf = &Config{
 		LabelNameLengthLimit:  globLabelNameLengthLimit,
 		LabelValueLengthLimit: globLabelValueLengthLimit,
 		ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+	},
+
+	Runtime: RuntimeConfig{
+		GoGC: globalGoGC,
 	},
 
 	RuleFiles: []string{
@@ -2081,6 +2086,7 @@ func TestEmptyGlobalBlock(t *testing.T) {
 	c, err := Load("global:\n", false, log.NewNopLogger())
 	require.NoError(t, err)
 	exp := DefaultConfig
+	exp.Runtime = DefaultRuntimeConfig
 	require.Equal(t, exp, *c)
 }
 

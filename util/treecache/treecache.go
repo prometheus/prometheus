@@ -200,7 +200,7 @@ func (tc *ZookeeperTreeCache) loop(path string) {
 				failure()
 			} else {
 				tc.resyncState(tc.prefix, tc.head, previousState)
-				level.Info(tc.logger).Log("Zookeeper resync successful")
+				level.Info(tc.logger).Log("msg", "Zookeeper resync successful")
 				failureMode = false
 			}
 		case <-tc.stop:

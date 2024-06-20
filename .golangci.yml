@@ -29,6 +29,7 @@ linters:
     - unused
     - usestdlibvars
     - whitespace
+    - loggercheck
 
 issues:
   max-same-issues: 0
@@ -47,7 +48,7 @@ issues:
       source: "^// ==="
     - linters:
         - perfsprint
-      text: "fmt.Sprintf can be replaced with string addition"
+      text: "fmt.Sprintf can be replaced with string concatenation"
 linters-settings:
   depguard:
     rules:

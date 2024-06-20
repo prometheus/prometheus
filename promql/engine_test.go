@@ -21,6 +21,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -58,7 +59,9 @@ func TestQueryConcurrency(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 	queryTracker := promql.NewActiveQueryTracker(dir, maxConcurrency, nil)
-	t.Cleanup(queryTracker.Close)
+	t.Cleanup(func() {
+		require.NoError(t, queryTracker.Close())
+	})
 
 	opts := promql.EngineOpts{
 		Logger:             nil,
@@ -90,9 +93,14 @@ func TestQueryConcurrency(t *testing.T) {
 		return nil
 	}
 
+	var wg sync.WaitGroup
 	for i := 0; i < maxConcurrency; i++ {
 		q := engine.NewTestQuery(f)
-		go q.Exec(ctx)
+		wg.Add(1)
+		go func() {
+			q.Exec(ctx)
+			wg.Done()
+		}()
 		select {
 		case <-processing:
 			// Expected.
@@ -102,7 +110,11 @@ func TestQueryConcurrency(t *testing.T) {
 	}
 
 	q := engine.NewTestQuery(f)
-	go q.Exec(ctx)
+	wg.Add(1)
+	go func() {
+		q.Exec(ctx)
+		wg.Done()
+	}()
 
 	select {
 	case <-processing:
@@ -125,6 +137,8 @@ func TestQueryConcurrency(t *testing.T) {
 	for i := 0; i < maxConcurrency; i++ {
 		block <- struct{}{}
 	}
+
+	wg.Wait()
 }
 
 // contextDone returns an error if the context was canceled or timed out.
@@ -2001,47 +2015,6 @@ func TestSubquerySelector(t *testing.T) {
 	}
 }
 
-func TestTimestampFunction_StepsMoreOftenThanSamples(t *testing.T) {
-	engine := newTestEngine()
-	storage := promqltest.LoadedStorage(t, `
-load 1m
-  metric 0+1x1000
-`)
-	t.Cleanup(func() { storage.Close() })
-
-	query := "timestamp(metric)"
-	start := time.Unix(0, 0)
-	end := time.Unix(61, 0)
-	interval := time.Second
-
-	// We expect the value to be 0 for t=0s to t=59s (inclusive), then 60 for t=60s and t=61s.
-	expectedPoints := []promql.FPoint{}
-
-	for t := 0; t <= 59; t++ {
-		expectedPoints = append(expectedPoints, promql.FPoint{F: 0, T: int64(t * 1000)})
-	}
-
-	expectedPoints = append(
-		expectedPoints,
-		promql.FPoint{F: 60, T: 60_000},
-		promql.FPoint{F: 60, T: 61_000},
-	)
-
-	expectedResult := promql.Matrix{
-		promql.Series{
-			Floats: expectedPoints,
-			Metric: labels.EmptyLabels(),
-		},
-	}
-
-	qry, err := engine.NewRangeQuery(context.Background(), storage, nil, query, start, end, interval)
-	require.NoError(t, err)
-
-	res := qry.Exec(context.Background())
-	require.NoError(t, res.Err)
-	testutil.RequireEqual(t, expectedResult, res.Value)
-}
-
 type FakeQueryLogger struct {
 	closed bool
 	logs   []interface{}
@@ -3047,163 +3020,78 @@ func TestEngineOptsValidation(t *testing.T) {
 	}
 }
 
-func TestRangeQuery(t *testing.T) {
-	cases := []struct {
-		Name     string
-		Load     string
-		Query    string
-		Result   parser.Value
-		Start    time.Time
-		End      time.Time
-		Interval time.Duration
+func TestInstantQueryWithRangeVectorSelector(t *testing.T) {
+	engine := newTestEngine()
+
+	baseT := timestamp.Time(0)
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			some_metric{env="1"} 0+1x4
+			some_metric{env="2"} 0+2x4
+			some_metric_with_stale_marker 0 1 stale 3
+	`)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	testCases := map[string]struct {
+		expr     string
+		expected promql.Matrix
+		ts       time.Time
 	}{
-		{
-			Name: "sum_over_time with all values",
-			Load: `load 30s
-              bar 0 1 10 100 1000`,
-			Query: "sum_over_time(bar[30s])",
-			Result: promql.Matrix{
-				promql.Series{
-					Floats: []promql.FPoint{{F: 0, T: 0}, {F: 11, T: 60000}, {F: 1100, T: 120000}},
-					Metric: labels.EmptyLabels(),
+		"matches series with points in range": {
+			expr: "some_metric[1m]",
+			ts:   baseT.Add(2 * time.Minute),
+			expected: promql.Matrix{
+				{
+					Metric: labels.FromStrings("__name__", "some_metric", "env", "1"),
+					Floats: []promql.FPoint{
+						{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 1},
+						{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), F: 2},
+					},
+				},
+				{
+					Metric: labels.FromStrings("__name__", "some_metric", "env", "2"),
+					Floats: []promql.FPoint{
+						{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 2},
+						{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), F: 4},
+					},
 				},
 			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(120, 0),
-			Interval: 60 * time.Second,
 		},
-		{
-			Name: "sum_over_time with trailing values",
-			Load: `load 30s
-              bar 0 1 10 100 1000 0 0 0 0`,
-			Query: "sum_over_time(bar[30s])",
-			Result: promql.Matrix{
-				promql.Series{
-					Floats: []promql.FPoint{{F: 0, T: 0}, {F: 11, T: 60000}, {F: 1100, T: 120000}},
-					Metric: labels.EmptyLabels(),
-				},
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(120, 0),
-			Interval: 60 * time.Second,
+		"matches no series": {
+			expr:     "some_nonexistent_metric[1m]",
+			ts:       baseT,
+			expected: promql.Matrix{},
 		},
-		{
-			Name: "sum_over_time with all values long",
-			Load: `load 30s
-              bar 0 1 10 100 1000 10000 100000 1000000 10000000`,
-			Query: "sum_over_time(bar[30s])",
-			Result: promql.Matrix{
-				promql.Series{
-					Floats: []promql.FPoint{{F: 0, T: 0}, {F: 11, T: 60000}, {F: 1100, T: 120000}, {F: 110000, T: 180000}, {F: 11000000, T: 240000}},
-					Metric: labels.EmptyLabels(),
-				},
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(240, 0),
-			Interval: 60 * time.Second,
+		"no samples in range": {
+			expr:     "some_metric[1m]",
+			ts:       baseT.Add(20 * time.Minute),
+			expected: promql.Matrix{},
 		},
-		{
-			Name: "sum_over_time with all values random",
-			Load: `load 30s
-              bar 5 17 42 2 7 905 51`,
-			Query: "sum_over_time(bar[30s])",
-			Result: promql.Matrix{
-				promql.Series{
-					Floats: []promql.FPoint{{F: 5, T: 0}, {F: 59, T: 60000}, {F: 9, T: 120000}, {F: 956, T: 180000}},
-					Metric: labels.EmptyLabels(),
+		"metric with stale marker": {
+			expr: "some_metric_with_stale_marker[3m]",
+			ts:   baseT.Add(3 * time.Minute),
+			expected: promql.Matrix{
+				{
+					Metric: labels.FromStrings("__name__", "some_metric_with_stale_marker"),
+					Floats: []promql.FPoint{
+						{T: timestamp.FromTime(baseT), F: 0},
+						{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 1},
+						{T: timestamp.FromTime(baseT.Add(3 * time.Minute)), F: 3},
+					},
 				},
 			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(180, 0),
-			Interval: 60 * time.Second,
-		},
-		{
-			Name: "metric query",
-			Load: `load 30s
-              metric 1+1x4`,
-			Query: "metric",
-			Result: promql.Matrix{
-				promql.Series{
-					Floats: []promql.FPoint{{F: 1, T: 0}, {F: 3, T: 60000}, {F: 5, T: 120000}},
-					Metric: labels.FromStrings("__name__", "metric"),
-				},
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(120, 0),
-			Interval: 1 * time.Minute,
-		},
-		{
-			Name: "metric query with trailing values",
-			Load: `load 30s
-              metric 1+1x8`,
-			Query: "metric",
-			Result: promql.Matrix{
-				promql.Series{
-					Floats: []promql.FPoint{{F: 1, T: 0}, {F: 3, T: 60000}, {F: 5, T: 120000}},
-					Metric: labels.FromStrings("__name__", "metric"),
-				},
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(120, 0),
-			Interval: 1 * time.Minute,
-		},
-		{
-			Name: "short-circuit",
-			Load: `load 30s
-							foo{job="1"} 1+1x4
-							bar{job="2"} 1+1x4`,
-			Query: `foo > 2 or bar`,
-			Result: promql.Matrix{
-				promql.Series{
-					Floats: []promql.FPoint{{F: 1, T: 0}, {F: 3, T: 60000}, {F: 5, T: 120000}},
-					Metric: labels.FromStrings(
-						"__name__", "bar",
-						"job", "2",
-					),
-				},
-				promql.Series{
-					Floats: []promql.FPoint{{F: 3, T: 60000}, {F: 5, T: 120000}},
-					Metric: labels.FromStrings(
-						"__name__", "foo",
-						"job", "1",
-					),
-				},
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(120, 0),
-			Interval: 1 * time.Minute,
-		},
-		{
-			Name: "drop-metric-name",
-			Load: `load 30s
-							requests{job="1", __address__="bar"} 100`,
-			Query: `requests * 2`,
-			Result: promql.Matrix{
-				promql.Series{
-					Floats: []promql.FPoint{{F: 200, T: 0}, {F: 200, T: 60000}, {F: 200, T: 120000}},
-					Metric: labels.FromStrings(
-						"__address__", "bar",
-						"job", "1",
-					),
-				},
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(120, 0),
-			Interval: 1 * time.Minute,
 		},
 	}
-	for _, c := range cases {
-		t.Run(c.Name, func(t *testing.T) {
-			engine := newTestEngine()
-			storage := promqltest.LoadedStorage(t, c.Load)
-			t.Cleanup(func() { storage.Close() })
 
-			qry, err := engine.NewRangeQuery(context.Background(), storage, nil, c.Query, c.Start, c.End, c.Interval)
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			q, err := engine.NewInstantQuery(context.Background(), storage, nil, testCase.expr, testCase.ts)
 			require.NoError(t, err)
+			defer q.Close()
 
-			res := qry.Exec(context.Background())
+			res := q.Exec(context.Background())
 			require.NoError(t, res.Err)
-			testutil.RequireEqual(t, c.Result, res.Value)
+			testutil.RequireEqual(t, testCase.expected, res.Value)
 		})
 	}
 }
