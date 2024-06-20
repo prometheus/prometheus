@@ -1350,7 +1350,6 @@ func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping 
 		if math.IsNaN(param) {
 			ev.errorf("Ratio value %v IsNan", param)
 		}
-		ratio = param
 		switch {
 		case param == 0:
 			return nil, warnings
@@ -1360,6 +1359,8 @@ func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping 
 		case param > 1.0:
 			ratio = 1.0
 			warnings.Add(annotations.NewInvalidRatioWarning(param, ratio, aggExpr.Param.PositionRange()))
+		default:
+			ratio = param
 		}
 		seriess = make(map[uint64]Series, len(inputMatrix)) // Output series by series hash.
 	case parser.QUANTILE:
