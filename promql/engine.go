@@ -3045,12 +3045,11 @@ seriesLoop:
 			}
 
 		case parser.LIMITK:
-			if len(group.heap) < k {
-				heap.Push(&group.heap, &s)
-			} else {
-				// The whole point behind limitk vs topk: early break after adding k elements.
+			// The whole point behind limitk vs topk: early break after adding k elements.
+			if len(group.heap) >= k {
 				break seriesLoop
 			}
+			heap.Push(&group.heap, &s)
 
 		case parser.LIMIT_RATIO:
 			if math.IsNaN(r) || ratiosampler.AddRatioSample(r, &s) {
