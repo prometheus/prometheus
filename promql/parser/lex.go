@@ -471,6 +471,10 @@ func lexStatements(l *Lexer) stateFn {
 			skipSpaces(l)
 		}
 		l.bracketOpen = true
+		if l.peek() == '^' {
+			l.emit(POW)
+			l.next()
+		}
 		return lexDuration
 	case r == ']':
 		if !l.bracketOpen {
