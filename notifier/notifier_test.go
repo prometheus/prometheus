@@ -844,8 +844,8 @@ func TestStop_DrainingDisabled(t *testing.T) {
 
 	m := NewManager(
 		&Options{
-			QueueCapacity: 10,
-			DrainTimeout:  0,
+			QueueCapacity:   10,
+			DrainOnShutdown: false,
 		},
 		nil,
 	)
@@ -899,7 +899,7 @@ func TestStop_DrainingDisabled(t *testing.T) {
 	require.Equal(t, []string{"alert-1"}, alertsReceived)
 }
 
-func TestStop_DrainingEnabled_AllNotificationsCompletedWithinTimeout(t *testing.T) {
+func TestStop_DrainingEnabled(t *testing.T) {
 	releaseReceiver := make(chan struct{})
 	receiverReceivedRequest := make(chan struct{}, 2)
 	var alertsReceived []string
@@ -931,8 +931,8 @@ func TestStop_DrainingEnabled_AllNotificationsCompletedWithinTimeout(t *testing.
 
 	m := NewManager(
 		&Options{
-			QueueCapacity: 10,
-			DrainTimeout:  time.Second,
+			QueueCapacity:   10,
+			DrainOnShutdown: true,
 		},
 		nil,
 	)
@@ -983,118 +983,4 @@ func TestStop_DrainingEnabled_AllNotificationsCompletedWithinTimeout(t *testing.
 	}
 
 	require.Equal(t, []string{"alert-1", "alert-2"}, alertsReceived)
-}
-
-func TestStop_DrainingEnabled_NotAllNotificationsCompletedWithinTimeout(t *testing.T) {
-	releaseReceiver := make(chan struct{}, 4)
-	receiverReceivedRequest := make(chan struct{}, 4)
-	requestsReceived := 0
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Let the test know we've received a request and might be waiting.
-		receiverReceivedRequest <- struct{}{}
-
-		// Wait for the test to release this request.
-		<-releaseReceiver
-
-		requestsReceived++
-
-		if requestsReceived > 3 {
-			panic("should not receive fourth notification batch - drain should have timed out")
-		}
-
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer func() {
-		server.Close()
-	}()
-
-	m := NewManager(
-		&Options{
-			QueueCapacity: 4 * maxBatchSize,
-			DrainTimeout:  time.Second,
-		},
-		nil,
-	)
-
-	m.alertmanagers = make(map[string]*alertmanagerSet)
-
-	am1Cfg := config.DefaultAlertmanagerConfig
-	am1Cfg.Timeout = model.Duration(time.Second)
-
-	m.alertmanagers["1"] = &alertmanagerSet{
-		ams: []alertmanager{
-			alertmanagerMock{
-				urlf: func() string { return server.URL },
-			},
-		},
-		cfg: &am1Cfg,
-	}
-
-	notificationManagerStopped := make(chan struct{})
-
-	go func() {
-		defer close(notificationManagerStopped)
-		m.Run(nil)
-	}()
-
-	generateAlertBatch := func(firstIndex int) []*Alert {
-		alerts := make([]*Alert, 0, maxBatchSize)
-
-		for i := 0; i < maxBatchSize; i++ {
-			alerts = append(alerts, &Alert{
-				Labels: labels.FromStrings(labels.AlertName, "alert-"+strconv.Itoa(firstIndex+i)),
-			})
-		}
-
-		return alerts
-	}
-
-	// Queue four alert batches. The first should be immediately sent to the receiver, which should block until we release it later.
-	m.Send(&Alert{Labels: labels.FromStrings(labels.AlertName, "alert-1")})
-
-	select {
-	case <-receiverReceivedRequest:
-		// Nothing more to do.
-	case <-time.After(time.Second):
-		require.FailNow(t, "gave up waiting for receiver to receive first notification batch")
-	}
-
-	m.Send(generateAlertBatch(2)...)
-	m.Send(generateAlertBatch(2 + maxBatchSize)...)
-	m.Send(generateAlertBatch(2 + (2 * maxBatchSize))...)
-
-	// Stop the notification manager and allow the first two notification request batches to proceed.
-	// The third batch will wait in the receiver, and the fourth will never be sent.
-	m.Stop()
-	releaseReceiver <- struct{}{}
-	releaseReceiver <- struct{}{}
-
-	// Wait for the notification manager to stop within the timeout and confirm the first two batches were sent.
-	select {
-	case <-notificationManagerStopped:
-		// Nothing more to do.
-	case <-time.After(2 * time.Second):
-		require.FailNow(t, "gave up waiting for notification manager to stop")
-	}
-
-	require.Equal(t, 2, requestsReceived)
-
-	// Confirm the receiver received the second batch.
-	select {
-	case <-receiverReceivedRequest:
-		// Nothing more to do.
-	case <-time.After(time.Second):
-		require.FailNow(t, "gave up waiting for receiver to receive second notification batch")
-	}
-
-	// Release the receiver to receive any outstanding requests, and wait until it has processed the third batch that
-	// would have been inflight when the notification manager timed out draining.
-	close(releaseReceiver)
-	select {
-	case <-receiverReceivedRequest:
-		// Nothing more to do.
-	case <-time.After(time.Second):
-		require.FailNow(t, "gave up waiting for receiver to receive third notification batch")
-	}
 }

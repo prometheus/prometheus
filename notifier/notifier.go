@@ -110,11 +110,11 @@ type Manager struct {
 
 	metrics *alertMetrics
 
-	more                  chan struct{}
-	mtx                   sync.RWMutex
-	stopAndDrainRequested chan struct{}
-	ctx                   context.Context
-	cancel                func()
+	more          chan struct{}
+	mtx           sync.RWMutex
+	stopRequested chan struct{}
+	ctx           context.Context
+	cancel        func()
 
 	alertmanagers map[string]*alertmanagerSet
 	logger        log.Logger
@@ -122,10 +122,10 @@ type Manager struct {
 
 // Options are the configurable parameters of a Handler.
 type Options struct {
-	QueueCapacity  int
-	DrainTimeout   time.Duration
-	ExternalLabels labels.Labels
-	RelabelConfigs []*relabel.Config
+	QueueCapacity   int
+	DrainOnShutdown bool
+	ExternalLabels  labels.Labels
+	RelabelConfigs  []*relabel.Config
 	// Used for sending HTTP requests to the Alertmanager.
 	Do func(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, error)
 
@@ -229,13 +229,13 @@ func NewManager(o *Options, logger log.Logger) *Manager {
 	}
 
 	n := &Manager{
-		queue:                 make([]*Alert, 0, o.QueueCapacity),
-		ctx:                   ctx,
-		cancel:                cancel,
-		more:                  make(chan struct{}, 1),
-		stopAndDrainRequested: make(chan struct{}, 1),
-		opts:                  o,
-		logger:                logger,
+		queue:         make([]*Alert, 0, o.QueueCapacity),
+		ctx:           ctx,
+		cancel:        cancel,
+		more:          make(chan struct{}, 1),
+		stopRequested: make(chan struct{}, 1),
+		opts:          o,
+		logger:        logger,
 	}
 
 	queueLenFunc := func() float64 { return float64(n.queueLen()) }
@@ -316,7 +316,7 @@ func (n *Manager) runLoop(tsets <-chan map[string][]*targetgroup.Group) {
 		// new alertmanager targets if they are available, before sending new
 		// alerts.
 		select {
-		case <-n.stopAndDrainRequested:
+		case <-n.stopRequested:
 			return
 
 		case ts := <-tsets:
@@ -324,7 +324,7 @@ func (n *Manager) runLoop(tsets <-chan map[string][]*targetgroup.Group) {
 
 		default:
 			select {
-			case <-n.stopAndDrainRequested:
+			case <-n.stopRequested:
 				return
 
 			case ts := <-tsets:
@@ -352,24 +352,19 @@ func (n *Manager) sendOneBatch() {
 }
 
 func (n *Manager) drainQueue() {
-	if n.opts.DrainTimeout == 0 {
-		// Draining disabled, we are done.
+	if !n.opts.DrainOnShutdown {
+		if n.queueLen() > 0 {
+			level.Warn(n.logger).Log("msg", "Draining remaining notifications on shutdown is disabled, and some notifications have been dropped", "count", n.queueLen())
+			n.metrics.dropped.Add(float64(n.queueLen()))
+		}
+
 		return
 	}
 
 	level.Info(n.logger).Log("msg", "Draining any remaining notifications...")
-	drainTimedOut := time.After(n.opts.DrainTimeout)
 
-	// Keep trying to send remaining notifications until we empty the queue or run out of time.
 	for n.queueLen() > 0 {
-		select {
-		case <-drainTimedOut:
-			level.Warn(n.logger).Log("msg", "Timed out draining remaining notifications, some notifications have been dropped", "droppedCount", n.queueLen())
-			return
-
-		default:
-			n.sendOneBatch()
-		}
+		n.sendOneBatch()
 	}
 
 	level.Info(n.logger).Log("msg", "Remaining notifications drained")
@@ -673,7 +668,7 @@ func (n *Manager) sendOne(ctx context.Context, c *http.Client, url string, b []b
 // A drain timeout of 0 means that no queued notifications will be drained and they will instead be dropped.
 func (n *Manager) Stop() {
 	level.Info(n.logger).Log("msg", "Stopping notification manager...")
-	n.stopAndDrainRequested <- struct{}{}
+	n.stopRequested <- struct{}{}
 }
 
 // Alertmanager holds Alertmanager endpoint information.
