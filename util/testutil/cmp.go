@@ -29,6 +29,11 @@ func RequireEqual(t testing.TB, expected, actual interface{}, msgAndArgs ...inte
 	RequireEqualWithOptions(t, expected, actual, nil, msgAndArgs...)
 }
 
+func CheckEqual(t testing.TB, expected interface{}, actual interface{}) bool {
+	t.Helper()
+	return cmp.Equal(expected, actual, cmp.Comparer(labels.Equal))
+}
+
 // As RequireEqual but allows extra cmp.Options.
 func RequireEqualWithOptions(t testing.TB, expected, actual interface{}, extra []cmp.Option, msgAndArgs ...interface{}) {
 	t.Helper()

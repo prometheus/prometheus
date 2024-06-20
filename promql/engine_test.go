@@ -1795,8 +1795,8 @@ load 10s
 		start, end, interval int64 // Time in seconds.
 		expectError          bool
 		result               parser.Value
-		// resultIn             parser.Value
-		resultLen int // Required if resultIn is set
+		resultIn             parser.Value
+		resultLen            int // Required if resultIn is set
 	}{
 		{
 			// Limit==0 -> empty matrix
@@ -1807,10 +1807,10 @@ load 10s
 		{
 			// Limit==2 -> return 2 timeseries (resultLen: 2),
 			// also asserting that they are member of full TSs
-			query: `limitk(1, metric)`,
+			query: `limitk(2, metric)`,
 			start: 0, end: 20, interval: 10,
-			resultLen: 1,
-			// resultIn:  fullMatrix20,
+			resultLen: 2,
+			resultIn:  fullMatrix20,
 		},
 		{
 			// Limit==5 -> return full matrix (5 timeseries)
@@ -1853,27 +1853,29 @@ load 10s
 				return
 			}
 			require.NoError(t, res.Err)
-			// switch {
-			if c.result != nil {
-				if expMat, ok := c.result.(promql.Matrix); ok {
-					sort.Sort(expMat)
-					sort.Sort(res.Value.(promql.Matrix))
-				}
+			switch {
+			case c.result != nil:
 				testutil.RequireEqual(t, c.result, res.Value, "query %q failed for RequireEqual()", c.query)
-				// TODO(jjo) work out how to test implement require.Contains ala testutil.RequireEqual
-				/*
-					case c.resultIn != nil:
-						require.Len(t, res.Value.(promql.Matrix), c.resultLen, "query %q failed", c.query)
-						if expMat, ok := c.resultIn.(promql.Matrix); ok {
-							sort.Sort(expMat)
-							sort.Sort(res.Value.(promql.Matrix))
-							for _, e := range res.Value.(promql.Matrix) {
-								require.Contains(t, c.resultIn, e, "query %q failed for require.Contains()", c.query)
+			case c.resultIn != nil:
+				require.Len(t, res.Value.(promql.Matrix), c.resultLen, "query %q failed", c.query)
+				cnt := 0
+				requireCommonSeries := func(t *testing.T, length int, actMatrix, expMatrix promql.Matrix) {
+					for _, actSeries := range actMatrix {
+						for _, expSeries := range expMatrix {
+							if testutil.CheckEqual(t, actSeries, expSeries) {
+								cnt++
+								if cnt == length {
+									return
+								}
 							}
 						}
-				*/
+					}
+					require.Fail(t, fmt.Sprintf("Expected and Actual matrices don't have %d equal series: \n"+
+						"Expected: \n%s\n"+
+						"Actual: \n%s\n", c.resultLen, c.resultIn, res.Value))
+				}
+				requireCommonSeries(t, c.resultLen, c.resultIn.(promql.Matrix), res.Value.(promql.Matrix))
 			}
-			//}
 		})
 	}
 }
@@ -1995,10 +1997,6 @@ load 10s
 			} else {
 				require.Empty(t, res.Warnings)
 			}
-			if expMat, ok := c.result.(promql.Matrix); ok {
-				sort.Sort(expMat)
-				sort.Sort(res.Value.(promql.Matrix))
-			}
 			testutil.RequireEqual(t, c.result, res.Value, "query %q failed for requireEqual()", c.query)
 		})
 	}
@@ -2060,10 +2058,6 @@ load 10s
 
 			res := qry.Exec(context.Background())
 			require.NoError(t, res.Err)
-			if expMat, ok := c.result.(promql.Matrix); ok {
-				sort.Sort(expMat)
-				sort.Sort(res.Value.(promql.Matrix))
-			}
 			testutil.RequireEqual(t, c.result, res.Value, "query %q failed for RequireEqual()", c.query)
 		})
 	}
