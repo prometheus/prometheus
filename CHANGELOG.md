@@ -4,6 +4,8 @@
 
 _Please add changes here that are only in the release-3.0 branch. These will be the source for the changelog when cutting the first release candidate for v3.0.0._
 
+* [CHANGE] PromQL: Range selectors and the lookback delta are now left-open, i.e. a sample coinciding with the lower time limit is excluded rather than included. #13904
+
 ## unreleased
 
 ## 2.53.0 / 2024-06-16
