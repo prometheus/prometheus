@@ -109,22 +109,21 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	outOfOrderExemplarErrs := 0
 	samplesWithInvalidLabels := 0
 
-	app := h.appendable.Appender(ctx)
+	timeLimitApp := &timeLimitAppender{
+		Appender: h.appendable.Appender(ctx),
+		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
+	}
+
 	defer func() {
 		if err != nil {
-			_ = app.Rollback()
+			_ = timeLimitApp.Rollback()
 			return
 		}
-		err = app.Commit()
+		err = timeLimitApp.Commit()
 	}()
 
 	b := labels.NewScratchBuilder(0)
 	var exemplarErr error
-
-	timeLimitApp := &timeLimitAppender{
-		Appender: app,
-		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
-	}
 
 	for _, ts := range req.Timeseries {
 		labels := labelProtosToLabels(&b, ts.Labels)
@@ -271,6 +270,18 @@ func (app *timeLimitAppender) AppendHistogram(ref storage.SeriesRef, l labels.La
 	}
 
 	ref, err := app.Appender.AppendHistogram(ref, l, t, h, fh)
+	if err != nil {
+		return 0, err
+	}
+	return ref, nil
+}
+
+func (app *timeLimitAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+	if e.Ts > app.maxTime {
+		return 0, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds)
+	}
+
+	ref, err := app.Appender.AppendExemplar(ref, l, e)
 	if err != nil {
 		return 0, err
 	}
