@@ -3052,7 +3052,7 @@ seriesLoop:
 			heap.Push(&group.heap, &s)
 
 		case parser.LIMIT_RATIO:
-			if math.IsNaN(r) || ratiosampler.AddRatioSample(r, &s) {
+			if ratiosampler.AddRatioSample(r, &s) {
 				heap.Push(&group.heap, &s)
 			}
 
