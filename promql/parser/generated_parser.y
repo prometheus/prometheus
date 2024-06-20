@@ -28,22 +28,23 @@ import (
 %}
 
 %union {
-    node        Node
-    item        Item
-    matchers    []*labels.Matcher
-    matcher     *labels.Matcher
-    label       labels.Label
-    labels      labels.Labels
-    lblList     []labels.Label
-    strings     []string
-    series      []SequenceValue
-    histogram   *histogram.FloatHistogram
-    descriptors map[string]interface{}
-    bucket_set  []float64
-    int         int64
-    uint        uint64
-    float       float64
-    duration    time.Duration
+    node           Node
+    item           Item
+    matchers       []*labels.Matcher
+    matcher        *labels.Matcher
+    label          labels.Label
+    labels         labels.Labels
+    lblList        []labels.Label
+    strings        []string
+    series         []SequenceValue
+    histogram      *histogram.FloatHistogram
+    descriptors    map[string]interface{}
+    bucket_set     []float64
+    int            int64
+    uint           uint64
+    float          float64
+    duration       time.Duration
+    range_duration rangeDuration
 }
 
 
@@ -449,7 +450,7 @@ at_modifier_preprocessors: START | END;
  * Subquery and range selectors.
  */
 
-matrix_selector : expr LEFT_BRACKET duration RIGHT_BRACKET
+matrix_selector : expr LEFT_BRACKET range_duration RIGHT_BRACKET
                         {
                         var errMsg string
                         vs, ok := $1.(*VectorSelector)
@@ -468,7 +469,9 @@ matrix_selector : expr LEFT_BRACKET duration RIGHT_BRACKET
 
                         $$ = &MatrixSelector{
                                 VectorSelector: $1.(Expr),
-                                Range: $3,
+                                Range: $3.duration,
+                                OpenLeft: $3.openLeft,
+                                OpenRight: $3.openRight,
                                 EndPos: yylex.(*parser).lastClosing,
                         }
                         }
@@ -898,6 +901,47 @@ duration        : DURATION
                         }
                         }
                 ;
+
+range_duration :  DURATION
+			{
+			var err error
+			$$.duration, err = parseDuration($1.Val)
+			if err != nil {
+				yylex.(*parser).addParseErr($1.PositionRange(), err)
+			}
+			}
+		| POW DURATION
+			{
+			var err error
+			$$.duration, err = parseDuration($1.Val)
+			if err != nil {
+				yylex.(*parser).addParseErr($1.PositionRange(), err)
+			}
+
+			$$.openLeft = true
+			}
+		| DURATION POW
+			{
+			var err error
+			$$.duration, err = parseDuration($1.Val)
+			if err != nil {
+				yylex.(*parser).addParseErr($1.PositionRange(), err)
+			}
+
+			$$.openRight = true
+			}
+		| POW DURATION POW
+			{
+			var err error
+			$$.duration, err = parseDuration($1.Val)
+			if err != nil {
+				yylex.(*parser).addParseErr($1.PositionRange(), err)
+			}
+
+			$$.openLeft = true
+			$$.openRight = true
+			}
+		;
 
 
 string_literal  : STRING

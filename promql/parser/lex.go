@@ -16,6 +16,7 @@ package parser
 import (
 	"fmt"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -999,4 +1000,10 @@ func isLabel(s string) bool {
 		}
 	}
 	return true
+}
+
+type rangeDuration struct {
+	duration  time.Duration
+	openLeft  bool
+	openRight bool
 }

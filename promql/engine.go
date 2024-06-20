@@ -685,6 +685,9 @@ func durationMilliseconds(d time.Duration) int64 {
 func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.EvalStmt) (parser.Value, annotations.Annotations, error) {
 	prepareSpanTimer, ctxPrepare := query.stats.GetSpanTimer(ctx, stats.QueryPreparationTime, ng.metrics.queryPrepareTime)
 	mint, maxt := FindMinMaxTime(s)
+	// metric[5m] + metric[5m] offset 5m
+	// mint -10m (-5m - 5m offset)
+	// maxt now()
 	querier, err := query.queryable.Querier(mint, maxt)
 	if err != nil {
 		prepareSpanTimer.Finish()
@@ -2171,6 +2174,15 @@ func (ev *evaluator) matrixSelector(node *parser.MatrixSelector) (Matrix, annota
 
 		it = storage.NewBuffer(durationMilliseconds(node.Range))
 	)
+
+	// TODO Test for case where range of 1ms
+	if node.OpenLeft {
+		mint += 1
+	}
+	if node.OpenRight {
+		maxt -= 1
+	}
+
 	ws, err := checkAndExpandSeriesSet(ev.ctx, node)
 	if err != nil {
 		ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})

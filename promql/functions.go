@@ -73,7 +73,7 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	var (
 		samples            = vals[0].(Matrix)[0]
 		rangeStart         = enh.Ts - durationMilliseconds(ms.Range+vs.Offset)
-		rangeEnd           = enh.Ts - durationMilliseconds(vs.Offset)
+		rangeEnd           = enh.Ts - durationMilliseconds(vs.Offset) // TODO Open this in the vector selector
 		resultFloat        float64
 		resultHistogram    *histogram.FloatHistogram
 		firstT, lastT      int64

@@ -126,6 +126,9 @@ type MatrixSelector struct {
 	VectorSelector Expr
 	Range          time.Duration
 
+	OpenLeft  bool
+	OpenRight bool
+
 	EndPos posrange.Pos
 }
 
