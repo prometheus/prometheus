@@ -742,7 +742,7 @@ func (c *TestWriteClient) expectExemplars(ss []record.RefExemplar, series []reco
 	for _, s := range ss {
 		seriesName := getSeriesNameFromRef(series[s.Ref])
 		e := prompb.Exemplar{
-			Labels:    labelsToLabelsProto(s.Labels, nil),
+			Labels:    LabelsToLabelsProto(s.Labels, nil),
 			Timestamp: s.T,
 			Value:     s.V,
 		}
@@ -826,7 +826,7 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) error {
 	builder := labels.NewScratchBuilder(0)
 	count := 0
 	for _, ts := range reqProto.Timeseries {
-		labels := labelProtosToLabels(&builder, ts.Labels)
+		labels := LabelProtosToLabels(&builder, ts.Labels)
 		seriesName := labels.Get("__name__")
 		for _, sample := range ts.Samples {
 			count++
