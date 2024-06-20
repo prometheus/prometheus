@@ -23,6 +23,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/grafana/regexp"
@@ -978,9 +979,13 @@ func TestMemPostings_Delete(t *testing.T) {
 	p.Add(3, labels.FromStrings("lbl2", "a"))
 
 	before := p.Get(allPostingsKey.Name, allPostingsKey.Value)
-	p.Delete(map[storage.SeriesRef]struct{}{
+	deletedRefs := map[storage.SeriesRef]struct{}{
 		2: {},
-	})
+	}
+	affectedLabels := map[labels.Label]struct{}{
+		{Name: "lbl1", Value: "b"}: {},
+	}
+	p.Delete(deletedRefs, affectedLabels)
 	after := p.Get(allPostingsKey.Name, allPostingsKey.Value)
 
 	// Make sure postings gotten before the delete have the old data when
@@ -999,6 +1004,101 @@ func TestMemPostings_Delete(t *testing.T) {
 	expanded, err = ExpandPostings(deleted)
 	require.NoError(t, err)
 	require.Empty(t, expanded, "expected empty postings, got %v", expanded)
+}
+
+// BenchmarkMemPostings_Delete is quite heavy, so consider running it with
+// -benchtime=10x or similar to get more stable and comparable results.
+func BenchmarkMemPostings_Delete(b *testing.B) {
+	internedItoa := map[int]string{}
+	var mtx sync.RWMutex
+	itoa := func(i int) string {
+		mtx.RLock()
+		s, ok := internedItoa[i]
+		mtx.RUnlock()
+		if ok {
+			return s
+		}
+		mtx.Lock()
+		s = strconv.Itoa(i)
+		internedItoa[i] = s
+		mtx.Unlock()
+		return s
+	}
+
+	const total = 1e6
+	allSeries := [total]labels.Labels{}
+	nameValues := make([]string, 0, 100)
+	for i := 0; i < total; i++ {
+		nameValues = nameValues[:0]
+
+		// A thousand labels like lbl_x_of_1000, each with total/1000 values
+		thousand := "lbl_" + itoa(i%1000) + "_of_1000"
+		nameValues = append(nameValues, thousand, itoa(i/1000))
+		// A hundred labels like lbl_x_of_100, each with total/100 values.
+		hundred := "lbl_" + itoa(i%100) + "_of_100"
+		nameValues = append(nameValues, hundred, itoa(i/100))
+
+		if i < 100 {
+			ten := "lbl_" + itoa(i%10) + "_of_10"
+			nameValues = append(nameValues, ten, itoa(i%10))
+		}
+		allSeries[i] = labels.FromStrings(append(nameValues, "first", "a", "second", "a", "third", "a")...)
+	}
+
+	for _, refs := range []int{1, 100, 10_000} {
+		b.Run(fmt.Sprintf("refs=%d", refs), func(b *testing.B) {
+			for _, reads := range []int{0, 1, 10} {
+				b.Run(fmt.Sprintf("readers=%d", reads), func(b *testing.B) {
+					if b.N > total/refs {
+						// Just to make sure that benchmark still makes sense.
+						panic("benchmark not prepared")
+					}
+
+					p := NewMemPostings()
+					for i := range allSeries {
+						p.Add(storage.SeriesRef(i), allSeries[i])
+					}
+
+					stop := make(chan struct{})
+					wg := sync.WaitGroup{}
+					for i := 0; i < reads; i++ {
+						wg.Add(1)
+						go func(i int) {
+							lbl := "lbl_" + itoa(i) + "_of_100"
+							defer wg.Done()
+							for {
+								select {
+								case <-stop:
+									return
+								default:
+									// Get a random value of this label.
+									p.Get(lbl, itoa(rand.Intn(10000))).Next()
+								}
+							}
+						}(i)
+					}
+					b.Cleanup(func() {
+						close(stop)
+						wg.Wait()
+					})
+
+					b.ResetTimer()
+					for n := 0; n < b.N; n++ {
+						deleted := make(map[storage.SeriesRef]struct{}, refs)
+						affected := make(map[labels.Label]struct{}, refs)
+						for i := 0; i < refs; i++ {
+							ref := storage.SeriesRef(n*refs + i)
+							deleted[ref] = struct{}{}
+							allSeries[ref].Range(func(l labels.Label) {
+								affected[l] = struct{}{}
+							})
+						}
+						p.Delete(deleted, affected)
+					}
+				})
+			}
+		})
+	}
 }
 
 func TestFindIntersectingPostings(t *testing.T) {
@@ -1336,6 +1436,28 @@ func BenchmarkMemPostings_PostingsForLabelMatching(b *testing.B) {
 			})
 		})
 	}
+}
+
+func TestMemPostings_PostingsForLabelMatching(t *testing.T) {
+	mp := NewMemPostings()
+	mp.Add(1, labels.FromStrings("foo", "1"))
+	mp.Add(2, labels.FromStrings("foo", "2"))
+	mp.Add(3, labels.FromStrings("foo", "3"))
+	mp.Add(4, labels.FromStrings("foo", "4"))
+
+	isEven := func(v string) bool {
+		iv, err := strconv.Atoi(v)
+		if err != nil {
+			panic(err)
+		}
+		return iv%2 == 0
+	}
+
+	p := mp.PostingsForLabelMatching(context.Background(), "foo", isEven)
+	require.NoError(t, p.Err())
+	refs, err := ExpandPostings(p)
+	require.NoError(t, err)
+	require.Equal(t, []storage.SeriesRef{2, 4}, refs)
 }
 
 func TestMemPostings_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
