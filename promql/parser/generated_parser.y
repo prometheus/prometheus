@@ -176,6 +176,7 @@ START_METRIC_SELECTOR
 %type <float> number series_value signed_number signed_or_unsigned_number
 %type <node> step_invariant_expr aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_literal offset_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector
 %type <duration> duration maybe_duration
+%type <range_duration> range_duration
 
 %start start
 
