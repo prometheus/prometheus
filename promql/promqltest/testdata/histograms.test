@@ -25,9 +25,8 @@ load_with_nhcb 5m
 	testhistogram2_bucket{le="6"}	 0+3x10
 	testhistogram2_bucket{le="+Inf"} 0+3x10
 
-# Another test histogram, where there are 0 counts where there is
-# an infinite bound, allowing us to calculate standard deviation
-# and variance properly.
+# Another test histogram, this time without any observations in the +Inf bucket.
+# This enables a meaningful calculation of standard deviation and variance.
 load_with_nhcb 5m
 	testhistogram3_bucket{le="0", start="positive"}	0+0x10
 	testhistogram3_bucket{le="0.1", start="positive"}	0+5x10
