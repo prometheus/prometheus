@@ -467,7 +467,7 @@ func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTi
 			// This only checks against the latest in-order sample.
 			// The OOO headchunk has its own method to detect these duplicates.
 			if math.Float64bits(s.lastValue) != math.Float64bits(v) {
-				return false, 0, storage.ErrDuplicateSampleForTimestamp
+				return false, 0, storage.NewDuplicateFloatErr(t, s.lastValue, v)
 			}
 			// Sample is identical (ts + value) with most current (highest ts) sample in sampleBuf.
 			return false, 0, nil

@@ -2292,12 +2292,15 @@ func (m mockIndex) LabelValueFor(_ context.Context, id storage.SeriesRef, label 
 	return m.series[id].l.Get(label), nil
 }
 
-func (m mockIndex) LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([]string, error) {
+func (m mockIndex) LabelNamesFor(_ context.Context, postings index.Postings) ([]string, error) {
 	namesMap := make(map[string]bool)
-	for _, id := range ids {
-		m.series[id].l.Range(func(lbl labels.Label) {
+	for postings.Next() {
+		m.series[postings.At()].l.Range(func(lbl labels.Label) {
 			namesMap[lbl.Name] = true
 		})
+	}
+	if err := postings.Err(); err != nil {
+		return nil, err
 	}
 	names := make([]string, 0, len(namesMap))
 	for name := range namesMap {
@@ -3232,7 +3235,7 @@ func (m mockMatcherIndex) LabelValueFor(context.Context, storage.SeriesRef, stri
 	return "", errors.New("label value for called")
 }
 
-func (m mockMatcherIndex) LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([]string, error) {
+func (m mockMatcherIndex) LabelNamesFor(ctx context.Context, postings index.Postings) ([]string, error) {
 	return nil, errors.New("label names for for called")
 }
 
@@ -3693,7 +3696,7 @@ func (m mockReaderOfLabels) LabelNames(context.Context, ...*labels.Matcher) ([]s
 	panic("LabelNames called")
 }
 
-func (m mockReaderOfLabels) LabelNamesFor(context.Context, ...storage.SeriesRef) ([]string, error) {
+func (m mockReaderOfLabels) LabelNamesFor(context.Context, index.Postings) ([]string, error) {
 	panic("LabelNamesFor called")
 }
 
