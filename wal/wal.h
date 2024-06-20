@@ -986,7 +986,7 @@ class BasicDecoder {
   using timeseries_type = const Primitives::BasicTimeseries<typename LabelSetsTable::value_type*>&;
 
   template <class Callback>
-    requires std::is_invocable_v<Callback, timeseries_type>
+    requires std::is_invocable_v<Callback, Primitives::LabelSetID, timeseries_type>
   __attribute__((flatten)) void process_segment(Callback&& func) {
     Primitives::BasicTimeseries<typename LabelSetsTable::value_type*> timeseries;
 
@@ -996,7 +996,7 @@ class BasicDecoder {
     process_segment([&](Primitives::LabelSetID ls_id, Primitives::Timestamp ts, Primitives::Sample::value_type v) {
       if (ls_id != last_ls_id) {
         if (last_ls_id != std::numeric_limits<Primitives::LabelSetID>::max()) {
-          func(timeseries);
+          func(last_ls_id, timeseries);
         }
 
         last_ls = label_sets_[ls_id];
@@ -1009,7 +1009,7 @@ class BasicDecoder {
     });
 
     if (last_ls_id != std::numeric_limits<Primitives::LabelSetID>::max()) {
-      func(timeseries);
+      func(last_ls_id, timeseries);
     }
   }
 };

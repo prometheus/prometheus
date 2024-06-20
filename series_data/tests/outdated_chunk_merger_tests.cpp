@@ -32,7 +32,8 @@ class OutdatedChunkMergerTrait {
   using ExpectedListOfSampleList = BareBones::Vector<ExpectedSampleList>;
 
   DataStorage storage_;
-  OutdatedSampleEncoder<> outdated_sample_encoder_{storage_};
+  std::chrono::system_clock clock_;
+  OutdatedSampleEncoder<std::chrono::system_clock> outdated_sample_encoder_{storage_, clock_};
   Encoder<decltype(outdated_sample_encoder_), kSamplesPerChunkValue> encoder_{storage_, outdated_sample_encoder_};
   OutdatedChunkMerger<decltype(encoder_)> merger_{storage_, encoder_};
 

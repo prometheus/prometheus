@@ -29,7 +29,8 @@ class EncoderTestTrait {
   using ListOfSampleList = BareBones::Vector<SampleList>;
 
   DataStorage storage_;
-  OutdatedSampleEncoder<> outdated_sample_encoder_{storage_};
+  std::chrono::system_clock clock_;
+  OutdatedSampleEncoder<std::chrono::system_clock> outdated_sample_encoder_{storage_, clock_};
   Encoder<decltype(outdated_sample_encoder_), kSamplesPerChunk> encoder_{storage_, outdated_sample_encoder_};
 
   [[nodiscard]] const DataChunk& chunk(uint32_t ls_id) const noexcept { return storage_.open_chunks[ls_id]; }

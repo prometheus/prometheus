@@ -240,6 +240,7 @@ cc_library(
     name = "cls_wal_modules",
     hdrs = glob([
         "ceph/cls/cls_wal/modules/**/*.h",
+        "ceph/cls/cls_wal/config/**/*.h",
         "ceph/cls/cls_wal/constants.h",
         "ceph/cls/cls_wal/tests/**/*.h"
     ]),
@@ -249,6 +250,7 @@ cc_library(
         ":prometheus",
         ":wal",
         ":series_index",
+        ":series_data",
         ":cls_common"
     ]
 )
