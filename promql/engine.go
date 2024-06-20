@@ -2998,13 +2998,16 @@ seriesLoop:
 		s = Sample{Metric: inputMatrix[si].Metric, F: f}
 
 		group := &groups[seriesToResult[si]]
+		// Initialize this group if it's the first time we've seen it.
 		if !group.seen {
+			// LIMIT_RATIO is a special case, as we may not add this very sample to the heap,
+			// while we also don't know the final size of it.
 			if op == parser.LIMIT_RATIO {
 				*group = groupedAggregation{
 					seen: true,
 					heap: make(vectorByValueHeap, 0),
 				}
-				if math.IsNaN(r) || ratiosampler.AddRatioSample(r, &s) {
+				if ratiosampler.AddRatioSample(r, &s) {
 					heap.Push(&group.heap, &s)
 				}
 			} else {
