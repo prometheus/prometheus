@@ -2989,6 +2989,7 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int, r float64, inp
 		groups[i].seen = false
 	}
 
+seriesLoop:
 	for si := range inputMatrix {
 		f, _, ok := ev.nextValues(enh.Ts, &inputMatrix[si])
 		if !ok {
@@ -3046,6 +3047,9 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int, r float64, inp
 		case parser.LIMITK:
 			if len(group.heap) < k {
 				heap.Push(&group.heap, &s)
+			} else {
+				// The whole point behind limitk vs topk: early break after adding k elements.
+				break seriesLoop
 			}
 
 		case parser.LIMIT_RATIO:
