@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"math/rand"
 	"os"
 	"runtime/pprof"
 	"sort"
@@ -609,6 +610,30 @@ func createTimeseries(numSamples, numSeries int, extraLabels ...labels.Label) ([
 		})
 	}
 	return samples, series
+}
+
+func createProtoTimeseriesWithOld(numSamples, baseTs int64, extraLabels ...labels.Label) []prompb.TimeSeries {
+	samples := make([]prompb.TimeSeries, numSamples)
+	// use a fixed rand source so tests are consistent
+	r := rand.New(rand.NewSource(99))
+	for j := int64(0); j < numSamples; j++ {
+		name := fmt.Sprintf("test_metric_%d", j)
+
+		samples[j] = prompb.TimeSeries{
+			Labels: []prompb.Label{{Name: "__name__", Value: name}},
+			Samples: []prompb.Sample{
+				{
+					Timestamp: baseTs + j,
+					Value:     float64(j),
+				},
+			},
+		}
+		// 10% of the time use a ts that is too old
+		if r.Intn(10) == 0 {
+			samples[j].Samples[0].Timestamp = baseTs - 5
+		}
+	}
+	return samples
 }
 
 func createExemplars(numExemplars, numSeries int) ([]record.RefExemplar, []record.RefSeries) {
@@ -1666,5 +1691,16 @@ func TestBuildTimeSeries(t *testing.T) {
 			require.Equal(t, tc.lowestTs, lowest)
 			require.Equal(t, tc.droppedSamples, droppedSamples)
 		})
+	}
+}
+
+func BenchmarkBuildTimeSeries(b *testing.B) {
+	// Send one sample per series, which is the typical remote_write case
+	const numSamples = 10000
+	filter := func(ts prompb.TimeSeries) bool { return filterTsLimit(99, ts) }
+	for i := 0; i < b.N; i++ {
+		samples := createProtoTimeseriesWithOld(numSamples, 100, extraLabels...)
+		_, _, result, _, _, _ := buildTimeSeries(samples, filter)
+		require.NotNil(b, result)
 	}
 }

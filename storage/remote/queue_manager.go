@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -1746,9 +1747,8 @@ func buildTimeSeries(timeSeries []prompb.TimeSeries, filter func(prompb.TimeSeri
 	var lowest int64
 	var droppedSamples, droppedExemplars, droppedHistograms int
 
-	keepIdx := 0
 	lowest = math.MaxInt64
-	for i, ts := range timeSeries {
+	timeSeries = slices.DeleteFunc(timeSeries, func(ts prompb.TimeSeries) bool {
 		if filter != nil && filter(ts) {
 			if len(ts.Samples) > 0 {
 				droppedSamples++
@@ -1759,7 +1759,7 @@ func buildTimeSeries(timeSeries []prompb.TimeSeries, filter func(prompb.TimeSeri
 			if len(ts.Histograms) > 0 {
 				droppedHistograms++
 			}
-			continue
+			return true
 		}
 
 		// At the moment we only ever append a TimeSeries with a single sample or exemplar in it.
@@ -1783,13 +1783,9 @@ func buildTimeSeries(timeSeries []prompb.TimeSeries, filter func(prompb.TimeSeri
 		if len(ts.Histograms) > 0 && ts.Histograms[0].Timestamp < lowest {
 			lowest = ts.Histograms[0].Timestamp
 		}
+		return false
+	})
 
-		// Move the current element to the write position and increment the write pointer
-		timeSeries[keepIdx] = timeSeries[i]
-		keepIdx++
-	}
-
-	timeSeries = timeSeries[:keepIdx]
 	return highest, lowest, timeSeries, droppedSamples, droppedExemplars, droppedHistograms
 }
 
