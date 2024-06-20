@@ -10,6 +10,8 @@ export interface Histogram {
   buckets?: [number, string, string, string][];
 }
 
+export type ScaleType = 'linear' | 'exponential';
+
 export interface Exemplar {
   labels: { [key: string]: string };
   value: string;

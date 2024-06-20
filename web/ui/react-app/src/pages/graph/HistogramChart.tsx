@@ -1,137 +1,68 @@
 import React, { FC } from 'react';
 import { UncontrolledTooltip } from 'reactstrap';
-import { Histogram } from '../../types/types';
+import { Histogram, ScaleType } from '../../types/types';
 import { bucketRangeString } from './DataTable';
-import { parse } from 'path';
+import { findMinPositive, findMaxNegative, findZeroAxisLeft, showZeroAxis, findZeroBucket } from './HistogramHelpers';
 
-type ScaleType = 'linear' | 'exponential';
+interface HistogramChartProps {
+  histogram: Histogram;
+  index: number;
+  scale: ScaleType;
+}
 
-const HistogramChart: FC<{ histogram: Histogram; index: number; scale: ScaleType }> = ({ index, histogram, scale }) => {
+const HistogramChart: FC<HistogramChartProps> = ({ index, histogram, scale }) => {
   const { buckets } = histogram;
   if (!buckets) {
     return <div>No data</div>;
   }
   const formatter = Intl.NumberFormat('en', { notation: 'compact' });
 
-  const rangeMax = parseFloat(buckets[buckets.length - 1][2]);
-  const rangeMin = parseFloat(buckets[0][1]);
-
-  const expBucketWidth = Math.abs(
-    Math.log(Math.abs(parseFloat(buckets[buckets.length - 1][2]))) -
-      Math.log(Math.abs(parseFloat(buckets[buckets.length - 1][1])))
-  ); //bw
-  const countMax = buckets.map((b) => parseFloat(b[3])).reduce((a, b) => Math.max(a, b));
-
-  // The count of a histogram bucket is represented by its area rather than its height. This means it considers
-  // both the count and the width (range) of the bucket. For this, we can set the height of the bucket proportional
+  // For linear scales, the count of a histogram bucket is represented by its area rather than its height. This means it considers
+  // both the count and the range (width) of the bucket. For this, we can set the height of the bucket proportional
   // to its frequency density (fd). The fd is the count of the bucket divided by the width of the bucket.
-
-  // Frequency density histograms are necessary when the bucekts are of unequal width. If the buckets are collected in
-  // intervals of equal width, then there is no difference between frequency and frequency density histograms.
   const fds = buckets.map((b) => {
     return parseFloat(b[3]) / (parseFloat(b[2]) - parseFloat(b[1]));
   });
   const fdMax = fds.reduce((a, b) => Math.max(a, b));
-  const { zeroBucket, zeroBucketIdx } = findZeroBucket(buckets);
-  console.log('ZERO BUCKET IS', zeroBucket);
 
-  const maxPositive = parseFloat(buckets[buckets.length - 1][2]) > 0 ? parseFloat(buckets[buckets.length - 1][2]) : 0;
-  const minPositive = findMinPositive();
-  const maxNegative = findMaxNegative();
-  console.log('MAX NEGATIVE', maxNegative, 'MIN POSITIVE', minPositive, 'MAX POSITIVE', maxPositive);
-  const minNegative = parseFloat(buckets[0][1]) < 0 ? parseFloat(buckets[0][1]) : 0;
-  const startNegative = minNegative !== 0 ? -Math.log(Math.abs(minNegative)) : 0; //start_neg
-  const endNegative = maxNegative !== 0 ? -Math.log(Math.abs(maxNegative)) : 0; //end_neg
-  const startPositive = minPositive !== 0 ? Math.log(minPositive) : 0; //start_pos
-  const endPositive = maxPositive !== 0 ? Math.log(maxPositive) : 0; //end_pos
+  const first = buckets[0];
+  const last = buckets[buckets.length - 1];
 
-  const widthNegative = endNegative - startNegative; //width_neg
-  const widthPositive = endPositive - startPositive; //width_pos
-  const widthTotal = widthNegative + expBucketWidth + widthPositive; //width_total
+  const rangeMax = parseFloat(last[2]);
+  const rangeMin = parseFloat(first[1]);
+  const countMax = buckets.map((b) => parseFloat(b[3])).reduce((a, b) => Math.max(a, b));
 
-  const zeroAxisLeft = findZeroAxisLeft();
-  const zeroAxis = showZeroAxis();
+  const defaultExpBucketWidth = Math.abs(Math.log(Math.abs(rangeMax)) - Math.log(Math.abs(parseFloat(last[1]))));
 
-  function findMinPositive() {
-    if (buckets) {
-      for (let i = 0; i < buckets.length; i++) {
-        if (parseFloat(buckets[i][1]) > 0) {
-          return parseFloat(buckets[i][1]);
-        }
-        if (parseFloat(buckets[i][1]) < 0 && parseFloat(buckets[i][2]) > 0) {
-          return parseFloat(buckets[i][2]);
-        }
-        if (i === buckets.length - 1) {
-          if (parseFloat(buckets[i][2]) > 0) {
-            return parseFloat(buckets[i][2]);
-          }
-        }
-      }
-      return 0; // all buckets are negative
-    }
-    return 0; // no buckets
-  }
+  const maxPositive = rangeMax > 0 ? rangeMax : 0;
+  const minPositive = findMinPositive(buckets);
+  const maxNegative = findMaxNegative(buckets);
+  const minNegative = parseFloat(first[1]) < 0 ? parseFloat(first[1]) : 0;
 
-  function findMaxNegative() {
-    if (buckets) {
-      for (let i = 0; i < buckets.length; i++) {
-        if (parseFloat(buckets[i][2]) > 0) {
-          if (i === 0) {
-            if (parseFloat(buckets[i][1]) < 0) {
-              return parseFloat(buckets[i][1]); // return the first negative bucket
-            }
-            return 0; // all buckets are positive
-          }
-          return parseFloat(buckets[i - 1][2]); // return the last negative bucket
-        }
-      }
-      return parseFloat(buckets[buckets.length - 1][2]); // all buckets are negative
-    }
-    return 0; // no buckets
-  }
+  // Calculate the borders of positive and negative buckets in the exponential scale from left to right
+  const startNegative = minNegative !== 0 ? -Math.log(Math.abs(minNegative)) : 0;
+  const endNegative = maxNegative !== 0 ? -Math.log(Math.abs(maxNegative)) : 0;
+  const startPositive = minPositive !== 0 ? Math.log(minPositive) : 0;
+  const endPositive = maxPositive !== 0 ? Math.log(maxPositive) : 0;
 
-  function findZeroAxisLeft() {
-    if (scale === 'linear') {
-      return ((0 - rangeMin) / (rangeMax - rangeMin)) * 100 + '%';
-    } else {
-      if (maxNegative === 0) {
-        return '0%';
-      }
-      if (minPositive === 0) {
-        return '100%';
-      }
-      if (zeroBucketIdx === -1) {
-        // if there is no zero bucket, we must zero axis between buckets around zero
-        return (widthNegative / widthTotal) * 100 + '%';
-      }
-      if ((widthNegative + 0.5 * expBucketWidth) / widthTotal > 0) {
-        return ((widthNegative + 0.5 * expBucketWidth) / widthTotal) * 100 + '%';
-      } else {
-        return '0%';
-      }
-    }
-  }
-  function showZeroAxis() {
-    const axisNumber = parseFloat(zeroAxisLeft.slice(0, -1));
-    if (5 < axisNumber && axisNumber < 95) {
-      return true;
-    }
-    return false;
-  }
+  // Calculate the width of negative, positive, and all exponential bucket ranges on the x-axis
+  const xWidthNegative = endNegative - startNegative;
+  const xWidthPositive = endPositive - startPositive;
+  const xWidthTotal = xWidthNegative + defaultExpBucketWidth + xWidthPositive;
 
-  function findZeroBucket(buckets: [number, string, string, string][]): {
-    zeroBucket: [number, string, string, string];
-    zeroBucketIdx: number;
-  } {
-    for (let i = 0; i < buckets.length; i++) {
-      const left = parseFloat(buckets[i][1]);
-      const right = parseFloat(buckets[i][2]);
-      if (left <= 0 && right >= 0) {
-        return { zeroBucket: buckets[i], zeroBucketIdx: i };
-      }
-    }
-    return { zeroBucket: [-1, '', '', ''], zeroBucketIdx: -1 };
-  }
+  const zeroBucketIdx = findZeroBucket(buckets);
+  const zeroAxisLeft = findZeroAxisLeft(
+    scale,
+    rangeMin,
+    rangeMax,
+    minPositive,
+    maxNegative,
+    zeroBucketIdx,
+    xWidthNegative,
+    xWidthTotal,
+    defaultExpBucketWidth
+  );
+  const zeroAxis = showZeroAxis(zeroAxisLeft);
 
   return (
     <div className="histogram-y-wrapper">
@@ -169,13 +100,13 @@ const HistogramChart: FC<{ histogram: Histogram; index: number; scale: ScaleType
               fds={fds}
               fdMax={fdMax}
               countMax={countMax}
-              bw={expBucketWidth}
+              defaultExpBucketWidth={defaultExpBucketWidth}
               minPositive={minPositive}
               maxNegative={maxNegative}
               startPositive={startPositive}
               startNegative={startNegative}
-              widthNegative={widthNegative}
-              widthTotal={widthTotal}
+              xWidthNegative={xWidthNegative}
+              xWidthTotal={xWidthTotal}
             />
           )}
 
@@ -204,13 +135,13 @@ interface RenderHistogramProps {
   fds: number[];
   fdMax: number;
   countMax: number;
-  bw: number;
+  defaultExpBucketWidth: number;
   minPositive: number;
   maxNegative: number;
   startPositive: number;
   startNegative: number;
-  widthNegative: number;
-  widthTotal: number;
+  xWidthNegative: number;
+  xWidthTotal: number;
 }
 
 const RenderHistogramBars: FC<RenderHistogramProps> = ({
@@ -222,13 +153,13 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
   fds,
   fdMax,
   countMax,
-  bw,
+  defaultExpBucketWidth,
   minPositive,
   maxNegative,
   startPositive,
   startNegative,
-  widthNegative,
-  widthTotal,
+  xWidthNegative,
+  xWidthTotal,
 }) => {
   return (
     <React.Fragment>
@@ -238,7 +169,8 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
         const count = parseFloat(b[3]);
         const bucketIdx = `bucket-${index}-${bIdx}-${Math.ceil(parseFloat(b[3]) * 100)}`;
 
-        const expBucketWidth = Math.abs(Math.log(Math.abs(right)) - Math.log(Math.abs(left))); //bw
+        const logWidth = Math.abs(Math.log(Math.abs(right)) - Math.log(Math.abs(left)));
+        const expBucketWidth = logWidth === 0 ? defaultExpBucketWidth : logWidth;
 
         let bucketWidth = '';
         let bucketLeft = '';
@@ -248,65 +180,28 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
           case 'linear':
             bucketWidth = ((right - left) / (rangeMax - rangeMin)) * 100 + '%';
             bucketLeft = ((left - rangeMin) / (rangeMax - rangeMin)) * 100 + '%';
-            console.log(
-              bucketIdx,
-              'LINbucketleft= (',
-              left,
-              '-',
-              rangeMin,
-              ')/(',
-              rangeMax,
-              '-',
-              rangeMin,
-              ')=',
-              bucketLeft
-            );
-
             bucketHeight = (fds[bIdx] / fdMax) * 100 + '%';
             break;
           case 'exponential':
-            let adjust = 0; // if buckets are all positive/negative, we need to adjust the width and positioning accordingly
+            let adjust = 0; // if buckets are all positive/negative, we need to remove the width of the zero bucket
             if (minPositive === 0 || maxNegative === 0) {
-              adjust = bw;
+              adjust = defaultExpBucketWidth;
             }
-            bucketWidth = ((expBucketWidth === 0 ? bw : expBucketWidth) / (widthTotal - adjust)) * 100 + '%';
+            bucketWidth = (expBucketWidth / (xWidthTotal - adjust)) * 100 + '%';
             if (left < 0) {
               // negative buckets boundary
-              bucketLeft = (-(Math.log(Math.abs(left)) + startNegative) / (widthTotal - adjust)) * 100 + '%';
-              console.log(
-                bucketIdx,
-                'EXPbucketleftNEG= (',
-                -Math.log(Math.abs(left)),
-                '+',
-                startNegative,
-                ')/(',
-                widthTotal,
-                ')=',
-                bucketLeft
-              );
+              bucketLeft = (-(Math.log(Math.abs(left)) + startNegative) / (xWidthTotal - adjust)) * 100 + '%';
             } else {
               // positive buckets boundary
               bucketLeft =
-                ((Math.log(left) - startPositive + bw + widthNegative - adjust) / (widthTotal - adjust)) * 100 + '%';
-              console.log(
-                bucketIdx,
-                'EXPbucketleftPOS= (',
-                Math.log(left),
-                '-',
-                startPositive,
-                '+',
-                bw,
-                '+',
-                widthNegative,
-                ')/(',
-                widthTotal,
-                ')=',
-                bucketLeft
-              );
+                ((Math.log(left) - startPositive + defaultExpBucketWidth + xWidthNegative - adjust) /
+                  (xWidthTotal - adjust)) *
+                  100 +
+                '%';
             }
             if (left < 0 && right > 0) {
-              bucketLeft = (widthNegative / widthTotal) * 100 + '%';
-              console.log(bucketIdx, 'EXPbucketleftZERO= (', widthNegative, ')/(', widthTotal, ')=', bucketLeft);
+              // if the bucket crosses the zero axis
+              bucketLeft = (xWidthNegative / xWidthTotal) * 100 + '%';
             }
 
             bucketHeight = (count / countMax) * 100 + '%';
@@ -315,41 +210,6 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
             console.error('Invalid scale type');
         }
 
-        console.log(
-          'ID',
-          bucketIdx,
-          '\n',
-          'left',
-          left,
-          '\n',
-          'right',
-          right,
-          '\n',
-          'count',
-          count,
-          '\n',
-          'bucketWidth',
-          bucketWidth,
-          '\n',
-          'bucketLeft',
-          bucketLeft,
-          '\n',
-          'bw',
-          bw,
-          '\n',
-          'widthTotal',
-          widthTotal,
-          '\n',
-          'widthNegative',
-          widthNegative,
-          '\n',
-          'startPositive',
-          startPositive,
-          'rangeMax',
-          rangeMax,
-          'rangeMin',
-          rangeMin
-        );
         return (
           <React.Fragment key={bIdx}>
             <div
