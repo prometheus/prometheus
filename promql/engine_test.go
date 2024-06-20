@@ -1858,8 +1858,8 @@ load 10s
 				testutil.RequireEqual(t, c.result, res.Value, "query %q failed for RequireEqual()", c.query)
 			case c.resultIn != nil:
 				require.Len(t, res.Value.(promql.Matrix), c.resultLen, "query %q failed", c.query)
-				cnt := 0
 				requireCommonSeries := func(t *testing.T, length int, actMatrix, expMatrix promql.Matrix) {
+					cnt := 0
 					for _, actSeries := range actMatrix {
 						for _, expSeries := range expMatrix {
 							if testutil.CheckEqual(t, actSeries, expSeries) {
@@ -1997,7 +1997,7 @@ load 10s
 			} else {
 				require.Empty(t, res.Warnings)
 			}
-			testutil.RequireEqual(t, c.result, res.Value, "query %q failed for requireEqual()", c.query)
+			testutil.RequireEqual(t, c.result, res.Value, "query %q failed for RequireEqual()", c.query)
 		})
 	}
 }
