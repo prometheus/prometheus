@@ -834,10 +834,10 @@ load 10s
 		{
 			Query:        "metricWith1HistogramEvery10Seconds",
 			Start:        time.Unix(21, 0),
-			PeakSamples:  13,
-			TotalSamples: 13, // 1 histogram HPoint of size 13 / 10 seconds
+			PeakSamples:  14,
+			TotalSamples: 14, // 1 histogram HPoint of size 14 / 10 seconds
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				21000: 13,
+				21000: 14,
 			},
 		},
 		{
@@ -934,10 +934,10 @@ load 10s
 		{
 			Query:        "metricWith1HistogramEvery10Seconds[60s]",
 			Start:        time.Unix(201, 0),
-			PeakSamples:  78,
-			TotalSamples: 78, // 1 histogram (size 13 HPoint) / 10 seconds * 60 seconds
+			PeakSamples:  84,
+			TotalSamples: 84, // 1 histogram (size 14 HPoint) / 10 seconds * 60 seconds
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 78,
+				201000: 84,
 			},
 		},
 		{
@@ -964,11 +964,11 @@ load 10s
 		{
 			Query:        "max_over_time(metricWith1HistogramEvery10Seconds[60s])[20s:5s]",
 			Start:        time.Unix(201, 0),
-			PeakSamples:  78,
-			TotalSamples: 338, // (1 histogram (size 13 HPoint) / 10 seconds * 60 seconds) * 4 + 2 * 13 as
+			PeakSamples:  84,
+			TotalSamples: 364, // (1 histogram (size 14 HPoint) / 10 seconds * 60 seconds) * 4 + 2 * 14 as
 			// max_over_time(metricWith1SampleEvery10Seconds[60s]) @ 190 and 200 will return 7 samples.
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 338,
+				201000: 364,
 			},
 		},
 		{
@@ -983,10 +983,10 @@ load 10s
 		{
 			Query:        "metricWith1HistogramEvery10Seconds[60s] @ 30",
 			Start:        time.Unix(201, 0),
-			PeakSamples:  52,
-			TotalSamples: 52, // @ modifier force the evaluation to at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 1 series
+			PeakSamples:  56,
+			TotalSamples: 56, // @ modifier force the evaluation to at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 1 series
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 52,
+				201000: 56,
 			},
 		},
 		{
@@ -1121,13 +1121,13 @@ load 10s
 			Start:        time.Unix(204, 0),
 			End:          time.Unix(223, 0),
 			Interval:     5 * time.Second,
-			PeakSamples:  52,
-			TotalSamples: 52, // 1 histogram (size 13 HPoint) per query * 4 steps
+			PeakSamples:  56,
+			TotalSamples: 56, // 1 histogram (size 14 HPoint) per query * 4 steps
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				204000: 13, // aligned to the step time, not the sample time
-				209000: 13,
-				214000: 13,
-				219000: 13,
+				204000: 14, // aligned to the step time, not the sample time
+				209000: 14,
+				214000: 14,
+				219000: 14,
 			},
 		},
 		{
