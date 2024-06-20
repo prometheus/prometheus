@@ -126,7 +126,7 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	var exemplarErr error
 
 	for _, ts := range req.Timeseries {
-		labels := labelProtosToLabels(&b, ts.Labels)
+		labels := LabelProtosToLabels(&b, ts.Labels)
 		if !labels.IsValid() {
 			level.Warn(h.logger).Log("msg", "Invalid metric names or labels", "got", labels.String())
 			samplesWithInvalidLabels++
