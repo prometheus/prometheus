@@ -159,7 +159,6 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 		}
 
 		for _, hp := range ts.Histograms {
-			// check, if the histogram timestamp is in the past
 			if hp.IsFloatHistogram() {
 				fhs := FloatHistogramProtoToFloatHistogram(hp)
 				_, err = timeLimitApp.AppendHistogram(0, labels, hp.Timestamp, nil, fhs)
