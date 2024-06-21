@@ -18,10 +18,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"reflect"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/config"
@@ -153,7 +153,7 @@ func getSDCheckResult(targetGroups []*targetgroup.Group, scrapeConfig *config.Sc
 
 			duplicateRes := false
 			for _, sdCheckRes := range sdCheckResults {
-				if reflect.DeepEqual(sdCheckRes, result) {
+				if cmp.Equal(sdCheckRes, result, cmp.Comparer(labels.Equal)) {
 					duplicateRes = true
 					break
 				}

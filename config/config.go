@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -82,7 +83,7 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 		return cfg, nil
 	}
 
-	b := labels.ScratchBuilder{}
+	b := labels.NewScratchBuilder(0)
 	cfg.GlobalConfig.ExternalLabels.Range(func(v labels.Label) {
 		newV := os.Expand(v.Value, func(s string) string {
 			if s == "$" {
@@ -97,6 +98,7 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 		if newV != v.Value {
 			level.Debug(logger).Log("msg", "External label replaced", "label", v.Name, "input", v.Value, "output", newV)
 		}
+		// Note newV can be blank. https://github.com/prometheus/prometheus/issues/11024
 		b.Add(v.Name, newV)
 	})
 	cfg.GlobalConfig.ExternalLabels = b.Labels()
@@ -144,9 +146,15 @@ var (
 		ScrapeInterval:     model.Duration(1 * time.Minute),
 		ScrapeTimeout:      model.Duration(10 * time.Second),
 		EvaluationInterval: model.Duration(1 * time.Minute),
+		RuleQueryOffset:    model.Duration(0 * time.Minute),
 		// When native histogram feature flag is enabled, ScrapeProtocols default
 		// changes to DefaultNativeHistogramScrapeProtocols.
 		ScrapeProtocols: DefaultScrapeProtocols,
+	}
+
+	DefaultRuntimeConfig = RuntimeConfig{
+		// Go runtime tuning.
+		GoGC: 75,
 	}
 
 	// DefaultScrapeConfig is the default scrape configuration.
@@ -223,6 +231,7 @@ var (
 // Config is the top-level configuration for Prometheus's config files.
 type Config struct {
 	GlobalConfig      GlobalConfig    `yaml:"global"`
+	Runtime           RuntimeConfig   `yaml:"runtime,omitempty"`
 	AlertingConfig    AlertingConfig  `yaml:"alerting,omitempty"`
 	RuleFiles         []string        `yaml:"rule_files,omitempty"`
 	ScrapeConfigFiles []string        `yaml:"scrape_config_files,omitempty"`
@@ -333,6 +342,14 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		c.GlobalConfig = DefaultGlobalConfig
 	}
 
+	// If a runtime block was open but empty the default runtime config is overwritten.
+	// We have to restore it here.
+	if c.Runtime.isZero() {
+		c.Runtime = DefaultRuntimeConfig
+		// Use the GOGC env var value if the runtime section is empty.
+		c.Runtime.GoGC = getGoGCEnv()
+	}
+
 	for _, rf := range c.RuleFiles {
 		if !patRulePath.MatchString(rf) {
 			return fmt.Errorf("invalid rule file path %q", rf)
@@ -396,6 +413,8 @@ type GlobalConfig struct {
 	ScrapeProtocols []ScrapeProtocol `yaml:"scrape_protocols,omitempty"`
 	// How frequently to evaluate rules by default.
 	EvaluationInterval model.Duration `yaml:"evaluation_interval,omitempty"`
+	// Offset the rule evaluation timestamp of this particular group by the specified duration into the past to ensure the underlying metrics have been received.
+	RuleQueryOffset model.Duration `yaml:"rule_query_offset,omitempty"`
 	// File to which PromQL queries are logged.
 	QueryLogFile string `yaml:"query_log_file,omitempty"`
 	// The labels to add to any timeseries that this Prometheus instance scrapes.
@@ -555,8 +574,20 @@ func (c *GlobalConfig) isZero() bool {
 		c.ScrapeInterval == 0 &&
 		c.ScrapeTimeout == 0 &&
 		c.EvaluationInterval == 0 &&
+		c.RuleQueryOffset == 0 &&
 		c.QueryLogFile == "" &&
 		c.ScrapeProtocols == nil
+}
+
+// RuntimeConfig configures the values for the process behavior.
+type RuntimeConfig struct {
+	// The Go garbage collection target percentage.
+	GoGC int `yaml:"gogc,omitempty"`
+}
+
+// isZero returns true iff the global config is the zero value.
+func (c *RuntimeConfig) isZero() bool {
+	return c.GoGC == 0
 }
 
 type ScrapeConfigs struct {
@@ -940,6 +971,8 @@ type AlertmanagerConfig struct {
 
 	// List of Alertmanager relabel configurations.
 	RelabelConfigs []*relabel.Config `yaml:"relabel_configs,omitempty"`
+	// Relabel alerts before sending to the specific alertmanager.
+	AlertRelabelConfigs []*relabel.Config `yaml:"alert_relabel_configs,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -979,6 +1012,12 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 	for _, rlcfg := range c.RelabelConfigs {
 		if rlcfg == nil {
 			return errors.New("empty or null Alertmanager target relabeling rule")
+		}
+	}
+
+	for _, rlcfg := range c.AlertRelabelConfigs {
+		if rlcfg == nil {
+			return errors.New("empty or null Alertmanager alert relabeling rule")
 		}
 	}
 
@@ -1197,4 +1236,20 @@ func filePath(filename string) string {
 
 func fileErr(filename string, err error) error {
 	return fmt.Errorf("%q: %w", filePath(filename), err)
+}
+
+func getGoGCEnv() int {
+	goGCEnv := os.Getenv("GOGC")
+	// If the GOGC env var is set, use the same logic as upstream Go.
+	if goGCEnv != "" {
+		// Special case for GOGC=off.
+		if strings.ToLower(goGCEnv) == "off" {
+			return -1
+		}
+		i, err := strconv.Atoi(goGCEnv)
+		if err == nil {
+			return i
+		}
+	}
+	return DefaultRuntimeConfig.GoGC
 }

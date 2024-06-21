@@ -15,12 +15,12 @@ package promql
 
 import (
 	"math"
+	"slices"
 	"sort"
-
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/util/almost"
 )
 
 // smallDeltaTolerance is the threshold for relative deltas between classic
@@ -398,7 +398,7 @@ func ensureMonotonicAndIgnoreSmallDeltas(buckets buckets, tolerance float64) (bo
 			// No correction needed if the counts are identical between buckets.
 			continue
 		}
-		if almostEqual(prev, curr, tolerance) {
+		if almost.Equal(prev, curr, tolerance) {
 			// Silently correct numerically insignificant differences from floating
 			// point precision errors, regardless of direction.
 			// Do not update the 'prev' value as we are ignoring the difference.
