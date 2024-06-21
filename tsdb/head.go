@@ -311,7 +311,6 @@ func (h *Head) resetInMemoryState() error {
 	}
 
 	if h.series != nil {
-
 		// reset the existing series to make sure we call the appropriated hooks
 		// and increment the series removed metrics
 		fs := h.series.callPostDeletionBeforeReset()
