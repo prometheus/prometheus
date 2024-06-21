@@ -1751,15 +1751,10 @@ load 1ms
 
 // Convenience function that returns a "full matrix" for the specified number
 // of jobs and time range.
-func fullMatrix(initialJobsNum, totalJobs, start, end, interval, increase int) promql.Matrix {
-	mat, _ := fullMatrixWithLabels(initialJobsNum, totalJobs, start, end, interval, increase)
-	return mat
-}
-
-func fullMatrixWithLabels(initialJobsNum, totalJobs, start, end, interval, increase int) (promql.Matrix, []labels.Labels) {
+func fullMatrix(totalJobs, start, end, interval, increase int) (promql.Matrix, []labels.Labels) {
 	var mat promql.Matrix
 	var lbls []labels.Labels
-	for job := initialJobsNum; job < initialJobsNum+totalJobs; job++ {
+	for job := 1; job <= totalJobs; job++ {
 		lbls = append(lbls, labels.FromStrings("__name__", "metric", "job", strconv.Itoa(job)))
 		series := func(start, end, interval int) promql.Series {
 			var points []promql.FPoint
@@ -1789,7 +1784,7 @@ load 10s
 `)
 	t.Cleanup(func() { storage.Close() })
 
-	fullMatrix20 := fullMatrix(1, 5, 0, 20, 10, 1000)
+	fullMatrix20, _ := fullMatrix(5, 0, 20, 10, 1000)
 	cases := []struct {
 		query                string
 		start, end, interval int64 // Time in seconds.
@@ -1892,7 +1887,7 @@ load 10s
 `)
 	t.Cleanup(func() { storage.Close() })
 
-	fullMatrix20, lbls := fullMatrixWithLabels(1, 5, 0, 20, 10, 1000)
+	fullMatrix20, lbls := fullMatrix(5, 0, 20, 10, 1000)
 	cases := []struct {
 		query                string
 		start, end, interval int64 // Time in seconds.
@@ -2014,7 +2009,7 @@ load 10s
 `)
 	t.Cleanup(func() { storage.Close() })
 
-	fullMatrix20 := fullMatrix(1, 5, 0, 20, 10, 1000)
+	fullMatrix20, _ := fullMatrix(5, 0, 20, 10, 1000)
 
 	// Dynamically build limit_ratio() cases, to verify that
 	//   limit_ratio(v, metric)
