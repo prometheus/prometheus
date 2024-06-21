@@ -23,7 +23,6 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 )
 
-// NOTE(bwplotka): Those tests does not prove, same will work on other languages.
 func TestInteropV2UnmarshalWithV1_DeterministicEmpty(t *testing.T) {
 	expectedV1Empty := &prompb.WriteRequest{}
 	for _, tc := range []struct{ incoming *Request }{
@@ -62,7 +61,6 @@ func TestInteropV2UnmarshalWithV1_DeterministicEmpty(t *testing.T) {
 	}
 }
 
-// NOTE(bwplotka): Those tests does not prove, same will work on other languages.
 func TestInteropV1UnmarshalWithV2_DeterministicEmpty(t *testing.T) {
 	expectedV2Empty := &Request{}
 	for _, tc := range []struct{ incoming *prompb.WriteRequest }{
