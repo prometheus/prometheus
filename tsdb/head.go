@@ -2075,7 +2075,7 @@ type memSeries struct {
 	// Everything after here should only be accessed with the lock held.
 	sync.Mutex
 
-	lset labels.Labels
+	lset labels.Labels // Locking required with -tags dedupelabels, not otherwise.
 
 	// Immutable chunks on disk that have not yet gone into a block, in order of ascending time stamps.
 	// When compaction runs, chunks get moved into a block and all pointers are shifted like so:
@@ -2137,13 +2137,6 @@ func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64,
 		s.txs = newTxRing(0)
 	}
 	return s
-}
-
-// Helper method to access labels under lock.
-func (s *memSeries) labels() labels.Labels {
-	s.Lock()
-	defer s.Unlock()
-	return s.lset
 }
 
 func (s *memSeries) minTime() int64 {
