@@ -7,7 +7,7 @@
 namespace series_data::chunk {
 
 struct PROMPP_ATTRIBUTE_PACKED DataChunk {
-  enum class Type {
+  enum class Type : uint8_t {
     kOpen = 0,
     kFinalized,
   };
@@ -29,6 +29,8 @@ struct PROMPP_ATTRIBUTE_PACKED DataChunk {
     uint32_t asc_integer_values_gorilla;
     uint32_t values_gorilla;
     uint32_t gorilla;
+
+    PROMPP_ALWAYS_INLINE bool operator==(const EncoderData& other) const noexcept { return double_constant == other.double_constant; }
   };
 
   EncoderData encoder{.double_constant = 0};
@@ -37,6 +39,9 @@ struct PROMPP_ATTRIBUTE_PACKED DataChunk {
 
   DataChunk() = default;
   DataChunk(const DataChunk&) noexcept = default;
+
+  DataChunk(uint32_t encoder_id, encoder::timestamp::State::Id _timestamp_encoder_state_id, EncodingType _encoding_type)
+      : encoder{.double_constant = encoder_id}, timestamp_encoder_state_id(_timestamp_encoder_state_id), encoding_type(_encoding_type) {}
 
   DataChunk& operator=(const DataChunk& other) noexcept {
     if (this != &other) {
@@ -47,6 +52,8 @@ struct PROMPP_ATTRIBUTE_PACKED DataChunk {
 
     return *this;
   }
+
+  bool operator==(const DataChunk&) const noexcept = default;
 
   PROMPP_ALWAYS_INLINE void reset() noexcept {
     encoder.double_constant = 0;

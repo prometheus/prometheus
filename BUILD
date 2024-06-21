@@ -304,6 +304,7 @@ cc_library(
     hdrs = glob(["series_data/**/*.h"]),
     deps = [
         ":bare_bones_headers",
+        ":primitives"
     ]
 )
 

@@ -122,12 +122,9 @@ class OutdatedChunkMerger {
   void merge_outdated_samples_in_finalized_chunks(uint32_t ls_id, const chunk::FinalizedChunkList& finalized_chunks, SamplesSpan& samples) {
     for (auto it = finalized_chunks.begin(), next_it = std::next(it); it != finalized_chunks.end(); ++next_it) {
       if (next_it == finalized_chunks.end()) {
-        auto& chunk = storage_.open_chunks[ls_id];
-        if (chunk.encoding_type != ChunkEncodingType::kUnknown) {
-          if (auto open_chunk_timestamp = Decoder::get_chunk_first_timestamp<ChunkType::kOpen>(storage_, storage_.open_chunks[ls_id]);
-              open_chunk_timestamp > samples.front().timestamp) {
-            merge_outdated_samples<ChunkType::kFinalized>(ls_id, *it, open_chunk_timestamp, samples);
-          }
+        if (auto open_chunk_timestamp = Decoder::get_chunk_first_timestamp<ChunkType::kOpen>(storage_, storage_.open_chunks[ls_id]);
+            open_chunk_timestamp > samples.front().timestamp) {
+          merge_outdated_samples<ChunkType::kFinalized>(ls_id, *it, open_chunk_timestamp, samples);
         }
 
         return;

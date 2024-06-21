@@ -138,6 +138,15 @@ class Decoder {
     return encoder::timestamp::TimestampDecoder::decode_first(get_stream_reader<chunk_type>(storage, chunk));
   }
 
+  [[nodiscard]] PROMPP_ALWAYS_INLINE static int64_t get_open_chunk_last_timestamp(const DataStorage& storage, const chunk::DataChunk& chunk) noexcept {
+    if (chunk.encoding_type == chunk::DataChunk::EncodingType::kGorilla) {
+      [[unlikely]];
+      return storage.gorilla_encoders[chunk.encoder.gorilla].timestamp();
+    } else {
+      return storage.timestamp_encoder.get_state(chunk.timestamp_encoder_state_id).timestamp();
+    }
+  }
+
  private:
   template <chunk::DataChunk::Type chunk_type>
   [[nodiscard]] static BareBones::BitSequenceReader get_stream_reader(const DataStorage& storage, const chunk::DataChunk& chunk) {

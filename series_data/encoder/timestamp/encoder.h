@@ -157,7 +157,8 @@ class Encoder {
     return states_[state_id].stream_data.stream;
   }
   [[nodiscard]] PROMPP_ALWAYS_INLINE State& get_state(State::Id state_id) noexcept { return states_[state_id]; }
-  [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_unique_state(State::Id state_id) noexcept {
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const State& get_state(State::Id state_id) const noexcept { return states_[state_id]; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_unique_state(State::Id state_id) const noexcept {
     auto& state = states_[state_id];
     return state.reference_count == 1 && state.child_count == 0;
   }
