@@ -147,6 +147,7 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 			}
 
 			flavorName, nameOk := s.Flavor["original_name"].(string)
+                        // "original_name" is only available for microversion >= 2.47. It was added in favor of "id".
 			if !nameOk {
 				flavorID, idOk := s.Flavor["id"].(string)
 				if !idOk {
