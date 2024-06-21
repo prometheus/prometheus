@@ -1139,6 +1139,24 @@ func (h *Head) ChunkSnapshot() (*ChunkSnapshotStats, error) {
 		h.series.locks[i].RUnlock()
 	}
 
+	survivors := h.series.survivors.Load().(map[chunks.HeadSeriesRef]*memSeries)
+	for _, s := range survivors {
+		start := len(buf)
+		buf = s.encodeToSnapshotRecord(buf)
+		if len(buf[start:]) == 0 {
+			continue // All contents discarded.
+		}
+		recs = append(recs, buf[start:])
+		// Flush records in 10 MB increments.
+		if len(buf) > 10*1024*1024 {
+			if err := cp.Log(recs...); err != nil {
+				return stats, fmt.Errorf("flush records: %w", err)
+			}
+			buf, recs = buf[:0], recs[:0]
+		}
+	}
+	stats.TotalSeries += len(survivors)
+
 	// Add tombstones to the snapshot.
 	tombstonesReader, err := h.Tombstones()
 	if err != nil {
