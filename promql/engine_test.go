@@ -1825,6 +1825,12 @@ load 10s
 			start: 0, end: 20, interval: 10,
 		},
 		{
+			// Limit==-1 -> return empty matrix
+			query: `limitk(-1, metric)`,
+			start: 0, end: 20, interval: 10,
+			result: promql.Matrix(nil),
+		},
+		{
 			// Limit==<over maxInt64> -> error
 			query: fmt.Sprintf(`limitk(%d, metric)`, maxInt64+1000),
 			start: 0, end: 20, interval: 10,
