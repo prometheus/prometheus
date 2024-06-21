@@ -61,7 +61,7 @@ func (m *Request) OptimizedMarshalToSizedBuffer(dAtA []byte) (int, error) {
 				i = encodeVarintTypes(dAtA, i, uint64(size))
 			}
 			i--
-			dAtA[i] = 0x12
+			dAtA[i] = 0x2a
 		}
 	}
 	if len(m.Symbols) > 0 {
@@ -70,7 +70,7 @@ func (m *Request) OptimizedMarshalToSizedBuffer(dAtA []byte) (int, error) {
 			copy(dAtA[i:], m.Symbols[iNdEx])
 			i = encodeVarintTypes(dAtA, i, uint64(len(m.Symbols[iNdEx])))
 			i--
-			dAtA[i] = 0xa
+			dAtA[i] = 0x22
 		}
 	}
 	return len(dAtA) - i, nil

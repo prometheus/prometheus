@@ -31,6 +31,13 @@ import "gogoproto/gogo.proto";
 // are not part of the spec proto (they only modify the generated Go code, not
 // the serialized message). See: https://github.com/prometheus/prometheus/issues/11908
 message Request {
+  // Since Request supersedes 1.0 spec's prometheus.WriteRequest, we reserve the top-down message
+  // for the deterministic interop between those two, see types_test.go for details.
+  // Generally it's not needed, because Receivers must use the Content-Type header, but we want to
+  // be sympathetic to adopters with mistaken implementations and have deterministic error (empty
+  // message if you use the wrong proto schema).
+  reserved 1 to 3;
+
   // symbols contains a de-duplicated array of string elements used for various
   // items in a Request message, like labels and metadata items. For the sender's convenience
   // around empty values for optional fields like unit_ref, symbols array MUST start with
@@ -39,9 +46,9 @@ message Request {
   // To decode each of the symbolized strings, referenced, by "ref(s)" suffix, you
   // need to lookup the actual string by index from symbols array. The order of
   // strings is up to the sender. The receiver should not assume any particular encoding.
-  repeated string symbols = 1;
+  repeated string symbols = 4;
   // timeseries represents an array of distinct series with 0 or more samples.
-  repeated TimeSeries timeseries = 2 [(gogoproto.nullable) = false];
+  repeated TimeSeries timeseries = 5 [(gogoproto.nullable) = false];
 }
 
 // TimeSeries represents a single series.
