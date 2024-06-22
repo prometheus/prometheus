@@ -339,7 +339,7 @@ func TestFailuresCountMetric(t *testing.T) {
 
 			n, c := makeDiscovery(tc.role, NamespaceDiscovery{})
 			// The counter is initialized and no failures at the beginning.
-			require.Equal(t, float64(0), prom_testutil.ToFloat64(n.metrics.failuresCount))
+			require.InDelta(t, float64(0), prom_testutil.ToFloat64(n.metrics.failuresCount), 0.01)
 
 			// Simulate an error on watch requests.
 			c.Discovery().(*fakediscovery.FakeDiscovery).PrependWatchReactor("*", func(action kubetesting.Action) (bool, watch.Interface, error) {

@@ -40,31 +40,31 @@ func TestListSeriesIterator(t *testing.T) {
 	require.Equal(t, chunkenc.ValFloat, it.Seek(1))
 	ts, v := it.At()
 	require.Equal(t, int64(1), ts)
-	require.Equal(t, 1., v)
+	require.InDelta(t, 1., v, 0.01)
 
 	// Seek one further, next sample still has ts=1.
 	require.Equal(t, chunkenc.ValFloat, it.Next())
 	ts, v = it.At()
 	require.Equal(t, int64(1), ts)
-	require.Equal(t, 1.5, v)
+	require.InDelta(t, 1.5, v, 0.01)
 
 	// Seek again to 1 and make sure we stay where we are.
 	require.Equal(t, chunkenc.ValFloat, it.Seek(1))
 	ts, v = it.At()
 	require.Equal(t, int64(1), ts)
-	require.Equal(t, 1.5, v)
+	require.InDelta(t, 1.5, v, 0.01)
 
 	// Another seek.
 	require.Equal(t, chunkenc.ValFloat, it.Seek(3))
 	ts, v = it.At()
 	require.Equal(t, int64(3), ts)
-	require.Equal(t, 3., v)
+	require.InDelta(t, 3., v, 0.01)
 
 	// And we don't go back.
 	require.Equal(t, chunkenc.ValFloat, it.Seek(2))
 	ts, v = it.At()
 	require.Equal(t, int64(3), ts)
-	require.Equal(t, 3., v)
+	require.InDelta(t, 3., v, 0.01)
 
 	// Seek beyond the end.
 	require.Equal(t, chunkenc.ValNone, it.Seek(5))

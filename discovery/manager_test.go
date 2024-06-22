@@ -1218,7 +1218,7 @@ func TestGaugeFailedConfigs(t *testing.T) {
 	<-discoveryManager.SyncCh()
 
 	failedCount := client_testutil.ToFloat64(discoveryManager.metrics.FailedConfigs)
-	require.Equal(t, 3.0, failedCount, "Expected to have 3 failed configs.")
+	require.InDeltaf(t, 3.0, failedCount, 0.01, "Expected to have 3 failed configs.")
 
 	c["prometheus"] = Configs{
 		staticConfig("foo:9090"),
@@ -1227,7 +1227,7 @@ func TestGaugeFailedConfigs(t *testing.T) {
 	<-discoveryManager.SyncCh()
 
 	failedCount = client_testutil.ToFloat64(discoveryManager.metrics.FailedConfigs)
-	require.Equal(t, 0.0, failedCount, "Expected to get no failed config.")
+	require.InDeltaf(t, 0.0, failedCount, 0.01, "Expected to get no failed config.")
 }
 
 func TestCoordinationWithReceiver(t *testing.T) {

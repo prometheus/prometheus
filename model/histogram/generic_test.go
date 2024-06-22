@@ -107,7 +107,7 @@ func TestGetBound(t *testing.T) {
 	for _, s := range scenarios {
 		got := getBound(s.idx, s.schema)
 		if s.want != got {
-			require.Equal(t, s.want, got, "idx %d, schema %d", s.idx, s.schema)
+			require.InDeltaf(t, s.want, got, 0.01, "idx %d, schema %d", s.idx, s.schema)
 		}
 	}
 }

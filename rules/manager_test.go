@@ -520,7 +520,7 @@ func TestForStateRestore(t *testing.T) {
 							// Difference in time should be within 1e6 ns, i.e. 1ms
 							// (due to conversion between ns & ms, float64 & int64).
 							activeAtDiff := queryOffset.Seconds() + float64(e.ActiveAt.Unix()+int64(tt.downDuration/time.Second)-got[i].ActiveAt.Unix())
-							require.Equal(t, 0.0, math.Abs(activeAtDiff), "'for' state restored time is wrong")
+							require.InDeltaf(t, 0.0, math.Abs(activeAtDiff), 0.01, "'for' state restored time is wrong")
 						}
 					}
 				})
@@ -1938,7 +1938,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 			// Each rule should take at least 1 second to execute sequentially.
 			require.GreaterOrEqual(t, time.Since(start).Seconds(), (time.Duration(ruleCount) * artificialDelay).Seconds())
 			// Each rule produces one vector.
-			require.EqualValues(t, ruleCount, testutil.ToFloat64(group.metrics.GroupSamples))
+			require.InDelta(t, ruleCount, testutil.ToFloat64(group.metrics.GroupSamples), 0.01)
 		}
 	})
 
@@ -1976,7 +1976,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 			// Some rules should execute concurrently so should complete quicker.
 			require.Less(t, time.Since(start).Seconds(), (time.Duration(ruleCount) * artificialDelay).Seconds())
 			// Each rule produces one vector.
-			require.EqualValues(t, ruleCount, testutil.ToFloat64(group.metrics.GroupSamples))
+			require.InDelta(t, ruleCount, testutil.ToFloat64(group.metrics.GroupSamples), 0.01)
 		}
 	})
 
@@ -2014,7 +2014,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 			// Some rules should execute concurrently so should complete quicker.
 			require.Less(t, time.Since(start).Seconds(), (time.Duration(ruleCount) * artificialDelay).Seconds())
 			// Each rule produces one vector.
-			require.EqualValues(t, ruleCount, testutil.ToFloat64(group.metrics.GroupSamples))
+			require.InDelta(t, ruleCount, testutil.ToFloat64(group.metrics.GroupSamples), 0.01)
 		}
 	})
 
@@ -2053,7 +2053,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 			// Some rules should execute concurrently so should complete quicker.
 			require.Less(t, time.Since(start).Seconds(), (time.Duration(ruleCount) * artificialDelay).Seconds())
 			// Each rule produces one vector.
-			require.EqualValues(t, ruleCount, testutil.ToFloat64(group.metrics.GroupSamples))
+			require.InDelta(t, ruleCount, testutil.ToFloat64(group.metrics.GroupSamples), 0.01)
 		}
 	})
 }

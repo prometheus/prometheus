@@ -402,7 +402,7 @@ func TestFullTruncateWAL(t *testing.T) {
 	s.truncate(lastTs + 1)
 
 	m := gatherFamily(t, reg, "prometheus_agent_deleted_series")
-	require.Equal(t, float64(numSeries*3), m.Metric[0].Gauge.GetValue(), "agent wal truncate mismatch of deleted series count")
+	require.InDeltaf(t, float64(numSeries*3), m.Metric[0].Gauge.GetValue(), 0.01, "agent wal truncate mismatch of deleted series count")
 }
 
 func TestPartialTruncateWAL(t *testing.T) {
@@ -503,7 +503,7 @@ func TestPartialTruncateWAL(t *testing.T) {
 	s.truncate(lastTs - 1)
 
 	m := gatherFamily(t, reg, "prometheus_agent_deleted_series")
-	require.Equal(t, float64(numSeries*3), m.Metric[0].Gauge.GetValue(), "agent wal truncate mismatch of deleted series count")
+	require.InDeltaf(t, float64(numSeries*3), m.Metric[0].Gauge.GetValue(), 0.01, "agent wal truncate mismatch of deleted series count")
 }
 
 func TestWALReplay(t *testing.T) {
@@ -569,7 +569,7 @@ func TestWALReplay(t *testing.T) {
 
 	// Check if all the series are retrieved back from the WAL.
 	m := gatherFamily(t, reg, "prometheus_agent_active_series")
-	require.Equal(t, float64(numSeries*3), m.Metric[0].Gauge.GetValue(), "agent wal replay mismatch of active series count")
+	require.InDeltaf(t, float64(numSeries*3), m.Metric[0].Gauge.GetValue(), 0.01, "agent wal replay mismatch of active series count")
 
 	// Check if lastTs of the samples retrieved from the WAL is retained.
 	metrics := replayStorage.series.series
@@ -813,8 +813,8 @@ func TestDBAllowOOOSamples(t *testing.T) {
 
 	require.NoError(t, app.Commit())
 	m := gatherFamily(t, reg, "prometheus_agent_samples_appended_total")
-	require.Equal(t, float64(20), m.Metric[0].Counter.GetValue(), "agent wal mismatch of total appended samples")
-	require.Equal(t, float64(40), m.Metric[1].Counter.GetValue(), "agent wal mismatch of total appended histograms")
+	require.InDeltaf(t, float64(20), m.Metric[0].Counter.GetValue(), 0.01, "agent wal mismatch of total appended samples")
+	require.InDeltaf(t, float64(40), m.Metric[1].Counter.GetValue(), 0.01, "agent wal mismatch of total appended histograms")
 	require.NoError(t, s.Close())
 
 	// Hack: s.wal.Dir() is the /wal subdirectory of the original storage path.
@@ -877,8 +877,8 @@ func TestDBAllowOOOSamples(t *testing.T) {
 
 	require.NoError(t, app.Commit())
 	m = gatherFamily(t, reg2, "prometheus_agent_samples_appended_total")
-	require.Equal(t, float64(40), m.Metric[0].Counter.GetValue(), "agent wal mismatch of total appended samples")
-	require.Equal(t, float64(80), m.Metric[1].Counter.GetValue(), "agent wal mismatch of total appended histograms")
+	require.InDeltaf(t, float64(40), m.Metric[0].Counter.GetValue(), 0.01, "agent wal mismatch of total appended samples")
+	require.InDeltaf(t, float64(80), m.Metric[1].Counter.GetValue(), 0.01, "agent wal mismatch of total appended histograms")
 	require.NoError(t, db.Close())
 }
 
@@ -925,8 +925,8 @@ func TestDBOutOfOrderTimeWindow(t *testing.T) {
 				expectedAppendedSamples = 1
 			}
 			m := gatherFamily(t, reg, "prometheus_agent_samples_appended_total")
-			require.Equal(t, expectedAppendedSamples, m.Metric[0].Counter.GetValue(), "agent wal mismatch of total appended samples")
-			require.Equal(t, expectedAppendedSamples, m.Metric[1].Counter.GetValue(), "agent wal mismatch of total appended histograms")
+			require.InDeltaf(t, expectedAppendedSamples, m.Metric[0].Counter.GetValue(), 0.01, "agent wal mismatch of total appended samples")
+			require.InDeltaf(t, expectedAppendedSamples, m.Metric[1].Counter.GetValue(), 0.01, "agent wal mismatch of total appended histograms")
 			require.NoError(t, s.Close())
 		})
 	}

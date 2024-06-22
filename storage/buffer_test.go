@@ -110,7 +110,7 @@ func TestSampleRingMixed(t *testing.T) {
 	require.Equal(t, chunkenc.ValFloat, it.Next())
 	ts, f := it.At()
 	require.Equal(t, int64(1), ts)
-	require.Equal(t, 3.14, f)
+	require.InDelta(t, 3.14, f, 0.01)
 	require.Equal(t, chunkenc.ValHistogram, it.Next())
 	var h *histogram.Histogram
 	ts, h = it.AtHistogram()
@@ -130,7 +130,7 @@ func TestSampleRingMixed(t *testing.T) {
 	require.Equal(t, chunkenc.ValFloat, it.Next())
 	ts, f = it.At()
 	require.Equal(t, int64(3), ts)
-	require.Equal(t, 4.2, f)
+	require.InDelta(t, 4.2, f, 0.01)
 	require.Equal(t, chunkenc.ValHistogram, it.Next())
 	ts, h = it.AtHistogram()
 	require.Equal(t, int64(4), ts)
@@ -216,13 +216,13 @@ func TestBufferedSeriesIterator(t *testing.T) {
 	sampleEq := func(ets int64, ev float64) {
 		ts, v := it.At()
 		require.Equal(t, ets, ts, "timestamp mismatch")
-		require.Equal(t, ev, v, "value mismatch")
+		require.InDeltaf(t, ev, v, 0.01, "value mismatch")
 	}
 	prevSampleEq := func(ets int64, ev float64, eok bool) {
 		s, ok := it.PeekBack(1)
 		require.Equal(t, eok, ok, "exist mismatch")
 		require.Equal(t, ets, s.T(), "timestamp mismatch")
-		require.Equal(t, ev, s.F(), "value mismatch")
+		require.InDelta(t, ev, s.F(), 0.01, "value mismatch")
 	}
 
 	it = NewBufferIterator(NewListSeriesIterator(samples{

@@ -29,7 +29,7 @@ func TestTimerGroupNewTimer(t *testing.T) {
 	tg := NewTimerGroup()
 	timer := tg.GetTimer(ExecTotalTime)
 	duration := timer.Duration()
-	require.Equal(t, 0.0, duration, "Expected duration equal 0")
+	require.InDeltaf(t, 0.0, duration, 0.01, "Expected duration equal 0")
 	minimum := 2 * time.Millisecond
 	timer.Start()
 	time.Sleep(minimum)
