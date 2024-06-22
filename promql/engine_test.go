@@ -1749,121 +1749,33 @@ load 1ms
 	}
 }
 
-// Convenience function that returns a "full matrix" for the specified number
-// of jobs and time range.
-func fullMatrix(totalJobs, start, end, interval, increase int) (promql.Matrix, []labels.Labels) {
-	var mat promql.Matrix
-	var lbls []labels.Labels
-	for job := 1; job <= totalJobs; job++ {
-		lbls = append(lbls, labels.FromStrings("__name__", "metric", "job", strconv.Itoa(job)))
-		series := func(start, end, interval int) promql.Series {
-			var points []promql.FPoint
-			for i := start; i <= end; i += interval {
-				t := int64(increase) * int64(i)
-				points = append(points, promql.FPoint{F: float64(job * i / interval), T: t})
-			}
-			return promql.Series{
-				Floats: points,
-				Metric: labels.FromStrings("__name__", "metric", "job", strconv.Itoa(job)),
-			}
-		}(start, end, interval)
-		mat = append(mat, series)
-	}
-	return mat, lbls
+type simpleRangeQueryOpts struct {
+	start, end, interval                             int64
+	requirePrepError, requireQueryError, requireWarn bool
 }
 
-func TestLimitK(t *testing.T) {
-	engine := newTestEngine()
-	storage := promqltest.LoadedStorage(t, `
-load 10s
-  metric{job="1"} 0+1x1000
-  metric{job="2"} 0+2x1000
-  metric{job="3"} 0+3x1000
-  metric{job="4"} 0+4x1000
-  metric{job="5"} 0+5x1000
-`)
-	t.Cleanup(func() { storage.Close() })
-
-	fullMatrix20, _ := fullMatrix(5, 0, 20, 10, 1000)
-	cases := []struct {
-		query                string
-		start, end, interval int64 // Time in seconds.
-		expectError          bool
-		result               parser.Value
-		resultIn             parser.Value
-		resultLen            int // Required if resultIn is set
-	}{
-		{
-			// Limit==0 -> empty matrix
-			query: `limitk(0, metric)`,
-			start: 0, end: 20, interval: 10,
-			result: promql.Matrix(nil),
-		},
-		{
-			// Limit==2 -> return 2 timeseries (resultLen: 2),
-			// also asserting that they are member of full TSs
-			query: `limitk(2, metric)`,
-			start: 0, end: 20, interval: 10,
-			resultLen: 2,
-			resultIn:  fullMatrix20,
-		},
-		{
-			// Limit==5 -> return full matrix (5 timeseries)
-			query: `limitk(5, metric)`,
-			start: 0, end: 20, interval: 10,
-			result: fullMatrix20,
-		},
-		{
-			// Limit==10 (>5 timeseries) -> still return full matrix (5 timeseries)
-			query: `limitk(10, metric)`,
-			start: 0, end: 20, interval: 10,
-			result: fullMatrix20,
-		},
-		{
-			// Limit <0 -> return empty matrix
-			query: `limitk(10, metric)`,
-			start: 0, end: 20, interval: 10,
-		},
-		{
-			// Limit==-1 -> return empty matrix
-			query: `limitk(-1, metric)`,
-			start: 0, end: 20, interval: 10,
-			result: promql.Matrix(nil),
-		},
-		{
-			// Limit==<over maxInt64> -> error
-			query: fmt.Sprintf(`limitk(%d, metric)`, maxInt64+1000),
-			start: 0, end: 20, interval: 10,
-			expectError: true,
-		},
+func simpleRangeQuery(t *testing.T, engine *promql.Engine, storage *teststorage.TestStorage, query string, opts *simpleRangeQueryOpts) promql.Matrix {
+	var err error
+	var qry promql.Query
+	qry, err = engine.NewRangeQuery(context.Background(), storage, nil, query, time.Unix(opts.start, 0), time.Unix(opts.end, 0), time.Duration(opts.interval)*time.Second)
+	if opts.requirePrepError {
+		require.Error(t, err)
+		return promql.Matrix(nil)
 	}
-	for _, c := range cases {
-		t.Run(c.query, func(t *testing.T) {
-			if c.interval == 0 {
-				c.interval = 1
-			}
-			start, end, interval := time.Unix(c.start, 0), time.Unix(c.end, 0), time.Duration(c.interval)*time.Second
-			var err error
-			var qry promql.Query
-			qry, err = engine.NewRangeQuery(context.Background(), storage, nil, c.query, start, end, interval)
-			require.NoError(t, err)
+	require.NoError(t, err)
 
-			res := qry.Exec(context.Background())
-			if c.expectError {
-				require.Error(t, res.Err)
-				return
-			}
-			require.NoError(t, res.Err)
-			switch {
-			case c.result != nil:
-				testutil.RequireEqual(t, c.result, res.Value, "query %q failed for RequireEqual()", c.query)
-			case c.resultIn != nil:
-				matrix := res.Value.(promql.Matrix)
-				require.Len(t, matrix, c.resultLen, "query %q failed", c.query)
-				requireCommonSeries(t, c.resultIn.(promql.Matrix), matrix, c.resultLen)
-			}
-		})
+	res := qry.Exec(context.Background())
+	if opts.requireQueryError {
+		require.Error(t, res.Err)
+		return promql.Matrix(nil)
 	}
+	if opts.requireWarn {
+		require.NotEmpty(t, res.Warnings)
+	} else {
+		require.Empty(t, res.Warnings)
+	}
+	require.NoError(t, res.Err)
+	return res.Value.(promql.Matrix)
 }
 
 func requireCommonSeries(t *testing.T, expected, actual promql.Matrix, expectedLen int) {
@@ -1884,6 +1796,79 @@ func requireCommonSeries(t *testing.T, expected, actual promql.Matrix, expectedL
 		expectedLen, expected, actual))
 }
 
+func TestLimitK(t *testing.T) {
+	engine := newTestEngine()
+	storage := promqltest.LoadedStorage(t, `
+load 10s
+  metric{job="1"} 0+1x1000
+  metric{job="2"} 0+2x1000
+  metric{job="3"} 0+3x1000
+  metric{job="4"} 0+4x1000
+  metric{job="5"} 0+5x1000
+`)
+	t.Cleanup(func() { storage.Close() })
+
+	opts := simpleRangeQueryOpts{start: 0, end: 20, interval: 10}
+	fullMatrix := simpleRangeQuery(t, engine, storage, `{__name__!=""}`, &opts)
+	cases := []struct {
+		query       string
+		result      parser.Value
+		resultLen   int // Required if resultIn is set
+		resultIn    parser.Value
+		expectError bool
+	}{
+		{
+			// Limit==0 -> empty matrix
+			query:  `limitk(0, metric)`,
+			result: promql.Matrix(nil),
+		},
+		{
+			// Limit==2 -> return 2 timeseries (resultLen: 2),
+			// also asserting that they are member of full TSs
+			query:     `limitk(2, metric)`,
+			resultLen: 2,
+			resultIn:  fullMatrix,
+		},
+		{
+			// Limit==5 -> return full matrix (5 timeseries)
+			query:  `limitk(5, metric)`,
+			result: fullMatrix,
+		},
+		{
+			// Limit==10 (>5 timeseries) -> still return full matrix (5 timeseries)
+			query:  `limitk(10, metric)`,
+			result: fullMatrix,
+		},
+		{
+			// Limit <0 -> return empty matrix
+			query: `limitk(10, metric)`,
+		},
+		{
+			// Limit==-1 -> return empty matrix
+			query:  `limitk(-1, metric)`,
+			result: promql.Matrix(nil),
+		},
+		{
+			// Limit==<over maxInt64> -> error
+			query:       fmt.Sprintf(`limitk(%d, metric)`, maxInt64+1000),
+			expectError: true,
+		},
+	}
+	for _, c := range cases {
+		testOpts := simpleRangeQueryOpts{start: opts.start, end: opts.end, interval: opts.interval, requireQueryError: c.expectError}
+		t.Run(c.query, func(t *testing.T) {
+			matrix := simpleRangeQuery(t, engine, storage, c.query, &testOpts)
+			switch {
+			case c.result != nil:
+				testutil.RequireEqual(t, c.result, matrix, "query %q failed for RequireEqual()", c.query)
+			case c.resultIn != nil:
+				require.Len(t, matrix, c.resultLen, "query %q failed", c.query)
+				requireCommonSeries(t, c.resultIn.(promql.Matrix), matrix, c.resultLen)
+			}
+		})
+	}
+}
+
 func TestLimitRatio(t *testing.T) {
 	engine := newTestEngine()
 	storage := promqltest.LoadedStorage(t, `
@@ -1896,112 +1881,77 @@ load 10s
 `)
 	t.Cleanup(func() { storage.Close() })
 
-	fullMatrix20, lbls := fullMatrix(5, 0, 20, 10, 1000)
+	opts := simpleRangeQueryOpts{start: 0, end: 20, interval: 10}
+	fullMatrix := simpleRangeQuery(t, engine, storage, `{__name__!=""}`, &opts)
 	cases := []struct {
-		query                string
-		start, end, interval int64 // Time in seconds.
-		result               parser.Value
-		expectError          bool
-		expectWarn           bool
+		query           string
+		result          parser.Value
+		resultLen       int
+		resultIn        parser.Value
+		expectPrepError bool
+		expectWarn      bool
 	}{
 		{
 			// ratioLimit=0 -> empty matrix
-			query: `limit_ratio(0, metric)`,
-			start: 0, end: 20, interval: 10,
+			query:  `limit_ratio(0, metric)`,
 			result: promql.Matrix(nil),
 		},
 		{
-			// ratioLimit=0.2 -> return some timeseries
-			// NB: given that involves Metric.Hash() this was _manually_ cherry-picked to match
-			query: `limit_ratio(0.2, metric)`,
-			start: 0, end: 20, interval: 10,
-			result: promql.Matrix{
-				promql.Series{
-					Metric: lbls[0],
-					Floats: []promql.FPoint{{T: 0, F: 0}, {T: 10000, F: 1}, {T: 20000, F: 2}},
-				},
-			},
+			// ratioLimit=0.2 -> return 1/5~ish of timeseries
+			// NB: we're "lucky" enough that labels's hashing are with us here, for 0.2 to be 1/5
+			query:     `limit_ratio(0.2, metric)`,
+			resultLen: 1, // 5 * 0.2 = 1
+			resultIn:  fullMatrix,
 		},
 		{
-			// ratioLimit=-0.8 -> the _completement_ of limit_ratio(0.2, metric)
-			query: `limit_ratio(-0.8, metric)`,
-			start: 0, end: 20, interval: 10,
-			result: promql.Matrix{
-				promql.Series{
-					Floats: []promql.FPoint{{T: 0, F: 0}, {T: 10000, F: 2}, {T: 20000, F: 4}},
-					Metric: lbls[1],
-				},
-				promql.Series{
-					Floats: []promql.FPoint{{T: 0, F: 0}, {T: 10000, F: 3}, {T: 20000, F: 6}},
-					Metric: lbls[2],
-				},
-				promql.Series{
-					Floats: []promql.FPoint{{T: 0, F: 0}, {T: 10000, F: 4}, {T: 20000, F: 8}},
-					Metric: lbls[3],
-				},
-				promql.Series{
-					Floats: []promql.FPoint{{F: 0, T: 0}, {T: 10000, F: 5}, {T: 20000, F: 10}},
-					Metric: lbls[4],
-				},
-			},
+			// ratioLimit=-0.8 -> 4/5~ish, the _completement_ of limit_ratio(0.2, metric)
+			query:     `limit_ratio(-0.8, metric)`,
+			resultLen: 4, // 5 * 0.8 = 4
+			resultIn:  fullMatrix,
 		},
 		{
 			// ratioLimit=1.0 -> full matrix
-			query: `limit_ratio(1.0, metric)`,
-			start: 0, end: 20, interval: 10,
-			result: fullMatrix20,
+			query:  `limit_ratio(1.0, metric)`,
+			result: fullMatrix,
 		},
 		{
 			// ratioLimit=-1.0 -> full matrix also
-			query: `limit_ratio(-1.0, metric)`,
-			start: 0, end: 20, interval: 10,
-			result: fullMatrix20,
+			query:  `limit_ratio(-1.0, metric)`,
+			result: fullMatrix,
 		},
 		{
 			// Treat ratioLimit > 1.0 as 1.0
-			query: `limit_ratio(1.01, metric)`,
-			start: 0, end: 20, interval: 10,
-			result:     fullMatrix20,
+			query:      `limit_ratio(1.01, metric)`,
+			result:     fullMatrix,
 			expectWarn: true,
 		},
 		{
 			// Treat ratioLimit < 1.0 as -1.0
-			query: `limit_ratio(-1.01, metric)`,
-			start: 0, end: 20, interval: 10,
-			result:     fullMatrix20,
+			query:      `limit_ratio(-1.01, metric)`,
+			result:     fullMatrix,
 			expectWarn: true,
 		},
 		{
 			// Handle NaN
-			query: `limit_ratio(1.0.1, metric)`,
-			start: 0, end: 20, interval: 10,
-			expectError: true,
+			query:           `limit_ratio(1.0.1, metric)`,
+			expectPrepError: true,
 		},
 	}
 
 	for _, c := range cases {
 		t.Run(c.query, func(t *testing.T) {
-			if c.interval == 0 {
-				c.interval = 1
-			}
-			start, end, interval := time.Unix(c.start, 0), time.Unix(c.end, 0), time.Duration(c.interval)*time.Second
-			var err error
-			var qry promql.Query
-			qry, err = engine.NewRangeQuery(context.Background(), storage, nil, c.query, start, end, interval)
-			if c.expectError {
-				require.Error(t, err)
+			testOpts := simpleRangeQueryOpts{start: opts.start, end: opts.end, interval: opts.interval, requirePrepError: c.expectPrepError, requireWarn: c.expectWarn}
+			matrix := simpleRangeQuery(t, engine, storage, c.query, &testOpts)
+			if matrix == nil {
 				return
 			}
-			require.NoError(t, err)
-
-			res := qry.Exec(context.Background())
-			require.NoError(t, res.Err)
-			if c.expectWarn {
-				require.NotEmpty(t, res.Warnings)
-			} else {
-				require.Empty(t, res.Warnings)
+			switch {
+			case c.result != nil:
+				testutil.RequireEqual(t, c.result, matrix, "query %q failed for RequireEqual()", c.query)
+			case c.resultIn != nil:
+				require.Len(t, matrix, c.resultLen, "query %q failed", c.query)
+				requireCommonSeries(t, c.resultIn.(promql.Matrix), matrix, c.resultLen)
 			}
-			testutil.RequireEqual(t, c.result, res.Value, "query %q failed for RequireEqual()", c.query)
 		})
 	}
 }
@@ -2018,7 +1968,8 @@ load 10s
 `)
 	t.Cleanup(func() { storage.Close() })
 
-	fullMatrix20, _ := fullMatrix(5, 0, 20, 10, 1000)
+	opts := simpleRangeQueryOpts{start: 0, end: 20, interval: 10}
+	fullMatrix := simpleRangeQuery(t, engine, storage, `{__name__!=""}`, &opts)
 
 	// Dynamically build limit_ratio() cases, to verify that
 	//   limit_ratio(v, metric)
@@ -2027,9 +1978,8 @@ load 10s
 	//
 	// e.g. v=0.2 is the complement (set of timeseries) of v=-0.8
 	type ratioCase struct {
-		query                string
-		start, end, interval int64 // Time in seconds.
-		result               parser.Value
+		query  string
+		result parser.Value
 	}
 	orQuery := `limit_ratio(%f, metric) or limit_ratio(%f, metric)`
 	andQuery := `limit_ratio(%f, metric) and limit_ratio(%f, metric)`
@@ -2037,32 +1987,20 @@ load 10s
 	for v := 0.0; v < 1.0; v += 0.1 {
 		// OR-ing both must return the full matrix
 		ratioCases = append(ratioCases, ratioCase{
-			query: fmt.Sprintf(orQuery, v, -(1.0 - v)),
-			start: 0, end: 20, interval: 10,
-			result: fullMatrix20,
+			query:  fmt.Sprintf(orQuery, v, -(1.0 - v)),
+			result: fullMatrix,
 		})
 		// AND-ing both must return an empty matrix
 		ratioCases = append(ratioCases, ratioCase{
-			query: fmt.Sprintf(andQuery, v, -(1.0 - v)),
-			start: 0, end: 20, interval: 10,
+			query:  fmt.Sprintf(andQuery, v, -(1.0 - v)),
 			result: promql.Matrix{},
 		})
 	}
 
 	for _, c := range ratioCases {
 		t.Run(c.query, func(t *testing.T) {
-			if c.interval == 0 {
-				c.interval = 1
-			}
-			start, end, interval := time.Unix(c.start, 0), time.Unix(c.end, 0), time.Duration(c.interval)*time.Second
-			var err error
-			var qry promql.Query
-			qry, err = engine.NewRangeQuery(context.Background(), storage, nil, c.query, start, end, interval)
-			require.NoError(t, err)
-
-			res := qry.Exec(context.Background())
-			require.NoError(t, res.Err)
-			testutil.RequireEqual(t, c.result, res.Value, "query %q failed for RequireEqual()", c.query)
+			matrix := simpleRangeQuery(t, engine, storage, c.query, &opts)
+			testutil.RequireEqual(t, c.result, matrix, "query %q failed for RequireEqual()", c.query)
 		})
 	}
 }
