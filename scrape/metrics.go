@@ -283,6 +283,7 @@ func (sm *scrapeMetrics) Unregister() {
 	sm.reg.Unregister(sm.targetScrapePoolExceededTargetLimit)
 	sm.reg.Unregister(sm.targetScrapePoolTargetLimit)
 	sm.reg.Unregister(sm.targetScrapePoolTargetsAdded)
+	sm.reg.Unregister(sm.targetScrapePoolSymbolTableItems)
 	sm.reg.Unregister(sm.targetSyncFailed)
 	sm.reg.Unregister(sm.targetScrapeExceededBodySizeLimit)
 	sm.reg.Unregister(sm.targetScrapeCacheFlushForced)
