@@ -16,6 +16,7 @@ package remote
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"strconv"
 	"sync"
@@ -1224,12 +1225,16 @@ func (s *shards) stop() {
 	// Force an unclean shutdown.
 	s.hardShutdown()
 	<-s.done
-	if dropped := s.samplesDroppedOnHardShutdown.Load(); dropped > 0 {
-		level.Error(s.qm.logger).Log("msg", "Failed to flush all samples on shutdown", "count", dropped)
+
+	// Log error for any dropped samples, exemplars, or histograms.
+	logDroppedError := func(t string, counter atomic.Uint32) {
+		if dropped := counter.Load(); dropped > 0 {
+			level.Error(s.qm.logger).Log("msg", fmt.Sprintf("Failed to flush all %s on shutdown", t), "count", dropped)
+		}
 	}
-	if dropped := s.exemplarsDroppedOnHardShutdown.Load(); dropped > 0 {
-		level.Error(s.qm.logger).Log("msg", "Failed to flush all exemplars on shutdown", "count", dropped)
-	}
+	logDroppedError("samples", s.samplesDroppedOnHardShutdown)
+	logDroppedError("exemplars", s.exemplarsDroppedOnHardShutdown)
+	logDroppedError("histograms", s.histogramsDroppedOnHardShutdown)
 }
 
 // enqueue data (sample or exemplar). If the shard is full, shutting down, or
@@ -1507,7 +1512,7 @@ func (s *shards) populateTimeSeries(batch []timeSeries, pendingData []prompb.Tim
 		// Number of pending samples is limited by the fact that sendSamples (via sendSamplesWithBackoff)
 		// retries endlessly, so once we reach max samples, if we can never send to the endpoint we'll
 		// stop reading from the queue. This makes it safe to reference pendingSamples by index.
-		pendingData[nPending].Labels = labelsToLabelsProto(d.seriesLabels, pendingData[nPending].Labels)
+		pendingData[nPending].Labels = LabelsToLabelsProto(d.seriesLabels, pendingData[nPending].Labels)
 		switch d.sType {
 		case tSample:
 			pendingData[nPending].Samples = append(pendingData[nPending].Samples, prompb.Sample{
@@ -1517,7 +1522,7 @@ func (s *shards) populateTimeSeries(batch []timeSeries, pendingData []prompb.Tim
 			nPendingSamples++
 		case tExemplar:
 			pendingData[nPending].Exemplars = append(pendingData[nPending].Exemplars, prompb.Exemplar{
-				Labels:    labelsToLabelsProto(d.exemplarLabels, nil),
+				Labels:    LabelsToLabelsProto(d.exemplarLabels, nil),
 				Value:     d.value,
 				Timestamp: d.timestamp,
 			})
@@ -1537,7 +1542,7 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 	begin := time.Now()
 	err := s.sendSamplesWithBackoff(ctx, samples, sampleCount, exemplarCount, histogramCount, pBuf, buf)
 	if err != nil {
-		level.Error(s.qm.logger).Log("msg", "non-recoverable error", "count", sampleCount, "exemplarCount", exemplarCount, "err", err)
+		level.Error(s.qm.logger).Log("msg", "non-recoverable error", "count", sampleCount, "exemplarCount", exemplarCount, "histogramCount", histogramCount, "err", err)
 		s.qm.metrics.failedSamplesTotal.Add(float64(sampleCount))
 		s.qm.metrics.failedExemplarsTotal.Add(float64(exemplarCount))
 		s.qm.metrics.failedHistogramsTotal.Add(float64(histogramCount))
@@ -1778,9 +1783,11 @@ func buildTimeSeries(timeSeries []prompb.TimeSeries, filter func(prompb.TimeSeri
 		if len(ts.Histograms) > 0 && ts.Histograms[0].Timestamp < lowest {
 			lowest = ts.Histograms[0].Timestamp
 		}
-
-		// Move the current element to the write position and increment the write pointer
-		timeSeries[keepIdx] = timeSeries[i]
+		if i != keepIdx {
+			// We have to swap the kept timeseries with the one which should be dropped.
+			// Copying any elements within timeSeries could cause data corruptions when reusing the slice in a next batch (shards.populateTimeSeries).
+			timeSeries[keepIdx], timeSeries[i] = timeSeries[i], timeSeries[keepIdx]
+		}
 		keepIdx++
 	}
 
