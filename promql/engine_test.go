@@ -1858,27 +1858,30 @@ load 10s
 			case c.result != nil:
 				testutil.RequireEqual(t, c.result, res.Value, "query %q failed for RequireEqual()", c.query)
 			case c.resultIn != nil:
-				require.Len(t, res.Value.(promql.Matrix), c.resultLen, "query %q failed", c.query)
-				requireCommonSeries := func(t *testing.T, length int, actMatrix, expMatrix promql.Matrix) {
-					cnt := 0
-					for _, actSeries := range actMatrix {
-						for _, expSeries := range expMatrix {
-							if testutil.CheckEqual(t, actSeries, expSeries) {
-								cnt++
-								if cnt == length {
-									return
-								}
-							}
-						}
-					}
-					require.Fail(t, fmt.Sprintf("Expected and Actual matrices don't have %d equal series: \n"+
-						"Expected: \n%s\n"+
-						"Actual: \n%s\n", c.resultLen, c.resultIn, res.Value))
-				}
-				requireCommonSeries(t, c.resultLen, c.resultIn.(promql.Matrix), res.Value.(promql.Matrix))
+				matrix := res.Value.(promql.Matrix)
+				require.Len(t, matrix, c.resultLen, "query %q failed", c.query)
+				requireCommonSeries(t, c.resultIn.(promql.Matrix), matrix, c.resultLen)
 			}
 		})
 	}
+}
+
+func requireCommonSeries(t *testing.T, expected, actual promql.Matrix, expectedLen int) {
+	commonSeries := 0
+	for _, actSeries := range actual {
+		for _, expSeries := range expected {
+			if testutil.CheckEqual(t, actSeries, expSeries) {
+				commonSeries++
+				if commonSeries == expectedLen {
+					return
+				}
+			}
+		}
+	}
+	require.Fail(t, fmt.Sprintf("Expected and Actual matrices don't have %d equal series:\n"+
+		"Expected:\n%s\n"+
+		"Actual:\n%s\n",
+		expectedLen, expected, actual))
 }
 
 func TestLimitRatio(t *testing.T) {
