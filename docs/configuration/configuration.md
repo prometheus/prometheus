@@ -70,7 +70,7 @@ global:
 
   # How frequently to evaluate rules.
   [ evaluation_interval: <duration> | default = 1m ]
-
+                        
   # Offset the rule evaluation timestamp of this particular group by the specified duration into the past to ensure the underlying metrics have been received.
   # Metric availability delays are more likely to occur when Prometheus is running as a remote write target, but can also occur when there's anomalies with scraping.
   [ rule_query_offset: <duration> | default = 0s ]
@@ -467,7 +467,7 @@ metric_relabel_configs:
 # reduced until it is within the limit.
 # To set an upper limit for the schema (equivalent to "scale" in OTel's
 # exponential histograms), use the following factor limits:
-#
+# 
 # +----------------------------+----------------------------+
 # |        growth factor       | resulting schema AKA scale |
 # +----------------------------+----------------------------+
@@ -497,7 +497,7 @@ metric_relabel_configs:
 # +----------------------------+----------------------------+
 # |              1.002         |              8             |
 # +----------------------------+----------------------------+
-#
+# 
 # 0 results in the smallest supported factor (which is currently ~1.0027 or
 # schema 8, but might change in the future).
 [ native_histogram_min_bucket_factor: <float> | default = 0 ]
@@ -693,7 +693,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_consul_address`: the address of the target
 * `__meta_consul_dc`: the datacenter name for the target
 * `__meta_consul_health`: the health status of the service
-* `__meta_consul_partition`: the admin partition name where the service is registered
+* `__meta_consul_partition`: the admin partition name where the service is registered 
 * `__meta_consul_metadata_<key>`: each node metadata key value of the target
 * `__meta_consul_node`: the node name defined for the target
 * `__meta_consul_service_address`: the service address of the target
@@ -1229,6 +1229,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_ec2_ipv6_addresses`: comma separated list of IPv6 addresses assigned to the instance's network interfaces, if present
 * `__meta_ec2_owner_id`: the ID of the AWS account that owns the EC2 instance
 * `__meta_ec2_platform`: the Operating System platform, set to 'windows' on Windows servers, absent otherwise
+* `__meta_ec2_primary_ipv6_addresses`: comma separated list of the Primary IPv6 addresses of the instance, if present. The list is ordered based on the position of each corresponding network interface in the attachment order.
 * `__meta_ec2_primary_subnet_id`: the subnet ID of the primary network interface, if available
 * `__meta_ec2_private_dns_name`: the private DNS name of the instance, if available
 * `__meta_ec2_private_ip`: the private IP address of the instance, if present
@@ -1359,7 +1360,7 @@ interface.
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
 * `__meta_openstack_address_pool`: the pool of the private IP.
-* `__meta_openstack_instance_flavor`: the flavor name or flavor ID of the OpenStack instance, whichever is available
+* `__meta_openstack_instance_flavor`: the flavor name or flavor ID of the OpenStack instance, whichever is available.
 * `__meta_openstack_instance_id`: the OpenStack instance ID.
 * `__meta_openstack_instance_image`: the ID of the image the OpenStack instance is using.
 * `__meta_openstack_instance_name`: the OpenStack instance name.
@@ -1608,7 +1609,7 @@ and serves as an interface to plug in custom service discovery mechanisms.
 
 It reads a set of files containing a list of zero or more
 `<static_config>`s. Changes to all defined files are detected via disk watches
-and applied immediately.
+and applied immediately. 
 
 While those individual files are watched for changes,
 the parent directory is also watched implicitly. This is to handle [atomic
@@ -2295,7 +2296,7 @@ See below for the configuration options for Kuma MonitoringAssignment discovery:
 # Address of the Kuma Control Plane's MADS xDS server.
 server: <string>
 
-# Client id is used by Kuma Control Plane to compute Monitoring Assignment for specific Prometheus backend.
+# Client id is used by Kuma Control Plane to compute Monitoring Assignment for specific Prometheus backend. 
 # This is useful when migrating between multiple Prometheus backends, or having separate backend for each Mesh.
 # When not specified, system hostname/fqdn will be used if available, if not `prometheus` will be used.
 [ client_id: <string> ]
@@ -2480,7 +2481,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_linode_status`: the status of the linode instance
 * `__meta_linode_tags`: a list of tags of the linode instance joined by the tag separator
 * `__meta_linode_group`: the display group a linode instance is a member of
-* `__meta_linode_gpus`: the number of GPU's of the linode instance
+* `__meta_linode_gpus`: the number of GPU's of the linode instance 
 * `__meta_linode_hypervisor`: the virtualization software powering the linode instance
 * `__meta_linode_backups`: the backup service status of the linode instance
 * `__meta_linode_specs_disk_bytes`: the amount of storage space the linode instance has access to
@@ -3645,7 +3646,7 @@ azuread:
 
   # Azure User-assigned Managed identity.
   [ managed_identity:
-      [ client_id: <string> ] ]
+      [ client_id: <string> ] ]  
 
   # Azure OAuth.
   [ oauth:
@@ -3823,8 +3824,8 @@ NOTE: Out-of-order ingestion is an experimental feature, but you do not need any
 # that is within the out-of-order window, or (b) too-old, i.e. not in-order
 # and before the out-of-order window.
 #
-# When out_of_order_time_window is greater than 0, it also affects experimental agent. It allows
-# the agent's WAL to accept out-of-order samples that fall within the specified time window relative
+# When out_of_order_time_window is greater than 0, it also affects experimental agent. It allows 
+# the agent's WAL to accept out-of-order samples that fall within the specified time window relative 
 # to the timestamp of the last appended sample for the same series.
 [ out_of_order_time_window: <duration> | default = 0s ]
 ```
