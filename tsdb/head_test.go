@@ -30,6 +30,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
@@ -50,6 +51,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 // newTestHeadDefaultOptions returns the HeadOptions that should be used by default in unit tests.
@@ -170,7 +172,7 @@ func readTestWAL(t testing.TB, dir string) (recs []interface{}) {
 		require.NoError(t, sr.Close())
 	}()
 
-	var dec record.Decoder
+	dec := record.NewDecoder(labels.NewSymbolTable())
 	r := wlog.NewReader(sr)
 
 	for r.Next() {
@@ -206,7 +208,7 @@ func readTestWAL(t testing.TB, dir string) (recs []interface{}) {
 			require.NoError(t, err)
 			recs = append(recs, exemplars)
 		default:
-			t.Fatalf("unknown record type")
+			require.Fail(t, "unknown record type")
 		}
 	}
 	require.NoError(t, r.Err())
@@ -373,7 +375,7 @@ func BenchmarkLoadWLs(b *testing.B) {
 									Ref:    chunks.HeadSeriesRef(k) * 101,
 									T:      int64(i) * 10,
 									V:      float64(i) * 100,
-									Labels: labels.FromStrings("traceID", fmt.Sprintf("trace-%d", i)),
+									Labels: labels.FromStrings("trace_id", fmt.Sprintf("trace-%d", i)),
 								})
 							}
 							populateTestWL(b, wal, []interface{}{refExemplars})
@@ -658,7 +660,7 @@ func TestHead_ReadWAL(t *testing.T) {
 					{Ref: 0, Intervals: []tombstones.Interval{{Mint: 99, Maxt: 101}}},
 				},
 				[]record.RefExemplar{
-					{Ref: 10, T: 100, V: 1, Labels: labels.FromStrings("traceID", "asdf")},
+					{Ref: 10, T: 100, V: 1, Labels: labels.FromStrings("trace_id", "asdf")},
 				},
 			}
 
@@ -677,10 +679,10 @@ func TestHead_ReadWAL(t *testing.T) {
 			s50 := head.series.getByID(50)
 			s100 := head.series.getByID(100)
 
-			require.Equal(t, labels.FromStrings("a", "1"), s10.lset)
-			require.Equal(t, (*memSeries)(nil), s11) // Series without samples should be garbage collected at head.Init().
-			require.Equal(t, labels.FromStrings("a", "4"), s50.lset)
-			require.Equal(t, labels.FromStrings("a", "3"), s100.lset)
+			testutil.RequireEqual(t, labels.FromStrings("a", "1"), s10.lset)
+			require.Nil(t, s11) // Series without samples should be garbage collected at head.Init().
+			testutil.RequireEqual(t, labels.FromStrings("a", "4"), s50.lset)
+			testutil.RequireEqual(t, labels.FromStrings("a", "3"), s100.lset)
 
 			expandChunk := func(c chunkenc.Iterator) (x []sample) {
 				for c.Next() == chunkenc.ValFloat {
@@ -707,7 +709,7 @@ func TestHead_ReadWAL(t *testing.T) {
 			require.NoError(t, err)
 			e, err := q.Select(0, 1000, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "1")})
 			require.NoError(t, err)
-			require.Equal(t, exemplar.Exemplar{Ts: 100, Value: 1, Labels: labels.FromStrings("traceID", "asdf")}, e[0].Exemplars[0])
+			require.True(t, exemplar.Exemplar{Ts: 100, Value: 1, Labels: labels.FromStrings("trace_id", "asdf")}.Equals(e[0].Exemplars[0]))
 		})
 	}
 }
@@ -810,6 +812,80 @@ func TestHead_UnknownWALRecord(t *testing.T) {
 	w.Log([]byte{255, 42})
 	require.NoError(t, head.Init(0))
 	require.NoError(t, head.Close())
+}
+
+// BenchmarkHead_Truncate is quite heavy, so consider running it with
+// -benchtime=10x or similar to get more stable and comparable results.
+func BenchmarkHead_Truncate(b *testing.B) {
+	const total = 1e6
+
+	prepare := func(b *testing.B, churn int) *Head {
+		h, _ := newTestHead(b, 1000, wlog.CompressionNone, false)
+		b.Cleanup(func() {
+			require.NoError(b, h.Close())
+		})
+
+		h.initTime(0)
+
+		internedItoa := map[int]string{}
+		var mtx sync.RWMutex
+		itoa := func(i int) string {
+			mtx.RLock()
+			s, ok := internedItoa[i]
+			mtx.RUnlock()
+			if ok {
+				return s
+			}
+			mtx.Lock()
+			s = strconv.Itoa(i)
+			internedItoa[i] = s
+			mtx.Unlock()
+			return s
+		}
+
+		allSeries := [total]labels.Labels{}
+		nameValues := make([]string, 0, 100)
+		for i := 0; i < total; i++ {
+			nameValues = nameValues[:0]
+
+			// A thousand labels like lbl_x_of_1000, each with total/1000 values
+			thousand := "lbl_" + itoa(i%1000) + "_of_1000"
+			nameValues = append(nameValues, thousand, itoa(i/1000))
+			// A hundred labels like lbl_x_of_100, each with total/100 values.
+			hundred := "lbl_" + itoa(i%100) + "_of_100"
+			nameValues = append(nameValues, hundred, itoa(i/100))
+
+			if i%13 == 0 {
+				ten := "lbl_" + itoa(i%10) + "_of_10"
+				nameValues = append(nameValues, ten, itoa(i%10))
+			}
+
+			allSeries[i] = labels.FromStrings(append(nameValues, "first", "a", "second", "a", "third", "a")...)
+			s, _, _ := h.getOrCreate(allSeries[i].Hash(), allSeries[i])
+			s.mmappedChunks = []*mmappedChunk{
+				{minTime: 1000 * int64(i/churn), maxTime: 999 + 1000*int64(i/churn)},
+			}
+		}
+
+		return h
+	}
+
+	for _, churn := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprintf("churn=%d", churn), func(b *testing.B) {
+			if b.N > total/churn {
+				// Just to make sure that benchmark still makes sense.
+				panic("benchmark not prepared")
+			}
+			h := prepare(b, churn)
+			b.ResetTimer()
+
+			for i := 0; i < b.N; i++ {
+				require.NoError(b, h.Truncate(1000*int64(i)))
+				// Make sure the benchmark is meaningful and it's actually truncating the expected amount of series.
+				require.Equal(b, total-churn*i, int(h.NumSeries()))
+			}
+		})
+	}
 }
 
 func TestHead_Truncate(t *testing.T) {
@@ -1213,7 +1289,6 @@ func TestHeadDeleteSimple(t *testing.T) {
 				for _, smpl := range smplsAll {
 					_, err := app.Append(0, lblsDefault, smpl.t, smpl.f)
 					require.NoError(t, err)
-
 				}
 				require.NoError(t, app.Commit())
 
@@ -1227,7 +1302,6 @@ func TestHeadDeleteSimple(t *testing.T) {
 				for _, smpl := range c.addSamples {
 					_, err := app.Append(0, lblsDefault, smpl.t, smpl.f)
 					require.NoError(t, err)
-
 				}
 				require.NoError(t, app.Commit())
 
@@ -1371,7 +1445,7 @@ func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
 		case []record.RefMetadata:
 			metadata++
 		default:
-			t.Fatalf("unknown record type")
+			require.Fail(t, "unknown record type")
 		}
 	}
 	require.Equal(t, 1, series)
@@ -1620,9 +1694,7 @@ func TestComputeChunkEndTime(t *testing.T) {
 	for testName, tc := range cases {
 		t.Run(testName, func(t *testing.T) {
 			got := computeChunkEndTime(tc.start, tc.cur, tc.max, tc.ratioToFull)
-			if got != tc.res {
-				t.Errorf("expected %d for (start: %d, cur: %d, max: %d, ratioToFull: %f), got %d", tc.res, tc.start, tc.cur, tc.max, tc.ratioToFull, got)
-			}
+			require.Equal(t, tc.res, got, "(start: %d, cur: %d, max: %d)", tc.start, tc.cur, tc.max)
 		})
 	}
 }
@@ -3049,7 +3121,7 @@ func TestHeadExemplars(t *testing.T) {
 	head, _ := newTestHead(t, chunkRange, wlog.CompressionNone, false)
 	app := head.Appender(context.Background())
 
-	l := labels.FromStrings("traceId", "123")
+	l := labels.FromStrings("trace_id", "123")
 	// It is perfectly valid to add Exemplars before the current start time -
 	// histogram buckets that haven't been update in a while could still be
 	// exported exemplars from an hour ago.
@@ -3385,7 +3457,7 @@ func TestWaitForPendingReadersInTimeRange(t *testing.T) {
 func TestAppendHistogram(t *testing.T) {
 	l := labels.FromStrings("a", "b")
 	for _, numHistograms := range []int{1, 10, 150, 200, 250, 300} {
-		t.Run(fmt.Sprintf("%d", numHistograms), func(t *testing.T) {
+		t.Run(strconv.Itoa(numHistograms), func(t *testing.T) {
 			head, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
 			t.Cleanup(func() {
 				require.NoError(t, head.Close())
@@ -3559,7 +3631,7 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 		expMmapChunks = append(expMmapChunks, &cpy)
 	}
 	expHeadChunkSamples := ms.headChunks.chunk.NumSamples()
-	require.Greater(t, expHeadChunkSamples, 0)
+	require.Positive(t, expHeadChunkSamples)
 
 	// Series with mix of histograms and float.
 	s2 := labels.FromStrings("a", "b2")
@@ -3694,7 +3766,7 @@ func TestChunkSnapshot(t *testing.T) {
 		e := ex{
 			seriesLabels: lbls,
 			e: exemplar.Exemplar{
-				Labels: labels.FromStrings("traceID", fmt.Sprintf("%d", rand.Int())),
+				Labels: labels.FromStrings("trace_id", strconv.Itoa(rand.Int())),
 				Value:  rand.Float64(),
 				Ts:     ts,
 			},
@@ -3745,7 +3817,7 @@ func TestChunkSnapshot(t *testing.T) {
 		})
 		require.NoError(t, err)
 		// Verifies both existence of right exemplars and order of exemplars in the buffer.
-		require.Equal(t, expExemplars, actExemplars)
+		testutil.RequireEqualWithOptions(t, expExemplars, actExemplars, []cmp.Option{cmp.AllowUnexported(ex{})})
 	}
 
 	var (
@@ -3851,7 +3923,6 @@ func TestChunkSnapshot(t *testing.T) {
 	}
 
 	{ // Additional data to only include in WAL and m-mapped chunks and not snapshot. This mimics having an old snapshot on disk.
-
 		// Add more samples.
 		app := head.Appender(context.Background())
 		for i := 1; i <= numSeries; i++ {
@@ -4010,6 +4081,9 @@ func TestSnapshotError(t *testing.T) {
 	require.NoError(t, err)
 	f, err := os.OpenFile(path.Join(snapDir, files[0].Name()), os.O_RDWR, 0)
 	require.NoError(t, err)
+	// Create snapshot backup to be restored on future test cases.
+	snapshotBackup, err := io.ReadAll(f)
+	require.NoError(t, err)
 	_, err = f.WriteAt([]byte{0b11111111}, 18)
 	require.NoError(t, err)
 	require.NoError(t, f.Close())
@@ -4024,10 +4098,44 @@ func TestSnapshotError(t *testing.T) {
 
 	// There should be no series in the memory after snapshot error since WAL was removed.
 	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal))
+	require.Equal(t, uint64(0), head.NumSeries())
 	require.Nil(t, head.series.getByHash(lbls.Hash(), lbls))
 	tm, err = head.tombstones.Get(1)
 	require.NoError(t, err)
 	require.Empty(t, tm)
+	require.NoError(t, head.Close())
+
+	// Test corruption in the middle of the snapshot.
+	f, err = os.OpenFile(path.Join(snapDir, files[0].Name()), os.O_RDWR, 0)
+	require.NoError(t, err)
+	_, err = f.WriteAt(snapshotBackup, 0)
+	require.NoError(t, err)
+	_, err = f.WriteAt([]byte{0b11111111}, 300)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	c := &countSeriesLifecycleCallback{}
+	opts := head.opts
+	opts.SeriesCallback = c
+
+	w, err = wlog.NewSize(nil, nil, head.wal.Dir(), 32768, wlog.CompressionNone)
+	require.NoError(t, err)
+	head, err = NewHead(prometheus.NewRegistry(), nil, w, nil, head.opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, head.Init(math.MinInt64))
+
+	// There should be no series in the memory after snapshot error since WAL was removed.
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal))
+	require.Nil(t, head.series.getByHash(lbls.Hash(), lbls))
+	require.Equal(t, uint64(0), head.NumSeries())
+
+	// Since the snapshot could replay certain series, we continue invoking the create hooks.
+	// In such instances, we need to ensure that we also trigger the delete hooks when resetting the memory.
+	require.Equal(t, int64(2), c.created.Load())
+	require.Equal(t, int64(2), c.deleted.Load())
+
+	require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.seriesRemoved))
+	require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.seriesCreated))
 }
 
 func TestHistogramMetrics(t *testing.T) {
@@ -4604,7 +4712,7 @@ func TestChunkSnapshotTakenAfterIncompleteSnapshot(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, "", name)
 	require.Equal(t, 0, idx)
-	require.Greater(t, offset, 0)
+	require.Positive(t, offset)
 }
 
 // TestWBLReplay checks the replay at a low level.
@@ -5035,7 +5143,7 @@ func TestOOOAppendWithNoSeries(t *testing.T) {
 		require.Equal(t, expSamples, ms.headChunks.chunk.NumSamples())
 	}
 
-	newLabels := func(idx int) labels.Labels { return labels.FromStrings("foo", fmt.Sprintf("%d", idx)) }
+	newLabels := func(idx int) labels.Labels { return labels.FromStrings("foo", strconv.Itoa(idx)) }
 
 	s1 := newLabels(1)
 	appendSample(s1, 300) // At 300m.
@@ -5818,4 +5926,28 @@ func TestHeadAppender_AppendCTZeroSample(t *testing.T) {
 		}
 		require.Equal(t, chunkenc.ValNone, it.Next())
 	}
+}
+
+func TestHeadCompactableDoesNotCompactEmptyHead(t *testing.T) {
+	// Use a chunk range of 1 here so that if we attempted to determine if the head
+	// was compactable using default values for min and max times, `Head.compactable()`
+	// would return true which is incorrect. This test verifies that we short-circuit
+	// the check when the head has not yet had any samples added.
+	head, _ := newTestHead(t, 1, wlog.CompressionNone, false)
+	defer func() {
+		require.NoError(t, head.Close())
+	}()
+
+	require.False(t, head.compactable())
+}
+
+type countSeriesLifecycleCallback struct {
+	created atomic.Int64
+	deleted atomic.Int64
+}
+
+func (c *countSeriesLifecycleCallback) PreCreation(labels.Labels) error { return nil }
+func (c *countSeriesLifecycleCallback) PostCreation(labels.Labels)      { c.created.Inc() }
+func (c *countSeriesLifecycleCallback) PostDeletion(s map[chunks.HeadSeriesRef]labels.Labels) {
+	c.deleted.Add(int64(len(s)))
 }

@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package promql
+package promql_test
 
 import (
 	"context"
@@ -23,16 +23,21 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
-func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *Engine, interval, numIntervals int) error {
+func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *promql.Engine, interval, numIntervals int) error {
 	ctx := context.Background()
 
 	metrics := []labels.Labels{}
+	// Generating test series: a_X, b_X, and h_X, where X can take values of one, ten, or hundred,
+	// representing the number of series each metric name contains.
+	// Metric a_X and b_X are simple metrics where h_X is a histogram.
+	// These metrics will have data for all test time range
 	metrics = append(metrics, labels.FromStrings("__name__", "a_one"))
 	metrics = append(metrics, labels.FromStrings("__name__", "b_one"))
 	for j := 0; j < 10; j++ {
@@ -59,6 +64,9 @@ func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *Engine, interval,
 	}
 	refs := make([]storage.SeriesRef, len(metrics))
 
+	// Number points for each different label value of "l" for the sparse series
+	pointsPerSparseSeries := numIntervals / 50
+
 	for s := 0; s < numIntervals; s++ {
 		a := stor.Appender(context.Background())
 		ts := int64(s * interval)
@@ -66,10 +74,18 @@ func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *Engine, interval,
 			ref, _ := a.Append(refs[i], metric, ts, float64(s)+float64(i)/float64(len(metrics)))
 			refs[i] = ref
 		}
+		// Generating a sparse time series: each label value of "l" will contain data only for
+		// pointsPerSparseSeries points
+		metric := labels.FromStrings("__name__", "sparse", "l", strconv.Itoa(s/pointsPerSparseSeries))
+		_, err := a.Append(0, metric, ts, float64(s)/float64(len(metrics)))
+		if err != nil {
+			return err
+		}
 		if err := a.Commit(); err != nil {
 			return err
 		}
 	}
+
 	stor.DB.ForceHeadMMap() // Ensure we have at most one head chunk for every series.
 	stor.DB.Compact(ctx)
 	return nil
@@ -92,6 +108,10 @@ func rangeQueryCases() []benchCase {
 		},
 		{
 			expr:  "rate(a_X[1m])",
+			steps: 10000,
+		},
+		{
+			expr:  "rate(sparse[1m])",
 			steps: 10000,
 		},
 		// Holt-Winters and long ranges.
@@ -230,13 +250,13 @@ func BenchmarkRangeQuery(b *testing.B) {
 	stor := teststorage.New(b)
 	stor.DB.DisableCompactions() // Don't want auto-compaction disrupting timings.
 	defer stor.Close()
-	opts := EngineOpts{
+	opts := promql.EngineOpts{
 		Logger:     nil,
 		Reg:        nil,
 		MaxSamples: 50000000,
 		Timeout:    100 * time.Second,
 	}
-	engine := NewEngine(opts)
+	engine := promql.NewEngine(opts)
 
 	const interval = 10000 // 10s interval.
 	// A day of data plus 10k steps.
@@ -303,9 +323,17 @@ func BenchmarkNativeHistograms(b *testing.B) {
 			name:  "sum rate with long rate interval",
 			query: "sum(rate(native_histogram_series[20m]))",
 		},
+		{
+			name:  "histogram_count with short rate interval",
+			query: "histogram_count(sum(rate(native_histogram_series[2m])))",
+		},
+		{
+			name:  "histogram_count with long rate interval",
+			query: "histogram_count(sum(rate(native_histogram_series[20m])))",
+		},
 	}
 
-	opts := EngineOpts{
+	opts := promql.EngineOpts{
 		Logger:               nil,
 		Reg:                  nil,
 		MaxSamples:           50000000,
@@ -319,7 +347,7 @@ func BenchmarkNativeHistograms(b *testing.B) {
 
 	for _, tc := range cases {
 		b.Run(tc.name, func(b *testing.B) {
-			ng := NewEngine(opts)
+			ng := promql.NewEngine(opts)
 			for i := 0; i < b.N; i++ {
 				qry, err := ng.NewRangeQuery(context.Background(), testStorage, nil, tc.query, start, end, step)
 				if err != nil {

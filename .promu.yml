@@ -1,7 +1,7 @@
 go:
     # Whenever the Go version is updated here,
-    # .circle/config.yml should also be updated.
-    version: 1.21
+    # .github/workflows should also be updated.
+    version: 1.22
 repository:
     path: github.com/prometheus/prometheus
 build:

@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 	otlptranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
@@ -81,7 +82,7 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// checkAppendExemplarError modifies the AppendExamplar's returned error based on the error cause.
+// checkAppendExemplarError modifies the AppendExemplar's returned error based on the error cause.
 func (h *writeHandler) checkAppendExemplarError(err error, e exemplar.Exemplar, outOfOrderErrs *int) error {
 	unwrappedErr := errors.Unwrap(err)
 	if unwrappedErr == nil {
@@ -112,9 +113,10 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 		err = app.Commit()
 	}()
 
+	b := labels.NewScratchBuilder(0)
 	var exemplarErr error
 	for _, ts := range req.Timeseries {
-		labels := labelProtosToLabels(ts.Labels)
+		labels := LabelProtosToLabels(&b, ts.Labels)
 		if !labels.IsValid() {
 			level.Warn(h.logger).Log("msg", "Invalid metric names or labels", "got", labels.String())
 			samplesWithInvalidLabels++
@@ -133,11 +135,10 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 				}
 				return err
 			}
-
 		}
 
 		for _, ep := range ts.Exemplars {
-			e := exemplarProtoToExemplar(ep)
+			e := exemplarProtoToExemplar(&b, ep)
 
 			_, exemplarErr = app.AppendExemplar(0, labels, e)
 			exemplarErr = h.checkAppendExemplarError(exemplarErr, e, &outOfOrderExemplarErrs)
@@ -207,21 +208,15 @@ func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prwMetricsMap, errs := otlptranslator.FromMetrics(req.Metrics(), otlptranslator.Settings{
+	converter := otlptranslator.NewPrometheusConverter()
+	if err := converter.FromMetrics(req.Metrics(), otlptranslator.Settings{
 		AddMetricSuffixes: true,
-	})
-	if errs != nil {
-		level.Warn(h.logger).Log("msg", "Error translating OTLP metrics to Prometheus write request", "err", errs)
-	}
-
-	prwMetrics := make([]prompb.TimeSeries, 0, len(prwMetricsMap))
-
-	for _, ts := range prwMetricsMap {
-		prwMetrics = append(prwMetrics, *ts)
+	}); err != nil {
+		level.Warn(h.logger).Log("msg", "Error translating OTLP metrics to Prometheus write request", "err", err)
 	}
 
 	err = h.rwHandler.write(r.Context(), &prompb.WriteRequest{
-		Timeseries: prwMetrics,
+		Timeseries: converter.TimeSeries(),
 	})
 
 	switch {

@@ -28,6 +28,14 @@ type RuleDetail struct {
 	Query  string
 	Labels labels.Labels
 	Kind   string
+
+	// NoDependentRules is set to true if it's guaranteed that in the rule group there's no other rule
+	// which depends on this one.
+	NoDependentRules bool
+
+	// NoDependencyRules is set to true if it's guaranteed that this rule doesn't depend on any other
+	// rule within the rule group.
+	NoDependencyRules bool
 }
 
 const (
@@ -48,10 +56,12 @@ func NewRuleDetail(r Rule) RuleDetail {
 	}
 
 	return RuleDetail{
-		Name:   r.Name(),
-		Query:  r.Query().String(),
-		Labels: r.Labels(),
-		Kind:   kind,
+		Name:              r.Name(),
+		Query:             r.Query().String(),
+		Labels:            r.Labels(),
+		Kind:              kind,
+		NoDependentRules:  r.NoDependentRules(),
+		NoDependencyRules: r.NoDependencyRules(),
 	}
 }
 

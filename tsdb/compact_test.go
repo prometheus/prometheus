@@ -22,6 +22,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -1129,7 +1130,7 @@ func BenchmarkCompactionFromHead(b *testing.B) {
 			for ln := 0; ln < labelNames; ln++ {
 				app := h.Appender(context.Background())
 				for lv := 0; lv < labelValues; lv++ {
-					app.Append(0, labels.FromStrings(fmt.Sprintf("%d", ln), fmt.Sprintf("%d%s%d", lv, postingsBenchSuffix, ln)), 0, 0)
+					app.Append(0, labels.FromStrings(strconv.Itoa(ln), fmt.Sprintf("%d%s%d", lv, postingsBenchSuffix, ln)), 0, 0)
 				}
 				require.NoError(b, app.Commit())
 			}
@@ -1161,7 +1162,7 @@ func BenchmarkCompactionFromOOOHead(b *testing.B) {
 			for ln := 0; ln < labelNames; ln++ {
 				app := h.Appender(context.Background())
 				for lv := 0; lv < labelValues; lv++ {
-					lbls := labels.FromStrings(fmt.Sprintf("%d", ln), fmt.Sprintf("%d%s%d", lv, postingsBenchSuffix, ln))
+					lbls := labels.FromStrings(strconv.Itoa(ln), fmt.Sprintf("%d%s%d", lv, postingsBenchSuffix, ln))
 					_, err = app.Append(0, lbls, int64(totalSamples), 0)
 					require.NoError(b, err)
 					for ts := 0; ts < totalSamples; ts++ {
@@ -1297,7 +1298,7 @@ func TestCancelCompactions(t *testing.T) {
 		// This checks that the `context.Canceled` error is properly checked at all levels:
 		// - tsdb_errors.NewMulti() should have the Is() method implemented for correct checks.
 		// - callers should check with errors.Is() instead of ==.
-		readOnlyDB, err := OpenDBReadOnly(tmpdirCopy, log.NewNopLogger())
+		readOnlyDB, err := OpenDBReadOnly(tmpdirCopy, "", log.NewNopLogger())
 		require.NoError(t, err)
 		blocks, err := readOnlyDB.Blocks()
 		require.NoError(t, err)
@@ -1483,12 +1484,12 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 			maxt := head.MaxTime() + 1 // Block intervals are half-open: [b.MinTime, b.MaxTime).
 			compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{DefaultBlockDuration}, chunkenc.NewPool(), nil)
 			require.NoError(t, err)
-			id, err := compactor.Write(head.opts.ChunkDirRoot, head, mint, maxt, nil)
+			ids, err := compactor.Write(head.opts.ChunkDirRoot, head, mint, maxt, nil)
 			require.NoError(t, err)
-			require.NotEqual(t, ulid.ULID{}, id)
+			require.Len(t, ids, 1)
 
 			// Open the block and query it and check the histograms.
-			block, err := OpenBlock(nil, path.Join(head.opts.ChunkDirRoot, id.String()), nil)
+			block, err := OpenBlock(nil, path.Join(head.opts.ChunkDirRoot, ids[0].String()), nil)
 			require.NoError(t, err)
 			t.Cleanup(func() {
 				require.NoError(t, block.Close())
@@ -1597,8 +1598,8 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 				sparseApp := sparseHead.Appender(context.Background())
 				numOldSeriesPerHistogram := 0
 
-				var oldULID ulid.ULID
-				var sparseULID ulid.ULID
+				var oldULIDs []ulid.ULID
+				var sparseULIDs []ulid.ULID
 
 				var wg sync.WaitGroup
 
@@ -1625,9 +1626,9 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 					maxt := sparseHead.MaxTime() + 1 // Block intervals are half-open: [b.MinTime, b.MaxTime).
 					compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{DefaultBlockDuration}, chunkenc.NewPool(), nil)
 					require.NoError(t, err)
-					sparseULID, err = compactor.Write(sparseHead.opts.ChunkDirRoot, sparseHead, mint, maxt, nil)
+					sparseULIDs, err = compactor.Write(sparseHead.opts.ChunkDirRoot, sparseHead, mint, maxt, nil)
 					require.NoError(t, err)
-					require.NotEqual(t, ulid.ULID{}, sparseULID)
+					require.Len(t, sparseULIDs, 1)
 				}()
 
 				wg.Add(1)
@@ -1676,15 +1677,15 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 					maxt := oldHead.MaxTime() + 1 // Block intervals are half-open: [b.MinTime, b.MaxTime).
 					compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{DefaultBlockDuration}, chunkenc.NewPool(), nil)
 					require.NoError(t, err)
-					oldULID, err = compactor.Write(oldHead.opts.ChunkDirRoot, oldHead, mint, maxt, nil)
+					oldULIDs, err = compactor.Write(oldHead.opts.ChunkDirRoot, oldHead, mint, maxt, nil)
 					require.NoError(t, err)
-					require.NotEqual(t, ulid.ULID{}, oldULID)
+					require.Len(t, oldULIDs, 1)
 				}()
 
 				wg.Wait()
 
-				oldBlockDir := filepath.Join(oldHead.opts.ChunkDirRoot, oldULID.String())
-				sparseBlockDir := filepath.Join(sparseHead.opts.ChunkDirRoot, sparseULID.String())
+				oldBlockDir := filepath.Join(oldHead.opts.ChunkDirRoot, oldULIDs[0].String())
+				sparseBlockDir := filepath.Join(sparseHead.opts.ChunkDirRoot, sparseULIDs[0].String())
 
 				oldSize, err := fileutil.DirSize(oldBlockDir)
 				require.NoError(t, err)
@@ -1844,4 +1845,23 @@ func TestCompactBlockMetas(t *testing.T) {
 		},
 	}
 	require.Equal(t, expected, output)
+}
+
+func TestCompactEmptyResultBlockWithTombstone(t *testing.T) {
+	ctx := context.Background()
+	tmpdir := t.TempDir()
+	blockDir := createBlock(t, tmpdir, genSeries(1, 1, 0, 10))
+	block, err := OpenBlock(nil, blockDir, nil)
+	require.NoError(t, err)
+	// Write tombstone covering the whole block.
+	err = block.Delete(ctx, 0, 10, labels.MustNewMatcher(labels.MatchEqual, defaultLabelName, "0"))
+	require.NoError(t, err)
+
+	c, err := NewLeveledCompactor(ctx, nil, log.NewNopLogger(), []int64{0}, nil, nil)
+	require.NoError(t, err)
+
+	ulids, err := c.Compact(tmpdir, []string{blockDir}, []*Block{block})
+	require.NoError(t, err)
+	require.Nil(t, ulids)
+	require.NoError(t, block.Close())
 }

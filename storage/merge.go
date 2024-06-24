@@ -19,9 +19,8 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
 	"sync"
-
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"

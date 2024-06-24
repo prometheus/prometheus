@@ -16,7 +16,9 @@ package main
 import (
 	"testing"
 
-	"github.com/prometheus/prometheus/promql"
+	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/promql/promqltest"
 )
 
 func TestRulesUnitTest(t *testing.T) {
@@ -26,7 +28,7 @@ func TestRulesUnitTest(t *testing.T) {
 	tests := []struct {
 		name      string
 		args      args
-		queryOpts promql.LazyLoaderOpts
+		queryOpts promqltest.LazyLoaderOpts
 		want      int
 	}{
 		{
@@ -90,7 +92,7 @@ func TestRulesUnitTest(t *testing.T) {
 			args: args{
 				files: []string{"./testdata/at-modifier-test.yml"},
 			},
-			queryOpts: promql.LazyLoaderOpts{
+			queryOpts: promqltest.LazyLoaderOpts{
 				EnableAtModifier: true,
 			},
 			want: 0,
@@ -107,7 +109,7 @@ func TestRulesUnitTest(t *testing.T) {
 			args: args{
 				files: []string{"./testdata/negative-offset-test.yml"},
 			},
-			queryOpts: promql.LazyLoaderOpts{
+			queryOpts: promqltest.LazyLoaderOpts{
 				EnableNegativeOffset: true,
 			},
 			want: 0,
@@ -117,7 +119,7 @@ func TestRulesUnitTest(t *testing.T) {
 			args: args{
 				files: []string{"./testdata/no-test-group-interval.yml"},
 			},
-			queryOpts: promql.LazyLoaderOpts{
+			queryOpts: promqltest.LazyLoaderOpts{
 				EnableNegativeOffset: true,
 			},
 			want: 0,
@@ -140,7 +142,7 @@ func TestRulesUnitTestRun(t *testing.T) {
 	tests := []struct {
 		name      string
 		args      args
-		queryOpts promql.LazyLoaderOpts
+		queryOpts promqltest.LazyLoaderOpts
 		want      int
 	}{
 		{
@@ -178,9 +180,8 @@ func TestRulesUnitTestRun(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := RulesUnitTest(tt.queryOpts, tt.args.run, false, tt.args.files...); got != tt.want {
-				t.Errorf("RulesUnitTest() = %v, want %v", got, tt.want)
-			}
+			got := RulesUnitTest(tt.queryOpts, tt.args.run, false, tt.args.files...)
+			require.Equal(t, tt.want, got)
 		})
 	}
 }

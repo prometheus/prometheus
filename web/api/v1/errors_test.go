@@ -89,7 +89,7 @@ func TestApiStatusCodes(t *testing.T) {
 				r := createPrometheusAPI(q)
 				rec := httptest.NewRecorder()
 
-				req := httptest.NewRequest("GET", "/api/v1/query?query=up", nil)
+				req := httptest.NewRequest(http.MethodGet, "/api/v1/query?query=up", nil)
 
 				r.ServeHTTP(rec, req)
 

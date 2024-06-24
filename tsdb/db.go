@@ -23,7 +23,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"strconv"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -33,7 +33,6 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
-	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/prometheus/prometheus/config"
@@ -43,7 +42,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
-	_ "github.com/prometheus/prometheus/tsdb/goversion" // Load the package into main to make sure minium Go version is met.
+	_ "github.com/prometheus/prometheus/tsdb/goversion" // Load the package into main to make sure minimum Go version is met.
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
@@ -190,7 +189,12 @@ type Options struct {
 
 	// EnableSharding enables query sharding support in TSDB.
 	EnableSharding bool
+
+	// NewCompactorFunc is a function that returns a TSDB compactor.
+	NewCompactorFunc NewCompactorFunc
 }
+
+type NewCompactorFunc func(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error)
 
 type BlocksToDeleteFunc func(blocks []*Block) map[ulid.ULID]struct{}
 
@@ -207,7 +211,7 @@ type DB struct {
 	compactor      Compactor
 	blocksToDelete BlocksToDeleteFunc
 
-	// Mutex for that must be held when modifying the general block layout or lastGarbageCollectedMmapRef.
+	// mtx must be held when modifying the general block layout or lastGarbageCollectedMmapRef.
 	mtx    sync.RWMutex
 	blocks []*Block
 
@@ -319,8 +323,11 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		return float64(db.blocks[0].meta.MinTime)
 	})
 	m.tombCleanTimer = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name: "prometheus_tsdb_tombstone_cleanup_seconds",
-		Help: "The time taken to recompact blocks to remove tombstones.",
+		Name:                            "prometheus_tsdb_tombstone_cleanup_seconds",
+		Help:                            "The time taken to recompact blocks to remove tombstones.",
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
 	})
 	m.blocksBytes = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "prometheus_tsdb_storage_blocks_bytes",
@@ -381,16 +388,25 @@ var ErrClosed = errors.New("db already closed")
 // Current implementation doesn't support concurrency so
 // all API calls should happen in the same go routine.
 type DBReadOnly struct {
-	logger  log.Logger
-	dir     string
-	closers []io.Closer
-	closed  chan struct{}
+	logger     log.Logger
+	dir        string
+	sandboxDir string
+	closers    []io.Closer
+	closed     chan struct{}
 }
 
 // OpenDBReadOnly opens DB in the given directory for read only operations.
-func OpenDBReadOnly(dir string, l log.Logger) (*DBReadOnly, error) {
+func OpenDBReadOnly(dir, sandboxDirRoot string, l log.Logger) (*DBReadOnly, error) {
 	if _, err := os.Stat(dir); err != nil {
 		return nil, fmt.Errorf("opening the db dir: %w", err)
+	}
+
+	if sandboxDirRoot == "" {
+		sandboxDirRoot = dir
+	}
+	sandboxDir, err := os.MkdirTemp(sandboxDirRoot, "tmp_dbro_sandbox")
+	if err != nil {
+		return nil, fmt.Errorf("setting up sandbox dir: %w", err)
 	}
 
 	if l == nil {
@@ -398,9 +414,10 @@ func OpenDBReadOnly(dir string, l log.Logger) (*DBReadOnly, error) {
 	}
 
 	return &DBReadOnly{
-		logger: l,
-		dir:    dir,
-		closed: make(chan struct{}),
+		logger:     l,
+		dir:        dir,
+		sandboxDir: sandboxDir,
+		closed:     make(chan struct{}),
 	}, nil
 }
 
@@ -489,7 +506,14 @@ func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQue
 	}
 
 	opts := DefaultHeadOptions()
-	opts.ChunkDirRoot = db.dir
+	// Hard link the chunk files to a dir in db.sandboxDir in case the Head needs to truncate some of them
+	// or cut new ones while replaying the WAL.
+	// See https://github.com/prometheus/prometheus/issues/11618.
+	err = chunks.HardLinkChunkFiles(mmappedChunksDir(db.dir), mmappedChunksDir(db.sandboxDir))
+	if err != nil {
+		return nil, err
+	}
+	opts.ChunkDirRoot = db.sandboxDir
 	head, err := NewHead(nil, db.logger, nil, nil, opts, NewHeadStats())
 	if err != nil {
 		return nil, err
@@ -517,7 +541,7 @@ func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQue
 			}
 		}
 		opts := DefaultHeadOptions()
-		opts.ChunkDirRoot = db.dir
+		opts.ChunkDirRoot = db.sandboxDir
 		head, err = NewHead(nil, db.logger, w, wbl, opts, NewHeadStats())
 		if err != nil {
 			return nil, err
@@ -527,9 +551,10 @@ func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQue
 		if err := head.Init(maxBlockTime); err != nil {
 			return nil, fmt.Errorf("read WAL: %w", err)
 		}
-		// Set the wal to nil to disable all wal operations.
+		// Set the wal and the wbl to nil to disable related operations.
 		// This is mainly to avoid blocking when closing the head.
 		head.wal = nil
+		head.wbl = nil
 	}
 
 	db.closers = append(db.closers, head)
@@ -687,8 +712,14 @@ func (db *DBReadOnly) Block(blockID string) (BlockReader, error) {
 	return block, nil
 }
 
-// Close all block readers.
+// Close all block readers and delete the sandbox dir.
 func (db *DBReadOnly) Close() error {
+	defer func() {
+		// Delete the temporary sandbox directory that was created when opening the DB.
+		if err := os.RemoveAll(db.sandboxDir); err != nil {
+			level.Error(db.logger).Log("msg", "delete sandbox dir", "err", err)
+		}
+	}()
 	select {
 	case <-db.closed:
 		return ErrClosed
@@ -776,10 +807,6 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	walDir := filepath.Join(dir, "wal")
 	wblDir := filepath.Join(dir, wlog.WblDirName)
 
-	// Migrate old WAL if one exists.
-	if err := MigrateWAL(l, walDir); err != nil {
-		return nil, fmt.Errorf("migrate WAL: %w", err)
-	}
 	for _, tmpDir := range []string{walDir, dir} {
 		// Remove tmp dirs.
 		if err := removeBestEffortTmpDirs(l, tmpDir); err != nil {
@@ -829,13 +856,17 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	db.compactor, err = NewLeveledCompactorWithOptions(ctx, r, l, rngs, db.chunkPool, LeveledCompactorOptions{
-		MaxBlockChunkSegmentSize:    opts.MaxBlockChunkSegmentSize,
-		EnableOverlappingCompaction: opts.EnableOverlappingCompaction,
-	})
+	if opts.NewCompactorFunc != nil {
+		db.compactor, err = opts.NewCompactorFunc(ctx, r, l, rngs, db.chunkPool, opts)
+	} else {
+		db.compactor, err = NewLeveledCompactorWithOptions(ctx, r, l, rngs, db.chunkPool, LeveledCompactorOptions{
+			MaxBlockChunkSegmentSize:    opts.MaxBlockChunkSegmentSize,
+			EnableOverlappingCompaction: opts.EnableOverlappingCompaction,
+		})
+	}
 	if err != nil {
 		cancel()
-		return nil, fmt.Errorf("create leveled compactor: %w", err)
+		return nil, fmt.Errorf("create compactor: %w", err)
 	}
 	db.compactCancel = cancel
 
@@ -1300,26 +1331,16 @@ func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID
 		}
 	}()
 
+	meta := &BlockMeta{}
+	meta.Compaction.SetOutOfOrder()
 	for t := blockSize * (oooHeadMint / blockSize); t <= oooHeadMaxt; t += blockSize {
 		mint, maxt := t, t+blockSize
 		// Block intervals are half-open: [b.MinTime, b.MaxTime). Block intervals are always +1 than the total samples it includes.
-		uid, err := db.compactor.Write(dest, oooHead.CloneForTimeRange(mint, maxt-1), mint, maxt, nil)
+		uids, err := db.compactor.Write(dest, oooHead.CloneForTimeRange(mint, maxt-1), mint, maxt, meta)
 		if err != nil {
 			return nil, err
 		}
-		if uid.Compare(ulid.ULID{}) != 0 {
-			ulids = append(ulids, uid)
-			blockDir := filepath.Join(dest, uid.String())
-			meta, _, err := readMetaFile(blockDir)
-			if err != nil {
-				return ulids, fmt.Errorf("read meta: %w", err)
-			}
-			meta.Compaction.SetOutOfOrder()
-			_, err = writeMetaFile(db.logger, blockDir, meta)
-			if err != nil {
-				return ulids, fmt.Errorf("write meta: %w", err)
-			}
-		}
+		ulids = append(ulids, uids...)
 	}
 
 	if len(ulids) == 0 {
@@ -1341,19 +1362,19 @@ func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID
 // compactHead compacts the given RangeHead.
 // The compaction mutex should be held before calling this method.
 func (db *DB) compactHead(head *RangeHead) error {
-	uid, err := db.compactor.Write(db.dir, head, head.MinTime(), head.BlockMaxTime(), nil)
+	uids, err := db.compactor.Write(db.dir, head, head.MinTime(), head.BlockMaxTime(), nil)
 	if err != nil {
 		return fmt.Errorf("persist head block: %w", err)
 	}
 
 	if err := db.reloadBlocks(); err != nil {
-		if errRemoveAll := os.RemoveAll(filepath.Join(db.dir, uid.String())); errRemoveAll != nil {
-			return tsdb_errors.NewMulti(
-				fmt.Errorf("reloadBlocks blocks: %w", err),
-				fmt.Errorf("delete persisted head block after failed db reloadBlocks:%s: %w", uid, errRemoveAll),
-			).Err()
+		multiErr := tsdb_errors.NewMulti(fmt.Errorf("reloadBlocks blocks: %w", err))
+		for _, uid := range uids {
+			if errRemoveAll := os.RemoveAll(filepath.Join(db.dir, uid.String())); errRemoveAll != nil {
+				multiErr.Add(fmt.Errorf("delete persisted head block after failed db reloadBlocks:%s: %w", uid, errRemoveAll))
+			}
 		}
-		return fmt.Errorf("reloadBlocks blocks: %w", err)
+		return multiErr.Err()
 	}
 	if err = db.head.truncateMemory(head.BlockMaxTime()); err != nil {
 		return fmt.Errorf("head memory truncate: %w", err)
@@ -1366,6 +1387,14 @@ func (db *DB) compactHead(head *RangeHead) error {
 func (db *DB) compactBlocks() (err error) {
 	// Check for compactions of multiple blocks.
 	for {
+		// If we have a lot of blocks to compact the whole process might take
+		// long enough that we end up with a HEAD block that needs to be written.
+		// Check if that's the case and stop compactions early.
+		if db.head.compactable() {
+			level.Warn(db.logger).Log("msg", "aborting block compactions to persit the head block")
+			return nil
+		}
+
 		plan, err := db.compactor.Plan(db.dir)
 		if err != nil {
 			return fmt.Errorf("plan compaction: %w", err)
@@ -1380,16 +1409,19 @@ func (db *DB) compactBlocks() (err error) {
 		default:
 		}
 
-		uid, err := db.compactor.Compact(db.dir, plan, db.blocks)
+		uids, err := db.compactor.Compact(db.dir, plan, db.blocks)
 		if err != nil {
 			return fmt.Errorf("compact %s: %w", plan, err)
 		}
 
 		if err := db.reloadBlocks(); err != nil {
-			if err := os.RemoveAll(filepath.Join(db.dir, uid.String())); err != nil {
-				return fmt.Errorf("delete compacted block after failed db reloadBlocks:%s: %w", uid, err)
+			errs := tsdb_errors.NewMulti(fmt.Errorf("reloadBlocks blocks: %w", err))
+			for _, uid := range uids {
+				if errRemoveAll := os.RemoveAll(filepath.Join(db.dir, uid.String())); errRemoveAll != nil {
+					errs.Add(fmt.Errorf("delete persisted block after failed db reloadBlocks:%s: %w", uid, errRemoveAll))
+				}
 			}
-			return fmt.Errorf("reloadBlocks blocks: %w", err)
+			return errs.Err()
 		}
 	}
 
@@ -1432,7 +1464,7 @@ func (db *DB) reloadBlocks() (err error) {
 		db.metrics.reloads.Inc()
 	}()
 
-	// Now that we reload TSDB every minute, there is high chance for race condition with a reload
+	// Now that we reload TSDB every minute, there is a high chance for a race condition with a reload
 	// triggered by CleanTombstones(). We need to lock the reload to avoid the situation where
 	// a normal reload and CleanTombstones try to delete the same block.
 	db.mtx.Lock()
@@ -1510,12 +1542,15 @@ func (db *DB) reloadBlocks() (err error) {
 	oldBlocks := db.blocks
 	db.blocks = toLoad
 
-	blockMetas := make([]BlockMeta, 0, len(toLoad))
-	for _, b := range toLoad {
-		blockMetas = append(blockMetas, b.Meta())
-	}
-	if overlaps := OverlappingBlocks(blockMetas); len(overlaps) > 0 {
-		level.Warn(db.logger).Log("msg", "Overlapping blocks found during reloadBlocks", "detail", overlaps.String())
+	// Only check overlapping blocks when overlapping compaction is enabled.
+	if db.opts.EnableOverlappingCompaction {
+		blockMetas := make([]BlockMeta, 0, len(toLoad))
+		for _, b := range toLoad {
+			blockMetas = append(blockMetas, b.Meta())
+		}
+		if overlaps := OverlappingBlocks(blockMetas); len(overlaps) > 0 {
+			level.Warn(db.logger).Log("msg", "Overlapping blocks found during reloadBlocks", "detail", overlaps.String())
+		}
 	}
 
 	// Append blocks to old, deletable blocks, so we can close them.
@@ -1610,9 +1645,9 @@ func BeyondTimeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struc
 
 	deletable = make(map[ulid.ULID]struct{})
 	for i, block := range blocks {
-		// The difference between the first block and this block is larger than
+		// The difference between the first block and this block is greater than or equal to
 		// the retention period so any blocks after that are added as deletable.
-		if i > 0 && blocks[0].Meta().MaxTime-block.Meta().MaxTime > db.opts.RetentionDuration {
+		if i > 0 && blocks[0].Meta().MaxTime-block.Meta().MaxTime >= db.opts.RetentionDuration {
 			for _, b := range blocks[i:] {
 				deletable[b.meta.ULID] = struct{}{}
 			}
@@ -1767,7 +1802,6 @@ func OverlappingBlocks(bm []BlockMeta) Overlaps {
 	// Fetch the critical overlapped time range foreach overlap groups.
 	overlapGroups := Overlaps{}
 	for _, overlap := range overlaps {
-
 		minRange := TimeRange{Min: 0, Max: math.MaxInt64}
 		for _, b := range overlap {
 			if minRange.Max > b.MaxTime {
@@ -2119,7 +2153,7 @@ func (db *DB) CleanTombstones() (err error) {
 		cleanUpCompleted = true
 
 		for _, pb := range db.Blocks() {
-			uid, safeToDelete, cleanErr := pb.CleanTombstones(db.Dir(), db.compactor)
+			uids, safeToDelete, cleanErr := pb.CleanTombstones(db.Dir(), db.compactor)
 			if cleanErr != nil {
 				return fmt.Errorf("clean tombstones: %s: %w", pb.Dir(), cleanErr)
 			}
@@ -2143,7 +2177,7 @@ func (db *DB) CleanTombstones() (err error) {
 			}
 
 			// Delete new block if it was created.
-			if uid != nil && *uid != (ulid.ULID{}) {
+			for _, uid := range uids {
 				dir := filepath.Join(db.Dir(), uid.String())
 				if err := os.RemoveAll(dir); err != nil {
 					level.Error(db.logger).Log("msg", "failed to delete block after failed `CleanTombstones`", "dir", dir, "err", err)
@@ -2208,39 +2242,6 @@ func blockDirs(dir string) ([]string, error) {
 		}
 	}
 	return dirs, nil
-}
-
-func sequenceFiles(dir string) ([]string, error) {
-	files, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, err
-	}
-	var res []string
-
-	for _, fi := range files {
-		if _, err := strconv.ParseUint(fi.Name(), 10, 64); err != nil {
-			continue
-		}
-		res = append(res, filepath.Join(dir, fi.Name()))
-	}
-	return res, nil
-}
-
-func nextSequenceFile(dir string) (string, int, error) {
-	files, err := os.ReadDir(dir)
-	if err != nil {
-		return "", 0, err
-	}
-
-	i := uint64(0)
-	for _, f := range files {
-		j, err := strconv.ParseUint(f.Name(), 10, 64)
-		if err != nil {
-			continue
-		}
-		i = j
-	}
-	return filepath.Join(dir, fmt.Sprintf("%0.6d", i+1)), int(i + 1), nil
 }
 
 func exponential(d, min, max time.Duration) time.Duration {

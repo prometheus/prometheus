@@ -10,21 +10,32 @@ local template = grafana.template;
 {
   grafanaDashboards+:: {
     'prometheus.json':
-      g.dashboard(
+      local showMultiCluster = $._config.showMultiCluster;
+      local dashboard = g.dashboard(
         '%(prefix)sOverview' % $._config.grafanaPrometheus
-      )
-      .addMultiTemplate('cluster', 'prometheus_build_info{%(prometheusSelector)s}' % $._config, 'cluster')
-      .addMultiTemplate('job', 'prometheus_build_info{cluster=~"$cluster"}', 'job')
-      .addMultiTemplate('instance', 'prometheus_build_info{cluster=~"$cluster", job=~"$job"}', 'instance')
+      );
+      local templatedDashboard = if showMultiCluster then
+        dashboard
+        .addMultiTemplate('cluster', 'prometheus_build_info{%(prometheusSelector)s}' % $._config, $._config.clusterLabel)
+        .addMultiTemplate('job', 'prometheus_build_info{cluster=~"$cluster"}', 'job')
+        .addMultiTemplate('instance', 'prometheus_build_info{cluster=~"$cluster", job=~"$job"}', 'instance')
+      else
+        dashboard
+        .addMultiTemplate('job', 'prometheus_build_info{%(prometheusSelector)s}' % $._config, 'job')
+        .addMultiTemplate('instance', 'prometheus_build_info{job=~"$job"}', 'instance');
+      templatedDashboard
       .addRow(
         g.row('Prometheus Stats')
         .addPanel(
           g.panel('Prometheus Stats') +
-          g.tablePanel([
+          g.tablePanel(if showMultiCluster then [
             'count by (cluster, job, instance, version) (prometheus_build_info{cluster=~"$cluster", job=~"$job", instance=~"$instance"})',
             'max by (cluster, job, instance) (time() - process_start_time_seconds{cluster=~"$cluster", job=~"$job", instance=~"$instance"})',
+          ] else [
+            'count by (job, instance, version) (prometheus_build_info{job=~"$job", instance=~"$instance"})',
+            'max by (job, instance) (time() - process_start_time_seconds{job=~"$job", instance=~"$instance"})',
           ], {
-            cluster: { alias: 'Cluster' },
+            cluster: { alias: if showMultiCluster then 'Cluster' else '' },
             job: { alias: 'Job' },
             instance: { alias: 'Instance' },
             version: { alias: 'Version' },
@@ -37,12 +48,18 @@ local template = grafana.template;
         g.row('Discovery')
         .addPanel(
           g.panel('Target Sync') +
-          g.queryPanel('sum(rate(prometheus_target_sync_length_seconds_sum{cluster=~"$cluster",job=~"$job",instance=~"$instance"}[5m])) by (cluster, job, scrape_job, instance) * 1e3', '{{cluster}}:{{job}}:{{instance}}:{{scrape_job}}') +
+          g.queryPanel(if showMultiCluster then 'sum(rate(prometheus_target_sync_length_seconds_sum{cluster=~"$cluster",job=~"$job",instance=~"$instance"}[5m])) by (cluster, job, scrape_job, instance) * 1e3'
+                       else 'sum(rate(prometheus_target_sync_length_seconds_sum{job=~"$job",instance=~"$instance"}[5m])) by (scrape_job) * 1e3',
+                       if showMultiCluster then '{{cluster}}:{{job}}:{{instance}}:{{scrape_job}}'
+                       else '{{scrape_job}}') +
           { yaxes: g.yaxes('ms') }
         )
         .addPanel(
           g.panel('Targets') +
-          g.queryPanel('sum by (cluster, job, instance) (prometheus_sd_discovered_targets{cluster=~"$cluster", job=~"$job",instance=~"$instance"})', '{{cluster}}:{{job}}:{{instance}}') +
+          g.queryPanel(if showMultiCluster then 'sum by (cluster, job, instance) (prometheus_sd_discovered_targets{cluster=~"$cluster", job=~"$job",instance=~"$instance"})'
+                       else 'sum(prometheus_sd_discovered_targets{job=~"$job",instance=~"$instance"})',
+                       if showMultiCluster then '{{cluster}}:{{job}}:{{instance}}'
+                       else 'Targets') +
           g.stack
         )
       )
@@ -50,29 +67,47 @@ local template = grafana.template;
         g.row('Retrieval')
         .addPanel(
           g.panel('Average Scrape Interval Duration') +
-          g.queryPanel('rate(prometheus_target_interval_length_seconds_sum{cluster=~"$cluster", job=~"$job",instance=~"$instance"}[5m]) / rate(prometheus_target_interval_length_seconds_count{cluster=~"$cluster", job=~"$job",instance=~"$instance"}[5m]) * 1e3', '{{cluster}}:{{job}}:{{instance}} {{interval}} configured') +
+          g.queryPanel(if showMultiCluster then 'rate(prometheus_target_interval_length_seconds_sum{cluster=~"$cluster", job=~"$job",instance=~"$instance"}[5m]) / rate(prometheus_target_interval_length_seconds_count{cluster=~"$cluster", job=~"$job",instance=~"$instance"}[5m]) * 1e3'
+                       else 'rate(prometheus_target_interval_length_seconds_sum{job=~"$job",instance=~"$instance"}[5m]) / rate(prometheus_target_interval_length_seconds_count{job=~"$job",instance=~"$instance"}[5m]) * 1e3',
+                       if showMultiCluster then '{{cluster}}:{{job}}:{{instance}} {{interval}} configured'
+                       else '{{interval}} configured') +
           { yaxes: g.yaxes('ms') }
         )
         .addPanel(
           g.panel('Scrape failures') +
-          g.queryPanel([
+          g.queryPanel(if showMultiCluster then [
             'sum by (cluster, job, instance) (rate(prometheus_target_scrapes_exceeded_body_size_limit_total{cluster=~"$cluster",job=~"$job",instance=~"$instance"}[1m]))',
             'sum by (cluster, job, instance) (rate(prometheus_target_scrapes_exceeded_sample_limit_total{cluster=~"$cluster",job=~"$job",instance=~"$instance"}[1m]))',
             'sum by (cluster, job, instance) (rate(prometheus_target_scrapes_sample_duplicate_timestamp_total{cluster=~"$cluster",job=~"$job",instance=~"$instance"}[1m]))',
             'sum by (cluster, job, instance) (rate(prometheus_target_scrapes_sample_out_of_bounds_total{cluster=~"$cluster",job=~"$job",instance=~"$instance"}[1m]))',
             'sum by (cluster, job, instance) (rate(prometheus_target_scrapes_sample_out_of_order_total{cluster=~"$cluster",job=~"$job",instance=~"$instance"}[1m]))',
-          ], [
+          ] else [
+            'sum by (job) (rate(prometheus_target_scrapes_exceeded_body_size_limit_total[1m]))',
+            'sum by (job) (rate(prometheus_target_scrapes_exceeded_sample_limit_total[1m]))',
+            'sum by (job) (rate(prometheus_target_scrapes_sample_duplicate_timestamp_total[1m]))',
+            'sum by (job) (rate(prometheus_target_scrapes_sample_out_of_bounds_total[1m]))',
+            'sum by (job) (rate(prometheus_target_scrapes_sample_out_of_order_total[1m]))',
+          ], if showMultiCluster then [
             'exceeded body size limit: {{cluster}} {{job}} {{instance}}',
             'exceeded sample limit: {{cluster}} {{job}} {{instance}}',
             'duplicate timestamp: {{cluster}} {{job}} {{instance}}',
             'out of bounds: {{cluster}} {{job}} {{instance}}',
             'out of order: {{cluster}} {{job}} {{instance}}',
+          ] else [
+            'exceeded body size limit: {{job}}',
+            'exceeded sample limit: {{job}}',
+            'duplicate timestamp: {{job}}',
+            'out of bounds: {{job}}',
+            'out of order: {{job}}',
           ]) +
           g.stack
         )
         .addPanel(
           g.panel('Appended Samples') +
-          g.queryPanel('rate(prometheus_tsdb_head_samples_appended_total{cluster=~"$cluster", job=~"$job",instance=~"$instance"}[5m])', '{{cluster}} {{job}} {{instance}}') +
+          g.queryPanel(if showMultiCluster then 'rate(prometheus_tsdb_head_samples_appended_total{cluster=~"$cluster", job=~"$job",instance=~"$instance"}[5m])'
+                       else 'rate(prometheus_tsdb_head_samples_appended_total{job=~"$job",instance=~"$instance"}[5m])',
+                       if showMultiCluster then '{{cluster}} {{job}} {{instance}}'
+                       else '{{job}} {{instance}}') +
           g.stack
         )
       )
@@ -80,12 +115,18 @@ local template = grafana.template;
         g.row('Storage')
         .addPanel(
           g.panel('Head Series') +
-          g.queryPanel('prometheus_tsdb_head_series{cluster=~"$cluster",job=~"$job",instance=~"$instance"}', '{{cluster}} {{job}} {{instance}} head series') +
+          g.queryPanel(if showMultiCluster then 'prometheus_tsdb_head_series{cluster=~"$cluster",job=~"$job",instance=~"$instance"}'
+                       else 'prometheus_tsdb_head_series{job=~"$job",instance=~"$instance"}',
+                       if showMultiCluster then '{{cluster}} {{job}} {{instance}} head series'
+                       else '{{job}} {{instance}} head series') +
           g.stack
         )
         .addPanel(
           g.panel('Head Chunks') +
-          g.queryPanel('prometheus_tsdb_head_chunks{cluster=~"$cluster",job=~"$job",instance=~"$instance"}', '{{cluster}} {{job}} {{instance}} head chunks') +
+          g.queryPanel(if showMultiCluster then 'prometheus_tsdb_head_chunks{cluster=~"$cluster",job=~"$job",instance=~"$instance"}'
+                       else 'prometheus_tsdb_head_chunks{job=~"$job",instance=~"$instance"}',
+                       if showMultiCluster then '{{cluster}} {{job}} {{instance}} head chunks'
+                       else '{{job}} {{instance}} head chunks') +
           g.stack
         )
       )
@@ -93,12 +134,18 @@ local template = grafana.template;
         g.row('Query')
         .addPanel(
           g.panel('Query Rate') +
-          g.queryPanel('rate(prometheus_engine_query_duration_seconds_count{cluster=~"$cluster",job=~"$job",instance=~"$instance",slice="inner_eval"}[5m])', '{{cluster}} {{job}} {{instance}}') +
+          g.queryPanel(if showMultiCluster then 'rate(prometheus_engine_query_duration_seconds_count{cluster=~"$cluster",job=~"$job",instance=~"$instance",slice="inner_eval"}[5m])'
+                       else 'rate(prometheus_engine_query_duration_seconds_count{job=~"$job",instance=~"$instance",slice="inner_eval"}[5m])',
+                       if showMultiCluster then '{{cluster}} {{job}} {{instance}}'
+                       else '{{job}} {{instance}}') +
           g.stack,
         )
         .addPanel(
           g.panel('Stage Duration') +
-          g.queryPanel('max by (slice) (prometheus_engine_query_duration_seconds{quantile="0.9",cluster=~"$cluster", job=~"$job",instance=~"$instance"}) * 1e3', '{{slice}}') +
+          g.queryPanel(if showMultiCluster then 'max by (slice) (prometheus_engine_query_duration_seconds{quantile="0.9",cluster=~"$cluster", job=~"$job",instance=~"$instance"}) * 1e3'
+                       else 'max by (slice) (prometheus_engine_query_duration_seconds{quantile="0.9",job=~"$job",instance=~"$instance"}) * 1e3',
+                       if showMultiCluster then '{{slice}}'
+                       else '{{slice}}') +
           { yaxes: g.yaxes('ms') } +
           g.stack,
         )

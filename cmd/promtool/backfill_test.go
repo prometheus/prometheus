@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 type backfillSample struct {
@@ -76,7 +77,7 @@ func testBlocks(t *testing.T, db *tsdb.DB, expectedMinTime, expectedMaxTime, exp
 	allSamples := queryAllSeries(t, q, expectedMinTime, expectedMaxTime)
 	sortSamples(allSamples)
 	sortSamples(expectedSamples)
-	require.Equal(t, expectedSamples, allSamples, "did not create correct samples")
+	testutil.RequireEqual(t, expectedSamples, allSamples, "did not create correct samples")
 
 	if len(allSamples) > 0 {
 		require.Equal(t, expectedMinTime, allSamples[0].Timestamp, "timestamp of first sample is not the expected minimum time")

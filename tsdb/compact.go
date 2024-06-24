@@ -21,13 +21,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -58,19 +58,23 @@ type Compactor interface {
 	// Results returned when compactions are in progress are undefined.
 	Plan(dir string) ([]string, error)
 
-	// Write persists a Block into a directory.
-	// No Block is written when resulting Block has 0 samples, and returns empty ulid.ULID{}.
-	Write(dest string, b BlockReader, mint, maxt int64, parent *BlockMeta) (ulid.ULID, error)
+	// Write persists one or more Blocks into a directory.
+	// No Block is written when resulting Block has 0 samples and returns an empty slice.
+	// Prometheus always return one or no block. The interface allows returning more than one
+	// block for downstream users to experiment with compactor.
+	Write(dest string, b BlockReader, mint, maxt int64, base *BlockMeta) ([]ulid.ULID, error)
 
 	// Compact runs compaction against the provided directories. Must
 	// only be called concurrently with results of Plan().
 	// Can optionally pass a list of already open blocks,
 	// to avoid having to reopen them.
-	// When resulting Block has 0 samples
+	// Prometheus always return one or no block. The interface allows returning more than one
+	// block for downstream users to experiment with compactor.
+	// When one resulting Block has 0 samples
 	//  * No block is written.
 	//  * The source dirs are marked Deletable.
-	//  * Returns empty ulid.ULID{}.
-	Compact(dest string, dirs []string, open []*Block) (ulid.ULID, error)
+	//  * Block is not included in the result.
+	Compact(dest string, dirs []string, open []*Block) ([]ulid.ULID, error)
 }
 
 // LeveledCompactor implements the Compactor interface.
@@ -96,7 +100,8 @@ type CompactorMetrics struct {
 	ChunkRange        prometheus.Histogram
 }
 
-func newCompactorMetrics(r prometheus.Registerer) *CompactorMetrics {
+// NewCompactorMetrics initializes metrics for Compactor.
+func NewCompactorMetrics(r prometheus.Registerer) *CompactorMetrics {
 	m := &CompactorMetrics{}
 
 	m.Ran = prometheus.NewCounter(prometheus.CounterOpts{
@@ -112,9 +117,12 @@ func newCompactorMetrics(r prometheus.Registerer) *CompactorMetrics {
 		Help: "Total number of compactions done on overlapping blocks.",
 	})
 	m.Duration = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:    "prometheus_tsdb_compaction_duration_seconds",
-		Help:    "Duration of compaction runs",
-		Buckets: prometheus.ExponentialBuckets(1, 2, 14),
+		Name:                            "prometheus_tsdb_compaction_duration_seconds",
+		Help:                            "Duration of compaction runs",
+		Buckets:                         prometheus.ExponentialBuckets(1, 2, 14),
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
 	})
 	m.ChunkSize = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Name:    "prometheus_tsdb_compaction_chunk_size_bytes",
@@ -200,7 +208,7 @@ func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer
 		ranges:                      ranges,
 		chunkPool:                   pool,
 		logger:                      l,
-		metrics:                     newCompactorMetrics(r),
+		metrics:                     NewCompactorMetrics(r),
 		ctx:                         ctx,
 		maxBlockChunkSegmentSize:    maxBlockChunkSegmentSize,
 		mergeFunc:                   mergeFunc,
@@ -268,7 +276,7 @@ func (c *LeveledCompactor) plan(dms []dirMeta) ([]string, error) {
 		meta := dms[i].meta
 		if meta.MaxTime-meta.MinTime < c.ranges[len(c.ranges)/2] {
 			// If the block is entirely deleted, then we don't care about the block being big enough.
-			// TODO: This is assuming single tombstone is for distinct series, which might be no true.
+			// TODO: This is assuming a single tombstone is for a distinct series, which might not be true.
 			if meta.Stats.NumTombstones > 0 && meta.Stats.NumTombstones >= meta.Stats.NumSeries {
 				return []string{dms[i].dir}, nil
 			}
@@ -368,7 +376,7 @@ func splitByRange(ds []dirMeta, tr int64) [][]dirMeta {
 			t0 = tr * ((m.MinTime - tr + 1) / tr)
 		}
 		// Skip blocks that don't fall into the range. This can happen via mis-alignment or
-		// by being the multiple of the intended range.
+		// by being a multiple of the intended range.
 		if m.MaxTime > t0+tr {
 			i++
 			continue
@@ -391,7 +399,7 @@ func splitByRange(ds []dirMeta, tr int64) [][]dirMeta {
 	return splitDirs
 }
 
-// CompactBlockMetas merges many block metas into one, combining it's source blocks together
+// CompactBlockMetas merges many block metas into one, combining its source blocks together
 // and adjusting compaction level. Min/Max time of result block meta covers all input blocks.
 func CompactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 	res := &BlockMeta{
@@ -437,11 +445,11 @@ func CompactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 
 // Compact creates a new block in the compactor's directory from the blocks in the
 // provided directories.
-func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (uid ulid.ULID, err error) {
+func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) ([]ulid.ULID, error) {
 	return c.CompactWithBlockPopulator(dest, dirs, open, DefaultBlockPopulator{})
 }
 
-func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string, open []*Block, blockPopulator BlockPopulator) (uid ulid.ULID, err error) {
+func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string, open []*Block, blockPopulator BlockPopulator) ([]ulid.ULID, error) {
 	var (
 		blocks []BlockReader
 		bs     []*Block
@@ -453,7 +461,7 @@ func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string,
 	for _, d := range dirs {
 		meta, _, err := readMetaFile(d)
 		if err != nil {
-			return uid, err
+			return nil, err
 		}
 
 		var b *Block
@@ -471,7 +479,7 @@ func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string,
 			var err error
 			b, err = OpenBlock(c.logger, d, c.chunkPool)
 			if err != nil {
-				return uid, err
+				return nil, err
 			}
 			defer b.Close()
 		}
@@ -482,10 +490,10 @@ func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string,
 		uids = append(uids, meta.ULID.String())
 	}
 
-	uid = ulid.MustNew(ulid.Now(), rand.Reader)
+	uid := ulid.MustNew(ulid.Now(), rand.Reader)
 
 	meta := CompactBlockMetas(uid, metas...)
-	err = c.write(dest, meta, blockPopulator, blocks...)
+	err := c.write(dest, meta, blockPopulator, blocks...)
 	if err == nil {
 		if meta.Stats.NumSamples == 0 {
 			for _, b := range bs {
@@ -499,25 +507,25 @@ func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string,
 				}
 				b.numBytesMeta = n
 			}
-			uid = ulid.ULID{}
 			level.Info(c.logger).Log(
 				"msg", "compact blocks resulted in empty block",
 				"count", len(blocks),
 				"sources", fmt.Sprintf("%v", uids),
 				"duration", time.Since(start),
 			)
-		} else {
-			level.Info(c.logger).Log(
-				"msg", "compact blocks",
-				"count", len(blocks),
-				"mint", meta.MinTime,
-				"maxt", meta.MaxTime,
-				"ulid", meta.ULID,
-				"sources", fmt.Sprintf("%v", uids),
-				"duration", time.Since(start),
-			)
+			return nil, nil
 		}
-		return uid, nil
+
+		level.Info(c.logger).Log(
+			"msg", "compact blocks",
+			"count", len(blocks),
+			"mint", meta.MinTime,
+			"maxt", meta.MaxTime,
+			"ulid", meta.ULID,
+			"sources", fmt.Sprintf("%v", uids),
+			"duration", time.Since(start),
+		)
+		return []ulid.ULID{uid}, nil
 	}
 
 	errs := tsdb_errors.NewMulti(err)
@@ -529,10 +537,10 @@ func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string,
 		}
 	}
 
-	return uid, errs.Err()
+	return nil, errs.Err()
 }
 
-func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, parent *BlockMeta) (ulid.ULID, error) {
+func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, base *BlockMeta) ([]ulid.ULID, error) {
 	start := time.Now()
 
 	uid := ulid.MustNew(ulid.Now(), rand.Reader)
@@ -545,15 +553,18 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, p
 	meta.Compaction.Level = 1
 	meta.Compaction.Sources = []ulid.ULID{uid}
 
-	if parent != nil {
+	if base != nil {
 		meta.Compaction.Parents = []BlockDesc{
-			{ULID: parent.ULID, MinTime: parent.MinTime, MaxTime: parent.MaxTime},
+			{ULID: base.ULID, MinTime: base.MinTime, MaxTime: base.MaxTime},
+		}
+		if base.Compaction.FromOutOfOrder() {
+			meta.Compaction.SetOutOfOrder()
 		}
 	}
 
 	err := c.write(dest, meta, DefaultBlockPopulator{}, b)
 	if err != nil {
-		return uid, err
+		return nil, err
 	}
 
 	if meta.Stats.NumSamples == 0 {
@@ -563,7 +574,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, p
 			"maxt", meta.MaxTime,
 			"duration", time.Since(start),
 		)
-		return ulid.ULID{}, nil
+		return nil, nil
 	}
 
 	level.Info(c.logger).Log(
@@ -572,8 +583,9 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, p
 		"maxt", meta.MaxTime,
 		"ulid", meta.ULID,
 		"duration", time.Since(start),
+		"ooo", meta.Compaction.FromOutOfOrder(),
 	)
-	return uid, nil
+	return []ulid.ULID{uid}, nil
 }
 
 // instrumentedChunkWriter is used for level 1 compactions to record statistics
@@ -825,7 +837,7 @@ func (c DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compa
 		chksIter = s.Iterator(chksIter)
 		chks = chks[:0]
 		for chksIter.Next() {
-			// We are not iterating in streaming way over chunk as
+			// We are not iterating in a streaming way over chunks as
 			// it's more efficient to do bulk write for index and
 			// chunk file purposes.
 			chks = append(chks, chksIter.At())
@@ -834,7 +846,7 @@ func (c DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compa
 			return fmt.Errorf("chunk iter: %w", err)
 		}
 
-		// Skip the series with all deleted chunks.
+		// Skip series with all deleted chunks.
 		if len(chks) == 0 {
 			continue
 		}

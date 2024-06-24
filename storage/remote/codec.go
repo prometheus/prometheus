@@ -20,6 +20,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -28,7 +29,6 @@ import (
 	"github.com/golang/snappy"
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -95,7 +95,7 @@ func EncodeReadResponse(resp *prompb.ReadResponse, w http.ResponseWriter) error 
 
 // ToQuery builds a Query proto.
 func ToQuery(from, to int64, matchers []*labels.Matcher, hints *storage.SelectHints) (*prompb.Query, error) {
-	ms, err := toLabelMatchers(matchers)
+	ms, err := ToLabelMatchers(matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +166,7 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 		}
 
 		resp.Timeseries = append(resp.Timeseries, &prompb.TimeSeries{
-			Labels:     labelsToLabelsProto(series.Labels(), nil),
+			Labels:     LabelsToLabelsProto(series.Labels(), nil),
 			Samples:    samples,
 			Histograms: histograms,
 		})
@@ -176,12 +176,13 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 
 // FromQueryResult unpacks and sorts a QueryResult proto.
 func FromQueryResult(sortSeries bool, res *prompb.QueryResult) storage.SeriesSet {
+	b := labels.NewScratchBuilder(0)
 	series := make([]storage.Series, 0, len(res.Timeseries))
 	for _, ts := range res.Timeseries {
 		if err := validateLabelsAndMetricName(ts.Labels); err != nil {
 			return errSeriesSet{err: err}
 		}
-		lbls := labelProtosToLabels(ts.Labels)
+		lbls := LabelProtosToLabels(&b, ts.Labels)
 		series = append(series, &concreteSeries{labels: lbls, floats: ts.Samples, histograms: ts.Histograms})
 	}
 
@@ -234,7 +235,7 @@ func StreamChunkedReadResponses(
 	for ss.Next() {
 		series := ss.At()
 		iter = series.Iterator(iter)
-		lbls = MergeLabels(labelsToLabelsProto(series.Labels(), lbls), sortedExternalLabels)
+		lbls = MergeLabels(LabelsToLabelsProto(series.Labels(), lbls), sortedExternalLabels)
 
 		maxDataLength := maxBytesInFrame
 		for _, lbl := range lbls {
@@ -565,7 +566,8 @@ func validateLabelsAndMetricName(ls []prompb.Label) error {
 	return nil
 }
 
-func toLabelMatchers(matchers []*labels.Matcher) ([]*prompb.LabelMatcher, error) {
+// ToLabelMatchers converts Prometheus label matchers to protobuf label matchers.
+func ToLabelMatchers(matchers []*labels.Matcher) ([]*prompb.LabelMatcher, error) {
 	pbMatchers := make([]*prompb.LabelMatcher, 0, len(matchers))
 	for _, m := range matchers {
 		var mType prompb.LabelMatcher_Type
@@ -590,7 +592,7 @@ func toLabelMatchers(matchers []*labels.Matcher) ([]*prompb.LabelMatcher, error)
 	return pbMatchers, nil
 }
 
-// FromLabelMatchers parses protobuf label matchers to Prometheus label matchers.
+// FromLabelMatchers converts protobuf label matchers to Prometheus label matchers.
 func FromLabelMatchers(matchers []*prompb.LabelMatcher) ([]*labels.Matcher, error) {
 	result := make([]*labels.Matcher, 0, len(matchers))
 	for _, matcher := range matchers {
@@ -616,11 +618,11 @@ func FromLabelMatchers(matchers []*prompb.LabelMatcher) ([]*labels.Matcher, erro
 	return result, nil
 }
 
-func exemplarProtoToExemplar(ep prompb.Exemplar) exemplar.Exemplar {
+func exemplarProtoToExemplar(b *labels.ScratchBuilder, ep prompb.Exemplar) exemplar.Exemplar {
 	timestamp := ep.Timestamp
 
 	return exemplar.Exemplar{
-		Labels: labelProtosToLabels(ep.Labels),
+		Labels: LabelProtosToLabels(b, ep.Labels),
 		Value:  ep.Value,
 		Ts:     timestamp,
 		HasTs:  timestamp != 0,
@@ -760,8 +762,10 @@ func LabelProtosToMetric(labelPairs []*prompb.Label) model.Metric {
 	return metric
 }
 
-func labelProtosToLabels(labelPairs []prompb.Label) labels.Labels {
-	b := labels.ScratchBuilder{}
+// LabelProtosToLabels transforms prompb labels into labels. The labels builder
+// will be used to build the returned labels.
+func LabelProtosToLabels(b *labels.ScratchBuilder, labelPairs []prompb.Label) labels.Labels {
+	b.Reset()
 	for _, l := range labelPairs {
 		b.Add(l.Name, l.Value)
 	}
@@ -769,9 +773,9 @@ func labelProtosToLabels(labelPairs []prompb.Label) labels.Labels {
 	return b.Labels()
 }
 
-// labelsToLabelsProto transforms labels into prompb labels. The buffer slice
+// LabelsToLabelsProto transforms labels into prompb labels. The buffer slice
 // will be used to avoid allocations if it is big enough to store the labels.
-func labelsToLabelsProto(lbls labels.Labels, buf []prompb.Label) []prompb.Label {
+func LabelsToLabelsProto(lbls labels.Labels, buf []prompb.Label) []prompb.Label {
 	result := buf[:0]
 	lbls.Range(func(l labels.Label) {
 		result = append(result, prompb.Label{
