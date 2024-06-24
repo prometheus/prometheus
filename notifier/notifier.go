@@ -689,10 +689,7 @@ func (n *Manager) sendOne(ctx context.Context, c *http.Client, url string, b []b
 //
 // Run will return once the notification manager has successfully shut down.
 //
-// The manager will optionally wait up to the configured drain timeout to drain any queued notifications
-// before shutting down. Any queued notifications remaining at the end of the timeout will be dropped.
-//
-// A drain timeout of 0 means that no queued notifications will be drained and they will instead be dropped.
+// The manager will optionally drain any queued notifications before shutting down.
 func (n *Manager) Stop() {
 	level.Info(n.logger).Log("msg", "Stopping notification manager...")
 	close(n.stopRequested)
