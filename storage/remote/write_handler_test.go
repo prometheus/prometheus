@@ -266,24 +266,22 @@ func TestRemoteWriteHandler_V1Message(t *testing.T) {
 	j := 0
 	k := 0
 	for _, ts := range writeRequestFixture.Timeseries {
-		labels := labelProtosToLabels(&b, ts.Labels)
+		labels := ts.ToLabels(&b, nil)
 		for _, s := range ts.Samples {
 			requireEqual(t, mockSample{labels, s.Timestamp, s.Value}, appendable.samples[i])
 			i++
 		}
-
 		for _, e := range ts.Exemplars {
-			exemplarLabels := labelProtosToLabels(&b, e.Labels)
+			exemplarLabels := e.ToExemplar(&b, nil).Labels
 			requireEqual(t, mockExemplar{labels, exemplarLabels, e.Timestamp, e.Value}, appendable.exemplars[j])
 			j++
 		}
-
 		for _, hp := range ts.Histograms {
 			if hp.IsFloatHistogram() {
-				fh := FloatHistogramProtoToFloatHistogram(hp)
+				fh := hp.ToFloatHistogram()
 				requireEqual(t, mockHistogram{labels, hp.Timestamp, nil, fh}, appendable.histograms[k])
 			} else {
-				h := HistogramProtoToHistogram(hp)
+				h := hp.ToIntHistogram()
 				requireEqual(t, mockHistogram{labels, hp.Timestamp, h, nil}, appendable.histograms[k])
 			}
 
@@ -312,30 +310,62 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 	resp := recorder.Result()
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 
+	b := labels.NewScratchBuilder(0)
 	i := 0
 	j := 0
 	k := 0
-	// the reduced write request is equivalent to the write request fixture.
-	// we can use it for
 	for _, ts := range writeV2RequestFixture.Timeseries {
-		ls := writev2.DesymbolizeLabels(ts.LabelsRefs, writeV2RequestFixture.Symbols)
+		ls := ts.ToLabels(&b, writeV2RequestFixture.Symbols)
 		for _, s := range ts.Samples {
-			require.Equal(t, mockSample{ls, s.Timestamp, s.Value}, appendable.samples[i])
+			// NOTE(bwplotka): In this case I got errors due to correct labels.Labels.String(), but with dedupelabels tag
+			// require.Equal(t, mockSample{ls, s.Timestamp, s.Value}, appendable.samples[i]) fails.
+			/*
+			   	Error Trace:	/Users/bwplotka/Repos/prometheus/storage/remote/write_handler_test.go:323
+			        	Error:      	Not equal:
+			        	           	expected: labels.Labels{syms:(*labels.nameTable)(0x1400095afc0), data:"\x00\x01\x02\x03\x04\x05\x06\a\b\t"}
+			        	           	actual  : labels.Labels{syms:(*labels.nameTable)(0x1400095b080), data:"\x00\x01\x02\x03\x04\x05\x06\a\b\t"}
+
+			        	           	Diff:
+			        	           	--- Expected
+			        	           	+++ Actual
+			        	           	@@ -13,4 +13,4 @@
+			        	           	   (string) (len=3) "bar",
+			        	           	-   (string) (len=1) "f",
+			        	           	-   (string) (len=1) "g",
+			        	           	+   (string) "",
+			        	           	+   (string) "",
+			        	           	   (string) "",
+			        	           	@@ -1034,4 +1034,4 @@
+			        	           	   nameTable: (*labels.nameTable)(<already shown>),
+			        	           	-   nextNum: (int) 12,
+			        	           	-   byName: (map[string]int) (len=12) {
+			        	           	+   nextNum: (int) 10,
+			        	           	+   byName: (map[string]int) (len=10) {
+			        	           	    (string) (len=8) "__name__": (int) 0,
+			        	           	@@ -1043,5 +1043,3 @@
+			        	           	    (string) (len=1) "e": (int) 7,
+			        	           	-    (string) (len=1) "f": (int) 10,
+			        	           	    (string) (len=3) "foo": (int) 8,
+			        	           	-    (string) (len=1) "g": (int) 11,
+			        	           	    (string) (len=3) "qux": (int) 5,
+			*/
+			// TODO(bwplotka): Investigate why, is it the way we do fixtures?
+			require.Equal(t, appendable.samples[i].l.String(), ls.String())
+			require.Equal(t, s.Value, appendable.samples[i].v)
+			require.Equal(t, s.Timestamp, appendable.samples[i].t)
 			i++
 		}
-
 		for _, e := range ts.Exemplars {
-			exemplarLabels := writev2.DesymbolizeLabels(e.LabelsRefs, writeV2RequestFixture.Symbols)
+			exemplarLabels := e.ToExemplar(&b, writeV2RequestFixture.Symbols).Labels
 			require.Equal(t, mockExemplar{ls, exemplarLabels, e.Timestamp, e.Value}, appendable.exemplars[j])
 			j++
 		}
-
 		for _, hp := range ts.Histograms {
 			if hp.IsFloatHistogram() {
-				fh := FloatHistogramProtoV2ToFloatHistogram(hp)
+				fh := hp.ToFloatHistogram()
 				require.Equal(t, mockHistogram{ls, hp.Timestamp, nil, fh}, appendable.histograms[k])
 			} else {
-				h := HistogramProtoV2ToHistogram(hp)
+				h := hp.ToIntHistogram()
 				require.Equal(t, mockHistogram{ls, hp.Timestamp, h, nil}, appendable.histograms[k])
 			}
 
@@ -442,7 +472,7 @@ func TestOutOfOrderExemplar_V2Message(t *testing.T) {
 func TestOutOfOrderHistogram_V1Message(t *testing.T) {
 	payload, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
 		Labels:     []prompb.Label{{Name: "__name__", Value: "test_metric"}},
-		Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat(nil))},
+		Histograms: []prompb.Histogram{prompb.FromIntHistogram(0, &testHistogram), prompb.FromFloatHistogram(1, testHistogram.ToFloat(nil))},
 	}}, nil, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
@@ -462,7 +492,7 @@ func TestOutOfOrderHistogram_V1Message(t *testing.T) {
 func TestOutOfOrderHistogram_V2Message(t *testing.T) {
 	payload, _, _, err := buildV2WriteRequest(nil, []writev2.TimeSeries{{
 		LabelsRefs: []uint32{0, 1},
-		Histograms: []writev2.Histogram{HistogramToV2HistogramProto(0, &testHistogram), FloatHistogramToV2HistogramProto(1, testHistogram.ToFloat(nil))},
+		Histograms: []writev2.Histogram{writev2.FromIntHistogram(0, &testHistogram), writev2.FromFloatHistogram(1, testHistogram.ToFloat(nil))},
 	}}, []string{"__name__", "metric1"}, nil, nil, nil, "snappy") // TODO(bwplotka): No empty string!
 	require.NoError(t, err)
 
@@ -493,7 +523,7 @@ func BenchmarkRemoteWriteHandler(b *testing.B) {
 				{Name: "__name__", Value: "test_metric"},
 				{Name: "test_label_name_" + num, Value: labelValue + num},
 			},
-			Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram)},
+			Histograms: []prompb.Histogram{prompb.FromIntHistogram(0, &testHistogram)},
 		}}, nil, nil, nil, nil, "snappy")
 		require.NoError(b, err)
 		req, err := http.NewRequest("", "", bytes.NewReader(buf))

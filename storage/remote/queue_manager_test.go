@@ -1019,7 +1019,7 @@ func (c *TestWriteClient) expectExemplars(ss []record.RefExemplar, series []reco
 	for _, s := range ss {
 		seriesName := getSeriesNameFromRef(series[s.Ref])
 		e := prompb.Exemplar{
-			Labels:    labelsToLabelsProto(s.Labels, nil),
+			Labels:    prompb.FromLabels(s.Labels, nil),
 			Timestamp: s.T,
 			Value:     s.V,
 		}
@@ -1036,7 +1036,7 @@ func (c *TestWriteClient) expectHistograms(hh []record.RefHistogramSample, serie
 
 	for _, h := range hh {
 		seriesName := getSeriesNameFromRef(series[h.Ref])
-		c.expectedHistograms[seriesName] = append(c.expectedHistograms[seriesName], HistogramToHistogramProto(h.T, h.H))
+		c.expectedHistograms[seriesName] = append(c.expectedHistograms[seriesName], prompb.FromIntHistogram(h.T, h.H))
 	}
 }
 
@@ -1049,7 +1049,7 @@ func (c *TestWriteClient) expectFloatHistograms(fhs []record.RefFloatHistogramSa
 
 	for _, fh := range fhs {
 		seriesName := getSeriesNameFromRef(series[fh.Ref])
-		c.expectedFloatHistograms[seriesName] = append(c.expectedFloatHistograms[seriesName], FloatHistogramToHistogramProto(fh.T, fh.FH))
+		c.expectedFloatHistograms[seriesName] = append(c.expectedFloatHistograms[seriesName], prompb.FromFloatHistogram(fh.T, fh.FH))
 	}
 }
 
@@ -1133,7 +1133,7 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) error {
 		var reqProtoV2 writev2.Request
 		err = proto.Unmarshal(reqBuf, &reqProtoV2)
 		if err == nil {
-			reqProto, err = V2WriteRequestToWriteRequest(&reqProtoV2)
+			reqProto, err = v2RequesToWriteRequest(&reqProtoV2)
 		}
 	}
 	if err != nil {
@@ -1144,9 +1144,9 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) error {
 		return errors.New("invalid request, no timeseries")
 	}
 
-	builder := labels.NewScratchBuilder(0)
+	b := labels.NewScratchBuilder(0)
 	for _, ts := range reqProto.Timeseries {
-		labels := labelProtosToLabels(&builder, ts.Labels)
+		labels := ts.ToLabels(&b, nil)
 		seriesName := labels.Get("__name__")
 		c.receivedSamples[seriesName] = append(c.receivedSamples[seriesName], ts.Samples...)
 		if len(ts.Exemplars) > 0 {

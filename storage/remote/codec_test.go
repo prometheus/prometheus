@@ -21,7 +21,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
-	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -59,7 +58,7 @@ var writeRequestFixture = &prompb.WriteRequest{
 			},
 			Samples:    []prompb.Sample{{Value: 1, Timestamp: 0}},
 			Exemplars:  []prompb.Exemplar{{Labels: []prompb.Label{{Name: "f", Value: "g"}}, Value: 1, Timestamp: 0}},
-			Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat(nil))},
+			Histograms: []prompb.Histogram{prompb.FromIntHistogram(0, &testHistogram), prompb.FromFloatHistogram(1, testHistogram.ToFloat(nil))},
 		},
 		{
 			Labels: []prompb.Label{
@@ -71,7 +70,7 @@ var writeRequestFixture = &prompb.WriteRequest{
 			},
 			Samples:    []prompb.Sample{{Value: 2, Timestamp: 1}},
 			Exemplars:  []prompb.Exemplar{{Labels: []prompb.Label{{Name: "h", Value: "i"}}, Value: 2, Timestamp: 1}},
-			Histograms: []prompb.Histogram{HistogramToHistogramProto(2, &testHistogram), FloatHistogramToHistogramProto(3, testHistogram.ToFloat(nil))},
+			Histograms: []prompb.Histogram{prompb.FromIntHistogram(2, &testHistogram), prompb.FromFloatHistogram(3, testHistogram.ToFloat(nil))},
 		},
 	},
 }
@@ -79,37 +78,23 @@ var writeRequestFixture = &prompb.WriteRequest{
 // writeV2RequestFixture represents the same request as writeRequestFixture, but using the v2 representation.
 var writeV2RequestFixture = func() *writev2.Request {
 	st := writev2.NewSymbolTable()
-	var labels []uint32
-	for _, s := range []string{
-		"__name__", "test_metric1",
-		"b", "c",
-		"baz", "qux",
-		"d", "e",
-		"foo", "bar",
-	} {
-		ref := st.Symbolize(s)
-		labels = append(labels, ref)
-	}
-	for _, s := range []string{
-		"f", "g", // 10, 11
-		"h", "i", // 12, 13
-	} {
-		_ = st.Symbolize(s)
-	}
-
+	b := labels.NewScratchBuilder(0)
+	labelRefs := st.SymbolizeLabels(writeRequestFixture.Timeseries[0].ToLabels(&b, nil), nil)
+	exemplar1LabelRefs := st.SymbolizeLabels(writeRequestFixture.Timeseries[0].Exemplars[0].ToExemplar(&b, nil).Labels, nil)
+	exemplar2LabelRefs := st.SymbolizeLabels(writeRequestFixture.Timeseries[0].Exemplars[0].ToExemplar(&b, nil).Labels, nil)
 	return &writev2.Request{
 		Timeseries: []writev2.TimeSeries{
 			{
-				LabelsRefs: labels,
+				LabelsRefs: labelRefs,
 				Samples:    []writev2.Sample{{Value: 1, Timestamp: 0}},
-				Exemplars:  []writev2.Exemplar{{LabelsRefs: []uint32{10, 11}, Value: 1, Timestamp: 0}},
-				Histograms: []writev2.Histogram{HistogramToV2HistogramProto(0, &testHistogram), FloatHistogramToV2HistogramProto(1, testHistogram.ToFloat(nil))},
+				Exemplars:  []writev2.Exemplar{{LabelsRefs: exemplar1LabelRefs, Value: 1, Timestamp: 0}},
+				Histograms: []writev2.Histogram{writev2.FromIntHistogram(0, &testHistogram), writev2.FromFloatHistogram(1, testHistogram.ToFloat(nil))},
 			},
 			{
-				LabelsRefs: labels,
+				LabelsRefs: labelRefs,
 				Samples:    []writev2.Sample{{Value: 2, Timestamp: 1}},
-				Exemplars:  []writev2.Exemplar{{LabelsRefs: []uint32{12, 13}, Value: 2, Timestamp: 1}},
-				Histograms: []writev2.Histogram{HistogramToV2HistogramProto(2, &testHistogram), FloatHistogramToV2HistogramProto(3, testHistogram.ToFloat(nil))},
+				Exemplars:  []writev2.Exemplar{{LabelsRefs: exemplar2LabelRefs, Value: 2, Timestamp: 1}},
+				Histograms: []writev2.Histogram{writev2.FromIntHistogram(2, &testHistogram), writev2.FromFloatHistogram(3, testHistogram.ToFloat(nil))},
 			},
 		},
 		Symbols: st.Symbols(),
@@ -310,7 +295,7 @@ func TestConcreteSeriesIterator_HistogramSamples(t *testing.T) {
 		} else {
 			ts = int64(i)
 		}
-		histProtos[i] = HistogramToHistogramProto(ts, h)
+		histProtos[i] = prompb.FromIntHistogram(ts, h)
 	}
 	series := &concreteSeries{
 		labels:     labels.FromStrings("foo", "bar"),
@@ -361,9 +346,9 @@ func TestConcreteSeriesIterator_FloatAndHistogramSamples(t *testing.T) {
 	histProtos := make([]prompb.Histogram, len(histograms))
 	for i, h := range histograms {
 		if i < 10 {
-			histProtos[i] = HistogramToHistogramProto(int64(i+1), h)
+			histProtos[i] = prompb.FromIntHistogram(int64(i+1), h)
 		} else {
-			histProtos[i] = HistogramToHistogramProto(int64(i+6), h)
+			histProtos[i] = prompb.FromIntHistogram(int64(i+6), h)
 		}
 	}
 	series := &concreteSeries{
@@ -443,7 +428,7 @@ func TestConcreteSeriesIterator_FloatAndHistogramSamples(t *testing.T) {
 	require.Equal(t, chunkenc.ValHistogram, it.Next())
 	ts, fh = it.AtFloatHistogram(nil)
 	require.Equal(t, int64(17), ts)
-	expected := HistogramProtoToFloatHistogram(HistogramToHistogramProto(int64(17), histograms[11]))
+	expected := prompb.FromIntHistogram(int64(17), histograms[11]).ToFloatHistogram()
 	require.Equal(t, expected, fh)
 
 	// Keep calling Next() until the end.
@@ -527,37 +512,6 @@ func TestMergeLabels(t *testing.T) {
 	}
 }
 
-func TestMetricTypeToMetricTypeProto(t *testing.T) {
-	tc := []struct {
-		desc     string
-		input    model.MetricType
-		expected prompb.MetricMetadata_MetricType
-	}{
-		{
-			desc:     "with a single-word metric",
-			input:    model.MetricTypeCounter,
-			expected: prompb.MetricMetadata_COUNTER,
-		},
-		{
-			desc:     "with a two-word metric",
-			input:    model.MetricTypeStateset,
-			expected: prompb.MetricMetadata_STATESET,
-		},
-		{
-			desc:     "with an unknown metric",
-			input:    "not-known",
-			expected: prompb.MetricMetadata_UNKNOWN,
-		},
-	}
-
-	for _, tt := range tc {
-		t.Run(tt.desc, func(t *testing.T) {
-			m := metricTypeToMetricTypeProto(tt.input)
-			require.Equal(t, tt.expected, m)
-		})
-	}
-}
-
 func TestDecodeWriteRequest(t *testing.T) {
 	buf, _, _, err := buildWriteRequest(nil, writeRequestFixture.Timeseries, nil, nil, nil, nil, "snappy")
 	require.NoError(t, err)
@@ -576,212 +530,9 @@ func TestDecodeV2WriteRequest(t *testing.T) {
 	require.Equal(t, writeV2RequestFixture, actual)
 }
 
-func TestNilHistogramProto(t *testing.T) {
-	// This function will panic if it impromperly handles nil
-	// values, causing the test to fail.
-	HistogramProtoToHistogram(prompb.Histogram{})
-	HistogramProtoToFloatHistogram(prompb.Histogram{})
-}
-
-func exampleHistogram() histogram.Histogram {
-	return histogram.Histogram{
-		CounterResetHint: histogram.GaugeType,
-		Schema:           0,
-		Count:            19,
-		Sum:              2.7,
-		PositiveSpans: []histogram.Span{
-			{Offset: 0, Length: 4},
-			{Offset: 0, Length: 0},
-			{Offset: 0, Length: 3},
-		},
-		PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 0},
-		NegativeSpans: []histogram.Span{
-			{Offset: 0, Length: 5},
-			{Offset: 1, Length: 0},
-			{Offset: 0, Length: 1},
-		},
-		NegativeBuckets: []int64{1, 2, -2, 1, -1, 0},
-	}
-}
-
-func exampleHistogramProto() prompb.Histogram {
-	return prompb.Histogram{
-		Count:         &prompb.Histogram_CountInt{CountInt: 19},
-		Sum:           2.7,
-		Schema:        0,
-		ZeroThreshold: 0,
-		ZeroCount:     &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
-		NegativeSpans: []prompb.BucketSpan{
-			{
-				Offset: 0,
-				Length: 5,
-			},
-			{
-				Offset: 1,
-				Length: 0,
-			},
-			{
-				Offset: 0,
-				Length: 1,
-			},
-		},
-		NegativeDeltas: []int64{1, 2, -2, 1, -1, 0},
-		PositiveSpans: []prompb.BucketSpan{
-			{
-				Offset: 0,
-				Length: 4,
-			},
-			{
-				Offset: 0,
-				Length: 0,
-			},
-			{
-				Offset: 0,
-				Length: 3,
-			},
-		},
-		PositiveDeltas: []int64{1, 2, -2, 1, -1, 0, 0},
-		ResetHint:      prompb.Histogram_GAUGE,
-		Timestamp:      1337,
-	}
-}
-
-func TestHistogramToProtoConvert(t *testing.T) {
-	tests := []struct {
-		input    histogram.CounterResetHint
-		expected prompb.Histogram_ResetHint
-	}{
-		{
-			input:    histogram.UnknownCounterReset,
-			expected: prompb.Histogram_UNKNOWN,
-		},
-		{
-			input:    histogram.CounterReset,
-			expected: prompb.Histogram_YES,
-		},
-		{
-			input:    histogram.NotCounterReset,
-			expected: prompb.Histogram_NO,
-		},
-		{
-			input:    histogram.GaugeType,
-			expected: prompb.Histogram_GAUGE,
-		},
-	}
-
-	for _, test := range tests {
-		h := exampleHistogram()
-		h.CounterResetHint = test.input
-		p := exampleHistogramProto()
-		p.ResetHint = test.expected
-
-		require.Equal(t, p, HistogramToHistogramProto(1337, &h))
-
-		require.Equal(t, h, *HistogramProtoToHistogram(p))
-	}
-}
-
-func exampleFloatHistogram() histogram.FloatHistogram {
-	return histogram.FloatHistogram{
-		CounterResetHint: histogram.GaugeType,
-		Schema:           0,
-		Count:            19,
-		Sum:              2.7,
-		PositiveSpans: []histogram.Span{
-			{Offset: 0, Length: 4},
-			{Offset: 0, Length: 0},
-			{Offset: 0, Length: 3},
-		},
-		PositiveBuckets: []float64{1, 2, -2, 1, -1, 0, 0},
-		NegativeSpans: []histogram.Span{
-			{Offset: 0, Length: 5},
-			{Offset: 1, Length: 0},
-			{Offset: 0, Length: 1},
-		},
-		NegativeBuckets: []float64{1, 2, -2, 1, -1, 0},
-	}
-}
-
-func exampleFloatHistogramProto() prompb.Histogram {
-	return prompb.Histogram{
-		Count:         &prompb.Histogram_CountFloat{CountFloat: 19},
-		Sum:           2.7,
-		Schema:        0,
-		ZeroThreshold: 0,
-		ZeroCount:     &prompb.Histogram_ZeroCountFloat{ZeroCountFloat: 0},
-		NegativeSpans: []prompb.BucketSpan{
-			{
-				Offset: 0,
-				Length: 5,
-			},
-			{
-				Offset: 1,
-				Length: 0,
-			},
-			{
-				Offset: 0,
-				Length: 1,
-			},
-		},
-		NegativeCounts: []float64{1, 2, -2, 1, -1, 0},
-		PositiveSpans: []prompb.BucketSpan{
-			{
-				Offset: 0,
-				Length: 4,
-			},
-			{
-				Offset: 0,
-				Length: 0,
-			},
-			{
-				Offset: 0,
-				Length: 3,
-			},
-		},
-		PositiveCounts: []float64{1, 2, -2, 1, -1, 0, 0},
-		ResetHint:      prompb.Histogram_GAUGE,
-		Timestamp:      1337,
-	}
-}
-
-func TestFloatHistogramToProtoConvert(t *testing.T) {
-	tests := []struct {
-		input    histogram.CounterResetHint
-		expected prompb.Histogram_ResetHint
-	}{
-		{
-			input:    histogram.UnknownCounterReset,
-			expected: prompb.Histogram_UNKNOWN,
-		},
-		{
-			input:    histogram.CounterReset,
-			expected: prompb.Histogram_YES,
-		},
-		{
-			input:    histogram.NotCounterReset,
-			expected: prompb.Histogram_NO,
-		},
-		{
-			input:    histogram.GaugeType,
-			expected: prompb.Histogram_GAUGE,
-		},
-	}
-
-	for _, test := range tests {
-		h := exampleFloatHistogram()
-		h.CounterResetHint = test.input
-		p := exampleFloatHistogramProto()
-		p.ResetHint = test.expected
-
-		require.Equal(t, p, FloatHistogramToHistogramProto(1337, &h))
-
-		require.Equal(t, h, *FloatHistogramProtoToFloatHistogram(p))
-	}
-}
-
 func TestStreamResponse(t *testing.T) {
-	lbs1 := labelsToLabelsProto(labels.FromStrings("instance", "localhost1", "job", "demo1"), nil)
-	lbs2 := labelsToLabelsProto(labels.FromStrings("instance", "localhost2", "job", "demo2"), nil)
+	lbs1 := prompb.FromLabels(labels.FromStrings("instance", "localhost1", "job", "demo1"), nil)
+	lbs2 := prompb.FromLabels(labels.FromStrings("instance", "localhost2", "job", "demo2"), nil)
 	chunk := prompb.Chunk{
 		Type: prompb.Chunk_XOR,
 		Data: make([]byte, 100),
@@ -853,7 +604,7 @@ func (c *mockChunkSeriesSet) Next() bool {
 
 func (c *mockChunkSeriesSet) At() storage.ChunkSeries {
 	return &storage.ChunkSeriesEntry{
-		Lset: labelProtosToLabels(&c.builder, c.chunkedSeries[c.index].Labels),
+		Lset: c.chunkedSeries[c.index].ToLabels(&c.builder, nil),
 		ChunkIteratorFn: func(chunks.Iterator) chunks.Iterator {
 			return &mockChunkIterator{
 				chunks: c.chunkedSeries[c.index].Chunks,
@@ -894,4 +645,75 @@ func (c *mockChunkIterator) Next() bool {
 
 func (c *mockChunkIterator) Err() error {
 	return nil
+}
+
+func v2RequesToWriteRequest(v2Req *writev2.Request) (*prompb.WriteRequest, error) {
+	req := &prompb.WriteRequest{
+		Timeseries: make([]prompb.TimeSeries, len(v2Req.Timeseries)),
+		// TODO handle metadata?
+	}
+	b := labels.NewScratchBuilder(0)
+	for i, rts := range v2Req.Timeseries {
+		rts.ToLabels(&b, v2Req.Symbols).Range(func(l labels.Label) {
+			req.Timeseries[i].Labels = append(req.Timeseries[i].Labels, prompb.Label{
+				Name:  l.Name,
+				Value: l.Value,
+			})
+		})
+
+		exemplars := make([]prompb.Exemplar, len(rts.Exemplars))
+		for j, e := range rts.Exemplars {
+			exemplars[j].Value = e.Value
+			exemplars[j].Timestamp = e.Timestamp
+			e.ToExemplar(&b, v2Req.Symbols).Labels.Range(func(l labels.Label) {
+				exemplars[j].Labels = append(exemplars[j].Labels, prompb.Label{
+					Name:  l.Name,
+					Value: l.Value,
+				})
+			})
+		}
+		req.Timeseries[i].Exemplars = exemplars
+
+		req.Timeseries[i].Samples = make([]prompb.Sample, len(rts.Samples))
+		for j, s := range rts.Samples {
+			req.Timeseries[i].Samples[j].Timestamp = s.Timestamp
+			req.Timeseries[i].Samples[j].Value = s.Value
+		}
+
+		req.Timeseries[i].Histograms = make([]prompb.Histogram, len(rts.Histograms))
+		for j, h := range rts.Histograms {
+			// TODO: double check
+			if h.IsFloatHistogram() {
+				req.Timeseries[i].Histograms[j].Count = &prompb.Histogram_CountFloat{CountFloat: h.GetCountFloat()}
+				req.Timeseries[i].Histograms[j].ZeroCount = &prompb.Histogram_ZeroCountFloat{ZeroCountFloat: h.GetZeroCountFloat()}
+			} else {
+				req.Timeseries[i].Histograms[j].Count = &prompb.Histogram_CountInt{CountInt: h.GetCountInt()}
+				req.Timeseries[i].Histograms[j].ZeroCount = &prompb.Histogram_ZeroCountInt{ZeroCountInt: h.GetZeroCountInt()}
+			}
+
+			for _, span := range h.NegativeSpans {
+				req.Timeseries[i].Histograms[j].NegativeSpans = append(req.Timeseries[i].Histograms[j].NegativeSpans, prompb.BucketSpan{
+					Offset: span.Offset,
+					Length: span.Length,
+				})
+			}
+			for _, span := range h.PositiveSpans {
+				req.Timeseries[i].Histograms[j].PositiveSpans = append(req.Timeseries[i].Histograms[j].PositiveSpans, prompb.BucketSpan{
+					Offset: span.Offset,
+					Length: span.Length,
+				})
+			}
+
+			req.Timeseries[i].Histograms[j].Sum = h.Sum
+			req.Timeseries[i].Histograms[j].Schema = h.Schema
+			req.Timeseries[i].Histograms[j].ZeroThreshold = h.ZeroThreshold
+			req.Timeseries[i].Histograms[j].NegativeDeltas = h.NegativeDeltas
+			req.Timeseries[i].Histograms[j].NegativeCounts = h.NegativeCounts
+			req.Timeseries[i].Histograms[j].PositiveDeltas = h.PositiveDeltas
+			req.Timeseries[i].Histograms[j].PositiveCounts = h.PositiveCounts
+			req.Timeseries[i].Histograms[j].ResetHint = prompb.Histogram_ResetHint(h.ResetHint)
+			req.Timeseries[i].Histograms[j].Timestamp = h.Timestamp
+		}
+	}
+	return req, nil
 }

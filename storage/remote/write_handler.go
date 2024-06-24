@@ -218,7 +218,7 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 
 	b := labels.NewScratchBuilder(0)
 	for _, ts := range req.Timeseries {
-		ls := labelProtosToLabels(&b, ts.Labels)
+		ls := ts.ToLabels(&b, nil)
 		if !ls.IsValid() {
 			level.Warn(h.logger).Log("msg", "Invalid metric names or labels", "got", ls.String())
 			samplesWithInvalidLabels++
@@ -231,7 +231,7 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 		}
 
 		for _, ep := range ts.Exemplars {
-			e := exemplarProtoToExemplar(&b, ep)
+			e := ep.ToExemplar(&b, nil)
 			h.appendExemplar(app, e, ls, &outOfOrderExemplarErrs)
 		}
 
@@ -263,8 +263,9 @@ func (h *writeHandler) writeV2(ctx context.Context, req *writev2.Request) (err e
 		err = app.Commit()
 	}()
 
+	b := labels.NewScratchBuilder(0)
 	for _, ts := range req.Timeseries {
-		ls := writev2.DesymbolizeLabels(ts.LabelsRefs, req.Symbols)
+		ls := ts.ToLabels(&b, req.Symbols)
 
 		err := h.appendSamplesV2(app, ts.Samples, ls)
 		if err != nil {
@@ -272,7 +273,7 @@ func (h *writeHandler) writeV2(ctx context.Context, req *writev2.Request) (err e
 		}
 
 		for _, ep := range ts.Exemplars {
-			e := exemplarProtoV2ToExemplar(ep, req.Symbols)
+			e := ep.ToExemplar(&b, req.Symbols)
 			h.appendExemplar(app, e, ls, &outOfOrderExemplarErrs)
 		}
 
@@ -281,7 +282,7 @@ func (h *writeHandler) writeV2(ctx context.Context, req *writev2.Request) (err e
 			return err
 		}
 
-		m := metadataProtoV2ToMetadata(ts.Metadata, req.Symbols)
+		m := ts.ToMetadata(req.Symbols)
 		if _, err = app.UpdateMetadata(0, ls, m); err != nil {
 			level.Debug(h.logger).Log("msg", "error while updating metadata from remote write", "err", err)
 		}
@@ -345,11 +346,9 @@ func (h *writeHandler) appendHistograms(app storage.Appender, hh []prompb.Histog
 	var err error
 	for _, hp := range hh {
 		if hp.IsFloatHistogram() {
-			fhs := FloatHistogramProtoToFloatHistogram(hp)
-			_, err = app.AppendHistogram(0, labels, hp.Timestamp, nil, fhs)
+			_, err = app.AppendHistogram(0, labels, hp.Timestamp, nil, hp.ToFloatHistogram())
 		} else {
-			hs := HistogramProtoToHistogram(hp)
-			_, err = app.AppendHistogram(0, labels, hp.Timestamp, hs, nil)
+			_, err = app.AppendHistogram(0, labels, hp.Timestamp, hp.ToIntHistogram(), nil)
 		}
 		if err != nil {
 			unwrappedErr := errors.Unwrap(err)
@@ -371,11 +370,9 @@ func (h *writeHandler) appendHistogramsV2(app storage.Appender, hh []writev2.His
 	var err error
 	for _, hp := range hh {
 		if hp.IsFloatHistogram() {
-			fhs := FloatV2HistogramProtoToFloatHistogram(hp)
-			_, err = app.AppendHistogram(0, labels, hp.Timestamp, nil, fhs)
+			_, err = app.AppendHistogram(0, labels, hp.Timestamp, nil, hp.ToFloatHistogram())
 		} else {
-			hs := V2HistogramProtoToHistogram(hp)
-			_, err = app.AppendHistogram(0, labels, hp.Timestamp, hs, nil)
+			_, err = app.AppendHistogram(0, labels, hp.Timestamp, hp.ToIntHistogram(), nil)
 		}
 		if err != nil {
 			unwrappedErr := errors.Unwrap(err)
