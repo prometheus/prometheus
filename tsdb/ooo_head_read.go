@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 var _ IndexReader = &OOOHeadIndexReader{}
@@ -92,10 +93,10 @@ func (oh *OOOHeadIndexReader) series(ref storage.SeriesRef, builder *labels.Scra
 		return nil
 	}
 
-	return getOOOSeriesChunks(s, oh.mint, oh.maxt, lastGarbageCollectedMmapRef, maxMmapRef, chks)
+	return getOOOSeriesChunks(s, oh.mint, oh.maxt, lastGarbageCollectedMmapRef, maxMmapRef, false, chks)
 }
 
-func getOOOSeriesChunks(s *memSeries, mint, maxt int64, lastGarbageCollectedMmapRef, maxMmapRef chunks.ChunkDiskMapperRef, chks *[]chunks.Meta) error {
+func getOOOSeriesChunks(s *memSeries, mint, maxt int64, lastGarbageCollectedMmapRef, maxMmapRef chunks.ChunkDiskMapperRef, includeInOrder bool, chks *[]chunks.Meta) error {
 	tmpChks := make([]chunks.Meta, 0, len(s.ooo.oooMmappedChunks))
 
 	addChunk := func(minT, maxT int64, ref chunks.ChunkRef, chunk chunkenc.Chunk) {
@@ -133,6 +134,10 @@ func getOOOSeriesChunks(s *memSeries, mint, maxt int64, lastGarbageCollectedMmap
 			ref := chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.oooHeadChunkID(i)))
 			addChunk(c.minTime, c.maxTime, ref, nil)
 		}
+	}
+
+	if includeInOrder {
+		getSeriesChunks(s, mint, maxt, &tmpChks)
 	}
 
 	// There is nothing to do if we did not collect any chunk.
@@ -273,7 +278,7 @@ func (cr OOOHeadChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, 
 		s.Unlock()
 		return nil, nil, storage.ErrNotFound
 	}
-	mc, err := s.oooMergedChunks(meta, cr.head.chunkDiskMapper, cr.mint, cr.maxt)
+	mc, err := s.oooMergedChunks(meta, cr.head.chunkDiskMapper, nil, cr.mint, cr.maxt)
 	s.Unlock()
 	if err != nil {
 		return nil, nil, err
@@ -495,4 +500,128 @@ func (ir *OOOCompactionHeadIndexReader) LabelNamesFor(ctx context.Context, posti
 
 func (ir *OOOCompactionHeadIndexReader) Close() error {
 	return ir.ch.oooIR.Close()
+}
+
+// HeadAndOOOQuerier queries both the head and the out-of-order head.
+type HeadAndOOOQuerier struct {
+	mint, maxt int64
+	head       *Head
+	index      IndexReader
+	chunkr     ChunkReader
+	querier    storage.Querier
+}
+
+func NewHeadAndOOOQuerier(mint, maxt int64, head *Head, oooIsoState *oooIsolationState, querier storage.Querier) storage.Querier {
+	isoState := head.iso.State(mint, maxt)
+	return &HeadAndOOOQuerier{
+		mint:    mint,
+		maxt:    maxt,
+		head:    head,
+		index:   NewHeadAndOOOIndexReader(head, mint, maxt, oooIsoState.minRef),
+		chunkr:  NewHeadAndOOOChunkReader(head, mint, maxt, isoState, oooIsoState),
+		querier: querier,
+	}
+}
+
+func (q *HeadAndOOOQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return q.querier.LabelValues(ctx, name, matchers...)
+}
+
+func (q *HeadAndOOOQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return q.querier.LabelNames(ctx, matchers...)
+}
+
+func (q *HeadAndOOOQuerier) Close() error {
+	q.chunkr.Close()
+	return q.querier.Close()
+}
+
+func (q *HeadAndOOOQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	return selectSeriesSet(ctx, sortSeries, hints, matchers, q.index, q.chunkr, q.head.tombstones, q.mint, q.maxt)
+}
+
+type HeadAndOOOIndexReader struct {
+	*headIndexReader            // A reference to the headIndexReader so we can reuse as many interface implementation as possible.
+	lastGarbageCollectedMmapRef chunks.ChunkDiskMapperRef
+}
+
+func NewHeadAndOOOIndexReader(head *Head, mint, maxt int64, lastGarbageCollectedMmapRef chunks.ChunkDiskMapperRef) *HeadAndOOOIndexReader {
+	hr := &headIndexReader{
+		head: head,
+		mint: mint,
+		maxt: maxt,
+	}
+	return &HeadAndOOOIndexReader{hr, lastGarbageCollectedMmapRef}
+}
+
+func (oh *HeadAndOOOIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
+	s := oh.head.series.getByID(chunks.HeadSeriesRef(ref))
+
+	if s == nil {
+		oh.head.metrics.seriesNotFound.Inc()
+		return storage.ErrNotFound
+	}
+	builder.Assign(s.lset)
+
+	if chks == nil {
+		return nil
+	}
+
+	s.Lock()
+	defer s.Unlock()
+	*chks = (*chks)[:0]
+
+	if s.ooo == nil {
+		getSeriesChunks(s, oh.mint, oh.maxt, chks)
+	} else {
+		return getOOOSeriesChunks(s, oh.mint, oh.maxt, oh.lastGarbageCollectedMmapRef, 0, true, chks)
+	}
+
+	return nil
+}
+
+type HeadAndOOOChunkReader struct {
+	cr          headChunkReader
+	oooIsoState *oooIsolationState
+}
+
+func NewHeadAndOOOChunkReader(head *Head, mint, maxt int64, isoState *isolationState, oooIsoState *oooIsolationState) *HeadAndOOOChunkReader {
+	return &HeadAndOOOChunkReader{
+		cr: headChunkReader{
+			head:     head,
+			mint:     mint,
+			maxt:     maxt,
+			isoState: isoState,
+		},
+		oooIsoState: oooIsoState,
+	}
+}
+
+func (cr *HeadAndOOOChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
+	sid, cid := chunks.HeadChunkRef(meta.Ref).Unpack()
+	if !isOOOHeadChunkID(cid) {
+		return cr.cr.ChunkOrIterable(meta)
+	}
+
+	s := cr.cr.head.series.getByID(sid)
+	// This means that the series has been garbage collected.
+	if s == nil {
+		return nil, nil, storage.ErrNotFound
+	}
+
+	s.Lock()
+	mc, err := s.oooMergedChunks(meta, cr.cr.head.chunkDiskMapper, &cr.cr, cr.cr.mint, cr.cr.maxt)
+	s.Unlock()
+
+	return nil, mc, err
+}
+
+func (cr *HeadAndOOOChunkReader) Close() error {
+	if cr.cr.isoState != nil {
+		cr.cr.isoState.Close()
+	}
+	if cr.oooIsoState != nil {
+		cr.oooIsoState.Close()
+	}
+	return nil
 }
