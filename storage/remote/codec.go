@@ -166,7 +166,7 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 		}
 
 		resp.Timeseries = append(resp.Timeseries, &prompb.TimeSeries{
-			Labels:     labelsToLabelsProto(series.Labels(), nil),
+			Labels:     LabelsToLabelsProto(series.Labels(), nil),
 			Samples:    samples,
 			Histograms: histograms,
 		})
@@ -182,7 +182,7 @@ func FromQueryResult(sortSeries bool, res *prompb.QueryResult) storage.SeriesSet
 		if err := validateLabelsAndMetricName(ts.Labels); err != nil {
 			return errSeriesSet{err: err}
 		}
-		lbls := labelProtosToLabels(&b, ts.Labels)
+		lbls := LabelProtosToLabels(&b, ts.Labels)
 		series = append(series, &concreteSeries{labels: lbls, floats: ts.Samples, histograms: ts.Histograms})
 	}
 
@@ -235,7 +235,7 @@ func StreamChunkedReadResponses(
 	for ss.Next() {
 		series := ss.At()
 		iter = series.Iterator(iter)
-		lbls = MergeLabels(labelsToLabelsProto(series.Labels(), lbls), sortedExternalLabels)
+		lbls = MergeLabels(LabelsToLabelsProto(series.Labels(), lbls), sortedExternalLabels)
 
 		maxDataLength := maxBytesInFrame
 		for _, lbl := range lbls {
@@ -622,7 +622,7 @@ func exemplarProtoToExemplar(b *labels.ScratchBuilder, ep prompb.Exemplar) exemp
 	timestamp := ep.Timestamp
 
 	return exemplar.Exemplar{
-		Labels: labelProtosToLabels(b, ep.Labels),
+		Labels: LabelProtosToLabels(b, ep.Labels),
 		Value:  ep.Value,
 		Ts:     timestamp,
 		HasTs:  timestamp != 0,
@@ -762,7 +762,9 @@ func LabelProtosToMetric(labelPairs []*prompb.Label) model.Metric {
 	return metric
 }
 
-func labelProtosToLabels(b *labels.ScratchBuilder, labelPairs []prompb.Label) labels.Labels {
+// LabelProtosToLabels transforms prompb labels into labels. The labels builder
+// will be used to build the returned labels.
+func LabelProtosToLabels(b *labels.ScratchBuilder, labelPairs []prompb.Label) labels.Labels {
 	b.Reset()
 	for _, l := range labelPairs {
 		b.Add(l.Name, l.Value)
@@ -771,9 +773,9 @@ func labelProtosToLabels(b *labels.ScratchBuilder, labelPairs []prompb.Label) la
 	return b.Labels()
 }
 
-// labelsToLabelsProto transforms labels into prompb labels. The buffer slice
+// LabelsToLabelsProto transforms labels into prompb labels. The buffer slice
 // will be used to avoid allocations if it is big enough to store the labels.
-func labelsToLabelsProto(lbls labels.Labels, buf []prompb.Label) []prompb.Label {
+func LabelsToLabelsProto(lbls labels.Labels, buf []prompb.Label) []prompb.Label {
 	result := buf[:0]
 	lbls.Range(func(l labels.Label) {
 		result = append(result, prompb.Label{
