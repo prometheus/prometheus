@@ -49,7 +49,8 @@ func TestSymbolsTable(t *testing.T) {
 	ls := labels.FromStrings("__name__", "qwer", "zxcv", "1234")
 	encoded := s.SymbolizeLabels(ls, nil)
 	require.Equal(t, []uint32{1, 3, 4, 5}, encoded)
-	decoded := DesymbolizeLabels(encoded, s.Symbols())
+	b := labels.NewScratchBuilder(len(encoded))
+	decoded := desymbolizeLabels(&b, encoded, s.Symbols())
 	require.Equal(t, ls, decoded)
 
 	// Different buf.
