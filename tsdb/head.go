@@ -2140,7 +2140,8 @@ func (s *stripeSeries) getOrSet(hash uint64, lset labels.Labels, createSeries fu
 	i = uint64(series.ref) & uint64(s.size-1)
 
 	s.locks[i].Lock()
-	if prevMin := s.minSeriesRef[i].Load(); !s.minSeriesRef[i].CompareAndSwap(prevMin, int64(series.ref)) {
+	prevMin := s.minSeriesRef[i].Load()
+	if prevMin > int64(series.ref) && !s.minSeriesRef[i].CompareAndSwap(prevMin, int64(series.ref)) {
 		panic("someone else updated the min, but we're holding the mutex")
 	}
 	s.series[i][series.ref] = series

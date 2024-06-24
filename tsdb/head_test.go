@@ -89,6 +89,43 @@ func newTestHeadWithOptions(t testing.TB, compressWAL wlog.CompressionType, opts
 	return h, wal
 }
 
+func TestHead_HappyCaseWriteAndReadBack(t *testing.T) {
+	const testStripeSize = 1 << 2
+	options := newTestHeadDefaultOptions(DefaultBlockDuration, true)
+	options.StripeSize = testStripeSize
+	head, _ := newTestHeadWithOptions(t, wlog.CompressionNone, options)
+	defer func() { require.NoError(t, head.Close()) }()
+	require.NoError(t, head.Init(0))
+
+	// Twice stripe size, so each series stripe gets two series.
+	series := make([]labels.Labels, testStripeSize*2)
+	for i := range series {
+		series[i] = labels.FromStrings("lbl", strconv.Itoa(i))
+	}
+
+	for _, s := range series {
+		app := head.Appender(context.Background())
+		_, err := app.Append(0, s, 1000, 1)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	}
+
+	require.Equal(t, len(series), int(head.NumSeries()))
+
+	for _, s := range series {
+		ms := make([]*labels.Matcher, 0, s.Len())
+		s.Range(func(l labels.Label) { ms = append(ms, labels.MustNewMatcher(labels.MatchEqual, l.Name, l.Value)) })
+
+		q, err := NewBlockChunkQuerier(head, 0, 10000)
+		require.NoError(t, err)
+		ss := q.Select(context.Background(), true, nil, ms...)
+
+		require.Truef(t, ss.Next(), "did not find series %s", s.String())
+		require.Equal(t, s, ss.At().Labels(), "series labels didn't match")
+		require.Falsef(t, ss.Next(), "found more than one series for %s", s.String())
+	}
+}
+
 func BenchmarkCreateSeries(b *testing.B) {
 	series := genSeries(b.N, 10, 0, 0)
 	h, _ := newTestHead(b, 10000, wlog.CompressionNone, false)
