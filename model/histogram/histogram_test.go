@@ -613,9 +613,11 @@ func TestCustomBucketsHistogramToFloat(t *testing.T) {
 	require.NoError(t, h.Validate())
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+ 			hStr := h.String()
 			fh := h.ToFloat(c.fh)
 			require.NoError(t, fh.Validate())
-			require.Equal(t, h.String(), fh.String())
+			require.Equal(t, hStr, h.String())
+			require.Equal(t, hStr, fh.String())
 		})
 	}
 }
