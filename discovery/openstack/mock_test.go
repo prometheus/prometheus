@@ -432,7 +432,7 @@ const serverListBody = `
 				"disk": 0,
 				"ephemeral": 0,
 				"swap": 0,
-				"original_name": "m1.small",
+				"original_name": "m1.medium",
 				"extra_specs": {
 					"aggregate_instance_extra_specs:general": "true",
 					"hw:mem_page_size": "large",

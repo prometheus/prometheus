@@ -84,7 +84,7 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 		},
 		{
 			"__address__":                      model.LabelValue("10.0.0.31:0"),
-			"__meta_openstack_instance_flavor": model.LabelValue("m1.small"),
+			"__meta_openstack_instance_flavor": model.LabelValue("m1.medium"),
 			"__meta_openstack_instance_id":     model.LabelValue("9e5476bd-a4ec-4653-93d6-72c93aa682ba"),
 			"__meta_openstack_instance_image":  model.LabelValue("f90f6034-2570-4974-8351-6b49732ef2eb"),
 			"__meta_openstack_instance_status": model.LabelValue("ACTIVE"),
