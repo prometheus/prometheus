@@ -660,6 +660,32 @@ func (g *Group) RestoreForState(ts time.Time) {
 			continue
 		}
 
+<<<<<<< HEAD
+=======
+		sset, err := alertRule.QueryForStateSeries(g.opts.Context, q)
+		if err != nil {
+			level.Error(g.logger).Log(
+				"msg", "Failed to restore 'for' state",
+				labels.AlertName, alertRule.Name(),
+				"stage", "Select",
+				"err", err,
+			)
+			continue
+		}
+
+		// While not technically the same number of series we expect, it's as good of an approximation as any.
+		seriesByLabels := make(map[string]storage.Series, alertRule.ActiveAlertsCount())
+		for sset.Next() {
+			seriesByLabels[sset.At().Labels().DropMetricName().String()] = sset.At()
+		}
+
+		// No results for this alert rule.
+		if len(seriesByLabels) == 0 {
+			level.Debug(g.logger).Log("msg", "Failed to find a series to restore the 'for' state", labels.AlertName, alertRule.Name())
+			continue
+		}
+
+>>>>>>> 379dec9d3 (querier.Select cannot return a nil series set.)
 		alertRule.ForEachActiveAlert(func(a *Alert) {
 			var s storage.Series
 
