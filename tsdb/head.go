@@ -506,6 +506,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		r.MustRegister(
 			m.activeAppenders,
 			m.series,
+			m.stripeSeries,
 			m.chunks,
 			m.chunksCreated,
 			m.chunksRemoved,
