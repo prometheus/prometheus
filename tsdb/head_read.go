@@ -200,9 +200,15 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchB
 
 	*chks = (*chks)[:0]
 
+	getSeriesChunks(s, h.mint, h.maxt, chks)
+
+	return nil
+}
+
+func getSeriesChunks(s *memSeries, mint, maxt int64, chks *[]chunks.Meta) {
 	for i, c := range s.mmappedChunks {
 		// Do not expose chunks that are outside of the specified range.
-		if !c.OverlapsClosedInterval(h.mint, h.maxt) {
+		if !c.OverlapsClosedInterval(mint, maxt) {
 			continue
 		}
 		*chks = append(*chks, chunks.Meta{
@@ -223,7 +229,7 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchB
 			} else {
 				maxTime = chk.maxTime
 			}
-			if chk.OverlapsClosedInterval(h.mint, h.maxt) {
+			if chk.OverlapsClosedInterval(mint, maxt) {
 				*chks = append(*chks, chunks.Meta{
 					MinTime: chk.minTime,
 					MaxTime: maxTime,
@@ -233,8 +239,6 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchB
 			j++
 		}
 	}
-
-	return nil
 }
 
 // headChunkID returns the HeadChunkID referred to by the given position.
