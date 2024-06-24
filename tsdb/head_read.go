@@ -248,12 +248,20 @@ func (s *memSeries) headChunkID(pos int) chunks.HeadChunkID {
 	return chunks.HeadChunkID(pos) + s.firstChunkID
 }
 
+const oooChunkIDMask = 1 << 23
+
 // oooHeadChunkID returns the HeadChunkID referred to by the given position.
+// Only the bottom 24 bits are used. Bit 23 is always 1 for an OOO chunk; for the rest:
 // * 0 <= pos < len(s.oooMmappedChunks) refer to s.oooMmappedChunks[pos]
 // * pos == len(s.oooMmappedChunks) refers to s.oooHeadChunk
 // The caller must ensure that s.ooo is not nil.
 func (s *memSeries) oooHeadChunkID(pos int) chunks.HeadChunkID {
-	return chunks.HeadChunkID(pos) + s.ooo.firstOOOChunkID
+	return (chunks.HeadChunkID(pos) + s.ooo.firstOOOChunkID) | oooChunkIDMask
+}
+
+func unpackHeadChunkRef(ref chunks.ChunkRef) (chunks.HeadSeriesRef, chunks.HeadChunkID, bool) {
+	sid, cid := chunks.HeadChunkRef(ref).Unpack()
+	return sid, (cid & (oooChunkIDMask - 1)), (cid & oooChunkIDMask) != 0
 }
 
 // LabelValueFor returns label value for the given label name in the series referred to by ID.
@@ -343,10 +351,15 @@ func (h *headChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chu
 	return chk, nil, err
 }
 
-// ChunkWithCopy returns the chunk for the reference number.
-// If the chunk is the in-memory chunk, then it makes a copy and returns the copied chunk.
-func (h *headChunkReader) ChunkWithCopy(meta chunks.Meta) (chunkenc.Chunk, int64, error) {
-	return h.chunk(meta, true)
+type ChunkReaderWithCopy interface {
+	ChunkOrIterableWithCopy(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, int64, error)
+}
+
+// ChunkOrIterableWithCopy returns the chunk for the reference number.
+// If the chunk is the in-memory chunk, then it makes a copy and returns the copied chunk, plus the max time of the chunk.
+func (h *headChunkReader) ChunkOrIterableWithCopy(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {
+	chk, maxTime, err := h.chunk(meta, true)
+	return chk, nil, maxTime, err
 }
 
 // chunk returns the chunk for the reference number.
@@ -472,10 +485,11 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 // chunks.Meta reference from memory or by m-mapping it from the disk. The
 // returned iterable will be a merge of all the overlapping chunks, if any,
 // amongst all the chunks in the OOOHead.
+// If hr is non-nil then in-order chunks are included.
 // This function is not thread safe unless the caller holds a lock.
 // The caller must ensure that s.ooo is not nil.
-func (s *memSeries) oooMergedChunks(meta chunks.Meta, cdm *chunks.ChunkDiskMapper, mint, maxt int64, maxMmapRef chunks.ChunkDiskMapperRef) (*mergedOOOChunks, error) {
-	_, cid := chunks.HeadChunkRef(meta.Ref).Unpack()
+func (s *memSeries) oooMergedChunks(meta chunks.Meta, cdm *chunks.ChunkDiskMapper, hr *headChunkReader, mint, maxt int64, maxMmapRef chunks.ChunkDiskMapperRef) (*mergedOOOChunks, error) {
+	_, cid, _ := unpackHeadChunkRef(meta.Ref)
 
 	// ix represents the index of chunk in the s.mmappedChunks slice. The chunk meta's are
 	// incremented by 1 when new chunk is created, hence (meta - firstChunkID) gives the slice index.
@@ -516,6 +530,17 @@ func (s *memSeries) oooMergedChunks(meta chunks.Meta, cdm *chunks.ChunkDiskMappe
 		tmpChks = append(tmpChks, chunkMetaAndChunkDiskMapperRef{meta: meta})
 	}
 
+	if hr != nil { // Include in-order chunks.
+		var metas []chunks.Meta
+		getSeriesChunks(s, max(meta.MinTime, mint), min(meta.MaxTime, maxt), &metas)
+		for _, m := range metas {
+			tmpChks = append(tmpChks, chunkMetaAndChunkDiskMapperRef{
+				meta: m,
+				ref:  0, // This tells the loop below it's an in-order head chunk.
+			})
+		}
+	}
+
 	// Next we want to sort all the collected chunks by min time so we can find
 	// those that overlap and stop when we know the rest don't.
 	slices.SortFunc(tmpChks, refLessByMinTimeAndMinRef)
@@ -527,9 +552,17 @@ func (s *memSeries) oooMergedChunks(meta chunks.Meta, cdm *chunks.ChunkDiskMappe
 			continue
 		}
 		var iterable chunkenc.Iterable
-		if c.meta.Chunk != nil {
+		switch {
+		case c.meta.Chunk != nil:
 			iterable = c.meta.Chunk
-		} else {
+		case c.ref == 0: // This is an in-order head chunk.
+			_, cid := chunks.HeadChunkRef(c.meta.Ref).Unpack()
+			var err error
+			iterable, _, err = hr.chunkFromSeries(s, cid, false)
+			if err != nil {
+				return nil, fmt.Errorf("invalid head chunk: %w", err)
+			}
+		default:
 			chk, err := cdm.Chunk(c.ref)
 			if err != nil {
 				var cerr *chunks.CorruptionErr

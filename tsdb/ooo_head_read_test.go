@@ -316,7 +316,7 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 						// Ref to whatever Ref the chunk has, that we refer to by ID
 						for ref, c := range intervals {
 							if c.ID == e.ID {
-								meta.Ref = chunks.ChunkRef(chunks.NewHeadChunkRef(chunks.HeadSeriesRef(s1ID), chunks.HeadChunkID(ref)))
+								meta.Ref = chunks.ChunkRef(chunks.NewHeadChunkRef(chunks.HeadSeriesRef(s1ID), s1.oooHeadChunkID(ref)))
 								break
 							}
 						}
