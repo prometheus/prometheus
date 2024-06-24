@@ -8,16 +8,27 @@
 
 namespace series_data::serialization {
 
+template <class Stream>
+concept have_reserve_buffer_method = requires(Stream& stream) {
+  { stream.reserve_buffer(size_t{}) };
+};
+
 class Serializer {
  public:
   explicit Serializer(const DataStorage& storage) : storage_(storage) {}
 
-  void serialize(const querier::QueriedChunkList& queried_chunks, std::ostream& stream) {
-    auto data_offset = write_chunks_count(queried_chunks, stream);
-
+  template <class Stream>
+  void serialize(const querier::QueriedChunkList& queried_chunks, Stream& stream) {
     TimestampStreamsData timestamp_streams_data;
     {
-      auto serialized_chunks = create_serialized_chunks(queried_chunks, timestamp_streams_data, data_offset);
+      uint32_t data_size = sizeof(uint32_t);
+      auto serialized_chunks = create_serialized_chunks(queried_chunks, timestamp_streams_data, data_size);
+
+      if constexpr (have_reserve_buffer_method<Stream>) {
+        stream.reserve_buffer(data_size);
+      }
+
+      write_chunks_count(queried_chunks, stream);
       write_serialized_chunks(serialized_chunks, stream);
     }
 
@@ -42,10 +53,9 @@ class Serializer {
 
   const DataStorage& storage_;
 
-  PROMPP_ALWAYS_INLINE static uint32_t write_chunks_count(const QueriedChunkList& queried_chunks, std::ostream& stream) {
+  PROMPP_ALWAYS_INLINE static void write_chunks_count(const QueriedChunkList& queried_chunks, std::ostream& stream) {
     uint32_t count = queried_chunks.size();
     stream.write(reinterpret_cast<char*>(&count), sizeof(count));
-    return sizeof(count);
   }
 
   PROMPP_ALWAYS_INLINE static void write_serialized_chunks(const SerializedChunkList& chunks, std::ostream& stream) noexcept {
@@ -55,19 +65,19 @@ class Serializer {
 
   [[nodiscard]] SerializedChunkList create_serialized_chunks(const QueriedChunkList& queried_chunks,
                                                              TimestampStreamsData& timestamp_streams_data,
-                                                             uint32_t& data_offset) const noexcept {
+                                                             uint32_t& data_size) const noexcept {
     SerializedChunkList serialized_chunks;
     uint32_t chunks_size = queried_chunks.size();
     serialized_chunks.reserve(chunks_size);
-    data_offset += sizeof(SerializedChunk) * chunks_size;
+    data_size += sizeof(SerializedChunk) * chunks_size;
 
     for (auto& queried_chunk : queried_chunks) {
       if (queried_chunk.is_open()) {
         fill_serialized_chunk<chunk::DataChunk::Type::kOpen>(queried_chunk, serialized_chunks.emplace_back(queried_chunk.ls_id), timestamp_streams_data,
-                                                             data_offset);
+                                                             data_size);
       } else {
         fill_serialized_chunk<chunk::DataChunk::Type::kFinalized>(queried_chunk, serialized_chunks.emplace_back(queried_chunk.ls_id), timestamp_streams_data,
-                                                                  data_offset);
+                                                                  data_size);
       }
     }
 
@@ -78,7 +88,7 @@ class Serializer {
   void fill_serialized_chunk(const QueriedChunk& queried_chunk,
                              SerializedChunk& serialized_chunk,
                              TimestampStreamsData& timestamp_streams_data,
-                             uint32_t& data_offset) const noexcept {
+                             uint32_t& data_size) const noexcept {
     using enum chunk::DataChunk::EncodingType;
 
     auto& chunk = get_chunk<chunk_type>(queried_chunk);
@@ -86,44 +96,44 @@ class Serializer {
 
     switch (chunk.encoding_type) {
       case kUint32Constant: {
-        fill_timestamp_stream_offset<chunk_type>(timestamp_streams_data, chunk.timestamp_encoder_state_id, serialized_chunk, data_offset);
+        fill_timestamp_stream_offset<chunk_type>(timestamp_streams_data, chunk.timestamp_encoder_state_id, serialized_chunk, data_size);
         serialized_chunk.values_offset = std::bit_cast<uint32_t>(chunk.encoder.uint32_constant);
         break;
       }
 
       case kDoubleConstant: {
-        fill_timestamp_stream_offset<chunk_type>(timestamp_streams_data, chunk.timestamp_encoder_state_id, serialized_chunk, data_offset);
-        serialized_chunk.values_offset = data_offset;
-        data_offset += sizeof(encoder::value::DoubleConstantEncoder);
+        fill_timestamp_stream_offset<chunk_type>(timestamp_streams_data, chunk.timestamp_encoder_state_id, serialized_chunk, data_size);
+        serialized_chunk.values_offset = data_size;
+        data_size += sizeof(encoder::value::DoubleConstantEncoder);
         break;
       }
 
       case kTwoDoubleConstant: {
-        fill_timestamp_stream_offset<chunk_type>(timestamp_streams_data, chunk.timestamp_encoder_state_id, serialized_chunk, data_offset);
-        serialized_chunk.values_offset = data_offset;
-        data_offset += sizeof(encoder::value::TwoDoubleConstantEncoder);
+        fill_timestamp_stream_offset<chunk_type>(timestamp_streams_data, chunk.timestamp_encoder_state_id, serialized_chunk, data_size);
+        serialized_chunk.values_offset = data_size;
+        data_size += sizeof(encoder::value::TwoDoubleConstantEncoder);
         break;
       }
 
       case kAscIntegerValuesGorilla: {
-        fill_timestamp_stream_offset<chunk_type>(timestamp_streams_data, chunk.timestamp_encoder_state_id, serialized_chunk, data_offset);
+        fill_timestamp_stream_offset<chunk_type>(timestamp_streams_data, chunk.timestamp_encoder_state_id, serialized_chunk, data_size);
 
-        serialized_chunk.values_offset = data_offset;
-        data_offset += storage_.get_asc_integer_values_gorilla_stream<chunk_type>(chunk.encoder.asc_integer_values_gorilla).size_in_bytes();
+        serialized_chunk.values_offset = data_size;
+        data_size += storage_.get_asc_integer_values_gorilla_stream<chunk_type>(chunk.encoder.asc_integer_values_gorilla).size_in_bytes();
         break;
       }
 
       case kValuesGorilla: {
-        fill_timestamp_stream_offset<chunk_type>(timestamp_streams_data, chunk.timestamp_encoder_state_id, serialized_chunk, data_offset);
+        fill_timestamp_stream_offset<chunk_type>(timestamp_streams_data, chunk.timestamp_encoder_state_id, serialized_chunk, data_size);
 
-        serialized_chunk.values_offset = data_offset;
-        data_offset += storage_.get_values_gorilla_stream<chunk_type>(chunk.encoder.values_gorilla).size_in_bytes();
+        serialized_chunk.values_offset = data_size;
+        data_size += storage_.get_values_gorilla_stream<chunk_type>(chunk.encoder.values_gorilla).size_in_bytes();
         break;
       }
 
       case kGorilla: {
-        serialized_chunk.values_offset = data_offset;
-        data_offset += storage_.get_gorilla_encoder_stream<chunk_type>(chunk.encoder.gorilla).size_in_bytes();
+        serialized_chunk.values_offset = data_size;
+        data_size += storage_.get_gorilla_encoder_stream<chunk_type>(chunk.encoder.gorilla).size_in_bytes();
         break;
       }
 
@@ -148,25 +158,25 @@ class Serializer {
   void fill_timestamp_stream_offset(TimestampStreamsData& timestamp_streams_data,
                                     encoder::timestamp::State::Id timestamp_stream_id,
                                     SerializedChunk& serialized_chunk,
-                                    uint32_t& data_offset) const noexcept {
+                                    uint32_t& data_size) const noexcept {
     if constexpr (chunk_type == chunk::DataChunk::Type::kOpen) {
       if (auto it = timestamp_streams_data.stream_offsets.find(timestamp_stream_id); it != timestamp_streams_data.stream_offsets.end()) {
         serialized_chunk.timestamps_offset = it->second;
         return;
       }
 
-      timestamp_streams_data.stream_offsets.emplace(timestamp_stream_id, data_offset);
+      timestamp_streams_data.stream_offsets.emplace(timestamp_stream_id, data_size);
     } else {
       if (auto it = timestamp_streams_data.finalized_stream_offsets.find(timestamp_stream_id); it != timestamp_streams_data.finalized_stream_offsets.end()) {
         serialized_chunk.timestamps_offset = it->second;
         return;
       }
 
-      timestamp_streams_data.finalized_stream_offsets.emplace(timestamp_stream_id, data_offset);
+      timestamp_streams_data.finalized_stream_offsets.emplace(timestamp_stream_id, data_size);
     }
 
-    serialized_chunk.timestamps_offset = data_offset;
-    data_offset += storage_.get_timestamp_stream<chunk_type>(timestamp_stream_id).stream.size_in_bytes();
+    serialized_chunk.timestamps_offset = data_size;
+    data_size += storage_.get_timestamp_stream<chunk_type>(timestamp_stream_id).stream.size_in_bytes();
   }
 
   void write_chunks_data(const QueriedChunkList& queried_chunks, TimestampStreamsData& timestamp_streams_data, std::ostream& stream) noexcept {
