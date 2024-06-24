@@ -851,7 +851,7 @@ loop2:
 func TestStop_DrainingDisabled(t *testing.T) {
 	releaseReceiver := make(chan struct{})
 	receiverReceivedRequest := make(chan struct{}, 2)
-	var alertsReceived []string
+	alertsReceived := atomic.NewInt64(0)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Let the test know we've received a request.
@@ -865,9 +865,7 @@ func TestStop_DrainingDisabled(t *testing.T) {
 		err = json.Unmarshal(b, &alerts)
 		require.NoError(t, err)
 
-		for _, a := range alerts {
-			alertsReceived = append(alertsReceived, a.Name())
-		}
+		alertsReceived.Add(int64(len(alerts)))
 
 		// Wait for the test to release us.
 		<-releaseReceiver
@@ -933,13 +931,13 @@ func TestStop_DrainingDisabled(t *testing.T) {
 		require.FailNow(t, "gave up waiting for notification manager to stop")
 	}
 
-	require.Equal(t, []string{"alert-1"}, alertsReceived)
+	require.Equal(t, int64(1), alertsReceived.Load())
 }
 
 func TestStop_DrainingEnabled(t *testing.T) {
 	releaseReceiver := make(chan struct{})
 	receiverReceivedRequest := make(chan struct{}, 2)
-	var alertsReceived []string
+	alertsReceived := atomic.NewInt64(0)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Let the test know we've received a request.
@@ -953,9 +951,7 @@ func TestStop_DrainingEnabled(t *testing.T) {
 		err = json.Unmarshal(b, &alerts)
 		require.NoError(t, err)
 
-		for _, a := range alerts {
-			alertsReceived = append(alertsReceived, a.Name())
-		}
+		alertsReceived.Add(int64(len(alerts)))
 
 		// Wait for the test to release us.
 		<-releaseReceiver
@@ -1019,5 +1015,5 @@ func TestStop_DrainingEnabled(t *testing.T) {
 		require.FailNow(t, "gave up waiting for notification manager to stop")
 	}
 
-	require.Equal(t, []string{"alert-1", "alert-2"}, alertsReceived)
+	require.Equal(t, int64(2), alertsReceived.Load())
 }
