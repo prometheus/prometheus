@@ -215,7 +215,7 @@ class PROMPP_ATTRIBUTE_PACKED CompactBitSequence {
   [[nodiscard]] PROMPP_ALWAYS_INLINE std::span<const uint8_t> filled_bytes() const noexcept { return {memory_, Bit::to_bytes(size_in_bits_)}; }
   template <class T>
   [[nodiscard]] PROMPP_ALWAYS_INLINE std::span<const T> bytes() const noexcept {
-    return {reinterpret_cast<T*>(memory_), allocated_memory() / sizeof(T)};
+    return {reinterpret_cast<T*>(memory_), size_in_bytes() / sizeof(T)};
   }
   [[nodiscard]] PROMPP_ALWAYS_INLINE std::span<const uint8_t> bytes() const noexcept { return bytes<uint8_t>(); }
   [[nodiscard]] PROMPP_ALWAYS_INLINE const uint8_t* raw_bytes() const noexcept { return memory_; }

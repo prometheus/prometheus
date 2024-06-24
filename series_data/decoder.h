@@ -95,10 +95,7 @@ class Decoder {
   static BareBones::Vector<encoder::SampleList> decode_chunks(const DataStorage& storage,
                                                               const chunk::FinalizedChunkList& finalized_chunks,
                                                               const chunk::DataChunk& open_chunk) {
-    BareBones::Vector<encoder::SampleList> result;
-    for (auto& finalized_chunk : finalized_chunks) {
-      decode_chunk<chunk::DataChunk::Type::kFinalized>(storage, finalized_chunk, result.emplace_back());
-    }
+    auto result = decode_chunks(storage, finalized_chunks);
     decode_chunk<chunk::DataChunk::Type::kOpen>(storage, open_chunk, result.emplace_back());
     return result;
   }

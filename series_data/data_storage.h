@@ -58,6 +58,24 @@ struct DataStorage {
   }
 
   template <chunk::DataChunk::Type chunk_type>
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const encoder::CompactBitSequence& get_asc_integer_values_gorilla_stream(uint32_t stream_id) const noexcept {
+    if constexpr (chunk_type == chunk::DataChunk::Type::kOpen) {
+      return asc_integer_values_gorilla_encoders[stream_id].stream();
+    } else {
+      return finalized_data_streams[stream_id];
+    }
+  }
+
+  template <chunk::DataChunk::Type chunk_type>
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const encoder::CompactBitSequence& get_values_gorilla_stream(uint32_t stream_id) const noexcept {
+    if constexpr (chunk_type == chunk::DataChunk::Type::kOpen) {
+      return values_gorilla_encoders[stream_id].stream();
+    } else {
+      return finalized_data_streams[stream_id];
+    }
+  }
+
+  template <chunk::DataChunk::Type chunk_type>
   [[nodiscard]] PROMPP_ALWAYS_INLINE const encoder::CompactBitSequence& get_gorilla_encoder_stream(uint32_t stream_id) const noexcept {
     if constexpr (chunk_type == chunk::DataChunk::Type::kOpen) {
       return gorilla_encoders[stream_id].stream().stream;

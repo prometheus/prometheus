@@ -8,9 +8,8 @@ namespace series_data::decoder {
 class GorillaDecodeIterator : public DecodeIteratorTrait {
  public:
   explicit GorillaDecodeIterator(const encoder::CompactBitSequence& stream)
-      : DecodeIteratorTrait(encoder::BitSequenceWithItemsCount::count(stream)), reader_(encoder::BitSequenceWithItemsCount::reader(stream)) {
-    decode();
-  }
+      : GorillaDecodeIterator(encoder::BitSequenceWithItemsCount::count(stream), encoder::BitSequenceWithItemsCount::reader(stream)) {}
+  GorillaDecodeIterator(uint8_t samples_count, const BareBones::BitSequenceReader& reader) : DecodeIteratorTrait(samples_count), reader_(reader) { decode(); }
 
   PROMPP_ALWAYS_INLINE GorillaDecodeIterator& operator++() noexcept {
     --remaining_samples_;

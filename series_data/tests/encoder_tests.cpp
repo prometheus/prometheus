@@ -55,7 +55,8 @@ class EncoderTestTrait {
   [[nodiscard]] BitSequenceReader open_chunk_timestamp_reader(uint32_t ls_id) const noexcept { return open_chunk_timestamp(ls_id).reader(); }
 
   [[nodiscard]] BareBones::Vector<int64_t> decode_open_chunk_timestamp_list(uint32_t ls_id) const noexcept {
-    return TimestampDecoder::decode_all(open_chunk_timestamp_reader(ls_id));
+    auto& timestamp_stream = open_chunk_timestamp(ls_id);
+    return TimestampDecoder::decode_all(timestamp_stream.reader(), timestamp_stream.count());
   }
 };
 

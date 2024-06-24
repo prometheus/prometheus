@@ -9,6 +9,10 @@ class TwoDoubleConstantDecodeIterator : public SeparatedTimestampValueDecodeIter
  public:
   TwoDoubleConstantDecodeIterator(const encoder::BitSequenceWithItemsCount& timestamp_stream, const encoder::value::TwoDoubleConstantEncoder& encoder)
       : SeparatedTimestampValueDecodeIteratorTrait(timestamp_stream, encoder.value1()), encoder_(&encoder) {}
+  TwoDoubleConstantDecodeIterator(uint8_t samples_count,
+                                  const BareBones::BitSequenceReader& timestamp_reader,
+                                  const encoder::value::TwoDoubleConstantEncoder& encoder)
+      : SeparatedTimestampValueDecodeIteratorTrait(samples_count, timestamp_reader, encoder.value1()), encoder_(&encoder) {}
 
   PROMPP_ALWAYS_INLINE TwoDoubleConstantDecodeIterator& operator++() noexcept {
     if (decode_timestamp()) {

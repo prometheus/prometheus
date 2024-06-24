@@ -32,16 +32,16 @@ class DecodeIteratorTrait {
 
 class SeparatedTimestampValueDecodeIteratorTrait : public DecodeIteratorTrait {
  public:
-  explicit SeparatedTimestampValueDecodeIteratorTrait(const encoder::BitSequenceWithItemsCount& timestamp_stream)
-      : DecodeIteratorTrait(timestamp_stream.count()), timestamp_decoder_(timestamp_stream.reader()) {
+  SeparatedTimestampValueDecodeIteratorTrait(uint8_t samples_count, const BareBones::BitSequenceReader& timestamp_reader, double value)
+      : DecodeIteratorTrait(value, samples_count), timestamp_decoder_(timestamp_reader) {
     if (remaining_samples_ > 0) {
       sample_.timestamp = timestamp_decoder_.decode();
     }
   }
+  explicit SeparatedTimestampValueDecodeIteratorTrait(const encoder::BitSequenceWithItemsCount& timestamp_stream)
+      : SeparatedTimestampValueDecodeIteratorTrait(timestamp_stream.count(), timestamp_stream.reader(), 0.0) {}
   SeparatedTimestampValueDecodeIteratorTrait(const encoder::BitSequenceWithItemsCount& timestamp_stream, double value)
-      : DecodeIteratorTrait(value, timestamp_stream.count()), timestamp_decoder_(timestamp_stream.reader()) {
-    sample_.timestamp = timestamp_decoder_.decode();
-  }
+      : SeparatedTimestampValueDecodeIteratorTrait(timestamp_stream.count(), timestamp_stream.reader(), value) {}
 
   PROMPP_ALWAYS_INLINE bool decode_timestamp() noexcept {
     if (--remaining_samples_ > 0) {

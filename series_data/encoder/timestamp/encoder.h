@@ -51,11 +51,11 @@ class TimestampDecoder {
     return state.last_ts;
   }
 
-  [[nodiscard]] static BareBones::Vector<int64_t> decode_all(BareBones::BitSequenceReader reader) noexcept {
+  [[nodiscard]] static BareBones::Vector<int64_t> decode_all(BareBones::BitSequenceReader reader, uint8_t count) noexcept {
     BareBones::Vector<int64_t> values;
 
     TimestampDecoder decoder(reader);
-    while (!decoder.reader_.eof()) {
+    for (uint8_t i = 0; i < count; ++i) {
       values.emplace_back(decoder.decode());
     }
 

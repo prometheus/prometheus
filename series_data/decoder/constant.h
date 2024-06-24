@@ -8,6 +8,8 @@ class ConstantDecodeIterator : public SeparatedTimestampValueDecodeIteratorTrait
  public:
   ConstantDecodeIterator(const encoder::BitSequenceWithItemsCount& timestamp_stream, double value)
       : SeparatedTimestampValueDecodeIteratorTrait(timestamp_stream, value) {}
+  ConstantDecodeIterator(uint8_t samples_count, const BareBones::BitSequenceReader& timestamp_reader, double value)
+      : SeparatedTimestampValueDecodeIteratorTrait(samples_count, timestamp_reader, value) {}
 
   PROMPP_ALWAYS_INLINE ConstantDecodeIterator& operator++() noexcept {
     decode_timestamp();

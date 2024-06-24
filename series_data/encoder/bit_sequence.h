@@ -28,12 +28,14 @@ struct PROMPP_ATTRIBUTE_PACKED BitSequenceWithItemsCount {
   PROMPP_ALWAYS_INLINE uint8_t inc_count() noexcept { return (*reinterpret_cast<uint8_t*>(stream.raw_bytes()))++; }
   [[nodiscard]] PROMPP_ALWAYS_INLINE BareBones::BitSequenceReader reader() const noexcept { return reader(stream); }
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE static uint8_t count(const CompactBitSequence& stream) noexcept {
-    return *reinterpret_cast<const uint8_t*>(stream.raw_bytes());
-  }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE static uint8_t count(const CompactBitSequence& stream) noexcept { return count(stream.raw_bytes()); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE static uint8_t count(const uint8_t* buffer) noexcept { return buffer[0]; }
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE static BareBones::BitSequenceReader reader(const CompactBitSequence& stream) noexcept {
-    auto reader = stream.reader();
+  [[nodiscard]] PROMPP_ALWAYS_INLINE static BareBones::BitSequenceReader reader(const CompactBitSequence& stream) noexcept { return reader(stream.bytes()); }
+
+  template <class Buffer>
+  [[nodiscard]] PROMPP_ALWAYS_INLINE static BareBones::BitSequenceReader reader(const Buffer& buffer) noexcept {
+    BareBones::BitSequenceReader reader{reinterpret_cast<const uint8_t*>(buffer.data()), BareBones::Bit::to_bits(buffer.size())};
     reader.ff(BareBones::Bit::to_bits(sizeof(uint8_t)));
     return reader;
   }

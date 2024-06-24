@@ -8,7 +8,9 @@ namespace series_data::decoder {
 class ValuesGorillaDecodeIterator : public SeparatedTimestampValueDecodeIteratorTrait {
  public:
   ValuesGorillaDecodeIterator(const encoder::BitSequenceWithItemsCount& timestamp_stream, BareBones::BitSequenceReader reader)
-      : SeparatedTimestampValueDecodeIteratorTrait(timestamp_stream), reader_(reader) {
+      : ValuesGorillaDecodeIterator(timestamp_stream.count(), timestamp_stream.reader(), reader) {}
+  ValuesGorillaDecodeIterator(uint8_t samples_count, const BareBones::BitSequenceReader& timestamp_reader, BareBones::BitSequenceReader values_reader)
+      : SeparatedTimestampValueDecodeIteratorTrait(samples_count, timestamp_reader, 0.0), reader_(values_reader) {
     if (remaining_samples_ > 0) {
       decode_value<true>();
     }
