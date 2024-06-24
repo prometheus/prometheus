@@ -301,44 +301,58 @@ func (n *Manager) nextBatch() []*Alert {
 	return alerts
 }
 
-// Run dispatches notifications continuously.
+// Run dispatches notifications continuously, returning once Stop has been called and all
+// pending notifications have been drained from the queue (if draining is enabled).
+//
+// Dispatching of notifications occurs in parallel to processing target updates to avoid one starving the other.
+// Refer to https://github.com/prometheus/prometheus/issues/13676 for more details.
 func (n *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) {
 	defer n.cancel()
+	wg := sync.WaitGroup{}
+	wg.Add(2)
 
-	n.runLoop(tsets)
-	n.drainQueue()
+	go func() {
+		defer wg.Done()
+		n.targetUpdateLoop(tsets)
+	}()
+
+	go func() {
+		defer wg.Done()
+		n.sendLoop()
+		n.drainQueue()
+	}()
+
+	wg.Wait()
 	level.Info(n.logger).Log("msg", "Notification manager stopped")
 }
 
-func (n *Manager) runLoop(tsets <-chan map[string][]*targetgroup.Group) {
+// sendLoop continuously consumes the notifications queue and sends alerts to
+// the configured Alertmanagers.
+func (n *Manager) sendLoop() {
 	for {
-		// The select is split in two parts, such as we will first try to read
-		// new alertmanager targets if they are available, before sending new
-		// alerts.
 		select {
 		case <-n.stopRequested:
 			return
 
-		case ts := <-tsets:
-			n.reload(ts)
+		case <-n.more:
+			n.sendOneBatch()
 
-		default:
-			select {
-			case <-n.stopRequested:
-				return
-
-			case ts := <-tsets:
-				n.reload(ts)
-
-			case <-n.more:
+			// If the queue still has items left, kick off the next iteration.
+			if n.queueLen() > 0 {
+				n.setMore()
 			}
 		}
+	}
+}
 
-		n.sendOneBatch()
-
-		// If the queue still has items left, kick off the next iteration.
-		if n.queueLen() > 0 {
-			n.setMore()
+// targetUpdateLoop receives updates of target groups and triggers a reload.
+func (n *Manager) targetUpdateLoop(tsets <-chan map[string][]*targetgroup.Group) {
+	for {
+		select {
+		case <-n.stopRequested:
+			return
+		case ts := <-tsets:
+			n.reload(ts)
 		}
 	}
 }
@@ -511,10 +525,6 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 		numSuccess atomic.Uint64
 	)
 	for _, ams := range amSets {
-		if len(ams.ams) == 0 {
-			continue
-		}
-
 		var (
 			payload  []byte
 			err      error
@@ -522,6 +532,11 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 		)
 
 		ams.mtx.RLock()
+
+		if len(ams.ams) == 0 {
+			ams.mtx.RUnlock()
+			continue
+		}
 
 		if len(ams.cfg.AlertRelabelConfigs) > 0 {
 			amAlerts = relabelAlerts(ams.cfg.AlertRelabelConfigs, labels.Labels{}, alerts)
@@ -668,7 +683,7 @@ func (n *Manager) sendOne(ctx context.Context, c *http.Client, url string, b []b
 // A drain timeout of 0 means that no queued notifications will be drained and they will instead be dropped.
 func (n *Manager) Stop() {
 	level.Info(n.logger).Log("msg", "Stopping notification manager...")
-	n.stopRequested <- struct{}{}
+	close(n.stopRequested)
 }
 
 // Alertmanager holds Alertmanager endpoint information.

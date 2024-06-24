@@ -16,10 +16,12 @@ package labels
 import (
 	"slices"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/grafana/regexp"
 	"github.com/grafana/regexp/syntax"
+	"golang.org/x/text/unicode/norm"
 )
 
 const (
@@ -42,7 +44,7 @@ type FastRegexMatcher struct {
 	stringMatcher StringMatcher
 	prefix        string
 	suffix        string
-	contains      string
+	contains      []string
 
 	// matchString is the "compiled" function to run by MatchString().
 	matchString func(string) bool
@@ -87,7 +89,7 @@ func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 // compileMatchStringFunction returns the function to run by MatchString().
 func (m *FastRegexMatcher) compileMatchStringFunction() func(string) bool {
 	// If the only optimization available is the string matcher, then we can just run it.
-	if len(m.setMatches) == 0 && m.prefix == "" && m.suffix == "" && m.contains == "" && m.stringMatcher != nil {
+	if len(m.setMatches) == 0 && m.prefix == "" && m.suffix == "" && len(m.contains) == 0 && m.stringMatcher != nil {
 		return m.stringMatcher.Matches
 	}
 
@@ -106,7 +108,7 @@ func (m *FastRegexMatcher) compileMatchStringFunction() func(string) bool {
 		if m.suffix != "" && !strings.HasSuffix(s, m.suffix) {
 			return false
 		}
-		if m.contains != "" && !strings.Contains(s, m.contains) {
+		if len(m.contains) > 0 && !containsInOrder(s, m.contains) {
 			return false
 		}
 		if m.stringMatcher != nil {
@@ -119,7 +121,7 @@ func (m *FastRegexMatcher) compileMatchStringFunction() func(string) bool {
 // IsOptimized returns true if any fast-path optimization is applied to the
 // regex matcher.
 func (m *FastRegexMatcher) IsOptimized() bool {
-	return len(m.setMatches) > 0 || m.stringMatcher != nil || m.prefix != "" || m.suffix != "" || m.contains != ""
+	return len(m.setMatches) > 0 || m.stringMatcher != nil || m.prefix != "" || m.suffix != "" || len(m.contains) > 0
 }
 
 // findSetMatches extract equality matches from a regexp.
@@ -361,8 +363,9 @@ func optimizeAlternatingLiterals(s string) (StringMatcher, []string) {
 
 // optimizeConcatRegex returns literal prefix/suffix text that can be safely
 // checked against the label value before running the regexp matcher.
-func optimizeConcatRegex(r *syntax.Regexp) (prefix, suffix, contains string) {
+func optimizeConcatRegex(r *syntax.Regexp) (prefix, suffix string, contains []string) {
 	sub := r.Sub
+	clearCapture(sub...)
 
 	// We can safely remove begin and end text matchers respectively
 	// at the beginning and end of the regexp.
@@ -387,13 +390,11 @@ func optimizeConcatRegex(r *syntax.Regexp) (prefix, suffix, contains string) {
 		suffix = string(sub[last].Rune)
 	}
 
-	// If contains any literal which is not a prefix/suffix, we keep the
-	// 1st one. We do not keep the whole list of literals to simplify the
-	// fast path.
+	// If contains any literal which is not a prefix/suffix, we keep track of
+	// all the ones which are case-sensitive.
 	for i := 1; i < len(sub)-1; i++ {
 		if sub[i].Op == syntax.OpLiteral && (sub[i].Flags&syntax.FoldCase) == 0 {
-			contains = string(sub[i].Rune)
-			break
+			contains = append(contains, string(sub[i].Rune))
 		}
 	}
 
@@ -767,7 +768,7 @@ type equalMultiStringMapMatcher struct {
 
 func (m *equalMultiStringMapMatcher) add(s string) {
 	if !m.caseSensitive {
-		s = strings.ToLower(s)
+		s = toNormalisedLower(s)
 	}
 
 	m.values[s] = struct{}{}
@@ -787,11 +788,33 @@ func (m *equalMultiStringMapMatcher) setMatches() []string {
 
 func (m *equalMultiStringMapMatcher) Matches(s string) bool {
 	if !m.caseSensitive {
-		s = strings.ToLower(s)
+		s = toNormalisedLower(s)
 	}
 
 	_, ok := m.values[s]
 	return ok
+}
+
+// toNormalisedLower normalise the input string using "Unicode Normalization Form D" and then convert
+// it to lower case.
+func toNormalisedLower(s string) string {
+	var buf []byte
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= utf8.RuneSelf {
+			return strings.Map(unicode.ToLower, norm.NFKD.String(s))
+		}
+		if 'A' <= c && c <= 'Z' {
+			if buf == nil {
+				buf = []byte(s)
+			}
+			buf[i] = c + 'a' - 'A'
+		}
+	}
+	if buf == nil {
+		return s
+	}
+	return yoloString(buf)
 }
 
 // anyStringWithoutNewlineMatcher is a stringMatcher which matches any string
@@ -939,4 +962,28 @@ func hasPrefixCaseInsensitive(s, prefix string) bool {
 
 func hasSuffixCaseInsensitive(s, suffix string) bool {
 	return len(s) >= len(suffix) && strings.EqualFold(s[len(s)-len(suffix):], suffix)
+}
+
+func containsInOrder(s string, contains []string) bool {
+	// Optimization for the case we only have to look for 1 substring.
+	if len(contains) == 1 {
+		return strings.Contains(s, contains[0])
+	}
+
+	return containsInOrderMulti(s, contains)
+}
+
+func containsInOrderMulti(s string, contains []string) bool {
+	offset := 0
+
+	for _, substr := range contains {
+		at := strings.Index(s[offset:], substr)
+		if at == -1 {
+			return false
+		}
+
+		offset += at + len(substr)
+	}
+
+	return true
 }

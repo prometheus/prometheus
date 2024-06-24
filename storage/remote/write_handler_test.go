@@ -60,14 +60,14 @@ func TestRemoteWriteHandler(t *testing.T) {
 	j := 0
 	k := 0
 	for _, ts := range writeRequestFixture.Timeseries {
-		labels := labelProtosToLabels(&b, ts.Labels)
+		labels := LabelProtosToLabels(&b, ts.Labels)
 		for _, s := range ts.Samples {
 			requireEqual(t, mockSample{labels, s.Timestamp, s.Value}, appendable.samples[i])
 			i++
 		}
 
 		for _, e := range ts.Exemplars {
-			exemplarLabels := labelProtosToLabels(&b, e.Labels)
+			exemplarLabels := LabelProtosToLabels(&b, e.Labels)
 			requireEqual(t, mockExemplar{labels, exemplarLabels, e.Timestamp, e.Value}, appendable.exemplars[j])
 			j++
 		}
