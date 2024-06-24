@@ -233,7 +233,7 @@ func NewManager(o *Options, logger log.Logger) *Manager {
 		ctx:           ctx,
 		cancel:        cancel,
 		more:          make(chan struct{}, 1),
-		stopRequested: make(chan struct{}, 1),
+		stopRequested: make(chan struct{}),
 		opts:          o,
 		logger:        logger,
 	}
