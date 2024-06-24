@@ -857,9 +857,6 @@ func TestStop_DrainingDisabled(t *testing.T) {
 		// Let the test know we've received a request.
 		receiverReceivedRequest <- struct{}{}
 
-		// Wait for the test to release us.
-		<-releaseReceiver
-
 		var alerts []*Alert
 
 		b, err := io.ReadAll(r.Body)
@@ -871,6 +868,9 @@ func TestStop_DrainingDisabled(t *testing.T) {
 		for _, a := range alerts {
 			alertsReceived = append(alertsReceived, a.Name())
 		}
+
+		// Wait for the test to release us.
+		<-releaseReceiver
 
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -919,8 +919,9 @@ func TestStop_DrainingDisabled(t *testing.T) {
 
 	m.Send(&Alert{Labels: labels.FromStrings(labels.AlertName, "alert-2")})
 
-	// Stop the notification manager and allow the receiver to proceed.
+	// Stop the notification manager, pause to allow the shutdown to be observed, and then allow the receiver to proceed.
 	m.Stop()
+	time.Sleep(time.Second)
 	close(releaseReceiver)
 
 	// Wait for the notification manager to stop and confirm only the first notification was sent.
@@ -944,9 +945,6 @@ func TestStop_DrainingEnabled(t *testing.T) {
 		// Let the test know we've received a request.
 		receiverReceivedRequest <- struct{}{}
 
-		// Wait for the test to release us.
-		<-releaseReceiver
-
 		var alerts []*Alert
 
 		b, err := io.ReadAll(r.Body)
@@ -958,6 +956,9 @@ func TestStop_DrainingEnabled(t *testing.T) {
 		for _, a := range alerts {
 			alertsReceived = append(alertsReceived, a.Name())
 		}
+
+		// Wait for the test to release us.
+		<-releaseReceiver
 
 		w.WriteHeader(http.StatusOK)
 	}))

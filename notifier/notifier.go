@@ -330,16 +330,22 @@ func (n *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) {
 // the configured Alertmanagers.
 func (n *Manager) sendLoop() {
 	for {
+		// If we've been asked to stop, that takes priority over sending any further notifications.
 		select {
 		case <-n.stopRequested:
 			return
+		default:
+			select {
+			case <-n.stopRequested:
+				return
 
-		case <-n.more:
-			n.sendOneBatch()
+			case <-n.more:
+				n.sendOneBatch()
 
-			// If the queue still has items left, kick off the next iteration.
-			if n.queueLen() > 0 {
-				n.setMore()
+				// If the queue still has items left, kick off the next iteration.
+				if n.queueLen() > 0 {
+					n.setMore()
+				}
 			}
 		}
 	}
@@ -348,11 +354,17 @@ func (n *Manager) sendLoop() {
 // targetUpdateLoop receives updates of target groups and triggers a reload.
 func (n *Manager) targetUpdateLoop(tsets <-chan map[string][]*targetgroup.Group) {
 	for {
+		// If we've been asked to stop, that takes priority over processing any further target group updates.
 		select {
 		case <-n.stopRequested:
 			return
-		case ts := <-tsets:
-			n.reload(ts)
+		default:
+			select {
+			case <-n.stopRequested:
+				return
+			case ts := <-tsets:
+				n.reload(ts)
+			}
 		}
 	}
 }
