@@ -1899,6 +1899,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		actualMint, minOOOTime, minMmapFile, keep = shouldKeepMemSeries(series, actualMint, minOOOTime, minMmapFile)
 		if keep {
 			survivors[series.ref] = series
+			// We'll delete it from series map once we've replaced the survivors.
 			return
 		}
 
@@ -1959,17 +1960,22 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 	for i := 0; i < s.size; i++ {
 		minRef := int64(math.MaxInt64)
 		s.locks[i].Lock()
+		// We don't expect any series in s.series[i],
+		// except for the ones that have been created since we iterated through them.
+		// Empty tsdb will have no survivors and all series in s.series,
+		// which means that s.series[i] will be bigger than needed after the first gc unless we have a 100% churn.
+		// (Maps don't shrink: https://github.com/golang/go/issues/20135)
+		// So we'll create the new maps with half size.
+		series := make(map[chunks.HeadSeriesRef]*memSeries, len(s.series[i])/2)
 		for ref := range s.series[i] {
-			if _, ok := survivors[ref]; ok {
-				delete(s.series[i], ref)
-				continue
-			}
-			// We moved everything we kept to survivors,
-			// so this has been added in the meantime.
-			if int64(ref) < minRef {
-				minRef = int64(ref)
+			if _, ok := survivors[ref]; !ok {
+				series[ref] = s.series[i][ref]
+				if int64(ref) < minRef {
+					minRef = int64(ref)
+				}
 			}
 		}
+		s.series[i] = series
 		s.minSeriesRef[i].Store(minRef)
 		s.locks[i].Unlock()
 	}
