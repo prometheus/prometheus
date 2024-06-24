@@ -22,8 +22,8 @@ type SymbolsTable struct {
 }
 
 // NewSymbolTable returns a symbol table.
-func NewSymbolTable() SymbolsTable {
-	return SymbolsTable{
+func NewSymbolTable() *SymbolsTable {
+	return &SymbolsTable{
 		// Empty string is required as a first element.
 		symbolsMap: map[string]uint32{"": 0},
 		strings:    []string{""},
@@ -73,8 +73,8 @@ func (t *SymbolsTable) Reset() {
 }
 
 // DesymbolizeLabels decodes label references, with given symbols to labels.
-func DesymbolizeLabels(labelRefs []uint32, symbols []string) labels.Labels {
-	b := labels.NewScratchBuilder(len(labelRefs))
+func DesymbolizeLabels(b *labels.ScratchBuilder, labelRefs []uint32, symbols []string) labels.Labels {
+	b.Reset()
 	for i := 0; i < len(labelRefs); i += 2 {
 		b.Add(symbols[labelRefs[i]], symbols[labelRefs[i+1]])
 	}

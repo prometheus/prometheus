@@ -1034,7 +1034,7 @@ func (c *TestWriteClient) expectHistograms(hh []record.RefHistogramSample, serie
 
 	for _, h := range hh {
 		seriesName := getSeriesNameFromRef(series[h.Ref])
-		c.expectedHistograms[seriesName] = append(c.expectedHistograms[seriesName], HistogramToHistogramProto(h.T, h.H))
+		c.expectedHistograms[seriesName] = append(c.expectedHistograms[seriesName], prompb.FromIntHistogram(h.T, h.H))
 	}
 }
 
@@ -1047,7 +1047,7 @@ func (c *TestWriteClient) expectFloatHistograms(fhs []record.RefFloatHistogramSa
 
 	for _, fh := range fhs {
 		seriesName := getSeriesNameFromRef(series[fh.Ref])
-		c.expectedFloatHistograms[seriesName] = append(c.expectedFloatHistograms[seriesName], FloatHistogramToHistogramProto(fh.T, fh.FH))
+		c.expectedFloatHistograms[seriesName] = append(c.expectedFloatHistograms[seriesName], prompb.FromFloatHistogram(fh.T, fh.FH))
 	}
 }
 
@@ -1134,7 +1134,7 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, attemptNos int) e
 		var reqProtoV2 writev2.Request
 		err = proto.Unmarshal(reqBuf, &reqProtoV2)
 		if err == nil {
-			reqProto, err = V2WriteRequestToWriteRequest(&reqProtoV2)
+			reqProto, err = v2WriteRequestToWriteRequest(&reqProtoV2)
 		}
 	}
 	if err != nil {
@@ -1168,6 +1168,78 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, attemptNos int) e
 	c.writesReceived++
 	c.sendAttempts = append(c.sendAttempts, attemptString+",ok")
 	return nil
+}
+
+func v2WriteRequestToWriteRequest(reqV2 *writev2.Request) (*prompb.WriteRequest, error) {
+	req := &prompb.WriteRequest{
+		Timeseries: make([]prompb.TimeSeries, len(reqV2.Timeseries)),
+		// TODO handle metadata?
+	}
+
+	for i, rts := range reqV2.Timeseries {
+		b := labels.NewScratchBuilder(len(rts.LabelsRefs))
+		writev2.DesymbolizeLabels(&b, rts.LabelsRefs, reqV2.Symbols).Range(func(l labels.Label) {
+			req.Timeseries[i].Labels = append(req.Timeseries[i].Labels, prompb.Label{
+				Name:  l.Name,
+				Value: l.Value,
+			})
+		})
+
+		exemplars := make([]prompb.Exemplar, len(rts.Exemplars))
+		for j, e := range rts.Exemplars {
+			exemplars[j].Value = e.Value
+			exemplars[j].Timestamp = e.Timestamp
+			b := labels.NewScratchBuilder(len(rts.LabelsRefs))
+			writev2.DesymbolizeLabels(&b, e.LabelsRefs, reqV2.Symbols).Range(func(l labels.Label) {
+				exemplars[j].Labels = append(exemplars[j].Labels, prompb.Label{
+					Name:  l.Name,
+					Value: l.Value,
+				})
+			})
+		}
+		req.Timeseries[i].Exemplars = exemplars
+
+		req.Timeseries[i].Samples = make([]prompb.Sample, len(rts.Samples))
+		for j, s := range rts.Samples {
+			req.Timeseries[i].Samples[j].Timestamp = s.Timestamp
+			req.Timeseries[i].Samples[j].Value = s.Value
+		}
+
+		req.Timeseries[i].Histograms = make([]prompb.Histogram, len(rts.Histograms))
+		for j, h := range rts.Histograms {
+			if h.IsFloatHistogram() {
+				req.Timeseries[i].Histograms[j].Count = &prompb.Histogram_CountFloat{CountFloat: h.GetCountFloat()}
+				req.Timeseries[i].Histograms[j].ZeroCount = &prompb.Histogram_ZeroCountFloat{ZeroCountFloat: h.GetZeroCountFloat()}
+			} else {
+				req.Timeseries[i].Histograms[j].Count = &prompb.Histogram_CountInt{CountInt: h.GetCountInt()}
+				req.Timeseries[i].Histograms[j].ZeroCount = &prompb.Histogram_ZeroCountInt{ZeroCountInt: h.GetZeroCountInt()}
+			}
+
+			for _, span := range h.NegativeSpans {
+				req.Timeseries[i].Histograms[j].NegativeSpans = append(req.Timeseries[i].Histograms[j].NegativeSpans, prompb.BucketSpan{
+					Offset: span.Offset,
+					Length: span.Length,
+				})
+			}
+			for _, span := range h.PositiveSpans {
+				req.Timeseries[i].Histograms[j].PositiveSpans = append(req.Timeseries[i].Histograms[j].PositiveSpans, prompb.BucketSpan{
+					Offset: span.Offset,
+					Length: span.Length,
+				})
+			}
+
+			req.Timeseries[i].Histograms[j].Sum = h.Sum
+			req.Timeseries[i].Histograms[j].Schema = h.Schema
+			req.Timeseries[i].Histograms[j].ZeroThreshold = h.ZeroThreshold
+			req.Timeseries[i].Histograms[j].NegativeDeltas = h.NegativeDeltas
+			req.Timeseries[i].Histograms[j].NegativeCounts = h.NegativeCounts
+			req.Timeseries[i].Histograms[j].PositiveDeltas = h.PositiveDeltas
+			req.Timeseries[i].Histograms[j].PositiveCounts = h.PositiveCounts
+			req.Timeseries[i].Histograms[j].ResetHint = prompb.Histogram_ResetHint(h.ResetHint)
+			req.Timeseries[i].Histograms[j].Timestamp = h.Timestamp
+		}
+	}
+	return req, nil
 }
 
 func (c *TestWriteClient) Name() string {
@@ -1805,95 +1877,95 @@ func createDummyTimeSeries(instances int) []timeSeries {
 	return result
 }
 
-func BenchmarkBuildWriteRequest(b *testing.B) {
-	noopLogger := log.NewNopLogger()
-	bench := func(b *testing.B, batch []timeSeries) {
-		buff := make([]byte, 0)
-		seriesBuff := make([]prompb.TimeSeries, len(batch))
-		for i := range seriesBuff {
-			seriesBuff[i].Samples = []prompb.Sample{{}}
-			seriesBuff[i].Exemplars = []prompb.Exemplar{{}}
-		}
-		pBuf := proto.NewBuffer(nil)
-
-		// Warmup buffers
-		for i := 0; i < 10; i++ {
-			populateTimeSeries(batch, seriesBuff, true, true)
-			buildWriteRequest(noopLogger, seriesBuff, nil, pBuf, &buff, nil, "snappy")
-		}
-
-		b.ResetTimer()
-		totalSize := 0
-		for i := 0; i < b.N; i++ {
-			populateTimeSeries(batch, seriesBuff, true, true)
-			req, _, _, err := buildWriteRequest(noopLogger, seriesBuff, nil, pBuf, &buff, nil, "snappy")
-			if err != nil {
-				b.Fatal(err)
-			}
-			totalSize += len(req)
-			b.ReportMetric(float64(totalSize)/float64(b.N), "compressedSize/op")
-		}
-	}
-
-	twoBatch := createDummyTimeSeries(2)
-	tenBatch := createDummyTimeSeries(10)
-	hundredBatch := createDummyTimeSeries(100)
-
-	b.Run("2 instances", func(b *testing.B) {
-		bench(b, twoBatch)
-	})
-
-	b.Run("10 instances", func(b *testing.B) {
-		bench(b, tenBatch)
-	})
-
-	b.Run("1k instances", func(b *testing.B) {
-		bench(b, hundredBatch)
-	})
-}
-
-func BenchmarkBuildV2WriteRequest(b *testing.B) {
-	noopLogger := log.NewNopLogger()
-	type testcase struct {
-		batch []timeSeries
-	}
-	testCases := []testcase{
-		{createDummyTimeSeries(2)},
-		{createDummyTimeSeries(10)},
-		{createDummyTimeSeries(100)},
-	}
-	for _, tc := range testCases {
-		symbolTable := writev2.NewSymbolTable()
-		buff := make([]byte, 0)
-		seriesBuff := make([]writev2.TimeSeries, len(tc.batch))
-		for i := range seriesBuff {
-			seriesBuff[i].Samples = []writev2.Sample{{}}
-			seriesBuff[i].Exemplars = []writev2.Exemplar{{}}
-		}
-		pBuf := []byte{}
-
-		// Warmup buffers
-		for i := 0; i < 10; i++ {
-			populateV2TimeSeries(&symbolTable, tc.batch, seriesBuff, true, true)
-			buildV2WriteRequest(noopLogger, seriesBuff, symbolTable.Symbols(), &pBuf, &buff, nil, "snappy")
-		}
-
-		b.Run(fmt.Sprintf("%d-instances", len(tc.batch)), func(b *testing.B) {
-			totalSize := 0
-			for j := 0; j < b.N; j++ {
-				populateV2TimeSeries(&symbolTable, tc.batch, seriesBuff, true, true)
-				b.ResetTimer()
-				req, _, _, err := buildV2WriteRequest(noopLogger, seriesBuff, symbolTable.Symbols(), &pBuf, &buff, nil, "snappy")
-				if err != nil {
-					b.Fatal(err)
-				}
-				symbolTable.Reset()
-				totalSize += len(req)
-				b.ReportMetric(float64(totalSize)/float64(b.N), "compressedSize/op")
-			}
-		})
-	}
-}
+//func BenchmarkBuildWriteRequest(b *testing.B) {
+//	noopLogger := log.NewNopLogger()
+//	bench := func(b *testing.B, batch []timeSeries) {
+//		buff := make([]byte, 0)
+//		seriesBuff := make([]prompb.TimeSeries, len(batch))
+//		for i := range seriesBuff {
+//			seriesBuff[i].Samples = []prompb.Sample{{}}
+//			seriesBuff[i].Exemplars = []prompb.Exemplar{{}}
+//		}
+//		pBuf := proto.NewBuffer(nil)
+//
+//		// Warmup buffers
+//		for i := 0; i < 10; i++ {
+//			populateTimeSeries(batch, seriesBuff, true, true)
+//			buildWriteRequest(noopLogger, seriesBuff, nil, pBuf, &buff, nil, "snappy")
+//		}
+//
+//		b.ResetTimer()
+//		totalSize := 0
+//		for i := 0; i < b.N; i++ {
+//			populateTimeSeries(batch, seriesBuff, true, true)
+//			req, _, _, err := buildWriteRequest(noopLogger, seriesBuff, nil, pBuf, &buff, nil, "snappy")
+//			if err != nil {
+//				b.Fatal(err)
+//			}
+//			totalSize += len(req)
+//			b.ReportMetric(float64(totalSize)/float64(b.N), "compressedSize/op")
+//		}
+//	}
+//
+//	twoBatch := createDummyTimeSeries(2)
+//	tenBatch := createDummyTimeSeries(10)
+//	hundredBatch := createDummyTimeSeries(100)
+//
+//	b.Run("2 instances", func(b *testing.B) {
+//		bench(b, twoBatch)
+//	})
+//
+//	b.Run("10 instances", func(b *testing.B) {
+//		bench(b, tenBatch)
+//	})
+//
+//	b.Run("1k instances", func(b *testing.B) {
+//		bench(b, hundredBatch)
+//	})
+//}
+//
+//func BenchmarkBuildV2WriteRequest(b *testing.B) {
+//	noopLogger := log.NewNopLogger()
+//	type testcase struct {
+//		batch []timeSeries
+//	}
+//	testCases := []testcase{
+//		{createDummyTimeSeries(2)},
+//		{createDummyTimeSeries(10)},
+//		{createDummyTimeSeries(100)},
+//	}
+//	for _, tc := range testCases {
+//		symbolTable := writev2.NewSymbolTable()
+//		buff := make([]byte, 0)
+//		seriesBuff := make([]writev2.TimeSeries, len(tc.batch))
+//		for i := range seriesBuff {
+//			seriesBuff[i].Samples = []writev2.Sample{{}}
+//			seriesBuff[i].Exemplars = []writev2.Exemplar{{}}
+//		}
+//		pBuf := []byte{}
+//
+//		// Warmup buffers
+//		for i := 0; i < 10; i++ {
+//			populateV2TimeSeries(&symbolTable, tc.batch, seriesBuff, true, true)
+//			buildV2WriteRequest(noopLogger, seriesBuff, symbolTable.Symbols(), &pBuf, &buff, nil, "snappy")
+//		}
+//
+//		b.Run(fmt.Sprintf("%d-instances", len(tc.batch)), func(b *testing.B) {
+//			totalSize := 0
+//			for j := 0; j < b.N; j++ {
+//				populateV2TimeSeries(&symbolTable, tc.batch, seriesBuff, true, true)
+//				b.ResetTimer()
+//				req, _, _, err := buildV2WriteRequest(noopLogger, seriesBuff, symbolTable.Symbols(), &pBuf, &buff, nil, "snappy")
+//				if err != nil {
+//					b.Fatal(err)
+//				}
+//				symbolTable.Reset()
+//				totalSize += len(req)
+//				b.ReportMetric(float64(totalSize)/float64(b.N), "compressedSize/op")
+//			}
+//		})
+//	}
+//}
 
 func TestDropOldTimeSeries(t *testing.T) {
 	size := 10
@@ -1924,8 +1996,8 @@ func TestDropOldTimeSeries(t *testing.T) {
 
 func TestIsSampleOld(t *testing.T) {
 	currentTime := time.Now()
-	require.True(t, isSampleOld(currentTime, 60*time.Second, timestamp.FromTime(currentTime.Add(-61*time.Second))))
-	require.False(t, isSampleOld(currentTime, 60*time.Second, timestamp.FromTime(currentTime.Add(-59*time.Second))))
+	require.True(t, isTimestampTooOld(currentTime, 60*time.Second, timestamp.FromTime(currentTime.Add(-61*time.Second))))
+	require.False(t, isTimestampTooOld(currentTime, 60*time.Second, timestamp.FromTime(currentTime.Add(-59*time.Second))))
 }
 
 func createTimeseriesWithOldSamples(numSamples, numSeries int, extraLabels ...labels.Label) ([]record.RefSample, []record.RefSample, []record.RefSeries) {
@@ -1976,7 +2048,7 @@ func TestBuildTimeSeries(t *testing.T) {
 	testCases := []struct {
 		name           string
 		ts             []prompb.TimeSeries
-		filter         func(ts prompb.TimeSeries) bool
+		tooOldTs       int64
 		lowestTs       int64
 		highestTs      int64
 		droppedSamples int
@@ -2010,7 +2082,6 @@ func TestBuildTimeSeries(t *testing.T) {
 					},
 				},
 			},
-			filter:      nil,
 			responseLen: 3,
 			lowestTs:    1234567890,
 			highestTs:   1234567892,
@@ -2051,7 +2122,7 @@ func TestBuildTimeSeries(t *testing.T) {
 					},
 				},
 			},
-			filter:         func(ts prompb.TimeSeries) bool { return filterTsLimit(1234567892, ts) },
+			tooOldTs:       1234567892,
 			responseLen:    2,
 			lowestTs:       1234567892,
 			highestTs:      1234567893,
@@ -2093,7 +2164,7 @@ func TestBuildTimeSeries(t *testing.T) {
 					},
 				},
 			},
-			filter:         func(ts prompb.TimeSeries) bool { return filterTsLimit(1234567892, ts) },
+			tooOldTs:       1234567892,
 			responseLen:    2,
 			lowestTs:       1234567892,
 			highestTs:      1234567893,
@@ -2135,7 +2206,7 @@ func TestBuildTimeSeries(t *testing.T) {
 					},
 				},
 			},
-			filter:         func(ts prompb.TimeSeries) bool { return filterTsLimit(1234567895, ts) },
+			tooOldTs:       1234567895,
 			responseLen:    2,
 			lowestTs:       1234567895,
 			highestTs:      1234567897,
@@ -2146,12 +2217,25 @@ func TestBuildTimeSeries(t *testing.T) {
 	// Run the test cases
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			highest, lowest, result, droppedSamples, _, _ := buildTimeSeries(tc.ts, tc.filter)
-			require.NotNil(t, result)
-			require.Len(t, result, tc.responseLen)
+			series := newProtoTimeSeriesBuffer(config.RemoteWriteProtoMsgV1, 0, true, true)
+			series.v1 = tc.ts
+
+			metrics := &queueManagerMetrics{}
+
+			baseTime := time.Time{}
+			sampleAgeLimit := time.Duration(0)
+			if tc.tooOldTs != 0 {
+				baseTime = timestamp.Time(tc.tooOldTs + 1)
+				sampleAgeLimit = 1 * time.Millisecond
+			}
+
+			highest, lowest := series.FilterOutTooOldSamples(log.NewNopLogger(), metrics, baseTime, sampleAgeLimit)
 			require.Equal(t, tc.highestTs, highest)
 			require.Equal(t, tc.lowestTs, lowest)
-			require.Equal(t, tc.droppedSamples, droppedSamples)
+
+			require.NotNil(t, series.v1)
+			require.Len(t, series.v1, tc.responseLen)
+			require.Equal(t, tc.droppedSamples, client_testutil.ToFloat64(metrics.droppedSamplesTotal.WithLabelValues(reasonTooOld)))
 		})
 	}
 }

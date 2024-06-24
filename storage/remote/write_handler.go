@@ -27,11 +27,12 @@ import (
 	"github.com/golang/snappy"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/prometheus/prometheus/model/histogram"
+
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
-	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/storage"
 	otlptranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
 )
@@ -148,28 +149,27 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	req := &writeRequest{}
+
 	// Now we have a decompressed buffer we can unmarshal it.
 	switch msg {
 	case config.RemoteWriteProtoMsgV1:
-		var req prompb.WriteRequest
-		if err := proto.Unmarshal(decompressed, &req); err != nil {
+		if err := proto.Unmarshal(decompressed, req.v1); err != nil {
 			// TODO(bwplotka): Add more context to responded error?
 			level.Error(h.logger).Log("msg", "Error decoding remote write request", "protobuf_message", msg, "err", err.Error())
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		err = h.write(r.Context(), &req)
 	case config.RemoteWriteProtoMsgV2:
-		var req writev2.Request
-		if err := proto.Unmarshal(decompressed, &req); err != nil {
+		if err := proto.Unmarshal(decompressed, req.v2); err != nil {
 			// TODO(bwplotka): Add more context to responded error?
 			level.Error(h.logger).Log("msg", "Error decoding remote write request", "protobuf_message", msg, "err", err.Error())
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		err = h.writeV2(r.Context(), &req)
 	}
 
+	err = h.write(r.Context(), req)
 	switch {
 	case err == nil:
 	case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrOutOfBounds), errors.Is(err, storage.ErrDuplicateSampleForTimestamp), errors.Is(err, storage.ErrTooOldSample):
@@ -203,7 +203,7 @@ func (h *writeHandler) checkAppendExemplarError(err error, e exemplar.Exemplar, 
 	}
 }
 
-func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err error) {
+func (h *writeHandler) write(ctx context.Context, req *writeRequest) (err error) {
 	outOfOrderExemplarErrs := 0
 	samplesWithInvalidLabels := 0
 
@@ -217,28 +217,68 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	}()
 
 	b := labels.NewScratchBuilder(0)
-	for _, ts := range req.Timeseries {
-		ls := labelProtosToLabels(&b, ts.Labels)
+	if err := req.ForeachTimeseries(func(ts *writeTimeSeries) error {
+		ls := ts.Labels(&b)
 		if !ls.IsValid() {
 			level.Warn(h.logger).Log("msg", "Invalid metric names or labels", "got", ls.String())
 			samplesWithInvalidLabels++
-			continue
+			return nil
 		}
 
-		err := h.appendSamples(app, ts.Samples, ls)
-		if err != nil {
+		var ref storage.SeriesRef
+		if err := ts.ForeachSample(func(s writeSample) error {
+			ref, err = app.Append(ref, ls, s.GetTimestamp(), s.GetValue())
+			if err != nil {
+				unwrappedErr := errors.Unwrap(err)
+				if unwrappedErr == nil {
+					unwrappedErr = err
+				}
+				if errors.Is(err, storage.ErrOutOfOrderSample) || errors.Is(unwrappedErr, storage.ErrOutOfBounds) || errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp) {
+					level.Error(h.logger).Log("msg", "Out of order sample from remote write", "err", err.Error(), "series", ls.String(), "timestamp", s.GetTimestamp())
+				}
+				return err
+			}
+			return nil
+		}); err != nil {
 			return err
 		}
 
-		for _, ep := range ts.Exemplars {
-			e := exemplarProtoToExemplar(&b, ep)
-			h.appendExemplar(app, e, ls, &outOfOrderExemplarErrs)
-		}
+		ts.ForeachExemplar(&b, func(e exemplar.Exemplar) {
+			_, err := app.AppendExemplar(0, ls, e)
+			err = h.checkAppendExemplarError(err, e, &outOfOrderExemplarErrs)
+			if err != nil {
+				// Since exemplar storage is still experimental, we don't fail the request on ingestion errors
+				level.Debug(h.logger).Log("msg", "Error while adding exemplar in AddExemplar", "exemplar", fmt.Sprintf("%+v", e), "err", err)
+			}
+		})
 
-		err = h.appendHistograms(app, ts.Histograms, ls)
-		if err != nil {
+		if err := ts.ForeachHistogram(func(ts int64, hs *histogram.Histogram, fhs *histogram.FloatHistogram) error {
+			if _, err = app.AppendHistogram(0, ls, ts, hs, fhs); err != nil {
+				unwrappedErr := errors.Unwrap(err)
+				if unwrappedErr == nil {
+					unwrappedErr = err
+				}
+				// Although AppendHistogram does not currently return ErrDuplicateSampleForTimestamp there is
+				// a note indicating its inclusion in the future.
+				if errors.Is(unwrappedErr, storage.ErrOutOfOrderSample) || errors.Is(unwrappedErr, storage.ErrOutOfBounds) || errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp) {
+					level.Error(h.logger).Log("msg", "Out of order histogram from remote write", "err", err.Error(), "series", ls.String(), "timestamp", ts)
+				}
+				return err
+			}
+			return nil
+		}); err != nil {
 			return err
 		}
+
+		// Update metadata, but only for PRW 2.0.
+		if m, isV2 := ts.Metadata(); isV2 {
+			if _, err = app.UpdateMetadata(0, ls, m); err != nil {
+				level.Debug(h.logger).Log("msg", "error while updating metadata from remote write", "err", err)
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	if outOfOrderExemplarErrs > 0 {
@@ -248,148 +288,6 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 		h.samplesWithInvalidLabelsTotal.Add(float64(samplesWithInvalidLabels))
 	}
 
-	return nil
-}
-
-func (h *writeHandler) writeV2(ctx context.Context, req *writev2.Request) (err error) {
-	outOfOrderExemplarErrs := 0
-
-	app := h.appendable.Appender(ctx)
-	defer func() {
-		if err != nil {
-			_ = app.Rollback()
-			return
-		}
-		err = app.Commit()
-	}()
-
-	for _, ts := range req.Timeseries {
-		ls := writev2.DesymbolizeLabels(ts.LabelsRefs, req.Symbols)
-
-		err := h.appendSamplesV2(app, ts.Samples, ls)
-		if err != nil {
-			return err
-		}
-
-		for _, ep := range ts.Exemplars {
-			e := exemplarProtoV2ToExemplar(ep, req.Symbols)
-			h.appendExemplar(app, e, ls, &outOfOrderExemplarErrs)
-		}
-
-		err = h.appendHistogramsV2(app, ts.Histograms, ls)
-		if err != nil {
-			return err
-		}
-
-		m := metadataProtoV2ToMetadata(ts.Metadata, req.Symbols)
-		if _, err = app.UpdateMetadata(0, ls, m); err != nil {
-			level.Debug(h.logger).Log("msg", "error while updating metadata from remote write", "err", err)
-		}
-	}
-
-	if outOfOrderExemplarErrs > 0 {
-		_ = level.Warn(h.logger).Log("msg", "Error on ingesting out-of-order exemplars", "num_dropped", outOfOrderExemplarErrs)
-	}
-
-	return nil
-}
-
-func (h *writeHandler) appendExemplar(app storage.Appender, e exemplar.Exemplar, labels labels.Labels, outOfOrderExemplarErrs *int) {
-	_, err := app.AppendExemplar(0, labels, e)
-	err = h.checkAppendExemplarError(err, e, outOfOrderExemplarErrs)
-	if err != nil {
-		// Since exemplar storage is still experimental, we don't fail the request on ingestion errors
-		level.Debug(h.logger).Log("msg", "Error while adding exemplar in AddExemplar", "exemplar", fmt.Sprintf("%+v", e), "err", err)
-	}
-}
-
-func (h *writeHandler) appendSamples(app storage.Appender, ss []prompb.Sample, labels labels.Labels) error {
-	var ref storage.SeriesRef
-	var err error
-	for _, s := range ss {
-		ref, err = app.Append(ref, labels, s.GetTimestamp(), s.GetValue())
-		if err != nil {
-			unwrappedErr := errors.Unwrap(err)
-			if unwrappedErr == nil {
-				unwrappedErr = err
-			}
-			if errors.Is(err, storage.ErrOutOfOrderSample) || errors.Is(unwrappedErr, storage.ErrOutOfBounds) || errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp) {
-				level.Error(h.logger).Log("msg", "Out of order sample from remote write", "err", err.Error(), "series", labels.String(), "timestamp", s.Timestamp)
-			}
-			return err
-		}
-	}
-	return nil
-}
-
-func (h *writeHandler) appendSamplesV2(app storage.Appender, ss []writev2.Sample, labels labels.Labels) error {
-	var ref storage.SeriesRef
-	var err error
-	for _, s := range ss {
-		ref, err = app.Append(ref, labels, s.GetTimestamp(), s.GetValue())
-		if err != nil {
-			unwrappedErr := errors.Unwrap(err)
-			if unwrappedErr == nil {
-				unwrappedErr = err
-			}
-			if errors.Is(err, storage.ErrOutOfOrderSample) || errors.Is(unwrappedErr, storage.ErrOutOfBounds) || errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp) {
-				level.Error(h.logger).Log("msg", "Out of order sample from remote write", "err", err.Error(), "series", labels.String(), "timestamp", s.Timestamp)
-			}
-			return err
-		}
-	}
-	return nil
-}
-
-func (h *writeHandler) appendHistograms(app storage.Appender, hh []prompb.Histogram, labels labels.Labels) error {
-	var err error
-	for _, hp := range hh {
-		if hp.IsFloatHistogram() {
-			fhs := FloatHistogramProtoToFloatHistogram(hp)
-			_, err = app.AppendHistogram(0, labels, hp.Timestamp, nil, fhs)
-		} else {
-			hs := HistogramProtoToHistogram(hp)
-			_, err = app.AppendHistogram(0, labels, hp.Timestamp, hs, nil)
-		}
-		if err != nil {
-			unwrappedErr := errors.Unwrap(err)
-			if unwrappedErr == nil {
-				unwrappedErr = err
-			}
-			// Although AppendHistogram does not currently return ErrDuplicateSampleForTimestamp there is
-			// a note indicating its inclusion in the future.
-			if errors.Is(unwrappedErr, storage.ErrOutOfOrderSample) || errors.Is(unwrappedErr, storage.ErrOutOfBounds) || errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp) {
-				level.Error(h.logger).Log("msg", "Out of order histogram from remote write", "err", err.Error(), "series", labels.String(), "timestamp", hp.Timestamp)
-			}
-			return err
-		}
-	}
-	return nil
-}
-
-func (h *writeHandler) appendHistogramsV2(app storage.Appender, hh []writev2.Histogram, labels labels.Labels) error {
-	var err error
-	for _, hp := range hh {
-		if hp.IsFloatHistogram() {
-			fhs := FloatV2HistogramProtoToFloatHistogram(hp)
-			_, err = app.AppendHistogram(0, labels, hp.Timestamp, nil, fhs)
-		} else {
-			hs := V2HistogramProtoToHistogram(hp)
-			_, err = app.AppendHistogram(0, labels, hp.Timestamp, hs, nil)
-		}
-		if err != nil {
-			unwrappedErr := errors.Unwrap(err)
-			if unwrappedErr == nil {
-				unwrappedErr = err
-			}
-			// Although AppendHistogram does not currently return ErrDuplicateSampleForTimestamp there is
-			// a note indicating its inclusion in the future.
-			if errors.Is(unwrappedErr, storage.ErrOutOfOrderSample) || errors.Is(unwrappedErr, storage.ErrOutOfBounds) || errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp) {
-				level.Error(h.logger).Log("msg", "Out of order histogram from remote write", "err", err.Error(), "series", labels.String(), "timestamp", hp.Timestamp)
-			}
-			return err
-		}
-	}
 	return nil
 }
 
@@ -433,9 +331,9 @@ func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		prwMetrics = append(prwMetrics, *ts)
 	}
 
-	err = h.rwHandler.write(r.Context(), &prompb.WriteRequest{
+	err = h.rwHandler.write(r.Context(), &writeRequest{v1: &prompb.WriteRequest{
 		Timeseries: prwMetrics,
-	})
+	}})
 
 	switch {
 	case err == nil:
