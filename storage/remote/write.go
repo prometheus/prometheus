@@ -148,7 +148,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 	newQueues := make(map[string]*QueueManager)
 	newHashes := []string{}
 	for _, rwConf := range conf.RemoteWriteConfigs {
-		if rwConf.ProtocolVersion > Version1 && !rws.metadataInWAL {
+		if rwConf.ProtobufMessage == config.RemoteWriteProtoMsgV2 && !rws.metadataInWAL {
 			return errors.New("invalid remote write configuration, if you are using remote write version 2.0 then the feature flag for metadata records in the WAL must be enabled")
 		}
 		hash, err := toHash(rwConf)
@@ -169,9 +169,19 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			name = rwConf.Name
 		}
 
+		// TODO(bwplotka): Remove in the next PR (split for readability).
+		protoVersion := func() config.RemoteWriteFormat {
+			switch rwConf.ProtobufMessage {
+			case config.RemoteWriteProtoMsgV2:
+				return Version2
+			default:
+				return Version1
+			}
+		}()
+
 		c, err := NewWriteClient(name, &ClientConfig{
 			URL:               rwConf.URL,
-			RemoteWriteFormat: rwConf.ProtocolVersion,
+			RemoteWriteFormat: protoVersion,
 			Timeout:           rwConf.RemoteTimeout,
 			HTTPClientConfig:  rwConf.HTTPClientConfig,
 			SigV4Config:       rwConf.SigV4Config,
@@ -195,7 +205,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 		// Work out what protocol and compression to use for this endpoint.
 		// Default to Remote Write Version1.
 		rwFormat := Version1
-		switch rwConf.ProtocolVersion {
+		switch protoVersion {
 		case Version1:
 			// We use the standard value as there's no negotiation to be had.
 		case Version2:

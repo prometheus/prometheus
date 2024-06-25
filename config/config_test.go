@@ -103,9 +103,10 @@ var expectedConf = &Config{
 
 	RemoteWriteConfigs: []*RemoteWriteConfig{
 		{
-			URL:           mustParseURL("http://remote1/push"),
-			RemoteTimeout: model.Duration(30 * time.Second),
-			Name:          "drop_expensive",
+			URL:             mustParseURL("http://remote1/push"),
+			ProtobufMessage: RemoteWriteProtoMsgV1,
+			RemoteTimeout:   model.Duration(30 * time.Second),
+			Name:            "drop_expensive",
 			WriteRelabelConfigs: []*relabel.Config{
 				{
 					SourceLabels: model.LabelNames{"__name__"},
@@ -132,11 +133,12 @@ var expectedConf = &Config{
 			},
 		},
 		{
-			URL:            mustParseURL("http://remote2/push"),
-			RemoteTimeout:  model.Duration(30 * time.Second),
-			QueueConfig:    DefaultQueueConfig,
-			MetadataConfig: DefaultMetadataConfig,
-			Name:           "rw_tls",
+			URL:             mustParseURL("http://remote2/push"),
+			ProtobufMessage: RemoteWriteProtoMsgV2,
+			RemoteTimeout:   model.Duration(30 * time.Second),
+			QueueConfig:     DefaultQueueConfig,
+			MetadataConfig:  DefaultMetadataConfig,
+			Name:            "rw_tls",
 			HTTPClientConfig: config.HTTPClientConfig{
 				TLSConfig: config.TLSConfig{
 					CertFile: filepath.FromSlash("testdata/valid_cert_file"),
@@ -1793,6 +1795,10 @@ var expectedErrors = []struct {
 	{
 		filename: "remote_write_authorization_header.bad.yml",
 		errMsg:   `authorization header must be changed via the basic_auth, authorization, oauth2, sigv4, or azuread parameter`,
+	},
+	{
+		filename: "remote_write_wrong_msg.bad.yml",
+		errMsg:   `invalid protobuf_message value: unknown remote write protobuf message io.prometheus.writet.v2.Request, supported: prometheus.WriteRequest,io.prometheus.write.v2.Request`,
 	},
 	{
 		filename: "remote_write_url_missing.bad.yml",

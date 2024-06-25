@@ -75,26 +75,26 @@ func TestContentNegotiation(t *testing.T) {
 	testcases := []struct {
 		name       string
 		success    bool
-		qmRwFormat config.RemoteWriteFormat
+		qmRwFormat config.RemoteWriteProtoMsg
 		rwFormat   config.RemoteWriteFormat
 		steps      []contentNegotiationStep
 	}{
 		// Test a simple case where the v2 request we send is processed first time.
 		{
-			success: true, name: "v2 happy path", qmRwFormat: Version2, rwFormat: Version2, steps: []contentNegotiationStep{
+			success: true, name: "v2 happy path", qmRwFormat: config.RemoteWriteProtoMsgV2, rwFormat: Version2, steps: []contentNegotiationStep{
 				{lastRWHeader: "2.0;snappy,0.1.0", compression: "snappy", behaviour: nil, attemptString: "0,1,snappy,ok"},
 			},
 		},
 		// Test a simple case where the v1 request we send is processed first time.
 		{
-			success: true, name: "v1 happy path", qmRwFormat: Version1, rwFormat: Version1, steps: []contentNegotiationStep{
+			success: true, name: "v1 happy path", qmRwFormat: config.RemoteWriteProtoMsgV1, rwFormat: Version1, steps: []contentNegotiationStep{
 				{lastRWHeader: "0.1.0", compression: "snappy", behaviour: nil, attemptString: "0,0,snappy,ok"},
 			},
 		},
 		// Test a case where the v1 request has a temporary delay but goes through on retry.
 		// There is no content re-negotiation between first and retry attempts.
 		{
-			success: true, name: "v1 happy path with one 5xx retry", qmRwFormat: Version1, rwFormat: Version1, steps: []contentNegotiationStep{
+			success: true, name: "v1 happy path with one 5xx retry", qmRwFormat: config.RemoteWriteProtoMsgV1, rwFormat: Version1, steps: []contentNegotiationStep{
 				{lastRWHeader: "0.1.0", compression: "snappy", behaviour: RecoverableError{fmt.Errorf("Pretend 500"), 1}, attemptString: "0,0,snappy,Pretend 500"},
 				{lastRWHeader: "0.1.0", compression: "snappy", behaviour: nil, attemptString: "1,0,snappy,ok"},
 			},
@@ -102,28 +102,28 @@ func TestContentNegotiation(t *testing.T) {
 		// Repeat the above test but with v2. The request has a temporary delay but goes through on retry.
 		// There is no content re-negotiation between first and retry attempts.
 		{
-			success: true, name: "v2 happy path with one 5xx retry", qmRwFormat: Version2, rwFormat: Version2, steps: []contentNegotiationStep{
+			success: true, name: "v2 happy path with one 5xx retry", qmRwFormat: config.RemoteWriteProtoMsgV2, rwFormat: Version2, steps: []contentNegotiationStep{
 				{lastRWHeader: "2.0;snappy,0.1.0", compression: "snappy", behaviour: RecoverableError{fmt.Errorf("Pretend 500"), 1}, attemptString: "0,1,snappy,Pretend 500"},
 				{lastRWHeader: "2.0;snappy,0.1.0", compression: "snappy", behaviour: nil, attemptString: "1,1,snappy,ok"},
 			},
 		},
 		// Now test where the server suddenly stops speaking 2.0 and we need to downgrade.
 		{
-			success: true, name: "v2 request to v2 server that has downgraded via 406", qmRwFormat: Version2, rwFormat: Version2, steps: []contentNegotiationStep{
+			success: true, name: "v2 request to v2 server that has downgraded via 406", qmRwFormat: config.RemoteWriteProtoMsgV2, rwFormat: Version2, steps: []contentNegotiationStep{
 				{lastRWHeader: "2.0;snappy,0.1.0", compression: "snappy", behaviour: &ErrRenegotiate{"", 406}, attemptString: "0,1,snappy,HTTP 406: msg: "},
 				{lastRWHeader: "0.1.0", compression: "snappy", behaviour: nil, attemptString: "0,0,snappy,ok"},
 			},
 		},
 		// Now test where the server suddenly stops speaking 2.0 and we need to downgrade because it returns a 400.
 		{
-			success: true, name: "v2 request to v2 server that has downgraded via 400", qmRwFormat: Version2, rwFormat: Version2, steps: []contentNegotiationStep{
+			success: true, name: "v2 request to v2 server that has downgraded via 400", qmRwFormat: config.RemoteWriteProtoMsgV2, rwFormat: Version2, steps: []contentNegotiationStep{
 				{lastRWHeader: "2.0;snappy,0.1.0", compression: "snappy", behaviour: &ErrRenegotiate{"", 400}, attemptString: "0,1,snappy,HTTP 400: msg: "},
 				{lastRWHeader: "0.1.0", compression: "snappy", behaviour: nil, attemptString: "0,0,snappy,ok"},
 			},
 		},
 		// Now test where the server flip flops between "2.0;snappy" and "0.1.0" only.
 		{
-			success: false, name: "flip flopping", qmRwFormat: Version2, rwFormat: Version2, steps: []contentNegotiationStep{
+			success: false, name: "flip flopping", qmRwFormat: config.RemoteWriteProtoMsgV2, rwFormat: Version2, steps: []contentNegotiationStep{
 				{lastRWHeader: "2.0;snappy", compression: "snappy", behaviour: &ErrRenegotiate{"", 406}, attemptString: "0,1,snappy,HTTP 406: msg: "},
 				{lastRWHeader: "0.1.0", compression: "snappy", behaviour: &ErrRenegotiate{"", 406}, attemptString: "0,0,snappy,HTTP 406: msg: "},
 				{lastRWHeader: "2.0;snappy", compression: "snappy", behaviour: &ErrRenegotiate{"", 406}, attemptString: "0,1,snappy,HTTP 406: msg: "},
@@ -167,7 +167,7 @@ func TestContentNegotiation(t *testing.T) {
 			queueConfig.Capacity = len(samples)
 			queueConfig.MaxSamplesPerSend = len(samples)
 			// For now we only ever have a single rw config in this test.
-			conf.RemoteWriteConfigs[0].ProtocolVersion = tc.qmRwFormat
+			conf.RemoteWriteConfigs[0].ProtobufMessage = tc.qmRwFormat
 			require.NoError(t, s.ApplyConfig(conf))
 			hash, err := toHash(writeConfig)
 			require.NoError(t, err)
@@ -369,7 +369,7 @@ func TestWALMetadataDelivery(t *testing.T) {
 
 	writeConfig := baseRemoteWriteConfig("http://test-storage.com")
 	writeConfig.QueueConfig = cfg
-	writeConfig.ProtocolVersion = Version2
+	writeConfig.ProtobufMessage = config.RemoteWriteProtoMsgV2
 
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
