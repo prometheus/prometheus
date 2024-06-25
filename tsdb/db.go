@@ -2105,6 +2105,9 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 		rh := NewOOORangeHead(db.head, mint, maxt, db.lastGarbageCollectedMmapRef)
 		outOfOrderHeadQuerier, err := db.blockChunkQuerierFunc(rh, mint, maxt)
 		if err != nil {
+			// If NewBlockQuerier() failed, make sure to clean up the pending read created by NewOOORangeHead.
+			rh.isoState.Close()
+
 			return nil, fmt.Errorf("open block chunk querier for ooo head %s: %w", rh, err)
 		}
 
