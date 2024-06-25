@@ -1,5 +1,7 @@
 #pragma once
 
+#define PROTOZERO_USE_VIEW std::string_view
+
 #include "bare_bones/vector.h"
 #include "primitives/primitives.h"
 #include "third_party/protozero/pbf_reader.hpp"
@@ -11,9 +13,11 @@ struct Query {
   int64_t end_timestamp_ms{};
   BareBones::Vector<PromPP::Primitives::LabelSetID> label_set_ids;
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_valid() const noexcept { return !label_set_ids.empty() && end_timestamp_ms > start_timestamp_ms; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_valid() const noexcept { return !label_set_ids.empty() && end_timestamp_ms >= start_timestamp_ms; }
 
-  [[nodiscard]] static bool read_from_protobuf(const std::string& protobuf, Query& query) noexcept {
+  bool operator==(const Query&) const noexcept = default;
+
+  [[nodiscard]] static bool read_from_protobuf(std::string_view protobuf, Query& query) noexcept {
     enum Tag {
       kStartTimestampMs = 1,
       kEndTimestampMs = 2,
@@ -54,7 +58,7 @@ struct Query {
       return false;
     }
 
-    return true;
+    return query.is_valid();
   }
 };
 
