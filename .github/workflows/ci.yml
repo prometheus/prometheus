@@ -143,6 +143,18 @@ jobs:
         with:
           parallelism: 12
           thread: ${{ matrix.thread }}
+  build_all_status:
+    name: Report status of build Prometheus for all architectures
+    runs-on: ubuntu-latest
+    needs: [build_all]
+    if: github.event_name == 'pull_request' && startsWith(github.event.pull_request.base.ref, 'release-')
+    steps:
+      - name: Successful build
+        if: ${{ !(contains(needs.*.result, 'failure')) && !(contains(needs.*.result, 'cancelled')) }}
+        run: exit 0
+      - name: Failing or cancelled build
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1
   check_generated_parser:
     name: Check generated parser
     runs-on: ubuntu-latest
