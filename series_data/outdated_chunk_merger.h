@@ -32,6 +32,9 @@ class OutdatedChunkMerger {
     if (!samples.empty()) {
       merge_outdated_samples<ChunkType::kOpen>(ls_id, storage_.open_chunks[ls_id], std::numeric_limits<int64_t>::max(), samples);
     }
+
+    storage_.outdated_samples_count -= decoded_samples.size();
+    storage_.merged_samples_count += decoded_samples.size();
   }
 
  private:
@@ -53,8 +56,6 @@ class OutdatedChunkMerger {
     [[nodiscard]] PROMPP_ALWAYS_INLINE EncodeIterator& operator=(const encoder::Sample& sample) noexcept {
       encoder_->encode(ls_id_, sample.timestamp, sample.value, *chunk_);
       --storage_->samples_count;
-      --storage_->outdated_samples_count;
-      ++storage_->merged_samples_count;
       return *this;
     }
     [[nodiscard]] PROMPP_ALWAYS_INLINE EncodeIterator& operator++() noexcept { return *this; }
