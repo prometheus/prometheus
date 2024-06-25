@@ -93,4 +93,8 @@ INSTANTIATE_TEST_SUITE_P(MultipeChunksMultipleLsIds,
                          testing::Values(QuerierCase{.query = {.start_timestamp_ms = 0, .end_timestamp_ms = 7, .label_set_ids = {0, 1}},
                                                      .expected = {QueriedChunk(0, 0), QueriedChunk(0, 1), QueriedChunk(1, 0), QueriedChunk(1, 1)}}));
 
+INSTANTIATE_TEST_SUITE_P(NonExistingChunk,
+                         QuerierFixture,
+                         testing::Values(QuerierCase{.query = {.start_timestamp_ms = 0, .end_timestamp_ms = 7, .label_set_ids = {2}}, .expected = {}}));
+
 }  // namespace

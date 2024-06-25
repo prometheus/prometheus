@@ -43,10 +43,12 @@ class Querier {
       }
     }
 
-    auto& open_chunk = storage_.open_chunks[ls_id];
-    if (is_in_bounds(Decoder::get_chunk_first_timestamp<ChunkType::kOpen>(storage_, open_chunk), start_timestamp_ms, end_timestamp_ms) ||
-        is_in_bounds(Decoder::get_open_chunk_last_timestamp(storage_, open_chunk), start_timestamp_ms, end_timestamp_ms)) {
-      chunks.emplace_back(ls_id);
+    if (storage_.open_chunks.size() > ls_id) {
+      auto& open_chunk = storage_.open_chunks[ls_id];
+      if (is_in_bounds(Decoder::get_chunk_first_timestamp<ChunkType::kOpen>(storage_, open_chunk), start_timestamp_ms, end_timestamp_ms) ||
+          is_in_bounds(Decoder::get_open_chunk_last_timestamp(storage_, open_chunk), start_timestamp_ms, end_timestamp_ms)) {
+        chunks.emplace_back(ls_id);
+      }
     }
   }
 
