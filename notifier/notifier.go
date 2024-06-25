@@ -113,8 +113,6 @@ type Manager struct {
 	more          chan struct{}
 	mtx           sync.RWMutex
 	stopRequested chan struct{}
-	ctx           context.Context
-	cancel        func()
 
 	alertmanagers map[string]*alertmanagerSet
 	logger        log.Logger
@@ -219,8 +217,6 @@ func do(ctx context.Context, client *http.Client, req *http.Request) (*http.Resp
 
 // NewManager is the manager constructor.
 func NewManager(o *Options, logger log.Logger) *Manager {
-	ctx, cancel := context.WithCancel(context.Background())
-
 	if o.Do == nil {
 		o.Do = do
 	}
@@ -230,8 +226,6 @@ func NewManager(o *Options, logger log.Logger) *Manager {
 
 	n := &Manager{
 		queue:         make([]*Alert, 0, o.QueueCapacity),
-		ctx:           ctx,
-		cancel:        cancel,
 		more:          make(chan struct{}, 1),
 		stopRequested: make(chan struct{}),
 		opts:          o,
@@ -307,7 +301,6 @@ func (n *Manager) nextBatch() []*Alert {
 // Dispatching of notifications occurs in parallel to processing target updates to avoid one starving the other.
 // Refer to https://github.com/prometheus/prometheus/issues/13676 for more details.
 func (n *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) {
-	defer n.cancel()
 	wg := sync.WaitGroup{}
 	wg.Add(2)
 
@@ -608,7 +601,7 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 		for _, am := range ams.ams {
 			wg.Add(1)
 
-			ctx, cancel := context.WithTimeout(n.ctx, time.Duration(ams.cfg.Timeout))
+			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(ams.cfg.Timeout))
 			defer cancel()
 
 			go func(ctx context.Context, client *http.Client, url string, payload []byte, count int) {
