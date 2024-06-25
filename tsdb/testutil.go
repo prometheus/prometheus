@@ -18,8 +18,6 @@ import (
 
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -156,7 +154,9 @@ func requireEqualSamples(t *testing.T, name string, expected, actual []chunks.Sa
 				require.Equal(t, expectedHist, actualHist, "Sample doesn't match for %s[%d] at ts %d", name, i, expectedSample.T())
 			}
 		default:
-			require.Equal(t, expectedSample, actualSample, "Sample doesn't match for %s[%d] at ts %d", name, i, expectedSample.T())
+			expectedFloat := expectedSample.F()
+			actualFloat := actualSample.F()
+			require.Equal(t, expectedFloat, actualFloat, "Sample doesn't match for %s[%d] at ts %d", name, i, expectedSample.T())
 		}
 	}
 }
@@ -173,24 +173,4 @@ func counterResetAsString(h histogram.CounterResetHint) string {
 		return "GaugeType"
 	}
 	panic("Unexpected counter reset type")
-}
-
-func samplesFromIterator(t testing.TB, it chunkenc.Iterator) []chunks.Sample {
-	var samples []chunks.Sample
-	for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
-		switch typ {
-		case chunkenc.ValFloat:
-			ts, val := it.At()
-			samples = append(samples, sample{t: ts, f: val})
-		case chunkenc.ValHistogram:
-			ts, val := it.AtHistogram(nil)
-			samples = append(samples, sample{t: ts, h: val})
-		case chunkenc.ValFloatHistogram:
-			ts, val := it.AtFloatHistogram(nil)
-			samples = append(samples, sample{t: ts, fh: val})
-		default:
-			t.Fatalf("unknown sample value type %s", typ)
-		}
-	}
-	return samples
 }

@@ -5469,7 +5469,9 @@ func testWBLAndMmapReplay(t *testing.T, scenario sampleTypeScenario) {
 		chk, err := db.head.chunkDiskMapper.Chunk(mc.ref)
 		require.NoError(t, err)
 		it := chk.Iterator(nil)
-		s1MmapSamples = append(s1MmapSamples, samplesFromIterator(t, it)...)
+		smpls, err := storage.ExpandSamples(it, newSample)
+		require.NoError(t, err)
+		s1MmapSamples = append(s1MmapSamples, smpls...)
 	}
 	require.NotEmpty(t, s1MmapSamples)
 
