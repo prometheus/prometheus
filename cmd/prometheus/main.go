@@ -233,8 +233,6 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 				level.Info(logger).Log("msg", "Experimental created timestamp zero ingestion enabled. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
 			case "":
 				continue
-			case "promql-at-modifier", "promql-negative-offset":
-				level.Warn(logger).Log("msg", "This option for --enable-feature is now permanently enabled and therefore a no-op.", "option", o)
 			default:
 				level.Warn(logger).Log("msg", "Unknown option for --enable-feature", "option", o)
 			}
