@@ -39,6 +39,16 @@ struct DataStorage {
                        BareBones::Allocator<std::pair<const uint32_t, std::forward_list<chunk::DataChunk>>>>
       finalized_chunks{{}, {}, BareBones::Allocator<std::pair<const uint32_t, std::forward_list<chunk::DataChunk>>>{finalized_chunks_map_allocated_memory}};
 
+  uint32_t samples_count{};
+  uint32_t outdated_samples_count{};
+  uint32_t merged_samples_count{};
+
+  void reset_sample_counters() noexcept {
+    samples_count = 0;
+    outdated_samples_count = 0;
+    merged_samples_count = 0;
+  }
+
   template <chunk::DataChunk::Type chunk_type>
   void erase_chunk(const chunk::DataChunk& chunk) {
     if (chunk.encoding_type != chunk::DataChunk::EncodingType::kGorilla) {

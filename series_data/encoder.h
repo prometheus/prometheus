@@ -13,6 +13,8 @@ class Encoder {
   Encoder(DataStorage& storage, OutdatedSampleEncoder& outdated_sample_encoder) : storage_(storage), outdated_sample_encoder_(outdated_sample_encoder) {}
 
   PROMPP_ALWAYS_INLINE void encode(uint32_t ls_id, int64_t timestamp, double value) {
+    ++storage_.samples_count;
+
     if (storage_.open_chunks.size() <= ls_id) {
       [[unlikely]];
       storage_.open_chunks.resize(ls_id + 1);

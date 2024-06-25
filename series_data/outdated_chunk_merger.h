@@ -46,11 +46,15 @@ class OutdatedChunkMerger {
    public:
     using difference_type = ptrdiff_t;
 
-    EncodeIterator(Encoder& encoder, chunk::DataChunk& chunk, uint32_t ls_id) : encoder_(&encoder), chunk_(&chunk), ls_id_(ls_id) {}
+    EncodeIterator(Encoder& encoder, chunk::DataChunk& chunk, DataStorage& storage, uint32_t ls_id)
+        : encoder_(&encoder), chunk_(&chunk), storage_(&storage), ls_id_(ls_id) {}
 
     [[nodiscard]] PROMPP_ALWAYS_INLINE EncodeIterator& operator*() noexcept { return *this; }
     [[nodiscard]] PROMPP_ALWAYS_INLINE EncodeIterator& operator=(const encoder::Sample& sample) noexcept {
       encoder_->encode(ls_id_, sample.timestamp, sample.value, *chunk_);
+      --storage_->samples_count;
+      --storage_->outdated_samples_count;
+      ++storage_->merged_samples_count;
       return *this;
     }
     [[nodiscard]] PROMPP_ALWAYS_INLINE EncodeIterator& operator++() noexcept { return *this; }
@@ -61,6 +65,7 @@ class OutdatedChunkMerger {
    private:
     Encoder* encoder_;
     chunk::DataChunk* chunk_;
+    DataStorage* storage_;
     uint32_t ls_id_;
   };
 
@@ -164,32 +169,32 @@ class OutdatedChunkMerger {
       }
 
       case kUint32Constant: {
-        merge_outdated_samples<kUint32Constant, chunk_type>(source_chunk, max_timestamp, EncodeIterator{encoder_, chunk, ls_id}, samples);
+        merge_outdated_samples<kUint32Constant, chunk_type>(source_chunk, max_timestamp, EncodeIterator{encoder_, chunk, storage_, ls_id}, samples);
         break;
       }
 
       case kDoubleConstant: {
-        merge_outdated_samples<kDoubleConstant, chunk_type>(source_chunk, max_timestamp, EncodeIterator{encoder_, chunk, ls_id}, samples);
+        merge_outdated_samples<kDoubleConstant, chunk_type>(source_chunk, max_timestamp, EncodeIterator{encoder_, chunk, storage_, ls_id}, samples);
         break;
       }
 
       case kTwoDoubleConstant: {
-        merge_outdated_samples<kTwoDoubleConstant, chunk_type>(source_chunk, max_timestamp, EncodeIterator{encoder_, chunk, ls_id}, samples);
+        merge_outdated_samples<kTwoDoubleConstant, chunk_type>(source_chunk, max_timestamp, EncodeIterator{encoder_, chunk, storage_, ls_id}, samples);
         break;
       }
 
       case kAscIntegerValuesGorilla: {
-        merge_outdated_samples<kAscIntegerValuesGorilla, chunk_type>(source_chunk, max_timestamp, EncodeIterator{encoder_, chunk, ls_id}, samples);
+        merge_outdated_samples<kAscIntegerValuesGorilla, chunk_type>(source_chunk, max_timestamp, EncodeIterator{encoder_, chunk, storage_, ls_id}, samples);
         break;
       }
 
       case kValuesGorilla: {
-        merge_outdated_samples<kValuesGorilla, chunk_type>(source_chunk, max_timestamp, EncodeIterator{encoder_, chunk, ls_id}, samples);
+        merge_outdated_samples<kValuesGorilla, chunk_type>(source_chunk, max_timestamp, EncodeIterator{encoder_, chunk, storage_, ls_id}, samples);
         break;
       }
 
       case kGorilla: {
-        merge_outdated_samples<kGorilla, chunk_type>(source_chunk, max_timestamp, EncodeIterator{encoder_, chunk, ls_id}, samples);
+        merge_outdated_samples<kGorilla, chunk_type>(source_chunk, max_timestamp, EncodeIterator{encoder_, chunk, storage_, ls_id}, samples);
         break;
       }
     }
