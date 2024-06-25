@@ -110,8 +110,10 @@ type Manager struct {
 
 	metrics *alertMetrics
 
-	more          chan struct{}
-	mtx           sync.RWMutex
+	more chan struct{}
+	mtx  sync.RWMutex
+
+	stopOnce      *sync.Once
 	stopRequested chan struct{}
 
 	alertmanagers map[string]*alertmanagerSet
@@ -228,6 +230,7 @@ func NewManager(o *Options, logger log.Logger) *Manager {
 		queue:         make([]*Alert, 0, o.QueueCapacity),
 		more:          make(chan struct{}, 1),
 		stopRequested: make(chan struct{}),
+		stopOnce:      &sync.Once{},
 		opts:          o,
 		logger:        logger,
 	}
@@ -683,9 +686,14 @@ func (n *Manager) sendOne(ctx context.Context, c *http.Client, url string, b []b
 // Run will return once the notification manager has successfully shut down.
 //
 // The manager will optionally drain any queued notifications before shutting down.
+//
+// Stop is safe to call multiple times.
 func (n *Manager) Stop() {
 	level.Info(n.logger).Log("msg", "Stopping notification manager...")
-	close(n.stopRequested)
+
+	n.stopOnce.Do(func() {
+		close(n.stopRequested)
+	})
 }
 
 // Alertmanager holds Alertmanager endpoint information.
