@@ -24,8 +24,8 @@ struct PROMPP_ATTRIBUTE_PACKED BitSequenceWithItemsCount {
 
   BitSequenceWithItemsCount() { stream.push_back_bits_u32(BareBones::Bit::to_bits(sizeof(uint8_t)), 1U); }
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE uint8_t count() const noexcept { return *reinterpret_cast<const uint8_t*>(stream.raw_bytes()); }
-  PROMPP_ALWAYS_INLINE uint8_t inc_count() noexcept { return (*reinterpret_cast<uint8_t*>(stream.raw_bytes()))++; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint8_t count() const noexcept { return *stream.raw_bytes(); }
+  PROMPP_ALWAYS_INLINE uint8_t inc_count() noexcept { return (*stream.raw_bytes())++; }
   [[nodiscard]] PROMPP_ALWAYS_INLINE BareBones::BitSequenceReader reader() const noexcept { return reader(stream); }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE static uint8_t count(const CompactBitSequence& stream) noexcept { return count(stream.raw_bytes()); }
@@ -44,7 +44,7 @@ struct PROMPP_ATTRIBUTE_PACKED BitSequenceWithItemsCount {
 };
 
 struct PROMPP_ATTRIBUTE_PACKED RefCountableBitSequenceWithItemsCount {
-  encoder::BitSequenceWithItemsCount stream;
+  BitSequenceWithItemsCount stream;
   uint32_t reference_count{1};
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return stream.allocated_memory(); }

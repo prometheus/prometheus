@@ -8,7 +8,7 @@ namespace series_data::chunk {
 
 struct PROMPP_ATTRIBUTE_PACKED SerializedChunk {
   PromPP::Primitives::LabelSetID label_set_id;
-  chunk::DataChunk::EncodingType encoding_type{chunk::DataChunk::EncodingType::kUnknown};
+  DataChunk::EncodingType encoding_type{DataChunk::EncodingType::kUnknown};
   uint32_t values_offset{};
   uint32_t timestamps_offset{};
 

@@ -8,7 +8,6 @@
 #include "encoder/value/asc_integer_values_gorilla.h"
 #include "encoder/value/double_constant.h"
 #include "encoder/value/two_double_constant.h"
-#include "encoder/value/uint32_constant.h"
 #include "encoder/value/values_gorilla.h"
 #include "series_data/encoder/timestamp/encoder.h"
 

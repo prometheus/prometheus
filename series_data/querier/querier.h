@@ -10,7 +10,7 @@ class Querier {
  public:
   explicit Querier(const DataStorage& storage) : storage_(storage) {}
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE QueriedChunkList query(const Query& query) {
+  [[nodiscard]] PROMPP_ALWAYS_INLINE QueriedChunkList query(const Query& query) const {
     QueriedChunkList chunks;
 
     for (auto& ls_id : query.label_set_ids) {
@@ -25,7 +25,7 @@ class Querier {
 
   const DataStorage& storage_;
 
-  void query_chunks(PromPP::Primitives::LabelSetID ls_id, int64_t start_timestamp_ms, int64_t end_timestamp_ms, QueriedChunkList& chunks) {
+  void query_chunks(PromPP::Primitives::LabelSetID ls_id, int64_t start_timestamp_ms, int64_t end_timestamp_ms, QueriedChunkList& chunks) const {
     if (auto it = storage_.finalized_chunks.find(ls_id); it != storage_.finalized_chunks.end()) {
       uint32_t finalized_chunk_index = 0;
       auto& finalized_chunks = it->second;
@@ -57,12 +57,11 @@ class Querier {
   [[nodiscard]] PROMPP_ALWAYS_INLINE int64_t get_finalized_chunk_last_timestamp(const chunk::FinalizedChunkList& finalized_chunks,
                                                                                 chunk::FinalizedChunkList::ChunksList::const_iterator chunk_it,
                                                                                 PromPP::Primitives::LabelSetID ls_id) const noexcept {
-    auto next_chunk_it = std::next(chunk_it);
-    if (next_chunk_it != finalized_chunks.end()) {
+    if (auto next_chunk_it = std::next(chunk_it); next_chunk_it != finalized_chunks.end()) {
       return Decoder::get_chunk_first_timestamp<ChunkType::kFinalized>(storage_, *next_chunk_it) - 1;
-    } else {
-      return Decoder::get_chunk_first_timestamp<ChunkType::kOpen>(storage_, storage_.open_chunks[ls_id]) - 1;
     }
+
+    return Decoder::get_chunk_first_timestamp<ChunkType::kOpen>(storage_, storage_.open_chunks[ls_id]) - 1;
   }
 };
 

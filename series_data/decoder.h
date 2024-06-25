@@ -106,21 +106,21 @@ class Decoder {
     using enum chunk::DataChunk::Type;
 
     if constexpr (encoding_type == kUint32Constant) {
-      return decoder::ConstantDecodeIterator(storage.template get_timestamp_stream<chunk_type>(chunk.timestamp_encoder_state_id),
+      return decoder::ConstantDecodeIterator(storage.get_timestamp_stream<chunk_type>(chunk.timestamp_encoder_state_id),
                                              chunk.encoder.uint32_constant.value());
     } else if constexpr (encoding_type == kDoubleConstant) {
-      return decoder::ConstantDecodeIterator(storage.template get_timestamp_stream<chunk_type>(chunk.timestamp_encoder_state_id),
+      return decoder::ConstantDecodeIterator(storage.get_timestamp_stream<chunk_type>(chunk.timestamp_encoder_state_id),
                                              storage.double_constant_encoders[chunk.encoder.double_constant].value());
     } else if constexpr (encoding_type == kTwoDoubleConstant) {
-      return decoder::TwoDoubleConstantDecodeIterator(storage.template get_timestamp_stream<chunk_type>(chunk.timestamp_encoder_state_id),
+      return decoder::TwoDoubleConstantDecodeIterator(storage.get_timestamp_stream<chunk_type>(chunk.timestamp_encoder_state_id),
                                                       storage.two_double_constant_encoders[chunk.encoder.two_double_constant]);
     } else if constexpr (encoding_type == kAscIntegerValuesGorilla) {
       return decoder::AscIntegerValuesGorillaDecodeIterator(
-          storage.template get_timestamp_stream<chunk_type>(chunk.timestamp_encoder_state_id),
+          storage.get_timestamp_stream<chunk_type>(chunk.timestamp_encoder_state_id),
           chunk_type == kOpen ? storage.asc_integer_values_gorilla_encoders[chunk.encoder.asc_integer_values_gorilla].stream().reader()
                               : storage.finalized_data_streams[chunk.encoder.asc_integer_values_gorilla].reader());
     } else if constexpr (encoding_type == kValuesGorilla) {
-      return decoder::ValuesGorillaDecodeIterator(storage.template get_timestamp_stream<chunk_type>(chunk.timestamp_encoder_state_id),
+      return decoder::ValuesGorillaDecodeIterator(storage.get_timestamp_stream<chunk_type>(chunk.timestamp_encoder_state_id),
                                                   chunk_type == kOpen ? storage.values_gorilla_encoders[chunk.encoder.values_gorilla].stream().reader()
                                                                       : storage.finalized_data_streams[chunk.encoder.values_gorilla].reader());
     } else if constexpr (encoding_type == kGorilla) {
@@ -139,9 +139,9 @@ class Decoder {
     if (chunk.encoding_type == chunk::DataChunk::EncodingType::kGorilla) {
       [[unlikely]];
       return storage.gorilla_encoders[chunk.encoder.gorilla].timestamp();
-    } else {
-      return storage.timestamp_encoder.get_state(chunk.timestamp_encoder_state_id).timestamp();
     }
+
+    return storage.timestamp_encoder.get_state(chunk.timestamp_encoder_state_id).timestamp();
   }
 
  private:
@@ -149,13 +149,13 @@ class Decoder {
   [[nodiscard]] static BareBones::BitSequenceReader get_stream_reader(const DataStorage& storage, const chunk::DataChunk& chunk) {
     if (chunk.encoding_type != chunk::DataChunk::EncodingType::kGorilla) {
       [[likely]];
-      return storage.template get_timestamp_stream<chunk_type>(chunk.timestamp_encoder_state_id).reader();
+      return storage.get_timestamp_stream<chunk_type>(chunk.timestamp_encoder_state_id).reader();
+    }
+
+    if constexpr (chunk_type == chunk::DataChunk::Type::kOpen) {
+      return storage.gorilla_encoders[chunk.encoder.gorilla].stream().reader();
     } else {
-      if constexpr (chunk_type == chunk::DataChunk::Type::kOpen) {
-        return storage.gorilla_encoders[chunk.encoder.gorilla].stream().reader();
-      } else {
-        return encoder::BitSequenceWithItemsCount::reader(storage.finalized_data_streams[chunk.encoder.gorilla]);
-      }
+      return encoder::BitSequenceWithItemsCount::reader(storage.finalized_data_streams[chunk.encoder.gorilla]);
     }
   }
 };

@@ -86,7 +86,7 @@ class OutdatedChunkMerger {
     const encoder::Sample& operator*() const noexcept { return **iterator_; }
 
     PROMPP_ALWAYS_INLINE SampleMergeIterator& operator++() noexcept {
-      ++(*iterator_);
+      ++*iterator_;
       skip_repeatable_timestamps();
       return *this;
     }
@@ -106,10 +106,9 @@ class OutdatedChunkMerger {
     SamplesSpan::iterator end_;
     int64_t max_timestamp_{};
 
-    void skip_repeatable_timestamps() {
+    void skip_repeatable_timestamps() const {
       for (; *iterator_ != end_; ++*iterator_) {
-        auto next = std::next(*iterator_);
-        if (next == end_ || (*iterator_)->timestamp != next->timestamp) {
+        if (auto next = std::next(*iterator_); next == end_ || (*iterator_)->timestamp != next->timestamp) {
           break;
         }
       }
@@ -121,7 +120,7 @@ class OutdatedChunkMerger {
 
   [[nodiscard]] static SampleList decode_samples(const chunk::OutdatedChunk& chunk) {
     SampleList samples = Decoder::decode_gorilla_chunk(chunk.stream().stream);
-    std::sort(samples.begin(), samples.end());
+    std::ranges::sort(samples);
     return samples;
   }
 
@@ -134,14 +133,14 @@ class OutdatedChunkMerger {
         }
 
         return;
+      }
+
+      if (auto next_chunk_timestamp = Decoder::get_chunk_first_timestamp<ChunkType::kFinalized>(storage_, *next_it);
+          next_chunk_timestamp > samples.front().timestamp) {
+        merge_outdated_samples<ChunkType::kFinalized>(ls_id, *it, next_chunk_timestamp, samples);
+        it = next_it;
       } else {
-        if (auto next_chunk_timestamp = Decoder::get_chunk_first_timestamp<ChunkType::kFinalized>(storage_, *next_it);
-            next_chunk_timestamp > samples.front().timestamp) {
-          merge_outdated_samples<ChunkType::kFinalized>(ls_id, *it, next_chunk_timestamp, samples);
-          it = next_it;
-        } else {
-          ++it;
-        }
+        ++it;
       }
     }
   }
@@ -205,21 +204,21 @@ class OutdatedChunkMerger {
 
   template <ChunkEncodingType encoding_type, ChunkType chunk_type>
   void merge_outdated_samples(const chunk::DataChunk& source_chunk, int64_t max_timestamp, const EncodeIterator& encode_iterator, SamplesSpan& samples) {
-    SamplesSpan::iterator begin = samples.begin();
+    auto begin = samples.begin();
     std::ranges::set_union(SampleMergeIterator{begin, samples.end(), max_timestamp}, IteratorSentinel{},
                            Decoder::create_decode_iterator<encoding_type, chunk_type>(storage_, source_chunk), decoder::DecodeIteratorSentinel{},
                            encode_iterator);
     samples = {begin, samples.end()};
   }
 
-  void erase_finalized_chunk(uint32_t ls_id, const chunk::DataChunk& chunk) {
+  void erase_finalized_chunk(uint32_t ls_id, const chunk::DataChunk& chunk) const {
     if (auto finalized_it = storage_.finalized_chunks.find(ls_id); finalized_it != storage_.finalized_chunks.end()) {
       storage_.erase_chunk<chunk::DataChunk::Type::kFinalized>(chunk);
       finalized_it->second.erase(chunk);
     }
   }
 
-  void replace_open_chunk(uint32_t ls_id, const chunk::DataChunk& chunk) {
+  void replace_open_chunk(uint32_t ls_id, const chunk::DataChunk& chunk) const {
     auto& open_chunk = storage_.open_chunks[ls_id];
     storage_.erase_chunk<chunk::DataChunk::Type::kOpen>(open_chunk);
     open_chunk = chunk;

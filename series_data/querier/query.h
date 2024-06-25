@@ -29,17 +29,17 @@ struct Query {
 
       while (reader.next()) {
         switch (reader.tag()) {
-          case Tag::kStartTimestampMs: {
+          case kStartTimestampMs: {
             query.start_timestamp_ms = reader.get_int64();
             break;
           }
 
-          case Tag::kEndTimestampMs: {
+          case kEndTimestampMs: {
             query.end_timestamp_ms = reader.get_int64();
             break;
           }
 
-          case Tag::kLabelSetIds: {
+          case kLabelSetIds: {
             const auto range = reader.get_packed_uint32();
             query.label_set_ids.reserve(range.size());
             for (auto ls_id : range) {
@@ -76,7 +76,7 @@ struct PROMPP_ATTRIBUTE_PACKED QueriedChunk {
   bool operator==(const QueriedChunk&) const noexcept = default;
 };
 
-using QueriedChunkList = BareBones::Vector<series_data::querier::QueriedChunk>;
+using QueriedChunkList = BareBones::Vector<QueriedChunk>;
 
 }  // namespace series_data::querier
 

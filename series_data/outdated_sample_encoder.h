@@ -32,8 +32,7 @@ class OutdatedSampleEncoder {
 
     OutdatedChunkMerger<Encoder> merger{storage_, encoder};
     phmap::erase_if(storage_.outdated_chunks, [ttl, now = clock_.now(), &merger](auto& it) {
-      auto& [ls_id, outdated_chunk] = it;
-      if (now - outdated_chunk.create_time() >= ttl) {
+      if (auto& [ls_id, outdated_chunk] = it; now - outdated_chunk.create_time() >= ttl) {
         merger.merge(ls_id, outdated_chunk);
         return true;
       }

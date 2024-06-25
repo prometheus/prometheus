@@ -37,8 +37,7 @@ class Encoder {
   OutdatedSampleEncoder& outdated_sample_encoder_;
 
   void encode_gorilla(uint32_t ls_id, int64_t timestamp, double value, chunk::DataChunk& chunk) {
-    auto& encoder = storage_.gorilla_encoders[chunk.encoder.gorilla];
-    if (timestamp > encoder.timestamp()) {
+    if (auto& encoder = storage_.gorilla_encoders[chunk.encoder.gorilla]; timestamp > encoder.timestamp()) {
       [[likely]];
       if (encoder.stream().count() >= kSamplesPerChunk) {
         [[unlikely]];
@@ -56,8 +55,7 @@ class Encoder {
     if (chunk.timestamp_encoder_state_id != encoder::timestamp::State::kInvalidId) {
       [[likely]];
 
-      auto& state = storage_.timestamp_encoder.get_state(chunk.timestamp_encoder_state_id);
-      if (timestamp > state.timestamp()) {
+      if (auto& state = storage_.timestamp_encoder.get_state(chunk.timestamp_encoder_state_id); timestamp > state.timestamp()) {
         [[likely]];
 
         if (auto finalized_stream_id = storage_.timestamp_encoder.process_finalized(chunk.timestamp_encoder_state_id);
@@ -88,7 +86,7 @@ class Encoder {
     }
   }
 
-  void encode_value(uint32_t ls_id, chunk::DataChunk& chunk, int64_t timestamp, double value) {
+  void encode_value(uint32_t ls_id, chunk::DataChunk& chunk, int64_t timestamp, double value) const {
     if (chunk.encoding_type == chunk::DataChunk::EncodingType::kUnknown) {
       [[unlikely]];
 
@@ -137,33 +135,41 @@ class Encoder {
   [[nodiscard]] bool is_actual_value(const chunk::DataChunk& chunk, double value) const noexcept {
     if (chunk.encoding_type == chunk::DataChunk::EncodingType::kUint32Constant) {
       return chunk.encoder.uint32_constant.is_actual(value);
-    } else if (chunk.encoding_type == chunk::DataChunk::EncodingType::kDoubleConstant) {
+    }
+
+    if (chunk.encoding_type == chunk::DataChunk::EncodingType::kDoubleConstant) {
       return storage_.double_constant_encoders[chunk.encoder.double_constant].is_actual(value);
-    } else if (chunk.encoding_type == chunk::DataChunk::EncodingType::kTwoDoubleConstant) {
+    }
+
+    if (chunk.encoding_type == chunk::DataChunk::EncodingType::kTwoDoubleConstant) {
       return storage_.two_double_constant_encoders[chunk.encoder.two_double_constant].is_actual(value);
-    } else if (chunk.encoding_type == chunk::DataChunk::EncodingType::kAscIntegerValuesGorilla) {
+    }
+
+    if (chunk.encoding_type == chunk::DataChunk::EncodingType::kAscIntegerValuesGorilla) {
       return storage_.asc_integer_values_gorilla_encoders[chunk.encoder.asc_integer_values_gorilla].is_actual(value);
-    } else if (chunk.encoding_type == chunk::DataChunk::EncodingType::kValuesGorilla) {
+    }
+
+    if (chunk.encoding_type == chunk::DataChunk::EncodingType::kValuesGorilla) {
       return storage_.values_gorilla_encoders[chunk.encoder.values_gorilla].is_actual(value);
     }
 
     return false;
   }
 
-  PROMPP_ALWAYS_INLINE void switch_to_double_constant_encoder(chunk::DataChunk& chunk, double value) {
+  PROMPP_ALWAYS_INLINE void switch_to_double_constant_encoder(chunk::DataChunk& chunk, double value) const {
     chunk.encoding_type = chunk::DataChunk::EncodingType::kDoubleConstant;
     auto& encoder = storage_.double_constant_encoders.emplace_back(value);
     chunk.encoder.double_constant = storage_.double_constant_encoders.index_of(encoder);
   }
 
-  PROMPP_ALWAYS_INLINE void switch_to_two_constant_encoder(chunk::DataChunk& chunk, double value1, double value2) {
-    auto& encoder = storage_.two_double_constant_encoders.emplace_back(
-        value1, value2, static_cast<uint8_t>(storage_.timestamp_encoder.get_stream(chunk.timestamp_encoder_state_id).count()));
+  PROMPP_ALWAYS_INLINE void switch_to_two_constant_encoder(chunk::DataChunk& chunk, double value1, double value2) const {
+    auto& encoder =
+        storage_.two_double_constant_encoders.emplace_back(value1, value2, storage_.timestamp_encoder.get_stream(chunk.timestamp_encoder_state_id).count());
     chunk.encoding_type = chunk::DataChunk::EncodingType::kTwoDoubleConstant;
     chunk.encoder.two_double_constant = storage_.two_double_constant_encoders.index_of(encoder);
   }
 
-  void switch_to_asc_integer_values_gorilla(chunk::DataChunk& data, const encoder::value::TwoDoubleConstantEncoder& constant_encoder, double value) {
+  void switch_to_asc_integer_values_gorilla(chunk::DataChunk& data, const encoder::value::TwoDoubleConstantEncoder& constant_encoder, double value) const {
     auto& encoder = storage_.asc_integer_values_gorilla_encoders.emplace_back(constant_encoder.value1());
     auto value1_count = constant_encoder.value1_count();
     auto value2_count = static_cast<uint8_t>(storage_.timestamp_encoder.get_stream(data.timestamp_encoder_state_id).count() - constant_encoder.value1_count());
@@ -188,7 +194,7 @@ class Encoder {
     data.encoder.asc_integer_values_gorilla = storage_.asc_integer_values_gorilla_encoders.index_of(encoder);
   }
 
-  void switch_to_values_gorilla(chunk::DataChunk& data, const encoder::value::TwoDoubleConstantEncoder& constant_encoder, double value) {
+  void switch_to_values_gorilla(chunk::DataChunk& data, const encoder::value::TwoDoubleConstantEncoder& constant_encoder, double value) const {
     auto& encoder = storage_.values_gorilla_encoders.emplace_back(constant_encoder.value1(), constant_encoder.value1_count());
 
     auto value2_count = storage_.timestamp_encoder.get_stream(data.timestamp_encoder_state_id).count() - constant_encoder.value1_count();
@@ -200,7 +206,7 @@ class Encoder {
     data.encoder.values_gorilla = storage_.values_gorilla_encoders.index_of(encoder);
   }
 
-  void switch_to_gorilla(chunk::DataChunk& chunk, const encoder::value::TwoDoubleConstantEncoder& constant_encoder, int64_t timestamp, double value) {
+  void switch_to_gorilla(chunk::DataChunk& chunk, const encoder::value::TwoDoubleConstantEncoder& constant_encoder, int64_t timestamp, double value) const {
     auto& timestamp_stream = storage_.timestamp_encoder.get_stream(chunk.timestamp_encoder_state_id);
     encoder::timestamp::TimestampDecoder timestamp_decoder(timestamp_stream.reader());
     uint8_t value2_count = timestamp_stream.count() - constant_encoder.value1_count();

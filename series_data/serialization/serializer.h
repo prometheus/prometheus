@@ -137,7 +137,7 @@ class Serializer {
         break;
       }
 
-      case kUnknown: {
+      default: {
         assert(chunk.encoding_type != kUnknown);
       }
     }
@@ -238,7 +238,7 @@ class Serializer {
   }
 
   template <class CompactBitSequence>
-  PROMPP_ALWAYS_INLINE void write_compact_bit_sequence(const CompactBitSequence& bit_sequence, std::ostream& stream) {
+  PROMPP_ALWAYS_INLINE static void write_compact_bit_sequence(const CompactBitSequence& bit_sequence, std::ostream& stream) {
     stream.write(reinterpret_cast<const char*>(bit_sequence.raw_bytes()), bit_sequence.size_in_bytes());
   }
 

@@ -24,7 +24,7 @@ template <uint8_t kSamplesPerChunkValue>
 class OutdatedChunkMergerTrait {
  protected:
   struct EncodeSample {
-    uint32_t ls_id;
+    uint32_t ls_id{};
     Sample sample;
   };
 

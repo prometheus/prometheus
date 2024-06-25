@@ -214,7 +214,7 @@ TEST_F(EncodeTestFixture, SwitchToDoubleConstantEncoderFromIntegerValuesGorillaE
   // Assert
   ASSERT_EQ(DataChunk::EncodingType::kDoubleConstant, chunk(0).encoding_type);
   EXPECT_EQ(2.1, storage_.double_constant_encoders[chunk(0).encoder.double_constant].value());
-  EXPECT_EQ((BareBones::Vector<int64_t>{4}), decode_open_chunk_timestamp_list(0));
+  EXPECT_EQ(BareBones::Vector<int64_t>{4}, decode_open_chunk_timestamp_list(0));
 
   auto finalized = finalized_chunks(0);
   ASSERT_NE(finalized, nullptr);
@@ -246,7 +246,7 @@ TEST_F(EncodeTestFixture, SwitchToDoubleConstantEncoderFromIntegerValuesGorillaE
   // Assert
   ASSERT_EQ(DataChunk::EncodingType::kDoubleConstant, chunk(0).encoding_type);
   EXPECT_EQ(2.1, storage_.double_constant_encoders[chunk(0).encoder.double_constant].value());
-  EXPECT_EQ((BareBones::Vector<int64_t>{4}), decode_open_chunk_timestamp_list(0));
+  EXPECT_EQ(BareBones::Vector<int64_t>{4}, decode_open_chunk_timestamp_list(0));
 
   ASSERT_EQ(DataChunk::EncodingType::kUint32Constant, chunk(1).encoding_type);
   EXPECT_EQ(1.0, chunk(1).encoder.uint32_constant.value());
@@ -318,12 +318,12 @@ class FinalizeChunkTestFixture : public EncoderTestTrait<4>, public testing::Tes
   void assert_result(uint32_t ls_id, SamplesAsserter&& samples_asserter) {
     auto& open_chunk = chunk(ls_id);
     EXPECT_EQ(1U, open_chunk_timestamp(ls_id).count());
-    EXPECT_EQ((BareBones::Vector<int64_t>{kSamplesPerChunk}), decode_open_chunk_timestamp_list(ls_id));
+    EXPECT_EQ(BareBones::Vector<int64_t>{kSamplesPerChunk}, decode_open_chunk_timestamp_list(ls_id));
 
     auto finalized = finalized_chunks(ls_id);
     ASSERT_NE(finalized, nullptr);
     samples_asserter(*finalized, open_chunk);
-  };
+  }
 };
 
 TEST_F(FinalizeChunkTestFixture, FinalizeUint32ConstantChunkWithUniqueTimeserie) {
@@ -544,7 +544,7 @@ TEST_F(EncodeOutdatedChunkTestFixture, EncodeUint32ConstantActualSample) {
 
   // Assert
   ASSERT_EQ(DataChunk::EncodingType::kUint32Constant, chunk(0).encoding_type);
-  EXPECT_EQ((BareBones::Vector<int64_t>{1}), decode_open_chunk_timestamp_list(0));
+  EXPECT_EQ(BareBones::Vector<int64_t>{1}, decode_open_chunk_timestamp_list(0));
 }
 
 TEST_F(EncodeOutdatedChunkTestFixture, EncodeUint32ConstantOutdatedSample) {
@@ -557,7 +557,7 @@ TEST_F(EncodeOutdatedChunkTestFixture, EncodeUint32ConstantOutdatedSample) {
 
   // Assert
   ASSERT_EQ(DataChunk::EncodingType::kUint32Constant, chunk(0).encoding_type);
-  EXPECT_EQ((BareBones::Vector<int64_t>{2}), decode_open_chunk_timestamp_list(0));
+  EXPECT_EQ(BareBones::Vector<int64_t>{2}, decode_open_chunk_timestamp_list(0));
 
   auto outdated = outdated_chunk(0);
   ASSERT_NE(nullptr, outdated);
@@ -573,7 +573,7 @@ TEST_F(EncodeOutdatedChunkTestFixture, EncodeDoubleConstantActualSample) {
 
   // Assert
   ASSERT_EQ(DataChunk::EncodingType::kDoubleConstant, chunk(0).encoding_type);
-  EXPECT_EQ((BareBones::Vector<int64_t>{1}), decode_open_chunk_timestamp_list(0));
+  EXPECT_EQ(BareBones::Vector<int64_t>{1}, decode_open_chunk_timestamp_list(0));
 }
 
 TEST_F(EncodeOutdatedChunkTestFixture, EncodeDoubleConstantOutdatedSample) {
@@ -586,7 +586,7 @@ TEST_F(EncodeOutdatedChunkTestFixture, EncodeDoubleConstantOutdatedSample) {
 
   // Assert
   ASSERT_EQ(DataChunk::EncodingType::kDoubleConstant, chunk(0).encoding_type);
-  EXPECT_EQ((BareBones::Vector<int64_t>{2}), decode_open_chunk_timestamp_list(0));
+  EXPECT_EQ(BareBones::Vector<int64_t>{2}, decode_open_chunk_timestamp_list(0));
 
   auto outdated = outdated_chunk(0);
   ASSERT_NE(nullptr, outdated);

@@ -35,13 +35,13 @@ class Deserializer {
   }
 
   template <chunk::DataChunk::EncodingType encoding_type>
-  [[nodiscard]] PROMPP_ALWAYS_INLINE auto create_decode_iterator(const chunk::SerializedChunk& chunk) {
+  [[nodiscard]] PROMPP_ALWAYS_INLINE auto create_decode_iterator(const chunk::SerializedChunk& chunk) const {
     using enum chunk::DataChunk::EncodingType;
 
     if constexpr (encoding_type == kUint32Constant) {
       auto timestamp_buffer = buffer_.subspan(chunk.timestamps_offset);
       return decoder::ConstantDecodeIterator(encoder::BitSequenceWithItemsCount::count(timestamp_buffer.data()),
-                                             encoder::BitSequenceWithItemsCount::reader(timestamp_buffer), static_cast<double>(chunk.values_offset));
+                                             encoder::BitSequenceWithItemsCount::reader(timestamp_buffer), chunk.values_offset);
     } else if constexpr (encoding_type == kDoubleConstant) {
       auto timestamp_buffer = buffer_.subspan(chunk.timestamps_offset);
       auto values_buffer = buffer_.subspan(chunk.values_offset);

@@ -25,7 +25,7 @@ class TimestampEncoder {
 
 class TimestampDecoder {
  public:
-  explicit TimestampDecoder(BareBones::BitSequenceReader reader) : reader_(reader) {}
+  explicit TimestampDecoder(const BareBones::BitSequenceReader& reader) : reader_(reader) {}
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE int64_t decode() noexcept {
     if (gorilla_state_ == GorillaState::kFirstPoint) {
@@ -51,7 +51,7 @@ class TimestampDecoder {
     return state.last_ts;
   }
 
-  [[nodiscard]] static BareBones::Vector<int64_t> decode_all(BareBones::BitSequenceReader reader, uint8_t count) noexcept {
+  [[nodiscard]] static BareBones::Vector<int64_t> decode_all(const BareBones::BitSequenceReader& reader, uint8_t count) noexcept {
     BareBones::Vector<int64_t> values;
 
     TimestampDecoder decoder(reader);
@@ -118,8 +118,7 @@ class Encoder {
   PROMPP_ALWAYS_INLINE void erase(State::Id state_id) { decrease_reference_count(states_[state_id], state_id); }
 
   PROMPP_ALWAYS_INLINE void finalize_or_copy(State::Id state_id, BitSequenceWithItemsCount& stream, uint32_t finalized_stream_id) {
-    auto& state = states_[state_id];
-    if (--state.reference_count == 0) {
+    if (auto& state = states_[state_id]; --state.reference_count == 0) {
       stream = state.finalize(finalized_stream_id);
 
       state_transitions_.erase(state);
@@ -140,8 +139,7 @@ class Encoder {
   }
 
   PROMPP_ALWAYS_INLINE uint32_t process_finalized(State::Id state_id) {
-    auto& state = states_[state_id];
-    if (state.is_finalized()) {
+    if (auto& state = states_[state_id]; state.is_finalized()) {
       [[unlikely]];
       auto result = state.stream_data.finalized_stream_id;
       decrease_reference_count(state, state_id);
@@ -163,7 +161,7 @@ class Encoder {
     return state.reference_count == 1 && state.child_count == 0;
   }
 
- public:
+ private:
   BareBones::VectorWithHoles<State> states_;
   StateTransitions state_transitions_{states_};
 
