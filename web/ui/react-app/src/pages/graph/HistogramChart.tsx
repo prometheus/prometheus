@@ -20,9 +20,18 @@ const HistogramChart: FC<HistogramChartProps> = ({ index, histogram, scale }) =>
   // For linear scales, the count of a histogram bucket is represented by its area rather than its height. This means it considers
   // both the count and the range (width) of the bucket. For this, we can set the height of the bucket proportional
   // to its frequency density (fd). The fd is the count of the bucket divided by the width of the bucket.
-  const fds = buckets.map((b) => {
-    return parseFloat(b[3]) / (parseFloat(b[2]) - parseFloat(b[1]));
-  });
+  const fds = [];
+  for (const bucket of buckets) {
+    const left = parseFloat(bucket[1]);
+    const right = parseFloat(bucket[2]);
+    const count = parseFloat(bucket[3]);
+    const width = right - left;
+    if (width === 0) {
+      fds.push(0);
+      continue;
+    }
+    fds.push(count / width);
+  }
   const fdMax = fds.reduce((a, b) => Math.max(a, b));
 
   const first = buckets[0];
@@ -180,6 +189,9 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
           case 'linear':
             bucketWidth = ((right - left) / (rangeMax - rangeMin)) * 100 + '%';
             bucketLeft = ((left - rangeMin) / (rangeMax - rangeMin)) * 100 + '%';
+            if (left === 0 && right === 0) {
+              bucketLeft = '0%'; // do not renter zero-width zero bucket
+            }
             bucketHeight = (fds[bIdx] / fdMax) * 100 + '%';
             break;
           case 'exponential':
