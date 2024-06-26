@@ -10,6 +10,7 @@ class PROMPP_ATTRIBUTE_PACKED ValuesGorillaEncoder {
   PROMPP_ALWAYS_INLINE explicit ValuesGorillaEncoder(double value, uint32_t count) { Encoder::encode_first(state_, value, count, stream_); }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_actual(double value) const noexcept { return is_values_strictly_equals(state_.last_v, value); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE double last_value() const noexcept { return state_.last_v; }
 
   PROMPP_ALWAYS_INLINE void encode(double value) { Encoder::encode(state_, value, stream_); }
 

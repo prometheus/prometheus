@@ -16,6 +16,7 @@ class PROMPP_ATTRIBUTE_PACKED GorillaEncoder {
   [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_actual(double value) const noexcept {
     return std::bit_cast<uint64_t>(values_state_.last_v) == std::bit_cast<uint64_t>(value);
   }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE double last_value() const noexcept { return values_state_.last_v; }
   [[nodiscard]] PROMPP_ALWAYS_INLINE int64_t timestamp() const noexcept { return timestamp_state_.last_ts; }
 
   PROMPP_ALWAYS_INLINE uint8_t encode(int64_t timestamp, double value) {

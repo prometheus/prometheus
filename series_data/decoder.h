@@ -106,8 +106,7 @@ class Decoder {
     using enum chunk::DataChunk::Type;
 
     if constexpr (encoding_type == kUint32Constant) {
-      return decoder::ConstantDecodeIterator(storage.get_timestamp_stream<chunk_type>(chunk.timestamp_encoder_state_id),
-                                             chunk.encoder.uint32_constant.value());
+      return decoder::ConstantDecodeIterator(storage.get_timestamp_stream<chunk_type>(chunk.timestamp_encoder_state_id), chunk.encoder.uint32_constant.value());
     } else if constexpr (encoding_type == kDoubleConstant) {
       return decoder::ConstantDecodeIterator(storage.get_timestamp_stream<chunk_type>(chunk.timestamp_encoder_state_id),
                                              storage.double_constant_encoders[chunk.encoder.double_constant].value());
@@ -142,6 +141,41 @@ class Decoder {
     }
 
     return storage.timestamp_encoder.get_state(chunk.timestamp_encoder_state_id).timestamp();
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE static double get_open_chunk_last_value(const DataStorage& storage, const chunk::DataChunk& chunk) noexcept {
+    using enum chunk::DataChunk::EncodingType;
+
+    switch (chunk.encoding_type) {
+      case kUint32Constant: {
+        return chunk.encoder.uint32_constant.value();
+      }
+
+      case kDoubleConstant: {
+        return storage.double_constant_encoders[chunk.encoder.double_constant].value();
+      }
+
+      case kTwoDoubleConstant: {
+        return storage.two_double_constant_encoders[chunk.encoder.two_double_constant].value2();
+      }
+
+      case kAscIntegerValuesGorilla: {
+        return storage.asc_integer_values_gorilla_encoders[chunk.encoder.asc_integer_values_gorilla].last_value();
+      }
+
+      case kValuesGorilla: {
+        return storage.values_gorilla_encoders[chunk.encoder.values_gorilla].last_value();
+      }
+
+      case kGorilla: {
+        return storage.gorilla_encoders[chunk.encoder.gorilla].last_value();
+      }
+
+      default: {
+        assert(chunk.encoding_type != kUint32Constant);
+        return 0.0;
+      }
+    }
   }
 
  private:
