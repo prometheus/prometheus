@@ -163,6 +163,7 @@ type flagConfig struct {
 	enableAutoGOMAXPROCS       bool
 	enableAutoGOMEMLIMIT       bool
 	enableConcurrentRuleEval   bool
+	enableShardedPostings      bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -176,6 +177,9 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 		opts := strings.Split(f, ",")
 		for _, o := range opts {
 			switch o {
+			case "sharded-postings":
+				c.tsdb.EnableSharding = true
+				level.Info(logger).Log("msg", "Experimental sharded postings through query hints enabled")
 			case "remote-write-receiver":
 				c.web.EnableRemoteWriteReceiver = true
 				level.Warn(logger).Log("msg", "Remote write receiver enabled via feature flag remote-write-receiver. This is DEPRECATED. Use --web.enable-remote-write-receiver.")
@@ -1706,6 +1710,7 @@ type tsdbOptions struct {
 	MaxExemplars                   int64
 	EnableMemorySnapshotOnShutdown bool
 	EnableNativeHistograms         bool
+	EnableSharding                 bool
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -1727,6 +1732,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableNativeHistograms:         opts.EnableNativeHistograms,
 		OutOfOrderTimeWindow:           opts.OutOfOrderTimeWindow,
 		EnableOverlappingCompaction:    true,
+		EnableSharding:                 opts.EnableSharding,
 	}
 }
 

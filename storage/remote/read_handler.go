@@ -147,13 +147,15 @@ func (h *readHandler) remoteReadSamples(
 			var hints *storage.SelectHints
 			if query.Hints != nil {
 				hints = &storage.SelectHints{
-					Start:    query.Hints.StartMs,
-					End:      query.Hints.EndMs,
-					Step:     query.Hints.StepMs,
-					Func:     query.Hints.Func,
-					Grouping: query.Hints.Grouping,
-					Range:    query.Hints.RangeMs,
-					By:       query.Hints.By,
+					Start:      query.Hints.StartMs,
+					End:        query.Hints.EndMs,
+					Step:       query.Hints.StepMs,
+					Func:       query.Hints.Func,
+					Grouping:   query.Hints.Grouping,
+					Range:      query.Hints.RangeMs,
+					By:         query.Hints.By,
+					ShardCount: query.Hints.ShardCount,
+					ShardIndex: query.Hints.ShardIndex,
 				}
 			}
 
@@ -253,13 +255,15 @@ func (h *readHandler) getChunkSeriesSet(ctx context.Context, query *prompb.Query
 	var hints *storage.SelectHints
 	if query.Hints != nil {
 		hints = &storage.SelectHints{
-			Start:    query.Hints.StartMs,
-			End:      query.Hints.EndMs,
-			Step:     query.Hints.StepMs,
-			Func:     query.Hints.Func,
-			Grouping: query.Hints.Grouping,
-			Range:    query.Hints.RangeMs,
-			By:       query.Hints.By,
+			Start:      query.Hints.StartMs,
+			End:        query.Hints.EndMs,
+			Step:       query.Hints.StepMs,
+			Func:       query.Hints.Func,
+			Grouping:   query.Hints.Grouping,
+			Range:      query.Hints.RangeMs,
+			By:         query.Hints.By,
+			ShardCount: query.Hints.ShardCount,
+			ShardIndex: query.Hints.ShardIndex,
 		}
 	}
 	return querier.Select(ctx, true, hints, filteredMatchers...)

@@ -103,13 +103,15 @@ func ToQuery(from, to int64, matchers []*labels.Matcher, hints *storage.SelectHi
 	var rp *prompb.ReadHints
 	if hints != nil {
 		rp = &prompb.ReadHints{
-			StartMs:  hints.Start,
-			EndMs:    hints.End,
-			StepMs:   hints.Step,
-			Func:     hints.Func,
-			Grouping: hints.Grouping,
-			By:       hints.By,
-			RangeMs:  hints.Range,
+			StartMs:    hints.Start,
+			EndMs:      hints.End,
+			StepMs:     hints.Step,
+			Func:       hints.Func,
+			Grouping:   hints.Grouping,
+			By:         hints.By,
+			RangeMs:    hints.Range,
+			ShardCount: hints.ShardCount,
+			ShardIndex: hints.ShardIndex,
 		}
 	}
 
