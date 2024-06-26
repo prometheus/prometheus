@@ -65,11 +65,6 @@ func newHighestTimestampMetric() *maxTimestamp {
 	}
 }
 
-type contentNegotiationStep struct {
-	behaviour     error // or nil
-	attemptString string
-}
-
 func TestBasicContentNegotiation(t *testing.T) {
 	queueConfig := config.DefaultQueueConfig
 	queueConfig.BatchSendDeadline = model.Duration(100 * time.Millisecond)
@@ -88,56 +83,58 @@ func TestBasicContentNegotiation(t *testing.T) {
 
 	for _, tc := range []struct {
 		name             string
-		success          bool
 		senderProtoMsg   config.RemoteWriteProtoMsg
 		receiverProtoMsg config.RemoteWriteProtoMsg
-		steps            []contentNegotiationStep
+		injectErrs       []error
+		expectFail       bool
 	}{
 		{
-			success: true, name: "v2 happy path", senderProtoMsg: config.RemoteWriteProtoMsgV2, receiverProtoMsg: config.RemoteWriteProtoMsgV2, steps: []contentNegotiationStep{
-				{behaviour: nil, attemptString: "0,ok"},
-			},
+			name:           "v2 happy path",
+			senderProtoMsg: config.RemoteWriteProtoMsgV2, receiverProtoMsg: config.RemoteWriteProtoMsgV2,
+			injectErrs: []error{nil},
 		},
 		{
-			success: true, name: "v1 happy path", senderProtoMsg: config.RemoteWriteProtoMsgV1, receiverProtoMsg: config.RemoteWriteProtoMsgV1, steps: []contentNegotiationStep{
-				{behaviour: nil, attemptString: "0,ok"},
-			},
+			name:           "v1 happy path",
+			senderProtoMsg: config.RemoteWriteProtoMsgV1, receiverProtoMsg: config.RemoteWriteProtoMsgV1,
+			injectErrs: []error{nil},
 		},
 		// Test a case where the v1 request has a temporary delay but goes through on retry.
 		{
-			success: true, name: "v1 happy path with one 5xx retry", senderProtoMsg: config.RemoteWriteProtoMsgV1, receiverProtoMsg: config.RemoteWriteProtoMsgV1, steps: []contentNegotiationStep{
-				{behaviour: RecoverableError{errors.New("pretend 500"), 1}, attemptString: "0,pretend 500"},
-				{behaviour: nil, attemptString: "1,ok"},
-			},
+			name:           "v1 happy path with one 5xx retry",
+			senderProtoMsg: config.RemoteWriteProtoMsgV1, receiverProtoMsg: config.RemoteWriteProtoMsgV1,
+			injectErrs: []error{RecoverableError{errors.New("pretend 500"), 1}, nil},
 		},
 		// Repeat the above test but with v2. The request has a temporary delay but goes through on retry.
 		{
-			success: true, name: "v2 happy path with one 5xx retry", senderProtoMsg: config.RemoteWriteProtoMsgV2, receiverProtoMsg: config.RemoteWriteProtoMsgV2, steps: []contentNegotiationStep{
-				{behaviour: RecoverableError{errors.New("pretend 500"), 1}, attemptString: "0,pretend 500"},
-				{behaviour: nil, attemptString: "1,ok"},
-			},
+			name:           "v2 happy path with one 5xx retry",
+			senderProtoMsg: config.RemoteWriteProtoMsgV2, receiverProtoMsg: config.RemoteWriteProtoMsgV2,
+			injectErrs: []error{RecoverableError{errors.New("pretend 500"), 1}, nil},
 		},
 		// A few error cases of v2 talking to v1.
 		{
-			success: false, name: "v2 talks to v1 that gives 400 or 415", senderProtoMsg: config.RemoteWriteProtoMsgV2, receiverProtoMsg: config.RemoteWriteProtoMsgV1, steps: []contentNegotiationStep{
-				{behaviour: errors.New("pretend unrecoverable err"), attemptString: "0,pretend unrecoverable err"},
-			},
+			name:           "v2 talks to v1 that gives 400 or 415",
+			senderProtoMsg: config.RemoteWriteProtoMsgV2, receiverProtoMsg: config.RemoteWriteProtoMsgV1,
+			injectErrs: []error{errors.New("pretend unrecoverable err")},
+			expectFail: true,
 		},
 		{
-			success: false, name: "v2 talks to v1 that tries to unmarshal v2 payload with v1 proto", senderProtoMsg: config.RemoteWriteProtoMsgV2, receiverProtoMsg: config.RemoteWriteProtoMsgV1, steps: []contentNegotiationStep{
-				{behaviour: nil, attemptString: "0,ok"}, // It's ok, because payload can be unmarshaled just fine, but it's empty.
-			},
+			name:           "v2 talks to v1 that tries to unmarshal v2 payload with v1 proto",
+			senderProtoMsg: config.RemoteWriteProtoMsgV2, receiverProtoMsg: config.RemoteWriteProtoMsgV1,
+			injectErrs: []error{nil},
+			expectFail: true, // invalid request, no timeseries
 		},
 		// Opposite, v1 talking to v2 only server.
 		{
-			success: false, name: "v1 talks to v2 that gives 400 or 415", senderProtoMsg: config.RemoteWriteProtoMsgV1, receiverProtoMsg: config.RemoteWriteProtoMsgV2, steps: []contentNegotiationStep{
-				{behaviour: errors.New("pretend unrecoverable err"), attemptString: "0,pretend unrecoverable err"},
-			},
+			name:           "v1 talks to v2 that gives 400 or 415",
+			senderProtoMsg: config.RemoteWriteProtoMsgV1, receiverProtoMsg: config.RemoteWriteProtoMsgV2,
+			injectErrs: []error{errors.New("pretend unrecoverable err")},
+			expectFail: true,
 		},
 		{
-			success: false, name: "v1 talks to (broken) v2 that tries to unmarshal v1 payload with v2 proto", senderProtoMsg: config.RemoteWriteProtoMsgV1, receiverProtoMsg: config.RemoteWriteProtoMsgV2, steps: []contentNegotiationStep{
-				{behaviour: nil, attemptString: "0,ok"}, // It's ok, because payload can be unmarshaled just fine, but it's empty.
-			},
+			name:           "v1 talks to (broken) v2 that tries to unmarshal v1 payload with v2 proto",
+			senderProtoMsg: config.RemoteWriteProtoMsgV1, receiverProtoMsg: config.RemoteWriteProtoMsgV2,
+			injectErrs: []error{nil},
+			expectFail: true, // invalid request, no timeseries
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -166,38 +163,43 @@ func TestBasicContentNegotiation(t *testing.T) {
 			qm := s.rws.queues[hash]
 
 			c := NewTestWriteClient(tc.receiverProtoMsg)
-			c.setSteps(tc.steps) // set expected behaviour.
+			c.injectErrors(tc.injectErrs)
 			qm.SetClient(c)
 
 			qm.StoreSeries(series, 0)
 			qm.StoreMetadata(metadata)
 
-			// Did we expect some data back?
-			if tc.success {
+			// Do we expect some data back?
+			if !tc.expectFail {
 				c.expectSamples(samples, series)
 			} else {
-				// For case like v2 message being able to be unmarshaled as v1, let's
-				// don't end up in corrupted data.
-				// NOTE(bwplotka): Technically receiver MUST check content-type, but
-				// we want to avoid surprising state on implementation mistakes.
 				c.expectSamples(nil, nil)
 			}
+
+			// Schedule send.
 			qm.Append(samples)
 
-			if !tc.success {
-				// We just need to sleep for a bit to give it time to run.
-				time.Sleep(2 * time.Second)
-				// But we still need to check for data with no delay to avoid race.
-				c.waitForExpectedData(t, 0*time.Second)
-			} else {
-				// We expected data so wait for it.
+			if !tc.expectFail {
+				// No error expected, so wait for data.
 				c.waitForExpectedData(t, 5*time.Second)
+				require.Equal(t, 1, c.writesReceived)
+				require.Equal(t, 0.0, client_testutil.ToFloat64(qm.metrics.failedSamplesTotal))
+			} else {
+				// Wait for failure to be recorded in metrics.
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				require.NoError(t, runutil.Retry(500*time.Millisecond, ctx.Done(), func() error {
+					if client_testutil.ToFloat64(qm.metrics.failedSamplesTotal) != 1.0 {
+						return errors.New("expected one sample failed in qm metrics")
+					}
+					return nil
+				}))
+				require.Equal(t, 0, c.writesReceived)
 			}
 
-			require.Equal(t, len(tc.steps), len(c.sendAttempts))
-			for i, s := range c.sendAttempts {
-				require.Equal(t, tc.steps[i].attemptString, s)
-			}
+			// samplesTotal means attempts.
+			require.Equal(t, float64(len(tc.injectErrs)), client_testutil.ToFloat64(qm.metrics.samplesTotal))
+			require.Equal(t, float64(len(tc.injectErrs)-1), client_testutil.ToFloat64(qm.metrics.retriedSamplesTotal))
 		})
 	}
 }
@@ -348,6 +350,7 @@ func TestMetadataDelivery(t *testing.T) {
 
 	m.AppendWatcherMetadata(context.Background(), metadata)
 
+	require.Equal(t, 0.0, client_testutil.ToFloat64(m.metrics.failedMetadataTotal))
 	require.Len(t, c.receivedMetadata, numMetadata)
 	// One more write than the rounded qoutient should be performed in order to get samples that didn't
 	// fit into MaxSamplesPerSend.
@@ -969,9 +972,8 @@ type TestWriteClient struct {
 	mtx                     sync.Mutex
 	buf                     []byte
 	protoMsg                config.RemoteWriteProtoMsg
-	sendAttempts            []string
-	steps                   []contentNegotiationStep
-	currstep                int
+	injectedErrs            []error
+	currErr                 int
 	retry                   bool
 }
 
@@ -985,9 +987,9 @@ func NewTestWriteClient(protoMsg config.RemoteWriteProtoMsg) *TestWriteClient {
 	}
 }
 
-func (c *TestWriteClient) setSteps(steps []contentNegotiationStep) {
-	c.steps = steps
-	c.currstep = -1
+func (c *TestWriteClient) injectErrors(injectedErrs []error) {
+	c.injectedErrs = injectedErrs
+	c.currErr = -1
 	c.retry = false
 }
 
@@ -1097,7 +1099,7 @@ func (c *TestWriteClient) waitForExpectedData(tb testing.TB, timeout time.Durati
 	}
 }
 
-func (c *TestWriteClient) Store(_ context.Context, req []byte, attemptNos int) error {
+func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) error {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 	// nil buffers are ok for snappy, ignore cast error.
@@ -1112,13 +1114,10 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, attemptNos int) e
 		return err
 	}
 
-	attemptString := fmt.Sprintf("%d", attemptNos)
-	c.currstep++
-
-	// Check if we've been told to return something for this config.
-	if len(c.steps) > 0 {
-		if err = c.steps[c.currstep].behaviour; err != nil {
-			c.sendAttempts = append(c.sendAttempts, attemptString+","+fmt.Sprintf("%s", err))
+	// Check if we've been told to inject err for this call.
+	if len(c.injectedErrs) > 0 {
+		c.currErr++
+		if err = c.injectedErrs[c.currErr]; err != nil {
 			return err
 		}
 	}
@@ -1138,18 +1137,18 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, attemptNos int) e
 		}
 	}
 	if err != nil {
-		c.sendAttempts = append(c.sendAttempts, attemptString+","+fmt.Sprintf("%s", err))
 		return err
 	}
+
+	if len(reqProto.Timeseries) == 0 && len(reqProto.Metadata) == 0 {
+		return errors.New("invalid request, no timeseries")
+	}
+
 	builder := labels.NewScratchBuilder(0)
-	count := 0
 	for _, ts := range reqProto.Timeseries {
 		labels := labelProtosToLabels(&builder, ts.Labels)
 		seriesName := labels.Get("__name__")
-		for _, sample := range ts.Samples {
-			count++
-			c.receivedSamples[seriesName] = append(c.receivedSamples[seriesName], sample)
-		}
+		c.receivedSamples[seriesName] = append(c.receivedSamples[seriesName], ts.Samples...)
 		if len(ts.Exemplars) > 0 {
 			c.receivedExemplars[seriesName] = append(c.receivedExemplars[seriesName], ts.Exemplars...)
 		}
@@ -1166,7 +1165,6 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, attemptNos int) e
 	}
 
 	c.writesReceived++
-	c.sendAttempts = append(c.sendAttempts, attemptString+",ok")
 	return nil
 }
 

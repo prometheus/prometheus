@@ -154,7 +154,7 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var req prompb.WriteRequest
 		if err := proto.Unmarshal(decompressed, &req); err != nil {
 			// TODO(bwplotka): Add more context to responded error?
-			level.Error(h.logger).Log("msg", "Error decoding remote write request", "protobuf_message", msg, "err", err.Error())
+			level.Error(h.logger).Log("msg", "Error decoding v1 remote write request", "protobuf_message", msg, "err", err.Error())
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -163,7 +163,7 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var req writev2.Request
 		if err := proto.Unmarshal(decompressed, &req); err != nil {
 			// TODO(bwplotka): Add more context to responded error?
-			level.Error(h.logger).Log("msg", "Error decoding remote write request", "protobuf_message", msg, "err", err.Error())
+			level.Error(h.logger).Log("msg", "Error decoding v2 remote write request", "protobuf_message", msg, "err", err.Error())
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
