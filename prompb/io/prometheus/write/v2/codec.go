@@ -59,6 +59,10 @@ func (h Histogram) IsFloatHistogram() bool {
 	return ok
 }
 
+func (h Histogram) T() int64 {
+	return h.Timestamp
+}
+
 // ToIntHistogram returns integer Prometheus histogram from the remote implementation
 // of integer histogram. It's a caller responsibility to check if it's not a float histogram.
 func (h Histogram) ToIntHistogram() *histogram.Histogram {
