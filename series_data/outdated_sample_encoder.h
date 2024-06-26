@@ -13,7 +13,6 @@ class OutdatedSampleEncoder {
   template <EncoderInterface Encoder>
   void encode(Encoder& encoder, uint32_t ls_id, int64_t timestamp, double value) {
     ++storage_.outdated_samples_count;
-    --storage_.samples_count;
 
     if (auto it = storage_.outdated_chunks.try_emplace(ls_id, clock_, timestamp, value); !it.second) {
       if (it.first->second.encode(timestamp, value) >= kMaxChunkSize) {
