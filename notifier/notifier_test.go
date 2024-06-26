@@ -847,3 +847,173 @@ loop2:
 		}
 	}
 }
+
+func TestStop_DrainingDisabled(t *testing.T) {
+	releaseReceiver := make(chan struct{})
+	receiverReceivedRequest := make(chan struct{}, 2)
+	alertsReceived := atomic.NewInt64(0)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Let the test know we've received a request.
+		receiverReceivedRequest <- struct{}{}
+
+		var alerts []*Alert
+
+		b, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+
+		err = json.Unmarshal(b, &alerts)
+		require.NoError(t, err)
+
+		alertsReceived.Add(int64(len(alerts)))
+
+		// Wait for the test to release us.
+		<-releaseReceiver
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer func() {
+		server.Close()
+	}()
+
+	m := NewManager(
+		&Options{
+			QueueCapacity:   10,
+			DrainOnShutdown: false,
+		},
+		nil,
+	)
+
+	m.alertmanagers = make(map[string]*alertmanagerSet)
+
+	am1Cfg := config.DefaultAlertmanagerConfig
+	am1Cfg.Timeout = model.Duration(time.Second)
+
+	m.alertmanagers["1"] = &alertmanagerSet{
+		ams: []alertmanager{
+			alertmanagerMock{
+				urlf: func() string { return server.URL },
+			},
+		},
+		cfg: &am1Cfg,
+	}
+
+	notificationManagerStopped := make(chan struct{})
+
+	go func() {
+		defer close(notificationManagerStopped)
+		m.Run(nil)
+	}()
+
+	// Queue two alerts. The first should be immediately sent to the receiver, which should block until we release it later.
+	m.Send(&Alert{Labels: labels.FromStrings(labels.AlertName, "alert-1")})
+
+	select {
+	case <-receiverReceivedRequest:
+		// Nothing more to do.
+	case <-time.After(time.Second):
+		require.FailNow(t, "gave up waiting for receiver to receive notification of first alert")
+	}
+
+	m.Send(&Alert{Labels: labels.FromStrings(labels.AlertName, "alert-2")})
+
+	// Stop the notification manager, pause to allow the shutdown to be observed, and then allow the receiver to proceed.
+	m.Stop()
+	time.Sleep(time.Second)
+	close(releaseReceiver)
+
+	// Wait for the notification manager to stop and confirm only the first notification was sent.
+	// The second notification should be dropped.
+	select {
+	case <-notificationManagerStopped:
+		// Nothing more to do.
+	case <-time.After(time.Second):
+		require.FailNow(t, "gave up waiting for notification manager to stop")
+	}
+
+	require.Equal(t, int64(1), alertsReceived.Load())
+}
+
+func TestStop_DrainingEnabled(t *testing.T) {
+	releaseReceiver := make(chan struct{})
+	receiverReceivedRequest := make(chan struct{}, 2)
+	alertsReceived := atomic.NewInt64(0)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Let the test know we've received a request.
+		receiverReceivedRequest <- struct{}{}
+
+		var alerts []*Alert
+
+		b, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+
+		err = json.Unmarshal(b, &alerts)
+		require.NoError(t, err)
+
+		alertsReceived.Add(int64(len(alerts)))
+
+		// Wait for the test to release us.
+		<-releaseReceiver
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer func() {
+		server.Close()
+	}()
+
+	m := NewManager(
+		&Options{
+			QueueCapacity:   10,
+			DrainOnShutdown: true,
+		},
+		nil,
+	)
+
+	m.alertmanagers = make(map[string]*alertmanagerSet)
+
+	am1Cfg := config.DefaultAlertmanagerConfig
+	am1Cfg.Timeout = model.Duration(time.Second)
+
+	m.alertmanagers["1"] = &alertmanagerSet{
+		ams: []alertmanager{
+			alertmanagerMock{
+				urlf: func() string { return server.URL },
+			},
+		},
+		cfg: &am1Cfg,
+	}
+
+	notificationManagerStopped := make(chan struct{})
+
+	go func() {
+		defer close(notificationManagerStopped)
+		m.Run(nil)
+	}()
+
+	// Queue two alerts. The first should be immediately sent to the receiver, which should block until we release it later.
+	m.Send(&Alert{Labels: labels.FromStrings(labels.AlertName, "alert-1")})
+
+	select {
+	case <-receiverReceivedRequest:
+		// Nothing more to do.
+	case <-time.After(time.Second):
+		require.FailNow(t, "gave up waiting for receiver to receive notification of first alert")
+	}
+
+	m.Send(&Alert{Labels: labels.FromStrings(labels.AlertName, "alert-2")})
+
+	// Stop the notification manager and allow the receiver to proceed.
+	m.Stop()
+	close(releaseReceiver)
+
+	// Wait for the notification manager to stop and confirm both notifications were sent.
+	select {
+	case <-notificationManagerStopped:
+		// Nothing more to do.
+	case <-time.After(200 * time.Millisecond):
+		require.FailNow(t, "gave up waiting for notification manager to stop")
+	}
+
+	require.Equal(t, int64(2), alertsReceived.Load())
+}
