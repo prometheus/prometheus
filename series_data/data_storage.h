@@ -40,6 +40,7 @@ struct DataStorage {
 
   uint32_t samples_count{};
   uint32_t outdated_samples_count{};
+  uint32_t outdated_chunks_count{};
   uint32_t merged_samples_count{};
 
   void reset_sample_counters() noexcept {

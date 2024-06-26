@@ -21,6 +21,8 @@ class OutdatedSampleEncoder {
         merger.merge(ls_id, it.first->second);
         storage_.outdated_chunks.erase(it.first);
       }
+    } else {
+      ++storage_.outdated_chunks_count;
     }
   }
 
