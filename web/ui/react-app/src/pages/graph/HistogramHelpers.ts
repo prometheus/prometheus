@@ -3,43 +3,51 @@ import { ScaleType } from '../../types/types';
 // Finds the lowest positive value from the bucket ranges
 // Returns 0 if no positive values are found or if there are no buckets.
 export function findMinPositive(buckets: [number, string, string, string][]) {
-  if (buckets) {
-    for (let i = 0; i < buckets.length; i++) {
-      if (parseFloat(buckets[i][1]) > 0) {
-        return parseFloat(buckets[i][1]);
-      }
-      if (parseFloat(buckets[i][1]) < 0 && parseFloat(buckets[i][2]) > 0) {
-        return parseFloat(buckets[i][2]);
-      }
-      if (i === buckets.length - 1) {
-        if (parseFloat(buckets[i][2]) > 0) {
-          return parseFloat(buckets[i][2]);
-        }
+  if (!buckets || buckets.length === 0) {
+    return 0; // no buckets
+  }
+  for (let i = 0; i < buckets.length; i++) {
+    const right = parseFloat(buckets[i][2]);
+    const left = parseFloat(buckets[i][1]);
+
+    if (left > 0) {
+      return left;
+    }
+    if (left < 0 && right > 0) {
+      return right;
+    }
+    if (i === buckets.length - 1) {
+      if (right > 0) {
+        return right;
       }
     }
-    return 0; // all buckets are negative
   }
-  return 0; // no buckets
+  return 0; // all buckets are negative
 }
 
 // Finds the lowest negative value from the bucket ranges
 // Returns 0 if no negative values are found or if there are no buckets.
 export function findMaxNegative(buckets: [number, string, string, string][]) {
-  if (buckets) {
-    for (let i = 0; i < buckets.length; i++) {
-      if (parseFloat(buckets[i][2]) >= 0) {
-        if (i === 0) {
-          if (parseFloat(buckets[i][1]) < 0) {
-            return parseFloat(buckets[i][1]); // return the first negative bucket
-          }
-          return 0; // all buckets are positive
-        }
-        return parseFloat(buckets[i - 1][2]); // return the last negative bucket
-      }
-    }
-    return parseFloat(buckets[buckets.length - 1][2]); // all buckets are negative
+  if (!buckets || buckets.length === 0) {
+    return 0; // no buckets
   }
-  return 0; // no buckets
+  for (let i = 0; i < buckets.length; i++) {
+    const right = parseFloat(buckets[i][2]);
+    const left = parseFloat(buckets[i][1]);
+    const prevRight = i > 0 ? parseFloat(buckets[i - 1][2]) : 0;
+
+    if (right >= 0) {
+      if (i === 0) {
+        if (left < 0) {
+          return left; // return the first negative bucket
+        }
+        return 0; // all buckets are positive
+      }
+      return prevRight; // return the last negative bucket
+    }
+  }
+  console.log('findmaxneg returning: ', buckets[buckets.length - 1][2]);
+  return parseFloat(buckets[buckets.length - 1][2]); // all buckets are negative
 }
 
 // Calculates the left position of the zero axis as a percentage string.
