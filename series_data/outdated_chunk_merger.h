@@ -32,7 +32,7 @@ class OutdatedChunkMerger {
     if (!samples.empty()) {
       merge_outdated_samples<ChunkType::kOpen>(ls_id, storage_.open_chunks[ls_id], std::numeric_limits<int64_t>::max(), samples);
     }
-    
+
     storage_.merged_samples_count += decoded_samples.size();
   }
 
@@ -119,7 +119,7 @@ class OutdatedChunkMerger {
 
   [[nodiscard]] static SampleList decode_samples(const chunk::OutdatedChunk& chunk) {
     SampleList samples = Decoder::decode_gorilla_chunk(chunk.stream().stream);
-    std::ranges::sort(samples);
+    std::ranges::stable_sort(samples);
     return samples;
   }
 
