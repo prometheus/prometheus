@@ -821,6 +821,60 @@ func (p *parser) unquoteString(s string) string {
 	return unquoted
 }
 
+func (p *parser) addMatrixBinaryOp(op Item, num, binOps Node) *MatrixSelectorBinOps {
+	binaryOps, _ := binOps.(*MatrixSelectorBinOps)
+	if binaryOps.Ops == nil {
+		binaryOps.Ops = []*MatrixSelectorBinOp{}
+	}
+
+	numberLiteral, _ := num.(*NumberLiteral)
+
+	binaryOps.Ops = append(
+		[]*MatrixSelectorBinOp{{op.Typ, numberLiteral}},
+		binaryOps.Ops...,
+	)
+
+	binaryOps.PosRange = posrange.PositionRange{
+		Start: num.PositionRange().Start,
+		End:   binaryOps.Ops[len(binaryOps.Ops)-1].Num.PosRange.End,
+	}
+
+	return binaryOps
+}
+
+func (p *parser) parseMatrixSelector(vectorSelector Node, leftBracket Item, duration time.Duration, rightBracket Item, binOps Node, lastClosing posrange.Pos) (*MatrixSelector, error) {
+	var errMsg string
+	binaryOps, _ := binOps.(*MatrixSelectorBinOps)
+	vs, ok := vectorSelector.(*VectorSelector)
+
+	if !ok {
+		errMsg = "ranges only allowed for vector selectors"
+	} else {
+		switch {
+		case vs.OriginalOffset != 0:
+			errMsg = "no offset modifiers allowed before range"
+		case vs.Timestamp != nil:
+			errMsg = "no @ modifiers allowed before range"
+		}
+	}
+
+	if errMsg != "" {
+		errRange := mergeRanges(&leftBracket, &rightBracket)
+		p.addParseErrf(errRange, errMsg)
+	}
+
+	if binaryOps != nil {
+		lastClosing = binaryOps.PosRange.End
+	}
+
+	return &MatrixSelector{
+		VectorSelector: vectorSelector.(Expr),
+		Range:          duration,
+		BinaryOps:      binaryOps,
+		EndPos:         lastClosing,
+	}, nil
+}
+
 func parseDuration(ds string) (time.Duration, error) {
 	dur, err := model.ParseDuration(ds)
 	if err != nil {

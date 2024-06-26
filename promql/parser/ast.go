@@ -119,12 +119,24 @@ type Call struct {
 	PosRange posrange.PositionRange
 }
 
+type MatrixSelectorBinOp struct {
+	Op  ItemType
+	Num *NumberLiteral
+}
+
+type MatrixSelectorBinOps struct {
+	Ops []*MatrixSelectorBinOp
+
+	PosRange posrange.PositionRange
+}
+
 // MatrixSelector represents a Matrix selection.
 type MatrixSelector struct {
 	// It is safe to assume that this is an VectorSelector
 	// if the parser hasn't returned an error.
 	VectorSelector Expr
 	Range          time.Duration
+	BinaryOps      *MatrixSelectorBinOps
 
 	EndPos posrange.Pos
 }
@@ -460,6 +472,10 @@ func (e *MatrixSelector) PositionRange() posrange.PositionRange {
 		Start: e.VectorSelector.PositionRange().Start,
 		End:   e.EndPos,
 	}
+}
+
+func (e *MatrixSelectorBinOps) PositionRange() posrange.PositionRange {
+	return e.PosRange
 }
 
 func (e *SubqueryExpr) PositionRange() posrange.PositionRange {

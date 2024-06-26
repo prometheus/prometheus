@@ -161,7 +161,7 @@ START_METRIC_SELECTOR
 // Type definitions for grammar rules.
 %type <matchers> label_match_list
 %type <matcher> label_matcher
-%type <item> aggregate_op grouping_label match_op maybe_label metric_identifier unary_op at_modifier_preprocessors string_identifier
+%type <item> aggregate_op grouping_label match_op maybe_label metric_identifier unary_op at_modifier_preprocessors string_identifier binary_op
 %type <labels> label_set metric
 %type <lblList> label_set_list
 %type <label> label_set_item
@@ -173,7 +173,7 @@ START_METRIC_SELECTOR
 %type <int> int
 %type <uint> uint
 %type <float> number series_value signed_number signed_or_unsigned_number
-%type <node> step_invariant_expr aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_literal offset_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector
+%type <node> step_invariant_expr aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_literal offset_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector matrix_binary_ops
 %type <duration> duration maybe_duration
 
 %start start
@@ -449,30 +449,33 @@ at_modifier_preprocessors: START | END;
  * Subquery and range selectors.
  */
 
+binary_op : ADD | DIV | EQLC | GTE | GTR | LSS | LTE | MOD | MUL | NEQ | POW | SUB | ATAN2;
+
+matrix_binary_ops : binary_op number_literal
+                    {
+                      $$ = yylex.(*parser).addMatrixBinaryOp($1, $2, &MatrixSelectorBinOps{nil, $2.PositionRange()})
+                    }
+                   | binary_op number_literal matrix_binary_ops
+		    {
+		      $$ = yylex.(*parser).addMatrixBinaryOp($1, $2, $3)
+		    }
+                   | binary_op error
+		     {
+		       yylex.(*parser).unexpected("range selector binary ops", "number literal");
+		       $$ = nil
+		     }
+                   ;
+
 matrix_selector : expr LEFT_BRACKET duration RIGHT_BRACKET
                         {
-                        var errMsg string
-                        vs, ok := $1.(*VectorSelector)
-                        if !ok{
-                                errMsg = "ranges only allowed for vector selectors"
-                        } else if vs.OriginalOffset != 0{
-                                errMsg = "no offset modifiers allowed before range"
-                        } else if vs.Timestamp != nil {
-                                errMsg = "no @ modifiers allowed before range"
+			  $$, _ = yylex.(*parser).parseMatrixSelector($1, $2, $3, $4, nil, $4.Pos + 1)
                         }
-
-                        if errMsg != ""{
-                                errRange := mergeRanges(&$2, &$4)
-                                yylex.(*parser).addParseErrf(errRange, errMsg)
-                        }
-
-                        $$ = &MatrixSelector{
-                                VectorSelector: $1.(Expr),
-                                Range: $3,
-                                EndPos: yylex.(*parser).lastClosing,
-                        }
-                        }
+                | expr LEFT_BRACKET duration RIGHT_BRACKET matrix_binary_ops
+		        {
+		          $$, _ = yylex.(*parser).parseMatrixSelector($1, $2, $3, $4, $5, $4.Pos)
+   	                }
                 ;
+
 
 subquery_expr   : expr LEFT_BRACKET duration COLON maybe_duration RIGHT_BRACKET
                         {

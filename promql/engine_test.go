@@ -3791,6 +3791,140 @@ metric 0 1 2
 	}
 }
 
+func TestApplyBinaryOps(t *testing.T) {
+	posRange := posrange.PositionRange{
+		Start: 0,
+		End:   42,
+	}
+
+	ts := int64(1)
+
+	type op struct {
+		i   parser.ItemType
+		num float64
+	}
+
+	testcases := []struct {
+		ops    []op
+		input  []float64
+		output []float64
+	}{
+		{nil, []float64{}, []float64{}},
+		{nil, []float64{1.0, 1.1, 1.2}, []float64{1.0, 1.1, 1.2}},
+		{
+			[]op{{parser.ADD, 2}},
+			[]float64{1.0, 1.1, 1.2},
+			[]float64{3.0, 3.1, 3.2},
+		},
+		{
+			[]op{{parser.DIV, 2}},
+			[]float64{2.0, 4.0, 6.6},
+			[]float64{1.0, 2.0, 3.3},
+		},
+		{
+			[]op{{parser.EQLC, 2}},
+			[]float64{2.0, 4.0, 6.6},
+			[]float64{2.0},
+		},
+		{
+			[]op{{parser.GTE, 4.1}},
+			[]float64{2.0, 4.1, 6.6},
+			[]float64{4.1, 6.6},
+		},
+		{
+			[]op{{parser.GTR, 4.1}},
+			[]float64{2.0, 4.1, 6.6},
+			[]float64{6.6},
+		},
+		{
+			[]op{{parser.LSS, 4.1}},
+			[]float64{2.0, 4.1, 6.6},
+			[]float64{2.0},
+		},
+		{
+			[]op{{parser.LTE, 4.1}},
+			[]float64{2.0, 4.1, 6.6},
+			[]float64{2.0, 4.1},
+		},
+		{
+			[]op{{parser.MOD, 2.0}},
+			[]float64{2.0, 11.0, 5.0},
+			[]float64{0.0, 1.0, 1.0},
+		},
+		{
+			[]op{{parser.MUL, 2}},
+			[]float64{1.0, 1.2, 2},
+			[]float64{2.0, 2.4, 4},
+		},
+		{
+			[]op{{parser.NEQ, 1.1}},
+			[]float64{1.0, 1.1, 1.2},
+			[]float64{1.0, 1.2},
+		},
+		{
+			[]op{{parser.POW, 4.0}},
+			[]float64{1.0, 2.0, 3.0},
+			[]float64{1.0, 16.0, 81.0},
+		},
+		{
+			[]op{{parser.SUB, 1.0}},
+			[]float64{1.0, 2.0, 3.0},
+			[]float64{0.0, 1.0, 2.0},
+		},
+		{
+			[]op{{parser.ATAN2, 1.0}},
+			[]float64{0.0, 1.0},
+			[]float64{0, math.Pi / 4},
+		},
+		{
+			[]op{{parser.MUL, 2}, {parser.SUB, 1}, {parser.ADD, 5}, {parser.EQLC, 10}},
+			[]float64{1.0, 2.0, 3.0},
+			[]float64{10.0},
+		},
+		{
+			[]op{{parser.GTE, 4.2}, {parser.GTE, 6.2}},
+			[]float64{1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0},
+			[]float64{7.0},
+		},
+		{
+			[]op{{parser.GTE, 4.2}, {parser.GTE, 10}},
+			[]float64{1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0},
+			[]float64{},
+		},
+	}
+
+	for _, test := range testcases {
+		input := []promql.FPoint{}
+		for _, elem := range test.input {
+			input = append(input, promql.FPoint{ts, elem})
+		}
+
+		output := []promql.FPoint{}
+		for _, elem := range test.output {
+			output = append(output, promql.FPoint{ts, elem})
+		}
+
+		binaryOps := &parser.MatrixSelectorBinOps{
+			Ops:      []*parser.MatrixSelectorBinOp{},
+			PosRange: posRange,
+		}
+
+		for _, binaryOp := range test.ops {
+			binaryOps.Ops = append(binaryOps.Ops, &parser.MatrixSelectorBinOp{
+				Op: binaryOp.i,
+				Num: &parser.NumberLiteral{
+					Val:      binaryOp.num,
+					PosRange: posRange,
+				},
+			},
+			)
+		}
+
+		res := promql.ApplyBinaryOps(binaryOps, input)
+		require.EqualValues(t, output, res)
+	}
+}
+
 func makeInt64Pointer(val int64) *int64 {
 	valp := new(int64)
 	*valp = val
