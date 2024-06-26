@@ -76,9 +76,9 @@ var writeRequestFixture = &prompb.WriteRequest{
 	},
 }
 
-// writeRequestMinimizedFixture represents the same request as writeRequestFixture, but using the minimized representation.
-var writeRequestMinimizedFixture = func() *writev2.Request {
-	st := newRwSymbolTable()
+// writeV2RequestFixture represents the same request as writeRequestFixture, but using the v2 representation.
+var writeV2RequestFixture = func() *writev2.Request {
+	st := writev2.NewSymbolTable()
 	var labels []uint32
 	for _, s := range []string{
 		"__name__", "test_metric1",
@@ -87,14 +87,14 @@ var writeRequestMinimizedFixture = func() *writev2.Request {
 		"d", "e",
 		"foo", "bar",
 	} {
-		ref := st.RefStr(s)
+		ref := st.Symbolize(s)
 		labels = append(labels, ref)
 	}
 	for _, s := range []string{
 		"f", "g", // 10, 11
 		"h", "i", // 12, 13
 	} {
-		st.RefStr(s)
+		_ = st.Symbolize(s)
 	}
 
 	return &writev2.Request{
@@ -103,16 +103,16 @@ var writeRequestMinimizedFixture = func() *writev2.Request {
 				LabelsRefs: labels,
 				Samples:    []writev2.Sample{{Value: 1, Timestamp: 0}},
 				Exemplars:  []writev2.Exemplar{{LabelsRefs: []uint32{10, 11}, Value: 1, Timestamp: 0}},
-				Histograms: []writev2.Histogram{HistogramToMinHistogramProto(0, &testHistogram), FloatHistogramToMinHistogramProto(1, testHistogram.ToFloat(nil))},
+				Histograms: []writev2.Histogram{HistogramToV2HistogramProto(0, &testHistogram), FloatHistogramToV2HistogramProto(1, testHistogram.ToFloat(nil))},
 			},
 			{
 				LabelsRefs: labels,
 				Samples:    []writev2.Sample{{Value: 2, Timestamp: 1}},
 				Exemplars:  []writev2.Exemplar{{LabelsRefs: []uint32{12, 13}, Value: 2, Timestamp: 1}},
-				Histograms: []writev2.Histogram{HistogramToMinHistogramProto(2, &testHistogram), FloatHistogramToMinHistogramProto(3, testHistogram.ToFloat(nil))},
+				Histograms: []writev2.Histogram{HistogramToV2HistogramProto(2, &testHistogram), FloatHistogramToV2HistogramProto(3, testHistogram.ToFloat(nil))},
 			},
 		},
-		Symbols: st.LabelsStrings(),
+		Symbols: st.Symbols(),
 	}
 }()
 
@@ -567,13 +567,13 @@ func TestDecodeWriteRequest(t *testing.T) {
 	require.Equal(t, writeRequestFixture, actual)
 }
 
-func TestDecodeMinWriteRequest(t *testing.T) {
-	buf, _, _, err := buildV2WriteRequest(log.NewNopLogger(), writeRequestMinimizedFixture.Timeseries, writeRequestMinimizedFixture.Symbols, nil, nil, nil, "snappy")
+func TestDecodeV2WriteRequest(t *testing.T) {
+	buf, _, _, err := buildV2WriteRequest(log.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
-	actual, err := DecodeMinimizedWriteRequestStr(bytes.NewReader(buf))
+	actual, err := DecodeV2WriteRequestStr(bytes.NewReader(buf))
 	require.NoError(t, err)
-	require.Equal(t, writeRequestMinimizedFixture, actual)
+	require.Equal(t, writeV2RequestFixture, actual)
 }
 
 func TestNilHistogramProto(t *testing.T) {
@@ -894,12 +894,4 @@ func (c *mockChunkIterator) Next() bool {
 
 func (c *mockChunkIterator) Err() error {
 	return nil
-}
-
-func TestStrFormat(t *testing.T) {
-	r := newRwSymbolTable()
-	ls := labels.FromStrings("asdf", "qwer", "zxcv", "1234")
-	encoded := labelsToLabelsProtoV2Refs(ls, &r, nil)
-	decoded := labelProtosV2ToLabels(encoded, r.LabelsStrings())
-	require.Equal(t, ls, decoded)
 }

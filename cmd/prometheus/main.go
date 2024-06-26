@@ -1747,6 +1747,7 @@ func rwProtoMsgFlagValue(msgs *[]config.RemoteWriteProtoMsg) kingpin.Value {
 	return &rwProtoMsgFlagParser{msgs: msgs}
 }
 
+// IsCumulative is used by kingpin to tell if it's an array or not.
 func (p *rwProtoMsgFlagParser) IsCumulative() bool {
 	return true
 }

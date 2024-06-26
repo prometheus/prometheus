@@ -1798,7 +1798,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "remote_write_wrong_msg.bad.yml",
-		errMsg:   `invalid protobuf_message value: unknown remote write protobuf message io.prometheus.writet.v2.Request, supported: prometheus.WriteRequest,io.prometheus.write.v2.Request`,
+		errMsg:   `invalid protobuf_message value: unknown remote write protobuf message io.prometheus.writet.v2.Request, supported: prometheus.WriteRequest, io.prometheus.write.v2.Request`,
 	},
 	{
 		filename: "remote_write_url_missing.bad.yml",

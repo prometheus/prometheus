@@ -169,25 +169,15 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			name = rwConf.Name
 		}
 
-		// TODO(bwplotka): Remove in the next PR (split for readability).
-		protoVersion := func() config.RemoteWriteFormat {
-			switch rwConf.ProtobufMessage {
-			case config.RemoteWriteProtoMsgV2:
-				return Version2
-			default:
-				return Version1
-			}
-		}()
-
 		c, err := NewWriteClient(name, &ClientConfig{
-			URL:               rwConf.URL,
-			RemoteWriteFormat: protoVersion,
-			Timeout:           rwConf.RemoteTimeout,
-			HTTPClientConfig:  rwConf.HTTPClientConfig,
-			SigV4Config:       rwConf.SigV4Config,
-			AzureADConfig:     rwConf.AzureADConfig,
-			Headers:           rwConf.Headers,
-			RetryOnRateLimit:  rwConf.QueueConfig.RetryOnRateLimit,
+			URL:              rwConf.URL,
+			WriteProtoMsg:    rwConf.ProtobufMessage,
+			Timeout:          rwConf.RemoteTimeout,
+			HTTPClientConfig: rwConf.HTTPClientConfig,
+			SigV4Config:      rwConf.SigV4Config,
+			AzureADConfig:    rwConf.AzureADConfig,
+			Headers:          rwConf.Headers,
+			RetryOnRateLimit: rwConf.QueueConfig.RetryOnRateLimit,
 		})
 		if err != nil {
 			return err
@@ -200,21 +190,6 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			newQueues[hash] = queue
 			delete(rws.queues, hash)
 			continue
-		}
-
-		// Work out what protocol and compression to use for this endpoint.
-		// Default to Remote Write Version1.
-		rwFormat := Version1
-		switch protoVersion {
-		case Version1:
-			// We use the standard value as there's no negotiation to be had.
-		case Version2:
-			rwFormat = Version2
-			// If this newer remote write format is enabled then we need to probe the remote server
-			// to work out the desired protocol version and compressions.
-			// The value of the header is kept in the client so no need to see it here.
-			_ = c.probeRemoteVersions(context.Background())
-			// We ignore any error here, at some point we may choose to log it.
 		}
 
 		// Redacted to remove any passwords in the URL (that are
@@ -239,7 +214,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rws.scraper,
 			rwConf.SendExemplars,
 			rwConf.SendNativeHistograms,
-			rwFormat,
+			rwConf.ProtobufMessage,
 		)
 		// Keep track of which queues are new so we know which to start.
 		newHashes = append(newHashes, hash)

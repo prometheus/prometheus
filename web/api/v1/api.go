@@ -210,10 +210,9 @@ type API struct {
 	isAgent       bool
 	statsRenderer StatsRenderer
 
-	remoteWriteHeadHandler http.Handler
-	remoteWriteHandler     http.Handler
-	remoteReadHandler      http.Handler
-	otlpWriteHandler       http.Handler
+	remoteWriteHandler http.Handler
+	remoteReadHandler  http.Handler
+	otlpWriteHandler   http.Handler
 
 	codecs []Codec
 }
@@ -290,10 +289,7 @@ func NewAPI(
 	}
 
 	if rwEnabled {
-		// TODO(bwplotka): Use acceptRemoteWriteProtoMsgs in the next PR (split PR for review readability).
-		// and remove all head/negotiation.
-		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, 1)
-		a.remoteWriteHeadHandler = remote.NewWriteHeadHandler(logger, registerer, 1)
+		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, acceptRemoteWriteProtoMsgs)
 	}
 	if otlpEnabled {
 		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, ap)
@@ -390,7 +386,6 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/walreplay", api.serveWALReplayStatus)
 	r.Post("/read", api.ready(api.remoteRead))
 	r.Post("/write", api.ready(api.remoteWrite))
-	r.Head("/write", api.remoteWriteHead)
 	r.Post("/otlp/v1/metrics", api.ready(api.otlpWrite))
 
 	r.Get("/alerts", wrapAgent(api.alerts))
@@ -1654,14 +1649,6 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 func (api *API) remoteWrite(w http.ResponseWriter, r *http.Request) {
 	if api.remoteWriteHandler != nil {
 		api.remoteWriteHandler.ServeHTTP(w, r)
-	} else {
-		http.Error(w, "remote write receiver needs to be enabled with --web.enable-remote-write-receiver", http.StatusNotFound)
-	}
-}
-
-func (api *API) remoteWriteHead(w http.ResponseWriter, r *http.Request) {
-	if api.remoteWriteHeadHandler != nil {
-		api.remoteWriteHeadHandler.ServeHTTP(w, r)
 	} else {
 		http.Error(w, "remote write receiver needs to be enabled with --web.enable-remote-write-receiver", http.StatusNotFound)
 	}

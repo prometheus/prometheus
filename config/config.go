@@ -1026,9 +1026,6 @@ func CheckTargetAddress(address model.LabelValue) error {
 	return nil
 }
 
-// TODO(bwplotka): Remove in the next PRs (review split PR for readability).
-type RemoteWriteFormat int64
-
 // RemoteWriteProtoMsg represents the known protobuf message for the remote write
 // 1.0 and 2.0 specs.
 type RemoteWriteProtoMsg string
@@ -1054,7 +1051,7 @@ func (m RemoteWriteProtoMsgs) Strings() []string {
 }
 
 func (m RemoteWriteProtoMsgs) String() string {
-	return strings.Join(m.Strings(), ",")
+	return strings.Join(m.Strings(), ", ")
 }
 
 var (

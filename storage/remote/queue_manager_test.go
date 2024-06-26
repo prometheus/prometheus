@@ -15,6 +15,7 @@ package remote
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"math/rand"
@@ -64,74 +65,7 @@ func newHighestTimestampMetric() *maxTimestamp {
 	}
 }
 
-type contentNegotiationStep struct {
-	lastRWHeader  string
-	compression   string
-	behaviour     error // or nil
-	attemptString string
-}
-
-func TestContentNegotiation(t *testing.T) {
-	testcases := []struct {
-		name       string
-		success    bool
-		qmRwFormat config.RemoteWriteProtoMsg
-		rwFormat   config.RemoteWriteFormat
-		steps      []contentNegotiationStep
-	}{
-		// Test a simple case where the v2 request we send is processed first time.
-		{
-			success: true, name: "v2 happy path", qmRwFormat: config.RemoteWriteProtoMsgV2, rwFormat: Version2, steps: []contentNegotiationStep{
-				{lastRWHeader: "2.0;snappy,0.1.0", compression: "snappy", behaviour: nil, attemptString: "0,1,snappy,ok"},
-			},
-		},
-		// Test a simple case where the v1 request we send is processed first time.
-		{
-			success: true, name: "v1 happy path", qmRwFormat: config.RemoteWriteProtoMsgV1, rwFormat: Version1, steps: []contentNegotiationStep{
-				{lastRWHeader: "0.1.0", compression: "snappy", behaviour: nil, attemptString: "0,0,snappy,ok"},
-			},
-		},
-		// Test a case where the v1 request has a temporary delay but goes through on retry.
-		// There is no content re-negotiation between first and retry attempts.
-		{
-			success: true, name: "v1 happy path with one 5xx retry", qmRwFormat: config.RemoteWriteProtoMsgV1, rwFormat: Version1, steps: []contentNegotiationStep{
-				{lastRWHeader: "0.1.0", compression: "snappy", behaviour: RecoverableError{fmt.Errorf("Pretend 500"), 1}, attemptString: "0,0,snappy,Pretend 500"},
-				{lastRWHeader: "0.1.0", compression: "snappy", behaviour: nil, attemptString: "1,0,snappy,ok"},
-			},
-		},
-		// Repeat the above test but with v2. The request has a temporary delay but goes through on retry.
-		// There is no content re-negotiation between first and retry attempts.
-		{
-			success: true, name: "v2 happy path with one 5xx retry", qmRwFormat: config.RemoteWriteProtoMsgV2, rwFormat: Version2, steps: []contentNegotiationStep{
-				{lastRWHeader: "2.0;snappy,0.1.0", compression: "snappy", behaviour: RecoverableError{fmt.Errorf("Pretend 500"), 1}, attemptString: "0,1,snappy,Pretend 500"},
-				{lastRWHeader: "2.0;snappy,0.1.0", compression: "snappy", behaviour: nil, attemptString: "1,1,snappy,ok"},
-			},
-		},
-		// Now test where the server suddenly stops speaking 2.0 and we need to downgrade.
-		{
-			success: true, name: "v2 request to v2 server that has downgraded via 406", qmRwFormat: config.RemoteWriteProtoMsgV2, rwFormat: Version2, steps: []contentNegotiationStep{
-				{lastRWHeader: "2.0;snappy,0.1.0", compression: "snappy", behaviour: &ErrRenegotiate{"", 406}, attemptString: "0,1,snappy,HTTP 406: msg: "},
-				{lastRWHeader: "0.1.0", compression: "snappy", behaviour: nil, attemptString: "0,0,snappy,ok"},
-			},
-		},
-		// Now test where the server suddenly stops speaking 2.0 and we need to downgrade because it returns a 400.
-		{
-			success: true, name: "v2 request to v2 server that has downgraded via 400", qmRwFormat: config.RemoteWriteProtoMsgV2, rwFormat: Version2, steps: []contentNegotiationStep{
-				{lastRWHeader: "2.0;snappy,0.1.0", compression: "snappy", behaviour: &ErrRenegotiate{"", 400}, attemptString: "0,1,snappy,HTTP 400: msg: "},
-				{lastRWHeader: "0.1.0", compression: "snappy", behaviour: nil, attemptString: "0,0,snappy,ok"},
-			},
-		},
-		// Now test where the server flip flops between "2.0;snappy" and "0.1.0" only.
-		{
-			success: false, name: "flip flopping", qmRwFormat: config.RemoteWriteProtoMsgV2, rwFormat: Version2, steps: []contentNegotiationStep{
-				{lastRWHeader: "2.0;snappy", compression: "snappy", behaviour: &ErrRenegotiate{"", 406}, attemptString: "0,1,snappy,HTTP 406: msg: "},
-				{lastRWHeader: "0.1.0", compression: "snappy", behaviour: &ErrRenegotiate{"", 406}, attemptString: "0,0,snappy,HTTP 406: msg: "},
-				{lastRWHeader: "2.0;snappy", compression: "snappy", behaviour: &ErrRenegotiate{"", 406}, attemptString: "0,1,snappy,HTTP 406: msg: "},
-				// There's no 4th attempt as we do a maximum of 3 sending attempts (not counting retries).
-			},
-		},
-	}
-
+func TestBasicContentNegotiation(t *testing.T) {
 	queueConfig := config.DefaultQueueConfig
 	queueConfig.BatchSendDeadline = model.Duration(100 * time.Millisecond)
 	queueConfig.MaxShards = 1
@@ -147,7 +81,62 @@ func TestContentNegotiation(t *testing.T) {
 		},
 	}
 
-	for _, tc := range testcases {
+	for _, tc := range []struct {
+		name             string
+		senderProtoMsg   config.RemoteWriteProtoMsg
+		receiverProtoMsg config.RemoteWriteProtoMsg
+		injectErrs       []error
+		expectFail       bool
+	}{
+		{
+			name:           "v2 happy path",
+			senderProtoMsg: config.RemoteWriteProtoMsgV2, receiverProtoMsg: config.RemoteWriteProtoMsgV2,
+			injectErrs: []error{nil},
+		},
+		{
+			name:           "v1 happy path",
+			senderProtoMsg: config.RemoteWriteProtoMsgV1, receiverProtoMsg: config.RemoteWriteProtoMsgV1,
+			injectErrs: []error{nil},
+		},
+		// Test a case where the v1 request has a temporary delay but goes through on retry.
+		{
+			name:           "v1 happy path with one 5xx retry",
+			senderProtoMsg: config.RemoteWriteProtoMsgV1, receiverProtoMsg: config.RemoteWriteProtoMsgV1,
+			injectErrs: []error{RecoverableError{errors.New("pretend 500"), 1}, nil},
+		},
+		// Repeat the above test but with v2. The request has a temporary delay but goes through on retry.
+		{
+			name:           "v2 happy path with one 5xx retry",
+			senderProtoMsg: config.RemoteWriteProtoMsgV2, receiverProtoMsg: config.RemoteWriteProtoMsgV2,
+			injectErrs: []error{RecoverableError{errors.New("pretend 500"), 1}, nil},
+		},
+		// A few error cases of v2 talking to v1.
+		{
+			name:           "v2 talks to v1 that gives 400 or 415",
+			senderProtoMsg: config.RemoteWriteProtoMsgV2, receiverProtoMsg: config.RemoteWriteProtoMsgV1,
+			injectErrs: []error{errors.New("pretend unrecoverable err")},
+			expectFail: true,
+		},
+		{
+			name:           "v2 talks to v1 that tries to unmarshal v2 payload with v1 proto",
+			senderProtoMsg: config.RemoteWriteProtoMsgV2, receiverProtoMsg: config.RemoteWriteProtoMsgV1,
+			injectErrs: []error{nil},
+			expectFail: true, // invalid request, no timeseries
+		},
+		// Opposite, v1 talking to v2 only server.
+		{
+			name:           "v1 talks to v2 that gives 400 or 415",
+			senderProtoMsg: config.RemoteWriteProtoMsgV1, receiverProtoMsg: config.RemoteWriteProtoMsgV2,
+			injectErrs: []error{errors.New("pretend unrecoverable err")},
+			expectFail: true,
+		},
+		{
+			name:           "v1 talks to (broken) v2 that tries to unmarshal v1 payload with v2 proto",
+			senderProtoMsg: config.RemoteWriteProtoMsgV1, receiverProtoMsg: config.RemoteWriteProtoMsgV2,
+			injectErrs: []error{nil},
+			expectFail: true, // invalid request, no timeseries
+		},
+	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, true)
@@ -167,67 +156,56 @@ func TestContentNegotiation(t *testing.T) {
 			queueConfig.Capacity = len(samples)
 			queueConfig.MaxSamplesPerSend = len(samples)
 			// For now we only ever have a single rw config in this test.
-			conf.RemoteWriteConfigs[0].ProtobufMessage = tc.qmRwFormat
+			conf.RemoteWriteConfigs[0].ProtobufMessage = tc.senderProtoMsg
 			require.NoError(t, s.ApplyConfig(conf))
 			hash, err := toHash(writeConfig)
 			require.NoError(t, err)
 			qm := s.rws.queues[hash]
 
-			c := NewTestWriteClient(tc.rwFormat)
-			c.setSteps(tc.steps) // set expected behaviour.
+			c := NewTestWriteClient(tc.receiverProtoMsg)
+			c.injectErrors(tc.injectErrs)
 			qm.SetClient(c)
 
 			qm.StoreSeries(series, 0)
 			qm.StoreMetadata(metadata)
 
-			// Did we expect some data back?
-			if tc.success {
+			// Do we expect some data back?
+			if !tc.expectFail {
 				c.expectSamples(samples, series)
+			} else {
+				c.expectSamples(nil, nil)
 			}
+
+			// Schedule send.
 			qm.Append(samples)
 
-			if !tc.success {
-				// We just need to sleep for a bit to give it time to run.
-				time.Sleep(2 * time.Second)
-				// But we still need to check for data with no delay to avoid race.
-				c.waitForExpectedData(t, 0*time.Second)
-			} else {
-				// We expected data so wait for it.
+			if !tc.expectFail {
+				// No error expected, so wait for data.
 				c.waitForExpectedData(t, 5*time.Second)
+				require.Equal(t, 1, c.writesReceived)
+				require.Equal(t, 0.0, client_testutil.ToFloat64(qm.metrics.failedSamplesTotal))
+			} else {
+				// Wait for failure to be recorded in metrics.
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				require.NoError(t, runutil.Retry(500*time.Millisecond, ctx.Done(), func() error {
+					if client_testutil.ToFloat64(qm.metrics.failedSamplesTotal) != 1.0 {
+						return errors.New("expected one sample failed in qm metrics")
+					}
+					return nil
+				}))
+				require.Equal(t, 0, c.writesReceived)
 			}
 
-			require.Equal(t, len(c.sendAttempts), len(tc.steps))
-			for i, s := range c.sendAttempts {
-				require.Equal(t, s, tc.steps[i].attemptString)
-			}
+			// samplesTotal means attempts.
+			require.Equal(t, float64(len(tc.injectErrs)), client_testutil.ToFloat64(qm.metrics.samplesTotal))
+			require.Equal(t, float64(len(tc.injectErrs)-1), client_testutil.ToFloat64(qm.metrics.retriedSamplesTotal))
 		})
 	}
 }
 
 func TestSampleDelivery(t *testing.T) {
-	testcases := []struct {
-		name            string
-		samples         bool
-		exemplars       bool
-		histograms      bool
-		floatHistograms bool
-		rwFormat        config.RemoteWriteFormat
-	}{
-		{samples: true, exemplars: false, histograms: false, floatHistograms: false, name: "samples only"},
-		{samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "samples, exemplars, and histograms"},
-		{samples: false, exemplars: true, histograms: false, floatHistograms: false, name: "exemplars only"},
-		{samples: false, exemplars: false, histograms: true, floatHistograms: false, name: "histograms only"},
-		{samples: false, exemplars: false, histograms: false, floatHistograms: true, name: "float histograms only"},
-
-		// TODO(alexg): update some portion of this test to check for the 2.0 metadata
-		{samples: true, exemplars: false, histograms: false, floatHistograms: false, name: "samples only", rwFormat: Version2},
-		{samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "samples, exemplars, and histograms", rwFormat: Version2},
-		{samples: false, exemplars: true, histograms: false, floatHistograms: false, name: "exemplars only", rwFormat: Version2},
-		{samples: false, exemplars: false, histograms: true, floatHistograms: false, name: "histograms only", rwFormat: Version2},
-		{samples: false, exemplars: false, histograms: false, floatHistograms: true, name: "float histograms only", rwFormat: Version2},
-	}
-
-	// Let's create an even number of send batches so we don't run into the
+	// Let's create an even number of send batches, so we don't run into the
 	// batch timeout case.
 	n := 3
 
@@ -247,9 +225,29 @@ func TestSampleDelivery(t *testing.T) {
 			writeConfig,
 		},
 	}
+	for _, tc := range []struct {
+		protoMsg config.RemoteWriteProtoMsg
 
-	for _, tc := range testcases {
-		t.Run(tc.name, func(t *testing.T) {
+		name            string
+		samples         bool
+		exemplars       bool
+		histograms      bool
+		floatHistograms bool
+	}{
+		{protoMsg: config.RemoteWriteProtoMsgV1, samples: true, exemplars: false, histograms: false, floatHistograms: false, name: "samples only"},
+		{protoMsg: config.RemoteWriteProtoMsgV1, samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "samples, exemplars, and histograms"},
+		{protoMsg: config.RemoteWriteProtoMsgV1, samples: false, exemplars: true, histograms: false, floatHistograms: false, name: "exemplars only"},
+		{protoMsg: config.RemoteWriteProtoMsgV1, samples: false, exemplars: false, histograms: true, floatHistograms: false, name: "histograms only"},
+		{protoMsg: config.RemoteWriteProtoMsgV1, samples: false, exemplars: false, histograms: false, floatHistograms: true, name: "float histograms only"},
+
+		// TODO(alexg): update some portion of this test to check for the 2.0 metadata
+		{protoMsg: config.RemoteWriteProtoMsgV2, samples: true, exemplars: false, histograms: false, floatHistograms: false, name: "samples only"},
+		{protoMsg: config.RemoteWriteProtoMsgV2, samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "samples, exemplars, and histograms"},
+		{protoMsg: config.RemoteWriteProtoMsgV2, samples: false, exemplars: true, histograms: false, floatHistograms: false, name: "exemplars only"},
+		{protoMsg: config.RemoteWriteProtoMsgV2, samples: false, exemplars: false, histograms: true, floatHistograms: false, name: "histograms only"},
+		{protoMsg: config.RemoteWriteProtoMsgV2, samples: false, exemplars: false, histograms: false, floatHistograms: true, name: "float histograms only"},
+	} {
+		t.Run(fmt.Sprintf("%s-%s", tc.protoMsg, tc.name), func(t *testing.T) {
 			dir := t.TempDir()
 			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, true)
 			defer s.Close()
@@ -281,12 +279,14 @@ func TestSampleDelivery(t *testing.T) {
 			// Apply new config.
 			queueConfig.Capacity = len(samples)
 			queueConfig.MaxSamplesPerSend = len(samples) / 2
+			// For now we only ever have a single rw config in this test.
+			conf.RemoteWriteConfigs[0].ProtobufMessage = tc.protoMsg
 			require.NoError(t, s.ApplyConfig(conf))
 			hash, err := toHash(writeConfig)
 			require.NoError(t, err)
 			qm := s.rws.queues[hash]
 
-			c := NewTestWriteClient(tc.rwFormat)
+			c := NewTestWriteClient(tc.protoMsg)
 			qm.SetClient(c)
 
 			qm.StoreSeries(series, 0)
@@ -325,7 +325,7 @@ func testDefaultQueueConfig() config.QueueConfig {
 }
 
 func TestMetadataDelivery(t *testing.T) {
-	c := NewTestWriteClient(Version1)
+	c := NewTestWriteClient(config.RemoteWriteProtoMsgV1)
 
 	dir := t.TempDir()
 
@@ -333,7 +333,7 @@ func TestMetadataDelivery(t *testing.T) {
 	mcfg := config.DefaultMetadataConfig
 
 	metrics := newQueueManagerMetrics(nil, "", "")
-	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, Version1)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, config.RemoteWriteProtoMsgV1)
 	m.Start()
 	defer m.Stop()
 
@@ -350,6 +350,7 @@ func TestMetadataDelivery(t *testing.T) {
 
 	m.AppendWatcherMetadata(context.Background(), metadata)
 
+	require.Equal(t, 0.0, client_testutil.ToFloat64(m.metrics.failedMetadataTotal))
 	require.Len(t, c.receivedMetadata, numMetadata)
 	// One more write than the rounded qoutient should be performed in order to get samples that didn't
 	// fit into MaxSamplesPerSend.
@@ -387,7 +388,7 @@ func TestWALMetadataDelivery(t *testing.T) {
 	require.NoError(t, err)
 	qm := s.rws.queues[hash]
 
-	c := NewTestWriteClient(Version1)
+	c := NewTestWriteClient(config.RemoteWriteProtoMsgV1)
 	qm.SetClient(c)
 
 	qm.StoreSeries(series, 0)
@@ -400,12 +401,12 @@ func TestWALMetadataDelivery(t *testing.T) {
 }
 
 func TestSampleDeliveryTimeout(t *testing.T) {
-	for _, rwFormat := range []config.RemoteWriteFormat{Version1, Version2} {
-		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
+	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			// Let's send one less sample than batch size, and wait the timeout duration
 			n := 9
 			samples, series := createTimeseries(n, n)
-			c := NewTestWriteClient(rwFormat)
+			c := NewTestWriteClient(protoMsg)
 
 			cfg := testDefaultQueueConfig()
 			mcfg := config.DefaultMetadataConfig
@@ -414,7 +415,7 @@ func TestSampleDeliveryTimeout(t *testing.T) {
 			dir := t.TempDir()
 
 			metrics := newQueueManagerMetrics(nil, "", "")
-			m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, rwFormat)
+			m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, protoMsg)
 			m.StoreSeries(series, 0)
 			m.Start()
 			defer m.Stop()
@@ -432,8 +433,8 @@ func TestSampleDeliveryTimeout(t *testing.T) {
 }
 
 func TestSampleDeliveryOrder(t *testing.T) {
-	for _, rwFormat := range []config.RemoteWriteFormat{Version1, Version2} {
-		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
+	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			ts := 10
 			n := config.DefaultQueueConfig.MaxSamplesPerSend * ts
 			samples := make([]record.RefSample, 0, n)
@@ -451,7 +452,7 @@ func TestSampleDeliveryOrder(t *testing.T) {
 				})
 			}
 
-			c := NewTestWriteClient(rwFormat)
+			c := NewTestWriteClient(protoMsg)
 			c.expectSamples(samples, series)
 
 			dir := t.TempDir()
@@ -460,7 +461,7 @@ func TestSampleDeliveryOrder(t *testing.T) {
 			mcfg := config.DefaultMetadataConfig
 
 			metrics := newQueueManagerMetrics(nil, "", "")
-			m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, rwFormat)
+			m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, protoMsg)
 			m.StoreSeries(series, 0)
 
 			m.Start()
@@ -482,7 +483,7 @@ func TestShutdown(t *testing.T) {
 	mcfg := config.DefaultMetadataConfig
 	metrics := newQueueManagerMetrics(nil, "", "")
 
-	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, Version1)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, config.RemoteWriteProtoMsgV1)
 	n := 2 * config.DefaultQueueConfig.MaxSamplesPerSend
 	samples, series := createTimeseries(n, n)
 	m.StoreSeries(series, 0)
@@ -520,7 +521,7 @@ func TestSeriesReset(t *testing.T) {
 	cfg := testDefaultQueueConfig()
 	mcfg := config.DefaultMetadataConfig
 	metrics := newQueueManagerMetrics(nil, "", "")
-	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, Version1)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, config.RemoteWriteProtoMsgV1)
 	for i := 0; i < numSegments; i++ {
 		series := []record.RefSeries{}
 		for j := 0; j < numSeries; j++ {
@@ -534,14 +535,14 @@ func TestSeriesReset(t *testing.T) {
 }
 
 func TestReshard(t *testing.T) {
-	for _, rwFormat := range []config.RemoteWriteFormat{Version1, Version2} {
-		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
+	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			size := 10 // Make bigger to find more races.
 			nSeries := 6
 			nSamples := config.DefaultQueueConfig.Capacity * size
 			samples, series := createTimeseries(nSamples, nSeries)
 
-			c := NewTestWriteClient(rwFormat)
+			c := NewTestWriteClient(protoMsg)
 			c.expectSamples(samples, series)
 
 			cfg := testDefaultQueueConfig()
@@ -551,7 +552,7 @@ func TestReshard(t *testing.T) {
 			dir := t.TempDir()
 
 			metrics := newQueueManagerMetrics(nil, "", "")
-			m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, rwFormat)
+			m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, protoMsg)
 			m.StoreSeries(series, 0)
 
 			m.Start()
@@ -577,9 +578,9 @@ func TestReshard(t *testing.T) {
 }
 
 func TestReshardRaceWithStop(t *testing.T) {
-	for _, rwFormat := range []config.RemoteWriteFormat{Version1, Version2} {
-		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
-			c := NewTestWriteClient(rwFormat)
+	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
+			c := NewTestWriteClient(protoMsg)
 			var m *QueueManager
 			h := sync.Mutex{}
 			h.Lock()
@@ -590,7 +591,7 @@ func TestReshardRaceWithStop(t *testing.T) {
 			go func() {
 				for {
 					metrics := newQueueManagerMetrics(nil, "", "")
-					m = NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, rwFormat)
+					m = NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, protoMsg)
 					m.Start()
 					h.Unlock()
 					h.Lock()
@@ -615,8 +616,8 @@ func TestReshardRaceWithStop(t *testing.T) {
 }
 
 func TestReshardPartialBatch(t *testing.T) {
-	for _, rwFormat := range []config.RemoteWriteFormat{Version1, Version2} {
-		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
+	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			samples, series := createTimeseries(1, 10)
 
 			c := NewTestBlockedWriteClient()
@@ -629,7 +630,7 @@ func TestReshardPartialBatch(t *testing.T) {
 			cfg.BatchSendDeadline = model.Duration(batchSendDeadline)
 
 			metrics := newQueueManagerMetrics(nil, "", "")
-			m := NewQueueManager(metrics, nil, nil, nil, t.TempDir(), newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, flushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, rwFormat)
+			m := NewQueueManager(metrics, nil, nil, nil, t.TempDir(), newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, flushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, protoMsg)
 			m.StoreSeries(series, 0)
 
 			m.Start()
@@ -661,8 +662,8 @@ func TestReshardPartialBatch(t *testing.T) {
 // where a large scrape (> capacity + max samples per send) is appended at the
 // same time as a batch times out according to the batch send deadline.
 func TestQueueFilledDeadlock(t *testing.T) {
-	for _, rwFormat := range []config.RemoteWriteFormat{Version1, Version2} {
-		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
+	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			samples, series := createTimeseries(50, 1)
 
 			c := NewNopWriteClient()
@@ -678,7 +679,7 @@ func TestQueueFilledDeadlock(t *testing.T) {
 
 			metrics := newQueueManagerMetrics(nil, "", "")
 
-			m := NewQueueManager(metrics, nil, nil, nil, t.TempDir(), newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, flushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, rwFormat)
+			m := NewQueueManager(metrics, nil, nil, nil, t.TempDir(), newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, flushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, protoMsg)
 			m.StoreSeries(series, 0)
 			m.Start()
 			defer m.Stop()
@@ -703,13 +704,13 @@ func TestQueueFilledDeadlock(t *testing.T) {
 }
 
 func TestReleaseNoninternedString(t *testing.T) {
-	for _, rwFormat := range []config.RemoteWriteFormat{Version1, Version2} {
-		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
+	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			cfg := testDefaultQueueConfig()
 			mcfg := config.DefaultMetadataConfig
 			metrics := newQueueManagerMetrics(nil, "", "")
-			c := NewTestWriteClient(rwFormat)
-			m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, rwFormat)
+			c := NewTestWriteClient(protoMsg)
+			m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, protoMsg)
 			m.Start()
 			defer m.Stop()
 			for i := 1; i < 1000; i++ {
@@ -757,8 +758,8 @@ func TestShouldReshard(t *testing.T) {
 	for _, c := range cases {
 		metrics := newQueueManagerMetrics(nil, "", "")
 		// todo: test with new proto type(s)
-		client := NewTestWriteClient(Version1)
-		m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, Version1)
+		client := NewTestWriteClient(config.RemoteWriteProtoMsgV1)
+		m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, config.RemoteWriteProtoMsgV1)
 		m.numShards = c.startingShards
 		m.dataIn.incr(c.samplesIn)
 		m.dataOut.incr(c.samplesOut)
@@ -804,7 +805,7 @@ func TestDisableReshardOnRetry(t *testing.T) {
 		}
 	)
 
-	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), newHighestTimestampMetric(), nil, false, false, Version1)
+	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), newHighestTimestampMetric(), nil, false, false, config.RemoteWriteProtoMsgV1)
 	m.StoreSeries(fakeSeries, 0)
 
 	// Attempt to samples while the manager is running. We immediately stop the
@@ -955,6 +956,8 @@ func getSeriesNameFromRef(r record.RefSeries) string {
 	return r.Labels.Get("__name__")
 }
 
+// TestWriteClient represents write client which does not call remote storage,
+// but instead re-implements fake WriteHandler for test purposes.
 type TestWriteClient struct {
 	receivedSamples         map[string][]prompb.Sample
 	expectedSamples         map[string][]prompb.Sample
@@ -968,25 +971,25 @@ type TestWriteClient struct {
 	writesReceived          int
 	mtx                     sync.Mutex
 	buf                     []byte
-	rwFormat                config.RemoteWriteFormat
-	sendAttempts            []string
-	steps                   []contentNegotiationStep
-	currstep                int
+	protoMsg                config.RemoteWriteProtoMsg
+	injectedErrs            []error
+	currErr                 int
 	retry                   bool
 }
 
-func NewTestWriteClient(rwFormat config.RemoteWriteFormat) *TestWriteClient {
+// NewTestWriteClient creates a new testing write client.
+func NewTestWriteClient(protoMsg config.RemoteWriteProtoMsg) *TestWriteClient {
 	return &TestWriteClient{
 		receivedSamples:  map[string][]prompb.Sample{},
 		expectedSamples:  map[string][]prompb.Sample{},
 		receivedMetadata: map[string][]prompb.MetricMetadata{},
-		rwFormat:         rwFormat,
+		protoMsg:         protoMsg,
 	}
 }
 
-func (c *TestWriteClient) setSteps(steps []contentNegotiationStep) {
-	c.steps = steps
-	c.currstep = -1 // incremented by GetLastRWHeader()
+func (c *TestWriteClient) injectErrors(injectedErrs []error) {
+	c.injectedErrs = injectedErrs
+	c.currErr = -1
 	c.retry = false
 }
 
@@ -1096,60 +1099,56 @@ func (c *TestWriteClient) waitForExpectedData(tb testing.TB, timeout time.Durati
 	}
 }
 
-func (c *TestWriteClient) Store(_ context.Context, req []byte, attemptNos int, rwFormat config.RemoteWriteFormat, compression string) error {
+func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) error {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 	// nil buffers are ok for snappy, ignore cast error.
 	if c.buf != nil {
 		c.buf = c.buf[:cap(c.buf)]
 	}
+
+	// TODO(bwplotka): Consider using WriteHandler instead?
 	reqBuf, err := snappy.Decode(c.buf, req)
 	c.buf = reqBuf
 	if err != nil {
 		return err
 	}
 
-	attemptString := fmt.Sprintf("%d,%d,%s", attemptNos, rwFormat, compression)
-
-	if attemptNos > 0 {
-		// If this is a second attempt then we need to bump to the next step otherwise we loop.
-		c.currstep++
-	}
-
-	// Check if we've been told to return something for this config.
-	if len(c.steps) > 0 {
-		if err = c.steps[c.currstep].behaviour; err != nil {
-			c.sendAttempts = append(c.sendAttempts, attemptString+","+fmt.Sprintf("%s", err))
+	// Check if we've been told to inject err for this call.
+	if len(c.injectedErrs) > 0 {
+		c.currErr++
+		if err = c.injectedErrs[c.currErr]; err != nil {
 			return err
 		}
 	}
 
 	var reqProto *prompb.WriteRequest
-	switch rwFormat {
-	case Version1:
+	switch c.protoMsg {
+	case config.RemoteWriteProtoMsgV1:
 		reqProto = &prompb.WriteRequest{}
 		err = proto.Unmarshal(reqBuf, reqProto)
-	case Version2:
-		var reqMin writev2.Request
-		err = proto.Unmarshal(reqBuf, &reqMin)
+	case config.RemoteWriteProtoMsgV2:
+		// NOTE(bwplotka): v1 msg can be unmarshaled to v2 sometimes, without
+		// errors.
+		var reqProtoV2 writev2.Request
+		err = proto.Unmarshal(reqBuf, &reqProtoV2)
 		if err == nil {
-			reqProto, err = MinimizedWriteRequestToWriteRequest(&reqMin)
+			reqProto, err = V2WriteRequestToWriteRequest(&reqProtoV2)
 		}
 	}
-
 	if err != nil {
-		c.sendAttempts = append(c.sendAttempts, attemptString+","+fmt.Sprintf("%s", err))
 		return err
 	}
+
+	if len(reqProto.Timeseries) == 0 && len(reqProto.Metadata) == 0 {
+		return errors.New("invalid request, no timeseries")
+	}
+
 	builder := labels.NewScratchBuilder(0)
-	count := 0
 	for _, ts := range reqProto.Timeseries {
 		labels := labelProtosToLabels(&builder, ts.Labels)
 		seriesName := labels.Get("__name__")
-		for _, sample := range ts.Samples {
-			count++
-			c.receivedSamples[seriesName] = append(c.receivedSamples[seriesName], sample)
-		}
+		c.receivedSamples[seriesName] = append(c.receivedSamples[seriesName], ts.Samples...)
 		if len(ts.Exemplars) > 0 {
 			c.receivedExemplars[seriesName] = append(c.receivedExemplars[seriesName], ts.Exemplars...)
 		}
@@ -1166,7 +1165,6 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, attemptNos int, r
 	}
 
 	c.writesReceived++
-	c.sendAttempts = append(c.sendAttempts, attemptString+",ok")
 	return nil
 }
 
@@ -1176,20 +1174,6 @@ func (c *TestWriteClient) Name() string {
 
 func (c *TestWriteClient) Endpoint() string {
 	return "http://test-remote.com/1234"
-}
-
-func (c *TestWriteClient) probeRemoteVersions(_ context.Context) error {
-	return nil
-}
-
-func (c *TestWriteClient) GetLastRWHeader() string {
-	c.mtx.Lock()
-	defer c.mtx.Unlock()
-	c.currstep++
-	if len(c.steps) > 0 {
-		return c.steps[c.currstep].lastRWHeader
-	}
-	return "2.0;snappy,0.1.0"
 }
 
 // TestBlockingWriteClient is a queue_manager WriteClient which will block
@@ -1204,7 +1188,7 @@ func NewTestBlockedWriteClient() *TestBlockingWriteClient {
 	return &TestBlockingWriteClient{}
 }
 
-func (c *TestBlockingWriteClient) Store(ctx context.Context, _ []byte, _ int, _ config.RemoteWriteFormat, _ string) error {
+func (c *TestBlockingWriteClient) Store(ctx context.Context, _ []byte, _ int) error {
 	c.numCalls.Inc()
 	<-ctx.Done()
 	return nil
@@ -1222,27 +1206,15 @@ func (c *TestBlockingWriteClient) Endpoint() string {
 	return "http://test-remote-blocking.com/1234"
 }
 
-func (c *TestBlockingWriteClient) probeRemoteVersions(_ context.Context) error {
-	return nil
-}
-
-func (c *TestBlockingWriteClient) GetLastRWHeader() string {
-	return "2.0;snappy,0.1.0"
-}
-
 // For benchmarking the send and not the receive side.
 type NopWriteClient struct{}
 
 func NewNopWriteClient() *NopWriteClient { return &NopWriteClient{} }
-func (c *NopWriteClient) Store(context.Context, []byte, int, config.RemoteWriteFormat, string) error {
+func (c *NopWriteClient) Store(context.Context, []byte, int) error {
 	return nil
 }
 func (c *NopWriteClient) Name() string     { return "nopwriteclient" }
 func (c *NopWriteClient) Endpoint() string { return "http://test-remote.com/1234" }
-func (c *NopWriteClient) probeRemoteVersions(_ context.Context) error {
-	return nil
-}
-func (c *NopWriteClient) GetLastRWHeader() string { return "2.0;snappy,0.1.0" }
 
 type MockWriteClient struct {
 	StoreFunc    func(context.Context, []byte, int) error
@@ -1250,19 +1222,11 @@ type MockWriteClient struct {
 	EndpointFunc func() string
 }
 
-func (c *MockWriteClient) Store(ctx context.Context, bb []byte, n int, _ config.RemoteWriteFormat, _ string) error {
+func (c *MockWriteClient) Store(ctx context.Context, bb []byte, n int) error {
 	return c.StoreFunc(ctx, bb, n)
 }
 func (c *MockWriteClient) Name() string     { return c.NameFunc() }
 func (c *MockWriteClient) Endpoint() string { return c.EndpointFunc() }
-
-// TODO(bwplotka): Mock it if needed.
-func (c *MockWriteClient) GetLastRWHeader() string { return "2.0;snappy,0.1.0" }
-
-// TODO(bwplotka): Mock it if needed.
-func (c *MockWriteClient) probeRemoteVersions(_ context.Context) error {
-	return nil
-}
 
 // Extra labels to make a more realistic workload - taken from Kubernetes' embedded cAdvisor metrics.
 var extraLabels []labels.Label = []labels.Label{
@@ -1302,7 +1266,7 @@ func BenchmarkSampleSend(b *testing.B) {
 
 	metrics := newQueueManagerMetrics(nil, "", "")
 	// todo: test with new proto type(s)
-	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, Version1)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, config.RemoteWriteProtoMsgV1)
 	m.StoreSeries(series, 0)
 
 	// These should be received by the client.
@@ -1356,12 +1320,12 @@ func BenchmarkStoreSeries(b *testing.B) {
 	for _, tc := range testCases {
 		b.Run(tc.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				c := NewTestWriteClient(Version1)
+				c := NewTestWriteClient(config.RemoteWriteProtoMsgV1)
 				dir := b.TempDir()
 				cfg := config.DefaultQueueConfig
 				mcfg := config.DefaultMetadataConfig
 				metrics := newQueueManagerMetrics(nil, "", "")
-				m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, Version1)
+				m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, config.RemoteWriteProtoMsgV1)
 				m.externalLabels = tc.externalLabels
 				m.relabelConfigs = tc.relabelConfigs
 
@@ -1401,7 +1365,7 @@ func BenchmarkStartup(b *testing.B) {
 		// todo: test with new proto type(s)
 		m := NewQueueManager(metrics, nil, nil, logger, dir,
 			newEWMARate(ewmaWeight, shardUpdateDuration),
-			cfg, mcfg, labels.EmptyLabels(), nil, c, 1*time.Minute, newPool(), newHighestTimestampMetric(), nil, false, false, Version1)
+			cfg, mcfg, labels.EmptyLabels(), nil, c, 1*time.Minute, newPool(), newHighestTimestampMetric(), nil, false, false, config.RemoteWriteProtoMsgV1)
 		m.watcher.SetStartTime(timestamp.Time(math.MaxInt64))
 		m.watcher.MaxSegment = segments[len(segments)-2]
 		err := m.watcher.Run()
@@ -1488,7 +1452,7 @@ func TestCalculateDesiredShards(t *testing.T) {
 	metrics := newQueueManagerMetrics(nil, "", "")
 	samplesIn := newEWMARate(ewmaWeight, shardUpdateDuration)
 	// todo: test with new proto type(s)
-	m := NewQueueManager(metrics, nil, nil, nil, dir, samplesIn, cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, Version1)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, samplesIn, cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, config.RemoteWriteProtoMsgV1)
 
 	// Need to start the queue manager so the proper metrics are initialized.
 	// However we can stop it right away since we don't need to do any actual
@@ -1557,7 +1521,7 @@ func TestCalculateDesiredShards(t *testing.T) {
 }
 
 func TestCalculateDesiredShardsDetail(t *testing.T) {
-	c := NewTestWriteClient(Version1)
+	c := NewTestWriteClient(config.RemoteWriteProtoMsgV1)
 	cfg := config.DefaultQueueConfig
 	mcfg := config.DefaultMetadataConfig
 
@@ -1566,7 +1530,7 @@ func TestCalculateDesiredShardsDetail(t *testing.T) {
 	metrics := newQueueManagerMetrics(nil, "", "")
 	samplesIn := newEWMARate(ewmaWeight, shardUpdateDuration)
 	// todo: test with new proto type(s)
-	m := NewQueueManager(metrics, nil, nil, nil, dir, samplesIn, cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, Version1)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, samplesIn, cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, config.RemoteWriteProtoMsgV1)
 
 	for _, tc := range []struct {
 		name            string
@@ -1886,7 +1850,7 @@ func BenchmarkBuildWriteRequest(b *testing.B) {
 	})
 }
 
-func BenchmarkBuildMinimizedWriteRequest(b *testing.B) {
+func BenchmarkBuildV2WriteRequest(b *testing.B) {
 	noopLogger := log.NewNopLogger()
 	type testcase struct {
 		batch []timeSeries
@@ -1897,7 +1861,7 @@ func BenchmarkBuildMinimizedWriteRequest(b *testing.B) {
 		{createDummyTimeSeries(100)},
 	}
 	for _, tc := range testCases {
-		symbolTable := newRwSymbolTable()
+		symbolTable := writev2.NewSymbolTable()
 		buff := make([]byte, 0)
 		seriesBuff := make([]writev2.TimeSeries, len(tc.batch))
 		for i := range seriesBuff {
@@ -1909,7 +1873,7 @@ func BenchmarkBuildMinimizedWriteRequest(b *testing.B) {
 		// Warmup buffers
 		for i := 0; i < 10; i++ {
 			populateV2TimeSeries(&symbolTable, tc.batch, seriesBuff, true, true)
-			buildV2WriteRequest(noopLogger, seriesBuff, symbolTable.LabelsStrings(), &pBuf, &buff, nil, "snappy")
+			buildV2WriteRequest(noopLogger, seriesBuff, symbolTable.Symbols(), &pBuf, &buff, nil, "snappy")
 		}
 
 		b.Run(fmt.Sprintf("%d-instances", len(tc.batch)), func(b *testing.B) {
@@ -1917,11 +1881,11 @@ func BenchmarkBuildMinimizedWriteRequest(b *testing.B) {
 			for j := 0; j < b.N; j++ {
 				populateV2TimeSeries(&symbolTable, tc.batch, seriesBuff, true, true)
 				b.ResetTimer()
-				req, _, _, err := buildV2WriteRequest(noopLogger, seriesBuff, symbolTable.LabelsStrings(), &pBuf, &buff, nil, "snappy")
+				req, _, _, err := buildV2WriteRequest(noopLogger, seriesBuff, symbolTable.Symbols(), &pBuf, &buff, nil, "snappy")
 				if err != nil {
 					b.Fatal(err)
 				}
-				symbolTable.clear()
+				symbolTable.Reset()
 				totalSize += len(req)
 				b.ReportMetric(float64(totalSize)/float64(b.N), "compressedSize/op")
 			}
@@ -1936,7 +1900,7 @@ func TestDropOldTimeSeries(t *testing.T) {
 	samples, newSamples, series := createTimeseriesWithOldSamples(nSamples, nSeries)
 
 	// TODO(alexg): test with new version
-	c := NewTestWriteClient(Version1)
+	c := NewTestWriteClient(config.RemoteWriteProtoMsgV1)
 	c.expectSamples(newSamples, series)
 
 	cfg := config.DefaultQueueConfig
@@ -1946,7 +1910,7 @@ func TestDropOldTimeSeries(t *testing.T) {
 	dir := t.TempDir()
 
 	metrics := newQueueManagerMetrics(nil, "", "")
-	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, Version1)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, config.RemoteWriteProtoMsgV1)
 	m.StoreSeries(series, 0)
 
 	m.Start()
