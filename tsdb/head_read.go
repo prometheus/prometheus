@@ -362,9 +362,14 @@ func (h *headChunkReader) chunk(meta chunks.Meta, copyLastChunk bool) (chunkenc.
 	}
 
 	s.Lock()
+	defer s.Unlock()
+	return h.chunkFromSeries(s, cid, copyLastChunk)
+}
+
+// Call with s locked.
+func (h *headChunkReader) chunkFromSeries(s *memSeries, cid chunks.HeadChunkID, copyLastChunk bool) (chunkenc.Chunk, int64, error) {
 	c, headChunk, isOpen, err := s.chunk(cid, h.head.chunkDiskMapper, &h.head.memChunkPool)
 	if err != nil {
-		s.Unlock()
 		return nil, 0, err
 	}
 	defer func() {
@@ -378,7 +383,6 @@ func (h *headChunkReader) chunk(meta chunks.Meta, copyLastChunk bool) (chunkenc.
 
 	// This means that the chunk is outside the specified range.
 	if !c.OverlapsClosedInterval(h.mint, h.maxt) {
-		s.Unlock()
 		return nil, 0, storage.ErrNotFound
 	}
 
@@ -395,7 +399,6 @@ func (h *headChunkReader) chunk(meta chunks.Meta, copyLastChunk bool) (chunkenc.
 			return nil, 0, err
 		}
 	}
-	s.Unlock()
 
 	return &safeHeadChunk{
 		Chunk:    chk,
