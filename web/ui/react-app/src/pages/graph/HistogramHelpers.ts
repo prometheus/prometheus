@@ -27,7 +27,7 @@ export function findMinPositive(buckets: [number, string, string, string][]) {
 export function findMaxNegative(buckets: [number, string, string, string][]) {
   if (buckets) {
     for (let i = 0; i < buckets.length; i++) {
-      if (parseFloat(buckets[i][2]) > 0) {
+      if (parseFloat(buckets[i][2]) >= 0) {
         if (i === 0) {
           if (parseFloat(buckets[i][1]) < 0) {
             return parseFloat(buckets[i][1]); // return the first negative bucket
