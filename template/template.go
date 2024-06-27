@@ -32,6 +32,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
+	common_templates "github.com/prometheus/common/helpers/templates"
+
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -263,51 +265,7 @@ func NewTemplateExpander(
 				}
 				return fmt.Sprintf("%.4g%s", v, prefix), nil
 			},
-			"humanizeDuration": func(i interface{}) (string, error) {
-				v, err := convertToFloat(i)
-				if err != nil {
-					return "", err
-				}
-				if math.IsNaN(v) || math.IsInf(v, 0) {
-					return fmt.Sprintf("%.4g", v), nil
-				}
-				if v == 0 {
-					return fmt.Sprintf("%.4gs", v), nil
-				}
-				if math.Abs(v) >= 1 {
-					sign := ""
-					if v < 0 {
-						sign = "-"
-						v = -v
-					}
-					duration := int64(v)
-					seconds := duration % 60
-					minutes := (duration / 60) % 60
-					hours := (duration / 60 / 60) % 24
-					days := duration / 60 / 60 / 24
-					// For days to minutes, we display seconds as an integer.
-					if days != 0 {
-						return fmt.Sprintf("%s%dd %dh %dm %ds", sign, days, hours, minutes, seconds), nil
-					}
-					if hours != 0 {
-						return fmt.Sprintf("%s%dh %dm %ds", sign, hours, minutes, seconds), nil
-					}
-					if minutes != 0 {
-						return fmt.Sprintf("%s%dm %ds", sign, minutes, seconds), nil
-					}
-					// For seconds, we display 4 significant digits.
-					return fmt.Sprintf("%s%.4gs", sign, v), nil
-				}
-				prefix := ""
-				for _, p := range []string{"m", "u", "n", "p", "f", "a", "z", "y"} {
-					if math.Abs(v) >= 1 {
-						break
-					}
-					prefix = p
-					v *= 1000
-				}
-				return fmt.Sprintf("%.4g%ss", v, prefix), nil
-			},
+			"humanizeDuration": common_templates.HumanizeDuration,
 			"humanizePercentage": func(i interface{}) (string, error) {
 				v, err := convertToFloat(i)
 				if err != nil {

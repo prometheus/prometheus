@@ -1,58 +1,59 @@
-// DO NOT EDIT. COPIED AS-IS. SEE ../README.md
+// Copyright 2024 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// Provenance-includes-location: https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/95e8f8fdc2a9dc87230406c9a3cf02be4fd68bea/pkg/translator/prometheusremotewrite/histograms.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: Copyright The OpenTelemetry Authors.
 
-// Copyright The OpenTelemetry Authors
-// SPDX-License-Identifier: Apache-2.0
-
-package prometheusremotewrite // import "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
+package prometheusremotewrite
 
 import (
 	"fmt"
 	"math"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/value"
-	"github.com/prometheus/prometheus/prompb"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
+
+	"github.com/prometheus/prometheus/model/value"
+	"github.com/prometheus/prometheus/prompb"
 )
 
 const defaultZeroThreshold = 1e-128
 
-func addSingleExponentialHistogramDataPoint(
-	metric string,
-	pt pmetric.ExponentialHistogramDataPoint,
-	resource pcommon.Resource,
-	settings Settings,
-	series map[string]*prompb.TimeSeries,
-) error {
-	labels := createAttributes(
-		resource,
-		pt.Attributes(),
-		settings.ExternalLabels,
-		model.MetricNameLabel,
-		metric,
-	)
+func (c *PrometheusConverter) addExponentialHistogramDataPoints(dataPoints pmetric.ExponentialHistogramDataPointSlice,
+	resource pcommon.Resource, settings Settings, baseName string) error {
+	for x := 0; x < dataPoints.Len(); x++ {
+		pt := dataPoints.At(x)
+		lbls := createAttributes(
+			resource,
+			pt.Attributes(),
+			settings.ExternalLabels,
+			nil,
+			true,
+			model.MetricNameLabel,
+			baseName,
+		)
+		ts, _ := c.getOrCreateTimeSeries(lbls)
 
-	sig := timeSeriesSignature(
-		pmetric.MetricTypeExponentialHistogram.String(),
-		labels,
-	)
-	ts, ok := series[sig]
-	if !ok {
-		ts = &prompb.TimeSeries{
-			Labels: labels,
+		histogram, err := exponentialToNativeHistogram(pt)
+		if err != nil {
+			return err
 		}
-		series[sig] = ts
-	}
+		ts.Histograms = append(ts.Histograms, histogram)
 
-	histogram, err := exponentialToNativeHistogram(pt)
-	if err != nil {
-		return err
+		exemplars := getPromExemplars[pmetric.ExponentialHistogramDataPoint](pt)
+		ts.Exemplars = append(ts.Exemplars, exemplars...)
 	}
-	ts.Histograms = append(ts.Histograms, histogram)
-
-	exemplars := getPromExemplars[pmetric.ExponentialHistogramDataPoint](pt)
-	ts.Exemplars = append(ts.Exemplars, exemplars...)
 
 	return nil
 }

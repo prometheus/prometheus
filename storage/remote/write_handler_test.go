@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -266,14 +267,14 @@ func TestRemoteWriteHandler_V1Message(t *testing.T) {
 	j := 0
 	k := 0
 	for _, ts := range writeRequestFixture.Timeseries {
-		labels := labelProtosToLabels(&b, ts.Labels)
+		labels := LabelProtosToLabels(&b, ts.Labels)
 		for _, s := range ts.Samples {
 			requireEqual(t, mockSample{labels, s.Timestamp, s.Value}, appendable.samples[i])
 			i++
 		}
 
 		for _, e := range ts.Exemplars {
-			exemplarLabels := labelProtosToLabels(&b, e.Labels)
+			exemplarLabels := LabelProtosToLabels(&b, e.Labels)
 			requireEqual(t, mockExemplar{labels, exemplarLabels, e.Timestamp, e.Value}, appendable.exemplars[j])
 			j++
 		}
@@ -292,6 +293,7 @@ func TestRemoteWriteHandler_V1Message(t *testing.T) {
 	}
 }
 
+<<<<<<< HEAD
 func TestRemoteWriteHandler_V2Message(t *testing.T) {
 	payload, _, _, err := buildV2WriteRequest(log.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
 	require.NoError(t, err)
@@ -382,17 +384,52 @@ func TestOutOfOrderSample_V2Message(t *testing.T) {
 
 	appendable := &mockAppendable{latestSample: 100}
 	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2})
+=======
+func TestOutOfOrderSample(t *testing.T) {
+	tests := []struct {
+		Name      string
+		Timestamp int64
+	}{
+		{
+			Name:      "historic",
+			Timestamp: 0,
+		},
+		{
+			Name:      "future",
+			Timestamp: math.MaxInt64,
+		},
+	}
+>>>>>>> main
 
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, req)
+	for _, tc := range tests {
+		t.Run(tc.Name, func(t *testing.T) {
+			buf, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
+				Labels:  []prompb.Label{{Name: "__name__", Value: "test_metric"}},
+				Samples: []prompb.Sample{{Value: 1, Timestamp: tc.Timestamp}},
+			}}, nil, nil, nil, nil)
+			require.NoError(t, err)
 
-	resp := recorder.Result()
-	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+			req, err := http.NewRequest("", "", bytes.NewReader(buf))
+			require.NoError(t, err)
+
+			appendable := &mockAppendable{
+				latestSample: 100,
+			}
+			handler := NewWriteHandler(log.NewNopLogger(), nil, appendable)
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+
+			resp := recorder.Result()
+			require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+		})
+	}
 }
 
 // This test case currently aims to verify that the WriteHandler endpoint
 // don't fail on exemplar ingestion errors since the exemplar storage is
 // still experimental.
+<<<<<<< HEAD
 func TestOutOfOrderExemplar_V1Message(t *testing.T) {
 	payload, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
 		Labels:    []prompb.Label{{Name: "__name__", Value: "test_metric"}},
@@ -405,15 +442,50 @@ func TestOutOfOrderExemplar_V1Message(t *testing.T) {
 
 	appendable := &mockAppendable{latestExemplar: 100}
 	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
+=======
+func TestOutOfOrderExemplar(t *testing.T) {
+	tests := []struct {
+		Name      string
+		Timestamp int64
+	}{
+		{
+			Name:      "historic",
+			Timestamp: 0,
+		},
+		{
+			Name:      "future",
+			Timestamp: math.MaxInt64,
+		},
+	}
+>>>>>>> main
 
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, req)
+	for _, tc := range tests {
+		t.Run(tc.Name, func(t *testing.T) {
+			buf, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
+				Labels:    []prompb.Label{{Name: "__name__", Value: "test_metric"}},
+				Exemplars: []prompb.Exemplar{{Labels: []prompb.Label{{Name: "foo", Value: "bar"}}, Value: 1, Timestamp: tc.Timestamp}},
+			}}, nil, nil, nil, nil)
+			require.NoError(t, err)
 
-	resp := recorder.Result()
-	// TODO: update to require.Equal(t, http.StatusConflict, resp.StatusCode) once exemplar storage is not experimental.
-	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+			req, err := http.NewRequest("", "", bytes.NewReader(buf))
+			require.NoError(t, err)
+
+			appendable := &mockAppendable{
+				latestExemplar: 100,
+			}
+			handler := NewWriteHandler(log.NewNopLogger(), nil, appendable)
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+
+			resp := recorder.Result()
+			// TODO: update to require.Equal(t, http.StatusConflict, resp.StatusCode) once exemplar storage is not experimental.
+			require.Equal(t, http.StatusNoContent, resp.StatusCode)
+		})
+	}
 }
 
+<<<<<<< HEAD
 func TestOutOfOrderExemplar_V2Message(t *testing.T) {
 	payload, _, _, err := buildV2WriteRequest(nil, []writev2.TimeSeries{{
 		LabelsRefs: []uint32{0, 1},
@@ -451,12 +523,46 @@ func TestOutOfOrderHistogram_V1Message(t *testing.T) {
 
 	appendable := &mockAppendable{latestHistogram: 100}
 	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
+=======
+func TestOutOfOrderHistogram(t *testing.T) {
+	tests := []struct {
+		Name      string
+		Timestamp int64
+	}{
+		{
+			Name:      "historic",
+			Timestamp: 0,
+		},
+		{
+			Name:      "future",
+			Timestamp: math.MaxInt64,
+		},
+	}
+>>>>>>> main
 
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, req)
+	for _, tc := range tests {
+		t.Run(tc.Name, func(t *testing.T) {
+			buf, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
+				Labels:     []prompb.Label{{Name: "__name__", Value: "test_metric"}},
+				Histograms: []prompb.Histogram{HistogramToHistogramProto(tc.Timestamp, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat(nil))},
+			}}, nil, nil, nil, nil)
+			require.NoError(t, err)
 
-	resp := recorder.Result()
-	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+			req, err := http.NewRequest("", "", bytes.NewReader(buf))
+			require.NoError(t, err)
+
+			appendable := &mockAppendable{
+				latestHistogram: 100,
+			}
+			handler := NewWriteHandler(log.NewNopLogger(), nil, appendable)
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+
+			resp := recorder.Result()
+			require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+		})
+	}
 }
 
 func TestOutOfOrderHistogram_V2Message(t *testing.T) {

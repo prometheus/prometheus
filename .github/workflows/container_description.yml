@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - "README.md"
+      - "README-containers.md"
       - ".github/workflows/container_description.yml"
     branches: [ main, master ]
 
@@ -17,7 +18,7 @@ jobs:
     if: github.repository_owner == 'prometheus' || github.repository_owner == 'prometheus-community' # Don't run this workflow on forks.
     steps:
       - name: git checkout
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
       - name: Set docker hub repo name
         run: echo "DOCKER_REPO_NAME=$(make docker-repo-name)" >> $GITHUB_ENV
       - name: Push README to Dockerhub
@@ -29,7 +30,9 @@ jobs:
           destination_container_repo: ${{ env.DOCKER_REPO_NAME }}
           provider: dockerhub
           short_description: ${{ env.DOCKER_REPO_NAME }}
-          readme_file: 'README.md'
+          # Empty string results in README-containers.md being pushed if it
+          # exists. Otherwise, README.md is pushed.
+          readme_file: ''
 
   PushQuayIoReadme:
     runs-on: ubuntu-latest
@@ -37,7 +40,7 @@ jobs:
     if: github.repository_owner == 'prometheus' || github.repository_owner == 'prometheus-community' # Don't run this workflow on forks.
     steps:
       - name: git checkout
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
       - name: Set quay.io org name
         run: echo "DOCKER_REPO=$(echo quay.io/${GITHUB_REPOSITORY_OWNER} | tr -d '-')" >> $GITHUB_ENV
       - name: Set quay.io repo name
@@ -49,4 +52,6 @@ jobs:
         with:
           destination_container_repo: ${{ env.DOCKER_REPO_NAME }}
           provider: quay
-          readme_file: 'README.md'
+          # Empty string results in README-containers.md being pushed if it
+          # exists. Otherwise, README.md is pushed.
+          readme_file: ''
