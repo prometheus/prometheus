@@ -467,7 +467,7 @@ func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTi
 			// This only checks against the latest in-order sample.
 			// The OOO headchunk has its own method to detect these duplicates.
 			if math.Float64bits(s.lastValue) != math.Float64bits(v) {
-				return false, 0, storage.ErrDuplicateSampleForTimestamp
+				return false, 0, storage.NewDuplicateFloatErr(t, s.lastValue, v)
 			}
 			// Sample is identical (ts + value) with most current (highest ts) sample in sampleBuf.
 			return false, 0, nil
@@ -1467,8 +1467,8 @@ func (s *memSeries) mmapChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (count i
 		return
 	}
 
-	// Write chunks starting from the oldest one and stop before we get to current s.headChunk.
-	// If we have this chain: s.headChunk{t4} -> t3 -> t2 -> t1 -> t0
+	// Write chunks starting from the oldest one and stop before we get to current s.headChunks.
+	// If we have this chain: s.headChunks{t4} -> t3 -> t2 -> t1 -> t0
 	// then we need to write chunks t0 to t3, but skip s.headChunks.
 	for i := s.headChunks.len() - 1; i > 0; i-- {
 		chk := s.headChunks.atOffset(i)

@@ -503,6 +503,18 @@ eval instant at 1m avg(data{test="-big"})
 eval instant at 1m avg(data{test="bigzero"})
 	{} 0
 
+# Test summing extreme values.
+clear
+
+load 10s
+	data{test="ten",point="a"} 2
+	data{test="ten",point="b"} 8
+	data{test="ten",point="c"} 1e+100
+	data{test="ten",point="d"} -1e100
+
+eval instant at 1m sum(data{test="ten"})
+	{} 10
+
 clear
 
 # Test that aggregations are deterministic.

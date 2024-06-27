@@ -45,6 +45,10 @@ func NewHistogramChunk() *HistogramChunk {
 	return &HistogramChunk{b: bstream{stream: b, count: 0}}
 }
 
+func (c *HistogramChunk) Reset(stream []byte) {
+	c.b.Reset(stream)
+}
+
 // Encoding returns the encoding type.
 func (c *HistogramChunk) Encoding() Encoding {
 	return EncHistogram
