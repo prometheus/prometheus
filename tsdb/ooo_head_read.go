@@ -92,6 +92,10 @@ func (oh *OOOHeadIndexReader) series(ref storage.SeriesRef, builder *labels.Scra
 		return nil
 	}
 
+	return getOOOSeriesChunks(s, oh.mint, oh.maxt, lastGarbageCollectedMmapRef, maxMmapRef, chks)
+}
+
+func getOOOSeriesChunks(s *memSeries, mint, maxt int64, lastGarbageCollectedMmapRef, maxMmapRef chunks.ChunkDiskMapperRef, chks *[]chunks.Meta) error {
 	tmpChks := make([]chunks.Meta, 0, len(s.ooo.oooMmappedChunks))
 
 	// We define these markers to track the last chunk reference while we
@@ -126,14 +130,14 @@ func (oh *OOOHeadIndexReader) series(ref storage.SeriesRef, builder *labels.Scra
 	// so we can set the correct markers.
 	if s.ooo.oooHeadChunk != nil {
 		c := s.ooo.oooHeadChunk
-		if c.OverlapsClosedInterval(oh.mint, oh.maxt) && maxMmapRef == 0 {
+		if c.OverlapsClosedInterval(mint, maxt) && maxMmapRef == 0 {
 			ref := chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.oooHeadChunkID(len(s.ooo.oooMmappedChunks))))
 			addChunk(c.minTime, c.maxTime, ref)
 		}
 	}
 	for i := len(s.ooo.oooMmappedChunks) - 1; i >= 0; i-- {
 		c := s.ooo.oooMmappedChunks[i]
-		if c.OverlapsClosedInterval(oh.mint, oh.maxt) && (maxMmapRef == 0 || maxMmapRef.GreaterThanOrEqualTo(c.ref)) && (lastGarbageCollectedMmapRef == 0 || c.ref.GreaterThan(lastGarbageCollectedMmapRef)) {
+		if c.OverlapsClosedInterval(mint, maxt) && (maxMmapRef == 0 || maxMmapRef.GreaterThanOrEqualTo(c.ref)) && (lastGarbageCollectedMmapRef == 0 || c.ref.GreaterThan(lastGarbageCollectedMmapRef)) {
 			ref := chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.oooHeadChunkID(i)))
 			addChunk(c.minTime, c.maxTime, ref)
 		}
