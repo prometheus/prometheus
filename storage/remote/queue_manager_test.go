@@ -1952,11 +1952,8 @@ func TestSendSamplesWithBackoffWithSampleAgeLimit(t *testing.T) {
 	metadataCfg.SendInterval = model.Duration(time.Second * 60)
 	metadataCfg.MaxSamplesPerSend = maxSamplesPerSend
 	c := NewTestWriteClient(config.RemoteWriteProtoMsgV1)
+	m := newTestQueueManager(t, cfg, metadataCfg, time.Second, c, config.RemoteWriteProtoMsgV1)
 
-	// TODO(npazosmendez): the helpers from https://github.com/prometheus/prometheus/pull/12304/commits/8f525b4ba4eb14f22a54cec4cf9b855d5c8efe4a
-	// were lost in the merge for some reason. Investigate and restore as needed.
-	metrics := newQueueManagerMetrics(nil, "", "")
-	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, metadataCfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, config.RemoteWriteProtoMsgV1)
 	m.Start()
 
 	batchID := 0
