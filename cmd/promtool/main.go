@@ -793,8 +793,12 @@ func checkRulesFromStdin(ls lintConfig) (bool, bool) {
 			return failed, hasErrors
 		}
 	}
-	if n, errs := checkRuleGroups(rgs, ls); errs != nil {
-		fmt.Fprintln(os.Stderr, "  FAILED:")
+	if n, errs, isFatal := checkRuleGroups(rgs, ls); errs != nil {
+		msg := "  FAILED:"
+		if !isFatal {
+			msg = " WARNING:"
+		}
+		fmt.Fprintln(os.Stderr, msg)
 		for _, e := range errs {
 			fmt.Fprintln(os.Stderr, e.Error())
 		}
@@ -869,7 +873,7 @@ func checkRuleGroups(rgs *rulefmt.RuleGroups, lintSettings lintConfig) (int, []e
 		}
 	}
 
-	return numRules, nil
+	return numRules, nil, false
 }
 
 type compareRuleType struct {
