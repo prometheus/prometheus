@@ -830,7 +830,7 @@ func checkRules(files []string, ls lintConfig) (bool, bool) {
 		if n, errs, isFatal := checkRuleGroups(rgs, ls); errs != nil {
 			msg := "  FAILED:"
 			if !isFatal {
-				msg = " WARNING:"
+				msg = "  WARNING:"
 			}
 			fmt.Fprintln(os.Stderr, msg)
 			for _, e := range errs {
