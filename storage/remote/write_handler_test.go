@@ -348,7 +348,6 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 }
 
 func TestOutOfOrderSample_V1Message(t *testing.T) {
-
 	tests := []struct {
 		Name      string
 		Timestamp int64
@@ -382,7 +381,6 @@ func TestOutOfOrderSample_V1Message(t *testing.T) {
 
 			resp := recorder.Result()
 			require.Equal(t, http.StatusBadRequest, resp.StatusCode)
-
 		})
 	}
 }
