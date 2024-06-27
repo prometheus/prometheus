@@ -343,10 +343,15 @@ func (h *headChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chu
 	return chk, nil, err
 }
 
-// ChunkWithCopy returns the chunk for the reference number.
-// If the chunk is the in-memory chunk, then it makes a copy and returns the copied chunk.
-func (h *headChunkReader) ChunkWithCopy(meta chunks.Meta) (chunkenc.Chunk, int64, error) {
-	return h.chunk(meta, true)
+type ChunkReaderWithCopy interface {
+	ChunkOrIterableWithCopy(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, int64, error)
+}
+
+// ChunkOrIterableWithCopy returns the chunk for the reference number.
+// If the chunk is the in-memory chunk, then it makes a copy and returns the copied chunk, plus the max time of the chunk.
+func (h *headChunkReader) ChunkOrIterableWithCopy(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {
+	chk, maxTime, err := h.chunk(meta, true)
+	return chk, nil, maxTime, err
 }
 
 // chunk returns the chunk for the reference number.
