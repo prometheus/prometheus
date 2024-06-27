@@ -206,6 +206,11 @@ func (re Regexp) MarshalYAML() (interface{}, error) {
 	return nil, nil
 }
 
+// IsZero implements the yaml.IsZeroer interface.
+func (re Regexp) IsZero() bool {
+	return re.Regexp == DefaultRelabelConfig.Regex.Regexp
+}
+
 // String returns the original string used to compile the regular expression.
 func (re Regexp) String() string {
 	str := re.Regexp.String()

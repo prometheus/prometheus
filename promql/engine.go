@@ -2740,7 +2740,7 @@ type groupedAggregation struct {
 	hasHistogram   bool // Has at least 1 histogram sample aggregated.
 	floatValue     float64
 	histogramValue *histogram.FloatHistogram
-	floatMean      float64
+	floatMean      float64 // Mean, or "compensating value" for Kahan summation.
 	groupCount     int
 	heap           vectorByValueHeap
 }
@@ -2768,11 +2768,13 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			*group = groupedAggregation{
 				seen:       true,
 				floatValue: f,
-				floatMean:  f,
 				groupCount: 1,
 			}
 			switch op {
-			case parser.SUM, parser.AVG:
+			case parser.AVG:
+				group.floatMean = f
+				fallthrough
+			case parser.SUM:
 				if h == nil {
 					group.hasFloat = true
 				} else {
@@ -2780,6 +2782,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 					group.hasHistogram = true
 				}
 			case parser.STDVAR, parser.STDDEV:
+				group.floatMean = f
 				group.floatValue = 0
 			case parser.QUANTILE:
 				group.heap = make(vectorByValueHeap, 1)
@@ -2802,7 +2805,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				// point in copying the histogram in that case.
 			} else {
 				group.hasFloat = true
-				group.floatValue += f
+				group.floatValue, group.floatMean = kahanSumInc(f, group.floatValue, group.floatMean)
 			}
 
 		case parser.AVG:
@@ -2913,6 +2916,8 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			}
 			if aggr.hasHistogram {
 				aggr.histogramValue.Compact(0)
+			} else {
+				aggr.floatValue += aggr.floatMean // Add Kahan summation compensating term.
 			}
 		default:
 			// For other aggregations, we already have the right value.
