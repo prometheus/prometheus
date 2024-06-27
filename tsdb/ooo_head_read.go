@@ -540,6 +540,44 @@ func (q *HeadAndOOOQuerier) Select(ctx context.Context, sortSeries bool, hints *
 	return selectSeriesSet(ctx, sortSeries, hints, matchers, q.index, q.chunkr, q.head.tombstones, q.mint, q.maxt)
 }
 
+// HeadAndOOOChunkQuerier queries both the head and the out-of-order head.
+type HeadAndOOOChunkQuerier struct {
+	mint, maxt int64
+	head       *Head
+	index      IndexReader
+	chunkr     ChunkReader
+	querier    storage.ChunkQuerier
+}
+
+func NewHeadAndOOOChunkQuerier(mint, maxt int64, head *Head, oooIsoState *oooIsolationState, querier storage.ChunkQuerier) storage.ChunkQuerier {
+	isoState := head.iso.State(mint, maxt)
+	return &HeadAndOOOChunkQuerier{
+		mint:    mint,
+		maxt:    maxt,
+		head:    head,
+		index:   NewHeadAndOOOIndexReader(head, mint, maxt, oooIsoState.minRef),
+		chunkr:  NewHeadAndOOOChunkReader(head, mint, maxt, isoState, oooIsoState),
+		querier: querier,
+	}
+}
+
+func (q *HeadAndOOOChunkQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return q.querier.LabelValues(ctx, name, matchers...)
+}
+
+func (q *HeadAndOOOChunkQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return q.querier.LabelNames(ctx, matchers...)
+}
+
+func (q *HeadAndOOOChunkQuerier) Close() error {
+	q.chunkr.Close()
+	return q.querier.Close()
+}
+
+func (q *HeadAndOOOChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
+	return selectChunkSeriesSet(ctx, sortSeries, hints, matchers, rangeHeadULID, q.index, q.chunkr, q.head.tombstones, q.mint, q.maxt)
+}
+
 type HeadAndOOOIndexReader struct {
 	*headIndexReader            // A reference to the headIndexReader so we can reuse as many interface implementation as possible.
 	lastGarbageCollectedMmapRef chunks.ChunkDiskMapperRef
