@@ -19,11 +19,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-<<<<<<< HEAD
 	"strings"
-=======
 	"time"
->>>>>>> main
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -51,7 +48,8 @@ type writeHandler struct {
 	acceptedProtoMsgs map[config.RemoteWriteProtoMsg]struct{}
 }
 
-<<<<<<< HEAD
+const maxAheadTime = 10 * time.Minute
+
 // NewWriteHandler creates a http.Handler that accepts remote write requests with
 // the given message in acceptedProtoMsgs and writes them to the provided appendable.
 func NewWriteHandler(logger log.Logger, reg prometheus.Registerer, appendable storage.Appendable, acceptedProtoMsgs []config.RemoteWriteProtoMsg) http.Handler {
@@ -59,13 +57,6 @@ func NewWriteHandler(logger log.Logger, reg prometheus.Registerer, appendable st
 	for _, acc := range acceptedProtoMsgs {
 		protoMsgs[acc] = struct{}{}
 	}
-=======
-const maxAheadTime = 10 * time.Minute
-
-// NewWriteHandler creates a http.Handler that accepts remote write requests and
-// writes them to the provided appendable.
-func NewWriteHandler(logger log.Logger, reg prometheus.Registerer, appendable storage.Appendable) http.Handler {
->>>>>>> main
 	h := &writeHandler{
 		logger:            logger,
 		appendable:        appendable,
@@ -235,85 +226,27 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	}()
 
 	b := labels.NewScratchBuilder(0)
-<<<<<<< HEAD
 	for _, ts := range req.Timeseries {
-		ls := labelProtosToLabels(&b, ts.Labels)
+		ls := LabelProtosToLabels(&b, ts.Labels)
 		if !ls.IsValid() {
 			level.Warn(h.logger).Log("msg", "Invalid metric names or labels", "got", ls.String())
 			samplesWithInvalidLabels++
 			continue
 		}
 
-		err := h.appendSamples(app, ts.Samples, ls)
+		err := h.appendSamples(timeLimitApp, ts.Samples, ls)
 		if err != nil {
 			return err
-=======
-	var exemplarErr error
-
-	for _, ts := range req.Timeseries {
-		labels := LabelProtosToLabels(&b, ts.Labels)
-		if !labels.IsValid() {
-			level.Warn(h.logger).Log("msg", "Invalid metric names or labels", "got", labels.String())
-			samplesWithInvalidLabels++
-			continue
-		}
-		var ref storage.SeriesRef
-		for _, s := range ts.Samples {
-			ref, err = timeLimitApp.Append(ref, labels, s.Timestamp, s.Value)
-			if err != nil {
-				unwrappedErr := errors.Unwrap(err)
-				if unwrappedErr == nil {
-					unwrappedErr = err
-				}
-				if errors.Is(err, storage.ErrOutOfOrderSample) || errors.Is(unwrappedErr, storage.ErrOutOfBounds) || errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp) {
-					level.Error(h.logger).Log("msg", "Out of order sample from remote write", "err", err.Error(), "series", labels.String(), "timestamp", s.Timestamp)
-				}
-				return err
-			}
->>>>>>> main
 		}
 
 		for _, ep := range ts.Exemplars {
 			e := exemplarProtoToExemplar(&b, ep)
-<<<<<<< HEAD
-			h.appendExemplar(app, e, ls, &outOfOrderExemplarErrs)
+			h.appendExemplar(timeLimitApp, e, ls, &outOfOrderExemplarErrs)
 		}
 
-		err = h.appendHistograms(app, ts.Histograms, ls)
+		err = h.appendHistograms(timeLimitApp, ts.Histograms, ls)
 		if err != nil {
 			return err
-=======
-
-			_, exemplarErr = timeLimitApp.AppendExemplar(0, labels, e)
-			exemplarErr = h.checkAppendExemplarError(exemplarErr, e, &outOfOrderExemplarErrs)
-			if exemplarErr != nil {
-				// Since exemplar storage is still experimental, we don't fail the request on ingestion errors.
-				level.Debug(h.logger).Log("msg", "Error while adding exemplar in AddExemplar", "exemplar", fmt.Sprintf("%+v", e), "err", exemplarErr)
-			}
-		}
-
-		for _, hp := range ts.Histograms {
-			if hp.IsFloatHistogram() {
-				fhs := FloatHistogramProtoToFloatHistogram(hp)
-				_, err = timeLimitApp.AppendHistogram(0, labels, hp.Timestamp, nil, fhs)
-			} else {
-				hs := HistogramProtoToHistogram(hp)
-				_, err = timeLimitApp.AppendHistogram(0, labels, hp.Timestamp, hs, nil)
-			}
-
-			if err != nil {
-				unwrappedErr := errors.Unwrap(err)
-				if unwrappedErr == nil {
-					unwrappedErr = err
-				}
-				// Although AppendHistogram does not currently return ErrDuplicateSampleForTimestamp there is
-				// a note indicating its inclusion in the future.
-				if errors.Is(unwrappedErr, storage.ErrOutOfOrderSample) || errors.Is(unwrappedErr, storage.ErrOutOfBounds) || errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp) {
-					level.Error(h.logger).Log("msg", "Out of order histogram from remote write", "err", err.Error(), "series", labels.String(), "timestamp", hp.Timestamp)
-				}
-				return err
-			}
->>>>>>> main
 		}
 	}
 
@@ -330,35 +263,39 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 func (h *writeHandler) writeV2(ctx context.Context, req *writev2.Request) (err error) {
 	outOfOrderExemplarErrs := 0
 
-	app := h.appendable.Appender(ctx)
+	timeLimitApp := &timeLimitAppender{
+		Appender: h.appendable.Appender(ctx),
+		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
+	}
+
 	defer func() {
 		if err != nil {
-			_ = app.Rollback()
+			_ = timeLimitApp.Rollback()
 			return
 		}
-		err = app.Commit()
+		err = timeLimitApp.Commit()
 	}()
 
 	for _, ts := range req.Timeseries {
 		ls := writev2.DesymbolizeLabels(ts.LabelsRefs, req.Symbols)
 
-		err := h.appendSamplesV2(app, ts.Samples, ls)
+		err := h.appendSamplesV2(timeLimitApp, ts.Samples, ls)
 		if err != nil {
 			return err
 		}
 
 		for _, ep := range ts.Exemplars {
 			e := exemplarProtoV2ToExemplar(ep, req.Symbols)
-			h.appendExemplar(app, e, ls, &outOfOrderExemplarErrs)
+			h.appendExemplar(timeLimitApp, e, ls, &outOfOrderExemplarErrs)
 		}
 
-		err = h.appendHistogramsV2(app, ts.Histograms, ls)
+		err = h.appendHistogramsV2(timeLimitApp, ts.Histograms, ls)
 		if err != nil {
 			return err
 		}
 
 		m := metadataProtoV2ToMetadata(ts.Metadata, req.Symbols)
-		if _, err = app.UpdateMetadata(0, ls, m); err != nil {
+		if _, err = timeLimitApp.UpdateMetadata(0, ls, m); err != nil {
 			level.Debug(h.logger).Log("msg", "error while updating metadata from remote write", "err", err)
 		}
 	}

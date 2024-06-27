@@ -718,26 +718,15 @@ func TestReleaseNoninternedString(t *testing.T) {
 				m.StoreSeries([]record.RefSeries{
 					{
 						Ref:    chunks.HeadSeriesRef(i),
-						Labels: labels.FromStrings("asdf", fmt.Sprintf("%d", i)),
+						Labels: labels.FromStrings("asdf", strconv.Itoa(i)),
 					},
 				}, 0)
 				m.SeriesReset(1)
 			}
 
-<<<<<<< HEAD
 			metric := client_testutil.ToFloat64(noReferenceReleases)
 			require.Equal(t, 0.0, metric, "expected there to be no calls to release for strings that were not already interned: %d", int(metric))
 		})
-=======
-	for i := 1; i < 1000; i++ {
-		m.StoreSeries([]record.RefSeries{
-			{
-				Ref:    chunks.HeadSeriesRef(i),
-				Labels: labels.FromStrings("asdf", strconv.Itoa(i)),
-			},
-		}, 0)
-		m.SeriesReset(1)
->>>>>>> main
 	}
 }
 
@@ -974,7 +963,6 @@ func createHistograms(numSamples, numSeries int, floatHistogram bool) ([]record.
 	return histograms, nil, series
 }
 
-<<<<<<< HEAD
 func createSeriesMetadata(series []record.RefSeries) []record.RefMetadata {
 	metas := make([]record.RefMetadata, len(series))
 
@@ -989,12 +977,8 @@ func createSeriesMetadata(series []record.RefSeries) []record.RefMetadata {
 	return metas
 }
 
-func getSeriesNameFromRef(r record.RefSeries) string {
-	return r.Labels.Get("__name__")
-=======
 func getSeriesIDFromRef(r record.RefSeries) string {
 	return r.Labels.String()
->>>>>>> main
 }
 
 // TestWriteClient represents write client which does not call remote storage,
@@ -1012,16 +996,14 @@ type TestWriteClient struct {
 	writesReceived          int
 	mtx                     sync.Mutex
 	buf                     []byte
-<<<<<<< HEAD
 	protoMsg                config.RemoteWriteProtoMsg
 	injectedErrs            []error
 	currErr                 int
 	retry                   bool
-=======
 
-	storeWait   time.Duration
+	storeWait time.Duration
+	// TODO(npazosmendez): maybe replaceable with injectedErrs?
 	returnError error
->>>>>>> main
 }
 
 // NewTestWriteClient creates a new testing write client.
@@ -1030,12 +1012,9 @@ func NewTestWriteClient(protoMsg config.RemoteWriteProtoMsg) *TestWriteClient {
 		receivedSamples:  map[string][]prompb.Sample{},
 		expectedSamples:  map[string][]prompb.Sample{},
 		receivedMetadata: map[string][]prompb.MetricMetadata{},
-<<<<<<< HEAD
 		protoMsg:         protoMsg,
-=======
 		storeWait:        0,
 		returnError:      nil,
->>>>>>> main
 	}
 }
 
@@ -1059,13 +1038,6 @@ func (c *TestWriteClient) expectSamples(ss []record.RefSample, series []record.R
 			Value:     s.V,
 		})
 	}
-<<<<<<< HEAD
-=======
-	if !c.withWaitGroup {
-		return
-	}
-	c.wg.Add(len(ss))
->>>>>>> main
 }
 
 func (c *TestWriteClient) expectExemplars(ss []record.RefExemplar, series []record.RefSeries) {
@@ -1223,38 +1195,21 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) error {
 
 	builder := labels.NewScratchBuilder(0)
 	for _, ts := range reqProto.Timeseries {
-<<<<<<< HEAD
-		labels := labelProtosToLabels(&builder, ts.Labels)
-		seriesName := labels.Get("__name__")
-		c.receivedSamples[seriesName] = append(c.receivedSamples[seriesName], ts.Samples...)
-		if len(ts.Exemplars) > 0 {
-			c.receivedExemplars[seriesName] = append(c.receivedExemplars[seriesName], ts.Exemplars...)
-		}
-		for _, h := range ts.Histograms {
-			if h.IsFloatHistogram() {
-				c.receivedFloatHistograms[seriesName] = append(c.receivedFloatHistograms[seriesName], h)
-			} else {
-				c.receivedHistograms[seriesName] = append(c.receivedHistograms[seriesName], h)
-=======
 		labels := LabelProtosToLabels(&builder, ts.Labels)
 		tsID := labels.String()
-		for _, sample := range ts.Samples {
-			count++
-			c.receivedSamples[tsID] = append(c.receivedSamples[tsID], sample)
+		if len(ts.Samples) > 0 {
+			c.receivedSamples[tsID] = append(c.receivedSamples[tsID], ts.Samples...)
 		}
 
-		for _, ex := range ts.Exemplars {
-			count++
-			c.receivedExemplars[tsID] = append(c.receivedExemplars[tsID], ex)
+		if len(ts.Exemplars) > 0 {
+			c.receivedExemplars[tsID] = append(c.receivedExemplars[tsID], ts.Exemplars...)
 		}
 
-		for _, histogram := range ts.Histograms {
-			count++
-			if histogram.IsFloatHistogram() {
-				c.receivedFloatHistograms[tsID] = append(c.receivedFloatHistograms[tsID], histogram)
+		for _, h := range ts.Histograms {
+			if h.IsFloatHistogram() {
+				c.receivedFloatHistograms[tsID] = append(c.receivedFloatHistograms[tsID], h)
 			} else {
-				c.receivedHistograms[tsID] = append(c.receivedHistograms[tsID], histogram)
->>>>>>> main
+				c.receivedHistograms[tsID] = append(c.receivedHistograms[tsID], h)
 			}
 		}
 	}
@@ -2042,10 +1997,12 @@ func TestSendSamplesWithBackoffWithSampleAgeLimit(t *testing.T) {
 	metadataCfg.Send = true
 	metadataCfg.SendInterval = model.Duration(time.Second * 60)
 	metadataCfg.MaxSamplesPerSend = maxSamplesPerSend
-	c := NewTestWriteClient()
-	c.withWaitGroup = false
-	m := newTestQueueManager(t, cfg, metadataCfg, time.Second, c)
+	c := NewTestWriteClient(config.RemoteWriteProtoMsgV1)
 
+	// TODO(npazosmendez): the helpers from https://github.com/prometheus/prometheus/pull/12304/commits/8f525b4ba4eb14f22a54cec4cf9b855d5c8efe4a
+	// were lost in the merge for some reason. Investigate and restore as needed.
+	metrics := newQueueManagerMetrics(nil, "", "")
+	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, metadataCfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, config.RemoteWriteProtoMsgV1)
 	m.Start()
 
 	batchID := 0

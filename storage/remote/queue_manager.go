@@ -1628,12 +1628,7 @@ func populateTimeSeries(batch []timeSeries, pendingData []prompb.TimeSeries, sen
 		// Number of pending samples is limited by the fact that sendSamples (via sendSamplesWithBackoff)
 		// retries endlessly, so once we reach max samples, if we can never send to the endpoint we'll
 		// stop reading from the queue. This makes it safe to reference pendingSamples by index.
-<<<<<<< HEAD
-		pendingData[nPending].Labels = labelsToLabelsProto(d.seriesLabels, pendingData[nPending].Labels)
-
-=======
 		pendingData[nPending].Labels = LabelsToLabelsProto(d.seriesLabels, pendingData[nPending].Labels)
->>>>>>> main
 		switch d.sType {
 		case tSample:
 			pendingData[nPending].Samples = append(pendingData[nPending].Samples, prompb.Sample{

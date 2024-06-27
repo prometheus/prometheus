@@ -293,7 +293,6 @@ func TestRemoteWriteHandler_V1Message(t *testing.T) {
 	}
 }
 
-<<<<<<< HEAD
 func TestRemoteWriteHandler_V2Message(t *testing.T) {
 	payload, _, _, err := buildV2WriteRequest(log.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
 	require.NoError(t, err)
@@ -349,43 +348,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 }
 
 func TestOutOfOrderSample_V1Message(t *testing.T) {
-	payload, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
-		Labels:  []prompb.Label{{Name: "__name__", Value: "test_metric"}},
-		Samples: []prompb.Sample{{Value: 1, Timestamp: 0}},
-	}}, nil, nil, nil, nil, "snappy")
-	require.NoError(t, err)
 
-	req, err := http.NewRequest("", "", bytes.NewReader(payload))
-	require.NoError(t, err)
-
-	appendable := &mockAppendable{latestSample: 100}
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
-
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, req)
-
-	resp := recorder.Result()
-	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
-}
-
-func TestOutOfOrderSample_V2Message(t *testing.T) {
-	payload, _, _, err := buildV2WriteRequest(nil, []writev2.TimeSeries{{
-		LabelsRefs: []uint32{0, 1},
-		Samples:    []writev2.Sample{{Value: 1, Timestamp: 0}},
-	}}, []string{"__name__", "metric1"}, nil, nil, nil, "snappy") // TODO(bwplotka): No empty string!
-	require.NoError(t, err)
-
-	req, err := http.NewRequest("", "", bytes.NewReader(payload))
-	require.NoError(t, err)
-
-	req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV2])
-	req.Header.Set("Content-Encoding", string(SnappyBlockCompression))
-	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
-
-	appendable := &mockAppendable{latestSample: 100}
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2})
-=======
-func TestOutOfOrderSample(t *testing.T) {
 	tests := []struct {
 		Name      string
 		Timestamp int64
@@ -399,23 +362,63 @@ func TestOutOfOrderSample(t *testing.T) {
 			Timestamp: math.MaxInt64,
 		},
 	}
->>>>>>> main
 
 	for _, tc := range tests {
 		t.Run(tc.Name, func(t *testing.T) {
-			buf, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
+			payload, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
 				Labels:  []prompb.Label{{Name: "__name__", Value: "test_metric"}},
 				Samples: []prompb.Sample{{Value: 1, Timestamp: tc.Timestamp}},
-			}}, nil, nil, nil, nil)
+			}}, nil, nil, nil, nil, "snappy")
 			require.NoError(t, err)
 
-			req, err := http.NewRequest("", "", bytes.NewReader(buf))
+			req, err := http.NewRequest("", "", bytes.NewReader(payload))
 			require.NoError(t, err)
 
-			appendable := &mockAppendable{
-				latestSample: 100,
-			}
-			handler := NewWriteHandler(log.NewNopLogger(), nil, appendable)
+			appendable := &mockAppendable{latestSample: 100}
+			handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+
+			resp := recorder.Result()
+			require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+		})
+	}
+}
+
+func TestOutOfOrderSample_V2Message(t *testing.T) {
+	tests := []struct {
+		Name      string
+		Timestamp int64
+	}{
+		{
+			Name:      "historic",
+			Timestamp: 0,
+		},
+		{
+			Name:      "future",
+			Timestamp: math.MaxInt64,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.Name, func(t *testing.T) {
+			payload, _, _, err := buildV2WriteRequest(nil, []writev2.TimeSeries{{
+				LabelsRefs: []uint32{0, 1},
+				Samples:    []writev2.Sample{{Value: 1, Timestamp: tc.Timestamp}},
+			}}, []string{"__name__", "metric1"}, nil, nil, nil, "snappy") // TODO(bwplotka): No empty string!
+			require.NoError(t, err)
+
+			req, err := http.NewRequest("", "", bytes.NewReader(payload))
+			require.NoError(t, err)
+
+			req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV2])
+			req.Header.Set("Content-Encoding", string(SnappyBlockCompression))
+			req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
+
+			appendable := &mockAppendable{latestSample: 100}
+			handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2})
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -429,21 +432,7 @@ func TestOutOfOrderSample(t *testing.T) {
 // This test case currently aims to verify that the WriteHandler endpoint
 // don't fail on exemplar ingestion errors since the exemplar storage is
 // still experimental.
-<<<<<<< HEAD
 func TestOutOfOrderExemplar_V1Message(t *testing.T) {
-	payload, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
-		Labels:    []prompb.Label{{Name: "__name__", Value: "test_metric"}},
-		Exemplars: []prompb.Exemplar{{Labels: []prompb.Label{{Name: "foo", Value: "bar"}}, Value: 1, Timestamp: 0}},
-	}}, nil, nil, nil, nil, "snappy")
-	require.NoError(t, err)
-
-	req, err := http.NewRequest("", "", bytes.NewReader(payload))
-	require.NoError(t, err)
-
-	appendable := &mockAppendable{latestExemplar: 100}
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
-=======
-func TestOutOfOrderExemplar(t *testing.T) {
 	tests := []struct {
 		Name      string
 		Timestamp int64
@@ -457,23 +446,20 @@ func TestOutOfOrderExemplar(t *testing.T) {
 			Timestamp: math.MaxInt64,
 		},
 	}
->>>>>>> main
 
 	for _, tc := range tests {
 		t.Run(tc.Name, func(t *testing.T) {
-			buf, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
+			payload, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
 				Labels:    []prompb.Label{{Name: "__name__", Value: "test_metric"}},
 				Exemplars: []prompb.Exemplar{{Labels: []prompb.Label{{Name: "foo", Value: "bar"}}, Value: 1, Timestamp: tc.Timestamp}},
-			}}, nil, nil, nil, nil)
+			}}, nil, nil, nil, nil, "snappy")
 			require.NoError(t, err)
 
-			req, err := http.NewRequest("", "", bytes.NewReader(buf))
+			req, err := http.NewRequest("", "", bytes.NewReader(payload))
 			require.NoError(t, err)
 
-			appendable := &mockAppendable{
-				latestExemplar: 100,
-			}
-			handler := NewWriteHandler(log.NewNopLogger(), nil, appendable)
+			appendable := &mockAppendable{latestExemplar: 100}
+			handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -485,46 +471,7 @@ func TestOutOfOrderExemplar(t *testing.T) {
 	}
 }
 
-<<<<<<< HEAD
 func TestOutOfOrderExemplar_V2Message(t *testing.T) {
-	payload, _, _, err := buildV2WriteRequest(nil, []writev2.TimeSeries{{
-		LabelsRefs: []uint32{0, 1},
-		Exemplars:  []writev2.Exemplar{{LabelsRefs: []uint32{2, 3}, Value: 1, Timestamp: 0}},
-	}}, []string{"__name__", "metric1", "foo", "bar"}, nil, nil, nil, "snappy") // TODO(bwplotka): No empty string!
-	require.NoError(t, err)
-
-	req, err := http.NewRequest("", "", bytes.NewReader(payload))
-	require.NoError(t, err)
-
-	req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV2])
-	req.Header.Set("Content-Encoding", string(SnappyBlockCompression))
-	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
-
-	appendable := &mockAppendable{latestExemplar: 100}
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2})
-
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, req)
-
-	resp := recorder.Result()
-	// TODO: update to require.Equal(t, http.StatusConflict, resp.StatusCode) once exemplar storage is not experimental.
-	require.Equal(t, http.StatusNoContent, resp.StatusCode)
-}
-
-func TestOutOfOrderHistogram_V1Message(t *testing.T) {
-	payload, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
-		Labels:     []prompb.Label{{Name: "__name__", Value: "test_metric"}},
-		Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat(nil))},
-	}}, nil, nil, nil, nil, "snappy")
-	require.NoError(t, err)
-
-	req, err := http.NewRequest("", "", bytes.NewReader(payload))
-	require.NoError(t, err)
-
-	appendable := &mockAppendable{latestHistogram: 100}
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
-=======
-func TestOutOfOrderHistogram(t *testing.T) {
 	tests := []struct {
 		Name      string
 		Timestamp int64
@@ -538,23 +485,63 @@ func TestOutOfOrderHistogram(t *testing.T) {
 			Timestamp: math.MaxInt64,
 		},
 	}
->>>>>>> main
 
 	for _, tc := range tests {
 		t.Run(tc.Name, func(t *testing.T) {
-			buf, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
+			payload, _, _, err := buildV2WriteRequest(nil, []writev2.TimeSeries{{
+				LabelsRefs: []uint32{0, 1},
+				Exemplars:  []writev2.Exemplar{{LabelsRefs: []uint32{2, 3}, Value: 1, Timestamp: tc.Timestamp}},
+			}}, []string{"__name__", "metric1", "foo", "bar"}, nil, nil, nil, "snappy") // TODO(bwplotka): No empty string!
+			require.NoError(t, err)
+
+			req, err := http.NewRequest("", "", bytes.NewReader(payload))
+			require.NoError(t, err)
+
+			req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV2])
+			req.Header.Set("Content-Encoding", string(SnappyBlockCompression))
+			req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
+
+			appendable := &mockAppendable{latestExemplar: 100}
+			handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2})
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+
+			resp := recorder.Result()
+			// TODO: update to require.Equal(t, http.StatusConflict, resp.StatusCode) once exemplar storage is not experimental.
+			require.Equal(t, http.StatusNoContent, resp.StatusCode)
+		})
+	}
+}
+
+func TestOutOfOrderHistogram_V1Message(t *testing.T) {
+	tests := []struct {
+		Name      string
+		Timestamp int64
+	}{
+		{
+			Name:      "historic",
+			Timestamp: 0,
+		},
+		{
+			Name:      "future",
+			Timestamp: math.MaxInt64,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.Name, func(t *testing.T) {
+			payload, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
 				Labels:     []prompb.Label{{Name: "__name__", Value: "test_metric"}},
 				Histograms: []prompb.Histogram{HistogramToHistogramProto(tc.Timestamp, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat(nil))},
-			}}, nil, nil, nil, nil)
+			}}, nil, nil, nil, nil, "snappy")
 			require.NoError(t, err)
 
-			req, err := http.NewRequest("", "", bytes.NewReader(buf))
+			req, err := http.NewRequest("", "", bytes.NewReader(payload))
 			require.NoError(t, err)
 
-			appendable := &mockAppendable{
-				latestHistogram: 100,
-			}
-			handler := NewWriteHandler(log.NewNopLogger(), nil, appendable)
+			appendable := &mockAppendable{latestHistogram: 100}
+			handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
