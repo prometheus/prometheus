@@ -827,8 +827,12 @@ func checkRules(files []string, ls lintConfig) (bool, bool) {
 				continue
 			}
 		}
-		if n, errs := checkRuleGroups(rgs, ls); errs != nil {
-			fmt.Fprintln(os.Stderr, "  FAILED:")
+		if n, errs, isFatal := checkRuleGroups(rgs, ls); errs != nil {
+			msg := "  FAILED:"
+			if !isFatal {
+				msg = " WARNING:"
+			}
+			fmt.Fprintln(os.Stderr, msg)
 			for _, e := range errs {
 				fmt.Fprintln(os.Stderr, e.Error())
 			}
@@ -844,7 +848,7 @@ func checkRules(files []string, ls lintConfig) (bool, bool) {
 	return failed, hasErrors
 }
 
-func checkRuleGroups(rgs *rulefmt.RuleGroups, lintSettings lintConfig) (int, []error) {
+func checkRuleGroups(rgs *rulefmt.RuleGroups, lintSettings lintConfig) (int, []error, bool) {
 	numRules := 0
 	for _, rg := range rgs.Groups {
 		numRules += len(rg.Rules)
@@ -861,7 +865,7 @@ func checkRuleGroups(rgs *rulefmt.RuleGroups, lintSettings lintConfig) (int, []e
 				})
 			}
 			errMessage += "Might cause inconsistency while recording expressions"
-			return 0, []error{fmt.Errorf("%w %s", errLint, errMessage)}
+			return 0, []error{fmt.Errorf("%w %s", errLint, errMessage)}, false
 		}
 	}
 
