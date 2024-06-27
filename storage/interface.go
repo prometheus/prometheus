@@ -126,6 +126,10 @@ func (q *MockQuerier) LabelValues(context.Context, string, ...*labels.Matcher) (
 	return nil, nil, nil
 }
 
+func (q *MockQuerier) LabelValuesStream(string, ...*labels.Matcher) LabelValues {
+	return nil
+}
+
 func (q *MockQuerier) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
@@ -162,6 +166,12 @@ type LabelQuerier interface {
 	// If matchers are specified the returned result set is reduced
 	// to label values of metrics matching the matchers.
 	LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error)
+
+	// LabelValuesStream returns an iterator over all potential values for a label name.
+	// It is not safe to use the strings beyond the lifetime of the querier.
+	// If matchers are specified the returned result set is reduced
+	// to label values of metrics matching the matchers.
+	LabelValuesStream(name string, matchers ...*labels.Matcher) LabelValues
 
 	// LabelNames returns all the unique label names present in the block in sorted order.
 	// If matchers are specified the returned result set is reduced
@@ -469,4 +479,18 @@ type ChunkIterable interface {
 	// Iterator returns an iterator that iterates over potentially overlapping
 	// chunks of the series, sorted by min time.
 	Iterator(chunks.Iterator) chunks.Iterator
+}
+
+// LabelValues is an iterator over label values.
+type LabelValues interface {
+	// Next tries to advance the iterator and returns true if it could, false otherwise.
+	Next() bool
+	// At returns the current label value.
+	At() string
+	// Err is the error that iteration eventually failed with.
+	// When an error occurs, the iterator cannot continue.
+	Err() error
+	// Warnings is a collection of warnings that have occurred during iteration.
+	// Warnings could be non-empty even if iteration has not failed with an error.
+	Warnings() annotations.Annotations
 }

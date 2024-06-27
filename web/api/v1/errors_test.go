@@ -174,6 +174,10 @@ func (t errorTestQuerier) LabelValues(context.Context, string, ...*labels.Matche
 	return nil, nil, t.err
 }
 
+func (t errorTestQuerier) LabelValuesStream(string, ...*labels.Matcher) storage.LabelValues {
+	return storage.ErrLabelValues(t.err)
+}
+
 func (t errorTestQuerier) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, t.err
 }
