@@ -41,6 +41,7 @@ type expectedParse struct {
 	unit    string
 	comment string
 	e       *exemplar.Exemplar
+	ct 	*int64
 }
 
 func TestPromParse(t *testing.T) {
@@ -217,6 +218,11 @@ func checkParseResults(t *testing.T, p Parser, exp []expectedParse) {
 			} else {
 				require.True(t, found)
 				testutil.RequireEqual(t, *exp[i].e, e)
+			}
+			if ct := p.CreatedTimestamp(); ct != nil {
+				require.Equal(t, *exp[i].ct, *ct)
+			} else {
+				require.Nil(t, exp[i].ct)
 			}
 
 		case EntryType:

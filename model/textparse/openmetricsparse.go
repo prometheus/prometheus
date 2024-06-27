@@ -222,9 +222,82 @@ func (p *OpenMetricsParser) Exemplar(e *exemplar.Exemplar) bool {
 // CreatedTimestamp returns nil as it's not implemented yet.
 // TODO(bwplotka): https://github.com/prometheus/prometheus/issues/12980
 func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
-	return nil
-}
+	newParser := deepCopyParser(p)
+	switch t, _ := newParser.Next(); t {
+		case EntrySeries:
+			for {
+				// Check _created suffix
+				var lbs labels.Labels
+				newParser.Metric(&lbs)
+				name := lbs.Get(model.MetricNameLabel)
+				if name[len(name)-8:] != "_created" {
+					return nil
+				}
 
+				var labelsPrev labels.Labels
+				p.Metric(&labelsPrev) 
+				namePrev := labelsPrev.Get(model.MetricNameLabel)
+				// a case like foo_total != foo_created fails even if underlying metric is the same
+				if namePrev != name { 
+					return nil
+				}
+
+
+				// TODO: for histograms
+				if t, _ := newParser.Next(); t != EntrySeries {
+					return nil
+				}
+			}
+		default:
+			// If not series, we don't care.
+		}
+	return nil
+ }
+
+ // We need this because we want offsets of the original parser unchanged when 
+ // we're working with a new parser in CreatedTimeStamp()
+ func deepCopyParser(p *OpenMetricsParser) OpenMetricsParser {
+	newB := make([]byte, len(p.l.b))
+	copy(newB, p.l.b)
+
+	newLexer := &openMetricsLexer{
+		b:    newB,
+		i:    p.l.i,
+		start: p.l.start,
+		err:  p.l.err,
+		state: p.l.state,
+	}
+
+	newSeries := make([]byte, len(p.series))
+	copy(newSeries, p.series)
+	newText := make([]byte, len(p.text))
+	copy(newText, p.text)
+	newOffsets := make([]int, len(p.offsets))
+	copy(newOffsets, p.offsets)
+	newEOffsets := p.eOffsets
+	newExemplar := p.exemplar
+	newParser := OpenMetricsParser{
+		l       :newLexer,
+		builder :p.builder,
+		series  :newSeries,
+		text    :newText,
+		mtype   :p.mtype,
+		val     :p.val,
+		ts      :p.ts,
+		hasTS   :p.hasTS,
+		start   :p.start,
+
+		offsets :newOffsets,
+	
+		eOffsets      :newEOffsets,
+		exemplar      :newExemplar,
+		exemplarVal   :p.exemplarVal,
+		exemplarTs    :p.exemplarTs,
+		hasExemplarTs :p.hasExemplarTs,
+	}
+	return newParser
+ }
+ 
 // nextToken returns the next token from the openMetricsLexer.
 func (p *OpenMetricsParser) nextToken() token {
 	tok := p.l.Lex()
