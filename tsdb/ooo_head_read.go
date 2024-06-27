@@ -654,6 +654,16 @@ func (cr *HeadAndOOOChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chu
 	return nil, mc, err
 }
 
+// Pass through special behaviour for current head chunk.
+func (cr *HeadAndOOOChunkReader) ChunkOrIterableWithCopy(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {
+	_, cid := chunks.HeadChunkRef(meta.Ref).Unpack()
+	if !isOOOHeadChunkID(cid) {
+		return cr.cr.ChunkOrIterableWithCopy(meta)
+	}
+	chk, iter, err := cr.ChunkOrIterable(meta)
+	return chk, iter, 0, err
+}
+
 func (cr *HeadAndOOOChunkReader) Close() error {
 	if cr.cr.isoState != nil {
 		cr.cr.isoState.Close()

@@ -641,14 +641,16 @@ func (p *populateWithDelGenericSeriesIterator) next(copyHeadChunk bool) bool {
 		}
 	}
 
-	hcr, ok := p.cr.(*headChunkReader)
+	hcr, ok := p.cr.(ChunkReaderWithCopy)
 	var iterable chunkenc.Iterable
 	if ok && copyHeadChunk && len(p.bufIter.Intervals) == 0 {
-		// ChunkWithCopy will copy the head chunk.
+		// ChunkOrIterableWithCopy will copy the head chunk, if it can.
 		var maxt int64
-		p.currMeta.Chunk, maxt, p.err = hcr.ChunkWithCopy(p.currMeta)
-		// For the in-memory head chunk the index reader sets maxt as MaxInt64. We fix it here.
-		p.currMeta.MaxTime = maxt
+		p.currMeta.Chunk, iterable, maxt, p.err = hcr.ChunkOrIterableWithCopy(p.currMeta)
+		if p.currMeta.Chunk != nil {
+			// For the in-memory head chunk the index reader sets maxt as MaxInt64. We fix it here.
+			p.currMeta.MaxTime = maxt
+		}
 	} else {
 		p.currMeta.Chunk, iterable, p.err = p.cr.ChunkOrIterable(p.currMeta)
 	}
