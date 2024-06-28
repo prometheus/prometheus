@@ -5,6 +5,8 @@
 _Please add changes here that are only in the release-3.0 branch. These will be the source for the changelog when cutting the first release candidate for v3.0.0._
 
 * [CHANGE] PromQL: Range selectors and the lookback delta are now left-open, i.e. a sample coinciding with the lower time limit is excluded rather than included. #13904
+* [CHANGE] Kubernetes SD: Remove support for `discovery.k8s.io/v1beta1` API version of EndpointSlice. This version is no longer served as of Kubernetes v1.25. #14365
+* [CHANGE] Kubernetes SD: Remove support for `networking.k8s.io/v1beta1` API version of Ingress. This version is no longer served as of Kubernetes v1.22. #14365
 
 ## unreleased
 
