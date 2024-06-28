@@ -17,7 +17,6 @@ import (
 	"context"
 	"math/rand"
 	"testing"
-	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/request"
@@ -27,7 +26,7 @@ import (
 	"go.uber.org/goleak"
 )
 
-// "helper" functions
+// "Helper" functions.
 const chars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 func RandString(n int) string {
@@ -39,7 +38,7 @@ func RandString(n int) string {
 	return string(b)
 }
 
-// struct for test data
+// Struct for test data.
 type EC2Data struct {
 	azNames  []string
 	azIDs    []string
@@ -48,10 +47,8 @@ type EC2Data struct {
 
 var ec2Data EC2Data
 
-// prepare test data
+// Prepare test data.
 func init() {
-	rand.Seed(time.Now().UnixNano())
-
 	// availability zone information
 	azCount := rand.Intn(3) + 2
 	ec2Data.azNames = make([]string, azCount)
@@ -65,7 +62,7 @@ func init() {
 	}
 }
 
-// tests
+// The tests itself.
 func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
@@ -85,7 +82,7 @@ func TestRefreshAZIDs(t *testing.T) {
 	require.Equal(t, ec2Data.azToAZID, d.azToAZID)
 }
 
-// EC2 client mock
+// EC2 client mock.
 type mockEC2Client struct {
 	ec2iface.EC2API
 }
