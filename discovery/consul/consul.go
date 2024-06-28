@@ -539,9 +539,9 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 		// since the service may be registered remotely through a different node.
 		var addr string
 		if serviceNode.Service.Address != "" {
-			addr = net.JoinHostPort(serviceNode.Service.Address, fmt.Sprintf("%d", serviceNode.Service.Port))
+			addr = net.JoinHostPort(serviceNode.Service.Address, strconv.Itoa(serviceNode.Service.Port))
 		} else {
-			addr = net.JoinHostPort(serviceNode.Node.Address, fmt.Sprintf("%d", serviceNode.Service.Port))
+			addr = net.JoinHostPort(serviceNode.Node.Address, strconv.Itoa(serviceNode.Service.Port))
 		}
 
 		labels := model.LabelSet{

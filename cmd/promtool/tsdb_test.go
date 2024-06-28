@@ -26,7 +26,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/tsdb"
 )
 
@@ -64,6 +64,7 @@ func getDumpedSamples(t *testing.T, path string, mint, maxt int64, match []strin
 	err := dumpSamples(
 		context.Background(),
 		path,
+		t.TempDir(),
 		mint,
 		maxt,
 		match,
@@ -88,7 +89,7 @@ func normalizeNewLine(b []byte) []byte {
 }
 
 func TestTSDBDump(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			metric{foo="bar", baz="abc"} 1 2 3 4 5
 			heavy_metric{foo="bar"} 5 4 3 2 1
@@ -158,7 +159,7 @@ func TestTSDBDump(t *testing.T) {
 }
 
 func TestTSDBDumpOpenMetrics(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			my_counter{foo="bar", baz="abc"} 1 2 3 4 5
 			my_gauge{bar="foo", abc="baz"} 9 8 0 4 7

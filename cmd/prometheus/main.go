@@ -28,6 +28,8 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -42,6 +44,7 @@ import (
 	"github.com/mwitkow/go-conntrack"
 	"github.com/oklog/run"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	versioncollector "github.com/prometheus/client_golang/prometheus/collectors/version"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promlog"
@@ -220,6 +223,7 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 				level.Info(logger).Log("msg", "Experimental PromQL functions enabled.")
 			case "native-histograms":
 				c.tsdb.EnableNativeHistograms = true
+				c.scrape.EnableNativeHistogramsIngestion = true
 				// Change relevant global variables. Hacky, but it's hard to pass a new option or default to unmarshallers.
 				config.DefaultConfig.GlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
@@ -253,6 +257,18 @@ func main() {
 		oldFlagRetentionDuration model.Duration
 		newFlagRetentionDuration model.Duration
 	)
+
+	// Unregister the default GoCollector, and reregister with our defaults.
+	if prometheus.Unregister(collectors.NewGoCollector()) {
+		prometheus.MustRegister(
+			collectors.NewGoCollector(
+				collectors.WithGoCollectorRuntimeMetrics(
+					collectors.MetricsGC,
+					collectors.MetricsScheduler,
+				),
+			),
+		)
+	}
 
 	cfg := flagConfig{
 		notifier: notifier.Options{
@@ -426,7 +442,7 @@ func main() {
 	serverOnlyFlag(a, "rules.alert.resend-delay", "Minimum amount of time to wait before resending an alert to Alertmanager.").
 		Default("1m").SetValue(&cfg.resendDelay)
 
-	serverOnlyFlag(a, "rules.max-concurrent-evals", "Global concurrency limit for independent rules that can run concurrently.").
+	serverOnlyFlag(a, "rules.max-concurrent-evals", "Global concurrency limit for independent rules that can run concurrently. When set, \"query.max-concurrency\" may need to be adjusted accordingly.").
 		Default("4").Int64Var(&cfg.maxConcurrentEvals)
 
 	a.Flag("scrape.adjust-timestamps", "Adjust scrape timestamps by up to `scrape.timestamp-tolerance` to align them to the intended schedule. See https://github.com/prometheus/prometheus/issues/7846 for more context. Experimental. This flag will be removed in a future release.").
@@ -437,6 +453,9 @@ func main() {
 
 	serverOnlyFlag(a, "alertmanager.notification-queue-capacity", "The capacity of the queue for pending Alertmanager notifications.").
 		Default("10000").IntVar(&cfg.notifier.QueueCapacity)
+
+	serverOnlyFlag(a, "alertmanager.drain-notification-queue-on-shutdown", "Send any outstanding Alertmanager notifications when shutting down. If false, any outstanding Alertmanager notifications will be dropped when shutting down.").
+		Default("true").BoolVar(&cfg.notifier.DrainOnShutdown)
 
 	// TODO: Remove in Prometheus 3.0.
 	alertmanagerTimeout := a.Flag("alertmanager.timeout", "[DEPRECATED] This flag has no effect.").Hidden().String()
@@ -780,6 +799,9 @@ func main() {
 			ResendDelay:            time.Duration(cfg.resendDelay),
 			MaxConcurrentEvals:     cfg.maxConcurrentEvals,
 			ConcurrentEvalsEnabled: cfg.enableConcurrentRuleEval,
+			DefaultRuleQueryOffset: func() time.Duration {
+				return time.Duration(cfgFile.GlobalConfig.RuleQueryOffset)
+			},
 		})
 	}
 
@@ -1187,7 +1209,7 @@ func main() {
 	}
 	if agentMode {
 		// WAL storage.
-		opts := cfg.agent.ToAgentOptions()
+		opts := cfg.agent.ToAgentOptions(cfg.tsdb.OutOfOrderTimeWindow)
 		cancel := make(chan struct{})
 		g.Add(
 			func() error {
@@ -1223,6 +1245,7 @@ func main() {
 					"TruncateFrequency", cfg.agent.TruncateFrequency,
 					"MinWALTime", cfg.agent.MinWALTime,
 					"MaxWALTime", cfg.agent.MaxWALTime,
+					"OutOfOrderTimeWindow", cfg.agent.OutOfOrderTimeWindow,
 				)
 
 				localStorage.Set(db, 0)
@@ -1374,6 +1397,17 @@ func reloadConfig(filename string, expandExternalLabels, enableExemplarStorage b
 	}
 	if failed {
 		return fmt.Errorf("one or more errors occurred while applying the new configuration (--config.file=%q)", filename)
+	}
+
+	oldGoGC := debug.SetGCPercent(conf.Runtime.GoGC)
+	if oldGoGC != conf.Runtime.GoGC {
+		level.Info(logger).Log("msg", "updated GOGC", "old", oldGoGC, "new", conf.Runtime.GoGC)
+	}
+	// Write the new setting out to the ENV var for runtime API output.
+	if conf.Runtime.GoGC >= 0 {
+		os.Setenv("GOGC", strconv.Itoa(conf.Runtime.GoGC))
+	} else {
+		os.Setenv("GOGC", "off")
 	}
 
 	noStepSuqueryInterval.Set(conf.GlobalConfig.EvaluationInterval)
@@ -1715,17 +1749,22 @@ type agentOptions struct {
 	TruncateFrequency      model.Duration
 	MinWALTime, MaxWALTime model.Duration
 	NoLockfile             bool
+	OutOfOrderTimeWindow   int64
 }
 
-func (opts agentOptions) ToAgentOptions() agent.Options {
+func (opts agentOptions) ToAgentOptions(outOfOrderTimeWindow int64) agent.Options {
+	if outOfOrderTimeWindow < 0 {
+		outOfOrderTimeWindow = 0
+	}
 	return agent.Options{
-		WALSegmentSize:    int(opts.WALSegmentSize),
-		WALCompression:    wlog.ParseCompressionType(opts.WALCompression, opts.WALCompressionType),
-		StripeSize:        opts.StripeSize,
-		TruncateFrequency: time.Duration(opts.TruncateFrequency),
-		MinWALTime:        durationToInt64Millis(time.Duration(opts.MinWALTime)),
-		MaxWALTime:        durationToInt64Millis(time.Duration(opts.MaxWALTime)),
-		NoLockfile:        opts.NoLockfile,
+		WALSegmentSize:       int(opts.WALSegmentSize),
+		WALCompression:       wlog.ParseCompressionType(opts.WALCompression, opts.WALCompressionType),
+		StripeSize:           opts.StripeSize,
+		TruncateFrequency:    time.Duration(opts.TruncateFrequency),
+		MinWALTime:           durationToInt64Millis(time.Duration(opts.MinWALTime)),
+		MaxWALTime:           durationToInt64Millis(time.Duration(opts.MaxWALTime)),
+		NoLockfile:           opts.NoLockfile,
+		OutOfOrderTimeWindow: outOfOrderTimeWindow,
 	}
 }
 

@@ -505,7 +505,7 @@ func targetEndpoint(task *task, port uint32, containerNet bool) string {
 		host = task.Host
 	}
 
-	return net.JoinHostPort(host, fmt.Sprintf("%d", port))
+	return net.JoinHostPort(host, strconv.Itoa(int(port)))
 }
 
 // Get a list of ports and a list of labels from a PortMapping.

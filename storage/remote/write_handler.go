@@ -20,6 +20,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -29,7 +30,9 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/storage"
@@ -44,6 +47,8 @@ type writeHandler struct {
 
 	acceptedProtoMsgs map[config.RemoteWriteProtoMsg]struct{}
 }
+
+const maxAheadTime = 10 * time.Minute
 
 // NewWriteHandler creates a http.Handler that accepts remote write requests with
 // the given message in acceptedProtoMsgs and writes them to the provided appendable.
@@ -207,35 +212,39 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	outOfOrderExemplarErrs := 0
 	samplesWithInvalidLabels := 0
 
-	app := h.appendable.Appender(ctx)
+	timeLimitApp := &timeLimitAppender{
+		Appender: h.appendable.Appender(ctx),
+		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
+	}
+
 	defer func() {
 		if err != nil {
-			_ = app.Rollback()
+			_ = timeLimitApp.Rollback()
 			return
 		}
-		err = app.Commit()
+		err = timeLimitApp.Commit()
 	}()
 
 	b := labels.NewScratchBuilder(0)
 	for _, ts := range req.Timeseries {
-		ls := labelProtosToLabels(&b, ts.Labels)
+		ls := LabelProtosToLabels(&b, ts.Labels)
 		if !ls.IsValid() {
 			level.Warn(h.logger).Log("msg", "Invalid metric names or labels", "got", ls.String())
 			samplesWithInvalidLabels++
 			continue
 		}
 
-		err := h.appendSamples(app, ts.Samples, ls)
+		err := h.appendSamples(timeLimitApp, ts.Samples, ls)
 		if err != nil {
 			return err
 		}
 
 		for _, ep := range ts.Exemplars {
 			e := exemplarProtoToExemplar(&b, ep)
-			h.appendExemplar(app, e, ls, &outOfOrderExemplarErrs)
+			h.appendExemplar(timeLimitApp, e, ls, &outOfOrderExemplarErrs)
 		}
 
-		err = h.appendHistograms(app, ts.Histograms, ls)
+		err = h.appendHistograms(timeLimitApp, ts.Histograms, ls)
 		if err != nil {
 			return err
 		}
@@ -254,35 +263,39 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 func (h *writeHandler) writeV2(ctx context.Context, req *writev2.Request) (err error) {
 	outOfOrderExemplarErrs := 0
 
-	app := h.appendable.Appender(ctx)
+	timeLimitApp := &timeLimitAppender{
+		Appender: h.appendable.Appender(ctx),
+		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
+	}
+
 	defer func() {
 		if err != nil {
-			_ = app.Rollback()
+			_ = timeLimitApp.Rollback()
 			return
 		}
-		err = app.Commit()
+		err = timeLimitApp.Commit()
 	}()
 
 	for _, ts := range req.Timeseries {
 		ls := writev2.DesymbolizeLabels(ts.LabelsRefs, req.Symbols)
 
-		err := h.appendSamplesV2(app, ts.Samples, ls)
+		err := h.appendSamplesV2(timeLimitApp, ts.Samples, ls)
 		if err != nil {
 			return err
 		}
 
 		for _, ep := range ts.Exemplars {
 			e := exemplarProtoV2ToExemplar(ep, req.Symbols)
-			h.appendExemplar(app, e, ls, &outOfOrderExemplarErrs)
+			h.appendExemplar(timeLimitApp, e, ls, &outOfOrderExemplarErrs)
 		}
 
-		err = h.appendHistogramsV2(app, ts.Histograms, ls)
+		err = h.appendHistogramsV2(timeLimitApp, ts.Histograms, ls)
 		if err != nil {
 			return err
 		}
 
 		m := metadataProtoV2ToMetadata(ts.Metadata, req.Symbols)
-		if _, err = app.UpdateMetadata(0, ls, m); err != nil {
+		if _, err = timeLimitApp.UpdateMetadata(0, ls, m); err != nil {
 			level.Debug(h.logger).Log("msg", "error while updating metadata from remote write", "err", err)
 		}
 	}
@@ -420,21 +433,15 @@ func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prwMetricsMap, errs := otlptranslator.FromMetrics(req.Metrics(), otlptranslator.Settings{
+	converter := otlptranslator.NewPrometheusConverter()
+	if err := converter.FromMetrics(req.Metrics(), otlptranslator.Settings{
 		AddMetricSuffixes: true,
-	})
-	if errs != nil {
-		level.Warn(h.logger).Log("msg", "Error translating OTLP metrics to Prometheus write request", "err", errs)
-	}
-
-	prwMetrics := make([]prompb.TimeSeries, 0, len(prwMetricsMap))
-
-	for _, ts := range prwMetricsMap {
-		prwMetrics = append(prwMetrics, *ts)
+	}); err != nil {
+		level.Warn(h.logger).Log("msg", "Error translating OTLP metrics to Prometheus write request", "err", err)
 	}
 
 	err = h.rwHandler.write(r.Context(), &prompb.WriteRequest{
-		Timeseries: prwMetrics,
+		Timeseries: converter.TimeSeries(),
 	})
 
 	switch {
@@ -450,4 +457,46 @@ func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
+}
+
+type timeLimitAppender struct {
+	storage.Appender
+
+	maxTime int64
+}
+
+func (app *timeLimitAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+	if t > app.maxTime {
+		return 0, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds)
+	}
+
+	ref, err := app.Appender.Append(ref, lset, t, v)
+	if err != nil {
+		return 0, err
+	}
+	return ref, nil
+}
+
+func (app *timeLimitAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	if t > app.maxTime {
+		return 0, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds)
+	}
+
+	ref, err := app.Appender.AppendHistogram(ref, l, t, h, fh)
+	if err != nil {
+		return 0, err
+	}
+	return ref, nil
+}
+
+func (app *timeLimitAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+	if e.Ts > app.maxTime {
+		return 0, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds)
+	}
+
+	ref, err := app.Appender.AppendExemplar(ref, l, e)
+	if err != nil {
+		return 0, err
+	}
+	return ref, nil
 }

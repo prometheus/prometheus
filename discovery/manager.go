@@ -120,6 +120,16 @@ func Name(n string) func(*Manager) {
 	}
 }
 
+// Updatert sets the updatert of the manager.
+// Used to speed up tests.
+func Updatert(u time.Duration) func(*Manager) {
+	return func(m *Manager) {
+		m.mtx.Lock()
+		defer m.mtx.Unlock()
+		m.updatert = u
+	}
+}
+
 // HTTPClientOptions sets the list of HTTP client options to expose to
 // Discoverers. It is up to Discoverers to choose to use the options provided.
 func HTTPClientOptions(opts ...config.HTTPClientOption) func(*Manager) {

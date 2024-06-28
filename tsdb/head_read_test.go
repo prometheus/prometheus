@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"testing"
@@ -551,4 +552,26 @@ func TestMemSeries_chunk(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHeadIndexReader_PostingsForLabelMatching(t *testing.T) {
+	testPostingsForLabelMatching(t, 0, func(t *testing.T, series []labels.Labels) IndexReader {
+		opts := DefaultHeadOptions()
+		opts.ChunkRange = 1000
+		opts.ChunkDirRoot = t.TempDir()
+		h, err := NewHead(nil, nil, nil, nil, opts, nil)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, h.Close())
+		})
+		app := h.Appender(context.Background())
+		for _, s := range series {
+			app.Append(0, s, 0, 0)
+		}
+		require.NoError(t, app.Commit())
+
+		ir, err := h.Index()
+		require.NoError(t, err)
+		return ir
+	})
 }

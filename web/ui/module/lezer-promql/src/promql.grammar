@@ -97,7 +97,7 @@ binModifiers {
 }
 
 GroupingLabels {
-  "(" (LabelName ("," LabelName)* ","?)? ")"
+  "(" ((LabelName | QuotedLabelName) ("," (LabelName | QuotedLabelName))* ","?)? ")"
 }
 
 FunctionCall {
@@ -220,7 +220,7 @@ VectorSelector {
 }
 
 LabelMatchers {
-  "{" (LabelMatcher ("," LabelMatcher)* ","?)? "}"
+  "{" ((UnquotedLabelMatcher | QuotedLabelMatcher | QuotedLabelName)("," (UnquotedLabelMatcher | QuotedLabelMatcher | QuotedLabelName))* ","?)? "}"
 }
 
 MatchOp {
@@ -230,8 +230,16 @@ MatchOp {
   NeqRegex
 }
 
-LabelMatcher {
-  LabelName MatchOp StringLiteral
+UnquotedLabelMatcher {
+    LabelName MatchOp StringLiteral
+}
+
+QuotedLabelMatcher {
+    QuotedLabelName MatchOp StringLiteral
+}
+
+QuotedLabelName {
+    StringLiteral
 }
 
 StepInvariantExpr {
