@@ -55,4 +55,7 @@ PROMPP_ALWAYS_INLINE constexpr T to_bytes(T bits) noexcept {
   return bits / 8;
 }
 
+constexpr uint8_t kUint64Bits = to_bits(sizeof(uint64_t));
+constexpr uint8_t kByteBits = to_bits(sizeof(uint8_t));
+
 }  // namespace BareBones::Bit
