@@ -35,6 +35,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
+	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -61,10 +62,15 @@ func TestMain(m *testing.M) {
 	testutil.TolerantVerifyLeak(m)
 }
 
-func newTestScrapeMetrics(t testing.TB) *scrapeMetrics {
+func newTestRegistryAndScrapeMetrics(t testing.TB) (*prometheus.Registry, *scrapeMetrics) {
 	reg := prometheus.NewRegistry()
 	metrics, err := newScrapeMetrics(reg)
 	require.NoError(t, err)
+	return reg, metrics
+}
+
+func newTestScrapeMetrics(t testing.TB) *scrapeMetrics {
+	_, metrics := newTestRegistryAndScrapeMetrics(t)
 	return metrics
 }
 
@@ -272,6 +278,7 @@ func TestScrapePoolReload(t *testing.T) {
 		return l
 	}
 
+	reg, metrics := newTestRegistryAndScrapeMetrics(t)
 	sp := &scrapePool{
 		appendable:    &nopAppendable{},
 		activeTargets: map[uint64]*Target{},
@@ -279,7 +286,7 @@ func TestScrapePoolReload(t *testing.T) {
 		newLoop:       newLoop,
 		logger:        nil,
 		client:        http.DefaultClient,
-		metrics:       newTestScrapeMetrics(t),
+		metrics:       metrics,
 		symbolTable:   labels.NewSymbolTable(),
 	}
 
@@ -334,6 +341,15 @@ func TestScrapePoolReload(t *testing.T) {
 
 	require.Equal(t, sp.activeTargets, beforeTargets, "Reloading affected target states unexpectedly")
 	require.Len(t, sp.loops, numTargets, "Unexpected number of stopped loops after reload")
+
+	got, err := gatherLabels(reg, "prometheus_target_reload_length_seconds")
+	require.NoError(t, err)
+	testutil.RequireEqual(t, []labels.Labels{labels.FromStrings("interval", "3s")}, got["prometheus_target_reload_length_seconds"])
+	require.NoError(t, client_testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+	# HELP prometheus_target_scrape_pool_reloads_total Total number of scrape pool reloads.
+	# TYPE prometheus_target_scrape_pool_reloads_total counter
+	prometheus_target_scrape_pool_reloads_total 1
+	`), "prometheus_target_scrape_pool_reloads_total"))
 }
 
 func TestScrapePoolReloadPreserveRelabeledIntervalTimeout(t *testing.T) {
@@ -349,6 +365,7 @@ func TestScrapePoolReloadPreserveRelabeledIntervalTimeout(t *testing.T) {
 		}
 		return l
 	}
+	reg, metrics := newTestRegistryAndScrapeMetrics(t)
 	sp := &scrapePool{
 		appendable: &nopAppendable{},
 		activeTargets: map[uint64]*Target{
@@ -362,7 +379,7 @@ func TestScrapePoolReloadPreserveRelabeledIntervalTimeout(t *testing.T) {
 		newLoop:     newLoop,
 		logger:      nil,
 		client:      http.DefaultClient,
-		metrics:     newTestScrapeMetrics(t),
+		metrics:     metrics,
 		symbolTable: labels.NewSymbolTable(),
 	}
 
@@ -370,6 +387,36 @@ func TestScrapePoolReloadPreserveRelabeledIntervalTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to reload configuration: %s", err)
 	}
+	// Check that the reload metric is labeled with the pool interval, not the overridden interval.
+	got, err := gatherLabels(reg, "prometheus_target_reload_length_seconds")
+	require.NoError(t, err)
+	testutil.RequireEqual(t, []labels.Labels{labels.FromStrings("interval", "3s")}, got["prometheus_target_reload_length_seconds"])
+}
+
+// Gather metrics from the provided Gatherer with specified familynames,
+// and extract labels. Return for each family name, a map of name/value pairs.
+func gatherLabels(g prometheus.Gatherer, familyNames ...string) (map[string][]labels.Labels, error) {
+	families, err := g.Gather()
+	if err != nil {
+		return nil, err
+	}
+	builder := labels.NewScratchBuilder(0)
+	ret := make(map[string][]labels.Labels)
+	for _, f := range families {
+		for _, name := range familyNames {
+			if f.GetName() == name {
+				for _, m := range f.GetMetric() {
+					builder.Reset()
+					for _, l := range m.GetLabel() {
+						builder.Add(l.GetName(), l.GetValue())
+					}
+					ret[name] = append(ret[name], builder.Labels())
+				}
+				break
+			}
+		}
+	}
+	return ret, nil
 }
 
 func TestScrapePoolTargetLimit(t *testing.T) {
