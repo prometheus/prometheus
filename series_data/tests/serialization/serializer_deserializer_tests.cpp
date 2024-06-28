@@ -81,14 +81,14 @@ TEST_F(SerializerDeserializerFixture, TwoUint32ConstantChunkWithCommonTimestampS
           {.timestamp = 2, .value = 1.0},
           {.timestamp = 3, .value = 1.0},
       },
-      decode_chunk(deserializer.create_decode_iterator<DataChunk::EncodingType::kUint32Constant>(deserializer.get_chunks()[0]))));
+      decode_chunk(deserializer.create_decode_iterator(deserializer.get_chunks()[0]))));
   EXPECT_TRUE(std::ranges::equal(
       SampleList{
           {.timestamp = 1, .value = 1.0},
           {.timestamp = 2, .value = 1.0},
           {.timestamp = 3, .value = 1.0},
       },
-      decode_chunk(deserializer.create_decode_iterator<DataChunk::EncodingType::kUint32Constant>(deserializer.get_chunks()[1]))));
+      decode_chunk(deserializer.create_decode_iterator(deserializer.get_chunks()[1]))));
 }
 
 TEST_F(SerializerDeserializerFixture, ThreeUint32ConstantChunkWithCommonAndUniqueTimestampStream) {
@@ -123,21 +123,21 @@ TEST_F(SerializerDeserializerFixture, ThreeUint32ConstantChunkWithCommonAndUniqu
           {.timestamp = 2, .value = 1.0},
           {.timestamp = 3, .value = 1.0},
       },
-      decode_chunk(deserializer.create_decode_iterator<DataChunk::EncodingType::kUint32Constant>(deserializer.get_chunks()[0]))));
+      decode_chunk(deserializer.create_decode_iterator(deserializer.get_chunks()[0]))));
   EXPECT_TRUE(std::ranges::equal(
       SampleList{
           {.timestamp = 1, .value = 1.0},
           {.timestamp = 2, .value = 1.0},
           {.timestamp = 3, .value = 1.0},
       },
-      decode_chunk(deserializer.create_decode_iterator<DataChunk::EncodingType::kUint32Constant>(deserializer.get_chunks()[1]))));
+      decode_chunk(deserializer.create_decode_iterator(deserializer.get_chunks()[1]))));
   EXPECT_TRUE(std::ranges::equal(
       SampleList{
           {.timestamp = 1, .value = 2.0},
           {.timestamp = 2, .value = 2.0},
           {.timestamp = 3, .value = 2.0},
       },
-      decode_chunk(deserializer.create_decode_iterator<DataChunk::EncodingType::kUint32Constant>(deserializer.get_chunks()[2]))));
+      decode_chunk(deserializer.create_decode_iterator(deserializer.get_chunks()[2]))));
 }
 
 TEST_F(SerializerDeserializerFixture, AllChunkTypes) {
@@ -184,44 +184,44 @@ TEST_F(SerializerDeserializerFixture, AllChunkTypes) {
       SampleList{
           {.timestamp = 100, .value = 1.0},
       },
-      decode_chunk(deserializer.create_decode_iterator<DataChunk::EncodingType::kUint32Constant>(deserializer.get_chunks()[0]))));
+      decode_chunk(deserializer.create_decode_iterator(deserializer.get_chunks()[0]))));
   EXPECT_TRUE(std::ranges::equal(
       SampleList{
           {.timestamp = 101, .value = 1.1},
       },
-      decode_chunk(deserializer.create_decode_iterator<DataChunk::EncodingType::kDoubleConstant>(deserializer.get_chunks()[1]))));
+      decode_chunk(deserializer.create_decode_iterator(deserializer.get_chunks()[1]))));
   EXPECT_TRUE(std::ranges::equal(
       SampleList{
           {.timestamp = 102, .value = 1.1},
           {.timestamp = 103, .value = 1.2},
       },
-      decode_chunk(deserializer.create_decode_iterator<DataChunk::EncodingType::kTwoDoubleConstant>(deserializer.get_chunks()[2]))));
+      decode_chunk(deserializer.create_decode_iterator(deserializer.get_chunks()[2]))));
   EXPECT_TRUE(std::ranges::equal(
       SampleList{
           {.timestamp = 104, .value = 1.0},
           {.timestamp = 105, .value = 2.0},
           {.timestamp = 106, .value = 3.0},
       },
-      decode_chunk(deserializer.create_decode_iterator<DataChunk::EncodingType::kAscIntegerValuesGorilla>(deserializer.get_chunks()[3]))));
+      decode_chunk(deserializer.create_decode_iterator(deserializer.get_chunks()[3]))));
   EXPECT_TRUE(std::ranges::equal(
       SampleList{
           {.timestamp = 107, .value = 1.1},
           {.timestamp = 108, .value = 2.1},
           {.timestamp = 109, .value = 3.1},
       },
-      decode_chunk(deserializer.create_decode_iterator<DataChunk::EncodingType::kValuesGorilla>(deserializer.get_chunks()[4]))));
+      decode_chunk(deserializer.create_decode_iterator(deserializer.get_chunks()[4]))));
   EXPECT_TRUE(std::ranges::equal(
       SampleList{
           {.timestamp = 110, .value = 1.1},
           {.timestamp = 111, .value = 2.1},
           {.timestamp = 112, .value = 3.1},
       },
-      decode_chunk(deserializer.create_decode_iterator<DataChunk::EncodingType::kGorilla>(deserializer.get_chunks()[5]))));
+      decode_chunk(deserializer.create_decode_iterator(deserializer.get_chunks()[5]))));
   EXPECT_TRUE(std::ranges::equal(
       SampleList{
           {.timestamp = 113, .value = 2.0},
       },
-      decode_chunk(deserializer.create_decode_iterator<DataChunk::EncodingType::kUint32Constant>(deserializer.get_chunks()[6]))));
+      decode_chunk(deserializer.create_decode_iterator(deserializer.get_chunks()[6]))));
 }
 
 TEST_F(SerializerDeserializerFixture, FinalizedAllChunkTypes) {
@@ -276,52 +276,44 @@ TEST_F(SerializerDeserializerFixture, FinalizedAllChunkTypes) {
       SampleList{
           {.timestamp = 100, .value = 1.0},
       },
-      decode_chunk(deserializer.create_decode_iterator<DataChunk::EncodingType::kUint32Constant>(deserializer.get_chunks()[0]))));
+      decode_chunk(deserializer.create_decode_iterator(deserializer.get_chunks()[0]))));
   EXPECT_TRUE(std::ranges::equal(
       SampleList{
           {.timestamp = 101, .value = 1.1},
       },
-      decode_chunk(deserializer.create_decode_iterator<DataChunk::EncodingType::kDoubleConstant>(deserializer.get_chunks()[1]))));
+      decode_chunk(deserializer.create_decode_iterator(deserializer.get_chunks()[1]))));
   EXPECT_TRUE(std::ranges::equal(
       SampleList{
           {.timestamp = 102, .value = 1.1},
           {.timestamp = 103, .value = 1.2},
       },
-      decode_chunk(deserializer.create_decode_iterator<DataChunk::EncodingType::kTwoDoubleConstant>(deserializer.get_chunks()[2]))));
+      decode_chunk(deserializer.create_decode_iterator(deserializer.get_chunks()[2]))));
   EXPECT_TRUE(std::ranges::equal(
       SampleList{
           {.timestamp = 104, .value = 1.0},
           {.timestamp = 105, .value = 2.0},
           {.timestamp = 106, .value = 3.0},
       },
-      decode_chunk(deserializer.create_decode_iterator<DataChunk::EncodingType::kAscIntegerValuesGorilla>(deserializer.get_chunks()[3]))));
+      decode_chunk(deserializer.create_decode_iterator(deserializer.get_chunks()[3]))));
   EXPECT_TRUE(std::ranges::equal(
       SampleList{
           {.timestamp = 107, .value = 1.1},
           {.timestamp = 108, .value = 2.1},
           {.timestamp = 109, .value = 3.1},
       },
-      decode_chunk(deserializer.create_decode_iterator<DataChunk::EncodingType::kValuesGorilla>(deserializer.get_chunks()[4]))));
+      decode_chunk(deserializer.create_decode_iterator(deserializer.get_chunks()[4]))));
   EXPECT_TRUE(std::ranges::equal(
       SampleList{
           {.timestamp = 110, .value = 1.1},
           {.timestamp = 111, .value = 2.1},
           {.timestamp = 112, .value = 3.1},
       },
-      decode_chunk(deserializer.create_decode_iterator<DataChunk::EncodingType::kGorilla>(deserializer.get_chunks()[5]))));
+      decode_chunk(deserializer.create_decode_iterator(deserializer.get_chunks()[5]))));
   EXPECT_TRUE(std::ranges::equal(
       SampleList{
           {.timestamp = 113, .value = 2.0},
       },
-      decode_chunk(deserializer.create_decode_iterator<DataChunk::EncodingType::kUint32Constant>(deserializer.get_chunks()[6]))));
+      decode_chunk(deserializer.create_decode_iterator(deserializer.get_chunks()[6]))));
 }
-
-#if 0
-auto it = deserializer.create_decode_iterator<DataChunk::EncodingType::kUint32Constant>(deserializer.get_chunks()[0]);
-for (; it != DecodeIteratorSentinel{}; ++it) {
-  auto sample = *it;
-  std::cout << sample.timestamp << ", " << sample.value << std::endl;
-}
-#endif
 
 }  // namespace

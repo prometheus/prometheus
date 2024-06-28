@@ -9,14 +9,17 @@ namespace series_data::decoder {
 
 class DecodeIteratorSentinel {};
 
-class DecodeIteratorTrait {
+class DecodeIteratorTypeTrait {
  public:
   using iterator_category = std::forward_iterator_tag;
   using value_type = encoder::Sample;
   using difference_type = ptrdiff_t;
   using pointer = encoder::Sample*;
   using reference = encoder::Sample&;
+};
 
+class DecodeIteratorTrait : public DecodeIteratorTypeTrait {
+ public:
   explicit DecodeIteratorTrait(uint8_t count) : remaining_samples_{count} {}
   explicit DecodeIteratorTrait(double value, uint8_t count) : sample_{.value = value}, remaining_samples_{count} {}
 
