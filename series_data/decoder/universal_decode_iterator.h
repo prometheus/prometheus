@@ -15,7 +15,7 @@ class UniversalDecodeIterator : public DecodeIteratorTypeTrait {
   template <class InPlaceType, class... Args>
   explicit UniversalDecodeIterator(InPlaceType in_place_type, Args&&... args) : iterator_(in_place_type, std::forward<Args>(args)...) {}
 
-  const encoder::Sample& operator*() const noexcept {
+  PROMPP_ALWAYS_INLINE const encoder::Sample& operator*() const noexcept {
     return std::visit([](auto& iterator) PROMPP_LAMBDA_INLINE -> auto const& { return *iterator; }, iterator_);
   }
 
