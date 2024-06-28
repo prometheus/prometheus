@@ -2111,7 +2111,7 @@ func TestUpdateWhenStopped(t *testing.T) {
 	require.NotEmpty(t, ruleManager.groups)
 
 	ruleManager.Stop()
-	// Updates following a stop are no-op
+	// Updates following a stop are no-op.
 	err = ruleManager.Update(10*time.Second, []string{}, labels.EmptyLabels(), "", nil)
 	require.NoError(t, err)
 }
