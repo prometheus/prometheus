@@ -15,16 +15,19 @@ package openstack
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"strconv"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
-	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/floatingips"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/servers"
+	"github.com/gophercloud/gophercloud/openstack/networking/v2/extensions/layer3/floatingips"
 	"github.com/gophercloud/gophercloud/pagination"
 	"github.com/prometheus/common/model"
 
@@ -71,9 +74,58 @@ func newInstanceDiscovery(provider *gophercloud.ProviderClient, opts *gopherclou
 	}
 }
 
+// VersionInfo discover the latest microversion available on OpenStack Compute API.
+// https://docs.openstack.org/api-guide/compute/microversions.html
+type VersionInfo struct {
+	Version struct {
+		ID         string `json:"id"`
+		Status     string `json:"status"`
+		Version    string `json:"version"`
+		MinVersion string `json:"min_version"`
+		Updated    string `json:"updated"`
+		Links      []struct {
+			Rel  string `json:"rel"`
+			Href string `json:"href"`
+			Type string `json:"type,omitempty"`
+		} `json:"links"`
+		MediaTypes []struct {
+			Base string `json:"base"`
+			Type string `json:"type"`
+		} `json:"media-types"`
+	} `json:"version"`
+}
+
+// queryVersionInfo get the min_version and version (max version) miroversion available from Openstack Compute API.
+func queryVersionInfo(client http.Client, url string) (string, error) {
+	resp, err := client.Get(url)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("failed to get response: status code %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	var versionInfo VersionInfo
+	err = json.Unmarshal(body, &versionInfo)
+	if err != nil {
+		return "", err
+	}
+
+	version := versionInfo.Version.Version
+
+	return version, nil
+}
+
 type floatingIPKey struct {
-	id    string
-	fixed string
+	tenantID string
+	fixed    string
 }
 
 func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
@@ -90,9 +142,22 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 		return nil, fmt.Errorf("could not create OpenStack compute session: %w", err)
 	}
 
+	version, err := queryVersionInfo(i.provider.HTTPClient, client.Endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("Error querying version info: %w", err)
+	}
+	client.Microversion = version
+
+	networkClient, err := openstack.NewNetworkV2(i.provider, gophercloud.EndpointOpts{
+		Region: i.region, Availability: i.availability,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("could not create OpenStack network session: %w", err)
+	}
+
 	// OpenStack API reference
 	// https://developer.openstack.org/api-ref/compute/#list-floating-ips
-	pagerFIP := floatingips.List(client)
+	pagerFIP := floatingips.List(networkClient, floatingips.ListOpts{})
 	floatingIPList := make(map[floatingIPKey]string)
 	floatingIPPresent := make(map[string]struct{})
 	err = pagerFIP.EachPage(func(page pagination.Page) (bool, error) {
@@ -102,11 +167,11 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 		}
 		for _, ip := range result {
 			// Skip not associated ips
-			if ip.InstanceID == "" || ip.FixedIP == "" {
+			if ip.PortID == "" || ip.FixedIP == "" {
 				continue
 			}
-			floatingIPList[floatingIPKey{id: ip.InstanceID, fixed: ip.FixedIP}] = ip.IP
-			floatingIPPresent[ip.IP] = struct{}{}
+			floatingIPList[floatingIPKey{tenantID: ip.TenantID, fixed: ip.FixedIP}] = ip.FloatingIP
+			floatingIPPresent[ip.FloatingIP] = struct{}{}
 		}
 		return true, nil
 	})
@@ -146,12 +211,17 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 				openstackLabelUserID:         model.LabelValue(s.UserID),
 			}
 
-			flavorID, ok := s.Flavor["id"].(string)
-			if !ok {
-				level.Warn(i.logger).Log("msg", "Invalid type for flavor id, expected string")
-				continue
+			flavorName, nameOk := s.Flavor["original_name"].(string)
+			if !nameOk {
+				flavorID, idOk := s.Flavor["id"].(string)
+				if !idOk {
+					level.Warn(i.logger).Log("msg", "Invalid type for both flavor original_name and flavor id, expected string")
+					continue
+				}
+				labels[openstackLabelInstanceFlavor] = model.LabelValue(flavorID)
+			} else {
+				labels[openstackLabelInstanceFlavor] = model.LabelValue(flavorName)
 			}
-			labels[openstackLabelInstanceFlavor] = model.LabelValue(flavorID)
 
 			imageID, ok := s.Image["id"].(string)
 			if ok {
@@ -192,7 +262,7 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 					}
 					lbls[openstackLabelAddressPool] = model.LabelValue(pool)
 					lbls[openstackLabelPrivateIP] = model.LabelValue(addr)
-					if val, ok := floatingIPList[floatingIPKey{id: s.ID, fixed: addr}]; ok {
+					if val, ok := floatingIPList[floatingIPKey{tenantID: s.TenantID, fixed: addr}]; ok {
 						lbls[openstackLabelPublicIP] = model.LabelValue(val)
 					}
 					addr = net.JoinHostPort(addr, strconv.Itoa(i.port))
