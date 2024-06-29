@@ -467,6 +467,11 @@ func (pb *Block) setCompactionFailed() error {
 	return nil
 }
 
+// Querier implements Queryable.
+func (pb *Block) Querier(mint, maxt int64) (storage.Querier, error) {
+	return NewBlockQuerier(pb, mint, maxt)
+}
+
 type blockIndexReader struct {
 	ir IndexReader
 	b  *Block
