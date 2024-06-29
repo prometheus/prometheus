@@ -2099,6 +2099,23 @@ func TestBoundedRuleEvalConcurrency(t *testing.T) {
 	require.EqualValues(t, maxInflight.Load(), int32(maxConcurrency)+int32(groupCount))
 }
 
+func TestUpdateWhenStopped(t *testing.T) {
+	files := []string{"fixtures/rules.yaml"}
+	ruleManager := NewManager(&ManagerOptions{
+		Context: context.Background(),
+		Logger:  log.NewNopLogger(),
+	})
+	ruleManager.start()
+	err := ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, ruleManager.groups)
+
+	ruleManager.Stop()
+	// Updates following a stop are no-op.
+	err = ruleManager.Update(10*time.Second, []string{}, labels.EmptyLabels(), "", nil)
+	require.NoError(t, err)
+}
+
 const artificialDelay = 250 * time.Millisecond
 
 func optsFactory(storage storage.Storage, maxInflight, inflightQueries *atomic.Int32, maxConcurrent int64) *ManagerOptions {
