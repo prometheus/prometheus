@@ -201,7 +201,7 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
         const bucketIdx = `bucket-${index}-${bIdx}-${Math.ceil(parseFloat(b[3]) * 100)}`;
 
         const logWidth = Math.abs(Math.log(Math.abs(right)) - Math.log(Math.abs(left)));
-        const expBucketWidth = logWidth === 0 || !isFinite(logWidth) || isNaN(logWidth) ? defaultExpBucketWidth : logWidth;
+        const expBucketWidth = logWidth === 0 ? defaultExpBucketWidth : logWidth;
 
         let bucketWidth = '';
         let bucketLeft = '';
@@ -213,6 +213,7 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
             bucketLeft = ((left - rangeMin) / (rangeMax - rangeMin)) * 100 + '%';
             if (left === 0 && right === 0) {
               bucketLeft = '0%'; // do not render zero-width zero bucket
+              bucketWidth = '0%';
             }
             bucketHeight = (fds[bIdx] / fdMax) * 100 + '%';
             break;
@@ -238,8 +239,9 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
               bucketLeft = (xWidthNegative / xWidthTotal) * 100 + '%';
             }
             if (left === 0 && right === 0) {
-              // zero width zero bucket
-              bucketLeft = ((xWidthNegative + expBucketWidth) / xWidthTotal) * 100 + '%';
+              // do not render zero width zero bucket
+              bucketLeft = '0%';
+              bucketWidth = '0%';
             }
 
             bucketHeight = (count / countMax) * 100 + '%';
