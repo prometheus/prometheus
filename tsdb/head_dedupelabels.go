@@ -22,7 +22,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-// Go through all the series in h, build a SymbolTable with all names and values,
+// RebuildSymbolTable goes through all the series in h, build a SymbolTable with all names and values,
 // replace each series' Labels with one using that SymbolTable.
 func (h *Head) RebuildSymbolTable(logger log.Logger) *labels.SymbolTable {
 	level.Info(logger).Log("msg", "RebuildSymbolTable starting")
