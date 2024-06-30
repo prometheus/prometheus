@@ -719,6 +719,7 @@ func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
 		if _, ok := seen[us]; ok {
 			continue
 		}
+		s.metrics.latency.DeleteLabelValues(us)
 		s.metrics.sent.DeleteLabelValues(us)
 		s.metrics.errors.DeleteLabelValues(us)
 		seen[us] = struct{}{}
