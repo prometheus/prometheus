@@ -1,5 +1,25 @@
 export type ScaleType = 'linear' | 'exponential';
 
+// Calculates a default width of exponential histogram bucket ranges. If the last bucket is [0, 0],
+// the width is calculated using the second to last bucket. returns error if the last bucket is [-0, 0],
+export function calculateDefaultExpBucketWidth(
+  last: [number, string, string, string],
+  buckets: [number, string, string, string][]
+): number {
+  if (parseFloat(last[2]) === 0 || parseFloat(last[1]) === 0) {
+    if (buckets.length > 1) {
+      return Math.abs(
+        Math.log(Math.abs(parseFloat(buckets[buckets.length - 2][2]))) -
+          Math.log(Math.abs(parseFloat(buckets[buckets.length - 2][1])))
+      );
+    } else {
+      throw new Error('Only one bucket in histogram ([-0, 0]). Cannot calculate defaultExpBucketWidth.');
+    }
+  } else {
+    return Math.abs(Math.log(Math.abs(parseFloat(last[2]))) - Math.log(Math.abs(parseFloat(last[1]))));
+  }
+}
+
 // Finds the lowest positive value from the bucket ranges
 // Returns 0 if no positive values are found or if there are no buckets.
 export function findMinPositive(buckets: [number, string, string, string][]) {
@@ -46,6 +66,7 @@ export function findMaxNegative(buckets: [number, string, string, string][]) {
       return prevRight; // return the last negative bucket
     }
   }
+  console.log('findmaxneg returning: ', buckets[buckets.length - 1][2]);
   return parseFloat(buckets[buckets.length - 1][2]); // all buckets are negative
 }
 

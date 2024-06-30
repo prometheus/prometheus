@@ -3,6 +3,7 @@ import { UncontrolledTooltip } from 'reactstrap';
 import { Histogram } from '../../types/types';
 import { bucketRangeString } from './DataTable';
 import {
+  calculateDefaultExpBucketWidth,
   findMinPositive,
   findMaxNegative,
   findZeroAxisLeft,
@@ -50,7 +51,7 @@ const HistogramChart: FC<HistogramChartProps> = ({ index, histogram, scale }) =>
   const rangeMin = parseFloat(first[1]);
   const countMax = Math.max(...buckets.map((b) => parseFloat(b[3])));
 
-  const defaultExpBucketWidth = Math.abs(Math.log(Math.abs(rangeMax)) - Math.log(Math.abs(parseFloat(last[1]))));
+  const defaultExpBucketWidth = calculateDefaultExpBucketWidth(last, buckets);
 
   const maxPositive = rangeMax > 0 ? rangeMax : 0;
   const minPositive = findMinPositive(buckets);
@@ -62,11 +63,22 @@ const HistogramChart: FC<HistogramChartProps> = ({ index, histogram, scale }) =>
   const endNegative = maxNegative !== 0 ? -Math.log(Math.abs(maxNegative)) : 0;
   const startPositive = minPositive !== 0 ? Math.log(minPositive) : 0;
   const endPositive = maxPositive !== 0 ? Math.log(maxPositive) : 0;
+  console.log(
+    'startNegative',
+    startNegative,
+    'endNegative',
+    endNegative,
+    'startPositive',
+    startPositive,
+    'endPositive',
+    endPositive
+  );
 
   // Calculate the width of negative, positive, and all exponential bucket ranges on the x-axis
   const xWidthNegative = endNegative - startNegative;
   const xWidthPositive = endPositive - startPositive;
   const xWidthTotal = xWidthNegative + defaultExpBucketWidth + xWidthPositive;
+  console.log('xWidthNegative', xWidthNegative, 'xWidthPositive', xWidthPositive, 'xWidthTotal', xWidthTotal);
 
   const zeroBucketIdx = findZeroBucket(buckets);
   const zeroAxisLeft = findZeroAxisLeft(
@@ -122,6 +134,7 @@ const HistogramChart: FC<HistogramChartProps> = ({ index, histogram, scale }) =>
             maxNegative={maxNegative}
             startPositive={startPositive}
             startNegative={startNegative}
+            xWidthPositive={xWidthPositive}
             xWidthNegative={xWidthNegative}
             xWidthTotal={xWidthTotal}
           />
@@ -157,6 +170,7 @@ interface RenderHistogramProps {
   startPositive: number;
   startNegative: number;
   xWidthNegative: number;
+  xWidthPositive: number;
   xWidthTotal: number;
 }
 
@@ -175,6 +189,7 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
   startPositive,
   startNegative,
   xWidthNegative,
+  xWidthPositive,
   xWidthTotal,
 }) => {
   return (
@@ -186,7 +201,7 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
         const bucketIdx = `bucket-${index}-${bIdx}-${Math.ceil(parseFloat(b[3]) * 100)}`;
 
         const logWidth = Math.abs(Math.log(Math.abs(right)) - Math.log(Math.abs(left)));
-        const expBucketWidth = logWidth === 0 ? defaultExpBucketWidth : logWidth;
+        const expBucketWidth = logWidth === 0 || !isFinite(logWidth) || isNaN(logWidth) ? defaultExpBucketWidth : logWidth;
 
         let bucketWidth = '';
         let bucketLeft = '';
@@ -222,12 +237,69 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
               // if the bucket crosses the zero axis
               bucketLeft = (xWidthNegative / xWidthTotal) * 100 + '%';
             }
+            if (left === 0 && right === 0) {
+              // zero width zero bucket
+              bucketLeft = ((xWidthNegative + expBucketWidth) / xWidthTotal) * 100 + '%';
+            }
 
             bucketHeight = (count / countMax) * 100 + '%';
             break;
           default:
             throw new Error('Invalid scale');
         }
+
+        console.log(
+          '[',
+          left,
+          ',',
+          right,
+          ']',
+          '\n',
+          'fds[bIdx]',
+          fds[bIdx],
+          '\n',
+          'fdMax',
+          fdMax,
+          '\n',
+          'bucketIdx',
+          bucketIdx,
+          '\n',
+          'bucketLeft',
+          bucketLeft,
+          '\n',
+          'bucketWidth',
+          bucketWidth,
+          '\n',
+          'bucketHeight',
+          bucketHeight,
+          '\n',
+          'defaultExpBucketWidth',
+          defaultExpBucketWidth,
+          '\n',
+          'expBucketWidth',
+          expBucketWidth,
+          '\n',
+          'startNegative',
+          startNegative,
+          '\n',
+          'startPositive',
+          startPositive,
+          '\n',
+          'minPositive',
+          minPositive,
+          '\n',
+          'maxNegative',
+          maxNegative,
+          'xWidthNegative',
+          xWidthNegative,
+          '\n',
+          'xWidthTotal',
+          xWidthTotal,
+          '\n',
+          'xWidthPositive',
+          xWidthPositive,
+          '\n'
+        );
 
         return (
           <React.Fragment key={bIdx}>
