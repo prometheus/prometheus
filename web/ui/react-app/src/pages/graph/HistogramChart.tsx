@@ -1,8 +1,15 @@
 import React, { FC } from 'react';
 import { UncontrolledTooltip } from 'reactstrap';
-import { Histogram, ScaleType } from '../../types/types';
+import { Histogram } from '../../types/types';
 import { bucketRangeString } from './DataTable';
-import { findMinPositive, findMaxNegative, findZeroAxisLeft, showZeroAxis, findZeroBucket } from './HistogramHelpers';
+import {
+  findMinPositive,
+  findMaxNegative,
+  findZeroAxisLeft,
+  showZeroAxis,
+  findZeroBucket,
+  ScaleType,
+} from './HistogramHelpers';
 
 interface HistogramChartProps {
   histogram: Histogram;
@@ -12,7 +19,7 @@ interface HistogramChartProps {
 
 const HistogramChart: FC<HistogramChartProps> = ({ index, histogram, scale }) => {
   const { buckets } = histogram;
-  if (!buckets) {
+  if (!buckets || buckets.length === 0) {
     return <div>No data</div>;
   }
   const formatter = Intl.NumberFormat('en', { notation: 'compact' });
@@ -26,20 +33,22 @@ const HistogramChart: FC<HistogramChartProps> = ({ index, histogram, scale }) =>
     const right = parseFloat(bucket[2]);
     const count = parseFloat(bucket[3]);
     const width = right - left;
+
+    // This happens when a user want observations of precisely zero to be included in the zero bucket
     if (width === 0) {
       fds.push(0);
       continue;
     }
     fds.push(count / width);
   }
-  const fdMax = fds.reduce((a, b) => Math.max(a, b));
+  const fdMax = Math.max(...fds);
 
   const first = buckets[0];
   const last = buckets[buckets.length - 1];
 
   const rangeMax = parseFloat(last[2]);
   const rangeMin = parseFloat(first[1]);
-  const countMax = buckets.map((b) => parseFloat(b[3])).reduce((a, b) => Math.max(a, b));
+  const countMax = Math.max(...buckets.map((b) => parseFloat(b[3])));
 
   const defaultExpBucketWidth = Math.abs(Math.log(Math.abs(rangeMax)) - Math.log(Math.abs(parseFloat(last[1]))));
 
@@ -99,25 +108,23 @@ const HistogramChart: FC<HistogramChartProps> = ({ index, histogram, scale }) =>
           <div className="histogram-x-grid" style={{ left: zeroAxisLeft }}></div>
           <div className="histogram-x-tick" style={{ left: '100%' }}></div>
 
-          {buckets && (
-            <RenderHistogramBars
-              buckets={buckets}
-              scale={scale}
-              rangeMin={rangeMin}
-              rangeMax={rangeMax}
-              index={index}
-              fds={fds}
-              fdMax={fdMax}
-              countMax={countMax}
-              defaultExpBucketWidth={defaultExpBucketWidth}
-              minPositive={minPositive}
-              maxNegative={maxNegative}
-              startPositive={startPositive}
-              startNegative={startNegative}
-              xWidthNegative={xWidthNegative}
-              xWidthTotal={xWidthTotal}
-            />
-          )}
+          <RenderHistogramBars
+            buckets={buckets}
+            scale={scale}
+            rangeMin={rangeMin}
+            rangeMax={rangeMax}
+            index={index}
+            fds={fds}
+            fdMax={fdMax}
+            countMax={countMax}
+            defaultExpBucketWidth={defaultExpBucketWidth}
+            minPositive={minPositive}
+            maxNegative={maxNegative}
+            startPositive={startPositive}
+            startNegative={startNegative}
+            xWidthNegative={xWidthNegative}
+            xWidthTotal={xWidthTotal}
+          />
 
           <div className="histogram-axes"></div>
         </div>
@@ -190,7 +197,7 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
             bucketWidth = ((right - left) / (rangeMax - rangeMin)) * 100 + '%';
             bucketLeft = ((left - rangeMin) / (rangeMax - rangeMin)) * 100 + '%';
             if (left === 0 && right === 0) {
-              bucketLeft = '0%'; // do not renter zero-width zero bucket
+              bucketLeft = '0%'; // do not render zero-width zero bucket
             }
             bucketHeight = (fds[bIdx] / fdMax) * 100 + '%';
             break;
@@ -219,7 +226,7 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
             bucketHeight = (count / countMax) * 100 + '%';
             break;
           default:
-            console.error('Invalid scale type');
+            throw new Error('Invalid scale');
         }
 
         return (

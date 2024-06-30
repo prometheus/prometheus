@@ -1,4 +1,4 @@
-import { ScaleType } from '../../types/types';
+export type ScaleType = 'linear' | 'exponential';
 
 // Finds the lowest positive value from the bucket ranges
 // Returns 0 if no positive values are found or if there are no buckets.
@@ -46,7 +46,6 @@ export function findMaxNegative(buckets: [number, string, string, string][]) {
       return prevRight; // return the last negative bucket
     }
   }
-  console.log('findmaxneg returning: ', buckets[buckets.length - 1][2]);
   return parseFloat(buckets[buckets.length - 1][2]); // all buckets are negative
 }
 
