@@ -55,7 +55,8 @@ func (h *Head) RebuildSymbolTable(logger log.Logger) *labels.SymbolTable {
 
 		h.series.locks[i].Unlock()
 	}
-	if e, ok := h.exemplars.(interface{ ResetSymbolTable(*labels.SymbolTable) }); ok {
+	type withReset interface{ ResetSymbolTable(*labels.SymbolTable) }
+	if e, ok := h.exemplars.(withReset); ok {
 		e.ResetSymbolTable(st)
 	}
 	level.Info(logger).Log("msg", "RebuildSymbolTable finished", "size", st.Len())
