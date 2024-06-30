@@ -23,9 +23,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
@@ -293,7 +293,7 @@ func TestStreamReadEndpoint(t *testing.T) {
 
 	require.Len(t, results, 6, "Expected 6 results.")
 
-	require.Equal(t, []*prompb.ChunkedReadResponse{
+	chunkedReadResponse := []*prompb.ChunkedReadResponse{
 		{
 			ChunkedSeries: []*prompb.ChunkedSeries{
 				{
@@ -428,7 +428,10 @@ func TestStreamReadEndpoint(t *testing.T) {
 			},
 			QueryIndex: 2,
 		},
-	}, results)
+	}
+	for index, result := range results {
+		require.True(t, proto.Equal(chunkedReadResponse[index], result))
+	}
 }
 
 func addNativeHistogramsToTestSuite(t *testing.T, storage *teststorage.TestStorage, n int) {

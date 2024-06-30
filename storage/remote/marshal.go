@@ -338,7 +338,7 @@ func marshalFloatHistogramToSizedBuffer(fh *histogram.FloatHistogram, timestamp 
 		}
 		i = encodeVarint(data, i, uint64(8*len(fh.NegativeBuckets)))
 		i--
-		data[i] = histogramNegativeDeltasTag
+		data[i] = histogramNegativeCountsTag
 	}
 	for index := len(fh.PositiveSpans) - 1; index >= 0; index-- {
 		size, err := marshalSpanToSizedBuffer(&fh.PositiveSpans[index], data[:i])
@@ -357,7 +357,7 @@ func marshalFloatHistogramToSizedBuffer(fh *histogram.FloatHistogram, timestamp 
 		}
 		i = encodeVarint(data, i, uint64(8*len(fh.PositiveBuckets)))
 		i--
-		data[i] = histogramPositiveDeltasTag
+		data[i] = histogramPositiveCountsTag
 	}
 	if fh.CounterResetHint != 0 {
 		i = encodeVarint(data, i, uint64(fh.CounterResetHint))

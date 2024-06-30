@@ -819,7 +819,6 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) error {
 		return err
 	}
 	var reqProto prompb.WriteRequest
-	fmt.Println("reqbuf:", reqBuf)
 	if err := proto.Unmarshal(reqBuf, &reqProto); err != nil {
 		return err
 	}
