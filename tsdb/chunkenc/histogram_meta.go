@@ -21,17 +21,21 @@ import (
 
 func writeHistogramChunkLayout(
 	b *bstream, schema int32, zeroThreshold float64,
-	positiveSpans, negativeSpans []histogram.Span,
+	positiveSpans, negativeSpans []histogram.Span, customValues []float64,
 ) {
 	putZeroThreshold(b, zeroThreshold)
 	putVarbitInt(b, int64(schema))
 	putHistogramChunkLayoutSpans(b, positiveSpans)
 	putHistogramChunkLayoutSpans(b, negativeSpans)
+	if histogram.IsCustomBucketsSchema(schema) {
+		putHistogramChunkLayoutCustomBounds(b, customValues)
+	}
 }
 
 func readHistogramChunkLayout(b *bstreamReader) (
 	schema int32, zeroThreshold float64,
 	positiveSpans, negativeSpans []histogram.Span,
+	customValues []float64,
 	err error,
 ) {
 	zeroThreshold, err = readZeroThreshold(b)
@@ -53,6 +57,13 @@ func readHistogramChunkLayout(b *bstreamReader) (
 	negativeSpans, err = readHistogramChunkLayoutSpans(b)
 	if err != nil {
 		return
+	}
+
+	if histogram.IsCustomBucketsSchema(schema) {
+		customValues, err = readHistogramChunkLayoutCustomBounds(b)
+		if err != nil {
+			return
+		}
 	}
 
 	return
@@ -89,6 +100,30 @@ func readHistogramChunkLayoutSpans(b *bstreamReader) ([]histogram.Span, error) {
 		})
 	}
 	return spans, nil
+}
+
+func putHistogramChunkLayoutCustomBounds(b *bstream, customValues []float64) {
+	putVarbitUint(b, uint64(len(customValues)))
+	for _, bound := range customValues {
+		putCustomBound(b, bound)
+	}
+}
+
+func readHistogramChunkLayoutCustomBounds(b *bstreamReader) ([]float64, error) {
+	var customValues []float64
+	num, err := readVarbitUint(b)
+	if err != nil {
+		return nil, err
+	}
+	for i := 0; i < int(num); i++ {
+		bound, err := readCustomBound(b)
+		if err != nil {
+			return nil, err
+		}
+
+		customValues = append(customValues, bound)
+	}
+	return customValues, nil
 }
 
 // putZeroThreshold writes the zero threshold to the bstream. It stores typical
@@ -136,6 +171,59 @@ func readZeroThreshold(br *bstreamReader) (float64, error) {
 		return math.Float64frombits(v), nil
 	default:
 		return math.Ldexp(0.5, int(b)-243), nil
+	}
+}
+
+// isWholeWhenMultiplied checks to see if the number when multiplied by 1000 can
+// be converted into an integer without losing precision.
+func isWholeWhenMultiplied(in float64) bool {
+	i := uint(math.Round(in * 1000))
+	out := float64(i) / 1000
+	return in == out
+}
+
+// putCustomBound writes a custom bound to the bstream. It stores values from
+// 0 to 33554.430 (inclusive) that are multiples of 0.001 in unsigned varbit
+// encoding of up to 4 bytes, but needs 1 bit + 8 bytes for other values like
+// negative numbers, numbers greater than 33554.430, or numbers that are not
+// a multiple of 0.001, on the assumption that they are less common. In detail:
+//   - Multiply the bound by 1000, without rounding.
+//   - If the multiplied bound is >= 0, <= 33554430 and a whole number,
+//     add 1 and store it in unsigned varbit encoding. All these numbers are
+//     greater than 0, so the leading bit of the varbit is always 1!
+//   - Otherwise, store a 0 bit, followed by the 8 bytes of the original
+//     bound as a float64.
+//
+// When reading the values, we can first decode a value as unsigned varbit,
+// if it's 0, then we read the next 8 bytes as a float64, otherwise
+// we can convert the value to a float64 by subtracting 1 and dividing by 1000.
+func putCustomBound(b *bstream, f float64) {
+	tf := f * 1000
+	// 33554431-1 comes from the maximum that can be stored in a varbit in 4
+	// bytes, other values are stored in 8 bytes anyway.
+	if tf < 0 || tf > 33554430 || !isWholeWhenMultiplied(f) {
+		b.writeBit(zero)
+		b.writeBits(math.Float64bits(f), 64)
+		return
+	}
+	putVarbitUint(b, uint64(math.Round(tf))+1)
+}
+
+// readCustomBound reads the custom bound written with putCustomBound.
+func readCustomBound(br *bstreamReader) (float64, error) {
+	b, err := readVarbitUint(br)
+	if err != nil {
+		return 0, err
+	}
+	switch b {
+	case 0:
+		v, err := br.readBits(64)
+		if err != nil {
+			return 0, err
+		}
+		return math.Float64frombits(v), nil
+	default:
+		return float64(b-1) / 1000, nil
 	}
 }
 

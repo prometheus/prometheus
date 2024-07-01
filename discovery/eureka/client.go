@@ -97,6 +97,7 @@ func fetchApps(ctx context.Context, server string, client *http.Client) (*Applic
 		resp.Body.Close()
 	}()
 
+	//nolint:usestdlibvars
 	if resp.StatusCode/100 != 2 {
 		return nil, fmt.Errorf("non 2xx status '%d' response during eureka service discovery", resp.StatusCode)
 	}

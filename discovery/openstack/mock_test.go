@@ -427,13 +427,17 @@ const serverListBody = `
 			"OS-SRV-USG:launched_at": "2014-09-25T13:04:49.000000",
 			"OS-EXT-SRV-ATTR:hypervisor_hostname": "devstack",
 			"flavor": {
-				"id": "1",
-				"links": [
-					{
-						"href": "http://104.130.131.164:8774/fcad67a6189847c4aecfa3c81a05783b/flavors/1",
-						"rel": "bookmark"
-					}
-				]
+				"vcpus": 2,
+				"ram": 4096,
+				"disk": 0,
+				"ephemeral": 0,
+				"swap": 0,
+				"original_name": "m1.medium",
+				"extra_specs": {
+					"aggregate_instance_extra_specs:general": "true",
+					"hw:mem_page_size": "large",
+					"hw:vif_multiqueue_enabled": "true"
+				}
 			},
 			"id": "9e5476bd-a4ec-4653-93d6-72c93aa682ba",
 			"security_groups": [
@@ -498,13 +502,17 @@ const serverListBody = `
 		"OS-SRV-USG:launched_at": "2014-09-25T13:04:49.000000",
 		"OS-EXT-SRV-ATTR:hypervisor_hostname": "devstack",
 		"flavor": {
-			"id": "4",
-			"links": [
-				{
-					"href": "http://104.130.131.164:8774/fcad67a6189847c4aecfa3c81a05783b/flavors/1",
-					"rel": "bookmark"
-				}
-			]
+			"vcpus": 2,
+			"ram": 4096,
+			"disk": 0,
+			"ephemeral": 0,
+			"swap": 0,
+			"original_name": "m1.small",
+			"extra_specs": {
+			  "aggregate_instance_extra_specs:general": "true",
+			  "hw:mem_page_size": "large",
+			  "hw:vif_multiqueue_enabled": "true"
+			}
 		},
 		"id": "9e5476bd-a4ec-4653-93d6-72c93aa682bb",
 		"security_groups": [

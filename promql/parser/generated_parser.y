@@ -84,6 +84,7 @@ BUCKETS_DESC
 NEGATIVE_BUCKETS_DESC
 ZERO_BUCKET_DESC
 ZERO_BUCKET_WIDTH_DESC
+CUSTOM_VALUES_DESC
 %token histogramDescEnd
 
 // Operators.
@@ -796,6 +797,11 @@ histogram_desc_item
                 {
                    $$ = yylex.(*parser).newMap()
                    $$["z_bucket_w"] = $3
+                }
+                | CUSTOM_VALUES_DESC COLON bucket_set
+                {
+                   $$ = yylex.(*parser).newMap()
+                   $$["custom_values"] = $3
                 }
                 | BUCKETS_DESC COLON bucket_set
                 {

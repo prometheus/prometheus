@@ -206,12 +206,15 @@ func histogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 
 	for it.Next() {
 		bucket = it.At()
+		if bucket.Count == 0 {
+			continue
+		}
 		count += bucket.Count
 		if count >= rank {
 			break
 		}
 	}
-	if bucket.Lower < 0 && bucket.Upper > 0 {
+	if !h.UsesCustomBuckets() && bucket.Lower < 0 && bucket.Upper > 0 {
 		switch {
 		case len(h.NegativeBuckets) == 0 && len(h.PositiveBuckets) > 0:
 			// The result is in the zero bucket and the histogram has only
@@ -221,6 +224,17 @@ func histogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 			// The result is in the zero bucket and the histogram has only
 			// negative buckets. So we consider 0 to be the upper bound.
 			bucket.Upper = 0
+		}
+	} else if h.UsesCustomBuckets() {
+		if bucket.Lower == math.Inf(-1) {
+			// first bucket, with lower bound -Inf
+			if bucket.Upper <= 0 {
+				return bucket.Upper
+			}
+			bucket.Lower = 0
+		} else if bucket.Upper == math.Inf(1) {
+			// last bucket, with upper bound +Inf
+			return bucket.Lower
 		}
 	}
 	// Due to numerical inaccuracies, we could end up with a higher count

@@ -513,12 +513,12 @@ var testExpr = []struct {
 	{
 		input:  "2.5.",
 		fail:   true,
-		errMsg: "unexpected character: '.'",
+		errMsg: `1:1: parse error: bad number or duration syntax: "2.5."`,
 	},
 	{
 		input:  "100..4",
 		fail:   true,
-		errMsg: `unexpected number ".4"`,
+		errMsg: `1:1: parse error: bad number or duration syntax: "100.."`,
 	},
 	{
 		input:  "0deadbeef",

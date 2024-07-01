@@ -132,6 +132,84 @@ var tests = []struct {
 			}, {
 				input:    "0x123",
 				expected: []Item{{NUMBER, 0, "0x123"}},
+			}, {
+				input: "1..2",
+				fail:  true,
+			}, {
+				input: "1.2.",
+				fail:  true,
+			}, {
+				input:    "00_1_23_4.56_7_8",
+				expected: []Item{{NUMBER, 0, "00_1_23_4.56_7_8"}},
+			}, {
+				input: "00_1_23__4.56_7_8",
+				fail:  true,
+			}, {
+				input: "00_1_23_4._56_7_8",
+				fail:  true,
+			}, {
+				input: "00_1_23_4_.56_7_8",
+				fail:  true,
+			}, {
+				input:    "0x1_2_34",
+				expected: []Item{{NUMBER, 0, "0x1_2_34"}},
+			}, {
+				input: "0x1_2__34",
+				fail:  true,
+			}, {
+				input: "0x1_2__34.5_6p1", // "0x1.1p1"-based formats are not supported yet.
+				fail:  true,
+			}, {
+				input: "0x1_2__34.5_6",
+				fail:  true,
+			}, {
+				input: "0x1_2__34.56",
+				fail:  true,
+			}, {
+				input: "1_e2",
+				fail:  true,
+			}, {
+				input:    "1.e2",
+				expected: []Item{{NUMBER, 0, "1.e2"}},
+			}, {
+				input: "1e.2",
+				fail:  true,
+			}, {
+				input: "1e+.2",
+				fail:  true,
+			}, {
+				input: "1ee2",
+				fail:  true,
+			}, {
+				input: "1e+e2",
+				fail:  true,
+			}, {
+				input: "1e",
+				fail:  true,
+			}, {
+				input: "1e+",
+				fail:  true,
+			}, {
+				input:    "1e1_2_34",
+				expected: []Item{{NUMBER, 0, "1e1_2_34"}},
+			}, {
+				input: "1e_1_2_34",
+				fail:  true,
+			}, {
+				input: "1e1_2__34",
+				fail:  true,
+			}, {
+				input: "1e+_1_2_34",
+				fail:  true,
+			}, {
+				input: "1e-_1_2_34",
+				fail:  true,
+			}, {
+				input: "12_",
+				fail:  true,
+			}, {
+				input:    "_1_2",
+				expected: []Item{{IDENTIFIER, 0, "_1_2"}},
 			},
 		},
 	},

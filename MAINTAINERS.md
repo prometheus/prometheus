@@ -16,7 +16,7 @@ Maintainers for specific parts of the codebase:
 * `model/histogram` and other code related to native histograms: Björn Rabenstein (<beorn@grafana.com> / @beorn7), 
 George Krajcsovits (<gyorgy.krajcsovits@grafana.com> / @krajorama)
 * `storage`
-  * `remote`: Callum Styan (<callumstyan@gmail.com> / @cstyan), Bartłomiej Płotka (<bwplotka@gmail.com> / @bwplotka), Tom Wilkie (<tom.wilkie@gmail.com> / @tomwilkie)
+  * `remote`: Callum Styan (<callumstyan@gmail.com> / @cstyan), Bartłomiej Płotka (<bwplotka@gmail.com> / @bwplotka), Tom Wilkie (tom.wilkie@gmail.com / @tomwilkie), Nicolás Pazos ( <npazosmendez@gmail.com> / @npazosmendez), Alex Greenbank ( <alex.greenbank@grafana.com> / @alexgreenbank)
     * `otlptranslator`: Arve Knudsen (<arve.knudsen@gmail.com> / @aknuds1), Jesús Vázquez (<jesus.vazquez@grafana.com> / @jesusvazquez)
 * `tsdb`: Ganesh Vernekar (<ganesh@grafana.com> / @codesome), Bartłomiej Płotka (<bwplotka@gmail.com> / @bwplotka), Jesús Vázquez (<jesus.vazquez@grafana.com> / @jesusvazquez)
   * `agent`: Robert Fratto (<robert.fratto@grafana.com> / @rfratto)
