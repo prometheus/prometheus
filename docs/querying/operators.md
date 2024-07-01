@@ -231,7 +231,7 @@ vector of fewer elements with aggregated values:
 * `topk` (largest k elements by sample value)
 * `quantile` (calculate φ-quantile (0 ≤ φ ≤ 1) over dimensions)
 * `limitk` (sample n elements)
-* `limit_ratio` (sample elements with approximately 𝑟 ratio)
+* `limit_ratio` (sample elements with approximately 𝑟 ratio if `𝑟 > 0`, and the complement of such samples if `𝑟 = -(1.0 - 𝑟)`)
 
 These operators can either be used to aggregate over **all** label dimensions
 or preserve distinct dimensions by including a `without` or `by` clause. These
