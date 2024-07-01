@@ -941,6 +941,9 @@ tls_config:
 # The host to use if the container is in host networking mode.
 [ host_networking_host: <string> | default = "localhost" ]
 
+# Match the first network if the container has multiple networks defined, thus avoiding collecting duplicate targets.
+[ match_first_network: <boolean> | default = true ]
+
 # Optional filters to limit the discovery process to a subset of available
 # resources.
 # The available filters are listed in the upstream documentation:
@@ -1229,6 +1232,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_ec2_ipv6_addresses`: comma separated list of IPv6 addresses assigned to the instance's network interfaces, if present
 * `__meta_ec2_owner_id`: the ID of the AWS account that owns the EC2 instance
 * `__meta_ec2_platform`: the Operating System platform, set to 'windows' on Windows servers, absent otherwise
+* `__meta_ec2_primary_ipv6_addresses`: comma separated list of the Primary IPv6 addresses of the instance, if present. The list is ordered based on the position of each corresponding network interface in the attachment order.
 * `__meta_ec2_primary_subnet_id`: the subnet ID of the primary network interface, if available
 * `__meta_ec2_private_dns_name`: the private DNS name of the instance, if available
 * `__meta_ec2_private_ip`: the private IP address of the instance, if present
@@ -1359,7 +1363,7 @@ interface.
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
 * `__meta_openstack_address_pool`: the pool of the private IP.
-* `__meta_openstack_instance_flavor`: the flavor ID of the OpenStack instance.
+* `__meta_openstack_instance_flavor`: the flavor name of the OpenStack instance, or the flavor ID if the flavor name isn't available.
 * `__meta_openstack_instance_id`: the OpenStack instance ID.
 * `__meta_openstack_instance_image`: the ID of the image the OpenStack instance is using.
 * `__meta_openstack_instance_name`: the OpenStack instance name.
@@ -1608,7 +1612,16 @@ and serves as an interface to plug in custom service discovery mechanisms.
 
 It reads a set of files containing a list of zero or more
 `<static_config>`s. Changes to all defined files are detected via disk watches
-and applied immediately. Files may be provided in YAML or JSON format. Only
+and applied immediately. 
+
+While those individual files are watched for changes,
+the parent directory is also watched implicitly. This is to handle [atomic
+renaming](https://github.com/fsnotify/fsnotify/blob/c1467c02fba575afdb5f4201072ab8403bbf00f4/README.md?plain=1#L128) efficiently and to detect new files that match the configured globs.
+This may cause issues if the parent directory contains a large number of other files,
+as each of these files will be watched too, even though the events related
+to them are not relevant.
+
+Files may be provided in YAML or JSON format. Only
 changes resulting in well-formed target groups are applied.
 
 Files must contain a list of static configs, using these formats:
@@ -3813,6 +3826,10 @@ NOTE: Out-of-order ingestion is an experimental feature, but you do not need any
 # into the TSDB, i.e. it is an in-order sample or an out-of-order/out-of-bounds sample
 # that is within the out-of-order window, or (b) too-old, i.e. not in-order
 # and before the out-of-order window.
+#
+# When out_of_order_time_window is greater than 0, it also affects experimental agent. It allows 
+# the agent's WAL to accept out-of-order samples that fall within the specified time window relative 
+# to the timestamp of the last appended sample for the same series.
 [ out_of_order_time_window: <duration> | default = 0s ]
 ```
 

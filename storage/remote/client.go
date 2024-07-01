@@ -231,6 +231,7 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) error {
 		httpResp.Body.Close()
 	}()
 
+	//nolint:usestdlibvars
 	if httpResp.StatusCode/100 != 2 {
 		scanner := bufio.NewScanner(io.LimitReader(httpResp.Body, maxErrMsgLen))
 		line := ""
@@ -239,6 +240,7 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) error {
 		}
 		err = fmt.Errorf("server returned HTTP status %s: %s", httpResp.Status, line)
 	}
+	//nolint:usestdlibvars
 	if httpResp.StatusCode/100 == 5 ||
 		(c.retryOnRateLimit && httpResp.StatusCode == http.StatusTooManyRequests) {
 		return RecoverableError{err, retryAfterDuration(httpResp.Header.Get("Retry-After"))}
@@ -323,6 +325,7 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 		return nil, fmt.Errorf("error reading response. HTTP status code: %s: %w", httpResp.Status, err)
 	}
 
+	//nolint:usestdlibvars
 	if httpResp.StatusCode/100 != 2 {
 		return nil, fmt.Errorf("remote server %s returned HTTP status %s: %s", c.urlString, httpResp.Status, strings.TrimSpace(string(compressed)))
 	}

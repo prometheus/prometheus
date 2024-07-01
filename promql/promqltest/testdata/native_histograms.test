@@ -364,7 +364,7 @@ eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_7)
 load 10m
     histogram_quantile_1 {{schema:0 count:12 sum:100 z_bucket:2 z_bucket_w:0.001 buckets:[2 3 0 1 4]}}x1
 
-eval instant at 10m histogram_quantile(1.001, histogram_quantile_1)
+eval_warn instant at 10m histogram_quantile(1.001, histogram_quantile_1)
     {} Inf
 
 eval instant at 10m histogram_quantile(1, histogram_quantile_1)
@@ -388,14 +388,14 @@ eval instant at 10m histogram_quantile(0.1, histogram_quantile_1)
 eval instant at 10m histogram_quantile(0, histogram_quantile_1)
     {} 0
 
-eval instant at 10m histogram_quantile(-1, histogram_quantile_1)
+eval_warn instant at 10m histogram_quantile(-1, histogram_quantile_1)
     {} -Inf
 
 # Apply quantile function to histogram with all negative buckets with zero bucket.
 load 10m
     histogram_quantile_2 {{schema:0 count:12 sum:100 z_bucket:2 z_bucket_w:0.001 n_buckets:[2 3 0 1 4]}}x1
 
-eval instant at 10m histogram_quantile(1.001, histogram_quantile_2)
+eval_warn instant at 10m histogram_quantile(1.001, histogram_quantile_2)
     {} Inf
 
 eval instant at 10m histogram_quantile(1, histogram_quantile_2)
@@ -416,14 +416,14 @@ eval instant at 10m histogram_quantile(0.1, histogram_quantile_2)
 eval instant at 10m histogram_quantile(0, histogram_quantile_2)
     {} -16
 
-eval instant at 10m histogram_quantile(-1, histogram_quantile_2)
+eval_warn instant at 10m histogram_quantile(-1, histogram_quantile_2)
     {} -Inf
 
 # Apply quantile function to histogram with both positive and negative buckets with zero bucket.
 load 10m
     histogram_quantile_3 {{schema:0 count:24 sum:100 z_bucket:4 z_bucket_w:0.001 buckets:[2 3 0 1 4] n_buckets:[2 3 0 1 4]}}x1
 
-eval instant at 10m histogram_quantile(1.001, histogram_quantile_3)
+eval_warn instant at 10m histogram_quantile(1.001, histogram_quantile_3)
     {} Inf
 
 eval instant at 10m histogram_quantile(1, histogram_quantile_3)
@@ -459,7 +459,7 @@ eval instant at 10m histogram_quantile(0.01, histogram_quantile_3)
 eval instant at 10m histogram_quantile(0, histogram_quantile_3)
     {} -16
 
-eval instant at 10m histogram_quantile(-1, histogram_quantile_3)
+eval_warn instant at 10m histogram_quantile(-1, histogram_quantile_3)
     {} -Inf
 
 # Apply fraction function to empty histogram.
@@ -731,3 +731,17 @@ eval instant at 10m histogram_count(increase(reset_in_bucket[15m]))
 eval instant at 10m histogram_sum(increase(reset_in_bucket[15m]))
      {} 10.5
 
+clear
+
+# Test native histograms with custom buckets.
+load 5m
+    custom_buckets_histogram {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1 2 1]}}x10
+
+eval instant at 5m histogram_fraction(5, 10, custom_buckets_histogram)
+    {} 0.5
+
+eval instant at 5m histogram_quantile(0.5, custom_buckets_histogram)
+    {} 7.5
+
+eval instant at 5m sum(custom_buckets_histogram)
+    {} {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1 2 1]}}

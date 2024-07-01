@@ -63,6 +63,10 @@ load 1m
 Each `load` command is additive - it does not replace any data loaded in a previous `load` command.
 Use `clear` to remove all loaded data.
 
+### Native histograms with custom buckets (NHCB)
+
+When loading a batch of classic histogram float series, you can optionally append the suffix `_with_nhcb` to convert them to native histograms with custom buckets and load both the original float series and the new histogram series.
+
 ## `clear` command
 
 `clear` removes all data previously loaded with `load` commands.

@@ -1431,9 +1431,9 @@ func (*mockCompactorFailing) Plan(string) ([]string, error) {
 	return nil, nil
 }
 
-func (c *mockCompactorFailing) Write(dest string, _ BlockReader, _, _ int64, _ *BlockMeta) (ulid.ULID, error) {
+func (c *mockCompactorFailing) Write(dest string, _ BlockReader, _, _ int64, _ *BlockMeta) ([]ulid.ULID, error) {
 	if len(c.blocks) >= c.max {
-		return ulid.ULID{}, fmt.Errorf("the compactor already did the maximum allowed blocks so it is time to fail")
+		return []ulid.ULID{}, fmt.Errorf("the compactor already did the maximum allowed blocks so it is time to fail")
 	}
 
 	block, err := OpenBlock(nil, createBlock(c.t, dest, genSeries(1, 1, 0, 1)), nil)
@@ -1452,11 +1452,11 @@ func (c *mockCompactorFailing) Write(dest string, _ BlockReader, _, _ int64, _ *
 
 	require.Equal(c.t, expectedBlocks, actualBlockDirs)
 
-	return block.Meta().ULID, nil
+	return []ulid.ULID{block.Meta().ULID}, nil
 }
 
-func (*mockCompactorFailing) Compact(string, []string, []*Block) (ulid.ULID, error) {
-	return ulid.ULID{}, nil
+func (*mockCompactorFailing) Compact(string, []string, []*Block) ([]ulid.ULID, error) {
+	return []ulid.ULID{}, nil
 }
 
 func (*mockCompactorFailing) CompactOOO(string, *OOOCompactionHead) (result []ulid.ULID, err error) {
@@ -6804,9 +6804,9 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 		for _, b := range blocks {
 			blockDirs = append(blockDirs, b.Dir())
 		}
-		id, err := db.compactor.Compact(db.Dir(), blockDirs, blocks)
+		ids, err := db.compactor.Compact(db.Dir(), blockDirs, blocks)
 		require.NoError(t, err)
-		require.NotEqual(t, ulid.ULID{}, id)
+		require.Len(t, ids, 1)
 		require.NoError(t, db.reload())
 		require.Len(t, db.Blocks(), 1)
 
@@ -7068,19 +7068,19 @@ func requireEqualOOOSamples(t *testing.T, expectedSamples int, db *DB) {
 
 type mockCompactorFn struct {
 	planFn    func() ([]string, error)
-	compactFn func() (ulid.ULID, error)
-	writeFn   func() (ulid.ULID, error)
+	compactFn func() ([]ulid.ULID, error)
+	writeFn   func() ([]ulid.ULID, error)
 }
 
 func (c *mockCompactorFn) Plan(_ string) ([]string, error) {
 	return c.planFn()
 }
 
-func (c *mockCompactorFn) Compact(_ string, _ []string, _ []*Block) (ulid.ULID, error) {
+func (c *mockCompactorFn) Compact(_ string, _ []string, _ []*Block) ([]ulid.ULID, error) {
 	return c.compactFn()
 }
 
-func (c *mockCompactorFn) Write(_ string, _ BlockReader, _, _ int64, _ *BlockMeta) (ulid.ULID, error) {
+func (c *mockCompactorFn) Write(_ string, _ BlockReader, _, _ int64, _ *BlockMeta) ([]ulid.ULID, error) {
 	return c.writeFn()
 }
 
@@ -7112,11 +7112,11 @@ func TestAbortBlockCompactions(t *testing.T) {
 			// Our custom Plan() will always return something to compact.
 			return []string{"1", "2", "3"}, nil
 		},
-		compactFn: func() (ulid.ULID, error) {
-			return ulid.ULID{}, nil
+		compactFn: func() ([]ulid.ULID, error) {
+			return []ulid.ULID{}, nil
 		},
-		writeFn: func() (ulid.ULID, error) {
-			return ulid.ULID{}, nil
+		writeFn: func() ([]ulid.ULID, error) {
+			return []ulid.ULID{}, nil
 		},
 	}
 
@@ -7135,11 +7135,11 @@ func TestNewCompactorFunc(t *testing.T) {
 			planFn: func() ([]string, error) {
 				return []string{block1.String(), block2.String()}, nil
 			},
-			compactFn: func() (ulid.ULID, error) {
-				return block1, nil
+			compactFn: func() ([]ulid.ULID, error) {
+				return []ulid.ULID{block1}, nil
 			},
-			writeFn: func() (ulid.ULID, error) {
-				return block2, nil
+			writeFn: func() ([]ulid.ULID, error) {
+				return []ulid.ULID{block2}, nil
 			},
 		}, nil
 	}
@@ -7150,10 +7150,87 @@ func TestNewCompactorFunc(t *testing.T) {
 	plans, err := db.compactor.Plan("")
 	require.NoError(t, err)
 	require.Equal(t, []string{block1.String(), block2.String()}, plans)
-	ulid, err := db.compactor.Compact("", nil, nil)
+	ulids, err := db.compactor.Compact("", nil, nil)
 	require.NoError(t, err)
-	require.Equal(t, block1, ulid)
-	ulid, err = db.compactor.Write("", nil, 0, 1, nil)
+	require.Len(t, ulids, 1)
+	require.Equal(t, block1, ulids[0])
+	ulids, err = db.compactor.Write("", nil, 0, 1, nil)
 	require.NoError(t, err)
-	require.Equal(t, block2, ulid)
+	require.Len(t, ulids, 1)
+	require.Equal(t, block2, ulids[0])
+}
+
+func TestBlockQuerierAndBlockChunkQuerier(t *testing.T) {
+	opts := DefaultOptions()
+	opts.BlockQuerierFunc = func(b BlockReader, mint, maxt int64) (storage.Querier, error) {
+		// Only block with hints can be queried.
+		if len(b.Meta().Compaction.Hints) > 0 {
+			return NewBlockQuerier(b, mint, maxt)
+		}
+		return storage.NoopQuerier(), nil
+	}
+	opts.BlockChunkQuerierFunc = func(b BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
+		// Only level 4 compaction block can be queried.
+		if b.Meta().Compaction.Level == 4 {
+			return NewBlockChunkQuerier(b, mint, maxt)
+		}
+		return storage.NoopChunkedQuerier(), nil
+	}
+
+	db := openTestDB(t, opts, nil)
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
+
+	metas := []BlockMeta{
+		{Compaction: BlockMetaCompaction{Hints: []string{"test-hint"}}},
+		{Compaction: BlockMetaCompaction{Level: 4}},
+	}
+	for i := range metas {
+		// Include blockID into series to identify which block got touched.
+		serieses := []storage.Series{storage.NewListSeries(labels.FromMap(map[string]string{"block": fmt.Sprintf("block-%d", i), labels.MetricName: "test_metric"}), []chunks.Sample{sample{t: 0, f: 1}})}
+		blockDir := createBlock(t, db.Dir(), serieses)
+		b, err := OpenBlock(db.logger, blockDir, db.chunkPool)
+		require.NoError(t, err)
+
+		// Overwrite meta.json with compaction section for testing purpose.
+		b.meta.Compaction = metas[i].Compaction
+		_, err = writeMetaFile(db.logger, blockDir, &b.meta)
+		require.NoError(t, err)
+		require.NoError(t, b.Close())
+	}
+	require.NoError(t, db.reloadBlocks())
+	require.Len(t, db.Blocks(), 2)
+
+	querier, err := db.Querier(0, 500)
+	require.NoError(t, err)
+	defer querier.Close()
+	matcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test_metric")
+	seriesSet := querier.Select(context.Background(), false, nil, matcher)
+	count := 0
+	var lbls labels.Labels
+	for seriesSet.Next() {
+		count++
+		lbls = seriesSet.At().Labels()
+	}
+	require.NoError(t, seriesSet.Err())
+	require.Equal(t, 1, count)
+	// Make sure only block-0 is queried.
+	require.Equal(t, "block-0", lbls.Get("block"))
+
+	chunkQuerier, err := db.ChunkQuerier(0, 500)
+	require.NoError(t, err)
+	defer chunkQuerier.Close()
+	css := chunkQuerier.Select(context.Background(), false, nil, matcher)
+	count = 0
+	// Reset lbls variable.
+	lbls = labels.EmptyLabels()
+	for css.Next() {
+		count++
+		lbls = css.At().Labels()
+	}
+	require.NoError(t, css.Err())
+	require.Equal(t, 1, count)
+	// Make sure only block-1 is queried.
+	require.Equal(t, "block-1", lbls.Get("block"))
 }

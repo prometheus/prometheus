@@ -1481,7 +1481,8 @@ func TestNativeHistogramsInRecordingRules(t *testing.T) {
 
 	expHist := hists[0].ToFloat(nil)
 	for _, h := range hists[1:] {
-		expHist = expHist.Add(h.ToFloat(nil))
+		expHist, err = expHist.Add(h.ToFloat(nil))
+		require.NoError(t, err)
 	}
 
 	it := s.Iterator(nil)
@@ -1936,18 +1937,12 @@ func TestDependencyMapUpdatesOnGroupUpdate(t *testing.T) {
 }
 
 func TestAsyncRuleEvaluation(t *testing.T) {
-	storage := teststorage.New(t)
-	t.Cleanup(func() { storage.Close() })
-
-	var (
-		inflightQueries atomic.Int32
-		maxInflight     atomic.Int32
-	)
-
 	t.Run("synchronous evaluation with independent rules", func(t *testing.T) {
-		// Reset.
-		inflightQueries.Store(0)
-		maxInflight.Store(0)
+		t.Parallel()
+		storage := teststorage.New(t)
+		t.Cleanup(func() { storage.Close() })
+		inflightQueries := atomic.Int32{}
+		maxInflight := atomic.Int32{}
 
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
@@ -1975,9 +1970,11 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 	})
 
 	t.Run("asynchronous evaluation with independent and dependent rules", func(t *testing.T) {
-		// Reset.
-		inflightQueries.Store(0)
-		maxInflight.Store(0)
+		t.Parallel()
+		storage := teststorage.New(t)
+		t.Cleanup(func() { storage.Close() })
+		inflightQueries := atomic.Int32{}
+		maxInflight := atomic.Int32{}
 
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
@@ -2011,9 +2008,11 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 	})
 
 	t.Run("asynchronous evaluation of all independent rules, insufficient concurrency", func(t *testing.T) {
-		// Reset.
-		inflightQueries.Store(0)
-		maxInflight.Store(0)
+		t.Parallel()
+		storage := teststorage.New(t)
+		t.Cleanup(func() { storage.Close() })
+		inflightQueries := atomic.Int32{}
+		maxInflight := atomic.Int32{}
 
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
@@ -2047,9 +2046,11 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 	})
 
 	t.Run("asynchronous evaluation of all independent rules, sufficient concurrency", func(t *testing.T) {
-		// Reset.
-		inflightQueries.Store(0)
-		maxInflight.Store(0)
+		t.Parallel()
+		storage := teststorage.New(t)
+		t.Cleanup(func() { storage.Close() })
+		inflightQueries := atomic.Int32{}
+		maxInflight := atomic.Int32{}
 
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
@@ -2124,7 +2125,24 @@ func TestBoundedRuleEvalConcurrency(t *testing.T) {
 	require.EqualValues(t, maxInflight.Load(), int32(maxConcurrency)+int32(groupCount))
 }
 
-const artificialDelay = 15 * time.Millisecond
+func TestUpdateWhenStopped(t *testing.T) {
+	files := []string{"fixtures/rules.yaml"}
+	ruleManager := NewManager(&ManagerOptions{
+		Context: context.Background(),
+		Logger:  log.NewNopLogger(),
+	})
+	ruleManager.start()
+	err := ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, ruleManager.groups)
+
+	ruleManager.Stop()
+	// Updates following a stop are no-op.
+	err = ruleManager.Update(10*time.Second, []string{}, labels.EmptyLabels(), "", nil)
+	require.NoError(t, err)
+}
+
+const artificialDelay = 250 * time.Millisecond
 
 func optsFactory(storage storage.Storage, maxInflight, inflightQueries *atomic.Int32, maxConcurrent int64) *ManagerOptions {
 	var inflightMu sync.Mutex

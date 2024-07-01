@@ -5,7 +5,7 @@
 # server has to cope with it.
 
 # Test histogram.
-load 5m
+load_with_nhcb 5m
 	testhistogram_bucket{le="0.1", start="positive"}	0+5x10
 	testhistogram_bucket{le=".2", start="positive"}		0+7x10
 	testhistogram_bucket{le="1e0", start="positive"}	0+11x10
@@ -18,15 +18,33 @@ load 5m
 # Another test histogram, where q(1/6), q(1/2), and q(5/6) are each in
 # the middle of a bucket and should therefore be 1, 3, and 5,
 # respectively.
-load 5m
+load_with_nhcb 5m
 	testhistogram2_bucket{le="0"}	 0+0x10
 	testhistogram2_bucket{le="2"}	 0+1x10
 	testhistogram2_bucket{le="4"}    0+2x10
 	testhistogram2_bucket{le="6"}	 0+3x10
 	testhistogram2_bucket{le="+Inf"} 0+3x10
 
+# Another test histogram, this time without any observations in the +Inf bucket.
+# This enables a meaningful calculation of standard deviation and variance.
+load_with_nhcb 5m
+	testhistogram3_bucket{le="0", start="positive"}	0+0x10
+	testhistogram3_bucket{le="0.1", start="positive"}	0+5x10
+	testhistogram3_bucket{le=".2", start="positive"}		0+7x10
+	testhistogram3_bucket{le="1e0", start="positive"}	0+11x10
+	testhistogram3_bucket{le="+Inf", start="positive"}	0+11x10
+	testhistogram3_sum{start="positive"}	0+33x10
+	testhistogram3_count{start="positive"}	0+11x10
+	testhistogram3_bucket{le="-.25", start="negative"}	0+0x10
+	testhistogram3_bucket{le="-.2", start="negative"}	0+1x10
+	testhistogram3_bucket{le="-0.1", start="negative"}	0+2x10
+	testhistogram3_bucket{le="0.3", start="negative"}	0+2x10
+	testhistogram3_bucket{le="+Inf", start="negative"}	0+2x10
+	testhistogram3_sum{start="negative"}	0+8x10
+	testhistogram3_count{start="negative"}	0+2x10
+
 # Now a more realistic histogram per job and instance to test aggregation.
-load 5m
+load_with_nhcb 5m
 	request_duration_seconds_bucket{job="job1", instance="ins1", le="0.1"}	0+1x10
 	request_duration_seconds_bucket{job="job1", instance="ins1", le="0.2"}	0+3x10
 	request_duration_seconds_bucket{job="job1", instance="ins1", le="+Inf"}	0+4x10
@@ -41,7 +59,7 @@ load 5m
 	request_duration_seconds_bucket{job="job2", instance="ins2", le="+Inf"}	0+9x10
 
 # Different le representations in one histogram.
-load 5m
+load_with_nhcb 5m
 	mixed_bucket{job="job1", instance="ins1", le="0.1"}	0+1x10
 	mixed_bucket{job="job1", instance="ins1", le="0.2"}	0+1x10
 	mixed_bucket{job="job1", instance="ins1", le="2e-1"}	0+1x10
@@ -50,27 +68,81 @@ load 5m
 	mixed_bucket{job="job1", instance="ins2", le="+inf"}	0+0x10
 	mixed_bucket{job="job1", instance="ins2", le="+Inf"}	0+0x10
 
+# Test histogram_count.
+eval instant at 50m histogram_count(testhistogram3)
+	{start="positive"} 110
+	{start="negative"} 20
+
+# Test histogram_sum.
+eval instant at 50m histogram_sum(testhistogram3)
+	{start="positive"} 330
+	{start="negative"} 80
+
+# Test histogram_avg.
+eval instant at 50m histogram_avg(testhistogram3)
+	{start="positive"} 3
+	{start="negative"} 4
+
+# Test histogram_stddev.
+eval instant at 50m histogram_stddev(testhistogram3)
+	{start="positive"} 2.8189265757336734
+	{start="negative"} 4.182715937754936
+
+# Test histogram_stdvar.
+eval instant at 50m histogram_stdvar(testhistogram3)
+	{start="positive"} 7.946347039377573
+	{start="negative"} 17.495112615949154
+
+# Test histogram_fraction.
+
+eval instant at 50m histogram_fraction(0, 0.2, testhistogram3)
+	{start="positive"} 0.6363636363636364
+	{start="negative"} 0
+	
+eval instant at 50m histogram_fraction(0, 0.2, rate(testhistogram3[5m]))
+	{start="positive"} 0.6363636363636364
+	{start="negative"} 0
+
+# Test histogram_quantile.
+
+eval instant at 50m histogram_quantile(0, testhistogram3_bucket)
+	{start="positive"} 0
+	{start="negative"} -0.25
+
+eval instant at 50m histogram_quantile(0.25, testhistogram3_bucket)
+	{start="positive"} 0.055
+	{start="negative"} -0.225
+
+eval instant at 50m histogram_quantile(0.5, testhistogram3_bucket)
+	{start="positive"} 0.125
+	{start="negative"} -0.2
+
+eval instant at 50m histogram_quantile(0.75, testhistogram3_bucket)
+	{start="positive"} 0.45
+	{start="negative"} -0.15
+
+eval instant at 50m histogram_quantile(1, testhistogram3_bucket)
+	{start="positive"} 1
+	{start="negative"} -0.1
+
 # Quantile too low.
-eval instant at 50m histogram_quantile(-0.1, testhistogram_bucket)
+eval_warn instant at 50m histogram_quantile(-0.1, testhistogram_bucket)
 	{start="positive"} -Inf
 	{start="negative"} -Inf
 
 # Quantile too high.
-eval instant at 50m histogram_quantile(1.01, testhistogram_bucket)
+eval_warn instant at 50m histogram_quantile(1.01, testhistogram_bucket)
 	{start="positive"} +Inf
 	{start="negative"} +Inf
 
 # Quantile invalid.
-eval instant at 50m histogram_quantile(NaN, testhistogram_bucket)
+eval_warn instant at 50m histogram_quantile(NaN, testhistogram_bucket)
 	{start="positive"} NaN
 	{start="negative"} NaN
 
-# Quantile value in lowest bucket, which is positive.
-eval instant at 50m histogram_quantile(0, testhistogram_bucket{start="positive"})
+# Quantile value in lowest bucket.
+eval instant at 50m histogram_quantile(0, testhistogram_bucket)
 	{start="positive"} 0
-
-# Quantile value in lowest bucket, which is negative.
-eval instant at 50m histogram_quantile(0, testhistogram_bucket{start="negative"})
 	{start="negative"} -0.2
 
 # Quantile value in highest bucket.
@@ -82,7 +154,6 @@ eval instant at 50m histogram_quantile(1, testhistogram_bucket)
 eval instant at 50m histogram_quantile(0.2, testhistogram_bucket)
 	{start="positive"} 0.048
 	{start="negative"} -0.2
-
 
 eval instant at 50m histogram_quantile(0.5, testhistogram_bucket)
 	{start="positive"} 0.15
@@ -182,6 +253,9 @@ eval instant at 50m histogram_quantile(0.5, rate(request_duration_seconds_bucket
 	{instance="ins1", job="job2"} 0.1
 	{instance="ins2", job="job2"} 0.11666666666666667
 
+eval instant at 50m sum(request_duration_seconds)
+	{} {{schema:-53 count:250 custom_values:[0.1 0.2] buckets:[100 90 60]}}
+
 # A histogram with nonmonotonic bucket counts. This may happen when recording
 # rule evaluation or federation races scrape ingestion, causing some buckets
 # counts to be derived from fewer samples.
@@ -209,6 +283,10 @@ eval instant at 50m histogram_quantile(0.5, rate(mixed_bucket[5m]))
 	{instance="ins1", job="job1"} 0.15
 	{instance="ins2", job="job1"} NaN
 
+eval instant at 50m histogram_quantile(0.5, rate(mixed[5m]))
+	{instance="ins1", job="job1"} 0.2
+	{instance="ins2", job="job1"} NaN
+
 eval instant at 50m histogram_quantile(0.75, rate(mixed_bucket[5m]))
 	{instance="ins1", job="job1"} 0.2
 	{instance="ins2", job="job1"} NaN
@@ -217,7 +295,7 @@ eval instant at 50m histogram_quantile(1, rate(mixed_bucket[5m]))
 	{instance="ins1", job="job1"} 0.2
 	{instance="ins2", job="job1"} NaN
 
-load 5m
+load_with_nhcb 5m
 	empty_bucket{le="0.1", job="job1", instance="ins1"}    0x10
 	empty_bucket{le="0.2", job="job1", instance="ins1"}    0x10
 	empty_bucket{le="+Inf", job="job1", instance="ins1"}   0x10
@@ -227,9 +305,9 @@ eval instant at 50m histogram_quantile(0.2, rate(empty_bucket[5m]))
 
 # Load a duplicate histogram with a different name to test failure scenario on multiple histograms with the same label set
 # https://github.com/prometheus/prometheus/issues/9910
-load 5m
+load_with_nhcb 5m
 	request_duration_seconds2_bucket{job="job1", instance="ins1", le="0.1"}	0+1x10
 	request_duration_seconds2_bucket{job="job1", instance="ins1", le="0.2"}	0+3x10
 	request_duration_seconds2_bucket{job="job1", instance="ins1", le="+Inf"}	0+4x10
 
-eval_fail instant at 50m histogram_quantile(0.99, {__name__=~"request_duration.*"})
+eval_fail instant at 50m histogram_quantile(0.99, {__name__=~"request_duration_seconds\\d*_bucket$"})

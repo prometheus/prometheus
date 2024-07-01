@@ -79,7 +79,12 @@ labels of the 1-element output vector from the input vector.
 ## `ceil()`
 
 `ceil(v instant-vector)` rounds the sample values of all elements in `v` up to
-the nearest integer.
+the nearest integer value greater than or equal to v.
+
+* `ceil(+Inf) = +Inf`
+* `ceil(±0) = ±0`
+* `ceil(1.49) = 2.0`
+* `ceil(1.78) = 2.0`
 
 ## `changes()`
 
@@ -173,7 +178,12 @@ Special cases are:
 ## `floor()`
 
 `floor(v instant-vector)` rounds the sample values of all elements in `v` down
-to the nearest integer.
+to the nearest integer value smaller than or equal to v.
+
+* `floor(+Inf) = +Inf`
+* `floor(±0) = ±0`
+* `floor(1.49) = 1.0`
+* `floor(1.78) = 1.0`
 
 ## `histogram_avg()`
 

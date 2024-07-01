@@ -288,89 +288,34 @@ func (p *MemPostings) EnsureOrder(numberOfConcurrentProcesses int) {
 }
 
 // Delete removes all ids in the given map from the postings lists.
-func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}) {
-	// We will take an optimistic read lock for the entire method,
-	// and only lock for writing when we actually find something to delete.
-	//
-	// Each SeriesRef can appear in several Postings.
-	// To change each one, we need to know the label name and value that it is indexed under.
-	// We iterate over all label names, then for each name all values,
-	// and look for individual series to be deleted.
-	p.mtx.RLock()
-	defer p.mtx.RUnlock()
+// affectedLabels contains all the labels that are affected by the deletion, there's no need to check other labels.
+func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}, affected map[labels.Label]struct{}) {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
 
-	// Collect all keys relevant for deletion once. New keys added afterwards
-	// can by definition not be affected by any of the given deletes.
-	keys := make([]string, 0, len(p.m))
-	maxVals := 0
-	for n := range p.m {
-		keys = append(keys, n)
-		if len(p.m[n]) > maxVals {
-			maxVals = len(p.m[n])
+	process := func(l labels.Label) {
+		orig := p.m[l.Name][l.Value]
+		repl := make([]storage.SeriesRef, 0, len(orig))
+		for _, id := range orig {
+			if _, ok := deleted[id]; !ok {
+				repl = append(repl, id)
+			}
+		}
+		if len(repl) > 0 {
+			p.m[l.Name][l.Value] = repl
+		} else {
+			delete(p.m[l.Name], l.Value)
+			// Delete the key if we removed all values.
+			if len(p.m[l.Name]) == 0 {
+				delete(p.m, l.Name)
+			}
 		}
 	}
 
-	vals := make([]string, 0, maxVals)
-	for _, n := range keys {
-		// Copy the values and iterate the copy: if we unlock in the loop below,
-		// another goroutine might modify the map while we are part-way through it.
-		vals = vals[:0]
-		for v := range p.m[n] {
-			vals = append(vals, v)
-		}
-
-		// For each posting we first analyse whether the postings list is affected by the deletes.
-		// If no, we remove the label value from the vals list.
-		// This way we only need to Lock once later.
-		for i := 0; i < len(vals); {
-			found := false
-			refs := p.m[n][vals[i]]
-			for _, id := range refs {
-				if _, ok := deleted[id]; ok {
-					i++
-					found = true
-					break
-				}
-			}
-
-			if !found {
-				// Didn't match, bring the last value to this position, make the slice shorter and check again.
-				// The order of the slice doesn't matter as it comes from a map iteration.
-				vals[i], vals = vals[len(vals)-1], vals[:len(vals)-1]
-			}
-		}
-
-		// If no label values have deleted ids, just continue.
-		if len(vals) == 0 {
-			continue
-		}
-
-		// The only vals left here are the ones that contain deleted ids.
-		// Now we take the write lock and remove the ids.
-		p.mtx.RUnlock()
-		p.mtx.Lock()
-		for _, l := range vals {
-			repl := make([]storage.SeriesRef, 0, len(p.m[n][l]))
-
-			for _, id := range p.m[n][l] {
-				if _, ok := deleted[id]; !ok {
-					repl = append(repl, id)
-				}
-			}
-			if len(repl) > 0 {
-				p.m[n][l] = repl
-			} else {
-				delete(p.m[n], l)
-			}
-		}
-
-		// Delete the key if we removed all values.
-		if len(p.m[n]) == 0 {
-			delete(p.m, n)
-		}
-		p.mtx.Unlock()
-		p.mtx.RLock()
+	for l := range affected {
+		process(l)
 	}
+	process(allPostingsKey)
 }
 
 // Iter calls f for each postings list. It aborts if f returns an error and returns it.

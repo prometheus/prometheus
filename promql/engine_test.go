@@ -843,10 +843,10 @@ load 10s
 		{
 			Query:        "metricWith1HistogramEvery10Seconds",
 			Start:        time.Unix(21, 0),
-			PeakSamples:  12,
-			TotalSamples: 12, // 1 histogram sample of size 12 / 10 seconds
+			PeakSamples:  13,
+			TotalSamples: 13, // 1 histogram HPoint of size 13 / 10 seconds
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				21000: 12,
+				21000: 13,
 			},
 		},
 		{
@@ -943,10 +943,10 @@ load 10s
 		{
 			Query:        "metricWith1HistogramEvery10Seconds[60s]",
 			Start:        time.Unix(201, 0),
-			PeakSamples:  72,
-			TotalSamples: 72, // 1 histogram (size 12) / 10 seconds * 60 seconds
+			PeakSamples:  78,
+			TotalSamples: 78, // 1 histogram (size 13 HPoint) / 10 seconds * 60 seconds
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 72,
+				201000: 78,
 			},
 		},
 		{
@@ -973,11 +973,11 @@ load 10s
 		{
 			Query:        "max_over_time(metricWith1HistogramEvery10Seconds[60s])[20s:5s]",
 			Start:        time.Unix(201, 0),
-			PeakSamples:  72,
-			TotalSamples: 312, // (1 histogram (size 12) / 10 seconds * 60 seconds) * 4 + 2 * 12 as
+			PeakSamples:  78,
+			TotalSamples: 338, // (1 histogram (size 13 HPoint) / 10 seconds * 60 seconds) * 4 + 2 * 13 as
 			// max_over_time(metricWith1SampleEvery10Seconds[60s]) @ 190 and 200 will return 7 samples.
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 312,
+				201000: 338,
 			},
 		},
 		{
@@ -992,10 +992,10 @@ load 10s
 		{
 			Query:        "metricWith1HistogramEvery10Seconds[60s] @ 30",
 			Start:        time.Unix(201, 0),
-			PeakSamples:  48,
-			TotalSamples: 48, // @ modifier force the evaluation to at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 1 series
+			PeakSamples:  52,
+			TotalSamples: 52, // @ modifier force the evaluation to at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 1 series
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 48,
+				201000: 52,
 			},
 		},
 		{
@@ -1130,13 +1130,13 @@ load 10s
 			Start:        time.Unix(204, 0),
 			End:          time.Unix(223, 0),
 			Interval:     5 * time.Second,
-			PeakSamples:  48,
-			TotalSamples: 48, // 1 histogram (size 12) per query * 4 steps
+			PeakSamples:  52,
+			TotalSamples: 52, // 1 histogram (size 13 HPoint) per query * 4 steps
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				204000: 12, // aligned to the step time, not the sample time
-				209000: 12,
-				214000: 12,
-				219000: 12,
+				204000: 13, // aligned to the step time, not the sample time
+				209000: 13,
+				214000: 13,
+				219000: 13,
 			},
 		},
 		{
@@ -2022,47 +2022,6 @@ func TestSubquerySelector(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestTimestampFunction_StepsMoreOftenThanSamples(t *testing.T) {
-	engine := newTestEngine(t)
-	storage := promqltest.LoadedStorage(t, `
-load 1m
-  metric 0+1x1000
-`)
-	t.Cleanup(func() { storage.Close() })
-
-	query := "timestamp(metric)"
-	start := time.Unix(0, 0)
-	end := time.Unix(61, 0)
-	interval := time.Second
-
-	// We expect the value to be 0 for t=0s to t=59s (inclusive), then 60 for t=60s and t=61s.
-	expectedPoints := []promql.FPoint{}
-
-	for t := 0; t <= 59; t++ {
-		expectedPoints = append(expectedPoints, promql.FPoint{F: 0, T: int64(t * 1000)})
-	}
-
-	expectedPoints = append(
-		expectedPoints,
-		promql.FPoint{F: 60, T: 60_000},
-		promql.FPoint{F: 60, T: 61_000},
-	)
-
-	expectedResult := promql.Matrix{
-		promql.Series{
-			Floats: expectedPoints,
-			Metric: labels.EmptyLabels(),
-		},
-	}
-
-	qry, err := engine.NewRangeQuery(context.Background(), storage, nil, query, start, end, interval)
-	require.NoError(t, err)
-
-	res := qry.Exec(context.Background())
-	require.NoError(t, res.Err)
-	testutil.RequireEqual(t, expectedResult, res.Value)
 }
 
 type FakeQueryLogger struct {
@@ -3082,167 +3041,7 @@ func TestEngineOptsValidation(t *testing.T) {
 	}
 }
 
-func TestRangeQuery(t *testing.T) {
-	cases := []struct {
-		Name     string
-		Load     string
-		Query    string
-		Result   parser.Value
-		Start    time.Time
-		End      time.Time
-		Interval time.Duration
-	}{
-		{
-			Name: "sum_over_time with all values",
-			Load: `load 30s
-              bar 0 1 10 100 1000`,
-			Query: "sum_over_time(bar[30s])",
-			Result: promql.Matrix{
-				promql.Series{
-					Floats: []promql.FPoint{{F: 0, T: 0}, {F: 11, T: 60000}, {F: 1100, T: 120000}},
-					Metric: labels.EmptyLabels(),
-				},
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(120, 0),
-			Interval: 60 * time.Second,
-		},
-		{
-			Name: "sum_over_time with trailing values",
-			Load: `load 30s
-              bar 0 1 10 100 1000 0 0 0 0`,
-			Query: "sum_over_time(bar[30s])",
-			Result: promql.Matrix{
-				promql.Series{
-					Floats: []promql.FPoint{{F: 0, T: 0}, {F: 11, T: 60000}, {F: 1100, T: 120000}},
-					Metric: labels.EmptyLabels(),
-				},
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(120, 0),
-			Interval: 60 * time.Second,
-		},
-		{
-			Name: "sum_over_time with all values long",
-			Load: `load 30s
-              bar 0 1 10 100 1000 10000 100000 1000000 10000000`,
-			Query: "sum_over_time(bar[30s])",
-			Result: promql.Matrix{
-				promql.Series{
-					Floats: []promql.FPoint{{F: 0, T: 0}, {F: 11, T: 60000}, {F: 1100, T: 120000}, {F: 110000, T: 180000}, {F: 11000000, T: 240000}},
-					Metric: labels.EmptyLabels(),
-				},
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(240, 0),
-			Interval: 60 * time.Second,
-		},
-		{
-			Name: "sum_over_time with all values random",
-			Load: `load 30s
-              bar 5 17 42 2 7 905 51`,
-			Query: "sum_over_time(bar[30s])",
-			Result: promql.Matrix{
-				promql.Series{
-					Floats: []promql.FPoint{{F: 5, T: 0}, {F: 59, T: 60000}, {F: 9, T: 120000}, {F: 956, T: 180000}},
-					Metric: labels.EmptyLabels(),
-				},
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(180, 0),
-			Interval: 60 * time.Second,
-		},
-		{
-			Name: "metric query",
-			Load: `load 30s
-              metric 1+1x4`,
-			Query: "metric",
-			Result: promql.Matrix{
-				promql.Series{
-					Floats: []promql.FPoint{{F: 1, T: 0}, {F: 3, T: 60000}, {F: 5, T: 120000}},
-					Metric: labels.FromStrings("__name__", "metric"),
-				},
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(120, 0),
-			Interval: 1 * time.Minute,
-		},
-		{
-			Name: "metric query with trailing values",
-			Load: `load 30s
-              metric 1+1x8`,
-			Query: "metric",
-			Result: promql.Matrix{
-				promql.Series{
-					Floats: []promql.FPoint{{F: 1, T: 0}, {F: 3, T: 60000}, {F: 5, T: 120000}},
-					Metric: labels.FromStrings("__name__", "metric"),
-				},
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(120, 0),
-			Interval: 1 * time.Minute,
-		},
-		{
-			Name: "short-circuit",
-			Load: `load 30s
-							foo{job="1"} 1+1x4
-							bar{job="2"} 1+1x4`,
-			Query: `foo > 2 or bar`,
-			Result: promql.Matrix{
-				promql.Series{
-					Floats: []promql.FPoint{{F: 1, T: 0}, {F: 3, T: 60000}, {F: 5, T: 120000}},
-					Metric: labels.FromStrings(
-						"__name__", "bar",
-						"job", "2",
-					),
-				},
-				promql.Series{
-					Floats: []promql.FPoint{{F: 3, T: 60000}, {F: 5, T: 120000}},
-					Metric: labels.FromStrings(
-						"__name__", "foo",
-						"job", "1",
-					),
-				},
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(120, 0),
-			Interval: 1 * time.Minute,
-		},
-		{
-			Name: "drop-metric-name",
-			Load: `load 30s
-							requests{job="1", __address__="bar"} 100`,
-			Query: `requests * 2`,
-			Result: promql.Matrix{
-				promql.Series{
-					Floats: []promql.FPoint{{F: 200, T: 0}, {F: 200, T: 60000}, {F: 200, T: 120000}},
-					Metric: labels.FromStrings(
-						"__address__", "bar",
-						"job", "1",
-					),
-				},
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(120, 0),
-			Interval: 1 * time.Minute,
-		},
-	}
-	for _, c := range cases {
-		t.Run(c.Name, func(t *testing.T) {
-			engine := newTestEngine(t)
-			storage := promqltest.LoadedStorage(t, c.Load)
-			t.Cleanup(func() { storage.Close() })
-
-			qry, err := engine.NewRangeQuery(context.Background(), storage, nil, c.Query, c.Start, c.End, c.Interval)
-			require.NoError(t, err)
-
-			res := qry.Exec(context.Background())
-			require.NoError(t, res.Err)
-			testutil.RequireEqual(t, c.Result, res.Value)
-		})
-	}
-}
-
+			engine := newTestEngine()
 func TestInstantQueryWithRangeVectorSelector(t *testing.T) {
 	engine := newTestEngine(t)
 
