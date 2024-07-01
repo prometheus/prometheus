@@ -27,12 +27,12 @@ import (
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
-func newTestEngine() *promql.Engine {
-	return promqltest.NewTestEngine(false, 0, promqltest.DefaultMaxSamplesPerQuery)
+func newTestEngine(t *testing.T) *promql.Engine {
+	return promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
 }
 
 func TestEvaluations(t *testing.T) {
-	promqltest.RunBuiltinTests(t, newTestEngine())
+	promqltest.RunBuiltinTests(t, newTestEngine(t))
 }
 
 // Run a lot of queries at the same time, to check for race conditions.
@@ -46,6 +46,9 @@ func TestConcurrentRangeQueries(t *testing.T) {
 		Timeout:    100 * time.Second,
 	}
 	engine := promql.NewEngine(opts)
+	t.Cleanup(func() {
+		require.NoError(t, engine.Close())
+	})
 
 	const interval = 10000 // 10s interval.
 	// A day of data plus 10k steps.

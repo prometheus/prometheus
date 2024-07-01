@@ -159,12 +159,13 @@ func TestAlertingRule(t *testing.T) {
 		},
 	}
 
+	ng := testEngine(t)
 	for i, test := range tests {
 		t.Logf("case %d", i)
 
 		evalTime := baseTime.Add(test.time)
 
-		res, err := rule.Eval(context.TODO(), 0, evalTime, EngineQueryFunc(testEngine, storage), nil, 0)
+		res, err := rule.Eval(context.TODO(), 0, evalTime, EngineQueryFunc(ng, storage), nil, 0)
 		require.NoError(t, err)
 
 		var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
@@ -300,6 +301,7 @@ func TestForStateAddSamples(t *testing.T) {
 				},
 			}
 
+			ng := testEngine(t)
 			var forState float64
 			for i, test := range tests {
 				t.Logf("case %d", i)
@@ -312,7 +314,7 @@ func TestForStateAddSamples(t *testing.T) {
 					forState = float64(value.StaleNaN)
 				}
 
-				res, err := rule.Eval(context.TODO(), queryOffset, evalTime, EngineQueryFunc(testEngine, storage), nil, 0)
+				res, err := rule.Eval(context.TODO(), queryOffset, evalTime, EngineQueryFunc(ng, storage), nil, 0)
 				require.NoError(t, err)
 
 				var filteredRes promql.Vector // After removing 'ALERTS' samples.
@@ -367,8 +369,9 @@ func TestForStateRestore(t *testing.T) {
 			expr, err := parser.ParseExpr(`http_requests{group="canary", job="app-server"} < 100`)
 			require.NoError(t, err)
 
+			ng := testEngine(t)
 			opts := &ManagerOptions{
-				QueryFunc:       EngineQueryFunc(testEngine, storage),
+				QueryFunc:       EngineQueryFunc(ng, storage),
 				Appendable:      storage,
 				Queryable:       storage,
 				Context:         context.Background(),
@@ -540,6 +543,9 @@ func TestStaleness(t *testing.T) {
 			Timeout:    10 * time.Second,
 		}
 		engine := promql.NewEngine(engineOpts)
+		t.Cleanup(func() {
+			require.NoError(t, engine.Close())
+		})
 		opts := &ManagerOptions{
 			QueryFunc:  EngineQueryFunc(engine, st),
 			Appendable: st,
@@ -774,6 +780,9 @@ func TestUpdate(t *testing.T) {
 		Timeout:    10 * time.Second,
 	}
 	engine := promql.NewEngine(opts)
+	t.Cleanup(func() {
+		require.NoError(t, engine.Close())
+	})
 	ruleManager := NewManager(&ManagerOptions{
 		Appendable: st,
 		Queryable:  st,
@@ -912,6 +921,9 @@ func TestNotify(t *testing.T) {
 		Timeout:    10 * time.Second,
 	}
 	engine := promql.NewEngine(engineOpts)
+	t.Cleanup(func() {
+		require.NoError(t, engine.Close())
+	})
 	var lastNotified []*Alert
 	notifyFunc := func(ctx context.Context, expr string, alerts ...*Alert) {
 		lastNotified = alerts
@@ -987,6 +999,9 @@ func TestMetricsUpdate(t *testing.T) {
 		Timeout:    10 * time.Second,
 	}
 	engine := promql.NewEngine(opts)
+	t.Cleanup(func() {
+		require.NoError(t, engine.Close())
+	})
 	ruleManager := NewManager(&ManagerOptions{
 		Appendable: storage,
 		Queryable:  storage,
@@ -1061,6 +1076,9 @@ func TestGroupStalenessOnRemoval(t *testing.T) {
 		Timeout:    10 * time.Second,
 	}
 	engine := promql.NewEngine(opts)
+	t.Cleanup(func() {
+		require.NoError(t, engine.Close())
+	})
 	ruleManager := NewManager(&ManagerOptions{
 		Appendable: storage,
 		Queryable:  storage,
@@ -1138,6 +1156,9 @@ func TestMetricsStalenessOnManagerShutdown(t *testing.T) {
 		Timeout:    10 * time.Second,
 	}
 	engine := promql.NewEngine(opts)
+	t.Cleanup(func() {
+		require.NoError(t, engine.Close())
+	})
 	ruleManager := NewManager(&ManagerOptions{
 		Appendable: storage,
 		Queryable:  storage,
@@ -1240,6 +1261,9 @@ func TestRuleHealthUpdates(t *testing.T) {
 		Timeout:    10 * time.Second,
 	}
 	engine := promql.NewEngine(engineOpts)
+	t.Cleanup(func() {
+		require.NoError(t, engine.Close())
+	})
 	opts := &ManagerOptions{
 		QueryFunc:  EngineQueryFunc(engine, st),
 		Appendable: st,
@@ -1336,9 +1360,10 @@ func TestRuleGroupEvalIterationFunc(t *testing.T) {
 		},
 	}
 
+	ng := testEngine(t)
 	testFunc := func(tst testInput) {
 		opts := &ManagerOptions{
-			QueryFunc:       EngineQueryFunc(testEngine, storage),
+			QueryFunc:       EngineQueryFunc(ng, storage),
 			Appendable:      storage,
 			Queryable:       storage,
 			Context:         context.Background(),
@@ -1422,8 +1447,9 @@ func TestNativeHistogramsInRecordingRules(t *testing.T) {
 	}
 	require.NoError(t, app.Commit())
 
+	ng := testEngine(t)
 	opts := &ManagerOptions{
-		QueryFunc:  EngineQueryFunc(testEngine, storage),
+		QueryFunc:  EngineQueryFunc(ng, storage),
 		Appendable: storage,
 		Queryable:  storage,
 		Context:    context.Background(),
