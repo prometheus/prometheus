@@ -30,6 +30,8 @@ import (
 
 const defaultZeroThreshold = 1e-128
 
+// addExponentialHistogramDataPoints adds OTel exponential histogram data points to the corresponding time series
+// as native histogram samples.
 func (c *PrometheusConverter) addExponentialHistogramDataPoints(dataPoints pmetric.ExponentialHistogramDataPointSlice,
 	resource pcommon.Resource, settings Settings, promName string) error {
 	for x := 0; x < dataPoints.Len(); x++ {
