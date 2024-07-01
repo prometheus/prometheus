@@ -2977,7 +2977,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 	return annos
 }
 
-// aggregationK evaluates topk, bottomk, or limitk at one timestep on inputMatrix.
+// aggregationK evaluates topk, bottomk, limitk, or limit_ratio at one timestep on inputMatrix.
 // Output that has the same labels as the input, but just k of them per group.
 // seriesToResult maps inputMatrix indexes to groups indexes.
 // For an instant query, returns a Matrix in descending order for topk or ascending for bottomk, or without any order for limitk.
