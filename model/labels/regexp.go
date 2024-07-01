@@ -733,7 +733,7 @@ func (m *equalStringMatcher) Matches(s string) bool {
 type multiStringMatcherBuilder interface {
 	StringMatcher
 	add(s string)
-	addPrefix(*literalPrefixStringMatcher)
+	addPrefix(prefix string, prefixCaseSensitive bool, matcher StringMatcher)
 	setMatches() []string
 }
 
@@ -745,7 +745,7 @@ func newEqualMultiStringMatcher(caseSensitive bool, estimatedSize, estimatedPref
 
 	return &equalMultiStringMapMatcher{
 		values:        make(map[string]struct{}, estimatedSize),
-		prefixes:      make(map[string][]*literalPrefixStringMatcher, estimatedPrefixes),
+		prefixes:      make(map[string][]StringMatcher, estimatedPrefixes),
 		minPrefixLen:  minPrefixLength,
 		caseSensitive: caseSensitive,
 	}
@@ -762,7 +762,7 @@ func (m *equalMultiStringSliceMatcher) add(s string) {
 	m.values = append(m.values, s)
 }
 
-func (m *equalMultiStringSliceMatcher) addPrefix(_ *literalPrefixStringMatcher) {
+func (m *equalMultiStringSliceMatcher) addPrefix(_ string, _ bool, _ StringMatcher) {
 	panic("not implemented")
 }
 
@@ -795,7 +795,7 @@ type equalMultiStringMapMatcher struct {
 	values map[string]struct{}
 	// prefixes maps strings, all of length minPrefixLen, to sets of matchers to check the rest of the string.
 	// If the matching is case insensitive, prefixes are all lowercase.
-	prefixes map[string][]*literalPrefixStringMatcher
+	prefixes map[string][]StringMatcher
 	// minPrefixLen can be zero, meaning there are no prefix matchers.
 	minPrefixLen  int
 	caseSensitive bool
@@ -809,23 +809,23 @@ func (m *equalMultiStringMapMatcher) add(s string) {
 	m.values[s] = struct{}{}
 }
 
-func (m *equalMultiStringMapMatcher) addPrefix(p *literalPrefixStringMatcher) {
+func (m *equalMultiStringMapMatcher) addPrefix(prefix string, prefixCaseSensitive bool, matcher StringMatcher) {
 	if m.minPrefixLen == 0 {
 		panic("addPrefix called when no prefix length defined")
 	}
-	if len(p.prefix) < m.minPrefixLen {
+	if len(prefix) < m.minPrefixLen {
 		panic("addPrefix called with a too short prefix")
 	}
-	if m.caseSensitive != p.prefixCaseSensitive {
+	if m.caseSensitive != prefixCaseSensitive {
 		panic("addPrefix called with a prefix whose case sensitivity is different than the expected one")
 	}
 
-	s := p.prefix[:m.minPrefixLen]
+	s := prefix[:m.minPrefixLen]
 	if !m.caseSensitive {
 		s = strings.ToLower(s)
 	}
 
-	m.prefixes[s] = append(m.prefixes[s], p)
+	m.prefixes[s] = append(m.prefixes[s], matcher)
 }
 
 func (m *equalMultiStringMapMatcher) setMatches() []string {
@@ -968,16 +968,16 @@ func optimizeEqualOrPrefixStringMatchers(input StringMatcher, threshold int) Str
 		return true
 	}
 
-	analysePrefixMatcherCallback := func(matcher *literalPrefixStringMatcher) bool {
+	analysePrefixMatcherCallback := func(prefix string, prefixCaseSensitive bool, matcher StringMatcher) bool {
 		// Ensure we don't have mixed case sensitivity.
-		if caseSensitiveSet && caseSensitive != matcher.prefixCaseSensitive {
+		if caseSensitiveSet && caseSensitive != prefixCaseSensitive {
 			return false
 		} else if !caseSensitiveSet {
-			caseSensitive = matcher.prefixCaseSensitive
+			caseSensitive = prefixCaseSensitive
 			caseSensitiveSet = true
 		}
-		if len(matcher.prefix) < minPrefixLength {
-			minPrefixLength = len(matcher.prefix)
+		if len(prefix) < minPrefixLength {
+			minPrefixLength = len(prefix)
 		}
 
 		numPrefixes++
@@ -1003,8 +1003,8 @@ func optimizeEqualOrPrefixStringMatchers(input StringMatcher, threshold int) Str
 	findEqualOrPrefixStringMatchers(input, func(matcher *equalStringMatcher) bool {
 		multiMatcher.add(matcher.s)
 		return true
-	}, func(matcher *literalPrefixStringMatcher) bool {
-		multiMatcher.addPrefix(matcher)
+	}, func(prefix string, prefixCaseSensitive bool, matcher StringMatcher) bool {
+		multiMatcher.addPrefix(prefix, caseSensitive, matcher)
 		return true
 	})
 
@@ -1016,7 +1016,7 @@ func optimizeEqualOrPrefixStringMatchers(input StringMatcher, threshold int) Str
 //
 // Returns true if and only if the input StringMatcher is *only* composed by an alternation of equalStringMatcher and/or
 // literalPrefixStringMatcher. Returns false if prefixMatcherCallback is nil and a literalPrefixStringMatcher is encountered.
-func findEqualOrPrefixStringMatchers(input StringMatcher, equalMatcherCallback func(matcher *equalStringMatcher) bool, prefixMatcherCallback func(matcher *literalPrefixStringMatcher) bool) bool {
+func findEqualOrPrefixStringMatchers(input StringMatcher, equalMatcherCallback func(matcher *equalStringMatcher) bool, prefixMatcherCallback func(prefix string, prefixCaseSensitive bool, matcher StringMatcher) bool) bool {
 	orInput, ok := input.(orStringMatcher)
 	if !ok {
 		return false
@@ -1034,8 +1034,13 @@ func findEqualOrPrefixStringMatchers(input StringMatcher, equalMatcherCallback f
 				return false
 			}
 
-		case *literalPrefixStringMatcher:
-			if prefixMatcherCallback == nil || !prefixMatcherCallback(casted) {
+		case *literalPrefixSensitiveStringMatcher:
+			if prefixMatcherCallback == nil || !prefixMatcherCallback(casted.prefix, true, casted) {
+				return false
+			}
+
+		case *literalPrefixInsensitiveStringMatcher:
+			if prefixMatcherCallback == nil || !prefixMatcherCallback(casted.prefix, false, casted) {
 				return false
 			}
 
