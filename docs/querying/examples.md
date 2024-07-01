@@ -105,3 +105,12 @@ Alternatively, if we wanted the returned timeseries to be more evenly sampled,
 we could use the following to get approximately 10% of them:
 
     limit_ratio(0.1, app_foo_metric_bar)
+
+Given that `limit_ratio()` implements a deterministic sampling algorithm (based
+on labels' hash), you can get the _complement_ of the above samples, i.e.
+approximately 90%, but precisely those not returned by `limit_ratio(0.1, ...)`
+with:
+
+    limit_ratio(-0.9, app_foo_metric_bar)
+
+
