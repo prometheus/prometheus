@@ -38,7 +38,7 @@
     "react-test-renderer": "^17.0.2",
     "reactstrap": "^8.10.1",
     "sanitize-html": "^2.13.0",
-    "sass": "1.77.4",
+    "sass": "1.77.6",
     "tempusdominus-bootstrap-4": "^5.39.2",
     "tempusdominus-core": "^5.19.3"
   },
