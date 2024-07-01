@@ -3,7 +3,7 @@
   "version": "0.53.0",
   "private": true,
   "dependencies": {
-    "@codemirror/autocomplete": "^6.16.2",
+    "@codemirror/autocomplete": "^6.16.3",
     "@codemirror/commands": "^6.6.0",
     "@codemirror/language": "^6.10.2",
     "@codemirror/lint": "^6.8.0",
