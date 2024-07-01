@@ -182,12 +182,13 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externa
 		if i+1 >= len(extras) {
 			break
 		}
-		_, found := l[extras[i]]
+
+		name := extras[i]
+		_, found := l[name]
 		if found && logOnOverwrite {
-			log.Println("label " + extras[i] + " is overwritten. Check if Prometheus reserved labels are used.")
+			log.Println("label " + name + " is overwritten. Check if Prometheus reserved labels are used.")
 		}
 		// internal labels should be maintained
-		name := extras[i]
 		if !(len(name) > 4 && name[:2] == "__" && name[len(name)-2:] == "__") {
 			name = prometheustranslator.NormalizeLabel(name)
 		}

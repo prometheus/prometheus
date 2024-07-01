@@ -31,9 +31,15 @@ import (
 const defaultZeroThreshold = 1e-128
 
 func (c *PrometheusConverter) addExponentialHistogramDataPoints(dataPoints pmetric.ExponentialHistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, baseName string) error {
+	resource pcommon.Resource, settings Settings, promName string) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		pt := dataPoints.At(x)
+
+		histogram, err := exponentialToNativeHistogram(pt)
+		if err != nil {
+			return err
+		}
+
 		lbls := createAttributes(
 			resource,
 			pt.Attributes(),
@@ -41,14 +47,9 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(dataPoints pmetr
 			nil,
 			true,
 			model.MetricNameLabel,
-			baseName,
+			promName,
 		)
 		ts, _ := c.getOrCreateTimeSeries(lbls)
-
-		histogram, err := exponentialToNativeHistogram(pt)
-		if err != nil {
-			return err
-		}
 		ts.Histograms = append(ts.Histograms, histogram)
 
 		exemplars := getPromExemplars[pmetric.ExponentialHistogramDataPoint](pt)
@@ -58,7 +59,7 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(dataPoints pmetr
 	return nil
 }
 
-// exponentialToNativeHistogram  translates OTel Exponential Histogram data point
+// exponentialToNativeHistogram translates OTel Exponential Histogram data point
 // to Prometheus Native Histogram.
 func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint) (prompb.Histogram, error) {
 	scale := p.Scale()
