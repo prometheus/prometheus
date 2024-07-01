@@ -28,6 +28,8 @@ import {
   Gtr,
   Identifier,
   LabelMatchers,
+  LimitK,
+  LimitRatio,
   Lss,
   Lte,
   MatrixSelector,
