@@ -357,8 +357,8 @@ func inversePostingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Ma
 	}
 
 	res := vals[:0]
-	// If the inverse match is ="", we just want all the values.
-	if m.Type == labels.MatchEqual && m.Value == "" {
+	// If the match before inversion was !="" or !~"", we just want all the values.
+	if m.Value == "" && (m.Type == labels.MatchRegexp || m.Type == labels.MatchEqual) {
 		res = vals
 	} else {
 		count := 1
@@ -447,16 +447,7 @@ func labelNamesWithMatchers(ctx context.Context, r IndexReader, matchers ...*lab
 	if err != nil {
 		return nil, err
 	}
-
-	var postings []storage.SeriesRef
-	for p.Next() {
-		postings = append(postings, p.At())
-	}
-	if err := p.Err(); err != nil {
-		return nil, fmt.Errorf("postings for label names with matchers: %w", err)
-	}
-
-	return r.LabelNamesFor(ctx, postings...)
+	return r.LabelNamesFor(ctx, p)
 }
 
 // seriesData, used inside other iterators, are updated when we move from one series to another.

@@ -186,12 +186,12 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	if d.lastResults != nil && d.eventPollingEnabled {
 		// Check to see if there have been any events. If so, refresh our data.
-		opts := linodego.ListOptions{
+		eventsOpts := linodego.ListOptions{
 			PageOptions: &linodego.PageOptions{Page: 1},
 			PageSize:    25,
 			Filter:      fmt.Sprintf(filterTemplate, d.lastRefreshTimestamp.Format("2006-01-02T15:04:05")),
 		}
-		events, err := d.client.ListEvents(ctx, &opts)
+		events, err := d.client.ListEvents(ctx, &eventsOpts)
 		if err != nil {
 			var e *linodego.Error
 			if errors.As(err, &e) && e.Code == http.StatusUnauthorized {
@@ -232,31 +232,40 @@ func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, erro
 	tg := &targetgroup.Group{
 		Source: "Linode",
 	}
-	opts := linodego.ListOptions{
+	// We need 3 of these because Linodego writes into the structure during pagination
+	listInstancesOpts := linodego.ListOptions{
+		PageSize: 500,
+	}
+	listIPAddressesOpts := linodego.ListOptions{
+		PageSize: 500,
+	}
+	listIPv6RangesOpts := linodego.ListOptions{
 		PageSize: 500,
 	}
 
 	// If region filter provided, use it to constrain results.
 	if d.region != "" {
-		opts.Filter = fmt.Sprintf(regionFilterTemplate, d.region)
+		listInstancesOpts.Filter = fmt.Sprintf(regionFilterTemplate, d.region)
+		listIPAddressesOpts.Filter = fmt.Sprintf(regionFilterTemplate, d.region)
+		listIPv6RangesOpts.Filter = fmt.Sprintf(regionFilterTemplate, d.region)
 	}
 
 	// Gather all linode instances.
-	instances, err := d.client.ListInstances(ctx, &opts)
+	instances, err := d.client.ListInstances(ctx, &listInstancesOpts)
 	if err != nil {
 		d.metrics.failuresCount.Inc()
 		return nil, err
 	}
 
 	// Gather detailed IP address info for all IPs on all linode instances.
-	detailedIPs, err := d.client.ListIPAddresses(ctx, &opts)
+	detailedIPs, err := d.client.ListIPAddresses(ctx, &listIPAddressesOpts)
 	if err != nil {
 		d.metrics.failuresCount.Inc()
 		return nil, err
 	}
 
 	// Gather detailed IPv6 Range info for all linode instances.
-	ipv6RangeList, err := d.client.ListIPv6Ranges(ctx, &opts)
+	ipv6RangeList, err := d.client.ListIPv6Ranges(ctx, &listIPv6RangesOpts)
 	if err != nil {
 		d.metrics.failuresCount.Inc()
 		return nil, err

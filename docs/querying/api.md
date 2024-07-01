@@ -473,6 +473,9 @@ Range vectors are returned as result type `matrix`. The corresponding
 Each series could have the `"values"` key, or the `"histograms"` key, or both. 
 For a given timestamp, there will only be one sample of either float or histogram type.
 
+Series are returned sorted by `metric`. Functions such as [`sort`](functions.md#sort)
+and [`sort_by_label`](functions.md#sort_by_label) have no effect for range vectors.
+
 ### Instant vectors
 
 Instant vectors are returned as result type `vector`. The corresponding
@@ -490,6 +493,10 @@ Instant vectors are returned as result type `vector`. The corresponding
 ```
 
 Each series could have the `"value"` key, or the `"histogram"` key, but not both.
+
+Series are not guaranteed to be returned in any particular order unless a function
+such as [`sort`](functions.md#sort) or [`sort_by_label`](functions.md#sort_by_label)`
+is used.
 
 ### Scalars
 

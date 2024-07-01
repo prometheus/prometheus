@@ -752,6 +752,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		case parser.ValueTypeScalar:
 			return Scalar{V: mat[0].Floats[0].F, T: start}, warnings, nil
 		case parser.ValueTypeMatrix:
+			ng.sortMatrixResult(ctx, query, mat)
 			return mat, warnings, nil
 		default:
 			panic(fmt.Errorf("promql.Engine.exec: unexpected expression type %q", s.Expr.Type()))
@@ -790,11 +791,15 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 	}
 
 	// TODO(fabxc): where to ensure metric labels are a copy from the storage internals.
+	ng.sortMatrixResult(ctx, query, mat)
+
+	return mat, warnings, nil
+}
+
+func (ng *Engine) sortMatrixResult(ctx context.Context, query *query, mat Matrix) {
 	sortSpanTimer, _ := query.stats.GetSpanTimer(ctx, stats.ResultSortTime, ng.metrics.queryResultSort)
 	sort.Sort(mat)
 	sortSpanTimer.Finish()
-
-	return mat, warnings, nil
 }
 
 // subqueryTimes returns the sum of offsets and ranges of all subqueries in the path.
@@ -980,6 +985,11 @@ func checkAndExpandSeriesSet(ctx context.Context, expr parser.Expr) (annotations
 			return nil, nil
 		}
 		series, ws, err := expandSeriesSet(ctx, e.UnexpandedSeriesSet)
+		if e.SkipHistogramBuckets {
+			for i := range series {
+				series[i] = newHistogramStatsSeries(series[i])
+			}
+		}
 		e.Series = series
 		return ws, err
 	}
@@ -1783,18 +1793,21 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 				}, e.LHS, e.RHS)
 			default:
 				return ev.rangeEval(initSignatures, func(v []parser.Value, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-					return ev.VectorBinop(e.Op, v[0].(Vector), v[1].(Vector), e.VectorMatching, e.ReturnBool, sh[0], sh[1], enh), nil
+					vec, err := ev.VectorBinop(e.Op, v[0].(Vector), v[1].(Vector), e.VectorMatching, e.ReturnBool, sh[0], sh[1], enh)
+					return vec, handleVectorBinopError(err, e)
 				}, e.LHS, e.RHS)
 			}
 
 		case lt == parser.ValueTypeVector && rt == parser.ValueTypeScalar:
 			return ev.rangeEval(nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-				return ev.VectorscalarBinop(e.Op, v[0].(Vector), Scalar{V: v[1].(Vector)[0].F}, false, e.ReturnBool, enh), nil
+				vec, err := ev.VectorscalarBinop(e.Op, v[0].(Vector), Scalar{V: v[1].(Vector)[0].F}, false, e.ReturnBool, enh)
+				return vec, handleVectorBinopError(err, e)
 			}, e.LHS, e.RHS)
 
 		case lt == parser.ValueTypeScalar && rt == parser.ValueTypeVector:
 			return ev.rangeEval(nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-				return ev.VectorscalarBinop(e.Op, v[1].(Vector), Scalar{V: v[0].(Vector)[0].F}, true, e.ReturnBool, enh), nil
+				vec, err := ev.VectorscalarBinop(e.Op, v[1].(Vector), Scalar{V: v[0].(Vector)[0].F}, true, e.ReturnBool, enh)
+				return vec, handleVectorBinopError(err, e)
 			}, e.LHS, e.RHS)
 		}
 
@@ -2427,12 +2440,12 @@ func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatchi
 }
 
 // VectorBinop evaluates a binary operation between two Vectors, excluding set operators.
-func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *parser.VectorMatching, returnBool bool, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper) Vector {
+func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *parser.VectorMatching, returnBool bool, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper) (Vector, error) {
 	if matching.Card == parser.CardManyToMany {
 		panic("many-to-many only allowed for set operators")
 	}
 	if len(lhs) == 0 || len(rhs) == 0 {
-		return nil // Short-circuit: nothing is going to match.
+		return nil, nil // Short-circuit: nothing is going to match.
 	}
 
 	// The control flow below handles one-to-one or many-to-one matching.
@@ -2485,6 +2498,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 
 	// For all lhs samples find a respective rhs sample and perform
 	// the binary operation.
+	var lastErr error
 	for i, ls := range lhs {
 		sig := lhsh[i].signature
 
@@ -2500,7 +2514,10 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			fl, fr = fr, fl
 			hl, hr = hr, hl
 		}
-		floatValue, histogramValue, keep := vectorElemBinop(op, fl, fr, hl, hr)
+		floatValue, histogramValue, keep, err := vectorElemBinop(op, fl, fr, hl, hr)
+		if err != nil {
+			lastErr = err
+		}
 		switch {
 		case returnBool:
 			if keep {
@@ -2542,7 +2559,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			H:      histogramValue,
 		})
 	}
-	return enh.Out
+	return enh.Out, lastErr
 }
 
 func signatureFunc(on bool, b []byte, names ...string) func(labels.Labels) string {
@@ -2605,7 +2622,8 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 }
 
 // VectorscalarBinop evaluates a binary operation between a Vector and a Scalar.
-func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scalar, swap, returnBool bool, enh *EvalNodeHelper) Vector {
+func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scalar, swap, returnBool bool, enh *EvalNodeHelper) (Vector, error) {
+	var lastErr error
 	for _, lhsSample := range lhs {
 		lf, rf := lhsSample.F, rhs.V
 		var rh *histogram.FloatHistogram
@@ -2616,7 +2634,10 @@ func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scala
 			lf, rf = rf, lf
 			lh, rh = rh, lh
 		}
-		float, histogram, keep := vectorElemBinop(op, lf, rf, lh, rh)
+		float, histogram, keep, err := vectorElemBinop(op, lf, rf, lh, rh)
+		if err != nil {
+			lastErr = err
+		}
 		// Catch cases where the scalar is the LHS in a scalar-vector comparison operation.
 		// We want to always keep the vector element value as the output value, even if it's on the RHS.
 		if op.IsComparisonOperator() && swap {
@@ -2640,7 +2661,7 @@ func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scala
 			enh.Out = append(enh.Out, lhsSample)
 		}
 	}
-	return enh.Out
+	return enh.Out, lastErr
 }
 
 // scalarBinop evaluates a binary operation between two Scalars.
@@ -2677,49 +2698,57 @@ func scalarBinop(op parser.ItemType, lhs, rhs float64) float64 {
 }
 
 // vectorElemBinop evaluates a binary operation between two Vector elements.
-func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool) {
+func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
 	switch op {
 	case parser.ADD:
 		if hlhs != nil && hrhs != nil {
-			return 0, hlhs.Copy().Add(hrhs).Compact(0), true
+			res, err := hlhs.Copy().Add(hrhs)
+			if err != nil {
+				return 0, nil, false, err
+			}
+			return 0, res.Compact(0), true, nil
 		}
-		return lhs + rhs, nil, true
+		return lhs + rhs, nil, true, nil
 	case parser.SUB:
 		if hlhs != nil && hrhs != nil {
-			return 0, hlhs.Copy().Sub(hrhs).Compact(0), true
+			res, err := hlhs.Copy().Sub(hrhs)
+			if err != nil {
+				return 0, nil, false, err
+			}
+			return 0, res.Compact(0), true, nil
 		}
-		return lhs - rhs, nil, true
+		return lhs - rhs, nil, true, nil
 	case parser.MUL:
 		if hlhs != nil && hrhs == nil {
-			return 0, hlhs.Copy().Mul(rhs), true
+			return 0, hlhs.Copy().Mul(rhs), true, nil
 		}
 		if hlhs == nil && hrhs != nil {
-			return 0, hrhs.Copy().Mul(lhs), true
+			return 0, hrhs.Copy().Mul(lhs), true, nil
 		}
-		return lhs * rhs, nil, true
+		return lhs * rhs, nil, true, nil
 	case parser.DIV:
 		if hlhs != nil && hrhs == nil {
-			return 0, hlhs.Copy().Div(rhs), true
+			return 0, hlhs.Copy().Div(rhs), true, nil
 		}
-		return lhs / rhs, nil, true
+		return lhs / rhs, nil, true, nil
 	case parser.POW:
-		return math.Pow(lhs, rhs), nil, true
+		return math.Pow(lhs, rhs), nil, true, nil
 	case parser.MOD:
-		return math.Mod(lhs, rhs), nil, true
+		return math.Mod(lhs, rhs), nil, true, nil
 	case parser.EQLC:
-		return lhs, nil, lhs == rhs
+		return lhs, nil, lhs == rhs, nil
 	case parser.NEQ:
-		return lhs, nil, lhs != rhs
+		return lhs, nil, lhs != rhs, nil
 	case parser.GTR:
-		return lhs, nil, lhs > rhs
+		return lhs, nil, lhs > rhs, nil
 	case parser.LSS:
-		return lhs, nil, lhs < rhs
+		return lhs, nil, lhs < rhs, nil
 	case parser.GTE:
-		return lhs, nil, lhs >= rhs
+		return lhs, nil, lhs >= rhs, nil
 	case parser.LTE:
-		return lhs, nil, lhs <= rhs
+		return lhs, nil, lhs <= rhs, nil
 	case parser.ATAN2:
-		return math.Atan2(lhs, rhs), nil, true
+		return math.Atan2(lhs, rhs), nil, true, nil
 	}
 	panic(fmt.Errorf("operator %q not allowed for operations between Vectors", op))
 }
@@ -2730,7 +2759,7 @@ type groupedAggregation struct {
 	hasHistogram   bool // Has at least 1 histogram sample aggregated.
 	floatValue     float64
 	histogramValue *histogram.FloatHistogram
-	floatMean      float64
+	floatMean      float64 // Mean, or "compensating value" for Kahan summation.
 	groupCount     int
 	heap           vectorByValueHeap
 }
@@ -2758,11 +2787,13 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			*group = groupedAggregation{
 				seen:       true,
 				floatValue: f,
-				floatMean:  f,
 				groupCount: 1,
 			}
 			switch op {
-			case parser.SUM, parser.AVG:
+			case parser.AVG:
+				group.floatMean = f
+				fallthrough
+			case parser.SUM:
 				if h == nil {
 					group.hasFloat = true
 				} else {
@@ -2770,6 +2801,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 					group.hasHistogram = true
 				}
 			case parser.STDVAR, parser.STDDEV:
+				group.floatMean = f
 				group.floatValue = 0
 			case parser.QUANTILE:
 				group.heap = make(vectorByValueHeap, 1)
@@ -2785,14 +2817,17 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			if h != nil {
 				group.hasHistogram = true
 				if group.histogramValue != nil {
-					group.histogramValue.Add(h)
+					_, err := group.histogramValue.Add(h)
+					if err != nil {
+						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
+					}
 				}
 				// Otherwise the aggregation contained floats
 				// previously and will be invalid anyway. No
 				// point in copying the histogram in that case.
 			} else {
 				group.hasFloat = true
-				group.floatValue += f
+				group.floatValue, group.floatMean = kahanSumInc(f, group.floatValue, group.floatMean)
 			}
 
 		case parser.AVG:
@@ -2802,8 +2837,14 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				if group.histogramValue != nil {
 					left := h.Copy().Div(float64(group.groupCount))
 					right := group.histogramValue.Copy().Div(float64(group.groupCount))
-					toAdd := left.Sub(right)
-					group.histogramValue.Add(toAdd)
+					toAdd, err := left.Sub(right)
+					if err != nil {
+						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
+					}
+					_, err = group.histogramValue.Add(toAdd)
+					if err != nil {
+						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
+					}
 				}
 				// Otherwise the aggregation contained floats
 				// previously and will be invalid anyway. No
@@ -2903,6 +2944,8 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			}
 			if aggr.hasHistogram {
 				aggr.histogramValue.Compact(0)
+			} else {
+				aggr.floatValue += aggr.floatMean // Add Kahan summation compensating term.
 			}
 		default:
 			// For other aggregations, we already have the right value.
@@ -3100,6 +3143,31 @@ func (ev *evaluator) nextValues(ts int64, series *Series) (f float64, h *histogr
 	return f, h, true
 }
 
+// handleAggregationError adds the appropriate annotation based on the aggregation error.
+func handleAggregationError(err error, e *parser.AggregateExpr, metricName string, annos *annotations.Annotations) {
+	pos := e.Expr.PositionRange()
+	if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
+		annos.Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
+	} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
+		annos.Add(annotations.NewIncompatibleCustomBucketsHistogramsWarning(metricName, pos))
+	}
+}
+
+// handleVectorBinopError returns the appropriate annotation based on the vector binary operation error.
+func handleVectorBinopError(err error, e *parser.BinaryExpr) annotations.Annotations {
+	if err == nil {
+		return nil
+	}
+	metricName := ""
+	pos := e.PositionRange()
+	if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
+		return annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
+	} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
+		return annotations.New().Add(annotations.NewIncompatibleCustomBucketsHistogramsWarning(metricName, pos))
+	}
+	return nil
+}
+
 // groupingKey builds and returns the grouping key for the given metric and
 // grouping labels.
 func generateGroupingKey(metric labels.Labels, grouping []string, without bool, buf []byte) (uint64, []byte) {
@@ -3179,6 +3247,8 @@ func unwrapStepInvariantExpr(e parser.Expr) parser.Expr {
 // PreprocessExpr wraps all possible step invariant parts of the given expression with
 // StepInvariantExpr. It also resolves the preprocessors.
 func PreprocessExpr(expr parser.Expr, start, end time.Time) parser.Expr {
+	detectHistogramStatsDecoding(expr)
+
 	isStepInvariant := preprocessExprHelper(expr, start, end)
 	if isStepInvariant {
 		return newStepInvariantExpr(expr)
@@ -3313,8 +3383,50 @@ func setOffsetForAtModifier(evalTime int64, expr parser.Expr) {
 	})
 }
 
+// detectHistogramStatsDecoding modifies the expression by setting the
+// SkipHistogramBuckets field in those vector selectors for which it is safe to
+// return only histogram statistics (sum and count), excluding histogram spans
+// and buckets. The function can be treated as an optimization and is not
+// required for correctness.
+func detectHistogramStatsDecoding(expr parser.Expr) {
+	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
+		n, ok := (node).(*parser.VectorSelector)
+		if !ok {
+			return nil
+		}
+
+		for _, p := range path {
+			call, ok := p.(*parser.Call)
+			if !ok {
+				continue
+			}
+			if call.Func.Name == "histogram_count" || call.Func.Name == "histogram_sum" {
+				n.SkipHistogramBuckets = true
+				break
+			}
+			if call.Func.Name == "histogram_quantile" || call.Func.Name == "histogram_fraction" {
+				n.SkipHistogramBuckets = false
+				break
+			}
+		}
+		return fmt.Errorf("stop")
+	})
+}
+
 func makeInt64Pointer(val int64) *int64 {
 	valp := new(int64)
 	*valp = val
 	return valp
+}
+
+type histogramStatsSeries struct {
+	storage.Series
+}
+
+func newHistogramStatsSeries(series storage.Series) *histogramStatsSeries {
+	return &histogramStatsSeries{Series: series}
+}
+
+func (s histogramStatsSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
+	return NewHistogramStatsIterator(s.Series.Iterator(it))
 }
