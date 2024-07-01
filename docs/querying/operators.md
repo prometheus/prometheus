@@ -317,13 +317,13 @@ with:
 You can also use this feature to e.g. verify that `avg()` is a representative
 aggregation for your samples' values, by checking that the difference between
 averaging two samples' subsets is "small" when compared to the standard
-deviation (and likely a great motivation to use `quantile()` instead ;)):
+deviation.
 
     abs(
       avg(limit_ratio(0.5, http_requests_total))
       -
       avg(limit_ratio(-0.5, http_requests_total))
-    ) < bool stddev(http_requests_total)
+    ) <= bool stddev(http_requests_total)
 
 ## Binary operator precedence
 
