@@ -56,9 +56,12 @@ eval range from 0 to 50m step 5m count(limitk(2, http_requests) and http_request
 #
 # See `AddRatioSample()` in promql/engine.go for more details.
 
-# Half samples
-eval range from 0 to 50m step 5m count(limit_ratio(0.5, http_requests) and http_requests)
-        {} 3+0x10
+# Half~ish samples: verify we get "near" 3 (of 0.5 * 6)
+eval range from 0 to 50m step 5m count(limit_ratio(0.5, http_requests) and http_requests) <= bool (3+1)
+        {} 1+0x10
+
+eval range from 0 to 50m step 5m count(limit_ratio(0.5, http_requests) and http_requests) >= bool (3-1)
+        {} 1+0x10
 
 # All samples
 eval range from 0 to 50m step 5m count(limit_ratio(1.0, http_requests) and http_requests)
