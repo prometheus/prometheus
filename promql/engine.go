@@ -1348,7 +1348,7 @@ func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping 
 		seriess = make(map[uint64]Series, len(inputMatrix)) // Output series by series hash.
 	case parser.LIMIT_RATIO:
 		if math.IsNaN(param) {
-			ev.errorf("Ratio value %v IsNan", param)
+			ev.errorf("Ratio value %v is NaN", param)
 		}
 		switch {
 		case param == 0:
