@@ -35,7 +35,7 @@
   "devDependencies": {
     "@codemirror/autocomplete": "^6.16.2",
     "@codemirror/language": "^6.10.2",
-    "@codemirror/lint": "^6.8.0",
+    "@codemirror/lint": "^6.8.1",
     "@codemirror/state": "^6.3.3",
     "@codemirror/view": "^6.22.1",
     "@lezer/common": "^1.2.1",
