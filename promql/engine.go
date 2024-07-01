@@ -2772,14 +2772,15 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 }
 
 type groupedAggregation struct {
-	seen           bool // Was this output groups seen in the input at this timestamp.
-	hasFloat       bool // Has at least 1 float64 sample aggregated.
-	hasHistogram   bool // Has at least 1 histogram sample aggregated.
-	floatValue     float64
-	histogramValue *histogram.FloatHistogram
-	floatMean      float64 // Mean, or "compensating value" for Kahan summation.
-	groupCount     int
-	heap           vectorByValueHeap
+	seen              bool // Was this output groups seen in the input at this timestamp.
+	hasFloat          bool // Has at least 1 float64 sample aggregated.
+	hasHistogram      bool // Has at least 1 histogram sample aggregated.
+	floatValue        float64
+	histogramValue    *histogram.FloatHistogram
+	floatMean         float64 // Mean, or "compensating value" for Kahan summation.
+	groupCount        int
+	groupAggrComplete bool // Used by LIMITK to short-cut series loop when we've reached K elem on every group
+	heap              vectorByValueHeap
 }
 
 // aggregation evaluates sum, avg, count, stdvar, stddev or quantile at one timestep on inputMatrix.
@@ -2985,6 +2986,8 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int, r float64, inp
 	op := e.Op
 	var s Sample
 	var annos annotations.Annotations
+	// Used to short-cut the loop for LIMITK if we already collected k elements for every group
+	groupsRemaining := len(groups)
 	for i := range groups {
 		groups[i].seen = false
 	}
@@ -3048,11 +3051,19 @@ seriesLoop:
 			}
 
 		case parser.LIMITK:
-			// The whole point behind limitk vs topk: early break after adding k elements.
-			if len(group.heap) >= k {
-				break seriesLoop
+			if len(group.heap) < k {
+				heap.Push(&group.heap, &s)
 			}
-			heap.Push(&group.heap, &s)
+			// LIMITK optimization: early break if we've added K elem to _every_ group,
+			// especially useful for large timeseries where the user is exploring labels via e.g.
+			// limitk(10, my_metric)
+			if !group.groupAggrComplete && len(group.heap) == k {
+				group.groupAggrComplete = true
+				groupsRemaining--
+				if groupsRemaining == 0 {
+					break seriesLoop
+				}
+			}
 
 		case parser.LIMIT_RATIO:
 			if ratiosampler.AddRatioSample(r, &s) {
