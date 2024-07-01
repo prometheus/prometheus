@@ -7159,3 +7159,78 @@ func TestNewCompactorFunc(t *testing.T) {
 	require.Len(t, ulids, 1)
 	require.Equal(t, block2, ulids[0])
 }
+
+func TestBlockQuerierAndBlockChunkQuerier(t *testing.T) {
+	opts := DefaultOptions()
+	opts.BlockQuerierFunc = func(b BlockReader, mint, maxt int64) (storage.Querier, error) {
+		// Only block with hints can be queried.
+		if len(b.Meta().Compaction.Hints) > 0 {
+			return NewBlockQuerier(b, mint, maxt)
+		}
+		return storage.NoopQuerier(), nil
+	}
+	opts.BlockChunkQuerierFunc = func(b BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
+		// Only level 4 compaction block can be queried.
+		if b.Meta().Compaction.Level == 4 {
+			return NewBlockChunkQuerier(b, mint, maxt)
+		}
+		return storage.NoopChunkedQuerier(), nil
+	}
+
+	db := openTestDB(t, opts, nil)
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
+
+	metas := []BlockMeta{
+		{Compaction: BlockMetaCompaction{Hints: []string{"test-hint"}}},
+		{Compaction: BlockMetaCompaction{Level: 4}},
+	}
+	for i := range metas {
+		// Include blockID into series to identify which block got touched.
+		serieses := []storage.Series{storage.NewListSeries(labels.FromMap(map[string]string{"block": fmt.Sprintf("block-%d", i), labels.MetricName: "test_metric"}), []chunks.Sample{sample{t: 0, f: 1}})}
+		blockDir := createBlock(t, db.Dir(), serieses)
+		b, err := OpenBlock(db.logger, blockDir, db.chunkPool)
+		require.NoError(t, err)
+
+		// Overwrite meta.json with compaction section for testing purpose.
+		b.meta.Compaction = metas[i].Compaction
+		_, err = writeMetaFile(db.logger, blockDir, &b.meta)
+		require.NoError(t, err)
+		require.NoError(t, b.Close())
+	}
+	require.NoError(t, db.reloadBlocks())
+	require.Len(t, db.Blocks(), 2)
+
+	querier, err := db.Querier(0, 500)
+	require.NoError(t, err)
+	defer querier.Close()
+	matcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test_metric")
+	seriesSet := querier.Select(context.Background(), false, nil, matcher)
+	count := 0
+	var lbls labels.Labels
+	for seriesSet.Next() {
+		count++
+		lbls = seriesSet.At().Labels()
+	}
+	require.NoError(t, seriesSet.Err())
+	require.Equal(t, 1, count)
+	// Make sure only block-0 is queried.
+	require.Equal(t, "block-0", lbls.Get("block"))
+
+	chunkQuerier, err := db.ChunkQuerier(0, 500)
+	require.NoError(t, err)
+	defer chunkQuerier.Close()
+	css := chunkQuerier.Select(context.Background(), false, nil, matcher)
+	count = 0
+	// Reset lbls variable.
+	lbls = labels.EmptyLabels()
+	for css.Next() {
+		count++
+		lbls = css.At().Labels()
+	}
+	require.NoError(t, css.Err())
+	require.Equal(t, 1, count)
+	// Make sure only block-1 is queried.
+	require.Equal(t, "block-1", lbls.Get("block"))
+}

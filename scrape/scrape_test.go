@@ -511,7 +511,7 @@ func TestScrapePoolAppender(t *testing.T) {
 	appl, ok := loop.(*scrapeLoop)
 	require.True(t, ok, "Expected scrapeLoop but got %T", loop)
 
-	wrapped := appender(appl.appender(context.Background()), 0, 0, nativeHistogramMaxSchema)
+	wrapped := appender(appl.appender(context.Background()), 0, 0, histogram.ExponentialSchemaMax)
 
 	tl, ok := wrapped.(*timeLimitAppender)
 	require.True(t, ok, "Expected timeLimitAppender but got %T", wrapped)
@@ -527,7 +527,7 @@ func TestScrapePoolAppender(t *testing.T) {
 	appl, ok = loop.(*scrapeLoop)
 	require.True(t, ok, "Expected scrapeLoop but got %T", loop)
 
-	wrapped = appender(appl.appender(context.Background()), sampleLimit, 0, nativeHistogramMaxSchema)
+	wrapped = appender(appl.appender(context.Background()), sampleLimit, 0, histogram.ExponentialSchemaMax)
 
 	sl, ok := wrapped.(*limitAppender)
 	require.True(t, ok, "Expected limitAppender but got %T", wrapped)
@@ -538,7 +538,7 @@ func TestScrapePoolAppender(t *testing.T) {
 	_, ok = tl.Appender.(nopAppender)
 	require.True(t, ok, "Expected base appender but got %T", tl.Appender)
 
-	wrapped = appender(appl.appender(context.Background()), sampleLimit, 100, nativeHistogramMaxSchema)
+	wrapped = appender(appl.appender(context.Background()), sampleLimit, 100, histogram.ExponentialSchemaMax)
 
 	bl, ok := wrapped.(*bucketLimitAppender)
 	require.True(t, ok, "Expected bucketLimitAppender but got %T", wrapped)
@@ -670,7 +670,7 @@ func newBasicScrapeLoop(t testing.TB, ctx context.Context, scraper scraper, app 
 		true,
 		false,
 		true,
-		0, 0, nativeHistogramMaxSchema,
+		0, 0, histogram.ExponentialSchemaMax,
 		nil,
 		interval,
 		time.Hour,
@@ -812,7 +812,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		true,
 		false,
 		true,
-		0, 0, nativeHistogramMaxSchema,
+		0, 0, histogram.ExponentialSchemaMax,
 		nil,
 		time.Second,
 		time.Hour,
@@ -956,7 +956,7 @@ func TestScrapeLoopMetadata(t *testing.T) {
 		true,
 		false,
 		true,
-		0, 0, nativeHistogramMaxSchema,
+		0, 0, histogram.ExponentialSchemaMax,
 		nil,
 		0,
 		0,

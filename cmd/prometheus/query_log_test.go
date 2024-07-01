@@ -72,7 +72,7 @@ func (p *queryLogTest) waitForPrometheus() error {
 	var err error
 	for x := 0; x < 20; x++ {
 		var r *http.Response
-		if r, err = http.Get(fmt.Sprintf("http://%s:%d%s/-/ready", p.host, p.port, p.prefix)); err == nil && r.StatusCode == 200 {
+		if r, err = http.Get(fmt.Sprintf("http://%s:%d%s/-/ready", p.host, p.port, p.prefix)); err == nil && r.StatusCode == http.StatusOK {
 			break
 		}
 		time.Sleep(500 * time.Millisecond)

@@ -399,7 +399,7 @@ eval instant at 1m quantile without(point)((scalar(foo)), data)
 	{test="three samples"} 1.6
 	{test="uneven samples"} 2.8
 
-eval instant at 1m quantile without(point)(NaN, data)
+eval_warn instant at 1m quantile without(point)(NaN, data)
     {test="two samples"} NaN
     {test="three samples"} NaN
     {test="uneven samples"} NaN
@@ -502,6 +502,18 @@ eval instant at 1m avg(data{test="-big"})
 
 eval instant at 1m avg(data{test="bigzero"})
 	{} 0
+
+# Test summing extreme values.
+clear
+
+load 10s
+	data{test="ten",point="a"} 2
+	data{test="ten",point="b"} 8
+	data{test="ten",point="c"} 1e+100
+	data{test="ten",point="d"} -1e100
+
+eval instant at 1m sum(data{test="ten"})
+	{} 10
 
 clear
 
