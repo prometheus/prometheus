@@ -107,3 +107,6 @@ eval range from 0 to 50m step 5m count(limit_ratio(0.8, http_requests) and limit
 # Poor man's normality check
 eval instant at 50m abs(avg(limit_ratio(0.5, http_requests)) - avg(limit_ratio(-0.5, http_requests))) < bool stddev(http_requests)
 	{} 1
+
+eval range from 0 to 50m step 5m abs(avg(limit_ratio(0.5, http_requests)) - avg(limit_ratio(-0.5, http_requests))) <= bool stddev(http_requests)
+	{} 1+0x10
