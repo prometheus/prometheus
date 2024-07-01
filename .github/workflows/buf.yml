@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.repository_owner == 'prometheus'
     steps:
-      - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
       - uses: bufbuild/buf-setup-action@dde0b9351db90fbf78e345f41a57de8514bf1091 # v1.32.2
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
