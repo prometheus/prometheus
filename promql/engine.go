@@ -3503,38 +3503,29 @@ func (s *HashRatioSampler) sampleOffset(ts int64, sample *Sample) float64 {
 }
 
 func (s *HashRatioSampler) AddRatioSample(ratioLimit float64, sample *Sample) bool {
+	// If ratioLimit >= 0: add sample if sampleOffset is lesser than ratioLimit
+	//
+	// 0.0        ratioLimit                1.0
+	//  [---------|--------------------------]
+	//  [#########...........................]
+	//
+	// e.g.:
+	//   sampleOffset==0.3 && ratioLimit==0.4
+	//     0.3 < 0.4 ? --> add sample
+	//
+	// Else if ratioLimit < 0: add sample if rand() return the "complement" of ratioLimit>=0 case
+	// (loosely similar behavior to negative array index in other programming languages)
+	//
+	// 0.0       1+ratioLimit               1.0
+	//  [---------|--------------------------]
+	//  [.........###########################]
+	//
+	// e.g.:
+	//   sampleOffset==0.3 && ratioLimit==-0.6
+	//     0.3 >= 0.4 ? --> don't add sample
 	sampleOffset := s.sampleOffset(sample.T, sample)
-	switch {
-	case ratioLimit >= 0:
-		// If ratioLimit >= 0: add sample if ratiosampler.sampleOffset() is lesser than ratioLimit
-		//
-		// 0.0        ratioLimit                1.0
-		//  [---------|--------------------------]
-		//  [#########...........................]
-		//
-		// e.g.:
-		//   ratiosampler.sampleOffset()==0.3 && ratioLimit==0.4
-		//     0.3 < 0.4 ? --> add sample
-		//
-		if sampleOffset < ratioLimit {
-			return true
-		}
-	case ratioLimit < 0:
-		// If ratioLimit < 0: add sample if rand() return the "complement" of ratioLimit>=0 case
-		// (loosely similar behavior to negative array index in other programming languages)
-		//
-		// 0.0       1+ratioLimit               1.0
-		//  [---------|--------------------------]
-		//  [.........###########################]
-		//
-		// e.g.:
-		//   ratiosampler.sampleOffset()==0.3 && ratioLimit==-0.6
-		//     0.3 >= 0.4 ? --> don't add sample
-		if sampleOffset >= (1.0 + ratioLimit) {
-			return true
-		}
-	}
-	return false
+	return (ratioLimit >= 0 && sampleOffset < ratioLimit) ||
+		(ratioLimit < 0 && sampleOffset >= (1.0+ratioLimit))
 }
 
 type histogramStatsSeries struct {
