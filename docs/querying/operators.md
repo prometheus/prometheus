@@ -264,7 +264,7 @@ the input samples, including the original labels, are returned in the result
 vector. `by` and `without` are only used to bucket the input vector.
 
 `limitk` and `limit_ratio` also return a subset of the input samples,
-including the original labels, in the result vector, these are experimental
+including the original labels in the result vector, these are experimental
 operators that must be enabled with `--enable-feature=promql-experimental-functions`.
 
 `quantile` calculates the φ-quantile, the value that ranks at number φ*N among
