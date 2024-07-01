@@ -264,7 +264,8 @@ the input samples, including the original labels, are returned in the result
 vector. `by` and `without` are only used to bucket the input vector.
 
 `limitk` and `limit_ratio` also return a subset of the input samples,
-including the original labels, in the result vector.
+including the original labels, in the result vector, these are experimental
+operators that must be enabled with `--enable-feature=promql-experimental-functions`.
 
 `quantile` calculates the φ-quantile, the value that ranks at number φ*N among
 the N metric values of the dimensions aggregated over. φ is provided as the
@@ -305,6 +306,24 @@ could write:
 To deterministically sample approximately 10% of timeseries we could write:
 
     limit_ratio(0.1, http_requests_total)
+
+Given that `limit_ratio()` implements a deterministic sampling algorithm (based
+on labels' hash), you can get the _complement_ of the above samples, i.e.
+approximately 90%, but precisely those not returned by `limit_ratio(0.1, ...)`
+with:
+
+    limit_ratio(-0.9, http_requests_total)
+
+You can also use this feature to e.g. verify that `avg()` is a representative
+aggregation for your samples' values, by checking that the difference between
+averaging two samples' subsets is "small" when compared to the standard
+deviation (and likely a great motivation to use `quantile()` instead ;)):
+
+    (
+      avg(limit_ratio(0.5, http_requests_total))
+      -
+      avg(limit_ratio(-0.5, http_requests_total))
+    ) < stddev(http_requests_total)
 
 ## Binary operator precedence
 
