@@ -14,7 +14,6 @@
 package labels
 
 import (
-	"math"
 	"slices"
 	"strings"
 	"unicode"
@@ -950,7 +949,7 @@ func optimizeEqualOrPrefixStringMatchers(input StringMatcher, threshold int) Str
 		caseSensitiveSet bool
 		numValues        int
 		numPrefixes      int
-		minPrefixLength  = math.MaxInt
+		minPrefixLength  int
 	)
 
 	// Analyse the input StringMatcher to count the number of occurrences
@@ -976,7 +975,7 @@ func optimizeEqualOrPrefixStringMatchers(input StringMatcher, threshold int) Str
 			caseSensitive = prefixCaseSensitive
 			caseSensitiveSet = true
 		}
-		if len(prefix) < minPrefixLength {
+		if numPrefixes == 0 || len(prefix) < minPrefixLength {
 			minPrefixLength = len(prefix)
 		}
 
