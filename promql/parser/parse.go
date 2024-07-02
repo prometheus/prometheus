@@ -447,6 +447,10 @@ func (p *parser) newAggregateExpr(op Item, modifier, args Node) (ret *AggregateE
 
 	desiredArgs := 1
 	if ret.Op.IsAggregatorWithParam() {
+		if !EnableExperimentalFunctions && (ret.Op == LIMITK || ret.Op == LIMIT_RATIO) {
+			p.addParseErrf(ret.PositionRange(), "limitk() and limit_ratio() are experimental and must be enabled with --enable-feature=promql-experimental-functions")
+			return
+		}
 		desiredArgs = 2
 
 		ret.Param = arguments[0]
@@ -672,7 +676,7 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 			p.addParseErrf(n.PositionRange(), "aggregation operator expected in aggregation expression but got %q", n.Op)
 		}
 		p.expectType(n.Expr, ValueTypeVector, "aggregation expression")
-		if n.Op == TOPK || n.Op == BOTTOMK || n.Op == QUANTILE {
+		if n.Op == TOPK || n.Op == BOTTOMK || n.Op == QUANTILE || n.Op == LIMITK || n.Op == LIMIT_RATIO {
 			p.expectType(n.Param, ValueTypeScalar, "aggregation parameter")
 		}
 		if n.Op == COUNT_VALUES {

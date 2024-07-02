@@ -49,6 +49,8 @@ const (
 )
 
 func TestMain(m *testing.M) {
+	// Enable experimental functions testing
+	parser.EnableExperimentalFunctions = true
 	goleak.VerifyTestMain(m)
 }
 

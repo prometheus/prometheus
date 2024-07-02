@@ -545,6 +545,18 @@ export const aggregateOpTerms = [
     type: 'keyword',
   },
   {
+    label: 'limitk',
+    detail: 'aggregation',
+    info: 'Sample k elements',
+    type: 'keyword',
+  },
+  {
+    label: 'limit_ratio',
+    detail: 'aggregation',
+    info: 'Sample given ratio of elements',
+    type: 'keyword',
+  },
+  {
     label: 'max',
     detail: 'aggregation',
     info: 'Select maximum over dimensions',
