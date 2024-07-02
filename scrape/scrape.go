@@ -111,6 +111,7 @@ type scrapeLoopOptions struct {
 	interval                 time.Duration
 	timeout                  time.Duration
 	scrapeClassicHistograms  bool
+	convertClassicHistograms bool
 
 	mrc               []*relabel.Config
 	cache             *scrapeCache
@@ -178,6 +179,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 			opts.interval,
 			opts.timeout,
 			opts.scrapeClassicHistograms,
+			opts.convertClassicHistograms,
 			options.EnableNativeHistogramsIngestion,
 			options.EnableCreatedTimestampZeroIngestion,
 			options.ExtraMetrics,
@@ -440,6 +442,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 		trackTimestampsStaleness = sp.config.TrackTimestampsStaleness
 		mrc                      = sp.config.MetricRelabelConfigs
 		scrapeClassicHistograms  = sp.config.ScrapeClassicHistograms
+		convertClassicHistograms = sp.config.ConvertClassicHistograms
 	)
 
 	sp.targetMtx.Lock()
@@ -476,6 +479,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 				interval:                 interval,
 				timeout:                  timeout,
 				scrapeClassicHistograms:  scrapeClassicHistograms,
+				convertClassicHistograms: convertClassicHistograms,
 			})
 			if err != nil {
 				l.setForcedError(err)
@@ -828,6 +832,7 @@ type scrapeLoop struct {
 	interval                 time.Duration
 	timeout                  time.Duration
 	scrapeClassicHistograms  bool
+	convertClassicHistograms bool
 
 	// Feature flagged options.
 	enableNativeHistogramIngestion bool
@@ -1127,6 +1132,7 @@ func newScrapeLoop(ctx context.Context,
 	interval time.Duration,
 	timeout time.Duration,
 	scrapeClassicHistograms bool,
+	convertClassicHistograms bool,
 	enableNativeHistogramIngestion bool,
 	enableCTZeroIngestion bool,
 	reportExtraMetrics bool,
@@ -1180,6 +1186,7 @@ func newScrapeLoop(ctx context.Context,
 		interval:                       interval,
 		timeout:                        timeout,
 		scrapeClassicHistograms:        scrapeClassicHistograms,
+		convertClassicHistograms:       convertClassicHistograms,
 		enableNativeHistogramIngestion: enableNativeHistogramIngestion,
 		enableCTZeroIngestion:          enableCTZeroIngestion,
 		reportExtraMetrics:             reportExtraMetrics,
@@ -1465,6 +1472,9 @@ type appendErrors struct {
 
 func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
 	p, err := textparse.New(b, contentType, sl.scrapeClassicHistograms, sl.symbolTable)
+	if sl.convertClassicHistograms {
+		p = textparse.NewNHCBParser(p, sl.scrapeClassicHistograms)
+	}
 	if err != nil {
 		level.Debug(sl.l).Log(
 			"msg", "Invalid content type on scrape, using prometheus parser as fallback.",
