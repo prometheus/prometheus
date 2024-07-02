@@ -3760,27 +3760,27 @@ metric: <
 		} {
 			var expectedClassicHistCount, expectedNativeHistCount int
 			var expectCustomBuckets bool
-			switch {
-			case tc.scrapeClassicHistograms && tc.convertClassicHistograms:
-				expectedClassicHistCount = 1
-				expectedNativeHistCount = 1
-				expectCustomBuckets = true
-			case !tc.scrapeClassicHistograms && tc.convertClassicHistograms:
-				expectedClassicHistCount = 0
-				expectedNativeHistCount = 1
-				expectCustomBuckets = true
-			case tc.scrapeClassicHistograms && !tc.convertClassicHistograms:
-				expectedClassicHistCount = 1
-				expectedNativeHistCount = 0
-			case !tc.scrapeClassicHistograms && !tc.convertClassicHistograms:
-				expectedClassicHistCount = 1 // since these are sent without native histograms
-				expectedNativeHistCount = 0
-			}
 			if metricsText.hasExponential {
 				expectedNativeHistCount = 1
 				expectCustomBuckets = false
-			} else {
-				expectCustomBuckets = true
+				expectedClassicHistCount = 0
+				if metricsText.hasClassic && tc.scrapeClassicHistograms {
+					expectedClassicHistCount = 1
+				}
+			} else if metricsText.hasClassic {
+				switch {
+				case tc.scrapeClassicHistograms && tc.convertClassicHistograms:
+					expectedClassicHistCount = 1
+					expectedNativeHistCount = 1
+					expectCustomBuckets = true
+				case !tc.scrapeClassicHistograms && tc.convertClassicHistograms:
+					expectedClassicHistCount = 0
+					expectedNativeHistCount = 1
+					expectCustomBuckets = true
+				case !tc.convertClassicHistograms:
+					expectedClassicHistCount = 1
+					expectedNativeHistCount = 0
+				}
 			}
 
 			t.Run(fmt.Sprintf("%s with %s", name, metricsTextName), func(t *testing.T) {
