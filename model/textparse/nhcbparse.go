@@ -29,23 +29,31 @@ import (
 )
 
 type NhcbParser struct {
-	parser                Parser
+	// The parser we're wrapping.
+	parser Parser
+	// Option to keep classic histograms along with converted histograms.
 	keepClassicHistograms bool
 
+	// Caches the values from the underlying parser.
+	// For Series and Histogram.
 	bytes []byte
 	ts    *int64
 	value float64
 	h     *histogram.Histogram
 	fh    *histogram.FloatHistogram
-
+	// For Metric.
 	lset         labels.Labels
 	metricString string
 
 	buf []byte
 
+	// Collates values from the classic histogram series to build
+	// the converted histogram later.
 	lsetNhcb labels.Labels
 	tempNhcb convertnhcb.TempHistogram
 
+	// Remembers the last native histogram name so we can ignore
+	// conversions to NHCB when the name is the same.
 	lastNativeHistName string
 }
 
@@ -118,6 +126,10 @@ func (p *NhcbParser) Next() (Entry, error) {
 	return et, err
 }
 
+// handleClassicHistogramSeries collates the classic histogram series to be converted to NHCB
+// if it is actually a classic histogram series (and not a normal float series) and if there
+// isn't already a native histogram with the same name (assuming it is always processed
+// right before the classic histograms) and returns true if the collation was done.
 func (p *NhcbParser) handleClassicHistogramSeries(lset labels.Labels) bool {
 	mName := lset.Get(labels.MetricName)
 	if convertnhcb.GetHistogramMetricBaseName(mName) == p.lastNativeHistName {
@@ -151,6 +163,8 @@ func (p *NhcbParser) processClassicHistogramSeries(lset labels.Labels, suffix st
 	updateHist(&p.tempNhcb)
 }
 
+// processNhcb converts the collated classic histogram series to NHCB and caches the info
+// to be returned to callers.
 func (p *NhcbParser) processNhcb(th convertnhcb.TempHistogram) bool {
 	if len(th.BucketCounts) == 0 {
 		return false
