@@ -146,12 +146,18 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 				openstackLabelUserID:         model.LabelValue(s.UserID),
 			}
 
-			flavorID, ok := s.Flavor["id"].(string)
-			if !ok {
-				level.Warn(i.logger).Log("msg", "Invalid type for flavor id, expected string")
-				continue
+			flavorName, nameOk := s.Flavor["original_name"].(string)
+			// "original_name" is only available for microversion >= 2.47. It was added in favor of "id".
+			if !nameOk {
+				flavorID, idOk := s.Flavor["id"].(string)
+				if !idOk {
+					level.Warn(i.logger).Log("msg", "Invalid type for both flavor original_name and flavor id, expected string")
+					continue
+				}
+				labels[openstackLabelInstanceFlavor] = model.LabelValue(flavorID)
+			} else {
+				labels[openstackLabelInstanceFlavor] = model.LabelValue(flavorName)
 			}
-			labels[openstackLabelInstanceFlavor] = model.LabelValue(flavorID)
 
 			imageID, ok := s.Image["id"].(string)
 			if ok {

@@ -1363,7 +1363,7 @@ interface.
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
 * `__meta_openstack_address_pool`: the pool of the private IP.
-* `__meta_openstack_instance_flavor`: the flavor ID of the OpenStack instance.
+* `__meta_openstack_instance_flavor`: the flavor name of the OpenStack instance, or the flavor ID if the flavor name isn't available.
 * `__meta_openstack_instance_id`: the OpenStack instance ID.
 * `__meta_openstack_instance_image`: the ID of the image the OpenStack instance is using.
 * `__meta_openstack_instance_name`: the OpenStack instance name.

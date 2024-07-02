@@ -838,17 +838,17 @@ eval instant at 1m quantile_over_time(1, data[1m])
 	{test="three samples"} 2
 	{test="uneven samples"} 4
 
-eval instant at 1m quantile_over_time(-1, data[1m])
+eval_warn instant at 1m quantile_over_time(-1, data[1m])
 	{test="two samples"} -Inf
 	{test="three samples"} -Inf
 	{test="uneven samples"} -Inf
 
-eval instant at 1m quantile_over_time(2, data[1m])
+eval_warn instant at 1m quantile_over_time(2, data[1m])
 	{test="two samples"} +Inf
 	{test="three samples"} +Inf
 	{test="uneven samples"} +Inf
 
-eval instant at 1m (quantile_over_time(2, (data[1m])))
+eval_warn instant at 1m (quantile_over_time(2, (data[1m])))
 	{test="two samples"} +Inf
 	{test="three samples"} +Inf
 	{test="uneven samples"} +Inf

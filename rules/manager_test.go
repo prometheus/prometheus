@@ -1455,7 +1455,8 @@ func TestNativeHistogramsInRecordingRules(t *testing.T) {
 
 	expHist := hists[0].ToFloat(nil)
 	for _, h := range hists[1:] {
-		expHist = expHist.Add(h.ToFloat(nil))
+		expHist, err = expHist.Add(h.ToFloat(nil))
+		require.NoError(t, err)
 	}
 
 	it := s.Iterator(nil)
@@ -2096,6 +2097,23 @@ func TestBoundedRuleEvalConcurrency(t *testing.T) {
 
 	// Synchronous queries also count towards inflight, so at most we can have maxConcurrency+$groupCount inflight evaluations.
 	require.EqualValues(t, maxInflight.Load(), int32(maxConcurrency)+int32(groupCount))
+}
+
+func TestUpdateWhenStopped(t *testing.T) {
+	files := []string{"fixtures/rules.yaml"}
+	ruleManager := NewManager(&ManagerOptions{
+		Context: context.Background(),
+		Logger:  log.NewNopLogger(),
+	})
+	ruleManager.start()
+	err := ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, ruleManager.groups)
+
+	ruleManager.Stop()
+	// Updates following a stop are no-op.
+	err = ruleManager.Update(10*time.Second, []string{}, labels.EmptyLabels(), "", nil)
+	require.NoError(t, err)
 }
 
 const artificialDelay = 250 * time.Millisecond
