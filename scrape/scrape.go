@@ -736,6 +736,10 @@ func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
 		req.Header.Set("User-Agent", UserAgent)
 		req.Header.Set("X-Prometheus-Scrape-Timeout-Seconds", strconv.FormatFloat(s.timeout.Seconds(), 'f', -1, 64))
 
+		// Add the Host header without the port
+		hostname := strings.Split(req.URL.Host, ":")[0]
+		req.Header.Set("Host", hostname)
+
 		s.req = req
 	}
 
