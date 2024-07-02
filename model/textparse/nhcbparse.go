@@ -48,6 +48,7 @@ type NhcbParser struct {
 	// Caches the entry itself if we are inserting a converted NHCB
 	// halfway through.
 	entry            Entry
+	err              error
 	justInsertedNhcb bool
 	// Caches the values and metric for the inserted converted NHCB.
 	bytesNhcb        []byte
@@ -131,12 +132,13 @@ func (p *NhcbParser) Next() (Entry, error) {
 				return p.Next()
 			}
 		}
-		return p.entry, nil
+		return p.entry, p.err
 	}
 	et, err := p.parser.Next()
 	if err != nil {
 		if errors.Is(err, io.EOF) && p.processNhcb() {
 			p.entry = et
+			p.err = err
 			return EntryHistogram, nil
 		}
 		return EntryInvalid, err
@@ -236,10 +238,9 @@ func (p *NhcbParser) processNhcb() bool {
 		p.hNhcb = nil
 		p.fhNhcb = fh
 	}
-	buf := make([]byte, 0, 1024)
-	p.bytesNhcb = p.tempLsetNhcb.Bytes(buf)
+	p.metricStringNhcb = p.tempLsetNhcb.Get(labels.MetricName) + strings.ReplaceAll(p.tempLsetNhcb.DropMetricName().String(), ", ", ",")
+	p.bytesNhcb = []byte(p.metricStringNhcb)
 	p.lsetNhcb = p.tempLsetNhcb
-	p.metricStringNhcb = p.tempLsetNhcb.String()
 	p.tempNhcb = convertnhcb.NewTempHistogram()
 	p.isCollationInProgress = false
 	p.justInsertedNhcb = true

@@ -29,6 +29,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"text/template"
 	"time"
 
 	"github.com/go-kit/log"
@@ -3371,120 +3372,187 @@ test_summary_count 199
 
 // Testing whether we can automatically convert scraped classic histograms into native histograms with custom buckets.
 func TestConvertClassicHistograms(t *testing.T) {
-	metricsTexts := map[string]string{
-		"normal": `
-# HELP test_metric_1 some help text
-# TYPE test_metric_1 counter
-test_metric_1 1
-# HELP test_histogram_1 This is a histogram with default buckets
-# TYPE test_histogram_1 histogram
-test_histogram_1_bucket{address="0.0.0.0",port="5001",le="0.005"} 0
-test_histogram_1_bucket{address="0.0.0.0",port="5001",le="0.01"} 0
-test_histogram_1_bucket{address="0.0.0.0",port="5001",le="0.025"} 0
-test_histogram_1_bucket{address="0.0.0.0",port="5001",le="0.05"} 0
-test_histogram_1_bucket{address="0.0.0.0",port="5001",le="0.1"} 0
-test_histogram_1_bucket{address="0.0.0.0",port="5001",le="0.25"} 0
-test_histogram_1_bucket{address="0.0.0.0",port="5001",le="0.5"} 0
-test_histogram_1_bucket{address="0.0.0.0",port="5001",le="1"} 0
-test_histogram_1_bucket{address="0.0.0.0",port="5001",le="2.5"} 0
-test_histogram_1_bucket{address="0.0.0.0",port="5001",le="5"} 0
-test_histogram_1_bucket{address="0.0.0.0",port="5001",le="10"} 1
-test_histogram_1_bucket{address="0.0.0.0",port="5001",le="+Inf"} 1
-test_histogram_1_sum{address="0.0.0.0",port="5001"} 10
-test_histogram_1_count{address="0.0.0.0",port="5001"} 1
-# HELP test_metric_2 some help text
-# TYPE test_metric_2 counter
-test_metric_2 1
-# HELP test_histogram_2 This is a histogram with default buckets
-# TYPE test_histogram_2 histogram
-test_histogram_2_bucket{address="0.0.0.0",port="5001",le="0.005"} 0
-test_histogram_2_bucket{address="0.0.0.0",port="5001",le="0.01"} 0
-test_histogram_2_bucket{address="0.0.0.0",port="5001",le="0.025"} 0
-test_histogram_2_bucket{address="0.0.0.0",port="5001",le="0.05"} 0
-test_histogram_2_bucket{address="0.0.0.0",port="5001",le="0.1"} 0
-test_histogram_2_bucket{address="0.0.0.0",port="5001",le="0.25"} 0
-test_histogram_2_bucket{address="0.0.0.0",port="5001",le="0.5"} 0
-test_histogram_2_bucket{address="0.0.0.0",port="5001",le="1"} 0
-test_histogram_2_bucket{address="0.0.0.0",port="5001",le="2.5"} 0
-test_histogram_2_bucket{address="0.0.0.0",port="5001",le="5"} 0
-test_histogram_2_bucket{address="0.0.0.0",port="5001",le="10"} 1
-test_histogram_2_bucket{address="0.0.0.0",port="5001",le="+Inf"} 1
-test_histogram_2_sum{address="0.0.0.0",port="5001"} 10
-test_histogram_2_count{address="0.0.0.0",port="5001"} 1
-# HELP test_metric_3 some help text
-# TYPE test_metric_3 counter
-test_metric_3 1
-# HELP test_histogram_3 This is a histogram with default buckets
-# TYPE test_histogram_3 histogram
-test_histogram_3_bucket{address="0.0.0.0",port="5001",le="0.005"} 0
-test_histogram_3_bucket{address="0.0.0.0",port="5001",le="0.01"} 0
-test_histogram_3_bucket{address="0.0.0.0",port="5001",le="0.025"} 0
-test_histogram_3_bucket{address="0.0.0.0",port="5001",le="0.05"} 0
-test_histogram_3_bucket{address="0.0.0.0",port="5001",le="0.1"} 0
-test_histogram_3_bucket{address="0.0.0.0",port="5001",le="0.25"} 0
-test_histogram_3_bucket{address="0.0.0.0",port="5001",le="0.5"} 0
-test_histogram_3_bucket{address="0.0.0.0",port="5001",le="1"} 0
-test_histogram_3_bucket{address="0.0.0.0",port="5001",le="2.5"} 0
-test_histogram_3_bucket{address="0.0.0.0",port="5001",le="5"} 0
-test_histogram_3_bucket{address="0.0.0.0",port="5001",le="10"} 1
-test_histogram_3_bucket{address="0.0.0.0",port="5001",le="+Inf"} 1
-test_histogram_3_sum{address="0.0.0.0",port="5001"} 10
-test_histogram_3_count{address="0.0.0.0",port="5001"} 1
-`,
-		"no metadata and different order": `
-test_metric_1 1
-test_histogram_1_bucket{address="0.0.0.0",port="5001",le="0.005"} 0
-test_histogram_1_bucket{address="0.0.0.0",port="5001",le="0.01"} 0
-test_histogram_1_bucket{address="0.0.0.0",port="5001",le="0.025"} 0
-test_histogram_1_bucket{address="0.0.0.0",port="5001",le="0.05"} 0
-test_histogram_1_bucket{address="0.0.0.0",port="5001",le="0.1"} 0
-test_histogram_1_bucket{address="0.0.0.0",port="5001",le="0.25"} 0
-test_histogram_1_bucket{address="0.0.0.0",port="5001",le="0.5"} 0
-test_histogram_1_bucket{address="0.0.0.0",port="5001",le="1"} 0
-test_histogram_1_bucket{address="0.0.0.0",port="5001",le="2.5"} 0
-test_histogram_1_bucket{address="0.0.0.0",port="5001",le="5"} 0
-test_histogram_1_bucket{address="0.0.0.0",port="5001",le="10"} 1
-test_histogram_1_bucket{address="0.0.0.0",port="5001",le="+Inf"} 1
-test_histogram_1_sum{address="0.0.0.0",port="5001"} 10
-test_histogram_1_count{address="0.0.0.0",port="5001"} 1
-test_metric_2 1
-test_histogram_2_bucket{address="0.0.0.0",port="5001",le="0.005"} 0
-test_histogram_2_bucket{address="0.0.0.0",port="5001",le="0.01"} 0
-test_histogram_2_bucket{address="0.0.0.0",port="5001",le="0.025"} 0
-test_histogram_2_bucket{address="0.0.0.0",port="5001",le="0.05"} 0
-test_histogram_2_bucket{address="0.0.0.0",port="5001",le="0.1"} 0
-test_histogram_2_bucket{address="0.0.0.0",port="5001",le="0.25"} 0
-test_histogram_2_bucket{address="0.0.0.0",port="5001",le="0.5"} 0
-test_histogram_2_bucket{address="0.0.0.0",port="5001",le="1"} 0
-test_histogram_2_bucket{address="0.0.0.0",port="5001",le="2.5"} 0
-test_histogram_2_bucket{address="0.0.0.0",port="5001",le="5"} 0
-test_histogram_2_bucket{address="0.0.0.0",port="5001",le="10"} 1
-test_histogram_2_bucket{address="0.0.0.0",port="5001",le="+Inf"} 1
-test_histogram_2_sum{address="0.0.0.0",port="5001"} 10
-test_histogram_2_count{address="0.0.0.0",port="5001"} 1
-test_histogram_3_bucket{address="0.0.0.0",port="5001",le="0.005"} 0
-test_histogram_3_bucket{address="0.0.0.0",port="5001",le="0.01"} 0
-test_histogram_3_bucket{address="0.0.0.0",port="5001",le="0.025"} 0
-test_histogram_3_bucket{address="0.0.0.0",port="5001",le="0.05"} 0
-test_histogram_3_bucket{address="0.0.0.0",port="5001",le="0.1"} 0
-test_histogram_3_bucket{address="0.0.0.0",port="5001",le="0.25"} 0
-test_histogram_3_bucket{address="0.0.0.0",port="5001",le="0.5"} 0
-test_histogram_3_bucket{address="0.0.0.0",port="5001",le="1"} 0
-test_histogram_3_bucket{address="0.0.0.0",port="5001",le="2.5"} 0
-test_histogram_3_bucket{address="0.0.0.0",port="5001",le="5"} 0
-test_histogram_3_bucket{address="0.0.0.0",port="5001",le="10"} 1
-test_histogram_3_bucket{address="0.0.0.0",port="5001",le="+Inf"} 1
-test_histogram_3_sum{address="0.0.0.0",port="5001"} 10
-test_histogram_3_count{address="0.0.0.0",port="5001"} 1
-test_metric_3 1
-`,
+	genTestCounterText := func(name string, value int, withMetadata bool) string {
+		if withMetadata {
+			return fmt.Sprintf(`
+# HELP %s some help text
+# TYPE %s counter
+%s %d
+`, name, name, name, value)
+		} else {
+			return fmt.Sprintf(`
+%s %d
+`, name, value)
+		}
+	}
+	genTestHistText := func(name string, withMetadata bool) string {
+		data := map[string]interface{}{
+			"name": name,
+		}
+		b := &bytes.Buffer{}
+		if withMetadata {
+			template.Must(template.New("").Parse(`
+# HELP {{.name}} This is a histogram with default buckets
+# TYPE {{.name}} histogram
+`)).Execute(b, data)
+		}
+		template.Must(template.New("").Parse(`
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="0.005"} 0
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="0.01"} 0
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="0.025"} 0
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="0.05"} 0
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="0.1"} 0
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="0.25"} 0
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="0.5"} 0
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="1"} 0
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="2.5"} 0
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="5"} 0
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="10"} 1
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="+Inf"} 1
+{{.name}}_sum{address="0.0.0.0",port="5001"} 10
+{{.name}}_count{address="0.0.0.0",port="5001"} 1
+`)).Execute(b, data)
+		return b.String()
+	}
+	genTestCounterProto := func(name string, value int) string {
+		return fmt.Sprintf(`
+name: "%s"
+help: "some help text"
+type: COUNTER
+metric: <
+	counter: <
+		value: %d
+	>
+>
+`, name, value)
+	}
+	genTestHistProto := func(name string) string {
+		return fmt.Sprintf(`
+name: "%s"
+help: "This is a histogram with default buckets"
+type: HISTOGRAM
+metric: <
+	label: <
+		name: "address"
+		value: "0.0.0.0"
+	>
+	label: <
+		name: "port"
+		value: "5001"
+	>
+	histogram: <
+		sample_count: 1
+		sample_sum: 10
+		bucket: <
+			cumulative_count: 0
+			upper_bound: 0.005
+		>
+		bucket: <
+			cumulative_count: 0
+			upper_bound: 0.01
+		>
+		bucket: <
+			cumulative_count: 0
+			upper_bound: 0.025
+		>
+		bucket: <
+			cumulative_count: 0
+			upper_bound: 0.05
+		>
+		bucket: <
+			cumulative_count: 0
+			upper_bound: 0.1
+		>
+		bucket: <
+			cumulative_count: 0
+			upper_bound: 0.25
+		>
+		bucket: <
+			cumulative_count: 0
+			upper_bound: 0.5
+		>
+		bucket: <
+			cumulative_count: 0
+			upper_bound: 1
+		>
+		bucket: <
+			cumulative_count: 0
+			upper_bound: 2.5
+		>
+		bucket: <
+			cumulative_count: 0
+			upper_bound: 5
+		>
+		bucket: <
+			cumulative_count: 1
+			upper_bound: 10
+		>
+	>
+	timestamp_ms: 1234568
+>
+`, name)
 	}
 
-	// The expected "le" values do not have the trailing ".0".
-	expectedLeValuesCorrect := []string{"0.005", "0.01", "0.025", "0.05", "0.1", "0.25", "0.5", "1", "2.5", "5", "10", "+Inf"}
-	expectedLeValuesNone := []string{}
+	metricsTexts := map[string]struct {
+		text        []string
+		contentType string
+	}{
+		"text": {
+			text: []string{
+				genTestCounterText("test_metric_1", 1, true),
+				genTestHistText("test_histogram_1", true),
+				genTestCounterText("test_metric_2", 1, true),
+				genTestHistText("test_histogram_2", true),
+				genTestCounterText("test_metric_3", 1, true),
+				genTestHistText("test_histogram_3", true),
+			},
+		},
+		"text, no metadata, in different order": {
+			text: []string{
+				genTestCounterText("test_metric_1", 1, false),
+				genTestHistText("test_histogram_1", false),
+				genTestCounterText("test_metric_2", 1, false),
+				genTestHistText("test_histogram_2", false),
+				genTestHistText("test_histogram_3", false),
+				genTestCounterText("test_metric_3", 1, false),
+			},
+		},
+		"protobuf": {
+			text: []string{
+				genTestCounterProto("test_metric_1", 1),
+				genTestHistProto("test_histogram_1"),
+				genTestCounterProto("test_metric_2", 1),
+				genTestHistProto("test_histogram_2"),
+				genTestCounterProto("test_metric_3", 1),
+				genTestHistProto("test_histogram_3"),
+			},
+			contentType: "application/vnd.google.protobuf",
+		},
+		"protobuf, in different order": {
+			text: []string{
+				genTestHistProto("test_histogram_1"),
+				genTestCounterProto("test_metric_1", 1),
+				genTestHistProto("test_histogram_2"),
+				genTestCounterProto("test_metric_2", 1),
+				genTestHistProto("test_histogram_3"),
+				genTestCounterProto("test_metric_3", 1),
+			},
+			contentType: "application/vnd.google.protobuf",
+		},
+	}
 
-	checkValues := func(labelName string, expectedValues []string, series storage.SeriesSet) {
+	checkBucketValues := func(expectedCount int, contentType string, series storage.SeriesSet) {
+		labelName := "le"
+		var expectedValues []string
+		if expectedCount > 0 {
+			if contentType == "application/vnd.google.protobuf" {
+				// The expected "le" values have the trailing ".0".
+				expectedValues = []string{"0.005", "0.01", "0.025", "0.05", "0.1", "0.25", "0.5", "1.0", "2.5", "5.0", "10.0", "+Inf"}
+			} else {
+				// The expected "le" values do not have the trailing ".0".
+				expectedValues = []string{"0.005", "0.01", "0.025", "0.05", "0.1", "0.25", "0.5", "1", "2.5", "5", "10", "+Inf"}
+			}
+		}
 		foundLeValues := map[string]bool{}
 
 		for series.Next() {
@@ -3494,64 +3562,98 @@ test_metric_3 1
 			foundLeValues[v] = true
 		}
 
-		require.Equal(t, len(expectedValues), len(foundLeValues), "number of label values not as expected")
+		require.Equal(t, len(expectedValues), len(foundLeValues), "unexpected number of label values, expected %v but found %v", expectedValues, foundLeValues)
 		for _, v := range expectedValues {
 			require.Contains(t, foundLeValues, v, "label value not found")
 		}
 	}
 
-	// Checks that the expected series is present and runs a basic sanity check of the values.
-	checkSeries := func(series storage.SeriesSet, encType chunkenc.ValueType, expectedCount int) {
+	// Checks that the expected series is present and runs a basic sanity check of the float values.
+	checkFloatSeries := func(series storage.SeriesSet, expectedCount int, expectedFloat float64) {
 		count := 0
 		for series.Next() {
 			i := series.At().Iterator(nil)
-			switch encType {
-			case chunkenc.ValFloat:
-				for i.Next() == encType {
+		loop:
+			for {
+				switch i.Next() {
+				case chunkenc.ValNone:
+					break loop
+				case chunkenc.ValFloat:
 					_, f := i.At()
-					require.Equal(t, 1., f)
-				}
-			case chunkenc.ValHistogram:
-				for i.Next() == encType {
-					_, h := i.AtHistogram(nil)
-					require.Equal(t, uint64(1), h.Count)
-					require.Equal(t, 10.0, h.Sum)
+					require.Equal(t, expectedFloat, f)
+				case chunkenc.ValHistogram:
+					panic("unexpected value type: histogram")
+				case chunkenc.ValFloatHistogram:
+					panic("unexpected value type: float histogram")
+				default:
+					panic("unexpected value type")
 				}
 			}
 			count++
 		}
-		require.Equal(t, expectedCount, count, "number of series not as expected")
+		require.Equal(t, expectedCount, count, "number of float series not as expected")
+	}
+
+	// Checks that the expected series is present and runs a basic sanity check of the histogram values.
+	checkHistSeries := func(series storage.SeriesSet, expectedCount int, expectedSchema int32) {
+		count := 0
+		for series.Next() {
+			i := series.At().Iterator(nil)
+		loop:
+			for {
+				switch i.Next() {
+				case chunkenc.ValNone:
+					break loop
+				case chunkenc.ValFloat:
+					panic("unexpected value type: float")
+				case chunkenc.ValHistogram:
+					_, h := i.AtHistogram(nil)
+					require.Equal(t, expectedSchema, h.Schema)
+					require.Equal(t, uint64(1), h.Count)
+					require.Equal(t, 10.0, h.Sum)
+				case chunkenc.ValFloatHistogram:
+					_, h := i.AtFloatHistogram(nil)
+					require.Equal(t, expectedSchema, h.Schema)
+					require.Equal(t, uint64(1), h.Count)
+					require.Equal(t, 10.0, h.Sum)
+				default:
+					panic("unexpected value type")
+				}
+			}
+			count++
+		}
+		require.Equal(t, expectedCount, count, "number of histogram series not as expected")
 	}
 
 	for metricsTextName, metricsText := range metricsTexts {
 		for name, tc := range map[string]struct {
 			scrapeClassicHistograms  bool
 			convertClassicHistograms bool
-			expectedLeValues         []string
+			expectedClassicHistCount int
 			expectedNhcbCount        int
 		}{
 			"convert with scrape": {
 				scrapeClassicHistograms:  true,
 				convertClassicHistograms: true,
-				expectedLeValues:         expectedLeValuesCorrect,
+				expectedClassicHistCount: 1,
 				expectedNhcbCount:        1,
 			},
 			"convert without scrape": {
 				scrapeClassicHistograms:  false,
 				convertClassicHistograms: true,
-				expectedLeValues:         expectedLeValuesNone,
+				expectedClassicHistCount: 0,
 				expectedNhcbCount:        1,
 			},
 			"scrape without convert": {
 				scrapeClassicHistograms:  true,
 				convertClassicHistograms: false,
-				expectedLeValues:         expectedLeValuesCorrect,
+				expectedClassicHistCount: 1,
 				expectedNhcbCount:        0,
 			},
 			"neither scrape nor convert": {
 				scrapeClassicHistograms:  false,
 				convertClassicHistograms: false,
-				expectedLeValues:         expectedLeValuesCorrect, // since these are sent without native histograms
+				expectedClassicHistCount: 1, // since these are sent without native histograms
 				expectedNhcbCount:        0,
 			},
 		} {
@@ -3573,7 +3675,29 @@ test_metric_3 1
 				scraped := make(chan bool)
 
 				ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					fmt.Fprint(w, metricsText)
+					if metricsText.contentType != "" {
+						w.Header().Set("Content-Type", `application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited`)
+						for _, text := range metricsText.text {
+							buf := &bytes.Buffer{}
+							// In case of protobuf, we have to create the binary representation.
+							pb := &dto.MetricFamily{}
+							// From text to proto message.
+							require.NoError(t, proto.UnmarshalText(text, pb))
+							// From proto message to binary protobuf.
+							protoBuf, err := proto.Marshal(pb)
+							require.NoError(t, err)
+
+							// Write first length, then binary protobuf.
+							varintBuf := binary.AppendUvarint(nil, uint64(len(protoBuf)))
+							buf.Write(varintBuf)
+							buf.Write(protoBuf)
+							w.Write(buf.Bytes())
+						}
+					} else {
+						for _, text := range metricsText.text {
+							fmt.Fprint(w, text)
+						}
+					}
 					scrapeCount++
 					if scrapeCount > 2 {
 						close(scraped)
@@ -3581,7 +3705,7 @@ test_metric_3 1
 				}))
 				defer ts.Close()
 
-				sp, err := newScrapePool(config, simpleStorage, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
+				sp, err := newScrapePool(config, simpleStorage, 0, nil, nil, &Options{EnableNativeHistogramsIngestion: true}, newTestScrapeMetrics(t))
 				require.NoError(t, err)
 				defer sp.stop()
 
@@ -3606,32 +3730,24 @@ test_metric_3 1
 				require.NoError(t, err)
 				defer q.Close()
 
-				series := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_1"))
-				checkSeries(series, chunkenc.ValFloat, 1)
+				var series storage.SeriesSet
 
-				series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_histogram_1_bucket"))
-				checkValues("le", tc.expectedLeValues, series)
+				for i := 1; i <= 3; i++ {
+					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_metric_%d", i)))
+					checkFloatSeries(series, 1, 1.)
 
-				series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_histogram_1"))
-				checkSeries(series, chunkenc.ValHistogram, tc.expectedNhcbCount)
+					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_histogram_%d_sum", i)))
+					checkFloatSeries(series, tc.expectedClassicHistCount, 10.)
 
-				series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_2"))
-				checkSeries(series, chunkenc.ValFloat, 1)
+					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_histogram_%d_count", i)))
+					checkFloatSeries(series, tc.expectedClassicHistCount, 1.)
 
-				series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_histogram_2_bucket"))
-				checkValues("le", tc.expectedLeValues, series)
+					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_histogram_%d_bucket", i)))
+					checkBucketValues(tc.expectedClassicHistCount, metricsText.contentType, series)
 
-				series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_histogram_2"))
-				checkSeries(series, chunkenc.ValHistogram, tc.expectedNhcbCount)
-
-				series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_3"))
-				checkSeries(series, chunkenc.ValFloat, 1)
-
-				series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_histogram_3_bucket"))
-				checkValues("le", tc.expectedLeValues, series)
-
-				series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_histogram_3"))
-				checkSeries(series, chunkenc.ValHistogram, tc.expectedNhcbCount)
+					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_histogram_%d", i)))
+					checkHistSeries(series, tc.expectedNhcbCount, histogram.CustomBucketsSchema)
+				}
 			})
 		}
 	}
