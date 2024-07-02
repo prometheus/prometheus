@@ -3426,7 +3426,67 @@ metric: <
 >
 `, name, value)
 	}
-	genTestHistProto := func(name string) string {
+	genTestHistProto := func(name string, hasClassic, hasExponential bool) string {
+		var classic string
+		if hasClassic {
+			classic = `
+bucket: <
+	cumulative_count: 0
+	upper_bound: 0.005
+>
+bucket: <
+	cumulative_count: 0
+	upper_bound: 0.01
+>
+bucket: <
+	cumulative_count: 0
+	upper_bound: 0.025
+>
+bucket: <
+	cumulative_count: 0
+	upper_bound: 0.05
+>
+bucket: <
+	cumulative_count: 0
+	upper_bound: 0.1
+>
+bucket: <
+	cumulative_count: 0
+	upper_bound: 0.25
+>
+bucket: <
+	cumulative_count: 0
+	upper_bound: 0.5
+>
+bucket: <
+	cumulative_count: 0
+	upper_bound: 1
+>
+bucket: <
+	cumulative_count: 0
+	upper_bound: 2.5
+>
+bucket: <
+	cumulative_count: 0
+	upper_bound: 5
+>
+bucket: <
+	cumulative_count: 1
+	upper_bound: 10
+>`
+		}
+		var expo string
+		if hasExponential {
+			expo = `
+schema: 3
+zero_threshold: 2.938735877055719e-39
+zero_count: 0
+positive_span: <
+	offset: 2
+	length: 1
+>
+positive_delta: 1`
+		}
 		return fmt.Sprintf(`
 name: "%s"
 help: "This is a histogram with default buckets"
@@ -3443,59 +3503,18 @@ metric: <
 	histogram: <
 		sample_count: 1
 		sample_sum: 10
-		bucket: <
-			cumulative_count: 0
-			upper_bound: 0.005
-		>
-		bucket: <
-			cumulative_count: 0
-			upper_bound: 0.01
-		>
-		bucket: <
-			cumulative_count: 0
-			upper_bound: 0.025
-		>
-		bucket: <
-			cumulative_count: 0
-			upper_bound: 0.05
-		>
-		bucket: <
-			cumulative_count: 0
-			upper_bound: 0.1
-		>
-		bucket: <
-			cumulative_count: 0
-			upper_bound: 0.25
-		>
-		bucket: <
-			cumulative_count: 0
-			upper_bound: 0.5
-		>
-		bucket: <
-			cumulative_count: 0
-			upper_bound: 1
-		>
-		bucket: <
-			cumulative_count: 0
-			upper_bound: 2.5
-		>
-		bucket: <
-			cumulative_count: 0
-			upper_bound: 5
-		>
-		bucket: <
-			cumulative_count: 1
-			upper_bound: 10
-		>
+		%s
+		%s
 	>
 	timestamp_ms: 1234568
 >
-`, name)
+`, name, classic, expo)
 	}
 
 	metricsTexts := map[string]struct {
-		text        []string
-		contentType string
+		text           []string
+		contentType    string
+		hasExponential bool
 	}{
 		"text": {
 			text: []string{
@@ -3520,24 +3539,36 @@ metric: <
 		"protobuf": {
 			text: []string{
 				genTestCounterProto("test_metric_1", 1),
-				genTestHistProto("test_histogram_1"),
+				genTestHistProto("test_histogram_1", true, false),
 				genTestCounterProto("test_metric_2", 1),
-				genTestHistProto("test_histogram_2"),
+				genTestHistProto("test_histogram_2", true, false),
 				genTestCounterProto("test_metric_3", 1),
-				genTestHistProto("test_histogram_3"),
+				genTestHistProto("test_histogram_3", true, false),
 			},
 			contentType: "application/vnd.google.protobuf",
 		},
 		"protobuf, in different order": {
 			text: []string{
-				genTestHistProto("test_histogram_1"),
+				genTestHistProto("test_histogram_1", true, false),
 				genTestCounterProto("test_metric_1", 1),
-				genTestHistProto("test_histogram_2"),
+				genTestHistProto("test_histogram_2", true, false),
 				genTestCounterProto("test_metric_2", 1),
-				genTestHistProto("test_histogram_3"),
+				genTestHistProto("test_histogram_3", true, false),
 				genTestCounterProto("test_metric_3", 1),
 			},
 			contentType: "application/vnd.google.protobuf",
+		},
+		"protobuf, with native exponential histogram": {
+			text: []string{
+				genTestCounterProto("test_metric_1", 1),
+				genTestHistProto("test_histogram_1", true, true),
+				genTestCounterProto("test_metric_2", 1),
+				genTestHistProto("test_histogram_2", true, true),
+				genTestCounterProto("test_metric_3", 1),
+				genTestHistProto("test_histogram_3", true, true),
+			},
+			contentType:    "application/vnd.google.protobuf",
+			hasExponential: true,
 		},
 	}
 
@@ -3746,7 +3777,11 @@ metric: <
 					checkBucketValues(tc.expectedClassicHistCount, metricsText.contentType, series)
 
 					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_histogram_%d", i)))
-					checkHistSeries(series, tc.expectedNhcbCount, histogram.CustomBucketsSchema)
+					if metricsText.hasExponential {
+						checkHistSeries(series, 1, 3)
+					} else {
+						checkHistSeries(series, tc.expectedNhcbCount, histogram.CustomBucketsSchema)
+					}
 				}
 			})
 		}
