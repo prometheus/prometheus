@@ -104,9 +104,30 @@ eval range from 0 to 50m step 5m count(limit_ratio(0.8, http_requests) or limit_
 eval range from 0 to 50m step 5m count(limit_ratio(0.8, http_requests) and limit_ratio(-0.2, http_requests))
 # empty
 
-# Poor man's normality check
-eval instant at 50m abs(avg(limit_ratio(0.5, http_requests)) - avg(limit_ratio(-0.5, http_requests))) < bool stddev(http_requests)
-	{} 1
+# Complement below for [some_ratio, 1.0 - some_ratio], some_ratio derived from time(),
+# using a small prime number to avoid rounded ratio values, and a small set of them.
+eval range from 0 to 50m step 5m count(limit_ratio(time() % 17/17, http_requests) or limit_ratio(1.0 - (time() % 17/17), http_requests))
+        {} 6+0x10
 
+eval range from 0 to 50m step 5m count(limit_ratio(time() % 17/17, http_requests) and limit_ratio(1.0 - (time() % 17/17), http_requests))
+# empty
+
+# Poor man's normality check: ok (loaded samples follow a nice linearity over labels and time)
+# The check giving: 1 (i.e. true)
 eval range from 0 to 50m step 5m abs(avg(limit_ratio(0.5, http_requests)) - avg(limit_ratio(-0.5, http_requests))) <= bool stddev(http_requests)
 	{} 1+0x10
+
+clear
+
+# Poor man's normality check: not-ok (loaded samples from a log-normal distribution)
+load 5m
+	http_requests{job="api-server", instance="0", group="production"}	1.23 1.56
+	http_requests{job="api-server", instance="1", group="production"}	4.56 3.21
+	http_requests{job="api-server", instance="0", group="canary"}		2.78 0.89
+	http_requests{job="api-server", instance="1", group="canary"}		8.91 7.34
+	http_requests{job="api-server", instance="2", group="canary"}		1.45 4.67
+	http_requests{job="api-server", instance="3", group="canary"}		3.67 3.89
+
+# The check giving: 0 (i.e. false)
+eval range from 0 to 5m step 5m abs(avg(limit_ratio(0.5, http_requests)) - avg(limit_ratio(-0.5, http_requests))) <= bool stddev(http_requests)
+	{} 0+0x1
