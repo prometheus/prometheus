@@ -3380,10 +3380,14 @@ func TestConvertClassicHistograms(t *testing.T) {
 		Scheme:                   "http",
 		ScrapeInterval:           model.Duration(100 * time.Millisecond),
 		ScrapeTimeout:            model.Duration(100 * time.Millisecond),
+		ScrapeClassicHistograms:  true,
 		ConvertClassicHistograms: true,
 	}
 
 	metricsText := `
+# HELP test_metric some help text
+# TYPE test_metric counter
+test_metric 1
 # HELP test_histogram This is a histogram with default buckets
 # TYPE test_histogram histogram
 test_histogram_bucket{address="0.0.0.0",port="5001",le="0.005"} 0
@@ -3458,21 +3462,37 @@ test_histogram_count{address="0.0.0.0",port="5001"} 1
 		}
 	}
 
+	// Checks that the expected series is present and runs a basic sanity check of the values.
+	checkSeries := func(series storage.SeriesSet, encType chunkenc.ValueType) {
+		count := 0
+		for series.Next() {
+			i := series.At().Iterator(nil)
+			switch encType {
+			case chunkenc.ValFloat:
+				for i.Next() == encType {
+					_, f := i.At()
+					require.Equal(t, 1., f)
+				}
+			case chunkenc.ValHistogram:
+				for i.Next() == encType {
+					_, h := i.AtHistogram(nil)
+					require.Equal(t, uint64(1), h.Count)
+					require.Equal(t, 10.0, h.Sum)
+				}
+			}
+			count++
+		}
+		require.Equal(t, 1, count, "number of series not as expected")
+	}
+
 	series := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_histogram_bucket"))
 	checkValues("le", expectedLeValues, series)
 
 	series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_histogram"))
-	count := 0
-	for series.Next() {
-		i := series.At().Iterator(nil)
-		for i.Next() == chunkenc.ValHistogram {
-			_, h := i.AtHistogram(nil)
-			require.Equal(t, uint64(1), h.Count)
-			require.Equal(t, 10.0, h.Sum)
-		}
-		count++
-	}
-	require.Equal(t, 1, count, "number of series not as expected")
+	checkSeries(series, chunkenc.ValHistogram)
+
+	series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric"))
+	checkSeries(series, chunkenc.ValFloat)
 }
 
 func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrapeForTimestampedMetrics(t *testing.T) {
