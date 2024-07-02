@@ -376,7 +376,7 @@ func TestStringMatcherFromRegexp(t *testing.T) {
 		{"10\\.0\\.(1|2)\\.+", nil},
 		{"10\\.0\\.(1|2).+", &containsStringMatcher{substrings: []string{"10.0.1", "10.0.2"}, left: nil, right: &anyNonEmptyStringMatcher{matchNL: false}}},
 		{"^.+foo", &literalSuffixStringMatcher{left: &anyNonEmptyStringMatcher{}, suffix: "foo", suffixCaseSensitive: true}},
-		{"foo-.*$", &literalPrefixStringMatcher{prefix: "foo-", prefixCaseSensitive: true, right: anyStringWithoutNewlineMatcher{}}},
+		{"foo-.*$", &literalPrefixSensitiveStringMatcher{prefix: "foo-", right: anyStringWithoutNewlineMatcher{}}},
 		{"(prometheus|api_prom)_api_v1_.+", &containsStringMatcher{substrings: []string{"prometheus_api_v1_", "api_prom_api_v1_"}, left: nil, right: &anyNonEmptyStringMatcher{matchNL: false}}},
 		{"^((.*)(bar|b|buzz)(.+)|foo)$", orStringMatcher([]StringMatcher{&containsStringMatcher{substrings: []string{"bar", "b", "buzz"}, left: anyStringWithoutNewlineMatcher{}, right: &anyNonEmptyStringMatcher{matchNL: false}}, &equalStringMatcher{s: "foo", caseSensitive: true}})},
 		{"((fo(bar))|.+foo)", orStringMatcher([]StringMatcher{orStringMatcher([]StringMatcher{&equalStringMatcher{s: "fobar", caseSensitive: true}}), &literalSuffixStringMatcher{suffix: "foo", suffixCaseSensitive: true, left: &anyNonEmptyStringMatcher{matchNL: false}}})},
@@ -391,15 +391,15 @@ func TestStringMatcherFromRegexp(t *testing.T) {
 		{".*foo.*bar.*", nil},
 		{`\d*`, nil},
 		{".", nil},
-		{"/|/bar.*", &literalPrefixStringMatcher{prefix: "/", prefixCaseSensitive: true, right: orStringMatcher{emptyStringMatcher{}, &literalPrefixStringMatcher{prefix: "bar", prefixCaseSensitive: true, right: anyStringWithoutNewlineMatcher{}}}}},
+		{"/|/bar.*", &literalPrefixSensitiveStringMatcher{prefix: "/", right: orStringMatcher{emptyStringMatcher{}, &literalPrefixSensitiveStringMatcher{prefix: "bar", right: anyStringWithoutNewlineMatcher{}}}}},
 		// This one is not supported because  `stringMatcherFromRegexp` is not reentrant for syntax.OpConcat.
 		// It would make the code too complex to handle it.
 		{"(.+)/(foo.*|bar$)", nil},
 		// Case sensitive alternate with same literal prefix and .* suffix.
-		{"(xyz-016a-ixb-dp.*|xyz-016a-ixb-op.*)", &literalPrefixStringMatcher{prefix: "xyz-016a-ixb-", prefixCaseSensitive: true, right: orStringMatcher{&literalPrefixStringMatcher{prefix: "dp", prefixCaseSensitive: true, right: anyStringWithoutNewlineMatcher{}}, &literalPrefixStringMatcher{prefix: "op", prefixCaseSensitive: true, right: anyStringWithoutNewlineMatcher{}}}}},
+		{"(xyz-016a-ixb-dp.*|xyz-016a-ixb-op.*)", &literalPrefixSensitiveStringMatcher{prefix: "xyz-016a-ixb-", right: orStringMatcher{&literalPrefixSensitiveStringMatcher{prefix: "dp", right: anyStringWithoutNewlineMatcher{}}, &literalPrefixSensitiveStringMatcher{prefix: "op", right: anyStringWithoutNewlineMatcher{}}}}},
 		// Case insensitive alternate with same literal prefix and .* suffix.
-		{"(?i:(xyz-016a-ixb-dp.*|xyz-016a-ixb-op.*))", &literalPrefixStringMatcher{prefix: "XYZ-016A-IXB-", prefixCaseSensitive: false, right: orStringMatcher{&literalPrefixStringMatcher{prefix: "DP", prefixCaseSensitive: false, right: anyStringWithoutNewlineMatcher{}}, &literalPrefixStringMatcher{prefix: "OP", prefixCaseSensitive: false, right: anyStringWithoutNewlineMatcher{}}}}},
-		{"(?i)(xyz-016a-ixb-dp.*|xyz-016a-ixb-op.*)", &literalPrefixStringMatcher{prefix: "XYZ-016A-IXB-", prefixCaseSensitive: false, right: orStringMatcher{&literalPrefixStringMatcher{prefix: "DP", prefixCaseSensitive: false, right: anyStringWithoutNewlineMatcher{}}, &literalPrefixStringMatcher{prefix: "OP", prefixCaseSensitive: false, right: anyStringWithoutNewlineMatcher{}}}}},
+		{"(?i:(xyz-016a-ixb-dp.*|xyz-016a-ixb-op.*))", &literalPrefixInsensitiveStringMatcher{prefix: "XYZ-016A-IXB-", right: orStringMatcher{&literalPrefixInsensitiveStringMatcher{prefix: "DP", right: anyStringWithoutNewlineMatcher{}}, &literalPrefixInsensitiveStringMatcher{prefix: "OP", right: anyStringWithoutNewlineMatcher{}}}}},
+		{"(?i)(xyz-016a-ixb-dp.*|xyz-016a-ixb-op.*)", &literalPrefixInsensitiveStringMatcher{prefix: "XYZ-016A-IXB-", right: orStringMatcher{&literalPrefixInsensitiveStringMatcher{prefix: "DP", right: anyStringWithoutNewlineMatcher{}}, &literalPrefixInsensitiveStringMatcher{prefix: "OP", right: anyStringWithoutNewlineMatcher{}}}}},
 		// Concatenated variable length selectors are not supported.
 		{"foo.*.*", nil},
 		{"foo.+.+", nil},
@@ -408,9 +408,9 @@ func TestStringMatcherFromRegexp(t *testing.T) {
 		{"aaa.?.?", nil},
 		{"aaa.?.*", nil},
 		// Regexps with ".?".
-		{"ext.?|xfs", orStringMatcher{&literalPrefixStringMatcher{prefix: "ext", prefixCaseSensitive: true, right: &zeroOrOneCharacterStringMatcher{matchNL: false}}, &equalStringMatcher{s: "xfs", caseSensitive: true}}},
-		{"(?s)(ext.?|xfs)", orStringMatcher{&literalPrefixStringMatcher{prefix: "ext", prefixCaseSensitive: true, right: &zeroOrOneCharacterStringMatcher{matchNL: true}}, &equalStringMatcher{s: "xfs", caseSensitive: true}}},
-		{"foo.?", &literalPrefixStringMatcher{prefix: "foo", prefixCaseSensitive: true, right: &zeroOrOneCharacterStringMatcher{matchNL: false}}},
+		{"ext.?|xfs", orStringMatcher{&literalPrefixSensitiveStringMatcher{prefix: "ext", right: &zeroOrOneCharacterStringMatcher{matchNL: false}}, &equalStringMatcher{s: "xfs", caseSensitive: true}}},
+		{"(?s)(ext.?|xfs)", orStringMatcher{&literalPrefixSensitiveStringMatcher{prefix: "ext", right: &zeroOrOneCharacterStringMatcher{matchNL: true}}, &equalStringMatcher{s: "xfs", caseSensitive: true}}},
+		{"foo.?", &literalPrefixSensitiveStringMatcher{prefix: "foo", right: &zeroOrOneCharacterStringMatcher{matchNL: false}}},
 		{"f.?o", nil},
 	} {
 		c := c
@@ -480,10 +480,13 @@ func TestStringMatcherFromRegexp_LiteralPrefix(t *testing.T) {
 
 			re := regexp.MustCompile("^" + c.pattern + "$")
 
-			// Pre-condition check: ensure it contains literalPrefixStringMatcher.
+			// Pre-condition check: ensure it contains literalPrefixSensitiveStringMatcher or literalPrefixInsensitiveStringMatcher.
 			numPrefixMatchers := 0
 			visitStringMatcher(matcher, func(matcher StringMatcher) {
-				if _, ok := matcher.(*literalPrefixStringMatcher); ok {
+				if _, ok := matcher.(*literalPrefixSensitiveStringMatcher); ok {
+					numPrefixMatchers++
+				}
+				if _, ok := matcher.(*literalPrefixInsensitiveStringMatcher); ok {
 					numPrefixMatchers++
 				}
 			})
@@ -1074,25 +1077,27 @@ func BenchmarkZeroOrOneCharacterStringMatcher(b *testing.B) {
 	}
 }
 
-func TestLiteralPrefixStringMatcher(t *testing.T) {
-	m := &literalPrefixStringMatcher{prefix: "mar", prefixCaseSensitive: true, right: &emptyStringMatcher{}}
+func TestLiteralPrefixSensitiveStringMatcher(t *testing.T) {
+	m := &literalPrefixSensitiveStringMatcher{prefix: "mar", right: &emptyStringMatcher{}}
 	require.True(t, m.Matches("mar"))
 	require.False(t, m.Matches("marco"))
 	require.False(t, m.Matches("ma"))
 	require.False(t, m.Matches("mAr"))
 
-	m = &literalPrefixStringMatcher{prefix: "mar", prefixCaseSensitive: false, right: &emptyStringMatcher{}}
-	require.True(t, m.Matches("mar"))
-	require.False(t, m.Matches("marco"))
-	require.False(t, m.Matches("ma"))
-	require.True(t, m.Matches("mAr"))
-
-	m = &literalPrefixStringMatcher{prefix: "mar", prefixCaseSensitive: true, right: &equalStringMatcher{s: "co", caseSensitive: false}}
+	m = &literalPrefixSensitiveStringMatcher{prefix: "mar", right: &equalStringMatcher{s: "co", caseSensitive: false}}
 	require.True(t, m.Matches("marco"))
 	require.True(t, m.Matches("marCO"))
 	require.False(t, m.Matches("MARco"))
 	require.False(t, m.Matches("mar"))
 	require.False(t, m.Matches("marcopracucci"))
+}
+
+func TestLiteralPrefixInsensitiveStringMatcher(t *testing.T) {
+	m := &literalPrefixInsensitiveStringMatcher{prefix: "mar", right: &emptyStringMatcher{}}
+	require.True(t, m.Matches("mar"))
+	require.False(t, m.Matches("marco"))
+	require.False(t, m.Matches("ma"))
+	require.True(t, m.Matches("mAr"))
 }
 
 func TestLiteralSuffixStringMatcher(t *testing.T) {
@@ -1184,7 +1189,10 @@ func visitStringMatcher(matcher StringMatcher, callback func(matcher StringMatch
 			visitStringMatcher(casted.right, callback)
 		}
 
-	case *literalPrefixStringMatcher:
+	case *literalPrefixSensitiveStringMatcher:
+		visitStringMatcher(casted.right, callback)
+
+	case *literalPrefixInsensitiveStringMatcher:
 		visitStringMatcher(casted.right, callback)
 
 	case *literalSuffixStringMatcher:

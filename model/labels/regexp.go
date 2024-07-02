@@ -549,11 +549,7 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 
 		// Right matcher with 1 fixed set match.
 		case left == nil && len(matches) == 1:
-			return &literalPrefixStringMatcher{
-				prefix:              matches[0],
-				prefixCaseSensitive: matchesCaseSensitive,
-				right:               right,
-			}
+			return newLiteralPrefixStringMatcher(matches[0], matchesCaseSensitive, right)
 
 		// Left matcher with 1 fixed set match.
 		case right == nil && len(matches) == 1:
@@ -631,21 +627,47 @@ func (m *containsStringMatcher) Matches(s string) bool {
 	return false
 }
 
-// literalPrefixStringMatcher matches a string with the given literal prefix and right side matcher.
-type literalPrefixStringMatcher struct {
-	prefix              string
-	prefixCaseSensitive bool
+func newLiteralPrefixStringMatcher(prefix string, prefixCaseSensitive bool, right StringMatcher) StringMatcher {
+	if prefixCaseSensitive {
+		return &literalPrefixSensitiveStringMatcher{
+			prefix: prefix,
+			right:  right,
+		}
+	}
+
+	return &literalPrefixInsensitiveStringMatcher{
+		prefix: prefix,
+		right:  right,
+	}
+}
+
+// literalPrefixSensitiveStringMatcher matches a string with the given literal case-sensitive prefix and right side matcher.
+type literalPrefixSensitiveStringMatcher struct {
+	prefix string
 
 	// The matcher that must match the right side. Can be nil.
 	right StringMatcher
 }
 
-func (m *literalPrefixStringMatcher) Matches(s string) bool {
-	// Ensure the prefix matches.
-	if m.prefixCaseSensitive && !strings.HasPrefix(s, m.prefix) {
+func (m *literalPrefixSensitiveStringMatcher) Matches(s string) bool {
+	if !strings.HasPrefix(s, m.prefix) {
 		return false
 	}
-	if !m.prefixCaseSensitive && !hasPrefixCaseInsensitive(s, m.prefix) {
+
+	// Ensure the right side matches.
+	return m.right.Matches(s[len(m.prefix):])
+}
+
+// literalPrefixInsensitiveStringMatcher matches a string with the given literal case-insensitive prefix and right side matcher.
+type literalPrefixInsensitiveStringMatcher struct {
+	prefix string
+
+	// The matcher that must match the right side. Can be nil.
+	right StringMatcher
+}
+
+func (m *literalPrefixInsensitiveStringMatcher) Matches(s string) bool {
+	if !hasPrefixCaseInsensitive(s, m.prefix) {
 		return false
 	}
 
