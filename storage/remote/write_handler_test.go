@@ -267,24 +267,22 @@ func TestRemoteWriteHandler_V1Message(t *testing.T) {
 	j := 0
 	k := 0
 	for _, ts := range writeRequestFixture.Timeseries {
-		labels := LabelProtosToLabels(&b, ts.Labels)
+		labels := ts.ToLabels(&b, nil)
 		for _, s := range ts.Samples {
 			requireEqual(t, mockSample{labels, s.Timestamp, s.Value}, appendable.samples[i])
 			i++
 		}
-
 		for _, e := range ts.Exemplars {
-			exemplarLabels := LabelProtosToLabels(&b, e.Labels)
+			exemplarLabels := e.ToExemplar(&b, nil).Labels
 			requireEqual(t, mockExemplar{labels, exemplarLabels, e.Timestamp, e.Value}, appendable.exemplars[j])
 			j++
 		}
-
 		for _, hp := range ts.Histograms {
 			if hp.IsFloatHistogram() {
-				fh := FloatHistogramProtoToFloatHistogram(hp)
+				fh := hp.ToFloatHistogram()
 				requireEqual(t, mockHistogram{labels, hp.Timestamp, nil, fh}, appendable.histograms[k])
 			} else {
-				h := HistogramProtoToHistogram(hp)
+				h := hp.ToIntHistogram()
 				requireEqual(t, mockHistogram{labels, hp.Timestamp, h, nil}, appendable.histograms[k])
 			}
 
@@ -313,33 +311,29 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 	resp := recorder.Result()
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 
+	b := labels.NewScratchBuilder(0)
 	i := 0
 	j := 0
 	k := 0
-	// the reduced write request is equivalent to the write request fixture.
-	// we can use it for
 	for _, ts := range writeV2RequestFixture.Timeseries {
-		ls := writev2.DesymbolizeLabels(ts.LabelsRefs, writeV2RequestFixture.Symbols)
+		ls := ts.ToLabels(&b, writeV2RequestFixture.Symbols)
 		for _, s := range ts.Samples {
-			require.Equal(t, mockSample{ls, s.Timestamp, s.Value}, appendable.samples[i])
+			requireEqual(t, mockSample{ls, s.Timestamp, s.Value}, appendable.samples[i])
 			i++
 		}
-
 		for _, e := range ts.Exemplars {
-			exemplarLabels := writev2.DesymbolizeLabels(e.LabelsRefs, writeV2RequestFixture.Symbols)
-			require.Equal(t, mockExemplar{ls, exemplarLabels, e.Timestamp, e.Value}, appendable.exemplars[j])
+			exemplarLabels := e.ToExemplar(&b, writeV2RequestFixture.Symbols).Labels
+			requireEqual(t, mockExemplar{ls, exemplarLabels, e.Timestamp, e.Value}, appendable.exemplars[j])
 			j++
 		}
-
 		for _, hp := range ts.Histograms {
 			if hp.IsFloatHistogram() {
-				fh := FloatHistogramProtoV2ToFloatHistogram(hp)
-				require.Equal(t, mockHistogram{ls, hp.Timestamp, nil, fh}, appendable.histograms[k])
+				fh := hp.ToFloatHistogram()
+				requireEqual(t, mockHistogram{ls, hp.Timestamp, nil, fh}, appendable.histograms[k])
 			} else {
-				h := HistogramProtoV2ToHistogram(hp)
-				require.Equal(t, mockHistogram{ls, hp.Timestamp, h, nil}, appendable.histograms[k])
+				h := hp.ToIntHistogram()
+				requireEqual(t, mockHistogram{ls, hp.Timestamp, h, nil}, appendable.histograms[k])
 			}
-
 			k++
 		}
 
@@ -348,7 +342,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 }
 
 func TestOutOfOrderSample_V1Message(t *testing.T) {
-	tests := []struct {
+	for _, tc := range []struct {
 		Name      string
 		Timestamp int64
 	}{
@@ -360,9 +354,7 @@ func TestOutOfOrderSample_V1Message(t *testing.T) {
 			Name:      "future",
 			Timestamp: math.MaxInt64,
 		},
-	}
-
-	for _, tc := range tests {
+	} {
 		t.Run(tc.Name, func(t *testing.T) {
 			payload, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
 				Labels:  []prompb.Label{{Name: "__name__", Value: "test_metric"}},
@@ -386,7 +378,7 @@ func TestOutOfOrderSample_V1Message(t *testing.T) {
 }
 
 func TestOutOfOrderSample_V2Message(t *testing.T) {
-	tests := []struct {
+	for _, tc := range []struct {
 		Name      string
 		Timestamp int64
 	}{
@@ -398,9 +390,7 @@ func TestOutOfOrderSample_V2Message(t *testing.T) {
 			Name:      "future",
 			Timestamp: math.MaxInt64,
 		},
-	}
-
-	for _, tc := range tests {
+	} {
 		t.Run(tc.Name, func(t *testing.T) {
 			payload, _, _, err := buildV2WriteRequest(nil, []writev2.TimeSeries{{
 				LabelsRefs: []uint32{0, 1},
@@ -513,7 +503,7 @@ func TestOutOfOrderExemplar_V2Message(t *testing.T) {
 }
 
 func TestOutOfOrderHistogram_V1Message(t *testing.T) {
-	tests := []struct {
+	for _, tc := range []struct {
 		Name      string
 		Timestamp int64
 	}{
@@ -525,13 +515,11 @@ func TestOutOfOrderHistogram_V1Message(t *testing.T) {
 			Name:      "future",
 			Timestamp: math.MaxInt64,
 		},
-	}
-
-	for _, tc := range tests {
+	} {
 		t.Run(tc.Name, func(t *testing.T) {
 			payload, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
 				Labels:     []prompb.Label{{Name: "__name__", Value: "test_metric"}},
-				Histograms: []prompb.Histogram{HistogramToHistogramProto(tc.Timestamp, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat(nil))},
+				Histograms: []prompb.Histogram{prompb.FromIntHistogram(tc.Timestamp, &testHistogram), prompb.FromFloatHistogram(1, testHistogram.ToFloat(nil))},
 			}}, nil, nil, nil, nil, "snappy")
 			require.NoError(t, err)
 
@@ -551,27 +539,43 @@ func TestOutOfOrderHistogram_V1Message(t *testing.T) {
 }
 
 func TestOutOfOrderHistogram_V2Message(t *testing.T) {
-	payload, _, _, err := buildV2WriteRequest(nil, []writev2.TimeSeries{{
-		LabelsRefs: []uint32{0, 1},
-		Histograms: []writev2.Histogram{HistogramToV2HistogramProto(0, &testHistogram), FloatHistogramToV2HistogramProto(1, testHistogram.ToFloat(nil))},
-	}}, []string{"__name__", "metric1"}, nil, nil, nil, "snappy") // TODO(bwplotka): No empty string!
-	require.NoError(t, err)
+	for _, tc := range []struct {
+		Name      string
+		Timestamp int64
+	}{
+		{
+			Name:      "historic",
+			Timestamp: 0,
+		},
+		{
+			Name:      "future",
+			Timestamp: math.MaxInt64,
+		},
+	} {
+		t.Run(tc.Name, func(t *testing.T) {
+			payload, _, _, err := buildV2WriteRequest(nil, []writev2.TimeSeries{{
+				LabelsRefs: []uint32{0, 1},
+				Histograms: []writev2.Histogram{writev2.FromIntHistogram(0, &testHistogram), writev2.FromFloatHistogram(1, testHistogram.ToFloat(nil))},
+			}}, []string{"__name__", "metric1"}, nil, nil, nil, "snappy")
+			require.NoError(t, err)
 
-	req, err := http.NewRequest("", "", bytes.NewReader(payload))
-	require.NoError(t, err)
+			req, err := http.NewRequest("", "", bytes.NewReader(payload))
+			require.NoError(t, err)
 
-	req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV2])
-	req.Header.Set("Content-Encoding", string(SnappyBlockCompression))
-	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
+			req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV2])
+			req.Header.Set("Content-Encoding", string(SnappyBlockCompression))
+			req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
 
-	appendable := &mockAppendable{latestHistogram: 100}
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2})
+			appendable := &mockAppendable{latestHistogram: 100}
+			handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2})
 
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, req)
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
 
-	resp := recorder.Result()
-	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+			resp := recorder.Result()
+			require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+		})
+	}
 }
 
 func BenchmarkRemoteWriteHandler(b *testing.B) {
@@ -584,7 +588,7 @@ func BenchmarkRemoteWriteHandler(b *testing.B) {
 				{Name: "__name__", Value: "test_metric"},
 				{Name: "test_label_name_" + num, Value: labelValue + num},
 			},
-			Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram)},
+			Histograms: []prompb.Histogram{prompb.FromIntHistogram(0, &testHistogram)},
 		}}, nil, nil, nil, nil, "snappy")
 		require.NoError(b, err)
 		req, err := http.NewRequest("", "", bytes.NewReader(buf))

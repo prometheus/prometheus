@@ -22,7 +22,6 @@ import (
 	"net/http"
 	"slices"
 	"sort"
-	"strings"
 	"sync"
 
 	"github.com/gogo/protobuf/proto"
@@ -30,10 +29,8 @@ import (
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
-	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/storage"
@@ -155,10 +152,10 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 				})
 			case chunkenc.ValHistogram:
 				ts, h := iter.AtHistogram(nil)
-				histograms = append(histograms, HistogramToHistogramProto(ts, h))
+				histograms = append(histograms, prompb.FromIntHistogram(ts, h))
 			case chunkenc.ValFloatHistogram:
 				ts, fh := iter.AtFloatHistogram(nil)
-				histograms = append(histograms, FloatHistogramToHistogramProto(ts, fh))
+				histograms = append(histograms, prompb.FromFloatHistogram(ts, fh))
 			default:
 				return nil, ss.Warnings(), fmt.Errorf("unrecognized value type: %s", valType)
 			}
@@ -168,7 +165,7 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 		}
 
 		resp.Timeseries = append(resp.Timeseries, &prompb.TimeSeries{
-			Labels:     LabelsToLabelsProto(series.Labels(), nil),
+			Labels:     prompb.FromLabels(series.Labels(), nil),
 			Samples:    samples,
 			Histograms: histograms,
 		})
@@ -184,7 +181,7 @@ func FromQueryResult(sortSeries bool, res *prompb.QueryResult) storage.SeriesSet
 		if err := validateLabelsAndMetricName(ts.Labels); err != nil {
 			return errSeriesSet{err: err}
 		}
-		lbls := LabelProtosToLabels(&b, ts.Labels)
+		lbls := ts.ToLabels(&b, nil)
 		series = append(series, &concreteSeries{labels: lbls, floats: ts.Samples, histograms: ts.Histograms})
 	}
 
@@ -237,7 +234,7 @@ func StreamChunkedReadResponses(
 	for ss.Next() {
 		series := ss.At()
 		iter = series.Iterator(iter)
-		lbls = MergeLabels(LabelsToLabelsProto(series.Labels(), lbls), sortedExternalLabels)
+		lbls = MergeLabels(prompb.FromLabels(series.Labels(), lbls), sortedExternalLabels)
 
 		maxDataLength := maxBytesInFrame
 		for _, lbl := range lbls {
@@ -483,21 +480,16 @@ func (c *concreteSeriesIterator) AtHistogram(*histogram.Histogram) (int64, *hist
 		panic("iterator is not on an integer histogram sample")
 	}
 	h := c.series.histograms[c.histogramsCur]
-	return h.Timestamp, HistogramProtoToHistogram(h)
+	return h.Timestamp, h.ToIntHistogram()
 }
 
 // AtFloatHistogram implements chunkenc.Iterator.
 func (c *concreteSeriesIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
-	switch c.curValType {
-	case chunkenc.ValHistogram:
+	if c.curValType == chunkenc.ValHistogram || c.curValType == chunkenc.ValFloatHistogram {
 		fh := c.series.histograms[c.histogramsCur]
-		return fh.Timestamp, HistogramProtoToFloatHistogram(fh)
-	case chunkenc.ValFloatHistogram:
-		fh := c.series.histograms[c.histogramsCur]
-		return fh.Timestamp, FloatHistogramProtoToFloatHistogram(fh)
-	default:
-		panic("iterator is not on a histogram sample")
+		return fh.Timestamp, fh.ToFloatHistogram() // integer will be auto-converted.
 	}
+	panic("iterator is not on a histogram sample")
 }
 
 // AtT implements chunkenc.Iterator.
@@ -620,292 +612,6 @@ func FromLabelMatchers(matchers []*prompb.LabelMatcher) ([]*labels.Matcher, erro
 	return result, nil
 }
 
-func exemplarProtoToExemplar(b *labels.ScratchBuilder, ep prompb.Exemplar) exemplar.Exemplar {
-	timestamp := ep.Timestamp
-
-	return exemplar.Exemplar{
-		Labels: LabelProtosToLabels(b, ep.Labels),
-		Value:  ep.Value,
-		Ts:     timestamp,
-		HasTs:  timestamp != 0,
-	}
-}
-
-func exemplarProtoV2ToExemplar(ep writev2.Exemplar, symbols []string) exemplar.Exemplar {
-	timestamp := ep.Timestamp
-
-	return exemplar.Exemplar{
-		Labels: writev2.DesymbolizeLabels(ep.LabelsRefs, symbols),
-		Value:  ep.Value,
-		Ts:     timestamp,
-		HasTs:  timestamp != 0,
-	}
-}
-
-func metadataProtoV2ToMetadata(mp writev2.Metadata, symbols []string) metadata.Metadata {
-	return metadata.Metadata{
-		Type: metricTypeFromProtoV2Equivalent(mp.Type),
-		Unit: symbols[mp.UnitRef],
-		Help: symbols[mp.HelpRef],
-	}
-}
-
-// HistogramProtoToHistogram extracts a (normal integer) Histogram from the
-// provided proto message. The caller has to make sure that the proto message
-// represents an integer histogram and not a float histogram, or it panics.
-func HistogramProtoToHistogram(hp prompb.Histogram) *histogram.Histogram {
-	if hp.IsFloatHistogram() {
-		panic("HistogramProtoToHistogram called with a float histogram")
-	}
-	return &histogram.Histogram{
-		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
-		Schema:           hp.Schema,
-		ZeroThreshold:    hp.ZeroThreshold,
-		ZeroCount:        hp.GetZeroCountInt(),
-		Count:            hp.GetCountInt(),
-		Sum:              hp.Sum,
-		PositiveSpans:    spansProtoToSpans(hp.GetPositiveSpans()),
-		PositiveBuckets:  hp.GetPositiveDeltas(),
-		NegativeSpans:    spansProtoToSpans(hp.GetNegativeSpans()),
-		NegativeBuckets:  hp.GetNegativeDeltas(),
-	}
-}
-
-// HistogramProtoV2ToHistogram extracts a (normal integer) Histogram from the
-// provided proto message. The caller has to make sure that the proto message
-// represents an integer histogram and not a float histogram, or it panics.
-func HistogramProtoV2ToHistogram(hp writev2.Histogram) *histogram.Histogram {
-	if hp.IsFloatHistogram() {
-		panic("HistogramProtoToHistogram called with a float histogram")
-	}
-	return &histogram.Histogram{
-		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
-		Schema:           hp.Schema,
-		ZeroThreshold:    hp.ZeroThreshold,
-		ZeroCount:        hp.GetZeroCountInt(),
-		Count:            hp.GetCountInt(),
-		Sum:              hp.Sum,
-		PositiveSpans:    spansProtoV2ToSpans(hp.GetPositiveSpans()),
-		PositiveBuckets:  hp.GetPositiveDeltas(),
-		NegativeSpans:    spansProtoV2ToSpans(hp.GetNegativeSpans()),
-		NegativeBuckets:  hp.GetNegativeDeltas(),
-	}
-}
-
-// FloatHistogramProtoToFloatHistogram extracts a float Histogram from the
-// provided proto message to a Float Histogram. The caller has to make sure that
-// the proto message represents a float histogram and not an integer histogram,
-// or it panics.
-func FloatHistogramProtoToFloatHistogram(hp prompb.Histogram) *histogram.FloatHistogram {
-	if !hp.IsFloatHistogram() {
-		panic("FloatHistogramProtoToFloatHistogram called with an integer histogram")
-	}
-	return &histogram.FloatHistogram{
-		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
-		Schema:           hp.Schema,
-		ZeroThreshold:    hp.ZeroThreshold,
-		ZeroCount:        hp.GetZeroCountFloat(),
-		Count:            hp.GetCountFloat(),
-		Sum:              hp.Sum,
-		PositiveSpans:    spansProtoToSpans(hp.GetPositiveSpans()),
-		PositiveBuckets:  hp.GetPositiveCounts(),
-		NegativeSpans:    spansProtoToSpans(hp.GetNegativeSpans()),
-		NegativeBuckets:  hp.GetNegativeCounts(),
-	}
-}
-
-// FloatHistogramProtoV2ToFloatHistogram extracts a float Histogram from the
-// provided proto message to a Float Histogram. The caller has to make sure that
-// the proto message represents a float histogram and not an integer histogram,
-// or it panics.
-func FloatHistogramProtoV2ToFloatHistogram(hp writev2.Histogram) *histogram.FloatHistogram {
-	if !hp.IsFloatHistogram() {
-		panic("FloatHistogramProtoToFloatHistogram called with an integer histogram")
-	}
-	return &histogram.FloatHistogram{
-		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
-		Schema:           hp.Schema,
-		ZeroThreshold:    hp.ZeroThreshold,
-		ZeroCount:        hp.GetZeroCountFloat(),
-		Count:            hp.GetCountFloat(),
-		Sum:              hp.Sum,
-		PositiveSpans:    spansProtoV2ToSpans(hp.GetPositiveSpans()),
-		PositiveBuckets:  hp.GetPositiveCounts(),
-		NegativeSpans:    spansProtoV2ToSpans(hp.GetNegativeSpans()),
-		NegativeBuckets:  hp.GetNegativeCounts(),
-	}
-}
-
-// HistogramProtoToFloatHistogram extracts and converts a (normal integer) histogram from the provided proto message
-// to a float histogram. The caller has to make sure that the proto message represents an integer histogram and not a
-// float histogram, or it panics.
-func HistogramProtoToFloatHistogram(hp prompb.Histogram) *histogram.FloatHistogram {
-	if hp.IsFloatHistogram() {
-		panic("HistogramProtoToFloatHistogram called with a float histogram")
-	}
-	return &histogram.FloatHistogram{
-		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
-		Schema:           hp.Schema,
-		ZeroThreshold:    hp.ZeroThreshold,
-		ZeroCount:        float64(hp.GetZeroCountInt()),
-		Count:            float64(hp.GetCountInt()),
-		Sum:              hp.Sum,
-		PositiveSpans:    spansProtoToSpans(hp.GetPositiveSpans()),
-		PositiveBuckets:  deltasToCounts(hp.GetPositiveDeltas()),
-		NegativeSpans:    spansProtoToSpans(hp.GetNegativeSpans()),
-		NegativeBuckets:  deltasToCounts(hp.GetNegativeDeltas()),
-	}
-}
-
-func FloatV2HistogramProtoToFloatHistogram(hp writev2.Histogram) *histogram.FloatHistogram {
-	if !hp.IsFloatHistogram() {
-		panic("FloatHistogramProtoToFloatHistogram called with an integer histogram")
-	}
-	return &histogram.FloatHistogram{
-		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
-		Schema:           hp.Schema,
-		ZeroThreshold:    hp.ZeroThreshold,
-		ZeroCount:        hp.GetZeroCountFloat(),
-		Count:            hp.GetCountFloat(),
-		Sum:              hp.Sum,
-		PositiveSpans:    spansProtoV2ToSpans(hp.GetPositiveSpans()),
-		PositiveBuckets:  hp.GetPositiveCounts(),
-		NegativeSpans:    spansProtoV2ToSpans(hp.GetNegativeSpans()),
-		NegativeBuckets:  hp.GetNegativeCounts(),
-	}
-}
-
-// V2HistogramProtoToHistogram extracts a (normal integer) Histogram from the
-// provided proto message. The caller has to make sure that the proto message
-// represents an integer histogram and not a float histogram, or it panics.
-func V2HistogramProtoToHistogram(hp writev2.Histogram) *histogram.Histogram {
-	if hp.IsFloatHistogram() {
-		panic("HistogramProtoToHistogram called with a float histogram")
-	}
-	return &histogram.Histogram{
-		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
-		Schema:           hp.Schema,
-		ZeroThreshold:    hp.ZeroThreshold,
-		ZeroCount:        hp.GetZeroCountInt(),
-		Count:            hp.GetCountInt(),
-		Sum:              hp.Sum,
-		PositiveSpans:    spansProtoV2ToSpans(hp.GetPositiveSpans()),
-		PositiveBuckets:  hp.GetPositiveDeltas(),
-		NegativeSpans:    spansProtoV2ToSpans(hp.GetNegativeSpans()),
-		NegativeBuckets:  hp.GetNegativeDeltas(),
-	}
-}
-
-func spansProtoToSpans(s []prompb.BucketSpan) []histogram.Span {
-	spans := make([]histogram.Span, len(s))
-	for i := 0; i < len(s); i++ {
-		spans[i] = histogram.Span{Offset: s[i].Offset, Length: s[i].Length}
-	}
-
-	return spans
-}
-
-func spansProtoV2ToSpans(s []writev2.BucketSpan) []histogram.Span {
-	spans := make([]histogram.Span, len(s))
-	for i := 0; i < len(s); i++ {
-		spans[i] = histogram.Span{Offset: s[i].Offset, Length: s[i].Length}
-	}
-
-	return spans
-}
-
-func deltasToCounts(deltas []int64) []float64 {
-	counts := make([]float64, len(deltas))
-	var cur float64
-	for i, d := range deltas {
-		cur += float64(d)
-		counts[i] = cur
-	}
-	return counts
-}
-
-func HistogramToHistogramProto(timestamp int64, h *histogram.Histogram) prompb.Histogram {
-	return prompb.Histogram{
-		Count:          &prompb.Histogram_CountInt{CountInt: h.Count},
-		Sum:            h.Sum,
-		Schema:         h.Schema,
-		ZeroThreshold:  h.ZeroThreshold,
-		ZeroCount:      &prompb.Histogram_ZeroCountInt{ZeroCountInt: h.ZeroCount},
-		NegativeSpans:  spansToSpansProto(h.NegativeSpans),
-		NegativeDeltas: h.NegativeBuckets,
-		PositiveSpans:  spansToSpansProto(h.PositiveSpans),
-		PositiveDeltas: h.PositiveBuckets,
-		ResetHint:      prompb.Histogram_ResetHint(h.CounterResetHint),
-		Timestamp:      timestamp,
-	}
-}
-
-func HistogramToV2HistogramProto(timestamp int64, h *histogram.Histogram) writev2.Histogram {
-	return writev2.Histogram{
-		Count:          &writev2.Histogram_CountInt{CountInt: h.Count},
-		Sum:            h.Sum,
-		Schema:         h.Schema,
-		ZeroThreshold:  h.ZeroThreshold,
-		ZeroCount:      &writev2.Histogram_ZeroCountInt{ZeroCountInt: h.ZeroCount},
-		NegativeSpans:  spansToV2SpansProto(h.NegativeSpans),
-		NegativeDeltas: h.NegativeBuckets,
-		PositiveSpans:  spansToV2SpansProto(h.PositiveSpans),
-		PositiveDeltas: h.PositiveBuckets,
-		ResetHint:      writev2.Histogram_ResetHint(h.CounterResetHint),
-		Timestamp:      timestamp,
-	}
-}
-
-func FloatHistogramToHistogramProto(timestamp int64, fh *histogram.FloatHistogram) prompb.Histogram {
-	return prompb.Histogram{
-		Count:          &prompb.Histogram_CountFloat{CountFloat: fh.Count},
-		Sum:            fh.Sum,
-		Schema:         fh.Schema,
-		ZeroThreshold:  fh.ZeroThreshold,
-		ZeroCount:      &prompb.Histogram_ZeroCountFloat{ZeroCountFloat: fh.ZeroCount},
-		NegativeSpans:  spansToSpansProto(fh.NegativeSpans),
-		NegativeCounts: fh.NegativeBuckets,
-		PositiveSpans:  spansToSpansProto(fh.PositiveSpans),
-		PositiveCounts: fh.PositiveBuckets,
-		ResetHint:      prompb.Histogram_ResetHint(fh.CounterResetHint),
-		Timestamp:      timestamp,
-	}
-}
-
-func FloatHistogramToV2HistogramProto(timestamp int64, fh *histogram.FloatHistogram) writev2.Histogram {
-	return writev2.Histogram{
-		Count:          &writev2.Histogram_CountFloat{CountFloat: fh.Count},
-		Sum:            fh.Sum,
-		Schema:         fh.Schema,
-		ZeroThreshold:  fh.ZeroThreshold,
-		ZeroCount:      &writev2.Histogram_ZeroCountFloat{ZeroCountFloat: fh.ZeroCount},
-		NegativeSpans:  spansToV2SpansProto(fh.NegativeSpans),
-		NegativeCounts: fh.NegativeBuckets,
-		PositiveSpans:  spansToV2SpansProto(fh.PositiveSpans),
-		PositiveCounts: fh.PositiveBuckets,
-		ResetHint:      writev2.Histogram_ResetHint(fh.CounterResetHint),
-		Timestamp:      timestamp,
-	}
-}
-
-func spansToSpansProto(s []histogram.Span) []prompb.BucketSpan {
-	spans := make([]prompb.BucketSpan, len(s))
-	for i := 0; i < len(s); i++ {
-		spans[i] = prompb.BucketSpan{Offset: s[i].Offset, Length: s[i].Length}
-	}
-
-	return spans
-}
-
-func spansToV2SpansProto(s []histogram.Span) []writev2.BucketSpan {
-	spans := make([]writev2.BucketSpan, len(s))
-	for i := 0; i < len(s); i++ {
-		spans[i] = writev2.BucketSpan{Offset: s[i].Offset, Length: s[i].Length}
-	}
-
-	return spans
-}
-
 // LabelProtosToMetric unpack a []*prompb.Label to a model.Metric.
 func LabelProtosToMetric(labelPairs []*prompb.Label) model.Metric {
 	metric := make(model.Metric, len(labelPairs))
@@ -913,57 +619,6 @@ func LabelProtosToMetric(labelPairs []*prompb.Label) model.Metric {
 		metric[model.LabelName(l.Name)] = model.LabelValue(l.Value)
 	}
 	return metric
-}
-
-// LabelProtosToLabels transforms prompb labels into labels. The labels builder
-// will be used to build the returned labels.
-func LabelProtosToLabels(b *labels.ScratchBuilder, labelPairs []prompb.Label) labels.Labels {
-	b.Reset()
-	for _, l := range labelPairs {
-		b.Add(l.Name, l.Value)
-	}
-	b.Sort()
-	return b.Labels()
-}
-
-// LabelsToLabelsProto transforms labels into prompb labels. The buffer slice
-// will be used to avoid allocations if it is big enough to store the labels.
-func LabelsToLabelsProto(lbls labels.Labels, buf []prompb.Label) []prompb.Label {
-	result := buf[:0]
-	lbls.Range(func(l labels.Label) {
-		result = append(result, prompb.Label{
-			Name:  l.Name,
-			Value: l.Value,
-		})
-	})
-	return result
-}
-
-// metricTypeToMetricTypeProto transforms a Prometheus metricType into prompb metricType. Since the former is a string we need to transform it to an enum.
-func metricTypeToMetricTypeProto(t model.MetricType) prompb.MetricMetadata_MetricType {
-	mt := strings.ToUpper(string(t))
-	v, ok := prompb.MetricMetadata_MetricType_value[mt]
-	if !ok {
-		return prompb.MetricMetadata_UNKNOWN
-	}
-
-	return prompb.MetricMetadata_MetricType(v)
-}
-
-// metricTypeToMetricTypeProtoV2 transforms a Prometheus metricType into writev2 metricType. Since the former is a string we need to transform it to an enum.
-func metricTypeToMetricTypeProtoV2(t model.MetricType) writev2.Metadata_MetricType {
-	mt := strings.ToUpper(string(t))
-	v, ok := prompb.MetricMetadata_MetricType_value[mt]
-	if !ok {
-		return writev2.Metadata_METRIC_TYPE_UNSPECIFIED
-	}
-
-	return writev2.Metadata_MetricType(v)
-}
-
-func metricTypeFromProtoV2Equivalent(t writev2.Metadata_MetricType) model.MetricType {
-	mt := strings.ToLower(t.String())
-	return model.MetricType(mt) // TODO(@tpaschalis) a better way for this?
 }
 
 // DecodeWriteRequest from an io.Reader into a prompb.WriteRequest, handling
@@ -1057,75 +712,4 @@ func DecodeV2WriteRequestStr(r io.Reader) (*writev2.Request, error) {
 	}
 
 	return &req, nil
-}
-
-func V2WriteRequestToWriteRequest(redReq *writev2.Request) (*prompb.WriteRequest, error) {
-	req := &prompb.WriteRequest{
-		Timeseries: make([]prompb.TimeSeries, len(redReq.Timeseries)),
-		// TODO handle metadata?
-	}
-
-	for i, rts := range redReq.Timeseries {
-		writev2.DesymbolizeLabels(rts.LabelsRefs, redReq.Symbols).Range(func(l labels.Label) {
-			req.Timeseries[i].Labels = append(req.Timeseries[i].Labels, prompb.Label{
-				Name:  l.Name,
-				Value: l.Value,
-			})
-		})
-
-		exemplars := make([]prompb.Exemplar, len(rts.Exemplars))
-		for j, e := range rts.Exemplars {
-			exemplars[j].Value = e.Value
-			exemplars[j].Timestamp = e.Timestamp
-			writev2.DesymbolizeLabels(e.LabelsRefs, redReq.Symbols).Range(func(l labels.Label) {
-				exemplars[j].Labels = append(exemplars[j].Labels, prompb.Label{
-					Name:  l.Name,
-					Value: l.Value,
-				})
-			})
-		}
-		req.Timeseries[i].Exemplars = exemplars
-
-		req.Timeseries[i].Samples = make([]prompb.Sample, len(rts.Samples))
-		for j, s := range rts.Samples {
-			req.Timeseries[i].Samples[j].Timestamp = s.Timestamp
-			req.Timeseries[i].Samples[j].Value = s.Value
-		}
-
-		req.Timeseries[i].Histograms = make([]prompb.Histogram, len(rts.Histograms))
-		for j, h := range rts.Histograms {
-			// TODO: double check
-			if h.IsFloatHistogram() {
-				req.Timeseries[i].Histograms[j].Count = &prompb.Histogram_CountFloat{CountFloat: h.GetCountFloat()}
-				req.Timeseries[i].Histograms[j].ZeroCount = &prompb.Histogram_ZeroCountFloat{ZeroCountFloat: h.GetZeroCountFloat()}
-			} else {
-				req.Timeseries[i].Histograms[j].Count = &prompb.Histogram_CountInt{CountInt: h.GetCountInt()}
-				req.Timeseries[i].Histograms[j].ZeroCount = &prompb.Histogram_ZeroCountInt{ZeroCountInt: h.GetZeroCountInt()}
-			}
-
-			for _, span := range h.NegativeSpans {
-				req.Timeseries[i].Histograms[j].NegativeSpans = append(req.Timeseries[i].Histograms[j].NegativeSpans, prompb.BucketSpan{
-					Offset: span.Offset,
-					Length: span.Length,
-				})
-			}
-			for _, span := range h.PositiveSpans {
-				req.Timeseries[i].Histograms[j].PositiveSpans = append(req.Timeseries[i].Histograms[j].PositiveSpans, prompb.BucketSpan{
-					Offset: span.Offset,
-					Length: span.Length,
-				})
-			}
-
-			req.Timeseries[i].Histograms[j].Sum = h.Sum
-			req.Timeseries[i].Histograms[j].Schema = h.Schema
-			req.Timeseries[i].Histograms[j].ZeroThreshold = h.ZeroThreshold
-			req.Timeseries[i].Histograms[j].NegativeDeltas = h.NegativeDeltas
-			req.Timeseries[i].Histograms[j].NegativeCounts = h.NegativeCounts
-			req.Timeseries[i].Histograms[j].PositiveDeltas = h.PositiveDeltas
-			req.Timeseries[i].Histograms[j].PositiveCounts = h.PositiveCounts
-			req.Timeseries[i].Histograms[j].ResetHint = prompb.Histogram_ResetHint(h.ResetHint)
-			req.Timeseries[i].Histograms[j].Timestamp = h.Timestamp
-		}
-	}
-	return req, nil
 }

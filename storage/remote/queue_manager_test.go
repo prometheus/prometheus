@@ -1023,7 +1023,7 @@ func (c *TestWriteClient) expectExemplars(ss []record.RefExemplar, series []reco
 	for _, s := range ss {
 		tsID := getSeriesIDFromRef(series[s.Ref])
 		e := prompb.Exemplar{
-			Labels:    LabelsToLabelsProto(s.Labels, nil),
+			Labels:    prompb.FromLabels(s.Labels, nil),
 			Timestamp: s.T,
 			Value:     s.V,
 		}
@@ -1040,7 +1040,7 @@ func (c *TestWriteClient) expectHistograms(hh []record.RefHistogramSample, serie
 
 	for _, h := range hh {
 		tsID := getSeriesIDFromRef(series[h.Ref])
-		c.expectedHistograms[tsID] = append(c.expectedHistograms[tsID], HistogramToHistogramProto(h.T, h.H))
+		c.expectedHistograms[tsID] = append(c.expectedHistograms[tsID], prompb.FromIntHistogram(h.T, h.H))
 	}
 }
 
@@ -1053,7 +1053,7 @@ func (c *TestWriteClient) expectFloatHistograms(fhs []record.RefFloatHistogramSa
 
 	for _, fh := range fhs {
 		tsID := getSeriesIDFromRef(series[fh.Ref])
-		c.expectedFloatHistograms[tsID] = append(c.expectedFloatHistograms[tsID], FloatHistogramToHistogramProto(fh.T, fh.FH))
+		c.expectedFloatHistograms[tsID] = append(c.expectedFloatHistograms[tsID], prompb.FromFloatHistogram(fh.T, fh.FH))
 	}
 }
 
@@ -1155,7 +1155,7 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) error {
 		var reqProtoV2 writev2.Request
 		err = proto.Unmarshal(reqBuf, &reqProtoV2)
 		if err == nil {
-			reqProto, err = V2WriteRequestToWriteRequest(&reqProtoV2)
+			reqProto, err = v2RequestToWriteRequest(&reqProtoV2)
 		}
 	}
 	if err != nil {
@@ -1166,9 +1166,9 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) error {
 		return errors.New("invalid request, no timeseries")
 	}
 
-	builder := labels.NewScratchBuilder(0)
+	b := labels.NewScratchBuilder(0)
 	for _, ts := range reqProto.Timeseries {
-		labels := LabelProtosToLabels(&builder, ts.Labels)
+		labels := ts.ToLabels(&b, nil)
 		tsID := labels.String()
 		if len(ts.Samples) > 0 {
 			c.receivedSamples[tsID] = append(c.receivedSamples[tsID], ts.Samples...)
@@ -1200,6 +1200,51 @@ func (c *TestWriteClient) Name() string {
 
 func (c *TestWriteClient) Endpoint() string {
 	return "http://test-remote.com/1234"
+}
+
+func v2RequestToWriteRequest(v2Req *writev2.Request) (*prompb.WriteRequest, error) {
+	req := &prompb.WriteRequest{
+		Timeseries: make([]prompb.TimeSeries, len(v2Req.Timeseries)),
+		// TODO handle metadata?
+	}
+	b := labels.NewScratchBuilder(0)
+	for i, rts := range v2Req.Timeseries {
+		rts.ToLabels(&b, v2Req.Symbols).Range(func(l labels.Label) {
+			req.Timeseries[i].Labels = append(req.Timeseries[i].Labels, prompb.Label{
+				Name:  l.Name,
+				Value: l.Value,
+			})
+		})
+
+		exemplars := make([]prompb.Exemplar, len(rts.Exemplars))
+		for j, e := range rts.Exemplars {
+			exemplars[j].Value = e.Value
+			exemplars[j].Timestamp = e.Timestamp
+			e.ToExemplar(&b, v2Req.Symbols).Labels.Range(func(l labels.Label) {
+				exemplars[j].Labels = append(exemplars[j].Labels, prompb.Label{
+					Name:  l.Name,
+					Value: l.Value,
+				})
+			})
+		}
+		req.Timeseries[i].Exemplars = exemplars
+
+		req.Timeseries[i].Samples = make([]prompb.Sample, len(rts.Samples))
+		for j, s := range rts.Samples {
+			req.Timeseries[i].Samples[j].Timestamp = s.Timestamp
+			req.Timeseries[i].Samples[j].Value = s.Value
+		}
+
+		req.Timeseries[i].Histograms = make([]prompb.Histogram, len(rts.Histograms))
+		for j, h := range rts.Histograms {
+			if h.IsFloatHistogram() {
+				req.Timeseries[i].Histograms[j] = prompb.FromFloatHistogram(h.Timestamp, h.ToFloatHistogram())
+				continue
+			}
+			req.Timeseries[i].Histograms[j] = prompb.FromIntHistogram(h.Timestamp, h.ToIntHistogram())
+		}
+	}
+	return req, nil
 }
 
 // TestBlockingWriteClient is a queue_manager WriteClient which will block
