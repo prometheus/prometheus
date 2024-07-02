@@ -754,10 +754,16 @@ func (it *ListPostings) Seek(x storage.SeriesRef) bool {
 		return false
 	}
 
-	// Do binary search between current position and end.
-	i := sort.Search(len(it.list), func(i int) bool {
-		return it.list[i] >= x
-	})
+	// Binary search for the value.
+	i, j := 0, len(it.list)
+	for i < j {
+		h := i + (j-i)/2
+		if it.list[h] < x {
+			i = h + 1
+		} else {
+			j = h
+		}
+	}
 	if i < len(it.list) {
 		it.cur = it.list[i]
 		it.list = it.list[i+1:]
