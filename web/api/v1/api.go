@@ -159,7 +159,7 @@ type Response struct {
 	ErrorType errorType   `json:"errorType,omitempty"`
 	Error     string      `json:"error,omitempty"`
 	Warnings  []string    `json:"warnings,omitempty"`
-	Info      []string    `json:"info,omitempty"`
+	Infos     []string    `json:"infos,omitempty"`
 }
 
 type apiFuncResult struct {
@@ -1753,7 +1753,7 @@ func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface
 		Status:   statusMessage,
 		Data:     data,
 		Warnings: warn,
-		Info:     info,
+		Infos:    info,
 	}
 
 	codec, err := api.negotiateCodec(req, resp)

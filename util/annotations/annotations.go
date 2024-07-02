@@ -72,13 +72,13 @@ func (a Annotations) AsErrors() []error {
 }
 
 // AsStrings is a convenience function to return the annotations map as 2 slices
-// of strings, separated into warnings and info. The query string is used to get the
+// of strings, separated into warnings and infos. The query string is used to get the
 // line number and character offset positioning info of the elements which trigger an
-// annotation. We limit the number of annotations returned here with maxAnnos (0 for
-// no limit).
-func (a Annotations) AsStrings(query string, maxWarnings, maxInfo int) ([]string, []string) {
-	warnArr := make([]string, 0, maxWarnings+1)
-	infoArr := make([]string, 0, maxInfo+1)
+// annotation. We limit the number of warnings and infos returned here with maxWarnings
+// and maxInfos respectively (0 for no limit).
+func (a Annotations) AsStrings(query string, maxWarnings, maxInfos int) (warnings, infos []string) {
+	warnings = make([]string, 0, maxWarnings+1)
+	infos = make([]string, 0, maxInfos+1)
 	warnSkipped := 0
 	infoSkipped := 0
 	for _, err := range a {
@@ -89,30 +89,31 @@ func (a Annotations) AsStrings(query string, maxWarnings, maxInfo int) ([]string
 		}
 		switch {
 		case errors.Is(err, PromQLInfo):
-			if maxInfo == 0 || len(infoArr) < maxInfo {
-				infoArr = append(infoArr, err.Error())
+			if maxInfos == 0 || len(infos) < maxInfos {
+				infos = append(infos, err.Error())
 			} else {
 				infoSkipped++
 			}
 		default:
-			if maxWarnings == 0 || len(warnArr) < maxWarnings {
-				warnArr = append(warnArr, err.Error())
+			if maxWarnings == 0 || len(warnings) < maxWarnings {
+				warnings = append(warnings, err.Error())
 			} else {
 				warnSkipped++
 			}
 		}
 	}
 	if warnSkipped > 0 {
-		warnArr = append(warnArr, fmt.Sprintf("%d more warnings omitted", warnSkipped))
+		warnings = append(warnings, fmt.Sprintf("%d more warning annotations omitted", warnSkipped))
 	}
 	if infoSkipped > 0 {
-		infoArr = append(infoArr, fmt.Sprintf("%d more info messages omitted", infoSkipped))
+		infos = append(infos, fmt.Sprintf("%d more info annotations omitted", infoSkipped))
 	}
-	return warnArr, infoArr
+	return
 }
 
-func (a Annotations) CountWarningsAndInfo() (int, int) {
-	var countWarnings, countInfo int
+// CountWarningsAndInfo counts and returns the number of warnings and infos in the
+// annotations wrapper.
+func (a Annotations) CountWarningsAndInfo() (countWarnings, countInfo int) {
 	for _, err := range a {
 		if errors.Is(err, PromQLWarning) {
 			countWarnings++
@@ -121,7 +122,7 @@ func (a Annotations) CountWarningsAndInfo() (int, int) {
 			countInfo++
 		}
 	}
-	return countWarnings, countInfo
+	return
 }
 
 //nolint:revive // error-naming.
