@@ -124,7 +124,7 @@ func TestSampledReadEndpoint(t *testing.T) {
 					{Name: "d", Value: "e"},
 				},
 				Histograms: []prompb.Histogram{
-					FloatHistogramToHistogramProto(0, tsdbutil.GenerateTestFloatHistogram(0)),
+					prompb.FromFloatHistogram(0, tsdbutil.GenerateTestFloatHistogram(0)),
 				},
 			},
 		},

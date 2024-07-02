@@ -92,7 +92,8 @@ func TestNoDuplicateReadConfigs(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run("", func(t *testing.T) {
-			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
+			// todo: test with new format type(s)?
+			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
 			conf := &config.Config{
 				GlobalConfig:      config.DefaultGlobalConfig,
 				RemoteReadConfigs: tc.cfgs,
@@ -172,12 +173,12 @@ func TestSeriesSetFilter(t *testing.T) {
 			toRemove: []string{"foo"},
 			in: &prompb.QueryResult{
 				Timeseries: []*prompb.TimeSeries{
-					{Labels: LabelsToLabelsProto(labels.FromStrings("foo", "bar", "a", "b"), nil)},
+					{Labels: prompb.FromLabels(labels.FromStrings("foo", "bar", "a", "b"), nil)},
 				},
 			},
 			expected: &prompb.QueryResult{
 				Timeseries: []*prompb.TimeSeries{
-					{Labels: LabelsToLabelsProto(labels.FromStrings("a", "b"), nil)},
+					{Labels: prompb.FromLabels(labels.FromStrings("a", "b"), nil)},
 				},
 			},
 		},
@@ -211,7 +212,7 @@ func (c *mockedRemoteClient) Read(_ context.Context, query *prompb.Query) (*prom
 
 	q := &prompb.QueryResult{}
 	for _, s := range c.store {
-		l := LabelProtosToLabels(&c.b, s.Labels)
+		l := s.ToLabels(&c.b, nil)
 		var notMatch bool
 
 		for _, m := range matchers {
