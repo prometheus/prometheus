@@ -723,14 +723,14 @@ func TestHead_WALMultiRef(t *testing.T) {
 	ref1, err := app.Append(0, labels.FromStrings("foo", "bar"), 100, 1)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
-	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
+	require.InDelta(t, 1.0, prom_testutil.ToFloat64(head.metrics.chunksCreated), 0.01)
 
 	// Add another sample outside chunk range to mmap a chunk.
 	app = head.Appender(context.Background())
 	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 1500, 2)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
-	require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
+	require.InDelta(t, 2.0, prom_testutil.ToFloat64(head.metrics.chunksCreated), 0.01)
 
 	require.NoError(t, head.Truncate(1600))
 
@@ -738,14 +738,14 @@ func TestHead_WALMultiRef(t *testing.T) {
 	ref2, err := app.Append(0, labels.FromStrings("foo", "bar"), 1700, 3)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
-	require.Equal(t, 3.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
+	require.InDelta(t, 3.0, prom_testutil.ToFloat64(head.metrics.chunksCreated), 0.01)
 
 	// Add another sample outside chunk range to mmap a chunk.
 	app = head.Appender(context.Background())
 	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 2000, 4)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
-	require.Equal(t, 4.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
+	require.InDelta(t, 4.0, prom_testutil.ToFloat64(head.metrics.chunksCreated), 0.01)
 
 	require.NotEqual(t, ref1, ref2, "Refs are the same")
 	require.NoError(t, head.Close())
@@ -782,29 +782,29 @@ func TestHead_ActiveAppenders(t *testing.T) {
 
 	// First rollback with no samples.
 	app := head.Appender(context.Background())
-	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.InDelta(t, 1.0, prom_testutil.ToFloat64(head.metrics.activeAppenders), 0.01)
 	require.NoError(t, app.Rollback())
-	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.InDelta(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders), 0.01)
 
 	// Then commit with no samples.
 	app = head.Appender(context.Background())
 	require.NoError(t, app.Commit())
-	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.InDelta(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders), 0.01)
 
 	// Now rollback with one sample.
 	app = head.Appender(context.Background())
 	_, err := app.Append(0, labels.FromStrings("foo", "bar"), 100, 1)
 	require.NoError(t, err)
-	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.InDelta(t, 1.0, prom_testutil.ToFloat64(head.metrics.activeAppenders), 0.01)
 	require.NoError(t, app.Rollback())
-	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.InDelta(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders), 0.01)
 
 	// Now commit with one sample.
 	app = head.Appender(context.Background())
 	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 100, 1)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
-	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.InDelta(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders), 0.01)
 }
 
 func TestHead_UnknownWALRecord(t *testing.T) {
@@ -2134,7 +2134,7 @@ func TestWalRepair_DecodingError(t *testing.T) {
 					opts.ChunkDirRoot = w.Dir()
 					h, err := NewHead(nil, nil, w, nil, opts, nil)
 					require.NoError(t, err)
-					require.Equal(t, 0.0, prom_testutil.ToFloat64(h.metrics.walCorruptionsTotal))
+					require.InDelta(t, 0.0, prom_testutil.ToFloat64(h.metrics.walCorruptionsTotal), 0.01)
 					initErr := h.Init(math.MinInt64)
 
 					var cerr *wlog.CorruptionErr
@@ -2149,7 +2149,7 @@ func TestWalRepair_DecodingError(t *testing.T) {
 					defer func() {
 						require.NoError(t, db.Close())
 					}()
-					require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.walCorruptionsTotal))
+					require.InDelta(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.walCorruptionsTotal), 0.01)
 				}
 
 				// Read the wal content after the repair.
@@ -2206,7 +2206,7 @@ func TestWblRepair_DecodingError(t *testing.T) {
 		opts.OutOfOrderTimeWindow.Store(1000 * time.Minute.Milliseconds())
 		h, err := NewHead(nil, nil, wal, wbl, opts, nil)
 		require.NoError(t, err)
-		require.Equal(t, 0.0, prom_testutil.ToFloat64(h.metrics.walCorruptionsTotal))
+		require.InDelta(t, 0.0, prom_testutil.ToFloat64(h.metrics.walCorruptionsTotal), 0.01)
 		initErr := h.Init(math.MinInt64)
 
 		var elb *errLoadWbl
@@ -2224,7 +2224,7 @@ func TestWblRepair_DecodingError(t *testing.T) {
 		defer func() {
 			require.NoError(t, db.Close())
 		}()
-		require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.walCorruptionsTotal))
+		require.InDelta(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.walCorruptionsTotal), 0.01)
 	}
 
 	// Read the wbl content after the repair.
@@ -2260,7 +2260,7 @@ func TestHeadReadWriterRepair(t *testing.T) {
 		opts.ChunkWriteQueueSize = 1 // We need to set this option so that we use the async queue. Upstream prometheus uses the queue directly.
 		h, err := NewHead(nil, nil, w, nil, opts, nil)
 		require.NoError(t, err)
-		require.Equal(t, 0.0, prom_testutil.ToFloat64(h.metrics.mmapChunkCorruptionTotal))
+		require.InDelta(t, 0.0, prom_testutil.ToFloat64(h.metrics.mmapChunkCorruptionTotal), 0.01)
 		require.NoError(t, h.Init(math.MinInt64))
 
 		cOpts := chunkOpts{
@@ -2307,7 +2307,7 @@ func TestHeadReadWriterRepair(t *testing.T) {
 		defer func() {
 			require.NoError(t, db.Close())
 		}()
-		require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.mmapChunkCorruptionTotal))
+		require.InDelta(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.mmapChunkCorruptionTotal), 0.01)
 	}
 
 	// Verify that there are 3 segment files after the repair.
@@ -2683,19 +2683,19 @@ func TestOutOfOrderSamplesMetric(t *testing.T) {
 	require.NoError(t, app.Commit())
 
 	// Test out of order metric.
-	require.Equal(t, 0.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat)))
+	require.InDelta(t, 0.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat)), 0.01)
 	app = db.Appender(ctx)
 	_, err = app.Append(0, labels.FromStrings("a", "b"), 2, 99)
 	require.Equal(t, storage.ErrOutOfOrderSample, err)
-	require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat)))
+	require.InDelta(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat)), 0.01)
 
 	_, err = app.Append(0, labels.FromStrings("a", "b"), 3, 99)
 	require.Equal(t, storage.ErrOutOfOrderSample, err)
-	require.Equal(t, 2.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat)))
+	require.InDelta(t, 2.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat)), 0.01)
 
 	_, err = app.Append(0, labels.FromStrings("a", "b"), 4, 99)
 	require.Equal(t, storage.ErrOutOfOrderSample, err)
-	require.Equal(t, 3.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat)))
+	require.InDelta(t, 3.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat)), 0.01)
 	require.NoError(t, app.Commit())
 
 	// Compact Head to test out of bound metric.
@@ -2711,11 +2711,11 @@ func TestOutOfOrderSamplesMetric(t *testing.T) {
 	app = db.Appender(ctx)
 	_, err = app.Append(0, labels.FromStrings("a", "b"), db.head.minValidTime.Load()-2, 99)
 	require.Equal(t, storage.ErrOutOfBounds, err)
-	require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeFloat)))
+	require.InDelta(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeFloat)), 0.01)
 
 	_, err = app.Append(0, labels.FromStrings("a", "b"), db.head.minValidTime.Load()-1, 99)
 	require.Equal(t, storage.ErrOutOfBounds, err)
-	require.Equal(t, 2.0, prom_testutil.ToFloat64(db.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeFloat)))
+	require.InDelta(t, 2.0, prom_testutil.ToFloat64(db.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeFloat)), 0.01)
 	require.NoError(t, app.Commit())
 
 	// Some more valid samples for out of order.
@@ -2730,15 +2730,15 @@ func TestOutOfOrderSamplesMetric(t *testing.T) {
 	app = db.Appender(ctx)
 	_, err = app.Append(0, labels.FromStrings("a", "b"), db.head.minValidTime.Load()+DefaultBlockDuration+2, 99)
 	require.Equal(t, storage.ErrOutOfOrderSample, err)
-	require.Equal(t, 4.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat)))
+	require.InDelta(t, 4.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat)), 0.01)
 
 	_, err = app.Append(0, labels.FromStrings("a", "b"), db.head.minValidTime.Load()+DefaultBlockDuration+3, 99)
 	require.Equal(t, storage.ErrOutOfOrderSample, err)
-	require.Equal(t, 5.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat)))
+	require.InDelta(t, 5.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat)), 0.01)
 
 	_, err = app.Append(0, labels.FromStrings("a", "b"), db.head.minValidTime.Load()+DefaultBlockDuration+4, 99)
 	require.Equal(t, storage.ErrOutOfOrderSample, err)
-	require.Equal(t, 6.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat)))
+	require.InDelta(t, 6.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat)), 0.01)
 	require.NoError(t, app.Commit())
 }
 
@@ -3204,32 +3204,32 @@ func TestIteratorSeekIntoBuffer(t *testing.T) {
 	require.Equal(t, chunkenc.ValFloat, it.Seek(0))
 	ts, val := it.At()
 	require.Equal(t, int64(0), ts)
-	require.Equal(t, float64(0), val)
+	require.InDelta(t, float64(0), val, 0.01)
 
 	// Advance one point.
 	require.Equal(t, chunkenc.ValFloat, it.Next())
 	ts, val = it.At()
 	require.Equal(t, int64(1), ts)
-	require.Equal(t, float64(1), val)
+	require.InDelta(t, float64(1), val, 0.01)
 
 	// Seeking an older timestamp shouldn't cause the iterator to go backwards.
 	require.Equal(t, chunkenc.ValFloat, it.Seek(0))
 	ts, val = it.At()
 	require.Equal(t, int64(1), ts)
-	require.Equal(t, float64(1), val)
+	require.InDelta(t, float64(1), val, 0.01)
 
 	// Seek into the buffer.
 	require.Equal(t, chunkenc.ValFloat, it.Seek(3))
 	ts, val = it.At()
 	require.Equal(t, int64(3), ts)
-	require.Equal(t, float64(3), val)
+	require.InDelta(t, float64(3), val, 0.01)
 
 	// Iterate through the rest of the buffer.
 	for i := 4; i < 7; i++ {
 		require.Equal(t, chunkenc.ValFloat, it.Next())
 		ts, val = it.At()
 		require.Equal(t, int64(i), ts)
-		require.Equal(t, float64(i), val)
+		require.InDelta(t, float64(i), val, 0.01)
 	}
 
 	// Run out of elements in the iterator.
@@ -4024,7 +4024,7 @@ func TestChunkSnapshot(t *testing.T) {
 
 		openHeadAndCheckReplay()
 
-		require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal))
+		require.InDelta(t, 0.0, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal), 0.01)
 	}
 }
 
@@ -4097,7 +4097,7 @@ func TestSnapshotError(t *testing.T) {
 	require.NoError(t, head.Init(math.MinInt64))
 
 	// There should be no series in the memory after snapshot error since WAL was removed.
-	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal))
+	require.InDelta(t, 1.0, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal), 0.01)
 	require.Equal(t, uint64(0), head.NumSeries())
 	require.Nil(t, head.series.getByHash(lbls.Hash(), lbls))
 	tm, err = head.tombstones.Get(1)
@@ -4125,7 +4125,7 @@ func TestSnapshotError(t *testing.T) {
 	require.NoError(t, head.Init(math.MinInt64))
 
 	// There should be no series in the memory after snapshot error since WAL was removed.
-	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal))
+	require.InDelta(t, 1.0, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal), 0.01)
 	require.Nil(t, head.series.getByHash(lbls.Hash(), lbls))
 	require.Equal(t, uint64(0), head.NumSeries())
 
@@ -4134,8 +4134,8 @@ func TestSnapshotError(t *testing.T) {
 	require.Equal(t, int64(2), c.created.Load())
 	require.Equal(t, int64(2), c.deleted.Load())
 
-	require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.seriesRemoved))
-	require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.seriesCreated))
+	require.InDelta(t, 2.0, prom_testutil.ToFloat64(head.metrics.seriesRemoved), 0.01)
+	require.InDelta(t, 2.0, prom_testutil.ToFloat64(head.metrics.seriesCreated), 0.01)
 }
 
 func TestHistogramMetrics(t *testing.T) {
@@ -4167,7 +4167,7 @@ func TestHistogramMetrics(t *testing.T) {
 		}
 	}
 
-	require.Equal(t, float64(expHSamples), prom_testutil.ToFloat64(head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeHistogram)))
+	require.InDelta(t, float64(expHSamples), prom_testutil.ToFloat64(head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeHistogram)), 0.01)
 
 	require.NoError(t, head.Close())
 	w, err := wlog.NewSize(nil, nil, head.wal.Dir(), 32768, wlog.CompressionNone)
@@ -4176,7 +4176,7 @@ func TestHistogramMetrics(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, head.Init(0))
 
-	require.Equal(t, float64(0), prom_testutil.ToFloat64(head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeHistogram))) // Counter reset.
+	require.InDelta(t, float64(0), prom_testutil.ToFloat64(head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeHistogram)), 0.01) // Counter reset.
 }
 
 func TestHistogramStaleSample(t *testing.T) {
@@ -4666,7 +4666,7 @@ func TestChunkSnapshotReplayBug(t *testing.T) {
 	}()
 
 	// Snapshot replay should error out.
-	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal))
+	require.InDelta(t, 1.0, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal), 0.01)
 
 	// Querying `request_duration{status_code!="200"}` should return no series since all of
 	// them have status_code="200".
@@ -4696,7 +4696,7 @@ func TestChunkSnapshotTakenAfterIncompleteSnapshot(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, head.Init(math.MinInt64))
 
-	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal))
+	require.InDelta(t, 0.0, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal), 0.01)
 
 	// Add some samples for the snapshot.
 	app := head.Appender(context.Background())
@@ -5922,6 +5922,7 @@ func TestHeadAppender_AppendCTZeroSample(t *testing.T) {
 			require.Equal(t, chunkenc.ValFloat, it.Next())
 			timestamp, value := it.At()
 			require.Equal(t, sample.Timestamp, model.Time(timestamp))
+			//nolint:testifylint // SampleValue is an alias of float64 but not the native type
 			require.Equal(t, sample.Value, model.SampleValue(value))
 		}
 		require.Equal(t, chunkenc.ValNone, it.Next())

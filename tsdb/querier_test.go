@@ -1821,7 +1821,7 @@ func checkCurrVal(t *testing.T, valType chunkenc.ValueType, it *populateWithDelS
 	case chunkenc.ValFloat:
 		ts, v := it.At()
 		require.Equal(t, int64(expectedTs), ts)
-		require.Equal(t, float64(expectedValue), v)
+		require.InDelta(t, float64(expectedValue), v, 0.01)
 	case chunkenc.ValHistogram:
 		ts, h := it.AtHistogram(nil)
 		require.Equal(t, int64(expectedTs), ts)
@@ -2135,7 +2135,7 @@ func TestDeletedIterator(t *testing.T) {
 
 			ts, v := it.At()
 			require.Equal(t, act[i].t, ts)
-			require.Equal(t, act[i].f, v)
+			require.InDelta(t, act[i].f, v, 0.01)
 		}
 		// There has been an extra call to Next().
 		i++
