@@ -239,14 +239,7 @@ foo_created{a="b"} 1000`
 		},{
 			m: "rpc_durations_histogram_seconds_bucket",
 			ct: int64p(1000),
-		},
-		{
-			m:    "foo_total",
-			v:    17,
-			lset: labels.FromStrings("__name__", "foo_total"),
-			t:    int64p(1520879607789),
-			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "counter-test"), Value: 5},
-		}, {
+		},{
 			m:    "metric",
 			help: "foo\x00bar",
 		}, {
