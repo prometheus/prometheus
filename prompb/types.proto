@@ -159,6 +159,8 @@ message ReadHints {
   repeated string grouping = 5; // List of label names used in aggregation.
   bool by = 6; // Indicate whether it is without or by.
   int64 range_ms = 7; // Range vector selector range in milliseconds.
+  uint64 shard_count = 8; // The total number of shards that the series should be split into. shard_count equal to 0 means that sharding is disabled.
+  uint64 shard_index = 9; // The series shard index to query. It must be between 0 and shard_count - 1.
 }
 
 // Chunk represents a TSDB chunk.
