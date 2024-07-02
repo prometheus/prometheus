@@ -3464,6 +3464,12 @@ test_histogram_count{address="0.0.0.0",port="5001"} 1
 	series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_histogram"))
 	count := 0
 	for series.Next() {
+		i := series.At().Iterator(nil)
+		for i.Next() == chunkenc.ValHistogram {
+			_, h := i.AtHistogram(nil)
+			require.Equal(t, uint64(1), h.Count)
+			require.Equal(t, 10.0, h.Sum)
+		}
 		count++
 	}
 	require.Equal(t, 1, count, "number of series not as expected")
