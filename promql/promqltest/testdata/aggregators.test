@@ -511,9 +511,38 @@ load 10s
 	data{test="ten",point="b"} 8
 	data{test="ten",point="c"} 1e+100
 	data{test="ten",point="d"} -1e100
+	data{test="pos_inf",group="1",point="a"} Inf
+	data{test="pos_inf",group="1",point="b"} 2
+	data{test="pos_inf",group="2",point="a"} 2
+	data{test="pos_inf",group="2",point="b"} Inf
+	data{test="neg_inf",group="1",point="a"} -Inf
+	data{test="neg_inf",group="1",point="b"} 2
+	data{test="neg_inf",group="2",point="a"} 2
+	data{test="neg_inf",group="2",point="b"} -Inf
+	data{test="inf_inf",point="a"} Inf
+	data{test="inf_inf",point="b"} -Inf
+	data{test="nan",group="1",point="a"} NaN
+	data{test="nan",group="1",point="b"} 2
+	data{test="nan",group="2",point="a"} 2
+	data{test="nan",group="2",point="b"} NaN
 
 eval instant at 1m sum(data{test="ten"})
 	{} 10
+
+eval instant at 1m sum by (group) (data{test="pos_inf"})
+	{group="1"} Inf
+	{group="2"} Inf
+
+eval instant at 1m sum by (group) (data{test="neg_inf"})
+	{group="1"} -Inf
+	{group="2"} -Inf
+
+eval instant at 1m sum(data{test="inf_inf"})
+	{} NaN
+
+eval instant at 1m sum by (group) (data{test="nan"})
+	{group="1"} NaN
+	{group="2"} NaN
 
 clear
 
