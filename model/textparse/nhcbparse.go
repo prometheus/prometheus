@@ -45,6 +45,8 @@ type NhcbParser struct {
 
 	lsetNhcb labels.Labels
 	tempNhcb convertnhcb.TempHistogram
+
+	lastNativeHistName string
 }
 
 func NewNhcbParser(p Parser, keepClassicHistograms bool) Parser {
@@ -111,12 +113,16 @@ func (p *NhcbParser) Next() (Entry, error) {
 	case EntryHistogram:
 		p.bytes, p.ts, p.h, p.fh = p.parser.Histogram()
 		p.metricString = p.parser.Metric(&p.lset)
+		p.lastNativeHistName = p.lset.Get(labels.MetricName)
 	}
 	return et, err
 }
 
 func (p *NhcbParser) handleClassicHistogramSeries(lset labels.Labels) bool {
 	mName := lset.Get(labels.MetricName)
+	if convertnhcb.GetHistogramMetricBaseName(mName) == p.lastNativeHistName {
+		return false
+	}
 	switch {
 	case strings.HasSuffix(mName, "_bucket") && lset.Has(labels.BucketLabel):
 		le, err := strconv.ParseFloat(lset.Get(labels.BucketLabel), 64)
