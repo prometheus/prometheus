@@ -59,19 +59,24 @@ A Prometheus server's data directory looks something like this:
 ```
 
 Note that a limitation of local storage is that it is not clustered or
-replicated. Thus, it is not arbitrarily scalable or durable in the face of
-drive or node outages and should be managed like any other single node
-database. 
+replicated. Thus, it is not arbitrarily scalable or durable in the
+face of drive or node outages and should be managed like any other
+single node database. With proper architecture, it is possible to
+retain years of data in local storage.
 
-[Snapshots](querying/api.md#snapshot) are recommended for backups. Backups 
-made without snapshots run the risk of losing data that was recorded since 
-the last WAL sync, which typically happens every two hours. With proper
-architecture, it is possible to retain years of data in local storage.
+[Snapshots](querying/api.md#snapshot) are recommended for
+backups. Backups made without snapshots run the risk of losing data
+that was recorded since the last WAL checkpoint, which typically
+happens every two hours, covering the last three hours of
+samples. Excluding the WAL files (the `wal/` directory in
+`storage.tsdb.path`) on backup or restore will ensure a coherent
+backup, in any case, at the cost of losing the time range covered by
+the WAL files.
 
-Alternatively, external storage may be used via the
-[remote read/write APIs](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage).
-Careful evaluation is required for these systems as they vary greatly in durability,
-performance, and efficiency.
+Alternatively, external storage may be used via the [remote read/write
+APIs](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage).
+Careful evaluation is required for these systems as they vary greatly
+in durability, performance, and efficiency.
 
 For further details on file format, see [TSDB format](/tsdb/docs/format/README.md).
 
