@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -77,6 +78,7 @@ type OpenMetricsParser struct {
 	series  []byte
 	text    []byte
 	mtype   model.MetricType
+	mName string
 	val     float64
 	ts      int64
 	hasTS   bool
@@ -234,19 +236,24 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 					return nil
 				}
 
-				var labelsPrev labels.Labels
-				p.Metric(&labelsPrev) 
-				namePrev := labelsPrev.Get(model.MetricNameLabel)
-				// a case like foo_total != foo_created fails even if underlying metric is the same
-				if namePrev != name { 
+				if newParser.mName != p.mName { 
 					return nil
 				}
 
+				// Check if labelsets are the same
 
 				// TODO: for histograms
-				if t, _ := newParser.Next(); t != EntrySeries {
+				// if t, _ := newParser.Next(); t != EntrySeries {
+				// 	return nil
+				// }
+
+				// return CT value
+				ctBytes := newParser.l.b[newParser.offsets[len(newParser.offsets)-1]+1:newParser.l.start]
+				ct, err := strconv.ParseInt(yoloString(ctBytes), 10, 64)
+				if err != nil {
 					return nil
 				}
+				return &ct
 			}
 		default:
 			// If not series, we don't care.
@@ -282,6 +289,7 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 		series  :newSeries,
 		text    :newText,
 		mtype   :p.mtype,
+		mName   :p.mName,
 		val     :p.val,
 		ts      :p.ts,
 		hasTS   :p.hasTS,
@@ -342,6 +350,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 				mEnd--
 			}
 			p.offsets = append(p.offsets, mStart, mEnd)
+			p.mName = string(p.l.b[mStart:mEnd])
 		default:
 			return EntryInvalid, p.parseError("expected metric name after "+t.String(), t2)
 		}
