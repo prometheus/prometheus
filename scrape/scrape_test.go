@@ -3371,80 +3371,118 @@ test_summary_count 199
 
 // Testing whether we can automatically convert scraped classic histograms into native histograms with custom buckets.
 func TestConvertClassicHistograms(t *testing.T) {
-	simpleStorage := teststorage.New(t)
-	defer simpleStorage.Close()
-
-	config := &config.ScrapeConfig{
-		JobName:                  "test",
-		SampleLimit:              100,
-		Scheme:                   "http",
-		ScrapeInterval:           model.Duration(100 * time.Millisecond),
-		ScrapeTimeout:            model.Duration(100 * time.Millisecond),
-		ScrapeClassicHistograms:  true,
-		ConvertClassicHistograms: true,
+	metricsTexts := map[string]string{
+		"normal": `
+# HELP test_metric_1 some help text
+# TYPE test_metric_1 counter
+test_metric_1 1
+# HELP test_histogram_1 This is a histogram with default buckets
+# TYPE test_histogram_1 histogram
+test_histogram_1_bucket{address="0.0.0.0",port="5001",le="0.005"} 0
+test_histogram_1_bucket{address="0.0.0.0",port="5001",le="0.01"} 0
+test_histogram_1_bucket{address="0.0.0.0",port="5001",le="0.025"} 0
+test_histogram_1_bucket{address="0.0.0.0",port="5001",le="0.05"} 0
+test_histogram_1_bucket{address="0.0.0.0",port="5001",le="0.1"} 0
+test_histogram_1_bucket{address="0.0.0.0",port="5001",le="0.25"} 0
+test_histogram_1_bucket{address="0.0.0.0",port="5001",le="0.5"} 0
+test_histogram_1_bucket{address="0.0.0.0",port="5001",le="1"} 0
+test_histogram_1_bucket{address="0.0.0.0",port="5001",le="2.5"} 0
+test_histogram_1_bucket{address="0.0.0.0",port="5001",le="5"} 0
+test_histogram_1_bucket{address="0.0.0.0",port="5001",le="10"} 1
+test_histogram_1_bucket{address="0.0.0.0",port="5001",le="+Inf"} 1
+test_histogram_1_sum{address="0.0.0.0",port="5001"} 10
+test_histogram_1_count{address="0.0.0.0",port="5001"} 1
+# HELP test_metric_2 some help text
+# TYPE test_metric_2 counter
+test_metric_2 1
+# HELP test_histogram_2 This is a histogram with default buckets
+# TYPE test_histogram_2 histogram
+test_histogram_2_bucket{address="0.0.0.0",port="5001",le="0.005"} 0
+test_histogram_2_bucket{address="0.0.0.0",port="5001",le="0.01"} 0
+test_histogram_2_bucket{address="0.0.0.0",port="5001",le="0.025"} 0
+test_histogram_2_bucket{address="0.0.0.0",port="5001",le="0.05"} 0
+test_histogram_2_bucket{address="0.0.0.0",port="5001",le="0.1"} 0
+test_histogram_2_bucket{address="0.0.0.0",port="5001",le="0.25"} 0
+test_histogram_2_bucket{address="0.0.0.0",port="5001",le="0.5"} 0
+test_histogram_2_bucket{address="0.0.0.0",port="5001",le="1"} 0
+test_histogram_2_bucket{address="0.0.0.0",port="5001",le="2.5"} 0
+test_histogram_2_bucket{address="0.0.0.0",port="5001",le="5"} 0
+test_histogram_2_bucket{address="0.0.0.0",port="5001",le="10"} 1
+test_histogram_2_bucket{address="0.0.0.0",port="5001",le="+Inf"} 1
+test_histogram_2_sum{address="0.0.0.0",port="5001"} 10
+test_histogram_2_count{address="0.0.0.0",port="5001"} 1
+# HELP test_metric_3 some help text
+# TYPE test_metric_3 counter
+test_metric_3 1
+# HELP test_histogram_3 This is a histogram with default buckets
+# TYPE test_histogram_3 histogram
+test_histogram_3_bucket{address="0.0.0.0",port="5001",le="0.005"} 0
+test_histogram_3_bucket{address="0.0.0.0",port="5001",le="0.01"} 0
+test_histogram_3_bucket{address="0.0.0.0",port="5001",le="0.025"} 0
+test_histogram_3_bucket{address="0.0.0.0",port="5001",le="0.05"} 0
+test_histogram_3_bucket{address="0.0.0.0",port="5001",le="0.1"} 0
+test_histogram_3_bucket{address="0.0.0.0",port="5001",le="0.25"} 0
+test_histogram_3_bucket{address="0.0.0.0",port="5001",le="0.5"} 0
+test_histogram_3_bucket{address="0.0.0.0",port="5001",le="1"} 0
+test_histogram_3_bucket{address="0.0.0.0",port="5001",le="2.5"} 0
+test_histogram_3_bucket{address="0.0.0.0",port="5001",le="5"} 0
+test_histogram_3_bucket{address="0.0.0.0",port="5001",le="10"} 1
+test_histogram_3_bucket{address="0.0.0.0",port="5001",le="+Inf"} 1
+test_histogram_3_sum{address="0.0.0.0",port="5001"} 10
+test_histogram_3_count{address="0.0.0.0",port="5001"} 1
+`,
+		"no metadata and different order": `
+test_metric_1 1
+test_histogram_1_bucket{address="0.0.0.0",port="5001",le="0.005"} 0
+test_histogram_1_bucket{address="0.0.0.0",port="5001",le="0.01"} 0
+test_histogram_1_bucket{address="0.0.0.0",port="5001",le="0.025"} 0
+test_histogram_1_bucket{address="0.0.0.0",port="5001",le="0.05"} 0
+test_histogram_1_bucket{address="0.0.0.0",port="5001",le="0.1"} 0
+test_histogram_1_bucket{address="0.0.0.0",port="5001",le="0.25"} 0
+test_histogram_1_bucket{address="0.0.0.0",port="5001",le="0.5"} 0
+test_histogram_1_bucket{address="0.0.0.0",port="5001",le="1"} 0
+test_histogram_1_bucket{address="0.0.0.0",port="5001",le="2.5"} 0
+test_histogram_1_bucket{address="0.0.0.0",port="5001",le="5"} 0
+test_histogram_1_bucket{address="0.0.0.0",port="5001",le="10"} 1
+test_histogram_1_bucket{address="0.0.0.0",port="5001",le="+Inf"} 1
+test_histogram_1_sum{address="0.0.0.0",port="5001"} 10
+test_histogram_1_count{address="0.0.0.0",port="5001"} 1
+test_metric_2 1
+test_histogram_2_bucket{address="0.0.0.0",port="5001",le="0.005"} 0
+test_histogram_2_bucket{address="0.0.0.0",port="5001",le="0.01"} 0
+test_histogram_2_bucket{address="0.0.0.0",port="5001",le="0.025"} 0
+test_histogram_2_bucket{address="0.0.0.0",port="5001",le="0.05"} 0
+test_histogram_2_bucket{address="0.0.0.0",port="5001",le="0.1"} 0
+test_histogram_2_bucket{address="0.0.0.0",port="5001",le="0.25"} 0
+test_histogram_2_bucket{address="0.0.0.0",port="5001",le="0.5"} 0
+test_histogram_2_bucket{address="0.0.0.0",port="5001",le="1"} 0
+test_histogram_2_bucket{address="0.0.0.0",port="5001",le="2.5"} 0
+test_histogram_2_bucket{address="0.0.0.0",port="5001",le="5"} 0
+test_histogram_2_bucket{address="0.0.0.0",port="5001",le="10"} 1
+test_histogram_2_bucket{address="0.0.0.0",port="5001",le="+Inf"} 1
+test_histogram_2_sum{address="0.0.0.0",port="5001"} 10
+test_histogram_2_count{address="0.0.0.0",port="5001"} 1
+test_histogram_3_bucket{address="0.0.0.0",port="5001",le="0.005"} 0
+test_histogram_3_bucket{address="0.0.0.0",port="5001",le="0.01"} 0
+test_histogram_3_bucket{address="0.0.0.0",port="5001",le="0.025"} 0
+test_histogram_3_bucket{address="0.0.0.0",port="5001",le="0.05"} 0
+test_histogram_3_bucket{address="0.0.0.0",port="5001",le="0.1"} 0
+test_histogram_3_bucket{address="0.0.0.0",port="5001",le="0.25"} 0
+test_histogram_3_bucket{address="0.0.0.0",port="5001",le="0.5"} 0
+test_histogram_3_bucket{address="0.0.0.0",port="5001",le="1"} 0
+test_histogram_3_bucket{address="0.0.0.0",port="5001",le="2.5"} 0
+test_histogram_3_bucket{address="0.0.0.0",port="5001",le="5"} 0
+test_histogram_3_bucket{address="0.0.0.0",port="5001",le="10"} 1
+test_histogram_3_bucket{address="0.0.0.0",port="5001",le="+Inf"} 1
+test_histogram_3_sum{address="0.0.0.0",port="5001"} 10
+test_histogram_3_count{address="0.0.0.0",port="5001"} 1
+test_metric_3 1
+`,
 	}
-
-	metricsText := `
-# HELP test_metric some help text
-# TYPE test_metric counter
-test_metric 1
-# HELP test_histogram This is a histogram with default buckets
-# TYPE test_histogram histogram
-test_histogram_bucket{address="0.0.0.0",port="5001",le="0.005"} 0
-test_histogram_bucket{address="0.0.0.0",port="5001",le="0.01"} 0
-test_histogram_bucket{address="0.0.0.0",port="5001",le="0.025"} 0
-test_histogram_bucket{address="0.0.0.0",port="5001",le="0.05"} 0
-test_histogram_bucket{address="0.0.0.0",port="5001",le="0.1"} 0
-test_histogram_bucket{address="0.0.0.0",port="5001",le="0.25"} 0
-test_histogram_bucket{address="0.0.0.0",port="5001",le="0.5"} 0
-test_histogram_bucket{address="0.0.0.0",port="5001",le="1"} 0
-test_histogram_bucket{address="0.0.0.0",port="5001",le="2.5"} 0
-test_histogram_bucket{address="0.0.0.0",port="5001",le="5"} 0
-test_histogram_bucket{address="0.0.0.0",port="5001",le="10"} 1
-test_histogram_bucket{address="0.0.0.0",port="5001",le="+Inf"} 1
-test_histogram_sum{address="0.0.0.0",port="5001"} 10
-test_histogram_count{address="0.0.0.0",port="5001"} 1
-`
 
 	// The expected "le" values do not have the trailing ".0".
-	expectedLeValues := []string{"0.005", "0.01", "0.025", "0.05", "0.1", "0.25", "0.5", "1", "2.5", "5", "10", "+Inf"}
-
-	scrapeCount := 0
-	scraped := make(chan bool)
-
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, metricsText)
-		scrapeCount++
-		if scrapeCount > 2 {
-			close(scraped)
-		}
-	}))
-	defer ts.Close()
-
-	sp, err := newScrapePool(config, simpleStorage, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
-	require.NoError(t, err)
-	defer sp.stop()
-
-	testURL, err := url.Parse(ts.URL)
-	require.NoError(t, err)
-	sp.Sync([]*targetgroup.Group{
-		{
-			Targets: []model.LabelSet{{model.AddressLabel: model.LabelValue(testURL.Host)}},
-		},
-	})
-	require.Len(t, sp.ActiveTargets(), 1)
-
-	select {
-	case <-time.After(5 * time.Second):
-		t.Fatalf("target was not scraped")
-	case <-scraped:
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	q, err := simpleStorage.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
-	require.NoError(t, err)
-	defer q.Close()
+	expectedLeValuesCorrect := []string{"0.005", "0.01", "0.025", "0.05", "0.1", "0.25", "0.5", "1", "2.5", "5", "10", "+Inf"}
+	expectedLeValuesNone := []string{}
 
 	checkValues := func(labelName string, expectedValues []string, series storage.SeriesSet) {
 		foundLeValues := map[string]bool{}
@@ -3463,7 +3501,7 @@ test_histogram_count{address="0.0.0.0",port="5001"} 1
 	}
 
 	// Checks that the expected series is present and runs a basic sanity check of the values.
-	checkSeries := func(series storage.SeriesSet, encType chunkenc.ValueType) {
+	checkSeries := func(series storage.SeriesSet, encType chunkenc.ValueType, expectedCount int) {
 		count := 0
 		for series.Next() {
 			i := series.At().Iterator(nil)
@@ -3482,17 +3520,121 @@ test_histogram_count{address="0.0.0.0",port="5001"} 1
 			}
 			count++
 		}
-		require.Equal(t, 1, count, "number of series not as expected")
+		require.Equal(t, expectedCount, count, "number of series not as expected")
 	}
 
-	series := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_histogram_bucket"))
-	checkValues("le", expectedLeValues, series)
+	for metricsTextName, metricsText := range metricsTexts {
+		for name, tc := range map[string]struct {
+			scrapeClassicHistograms  bool
+			convertClassicHistograms bool
+			expectedLeValues         []string
+			expectedNhcbCount        int
+		}{
+			"convert with scrape": {
+				scrapeClassicHistograms:  true,
+				convertClassicHistograms: true,
+				expectedLeValues:         expectedLeValuesCorrect,
+				expectedNhcbCount:        1,
+			},
+			"convert without scrape": {
+				scrapeClassicHistograms:  false,
+				convertClassicHistograms: true,
+				expectedLeValues:         expectedLeValuesNone,
+				expectedNhcbCount:        1,
+			},
+			"scrape without convert": {
+				scrapeClassicHistograms:  true,
+				convertClassicHistograms: false,
+				expectedLeValues:         expectedLeValuesCorrect,
+				expectedNhcbCount:        0,
+			},
+			"neither scrape nor convert": {
+				scrapeClassicHistograms:  false,
+				convertClassicHistograms: false,
+				expectedLeValues:         expectedLeValuesCorrect, // since these are sent without native histograms
+				expectedNhcbCount:        0,
+			},
+		} {
+			t.Run(fmt.Sprintf("%s with %s", name, metricsTextName), func(t *testing.T) {
+				simpleStorage := teststorage.New(t)
+				defer simpleStorage.Close()
 
-	series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_histogram"))
-	checkSeries(series, chunkenc.ValHistogram)
+				config := &config.ScrapeConfig{
+					JobName:                  "test",
+					SampleLimit:              100,
+					Scheme:                   "http",
+					ScrapeInterval:           model.Duration(100 * time.Millisecond),
+					ScrapeTimeout:            model.Duration(100 * time.Millisecond),
+					ScrapeClassicHistograms:  tc.scrapeClassicHistograms,
+					ConvertClassicHistograms: tc.convertClassicHistograms,
+				}
 
-	series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric"))
-	checkSeries(series, chunkenc.ValFloat)
+				scrapeCount := 0
+				scraped := make(chan bool)
+
+				ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					fmt.Fprint(w, metricsText)
+					scrapeCount++
+					if scrapeCount > 2 {
+						close(scraped)
+					}
+				}))
+				defer ts.Close()
+
+				sp, err := newScrapePool(config, simpleStorage, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
+				require.NoError(t, err)
+				defer sp.stop()
+
+				testURL, err := url.Parse(ts.URL)
+				require.NoError(t, err)
+				sp.Sync([]*targetgroup.Group{
+					{
+						Targets: []model.LabelSet{{model.AddressLabel: model.LabelValue(testURL.Host)}},
+					},
+				})
+				require.Len(t, sp.ActiveTargets(), 1)
+
+				select {
+				case <-time.After(5 * time.Second):
+					t.Fatalf("target was not scraped")
+				case <-scraped:
+				}
+
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				q, err := simpleStorage.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
+				require.NoError(t, err)
+				defer q.Close()
+
+				series := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_1"))
+				checkSeries(series, chunkenc.ValFloat, 1)
+
+				series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_histogram_1_bucket"))
+				checkValues("le", tc.expectedLeValues, series)
+
+				series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_histogram_1"))
+				checkSeries(series, chunkenc.ValHistogram, tc.expectedNhcbCount)
+
+				series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_2"))
+				checkSeries(series, chunkenc.ValFloat, 1)
+
+				series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_histogram_2_bucket"))
+				checkValues("le", tc.expectedLeValues, series)
+
+				series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_histogram_2"))
+				checkSeries(series, chunkenc.ValHistogram, tc.expectedNhcbCount)
+
+				series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_3"))
+				checkSeries(series, chunkenc.ValFloat, 1)
+
+				series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_histogram_3_bucket"))
+				checkValues("le", tc.expectedLeValues, series)
+
+				series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_histogram_3"))
+				checkSeries(series, chunkenc.ValHistogram, tc.expectedNhcbCount)
+			})
+		}
+	}
 }
 
 func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrapeForTimestampedMetrics(t *testing.T) {

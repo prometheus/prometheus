@@ -45,14 +45,30 @@ type NhcbParser struct {
 	lset         labels.Labels
 	metricString string
 
+	// Caches the entry itself if we are inserting a converted NHCB
+	// halfway through.
+	entry            Entry
+	justInsertedNhcb bool
+	// Caches the values and metric for the inserted converted NHCB.
+	bytesNhcb        []byte
+	hNhcb            *histogram.Histogram
+	fhNhcb           *histogram.FloatHistogram
+	lsetNhcb         labels.Labels
+	metricStringNhcb string
+
 	// Collates values from the classic histogram series to build
 	// the converted histogram later.
-	lsetNhcb labels.Labels
-	tempNhcb convertnhcb.TempHistogram
+	tempLsetNhcb          labels.Labels
+	tempNhcb              convertnhcb.TempHistogram
+	isCollationInProgress bool
 
 	// Remembers the last native histogram name so we can ignore
 	// conversions to NHCB when the name is the same.
 	lastNativeHistName string
+	// Remembers the last base histogram metric name (assuming it's
+	// a classic histogram) so we can tell if the next float series
+	// is part of the same classic histogram.
+	lastBaseHistName string
 }
 
 func NewNhcbParser(p Parser, keepClassicHistograms bool) Parser {
@@ -68,6 +84,9 @@ func (p *NhcbParser) Series() ([]byte, *int64, float64) {
 }
 
 func (p *NhcbParser) Histogram() ([]byte, *int64, *histogram.Histogram, *histogram.FloatHistogram) {
+	if p.justInsertedNhcb {
+		return p.bytesNhcb, p.ts, p.hNhcb, p.fhNhcb
+	}
 	return p.bytes, p.ts, p.h, p.fh
 }
 
@@ -88,6 +107,10 @@ func (p *NhcbParser) Comment() []byte {
 }
 
 func (p *NhcbParser) Metric(l *labels.Labels) string {
+	if p.justInsertedNhcb {
+		*l = p.lsetNhcb
+		return p.metricStringNhcb
+	}
 	*l = p.lset
 	return p.metricString
 }
@@ -101,9 +124,19 @@ func (p *NhcbParser) CreatedTimestamp() *int64 {
 }
 
 func (p *NhcbParser) Next() (Entry, error) {
+	if p.justInsertedNhcb {
+		p.justInsertedNhcb = false
+		if p.entry == EntrySeries {
+			if isNhcb := p.handleClassicHistogramSeries(p.lset); isNhcb && !p.keepClassicHistograms {
+				return p.Next()
+			}
+		}
+		return p.entry, nil
+	}
 	et, err := p.parser.Next()
-	if errors.Is(err, io.EOF) {
-		if p.processNhcb(p.tempNhcb) {
+	if err != nil {
+		if errors.Is(err, io.EOF) && p.processNhcb() {
+			p.entry = et
 			return EntryHistogram, nil
 		}
 		return EntryInvalid, err
@@ -112,6 +145,16 @@ func (p *NhcbParser) Next() (Entry, error) {
 	case EntrySeries:
 		p.bytes, p.ts, p.value = p.parser.Series()
 		p.metricString = p.parser.Metric(&p.lset)
+		histBaseName := convertnhcb.GetHistogramMetricBaseName(p.lset)
+		if histBaseName == p.lastNativeHistName {
+			break
+		}
+		shouldInsertNhcb := p.lastBaseHistName != "" && p.lastBaseHistName != histBaseName
+		p.lastBaseHistName = histBaseName
+		if shouldInsertNhcb && p.processNhcb() {
+			p.entry = et
+			return EntryHistogram, nil
+		}
 		if isNhcb := p.handleClassicHistogramSeries(p.lset); isNhcb && !p.keepClassicHistograms {
 			return p.Next()
 		}
@@ -119,6 +162,15 @@ func (p *NhcbParser) Next() (Entry, error) {
 		p.bytes, p.ts, p.h, p.fh = p.parser.Histogram()
 		p.metricString = p.parser.Metric(&p.lset)
 		p.lastNativeHistName = p.lset.Get(labels.MetricName)
+		if p.processNhcb() {
+			p.entry = et
+			return EntryHistogram, nil
+		}
+	default:
+		if p.processNhcb() {
+			p.entry = et
+			return EntryHistogram, nil
+		}
 	}
 	return et, err
 }
@@ -129,9 +181,6 @@ func (p *NhcbParser) Next() (Entry, error) {
 // right before the classic histograms) and returns true if the collation was done.
 func (p *NhcbParser) handleClassicHistogramSeries(lset labels.Labels) bool {
 	mName := lset.Get(labels.MetricName)
-	if convertnhcb.GetHistogramMetricBaseName(mName) == p.lastNativeHistName {
-		return false
-	}
 	switch {
 	case strings.HasSuffix(mName, "_bucket") && lset.Has(labels.BucketLabel):
 		le, err := strconv.ParseFloat(lset.Get(labels.BucketLabel), 64)
@@ -156,40 +205,43 @@ func (p *NhcbParser) handleClassicHistogramSeries(lset labels.Labels) bool {
 }
 
 func (p *NhcbParser) processClassicHistogramSeries(lset labels.Labels, suffix string, updateHist func(*convertnhcb.TempHistogram)) {
-	p.lsetNhcb = convertnhcb.GetHistogramMetricBase(lset, suffix)
+	p.isCollationInProgress = true
+	p.tempLsetNhcb = convertnhcb.GetHistogramMetricBase(lset, suffix)
 	updateHist(&p.tempNhcb)
 }
 
 // processNhcb converts the collated classic histogram series to NHCB and caches the info
 // to be returned to callers.
-func (p *NhcbParser) processNhcb(th convertnhcb.TempHistogram) bool {
-	if len(th.BucketCounts) == 0 {
+func (p *NhcbParser) processNhcb() bool {
+	if !p.isCollationInProgress {
 		return false
 	}
-	ub := make([]float64, 0, len(th.BucketCounts))
-	for b := range th.BucketCounts {
+	ub := make([]float64, 0, len(p.tempNhcb.BucketCounts))
+	for b := range p.tempNhcb.BucketCounts {
 		ub = append(ub, b)
 	}
 	upperBounds, hBase := convertnhcb.ProcessUpperBoundsAndCreateBaseHistogram(ub, false)
 	fhBase := hBase.ToFloat(nil)
-	h, fh := convertnhcb.ConvertHistogramWrapper(th, upperBounds, hBase, fhBase)
+	h, fh := convertnhcb.ConvertHistogramWrapper(p.tempNhcb, upperBounds, hBase, fhBase)
 	if h != nil {
 		if err := h.Validate(); err != nil {
 			return false
 		}
-		p.h = h
-		p.fh = nil
+		p.hNhcb = h
+		p.fhNhcb = nil
 	} else if fh != nil {
 		if err := fh.Validate(); err != nil {
 			return false
 		}
-		p.h = nil
-		p.fh = fh
+		p.hNhcb = nil
+		p.fhNhcb = fh
 	}
 	buf := make([]byte, 0, 1024)
-	p.bytes = p.lsetNhcb.Bytes(buf)
-	p.lset = p.lsetNhcb
-	p.metricString = p.lsetNhcb.String()
+	p.bytesNhcb = p.tempLsetNhcb.Bytes(buf)
+	p.lsetNhcb = p.tempLsetNhcb
+	p.metricStringNhcb = p.tempLsetNhcb.String()
 	p.tempNhcb = convertnhcb.NewTempHistogram()
+	p.isCollationInProgress = false
+	p.justInsertedNhcb = true
 	return true
 }
