@@ -3022,7 +3022,7 @@ func TestQuerierIndexQueriesRace(t *testing.T) {
 				q, err := db.Querier(math.MinInt64, math.MaxInt64)
 				require.NoError(t, err)
 
-				values, _, err := q.LabelValues(ctx, "seq", c.matchers...)
+				values, _, err := q.LabelValues(ctx, "seq", nil, c.matchers...)
 				require.NoError(t, err)
 				require.Emptyf(t, values, `label values for label "seq" should be empty`)
 
