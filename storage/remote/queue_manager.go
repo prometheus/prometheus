@@ -664,7 +664,8 @@ outer:
 				return false
 			default:
 			}
-			if t.shards.enqueue(s.Ref, timeSeries{
+			if t.shards.enqueue(timeSeries{
+				ref:          s.Ref,
 				seriesLabels: lbls,
 				timestamp:    s.T,
 				value:        s.V,
@@ -720,7 +721,8 @@ outer:
 				return false
 			default:
 			}
-			if t.shards.enqueue(e.Ref, timeSeries{
+			if t.shards.enqueue(timeSeries{
+				ref:            e.Ref,
 				seriesLabels:   lbls,
 				timestamp:      e.T,
 				value:          e.V,
@@ -774,7 +776,8 @@ outer:
 				return false
 			default:
 			}
-			if t.shards.enqueue(h.Ref, timeSeries{
+			if t.shards.enqueue(timeSeries{
+				ref:          h.Ref,
 				seriesLabels: lbls,
 				timestamp:    h.T,
 				histogram:    h.H,
@@ -827,7 +830,8 @@ outer:
 				return false
 			default:
 			}
-			if t.shards.enqueue(h.Ref, timeSeries{
+			if t.shards.enqueue(timeSeries{
+				ref:            h.Ref,
 				seriesLabels:   lbls,
 				timestamp:      h.T,
 				floatHistogram: h.FH,
@@ -1122,11 +1126,14 @@ func (t *QueueManager) reshardLoop() {
 	for {
 		select {
 		case numShards := <-t.reshardChan:
-			// We start the newShards after we have stopped (the therefore completely
-			// flushed) the oldShards, to guarantee we only every deliver samples in
-			// order.
-			t.shards.stop()
-			t.shards.start(numShards)
+			// We start the newShards after we have either redistributed the samples amongst
+			// the new shards, or if that fails, we wait for the samples to be completely flushed
+			// before starting the new shards to guarantee we only every deliver samples in order.
+			successful := t.shards.reshard(numShards)
+			if !successful {
+				t.shards.stop()
+				t.shards.start(numShards)
+			}
 		case <-t.quit:
 			return
 		}
@@ -1224,6 +1231,7 @@ func (s *shards) stop() {
 
 	// Force an unclean shutdown.
 	s.hardShutdown()
+	s.updateDroppedMetrics()
 	<-s.done
 
 	// Log error for any dropped samples, exemplars, or histograms.
@@ -1237,20 +1245,95 @@ func (s *shards) stop() {
 	logDroppedError("histograms", s.histogramsDroppedOnHardShutdown)
 }
 
+func (s *shards) updateDroppedMetrics() {
+	// In this case we drop all samples in the buffer and the queue.
+	// Remove them from pending and mark them as failed.
+	droppedSamples := int(s.enqueuedSamples.Load())
+	droppedExemplars := int(s.enqueuedExemplars.Load())
+	droppedHistograms := int(s.enqueuedHistograms.Load())
+	s.qm.metrics.pendingSamples.Sub(float64(droppedSamples))
+	s.qm.metrics.pendingExemplars.Sub(float64(droppedExemplars))
+	s.qm.metrics.pendingHistograms.Sub(float64(droppedHistograms))
+	s.qm.metrics.failedSamplesTotal.Add(float64(droppedSamples))
+	s.qm.metrics.failedExemplarsTotal.Add(float64(droppedExemplars))
+	s.qm.metrics.failedHistogramsTotal.Add(float64(droppedHistograms))
+	s.samplesDroppedOnHardShutdown.Add(uint32(droppedSamples))
+	s.exemplarsDroppedOnHardShutdown.Add(uint32(droppedExemplars))
+	s.histogramsDroppedOnHardShutdown.Add(uint32(droppedHistograms))
+}
+
+func (s *shards) reshard(numShards int) bool {
+	// Exclusive lock to ensure that this does not run concurrently with enqueue.
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
+	newQueues := make([]*queue, numShards)
+	for i := 0; i < numShards; i++ {
+		newQueues[i] = newQueue(s.qm.cfg.MaxSamplesPerSend, s.qm.cfg.Capacity)
+	}
+
+	successful := s.redistributeSamples(newQueues)
+	// We are not able to redistribute, we can revert to the start/stop loop.
+	if !successful {
+		return false
+	}
+
+	// We have successfully moved all the samples, now can delete the old queues.
+	for _, queue := range s.queues {
+		close(queue.batchQueue)
+		queue.batchMtx.Unlock()
+	}
+
+	// Waiting till flushDeadline for all the runShards to terminate.
+	select {
+	case <-s.done:
+	case <-time.After(s.qm.flushDeadline):
+		// Cancelling the current context so as to unblock client calls.
+		s.hardShutdown()
+		<-s.done
+	}
+
+	s.queues = newQueues
+	var hardShutdownCtx context.Context
+	hardShutdownCtx, s.hardShutdown = context.WithCancel(context.Background())
+	s.running.Store(int32(numShards))
+	s.done = make(chan struct{})
+	for i := 0; i < numShards; i++ {
+		go s.runShard(hardShutdownCtx, i, newQueues[i])
+	}
+	s.qm.metrics.numShards.Set(float64(numShards))
+	return true
+}
+
+func (s *shards) redistributeSamples(newQueues []*queue) bool {
+	for _, queue := range s.queues {
+		queue.batchMtx.Lock()
+		for _, ts := range queue.batch {
+			queueIndex := uint64(ts.ref) % uint64(len(newQueues))
+			added := newQueues[queueIndex].Append(ts)
+			if !added {
+				queue.batchMtx.Unlock()
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // enqueue data (sample or exemplar). If the shard is full, shutting down, or
 // resharding, it will return false; in this case, you should back off and
 // retry. A shard is full when its configured capacity has been reached,
 // specifically, when s.queues[shard] has filled its batchQueue channel and the
 // partial batch has also been filled.
-func (s *shards) enqueue(ref chunks.HeadSeriesRef, data timeSeries) bool {
+func (s *shards) enqueue(data timeSeries) bool {
 	s.mtx.RLock()
 	defer s.mtx.RUnlock()
 
-	shard := uint64(ref) % uint64(len(s.queues))
 	select {
 	case <-s.softShutdown:
 		return false
 	default:
+		shard := uint64(data.ref) % uint64(len(s.queues))
 		appended := s.queues[shard].Append(data)
 		if !appended {
 			return false
@@ -1284,6 +1367,7 @@ type queue struct {
 }
 
 type timeSeries struct {
+	ref            chunks.HeadSeriesRef
 	seriesLabels   labels.Labels
 	value          float64
 	histogram      *histogram.Histogram
@@ -1455,20 +1539,6 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 	for {
 		select {
 		case <-ctx.Done():
-			// In this case we drop all samples in the buffer and the queue.
-			// Remove them from pending and mark them as failed.
-			droppedSamples := int(s.enqueuedSamples.Load())
-			droppedExemplars := int(s.enqueuedExemplars.Load())
-			droppedHistograms := int(s.enqueuedHistograms.Load())
-			s.qm.metrics.pendingSamples.Sub(float64(droppedSamples))
-			s.qm.metrics.pendingExemplars.Sub(float64(droppedExemplars))
-			s.qm.metrics.pendingHistograms.Sub(float64(droppedHistograms))
-			s.qm.metrics.failedSamplesTotal.Add(float64(droppedSamples))
-			s.qm.metrics.failedExemplarsTotal.Add(float64(droppedExemplars))
-			s.qm.metrics.failedHistogramsTotal.Add(float64(droppedHistograms))
-			s.samplesDroppedOnHardShutdown.Add(uint32(droppedSamples))
-			s.exemplarsDroppedOnHardShutdown.Add(uint32(droppedExemplars))
-			s.histogramsDroppedOnHardShutdown.Add(uint32(droppedHistograms))
 			return
 
 		case batch, ok := <-batchQueue:
