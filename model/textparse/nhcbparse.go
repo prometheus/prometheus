@@ -44,6 +44,9 @@ type NhcbParser struct {
 	// For Metric.
 	lset         labels.Labels
 	metricString string
+	// For Type.
+	bType []byte
+	typ   model.MetricType
 
 	// Caches the entry itself if we are inserting a converted NHCB
 	// halfway through.
@@ -96,7 +99,7 @@ func (p *NhcbParser) Help() ([]byte, []byte) {
 }
 
 func (p *NhcbParser) Type() ([]byte, model.MetricType) {
-	return p.parser.Type()
+	return p.bType, p.typ
 }
 
 func (p *NhcbParser) Unit() ([]byte, []byte) {
@@ -147,7 +150,7 @@ func (p *NhcbParser) Next() (Entry, error) {
 	case EntrySeries:
 		p.bytes, p.ts, p.value = p.parser.Series()
 		p.metricString = p.parser.Metric(&p.lset)
-		histBaseName := convertnhcb.GetHistogramMetricBaseName(p.lset)
+		histBaseName := convertnhcb.GetHistogramMetricBaseName(p.lset.Get(labels.MetricName))
 		if histBaseName == p.lastNativeHistName {
 			break
 		}
@@ -160,19 +163,17 @@ func (p *NhcbParser) Next() (Entry, error) {
 		if isNhcb := p.handleClassicHistogramSeries(p.lset); isNhcb && !p.keepClassicHistograms {
 			return p.Next()
 		}
+		return et, err
 	case EntryHistogram:
 		p.bytes, p.ts, p.h, p.fh = p.parser.Histogram()
 		p.metricString = p.parser.Metric(&p.lset)
 		p.lastNativeHistName = p.lset.Get(labels.MetricName)
-		if p.processNhcb() {
-			p.entry = et
-			return EntryHistogram, nil
-		}
-	default:
-		if p.processNhcb() {
-			p.entry = et
-			return EntryHistogram, nil
-		}
+	case EntryType:
+		p.bType, p.typ = p.parser.Type()
+	}
+	if p.processNhcb() {
+		p.entry = et
+		return EntryHistogram, nil
 	}
 	return et, err
 }
@@ -182,7 +183,13 @@ func (p *NhcbParser) Next() (Entry, error) {
 // isn't already a native histogram with the same name (assuming it is always processed
 // right before the classic histograms) and returns true if the collation was done.
 func (p *NhcbParser) handleClassicHistogramSeries(lset labels.Labels) bool {
+	if p.typ != model.MetricTypeHistogram {
+		return false
+	}
 	mName := lset.Get(labels.MetricName)
+	if convertnhcb.GetHistogramMetricBaseName(mName) != string(p.bType) {
+		return false
+	}
 	switch {
 	case strings.HasSuffix(mName, "_bucket") && lset.Has(labels.BucketLabel):
 		le, err := strconv.ParseFloat(lset.Get(labels.BucketLabel), 64)
