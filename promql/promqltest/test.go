@@ -534,10 +534,17 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 	// Convert the collated classic histogram data into native histograms
 	// with custom bounds and append them to the storage.
 	for _, histogramWrapper := range histogramMap {
-		upperBounds, fhBase := convertnhcb.ProcessUpperBoundsAndCreateBaseHistogram(histogramWrapper.upperBounds)
+		upperBounds, hBase := convertnhcb.ProcessUpperBoundsAndCreateBaseHistogram(histogramWrapper.upperBounds, true)
+		fhBase := hBase.ToFloat(nil)
 		samples := make([]promql.Sample, 0, len(histogramWrapper.histogramByTs))
 		for t, histogram := range histogramWrapper.histogramByTs {
-			fh := convertnhcb.ConvertHistogramWrapper(histogram, upperBounds, fhBase)
+			h, fh := convertnhcb.ConvertHistogramWrapper(histogram, upperBounds, hBase, fhBase)
+			if fh == nil {
+				if err := h.Validate(); err != nil {
+					return err
+				}
+				fh = h.ToFloat(nil)
+			}
 			if err := fh.Validate(); err != nil {
 				return err
 			}
