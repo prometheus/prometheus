@@ -940,7 +940,7 @@ func (m trueMatcher) Matches(_ string) bool {
 
 // optimizeEqualOrPrefixStringMatchers optimize a specific case where all matchers are made by an
 // alternation (orStringMatcher) of strings checked for equality (equalStringMatcher) or
-// with a literal prefix (literalPrefixStringMatcher).
+// with a literal prefix (literalPrefixSensitiveStringMatcher or literalPrefixInsensitiveStringMatcher).
 //
 // In this specific case, when we have many strings to match against we can use a map instead
 // of iterating over the list of strings.
@@ -988,7 +988,7 @@ func optimizeEqualOrPrefixStringMatchers(input StringMatcher, threshold int) Str
 		return input
 	}
 
-	// If the number of values found is less than the threshold, then we should skip the optimization.
+	// If the number of values and prefixes found is less than the threshold, then we should skip the optimization.
 	if (numValues + numPrefixes) < threshold {
 		return input
 	}
@@ -1012,10 +1012,10 @@ func optimizeEqualOrPrefixStringMatchers(input StringMatcher, threshold int) Str
 }
 
 // findEqualOrPrefixStringMatchers analyze the input StringMatcher and calls the equalMatcherCallback for each
-// equalStringMatcher found, and prefixMatcherCallback for each literalPrefixStringMatcher found.
+// equalStringMatcher found, and prefixMatcherCallback for each literalPrefixSensitiveStringMatcher and literalPrefixInsensitiveStringMatcher found.
 //
 // Returns true if and only if the input StringMatcher is *only* composed by an alternation of equalStringMatcher and/or
-// literalPrefixStringMatcher. Returns false if prefixMatcherCallback is nil and a literalPrefixStringMatcher is encountered.
+// literal prefix matcher. Returns false if prefixMatcherCallback is nil and a literal prefix matcher is encountered.
 func findEqualOrPrefixStringMatchers(input StringMatcher, equalMatcherCallback func(matcher *equalStringMatcher) bool, prefixMatcherCallback func(prefix string, prefixCaseSensitive bool, matcher StringMatcher) bool) bool {
 	orInput, ok := input.(orStringMatcher)
 	if !ok {
