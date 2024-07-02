@@ -60,6 +60,9 @@ type Group struct {
 
 	shouldRestore bool
 
+	isDoneChClosed bool
+	doneChMtx      sync.Mutex
+
 	markStale   bool
 	done        chan struct{}
 	terminated  chan struct{}
@@ -264,7 +267,13 @@ func (g *Group) run(ctx context.Context) {
 }
 
 func (g *Group) stop() {
-	close(g.done)
+	g.doneChMtx.Lock()
+	if !g.isDoneChClosed {
+		g.isDoneChClosed = true
+		close(g.done)
+	}
+	g.doneChMtx.Unlock()
+
 	<-g.terminated
 }
 
