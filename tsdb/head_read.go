@@ -200,9 +200,15 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchB
 
 	*chks = (*chks)[:0]
 
+	getSeriesChunks(s, h.mint, h.maxt, chks)
+
+	return nil
+}
+
+func getSeriesChunks(s *memSeries, mint, maxt int64, chks *[]chunks.Meta) {
 	for i, c := range s.mmappedChunks {
 		// Do not expose chunks that are outside of the specified range.
-		if !c.OverlapsClosedInterval(h.mint, h.maxt) {
+		if !c.OverlapsClosedInterval(mint, maxt) {
 			continue
 		}
 		*chks = append(*chks, chunks.Meta{
@@ -223,7 +229,7 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchB
 			} else {
 				maxTime = chk.maxTime
 			}
-			if chk.OverlapsClosedInterval(h.mint, h.maxt) {
+			if chk.OverlapsClosedInterval(mint, maxt) {
 				*chks = append(*chks, chunks.Meta{
 					MinTime: chk.minTime,
 					MaxTime: maxTime,
@@ -233,8 +239,6 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchB
 			j++
 		}
 	}
-
-	return nil
 }
 
 // headChunkID returns the HeadChunkID referred to by the given position.
@@ -339,10 +343,15 @@ func (h *headChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chu
 	return chk, nil, err
 }
 
-// ChunkWithCopy returns the chunk for the reference number.
-// If the chunk is the in-memory chunk, then it makes a copy and returns the copied chunk.
-func (h *headChunkReader) ChunkWithCopy(meta chunks.Meta) (chunkenc.Chunk, int64, error) {
-	return h.chunk(meta, true)
+type ChunkReaderWithCopy interface {
+	ChunkOrIterableWithCopy(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, int64, error)
+}
+
+// ChunkOrIterableWithCopy returns the chunk for the reference number.
+// If the chunk is the in-memory chunk, then it makes a copy and returns the copied chunk, plus the max time of the chunk.
+func (h *headChunkReader) ChunkOrIterableWithCopy(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {
+	chk, maxTime, err := h.chunk(meta, true)
+	return chk, nil, maxTime, err
 }
 
 // chunk returns the chunk for the reference number.
@@ -358,9 +367,14 @@ func (h *headChunkReader) chunk(meta chunks.Meta, copyLastChunk bool) (chunkenc.
 	}
 
 	s.Lock()
+	defer s.Unlock()
+	return h.chunkFromSeries(s, cid, copyLastChunk)
+}
+
+// Call with s locked.
+func (h *headChunkReader) chunkFromSeries(s *memSeries, cid chunks.HeadChunkID, copyLastChunk bool) (chunkenc.Chunk, int64, error) {
 	c, headChunk, isOpen, err := s.chunk(cid, h.head.chunkDiskMapper, &h.head.memChunkPool)
 	if err != nil {
-		s.Unlock()
 		return nil, 0, err
 	}
 	defer func() {
@@ -374,7 +388,6 @@ func (h *headChunkReader) chunk(meta chunks.Meta, copyLastChunk bool) (chunkenc.
 
 	// This means that the chunk is outside the specified range.
 	if !c.OverlapsClosedInterval(h.mint, h.maxt) {
-		s.Unlock()
 		return nil, 0, storage.ErrNotFound
 	}
 
@@ -391,7 +404,6 @@ func (h *headChunkReader) chunk(meta chunks.Meta, copyLastChunk bool) (chunkenc.
 			return nil, 0, err
 		}
 	}
-	s.Unlock()
 
 	return &safeHeadChunk{
 		Chunk:    chk,
@@ -465,9 +477,10 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 // chunks.Meta reference from memory or by m-mapping it from the disk. The
 // returned iterable will be a merge of all the overlapping chunks, if any,
 // amongst all the chunks in the OOOHead.
+// If hr is non-nil then in-order chunks are included.
 // This function is not thread safe unless the caller holds a lock.
 // The caller must ensure that s.ooo is not nil.
-func (s *memSeries) oooMergedChunks(meta chunks.Meta, cdm *chunks.ChunkDiskMapper, mint, maxt int64) (*mergedOOOChunks, error) {
+func (s *memSeries) oooMergedChunks(meta chunks.Meta, cdm *chunks.ChunkDiskMapper, hr *headChunkReader, mint, maxt int64) (*mergedOOOChunks, error) {
 	_, cid := chunks.HeadChunkRef(meta.Ref).Unpack()
 
 	// ix represents the index of chunk in the s.mmappedChunks slice. The chunk meta's are
@@ -537,6 +550,17 @@ func (s *memSeries) oooMergedChunks(meta chunks.Meta, cdm *chunks.ChunkDiskMappe
 		}
 	}
 
+	if hr != nil {
+		var metas []chunks.Meta
+		getSeriesChunks(s, max(meta.MinTime, mint), min(meta.MaxTime, maxt), &metas)
+		for _, m := range metas {
+			tmpChks = append(tmpChks, chunkMetaAndChunkDiskMapperRef{
+				meta: m,
+				ref:  0, // This tells the loop below it's an in-order head chunk.
+			})
+		}
+	}
+
 	// Next we want to sort all the collected chunks by min time so we can find
 	// those that overlap and stop when we know the rest don't.
 	slices.SortFunc(tmpChks, refLessByMinTimeAndMinRef)
@@ -548,7 +572,8 @@ func (s *memSeries) oooMergedChunks(meta chunks.Meta, cdm *chunks.ChunkDiskMappe
 			continue
 		}
 		var iterable chunkenc.Iterable
-		if c.meta.Ref == oooHeadRef {
+		switch {
+		case c.meta.Ref == oooHeadRef:
 			var xor *chunkenc.XORChunk
 			var err error
 			// If head chunk min and max time match the meta OOO markers
@@ -564,7 +589,14 @@ func (s *memSeries) oooMergedChunks(meta chunks.Meta, cdm *chunks.ChunkDiskMappe
 				return nil, fmt.Errorf("failed to convert ooo head chunk to xor chunk: %w", err)
 			}
 			iterable = xor
-		} else {
+		case c.ref == 0: // This is an in-order head chunk.
+			_, cid := chunks.HeadChunkRef(c.meta.Ref).Unpack()
+			var err error
+			iterable, _, err = hr.chunkFromSeries(s, cid, false)
+			if err != nil {
+				return nil, fmt.Errorf("invalid head chunk: %w", err)
+			}
+		default:
 			chk, err := cdm.Chunk(c.ref)
 			if err != nil {
 				var cerr *chunks.CorruptionErr
