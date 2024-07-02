@@ -754,16 +754,8 @@ func (it *ListPostings) Seek(x storage.SeriesRef) bool {
 		return false
 	}
 
-	// Binary search for the value.
-	i, j := 0, len(it.list)
-	for i < j {
-		h := i + (j-i)/2
-		if it.list[h] < x {
-			i = h + 1
-		} else {
-			j = h
-		}
-	}
+	// Do binary search between current position and end.
+	i, _ := slices.BinarySearch(it.list, x)
 	if i < len(it.list) {
 		it.cur = it.list[i]
 		it.list = it.list[i+1:]
