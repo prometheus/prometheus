@@ -1463,7 +1463,7 @@ func TestNativeHistogramsInRecordingRules(t *testing.T) {
 	require.Equal(t, chunkenc.ValFloatHistogram, it.Next())
 	tsp, fh := it.AtFloatHistogram(nil)
 	require.Equal(t, ts.Add(10*time.Second).UnixMilli(), tsp)
-	require.Equal(t, expHist, fh)
+	require.True(t, expHist.Equals(fh))
 	require.Equal(t, chunkenc.ValNone, it.Next())
 }
 

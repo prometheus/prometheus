@@ -3304,6 +3304,7 @@ func TestFloatHistogramSize(t *testing.T) {
 			"without spans and buckets",
 			&FloatHistogram{ // 8 bytes.
 				CounterResetHint: 0,           // 1 byte.
+				KahanSumHint:     0,           // 8 bytes.
 				Schema:           1,           // 4 bytes.
 				ZeroThreshold:    0.01,        // 8 bytes.
 				ZeroCount:        5.5,         // 8 bytes.
@@ -3315,12 +3316,13 @@ func TestFloatHistogramSize(t *testing.T) {
 				NegativeBuckets:  nil,         // 24 bytes.
 				CustomValues:     nil,         // 24 bytes.
 			},
-			8 + 4 + 4 + 8 + 8 + 8 + 8 + 24 + 24 + 24 + 24 + 24,
+			8 + 4 + 8 + 4 + 8 + 8 + 8 + 8 + 24 + 24 + 24 + 24 + 24,
 		},
 		{
 			"complete struct",
 			&FloatHistogram{ // 8 bytes.
 				CounterResetHint: 0,           // 1 byte.
+				KahanSumHint:     0,           // 8 bytes.
 				Schema:           1,           // 4 bytes.
 				ZeroThreshold:    0.01,        // 8 bytes.
 				ZeroCount:        5.5,         // 8 bytes.
@@ -3337,12 +3339,13 @@ func TestFloatHistogramSize(t *testing.T) {
 				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000}, // 24 bytes + 4 * 8 bytes.
 				CustomValues:    nil,                              // 24 bytes.
 			},
-			8 + 4 + 4 + 8 + 8 + 8 + 8 + (24 + 2*4 + 2*4) + (24 + 2*4 + 2*4) + (24 + 4*8) + (24 + 4*8) + 24,
+			8 + 4 + 8 + 4 + 8 + 8 + 8 + 8 + (24 + 2*4 + 2*4) + (24 + 2*4 + 2*4) + (24 + 4*8) + (24 + 4*8) + 24,
 		},
 		{
 			"complete struct with custom buckets",
 			&FloatHistogram{ // 8 bytes.
 				CounterResetHint: 0,                   // 1 byte.
+				KahanSumHint:     0,                   // 8 bytes.
 				Schema:           CustomBucketsSchema, // 4 bytes.
 				ZeroThreshold:    0,                   // 8 bytes.
 				ZeroCount:        0,                   // 8 bytes.
@@ -3357,7 +3360,7 @@ func TestFloatHistogramSize(t *testing.T) {
 				NegativeBuckets: nil,                         // 24 bytes.
 				CustomValues:    []float64{1, 2, 3},          // 24 bytes + 3 * 8 bytes.
 			},
-			8 + 4 + 4 + 8 + 8 + 8 + 8 + (24 + 2*4 + 2*4) + (24 + 4*8) + 24 + 24 + (24 + 3*8),
+			8 + 4 + 8 + 4 + 8 + 8 + 8 + 8 + (24 + 2*4 + 2*4) + (24 + 4*8) + 24 + 24 + (24 + 3*8),
 		},
 	}
 

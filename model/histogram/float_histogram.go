@@ -30,6 +30,8 @@ import (
 type FloatHistogram struct {
 	// Counter reset information.
 	CounterResetHint CounterResetHint
+	// KahanSumHint runs compensation for lost low-order bits.
+	KahanSumHint float64
 	// Currently valid schema numbers are -4 <= n <= 8 for exponential buckets.
 	// They are all for base-2 bucket schemas, where 1 is a bucket boundary in
 	// each case, and then each power of two is divided into 2^n logarithmic buckets.
@@ -352,7 +354,11 @@ func (h *FloatHistogram) Add(other *FloatHistogram) (*FloatHistogram, error) {
 		h.ZeroCount += otherZeroCount
 	}
 	h.Count += other.Count
-	h.Sum += other.Sum
+	// Kahan summation algorithm
+	y := other.Sum - h.KahanSumHint
+	t := h.Sum + y
+	h.KahanSumHint = (t - h.Sum) - y
+	h.Sum = t
 
 	var (
 		hPositiveSpans       = h.PositiveSpans
@@ -504,6 +510,7 @@ func (h *FloatHistogram) Size() int {
 
 	// fh is 8 bytes.
 	// fh.CounterResetHint is 4 bytes (1 byte bool + 3 bytes padding).
+	// fh.KahanSumHint is 8 bytes.
 	// fh.Schema is 4 bytes.
 	// fh.ZeroThreshold is 8 bytes.
 	// fh.ZeroCount is 8 bytes.
@@ -514,7 +521,7 @@ func (h *FloatHistogram) Size() int {
 	// fh.PositiveBuckets is 24 bytes.
 	// fh.NegativeBuckets is 24 bytes.
 	// fh.CustomValues is 24 bytes.
-	structSize := 168
+	structSize := 176
 
 	return structSize + posSpanSize + negSpanSize + posBucketSize + negBucketSize + customBoundSize
 }
