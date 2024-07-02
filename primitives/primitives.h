@@ -201,6 +201,10 @@ class Sample {
     return *this;
   }
 
+  bool operator==(const Sample& other) const noexcept {
+    return timestamp_ == other.timestamp_ && std::bit_cast<uint64_t>(value_) == std::bit_cast<uint64_t>(other.value_);
+  }
+
   template <class T>
   // TODO requires is_sample
   inline __attribute__((always_inline)) explicit Sample(const T& s) noexcept : timestamp_(s.timestamp()), value_(s.value()) {}
