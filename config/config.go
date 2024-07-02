@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/storage/remote/azuread"
+	"github.com/prometheus/prometheus/storage/remote/googleiam"
 )
 
 var (
@@ -1067,11 +1068,12 @@ type RemoteWriteConfig struct {
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
-	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
-	QueueConfig      QueueConfig             `yaml:"queue_config,omitempty"`
-	MetadataConfig   MetadataConfig          `yaml:"metadata_config,omitempty"`
-	SigV4Config      *sigv4.SigV4Config      `yaml:"sigv4,omitempty"`
-	AzureADConfig    *azuread.AzureADConfig  `yaml:"azuread,omitempty"`
+	HTTPClientConfig config.HTTPClientConfig    `yaml:",inline"`
+	QueueConfig      QueueConfig                `yaml:"queue_config,omitempty"`
+	MetadataConfig   MetadataConfig             `yaml:"metadata_config,omitempty"`
+	SigV4Config      *sigv4.SigV4Config         `yaml:"sigv4,omitempty"`
+	AzureADConfig    *azuread.AzureADConfig     `yaml:"azuread,omitempty"`
+	GoogleIAMConfig  *googleiam.GoogleIAMConfig `yaml:"google_iam,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -1105,17 +1107,38 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 		return err
 	}
 
-	httpClientConfigAuthEnabled := c.HTTPClientConfig.BasicAuth != nil ||
-		c.HTTPClientConfig.Authorization != nil || c.HTTPClientConfig.OAuth2 != nil
-
-	if httpClientConfigAuthEnabled && (c.SigV4Config != nil || c.AzureADConfig != nil) {
-		return fmt.Errorf("at most one of basic_auth, authorization, oauth2, sigv4, & azuread must be configured")
+	err := validateAuthConfigs(c)
+	if err != nil {
+		return err
 	}
 
-	if c.SigV4Config != nil && c.AzureADConfig != nil {
-		return fmt.Errorf("at most one of basic_auth, authorization, oauth2, sigv4, & azuread must be configured")
-	}
+	return nil
+}
 
+// validateAuthConfigs validates that at most one of basic_auth, authorization, oauth2, sigv4, azuread or google_iam must be configured.
+func validateAuthConfigs(c *RemoteWriteConfig) error {
+	var authConfigured []string
+	if c.HTTPClientConfig.BasicAuth != nil {
+		authConfigured = append(authConfigured, "basic_auth")
+	}
+	if c.HTTPClientConfig.Authorization != nil {
+		authConfigured = append(authConfigured, "authorization")
+	}
+	if c.HTTPClientConfig.OAuth2 != nil {
+		authConfigured = append(authConfigured, "oauth2")
+	}
+	if c.SigV4Config != nil {
+		authConfigured = append(authConfigured, "sigv4")
+	}
+	if c.AzureADConfig != nil {
+		authConfigured = append(authConfigured, "azuread")
+	}
+	if c.GoogleIAMConfig != nil {
+		authConfigured = append(authConfigured, "google_iam")
+	}
+	if len(authConfigured) > 1 {
+		return fmt.Errorf("at most one of basic_auth, authorization, oauth2, sigv4, azuread or google_iam must be configured. Currently configured: %v", authConfigured)
+	}
 	return nil
 }
 
@@ -1134,7 +1157,7 @@ func validateHeadersForTracing(headers map[string]string) error {
 func validateHeaders(headers map[string]string) error {
 	for header := range headers {
 		if strings.ToLower(header) == "authorization" {
-			return errors.New("authorization header must be changed via the basic_auth, authorization, oauth2, sigv4, or azuread parameter")
+			return errors.New("authorization header must be changed via the basic_auth, authorization, oauth2, sigv4, azuread or google_iam parameter")
 		}
 		if _, ok := reservedHeaders[strings.ToLower(header)]; ok {
 			return fmt.Errorf("%s is a reserved header. It must not be changed", header)
