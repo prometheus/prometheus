@@ -1407,6 +1407,9 @@ func (db *DB) compactHead(head *RangeHead) error {
 	if err = db.head.truncateMemory(head.BlockMaxTime()); err != nil {
 		return fmt.Errorf("head memory truncate: %w", err)
 	}
+
+	db.head.RebuildSymbolTable(db.logger)
+
 	return nil
 }
 
