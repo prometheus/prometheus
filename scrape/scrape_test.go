@@ -3522,6 +3522,7 @@ metric: <
 	metricsTexts := map[string]struct {
 		text           []string
 		contentType    string
+		hasClassic     bool
 		hasExponential bool
 	}{
 		"text": {
@@ -3542,6 +3543,7 @@ metric: <
 				genTestCounterText("test_metric_3_bucket", 1, true),
 				genTestHistText("test_histogram_3", true),
 			},
+			hasClassic: true,
 		},
 		"text, in different order": {
 			text: []string{
@@ -3561,6 +3563,7 @@ metric: <
 				genTestCounterText("test_metric_3_sum", 1, true),
 				genTestCounterText("test_metric_3_bucket", 1, true),
 			},
+			hasClassic: true,
 		},
 		"protobuf": {
 			text: []string{
@@ -3581,6 +3584,7 @@ metric: <
 				genTestHistProto("test_histogram_3", true, false),
 			},
 			contentType: "application/vnd.google.protobuf",
+			hasClassic:  true,
 		},
 		"protobuf, in different order": {
 			text: []string{
@@ -3601,8 +3605,9 @@ metric: <
 				genTestCounterProto("test_metric_3_bucket", 1),
 			},
 			contentType: "application/vnd.google.protobuf",
+			hasClassic:  true,
 		},
-		"protobuf, with native exponential histogram": {
+		"protobuf, with additional native exponential histogram": {
 			text: []string{
 				genTestCounterProto("test_metric_1", 1),
 				genTestCounterProto("test_metric_1_count", 1),
@@ -3619,6 +3624,28 @@ metric: <
 				genTestCounterProto("test_metric_3_sum", 1),
 				genTestCounterProto("test_metric_3_bucket", 1),
 				genTestHistProto("test_histogram_3", true, true),
+			},
+			contentType:    "application/vnd.google.protobuf",
+			hasClassic:     true,
+			hasExponential: true,
+		},
+		"protobuf, with only native exponential histogram": {
+			text: []string{
+				genTestCounterProto("test_metric_1", 1),
+				genTestCounterProto("test_metric_1_count", 1),
+				genTestCounterProto("test_metric_1_sum", 1),
+				genTestCounterProto("test_metric_1_bucket", 1),
+				genTestHistProto("test_histogram_1", false, true),
+				genTestCounterProto("test_metric_2", 1),
+				genTestCounterProto("test_metric_2_count", 1),
+				genTestCounterProto("test_metric_2_sum", 1),
+				genTestCounterProto("test_metric_2_bucket", 1),
+				genTestHistProto("test_histogram_2", false, true),
+				genTestCounterProto("test_metric_3", 1),
+				genTestCounterProto("test_metric_3_count", 1),
+				genTestCounterProto("test_metric_3_sum", 1),
+				genTestCounterProto("test_metric_3_bucket", 1),
+				genTestHistProto("test_histogram_3", false, true),
 			},
 			contentType:    "application/vnd.google.protobuf",
 			hasExponential: true,
@@ -3713,34 +3740,49 @@ metric: <
 		for name, tc := range map[string]struct {
 			scrapeClassicHistograms  bool
 			convertClassicHistograms bool
-			expectedClassicHistCount int
-			expectedNhcbCount        int
 		}{
 			"convert with scrape": {
 				scrapeClassicHistograms:  true,
 				convertClassicHistograms: true,
-				expectedClassicHistCount: 1,
-				expectedNhcbCount:        1,
 			},
 			"convert without scrape": {
 				scrapeClassicHistograms:  false,
 				convertClassicHistograms: true,
-				expectedClassicHistCount: 0,
-				expectedNhcbCount:        1,
 			},
 			"scrape without convert": {
 				scrapeClassicHistograms:  true,
 				convertClassicHistograms: false,
-				expectedClassicHistCount: 1,
-				expectedNhcbCount:        0,
 			},
 			"neither scrape nor convert": {
 				scrapeClassicHistograms:  false,
 				convertClassicHistograms: false,
-				expectedClassicHistCount: 1, // since these are sent without native histograms
-				expectedNhcbCount:        0,
 			},
 		} {
+			var expectedClassicHistCount, expectedNativeHistCount int
+			var expectCustomBuckets bool
+			switch {
+			case tc.scrapeClassicHistograms && tc.convertClassicHistograms:
+				expectedClassicHistCount = 1
+				expectedNativeHistCount = 1
+				expectCustomBuckets = true
+			case !tc.scrapeClassicHistograms && tc.convertClassicHistograms:
+				expectedClassicHistCount = 0
+				expectedNativeHistCount = 1
+				expectCustomBuckets = true
+			case tc.scrapeClassicHistograms && !tc.convertClassicHistograms:
+				expectedClassicHistCount = 1
+				expectedNativeHistCount = 0
+			case !tc.scrapeClassicHistograms && !tc.convertClassicHistograms:
+				expectedClassicHistCount = 1 // since these are sent without native histograms
+				expectedNativeHistCount = 0
+			}
+			if metricsText.hasExponential {
+				expectedNativeHistCount = 1
+				expectCustomBuckets = false
+			} else {
+				expectCustomBuckets = true
+			}
+
 			t.Run(fmt.Sprintf("%s with %s", name, metricsTextName), func(t *testing.T) {
 				simpleStorage := teststorage.New(t)
 				defer simpleStorage.Close()
@@ -3830,20 +3872,23 @@ metric: <
 					checkFloatSeries(series, 1, 1.)
 
 					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_histogram_%d_count", i)))
-					checkFloatSeries(series, tc.expectedClassicHistCount, 1.)
+					checkFloatSeries(series, expectedClassicHistCount, 1.)
 
 					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_histogram_%d_sum", i)))
-					checkFloatSeries(series, tc.expectedClassicHistCount, 10.)
+					checkFloatSeries(series, expectedClassicHistCount, 10.)
 
 					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_histogram_%d_bucket", i)))
-					checkBucketValues(tc.expectedClassicHistCount, metricsText.contentType, series)
+					checkBucketValues(expectedClassicHistCount, metricsText.contentType, series)
 
 					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_histogram_%d", i)))
-					if metricsText.hasExponential {
-						checkHistSeries(series, 1, 3)
+
+					var expectedSchema int32
+					if expectCustomBuckets {
+						expectedSchema = histogram.CustomBucketsSchema
 					} else {
-						checkHistSeries(series, tc.expectedNhcbCount, histogram.CustomBucketsSchema)
+						expectedSchema = 3
 					}
+					checkHistSeries(series, expectedNativeHistCount, expectedSchema)
 				}
 			})
 		}
