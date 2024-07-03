@@ -3377,7 +3377,7 @@ func TestConvertClassicHistograms(t *testing.T) {
 			return fmt.Sprintf(`
 # HELP %s some help text
 # TYPE %s counter
-%s %d
+%s{address="0.0.0.0",port="5001"} %d
 `, name, name, name, value)
 		} else {
 			return fmt.Sprintf(`
@@ -3420,6 +3420,14 @@ name: "%s"
 help: "some help text"
 type: COUNTER
 metric: <
+	label: <
+		name: "address"
+		value: "0.0.0.0"
+	>
+	label: <
+		name: "port"
+		value: "5001"
+	>
 	counter: <
 		value: %d
 	>
@@ -3519,30 +3527,57 @@ metric: <
 		"text": {
 			text: []string{
 				genTestCounterText("test_metric_1", 1, true),
+				genTestCounterText("test_metric_1_count", 1, true),
+				genTestCounterText("test_metric_1_sum", 1, true),
+				genTestCounterText("test_metric_1_bucket", 1, true),
 				genTestHistText("test_histogram_1", true),
 				genTestCounterText("test_metric_2", 1, true),
+				genTestCounterText("test_metric_2_count", 1, true),
+				genTestCounterText("test_metric_2_sum", 1, true),
+				genTestCounterText("test_metric_2_bucket", 1, true),
 				genTestHistText("test_histogram_2", true),
 				genTestCounterText("test_metric_3", 1, true),
+				genTestCounterText("test_metric_3_count", 1, true),
+				genTestCounterText("test_metric_3_sum", 1, true),
+				genTestCounterText("test_metric_3_bucket", 1, true),
 				genTestHistText("test_histogram_3", true),
 			},
 		},
-		"text, no metadata, in different order": {
+		"text, in different order": {
 			text: []string{
-				genTestCounterText("test_metric_1", 1, false),
-				genTestHistText("test_histogram_1", false),
-				genTestCounterText("test_metric_2", 1, false),
-				genTestHistText("test_histogram_2", false),
-				genTestHistText("test_histogram_3", false),
-				genTestCounterText("test_metric_3", 1, false),
+				genTestCounterText("test_metric_1", 1, true),
+				genTestCounterText("test_metric_1_count", 1, true),
+				genTestCounterText("test_metric_1_sum", 1, true),
+				genTestCounterText("test_metric_1_bucket", 1, true),
+				genTestHistText("test_histogram_1", true),
+				genTestCounterText("test_metric_2", 1, true),
+				genTestCounterText("test_metric_2_count", 1, true),
+				genTestCounterText("test_metric_2_sum", 1, true),
+				genTestCounterText("test_metric_2_bucket", 1, true),
+				genTestHistText("test_histogram_2", true),
+				genTestHistText("test_histogram_3", true),
+				genTestCounterText("test_metric_3", 1, true),
+				genTestCounterText("test_metric_3_count", 1, true),
+				genTestCounterText("test_metric_3_sum", 1, true),
+				genTestCounterText("test_metric_3_bucket", 1, true),
 			},
 		},
 		"protobuf": {
 			text: []string{
 				genTestCounterProto("test_metric_1", 1),
+				genTestCounterProto("test_metric_1_count", 1),
+				genTestCounterProto("test_metric_1_sum", 1),
+				genTestCounterProto("test_metric_1_bucket", 1),
 				genTestHistProto("test_histogram_1", true, false),
 				genTestCounterProto("test_metric_2", 1),
+				genTestCounterProto("test_metric_2_count", 1),
+				genTestCounterProto("test_metric_2_sum", 1),
+				genTestCounterProto("test_metric_2_bucket", 1),
 				genTestHistProto("test_histogram_2", true, false),
 				genTestCounterProto("test_metric_3", 1),
+				genTestCounterProto("test_metric_3_count", 1),
+				genTestCounterProto("test_metric_3_sum", 1),
+				genTestCounterProto("test_metric_3_bucket", 1),
 				genTestHistProto("test_histogram_3", true, false),
 			},
 			contentType: "application/vnd.google.protobuf",
@@ -3551,20 +3586,38 @@ metric: <
 			text: []string{
 				genTestHistProto("test_histogram_1", true, false),
 				genTestCounterProto("test_metric_1", 1),
+				genTestCounterProto("test_metric_1_count", 1),
+				genTestCounterProto("test_metric_1_sum", 1),
+				genTestCounterProto("test_metric_1_bucket", 1),
 				genTestHistProto("test_histogram_2", true, false),
 				genTestCounterProto("test_metric_2", 1),
+				genTestCounterProto("test_metric_2_count", 1),
+				genTestCounterProto("test_metric_2_sum", 1),
+				genTestCounterProto("test_metric_2_bucket", 1),
 				genTestHistProto("test_histogram_3", true, false),
 				genTestCounterProto("test_metric_3", 1),
+				genTestCounterProto("test_metric_3_count", 1),
+				genTestCounterProto("test_metric_3_sum", 1),
+				genTestCounterProto("test_metric_3_bucket", 1),
 			},
 			contentType: "application/vnd.google.protobuf",
 		},
 		"protobuf, with native exponential histogram": {
 			text: []string{
 				genTestCounterProto("test_metric_1", 1),
+				genTestCounterProto("test_metric_1_count", 1),
+				genTestCounterProto("test_metric_1_sum", 1),
+				genTestCounterProto("test_metric_1_bucket", 1),
 				genTestHistProto("test_histogram_1", true, true),
 				genTestCounterProto("test_metric_2", 1),
+				genTestCounterProto("test_metric_2_count", 1),
+				genTestCounterProto("test_metric_2_sum", 1),
+				genTestCounterProto("test_metric_2_bucket", 1),
 				genTestHistProto("test_histogram_2", true, true),
 				genTestCounterProto("test_metric_3", 1),
+				genTestCounterProto("test_metric_3_count", 1),
+				genTestCounterProto("test_metric_3_sum", 1),
+				genTestCounterProto("test_metric_3_bucket", 1),
 				genTestHistProto("test_histogram_3", true, true),
 			},
 			contentType:    "application/vnd.google.protobuf",
@@ -3767,11 +3820,20 @@ metric: <
 					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_metric_%d", i)))
 					checkFloatSeries(series, 1, 1.)
 
-					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_histogram_%d_sum", i)))
-					checkFloatSeries(series, tc.expectedClassicHistCount, 10.)
+					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_metric_%d_count", i)))
+					checkFloatSeries(series, 1, 1.)
+
+					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_metric_%d_sum", i)))
+					checkFloatSeries(series, 1, 1.)
+
+					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_metric_%d_bucket", i)))
+					checkFloatSeries(series, 1, 1.)
 
 					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_histogram_%d_count", i)))
 					checkFloatSeries(series, tc.expectedClassicHistCount, 1.)
+
+					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_histogram_%d_sum", i)))
+					checkFloatSeries(series, tc.expectedClassicHistCount, 10.)
 
 					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_histogram_%d_bucket", i)))
 					checkBucketValues(tc.expectedClassicHistCount, metricsText.contentType, series)
