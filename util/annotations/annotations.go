@@ -71,27 +71,44 @@ func (a Annotations) AsErrors() []error {
 	return arr
 }
 
-// AsStrings is a convenience function to return the annotations map as a slice
-// of strings. The query string is used to get the line number and character offset
-// positioning info of the elements which trigger an annotation. We limit the number
-// of annotations returned here with maxAnnos (0 for no limit).
-func (a Annotations) AsStrings(query string, maxAnnos int) []string {
-	arr := make([]string, 0, len(a))
+// AsStrings is a convenience function to return the annotations map as 2 slices
+// of strings, separated into warnings and info. The query string is used to get the
+// line number and character offset positioning info of the elements which trigger an
+// annotation. We limit the number of annotations returned here with maxAnnos (0 for
+// no limit).
+func (a Annotations) AsStrings(query string, maxWarnings, maxInfo int) ([]string, []string) {
+	warnArr := make([]string, 0, maxWarnings+1)
+	infoArr := make([]string, 0, maxInfo+1)
+	warnSkipped := 0
+	infoSkipped := 0
 	for _, err := range a {
-		if maxAnnos > 0 && len(arr) >= maxAnnos {
-			break
-		}
 		var anErr annoErr
 		if errors.As(err, &anErr) {
 			anErr.Query = query
 			err = anErr
 		}
-		arr = append(arr, err.Error())
+		switch {
+		case errors.Is(err, PromQLInfo):
+			if maxInfo == 0 || len(infoArr) < maxInfo {
+				infoArr = append(infoArr, err.Error())
+			} else {
+				infoSkipped++
+			}
+		default:
+			if maxWarnings == 0 || len(warnArr) < maxWarnings {
+				warnArr = append(warnArr, err.Error())
+			} else {
+				warnSkipped++
+			}
+		}
 	}
-	if maxAnnos > 0 && len(a) > maxAnnos {
-		arr = append(arr, fmt.Sprintf("%d more annotations omitted", len(a)-maxAnnos))
+	if warnSkipped > 0 {
+		warnArr = append(warnArr, fmt.Sprintf("%d more warnings omitted", warnSkipped))
 	}
-	return arr
+	if infoSkipped > 0 {
+		infoArr = append(infoArr, fmt.Sprintf("%d more info messages omitted", infoSkipped))
+	}
+	return warnArr, infoArr
 }
 
 func (a Annotations) CountWarningsAndInfo() (int, int) {
