@@ -1812,15 +1812,24 @@ loop:
 			for b := range th.BucketCounts {
 				ub = append(ub, b)
 			}
-			upperBounds, fhBase := convertnhcb.ProcessUpperBoundsAndCreateBaseHistogram(ub)
-			fh := convertnhcb.ConvertHistogramWrapper(th, upperBounds, fhBase)
-			if err := fh.Validate(); err != nil {
-				continue
-			}
+			upperBounds, hBase := convertnhcb.ProcessUpperBoundsAndCreateBaseHistogram(ub, false)
+			fhBase := hBase.ToFloat(nil)
+			h, fh := convertnhcb.ConvertHistogramWrapper(th, upperBounds, hBase, fhBase)
 			// fmt.Printf("FINAL lset: %s, timestamp: %v, val: %v\n", lset, defTime, fh)
-			_, err = app.AppendHistogram(0, lset, defTime, nil, fh)
-			if err != nil {
-				continue
+			if h != nil {
+				if err := h.Validate(); err != nil {
+					continue
+				}
+				if _, err = app.AppendHistogram(0, lset, defTime, h, nil); err != nil {
+					continue
+				}
+			} else if fh != nil {
+				if err := fh.Validate(); err != nil {
+					continue
+				}
+				if _, err = app.AppendHistogram(0, lset, defTime, nil, fh); err != nil {
+					continue
+				}
 			}
 		}
 		sl.cache.resetNhcb()
