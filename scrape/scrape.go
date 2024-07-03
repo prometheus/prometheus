@@ -1655,10 +1655,15 @@ loop:
 					ref, err = app.AppendHistogram(ref, lset, t, nil, fh)
 				}
 			} else {
-				ref, err = app.Append(ref, lset, t, val)
-
+				var skipAppendFloat bool
 				if sl.convertClassicHistograms {
 					mName := lset.Get(labels.MetricName)
+					if !sl.scrapeClassicHistograms {
+						baseMetadata, _ := sl.cache.GetMetadata(convertnhcb.GetHistogramMetricBaseName(mName))
+						if baseMetadata.Type == model.MetricTypeHistogram {
+							skipAppendFloat = true
+						}
+					}
 					switch {
 					case strings.HasSuffix(mName, "_bucket") && lset.Has(labels.BucketLabel):
 						le, err := strconv.ParseFloat(lset.Get(labels.BucketLabel), 64)
@@ -1676,6 +1681,9 @@ loop:
 							hist.Sum = val
 						})
 					}
+				}
+				if !skipAppendFloat {
+					ref, err = app.Append(ref, lset, t, val)
 				}
 			}
 		}
