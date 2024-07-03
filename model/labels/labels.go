@@ -357,6 +357,41 @@ func (ls Labels) DropMetricName() Labels {
 	return ls
 }
 
+// DropMetricDeleteName returns Labels with "__delete__name__" removed.
+func (ls Labels) DropMetricDeleteName() Labels {
+	for i, l := range ls {
+		if l.Name == "__delete"+MetricName {
+			if i == 0 { // Make common case fast with no allocations.
+				return ls[1:]
+			}
+			// Avoid modifying original Labels - use [:i:i] so that left slice would not
+			// have any spare capacity and append would have to allocate a new slice for the result.
+			return append(ls[:i:i], ls[i+1:]...)
+		}
+	}
+	return ls
+}
+
+// RestoreMetricName returns Labels with restored "__name__" label from "__delete__name__".
+func (ls Labels) RestoreMetricName() Labels {
+	for i, l := range ls {
+		if l.Name == "__delete"+MetricName {
+			ls[i].Name = MetricName
+		}
+	}
+	return ls
+}
+
+// FlagMetricNameForDeletion returns Labels with "__name__" flagged for deletion.
+func (ls Labels) FlagMetricNameForDeletion() Labels {
+	for i, l := range ls {
+		if l.Name == MetricName {
+			ls[i].Name = "__delete" + ls[i].Name
+		}
+	}
+	return ls
+}
+
 // InternStrings calls intern on every string value inside ls, replacing them with what it returns.
 func (ls *Labels) InternStrings(intern func(string) string) {
 	for i, l := range *ls {

@@ -1073,6 +1073,14 @@ func (ev *evaluator) Eval(expr parser.Expr) (v parser.Value, ws annotations.Anno
 	defer ev.recover(expr, &ws, &err)
 
 	v, ws = ev.eval(expr)
+
+	if v.Type() == parser.ValueTypeMatrix {
+		// test label_replace(count_over_time({__name__!=""}[1m]), "name_label", "$1", "__name__", "(.+)")
+		mat := v.(Matrix)
+		for i := range mat {
+			mat[i].Metric = mat[i].Metric.DropMetricDeleteName()
+		}
+	}
 	return v, ws, nil
 }
 
@@ -1615,7 +1623,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 			// vector functions, the only change needed is to drop the
 			// metric name in the output.
 			if e.Func.Name != "last_over_time" {
-				metric = metric.DropMetricName()
+				metric = metric.FlagMetricNameForDeletion()
 			}
 			ss := Series{
 				Metric: metric,

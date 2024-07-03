@@ -1386,6 +1386,9 @@ func (ev *evaluator) evalLabelReplace(args parser.Expressions) (parser.Value, an
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
 	for i, el := range matrix {
+		if src == labels.MetricName {
+			matrix[i].Metric = matrix[i].Metric.RestoreMetricName()
+		}
 		srcVal := el.Metric.Get(src)
 		indexes := regex.FindStringSubmatchIndex(srcVal)
 		if indexes != nil { // Only replace when regexp matches.
@@ -1393,6 +1396,9 @@ func (ev *evaluator) evalLabelReplace(args parser.Expressions) (parser.Value, an
 			lb.Reset(el.Metric)
 			lb.Set(dst, string(res))
 			matrix[i].Metric = lb.Labels()
+		}
+		if dst != labels.MetricName {
+			matrix[i].Metric = matrix[i].Metric.FlagMetricNameForDeletion()
 		}
 	}
 	if matrix.ContainsSameLabelset() {
