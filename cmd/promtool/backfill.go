@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"sort"
 	"time"
 
 	"github.com/go-kit/log"
@@ -132,13 +131,6 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 			symbolTable := labels.NewSymbolTable() // One table per block means it won't grow too large.
 			p := textparse.NewOpenMetricsParser(input, symbolTable)
 			samplesCount := 0
-
-			customLabelNames := make([]string, len(customLabels))
-			for k := range customLabels {
-				customLabelNames = append(customLabelNames, k)
-			}
-			sort.Strings(customLabelNames)
-
 			for {
 				e, err := p.Next()
 				if errors.Is(err, io.EOF) {
@@ -170,15 +162,13 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 				l := labels.Labels{}
 				p.Metric(&l)
 
-				// Add custom labels to series
-				for _, lName := range customLabelNames {
-					l = append(l, labels.Label{
-						Name:  lName,
-						Value: customLabels[lName],
-					})
+				lb := labels.NewBuilder(l)
+				for name, value := range customLabels {
+					lb.Set(string(name), string(value))
 				}
+				lbls := lb.Labels()
 
-				if _, err := app.Append(0, l, *ts, v); err != nil {
+				if _, err := app.Append(0, lbls, *ts, v); err != nil {
 					return fmt.Errorf("add sample: %w", err)
 				}
 
