@@ -359,6 +359,15 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 }
 
 func TestOOOHeadChunkReader_LabelValues(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testOOOHeadChunkReader_LabelValues(t, scenario)
+		})
+	}
+}
+
+//nolint:revive // unexported-return.
+func testOOOHeadChunkReader_LabelValues(t *testing.T, scenario sampleTypeScenario) {
 	chunkRange := int64(2000)
 	head, _ := newTestHead(t, chunkRange, wlog.CompressionNone, true)
 	t.Cleanup(func() { require.NoError(t, head.Close()) })
@@ -368,15 +377,15 @@ func TestOOOHeadChunkReader_LabelValues(t *testing.T) {
 	app := head.Appender(context.Background())
 
 	// Add in-order samples
-	_, err := app.Append(0, labels.FromStrings("foo", "bar1"), 100, 1)
+	_, _, err := scenario.appendFunc(app, labels.FromStrings("foo", "bar1"), 100, int64(1))
 	require.NoError(t, err)
-	_, err = app.Append(0, labels.FromStrings("foo", "bar2"), 100, 2)
+	_, _, err = scenario.appendFunc(app, labels.FromStrings("foo", "bar2"), 100, int64(2))
 	require.NoError(t, err)
 
 	// Add ooo samples for those series
-	_, err = app.Append(0, labels.FromStrings("foo", "bar1"), 90, 1)
+	_, _, err = scenario.appendFunc(app, labels.FromStrings("foo", "bar1"), 90, int64(1))
 	require.NoError(t, err)
-	_, err = app.Append(0, labels.FromStrings("foo", "bar2"), 90, 2)
+	_, _, err = scenario.appendFunc(app, labels.FromStrings("foo", "bar2"), 90, int64(2))
 	require.NoError(t, err)
 
 	require.NoError(t, app.Commit())
@@ -453,18 +462,21 @@ func TestOOOHeadChunkReader_LabelValues(t *testing.T) {
 // It does so by appending out of order samples to the db and then initializing
 // an OOOHeadChunkReader to read chunks from it.
 func TestOOOHeadChunkReader_Chunk(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testOOOHeadChunkReader_Chunk(t, scenario)
+		})
+	}
+}
+
+//nolint:revive // unexported-return.
+func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 5
 	opts.OutOfOrderTimeWindow = 120 * time.Minute.Milliseconds()
 
 	s1 := labels.FromStrings("l", "v1")
 	minutes := func(m int64) int64 { return m * time.Minute.Milliseconds() }
-
-	appendSample := func(app storage.Appender, l labels.Labels, timestamp int64, value float64) storage.SeriesRef {
-		ref, err := app.Append(0, l, timestamp, value)
-		require.NoError(t, err)
-		return ref
-	}
 
 	t.Run("Getting a non existing chunk fails with not found error", func(t *testing.T) {
 		db := newTestDBWithOpts(t, opts)
@@ -484,7 +496,7 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 		queryMinT            int64
 		queryMaxT            int64
 		firstInOrderSampleAt int64
-		inputSamples         chunks.SampleSlice
+		inputSamples         []testValue
 		expChunkError        bool
 		expChunksSamples     []chunks.SampleSlice
 	}{
@@ -493,9 +505,9 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			queryMinT:            minutes(0),
 			queryMaxT:            minutes(100),
 			firstInOrderSampleAt: minutes(120),
-			inputSamples: chunks.SampleSlice{
-				sample{t: minutes(30), f: float64(0)},
-				sample{t: minutes(40), f: float64(0)},
+			inputSamples: []testValue{
+				{Ts: minutes(30), V: 0},
+				{Ts: minutes(40), V: 0},
 			},
 			expChunkError: false,
 			// ts (in minutes)         0       10       20       30       40       50       60       70       80       90       100
@@ -504,8 +516,8 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			// Output Graphically                                 [--------] (With 2 samples)
 			expChunksSamples: []chunks.SampleSlice{
 				{
-					sample{t: minutes(30), f: float64(0)},
-					sample{t: minutes(40), f: float64(0)},
+					scenario.sampleFunc(minutes(30), 0),
+					scenario.sampleFunc(minutes(40), 0),
 				},
 			},
 		},
@@ -514,19 +526,8 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			queryMinT:            minutes(0),
 			queryMaxT:            minutes(100),
 			firstInOrderSampleAt: minutes(120),
-			inputSamples: chunks.SampleSlice{
-				// opts.OOOCapMax is 5 so these will be mmapped to the first mmapped chunk
-				sample{t: minutes(41), f: float64(0)},
-				sample{t: minutes(42), f: float64(0)},
-				sample{t: minutes(43), f: float64(0)},
-				sample{t: minutes(44), f: float64(0)},
-				sample{t: minutes(45), f: float64(0)},
-				// The following samples will go to the head chunk, and we want it
-				// to overlap with the previous chunk
-				sample{t: minutes(30), f: float64(1)},
-				sample{t: minutes(50), f: float64(1)},
-			},
-			expChunkError: false,
+			inputSamples:         []testValue{{Ts: minutes(41), V: 0}, {Ts: minutes(42), V: 0}, {Ts: minutes(43), V: 0}, {Ts: minutes(44), V: 0}, {Ts: minutes(45), V: 0}, {Ts: minutes(30), V: 1}, {Ts: minutes(50), V: 1}},
+			expChunkError:        false,
 			// ts (in minutes)         0       10       20       30       40       50       60       70       80       90       100
 			// Query Interval          [------------------------------------------------------------------------------------------]
 			// Chunk 0                                                     [---] (With 5 samples)
@@ -534,13 +535,13 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			// Output Graphically                                 [-----------------] (With 7 samples)
 			expChunksSamples: []chunks.SampleSlice{
 				{
-					sample{t: minutes(30), f: float64(1)},
-					sample{t: minutes(41), f: float64(0)},
-					sample{t: minutes(42), f: float64(0)},
-					sample{t: minutes(43), f: float64(0)},
-					sample{t: minutes(44), f: float64(0)},
-					sample{t: minutes(45), f: float64(0)},
-					sample{t: minutes(50), f: float64(1)},
+					scenario.sampleFunc(minutes(30), 1),
+					scenario.sampleFunc(minutes(41), 0),
+					scenario.sampleFunc(minutes(42), 0),
+					scenario.sampleFunc(minutes(43), 0),
+					scenario.sampleFunc(minutes(44), 0),
+					scenario.sampleFunc(minutes(45), 0),
+					scenario.sampleFunc(minutes(50), 1),
 				},
 			},
 		},
@@ -549,28 +550,28 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			queryMinT:            minutes(0),
 			queryMaxT:            minutes(100),
 			firstInOrderSampleAt: minutes(120),
-			inputSamples: chunks.SampleSlice{
+			inputSamples: []testValue{
 				// Chunk 0
-				sample{t: minutes(10), f: float64(0)},
-				sample{t: minutes(12), f: float64(0)},
-				sample{t: minutes(14), f: float64(0)},
-				sample{t: minutes(16), f: float64(0)},
-				sample{t: minutes(20), f: float64(0)},
+				{Ts: minutes(10), V: 0},
+				{Ts: minutes(12), V: 0},
+				{Ts: minutes(14), V: 0},
+				{Ts: minutes(16), V: 0},
+				{Ts: minutes(20), V: 0},
 				// Chunk 1
-				sample{t: minutes(20), f: float64(1)},
-				sample{t: minutes(22), f: float64(1)},
-				sample{t: minutes(24), f: float64(1)},
-				sample{t: minutes(26), f: float64(1)},
-				sample{t: minutes(29), f: float64(1)},
-				// Chunk 2
-				sample{t: minutes(30), f: float64(2)},
-				sample{t: minutes(32), f: float64(2)},
-				sample{t: minutes(34), f: float64(2)},
-				sample{t: minutes(36), f: float64(2)},
-				sample{t: minutes(40), f: float64(2)},
+				{Ts: minutes(20), V: 1},
+				{Ts: minutes(22), V: 1},
+				{Ts: minutes(24), V: 1},
+				{Ts: minutes(26), V: 1},
+				{Ts: minutes(29), V: 1},
+				// Chunk 3
+				{Ts: minutes(30), V: 2},
+				{Ts: minutes(32), V: 2},
+				{Ts: minutes(34), V: 2},
+				{Ts: minutes(36), V: 2},
+				{Ts: minutes(40), V: 2},
 				// Head
-				sample{t: minutes(40), f: float64(3)},
-				sample{t: minutes(50), f: float64(3)},
+				{Ts: minutes(40), V: 3},
+				{Ts: minutes(50), V: 3},
 			},
 			expChunkError: false,
 			// ts (in minutes)         0       10       20       30       40       50       60       70       80       90       100
@@ -582,23 +583,23 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			// Output Graphically               [----------------][-----------------]
 			expChunksSamples: []chunks.SampleSlice{
 				{
-					sample{t: minutes(10), f: float64(0)},
-					sample{t: minutes(12), f: float64(0)},
-					sample{t: minutes(14), f: float64(0)},
-					sample{t: minutes(16), f: float64(0)},
-					sample{t: minutes(20), f: float64(1)},
-					sample{t: minutes(22), f: float64(1)},
-					sample{t: minutes(24), f: float64(1)},
-					sample{t: minutes(26), f: float64(1)},
-					sample{t: minutes(29), f: float64(1)},
+					scenario.sampleFunc(minutes(10), 0),
+					scenario.sampleFunc(minutes(12), 0),
+					scenario.sampleFunc(minutes(14), 0),
+					scenario.sampleFunc(minutes(16), 0),
+					scenario.sampleFunc(minutes(20), 1),
+					scenario.sampleFunc(minutes(22), 1),
+					scenario.sampleFunc(minutes(24), 1),
+					scenario.sampleFunc(minutes(26), 1),
+					scenario.sampleFunc(minutes(29), 1),
 				},
 				{
-					sample{t: minutes(30), f: float64(2)},
-					sample{t: minutes(32), f: float64(2)},
-					sample{t: minutes(34), f: float64(2)},
-					sample{t: minutes(36), f: float64(2)},
-					sample{t: minutes(40), f: float64(3)},
-					sample{t: minutes(50), f: float64(3)},
+					scenario.sampleFunc(minutes(30), 2),
+					scenario.sampleFunc(minutes(32), 2),
+					scenario.sampleFunc(minutes(34), 2),
+					scenario.sampleFunc(minutes(36), 2),
+					scenario.sampleFunc(minutes(40), 3),
+					scenario.sampleFunc(minutes(50), 3),
 				},
 			},
 		},
@@ -607,28 +608,28 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			queryMinT:            minutes(0),
 			queryMaxT:            minutes(100),
 			firstInOrderSampleAt: minutes(120),
-			inputSamples: chunks.SampleSlice{
+			inputSamples: []testValue{
 				// Chunk 0
-				sample{t: minutes(40), f: float64(0)},
-				sample{t: minutes(42), f: float64(0)},
-				sample{t: minutes(44), f: float64(0)},
-				sample{t: minutes(46), f: float64(0)},
-				sample{t: minutes(50), f: float64(0)},
+				{Ts: minutes(40), V: 0},
+				{Ts: minutes(42), V: 0},
+				{Ts: minutes(44), V: 0},
+				{Ts: minutes(46), V: 0},
+				{Ts: minutes(50), V: 0},
 				// Chunk 1
-				sample{t: minutes(30), f: float64(1)},
-				sample{t: minutes(32), f: float64(1)},
-				sample{t: minutes(34), f: float64(1)},
-				sample{t: minutes(36), f: float64(1)},
-				sample{t: minutes(40), f: float64(1)},
-				// Chunk 2
-				sample{t: minutes(20), f: float64(2)},
-				sample{t: minutes(22), f: float64(2)},
-				sample{t: minutes(24), f: float64(2)},
-				sample{t: minutes(26), f: float64(2)},
-				sample{t: minutes(29), f: float64(2)},
+				{Ts: minutes(30), V: 1},
+				{Ts: minutes(32), V: 1},
+				{Ts: minutes(34), V: 1},
+				{Ts: minutes(36), V: 1},
+				{Ts: minutes(40), V: 1},
+				// Chunk 3
+				{Ts: minutes(20), V: 2},
+				{Ts: minutes(22), V: 2},
+				{Ts: minutes(24), V: 2},
+				{Ts: minutes(26), V: 2},
+				{Ts: minutes(29), V: 2},
 				// Head
-				sample{t: minutes(10), f: float64(3)},
-				sample{t: minutes(20), f: float64(3)},
+				{Ts: minutes(10), V: 3},
+				{Ts: minutes(20), V: 3},
 			},
 			expChunkError: false,
 			// ts (in minutes)         0       10       20       30       40       50       60       70       80       90       100
@@ -640,23 +641,23 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			// Output Graphically               [----------------][-----------------]
 			expChunksSamples: []chunks.SampleSlice{
 				{
-					sample{t: minutes(10), f: float64(3)},
-					sample{t: minutes(20), f: float64(2)},
-					sample{t: minutes(22), f: float64(2)},
-					sample{t: minutes(24), f: float64(2)},
-					sample{t: minutes(26), f: float64(2)},
-					sample{t: minutes(29), f: float64(2)},
+					scenario.sampleFunc(minutes(10), 3),
+					scenario.sampleFunc(minutes(20), 2),
+					scenario.sampleFunc(minutes(22), 2),
+					scenario.sampleFunc(minutes(24), 2),
+					scenario.sampleFunc(minutes(26), 2),
+					scenario.sampleFunc(minutes(29), 2),
 				},
 				{
-					sample{t: minutes(30), f: float64(1)},
-					sample{t: minutes(32), f: float64(1)},
-					sample{t: minutes(34), f: float64(1)},
-					sample{t: minutes(36), f: float64(1)},
-					sample{t: minutes(40), f: float64(0)},
-					sample{t: minutes(42), f: float64(0)},
-					sample{t: minutes(44), f: float64(0)},
-					sample{t: minutes(46), f: float64(0)},
-					sample{t: minutes(50), f: float64(0)},
+					scenario.sampleFunc(minutes(30), 1),
+					scenario.sampleFunc(minutes(32), 1),
+					scenario.sampleFunc(minutes(34), 1),
+					scenario.sampleFunc(minutes(36), 1),
+					scenario.sampleFunc(minutes(40), 0),
+					scenario.sampleFunc(minutes(42), 0),
+					scenario.sampleFunc(minutes(44), 0),
+					scenario.sampleFunc(minutes(46), 0),
+					scenario.sampleFunc(minutes(50), 0),
 				},
 			},
 		},
@@ -665,28 +666,28 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			queryMinT:            minutes(0),
 			queryMaxT:            minutes(100),
 			firstInOrderSampleAt: minutes(120),
-			inputSamples: chunks.SampleSlice{
+			inputSamples: []testValue{
 				// Chunk 0
-				sample{t: minutes(10), f: float64(0)},
-				sample{t: minutes(12), f: float64(0)},
-				sample{t: minutes(14), f: float64(0)},
-				sample{t: minutes(16), f: float64(0)},
-				sample{t: minutes(18), f: float64(0)},
+				{Ts: minutes(10), V: 0},
+				{Ts: minutes(12), V: 0},
+				{Ts: minutes(14), V: 0},
+				{Ts: minutes(16), V: 0},
+				{Ts: minutes(18), V: 0},
 				// Chunk 1
-				sample{t: minutes(20), f: float64(1)},
-				sample{t: minutes(22), f: float64(1)},
-				sample{t: minutes(24), f: float64(1)},
-				sample{t: minutes(26), f: float64(1)},
-				sample{t: minutes(28), f: float64(1)},
-				// Chunk 2
-				sample{t: minutes(30), f: float64(2)},
-				sample{t: minutes(32), f: float64(2)},
-				sample{t: minutes(34), f: float64(2)},
-				sample{t: minutes(36), f: float64(2)},
-				sample{t: minutes(38), f: float64(2)},
+				{Ts: minutes(20), V: 1},
+				{Ts: minutes(22), V: 1},
+				{Ts: minutes(24), V: 1},
+				{Ts: minutes(26), V: 1},
+				{Ts: minutes(28), V: 1},
+				// Chunk 3
+				{Ts: minutes(30), V: 2},
+				{Ts: minutes(32), V: 2},
+				{Ts: minutes(34), V: 2},
+				{Ts: minutes(36), V: 2},
+				{Ts: minutes(38), V: 2},
 				// Head
-				sample{t: minutes(40), f: float64(3)},
-				sample{t: minutes(42), f: float64(3)},
+				{Ts: minutes(40), V: 3},
+				{Ts: minutes(42), V: 3},
 			},
 			expChunkError: false,
 			// ts (in minutes)         0       10       20       30       40       50       60       70       80       90       100
@@ -698,29 +699,29 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			// Output Graphically               [-------][-------][-------][--------]
 			expChunksSamples: []chunks.SampleSlice{
 				{
-					sample{t: minutes(10), f: float64(0)},
-					sample{t: minutes(12), f: float64(0)},
-					sample{t: minutes(14), f: float64(0)},
-					sample{t: minutes(16), f: float64(0)},
-					sample{t: minutes(18), f: float64(0)},
+					scenario.sampleFunc(minutes(10), 0),
+					scenario.sampleFunc(minutes(12), 0),
+					scenario.sampleFunc(minutes(14), 0),
+					scenario.sampleFunc(minutes(16), 0),
+					scenario.sampleFunc(minutes(18), 0),
 				},
 				{
-					sample{t: minutes(20), f: float64(1)},
-					sample{t: minutes(22), f: float64(1)},
-					sample{t: minutes(24), f: float64(1)},
-					sample{t: minutes(26), f: float64(1)},
-					sample{t: minutes(28), f: float64(1)},
+					scenario.sampleFunc(minutes(20), 1),
+					scenario.sampleFunc(minutes(22), 1),
+					scenario.sampleFunc(minutes(24), 1),
+					scenario.sampleFunc(minutes(26), 1),
+					scenario.sampleFunc(minutes(28), 1),
 				},
 				{
-					sample{t: minutes(30), f: float64(2)},
-					sample{t: minutes(32), f: float64(2)},
-					sample{t: minutes(34), f: float64(2)},
-					sample{t: minutes(36), f: float64(2)},
-					sample{t: minutes(38), f: float64(2)},
+					scenario.sampleFunc(minutes(30), 2),
+					scenario.sampleFunc(minutes(32), 2),
+					scenario.sampleFunc(minutes(34), 2),
+					scenario.sampleFunc(minutes(36), 2),
+					scenario.sampleFunc(minutes(38), 2),
 				},
 				{
-					sample{t: minutes(40), f: float64(3)},
-					sample{t: minutes(42), f: float64(3)},
+					scenario.sampleFunc(minutes(40), 3),
+					scenario.sampleFunc(minutes(42), 3),
 				},
 			},
 		},
@@ -729,22 +730,22 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			queryMinT:            minutes(0),
 			queryMaxT:            minutes(100),
 			firstInOrderSampleAt: minutes(120),
-			inputSamples: chunks.SampleSlice{
+			inputSamples: []testValue{
 				// Chunk 0
-				sample{t: minutes(10), f: float64(0)},
-				sample{t: minutes(15), f: float64(0)},
-				sample{t: minutes(20), f: float64(0)},
-				sample{t: minutes(25), f: float64(0)},
-				sample{t: minutes(30), f: float64(0)},
+				{Ts: minutes(10), V: 0},
+				{Ts: minutes(15), V: 0},
+				{Ts: minutes(20), V: 0},
+				{Ts: minutes(25), V: 0},
+				{Ts: minutes(30), V: 0},
 				// Chunk 1
-				sample{t: minutes(20), f: float64(1)},
-				sample{t: minutes(25), f: float64(1)},
-				sample{t: minutes(30), f: float64(1)},
-				sample{t: minutes(35), f: float64(1)},
-				sample{t: minutes(42), f: float64(1)},
+				{Ts: minutes(20), V: 1},
+				{Ts: minutes(25), V: 1},
+				{Ts: minutes(30), V: 1},
+				{Ts: minutes(35), V: 1},
+				{Ts: minutes(42), V: 1},
 				// Chunk 2 Head
-				sample{t: minutes(32), f: float64(2)},
-				sample{t: minutes(50), f: float64(2)},
+				{Ts: minutes(32), V: 2},
+				{Ts: minutes(50), V: 2},
 			},
 			expChunkError: false,
 			// ts (in minutes)         0       10       20       30       40       50       60       70       80       90       100
@@ -755,15 +756,15 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			// Output Graphically               [-----------------------------------]
 			expChunksSamples: []chunks.SampleSlice{
 				{
-					sample{t: minutes(10), f: float64(0)},
-					sample{t: minutes(15), f: float64(0)},
-					sample{t: minutes(20), f: float64(1)},
-					sample{t: minutes(25), f: float64(1)},
-					sample{t: minutes(30), f: float64(1)},
-					sample{t: minutes(32), f: float64(2)},
-					sample{t: minutes(35), f: float64(1)},
-					sample{t: minutes(42), f: float64(1)},
-					sample{t: minutes(50), f: float64(2)},
+					scenario.sampleFunc(minutes(10), 0),
+					scenario.sampleFunc(minutes(15), 0),
+					scenario.sampleFunc(minutes(20), 1),
+					scenario.sampleFunc(minutes(25), 1),
+					scenario.sampleFunc(minutes(30), 1),
+					scenario.sampleFunc(minutes(32), 2),
+					scenario.sampleFunc(minutes(35), 1),
+					scenario.sampleFunc(minutes(42), 1),
+					scenario.sampleFunc(minutes(50), 2),
 				},
 			},
 		},
@@ -772,22 +773,22 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			queryMinT:            minutes(12),
 			queryMaxT:            minutes(33),
 			firstInOrderSampleAt: minutes(120),
-			inputSamples: chunks.SampleSlice{
+			inputSamples: []testValue{
 				// Chunk 0
-				sample{t: minutes(10), f: float64(0)},
-				sample{t: minutes(15), f: float64(0)},
-				sample{t: minutes(20), f: float64(0)},
-				sample{t: minutes(25), f: float64(0)},
-				sample{t: minutes(30), f: float64(0)},
+				{Ts: minutes(10), V: 0},
+				{Ts: minutes(15), V: 0},
+				{Ts: minutes(20), V: 0},
+				{Ts: minutes(25), V: 0},
+				{Ts: minutes(30), V: 0},
 				// Chunk 1
-				sample{t: minutes(20), f: float64(1)},
-				sample{t: minutes(25), f: float64(1)},
-				sample{t: minutes(30), f: float64(1)},
-				sample{t: minutes(35), f: float64(1)},
-				sample{t: minutes(42), f: float64(1)},
+				{Ts: minutes(20), V: 1},
+				{Ts: minutes(25), V: 1},
+				{Ts: minutes(30), V: 1},
+				{Ts: minutes(35), V: 1},
+				{Ts: minutes(42), V: 1},
 				// Chunk 2 Head
-				sample{t: minutes(32), f: float64(2)},
-				sample{t: minutes(50), f: float64(2)},
+				{Ts: minutes(32), V: 2},
+				{Ts: minutes(50), V: 2},
 			},
 			expChunkError: false,
 			// ts (in minutes)         0       10       20       30       40       50       60       70       80       90       100
@@ -798,15 +799,15 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			// Output Graphically               [-----------------------------------]
 			expChunksSamples: []chunks.SampleSlice{
 				{
-					sample{t: minutes(10), f: float64(0)},
-					sample{t: minutes(15), f: float64(0)},
-					sample{t: minutes(20), f: float64(1)},
-					sample{t: minutes(25), f: float64(1)},
-					sample{t: minutes(30), f: float64(1)},
-					sample{t: minutes(32), f: float64(2)},
-					sample{t: minutes(35), f: float64(1)},
-					sample{t: minutes(42), f: float64(1)},
-					sample{t: minutes(50), f: float64(2)},
+					scenario.sampleFunc(minutes(10), 0),
+					scenario.sampleFunc(minutes(15), 0),
+					scenario.sampleFunc(minutes(20), 1),
+					scenario.sampleFunc(minutes(25), 1),
+					scenario.sampleFunc(minutes(30), 1),
+					scenario.sampleFunc(minutes(32), 2),
+					scenario.sampleFunc(minutes(35), 1),
+					scenario.sampleFunc(minutes(42), 1),
+					scenario.sampleFunc(minutes(50), 2),
 				},
 			},
 		},
@@ -817,13 +818,15 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			db := newTestDBWithOpts(t, opts)
 
 			app := db.Appender(context.Background())
-			s1Ref := appendSample(app, s1, tc.firstInOrderSampleAt, float64(tc.firstInOrderSampleAt/1*time.Minute.Milliseconds()))
+			s1Ref, _, err := scenario.appendFunc(app, s1, tc.firstInOrderSampleAt, tc.firstInOrderSampleAt/1*time.Minute.Milliseconds())
+			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
 			// OOO few samples for s1.
 			app = db.Appender(context.Background())
 			for _, s := range tc.inputSamples {
-				appendSample(app, s1, s.T(), s.F())
+				_, _, err := scenario.appendFunc(app, s1, s.Ts, s.V)
+				require.NoError(t, err)
 			}
 			require.NoError(t, app.Commit())
 
@@ -832,7 +835,7 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			ir := NewOOOHeadIndexReader(db.head, tc.queryMinT, tc.queryMaxT, 0)
 			var chks []chunks.Meta
 			var b labels.ScratchBuilder
-			err := ir.Series(s1Ref, &b, &chks)
+			err = ir.Series(s1Ref, &b, &chks)
 			require.NoError(t, err)
 			require.Equal(t, len(tc.expChunksSamples), len(chks))
 
@@ -843,13 +846,10 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 				require.NoError(t, err)
 				require.Nil(t, c)
 
-				var resultSamples chunks.SampleSlice
 				it := iterable.Iterator(nil)
-				for it.Next() == chunkenc.ValFloat {
-					t, v := it.At()
-					resultSamples = append(resultSamples, sample{t: t, f: v})
-				}
-				require.Equal(t, tc.expChunksSamples[i], resultSamples)
+				resultSamples, err := storage.ExpandSamples(it, nil)
+				require.NoError(t, err)
+				requireEqualSamples(t, s1.String(), tc.expChunksSamples[i], resultSamples, true)
 			}
 		})
 	}
@@ -864,6 +864,15 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 //   - Response B comes from : Series(), in parallel new samples added to the head, then Chunk()
 //   - A == B
 func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(t, scenario)
+		})
+	}
+}
+
+//nolint:revive // unexported-return.
+func testOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(t *testing.T, scenario sampleTypeScenario) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 5
 	opts.OutOfOrderTimeWindow = 120 * time.Minute.Milliseconds()
@@ -871,19 +880,13 @@ func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 	s1 := labels.FromStrings("l", "v1")
 	minutes := func(m int64) int64 { return m * time.Minute.Milliseconds() }
 
-	appendSample := func(app storage.Appender, l labels.Labels, timestamp int64, value float64) storage.SeriesRef {
-		ref, err := app.Append(0, l, timestamp, value)
-		require.NoError(t, err)
-		return ref
-	}
-
 	tests := []struct {
 		name                   string
 		queryMinT              int64
 		queryMaxT              int64
 		firstInOrderSampleAt   int64
-		initialSamples         chunks.SampleSlice
-		samplesAfterSeriesCall chunks.SampleSlice
+		initialSamples         []testValue
+		samplesAfterSeriesCall []testValue
 		expChunkError          bool
 		expChunksSamples       []chunks.SampleSlice
 	}{
@@ -892,21 +895,21 @@ func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 			queryMinT:            minutes(0),
 			queryMaxT:            minutes(100),
 			firstInOrderSampleAt: minutes(120),
-			initialSamples: chunks.SampleSlice{
+			initialSamples: []testValue{
 				// Chunk 0
-				sample{t: minutes(20), f: float64(0)},
-				sample{t: minutes(22), f: float64(0)},
-				sample{t: minutes(24), f: float64(0)},
-				sample{t: minutes(26), f: float64(0)},
-				sample{t: minutes(30), f: float64(0)},
+				{Ts: minutes(20), V: 0},
+				{Ts: minutes(22), V: 0},
+				{Ts: minutes(24), V: 0},
+				{Ts: minutes(26), V: 0},
+				{Ts: minutes(30), V: 0},
 				// Chunk 1 Head
-				sample{t: minutes(25), f: float64(1)},
-				sample{t: minutes(35), f: float64(1)},
+				{Ts: minutes(25), V: 1},
+				{Ts: minutes(35), V: 1},
 			},
-			samplesAfterSeriesCall: chunks.SampleSlice{
-				sample{t: minutes(10), f: float64(1)},
-				sample{t: minutes(32), f: float64(1)},
-				sample{t: minutes(50), f: float64(1)},
+			samplesAfterSeriesCall: []testValue{
+				{Ts: minutes(10), V: 1},
+				{Ts: minutes(32), V: 1},
+				{Ts: minutes(50), V: 1},
 			},
 			expChunkError: false,
 			// ts (in minutes)         0       10       20       30       40       50       60       70       80       90       100
@@ -918,39 +921,39 @@ func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 			// Output Graphically                        [------------] (With 8 samples, samples newer than lastmint or older than lastmaxt are omitted but the ones in between are kept)
 			expChunksSamples: []chunks.SampleSlice{
 				{
-					sample{t: minutes(20), f: float64(0)},
-					sample{t: minutes(22), f: float64(0)},
-					sample{t: minutes(24), f: float64(0)},
-					sample{t: minutes(25), f: float64(1)},
-					sample{t: minutes(26), f: float64(0)},
-					sample{t: minutes(30), f: float64(0)},
-					sample{t: minutes(35), f: float64(1)},
+					scenario.sampleFunc(minutes(20), 0),
+					scenario.sampleFunc(minutes(22), 0),
+					scenario.sampleFunc(minutes(24), 0),
+					scenario.sampleFunc(minutes(25), 1),
+					scenario.sampleFunc(minutes(26), 0),
+					scenario.sampleFunc(minutes(30), 0),
+					scenario.sampleFunc(minutes(35), 1),
 				},
 			},
 		},
 		{
-			name:                 "After Series() previous head gets mmapped after getting samples, new head gets new samples also overlapping, none of these should appear in the response.",
+			name:                 "After Series() prev head gets mmapped after getting samples, new head gets new samples also overlapping, none of these should appear in response.",
 			queryMinT:            minutes(0),
 			queryMaxT:            minutes(100),
 			firstInOrderSampleAt: minutes(120),
-			initialSamples: chunks.SampleSlice{
+			initialSamples: []testValue{
 				// Chunk 0
-				sample{t: minutes(20), f: float64(0)},
-				sample{t: minutes(22), f: float64(0)},
-				sample{t: minutes(24), f: float64(0)},
-				sample{t: minutes(26), f: float64(0)},
-				sample{t: minutes(30), f: float64(0)},
+				{Ts: minutes(20), V: 0},
+				{Ts: minutes(22), V: 0},
+				{Ts: minutes(24), V: 0},
+				{Ts: minutes(26), V: 0},
+				{Ts: minutes(30), V: 0},
 				// Chunk 1 Head
-				sample{t: minutes(25), f: float64(1)},
-				sample{t: minutes(35), f: float64(1)},
+				{Ts: minutes(25), V: 1},
+				{Ts: minutes(35), V: 1},
 			},
-			samplesAfterSeriesCall: chunks.SampleSlice{
-				sample{t: minutes(10), f: float64(1)},
-				sample{t: minutes(32), f: float64(1)},
-				sample{t: minutes(50), f: float64(1)},
+			samplesAfterSeriesCall: []testValue{
+				{Ts: minutes(10), V: 1},
+				{Ts: minutes(32), V: 1},
+				{Ts: minutes(50), V: 1},
 				// Chunk 1 gets mmapped and Chunk 2, the new head is born
-				sample{t: minutes(25), f: float64(2)},
-				sample{t: minutes(31), f: float64(2)},
+				{Ts: minutes(25), V: 2},
+				{Ts: minutes(31), V: 2},
 			},
 			expChunkError: false,
 			// ts (in minutes)         0       10       20       30       40       50       60       70       80       90       100
@@ -963,13 +966,13 @@ func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 			// Output Graphically                        [------------]  (8 samples) It has 5 from Chunk 0 and 3 from Chunk 1
 			expChunksSamples: []chunks.SampleSlice{
 				{
-					sample{t: minutes(20), f: float64(0)},
-					sample{t: minutes(22), f: float64(0)},
-					sample{t: minutes(24), f: float64(0)},
-					sample{t: minutes(25), f: float64(1)},
-					sample{t: minutes(26), f: float64(0)},
-					sample{t: minutes(30), f: float64(0)},
-					sample{t: minutes(35), f: float64(1)},
+					scenario.sampleFunc(minutes(20), 0),
+					scenario.sampleFunc(minutes(22), 0),
+					scenario.sampleFunc(minutes(24), 0),
+					scenario.sampleFunc(minutes(25), 1),
+					scenario.sampleFunc(minutes(26), 0),
+					scenario.sampleFunc(minutes(30), 0),
+					scenario.sampleFunc(minutes(35), 1),
 				},
 			},
 		},
@@ -980,13 +983,15 @@ func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 			db := newTestDBWithOpts(t, opts)
 
 			app := db.Appender(context.Background())
-			s1Ref := appendSample(app, s1, tc.firstInOrderSampleAt, float64(tc.firstInOrderSampleAt/1*time.Minute.Milliseconds()))
+			s1Ref, _, err := scenario.appendFunc(app, s1, tc.firstInOrderSampleAt, tc.firstInOrderSampleAt/1*time.Minute.Milliseconds())
+			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
 			// OOO few samples for s1.
 			app = db.Appender(context.Background())
 			for _, s := range tc.initialSamples {
-				appendSample(app, s1, s.T(), s.F())
+				_, _, err := scenario.appendFunc(app, s1, s.Ts, s.V)
+				require.NoError(t, err)
 			}
 			require.NoError(t, app.Commit())
 
@@ -995,7 +1000,7 @@ func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 			ir := NewOOOHeadIndexReader(db.head, tc.queryMinT, tc.queryMaxT, 0)
 			var chks []chunks.Meta
 			var b labels.ScratchBuilder
-			err := ir.Series(s1Ref, &b, &chks)
+			err = ir.Series(s1Ref, &b, &chks)
 			require.NoError(t, err)
 			require.Equal(t, len(tc.expChunksSamples), len(chks))
 
@@ -1003,7 +1008,8 @@ func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 			// OOO few samples for s1.
 			app = db.Appender(context.Background())
 			for _, s := range tc.samplesAfterSeriesCall {
-				appendSample(app, s1, s.T(), s.F())
+				_, _, err = scenario.appendFunc(app, s1, s.Ts, s.V)
+				require.NoError(t, err)
 			}
 			require.NoError(t, app.Commit())
 
@@ -1014,13 +1020,10 @@ func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 				require.NoError(t, err)
 				require.Nil(t, c)
 
-				var resultSamples chunks.SampleSlice
 				it := iterable.Iterator(nil)
-				for it.Next() == chunkenc.ValFloat {
-					ts, v := it.At()
-					resultSamples = append(resultSamples, sample{t: ts, f: v})
-				}
-				require.Equal(t, tc.expChunksSamples[i], resultSamples)
+				resultSamples, err := storage.ExpandSamples(it, nil)
+				require.NoError(t, err)
+				requireEqualSamples(t, s1.String(), tc.expChunksSamples[i], resultSamples, true)
 			}
 		})
 	}
