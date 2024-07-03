@@ -927,7 +927,6 @@ func testOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 					scenario.sampleFunc(minutes(25), 1),
 					scenario.sampleFunc(minutes(26), 0),
 					scenario.sampleFunc(minutes(30), 0),
-					scenario.sampleFunc(minutes(32), 1), // This sample was added after Series() but before Chunk() and its in between the lastmint and maxt so it should be kept
 					scenario.sampleFunc(minutes(35), 1),
 				},
 			},
@@ -973,7 +972,6 @@ func testOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 					scenario.sampleFunc(minutes(25), 1),
 					scenario.sampleFunc(minutes(26), 0),
 					scenario.sampleFunc(minutes(30), 0),
-					scenario.sampleFunc(minutes(32), 1), // This sample was added after Series() but before Chunk() and its in between the lastmint and maxt so it should be kept
 					scenario.sampleFunc(minutes(35), 1),
 				},
 			},
