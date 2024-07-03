@@ -227,6 +227,10 @@ func (f QueryableFunc) Querier(mint, maxt int64) (Querier, error) {
 	return f(mint, maxt)
 }
 
+type AppendHints struct {
+	DiscardOutOfOrder bool
+}
+
 // Appender provides batched appends against a storage.
 // It must be completed with a call to Commit or Rollback and must not be reused afterwards.
 //
@@ -244,6 +248,7 @@ type Appender interface {
 	// reference number.
 	// If the reference is 0 it must not be used for caching.
 	Append(ref SeriesRef, l labels.Labels, t int64, v float64) (SeriesRef, error)
+	AppendWithHints(ref SeriesRef, l labels.Labels, t int64, v float64, hints *AppendHints) (SeriesRef, error)
 
 	// Commit submits the collected samples and purges the batch. If Commit
 	// returns a non-nil error, it also rolls back all modifications made in

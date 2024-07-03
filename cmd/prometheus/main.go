@@ -1557,6 +1557,11 @@ func (s *readyStorage) Appender(ctx context.Context) storage.Appender {
 
 type notReadyAppender struct{}
 
+// AppendWithHints implements storage.Appender.
+func (n notReadyAppender) AppendWithHints(ref storage.SeriesRef, l labels.Labels, t int64, v float64, hints *storage.AppendHints) (storage.SeriesRef, error) {
+	return 0, tsdb.ErrNotReady
+}
+
 func (n notReadyAppender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	return 0, tsdb.ErrNotReady
 }

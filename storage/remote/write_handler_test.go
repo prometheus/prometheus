@@ -371,7 +371,9 @@ func (m *mockAppendable) Append(_ storage.SeriesRef, l labels.Labels, t int64, v
 	m.samples = append(m.samples, mockSample{l, t, v})
 	return 0, nil
 }
-
+func (*mockAppendable) AppendWithHints(ref storage.SeriesRef, lset labels.Labels, t int64, v float64, hints *storage.AppendHints) (storage.SeriesRef, error) {
+	panic("not implemented")
+}
 func (m *mockAppendable) Commit() error {
 	return m.commitErr
 }
