@@ -45,8 +45,6 @@ type NhcbParser struct {
 	lset         labels.Labels
 	metricString string
 
-	buf []byte
-
 	// Collates values from the classic histogram series to build
 	// the converted histogram later.
 	lsetNhcb labels.Labels
@@ -61,7 +59,6 @@ func NewNhcbParser(p Parser, keepClassicHistograms bool) Parser {
 	return &NhcbParser{
 		parser:                p,
 		keepClassicHistograms: keepClassicHistograms,
-		buf:                   make([]byte, 0, 1024),
 		tempNhcb:              convertnhcb.NewTempHistogram(),
 	}
 }
@@ -189,7 +186,8 @@ func (p *NhcbParser) processNhcb(th convertnhcb.TempHistogram) bool {
 		p.h = nil
 		p.fh = fh
 	}
-	p.bytes = p.lsetNhcb.Bytes(p.buf)
+	buf := make([]byte, 0, 1024)
+	p.bytes = p.lsetNhcb.Bytes(buf)
 	p.lset = p.lsetNhcb
 	p.metricString = p.lsetNhcb.String()
 	p.tempNhcb = convertnhcb.NewTempHistogram()
