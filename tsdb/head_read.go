@@ -490,20 +490,18 @@ func (s *memSeries) oooMergedChunks(meta chunks.Meta, cdm *chunks.ChunkDiskMappe
 	tmpChks := make([]chunkMetaAndChunkDiskMapperRef, 0, len(s.ooo.oooMmappedChunks)+1)
 
 	for i, c := range s.ooo.oooMmappedChunks {
-		chunkRef := chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.oooHeadChunkID(i)))
-
-		switch {
-		case c.OverlapsClosedInterval(mint, maxt):
+		if c.OverlapsClosedInterval(mint, maxt) {
 			tmpChks = append(tmpChks, chunkMetaAndChunkDiskMapperRef{
 				meta: chunks.Meta{
 					MinTime: c.minTime,
 					MaxTime: c.maxTime,
-					Ref:     chunkRef,
+					Ref:     chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.oooHeadChunkID(i))),
 				},
 				ref: c.ref,
 			})
 		}
 	}
+	// Add in data copied from the head OOO chunk.
 	if meta.Chunk != nil {
 		tmpChks = append(tmpChks, chunkMetaAndChunkDiskMapperRef{meta: meta})
 	}
