@@ -164,7 +164,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 
 				lb := labels.NewBuilder(l)
 				for name, value := range customLabels {
-					lb.Set(string(name), string(value))
+					lb.Set(name, value)
 				}
 				lbls := lb.Labels()
 
