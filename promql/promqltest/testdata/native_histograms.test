@@ -355,10 +355,10 @@ load 10m
    histogram_stddev_stdvar_7 {{schema:3 count:7 sum:Inf z_bucket:1 buckets:[0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 ] n_buckets:[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 ]}}x1
 
 eval instant at 10m histogram_stddev(histogram_stddev_stdvar_7)
-    {} NaN
+    {} Inf
 
 eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_7)
-    {} NaN
+    {} Inf
 
 # Apply quantile function to histogram with all positive buckets with zero bucket.
 load 10m
