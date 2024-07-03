@@ -164,7 +164,8 @@ func GetHistogramMetricBase(m labels.Labels, suffix string) labels.Labels {
 		Labels()
 }
 
-func GetHistogramMetricBaseName(s string) string {
+func GetHistogramMetricBaseName(m labels.Labels) string {
+	s := m.Get(labels.MetricName)
 	for _, rep := range histogramNameSuffixReplacements {
 		s = rep.pattern.ReplaceAllString(s, rep.repl)
 	}
