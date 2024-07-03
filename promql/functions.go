@@ -1301,13 +1301,13 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 
 	for _, mb := range enh.signatureToMetricWithBuckets {
 		if len(mb.buckets) > 0 {
-			res, forcedMonotonicity, _ := bucketQuantile(q, mb.buckets)
+			res, forcedMonotonicMinBucket, forcedMonotonicMaxBucket, forcedMonotonicMaxDiff, forcedMonotonicity, _ := bucketQuantile(q, mb.buckets)
 			enh.Out = append(enh.Out, Sample{
 				Metric: mb.metric,
 				F:      res,
 			})
 			if forcedMonotonicity {
-				annos.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(mb.metric.Get(labels.MetricName), args[1].PositionRange()))
+				annos.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(mb.metric.Get(labels.MetricName), args[1].PositionRange(), enh.Ts, forcedMonotonicMinBucket, forcedMonotonicMaxBucket, forcedMonotonicMaxDiff))
 			}
 		}
 	}

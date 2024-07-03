@@ -95,15 +95,15 @@ type metricWithBuckets struct {
 // and another bool to indicate if small differences between buckets (that
 // are likely artifacts of floating point precision issues) have been
 // ignored.
-func bucketQuantile(q float64, buckets buckets) (float64, bool, bool) {
+func bucketQuantile(q float64, buckets buckets) (float64, float64, float64, float64, bool, bool) {
 	if math.IsNaN(q) {
-		return math.NaN(), false, false
+		return math.NaN(), 0, 0, 0, false, false
 	}
 	if q < 0 {
-		return math.Inf(-1), false, false
+		return math.Inf(-1), 0, 0, 0, false, false
 	}
 	if q > 1 {
-		return math.Inf(+1), false, false
+		return math.Inf(+1), 0, 0, 0, false, false
 	}
 	slices.SortFunc(buckets, func(a, b bucket) int {
 		// We don't expect the bucket boundary to be a NaN.
@@ -116,39 +116,42 @@ func bucketQuantile(q float64, buckets buckets) (float64, bool, bool) {
 		return 0
 	})
 	if !math.IsInf(buckets[len(buckets)-1].upperBound, +1) {
-		return math.NaN(), false, false
+		return math.NaN(), 0, 0, 0, false, false
 	}
 
 	buckets = coalesceBuckets(buckets)
-	forcedMonotonic, fixedPrecision := ensureMonotonicAndIgnoreSmallDeltas(buckets, smallDeltaTolerance)
+	forcedMonotonicMinBucket, forcedMonotonicMaxBucket, forcedMonotonicMaxDiff, forcedMonotonic, fixedPrecision := ensureMonotonicAndIgnoreSmallDeltas(buckets, smallDeltaTolerance)
 
 	if len(buckets) < 2 {
-		return math.NaN(), false, false
+		return math.NaN(), 0, 0, 0, false, false
 	}
 	observations := buckets[len(buckets)-1].count
 	if observations == 0 {
-		return math.NaN(), false, false
+		return math.NaN(), 0, 0, 0, false, false
 	}
 	rank := q * observations
 	b := sort.Search(len(buckets)-1, func(i int) bool { return buckets[i].count >= rank })
 
-	if b == len(buckets)-1 {
-		return buckets[len(buckets)-2].upperBound, forcedMonotonic, fixedPrecision
+	var res float64
+	switch {
+	case b == len(buckets)-1:
+		res = buckets[len(buckets)-2].upperBound
+	case b == 0 && buckets[0].upperBound <= 0:
+		res = buckets[0].upperBound
+	default:
+		var (
+			bucketStart float64
+			bucketEnd   = buckets[b].upperBound
+			count       = buckets[b].count
+		)
+		if b > 0 {
+			bucketStart = buckets[b-1].upperBound
+			count -= buckets[b-1].count
+			rank -= buckets[b-1].count
+		}
+		res = bucketStart + (bucketEnd-bucketStart)*(rank/count)
 	}
-	if b == 0 && buckets[0].upperBound <= 0 {
-		return buckets[0].upperBound, forcedMonotonic, fixedPrecision
-	}
-	var (
-		bucketStart float64
-		bucketEnd   = buckets[b].upperBound
-		count       = buckets[b].count
-	)
-	if b > 0 {
-		bucketStart = buckets[b-1].upperBound
-		count -= buckets[b-1].count
-		rank -= buckets[b-1].count
-	}
-	return bucketStart + (bucketEnd-bucketStart)*(rank/count), forcedMonotonic, fixedPrecision
+	return res, forcedMonotonicMinBucket, forcedMonotonicMaxBucket, forcedMonotonicMaxDiff, forcedMonotonic, fixedPrecision
 }
 
 // histogramQuantile calculates the quantile 'q' based on the given histogram.
@@ -403,8 +406,11 @@ func coalesceBuckets(buckets buckets) buckets {
 //
 // We return a bool to indicate if this monotonicity was forced or not, and
 // another bool to indicate if small deltas were ignored or not.
-func ensureMonotonicAndIgnoreSmallDeltas(buckets buckets, tolerance float64) (bool, bool) {
+func ensureMonotonicAndIgnoreSmallDeltas(buckets buckets, tolerance float64) (float64, float64, float64, bool, bool) {
 	var forcedMonotonic, fixedPrecision bool
+	var forcedMonotonicMinBucket, forcedMonotonicMaxBucket, forcedMonotonicMaxDiff float64
+	forcedMonotonicMinBucket = math.Inf(+1)
+	forcedMonotonicMaxBucket = math.Inf(-1)
 	prev := buckets[0].count
 	for i := 1; i < len(buckets); i++ {
 		curr := buckets[i].count // Assumed always positive.
@@ -425,11 +431,20 @@ func ensureMonotonicAndIgnoreSmallDeltas(buckets buckets, tolerance float64) (bo
 			// Do not update the 'prev' value as we are ignoring the decrease.
 			buckets[i].count = prev
 			forcedMonotonic = true
+			if buckets[i].upperBound < forcedMonotonicMinBucket {
+				forcedMonotonicMinBucket = buckets[i].upperBound
+			}
+			if buckets[i].upperBound > forcedMonotonicMaxBucket {
+				forcedMonotonicMaxBucket = buckets[i].upperBound
+			}
+			if diff := prev - curr; diff > forcedMonotonicMaxDiff {
+				forcedMonotonicMaxDiff = diff
+			}
 			continue
 		}
 		prev = curr
 	}
-	return forcedMonotonic, fixedPrecision
+	return forcedMonotonicMinBucket, forcedMonotonicMaxBucket, forcedMonotonicMaxDiff, forcedMonotonic, fixedPrecision
 }
 
 // quantile calculates the given quantile of a vector of samples.
