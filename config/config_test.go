@@ -998,6 +998,7 @@ var expectedConf = &Config{
 					HostNetworkingHost: "localhost",
 					RefreshInterval:    model.Duration(60 * time.Second),
 					HTTPClientConfig:   config.DefaultHTTPClientConfig,
+					MatchFirstNetwork:  true,
 				},
 			},
 		},
