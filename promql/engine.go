@@ -1385,7 +1385,7 @@ func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping 
 			// If this could be an instant query, shortcut so as not to change sort order.
 			if ev.endTimestamp == ev.startTimestamp {
 				warnings.Merge(ws)
-				return result, ws
+				return result, warnings
 			}
 		default:
 			ws = ev.aggregation(aggExpr, param, inputMatrix, result, seriesToResult, groups, enh)
