@@ -3379,11 +3379,10 @@ func TestConvertClassicHistograms(t *testing.T) {
 # TYPE %s counter
 %s{address="0.0.0.0",port="5001"} %d
 `, name, name, name, value)
-		} else {
-			return fmt.Sprintf(`
+		}
+		return fmt.Sprintf(`
 %s %d
 `, name, value)
-		}
 	}
 	genTestHistText := func(name string, withMetadata bool) string {
 		data := map[string]interface{}{
