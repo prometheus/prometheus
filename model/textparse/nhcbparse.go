@@ -28,7 +28,7 @@ import (
 	"github.com/prometheus/prometheus/util/convertnhcb"
 )
 
-type NhcbParser struct {
+type NHCBParser struct {
 	// The parser we're wrapping.
 	parser Parser
 	// Option to keep classic histograms along with converted histograms.
@@ -52,18 +52,18 @@ type NhcbParser struct {
 	// halfway through.
 	entry            Entry
 	err              error
-	justInsertedNhcb bool
+	justInsertedNHCB bool
 	// Caches the values and metric for the inserted converted NHCB.
-	bytesNhcb        []byte
-	hNhcb            *histogram.Histogram
-	fhNhcb           *histogram.FloatHistogram
-	lsetNhcb         labels.Labels
-	metricStringNhcb string
+	bytesNHCB        []byte
+	hNHCB            *histogram.Histogram
+	fhNHCB           *histogram.FloatHistogram
+	lsetNHCB         labels.Labels
+	metricStringNHCB string
 
 	// Collates values from the classic histogram series to build
 	// the converted histogram later.
-	tempLsetNhcb          labels.Labels
-	tempNhcb              convertnhcb.TempHistogram
+	tempLsetNHCB          labels.Labels
+	tempNHCB              convertnhcb.TempHistogram
 	isCollationInProgress bool
 
 	// Remembers the last native histogram name so we can ignore
@@ -75,63 +75,63 @@ type NhcbParser struct {
 	lastBaseHistName string
 }
 
-func NewNhcbParser(p Parser, keepClassicHistograms bool) Parser {
-	return &NhcbParser{
+func NewNHCBParser(p Parser, keepClassicHistograms bool) Parser {
+	return &NHCBParser{
 		parser:                p,
 		keepClassicHistograms: keepClassicHistograms,
-		tempNhcb:              convertnhcb.NewTempHistogram(),
+		tempNHCB:              convertnhcb.NewTempHistogram(),
 	}
 }
 
-func (p *NhcbParser) Series() ([]byte, *int64, float64) {
+func (p *NHCBParser) Series() ([]byte, *int64, float64) {
 	return p.bytes, p.ts, p.value
 }
 
-func (p *NhcbParser) Histogram() ([]byte, *int64, *histogram.Histogram, *histogram.FloatHistogram) {
-	if p.justInsertedNhcb {
-		return p.bytesNhcb, p.ts, p.hNhcb, p.fhNhcb
+func (p *NHCBParser) Histogram() ([]byte, *int64, *histogram.Histogram, *histogram.FloatHistogram) {
+	if p.justInsertedNHCB {
+		return p.bytesNHCB, p.ts, p.hNHCB, p.fhNHCB
 	}
 	return p.bytes, p.ts, p.h, p.fh
 }
 
-func (p *NhcbParser) Help() ([]byte, []byte) {
+func (p *NHCBParser) Help() ([]byte, []byte) {
 	return p.parser.Help()
 }
 
-func (p *NhcbParser) Type() ([]byte, model.MetricType) {
+func (p *NHCBParser) Type() ([]byte, model.MetricType) {
 	return p.bType, p.typ
 }
 
-func (p *NhcbParser) Unit() ([]byte, []byte) {
+func (p *NHCBParser) Unit() ([]byte, []byte) {
 	return p.parser.Unit()
 }
 
-func (p *NhcbParser) Comment() []byte {
+func (p *NHCBParser) Comment() []byte {
 	return p.parser.Comment()
 }
 
-func (p *NhcbParser) Metric(l *labels.Labels) string {
-	if p.justInsertedNhcb {
-		*l = p.lsetNhcb
-		return p.metricStringNhcb
+func (p *NHCBParser) Metric(l *labels.Labels) string {
+	if p.justInsertedNHCB {
+		*l = p.lsetNHCB
+		return p.metricStringNHCB
 	}
 	*l = p.lset
 	return p.metricString
 }
 
-func (p *NhcbParser) Exemplar(ex *exemplar.Exemplar) bool {
+func (p *NHCBParser) Exemplar(ex *exemplar.Exemplar) bool {
 	return p.parser.Exemplar(ex)
 }
 
-func (p *NhcbParser) CreatedTimestamp() *int64 {
+func (p *NHCBParser) CreatedTimestamp() *int64 {
 	return p.parser.CreatedTimestamp()
 }
 
-func (p *NhcbParser) Next() (Entry, error) {
-	if p.justInsertedNhcb {
-		p.justInsertedNhcb = false
+func (p *NHCBParser) Next() (Entry, error) {
+	if p.justInsertedNHCB {
+		p.justInsertedNHCB = false
 		if p.entry == EntrySeries {
-			if isNhcb := p.handleClassicHistogramSeries(p.lset); isNhcb && !p.keepClassicHistograms {
+			if isNHCB := p.handleClassicHistogramSeries(p.lset); isNHCB && !p.keepClassicHistograms {
 				return p.Next()
 			}
 		}
@@ -139,7 +139,7 @@ func (p *NhcbParser) Next() (Entry, error) {
 	}
 	et, err := p.parser.Next()
 	if err != nil {
-		if errors.Is(err, io.EOF) && p.processNhcb() {
+		if errors.Is(err, io.EOF) && p.processNHCB() {
 			p.entry = et
 			p.err = err
 			return EntryHistogram, nil
@@ -154,13 +154,13 @@ func (p *NhcbParser) Next() (Entry, error) {
 		if histBaseName == p.lastNativeHistName {
 			break
 		}
-		shouldInsertNhcb := p.lastBaseHistName != "" && p.lastBaseHistName != histBaseName
+		shouldInsertNHCB := p.lastBaseHistName != "" && p.lastBaseHistName != histBaseName
 		p.lastBaseHistName = histBaseName
-		if shouldInsertNhcb && p.processNhcb() {
+		if shouldInsertNHCB && p.processNHCB() {
 			p.entry = et
 			return EntryHistogram, nil
 		}
-		if isNhcb := p.handleClassicHistogramSeries(p.lset); isNhcb && !p.keepClassicHistograms {
+		if isNHCB := p.handleClassicHistogramSeries(p.lset); isNHCB && !p.keepClassicHistograms {
 			return p.Next()
 		}
 		return et, err
@@ -171,7 +171,7 @@ func (p *NhcbParser) Next() (Entry, error) {
 	case EntryType:
 		p.bType, p.typ = p.parser.Type()
 	}
-	if p.processNhcb() {
+	if p.processNHCB() {
 		p.entry = et
 		return EntryHistogram, nil
 	}
@@ -182,7 +182,7 @@ func (p *NhcbParser) Next() (Entry, error) {
 // if it is actually a classic histogram series (and not a normal float series) and if there
 // isn't already a native histogram with the same name (assuming it is always processed
 // right before the classic histograms) and returns true if the collation was done.
-func (p *NhcbParser) handleClassicHistogramSeries(lset labels.Labels) bool {
+func (p *NHCBParser) handleClassicHistogramSeries(lset labels.Labels) bool {
 	if p.typ != model.MetricTypeHistogram {
 		return false
 	}
@@ -213,43 +213,43 @@ func (p *NhcbParser) handleClassicHistogramSeries(lset labels.Labels) bool {
 	return false
 }
 
-func (p *NhcbParser) processClassicHistogramSeries(lset labels.Labels, suffix string, updateHist func(*convertnhcb.TempHistogram)) {
+func (p *NHCBParser) processClassicHistogramSeries(lset labels.Labels, suffix string, updateHist func(*convertnhcb.TempHistogram)) {
 	p.isCollationInProgress = true
-	p.tempLsetNhcb = convertnhcb.GetHistogramMetricBase(lset, suffix)
-	updateHist(&p.tempNhcb)
+	p.tempLsetNHCB = convertnhcb.GetHistogramMetricBase(lset, suffix)
+	updateHist(&p.tempNHCB)
 }
 
-// processNhcb converts the collated classic histogram series to NHCB and caches the info
+// processNHCB converts the collated classic histogram series to NHCB and caches the info
 // to be returned to callers.
-func (p *NhcbParser) processNhcb() bool {
+func (p *NHCBParser) processNHCB() bool {
 	if !p.isCollationInProgress {
 		return false
 	}
-	ub := make([]float64, 0, len(p.tempNhcb.BucketCounts))
-	for b := range p.tempNhcb.BucketCounts {
+	ub := make([]float64, 0, len(p.tempNHCB.BucketCounts))
+	for b := range p.tempNHCB.BucketCounts {
 		ub = append(ub, b)
 	}
 	upperBounds, hBase := convertnhcb.ProcessUpperBoundsAndCreateBaseHistogram(ub, false)
 	fhBase := hBase.ToFloat(nil)
-	h, fh := convertnhcb.ConvertHistogramWrapper(p.tempNhcb, upperBounds, hBase, fhBase)
+	h, fh := convertnhcb.ConvertHistogramWrapper(p.tempNHCB, upperBounds, hBase, fhBase)
 	if h != nil {
 		if err := h.Validate(); err != nil {
 			return false
 		}
-		p.hNhcb = h
-		p.fhNhcb = nil
+		p.hNHCB = h
+		p.fhNHCB = nil
 	} else if fh != nil {
 		if err := fh.Validate(); err != nil {
 			return false
 		}
-		p.hNhcb = nil
-		p.fhNhcb = fh
+		p.hNHCB = nil
+		p.fhNHCB = fh
 	}
-	p.metricStringNhcb = p.tempLsetNhcb.Get(labels.MetricName) + strings.ReplaceAll(p.tempLsetNhcb.DropMetricName().String(), ", ", ",")
-	p.bytesNhcb = []byte(p.metricStringNhcb)
-	p.lsetNhcb = p.tempLsetNhcb
-	p.tempNhcb = convertnhcb.NewTempHistogram()
+	p.metricStringNHCB = p.tempLsetNHCB.Get(labels.MetricName) + strings.ReplaceAll(p.tempLsetNHCB.DropMetricName().String(), ", ", ",")
+	p.bytesNHCB = []byte(p.metricStringNHCB)
+	p.lsetNHCB = p.tempLsetNHCB
+	p.tempNHCB = convertnhcb.NewTempHistogram()
 	p.isCollationInProgress = false
-	p.justInsertedNhcb = true
+	p.justInsertedNHCB = true
 	return true
 }
