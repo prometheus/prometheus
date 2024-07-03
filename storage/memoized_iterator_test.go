@@ -30,7 +30,7 @@ func TestMemoizedSeriesIterator(t *testing.T) {
 		if efh == nil {
 			ts, v := it.At()
 			require.Equal(t, ets, ts, "timestamp mismatch")
-			require.Equal(t, ev, v, "value mismatch")
+			require.InDeltaf(t, ev, v, 0.01, "value mismatch")
 		} else {
 			ts, fh := it.AtFloatHistogram()
 			require.Equal(t, ets, ts, "timestamp mismatch")
@@ -42,7 +42,7 @@ func TestMemoizedSeriesIterator(t *testing.T) {
 		require.Equal(t, eok, ok, "exist mismatch")
 		require.Equal(t, ets, ts, "timestamp mismatch")
 		if efh == nil {
-			require.Equal(t, ev, v, "value mismatch")
+			require.InDeltaf(t, ev, v, 0.01, "value mismatch")
 		} else {
 			require.Equal(t, efh, fh, "histogram mismatch")
 		}

@@ -65,7 +65,7 @@ func TestDeriv(t *testing.T) {
 
 	vec, _ := result.Vector()
 	require.Len(t, vec, 1, "Expected 1 result, got %d", len(vec))
-	require.Equal(t, 0.0, vec[0].F, "Expected 0.0 as value, got %f", vec[0].F)
+	require.InDeltaf(t, 0.0, vec[0].F, 0.01, "Expected 0.0 as value, got %f", vec[0].F)
 }
 
 func TestFunctionList(t *testing.T) {

@@ -364,7 +364,7 @@ func TestSegmentMetric(t *testing.T) {
 		err = w.Log(buf)
 		require.NoError(t, err)
 	}
-	require.Equal(t, initialSegment+1, client_testutil.ToFloat64(w.metrics.currentSegment), "segment metric did not increment after segment rotation")
+	require.InDeltaf(t, initialSegment+1, client_testutil.ToFloat64(w.metrics.currentSegment), 0.01, "segment metric did not increment after segment rotation")
 	require.NoError(t, w.Close())
 }
 

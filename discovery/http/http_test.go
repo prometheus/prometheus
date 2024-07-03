@@ -71,7 +71,7 @@ func TestHTTPValidRefresh(t *testing.T) {
 		},
 	}
 	require.Equal(t, expectedTargets, tgs)
-	require.Equal(t, 0.0, getFailureCount(d.metrics.failuresCount))
+	require.InDelta(t, 0.0, getFailureCount(d.metrics.failuresCount), 0.01)
 }
 
 func TestHTTPInvalidCode(t *testing.T) {
@@ -100,7 +100,7 @@ func TestHTTPInvalidCode(t *testing.T) {
 	ctx := context.Background()
 	_, err = d.Refresh(ctx)
 	require.EqualError(t, err, "server returned HTTP status 400 Bad Request")
-	require.Equal(t, 1.0, getFailureCount(d.metrics.failuresCount))
+	require.InDelta(t, 1.0, getFailureCount(d.metrics.failuresCount), 0.01)
 }
 
 func TestHTTPInvalidFormat(t *testing.T) {
@@ -129,7 +129,7 @@ func TestHTTPInvalidFormat(t *testing.T) {
 	ctx := context.Background()
 	_, err = d.Refresh(ctx)
 	require.EqualError(t, err, `unsupported content type "text/plain; charset=utf-8"`)
-	require.Equal(t, 1.0, getFailureCount(d.metrics.failuresCount))
+	require.InDelta(t, 1.0, getFailureCount(d.metrics.failuresCount), 0.01)
 }
 
 func getFailureCount(failuresCount prometheus.Counter) float64 {

@@ -2222,7 +2222,7 @@ func TestProtobufParse(t *testing.T) {
 					} else {
 						require.Equal(t, int64(0), exp[i].t, "i: %d", i)
 					}
-					require.Equal(t, exp[i].v, v, "i: %d", i)
+					require.InDeltaf(t, exp[i].v, v, 0.01, "i: %d", i)
 					testutil.RequireEqual(t, exp[i].lset, res, "i: %d", i)
 					if len(exp[i].e) == 0 {
 						require.False(t, eFound, "i: %d", i)

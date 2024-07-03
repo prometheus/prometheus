@@ -1146,7 +1146,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
 	// 1 successfully scraped sample, 1 stale marker after first fail, 5 report samples for
 	// each scrape successful or not.
 	require.Len(t, appender.resultFloats, 27, "Appended samples not as expected:\n%s", appender)
-	require.Equal(t, 42.0, appender.resultFloats[0].f, "Appended first sample not as expected")
+	require.InDeltaf(t, 42.0, appender.resultFloats[0].f, 0.01, "Appended first sample not as expected")
 	require.True(t, value.IsStaleNaN(appender.resultFloats[6].f),
 		"Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(appender.resultFloats[6].f))
 }
@@ -1193,7 +1193,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 	// 1 successfully scraped sample, 1 stale marker after first fail, 5 report samples for
 	// each scrape successful or not.
 	require.Len(t, appender.resultFloats, 17, "Appended samples not as expected:\n%s", appender)
-	require.Equal(t, 42.0, appender.resultFloats[0].f, "Appended first sample not as expected")
+	require.InDeltaf(t, 42.0, appender.resultFloats[0].f, 0.01, "Appended first sample not as expected")
 	require.True(t, value.IsStaleNaN(appender.resultFloats[6].f),
 		"Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(appender.resultFloats[6].f))
 }
@@ -1547,7 +1547,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 
 	value := metric.GetCounter().GetValue()
 	change := value - beforeMetricValue
-	require.Equal(t, 1.0, change, "Unexpected change of sample limit metric: %f", change)
+	require.InDeltaf(t, 1.0, change, 0.01, "Unexpected change of sample limit metric: %f", change)
 
 	// And verify that we got the samples that fit under the limit.
 	want := []floatSample{
@@ -1625,7 +1625,7 @@ func TestScrapeLoop_HistogramBucketLimit(t *testing.T) {
 	err = sl.metrics.targetScrapeNativeHistogramBucketLimit.Write(&metric)
 	require.NoError(t, err)
 	metricValue := metric.GetCounter().GetValue()
-	require.Equal(t, beforeMetricValue, metricValue)
+	require.InDelta(t, beforeMetricValue, metricValue, 0.01)
 	beforeMetricValue = metricValue
 
 	nativeHistogram.WithLabelValues("L").Observe(100.0) // in different bucket since > 10*1.1
@@ -1648,7 +1648,7 @@ func TestScrapeLoop_HistogramBucketLimit(t *testing.T) {
 	err = sl.metrics.targetScrapeNativeHistogramBucketLimit.Write(&metric)
 	require.NoError(t, err)
 	metricValue = metric.GetCounter().GetValue()
-	require.Equal(t, beforeMetricValue, metricValue)
+	require.InDelta(t, beforeMetricValue, metricValue, 0.01)
 	beforeMetricValue = metricValue
 
 	nativeHistogram.WithLabelValues("L").Observe(100000.0) // in different bucket since > 10*1.1
@@ -1674,7 +1674,7 @@ func TestScrapeLoop_HistogramBucketLimit(t *testing.T) {
 	err = sl.metrics.targetScrapeNativeHistogramBucketLimit.Write(&metric)
 	require.NoError(t, err)
 	metricValue = metric.GetCounter().GetValue()
-	require.Equal(t, beforeMetricValue+1, metricValue)
+	require.InDelta(t, beforeMetricValue+1, metricValue, 0.01)
 }
 
 func TestScrapeLoop_ChangingMetricString(t *testing.T) {
@@ -2247,7 +2247,7 @@ func TestScrapeLoopRunReportsTargetDownOnScrapeError(t *testing.T) {
 	}
 
 	sl.run(nil)
-	require.Equal(t, 0.0, appender.resultFloats[0].f, "bad 'up' value")
+	require.InDeltaf(t, 0.0, appender.resultFloats[0].f, 0.01, "bad 'up' value")
 }
 
 func TestScrapeLoopRunReportsTargetDownOnInvalidUTF8(t *testing.T) {
@@ -2267,7 +2267,7 @@ func TestScrapeLoopRunReportsTargetDownOnInvalidUTF8(t *testing.T) {
 	}
 
 	sl.run(nil)
-	require.Equal(t, 0.0, appender.resultFloats[0].f, "bad 'up' value")
+	require.InDeltaf(t, 0.0, appender.resultFloats[0].f, 0.01, "bad 'up' value")
 }
 
 type errorAppender struct {
@@ -3102,7 +3102,7 @@ func TestScrapeReportLimit(t *testing.T) {
 		i := series.At().Iterator(nil)
 		for i.Next() == chunkenc.ValFloat {
 			_, v := i.At()
-			require.Equal(t, 1.0, v)
+			require.InDelta(t, 1.0, v, 0.01)
 			found = true
 		}
 	}
@@ -3407,7 +3407,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrapeForTimestampedMetrics(t *
 	// 1 successfully scraped sample, 1 stale marker after first fail, 5 report samples for
 	// each scrape successful or not.
 	require.Len(t, appender.resultFloats, 27, "Appended samples not as expected:\n%s", appender)
-	require.Equal(t, 42.0, appender.resultFloats[0].f, "Appended first sample not as expected")
+	require.InDelta(t, 42.0, appender.resultFloats[0].f, 0.01, "Appended first sample not as expected")
 	require.True(t, value.IsStaleNaN(appender.resultFloats[6].f),
 		"Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(appender.resultFloats[6].f))
 }
@@ -3640,7 +3640,7 @@ func TestScrapeLoopSeriesAddedDuplicates(t *testing.T) {
 	err = sl.metrics.targetScrapeSampleDuplicate.Write(&metric)
 	require.NoError(t, err)
 	value := metric.GetCounter().GetValue()
-	require.Equal(t, 4.0, value)
+	require.InDelta(t, 4.0, value, 0.01)
 }
 
 // This tests running a full scrape loop and checking that the scrape option

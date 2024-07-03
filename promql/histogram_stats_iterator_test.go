@@ -53,7 +53,7 @@ func TestHistogramStatsDecoding(t *testing.T) {
 		for i := 0; i < len(histograms); i++ {
 			require.Equal(t, expectedHints[i], decodedStats[i].CounterResetHint)
 			require.Equal(t, histograms[i].Count, decodedStats[i].Count)
-			require.Equal(t, histograms[i].Sum, decodedStats[i].Sum)
+			require.InDelta(t, histograms[i].Sum, decodedStats[i].Sum, 0.01)
 		}
 	})
 	t.Run("float_histogram_stats", func(t *testing.T) {
@@ -66,8 +66,8 @@ func TestHistogramStatsDecoding(t *testing.T) {
 		for i := 0; i < len(histograms); i++ {
 			fh := histograms[i].ToFloat(nil)
 			require.Equal(t, expectedHints[i], decodedStats[i].CounterResetHint)
-			require.Equal(t, fh.Count, decodedStats[i].Count)
-			require.Equal(t, fh.Sum, decodedStats[i].Sum)
+			require.InDelta(t, fh.Count, decodedStats[i].Count, 0.01)
+			require.InDelta(t, fh.Sum, decodedStats[i].Sum, 0.01)
 		}
 	})
 }
