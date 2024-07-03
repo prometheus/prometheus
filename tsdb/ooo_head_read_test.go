@@ -304,18 +304,6 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 					s1, _, _ := h.getOrCreate(s1ID, s1Lset)
 					s1.ooo = &memSeriesOOOFields{}
 
-					var lastChunk chunkInterval
-					var lastChunkPos int
-
-					// the marker should be set based on whichever is the last chunk/interval that overlaps with the query range
-					for i, interv := range intervals {
-						if overlapsClosedInterval(interv.mint, interv.maxt, tc.queryMinT, tc.queryMaxT) {
-							lastChunk = interv
-							lastChunkPos = i
-						}
-					}
-					lastChunkRef := chunks.ChunkRef(chunks.NewHeadChunkRef(1, chunks.HeadChunkID(uint64(lastChunkPos))))
-
 					// define our expected chunks, by looking at the expected ChunkIntervals and setting...
 					var expChunks []chunks.Meta
 					for _, e := range tc.expChunks {
@@ -323,10 +311,6 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 							Chunk:   chunkenc.Chunk(nil),
 							MinTime: e.mint,
 							MaxTime: e.maxt,
-							// markers based on the last chunk we found above
-							OOOLastMinTime: lastChunk.mint,
-							OOOLastMaxTime: lastChunk.maxt,
-							OOOLastRef:     lastChunkRef,
 						}
 
 						// Ref to whatever Ref the chunk has, that we refer to by ID
@@ -343,6 +327,7 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 					if headChunk && len(intervals) > 0 {
 						// Put the last interval in the head chunk
 						s1.ooo.oooHeadChunk = &oooHeadChunk{
+							chunk:   NewOOOChunk(),
 							minTime: intervals[len(intervals)-1].mint,
 							maxTime: intervals[len(intervals)-1].maxt,
 						}
@@ -842,8 +827,8 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			}
 			require.NoError(t, app.Commit())
 
-			// The Series method is the one that populates the chunk meta OOO
-			// markers like OOOLastRef. These are then used by the ChunkReader.
+			// The Series method populates the chunk metas, taking a copy of the
+			// head OOO chunk if necessary. These are then used by the ChunkReader.
 			ir := NewOOOHeadIndexReader(db.head, tc.queryMinT, tc.queryMaxT, 0)
 			var chks []chunks.Meta
 			var b labels.ScratchBuilder
@@ -939,7 +924,6 @@ func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 					sample{t: minutes(25), f: float64(1)},
 					sample{t: minutes(26), f: float64(0)},
 					sample{t: minutes(30), f: float64(0)},
-					sample{t: minutes(32), f: float64(1)}, // This sample was added after Series() but before Chunk() and its in between the lastmint and maxt so it should be kept
 					sample{t: minutes(35), f: float64(1)},
 				},
 			},
@@ -985,7 +969,6 @@ func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 					sample{t: minutes(25), f: float64(1)},
 					sample{t: minutes(26), f: float64(0)},
 					sample{t: minutes(30), f: float64(0)},
-					sample{t: minutes(32), f: float64(1)}, // This sample was added after Series() but before Chunk() and its in between the lastmint and maxt so it should be kept
 					sample{t: minutes(35), f: float64(1)},
 				},
 			},
@@ -1007,8 +990,8 @@ func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 			}
 			require.NoError(t, app.Commit())
 
-			// The Series method is the one that populates the chunk meta OOO
-			// markers like OOOLastRef. These are then used by the ChunkReader.
+			// The Series method populates the chunk metas, taking a copy of the
+			// head OOO chunk if necessary. These are then used by the ChunkReader.
 			ir := NewOOOHeadIndexReader(db.head, tc.queryMinT, tc.queryMaxT, 0)
 			var chks []chunks.Meta
 			var b labels.ScratchBuilder
