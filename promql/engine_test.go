@@ -3041,7 +3041,6 @@ func TestEngineOptsValidation(t *testing.T) {
 	}
 }
 
-			engine := newTestEngine()
 func TestInstantQueryWithRangeVectorSelector(t *testing.T) {
 	engine := newTestEngine(t)
 
