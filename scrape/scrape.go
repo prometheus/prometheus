@@ -47,6 +47,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/convertnhcb"
 	"github.com/prometheus/prometheus/util/pool"
 )
 
@@ -111,6 +112,7 @@ type scrapeLoopOptions struct {
 	interval                 time.Duration
 	timeout                  time.Duration
 	scrapeClassicHistograms  bool
+	convertClassicHistograms bool
 
 	mrc               []*relabel.Config
 	cache             *scrapeCache
@@ -178,6 +180,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 			opts.interval,
 			opts.timeout,
 			opts.scrapeClassicHistograms,
+			opts.convertClassicHistograms,
 			options.EnableNativeHistogramsIngestion,
 			options.EnableCreatedTimestampZeroIngestion,
 			options.ExtraMetrics,
@@ -440,6 +443,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 		trackTimestampsStaleness = sp.config.TrackTimestampsStaleness
 		mrc                      = sp.config.MetricRelabelConfigs
 		scrapeClassicHistograms  = sp.config.ScrapeClassicHistograms
+		convertClassicHistograms = sp.config.ConvertClassicHistograms
 	)
 
 	sp.targetMtx.Lock()
@@ -476,6 +480,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 				interval:                 interval,
 				timeout:                  timeout,
 				scrapeClassicHistograms:  scrapeClassicHistograms,
+				convertClassicHistograms: convertClassicHistograms,
 			})
 			if err != nil {
 				l.setForcedError(err)
@@ -828,6 +833,7 @@ type scrapeLoop struct {
 	interval                 time.Duration
 	timeout                  time.Duration
 	scrapeClassicHistograms  bool
+	convertClassicHistograms bool
 
 	// Feature flagged options.
 	enableNativeHistogramIngestion bool
@@ -881,6 +887,9 @@ type scrapeCache struct {
 	metadata map[string]*metaEntry
 
 	metrics *scrapeMetrics
+
+	nhcbLabels  map[uint64]labels.Labels
+	nhcbBuilder map[uint64]convertnhcb.TempHistogram
 }
 
 // metaEntry holds meta information about a metric.
@@ -904,6 +913,8 @@ func newScrapeCache(metrics *scrapeMetrics) *scrapeCache {
 		seriesPrev:    map[uint64]labels.Labels{},
 		metadata:      map[string]*metaEntry{},
 		metrics:       metrics,
+		nhcbLabels:    map[uint64]labels.Labels{},
+		nhcbBuilder:   map[uint64]convertnhcb.TempHistogram{},
 	}
 }
 
@@ -1107,6 +1118,11 @@ func (c *scrapeCache) LengthMetadata() int {
 	return len(c.metadata)
 }
 
+func (c *scrapeCache) resetNhcb() {
+	c.nhcbLabels = map[uint64]labels.Labels{}
+	c.nhcbBuilder = map[uint64]convertnhcb.TempHistogram{}
+}
+
 func newScrapeLoop(ctx context.Context,
 	sc scraper,
 	l log.Logger,
@@ -1127,6 +1143,7 @@ func newScrapeLoop(ctx context.Context,
 	interval time.Duration,
 	timeout time.Duration,
 	scrapeClassicHistograms bool,
+	convertClassicHistograms bool,
 	enableNativeHistogramIngestion bool,
 	enableCTZeroIngestion bool,
 	reportExtraMetrics bool,
@@ -1180,6 +1197,7 @@ func newScrapeLoop(ctx context.Context,
 		interval:                       interval,
 		timeout:                        timeout,
 		scrapeClassicHistograms:        scrapeClassicHistograms,
+		convertClassicHistograms:       convertClassicHistograms,
 		enableNativeHistogramIngestion: enableNativeHistogramIngestion,
 		enableCTZeroIngestion:          enableCTZeroIngestion,
 		reportExtraMetrics:             reportExtraMetrics,
@@ -1641,6 +1659,27 @@ loop:
 				}
 			} else {
 				ref, err = app.Append(ref, lset, t, val)
+
+				if sl.convertClassicHistograms {
+					mName := lset.Get(labels.MetricName)
+					switch {
+					case strings.HasSuffix(mName, "_bucket") && lset.Has(labels.BucketLabel):
+						le, err := strconv.ParseFloat(lset.Get(labels.BucketLabel), 64)
+						if err == nil && !math.IsNaN(le) {
+							processClassicHistogramSeries(lset, "_bucket", sl.cache, func(hist *convertnhcb.TempHistogram) {
+								hist.BucketCounts[le] = val
+							})
+						}
+					case strings.HasSuffix(mName, "_count"):
+						processClassicHistogramSeries(lset, "_count", sl.cache, func(hist *convertnhcb.TempHistogram) {
+							hist.Count = val
+						})
+					case strings.HasSuffix(mName, "_sum"):
+						processClassicHistogramSeries(lset, "_sum", sl.cache, func(hist *convertnhcb.TempHistogram) {
+							hist.Sum = val
+						})
+					}
+				}
 			}
 		}
 
@@ -1762,7 +1801,44 @@ loop:
 			return err == nil
 		})
 	}
+
+	if sl.convertClassicHistograms {
+		for hash, th := range sl.cache.nhcbBuilder {
+			lset, ok := sl.cache.nhcbLabels[hash]
+			if !ok {
+				continue
+			}
+			ub := make([]float64, 0, len(th.BucketCounts))
+			for b := range th.BucketCounts {
+				ub = append(ub, b)
+			}
+			upperBounds, fhBase := convertnhcb.ProcessUpperBoundsAndCreateBaseHistogram(ub)
+			fh := convertnhcb.ConvertHistogramWrapper(th, upperBounds, fhBase)
+			if err := fh.Validate(); err != nil {
+				continue
+			}
+			// fmt.Printf("FINAL lset: %s, timestamp: %v, val: %v\n", lset, defTime, fh)
+			_, err = app.AppendHistogram(0, lset, defTime, nil, fh)
+			if err != nil {
+				continue
+			}
+		}
+		sl.cache.resetNhcb()
+	}
+
 	return
+}
+
+func processClassicHistogramSeries(lset labels.Labels, suffix string, cache *scrapeCache, updateHist func(*convertnhcb.TempHistogram)) {
+	m2 := convertnhcb.GetHistogramMetricBase(lset, suffix)
+	m2hash := m2.Hash()
+	cache.nhcbLabels[m2hash] = m2
+	th, exists := cache.nhcbBuilder[m2hash]
+	if !exists {
+		th = convertnhcb.NewTempHistogram()
+	}
+	updateHist(&th)
+	cache.nhcbBuilder[m2hash] = th
 }
 
 // Adds samples to the appender, checking the error, and then returns the # of samples added,
