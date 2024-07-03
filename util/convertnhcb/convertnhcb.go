@@ -19,9 +19,29 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/grafana/regexp"
+
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 )
+
+var histogramNameSuffixReplacements = []struct {
+	pattern *regexp.Regexp
+	repl    string
+}{
+	{
+		pattern: regexp.MustCompile(`_bucket$`),
+		repl:    "",
+	},
+	{
+		pattern: regexp.MustCompile(`_sum$`),
+		repl:    "",
+	},
+	{
+		pattern: regexp.MustCompile(`_count$`),
+		repl:    "",
+	},
+}
 
 type TempHistogram struct {
 	BucketCounts map[float64]float64
@@ -142,4 +162,11 @@ func GetHistogramMetricBase(m labels.Labels, suffix string) labels.Labels {
 		Set(labels.MetricName, strings.TrimSuffix(mName, suffix)).
 		Del(labels.BucketLabel).
 		Labels()
+}
+
+func GetHistogramMetricBaseName(s string) string {
+	for _, rep := range histogramNameSuffixReplacements {
+		s = rep.pattern.ReplaceAllString(s, rep.repl)
+	}
+	return s
 }
