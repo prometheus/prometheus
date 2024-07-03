@@ -47,7 +47,6 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/convertnhcb"
 	"github.com/prometheus/prometheus/util/pool"
 )
 
@@ -1473,6 +1472,9 @@ type appendErrors struct {
 
 func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
 	p, err := textparse.New(b, contentType, sl.scrapeClassicHistograms, sl.symbolTable)
+	if sl.convertClassicHistograms {
+		p = textparse.NewNhcbParser(p, sl.scrapeClassicHistograms)
+	}
 	if err != nil {
 		level.Debug(sl.l).Log(
 			"msg", "Invalid content type on scrape, using prometheus parser as fallback.",
@@ -1490,8 +1492,6 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 		e               exemplar.Exemplar // escapes to heap so hoisted out of loop
 		meta            metadata.Metadata
 		metadataChanged bool
-		nhcbLabels      map[uint64]labels.Labels
-		nhcbBuilder     map[uint64]convertnhcb.TempHistogram
 	)
 
 	exemplars := make([]exemplar.Exemplar, 1)
@@ -1520,11 +1520,6 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 
 	// Take an appender with limits.
 	app = appender(app, sl.sampleLimit, sl.bucketLimit, sl.maxSchema)
-
-	if sl.convertClassicHistograms {
-		nhcbLabels = make(map[uint64]labels.Labels)
-		nhcbBuilder = make(map[uint64]convertnhcb.TempHistogram)
-	}
 
 	defer func() {
 		if err != nil {
@@ -1655,36 +1650,7 @@ loop:
 					ref, err = app.AppendHistogram(ref, lset, t, nil, fh)
 				}
 			} else {
-				var skipAppendFloat bool
-				if sl.convertClassicHistograms {
-					mName := lset.Get(labels.MetricName)
-					if !sl.scrapeClassicHistograms {
-						baseMetadata, _ := sl.cache.GetMetadata(convertnhcb.GetHistogramMetricBaseName(mName))
-						if baseMetadata.Type == model.MetricTypeHistogram {
-							skipAppendFloat = true
-						}
-					}
-					switch {
-					case strings.HasSuffix(mName, "_bucket") && lset.Has(labels.BucketLabel):
-						le, err := strconv.ParseFloat(lset.Get(labels.BucketLabel), 64)
-						if err == nil && !math.IsNaN(le) {
-							processClassicHistogramSeries(lset, "_bucket", nhcbLabels, nhcbBuilder, func(hist *convertnhcb.TempHistogram) {
-								hist.BucketCounts[le] = val
-							})
-						}
-					case strings.HasSuffix(mName, "_count"):
-						processClassicHistogramSeries(lset, "_count", nhcbLabels, nhcbBuilder, func(hist *convertnhcb.TempHistogram) {
-							hist.Count = val
-						})
-					case strings.HasSuffix(mName, "_sum"):
-						processClassicHistogramSeries(lset, "_sum", nhcbLabels, nhcbBuilder, func(hist *convertnhcb.TempHistogram) {
-							hist.Sum = val
-						})
-					}
-				}
-				if !skipAppendFloat {
-					ref, err = app.Append(ref, lset, t, val)
-				}
+				ref, err = app.Append(ref, lset, t, val)
 			}
 		}
 
@@ -1806,49 +1772,7 @@ loop:
 			return err == nil
 		})
 	}
-
-	for hash, th := range nhcbBuilder {
-		lset, ok := nhcbLabels[hash]
-		if !ok {
-			continue
-		}
-		ub := make([]float64, 0, len(th.BucketCounts))
-		for b := range th.BucketCounts {
-			ub = append(ub, b)
-		}
-		upperBounds, hBase := convertnhcb.ProcessUpperBoundsAndCreateBaseHistogram(ub, false)
-		fhBase := hBase.ToFloat(nil)
-		h, fh := convertnhcb.ConvertHistogramWrapper(th, upperBounds, hBase, fhBase)
-		if h != nil {
-			if err := h.Validate(); err != nil {
-				continue
-			}
-			if _, err = app.AppendHistogram(0, lset, defTime, h, nil); err != nil {
-				continue
-			}
-		} else if fh != nil {
-			if err := fh.Validate(); err != nil {
-				continue
-			}
-			if _, err = app.AppendHistogram(0, lset, defTime, nil, fh); err != nil {
-				continue
-			}
-		}
-	}
-
 	return
-}
-
-func processClassicHistogramSeries(lset labels.Labels, suffix string, nhcbLabels map[uint64]labels.Labels, nhcbBuilder map[uint64]convertnhcb.TempHistogram, updateHist func(*convertnhcb.TempHistogram)) {
-	m2 := convertnhcb.GetHistogramMetricBase(lset, suffix)
-	m2hash := m2.Hash()
-	nhcbLabels[m2hash] = m2
-	th, exists := nhcbBuilder[m2hash]
-	if !exists {
-		th = convertnhcb.NewTempHistogram()
-	}
-	updateHist(&th)
-	nhcbBuilder[m2hash] = th
 }
 
 // Adds samples to the appender, checking the error, and then returns the # of samples added,
