@@ -227,18 +227,21 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 	newParser := deepCopyParser(p)
 	switch t, _ := newParser.Next(); t {
 		case EntrySeries:
-			for {
+			// continue instead of return nil until we get new series/labels. can happen for histograms, summaries
+			for { 
 				// Check _created suffix
 				var lbs labels.Labels
 				newParser.Metric(&lbs)
 				name := lbs.Get(model.MetricNameLabel)
-				if name[len(name)-8:] != "_created" {
+				if name[len(name)-8:] != "_created" { 
 					return nil
 				}
-
+				
 				if newParser.mName != p.mName { 
 					return nil
 				}
+
+				// edge case: if guage_created of unknown type -> skip parsing
 
 				// Check if labelsets are the same
 
@@ -253,6 +256,8 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 				if err != nil {
 					return nil
 				}
+
+				// guage_created is a metric
 				return &ct
 			}
 		default:
