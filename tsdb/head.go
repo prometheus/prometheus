@@ -313,10 +313,7 @@ func (h *Head) resetInMemoryState() error {
 	if h.series != nil {
 		// reset the existing series to make sure we call the appropriated hooks
 		// and increment the series removed metrics
-		fs := h.series.iterForDeletion(func(_ int, _ uint64, s *memSeries, flushedForCallback map[chunks.HeadSeriesRef]labels.Labels) {
-			// All series should be flushed
-			flushedForCallback[s.ref] = s.lset
-		})
+		fs := h.series.callPostDeletionBeforeReset()
 		h.metrics.seriesRemoved.Add(float64(fs))
 	}
 
@@ -342,6 +339,7 @@ func (h *Head) resetInMemoryState() error {
 type headMetrics struct {
 	activeAppenders           prometheus.Gauge
 	series                    prometheus.GaugeFunc
+	stripeSeries              prometheus.Gauge
 	seriesCreated             prometheus.Counter
 	seriesRemoved             prometheus.Counter
 	seriesNotFound            prometheus.Counter
@@ -385,6 +383,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Help: "Total number of series in the head block.",
 		}, func() float64 {
 			return float64(h.NumSeries())
+		}),
+		stripeSeries: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "prometheus_tsdb_head_stripe_series",
+			Help: "Total number of series in stripes (i.e., series created since the last gc()).",
 		}),
 		seriesCreated: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_series_created_total",
@@ -504,6 +506,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		r.MustRegister(
 			m.activeAppenders,
 			m.series,
+			m.stripeSeries,
 			m.chunks,
 			m.chunksCreated,
 			m.chunksRemoved,
@@ -1552,12 +1555,13 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 
 	// Drop old chunks and remember series IDs and hashes if they can be
 	// deleted entirely.
-	deleted, affected, chunksRemoved, actualInOrderMint, minOOOTime, minMmapFile := h.series.gc(mint, minOOOMmapRef)
+	deleted, affected, actualInOrderMint, minOOOTime, minMmapFile, stats := h.series.gc(mint, minOOOMmapRef)
 	seriesRemoved := len(deleted)
 
+	h.metrics.stripeSeries.Sub(float64(stats.stripeSeriesRemoved))
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
-	h.metrics.chunksRemoved.Add(float64(chunksRemoved))
-	h.metrics.chunks.Sub(float64(chunksRemoved))
+	h.metrics.chunksRemoved.Add(float64(stats.chunksRemoved))
+	h.metrics.chunks.Sub(float64(stats.chunksRemoved))
 	h.numSeries.Sub(uint64(seriesRemoved))
 
 	// Remove deleted series IDs from the postings lists.
@@ -1711,6 +1715,7 @@ func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labe
 	}
 
 	h.metrics.seriesCreated.Inc()
+	h.metrics.stripeSeries.Inc()
 	h.numSeries.Inc()
 
 	h.postings.Add(storage.SeriesRef(id), lset)
@@ -1742,6 +1747,12 @@ func (h *Head) mmapHeadChunks() {
 			series.Unlock()
 		}
 		h.series.locks[i].RUnlock()
+	}
+	survivors := h.series.survivors.Load().(map[chunks.HeadSeriesRef]*memSeries)
+	for _, series := range survivors {
+		series.Lock()
+		count += series.mmapChunks(h.chunkDiskMapper)
+		series.Unlock()
 	}
 	h.metrics.mmapChunksTotal.Add(float64(count))
 }
@@ -1831,8 +1842,10 @@ const (
 type stripeSeries struct {
 	size                    int
 	series                  []map[chunks.HeadSeriesRef]*memSeries // Sharded by ref. A series ref is the value of `size` when the series was being newly added.
+	minSeriesRef            []atomic.Int64                        // The oldest series ref in series. // TODO: does it need to be in stripes?
 	hashes                  []seriesHashmap                       // Sharded by label hash.
 	locks                   []stripeLock                          // Sharded by ref for series access, by label hash for hashes access.
+	survivors               atomic.Value                          // map[chunks.HeadSeriesRef]*memSeries, series that survived the gc()
 	seriesLifecycleCallback SeriesLifecycleCallback
 }
 
@@ -1846,21 +1859,27 @@ func newStripeSeries(stripeSize int, seriesCallback SeriesLifecycleCallback) *st
 	s := &stripeSeries{
 		size:                    stripeSize,
 		series:                  make([]map[chunks.HeadSeriesRef]*memSeries, stripeSize),
+		minSeriesRef:            make([]atomic.Int64, stripeSize),
 		hashes:                  make([]seriesHashmap, stripeSize),
 		locks:                   make([]stripeLock, stripeSize),
 		seriesLifecycleCallback: seriesCallback,
 	}
+	s.survivors.Store(map[chunks.HeadSeriesRef]*memSeries{})
 
-	for i := range s.series {
+	for i := 0; i < stripeSize; i++ {
 		s.series[i] = map[chunks.HeadSeriesRef]*memSeries{}
-	}
-	for i := range s.hashes {
 		s.hashes[i] = seriesHashmap{
 			unique:    map[uint64]*memSeries{},
 			conflicts: nil, // Initialized on demand in set().
 		}
+		s.minSeriesRef[i].Store(math.MaxInt64)
 	}
 	return s
+}
+
+type stripeSeriesStats struct {
+	stripeSeriesRemoved int
+	chunksRemoved       int
 }
 
 // gc garbage collects old chunks that are strictly before mint and removes
@@ -1869,53 +1888,35 @@ func newStripeSeries(stripeSize int, seriesCallback SeriesLifecycleCallback) *st
 // but the returned map goes into postings.Delete() which expects a map[storage.SeriesRef]struct
 // and there's no easy way to cast maps.
 // minMmapFile is the min mmap file number seen in the series (in-order and out-of-order) after gc'ing the series.
-func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _ int, _, _ int64, minMmapFile int) {
+func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _, _ int64, minMmapFile int, _ stripeSeriesStats) {
 	var (
 		deleted          = map[storage.SeriesRef]struct{}{}
 		affected         = map[labels.Label]struct{}{}
-		rmChunks         = 0
 		actualMint int64 = math.MaxInt64
 		minOOOTime int64 = math.MaxInt64
+
+		stats stripeSeriesStats
 	)
 	minMmapFile = math.MaxInt32
+	prevSurvivors := s.survivors.Load().(map[chunks.HeadSeriesRef]*memSeries)
+	survivors := make(map[chunks.HeadSeriesRef]*memSeries, len(prevSurvivors))
 
-	// For one series, truncate old chunks and check if any chunks left. If not, mark as deleted and collect the ID.
-	check := func(hashShard int, hash uint64, series *memSeries, deletedForCallback map[chunks.HeadSeriesRef]labels.Labels) {
+	// For one series, truncate old chunks and check if any chunks left.
+	// If kept, move it to survivors.
+	// If not, mark as deleted and collect the ID.
+	checkSeriesFromStripe := func(hashShard int, hash uint64, series *memSeries, deletedForCallback map[chunks.HeadSeriesRef]labels.Labels) {
 		series.Lock()
 		defer series.Unlock()
 
-		rmChunks += series.truncateChunksBefore(mint, minOOOMmapRef)
-
-		if len(series.mmappedChunks) > 0 {
-			seq, _ := series.mmappedChunks[0].ref.Unpack()
-			if seq < minMmapFile {
-				minMmapFile = seq
-			}
-		}
-		if series.ooo != nil && len(series.ooo.oooMmappedChunks) > 0 {
-			seq, _ := series.ooo.oooMmappedChunks[0].ref.Unpack()
-			if seq < minMmapFile {
-				minMmapFile = seq
-			}
-			for _, ch := range series.ooo.oooMmappedChunks {
-				if ch.minTime < minOOOTime {
-					minOOOTime = ch.minTime
-				}
-			}
-		}
-		if series.ooo != nil && series.ooo.oooHeadChunk != nil {
-			if series.ooo.oooHeadChunk.minTime < minOOOTime {
-				minOOOTime = series.ooo.oooHeadChunk.minTime
-			}
-		}
-		if len(series.mmappedChunks) > 0 || series.headChunks != nil || series.pendingCommit ||
-			(series.ooo != nil && (len(series.ooo.oooMmappedChunks) > 0 || series.ooo.oooHeadChunk != nil)) {
-			seriesMint := series.minTime()
-			if seriesMint < actualMint {
-				actualMint = seriesMint
-			}
+		stats.chunksRemoved += series.truncateChunksBefore(mint, minOOOMmapRef)
+		var keep bool
+		actualMint, minOOOTime, minMmapFile, keep = shouldKeepMemSeries(series, actualMint, minOOOTime, minMmapFile)
+		if keep {
+			survivors[series.ref] = series
+			// We'll delete it from series map once we've replaced the survivors.
 			return
 		}
+
 		// The series is gone entirely. We need to keep the series lock
 		// and make sure we have acquired the stripe locks for hash and ID of the
 		// series alike.
@@ -1930,25 +1931,85 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
 		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
 		s.hashes[hashShard].del(hash, series.ref)
-		delete(s.series[refShard], series.ref)
 		deletedForCallback[series.ref] = series.lset
+
+		delete(s.series[refShard], series.ref)
+		stats.stripeSeriesRemoved++
 	}
 
-	s.iterForDeletion(check)
+	s.iterStripesForGC(checkSeriesFromStripe)
+
+	// For survivors series, truncate old chunks and check if any chunks left.
+	// If survivors, move it to survivors.
+	// If not, we need to remove it from the hashes.
+	deletedSurvivorsForCallback := make(map[chunks.HeadSeriesRef]labels.Labels)
+
+	// Check survivors.
+	for _, series := range prevSurvivors {
+		series.Lock()
+
+		stats.chunksRemoved += series.truncateChunksBefore(mint, minOOOMmapRef)
+		var keep bool
+		actualMint, minOOOTime, minMmapFile, keep = shouldKeepMemSeries(series, actualMint, minOOOTime, minMmapFile)
+		if keep {
+			survivors[series.ref] = series
+			series.Unlock()
+			continue
+		}
+
+		hash := series.lset.Hash()
+		hashShard := hash & uint64(s.size-1)
+
+		s.locks[hashShard].Lock()
+		deleted[storage.SeriesRef(series.ref)] = struct{}{}
+		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
+		s.hashes[hashShard].del(hash, series.ref)
+		deletedSurvivorsForCallback[series.ref] = series.lset
+		s.locks[hashShard].Unlock()
+
+		series.Unlock()
+	}
+	// Update survivors.
+	s.survivors.Store(survivors)
+
+	// Cleanup stale series.
+	for i := 0; i < s.size; i++ {
+		minRef := int64(math.MaxInt64)
+		s.locks[i].Lock()
+		// We don't expect any series in s.series[i],
+		// except for the ones that have been created since we iterated through them.
+		// Empty tsdb will have no survivors and all series in s.series,
+		// which means that s.series[i] will be bigger than needed after the first gc unless we have a 100% churn.
+		// (Maps don't shrink: https://github.com/golang/go/issues/20135)
+		// So we'll create the new maps with half size.
+		series := make(map[chunks.HeadSeriesRef]*memSeries, len(s.series[i])/2)
+		for ref := range s.series[i] {
+			if _, ok := survivors[ref]; !ok {
+				series[ref] = s.series[i][ref]
+				if int64(ref) < minRef {
+					minRef = int64(ref)
+				}
+			}
+		}
+		s.series[i] = series
+		s.minSeriesRef[i].Store(minRef)
+		s.locks[i].Unlock()
+	}
+
+	s.seriesLifecycleCallback.PostDeletion(deletedSurvivorsForCallback)
 
 	if actualMint == math.MaxInt64 {
 		actualMint = mint
 	}
 
-	return deleted, affected, rmChunks, actualMint, minOOOTime, minMmapFile
+	return deleted, affected, actualMint, minOOOTime, minMmapFile, stats
 }
 
-// The iterForDeletion function iterates through all series, invoking the checkDeletedFunc for each.
+// The iterStripesForGC function iterates through all series from the stripes, invoking the checkDeletedFunc for each.
 // The checkDeletedFunc takes a map as input and should add to it all series that were deleted and should be included
 // when invoking the PostDeletion hook.
-func (s *stripeSeries) iterForDeletion(checkDeletedFunc func(int, uint64, *memSeries, map[chunks.HeadSeriesRef]labels.Labels)) int {
+func (s *stripeSeries) iterStripesForGC(checkDeletedFunc func(int, uint64, *memSeries, map[chunks.HeadSeriesRef]labels.Labels)) {
 	seriesSetFromPrevStripe := 0
-	totalDeletedSeries := 0
 	// Run through all series shard by shard
 	for i := 0; i < s.size; i++ {
 		seriesSet := make(map[chunks.HeadSeriesRef]labels.Labels, seriesSetFromPrevStripe)
@@ -1966,18 +2027,84 @@ func (s *stripeSeries) iterForDeletion(checkDeletedFunc func(int, uint64, *memSe
 		}
 		s.locks[i].Unlock()
 		s.seriesLifecycleCallback.PostDeletion(seriesSet)
-		totalDeletedSeries += len(seriesSet)
 		seriesSetFromPrevStripe = len(seriesSet)
 	}
-	return totalDeletedSeries
+}
+
+func shouldKeepMemSeries(series *memSeries, actualMint, minOOOTime int64, minMmapFile int) (_actualMint, _minOOOTime int64, _minMmapFile int, keep bool) {
+	if len(series.mmappedChunks) > 0 {
+		seq, _ := series.mmappedChunks[0].ref.Unpack()
+		if seq < minMmapFile {
+			minMmapFile = seq
+		}
+	}
+	if series.ooo != nil && len(series.ooo.oooMmappedChunks) > 0 {
+		seq, _ := series.ooo.oooMmappedChunks[0].ref.Unpack()
+		if seq < minMmapFile {
+			minMmapFile = seq
+		}
+		for _, ch := range series.ooo.oooMmappedChunks {
+			if ch.minTime < minOOOTime {
+				minOOOTime = ch.minTime
+			}
+		}
+	}
+	if series.ooo != nil && series.ooo.oooHeadChunk != nil {
+		if series.ooo.oooHeadChunk.minTime < minOOOTime {
+			minOOOTime = series.ooo.oooHeadChunk.minTime
+		}
+	}
+	if len(series.mmappedChunks) > 0 || series.headChunks != nil || series.pendingCommit ||
+		(series.ooo != nil && (len(series.ooo.oooMmappedChunks) > 0 || series.ooo.oooHeadChunk != nil)) {
+		seriesMint := series.minTime()
+		if seriesMint < actualMint {
+			actualMint = seriesMint
+		}
+		return actualMint, minOOOTime, minMmapFile, true
+	}
+	return actualMint, minOOOTime, minMmapFile, false
+}
+
+// callPostDeletionBeforeReset will call the PostDeletion hook for all series in the stripeSeries.
+// This should be called before the reset.
+// It returns the total amount of series that were notified to the PostDeletion hook.
+func (s *stripeSeries) callPostDeletionBeforeReset() int {
+	total := 0
+	// Run through all series shard by shard
+	for i := 0; i < s.size; i++ {
+		s.locks[i].Lock()
+		seriesSet := make(map[chunks.HeadSeriesRef]labels.Labels, len(s.series[i]))
+		for ref, series := range s.series[i] {
+			seriesSet[ref] = series.lset
+		}
+		s.locks[i].Unlock()
+		s.seriesLifecycleCallback.PostDeletion(seriesSet)
+		total += len(seriesSet)
+	}
+	survivors := s.survivors.Load().(map[chunks.HeadSeriesRef]*memSeries)
+	seriesSet := make(map[chunks.HeadSeriesRef]labels.Labels, len(survivors))
+	for ref, series := range survivors {
+		seriesSet[ref] = series.lset
+	}
+	s.seriesLifecycleCallback.PostDeletion(seriesSet)
+	total += len(survivors)
+	return total
 }
 
 func (s *stripeSeries) getByID(id chunks.HeadSeriesRef) *memSeries {
 	i := uint64(id) & uint64(s.size-1)
+	if minRef := chunks.HeadSeriesRef(s.minSeriesRef[i].Load()); minRef != math.MaxInt64 && id < minRef {
+		return s.survivors.Load().(map[chunks.HeadSeriesRef]*memSeries)[id]
+	}
 
 	s.locks[i].RLock()
 	series := s.series[i][id]
 	s.locks[i].RUnlock()
+
+	if series == nil {
+		// Maybe series was compacted, but then someone wrote a lower id into series[] again.
+		return s.survivors.Load().(map[chunks.HeadSeriesRef]*memSeries)[id]
+	}
 
 	return series
 }
@@ -2028,6 +2155,10 @@ func (s *stripeSeries) getOrSet(hash uint64, lset labels.Labels, createSeries fu
 	i = uint64(series.ref) & uint64(s.size-1)
 
 	s.locks[i].Lock()
+	prevMin := s.minSeriesRef[i].Load()
+	if prevMin > int64(series.ref) && !s.minSeriesRef[i].CompareAndSwap(prevMin, int64(series.ref)) {
+		panic("someone else updated the min, but we're holding the mutex")
+	}
 	s.series[i][series.ref] = series
 	s.locks[i].Unlock()
 
