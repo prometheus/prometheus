@@ -248,16 +248,19 @@ func (s *memSeries) headChunkID(pos int) chunks.HeadChunkID {
 	return chunks.HeadChunkID(pos) + s.firstChunkID
 }
 
+const oooChunkIDMask = 1 << 23
+
 // oooHeadChunkID returns the HeadChunkID referred to by the given position.
 // * 0 <= pos < len(s.oooMmappedChunks) refer to s.oooMmappedChunks[pos]
 // * pos == len(s.oooMmappedChunks) refers to s.oooHeadChunk
 // The caller must ensure that s.ooo is not nil.
 func (s *memSeries) oooHeadChunkID(pos int) chunks.HeadChunkID {
-	return chunks.HeadChunkID(pos) + s.ooo.firstOOOChunkID + 1<<23
+	return (chunks.HeadChunkID(pos) + s.ooo.firstOOOChunkID) | oooChunkIDMask
 }
 
-func isOOOHeadChunkID(id chunks.HeadChunkID) bool {
-	return id >= 1<<23
+func unpackHeadChunkRef(ref chunks.ChunkRef) (chunks.HeadSeriesRef, chunks.HeadChunkID, bool) {
+	sid, cid := chunks.HeadChunkRef(ref).Unpack()
+	return sid, (cid & (oooChunkIDMask - 1)), (cid & oooChunkIDMask) != 0
 }
 
 // LabelValueFor returns label value for the given label name in the series referred to by ID.
@@ -485,13 +488,13 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 // This function is not thread safe unless the caller holds a lock.
 // The caller must ensure that s.ooo is not nil.
 func (s *memSeries) oooMergedChunks(meta chunks.Meta, cdm *chunks.ChunkDiskMapper, hr *headChunkReader, mint, maxt int64) (*mergedOOOChunks, error) {
-	_, cid := chunks.HeadChunkRef(meta.Ref).Unpack()
+	_, cid, _ := unpackHeadChunkRef(meta.Ref)
 
 	// ix represents the index of chunk in the s.mmappedChunks slice. The chunk meta's are
 	// incremented by 1 when new chunk is created, hence (meta - firstChunkID) gives the slice index.
 	// The max index for the s.mmappedChunks slice can be len(s.mmappedChunks)-1, hence if the ix
 	// is len(s.mmappedChunks), it represents the next chunk, which is the head chunk.
-	ix := int(cid-1<<23) - int(s.ooo.firstOOOChunkID)
+	ix := int(cid) - int(s.ooo.firstOOOChunkID)
 	if ix < 0 || ix > len(s.ooo.oooMmappedChunks) {
 		return nil, storage.ErrNotFound
 	}

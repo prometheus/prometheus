@@ -636,8 +636,8 @@ func NewHeadAndOOOChunkReader(head *Head, mint, maxt int64, isoState *isolationS
 }
 
 func (cr *HeadAndOOOChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
-	sid, cid := chunks.HeadChunkRef(meta.Ref).Unpack()
-	if !isOOOHeadChunkID(cid) {
+	sid, _, isOOO := unpackHeadChunkRef(meta.Ref)
+	if !isOOO {
 		return cr.cr.ChunkOrIterable(meta)
 	}
 
@@ -656,8 +656,8 @@ func (cr *HeadAndOOOChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chu
 
 // Pass through special behaviour for current head chunk.
 func (cr *HeadAndOOOChunkReader) ChunkOrIterableWithCopy(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {
-	_, cid := chunks.HeadChunkRef(meta.Ref).Unpack()
-	if !isOOOHeadChunkID(cid) {
+	_, _, isOOO := unpackHeadChunkRef(meta.Ref)
+	if !isOOO {
 		return cr.cr.ChunkOrIterableWithCopy(meta)
 	}
 	chk, iter, err := cr.ChunkOrIterable(meta)
