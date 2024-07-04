@@ -2779,7 +2779,7 @@ type groupedAggregation struct {
 	floatValue        float64
 	histogramValue    *histogram.FloatHistogram
 	floatMean         float64 // Mean, or "compensating value" for Kahan summation.
-	groupCount        int
+	groupCount        float64
 	groupAggrComplete bool // Used by LIMITK to short-cut series loop when we've reached K elem on every group
 	heap              vectorByValueHeap
 }
@@ -2855,8 +2855,8 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			if h != nil {
 				group.hasHistogram = true
 				if group.histogramValue != nil {
-					left := h.Copy().Div(float64(group.groupCount))
-					right := group.histogramValue.Copy().Div(float64(group.groupCount))
+					left := h.Copy().Div(group.groupCount)
+					right := group.histogramValue.Copy().Div(group.groupCount)
 					toAdd, err := left.Sub(right)
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
@@ -2889,7 +2889,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 					}
 				}
 				// Divide each side of the `-` by `group.groupCount` to avoid float64 overflows.
-				group.floatMean += f/float64(group.groupCount) - group.floatMean/float64(group.groupCount)
+				group.floatMean += f/group.groupCount - group.floatMean/group.groupCount
 			}
 
 		case parser.GROUP:
@@ -2912,7 +2912,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			if h == nil { // Ignore native histograms.
 				group.groupCount++
 				delta := f - group.floatMean
-				group.floatMean += delta / float64(group.groupCount)
+				group.floatMean += delta / group.groupCount
 				group.floatValue += delta * (f - group.floatMean)
 			}
 
@@ -2945,13 +2945,13 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			}
 
 		case parser.COUNT:
-			aggr.floatValue = float64(aggr.groupCount)
+			aggr.floatValue = aggr.groupCount
 
 		case parser.STDVAR:
-			aggr.floatValue /= float64(aggr.groupCount)
+			aggr.floatValue /= aggr.groupCount
 
 		case parser.STDDEV:
-			aggr.floatValue = math.Sqrt(aggr.floatValue / float64(aggr.groupCount))
+			aggr.floatValue = math.Sqrt(aggr.floatValue / aggr.groupCount)
 
 		case parser.QUANTILE:
 			aggr.floatValue = quantile(q, aggr.heap)
