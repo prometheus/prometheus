@@ -106,19 +106,19 @@ class BasicEncoder {
     Primitives::Timestamp earliest_sample_ = std::numeric_limits<Primitives::Timestamp>::max();
     Primitives::Timestamp latest_sample_ = 0;
     int64_t first_sample_added_at_tsns_ = 0;
+    uint32_t repeated_samples_count_ = 0;
+    uint32_t rewritten_samples_count_ = 0;
 
    public:
-    inline __attribute__((always_inline)) uint32_t samples_count() const { return samples_count_; }
+    [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t samples_count() const noexcept { return samples_count_; }
+    [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t series_count() const noexcept { return series_count_; }
+    [[nodiscard]] PROMPP_ALWAYS_INLINE Primitives::Timestamp earliest_sample() const noexcept { return earliest_sample_; }
+    [[nodiscard]] PROMPP_ALWAYS_INLINE Primitives::Timestamp latest_sample() const noexcept { return latest_sample_; }
+    [[nodiscard]] PROMPP_ALWAYS_INLINE int64_t first_sample_added_at_ts_ns() const noexcept { return first_sample_added_at_tsns_; }
+    [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t repeated_samples_count() const noexcept { return repeated_samples_count_; }
+    [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t rewritten_samples_count() const noexcept { return rewritten_samples_count_; }
 
-    inline __attribute__((always_inline)) uint32_t series_count() const { return series_count_; }
-
-    inline __attribute__((always_inline)) Primitives::Timestamp earliest_sample() const { return earliest_sample_; }
-
-    inline __attribute__((always_inline)) Primitives::Timestamp latest_sample() const { return latest_sample_; }
-
-    inline __attribute__((always_inline)) int64_t first_sample_added_at_ts_ns() const { return first_sample_added_at_tsns_; }
-
-    inline __attribute__((always_inline)) void clear() {
+    PROMPP_ALWAYS_INLINE void clear() noexcept {
       singular_.clear();
       plural_.clear();
 
@@ -128,51 +128,64 @@ class BasicEncoder {
       earliest_sample_ = std::numeric_limits<Primitives::Timestamp>::max();
       latest_sample_ = 0;
       first_sample_added_at_tsns_ = 0;
+
+      repeated_samples_count_ = 0;
+      rewritten_samples_count_ = 0;
     }
 
     template <class T>
-    inline __attribute__((always_inline)) void add(Primitives::LabelSetID ls_id, const T& smpl) {
-      // TODO What to do with non unique timestamps?
-
+    PROMPP_ALWAYS_INLINE void add(Primitives::LabelSetID ls_id, const T& smpl) {
       if (first_sample_added_at_tsns_ == 0) {
+        [[unlikely]];
         const auto now = std::chrono::system_clock::now();
         first_sample_added_at_tsns_ = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
       }
 
-      ++samples_count_;
-
       earliest_sample_ = std::min(smpl.timestamp(), earliest_sample_);
       latest_sample_ = std::max(smpl.timestamp(), latest_sample_);
 
-      if (ls_id >= singular_.size()) {
-        singular_.resize(ls_id + 1 + 512);
-      }
+      if (plural_.count(ls_id)) {
+        [[unlikely]];
 
-      if (__builtin_expect(plural_.count(ls_id), false)) {
         auto& vec = plural_[ls_id];
-
-        if (__builtin_expect(vec.back().timestamp() < smpl.timestamp(), true)) {
-          vec.push_back(Primitives::Sample(smpl));
+        if (vec.back().timestamp() < smpl.timestamp()) {
+          [[likely]];
+          vec.emplace_back(smpl);
         } else {
-          vec.insert(std::lower_bound(vec.begin(), vec.end(), smpl, [](const Primitives::Sample& a, const T& b) { return a.timestamp() < b.timestamp(); }),
-                     Primitives::Sample(smpl));
+          auto it = std::lower_bound(vec.begin(), vec.end(), smpl,
+                                     [](const Primitives::Sample& a, const T& b) PROMPP_LAMBDA_INLINE { return a.timestamp() < b.timestamp(); });
+          if (it->timestamp() != smpl.timestamp()) {
+            [[likely]];
+            vec.insert(it, Primitives::Sample(smpl));
+          } else {
+            update_repeated_samples_counter(it->value(), smpl.value());
+            return;
+          }
         }
-      } else if (__builtin_expect(singular_.count(ls_id), false)) {
-        plural_.resize(ls_id + 1 + 512);
+
+        ++samples_count_;
+      } else if (singular_.count(ls_id)) {
+        [[unlikely]];
 
         const auto& first_smpl = singular_[ls_id];
-        auto& vec = plural_[ls_id];
-
-        if (__builtin_expect(first_smpl.timestamp() < smpl.timestamp(), true)) {
-          vec.push_back(first_smpl);
-          vec.push_back(Primitives::Sample(smpl));
+        if (first_smpl.timestamp() < smpl.timestamp()) {
+          [[likely]];
+          switch_to_plural_list(ls_id, first_smpl, Primitives::Sample(smpl));
+        } else if (first_smpl.timestamp() != smpl.timestamp()) {
+          [[likely]];
+          switch_to_plural_list(ls_id, Primitives::Sample(smpl), first_smpl);
         } else {
-          vec.push_back(Primitives::Sample(smpl));
-          vec.push_back(first_smpl);
+          update_repeated_samples_counter(first_smpl.value(), smpl.value());
+          return;
         }
+
+        ++samples_count_;
       } else {
-        ++series_count_;
+        resize_sparse_vector_if_needed(ls_id, singular_);
+
         singular_[ls_id] = smpl;
+        ++series_count_;
+        ++samples_count_;
       }
     }
 
@@ -193,6 +206,30 @@ class BasicEncoder {
             func(ls_id, s.timestamp(), s.value());
           }
         }
+      }
+    }
+
+   private:
+    PROMPP_ALWAYS_INLINE void switch_to_plural_list(Primitives::LabelSetID ls_id, const Primitives::Sample& first, const Primitives::Sample& second) {
+      resize_sparse_vector_if_needed(ls_id, plural_);
+
+      auto& vec = plural_[ls_id];
+      vec.emplace_back(first);
+      vec.emplace_back(second);
+    }
+
+    template <class SparseVector>
+    PROMPP_ALWAYS_INLINE void resize_sparse_vector_if_needed(Primitives::LabelSetID ls_id, SparseVector& vector) {
+      if (ls_id >= vector.size()) {
+        vector.resize(ls_id + 1 + 512);
+      }
+    }
+
+    PROMPP_ALWAYS_INLINE void update_repeated_samples_counter(double value1, double value2) noexcept {
+      if (std::bit_cast<uint64_t>(value1) == std::bit_cast<uint64_t>(value2)) {
+        ++repeated_samples_count_;
+      } else {
+        ++rewritten_samples_count_;
       }
     }
   };
