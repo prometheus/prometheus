@@ -2780,7 +2780,7 @@ type groupedAggregation struct {
 	histogramValue    *histogram.FloatHistogram
 	floatMean         float64 // Mean, or "compensating value" for Kahan summation.
 	groupCount        float64
-	groupAggrComplete bool // Used by LIMITK to short-cut series loop when we've reached K elem on every group
+	groupAggrComplete bool // Used by LIMITK to short-cut series loop when we've reached K elem on every group.
 	heap              vectorByValueHeap
 }
 
