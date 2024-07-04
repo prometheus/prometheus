@@ -593,7 +593,8 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 					continue
 				}
 			}
-			mean, c = kahanSumInc(f.F/count-mean/count, mean, c)
+			correctedMean := mean + c
+			mean, c = kahanSumInc(f.F/count-correctedMean/count, mean, c)
 		}
 
 		if math.IsInf(mean, 0) {
