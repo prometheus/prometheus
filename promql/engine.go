@@ -1318,7 +1318,7 @@ func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping 
 		index, ok := groupToResultIndex[groupingKey]
 		// Add a new group if it doesn't exist.
 		if !ok {
-			if aggExpr.Op != parser.TOPK && aggExpr.Op != parser.BOTTOMK {
+			if aggExpr.Op != parser.TOPK && aggExpr.Op != parser.BOTTOMK && aggExpr.Op != parser.LIMITK && aggExpr.Op != parser.LIMIT_RATIO {
 				m := generateGroupingLabels(enh, series.Metric, aggExpr.Without, sortedGrouping)
 				result = append(result, Series{Metric: m})
 			}
@@ -1331,9 +1331,10 @@ func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping 
 	groups := make([]groupedAggregation, groupCount)
 
 	var k int
+	var ratio float64
 	var seriess map[uint64]Series
 	switch aggExpr.Op {
-	case parser.TOPK, parser.BOTTOMK:
+	case parser.TOPK, parser.BOTTOMK, parser.LIMITK:
 		if !convertibleToInt64(param) {
 			ev.errorf("Scalar value %v overflows int64", param)
 		}
@@ -1343,6 +1344,23 @@ func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping 
 		}
 		if k < 1 {
 			return nil, warnings
+		}
+		seriess = make(map[uint64]Series, len(inputMatrix)) // Output series by series hash.
+	case parser.LIMIT_RATIO:
+		if math.IsNaN(param) {
+			ev.errorf("Ratio value %v is NaN", param)
+		}
+		switch {
+		case param == 0:
+			return nil, warnings
+		case param < -1.0:
+			ratio = -1.0
+			warnings.Add(annotations.NewInvalidRatioWarning(param, ratio, aggExpr.Param.PositionRange()))
+		case param > 1.0:
+			ratio = 1.0
+			warnings.Add(annotations.NewInvalidRatioWarning(param, ratio, aggExpr.Param.PositionRange()))
+		default:
+			ratio = param
 		}
 		seriess = make(map[uint64]Series, len(inputMatrix)) // Output series by series hash.
 	case parser.QUANTILE:
@@ -1362,11 +1380,12 @@ func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping 
 		enh.Ts = ts
 		var ws annotations.Annotations
 		switch aggExpr.Op {
-		case parser.TOPK, parser.BOTTOMK:
-			result, ws = ev.aggregationK(aggExpr, k, inputMatrix, seriesToResult, groups, enh, seriess)
+		case parser.TOPK, parser.BOTTOMK, parser.LIMITK, parser.LIMIT_RATIO:
+			result, ws = ev.aggregationK(aggExpr, k, ratio, inputMatrix, seriesToResult, groups, enh, seriess)
 			// If this could be an instant query, shortcut so as not to change sort order.
 			if ev.endTimestamp == ev.startTimestamp {
-				return result, ws
+				warnings.Merge(ws)
+				return result, warnings
 			}
 		default:
 			ws = ev.aggregation(aggExpr, param, inputMatrix, result, seriesToResult, groups, enh)
@@ -1381,7 +1400,7 @@ func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping 
 
 	// Assemble the output matrix. By the time we get here we know we don't have too many samples.
 	switch aggExpr.Op {
-	case parser.TOPK, parser.BOTTOMK:
+	case parser.TOPK, parser.BOTTOMK, parser.LIMITK, parser.LIMIT_RATIO:
 		result = make(Matrix, 0, len(seriess))
 		for _, ss := range seriess {
 			result = append(result, ss)
@@ -2754,14 +2773,15 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 }
 
 type groupedAggregation struct {
-	seen           bool // Was this output groups seen in the input at this timestamp.
-	hasFloat       bool // Has at least 1 float64 sample aggregated.
-	hasHistogram   bool // Has at least 1 histogram sample aggregated.
-	floatValue     float64
-	histogramValue *histogram.FloatHistogram
-	floatMean      float64 // Mean, or "compensating value" for Kahan summation.
-	groupCount     int
-	heap           vectorByValueHeap
+	seen              bool // Was this output groups seen in the input at this timestamp.
+	hasFloat          bool // Has at least 1 float64 sample aggregated.
+	hasHistogram      bool // Has at least 1 histogram sample aggregated.
+	floatValue        float64
+	histogramValue    *histogram.FloatHistogram
+	floatMean         float64 // Mean, or "compensating value" for Kahan summation.
+	groupCount        int
+	groupAggrComplete bool // Used by LIMITK to short-cut series loop when we've reached K elem on every group
+	heap              vectorByValueHeap
 }
 
 // aggregation evaluates sum, avg, count, stdvar, stddev or quantile at one timestep on inputMatrix.
@@ -2958,19 +2978,22 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 	return annos
 }
 
-// aggregationK evaluates topk or bottomk at one timestep on inputMatrix.
+// aggregationK evaluates topk, bottomk, limitk, or limit_ratio at one timestep on inputMatrix.
 // Output that has the same labels as the input, but just k of them per group.
 // seriesToResult maps inputMatrix indexes to groups indexes.
-// For an instant query, returns a Matrix in descending order for topk or ascending for bottomk.
+// For an instant query, returns a Matrix in descending order for topk or ascending for bottomk, or without any order for limitk / limit_ratio.
 // For a range query, aggregates output in the seriess map.
-func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int, inputMatrix Matrix, seriesToResult []int, groups []groupedAggregation, enh *EvalNodeHelper, seriess map[uint64]Series) (Matrix, annotations.Annotations) {
+func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int, r float64, inputMatrix Matrix, seriesToResult []int, groups []groupedAggregation, enh *EvalNodeHelper, seriess map[uint64]Series) (Matrix, annotations.Annotations) {
 	op := e.Op
 	var s Sample
 	var annos annotations.Annotations
+	// Used to short-cut the loop for LIMITK if we already collected k elements for every group
+	groupsRemaining := len(groups)
 	for i := range groups {
 		groups[i].seen = false
 	}
 
+seriesLoop:
 	for si := range inputMatrix {
 		f, _, ok := ev.nextValues(enh.Ts, &inputMatrix[si])
 		if !ok {
@@ -2981,11 +3004,23 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int, inputMatrix Ma
 		group := &groups[seriesToResult[si]]
 		// Initialize this group if it's the first time we've seen it.
 		if !group.seen {
-			*group = groupedAggregation{
-				seen: true,
-				heap: make(vectorByValueHeap, 1, k),
+			// LIMIT_RATIO is a special case, as we may not add this very sample to the heap,
+			// while we also don't know the final size of it.
+			if op == parser.LIMIT_RATIO {
+				*group = groupedAggregation{
+					seen: true,
+					heap: make(vectorByValueHeap, 0),
+				}
+				if ratiosampler.AddRatioSample(r, &s) {
+					heap.Push(&group.heap, &s)
+				}
+			} else {
+				*group = groupedAggregation{
+					seen: true,
+					heap: make(vectorByValueHeap, 1, k),
+				}
+				group.heap[0] = s
 			}
-			group.heap[0] = s
 			continue
 		}
 
@@ -3014,6 +3049,26 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int, inputMatrix Ma
 				if k > 1 {
 					heap.Fix((*vectorByReverseValueHeap)(&group.heap), 0) // Maintain the heap invariant.
 				}
+			}
+
+		case parser.LIMITK:
+			if len(group.heap) < k {
+				heap.Push(&group.heap, &s)
+			}
+			// LIMITK optimization: early break if we've added K elem to _every_ group,
+			// especially useful for large timeseries where the user is exploring labels via e.g.
+			// limitk(10, my_metric)
+			if !group.groupAggrComplete && len(group.heap) == k {
+				group.groupAggrComplete = true
+				groupsRemaining--
+				if groupsRemaining == 0 {
+					break seriesLoop
+				}
+			}
+
+		case parser.LIMIT_RATIO:
+			if ratiosampler.AddRatioSample(r, &s) {
+				heap.Push(&group.heap, &s)
 			}
 
 		default:
@@ -3062,6 +3117,11 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int, inputMatrix Ma
 			if len(aggr.heap) > 1 {
 				sort.Sort(sort.Reverse((*vectorByReverseValueHeap)(&aggr.heap)))
 			}
+			for _, v := range aggr.heap {
+				add(v.Metric, v.F)
+			}
+
+		case parser.LIMITK, parser.LIMIT_RATIO:
 			for _, v := range aggr.heap {
 				add(v.Metric, v.F)
 			}
@@ -3417,6 +3477,56 @@ func makeInt64Pointer(val int64) *int64 {
 	valp := new(int64)
 	*valp = val
 	return valp
+}
+
+// Add RatioSampler interface to allow unit-testing (previously: Randomizer).
+type RatioSampler interface {
+	// Return this sample "offset" between [0.0, 1.0]
+	sampleOffset(ts int64, sample *Sample) float64
+	AddRatioSample(r float64, sample *Sample) bool
+}
+
+// Use Hash(labels.String()) / maxUint64 as a "deterministic"
+// value in [0.0, 1.0].
+type HashRatioSampler struct{}
+
+var ratiosampler RatioSampler = NewHashRatioSampler()
+
+func NewHashRatioSampler() *HashRatioSampler {
+	return &HashRatioSampler{}
+}
+
+func (s *HashRatioSampler) sampleOffset(ts int64, sample *Sample) float64 {
+	const (
+		float64MaxUint64 = float64(math.MaxUint64)
+	)
+	return float64(sample.Metric.Hash()) / float64MaxUint64
+}
+
+func (s *HashRatioSampler) AddRatioSample(ratioLimit float64, sample *Sample) bool {
+	// If ratioLimit >= 0: add sample if sampleOffset is lesser than ratioLimit
+	//
+	// 0.0        ratioLimit                1.0
+	//  [---------|--------------------------]
+	//  [#########...........................]
+	//
+	// e.g.:
+	//   sampleOffset==0.3 && ratioLimit==0.4
+	//     0.3 < 0.4 ? --> add sample
+	//
+	// Else if ratioLimit < 0: add sample if rand() return the "complement" of ratioLimit>=0 case
+	// (loosely similar behavior to negative array index in other programming languages)
+	//
+	// 0.0       1+ratioLimit               1.0
+	//  [---------|--------------------------]
+	//  [.........###########################]
+	//
+	// e.g.:
+	//   sampleOffset==0.3 && ratioLimit==-0.6
+	//     0.3 >= 0.4 ? --> don't add sample
+	sampleOffset := s.sampleOffset(sample.T, sample)
+	return (ratioLimit >= 0 && sampleOffset < ratioLimit) ||
+		(ratioLimit < 0 && sampleOffset >= (1.0+ratioLimit))
 }
 
 type histogramStatsSeries struct {
