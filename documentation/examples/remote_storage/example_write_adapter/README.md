@@ -15,6 +15,15 @@ go build
 ```yaml
 remote_write:
   - url: "http://localhost:1234/receive"
+    protobuf_message: "io.prometheus.write.v2.Request"
+```
+
+or for deprecated Remote Write 1.0 message:
+
+```yaml
+remote_write:
+  - url: "http://localhost:1234/receive"
+    protobuf_message: "prometheus.WriteRequest"
 ```
 
 Then start Prometheus:
