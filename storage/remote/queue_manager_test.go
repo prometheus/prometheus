@@ -731,7 +731,6 @@ func TestShouldReshard(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		// todo: test with new proto type(s)
 		_, m := newTestClientAndQueueManager(t, defaultFlushDeadline, config.RemoteWriteProtoMsgV1)
 		m.numShards = c.startingShards
 		m.dataIn.incr(c.samplesIn)
