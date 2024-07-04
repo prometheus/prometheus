@@ -7,6 +7,7 @@ To use it:
 
 ```
 go build
+
 ./example_write_adapter
 ```
 
@@ -26,8 +27,8 @@ remote_write:
     protobuf_message: "prometheus.WriteRequest"
 ```
 
-Then start Prometheus:
+Then start Prometheus (in separate terminal):
 
 ```
-./prometheus
+./prometheus --enable-feature=metadata-wal-records
 ```

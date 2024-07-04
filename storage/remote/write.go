@@ -149,7 +149,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 	newHashes := []string{}
 	for _, rwConf := range conf.RemoteWriteConfigs {
 		if rwConf.ProtobufMessage == config.RemoteWriteProtoMsgV2 && !rws.metadataInWAL {
-			return errors.New("invalid remote write configuration, if you are using remote write version 2.0 then the feature flag for metadata records in the WAL must be enabled")
+			return errors.New("invalid remote write configuration, if you are using remote write version 2.0 the `--enable-feature=metadata-wal-records` feature flag must be enabled")
 		}
 		hash, err := toHash(rwConf)
 		if err != nil {
