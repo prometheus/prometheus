@@ -19,6 +19,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/metadata"
+
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -79,6 +81,57 @@ func TestFromMetadataType(t *testing.T) {
 			t.Run("v2", func(t *testing.T) {
 				require.Equal(t, tc.expectedV2, writev2.FromMetadataType(tc.input))
 			})
+		})
+	}
+}
+
+func TestToMetadata(t *testing.T) {
+	sym := writev2.NewSymbolTable()
+
+	for _, tc := range []struct {
+		input    writev2.Metadata
+		expected metadata.Metadata
+	}{
+		{
+			input: writev2.Metadata{},
+			expected: metadata.Metadata{
+				Type: model.MetricTypeUnknown,
+			},
+		},
+		{
+			input: writev2.Metadata{
+				Type: 12414, // Unknown.
+			},
+			expected: metadata.Metadata{
+				Type: model.MetricTypeUnknown,
+			},
+		},
+		{
+			input: writev2.Metadata{
+				Type:    writev2.Metadata_METRIC_TYPE_COUNTER,
+				HelpRef: sym.Symbolize("help1"),
+				UnitRef: sym.Symbolize("unit1"),
+			},
+			expected: metadata.Metadata{
+				Type: model.MetricTypeCounter,
+				Help: "help1",
+				Unit: "unit1",
+			},
+		},
+		{
+			input: writev2.Metadata{
+				Type:    writev2.Metadata_METRIC_TYPE_STATESET,
+				HelpRef: sym.Symbolize("help2"),
+			},
+			expected: metadata.Metadata{
+				Type: model.MetricTypeStateset,
+				Help: "help2",
+			},
+		},
+	} {
+		t.Run("", func(t *testing.T) {
+			ts := writev2.TimeSeries{Metadata: tc.input}
+			require.Equal(t, tc.expected, ts.ToMetadata(sym.Symbols()))
 		})
 	}
 }

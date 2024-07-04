@@ -35,15 +35,32 @@ func (m TimeSeries) ToLabels(b *labels.ScratchBuilder, symbols []string) labels.
 
 // ToMetadata return model metadata from timeseries' remote metadata.
 func (m TimeSeries) ToMetadata(symbols []string) metadata.Metadata {
-	mt := strings.ToLower(m.Metadata.Type.String())
+	typ := model.MetricTypeUnknown
+	switch m.Metadata.Type {
+	case Metadata_METRIC_TYPE_COUNTER:
+		typ = model.MetricTypeCounter
+	case Metadata_METRIC_TYPE_GAUGE:
+		typ = model.MetricTypeGauge
+	case Metadata_METRIC_TYPE_HISTOGRAM:
+		typ = model.MetricTypeHistogram
+	case Metadata_METRIC_TYPE_GAUGEHISTOGRAM:
+		typ = model.MetricTypeGaugeHistogram
+	case Metadata_METRIC_TYPE_SUMMARY:
+		typ = model.MetricTypeSummary
+	case Metadata_METRIC_TYPE_INFO:
+		typ = model.MetricTypeInfo
+	case Metadata_METRIC_TYPE_STATESET:
+		typ = model.MetricTypeStateset
+	}
 	return metadata.Metadata{
-		Type: model.MetricType(mt), // TODO(@tpaschalis) a better way for this?
+		Type: typ,
 		Unit: symbols[m.Metadata.UnitRef],
 		Help: symbols[m.Metadata.HelpRef],
 	}
 }
 
-// FromMetadataType transforms a Prometheus metricType into writev2 metricType. Since the former is a string we need to transform it to an enum.
+// FromMetadataType transforms a Prometheus metricType into writev2 metricType.
+// Since the former is a string we need to transform it to an enum.
 func FromMetadataType(t model.MetricType) Metadata_MetricType {
 	mt := strings.ToUpper(string(t))
 	v, ok := prompb.MetricMetadata_MetricType_value[mt]

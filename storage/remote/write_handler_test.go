@@ -316,8 +316,18 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 	k := 0
 	for _, ts := range writeV2RequestFixture.Timeseries {
 		ls := ts.ToLabels(&b, writeV2RequestFixture.Symbols)
+
 		for _, s := range ts.Samples {
 			requireEqual(t, mockSample{ls, s.Timestamp, s.Value}, appendable.samples[i])
+
+			switch i {
+			case 0:
+				requireEqual(t, mockMetadata{ls, writeV2RequestSeries1Metadata}, appendable.metadata[i])
+			case 1:
+				requireEqual(t, mockMetadata{ls, writeV2RequestSeries2Metadata}, appendable.metadata[i])
+			default:
+				t.Fatal("more series/samples then expected")
+			}
 			i++
 		}
 		for _, e := range ts.Exemplars {
@@ -335,8 +345,6 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			}
 			k++
 		}
-
-		// TODO: check for metadata
 	}
 }
 
@@ -717,7 +725,9 @@ type mockAppendable struct {
 	exemplars       []mockExemplar
 	latestHistogram int64
 	histograms      []mockHistogram
-	commitErr       error
+	metadata        []mockMetadata
+
+	commitErr error
 }
 
 type mockSample struct {
@@ -740,10 +750,17 @@ type mockHistogram struct {
 	fh *histogram.FloatHistogram
 }
 
+type mockMetadata struct {
+	l labels.Labels
+	m metadata.Metadata
+}
+
 // Wrapper to instruct go-cmp package to compare a list of structs with unexported fields.
 func requireEqual(t *testing.T, expected, actual interface{}, msgAndArgs ...interface{}) {
+	t.Helper()
+
 	testutil.RequireEqualWithOptions(t, expected, actual,
-		[]cmp.Option{cmp.AllowUnexported(mockSample{}), cmp.AllowUnexported(mockExemplar{}), cmp.AllowUnexported(mockHistogram{})},
+		[]cmp.Option{cmp.AllowUnexported(mockSample{}), cmp.AllowUnexported(mockExemplar{}), cmp.AllowUnexported(mockHistogram{}), cmp.AllowUnexported(mockMetadata{})},
 		msgAndArgs...)
 }
 
@@ -790,12 +807,13 @@ func (m *mockAppendable) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t
 }
 
 func (m *mockAppendable) UpdateMetadata(_ storage.SeriesRef, l labels.Labels, mp metadata.Metadata) (storage.SeriesRef, error) {
-	// TODO: Wire metadata in a mockAppendable field when we get around to handling metadata in remote_write.
-	// UpdateMetadata is no-op for remote write (where mockAppendable is being used to test) for now.
+	m.metadata = append(m.metadata, mockMetadata{l: l, m: mp})
 	return 0, nil
 }
 
 func (m *mockAppendable) AppendCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
 	// AppendCTZeroSample is no-op for remote-write for now.
+	// TODO(bwplotka): Add support for PRW 2.0 for CT zero feature (but also we might
+	// replace this with in-metadata CT storage, see https://github.com/prometheus/prometheus/issues/14218).
 	return 0, nil
 }

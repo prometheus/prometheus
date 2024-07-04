@@ -21,7 +21,10 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/metadata"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -75,31 +78,53 @@ var writeRequestFixture = &prompb.WriteRequest{
 	},
 }
 
-// writeV2RequestFixture represents the same request as writeRequestFixture, but using the v2 representation.
-var writeV2RequestFixture = func() *writev2.Request {
-	st := writev2.NewSymbolTable()
-	b := labels.NewScratchBuilder(0)
-	labelRefs := st.SymbolizeLabels(writeRequestFixture.Timeseries[0].ToLabels(&b, nil), nil)
-	exemplar1LabelRefs := st.SymbolizeLabels(writeRequestFixture.Timeseries[0].Exemplars[0].ToExemplar(&b, nil).Labels, nil)
-	exemplar2LabelRefs := st.SymbolizeLabels(writeRequestFixture.Timeseries[0].Exemplars[0].ToExemplar(&b, nil).Labels, nil)
-	return &writev2.Request{
-		Timeseries: []writev2.TimeSeries{
-			{
-				LabelsRefs: labelRefs,
-				Samples:    []writev2.Sample{{Value: 1, Timestamp: 0}},
-				Exemplars:  []writev2.Exemplar{{LabelsRefs: exemplar1LabelRefs, Value: 1, Timestamp: 0}},
-				Histograms: []writev2.Histogram{writev2.FromIntHistogram(0, &testHistogram), writev2.FromFloatHistogram(1, testHistogram.ToFloat(nil))},
-			},
-			{
-				LabelsRefs: labelRefs,
-				Samples:    []writev2.Sample{{Value: 2, Timestamp: 1}},
-				Exemplars:  []writev2.Exemplar{{LabelsRefs: exemplar2LabelRefs, Value: 2, Timestamp: 1}},
-				Histograms: []writev2.Histogram{writev2.FromIntHistogram(2, &testHistogram), writev2.FromFloatHistogram(3, testHistogram.ToFloat(nil))},
-			},
-		},
-		Symbols: st.Symbols(),
+var (
+	writeV2RequestSeries1Metadata = metadata.Metadata{
+		Type: model.MetricTypeGauge,
+		Help: "Test gauge for test purposes",
+		Unit: "Maybe op/sec who knows (:",
 	}
-}()
+	writeV2RequestSeries2Metadata = metadata.Metadata{
+		Type: model.MetricTypeCounter,
+		Help: "Test counter for test purposes",
+	}
+
+	// writeV2RequestFixture represents the same request as writeRequestFixture, but using the v2 representation.
+	writeV2RequestFixture = func() *writev2.Request {
+		st := writev2.NewSymbolTable()
+		b := labels.NewScratchBuilder(0)
+		labelRefs := st.SymbolizeLabels(writeRequestFixture.Timeseries[0].ToLabels(&b, nil), nil)
+		exemplar1LabelRefs := st.SymbolizeLabels(writeRequestFixture.Timeseries[0].Exemplars[0].ToExemplar(&b, nil).Labels, nil)
+		exemplar2LabelRefs := st.SymbolizeLabels(writeRequestFixture.Timeseries[0].Exemplars[0].ToExemplar(&b, nil).Labels, nil)
+		return &writev2.Request{
+			Timeseries: []writev2.TimeSeries{
+				{
+					LabelsRefs: labelRefs,
+					Metadata: writev2.Metadata{
+						Type:    writev2.Metadata_METRIC_TYPE_GAUGE, // Same as writeV2RequestSeries1Metadata.Type, but in writev2.
+						HelpRef: st.Symbolize(writeV2RequestSeries1Metadata.Help),
+						UnitRef: st.Symbolize(writeV2RequestSeries1Metadata.Unit),
+					},
+					Samples:    []writev2.Sample{{Value: 1, Timestamp: 0}},
+					Exemplars:  []writev2.Exemplar{{LabelsRefs: exemplar1LabelRefs, Value: 1, Timestamp: 0}},
+					Histograms: []writev2.Histogram{writev2.FromIntHistogram(0, &testHistogram), writev2.FromFloatHistogram(1, testHistogram.ToFloat(nil))},
+				},
+				{
+					LabelsRefs: labelRefs,
+					Metadata: writev2.Metadata{
+						Type:    writev2.Metadata_METRIC_TYPE_COUNTER, // Same as writeV2RequestSeries2Metadata.Type, but in writev2.
+						HelpRef: st.Symbolize(writeV2RequestSeries2Metadata.Help),
+						// No unit.
+					},
+					Samples:    []writev2.Sample{{Value: 2, Timestamp: 1}},
+					Exemplars:  []writev2.Exemplar{{LabelsRefs: exemplar2LabelRefs, Value: 2, Timestamp: 1}},
+					Histograms: []writev2.Histogram{writev2.FromIntHistogram(2, &testHistogram), writev2.FromFloatHistogram(3, testHistogram.ToFloat(nil))},
+				},
+			},
+			Symbols: st.Symbols(),
+		}
+	}()
+)
 
 func TestValidateLabelsAndMetricName(t *testing.T) {
 	tests := []struct {
