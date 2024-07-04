@@ -194,6 +194,9 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "extra-scrape-metrics":
 				c.scrape.ExtraMetrics = true
 				level.Info(logger).Log("msg", "Experimental additional scrape metrics enabled")
+			case "metadata-wal-records":
+				c.scrape.AppendMetadata = true
+				level.Info(logger).Log("msg", "Experimental metadata records in WAL enabled, required for remote write 2.0")
 			case "new-service-discovery-manager":
 				c.enableNewSDManager = true
 				level.Info(logger).Log("msg", "Experimental service discovery manager")
@@ -322,8 +325,14 @@ func main() {
 	a.Flag("web.enable-admin-api", "Enable API endpoints for admin control actions.").
 		Default("false").BoolVar(&cfg.web.EnableAdminAPI)
 
+	// TODO(bwplotka): Consider allowing those remote receive flags to be changed in config.
+	// See https://github.com/prometheus/prometheus/issues/14410
 	a.Flag("web.enable-remote-write-receiver", "Enable API endpoint accepting remote write requests.").
 		Default("false").BoolVar(&cfg.web.EnableRemoteWriteReceiver)
+
+	supportedRemoteWriteProtoMsgs := config.RemoteWriteProtoMsgs{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2}
+	a.Flag("web.remote-write-receiver.accepted-protobuf-messages", fmt.Sprintf("List of the remote write protobuf messages to accept when receiving the remote writes. Supported values: %v", supportedRemoteWriteProtoMsgs.String())).
+		Default(supportedRemoteWriteProtoMsgs.Strings()...).SetValue(rwProtoMsgFlagValue(&cfg.web.AcceptRemoteWriteProtoMsgs))
 
 	a.Flag("web.console.templates", "Path to the console template directory, available at /consoles.").
 		Default("consoles").StringVar(&cfg.web.ConsoleTemplatesPath)
@@ -646,7 +655,7 @@ func main() {
 	var (
 		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
 		scraper       = &readyScrapeManager{}
-		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper)
+		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.scrape.AppendMetadata)
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 
@@ -1766,4 +1775,40 @@ type discoveryManager interface {
 	ApplyConfig(cfg map[string]discovery.Configs) error
 	Run() error
 	SyncCh() <-chan map[string][]*targetgroup.Group
+}
+
+// rwProtoMsgFlagParser is a custom parser for config.RemoteWriteProtoMsg enum.
+type rwProtoMsgFlagParser struct {
+	msgs *[]config.RemoteWriteProtoMsg
+}
+
+func rwProtoMsgFlagValue(msgs *[]config.RemoteWriteProtoMsg) kingpin.Value {
+	return &rwProtoMsgFlagParser{msgs: msgs}
+}
+
+// IsCumulative is used by kingpin to tell if it's an array or not.
+func (p *rwProtoMsgFlagParser) IsCumulative() bool {
+	return true
+}
+
+func (p *rwProtoMsgFlagParser) String() string {
+	ss := make([]string, 0, len(*p.msgs))
+	for _, t := range *p.msgs {
+		ss = append(ss, string(t))
+	}
+	return strings.Join(ss, ",")
+}
+
+func (p *rwProtoMsgFlagParser) Set(opt string) error {
+	t := config.RemoteWriteProtoMsg(opt)
+	if err := t.Validate(); err != nil {
+		return err
+	}
+	for _, prev := range *p.msgs {
+		if prev == t {
+			return fmt.Errorf("duplicated %v flag value, got %v already", t, *p.msgs)
+		}
+	}
+	*p.msgs = append(*p.msgs, t)
+	return nil
 }

@@ -224,3 +224,13 @@ When the `concurrent-rule-eval` feature flag is enabled, rules without any depen
 This has the potential to improve rule group evaluation latency and resource utilization at the expense of adding more concurrent query load.
 
 The number of concurrent rule evaluations can be configured with `--rules.max-concurrent-rule-evals`, which is set to `4` by default.
+
+## Metadata WAL Records
+
+`--enable-feature=metadata-wal-records`
+
+When enabled, Prometheus will store metadata in-memory and keep track of
+metadata changes as WAL records on a per-series basis.
+
+This must be used if
+you are also using remote write 2.0 as it will only gather metadata from the WAL.
