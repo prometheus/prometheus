@@ -16,6 +16,7 @@ package v1
 import (
 	"context"
 	"crypto/sha1"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math"
@@ -1595,7 +1596,7 @@ func parseListRulesPaginationRequest(r *http.Request) (*listRulesPaginationReque
 func getRuleGroupNextToken(file, group string) string {
 	h := sha1.New()
 	h.Write([]byte(file + ";" + group))
-	return fmt.Sprintf("%x", h.Sum(nil))
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 type prometheusConfig struct {
