@@ -246,7 +246,7 @@ loop:
 				return nil
 			}
 
-			// edge case: if guage_created of unknown type -> skip parsing
+			// edge case: if gauge_created of unknown type -> skip parsing
 			newLbs = newLbs.DropMetricName()
 			if !labels.Equal(lbs, newLbs) {
 				return nil
@@ -256,11 +256,13 @@ loop:
 			// if t, _ := newParser.Next(); t != EntrySeries {
 			// 	return nil
 			// }
-			
-			// guage_created is a metric
 
+			// gauge_created is a metric
 			ct := int64(newParser.val)
-			p.Next()
+			_, err := p.Next()
+			if err != nil {
+				return nil
+			}
 			return &ct
 		default:
 			break loop
