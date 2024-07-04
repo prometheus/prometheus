@@ -33,8 +33,6 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 	"go.uber.org/atomic"
 
-	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
-
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -42,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
+	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
@@ -714,7 +713,8 @@ outer:
 			t.seriesMtx.Unlock()
 			continue
 		}
-		// todo: handle or at least log an error if no metadata is found
+		// TODO(cstyan): Handle or at least log an error if no metadata is found.
+		// See https://github.com/prometheus/prometheus/issues/14405
 		meta := t.seriesMetadata[s.Ref]
 		t.seriesMtx.Unlock()
 		// Start with a very small backoff. This should not be t.cfg.MinBackoff
@@ -1416,9 +1416,10 @@ func newQueue(batchSize, capacity int) *queue {
 func (q *queue) Append(datum timeSeries) bool {
 	q.batchMtx.Lock()
 	defer q.batchMtx.Unlock()
-	// TODO: check if metadata now means we've reduced the total # of samples
+	// TODO(cstyan): Check if metadata now means we've reduced the total # of samples
 	// we can batch together here, and if so find a way to not include metadata
 	// in the batch size calculation.
+	// See https://github.com/prometheus/prometheus/issues/14405
 	q.batch = append(q.batch, datum)
 	if len(q.batch) == cap(q.batch) {
 		select {
@@ -1597,7 +1598,8 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			}
 
 			sendBatch(batch, s.qm.protoMsg, s.qm.enc, false)
-			// TODO(bwplotka): Previously the return was between popular and send, double check.
+			// TODO(bwplotka): Previously the return was between popular and send.
+			// Consider this when DRY-ing https://github.com/prometheus/prometheus/issues/14409
 			queue.ReturnForReuse(batch)
 
 			stop()
@@ -1662,6 +1664,8 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 	return err
 }
 
+// TODO(bwplotka): DRY this (have one logic for both v1 and v2).
+// See https://github.com/prometheus/prometheus/issues/14409
 func (s *shards) sendV2Samples(ctx context.Context, samples []writev2.TimeSeries, labels []string, sampleCount, exemplarCount, histogramCount, metadataCount int, pBuf, buf *[]byte, enc Compression) error {
 	begin := time.Now()
 	err := s.sendV2SamplesWithBackoff(ctx, samples, labels, sampleCount, exemplarCount, histogramCount, metadataCount, pBuf, buf, enc)
@@ -2199,9 +2203,11 @@ func buildV2TimeSeries(timeSeries []writev2.TimeSeries, filter func(writev2.Time
 		if len(ts.Histograms) > 0 && ts.Histograms[0].Timestamp < lowest {
 			lowest = ts.Histograms[0].Timestamp
 		}
-
-		// Move the current element to the write position and increment the write pointer
-		timeSeries[keepIdx] = timeSeries[i]
+		if i != keepIdx {
+			// We have to swap the kept timeseries with the one which should be dropped.
+			// Copying any elements within timeSeries could cause data corruptions when reusing the slice in a next batch (shards.populateTimeSeries).
+			timeSeries[keepIdx], timeSeries[i] = timeSeries[i], timeSeries[keepIdx]
+		}
 		keepIdx++
 	}
 

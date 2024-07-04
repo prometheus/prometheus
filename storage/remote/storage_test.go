@@ -29,7 +29,6 @@ import (
 func TestStorageLifecycle(t *testing.T) {
 	dir := t.TempDir()
 
-	// todo: test with new format type(s)
 	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
@@ -57,7 +56,6 @@ func TestStorageLifecycle(t *testing.T) {
 func TestUpdateRemoteReadConfigs(t *testing.T) {
 	dir := t.TempDir()
 
-	// todo: test with new format type(s)
 	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
 
 	conf := &config.Config{
@@ -79,7 +77,6 @@ func TestUpdateRemoteReadConfigs(t *testing.T) {
 func TestFilterExternalLabels(t *testing.T) {
 	dir := t.TempDir()
 
-	// todo: test with new format type(s)
 	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
 
 	conf := &config.Config{
@@ -105,7 +102,6 @@ func TestFilterExternalLabels(t *testing.T) {
 func TestIgnoreExternalLabels(t *testing.T) {
 	dir := t.TempDir()
 
-	// todo: test with new format type(s)
 	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
 
 	conf := &config.Config{
