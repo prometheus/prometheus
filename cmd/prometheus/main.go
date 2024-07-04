@@ -325,8 +325,8 @@ func main() {
 	a.Flag("web.enable-admin-api", "Enable API endpoints for admin control actions.").
 		Default("false").BoolVar(&cfg.web.EnableAdminAPI)
 
-	// TODO(bwplotka): Moveo all remote receive flags to config.
-	// See https://github.com/prometheus/prometheus/pull/13968/files#r1577035002
+	// TODO(bwplotka): Consider allowing those remote receive flags to be changed in config.
+	// See https://github.com/prometheus/prometheus/issues/14410
 	a.Flag("web.enable-remote-write-receiver", "Enable API endpoint accepting remote write requests.").
 		Default("false").BoolVar(&cfg.web.EnableRemoteWriteReceiver)
 
@@ -1777,7 +1777,7 @@ type discoveryManager interface {
 	SyncCh() <-chan map[string][]*targetgroup.Group
 }
 
-// TODO(bwplotka): Add unit test.
+// rwProtoMsgFlagParser is a custom parser for config.RemoteWriteProtoMsg enum.
 type rwProtoMsgFlagParser struct {
 	msgs *[]config.RemoteWriteProtoMsg
 }
@@ -1803,6 +1803,11 @@ func (p *rwProtoMsgFlagParser) Set(opt string) error {
 	t := config.RemoteWriteProtoMsg(opt)
 	if err := t.Validate(); err != nil {
 		return err
+	}
+	for _, prev := range *p.msgs {
+		if prev == t {
+			return fmt.Errorf("duplicated %v flag value, got %v already", t, *p.msgs)
+		}
 	}
 	*p.msgs = append(*p.msgs, t)
 	return nil
