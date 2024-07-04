@@ -85,4 +85,5 @@ exclude (
 	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1
 )
 
+// TODO(bwplotka): Move to main branch commit or perhaps released version.
 replace github.com/prometheus/prometheus => github.com/prometheus/prometheus v0.53.1-0.20240704074759-c137febfcf8c

@@ -3584,7 +3584,7 @@ url: <string>
 #
 # Before changing this value, consult with your remote storage provider (or test) what message it supports.
 # Read more on https://prometheus.io/docs/specs/remote_write_spec_2_0/#io-prometheus-write-v2-request
-[ protobuf_message: <prometheus.WriteRequest | io.prometheus.write.v2.Request > | default = prometheus.WriteRequest ]
+[ protobuf_message: <prometheus.WriteRequest | io.prometheus.write.v2.Request> | default = prometheus.WriteRequest ]
 
 # Timeout for requests to the remote write endpoint.
 [ remote_timeout: <duration> | default = 30s ]

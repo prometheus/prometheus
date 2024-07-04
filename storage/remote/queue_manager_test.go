@@ -1128,7 +1128,6 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) error {
 		c.buf = c.buf[:cap(c.buf)]
 	}
 
-	// TODO(bwplotka): Consider using WriteHandler instead?
 	reqBuf, err := snappy.Decode(c.buf, req)
 	c.buf = reqBuf
 	if err != nil {
@@ -1510,7 +1509,6 @@ func TestProcessExternalLabels(t *testing.T) {
 }
 
 func TestCalculateDesiredShards(t *testing.T) {
-	// todo: test with new proto type(s)
 	cfg := config.DefaultQueueConfig
 	_, m := newTestClientAndQueueManager(t, defaultFlushDeadline, config.RemoteWriteProtoMsgV1)
 	samplesIn := m.dataIn
@@ -1582,7 +1580,6 @@ func TestCalculateDesiredShards(t *testing.T) {
 }
 
 func TestCalculateDesiredShardsDetail(t *testing.T) {
-	// todo: test with new proto type(s)
 	_, m := newTestClientAndQueueManager(t, defaultFlushDeadline, config.RemoteWriteProtoMsgV1)
 	samplesIn := m.dataIn
 
