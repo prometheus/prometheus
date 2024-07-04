@@ -10,10 +10,11 @@ if ! [[ "$0" =~ "scripts/genproto.sh" ]]; then
 	exit 255
 fi
 
-#if ! [[ $(protoc --version) =~ "3.21.12" ]]; then
-#	echo "could not find protoc 3.21.12, is it installed + in PATH?"
-#	exit 255
-#fi
+# TODO(bwplotka): Move to buf, this is not OSS agnostic, likely won't work locally.
+if ! [[ $(protoc --version) =~ "3.15.8" ]]; then
+	echo "could not find protoc 3.15.8, is it installed + in PATH? Consider commenting out this check for local flow"
+	exit 255
+fi
 
 # Since we run go install, go mod download, the go.sum will change.
 # Make a backup.
