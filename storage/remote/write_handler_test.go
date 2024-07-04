@@ -400,9 +400,9 @@ func TestOutOfOrderSample_V2Message(t *testing.T) {
 	} {
 		t.Run(tc.Name, func(t *testing.T) {
 			payload, _, _, err := buildV2WriteRequest(nil, []writev2.TimeSeries{{
-				LabelsRefs: []uint32{0, 1},
+				LabelsRefs: []uint32{1, 2},
 				Samples:    []writev2.Sample{{Value: 1, Timestamp: tc.Timestamp}},
-			}}, []string{"__name__", "metric1"}, nil, nil, nil, "snappy") // TODO(bwplotka): No empty string!
+			}}, []string{"", "__name__", "metric1"}, nil, nil, nil, "snappy")
 			require.NoError(t, err)
 
 			req, err := http.NewRequest("", "", bytes.NewReader(payload))
@@ -484,9 +484,9 @@ func TestOutOfOrderExemplar_V2Message(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.Name, func(t *testing.T) {
 			payload, _, _, err := buildV2WriteRequest(nil, []writev2.TimeSeries{{
-				LabelsRefs: []uint32{0, 1},
-				Exemplars:  []writev2.Exemplar{{LabelsRefs: []uint32{2, 3}, Value: 1, Timestamp: tc.Timestamp}},
-			}}, []string{"__name__", "metric1", "foo", "bar"}, nil, nil, nil, "snappy") // TODO(bwplotka): No empty string!
+				LabelsRefs: []uint32{1, 2},
+				Exemplars:  []writev2.Exemplar{{LabelsRefs: []uint32{3, 4}, Value: 1, Timestamp: tc.Timestamp}},
+			}}, []string{"", "__name__", "metric1", "foo", "bar"}, nil, nil, nil, "snappy")
 			require.NoError(t, err)
 
 			req, err := http.NewRequest("", "", bytes.NewReader(payload))
