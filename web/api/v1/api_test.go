@@ -1073,54 +1073,28 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 	}
 
 	rulesZeroFunc := func(i interface{}) {
-		if i != nil {
-			switch v := i.(type) {
-			case *RuleDiscovery:
-				for _, ruleGroup := range v.RuleGroups {
-					ruleGroup.EvaluationTime = float64(0)
-					ruleGroup.LastEvaluation = time.Time{}
-					for k, rule := range ruleGroup.Rules {
-						switch r := rule.(type) {
-						case AlertingRule:
-							r.LastEvaluation = time.Time{}
-							r.EvaluationTime = float64(0)
-							r.LastError = ""
-							r.Health = "ok"
-							for _, alert := range r.Alerts {
-								alert.ActiveAt = nil
-							}
-							ruleGroup.Rules[k] = r
-						case RecordingRule:
-							r.LastEvaluation = time.Time{}
-							r.EvaluationTime = float64(0)
-							r.LastError = ""
-							r.Health = "ok"
-							ruleGroup.Rules[k] = r
+		v := i.(*RuleDiscovery)
+		if v != nil {
+			for _, ruleGroup := range v.RuleGroups {
+				ruleGroup.EvaluationTime = float64(0)
+				ruleGroup.LastEvaluation = time.Time{}
+				for k, rule := range ruleGroup.Rules {
+					switch r := rule.(type) {
+					case AlertingRule:
+						r.LastEvaluation = time.Time{}
+						r.EvaluationTime = float64(0)
+						r.LastError = ""
+						r.Health = "ok"
+						for _, alert := range r.Alerts {
+							alert.ActiveAt = nil
 						}
-					}
-				}
-			case *PaginatedRuleDiscovery:
-				for _, ruleGroup := range v.RuleGroups {
-					ruleGroup.EvaluationTime = float64(0)
-					ruleGroup.LastEvaluation = time.Time{}
-					for k, rule := range ruleGroup.Rules {
-						switch r := rule.(type) {
-						case AlertingRulePaginated:
-							r.LastEvaluation = time.Time{}
-							r.EvaluationTime = float64(0)
-							r.LastError = ""
-							r.Health = "ok"
-							for _, alert := range r.PartialAlerts.Alerts {
-								alert.ActiveAt = nil
-							}
-							ruleGroup.Rules[k] = r
-						case RecordingRule:
-							r.LastEvaluation = time.Time{}
-							r.EvaluationTime = float64(0)
-							r.LastError = ""
-							r.Health = "ok"
-							ruleGroup.Rules[k] = r
-						}
+						ruleGroup.Rules[k] = r
+					case RecordingRule:
+						r.LastEvaluation = time.Time{}
+						r.EvaluationTime = float64(0)
+						r.LastError = ""
+						r.Health = "ok"
+						ruleGroup.Rules[k] = r
 					}
 				}
 			}
@@ -2432,7 +2406,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			query: url.Values{
 				"maxRuleGroups": []string{"1"},
 			},
-			response: &PaginatedRuleDiscovery{
+			response: &RuleDiscovery{
 				NextToken: getRuleGroupNextToken("/path/to/file", "grp"),
 				RuleGroups: []*RuleGroup{
 					{
@@ -2441,43 +2415,41 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						Interval: 1,
 						Limit:    0,
 						Rules: []Rule{
-							AlertingRulePaginated{
-								State:         "inactive",
-								Name:          "test_metric3",
-								Query:         "absent(test_metric3) != 1",
-								Duration:      1,
-								Labels:        labels.Labels{},
-								Annotations:   labels.Labels{},
-								PartialAlerts: &PartialAlerts{Alerts: []*Alert{}},
-								Health:        "ok",
-								Type:          "alerting",
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric3",
+								Query:       "absent(test_metric3) != 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Health:      "ok",
+								Type:        "alerting",
 							},
-							AlertingRulePaginated{
-								State:         "inactive",
-								Name:          "test_metric4",
-								Query:         "up == 1",
-								Duration:      1,
-								Labels:        labels.Labels{},
-								Annotations:   labels.Labels{},
-								PartialAlerts: &PartialAlerts{Alerts: []*Alert{}},
-								Health:        "ok",
-								Type:          "alerting",
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric4",
+								Query:       "up == 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Health:      "ok",
+								Type:        "alerting",
 							},
-							AlertingRulePaginated{
+							AlertingRule{
 								State:       "pending",
 								Name:        "test_metric5",
 								Query:       "vector(1)",
 								Duration:    1,
 								Labels:      labels.FromStrings("name", "tm5"),
 								Annotations: labels.Labels{},
-								PartialAlerts: &PartialAlerts{
-									Alerts: []*Alert{
-										{
-											Labels:      labels.FromStrings("alertname", "test_metric5", "name", "tm5"),
-											Annotations: labels.Labels{},
-											State:       "pending",
-											Value:       "1e+00",
-										},
+								Alerts: []*Alert{
+									{
+										Labels:      labels.FromStrings("alertname", "test_metric5", "name", "tm5"),
+										Annotations: labels.Labels{},
+										State:       "pending",
+										Value:       "1e+00",
 									},
 								},
 								Health: "ok",
@@ -2489,87 +2461,6 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Labels: labels.Labels{},
 								Health: "ok",
 								Type:   "recording",
-							},
-						},
-					},
-				},
-			},
-			zeroFunc: rulesZeroFunc,
-		},
-		{
-			endpoint: api.rules,
-			query: url.Values{
-				"maxAlerts": []string{"0"},
-			},
-			response: &PaginatedRuleDiscovery{
-				RuleGroups: []*RuleGroup{
-					{
-						Name:     "grp",
-						File:     "/path/to/file",
-						Interval: 1,
-						Limit:    0,
-						Rules: []Rule{
-							AlertingRulePaginated{
-								State:         "inactive",
-								Name:          "test_metric3",
-								Query:         "absent(test_metric3) != 1",
-								Duration:      1,
-								Labels:        labels.Labels{},
-								Annotations:   labels.Labels{},
-								PartialAlerts: &PartialAlerts{Alerts: []*Alert{}},
-								Health:        "ok",
-								Type:          "alerting",
-							},
-							AlertingRulePaginated{
-								State:         "inactive",
-								Name:          "test_metric4",
-								Query:         "up == 1",
-								Duration:      1,
-								Labels:        labels.Labels{},
-								Annotations:   labels.Labels{},
-								PartialAlerts: &PartialAlerts{Alerts: []*Alert{}},
-								Health:        "ok",
-								Type:          "alerting",
-							},
-							AlertingRulePaginated{
-								State:       "pending",
-								Name:        "test_metric5",
-								Query:       "vector(1)",
-								Duration:    1,
-								Labels:      labels.FromStrings("name", "tm5"),
-								Annotations: labels.Labels{},
-								PartialAlerts: &PartialAlerts{
-									Alerts:  []*Alert{},
-									HasMore: true,
-								},
-								Health: "ok",
-								Type:   "alerting",
-							},
-							RecordingRule{
-								Name:   "recording-rule-1",
-								Query:  "vector(1)",
-								Labels: labels.Labels{},
-								Health: "ok",
-								Type:   "recording",
-							},
-						},
-					},
-					{
-						Name:     "grp2",
-						File:     "/path/to/file",
-						Interval: 1,
-						Limit:    0,
-						Rules: []Rule{
-							AlertingRulePaginated{
-								State:         "inactive",
-								Name:          "test_metric3",
-								Query:         "absent(test_metric3) != 1",
-								Duration:      1,
-								Labels:        labels.Labels{},
-								Annotations:   labels.Labels{},
-								PartialAlerts: &PartialAlerts{Alerts: []*Alert{}},
-								Health:        "ok",
-								Type:          "alerting",
 							},
 						},
 					},

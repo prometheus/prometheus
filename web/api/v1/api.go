@@ -170,7 +170,6 @@ type apiFuncResult struct {
 type apiFunc func(r *http.Request) apiFuncResult
 
 type listRulesPaginationRequest struct {
-	MaxAlerts     int64
 	MaxRuleGroups int64
 	NextToken     string
 }
@@ -1339,12 +1338,7 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 // RuleDiscovery has info for all rules.
 type RuleDiscovery struct {
 	RuleGroups []*RuleGroup `json:"groups"`
-}
-
-// PaginatedRuleDiscovery has info for all rules with pagination.
-type PaginatedRuleDiscovery struct {
-	RuleGroups []*RuleGroup `json:"groups"`
-	NextToken  string       `json:"nextToken"`
+	NextToken  string       `json:"nextToken:omitempty"`
 }
 
 // RuleGroup has info for rules which are part of a group.
@@ -1379,29 +1373,6 @@ type AlertingRule struct {
 	LastEvaluation time.Time        `json:"lastEvaluation"`
 	// Type of an alertingRule is always "alerting".
 	Type string `json:"type"`
-}
-
-type AlertingRulePaginated struct {
-	// State can be "pending", "firing", "inactive".
-	State          string           `json:"state"`
-	Name           string           `json:"name"`
-	Query          string           `json:"query"`
-	Duration       float64          `json:"duration"`
-	KeepFiringFor  float64          `json:"keepFiringFor"`
-	Labels         labels.Labels    `json:"labels"`
-	Annotations    labels.Labels    `json:"annotations"`
-	PartialAlerts  *PartialAlerts   `json:"alertInfo"`
-	Health         rules.RuleHealth `json:"health"`
-	LastError      string           `json:"lastError,omitempty"`
-	EvaluationTime float64          `json:"evaluationTime"`
-	LastEvaluation time.Time        `json:"lastEvaluation"`
-	// Type of an alertingRule is always "alerting".
-	Type string `json:"type"`
-}
-
-type PartialAlerts struct {
-	Alerts  []*Alert `json:"alerts"`
-	HasMore bool     `json:"hasMore"`
 }
 
 type RecordingRule struct {
@@ -1459,6 +1430,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 	}
 
 	rgs := make([]*RuleGroup, 0, len(ruleGroups))
+
 	for _, grp := range ruleGroups {
 		if len(rgSet) > 0 {
 			if _, ok := rgSet[grp.Name()]; !ok {
@@ -1509,48 +1481,23 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 				if !excludeAlerts {
 					activeAlerts = rulesAlertsToAPIAlerts(rule.ActiveAlerts())
 				}
-				hasMore := false
-				if paginationRequest != nil && paginationRequest.MaxAlerts >= 0 && len(activeAlerts) > int(paginationRequest.MaxAlerts) {
-					activeAlerts = activeAlerts[:int(paginationRequest.MaxAlerts)]
-					hasMore = true
+
+				enrichedRule = AlertingRule{
+					State:          rule.State().String(),
+					Name:           rule.Name(),
+					Query:          rule.Query().String(),
+					Duration:       rule.HoldDuration().Seconds(),
+					KeepFiringFor:  rule.KeepFiringFor().Seconds(),
+					Labels:         rule.Labels(),
+					Annotations:    rule.Annotations(),
+					Alerts:         activeAlerts,
+					Health:         rule.Health(),
+					LastError:      lastError,
+					EvaluationTime: rule.GetEvaluationDuration().Seconds(),
+					LastEvaluation: rule.GetEvaluationTimestamp(),
+					Type:           "alerting",
 				}
 
-				if paginationRequest != nil {
-					enrichedRule = AlertingRulePaginated{
-						State:         rule.State().String(),
-						Name:          rule.Name(),
-						Query:         rule.Query().String(),
-						Duration:      rule.HoldDuration().Seconds(),
-						KeepFiringFor: rule.KeepFiringFor().Seconds(),
-						Labels:        rule.Labels(),
-						Annotations:   rule.Annotations(),
-						PartialAlerts: &PartialAlerts{
-							Alerts:  activeAlerts,
-							HasMore: hasMore,
-						},
-						Health:         rule.Health(),
-						LastError:      lastError,
-						EvaluationTime: rule.GetEvaluationDuration().Seconds(),
-						LastEvaluation: rule.GetEvaluationTimestamp(),
-						Type:           "alerting",
-					}
-				} else {
-					enrichedRule = AlertingRule{
-						State:          rule.State().String(),
-						Name:           rule.Name(),
-						Query:          rule.Query().String(),
-						Duration:       rule.HoldDuration().Seconds(),
-						KeepFiringFor:  rule.KeepFiringFor().Seconds(),
-						Labels:         rule.Labels(),
-						Annotations:    rule.Annotations(),
-						Alerts:         activeAlerts,
-						Health:         rule.Health(),
-						LastError:      lastError,
-						EvaluationTime: rule.GetEvaluationDuration().Seconds(),
-						LastEvaluation: rule.GetEvaluationTimestamp(),
-						Type:           "alerting",
-					}
-				}
 			case *rules.RecordingRule:
 				if !returnRecording {
 					break
@@ -1582,11 +1529,10 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 	}
 
 	if paginationRequest != nil {
-		paginatedRes := &PaginatedRuleDiscovery{RuleGroups: make([]*RuleGroup, 0, len(ruleGroups))}
 		returnGroups, nextToken := TruncateGroupInfos(rgs, int(paginationRequest.MaxRuleGroups))
-		paginatedRes.RuleGroups = returnGroups
-		paginatedRes.NextToken = nextToken
-		return apiFuncResult{paginatedRes, nil, nil, nil}
+		res.NextToken = nextToken
+		res.RuleGroups = returnGroups
+		return apiFuncResult{res, nil, nil, nil}
 	}
 
 	res.RuleGroups = rgs
@@ -1609,28 +1555,17 @@ func parseExcludeAlerts(r *http.Request) (bool, error) {
 
 func parseListRulesPaginationRequest(r *http.Request) (*listRulesPaginationRequest, *parsePaginationError) {
 	var (
-		maxAlerts     int64 = -1
 		maxRuleGroups int64 = -1
 		nextToken           = ""
 		err           error
 	)
-
-	if r.URL.Query().Get("maxAlerts") != "" {
-		maxAlerts, err = strconv.ParseInt(r.URL.Query().Get("maxAlerts"), 10, 32)
-		if err != nil || maxAlerts < 0 {
-			return nil, &parsePaginationError{
-				err:       fmt.Errorf("maxAlerts need to be a valid number greater than or equal to 0: %w", err),
-				parameter: "maxAlerts",
-			}
-		}
-	}
 
 	if r.URL.Query().Get("maxRuleGroups") != "" {
 		maxRuleGroups, err = strconv.ParseInt(r.URL.Query().Get("maxRuleGroups"), 10, 32)
 		if err != nil || maxRuleGroups < 0 {
 			return nil, &parsePaginationError{
 				err:       fmt.Errorf("maxRuleGroups need to be a valid number greater than or equal to 0: %w", err),
-				parameter: "maxAlerts",
+				parameter: "maxRuleGroups",
 			}
 		}
 	}
@@ -1639,10 +1574,9 @@ func parseListRulesPaginationRequest(r *http.Request) (*listRulesPaginationReque
 		nextToken = r.URL.Query().Get("nextToken")
 	}
 
-	if maxAlerts >= 0 || maxRuleGroups >= 0 || nextToken != "" {
+	if maxRuleGroups >= 0 || nextToken != "" {
 		return &listRulesPaginationRequest{
 			MaxRuleGroups: maxRuleGroups,
-			MaxAlerts:     maxAlerts,
 			NextToken:     nextToken,
 		}, nil
 	}
