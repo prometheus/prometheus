@@ -521,11 +521,11 @@ func TestDecodeWriteRequest(t *testing.T) {
 	require.Equal(t, writeRequestFixture, actual)
 }
 
-func TestDecodeV2WriteRequest(t *testing.T) {
+func TestDecodeWriteV2Request(t *testing.T) {
 	buf, _, _, err := buildV2WriteRequest(log.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
-	actual, err := DecodeV2WriteRequestStr(bytes.NewReader(buf))
+	actual, err := DecodeWriteV2Request(bytes.NewReader(buf))
 	require.NoError(t, err)
 	require.Equal(t, writeV2RequestFixture, actual)
 }
