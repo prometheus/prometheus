@@ -59,7 +59,7 @@ type EC2Data struct {
 	azIDs    []string
 	azToAZID map[string]string
 
-	ownerId string
+	ownerID string
 
 	instances []*ec2.Instance
 }
@@ -87,7 +87,7 @@ func GenerateTestAzData() {
 	}
 
 	// ownerId for the reservation
-	ec2Data.ownerId = fmt.Sprintf("ownerid-%s", RandString(5))
+	ec2Data.ownerID = fmt.Sprintf("ownerid-%s", RandString(5))
 }
 
 func GenerateTestInstanceData() int {
@@ -145,7 +145,7 @@ func TestRefreshAZIDs(t *testing.T) {
 	}
 
 	err := d.refreshAZIDs(ctx)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Equal(t, ec2Data.azToAZID, d.azToAZID)
 }
 
@@ -188,7 +188,7 @@ func TestRefreshNoPrivateIp(t *testing.T) {
 
 	g, err := d.refresh(ctx)
 	require.Equal(t, expected, g)
-	require.Nil(t, err)
+	require.NoError(t, err)
 }
 
 func TestRefreshNoVpc(t *testing.T) {
@@ -216,7 +216,7 @@ func TestRefreshNoVpc(t *testing.T) {
 		"__meta_ec2_instance_lifecycle":   model.LabelValue(*ec2Data.instances[0].InstanceLifecycle),
 		"__meta_ec2_instance_state":       model.LabelValue(*ec2Data.instances[0].State.Name),
 		"__meta_ec2_instance_type":        model.LabelValue(*ec2Data.instances[0].InstanceType),
-		"__meta_ec2_owner_id":             model.LabelValue(ec2Data.ownerId),
+		"__meta_ec2_owner_id":             model.LabelValue(ec2Data.ownerID),
 		"__meta_ec2_platform":             model.LabelValue(*ec2Data.instances[0].Platform),
 		"__meta_ec2_private_dns_name":     model.LabelValue(*ec2Data.instances[0].PrivateDnsName),
 		"__meta_ec2_private_ip":           model.LabelValue(*ec2Data.instances[0].PrivateIpAddress),
@@ -226,7 +226,7 @@ func TestRefreshNoVpc(t *testing.T) {
 	}
 
 	for i := 0; i < len(ec2Data.instances[0].Tags); i++ {
-		key := strings.Replace(fmt.Sprintf("__meta_ec2_tag_%s", *ec2Data.instances[0].Tags[i].Key), "-", "_", -1)
+		key := strings.ReplaceAll(fmt.Sprintf("__meta_ec2_tag_%s", *ec2Data.instances[0].Tags[i].Key), "-", "_")
 		labels[model.LabelName(key)] = model.LabelValue(*ec2Data.instances[0].Tags[i].Value)
 	}
 
@@ -238,7 +238,7 @@ func TestRefreshNoVpc(t *testing.T) {
 
 	g, err := d.refresh(ctx)
 	require.Equal(t, expected, g)
-	require.Nil(t, err)
+	require.NoError(t, err)
 }
 
 // EC2 client mock.
@@ -247,28 +247,28 @@ type mockEC2Client struct {
 }
 
 func (m *mockEC2Client) DescribeAvailabilityZonesWithContext(ctx aws.Context, input *ec2.DescribeAvailabilityZonesInput, opts ...request.Option) (*ec2.DescribeAvailabilityZonesOutput, error) {
-	if len(ec2Data.azNames) > 0 {
-		azs := make([]*ec2.AvailabilityZone, len(ec2Data.azNames))
-
-		for i := range ec2Data.azNames {
-			azs[i] = &ec2.AvailabilityZone{
-				ZoneName: &ec2Data.azNames[i],
-				ZoneId:   &ec2Data.azIDs[i],
-			}
-		}
-
-		return &ec2.DescribeAvailabilityZonesOutput{
-			AvailabilityZones: azs,
-		}, nil
-	} else {
+	if len(ec2Data.azNames) == 0 {
 		return nil, errors.New("No AZs found")
 	}
+
+	azs := make([]*ec2.AvailabilityZone, len(ec2Data.azNames))
+
+	for i := range ec2Data.azNames {
+		azs[i] = &ec2.AvailabilityZone{
+			ZoneName: &ec2Data.azNames[i],
+			ZoneId:   &ec2Data.azIDs[i],
+		}
+	}
+
+	return &ec2.DescribeAvailabilityZonesOutput{
+		AvailabilityZones: azs,
+	}, nil
 }
 
 func (m *mockEC2Client) DescribeInstancesPagesWithContext(ctx aws.Context, input *ec2.DescribeInstancesInput, fn func(*ec2.DescribeInstancesOutput, bool) bool, opts ...request.Option) error {
 	r := ec2.Reservation{}
 	r.SetInstances(ec2Data.instances)
-	r.SetOwnerId(ec2Data.ownerId)
+	r.SetOwnerId(ec2Data.ownerID)
 
 	o := ec2.DescribeInstancesOutput{}
 	o.SetReservations([]*ec2.Reservation{&r})
