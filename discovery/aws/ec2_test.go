@@ -26,9 +26,10 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
+
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
 // "Helper" functions.
@@ -38,7 +39,7 @@ func RandIpv4() string {
 	return fmt.Sprintf("%d.%d.%d.%d", RandNumber(1, 255), RandNumber(0, 255), RandNumber(0, 255), RandNumber(0, 255))
 }
 
-func RandNumber(minimum int, maximum int) int {
+func RandNumber(minimum, maximum int) int {
 	return rand.Intn(maximum-minimum) + minimum
 }
 
