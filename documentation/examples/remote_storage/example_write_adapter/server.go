@@ -60,6 +60,10 @@ func main() {
 				return
 			}
 			printV2(req)
+		default:
+			msg := fmt.Sprintf("Unknown remote write content type: %s", contentType)
+			fmt.Println(msg)
+			http.Error(w, msg, http.StatusBadRequest)
 		}
 	})
 	log.Fatal(http.ListenAndServe(":1234", nil))
