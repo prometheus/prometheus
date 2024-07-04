@@ -19,16 +19,14 @@ import (
 )
 
 func TestOptimizedMarshal(t *testing.T) {
-	var got []byte
-
-	tests := []struct {
+	for _, tt := range []struct {
 		name string
 		m    *Request
 	}{
-		// {
-		// 	name: "empty",
-		// 	m:    &WriteRequest{},
-		// },
+		{
+			name: "empty",
+			m:    &Request{},
+		},
 		{
 			name: "simple",
 			m: &Request{
@@ -77,19 +75,20 @@ func TestOptimizedMarshal(t *testing.T) {
 				},
 			},
 		},
-	}
-
-	for _, tt := range tests {
+	} {
 		t.Run(tt.name, func(t *testing.T) {
-			got = got[:0]
-			// should be the same as the standard marshal
+			// Keep the slice allocated to mimic what std Marshal
+			// would give to sized Marshal.
+			got := make([]byte, 0)
+
+			// Should be the same as the standard marshal.
 			expected, err := tt.m.Marshal()
 			require.NoError(t, err)
 			got, err = tt.m.OptimizedMarshal(got)
 			require.NoError(t, err)
 			require.Equal(t, expected, got)
 
-			// round trip
+			// Unmarshal should work too.
 			m := &Request{}
 			require.NoError(t, m.Unmarshal(got))
 			require.Equal(t, tt.m, m)

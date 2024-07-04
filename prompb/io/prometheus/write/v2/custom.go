@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright 2024 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -25,13 +25,11 @@ func (m *Request) OptimizedMarshal(dst []byte) ([]byte, error) {
 	if cap(dst) < siz {
 		dst = make([]byte, siz)
 	}
-	dst = dst[:siz]
-
-	n, err := m.OptimizedMarshalToSizedBuffer(dst)
+	n, err := m.OptimizedMarshalToSizedBuffer(dst[:siz])
 	if err != nil {
 		return nil, err
 	}
-	return (dst)[:n], nil
+	return dst[:n], nil
 }
 
 // OptimizedMarshalToSizedBuffer is mostly a copy of the generated MarshalToSizedBuffer,
