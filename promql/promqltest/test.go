@@ -90,6 +90,7 @@ func NewTestEngine(enablePerStepStats bool, lookbackDelta time.Duration, maxSamp
 		EnableNegativeOffset:     true,
 		EnablePerStepStats:       enablePerStepStats,
 		LookbackDelta:            lookbackDelta,
+		EnableDelayedNameRemoval: true,
 	})
 }
 
@@ -1362,6 +1363,7 @@ func (ll *LazyLoader) clear() error {
 		NoStepSubqueryIntervalFn: func(int64) int64 { return durationMilliseconds(ll.SubqueryInterval) },
 		EnableAtModifier:         ll.opts.EnableAtModifier,
 		EnableNegativeOffset:     ll.opts.EnableNegativeOffset,
+		EnableDelayedNameRemoval: true,
 	}
 
 	ll.queryEngine = promql.NewEngine(opts)
