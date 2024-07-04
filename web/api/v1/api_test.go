@@ -2407,7 +2407,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				"maxRuleGroups": []string{"1"},
 			},
 			response: &RuleDiscovery{
-				NextToken: getRuleGroupNextToken("/path/to/file", "grp"),
+				NextToken: getRuleGroupNextToken("/path/to/file", "grp2"),
 				RuleGroups: []*RuleGroup{
 					{
 						Name:     "grp",

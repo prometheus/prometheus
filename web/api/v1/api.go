@@ -1425,13 +1425,19 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 		return invalidParamError(parseErr.err, parseErr.parameter)
 	}
 
-	if paginationRequest != nil {
-		sort.Sort(GroupStateDescs(ruleGroups))
-	}
-
 	rgs := make([]*RuleGroup, 0, len(ruleGroups))
 
+	foundToken := false
+
 	for _, grp := range ruleGroups {
+		if paginationRequest != nil && paginationRequest.NextToken != "" && !foundToken {
+			if paginationRequest.NextToken == getRuleGroupNextToken(grp.File(), grp.Name()) {
+				foundToken = true
+			} else {
+				continue
+			}
+		}
+
 		if len(rgSet) > 0 {
 			if _, ok := rgSet[grp.Name()]; !ok {
 				continue
@@ -1442,12 +1448,6 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 			if _, ok := fSet[grp.File()]; !ok {
 				continue
 			}
-		}
-
-		// Skip the rule group if the next token is set and hasn't arrived at the nextToken item yet.
-		groupID := getRuleGroupNextToken(grp.File(), grp.Name())
-		if paginationRequest != nil && len(paginationRequest.NextToken) > 0 && paginationRequest.NextToken >= groupID {
-			continue
 		}
 
 		apiRuleGroup := &RuleGroup{
@@ -1526,12 +1526,20 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 		if len(apiRuleGroup.Rules) > 0 {
 			rgs = append(rgs, apiRuleGroup)
 		}
+
+		if paginationRequest != nil && len(rgs) == int(paginationRequest.MaxRuleGroups+1) {
+			break
+		}
 	}
 
 	if paginationRequest != nil {
-		returnGroups, nextToken := TruncateGroupInfos(rgs, int(paginationRequest.MaxRuleGroups))
-		res.NextToken = nextToken
-		res.RuleGroups = returnGroups
+		if len(rgs) == int(paginationRequest.MaxRuleGroups+1) {
+			nextRg := rgs[paginationRequest.MaxRuleGroups]
+			res.NextToken = getRuleGroupNextToken(nextRg.File, nextRg.Name)
+			res.RuleGroups = rgs[:paginationRequest.MaxRuleGroups]
+		} else {
+			res.RuleGroups = rgs
+		}
 		return apiFuncResult{res, nil, nil, nil}
 	}
 
@@ -1582,25 +1590,6 @@ func parseListRulesPaginationRequest(r *http.Request) (*listRulesPaginationReque
 	}
 
 	return nil, nil
-}
-
-func TruncateGroupInfos(groupInfos []*RuleGroup, maxRuleGroups int) ([]*RuleGroup, string) {
-	var returnPaginationToken string
-	returnGroupDescs := make([]*RuleGroup, 0, len(groupInfos))
-	for _, groupInfo := range groupInfos {
-		// Add the rule group to the return slice if the maxRuleGroups is not hit
-		if maxRuleGroups < 0 || len(returnGroupDescs) < maxRuleGroups {
-			returnGroupDescs = append(returnGroupDescs, groupInfo)
-			continue
-		}
-
-		// Return the next token if there are more aggregation groups
-		if maxRuleGroups > 0 && len(returnGroupDescs) == maxRuleGroups {
-			returnPaginationToken = getRuleGroupNextToken(returnGroupDescs[maxRuleGroups-1].File, returnGroupDescs[maxRuleGroups-1].Name)
-			break
-		}
-	}
-	return returnGroupDescs, returnPaginationToken
 }
 
 func getRuleGroupNextToken(file, group string) string {
@@ -2005,11 +1994,3 @@ func parseLimitParam(limitStr string) (limit int, err error) {
 
 	return limit, nil
 }
-
-type GroupStateDescs []*rules.Group
-
-func (g GroupStateDescs) Swap(i, j int) { g[i], g[j] = g[j], g[i] }
-func (g GroupStateDescs) Less(i, j int) bool {
-	return getRuleGroupNextToken(g[i].File(), g[i].Name()) < getRuleGroupNextToken(g[j].File(), g[j].Name())
-}
-func (g GroupStateDescs) Len() int { return len(g) }
