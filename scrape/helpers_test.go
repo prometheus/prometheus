@@ -117,6 +117,7 @@ type collectResultAppender struct {
 func (a *collectResultAppender) AppendWithHints(ref storage.SeriesRef, l labels.Labels, t int64, v float64, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	panic("unimplemented")
 }
+
 func (a *collectResultAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()

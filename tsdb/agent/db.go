@@ -836,6 +836,7 @@ func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v flo
 func (a *appender) AppendWithHints(ref storage.SeriesRef, l labels.Labels, t int64, v float64, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	panic("unimplemented")
 }
+
 func (a *appender) getOrCreate(l labels.Labels) (series *memSeries, created bool) {
 	hash := l.Hash()
 
