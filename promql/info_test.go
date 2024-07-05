@@ -15,6 +15,7 @@ package promql_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -289,6 +290,7 @@ load 10s
 			result: promql.Matrix{},
 		},
 		{
+			// Other info metrics are currently not supported.
 			name:  "include data labels from build_info",
 			load:  load1,
 			query: `info(metric, {__name__="build_info"})`,
@@ -358,6 +360,7 @@ load 10s
 				promql.Series{
 					Metric: labels.FromStrings(
 						labels.MetricName, "build_info",
+						"another_data", "another info",
 						"build_data", "build",
 						"instance", "a",
 						"job", "1",
@@ -380,6 +383,7 @@ load 10s
 			},
 		},
 		{
+			// TODO: This case should be handled by picking the series with the newest sample.
 			name:  "conflicting info series are resolved through picking the latest sample",
 			load:  load2,
 			query: `info(metric)`,

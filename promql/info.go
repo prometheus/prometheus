@@ -29,9 +29,10 @@ import (
 
 const targetInfo = "target_info"
 
-// identifyingLabels are the labels we consider as identifying for info metrics.
-// Currently hard coded, so we don't need knowledge of individual info metrics.
-var identifyingLabels = []string{"instance", "job"}
+var infoMetricsMap = map[string][]string{
+	targetInfo: {"instance", "job"},
+}
+var ignoreInfoMetrics = []*regexp.Regexp{regexp.MustCompile("^" + targetInfo + "$")}
 
 // evalInfo implements the info PromQL function.
 func (ev *evaluator) evalInfo(ctx context.Context, args parser.Expressions) (parser.Value, annotations.Annotations) {
@@ -91,6 +92,7 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 
 	// A map of values for all identifying labels we are interested in.
 	idLblValues := map[string]map[string]struct{}{}
+	for _, identifyingLabels := range infoMetricsMap {
 	for i, s := range mat {
 		if _, exists := ignoreSeries[i]; exists {
 			continue
@@ -108,6 +110,7 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 				idLblValues[l] = map[string]struct{}{}
 			}
 			idLblValues[l][val] = struct{}{}
+			}
 		}
 	}
 	if len(idLblValues) == 0 {
@@ -130,6 +133,15 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 		idLblRegexps[name] = sb.String()
 	}
 
+	i := 0
+	sb.Reset()
+	for name := range infoMetricsMap {
+		if i > 0 {
+			sb.WriteRune('|')
+		}
+		sb.WriteString(regexp.QuoteMeta(name))
+		i++
+	}
 	var infoLabelMatchers []*labels.Matcher
 	for name, re := range idLblRegexps {
 		infoLabelMatchers = append(infoLabelMatchers, labels.MustNewMatcher(labels.MatchRegexp, name, re))
@@ -152,6 +164,11 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 	if nameMatcher == nil {
 		// Default to using the target_info metric.
 		infoLabelMatchers = append([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, targetInfo)}, infoLabelMatchers...)
+	} else if !nameMatcher.Matches(targetInfo) {
+		// We only support target_info for now.
+		var annots annotations.Annotations
+		annots.Add(fmt.Errorf("unsupported info metric matcher %s", nameMatcher))
+		return nil, annots, nil
 	}
 
 	infoIt := ev.querier.Select(ctx, false, ev.selectHints, infoLabelMatchers...)
