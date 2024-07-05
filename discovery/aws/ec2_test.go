@@ -292,8 +292,8 @@ func TestRefreshIpv4(t *testing.T) {
 	enis[1] = &ec2.InstanceNetworkInterface{}
 	enis[1].SetIpv6Addresses([]*ec2.InstanceIpv6Address{})
 	// azIdx + 1 modulo #azs
-	secondAzId := (azIdx + 1) % len(ec2Data.azIDs)
-	enis[1].SetSubnetId(ec2Data.azIDs[secondAzId])
+	secondAzID := (azIdx + 1) % len(ec2Data.azIDs)
+	enis[1].SetSubnetId(ec2Data.azIDs[secondAzID])
 
 	// interface in another subnet
 	enis[2] = &ec2.InstanceNetworkInterface{}
@@ -309,7 +309,7 @@ func TestRefreshIpv4(t *testing.T) {
 	labels := GenerateExpectedLabels(azIdx, d.cfg.Port)
 
 	labels["__meta_ec2_primary_subnet_id"] = model.LabelValue(*ec2Data.instances[0].SubnetId)
-	labels["__meta_ec2_subnet_id"] = model.LabelValue(fmt.Sprintf(",%s,%s,", ec2Data.azIDs[azIdx], ec2Data.azIDs[secondAzId]))
+	labels["__meta_ec2_subnet_id"] = model.LabelValue(fmt.Sprintf(",%s,%s,", ec2Data.azIDs[azIdx], ec2Data.azIDs[secondAzID]))
 	labels["__meta_ec2_vpc_id"] = model.LabelValue(*ec2Data.instances[0].VpcId)
 
 	expected := make([]*targetgroup.Group, 1)
