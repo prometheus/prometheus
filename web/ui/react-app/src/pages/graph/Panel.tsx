@@ -312,7 +312,7 @@ class Panel extends Component<PanelProps, PanelState> {
         ))}
         {this.state.infos?.map((info, index) => (
           <Row key={index}>
-            <Col>{info && <Alert color="success">{info}</Alert>}</Col>
+            <Col>{info && <Alert color="info">{info}</Alert>}</Col>
           </Row>
         ))}
         <Row>
