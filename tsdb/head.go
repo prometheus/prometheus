@@ -1746,77 +1746,6 @@ func (h *Head) mmapHeadChunks() {
 	h.metrics.mmapChunksTotal.Add(float64(count))
 }
 
-// seriesHashmap lets TSDB find a memSeries by its label set, via a 64-bit hash.
-// There is one map for the common case where the hash value is unique, and a
-// second map for the case that two series have the same hash value.
-// Each series is in only one of the maps.
-// Its methods require the hash to be submitted with it to avoid re-computations throughout
-// the code.
-type seriesHashmap struct {
-	unique    map[uint64]*memSeries
-	conflicts map[uint64][]*memSeries
-}
-
-func (m *seriesHashmap) get(hash uint64, lset labels.Labels) *memSeries {
-	if s, found := m.unique[hash]; found {
-		if labels.Equal(s.labels(), lset) {
-			return s
-		}
-	}
-	for _, s := range m.conflicts[hash] {
-		if labels.Equal(s.labels(), lset) {
-			return s
-		}
-	}
-	return nil
-}
-
-func (m *seriesHashmap) set(hash uint64, s *memSeries) {
-	if existing, found := m.unique[hash]; !found || labels.Equal(existing.labels(), s.labels()) {
-		m.unique[hash] = s
-		return
-	}
-	if m.conflicts == nil {
-		m.conflicts = make(map[uint64][]*memSeries)
-	}
-	l := m.conflicts[hash]
-	for i, prev := range l {
-		if labels.Equal(prev.labels(), s.labels()) {
-			l[i] = s
-			return
-		}
-	}
-	m.conflicts[hash] = append(l, s)
-}
-
-func (m *seriesHashmap) del(hash uint64, ref chunks.HeadSeriesRef) {
-	var rem []*memSeries
-	unique, found := m.unique[hash]
-	switch {
-	case !found: // Supplied hash is not stored.
-		return
-	case unique.ref == ref:
-		conflicts := m.conflicts[hash]
-		if len(conflicts) == 0 { // Exactly one series with this hash was stored
-			delete(m.unique, hash)
-			return
-		}
-		m.unique[hash] = conflicts[0] // First remaining series goes in 'unique'.
-		rem = conflicts[1:]           // Keep the rest.
-	default: // The series to delete is somewhere in 'conflicts'. Keep all the ones that don't match.
-		for _, s := range m.conflicts[hash] {
-			if s.ref != ref {
-				rem = append(rem, s)
-			}
-		}
-	}
-	if len(rem) == 0 {
-		delete(m.conflicts, hash)
-	} else {
-		m.conflicts[hash] = rem
-	}
-}
-
 const (
 	// DefaultStripeSize is the default number of entries to allocate in the stripeSeries hash map.
 	DefaultStripeSize = 1 << 14
@@ -1853,12 +1782,6 @@ func newStripeSeries(stripeSize int, seriesCallback SeriesLifecycleCallback) *st
 
 	for i := range s.series {
 		s.series[i] = map[chunks.HeadSeriesRef]*memSeries{}
-	}
-	for i := range s.hashes {
-		s.hashes[i] = seriesHashmap{
-			unique:    map[uint64]*memSeries{},
-			conflicts: nil, // Initialized on demand in set().
-		}
 	}
 	return s
 }
@@ -1953,17 +1876,10 @@ func (s *stripeSeries) iterForDeletion(checkDeletedFunc func(int, uint64, *memSe
 	for i := 0; i < s.size; i++ {
 		seriesSet := make(map[chunks.HeadSeriesRef]labels.Labels, seriesSetFromPrevStripe)
 		s.locks[i].Lock()
-		// Iterate conflicts first so f doesn't move them to the `unique` field,
-		// after deleting `unique`.
-		for hash, all := range s.hashes[i].conflicts {
-			for _, series := range all {
-				checkDeletedFunc(i, hash, series, seriesSet)
-			}
-		}
-
-		for hash, series := range s.hashes[i].unique {
+		s.hashes[i].iter(func(hash uint64, series *memSeries) bool {
 			checkDeletedFunc(i, hash, series, seriesSet)
-		}
+			return false
+		})
 		s.locks[i].Unlock()
 		s.seriesLifecycleCallback.PostDeletion(seriesSet)
 		totalDeletedSeries += len(seriesSet)
