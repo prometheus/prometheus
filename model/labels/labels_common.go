@@ -218,5 +218,5 @@ func contains(s []Label, n string) bool {
 }
 
 func yoloString(b []byte) string {
-	return *((*string)(unsafe.Pointer(&b)))
+	return unsafe.String(unsafe.SliceData(b), len(b))
 }

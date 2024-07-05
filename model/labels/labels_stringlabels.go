@@ -16,7 +16,6 @@
 package labels
 
 import (
-	"reflect"
 	"slices"
 	"strings"
 	"unsafe"
@@ -299,10 +298,8 @@ func Equal(ls, o Labels) bool {
 func EmptyLabels() Labels {
 	return Labels{}
 }
-func yoloBytes(s string) (b []byte) {
-	*(*string)(unsafe.Pointer(&b)) = s
-	(*reflect.SliceHeader)(unsafe.Pointer(&b)).Cap = len(s)
-	return
+func yoloBytes(s string) []byte {
+	return unsafe.Slice(unsafe.StringData(s), len(s))
 }
 
 // New returns a sorted Labels from the given labels.
@@ -338,8 +335,8 @@ func Compare(a, b Labels) int {
 	}
 	i := 0
 	// First, go 8 bytes at a time. Data strings are expected to be 8-byte aligned.
-	sp := unsafe.Pointer((*reflect.StringHeader)(unsafe.Pointer(&shorter)).Data)
-	lp := unsafe.Pointer((*reflect.StringHeader)(unsafe.Pointer(&longer)).Data)
+	sp := unsafe.Pointer(unsafe.StringData(shorter))
+	lp := unsafe.Pointer(unsafe.StringData(longer))
 	for ; i < len(shorter)-8; i += 8 {
 		if *(*uint64)(unsafe.Add(sp, i)) != *(*uint64)(unsafe.Add(lp, i)) {
 			break
