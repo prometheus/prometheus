@@ -748,7 +748,15 @@ See below for the configuration options for Azure discovery:
 ```yaml
 # The information to access the Azure API.
 # The Azure environment.
-[ environment: <string> | default = AzurePublicCloud ]
+[ environment: <string|AzureCloudConfig> | default = AzurePublicCloud
+      # Name must be AzureCustom when AzureCloudConfig struct is used
+      [ name: <string> ]
+      # aad_endpoint such as https://login.microsoftonline.com/, required for AzureCloudConfig struct
+      [ aad_endpoint: <string> | default = "" ]
+      # arm_token_audience such as https://management.azure.com/, required for AzureCloudConfig struct
+      [ arm_token_audience: <string> | default = "" ]
+      # arm_endpoint such as https://management.azure.com/, required for AzureCloudConfig struct
+      [ arm_endpoint: <string> | default = "" ] ]
 
 # The authentication method, either OAuth, ManagedIdentity or SDK.
 # See https://docs.microsoft.com/en-us/azure/active-directory/managed-identities-azure-resources/overview
@@ -2919,7 +2927,7 @@ azuread:
       [ name: <string> ]
       # aad_endpoint such as https://login.microsoftonline.com/, required for AzureADCloudConfig struct
       [ aad_endpoint: <string> | default = "" ]
-      # token_audience such as https://monitor.azure.com/.default, , required for AzureADCloudConfig struct
+      # token_audience such as https://monitor.azure.com/.default, required for AzureADCloudConfig struct
       [ token_audience: <string> | default = "" ] ]
 
 # Azure User-assigned Managed identity.
