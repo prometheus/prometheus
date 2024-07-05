@@ -734,6 +734,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 			samplesStats:             query.sampleStats,
 			noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
 			enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
+			querier:                  querier,
 		}
 		query.sampleStats.InitStepTracking(start, start, 1)
 
@@ -792,6 +793,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		samplesStats:             query.sampleStats,
 		noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
 		enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
+		querier:                  querier,
 	}
 	query.sampleStats.InitStepTracking(evaluator.startTimestamp, evaluator.endTimestamp, evaluator.interval)
 	val, warnings, err := evaluator.Eval(ctxInnerEval, s.Expr)
@@ -960,6 +962,7 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 			evalRange = 0
 			hints.By, hints.Grouping = extractGroupsFromPath(path)
 			n.UnexpandedSeriesSet = querier.Select(ctx, false, hints, n.LabelMatchers...)
+			n.SelectHints = hints
 
 		case *parser.MatrixSelector:
 			evalRange = n.Range
@@ -1017,7 +1020,7 @@ func checkAndExpandSeriesSet(ctx context.Context, expr parser.Expr) (annotations
 			}
 		}
 		e.Series = series
-		span.AddEvent("expand end", trace.WithAttributes(attribute.Int("num_series", len(series))))
+		ev.selectHints = e.SelectHints
 		return ws, err
 	}
 	return nil, nil
@@ -1058,6 +1061,10 @@ type evaluator struct {
 	samplesStats             *stats.QuerySamples
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 	enableDelayedNameRemoval bool
+	querier                  storage.Querier
+
+	// selectHints is the top-most SelectHints in the expression tree.
+	selectHints *storage.SelectHints
 }
 
 // errorf causes a panic with the input formatted into an error.
@@ -1133,6 +1140,10 @@ type EvalNodeHelper struct {
 
 	// Additional options for the evaluation.
 	enableDelayedNameRemoval bool
+
+	// For base and info vector matching.
+	infoSamplesBySig map[string]Sample
+	labelBuilder     *labels.ScratchBuilder
 }
 
 func (enh *EvalNodeHelper) resetBuilder(lbls labels.Labels) {
@@ -1430,20 +1441,19 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 	return result, warnings
 }
 
-// evalVectorSelector generates a Matrix between ev.startTimestamp and ev.endTimestamp (inclusive), each point spaced ev.interval apart, from vs.
-// vs.Series has to be expanded before calling this method.
-// For every series iterator in vs.Series, the method iterates in ev.interval sized steps from ev.startTimestamp until and including ev.endTimestamp,
+// evalSeries generates a Matrix between ev.startTimestamp and ev.endTimestamp (inclusive), each point spaced ev.interval apart, from series given offset.
+// For every storage.Series iterator in series, the method iterates in ev.interval sized steps from ev.startTimestamp until and including ev.endTimestamp,
 // collecting every corresponding sample (obtained via ev.vectorSelectorSingle) into a Series.
 // All of the generated Series are collected into a Matrix, that gets returned.
-func (ev *evaluator) evalVectorSelector(ctx context.Context, vs *parser.VectorSelector) Matrix {
+func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, offset time.Duration, recordOrigT bool) Matrix {
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 
-	mat := make(Matrix, 0, len(vs.Series))
+	mat := make(Matrix, 0, len(series))
 	var prevSS *Series
 	it := storage.NewMemoizedEmptyIterator(durationMilliseconds(ev.lookbackDelta))
 	var chkIter chunkenc.Iterator
-	for _, s := range vs.Series {
-		if err := contextDone(ctx, "expression evaluation"); err != nil {
+	for _, s := range series {
+		if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
 			ev.error(err)
 		}
 
@@ -1453,11 +1463,14 @@ func (ev *evaluator) evalVectorSelector(ctx context.Context, vs *parser.VectorSe
 			Metric: s.Labels(),
 		}
 
-		for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
+		for ts, step := start, -1; ts <= end; ts += interval {
 			step++
-			_, f, h, ok := ev.vectorSelectorSingle(it, vs, ts)
+			origT, f, h, ok := ev.vectorSelectorSingle(it, offset, ts)
 			if !ok {
 				continue
+			}
+			if !recordOrigT {
+				origT = 0
 			}
 
 			if h == nil {
@@ -1469,9 +1482,9 @@ func (ev *evaluator) evalVectorSelector(ctx context.Context, vs *parser.VectorSe
 				if ss.Floats == nil {
 					ss.Floats = reuseOrGetFPointSlices(prevSS, numSteps)
 				}
-				ss.Floats = append(ss.Floats, FPoint{F: f, T: ts})
+				ss.Floats = append(ss.Floats, FPoint{F: f, T: ts, OrigT: origT})
 			} else {
-				point := HPoint{H: h, T: ts}
+				point := HPoint{H: h, T: ts, OrigT: origT}
 				histSize := point.size()
 				ev.currentSamples += histSize
 				ev.samplesStats.IncrementSamplesAtStep(step, int64(histSize))
@@ -1640,6 +1653,8 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			return ev.evalLabelReplace(ctx, e.Args)
 		case "label_join":
 			return ev.evalLabelJoin(ctx, e.Args)
+		case "info":
+			return ev.evalInfo(ev.ctx, e.Args)
 		}
 
 		if !matrixArg {
@@ -1932,7 +1947,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		if err != nil {
 			ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
 		}
-		mat := ev.evalVectorSelector(ctx, e)
+		mat := ev.evalSeries(e.Series, e.Offset, ev.startTimestamp, ev.endTimestamp, ev.interval, false)
 		return mat, ws
 
 	case *parser.MatrixSelector:
@@ -2097,7 +2112,7 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 		vec := make(Vector, 0, len(vs.Series))
 		for i, s := range vs.Series {
 			it := seriesIterators[i]
-			t, _, _, ok := ev.vectorSelectorSingle(it, vs, enh.Ts)
+			t, _, _, ok := ev.vectorSelectorSingle(it, vs.Offset, enh.Ts)
 			if !ok {
 				continue
 			}
@@ -2121,10 +2136,10 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 }
 
 // vectorSelectorSingle evaluates an instant vector for the iterator of one time series.
-func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, node *parser.VectorSelector, ts int64) (
+func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, offset time.Duration, ts int64) (
 	int64, float64, *histogram.FloatHistogram, bool,
 ) {
-	refTime := ts - durationMilliseconds(node.Offset)
+	refTime := ts - durationMilliseconds(offset)
 	var t int64
 	var v float64
 	var h *histogram.FloatHistogram
