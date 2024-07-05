@@ -432,6 +432,23 @@ by the number of seconds under the specified time range window, and should be
 used primarily for human readability.  Use `rate` in recording rules so that
 increases are tracked consistently on a per-second basis.
 
+## `info()`
+
+**This function has to be enabled via the [feature flag](../feature_flags.md#experimental-promql-functions) `--enable-feature=promql-experimental-functions`.**
+
+For each time series in `v`, `info(v instant-vector, [data-label-selector string])` finds 
+all `target_info` series with corresponding identifying labels (`instance` and `job`),
+and adds the union of their data (i.e., non-identifying) labels to the time series.
+`target_info`'s data labels correspond to OpenTelemetry resource attributes.
+The optional second argument allows specifying through label matchers, which data labels
+should be picked. Example: `{k8s_container_name=~".+"}`. Through this argument, you can
+also specify the info series to consider, by providing a `__name__` label matcher, e.g.
+`{__name__="target_info"}`. For the time being however, only `target_info` will be considered.
+The set of time series set augmented with any matching info series labels gets returned.
+
+In the future, `info` will recognize all info metrics, not just `target_info`, and also detect their 
+respective identifying labels.
+
 ## `irate()`
 
 `irate(v range-vector)` calculates the per-second instant rate of increase of

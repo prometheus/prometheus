@@ -50,6 +50,7 @@ import {
   Hour,
   Idelta,
   Increase,
+  Info,
   Irate,
   LabelJoin,
   LabelReplace,
@@ -333,6 +334,12 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
   [Increase]: {
     name: 'increase',
     argTypes: [ValueType.matrix],
+    variadic: 0,
+    returnType: ValueType.vector,
+  },
+  [Info]: {
+    name: 'info',
+    argTypes: [ValueType.vector, ValueType.vector],
     variadic: 0,
     returnType: ValueType.vector,
   },
