@@ -135,6 +135,7 @@ func createPrometheusAPI(q storage.SampleAndChunkQueryable) *route.Router {
 		nil,
 		nil,
 		false,
+		config.RemoteWriteProtoMsgs{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2},
 		false,
 	)
 

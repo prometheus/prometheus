@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright 2024 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -11,21 +11,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package prompb
+//go:build !dedupelabels
+
+package tsdb
 
 import (
-	"sync"
+	"github.com/go-kit/log"
+
+	"github.com/prometheus/prometheus/model/labels"
 )
 
-func (r *ChunkedReadResponse) PooledMarshal(p *sync.Pool) ([]byte, error) {
-	size := r.Size()
-	data, ok := p.Get().(*[]byte)
-	if ok && cap(*data) >= size {
-		n, err := r.MarshalToSizedBuffer((*data)[:size])
-		if err != nil {
-			return nil, err
-		}
-		return (*data)[:n], nil
-	}
-	return r.Marshal()
+// Helper method to access labels; trivial when not using dedupelabels.
+func (s *memSeries) labels() labels.Labels {
+	return s.lset
+}
+
+// No-op when not using dedupelabels.
+func (h *Head) RebuildSymbolTable(logger log.Logger) *labels.SymbolTable {
+	return nil
 }
