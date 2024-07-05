@@ -67,13 +67,14 @@ const (
 	authMethodOAuth           = "OAuth"
 	authMethodSDK             = "SDK"
 	authMethodManagedIdentity = "ManagedIdentity"
+	azureCustom               = "AzureCustom"
 )
 
 // DefaultSDConfig is the default Azure SD configuration.
 var DefaultSDConfig = SDConfig{
 	Port:                 80,
 	RefreshInterval:      model.Duration(5 * time.Minute),
-	Environment:          "AzurePublicCloud",
+	Environment:          AzureCloudConfig{Name: "AZUREPUBLICCLOUD"},
 	AuthenticationMethod: authMethodOAuth,
 	HTTPClientConfig:     config_util.DefaultHTTPClientConfig,
 }
@@ -85,6 +86,7 @@ var environments = map[string]cloud.Configuration{
 	"AZUREPUBLICCLOUD":       cloud.AzurePublic,
 	"AZUREUSGOVERNMENT":      cloud.AzureGovernment,
 	"AZUREUSGOVERNMENTCLOUD": cloud.AzureGovernment,
+	"AZURECUSTOM":            {},
 }
 
 // CloudConfigurationFromName returns cloud configuration based on the common name specified.
@@ -104,7 +106,7 @@ func init() {
 
 // SDConfig is the configuration for Azure based service discovery.
 type SDConfig struct {
-	Environment          string             `yaml:"environment,omitempty"`
+	Environment          AzureCloudConfig   `yaml:"environment,omitempty"`
 	Port                 int                `yaml:"port"`
 	SubscriptionID       string             `yaml:"subscription_id"`
 	TenantID             string             `yaml:"tenant_id,omitempty"`
@@ -115,6 +117,21 @@ type SDConfig struct {
 	ResourceGroup        string             `yaml:"resource_group,omitempty"`
 
 	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
+}
+
+// AzureADCloudConfig is used to store the AAD config values.
+type AzureCloudConfig struct { //nolint:revive // exported.
+	// Name is the Azure cloud in which the service is running. Example: AzurePublic/AzureGovernment/AzureChina.
+	Name string `yaml:"name,omitempty"`
+
+	// AAD Endpoint to authenticate against. Example: https://login.microsoftonline.com/
+	AadEndpoint string `yaml:"aad_endpoint,omitempty"`
+
+	// Audience to acquire token for ARM calls. Example: https://management.azure.com/
+	ArmTokenAudience string `yaml:"arm_token_audience,omitempty"`
+
+	// Endpoint for ARM. Example: https://management.azure.com/
+	ArmEndpoint string `yaml:"arm_endpoint,omitempty"`
 }
 
 // NewDiscovererMetrics implements discovery.Config.
@@ -166,6 +183,55 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 
 	return c.HTTPClientConfig.Validate()
+}
+
+// Validate validates config values provided.
+func (c *AzureCloudConfig) Validate() error {
+	if c.Name != azureCustom {
+		return fmt.Errorf("cannot provide cloud name other than AzureCustom in the Azure cloud config")
+	}
+
+	if c.AadEndpoint == "" || c.ArmTokenAudience == "" || c.ArmEndpoint == "" {
+		return fmt.Errorf("must provide all of AAD Endpoint, ARM Token Audience, and ARM Endpoint when using AzureCustom cloud")
+	}
+
+	environments["AZURECUSTOM"] = cloud.Configuration{
+		ActiveDirectoryAuthorityHost: c.AadEndpoint, Services: map[cloud.ServiceName]cloud.ServiceConfiguration{
+			cloud.ResourceManager: {
+				Audience: c.ArmTokenAudience,
+				Endpoint: c.ArmEndpoint,
+			},
+		},
+	}
+
+	return nil
+}
+
+// UnmarshalYAML unmarshal the Azure cloud config yaml.
+func (config *AzureCloudConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var name string
+	if err := unmarshal(&name); err == nil {
+		// Legacy format used, just set the name
+		config.Name = name
+		return nil
+	}
+
+	type plain AzureCloudConfig
+	*config = AzureCloudConfig{}
+	if err := unmarshal((*plain)(config)); err != nil {
+		return err
+	}
+
+	return config.Validate()
+}
+
+// MarshalYAML marshal the Azure cloud config to yaml.
+func (config AzureCloudConfig) MarshalYAML() (interface{}, error) {
+	if config.Name != azureCustom {
+		return config.Name, nil
+	} else {
+		return config, nil
+	}
 }
 
 type Discovery struct {
@@ -230,7 +296,7 @@ var _ client = &azureClient{}
 
 // createAzureClient is a helper method for creating an Azure compute client to ARM.
 func (d *Discovery) createAzureClient() (client, error) {
-	cloudConfiguration, err := CloudConfigurationFromName(d.cfg.Environment)
+	cloudConfiguration, err := CloudConfigurationFromName(d.cfg.Environment.Name)
 	if err != nil {
 		return &azureClient{}, err
 	}
