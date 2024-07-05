@@ -16,10 +16,17 @@
 package tsdb
 
 import (
+	"github.com/go-kit/log"
+
 	"github.com/prometheus/prometheus/model/labels"
 )
 
 // Helper method to access labels; trivial when not using dedupelabels.
 func (s *memSeries) labels() labels.Labels {
 	return s.lset
+}
+
+// No-op when not using dedupelabels.
+func (h *Head) RebuildSymbolTable(logger log.Logger) *labels.SymbolTable {
+	return nil
 }
