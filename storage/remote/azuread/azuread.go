@@ -230,6 +230,15 @@ func (config *AzureADCloudConfig) UnmarshalYAML(unmarshal func(interface{}) erro
 	return config.Validate()
 }
 
+// MarshalYAML marshal the Azure AD cloud config to yaml.
+func (config AzureADCloudConfig) MarshalYAML() (interface{}, error) {
+	if config.Name != AzureCustom {
+		return config.Name, nil
+	} else {
+		return config, nil
+	}
+}
+
 // NewAzureADRoundTripper creates round tripper adding Azure AD authorization to calls.
 func NewAzureADRoundTripper(cfg *AzureADConfig, next http.RoundTripper) (http.RoundTripper, error) {
 	if next == nil {
