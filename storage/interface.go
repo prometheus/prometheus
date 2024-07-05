@@ -218,6 +218,9 @@ type SelectHints struct {
 	// When disabled, the result may contain samples outside the queried time range but Select() performances
 	// may be improved.
 	DisableTrimming bool
+
+	// IncludeInfoMetricDataLabels specifies whether to enrich resulting time series with matching info metric data labels.
+	IncludeInfoMetricDataLabels bool
 }
 
 // LabelHints specifies hints passed for label reads.

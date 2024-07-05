@@ -131,6 +131,7 @@ func (q *blockQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 		p = q.index.SortedPostings(p)
 	}
 
+	includeInfoMetricDataLabels := false
 	if hints != nil {
 		mint = hints.Start
 		maxt = hints.End
@@ -139,9 +140,21 @@ func (q *blockQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 			// When you're only looking up metadata (for example series API), you don't need to load any chunks.
 			return newBlockSeriesSet(q.index, newNopChunkReader(), q.tombstones, p, mint, maxt, disableTrimming)
 		}
+		includeInfoMetricDataLabels = hints.IncludeInfoMetricDataLabels
+		hints.IncludeInfoMetricDataLabels = false
 	}
 
-	return newBlockSeriesSet(q.index, q.chunks, q.tombstones, p, mint, maxt, disableTrimming)
+	ss := newBlockSeriesSet(q.index, q.chunks, q.tombstones, p, mint, maxt, disableTrimming)
+	if includeInfoMetricDataLabels {
+		// fmt.Printf("blockQuerier.Select: Returning SeriesSetWithInfoLabels\n")
+		return &storage.SeriesSetWithInfoLabels{
+			Base:  ss,
+			Hints: hints,
+			Q:     q,
+			Ctx:   ctx,
+		}
+	}
+	return ss
 }
 
 // blockChunkQuerier provides chunk querying access to a single block database.
@@ -962,7 +975,7 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 		// Check if the encoding has changed (i.e. we need to create a new
 		// chunk as chunks can't have multiple encoding types).
 		// For the first sample, the following condition will always be true as
-		// ValNoneNone != ValFloat | ValHistogram | ValFloatHistogram.
+		// ValNone != ValFloat | ValHistogram | ValFloatHistogram.
 		if currentValueType != prevValueType {
 			if prevValueType != chunkenc.ValNone {
 				p.chunksFromIterable = append(p.chunksFromIterable, chunks.Meta{Chunk: currentChunk, MinTime: cmint, MaxTime: cmaxt})

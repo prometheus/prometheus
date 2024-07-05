@@ -18,6 +18,7 @@ package storage
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -89,7 +90,22 @@ func (a *seriesSetAdapter) At() Series {
 }
 
 func (q *querierAdapter) Select(ctx context.Context, sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet {
-	return &seriesSetAdapter{q.genericQuerier.Select(ctx, sortSeries, hints, matchers...)}
+	includeInfoMetricDataLabels := false
+	if hints != nil {
+		includeInfoMetricDataLabels = hints.IncludeInfoMetricDataLabels
+		hints.IncludeInfoMetricDataLabels = false
+	}
+	ss := &seriesSetAdapter{q.genericQuerier.Select(ctx, sortSeries, hints, matchers...)}
+	if includeInfoMetricDataLabels {
+		fmt.Printf("querierAdapter.Select: Returning SeriesSetWithInfoLabels\n")
+		return &SeriesSetWithInfoLabels{
+			Base:  ss,
+			Hints: hints,
+			Q:     q,
+			Ctx:   ctx,
+		}
+	}
+	return ss
 }
 
 type chunkQuerierAdapter struct {
