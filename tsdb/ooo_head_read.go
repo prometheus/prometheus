@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 var _ IndexReader = &OOOHeadIndexReader{}
@@ -479,6 +480,10 @@ func (ir *OOOCompactionHeadIndexReader) PostingsForMatchers(_ context.Context, c
 
 func (ir *OOOCompactionHeadIndexReader) LabelNames(context.Context, ...*labels.Matcher) ([]string, error) {
 	return nil, errors.New("not implemented")
+}
+
+func (ir *OOOCompactionHeadIndexReader) InfoMetricDataLabels(context.Context, labels.Labels, int64, index.InfoMetricSampleQuerier, ...*labels.Matcher) (labels.Labels, annotations.Annotations, error) {
+	return labels.Labels{}, nil, errors.New("not implemented")
 }
 
 func (ir *OOOCompactionHeadIndexReader) LabelValueFor(context.Context, storage.SeriesRef, string) (string, error) {

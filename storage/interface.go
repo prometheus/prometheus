@@ -130,6 +130,10 @@ func (q *MockQuerier) LabelNames(context.Context, *LabelHints, ...*labels.Matche
 	return nil, nil, nil
 }
 
+func (q *MockQuerier) InfoMetricDataLabels(context.Context, labels.Labels, int64, ...*labels.Matcher) (labels.Labels, annotations.Annotations, error) {
+	return labels.Labels{}, nil, nil
+}
+
 func (q *MockQuerier) Close() error {
 	return nil
 }
@@ -167,6 +171,12 @@ type LabelQuerier interface {
 	// If matchers are specified the returned result set is reduced
 	// to label names of metrics matching the matchers.
 	LabelNames(ctx context.Context, hints *LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error)
+
+	// InfoMetricDataLabels queries for the data labels of info metrics which identifying labels are contained in lbls,
+	// at time t.
+	// If matchers are specified, these will filter chosen info metrics based on their data labels, and also constrain
+	// which data labels are returned.
+	InfoMetricDataLabels(ctx context.Context, lbls labels.Labels, t int64, matchers ...*labels.Matcher) (labels.Labels, annotations.Annotations, error)
 
 	// Close releases the resources of the Querier.
 	Close() error

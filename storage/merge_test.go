@@ -959,6 +959,10 @@ func (m *mockQuerier) Select(_ context.Context, sortSeries bool, _ *SelectHints,
 	return &mockSeriesSet{idx: -1, series: ret, warnings: m.warnings, err: m.err}
 }
 
+func (m *mockQuerier) InfoMetricDataLabels(context.Context, labels.Labels, int64, ...*labels.Matcher) (labels.Labels, annotations.Annotations, error) {
+	panic("not implemented")
+}
+
 func (m *mockQuerier) LabelValues(_ context.Context, name string, hints *LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	m.mtx.Lock()
 	m.labelNamesRequested = append(m.labelNamesRequested, labelNameRequest{

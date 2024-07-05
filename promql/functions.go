@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -1537,6 +1538,57 @@ func funcYear(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper)
 	}), nil
 }
 
+// === info(vector parser.ValueTypeVector, [ls label-selector]) (Vector, Annotations) ===
+func funcInfo(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	vector := vals[0].(Vector)
+	var dataLabelMatchers []*labels.Matcher
+	if len(args) > 1 {
+		// TODO: Introduce a dedicated LabelSelector type
+		labelSelector := args[1].(*parser.VectorSelector)
+		dataLabelMatchers = labelSelector.LabelMatchers
+	}
+
+	if len(vector) == 0 {
+		return enh.Out, nil
+	}
+
+	ts := vector[0].T
+
+	var annos annotations.Annotations
+	for _, s := range vector {
+		// Find info metrics for which all of their identifying labels are contained among the metric's labels.
+		// Pick the union of the data labels belonging to the various info metrics.
+		dataLabels, curAnnos, err := enh.Querier.InfoMetricDataLabels(context.TODO(), s.Metric, ts, dataLabelMatchers...)
+		annos.Merge(curAnnos)
+		if err != nil {
+			annos.Add(fmt.Errorf("querying for info metric data labels: %w", err))
+			return nil, annos
+		}
+
+		lb := labels.NewBuilder(s.Metric)
+		dataLabels.Range(func(l labels.Label) {
+			fmt.Printf("Data label %q = %q\n", l.Name, l.Value)
+			if lb.Get(l.Name) == "" {
+				lb.Set(l.Name, l.Value)
+			}
+		})
+
+		// If info metric data label matchers are specified, we should only include series where
+		// info metric data labels are found
+		if len(dataLabelMatchers) > 0 && dataLabels.IsEmpty() {
+			continue
+		}
+
+		enh.Out = append(enh.Out, Sample{
+			Metric: lb.Labels(),
+			F:      s.F,
+			H:      s.H,
+		})
+	}
+
+	return enh.Out, annos
+}
+
 // FunctionCalls is a list of all functions supported by PromQL, including their types.
 var FunctionCalls = map[string]FunctionCall{
 	"abs":                funcAbs,
@@ -1577,6 +1629,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"hour":               funcHour,
 	"idelta":             funcIdelta,
 	"increase":           funcIncrease,
+	"info":               funcInfo,
 	"irate":              funcIrate,
 	"label_replace":      funcLabelReplace,
 	"label_join":         funcLabelJoin,
