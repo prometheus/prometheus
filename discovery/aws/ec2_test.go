@@ -33,10 +33,27 @@ import (
 )
 
 // "Helper" functions.
-const chars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+const (
+	chars     = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	ipv6chars = "0123456789abcdef"
+)
 
 func RandIpv4() string {
 	return fmt.Sprintf("%d.%d.%d.%d", RandNumber(1, 255), RandNumber(0, 255), RandNumber(0, 255), RandNumber(0, 255))
+}
+
+func RandIpv6() string {
+	address := "2000"
+
+	for i := 0; i < 7; i++ {
+		e := make([]byte, 4)
+		for j := range e {
+			e[j] = ipv6chars[rand.Intn(len(ipv6chars))]
+		}
+		address += ":" + string(e)
+	}
+
+	return address
 }
 
 func RandNumber(minimum, maximum int) int {
@@ -76,7 +93,7 @@ func GenerateTestAzData() {
 	ec2Data.region = fmt.Sprintf("region-%s", RandString(4))
 
 	// availability zone information
-	azCount := RandNumber(2, 5)
+	azCount := RandNumber(3, 5)
 	ec2Data.azNames = make([]string, azCount)
 	ec2Data.azIDs = make([]string, azCount)
 	ec2Data.azToAZID = make(map[string]string, azCount)
@@ -128,6 +145,34 @@ func GenerateTestInstanceData() int {
 	ec2Data.instances = append(ec2Data.instances, &instance)
 
 	return azIdx
+}
+
+func GenerateExpectedLabels(azIdx, port int) model.LabelSet {
+	labels := model.LabelSet{
+		"__address__":                     model.LabelValue(fmt.Sprintf("%s:%d", *ec2Data.instances[0].PrivateIpAddress, port)),
+		"__meta_ec2_ami":                  model.LabelValue(*ec2Data.instances[0].ImageId),
+		"__meta_ec2_architecture":         model.LabelValue(*ec2Data.instances[0].Architecture),
+		"__meta_ec2_availability_zone":    model.LabelValue(ec2Data.azNames[azIdx]),
+		"__meta_ec2_availability_zone_id": model.LabelValue(ec2Data.azIDs[azIdx]),
+		"__meta_ec2_instance_id":          model.LabelValue(*ec2Data.instances[0].InstanceId),
+		"__meta_ec2_instance_lifecycle":   model.LabelValue(*ec2Data.instances[0].InstanceLifecycle),
+		"__meta_ec2_instance_state":       model.LabelValue(*ec2Data.instances[0].State.Name),
+		"__meta_ec2_instance_type":        model.LabelValue(*ec2Data.instances[0].InstanceType),
+		"__meta_ec2_owner_id":             model.LabelValue(ec2Data.ownerID),
+		"__meta_ec2_platform":             model.LabelValue(*ec2Data.instances[0].Platform),
+		"__meta_ec2_private_dns_name":     model.LabelValue(*ec2Data.instances[0].PrivateDnsName),
+		"__meta_ec2_private_ip":           model.LabelValue(*ec2Data.instances[0].PrivateIpAddress),
+		"__meta_ec2_public_dns_name":      model.LabelValue(*ec2Data.instances[0].PublicDnsName),
+		"__meta_ec2_public_ip":            model.LabelValue(*ec2Data.instances[0].PublicIpAddress),
+		"__meta_ec2_region":               model.LabelValue(ec2Data.region),
+	}
+
+	for i := 0; i < len(ec2Data.instances[0].Tags); i++ {
+		key := strings.ReplaceAll(fmt.Sprintf("__meta_ec2_tag_%s", *ec2Data.instances[0].Tags[i].Key), "-", "_")
+		labels[model.LabelName(key)] = model.LabelValue(*ec2Data.instances[0].Tags[i].Value)
+	}
+
+	return labels
 }
 
 // The tests itself.
@@ -207,29 +252,171 @@ func TestRefreshNoVpc(t *testing.T) {
 		},
 	}
 
-	labels := model.LabelSet{
-		"__address__":                     model.LabelValue(fmt.Sprintf("%s:%d", *ec2Data.instances[0].PrivateIpAddress, d.cfg.Port)),
-		"__meta_ec2_ami":                  model.LabelValue(*ec2Data.instances[0].ImageId),
-		"__meta_ec2_architecture":         model.LabelValue(*ec2Data.instances[0].Architecture),
-		"__meta_ec2_availability_zone":    model.LabelValue(ec2Data.azNames[azIdx]),
-		"__meta_ec2_availability_zone_id": model.LabelValue(ec2Data.azIDs[azIdx]),
-		"__meta_ec2_instance_id":          model.LabelValue(*ec2Data.instances[0].InstanceId),
-		"__meta_ec2_instance_lifecycle":   model.LabelValue(*ec2Data.instances[0].InstanceLifecycle),
-		"__meta_ec2_instance_state":       model.LabelValue(*ec2Data.instances[0].State.Name),
-		"__meta_ec2_instance_type":        model.LabelValue(*ec2Data.instances[0].InstanceType),
-		"__meta_ec2_owner_id":             model.LabelValue(ec2Data.ownerID),
-		"__meta_ec2_platform":             model.LabelValue(*ec2Data.instances[0].Platform),
-		"__meta_ec2_private_dns_name":     model.LabelValue(*ec2Data.instances[0].PrivateDnsName),
-		"__meta_ec2_private_ip":           model.LabelValue(*ec2Data.instances[0].PrivateIpAddress),
-		"__meta_ec2_public_dns_name":      model.LabelValue(*ec2Data.instances[0].PublicDnsName),
-		"__meta_ec2_public_ip":            model.LabelValue(*ec2Data.instances[0].PublicIpAddress),
-		"__meta_ec2_region":               model.LabelValue(ec2Data.region),
+	expected := make([]*targetgroup.Group, 1)
+	expected[0] = &targetgroup.Group{
+		Source: ec2Data.region,
+	}
+	expected[0].Targets = append(expected[0].Targets, GenerateExpectedLabels(azIdx, d.cfg.Port))
+
+	g, err := d.refresh(ctx)
+	require.Equal(t, expected, g)
+	require.NoError(t, err)
+}
+
+func TestRefreshIpv4(t *testing.T) {
+	ctx := context.Background()
+	client := &mockEC2Client{}
+
+	GenerateTestAzData()
+	azIdx := GenerateTestInstanceData()
+
+	d := &EC2Discovery{
+		ec2: client,
+		cfg: &EC2SDConfig{
+			Port:   RandNumber(1024, 65535),
+			Region: ec2Data.region,
+		},
 	}
 
-	for i := 0; i < len(ec2Data.instances[0].Tags); i++ {
-		key := strings.ReplaceAll(fmt.Sprintf("__meta_ec2_tag_%s", *ec2Data.instances[0].Tags[i].Key), "-", "_")
-		labels[model.LabelName(key)] = model.LabelValue(*ec2Data.instances[0].Tags[i].Value)
+	ec2Data.instances[0].SetSubnetId(ec2Data.azIDs[azIdx])
+	ec2Data.instances[0].SetVpcId(fmt.Sprintf("vpc-%s", RandString(8)))
+
+	enis := make([]*ec2.InstanceNetworkInterface, 4)
+
+	// interface in the primary subnet
+	enis[0] = &ec2.InstanceNetworkInterface{}
+	enis[0].SetIpv6Addresses([]*ec2.InstanceIpv6Address{})
+	enis[0].SetSubnetId(*ec2Data.instances[0].SubnetId)
+
+	// interface without any subnet
+	enis[1] = &ec2.InstanceNetworkInterface{}
+	enis[1].SetIpv6Addresses([]*ec2.InstanceIpv6Address{})
+	// azIdx + 1 modulo #azs
+	secondAzId := (azIdx + 1) % len(ec2Data.azIDs)
+	enis[1].SetSubnetId(ec2Data.azIDs[secondAzId])
+
+	// interface in another subnet
+	enis[2] = &ec2.InstanceNetworkInterface{}
+	enis[2].SetIpv6Addresses([]*ec2.InstanceIpv6Address{})
+
+	// inteface in the primary subnet
+	enis[3] = &ec2.InstanceNetworkInterface{}
+	enis[3].SetIpv6Addresses([]*ec2.InstanceIpv6Address{})
+	enis[3].SetSubnetId(*ec2Data.instances[0].SubnetId)
+
+	ec2Data.instances[0].SetNetworkInterfaces(enis)
+
+	labels := GenerateExpectedLabels(azIdx, d.cfg.Port)
+
+	labels["__meta_ec2_primary_subnet_id"] = model.LabelValue(*ec2Data.instances[0].SubnetId)
+	labels["__meta_ec2_subnet_id"] = model.LabelValue(fmt.Sprintf(",%s,%s,", ec2Data.azIDs[azIdx], ec2Data.azIDs[secondAzId]))
+	labels["__meta_ec2_vpc_id"] = model.LabelValue(*ec2Data.instances[0].VpcId)
+
+	expected := make([]*targetgroup.Group, 1)
+	expected[0] = &targetgroup.Group{
+		Source: ec2Data.region,
 	}
+	expected[0].Targets = append(expected[0].Targets, labels)
+
+	g, err := d.refresh(ctx)
+	require.Equal(t, expected, g)
+	require.NoError(t, err)
+}
+
+func TestRefreshIpv6(t *testing.T) {
+	ctx := context.Background()
+	client := &mockEC2Client{}
+
+	GenerateTestAzData()
+	azIdx := GenerateTestInstanceData()
+
+	d := &EC2Discovery{
+		ec2: client,
+		cfg: &EC2SDConfig{
+			Port:   RandNumber(1024, 65535),
+			Region: ec2Data.region,
+		},
+	}
+
+	ec2Data.instances[0].SetSubnetId(ec2Data.azIDs[azIdx])
+	ec2Data.instances[0].SetVpcId(fmt.Sprintf("vpc-%s", RandString(8)))
+
+	attachments := make([]*ec2.InstanceNetworkInterfaceAttachment, 4)
+	enis := make([]*ec2.InstanceNetworkInterface, 4)
+	ips := make([][]*ec2.InstanceIpv6Address, 4)
+
+	// interface without primary IPv6
+	attachments[0] = &ec2.InstanceNetworkInterfaceAttachment{}
+	attachments[0].SetDeviceIndex(3)
+
+	ips[0] = make([]*ec2.InstanceIpv6Address, 1)
+	ips[0][0] = &ec2.InstanceIpv6Address{}
+	ips[0][0].SetIpv6Address(RandIpv6())
+	ips[0][0].SetIsPrimaryIpv6(false)
+
+	enis[0] = &ec2.InstanceNetworkInterface{}
+	enis[0].SetAttachment(attachments[0])
+	enis[0].SetIpv6Addresses(ips[0])
+	enis[0].SetSubnetId(*ec2Data.instances[0].SubnetId)
+
+	// interface with primary IPv6
+	attachments[1] = &ec2.InstanceNetworkInterfaceAttachment{}
+	attachments[1].SetDeviceIndex(2)
+
+	ips[1] = make([]*ec2.InstanceIpv6Address, 2)
+	ips[1][0] = &ec2.InstanceIpv6Address{}
+	ips[1][0].SetIpv6Address(RandIpv6())
+	ips[1][0].SetIsPrimaryIpv6(false)
+	ips[1][1] = &ec2.InstanceIpv6Address{}
+	ips[1][1].SetIpv6Address(RandIpv6())
+	ips[1][1].SetIsPrimaryIpv6(true)
+
+	enis[1] = &ec2.InstanceNetworkInterface{}
+	enis[1].SetAttachment(attachments[1])
+	enis[1].SetIpv6Addresses(ips[1])
+	enis[1].SetSubnetId(*ec2Data.instances[0].SubnetId)
+
+	// interface with primary IPv6
+	attachments[2] = &ec2.InstanceNetworkInterfaceAttachment{}
+	attachments[2].SetDeviceIndex(1)
+
+	ips[2] = make([]*ec2.InstanceIpv6Address, 1)
+	ips[2][0] = &ec2.InstanceIpv6Address{}
+	ips[2][0].SetIpv6Address(RandIpv6())
+	ips[2][0].SetIsPrimaryIpv6(true)
+
+	enis[2] = &ec2.InstanceNetworkInterface{}
+	enis[2].SetAttachment(attachments[2])
+	enis[2].SetIpv6Addresses(ips[2])
+	enis[2].SetSubnetId(*ec2Data.instances[0].SubnetId)
+
+	// interface without primary IPv6
+	attachments[3] = &ec2.InstanceNetworkInterfaceAttachment{}
+	attachments[3].SetDeviceIndex(0)
+
+	enis[3] = &ec2.InstanceNetworkInterface{}
+	enis[3].SetAttachment(attachments[3])
+	enis[3].SetIpv6Addresses([]*ec2.InstanceIpv6Address{})
+	enis[3].SetSubnetId(*ec2Data.instances[0].SubnetId)
+
+	ec2Data.instances[0].SetNetworkInterfaces(enis)
+
+	labels := GenerateExpectedLabels(azIdx, d.cfg.Port)
+
+	labels["__meta_ec2_ipv6_addresses"] = model.LabelValue(
+		fmt.Sprintf(",%s,%s,%s,%s,",
+			*ips[0][0].Ipv6Address,
+			*ips[1][0].Ipv6Address,
+			*ips[1][1].Ipv6Address,
+			*ips[2][0].Ipv6Address,
+		),
+	)
+	labels["__meta_ec2_primary_ipv6_addresses"] = model.LabelValue(
+		fmt.Sprintf(",,%s,%s,", *ips[2][0].Ipv6Address, *ips[1][1].Ipv6Address),
+	)
+	labels["__meta_ec2_primary_subnet_id"] = model.LabelValue(*ec2Data.instances[0].SubnetId)
+	labels["__meta_ec2_subnet_id"] = model.LabelValue(fmt.Sprintf(",%s,", ec2Data.azIDs[azIdx]))
+	labels["__meta_ec2_vpc_id"] = model.LabelValue(*ec2Data.instances[0].VpcId)
 
 	expected := make([]*targetgroup.Group, 1)
 	expected[0] = &targetgroup.Group{
