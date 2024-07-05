@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 func (h *Head) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
@@ -101,6 +102,22 @@ func (h *headIndexReader) LabelNames(ctx context.Context, matchers ...*labels.Ma
 	}
 
 	return labelNamesWithMatchers(ctx, h, matchers...)
+}
+
+func (h *headIndexReader) InfoMetricDataLabels(ctx context.Context, lbls labels.Labels, t int64, sq index.InfoMetricSampleQuerier, matchers ...*labels.Matcher) (labels.Labels, annotations.Annotations, error) {
+	lb := labels.NewScratchBuilder(0)
+	latestTimestamp := func(sr storage.SeriesRef, t int64) (int64, error) {
+		lb.Reset()
+		var chks []chunks.Meta
+		if err := h.Series(sr, &lb, &chks); err != nil {
+			return 0, err
+		}
+
+		return sq.LatestTimestamp(t, chks)
+	}
+
+	dls, err := h.head.postings.InfoMetricDataLabels(ctx, lbls, t, latestTimestamp, matchers...)
+	return dls, nil, err
 }
 
 // Postings returns the postings list iterator for the label pairs.

@@ -172,6 +172,12 @@ func (q *querier) Select(ctx context.Context, sortSeries bool, hints *storage.Se
 	return newSeriesSetFilter(FromQueryResult(sortSeries, res), added)
 }
 
+// InfoMetricDataLabels implements storage.LabelQuerier and is a noop.
+func (q *querier) InfoMetricDataLabels(context.Context, labels.Labels, int64, ...*labels.Matcher) (labels.Labels, annotations.Annotations, error) {
+	// TODO: Implement.
+	return labels.Labels{}, nil, errors.New("not implemented")
+}
+
 // addExternalLabels adds matchers for each external label. External labels
 // that already have a corresponding user-supplied matcher are skipped, as we
 // assume that the user explicitly wants to select a different value for them.

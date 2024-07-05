@@ -2309,6 +2309,10 @@ func (m mockIndex) LabelNamesFor(_ context.Context, postings index.Postings) ([]
 	return names, nil
 }
 
+func (m mockIndex) InfoMetricDataLabels(context.Context, labels.Labels, int64, index.InfoMetricSampleQuerier, ...*labels.Matcher) (labels.Labels, annotations.Annotations, error) {
+	return labels.Labels{}, nil, nil
+}
+
 func (m mockIndex) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
 	res := make([]index.Postings, 0, len(values))
 	for _, value := range values {
@@ -3263,6 +3267,10 @@ func (m mockMatcherIndex) PostingsForLabelMatching(context.Context, string, func
 	return index.ErrPostings(fmt.Errorf("PostingsForLabelMatching called"))
 }
 
+func (m mockMatcherIndex) InfoMetricDataLabels(context.Context, labels.Labels, int64, index.InfoMetricSampleQuerier, ...*labels.Matcher) (labels.Labels, annotations.Annotations, error) {
+	return labels.Labels{}, nil, errors.New("InfoMetricDataLabels called")
+}
+
 func TestPostingsForMatcher(t *testing.T) {
 	ctx := context.Background()
 
@@ -3698,6 +3706,10 @@ func (m mockReaderOfLabels) LabelNames(context.Context, ...*labels.Matcher) ([]s
 
 func (m mockReaderOfLabels) LabelNamesFor(context.Context, index.Postings) ([]string, error) {
 	panic("LabelNamesFor called")
+}
+
+func (m mockReaderOfLabels) InfoMetricDataLabels(context.Context, labels.Labels, int64, index.InfoMetricSampleQuerier, ...*labels.Matcher) (labels.Labels, annotations.Annotations, error) {
+	return labels.Labels{}, nil, nil
 }
 
 func (m mockReaderOfLabels) PostingsForLabelMatching(context.Context, string, func(string) bool) index.Postings {

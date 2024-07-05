@@ -432,6 +432,11 @@ by the number of seconds under the specified time range window, and should be
 used primarily for human readability.  Use `rate` in recording rules so that
 increases are tracked consistently on a per-second basis.
 
+## `info()`
+
+For each time series in `v`, `info(v instant-vector, [label-selector string])` finds all info metrics with corresponding
+identifying labels, and adds the union of their data labels to the time series, that gets returned.
+
 ## `irate()`
 
 `irate(v range-vector)` calculates the per-second instant rate of increase of
