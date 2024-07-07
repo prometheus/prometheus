@@ -1,5 +1,3 @@
-export type ScaleType = "linear" | "exponential";
-
 // Calculates a default width of exponential histogram bucket ranges. If the last bucket is [0, 0],
 // the width is calculated using the second to last bucket. returns error if the last bucket is [-0, 0],
 export function calculateDefaultExpBucketWidth(
@@ -77,7 +75,7 @@ export function findMaxNegative(buckets: [number, string, string, string][]) {
 
 // Calculates the left position of the zero axis as a percentage string.
 export function findZeroAxisLeft(
-  scale: ScaleType,
+  scale: string,
   rangeMin: number,
   rangeMax: number,
   minPositive: number,
@@ -139,6 +137,7 @@ export const bucketRangeString = ([
   boundaryRule,
   leftBoundary,
   rightBoundary,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _,
 ]: [number, string, string, string]): string => {
   return `${leftDelim(boundaryRule)}${leftBoundary} -> ${rightBoundary}${rightDelim(boundaryRule)}`;

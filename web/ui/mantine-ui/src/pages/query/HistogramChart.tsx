@@ -7,14 +7,14 @@ import {
   findZeroAxisLeft,
   showZeroAxis,
   findZeroBucket,
-  bucketRangeString,
-  ScaleType,
+  // bucketRangeString,
 } from "./HistogramHelpers";
+import classes from "./HistogramChart.module.css";
 
 interface HistogramChartProps {
   histogram: Histogram;
   index: number;
-  scale: ScaleType;
+  scale: string;
 }
 
 const HistogramChart: FC<HistogramChartProps> = ({
@@ -106,45 +106,48 @@ const HistogramChart: FC<HistogramChartProps> = ({
   const zeroAxis = showZeroAxis(zeroAxisLeft);
 
   return (
-    <div className="histogram-y-wrapper">
-      <div className="histogram-y-labels">
+    <div className={classes.histogramYWrapper}>
+      <div className={classes.histogramYLabels}>
         {[1, 0.75, 0.5, 0.25].map((i) => (
-          <div key={i} className="histogram-y-label">
+          <div key={i} className={classes.histogramYLabel}>
             {scale === "linear" ? "" : formatter.format(countMax * i)}
           </div>
         ))}
-        <div key={0} className="histogram-y-label" style={{ height: 0 }}>
+        <div key={0} className={classes.histogramYLabel} style={{ height: 0 }}>
           0
         </div>
       </div>
-      <div className="histogram-x-wrapper">
-        <div className="histogram-container">
+      <div className={classes.histogramXWrapper}>
+        <div className={classes.histogramContainer}>
           {[0, 0.25, 0.5, 0.75, 1].map((i) => (
             <React.Fragment key={i}>
               <div
-                className="histogram-y-grid"
+                className={classes.histogramYGrid}
                 style={{ bottom: i * 100 + "%" }}
               ></div>
               <div
-                className="histogram-y-tick"
+                className={classes.histogramYTick}
                 style={{ bottom: i * 100 + "%" }}
               ></div>
               <div
-                className="histogram-x-grid"
+                className={classes.histogramXGrid}
                 style={{ left: i * 100 + "%" }}
               ></div>
             </React.Fragment>
           ))}
-          <div className="histogram-x-tick" style={{ left: "0%" }}></div>
+          <div className={classes.histogramXTick} style={{ left: "0%" }}></div>
           <div
-            className="histogram-x-tick"
+            className={classes.histogramXTick}
             style={{ left: zeroAxisLeft }}
           ></div>
           <div
-            className="histogram-x-grid"
+            className={classes.histogramXGrid}
             style={{ left: zeroAxisLeft }}
           ></div>
-          <div className="histogram-x-tick" style={{ left: "100%" }}></div>
+          <div
+            className={classes.histogramXTick}
+            style={{ left: "100%" }}
+          ></div>
 
           <RenderHistogramBars
             buckets={buckets}
@@ -165,10 +168,10 @@ const HistogramChart: FC<HistogramChartProps> = ({
             xWidthTotal={xWidthTotal}
           />
 
-          <div className="histogram-axes"></div>
+          <div className={classes.histogramAxes}></div>
         </div>
-        <div className="histogram-x-labels">
-          <div className="histogram-x-label">
+        <div className={classes.histogramXLabels}>
+          <div className={classes.histogramXLabel}>
             <React.Fragment>
               <div style={{ position: "absolute", left: 0 }}>
                 {formatter.format(rangeMin)}
@@ -191,7 +194,7 @@ const HistogramChart: FC<HistogramChartProps> = ({
 
 interface RenderHistogramProps {
   buckets: [number, string, string, string][];
-  scale: ScaleType;
+  scale: string;
   rangeMin: number;
   rangeMax: number;
   index: number;
@@ -245,7 +248,7 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
         let bucketHeight = "";
 
         switch (scale) {
-          case "linear":
+          case "linear": {
             bucketWidth = ((right - left) / (rangeMax - rangeMin)) * 100 + "%";
             bucketLeft =
               ((left - rangeMin) / (rangeMax - rangeMin)) * 100 + "%";
@@ -255,7 +258,8 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
             }
             bucketHeight = (fds[bIdx] / fdMax) * 100 + "%";
             break;
-          case "exponential":
+          }
+          case "exponential": {
             let adjust = 0; // if buckets are all positive/negative, we need to remove the width of the zero bucket
             if (minPositive === 0 || maxNegative === 0) {
               adjust = defaultExpBucketWidth;
@@ -292,6 +296,7 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
 
             bucketHeight = (count / countMax) * 100 + "%";
             break;
+          }
           default:
             throw new Error("Invalid scale");
         }
@@ -353,7 +358,7 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
           <React.Fragment key={bIdx}>
             <div
               id={bucketIdx}
-              className="histogram-bucket-slot"
+              className={classes.histogramBucketSlot}
               style={{
                 left: bucketLeft,
                 width: bucketWidth,
@@ -361,7 +366,7 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
             >
               <div
                 id={bucketIdx}
-                className="histogram-bucket"
+                className={classes.histogramBucket}
                 style={{
                   height: bucketHeight,
                 }}
