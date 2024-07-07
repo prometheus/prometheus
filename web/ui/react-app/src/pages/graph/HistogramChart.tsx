@@ -63,22 +63,11 @@ const HistogramChart: FC<HistogramChartProps> = ({ index, histogram, scale }) =>
   const endNegative = maxNegative !== 0 ? -Math.log(Math.abs(maxNegative)) : 0;
   const startPositive = minPositive !== 0 ? Math.log(minPositive) : 0;
   const endPositive = maxPositive !== 0 ? Math.log(maxPositive) : 0;
-  console.log(
-    'startNegative',
-    startNegative,
-    'endNegative',
-    endNegative,
-    'startPositive',
-    startPositive,
-    'endPositive',
-    endPositive
-  );
 
   // Calculate the width of negative, positive, and all exponential bucket ranges on the x-axis
   const xWidthNegative = endNegative - startNegative;
   const xWidthPositive = endPositive - startPositive;
   const xWidthTotal = xWidthNegative + defaultExpBucketWidth + xWidthPositive;
-  console.log('xWidthNegative', xWidthNegative, 'xWidthPositive', xWidthPositive, 'xWidthTotal', xWidthTotal);
 
   const zeroBucketIdx = findZeroBucket(buckets);
   const zeroAxisLeft = findZeroAxisLeft(
@@ -249,59 +238,6 @@ const RenderHistogramBars: FC<RenderHistogramProps> = ({
           default:
             throw new Error('Invalid scale');
         }
-
-        console.log(
-          '[',
-          left,
-          ',',
-          right,
-          ']',
-          '\n',
-          'fds[bIdx]',
-          fds[bIdx],
-          '\n',
-          'fdMax',
-          fdMax,
-          '\n',
-          'bucketIdx',
-          bucketIdx,
-          '\n',
-          'bucketLeft',
-          bucketLeft,
-          '\n',
-          'bucketWidth',
-          bucketWidth,
-          '\n',
-          'bucketHeight',
-          bucketHeight,
-          '\n',
-          'defaultExpBucketWidth',
-          defaultExpBucketWidth,
-          '\n',
-          'expBucketWidth',
-          expBucketWidth,
-          '\n',
-          'startNegative',
-          startNegative,
-          '\n',
-          'startPositive',
-          startPositive,
-          '\n',
-          'minPositive',
-          minPositive,
-          '\n',
-          'maxNegative',
-          maxNegative,
-          'xWidthNegative',
-          xWidthNegative,
-          '\n',
-          'xWidthTotal',
-          xWidthTotal,
-          '\n',
-          'xWidthPositive',
-          xWidthPositive,
-          '\n'
-        );
 
         return (
           <React.Fragment key={bIdx}>
