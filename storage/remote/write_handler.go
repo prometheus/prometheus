@@ -237,7 +237,7 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	b := labels.NewScratchBuilder(0)
 	for _, ts := range req.Timeseries {
 		ls := ts.ToLabels(&b, nil)
-		if !ls.IsValid() {
+		if !ls.Has(labels.MetricName) || !ls.IsValid() {
 			level.Warn(h.logger).Log("msg", "Invalid metric names or labels", "got", ls.String())
 			samplesWithInvalidLabels++
 			// TODO(bwplotka): Even as per 1.0 spec, this should be a 400 error, while other samples are
@@ -382,7 +382,7 @@ func (h *writeHandler) writeV2(ctx context.Context, req *writev2.Request) (_ res
 	return rs, 0, nil
 }
 
-func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *responseStats) (samplesWithoutMetadata int, errHTTPCode int, err error) {
+func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *responseStats) (samplesWithoutMetadata, errHTTPCode int, err error) {
 	var (
 		badRequestErrs                                   []error
 		outOfOrderExemplarErrs, samplesWithInvalidLabels int
@@ -394,7 +394,7 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		// Validate series labels early.
 		// NOTE(bwplotka): While spec allows UTF-8, Prometheus Receiver may impose
 		// specific limits and follow https://prometheus.io/docs/specs/remote_write_spec_2_0/#invalid-samples case.
-		if !ls.IsValid() {
+		if !ls.Has(labels.MetricName) || !ls.IsValid() {
 			badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid metric name or labels, got %v", ls.String()))
 			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
 			continue
@@ -468,12 +468,11 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		}
 
 		m := ts.ToMetadata(req.Symbols)
-		ref, err = app.UpdateMetadata(ref, ls, m)
-		if err != nil {
+		if _, err = app.UpdateMetadata(ref, ls, m); err != nil {
 			level.Debug(h.logger).Log("msg", "error while updating metadata from remote write", "err", err)
 			// Metadata is attached to each series, so since Prometheus does not reject sample without metadata information,
 			// we don't report remote write error either. We increment metric instead.
-			samplesWithoutMetadata += allSamplesSoFar - (rs.samples + rs.histograms)
+			samplesWithoutMetadata += (rs.samples + rs.histograms) - allSamplesSoFar
 		}
 	}
 
