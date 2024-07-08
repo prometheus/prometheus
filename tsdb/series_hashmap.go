@@ -18,7 +18,6 @@ package tsdb
 
 import (
 	"math/bits"
-	"math/rand/v2"
 	"unsafe"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -250,11 +249,6 @@ func probeStart(hi h1, groups int) uint32 {
 // lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/.
 func fastModN(x, n uint32) uint32 {
 	return uint32((uint64(x) * uint64(n)) >> 32)
-}
-
-// randIntN returns a random number in the interval [0, n).
-func randIntN(n int) uint32 {
-	return rand.Uint32N(uint32(n))
 }
 
 const (
