@@ -694,10 +694,31 @@ eval instant at 1m avg_over_time(metric[1m])
 eval instant at 1m sum_over_time(metric[1m])/count_over_time(metric[1m])
   {} 3
 
+# Default integral: mid-point rule (prev+curr)/2 * delta-time
+eval instant at 1m integral(metric[1m])
+  {} 120
+
+eval instant at 1m integral(metric[1m], 2)
+  {} 120
+
+# Left-wise integral: prev * delta-time
+eval instant at 1m integral(metric[1m], 0)
+  {} 100
+
+# Right-wise integral: curr * delta-time
+eval instant at 1m integral(metric[1m], 1)
+  {} 140
+
+eval instant at 1m integral(metric5b[1m])
+  {} Inf
+
 eval instant at 1m avg_over_time(metric2[1m])
   {} Inf
 
 eval instant at 1m sum_over_time(metric2[1m])/count_over_time(metric2[1m])
+  {} Inf
+
+eval instant at 1m integral(metric2[1m])/count_over_time(metric2[1m])
   {} Inf
 
 eval instant at 1m avg_over_time(metric3[1m])
@@ -782,6 +803,169 @@ load 10s
 
 eval instant at 1m sum_over_time(metric[1m])
   {} 2
+
+# Test integral
+clear
+load 10s
+  metricbignum 1 1e100 1 -1e100 1
+  metricinf 1 Inf 1 -Inf 1
+  metricoscillator 0 1 2 1 0 -1 -2 -1 0
+  metricnan1 NaN NaN 1 NaN NaN NaN
+  metricnan2 NaN NaN 1 NaN NaN 2 NaN NaN NaN NaN NaN NaN NaN
+
+# mid-point
+eval instant at 1m integral(metricbignum[2m])
+  {} 0
+
+# left-wise
+eval instant at 1m integral(metricbignum[2m], 0)
+  {} 20
+
+# right-wise
+eval instant at 1m integral(metricbignum[2m], 1)
+  {} 20
+
+eval instant at 1m integral(metricinf[2m])
+  {} NaN
+
+## Simple discrete zero-up-zero-down-zero oscillator
+# mid-point
+eval instant at 2m integral(metricoscillator[2m])
+  {} 0
+
+# left-wise
+eval instant at 2m integral(metricoscillator[2m], 0)
+  {} 0
+
+# right-wise
+eval instant at 2m integral(metricoscillator[2m], 1)
+  {} 0
+
+## Simple integral test for single non-NaN point
+# mid-point
+eval instant at 10s integral(metricnan1[10s])
+  {} 0
+
+eval instant at 20s integral(metricnan1[20s])
+  {} 5
+
+eval instant at 30s integral(metricnan1[30s])
+  {} 10
+
+# left-wise
+eval instant at 10s integral(metricnan1[10s], 0)
+  {} 0
+
+eval instant at 20s integral(metricnan1[20s], 0)
+  {} 0
+
+eval instant at 30s integral(metricnan1[30s], 0)
+  {} 10
+
+# right-wise
+eval instant at 10s integral(metricnan1[10s], 1)
+  {} 0
+
+eval instant at 20s integral(metricnan1[20s], 1)
+  {} 10
+
+eval instant at 30s integral(metricnan1[30s], 1)
+  {} 10
+
+## Integral test for couple non-NaN points
+# mid-point
+eval instant at 50s integral(metricnan2[50s])
+  {} 20
+
+eval instant at 60s integral(metricnan2[60s])
+  {} 30
+
+eval instant at 60s integral(metricnan2[60s])
+  {} 30
+
+# left-wise
+eval instant at 50s integral(metricnan2[50s], 0)
+  {} 10
+
+eval instant at 60s integral(metricnan2[60s], 0)
+  {} 30
+
+eval instant at 60s integral(metricnan2[60s], 0)
+  {} 30
+
+# right-wise
+eval instant at 50s integral(metricnan2[50s], 1)
+  {} 30
+
+eval instant at 60s integral(metricnan2[60s], 1)
+  {} 30
+
+eval instant at 60s integral(metricnan2[60s], 1)
+  {} 30
+
+## Below two integral tests must give same result for mid-point, left-wise, and right-wise
+# - integral over 2m range
+# - same integral over 2m (whole) range, slotted with sum_over_time() each 10s
+#
+# 1) mid-point
+eval instant at 2m integral(metricnan2[2m])
+  {} 30
+
+eval instant at 2m sum_over_time(integral(metricnan2[10s])[2m:10s])
+  {} 30
+
+# 2) left-wise
+eval instant at 2m integral(metricnan2[2m], 0)
+  {} 30
+
+eval instant at 2m sum_over_time(integral(metricnan2[10s], 0)[2m:10s])
+  {} 30
+
+# 3) right-wise
+eval instant at 2m integral(metricnan2[2m], 1)
+  {} 30
+
+eval instant at 2m sum_over_time(integral(metricnan2[10s], 1)[2m:10s])
+  {} 30
+
+# integral of sin(x), should be 0 (with a 1e-12 tolerance)
+# mid-point
+eval instant at 10m round(integral(sin(vector(time()/60*2*pi()))[10m:1s]), 1e-12)
+  {} 0
+
+# left-wise
+eval instant at 10m round(integral(sin(vector(time()/60*2*pi()))[10m:1s], 0), 1e-12)
+  {} 0
+
+# right-wise
+eval instant at 10m round(integral(sin(vector(time()/60*2*pi()))[10m:1s], 1), 1e-12)
+  {} 0
+
+# "running" integral eval range of sin(x), period at 1m
+# mid-point
+eval range from 1m to 10m step 1m round(integral(sin(vector(time()/60*2*pi()))[2m:1s]), 1e-12)
+  {} 0+0x9
+
+# left-wise
+eval range from 1m to 10m step 1m round(integral(sin(vector(time()/60*2*pi()))[2m:1s], 0), 1e-12)
+  {} 0+0x9
+
+# right-wise
+eval range from 1m to 10m step 1m round(integral(sin(vector(time()/60*2*pi()))[2m:1s], 1), 1e-12)
+  {} 0+0x9
+
+# "running" integral eval range of cos(x), period at 1m
+# mid-point
+eval range from 1m to 10m step 1m round(integral(cos(vector(time()/60*2*pi()))[2m:1s]), 1e-12)
+  {} 0+0x9
+
+# left-wise
+eval range from 1m to 10m step 1m round(integral(cos(vector(time()/60*2*pi()))[2m:1s], 0), 1e-12)
+  {} 0+0x9
+
+# right-wise
+eval range from 1m to 10m step 1m round(integral(cos(vector(time()/60*2*pi()))[2m:1s], 1), 1e-12)
+  {} 0+0x9
 
 # Tests for stddev_over_time and stdvar_over_time.
 clear

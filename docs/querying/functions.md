@@ -432,6 +432,24 @@ by the number of seconds under the specified time range window, and should be
 used primarily for human readability.  Use `rate` in recording rules so that
 increases are tracked consistently on a per-second basis.
 
+## `integral()`
+
+`integral(v range-vector, strategy=2 scalar)` calculates the integral of the
+time series over time in seconds, using trapezoidal approximation.
+The optional `strategy` for calculating the integral modifies how the value for
+the interval is handled: `0` for the left sample, `1` for the right sample, and
+`2` for the average between these two (aka _mid-point_). The default is `2`.
+
+`integral` should only be used with gauges, most likely representing a rate in
+units per seconds.
+
+For example, to calculate the total nodes cost accumulated the last 7 days,
+given its hourly cost:
+
+```
+integral(hourly_cost{job="nodes"}[7d]) / 3600
+```
+
 ## `irate()`
 
 `irate(v range-vector)` calculates the per-second instant rate of increase of

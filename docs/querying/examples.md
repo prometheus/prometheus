@@ -105,3 +105,17 @@ Alternatively, if we wanted the returned timeseries to be more evenly sampled,
 we could use the following to get approximately 10% of them:
 
     limit_ratio(0.1, app_foo_metric_bar)
+
+Calculate the total cost over past week given the per-node hourly cost:
+
+    integral(hourly_cost[7d]) / 3600
+
+Ditto above, but use left-wise sampling for the integral, for example if
+instant corresponds to the start of the interval (use `1` for right-wise):
+
+    integral(hourly_cost[7d], 0) / 3600
+
+Calculate the total energy consumed in Joules over last day, given the instant
+power consumption in Watts:
+
+    integral(power_rate[1d])
