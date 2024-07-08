@@ -40,11 +40,10 @@ type seriesHashmap struct {
 }
 
 // hashSuffixes is the h2 hashSuffixes array for a group.
-// find operations first probe the controls bytes
-// to filter candidates before matching keys
+// Find operations first probe the controls bytes to filter candidates before matching keys.
 type hashSuffixes [groupSize]uint8
 
-// group is a group of 16 key-value pairs
+// group is a group of 16 key-value pairs.
 type group struct {
 	hashes [groupSize]uint64
 	series [groupSize]*memSeries
@@ -58,10 +57,10 @@ const (
 	tombstone uint8  = 0b0000_0001
 )
 
-// h1 is a 57 bit hash prefix
+// h1 is a 57 bit hash prefix.
 type h1 uint64
 
-// h2 is a 7 bit hash suffix
+// h2 is a 7 bit hash suffix.
 type h2 uint8
 
 func (m *seriesHashmap) get(hash uint64, lset labels.Labels) *memSeries {
@@ -85,12 +84,10 @@ func (m *seriesHashmap) get(hash uint64, lset labels.Labels) *memSeries {
 		if matches != 0 {
 			return nil
 		}
-		g += 1 // linear probing
-		if g >= uint32(len(m.groups)) {
+		if g++; g >= uint32(len(m.groups)) {
 			g = 0
 		}
 	}
-	return nil
 }
 
 func (m *seriesHashmap) set(hash uint64, series *memSeries) {
@@ -122,8 +119,7 @@ func (m *seriesHashmap) set(hash uint64, series *memSeries) {
 			m.resident++
 			return
 		}
-		g += 1 // linear probing
-		if g >= uint32(len(m.groups)) {
+		if g++; g >= uint32(len(m.groups)) {
 			g = 0
 		}
 	}
@@ -165,8 +161,7 @@ func (m *seriesHashmap) del(hash uint64, ref chunks.HeadSeriesRef) {
 		if matches := metaMatchEmpty(&m.ctrl[g]); matches != 0 { // |key| absent
 			return
 		}
-		g += 1 // linear probing
-		if g >= uint32(len(m.groups)) {
+		if g++; g >= uint32(len(m.groups)) {
 			g = 0
 		}
 	}
@@ -251,7 +246,8 @@ func probeStart(hi h1, groups int) uint32 {
 	return fastModN(uint32(hi), uint32(groups))
 }
 
-// lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/
+// fastModN is an alternative to modulo operation to evenly distribute keys.
+// lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/.
 func fastModN(x, n uint32) uint32 {
 	return uint32((uint64(x) * uint64(n)) >> 32)
 }
