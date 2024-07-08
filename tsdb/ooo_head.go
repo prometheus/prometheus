@@ -15,8 +15,9 @@ package tsdb
 
 import (
 	"fmt"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"sort"
+
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
 	"github.com/oklog/ulid"
 
