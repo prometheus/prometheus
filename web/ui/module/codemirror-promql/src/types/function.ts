@@ -54,6 +54,7 @@ import {
   Idelta,
   Increase,
   Info,
+  Integral,
   Irate,
   LabelJoin,
   LabelReplace,
@@ -369,6 +370,12 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
     name: 'info',
     argTypes: [ValueType.vector, ValueType.vector],
     variadic: 1,
+    returnType: ValueType.vector,
+  },
+  [Integral]: {
+    name: 'integral',
+    argTypes: [ValueType.matrix],
+    variadic: 0,
     returnType: ValueType.vector,
   },
   [Irate]: {

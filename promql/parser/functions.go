@@ -247,6 +247,12 @@ var Functions = map[string]*Function{
 		Experimental: true,
 		Variadic:     1,
 	},
+	"integral": {
+		Name:       "integral",
+		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar},
+		Variadic:   1,
+		ReturnType: ValueTypeVector,
+	},
 	"irate": {
 		Name:       "irate",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
