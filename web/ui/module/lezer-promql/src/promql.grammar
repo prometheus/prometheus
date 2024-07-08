@@ -446,6 +446,7 @@ NumberDurationLiteralInDurationContext {
   Idelta { condFn<"idelta"> }
   Increase { condFn<"increase"> }
   Info { condFn<"info"> }
+  Integral { condFn<"integral"> }
   Irate { condFn<"irate"> }
   LabelReplace { condFn<"label_replace"> }
   LabelJoin { condFn<"label_join"> }

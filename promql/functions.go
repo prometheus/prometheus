@@ -1298,6 +1298,118 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 	}), nil
 }
 
+// === integral(Matrix parser.ValueTypeMatrix, strategy=2 Scalar) (Vector, Annotations) ===
+func funcIntegral(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	strategy := 2
+	if len(args) >= 2 {
+		strategy = int(vals[1].(Vector)[0].F)
+	}
+	nanAsZero := func(v float64) float64 {
+		if math.IsNaN(v) {
+			return 0
+		}
+		return v
+	}
+
+	return aggrOverTime(vals, enh, func(s Series) float64 {
+		var sum, c float64
+		var prev FPoint
+		for i, f := range s.Floats {
+			var value float64
+			// Treat NaN as zero, to let "neighboring" non-zero values handle it
+			currVal := nanAsZero(f.F)
+			prevVal := nanAsZero(prev.F)
+
+			// Discrete integral using simple (trapezoidal rule).
+			switch strategy {
+			case 0:
+				// Left-wise rectangle rule.
+				//
+				//   metric
+				//     ^
+				//     |
+				//     |         v1
+				//     |         *........>.                  v4
+				//     |         |#########:                   *........>.
+				//     |         |######## v2                  |         :
+				//     |         |######## *........>.         |         :
+				//     |         |#########|#########:         |         :
+				//     |         |#########|#########:         |         :
+				//     |         |#########|###### (NaN)......>|       (NaN)
+				//     +---------+---------+---------+---------+---------+-------> t
+				//               t1        t2        t3        t4        t5
+				//               [<--------------------------->)
+				//
+				// integral(metric)[] @t4: +         +         +
+				//                         v1        v2        0
+				//                         *         *
+				//                      (t2-t1)   (t3-t2)
+				value = prevVal
+			case 1:
+				// Right-wise rectangle rule.
+				//
+				//   metric
+				//     ^
+				//     |
+				//     |         v1
+				//     |:<.......*                            v4
+				//     |:        |                   .<........*
+				//     |:        |         v2        :#########|
+				//     |:        |<........*         :#########|
+				//     |:        |#########|         :#########|
+				//     |:        |#########|         :#########|
+				//     |:        |#########|<......(NaN) ######|<......(NaN)
+				//     +---------+---------+---------+---------+---------+-------> t
+				//               t1        t2        t3        t4        t5
+				//               (<--------------------------->]
+				//
+				// integral(metric)[] @t4: +         +         +
+				//                         v2        0         v4
+				//                         *                   *
+				//                      (t2-t1)             (t4-t3)
+				value = currVal
+			case 2:
+				// Mid-point rule (default).
+				// With NaN as zero, "neighboring" non-zero values are
+				// aggregated (halved at each interval eval).
+				//
+				//   metric
+				//     ^
+				//     |
+				//     |         v1
+				//     |    ....>*<....                       v4
+				//     |    :    |####:                   ....>*<....
+				//     |    :    |####:    v2             :####|    :
+				//     |    :    |####:...>*<....         :####|    :
+				//     |    :    |####:####|####:         :####|    :
+				//     |    :    |####:####|####:         :####|    :
+				//     |    :    |####:####|####:.>(NaN)<.:####|    :.>(NaN)
+				//     +---------+---------+---------+---------+---------+-------> t
+				//               t1        t2        t3        t4        t5
+				//               [<--------------------------->]
+				//
+				// integral(metric)[] @t4: +         +         +
+				//                      (v1+v2)/2 (v2+0)/2   (0+v4)/2
+				//                         *         *         *
+				//                      (t2-t1)   (t3-t2)   (t4-t3)
+				//
+				if prevVal != 0 || currVal != 0 {
+					value = (currVal + prevVal) / 2
+				}
+			}
+			// Skip the first sample, aggregate non-zero values.
+			if i > 0 && value != 0 {
+				sum, c = kahanSumInc(value*float64(f.T-prev.T)/1000, sum, c)
+			}
+			prev = f
+		}
+		if math.IsInf(sum, 0) {
+			return sum
+		}
+		return sum + c
+	}), nil
+}
+
 // === quantile_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcQuantileOverTime(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	if len(vectorVals) == 0 || len(vectorVals[0]) == 0 || len(matrixVal) == 0 {
@@ -2288,6 +2400,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"idelta":                       funcIdelta,
 	"increase":                     funcIncrease,
 	"info":                         nil,
+	"integral":                     funcIntegral,
 	"irate":                        funcIrate,
 	"label_replace":                nil, // evalLabelReplace not called via this map.
 	"label_join":                   nil, // evalLabelJoin not called via this map.
