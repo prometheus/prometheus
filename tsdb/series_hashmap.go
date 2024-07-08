@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	initialSeriesHashmapSize = 16
+	initialSeriesHashmapSize = 128
 )
 
 // Map is an open-addressing hash map
