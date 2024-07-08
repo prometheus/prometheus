@@ -2469,6 +2469,37 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			zeroFunc: rulesZeroFunc,
 		},
 		{
+			endpoint: api.rules,
+			query: url.Values{
+				"maxRuleGroups": []string{"1"},
+				"nextToken":     []string{getRuleGroupNextToken("/path/to/file", "grp2")},
+			},
+			response: &RuleDiscovery{
+				RuleGroups: []*RuleGroup{
+					{
+						Name:     "grp2",
+						File:     "/path/to/file",
+						Interval: 1,
+						Limit:    0,
+						Rules: []Rule{
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric3",
+								Query:       "absent(test_metric3) != 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Health:      "ok",
+								Type:        "alerting",
+							},
+						},
+					},
+				},
+			},
+			zeroFunc: rulesZeroFunc,
+		},
+		{
 			endpoint: api.queryExemplars,
 			query: url.Values{
 				"query": []string{`test_metric3{foo="boo"} - test_metric4{foo="bar"}`},
