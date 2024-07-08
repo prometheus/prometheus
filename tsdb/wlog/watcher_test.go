@@ -784,6 +784,13 @@ func TestRun_AvoidNotifyWhenBehind(t *testing.T) {
 			err = watcher.Run()
 			wg.Wait()
 			require.Less(t, time.Since(startTime), readTimeout)
+
+			// But samples records shouldn't get dropped
+			retry(t, defaultRetryInterval, defaultRetries, func() bool {
+				return wt.checkNumSeries() > 0
+			})
+			require.Greater(t, wt.samplesAppended, 0)
+
 			require.NoError(t, err)
 			require.NoError(t, w.Close())
 		})
