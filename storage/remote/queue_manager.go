@@ -232,7 +232,7 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 			Namespace:   namespace,
 			Subsystem:   subsystem,
 			Name:        "queue_highest_sent_timestamp_seconds",
-			Help:        "Timestamp from a WAL sample, the highest timestamp successfully sent by this queue, in seconds since epoch.",
+			Help:        "Timestamp from a WAL sample, the highest timestamp successfully sent by this queue, in seconds since epoch. Initialized to 0 when no data has been sent yet.",
 			ConstLabels: constLabels,
 		}),
 	}
