@@ -198,16 +198,16 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respStats, err, httpCode := h.writeV2(r.Context(), &req)
+	respStats, errHTTPCode, err := h.writeV2(r.Context(), &req)
 
-	// Set required X-Prometheus-Remote-Write-Received-* response headers, in all cases.
+	// Set required X-Prometheus-Remote-Write-Accepted-* response headers, in all cases.
 	respStats.SetResponseHeaders(w.Header())
 
 	if err != nil {
-		if httpCode/5 == 100 { // 5xx
+		if errHTTPCode/5 == 100 { // 5xx
 			level.Error(h.logger).Log("msg", "Error while remote writing the v2 request", "err", err.Error())
 		}
-		http.Error(w, err.Error(), httpCode)
+		http.Error(w, err.Error(), errHTTPCode)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -345,44 +345,44 @@ func (s responseStats) SetResponseHeaders(h http.Header) {
 //
 // NOTE(bwplotka): TSDB storage is NOT idempotent, so we don't allow "partial retry-able" errors.
 // Once we have 5xx type of error, we immediately stop and rollback all appends.
-func (h *writeHandler) writeV2(ctx context.Context, req *writev2.Request) (_ responseStats, _ error, httpCode int) {
+func (h *writeHandler) writeV2(ctx context.Context, req *writev2.Request) (_ responseStats, errHTTPCode int, _ error) {
 	app := &timeLimitAppender{
 		Appender: h.appendable.Appender(ctx),
 		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
 	}
 
 	rs := responseStats{}
-	samplesWithoutMetadata, err, httpCode := h.appendV2(app, req, &rs)
+	samplesWithoutMetadata, errHTTPCode, err := h.appendV2(app, req, &rs)
 	if err != nil {
-		if httpCode/5 == 100 {
+		if errHTTPCode/5 == 100 {
 			// On 5xx, we always rollback, because we expect
 			// sender to retry and TSDB is not idempotent.
 			if rerr := app.Rollback(); rerr != nil {
 				level.Error(h.logger).Log("msg", "writev2 rollback failed on retry-able error", "err", rerr)
 			}
-			return responseStats{}, err, httpCode
+			return responseStats{}, errHTTPCode, err
 		}
 
 		// Non-retriable (e.g. bad request error case). Can be partially written.
 		commitErr := app.Commit()
 		if commitErr != nil {
 			// Bad requests does not matter as we have internal error (retryable).
-			return responseStats{}, commitErr, http.StatusInternalServerError
+			return responseStats{}, http.StatusInternalServerError, commitErr
 		}
 		// Bad request error happened, but rest of data (if any) was written.
 		h.samplesAppendedWithoutMetadata.Add(float64(samplesWithoutMetadata))
-		return rs, err, httpCode
+		return rs, errHTTPCode, err
 	}
 
 	// All good just commit.
 	if err := app.Commit(); err != nil {
-		return responseStats{}, err, http.StatusInternalServerError
+		return responseStats{}, http.StatusInternalServerError, err
 	}
 	h.samplesAppendedWithoutMetadata.Add(float64(samplesWithoutMetadata))
-	return rs, nil, 0
+	return rs, 0, nil
 }
 
-func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *responseStats) (samplesWithoutMetadata int, err error, httpCode int) {
+func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *responseStats) (samplesWithoutMetadata int, errHTTPCode int, err error) {
 	var (
 		badRequestErrs                                   []error
 		outOfOrderExemplarErrs, samplesWithInvalidLabels int
@@ -410,7 +410,6 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 				rs.samples++
 				continue
 			}
-
 			// Handle append error.
 			if errors.Is(err, storage.ErrOutOfOrderSample) ||
 				errors.Is(err, storage.ErrOutOfBounds) ||
@@ -421,7 +420,7 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 				badRequestErrs = append(badRequestErrs, fmt.Errorf("%w for series %v", err, ls.String()))
 				continue
 			}
-			return 0, err, http.StatusInternalServerError
+			return 0, http.StatusInternalServerError, err
 		}
 
 		// Native Histograms.
@@ -446,7 +445,7 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 				badRequestErrs = append(badRequestErrs, fmt.Errorf("%w for series %v", err, ls.String()))
 				continue
 			}
-			return 0, err, http.StatusInternalServerError
+			return 0, http.StatusInternalServerError, err
 		}
 
 		// Exemplars.
@@ -456,7 +455,6 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 			if err == nil {
 				rs.exemplars++
 				continue
-
 			}
 			// Handle append error.
 			// TODO(bwplotka): I left the logic as in v1, but we might want to make it consistent with samples and histograms.
@@ -470,7 +468,8 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		}
 
 		m := ts.ToMetadata(req.Symbols)
-		if ref, err = app.UpdateMetadata(ref, ls, m); err != nil {
+		ref, err = app.UpdateMetadata(ref, ls, m)
+		if err != nil {
 			level.Debug(h.logger).Log("msg", "error while updating metadata from remote write", "err", err)
 			// Metadata is attached to each series, so since Prometheus does not reject sample without metadata information,
 			// we don't report remote write error either. We increment metric instead.
@@ -484,10 +483,10 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 	h.samplesWithInvalidLabelsTotal.Add(float64(samplesWithInvalidLabels))
 
 	if len(badRequestErrs) == 0 {
-		return samplesWithoutMetadata, nil, 0
+		return samplesWithoutMetadata, 0, nil
 	}
 	// TODO(bwplotka): Better concat formatting? Perhaps add size limit?
-	return samplesWithoutMetadata, errors.Join(badRequestErrs...), http.StatusBadRequest
+	return samplesWithoutMetadata, http.StatusBadRequest, errors.Join(badRequestErrs...)
 }
 
 // NewOTLPWriteHandler creates a http.Handler that accepts OTLP write requests and
