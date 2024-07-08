@@ -45,20 +45,12 @@ func (h *Head) RebuildSymbolTable(logger log.Logger) *labels.SymbolTable {
 
 	for i := 0; i < h.series.size; i++ {
 		h.series.locks[i].Lock()
-
-		for _, s := range h.series.hashes[i].unique {
+		h.series.hashes[i].iter(func(_ uint64, s *memSeries) (stop bool) {
 			s.Lock()
 			s.lset = rebuildLabels(s.lset)
 			s.Unlock()
-		}
-
-		for _, all := range h.series.hashes[i].conflicts {
-			for _, s := range all {
-				s.Lock()
-				s.lset = rebuildLabels(s.lset)
-				s.Unlock()
-			}
-		}
+			return false
+		})
 
 		h.series.locks[i].Unlock()
 	}
