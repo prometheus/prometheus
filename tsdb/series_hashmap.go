@@ -32,22 +32,18 @@ const (
 // Map is an open-addressing hash map
 // based on Abseil's flat_hash_map.
 type seriesHashmap struct {
-	ctrl     []hashSuffixes
-	groups   []group
+	meta     []hashMeta
+	hashes   [][groupSize]uint64
+	series   [][groupSize]*memSeries
 	resident uint32
 	dead     uint32
 	limit    uint32
 }
 
-// hashSuffixes is the h2 hashSuffixes array for a group.
-// Find operations first probe the controls bytes to filter candidates before matching keys.
-type hashSuffixes [groupSize]uint8
-
-// group is a group of 16 key-value pairs.
-type group struct {
-	hashes [groupSize]uint64
-	series [groupSize]*memSeries
-}
+// hashMeta is the h2 metadata array for a group.
+// Find operations first probe the controls bytes to filter candidates before matching keys,
+// and to know when to stop searching.
+type hashMeta [groupSize]uint8
 
 const (
 	h1Mask    uint64 = 0xffff_ffff_ffff_ff80
@@ -64,27 +60,31 @@ type h1 uint64
 type h2 uint8
 
 func (m *seriesHashmap) get(hash uint64, lset labels.Labels) *memSeries {
-	if len(m.groups) == 0 {
+	if len(m.meta) == 0 {
 		return nil
 	}
 
 	hi, lo := splitHash(hash)
-	g := probeStart(hi, len(m.groups))
+	g := probeStart(hi, len(m.meta))
 	for { // inlined find loop
-		matches := metaMatchH2(&m.ctrl[g], lo)
+		matches := metaMatchH2(&m.meta[g], lo)
 		for matches != 0 {
 			s := nextMatch(&matches)
-			if hash == m.groups[g].hashes[s] && labels.Equal(lset, m.groups[g].series[s].labels()) {
-				return m.groups[g].series[s]
+			if hash != m.hashes[g][s] {
+				continue
+			}
+
+			if labels.Equal(lset, m.series[g][s].labels()) {
+				return m.series[g][s]
 			}
 		}
 		// |key| is not in group |g|,
 		// stop probing if we see an empty slot
-		matches = metaMatchEmpty(&m.ctrl[g])
+		matches = metaMatchEmpty(&m.meta[g])
 		if matches != 0 {
 			return nil
 		}
-		if g++; g >= uint32(len(m.groups)) {
+		if g++; g >= uint32(len(m.meta)) {
 			g = 0
 		}
 	}
@@ -96,72 +96,72 @@ func (m *seriesHashmap) set(hash uint64, series *memSeries) {
 	}
 
 	hi, lo := splitHash(hash)
-	g := probeStart(hi, len(m.groups))
+	g := probeStart(hi, len(m.meta))
 	for { // inlined find loop
-		matches := metaMatchH2(&m.ctrl[g], lo)
+		matches := metaMatchH2(&m.meta[g], lo)
 		for matches != 0 {
 			s := nextMatch(&matches)
 			// We only read series.labels() if we actually have the same hash,
 			// because the implementation of series.labels() is expensive with dedupelabels.
-			if hash == m.groups[g].hashes[s] && labels.Equal(series.labels(), m.groups[g].series[s].labels()) { // update (do we expect updates here? this is just inherited from swiss map)
-				m.groups[g].hashes[s] = hash
-				m.groups[g].series[s] = series
+			if hash == m.hashes[g][s] && labels.Equal(series.labels(), m.series[g][s].labels()) { // update (do we expect updates here? this is just inherited from swiss map)
+				m.hashes[g][s] = hash
+				m.series[g][s] = series
 				return
 			}
 		}
 		// |key| is not in group |g|,
 		// stop probing if we see an empty slot
-		if matches := metaMatchEmpty(&m.ctrl[g]); matches != 0 { // insert
+		if matches := metaMatchEmpty(&m.meta[g]); matches != 0 { // insert
 			s := nextMatch(&matches)
-			m.groups[g].hashes[s] = hash
-			m.groups[g].series[s] = series
-			m.ctrl[g][s] = uint8(lo)
+			m.hashes[g][s] = hash
+			m.series[g][s] = series
+			m.meta[g][s] = uint8(lo)
 			m.resident++
 			return
 		}
-		if g++; g >= uint32(len(m.groups)) {
+		if g++; g >= uint32(len(m.meta)) {
 			g = 0
 		}
 	}
 }
 
 func (m *seriesHashmap) del(hash uint64, ref chunks.HeadSeriesRef) {
-	if len(m.groups) == 0 {
+	if len(m.meta) == 0 {
 		return
 	}
 
 	hi, lo := splitHash(hash)
-	g := probeStart(hi, len(m.groups))
+	g := probeStart(hi, len(m.meta))
 	for {
-		matches := metaMatchH2(&m.ctrl[g], lo)
+		matches := metaMatchH2(&m.meta[g], lo)
 		for matches != 0 {
 			s := nextMatch(&matches)
-			if hash == m.groups[g].hashes[s] && ref == m.groups[g].series[s].ref { // update (do we expect updates here? this is just inherited from swiss map)
-				// optimization: if |m.ctrl[g]| contains any empty
-				// hashSuffixes bytes, we can physically delete |key|
+			if hash == m.hashes[g][s] && ref == m.series[g][s].ref { // update (do we expect updates here? this is just inherited from swiss map)
+				// optimization: if |m.meta[g]| contains any empty
+				// meta bytes, we can physically delete |key|
 				// rather than placing a tombstone.
 				// The observation is that any probes into group |g|
 				// would already be terminated by the existing empty
 				// slot, and therefore reclaiming slot |s| will not
 				// cause premature termination of probes into |g|.
-				if metaMatchEmpty(&m.ctrl[g]) != 0 {
-					m.ctrl[g][s] = empty
+				if metaMatchEmpty(&m.meta[g]) != 0 {
+					m.meta[g][s] = empty
 					m.resident--
 				} else {
-					m.ctrl[g][s] = tombstone
+					m.meta[g][s] = tombstone
 					m.dead++
 				}
-				m.groups[g].hashes[s] = 0
-				m.groups[g].series[s] = nil
+				m.hashes[g][s] = 0
+				m.series[g][s] = nil
 				return
 			}
 		}
 		// |key| is not in group |g|,
 		// stop probing if we see an empty slot
-		if matches := metaMatchEmpty(&m.ctrl[g]); matches != 0 { // |key| absent
+		if matches := metaMatchEmpty(&m.meta[g]); matches != 0 { // |key| absent
 			return
 		}
-		if g++; g >= uint32(len(m.groups)) {
+		if g++; g >= uint32(len(m.meta)) {
 			g = 0
 		}
 	}
@@ -173,55 +173,58 @@ func (m *seriesHashmap) del(hash uint64, ref chunks.HeadSeriesRef) {
 // Series added while iterating might, or might not be visited.
 // Series deleted from outside the iterator's callback might be iterated.
 func (m *seriesHashmap) iter(cb func(uint64, *memSeries) (stop bool)) {
-	if len(m.groups) == 0 {
+	if len(m.meta) == 0 {
 		return
 	}
 
 	// take a consistent view of the table in case
 	// we rehash during iteration
-	ctrl, groups := m.ctrl, m.groups
+	meta, hashes, series := m.meta, m.hashes, m.series
 	// pick a random starting group
-	g := randIntN(len(groups))
-	for n := 0; n < len(groups); n++ {
-		for s, c := range ctrl[g] {
+	g := randIntN(len(meta))
+	for n := 0; n < len(meta); n++ {
+		meta, hashes, series := meta[g], hashes[g], series[g]
+		for s, c := range meta {
 			if c == empty || c == tombstone {
 				continue
 			}
-			if stop := cb(groups[g].hashes[s], groups[g].series[s]); stop {
+			if stop := cb(hashes[s], series[s]); stop {
 				return
 			}
 		}
-		g++
-		if g >= uint32(len(groups)) {
+
+		if g++; g >= uint32(len(m.meta)) {
 			g = 0
 		}
 	}
 }
 
 func (m *seriesHashmap) nextSize() (n uint32) {
-	if len(m.groups) == 0 {
+	if len(m.meta) == 0 {
 		return numGroups(initialSeriesHashmapSize)
 	}
-	n = uint32(len(m.groups)) * 2
+	n = uint32(len(m.meta)) * 2
 	if m.dead >= (m.resident / 2) {
-		n = uint32(len(m.groups))
+		n = uint32(len(m.meta))
 	}
 	return
 }
 
 func (m *seriesHashmap) rehash(n uint32) {
-	groups, ctrl := m.groups, m.ctrl
-	m.groups = make([]group, n)
-	m.ctrl = make([]hashSuffixes, n)
+	meta, hashes, series := m.meta, m.hashes, m.series
+	m.meta = make([]hashMeta, n)
+	m.hashes = make([][groupSize]uint64, n)
+	m.series = make([][groupSize]*memSeries, n)
 	m.limit = n * maxAvgSeriesHashmapGroupLoad
 	m.resident, m.dead = 0, 0
-	for g := range ctrl {
-		for s := range ctrl[g] {
-			c := ctrl[g][s]
+	for g := range meta {
+		meta, hashes, series := meta[g], hashes[g], series[g]
+		for s := range meta {
+			c := meta[s]
 			if c == empty || c == tombstone {
 				continue
 			}
-			m.set(groups[g].hashes[s], groups[g].series[s])
+			m.set(hashes[s], series[s])
 		}
 	}
 }
@@ -262,12 +265,12 @@ const (
 
 type bitset uint64
 
-func metaMatchH2(m *hashSuffixes, h h2) bitset {
+func metaMatchH2(m *hashMeta, h h2) bitset {
 	// https://graphics.stanford.edu/~seander/bithacks.html##ValueInWord
 	return hasZeroByte(castUint64(m) ^ (loBits * uint64(h)))
 }
 
-func metaMatchEmpty(m *hashSuffixes) bitset {
+func metaMatchEmpty(m *hashMeta) bitset {
 	return hasZeroByte(castUint64(m))
 }
 
@@ -281,6 +284,6 @@ func hasZeroByte(x uint64) bitset {
 	return bitset(((x - loBits) & ^(x)) & hiBits)
 }
 
-func castUint64(m *hashSuffixes) uint64 {
+func castUint64(m *hashMeta) uint64 {
 	return *(*uint64)((unsafe.Pointer)(m))
 }
