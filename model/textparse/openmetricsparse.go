@@ -270,13 +270,9 @@ loop:
 					}
 				}
 			default:
-				break
+				// if mtype is not counter, summary or histogram, it won't have a valid _created line
+				return nil
 			}
-
-			// TODO: for histograms
-			// if t, _ := newParser.Next(); t != EntrySeries {
-			// 	return nil
-			// }
 
 			// gauge_created is a metric
 			ct := int64(newParser.val)
