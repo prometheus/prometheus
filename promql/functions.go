@@ -1576,10 +1576,17 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 
 // === integral(Matrix parser.ValueTypeMatrix, strategy=2 Scalar) (Vector, Annotations) ===
 func funcIntegral(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	var annos annotations.Annotations
+
 	strategy := 2
 	if len(args) >= 2 {
 		strategy = int(vals[1].(Vector)[0].F)
 	}
+	if strategy < 0 || strategy > 2 {
+		annos.Add(annotations.NewInvalidIntegralStrategyWarning(strategy, args[1].PositionRange()))
+		strategy = 2
+	}
+
 	nanAsZero := func(v float64) float64 {
 		if math.IsNaN(v) {
 			return 0
@@ -1683,7 +1690,7 @@ func funcIntegral(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 			return sum
 		}
 		return sum + c
-	}), nil
+	}), annos
 }
 
 // === quantile_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
