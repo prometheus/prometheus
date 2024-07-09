@@ -95,7 +95,7 @@ type OpenMetricsParser struct {
 	exemplarVal   float64
 	exemplarTs    int64
 	hasExemplarTs bool
-	skipCT		bool
+	skipCT        bool
 }
 
 // NewOpenMetricsParser returns a new parser of the byte slice.
@@ -325,7 +325,7 @@ func deepCopyParser(p *OpenMetricsParser) OpenMetricsParser {
 		exemplarVal:   p.exemplarVal,
 		exemplarTs:    p.exemplarTs,
 		hasExemplarTs: p.hasExemplarTs,
-		skipCT:       false,
+		skipCT:        false,
 	}
 	return newParser
 }
@@ -621,7 +621,7 @@ func (p *OpenMetricsParser) parseMetricSuffix(t token) (Entry, error) {
 	var newLbs labels.Labels
 	p.Metric(&newLbs)
 	name := newLbs.Get(model.MetricNameLabel)
-	if strings.HasSuffix(name, "_created") && p.skipCT  {
+	if strings.HasSuffix(name, "_created") && p.skipCT {
 		return p.Next()
 	}
 	return EntrySeries, nil
