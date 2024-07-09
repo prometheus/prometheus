@@ -38,21 +38,22 @@ import (
 type EndpointSlice struct {
 	logger log.Logger
 
-	endpointSliceInf cache.SharedIndexInformer
-	serviceInf       cache.SharedInformer
-	podInf           cache.SharedInformer
-	nodeInf          cache.SharedInformer
-	withNodeMetadata bool
-
-	podStore           cache.Store
-	endpointSliceStore cache.Store
-	serviceStore       cache.Store
+	endpointSliceInf      cache.SharedIndexInformer
+	serviceInf            cache.SharedInformer
+	podInf                cache.SharedInformer
+	nodeInf               cache.SharedInformer
+	withNodeMetadata      bool
+	namespaceInf          cache.SharedInformer
+	withNamespaceMetadata bool
+	podStore              cache.Store
+	endpointSliceStore    cache.Store
+	serviceStore          cache.Store
 
 	queue *workqueue.Type
 }
 
 // NewEndpointSlice returns a new endpointslice discovery.
-func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node cache.SharedInformer, eventCount *prometheus.CounterVec) *EndpointSlice {
+func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node, namespace cache.SharedInformer, eventCount *prometheus.CounterVec) *EndpointSlice {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
@@ -66,16 +67,18 @@ func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, nod
 	svcDeleteCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleDelete)
 
 	e := &EndpointSlice{
-		logger:             l,
-		endpointSliceInf:   eps,
-		endpointSliceStore: eps.GetStore(),
-		serviceInf:         svc,
-		serviceStore:       svc.GetStore(),
-		podInf:             pod,
-		podStore:           pod.GetStore(),
-		nodeInf:            node,
-		withNodeMetadata:   node != nil,
-		queue:              workqueue.NewNamed(RoleEndpointSlice.String()),
+		logger:                l,
+		endpointSliceInf:      eps,
+		endpointSliceStore:    eps.GetStore(),
+		serviceInf:            svc,
+		serviceStore:          svc.GetStore(),
+		podInf:                pod,
+		podStore:              pod.GetStore(),
+		nodeInf:               node,
+		withNodeMetadata:      node != nil,
+		namespaceInf:          namespace,
+		withNamespaceMetadata: namespace != nil,
+		queue:                 workqueue.NewNamed(RoleEndpointSlice.String()),
 	}
 
 	_, err := e.endpointSliceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -155,6 +158,26 @@ func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, nod
 		}
 	}
 
+	if e.withNamespaceMetadata {
+		_, err = e.namespaceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(o interface{}) {
+				namespace := o.(*apiv1.Namespace)
+				e.enqueueNode(namespace.Name)
+			},
+			UpdateFunc: func(_, o interface{}) {
+				namespace := o.(*apiv1.Namespace)
+				e.enqueueNode(namespace.Name)
+			},
+			DeleteFunc: func(o interface{}) {
+				namespace := o.(*apiv1.Namespace)
+				e.enqueueNode(namespace.Name)
+			},
+		})
+		if err != nil {
+			level.Error(l).Log("msg", "Error adding namespaces event handler.", "err", err)
+		}
+	}
+
 	return e
 }
 
@@ -187,6 +210,10 @@ func (e *EndpointSlice) Run(ctx context.Context, ch chan<- []*targetgroup.Group)
 	if e.withNodeMetadata {
 		cacheSyncs = append(cacheSyncs, e.nodeInf.HasSynced)
 	}
+	if e.withNamespaceMetadata {
+		cacheSyncs = append(cacheSyncs, e.namespaceInf.HasSynced)
+	}
+
 	if !cache.WaitForCacheSync(ctx.Done(), cacheSyncs...) {
 		if !errors.Is(ctx.Err(), context.Canceled) {
 			level.Error(e.logger).Log("msg", "endpointslice informer unable to sync cache")
@@ -360,6 +387,11 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 			} else {
 				target = addNodeLabels(target, e.nodeInf, e.logger, ep.nodename())
 			}
+		}
+
+		if e.withNamespaceMetadata {
+			namespaceName := eps.namespace()
+			target = addNamespaceLabels(target, e.namespaceInf, e.logger, &namespaceName)
 		}
 
 		pod := e.resolvePodRef(ep.targetRef())
