@@ -545,7 +545,7 @@ func TestPodDiscoveryWithNamespaceMetadata(t *testing.T) {
 	}.Run(t)
 }
 
-func TestPodDiscoveryWithNamespaceMetadataUpdateNode(t *testing.T) {
+func TestPodDiscoveryWithNamespaceMetadataUpdateNamespace(t *testing.T) {
 	namespaceName := "prom-test"
 	namespaceLabels := map[string]string{"foo": "bar"}
 	updatedNamespaceLabels := map[string]string{"bar": "foo"}

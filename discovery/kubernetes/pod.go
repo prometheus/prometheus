@@ -111,15 +111,7 @@ func NewPod(l log.Logger, pods cache.SharedIndexInformer, nodes, namespaces cach
 
 	if p.withNamespaceMetadata {
 		_, err = p.namespaceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc: func(o interface{}) {
-				namespace := o.(*apiv1.Namespace)
-				p.enqueuePodsForNamespace(namespace.Name)
-			},
 			UpdateFunc: func(_, o interface{}) {
-				namespace := o.(*apiv1.Namespace)
-				p.enqueuePodsForNamespace(namespace.Name)
-			},
-			DeleteFunc: func(o interface{}) {
 				namespace := o.(*apiv1.Namespace)
 				p.enqueuePodsForNamespace(namespace.Name)
 			},

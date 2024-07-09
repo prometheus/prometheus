@@ -168,7 +168,7 @@ type resourceSelector struct {
 // coming from nodes on which the targets are scheduled.
 type AttachMetadataConfig struct {
 	Node      bool `yaml:"node"`
-	Namespace bool `yaml:"node"`
+	Namespace bool `yaml:"namespace"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -773,13 +773,9 @@ func (d *Discovery) newNodeInformer(ctx context.Context) cache.SharedInformer {
 func (d *Discovery) newNamespaceInformer(ctx context.Context) cache.SharedInformer {
 	nlw := &cache.ListWatch{
 		ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-			options.FieldSelector = d.selectors.namespace.field
-			options.LabelSelector = d.selectors.namespace.label
 			return d.client.CoreV1().Namespaces().List(ctx, options)
 		},
 		WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-			options.FieldSelector = d.selectors.node.field
-			options.LabelSelector = d.selectors.node.label
 			return d.client.CoreV1().Namespaces().Watch(ctx, options)
 		},
 	}

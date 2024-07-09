@@ -2248,7 +2248,7 @@ attach_metadata:
 # When set to true, Prometheus must have permissions to get Nodes.
   [ node: <boolean> | default = false ]
 # Attaches namespace metadata to discovered targets. Valid for roles: pod, endpoints, endpointslice.
-# When set to true, Prometheus must have permissions to get Namespaces.
+# When set to true, Prometheus must have permissions to list/watch Namespaces.
   [ namespace: <boolean> | default = false ]
 ```
 

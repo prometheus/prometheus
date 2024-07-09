@@ -160,15 +160,7 @@ func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, nod
 
 	if e.withNamespaceMetadata {
 		_, err = e.namespaceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc: func(o interface{}) {
-				namespace := o.(*apiv1.Namespace)
-				e.enqueueNode(namespace.Name)
-			},
 			UpdateFunc: func(_, o interface{}) {
-				namespace := o.(*apiv1.Namespace)
-				e.enqueueNode(namespace.Name)
-			},
-			DeleteFunc: func(o interface{}) {
 				namespace := o.(*apiv1.Namespace)
 				e.enqueueNode(namespace.Name)
 			},
