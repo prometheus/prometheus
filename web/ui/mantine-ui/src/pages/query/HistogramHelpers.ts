@@ -2,23 +2,23 @@
 // the width is calculated using the second to last bucket. returns error if the last bucket is [-0, 0],
 export function calculateDefaultExpBucketWidth(
   last: [number, string, string, string],
-  buckets: [number, string, string, string][],
+  buckets: [number, string, string, string][]
 ): number {
   if (parseFloat(last[2]) === 0 || parseFloat(last[1]) === 0) {
     if (buckets.length > 1) {
       return Math.abs(
         Math.log(Math.abs(parseFloat(buckets[buckets.length - 2][2]))) -
-          Math.log(Math.abs(parseFloat(buckets[buckets.length - 2][1]))),
+          Math.log(Math.abs(parseFloat(buckets[buckets.length - 2][1])))
       );
     } else {
       throw new Error(
-        "Only one bucket in histogram ([-0, 0]). Cannot calculate defaultExpBucketWidth.",
+        "Only one bucket in histogram ([-0, 0]). Cannot calculate defaultExpBucketWidth."
       );
     }
   } else {
     return Math.abs(
       Math.log(Math.abs(parseFloat(last[2]))) -
-        Math.log(Math.abs(parseFloat(last[1]))),
+        Math.log(Math.abs(parseFloat(last[1])))
     );
   }
 }
@@ -83,7 +83,7 @@ export function findZeroAxisLeft(
   zeroBucketIdx: number,
   widthNegative: number,
   widthTotal: number,
-  expBucketWidth: number,
+  expBucketWidth: number
 ): string {
   if (scale === "linear") {
     return ((0 - rangeMin) / (rangeMax - rangeMin)) * 100 + "%";
@@ -118,7 +118,7 @@ export function showZeroAxis(zeroAxisLeft: string) {
 
 // Finds the index of the bucket whose range includes zero
 export function findZeroBucket(
-  buckets: [number, string, string, string][],
+  buckets: [number, string, string, string][]
 ): number {
   for (let i = 0; i < buckets.length; i++) {
     const left = parseFloat(buckets[i][1]);

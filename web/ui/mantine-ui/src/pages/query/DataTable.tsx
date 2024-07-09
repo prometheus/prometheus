@@ -7,8 +7,6 @@ import {
   LoadingOverlay,
   SegmentedControl,
   ScrollArea,
-  // ButtonGroup,
-  // Button,
 } from "@mantine/core";
 import { IconAlertTriangle, IconInfoCircle } from "@tabler/icons-react";
 import {
@@ -32,7 +30,7 @@ const maxFormattableSeries = 1000;
 const maxDisplayableSeries = 10000;
 
 const limitSeries = <S extends InstantSample | RangeSamples>(
-  series: S[],
+  series: S[]
 ): S[] => {
   if (series.length > maxDisplayableSeries) {
     return series.slice(0, maxDisplayableSeries);
@@ -47,7 +45,6 @@ export interface DataTableProps {
 }
 
 const DataTable: FC<DataTableProps> = ({ expr, evalTime, retriggerIdx }) => {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [scale, setScale] = useState<string>("exponential");
 
   const { data, error, isFetching, isLoading, refetch } =
@@ -146,6 +143,7 @@ const DataTable: FC<DataTableProps> = ({ expr, evalTime, retriggerIdx }) => {
                         <div className={classes.histogramSummary}>
                           <span>x-axis scale:</span>
                           <SegmentedControl
+                            size={"xs"}
                             value={scale}
                             onChange={setScale}
                             data={["exponential", "linear"]}
@@ -209,7 +207,7 @@ export const histogramTable = (h: Histogram): ReactNode => (
     <Table.Thead>
       <Table.Tr>
         <Table.Th style={{ textAlign: "center" }} colSpan={2}>
-          Histogram Sample
+          Bucket counts
         </Table.Th>
       </Table.Tr>
     </Table.Thead>
