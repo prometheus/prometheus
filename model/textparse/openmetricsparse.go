@@ -239,8 +239,6 @@ loop:
 				return nil
 			}
 
-			// continue instead of return nil until we get new series/labels. can happen for histograms, summaries
-			// Check _created suffix
 			var newLbs labels.Labels
 			newParser.Metric(&newLbs)
 			name := newLbs.Get(model.MetricNameLabel)
@@ -274,7 +272,6 @@ loop:
 				return nil
 			}
 
-			// gauge_created is a metric
 			ct := int64(newParser.val)
 			return &ct
 		default:

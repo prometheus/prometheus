@@ -234,8 +234,7 @@ baz_created 1520430000`
 		}, {
 			m:   "foo",
 			typ: model.MetricTypeCounter,
-		},
-		{
+		}, {
 			m:    "foo_total",
 			v:    17,
 			lset: labels.FromStrings("__name__", "foo_total"),
