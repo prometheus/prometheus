@@ -339,8 +339,8 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
   },
   [Integral]: {
     name: 'integral',
-    argTypes: [ValueType.matrix],
-    variadic: 0,
+    argTypes: [ValueType.matrix, ValueType.scalar],
+    variadic: 1,
     returnType: ValueType.vector,
   },
   [Irate]: {
