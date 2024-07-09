@@ -89,8 +89,9 @@ type Options struct {
 	// Optional HTTP client options to use when scraping.
 	HTTPClientOptions []config_util.HTTPClientOption
 
-	// private option for testability.
-	skipOffsetting bool
+	// private options for testability.
+	skipOffsetting                   bool
+	skipDiscoveryReloadIntervalCheck bool
 }
 
 // Manager maintains a set of scrape pools and manages start/stop cycles
@@ -140,7 +141,7 @@ func (m *Manager) UnregisterMetrics() {
 
 func (m *Manager) reloader() {
 	reloadIntervalDuration := m.opts.DiscoveryReloadInterval
-	if reloadIntervalDuration < model.Duration(5*time.Second) {
+	if !m.opts.skipDiscoveryReloadIntervalCheck && reloadIntervalDuration < model.Duration(5*time.Second) {
 		reloadIntervalDuration = model.Duration(5 * time.Second)
 	}
 
