@@ -24,11 +24,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-// In summary: we find created but then p.Next() is called and we end up parsing the bar_created again
-// In histogram bucket labels {le="0.0"} end up getting compared to baz_created which is not what we want
-// This issue might happen in summaries if quantiles are before _created
-
-// figure out summary order for _created, quantiles etc
 func TestOpenMetricsParse(t *testing.T) {
 	input := `# HELP go_gc_duration_seconds A summary of the GC invocation durations.
 # TYPE go_gc_duration_seconds summary
