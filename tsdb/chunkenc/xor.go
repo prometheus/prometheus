@@ -60,7 +60,7 @@ type XORChunk struct {
 	b bstream
 }
 
-// NewXORChunk returns a new chunk with XOR encoding of the given size.
+// NewXORChunk returns a new chunk with XOR encoding.
 func NewXORChunk() *XORChunk {
 	b := make([]byte, 2, 128)
 	return &XORChunk{b: bstream{stream: b, count: 0}}
