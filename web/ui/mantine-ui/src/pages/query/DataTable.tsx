@@ -202,7 +202,7 @@ const DataTable: FC<DataTableProps> = ({ expr, evalTime, retriggerIdx }) => {
   );
 };
 
-export const histogramTable = (h: Histogram): ReactNode => (
+const histogramTable = (h: Histogram): ReactNode => (
   <Table>
     <Table.Thead>
       <Table.Tr>
