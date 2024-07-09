@@ -35,13 +35,40 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage/remote/azuread"
 )
 
 const maxErrMsgLen = 1024
 
-var UserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+const (
+	RemoteWriteVersionHeader        = "X-Prometheus-Remote-Write-Version"
+	RemoteWriteVersion1HeaderValue  = "0.1.0"
+	RemoteWriteVersion20HeaderValue = "2.0.0"
+	appProtoContentType             = "application/x-protobuf"
+)
+
+// Compression represents the encoding. Currently remote storage supports only
+// one, but we experiment with more, thus leaving the compression scaffolding
+// for now.
+// NOTE(bwplotka): Keeping it public, as a non-stable help for importers to use.
+type Compression string
+
+const (
+	// SnappyBlockCompression represents https://github.com/google/snappy/blob/2c94e11145f0b7b184b831577c93e5a41c4c0346/format_description.txt
+	SnappyBlockCompression Compression = "snappy"
+)
+
+var (
+	// UserAgent represents Prometheus version to use for user agent header.
+	UserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+
+	remoteWriteContentTypeHeaders = map[config.RemoteWriteProtoMsg]string{
+		config.RemoteWriteProtoMsgV1: appProtoContentType, // Also application/x-protobuf;proto=prometheus.WriteRequest but simplified for compatibility with 1.x spec.
+		config.RemoteWriteProtoMsgV2: appProtoContentType + ";proto=io.prometheus.write.v2.Request",
+	}
+)
 
 var (
 	remoteReadQueriesTotal = prometheus.NewCounterVec(
@@ -93,6 +120,9 @@ type Client struct {
 	readQueries         prometheus.Gauge
 	readQueriesTotal    *prometheus.CounterVec
 	readQueriesDuration prometheus.Observer
+
+	writeProtoMsg    config.RemoteWriteProtoMsg
+	writeCompression Compression // Not exposed by ClientConfig for now.
 }
 
 // ClientConfig configures a client.
@@ -104,6 +134,7 @@ type ClientConfig struct {
 	AzureADConfig    *azuread.AzureADConfig
 	Headers          map[string]string
 	RetryOnRateLimit bool
+	WriteProtoMsg    config.RemoteWriteProtoMsg
 }
 
 // ReadClient uses the SAMPLES method of remote read to read series samples from remote server.
@@ -162,14 +193,20 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 		}
 	}
 
-	httpClient.Transport = otelhttp.NewTransport(t)
+	writeProtoMsg := config.RemoteWriteProtoMsgV1
+	if conf.WriteProtoMsg != "" {
+		writeProtoMsg = conf.WriteProtoMsg
+	}
 
+	httpClient.Transport = otelhttp.NewTransport(t)
 	return &Client{
 		remoteName:       name,
 		urlString:        conf.URL.String(),
 		Client:           httpClient,
 		retryOnRateLimit: conf.RetryOnRateLimit,
 		timeout:          time.Duration(conf.Timeout),
+		writeProtoMsg:    writeProtoMsg,
+		writeCompression: SnappyBlockCompression,
 	}, nil
 }
 
@@ -206,10 +243,16 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) error {
 		return err
 	}
 
-	httpReq.Header.Add("Content-Encoding", "snappy")
-	httpReq.Header.Set("Content-Type", "application/x-protobuf")
+	httpReq.Header.Add("Content-Encoding", string(c.writeCompression))
+	httpReq.Header.Set("Content-Type", remoteWriteContentTypeHeaders[c.writeProtoMsg])
 	httpReq.Header.Set("User-Agent", UserAgent)
-	httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
+	if c.writeProtoMsg == config.RemoteWriteProtoMsgV1 {
+		// Compatibility mode for 1.0.
+		httpReq.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion1HeaderValue)
+	} else {
+		httpReq.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
+	}
+
 	if attempt > 0 {
 		httpReq.Header.Set("Retry-Attempt", strconv.Itoa(attempt))
 	}
@@ -265,12 +308,12 @@ func retryAfterDuration(t string) model.Duration {
 }
 
 // Name uniquely identifies the client.
-func (c Client) Name() string {
+func (c *Client) Name() string {
 	return c.remoteName
 }
 
 // Endpoint is the remote read or write endpoint.
-func (c Client) Endpoint() string {
+func (c *Client) Endpoint() string {
 	return c.urlString
 }
 

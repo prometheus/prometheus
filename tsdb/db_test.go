@@ -4495,6 +4495,14 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 //
 //	are not included in this compaction.
 func TestOOOCompaction(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testOOOCompaction(t, scenario)
+		})
+	}
+}
+
+func testOOOCompaction(t *testing.T, scenario sampleTypeScenario) {
 	dir := t.TempDir()
 	ctx := context.Background()
 
@@ -4516,9 +4524,9 @@ func TestOOOCompaction(t *testing.T) {
 		app := db.Appender(context.Background())
 		for min := fromMins; min <= toMins; min++ {
 			ts := min * time.Minute.Milliseconds()
-			_, err := app.Append(0, series1, ts, float64(ts))
+			_, _, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
-			_, err = app.Append(0, series2, ts, float64(2*ts))
+			_, _, err = scenario.appendFunc(app, series2, ts, 2*ts)
 			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())
@@ -4551,8 +4559,8 @@ func TestOOOCompaction(t *testing.T) {
 			fromMins, toMins := r[0], r[1]
 			for min := fromMins; min <= toMins; min++ {
 				ts := min * time.Minute.Milliseconds()
-				series1Samples = append(series1Samples, sample{ts, float64(ts), nil, nil})
-				series2Samples = append(series2Samples, sample{ts, float64(2 * ts), nil, nil})
+				series1Samples = append(series1Samples, scenario.sampleFunc(ts, ts))
+				series2Samples = append(series2Samples, scenario.sampleFunc(ts, 2*ts))
 			}
 		}
 		expRes := map[string][]chunks.Sample{
@@ -4564,7 +4572,7 @@ func TestOOOCompaction(t *testing.T) {
 		require.NoError(t, err)
 
 		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
-		require.Equal(t, expRes, actRes)
+		requireEqualSeries(t, expRes, actRes, true)
 	}
 
 	verifyDBSamples() // Before any compaction.
@@ -4619,8 +4627,8 @@ func TestOOOCompaction(t *testing.T) {
 		series2Samples := make([]chunks.Sample, 0, toMins-fromMins+1)
 		for min := fromMins; min <= toMins; min++ {
 			ts := min * time.Minute.Milliseconds()
-			series1Samples = append(series1Samples, sample{ts, float64(ts), nil, nil})
-			series2Samples = append(series2Samples, sample{ts, float64(2 * ts), nil, nil})
+			series1Samples = append(series1Samples, scenario.sampleFunc(ts, ts))
+			series2Samples = append(series2Samples, scenario.sampleFunc(ts, 2*ts))
 		}
 		expRes := map[string][]chunks.Sample{
 			series1.String(): series1Samples,
@@ -4631,7 +4639,7 @@ func TestOOOCompaction(t *testing.T) {
 		require.NoError(t, err)
 
 		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
-		require.Equal(t, expRes, actRes)
+		requireEqualSeries(t, expRes, actRes, true)
 	}
 
 	// Checking for expected data in the blocks.
@@ -4675,6 +4683,14 @@ func TestOOOCompaction(t *testing.T) {
 // TestOOOCompactionWithNormalCompaction tests if OOO compaction is performed
 // when the normal head's compaction is done.
 func TestOOOCompactionWithNormalCompaction(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testOOOCompactionWithNormalCompaction(t, scenario)
+		})
+	}
+}
+
+func testOOOCompactionWithNormalCompaction(t *testing.T, scenario sampleTypeScenario) {
 	dir := t.TempDir()
 	ctx := context.Background()
 
@@ -4696,9 +4712,9 @@ func TestOOOCompactionWithNormalCompaction(t *testing.T) {
 		app := db.Appender(context.Background())
 		for min := fromMins; min <= toMins; min++ {
 			ts := min * time.Minute.Milliseconds()
-			_, err := app.Append(0, series1, ts, float64(ts))
+			_, _, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
-			_, err = app.Append(0, series2, ts, float64(2*ts))
+			_, _, err = scenario.appendFunc(app, series2, ts, 2*ts)
 			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())
@@ -4751,8 +4767,8 @@ func TestOOOCompactionWithNormalCompaction(t *testing.T) {
 		series2Samples := make([]chunks.Sample, 0, toMins-fromMins+1)
 		for min := fromMins; min <= toMins; min++ {
 			ts := min * time.Minute.Milliseconds()
-			series1Samples = append(series1Samples, sample{ts, float64(ts), nil, nil})
-			series2Samples = append(series2Samples, sample{ts, float64(2 * ts), nil, nil})
+			series1Samples = append(series1Samples, scenario.sampleFunc(ts, ts))
+			series2Samples = append(series2Samples, scenario.sampleFunc(ts, 2*ts))
 		}
 		expRes := map[string][]chunks.Sample{
 			series1.String(): series1Samples,
@@ -4763,7 +4779,7 @@ func TestOOOCompactionWithNormalCompaction(t *testing.T) {
 		require.NoError(t, err)
 
 		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
-		require.Equal(t, expRes, actRes)
+		requireEqualSeries(t, expRes, actRes, true)
 	}
 
 	// Checking for expected data in the blocks.
@@ -4775,6 +4791,14 @@ func TestOOOCompactionWithNormalCompaction(t *testing.T) {
 // configured to not have wal and wbl but its able to compact both the in-order
 // and out-of-order head.
 func TestOOOCompactionWithDisabledWriteLog(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testOOOCompactionWithDisabledWriteLog(t, scenario)
+		})
+	}
+}
+
+func testOOOCompactionWithDisabledWriteLog(t *testing.T, scenario sampleTypeScenario) {
 	dir := t.TempDir()
 	ctx := context.Background()
 
@@ -4797,9 +4821,9 @@ func TestOOOCompactionWithDisabledWriteLog(t *testing.T) {
 		app := db.Appender(context.Background())
 		for min := fromMins; min <= toMins; min++ {
 			ts := min * time.Minute.Milliseconds()
-			_, err := app.Append(0, series1, ts, float64(ts))
+			_, _, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
-			_, err = app.Append(0, series2, ts, float64(2*ts))
+			_, _, err = scenario.appendFunc(app, series2, ts, 2*ts)
 			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())
@@ -4852,8 +4876,8 @@ func TestOOOCompactionWithDisabledWriteLog(t *testing.T) {
 		series2Samples := make([]chunks.Sample, 0, toMins-fromMins+1)
 		for min := fromMins; min <= toMins; min++ {
 			ts := min * time.Minute.Milliseconds()
-			series1Samples = append(series1Samples, sample{ts, float64(ts), nil, nil})
-			series2Samples = append(series2Samples, sample{ts, float64(2 * ts), nil, nil})
+			series1Samples = append(series1Samples, scenario.sampleFunc(ts, ts))
+			series2Samples = append(series2Samples, scenario.sampleFunc(ts, 2*ts))
 		}
 		expRes := map[string][]chunks.Sample{
 			series1.String(): series1Samples,
@@ -4864,7 +4888,7 @@ func TestOOOCompactionWithDisabledWriteLog(t *testing.T) {
 		require.NoError(t, err)
 
 		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
-		require.Equal(t, expRes, actRes)
+		requireEqualSeries(t, expRes, actRes, true)
 	}
 
 	// Checking for expected data in the blocks.
@@ -4876,6 +4900,14 @@ func TestOOOCompactionWithDisabledWriteLog(t *testing.T) {
 // missing after a restart while snapshot was enabled, but the query still returns the right
 // data from the mmap chunks.
 func TestOOOQueryAfterRestartWithSnapshotAndRemovedWBL(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testOOOQueryAfterRestartWithSnapshotAndRemovedWBL(t, scenario)
+		})
+	}
+}
+
+func testOOOQueryAfterRestartWithSnapshotAndRemovedWBL(t *testing.T, scenario sampleTypeScenario) {
 	dir := t.TempDir()
 	ctx := context.Background()
 
@@ -4898,9 +4930,9 @@ func TestOOOQueryAfterRestartWithSnapshotAndRemovedWBL(t *testing.T) {
 		app := db.Appender(context.Background())
 		for min := fromMins; min <= toMins; min++ {
 			ts := min * time.Minute.Milliseconds()
-			_, err := app.Append(0, series1, ts, float64(ts))
+			_, _, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
-			_, err = app.Append(0, series2, ts, float64(2*ts))
+			_, _, err = scenario.appendFunc(app, series2, ts, 2*ts)
 			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())
@@ -4946,8 +4978,8 @@ func TestOOOQueryAfterRestartWithSnapshotAndRemovedWBL(t *testing.T) {
 		series2Samples := make([]chunks.Sample, 0, toMins-fromMins+1)
 		for min := fromMins; min <= toMins; min++ {
 			ts := min * time.Minute.Milliseconds()
-			series1Samples = append(series1Samples, sample{ts, float64(ts), nil, nil})
-			series2Samples = append(series2Samples, sample{ts, float64(2 * ts), nil, nil})
+			series1Samples = append(series1Samples, scenario.sampleFunc(ts, ts))
+			series2Samples = append(series2Samples, scenario.sampleFunc(ts, ts*2))
 		}
 		expRes := map[string][]chunks.Sample{
 			series1.String(): series1Samples,
@@ -4958,7 +4990,7 @@ func TestOOOQueryAfterRestartWithSnapshotAndRemovedWBL(t *testing.T) {
 		require.NoError(t, err)
 
 		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
-		require.Equal(t, expRes, actRes)
+		requireEqualSeries(t, expRes, actRes, true)
 	}
 
 	// Checking for expected ooo data from mmap chunks.
@@ -5159,6 +5191,14 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 }
 
 func TestOOOAppendAndQuery(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testOOOAppendAndQuery(t, scenario)
+		})
+	}
+}
+
+func testOOOAppendAndQuery(t *testing.T, scenario sampleTypeScenario) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 4 * time.Hour.Milliseconds()
@@ -5180,13 +5220,13 @@ func TestOOOAppendAndQuery(t *testing.T) {
 		key := lbls.String()
 		from, to := minutes(fromMins), minutes(toMins)
 		for min := from; min <= to; min += time.Minute.Milliseconds() {
-			val := rand.Float64()
-			_, err := app.Append(0, lbls, min, val)
+			val := rand.Intn(1000)
+			_, s, err := scenario.appendFunc(app, lbls, min, int64(val))
 			if faceError {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
-				appendedSamples[key] = append(appendedSamples[key], sample{t: min, f: val})
+				appendedSamples[key] = append(appendedSamples[key], s)
 				totalSamples++
 			}
 		}
@@ -5222,7 +5262,7 @@ func TestOOOAppendAndQuery(t *testing.T) {
 				expSamples[k] = append(expSamples[k], s)
 			}
 		}
-		require.Equal(t, expSamples, seriesSet)
+		requireEqualSeries(t, expSamples, seriesSet, true)
 		requireEqualOOOSamples(t, totalSamples-2, db)
 	}
 
@@ -5284,6 +5324,14 @@ func TestOOOAppendAndQuery(t *testing.T) {
 }
 
 func TestOOODisabled(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testOOODisabled(t, scenario)
+		})
+	}
+}
+
+func testOOODisabled(t *testing.T, scenario sampleTypeScenario) {
 	opts := DefaultOptions()
 	opts.OutOfOrderTimeWindow = 0
 	db := openTestDB(t, opts, nil)
@@ -5297,19 +5345,19 @@ func TestOOODisabled(t *testing.T) {
 	expSamples := make(map[string][]chunks.Sample)
 	totalSamples := 0
 	failedSamples := 0
-	addSample := func(lbls labels.Labels, fromMins, toMins int64, faceError bool) {
+
+	addSample := func(db *DB, lbls labels.Labels, fromMins, toMins int64, faceError bool) {
 		app := db.Appender(context.Background())
 		key := lbls.String()
 		from, to := minutes(fromMins), minutes(toMins)
 		for min := from; min <= to; min += time.Minute.Milliseconds() {
-			val := rand.Float64()
-			_, err := app.Append(0, lbls, min, val)
+			_, _, err := scenario.appendFunc(app, lbls, min, min)
 			if faceError {
 				require.Error(t, err)
 				failedSamples++
 			} else {
 				require.NoError(t, err)
-				expSamples[key] = append(expSamples[key], sample{t: min, f: val})
+				expSamples[key] = append(expSamples[key], scenario.sampleFunc(min, min))
 				totalSamples++
 			}
 		}
@@ -5320,21 +5368,21 @@ func TestOOODisabled(t *testing.T) {
 		}
 	}
 
-	addSample(s1, 300, 300, false) // In-order samples.
-	addSample(s1, 250, 260, true)  // Some ooo samples.
-	addSample(s1, 59, 59, true)    // Out of time window.
-	addSample(s1, 60, 65, true)    // At the edge of time window, also it would be "out of bound" without the ooo support.
-	addSample(s1, 59, 59, true)    // Out of time window again.
-	addSample(s1, 301, 310, false) // More in-order samples.
+	addSample(db, s1, 300, 300, false) // In-order samples.
+	addSample(db, s1, 250, 260, true)  // Some ooo samples.
+	addSample(db, s1, 59, 59, true)    // Out of time window.
+	addSample(db, s1, 60, 65, true)    // At the edge of time window, also it would be "out of bound" without the ooo support.
+	addSample(db, s1, 59, 59, true)    // Out of time window again.
+	addSample(db, s1, 301, 310, false) // More in-order samples.
 
 	querier, err := db.Querier(math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
 
 	seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar."))
-	require.Equal(t, expSamples, seriesSet)
+	requireEqualSeries(t, expSamples, seriesSet, true)
 	requireEqualOOOSamples(t, 0, db)
 	require.Equal(t, float64(failedSamples),
-		prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat))+prom_testutil.ToFloat64(db.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeFloat)),
+		prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(scenario.sampleType))+prom_testutil.ToFloat64(db.head.metrics.outOfBoundSamples.WithLabelValues(scenario.sampleType)),
 		"number of ooo/oob samples mismatch")
 
 	// Verifying that no OOO artifacts were generated.
@@ -5349,6 +5397,14 @@ func TestOOODisabled(t *testing.T) {
 }
 
 func TestWBLAndMmapReplay(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testWBLAndMmapReplay(t, scenario)
+		})
+	}
+}
+
+func testWBLAndMmapReplay(t *testing.T, scenario sampleTypeScenario) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 4 * time.Hour.Milliseconds()
@@ -5369,10 +5425,10 @@ func TestWBLAndMmapReplay(t *testing.T) {
 		key := lbls.String()
 		from, to := minutes(fromMins), minutes(toMins)
 		for min := from; min <= to; min += time.Minute.Milliseconds() {
-			val := rand.Float64()
-			_, err := app.Append(0, lbls, min, val)
+			val := rand.Intn(1000)
+			_, s, err := scenario.appendFunc(app, lbls, min, int64(val))
 			require.NoError(t, err)
-			expSamples[key] = append(expSamples[key], sample{t: min, f: val})
+			expSamples[key] = append(expSamples[key], s)
 			totalSamples++
 		}
 		require.NoError(t, app.Commit())
@@ -5390,7 +5446,7 @@ func TestWBLAndMmapReplay(t *testing.T) {
 			})
 			exp[k] = v
 		}
-		require.Equal(t, exp, seriesSet)
+		requireEqualSeries(t, exp, seriesSet, true)
 	}
 
 	// In-order samples.
@@ -5413,10 +5469,9 @@ func TestWBLAndMmapReplay(t *testing.T) {
 		chk, err := db.head.chunkDiskMapper.Chunk(mc.ref)
 		require.NoError(t, err)
 		it := chk.Iterator(nil)
-		for it.Next() == chunkenc.ValFloat {
-			ts, val := it.At()
-			s1MmapSamples = append(s1MmapSamples, sample{t: ts, f: val})
-		}
+		smpls, err := storage.ExpandSamples(it, newSample)
+		require.NoError(t, err)
+		s1MmapSamples = append(s1MmapSamples, smpls...)
 	}
 	require.NotEmpty(t, s1MmapSamples)
 
@@ -5534,6 +5589,14 @@ func TestWBLAndMmapReplay(t *testing.T) {
 }
 
 func TestOOOCompactionFailure(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testOOOCompactionFailure(t, scenario)
+		})
+	}
+}
+
+func testOOOCompactionFailure(t *testing.T, scenario sampleTypeScenario) {
 	dir := t.TempDir()
 	ctx := context.Background()
 
@@ -5554,7 +5617,7 @@ func TestOOOCompactionFailure(t *testing.T) {
 		app := db.Appender(context.Background())
 		for min := fromMins; min <= toMins; min++ {
 			ts := min * time.Minute.Milliseconds()
-			_, err := app.Append(0, series1, ts, float64(ts))
+			_, _, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())
@@ -5642,7 +5705,7 @@ func TestOOOCompactionFailure(t *testing.T) {
 		series1Samples := make([]chunks.Sample, 0, toMins-fromMins+1)
 		for min := fromMins; min <= toMins; min++ {
 			ts := min * time.Minute.Milliseconds()
-			series1Samples = append(series1Samples, sample{ts, float64(ts), nil, nil})
+			series1Samples = append(series1Samples, scenario.sampleFunc(ts, ts))
 		}
 		expRes := map[string][]chunks.Sample{
 			series1.String(): series1Samples,
@@ -5650,9 +5713,8 @@ func TestOOOCompactionFailure(t *testing.T) {
 
 		q, err := NewBlockQuerier(block, math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
-
 		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
-		require.Equal(t, expRes, actRes)
+		requireEqualSeries(t, expRes, actRes, true)
 	}
 
 	// Checking for expected data in the blocks.
@@ -5819,6 +5881,14 @@ func TestWBLCorruption(t *testing.T) {
 }
 
 func TestOOOMmapCorruption(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testOOOMmapCorruption(t, scenario)
+		})
+	}
+}
+
+func testOOOMmapCorruption(t *testing.T, scenario sampleTypeScenario) {
 	dir := t.TempDir()
 
 	opts := DefaultOptions()
@@ -5838,11 +5908,11 @@ func TestOOOMmapCorruption(t *testing.T) {
 		app := db.Appender(context.Background())
 		for min := fromMins; min <= toMins; min++ {
 			ts := min * time.Minute.Milliseconds()
-			_, err := app.Append(0, series1, ts, float64(ts))
+			_, s, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
-			allSamples = append(allSamples, sample{t: ts, f: float64(ts)})
+			allSamples = append(allSamples, s)
 			if inMmapAfterCorruption {
-				expInMmapChunks = append(expInMmapChunks, sample{t: ts, f: float64(ts)})
+				expInMmapChunks = append(expInMmapChunks, s)
 			}
 		}
 		require.NoError(t, app.Commit())
@@ -5880,7 +5950,7 @@ func TestOOOMmapCorruption(t *testing.T) {
 		require.NoError(t, err)
 
 		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
-		require.Equal(t, expRes, actRes)
+		requireEqualSeries(t, expRes, actRes, true)
 	}
 
 	verifySamples(allSamples)
@@ -5942,6 +6012,14 @@ func TestOOOMmapCorruption(t *testing.T) {
 }
 
 func TestOutOfOrderRuntimeConfig(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testOutOfOrderRuntimeConfig(t, scenario)
+		})
+	}
+}
+
+func testOutOfOrderRuntimeConfig(t *testing.T, scenario sampleTypeScenario) {
 	ctx := context.Background()
 
 	getDB := func(oooTimeWindow int64) *DB {
@@ -5975,10 +6053,10 @@ func TestOutOfOrderRuntimeConfig(t *testing.T) {
 		app := db.Appender(context.Background())
 		for min := fromMins; min <= toMins; min++ {
 			ts := min * time.Minute.Milliseconds()
-			_, err := app.Append(0, series1, ts, float64(ts))
+			_, s, err := scenario.appendFunc(app, series1, ts, ts)
 			if success {
 				require.NoError(t, err)
-				allSamples = append(allSamples, sample{t: ts, f: float64(ts)})
+				allSamples = append(allSamples, s)
 			} else {
 				require.Error(t, err)
 			}
@@ -6000,7 +6078,7 @@ func TestOutOfOrderRuntimeConfig(t *testing.T) {
 		require.NoError(t, err)
 
 		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
-		require.Equal(t, expRes, actRes)
+		requireEqualSeries(t, expRes, actRes, true)
 	}
 
 	doOOOCompaction := func(t *testing.T, db *DB) {
@@ -6173,12 +6251,20 @@ func TestOutOfOrderRuntimeConfig(t *testing.T) {
 }
 
 func TestNoGapAfterRestartWithOOO(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testNoGapAfterRestartWithOOO(t, scenario)
+		})
+	}
+}
+
+func testNoGapAfterRestartWithOOO(t *testing.T, scenario sampleTypeScenario) {
 	series1 := labels.FromStrings("foo", "bar1")
 	addSamples := func(t *testing.T, db *DB, fromMins, toMins int64, success bool) {
 		app := db.Appender(context.Background())
 		for min := fromMins; min <= toMins; min++ {
 			ts := min * time.Minute.Milliseconds()
-			_, err := app.Append(0, series1, ts, float64(ts))
+			_, _, err := scenario.appendFunc(app, series1, ts, ts)
 			if success {
 				require.NoError(t, err)
 			} else {
@@ -6192,7 +6278,7 @@ func TestNoGapAfterRestartWithOOO(t *testing.T) {
 		var expSamples []chunks.Sample
 		for min := fromMins; min <= toMins; min++ {
 			ts := min * time.Minute.Milliseconds()
-			expSamples = append(expSamples, sample{t: ts, f: float64(ts)})
+			expSamples = append(expSamples, scenario.sampleFunc(ts, ts))
 		}
 
 		expRes := map[string][]chunks.Sample{
@@ -6203,7 +6289,7 @@ func TestNoGapAfterRestartWithOOO(t *testing.T) {
 		require.NoError(t, err)
 
 		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
-		require.Equal(t, expRes, actRes)
+		requireEqualSeries(t, expRes, actRes, true)
 	}
 
 	cases := []struct {
@@ -6280,6 +6366,14 @@ func TestNoGapAfterRestartWithOOO(t *testing.T) {
 }
 
 func TestWblReplayAfterOOODisableAndRestart(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testWblReplayAfterOOODisableAndRestart(t, scenario)
+		})
+	}
+}
+
+func testWblReplayAfterOOODisableAndRestart(t *testing.T, scenario sampleTypeScenario) {
 	dir := t.TempDir()
 
 	opts := DefaultOptions()
@@ -6298,9 +6392,9 @@ func TestWblReplayAfterOOODisableAndRestart(t *testing.T) {
 		app := db.Appender(context.Background())
 		for min := fromMins; min <= toMins; min++ {
 			ts := min * time.Minute.Milliseconds()
-			_, err := app.Append(0, series1, ts, float64(ts))
+			_, s, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
-			allSamples = append(allSamples, sample{t: ts, f: float64(ts)})
+			allSamples = append(allSamples, s)
 		}
 		require.NoError(t, app.Commit())
 	}
@@ -6323,7 +6417,7 @@ func TestWblReplayAfterOOODisableAndRestart(t *testing.T) {
 		require.NoError(t, err)
 
 		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
-		require.Equal(t, expRes, actRes)
+		requireEqualSeries(t, expRes, actRes, true)
 	}
 
 	verifySamples(allSamples)
@@ -6339,6 +6433,14 @@ func TestWblReplayAfterOOODisableAndRestart(t *testing.T) {
 }
 
 func TestPanicOnApplyConfig(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testPanicOnApplyConfig(t, scenario)
+		})
+	}
+}
+
+func testPanicOnApplyConfig(t *testing.T, scenario sampleTypeScenario) {
 	dir := t.TempDir()
 
 	opts := DefaultOptions()
@@ -6357,9 +6459,9 @@ func TestPanicOnApplyConfig(t *testing.T) {
 		app := db.Appender(context.Background())
 		for min := fromMins; min <= toMins; min++ {
 			ts := min * time.Minute.Milliseconds()
-			_, err := app.Append(0, series1, ts, float64(ts))
+			_, s, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
-			allSamples = append(allSamples, sample{t: ts, f: float64(ts)})
+			allSamples = append(allSamples, s)
 		}
 		require.NoError(t, app.Commit())
 	}
@@ -6387,6 +6489,14 @@ func TestPanicOnApplyConfig(t *testing.T) {
 }
 
 func TestDiskFillingUpAfterDisablingOOO(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testDiskFillingUpAfterDisablingOOO(t, scenario)
+		})
+	}
+}
+
+func testDiskFillingUpAfterDisablingOOO(t *testing.T, scenario sampleTypeScenario) {
 	dir := t.TempDir()
 	ctx := context.Background()
 
@@ -6406,9 +6516,9 @@ func TestDiskFillingUpAfterDisablingOOO(t *testing.T) {
 		app := db.Appender(context.Background())
 		for min := fromMins; min <= toMins; min++ {
 			ts := min * time.Minute.Milliseconds()
-			_, err := app.Append(0, series1, ts, float64(ts))
+			_, s, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
-			allSamples = append(allSamples, sample{t: ts, f: float64(ts)})
+			allSamples = append(allSamples, s)
 		}
 		require.NoError(t, app.Commit())
 	}
@@ -7058,12 +7168,6 @@ Outer:
 	}
 
 	require.NoError(t, writerErr)
-}
-
-func requireEqualOOOSamples(t *testing.T, expectedSamples int, db *DB) {
-	require.Equal(t, float64(expectedSamples),
-		prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeFloat)),
-		"number of ooo appended samples mismatch")
 }
 
 type mockCompactorFn struct {
