@@ -246,7 +246,6 @@ loop:
 				continue
 			}
 
-			// edge case: if gauge_created of unknown type -> skip parsing
 			newLbs = newLbs.DropMetricName()
 			switch p.mtype {
 			case model.MetricTypeCounter:
@@ -620,10 +619,16 @@ func (p *OpenMetricsParser) parseMetricSuffix(t token) (Entry, error) {
 	var newLbs labels.Labels
 	p.Metric(&newLbs)
 	name := newLbs.Get(model.MetricNameLabel)
-	if strings.HasSuffix(name, "_created") && p.skipCT {
-		return p.Next()
+	switch p.mtype {
+	case model.MetricTypeCounter, model.MetricTypeSummary, model.MetricTypeHistogram:
+		if strings.HasSuffix(name, "_created") && p.skipCT {
+			return p.Next()
+		}
+	default:
+		break
 	}
 	return EntrySeries, nil
+
 }
 
 func (p *OpenMetricsParser) getFloatValue(t token, after string) (float64, error) {

@@ -79,7 +79,9 @@ baz_bucket{le="0.0"} 0
 baz_bucket{le="+Inf"} 17
 baz_count 17
 baz_sum 324789.3
-baz_created 1520430000`
+baz_created 1520430000
+# TYPE fizz_created gauge
+fizz_created 17.0`
 
 	input += "\n# HELP metric foo\x00bar"
 	input += "\nnull_byte_metric{a=\"abc\x00\"} 1"
@@ -294,6 +296,13 @@ baz_created 1520430000`
 			v:    324789.3,
 			lset: labels.FromStrings("__name__", "baz_sum"),
 			ct:   int64p(1520430000),
+		}, {
+			m:   "fizz_created",
+			typ: model.MetricTypeGauge,
+		}, {
+			m:    `fizz_created`,
+			v:    17,
+			lset: labels.FromStrings("__name__", "fizz_created"),
 		}, {
 			m:    "metric",
 			help: "foo\x00bar",
