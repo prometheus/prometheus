@@ -281,8 +281,10 @@ loop:
 	return nil
 }
 
-// We need this because we want offsets of the original parser unchanged when
-// we're working with a new parser in CreatedTimeStamp().
+// deepCopyParser creates a copy of a parser without re-using the slices' original memory addresses.
+// The function `CreatedTimestamp()` uses a copy of the parser to "peek" at _created lines that might be several lines ahead, without changing the state of the original parser.
+//
+// Additionally, deepCopyParser switches `skipCT` from false to true, because this new parser needs to return _created lines.
 func deepCopyParser(p *OpenMetricsParser) OpenMetricsParser {
 	newB := make([]byte, len(p.l.b))
 	copy(newB, p.l.b)
