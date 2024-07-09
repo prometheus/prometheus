@@ -31,7 +31,6 @@ func (ls Labels) Len() int           { return len(ls) }
 func (ls Labels) Swap(i, j int)      { ls[i], ls[j] = ls[j], ls[i] }
 func (ls Labels) Less(i, j int) bool { return ls[i].Name < ls[j].Name }
 
-
 // ExtractNames returns an array of all Name in ls.
 func (ls Labels) ExtractNames() []string {
 	names := make([]string, len(ls))
