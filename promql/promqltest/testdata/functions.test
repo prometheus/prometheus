@@ -701,11 +701,11 @@ eval instant at 1m integral(metric[1m])
 eval instant at 1m integral(metric[1m], 2)
   {} 120
 
-# Left-wise integral: prev * delta-time
+# Left-point integral: prev * delta-time
 eval instant at 1m integral(metric[1m], 0)
   {} 100
 
-# Right-wise integral: curr * delta-time
+# Right-point integral: curr * delta-time
 eval instant at 1m integral(metric[1m], 1)
   {} 140
 
@@ -821,11 +821,11 @@ eval instant at 1m integral(metricbignum[2m])
 eval_warn instant at 1m integral(metricbignum[2m], 3)
   {} 0
 
-# left-wise
+# left-point
 eval instant at 1m integral(metricbignum[2m], 0)
   {} 20
 
-# right-wise
+# right-point
 eval instant at 1m integral(metricbignum[2m], 1)
   {} 20
 
@@ -837,11 +837,11 @@ eval instant at 1m integral(metricinf[2m])
 eval instant at 2m integral(metricoscillator[2m])
   {} 0
 
-# left-wise
+# left-point
 eval instant at 2m integral(metricoscillator[2m], 0)
   {} 0
 
-# right-wise
+# right-point
 eval instant at 2m integral(metricoscillator[2m], 1)
   {} 0
 
@@ -856,7 +856,7 @@ eval instant at 20s integral(metricnan1[20s])
 eval instant at 30s integral(metricnan1[30s])
   {} 10
 
-# left-wise
+# left-point
 eval instant at 10s integral(metricnan1[10s], 0)
   {} 0
 
@@ -866,7 +866,7 @@ eval instant at 20s integral(metricnan1[20s], 0)
 eval instant at 30s integral(metricnan1[30s], 0)
   {} 10
 
-# right-wise
+# right-point
 eval instant at 10s integral(metricnan1[10s], 1)
   {} 0
 
@@ -887,7 +887,7 @@ eval instant at 60s integral(metricnan2[60s])
 eval instant at 60s integral(metricnan2[60s])
   {} 30
 
-# left-wise
+# left-point
 eval instant at 50s integral(metricnan2[50s], 0)
   {} 10
 
@@ -897,7 +897,7 @@ eval instant at 60s integral(metricnan2[60s], 0)
 eval instant at 60s integral(metricnan2[60s], 0)
   {} 30
 
-# right-wise
+# right-point
 eval instant at 50s integral(metricnan2[50s], 1)
   {} 30
 
@@ -907,7 +907,7 @@ eval instant at 60s integral(metricnan2[60s], 1)
 eval instant at 60s integral(metricnan2[60s], 1)
   {} 30
 
-## Below two integral tests must give same result for mid-point, left-wise, and right-wise
+## Below two integral tests must give same result for mid-point, left-point, and right-point
 # - integral over 2m range
 # - same integral over 2m (whole) range, slotted with sum_over_time() each 10s
 #
@@ -918,14 +918,14 @@ eval instant at 2m integral(metricnan2[2m])
 eval instant at 2m sum_over_time(integral(metricnan2[10s])[2m:10s])
   {} 30
 
-# 2) left-wise
+# 2) left-point
 eval instant at 2m integral(metricnan2[2m], 0)
   {} 30
 
 eval instant at 2m sum_over_time(integral(metricnan2[10s], 0)[2m:10s])
   {} 30
 
-# 3) right-wise
+# 3) right-point
 eval instant at 2m integral(metricnan2[2m], 1)
   {} 30
 
@@ -937,11 +937,11 @@ eval instant at 2m sum_over_time(integral(metricnan2[10s], 1)[2m:10s])
 eval instant at 10m round(integral(sin(vector(time()/60*2*pi()))[10m:1s]), 1e-12)
   {} 0
 
-# left-wise
+# left-point
 eval instant at 10m round(integral(sin(vector(time()/60*2*pi()))[10m:1s], 0), 1e-12)
   {} 0
 
-# right-wise
+# right-point
 eval instant at 10m round(integral(sin(vector(time()/60*2*pi()))[10m:1s], 1), 1e-12)
   {} 0
 
@@ -950,11 +950,11 @@ eval instant at 10m round(integral(sin(vector(time()/60*2*pi()))[10m:1s], 1), 1e
 eval range from 1m to 10m step 1m round(integral(sin(vector(time()/60*2*pi()))[2m:1s]), 1e-12)
   {} 0+0x9
 
-# left-wise
+# left-point
 eval range from 1m to 10m step 1m round(integral(sin(vector(time()/60*2*pi()))[2m:1s], 0), 1e-12)
   {} 0+0x9
 
-# right-wise
+# right-point
 eval range from 1m to 10m step 1m round(integral(sin(vector(time()/60*2*pi()))[2m:1s], 1), 1e-12)
   {} 0+0x9
 
@@ -963,11 +963,11 @@ eval range from 1m to 10m step 1m round(integral(sin(vector(time()/60*2*pi()))[2
 eval range from 1m to 10m step 1m round(integral(cos(vector(time()/60*2*pi()))[2m:1s]), 1e-12)
   {} 0+0x9
 
-# left-wise
+# left-point
 eval range from 1m to 10m step 1m round(integral(cos(vector(time()/60*2*pi()))[2m:1s], 0), 1e-12)
   {} 0+0x9
 
-# right-wise
+# right-point
 eval range from 1m to 10m step 1m round(integral(cos(vector(time()/60*2*pi()))[2m:1s], 1), 1e-12)
   {} 0+0x9
 

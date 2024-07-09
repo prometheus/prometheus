@@ -110,12 +110,19 @@ Calculate the total cost over past week given the per-node hourly cost:
 
     integral(hourly_cost[7d]) / 3600
 
-Ditto above, but use left-wise sampling for the integral, for example if
-instant corresponds to the start of the interval (use `1` for right-wise):
+Ditto above, but use left-point sampling for the integral, for example if
+instant corresponds to the start of the interval (use `1` for right-point):
 
     integral(hourly_cost[7d], 0) / 3600
 
-Calculate the total energy consumed in Joules over last day, given the instant
+Calculate the total energy consumed in kWh over last day, given the instant
 power consumption in Watts:
 
-    integral(power_rate[1d])
+    integral(power_rate[1d]) / 1000 / 3600
+
+For those metrics that produce `1`s or `0`s, integrating them over time will
+give the _time in seconds_ that the value was `1`, for example, to get the
+_amount of time_ a particular metric has been absent during the past day
+(sampled every 5 minutes):
+
+    integral(absent(metric_name)[1d:5m])

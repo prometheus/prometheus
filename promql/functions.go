@@ -768,7 +768,7 @@ func funcIntegral(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 			// Discrete integral using simple (trapezoidal rule).
 			switch strategy {
 			case 0:
-				// Left-wise rectangle rule.
+				// Left-point rectangle rule.
 				//
 				//   metric
 				//     ^
@@ -791,7 +791,7 @@ func funcIntegral(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 				//                      (t2-t1)   (t3-t2)
 				value = prevVal
 			case 1:
-				// Right-wise rectangle rule.
+				// Right-point rectangle rule.
 				//
 				//   metric
 				//     ^
