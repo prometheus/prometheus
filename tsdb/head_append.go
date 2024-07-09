@@ -848,8 +848,8 @@ func (a *headAppender) Commit() (err error) {
 
 		inOrderMint         int64 = math.MaxInt64
 		inOrderMaxt         int64 = math.MinInt64
-		ooomint             int64 = math.MaxInt64
-		ooomaxt             int64 = math.MinInt64
+		oooMinT             int64 = math.MaxInt64
+		oooMaxT             int64 = math.MinInt64
 		wblSamples          []record.RefSample
 		oooMmapMarkers      map[chunks.HeadSeriesRef][]chunks.ChunkDiskMapperRef
 		oooMmapMarkersCount int
@@ -960,11 +960,11 @@ func (a *headAppender) Commit() (err error) {
 			}
 			if ok {
 				wblSamples = append(wblSamples, s)
-				if s.T < ooomint {
-					ooomint = s.T
+				if s.T < oooMinT {
+					oooMinT = s.T
 				}
-				if s.T > ooomaxt {
-					ooomaxt = s.T
+				if s.T > oooMaxT {
+					oooMaxT = s.T
 				}
 				floatOOOAccepted++
 			} else {
@@ -1064,7 +1064,7 @@ func (a *headAppender) Commit() (err error) {
 	a.head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeHistogram).Add(float64(histogramsAppended))
 	a.head.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeFloat).Add(float64(floatOOOAccepted))
 	a.head.updateMinMaxTime(inOrderMint, inOrderMaxt)
-	a.head.updateMinOOOMaxOOOTime(ooomint, ooomaxt)
+	a.head.updateMinOOOMaxOOOTime(oooMinT, oooMaxT)
 
 	collectOOORecords()
 	if a.head.wbl != nil {
