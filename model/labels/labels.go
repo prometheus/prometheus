@@ -31,6 +31,23 @@ func (ls Labels) Len() int           { return len(ls) }
 func (ls Labels) Swap(i, j int)      { ls[i], ls[j] = ls[j], ls[i] }
 func (ls Labels) Less(i, j int) bool { return ls[i].Name < ls[j].Name }
 
+func (l Labels) ExtractNames() []string {
+	names := make([]string, len(l))
+	for i, label := range l {
+		names[i] = label.Name
+	}
+	return names
+}
+
+func (l Labels) Contains(name string) bool {
+	for _, label := range l {
+		if label.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 // Bytes returns ls as a byte slice.
 // It uses an byte invalid character as a separator and so should not be used for printing.
 func (ls Labels) Bytes(buf []byte) []byte {

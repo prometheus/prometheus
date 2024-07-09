@@ -95,6 +95,7 @@ type OpenMetricsParser struct {
 	exemplarVal   float64
 	exemplarTs    int64
 	hasExemplarTs bool
+	skipCT		bool
 }
 
 // NewOpenMetricsParser returns a new parser of the byte slice.
@@ -102,6 +103,7 @@ func NewOpenMetricsParser(b []byte, st *labels.SymbolTable) Parser {
 	return &OpenMetricsParser{
 		l:       &openMetricsLexer{b: b},
 		builder: labels.NewScratchBuilderWithSymbolTable(st, 16),
+		skipCT:  true,
 	}
 }
 
@@ -232,6 +234,11 @@ loop:
 	for {
 		switch t, _ := newParser.Next(); t {
 		case EntrySeries:
+			// TODO: potentially broken? Missing type?
+			if newParser.mName != p.mName {
+				return nil
+			}
+
 			// continue instead of return nil until we get new series/labels. can happen for histograms, summaries
 			// Check _created suffix
 			var newLbs labels.Labels
@@ -241,15 +248,29 @@ loop:
 				continue
 			}
 
-			// TODO: potentially broken? Missing type?
-			if newParser.mName != p.mName {
-				return nil
-			}
-
 			// edge case: if gauge_created of unknown type -> skip parsing
 			newLbs = newLbs.DropMetricName()
-			if !labels.Equal(lbs, newLbs) {
-				return nil
+			switch p.mtype {
+			case model.MetricTypeCounter:
+				if !labels.Equal(lbs, newLbs) {
+					return nil
+				}
+			case model.MetricTypeSummary:
+				labelDiffs := lbs.MatchLabels(false, newLbs.ExtractNames()...)
+				if labelDiffs.Len() != 0 {
+					if !labelDiffs.Contains("quantile") || labelDiffs.Len() != 1 {
+						return nil
+					}
+				}
+			case model.MetricTypeHistogram:
+				labelDiffs := lbs.MatchLabels(false, newLbs.ExtractNames()...)
+				if labelDiffs.Len() != 0 {
+					if !labelDiffs.Contains("le") || labelDiffs.Len() != 1 {
+						return nil
+					}
+				}
+			default:
+				break
 			}
 
 			// TODO: for histograms
@@ -259,10 +280,6 @@ loop:
 
 			// gauge_created is a metric
 			ct := int64(newParser.val)
-			_, err := p.Next()
-			if err != nil {
-				return nil
-			}
 			return &ct
 		default:
 			break loop
@@ -312,6 +329,7 @@ func deepCopyParser(p *OpenMetricsParser) OpenMetricsParser {
 		exemplarVal:   p.exemplarVal,
 		exemplarTs:    p.exemplarTs,
 		hasExemplarTs: p.hasExemplarTs,
+		skipCT:       false,
 	}
 	return newParser
 }
@@ -602,6 +620,13 @@ func (p *OpenMetricsParser) parseMetricSuffix(t token) (Entry, error) {
 		default:
 			return EntryInvalid, p.parseError("expected next entry after timestamp", t3)
 		}
+	}
+
+	var newLbs labels.Labels
+	p.Metric(&newLbs)
+	name := newLbs.Get(model.MetricNameLabel)
+	if strings.HasSuffix(name, "_created") && p.skipCT  {
+		return p.Next()
 	}
 	return EntrySeries, nil
 }

@@ -41,7 +41,7 @@ type expectedParse struct {
 	unit    string
 	comment string
 	e       *exemplar.Exemplar
-	ct 	*int64
+	ct      *int64
 }
 
 func TestPromParse(t *testing.T) {
