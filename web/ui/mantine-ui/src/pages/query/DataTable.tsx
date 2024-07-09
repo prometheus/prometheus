@@ -1,5 +1,13 @@
-import { FC, useEffect, useId } from "react";
-import { Table, Alert, Skeleton, Box, LoadingOverlay } from "@mantine/core";
+import { FC, ReactNode, useEffect, useId, useState } from "react";
+import {
+  Table,
+  Alert,
+  Skeleton,
+  Box,
+  LoadingOverlay,
+  SegmentedControl,
+  ScrollArea,
+} from "@mantine/core";
 import { IconAlertTriangle, IconInfoCircle } from "@tabler/icons-react";
 import {
   InstantQueryResult,
@@ -13,6 +21,9 @@ import dayjs from "dayjs";
 import timezone from "dayjs/plugin/timezone";
 import { useAppSelector } from "../../state/hooks";
 import { formatTimestamp } from "../../lib/formatTime";
+import HistogramChart from "./HistogramChart";
+import { Histogram } from "../../types/types";
+import { bucketRangeString } from "./HistogramHelpers";
 dayjs.extend(timezone);
 
 const maxFormattableSeries = 1000;
@@ -34,6 +45,8 @@ export interface DataTableProps {
 }
 
 const DataTable: FC<DataTableProps> = ({ expr, evalTime, retriggerIdx }) => {
+  const [scale, setScale] = useState<string>("exponential");
+
   const { data, error, isFetching, isLoading, refetch } =
     useAPIQuery<InstantQueryResult>({
       key: useId(),
@@ -101,7 +114,7 @@ const DataTable: FC<DataTableProps> = ({ expr, evalTime, retriggerIdx }) => {
         }}
         styles={{ loader: { width: "100%", height: "100%" } }}
       />
-      <Table highlightOnHover fz="xs">
+      <Table fz="xs">
         <Table.Tbody>
           {resultType === "vector" ? (
             limitSeries<InstantSample>(result).map((s, idx) => (
@@ -111,7 +124,35 @@ const DataTable: FC<DataTableProps> = ({ expr, evalTime, retriggerIdx }) => {
                 </Table.Td>
                 <Table.Td className={classes.numberCell}>
                   {s.value && s.value[1]}
-                  {s.histogram && "TODO HISTOGRAM DISPLAY"}
+                  {s.histogram && (
+                    <>
+                      <HistogramChart
+                        histogram={s.histogram[1]}
+                        index={idx}
+                        scale={scale}
+                      />
+                      <div className={classes.histogramSummaryWrapper}>
+                        <div className={classes.histogramSummary}>
+                          <span>
+                            <strong>Total count:</strong> {s.histogram[1].count}
+                          </span>
+                          <span>
+                            <strong>Sum:</strong> {s.histogram[1].sum}
+                          </span>
+                        </div>
+                        <div className={classes.histogramSummary}>
+                          <span>x-axis scale:</span>
+                          <SegmentedControl
+                            size={"xs"}
+                            value={scale}
+                            onChange={setScale}
+                            data={["exponential", "linear"]}
+                          />
+                        </div>
+                      </div>
+                      {histogramTable(s.histogram[1])}
+                    </>
+                  )}
                 </Table.Td>
               </Table.Tr>
             ))
@@ -160,5 +201,45 @@ const DataTable: FC<DataTableProps> = ({ expr, evalTime, retriggerIdx }) => {
     </Box>
   );
 };
+
+const histogramTable = (h: Histogram): ReactNode => (
+  <Table>
+    <Table.Thead>
+      <Table.Tr>
+        <Table.Th style={{ textAlign: "center" }} colSpan={2}>
+          Bucket counts
+        </Table.Th>
+      </Table.Tr>
+    </Table.Thead>
+    <Table.Tbody
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "space-between",
+      }}
+    >
+      <Table.Tr
+        style={{
+          display: "flex",
+          flexDirection: "row",
+          justifyContent: "space-between",
+        }}
+      >
+        <Table.Th>Range</Table.Th>
+        <Table.Th>Count</Table.Th>
+      </Table.Tr>
+      <ScrollArea w={"100%"} h={250}>
+        {h.buckets?.map((b, i) => (
+          <Table.Tr key={i}>
+            <Table.Td style={{ textAlign: "left" }}>
+              {bucketRangeString(b)}
+            </Table.Td>
+            <Table.Td>{b[3]}</Table.Td>
+          </Table.Tr>
+        ))}
+      </ScrollArea>
+    </Table.Tbody>
+  </Table>
+);
 
 export default DataTable;
