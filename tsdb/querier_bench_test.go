@@ -42,7 +42,7 @@ func BenchmarkQuerier(b *testing.B) {
 
 	app := h.Appender(context.Background())
 	addSeries := func(l labels.Labels) {
-		app.Append(0, l, 0, 0)
+		app.Append(0, l, 0, 0, nil)
 	}
 
 	for n := 0; n < 10; n++ {
@@ -264,7 +264,7 @@ func BenchmarkQuerierSelect(b *testing.B) {
 	app := h.Appender(context.Background())
 	numSeries := 1000000
 	for i := 0; i < numSeries; i++ {
-		app.Append(0, labels.FromStrings("foo", "bar", "i", fmt.Sprintf("%d%s", i, postingsBenchSuffix)), int64(i), 0)
+		app.Append(0, labels.FromStrings("foo", "bar", "i", fmt.Sprintf("%d%s", i, postingsBenchSuffix)), int64(i), 0, nil)
 	}
 	require.NoError(b, app.Commit())
 

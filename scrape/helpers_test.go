@@ -43,12 +43,7 @@ func (a nopAppendable) Appender(_ context.Context) storage.Appender {
 
 type nopAppender struct{}
 
-// AppendWithHints implements storage.Appender.
-func (a nopAppender) AppendWithHints(ref storage.SeriesRef, l labels.Labels, t int64, v float64, hints *storage.AppendHints) (storage.SeriesRef, error) {
-	panic("unimplemented")
-}
-
-func (a nopAppender) Append(storage.SeriesRef, labels.Labels, int64, float64) (storage.SeriesRef, error) {
+func (a nopAppender) Append(storage.SeriesRef, labels.Labels, int64, float64, *storage.AppendHints) (storage.SeriesRef, error) {
 	return 0, nil
 }
 
@@ -92,6 +87,48 @@ type collectResultAppendable struct {
 	*collectResultAppender
 }
 
+// Append implements storage.Appender.
+// Subtle: this method shadows the method (*collectResultAppender).Append of collectResultAppendable.collectResultAppender.
+func (a *collectResultAppendable) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64, hints *storage.AppendHints) (storage.SeriesRef, error) {
+	panic("unimplemented")
+}
+
+// AppendCTZeroSample implements storage.Appender.
+// Subtle: this method shadows the method (*collectResultAppender).AppendCTZeroSample of collectResultAppendable.collectResultAppender.
+func (a *collectResultAppendable) AppendCTZeroSample(ref storage.SeriesRef, l labels.Labels, t int64, ct int64) (storage.SeriesRef, error) {
+	panic("unimplemented")
+}
+
+// AppendExemplar implements storage.Appender.
+// Subtle: this method shadows the method (*collectResultAppender).AppendExemplar of collectResultAppendable.collectResultAppender.
+func (a *collectResultAppendable) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+	panic("unimplemented")
+}
+
+// AppendHistogram implements storage.Appender.
+// Subtle: this method shadows the method (*collectResultAppender).AppendHistogram of collectResultAppendable.collectResultAppender.
+func (a *collectResultAppendable) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	panic("unimplemented")
+}
+
+// Commit implements storage.Appender.
+// Subtle: this method shadows the method (*collectResultAppender).Commit of collectResultAppendable.collectResultAppender.
+func (a *collectResultAppendable) Commit() error {
+	panic("unimplemented")
+}
+
+// Rollback implements storage.Appender.
+// Subtle: this method shadows the method (*collectResultAppender).Rollback of collectResultAppendable.collectResultAppender.
+func (a *collectResultAppendable) Rollback() error {
+	panic("unimplemented")
+}
+
+// UpdateMetadata implements storage.Appender.
+// Subtle: this method shadows the method (*collectResultAppender).UpdateMetadata of collectResultAppendable.collectResultAppender.
+func (a *collectResultAppendable) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
+	panic("unimplemented")
+}
+
 func (a *collectResultAppendable) Appender(_ context.Context) storage.Appender {
 	return a
 }
@@ -114,11 +151,7 @@ type collectResultAppender struct {
 	pendingMetadata      []metadata.Metadata
 }
 
-func (a *collectResultAppender) AppendWithHints(ref storage.SeriesRef, l labels.Labels, t int64, v float64, hints *storage.AppendHints) (storage.SeriesRef, error) {
-	panic("unimplemented")
-}
-
-func (a *collectResultAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+func (a *collectResultAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
 	a.pendingFloats = append(a.pendingFloats, floatSample{
@@ -134,7 +167,7 @@ func (a *collectResultAppender) Append(ref storage.SeriesRef, lset labels.Labels
 		return ref, nil
 	}
 
-	ref, err := a.next.Append(ref, lset, t, v)
+	ref, err := a.next.Append(ref, lset, t, v, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -178,7 +211,7 @@ func (a *collectResultAppender) UpdateMetadata(ref storage.SeriesRef, l labels.L
 }
 
 func (a *collectResultAppender) AppendCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64) (storage.SeriesRef, error) {
-	return a.Append(ref, l, ct, 0.0)
+	return a.Append(ref, l, ct, 0.0, nil)
 }
 
 func (a *collectResultAppender) Commit() error {

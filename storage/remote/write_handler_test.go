@@ -768,7 +768,7 @@ func (m *mockAppendable) Appender(_ context.Context) storage.Appender {
 	return m
 }
 
-func (m *mockAppendable) Append(_ storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+func (m *mockAppendable) Append(_ storage.SeriesRef, l labels.Labels, t int64, v float64, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	if t < m.latestSample {
 		return 0, storage.ErrOutOfOrderSample
 	}
@@ -776,10 +776,6 @@ func (m *mockAppendable) Append(_ storage.SeriesRef, l labels.Labels, t int64, v
 	m.latestSample = t
 	m.samples = append(m.samples, mockSample{l, t, v})
 	return 0, nil
-}
-
-func (*mockAppendable) AppendWithHints(ref storage.SeriesRef, lset labels.Labels, t int64, v float64, hints *storage.AppendHints) (storage.SeriesRef, error) {
-	panic("not implemented")
 }
 
 func (m *mockAppendable) Commit() error {

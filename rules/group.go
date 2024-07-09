@@ -209,7 +209,8 @@ func (g *Group) run(ctx context.Context) {
 			select {
 			case <-g.managerDone:
 			case <-time.After(2 * g.interval):
-				g.cleanupStaleSeries(ctx, now)
+				hints := &storage.AppendHints{DiscardOutOfOrder: true}
+				g.cleanupStaleSeries(ctx, now, hints)
 			}
 		}(time.Now())
 	}()
@@ -441,6 +442,7 @@ func (g *Group) CopyState(from *Group) {
 // Eval runs a single evaluation cycle in which all rules are evaluated sequentially.
 // Rules can be evaluated concurrently if the `concurrent-rule-eval` feature flag is enabled.
 func (g *Group) Eval(ctx context.Context, ts time.Time) {
+	hints := &storage.AppendHints{DiscardOutOfOrder: true}
 	var (
 		samplesTotal atomic.Float64
 		wg           sync.WaitGroup
@@ -520,12 +522,11 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				}
 				g.seriesInPreviousEval[i] = seriesReturned
 			}()
-
 			for _, s := range vector {
 				if s.H != nil {
 					_, err = app.AppendHistogram(0, s.Metric, s.T, nil, s.H)
 				} else {
-					_, err = app.Append(0, s.Metric, s.T, s.F)
+					_, err = app.Append(0, s.Metric, s.T, s.F, hints)
 				}
 
 				if err != nil {
@@ -567,7 +568,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			for metric, lset := range g.seriesInPreviousEval[i] {
 				if _, ok := seriesReturned[metric]; !ok {
 					// Series no longer exposed, mark it stale.
-					_, err = app.Append(0, lset, timestamp.FromTime(ts.Add(-ruleQueryOffset)), math.Float64frombits(value.StaleNaN))
+					_, err = app.Append(0, lset, timestamp.FromTime(ts.Add(-ruleQueryOffset)), math.Float64frombits(value.StaleNaN), hints)
 					unwrappedErr := errors.Unwrap(err)
 					if unwrappedErr == nil {
 						unwrappedErr = err
@@ -603,7 +604,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 	wg.Wait()
 
 	g.metrics.GroupSamples.WithLabelValues(GroupKey(g.File(), g.Name())).Set(samplesTotal.Load())
-	g.cleanupStaleSeries(ctx, ts)
+	g.cleanupStaleSeries(ctx, ts, hints)
 }
 
 func (g *Group) QueryOffset() time.Duration {
@@ -618,7 +619,7 @@ func (g *Group) QueryOffset() time.Duration {
 	return time.Duration(0)
 }
 
-func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
+func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time, hints *storage.AppendHints) {
 	if len(g.staleSeries) == 0 {
 		return
 	}
@@ -626,7 +627,7 @@ func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
 	queryOffset := g.QueryOffset()
 	for _, s := range g.staleSeries {
 		// Rule that produced series no longer configured, mark it stale.
-		_, err := app.Append(0, s, timestamp.FromTime(ts.Add(-queryOffset)), math.Float64frombits(value.StaleNaN))
+		_, err := app.Append(0, s, timestamp.FromTime(ts.Add(-queryOffset)), math.Float64frombits(value.StaleNaN), hints)
 		unwrappedErr := errors.Unwrap(err)
 		if unwrappedErr == nil {
 			unwrappedErr = err

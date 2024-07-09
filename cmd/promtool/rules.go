@@ -203,7 +203,7 @@ type multipleAppender struct {
 }
 
 func (m *multipleAppender) add(ctx context.Context, l labels.Labels, t int64, v float64) error {
-	if _, err := m.appender.Append(0, l, t, v); err != nil {
+	if _, err := m.appender.Append(0, l, t, v, nil); err != nil {
 		return fmt.Errorf("multiappender append: %w", err)
 	}
 	m.currentSampleCount++
