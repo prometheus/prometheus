@@ -1,23 +1,23 @@
 .tableWrapper {
-    border: 1px solid
-        light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-5));
-    border-radius: var(--mantine-radius-default);
+  border: 1px solid
+    light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-5));
+  border-radius: var(--mantine-radius-default);
 }
 
 .numberCell {
-    text-align: right;
-    font-variant-numeric: tabular-nums;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .histogramSummaryWrapper {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px;
 }
 
 .histogramSummary {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
 }
