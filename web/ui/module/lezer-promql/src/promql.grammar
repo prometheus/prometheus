@@ -145,6 +145,7 @@ FunctionIdentifier {
   Hour |
   Idelta |
   Increase |
+  Integral |
   Irate |
   LabelReplace |
   LabelJoin |
