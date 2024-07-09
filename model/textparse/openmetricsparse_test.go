@@ -36,9 +36,9 @@ func TestOpenMetricsParse(t *testing.T) {
 go_gc_duration_seconds{quantile="0"} 4.9351e-05
 go_gc_duration_seconds{quantile="0.25"} 7.424100000000001e-05
 go_gc_duration_seconds{quantile="0.5",a="b"} 8.3835e-05
-# HELP nohelp1
+# HELP nohelp1 
 # HELP help2 escape \ \n \\ \" \x chars
-# UNIT nounit
+# UNIT nounit 
 go_gc_duration_seconds{quantile="1.0",a="b"} 8.3835e-05
 go_gc_duration_seconds_count 99
 some:aggregate:rate5m{a_b="c"} 1
