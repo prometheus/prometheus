@@ -95,7 +95,11 @@ type OpenMetricsParser struct {
 	exemplarVal   float64
 	exemplarTs    int64
 	hasExemplarTs bool
-	skipCT        bool
+
+	// lines ending with _created are skipped by default as they are
+	// parsed by the CreatedTimestamp method. The skipCT flag is set to
+	// false when the CreatedTimestamp method is called.
+	skipCT bool
 }
 
 // NewOpenMetricsParser returns a new parser of the byte slice.
@@ -229,7 +233,7 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 	p.Metric(&lbs)
 	lbs = lbs.DropMetricName()
 
-	newParser := deepCopyParser(p)
+	newParser := createdTimestampParser(p)
 loop:
 	for {
 		switch t, _ := newParser.Next(); t {
@@ -280,11 +284,11 @@ loop:
 	return nil
 }
 
-// deepCopyParser creates a copy of a parser without re-using the slices' original memory addresses.
+// createdTimestampParser creates a copy of a parser without re-using the slices' original memory addresses.
 // The function `CreatedTimestamp()` uses a copy of the parser to "peek" at _created lines that might be several lines ahead, without changing the state of the original parser.
 //
-// Additionally, deepCopyParser switches `skipCT` from false to true, because this new parser needs to return _created lines.
-func deepCopyParser(p *OpenMetricsParser) OpenMetricsParser {
+// Additionally, createdTimestampParser switches `skipCT` from true to false, because this new parser needs to return _created lines.
+func createdTimestampParser(p *OpenMetricsParser) OpenMetricsParser {
 	newB := make([]byte, len(p.l.b))
 	copy(newB, p.l.b)
 
@@ -296,34 +300,12 @@ func deepCopyParser(p *OpenMetricsParser) OpenMetricsParser {
 		state: p.l.state,
 	}
 
-	newSeries := make([]byte, len(p.series))
-	copy(newSeries, p.series)
-	newText := make([]byte, len(p.text))
-	copy(newText, p.text)
-	newOffsets := make([]int, len(p.offsets))
-	copy(newOffsets, p.offsets)
-	newEOffsets := p.eOffsets
-	newExemplar := p.exemplar
 	newParser := OpenMetricsParser{
-		l:       newLexer,
-		builder: p.builder,
-		series:  newSeries,
-		text:    newText,
-		mtype:   p.mtype,
-		mName:   p.mName,
-		val:     p.val,
-		ts:      p.ts,
-		hasTS:   p.hasTS,
-		start:   p.start,
-
-		offsets: newOffsets,
-
-		eOffsets:      newEOffsets,
-		exemplar:      newExemplar,
-		exemplarVal:   p.exemplarVal,
-		exemplarTs:    p.exemplarTs,
-		hasExemplarTs: p.hasExemplarTs,
-		skipCT:        false,
+		l:      newLexer,
+		mtype:  p.mtype,
+		mName:  p.mName,
+		val:    p.val,
+		skipCT: false,
 	}
 	return newParser
 }
