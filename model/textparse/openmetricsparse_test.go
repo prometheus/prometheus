@@ -24,52 +24,51 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-// # HELP go_gc_duration_seconds A summary of the GC invocation durations.
-// # TYPE go_gc_duration_seconds summary
-// # UNIT go_gc_duration_seconds seconds
-// go_gc_duration_seconds{quantile="0"} 4.9351e-05
-// go_gc_duration_seconds{quantile="0.25"} 7.424100000000001e-05
-// go_gc_duration_seconds{quantile="0.5",a="b"} 8.3835e-05
-// # HELP nohelp1
-// # HELP help2 escape \ \n \\ \" \x chars
-// # UNIT nounit
-// go_gc_duration_seconds{quantile="1.0",a="b"} 8.3835e-05
-// go_gc_duration_seconds_count 99
-// some:aggregate:rate5m{a_b="c"} 1
-// # HELP go_goroutines Number of goroutines that currently exist.
-// # TYPE go_goroutines gauge
-// go_goroutines 33 123.123
-// # TYPE hh histogram
-// hh_bucket{le="+Inf"} 1
-// # TYPE gh gaugehistogram
-// gh_bucket{le="+Inf"} 1
-// # TYPE hhh histogram
-// hhh_bucket{le="+Inf"} 1 # {id="histogram-bucket-test"} 4
-// hhh_count 1 # {id="histogram-count-test"} 4
-// # TYPE ggh gaugehistogram
-// ggh_bucket{le="+Inf"} 1 # {id="gaugehistogram-bucket-test",xx="yy"} 4 123.123
-// ggh_count 1 # {id="gaugehistogram-count-test",xx="yy"} 4 123.123
-// # TYPE smr_seconds summary
-// smr_seconds_count 2.0 # {id="summary-count-test"} 1 123.321
-// smr_seconds_sum 42.0 # {id="summary-sum-test"} 1 123.321
-// # TYPE ii info
-// ii{foo="bar"} 1
-// # TYPE ss stateset
-// ss{ss="foo"} 1
-// ss{ss="bar"} 0
-// ss{A="a"} 0
-// # TYPE un unknown
-// _metric_starting_with_underscore 1
-// testmetric{_label_starting_with_underscore="foo"} 1
-// testmetric{label="\"bar\""} 1
-
 // In summary: we find created but then p.Next() is called and we end up parsing the bar_created again
 // In histogram bucket labels {le="0.0"} end up getting compared to baz_created which is not what we want
 // This issue might happen in summaries if quantiles are before _created
 
 // figure out summary order for _created, quantiles etc
 func TestOpenMetricsParse(t *testing.T) {
-	input := `# TYPE foo counter
+	input := `# HELP go_gc_duration_seconds A summary of the GC invocation durations.
+# TYPE go_gc_duration_seconds summary
+# UNIT go_gc_duration_seconds seconds
+go_gc_duration_seconds{quantile="0"} 4.9351e-05
+go_gc_duration_seconds{quantile="0.25"} 7.424100000000001e-05
+go_gc_duration_seconds{quantile="0.5",a="b"} 8.3835e-05
+# HELP nohelp1
+# HELP help2 escape \ \n \\ \" \x chars
+# UNIT nounit
+go_gc_duration_seconds{quantile="1.0",a="b"} 8.3835e-05
+go_gc_duration_seconds_count 99
+some:aggregate:rate5m{a_b="c"} 1
+# HELP go_goroutines Number of goroutines that currently exist.
+# TYPE go_goroutines gauge
+go_goroutines 33 123.123
+# TYPE hh histogram
+hh_bucket{le="+Inf"} 1
+# TYPE gh gaugehistogram
+gh_bucket{le="+Inf"} 1
+# TYPE hhh histogram
+hhh_bucket{le="+Inf"} 1 # {id="histogram-bucket-test"} 4
+hhh_count 1 # {id="histogram-count-test"} 4
+# TYPE ggh gaugehistogram
+ggh_bucket{le="+Inf"} 1 # {id="gaugehistogram-bucket-test",xx="yy"} 4 123.123
+ggh_count 1 # {id="gaugehistogram-count-test",xx="yy"} 4 123.123
+# TYPE smr_seconds summary
+smr_seconds_count 2.0 # {id="summary-count-test"} 1 123.321
+smr_seconds_sum 42.0 # {id="summary-sum-test"} 1 123.321
+# TYPE ii info
+ii{foo="bar"} 1
+# TYPE ss stateset
+ss{ss="foo"} 1
+ss{ss="bar"} 0
+ss{A="a"} 0
+# TYPE un unknown
+_metric_starting_with_underscore 1
+testmetric{_label_starting_with_underscore="foo"} 1
+testmetric{label="\"bar\""} 1
+# TYPE foo counter
 foo_total 17.0 1520879607.789 # {id="counter-test"} 5
 foo_created 1000
 foo_total{a="b"} 17.0 1520879607.789 # {id="counter-test"} 5
@@ -94,151 +93,150 @@ baz_created 1520430000`
 	int64p := func(x int64) *int64 { return &x }
 
 	exp := []expectedParse{
-		// {
-		// 	m:    "go_gc_duration_seconds",
-		// 	help: "A summary of the GC invocation durations.",
-		// }, {
-		// 	m:   "go_gc_duration_seconds",
-		// 	typ: model.MetricTypeSummary,
-		// }, {
-		// 	m:    "go_gc_duration_seconds",
-		// 	unit: "seconds",
-		// }, {
-		// 	m:    `go_gc_duration_seconds{quantile="0"}`,
-		// 	v:    4.9351e-05,
-		// 	lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0"),
-		// }, {
-		// 	m:    `go_gc_duration_seconds{quantile="0.25"}`,
-		// 	v:    7.424100000000001e-05,
-		// 	lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.25"),
-		// }, {
-		// 	m:    `go_gc_duration_seconds{quantile="0.5",a="b"}`,
-		// 	v:    8.3835e-05,
-		// 	lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.5", "a", "b"),
-		// }, {
-		// 	m:    "nohelp1",
-		// 	help: "",
-		// }, {
-		// 	m:    "help2",
-		// 	help: "escape \\ \n \\ \" \\x chars",
-		// }, {
-		// 	m:    "nounit",
-		// 	unit: "",
-		// }, {
-		// 	m:    `go_gc_duration_seconds{quantile="1.0",a="b"}`,
-		// 	v:    8.3835e-05,
-		// 	lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"),
-		// }, {
-		// 	m:    `go_gc_duration_seconds_count`,
-		// 	v:    99,
-		// 	lset: labels.FromStrings("__name__", "go_gc_duration_seconds_count"),
-		// }, {
-		// 	m:    `some:aggregate:rate5m{a_b="c"}`,
-		// 	v:    1,
-		// 	lset: labels.FromStrings("__name__", "some:aggregate:rate5m", "a_b", "c"),
-		// }, {
-		// 	m:    "go_goroutines",
-		// 	help: "Number of goroutines that currently exist.",
-		// }, {
-		// 	m:   "go_goroutines",
-		// 	typ: model.MetricTypeGauge,
-		// }, {
-		// 	m:    `go_goroutines`,
-		// 	v:    33,
-		// 	t:    int64p(123123),
-		// 	lset: labels.FromStrings("__name__", "go_goroutines"),
-		// }, {
-		// 	m:   "hh",
-		// 	typ: model.MetricTypeHistogram,
-		// }, {
-		// 	m:    `hh_bucket{le="+Inf"}`,
-		// 	v:    1,
-		// 	lset: labels.FromStrings("__name__", "hh_bucket", "le", "+Inf"),
-		// }, {
-		// 	m:   "gh",
-		// 	typ: model.MetricTypeGaugeHistogram,
-		// }, {
-		// 	m:    `gh_bucket{le="+Inf"}`,
-		// 	v:    1,
-		// 	lset: labels.FromStrings("__name__", "gh_bucket", "le", "+Inf"),
-		// }, {
-		// 	m:   "hhh",
-		// 	typ: model.MetricTypeHistogram,
-		// }, {
-		// 	m:    `hhh_bucket{le="+Inf"}`,
-		// 	v:    1,
-		// 	lset: labels.FromStrings("__name__", "hhh_bucket", "le", "+Inf"),
-		// 	e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "histogram-bucket-test"), Value: 4},
-		// }, {
-		// 	m:    `hhh_count`,
-		// 	v:    1,
-		// 	lset: labels.FromStrings("__name__", "hhh_count"),
-		// 	e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "histogram-count-test"), Value: 4},
-		// }, {
-		// 	m:   "ggh",
-		// 	typ: model.MetricTypeGaugeHistogram,
-		// }, {
-		// 	m:    `ggh_bucket{le="+Inf"}`,
-		// 	v:    1,
-		// 	lset: labels.FromStrings("__name__", "ggh_bucket", "le", "+Inf"),
-		// 	e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "gaugehistogram-bucket-test", "xx", "yy"), Value: 4, HasTs: true, Ts: 123123},
-		// }, {
-		// 	m:    `ggh_count`,
-		// 	v:    1,
-		// 	lset: labels.FromStrings("__name__", "ggh_count"),
-		// 	e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "gaugehistogram-count-test", "xx", "yy"), Value: 4, HasTs: true, Ts: 123123},
-		// }, {
-		// 	m:   "smr_seconds",
-		// 	typ: model.MetricTypeSummary,
-		// }, {
-		// 	m:    `smr_seconds_count`,
-		// 	v:    2,
-		// 	lset: labels.FromStrings("__name__", "smr_seconds_count"),
-		// 	e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "summary-count-test"), Value: 1, HasTs: true, Ts: 123321},
-		// }, {
-		// 	m:    `smr_seconds_sum`,
-		// 	v:    42,
-		// 	lset: labels.FromStrings("__name__", "smr_seconds_sum"),
-		// 	e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "summary-sum-test"), Value: 1, HasTs: true, Ts: 123321},
-		// }, {
-		// 	m:   "ii",
-		// 	typ: model.MetricTypeInfo,
-		// }, {
-		// 	m:    `ii{foo="bar"}`,
-		// 	v:    1,
-		// 	lset: labels.FromStrings("__name__", "ii", "foo", "bar"),
-		// }, {
-		// 	m:   "ss",
-		// 	typ: model.MetricTypeStateset,
-		// }, {
-		// 	m:    `ss{ss="foo"}`,
-		// 	v:    1,
-		// 	lset: labels.FromStrings("__name__", "ss", "ss", "foo"),
-		// }, {
-		// 	m:    `ss{ss="bar"}`,
-		// 	v:    0,
-		// 	lset: labels.FromStrings("__name__", "ss", "ss", "bar"),
-		// }, {
-		// 	m:    `ss{A="a"}`,
-		// 	v:    0,
-		// 	lset: labels.FromStrings("A", "a", "__name__", "ss"),
-		// }, {
-		// 	m:   "un",
-		// 	typ: model.MetricTypeUnknown,
-		// }, {
-		// 	m:    "_metric_starting_with_underscore",
-		// 	v:    1,
-		// 	lset: labels.FromStrings("__name__", "_metric_starting_with_underscore"),
-		// }, {
-		// 	m:    "testmetric{_label_starting_with_underscore=\"foo\"}",
-		// 	v:    1,
-		// 	lset: labels.FromStrings("__name__", "testmetric", "_label_starting_with_underscore", "foo"),
-		// }, {
-		// 	m:    "testmetric{label=\"\\\"bar\\\"\"}",
-		// 	v:    1,
-		// 	lset: labels.FromStrings("__name__", "testmetric", "label", `"bar"`),
-		// }, {
 		{
+			m:    "go_gc_duration_seconds",
+			help: "A summary of the GC invocation durations.",
+		}, {
+			m:   "go_gc_duration_seconds",
+			typ: model.MetricTypeSummary,
+		}, {
+			m:    "go_gc_duration_seconds",
+			unit: "seconds",
+		}, {
+			m:    `go_gc_duration_seconds{quantile="0"}`,
+			v:    4.9351e-05,
+			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0"),
+		}, {
+			m:    `go_gc_duration_seconds{quantile="0.25"}`,
+			v:    7.424100000000001e-05,
+			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.25"),
+		}, {
+			m:    `go_gc_duration_seconds{quantile="0.5",a="b"}`,
+			v:    8.3835e-05,
+			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.5", "a", "b"),
+		}, {
+			m:    "nohelp1",
+			help: "",
+		}, {
+			m:    "help2",
+			help: "escape \\ \n \\ \" \\x chars",
+		}, {
+			m:    "nounit",
+			unit: "",
+		}, {
+			m:    `go_gc_duration_seconds{quantile="1.0",a="b"}`,
+			v:    8.3835e-05,
+			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"),
+		}, {
+			m:    `go_gc_duration_seconds_count`,
+			v:    99,
+			lset: labels.FromStrings("__name__", "go_gc_duration_seconds_count"),
+		}, {
+			m:    `some:aggregate:rate5m{a_b="c"}`,
+			v:    1,
+			lset: labels.FromStrings("__name__", "some:aggregate:rate5m", "a_b", "c"),
+		}, {
+			m:    "go_goroutines",
+			help: "Number of goroutines that currently exist.",
+		}, {
+			m:   "go_goroutines",
+			typ: model.MetricTypeGauge,
+		}, {
+			m:    `go_goroutines`,
+			v:    33,
+			t:    int64p(123123),
+			lset: labels.FromStrings("__name__", "go_goroutines"),
+		}, {
+			m:   "hh",
+			typ: model.MetricTypeHistogram,
+		}, {
+			m:    `hh_bucket{le="+Inf"}`,
+			v:    1,
+			lset: labels.FromStrings("__name__", "hh_bucket", "le", "+Inf"),
+		}, {
+			m:   "gh",
+			typ: model.MetricTypeGaugeHistogram,
+		}, {
+			m:    `gh_bucket{le="+Inf"}`,
+			v:    1,
+			lset: labels.FromStrings("__name__", "gh_bucket", "le", "+Inf"),
+		}, {
+			m:   "hhh",
+			typ: model.MetricTypeHistogram,
+		}, {
+			m:    `hhh_bucket{le="+Inf"}`,
+			v:    1,
+			lset: labels.FromStrings("__name__", "hhh_bucket", "le", "+Inf"),
+			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "histogram-bucket-test"), Value: 4},
+		}, {
+			m:    `hhh_count`,
+			v:    1,
+			lset: labels.FromStrings("__name__", "hhh_count"),
+			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "histogram-count-test"), Value: 4},
+		}, {
+			m:   "ggh",
+			typ: model.MetricTypeGaugeHistogram,
+		}, {
+			m:    `ggh_bucket{le="+Inf"}`,
+			v:    1,
+			lset: labels.FromStrings("__name__", "ggh_bucket", "le", "+Inf"),
+			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "gaugehistogram-bucket-test", "xx", "yy"), Value: 4, HasTs: true, Ts: 123123},
+		}, {
+			m:    `ggh_count`,
+			v:    1,
+			lset: labels.FromStrings("__name__", "ggh_count"),
+			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "gaugehistogram-count-test", "xx", "yy"), Value: 4, HasTs: true, Ts: 123123},
+		}, {
+			m:   "smr_seconds",
+			typ: model.MetricTypeSummary,
+		}, {
+			m:    `smr_seconds_count`,
+			v:    2,
+			lset: labels.FromStrings("__name__", "smr_seconds_count"),
+			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "summary-count-test"), Value: 1, HasTs: true, Ts: 123321},
+		}, {
+			m:    `smr_seconds_sum`,
+			v:    42,
+			lset: labels.FromStrings("__name__", "smr_seconds_sum"),
+			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "summary-sum-test"), Value: 1, HasTs: true, Ts: 123321},
+		}, {
+			m:   "ii",
+			typ: model.MetricTypeInfo,
+		}, {
+			m:    `ii{foo="bar"}`,
+			v:    1,
+			lset: labels.FromStrings("__name__", "ii", "foo", "bar"),
+		}, {
+			m:   "ss",
+			typ: model.MetricTypeStateset,
+		}, {
+			m:    `ss{ss="foo"}`,
+			v:    1,
+			lset: labels.FromStrings("__name__", "ss", "ss", "foo"),
+		}, {
+			m:    `ss{ss="bar"}`,
+			v:    0,
+			lset: labels.FromStrings("__name__", "ss", "ss", "bar"),
+		}, {
+			m:    `ss{A="a"}`,
+			v:    0,
+			lset: labels.FromStrings("A", "a", "__name__", "ss"),
+		}, {
+			m:   "un",
+			typ: model.MetricTypeUnknown,
+		}, {
+			m:    "_metric_starting_with_underscore",
+			v:    1,
+			lset: labels.FromStrings("__name__", "_metric_starting_with_underscore"),
+		}, {
+			m:    "testmetric{_label_starting_with_underscore=\"foo\"}",
+			v:    1,
+			lset: labels.FromStrings("__name__", "testmetric", "_label_starting_with_underscore", "foo"),
+		}, {
+			m:    "testmetric{label=\"\\\"bar\\\"\"}",
+			v:    1,
+			lset: labels.FromStrings("__name__", "testmetric", "label", `"bar"`),
+		}, {
 			m:   "foo",
 			typ: model.MetricTypeCounter,
 		},
