@@ -31,16 +31,19 @@ func (ls Labels) Len() int           { return len(ls) }
 func (ls Labels) Swap(i, j int)      { ls[i], ls[j] = ls[j], ls[i] }
 func (ls Labels) Less(i, j int) bool { return ls[i].Name < ls[j].Name }
 
-func (l Labels) ExtractNames() []string {
-	names := make([]string, len(l))
-	for i, label := range l {
+
+// ExtractNames returns an array of all Name in ls.
+func (ls Labels) ExtractNames() []string {
+	names := make([]string, len(ls))
+	for i, label := range ls {
 		names[i] = label.Name
 	}
 	return names
 }
 
-func (l Labels) Contains(name string) bool {
-	for _, label := range l {
+// Contains returns true if the label set contains the provided label name.
+func (ls Labels) Contains(name string) bool {
+	for _, label := range ls {
 		if label.Name == name {
 			return true
 		}

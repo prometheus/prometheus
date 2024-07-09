@@ -282,7 +282,7 @@ loop:
 }
 
 // We need this because we want offsets of the original parser unchanged when
-// we're working with a new parser in CreatedTimeStamp()
+// we're working with a new parser in CreatedTimeStamp().
 func deepCopyParser(p *OpenMetricsParser) OpenMetricsParser {
 	newB := make([]byte, len(p.l.b))
 	copy(newB, p.l.b)
