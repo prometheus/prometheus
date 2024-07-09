@@ -8,16 +8,3 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
-
-.histogramSummaryWrapper {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px;
-}
-
-.histogramSummary {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
