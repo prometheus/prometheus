@@ -817,6 +817,10 @@ load 10s
 eval instant at 1m integral(metricbignum[2m])
   {} 0
 
+# mid-point fallback after warning
+eval_warn instant at 1m integral(metricbignum[2m], 3)
+  {} 0
+
 # left-wise
 eval instant at 1m integral(metricbignum[2m], 0)
   {} 20
