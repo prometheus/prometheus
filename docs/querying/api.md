@@ -25,8 +25,10 @@ Other non-`2xx` codes may be returned for errors occurring before the API
 endpoint is reached.
 
 An array of warnings may be returned if there are errors that do
-not inhibit the request execution. All of the data that was successfully
-collected will be returned in the data field.
+not inhibit the request execution. An additional array of info-level
+annotations may be returned for potential query issues that may or may
+not be false positives. All of the data that was successfully collected
+will be returned in the data field.
 
 The JSON response envelope format is as follows:
 
@@ -40,9 +42,11 @@ The JSON response envelope format is as follows:
   "errorType": "<string>",
   "error": "<string>",
 
-  // Only if there were warnings while executing the request.
+  // Only set if there were warnings while executing the request.
   // There will still be data in the data field.
-  "warnings": ["<string>"]
+  "warnings": ["<string>"],
+  // Only set if there were info-level annnotations while executing the request.
+  "infos": ["<string>"]
 }
 ```
 
@@ -452,7 +456,7 @@ raw numbers.
 
 The keys `"histogram"` and `"histograms"` only show up if the experimental
 native histograms are present in the response. Their placeholder `<histogram>`
-is explained in detail in its own section below. 
+is explained in detail in its own section below.
 
 ### Range vectors
 
@@ -470,7 +474,7 @@ Range vectors are returned as result type `matrix`. The corresponding
 ]
 ```
 
-Each series could have the `"values"` key, or the `"histograms"` key, or both. 
+Each series could have the `"values"` key, or the `"histograms"` key, or both.
 For a given timestamp, there will only be one sample of either float or histogram type.
 
 Series are returned sorted by `metric`. Functions such as [`sort`](functions.md#sort)
@@ -1309,7 +1313,7 @@ endpoint is `/api/v1/write`. Find more details [here](../storage.md#overview).
 
 ## OTLP Receiver
 
-Prometheus can be configured as a receiver for the OTLP Metrics protocol. This 
+Prometheus can be configured as a receiver for the OTLP Metrics protocol. This
 is not considered an efficient way of ingesting samples. Use it
 with caution for specific low-volume use cases. It is not suitable for
 replacing the ingestion via scraping.
