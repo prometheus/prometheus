@@ -329,7 +329,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 		a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
 		return 0, storage.ErrOutOfOrderSample
 	}
-	if t < a.minValidTime {
+	if a.oooTimeWindow == 0 && t < a.minValidTime {
 		a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
 		return 0, storage.ErrOutOfBounds
 	}
