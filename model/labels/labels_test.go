@@ -889,3 +889,45 @@ func TestMarshaling(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, f, gotFY)
 }
+
+func TestExtractNames(t *testing.T) {
+	tests := []struct {
+		name     string
+		labels   Labels
+		expected []string
+	}{
+		{"Empty slice empty labels", Labels{}, []string{}},
+		{"Single label", Labels{{"hi", "Value1"}}, []string{"hi"}},
+		{"Multiple labels", Labels{{"hi", "Value1"}, {"yoyoy", "Value2"}, {"xxxx", "Value3"}}, []string{"hi", "yoyoy", "xxxx"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.labels.ExtractNames()
+			require.Equal(t, tt.expected, got)
+		})
+	}
+}
+
+func TestContains(t *testing.T) {
+	tests := []struct {
+		name     string
+		labels   Labels
+		names    []string
+		expected bool
+	}{
+		{"Empty slice", Labels{}, []string{"hi"}, false},
+		{"Empty slice Empty Labels", Labels{}, []string{}, false},
+		{"Empty slice non-Labels", Labels{{"hi", "Value1"}, {"yoyoy", "Value2"}}, []string{}, false},
+		{"Single match", Labels{{"hi", "Value1"}}, []string{"hi"}, true},
+		{"Multiple matches", Labels{{"hi", "Value1"}, {"yoyoy", "Value2"}, {"xxxx", "Value3"}}, []string{"hi", "bye"}, true},
+		{"No match", Labels{{"hi", "Value1"}, {"yoyoy", "Value2"}, {"xxxx", "Value3"}}, []string{"bye"}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.labels.Contains(tt.names...)
+			require.Equal(t, tt.expected, got)
+		})
+	}
+}
