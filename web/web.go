@@ -70,7 +70,6 @@ var reactRouterPaths = []string{
 	"/service-discovery",
 	"/status",
 	"/targets",
-	"/starting",
 }
 
 // Paths that are handled by the React router when the Agent mode is set.
@@ -367,11 +366,11 @@ func New(logger log.Logger, o *Options) *Handler {
 	}
 
 	homePage := "/graph"
-	if o.IsAgent {
-		homePage = "/agent"
-	}
 	if o.UseNewUI {
 		homePage = "/query"
+	}
+	if o.IsAgent {
+		homePage = "/agent"
 	}
 
 	readyf := h.testReady

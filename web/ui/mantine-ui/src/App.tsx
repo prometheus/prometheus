@@ -74,12 +74,14 @@ const mainNavPages = [
     path: "/query",
     icon: <IconDatabaseSearch style={navIconStyle} />,
     element: <QueryPage />,
+    inAgentMode: false,
   },
   {
     title: "Alerts",
     path: "/alerts",
     icon: <IconBellFilled style={navIconStyle} />,
     element: <AlertsPage />,
+    inAgentMode: false,
   },
 ];
 
@@ -89,18 +91,21 @@ const monitoringStatusPages = [
     path: "/targets",
     icon: <IconHeartRateMonitor style={navIconStyle} />,
     element: <TargetsPage />,
+    inAgentMode: true,
   },
   {
     title: "Rule health",
     path: "/rules",
     icon: <IconTable style={navIconStyle} />,
     element: <RulesPage />,
+    inAgentMode: false,
   },
   {
     title: "Service discovery",
     path: "/service-discovery",
     icon: <IconCloudDataConnection style={navIconStyle} />,
     element: <ServiceDiscoveryPage />,
+    inAgentMode: true,
   },
 ];
 
@@ -110,29 +115,32 @@ const serverStatusPages = [
     path: "/status",
     icon: <IconInfoCircle style={navIconStyle} />,
     element: <StatusPage />,
+    inAgentMode: true,
   },
   {
     title: "TSDB status",
     path: "/tsdb-status",
     icon: <IconDatabase style={navIconStyle} />,
     element: <TSDBStatusPage />,
+    inAgentMode: false,
   },
   {
     title: "Command-line flags",
     path: "/flags",
     icon: <IconFlag style={navIconStyle} />,
     element: <FlagsPage />,
+    inAgentMode: true,
   },
   {
     title: "Configuration",
     path: "/config",
     icon: <IconServerCog style={navIconStyle} />,
     element: <ConfigPage />,
+    inAgentMode: true,
   },
 ];
 
 const allStatusPages = [...monitoringStatusPages, ...serverStatusPages];
-const allPages = [...mainNavPages, ...allStatusPages];
 
 const theme = createTheme({
   colors: {
@@ -159,7 +167,13 @@ const getPathPrefix = (path: string) => {
     path = path.slice(0, -1);
   }
 
-  const pagePath = allPages.find((p) => path.endsWith(p.path))?.path;
+  const pagePaths = [
+    ...mainNavPages,
+    ...allStatusPages,
+    { path: "/agent" },
+  ].map((p) => p.path);
+
+  const pagePath = pagePaths.find((p) => path.endsWith(p));
   return path.slice(0, path.length - (pagePath || "").length);
 };
 
@@ -176,41 +190,45 @@ function App() {
 
   const navLinks = (
     <>
-      {mainNavPages.map((p) => (
-        <Button
-          key={p.path}
-          component={NavLink}
-          to={p.path}
-          className={classes.link}
-          leftSection={p.icon}
-          px={navLinkXPadding}
-        >
-          {p.title}
-        </Button>
-      ))}
+      {mainNavPages
+        .filter((p) => !agentMode || p.inAgentMode)
+        .map((p) => (
+          <Button
+            key={p.path}
+            component={NavLink}
+            to={p.path}
+            className={classes.link}
+            leftSection={p.icon}
+            px={navLinkXPadding}
+          >
+            {p.title}
+          </Button>
+        ))}
 
       <Menu shadow="md" width={240}>
         <Routes>
-          {allStatusPages.map((p) => (
-            <Route
-              key={p.path}
-              path={p.path}
-              element={
-                <Menu.Target>
-                  <Button
-                    component={NavLink}
-                    to={p.path}
-                    className={classes.link}
-                    leftSection={p.icon}
-                    rightSection={<IconChevronDown style={navIconStyle} />}
-                    px={navLinkXPadding}
-                  >
-                    Status <IconChevronRight style={navIconStyle} /> {p.title}
-                  </Button>
-                </Menu.Target>
-              }
-            />
-          ))}
+          {allStatusPages
+            .filter((p) => !agentMode || p.inAgentMode)
+            .map((p) => (
+              <Route
+                key={p.path}
+                path={p.path}
+                element={
+                  <Menu.Target>
+                    <Button
+                      component={NavLink}
+                      to={p.path}
+                      className={classes.link}
+                      leftSection={p.icon}
+                      rightSection={<IconChevronDown style={navIconStyle} />}
+                      px={navLinkXPadding}
+                    >
+                      Status <IconChevronRight style={navIconStyle} /> {p.title}
+                    </Button>
+                  </Menu.Target>
+                }
+              />
+            ))}
           <Route
             path="*"
             element={
@@ -235,29 +253,33 @@ function App() {
 
         <Menu.Dropdown>
           <Menu.Label>Monitoring status</Menu.Label>
-          {monitoringStatusPages.map((p) => (
-            <Menu.Item
-              key={p.path}
-              component={NavLink}
-              to={p.path}
-              leftSection={p.icon}
-            >
-              {p.title}
-            </Menu.Item>
-          ))}
+          {monitoringStatusPages
+            .filter((p) => !agentMode || p.inAgentMode)
+            .map((p) => (
+              <Menu.Item
+                key={p.path}
+                component={NavLink}
+                to={p.path}
+                leftSection={p.icon}
+              >
+                {p.title}
+              </Menu.Item>
+            ))}
 
           <Menu.Divider />
           <Menu.Label>Server status</Menu.Label>
-          {serverStatusPages.map((p) => (
-            <Menu.Item
-              key={p.path}
-              component={NavLink}
-              to={p.path}
-              leftSection={p.icon}
-            >
-              {p.title}
-            </Menu.Item>
-          ))}
+          {serverStatusPages
+            .filter((p) => !agentMode || p.inAgentMode)
+            .map((p) => (
+              <Menu.Item
+                key={p.path}
+                component={NavLink}
+                to={p.path}
+                leftSection={p.icon}
+              >
+                {p.title}
+              </Menu.Item>
+            ))}
         </Menu.Dropdown>
       </Menu>
 
@@ -350,12 +372,20 @@ function App() {
                     <Route
                       path="/"
                       element={
-                        <Navigate to={agentMode ? "/agent" : "/query"} />
+                        <Navigate
+                          to={agentMode ? "/agent" : "/query"}
+                          replace
+                        />
                       }
                     />
-                    <Route path="/query" element={<QueryPage />} />
-                    <Route path="/agent" element={<AgentPage />} />
-                    <Route path="/alerts" element={<AlertsPage />} />
+                    {agentMode ? (
+                      <Route path="/agent" element={<AgentPage />} />
+                    ) : (
+                      <>
+                        <Route path="/query" element={<QueryPage />} />
+                        <Route path="/alerts" element={<AlertsPage />} />
+                      </>
+                    )}
                     {allStatusPages.map((p) => (
                       <Route key={p.path} path={p.path} element={p.element} />
                     ))}
