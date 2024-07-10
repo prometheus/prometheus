@@ -18,19 +18,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/go-kit/log"
+	"github.com/google/go-cmp/cmp"
+	"github.com/grafana/regexp"
+	"github.com/nsf/jsondiff"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/util/junitxml"
+	"gopkg.in/yaml.v2"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/go-kit/log"
-	"github.com/google/go-cmp/cmp"
-	"github.com/grafana/regexp"
-	"github.com/nsf/jsondiff"
-	"github.com/prometheus/common/model"
-	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -44,7 +45,12 @@ import (
 // RulesUnitTest does unit testing of rules based on the unit testing files provided.
 // More info about the file format can be found in the docs.
 func RulesUnitTest(queryOpts promqltest.LazyLoaderOpts, runStrings []string, diffFlag bool, files ...string) int {
+	return RulesUnitTestResult(io.Discard, queryOpts, runStrings, diffFlag, files...)
+}
+
+func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts, runStrings []string, diffFlag bool, files ...string) int {
 	failed := false
+	junit := &junitxml.JUnitXML{}
 
 	var run *regexp.Regexp
 	if runStrings != nil {
@@ -52,7 +58,7 @@ func RulesUnitTest(queryOpts promqltest.LazyLoaderOpts, runStrings []string, dif
 	}
 
 	for _, f := range files {
-		if errs := ruleUnitTest(f, queryOpts, run, diffFlag); errs != nil {
+		if errs := ruleUnitTest(f, queryOpts, run, diffFlag, junit.Suite(f)); errs != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
 			for _, e := range errs {
 				fmt.Fprintln(os.Stderr, e.Error())
@@ -62,7 +68,10 @@ func RulesUnitTest(queryOpts promqltest.LazyLoaderOpts, runStrings []string, dif
 		} else {
 			fmt.Println("  SUCCESS")
 		}
-		fmt.Println()
+	}
+	err := junit.WriteXML(results)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to write JUnit XML: %s\n", err)
 	}
 	if failed {
 		return failureExitCode
@@ -70,8 +79,7 @@ func RulesUnitTest(queryOpts promqltest.LazyLoaderOpts, runStrings []string, dif
 	return successExitCode
 }
 
-func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *regexp.Regexp, diffFlag bool) []error {
-	fmt.Println("Unit Testing: ", filename)
+func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *regexp.Regexp, diffFlag bool, ts *junitxml.TestSuite) []error {
 
 	b, err := os.ReadFile(filename)
 	if err != nil {
@@ -91,7 +99,8 @@ func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *reg
 	}
 
 	evalInterval := time.Duration(unitTestInp.EvaluationInterval)
-
+	currentTime := time.Now().Format("2006-01-02T15:04:05")
+	ts.Settime(currentTime)
 	// Giving number for groups mentioned in the file for ordering.
 	// Lower number group should be evaluated before higher number group.
 	groupOrderMap := make(map[string]int)
@@ -104,16 +113,23 @@ func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *reg
 
 	// Testing.
 	var errs []error
-	for _, t := range unitTestInp.Tests {
+	for i, t := range unitTestInp.Tests {
 		if !matchesRun(t.TestGroupName, run) {
 			continue
 		}
-
+		testname := t.TestGroupName
+		if testname == "" {
+			testname = fmt.Sprintf("unnamed#%d", i)
+		}
+		tc := ts.Case(testname)
 		if t.Interval == 0 {
 			t.Interval = unitTestInp.EvaluationInterval
 		}
 		ers := t.test(evalInterval, groupOrderMap, queryOpts, diffFlag, unitTestInp.RuleFiles...)
 		if ers != nil {
+			for _, e := range ers {
+				tc.Fail(e.Error())
+			}
 			errs = append(errs, ers...)
 		}
 	}

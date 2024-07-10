@@ -14,11 +14,11 @@
 package main
 
 import (
-	"testing"
-
-	"github.com/stretchr/testify/require"
-
+	"bytes"
+	"fmt"
 	"github.com/prometheus/prometheus/promql/promqltest"
+	"github.com/stretchr/testify/require"
+	"testing"
 )
 
 func TestRulesUnitTest(t *testing.T) {
@@ -125,15 +125,30 @@ func TestRulesUnitTest(t *testing.T) {
 			want: 0,
 		},
 	}
+	reuseFiles := []string{}
 	for _, tt := range tests {
+		if (tt.queryOpts == promqltest.LazyLoaderOpts{}) {
+			reuseFiles = append(reuseFiles, tt.args.files...)
+		}
 		t.Run(tt.name, func(t *testing.T) {
 			if got := RulesUnitTest(tt.queryOpts, nil, false, tt.args.files...); got != tt.want {
 				t.Errorf("RulesUnitTest() = %v, want %v", got, tt.want)
 			}
 		})
 	}
-}
 
+	t.Run("Junit xml output ", func(t *testing.T) {
+		var buf bytes.Buffer
+		if got := RulesUnitTestResult(&buf, promqltest.LazyLoaderOpts{}, nil, false, reuseFiles...); got != 1 {
+			t.Errorf("RulesUnitTestResults() = %v, want 1", got)
+		}
+
+		output := buf.String()
+		fmt.Println(output)
+	})
+	//fmt.Println(reuseFiles, "Hello from reuseFiles")
+
+}
 func TestRulesUnitTestRun(t *testing.T) {
 	type args struct {
 		run   []string
