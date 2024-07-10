@@ -226,58 +226,70 @@ func (p *OpenMetricsParser) Exemplar(e *exemplar.Exemplar) bool {
 	return true
 }
 
-// CreatedTimestamp returns the created timestamp as *int64 of a given Metric.
-// It searches for the _created line of a given metric and uses an ephemeral createdTimestampParser to peek ahead and find the _created line.
+// CreatedTimestamp returns the created timestamp for a current Metric if exists or nil.
+// NOTE(Maniktherana): Might use additional CPU/mem resources due to deep copy of parser required for peeking given 1.0 OM specification on _created series.
 func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
-	var lbs labels.Labels
-	p.Metric(&lbs)
-	lbs = lbs.DropMetricName()
-
-	newParser := createdTimestampParser(p)
-loop:
-	for {
-		switch t, _ := newParser.Next(); t {
-		case EntrySeries:
-			// TODO: potentially broken? Missing type?
-			if newParser.mName != p.mName {
-				return nil
-			}
-
-			var newLbs labels.Labels
-			newParser.Metric(&newLbs)
-			name := newLbs.Get(model.MetricNameLabel)
-			if !strings.HasSuffix(name, "_created") {
-				continue
-			}
-
-			newLbs = newLbs.DropMetricName()
-			switch p.mtype {
-			case model.MetricTypeCounter, model.MetricTypeHistogram, model.MetricTypeSummary:
-				labelDiffs := lbs.MatchLabels(false, newLbs.ExtractNames()...)
-				if labelDiffs.Len() != 0 {
-					if !labelDiffs.Contains("quantile", "le") || labelDiffs.Len() != 1 {
-						return nil
-					}
-				}
-			default:
-				// if mtype is not counter, summary or histogram, it won't have a valid _created line
-				return nil
-			}
-
-			ct := int64(newParser.val)
-			return &ct
-		default:
-			break loop
-		}
+	if !typeRequiresCT(p.mtype) {
+		// Not a CT supported metric type, fast path.
+		return nil
 	}
-	return nil
+
+	var (
+		currLset                labels.Labels
+		buf                     []byte
+		peekWithoutNameLsetHash uint64
+	)
+	p.Metric(&currLset)
+	currWithoutNameLsetHash, buf := currLset.HashWithoutLabels(buf, labels.MetricName, "le", "quantile")
+	// Search for the _created line for the currName using ephemeral parser until
+	// we see EOF or new metric family. We have to do it as we don't know where (and if)
+	// that CT line is.
+	// TODO(bwplotka): Make sure OM 1.1/2.0 pass CT via metadata or exemplar-like to avoid this.
+	peek := deepCopy(p)
+	for {
+		eType, err := peek.Next()
+		if err != nil {
+			// This means p will give error too later on, so def no CT line found.
+			// This might result in partial scrape with wrong/missing CT, but only
+			// spec improvement would help.
+			// TODO(bwplotka): Make sure OM 1.1/2.0 pass CT via metadata or exemplar-like to avoid this.
+			return nil
+		}
+		if eType != EntrySeries {
+			// Assume we hit different family, no CT line found.
+			return nil
+		}
+		// We are sure this series is for sure the same metric family as in currLset
+		// because otherwise we would have EntryType first which we ruled out before.
+		var peekedLset labels.Labels
+		peek.Metric(&peekedLset)
+		peekedName := peekedLset.Get(model.MetricNameLabel)
+		if !strings.HasSuffix(peekedName, "_created") {
+			// Not a CT line, search more.
+			continue
+		}
+
+		// We got a CT line here, but let's search if CT line is actually for our series, edge case.
+		peekWithoutNameLsetHash, buf = peekedLset.HashWithoutLabels(buf, labels.MetricName, "le", "quantile")
+		if peekWithoutNameLsetHash != currWithoutNameLsetHash {
+			// CT line for a different series, for our series no CT.
+			return nil
+		}
+		ct := int64(peek.val)
+		return &ct
+	}
+}
+func typeRequiresCT(t model.MetricType) bool {
+	switch t {
+	case model.MetricTypeCounter, model.MetricTypeSummary, model.MetricTypeHistogram:
+		return true
+	default:
+		return false
+	}
 }
 
 // createdTimestampParser creates a copy of a parser without re-using the slices' original memory addresses.
-// The function `CreatedTimestamp()` uses a copy of the parser to "peek" at _created lines that might be several lines ahead, without changing the state of the original parser.
-//
-// Additionally, createdTimestampParser switches `skipCT` from true to false, because this new parser needs to return _created lines.
-func createdTimestampParser(p *OpenMetricsParser) OpenMetricsParser {
+func deepCopy(p *OpenMetricsParser) OpenMetricsParser {
 	newB := make([]byte, len(p.l.b))
 	copy(newB, p.l.b)
 

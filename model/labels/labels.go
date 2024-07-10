@@ -373,29 +373,6 @@ func (ls Labels) ReleaseStrings(release func(string)) {
 	}
 }
 
-// ExtractNames returns an array of all Name in ls.
-func (ls Labels) ExtractNames() []string {
-	names := make([]string, len(ls))
-	for i, label := range ls {
-		names[i] = label.Name
-	}
-	return names
-}
-
-// Method to check if the Labels contains any of the provided label Names
-// returns true if any of the provided label names are present in the Labels
-// return false if no Names are provided
-func (ls Labels) Contains(names ...string) bool {
-	for _, name := range names {
-		for _, label := range ls {
-			if label.Name == name {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 // Builder allows modifying Labels.
 type Builder struct {
 	base Labels
