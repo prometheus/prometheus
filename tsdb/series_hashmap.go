@@ -40,24 +40,23 @@ type seriesHashmap struct {
 	limit    uint32
 }
 
-// hashMeta is the h2 metadata array for a group.
+// hashMeta is the metadata array for a group.
+// It contains either `empty` or `tombstone` marks, or the `h1` hash prefix for an item, if there's one in that bucket.
 // Find operations first probe the controls bytes to filter candidates before matching keys,
 // and to know when to stop searching.
 type hashMeta [groupSize]uint8
 
 const (
-	h1Mask    uint64 = 0xffff_ffff_ffff_ff80
-	h2Mask    uint64 = 0x0000_0000_0000_007f
-	h2Offset         = 2
-	empty     uint8  = 0b0000_0000
-	tombstone uint8  = 0b0000_0001
+	h1Offset        = 2
+	empty     uint8 = 0b0000_0000
+	tombstone uint8 = 0b0000_0001
 )
 
-// h1 is a 57 bit hash prefix.
-type h1 uint64
+// h1 is a 7 bit hash prefix.
+type h1 uint8
 
-// h2 is a 7 bit hash suffix.
-type h2 uint8
+// h2 is a 57 bit hash suffix.
+type h2 uint64
 
 func (m *seriesHashmap) get(hash uint64, lset labels.Labels) *memSeries {
 	if len(m.meta) == 0 {
@@ -65,9 +64,9 @@ func (m *seriesHashmap) get(hash uint64, lset labels.Labels) *memSeries {
 	}
 
 	hi, lo := splitHash(hash)
-	g := probeStart(hi, len(m.meta))
+	g := probeStart(lo, len(m.meta))
 	for { // inlined find loop
-		matches := metaMatchH2(&m.meta[g], lo)
+		matches := metaMatchH1(&m.meta[g], hi)
 		for matches != 0 {
 			s := nextMatch(&matches)
 			if hash != m.hashes[g][s] {
@@ -96,14 +95,18 @@ func (m *seriesHashmap) set(hash uint64, series *memSeries) {
 	}
 
 	hi, lo := splitHash(hash)
-	g := probeStart(hi, len(m.meta))
+	g := probeStart(lo, len(m.meta))
 	for { // inlined find loop
-		matches := metaMatchH2(&m.meta[g], lo)
+		matches := metaMatchH1(&m.meta[g], hi)
 		for matches != 0 {
 			s := nextMatch(&matches)
+			if hash != m.hashes[g][s] {
+				continue
+			}
+
 			// We only read series.labels() if we actually have the same hash,
 			// because the implementation of series.labels() is expensive with dedupelabels.
-			if hash == m.hashes[g][s] && labels.Equal(series.labels(), m.series[g][s].labels()) { // update (do we expect updates here? this is just inherited from swiss map)
+			if labels.Equal(series.labels(), m.series[g][s].labels()) { // update, although we could also panic: I think we don't expect updates in the series hashmap
 				m.hashes[g][s] = hash
 				m.series[g][s] = series
 				return
@@ -115,7 +118,7 @@ func (m *seriesHashmap) set(hash uint64, series *memSeries) {
 			s := nextMatch(&matches)
 			m.hashes[g][s] = hash
 			m.series[g][s] = series
-			m.meta[g][s] = uint8(lo)
+			m.meta[g][s] = uint8(hi)
 			m.resident++
 			return
 		}
@@ -131,12 +134,12 @@ func (m *seriesHashmap) del(hash uint64, ref chunks.HeadSeriesRef) {
 	}
 
 	hi, lo := splitHash(hash)
-	g := probeStart(hi, len(m.meta))
+	g := probeStart(lo, len(m.meta))
 	for {
-		matches := metaMatchH2(&m.meta[g], lo)
+		matches := metaMatchH1(&m.meta[g], hi)
 		for matches != 0 {
 			s := nextMatch(&matches)
-			if hash == m.hashes[g][s] && ref == m.series[g][s].ref { // update (do we expect updates here? this is just inherited from swiss map)
+			if hash == m.hashes[g][s] && ref == m.series[g][s].ref {
 				// optimization: if |m.meta[g]| contains any empty
 				// meta bytes, we can physically delete |key|
 				// rather than placing a tombstone.
@@ -239,14 +242,24 @@ func numGroups(n uint32) (groups uint32) {
 }
 
 // splitHash extracts the h1 and h2 components from a 64 bit hash.
-// h1 is the upper 57 bits, h2 is the lower 7 bits plus two.
-// By adding 2, it ensures that h2 is never uint8(0) or uint8(1).
+// h1 is the upper 7 bits plus two, h2 is the lower 57 bits.
+// By adding 2 to h1, it ensures that h1 is never uint8(0) or uint8(1).
 func splitHash(h uint64) (h1, h2) {
-	return h1((h & h1Mask) >> 7), h2(h&h2Mask) + h2Offset
+	const h2Mask uint64 = 0x01ff_ffff_ffff_ffff
+	return h1(h>>57) + h1Offset, h2(h & h2Mask)
 }
 
-func probeStart(hi h1, groups int) uint32 {
-	return fastModN(uint32(hi), uint32(groups))
+func probeStart(lo h2, groups int) uint32 {
+	// Since x is `lo` here, which are the lower 57 bits of a 64 bit hash,
+	// and this is used in stripeSeries, with 16K stripes by default,
+	// that means that most likely (except for a config change)
+	// the lower 14 bits of lo in this hashmap are always the same.
+	// However, as we shift 32 bits right in the fastModN function,
+	// We'll discard those equal bits.
+	// If log2(n) (log2(groups)) is > (32-14)=18, i.e. 260K groups,
+	// we'll start having a bias in the distribution of the keys,
+	// but at that point our instance would have ~(8*MaxUint32) series (stripes * groups * group size).
+	return fastModN(uint32(lo), uint32(groups))
 }
 
 // fastModN is an alternative to modulo operation to evenly distribute keys.
@@ -265,7 +278,7 @@ const (
 
 type bitset uint64
 
-func metaMatchH2(m *hashMeta, h h2) bitset {
+func metaMatchH1(m *hashMeta, h h1) bitset {
 	// https://graphics.stanford.edu/~seander/bithacks.html##ValueInWord
 	return hasZeroByte(castUint64(m) ^ (loBits * uint64(h)))
 }
