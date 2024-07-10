@@ -562,10 +562,9 @@ func TestStaleness(t *testing.T) {
 
 		// A time series that has two samples and then goes stale.
 		app := st.Appender(context.Background())
-		hints := &storage.AppendHints{DiscardOutOfOrder: true}
-		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1, hints)
-		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2, hints)
-		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 2000, math.Float64frombits(value.StaleNaN), hints)
+		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1, nil)
+		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2, nil)
+		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 2000, math.Float64frombits(value.StaleNaN), nil)
 
 		err = app.Commit()
 		require.NoError(t, err)
@@ -1262,9 +1261,8 @@ func TestRuleHealthUpdates(t *testing.T) {
 
 	// A time series that has two samples.
 	app := st.Appender(context.Background())
-	hints := &storage.AppendHints{DiscardOutOfOrder: true}
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1, hints)
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2, hints)
+	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1, nil)
+	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2, nil)
 	err = app.Commit()
 	require.NoError(t, err)
 

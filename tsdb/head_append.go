@@ -326,14 +326,13 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	// For OOO inserts, this restriction is irrelevant and will be checked later once we confirm the sample is an in-order append.
 	// If OOO inserts are disabled, we may as well as check this as early as we can and avoid more work.
 	if hints != nil && hints.DiscardOutOfOrder {
-		if t < a.minValidTime {
-			a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
-			return 0, storage.ErrOutOfBounds
-		}
 		a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
+		return 0, storage.ErrOutOfOrderSample
+	}
+	if t < a.minValidTime {
+		a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
 		return 0, storage.ErrOutOfBounds
 	}
-
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
 	if s == nil {
 		var err error
