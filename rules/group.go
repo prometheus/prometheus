@@ -173,6 +173,7 @@ func matches(lbls labels.Labels, matchers ...*labels.Matcher) bool {
 	return true
 }
 
+// matchesMatcherSets ensures all matches in each matcher set are ANDed and the set of those is ORed.
 func matchesMatcherSets(matcherSets [][]*labels.Matcher, lbls labels.Labels) bool {
 	if len(matcherSets) == 0 {
 		return true
@@ -311,12 +312,12 @@ func (g *Group) hash() uint64 {
 }
 
 // AlertingRules returns the list of the group's alerting rules.
-func (g *Group) AlertingRules(matcherSets ...[]*labels.Matcher) []*AlertingRule {
+func (g *Group) AlertingRules() []*AlertingRule {
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
 
 	var alerts []*AlertingRule
-	for _, rule := range g.Rules(matcherSets...) {
+	for _, rule := range g.rules {
 		if alertingRule, ok := rule.(*AlertingRule); ok {
 			alerts = append(alerts, alertingRule)
 		}
