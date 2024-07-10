@@ -42,16 +42,14 @@ type initAppender struct {
 var _ storage.GetRef = &initAppender{}
 
 func (a *initAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64, hints *storage.AppendHints) (storage.SeriesRef, error) {
-	if hints != nil && hints.DiscardOutOfOrder {
-		return 0, storage.ErrOutOfOrderSample
-	}
+
 	if a.app != nil {
-		return a.app.Append(ref, lset, t, v, hints)
+		return a.app.Append(ref, lset, t, v, nil)
 	}
 
 	a.head.initTime(t)
 	a.app = a.head.appender()
-	return a.app.Append(ref, lset, t, v, hints)
+	return a.app.Append(ref, lset, t, v, nil)
 }
 
 func (a *initAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
