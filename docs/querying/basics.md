@@ -83,7 +83,7 @@ Examples:
     NaN
 	
 
-As of version 2.53, float literals can also be represented using the syntax of time durations, where the time duration is converted into a float value corresponding to the number of seconds the time duration represents. This is an experimental feature and might still change.
+As of version 2.54, float literals can also be represented using the syntax of time durations, where the time duration is converted into a float value corresponding to the number of seconds the time duration represents. This is an experimental feature and might still change.
 
 Examples:
 
@@ -235,7 +235,7 @@ Here are some examples of valid time durations:
     10s
 
 
-As of version 2.53, time durations can also be represented using the syntax of float literals, implying the number of seconds of the time duration. This is an experimental feature and might still change.
+As of version 2.54, time durations can also be represented using the syntax of float literals, implying the number of seconds of the time duration. This is an experimental feature and might still change.
 
 Examples:
 
