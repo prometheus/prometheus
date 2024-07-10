@@ -87,48 +87,6 @@ type collectResultAppendable struct {
 	*collectResultAppender
 }
 
-// Append implements storage.Appender.
-// Subtle: this method shadows the method (*collectResultAppender).Append of collectResultAppendable.collectResultAppender.
-func (a *collectResultAppendable) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64, hints *storage.AppendHints) (storage.SeriesRef, error) {
-	panic("unimplemented")
-}
-
-// AppendCTZeroSample implements storage.Appender.
-// Subtle: this method shadows the method (*collectResultAppender).AppendCTZeroSample of collectResultAppendable.collectResultAppender.
-func (a *collectResultAppendable) AppendCTZeroSample(ref storage.SeriesRef, l labels.Labels, t int64, ct int64) (storage.SeriesRef, error) {
-	panic("unimplemented")
-}
-
-// AppendExemplar implements storage.Appender.
-// Subtle: this method shadows the method (*collectResultAppender).AppendExemplar of collectResultAppendable.collectResultAppender.
-func (a *collectResultAppendable) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
-	panic("unimplemented")
-}
-
-// AppendHistogram implements storage.Appender.
-// Subtle: this method shadows the method (*collectResultAppender).AppendHistogram of collectResultAppendable.collectResultAppender.
-func (a *collectResultAppendable) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	panic("unimplemented")
-}
-
-// Commit implements storage.Appender.
-// Subtle: this method shadows the method (*collectResultAppender).Commit of collectResultAppendable.collectResultAppender.
-func (a *collectResultAppendable) Commit() error {
-	panic("unimplemented")
-}
-
-// Rollback implements storage.Appender.
-// Subtle: this method shadows the method (*collectResultAppender).Rollback of collectResultAppendable.collectResultAppender.
-func (a *collectResultAppendable) Rollback() error {
-	panic("unimplemented")
-}
-
-// UpdateMetadata implements storage.Appender.
-// Subtle: this method shadows the method (*collectResultAppender).UpdateMetadata of collectResultAppendable.collectResultAppender.
-func (a *collectResultAppendable) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
-	panic("unimplemented")
-}
-
 func (a *collectResultAppendable) Appender(_ context.Context) storage.Appender {
 	return a
 }
