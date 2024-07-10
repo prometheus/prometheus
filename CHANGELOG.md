@@ -5,8 +5,8 @@
 ## 2.53.1 / 2024-07-10
 
 Fix a bug which would drop samples in remote-write if the sending flow stalled
-for more than one "WAL segment". How long this takes depends on the size
-of your Prometheus; as a rough guide with 10 million series about 2-3 minutes.
+for longer than it takes to write one "WAL segment". How long this takes depends on the size
+of your Prometheus; as a rough guide with 10 million series it is about 2-3 minutes.
 
 * [BUGFIX] Remote-write: stop dropping samples in catch-up #14446
 
