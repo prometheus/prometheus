@@ -226,8 +226,8 @@ func (p *OpenMetricsParser) Exemplar(e *exemplar.Exemplar) bool {
 	return true
 }
 
-// CreatedTimestamp returns nil as it's not implemented yet.
-// TODO(bwplotka): https://github.com/prometheus/prometheus/issues/12980
+// CreatedTimestamp returns the created timestamp as *int64 of a given Metric.
+// It searches for the _created line of a given metric and uses an ephemeral createdTimestampParser to peek ahead and find the _created line.
 func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 	var lbs labels.Labels
 	p.Metric(&lbs)
