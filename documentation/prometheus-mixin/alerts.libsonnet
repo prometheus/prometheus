@@ -35,6 +35,20 @@
             },
           },
           {
+            alert: 'PrometheusKubernetesListWatchFailures',
+            expr: |||
+              increase(prometheus_sd_kubernetes_failures_total{%(prometheusSelector)s}[5m]) > 0
+            ||| % $._config,
+            'for': '15m',
+            labels: {
+              severity: 'warning',
+            },
+            annotations: {
+              summary: 'Requests in Kubernetes SD are failing.',
+              description: 'Kubernetes service discovery of Prometheus %(prometheusName)s is experiencing {{ printf "%%.0f" $value }} failures with LIST/WATCH requests to the Kubernetes API in the last 5 minutes.' % $._config,
+            },
+          },
+          {
             alert: 'PrometheusNotificationQueueRunningFull',
             expr: |||
               # Without min_over_time, failed scrapes could create false negatives, see

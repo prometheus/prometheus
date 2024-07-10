@@ -37,6 +37,7 @@ interface PanelState {
   lastQueryParams: QueryParams | null;
   loading: boolean;
   warnings: string[] | null;
+  infos: string[] | null;
   error: string | null;
   stats: QueryStats | null;
   exprInputValue: string;
@@ -87,6 +88,7 @@ class Panel extends Component<PanelProps, PanelState> {
       lastQueryParams: null,
       loading: false,
       warnings: null,
+      infos: null,
       error: null,
       stats: null,
       exprInputValue: props.options.expr,
@@ -204,6 +206,7 @@ class Panel extends Component<PanelProps, PanelState> {
         data: query.data,
         exemplars: exemplars?.data,
         warnings: query.warnings,
+        infos: query.infos,
         lastQueryParams: {
           startTime,
           endTime,
@@ -305,6 +308,11 @@ class Panel extends Component<PanelProps, PanelState> {
         {this.state.warnings?.map((warning, index) => (
           <Row key={index}>
             <Col>{warning && <Alert color="warning">{warning}</Alert>}</Col>
+          </Row>
+        ))}
+        {this.state.infos?.map((info, index) => (
+          <Row key={index}>
+            <Col>{info && <Alert color="info">{info}</Alert>}</Col>
           </Row>
         ))}
         <Row>

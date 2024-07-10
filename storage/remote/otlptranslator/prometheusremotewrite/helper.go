@@ -182,12 +182,13 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externa
 		if i+1 >= len(extras) {
 			break
 		}
-		_, found := l[extras[i]]
+
+		name := extras[i]
+		_, found := l[name]
 		if found && logOnOverwrite {
-			log.Println("label " + extras[i] + " is overwritten. Check if Prometheus reserved labels are used.")
+			log.Println("label " + name + " is overwritten. Check if Prometheus reserved labels are used.")
 		}
 		// internal labels should be maintained
-		name := extras[i]
 		if !(len(name) > 4 && name[:2] == "__" && name[len(name)-2:] == "__") {
 			name = prometheustranslator.NormalizeLabel(name)
 		}
@@ -219,6 +220,13 @@ func isValidAggregationTemporality(metric pmetric.Metric) bool {
 	return false
 }
 
+// addHistogramDataPoints adds OTel histogram data points to the corresponding Prometheus time series
+// as classical histogram samples.
+//
+// Note that we can't convert to native histograms, since these have exponential buckets and don't line up
+// with the user defined bucket boundaries of non-exponential OTel histograms.
+// However, work is under way to resolve this shortcoming through a feature called native histograms custom buckets:
+// https://github.com/prometheus/prometheus/issues/13485.
 func (c *PrometheusConverter) addHistogramDataPoints(dataPoints pmetric.HistogramDataPointSlice,
 	resource pcommon.Resource, settings Settings, baseName string) {
 	for x := 0; x < dataPoints.Len(); x++ {

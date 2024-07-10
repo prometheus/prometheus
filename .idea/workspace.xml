@@ -1,0 +1,397 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="ALL" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="5abaef6a-a868-4076-97e4-6e0da90485f3" name="Changes" comment="recreated pr in junit formate">
+      <change afterPath="$PROJECT_DIR$/config/testdata/remote_write_wrong_msg.bad.yml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/model/labels/labels_dedupelabels_test.go" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/prompb/codec.go" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/prompb/io/prometheus/write/v2/codec.go" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/prompb/io/prometheus/write/v2/custom.go" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/prompb/io/prometheus/write/v2/custom_test.go" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/prompb/io/prometheus/write/v2/symbols.go" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/prompb/io/prometheus/write/v2/symbols_test.go" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/prompb/io/prometheus/write/v2/types.pb.go" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/prompb/io/prometheus/write/v2/types.proto" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/prompb/io/prometheus/write/v2/types_test.go" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/prompb/rwcommon/codec_test.go" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/promql/functions_internal_test.go" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/promql/histogram_stats_iterator.go" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/promql/histogram_stats_iterator_test.go" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/promql/promqltest/README.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/promql/promqltest/testdata/limit.test" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/promql/promqltest/testdata/range_queries.test" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/rules/group_test.go" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/storage/errors.go" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/tsdb/head_dedupelabels.go" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/tsdb/head_other.go" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/tsdb/testutil.go" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/web/ui/react-app/src/pages/graph/HistogramHelpers.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.github/dependabot.yml" beforeDir="false" afterPath="$PROJECT_DIR$/.github/dependabot.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.github/workflows/buf-lint.yml" beforeDir="false" afterPath="$PROJECT_DIR$/.github/workflows/buf-lint.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.github/workflows/buf.yml" beforeDir="false" afterPath="$PROJECT_DIR$/.github/workflows/buf.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.github/workflows/ci.yml" beforeDir="false" afterPath="$PROJECT_DIR$/.github/workflows/ci.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.github/workflows/codeql-analysis.yml" beforeDir="false" afterPath="$PROJECT_DIR$/.github/workflows/codeql-analysis.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.github/workflows/container_description.yml" beforeDir="false" afterPath="$PROJECT_DIR$/.github/workflows/container_description.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.github/workflows/repo_sync.yml" beforeDir="false" afterPath="$PROJECT_DIR$/.github/workflows/repo_sync.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.github/workflows/scorecards.yml" beforeDir="false" afterPath="$PROJECT_DIR$/.github/workflows/scorecards.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gitpod.Dockerfile" beforeDir="false" afterPath="$PROJECT_DIR$/.gitpod.Dockerfile" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.golangci.yml" beforeDir="false" afterPath="$PROJECT_DIR$/.golangci.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/CHANGELOG.md" beforeDir="false" afterPath="$PROJECT_DIR$/CHANGELOG.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/CONTRIBUTING.md" beforeDir="false" afterPath="$PROJECT_DIR$/CONTRIBUTING.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/MAINTAINERS.md" beforeDir="false" afterPath="$PROJECT_DIR$/MAINTAINERS.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Makefile" beforeDir="false" afterPath="$PROJECT_DIR$/Makefile" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Makefile.common" beforeDir="false" afterPath="$PROJECT_DIR$/Makefile.common" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/RELEASE.md" beforeDir="false" afterPath="$PROJECT_DIR$/RELEASE.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/VERSION" beforeDir="false" afterPath="$PROJECT_DIR$/VERSION" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/cmd/prometheus/main.go" beforeDir="false" afterPath="$PROJECT_DIR$/cmd/prometheus/main.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/cmd/prometheus/main_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/cmd/prometheus/main_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/cmd/prometheus/query_log_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/cmd/prometheus/query_log_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/cmd/promtool/backfill.go" beforeDir="false" afterPath="$PROJECT_DIR$/cmd/promtool/backfill.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/cmd/promtool/main.go" beforeDir="false" afterPath="$PROJECT_DIR$/cmd/promtool/main.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/cmd/promtool/main_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/cmd/promtool/main_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/cmd/promtool/tsdb.go" beforeDir="false" afterPath="$PROJECT_DIR$/cmd/promtool/tsdb.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/cmd/promtool/tsdb_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/cmd/promtool/tsdb_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/cmd/promtool/unittest.go" beforeDir="false" afterPath="$PROJECT_DIR$/cmd/promtool/unittest.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/config/config.go" beforeDir="false" afterPath="$PROJECT_DIR$/config/config.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/config/config_default_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/config/config_default_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/config/config_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/config/config_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/config/config_windows_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/config/config_windows_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/config/testdata/conf.good.yml" beforeDir="false" afterPath="$PROJECT_DIR$/config/testdata/conf.good.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/aws/ec2.go" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/aws/ec2.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/aws/lightsail.go" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/aws/lightsail.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/azure/azure.go" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/azure/azure.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/consul/consul.go" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/consul/consul.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/digitalocean/digitalocean.go" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/digitalocean/digitalocean.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/dns/dns.go" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/dns/dns.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/eureka/client.go" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/eureka/client.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/hetzner/hcloud.go" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/hetzner/hcloud.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/hetzner/robot.go" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/hetzner/robot.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/legacymanager/manager_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/legacymanager/manager_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/linode/linode.go" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/linode/linode.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/manager.go" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/manager.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/manager_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/manager_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/marathon/marathon.go" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/marathon/marathon.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/moby/docker.go" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/moby/docker.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/moby/docker_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/moby/docker_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/moby/network.go" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/moby/network.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/moby/nodes.go" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/moby/nodes.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/moby/services.go" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/moby/services.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/moby/tasks.go" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/moby/tasks.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/moby/testdata/dockerprom/containers/json.json" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/moby/testdata/dockerprom/containers/json.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/moby/testdata/dockerprom/networks.json" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/moby/testdata/dockerprom/networks.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/openstack/hypervisor.go" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/openstack/hypervisor.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/openstack/instance.go" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/openstack/instance.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/openstack/instance_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/openstack/instance_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/openstack/mock_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/openstack/mock_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/ovhcloud/dedicated_server.go" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/ovhcloud/dedicated_server.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/ovhcloud/ovhcloud_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/ovhcloud/ovhcloud_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/ovhcloud/vps.go" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/ovhcloud/vps.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/puppetdb/puppetdb.go" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/puppetdb/puppetdb.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/scaleway/instance.go" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/scaleway/instance.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/uyuni/uyuni.go" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/uyuni/uyuni.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/discovery/zookeeper/zookeeper.go" beforeDir="false" afterPath="$PROJECT_DIR$/discovery/zookeeper/zookeeper.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/command-line/prometheus.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/command-line/prometheus.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/command-line/promtool.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/command-line/promtool.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/configuration/configuration.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/configuration/configuration.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/configuration/recording_rules.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/configuration/recording_rules.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/feature_flags.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/feature_flags.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/installation.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/installation.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/querying/api.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/querying/api.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/querying/examples.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/querying/examples.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/querying/functions.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/querying/functions.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/querying/operators.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/querying/operators.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/storage.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/storage.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/documentation/examples/custom-sd/adapter-usage/main.go" beforeDir="false" afterPath="$PROJECT_DIR$/documentation/examples/custom-sd/adapter-usage/main.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/documentation/examples/remote_storage/example_write_adapter/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/documentation/examples/remote_storage/example_write_adapter/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/documentation/examples/remote_storage/example_write_adapter/server.go" beforeDir="false" afterPath="$PROJECT_DIR$/documentation/examples/remote_storage/example_write_adapter/server.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/documentation/examples/remote_storage/go.mod" beforeDir="false" afterPath="$PROJECT_DIR$/documentation/examples/remote_storage/go.mod" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/documentation/examples/remote_storage/go.sum" beforeDir="false" afterPath="$PROJECT_DIR$/documentation/examples/remote_storage/go.sum" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/documentation/prometheus-mixin/alerts.libsonnet" beforeDir="false" afterPath="$PROJECT_DIR$/documentation/prometheus-mixin/alerts.libsonnet" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/documentation/prometheus-mixin/config.libsonnet" beforeDir="false" afterPath="$PROJECT_DIR$/documentation/prometheus-mixin/config.libsonnet" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/documentation/prometheus-mixin/dashboards.libsonnet" beforeDir="false" afterPath="$PROJECT_DIR$/documentation/prometheus-mixin/dashboards.libsonnet" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/go.mod" beforeDir="false" afterPath="$PROJECT_DIR$/go.mod" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/go.sum" beforeDir="false" afterPath="$PROJECT_DIR$/go.sum" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/model/histogram/float_histogram.go" beforeDir="false" afterPath="$PROJECT_DIR$/model/histogram/float_histogram.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/model/histogram/float_histogram_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/model/histogram/float_histogram_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/model/histogram/generic.go" beforeDir="false" afterPath="$PROJECT_DIR$/model/histogram/generic.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/model/histogram/generic_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/model/histogram/generic_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/model/histogram/histogram.go" beforeDir="false" afterPath="$PROJECT_DIR$/model/histogram/histogram.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/model/histogram/histogram_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/model/histogram/histogram_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/model/labels/labels_common.go" beforeDir="false" afterPath="$PROJECT_DIR$/model/labels/labels_common.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/model/labels/labels_dedupelabels.go" beforeDir="false" afterPath="$PROJECT_DIR$/model/labels/labels_dedupelabels.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/model/labels/labels_stringlabels.go" beforeDir="false" afterPath="$PROJECT_DIR$/model/labels/labels_stringlabels.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/model/labels/labels_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/model/labels/labels_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/model/labels/matcher.go" beforeDir="false" afterPath="$PROJECT_DIR$/model/labels/matcher.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/model/labels/matcher_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/model/labels/matcher_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/model/labels/regexp.go" beforeDir="false" afterPath="$PROJECT_DIR$/model/labels/regexp.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/model/labels/regexp_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/model/labels/regexp_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/model/relabel/relabel.go" beforeDir="false" afterPath="$PROJECT_DIR$/model/relabel/relabel.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/model/relabel/relabel_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/model/relabel/relabel_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/model/rulefmt/rulefmt.go" beforeDir="false" afterPath="$PROJECT_DIR$/model/rulefmt/rulefmt.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/notifier/notifier.go" beforeDir="false" afterPath="$PROJECT_DIR$/notifier/notifier.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/notifier/notifier_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/notifier/notifier_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/prompb/custom.go" beforeDir="false" afterPath="$PROJECT_DIR$/prompb/custom.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/promql/bench_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/promql/bench_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/promql/engine.go" beforeDir="false" afterPath="$PROJECT_DIR$/promql/engine.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/promql/engine_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/promql/engine_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/promql/functions.go" beforeDir="false" afterPath="$PROJECT_DIR$/promql/functions.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/promql/parser/ast.go" beforeDir="false" afterPath="$PROJECT_DIR$/promql/parser/ast.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/promql/parser/generated_parser.y" beforeDir="false" afterPath="$PROJECT_DIR$/promql/parser/generated_parser.y" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/promql/parser/generated_parser.y.go" beforeDir="false" afterPath="$PROJECT_DIR$/promql/parser/generated_parser.y.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/promql/parser/lex.go" beforeDir="false" afterPath="$PROJECT_DIR$/promql/parser/lex.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/promql/parser/lex_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/promql/parser/lex_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/promql/parser/parse.go" beforeDir="false" afterPath="$PROJECT_DIR$/promql/parser/parse.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/promql/parser/parse_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/promql/parser/parse_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/promql/parser/printer_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/promql/parser/printer_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/promql/promql_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/promql/promql_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/promql/promqltest/test.go" beforeDir="false" afterPath="$PROJECT_DIR$/promql/promqltest/test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/promql/promqltest/test_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/promql/promqltest/test_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/promql/promqltest/testdata/aggregators.test" beforeDir="false" afterPath="$PROJECT_DIR$/promql/promqltest/testdata/aggregators.test" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/promql/promqltest/testdata/functions.test" beforeDir="false" afterPath="$PROJECT_DIR$/promql/promqltest/testdata/functions.test" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/promql/promqltest/testdata/histograms.test" beforeDir="false" afterPath="$PROJECT_DIR$/promql/promqltest/testdata/histograms.test" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/promql/promqltest/testdata/native_histograms.test" beforeDir="false" afterPath="$PROJECT_DIR$/promql/promqltest/testdata/native_histograms.test" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/promql/quantile.go" beforeDir="false" afterPath="$PROJECT_DIR$/promql/quantile.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/promql/query_logger.go" beforeDir="false" afterPath="$PROJECT_DIR$/promql/query_logger.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/promql/query_logger_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/promql/query_logger_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rules/alerting.go" beforeDir="false" afterPath="$PROJECT_DIR$/rules/alerting.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rules/alerting_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/rules/alerting_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rules/group.go" beforeDir="false" afterPath="$PROJECT_DIR$/rules/group.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rules/manager.go" beforeDir="false" afterPath="$PROJECT_DIR$/rules/manager.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rules/manager_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/rules/manager_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rules/origin_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/rules/origin_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rules/recording.go" beforeDir="false" afterPath="$PROJECT_DIR$/rules/recording.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rules/recording_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/rules/recording_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rules/rule.go" beforeDir="false" afterPath="$PROJECT_DIR$/rules/rule.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrape/manager.go" beforeDir="false" afterPath="$PROJECT_DIR$/scrape/manager.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrape/metrics.go" beforeDir="false" afterPath="$PROJECT_DIR$/scrape/metrics.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrape/scrape.go" beforeDir="false" afterPath="$PROJECT_DIR$/scrape/scrape.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrape/scrape_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/scrape/scrape_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrape/target.go" beforeDir="false" afterPath="$PROJECT_DIR$/scrape/target.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrape/target_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/scrape/target_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/genproto.sh" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/genproto.sh" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/golangci-lint.yml" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/golangci-lint.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/storage/fanout_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/storage/fanout_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/storage/interface.go" beforeDir="false" afterPath="$PROJECT_DIR$/storage/interface.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/storage/merge.go" beforeDir="false" afterPath="$PROJECT_DIR$/storage/merge.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/storage/merge_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/storage/merge_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/storage/remote/azuread/azuread.go" beforeDir="false" afterPath="$PROJECT_DIR$/storage/remote/azuread/azuread.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/storage/remote/client.go" beforeDir="false" afterPath="$PROJECT_DIR$/storage/remote/client.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/storage/remote/codec.go" beforeDir="false" afterPath="$PROJECT_DIR$/storage/remote/codec.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/storage/remote/codec_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/storage/remote/codec_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/storage/remote/metadata_watcher.go" beforeDir="false" afterPath="$PROJECT_DIR$/storage/remote/metadata_watcher.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/storage/remote/metadata_watcher_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/storage/remote/metadata_watcher_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/storage/remote/otlptranslator/prometheus/normalize_name.go" beforeDir="false" afterPath="$PROJECT_DIR$/storage/remote/otlptranslator/prometheus/normalize_name.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/storage/remote/otlptranslator/prometheus/unit_to_ucum.go" beforeDir="false" afterPath="$PROJECT_DIR$/storage/remote/otlptranslator/prometheus/unit_to_ucum.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/storage/remote/otlptranslator/prometheusremotewrite/helper.go" beforeDir="false" afterPath="$PROJECT_DIR$/storage/remote/otlptranslator/prometheusremotewrite/helper.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/storage/remote/otlptranslator/prometheusremotewrite/histograms.go" beforeDir="false" afterPath="$PROJECT_DIR$/storage/remote/otlptranslator/prometheusremotewrite/histograms.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/storage/remote/queue_manager.go" beforeDir="false" afterPath="$PROJECT_DIR$/storage/remote/queue_manager.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/storage/remote/queue_manager_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/storage/remote/queue_manager_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/storage/remote/read_handler_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/storage/remote/read_handler_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/storage/remote/read_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/storage/remote/read_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/storage/remote/storage.go" beforeDir="false" afterPath="$PROJECT_DIR$/storage/remote/storage.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/storage/remote/storage_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/storage/remote/storage_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/storage/remote/write.go" beforeDir="false" afterPath="$PROJECT_DIR$/storage/remote/write.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/storage/remote/write_handler.go" beforeDir="false" afterPath="$PROJECT_DIR$/storage/remote/write_handler.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/storage/remote/write_handler_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/storage/remote/write_handler_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/storage/remote/write_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/storage/remote/write_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/template/template.go" beforeDir="false" afterPath="$PROJECT_DIR$/template/template.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tracing/tracing.go" beforeDir="false" afterPath="$PROJECT_DIR$/tracing/tracing.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/agent/db.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/agent/db.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/agent/db_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/agent/db_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/agent/series_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/agent/series_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/block.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/block.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/block_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/block_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/blockwriter.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/blockwriter.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/chunkenc/float_histogram.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/chunkenc/float_histogram.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/chunkenc/float_histogram_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/chunkenc/float_histogram_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/chunkenc/histogram.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/chunkenc/histogram.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/chunkenc/histogram_meta.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/chunkenc/histogram_meta.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/chunkenc/histogram_meta_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/chunkenc/histogram_meta_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/chunkenc/histogram_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/chunkenc/histogram_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/chunkenc/xor.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/chunkenc/xor.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/chunks/chunks.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/chunks/chunks.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/chunks/head_chunks.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/chunks/head_chunks.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/chunks/queue_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/chunks/queue_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/compact.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/compact.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/compact_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/compact_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/db.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/db.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/db_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/db_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/exemplar.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/exemplar.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/exemplar_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/exemplar_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/head.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/head.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/head_append.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/head_append.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/head_read.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/head_read.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/head_read_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/head_read_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/head_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/head_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/head_wal.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/head_wal.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/index/index.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/index/index.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/index/index_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/index/index_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/index/postings.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/index/postings.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/index/postings_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/index/postings_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/ooo_head_read.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/ooo_head_read.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/ooo_head_read_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/ooo_head_read_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/querier.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/querier.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/querier_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/querier_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/record/record.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/record/record.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/tsdbutil/histogram.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/tsdbutil/histogram.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/wlog/checkpoint_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/wlog/checkpoint_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/wlog/watcher.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/wlog/watcher.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsdb/wlog/watcher_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/tsdb/wlog/watcher_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/util/annotations/annotations.go" beforeDir="false" afterPath="$PROJECT_DIR$/util/annotations/annotations.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/util/testutil/context.go" beforeDir="false" afterPath="$PROJECT_DIR$/util/testutil/context.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/util/treecache/treecache.go" beforeDir="false" afterPath="$PROJECT_DIR$/util/treecache/treecache.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web/api/v1/api.go" beforeDir="false" afterPath="$PROJECT_DIR$/web/api/v1/api.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web/api/v1/api_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/web/api/v1/api_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web/api/v1/errors_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/web/api/v1/errors_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web/federate_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/web/federate_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web/ui/module/codemirror-promql/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/web/ui/module/codemirror-promql/package.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web/ui/module/codemirror-promql/src/client/prometheus.ts" beforeDir="false" afterPath="$PROJECT_DIR$/web/ui/module/codemirror-promql/src/client/prometheus.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web/ui/module/codemirror-promql/src/complete/promql.terms.ts" beforeDir="false" afterPath="$PROJECT_DIR$/web/ui/module/codemirror-promql/src/complete/promql.terms.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web/ui/module/codemirror-promql/src/parser/parser.ts" beforeDir="false" afterPath="$PROJECT_DIR$/web/ui/module/codemirror-promql/src/parser/parser.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web/ui/module/lezer-promql/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/web/ui/module/lezer-promql/package.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web/ui/module/lezer-promql/src/highlight.js" beforeDir="false" afterPath="$PROJECT_DIR$/web/ui/module/lezer-promql/src/highlight.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web/ui/module/lezer-promql/src/promql.grammar" beforeDir="false" afterPath="$PROJECT_DIR$/web/ui/module/lezer-promql/src/promql.grammar" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web/ui/module/lezer-promql/src/tokens.js" beforeDir="false" afterPath="$PROJECT_DIR$/web/ui/module/lezer-promql/src/tokens.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web/ui/package-lock.json" beforeDir="false" afterPath="$PROJECT_DIR$/web/ui/package-lock.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web/ui/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/web/ui/package.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web/ui/react-app/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/web/ui/react-app/package.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web/ui/react-app/src/pages/graph/HistogramChart.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/web/ui/react-app/src/pages/graph/HistogramChart.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web/ui/react-app/src/pages/graph/Panel.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/web/ui/react-app/src/pages/graph/Panel.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web/web.go" beforeDir="false" afterPath="$PROJECT_DIR$/web/web.go" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="GOROOT" url="file:///usr/local/go" />
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="PackageJsonUpdateNotifier">
+    <dismissed value="$PROJECT_DIR$/web/ui/module/codemirror-promql/package.json" />
+    <dismissed value="$PROJECT_DIR$/web/ui/package.json" />
+    <dismissed value="$PROJECT_DIR$/web/ui/react-app/package.json" />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 0
+}</component>
+  <component name="ProjectId" id="2isevc9OApPIy449mQV9uq9TRPE" />
+  <component name="ProjectLevelVcsManager">
+    <ConfirmationsSetting value="2" id="Add" />
+  </component>
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ASKED_ADD_EXTERNAL_FILES": "true",
+    "ASKED_SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "Go Test.TestRulesUnitTest in github.com/prometheus/prometheus/cmd/promtool.executor": "Debug",
+    "Go Test.TestRulesUnitTest/Junit_xml_output_ in github.com/prometheus/prometheus/cmd/promtool.executor": "Debug",
+    "Go Test.TestRulesUnitTestRun in github.com/prometheus/prometheus/cmd/promtool.executor": "Debug",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.go.formatter.settings.were.checked": "true",
+    "RunOnceActivity.go.migrated.go.modules.settings": "true",
+    "RunOnceActivity.go.modules.automatic.dependencies.download": "true",
+    "RunOnceActivity.go.modules.go.list.on.any.changes.was.set": "true",
+    "go.import.settings.migrated": "true",
+    "go.sdk.automatically.set": "true",
+    "last_opened_file_path": "/home/kushal",
+    "node.js.detected.package.eslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "preferences.keymap"
+  }
+}]]></component>
+  <component name="RunManager" selected="Go Test.TestRulesUnitTest in github.com/prometheus/prometheus/cmd/promtool">
+    <configuration name="TestRulesUnitTest in github.com/prometheus/prometheus/cmd/promtool" type="GoTestRunConfiguration" factoryName="Go Test" temporary="true" nameIsGenerated="true">
+      <module name="prometheus" />
+      <working_directory value="$PROJECT_DIR$/cmd/promtool" />
+      <root_directory value="$PROJECT_DIR$" />
+      <kind value="PACKAGE" />
+      <package value="github.com/prometheus/prometheus/cmd/promtool" />
+      <directory value="$PROJECT_DIR$" />
+      <filePath value="$PROJECT_DIR$" />
+      <framework value="gotest" />
+      <pattern value="^\QTestRulesUnitTest\E$" />
+      <method v="2" />
+    </configuration>
+    <configuration name="TestRulesUnitTestRun in github.com/prometheus/prometheus/cmd/promtool" type="GoTestRunConfiguration" factoryName="Go Test" temporary="true" nameIsGenerated="true">
+      <module name="prometheus" />
+      <working_directory value="$PROJECT_DIR$/cmd/promtool" />
+      <root_directory value="$PROJECT_DIR$" />
+      <kind value="PACKAGE" />
+      <package value="github.com/prometheus/prometheus/cmd/promtool" />
+      <directory value="$PROJECT_DIR$" />
+      <filePath value="$PROJECT_DIR$" />
+      <framework value="gotest" />
+      <pattern value="^\QTestRulesUnitTestRun\E$" />
+      <method v="2" />
+    </configuration>
+    <configuration name="TestRulesUnitTest/Junit_xml_output_ in github.com/prometheus/prometheus/cmd/promtool" type="GoTestRunConfiguration" factoryName="Go Test" temporary="true" nameIsGenerated="true">
+      <module name="prometheus" />
+      <working_directory value="$PROJECT_DIR$/cmd/promtool" />
+      <root_directory value="$PROJECT_DIR$" />
+      <kind value="PACKAGE" />
+      <package value="github.com/prometheus/prometheus/cmd/promtool" />
+      <directory value="$PROJECT_DIR$" />
+      <filePath value="$PROJECT_DIR$" />
+      <framework value="gotest" />
+      <pattern value="^\QTestRulesUnitTest\E$/^\QJunit_xml_output_\E$" />
+      <method v="2" />
+    </configuration>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Go Test.TestRulesUnitTest in github.com/prometheus/prometheus/cmd/promtool" />
+        <item itemvalue="Go Test.TestRulesUnitTest/Junit_xml_output_ in github.com/prometheus/prometheus/cmd/promtool" />
+        <item itemvalue="Go Test.TestRulesUnitTestRun in github.com/prometheus/prometheus/cmd/promtool" />
+      </list>
+    </recent_temporary>
+  </component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-gosdk-33c477a475b1-e0158606a674-org.jetbrains.plugins.go.sharedIndexes.bundled-GO-241.18034.61" />
+        <option value="bundled-js-predefined-1d06a55b98c1-0b3e54e931b4-JavaScript-GO-241.18034.61" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="UnknownFeatures">
+    <option featureType="dependencySupport" implementationName="javascript:npm:react" />
+    <option featureType="dependencySupport" implementationName="javascript:npm:prettier" />
+    <option featureType="dependencySupport" implementationName="executable:docker" />
+    <option featureType="dependencySupport" implementationName="executable:kubectl" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+  <component name="VcsManagerConfiguration">
+    <option name="ADD_EXTERNAL_FILES_SILENTLY" value="true" />
+    <MESSAGE value="recreated pr in junit formate" />
+    <option name="LAST_COMMIT_MESSAGE" value="recreated pr in junit formate" />
+  </component>
+  <component name="VgoProject">
+    <settings-migrated>true</settings-migrated>
+  </component>
+  <component name="com.intellij.coverage.CoverageDataManagerImpl">
+    <SUITE FILE_PATH="coverage/prometheus$TestRulesUnitTest_in_github_com_prometheus_prometheus_cmd_promtool.out" NAME="TestRulesUnitTest in github.com/prometheus/prometheus/cmd/promtool Coverage Results" MODIFIED="1720457806949" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="GoCoverage" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" />
+  </component>
+</project>

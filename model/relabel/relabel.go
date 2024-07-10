@@ -17,6 +17,7 @@ import (
 	"crypto/md5"
 	"encoding/binary"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/grafana/regexp"
@@ -205,6 +206,11 @@ func (re Regexp) MarshalYAML() (interface{}, error) {
 	return nil, nil
 }
 
+// IsZero implements the yaml.IsZeroer interface.
+func (re Regexp) IsZero() bool {
+	return re.Regexp == DefaultRelabelConfig.Regex.Regexp
+}
+
 // String returns the original string used to compile the regular expression.
 func (re Regexp) String() string {
 	str := re.Regexp.String()
@@ -290,7 +296,7 @@ func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
 		hash := md5.Sum([]byte(val))
 		// Use only the last 8 bytes of the hash to give the same result as earlier versions of this code.
 		mod := binary.BigEndian.Uint64(hash[8:]) % cfg.Modulus
-		lb.Set(cfg.TargetLabel, fmt.Sprintf("%d", mod))
+		lb.Set(cfg.TargetLabel, strconv.FormatUint(mod, 10))
 	case LabelMap:
 		lb.Range(func(l labels.Label) {
 			if cfg.Regex.MatchString(l.Name) {

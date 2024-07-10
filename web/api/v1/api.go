@@ -116,9 +116,11 @@ type RulesRetriever interface {
 	AlertingRules() []*rules.AlertingRule
 }
 
+// StatsRenderer converts engine statistics into a format suitable for the API.
 type StatsRenderer func(context.Context, *stats.Statistics, string) stats.QueryStats
 
-func defaultStatsRenderer(_ context.Context, s *stats.Statistics, param string) stats.QueryStats {
+// DefaultStatsRenderer is the default stats renderer for the API.
+func DefaultStatsRenderer(_ context.Context, s *stats.Statistics, param string) stats.QueryStats {
 	if param != "" {
 		return stats.NewQueryStats(s)
 	}
@@ -157,6 +159,7 @@ type Response struct {
 	ErrorType errorType   `json:"errorType,omitempty"`
 	Error     string      `json:"error,omitempty"`
 	Warnings  []string    `json:"warnings,omitempty"`
+	Infos     []string    `json:"infos,omitempty"`
 }
 
 type apiFuncResult struct {
@@ -246,6 +249,7 @@ func NewAPI(
 	registerer prometheus.Registerer,
 	statsRenderer StatsRenderer,
 	rwEnabled bool,
+	acceptRemoteWriteProtoMsgs []config.RemoteWriteProtoMsg,
 	otlpEnabled bool,
 ) *API {
 	a := &API{
@@ -272,7 +276,7 @@ func NewAPI(
 		buildInfo:        buildInfo,
 		gatherer:         gatherer,
 		isAgent:          isAgent,
-		statsRenderer:    defaultStatsRenderer,
+		statsRenderer:    DefaultStatsRenderer,
 
 		remoteReadHandler: remote.NewReadHandler(logger, registerer, q, configFunc, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame),
 	}
@@ -288,7 +292,7 @@ func NewAPI(
 	}
 
 	if rwEnabled {
-		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap)
+		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, acceptRemoteWriteProtoMsgs)
 	}
 	if otlpEnabled {
 		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, ap)
@@ -461,7 +465,7 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	// Optional stats field in response if parameter "stats" is not empty.
 	sr := api.statsRenderer
 	if sr == nil {
-		sr = defaultStatsRenderer
+		sr = DefaultStatsRenderer
 	}
 	qs := sr(ctx, qry.Stats(), r.FormValue("stats"))
 
@@ -563,7 +567,7 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	// Optional stats field in response if parameter "stats" is not empty.
 	sr := api.statsRenderer
 	if sr == nil {
-		sr = defaultStatsRenderer
+		sr = DefaultStatsRenderer
 	}
 	qs := sr(ctx, qry.Stats(), r.FormValue("stats"))
 
@@ -702,7 +706,7 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 		names = []string{}
 	}
 
-	if len(names) >= limit {
+	if len(names) > limit {
 		names = names[:limit]
 		warnings = warnings.Add(errors.New("results truncated due to limit"))
 	}
@@ -791,7 +795,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 
 	slices.Sort(vals)
 
-	if len(vals) >= limit {
+	if len(vals) > limit {
 		vals = vals[:limit]
 		warnings = warnings.Add(errors.New("results truncated due to limit"))
 	}
@@ -887,7 +891,8 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 		}
 		metrics = append(metrics, set.At().Labels())
 
-		if len(metrics) >= limit {
+		if len(metrics) > limit {
+			metrics = metrics[:limit]
 			warnings.Add(errors.New("results truncated due to limit"))
 			return apiFuncResult{metrics, nil, warnings, closer}
 		}
@@ -1743,11 +1748,13 @@ func (api *API) cleanTombstones(*http.Request) apiFuncResult {
 // can be empty if the position information isn't needed.
 func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface{}, warnings annotations.Annotations, query string) {
 	statusMessage := statusSuccess
+	warn, info := warnings.AsStrings(query, 10, 10)
 
 	resp := &Response{
 		Status:   statusMessage,
 		Data:     data,
-		Warnings: warnings.AsStrings(query, 10),
+		Warnings: warn,
+		Infos:    info,
 	}
 
 	codec, err := api.negotiateCodec(req, resp)
@@ -1758,7 +1765,7 @@ func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface
 
 	b, err := codec.Encode(resp)
 	if err != nil {
-		level.Error(api.logger).Log("msg", "error marshaling response", "err", err)
+		level.Error(api.logger).Log("msg", "error marshaling response", "url", req.URL, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -1766,7 +1773,7 @@ func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface
 	w.Header().Set("Content-Type", codec.ContentType().String())
 	w.WriteHeader(http.StatusOK)
 	if n, err := w.Write(b); err != nil {
-		level.Error(api.logger).Log("msg", "error writing response", "bytesWritten", n, "err", err)
+		level.Error(api.logger).Log("msg", "error writing response", "url", req.URL, "bytesWritten", n, "err", err)
 	}
 }
 

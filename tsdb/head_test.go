@@ -814,6 +814,80 @@ func TestHead_UnknownWALRecord(t *testing.T) {
 	require.NoError(t, head.Close())
 }
 
+// BenchmarkHead_Truncate is quite heavy, so consider running it with
+// -benchtime=10x or similar to get more stable and comparable results.
+func BenchmarkHead_Truncate(b *testing.B) {
+	const total = 1e6
+
+	prepare := func(b *testing.B, churn int) *Head {
+		h, _ := newTestHead(b, 1000, wlog.CompressionNone, false)
+		b.Cleanup(func() {
+			require.NoError(b, h.Close())
+		})
+
+		h.initTime(0)
+
+		internedItoa := map[int]string{}
+		var mtx sync.RWMutex
+		itoa := func(i int) string {
+			mtx.RLock()
+			s, ok := internedItoa[i]
+			mtx.RUnlock()
+			if ok {
+				return s
+			}
+			mtx.Lock()
+			s = strconv.Itoa(i)
+			internedItoa[i] = s
+			mtx.Unlock()
+			return s
+		}
+
+		allSeries := [total]labels.Labels{}
+		nameValues := make([]string, 0, 100)
+		for i := 0; i < total; i++ {
+			nameValues = nameValues[:0]
+
+			// A thousand labels like lbl_x_of_1000, each with total/1000 values
+			thousand := "lbl_" + itoa(i%1000) + "_of_1000"
+			nameValues = append(nameValues, thousand, itoa(i/1000))
+			// A hundred labels like lbl_x_of_100, each with total/100 values.
+			hundred := "lbl_" + itoa(i%100) + "_of_100"
+			nameValues = append(nameValues, hundred, itoa(i/100))
+
+			if i%13 == 0 {
+				ten := "lbl_" + itoa(i%10) + "_of_10"
+				nameValues = append(nameValues, ten, itoa(i%10))
+			}
+
+			allSeries[i] = labels.FromStrings(append(nameValues, "first", "a", "second", "a", "third", "a")...)
+			s, _, _ := h.getOrCreate(allSeries[i].Hash(), allSeries[i])
+			s.mmappedChunks = []*mmappedChunk{
+				{minTime: 1000 * int64(i/churn), maxTime: 999 + 1000*int64(i/churn)},
+			}
+		}
+
+		return h
+	}
+
+	for _, churn := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprintf("churn=%d", churn), func(b *testing.B) {
+			if b.N > total/churn {
+				// Just to make sure that benchmark still makes sense.
+				panic("benchmark not prepared")
+			}
+			h := prepare(b, churn)
+			b.ResetTimer()
+
+			for i := 0; i < b.N; i++ {
+				require.NoError(b, h.Truncate(1000*int64(i)))
+				// Make sure the benchmark is meaningful and it's actually truncating the expected amount of series.
+				require.Equal(b, total-churn*i, int(h.NumSeries()))
+			}
+		})
+	}
+}
+
 func TestHead_Truncate(t *testing.T) {
 	h, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
 	defer func() {
@@ -2591,6 +2665,14 @@ func TestIsolationWithoutAdd(t *testing.T) {
 }
 
 func TestOutOfOrderSamplesMetric(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testOutOfOrderSamplesMetric(t, scenario)
+		})
+	}
+}
+
+func testOutOfOrderSamplesMetric(t *testing.T, scenario sampleTypeScenario) {
 	dir := t.TempDir()
 
 	db, err := Open(dir, nil, nil, DefaultOptions(), nil)
@@ -2600,33 +2682,38 @@ func TestOutOfOrderSamplesMetric(t *testing.T) {
 	}()
 	db.DisableCompactions()
 
+	appendSample := func(appender storage.Appender, ts int64) (storage.SeriesRef, error) {
+		ref, _, err := scenario.appendFunc(appender, labels.FromStrings("a", "b"), ts, 99)
+		return ref, err
+	}
+
 	ctx := context.Background()
 	app := db.Appender(ctx)
 	for i := 1; i <= 5; i++ {
-		_, err = app.Append(0, labels.FromStrings("a", "b"), int64(i), 99)
+		_, err = appendSample(app, int64(i))
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
 
 	// Test out of order metric.
-	require.Equal(t, 0.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat)))
+	require.Equal(t, 0.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(scenario.sampleType)))
 	app = db.Appender(ctx)
-	_, err = app.Append(0, labels.FromStrings("a", "b"), 2, 99)
+	_, err = appendSample(app, 2)
 	require.Equal(t, storage.ErrOutOfOrderSample, err)
-	require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat)))
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(scenario.sampleType)))
 
-	_, err = app.Append(0, labels.FromStrings("a", "b"), 3, 99)
+	_, err = appendSample(app, 3)
 	require.Equal(t, storage.ErrOutOfOrderSample, err)
-	require.Equal(t, 2.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat)))
+	require.Equal(t, 2.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(scenario.sampleType)))
 
-	_, err = app.Append(0, labels.FromStrings("a", "b"), 4, 99)
+	_, err = appendSample(app, 4)
 	require.Equal(t, storage.ErrOutOfOrderSample, err)
-	require.Equal(t, 3.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat)))
+	require.Equal(t, 3.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(scenario.sampleType)))
 	require.NoError(t, app.Commit())
 
 	// Compact Head to test out of bound metric.
 	app = db.Appender(ctx)
-	_, err = app.Append(0, labels.FromStrings("a", "b"), DefaultBlockDuration*2, 99)
+	_, err = appendSample(app, DefaultBlockDuration*2)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -2635,36 +2722,36 @@ func TestOutOfOrderSamplesMetric(t *testing.T) {
 	require.Greater(t, db.head.minValidTime.Load(), int64(0))
 
 	app = db.Appender(ctx)
-	_, err = app.Append(0, labels.FromStrings("a", "b"), db.head.minValidTime.Load()-2, 99)
+	_, err = appendSample(app, db.head.minValidTime.Load()-2)
 	require.Equal(t, storage.ErrOutOfBounds, err)
-	require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeFloat)))
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.outOfBoundSamples.WithLabelValues(scenario.sampleType)))
 
-	_, err = app.Append(0, labels.FromStrings("a", "b"), db.head.minValidTime.Load()-1, 99)
+	_, err = appendSample(app, db.head.minValidTime.Load()-1)
 	require.Equal(t, storage.ErrOutOfBounds, err)
-	require.Equal(t, 2.0, prom_testutil.ToFloat64(db.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeFloat)))
+	require.Equal(t, 2.0, prom_testutil.ToFloat64(db.head.metrics.outOfBoundSamples.WithLabelValues(scenario.sampleType)))
 	require.NoError(t, app.Commit())
 
 	// Some more valid samples for out of order.
 	app = db.Appender(ctx)
 	for i := 1; i <= 5; i++ {
-		_, err = app.Append(0, labels.FromStrings("a", "b"), db.head.minValidTime.Load()+DefaultBlockDuration+int64(i), 99)
+		_, err = appendSample(app, db.head.minValidTime.Load()+DefaultBlockDuration+int64(i))
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
 
 	// Test out of order metric.
 	app = db.Appender(ctx)
-	_, err = app.Append(0, labels.FromStrings("a", "b"), db.head.minValidTime.Load()+DefaultBlockDuration+2, 99)
+	_, err = appendSample(app, db.head.minValidTime.Load()+DefaultBlockDuration+2)
 	require.Equal(t, storage.ErrOutOfOrderSample, err)
-	require.Equal(t, 4.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat)))
+	require.Equal(t, 4.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(scenario.sampleType)))
 
-	_, err = app.Append(0, labels.FromStrings("a", "b"), db.head.minValidTime.Load()+DefaultBlockDuration+3, 99)
+	_, err = appendSample(app, db.head.minValidTime.Load()+DefaultBlockDuration+3)
 	require.Equal(t, storage.ErrOutOfOrderSample, err)
-	require.Equal(t, 5.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat)))
+	require.Equal(t, 5.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(scenario.sampleType)))
 
-	_, err = app.Append(0, labels.FromStrings("a", "b"), db.head.minValidTime.Load()+DefaultBlockDuration+4, 99)
+	_, err = appendSample(app, db.head.minValidTime.Load()+DefaultBlockDuration+4)
 	require.Equal(t, storage.ErrOutOfOrderSample, err)
-	require.Equal(t, 6.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat)))
+	require.Equal(t, 6.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(scenario.sampleType)))
 	require.NoError(t, app.Commit())
 }
 
@@ -3383,7 +3470,7 @@ func TestWaitForPendingReadersInTimeRange(t *testing.T) {
 func TestAppendHistogram(t *testing.T) {
 	l := labels.FromStrings("a", "b")
 	for _, numHistograms := range []int{1, 10, 150, 200, 250, 300} {
-		t.Run(fmt.Sprintf("%d", numHistograms), func(t *testing.T) {
+		t.Run(strconv.Itoa(numHistograms), func(t *testing.T) {
 			head, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
 			t.Cleanup(func() {
 				require.NoError(t, head.Close())
@@ -3557,7 +3644,7 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 		expMmapChunks = append(expMmapChunks, &cpy)
 	}
 	expHeadChunkSamples := ms.headChunks.chunk.NumSamples()
-	require.Greater(t, expHeadChunkSamples, 0)
+	require.Positive(t, expHeadChunkSamples)
 
 	// Series with mix of histograms and float.
 	s2 := labels.FromStrings("a", "b2")
@@ -3692,7 +3779,7 @@ func TestChunkSnapshot(t *testing.T) {
 		e := ex{
 			seriesLabels: lbls,
 			e: exemplar.Exemplar{
-				Labels: labels.FromStrings("trace_id", fmt.Sprintf("%d", rand.Int())),
+				Labels: labels.FromStrings("trace_id", strconv.Itoa(rand.Int())),
 				Value:  rand.Float64(),
 				Ts:     ts,
 			},
@@ -4007,6 +4094,9 @@ func TestSnapshotError(t *testing.T) {
 	require.NoError(t, err)
 	f, err := os.OpenFile(path.Join(snapDir, files[0].Name()), os.O_RDWR, 0)
 	require.NoError(t, err)
+	// Create snapshot backup to be restored on future test cases.
+	snapshotBackup, err := io.ReadAll(f)
+	require.NoError(t, err)
 	_, err = f.WriteAt([]byte{0b11111111}, 18)
 	require.NoError(t, err)
 	require.NoError(t, f.Close())
@@ -4021,10 +4111,44 @@ func TestSnapshotError(t *testing.T) {
 
 	// There should be no series in the memory after snapshot error since WAL was removed.
 	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal))
+	require.Equal(t, uint64(0), head.NumSeries())
 	require.Nil(t, head.series.getByHash(lbls.Hash(), lbls))
 	tm, err = head.tombstones.Get(1)
 	require.NoError(t, err)
 	require.Empty(t, tm)
+	require.NoError(t, head.Close())
+
+	// Test corruption in the middle of the snapshot.
+	f, err = os.OpenFile(path.Join(snapDir, files[0].Name()), os.O_RDWR, 0)
+	require.NoError(t, err)
+	_, err = f.WriteAt(snapshotBackup, 0)
+	require.NoError(t, err)
+	_, err = f.WriteAt([]byte{0b11111111}, 300)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	c := &countSeriesLifecycleCallback{}
+	opts := head.opts
+	opts.SeriesCallback = c
+
+	w, err = wlog.NewSize(nil, nil, head.wal.Dir(), 32768, wlog.CompressionNone)
+	require.NoError(t, err)
+	head, err = NewHead(prometheus.NewRegistry(), nil, w, nil, head.opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, head.Init(math.MinInt64))
+
+	// There should be no series in the memory after snapshot error since WAL was removed.
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal))
+	require.Nil(t, head.series.getByHash(lbls.Hash(), lbls))
+	require.Equal(t, uint64(0), head.NumSeries())
+
+	// Since the snapshot could replay certain series, we continue invoking the create hooks.
+	// In such instances, we need to ensure that we also trigger the delete hooks when resetting the memory.
+	require.Equal(t, int64(2), c.created.Load())
+	require.Equal(t, int64(2), c.deleted.Load())
+
+	require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.seriesRemoved))
+	require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.seriesCreated))
 }
 
 func TestHistogramMetrics(t *testing.T) {
@@ -4601,7 +4725,7 @@ func TestChunkSnapshotTakenAfterIncompleteSnapshot(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, "", name)
 	require.Equal(t, 0, idx)
-	require.Greater(t, offset, 0)
+	require.Positive(t, offset)
 }
 
 // TestWBLReplay checks the replay at a low level.
@@ -4690,6 +4814,14 @@ func TestWBLReplay(t *testing.T) {
 
 // TestOOOMmapReplay checks the replay at a low level.
 func TestOOOMmapReplay(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testOOOMmapReplay(t, scenario)
+		})
+	}
+}
+
+func testOOOMmapReplay(t *testing.T, scenario sampleTypeScenario) {
 	dir := t.TempDir()
 	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, wlog.CompressionSnappy)
 	require.NoError(t, err)
@@ -4709,8 +4841,7 @@ func TestOOOMmapReplay(t *testing.T) {
 	l := labels.FromStrings("foo", "bar")
 	appendSample := func(mins int64) {
 		app := h.Appender(context.Background())
-		ts, v := mins*time.Minute.Milliseconds(), float64(mins)
-		_, err := app.Append(0, l, ts, v)
+		_, _, err := scenario.appendFunc(app, l, mins*time.Minute.Milliseconds(), mins)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 	}
@@ -4985,6 +5116,14 @@ func TestReplayAfterMmapReplayError(t *testing.T) {
 }
 
 func TestOOOAppendWithNoSeries(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testOOOAppendWithNoSeries(t, scenario.appendFunc)
+		})
+	}
+}
+
+func testOOOAppendWithNoSeries(t *testing.T, appendFunc func(appender storage.Appender, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error)) {
 	dir := t.TempDir()
 	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, wlog.CompressionSnappy)
 	require.NoError(t, err)
@@ -5005,7 +5144,7 @@ func TestOOOAppendWithNoSeries(t *testing.T) {
 
 	appendSample := func(lbls labels.Labels, ts int64) {
 		app := h.Appender(context.Background())
-		_, err := app.Append(0, lbls, ts*time.Minute.Milliseconds(), float64(ts))
+		_, _, err := appendFunc(app, lbls, ts*time.Minute.Milliseconds(), ts)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 	}
@@ -5032,7 +5171,7 @@ func TestOOOAppendWithNoSeries(t *testing.T) {
 		require.Equal(t, expSamples, ms.headChunks.chunk.NumSamples())
 	}
 
-	newLabels := func(idx int) labels.Labels { return labels.FromStrings("foo", fmt.Sprintf("%d", idx)) }
+	newLabels := func(idx int) labels.Labels { return labels.FromStrings("foo", strconv.Itoa(idx)) }
 
 	s1 := newLabels(1)
 	appendSample(s1, 300) // At 300m.
@@ -5053,7 +5192,7 @@ func TestOOOAppendWithNoSeries(t *testing.T) {
 	// Now 179m is too old.
 	s4 := newLabels(4)
 	app := h.Appender(context.Background())
-	_, err = app.Append(0, s4, 179*time.Minute.Milliseconds(), float64(179))
+	_, _, err = appendFunc(app, s4, 179*time.Minute.Milliseconds(), 179)
 	require.Equal(t, storage.ErrTooOldSample, err)
 	require.NoError(t, app.Rollback())
 	verifyOOOSamples(s3, 1)
@@ -5066,6 +5205,14 @@ func TestOOOAppendWithNoSeries(t *testing.T) {
 }
 
 func TestHeadMinOOOTimeUpdate(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testHeadMinOOOTimeUpdate(t, scenario)
+		})
+	}
+}
+
+func testHeadMinOOOTimeUpdate(t *testing.T, scenario sampleTypeScenario) {
 	dir := t.TempDir()
 	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, wlog.CompressionSnappy)
 	require.NoError(t, err)
@@ -5084,15 +5231,13 @@ func TestHeadMinOOOTimeUpdate(t *testing.T) {
 	require.NoError(t, h.Init(0))
 
 	appendSample := func(ts int64) {
-		lbls := labels.FromStrings("foo", "bar")
 		app := h.Appender(context.Background())
-		_, err := app.Append(0, lbls, ts*time.Minute.Milliseconds(), float64(ts))
+		_, _, err = scenario.appendFunc(app, labels.FromStrings("a", "b"), ts*time.Minute.Milliseconds(), ts)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 	}
 
 	appendSample(300) // In-order sample.
-
 	require.Equal(t, int64(math.MaxInt64), h.MinOOOTime())
 
 	appendSample(295) // OOO sample.
@@ -5828,4 +5973,15 @@ func TestHeadCompactableDoesNotCompactEmptyHead(t *testing.T) {
 	}()
 
 	require.False(t, head.compactable())
+}
+
+type countSeriesLifecycleCallback struct {
+	created atomic.Int64
+	deleted atomic.Int64
+}
+
+func (c *countSeriesLifecycleCallback) PreCreation(labels.Labels) error { return nil }
+func (c *countSeriesLifecycleCallback) PostCreation(labels.Labels)      { c.created.Inc() }
+func (c *countSeriesLifecycleCallback) PostDeletion(s map[chunks.HeadSeriesRef]labels.Labels) {
+	c.deleted.Add(int64(len(s)))
 }

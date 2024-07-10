@@ -20,6 +20,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -492,7 +493,7 @@ func (d *Discovery) vmToLabelSet(ctx context.Context, client client, vm virtualM
 				}
 				if ip.Properties != nil && ip.Properties.PrivateIPAddress != nil {
 					labels[azureLabelMachinePrivateIP] = model.LabelValue(*ip.Properties.PrivateIPAddress)
-					address := net.JoinHostPort(*ip.Properties.PrivateIPAddress, fmt.Sprintf("%d", d.port))
+					address := net.JoinHostPort(*ip.Properties.PrivateIPAddress, strconv.Itoa(d.port))
 					labels[model.AddressLabel] = model.LabelValue(address)
 					return labels, nil
 				}

@@ -150,7 +150,7 @@ func (d *Discovery) refreshTasks(ctx context.Context) ([]*targetgroup.Group, err
 						labels[model.LabelName(k)] = model.LabelValue(v)
 					}
 
-					addr := net.JoinHostPort(ip.String(), fmt.Sprintf("%d", d.port))
+					addr := net.JoinHostPort(ip.String(), strconv.Itoa(d.port))
 					labels[model.AddressLabel] = model.LabelValue(addr)
 
 					tg.Targets = append(tg.Targets, labels)

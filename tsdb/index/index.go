@@ -51,6 +51,9 @@ const (
 	indexFilename = "index"
 
 	seriesByteAlign = 16
+
+	// checkContextEveryNIterations is used in some tight loops to check if the context is done.
+	checkContextEveryNIterations = 128
 )
 
 type indexWriterSeries struct {
@@ -1548,12 +1551,18 @@ func (r *Reader) LabelValues(ctx context.Context, name string, matchers ...*labe
 
 // LabelNamesFor returns all the label names for the series referred to by IDs.
 // The names returned are sorted.
-func (r *Reader) LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([]string, error) {
+func (r *Reader) LabelNamesFor(ctx context.Context, postings Postings) ([]string, error) {
 	// Gather offsetsMap the name offsetsMap in the symbol table first
 	offsetsMap := make(map[uint32]struct{})
-	for _, id := range ids {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
+	i := 0
+	for postings.Next() {
+		id := postings.At()
+		i++
+
+		if i%checkContextEveryNIterations == 0 {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
 		}
 
 		offset := id
@@ -1797,7 +1806,12 @@ func (r *Reader) postingsForLabelMatchingV1(ctx context.Context, name string, ma
 	}
 
 	var its []Postings
+	count := 1
 	for val, offset := range e {
+		if count%checkContextEveryNIterations == 0 && ctx.Err() != nil {
+			return ErrPostings(ctx.Err())
+		}
+		count++
 		if !match(val) {
 			continue
 		}

@@ -87,6 +87,7 @@ func (d *robotDiscovery) refresh(context.Context) ([]*targetgroup.Group, error) 
 		resp.Body.Close()
 	}()
 
+	//nolint:usestdlibvars
 	if resp.StatusCode/100 != 2 {
 		return nil, fmt.Errorf("non 2xx status '%d' response during hetzner service discovery with role robot", resp.StatusCode)
 	}
@@ -112,7 +113,7 @@ func (d *robotDiscovery) refresh(context.Context) ([]*targetgroup.Group, error) 
 			hetznerLabelPublicIPv4:     model.LabelValue(server.Server.ServerIP),
 			hetznerLabelServerStatus:   model.LabelValue(server.Server.Status),
 			hetznerLabelRobotProduct:   model.LabelValue(server.Server.Product),
-			hetznerLabelRobotCancelled: model.LabelValue(fmt.Sprintf("%t", server.Server.Canceled)),
+			hetznerLabelRobotCancelled: model.LabelValue(strconv.FormatBool(server.Server.Canceled)),
 
 			model.AddressLabel: model.LabelValue(net.JoinHostPort(server.Server.ServerIP, strconv.FormatUint(uint64(d.port), 10))),
 		}

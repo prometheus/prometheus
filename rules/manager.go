@@ -116,6 +116,7 @@ type ManagerOptions struct {
 	ForGracePeriod            time.Duration
 	ResendDelay               time.Duration
 	GroupLoader               GroupLoader
+	DefaultRuleQueryOffset    func() time.Duration
 	MaxConcurrentEvals        int64
 	ConcurrentEvalsEnabled    bool
 	RuleConcurrencyController RuleConcurrencyController
@@ -189,9 +190,17 @@ func (m *Manager) Stop() {
 
 // Update the rule manager's state as the config requires. If
 // loading the new rules failed the old rule set is restored.
+// This method will no-op in case the manager is already stopped.
 func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string, groupEvalIterationFunc GroupEvalIterationFunc) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
+
+	// We cannot update a stopped manager
+	select {
+	case <-m.done:
+		return nil
+	default:
+	}
 
 	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, groupEvalIterationFunc, files...)
 
@@ -336,6 +345,7 @@ func (m *Manager) LoadGroups(
 				Rules:             rules,
 				ShouldRestore:     shouldRestore,
 				Opts:              m.opts,
+				QueryOffset:       (*time.Duration)(rg.QueryOffset),
 				done:              m.done,
 				EvalIterationFunc: groupEvalIterationFunc,
 			})

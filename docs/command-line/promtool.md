@@ -566,6 +566,7 @@ Dump samples from a TSDB.
 
 | Flag | Description | Default |
 | --- | --- | --- |
+| <code class="text-nowrap">--sandbox-dir-root</code> | Root directory where a sandbox directory would be created in case WAL replay generates chunks. The sandbox directory is cleaned up at the end. | `data/` |
 | <code class="text-nowrap">--min-time</code> | Minimum timestamp to dump. | `-9223372036854775808` |
 | <code class="text-nowrap">--max-time</code> | Maximum timestamp to dump. | `9223372036854775807` |
 | <code class="text-nowrap">--match</code> | Series selector. Can be specified multiple times. | `{__name__=~'(?s:.*)'}` |
@@ -584,7 +585,7 @@ Dump samples from a TSDB.
 
 ##### `promtool tsdb dump-openmetrics`
 
-[Experimental] Dump samples from a TSDB into OpenMetrics format. Native histograms are not dumped.
+[Experimental] Dump samples from a TSDB into OpenMetrics text format, excluding native histograms and staleness markers, which are not representable in OpenMetrics.
 
 
 
@@ -592,6 +593,7 @@ Dump samples from a TSDB.
 
 | Flag | Description | Default |
 | --- | --- | --- |
+| <code class="text-nowrap">--sandbox-dir-root</code> | Root directory where a sandbox directory would be created in case WAL replay generates chunks. The sandbox directory is cleaned up at the end. | `data/` |
 | <code class="text-nowrap">--min-time</code> | Minimum timestamp to dump. | `-9223372036854775808` |
 | <code class="text-nowrap">--max-time</code> | Maximum timestamp to dump. | `9223372036854775807` |
 | <code class="text-nowrap">--match</code> | Series selector. Can be specified multiple times. | `{__name__=~'(?s:.*)'}` |
