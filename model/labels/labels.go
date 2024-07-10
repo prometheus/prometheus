@@ -31,25 +31,6 @@ func (ls Labels) Len() int           { return len(ls) }
 func (ls Labels) Swap(i, j int)      { ls[i], ls[j] = ls[j], ls[i] }
 func (ls Labels) Less(i, j int) bool { return ls[i].Name < ls[j].Name }
 
-// ExtractNames returns an array of all Name in ls.
-func (ls Labels) ExtractNames() []string {
-	names := make([]string, len(ls))
-	for i, label := range ls {
-		names[i] = label.Name
-	}
-	return names
-}
-
-// Contains returns true if the label set contains the provided label name.
-func (ls Labels) Contains(name string) bool {
-	for _, label := range ls {
-		if label.Name == name {
-			return true
-		}
-	}
-	return false
-}
-
 // Bytes returns ls as a byte slice.
 // It uses an byte invalid character as a separator and so should not be used for printing.
 func (ls Labels) Bytes(buf []byte) []byte {
@@ -390,6 +371,29 @@ func (ls Labels) ReleaseStrings(release func(string)) {
 		release(l.Name)
 		release(l.Value)
 	}
+}
+
+// ExtractNames returns an array of all Name in ls.
+func (ls Labels) ExtractNames() []string {
+	names := make([]string, len(ls))
+	for i, label := range ls {
+		names[i] = label.Name
+	}
+	return names
+}
+
+// Method to check if the Labels contains any of the provided label Names
+// returns true if any of the provided label names are present in the Labels
+// return false if no Names are provided
+func (ls Labels) Contains(names ...string) bool {
+	for _, name := range names {
+		for _, label := range ls {
+			if label.Name == name {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Builder allows modifying Labels.

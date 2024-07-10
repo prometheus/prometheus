@@ -252,21 +252,10 @@ loop:
 
 			newLbs = newLbs.DropMetricName()
 			switch p.mtype {
-			case model.MetricTypeCounter:
-				if !labels.Equal(lbs, newLbs) {
-					return nil
-				}
-			case model.MetricTypeSummary:
+			case model.MetricTypeCounter, model.MetricTypeHistogram, model.MetricTypeSummary:
 				labelDiffs := lbs.MatchLabels(false, newLbs.ExtractNames()...)
 				if labelDiffs.Len() != 0 {
-					if !labelDiffs.Contains("quantile") || labelDiffs.Len() != 1 {
-						return nil
-					}
-				}
-			case model.MetricTypeHistogram:
-				labelDiffs := lbs.MatchLabels(false, newLbs.ExtractNames()...)
-				if labelDiffs.Len() != 0 {
-					if !labelDiffs.Contains("le") || labelDiffs.Len() != 1 {
+					if !labelDiffs.Contains("quantile", "le") || labelDiffs.Len() != 1 {
 						return nil
 					}
 				}
