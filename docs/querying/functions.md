@@ -98,6 +98,7 @@ vector.
 clamps the sample values of all elements in `v` to have a lower limit of `min` and an upper limit of `max`.
 
 Special cases:
+
 - Return an empty vector if `min > max`
 - Return `NaN` if `min` or `max` is `NaN`
 
