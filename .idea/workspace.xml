@@ -291,6 +291,7 @@
   <component name="PropertiesComponent"><![CDATA[{
   "keyToString": {
     "ASKED_ADD_EXTERNAL_FILES": "true",
+    "ASKED_MARK_IGNORED_FILES_AS_EXCLUDED": "true",
     "ASKED_SHARE_PROJECT_CONFIGURATION_FILES": "true",
     "Go Test.TestRulesUnitTest in github.com/prometheus/prometheus/cmd/promtool.executor": "Debug",
     "Go Test.TestRulesUnitTest/Junit_xml_output_ in github.com/prometheus/prometheus/cmd/promtool.executor": "Debug",
