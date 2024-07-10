@@ -2134,6 +2134,115 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: `test{a="b"}[5m] OFFSET 3600`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name:           "test",
+				OriginalOffset: 1 * time.Hour,
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, "a", "b"),
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   11,
+				},
+			},
+			Range:  5 * time.Minute,
+			EndPos: 27,
+		},
+	},
+	{
+		input: `foo[3ms] @ 2.345`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name:      "foo",
+				Timestamp: makeInt64Pointer(2345),
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			Range:  3 * time.Millisecond,
+			EndPos: 16,
+		},
+	},
+	{
+		input: `foo[4s180ms] @ 2.345`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name:      "foo",
+				Timestamp: makeInt64Pointer(2345),
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			Range:  4*time.Second + 180*time.Millisecond,
+			EndPos: 20,
+		},
+	},
+	{
+		input: `foo[4.18] @ 2.345`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name:      "foo",
+				Timestamp: makeInt64Pointer(2345),
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			Range:  4*time.Second + 180*time.Millisecond,
+			EndPos: 17,
+		},
+	},
+	{
+		input: `foo[4s18ms] @ 2.345`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name:      "foo",
+				Timestamp: makeInt64Pointer(2345),
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			Range:  4*time.Second + 18*time.Millisecond,
+			EndPos: 19,
+		},
+	},
+	{
+		input: `foo[4.018] @ 2.345`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name:      "foo",
+				Timestamp: makeInt64Pointer(2345),
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			Range:  4*time.Second + 18*time.Millisecond,
+			EndPos: 18,
+		},
+	},
+	{
 		input: `test{a="b"}[5y] @ 1603774699`,
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
@@ -2153,14 +2262,49 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: "test[5]",
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "test",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   4,
+				},
+			},
+			Range:  5 * time.Second,
+			EndPos: 7,
+		},
+	},
+	{
+		input: `some_metric[5m] @ 1m`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name:      "some_metric",
+				Timestamp: makeInt64Pointer(60000),
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   11,
+				},
+			},
+			Range:  5 * time.Minute,
+			EndPos: 20,
+		},
+	},
+	{
 		input:  `foo[5mm]`,
 		fail:   true,
-		errMsg: "bad duration syntax: \"5mm\"",
+		errMsg: "bad number or duration syntax: \"5mm\"",
 	},
 	{
 		input:  `foo[5m1]`,
 		fail:   true,
-		errMsg: "bad duration syntax: \"5m1\"",
+		errMsg: "bad number or duration syntax: \"5m1\"",
 	},
 	{
 		input:  `foo[5m:1m1]`,
@@ -2194,17 +2338,12 @@ var testExpr = []struct {
 	{
 		input:  `foo[]`,
 		fail:   true,
-		errMsg: "missing unit character in duration",
+		errMsg: "bad number or duration syntax: \"\"",
 	},
 	{
-		input:  `foo[1]`,
+		input:  `foo[-1]`,
 		fail:   true,
-		errMsg: "missing unit character in duration",
-	},
-	{
-		input:  `some_metric[5m] OFFSET 1`,
-		fail:   true,
-		errMsg: "unexpected number \"1\" in offset, expected duration",
+		errMsg: "bad number or duration syntax: \"\"",
 	},
 	{
 		input:  `some_metric[5m] OFFSET 1mm`,
@@ -2214,17 +2353,12 @@ var testExpr = []struct {
 	{
 		input:  `some_metric[5m] OFFSET`,
 		fail:   true,
-		errMsg: "unexpected end of input in offset, expected duration",
+		errMsg: "unexpected end of input in offset, expected number or duration",
 	},
 	{
 		input:  `some_metric OFFSET 1m[5m]`,
 		fail:   true,
 		errMsg: "1:22: parse error: no offset modifiers allowed before range",
-	},
-	{
-		input:  `some_metric[5m] @ 1m`,
-		fail:   true,
-		errMsg: "1:19: parse error: unexpected duration \"1m\" in @, expected timestamp",
 	},
 	{
 		input:  `some_metric[5m] @`,
@@ -2910,6 +3044,11 @@ var testExpr = []struct {
 		errMsg: "illegal character U+002E '.' in escape sequence",
 	},
 	// Subquery.
+	{
+		input:  `foo{bar="baz"}[`,
+		fail:   true,
+		errMsg: `1:16: parse error: bad number or duration syntax: ""`,
+	},
 	{
 		input: `foo{bar="baz"}[10m:6s]`,
 		expected: &SubqueryExpr{
