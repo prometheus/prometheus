@@ -760,7 +760,7 @@ func funcIntegral(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 		var sum, c float64
 		var prev FPoint
 		for i, f := range s.Floats {
-			var value float64
+			var value, cValue float64
 			// Treat NaN as zero, to let "neighboring" non-zero values handle it
 			currVal := nanAsZero(f.F)
 			prevVal := nanAsZero(prev.F)
@@ -838,13 +838,19 @@ func funcIntegral(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 				//                         *         *         *
 				//                      (t2-t1)   (t3-t2)   (t4-t3)
 				//
+
+				// NB: use kahanSumInc() here also for big vs small number precision
+				// to implement (currVal+prevVal)/2
 				if prevVal != 0 || currVal != 0 {
-					value = (currVal + prevVal) / 2
+					value, cValue = kahanSumInc(currVal, prevVal, 0)
+					value /= 2
+					cValue /= 2
 				}
 			}
 			// Skip the first sample, aggregate non-zero values.
-			if i > 0 && value != 0 {
-				sum, c = kahanSumInc(value*float64(f.T-prev.T)/1000, sum, c)
+			if i > 0 && (value != 0 || cValue != 0) {
+				deltaT := float64(f.T-prev.T) / 1000
+				sum, c = kahanSumInc(value*deltaT, sum, c+cValue*deltaT)
 			}
 			prev = f
 		}

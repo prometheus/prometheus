@@ -807,7 +807,7 @@ eval instant at 1m sum_over_time(metric[1m])
 # Test integral
 clear
 load 10s
-  metricbignum 1 1e100 1 -1e100 1
+  metricbignum 0 1 1e100 1 -1e100 1 0
   metricinf 1 Inf 1 -Inf 1
   metricoscillator 0 1 2 1 0 -1 -2 -1 0
   metricnan1 NaN NaN 1 NaN NaN NaN
@@ -815,19 +815,19 @@ load 10s
 
 # mid-point
 eval instant at 1m integral(metricbignum[2m])
-  {} 0
+  {} 30
 
 # mid-point fallback after warning
 eval_warn instant at 1m integral(metricbignum[2m], 3)
-  {} 0
+  {} 30
 
 # left-point
 eval instant at 1m integral(metricbignum[2m], 0)
-  {} 20
+  {} 30
 
 # right-point
 eval instant at 1m integral(metricbignum[2m], 1)
-  {} 20
+  {} 30
 
 eval instant at 1m integral(metricinf[2m])
   {} NaN
@@ -932,43 +932,43 @@ eval instant at 2m integral(metricnan2[2m], 1)
 eval instant at 2m sum_over_time(integral(metricnan2[10s], 1)[2m:10s])
   {} 30
 
-# integral of sin(x), should be 0 (with a 1e-12 tolerance)
+# integral of sin(x), should be 0 (with a 1e-13 tolerance)
 # mid-point
-eval instant at 10m round(integral(sin(vector(time()/60*2*pi()))[10m:1s]), 1e-12)
+eval instant at 10m round(integral(sin(vector(time()/60*2*pi()))[10m:1s]), 1e-13)
   {} 0
 
 # left-point
-eval instant at 10m round(integral(sin(vector(time()/60*2*pi()))[10m:1s], 0), 1e-12)
+eval instant at 10m round(integral(sin(vector(time()/60*2*pi()))[10m:1s], 0), 1e-13)
   {} 0
 
 # right-point
-eval instant at 10m round(integral(sin(vector(time()/60*2*pi()))[10m:1s], 1), 1e-12)
+eval instant at 10m round(integral(sin(vector(time()/60*2*pi()))[10m:1s], 1), 1e-13)
   {} 0
 
 # "running" integral eval range of sin(x), period at 1m
 # mid-point
-eval range from 1m to 10m step 1m round(integral(sin(vector(time()/60*2*pi()))[2m:1s]), 1e-12)
+eval range from 1m to 10m step 1m round(integral(sin(vector(time()/60*2*pi()))[2m:1s]), 1e-13)
   {} 0+0x9
 
 # left-point
-eval range from 1m to 10m step 1m round(integral(sin(vector(time()/60*2*pi()))[2m:1s], 0), 1e-12)
+eval range from 1m to 10m step 1m round(integral(sin(vector(time()/60*2*pi()))[2m:1s], 0), 1e-13)
   {} 0+0x9
 
 # right-point
-eval range from 1m to 10m step 1m round(integral(sin(vector(time()/60*2*pi()))[2m:1s], 1), 1e-12)
+eval range from 1m to 10m step 1m round(integral(sin(vector(time()/60*2*pi()))[2m:1s], 1), 1e-13)
   {} 0+0x9
 
 # "running" integral eval range of cos(x), period at 1m
 # mid-point
-eval range from 1m to 10m step 1m round(integral(cos(vector(time()/60*2*pi()))[2m:1s]), 1e-12)
+eval range from 1m to 10m step 1m round(integral(cos(vector(time()/60*2*pi()))[2m:1s]), 1e-13)
   {} 0+0x9
 
 # left-point
-eval range from 1m to 10m step 1m round(integral(cos(vector(time()/60*2*pi()))[2m:1s], 0), 1e-12)
+eval range from 1m to 10m step 1m round(integral(cos(vector(time()/60*2*pi()))[2m:1s], 0), 1e-13)
   {} 0+0x9
 
 # right-point
-eval range from 1m to 10m step 1m round(integral(cos(vector(time()/60*2*pi()))[2m:1s], 1), 1e-12)
+eval range from 1m to 10m step 1m round(integral(cos(vector(time()/60*2*pi()))[2m:1s], 1), 1e-13)
   {} 0+0x9
 
 # Tests for stddev_over_time and stdvar_over_time.
