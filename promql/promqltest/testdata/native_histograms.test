@@ -715,6 +715,9 @@ eval instant at 10m histogram_fraction(NaN, NaN, histogram_fraction_4)
 eval instant at 10m histogram_fraction(-Inf, +Inf, histogram_fraction_4)
     {} 1
 
+eval instant at 10m histogram_sum(scalar(histogram_fraction(-Inf, +Inf, sum(histogram_fraction_4))) * histogram_fraction_4)
+    {} 100
+
 clear
 
 # Counter reset only noticeable in a single bucket.
