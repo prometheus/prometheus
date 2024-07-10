@@ -7,6 +7,8 @@ import {
   LoadingOverlay,
   SegmentedControl,
   ScrollArea,
+  Group,
+  Stack,
 } from "@mantine/core";
 import { IconAlertTriangle, IconInfoCircle } from "@tabler/icons-react";
 import {
@@ -125,22 +127,22 @@ const DataTable: FC<DataTableProps> = ({ expr, evalTime, retriggerIdx }) => {
                 <Table.Td className={classes.numberCell}>
                   {s.value && s.value[1]}
                   {s.histogram && (
-                    <>
+                    <Stack>
                       <HistogramChart
                         histogram={s.histogram[1]}
                         index={idx}
                         scale={scale}
                       />
-                      <div className={classes.histogramSummaryWrapper}>
-                        <div className={classes.histogramSummary}>
+                      <Group justify="space-between" align="center" p={10}>
+                        <Group align="center" gap="1rem">
                           <span>
-                            <strong>Total count:</strong> {s.histogram[1].count}
+                            <strong>Count:</strong> {s.histogram[1].count}
                           </span>
                           <span>
                             <strong>Sum:</strong> {s.histogram[1].sum}
                           </span>
-                        </div>
-                        <div className={classes.histogramSummary}>
+                        </Group>
+                        <Group align="center" gap="1rem">
                           <span>x-axis scale:</span>
                           <SegmentedControl
                             size={"xs"}
@@ -148,10 +150,10 @@ const DataTable: FC<DataTableProps> = ({ expr, evalTime, retriggerIdx }) => {
                             onChange={setScale}
                             data={["exponential", "linear"]}
                           />
-                        </div>
-                      </div>
+                        </Group>
+                      </Group>
                       {histogramTable(s.histogram[1])}
-                    </>
+                    </Stack>
                   )}
                 </Table.Td>
               </Table.Tr>
@@ -203,14 +205,7 @@ const DataTable: FC<DataTableProps> = ({ expr, evalTime, retriggerIdx }) => {
 };
 
 const histogramTable = (h: Histogram): ReactNode => (
-  <Table>
-    <Table.Thead>
-      <Table.Tr>
-        <Table.Th style={{ textAlign: "center" }} colSpan={2}>
-          Bucket counts
-        </Table.Th>
-      </Table.Tr>
-    </Table.Thead>
+  <Table withTableBorder fz="xs">
     <Table.Tbody
       style={{
         display: "flex",
@@ -225,10 +220,10 @@ const histogramTable = (h: Histogram): ReactNode => (
           justifyContent: "space-between",
         }}
       >
-        <Table.Th>Range</Table.Th>
+        <Table.Th>Bucket range</Table.Th>
         <Table.Th>Count</Table.Th>
       </Table.Tr>
-      <ScrollArea w={"100%"} h={250}>
+      <ScrollArea w={"100%"} h={265}>
         {h.buckets?.map((b, i) => (
           <Table.Tr key={i}>
             <Table.Td style={{ textAlign: "left" }}>
