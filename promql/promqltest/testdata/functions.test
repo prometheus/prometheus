@@ -947,29 +947,29 @@ eval instant at 10m round(integral(sin(vector(time()/60*2*pi()))[10m:1s], 1), 1e
 
 # "running" integral eval range of sin(x), period at 1m
 # mid-point
-eval range from 1m to 10m step 1m round(integral(sin(vector(time()/60*2*pi()))[2m:1s]), 1e-13)
-  {} 0+0x9
+eval range from 1m to 2m step 10s round(integral(sin(vector(time()/60*2*pi()))[1m:200ms]), 1e-14)
+  {} 0+0x6
 
 # left-point
-eval range from 1m to 10m step 1m round(integral(sin(vector(time()/60*2*pi()))[2m:1s], 0), 1e-13)
-  {} 0+0x9
+eval range from 1m to 2m step 10s round(integral(sin(vector(time()/60*2*pi()))[1m:200ms], 0), 1e-14)
+  {} 0+0x6
 
 # right-point
-eval range from 1m to 10m step 1m round(integral(sin(vector(time()/60*2*pi()))[2m:1s], 1), 1e-13)
-  {} 0+0x9
+eval range from 1m to 2m step 10s round(integral(sin(vector(time()/60*2*pi()))[1m:200ms], 1), 1e-14)
+  {} 0+0x6
 
 # "running" integral eval range of cos(x), period at 1m
 # mid-point
-eval range from 1m to 10m step 1m round(integral(cos(vector(time()/60*2*pi()))[2m:1s]), 1e-13)
-  {} 0+0x9
+eval range from 1m to 2m step 10s round(integral(cos(vector(time()/60*2*pi()))[1m:200ms]), 1e-14)
+  {} 0+0x6
 
 # left-point
-eval range from 1m to 10m step 1m round(integral(cos(vector(time()/60*2*pi()))[2m:1s], 0), 1e-13)
-  {} 0+0x9
+eval range from 1m to 2m step 10s round(integral(cos(vector(time()/60*2*pi()))[1m:200ms], 0), 1e-14)
+  {} 0+0x6
 
 # right-point
-eval range from 1m to 10m step 1m round(integral(cos(vector(time()/60*2*pi()))[2m:1s], 1), 1e-13)
-  {} 0+0x9
+eval range from 1m to 2m step 10s round(integral(cos(vector(time()/60*2*pi()))[1m:200ms], 1), 1e-14)
+  {} 0+0x6
 
 # Tests for stddev_over_time and stdvar_over_time.
 clear
