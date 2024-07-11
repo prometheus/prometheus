@@ -448,7 +448,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			require.Equal(t, tc.expectedRespBody, string(respBody))
 
 			if tc.expectedCode == http.StatusInternalServerError {
-				// We don't expect writes for partial writes with retry-iable code.
+				// We don't expect writes for partial writes with retry-able code.
 				expectHeaderValue(t, 0, resp.Header.Get("X-Prometheus-Remote-Write-Written-Samples"))
 				expectHeaderValue(t, 0, resp.Header.Get("X-Prometheus-Remote-Write-Written-Histograms"))
 				expectHeaderValue(t, 0, resp.Header.Get("X-Prometheus-Remote-Write-Written-Exemplars"))
