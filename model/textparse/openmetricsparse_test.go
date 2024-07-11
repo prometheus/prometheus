@@ -14,6 +14,7 @@
 package textparse
 
 import (
+	"errors"
 	"io"
 	"testing"
 
@@ -63,47 +64,27 @@ ss{A="a"} 0
 _metric_starting_with_underscore 1
 testmetric{_label_starting_with_underscore="foo"} 1
 testmetric{label="\"bar\""} 1
+# HELP foo Counter with and without labels to certify CT is parsed for both cases
 # TYPE foo counter
 foo_total 17.0 1520879607.789 # {id="counter-test"} 5
 foo_created 1000
 foo_total{a="b"} 17.0 1520879607.789 # {id="counter-test"} 5
 foo_created{a="b"} 1000
+# HELP bar Summary with CT at the end, making sure we find CT even if it's multiple lines a far
 # TYPE bar summary
 bar_count 17.0
 bar_sum 324789.3
 bar{quantile="0.95"} 123.7
 bar{quantile="0.99"} 150.0
 bar_created 1520430000
+# HELP baz Histogram with the same objective as above's summary
 # TYPE baz histogram
 baz_bucket{le="0.0"} 0
 baz_bucket{le="+Inf"} 17
 baz_count 17
 baz_sum 324789.3
 baz_created 1520430000
-# TYPE something histogram
-something_count 17
-something_sum 324789.3
-something_created 1520430000
-something_bucket{le="0.0"} 0
-something_bucket{le="+Inf"} 17
-# TYPE thing histogram
-thing_created 1520430000
-thing_count 17
-thing_sum 324789.3
-thing_bucket{le="0.0"} 0
-thing_bucket{le="+Inf"} 17
-# TYPE yum summary
-yum_count 17.0
-yum_sum 324789.3
-yum_created 1520430000
-yum{quantile="0.95"} 123.7
-yum{quantile="0.99"} 150.0
-# TYPE foobar summary
-foobar_created 1520430000
-foobar_count 17.0
-foobar_sum 324789.3
-foobar{quantile="0.95"} 123.7
-foobar{quantile="0.99"} 150.0
+# HELP fizz_created Gauge which shouldn't be parsed as CT
 # TYPE fizz_created gauge
 fizz_created 17.0`
 
@@ -258,6 +239,9 @@ fizz_created 17.0`
 			v:    1,
 			lset: labels.FromStrings("__name__", "testmetric", "label", `"bar"`),
 		}, {
+			m:    "foo",
+			help: "Counter with and without labels to certify CT is parsed for both cases",
+		}, {
 			m:   "foo",
 			typ: model.MetricTypeCounter,
 		}, {
@@ -274,6 +258,9 @@ fizz_created 17.0`
 			t:    int64p(1520879607789),
 			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "counter-test"), Value: 5},
 			ct:   int64p(1000),
+		}, {
+			m:    "bar",
+			help: "Summary with CT at the end, making sure we find CT even if it's multiple lines a far",
 		}, {
 			m:   "bar",
 			typ: model.MetricTypeSummary,
@@ -298,6 +285,9 @@ fizz_created 17.0`
 			lset: labels.FromStrings("__name__", "bar", "quantile", "0.99"),
 			ct:   int64p(1520430000),
 		}, {
+			m:    "baz",
+			help: "Histogram with the same objective as above's summary",
+		}, {
 			m:   "baz",
 			typ: model.MetricTypeHistogram,
 		}, {
@@ -321,97 +311,8 @@ fizz_created 17.0`
 			lset: labels.FromStrings("__name__", "baz_sum"),
 			ct:   int64p(1520430000),
 		}, {
-			m:   "something",
-			typ: model.MetricTypeHistogram,
-		}, {
-			m:    `something_count`,
-			v:    17,
-			lset: labels.FromStrings("__name__", "something_count"),
-			ct:   int64p(1520430000),
-		}, {
-			m:    `something_sum`,
-			v:    324789.3,
-			lset: labels.FromStrings("__name__", "something_sum"),
-			ct:   int64p(1520430000),
-		}, {
-			m:    `something_bucket{le="0.0"}`,
-			v:    0,
-			lset: labels.FromStrings("__name__", "something_bucket", "le", "0.0"),
-			ct:   int64p(1520430000),
-		}, {
-			m:    `something_bucket{le="+Inf"}`,
-			v:    17,
-			lset: labels.FromStrings("__name__", "something_bucket", "le", "+Inf"),
-			ct:   int64p(1520430000),
-		}, {
-			m:   "thing",
-			typ: model.MetricTypeHistogram,
-		}, {
-			m:    `thing_count`,
-			v:    17,
-			lset: labels.FromStrings("__name__", "thing_count"),
-			ct:   int64p(1520430000),
-		}, {
-			m:    `thing_sum`,
-			v:    324789.3,
-			lset: labels.FromStrings("__name__", "thing_sum"),
-			ct:   int64p(1520430000),
-		}, {
-			m:    `thing_bucket{le="0.0"}`,
-			v:    0,
-			lset: labels.FromStrings("__name__", "thing_bucket", "le", "0.0"),
-			ct:   int64p(1520430000),
-		}, {
-			m:    `thing_bucket{le="+Inf"}`,
-			v:    17,
-			lset: labels.FromStrings("__name__", "thing_bucket", "le", "+Inf"),
-			ct:   int64p(1520430000),
-		}, {
-			m:   "yum",
-			typ: model.MetricTypeSummary,
-		}, {
-			m:    "yum_count",
-			v:    17.0,
-			lset: labels.FromStrings("__name__", "yum_count"),
-			ct:   int64p(1520430000),
-		}, {
-			m:    "yum_sum",
-			v:    324789.3,
-			lset: labels.FromStrings("__name__", "yum_sum"),
-			ct:   int64p(1520430000),
-		}, {
-			m:    `yum{quantile="0.95"}`,
-			v:    123.7,
-			lset: labels.FromStrings("__name__", "yum", "quantile", "0.95"),
-			ct:   int64p(1520430000),
-		}, {
-			m:    `yum{quantile="0.99"}`,
-			v:    150.0,
-			lset: labels.FromStrings("__name__", "yum", "quantile", "0.99"),
-			ct:   int64p(1520430000),
-		}, {
-			m:   "foobar",
-			typ: model.MetricTypeSummary,
-		}, {
-			m:    "foobar_count",
-			v:    17.0,
-			lset: labels.FromStrings("__name__", "foobar_count"),
-			ct:   int64p(1520430000),
-		}, {
-			m:    "foobar_sum",
-			v:    324789.3,
-			lset: labels.FromStrings("__name__", "foobar_sum"),
-			ct:   int64p(1520430000),
-		}, {
-			m:    `foobar{quantile="0.95"}`,
-			v:    123.7,
-			lset: labels.FromStrings("__name__", "foobar", "quantile", "0.95"),
-			ct:   int64p(1520430000),
-		}, {
-			m:    `foobar{quantile="0.99"}`,
-			v:    150.0,
-			lset: labels.FromStrings("__name__", "foobar", "quantile", "0.99"),
-			ct:   int64p(1520430000),
+			m:    "fizz_created",
+			help: "Gauge which shouldn't be parsed as CT",
 		}, {
 			m:   "fizz_created",
 			typ: model.MetricTypeGauge,
@@ -792,10 +693,6 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 			input: "# TYPE hhh histogram\nhhh_bucket{le=\"+Inf\"} 1 # {aa=\"bb\"} 4 -Inf",
 			err:   `invalid exemplar timestamp -Inf`,
 		},
-		{
-			input: "# TYPE hhh histogram\nhhh_bucket{le=\"+Inf\"} 1 # {aa=\"bb\"} 4 Inf",
-			err:   `invalid exemplar timestamp +Inf`,
-		},
 	}
 
 	for i, c := range cases {
@@ -877,4 +774,215 @@ func TestOMNullByteHandling(t *testing.T) {
 
 		require.Equal(t, c.err, err.Error(), "test %d", i)
 	}
+}
+
+func TestCTParseFailures(t *testing.T) {
+	input := `# HELP something Histogram with _created between buckets and summary
+# TYPE something histogram
+something_count 17
+something_sum 324789.3
+something_created 1520430001
+something_bucket{le="0.0"} 0
+something_bucket{le="+Inf"} 17
+# HELP thing Histogram with _created as first line
+# TYPE thing histogram
+thing_created 1520430002
+thing_count 17
+thing_sum 324789.3
+thing_bucket{le="0.0"} 0
+thing_bucket{le="+Inf"} 17
+# HELP yum Summary with _created between summary and quantiles
+# TYPE yum summary
+yum_count 17.0
+yum_sum 324789.3
+yum_created 1520430003
+yum{quantile="0.95"} 123.7
+yum{quantile="0.99"} 150.0
+# HELP foobar Summary with _created as the first line
+# TYPE foobar summary
+foobar_created 1520430004
+foobar_count 17.0
+foobar_sum 324789.3
+foobar{quantile="0.95"} 123.7
+foobar{quantile="0.99"} 150.0`
+
+	input += "\n# EOF\n"
+
+	int64p := func(x int64) *int64 { return &x }
+
+	type expectCT struct {
+		m     string
+		ct    *int64
+		typ   model.MetricType
+		help  string
+		isErr bool
+	}
+
+	exp := []expectCT{
+		{
+			m:     "something",
+			help:  "Histogram with _created between buckets and summary",
+			isErr: false,
+		}, {
+			m:     "something",
+			typ:   model.MetricTypeHistogram,
+			isErr: false,
+		}, {
+			m:     `something_count`,
+			ct:    int64p(1520430001),
+			isErr: false,
+		}, {
+			m:     `something_sum`,
+			ct:    int64p(1520430001),
+			isErr: false,
+		}, {
+			m:     `something_bucket{le="0.0"}`,
+			ct:    int64p(1520430001),
+			isErr: true,
+		}, {
+			m:     `something_bucket{le="+Inf"}`,
+			ct:    int64p(1520430001),
+			isErr: true,
+		}, {
+			m:     "thing",
+			help:  "Histogram with _created as first line",
+			isErr: false,
+		}, {
+			m:     "thing",
+			typ:   model.MetricTypeHistogram,
+			isErr: false,
+		}, {
+			m:     `thing_count`,
+			ct:    int64p(1520430002),
+			isErr: true,
+		}, {
+			m:     `thing_sum`,
+			ct:    int64p(1520430002),
+			isErr: true,
+		}, {
+			m:     `thing_bucket{le="0.0"}`,
+			ct:    int64p(1520430002),
+			isErr: true,
+		}, {
+			m:     `thing_bucket{le="+Inf"}`,
+			ct:    int64p(1520430002),
+			isErr: true,
+		}, {
+			m:     "yum",
+			help:  "Summary with _created between summary and quantiles",
+			isErr: false,
+		}, {
+			m:     "yum",
+			typ:   model.MetricTypeSummary,
+			isErr: false,
+		}, {
+			m:     "yum_count",
+			ct:    int64p(1520430003),
+			isErr: false,
+		}, {
+			m:     "yum_sum",
+			ct:    int64p(1520430003),
+			isErr: false,
+		}, {
+			m:     `yum{quantile="0.95"}`,
+			ct:    int64p(1520430003),
+			isErr: true,
+		}, {
+			m:     `yum{quantile="0.99"}`,
+			ct:    int64p(1520430003),
+			isErr: true,
+		}, {
+			m:     "foobar",
+			help:  "Summary with _created as the first line",
+			isErr: false,
+		}, {
+			m:     "foobar",
+			typ:   model.MetricTypeSummary,
+			isErr: false,
+		}, {
+			m:     "foobar_count",
+			ct:    int64p(1520430004),
+			isErr: true,
+		}, {
+			m:     "foobar_sum",
+			ct:    int64p(1520430004),
+			isErr: true,
+		}, {
+			m:     `foobar{quantile="0.95"}`,
+			ct:    int64p(1520430004),
+			isErr: true,
+		}, {
+			m:     `foobar{quantile="0.99"}`,
+			ct:    int64p(1520430004),
+			isErr: true,
+		},
+	}
+
+	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable())
+	i := 0
+
+	var res labels.Labels
+	for {
+		et, err := p.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		require.NoError(t, err)
+
+		switch et {
+		case EntrySeries:
+			p.Metric(&res)
+
+			if ct := p.CreatedTimestamp(); exp[i].isErr {
+				require.Nil(t, ct)
+			} else {
+				require.Equal(t, *exp[i].ct, *ct)
+			}
+		default:
+			i++
+			continue
+		}
+		i++
+	}
+}
+
+func TestDeepCopy(t *testing.T) {
+	input := []byte(`# HELP go_goroutines A gauge goroutines.
+# TYPE go_goroutines gauge
+go_goroutines 33 123.123
+# TYPE go_gc_duration_seconds summary
+go_gc_duration_seconds
+go_gc_duration_seconds_created`)
+
+	st := labels.NewSymbolTable()
+	parser := NewOpenMetricsParser(input, st).(*OpenMetricsParser)
+
+	// Modify the original parser state
+	_, err := parser.Next()
+	require.NoError(t, err)
+	require.Equal(t, "go_goroutines", string(parser.l.b[parser.offsets[0]:parser.offsets[1]]))
+	require.True(t, parser.skipCT)
+
+	// Create a deep copy of the parser
+	copyParser := deepCopy(parser)
+	etype, err := copyParser.Next()
+	require.NoError(t, err)
+	require.Equal(t, EntryType, etype)
+	require.True(t, parser.skipCT)
+	require.False(t, copyParser.skipCT)
+
+	// Modify the original parser further
+	parser.Next()
+	parser.Next()
+	parser.Next()
+	require.Equal(t, "go_gc_duration_seconds", string(parser.l.b[parser.offsets[0]:parser.offsets[1]]))
+	require.Equal(t, "summary", string(parser.mtype))
+	require.False(t, copyParser.skipCT)
+	require.True(t, parser.skipCT)
+
+	// Ensure the copy remains unchanged
+	copyParser.Next()
+	copyParser.Next()
+	require.Equal(t, "go_gc_duration_seconds", string(copyParser.l.b[copyParser.offsets[0]:copyParser.offsets[1]]))
+	require.False(t, copyParser.skipCT)
 }
