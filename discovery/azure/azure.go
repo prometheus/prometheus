@@ -36,6 +36,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v4"
 	cache "github.com/Code-Hex/go-generics-cache"
 	"github.com/Code-Hex/go-generics-cache/policy/lru"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/promslog"
@@ -350,14 +351,7 @@ func newAzureResourceFromID(id string, logger *slog.Logger) (*arm.ResourceID, er
 	return resourceID, nil
 }
 
-func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	defer d.logger.Debug("Azure discovery completed")
-
-	client, err := createAzureClient(*d.cfg, d.logger)
-	if err != nil {
-		d.metrics.failuresCount.Inc()
-		return nil, fmt.Errorf("could not create Azure client: %w", err)
-	}
+func (d *Discovery) refreshAzureClient(client client, ctx context.Context) ([]*targetgroup.Group, error) {
 
 	machines, err := client.getVMs(ctx, d.cfg.ResourceGroup)
 	if err != nil {
@@ -416,6 +410,18 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	}
 
 	return []*targetgroup.Group{&tg}, nil
+}
+
+func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+	defer level.Debug(d.logger).Log("msg", "Azure discovery completed")
+
+	client, err := createAzureClient(*d.cfg, d.logger)
+	if err != nil {
+		d.metrics.failuresCount.Inc()
+		return nil, fmt.Errorf("could not create Azure client: %w", err)
+	}
+
+	return d.refreshAzureClient(client, ctx)
 }
 
 func (d *Discovery) vmToLabelSet(ctx context.Context, client client, vm virtualMachine) (model.LabelSet, error) {
