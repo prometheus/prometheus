@@ -815,106 +815,106 @@ foobar{quantile="0.99"} 150.0`
 		ct    *int64
 		typ   model.MetricType
 		help  string
-		isErr bool
+		expErr bool
 	}
 
 	exp := []expectCT{
 		{
 			m:     "something",
 			help:  "Histogram with _created between buckets and summary",
-			isErr: false,
+			expErr: false,
 		}, {
 			m:     "something",
 			typ:   model.MetricTypeHistogram,
-			isErr: false,
+			expErr: false,
 		}, {
 			m:     `something_count`,
 			ct:    int64p(1520430001),
-			isErr: false,
+			expErr: false,
 		}, {
 			m:     `something_sum`,
 			ct:    int64p(1520430001),
-			isErr: false,
+			expErr: false,
 		}, {
 			m:     `something_bucket{le="0.0"}`,
 			ct:    int64p(1520430001),
-			isErr: true,
+			expErr: true,
 		}, {
 			m:     `something_bucket{le="+Inf"}`,
 			ct:    int64p(1520430001),
-			isErr: true,
+			expErr: true,
 		}, {
 			m:     "thing",
 			help:  "Histogram with _created as first line",
-			isErr: false,
+			expErr: false,
 		}, {
 			m:     "thing",
 			typ:   model.MetricTypeHistogram,
-			isErr: false,
+			expErr: false,
 		}, {
 			m:     `thing_count`,
 			ct:    int64p(1520430002),
-			isErr: true,
+			expErr: true,
 		}, {
 			m:     `thing_sum`,
 			ct:    int64p(1520430002),
-			isErr: true,
+			expErr: true,
 		}, {
 			m:     `thing_bucket{le="0.0"}`,
 			ct:    int64p(1520430002),
-			isErr: true,
+			expErr: true,
 		}, {
 			m:     `thing_bucket{le="+Inf"}`,
 			ct:    int64p(1520430002),
-			isErr: true,
+			expErr: true,
 		}, {
 			m:     "yum",
 			help:  "Summary with _created between summary and quantiles",
-			isErr: false,
+			expErr: false,
 		}, {
 			m:     "yum",
 			typ:   model.MetricTypeSummary,
-			isErr: false,
+			expErr: false,
 		}, {
 			m:     "yum_count",
 			ct:    int64p(1520430003),
-			isErr: false,
+			expErr: false,
 		}, {
 			m:     "yum_sum",
 			ct:    int64p(1520430003),
-			isErr: false,
+			expErr: false,
 		}, {
 			m:     `yum{quantile="0.95"}`,
 			ct:    int64p(1520430003),
-			isErr: true,
+			expErr: true,
 		}, {
 			m:     `yum{quantile="0.99"}`,
 			ct:    int64p(1520430003),
-			isErr: true,
+			expErr: true,
 		}, {
 			m:     "foobar",
 			help:  "Summary with _created as the first line",
-			isErr: false,
+			expErr: false,
 		}, {
 			m:     "foobar",
 			typ:   model.MetricTypeSummary,
-			isErr: false,
+			expErr: false,
 		}, {
 			m:     "foobar_count",
 			ct:    int64p(1520430004),
-			isErr: true,
+			expErr: true,
 		}, {
 			m:     "foobar_sum",
 			ct:    int64p(1520430004),
-			isErr: true,
+			expErr: true,
 		}, {
 			m:     `foobar{quantile="0.95"}`,
 			ct:    int64p(1520430004),
-			isErr: true,
+			expErr: true,
 		}, {
 			m:     `foobar{quantile="0.99"}`,
 			ct:    int64p(1520430004),
-			isErr: true,
+			expErr: true,
 		},
 	}
 
@@ -933,7 +933,7 @@ foobar{quantile="0.99"} 150.0`
 		case EntrySeries:
 			p.Metric(&res)
 
-			if ct := p.CreatedTimestamp(); exp[i].isErr {
+			if ct := p.CreatedTimestamp(); exp[i].expErr {
 				require.Nil(t, ct)
 			} else {
 				require.Equal(t, *exp[i].ct, *ct)
