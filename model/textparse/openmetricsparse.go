@@ -269,7 +269,7 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 		}
 
 		// We got a CT line here, but let's search if CT line is actually for our series, edge case.
-		peekWithoutNameLsetHash, buf = peekedLset.HashWithoutLabels(buf, labels.MetricName, "le", "quantile")
+		peekWithoutNameLsetHash, _ = peekedLset.HashWithoutLabels(buf, labels.MetricName, "le", "quantile")
 		if peekWithoutNameLsetHash != currWithoutNameLsetHash {
 			// CT line for a different series, for our series no CT.
 			return nil
@@ -278,6 +278,7 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 		return &ct
 	}
 }
+
 func typeRequiresCT(t model.MetricType) bool {
 	switch t {
 	case model.MetricTypeCounter, model.MetricTypeSummary, model.MetricTypeHistogram:
