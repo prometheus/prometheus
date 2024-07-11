@@ -81,10 +81,17 @@ type SDConfig struct {
 	APIToken        string         `yaml:"api_token,omitempty"`
 }
 
+// NewDiscovererMetrics implements discovery.Config.
+func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return &tailscaleMetrics{
+		refreshMetrics: rmi,
+	}
+}
+
 func (c *SDConfig) Name() string { return "tailscale" }
 
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger, opts.Registerer)
+	return NewDiscovery(c, opts.Logger, opts.Metrics)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -123,7 +130,12 @@ type Discovery struct {
 	client          *tailscale.Client
 }
 
-func NewDiscovery(conf *SDConfig, logger log.Logger, reg prometheus.Registerer) (*Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+	m, ok := metrics.(*tailscaleMetrics)
+	if !ok {
+		return nil, fmt.Errorf("invalid discovery metrics type")
+	}
+
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -152,7 +164,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger, reg prometheus.Registerer) 
 			Mech:     "tailscale",
 			Interval: time.Duration(conf.RefreshInterval),
 			RefreshF: d.refresh,
-			Registry: reg,
+			MetricsInstantiator: m.refreshMetrics,
 		},
 	)
 	return d, nil
