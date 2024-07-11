@@ -77,7 +77,6 @@ type OpenMetricsParser struct {
 	series  []byte
 	text    []byte
 	mtype   model.MetricType
-	mName   string
 	val     float64
 	ts      int64
 	hasTS   bool
@@ -304,7 +303,6 @@ func deepCopy(p *OpenMetricsParser) OpenMetricsParser {
 	newParser := OpenMetricsParser{
 		l:      newLexer,
 		mtype:  p.mtype,
-		mName:  p.mName,
 		val:    p.val,
 		skipCT: false,
 	}
@@ -355,7 +353,6 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 				mEnd--
 			}
 			p.offsets = append(p.offsets, mStart, mEnd)
-			p.mName = string(p.l.b[mStart:mEnd])
 		default:
 			return EntryInvalid, p.parseError("expected metric name after "+t.String(), t2)
 		}
