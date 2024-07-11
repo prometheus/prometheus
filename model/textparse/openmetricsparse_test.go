@@ -80,6 +80,30 @@ baz_bucket{le="+Inf"} 17
 baz_count 17
 baz_sum 324789.3
 baz_created 1520430000
+# TYPE something histogram
+something_count 17
+something_sum 324789.3
+something_created 1520430000
+something_bucket{le="0.0"} 0
+something_bucket{le="+Inf"} 17
+# TYPE thing histogram
+thing_created 1520430000
+thing_count 17
+thing_sum 324789.3
+thing_bucket{le="0.0"} 0
+thing_bucket{le="+Inf"} 17
+# TYPE yum summary
+yum_count 17.0
+yum_sum 324789.3
+yum_created 1520430000
+yum{quantile="0.95"} 123.7
+yum{quantile="0.99"} 150.0
+# TYPE foobar summary
+foobar_created 1520430000
+foobar_count 17.0
+foobar_sum 324789.3
+foobar{quantile="0.95"} 123.7
+foobar{quantile="0.99"} 150.0
 # TYPE fizz_created gauge
 fizz_created 17.0`
 
@@ -295,6 +319,98 @@ fizz_created 17.0`
 			m:    `baz_sum`,
 			v:    324789.3,
 			lset: labels.FromStrings("__name__", "baz_sum"),
+			ct:   int64p(1520430000),
+		}, {
+			m:   "something",
+			typ: model.MetricTypeHistogram,
+		}, {
+			m:    `something_count`,
+			v:    17,
+			lset: labels.FromStrings("__name__", "something_count"),
+			ct:   int64p(1520430000),
+		}, {
+			m:    `something_sum`,
+			v:    324789.3,
+			lset: labels.FromStrings("__name__", "something_sum"),
+			ct:   int64p(1520430000),
+		}, {
+			m:    `something_bucket{le="0.0"}`,
+			v:    0,
+			lset: labels.FromStrings("__name__", "something_bucket", "le", "0.0"),
+			ct:   int64p(1520430000),
+		}, {
+			m:    `something_bucket{le="+Inf"}`,
+			v:    17,
+			lset: labels.FromStrings("__name__", "something_bucket", "le", "+Inf"),
+			ct:   int64p(1520430000),
+		}, {
+			m:   "thing",
+			typ: model.MetricTypeHistogram,
+		}, {
+			m:    `thing_count`,
+			v:    17,
+			lset: labels.FromStrings("__name__", "thing_count"),
+			ct:   int64p(1520430000),
+		}, {
+			m:    `thing_sum`,
+			v:    324789.3,
+			lset: labels.FromStrings("__name__", "thing_sum"),
+			ct:   int64p(1520430000),
+		}, {
+			m:    `thing_bucket{le="0.0"}`,
+			v:    0,
+			lset: labels.FromStrings("__name__", "thing_bucket", "le", "0.0"),
+			ct:   int64p(1520430000),
+		}, {
+			m:    `thing_bucket{le="+Inf"}`,
+			v:    17,
+			lset: labels.FromStrings("__name__", "thing_bucket", "le", "+Inf"),
+			ct:   int64p(1520430000),
+		}, {
+			m:   "yum",
+			typ: model.MetricTypeSummary,
+		}, {
+			m:    "yum_count",
+			v:    17.0,
+			lset: labels.FromStrings("__name__", "yum_count"),
+			ct:   int64p(1520430000),
+		}, {
+			m:    "yum_sum",
+			v:    324789.3,
+			lset: labels.FromStrings("__name__", "yum_sum"),
+			ct:   int64p(1520430000),
+		}, {
+			m:    `yum{quantile="0.95"}`,
+			v:    123.7,
+			lset: labels.FromStrings("__name__", "yum", "quantile", "0.95"),
+			ct:   int64p(1520430000),
+		}, {
+			m:    `yum{quantile="0.99"}`,
+			v:    150.0,
+			lset: labels.FromStrings("__name__", "yum", "quantile", "0.99"),
+			ct:   int64p(1520430000),
+		}, {
+			m:   "foobar",
+			typ: model.MetricTypeSummary,
+		}, {
+			m:    "foobar_count",
+			v:    17.0,
+			lset: labels.FromStrings("__name__", "foobar_count"),
+			ct:   int64p(1520430000),
+		}, {
+			m:    "foobar_sum",
+			v:    324789.3,
+			lset: labels.FromStrings("__name__", "foobar_sum"),
+			ct:   int64p(1520430000),
+		}, {
+			m:    `foobar{quantile="0.95"}`,
+			v:    123.7,
+			lset: labels.FromStrings("__name__", "foobar", "quantile", "0.95"),
+			ct:   int64p(1520430000),
+		}, {
+			m:    `foobar{quantile="0.99"}`,
+			v:    150.0,
+			lset: labels.FromStrings("__name__", "foobar", "quantile", "0.99"),
 			ct:   int64p(1520430000),
 		}, {
 			m:   "fizz_created",

@@ -611,7 +611,6 @@ func (p *OpenMetricsParser) parseMetricSuffix(t token) (Entry, error) {
 		break
 	}
 	return EntrySeries, nil
-
 }
 
 func (p *OpenMetricsParser) getFloatValue(t token, after string) (float64, error) {
