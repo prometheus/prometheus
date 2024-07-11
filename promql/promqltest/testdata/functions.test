@@ -932,17 +932,22 @@ eval instant at 2m integral(metricnan2[2m], 1)
 eval instant at 2m sum_over_time(integral(metricnan2[10s], 1)[2m:10s])
   {} 30
 
+# Verify: \int_{0}^{1} (3x^2 - 30x + 14) \, dx = 0
+# 0~ish with 0.005 tolerance, can't further increase resolution as you'd get too many samples error
+eval instant at 1s round(integral(vector(3 * time()^2 - 30 * time() + 14)[1s:50ms]), 0.005)
+  {} 0
+
 # integral of sin(x), should be 0 (with a 1e-13 tolerance)
 # mid-point
-eval instant at 10m round(integral(sin(vector(time()/60*2*pi()))[10m:1s]), 1e-13)
+eval instant at 1m round(integral(sin(vector(time()/60*2*pi()))[1m:200ms]), 1e-14)
   {} 0
 
 # left-point
-eval instant at 10m round(integral(sin(vector(time()/60*2*pi()))[10m:1s], 0), 1e-13)
+eval instant at 1m round(integral(sin(vector(time()/60*2*pi()))[1m:200ms], 0), 1e-14)
   {} 0
 
 # right-point
-eval instant at 10m round(integral(sin(vector(time()/60*2*pi()))[10m:1s], 1), 1e-13)
+eval instant at 1m round(integral(sin(vector(time()/60*2*pi()))[1m:200ms], 1), 1e-14)
   {} 0
 
 # "running" integral eval range of sin(x), period at 1m
