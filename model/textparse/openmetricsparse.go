@@ -279,6 +279,7 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 	}
 }
 
+// typeRequiresCT returns true if the metric type requires a _created timestamp.
 func typeRequiresCT(t model.MetricType) bool {
 	switch t {
 	case model.MetricTypeCounter, model.MetricTypeSummary, model.MetricTypeHistogram:
@@ -288,7 +289,7 @@ func typeRequiresCT(t model.MetricType) bool {
 	}
 }
 
-// createdTimestampParser creates a copy of a parser without re-using the slices' original memory addresses.
+// deepCopy creates a copy of a parser without re-using the slices' original memory addresses.
 func deepCopy(p *OpenMetricsParser) OpenMetricsParser {
 	newB := make([]byte, len(p.l.b))
 	copy(newB, p.l.b)
