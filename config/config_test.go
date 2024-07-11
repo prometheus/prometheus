@@ -100,51 +100,57 @@ var expectedConf = &Config{
 		filepath.FromSlash("testdata/my/*.rules"),
 	},
 
-	RemoteWriteConfigs: []*RemoteWriteConfig{
+	RemoteWriteConfigs: []*OpRemoteWriteConfig{
 		{
-			URL:           mustParseURL("http://remote1/push"),
-			RemoteTimeout: model.Duration(30 * time.Second),
-			Name:          "drop_expensive",
-			WriteRelabelConfigs: []*relabel.Config{
-				{
-					SourceLabels: model.LabelNames{"__name__"},
-					Separator:    ";",
-					Regex:        relabel.MustNewRegexp("expensive.*"),
-					Replacement:  "$1",
-					Action:       relabel.Drop,
+			Protocol: PrometheusProtocol,
+			RemoteWriteConfig: RemoteWriteConfig{
+				URL:           mustParseURL("http://remote1/push"),
+				RemoteTimeout: model.Duration(30 * time.Second),
+				Name:          "drop_expensive",
+				WriteRelabelConfigs: []*relabel.Config{
+					{
+						SourceLabels: model.LabelNames{"__name__"},
+						Separator:    ";",
+						Regex:        relabel.MustNewRegexp("expensive.*"),
+						Replacement:  "$1",
+						Action:       relabel.Drop,
+					},
+				},
+				QueueConfig:    DefaultQueueConfig,
+				MetadataConfig: DefaultMetadataConfig,
+				HTTPClientConfig: config.HTTPClientConfig{
+					OAuth2: &config.OAuth2{
+						ClientID:     "123",
+						ClientSecret: "456",
+						TokenURL:     "http://remote1/auth",
+						TLSConfig: config.TLSConfig{
+							CertFile: filepath.FromSlash("testdata/valid_cert_file"),
+							KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
+						},
+					},
+					FollowRedirects: true,
+					EnableHTTP2:     true,
 				},
 			},
-			QueueConfig:    DefaultQueueConfig,
-			MetadataConfig: DefaultMetadataConfig,
-			HTTPClientConfig: config.HTTPClientConfig{
-				OAuth2: &config.OAuth2{
-					ClientID:     "123",
-					ClientSecret: "456",
-					TokenURL:     "http://remote1/auth",
+		},
+		{
+			Protocol: PrometheusProtocol,
+			RemoteWriteConfig: RemoteWriteConfig{
+				URL:            mustParseURL("http://remote2/push"),
+				RemoteTimeout:  model.Duration(30 * time.Second),
+				QueueConfig:    DefaultQueueConfig,
+				MetadataConfig: DefaultMetadataConfig,
+				Name:           "rw_tls",
+				HTTPClientConfig: config.HTTPClientConfig{
 					TLSConfig: config.TLSConfig{
 						CertFile: filepath.FromSlash("testdata/valid_cert_file"),
 						KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
 					},
+					FollowRedirects: true,
+					EnableHTTP2:     true,
 				},
-				FollowRedirects: true,
-				EnableHTTP2:     true,
+				Headers: map[string]string{"name": "value"},
 			},
-		},
-		{
-			URL:            mustParseURL("http://remote2/push"),
-			RemoteTimeout:  model.Duration(30 * time.Second),
-			QueueConfig:    DefaultQueueConfig,
-			MetadataConfig: DefaultMetadataConfig,
-			Name:           "rw_tls",
-			HTTPClientConfig: config.HTTPClientConfig{
-				TLSConfig: config.TLSConfig{
-					CertFile: filepath.FromSlash("testdata/valid_cert_file"),
-					KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
-				},
-				FollowRedirects: true,
-				EnableHTTP2:     true,
-			},
-			Headers: map[string]string{"name": "value"},
 		},
 	},
 

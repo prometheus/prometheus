@@ -2,6 +2,7 @@ go:
     # Whenever the Go version is updated here,
     # .circle/config.yml should also be updated.
     version: 1.21
+    cgo: true
 repository:
     path: github.com/prometheus/prometheus
 build:
@@ -15,6 +16,8 @@ build:
             - netgo
             - builtinassets
             - stringlabels
+            - static
+            - osusergo
         windows:
             - builtinassets
             - stringlabels

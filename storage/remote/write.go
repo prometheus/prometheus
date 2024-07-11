@@ -15,7 +15,6 @@ package remote
 
 import (
 	"context"
-	"fmt"
 	"math"
 	"sync"
 	"time"
@@ -137,92 +136,92 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 	rws.mtx.Lock()
 	defer rws.mtx.Unlock()
 
-	// Remote write queues only need to change if the remote write config or
-	// external labels change.
-	externalLabelUnchanged := labels.Equal(conf.GlobalConfig.ExternalLabels, rws.externalLabels)
-	rws.externalLabels = conf.GlobalConfig.ExternalLabels
+	// // Remote write queues only need to change if the remote write config or
+	// // external labels change.
+	// externalLabelUnchanged := labels.Equal(conf.GlobalConfig.ExternalLabels, rws.externalLabels)
+	// rws.externalLabels = conf.GlobalConfig.ExternalLabels
 
-	newQueues := make(map[string]*QueueManager)
-	newHashes := []string{}
-	for _, rwConf := range conf.RemoteWriteConfigs {
-		hash, err := toHash(rwConf)
-		if err != nil {
-			return err
-		}
+	// newQueues := make(map[string]*QueueManager)
+	// newHashes := []string{}
+	// for _, rwConf := range conf.RemoteWriteConfigs {
+	// 	hash, err := toHash(rwConf)
+	// 	if err != nil {
+	// 		return err
+	// 	}
 
-		// Don't allow duplicate remote write configs.
-		if _, ok := newQueues[hash]; ok {
-			return fmt.Errorf("duplicate remote write configs are not allowed, found duplicate for URL: %s", rwConf.URL)
-		}
+	// 	// Don't allow duplicate remote write configs.
+	// 	if _, ok := newQueues[hash]; ok {
+	// 		return fmt.Errorf("duplicate remote write configs are not allowed, found duplicate for URL: %s", rwConf.URL)
+	// 	}
 
-		// Set the queue name to the config hash if the user has not set
-		// a name in their remote write config so we can still differentiate
-		// between queues that have the same remote write endpoint.
-		name := hash[:6]
-		if rwConf.Name != "" {
-			name = rwConf.Name
-		}
+	// 	// Set the queue name to the config hash if the user has not set
+	// 	// a name in their remote write config so we can still differentiate
+	// 	// between queues that have the same remote write endpoint.
+	// 	name := hash[:6]
+	// 	if rwConf.Name != "" {
+	// 		name = rwConf.Name
+	// 	}
 
-		c, err := NewWriteClient(name, &ClientConfig{
-			URL:              rwConf.URL,
-			Timeout:          rwConf.RemoteTimeout,
-			HTTPClientConfig: rwConf.HTTPClientConfig,
-			SigV4Config:      rwConf.SigV4Config,
-			AzureADConfig:    rwConf.AzureADConfig,
-			Headers:          rwConf.Headers,
-			RetryOnRateLimit: rwConf.QueueConfig.RetryOnRateLimit,
-		})
-		if err != nil {
-			return err
-		}
+	// 	c, err := NewWriteClient(name, &ClientConfig{
+	// 		URL:              rwConf.URL,
+	// 		Timeout:          rwConf.RemoteTimeout,
+	// 		HTTPClientConfig: rwConf.HTTPClientConfig,
+	// 		SigV4Config:      rwConf.SigV4Config,
+	// 		AzureADConfig:    rwConf.AzureADConfig,
+	// 		Headers:          rwConf.Headers,
+	// 		RetryOnRateLimit: rwConf.QueueConfig.RetryOnRateLimit,
+	// 	})
+	// 	if err != nil {
+	// 		return err
+	// 	}
 
-		queue, ok := rws.queues[hash]
-		if externalLabelUnchanged && ok {
-			// Update the client in case any secret configuration has changed.
-			queue.SetClient(c)
-			newQueues[hash] = queue
-			delete(rws.queues, hash)
-			continue
-		}
+	// 	queue, ok := rws.queues[hash]
+	// 	if externalLabelUnchanged && ok {
+	// 		// Update the client in case any secret configuration has changed.
+	// 		queue.SetClient(c)
+	// 		newQueues[hash] = queue
+	// 		delete(rws.queues, hash)
+	// 		continue
+	// 	}
 
-		// Redacted to remove any passwords in the URL (that are
-		// technically accepted but not recommended) since this is
-		// only used for metric labels.
-		endpoint := rwConf.URL.Redacted()
-		newQueues[hash] = NewQueueManager(
-			newQueueManagerMetrics(rws.reg, name, endpoint),
-			rws.watcherMetrics,
-			rws.liveReaderMetrics,
-			rws.logger,
-			rws.dir,
-			rws.samplesIn,
-			rwConf.QueueConfig,
-			rwConf.MetadataConfig,
-			conf.GlobalConfig.ExternalLabels,
-			rwConf.WriteRelabelConfigs,
-			c,
-			rws.flushDeadline,
-			rws.interner,
-			rws.highestTimestamp,
-			rws.scraper,
-			rwConf.SendExemplars,
-			rwConf.SendNativeHistograms,
-		)
-		// Keep track of which queues are new so we know which to start.
-		newHashes = append(newHashes, hash)
-	}
+	// 	// Redacted to remove any passwords in the URL (that are
+	// 	// technically accepted but not recommended) since this is
+	// 	// only used for metric labels.
+	// 	endpoint := rwConf.URL.Redacted()
+	// 	newQueues[hash] = NewQueueManager(
+	// 		newQueueManagerMetrics(rws.reg, name, endpoint),
+	// 		rws.watcherMetrics,
+	// 		rws.liveReaderMetrics,
+	// 		rws.logger,
+	// 		rws.dir,
+	// 		rws.samplesIn,
+	// 		rwConf.QueueConfig,
+	// 		rwConf.MetadataConfig,
+	// 		conf.GlobalConfig.ExternalLabels,
+	// 		rwConf.WriteRelabelConfigs,
+	// 		c,
+	// 		rws.flushDeadline,
+	// 		rws.interner,
+	// 		rws.highestTimestamp,
+	// 		rws.scraper,
+	// 		rwConf.SendExemplars,
+	// 		rwConf.SendNativeHistograms,
+	// 	)
+	// 	// Keep track of which queues are new so we know which to start.
+	// 	newHashes = append(newHashes, hash)
+	// }
 
-	// Anything remaining in rws.queues is a queue who's config has
-	// changed or was removed from the overall remote write config.
-	for _, q := range rws.queues {
-		q.Stop()
-	}
+	// // Anything remaining in rws.queues is a queue who's config has
+	// // changed or was removed from the overall remote write config.
+	// for _, q := range rws.queues {
+	// 	q.Stop()
+	// }
 
-	for _, hash := range newHashes {
-		newQueues[hash].Start()
-	}
+	// for _, hash := range newHashes {
+	// 	newQueues[hash].Start()
+	// }
 
-	rws.queues = newQueues
+	// rws.queues = newQueues
 
 	return nil
 }

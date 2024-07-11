@@ -62,11 +62,12 @@ import (
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/notifier"
+	"github.com/prometheus/prometheus/op-pkg/receiver"
+	"github.com/prometheus/prometheus/op-pkg/scrape"
 	_ "github.com/prometheus/prometheus/plugins" // Register plugins.
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
-	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tracing"
@@ -626,6 +627,8 @@ func main() {
 		ctxWeb, cancelWeb = context.WithCancel(context.Background())
 		ctxRule           = context.Background()
 
+		ctxReceiver, cancelReceiver = context.WithCancel(context.Background())
+
 		notifierManager = notifier.NewManager(&cfg.notifier, log.With(logger, "component", "notifier"))
 
 		ctxScrape, cancelScrape = context.WithCancel(context.Background())
@@ -689,10 +692,31 @@ func main() {
 		}
 	}
 
+	receiverConfig, err := cfgFile.GetReceiverConfig()
+	if err != nil {
+		level.Error(logger).Log("msg", "failed take a receiver config", "err", err)
+		os.Exit(1)
+	}
+
+	// create receiver
+	receiver, err := receiver.NewReceiver(
+		ctxReceiver,
+		log.With(logger, "component", "receiver"),
+		prometheus.DefaultRegisterer,
+		receiverConfig,
+		localStoragePath,
+		cfgFile.RemoteWriteConfigs,
+	)
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to create a receiver", "err", err)
+		os.Exit(1)
+	}
+
 	scrapeManager, err := scrape.NewManager(
 		&cfg.scrape,
 		log.With(logger, "component", "scrape manager"),
-		fanoutStorage,
+		receiver,
+		// fanoutStorage,
 		prometheus.DefaultRegisterer,
 	)
 	if err != nil {
@@ -802,7 +826,7 @@ func main() {
 	}
 
 	// Depends on cfg.web.ScrapeManager so needs to be after cfg.web.ScrapeManager = scrapeManager.
-	webHandler := web.New(log.With(logger, "component", "web"), &cfg.web)
+	webHandler := web.New(log.With(logger, "component", "web"), &cfg.web, receiver)
 
 	// Monitor outgoing connections on default transport with conntrack.
 	http.DefaultTransport.(*http.Transport).DialContext = conntrack.NewDialContextFunc(
@@ -814,6 +838,9 @@ func main() {
 
 	reloaders := []reloader{
 		{
+			name:     "receiver",
+			reloader: receiver.ApplyConfig,
+		}, {
 			name:     "db_storage",
 			reloader: localStorage.ApplyConfig,
 		}, {
@@ -1230,6 +1257,22 @@ func main() {
 			},
 			func(err error) {
 				cancelWeb()
+			},
+		)
+	}
+	{
+		// run receiver.
+		g.Add(
+			func() error {
+				receiver.Run(ctxReceiver)
+				return nil
+			},
+			func(err error) {
+				level.Info(logger).Log("msg", "Stopping Receiver...")
+				if err := receiver.Shutdown(); err != nil {
+					level.Error(logger).Log("msg", "Receiver shutdown failed", "err", err)
+				}
+				cancelReceiver()
 			},
 		)
 	}

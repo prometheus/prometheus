@@ -31,9 +31,9 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/op-pkg/scrape"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
-	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 )
@@ -132,6 +132,7 @@ func createPrometheusAPI(q storage.SampleAndChunkQueryable) *route.Router {
 		func() (RuntimeInfo, error) { return RuntimeInfo{}, errors.New("not implemented") },
 		&PrometheusVersion{},
 		prometheus.DefaultGatherer,
+		nil,
 		nil,
 		nil,
 		false,

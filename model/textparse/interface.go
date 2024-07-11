@@ -60,6 +60,9 @@ type Parser interface {
 	// It returns the string from which the metric was parsed.
 	Metric(l *labels.Labels) string
 
+	// MetricToBuilder writes the labels of the current sample into the passed builder.
+	MetricToBuilder(builder Builder)
+
 	// Exemplar writes the exemplar of the current sample into the passed
 	// exemplar. It can be called repeatedly to retrieve multiple exemplars
 	// for the same sample. It returns false once all exemplars are

@@ -46,10 +46,10 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/op-pkg/scrape"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
-	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
@@ -336,7 +336,7 @@ var samplePrometheusCfg = config.Config{
 	AlertingConfig:     config.AlertingConfig{},
 	RuleFiles:          []string{},
 	ScrapeConfigs:      []*config.ScrapeConfig{},
-	RemoteWriteConfigs: []*config.RemoteWriteConfig{},
+	RemoteWriteConfigs: []*config.OpRemoteWriteConfig{},
 	RemoteReadConfigs:  []*config.RemoteReadConfig{},
 }
 

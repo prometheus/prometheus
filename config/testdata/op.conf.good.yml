@@ -1,0 +1,39 @@
+# my global config
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+  body_size_limit: 15MB
+  sample_limit: 1500
+  target_limit: 30
+  label_limit: 30
+  label_name_length_limit: 200
+  label_value_length_limit: 200
+  # scrape_timeout is set to the global default (10s).
+
+  external_labels:
+    monitor: codelab
+    foo: bar
+
+scrape_configs:
+  - job_name: service-x
+    metric_relabel_configs:
+      - source_labels: [job]
+        regex: (.*)some-[regex]
+        action: drop
+
+remote_write:
+  - destinations:
+      - name: dname
+        url: https://host.com
+        tls_config:
+          server_name: server_name
+
+number_of_shards: 2
+remote_write_receivers:
+  - name: some_remote_write_receiver_1
+    relabel_configs:
+      - source_labels: [__name__]
+        separator: ;
+        regex: .*
+        replacement: $1
+        action: keep

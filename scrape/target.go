@@ -280,7 +280,7 @@ func (t *Target) Health() TargetHealth {
 	return t.health
 }
 
-// PP_CHANGES.md override sample limit
+// PP_CHANGES.md override sample limit.
 func (t *Target) SampleLimit() int {
 	limit := t.labels.Get("__sample_limit__")
 	if limit == "" {

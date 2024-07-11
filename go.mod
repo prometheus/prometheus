@@ -1,6 +1,8 @@
 module github.com/prometheus/prometheus
 
-go 1.20
+go 1.21
+
+toolchain go1.22.5
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.9.1
@@ -29,7 +31,7 @@ require (
 	github.com/gogo/protobuf v1.3.2
 	github.com/golang/snappy v0.0.4
 	github.com/google/pprof v0.0.0-20240117000934-35fc243c5815
-	github.com/google/uuid v1.5.0
+	github.com/google/uuid v1.6.0
 	github.com/gophercloud/gophercloud v1.8.0
 	github.com/grafana/regexp v0.0.0-20221122212121-6b5c0a4cb7fd
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
@@ -94,6 +96,11 @@ require (
 )
 
 require (
+	github.com/jonboulle/clockwork v0.4.0
+	github.com/prometheus/prometheus/pp/go v0.0.0-20240704114342-591e99c2537e
+)
+
+require (
 	cloud.google.com/go/compute v1.23.3 // indirect
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.5.1 // indirect
@@ -116,6 +123,7 @@ require (
 	github.com/evanphx/json-patch v5.6.0+incompatible // indirect
 	github.com/fatih/color v1.15.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
+	github.com/gabriel-vasile/mimetype v1.4.2 // indirect
 	github.com/ghodss/yaml v1.0.0 // indirect
 	github.com/go-kit/kit v0.12.0 // indirect
 	github.com/go-logr/logr v1.4.1 // indirect
@@ -128,6 +136,9 @@ require (
 	github.com/go-openapi/spec v0.20.9 // indirect
 	github.com/go-openapi/swag v0.22.4 // indirect
 	github.com/go-openapi/validate v0.22.1 // indirect
+	github.com/go-playground/locales v0.14.1 // indirect
+	github.com/go-playground/universal-translator v0.18.1 // indirect
+	github.com/go-playground/validator/v10 v10.17.0 // indirect
 	github.com/go-resty/resty/v2 v2.11.0 // indirect
 	github.com/godbus/dbus/v5 v5.0.4 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.0 // indirect
@@ -160,6 +171,7 @@ require (
 	github.com/jpillora/backoff v1.0.0 // indirect
 	github.com/julienschmidt/httprouter v1.3.0 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
+	github.com/leodido/go-urn v1.2.4 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.19 // indirect
@@ -215,3 +227,5 @@ exclude (
 	github.com/grpc-ecosystem/grpc-gateway v1.14.7
 	google.golang.org/api v0.30.0
 )
+
+replace github.com/prometheus/prometheus/pp/go => ../odarix-core/go/

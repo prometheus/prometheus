@@ -28,7 +28,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/scrape"
+	"github.com/prometheus/prometheus/op-pkg/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/logging"
 )

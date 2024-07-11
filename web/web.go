@@ -53,9 +53,10 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
+	"github.com/prometheus/prometheus/op-pkg/handler"
+	"github.com/prometheus/prometheus/op-pkg/scrape"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
-	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/httputil"
@@ -267,7 +268,7 @@ type Options struct {
 }
 
 // New initializes a new web Handler.
-func New(logger log.Logger, o *Options) *Handler {
+func New(logger log.Logger, o *Options, receiver handler.Receiver) *Handler {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -349,6 +350,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		o.Gatherer,
 		o.Registerer,
 		nil,
+		receiver,
 		o.EnableRemoteWriteReceiver,
 		o.EnableOTLPWriteReceiver,
 	)
