@@ -16,10 +16,15 @@ package azure
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	azfake "github.com/Azure/azure-sdk-for-go/sdk/azcore/fake"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	fake "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5/fake"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v4"
 	cache "github.com/Code-Hex/go-generics-cache"
 	"github.com/Code-Hex/go-generics-cache/policy/lru"
@@ -475,24 +480,257 @@ func TestNewAzureResourceFromID(t *testing.T) {
 	}
 }
 
+func TestAzureSDRefresh(t *testing.T) {
+}
+
 type mockAzureClient struct {
 	networkInterface *armnetwork.Interface
+	azureClient
 }
 
-var _ client = &mockAzureClient{}
-
-func (*mockAzureClient) getVMs(ctx context.Context, resourceGroup string) ([]virtualMachine, error) {
-	return nil, nil
+type vmOptions struct {
+	vmType     string
+	location   string
+	properties *armcompute.VirtualMachineProperties
+	tags       map[string]*string
 }
 
-func (*mockAzureClient) getScaleSets(ctx context.Context, resourceGroup string) ([]armcompute.VirtualMachineScaleSet, error) {
-	return nil, nil
+func createNewMockAzureClient(logger log.Logger) (client, error) {
+	networkID := "/subscriptions/00000000-0000-0000-0000-000000000000/network1"
+	ipAddress := "10.20.30.40"
+	primary := true
+
+	c := mockAzureClient{}
+
+	// Create mock servers.
+	mockVMServer := newDefaultMockVMServer()
+	mockVMSSServer := newDefaultMockVMSSServer()
+	mockVMScaleSetVMServer := newDefaultMockVMSSVMServer()
+
+	// Connect our client with the mock servers using mock transports (round-trippers).
+	vmClient, err := armcompute.NewVirtualMachinesClient("fake-subscription-id", &azfake.TokenCredential{}, &arm.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
+			Transport: fake.NewVirtualMachinesServerTransport(&mockVMServer),
+		},
+	})
+	if err != nil {
+		return &mockAzureClient{}, err
+	}
+
+	vmssClient, err := armcompute.NewVirtualMachineScaleSetsClient("fake-subscription-id", &azfake.TokenCredential{}, &arm.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
+			Transport: fake.NewVirtualMachineScaleSetsServerTransport(&mockVMSSServer),
+		},
+	})
+	if err != nil {
+		return &mockAzureClient{}, err
+	}
+
+	vmssvmClient, err := armcompute.NewVirtualMachineScaleSetVMsClient("fake-subscription-id", &azfake.TokenCredential{}, &arm.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
+			Transport: fake.NewVirtualMachineScaleSetVMsServerTransport(&mockVMScaleSetVMServer),
+		},
+	})
+	if err != nil {
+		return &mockAzureClient{}, err
+	}
+
+	c.vm = vmClient
+	c.vmss = vmssClient
+	c.vmssvm = vmssvmClient
+	c.networkInterface = &armnetwork.Interface{
+		Name: &networkID,
+		Properties: &armnetwork.InterfacePropertiesFormat{
+			Primary: &primary,
+			IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
+				{Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
+					PrivateIPAddress: &ipAddress,
+				}},
+			},
+		},
+	}
+	c.logger = logger
+
+	return &c, nil
 }
 
-func (*mockAzureClient) getScaleSetVMs(ctx context.Context, scaleSet armcompute.VirtualMachineScaleSet) ([]virtualMachine, error) {
-	return nil, nil
+func defaultVMWithIdAndName(id *string, name *string) *armcompute.VirtualMachine {
+	vmSize := armcompute.VirtualMachineSizeTypes("size")
+	osType := armcompute.OperatingSystemTypesLinux
+
+	return &armcompute.VirtualMachine{
+		ID:       id,
+		Name:     name,
+		Type:     to.Ptr("type"),
+		Location: to.Ptr("westeurope"),
+		Properties: &armcompute.VirtualMachineProperties{
+			OSProfile: &armcompute.OSProfile{
+				ComputerName: to.Ptr("computer_name"),
+			},
+			StorageProfile: &armcompute.StorageProfile{
+				OSDisk: &armcompute.OSDisk{
+					OSType: &osType,
+				},
+			},
+			NetworkProfile: &armcompute.NetworkProfile{
+				NetworkInterfaces: []*armcompute.NetworkInterfaceReference{},
+			},
+			HardwareProfile: &armcompute.HardwareProfile{
+				VMSize: &vmSize,
+			},
+		},
+		Tags: map[string]*string{
+			"prometheus": new(string),
+		},
+	}
 }
 
+// we need to create a mock server and basically get data from it. lets write a function which creates a mock server
+
+func newDefaultMockVMServer() fake.VirtualMachinesServer {
+
+	fakeVirtualMachinesServer := fake.VirtualMachinesServer{
+
+		NewListAllPager: func(options *armcompute.VirtualMachinesClientListAllOptions) (resp azfake.PagerResponder[armcompute.VirtualMachinesClientListAllResponse]) {
+
+			page1 := armcompute.VirtualMachinesClientListAllResponse{
+				VirtualMachineListResult: armcompute.VirtualMachineListResult{
+					Value: []*armcompute.VirtualMachine{
+						defaultVMWithIdAndName(to.Ptr("/fake/resource/id-1"), to.Ptr("fake-vm-1")),
+						defaultVMWithIdAndName(to.Ptr("/fake/resource/id-2"), to.Ptr("fake-vm-2")),
+					},
+				},
+			}
+
+			page2 := armcompute.VirtualMachinesClientListAllResponse{
+				VirtualMachineListResult: armcompute.VirtualMachineListResult{
+					Value: []*armcompute.VirtualMachine{
+						defaultVMWithIdAndName(to.Ptr("/fake/resource/id-3"), to.Ptr("fake-vm-3")),
+						defaultVMWithIdAndName(to.Ptr("/fake/resource/id-4"), to.Ptr("fake-vm-4")),
+					},
+				},
+			}
+
+			resp.AddPage(http.StatusOK, page1, nil)
+			resp.AddPage(http.StatusOK, page2, nil)
+
+			return
+		},
+	}
+	return fakeVirtualMachinesServer
+}
+
+func newDefaultMockVMSSServer() fake.VirtualMachineScaleSetsServer {
+	fakeVirtualMachineScaleSetsServer := fake.VirtualMachineScaleSetsServer{
+
+		NewListAllPager: func(options *armcompute.VirtualMachineScaleSetsClientListAllOptions) (resp azfake.PagerResponder[armcompute.VirtualMachineScaleSetsClientListAllResponse]) {
+
+			page1 := armcompute.VirtualMachineScaleSetsClientListAllResponse{
+				VirtualMachineScaleSetListWithLinkResult: armcompute.VirtualMachineScaleSetListWithLinkResult{
+					Value: []*armcompute.VirtualMachineScaleSet{
+						{
+							ID:   to.Ptr("/fake/scaleset/id-1"),
+							Name: to.Ptr("fake-scaleset-1"),
+						},
+						{
+							ID:   to.Ptr("/fake/scaleset/id-2"),
+							Name: to.Ptr("fake-scaleset-2"),
+						},
+					},
+				},
+			}
+
+			page2 := armcompute.VirtualMachineScaleSetsClientListAllResponse{
+				VirtualMachineScaleSetListWithLinkResult: armcompute.VirtualMachineScaleSetListWithLinkResult{
+					Value: []*armcompute.VirtualMachineScaleSet{
+						{
+							ID:   to.Ptr("/fake/scaleset/id-3"),
+							Name: to.Ptr("fake-scaleset-3"),
+						},
+						{
+							ID:   to.Ptr("/fake/scaleset/id-4"),
+							Name: to.Ptr("fake-scaleset-4"),
+						},
+					},
+				},
+			}
+
+			resp.AddPage(http.StatusOK, page1, nil)
+			resp.AddPage(http.StatusOK, page2, nil)
+
+			return
+		},
+	}
+	return fakeVirtualMachineScaleSetsServer
+}
+
+func defaultVMSSVMWithIdAndName(id *string, name *string) *armcompute.VirtualMachineScaleSetVM {
+	vmSize := armcompute.VirtualMachineSizeTypes("size")
+	osType := armcompute.OperatingSystemTypesLinux
+
+	return &armcompute.VirtualMachineScaleSetVM{
+		ID:         id,
+		Name:       name,
+		Type:       to.Ptr("type"),
+		Location:   to.Ptr("westeurope"),
+		InstanceID: to.Ptr("123"),
+		Properties: &armcompute.VirtualMachineScaleSetVMProperties{
+			OSProfile: &armcompute.OSProfile{
+				ComputerName: to.Ptr("computer_name"),
+			},
+			StorageProfile: &armcompute.StorageProfile{
+				OSDisk: &armcompute.OSDisk{
+					OSType: &osType,
+				},
+			},
+			NetworkProfile: &armcompute.NetworkProfile{
+				NetworkInterfaces: []*armcompute.NetworkInterfaceReference{},
+			},
+			HardwareProfile: &armcompute.HardwareProfile{
+				VMSize: &vmSize,
+			},
+		},
+		Tags: map[string]*string{
+			"prometheus": new(string),
+		},
+	}
+}
+
+func newDefaultMockVMSSVMServer() fake.VirtualMachineScaleSetVMsServer {
+
+	fakeVirtualMachineScaleSetVMsServer := fake.VirtualMachineScaleSetVMsServer{
+
+		NewListPager: func(resourceGroupName string, virtualMachineScaleSetName string, options *armcompute.VirtualMachineScaleSetVMsClientListOptions) (resp azfake.PagerResponder[armcompute.VirtualMachineScaleSetVMsClientListResponse]) {
+
+			page1 := armcompute.VirtualMachineScaleSetVMsClientListResponse{
+				VirtualMachineScaleSetVMListResult: armcompute.VirtualMachineScaleSetVMListResult{
+					Value: []*armcompute.VirtualMachineScaleSetVM{
+						defaultVMSSVMWithIdAndName(to.Ptr("/fake/scalesetvm/id-1"), to.Ptr("fake-scalesetvm-1")),
+						defaultVMSSVMWithIdAndName(to.Ptr("/fake/scalesetvm/id-2"), to.Ptr("fake-scalesetvm-2")),
+					},
+				},
+			}
+
+			page2 := armcompute.VirtualMachineScaleSetVMsClientListResponse{
+				VirtualMachineScaleSetVMListResult: armcompute.VirtualMachineScaleSetVMListResult{
+					Value: []*armcompute.VirtualMachineScaleSetVM{
+						defaultVMSSVMWithIdAndName(to.Ptr("/fake/scalesetvm/id-3"), to.Ptr("fake-scalesetvm-3")),
+						defaultVMSSVMWithIdAndName(to.Ptr("/fake/scalesetvm/id-4"), to.Ptr("fake-scalesetvm-4")),
+					},
+				},
+			}
+
+			resp.AddPage(http.StatusOK, page1, nil)
+			resp.AddPage(http.StatusOK, page2, nil)
+
+			return
+		},
+	}
+	return fakeVirtualMachineScaleSetVMsServer
+}
+
+// Mocking the interfaces client is not as straightforward as the others, for our
+// purposes this implementation works just fine.
 func (m *mockAzureClient) getVMNetworkInterfaceByID(ctx context.Context, networkInterfaceID string) (*armnetwork.Interface, error) {
 	if networkInterfaceID == "" {
 		return nil, fmt.Errorf("parameter networkInterfaceID cannot be empty")
