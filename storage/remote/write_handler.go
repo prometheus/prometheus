@@ -200,7 +200,7 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	respStats, errHTTPCode, err := h.writeV2(r.Context(), &req)
 
-	// Set required X-Prometheus-Remote-Write-Accepted-* response headers, in all cases.
+	// Set required X-Prometheus-Remote-Write-Written-* response headers, in all cases.
 	respStats.SetResponseHeaders(w.Header())
 
 	if err != nil {
@@ -319,9 +319,9 @@ func (h *writeHandler) appendV1Histograms(app storage.Appender, hh []prompb.Hist
 }
 
 const (
-	prw20AcceptedSamplesHeader   = "X-Prometheus-Remote-Write-Accepted-Samples"
-	rw20AcceptedHistogramsHeader = "X-Prometheus-Remote-Write-Accepted-Histograms"
-	rw20AcceptedExemplarsHeader  = "X-Prometheus-Remote-Write-Accepted-Exemplars"
+	prw20WrittenSamplesHeader   = "X-Prometheus-Remote-Write-Written-Samples"
+	rw20WrittenHistogramsHeader = "X-Prometheus-Remote-Write-Written-Histograms"
+	rw20WrittenExemplarsHeader  = "X-Prometheus-Remote-Write-Written-Exemplars"
 )
 
 type responseStats struct {
@@ -331,9 +331,9 @@ type responseStats struct {
 }
 
 func (s responseStats) SetResponseHeaders(h http.Header) {
-	h.Set(prw20AcceptedSamplesHeader, strconv.Itoa(s.samples))
-	h.Set(rw20AcceptedHistogramsHeader, strconv.Itoa(s.histograms))
-	h.Set(rw20AcceptedExemplarsHeader, strconv.Itoa(s.exemplars))
+	h.Set(prw20WrittenSamplesHeader, strconv.Itoa(s.samples))
+	h.Set(rw20WrittenHistogramsHeader, strconv.Itoa(s.histograms))
+	h.Set(rw20WrittenExemplarsHeader, strconv.Itoa(s.exemplars))
 }
 
 // writeV2 is similar to write, but it works with v2 proto message,

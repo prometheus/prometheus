@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/gogo/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 
@@ -322,6 +323,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 		{
 			desc: "Partial write; first series with invalid labels (no metric name)",
 			input: append(
+				// Series with test_metric1="test_metric1" labels.
 				[]writev2.TimeSeries{{LabelsRefs: []uint32{2, 2}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
 				writeV2RequestFixture.Timeseries...),
 			expectedCode:     http.StatusBadRequest,
@@ -330,6 +332,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 		{
 			desc: "Partial write; first series with invalid labels (empty metric name)",
 			input: append(
+				// Series with __name__="" labels.
 				[]writev2.TimeSeries{{LabelsRefs: []uint32{1, 0}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
 				writeV2RequestFixture.Timeseries...),
 			expectedCode:     http.StatusBadRequest,
@@ -338,7 +341,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 		{
 			desc: "Partial write; first series with one OOO sample",
 			input: func() []writev2.TimeSeries {
-				f := createWriteV2RequestFixture()
+				f := proto.Clone(writeV2RequestFixture).(*writev2.Request)
 				f.Timeseries[0].Samples = append(f.Timeseries[0].Samples, writev2.Sample{Value: 2, Timestamp: 0})
 				return f.Timeseries
 			}(),
@@ -348,7 +351,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 		{
 			desc: "Partial write; first series with one dup sample",
 			input: func() []writev2.TimeSeries {
-				f := createWriteV2RequestFixture()
+				f := proto.Clone(writeV2RequestFixture).(*writev2.Request)
 				f.Timeseries[0].Samples = append(f.Timeseries[0].Samples, f.Timeseries[0].Samples[0])
 				return f.Timeseries
 			}(),
@@ -358,7 +361,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 		{
 			desc: "Partial write; first series with one OOO histogram sample",
 			input: func() []writev2.TimeSeries {
-				f := createWriteV2RequestFixture()
+				f := proto.Clone(writeV2RequestFixture).(*writev2.Request)
 				f.Timeseries[0].Histograms = append(f.Timeseries[0].Histograms, writev2.FromFloatHistogram(1, testHistogram.ToFloat(nil)))
 				return f.Timeseries
 			}(),
@@ -368,7 +371,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 		{
 			desc: "Partial write; first series with one dup histogram sample",
 			input: func() []writev2.TimeSeries {
-				f := createWriteV2RequestFixture()
+				f := proto.Clone(writeV2RequestFixture).(*writev2.Request)
 				f.Timeseries[0].Histograms = append(f.Timeseries[0].Histograms, f.Timeseries[0].Histograms[1])
 				return f.Timeseries
 			}(),
@@ -446,9 +449,9 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 
 			if tc.expectedCode == http.StatusInternalServerError {
 				// We don't expect writes for partial writes with retry-iable code.
-				expectHeaderValue(t, 0, resp.Header.Get("X-Prometheus-Remote-Write-Accepted-Samples"))
-				expectHeaderValue(t, 0, resp.Header.Get("X-Prometheus-Remote-Write-Accepted-Histograms"))
-				expectHeaderValue(t, 0, resp.Header.Get("X-Prometheus-Remote-Write-Accepted-Exemplars"))
+				expectHeaderValue(t, 0, resp.Header.Get("X-Prometheus-Remote-Write-Written-Samples"))
+				expectHeaderValue(t, 0, resp.Header.Get("X-Prometheus-Remote-Write-Written-Histograms"))
+				expectHeaderValue(t, 0, resp.Header.Get("X-Prometheus-Remote-Write-Written-Exemplars"))
 
 				require.Empty(t, len(appendable.samples))
 				require.Empty(t, len(appendable.histograms))
@@ -459,12 +462,12 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 
 			// Double check mandatory 2.0 stats.
 			// writeV2RequestFixture has 2 series with 1 sample, 2 histograms, 1 exemplar each.
-			expectHeaderValue(t, 2, resp.Header.Get("X-Prometheus-Remote-Write-Accepted-Samples"))
-			expectHeaderValue(t, 4, resp.Header.Get("X-Prometheus-Remote-Write-Accepted-Histograms"))
+			expectHeaderValue(t, 2, resp.Header.Get("X-Prometheus-Remote-Write-Written-Samples"))
+			expectHeaderValue(t, 4, resp.Header.Get("X-Prometheus-Remote-Write-Written-Histograms"))
 			if tc.appendExemplarErr != nil {
-				expectHeaderValue(t, 0, resp.Header.Get("X-Prometheus-Remote-Write-Accepted-Exemplars"))
+				expectHeaderValue(t, 0, resp.Header.Get("X-Prometheus-Remote-Write-Written-Exemplars"))
 			} else {
-				expectHeaderValue(t, 2, resp.Header.Get("X-Prometheus-Remote-Write-Accepted-Exemplars"))
+				expectHeaderValue(t, 2, resp.Header.Get("X-Prometheus-Remote-Write-Written-Exemplars"))
 			}
 
 			// Double check what was actually appended.
