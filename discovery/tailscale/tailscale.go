@@ -46,7 +46,7 @@ const (
 	tsLabelDeviceAuthorized                 = deviceLabel + "authorized"
 	tsLabelDeviceIsExternal                 = deviceLabel + "is_external"
 	tsLabelDeviceKeyExpiryDisabled          = deviceLabel + "key_expiry_disabled"
-	tsLabelDeviceBlocksIncommingConnections = deviceLabel + "blocks_incoming_connections"
+	tsLabelDeviceBlocksIncomingConnections  = deviceLabel + "blocks_incoming_connections"
 	tsLabelDeviceEnabledRoutes              = deviceLabel + "enabled_routes"
 	tsLabelDeviceAdvertisedRoutes           = deviceLabel + "advertised_routes"
 	tsLabelDeviceTags                       = deviceLabel + "tags"
@@ -194,7 +194,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 			tsLabelDeviceAuthorized:                 model.LabelValue(strconv.FormatBool(device.Authorized)),
 			tsLabelDeviceUpdateAvailable:            model.LabelValue(strconv.FormatBool(device.UpdateAvailable)),
 			tsLabelDeviceKeyExpiryDisabled:          model.LabelValue(strconv.FormatBool(device.KeyExpiryDisabled)),
-			tsLabelDeviceBlocksIncommingConnections: model.LabelValue(strconv.FormatBool(device.BlocksIncomingConnections)),
+			tsLabelDeviceBlocksIncomingConnections: model.LabelValue(strconv.FormatBool(device.BlocksIncomingConnections)),
 		}
 
 		addr := net.JoinHostPort(device.Addresses[0], strconv.FormatUint(uint64(d.port), 10))
