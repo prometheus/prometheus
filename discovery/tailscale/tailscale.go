@@ -33,23 +33,23 @@ import (
 )
 
 const (
-	tsLabel                                 = model.MetaLabelPrefix + "tailscale_"
-	deviceLabel                             = tsLabel + "device_"
-	tsLabelDeviceAddresses                  = deviceLabel + "addresses"
-	tsLabelDeviceID                         = deviceLabel + "id"
-	tsLabelDeviceName                       = deviceLabel + "name"
-	tsLabelDeviceHostname                   = deviceLabel + "hostname"
-	tsLabelDeviceUser                       = deviceLabel + "user"
-	tsLabelDeviceClientVersion              = deviceLabel + "client_version"
-	tsLabelDeviceOS                         = deviceLabel + "os"
-	tsLabelDeviceUpdateAvailable            = deviceLabel + "update_available"
-	tsLabelDeviceAuthorized                 = deviceLabel + "authorized"
-	tsLabelDeviceIsExternal                 = deviceLabel + "is_external"
-	tsLabelDeviceKeyExpiryDisabled          = deviceLabel + "key_expiry_disabled"
-	tsLabelDeviceBlocksIncomingConnections  = deviceLabel + "blocks_incoming_connections"
-	tsLabelDeviceEnabledRoutes              = deviceLabel + "enabled_routes"
-	tsLabelDeviceAdvertisedRoutes           = deviceLabel + "advertised_routes"
-	tsLabelDeviceTags                       = deviceLabel + "tags"
+	tsLabel                                = model.MetaLabelPrefix + "tailscale_"
+	deviceLabel                            = tsLabel + "device_"
+	tsLabelDeviceAddresses                 = deviceLabel + "addresses"
+	tsLabelDeviceID                        = deviceLabel + "id"
+	tsLabelDeviceName                      = deviceLabel + "name"
+	tsLabelDeviceHostname                  = deviceLabel + "hostname"
+	tsLabelDeviceUser                      = deviceLabel + "user"
+	tsLabelDeviceClientVersion             = deviceLabel + "client_version"
+	tsLabelDeviceOS                        = deviceLabel + "os"
+	tsLabelDeviceUpdateAvailable           = deviceLabel + "update_available"
+	tsLabelDeviceAuthorized                = deviceLabel + "authorized"
+	tsLabelDeviceIsExternal                = deviceLabel + "is_external"
+	tsLabelDeviceKeyExpiryDisabled         = deviceLabel + "key_expiry_disabled"
+	tsLabelDeviceBlocksIncomingConnections = deviceLabel + "blocks_incoming_connections"
+	tsLabelDeviceEnabledRoutes             = deviceLabel + "enabled_routes"
+	tsLabelDeviceAdvertisedRoutes          = deviceLabel + "advertised_routes"
+	tsLabelDeviceTags                      = deviceLabel + "tags"
 )
 
 var (
@@ -184,16 +184,16 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	for _, device := range tsDevices {
 		labels := model.LabelSet{
-			tsLabelDeviceID:                         model.LabelValue(device.DeviceID),
-			tsLabelDeviceOS:                         model.LabelValue(device.OS),
-			tsLabelDeviceClientVersion:              model.LabelValue(device.ClientVersion),
-			tsLabelDeviceName:                       model.LabelValue(device.Name),
-			tsLabelDeviceHostname:                   model.LabelValue(device.Hostname),
-			tsLabelDeviceUser:                       model.LabelValue(device.User),
-			tsLabelDeviceIsExternal:                 model.LabelValue(strconv.FormatBool(device.IsExternal)),
-			tsLabelDeviceAuthorized:                 model.LabelValue(strconv.FormatBool(device.Authorized)),
-			tsLabelDeviceUpdateAvailable:            model.LabelValue(strconv.FormatBool(device.UpdateAvailable)),
-			tsLabelDeviceKeyExpiryDisabled:          model.LabelValue(strconv.FormatBool(device.KeyExpiryDisabled)),
+			tsLabelDeviceID:                        model.LabelValue(device.DeviceID),
+			tsLabelDeviceOS:                        model.LabelValue(device.OS),
+			tsLabelDeviceClientVersion:             model.LabelValue(device.ClientVersion),
+			tsLabelDeviceName:                      model.LabelValue(device.Name),
+			tsLabelDeviceHostname:                  model.LabelValue(device.Hostname),
+			tsLabelDeviceUser:                      model.LabelValue(device.User),
+			tsLabelDeviceIsExternal:                model.LabelValue(strconv.FormatBool(device.IsExternal)),
+			tsLabelDeviceAuthorized:                model.LabelValue(strconv.FormatBool(device.Authorized)),
+			tsLabelDeviceUpdateAvailable:           model.LabelValue(strconv.FormatBool(device.UpdateAvailable)),
+			tsLabelDeviceKeyExpiryDisabled:         model.LabelValue(strconv.FormatBool(device.KeyExpiryDisabled)),
 			tsLabelDeviceBlocksIncomingConnections: model.LabelValue(strconv.FormatBool(device.BlocksIncomingConnections)),
 		}
 
