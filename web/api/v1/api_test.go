@@ -766,12 +766,15 @@ func TestLabelNames(t *testing.T) {
 	api := &API{
 		Queryable: storage,
 	}
-	request := func(method string, matchers ...string) (*http.Request, error) {
+	request := func(method, limit string, matchers ...string) (*http.Request, error) {
 		u, err := url.Parse("http://example.com")
 		require.NoError(t, err)
 		q := u.Query()
 		for _, matcher := range matchers {
 			q.Add("match[]", matcher)
+		}
+		if limit != "" {
+			q.Add("limit", limit)
 		}
 		u.RawQuery = q.Encode()
 
@@ -786,6 +789,7 @@ func TestLabelNames(t *testing.T) {
 		name              string
 		api               *API
 		matchers          []string
+		limit             string
 		expected          []string
 		expectedErrorType errorType
 	}{
@@ -798,6 +802,13 @@ func TestLabelNames(t *testing.T) {
 			name:     "non empty label matcher",
 			matchers: []string{`{foo=~".+"}`},
 			expected: []string{"__name__", "abc", "foo", "xyz"},
+			api:      api,
+		},
+		{
+			name:     "non empty label matcher with limit",
+			matchers: []string{`{foo=~".+"}`},
+			expected: []string{"__name__", "abc"},
+			limit:    "2",
 			api:      api,
 		},
 		{
@@ -832,7 +843,7 @@ func TestLabelNames(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, method := range []string{http.MethodGet, http.MethodPost} {
 				ctx := context.Background()
-				req, err := request(method, tc.matchers...)
+				req, err := request(method, tc.limit, tc.matchers...)
 				require.NoError(t, err)
 				res := tc.api.labelNames(req.WithContext(ctx))
 				assertAPIError(t, res.err, tc.expectedErrorType)
@@ -1453,6 +1464,15 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			query: url.Values{
 				"match[]": []string{"test_metric1"},
 				"limit":   []string{"2"},
+			},
+			responseLen:   2, // API does not specify which particular value will come back.
+			warningsCount: 0, // No warnings if limit isn't exceeded.
+		},
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{"test_metric1"},
+				"limit":   []string{"0"},
 			},
 			responseLen:   2, // API does not specify which particular value will come back.
 			warningsCount: 0, // No warnings if limit isn't exceeded.
