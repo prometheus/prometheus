@@ -392,10 +392,6 @@ ovhcloud_sd_configs:
 puppetdb_sd_configs:
   [ - <puppetdb_sd_config> ... ]
 
-# List of Tailscale service discovery configurations.
-tailscale_sd_configs:
-  [ - <tailscale_sd_config> ... ]
-
 # List of Scaleway service discovery configurations.
 scaleway_sd_configs:
   [ - <scaleway_sd_config> ... ]
@@ -403,6 +399,10 @@ scaleway_sd_configs:
 # List of Zookeeper Serverset service discovery configurations.
 serverset_sd_configs:
   [ - <serverset_sd_config> ... ]
+
+# List of Tailscale service discovery configurations.
+tailscale_sd_configs:
+  [ - <tailscale_sd_config> ... ]
 
 # List of Triton service discovery configurations.
 triton_sd_configs:
@@ -3533,10 +3533,6 @@ ovhcloud_sd_configs:
 puppetdb_sd_configs:
   [ - <puppetdb_sd_config> ... ]
 
-# List of Tailscale service discovery configurations.
-tailscale_sd_configs:
-  [ - <tailscale_sd_config> ... ]
-
 # List of Scaleway service discovery configurations.
 scaleway_sd_configs:
   [ - <scaleway_sd_config> ... ]
@@ -3544,6 +3540,10 @@ scaleway_sd_configs:
 # List of Zookeeper Serverset service discovery configurations.
 serverset_sd_configs:
   [ - <serverset_sd_config> ... ]
+
+# List of Tailscale service discovery configurations.
+tailscale_sd_configs:
+  [ - <tailscale_sd_config> ... ]
 
 # List of Triton service discovery configurations.
 triton_sd_configs:
