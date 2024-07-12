@@ -20,6 +20,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -27,8 +28,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/exp/slices"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/tsdb/record"
 )
@@ -56,6 +57,7 @@ type WriteTo interface {
 	AppendHistograms([]record.RefHistogramSample) bool
 	AppendFloatHistograms([]record.RefFloatHistogramSample) bool
 	StoreSeries([]record.RefSeries, int)
+	StoreMetadata([]record.RefMetadata)
 
 	// Next two methods are intended for garbage-collection: first we call
 	// UpdateSeriesSegment on all current series
@@ -87,6 +89,7 @@ type Watcher struct {
 	lastCheckpoint string
 	sendExemplars  bool
 	sendHistograms bool
+	sendMetadata   bool
 	metrics        *WatcherMetrics
 	readerMetrics  *LiveReaderMetrics
 
@@ -169,7 +172,7 @@ func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 }
 
 // NewWatcher creates a new WAL watcher for a given WriteTo.
-func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logger log.Logger, name string, writer WriteTo, dir string, sendExemplars, sendHistograms bool) *Watcher {
+func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logger log.Logger, name string, writer WriteTo, dir string, sendExemplars, sendHistograms, sendMetadata bool) *Watcher {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -182,6 +185,7 @@ func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logge
 		name:           name,
 		sendExemplars:  sendExemplars,
 		sendHistograms: sendHistograms,
+		sendMetadata:   sendMetadata,
 
 		readNotify: make(chan struct{}),
 		quit:       make(chan struct{}),
@@ -212,7 +216,6 @@ func (w *Watcher) setMetrics() {
 		w.samplesSentPreTailing = w.metrics.samplesSentPreTailing.WithLabelValues(w.name)
 		w.currentSegmentMetric = w.metrics.currentSegment.WithLabelValues(w.name)
 		w.notificationsSkipped = w.metrics.notificationsSkipped.WithLabelValues(w.name)
-
 	}
 }
 
@@ -294,10 +297,10 @@ func (w *Watcher) Run() error {
 	level.Debug(w.logger).Log("msg", "Tailing WAL", "lastCheckpoint", lastCheckpoint, "checkpointIndex", checkpointIndex, "currentSegment", currentSegment, "lastSegment", lastSegment)
 	for !isClosed(w.quit) {
 		w.currentSegmentMetric.Set(float64(currentSegment))
-		level.Debug(w.logger).Log("msg", "Processing segment", "currentSegment", currentSegment)
 
 		// On start, after reading the existing WAL for series records, we have a pointer to what is the latest segment.
 		// On subsequent calls to this function, currentSegment will have been incremented and we should open that segment.
+		level.Debug(w.logger).Log("msg", "Processing segment", "currentSegment", currentSegment)
 		if err := w.watch(currentSegment, currentSegment >= lastSegment); err != nil && !errors.Is(err, ErrIgnorable) {
 			return err
 		}
@@ -531,7 +534,7 @@ func (w *Watcher) garbageCollectSeries(segmentNum int) error {
 // Also used with readCheckpoint - implements segmentReadFn.
 func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 	var (
-		dec                   record.Decoder
+		dec                   = record.NewDecoder(labels.NewSymbolTable()) // One table per WAL segment means it won't grow indefinitely.
 		series                []record.RefSeries
 		samples               []record.RefSample
 		samplesToSend         []record.RefSample
@@ -540,6 +543,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 		histogramsToSend      []record.RefHistogramSample
 		floatHistograms       []record.RefFloatHistogramSample
 		floatHistogramsToSend []record.RefFloatHistogramSample
+		metadata              []record.RefMetadata
 	)
 	for r.Next() && !isClosed(w.quit) {
 		rec := r.Record()
@@ -651,6 +655,17 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				w.writer.AppendFloatHistograms(floatHistogramsToSend)
 				floatHistogramsToSend = floatHistogramsToSend[:0]
 			}
+
+		case record.Metadata:
+			if !w.sendMetadata || !tail {
+				break
+			}
+			meta, err := dec.Metadata(rec, metadata[:0])
+			if err != nil {
+				w.recordDecodeFailsMetric.Inc()
+				return err
+			}
+			w.writer.StoreMetadata(meta)
 		case record.Tombstones:
 
 		default:
@@ -668,7 +683,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 // Used with readCheckpoint - implements segmentReadFn.
 func (w *Watcher) readSegmentForGC(r *LiveReader, segmentNum int, _ bool) error {
 	var (
-		dec    record.Decoder
+		dec    = record.NewDecoder(labels.NewSymbolTable()) // Needed for decoding; labels do not outlive this function.
 		series []record.RefSeries
 	)
 	for r.Next() && !isClosed(w.quit) {

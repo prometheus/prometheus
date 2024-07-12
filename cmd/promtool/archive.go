@@ -15,9 +15,10 @@ package main
 
 import (
 	"archive/tar"
-	"compress/gzip"
 	"fmt"
 	"os"
+
+	"github.com/klauspost/compress/gzip"
 )
 
 const filePerm = 0o666

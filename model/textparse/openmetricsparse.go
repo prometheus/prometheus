@@ -97,8 +97,11 @@ type OpenMetricsParser struct {
 }
 
 // NewOpenMetricsParser returns a new parser of the byte slice.
-func NewOpenMetricsParser(b []byte) Parser {
-	return &OpenMetricsParser{l: &openMetricsLexer{b: b}}
+func NewOpenMetricsParser(b []byte, st *labels.SymbolTable) Parser {
+	return &OpenMetricsParser{
+		l:       &openMetricsLexer{b: b},
+		builder: labels.NewScratchBuilderWithSymbolTable(st, 16),
+	}
 }
 
 // Series returns the bytes of the series, the timestamp if set, and the value
@@ -236,8 +239,8 @@ func (p *OpenMetricsParser) parseError(exp string, got token) error {
 	return fmt.Errorf("%s, got %q (%q) while parsing: %q", exp, p.l.b[p.l.start:e], got, p.l.b[p.start:e])
 }
 
-// Next advances the parser to the next sample. It returns false if no
-// more samples were read or an error occurred.
+// Next advances the parser to the next sample.
+// It returns (EntryInvalid, io.EOF) if no samples were read.
 func (p *OpenMetricsParser) Next() (Entry, error) {
 	var err error
 

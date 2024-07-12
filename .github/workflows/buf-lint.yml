@@ -12,14 +12,14 @@ jobs:
     name: lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
-      - uses: bufbuild/buf-setup-action@382440cdb8ec7bc25a68d7b4711163d95f7cc3aa # v1.28.1
+      - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+      - uses: bufbuild/buf-setup-action@dde0b9351db90fbf78e345f41a57de8514bf1091 # v1.32.2
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: bufbuild/buf-lint-action@bd48f53224baaaf0fc55de9a913e7680ca6dbea4 # v1.0.3
+      - uses: bufbuild/buf-lint-action@06f9dd823d873146471cfaaf108a993fe00e5325 # v1.1.1
         with:
           input: 'prompb'
-      - uses: bufbuild/buf-breaking-action@f47418c81c00bfd65394628385593542f64db477 # v1.1.2
+      - uses: bufbuild/buf-breaking-action@c57b3d842a5c3f3b454756ef65305a50a587c5ba # v1.1.4
         with:
           input: 'prompb'
           against: 'https://github.com/prometheus/prometheus.git#branch=main,ref=HEAD,subdir=prompb'

@@ -43,7 +43,6 @@ import (
     int         int64
     uint        uint64
     float       float64
-    duration    time.Duration
 }
 
 
@@ -84,6 +83,7 @@ BUCKETS_DESC
 NEGATIVE_BUCKETS_DESC
 ZERO_BUCKET_DESC
 ZERO_BUCKET_WIDTH_DESC
+CUSTOM_VALUES_DESC
 %token histogramDescEnd
 
 // Operators.
@@ -125,6 +125,8 @@ STDDEV
 STDVAR
 SUM
 TOPK
+LIMITK
+LIMIT_RATIO
 %token	aggregatorsEnd
 
 // Keywords.
@@ -173,8 +175,7 @@ START_METRIC_SELECTOR
 %type <int> int
 %type <uint> uint
 %type <float> number series_value signed_number signed_or_unsigned_number
-%type <node> step_invariant_expr aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_literal offset_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector
-%type <duration> duration maybe_duration
+%type <node> step_invariant_expr aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_duration_literal offset_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector
 
 %start start
 
@@ -215,7 +216,7 @@ expr            :
                 | binary_expr
                 | function_call
                 | matrix_selector
-                | number_literal
+                | number_duration_literal
                 | offset_expr
                 | paren_expr
                 | string_literal
@@ -412,18 +413,22 @@ paren_expr      : LEFT_PAREN expr RIGHT_PAREN
  * Offset modifiers.
  */
 
-offset_expr: expr OFFSET duration
+offset_expr: expr OFFSET number_duration_literal
                         {
-                        yylex.(*parser).addOffset($1, $3)
-                        $$ = $1
+  		            numLit, _ := $3.(*NumberLiteral)
+      		            dur := time.Duration(numLit.Val * 1000) * time.Millisecond
+                 	    yylex.(*parser).addOffset($1, dur)
+                            $$ = $1
                         }
-                | expr OFFSET SUB duration
+                | expr OFFSET SUB number_duration_literal
                         {
-                        yylex.(*parser).addOffset($1, -$4)
-                        $$ = $1
+			    numLit, _ := $4.(*NumberLiteral)
+		            dur := time.Duration(numLit.Val * 1000) * time.Millisecond
+			    yylex.(*parser).addOffset($1, -dur)
+                            $$ = $1
                         }
                 | expr OFFSET error
-                        { yylex.(*parser).unexpected("offset", "duration"); $$ = $1 }
+                        { yylex.(*parser).unexpected("offset", "number or duration"); $$ = $1 }
                 ;
 /*
  * @ modifiers.
@@ -449,7 +454,7 @@ at_modifier_preprocessors: START | END;
  * Subquery and range selectors.
  */
 
-matrix_selector : expr LEFT_BRACKET duration RIGHT_BRACKET
+matrix_selector : expr LEFT_BRACKET number_duration_literal RIGHT_BRACKET
                         {
                         var errMsg string
                         vs, ok := $1.(*VectorSelector)
@@ -466,32 +471,44 @@ matrix_selector : expr LEFT_BRACKET duration RIGHT_BRACKET
                                 yylex.(*parser).addParseErrf(errRange, errMsg)
                         }
 
+			numLit, _ := $3.(*NumberLiteral)
                         $$ = &MatrixSelector{
                                 VectorSelector: $1.(Expr),
-                                Range: $3,
+                                Range: time.Duration(numLit.Val * 1000) * time.Millisecond,
                                 EndPos: yylex.(*parser).lastClosing,
                         }
                         }
                 ;
 
-subquery_expr   : expr LEFT_BRACKET duration COLON maybe_duration RIGHT_BRACKET
+subquery_expr   : expr LEFT_BRACKET number_duration_literal COLON number_duration_literal RIGHT_BRACKET
                         {
+			numLitRange, _ := $3.(*NumberLiteral)
+			numLitStep, _ := $5.(*NumberLiteral)
                         $$ = &SubqueryExpr{
                                 Expr:  $1.(Expr),
-                                Range: $3,
-                                Step:  $5,
-
+                                Range: time.Duration(numLitRange.Val * 1000) * time.Millisecond,
+                                Step:  time.Duration(numLitStep.Val * 1000) * time.Millisecond,
                                 EndPos: $6.Pos + 1,
                         }
                         }
-                | expr LEFT_BRACKET duration COLON duration error
+                | expr LEFT_BRACKET number_duration_literal COLON RIGHT_BRACKET
+		        {
+		          numLitRange, _ := $3.(*NumberLiteral)
+		          $$ = &SubqueryExpr{
+		          Expr:  $1.(Expr),
+		          Range: time.Duration(numLitRange.Val * 1000) * time.Millisecond,
+		          Step:  0,
+		          EndPos: $5.Pos + 1,
+		          }
+		        }
+                | expr LEFT_BRACKET number_duration_literal COLON number_duration_literal error
                         { yylex.(*parser).unexpected("subquery selector", "\"]\""); $$ = $1 }
-                | expr LEFT_BRACKET duration COLON error
-                        { yylex.(*parser).unexpected("subquery selector", "duration or \"]\""); $$ = $1 }
-                | expr LEFT_BRACKET duration error
+                | expr LEFT_BRACKET number_duration_literal COLON error
+                        { yylex.(*parser).unexpected("subquery selector", "number or duration or \"]\""); $$ = $1 }
+                | expr LEFT_BRACKET number_duration_literal error
                         { yylex.(*parser).unexpected("subquery or range", "\":\" or \"]\""); $$ = $1 }
                 | expr LEFT_BRACKET error
-                        { yylex.(*parser).unexpected("subquery selector", "duration"); $$ = $1 }
+		        { yylex.(*parser).unexpected("subquery selector", "number or duration"); $$ = $1 }
                 ;
 
 /*
@@ -608,7 +625,7 @@ metric          : metric_identifier label_set
                 ;
 
 
-metric_identifier: AVG | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | IDENTIFIER |  LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | QUANTILE | STDDEV | STDVAR | SUM | TOPK | WITHOUT | START | END;
+metric_identifier: AVG | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | IDENTIFIER |  LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | QUANTILE | STDDEV | STDVAR | SUM | TOPK | WITHOUT | START | END | LIMITK | LIMIT_RATIO;
 
 label_set       : LEFT_BRACE label_set_list RIGHT_BRACE
                         { $$ = labels.New($2...) }
@@ -797,6 +814,11 @@ histogram_desc_item
                    $$ = yylex.(*parser).newMap()
                    $$["z_bucket_w"] = $3
                 }
+                | CUSTOM_VALUES_DESC COLON bucket_set
+                {
+                   $$ = yylex.(*parser).newMap()
+                   $$["custom_values"] = $3
+                }
                 | BUCKETS_DESC COLON bucket_set
                 {
                    $$ = yylex.(*parser).newMap()
@@ -845,10 +867,10 @@ bucket_set_list : bucket_set_list SPACE number
  * Keyword lists.
  */
 
-aggregate_op    : AVG | BOTTOMK | COUNT | COUNT_VALUES | GROUP | MAX | MIN | QUANTILE | STDDEV | STDVAR | SUM | TOPK ;
+aggregate_op    : AVG | BOTTOMK | COUNT | COUNT_VALUES | GROUP | MAX | MIN | QUANTILE | STDDEV | STDVAR | SUM | TOPK | LIMITK | LIMIT_RATIO;
 
 // Inside of grouping options label names can be recognized as keywords by the lexer. This is a list of keywords that could also be a label name.
-maybe_label     : AVG | BOOL | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | GROUP_LEFT | GROUP_RIGHT | IDENTIFIER | IGNORING | LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | ON | QUANTILE | STDDEV | STDVAR | SUM | TOPK | START | END | ATAN2;
+maybe_label     : AVG | BOOL | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | GROUP_LEFT | GROUP_RIGHT | IDENTIFIER | IGNORING | LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | ON | QUANTILE | STDDEV | STDVAR | SUM | TOPK | START | END | ATAN2 | LIMITK | LIMIT_RATIO;
 
 unary_op        : ADD | SUB;
 
@@ -858,16 +880,43 @@ match_op        : EQL | NEQ | EQL_REGEX | NEQ_REGEX ;
  * Literals.
  */
 
-number_literal  : NUMBER
+number_duration_literal  : NUMBER
                         {
-                        $$ = &NumberLiteral{
+                            $$ = &NumberLiteral{
                                 Val:           yylex.(*parser).number($1.Val),
                                 PosRange: $1.PositionRange(),
+                            }
                         }
+                        | DURATION
+			{
+                            var err error
+                            var dur time.Duration
+                            dur, err = parseDuration($1.Val)
+                            if err != nil {
+                                    yylex.(*parser).addParseErr($1.PositionRange(), err)
+                            }
+                            $$ = &NumberLiteral{
+			            Val:      dur.Seconds(),
+			            PosRange: $1.PositionRange(),
+                            }
                         }
                 ;
 
-number          : NUMBER { $$ = yylex.(*parser).number($1.Val) } ;
+number          : NUMBER
+                {
+		  $$ = yylex.(*parser).number($1.Val)
+		}
+                | DURATION
+		{
+		  var err error
+		  var dur time.Duration
+		  dur, err = parseDuration($1.Val)
+		  if err != nil {
+		      yylex.(*parser).addParseErr($1.PositionRange(), err)
+		  }
+		  $$ = dur.Seconds()
+		}
+                ;
 
 signed_number   : ADD number { $$ = $2 }
                 | SUB number { $$ = -$2 }
@@ -888,17 +937,6 @@ uint            : NUMBER
 int             : SUB uint { $$ = -int64($2) }
                 | uint { $$ = int64($1) }
                 ;
-
-duration        : DURATION
-                        {
-                        var err error
-                        $$, err = parseDuration($1.Val)
-                        if err != nil {
-                                yylex.(*parser).addParseErr($1.PositionRange(), err)
-                        }
-                        }
-                ;
-
 
 string_literal  : STRING
                         {
@@ -922,11 +960,6 @@ string_identifier  : STRING
 /*
  * Wrappers for optional arguments.
  */
-
-maybe_duration  : /* empty */
-                        {$$ = 0}
-                | duration
-                ;
 
 maybe_grouping_labels: /* empty */ { $$ = nil }
                 | grouping_labels

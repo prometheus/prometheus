@@ -15,13 +15,13 @@ package histogram
 
 import (
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"golang.org/x/exp/slices"
 )
 
-func TestGetBound(t *testing.T) {
+func TestGetBoundExponential(t *testing.T) {
 	scenarios := []struct {
 		idx    int32
 		schema int32
@@ -105,7 +105,7 @@ func TestGetBound(t *testing.T) {
 	}
 
 	for _, s := range scenarios {
-		got := getBound(s.idx, s.schema)
+		got := getBoundExponential(s.idx, s.schema)
 		if s.want != got {
 			require.Equal(t, s.want, got, "idx %d, schema %d", s.idx, s.schema)
 		}

@@ -133,15 +133,6 @@ type Meta struct {
 	// Time range the data covers.
 	// When MaxTime == math.MaxInt64 the chunk is still open and being appended to.
 	MinTime, MaxTime int64
-
-	// OOOLastRef, OOOLastMinTime and OOOLastMaxTime are kept as markers for
-	// overlapping chunks.
-	// These fields point to the last created out of order Chunk (the head) that existed
-	// when Series() was called and was overlapping.
-	// Series() and Chunk() method responses should be consistent for the same
-	// query even if new data is added in between the calls.
-	OOOLastRef                     ChunkRef
-	OOOLastMinTime, OOOLastMaxTime int64
 }
 
 // ChunkFromSamples requires all samples to have the same type.
@@ -202,15 +193,6 @@ func ChunkFromSamplesGeneric(s Samples) (Meta, error) {
 	}, nil
 }
 
-// PopulatedChunk creates a chunk populated with samples every second starting at minTime.
-func PopulatedChunk(numSamples int, minTime int64) (Meta, error) {
-	samples := make([]Sample, numSamples)
-	for i := 0; i < numSamples; i++ {
-		samples[i] = sample{t: minTime + int64(i*1000), f: 1.0}
-	}
-	return ChunkFromSamples(samples)
-}
-
 // ChunkMetasToSamples converts a slice of chunk meta data to a slice of samples.
 // Used in tests to compare the content of chunks.
 func ChunkMetasToSamples(chunks []Meta) (result []Sample) {
@@ -242,7 +224,7 @@ func ChunkMetasToSamples(chunks []Meta) (result []Sample) {
 // Iterator iterates over the chunks of a single time series.
 type Iterator interface {
 	// At returns the current meta.
-	// It depends on implementation if the chunk is populated or not.
+	// It depends on the implementation whether the chunk is populated or not.
 	At() Meta
 	// Next advances the iterator by one.
 	Next() bool
@@ -487,7 +469,7 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 		// the batch is too large to fit in the current segment.
 		cutNewBatch := (i != 0) && (batchSize+SegmentHeaderSize > w.segmentSize)
 
-		// When the segment already has some data than
+		// If the segment already has some data then
 		// the first batch size calculation should account for that.
 		if firstBatch && w.n > SegmentHeaderSize {
 			cutNewBatch = batchSize+w.n > w.segmentSize
@@ -726,7 +708,7 @@ func nextSequenceFile(dir string) (string, int, error) {
 		}
 		// It is not necessary that we find the files in number order,
 		// for example with '1000000' and '200000', '1000000' would come first.
-		// Though this is a very very race case, we check anyway for the max id.
+		// Though this is a very very rare case, we check anyway for the max id.
 		if j > i {
 			i = j
 		}

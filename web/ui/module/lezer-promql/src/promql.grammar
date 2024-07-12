@@ -54,6 +54,8 @@ AggregateOp {
   Max |
   Min |
   Quantile |
+  LimitK |
+  LimitRatio |
   Stddev |
   Stdvar |
   Sum |
@@ -97,7 +99,7 @@ binModifiers {
 }
 
 GroupingLabels {
-  "(" (LabelName ("," LabelName)* ","?)? ")"
+  "(" ((LabelName | QuotedLabelName) ("," (LabelName | QuotedLabelName))* ","?)? ")"
 }
 
 FunctionCall {
@@ -220,7 +222,7 @@ VectorSelector {
 }
 
 LabelMatchers {
-  "{" (LabelMatcher ("," LabelMatcher)* ","?)? "}"
+  "{" ((UnquotedLabelMatcher | QuotedLabelMatcher | QuotedLabelName)("," (UnquotedLabelMatcher | QuotedLabelMatcher | QuotedLabelName))* ","?)? "}"
 }
 
 MatchOp {
@@ -230,8 +232,16 @@ MatchOp {
   NeqRegex
 }
 
-LabelMatcher {
-  LabelName MatchOp StringLiteral
+UnquotedLabelMatcher {
+    LabelName MatchOp StringLiteral
+}
+
+QuotedLabelMatcher {
+    QuotedLabelName MatchOp StringLiteral
+}
+
+QuotedLabelName {
+    StringLiteral
 }
 
 StepInvariantExpr {
@@ -253,7 +263,7 @@ NumberLiteral  {
   LineComment { "#" ![\n]* }
 
   number {
-      (std.digit+ ("." std.digit*)? | "." std.digit+) (("e" | "E") ("+" | "-")? std.digit+)? |
+      (std.digit+ (("_")? std.digit)* ("." std.digit+ (("_")? std.digit)*)? | "." std.digit+ (("_")? std.digit)*) (("e" | "E") ("+" | "-")? std.digit+ (("_")? std.digit)*)? |
       "0x" (std.digit | $[a-fA-F])+
   }
   StringLiteral { // TODO: This is for JS, make this work for PromQL.
@@ -322,6 +332,8 @@ NumberLiteral  {
   Max,
   Min,
   Quantile,
+  LimitK,
+  LimitRatio,
   Stddev,
   Stdvar,
   Sum,

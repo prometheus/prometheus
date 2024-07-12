@@ -163,7 +163,7 @@ type RefMetadata struct {
 	Help string
 }
 
-// RefExemplar is an exemplar with it's labels, timestamp, value the exemplar was collected/observed with, and a reference to a series.
+// RefExemplar is an exemplar with the labels, timestamp, value the exemplar was collected/observed with, and a reference to a series.
 type RefExemplar struct {
 	Ref    chunks.HeadSeriesRef
 	T      int64
@@ -192,9 +192,12 @@ type RefMmapMarker struct {
 }
 
 // Decoder decodes series, sample, metadata and tombstone records.
-// The zero value is ready to use.
 type Decoder struct {
 	builder labels.ScratchBuilder
+}
+
+func NewDecoder(t *labels.SymbolTable) Decoder { // FIXME remove t
+	return Decoder{builder: labels.NewScratchBuilder(0)}
 }
 
 // Type returns the type of the record.
@@ -540,7 +543,7 @@ func (d *Decoder) FloatHistogramSamples(rec []byte, histograms []RefFloatHistogr
 	return histograms, nil
 }
 
-// Decode decodes a Histogram from a byte slice.
+// DecodeFloatHistogram decodes a Histogram from a byte slice.
 func DecodeFloatHistogram(buf *encoding.Decbuf, fh *histogram.FloatHistogram) {
 	fh.CounterResetHint = histogram.CounterResetHint(buf.Byte())
 
@@ -795,7 +798,7 @@ func (e *Encoder) FloatHistogramSamples(histograms []RefFloatHistogramSample, b 
 	return buf.Get()
 }
 
-// Encode encodes the Float Histogram into a byte slice.
+// EncodeFloatHistogram encodes the Float Histogram into a byte slice.
 func EncodeFloatHistogram(buf *encoding.Encbuf, h *histogram.FloatHistogram) {
 	buf.PutByte(byte(h.CounterResetHint))
 

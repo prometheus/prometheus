@@ -14,8 +14,10 @@
 package promql
 
 import (
+	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,7 +26,6 @@ import (
 	"github.com/facette/natsort"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/common/model"
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -128,20 +129,6 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	sampledInterval := float64(lastT-firstT) / 1000
 	averageDurationBetweenSamples := sampledInterval / float64(numSamplesMinusOne)
 
-	// TODO(beorn7): Do this for histograms, too.
-	if isCounter && resultFloat > 0 && len(samples.Floats) > 0 && samples.Floats[0].F >= 0 {
-		// Counters cannot be negative. If we have any slope at all
-		// (i.e. resultFloat went up), we can extrapolate the zero point
-		// of the counter. If the duration to the zero point is shorter
-		// than the durationToStart, we take the zero point as the start
-		// of the series, thereby avoiding extrapolation to negative
-		// counter values.
-		durationToZero := sampledInterval * (samples.Floats[0].F / resultFloat)
-		if durationToZero < durationToStart {
-			durationToStart = durationToZero
-		}
-	}
-
 	// If the first/last samples are close to the boundaries of the range,
 	// extrapolate the result. This is as we expect that another sample
 	// will exist given the spacing between samples we've seen thus far,
@@ -149,16 +136,29 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	extrapolationThreshold := averageDurationBetweenSamples * 1.1
 	extrapolateToInterval := sampledInterval
 
-	if durationToStart < extrapolationThreshold {
-		extrapolateToInterval += durationToStart
-	} else {
-		extrapolateToInterval += averageDurationBetweenSamples / 2
+	if durationToStart >= extrapolationThreshold {
+		durationToStart = averageDurationBetweenSamples / 2
 	}
-	if durationToEnd < extrapolationThreshold {
-		extrapolateToInterval += durationToEnd
-	} else {
-		extrapolateToInterval += averageDurationBetweenSamples / 2
+	if isCounter && resultFloat > 0 && len(samples.Floats) > 0 && samples.Floats[0].F >= 0 {
+		// Counters cannot be negative. If we have any slope at all
+		// (i.e. resultFloat went up), we can extrapolate the zero point
+		// of the counter. If the duration to the zero point is shorter
+		// than the durationToStart, we take the zero point as the start
+		// of the series, thereby avoiding extrapolation to negative
+		// counter values.
+		// TODO(beorn7): Do this for histograms, too.
+		durationToZero := sampledInterval * (samples.Floats[0].F / resultFloat)
+		if durationToZero < durationToStart {
+			durationToStart = durationToZero
+		}
 	}
+	extrapolateToInterval += durationToStart
+
+	if durationToEnd >= extrapolationThreshold {
+		durationToEnd = averageDurationBetweenSamples / 2
+	}
+	extrapolateToInterval += durationToEnd
+
 	factor := extrapolateToInterval / sampledInterval
 	if isRate {
 		factor /= ms.Range.Seconds()
@@ -211,14 +211,28 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 	}
 
 	h := last.CopyToSchema(minSchema)
-	h.Sub(prev)
+	_, err := h.Sub(prev)
+	if err != nil {
+		if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
+			return nil, annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
+		} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
+			return nil, annotations.New().Add(annotations.NewIncompatibleCustomBucketsHistogramsWarning(metricName, pos))
+		}
+	}
 
 	if isCounter {
 		// Second iteration to deal with counter resets.
 		for _, currPoint := range points[1:] {
 			curr := currPoint.H
 			if curr.DetectReset(prev) {
-				h.Add(prev)
+				_, err := h.Add(prev)
+				if err != nil {
+					if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
+						return nil, annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
+					} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
+						return nil, annotations.New().Add(annotations.NewIncompatibleCustomBucketsHistogramsWarning(metricName, pos))
+					}
+				}
 			}
 			prev = curr
 		}
@@ -343,7 +357,6 @@ func funcHoltWinters(vals []parser.Value, args parser.Expressions, enh *EvalNode
 	// Run the smoothing operation.
 	var x, y float64
 	for i := 1; i < l; i++ {
-
 		// Scale the raw value against the smoothing factor.
 		x = sf * samples.Floats[i].F
 
@@ -515,10 +528,11 @@ func aggrOverTime(vals []parser.Value, enh *EvalNodeHelper, aggrFn func(Series) 
 	return append(enh.Out, Sample{F: aggrFn(el)})
 }
 
-func aggrHistOverTime(vals []parser.Value, enh *EvalNodeHelper, aggrFn func(Series) *histogram.FloatHistogram) Vector {
+func aggrHistOverTime(vals []parser.Value, enh *EvalNodeHelper, aggrFn func(Series) (*histogram.FloatHistogram, error)) (Vector, error) {
 	el := vals[0].(Matrix)[0]
+	res, err := aggrFn(el)
 
-	return append(enh.Out, Sample{H: aggrFn(el)})
+	return append(enh.Out, Sample{H: res}), err
 }
 
 // === avg_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations)  ===
@@ -530,18 +544,33 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 	}
 	if len(firstSeries.Floats) == 0 {
 		// The passed values only contain histograms.
-		return aggrHistOverTime(vals, enh, func(s Series) *histogram.FloatHistogram {
+		vec, err := aggrHistOverTime(vals, enh, func(s Series) (*histogram.FloatHistogram, error) {
 			count := 1
 			mean := s.Histograms[0].H.Copy()
 			for _, h := range s.Histograms[1:] {
 				count++
 				left := h.H.Copy().Div(float64(count))
 				right := mean.Copy().Div(float64(count))
-				toAdd := left.Sub(right)
-				mean.Add(toAdd)
+				toAdd, err := left.Sub(right)
+				if err != nil {
+					return mean, err
+				}
+				_, err = mean.Add(toAdd)
+				if err != nil {
+					return mean, err
+				}
 			}
-			return mean
-		}), nil
+			return mean, nil
+		})
+		if err != nil {
+			metricName := firstSeries.Metric.Get(labels.MetricName)
+			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
+				return enh.Out, annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, args[0].PositionRange()))
+			} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
+				return enh.Out, annotations.New().Add(annotations.NewIncompatibleCustomBucketsHistogramsWarning(metricName, args[0].PositionRange()))
+			}
+		}
+		return vec, nil
 	}
 	return aggrOverTime(vals, enh, func(s Series) float64 {
 		var mean, count, c float64
@@ -675,13 +704,25 @@ func funcSumOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 	}
 	if len(firstSeries.Floats) == 0 {
 		// The passed values only contain histograms.
-		return aggrHistOverTime(vals, enh, func(s Series) *histogram.FloatHistogram {
+		vec, err := aggrHistOverTime(vals, enh, func(s Series) (*histogram.FloatHistogram, error) {
 			sum := s.Histograms[0].H.Copy()
 			for _, h := range s.Histograms[1:] {
-				sum.Add(h.H)
+				_, err := sum.Add(h.H)
+				if err != nil {
+					return sum, err
+				}
 			}
-			return sum
-		}), nil
+			return sum, nil
+		})
+		if err != nil {
+			metricName := firstSeries.Metric.Get(labels.MetricName)
+			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
+				return enh.Out, annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, args[0].PositionRange()))
+			} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
+				return enh.Out, annotations.New().Add(annotations.NewIncompatibleCustomBucketsHistogramsWarning(metricName, args[0].PositionRange()))
+			}
+		}
+		return vec, nil
 	}
 	return aggrOverTime(vals, enh, func(s Series) float64 {
 		var sum, c float64
@@ -950,21 +991,16 @@ func funcTimestamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHe
 	return enh.Out, nil
 }
 
-func kahanSum(samples []float64) float64 {
-	var sum, c float64
-
-	for _, v := range samples {
-		sum, c = kahanSumInc(v, sum, c)
-	}
-	return sum + c
-}
-
 func kahanSumInc(inc, sum, c float64) (newSum, newC float64) {
 	t := sum + inc
+	switch {
+	case math.IsInf(t, 0):
+		c = 0
+
 	// Using Neumaier improvement, swap if next term larger than sum.
-	if math.Abs(sum) >= math.Abs(inc) {
+	case math.Abs(sum) >= math.Abs(inc):
 		c += (sum - t) + inc
-	} else {
+	default:
 		c += (inc - t) + sum
 	}
 	return t, c
@@ -1112,11 +1148,17 @@ func funcHistogramStdDev(vals []parser.Value, args parser.Expressions, enh *Eval
 		it := sample.H.AllBucketIterator()
 		for it.Next() {
 			bucket := it.At()
+			if bucket.Count == 0 {
+				continue
+			}
 			var val float64
 			if bucket.Lower <= 0 && 0 <= bucket.Upper {
 				val = 0
 			} else {
 				val = math.Sqrt(bucket.Upper * bucket.Lower)
+				if bucket.Upper < 0 {
+					val = -val
+				}
 			}
 			delta := val - mean
 			variance, cVariance = kahanSumInc(bucket.Count*delta*delta, variance, cVariance)
@@ -1145,11 +1187,17 @@ func funcHistogramStdVar(vals []parser.Value, args parser.Expressions, enh *Eval
 		it := sample.H.AllBucketIterator()
 		for it.Next() {
 			bucket := it.At()
+			if bucket.Count == 0 {
+				continue
+			}
 			var val float64
 			if bucket.Lower <= 0 && 0 <= bucket.Upper {
 				val = 0
 			} else {
 				val = math.Sqrt(bucket.Upper * bucket.Lower)
+				if bucket.Upper < 0 {
+					val = -val
+				}
 			}
 			delta := val - mean
 			variance, cVariance = kahanSumInc(bucket.Count*delta*delta, variance, cVariance)
@@ -1229,7 +1277,6 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			enh.signatureToMetricWithBuckets[string(enh.lblBuf)] = mb
 		}
 		mb.buckets = append(mb.buckets, bucket{upperBound, sample.F})
-
 	}
 
 	// Now deal with the histograms.
@@ -1321,59 +1368,47 @@ func funcChanges(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelp
 	return append(enh.Out, Sample{F: float64(changes)}), nil
 }
 
-// === label_replace(Vector parser.ValueTypeVector, dst_label, replacement, src_labelname, regex parser.ValueTypeString) (Vector, Annotations) ===
-func funcLabelReplace(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+// label_replace function operates only on series; does not look at timestamps or values.
+func (ev *evaluator) evalLabelReplace(args parser.Expressions) (parser.Value, annotations.Annotations) {
 	var (
-		vector   = vals[0].(Vector)
 		dst      = stringFromArg(args[1])
 		repl     = stringFromArg(args[2])
 		src      = stringFromArg(args[3])
 		regexStr = stringFromArg(args[4])
 	)
 
-	if enh.regex == nil {
-		var err error
-		enh.regex, err = regexp.Compile("^(?:" + regexStr + ")$")
-		if err != nil {
-			panic(fmt.Errorf("invalid regular expression in label_replace(): %s", regexStr))
-		}
-		if !model.LabelNameRE.MatchString(dst) {
-			panic(fmt.Errorf("invalid destination label name in label_replace(): %s", dst))
-		}
-		enh.Dmn = make(map[uint64]labels.Labels, len(enh.Out))
+	regex, err := regexp.Compile("^(?:" + regexStr + ")$")
+	if err != nil {
+		panic(fmt.Errorf("invalid regular expression in label_replace(): %s", regexStr))
+	}
+	if !model.LabelNameRE.MatchString(dst) {
+		panic(fmt.Errorf("invalid destination label name in label_replace(): %s", dst))
 	}
 
-	for _, el := range vector {
-		h := el.Metric.Hash()
-		var outMetric labels.Labels
-		if l, ok := enh.Dmn[h]; ok {
-			outMetric = l
-		} else {
-			srcVal := el.Metric.Get(src)
-			indexes := enh.regex.FindStringSubmatchIndex(srcVal)
-			if indexes == nil {
-				// If there is no match, no replacement should take place.
-				outMetric = el.Metric
-				enh.Dmn[h] = outMetric
-			} else {
-				res := enh.regex.ExpandString([]byte{}, repl, srcVal, indexes)
+	val, ws := ev.eval(args[0])
+	matrix := val.(Matrix)
+	lb := labels.NewBuilder(labels.EmptyLabels())
 
-				lb := labels.NewBuilder(el.Metric).Del(dst)
-				if len(res) > 0 {
-					lb.Set(dst, string(res))
-				}
-				outMetric = lb.Labels()
-				enh.Dmn[h] = outMetric
-			}
+	for i, el := range matrix {
+		srcVal := el.Metric.Get(src)
+		indexes := regex.FindStringSubmatchIndex(srcVal)
+		if indexes != nil { // Only replace when regexp matches.
+			res := regex.ExpandString([]byte{}, repl, srcVal, indexes)
+			lb.Reset(el.Metric)
+			lb.Set(dst, string(res))
+			matrix[i].Metric = lb.Labels()
 		}
-
-		enh.Out = append(enh.Out, Sample{
-			Metric: outMetric,
-			F:      el.F,
-			H:      el.H,
-		})
 	}
-	return enh.Out, nil
+	if matrix.ContainsSameLabelset() {
+		ev.errorf("vector cannot contain metrics with the same labelset")
+	}
+
+	return matrix, ws
+}
+
+// === label_replace(Vector parser.ValueTypeVector, dst_label, replacement, src_labelname, regex parser.ValueTypeString) (Vector, Annotations) ===
+func funcLabelReplace(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	panic("funcLabelReplace wrong implementation called")
 }
 
 // === Vector(s Scalar) (Vector, Annotations) ===
@@ -1385,19 +1420,13 @@ func funcVector(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelpe
 		}), nil
 }
 
-// === label_join(vector model.ValVector, dest_labelname, separator, src_labelname...) (Vector, Annotations) ===
-func funcLabelJoin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+// label_join function operates only on series; does not look at timestamps or values.
+func (ev *evaluator) evalLabelJoin(args parser.Expressions) (parser.Value, annotations.Annotations) {
 	var (
-		vector    = vals[0].(Vector)
 		dst       = stringFromArg(args[1])
 		sep       = stringFromArg(args[2])
 		srcLabels = make([]string, len(args)-3)
 	)
-
-	if enh.Dmn == nil {
-		enh.Dmn = make(map[uint64]labels.Labels, len(enh.Out))
-	}
-
 	for i := 3; i < len(args); i++ {
 		src := stringFromArg(args[i])
 		if !model.LabelName(src).IsValid() {
@@ -1405,43 +1434,31 @@ func funcLabelJoin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHe
 		}
 		srcLabels[i-3] = src
 	}
-
 	if !model.LabelName(dst).IsValid() {
 		panic(fmt.Errorf("invalid destination label name in label_join(): %s", dst))
 	}
 
+	val, ws := ev.eval(args[0])
+	matrix := val.(Matrix)
 	srcVals := make([]string, len(srcLabels))
-	for _, el := range vector {
-		h := el.Metric.Hash()
-		var outMetric labels.Labels
-		if l, ok := enh.Dmn[h]; ok {
-			outMetric = l
-		} else {
+	lb := labels.NewBuilder(labels.EmptyLabels())
 
-			for i, src := range srcLabels {
-				srcVals[i] = el.Metric.Get(src)
-			}
-
-			lb := labels.NewBuilder(el.Metric)
-
-			strval := strings.Join(srcVals, sep)
-			if strval == "" {
-				lb.Del(dst)
-			} else {
-				lb.Set(dst, strval)
-			}
-
-			outMetric = lb.Labels()
-			enh.Dmn[h] = outMetric
+	for i, el := range matrix {
+		for i, src := range srcLabels {
+			srcVals[i] = el.Metric.Get(src)
 		}
-
-		enh.Out = append(enh.Out, Sample{
-			Metric: outMetric,
-			F:      el.F,
-			H:      el.H,
-		})
+		strval := strings.Join(srcVals, sep)
+		lb.Reset(el.Metric)
+		lb.Set(dst, strval)
+		matrix[i].Metric = lb.Labels()
 	}
-	return enh.Out, nil
+
+	return matrix, ws
+}
+
+// === label_join(vector model.ValVector, dest_labelname, separator, src_labelname...) (Vector, Annotations) ===
+func funcLabelJoin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	panic("funcLabelReplace wrong implementation called")
 }
 
 // Common code for date related functions.

@@ -513,12 +513,12 @@ var testExpr = []struct {
 	{
 		input:  "2.5.",
 		fail:   true,
-		errMsg: "unexpected character: '.'",
+		errMsg: `1:1: parse error: bad number or duration syntax: "2.5."`,
 	},
 	{
 		input:  "100..4",
 		fail:   true,
-		errMsg: `unexpected number ".4"`,
+		errMsg: `1:1: parse error: bad number or duration syntax: "100.."`,
 	},
 	{
 		input:  "0deadbeef",
@@ -1732,6 +1732,34 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: `{'foo\'bar', 'a\\dos\\path'='boo\\urns'}`,
+		expected: &VectorSelector{
+			// When a metric is named inside the braces, the Name field is not set.
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, `foo'bar`),
+				MustLabelMatcher(labels.MatchEqual, `a\dos\path`, `boo\urns`),
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   40,
+			},
+		},
+	},
+	{
+		input: `{'foo\'bar', ` + "`" + `a\dos\path` + "`" + `="boo"}`,
+		expected: &VectorSelector{
+			// When a metric is named inside the braces, the Name field is not set.
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, `foo'bar`),
+				MustLabelMatcher(labels.MatchEqual, `a\dos\path`, "boo"),
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   32,
+			},
+		},
+	},
+	{
 		input: `{"foo", a="bc"}`,
 		expected: &VectorSelector{
 			// When a metric is named inside the braces, the Name field is not set.
@@ -1825,6 +1853,48 @@ var testExpr = []struct {
 		},
 	},
 	{
+		// Specifying __name__ twice inside the braces is ok.
+		input: `{__name__=~"bar", __name__!~"baz"}`,
+		expected: &VectorSelector{
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchRegexp, model.MetricNameLabel, "bar"),
+				MustLabelMatcher(labels.MatchNotRegexp, model.MetricNameLabel, "baz"),
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   34,
+			},
+		},
+	},
+	{
+		// Specifying __name__ with equality twice inside the braces is even allowed.
+		input: `{__name__="bar", __name__="baz"}`,
+		expected: &VectorSelector{
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "bar"),
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "baz"),
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   32,
+			},
+		},
+	},
+	{
+		// Because the above are allowed, this is also allowed.
+		input: `{"bar", __name__="baz"}`,
+		expected: &VectorSelector{
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "bar"),
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "baz"),
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   23,
+			},
+		},
+	},
+	{
 		input:  `{`,
 		fail:   true,
 		errMsg: "unexpected end of input inside braces",
@@ -1906,6 +1976,8 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "vector selector must contain at least one non-empty matcher",
 	},
+	// Although {"bar", __name__="baz"} is allowed (see above), specifying a
+	// metric name inside and outside the braces is not.
 	{
 		input:  `foo{__name__="bar"}`,
 		fail:   true,
@@ -2062,6 +2134,115 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: `test{a="b"}[5m] OFFSET 3600`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name:           "test",
+				OriginalOffset: 1 * time.Hour,
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, "a", "b"),
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   11,
+				},
+			},
+			Range:  5 * time.Minute,
+			EndPos: 27,
+		},
+	},
+	{
+		input: `foo[3ms] @ 2.345`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name:      "foo",
+				Timestamp: makeInt64Pointer(2345),
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			Range:  3 * time.Millisecond,
+			EndPos: 16,
+		},
+	},
+	{
+		input: `foo[4s180ms] @ 2.345`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name:      "foo",
+				Timestamp: makeInt64Pointer(2345),
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			Range:  4*time.Second + 180*time.Millisecond,
+			EndPos: 20,
+		},
+	},
+	{
+		input: `foo[4.18] @ 2.345`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name:      "foo",
+				Timestamp: makeInt64Pointer(2345),
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			Range:  4*time.Second + 180*time.Millisecond,
+			EndPos: 17,
+		},
+	},
+	{
+		input: `foo[4s18ms] @ 2.345`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name:      "foo",
+				Timestamp: makeInt64Pointer(2345),
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			Range:  4*time.Second + 18*time.Millisecond,
+			EndPos: 19,
+		},
+	},
+	{
+		input: `foo[4.018] @ 2.345`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name:      "foo",
+				Timestamp: makeInt64Pointer(2345),
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			Range:  4*time.Second + 18*time.Millisecond,
+			EndPos: 18,
+		},
+	},
+	{
 		input: `test{a="b"}[5y] @ 1603774699`,
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
@@ -2081,14 +2262,49 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: "test[5]",
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "test",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   4,
+				},
+			},
+			Range:  5 * time.Second,
+			EndPos: 7,
+		},
+	},
+	{
+		input: `some_metric[5m] @ 1m`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name:      "some_metric",
+				Timestamp: makeInt64Pointer(60000),
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   11,
+				},
+			},
+			Range:  5 * time.Minute,
+			EndPos: 20,
+		},
+	},
+	{
 		input:  `foo[5mm]`,
 		fail:   true,
-		errMsg: "bad duration syntax: \"5mm\"",
+		errMsg: "bad number or duration syntax: \"5mm\"",
 	},
 	{
 		input:  `foo[5m1]`,
 		fail:   true,
-		errMsg: "bad duration syntax: \"5m1\"",
+		errMsg: "bad number or duration syntax: \"5m1\"",
 	},
 	{
 		input:  `foo[5m:1m1]`,
@@ -2122,17 +2338,12 @@ var testExpr = []struct {
 	{
 		input:  `foo[]`,
 		fail:   true,
-		errMsg: "missing unit character in duration",
+		errMsg: "bad number or duration syntax: \"\"",
 	},
 	{
-		input:  `foo[1]`,
+		input:  `foo[-1]`,
 		fail:   true,
-		errMsg: "missing unit character in duration",
-	},
-	{
-		input:  `some_metric[5m] OFFSET 1`,
-		fail:   true,
-		errMsg: "unexpected number \"1\" in offset, expected duration",
+		errMsg: "bad number or duration syntax: \"\"",
 	},
 	{
 		input:  `some_metric[5m] OFFSET 1mm`,
@@ -2142,17 +2353,12 @@ var testExpr = []struct {
 	{
 		input:  `some_metric[5m] OFFSET`,
 		fail:   true,
-		errMsg: "unexpected end of input in offset, expected duration",
+		errMsg: "unexpected end of input in offset, expected number or duration",
 	},
 	{
 		input:  `some_metric OFFSET 1m[5m]`,
 		fail:   true,
 		errMsg: "1:22: parse error: no offset modifiers allowed before range",
-	},
-	{
-		input:  `some_metric[5m] @ 1m`,
-		fail:   true,
-		errMsg: "1:19: parse error: unexpected duration \"1m\" in @, expected timestamp",
 	},
 	{
 		input:  `some_metric[5m] @`,
@@ -2838,6 +3044,11 @@ var testExpr = []struct {
 		errMsg: "illegal character U+002E '.' in escape sequence",
 	},
 	// Subquery.
+	{
+		input:  `foo{bar="baz"}[`,
+		fail:   true,
+		errMsg: `1:16: parse error: bad number or duration syntax: ""`,
+	},
 	{
 		input: `foo{bar="baz"}[10m:6s]`,
 		expected: &SubqueryExpr{
@@ -3624,9 +3835,17 @@ func makeInt64Pointer(val int64) *int64 {
 	return valp
 }
 
+func readable(s string) string {
+	const maxReadableStringLen = 40
+	if len(s) < maxReadableStringLen {
+		return s
+	}
+	return s[:maxReadableStringLen] + "..."
+}
+
 func TestParseExpressions(t *testing.T) {
 	for _, test := range testExpr {
-		t.Run(test.input, func(t *testing.T) {
+		t.Run(readable(test.input), func(t *testing.T) {
 			expr, err := ParseExpr(test.input)
 
 			// Unexpected errors are always caused by a bug.
@@ -3634,7 +3853,31 @@ func TestParseExpressions(t *testing.T) {
 
 			if !test.fail {
 				require.NoError(t, err)
-				require.Equal(t, test.expected, expr, "error on input '%s'", test.input)
+				expected := test.expected
+
+				// The FastRegexMatcher is not comparable with a deep equal, so only compare its String() version.
+				if actualVector, ok := expr.(*VectorSelector); ok {
+					require.IsType(t, &VectorSelector{}, test.expected, "error on input '%s'", test.input)
+					expectedVector := test.expected.(*VectorSelector)
+
+					require.Len(t, actualVector.LabelMatchers, len(expectedVector.LabelMatchers), "error on input '%s'", test.input)
+
+					for i := 0; i < len(actualVector.LabelMatchers); i++ {
+						expectedMatcher := expectedVector.LabelMatchers[i].String()
+						actualMatcher := actualVector.LabelMatchers[i].String()
+
+						require.Equal(t, expectedMatcher, actualMatcher, "unexpected label matcher '%s' on input '%s'", actualMatcher, test.input)
+					}
+
+					// Make a shallow copy of the expected expr (because the test cases are defined in a global variable)
+					// and then reset the LabelMatcher to not compared them with the following deep equal.
+					expectedCopy := *expectedVector
+					expectedCopy.LabelMatchers = nil
+					expected = &expectedCopy
+					actualVector.LabelMatchers = nil
+				}
+
+				require.Equal(t, expected, expr, "error on input '%s'", test.input)
 			} else {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), test.errMsg, "unexpected error on input '%s', expected '%s', got '%s'", test.input, test.errMsg, err.Error())

@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/discovery/v1"
 	"k8s.io/api/discovery/v1beta1"
@@ -79,6 +80,7 @@ func makeEndpointSliceV1() *v1.EndpointSlice {
 				DeprecatedTopology: map[string]string{
 					"topology": "value",
 				},
+				Zone: strptr("us-east-1a"),
 			}, {
 				Addresses: []string{"2.3.4.5"},
 				Conditions: v1.EndpointConditions{
@@ -86,6 +88,7 @@ func makeEndpointSliceV1() *v1.EndpointSlice {
 					Serving:     boolptr(true),
 					Terminating: boolptr(false),
 				},
+				Zone: strptr("us-east-1b"),
 			}, {
 				Addresses: []string{"3.4.5.6"},
 				Conditions: v1.EndpointConditions{
@@ -93,6 +96,7 @@ func makeEndpointSliceV1() *v1.EndpointSlice {
 					Serving:     boolptr(true),
 					Terminating: boolptr(true),
 				},
+				Zone: strptr("us-east-1c"),
 			}, {
 				Addresses: []string{"4.5.6.7"},
 				Conditions: v1.EndpointConditions{
@@ -104,6 +108,7 @@ func makeEndpointSliceV1() *v1.EndpointSlice {
 					Kind: "Node",
 					Name: "barbaz",
 				},
+				Zone: strptr("us-east-1a"),
 			},
 		},
 	}
@@ -184,8 +189,10 @@ func TestEndpointSliceDiscoveryBeforeRun(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":        "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating":    "false",
 						"__meta_kubernetes_endpointslice_endpoint_hostname":                  "testendpoint1",
+						"__meta_kubernetes_endpointslice_endpoint_node_name":                 "foobar",
 						"__meta_kubernetes_endpointslice_endpoint_topology_present_topology": "true",
 						"__meta_kubernetes_endpointslice_endpoint_topology_topology":         "value",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                      "us-east-1a",
 						"__meta_kubernetes_endpointslice_port":                               "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":                  "http",
 						"__meta_kubernetes_endpointslice_port_name":                          "testport",
@@ -196,6 +203,7 @@ func TestEndpointSliceDiscoveryBeforeRun(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                   "us-east-1b",
 						"__meta_kubernetes_endpointslice_port":                            "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
@@ -206,6 +214,7 @@ func TestEndpointSliceDiscoveryBeforeRun(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "false",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "true",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                   "us-east-1c",
 						"__meta_kubernetes_endpointslice_port":                            "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
@@ -218,6 +227,7 @@ func TestEndpointSliceDiscoveryBeforeRun(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                   "us-east-1a",
 						"__meta_kubernetes_endpointslice_port":                            "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
@@ -451,8 +461,10 @@ func TestEndpointSliceDiscoveryDelete(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":        "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating":    "false",
 						"__meta_kubernetes_endpointslice_endpoint_hostname":                  "testendpoint1",
+						"__meta_kubernetes_endpointslice_endpoint_node_name":                 "foobar",
 						"__meta_kubernetes_endpointslice_endpoint_topology_present_topology": "true",
 						"__meta_kubernetes_endpointslice_endpoint_topology_topology":         "value",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                      "us-east-1a",
 						"__meta_kubernetes_endpointslice_port":                               "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":                  "http",
 						"__meta_kubernetes_endpointslice_port_name":                          "testport",
@@ -463,6 +475,7 @@ func TestEndpointSliceDiscoveryDelete(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                   "us-east-1b",
 						"__meta_kubernetes_endpointslice_port":                            "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
@@ -473,6 +486,7 @@ func TestEndpointSliceDiscoveryDelete(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "false",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "true",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                   "us-east-1c",
 						"__meta_kubernetes_endpointslice_port":                            "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
@@ -485,6 +499,7 @@ func TestEndpointSliceDiscoveryDelete(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                   "us-east-1a",
 						"__meta_kubernetes_endpointslice_port":                            "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
@@ -551,8 +566,10 @@ func TestEndpointSliceDiscoveryUpdate(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":        "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating":    "false",
 						"__meta_kubernetes_endpointslice_endpoint_hostname":                  "testendpoint1",
+						"__meta_kubernetes_endpointslice_endpoint_node_name":                 "foobar",
 						"__meta_kubernetes_endpointslice_endpoint_topology_present_topology": "true",
 						"__meta_kubernetes_endpointslice_endpoint_topology_topology":         "value",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                      "us-east-1a",
 						"__meta_kubernetes_endpointslice_port":                               "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":                  "http",
 						"__meta_kubernetes_endpointslice_port_name":                          "testport",
@@ -563,6 +580,7 @@ func TestEndpointSliceDiscoveryUpdate(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                   "us-east-1b",
 						"__meta_kubernetes_endpointslice_port":                            "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
@@ -573,6 +591,7 @@ func TestEndpointSliceDiscoveryUpdate(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "false",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "true",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                   "us-east-1c",
 						"__meta_kubernetes_endpointslice_port":                            "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
@@ -585,6 +604,7 @@ func TestEndpointSliceDiscoveryUpdate(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                   "us-east-1a",
 						"__meta_kubernetes_endpointslice_port":                            "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
@@ -640,8 +660,10 @@ func TestEndpointSliceDiscoveryEmptyEndpoints(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":        "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating":    "false",
 						"__meta_kubernetes_endpointslice_endpoint_hostname":                  "testendpoint1",
+						"__meta_kubernetes_endpointslice_endpoint_node_name":                 "foobar",
 						"__meta_kubernetes_endpointslice_endpoint_topology_present_topology": "true",
 						"__meta_kubernetes_endpointslice_endpoint_topology_topology":         "value",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                      "us-east-1a",
 						"__meta_kubernetes_endpointslice_port":                               "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":                  "http",
 						"__meta_kubernetes_endpointslice_port_name":                          "testport",
@@ -652,6 +674,7 @@ func TestEndpointSliceDiscoveryEmptyEndpoints(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                   "us-east-1b",
 						"__meta_kubernetes_endpointslice_port":                            "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
@@ -662,6 +685,7 @@ func TestEndpointSliceDiscoveryEmptyEndpoints(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "false",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "true",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                   "us-east-1c",
 						"__meta_kubernetes_endpointslice_port":                            "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
@@ -674,6 +698,7 @@ func TestEndpointSliceDiscoveryEmptyEndpoints(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                   "us-east-1a",
 						"__meta_kubernetes_endpointslice_port":                            "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
@@ -724,8 +749,10 @@ func TestEndpointSliceDiscoveryWithService(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":        "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating":    "false",
 						"__meta_kubernetes_endpointslice_endpoint_hostname":                  "testendpoint1",
+						"__meta_kubernetes_endpointslice_endpoint_node_name":                 "foobar",
 						"__meta_kubernetes_endpointslice_endpoint_topology_present_topology": "true",
 						"__meta_kubernetes_endpointslice_endpoint_topology_topology":         "value",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                      "us-east-1a",
 						"__meta_kubernetes_endpointslice_port":                               "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":                  "http",
 						"__meta_kubernetes_endpointslice_port_name":                          "testport",
@@ -736,6 +763,7 @@ func TestEndpointSliceDiscoveryWithService(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                   "us-east-1b",
 						"__meta_kubernetes_endpointslice_port":                            "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
@@ -746,6 +774,7 @@ func TestEndpointSliceDiscoveryWithService(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "false",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "true",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                   "us-east-1c",
 						"__meta_kubernetes_endpointslice_port":                            "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
@@ -758,6 +787,7 @@ func TestEndpointSliceDiscoveryWithService(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                   "us-east-1a",
 						"__meta_kubernetes_endpointslice_port":                            "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
@@ -824,8 +854,10 @@ func TestEndpointSliceDiscoveryWithServiceUpdate(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":        "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating":    "false",
 						"__meta_kubernetes_endpointslice_endpoint_hostname":                  "testendpoint1",
+						"__meta_kubernetes_endpointslice_endpoint_node_name":                 "foobar",
 						"__meta_kubernetes_endpointslice_endpoint_topology_present_topology": "true",
 						"__meta_kubernetes_endpointslice_endpoint_topology_topology":         "value",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                      "us-east-1a",
 						"__meta_kubernetes_endpointslice_port":                               "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":                  "http",
 						"__meta_kubernetes_endpointslice_port_name":                          "testport",
@@ -836,6 +868,7 @@ func TestEndpointSliceDiscoveryWithServiceUpdate(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                   "us-east-1b",
 						"__meta_kubernetes_endpointslice_port":                            "9000",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
 						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
@@ -846,6 +879,7 @@ func TestEndpointSliceDiscoveryWithServiceUpdate(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "false",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "true",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                   "us-east-1c",
 						"__meta_kubernetes_endpointslice_port":                            "9000",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
 						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
@@ -858,6 +892,7 @@ func TestEndpointSliceDiscoveryWithServiceUpdate(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                   "us-east-1a",
 						"__meta_kubernetes_endpointslice_port":                            "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
@@ -914,8 +949,10 @@ func TestEndpointsSlicesDiscoveryWithNodeMetadata(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":        "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating":    "false",
 						"__meta_kubernetes_endpointslice_endpoint_hostname":                  "testendpoint1",
+						"__meta_kubernetes_endpointslice_endpoint_node_name":                 "foobar",
 						"__meta_kubernetes_endpointslice_endpoint_topology_present_topology": "true",
 						"__meta_kubernetes_endpointslice_endpoint_topology_topology":         "value",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                      "us-east-1a",
 						"__meta_kubernetes_endpointslice_port":                               "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":                  "http",
 						"__meta_kubernetes_endpointslice_port_name":                          "testport",
@@ -929,6 +966,7 @@ func TestEndpointsSlicesDiscoveryWithNodeMetadata(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                   "us-east-1b",
 						"__meta_kubernetes_endpointslice_port":                            "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
@@ -939,6 +977,7 @@ func TestEndpointsSlicesDiscoveryWithNodeMetadata(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "false",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "true",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                   "us-east-1c",
 						"__meta_kubernetes_endpointslice_port":                            "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
@@ -951,6 +990,7 @@ func TestEndpointsSlicesDiscoveryWithNodeMetadata(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                   "us-east-1a",
 						"__meta_kubernetes_endpointslice_port":                            "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
@@ -1014,8 +1054,10 @@ func TestEndpointsSlicesDiscoveryWithUpdatedNodeMetadata(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":        "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating":    "false",
 						"__meta_kubernetes_endpointslice_endpoint_hostname":                  "testendpoint1",
+						"__meta_kubernetes_endpointslice_endpoint_node_name":                 "foobar",
 						"__meta_kubernetes_endpointslice_endpoint_topology_present_topology": "true",
 						"__meta_kubernetes_endpointslice_endpoint_topology_topology":         "value",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                      "us-east-1a",
 						"__meta_kubernetes_endpointslice_port":                               "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":                  "http",
 						"__meta_kubernetes_endpointslice_port_name":                          "testport",
@@ -1029,6 +1071,7 @@ func TestEndpointsSlicesDiscoveryWithUpdatedNodeMetadata(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                   "us-east-1b",
 						"__meta_kubernetes_endpointslice_port":                            "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
@@ -1039,6 +1082,7 @@ func TestEndpointsSlicesDiscoveryWithUpdatedNodeMetadata(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "false",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "true",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                   "us-east-1c",
 						"__meta_kubernetes_endpointslice_port":                            "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
@@ -1051,6 +1095,7 @@ func TestEndpointsSlicesDiscoveryWithUpdatedNodeMetadata(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                   "us-east-1a",
 						"__meta_kubernetes_endpointslice_port":                            "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
@@ -1160,8 +1205,10 @@ func TestEndpointSliceDiscoveryNamespaces(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":        "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating":    "false",
 						"__meta_kubernetes_endpointslice_endpoint_hostname":                  "testendpoint1",
+						"__meta_kubernetes_endpointslice_endpoint_node_name":                 "foobar",
 						"__meta_kubernetes_endpointslice_endpoint_topology_present_topology": "true",
 						"__meta_kubernetes_endpointslice_endpoint_topology_topology":         "value",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                      "us-east-1a",
 						"__meta_kubernetes_endpointslice_port":                               "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":                  "http",
 						"__meta_kubernetes_endpointslice_port_name":                          "testport",
@@ -1172,6 +1219,7 @@ func TestEndpointSliceDiscoveryNamespaces(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                   "us-east-1b",
 						"__meta_kubernetes_endpointslice_port":                            "9000",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
 						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
@@ -1182,6 +1230,7 @@ func TestEndpointSliceDiscoveryNamespaces(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "false",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "true",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                   "us-east-1c",
 						"__meta_kubernetes_endpointslice_port":                            "9000",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
 						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
@@ -1194,6 +1243,7 @@ func TestEndpointSliceDiscoveryNamespaces(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                   "us-east-1a",
 						"__meta_kubernetes_endpointslice_port":                            "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
@@ -1308,8 +1358,10 @@ func TestEndpointSliceDiscoveryOwnNamespace(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":        "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating":    "false",
 						"__meta_kubernetes_endpointslice_endpoint_hostname":                  "testendpoint1",
+						"__meta_kubernetes_endpointslice_endpoint_node_name":                 "foobar",
 						"__meta_kubernetes_endpointslice_endpoint_topology_present_topology": "true",
 						"__meta_kubernetes_endpointslice_endpoint_topology_topology":         "value",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                      "us-east-1a",
 						"__meta_kubernetes_endpointslice_port":                               "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":                  "http",
 						"__meta_kubernetes_endpointslice_port_name":                          "testport",
@@ -1320,6 +1372,7 @@ func TestEndpointSliceDiscoveryOwnNamespace(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                   "us-east-1b",
 						"__meta_kubernetes_endpointslice_port":                            "9000",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
 						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
@@ -1330,6 +1383,7 @@ func TestEndpointSliceDiscoveryOwnNamespace(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "false",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "true",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                   "us-east-1c",
 						"__meta_kubernetes_endpointslice_port":                            "9000",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
 						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
@@ -1342,6 +1396,7 @@ func TestEndpointSliceDiscoveryOwnNamespace(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_endpoint_zone":                   "us-east-1a",
 						"__meta_kubernetes_endpointslice_port":                            "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
@@ -1404,4 +1459,42 @@ func TestEndpointSliceDiscoveryEmptyPodStatus(t *testing.T) {
 		expectedMaxItems: 0,
 		expectedRes:      map[string]*targetgroup.Group{},
 	}.Run(t)
+}
+
+// TestEndpointSliceInfIndexersCount makes sure that RoleEndpointSlice discovery
+// sets up indexing for the main Kube informer only when needed.
+// See: https://github.com/prometheus/prometheus/pull/13554#discussion_r1490965817
+func TestEndpointSliceInfIndexersCount(t *testing.T) {
+	tests := []struct {
+		name             string
+		withNodeMetadata bool
+	}{
+		{"with node metadata", true},
+		{"without node metadata", false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var (
+				n                    *Discovery
+				mainInfIndexersCount int
+			)
+			if tc.withNodeMetadata {
+				mainInfIndexersCount = 1
+				n, _ = makeDiscoveryWithMetadata(RoleEndpointSlice, NamespaceDiscovery{}, AttachMetadataConfig{Node: true})
+			} else {
+				n, _ = makeDiscovery(RoleEndpointSlice, NamespaceDiscovery{})
+			}
+
+			k8sDiscoveryTest{
+				discovery: n,
+				afterStart: func() {
+					n.RLock()
+					defer n.RUnlock()
+					require.Len(t, n.discoverers, 1)
+					require.Len(t, n.discoverers[0].(*EndpointSlice).endpointSliceInf.GetIndexer().GetIndexers(), mainInfIndexersCount)
+				},
+			}.Run(t)
+		})
+	}
 }

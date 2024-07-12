@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -40,6 +41,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -278,6 +280,7 @@ func TestScrapePoolReload(t *testing.T) {
 		logger:        nil,
 		client:        http.DefaultClient,
 		metrics:       newTestScrapeMetrics(t),
+		symbolTable:   labels.NewSymbolTable(),
 	}
 
 	// Reloading a scrape pool with a new scrape configuration must stop all scrape
@@ -356,10 +359,11 @@ func TestScrapePoolReloadPreserveRelabeledIntervalTimeout(t *testing.T) {
 		loops: map[uint64]loop{
 			1: noopLoop(),
 		},
-		newLoop: newLoop,
-		logger:  nil,
-		client:  http.DefaultClient,
-		metrics: newTestScrapeMetrics(t),
+		newLoop:     newLoop,
+		logger:      nil,
+		client:      http.DefaultClient,
+		metrics:     newTestScrapeMetrics(t),
+		symbolTable: labels.NewSymbolTable(),
 	}
 
 	err := sp.reload(reloadCfg)
@@ -390,6 +394,7 @@ func TestScrapePoolTargetLimit(t *testing.T) {
 		logger:        log.NewNopLogger(),
 		client:        http.DefaultClient,
 		metrics:       newTestScrapeMetrics(t),
+		symbolTable:   labels.NewSymbolTable(),
 	}
 
 	tgs := []*targetgroup.Group{}
@@ -506,7 +511,7 @@ func TestScrapePoolAppender(t *testing.T) {
 	appl, ok := loop.(*scrapeLoop)
 	require.True(t, ok, "Expected scrapeLoop but got %T", loop)
 
-	wrapped := appender(appl.appender(context.Background()), 0, 0, nativeHistogramMaxSchema)
+	wrapped := appender(appl.appender(context.Background()), 0, 0, histogram.ExponentialSchemaMax)
 
 	tl, ok := wrapped.(*timeLimitAppender)
 	require.True(t, ok, "Expected timeLimitAppender but got %T", wrapped)
@@ -522,7 +527,7 @@ func TestScrapePoolAppender(t *testing.T) {
 	appl, ok = loop.(*scrapeLoop)
 	require.True(t, ok, "Expected scrapeLoop but got %T", loop)
 
-	wrapped = appender(appl.appender(context.Background()), sampleLimit, 0, nativeHistogramMaxSchema)
+	wrapped = appender(appl.appender(context.Background()), sampleLimit, 0, histogram.ExponentialSchemaMax)
 
 	sl, ok := wrapped.(*limitAppender)
 	require.True(t, ok, "Expected limitAppender but got %T", wrapped)
@@ -533,7 +538,7 @@ func TestScrapePoolAppender(t *testing.T) {
 	_, ok = tl.Appender.(nopAppender)
 	require.True(t, ok, "Expected base appender but got %T", tl.Appender)
 
-	wrapped = appender(appl.appender(context.Background()), sampleLimit, 100, nativeHistogramMaxSchema)
+	wrapped = appender(appl.appender(context.Background()), sampleLimit, 100, histogram.ExponentialSchemaMax)
 
 	bl, ok := wrapped.(*bucketLimitAppender)
 	require.True(t, ok, "Expected bucketLimitAppender but got %T", wrapped)
@@ -622,6 +627,7 @@ func TestScrapePoolScrapeLoopsStarted(t *testing.T) {
 		logger:        nil,
 		client:        http.DefaultClient,
 		metrics:       newTestScrapeMetrics(t),
+		symbolTable:   labels.NewSymbolTable(),
 	}
 
 	tgs := []*targetgroup.Group{
@@ -659,14 +665,16 @@ func newBasicScrapeLoop(t testing.TB, ctx context.Context, scraper scraper, app 
 		nopMutator,
 		app,
 		nil,
+		labels.NewSymbolTable(),
 		0,
 		true,
 		false,
 		true,
-		0, 0, nativeHistogramMaxSchema,
+		0, 0, histogram.ExponentialSchemaMax,
 		nil,
 		interval,
 		time.Hour,
+		false,
 		false,
 		false,
 		false,
@@ -799,14 +807,16 @@ func TestScrapeLoopRun(t *testing.T) {
 		nopMutator,
 		app,
 		nil,
+		nil,
 		0,
 		true,
 		false,
 		true,
-		0, 0, nativeHistogramMaxSchema,
+		0, 0, histogram.ExponentialSchemaMax,
 		nil,
 		time.Second,
 		time.Hour,
+		false,
 		false,
 		false,
 		false,
@@ -941,14 +951,16 @@ func TestScrapeLoopMetadata(t *testing.T) {
 		nopMutator,
 		func(ctx context.Context) storage.Appender { return nopAppender{} },
 		cache,
+		labels.NewSymbolTable(),
 		0,
 		true,
 		false,
 		true,
-		0, 0, nativeHistogramMaxSchema,
+		0, 0, histogram.ExponentialSchemaMax,
 		nil,
 		0,
 		0,
+		false,
 		false,
 		false,
 		false,
@@ -1060,6 +1072,7 @@ func makeTestMetrics(n int) []byte {
 		fmt.Fprintf(&sb, "# HELP metric_a help text\n")
 		fmt.Fprintf(&sb, "metric_a{foo=\"%d\",bar=\"%d\"} 1\n", i, i*100)
 	}
+	fmt.Fprintf(&sb, "# EOF\n")
 	return sb.Bytes()
 }
 
@@ -1272,7 +1285,7 @@ func TestScrapeLoopCacheMemoryExhaustionProtection(t *testing.T) {
 			for i := 0; i < 500; i++ {
 				s = fmt.Sprintf("%smetric_%d_%d 42\n", s, i, numScrapes)
 			}
-			w.Write([]byte(fmt.Sprintf(s + "&")))
+			w.Write([]byte(s + "&"))
 		} else {
 			cancel()
 		}
@@ -1469,7 +1482,7 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 	fakeRef := storage.SeriesRef(1)
 	expValue := float64(1)
 	metric := []byte(`metric{n="1"} 1`)
-	p, warning := textparse.New(metric, "", false)
+	p, warning := textparse.New(metric, "", false, labels.NewSymbolTable())
 	require.NoError(t, warning)
 
 	var lset labels.Labels
@@ -1561,6 +1574,7 @@ func TestScrapeLoop_HistogramBucketLimit(t *testing.T) {
 	app := &bucketLimitAppender{Appender: resApp, limit: 2}
 
 	sl := newBasicScrapeLoop(t, context.Background(), nil, func(ctx context.Context) storage.Appender { return app }, 0)
+	sl.enableNativeHistogramIngestion = true
 	sl.sampleMutator = func(l labels.Labels) labels.Labels {
 		if l.Has("deleteme") {
 			return labels.EmptyLabels()
@@ -1787,14 +1801,15 @@ func TestScrapeLoopAppendStalenessIfTrackTimestampStaleness(t *testing.T) {
 
 func TestScrapeLoopAppendExemplar(t *testing.T) {
 	tests := []struct {
-		title                   string
-		scrapeClassicHistograms bool
-		scrapeText              string
-		contentType             string
-		discoveryLabels         []string
-		floats                  []floatSample
-		histograms              []histogramSample
-		exemplars               []exemplar.Exemplar
+		title                           string
+		scrapeClassicHistograms         bool
+		enableNativeHistogramsIngestion bool
+		scrapeText                      string
+		contentType                     string
+		discoveryLabels                 []string
+		floats                          []floatSample
+		histograms                      []histogramSample
+		exemplars                       []exemplar.Exemplar
 	}{
 		{
 			title:           "Metric without exemplars",
@@ -1852,6 +1867,8 @@ metric_total{n="2"} 2 # {t="2"} 2.0 20000
 		},
 		{
 			title: "Native histogram with three exemplars",
+
+			enableNativeHistogramsIngestion: true,
 			scrapeText: `name: "test_histogram"
 help: "Test histogram with many buckets removed to keep it manageable in size."
 type: HISTOGRAM
@@ -1966,6 +1983,8 @@ metric: <
 		},
 		{
 			title: "Native histogram with three exemplars scraped as classic histogram",
+
+			enableNativeHistogramsIngestion: true,
 			scrapeText: `name: "test_histogram"
 help: "Test histogram with many buckets removed to keep it manageable in size."
 type: HISTOGRAM
@@ -2105,6 +2124,7 @@ metric: <
 			}
 
 			sl := newBasicScrapeLoop(t, context.Background(), nil, func(ctx context.Context) storage.Appender { return app }, 0)
+			sl.enableNativeHistogramIngestion = test.enableNativeHistogramsIngestion
 			sl.sampleMutator = func(l labels.Labels) labels.Labels {
 				return mutateSampleLabels(l, discoveryLabels, false, nil)
 			}
@@ -2689,6 +2709,9 @@ func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
 	_, _, _, err := sl.append(slApp, []byte("test_metric{le=\"500\"} 1\ntest_metric{le=\"600\",le=\"700\"} 1\n"), "", time.Time{})
 	require.Error(t, err)
 	require.NoError(t, slApp.Rollback())
+	// We need to cycle staleness cache maps after a manual rollback. Otherwise they will have old entries in them,
+	// which would cause ErrDuplicateSampleForTimestamp errors on the next append.
+	sl.cache.iterDone(true)
 
 	q, err := s.Querier(time.Time{}.UnixNano(), 0)
 	require.NoError(t, err)
@@ -3025,7 +3048,7 @@ func TestReuseCacheRace(t *testing.T) {
 func TestCheckAddError(t *testing.T) {
 	var appErrs appendErrors
 	sl := scrapeLoop{l: log.NewNopLogger(), metrics: newTestScrapeMetrics(t)}
-	sl.checkAddError(nil, nil, nil, storage.ErrOutOfOrderSample, nil, nil, &appErrs)
+	sl.checkAddError(nil, storage.ErrOutOfOrderSample, nil, nil, &appErrs)
 	require.Equal(t, 1, appErrs.numOutOfOrder)
 }
 
@@ -3578,5 +3601,240 @@ func TestPickSchema(t *testing.T) {
 	for _, tc := range tcs {
 		schema := pickSchema(tc.factor)
 		require.Equal(t, tc.schema, schema)
+	}
+}
+
+func BenchmarkTargetScraperGzip(b *testing.B) {
+	scenarios := []struct {
+		metricsCount int
+		body         []byte
+	}{
+		{metricsCount: 1},
+		{metricsCount: 100},
+		{metricsCount: 1000},
+		{metricsCount: 10000},
+		{metricsCount: 100000},
+	}
+
+	for i := 0; i < len(scenarios); i++ {
+		var buf bytes.Buffer
+		var name string
+		gw := gzip.NewWriter(&buf)
+		for j := 0; j < scenarios[i].metricsCount; j++ {
+			name = fmt.Sprintf("go_memstats_alloc_bytes_total_%d", j)
+			fmt.Fprintf(gw, "# HELP %s Total number of bytes allocated, even if freed.\n", name)
+			fmt.Fprintf(gw, "# TYPE %s counter\n", name)
+			fmt.Fprintf(gw, "%s %d\n", name, i*j)
+		}
+		gw.Close()
+		scenarios[i].body = buf.Bytes()
+	}
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+		w.Header().Set("Content-Encoding", "gzip")
+		for _, scenario := range scenarios {
+			if strconv.Itoa(scenario.metricsCount) == r.URL.Query()["count"][0] {
+				w.Write(scenario.body)
+				return
+			}
+		}
+		w.WriteHeader(http.StatusBadRequest)
+	})
+
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	if err != nil {
+		panic(err)
+	}
+
+	client, err := config_util.NewClientFromConfig(config_util.DefaultHTTPClientConfig, "test_job")
+	if err != nil {
+		panic(err)
+	}
+
+	for _, scenario := range scenarios {
+		b.Run(fmt.Sprintf("metrics=%d", scenario.metricsCount), func(b *testing.B) {
+			ts := &targetScraper{
+				Target: &Target{
+					labels: labels.FromStrings(
+						model.SchemeLabel, serverURL.Scheme,
+						model.AddressLabel, serverURL.Host,
+					),
+					params: url.Values{"count": []string{strconv.Itoa(scenario.metricsCount)}},
+				},
+				client:  client,
+				timeout: time.Second,
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_, err = ts.scrape(context.Background())
+				require.NoError(b, err)
+			}
+		})
+	}
+}
+
+// When a scrape contains multiple instances for the same time series we should increment
+// prometheus_target_scrapes_sample_duplicate_timestamp_total metric.
+func TestScrapeLoopSeriesAddedDuplicates(t *testing.T) {
+	ctx, sl := simpleTestScrapeLoop(t)
+
+	slApp := sl.appender(ctx)
+	total, added, seriesAdded, err := sl.append(slApp, []byte("test_metric 1\ntest_metric 2\ntest_metric 3\n"), "", time.Time{})
+	require.NoError(t, err)
+	require.NoError(t, slApp.Commit())
+	require.Equal(t, 3, total)
+	require.Equal(t, 3, added)
+	require.Equal(t, 1, seriesAdded)
+
+	slApp = sl.appender(ctx)
+	total, added, seriesAdded, err = sl.append(slApp, []byte("test_metric 1\ntest_metric 1\ntest_metric 1\n"), "", time.Time{})
+	require.NoError(t, err)
+	require.NoError(t, slApp.Commit())
+	require.Equal(t, 3, total)
+	require.Equal(t, 3, added)
+	require.Equal(t, 0, seriesAdded)
+
+	metric := dto.Metric{}
+	err = sl.metrics.targetScrapeSampleDuplicate.Write(&metric)
+	require.NoError(t, err)
+	value := metric.GetCounter().GetValue()
+	require.Equal(t, 4.0, value)
+}
+
+// This tests running a full scrape loop and checking that the scrape option
+// `native_histogram_min_bucket_factor` is used correctly.
+func TestNativeHistogramMaxSchemaSet(t *testing.T) {
+	testcases := map[string]struct {
+		minBucketFactor string
+		expectedSchema  int32
+	}{
+		"min factor not specified": {
+			minBucketFactor: "",
+			expectedSchema:  3, // Factor 1.09.
+		},
+		"min factor 1": {
+			minBucketFactor: "native_histogram_min_bucket_factor: 1",
+			expectedSchema:  3, // Factor 1.09.
+		},
+		"min factor 2": {
+			minBucketFactor: "native_histogram_min_bucket_factor: 2",
+			expectedSchema:  0, // Factor 2.00.
+		},
+	}
+	for name, tc := range testcases {
+		t.Run(name, func(t *testing.T) {
+			testNativeHistogramMaxSchemaSet(t, tc.minBucketFactor, tc.expectedSchema)
+		})
+	}
+}
+
+func testNativeHistogramMaxSchemaSet(t *testing.T, minBucketFactor string, expectedSchema int32) {
+	// Create a ProtoBuf message to serve as a Prometheus metric.
+	nativeHistogram := prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace:                      "testing",
+			Name:                           "example_native_histogram",
+			Help:                           "This is used for testing",
+			NativeHistogramBucketFactor:    1.1,
+			NativeHistogramMaxBucketNumber: 100,
+		},
+	)
+	registry := prometheus.NewRegistry()
+	registry.Register(nativeHistogram)
+	nativeHistogram.Observe(1.0)
+	nativeHistogram.Observe(1.0)
+	nativeHistogram.Observe(1.0)
+	nativeHistogram.Observe(10.0) // in different bucket since > 1*1.1.
+	nativeHistogram.Observe(10.0)
+
+	gathered, err := registry.Gather()
+	require.NoError(t, err)
+	require.NotEmpty(t, gathered)
+
+	histogramMetricFamily := gathered[0]
+	buffer := protoMarshalDelimited(t, histogramMetricFamily)
+
+	// Create a HTTP server to serve /metrics via ProtoBuf
+	metricsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", `application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited`)
+		w.Write(buffer)
+	}))
+	defer metricsServer.Close()
+
+	// Create a scrape loop with the HTTP server as the target.
+	configStr := fmt.Sprintf(`
+global:
+  scrape_interval: 1s
+  scrape_timeout: 1s
+scrape_configs:
+  - job_name: test
+    %s
+    static_configs:
+      - targets: [%s]
+`, minBucketFactor, strings.ReplaceAll(metricsServer.URL, "http://", ""))
+
+	s := teststorage.New(t)
+	defer s.Close()
+	s.DB.EnableNativeHistograms()
+	reg := prometheus.NewRegistry()
+
+	mng, err := NewManager(&Options{EnableNativeHistogramsIngestion: true}, nil, s, reg)
+	require.NoError(t, err)
+	cfg, err := config.Load(configStr, false, log.NewNopLogger())
+	require.NoError(t, err)
+	mng.ApplyConfig(cfg)
+	tsets := make(chan map[string][]*targetgroup.Group)
+	go func() {
+		err = mng.Run(tsets)
+		require.NoError(t, err)
+	}()
+	defer mng.Stop()
+
+	// Get the static targets and apply them to the scrape manager.
+	require.Len(t, cfg.ScrapeConfigs, 1)
+	scrapeCfg := cfg.ScrapeConfigs[0]
+	require.Len(t, scrapeCfg.ServiceDiscoveryConfigs, 1)
+	staticDiscovery, ok := scrapeCfg.ServiceDiscoveryConfigs[0].(discovery.StaticConfig)
+	require.True(t, ok)
+	require.Len(t, staticDiscovery, 1)
+	tsets <- map[string][]*targetgroup.Group{"test": staticDiscovery}
+
+	// Wait for the scrape loop to scrape the target.
+	require.Eventually(t, func() bool {
+		q, err := s.Querier(0, math.MaxInt64)
+		require.NoError(t, err)
+		seriesS := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "testing_example_native_histogram"))
+		countSeries := 0
+		for seriesS.Next() {
+			countSeries++
+		}
+		return countSeries > 0
+	}, 15*time.Second, 100*time.Millisecond)
+
+	// Check that native histogram schema is as expected.
+	q, err := s.Querier(0, math.MaxInt64)
+	require.NoError(t, err)
+	seriesS := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "testing_example_native_histogram"))
+	histogramSamples := []*histogram.Histogram{}
+	for seriesS.Next() {
+		series := seriesS.At()
+		it := series.Iterator(nil)
+		for vt := it.Next(); vt != chunkenc.ValNone; vt = it.Next() {
+			if vt != chunkenc.ValHistogram {
+				// don't care about other samples
+				continue
+			}
+			_, h := it.AtHistogram(nil)
+			histogramSamples = append(histogramSamples, h)
+		}
+	}
+	require.NoError(t, seriesS.Err())
+	require.NotEmpty(t, histogramSamples)
+	for _, h := range histogramSamples {
+		require.Equal(t, expectedSchema, h.Schema)
 	}
 }
