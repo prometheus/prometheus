@@ -209,7 +209,6 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 			tags := d.tagSeparator + strings.Join(device.Tags, d.tagSeparator) + d.tagSeparator
 			labels[tsLabelDeviceTags] = model.LabelValue(tags)
 		}
-		tg.Targets = append(tg.Targets, labels)
 
 		if len(device.EnabledRoutes) > 0 {
 			tags := d.tagSeparator + strings.Join(device.EnabledRoutes, d.tagSeparator) + d.tagSeparator
@@ -219,6 +218,8 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 			tags := d.tagSeparator + strings.Join(device.AdvertisedRoutes, d.tagSeparator) + d.tagSeparator
 			labels[tsLabelDeviceAdvertisedRoutes] = model.LabelValue(tags)
 		}
+
+		tg.Targets = append(tg.Targets, labels)
 	}
 
 	return []*targetgroup.Group{tg}, nil
