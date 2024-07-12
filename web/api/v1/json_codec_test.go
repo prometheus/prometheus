@@ -31,6 +31,40 @@ func TestJsonCodec_Encode(t *testing.T) {
 	}{
 		{
 			response: &QueryData{
+				ResultType: parser.ValueTypeVector,
+				Result: promql.Vector{
+					promql.Sample{
+						Metric: labels.FromStrings("__name__", "foo"),
+						T:      1000,
+						F:      1,
+					},
+					promql.Sample{
+						Metric: labels.FromStrings("__name__", "bar"),
+						T:      2000,
+						F:      2,
+					},
+				},
+			},
+			expected: `{"status":"success","data":{"resultType":"vector","result":[{"metric":{"__name__":"foo"},"value":[1,"1"]},{"metric":{"__name__":"bar"},"value":[2,"2"]}]}}`,
+		},
+		{
+			response: &QueryData{
+				ResultType: parser.ValueTypeMatrix,
+				Result: promql.Matrix{
+					promql.Series{
+						Metric: labels.FromStrings("__name__", "foo"),
+						Floats: []promql.FPoint{{F: 1, T: 1000}},
+					},
+					promql.Series{
+						Metric: labels.FromStrings("__name__", "bar"),
+						Floats: []promql.FPoint{{F: 2, T: 2000}},
+					},
+				},
+			},
+			expected: `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"foo"},"values":[[1,"1"]]},{"metric":{"__name__":"bar"},"values":[[2,"2"]]}]}}`,
+		},
+		{
+			response: &QueryData{
 				ResultType: parser.ValueTypeMatrix,
 				Result: promql.Matrix{
 					promql.Series{

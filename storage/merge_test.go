@@ -180,9 +180,9 @@ func TestMergeQuerierWithChainMerger(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var p Querier
+			var p []Querier
 			if tc.primaryQuerierSeries != nil {
-				p = &mockQuerier{toReturn: tc.primaryQuerierSeries}
+				p = append(p, &mockQuerier{toReturn: tc.primaryQuerierSeries})
 			}
 			var qs []Querier
 			for _, in := range tc.querierSeries {
@@ -190,7 +190,7 @@ func TestMergeQuerierWithChainMerger(t *testing.T) {
 			}
 			qs = append(qs, tc.extraQueriers...)
 
-			mergedQuerier := NewMergeQuerier([]Querier{p}, qs, ChainedSeriesMerge).Select(context.Background(), false, nil)
+			mergedQuerier := NewMergeQuerier(p, qs, ChainedSeriesMerge).Select(context.Background(), false, nil)
 
 			// Get all merged series upfront to make sure there are no incorrectly retained shared
 			// buffers causing bugs.
@@ -355,9 +355,9 @@ func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var p ChunkQuerier
+			var p []ChunkQuerier
 			if tc.primaryChkQuerierSeries != nil {
-				p = &mockChunkQuerier{toReturn: tc.primaryChkQuerierSeries}
+				p = append(p, &mockChunkQuerier{toReturn: tc.primaryChkQuerierSeries})
 			}
 
 			var qs []ChunkQuerier
@@ -366,7 +366,7 @@ func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
 			}
 			qs = append(qs, tc.extraQueriers...)
 
-			merged := NewMergeChunkQuerier([]ChunkQuerier{p}, qs, NewCompactingChunkSeriesMerger(nil)).Select(context.Background(), false, nil)
+			merged := NewMergeChunkQuerier(p, qs, NewCompactingChunkSeriesMerger(nil)).Select(context.Background(), false, nil)
 			for merged.Next() {
 				require.True(t, tc.expected.Next(), "Expected Next() to be true")
 				actualSeries := merged.At()
@@ -1361,7 +1361,7 @@ func (m *mockGenericQuerier) Select(_ context.Context, b bool, _ *SelectHints, _
 	return &mockGenericSeriesSet{resp: m.resp, warnings: m.warnings, err: m.err}
 }
 
-func (m *mockGenericQuerier) LabelValues(_ context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (m *mockGenericQuerier) LabelValues(_ context.Context, name string, hints *LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	m.mtx.Lock()
 	m.labelNamesRequested = append(m.labelNamesRequested, labelNameRequest{
 		name:     name,
@@ -1371,7 +1371,7 @@ func (m *mockGenericQuerier) LabelValues(_ context.Context, name string, matcher
 	return m.resp, m.warnings, m.err
 }
 
-func (m *mockGenericQuerier) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (m *mockGenericQuerier) LabelNames(context.Context, *LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	m.mtx.Lock()
 	m.labelNamesCalls++
 	m.mtx.Unlock()
@@ -1443,6 +1443,8 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 		expectedErrs     [4]error
 	}{
 		{
+			// NewMergeQuerier will not create a mergeGenericQuerier
+			// with just one querier inside, but we can test it anyway.
 			name:     "one successful primary querier",
 			queriers: []genericQuerier{&mockGenericQuerier{resp: []string{"a", "b"}, warnings: nil, err: nil}},
 			expectedSelectsSeries: []labels.Labels{
@@ -1551,16 +1553,12 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 
 				for _, qr := range q.queriers {
 					m := unwrapMockGenericQuerier(t, qr)
-
-					exp := []bool{true}
-					if len(q.queriers) == 1 {
-						exp[0] = false
-					}
-					require.Equal(t, exp, m.sortedSeriesRequested)
+					// mergeGenericQuerier forces all Selects to be sorted.
+					require.Equal(t, []bool{true}, m.sortedSeriesRequested)
 				}
 			})
 			t.Run("LabelNames", func(t *testing.T) {
-				res, w, err := q.LabelNames(ctx)
+				res, w, err := q.LabelNames(ctx, nil)
 				require.Subset(t, tcase.expectedWarnings, w)
 				require.ErrorIs(t, err, tcase.expectedErrs[1], "expected error doesn't match")
 				require.Equal(t, tcase.expectedLabels, res)
@@ -1575,7 +1573,7 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 				}
 			})
 			t.Run("LabelValues", func(t *testing.T) {
-				res, w, err := q.LabelValues(ctx, "test")
+				res, w, err := q.LabelValues(ctx, "test", nil)
 				require.Subset(t, tcase.expectedWarnings, w)
 				require.ErrorIs(t, err, tcase.expectedErrs[2], "expected error doesn't match")
 				require.Equal(t, tcase.expectedLabels, res)
@@ -1591,7 +1589,7 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 			})
 			t.Run("LabelValuesWithMatchers", func(t *testing.T) {
 				matcher := labels.MustNewMatcher(labels.MatchEqual, "otherLabel", "someValue")
-				res, w, err := q.LabelValues(ctx, "test2", matcher)
+				res, w, err := q.LabelValues(ctx, "test2", nil, matcher)
 				require.Subset(t, tcase.expectedWarnings, w)
 				require.ErrorIs(t, err, tcase.expectedErrs[3], "expected error doesn't match")
 				require.Equal(t, tcase.expectedLabels, res)

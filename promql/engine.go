@@ -573,7 +573,8 @@ func (ng *Engine) validateOpts(expr parser.Expr) error {
 	return validationErr
 }
 
-func (ng *Engine) newTestQuery(f func(context.Context) error) Query {
+// NewTestQuery: inject special behaviour into Query for testing.
+func (ng *Engine) NewTestQuery(f func(context.Context) error) Query {
 	qry := &query{
 		q:           "test statement",
 		stmt:        parser.TestStmt(f),
@@ -751,6 +752,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		case parser.ValueTypeScalar:
 			return Scalar{V: mat[0].Floats[0].F, T: start}, warnings, nil
 		case parser.ValueTypeMatrix:
+			ng.sortMatrixResult(ctx, query, mat)
 			return mat, warnings, nil
 		default:
 			panic(fmt.Errorf("promql.Engine.exec: unexpected expression type %q", s.Expr.Type()))
@@ -789,11 +791,15 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 	}
 
 	// TODO(fabxc): where to ensure metric labels are a copy from the storage internals.
+	ng.sortMatrixResult(ctx, query, mat)
+
+	return mat, warnings, nil
+}
+
+func (ng *Engine) sortMatrixResult(ctx context.Context, query *query, mat Matrix) {
 	sortSpanTimer, _ := query.stats.GetSpanTimer(ctx, stats.ResultSortTime, ng.metrics.queryResultSort)
 	sort.Sort(mat)
 	sortSpanTimer.Finish()
-
-	return mat, warnings, nil
 }
 
 // subqueryTimes returns the sum of offsets and ranges of all subqueries in the path.
@@ -979,6 +985,11 @@ func checkAndExpandSeriesSet(ctx context.Context, expr parser.Expr) (annotations
 			return nil, nil
 		}
 		series, ws, err := expandSeriesSet(ctx, e.UnexpandedSeriesSet)
+		if e.SkipHistogramBuckets {
+			for i := range series {
+				series[i] = newHistogramStatsSeries(series[i])
+			}
+		}
 		e.Series = series
 		return ws, err
 	}
@@ -1307,7 +1318,7 @@ func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping 
 		index, ok := groupToResultIndex[groupingKey]
 		// Add a new group if it doesn't exist.
 		if !ok {
-			if aggExpr.Op != parser.TOPK && aggExpr.Op != parser.BOTTOMK {
+			if aggExpr.Op != parser.TOPK && aggExpr.Op != parser.BOTTOMK && aggExpr.Op != parser.LIMITK && aggExpr.Op != parser.LIMIT_RATIO {
 				m := generateGroupingLabels(enh, series.Metric, aggExpr.Without, sortedGrouping)
 				result = append(result, Series{Metric: m})
 			}
@@ -1320,9 +1331,10 @@ func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping 
 	groups := make([]groupedAggregation, groupCount)
 
 	var k int
+	var ratio float64
 	var seriess map[uint64]Series
 	switch aggExpr.Op {
-	case parser.TOPK, parser.BOTTOMK:
+	case parser.TOPK, parser.BOTTOMK, parser.LIMITK:
 		if !convertibleToInt64(param) {
 			ev.errorf("Scalar value %v overflows int64", param)
 		}
@@ -1332,6 +1344,23 @@ func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping 
 		}
 		if k < 1 {
 			return nil, warnings
+		}
+		seriess = make(map[uint64]Series, len(inputMatrix)) // Output series by series hash.
+	case parser.LIMIT_RATIO:
+		if math.IsNaN(param) {
+			ev.errorf("Ratio value %v is NaN", param)
+		}
+		switch {
+		case param == 0:
+			return nil, warnings
+		case param < -1.0:
+			ratio = -1.0
+			warnings.Add(annotations.NewInvalidRatioWarning(param, ratio, aggExpr.Param.PositionRange()))
+		case param > 1.0:
+			ratio = 1.0
+			warnings.Add(annotations.NewInvalidRatioWarning(param, ratio, aggExpr.Param.PositionRange()))
+		default:
+			ratio = param
 		}
 		seriess = make(map[uint64]Series, len(inputMatrix)) // Output series by series hash.
 	case parser.QUANTILE:
@@ -1351,11 +1380,12 @@ func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping 
 		enh.Ts = ts
 		var ws annotations.Annotations
 		switch aggExpr.Op {
-		case parser.TOPK, parser.BOTTOMK:
-			result, ws = ev.aggregationK(aggExpr, k, inputMatrix, seriesToResult, groups, enh, seriess)
+		case parser.TOPK, parser.BOTTOMK, parser.LIMITK, parser.LIMIT_RATIO:
+			result, ws = ev.aggregationK(aggExpr, k, ratio, inputMatrix, seriesToResult, groups, enh, seriess)
 			// If this could be an instant query, shortcut so as not to change sort order.
 			if ev.endTimestamp == ev.startTimestamp {
-				return result, ws
+				warnings.Merge(ws)
+				return result, warnings
 			}
 		default:
 			ws = ev.aggregation(aggExpr, param, inputMatrix, result, seriesToResult, groups, enh)
@@ -1370,7 +1400,7 @@ func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping 
 
 	// Assemble the output matrix. By the time we get here we know we don't have too many samples.
 	switch aggExpr.Op {
-	case parser.TOPK, parser.BOTTOMK:
+	case parser.TOPK, parser.BOTTOMK, parser.LIMITK, parser.LIMIT_RATIO:
 		result = make(Matrix, 0, len(seriess))
 		for _, ss := range seriess {
 			result = append(result, ss)
@@ -1782,18 +1812,21 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 				}, e.LHS, e.RHS)
 			default:
 				return ev.rangeEval(initSignatures, func(v []parser.Value, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-					return ev.VectorBinop(e.Op, v[0].(Vector), v[1].(Vector), e.VectorMatching, e.ReturnBool, sh[0], sh[1], enh), nil
+					vec, err := ev.VectorBinop(e.Op, v[0].(Vector), v[1].(Vector), e.VectorMatching, e.ReturnBool, sh[0], sh[1], enh)
+					return vec, handleVectorBinopError(err, e)
 				}, e.LHS, e.RHS)
 			}
 
 		case lt == parser.ValueTypeVector && rt == parser.ValueTypeScalar:
 			return ev.rangeEval(nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-				return ev.VectorscalarBinop(e.Op, v[0].(Vector), Scalar{V: v[1].(Vector)[0].F}, false, e.ReturnBool, enh), nil
+				vec, err := ev.VectorscalarBinop(e.Op, v[0].(Vector), Scalar{V: v[1].(Vector)[0].F}, false, e.ReturnBool, enh)
+				return vec, handleVectorBinopError(err, e)
 			}, e.LHS, e.RHS)
 
 		case lt == parser.ValueTypeScalar && rt == parser.ValueTypeVector:
 			return ev.rangeEval(nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-				return ev.VectorscalarBinop(e.Op, v[1].(Vector), Scalar{V: v[0].(Vector)[0].F}, true, e.ReturnBool, enh), nil
+				vec, err := ev.VectorscalarBinop(e.Op, v[1].(Vector), Scalar{V: v[0].(Vector)[0].F}, true, e.ReturnBool, enh)
+				return vec, handleVectorBinopError(err, e)
 			}, e.LHS, e.RHS)
 		}
 
@@ -2024,25 +2057,21 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(vs *parser.Vec
 		vec := make(Vector, 0, len(vs.Series))
 		for i, s := range vs.Series {
 			it := seriesIterators[i]
-			t, f, h, ok := ev.vectorSelectorSingle(it, vs, enh.Ts)
-			if ok {
-				vec = append(vec, Sample{
-					Metric: s.Labels(),
-					T:      t,
-					F:      f,
-					H:      h,
-				})
-				histSize := 0
-				if h != nil {
-					histSize := h.Size() / 16 // 16 bytes per sample.
-					ev.currentSamples += histSize
-				}
-				ev.currentSamples++
+			t, _, _, ok := ev.vectorSelectorSingle(it, vs, enh.Ts)
+			if !ok {
+				continue
+			}
 
-				ev.samplesStats.IncrementSamplesAtTimestamp(enh.Ts, int64(1+histSize))
-				if ev.currentSamples > ev.maxSamples {
-					ev.error(ErrTooManySamples(env))
-				}
+			// Note that we ignore the sample values because call only cares about the timestamp.
+			vec = append(vec, Sample{
+				Metric: s.Labels(),
+				T:      t,
+			})
+
+			ev.currentSamples++
+			ev.samplesStats.IncrementSamplesAtTimestamp(enh.Ts, 1)
+			if ev.currentSamples > ev.maxSamples {
+				ev.error(ErrTooManySamples(env))
 			}
 		}
 		ev.samplesStats.UpdatePeak(ev.currentSamples)
@@ -2430,12 +2459,12 @@ func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatchi
 }
 
 // VectorBinop evaluates a binary operation between two Vectors, excluding set operators.
-func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *parser.VectorMatching, returnBool bool, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper) Vector {
+func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *parser.VectorMatching, returnBool bool, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper) (Vector, error) {
 	if matching.Card == parser.CardManyToMany {
 		panic("many-to-many only allowed for set operators")
 	}
 	if len(lhs) == 0 || len(rhs) == 0 {
-		return nil // Short-circuit: nothing is going to match.
+		return nil, nil // Short-circuit: nothing is going to match.
 	}
 
 	// The control flow below handles one-to-one or many-to-one matching.
@@ -2488,6 +2517,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 
 	// For all lhs samples find a respective rhs sample and perform
 	// the binary operation.
+	var lastErr error
 	for i, ls := range lhs {
 		sig := lhsh[i].signature
 
@@ -2503,7 +2533,10 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			fl, fr = fr, fl
 			hl, hr = hr, hl
 		}
-		floatValue, histogramValue, keep := vectorElemBinop(op, fl, fr, hl, hr)
+		floatValue, histogramValue, keep, err := vectorElemBinop(op, fl, fr, hl, hr)
+		if err != nil {
+			lastErr = err
+		}
 		switch {
 		case returnBool:
 			if keep {
@@ -2545,7 +2578,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			H:      histogramValue,
 		})
 	}
-	return enh.Out
+	return enh.Out, lastErr
 }
 
 func signatureFunc(on bool, b []byte, names ...string) func(labels.Labels) string {
@@ -2608,7 +2641,8 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 }
 
 // VectorscalarBinop evaluates a binary operation between a Vector and a Scalar.
-func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scalar, swap, returnBool bool, enh *EvalNodeHelper) Vector {
+func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scalar, swap, returnBool bool, enh *EvalNodeHelper) (Vector, error) {
+	var lastErr error
 	for _, lhsSample := range lhs {
 		lf, rf := lhsSample.F, rhs.V
 		var rh *histogram.FloatHistogram
@@ -2619,7 +2653,10 @@ func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scala
 			lf, rf = rf, lf
 			lh, rh = rh, lh
 		}
-		float, histogram, keep := vectorElemBinop(op, lf, rf, lh, rh)
+		float, histogram, keep, err := vectorElemBinop(op, lf, rf, lh, rh)
+		if err != nil {
+			lastErr = err
+		}
 		// Catch cases where the scalar is the LHS in a scalar-vector comparison operation.
 		// We want to always keep the vector element value as the output value, even if it's on the RHS.
 		if op.IsComparisonOperator() && swap {
@@ -2643,7 +2680,7 @@ func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scala
 			enh.Out = append(enh.Out, lhsSample)
 		}
 	}
-	return enh.Out
+	return enh.Out, lastErr
 }
 
 // scalarBinop evaluates a binary operation between two Scalars.
@@ -2680,62 +2717,71 @@ func scalarBinop(op parser.ItemType, lhs, rhs float64) float64 {
 }
 
 // vectorElemBinop evaluates a binary operation between two Vector elements.
-func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool) {
+func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
 	switch op {
 	case parser.ADD:
 		if hlhs != nil && hrhs != nil {
-			return 0, hlhs.Copy().Add(hrhs).Compact(0), true
+			res, err := hlhs.Copy().Add(hrhs)
+			if err != nil {
+				return 0, nil, false, err
+			}
+			return 0, res.Compact(0), true, nil
 		}
-		return lhs + rhs, nil, true
+		return lhs + rhs, nil, true, nil
 	case parser.SUB:
 		if hlhs != nil && hrhs != nil {
-			return 0, hlhs.Copy().Sub(hrhs).Compact(0), true
+			res, err := hlhs.Copy().Sub(hrhs)
+			if err != nil {
+				return 0, nil, false, err
+			}
+			return 0, res.Compact(0), true, nil
 		}
-		return lhs - rhs, nil, true
+		return lhs - rhs, nil, true, nil
 	case parser.MUL:
 		if hlhs != nil && hrhs == nil {
-			return 0, hlhs.Copy().Mul(rhs), true
+			return 0, hlhs.Copy().Mul(rhs), true, nil
 		}
 		if hlhs == nil && hrhs != nil {
-			return 0, hrhs.Copy().Mul(lhs), true
+			return 0, hrhs.Copy().Mul(lhs), true, nil
 		}
-		return lhs * rhs, nil, true
+		return lhs * rhs, nil, true, nil
 	case parser.DIV:
 		if hlhs != nil && hrhs == nil {
-			return 0, hlhs.Copy().Div(rhs), true
+			return 0, hlhs.Copy().Div(rhs), true, nil
 		}
-		return lhs / rhs, nil, true
+		return lhs / rhs, nil, true, nil
 	case parser.POW:
-		return math.Pow(lhs, rhs), nil, true
+		return math.Pow(lhs, rhs), nil, true, nil
 	case parser.MOD:
-		return math.Mod(lhs, rhs), nil, true
+		return math.Mod(lhs, rhs), nil, true, nil
 	case parser.EQLC:
-		return lhs, nil, lhs == rhs
+		return lhs, nil, lhs == rhs, nil
 	case parser.NEQ:
-		return lhs, nil, lhs != rhs
+		return lhs, nil, lhs != rhs, nil
 	case parser.GTR:
-		return lhs, nil, lhs > rhs
+		return lhs, nil, lhs > rhs, nil
 	case parser.LSS:
-		return lhs, nil, lhs < rhs
+		return lhs, nil, lhs < rhs, nil
 	case parser.GTE:
-		return lhs, nil, lhs >= rhs
+		return lhs, nil, lhs >= rhs, nil
 	case parser.LTE:
-		return lhs, nil, lhs <= rhs
+		return lhs, nil, lhs <= rhs, nil
 	case parser.ATAN2:
-		return math.Atan2(lhs, rhs), nil, true
+		return math.Atan2(lhs, rhs), nil, true, nil
 	}
 	panic(fmt.Errorf("operator %q not allowed for operations between Vectors", op))
 }
 
 type groupedAggregation struct {
-	seen           bool // Was this output groups seen in the input at this timestamp.
-	hasFloat       bool // Has at least 1 float64 sample aggregated.
-	hasHistogram   bool // Has at least 1 histogram sample aggregated.
-	floatValue     float64
-	histogramValue *histogram.FloatHistogram
-	floatMean      float64
-	groupCount     int
-	heap           vectorByValueHeap
+	seen              bool // Was this output groups seen in the input at this timestamp.
+	hasFloat          bool // Has at least 1 float64 sample aggregated.
+	hasHistogram      bool // Has at least 1 histogram sample aggregated.
+	floatValue        float64
+	histogramValue    *histogram.FloatHistogram
+	floatMean         float64 // Mean, or "compensating value" for Kahan summation.
+	groupCount        int
+	groupAggrComplete bool // Used by LIMITK to short-cut series loop when we've reached K elem on every group
+	heap              vectorByValueHeap
 }
 
 // aggregation evaluates sum, avg, count, stdvar, stddev or quantile at one timestep on inputMatrix.
@@ -2761,11 +2807,13 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			*group = groupedAggregation{
 				seen:       true,
 				floatValue: f,
-				floatMean:  f,
 				groupCount: 1,
 			}
 			switch op {
-			case parser.SUM, parser.AVG:
+			case parser.AVG:
+				group.floatMean = f
+				fallthrough
+			case parser.SUM:
 				if h == nil {
 					group.hasFloat = true
 				} else {
@@ -2773,6 +2821,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 					group.hasHistogram = true
 				}
 			case parser.STDVAR, parser.STDDEV:
+				group.floatMean = f
 				group.floatValue = 0
 			case parser.QUANTILE:
 				group.heap = make(vectorByValueHeap, 1)
@@ -2788,14 +2837,17 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			if h != nil {
 				group.hasHistogram = true
 				if group.histogramValue != nil {
-					group.histogramValue.Add(h)
+					_, err := group.histogramValue.Add(h)
+					if err != nil {
+						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
+					}
 				}
 				// Otherwise the aggregation contained floats
 				// previously and will be invalid anyway. No
 				// point in copying the histogram in that case.
 			} else {
 				group.hasFloat = true
-				group.floatValue += f
+				group.floatValue, group.floatMean = kahanSumInc(f, group.floatValue, group.floatMean)
 			}
 
 		case parser.AVG:
@@ -2805,8 +2857,14 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				if group.histogramValue != nil {
 					left := h.Copy().Div(float64(group.groupCount))
 					right := group.histogramValue.Copy().Div(float64(group.groupCount))
-					toAdd := left.Sub(right)
-					group.histogramValue.Add(toAdd)
+					toAdd, err := left.Sub(right)
+					if err != nil {
+						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
+					}
+					_, err = group.histogramValue.Add(toAdd)
+					if err != nil {
+						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
+					}
 				}
 				// Otherwise the aggregation contained floats
 				// previously and will be invalid anyway. No
@@ -2906,6 +2964,8 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			}
 			if aggr.hasHistogram {
 				aggr.histogramValue.Compact(0)
+			} else {
+				aggr.floatValue += aggr.floatMean // Add Kahan summation compensating term.
 			}
 		default:
 			// For other aggregations, we already have the right value.
@@ -2918,19 +2978,22 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 	return annos
 }
 
-// aggregationK evaluates topk or bottomk at one timestep on inputMatrix.
+// aggregationK evaluates topk, bottomk, limitk, or limit_ratio at one timestep on inputMatrix.
 // Output that has the same labels as the input, but just k of them per group.
 // seriesToResult maps inputMatrix indexes to groups indexes.
-// For an instant query, returns a Matrix in descending order for topk or ascending for bottomk.
+// For an instant query, returns a Matrix in descending order for topk or ascending for bottomk, or without any order for limitk / limit_ratio.
 // For a range query, aggregates output in the seriess map.
-func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int, inputMatrix Matrix, seriesToResult []int, groups []groupedAggregation, enh *EvalNodeHelper, seriess map[uint64]Series) (Matrix, annotations.Annotations) {
+func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int, r float64, inputMatrix Matrix, seriesToResult []int, groups []groupedAggregation, enh *EvalNodeHelper, seriess map[uint64]Series) (Matrix, annotations.Annotations) {
 	op := e.Op
 	var s Sample
 	var annos annotations.Annotations
+	// Used to short-cut the loop for LIMITK if we already collected k elements for every group
+	groupsRemaining := len(groups)
 	for i := range groups {
 		groups[i].seen = false
 	}
 
+seriesLoop:
 	for si := range inputMatrix {
 		f, _, ok := ev.nextValues(enh.Ts, &inputMatrix[si])
 		if !ok {
@@ -2941,11 +3004,23 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int, inputMatrix Ma
 		group := &groups[seriesToResult[si]]
 		// Initialize this group if it's the first time we've seen it.
 		if !group.seen {
-			*group = groupedAggregation{
-				seen: true,
-				heap: make(vectorByValueHeap, 1, k),
+			// LIMIT_RATIO is a special case, as we may not add this very sample to the heap,
+			// while we also don't know the final size of it.
+			if op == parser.LIMIT_RATIO {
+				*group = groupedAggregation{
+					seen: true,
+					heap: make(vectorByValueHeap, 0),
+				}
+				if ratiosampler.AddRatioSample(r, &s) {
+					heap.Push(&group.heap, &s)
+				}
+			} else {
+				*group = groupedAggregation{
+					seen: true,
+					heap: make(vectorByValueHeap, 1, k),
+				}
+				group.heap[0] = s
 			}
-			group.heap[0] = s
 			continue
 		}
 
@@ -2974,6 +3049,26 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int, inputMatrix Ma
 				if k > 1 {
 					heap.Fix((*vectorByReverseValueHeap)(&group.heap), 0) // Maintain the heap invariant.
 				}
+			}
+
+		case parser.LIMITK:
+			if len(group.heap) < k {
+				heap.Push(&group.heap, &s)
+			}
+			// LIMITK optimization: early break if we've added K elem to _every_ group,
+			// especially useful for large timeseries where the user is exploring labels via e.g.
+			// limitk(10, my_metric)
+			if !group.groupAggrComplete && len(group.heap) == k {
+				group.groupAggrComplete = true
+				groupsRemaining--
+				if groupsRemaining == 0 {
+					break seriesLoop
+				}
+			}
+
+		case parser.LIMIT_RATIO:
+			if ratiosampler.AddRatioSample(r, &s) {
+				heap.Push(&group.heap, &s)
 			}
 
 		default:
@@ -3022,6 +3117,11 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int, inputMatrix Ma
 			if len(aggr.heap) > 1 {
 				sort.Sort(sort.Reverse((*vectorByReverseValueHeap)(&aggr.heap)))
 			}
+			for _, v := range aggr.heap {
+				add(v.Metric, v.F)
+			}
+
+		case parser.LIMITK, parser.LIMIT_RATIO:
 			for _, v := range aggr.heap {
 				add(v.Metric, v.F)
 			}
@@ -3103,6 +3203,31 @@ func (ev *evaluator) nextValues(ts int64, series *Series) (f float64, h *histogr
 	return f, h, true
 }
 
+// handleAggregationError adds the appropriate annotation based on the aggregation error.
+func handleAggregationError(err error, e *parser.AggregateExpr, metricName string, annos *annotations.Annotations) {
+	pos := e.Expr.PositionRange()
+	if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
+		annos.Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
+	} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
+		annos.Add(annotations.NewIncompatibleCustomBucketsHistogramsWarning(metricName, pos))
+	}
+}
+
+// handleVectorBinopError returns the appropriate annotation based on the vector binary operation error.
+func handleVectorBinopError(err error, e *parser.BinaryExpr) annotations.Annotations {
+	if err == nil {
+		return nil
+	}
+	metricName := ""
+	pos := e.PositionRange()
+	if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
+		return annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
+	} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
+		return annotations.New().Add(annotations.NewIncompatibleCustomBucketsHistogramsWarning(metricName, pos))
+	}
+	return nil
+}
+
 // groupingKey builds and returns the grouping key for the given metric and
 // grouping labels.
 func generateGroupingKey(metric labels.Labels, grouping []string, without bool, buf []byte) (uint64, []byte) {
@@ -3182,6 +3307,8 @@ func unwrapStepInvariantExpr(e parser.Expr) parser.Expr {
 // PreprocessExpr wraps all possible step invariant parts of the given expression with
 // StepInvariantExpr. It also resolves the preprocessors.
 func PreprocessExpr(expr parser.Expr, start, end time.Time) parser.Expr {
+	detectHistogramStatsDecoding(expr)
+
 	isStepInvariant := preprocessExprHelper(expr, start, end)
 	if isStepInvariant {
 		return newStepInvariantExpr(expr)
@@ -3316,8 +3443,106 @@ func setOffsetForAtModifier(evalTime int64, expr parser.Expr) {
 	})
 }
 
+// detectHistogramStatsDecoding modifies the expression by setting the
+// SkipHistogramBuckets field in those vector selectors for which it is safe to
+// return only histogram statistics (sum and count), excluding histogram spans
+// and buckets. The function can be treated as an optimization and is not
+// required for correctness.
+func detectHistogramStatsDecoding(expr parser.Expr) {
+	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
+		if n, ok := node.(*parser.BinaryExpr); ok {
+			detectHistogramStatsDecoding(n.LHS)
+			detectHistogramStatsDecoding(n.RHS)
+			return fmt.Errorf("stop")
+		}
+
+		n, ok := (node).(*parser.VectorSelector)
+		if !ok {
+			return nil
+		}
+
+		for _, p := range path {
+			call, ok := p.(*parser.Call)
+			if !ok {
+				continue
+			}
+			if call.Func.Name == "histogram_count" || call.Func.Name == "histogram_sum" {
+				n.SkipHistogramBuckets = true
+				break
+			}
+			if call.Func.Name == "histogram_quantile" || call.Func.Name == "histogram_fraction" {
+				n.SkipHistogramBuckets = false
+				break
+			}
+		}
+		return fmt.Errorf("stop")
+	})
+}
+
 func makeInt64Pointer(val int64) *int64 {
 	valp := new(int64)
 	*valp = val
 	return valp
+}
+
+// Add RatioSampler interface to allow unit-testing (previously: Randomizer).
+type RatioSampler interface {
+	// Return this sample "offset" between [0.0, 1.0]
+	sampleOffset(ts int64, sample *Sample) float64
+	AddRatioSample(r float64, sample *Sample) bool
+}
+
+// Use Hash(labels.String()) / maxUint64 as a "deterministic"
+// value in [0.0, 1.0].
+type HashRatioSampler struct{}
+
+var ratiosampler RatioSampler = NewHashRatioSampler()
+
+func NewHashRatioSampler() *HashRatioSampler {
+	return &HashRatioSampler{}
+}
+
+func (s *HashRatioSampler) sampleOffset(ts int64, sample *Sample) float64 {
+	const (
+		float64MaxUint64 = float64(math.MaxUint64)
+	)
+	return float64(sample.Metric.Hash()) / float64MaxUint64
+}
+
+func (s *HashRatioSampler) AddRatioSample(ratioLimit float64, sample *Sample) bool {
+	// If ratioLimit >= 0: add sample if sampleOffset is lesser than ratioLimit
+	//
+	// 0.0        ratioLimit                1.0
+	//  [---------|--------------------------]
+	//  [#########...........................]
+	//
+	// e.g.:
+	//   sampleOffset==0.3 && ratioLimit==0.4
+	//     0.3 < 0.4 ? --> add sample
+	//
+	// Else if ratioLimit < 0: add sample if rand() return the "complement" of ratioLimit>=0 case
+	// (loosely similar behavior to negative array index in other programming languages)
+	//
+	// 0.0       1+ratioLimit               1.0
+	//  [---------|--------------------------]
+	//  [.........###########################]
+	//
+	// e.g.:
+	//   sampleOffset==0.3 && ratioLimit==-0.6
+	//     0.3 >= 0.4 ? --> don't add sample
+	sampleOffset := s.sampleOffset(sample.T, sample)
+	return (ratioLimit >= 0 && sampleOffset < ratioLimit) ||
+		(ratioLimit < 0 && sampleOffset >= (1.0+ratioLimit))
+}
+
+type histogramStatsSeries struct {
+	storage.Series
+}
+
+func newHistogramStatsSeries(series storage.Series) *histogramStatsSeries {
+	return &histogramStatsSeries{Series: series}
+}
+
+func (s histogramStatsSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
+	return NewHistogramStatsIterator(s.Series.Iterator(it))
 }

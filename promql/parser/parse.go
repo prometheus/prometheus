@@ -447,6 +447,10 @@ func (p *parser) newAggregateExpr(op Item, modifier, args Node) (ret *AggregateE
 
 	desiredArgs := 1
 	if ret.Op.IsAggregatorWithParam() {
+		if !EnableExperimentalFunctions && (ret.Op == LIMITK || ret.Op == LIMIT_RATIO) {
+			p.addParseErrf(ret.PositionRange(), "limitk() and limit_ratio() are experimental and must be enabled with --enable-feature=promql-experimental-functions")
+			return
+		}
 		desiredArgs = 2
 
 		ret.Param = arguments[0]
@@ -481,19 +485,19 @@ func (p *parser) mergeMaps(left, right *map[string]interface{}) (ret *map[string
 }
 
 func (p *parser) histogramsIncreaseSeries(base, inc *histogram.FloatHistogram, times uint64) ([]SequenceValue, error) {
-	return p.histogramsSeries(base, inc, times, func(a, b *histogram.FloatHistogram) *histogram.FloatHistogram {
+	return p.histogramsSeries(base, inc, times, func(a, b *histogram.FloatHistogram) (*histogram.FloatHistogram, error) {
 		return a.Add(b)
 	})
 }
 
 func (p *parser) histogramsDecreaseSeries(base, inc *histogram.FloatHistogram, times uint64) ([]SequenceValue, error) {
-	return p.histogramsSeries(base, inc, times, func(a, b *histogram.FloatHistogram) *histogram.FloatHistogram {
+	return p.histogramsSeries(base, inc, times, func(a, b *histogram.FloatHistogram) (*histogram.FloatHistogram, error) {
 		return a.Sub(b)
 	})
 }
 
 func (p *parser) histogramsSeries(base, inc *histogram.FloatHistogram, times uint64,
-	combine func(*histogram.FloatHistogram, *histogram.FloatHistogram) *histogram.FloatHistogram,
+	combine func(*histogram.FloatHistogram, *histogram.FloatHistogram) (*histogram.FloatHistogram, error),
 ) ([]SequenceValue, error) {
 	ret := make([]SequenceValue, times+1)
 	// Add an additional value (the base) for time 0, which we ignore in tests.
@@ -504,7 +508,11 @@ func (p *parser) histogramsSeries(base, inc *histogram.FloatHistogram, times uin
 			return nil, fmt.Errorf("error combining histograms: cannot merge from schema %d to %d", inc.Schema, cur.Schema)
 		}
 
-		cur = combine(cur.Copy(), inc)
+		var err error
+		cur, err = combine(cur.Copy(), inc)
+		if err != nil {
+			return ret, err
+		}
 		ret[i] = SequenceValue{Histogram: cur}
 	}
 
@@ -560,6 +568,15 @@ func (p *parser) buildHistogramFromMap(desc *map[string]interface{}) *histogram.
 			output.ZeroThreshold = bucketWidth
 		} else {
 			p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing z_bucket_w number: %v", val)
+		}
+	}
+	val, ok = (*desc)["custom_values"]
+	if ok {
+		customValues, ok := val.([]float64)
+		if ok {
+			output.CustomValues = customValues
+		} else {
+			p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing custom_values: %v", val)
 		}
 	}
 
@@ -659,7 +676,7 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 			p.addParseErrf(n.PositionRange(), "aggregation operator expected in aggregation expression but got %q", n.Op)
 		}
 		p.expectType(n.Expr, ValueTypeVector, "aggregation expression")
-		if n.Op == TOPK || n.Op == BOTTOMK || n.Op == QUANTILE {
+		if n.Op == TOPK || n.Op == BOTTOMK || n.Op == QUANTILE || n.Op == LIMITK || n.Op == LIMIT_RATIO {
 			p.expectType(n.Param, ValueTypeScalar, "aggregation parameter")
 		}
 		if n.Op == COUNT_VALUES {

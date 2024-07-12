@@ -47,6 +47,7 @@ type Group struct {
 	name                 string
 	file                 string
 	interval             time.Duration
+	queryOffset          *time.Duration
 	limit                int
 	rules                []Rule
 	seriesInPreviousEval []map[string]labels.Labels // One per Rule.
@@ -90,6 +91,7 @@ type GroupOptions struct {
 	Rules             []Rule
 	ShouldRestore     bool
 	Opts              *ManagerOptions
+	QueryOffset       *time.Duration
 	done              chan struct{}
 	EvalIterationFunc GroupEvalIterationFunc
 }
@@ -126,6 +128,7 @@ func NewGroup(o GroupOptions) *Group {
 		name:                  o.Name,
 		file:                  o.File,
 		interval:              o.Interval,
+		queryOffset:           o.QueryOffset,
 		limit:                 o.Limit,
 		rules:                 o.Rules,
 		shouldRestore:         o.ShouldRestore,
@@ -148,7 +151,42 @@ func (g *Group) Name() string { return g.name }
 func (g *Group) File() string { return g.file }
 
 // Rules returns the group's rules.
-func (g *Group) Rules() []Rule { return g.rules }
+func (g *Group) Rules(matcherSets ...[]*labels.Matcher) []Rule {
+	if len(matcherSets) == 0 {
+		return g.rules
+	}
+	var rules []Rule
+	for _, rule := range g.rules {
+		if matchesMatcherSets(matcherSets, rule.Labels()) {
+			rules = append(rules, rule)
+		}
+	}
+	return rules
+}
+
+func matches(lbls labels.Labels, matchers ...*labels.Matcher) bool {
+	for _, m := range matchers {
+		if v := lbls.Get(m.Name); !m.Matches(v) {
+			return false
+		}
+	}
+	return true
+}
+
+// matchesMatcherSets ensures all matches in each matcher set are ANDed and the set of those is ORed.
+func matchesMatcherSets(matcherSets [][]*labels.Matcher, lbls labels.Labels) bool {
+	if len(matcherSets) == 0 {
+		return true
+	}
+
+	var ok bool
+	for _, matchers := range matcherSets {
+		if matches(lbls, matchers...) {
+			ok = true
+		}
+	}
+	return ok
+}
 
 // Queryable returns the group's querable.
 func (g *Group) Queryable() storage.Queryable { return g.opts.Queryable }
@@ -443,6 +481,8 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		wg           sync.WaitGroup
 	)
 
+	ruleQueryOffset := g.QueryOffset()
+
 	for i, rule := range g.rules {
 		select {
 		case <-g.done:
@@ -473,7 +513,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 			g.metrics.EvalTotal.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
 
-			vector, err := rule.Eval(ctx, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit())
+			vector, err := rule.Eval(ctx, ruleQueryOffset, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit())
 			if err != nil {
 				rule.SetHealth(HealthBad)
 				rule.SetLastError(err)
@@ -562,7 +602,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			for metric, lset := range g.seriesInPreviousEval[i] {
 				if _, ok := seriesReturned[metric]; !ok {
 					// Series no longer exposed, mark it stale.
-					_, err = app.Append(0, lset, timestamp.FromTime(ts), math.Float64frombits(value.StaleNaN))
+					_, err = app.Append(0, lset, timestamp.FromTime(ts.Add(-ruleQueryOffset)), math.Float64frombits(value.StaleNaN))
 					unwrappedErr := errors.Unwrap(err)
 					if unwrappedErr == nil {
 						unwrappedErr = err
@@ -601,14 +641,27 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 	g.cleanupStaleSeries(ctx, ts)
 }
 
+func (g *Group) QueryOffset() time.Duration {
+	if g.queryOffset != nil {
+		return *g.queryOffset
+	}
+
+	if g.opts.DefaultRuleQueryOffset != nil {
+		return g.opts.DefaultRuleQueryOffset()
+	}
+
+	return time.Duration(0)
+}
+
 func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
 	if len(g.staleSeries) == 0 {
 		return
 	}
 	app := g.opts.Appendable.Appender(ctx)
+	queryOffset := g.QueryOffset()
 	for _, s := range g.staleSeries {
 		// Rule that produced series no longer configured, mark it stale.
-		_, err := app.Append(0, s, timestamp.FromTime(ts), math.Float64frombits(value.StaleNaN))
+		_, err := app.Append(0, s, timestamp.FromTime(ts.Add(-queryOffset)), math.Float64frombits(value.StaleNaN))
 		unwrappedErr := errors.Unwrap(err)
 		if unwrappedErr == nil {
 			unwrappedErr = err
@@ -664,25 +717,40 @@ func (g *Group) RestoreForState(ts time.Time) {
 			continue
 		}
 
+		sset, err := alertRule.QueryForStateSeries(g.opts.Context, q)
+		if err != nil {
+			level.Error(g.logger).Log(
+				"msg", "Failed to restore 'for' state",
+				labels.AlertName, alertRule.Name(),
+				"stage", "Select",
+				"err", err,
+			)
+			// Even if we failed to query the `ALERT_FOR_STATE` series, we currently have no way to retry the restore process.
+			// So the best we can do is mark the rule as restored and let it eventually fire.
+			alertRule.SetRestored(true)
+			continue
+		}
+
+		// While not technically the same number of series we expect, it's as good of an approximation as any.
+		seriesByLabels := make(map[string]storage.Series, alertRule.ActiveAlertsCount())
+		for sset.Next() {
+			seriesByLabels[sset.At().Labels().DropMetricName().String()] = sset.At()
+		}
+
+		// No results for this alert rule.
+		if len(seriesByLabels) == 0 {
+			level.Debug(g.logger).Log("msg", "No series found to restore the 'for' state of the alert rule", labels.AlertName, alertRule.Name())
+			alertRule.SetRestored(true)
+			continue
+		}
+
 		alertRule.ForEachActiveAlert(func(a *Alert) {
 			var s storage.Series
 
-			s, err := alertRule.QueryforStateSeries(g.opts.Context, a, q)
-			if err != nil {
-				// Querier Warnings are ignored. We do not care unless we have an error.
-				level.Error(g.logger).Log(
-					"msg", "Failed to restore 'for' state",
-					labels.AlertName, alertRule.Name(),
-					"stage", "Select",
-					"err", err,
-				)
+			s, ok := seriesByLabels[a.Labels.String()]
+			if !ok {
 				return
 			}
-
-			if s == nil {
-				return
-			}
-
 			// Series found for the 'for' state.
 			var t int64
 			var v float64
@@ -757,6 +825,10 @@ func (g *Group) Equals(ng *Group) bool {
 	}
 
 	if g.limit != ng.limit {
+		return false
+	}
+
+	if ((g.queryOffset == nil) != (ng.queryOffset == nil)) || (g.queryOffset != nil && ng.queryOffset != nil && *g.queryOffset != *ng.queryOffset) {
 		return false
 	}
 

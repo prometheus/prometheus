@@ -10,6 +10,11 @@ eval instant at 50m resets(http_requests[5m])
 	{path="/bar"} 0
 	{path="/biz"} 0
 
+eval instant at 50m resets(http_requests[300])
+	{path="/foo"} 0
+	{path="/bar"} 0
+	{path="/biz"} 0
+
 eval instant at 50m resets(http_requests[20m])
 	{path="/foo"} 1
 	{path="/bar"} 0
@@ -239,8 +244,14 @@ eval instant at 50m deriv(testcounter_reset_middle[100m])
 eval instant at 50m predict_linear(testcounter_reset_middle[50m], 3600)
 	{} 76.81818181818181
 
+eval instant at 50m predict_linear(testcounter_reset_middle[50m], 1h)
+	{} 76.81818181818181
+
 # intercept at t = 3000+3600 = 6600
 eval instant at 50m predict_linear(testcounter_reset_middle[50m] @ 3000, 3600)
+	{} 76.81818181818181
+
+eval instant at 50m predict_linear(testcounter_reset_middle[50m] @ 3000, 1h)
 	{} 76.81818181818181
 
 # intercept at t = 600+3600 = 4200
@@ -764,6 +775,14 @@ eval instant at 1m avg_over_time(metric10[1m])
 eval instant at 1m sum_over_time(metric10[1m])/count_over_time(metric10[1m])
   {} 0
 
+# Test if very big intermediate values cause loss of detail.
+clear
+load 10s
+  metric 1 1e100 1 -1e100
+
+eval instant at 1m sum_over_time(metric[1m])
+  {} 2
+
 # Tests for stddev_over_time and stdvar_over_time.
 clear
 load 10s
@@ -830,17 +849,17 @@ eval instant at 1m quantile_over_time(1, data[1m])
 	{test="three samples"} 2
 	{test="uneven samples"} 4
 
-eval instant at 1m quantile_over_time(-1, data[1m])
+eval_warn instant at 1m quantile_over_time(-1, data[1m])
 	{test="two samples"} -Inf
 	{test="three samples"} -Inf
 	{test="uneven samples"} -Inf
 
-eval instant at 1m quantile_over_time(2, data[1m])
+eval_warn instant at 1m quantile_over_time(2, data[1m])
 	{test="two samples"} +Inf
 	{test="three samples"} +Inf
 	{test="uneven samples"} +Inf
 
-eval instant at 1m (quantile_over_time(2, (data[1m])))
+eval_warn instant at 1m (quantile_over_time(2, (data[1m])))
 	{test="two samples"} +Inf
 	{test="three samples"} +Inf
 	{test="uneven samples"} +Inf
@@ -1205,3 +1224,11 @@ eval instant at 5m log10(exp_root_log - 20)
 	{l="y"} -Inf
 
 clear
+
+# Test that timestamp() handles the scenario where there are more steps than samples.
+load 1m
+  metric 0+1x1000
+
+# We expect the value to be 0 for t=0s to t=59s (inclusive), then 60 for t=60s and t=61s.
+eval range from 0 to 61s step 1s timestamp(metric)
+  {} 0x59 60 60

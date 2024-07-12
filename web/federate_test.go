@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -34,6 +35,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/teststorage"
@@ -201,7 +203,7 @@ test_metric_without_labels{instance="baz"} 1001 6000000
 }
 
 func TestFederation(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			test_metric1{foo="bar",instance="i"}    0+100x100
 			test_metric1{foo="boo",instance="i"}    1+0x100
@@ -340,8 +342,8 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 	}
 	app := db.Appender(context.Background())
 	for i := 0; i < 6; i++ {
-		l := labels.FromStrings("__name__", "test_metric", "foo", fmt.Sprintf("%d", i))
-		expL := labels.FromStrings("__name__", "test_metric", "instance", "", "foo", fmt.Sprintf("%d", i))
+		l := labels.FromStrings("__name__", "test_metric", "foo", strconv.Itoa(i))
+		expL := labels.FromStrings("__name__", "test_metric", "instance", "", "foo", strconv.Itoa(i))
 		var err error
 		switch i {
 		case 0, 3:

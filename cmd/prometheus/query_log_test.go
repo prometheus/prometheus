@@ -72,7 +72,7 @@ func (p *queryLogTest) waitForPrometheus() error {
 	var err error
 	for x := 0; x < 20; x++ {
 		var r *http.Response
-		if r, err = http.Get(fmt.Sprintf("http://%s:%d%s/-/ready", p.host, p.port, p.prefix)); err == nil && r.StatusCode == 200 {
+		if r, err = http.Get(fmt.Sprintf("http://%s:%d%s/-/ready", p.host, p.port, p.prefix)); err == nil && r.StatusCode == http.StatusOK {
 			break
 		}
 		time.Sleep(500 * time.Millisecond)
@@ -296,7 +296,7 @@ func (p *queryLogTest) run(t *testing.T) {
 	if p.exactQueryCount() {
 		require.Equal(t, 1, qc)
 	} else {
-		require.Greater(t, qc, 0, "no queries logged")
+		require.Positive(t, qc, "no queries logged")
 	}
 	p.validateLastQuery(t, ql)
 
@@ -366,7 +366,7 @@ func (p *queryLogTest) run(t *testing.T) {
 	if p.exactQueryCount() {
 		require.Equal(t, 1, qc)
 	} else {
-		require.Greater(t, qc, 0, "no queries logged")
+		require.Positive(t, qc, "no queries logged")
 	}
 }
 

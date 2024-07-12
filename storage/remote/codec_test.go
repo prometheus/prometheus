@@ -19,13 +19,16 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/prompb"
+	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -33,45 +36,128 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
-var testHistogram = histogram.Histogram{
-	Schema:          2,
-	ZeroThreshold:   1e-128,
-	ZeroCount:       0,
-	Count:           0,
-	Sum:             20,
-	PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-	PositiveBuckets: []int64{1},
-	NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-	NegativeBuckets: []int64{-1},
-}
+var (
+	testHistogram = histogram.Histogram{
+		Schema:          2,
+		ZeroThreshold:   1e-128,
+		ZeroCount:       0,
+		Count:           0,
+		Sum:             20,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+		PositiveBuckets: []int64{1},
+		NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+		NegativeBuckets: []int64{-1},
+	}
 
-var writeRequestFixture = &prompb.WriteRequest{
-	Timeseries: []prompb.TimeSeries{
-		{
-			Labels: []prompb.Label{
-				{Name: "__name__", Value: "test_metric1"},
-				{Name: "b", Value: "c"},
-				{Name: "baz", Value: "qux"},
-				{Name: "d", Value: "e"},
-				{Name: "foo", Value: "bar"},
+	writeRequestFixture = &prompb.WriteRequest{
+		Timeseries: []prompb.TimeSeries{
+			{
+				Labels: []prompb.Label{
+					{Name: "__name__", Value: "test_metric1"},
+					{Name: "b", Value: "c"},
+					{Name: "baz", Value: "qux"},
+					{Name: "d", Value: "e"},
+					{Name: "foo", Value: "bar"},
+				},
+				Samples:    []prompb.Sample{{Value: 1, Timestamp: 1}},
+				Exemplars:  []prompb.Exemplar{{Labels: []prompb.Label{{Name: "f", Value: "g"}}, Value: 1, Timestamp: 1}},
+				Histograms: []prompb.Histogram{prompb.FromIntHistogram(1, &testHistogram), prompb.FromFloatHistogram(2, testHistogram.ToFloat(nil))},
 			},
-			Samples:    []prompb.Sample{{Value: 1, Timestamp: 0}},
-			Exemplars:  []prompb.Exemplar{{Labels: []prompb.Label{{Name: "f", Value: "g"}}, Value: 1, Timestamp: 0}},
-			Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat(nil))},
-		},
-		{
-			Labels: []prompb.Label{
-				{Name: "__name__", Value: "test_metric1"},
-				{Name: "b", Value: "c"},
-				{Name: "baz", Value: "qux"},
-				{Name: "d", Value: "e"},
-				{Name: "foo", Value: "bar"},
+			{
+				Labels: []prompb.Label{
+					{Name: "__name__", Value: "test_metric1"},
+					{Name: "b", Value: "c"},
+					{Name: "baz", Value: "qux"},
+					{Name: "d", Value: "e"},
+					{Name: "foo", Value: "bar"},
+				},
+				Samples:    []prompb.Sample{{Value: 2, Timestamp: 2}},
+				Exemplars:  []prompb.Exemplar{{Labels: []prompb.Label{{Name: "h", Value: "i"}}, Value: 2, Timestamp: 2}},
+				Histograms: []prompb.Histogram{prompb.FromIntHistogram(3, &testHistogram), prompb.FromFloatHistogram(4, testHistogram.ToFloat(nil))},
 			},
-			Samples:    []prompb.Sample{{Value: 2, Timestamp: 1}},
-			Exemplars:  []prompb.Exemplar{{Labels: []prompb.Label{{Name: "h", Value: "i"}}, Value: 2, Timestamp: 1}},
-			Histograms: []prompb.Histogram{HistogramToHistogramProto(2, &testHistogram), FloatHistogramToHistogramProto(3, testHistogram.ToFloat(nil))},
 		},
-	},
+	}
+
+	writeV2RequestSeries1Metadata = metadata.Metadata{
+		Type: model.MetricTypeGauge,
+		Help: "Test gauge for test purposes",
+		Unit: "Maybe op/sec who knows (:",
+	}
+	writeV2RequestSeries2Metadata = metadata.Metadata{
+		Type: model.MetricTypeCounter,
+		Help: "Test counter for test purposes",
+	}
+
+	// writeV2RequestFixture represents the same request as writeRequestFixture,
+	// but using the v2 representation, plus includes writeV2RequestSeries1Metadata and writeV2RequestSeries2Metadata.
+	// NOTE: Use TestWriteV2RequestFixture and copy the diff to regenerate if needed.
+	writeV2RequestFixture = &writev2.Request{
+		Symbols: []string{"", "__name__", "test_metric1", "b", "c", "baz", "qux", "d", "e", "foo", "bar", "f", "g", "h", "i", "Test gauge for test purposes", "Maybe op/sec who knows (:", "Test counter for test purposes"},
+		Timeseries: []writev2.TimeSeries{
+			{
+				LabelsRefs: []uint32{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, // Symbolized writeRequestFixture.Timeseries[0].Labels
+				Metadata: writev2.Metadata{
+					Type: writev2.Metadata_METRIC_TYPE_GAUGE, // writeV2RequestSeries1Metadata.Type.
+
+					HelpRef: 15, // Symbolized writeV2RequestSeries1Metadata.Help.
+					UnitRef: 16, // Symbolized writeV2RequestSeries1Metadata.Unit.
+				},
+				Samples:    []writev2.Sample{{Value: 1, Timestamp: 1}},
+				Exemplars:  []writev2.Exemplar{{LabelsRefs: []uint32{11, 12}, Value: 1, Timestamp: 1}},
+				Histograms: []writev2.Histogram{writev2.FromIntHistogram(1, &testHistogram), writev2.FromFloatHistogram(2, testHistogram.ToFloat(nil))},
+			},
+			{
+				LabelsRefs: []uint32{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, // Same series as first.
+				Metadata: writev2.Metadata{
+					Type: writev2.Metadata_METRIC_TYPE_COUNTER, // writeV2RequestSeries2Metadata.Type.
+
+					HelpRef: 17, // Symbolized writeV2RequestSeries2Metadata.Help.
+					// No unit.
+				},
+				Samples:    []writev2.Sample{{Value: 2, Timestamp: 2}},
+				Exemplars:  []writev2.Exemplar{{LabelsRefs: []uint32{13, 14}, Value: 2, Timestamp: 2}},
+				Histograms: []writev2.Histogram{writev2.FromIntHistogram(3, &testHistogram), writev2.FromFloatHistogram(4, testHistogram.ToFloat(nil))},
+			},
+		},
+	}
+)
+
+func TestWriteV2RequestFixture(t *testing.T) {
+	// Generate dynamically writeV2RequestFixture, reusing v1 fixture elements.
+	st := writev2.NewSymbolTable()
+	b := labels.NewScratchBuilder(0)
+	labelRefs := st.SymbolizeLabels(writeRequestFixture.Timeseries[0].ToLabels(&b, nil), nil)
+	exemplar1LabelRefs := st.SymbolizeLabels(writeRequestFixture.Timeseries[0].Exemplars[0].ToExemplar(&b, nil).Labels, nil)
+	exemplar2LabelRefs := st.SymbolizeLabels(writeRequestFixture.Timeseries[1].Exemplars[0].ToExemplar(&b, nil).Labels, nil)
+	expected := &writev2.Request{
+		Timeseries: []writev2.TimeSeries{
+			{
+				LabelsRefs: labelRefs,
+				Metadata: writev2.Metadata{
+					Type:    writev2.Metadata_METRIC_TYPE_GAUGE,
+					HelpRef: st.Symbolize(writeV2RequestSeries1Metadata.Help),
+					UnitRef: st.Symbolize(writeV2RequestSeries1Metadata.Unit),
+				},
+				Samples:    []writev2.Sample{{Value: 1, Timestamp: 1}},
+				Exemplars:  []writev2.Exemplar{{LabelsRefs: exemplar1LabelRefs, Value: 1, Timestamp: 1}},
+				Histograms: []writev2.Histogram{writev2.FromIntHistogram(1, &testHistogram), writev2.FromFloatHistogram(2, testHistogram.ToFloat(nil))},
+			},
+			{
+				LabelsRefs: labelRefs,
+				Metadata: writev2.Metadata{
+					Type:    writev2.Metadata_METRIC_TYPE_COUNTER,
+					HelpRef: st.Symbolize(writeV2RequestSeries2Metadata.Help),
+					// No unit.
+				},
+				Samples:    []writev2.Sample{{Value: 2, Timestamp: 2}},
+				Exemplars:  []writev2.Exemplar{{LabelsRefs: exemplar2LabelRefs, Value: 2, Timestamp: 2}},
+				Histograms: []writev2.Histogram{writev2.FromIntHistogram(3, &testHistogram), writev2.FromFloatHistogram(4, testHistogram.ToFloat(nil))},
+			},
+		},
+		Symbols: st.Symbols(),
+	}
+	// Check if it matches static writeV2RequestFixture.
+	require.Equal(t, expected, writeV2RequestFixture)
 }
 
 func TestValidateLabelsAndMetricName(t *testing.T) {
@@ -268,7 +354,7 @@ func TestConcreteSeriesIterator_HistogramSamples(t *testing.T) {
 		} else {
 			ts = int64(i)
 		}
-		histProtos[i] = HistogramToHistogramProto(ts, h)
+		histProtos[i] = prompb.FromIntHistogram(ts, h)
 	}
 	series := &concreteSeries{
 		labels:     labels.FromStrings("foo", "bar"),
@@ -319,9 +405,9 @@ func TestConcreteSeriesIterator_FloatAndHistogramSamples(t *testing.T) {
 	histProtos := make([]prompb.Histogram, len(histograms))
 	for i, h := range histograms {
 		if i < 10 {
-			histProtos[i] = HistogramToHistogramProto(int64(i+1), h)
+			histProtos[i] = prompb.FromIntHistogram(int64(i+1), h)
 		} else {
-			histProtos[i] = HistogramToHistogramProto(int64(i+6), h)
+			histProtos[i] = prompb.FromIntHistogram(int64(i+6), h)
 		}
 	}
 	series := &concreteSeries{
@@ -401,7 +487,7 @@ func TestConcreteSeriesIterator_FloatAndHistogramSamples(t *testing.T) {
 	require.Equal(t, chunkenc.ValHistogram, it.Next())
 	ts, fh = it.AtFloatHistogram(nil)
 	require.Equal(t, int64(17), ts)
-	expected := HistogramProtoToFloatHistogram(HistogramToHistogramProto(int64(17), histograms[11]))
+	expected := prompb.FromIntHistogram(int64(17), histograms[11]).ToFloatHistogram()
 	require.Equal(t, expected, fh)
 
 	// Keep calling Next() until the end.
@@ -485,39 +571,8 @@ func TestMergeLabels(t *testing.T) {
 	}
 }
 
-func TestMetricTypeToMetricTypeProto(t *testing.T) {
-	tc := []struct {
-		desc     string
-		input    model.MetricType
-		expected prompb.MetricMetadata_MetricType
-	}{
-		{
-			desc:     "with a single-word metric",
-			input:    model.MetricTypeCounter,
-			expected: prompb.MetricMetadata_COUNTER,
-		},
-		{
-			desc:     "with a two-word metric",
-			input:    model.MetricTypeStateset,
-			expected: prompb.MetricMetadata_STATESET,
-		},
-		{
-			desc:     "with an unknown metric",
-			input:    "not-known",
-			expected: prompb.MetricMetadata_UNKNOWN,
-		},
-	}
-
-	for _, tt := range tc {
-		t.Run(tt.desc, func(t *testing.T) {
-			m := metricTypeToMetricTypeProto(tt.input)
-			require.Equal(t, tt.expected, m)
-		})
-	}
-}
-
 func TestDecodeWriteRequest(t *testing.T) {
-	buf, _, _, err := buildWriteRequest(nil, writeRequestFixture.Timeseries, nil, nil, nil, nil)
+	buf, _, _, err := buildWriteRequest(nil, writeRequestFixture.Timeseries, nil, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
 	actual, err := DecodeWriteRequest(bytes.NewReader(buf))
@@ -525,212 +580,18 @@ func TestDecodeWriteRequest(t *testing.T) {
 	require.Equal(t, writeRequestFixture, actual)
 }
 
-func TestNilHistogramProto(*testing.T) {
-	// This function will panic if it impromperly handles nil
-	// values, causing the test to fail.
-	HistogramProtoToHistogram(prompb.Histogram{})
-	HistogramProtoToFloatHistogram(prompb.Histogram{})
-}
+func TestDecodeWriteV2Request(t *testing.T) {
+	buf, _, _, err := buildV2WriteRequest(log.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
+	require.NoError(t, err)
 
-func exampleHistogram() histogram.Histogram {
-	return histogram.Histogram{
-		CounterResetHint: histogram.GaugeType,
-		Schema:           0,
-		Count:            19,
-		Sum:              2.7,
-		PositiveSpans: []histogram.Span{
-			{Offset: 0, Length: 4},
-			{Offset: 0, Length: 0},
-			{Offset: 0, Length: 3},
-		},
-		PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 0},
-		NegativeSpans: []histogram.Span{
-			{Offset: 0, Length: 5},
-			{Offset: 1, Length: 0},
-			{Offset: 0, Length: 1},
-		},
-		NegativeBuckets: []int64{1, 2, -2, 1, -1, 0},
-	}
-}
-
-func exampleHistogramProto() prompb.Histogram {
-	return prompb.Histogram{
-		Count:         &prompb.Histogram_CountInt{CountInt: 19},
-		Sum:           2.7,
-		Schema:        0,
-		ZeroThreshold: 0,
-		ZeroCount:     &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
-		NegativeSpans: []prompb.BucketSpan{
-			{
-				Offset: 0,
-				Length: 5,
-			},
-			{
-				Offset: 1,
-				Length: 0,
-			},
-			{
-				Offset: 0,
-				Length: 1,
-			},
-		},
-		NegativeDeltas: []int64{1, 2, -2, 1, -1, 0},
-		PositiveSpans: []prompb.BucketSpan{
-			{
-				Offset: 0,
-				Length: 4,
-			},
-			{
-				Offset: 0,
-				Length: 0,
-			},
-			{
-				Offset: 0,
-				Length: 3,
-			},
-		},
-		PositiveDeltas: []int64{1, 2, -2, 1, -1, 0, 0},
-		ResetHint:      prompb.Histogram_GAUGE,
-		Timestamp:      1337,
-	}
-}
-
-func TestHistogramToProtoConvert(t *testing.T) {
-	tests := []struct {
-		input    histogram.CounterResetHint
-		expected prompb.Histogram_ResetHint
-	}{
-		{
-			input:    histogram.UnknownCounterReset,
-			expected: prompb.Histogram_UNKNOWN,
-		},
-		{
-			input:    histogram.CounterReset,
-			expected: prompb.Histogram_YES,
-		},
-		{
-			input:    histogram.NotCounterReset,
-			expected: prompb.Histogram_NO,
-		},
-		{
-			input:    histogram.GaugeType,
-			expected: prompb.Histogram_GAUGE,
-		},
-	}
-
-	for _, test := range tests {
-		h := exampleHistogram()
-		h.CounterResetHint = test.input
-		p := exampleHistogramProto()
-		p.ResetHint = test.expected
-
-		require.Equal(t, p, HistogramToHistogramProto(1337, &h))
-
-		require.Equal(t, h, *HistogramProtoToHistogram(p))
-	}
-}
-
-func exampleFloatHistogram() histogram.FloatHistogram {
-	return histogram.FloatHistogram{
-		CounterResetHint: histogram.GaugeType,
-		Schema:           0,
-		Count:            19,
-		Sum:              2.7,
-		PositiveSpans: []histogram.Span{
-			{Offset: 0, Length: 4},
-			{Offset: 0, Length: 0},
-			{Offset: 0, Length: 3},
-		},
-		PositiveBuckets: []float64{1, 2, -2, 1, -1, 0, 0},
-		NegativeSpans: []histogram.Span{
-			{Offset: 0, Length: 5},
-			{Offset: 1, Length: 0},
-			{Offset: 0, Length: 1},
-		},
-		NegativeBuckets: []float64{1, 2, -2, 1, -1, 0},
-	}
-}
-
-func exampleFloatHistogramProto() prompb.Histogram {
-	return prompb.Histogram{
-		Count:         &prompb.Histogram_CountFloat{CountFloat: 19},
-		Sum:           2.7,
-		Schema:        0,
-		ZeroThreshold: 0,
-		ZeroCount:     &prompb.Histogram_ZeroCountFloat{ZeroCountFloat: 0},
-		NegativeSpans: []prompb.BucketSpan{
-			{
-				Offset: 0,
-				Length: 5,
-			},
-			{
-				Offset: 1,
-				Length: 0,
-			},
-			{
-				Offset: 0,
-				Length: 1,
-			},
-		},
-		NegativeCounts: []float64{1, 2, -2, 1, -1, 0},
-		PositiveSpans: []prompb.BucketSpan{
-			{
-				Offset: 0,
-				Length: 4,
-			},
-			{
-				Offset: 0,
-				Length: 0,
-			},
-			{
-				Offset: 0,
-				Length: 3,
-			},
-		},
-		PositiveCounts: []float64{1, 2, -2, 1, -1, 0, 0},
-		ResetHint:      prompb.Histogram_GAUGE,
-		Timestamp:      1337,
-	}
-}
-
-func TestFloatHistogramToProtoConvert(t *testing.T) {
-	tests := []struct {
-		input    histogram.CounterResetHint
-		expected prompb.Histogram_ResetHint
-	}{
-		{
-			input:    histogram.UnknownCounterReset,
-			expected: prompb.Histogram_UNKNOWN,
-		},
-		{
-			input:    histogram.CounterReset,
-			expected: prompb.Histogram_YES,
-		},
-		{
-			input:    histogram.NotCounterReset,
-			expected: prompb.Histogram_NO,
-		},
-		{
-			input:    histogram.GaugeType,
-			expected: prompb.Histogram_GAUGE,
-		},
-	}
-
-	for _, test := range tests {
-		h := exampleFloatHistogram()
-		h.CounterResetHint = test.input
-		p := exampleFloatHistogramProto()
-		p.ResetHint = test.expected
-
-		require.Equal(t, p, FloatHistogramToHistogramProto(1337, &h))
-
-		require.Equal(t, h, *FloatHistogramProtoToFloatHistogram(p))
-	}
+	actual, err := DecodeWriteV2Request(bytes.NewReader(buf))
+	require.NoError(t, err)
+	require.Equal(t, writeV2RequestFixture, actual)
 }
 
 func TestStreamResponse(t *testing.T) {
-	lbs1 := labelsToLabelsProto(labels.FromStrings("instance", "localhost1", "job", "demo1"), nil)
-	lbs2 := labelsToLabelsProto(labels.FromStrings("instance", "localhost2", "job", "demo2"), nil)
+	lbs1 := prompb.FromLabels(labels.FromStrings("instance", "localhost1", "job", "demo1"), nil)
+	lbs2 := prompb.FromLabels(labels.FromStrings("instance", "localhost2", "job", "demo2"), nil)
 	chunk := prompb.Chunk{
 		Type: prompb.Chunk_XOR,
 		Data: make([]byte, 100),
@@ -802,7 +663,7 @@ func (c *mockChunkSeriesSet) Next() bool {
 
 func (c *mockChunkSeriesSet) At() storage.ChunkSeries {
 	return &storage.ChunkSeriesEntry{
-		Lset: labelProtosToLabels(&c.builder, c.chunkedSeries[c.index].Labels),
+		Lset: c.chunkedSeries[c.index].ToLabels(&c.builder, nil),
 		ChunkIteratorFn: func(chunks.Iterator) chunks.Iterator {
 			return &mockChunkIterator{
 				chunks: c.chunkedSeries[c.index].Chunks,
