@@ -1468,6 +1468,8 @@ func (q *queue) FlushAndShutdown(done <-chan struct{}) {
 	for q.tryEnqueueingBatch(done) {
 		time.Sleep(time.Second)
 	}
+	q.batchMtx.Lock()
+	defer q.batchMtx.Unlock()
 	q.batch = nil
 	close(q.batchQueue)
 }
