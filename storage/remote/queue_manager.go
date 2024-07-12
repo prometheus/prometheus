@@ -1677,20 +1677,23 @@ func (s *shards) sendV2Samples(ctx context.Context, samples []writev2.TimeSeries
 }
 
 func (s *shards) updateMetrics(_ context.Context, err error, sampleCount, exemplarCount, histogramCount, metadataCount int, rs WriteResponseStats, duration time.Duration) {
-	if err != nil {
-		level.Error(s.qm.logger).Log("msg", "non-recoverable error", "failedSampleCount", sampleCount-rs.Samples, "failedHistogramCount", histogramCount-rs.Histograms, "failedExemplarCount", exemplarCount-rs.Exemplars, "err", err)
-	}
-
 	// Partial errors may happen -- account for that.
-	// TODO(bwplotka): No error and non zero diffs might mean something weird happens e.g. buggy 2.0 Receiver. Warn?
-	if diff := sampleCount - rs.Samples; diff > 0 {
-		s.qm.metrics.failedSamplesTotal.Add(float64(diff))
+	sampleDiff := sampleCount - rs.Samples
+	if sampleDiff > 0 {
+		s.qm.metrics.failedSamplesTotal.Add(float64(sampleDiff))
 	}
-	if diff := histogramCount - rs.Histograms; diff > 0 {
-		s.qm.metrics.failedHistogramsTotal.Add(float64(diff))
+	histogramDiff := histogramCount - rs.Histograms
+	if histogramDiff > 0 {
+		s.qm.metrics.failedHistogramsTotal.Add(float64(histogramDiff))
 	}
-	if diff := exemplarCount - rs.Exemplars; diff > 0 {
-		s.qm.metrics.failedExemplarsTotal.Add(float64(diff))
+	exemplarDiff := exemplarCount - rs.Exemplars
+	if exemplarDiff > 0 {
+		s.qm.metrics.failedExemplarsTotal.Add(float64(exemplarDiff))
+	}
+	if err != nil {
+		level.Error(s.qm.logger).Log("msg", "non-recoverable error", "failedSampleCount", sampleDiff, "failedHistogramCount", histogramDiff, "failedExemplarCount", exemplarDiff, "err", err)
+	} else if sampleDiff+exemplarDiff+histogramDiff > 0 {
+		level.Error(s.qm.logger).Log("msg", "we got 2xx status code from the Receiver yet statistics indicate some dat was not written; investigation needed", "failedSampleCount", sampleDiff, "failedHistogramCount", histogramDiff, "failedExemplarCount", exemplarDiff)
 	}
 
 	// These counters are used to calculate the dynamic sharding, and as such
@@ -1723,12 +1726,14 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 	reqSize := len(req)
 	*buf = req
 
-	totalRs := WriteResponseStats{}
-	var totalRsMu sync.Mutex
+	// Since we retry writes via attemptStore and sendWriteRequestWithBackoff we need
+	// to track the total amount of accepted data across the various attempts.
+	accumulatedStats := WriteResponseStats{}
+	var accumulatedStatsMu sync.Mutex
 	addStats := func(rs WriteResponseStats) {
-		totalRsMu.Lock()
-		totalRs = totalRs.Add(rs)
-		totalRsMu.Unlock()
+		accumulatedStatsMu.Lock()
+		accumulatedStats = accumulatedStats.Add(rs)
+		accumulatedStatsMu.Unlock()
 	}
 
 	// An anonymous function allows us to defer the completion of our per-try spans
@@ -1803,13 +1808,13 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 	if errors.Is(err, context.Canceled) {
 		// When there is resharding, we cancel the context for this queue, which means the data is not sent.
 		// So we exit early to not update the metrics.
-		return totalRs, err
+		return accumulatedStats, err
 	}
 
 	s.qm.metrics.sentBytesTotal.Add(float64(reqSize))
 	s.qm.metrics.highestSentTimestamp.Set(float64(highest / 1000))
 
-	if err == nil && !totalRs.Confirmed {
+	if err == nil && !accumulatedStats.Confirmed {
 		// No 2.0 response headers, and we sent v1 message, so likely it's 1.0 Receiver.
 		// Assume success, don't rely on headers.
 		return WriteResponseStats{
@@ -1818,7 +1823,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 			Exemplars:  exemplarCount,
 		}, nil
 	}
-	return totalRs, err
+	return accumulatedStats, err
 }
 
 // sendV2Samples to the remote storage with backoff for recoverable errors.
@@ -1835,12 +1840,14 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 	reqSize := len(req)
 	*buf = req
 
-	totalRs := WriteResponseStats{}
-	var totalRsMu sync.Mutex
+	// Since we retry writes via attemptStore and sendWriteRequestWithBackoff we need
+	// to track the total amount of accepted data across the various attempts.
+	accumulatedStats := WriteResponseStats{}
+	var accumulatedStatsMu sync.Mutex
 	addStats := func(rs WriteResponseStats) {
-		totalRsMu.Lock()
-		totalRs = totalRs.Add(rs)
-		totalRsMu.Unlock()
+		accumulatedStatsMu.Lock()
+		accumulatedStats = accumulatedStats.Add(rs)
+		accumulatedStatsMu.Unlock()
 	}
 
 	// An anonymous function allows us to defer the completion of our per-try spans
@@ -1923,12 +1930,12 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 	if errors.Is(err, context.Canceled) {
 		// When there is resharding, we cancel the context for this queue, which means the data is not sent.
 		// So we exit early to not update the metrics.
-		return totalRs, err
+		return accumulatedStats, err
 	}
 
 	s.qm.metrics.sentBytesTotal.Add(float64(reqSize))
 	s.qm.metrics.highestSentTimestamp.Set(float64(highest / 1000))
-	return totalRs, err
+	return accumulatedStats, err
 }
 
 func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries, pendingData []writev2.TimeSeries, sendExemplars, sendNativeHistograms bool) (int, int, int, int) {

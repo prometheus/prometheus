@@ -14,7 +14,6 @@
 package remote
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"fmt"
@@ -286,12 +285,9 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) (WriteRespo
 	}
 
 	// Handling errors e.g. read potential error in the body.
-	scanner := bufio.NewScanner(io.LimitReader(httpResp.Body, maxErrMsgLen))
-	line := ""
-	if scanner.Scan() {
-		line = scanner.Text()
-	}
-	err = fmt.Errorf("server returned HTTP status %s: %s", httpResp.Status, line)
+	// TODO(bwplotka): Pass logger and emit debug on error?
+	body, _ := io.ReadAll(io.LimitReader(httpResp.Body, maxErrMsgLen))
+	err = fmt.Errorf("server returned HTTP status %s: %s", httpResp.Status, body)
 
 	//nolint:usestdlibvars
 	if httpResp.StatusCode/100 == 5 ||
