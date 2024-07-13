@@ -458,8 +458,9 @@ metric_relabel_configs:
 [ keep_dropped_targets: <int> | default = 0 ]
 
 # Limit on total number of positive and negative buckets allowed in a single
-# native histogram. If this is exceeded, the entire scrape will be treated as
-# failed. 0 means no limit.
+# native histogram. If this is exceeded, the resolution of a histogram will be
+# reduced until it is within the limit or the resolution cannot be reduced anymore.
+# The entire scrape will be treated as failed if unable to reduce resolution. 0 means no limit.
 [ native_histogram_bucket_limit: <int> | default = 0 ]
 
 # Lower limit for the growth factor of one bucket to the next in each native
