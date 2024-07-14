@@ -48,10 +48,7 @@ func TestConcurrentRangeQueries(t *testing.T) {
 	}
 	// Enable experimental functions testing
 	parser.EnableExperimentalFunctions = true
-	engine := promql.NewEngine(opts)
-	t.Cleanup(func() {
-		require.NoError(t, engine.Close())
-	})
+	engine := promqltest.NewTestEngineWithOpts(t, opts)
 
 	const interval = 10000 // 10s interval.
 	// A day of data plus 10k steps.

@@ -167,10 +167,7 @@ func TestRuleEvalDuplicate(t *testing.T) {
 		Timeout:    10 * time.Second,
 	}
 
-	engine := promql.NewEngine(opts)
-	t.Cleanup(func() {
-		require.NoError(t, engine.Close())
-	})
+	engine := promqltest.NewTestEngineWithOpts(t, opts)
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 

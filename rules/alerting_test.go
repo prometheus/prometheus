@@ -38,7 +38,7 @@ import (
 
 func testEngine(tb testing.TB) *promql.Engine {
 	tb.Helper()
-	e := promql.NewEngine(promql.EngineOpts{
+	return promqltest.NewTestEngineWithOpts(tb, promql.EngineOpts{
 		Logger:                   nil,
 		Reg:                      nil,
 		MaxSamples:               10000,
@@ -48,10 +48,6 @@ func testEngine(tb testing.TB) *promql.Engine {
 		EnableNegativeOffset:     true,
 		EnablePerStepStats:       true,
 	})
-	tb.Cleanup(func() {
-		require.NoError(tb, e.Close())
-	})
-	return e
 }
 
 func TestAlertingRuleState(t *testing.T) {
@@ -595,10 +591,7 @@ func TestAlertingRuleDuplicate(t *testing.T) {
 		Timeout:    10 * time.Second,
 	}
 
-	engine := promql.NewEngine(opts)
-	t.Cleanup(func() {
-		require.NoError(t, engine.Close())
-	})
+	engine := promqltest.NewTestEngineWithOpts(t, opts)
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 

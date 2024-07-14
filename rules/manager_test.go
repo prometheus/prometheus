@@ -542,10 +542,7 @@ func TestStaleness(t *testing.T) {
 			MaxSamples: 10,
 			Timeout:    10 * time.Second,
 		}
-		engine := promql.NewEngine(engineOpts)
-		t.Cleanup(func() {
-			require.NoError(t, engine.Close())
-		})
+		engine := promqltest.NewTestEngineWithOpts(t, engineOpts)
 		opts := &ManagerOptions{
 			QueryFunc:  EngineQueryFunc(engine, st),
 			Appendable: st,
@@ -779,10 +776,7 @@ func TestUpdate(t *testing.T) {
 		MaxSamples: 10,
 		Timeout:    10 * time.Second,
 	}
-	engine := promql.NewEngine(opts)
-	t.Cleanup(func() {
-		require.NoError(t, engine.Close())
-	})
+	engine := promqltest.NewTestEngineWithOpts(t, opts)
 	ruleManager := NewManager(&ManagerOptions{
 		Appendable: st,
 		Queryable:  st,
@@ -920,10 +914,7 @@ func TestNotify(t *testing.T) {
 		MaxSamples: 10,
 		Timeout:    10 * time.Second,
 	}
-	engine := promql.NewEngine(engineOpts)
-	t.Cleanup(func() {
-		require.NoError(t, engine.Close())
-	})
+	engine := promqltest.NewTestEngineWithOpts(t, engineOpts)
 	var lastNotified []*Alert
 	notifyFunc := func(ctx context.Context, expr string, alerts ...*Alert) {
 		lastNotified = alerts
@@ -998,10 +989,7 @@ func TestMetricsUpdate(t *testing.T) {
 		MaxSamples: 10,
 		Timeout:    10 * time.Second,
 	}
-	engine := promql.NewEngine(opts)
-	t.Cleanup(func() {
-		require.NoError(t, engine.Close())
-	})
+	engine := promqltest.NewTestEngineWithOpts(t, opts)
 	ruleManager := NewManager(&ManagerOptions{
 		Appendable: storage,
 		Queryable:  storage,
@@ -1075,10 +1063,7 @@ func TestGroupStalenessOnRemoval(t *testing.T) {
 		MaxSamples: 10,
 		Timeout:    10 * time.Second,
 	}
-	engine := promql.NewEngine(opts)
-	t.Cleanup(func() {
-		require.NoError(t, engine.Close())
-	})
+	engine := promqltest.NewTestEngineWithOpts(t, opts)
 	ruleManager := NewManager(&ManagerOptions{
 		Appendable: storage,
 		Queryable:  storage,
@@ -1155,10 +1140,7 @@ func TestMetricsStalenessOnManagerShutdown(t *testing.T) {
 		MaxSamples: 10,
 		Timeout:    10 * time.Second,
 	}
-	engine := promql.NewEngine(opts)
-	t.Cleanup(func() {
-		require.NoError(t, engine.Close())
-	})
+	engine := promqltest.NewTestEngineWithOpts(t, opts)
 	ruleManager := NewManager(&ManagerOptions{
 		Appendable: storage,
 		Queryable:  storage,
@@ -1260,10 +1242,7 @@ func TestRuleHealthUpdates(t *testing.T) {
 		MaxSamples: 10,
 		Timeout:    10 * time.Second,
 	}
-	engine := promql.NewEngine(engineOpts)
-	t.Cleanup(func() {
-		require.NoError(t, engine.Close())
-	})
+	engine := promqltest.NewTestEngineWithOpts(t, engineOpts)
 	opts := &ManagerOptions{
 		QueryFunc:  EngineQueryFunc(engine, st),
 		Appendable: st,

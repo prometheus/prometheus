@@ -61,8 +61,7 @@ import (
 
 func testEngine(t *testing.T) *promql.Engine {
 	t.Helper()
-
-	ng := promql.NewEngine(promql.EngineOpts{
+	return promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
 		Logger:                   nil,
 		Reg:                      nil,
 		MaxSamples:               10000,
@@ -72,11 +71,6 @@ func testEngine(t *testing.T) *promql.Engine {
 		EnableNegativeOffset:     true,
 		EnablePerStepStats:       true,
 	})
-	t.Cleanup(func() {
-		require.NoError(t, ng.Close())
-	})
-
-	return ng
 }
 
 // testMetaStore satisfies the scrape.MetricMetadataStore interface.
@@ -315,11 +309,7 @@ func (m *rulesRetrieverMock) CreateRuleGroups() {
 		MaxSamples: 10,
 		Timeout:    100 * time.Second,
 	}
-
-	engine := promql.NewEngine(engineOpts)
-	m.testing.Cleanup(func() {
-		require.NoError(m.testing, engine.Close())
-	})
+	engine := promqltest.NewTestEngineWithOpts(m.testing, engineOpts)
 	opts := &rules.ManagerOptions{
 		QueryFunc:  rules.EngineQueryFunc(engine, storage),
 		Appendable: storage,

@@ -74,8 +74,9 @@ func LoadedStorage(t testutil.T, input string) *teststorage.TestStorage {
 	return test.storage
 }
 
-func NewTestEngine(t *testing.T, enablePerStepStats bool, lookbackDelta time.Duration, maxSamples int) *promql.Engine {
-	ng := promql.NewEngine(promql.EngineOpts{
+// NewTestEngine creates a promql.Engine with enablePerStepStats, lookbackDelta and maxSamples, and returns it.
+func NewTestEngine(tb testing.TB, enablePerStepStats bool, lookbackDelta time.Duration, maxSamples int) *promql.Engine {
+	return NewTestEngineWithOpts(tb, promql.EngineOpts{
 		Logger:                   nil,
 		Reg:                      nil,
 		MaxSamples:               maxSamples,
@@ -86,8 +87,14 @@ func NewTestEngine(t *testing.T, enablePerStepStats bool, lookbackDelta time.Dur
 		EnablePerStepStats:       enablePerStepStats,
 		LookbackDelta:            lookbackDelta,
 	})
-	t.Cleanup(func() {
-		require.NoError(t, ng.Close())
+}
+
+// NewTestEngineWithOpts creates a promql.Engine with opts and returns it.
+func NewTestEngineWithOpts(tb testing.TB, opts promql.EngineOpts) *promql.Engine {
+	tb.Helper()
+	ng := promql.NewEngine(opts)
+	tb.Cleanup(func() {
+		require.NoError(tb, ng.Close())
 	})
 	return ng
 }

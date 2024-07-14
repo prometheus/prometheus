@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
@@ -39,10 +40,7 @@ func TestDeriv(t *testing.T) {
 		MaxSamples: 10000,
 		Timeout:    10 * time.Second,
 	}
-	engine := promql.NewEngine(opts)
-	t.Cleanup(func() {
-		require.NoError(t, engine.Close())
-	})
+	engine := promqltest.NewTestEngineWithOpts(t, opts)
 
 	a := storage.Appender(context.Background())
 
