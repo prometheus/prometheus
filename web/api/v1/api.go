@@ -159,6 +159,7 @@ type Response struct {
 	ErrorType errorType   `json:"errorType,omitempty"`
 	Error     string      `json:"error,omitempty"`
 	Warnings  []string    `json:"warnings,omitempty"`
+	Infos     []string    `json:"infos,omitempty"`
 }
 
 type apiFuncResult struct {
@@ -248,6 +249,7 @@ func NewAPI(
 	registerer prometheus.Registerer,
 	statsRenderer StatsRenderer,
 	rwEnabled bool,
+	acceptRemoteWriteProtoMsgs []config.RemoteWriteProtoMsg,
 	otlpEnabled bool,
 ) *API {
 	a := &API{
@@ -290,7 +292,7 @@ func NewAPI(
 	}
 
 	if rwEnabled {
-		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap)
+		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, acceptRemoteWriteProtoMsgs)
 	}
 	if otlpEnabled {
 		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, ap)
@@ -658,6 +660,10 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
+	hints := &storage.LabelHints{
+		Limit: toHintLimit(limit),
+	}
+
 	q, err := api.Queryable.Querier(timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
 		return apiFuncResult{nil, returnAPIError(err), nil, nil}
@@ -672,7 +678,7 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 		labelNamesSet := make(map[string]struct{})
 
 		for _, matchers := range matcherSets {
-			vals, callWarnings, err := q.LabelNames(r.Context(), matchers...)
+			vals, callWarnings, err := q.LabelNames(r.Context(), hints, matchers...)
 			if err != nil {
 				return apiFuncResult{nil, returnAPIError(err), warnings, nil}
 			}
@@ -694,7 +700,7 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 		if len(matcherSets) == 1 {
 			matchers = matcherSets[0]
 		}
-		names, warnings, err = q.LabelNames(r.Context(), matchers...)
+		names, warnings, err = q.LabelNames(r.Context(), hints, matchers...)
 		if err != nil {
 			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
 		}
@@ -704,7 +710,7 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 		names = []string{}
 	}
 
-	if len(names) > limit {
+	if limit > 0 && len(names) > limit {
 		names = names[:limit]
 		warnings = warnings.Add(errors.New("results truncated due to limit"))
 	}
@@ -738,6 +744,10 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
+	hints := &storage.LabelHints{
+		Limit: toHintLimit(limit),
+	}
+
 	q, err := api.Queryable.Querier(timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
@@ -762,7 +772,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 		var callWarnings annotations.Annotations
 		labelValuesSet := make(map[string]struct{})
 		for _, matchers := range matcherSets {
-			vals, callWarnings, err = q.LabelValues(ctx, name, matchers...)
+			vals, callWarnings, err = q.LabelValues(ctx, name, hints, matchers...)
 			if err != nil {
 				return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
 			}
@@ -781,7 +791,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 		if len(matcherSets) == 1 {
 			matchers = matcherSets[0]
 		}
-		vals, warnings, err = q.LabelValues(ctx, name, matchers...)
+		vals, warnings, err = q.LabelValues(ctx, name, hints, matchers...)
 		if err != nil {
 			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
 		}
@@ -793,7 +803,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 
 	slices.Sort(vals)
 
-	if len(vals) > limit {
+	if limit > 0 && len(vals) > limit {
 		vals = vals[:limit]
 		warnings = warnings.Add(errors.New("results truncated due to limit"))
 	}
@@ -863,6 +873,7 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 		Start: timestamp.FromTime(start),
 		End:   timestamp.FromTime(end),
 		Func:  "series", // There is no series function, this token is used for lookups that don't need samples.
+		Limit: toHintLimit(limit),
 	}
 	var set storage.SeriesSet
 
@@ -889,7 +900,7 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 		}
 		metrics = append(metrics, set.At().Labels())
 
-		if len(metrics) > limit {
+		if limit > 0 && len(metrics) > limit {
 			metrics = metrics[:limit]
 			warnings.Add(errors.New("results truncated due to limit"))
 			return apiFuncResult{metrics, nil, warnings, closer}
@@ -1395,6 +1406,11 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 	rgSet := queryFormToSet(r.Form["rule_group[]"])
 	fSet := queryFormToSet(r.Form["file[]"])
 
+	matcherSets, err := parseMatchersParam(r.Form["match[]"])
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	}
+
 	ruleGroups := api.rulesRetriever(r.Context()).RuleGroups()
 	res := &RuleDiscovery{RuleGroups: make([]*RuleGroup, 0, len(ruleGroups))}
 	typ := strings.ToLower(r.URL.Query().Get("type"))
@@ -1434,7 +1450,8 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 			EvaluationTime: grp.GetEvaluationTime().Seconds(),
 			LastEvaluation: grp.GetLastEvaluation(),
 		}
-		for _, rr := range grp.Rules() {
+
+		for _, rr := range grp.Rules(matcherSets...) {
 			var enrichedRule Rule
 
 			if len(rnSet) > 0 {
@@ -1746,11 +1763,13 @@ func (api *API) cleanTombstones(*http.Request) apiFuncResult {
 // can be empty if the position information isn't needed.
 func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface{}, warnings annotations.Annotations, query string) {
 	statusMessage := statusSuccess
+	warn, info := warnings.AsStrings(query, 10, 10)
 
 	resp := &Response{
 		Status:   statusMessage,
 		Data:     data,
-		Warnings: warnings.AsStrings(query, 10),
+		Warnings: warn,
+		Infos:    info,
 	}
 
 	codec, err := api.negotiateCodec(req, resp)
@@ -1898,8 +1917,8 @@ OUTER:
 	return matcherSets, nil
 }
 
+// parseLimitParam returning 0 means no limit is to be applied.
 func parseLimitParam(limitStr string) (limit int, err error) {
-	limit = math.MaxInt
 	if limitStr == "" {
 		return limit, nil
 	}
@@ -1908,9 +1927,19 @@ func parseLimitParam(limitStr string) (limit int, err error) {
 	if err != nil {
 		return limit, err
 	}
-	if limit <= 0 {
-		return limit, errors.New("limit must be positive")
+	if limit < 0 {
+		return limit, errors.New("limit must be non-negative")
 	}
 
 	return limit, nil
+}
+
+// toHintLimit increases the API limit, as returned by parseLimitParam, by 1.
+// This allows for emitting warnings when the results are truncated.
+func toHintLimit(limit int) int {
+	// 0 means no limit and avoid int overflow
+	if limit > 0 && limit < math.MaxInt {
+		return limit + 1
+	}
+	return limit
 }

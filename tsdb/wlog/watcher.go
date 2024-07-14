@@ -57,6 +57,7 @@ type WriteTo interface {
 	AppendHistograms([]record.RefHistogramSample) bool
 	AppendFloatHistograms([]record.RefFloatHistogramSample) bool
 	StoreSeries([]record.RefSeries, int)
+	StoreMetadata([]record.RefMetadata)
 
 	// Next two methods are intended for garbage-collection: first we call
 	// UpdateSeriesSegment on all current series
@@ -88,6 +89,7 @@ type Watcher struct {
 	lastCheckpoint string
 	sendExemplars  bool
 	sendHistograms bool
+	sendMetadata   bool
 	metrics        *WatcherMetrics
 	readerMetrics  *LiveReaderMetrics
 
@@ -170,7 +172,7 @@ func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 }
 
 // NewWatcher creates a new WAL watcher for a given WriteTo.
-func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logger log.Logger, name string, writer WriteTo, dir string, sendExemplars, sendHistograms bool) *Watcher {
+func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logger log.Logger, name string, writer WriteTo, dir string, sendExemplars, sendHistograms, sendMetadata bool) *Watcher {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -183,6 +185,7 @@ func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logge
 		name:           name,
 		sendExemplars:  sendExemplars,
 		sendHistograms: sendHistograms,
+		sendMetadata:   sendMetadata,
 
 		readNotify: make(chan struct{}),
 		quit:       make(chan struct{}),
@@ -262,6 +265,11 @@ func (w *Watcher) loop() {
 // Run the watcher, which will tail the WAL until the quit channel is closed
 // or an error case is hit.
 func (w *Watcher) Run() error {
+	_, lastSegment, err := w.firstAndLast()
+	if err != nil {
+		return fmt.Errorf("wal.Segments: %w", err)
+	}
+
 	// We want to ensure this is false across iterations since
 	// Run will be called again if there was a failure to read the WAL.
 	w.sendSamples = false
@@ -286,20 +294,14 @@ func (w *Watcher) Run() error {
 		return err
 	}
 
-	level.Debug(w.logger).Log("msg", "Tailing WAL", "lastCheckpoint", lastCheckpoint, "checkpointIndex", checkpointIndex, "currentSegment", currentSegment)
+	level.Debug(w.logger).Log("msg", "Tailing WAL", "lastCheckpoint", lastCheckpoint, "checkpointIndex", checkpointIndex, "currentSegment", currentSegment, "lastSegment", lastSegment)
 	for !isClosed(w.quit) {
 		w.currentSegmentMetric.Set(float64(currentSegment))
 
-		// Re-check on each iteration in case a new segment was added,
-		// because watch() will wait for notifications on the last segment.
-		_, lastSegment, err := w.firstAndLast()
-		if err != nil {
-			return fmt.Errorf("wal.Segments: %w", err)
-		}
-		tail := currentSegment >= lastSegment
-
-		level.Debug(w.logger).Log("msg", "Processing segment", "currentSegment", currentSegment, "lastSegment", lastSegment)
-		if err := w.watch(currentSegment, tail); err != nil && !errors.Is(err, ErrIgnorable) {
+		// On start, after reading the existing WAL for series records, we have a pointer to what is the latest segment.
+		// On subsequent calls to this function, currentSegment will have been incremented and we should open that segment.
+		level.Debug(w.logger).Log("msg", "Processing segment", "currentSegment", currentSegment)
+		if err := w.watch(currentSegment, currentSegment >= lastSegment); err != nil && !errors.Is(err, ErrIgnorable) {
 			return err
 		}
 
@@ -541,6 +543,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 		histogramsToSend      []record.RefHistogramSample
 		floatHistograms       []record.RefFloatHistogramSample
 		floatHistogramsToSend []record.RefFloatHistogramSample
+		metadata              []record.RefMetadata
 	)
 	for r.Next() && !isClosed(w.quit) {
 		rec := r.Record()
@@ -652,6 +655,17 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				w.writer.AppendFloatHistograms(floatHistogramsToSend)
 				floatHistogramsToSend = floatHistogramsToSend[:0]
 			}
+
+		case record.Metadata:
+			if !w.sendMetadata || !tail {
+				break
+			}
+			meta, err := dec.Metadata(rec, metadata[:0])
+			if err != nil {
+				w.recordDecodeFailsMetric.Inc()
+				return err
+			}
+			w.writer.StoreMetadata(meta)
 		case record.Tombstones:
 
 		default:

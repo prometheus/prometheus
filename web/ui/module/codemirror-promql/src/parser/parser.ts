@@ -28,6 +28,8 @@ import {
   Gtr,
   Identifier,
   LabelMatchers,
+  LimitK,
+  LimitRatio,
   Lss,
   Lte,
   MatrixSelector,
@@ -167,7 +169,13 @@ export class Parser {
     }
     this.expectType(params[params.length - 1], ValueType.vector, 'aggregation expression');
     // get the parameter of the aggregation operator
-    if (aggregateOp.type.id === Topk || aggregateOp.type.id === Bottomk || aggregateOp.type.id === Quantile) {
+    if (
+      aggregateOp.type.id === Topk ||
+      aggregateOp.type.id === Bottomk ||
+      aggregateOp.type.id === LimitK ||
+      aggregateOp.type.id === LimitRatio ||
+      aggregateOp.type.id === Quantile
+    ) {
       this.expectType(params[0], ValueType.scalar, 'aggregation parameter');
     }
     if (aggregateOp.type.id === CountValues) {

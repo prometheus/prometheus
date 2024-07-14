@@ -78,7 +78,7 @@ func (oh *OOOHeadIndexReader) series(ref storage.SeriesRef, builder *labels.Scra
 		oh.head.metrics.seriesNotFound.Inc()
 		return storage.ErrNotFound
 	}
-	builder.Assign(s.lset)
+	builder.Assign(s.labels())
 
 	if chks == nil {
 		return nil
@@ -94,48 +94,32 @@ func (oh *OOOHeadIndexReader) series(ref storage.SeriesRef, builder *labels.Scra
 
 	tmpChks := make([]chunks.Meta, 0, len(s.ooo.oooMmappedChunks))
 
-	// We define these markers to track the last chunk reference while we
-	// fill the chunk meta.
-	// These markers are useful to give consistent responses to repeated queries
-	// even if new chunks that might be overlapping or not are added afterwards.
-	// Also, lastMinT and lastMaxT are initialized to the max int as a sentinel
-	// value to know they are unset.
-	var lastChunkRef chunks.ChunkRef
-	lastMinT, lastMaxT := int64(math.MaxInt64), int64(math.MaxInt64)
-
-	addChunk := func(minT, maxT int64, ref chunks.ChunkRef) {
-		// the first time we get called is for the last included chunk.
-		// set the markers accordingly
-		if lastMinT == int64(math.MaxInt64) {
-			lastChunkRef = ref
-			lastMinT = minT
-			lastMaxT = maxT
-		}
-
+	addChunk := func(minT, maxT int64, ref chunks.ChunkRef, chunk chunkenc.Chunk) {
 		tmpChks = append(tmpChks, chunks.Meta{
-			MinTime:        minT,
-			MaxTime:        maxT,
-			Ref:            ref,
-			OOOLastRef:     lastChunkRef,
-			OOOLastMinTime: lastMinT,
-			OOOLastMaxTime: lastMaxT,
+			MinTime: minT,
+			MaxTime: maxT,
+			Ref:     ref,
+			Chunk:   chunk,
 		})
 	}
 
-	// Collect all chunks that overlap the query range, in order from most recent to most old,
-	// so we can set the correct markers.
+	// Collect all chunks that overlap the query range.
 	if s.ooo.oooHeadChunk != nil {
 		c := s.ooo.oooHeadChunk
 		if c.OverlapsClosedInterval(oh.mint, oh.maxt) && maxMmapRef == 0 {
 			ref := chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.oooHeadChunkID(len(s.ooo.oooMmappedChunks))))
-			addChunk(c.minTime, c.maxTime, ref)
+			var xor chunkenc.Chunk
+			if len(c.chunk.samples) > 0 { // Empty samples happens in tests, at least.
+				xor, _ = c.chunk.ToXOR() // Ignoring error because it can't fail.
+			}
+			addChunk(c.minTime, c.maxTime, ref, xor)
 		}
 	}
 	for i := len(s.ooo.oooMmappedChunks) - 1; i >= 0; i-- {
 		c := s.ooo.oooMmappedChunks[i]
 		if c.OverlapsClosedInterval(oh.mint, oh.maxt) && (maxMmapRef == 0 || maxMmapRef.GreaterThanOrEqualTo(c.ref)) && (lastGarbageCollectedMmapRef == 0 || c.ref.GreaterThan(lastGarbageCollectedMmapRef)) {
 			ref := chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.oooHeadChunkID(i)))
-			addChunk(c.minTime, c.maxTime, ref)
+			addChunk(c.minTime, c.maxTime, ref, nil)
 		}
 	}
 
@@ -163,6 +147,12 @@ func (oh *OOOHeadIndexReader) series(ref storage.SeriesRef, builder *labels.Scra
 		case c.MaxTime > maxTime:
 			maxTime = c.MaxTime
 			(*chks)[len(*chks)-1].MaxTime = c.MaxTime
+			fallthrough
+		default:
+			// If the head OOO chunk is part of an output chunk, copy the chunk pointer.
+			if c.Chunk != nil {
+				(*chks)[len(*chks)-1].Chunk = c.Chunk
+			}
 		}
 	}
 
@@ -185,10 +175,8 @@ func (oh *OOOHeadIndexReader) LabelValues(ctx context.Context, name string, matc
 }
 
 type chunkMetaAndChunkDiskMapperRef struct {
-	meta     chunks.Meta
-	ref      chunks.ChunkDiskMapperRef
-	origMinT int64
-	origMaxT int64
+	meta chunks.Meta
+	ref  chunks.ChunkDiskMapperRef
 }
 
 func refLessByMinTimeAndMinRef(a, b chunkMetaAndChunkDiskMapperRef) int {

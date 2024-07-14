@@ -81,6 +81,16 @@ Examples:
     0x8f
     -Inf
     NaN
+	
+
+As of version 2.54, float literals can also be represented using the syntax of time durations, where the time duration is converted into a float value corresponding to the number of seconds the time duration represents. This is an experimental feature and might still change.
+
+Examples:
+
+    1s # Equivalent to 1.0
+    2m # Equivalent to 120.0
+    1ms # Equivalent to 0.001
+ 
 
 ## Time series selectors
 
@@ -223,6 +233,15 @@ Here are some examples of valid time durations:
     1h30m
     5m
     10s
+
+
+As of version 2.54, time durations can also be represented using the syntax of float literals, implying the number of seconds of the time duration. This is an experimental feature and might still change.
+
+Examples:
+
+    1.0 # Equivalent to 1s
+    0.001 # Equivalent to 1ms
+    120 # Equivalent to 2m
 
 ### Offset modifier
 
