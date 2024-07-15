@@ -55,8 +55,8 @@ func NewListSeries(lset labels.Labels, s []chunks.Sample) *SeriesEntry {
 	}
 }
 
-// NewListChunkSeriesFromSamples returns chunk series entry that allows to iterate over provided samples.
-// NOTE: It uses inefficient chunks encoding implementation, not caring about chunk size.
+// NewListChunkSeriesFromSamples returns a chunk series entry that allows to iterate over provided samples.
+// NOTE: It uses an inefficient chunks encoding implementation, not caring about chunk size.
 // Use only for testing.
 func NewListChunkSeriesFromSamples(lset labels.Labels, samples ...[]chunks.Sample) *ChunkSeriesEntry {
 	chksFromSamples := make([]chunks.Meta, 0, len(samples))

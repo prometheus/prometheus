@@ -230,3 +230,13 @@ The number of concurrent rule evaluations can be configured with `--rules.max-co
 Enables the new experimental web UI instead of the old and stable web UI. The new UI is a complete rewrite and aims to be cleaner, less cluttered, and more modern under the hood. It is not feature complete yet and is still under active development.
 
 `--enable-feature=new-ui`
+
+## Metadata WAL Records
+
+`--enable-feature=metadata-wal-records`
+
+When enabled, Prometheus will store metadata in-memory and keep track of
+metadata changes as WAL records on a per-series basis.
+
+This must be used if
+you are also using remote write 2.0 as it will only gather metadata from the WAL.

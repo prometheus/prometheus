@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package promql
+package promqltest
 
 import (
 	"math"
@@ -21,14 +21,15 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 func TestLazyLoader_WithSamplesTill(t *testing.T) {
 	type testCase struct {
 		ts             time.Time
-		series         []Series // Each series is checked separately. Need not mention all series here.
-		checkOnlyError bool     // If this is true, series is not checked.
+		series         []promql.Series // Each series is checked separately. Need not mention all series here.
+		checkOnlyError bool            // If this is true, series is not checked.
 	}
 
 	cases := []struct {
@@ -44,33 +45,33 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 			testCases: []testCase{
 				{
 					ts: time.Unix(40, 0),
-					series: []Series{
+					series: []promql.Series{
 						{
 							Metric: labels.FromStrings("__name__", "metric1"),
-							Floats: []FPoint{
-								{0, 1}, {10000, 2}, {20000, 3}, {30000, 4}, {40000, 5},
+							Floats: []promql.FPoint{
+								{T: 0, F: 1}, {T: 10000, F: 2}, {T: 20000, F: 3}, {T: 30000, F: 4}, {T: 40000, F: 5},
 							},
 						},
 					},
 				},
 				{
 					ts: time.Unix(10, 0),
-					series: []Series{
+					series: []promql.Series{
 						{
 							Metric: labels.FromStrings("__name__", "metric1"),
-							Floats: []FPoint{
-								{0, 1}, {10000, 2}, {20000, 3}, {30000, 4}, {40000, 5},
+							Floats: []promql.FPoint{
+								{T: 0, F: 1}, {T: 10000, F: 2}, {T: 20000, F: 3}, {T: 30000, F: 4}, {T: 40000, F: 5},
 							},
 						},
 					},
 				},
 				{
 					ts: time.Unix(60, 0),
-					series: []Series{
+					series: []promql.Series{
 						{
 							Metric: labels.FromStrings("__name__", "metric1"),
-							Floats: []FPoint{
-								{0, 1}, {10000, 2}, {20000, 3}, {30000, 4}, {40000, 5}, {50000, 6}, {60000, 7},
+							Floats: []promql.FPoint{
+								{T: 0, F: 1}, {T: 10000, F: 2}, {T: 20000, F: 3}, {T: 30000, F: 4}, {T: 40000, F: 5}, {T: 50000, F: 6}, {T: 60000, F: 7},
 							},
 						},
 					},
@@ -86,17 +87,17 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 			testCases: []testCase{
 				{ // Adds all samples of metric1.
 					ts: time.Unix(70, 0),
-					series: []Series{
+					series: []promql.Series{
 						{
 							Metric: labels.FromStrings("__name__", "metric1"),
-							Floats: []FPoint{
-								{0, 1}, {10000, 1}, {20000, 1}, {30000, 1}, {40000, 1}, {50000, 1},
+							Floats: []promql.FPoint{
+								{T: 0, F: 1}, {T: 10000, F: 1}, {T: 20000, F: 1}, {T: 30000, F: 1}, {T: 40000, F: 1}, {T: 50000, F: 1},
 							},
 						},
 						{
 							Metric: labels.FromStrings("__name__", "metric2"),
-							Floats: []FPoint{
-								{0, 1}, {10000, 2}, {20000, 3}, {30000, 4}, {40000, 5}, {50000, 6}, {60000, 7}, {70000, 8},
+							Floats: []promql.FPoint{
+								{T: 0, F: 1}, {T: 10000, F: 2}, {T: 20000, F: 3}, {T: 30000, F: 4}, {T: 40000, F: 5}, {T: 50000, F: 6}, {T: 60000, F: 7}, {T: 70000, F: 8},
 							},
 						},
 					},
@@ -140,13 +141,13 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 					require.False(t, ss.Next(), "Expecting only 1 series")
 
 					// Convert `storage.Series` to `promql.Series`.
-					got := Series{
+					got := promql.Series{
 						Metric: storageSeries.Labels(),
 					}
 					it := storageSeries.Iterator(nil)
 					for it.Next() == chunkenc.ValFloat {
 						t, v := it.At()
-						got.Floats = append(got.Floats, FPoint{T: t, F: v})
+						got.Floats = append(got.Floats, promql.FPoint{T: t, F: v})
 					}
 					require.NoError(t, it.Err())
 
@@ -261,6 +262,60 @@ eval_fail instant at 0m ceil({__name__=~'testmetric1|testmetric2'})
 		"instant query expected to fail, but query succeeds": {
 			input:         `eval_fail instant at 0s vector(0)`,
 			expectedError: `expected error evaluating query "vector(0)" (line 1) but got none`,
+		},
+		"instant query expected to fail with specific error message, and query fails with that error": {
+			input: `
+load 5m
+	testmetric1{src="a",dst="b"} 0
+	testmetric2{src="a",dst="b"} 1
+
+eval_fail instant at 0m ceil({__name__=~'testmetric1|testmetric2'})
+	expected_fail_message vector cannot contain metrics with the same labelset
+`,
+		},
+		"instant query expected to fail with specific error message, and query fails with a different error": {
+			input: `
+load 5m
+	testmetric1{src="a",dst="b"} 0
+	testmetric2{src="a",dst="b"} 1
+
+eval_fail instant at 0m ceil({__name__=~'testmetric1|testmetric2'})
+	expected_fail_message something else went wrong
+`,
+			expectedError: `expected error "something else went wrong" evaluating query "ceil({__name__=~'testmetric1|testmetric2'})" (line 6), but got: vector cannot contain metrics with the same labelset`,
+		},
+
+		"instant query expected to fail with error matching pattern, and query fails with that error": {
+			input: `
+load 5m
+	testmetric1{src="a",dst="b"} 0
+	testmetric2{src="a",dst="b"} 1
+
+eval_fail instant at 0m ceil({__name__=~'testmetric1|testmetric2'})
+	expected_fail_regexp vector .* contain metrics
+`,
+		},
+		"instant query expected to fail with error matching pattern, and query fails with a different error": {
+			input: `
+load 5m
+	testmetric1{src="a",dst="b"} 0
+	testmetric2{src="a",dst="b"} 1
+
+eval_fail instant at 0m ceil({__name__=~'testmetric1|testmetric2'})
+	expected_fail_regexp something else went wrong
+`,
+			expectedError: `expected error matching pattern "something else went wrong" evaluating query "ceil({__name__=~'testmetric1|testmetric2'})" (line 6), but got: vector cannot contain metrics with the same labelset`,
+		},
+		"instant query expected to fail with error matching pattern, and pattern is not a valid regexp": {
+			input: `
+load 5m
+	testmetric1{src="a",dst="b"} 0
+	testmetric2{src="a",dst="b"} 1
+
+eval_fail instant at 0m ceil({__name__=~'testmetric1|testmetric2'})
+	expected_fail_regexp [
+`,
+			expectedError: `error in eval ceil({__name__=~'testmetric1|testmetric2'}) (line 7): invalid regexp '[' for expected_fail_regexp: error parsing regexp: missing closing ]: ` + "`[`",
 		},
 		"instant query with results expected to match provided order, and result is in expected order": {
 			input: testData + `
@@ -383,6 +438,59 @@ eval_fail range from 0 to 10m step 5m ceil({__name__=~'testmetric1|testmetric2'}
 			input:         `eval_fail range from 0 to 10m step 5m vector(0)`,
 			expectedError: `expected error evaluating query "vector(0)" (line 1) but got none`,
 		},
+		"range query expected to fail with specific error message, and query fails with that error": {
+			input: `
+load 5m
+	testmetric1{src="a",dst="b"} 0
+	testmetric2{src="a",dst="b"} 1
+
+eval_fail range from 0 to 10m step 5m ceil({__name__=~'testmetric1|testmetric2'})
+	expected_fail_message vector cannot contain metrics with the same labelset
+`,
+		},
+		"range query expected to fail with specific error message, and query fails with a different error": {
+			input: `
+load 5m
+	testmetric1{src="a",dst="b"} 0
+	testmetric2{src="a",dst="b"} 1
+
+eval_fail range from 0 to 10m step 5m ceil({__name__=~'testmetric1|testmetric2'})
+	expected_fail_message something else went wrong
+`,
+			expectedError: `expected error "something else went wrong" evaluating query "ceil({__name__=~'testmetric1|testmetric2'})" (line 6), but got: vector cannot contain metrics with the same labelset`,
+		},
+		"range query expected to fail with error matching pattern, and query fails with that error": {
+			input: `
+load 5m
+	testmetric1{src="a",dst="b"} 0
+	testmetric2{src="a",dst="b"} 1
+
+eval_fail range from 0 to 10m step 5m ceil({__name__=~'testmetric1|testmetric2'})
+	expected_fail_regexp vector .* contain metrics
+`,
+		},
+		"range query expected to fail with error matching pattern, and query fails with a different error": {
+			input: `
+load 5m
+	testmetric1{src="a",dst="b"} 0
+	testmetric2{src="a",dst="b"} 1
+
+eval_fail range from 0 to 10m step 5m ceil({__name__=~'testmetric1|testmetric2'})
+	expected_fail_regexp something else went wrong
+`,
+			expectedError: `expected error matching pattern "something else went wrong" evaluating query "ceil({__name__=~'testmetric1|testmetric2'})" (line 6), but got: vector cannot contain metrics with the same labelset`,
+		},
+		"range query expected to fail with error matching pattern, and pattern is not a valid regexp": {
+			input: `
+load 5m
+	testmetric1{src="a",dst="b"} 0
+	testmetric2{src="a",dst="b"} 1
+
+eval_fail range from 0 to 10m step 5m ceil({__name__=~'testmetric1|testmetric2'})
+	expected_fail_regexp [
+`,
+			expectedError: `error in eval ceil({__name__=~'testmetric1|testmetric2'}) (line 7): invalid regexp '[' for expected_fail_regexp: error parsing regexp: missing closing ]: ` + "`[`",
+		},
 		"range query with from and to timestamps in wrong order": {
 			input:         `eval range from 10m to 9m step 5m vector(0)`,
 			expectedError: `error in eval vector(0) (line 1): invalid test definition, end timestamp (9m) is before start timestamp (10m)`,
@@ -450,7 +558,7 @@ eval range from 0 to 5m step 5m testmetric
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			err := runTest(t, testCase.input, newTestEngine())
+			err := runTest(t, testCase.input, NewTestEngine(false, 0, DefaultMaxSamplesPerQuery))
 
 			if testCase.expectedError == "" {
 				require.NoError(t, err)
@@ -463,42 +571,42 @@ eval range from 0 to 5m step 5m testmetric
 
 func TestAssertMatrixSorted(t *testing.T) {
 	testCases := map[string]struct {
-		matrix        Matrix
+		matrix        promql.Matrix
 		expectedError string
 	}{
 		"empty matrix": {
-			matrix: Matrix{},
+			matrix: promql.Matrix{},
 		},
 		"matrix with one series": {
-			matrix: Matrix{
-				Series{Metric: labels.FromStrings("the_label", "value_1")},
+			matrix: promql.Matrix{
+				promql.Series{Metric: labels.FromStrings("the_label", "value_1")},
 			},
 		},
 		"matrix with two series, series in sorted order": {
-			matrix: Matrix{
-				Series{Metric: labels.FromStrings("the_label", "value_1")},
-				Series{Metric: labels.FromStrings("the_label", "value_2")},
+			matrix: promql.Matrix{
+				promql.Series{Metric: labels.FromStrings("the_label", "value_1")},
+				promql.Series{Metric: labels.FromStrings("the_label", "value_2")},
 			},
 		},
 		"matrix with two series, series in reverse order": {
-			matrix: Matrix{
-				Series{Metric: labels.FromStrings("the_label", "value_2")},
-				Series{Metric: labels.FromStrings("the_label", "value_1")},
+			matrix: promql.Matrix{
+				promql.Series{Metric: labels.FromStrings("the_label", "value_2")},
+				promql.Series{Metric: labels.FromStrings("the_label", "value_1")},
 			},
 			expectedError: `matrix results should always be sorted by labels, but matrix is not sorted: series at index 1 with labels {the_label="value_1"} sorts before series at index 0 with labels {the_label="value_2"}`,
 		},
 		"matrix with three series, series in sorted order": {
-			matrix: Matrix{
-				Series{Metric: labels.FromStrings("the_label", "value_1")},
-				Series{Metric: labels.FromStrings("the_label", "value_2")},
-				Series{Metric: labels.FromStrings("the_label", "value_3")},
+			matrix: promql.Matrix{
+				promql.Series{Metric: labels.FromStrings("the_label", "value_1")},
+				promql.Series{Metric: labels.FromStrings("the_label", "value_2")},
+				promql.Series{Metric: labels.FromStrings("the_label", "value_3")},
 			},
 		},
 		"matrix with three series, series not in sorted order": {
-			matrix: Matrix{
-				Series{Metric: labels.FromStrings("the_label", "value_1")},
-				Series{Metric: labels.FromStrings("the_label", "value_3")},
-				Series{Metric: labels.FromStrings("the_label", "value_2")},
+			matrix: promql.Matrix{
+				promql.Series{Metric: labels.FromStrings("the_label", "value_1")},
+				promql.Series{Metric: labels.FromStrings("the_label", "value_3")},
+				promql.Series{Metric: labels.FromStrings("the_label", "value_2")},
 			},
 			expectedError: `matrix results should always be sorted by labels, but matrix is not sorted: series at index 2 with labels {the_label="value_2"} sorts before series at index 1 with labels {the_label="value_3"}`,
 		},

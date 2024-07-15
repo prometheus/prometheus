@@ -19,6 +19,7 @@ import (
 	"net/netip"
 	"net/url"
 	"path"
+	"strconv"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -161,21 +162,21 @@ func (d *vpsDiscovery) refresh(context.Context) ([]*targetgroup.Group, error) {
 			model.InstanceLabel:                      model.LabelValue(server.Name),
 			vpsLabelPrefix + "offer":                 model.LabelValue(server.Model.Offer),
 			vpsLabelPrefix + "datacenter":            model.LabelValue(fmt.Sprintf("%+v", server.Model.Datacenter)),
-			vpsLabelPrefix + "model_vcore":           model.LabelValue(fmt.Sprintf("%d", server.Model.Vcore)),
-			vpsLabelPrefix + "maximum_additional_ip": model.LabelValue(fmt.Sprintf("%d", server.Model.MaximumAdditionalIP)),
+			vpsLabelPrefix + "model_vcore":           model.LabelValue(strconv.Itoa(server.Model.Vcore)),
+			vpsLabelPrefix + "maximum_additional_ip": model.LabelValue(strconv.Itoa(server.Model.MaximumAdditionalIP)),
 			vpsLabelPrefix + "version":               model.LabelValue(server.Model.Version),
 			vpsLabelPrefix + "model_name":            model.LabelValue(server.Model.Name),
-			vpsLabelPrefix + "disk":                  model.LabelValue(fmt.Sprintf("%d", server.Model.Disk)),
-			vpsLabelPrefix + "memory":                model.LabelValue(fmt.Sprintf("%d", server.Model.Memory)),
+			vpsLabelPrefix + "disk":                  model.LabelValue(strconv.Itoa(server.Model.Disk)),
+			vpsLabelPrefix + "memory":                model.LabelValue(strconv.Itoa(server.Model.Memory)),
 			vpsLabelPrefix + "zone":                  model.LabelValue(server.Zone),
 			vpsLabelPrefix + "display_name":          model.LabelValue(server.DisplayName),
 			vpsLabelPrefix + "cluster":               model.LabelValue(server.Cluster),
 			vpsLabelPrefix + "state":                 model.LabelValue(server.State),
 			vpsLabelPrefix + "name":                  model.LabelValue(server.Name),
 			vpsLabelPrefix + "netboot_mode":          model.LabelValue(server.NetbootMode),
-			vpsLabelPrefix + "memory_limit":          model.LabelValue(fmt.Sprintf("%d", server.MemoryLimit)),
+			vpsLabelPrefix + "memory_limit":          model.LabelValue(strconv.Itoa(server.MemoryLimit)),
 			vpsLabelPrefix + "offer_type":            model.LabelValue(server.OfferType),
-			vpsLabelPrefix + "vcore":                 model.LabelValue(fmt.Sprintf("%d", server.Vcore)),
+			vpsLabelPrefix + "vcore":                 model.LabelValue(strconv.Itoa(server.Vcore)),
 			vpsLabelPrefix + "ipv4":                  model.LabelValue(ipv4),
 			vpsLabelPrefix + "ipv6":                  model.LabelValue(ipv6),
 		}

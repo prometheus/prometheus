@@ -66,6 +66,7 @@ interface APIResponse<T> {
   data?: T;
   error?: string;
   warnings?: string[];
+  infos?: string[];
 }
 
 // These are status codes where the Prometheus API still returns a valid JSON body,

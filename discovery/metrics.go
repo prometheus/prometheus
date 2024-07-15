@@ -19,16 +19,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-var (
-	clientGoRequestMetrics  = &clientGoRequestMetricAdapter{}
-	clientGoWorkloadMetrics = &clientGoWorkqueueMetricsProvider{}
-)
-
-func init() {
-	clientGoRequestMetrics.RegisterWithK8sGoClient()
-	clientGoWorkloadMetrics.RegisterWithK8sGoClient()
-}
-
 // Metrics to be used with a discovery manager.
 type Metrics struct {
 	FailedConfigs     prometheus.Gauge
