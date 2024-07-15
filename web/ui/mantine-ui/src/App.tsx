@@ -62,6 +62,7 @@ import { Notifications } from "@mantine/notifications";
 import { useAppDispatch } from "./state/hooks";
 import { updateSettings, useSettings } from "./state/settingsSlice";
 import SettingsMenu from "./components/SettingsMenu";
+import ReadinessWrapper from "./components/ReadinessWrapper";
 
 const queryClient = new QueryClient();
 
@@ -379,15 +380,42 @@ function App() {
                       }
                     />
                     {agentMode ? (
-                      <Route path="/agent" element={<AgentPage />} />
+                      <Route
+                        path="/agent"
+                        element={
+                          <ReadinessWrapper>
+                            <AgentPage />
+                          </ReadinessWrapper>
+                        }
+                      />
                     ) : (
                       <>
-                        <Route path="/query" element={<QueryPage />} />
-                        <Route path="/alerts" element={<AlertsPage />} />
+                        <Route
+                          path="/query"
+                          element={
+                            <ReadinessWrapper>
+                              <QueryPage />
+                            </ReadinessWrapper>
+                          }
+                        />
+                        <Route
+                          path="/alerts"
+                          element={
+                            <ReadinessWrapper>
+                              <AlertsPage />
+                            </ReadinessWrapper>
+                          }
+                        />
                       </>
                     )}
                     {allStatusPages.map((p) => (
-                      <Route key={p.path} path={p.path} element={p.element} />
+                      <Route
+                        key={p.path}
+                        path={p.path}
+                        element={
+                          <ReadinessWrapper>{p.element}</ReadinessWrapper>
+                        }
+                      />
                     ))}
                   </Routes>
                 </Suspense>
