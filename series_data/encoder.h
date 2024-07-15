@@ -46,7 +46,7 @@ class Encoder {
       } else {
         encoder.encode(timestamp, value);
       }
-    } else if (timestamp < encoder.timestamp() || !encoder.is_actual(value)) {
+    } else if (timestamp < encoder.timestamp()) {
       outdated_sample_encoder_.encode(*this, ls_id, timestamp, value);
     }
   }
@@ -67,13 +67,7 @@ class Encoder {
           [[unlikely]];
           ChunkFinalizer::finalize(storage_, ls_id, chunk);
         }
-      } else {
-        if (timestamp == state.timestamp()) {
-          if (is_actual_value(chunk, value)) {
-            return;
-          }
-        }
-
+      } else if (timestamp < state.timestamp()) {
         outdated_sample_encoder_.encode(*this, ls_id, timestamp, value);
         return;
       }
