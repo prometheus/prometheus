@@ -21,11 +21,11 @@ import { useAPIQuery } from "../../api/api";
 import classes from "./DataTable.module.css";
 import dayjs from "dayjs";
 import timezone from "dayjs/plugin/timezone";
-import { useAppSelector } from "../../state/hooks";
 import { formatTimestamp } from "../../lib/formatTime";
 import HistogramChart from "./HistogramChart";
 import { Histogram } from "../../types/types";
 import { bucketRangeString } from "./HistogramHelpers";
+import { useSettings } from "../../state/settingsSlice";
 dayjs.extend(timezone);
 
 const maxFormattableSeries = 1000;
@@ -64,7 +64,7 @@ const DataTable: FC<DataTableProps> = ({ expr, evalTime, retriggerIdx }) => {
     expr !== "" && refetch();
   }, [retriggerIdx, refetch, expr, evalTime]);
 
-  const useLocalTime = useAppSelector((state) => state.settings.useLocalTime);
+  const { useLocalTime } = useSettings();
 
   // Show a skeleton only on the first load, not on subsequent ones.
   if (isLoading) {

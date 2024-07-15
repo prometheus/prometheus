@@ -1,8 +1,8 @@
 import { Popover, ActionIcon, Fieldset, Checkbox, Stack } from "@mantine/core";
 import { IconSettings } from "@tabler/icons-react";
 import { FC } from "react";
-import { useAppDispatch, useAppSelector } from "../state/hooks";
-import { updateSettings } from "../state/settingsSlice";
+import { useAppDispatch } from "../state/hooks";
+import { updateSettings, useSettings } from "../state/settingsSlice";
 
 const SettingsMenu: FC = () => {
   const {
@@ -12,7 +12,7 @@ const SettingsMenu: FC = () => {
     enableSyntaxHighlighting,
     enableLinter,
     showAnnotations,
-  } = useAppSelector((state) => state.settings);
+  } = useSettings();
   const dispatch = useAppDispatch();
 
   return (

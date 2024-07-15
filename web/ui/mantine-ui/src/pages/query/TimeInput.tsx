@@ -2,7 +2,7 @@ import { Group, ActionIcon, CloseButton } from "@mantine/core";
 import { DatesProvider, DateTimePicker } from "@mantine/dates";
 import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
 import { FC } from "react";
-import { useAppSelector } from "../../state/hooks";
+import { useSettings } from "../../state/settingsSlice";
 
 interface TimeInputProps {
   time: number | null; // Timestamp in milliseconds.
@@ -20,7 +20,7 @@ const TimeInput: FC<TimeInputProps> = ({
   onChangeTime,
 }) => {
   const baseTime = () => (time !== null ? time : Date.now().valueOf());
-  const useLocalTime = useAppSelector((state) => state.settings.useLocalTime);
+  const { useLocalTime } = useSettings();
 
   return (
     <Group gap={5}>

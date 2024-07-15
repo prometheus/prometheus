@@ -61,7 +61,7 @@ import {
 } from "@tabler/icons-react";
 import { useAPIQuery } from "../../api/api";
 import { notifications } from "@mantine/notifications";
-import { useAppSelector } from "../../state/hooks";
+import { useSettings } from "../../state/settingsSlice";
 
 const promqlExtension = new PromQLExtension();
 
@@ -126,7 +126,7 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
     enableAutocomplete,
     enableSyntaxHighlighting,
     enableLinter,
-  } = useAppSelector((state) => state.settings);
+  } = useSettings();
   const [expr, setExpr] = useState(initialExpr);
   useEffect(() => {
     setExpr(initialExpr);

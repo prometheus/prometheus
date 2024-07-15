@@ -55,13 +55,12 @@ import TSDBStatusPage from "./pages/TSDBStatusPage";
 import FlagsPage from "./pages/FlagsPage";
 import ConfigPage from "./pages/ConfigPage";
 import AgentPage from "./pages/AgentPage";
-import { Suspense, useContext } from "react";
+import { Suspense } from "react";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeSelector } from "./components/ThemeSelector";
-import { SettingsContext } from "./settings";
 import { Notifications } from "@mantine/notifications";
 import { useAppDispatch } from "./state/hooks";
-import { updateSettings } from "./state/settingsSlice";
+import { updateSettings, useSettings } from "./state/settingsSlice";
 import SettingsMenu from "./components/SettingsMenu";
 
 const queryClient = new QueryClient();
@@ -182,11 +181,12 @@ const navLinkXPadding = "md";
 function App() {
   const [scroll, scrollTo] = useWindowScroll();
   const [opened, { toggle }] = useDisclosure();
-  const { agentMode } = useContext(SettingsContext);
 
   const pathPrefix = getPathPrefix(window.location.pathname);
   const dispatch = useAppDispatch();
   dispatch(updateSettings({ pathPrefix }));
+
+  const { agentMode } = useSettings();
 
   const navLinks = (
     <>

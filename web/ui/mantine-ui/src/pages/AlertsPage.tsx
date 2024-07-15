@@ -22,6 +22,7 @@ import { useAppDispatch, useAppSelector } from "../state/hooks";
 import { IconInfoCircle, IconSearch } from "@tabler/icons-react";
 import { LabelBadges } from "../components/LabelBadges";
 import { updateAlertFilters } from "../state/alertsPageSlice";
+import { useSettings } from "../state/settingsSlice";
 
 export default function AlertsPage() {
   const { data } = useSuspenseAPIQuery<AlertingRulesResult>({
@@ -32,9 +33,7 @@ export default function AlertsPage() {
   });
 
   const dispatch = useAppDispatch();
-  const showAnnotations = useAppSelector(
-    (state) => state.settings.showAnnotations
-  );
+  const { showAnnotations } = useSettings();
   const filters = useAppSelector((state) => state.alertsPage.filters);
 
   const ruleStatsCount = {
@@ -56,8 +55,8 @@ export default function AlertsPage() {
             o === "inactive"
               ? badgeClasses.healthOk
               : o === "pending"
-              ? badgeClasses.healthWarn
-              : badgeClasses.healthErr
+                ? badgeClasses.healthWarn
+                : badgeClasses.healthErr
           }
           placeholder="Filter by alert state"
           values={filters.state}
@@ -121,8 +120,8 @@ export default function AlertsPage() {
                           numFiring > 0
                             ? "5px solid var(--mantine-color-red-4)"
                             : numPending > 0
-                            ? "5px solid var(--mantine-color-orange-5)"
-                            : "5px solid var(--mantine-color-green-4)",
+                              ? "5px solid var(--mantine-color-orange-5)"
+                              : "5px solid var(--mantine-color-green-4)",
                       }}
                     >
                       <Accordion.Control>

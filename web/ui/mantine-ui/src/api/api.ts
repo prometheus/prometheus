@@ -1,5 +1,5 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
-import { useAppSelector } from "../state/hooks";
+import { useSettings } from "../state/settingsSlice";
 
 export const API_PATH = "api/v1";
 
@@ -92,7 +92,7 @@ export const useAPIQuery = <T>({
   params,
   enabled,
 }: QueryOptions) => {
-  const pathPrefix = useAppSelector((state) => state.settings.pathPrefix);
+  const { pathPrefix } = useSettings();
 
   return useQuery<SuccessAPIResponse<T>>({
     queryKey: key ? [key] : [path, params],
@@ -105,7 +105,7 @@ export const useAPIQuery = <T>({
 };
 
 export const useSuspenseAPIQuery = <T>({ key, path, params }: QueryOptions) => {
-  const pathPrefix = useAppSelector((state) => state.settings.pathPrefix);
+  const { pathPrefix } = useSettings();
 
   return useSuspenseQuery<SuccessAPIResponse<T>>({
     queryKey: key ? [key] : [path, params],
