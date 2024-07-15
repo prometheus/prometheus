@@ -248,7 +248,7 @@ func (d *Discovery) refreshOne(ctx context.Context, name string, ch chan<- *targ
 	cachedMsg, found := d.cache.Get(name)
 	if found {
 		d.metrics.dnsSDLookupsCount.Inc()
-		tg, err := d.dnsMsgToTargetGroup(ctx, name, cachedMsg)
+		tg, err := d.dnsMsgToTargetGroup(name, cachedMsg)
 		if err != nil {
 			d.metrics.dnsSDLookupFailuresCount.Inc()
 			return err
@@ -269,7 +269,7 @@ func (d *Discovery) refreshOne(ctx context.Context, name string, ch chan<- *targ
 	}
 
 	d.cache.Set(name, response)
-	tg, err := d.dnsMsgToTargetGroup(ctx, name, response)
+	tg, err := d.dnsMsgToTargetGroup(name, response)
 	if err != nil {
 		d.metrics.dnsSDLookupFailuresCount.Inc()
 		return err
@@ -282,7 +282,7 @@ func (d *Discovery) refreshOne(ctx context.Context, name string, ch chan<- *targ
 	return nil
 }
 
-func (d *Discovery) dnsMsgToTargetGroup(ctx context.Context, name string, msg *dns.Msg) (*targetgroup.Group, error) {
+func (d *Discovery) dnsMsgToTargetGroup(name string, msg *dns.Msg) (*targetgroup.Group, error) {
 	tg := &targetgroup.Group{}
 	hostPort := func(a string, p int) model.LabelValue {
 		return model.LabelValue(net.JoinHostPort(a, strconv.Itoa(p)))
