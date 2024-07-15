@@ -2095,8 +2095,6 @@ type memSeries struct {
 
 	ooo *memSeriesOOOFields
 
-	mmMaxTime int64 // Max time of any mmapped chunk, only used during WAL replay.
-
 	nextAt                           int64 // Timestamp at which to cut the next chunk.
 	histogramChunkHasComputedEndTime bool  // True if nextAt has been predicted for the current histograms chunk; false otherwise.
 
