@@ -303,10 +303,11 @@ func deepCopy(p *OpenMetricsParser) OpenMetricsParser {
 	}
 
 	newParser := OpenMetricsParser{
-		l:      newLexer,
-		mtype:  p.mtype,
-		val:    p.val,
-		skipCT: false,
+		l:       newLexer,
+		builder: labels.NewScratchBuilderWithSymbolTable(labels.NewSymbolTable(), 16),
+		mtype:   p.mtype,
+		val:     p.val,
+		skipCT:  false,
 	}
 	return newParser
 }
