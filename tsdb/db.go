@@ -1992,8 +1992,9 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 		}
 	}()
 
+	overlapsOOO := overlapsClosedInterval(mint, maxt, db.head.MinOOOTime(), db.head.MaxOOOTime())
 	var headQuerier storage.Querier
-	if maxt >= db.head.MinTime() {
+	if maxt >= db.head.MinTime() || overlapsOOO {
 		rh := NewRangeHead(db.head, mint, maxt)
 		var err error
 		headQuerier, err = db.blockQuerierFunc(rh, mint, maxt)
@@ -2020,22 +2021,10 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 		}
 	}
 
-	if headQuerier != nil {
-		if overlapsClosedInterval(mint, maxt, db.head.MinOOOTime(), db.head.MaxOOOTime()) {
-			// We need to fetch from in-order and out-of-order chunks: wrap the headQuerier.
-			isoState := db.head.oooIso.TrackReadAfter(db.lastGarbageCollectedMmapRef)
-			headQuerier = NewHeadAndOOOQuerier(mint, maxt, db.head, isoState, headQuerier)
-		}
-	} else if overlapsClosedInterval(mint, maxt, db.head.MinOOOTime(), db.head.MaxOOOTime()) {
-		rh := NewOOORangeHead(db.head, mint, maxt, db.lastGarbageCollectedMmapRef)
-		var err error
-		headQuerier, err = db.blockQuerierFunc(rh, mint, maxt)
-		if err != nil {
-			// If BlockQuerierFunc() failed, make sure to clean up the pending read created by NewOOORangeHead.
-			rh.isoState.Close()
-
-			return nil, fmt.Errorf("open block querier for ooo head %s: %w", rh, err)
-		}
+	if overlapsOOO {
+		// We need to fetch from in-order and out-of-order chunks: wrap the headQuerier.
+		isoState := db.head.oooIso.TrackReadAfter(db.lastGarbageCollectedMmapRef)
+		headQuerier = NewHeadAndOOOQuerier(mint, maxt, db.head, isoState, headQuerier)
 	}
 
 	if headQuerier != nil {
@@ -2079,8 +2068,9 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 		}
 	}()
 
+	overlapsOOO := overlapsClosedInterval(mint, maxt, db.head.MinOOOTime(), db.head.MaxOOOTime())
 	var headQuerier storage.ChunkQuerier
-	if maxt >= db.head.MinTime() {
+	if maxt >= db.head.MinTime() || overlapsOOO {
 		rh := NewRangeHead(db.head, mint, maxt)
 		headQuerier, err = db.blockChunkQuerierFunc(rh, mint, maxt)
 		if err != nil {
@@ -2106,21 +2096,10 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 		}
 	}
 
-	if headQuerier != nil {
-		if overlapsClosedInterval(mint, maxt, db.head.MinOOOTime(), db.head.MaxOOOTime()) {
-			// We need to fetch from in-order and out-of-order chunks: wrap the headQuerier.
-			isoState := db.head.oooIso.TrackReadAfter(db.lastGarbageCollectedMmapRef)
-			headQuerier = NewHeadAndOOOChunkQuerier(mint, maxt, db.head, isoState, headQuerier)
-		}
-	} else if overlapsClosedInterval(mint, maxt, db.head.MinOOOTime(), db.head.MaxOOOTime()) {
-		rh := NewOOORangeHead(db.head, mint, maxt, db.lastGarbageCollectedMmapRef)
-		headQuerier, err = db.blockChunkQuerierFunc(rh, mint, maxt)
-		if err != nil {
-			// If NewBlockQuerier() failed, make sure to clean up the pending read created by NewOOORangeHead.
-			rh.isoState.Close()
-
-			return nil, fmt.Errorf("open block chunk querier for ooo head %s: %w", rh, err)
-		}
+	if overlapsOOO {
+		// We need to fetch from in-order and out-of-order chunks: wrap the headQuerier.
+		isoState := db.head.oooIso.TrackReadAfter(db.lastGarbageCollectedMmapRef)
+		headQuerier = NewHeadAndOOOChunkQuerier(mint, maxt, db.head, isoState, headQuerier)
 	}
 
 	if headQuerier != nil {
