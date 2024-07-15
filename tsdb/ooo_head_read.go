@@ -248,59 +248,6 @@ func (oh *OOOHeadIndexReader) Postings(ctx context.Context, name string, values 
 	}
 }
 
-type OOOHeadChunkReader struct {
-	head       *Head
-	mint, maxt int64
-	isoState   *oooIsolationState
-	maxMmapRef chunks.ChunkDiskMapperRef
-}
-
-func NewOOOHeadChunkReader(head *Head, mint, maxt int64, isoState *oooIsolationState, maxMmapRef chunks.ChunkDiskMapperRef) *OOOHeadChunkReader {
-	return &OOOHeadChunkReader{
-		head:       head,
-		mint:       mint,
-		maxt:       maxt,
-		isoState:   isoState,
-		maxMmapRef: maxMmapRef,
-	}
-}
-
-func (cr OOOHeadChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
-	sid, _ := chunks.HeadChunkRef(meta.Ref).Unpack()
-
-	s := cr.head.series.getByID(sid)
-	// This means that the series has been garbage collected.
-	if s == nil {
-		return nil, nil, storage.ErrNotFound
-	}
-
-	s.Lock()
-	if s.ooo == nil {
-		// There is no OOO data for this series.
-		s.Unlock()
-		return nil, nil, storage.ErrNotFound
-	}
-	mc, err := s.oooMergedChunks(meta, cr.head.chunkDiskMapper, nil, cr.mint, cr.maxt, cr.maxMmapRef)
-	s.Unlock()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// This means that the query range did not overlap with the requested chunk.
-	if len(mc.chunkIterables) == 0 {
-		return nil, nil, storage.ErrNotFound
-	}
-
-	return nil, mc, nil
-}
-
-func (cr OOOHeadChunkReader) Close() error {
-	if cr.isoState != nil {
-		cr.isoState.Close()
-	}
-	return nil
-}
-
 type OOOCompactionHead struct {
 	oooIR       *OOOHeadIndexReader
 	lastMmapRef chunks.ChunkDiskMapperRef
@@ -397,7 +344,7 @@ func (ch *OOOCompactionHead) Index() (IndexReader, error) {
 }
 
 func (ch *OOOCompactionHead) Chunks() (ChunkReader, error) {
-	return NewOOOHeadChunkReader(ch.oooIR.head, ch.oooIR.mint, ch.oooIR.maxt, nil, ch.lastMmapRef), nil
+	return NewHeadAndOOOChunkReader(ch.oooIR.head, ch.oooIR.mint, ch.oooIR.maxt, nil, nil, ch.lastMmapRef), nil
 }
 
 func (ch *OOOCompactionHead) Tombstones() (tombstones.Reader, error) {
