@@ -29,13 +29,15 @@ func TestMemoizedSeriesIterator(t *testing.T) {
 	sampleEq := func(ets int64, ev float64, efh *histogram.FloatHistogram) {
 		if efh == nil {
 			ts, v := it.At()
-			require.Equal(t, ets, ts, "timestamp mismatch")
-			require.Equal(t, ev, v, "value mismatch")
+			require.Equal(t, ets, ts, "At() timestamp mismatch")
+			require.Equal(t, ev, v, "At() value mismatch")
 		} else {
 			ts, fh := it.AtFloatHistogram()
-			require.Equal(t, ets, ts, "timestamp mismatch")
-			require.Equal(t, efh, fh, "histogram mismatch")
+			require.Equal(t, ets, ts, "AtFloatHistogram() timestamp mismatch")
+			require.Equal(t, efh, fh, "AtFloatHistogram() histogram mismatch")
 		}
+
+		require.Equal(t, ets, it.AtT(), "AtT() timestamp mismatch")
 	}
 	prevSampleEq := func(ets int64, ev float64, efh *histogram.FloatHistogram, eok bool) {
 		ts, v, fh, ok := it.PeekPrev()
