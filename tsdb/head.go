@@ -2217,7 +2217,7 @@ func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkD
 	return removedInOrder + removedOOO
 }
 
-// mmMaxTime returns the time of any mmapped chunk.
+// mmMaxTime returns the max time of any mmapped chunk, or math.MinInt64 if there are none.
 // Only used during WAL replay, so we can skip calling append() for samples it will reject.
 func (s *memSeries) mmMaxTime() int64 {
 	if len(s.mmappedChunks) > 0 {
