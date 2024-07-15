@@ -50,7 +50,7 @@ const (
 	tagsLabel = model.MetaLabelPrefix + "consul_tags"
 	// serviceLabel is the name of the label containing the service name.
 	serviceLabel = model.MetaLabelPrefix + "consul_service"
-	// healthLabel is the name of the label containing the health of the service instance
+	// healthLabel is the name of the label containing the health of the service instance.
 	healthLabel = model.MetaLabelPrefix + "consul_health"
 	// serviceAddressLabel is the name of the label containing the (optional) service address.
 	serviceAddressLabel = model.MetaLabelPrefix + "consul_service_address"
@@ -71,41 +71,18 @@ const (
 	namespace = "prometheus"
 )
 
-var (
-	rpcFailuresCount = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: namespace,
-			Name:      "sd_consul_rpc_failures_total",
-			Help:      "The number of Consul RPC call failures.",
-		})
-	rpcDuration = prometheus.NewSummaryVec(
-		prometheus.SummaryOpts{
-			Namespace:  namespace,
-			Name:       "sd_consul_rpc_duration_seconds",
-			Help:       "The duration of a Consul RPC call in seconds.",
-			Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
-		},
-		[]string{"endpoint", "call"},
-	)
-
-	// Initialize metric vectors.
-	servicesRPCDuration = rpcDuration.WithLabelValues("catalog", "services")
-	serviceRPCDuration  = rpcDuration.WithLabelValues("catalog", "service")
-
-	// DefaultSDConfig is the default Consul SD configuration.
-	DefaultSDConfig = SDConfig{
-		TagSeparator:     ",",
-		Scheme:           "http",
-		Server:           "localhost:8500",
-		AllowStale:       true,
-		RefreshInterval:  model.Duration(30 * time.Second),
-		HTTPClientConfig: config.DefaultHTTPClientConfig,
-	}
-)
+// DefaultSDConfig is the default Consul SD configuration.
+var DefaultSDConfig = SDConfig{
+	TagSeparator:     ",",
+	Scheme:           "http",
+	Server:           "localhost:8500",
+	AllowStale:       true,
+	RefreshInterval:  model.Duration(30 * time.Second),
+	HTTPClientConfig: config.DefaultHTTPClientConfig,
+}
 
 func init() {
 	discovery.RegisterConfig(&SDConfig{})
-	prometheus.MustRegister(rpcFailuresCount, rpcDuration)
 }
 
 // SDConfig is the configuration for Consul service discovery.
@@ -142,12 +119,17 @@ type SDConfig struct {
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 }
 
+// NewDiscovererMetrics implements discovery.Config.
+func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return newDiscovererMetrics(reg, rmi)
+}
+
 // Name returns the name of the Config.
 func (*SDConfig) Name() string { return "consul" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger)
+	return NewDiscovery(c, opts.Logger, opts.Metrics)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -196,10 +178,16 @@ type Discovery struct {
 	refreshInterval  time.Duration
 	finalizer        func()
 	logger           log.Logger
+	metrics          *consulMetrics
 }
 
 // NewDiscovery returns a new Discovery for the given config.
-func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+	m, ok := metrics.(*consulMetrics)
+	if !ok {
+		return nil, fmt.Errorf("invalid discovery metrics type")
+	}
+
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -237,7 +225,9 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		clientPartition:  conf.Partition,
 		finalizer:        wrapper.CloseIdleConnections,
 		logger:           logger,
+		metrics:          m,
 	}
+
 	return cd, nil
 }
 
@@ -293,7 +283,7 @@ func (d *Discovery) getDatacenter() error {
 	info, err := d.client.Agent().Self()
 	if err != nil {
 		level.Error(d.logger).Log("msg", "Error retrieving datacenter name", "err", err)
-		rpcFailuresCount.Inc()
+		d.metrics.rpcFailuresCount.Inc()
 		return err
 	}
 
@@ -382,7 +372,7 @@ func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.
 	t0 := time.Now()
 	srvs, meta, err := catalog.Services(opts.WithContext(ctx))
 	elapsed := time.Since(t0)
-	servicesRPCDuration.Observe(elapsed.Seconds())
+	d.metrics.servicesRPCDuration.Observe(elapsed.Seconds())
 
 	// Check the context before in order to exit early.
 	select {
@@ -393,7 +383,7 @@ func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.
 
 	if err != nil {
 		level.Error(d.logger).Log("msg", "Error refreshing service list", "err", err)
-		rpcFailuresCount.Inc()
+		d.metrics.rpcFailuresCount.Inc()
 		time.Sleep(retryInterval)
 		return
 	}
@@ -449,13 +439,15 @@ func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.
 
 // consulService contains data belonging to the same service.
 type consulService struct {
-	name         string
-	tags         []string
-	labels       model.LabelSet
-	discovery    *Discovery
-	client       *consul.Client
-	tagSeparator string
-	logger       log.Logger
+	name               string
+	tags               []string
+	labels             model.LabelSet
+	discovery          *Discovery
+	client             *consul.Client
+	tagSeparator       string
+	logger             log.Logger
+	rpcFailuresCount   prometheus.Counter
+	serviceRPCDuration prometheus.Observer
 }
 
 // Start watching a service.
@@ -469,8 +461,10 @@ func (d *Discovery) watchService(ctx context.Context, ch chan<- []*targetgroup.G
 			serviceLabel:    model.LabelValue(name),
 			datacenterLabel: model.LabelValue(d.clientDatacenter),
 		},
-		tagSeparator: d.tagSeparator,
-		logger:       d.logger,
+		tagSeparator:       d.tagSeparator,
+		logger:             d.logger,
+		rpcFailuresCount:   d.metrics.rpcFailuresCount,
+		serviceRPCDuration: d.metrics.serviceRPCDuration,
 	}
 
 	go func() {
@@ -508,7 +502,7 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 	t0 := time.Now()
 	serviceNodes, meta, err := health.ServiceMultipleTags(srv.name, srv.tags, false, opts.WithContext(ctx))
 	elapsed := time.Since(t0)
-	serviceRPCDuration.Observe(elapsed.Seconds())
+	srv.serviceRPCDuration.Observe(elapsed.Seconds())
 
 	// Check the context before in order to exit early.
 	select {
@@ -520,7 +514,7 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 
 	if err != nil {
 		level.Error(srv.logger).Log("msg", "Error refreshing service", "service", srv.name, "tags", strings.Join(srv.tags, ","), "err", err)
-		rpcFailuresCount.Inc()
+		srv.rpcFailuresCount.Inc()
 		time.Sleep(retryInterval)
 		return
 	}
@@ -545,9 +539,9 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 		// since the service may be registered remotely through a different node.
 		var addr string
 		if serviceNode.Service.Address != "" {
-			addr = net.JoinHostPort(serviceNode.Service.Address, fmt.Sprintf("%d", serviceNode.Service.Port))
+			addr = net.JoinHostPort(serviceNode.Service.Address, strconv.Itoa(serviceNode.Service.Port))
 		} else {
-			addr = net.JoinHostPort(serviceNode.Node.Address, fmt.Sprintf("%d", serviceNode.Service.Port))
+			addr = net.JoinHostPort(serviceNode.Node.Address, strconv.Itoa(serviceNode.Service.Port))
 		}
 
 		labels := model.LabelSet{

@@ -25,6 +25,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/discovery"
@@ -162,12 +163,12 @@ func (a *Adapter) Run() {
 }
 
 // NewAdapter creates a new instance of Adapter.
-func NewAdapter(ctx context.Context, file, name string, d discovery.Discoverer, logger log.Logger) *Adapter {
+func NewAdapter(ctx context.Context, file, name string, d discovery.Discoverer, logger log.Logger, sdMetrics map[string]discovery.DiscovererMetrics, registerer prometheus.Registerer) *Adapter {
 	return &Adapter{
 		ctx:     ctx,
 		disc:    d,
 		groups:  make(map[string]*customSD),
-		manager: discovery.NewManager(ctx, logger),
+		manager: discovery.NewManager(ctx, logger, registerer, sdMetrics),
 		output:  file,
 		name:    name,
 		logger:  logger,

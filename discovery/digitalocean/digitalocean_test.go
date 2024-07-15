@@ -20,8 +20,11 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/discovery"
 )
 
 type DigitalOceanSDTestSuite struct {
@@ -46,7 +49,15 @@ func TestDigitalOceanSDRefresh(t *testing.T) {
 
 	cfg := DefaultSDConfig
 	cfg.HTTPClientConfig.BearerToken = tokenID
-	d, err := NewDiscovery(&cfg, log.NewNopLogger())
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+	defer refreshMetrics.Unregister()
+
+	d, err := NewDiscovery(&cfg, log.NewNopLogger(), metrics)
 	require.NoError(t, err)
 	endpoint, err := url.Parse(sdmock.Mock.Endpoint())
 	require.NoError(t, err)
@@ -56,12 +67,12 @@ func TestDigitalOceanSDRefresh(t *testing.T) {
 	tgs, err := d.refresh(ctx)
 	require.NoError(t, err)
 
-	require.Equal(t, 1, len(tgs))
+	require.Len(t, tgs, 1)
 
 	tg := tgs[0]
 	require.NotNil(t, tg)
 	require.NotNil(t, tg.Targets)
-	require.Equal(t, 4, len(tg.Targets))
+	require.Len(t, tg.Targets, 4)
 
 	for i, lbls := range []model.LabelSet{
 		{

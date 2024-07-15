@@ -17,7 +17,10 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/oklog/ulid"
+
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
 
@@ -111,22 +114,27 @@ type OOORangeHead struct {
 	// the timerange of the query and having preexisting pointers to the first
 	// and last timestamp help with that.
 	mint, maxt int64
+
+	isoState *oooIsolationState
 }
 
-func NewOOORangeHead(head *Head, mint, maxt int64) *OOORangeHead {
+func NewOOORangeHead(head *Head, mint, maxt int64, minRef chunks.ChunkDiskMapperRef) *OOORangeHead {
+	isoState := head.oooIso.TrackReadAfter(minRef)
+
 	return &OOORangeHead{
-		head: head,
-		mint: mint,
-		maxt: maxt,
+		head:     head,
+		mint:     mint,
+		maxt:     maxt,
+		isoState: isoState,
 	}
 }
 
 func (oh *OOORangeHead) Index() (IndexReader, error) {
-	return NewOOOHeadIndexReader(oh.head, oh.mint, oh.maxt), nil
+	return NewOOOHeadIndexReader(oh.head, oh.mint, oh.maxt, oh.isoState.minRef), nil
 }
 
 func (oh *OOORangeHead) Chunks() (ChunkReader, error) {
-	return NewOOOHeadChunkReader(oh.head, oh.mint, oh.maxt), nil
+	return NewOOOHeadChunkReader(oh.head, oh.mint, oh.maxt, oh.isoState), nil
 }
 
 func (oh *OOORangeHead) Tombstones() (tombstones.Reader, error) {
@@ -135,13 +143,13 @@ func (oh *OOORangeHead) Tombstones() (tombstones.Reader, error) {
 	return tombstones.NewMemTombstones(), nil
 }
 
+var oooRangeHeadULID = ulid.MustParse("0000000000XXXX000RANGEHEAD")
+
 func (oh *OOORangeHead) Meta() BlockMeta {
-	var id [16]byte
-	copy(id[:], "____ooo_head____")
 	return BlockMeta{
 		MinTime: oh.mint,
 		MaxTime: oh.maxt,
-		ULID:    id,
+		ULID:    oooRangeHeadULID,
 		Stats: BlockStats{
 			NumSeries: oh.head.NumSeries(),
 		},

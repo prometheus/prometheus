@@ -12,7 +12,6 @@
 // limitations under the License.
 //
 //go:build !windows
-// +build !windows
 
 package main
 
@@ -23,6 +22,8 @@ import (
 	"os/exec"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -38,9 +39,7 @@ func TestStartupInterrupt(t *testing.T) {
 
 	prom := exec.Command(promPath, "-test.main", "--config.file="+promConfig, "--storage.tsdb.path="+t.TempDir(), "--web.listen-address=0.0.0.0"+port)
 	err := prom.Start()
-	if err != nil {
-		t.Fatalf("execution error: %v", err)
-	}
+	require.NoError(t, err)
 
 	done := make(chan error, 1)
 	go func() {
@@ -69,14 +68,11 @@ Loop:
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	if !startedOk {
-		t.Fatal("prometheus didn't start in the specified timeout")
-	}
-	switch err := prom.Process.Kill(); {
-	case err == nil:
-		t.Errorf("prometheus didn't shutdown gracefully after sending the Interrupt signal")
-	case stoppedErr != nil && stoppedErr.Error() != "signal: interrupt":
-		// TODO: find a better way to detect when the process didn't exit as expected!
-		t.Errorf("prometheus exited with an unexpected error: %v", stoppedErr)
+	require.True(t, startedOk, "prometheus didn't start in the specified timeout")
+	err = prom.Process.Kill()
+	require.Error(t, err, "prometheus didn't shutdown gracefully after sending the Interrupt signal")
+	// TODO - find a better way to detect when the process didn't exit as expected!
+	if stoppedErr != nil {
+		require.EqualError(t, stoppedErr, "signal: interrupt", "prometheus exit")
 	}
 }

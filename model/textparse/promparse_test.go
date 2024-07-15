@@ -15,18 +15,33 @@ package textparse
 
 import (
 	"bytes"
-	"compress/gzip"
 	"errors"
 	"io"
 	"os"
 	"testing"
 
-	"github.com/prometheus/common/expfmt"
-	"github.com/prometheus/common/model"
+	"github.com/klauspost/compress/gzip"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
+
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/util/testutil"
 )
+
+type expectedParse struct {
+	lset    labels.Labels
+	m       string
+	t       *int64
+	v       float64
+	typ     model.MetricType
+	help    string
+	unit    string
+	comment string
+	e       *exemplar.Exemplar
+}
 
 func TestPromParse(t *testing.T) {
 	input := `# HELP go_gc_duration_seconds A summary of the GC invocation durations.
@@ -47,6 +62,7 @@ go_gc_duration_seconds{ quantile="1.0", a="b" } 8.3835e-05
 go_gc_duration_seconds { quantile="1.0", a="b" } 8.3835e-05
 go_gc_duration_seconds { quantile= "1.0", a= "b", } 8.3835e-05
 go_gc_duration_seconds { quantile = "1.0", a = "b" } 8.3835e-05
+go_gc_duration_seconds { quantile = "2.0" a = "b" } 8.3835e-05
 go_gc_duration_seconds_count 99
 some:aggregate:rate5m{a_b="c"}	1
 # HELP go_goroutines Number of goroutines that currently exist.
@@ -60,21 +76,13 @@ testmetric{label="\"bar\""} 1`
 
 	int64p := func(x int64) *int64 { return &x }
 
-	exp := []struct {
-		lset    labels.Labels
-		m       string
-		t       *int64
-		v       float64
-		typ     MetricType
-		help    string
-		comment string
-	}{
+	exp := []expectedParse{
 		{
 			m:    "go_gc_duration_seconds",
 			help: "A summary of the GC invocation durations.",
 		}, {
 			m:   "go_gc_duration_seconds",
-			typ: MetricTypeSummary,
+			typ: model.MetricTypeSummary,
 		}, {
 			m:    `go_gc_duration_seconds{quantile="0"}`,
 			v:    4.9351e-05,
@@ -130,6 +138,11 @@ testmetric{label="\"bar\""} 1`
 			v:    8.3835e-05,
 			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"),
 		}, {
+			// NOTE: Unlike OpenMetrics, Promparse allows spaces between label terms. This appears to be unintended and should probably be fixed.
+			m:    `go_gc_duration_seconds { quantile = "2.0" a = "b" }`,
+			v:    8.3835e-05,
+			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "2.0", "a", "b"),
+		}, {
 			m:    `go_gc_duration_seconds_count`,
 			v:    99,
 			lset: labels.FromStrings("__name__", "go_gc_duration_seconds_count"),
@@ -142,7 +155,7 @@ testmetric{label="\"bar\""} 1`
 			help: "Number of goroutines that currently exist.",
 		}, {
 			m:   "go_goroutines",
-			typ: MetricTypeGauge,
+			typ: model.MetricTypeGauge,
 		}, {
 			m:    `go_goroutines`,
 			v:    33,
@@ -170,7 +183,11 @@ testmetric{label="\"bar\""} 1`
 		},
 	}
 
-	p := NewPromParser([]byte(input))
+	p := NewPromParser([]byte(input), labels.NewSymbolTable())
+	checkParseResults(t, p, exp)
+}
+
+func checkParseResults(t *testing.T, p Parser, exp []expectedParse) {
 	i := 0
 
 	var res labels.Labels
@@ -191,7 +208,16 @@ testmetric{label="\"bar\""} 1`
 			require.Equal(t, exp[i].m, string(m))
 			require.Equal(t, exp[i].t, ts)
 			require.Equal(t, exp[i].v, v)
-			require.Equal(t, exp[i].lset, res)
+			testutil.RequireEqual(t, exp[i].lset, res)
+
+			var e exemplar.Exemplar
+			found := p.Exemplar(&e)
+			if exp[i].e == nil {
+				require.False(t, found)
+			} else {
+				require.True(t, found)
+				testutil.RequireEqual(t, *exp[i].e, e)
+			}
 
 		case EntryType:
 			m, typ := p.Type()
@@ -203,13 +229,98 @@ testmetric{label="\"bar\""} 1`
 			require.Equal(t, exp[i].m, string(m))
 			require.Equal(t, exp[i].help, string(h))
 
+		case EntryUnit:
+			m, u := p.Unit()
+			require.Equal(t, exp[i].m, string(m))
+			require.Equal(t, exp[i].unit, string(u))
+
 		case EntryComment:
 			require.Equal(t, exp[i].comment, string(p.Comment()))
 		}
 
 		i++
 	}
-	require.Equal(t, len(exp), i)
+	require.Len(t, exp, i)
+}
+
+func TestUTF8PromParse(t *testing.T) {
+	oldValidationScheme := model.NameValidationScheme
+	model.NameValidationScheme = model.UTF8Validation
+	defer func() {
+		model.NameValidationScheme = oldValidationScheme
+	}()
+
+	input := `# HELP "go.gc_duration_seconds" A summary of the GC invocation durations.
+# 	TYPE "go.gc_duration_seconds" summary
+{"go.gc_duration_seconds",quantile="0"} 4.9351e-05
+{"go.gc_duration_seconds",quantile="0.25",} 7.424100000000001e-05
+{"go.gc_duration_seconds",quantile="0.5",a="b"} 8.3835e-05
+{"go.gc_duration_seconds",quantile="0.8", a="b"} 8.3835e-05
+{"go.gc_duration_seconds", quantile="0.9", a="b"} 8.3835e-05
+{"go.gc_duration_seconds", quantile="1.0", a="b" } 8.3835e-05
+{ "go.gc_duration_seconds", quantile="1.0", a="b" } 8.3835e-05
+{ "go.gc_duration_seconds", quantile= "1.0", a= "b", } 8.3835e-05
+{ "go.gc_duration_seconds", quantile = "1.0", a = "b" } 8.3835e-05
+{"go.gc_duration_seconds_count"} 99
+{"Heizölrückstoßabdämpfung 10€ metric with \"interesting\" {character\nchoices}","strange©™\n'quoted' \"name\""="6"} 10.0`
+
+	exp := []expectedParse{
+		{
+			m:    "go.gc_duration_seconds",
+			help: "A summary of the GC invocation durations.",
+		}, {
+			m:   "go.gc_duration_seconds",
+			typ: model.MetricTypeSummary,
+		}, {
+			m:    `{"go.gc_duration_seconds",quantile="0"}`,
+			v:    4.9351e-05,
+			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "0"),
+		}, {
+			m:    `{"go.gc_duration_seconds",quantile="0.25",}`,
+			v:    7.424100000000001e-05,
+			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "0.25"),
+		}, {
+			m:    `{"go.gc_duration_seconds",quantile="0.5",a="b"}`,
+			v:    8.3835e-05,
+			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "0.5", "a", "b"),
+		}, {
+			m:    `{"go.gc_duration_seconds",quantile="0.8", a="b"}`,
+			v:    8.3835e-05,
+			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "0.8", "a", "b"),
+		}, {
+			m:    `{"go.gc_duration_seconds", quantile="0.9", a="b"}`,
+			v:    8.3835e-05,
+			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "0.9", "a", "b"),
+		}, {
+			m:    `{"go.gc_duration_seconds", quantile="1.0", a="b" }`,
+			v:    8.3835e-05,
+			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "1.0", "a", "b"),
+		}, {
+			m:    `{ "go.gc_duration_seconds", quantile="1.0", a="b" }`,
+			v:    8.3835e-05,
+			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "1.0", "a", "b"),
+		}, {
+			m:    `{ "go.gc_duration_seconds", quantile= "1.0", a= "b", }`,
+			v:    8.3835e-05,
+			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "1.0", "a", "b"),
+		}, {
+			m:    `{ "go.gc_duration_seconds", quantile = "1.0", a = "b" }`,
+			v:    8.3835e-05,
+			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "1.0", "a", "b"),
+		}, {
+			m:    `{"go.gc_duration_seconds_count"}`,
+			v:    99,
+			lset: labels.FromStrings("__name__", "go.gc_duration_seconds_count"),
+		}, {
+			m: `{"Heizölrückstoßabdämpfung 10€ metric with \"interesting\" {character\nchoices}","strange©™\n'quoted' \"name\""="6"}`,
+			v: 10.0,
+			lset: labels.FromStrings("__name__", `Heizölrückstoßabdämpfung 10€ metric with "interesting" {character
+choices}`, "strange©™\n'quoted' \"name\"", "6"),
+		},
+	}
+
+	p := NewPromParser([]byte(input), labels.NewSymbolTable())
+	checkParseResults(t, p, exp)
 }
 
 func TestPromParseErrors(t *testing.T) {
@@ -236,6 +347,14 @@ func TestPromParseErrors(t *testing.T) {
 		{
 			input: "a{b=\"\xff\"} 1\n",
 			err:   "invalid UTF-8 label value: \"\\\"\\xff\\\"\"",
+		},
+		{
+			input: `{"a", "b = "c"}`,
+			err:   "expected equal, got \"c\\\"\" (\"LNAME\") while parsing: \"{\\\"a\\\", \\\"b = \\\"c\\\"\"",
+		},
+		{
+			input: `{"a",b\nc="d"} 1`,
+			err:   "expected equal, got \"\\\\\" (\"INVALID\") while parsing: \"{\\\"a\\\",b\\\\\"",
 		},
 		{
 			input: "a true\n",
@@ -267,7 +386,7 @@ func TestPromParseErrors(t *testing.T) {
 		},
 		{
 			input: `{a="ok"} 1`,
-			err:   "expected a valid start token, got \"{\" (\"INVALID\") while parsing: \"{\"",
+			err:   "metric name not set while parsing: \"{a=\\\"ok\\\"} 1\"",
 		},
 		{
 			input: "# TYPE #\n#EOF\n",
@@ -280,7 +399,7 @@ func TestPromParseErrors(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		p := NewPromParser([]byte(c.input))
+		p := NewPromParser([]byte(c.input), labels.NewSymbolTable())
 		var err error
 		for err == nil {
 			_, err = p.Next()
@@ -334,7 +453,7 @@ func TestPromNullByteHandling(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		p := NewPromParser([]byte(c.input))
+		p := NewPromParser([]byte(c.input), labels.NewSymbolTable())
 		var err error
 		for err == nil {
 			_, err = p.Next()
@@ -355,7 +474,7 @@ const (
 )
 
 func BenchmarkParse(b *testing.B) {
-	for parserName, parser := range map[string]func([]byte) Parser{
+	for parserName, parser := range map[string]func([]byte, *labels.SymbolTable) Parser{
 		"prometheus":  NewPromParser,
 		"openmetrics": NewOpenMetricsParser,
 	} {
@@ -374,8 +493,9 @@ func BenchmarkParse(b *testing.B) {
 				b.ReportAllocs()
 				b.ResetTimer()
 
+				st := labels.NewSymbolTable()
 				for i := 0; i < b.N; i += promtestdataSampleCount {
-					p := parser(buf)
+					p := parser(buf, st)
 
 				Outer:
 					for i < b.N {
@@ -402,8 +522,9 @@ func BenchmarkParse(b *testing.B) {
 				b.ReportAllocs()
 				b.ResetTimer()
 
+				st := labels.NewSymbolTable()
 				for i := 0; i < b.N; i += promtestdataSampleCount {
-					p := parser(buf)
+					p := parser(buf, st)
 
 				Outer:
 					for i < b.N {
@@ -435,8 +556,9 @@ func BenchmarkParse(b *testing.B) {
 				b.ReportAllocs()
 				b.ResetTimer()
 
+				st := labels.NewSymbolTable()
 				for i := 0; i < b.N; i += promtestdataSampleCount {
-					p := parser(buf)
+					p := parser(buf, st)
 
 				Outer:
 					for i < b.N {
@@ -472,7 +594,7 @@ func BenchmarkParse(b *testing.B) {
 				for i := 0; i < b.N; i += promtestdataSampleCount {
 					decSamples := make(model.Vector, 0, 50)
 					sdec := expfmt.SampleDecoder{
-						Dec: expfmt.NewDecoder(bytes.NewReader(buf), expfmt.FmtText),
+						Dec: expfmt.NewDecoder(bytes.NewReader(buf), expfmt.NewFormat(expfmt.TypeTextPlain)),
 						Opts: &expfmt.DecodeOptions{
 							Timestamp: model.TimeFromUnixNano(0),
 						},

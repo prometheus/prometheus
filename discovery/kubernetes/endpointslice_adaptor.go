@@ -20,7 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// endpointSliceAdaptor is an adaptor for the different EndpointSlice versions
+// endpointSliceAdaptor is an adaptor for the different EndpointSlice versions.
 type endpointSliceAdaptor interface {
 	get() interface{}
 	getObjectMeta() metav1.ObjectMeta
@@ -44,6 +44,7 @@ type endpointSliceEndpointAdaptor interface {
 	addresses() []string
 	hostname() *string
 	nodename() *string
+	zone() *string
 	conditions() endpointSliceEndpointConditionsAdaptor
 	targetRef() *corev1.ObjectReference
 	topology() map[string]string
@@ -55,7 +56,7 @@ type endpointSliceEndpointConditionsAdaptor interface {
 	terminating() *bool
 }
 
-// Adaptor for k8s.io/api/discovery/v1
+// Adaptor for k8s.io/api/discovery/v1.
 type endpointSliceAdaptorV1 struct {
 	endpointSlice *v1.EndpointSlice
 }
@@ -108,7 +109,7 @@ func (e *endpointSliceAdaptorV1) labelServiceName() string {
 	return v1.LabelServiceName
 }
 
-// Adaptor for k8s.io/api/discovery/v1beta1
+// Adaptor for k8s.io/api/discovery/v1beta1.
 type endpointSliceAdaptorV1Beta1 struct {
 	endpointSlice *v1beta1.EndpointSlice
 }
@@ -181,6 +182,10 @@ func (e *endpointSliceEndpointAdaptorV1) nodename() *string {
 	return e.endpoint.NodeName
 }
 
+func (e *endpointSliceEndpointAdaptorV1) zone() *string {
+	return e.endpoint.Zone
+}
+
 func (e *endpointSliceEndpointAdaptorV1) conditions() endpointSliceEndpointConditionsAdaptor {
 	return newEndpointSliceEndpointConditionsAdaptorFromV1(e.endpoint.Conditions)
 }
@@ -231,6 +236,10 @@ func (e *endpointSliceEndpointAdaptorV1beta1) hostname() *string {
 
 func (e *endpointSliceEndpointAdaptorV1beta1) nodename() *string {
 	return e.endpoint.NodeName
+}
+
+func (e *endpointSliceEndpointAdaptorV1beta1) zone() *string {
+	return nil
 }
 
 func (e *endpointSliceEndpointAdaptorV1beta1) conditions() endpointSliceEndpointConditionsAdaptor {

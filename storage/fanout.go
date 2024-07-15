@@ -72,15 +72,15 @@ func (f *fanout) StartTime() (int64, error) {
 	return firstTime, nil
 }
 
-func (f *fanout) Querier(ctx context.Context, mint, maxt int64) (Querier, error) {
-	primary, err := f.primary.Querier(ctx, mint, maxt)
+func (f *fanout) Querier(mint, maxt int64) (Querier, error) {
+	primary, err := f.primary.Querier(mint, maxt)
 	if err != nil {
 		return nil, err
 	}
 
 	secondaries := make([]Querier, 0, len(f.secondaries))
 	for _, storage := range f.secondaries {
-		querier, err := storage.Querier(ctx, mint, maxt)
+		querier, err := storage.Querier(mint, maxt)
 		if err != nil {
 			// Close already open Queriers, append potential errors to returned error.
 			errs := tsdb_errors.NewMulti(err, primary.Close())
@@ -89,20 +89,22 @@ func (f *fanout) Querier(ctx context.Context, mint, maxt int64) (Querier, error)
 			}
 			return nil, errs.Err()
 		}
-		secondaries = append(secondaries, querier)
+		if _, ok := querier.(noopQuerier); !ok {
+			secondaries = append(secondaries, querier)
+		}
 	}
 	return NewMergeQuerier([]Querier{primary}, secondaries, ChainedSeriesMerge), nil
 }
 
-func (f *fanout) ChunkQuerier(ctx context.Context, mint, maxt int64) (ChunkQuerier, error) {
-	primary, err := f.primary.ChunkQuerier(ctx, mint, maxt)
+func (f *fanout) ChunkQuerier(mint, maxt int64) (ChunkQuerier, error) {
+	primary, err := f.primary.ChunkQuerier(mint, maxt)
 	if err != nil {
 		return nil, err
 	}
 
 	secondaries := make([]ChunkQuerier, 0, len(f.secondaries))
 	for _, storage := range f.secondaries {
-		querier, err := storage.ChunkQuerier(ctx, mint, maxt)
+		querier, err := storage.ChunkQuerier(mint, maxt)
 		if err != nil {
 			// Close already open Queriers, append potential errors to returned error.
 			errs := tsdb_errors.NewMulti(err, primary.Close())
@@ -196,6 +198,20 @@ func (f *fanoutAppender) UpdateMetadata(ref SeriesRef, l labels.Labels, m metada
 
 	for _, appender := range f.secondaries {
 		if _, err := appender.UpdateMetadata(ref, l, m); err != nil {
+			return 0, err
+		}
+	}
+	return ref, nil
+}
+
+func (f *fanoutAppender) AppendCTZeroSample(ref SeriesRef, l labels.Labels, t, ct int64) (SeriesRef, error) {
+	ref, err := f.primary.AppendCTZeroSample(ref, l, t, ct)
+	if err != nil {
+		return ref, err
+	}
+
+	for _, appender := range f.secondaries {
+		if _, err := appender.AppendCTZeroSample(ref, l, t, ct); err != nil {
 			return 0, err
 		}
 	}

@@ -40,7 +40,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/regexp"
 	"github.com/mwitkow/go-conntrack"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	io_prometheus_client "github.com/prometheus/client_model/go"
@@ -124,9 +123,12 @@ func newMetrics(r prometheus.Registerer) *metrics {
 		),
 		requestDuration: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
-				Name:    "prometheus_http_request_duration_seconds",
-				Help:    "Histogram of latencies for HTTP requests.",
-				Buckets: []float64{.1, .2, .4, 1, 3, 8, 20, 60, 120},
+				Name:                            "prometheus_http_request_duration_seconds",
+				Help:                            "Histogram of latencies for HTTP requests.",
+				Buckets:                         []float64{.1, .2, .4, 1, 3, 8, 20, 60, 120},
+				NativeHistogramBucketFactor:     1.1,
+				NativeHistogramMaxBucketNumber:  100,
+				NativeHistogramMinResetDuration: 1 * time.Hour,
 			},
 			[]string{"handler"},
 		),
@@ -179,7 +181,7 @@ type LocalStorage interface {
 	api_v1.TSDBAdminStats
 }
 
-// Handler serves various HTTP endpoints of the Prometheus server
+// Handler serves various HTTP endpoints of the Prometheus server.
 type Handler struct {
 	logger log.Logger
 
@@ -215,7 +217,7 @@ type Handler struct {
 	ready atomic.Uint32 // ready is uint32 rather than boolean to be able to use atomic functions.
 }
 
-// ApplyConfig updates the config field of the Handler struct
+// ApplyConfig updates the config field of the Handler struct.
 func (h *Handler) ApplyConfig(conf *config.Config) error {
 	h.mtx.Lock()
 	defer h.mtx.Unlock()
@@ -262,6 +264,8 @@ type Options struct {
 	EnableOTLPWriteReceiver    bool
 	IsAgent                    bool
 	AppName                    string
+
+	AcceptRemoteWriteProtoMsgs []config.RemoteWriteProtoMsg
 
 	Gatherer   prometheus.Gatherer
 	Registerer prometheus.Registerer
@@ -351,6 +355,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		o.Registerer,
 		nil,
 		o.EnableRemoteWriteReceiver,
+		o.AcceptRemoteWriteProtoMsgs,
 		o.EnableOTLPWriteReceiver,
 	)
 
@@ -522,7 +527,7 @@ func serveDebug(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-// SetReady sets the ready status of our web Handler
+// SetReady sets the ready status of our web Handler.
 func (h *Handler) SetReady(v bool) {
 	if v {
 		h.ready.Store(1)
@@ -732,7 +737,7 @@ func (h *Handler) runtimeInfo() (api_v1.RuntimeInfo, error) {
 
 	metrics, err := h.gatherer.Gather()
 	if err != nil {
-		return status, errors.Errorf("error gathering runtime status: %s", err)
+		return status, fmt.Errorf("error gathering runtime status: %w", err)
 	}
 	for _, mF := range metrics {
 		switch *mF.Name {

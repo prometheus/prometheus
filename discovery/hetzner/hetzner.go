@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
@@ -62,12 +63,19 @@ type SDConfig struct {
 	robotEndpoint   string         // For tests only.
 }
 
+// NewDiscovererMetrics implements discovery.Config.
+func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return &hetznerMetrics{
+		refreshMetrics: rmi,
+	}
+}
+
 // Name returns the name of the Config.
 func (*SDConfig) Name() string { return "hetzner" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger)
+	return NewDiscovery(c, opts.Logger, opts.Metrics)
 }
 
 type refresher interface {
@@ -127,17 +135,25 @@ type Discovery struct {
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
-func NewDiscovery(conf *SDConfig, logger log.Logger) (*refresh.Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*refresh.Discovery, error) {
+	m, ok := metrics.(*hetznerMetrics)
+	if !ok {
+		return nil, fmt.Errorf("invalid discovery metrics type")
+	}
+
 	r, err := newRefresher(conf, logger)
 	if err != nil {
 		return nil, err
 	}
 
 	return refresh.NewDiscovery(
-		logger,
-		"hetzner",
-		time.Duration(conf.RefreshInterval),
-		r.refresh,
+		refresh.Options{
+			Logger:              logger,
+			Mech:                "hetzner",
+			Interval:            time.Duration(conf.RefreshInterval),
+			RefreshF:            r.refresh,
+			MetricsInstantiator: m.refreshMetrics,
+		},
 	), nil
 }
 

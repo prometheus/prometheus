@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,6 +31,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
@@ -40,28 +42,29 @@ import (
 )
 
 const (
-	ec2Label                  = model.MetaLabelPrefix + "ec2_"
-	ec2LabelAMI               = ec2Label + "ami"
-	ec2LabelAZ                = ec2Label + "availability_zone"
-	ec2LabelAZID              = ec2Label + "availability_zone_id"
-	ec2LabelArch              = ec2Label + "architecture"
-	ec2LabelIPv6Addresses     = ec2Label + "ipv6_addresses"
-	ec2LabelInstanceID        = ec2Label + "instance_id"
-	ec2LabelInstanceLifecycle = ec2Label + "instance_lifecycle"
-	ec2LabelInstanceState     = ec2Label + "instance_state"
-	ec2LabelInstanceType      = ec2Label + "instance_type"
-	ec2LabelOwnerID           = ec2Label + "owner_id"
-	ec2LabelPlatform          = ec2Label + "platform"
-	ec2LabelPrimarySubnetID   = ec2Label + "primary_subnet_id"
-	ec2LabelPrivateDNS        = ec2Label + "private_dns_name"
-	ec2LabelPrivateIP         = ec2Label + "private_ip"
-	ec2LabelPublicDNS         = ec2Label + "public_dns_name"
-	ec2LabelPublicIP          = ec2Label + "public_ip"
-	ec2LabelRegion            = ec2Label + "region"
-	ec2LabelSubnetID          = ec2Label + "subnet_id"
-	ec2LabelTag               = ec2Label + "tag_"
-	ec2LabelVPCID             = ec2Label + "vpc_id"
-	ec2LabelSeparator         = ","
+	ec2Label                     = model.MetaLabelPrefix + "ec2_"
+	ec2LabelAMI                  = ec2Label + "ami"
+	ec2LabelAZ                   = ec2Label + "availability_zone"
+	ec2LabelAZID                 = ec2Label + "availability_zone_id"
+	ec2LabelArch                 = ec2Label + "architecture"
+	ec2LabelIPv6Addresses        = ec2Label + "ipv6_addresses"
+	ec2LabelInstanceID           = ec2Label + "instance_id"
+	ec2LabelInstanceLifecycle    = ec2Label + "instance_lifecycle"
+	ec2LabelInstanceState        = ec2Label + "instance_state"
+	ec2LabelInstanceType         = ec2Label + "instance_type"
+	ec2LabelOwnerID              = ec2Label + "owner_id"
+	ec2LabelPlatform             = ec2Label + "platform"
+	ec2LabelPrimaryIPv6Addresses = ec2Label + "primary_ipv6_addresses"
+	ec2LabelPrimarySubnetID      = ec2Label + "primary_subnet_id"
+	ec2LabelPrivateDNS           = ec2Label + "private_dns_name"
+	ec2LabelPrivateIP            = ec2Label + "private_ip"
+	ec2LabelPublicDNS            = ec2Label + "public_dns_name"
+	ec2LabelPublicIP             = ec2Label + "public_ip"
+	ec2LabelRegion               = ec2Label + "region"
+	ec2LabelSubnetID             = ec2Label + "subnet_id"
+	ec2LabelTag                  = ec2Label + "tag_"
+	ec2LabelVPCID                = ec2Label + "vpc_id"
+	ec2LabelSeparator            = ","
 )
 
 // DefaultEC2SDConfig is the default EC2 SD configuration.
@@ -96,12 +99,19 @@ type EC2SDConfig struct {
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 }
 
+// NewDiscovererMetrics implements discovery.Config.
+func (*EC2SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return &ec2Metrics{
+		refreshMetrics: rmi,
+	}
+}
+
 // Name returns the name of the EC2 Config.
 func (*EC2SDConfig) Name() string { return "ec2" }
 
 // NewDiscoverer returns a Discoverer for the EC2 Config.
 func (c *EC2SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewEC2Discovery(c, opts.Logger), nil
+	return NewEC2Discovery(c, opts.Logger, opts.Metrics)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface for the EC2 Config.
@@ -129,7 +139,7 @@ func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			return errors.New("EC2 SD configuration filter values cannot be empty")
 		}
 	}
-	return nil
+	return c.HTTPClientConfig.Validate()
 }
 
 // EC2Discovery periodically performs EC2-SD requests. It implements
@@ -147,7 +157,12 @@ type EC2Discovery struct {
 }
 
 // NewEC2Discovery returns a new EC2Discovery which periodically refreshes its targets.
-func NewEC2Discovery(conf *EC2SDConfig, logger log.Logger) *EC2Discovery {
+func NewEC2Discovery(conf *EC2SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*EC2Discovery, error) {
+	m, ok := metrics.(*ec2Metrics)
+	if !ok {
+		return nil, fmt.Errorf("invalid discovery metrics type")
+	}
+
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -156,12 +171,15 @@ func NewEC2Discovery(conf *EC2SDConfig, logger log.Logger) *EC2Discovery {
 		cfg:    conf,
 	}
 	d.Discovery = refresh.NewDiscovery(
-		logger,
-		"ec2",
-		time.Duration(d.cfg.RefreshInterval),
-		d.refresh,
+		refresh.Options{
+			Logger:              logger,
+			Mech:                "ec2",
+			Interval:            time.Duration(d.cfg.RefreshInterval),
+			RefreshF:            d.refresh,
+			MetricsInstantiator: m.refreshMetrics,
+		},
 	)
-	return d
+	return d, nil
 }
 
 func (d *EC2Discovery) ec2Client(context.Context) (*ec2.EC2, error) {
@@ -263,7 +281,7 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 				if inst.PrivateDnsName != nil {
 					labels[ec2LabelPrivateDNS] = model.LabelValue(*inst.PrivateDnsName)
 				}
-				addr := net.JoinHostPort(*inst.PrivateIpAddress, fmt.Sprintf("%d", d.cfg.Port))
+				addr := net.JoinHostPort(*inst.PrivateIpAddress, strconv.Itoa(d.cfg.Port))
 				labels[model.AddressLabel] = model.LabelValue(addr)
 
 				if inst.Platform != nil {
@@ -300,6 +318,7 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 
 					var subnets []string
 					var ipv6addrs []string
+					var primaryipv6addrs []string
 					subnetsMap := make(map[string]struct{})
 					for _, eni := range inst.NetworkInterfaces {
 						if eni.SubnetId == nil {
@@ -313,6 +332,15 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 
 						for _, ipv6addr := range eni.Ipv6Addresses {
 							ipv6addrs = append(ipv6addrs, *ipv6addr.Ipv6Address)
+							if *ipv6addr.IsPrimaryIpv6 {
+								// we might have to extend the slice with more than one element
+								// that could leave empty strings in the list which is intentional
+								// to keep the position/device index information
+								for int64(len(primaryipv6addrs)) <= *eni.Attachment.DeviceIndex {
+									primaryipv6addrs = append(primaryipv6addrs, "")
+								}
+								primaryipv6addrs[*eni.Attachment.DeviceIndex] = *ipv6addr.Ipv6Address
+							}
 						}
 					}
 					labels[ec2LabelSubnetID] = model.LabelValue(
@@ -323,6 +351,12 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 						labels[ec2LabelIPv6Addresses] = model.LabelValue(
 							ec2LabelSeparator +
 								strings.Join(ipv6addrs, ec2LabelSeparator) +
+								ec2LabelSeparator)
+					}
+					if len(primaryipv6addrs) > 0 {
+						labels[ec2LabelPrimaryIPv6Addresses] = model.LabelValue(
+							ec2LabelSeparator +
+								strings.Join(primaryipv6addrs, ec2LabelSeparator) +
 								ec2LabelSeparator)
 					}
 				}

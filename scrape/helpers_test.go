@@ -14,10 +14,19 @@
 package scrape
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
+	"math"
 	"math/rand"
 	"strings"
+	"sync"
+	"testing"
+
+	"github.com/gogo/protobuf/proto"
+	dto "github.com/prometheus/client_model/go"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -50,6 +59,10 @@ func (a nopAppender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.M
 	return 0, nil
 }
 
+func (a nopAppender) AppendCTZeroSample(storage.SeriesRef, labels.Labels, int64, int64) (storage.SeriesRef, error) {
+	return 0, nil
+}
+
 func (a nopAppender) Commit() error   { return nil }
 func (a nopAppender) Rollback() error { return nil }
 
@@ -59,15 +72,30 @@ type floatSample struct {
 	f      float64
 }
 
+func equalFloatSamples(a, b floatSample) bool {
+	// Compare Float64bits so NaN values which are exactly the same will compare equal.
+	return labels.Equal(a.metric, b.metric) && a.t == b.t && math.Float64bits(a.f) == math.Float64bits(b.f)
+}
+
 type histogramSample struct {
 	t  int64
 	h  *histogram.Histogram
 	fh *histogram.FloatHistogram
 }
 
+type collectResultAppendable struct {
+	*collectResultAppender
+}
+
+func (a *collectResultAppendable) Appender(_ context.Context) storage.Appender {
+	return a
+}
+
 // collectResultAppender records all samples that were added through the appender.
 // It can be used as its zero value or be backed by another appender it writes samples through.
 type collectResultAppender struct {
+	mtx sync.Mutex
+
 	next                 storage.Appender
 	resultFloats         []floatSample
 	pendingFloats        []floatSample
@@ -82,6 +110,8 @@ type collectResultAppender struct {
 }
 
 func (a *collectResultAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+	a.mtx.Lock()
+	defer a.mtx.Unlock()
 	a.pendingFloats = append(a.pendingFloats, floatSample{
 		metric: lset,
 		t:      t,
@@ -103,6 +133,8 @@ func (a *collectResultAppender) Append(ref storage.SeriesRef, lset labels.Labels
 }
 
 func (a *collectResultAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+	a.mtx.Lock()
+	defer a.mtx.Unlock()
 	a.pendingExemplars = append(a.pendingExemplars, e)
 	if a.next == nil {
 		return 0, nil
@@ -112,6 +144,8 @@ func (a *collectResultAppender) AppendExemplar(ref storage.SeriesRef, l labels.L
 }
 
 func (a *collectResultAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	a.mtx.Lock()
+	defer a.mtx.Unlock()
 	a.pendingHistograms = append(a.pendingHistograms, histogramSample{h: h, fh: fh, t: t})
 	if a.next == nil {
 		return 0, nil
@@ -121,6 +155,8 @@ func (a *collectResultAppender) AppendHistogram(ref storage.SeriesRef, l labels.
 }
 
 func (a *collectResultAppender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
+	a.mtx.Lock()
+	defer a.mtx.Unlock()
 	a.pendingMetadata = append(a.pendingMetadata, m)
 	if ref == 0 {
 		ref = storage.SeriesRef(rand.Uint64())
@@ -132,7 +168,13 @@ func (a *collectResultAppender) UpdateMetadata(ref storage.SeriesRef, l labels.L
 	return a.next.UpdateMetadata(ref, l, m)
 }
 
+func (a *collectResultAppender) AppendCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64) (storage.SeriesRef, error) {
+	return a.Append(ref, l, ct, 0.0)
+}
+
 func (a *collectResultAppender) Commit() error {
+	a.mtx.Lock()
+	defer a.mtx.Unlock()
 	a.resultFloats = append(a.resultFloats, a.pendingFloats...)
 	a.resultExemplars = append(a.resultExemplars, a.pendingExemplars...)
 	a.resultHistograms = append(a.resultHistograms, a.pendingHistograms...)
@@ -148,6 +190,8 @@ func (a *collectResultAppender) Commit() error {
 }
 
 func (a *collectResultAppender) Rollback() error {
+	a.mtx.Lock()
+	defer a.mtx.Unlock()
 	a.rolledbackFloats = a.pendingFloats
 	a.rolledbackHistograms = a.pendingHistograms
 	a.pendingFloats = nil
@@ -170,4 +214,23 @@ func (a *collectResultAppender) String() string {
 		sb.WriteString(fmt.Sprintf("rolledback: %s %f %d\n", s.metric, s.f, s.t))
 	}
 	return sb.String()
+}
+
+// protoMarshalDelimited marshals a MetricFamily into a delimited
+// Prometheus proto exposition format bytes (known as 'encoding=delimited`)
+//
+// See also https://eli.thegreenplace.net/2011/08/02/length-prefix-framing-for-protocol-buffers
+func protoMarshalDelimited(t *testing.T, mf *dto.MetricFamily) []byte {
+	t.Helper()
+
+	protoBuf, err := proto.Marshal(mf)
+	require.NoError(t, err)
+
+	varintBuf := make([]byte, binary.MaxVarintLen32)
+	varintLength := binary.PutUvarint(varintBuf, uint64(len(protoBuf)))
+
+	buf := &bytes.Buffer{}
+	buf.Write(varintBuf[:varintLength])
+	buf.Write(protoBuf)
+	return buf.Bytes()
 }

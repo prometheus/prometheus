@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
@@ -48,7 +49,7 @@ const (
 	// imageLabel is the label that is used for the docker image running the service.
 	imageLabel model.LabelName = metaLabelPrefix + "image"
 	// portIndexLabel is the integer port index when multiple ports are defined;
-	// e.g. PORT1 would have a value of '1'
+	// e.g. PORT1 would have a value of '1'.
 	portIndexLabel model.LabelName = metaLabelPrefix + "port_index"
 	// taskLabel contains the mesos task name of the app instance.
 	taskLabel model.LabelName = metaLabelPrefix + "task"
@@ -78,12 +79,19 @@ type SDConfig struct {
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 }
 
+// NewDiscovererMetrics implements discovery.Config.
+func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return &marathonMetrics{
+		refreshMetrics: rmi,
+	}
+}
+
 // Name returns the name of the Config.
 func (*SDConfig) Name() string { return "marathon" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(*c, opts.Logger)
+	return NewDiscovery(*c, opts.Logger, opts.Metrics)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -106,14 +114,16 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if len(c.AuthToken) > 0 && len(c.AuthTokenFile) > 0 {
 		return errors.New("marathon_sd: at most one of auth_token & auth_token_file must be configured")
 	}
-	if c.HTTPClientConfig.BasicAuth != nil && (len(c.AuthToken) > 0 || len(c.AuthTokenFile) > 0) {
-		return errors.New("marathon_sd: at most one of basic_auth, auth_token & auth_token_file must be configured")
-	}
-	if (len(c.HTTPClientConfig.BearerToken) > 0 || len(c.HTTPClientConfig.BearerTokenFile) > 0) && (len(c.AuthToken) > 0 || len(c.AuthTokenFile) > 0) {
-		return errors.New("marathon_sd: at most one of bearer_token, bearer_token_file, auth_token & auth_token_file must be configured")
-	}
-	if c.HTTPClientConfig.Authorization != nil && (len(c.AuthToken) > 0 || len(c.AuthTokenFile) > 0) {
-		return errors.New("marathon_sd: at most one of auth_token, auth_token_file & authorization must be configured")
+
+	if len(c.AuthToken) > 0 || len(c.AuthTokenFile) > 0 {
+		switch {
+		case c.HTTPClientConfig.BasicAuth != nil:
+			return errors.New("marathon_sd: at most one of basic_auth, auth_token & auth_token_file must be configured")
+		case len(c.HTTPClientConfig.BearerToken) > 0 || len(c.HTTPClientConfig.BearerTokenFile) > 0:
+			return errors.New("marathon_sd: at most one of bearer_token, bearer_token_file, auth_token & auth_token_file must be configured")
+		case c.HTTPClientConfig.Authorization != nil:
+			return errors.New("marathon_sd: at most one of auth_token, auth_token_file & authorization must be configured")
+		}
 	}
 	return c.HTTPClientConfig.Validate()
 }
@@ -130,7 +140,12 @@ type Discovery struct {
 }
 
 // NewDiscovery returns a new Marathon Discovery.
-func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
+func NewDiscovery(conf SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+	m, ok := metrics.(*marathonMetrics)
+	if !ok {
+		return nil, fmt.Errorf("invalid discovery metrics type")
+	}
+
 	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "marathon_sd")
 	if err != nil {
 		return nil, err
@@ -152,10 +167,13 @@ func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
 		appsClient: fetchApps,
 	}
 	d.Discovery = refresh.NewDiscovery(
-		logger,
-		"marathon",
-		time.Duration(conf.RefreshInterval),
-		d.refresh,
+		refresh.Options{
+			Logger:              logger,
+			Mech:                "marathon",
+			Interval:            time.Duration(conf.RefreshInterval),
+			RefreshF:            d.refresh,
+			MetricsInstantiator: m.refreshMetrics,
+		},
 	)
 	return d, nil
 }
@@ -321,7 +339,7 @@ type appListClient func(ctx context.Context, client *http.Client, url string) (*
 
 // fetchApps requests a list of applications from a marathon server.
 func fetchApps(ctx context.Context, client *http.Client, url string) (*appList, error) {
-	request, err := http.NewRequest("GET", url, nil)
+	request, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -435,7 +453,6 @@ func targetsForApp(app *app) []model.LabelSet {
 	// Gather info about the app's 'tasks'. Each instance (container) is considered a task
 	// and can be reachable at one or more host:port endpoints.
 	for _, t := range app.Tasks {
-
 		// There are no labels to gather if only Ports is defined. (eg. with host networking)
 		// Ports can only be gathered from the Task (not from the app) and are guaranteed
 		// to be the same across all tasks. If we haven't gathered any ports by now,
@@ -446,7 +463,6 @@ func targetsForApp(app *app) []model.LabelSet {
 
 		// Iterate over the ports we gathered using one of the methods above.
 		for i, port := range ports {
-
 			// A zero port here means that either the portMapping has a zero port defined,
 			// or there is a portDefinition with requirePorts set to false. This means the port
 			// is auto-generated by Mesos and needs to be looked up in the task.
@@ -489,7 +505,7 @@ func targetEndpoint(task *task, port uint32, containerNet bool) string {
 		host = task.Host
 	}
 
-	return net.JoinHostPort(host, fmt.Sprintf("%d", port))
+	return net.JoinHostPort(host, strconv.Itoa(int(port)))
 }
 
 // Get a list of ports and a list of labels from a PortMapping.
@@ -498,7 +514,6 @@ func extractPortMapping(portMappings []portMapping, containerNet bool) ([]uint32
 	labels := make([]map[string]string, len(portMappings))
 
 	for i := 0; i < len(portMappings); i++ {
-
 		labels[i] = portMappings[i].Labels
 
 		if containerNet {

@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 type backfillSample struct {
@@ -44,8 +45,8 @@ func sortSamples(samples []backfillSample) {
 	})
 }
 
-func queryAllSeries(t testing.TB, q storage.Querier, expectedMinTime, expectedMaxTime int64) []backfillSample { // nolint:revive
-	ss := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
+func queryAllSeries(t testing.TB, q storage.Querier, expectedMinTime, expectedMaxTime int64) []backfillSample {
+	ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
 	samples := []backfillSample{}
 	for ss.Next() {
 		series := ss.At()
@@ -61,13 +62,13 @@ func queryAllSeries(t testing.TB, q storage.Querier, expectedMinTime, expectedMa
 
 func testBlocks(t *testing.T, db *tsdb.DB, expectedMinTime, expectedMaxTime, expectedBlockDuration int64, expectedSamples []backfillSample, expectedNumBlocks int) {
 	blocks := db.Blocks()
-	require.Equal(t, expectedNumBlocks, len(blocks), "did not create correct number of blocks")
+	require.Len(t, blocks, expectedNumBlocks, "did not create correct number of blocks")
 
 	for i, block := range blocks {
 		require.Equal(t, block.MinTime()/expectedBlockDuration, (block.MaxTime()-1)/expectedBlockDuration, "block %d contains data outside of one aligned block duration", i)
 	}
 
-	q, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
+	q, err := db.Querier(math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, q.Close())
@@ -76,7 +77,7 @@ func testBlocks(t *testing.T, db *tsdb.DB, expectedMinTime, expectedMaxTime, exp
 	allSamples := queryAllSeries(t, q, expectedMinTime, expectedMaxTime)
 	sortSamples(allSamples)
 	sortSamples(expectedSamples)
-	require.Equal(t, expectedSamples, allSamples, "did not create correct samples")
+	testutil.RequireEqual(t, expectedSamples, allSamples, "did not create correct samples")
 
 	if len(allSamples) > 0 {
 		require.Equal(t, expectedMinTime, allSamples[0].Timestamp, "timestamp of first sample is not the expected minimum time")

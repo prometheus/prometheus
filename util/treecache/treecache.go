@@ -116,7 +116,7 @@ func (tc *ZookeeperTreeCache) Stop() {
 	tc.stop <- struct{}{}
 	go func() {
 		// Drain tc.head.events so that go routines can make progress and exit.
-		for range tc.head.events { // nolint:revive
+		for range tc.head.events {
 		}
 	}()
 	go func() {
@@ -200,7 +200,7 @@ func (tc *ZookeeperTreeCache) loop(path string) {
 				failure()
 			} else {
 				tc.resyncState(tc.prefix, tc.head, previousState)
-				level.Info(tc.logger).Log("Zookeeper resync successful")
+				level.Info(tc.logger).Log("msg", "Zookeeper resync successful")
 				failureMode = false
 			}
 		case <-tc.stop:

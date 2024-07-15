@@ -14,7 +14,7 @@ vector, which if not provided it will default to the value of the expression
 _Notes about the experimental native histograms:_
 
 * Ingesting native histograms has to be enabled via a [feature
-  flag](../feature_flags/#native-histograms). As long as no native histograms
+  flag](../feature_flags.md#native-histograms). As long as no native histograms
   have been ingested into the TSDB, all functions will behave as usual.
 * Functions that do not explicitly mention native histograms in their
   documentation (see below) will ignore histogram samples.
@@ -79,7 +79,12 @@ labels of the 1-element output vector from the input vector.
 ## `ceil()`
 
 `ceil(v instant-vector)` rounds the sample values of all elements in `v` up to
-the nearest integer.
+the nearest integer value greater than or equal to v.
+
+* `ceil(+Inf) = +Inf`
+* `ceil(±0) = ±0`
+* `ceil(1.49) = 2.0`
+* `ceil(1.78) = 2.0`
 
 ## `changes()`
 
@@ -93,8 +98,9 @@ vector.
 clamps the sample values of all elements in `v` to have a lower limit of `min` and an upper limit of `max`.
 
 Special cases:
-- Return an empty vector if `min > max`
-- Return `NaN` if `min` or `max` is `NaN`
+
+* Return an empty vector if `min > max`
+* Return `NaN` if `min` or `max` is `NaN`
 
 ## `clamp_max()`
 
@@ -145,7 +151,7 @@ delta(cpu_temp_celsius{host="zeus"}[2h])
 ```
 
 `delta` acts on native histograms by calculating a new histogram where each
-compononent (sum and count of observations, buckets) is the difference between
+component (sum and count of observations, buckets) is the difference between
 the respective component in the first and last native histogram in
 `v`. However, each element in `v` that contains a mix of float and native
 histogram samples within the range, will be missing from the result vector.
@@ -173,7 +179,33 @@ Special cases are:
 ## `floor()`
 
 `floor(v instant-vector)` rounds the sample values of all elements in `v` down
-to the nearest integer.
+to the nearest integer value smaller than or equal to v.
+
+* `floor(+Inf) = +Inf`
+* `floor(±0) = ±0`
+* `floor(1.49) = 1.0`
+* `floor(1.78) = 1.0`
+
+## `histogram_avg()`
+
+_This function only acts on native histograms, which are an experimental
+feature. The behavior of this function may change in future versions of
+Prometheus, including its removal from PromQL._
+
+`histogram_avg(v instant-vector)` returns the arithmetic average of observed values stored in
+a native histogram. Samples that are not native histograms are ignored and do
+not show up in the returned vector.
+
+Use `histogram_avg` as demonstrated below to compute the average request duration
+over a 5-minute window from a native histogram:
+
+    histogram_avg(rate(http_request_duration_seconds[5m]))
+
+Which is equivalent to the following query:
+
+      histogram_sum(rate(http_request_duration_seconds[5m]))
+    /
+      histogram_count(rate(http_request_duration_seconds[5m]))
 
 ## `histogram_count()` and `histogram_sum()`
 
@@ -192,13 +224,6 @@ Use `histogram_count` in the following way to calculate a rate of observations
 (in this case corresponding to “requests per second”) from a native histogram:
 
     histogram_count(rate(http_request_duration_seconds[10m]))
-
-The additional use of `histogram_sum` enables the calculation of the average of
-observed values (in this case corresponding to “average request duration”):
-
-      histogram_sum(rate(http_request_duration_seconds[10m]))
-	/
-      histogram_count(rate(http_request_duration_seconds[10m]))
 
 ## `histogram_fraction()`
 
@@ -238,23 +263,23 @@ boundaries are inclusive or exclusive.
 ## `histogram_quantile()`
 
 `histogram_quantile(φ scalar, b instant-vector)` calculates the φ-quantile (0 ≤
-φ ≤ 1) from a [conventional
+φ ≤ 1) from a [classic
 histogram](https://prometheus.io/docs/concepts/metric_types/#histogram) or from
 a native histogram. (See [histograms and
 summaries](https://prometheus.io/docs/practices/histograms) for a detailed
-explanation of φ-quantiles and the usage of the (conventional) histogram metric
+explanation of φ-quantiles and the usage of the (classic) histogram metric
 type in general.)
 
 _Note that native histograms are an experimental feature. The behavior of this
 function when dealing with native histograms may change in future versions of
 Prometheus._
 
-The conventional float samples in `b` are considered the counts of observations
-in each bucket of one or more conventional histograms. Each float sample must
-have a label `le` where the label value denotes the inclusive upper bound of
-the bucket. (Float samples without such a label are silently ignored.) The
-other labels and the metric name are used to identify the buckets belonging to
-each conventional histogram. The [histogram metric
+The float samples in `b` are considered the counts of observations in each
+bucket of one or more classic histograms. Each float sample must have a label
+`le` where the label value denotes the inclusive upper bound of the bucket.
+(Float samples without such a label are silently ignored.) The other labels and
+the metric name are used to identify the buckets belonging to each classic
+histogram. The [histogram metric
 type](https://prometheus.io/docs/concepts/metric_types/#histogram)
 automatically provides time series with the `_bucket` suffix and the
 appropriate labels.
@@ -262,17 +287,17 @@ appropriate labels.
 The native histogram samples in `b` are treated each individually as a separate
 histogram to calculate the quantile from.
 
-As long as no naming collisions arise, `b` may contain a mix of conventional
+As long as no naming collisions arise, `b` may contain a mix of classic
 and native histograms.
 
 Use the `rate()` function to specify the time window for the quantile
 calculation.
 
 Example: A histogram metric is called `http_request_duration_seconds` (and
-therefore the metric name for the buckets of a conventional histogram is
+therefore the metric name for the buckets of a classic histogram is
 `http_request_duration_seconds_bucket`). To calculate the 90th percentile of request
 durations over the last 10m, use the following expression in case
-`http_request_duration_seconds` is a conventional histogram:
+`http_request_duration_seconds` is a classic histogram:
 
     histogram_quantile(0.9, rate(http_request_duration_seconds_bucket[10m]))
 
@@ -283,9 +308,9 @@ For a native histogram, use the following expression instead:
 The quantile is calculated for each label combination in
 `http_request_duration_seconds`. To aggregate, use the `sum()` aggregator
 around the `rate()` function. Since the `le` label is required by
-`histogram_quantile()` to deal with conventional histograms, it has to be
+`histogram_quantile()` to deal with classic histograms, it has to be
 included in the `by` clause. The following expression aggregates the 90th
-percentile by `job` for conventional histograms:
+percentile by `job` for classic histograms:
 
     histogram_quantile(0.9, sum by (job, le) (rate(http_request_duration_seconds_bucket[10m])))
 	
@@ -293,7 +318,7 @@ When aggregating native histograms, the expression simplifies to:
 
     histogram_quantile(0.9, sum by (job) (rate(http_request_duration_seconds[10m])))
 
-To aggregate all conventional histograms, specify only the `le` label:
+To aggregate all classic histograms, specify only the `le` label:
 
     histogram_quantile(0.9, sum by (le) (rate(http_request_duration_seconds_bucket[10m])))
 
@@ -307,7 +332,7 @@ assuming a linear distribution within a bucket.
 If `b` has 0 observations, `NaN` is returned. For φ < 0, `-Inf` is
 returned. For φ > 1, `+Inf` is returned. For φ = `NaN`, `NaN` is returned.
 
-The following is only relevant for conventional histograms: If `b` contains
+The following is only relevant for classic histograms: If `b` contains
 fewer than two buckets, `NaN` is returned. The highest bucket must have an
 upper bound of `+Inf`. (Otherwise, `NaN` is returned.) If a quantile is located
 in the highest bucket, the upper bound of the second highest bucket is
@@ -323,6 +348,37 @@ a histogram.
 You can use `histogram_quantile(1, v instant-vector)` to get the estimated maximum value stored in
 a histogram.
 
+Buckets of classic histograms are cumulative. Therefore, the following should always be the case:
+
+* The counts in the buckets are monotonically increasing (strictly non-decreasing).
+* A lack of observations between the upper limits of two consecutive buckets results in equal counts
+in those two buckets.
+
+However, floating point precision issues (e.g. small discrepancies introduced by computing of buckets
+with `sum(rate(...))`) or invalid data might violate these assumptions. In that case,
+`histogram_quantile` would be unable to return meaningful results. To mitigate the issue,
+`histogram_quantile` assumes that tiny relative differences between consecutive buckets are happening
+because of floating point precision errors and ignores them. (The threshold to ignore a difference
+between two buckets is a trillionth (1e-12) of the sum of both buckets.) Furthermore, if there are
+non-monotonic bucket counts even after this adjustment, they are increased to the value of the
+previous buckets to enforce monotonicity. The latter is evidence for an actual issue with the input
+data and is therefore flagged with an informational annotation reading `input to histogram_quantile
+needed to be fixed for monotonicity`. If you encounter this annotation, you should find and remove
+the source of the invalid data.
+
+## `histogram_stddev()` and `histogram_stdvar()`
+
+_Both functions only act on native histograms, which are an experimental
+feature. The behavior of these functions may change in future versions of
+Prometheus, including their removal from PromQL._
+
+`histogram_stddev(v instant-vector)` returns the estimated standard deviation
+of observations in a native histogram, based on the geometric mean of the buckets
+where the observations lie. Samples that are not native histograms are ignored and
+do not show up in the returned vector.
+
+Similarly, `histogram_stdvar(v instant-vector)` returns the estimated standard
+variance of observations in a native histogram.
 
 ## `holt_winters()`
 
@@ -495,7 +551,7 @@ rate(http_requests_total{job="api-server"}[5m])
 ```
 
 `rate` acts on native histograms by calculating a new histogram where each
-compononent (sum and count of observations, buckets) is the rate of increase
+component (sum and count of observations, buckets) is the rate of increase
 between the respective component in the first and last native histogram in
 `v`. However, each element in `v` that contains a mix of float and native
 histogram samples within the range, will be missing from the result vector.
@@ -551,9 +607,33 @@ have exactly one element, `scalar` will return `NaN`.
 `sort(v instant-vector)` returns vector elements sorted by their sample values,
 in ascending order. Native histograms are sorted by their sum of observations.
 
+Please note that `sort` only affects the results of instant queries, as range query results always have a fixed output ordering.
+
 ## `sort_desc()`
 
 Same as `sort`, but sorts in descending order.
+
+Like `sort`, `sort_desc` only affects the results of instant queries, as range query results always have a fixed output ordering.
+
+## `sort_by_label()`
+
+**This function has to be enabled via the [feature flag](../feature_flags/) `--enable-feature=promql-experimental-functions`.**
+
+`sort_by_label(v instant-vector, label string, ...)` returns vector elements sorted by their label values and sample value in case of label values being equal, in ascending order.
+
+Please note that the sort by label functions only affect the results of instant queries, as range query results always have a fixed output ordering.
+
+This function uses [natural sort order](https://en.wikipedia.org/wiki/Natural_sort_order).
+
+## `sort_by_label_desc()`
+
+**This function has to be enabled via the [feature flag](../feature_flags/) `--enable-feature=promql-experimental-functions`.**
+
+Same as `sort_by_label`, but sorts in descending order.
+
+Please note that the sort by label functions only affect the results of instant queries, as range query results always have a fixed output ordering.
+
+This function uses [natural sort order](https://en.wikipedia.org/wiki/Natural_sort_order).
 
 ## `sqrt()`
 
@@ -596,6 +676,12 @@ over time and return an instant vector with per-series aggregation results:
 * `last_over_time(range-vector)`: the most recent point value in the specified interval.
 * `present_over_time(range-vector)`: the value 1 for any series in the specified interval.
 
+If the [feature flag](../feature_flags/)
+`--enable-feature=promql-experimental-functions` is set, the following
+additional functions are available:
+
+* `mad_over_time(range-vector)`: the median absolute deviation of all points in the specified interval.
+
 Note that all values in the specified interval have the same weight in the
 aggregation even if the values are not equally spaced throughout the interval.
 
@@ -607,21 +693,21 @@ ignore histogram samples.
 
 The trigonometric functions work in radians:
 
-- `acos(v instant-vector)`: calculates the arccosine of all elements in `v` ([special cases](https://pkg.go.dev/math#Acos)).
-- `acosh(v instant-vector)`: calculates the inverse hyperbolic cosine of all elements in `v` ([special cases](https://pkg.go.dev/math#Acosh)).
-- `asin(v instant-vector)`: calculates the arcsine of all elements in `v` ([special cases](https://pkg.go.dev/math#Asin)).
-- `asinh(v instant-vector)`: calculates the inverse hyperbolic sine of all elements in `v` ([special cases](https://pkg.go.dev/math#Asinh)).
-- `atan(v instant-vector)`: calculates the arctangent of all elements in `v` ([special cases](https://pkg.go.dev/math#Atan)).
-- `atanh(v instant-vector)`: calculates the inverse hyperbolic tangent of all elements in `v` ([special cases](https://pkg.go.dev/math#Atanh)).
-- `cos(v instant-vector)`: calculates the cosine of all elements in `v` ([special cases](https://pkg.go.dev/math#Cos)).
-- `cosh(v instant-vector)`: calculates the hyperbolic cosine of all elements in `v` ([special cases](https://pkg.go.dev/math#Cosh)).
-- `sin(v instant-vector)`: calculates the sine of all elements in `v` ([special cases](https://pkg.go.dev/math#Sin)).
-- `sinh(v instant-vector)`: calculates the hyperbolic sine of all elements in `v` ([special cases](https://pkg.go.dev/math#Sinh)).
-- `tan(v instant-vector)`: calculates the tangent of all elements in `v` ([special cases](https://pkg.go.dev/math#Tan)).
-- `tanh(v instant-vector)`: calculates the hyperbolic tangent of all elements in `v` ([special cases](https://pkg.go.dev/math#Tanh)).
+* `acos(v instant-vector)`: calculates the arccosine of all elements in `v` ([special cases](https://pkg.go.dev/math#Acos)).
+* `acosh(v instant-vector)`: calculates the inverse hyperbolic cosine of all elements in `v` ([special cases](https://pkg.go.dev/math#Acosh)).
+* `asin(v instant-vector)`: calculates the arcsine of all elements in `v` ([special cases](https://pkg.go.dev/math#Asin)).
+* `asinh(v instant-vector)`: calculates the inverse hyperbolic sine of all elements in `v` ([special cases](https://pkg.go.dev/math#Asinh)).
+* `atan(v instant-vector)`: calculates the arctangent of all elements in `v` ([special cases](https://pkg.go.dev/math#Atan)).
+* `atanh(v instant-vector)`: calculates the inverse hyperbolic tangent of all elements in `v` ([special cases](https://pkg.go.dev/math#Atanh)).
+* `cos(v instant-vector)`: calculates the cosine of all elements in `v` ([special cases](https://pkg.go.dev/math#Cos)).
+* `cosh(v instant-vector)`: calculates the hyperbolic cosine of all elements in `v` ([special cases](https://pkg.go.dev/math#Cosh)).
+* `sin(v instant-vector)`: calculates the sine of all elements in `v` ([special cases](https://pkg.go.dev/math#Sin)).
+* `sinh(v instant-vector)`: calculates the hyperbolic sine of all elements in `v` ([special cases](https://pkg.go.dev/math#Sinh)).
+* `tan(v instant-vector)`: calculates the tangent of all elements in `v` ([special cases](https://pkg.go.dev/math#Tan)).
+* `tanh(v instant-vector)`: calculates the hyperbolic tangent of all elements in `v` ([special cases](https://pkg.go.dev/math#Tanh)).
 
 The following are useful for converting between degrees and radians:
 
-- `deg(v instant-vector)`: converts radians to degrees for all elements in `v`.
-- `pi()`: returns pi.
-- `rad(v instant-vector)`: converts degrees to radians for all elements in `v`.
+* `deg(v instant-vector)`: converts radians to degrees for all elements in `v`.
+* `pi()`: returns pi.
+* `rad(v instant-vector)`: converts degrees to radians for all elements in `v`.

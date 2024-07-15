@@ -48,3 +48,18 @@ func (e Exemplar) Equals(e2 Exemplar) bool {
 
 	return e.Value == e2.Value
 }
+
+// Sort first by timestamp, then value, then labels.
+func Compare(a, b Exemplar) int {
+	if a.Ts < b.Ts {
+		return -1
+	} else if a.Ts > b.Ts {
+		return 1
+	}
+	if a.Value < b.Value {
+		return -1
+	} else if a.Value > b.Value {
+		return 1
+	}
+	return labels.Compare(a.Labels, b.Labels)
+}

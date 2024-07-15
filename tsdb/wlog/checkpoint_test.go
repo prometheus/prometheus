@@ -19,17 +19,18 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/go-kit/log"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestLastCheckpoint(t *testing.T) {
@@ -125,6 +126,20 @@ func TestCheckpoint(t *testing.T) {
 			PositiveBuckets: []int64{int64(i + 1), 1, -1, 0},
 		}
 	}
+	makeFloatHistogram := func(i int) *histogram.FloatHistogram {
+		return &histogram.FloatHistogram{
+			Count:         5 + float64(i*4),
+			ZeroCount:     2 + float64(i),
+			ZeroThreshold: 0.001,
+			Sum:           18.4 * float64(i+1),
+			Schema:        1,
+			PositiveSpans: []histogram.Span{
+				{Offset: 0, Length: 2},
+				{Offset: 1, Length: 2},
+			},
+			PositiveBuckets: []float64{float64(i + 1), 1, -1, 0},
+		}
+	}
 
 	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
 		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
@@ -154,7 +169,7 @@ func TestCheckpoint(t *testing.T) {
 			w, err = NewSize(nil, nil, dir, 64*1024, compress)
 			require.NoError(t, err)
 
-			samplesInWAL, histogramsInWAL := 0, 0
+			samplesInWAL, histogramsInWAL, floatHistogramsInWAL := 0, 0, 0
 			var last int64
 			for i := 0; ; i++ {
 				_, n, err := Segments(w.Dir())
@@ -200,19 +215,28 @@ func TestCheckpoint(t *testing.T) {
 				}, nil)
 				require.NoError(t, w.Log(b))
 				histogramsInWAL += 4
+				fh := makeFloatHistogram(i)
+				b = enc.FloatHistogramSamples([]record.RefFloatHistogramSample{
+					{Ref: 0, T: last, FH: fh},
+					{Ref: 1, T: last + 10000, FH: fh},
+					{Ref: 2, T: last + 20000, FH: fh},
+					{Ref: 3, T: last + 30000, FH: fh},
+				}, nil)
+				require.NoError(t, w.Log(b))
+				floatHistogramsInWAL += 4
 
 				b = enc.Exemplars([]record.RefExemplar{
-					{Ref: 1, T: last, V: float64(i), Labels: labels.FromStrings("traceID", fmt.Sprintf("trace-%d", i))},
+					{Ref: 1, T: last, V: float64(i), Labels: labels.FromStrings("trace_id", fmt.Sprintf("trace-%d", i))},
 				}, nil)
 				require.NoError(t, w.Log(b))
 
 				// Write changing metadata for each series. In the end, only the latest
 				// version should end up in the checkpoint.
 				b = enc.Metadata([]record.RefMetadata{
-					{Ref: 0, Unit: fmt.Sprintf("%d", last), Help: fmt.Sprintf("%d", last)},
-					{Ref: 1, Unit: fmt.Sprintf("%d", last), Help: fmt.Sprintf("%d", last)},
-					{Ref: 2, Unit: fmt.Sprintf("%d", last), Help: fmt.Sprintf("%d", last)},
-					{Ref: 3, Unit: fmt.Sprintf("%d", last), Help: fmt.Sprintf("%d", last)},
+					{Ref: 0, Unit: strconv.FormatInt(last, 10), Help: strconv.FormatInt(last, 10)},
+					{Ref: 1, Unit: strconv.FormatInt(last, 10), Help: strconv.FormatInt(last, 10)},
+					{Ref: 2, Unit: strconv.FormatInt(last, 10), Help: strconv.FormatInt(last, 10)},
+					{Ref: 3, Unit: strconv.FormatInt(last, 10), Help: strconv.FormatInt(last, 10)},
 				}, nil)
 				require.NoError(t, w.Log(b))
 
@@ -220,29 +244,31 @@ func TestCheckpoint(t *testing.T) {
 			}
 			require.NoError(t, w.Close())
 
-			_, err = Checkpoint(log.NewNopLogger(), w, 100, 106, func(x chunks.HeadSeriesRef) bool {
+			stats, err := Checkpoint(log.NewNopLogger(), w, 100, 106, func(x chunks.HeadSeriesRef) bool {
 				return x%2 == 0
 			}, last/2)
 			require.NoError(t, err)
 			require.NoError(t, w.Truncate(107))
 			require.NoError(t, DeleteCheckpoints(w.Dir(), 106))
+			require.Equal(t, histogramsInWAL+floatHistogramsInWAL+samplesInWAL, stats.TotalSamples)
+			require.Positive(t, stats.DroppedSamples)
 
 			// Only the new checkpoint should be left.
 			files, err := os.ReadDir(dir)
 			require.NoError(t, err)
-			require.Equal(t, 1, len(files))
+			require.Len(t, files, 1)
 			require.Equal(t, "checkpoint.00000106", files[0].Name())
 
 			sr, err := NewSegmentsReader(filepath.Join(dir, "checkpoint.00000106"))
 			require.NoError(t, err)
 			defer sr.Close()
 
-			var dec record.Decoder
+			dec := record.NewDecoder(labels.NewSymbolTable())
 			var series []record.RefSeries
 			var metadata []record.RefMetadata
 			r := NewReader(sr)
 
-			samplesInCheckpoint, histogramsInCheckpoint := 0, 0
+			samplesInCheckpoint, histogramsInCheckpoint, floatHistogramsInCheckpoint := 0, 0, 0
 			for r.Next() {
 				rec := r.Record()
 
@@ -264,6 +290,13 @@ func TestCheckpoint(t *testing.T) {
 						require.GreaterOrEqual(t, h.T, last/2, "histogram with wrong timestamp")
 					}
 					histogramsInCheckpoint += len(histograms)
+				case record.FloatHistogramSamples:
+					floatHistograms, err := dec.FloatHistogramSamples(rec, nil)
+					require.NoError(t, err)
+					for _, h := range floatHistograms {
+						require.GreaterOrEqual(t, h.T, last/2, "float histogram with wrong timestamp")
+					}
+					floatHistogramsInCheckpoint += len(floatHistograms)
 				case record.Exemplars:
 					exemplars, err := dec.Exemplars(rec, nil)
 					require.NoError(t, err)
@@ -281,17 +314,19 @@ func TestCheckpoint(t *testing.T) {
 			require.Less(t, float64(samplesInCheckpoint)/float64(samplesInWAL), 0.8)
 			require.Greater(t, float64(histogramsInCheckpoint)/float64(histogramsInWAL), 0.5)
 			require.Less(t, float64(histogramsInCheckpoint)/float64(histogramsInWAL), 0.8)
+			require.Greater(t, float64(floatHistogramsInCheckpoint)/float64(floatHistogramsInWAL), 0.5)
+			require.Less(t, float64(floatHistogramsInCheckpoint)/float64(floatHistogramsInWAL), 0.8)
 
 			expectedRefSeries := []record.RefSeries{
 				{Ref: 0, Labels: labels.FromStrings("a", "b", "c", "0")},
 				{Ref: 2, Labels: labels.FromStrings("a", "b", "c", "2")},
 				{Ref: 4, Labels: labels.FromStrings("a", "b", "c", "4")},
 			}
-			require.Equal(t, expectedRefSeries, series)
+			testutil.RequireEqual(t, expectedRefSeries, series)
 
 			expectedRefMetadata := []record.RefMetadata{
-				{Ref: 0, Unit: fmt.Sprintf("%d", last-100), Help: fmt.Sprintf("%d", last-100)},
-				{Ref: 2, Unit: fmt.Sprintf("%d", last-100), Help: fmt.Sprintf("%d", last-100)},
+				{Ref: 0, Unit: strconv.FormatInt(last-100, 10), Help: strconv.FormatInt(last-100, 10)},
+				{Ref: 2, Unit: strconv.FormatInt(last-100, 10), Help: strconv.FormatInt(last-100, 10)},
 				{Ref: 4, Unit: "unit", Help: "help"},
 			}
 			sort.Slice(metadata, func(i, j int) bool { return metadata[i].Ref < metadata[j].Ref })
@@ -325,7 +360,7 @@ func TestCheckpointNoTmpFolderAfterError(t *testing.T) {
 	// Walk the wlog dir to make sure there are no tmp folder left behind after the error.
 	err = filepath.Walk(w.Dir(), func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return errors.Wrapf(err, "access err %q: %v", path, err)
+			return fmt.Errorf("access err %q: %w", path, err)
 		}
 		if info.IsDir() && strings.HasSuffix(info.Name(), ".tmp") {
 			return fmt.Errorf("wlog dir contains temporary folder:%s", info.Name())

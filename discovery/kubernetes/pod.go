@@ -23,6 +23,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -32,12 +33,9 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
-const nodeIndex = "node"
-
-var (
-	podAddCount    = eventCount.WithLabelValues("pod", "add")
-	podUpdateCount = eventCount.WithLabelValues("pod", "update")
-	podDeleteCount = eventCount.WithLabelValues("pod", "delete")
+const (
+	nodeIndex = "node"
+	podIndex  = "pod"
 )
 
 // Pod discovers new pod targets.
@@ -51,10 +49,14 @@ type Pod struct {
 }
 
 // NewPod creates a new pod discovery.
-func NewPod(l log.Logger, pods cache.SharedIndexInformer, nodes cache.SharedInformer) *Pod {
+func NewPod(l log.Logger, pods cache.SharedIndexInformer, nodes cache.SharedInformer, eventCount *prometheus.CounterVec) *Pod {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
+
+	podAddCount := eventCount.WithLabelValues(RolePod.String(), MetricLabelRoleAdd)
+	podDeleteCount := eventCount.WithLabelValues(RolePod.String(), MetricLabelRoleDelete)
+	podUpdateCount := eventCount.WithLabelValues(RolePod.String(), MetricLabelRoleUpdate)
 
 	p := &Pod{
 		podInf:           pods,
@@ -62,7 +64,7 @@ func NewPod(l log.Logger, pods cache.SharedIndexInformer, nodes cache.SharedInfo
 		withNodeMetadata: nodes != nil,
 		store:            pods.GetStore(),
 		logger:           l,
-		queue:            workqueue.NewNamed("pod"),
+		queue:            workqueue.NewNamed(RolePod.String()),
 	}
 	_, err := p.podInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
@@ -131,7 +133,7 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 
 	go func() {
-		for p.process(ctx, ch) { // nolint:revive
+		for p.process(ctx, ch) {
 		}
 	}()
 
@@ -327,7 +329,7 @@ func podSource(pod *apiv1.Pod) string {
 }
 
 func podSourceFromNamespaceAndName(namespace, name string) string {
-	return "pod/" + namespace + "/" + name
+	return "pod/" + namespacedName(namespace, name)
 }
 
 func podReady(pod *apiv1.Pod) model.LabelValue {

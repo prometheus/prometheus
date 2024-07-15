@@ -15,13 +15,23 @@ package scrape
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"os"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/config"
@@ -29,6 +39,8 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/util/runutil"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestPopulateLabels(t *testing.T) {
@@ -438,8 +450,8 @@ func TestPopulateLabels(t *testing.T) {
 			require.NoError(t, err)
 		}
 		require.Equal(t, c.in, in)
-		require.Equal(t, c.res, res)
-		require.Equal(t, c.resOrig, orig)
+		testutil.RequireEqual(t, c.res, res)
+		testutil.RequireEqual(t, c.resOrig, orig)
 	}
 }
 
@@ -447,9 +459,9 @@ func loadConfiguration(t testing.TB, c string) *config.Config {
 	t.Helper()
 
 	cfg := &config.Config{}
-	if err := yaml.UnmarshalStrict([]byte(c), cfg); err != nil {
-		t.Fatalf("Unable to load YAML config: %s", err)
-	}
+	err := yaml.UnmarshalStrict([]byte(c), cfg)
+	require.NoError(t, err, "Unable to load YAML config.")
+
 	return cfg
 }
 
@@ -492,10 +504,13 @@ scrape_configs:
 		cfg3 = loadConfiguration(t, cfgText3)
 
 		ch = make(chan struct{}, 1)
+
+		testRegistry = prometheus.NewRegistry()
 	)
 
 	opts := Options{}
-	scrapeManager := NewManager(&opts, nil, nil)
+	scrapeManager, err := NewManager(&opts, nil, nil, testRegistry)
+	require.NoError(t, err)
 	newLoop := func(scrapeLoopOptions) loop {
 		ch <- struct{}{}
 		return noopLoop()
@@ -508,59 +523,59 @@ scrape_configs:
 		loops: map[uint64]loop{
 			1: noopLoop(),
 		},
-		newLoop: newLoop,
-		logger:  nil,
-		config:  cfg1.ScrapeConfigs[0],
-		client:  http.DefaultClient,
+		newLoop:     newLoop,
+		logger:      nil,
+		config:      cfg1.ScrapeConfigs[0],
+		client:      http.DefaultClient,
+		metrics:     scrapeManager.metrics,
+		symbolTable: labels.NewSymbolTable(),
 	}
 	scrapeManager.scrapePools = map[string]*scrapePool{
 		"job1": sp,
 	}
 
 	// Apply the initial configuration.
-	if err := scrapeManager.ApplyConfig(cfg1); err != nil {
-		t.Fatalf("unable to apply configuration: %s", err)
-	}
+	err = scrapeManager.ApplyConfig(cfg1)
+	require.NoError(t, err, "Unable to apply configuration.")
 	select {
 	case <-ch:
-		t.Fatal("reload happened")
+		require.FailNow(t, "Reload happened.")
 	default:
 	}
 
 	// Apply a configuration for which the reload fails.
-	if err := scrapeManager.ApplyConfig(cfg2); err == nil {
-		t.Fatalf("expecting error but got none")
-	}
+	err = scrapeManager.ApplyConfig(cfg2)
+	require.Error(t, err, "Expecting error but got none.")
 	select {
 	case <-ch:
-		t.Fatal("reload happened")
+		require.FailNow(t, "Reload happened.")
 	default:
 	}
 
 	// Apply a configuration for which the reload succeeds.
-	if err := scrapeManager.ApplyConfig(cfg3); err != nil {
-		t.Fatalf("unable to apply configuration: %s", err)
-	}
+	err = scrapeManager.ApplyConfig(cfg3)
+	require.NoError(t, err, "Unable to apply configuration.")
 	select {
 	case <-ch:
 	default:
-		t.Fatal("reload didn't happen")
+		require.FailNow(t, "Reload didn't happen.")
 	}
 
 	// Re-applying the same configuration shouldn't trigger a reload.
-	if err := scrapeManager.ApplyConfig(cfg3); err != nil {
-		t.Fatalf("unable to apply configuration: %s", err)
-	}
+	err = scrapeManager.ApplyConfig(cfg3)
+	require.NoError(t, err, "Unable to apply configuration.")
 	select {
 	case <-ch:
-		t.Fatal("reload happened")
+		require.FailNow(t, "Reload happened.")
 	default:
 	}
 }
 
 func TestManagerTargetsUpdates(t *testing.T) {
 	opts := Options{}
-	m := NewManager(&opts, nil, nil)
+	testRegistry := prometheus.NewRegistry()
+	m, err := NewManager(&opts, nil, nil, testRegistry)
+	require.NoError(t, err)
 
 	ts := make(chan map[string][]*targetgroup.Group)
 	go m.Run(ts)
@@ -568,7 +583,6 @@ func TestManagerTargetsUpdates(t *testing.T) {
 
 	tgSent := make(map[string][]*targetgroup.Group)
 	for x := 0; x < 10; x++ {
-
 		tgSent[strconv.Itoa(x)] = []*targetgroup.Group{
 			{
 				Source: strconv.Itoa(x),
@@ -578,7 +592,7 @@ func TestManagerTargetsUpdates(t *testing.T) {
 		select {
 		case ts <- tgSent:
 		case <-time.After(10 * time.Millisecond):
-			t.Error("Scrape manager's channel remained blocked after the set threshold.")
+			require.Fail(t, "Scrape manager's channel remained blocked after the set threshold.")
 		}
 	}
 
@@ -592,7 +606,7 @@ func TestManagerTargetsUpdates(t *testing.T) {
 	select {
 	case <-m.triggerReload:
 	default:
-		t.Error("No scrape loops reload was triggered after targets update.")
+		require.Fail(t, "No scrape loops reload was triggered after targets update.")
 	}
 }
 
@@ -605,37 +619,31 @@ global:
 `
 
 		cfg := &config.Config{}
-		if err := yaml.UnmarshalStrict([]byte(cfgText), cfg); err != nil {
-			t.Fatalf("Unable to load YAML config cfgYaml: %s", err)
-		}
+		err := yaml.UnmarshalStrict([]byte(cfgText), cfg)
+		require.NoError(t, err, "Unable to load YAML config cfgYaml.")
 
 		return cfg
 	}
 
 	opts := Options{}
-	scrapeManager := NewManager(&opts, nil, nil)
+	testRegistry := prometheus.NewRegistry()
+	scrapeManager, err := NewManager(&opts, nil, nil, testRegistry)
+	require.NoError(t, err)
 
 	// Load the first config.
 	cfg1 := getConfig("ha1")
-	if err := scrapeManager.setOffsetSeed(cfg1.GlobalConfig.ExternalLabels); err != nil {
-		t.Error(err)
-	}
+	err = scrapeManager.setOffsetSeed(cfg1.GlobalConfig.ExternalLabels)
+	require.NoError(t, err)
 	offsetSeed1 := scrapeManager.offsetSeed
 
-	if offsetSeed1 == 0 {
-		t.Error("Offset seed has to be a hash of uint64")
-	}
+	require.NotZero(t, offsetSeed1, "Offset seed has to be a hash of uint64.")
 
 	// Load the first config.
 	cfg2 := getConfig("ha2")
-	if err := scrapeManager.setOffsetSeed(cfg2.GlobalConfig.ExternalLabels); err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, scrapeManager.setOffsetSeed(cfg2.GlobalConfig.ExternalLabels))
 	offsetSeed2 := scrapeManager.offsetSeed
 
-	if offsetSeed1 == offsetSeed2 {
-		t.Error("Offset seed should not be the same on different set of external labels")
-	}
+	require.NotEqual(t, offsetSeed1, offsetSeed2, "Offset seed should not be the same on different set of external labels.")
 }
 
 func TestManagerScrapePools(t *testing.T) {
@@ -658,8 +666,9 @@ scrape_configs:
   - targets: ["foo:9093"]
 `
 	var (
-		cfg1 = loadConfiguration(t, cfgText1)
-		cfg2 = loadConfiguration(t, cfgText2)
+		cfg1         = loadConfiguration(t, cfgText1)
+		cfg2         = loadConfiguration(t, cfgText2)
+		testRegistry = prometheus.NewRegistry()
 	)
 
 	reload := func(scrapeManager *Manager, cfg *config.Config) {
@@ -695,11 +704,168 @@ scrape_configs:
 	}
 
 	opts := Options{}
-	scrapeManager := NewManager(&opts, nil, nil)
+	scrapeManager, err := NewManager(&opts, nil, nil, testRegistry)
+	require.NoError(t, err)
 
 	reload(scrapeManager, cfg1)
 	require.ElementsMatch(t, []string{"job1", "job2"}, scrapeManager.ScrapePools())
 
 	reload(scrapeManager, cfg2)
 	require.ElementsMatch(t, []string{"job1", "job3"}, scrapeManager.ScrapePools())
+}
+
+// TestManagerCTZeroIngestion tests scrape manager for CT cases.
+func TestManagerCTZeroIngestion(t *testing.T) {
+	const mName = "expected_counter"
+
+	for _, tc := range []struct {
+		name                  string
+		counterSample         *dto.Counter
+		enableCTZeroIngestion bool
+
+		expectedValues []float64
+	}{
+		{
+			name: "disabled with CT on counter",
+			counterSample: &dto.Counter{
+				Value: proto.Float64(1.0),
+				// Timestamp does not matter as long as it exists in this test.
+				CreatedTimestamp: timestamppb.Now(),
+			},
+			expectedValues: []float64{1.0},
+		},
+		{
+			name: "enabled with CT on counter",
+			counterSample: &dto.Counter{
+				Value: proto.Float64(1.0),
+				// Timestamp does not matter as long as it exists in this test.
+				CreatedTimestamp: timestamppb.Now(),
+			},
+			enableCTZeroIngestion: true,
+			expectedValues:        []float64{0.0, 1.0},
+		},
+		{
+			name: "enabled without CT on counter",
+			counterSample: &dto.Counter{
+				Value: proto.Float64(1.0),
+			},
+			enableCTZeroIngestion: true,
+			expectedValues:        []float64{1.0},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app := &collectResultAppender{}
+			scrapeManager, err := NewManager(
+				&Options{
+					EnableCreatedTimestampZeroIngestion: tc.enableCTZeroIngestion,
+					skipOffsetting:                      true,
+				},
+				log.NewLogfmtLogger(os.Stderr),
+				&collectResultAppendable{app},
+				prometheus.NewRegistry(),
+			)
+			require.NoError(t, err)
+
+			require.NoError(t, scrapeManager.ApplyConfig(&config.Config{
+				GlobalConfig: config.GlobalConfig{
+					// Disable regular scrapes.
+					ScrapeInterval: model.Duration(9999 * time.Minute),
+					ScrapeTimeout:  model.Duration(5 * time.Second),
+					// Ensure the proto is chosen. We need proto as it's the only protocol
+					// with the CT parsing support.
+					ScrapeProtocols: []config.ScrapeProtocol{config.PrometheusProto},
+				},
+				ScrapeConfigs: []*config.ScrapeConfig{{JobName: "test"}},
+			}))
+
+			once := sync.Once{}
+			// Start fake HTTP target to that allow one scrape only.
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					fail := true
+					once.Do(func() {
+						fail = false
+						w.Header().Set("Content-Type", `application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited`)
+
+						ctrType := dto.MetricType_COUNTER
+						w.Write(protoMarshalDelimited(t, &dto.MetricFamily{
+							Name:   proto.String(mName),
+							Type:   &ctrType,
+							Metric: []*dto.Metric{{Counter: tc.counterSample}},
+						}))
+					})
+
+					if fail {
+						w.WriteHeader(http.StatusInternalServerError)
+					}
+				}),
+			)
+			defer server.Close()
+
+			serverURL, err := url.Parse(server.URL)
+			require.NoError(t, err)
+
+			// Add fake target directly into tsets + reload. Normally users would use
+			// Manager.Run and wait for minimum 5s refresh interval.
+			scrapeManager.updateTsets(map[string][]*targetgroup.Group{
+				"test": {{
+					Targets: []model.LabelSet{{
+						model.SchemeLabel:  model.LabelValue(serverURL.Scheme),
+						model.AddressLabel: model.LabelValue(serverURL.Host),
+					}},
+				}},
+			})
+			scrapeManager.reload()
+
+			// Wait for one scrape.
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+			defer cancel()
+			require.NoError(t, runutil.Retry(100*time.Millisecond, ctx.Done(), func() error {
+				if countFloatSamples(app, mName) != len(tc.expectedValues) {
+					return fmt.Errorf("expected %v samples", tc.expectedValues)
+				}
+				return nil
+			}), "after 1 minute")
+			scrapeManager.Stop()
+
+			require.Equal(t, tc.expectedValues, getResultFloats(app, mName))
+		})
+	}
+}
+
+func countFloatSamples(a *collectResultAppender, expectedMetricName string) (count int) {
+	a.mtx.Lock()
+	defer a.mtx.Unlock()
+
+	for _, f := range a.resultFloats {
+		if f.metric.Get(model.MetricNameLabel) == expectedMetricName {
+			count++
+		}
+	}
+	return count
+}
+
+func getResultFloats(app *collectResultAppender, expectedMetricName string) (result []float64) {
+	app.mtx.Lock()
+	defer app.mtx.Unlock()
+
+	for _, f := range app.resultFloats {
+		if f.metric.Get(model.MetricNameLabel) == expectedMetricName {
+			result = append(result, f.f)
+		}
+	}
+	return result
+}
+
+func TestUnregisterMetrics(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	// Check that all metrics can be unregistered, allowing a second manager to be created.
+	for i := 0; i < 2; i++ {
+		opts := Options{}
+		manager, err := NewManager(&opts, nil, nil, reg)
+		require.NotNil(t, manager)
+		require.NoError(t, err)
+		// Unregister all metrics.
+		manager.UnregisterMetrics()
+	}
 }

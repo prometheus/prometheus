@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,6 +30,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/lightsail"
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
@@ -79,12 +81,19 @@ type LightsailSDConfig struct {
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 }
 
+// NewDiscovererMetrics implements discovery.Config.
+func (*LightsailSDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return &lightsailMetrics{
+		refreshMetrics: rmi,
+	}
+}
+
 // Name returns the name of the Lightsail Config.
 func (*LightsailSDConfig) Name() string { return "lightsail" }
 
 // NewDiscoverer returns a Discoverer for the Lightsail Config.
 func (c *LightsailSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewLightsailDiscovery(c, opts.Logger), nil
+	return NewLightsailDiscovery(c, opts.Logger, opts.Metrics)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface for the Lightsail Config.
@@ -109,7 +118,7 @@ func (c *LightsailSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 		}
 		c.Region = region
 	}
-	return nil
+	return c.HTTPClientConfig.Validate()
 }
 
 // LightsailDiscovery periodically performs Lightsail-SD requests. It implements
@@ -121,20 +130,29 @@ type LightsailDiscovery struct {
 }
 
 // NewLightsailDiscovery returns a new LightsailDiscovery which periodically refreshes its targets.
-func NewLightsailDiscovery(conf *LightsailSDConfig, logger log.Logger) *LightsailDiscovery {
+func NewLightsailDiscovery(conf *LightsailSDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*LightsailDiscovery, error) {
+	m, ok := metrics.(*lightsailMetrics)
+	if !ok {
+		return nil, fmt.Errorf("invalid discovery metrics type")
+	}
+
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
+
 	d := &LightsailDiscovery{
 		cfg: conf,
 	}
 	d.Discovery = refresh.NewDiscovery(
-		logger,
-		"lightsail",
-		time.Duration(d.cfg.RefreshInterval),
-		d.refresh,
+		refresh.Options{
+			Logger:              logger,
+			Mech:                "lightsail",
+			Interval:            time.Duration(d.cfg.RefreshInterval),
+			RefreshF:            d.refresh,
+			MetricsInstantiator: m.refreshMetrics,
+		},
 	)
-	return d
+	return d, nil
 }
 
 func (d *LightsailDiscovery) lightsailClient() (*lightsail.Lightsail, error) {
@@ -212,7 +230,7 @@ func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 			lightsailLabelRegion:              model.LabelValue(d.cfg.Region),
 		}
 
-		addr := net.JoinHostPort(*inst.PrivateIpAddress, fmt.Sprintf("%d", d.cfg.Port))
+		addr := net.JoinHostPort(*inst.PrivateIpAddress, strconv.Itoa(d.cfg.Port))
 		labels[model.AddressLabel] = model.LabelValue(addr)
 
 		if inst.PublicIpAddress != nil {

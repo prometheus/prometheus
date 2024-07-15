@@ -24,7 +24,9 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/util/teststorage"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 var (
@@ -109,38 +111,31 @@ var ruleEvalTestScenarios = []struct {
 	},
 }
 
-func setUpRuleEvalTest(t require.TestingT) *promql.Test {
-	suite, err := promql.NewTest(t, `
+func setUpRuleEvalTest(t require.TestingT) *teststorage.TestStorage {
+	return promqltest.LoadedStorage(t, `
 		load 1m
 			metric{label_a="1",label_b="3"} 1
 			metric{label_a="2",label_b="4"} 10
 	`)
-	require.NoError(t, err)
-
-	return suite
 }
 
 func TestRuleEval(t *testing.T) {
-	suite := setUpRuleEvalTest(t)
-	defer suite.Close()
-
-	require.NoError(t, suite.Run())
+	storage := setUpRuleEvalTest(t)
+	t.Cleanup(func() { storage.Close() })
 
 	for _, scenario := range ruleEvalTestScenarios {
 		t.Run(scenario.name, func(t *testing.T) {
 			rule := NewRecordingRule("test_rule", scenario.expr, scenario.ruleLabels)
-			result, err := rule.Eval(suite.Context(), ruleEvaluationTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0)
+			result, err := rule.Eval(context.TODO(), 0, ruleEvaluationTime, EngineQueryFunc(testEngine, storage), nil, 0)
 			require.NoError(t, err)
-			require.Equal(t, scenario.expected, result)
+			testutil.RequireEqual(t, scenario.expected, result)
 		})
 	}
 }
 
 func BenchmarkRuleEval(b *testing.B) {
-	suite := setUpRuleEvalTest(b)
-	defer suite.Close()
-
-	require.NoError(b, suite.Run())
+	storage := setUpRuleEvalTest(b)
+	b.Cleanup(func() { storage.Close() })
 
 	for _, scenario := range ruleEvalTestScenarios {
 		b.Run(scenario.name, func(b *testing.B) {
@@ -149,7 +144,7 @@ func BenchmarkRuleEval(b *testing.B) {
 			b.ResetTimer()
 
 			for i := 0; i < b.N; i++ {
-				_, err := rule.Eval(suite.Context(), ruleEvaluationTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0)
+				_, err := rule.Eval(context.TODO(), 0, ruleEvaluationTime, EngineQueryFunc(testEngine, storage), nil, 0)
 				if err != nil {
 					require.NoError(b, err)
 				}
@@ -178,21 +173,18 @@ func TestRuleEvalDuplicate(t *testing.T) {
 
 	expr, _ := parser.ParseExpr(`vector(0) or label_replace(vector(0),"test","x","","")`)
 	rule := NewRecordingRule("foo", expr, labels.FromStrings("test", "test"))
-	_, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil, 0)
+	_, err := rule.Eval(ctx, 0, now, EngineQueryFunc(engine, storage), nil, 0)
 	require.Error(t, err)
 	require.EqualError(t, err, "vector contains metrics with the same labelset after applying rule labels")
 }
 
 func TestRecordingRuleLimit(t *testing.T) {
-	suite, err := promql.NewTest(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			metric{label="1"} 1
 			metric{label="2"} 1
 	`)
-	require.NoError(t, err)
-	defer suite.Close()
-
-	require.NoError(t, suite.Run())
+	t.Cleanup(func() { storage.Close() })
 
 	tests := []struct {
 		limit int
@@ -223,7 +215,7 @@ func TestRecordingRuleLimit(t *testing.T) {
 	evalTime := time.Unix(0, 0)
 
 	for _, test := range tests {
-		switch _, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, test.limit); {
+		switch _, err := rule.Eval(context.TODO(), 0, evalTime, EngineQueryFunc(testEngine, storage), nil, test.limit); {
 		case err != nil:
 			require.EqualError(t, err, test.err)
 		case test.err != "":
@@ -251,11 +243,33 @@ func TestRecordingEvalWithOrigin(t *testing.T) {
 	require.NoError(t, err)
 
 	rule := NewRecordingRule(name, expr, lbs)
-	_, err = rule.Eval(ctx, now, func(ctx context.Context, qs string, _ time.Time) (promql.Vector, error) {
+	_, err = rule.Eval(ctx, 0, now, func(ctx context.Context, qs string, _ time.Time) (promql.Vector, error) {
 		detail = FromOriginContext(ctx)
 		return nil, nil
 	}, nil, 0)
 
 	require.NoError(t, err)
 	require.Equal(t, detail, NewRuleDetail(rule))
+}
+
+func TestRecordingRule_SetNoDependentRules(t *testing.T) {
+	rule := NewRecordingRule("1", &parser.NumberLiteral{Val: 1}, labels.EmptyLabels())
+	require.False(t, rule.NoDependentRules())
+
+	rule.SetNoDependentRules(false)
+	require.False(t, rule.NoDependentRules())
+
+	rule.SetNoDependentRules(true)
+	require.True(t, rule.NoDependentRules())
+}
+
+func TestRecordingRule_SetNoDependencyRules(t *testing.T) {
+	rule := NewRecordingRule("1", &parser.NumberLiteral{Val: 1}, labels.EmptyLabels())
+	require.False(t, rule.NoDependencyRules())
+
+	rule.SetNoDependencyRules(false)
+	require.False(t, rule.NoDependencyRules())
+
+	rule.SetNoDependencyRules(true)
+	require.True(t, rule.NoDependencyRules())
 }

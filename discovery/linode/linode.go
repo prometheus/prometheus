@@ -51,6 +51,7 @@ const (
 	linodeLabelStatus             = linodeLabel + "status"
 	linodeLabelTags               = linodeLabel + "tags"
 	linodeLabelGroup              = linodeLabel + "group"
+	linodeLabelGPUs               = linodeLabel + "gpus"
 	linodeLabelHypervisor         = linodeLabel + "hypervisor"
 	linodeLabelBackups            = linodeLabel + "backups"
 	linodeLabelSpecsDiskBytes     = linodeLabel + "specs_disk_bytes"
@@ -58,32 +59,28 @@ const (
 	linodeLabelSpecsVCPUs         = linodeLabel + "specs_vcpus"
 	linodeLabelSpecsTransferBytes = linodeLabel + "specs_transfer_bytes"
 	linodeLabelExtraIPs           = linodeLabel + "extra_ips"
+	linodeLabelIPv6Ranges         = linodeLabel + "ipv6_ranges"
 
 	// This is our events filter; when polling for changes, we care only about
 	// events since our last refresh.
-	// Docs: https://www.linode.com/docs/api/account/#events-list
+	// Docs: https://www.linode.com/docs/api/account/#events-list.
 	filterTemplate = `{"created": {"+gte": "%s"}}`
+
+	// Optional region filtering.
+	regionFilterTemplate = `{"region": "%s"}`
 )
 
 // DefaultSDConfig is the default Linode SD configuration.
-var (
-	DefaultSDConfig = SDConfig{
-		TagSeparator:     ",",
-		Port:             80,
-		RefreshInterval:  model.Duration(60 * time.Second),
-		HTTPClientConfig: config.DefaultHTTPClientConfig,
-	}
-
-	failuresCount = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name: "prometheus_sd_linode_failures_total",
-			Help: "Number of Linode service discovery refresh failures.",
-		})
-)
+var DefaultSDConfig = SDConfig{
+	TagSeparator:     ",",
+	Port:             80,
+	Region:           "",
+	RefreshInterval:  model.Duration(60 * time.Second),
+	HTTPClientConfig: config.DefaultHTTPClientConfig,
+}
 
 func init() {
 	discovery.RegisterConfig(&SDConfig{})
-	prometheus.MustRegister(failuresCount)
 }
 
 // SDConfig is the configuration for Linode based service discovery.
@@ -93,6 +90,12 @@ type SDConfig struct {
 	RefreshInterval model.Duration `yaml:"refresh_interval"`
 	Port            int            `yaml:"port"`
 	TagSeparator    string         `yaml:"tag_separator,omitempty"`
+	Region          string         `yaml:"region,omitempty"`
+}
+
+// NewDiscovererMetrics implements discovery.Config.
+func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return newDiscovererMetrics(reg, rmi)
 }
 
 // Name returns the name of the Config.
@@ -100,7 +103,7 @@ func (*SDConfig) Name() string { return "linode" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger)
+	return NewDiscovery(c, opts.Logger, opts.Metrics)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -125,21 +128,30 @@ type Discovery struct {
 	*refresh.Discovery
 	client               *linodego.Client
 	port                 int
+	region               string
 	tagSeparator         string
 	lastRefreshTimestamp time.Time
 	pollCount            int
 	lastResults          []*targetgroup.Group
 	eventPollingEnabled  bool
+	metrics              *linodeMetrics
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
-func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+	m, ok := metrics.(*linodeMetrics)
+	if !ok {
+		return nil, fmt.Errorf("invalid discovery metrics type")
+	}
+
 	d := &Discovery{
 		port:                 conf.Port,
+		region:               conf.Region,
 		tagSeparator:         conf.TagSeparator,
 		pollCount:            0,
 		lastRefreshTimestamp: time.Now().UTC(),
 		eventPollingEnabled:  true,
+		metrics:              m,
 	}
 
 	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "linode_sd")
@@ -157,10 +169,13 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 	d.client = &client
 
 	d.Discovery = refresh.NewDiscovery(
-		logger,
-		"linode",
-		time.Duration(conf.RefreshInterval),
-		d.refresh,
+		refresh.Options{
+			Logger:              logger,
+			Mech:                "linode",
+			Interval:            time.Duration(conf.RefreshInterval),
+			RefreshF:            d.refresh,
+			MetricsInstantiator: m.refreshMetrics,
+		},
 	)
 	return d, nil
 }
@@ -171,12 +186,12 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	if d.lastResults != nil && d.eventPollingEnabled {
 		// Check to see if there have been any events. If so, refresh our data.
-		opts := linodego.ListOptions{
+		eventsOpts := linodego.ListOptions{
 			PageOptions: &linodego.PageOptions{Page: 1},
 			PageSize:    25,
 			Filter:      fmt.Sprintf(filterTemplate, d.lastRefreshTimestamp.Format("2006-01-02T15:04:05")),
 		}
-		events, err := d.client.ListEvents(ctx, &opts)
+		events, err := d.client.ListEvents(ctx, &eventsOpts)
 		if err != nil {
 			var e *linodego.Error
 			if errors.As(err, &e) && e.Code == http.StatusUnauthorized {
@@ -217,18 +232,42 @@ func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, erro
 	tg := &targetgroup.Group{
 		Source: "Linode",
 	}
+	// We need 3 of these because Linodego writes into the structure during pagination
+	listInstancesOpts := linodego.ListOptions{
+		PageSize: 500,
+	}
+	listIPAddressesOpts := linodego.ListOptions{
+		PageSize: 500,
+	}
+	listIPv6RangesOpts := linodego.ListOptions{
+		PageSize: 500,
+	}
+
+	// If region filter provided, use it to constrain results.
+	if d.region != "" {
+		listInstancesOpts.Filter = fmt.Sprintf(regionFilterTemplate, d.region)
+		listIPAddressesOpts.Filter = fmt.Sprintf(regionFilterTemplate, d.region)
+		listIPv6RangesOpts.Filter = fmt.Sprintf(regionFilterTemplate, d.region)
+	}
 
 	// Gather all linode instances.
-	instances, err := d.client.ListInstances(ctx, &linodego.ListOptions{PageSize: 500})
+	instances, err := d.client.ListInstances(ctx, &listInstancesOpts)
 	if err != nil {
-		failuresCount.Inc()
+		d.metrics.failuresCount.Inc()
 		return nil, err
 	}
 
 	// Gather detailed IP address info for all IPs on all linode instances.
-	detailedIPs, err := d.client.ListIPAddresses(ctx, &linodego.ListOptions{PageSize: 500})
+	detailedIPs, err := d.client.ListIPAddresses(ctx, &listIPAddressesOpts)
 	if err != nil {
-		failuresCount.Inc()
+		d.metrics.failuresCount.Inc()
+		return nil, err
+	}
+
+	// Gather detailed IPv6 Range info for all linode instances.
+	ipv6RangeList, err := d.client.ListIPv6Ranges(ctx, &listIPv6RangesOpts)
+	if err != nil {
+		d.metrics.failuresCount.Inc()
 		return nil, err
 	}
 
@@ -241,7 +280,7 @@ func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, erro
 			privateIPv4, publicIPv4, publicIPv6             string
 			privateIPv4RDNS, publicIPv4RDNS, publicIPv6RDNS string
 			backupsStatus                                   string
-			extraIPs                                        []string
+			extraIPs, ipv6Ranges                            []string
 		)
 
 		for _, ip := range instance.IPv4 {
@@ -269,16 +308,22 @@ func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, erro
 		}
 
 		if instance.IPv6 != "" {
+			slaac := strings.Split(instance.IPv6, "/")[0]
 			for _, detailedIP := range detailedIPs {
-				if detailedIP.Address != strings.Split(instance.IPv6, "/")[0] {
+				if detailedIP.Address != slaac {
 					continue
 				}
-
 				publicIPv6 = detailedIP.Address
 
 				if detailedIP.RDNS != "" && detailedIP.RDNS != "null" {
 					publicIPv6RDNS = detailedIP.RDNS
 				}
+			}
+			for _, ipv6Range := range ipv6RangeList {
+				if ipv6Range.RouteTarget != slaac {
+					continue
+				}
+				ipv6Ranges = append(ipv6Ranges, fmt.Sprintf("%s/%d", ipv6Range.Range, ipv6Range.Prefix))
 			}
 		}
 
@@ -289,7 +334,7 @@ func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, erro
 		}
 
 		labels := model.LabelSet{
-			linodeLabelID:                 model.LabelValue(fmt.Sprintf("%d", instance.ID)),
+			linodeLabelID:                 model.LabelValue(strconv.Itoa(instance.ID)),
 			linodeLabelName:               model.LabelValue(instance.Label),
 			linodeLabelImage:              model.LabelValue(instance.Image),
 			linodeLabelPrivateIPv4:        model.LabelValue(privateIPv4),
@@ -302,12 +347,13 @@ func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, erro
 			linodeLabelType:               model.LabelValue(instance.Type),
 			linodeLabelStatus:             model.LabelValue(instance.Status),
 			linodeLabelGroup:              model.LabelValue(instance.Group),
+			linodeLabelGPUs:               model.LabelValue(strconv.Itoa(instance.Specs.GPUs)),
 			linodeLabelHypervisor:         model.LabelValue(instance.Hypervisor),
 			linodeLabelBackups:            model.LabelValue(backupsStatus),
-			linodeLabelSpecsDiskBytes:     model.LabelValue(fmt.Sprintf("%d", int64(instance.Specs.Disk)<<20)),
-			linodeLabelSpecsMemoryBytes:   model.LabelValue(fmt.Sprintf("%d", int64(instance.Specs.Memory)<<20)),
-			linodeLabelSpecsVCPUs:         model.LabelValue(fmt.Sprintf("%d", instance.Specs.VCPUs)),
-			linodeLabelSpecsTransferBytes: model.LabelValue(fmt.Sprintf("%d", int64(instance.Specs.Transfer)<<20)),
+			linodeLabelSpecsDiskBytes:     model.LabelValue(strconv.FormatInt(int64(instance.Specs.Disk)<<20, 10)),
+			linodeLabelSpecsMemoryBytes:   model.LabelValue(strconv.FormatInt(int64(instance.Specs.Memory)<<20, 10)),
+			linodeLabelSpecsVCPUs:         model.LabelValue(strconv.Itoa(instance.Specs.VCPUs)),
+			linodeLabelSpecsTransferBytes: model.LabelValue(strconv.FormatInt(int64(instance.Specs.Transfer)<<20, 10)),
 		}
 
 		addr := net.JoinHostPort(publicIPv4, strconv.FormatUint(uint64(d.port), 10))
@@ -322,10 +368,18 @@ func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, erro
 
 		if len(extraIPs) > 0 {
 			// This instance has more than one of at least one type of IP address (public, private,
-			// IPv4, IPv6, etc. We provide those extra IPs found here just like we do for instance
+			// IPv4,etc. We provide those extra IPs found here just like we do for instance
 			// tags, we surround a separated list with the tagSeparator config.
 			ips := d.tagSeparator + strings.Join(extraIPs, d.tagSeparator) + d.tagSeparator
 			labels[linodeLabelExtraIPs] = model.LabelValue(ips)
+		}
+
+		if len(ipv6Ranges) > 0 {
+			// This instance has more than one IPv6 Ranges routed to it we provide these
+			// Ranges found here just like we do for instance tags, we surround a separated
+			// list with the tagSeparator config.
+			ips := d.tagSeparator + strings.Join(ipv6Ranges, d.tagSeparator) + d.tagSeparator
+			labels[linodeLabelIPv6Ranges] = model.LabelValue(ips)
 		}
 
 		tg.Targets = append(tg.Targets, labels)

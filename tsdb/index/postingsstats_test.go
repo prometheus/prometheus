@@ -33,7 +33,7 @@ func TestPostingsStats(t *testing.T) {
 	stats.push(Stat{Name: "Stuff", Count: 3000000})
 
 	data := stats.get()
-	require.Equal(t, 10, len(data))
+	require.Len(t, data, 10)
 	for i := 0; i < heapLength; i++ {
 		require.Equal(t, uint64(max-i), data[i].Count)
 	}
@@ -51,7 +51,7 @@ func TestPostingsStats2(t *testing.T) {
 
 	data := stats.get()
 
-	require.Equal(t, 4, len(data))
+	require.Len(t, data, 4)
 	require.Equal(t, uint64(11), data[0].Count)
 }
 

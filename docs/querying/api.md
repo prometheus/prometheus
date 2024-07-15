@@ -25,8 +25,10 @@ Other non-`2xx` codes may be returned for errors occurring before the API
 endpoint is reached.
 
 An array of warnings may be returned if there are errors that do
-not inhibit the request execution. All of the data that was successfully
-collected will be returned in the data field.
+not inhibit the request execution. An additional array of info-level
+annotations may be returned for potential query issues that may or may
+not be false positives. All of the data that was successfully collected
+will be returned in the data field.
 
 The JSON response envelope format is as follows:
 
@@ -40,9 +42,11 @@ The JSON response envelope format is as follows:
   "errorType": "<string>",
   "error": "<string>",
 
-  // Only if there were warnings while executing the request.
+  // Only set if there were warnings while executing the request.
   // There will still be data in the data field.
-  "warnings": ["<string>"]
+  "warnings": ["<string>"],
+  // Only set if there were info-level annnotations while executing the request.
+  "infos": ["<string>"]
 }
 ```
 
@@ -256,6 +260,7 @@ URL query parameters:
   series to return. At least one `match[]` argument must be provided.
 - `start=<rfc3339 | unix_timestamp>`: Start timestamp.
 - `end=<rfc3339 | unix_timestamp>`: End timestamp.
+- `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 
 You can URL-encode these parameters directly in the request body by using the `POST` method and
 `Content-Type: application/x-www-form-urlencoded` header. This is useful when specifying a large
@@ -306,6 +311,7 @@ URL query parameters:
 - `end=<rfc3339 | unix_timestamp>`: End timestamp. Optional.
 - `match[]=<series_selector>`: Repeated series selector argument that selects the
   series from which to read the label names. Optional.
+- `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 
 
 The `data` section of the JSON response is a list of string label names.
@@ -356,6 +362,7 @@ URL query parameters:
 - `end=<rfc3339 | unix_timestamp>`: End timestamp. Optional.
 - `match[]=<series_selector>`: Repeated series selector argument that selects the
   series from which to read the label values. Optional.
+- `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 
 
 The `data` section of the JSON response is a list of string label values.
@@ -404,7 +411,7 @@ $ curl -g 'http://localhost:9090/api/v1/query_exemplars?query=test_exemplar_metr
             "exemplars": [
                 {
                     "labels": {
-                        "traceID": "EpTxMJ40fUus7aGY"
+                        "trace_id": "EpTxMJ40fUus7aGY"
                     },
                     "value": "6",
                     "timestamp": 1600096945.479
@@ -421,14 +428,14 @@ $ curl -g 'http://localhost:9090/api/v1/query_exemplars?query=test_exemplar_metr
             "exemplars": [
                 {
                     "labels": {
-                        "traceID": "Olp9XHlq763ccsfa"
+                        "trace_id": "Olp9XHlq763ccsfa"
                     },
                     "value": "19",
                     "timestamp": 1600096955.479
                 },
                 {
                     "labels": {
-                        "traceID": "hCtjygkIHwAN9vs4"
+                        "trace_id": "hCtjygkIHwAN9vs4"
                     },
                     "value": "20",
                     "timestamp": 1600096965.489
@@ -449,7 +456,7 @@ raw numbers.
 
 The keys `"histogram"` and `"histograms"` only show up if the experimental
 native histograms are present in the response. Their placeholder `<histogram>`
-is explained in detail in its own section below. 
+is explained in detail in its own section below.
 
 ### Range vectors
 
@@ -467,8 +474,11 @@ Range vectors are returned as result type `matrix`. The corresponding
 ]
 ```
 
-Each series could have the `"values"` key, or the `"histograms"` key, or both. 
+Each series could have the `"values"` key, or the `"histograms"` key, or both.
 For a given timestamp, there will only be one sample of either float or histogram type.
+
+Series are returned sorted by `metric`. Functions such as [`sort`](functions.md#sort)
+and [`sort_by_label`](functions.md#sort_by_label) have no effect for range vectors.
 
 ### Instant vectors
 
@@ -487,6 +497,10 @@ Instant vectors are returned as result type `vector`. The corresponding
 ```
 
 Each series could have the `"value"` key, or the `"histogram"` key, but not both.
+
+Series are not guaranteed to be returned in any particular order unless a function
+such as [`sort`](functions.md#sort) or [`sort_by_label`](functions.md#sort_by_label)`
+is used.
 
 ### Scalars
 
@@ -543,6 +557,7 @@ GET /api/v1/targets
 ```
 
 Both the active and dropped targets are part of the response by default.
+Dropped targets are subject to `keep_dropped_targets` limit, if set.
 `labels` represents the label set after relabeling has occurred.
 `discoveredLabels` represent the unmodified labels retrieved during service discovery before relabeling has occurred.
 
@@ -678,6 +693,8 @@ URL query parameters:
 - `rule_name[]=<string>`: only return rules with the given rule name. If the parameter is repeated, rules with any of the provided names are returned. If we've filtered out all the rules of a group, the group is not returned. When the parameter is absent or empty, no filtering is done.
 - `rule_group[]=<string>`: only return rules with the given rule group name. If the parameter is repeated, rules with any of the provided rule group names are returned. When the parameter is absent or empty, no filtering is done.
 - `file[]=<string>`: only return rules with the given filepath. If the parameter is repeated, rules with any of the provided filepaths are returned. When the parameter is absent or empty, no filtering is done.
+- `exclude_alerts=<bool>`: only return rules, do not return active alerts. 
+- `match[]=<label_selector>`: only return rules that have configured labels that satisfy the label selectors. If the parameter is repeated, rules that match any of the sets of label selectors are returned. Note that matching is on the labels in the definition of each rule, not on the values after template expansion (for alerting rules). Optional.
 
 ```json
 $ curl http://localhost:9090/api/v1/rules
@@ -1294,3 +1311,16 @@ Enable the remote write receiver by setting
 endpoint is `/api/v1/write`. Find more details [here](../storage.md#overview).
 
 *New in v2.33*
+
+## OTLP Receiver
+
+Prometheus can be configured as a receiver for the OTLP Metrics protocol. This
+is not considered an efficient way of ingesting samples. Use it
+with caution for specific low-volume use cases. It is not suitable for
+replacing the ingestion via scraping.
+
+Enable the OTLP receiver by the feature flag
+`--enable-feature=otlp-write-receiver`. When enabled, the OTLP receiver
+endpoint is `/api/v1/otlp/v1/metrics`.
+
+*New in v2.47*

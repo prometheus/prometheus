@@ -14,13 +14,13 @@
 package tsdbutil
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
@@ -83,7 +83,7 @@ func (l *DirLocker) Lock() error {
 
 	lockf, _, err := fileutil.Flock(l.path)
 	if err != nil {
-		return errors.Wrap(err, "lock DB directory")
+		return fmt.Errorf("lock DB directory: %w", err)
 	}
 	l.releaser = lockf
 	return nil

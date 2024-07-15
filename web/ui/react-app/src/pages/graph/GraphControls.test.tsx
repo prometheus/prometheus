@@ -5,13 +5,15 @@ import { Button, ButtonGroup, Form, InputGroup, InputGroupAddon, Input } from 'r
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faPlus, faMinus, faChartArea, faChartLine } from '@fortawesome/free-solid-svg-icons';
 import TimeInput from './TimeInput';
+import { GraphDisplayMode } from './Panel';
 
 const defaultGraphControlProps = {
   range: 60 * 60 * 24 * 1000,
   endTime: 1572100217898,
   useLocalTime: false,
   resolution: 10,
-  stacked: false,
+  displayMode: GraphDisplayMode.Lines,
+  isHeatmapData: false,
   showExemplars: false,
 
   onChangeRange: (): void => {
@@ -27,6 +29,9 @@ const defaultGraphControlProps = {
     // Do nothing.
   },
   onChangeShowExemplars: (): void => {
+    // Do nothing.
+  },
+  onChangeDisplayMode: (): void => {
     // Do nothing.
   },
 };
@@ -163,10 +168,10 @@ describe('GraphControls', () => {
       },
     ].forEach((testCase) => {
       const results: boolean[] = [];
-      const onChange = (stacked: boolean): void => {
-        results.push(stacked);
+      const onChange = (mode: GraphDisplayMode): void => {
+        results.push(mode === GraphDisplayMode.Stacked);
       };
-      const controls = shallow(<GraphControls {...defaultGraphControlProps} onChangeStacking={onChange} />);
+      const controls = shallow(<GraphControls {...defaultGraphControlProps} onChangeDisplayMode={onChange} />);
       const group = controls.find(ButtonGroup);
       const btn = group.find(Button).filterWhere((btn) => btn.prop('title') === testCase.title);
       const onClick = btn.prop('onClick');

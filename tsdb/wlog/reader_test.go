@@ -16,11 +16,12 @@ package wlog
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
 	"io"
-	"math/rand"
+	"math/big"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -181,16 +182,13 @@ func TestReader(t *testing.T) {
 					t.Logf("record %d", j)
 					rec := r.Record()
 
-					if j >= len(c.exp) {
-						t.Fatal("received more records than expected")
-					}
+					require.Less(t, j, len(c.exp), "received more records than expected")
 					require.Equal(t, c.exp[j], rec, "Bytes within record did not match expected Bytes")
 				}
-				if !c.fail && r.Err() != nil {
-					t.Fatalf("unexpected error: %s", r.Err())
-				}
-				if c.fail && r.Err() == nil {
-					t.Fatalf("expected error but got none")
+				if !c.fail {
+					require.NoError(t, r.Err())
+				} else {
+					require.Error(t, r.Err())
 				}
 			})
 		}
@@ -252,8 +250,11 @@ func generateRandomEntries(w *WL, records chan []byte) error {
 		default:
 			sz = pageSize * 8
 		}
-
-		rec := make([]byte, rand.Int63n(sz))
+		n, err := rand.Int(rand.Reader, big.NewInt(sz))
+		if err != nil {
+			return err
+		}
+		rec := make([]byte, n.Int64())
 		if _, err := rand.Read(rec); err != nil {
 			return err
 		}
@@ -262,7 +263,11 @@ func generateRandomEntries(w *WL, records chan []byte) error {
 
 		// Randomly batch up records.
 		recs = append(recs, rec)
-		if rand.Intn(4) < 3 {
+		n, err = rand.Int(rand.Reader, big.NewInt(int64(4)))
+		if err != nil {
+			return err
+		}
+		if int(n.Int64()) < 3 {
 			if err := w.Log(recs...); err != nil {
 				return err
 			}
@@ -336,7 +341,7 @@ func TestReaderFuzz(t *testing.T) {
 					r := reader.Record()
 					// Expected value may come as nil or empty slice, so it requires special comparison.
 					if len(expected) == 0 {
-						require.Len(t, r, 0)
+						require.Empty(t, r)
 					} else {
 						require.Equal(t, expected, r, "read wrong record")
 					}
@@ -387,7 +392,7 @@ func TestReaderFuzz_Live(t *testing.T) {
 					require.True(t, ok, "unexpected record")
 					// Expected value may come as nil or empty slice, so it requires special comparison.
 					if len(expected) == 0 {
-						require.Len(t, rec, 0)
+						require.Empty(t, rec)
 					} else {
 						require.Equal(t, expected, rec, "record does not match expected")
 					}
@@ -533,7 +538,7 @@ func TestReaderData(t *testing.T) {
 			require.NoError(t, err)
 
 			reader := fn(sr)
-			for reader.Next() { // nolint:revive
+			for reader.Next() {
 			}
 			require.NoError(t, reader.Err())
 

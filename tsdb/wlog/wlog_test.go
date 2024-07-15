@@ -16,13 +16,15 @@ package wlog
 
 import (
 	"bytes"
+	"crypto/rand"
 	"fmt"
 	"io"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -164,7 +166,7 @@ func TestWALRepair_ReadingError(t *testing.T) {
 				sr := NewSegmentBufReader(s)
 				require.NoError(t, err)
 				r := NewReader(sr)
-				for r.Next() { // nolint:revive
+				for r.Next() {
 				}
 
 				// Close the segment so we don't break things on Windows.
@@ -189,12 +191,10 @@ func TestWALRepair_ReadingError(t *testing.T) {
 				result = append(result, append(b, r.Record()...))
 			}
 			require.NoError(t, r.Err())
-			require.Equal(t, test.intactRecs, len(result), "Wrong number of intact records")
+			require.Len(t, result, test.intactRecs, "Wrong number of intact records")
 
 			for i, r := range result {
-				if !bytes.Equal(records[i], r) {
-					t.Fatalf("record %d diverges: want %x, got %x", i, records[i][:10], r[:10])
-				}
+				require.True(t, bytes.Equal(records[i], r), "record %d diverges: want %x, got %x", i, records[i][:10], r[:10])
 			}
 
 			// Make sure there is a new 0 size Segment after the corrupted Segment.
@@ -283,7 +283,7 @@ func TestCorruptAndCarryOn(t *testing.T) {
 		reader := NewReader(sr)
 		i := 0
 		for ; i < 4 && reader.Next(); i++ {
-			require.Equal(t, recordSize, len(reader.Record()))
+			require.Len(t, reader.Record(), recordSize)
 		}
 		require.Equal(t, 4, i, "not enough records")
 		require.False(t, reader.Next(), "unexpected record")
@@ -301,8 +301,8 @@ func TestCorruptAndCarryOn(t *testing.T) {
 		require.NoError(t, err)
 
 		// Ensure that we have a completely clean slate after repairing.
-		require.Equal(t, w.segment.Index(), 1) // We corrupted segment 0.
-		require.Equal(t, w.donePages, 0)
+		require.Equal(t, 1, w.segment.Index()) // We corrupted segment 0.
+		require.Equal(t, 0, w.donePages)
 
 		for i := 0; i < 5; i++ {
 			buf := make([]byte, recordSize)
@@ -325,11 +325,11 @@ func TestCorruptAndCarryOn(t *testing.T) {
 		reader := NewReader(sr)
 		i := 0
 		for ; i < 9 && reader.Next(); i++ {
-			require.Equal(t, recordSize, len(reader.Record()))
+			require.Len(t, reader.Record(), recordSize)
 		}
 		require.Equal(t, 9, i, "wrong number of records")
 		require.False(t, reader.Next(), "unexpected record")
-		require.Equal(t, nil, reader.Err())
+		require.NoError(t, reader.Err())
 		sr.Close()
 	}
 }
@@ -456,7 +456,7 @@ func TestLogPartialWrite(t *testing.T) {
 
 			for i := 1; i <= testData.numRecords; i++ {
 				if err := w.Log(record); i == testData.faultyRecord {
-					require.Error(t, io.ErrShortWrite, err)
+					require.ErrorIs(t, io.ErrShortWrite, err)
 				} else {
 					require.NoError(t, err)
 				}
@@ -561,5 +561,15 @@ func BenchmarkWAL_Log(b *testing.B) {
 			// do not show burst throughput well.
 			b.StopTimer()
 		})
+	}
+}
+
+func TestUnregisterMetrics(t *testing.T) {
+	reg := prometheus.NewRegistry()
+
+	for i := 0; i < 2; i++ {
+		wl, err := New(log.NewNopLogger(), reg, t.TempDir(), CompressionNone)
+		require.NoError(t, err)
+		require.NoError(t, wl.Close())
 	}
 }

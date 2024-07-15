@@ -20,7 +20,6 @@ import (
 	v3 "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -55,6 +54,7 @@ type SDConfig struct {
 	RefreshInterval  model.Duration          `yaml:"refresh_interval,omitempty"`
 	FetchTimeout     model.Duration          `yaml:"fetch_timeout,omitempty"`
 	Server           string                  `yaml:"server,omitempty"`
+	ClientID         string                  `yaml:"client_id,omitempty"`
 }
 
 // mustRegisterMessage registers the provided message type in the typeRegistry, and panics
@@ -68,9 +68,6 @@ func mustRegisterMessage(typeRegistry *protoregistry.Types, mt protoreflect.Mess
 func init() {
 	// Register top-level SD Configs.
 	discovery.RegisterConfig(&KumaSDConfig{})
-
-	// Register metrics.
-	prometheus.MustRegister(kumaFetchDuration, kumaFetchSkipUpdateCount, kumaFetchFailuresCount)
 
 	// Register protobuf types that need to be marshalled/ unmarshalled.
 	mustRegisterMessage(protoTypes, (&v3.DiscoveryRequest{}).ProtoReflect().Type())
@@ -109,9 +106,7 @@ type fetchDiscovery struct {
 	parseResources resourceParser
 	logger         log.Logger
 
-	fetchDuration        prometheus.Observer
-	fetchSkipUpdateCount prometheus.Counter
-	fetchFailuresCount   prometheus.Counter
+	metrics *xdsMetrics
 }
 
 func (d *fetchDiscovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
@@ -135,7 +130,7 @@ func (d *fetchDiscovery) poll(ctx context.Context, ch chan<- []*targetgroup.Grou
 	t0 := time.Now()
 	response, err := d.client.Fetch(ctx)
 	elapsed := time.Since(t0)
-	d.fetchDuration.Observe(elapsed.Seconds())
+	d.metrics.fetchDuration.Observe(elapsed.Seconds())
 
 	// Check the context before in order to exit early.
 	select {
@@ -146,20 +141,20 @@ func (d *fetchDiscovery) poll(ctx context.Context, ch chan<- []*targetgroup.Grou
 
 	if err != nil {
 		level.Error(d.logger).Log("msg", "error parsing resources", "err", err)
-		d.fetchFailuresCount.Inc()
+		d.metrics.fetchFailuresCount.Inc()
 		return
 	}
 
 	if response == nil {
 		// No update needed.
-		d.fetchSkipUpdateCount.Inc()
+		d.metrics.fetchSkipUpdateCount.Inc()
 		return
 	}
 
 	parsedTargets, err := d.parseResources(response.Resources, response.TypeUrl)
 	if err != nil {
 		level.Error(d.logger).Log("msg", "error parsing resources", "err", err)
-		d.fetchFailuresCount.Inc()
+		d.metrics.fetchFailuresCount.Inc()
 		return
 	}
 

@@ -1,7 +1,20 @@
-// Copyright The OpenTelemetry Authors
-// SPDX-License-Identifier: Apache-2.0
+// Copyright 2024 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// Provenance-includes-location: https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/95e8f8fdc2a9dc87230406c9a3cf02be4fd68bea/pkg/translator/prometheus/normalize_name.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: Copyright The OpenTelemetry Authors.
 
-package normalize
+package prometheus
 
 import (
 	"strings"
@@ -35,11 +48,6 @@ var unitMap = map[string]string{
 	"MBy":  "megabytes",
 	"GBy":  "gigabytes",
 	"TBy":  "terabytes",
-	"B":    "bytes",
-	"KB":   "kilobytes",
-	"MB":   "megabytes",
-	"GB":   "gigabytes",
-	"TB":   "terabytes",
 
 	// SI
 	"m": "meters",
@@ -54,7 +62,6 @@ var unitMap = map[string]string{
 	"Hz":  "hertz",
 	"1":   "",
 	"%":   "percent",
-	"$":   "dollars",
 }
 
 // The map that translates the "per" unit
@@ -69,7 +76,7 @@ var perUnitMap = map[string]string{
 	"y":  "year",
 }
 
-// Build a Prometheus-compliant metric name for the specified metric
+// BuildCompliantName builds a Prometheus-compliant metric name for the specified metric
 //
 // Metric name is prefixed with specified namespace and underscore (if any).
 // Namespace is not cleaned up. Make sure specified namespace follows Prometheus
@@ -77,7 +84,32 @@ var perUnitMap = map[string]string{
 //
 // See rules at https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels
 // and https://prometheus.io/docs/practices/naming/#metric-and-label-naming
-func BuildPromCompliantName(metric pmetric.Metric, namespace string) string {
+func BuildCompliantName(metric pmetric.Metric, namespace string, addMetricSuffixes bool) string {
+	var metricName string
+
+	// Full normalization following standard Prometheus naming conventions
+	if addMetricSuffixes {
+		return normalizeName(metric, namespace)
+	}
+
+	// Simple case (no full normalization, no units, etc.), we simply trim out forbidden chars
+	metricName = RemovePromForbiddenRunes(metric.Name())
+
+	// Namespace?
+	if namespace != "" {
+		return namespace + "_" + metricName
+	}
+
+	// Metric name starts with a digit? Prefix it with an underscore
+	if metricName != "" && unicode.IsDigit(rune(metricName[0])) {
+		metricName = "_" + metricName
+	}
+
+	return metricName
+}
+
+// Build a normalized name for the specified metric
+func normalizeName(metric pmetric.Metric, namespace string) string {
 	// Split metric name in "tokens" (remove all non-alphanumeric)
 	nameTokens := strings.FieldsFunc(
 		metric.Name(),

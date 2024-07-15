@@ -35,8 +35,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/google/pprof/profile"
 	"github.com/prometheus/client_golang/api"
-	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil/promlint"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -57,8 +56,8 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
 	_ "github.com/prometheus/prometheus/plugins" // Register plugins.
-	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/util/documentcli"
 )
@@ -85,6 +84,8 @@ func main() {
 		remoteWriteURL     *url.URL
 		httpConfigFilePath string
 	)
+
+	ctx := context.Background()
 
 	app := kingpin.New(filepath.Base(os.Args[0]), "Tooling for the Prometheus monitoring system.").UsageWriter(os.Stdout)
 	app.Version(version.Print("promtool"))
@@ -182,6 +183,14 @@ func main() {
 	queryLabelsEnd := queryLabelsCmd.Flag("end", "End time (RFC3339 or Unix timestamp).").String()
 	queryLabelsMatch := queryLabelsCmd.Flag("match", "Series selector. Can be specified multiple times.").Strings()
 
+	queryAnalyzeCfg := &QueryAnalyzeConfig{}
+	queryAnalyzeCmd := queryCmd.Command("analyze", "Run queries against your Prometheus to analyze the usage pattern of certain metrics.")
+	queryAnalyzeCmd.Flag("server", "Prometheus server to query.").Required().URLVar(&serverURL)
+	queryAnalyzeCmd.Flag("type", "Type of metric: histogram.").Required().StringVar(&queryAnalyzeCfg.metricType)
+	queryAnalyzeCmd.Flag("duration", "Time frame to analyze.").Default("1h").DurationVar(&queryAnalyzeCfg.duration)
+	queryAnalyzeCmd.Flag("time", "Query time (RFC3339 or Unix timestamp), defaults to now.").StringVar(&queryAnalyzeCfg.time)
+	queryAnalyzeCmd.Flag("match", "Series selector. Can be specified multiple times.").Required().StringsVar(&queryAnalyzeCfg.matchers)
+
 	pushCmd := app.Command("push", "Push to a Prometheus server.")
 	pushCmd.Flag("http.config.file", "HTTP client configuration file for promtool to connect to Prometheus.").PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
 	pushMetricsCmd := pushCmd.Command("metrics", "Push metrics to a prometheus remote write (for testing purpose only).")
@@ -196,10 +205,12 @@ func main() {
 
 	testCmd := app.Command("test", "Unit testing.")
 	testRulesCmd := testCmd.Command("rules", "Unit tests for rules.")
+	testRulesRun := testRulesCmd.Flag("run", "If set, will only run test groups whose names match the regular expression. Can be specified multiple times.").Strings()
 	testRulesFiles := testRulesCmd.Arg(
 		"test-rule-file",
 		"The unit test file.",
 	).Required().ExistingFiles()
+	testRulesDiff := testRulesCmd.Flag("diff", "[Experimental] Print colored differential output between expected & received output.").Default("false").Bool()
 
 	defaultDBPath := "data/"
 	tsdbCmd := app.Command("tsdb", "Run tsdb commands.")
@@ -216,6 +227,7 @@ func main() {
 	analyzeBlockID := tsdbAnalyzeCmd.Arg("block id", "Block to analyze (default is the last block).").String()
 	analyzeLimit := tsdbAnalyzeCmd.Flag("limit", "How many items to show in each list.").Default("20").Int()
 	analyzeRunExtended := tsdbAnalyzeCmd.Flag("extended", "Run extended analysis.").Bool()
+	analyzeMatchers := tsdbAnalyzeCmd.Flag("match", "Series selector to analyze. Only 1 set of matchers is supported now.").String()
 
 	tsdbListCmd := tsdbCmd.Command("list", "List tsdb blocks.")
 	listHumanReadable := tsdbListCmd.Flag("human-readable", "Print human readable values.").Short('r').Bool()
@@ -223,9 +235,17 @@ func main() {
 
 	tsdbDumpCmd := tsdbCmd.Command("dump", "Dump samples from a TSDB.")
 	dumpPath := tsdbDumpCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
+	dumpSandboxDirRoot := tsdbDumpCmd.Flag("sandbox-dir-root", "Root directory where a sandbox directory would be created in case WAL replay generates chunks. The sandbox directory is cleaned up at the end.").Default(defaultDBPath).String()
 	dumpMinTime := tsdbDumpCmd.Flag("min-time", "Minimum timestamp to dump.").Default(strconv.FormatInt(math.MinInt64, 10)).Int64()
 	dumpMaxTime := tsdbDumpCmd.Flag("max-time", "Maximum timestamp to dump.").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
-	dumpMatch := tsdbDumpCmd.Flag("match", "Series selector.").Default("{__name__=~'(?s:.*)'}").String()
+	dumpMatch := tsdbDumpCmd.Flag("match", "Series selector. Can be specified multiple times.").Default("{__name__=~'(?s:.*)'}").Strings()
+
+	tsdbDumpOpenMetricsCmd := tsdbCmd.Command("dump-openmetrics", "[Experimental] Dump samples from a TSDB into OpenMetrics text format, excluding native histograms and staleness markers, which are not representable in OpenMetrics.")
+	dumpOpenMetricsPath := tsdbDumpOpenMetricsCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
+	dumpOpenMetricsSandboxDirRoot := tsdbDumpOpenMetricsCmd.Flag("sandbox-dir-root", "Root directory where a sandbox directory would be created in case WAL replay generates chunks. The sandbox directory is cleaned up at the end.").Default(defaultDBPath).String()
+	dumpOpenMetricsMinTime := tsdbDumpOpenMetricsCmd.Flag("min-time", "Minimum timestamp to dump.").Default(strconv.FormatInt(math.MinInt64, 10)).Int64()
+	dumpOpenMetricsMaxTime := tsdbDumpOpenMetricsCmd.Flag("max-time", "Maximum timestamp to dump.").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
+	dumpOpenMetricsMatch := tsdbDumpOpenMetricsCmd.Flag("match", "Series selector. Can be specified multiple times.").Default("{__name__=~'(?s:.*)'}").Strings()
 
 	importCmd := tsdbCmd.Command("create-blocks-from", "[Experimental] Import samples from input and produce TSDB blocks. Please refer to the storage docs for more details.")
 	importHumanReadable := importCmd.Flag("human-readable", "Print human readable values.").Short('r').Bool()
@@ -313,7 +333,7 @@ func main() {
 
 	switch parsedCmd {
 	case sdCheckCmd.FullCommand():
-		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout, noDefaultScrapePort))
+		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout, noDefaultScrapePort, prometheus.DefaultRegisterer))
 
 	case checkConfigCmd.FullCommand():
 		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newLintConfig(*checkConfigLint, *checkConfigLintFatal), *configFiles...))
@@ -359,10 +379,12 @@ func main() {
 
 	case testRulesCmd.FullCommand():
 		os.Exit(RulesUnitTest(
-			promql.LazyLoaderOpts{
+			promqltest.LazyLoaderOpts{
 				EnableAtModifier:     true,
 				EnableNegativeOffset: true,
 			},
+			*testRulesRun,
+			*testRulesDiff,
 			*testRulesFiles...),
 		)
 
@@ -370,19 +392,24 @@ func main() {
 		os.Exit(checkErr(benchmarkWrite(*benchWriteOutPath, *benchSamplesFile, *benchWriteNumMetrics, *benchWriteNumScrapes)))
 
 	case tsdbAnalyzeCmd.FullCommand():
-		os.Exit(checkErr(analyzeBlock(*analyzePath, *analyzeBlockID, *analyzeLimit, *analyzeRunExtended)))
+		os.Exit(checkErr(analyzeBlock(ctx, *analyzePath, *analyzeBlockID, *analyzeLimit, *analyzeRunExtended, *analyzeMatchers)))
 
 	case tsdbListCmd.FullCommand():
 		os.Exit(checkErr(listBlocks(*listPath, *listHumanReadable)))
 
 	case tsdbDumpCmd.FullCommand():
-		os.Exit(checkErr(dumpSamples(*dumpPath, *dumpMinTime, *dumpMaxTime, *dumpMatch)))
+		os.Exit(checkErr(dumpSamples(ctx, *dumpPath, *dumpSandboxDirRoot, *dumpMinTime, *dumpMaxTime, *dumpMatch, formatSeriesSet)))
+	case tsdbDumpOpenMetricsCmd.FullCommand():
+		os.Exit(checkErr(dumpSamples(ctx, *dumpOpenMetricsPath, *dumpOpenMetricsSandboxDirRoot, *dumpOpenMetricsMinTime, *dumpOpenMetricsMaxTime, *dumpOpenMetricsMatch, formatSeriesSetOpenMetrics)))
 	// TODO(aSquare14): Work on adding support for custom block size.
 	case openMetricsImportCmd.FullCommand():
 		os.Exit(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable, *importQuiet, *maxBlockDuration))
 
 	case importRulesCmd.FullCommand():
 		os.Exit(checkErr(importRules(serverURL, httpRoundTripper, *importRulesStart, *importRulesEnd, *importRulesOutputDir, *importRulesEvalInterval, *maxBlockDuration, *importRulesFiles...)))
+
+	case queryAnalyzeCmd.FullCommand():
+		os.Exit(checkErr(queryAnalyzeCfg.run(serverURL, httpRoundTripper)))
 
 	case documentationCmd.FullCommand():
 		os.Exit(checkErr(documentcli.GenerateMarkdown(app.Model(), os.Stdout)))
@@ -408,8 +435,7 @@ func checkExperimental(f bool) {
 	}
 }
 
-// nolint:revive
-var lintError = fmt.Errorf("lint error")
+var errLint = fmt.Errorf("lint error")
 
 type lintConfig struct {
 	all            bool
@@ -458,7 +484,7 @@ func CheckServerStatus(serverURL *url.URL, checkEndpoint string, roundTripper ht
 		return err
 	}
 
-	request, err := http.NewRequest("GET", config.Address, nil)
+	request, err := http.NewRequest(http.MethodGet, config.Address, nil)
 	if err != nil {
 		return err
 	}
@@ -730,30 +756,7 @@ func CheckRules(ls lintConfig, files ...string) int {
 	failed := false
 	hasErrors := false
 	if len(files) == 0 {
-		fmt.Println("Checking standard input")
-		data, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "  FAILED:", err)
-			return failureExitCode
-		}
-		rgs, errs := rulefmt.Parse(data)
-		for _, e := range errs {
-			fmt.Fprintln(os.Stderr, e.Error())
-			return failureExitCode
-		}
-		if n, errs := checkRuleGroups(rgs, ls); errs != nil {
-			fmt.Fprintln(os.Stderr, "  FAILED:")
-			for _, e := range errs {
-				fmt.Fprintln(os.Stderr, e.Error())
-			}
-			failed = true
-			for _, err := range errs {
-				hasErrors = hasErrors || !errors.Is(err, lintError)
-			}
-		} else {
-			fmt.Printf("  SUCCESS: %d rules found\n", n)
-		}
-		fmt.Println()
+		failed, hasErrors = checkRulesFromStdin(ls)
 	} else {
 		failed, hasErrors = checkRules(files, ls)
 	}
@@ -768,6 +771,44 @@ func CheckRules(ls lintConfig, files ...string) int {
 	return successExitCode
 }
 
+// checkRulesFromStdin validates rule from stdin.
+func checkRulesFromStdin(ls lintConfig) (bool, bool) {
+	failed := false
+	hasErrors := false
+	fmt.Println("Checking standard input")
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "  FAILED:", err)
+		return true, true
+	}
+	rgs, errs := rulefmt.Parse(data)
+	if errs != nil {
+		failed = true
+		fmt.Fprintln(os.Stderr, "  FAILED:")
+		for _, e := range errs {
+			fmt.Fprintln(os.Stderr, e.Error())
+			hasErrors = hasErrors || !errors.Is(e, errLint)
+		}
+		if hasErrors {
+			return failed, hasErrors
+		}
+	}
+	if n, errs := checkRuleGroups(rgs, ls); errs != nil {
+		fmt.Fprintln(os.Stderr, "  FAILED:")
+		for _, e := range errs {
+			fmt.Fprintln(os.Stderr, e.Error())
+		}
+		failed = true
+		for _, err := range errs {
+			hasErrors = hasErrors || !errors.Is(err, errLint)
+		}
+	} else {
+		fmt.Printf("  SUCCESS: %d rules found\n", n)
+	}
+	fmt.Println()
+	return failed, hasErrors
+}
+
 // checkRules validates rule files.
 func checkRules(files []string, ls lintConfig) (bool, bool) {
 	failed := false
@@ -777,7 +818,14 @@ func checkRules(files []string, ls lintConfig) (bool, bool) {
 		rgs, errs := rulefmt.ParseFile(f)
 		if errs != nil {
 			failed = true
-			continue
+			fmt.Fprintln(os.Stderr, "  FAILED:")
+			for _, e := range errs {
+				fmt.Fprintln(os.Stderr, e.Error())
+				hasErrors = hasErrors || !errors.Is(e, errLint)
+			}
+			if hasErrors {
+				continue
+			}
 		}
 		if n, errs := checkRuleGroups(rgs, ls); errs != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
@@ -786,7 +834,7 @@ func checkRules(files []string, ls lintConfig) (bool, bool) {
 			}
 			failed = true
 			for _, err := range errs {
-				hasErrors = hasErrors || !errors.Is(err, lintError)
+				hasErrors = hasErrors || !errors.Is(err, errLint)
 			}
 		} else {
 			fmt.Printf("  SUCCESS: %d rules found\n", n)
@@ -813,7 +861,7 @@ func checkRuleGroups(rgs *rulefmt.RuleGroups, lintSettings lintConfig) (int, []e
 				})
 			}
 			errMessage += "Might cause inconsistency while recording expressions"
-			return 0, []error{fmt.Errorf("%w %s", lintError, errMessage)}
+			return 0, []error{fmt.Errorf("%w %s", errLint, errMessage)}
 		}
 	}
 
@@ -970,246 +1018,6 @@ func checkMetricsExtended(r io.Reader) ([]metricStat, int, error) {
 	return stats, total, nil
 }
 
-// QueryInstant performs an instant query against a Prometheus server.
-func QueryInstant(url *url.URL, roundTripper http.RoundTripper, query, evalTime string, p printer) int {
-	if url.Scheme == "" {
-		url.Scheme = "http"
-	}
-	config := api.Config{
-		Address:      url.String(),
-		RoundTripper: roundTripper,
-	}
-
-	// Create new client.
-	c, err := api.NewClient(config)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "error creating API client:", err)
-		return failureExitCode
-	}
-
-	eTime := time.Now()
-	if evalTime != "" {
-		eTime, err = parseTime(evalTime)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error parsing evaluation time:", err)
-			return failureExitCode
-		}
-	}
-
-	// Run query against client.
-	api := v1.NewAPI(c)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, _, err := api.Query(ctx, query, eTime) // Ignoring warnings for now.
-	cancel()
-	if err != nil {
-		return handleAPIError(err)
-	}
-
-	p.printValue(val)
-
-	return successExitCode
-}
-
-// QueryRange performs a range query against a Prometheus server.
-func QueryRange(url *url.URL, roundTripper http.RoundTripper, headers map[string]string, query, start, end string, step time.Duration, p printer) int {
-	if url.Scheme == "" {
-		url.Scheme = "http"
-	}
-	config := api.Config{
-		Address:      url.String(),
-		RoundTripper: roundTripper,
-	}
-
-	if len(headers) > 0 {
-		config.RoundTripper = promhttp.RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
-			for key, value := range headers {
-				req.Header.Add(key, value)
-			}
-			return roundTripper.RoundTrip(req)
-		})
-	}
-
-	// Create new client.
-	c, err := api.NewClient(config)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "error creating API client:", err)
-		return failureExitCode
-	}
-
-	var stime, etime time.Time
-
-	if end == "" {
-		etime = time.Now()
-	} else {
-		etime, err = parseTime(end)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error parsing end time:", err)
-			return failureExitCode
-		}
-	}
-
-	if start == "" {
-		stime = etime.Add(-5 * time.Minute)
-	} else {
-		stime, err = parseTime(start)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error parsing start time:", err)
-			return failureExitCode
-		}
-	}
-
-	if !stime.Before(etime) {
-		fmt.Fprintln(os.Stderr, "start time is not before end time")
-		return failureExitCode
-	}
-
-	if step == 0 {
-		resolution := math.Max(math.Floor(etime.Sub(stime).Seconds()/250), 1)
-		// Convert seconds to nanoseconds such that time.Duration parses correctly.
-		step = time.Duration(resolution) * time.Second
-	}
-
-	// Run query against client.
-	api := v1.NewAPI(c)
-	r := v1.Range{Start: stime, End: etime, Step: step}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, _, err := api.QueryRange(ctx, query, r) // Ignoring warnings for now.
-	cancel()
-
-	if err != nil {
-		return handleAPIError(err)
-	}
-
-	p.printValue(val)
-	return successExitCode
-}
-
-// QuerySeries queries for a series against a Prometheus server.
-func QuerySeries(url *url.URL, roundTripper http.RoundTripper, matchers []string, start, end string, p printer) int {
-	if url.Scheme == "" {
-		url.Scheme = "http"
-	}
-	config := api.Config{
-		Address:      url.String(),
-		RoundTripper: roundTripper,
-	}
-
-	// Create new client.
-	c, err := api.NewClient(config)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "error creating API client:", err)
-		return failureExitCode
-	}
-
-	stime, etime, err := parseStartTimeAndEndTime(start, end)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return failureExitCode
-	}
-
-	// Run query against client.
-	api := v1.NewAPI(c)
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, _, err := api.Series(ctx, matchers, stime, etime) // Ignoring warnings for now.
-	cancel()
-
-	if err != nil {
-		return handleAPIError(err)
-	}
-
-	p.printSeries(val)
-	return successExitCode
-}
-
-// QueryLabels queries for label values against a Prometheus server.
-func QueryLabels(url *url.URL, roundTripper http.RoundTripper, matchers []string, name, start, end string, p printer) int {
-	if url.Scheme == "" {
-		url.Scheme = "http"
-	}
-	config := api.Config{
-		Address:      url.String(),
-		RoundTripper: roundTripper,
-	}
-
-	// Create new client.
-	c, err := api.NewClient(config)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "error creating API client:", err)
-		return failureExitCode
-	}
-
-	stime, etime, err := parseStartTimeAndEndTime(start, end)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return failureExitCode
-	}
-
-	// Run query against client.
-	api := v1.NewAPI(c)
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, warn, err := api.LabelValues(ctx, name, matchers, stime, etime)
-	cancel()
-
-	for _, v := range warn {
-		fmt.Fprintln(os.Stderr, "query warning:", v)
-	}
-	if err != nil {
-		return handleAPIError(err)
-	}
-
-	p.printLabelValues(val)
-	return successExitCode
-}
-
-func handleAPIError(err error) int {
-	var apiErr *v1.Error
-	if errors.As(err, &apiErr) && apiErr.Detail != "" {
-		fmt.Fprintf(os.Stderr, "query error: %v (detail: %s)\n", apiErr, strings.TrimSpace(apiErr.Detail))
-	} else {
-		fmt.Fprintln(os.Stderr, "query error:", err)
-	}
-
-	return failureExitCode
-}
-
-func parseStartTimeAndEndTime(start, end string) (time.Time, time.Time, error) {
-	var (
-		minTime = time.Now().Add(-9999 * time.Hour)
-		maxTime = time.Now().Add(9999 * time.Hour)
-		err     error
-	)
-
-	stime := minTime
-	etime := maxTime
-
-	if start != "" {
-		stime, err = parseTime(start)
-		if err != nil {
-			return stime, etime, fmt.Errorf("error parsing start time: %w", err)
-		}
-	}
-
-	if end != "" {
-		etime, err = parseTime(end)
-		if err != nil {
-			return stime, etime, fmt.Errorf("error parsing end time: %w", err)
-		}
-	}
-	return stime, etime, nil
-}
-
-func parseTime(s string) (time.Time, error) {
-	if t, err := strconv.ParseFloat(s, 64); err == nil {
-		s, ns := math.Modf(t)
-		return time.Unix(int64(s), int64(ns*float64(time.Second))).UTC(), nil
-	}
-	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
-		return t, nil
-	}
-	return time.Time{}, fmt.Errorf("cannot parse %q to a valid timestamp", s)
-}
-
 type endpointsGroup struct {
 	urlToFilename map[string]string
 	postProcess   func(b []byte) ([]byte, error)
@@ -1363,15 +1171,12 @@ func importRules(url *url.URL, roundTripper http.RoundTripper, start, end, outpu
 		evalInterval:     evalInterval,
 		maxBlockDuration: maxBlockDuration,
 	}
-	client, err := api.NewClient(api.Config{
-		Address:      url.String(),
-		RoundTripper: roundTripper,
-	})
+	api, err := newAPI(url, roundTripper, nil)
 	if err != nil {
 		return fmt.Errorf("new api client error: %w", err)
 	}
 
-	ruleImporter := newRuleImporter(log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr)), cfg, v1.NewAPI(client))
+	ruleImporter := newRuleImporter(log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr)), cfg, api)
 	errs := ruleImporter.loadGroups(ctx, files)
 	for _, err := range errs {
 		if err != nil {

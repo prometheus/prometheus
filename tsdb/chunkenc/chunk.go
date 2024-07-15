@@ -14,10 +14,9 @@
 package chunkenc
 
 import (
+	"fmt"
 	"math"
 	"sync"
-
-	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/model/histogram"
 )
@@ -52,8 +51,24 @@ func IsValidEncoding(e Encoding) bool {
 	return e == EncXOR || e == EncHistogram || e == EncFloatHistogram
 }
 
+const (
+	// MaxBytesPerXORChunk is the maximum size an XOR chunk can be.
+	MaxBytesPerXORChunk = 1024
+	// TargetBytesPerHistogramChunk sets a size target for each histogram chunk.
+	TargetBytesPerHistogramChunk = 1024
+	// MinSamplesPerHistogramChunk sets a minimum sample count for histogram chunks. This is desirable because a single
+	// histogram sample can be larger than TargetBytesPerHistogramChunk but we want to avoid too-small sample count
+	// chunks so we can achieve some measure of compression advantage even while dealing with really large histograms.
+	// Note that this minimum sample count is not enforced across chunk range boundaries (for example, if the chunk
+	// range is 100 and the first sample in the chunk range is 99, the next sample will be included in a new chunk
+	// resulting in the old chunk containing only a single sample).
+	MinSamplesPerHistogramChunk = 10
+)
+
 // Chunk holds a sequence of sample pairs that can be iterated over and appended to.
 type Chunk interface {
+	Iterable
+
 	// Bytes returns the underlying byte slice of the chunk.
 	Bytes() []byte
 
@@ -62,11 +77,6 @@ type Chunk interface {
 
 	// Appender returns an appender to append samples to the chunk.
 	Appender() (Appender, error)
-
-	// The iterator passed as argument is for re-use.
-	// Depending on implementation, the iterator can
-	// be re-used or a new iterator can be allocated.
-	Iterator(Iterator) Iterator
 
 	// NumSamples returns the number of samples in the chunk.
 	NumSamples() int
@@ -77,6 +87,16 @@ type Chunk interface {
 	// There's no strong guarantee that no samples will be appended once
 	// Compact() is called. Implementing this function is optional.
 	Compact()
+
+	// Reset resets the chunk given stream.
+	Reset(stream []byte)
+}
+
+type Iterable interface {
+	// The iterator passed as argument is for re-use.
+	// Depending on implementation, the iterator can
+	// be re-used or a new iterator can be allocated.
+	Iterator(Iterator) Iterator
 }
 
 // Appender adds sample pairs to a chunk.
@@ -94,7 +114,7 @@ type Appender interface {
 	// The returned bool isRecoded can be used to distinguish between the new Chunk c being a completely new Chunk
 	// or the current Chunk recoded to a new Chunk.
 	// The Appender app that can be used for the next append is always returned.
-	AppendHistogram(prev *HistogramAppender, t int64, h *histogram.Histogram, appendOny bool) (c Chunk, isRecoded bool, app Appender, err error)
+	AppendHistogram(prev *HistogramAppender, t int64, h *histogram.Histogram, appendOnly bool) (c Chunk, isRecoded bool, app Appender, err error)
 	AppendFloatHistogram(prev *FloatHistogramAppender, t int64, h *histogram.FloatHistogram, appendOnly bool) (c Chunk, isRecoded bool, app Appender, err error)
 }
 
@@ -114,16 +134,20 @@ type Iterator interface {
 	// At returns the current timestamp/value pair if the value is a float.
 	// Before the iterator has advanced, the behaviour is unspecified.
 	At() (int64, float64)
-	// AtHistogram returns the current timestamp/value pair if the value is
-	// a histogram with integer counts. Before the iterator has advanced,
-	// the behaviour is unspecified.
-	AtHistogram() (int64, *histogram.Histogram)
+	// AtHistogram returns the current timestamp/value pair if the value is a
+	// histogram with integer counts. Before the iterator has advanced, the behaviour
+	// is unspecified.
+	// The method accepts an optional Histogram object which will be
+	// reused when not nil. Otherwise, a new Histogram object will be allocated.
+	AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram)
 	// AtFloatHistogram returns the current timestamp/value pair if the
 	// value is a histogram with floating-point counts. It also works if the
 	// value is a histogram with integer counts, in which case a
 	// FloatHistogram copy of the histogram is returned. Before the iterator
 	// has advanced, the behaviour is unspecified.
-	AtFloatHistogram() (int64, *histogram.FloatHistogram)
+	// The method accepts an optional FloatHistogram object which will be
+	// reused when not nil. Otherwise, a new FloatHistogram object will be allocated.
+	AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram)
 	// AtT returns the current timestamp.
 	// Before the iterator has advanced, the behaviour is unspecified.
 	AtT() int64
@@ -171,6 +195,19 @@ func (v ValueType) ChunkEncoding() Encoding {
 	}
 }
 
+func (v ValueType) NewChunk() (Chunk, error) {
+	switch v {
+	case ValFloat:
+		return NewXORChunk(), nil
+	case ValHistogram:
+		return NewHistogramChunk(), nil
+	case ValFloatHistogram:
+		return NewFloatHistogramChunk(), nil
+	default:
+		return nil, fmt.Errorf("value type %v unsupported", v)
+	}
+}
+
 // MockSeriesIterator returns an iterator for a mock series with custom timeStamps and values.
 func MockSeriesIterator(timestamps []int64, values []float64) Iterator {
 	return &mockSeriesIterator{
@@ -192,9 +229,11 @@ func (it *mockSeriesIterator) At() (int64, float64) {
 	return it.timeStamps[it.currIndex], it.values[it.currIndex]
 }
 
-func (it *mockSeriesIterator) AtHistogram() (int64, *histogram.Histogram) { return math.MinInt64, nil }
+func (it *mockSeriesIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
+	return math.MinInt64, nil
+}
 
-func (it *mockSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+func (it *mockSeriesIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	return math.MinInt64, nil
 }
 
@@ -219,13 +258,18 @@ func NewNopIterator() Iterator {
 
 type nopIterator struct{}
 
-func (nopIterator) Next() ValueType                                      { return ValNone }
-func (nopIterator) Seek(int64) ValueType                                 { return ValNone }
-func (nopIterator) At() (int64, float64)                                 { return math.MinInt64, 0 }
-func (nopIterator) AtHistogram() (int64, *histogram.Histogram)           { return math.MinInt64, nil }
-func (nopIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) { return math.MinInt64, nil }
-func (nopIterator) AtT() int64                                           { return math.MinInt64 }
-func (nopIterator) Err() error                                           { return nil }
+func (nopIterator) Next() ValueType      { return ValNone }
+func (nopIterator) Seek(int64) ValueType { return ValNone }
+func (nopIterator) At() (int64, float64) { return math.MinInt64, 0 }
+func (nopIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
+	return math.MinInt64, nil
+}
+
+func (nopIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+	return math.MinInt64, nil
+}
+func (nopIterator) AtT() int64 { return math.MinInt64 }
+func (nopIterator) Err() error { return nil }
 
 // Pool is used to create and reuse chunk references to avoid allocations.
 type Pool interface {
@@ -262,64 +306,47 @@ func NewPool() Pool {
 }
 
 func (p *pool) Get(e Encoding, b []byte) (Chunk, error) {
+	var c Chunk
 	switch e {
 	case EncXOR:
-		c := p.xor.Get().(*XORChunk)
-		c.b.stream = b
-		c.b.count = 0
-		return c, nil
+		c = p.xor.Get().(*XORChunk)
 	case EncHistogram:
-		c := p.histogram.Get().(*HistogramChunk)
-		c.b.stream = b
-		c.b.count = 0
-		return c, nil
+		c = p.histogram.Get().(*HistogramChunk)
 	case EncFloatHistogram:
-		c := p.floatHistogram.Get().(*FloatHistogramChunk)
-		c.b.stream = b
-		c.b.count = 0
-		return c, nil
+		c = p.floatHistogram.Get().(*FloatHistogramChunk)
+	default:
+		return nil, fmt.Errorf("invalid chunk encoding %q", e)
 	}
-	return nil, errors.Errorf("invalid chunk encoding %q", e)
+
+	c.Reset(b)
+	return c, nil
 }
 
 func (p *pool) Put(c Chunk) error {
+	var sp *sync.Pool
+	var ok bool
 	switch c.Encoding() {
 	case EncXOR:
-		xc, ok := c.(*XORChunk)
-		// This may happen often with wrapped chunks. Nothing we can really do about
-		// it but returning an error would cause a lot of allocations again. Thus,
-		// we just skip it.
-		if !ok {
-			return nil
-		}
-		xc.b.stream = nil
-		xc.b.count = 0
-		p.xor.Put(c)
+		_, ok = c.(*XORChunk)
+		sp = &p.xor
 	case EncHistogram:
-		sh, ok := c.(*HistogramChunk)
-		// This may happen often with wrapped chunks. Nothing we can really do about
-		// it but returning an error would cause a lot of allocations again. Thus,
-		// we just skip it.
-		if !ok {
-			return nil
-		}
-		sh.b.stream = nil
-		sh.b.count = 0
-		p.histogram.Put(c)
+		_, ok = c.(*HistogramChunk)
+		sp = &p.histogram
 	case EncFloatHistogram:
-		sh, ok := c.(*FloatHistogramChunk)
+		_, ok = c.(*FloatHistogramChunk)
+		sp = &p.floatHistogram
+	default:
+		return fmt.Errorf("invalid chunk encoding %q", c.Encoding())
+	}
+	if !ok {
 		// This may happen often with wrapped chunks. Nothing we can really do about
 		// it but returning an error would cause a lot of allocations again. Thus,
 		// we just skip it.
-		if !ok {
-			return nil
-		}
-		sh.b.stream = nil
-		sh.b.count = 0
-		p.floatHistogram.Put(c)
-	default:
-		return errors.Errorf("invalid chunk encoding %q", c.Encoding())
+		return nil
 	}
+
+	c.Reset(nil)
+	sp.Put(c)
 	return nil
 }
 
@@ -335,7 +362,7 @@ func FromData(e Encoding, d []byte) (Chunk, error) {
 	case EncFloatHistogram:
 		return &FloatHistogramChunk{b: bstream{count: 0, stream: d}}, nil
 	}
-	return nil, errors.Errorf("invalid chunk encoding %q", e)
+	return nil, fmt.Errorf("invalid chunk encoding %q", e)
 }
 
 // NewEmptyChunk returns an empty chunk for the given encoding.
@@ -348,5 +375,5 @@ func NewEmptyChunk(e Encoding) (Chunk, error) {
 	case EncFloatHistogram:
 		return NewFloatHistogramChunk(), nil
 	}
-	return nil, errors.Errorf("invalid chunk encoding %q", e)
+	return nil, fmt.Errorf("invalid chunk encoding %q", e)
 }

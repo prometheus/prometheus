@@ -34,7 +34,7 @@ Activating the remote write receiver via a feature flag is deprecated. Use `--we
 
 [OpenMetrics](https://github.com/OpenObservability/OpenMetrics/blob/main/specification/OpenMetrics.md#exemplars) introduces the ability for scrape targets to add exemplars to certain metrics. Exemplars are references to data outside of the MetricSet. A common use case are IDs of program traces.
 
-Exemplar storage is implemented as a fixed size circular buffer that stores exemplars in memory for all series. Enabling this feature will enable the storage of exemplars scraped by Prometheus. The config file block [storage](configuration/configuration.md#configuration-file)/[exemplars](configuration/configuration.md#exemplars) can be used to control the size of circular buffer by # of exemplars. An exemplar with just a `traceID=<jaeger-trace-id>` uses roughly 100 bytes of memory via the in-memory exemplar storage. If the exemplar storage is enabled, we will also append the exemplars to WAL for local persistence (for WAL duration).
+Exemplar storage is implemented as a fixed size circular buffer that stores exemplars in memory for all series. Enabling this feature will enable the storage of exemplars scraped by Prometheus. The config file block [storage](configuration/configuration.md#configuration-file)/[exemplars](configuration/configuration.md#exemplars) can be used to control the size of circular buffer by # of exemplars. An exemplar with just a `trace_id=<jaeger-trace-id>` uses roughly 100 bytes of memory via the in-memory exemplar storage. If the exemplar storage is enabled, we will also append the exemplars to WAL for local persistence (for WAL duration).
 
 ## Memory snapshot on shutdown
 
@@ -95,6 +95,14 @@ computed at all.
 
 When enabled, GOMAXPROCS variable is automatically set to match Linux container CPU quota.
 
+## Auto GOMEMLIMIT
+
+`--enable-feature=auto-gomemlimit`
+
+When enabled, the GOMEMLIMIT variable is automatically set to match the Linux container memory limit. If there is no container limit, or the process is running outside of containers, the system memory total is used.
+
+There is also an additional tuning flag, `--auto-gomemlimit.ratio`, which allows controlling how much of the memory is used for Prometheus. The remainder is reserved for memory outside the process. For example, kernel page cache. Page cache is important for Prometheus TSDB query performance. The default is `0.9`, which means 90% of the memory limit will be used for Prometheus.
+
 ## No default scrape port
 
 `--enable-feature=no-default-scrape-port`
@@ -119,10 +127,110 @@ also experimental) protobuf parser, through which _all_ metrics are ingested
 (i.e. not only native histograms). Prometheus will try to negotiate the
 protobuf format first. The instrumented target needs to support the protobuf
 format, too, _and_ it needs to expose native histograms. The protobuf format
-allows to expose conventional and native histograms side by side. With this
-feature flag disabled, Prometheus will continue to parse the conventional
-histogram (albeit via the text format). With this flag enabled, Prometheus will
-still ingest those conventional histograms that do not come with a
-corresponding native histogram. However, if a native histogram is present,
-Prometheus will ignore the corresponding conventional histogram, with the
-notable exception of exemplars, which are always ingested.
+allows to expose classic and native histograms side by side. With this feature
+flag disabled, Prometheus will continue to parse the classic histogram (albeit
+via the text format). With this flag enabled, Prometheus will still ingest
+those classic histograms that do not come with a corresponding native
+histogram. However, if a native histogram is present, Prometheus will ignore
+the corresponding classic histogram, with the notable exception of exemplars,
+which are always ingested. To keep the classic histograms as well, enable
+`scrape_classic_histograms` in the scrape job.
+
+_Note about the format of `le` and `quantile` label values:_
+
+In certain situations, the protobuf parsing changes the number formatting of
+the `le` labels of classic histograms and the `quantile` labels of
+summaries. Typically, this happens if the scraped target is instrumented with
+[client_golang](https://github.com/prometheus/client_golang) provided that
+[promhttp.HandlerOpts.EnableOpenMetrics](https://pkg.go.dev/github.com/prometheus/client_golang/prometheus/promhttp#HandlerOpts)
+is set to `false`. In such a case, integer label values are represented in the
+text format as such, e.g. `quantile="1"` or `le="2"`. However, the protobuf parsing
+changes the representation to float-like (following the OpenMetrics
+specification), so the examples above become `quantile="1.0"` and `le="2.0"` after
+ingestion into Prometheus, which changes the identity of the metric compared to
+what was ingested before via the text format.
+
+The effect of this change is that alerts, recording rules and dashboards that
+directly reference label values as whole numbers such as `le="1"` will stop
+working.
+
+Aggregation by the `le` and `quantile` labels for vectors that contain the old and
+new formatting will lead to unexpected results, and range vectors that span the
+transition between the different formatting will contain additional series.
+The most common use case for both is the quantile calculation via
+`histogram_quantile`, e.g.
+`histogram_quantile(0.95, sum by (le) (rate(histogram_bucket[10m])))`.
+The `histogram_quantile` function already tries to mitigate the effects to some
+extent, but there will be inaccuracies, in particular for shorter ranges that
+cover only a few samples.
+
+Ways to deal with this change either globally or on a per metric basis:
+
+- Fix references to integer `le`, `quantile` label values, but otherwise do
+nothing and accept that some queries that span the transition time will produce
+inaccurate or unexpected results.
+_This is the recommended solution, to get consistently normalized label values._
+Also Prometheus 3.0 is expected to enforce normalization of these label values.
+- Use `metric_relabel_config` to retain the old labels when scraping targets.
+This should **only** be applied to metrics that currently produce such labels.
+
+<!-- The following config snippet is unit tested in scrape/scrape_test.go. -->
+```yaml
+    metric_relabel_configs:
+      - source_labels:
+          - quantile
+        target_label: quantile
+        regex: (\d+)\.0+
+      - source_labels:
+          - le
+          - __name__
+        target_label: le
+        regex: (\d+)\.0+;.*_bucket
+```
+
+## OTLP Receiver
+
+`--enable-feature=otlp-write-receiver`
+
+The OTLP receiver allows Prometheus to accept [OpenTelemetry](https://opentelemetry.io/) metrics writes.
+Prometheus is best used as a Pull based system, and staleness, `up` metric, and other Pull enabled features 
+won't work when you push OTLP metrics.
+
+## Experimental PromQL functions
+
+`--enable-feature=promql-experimental-functions`
+
+Enables PromQL functions that are considered experimental and whose name or
+semantics could change.
+
+## Created Timestamps Zero Injection
+
+`--enable-feature=created-timestamp-zero-ingestion`
+
+Enables ingestion of created timestamp. Created timestamps are injected as 0 valued samples when appropriate. See [PromCon talk](https://youtu.be/nWf0BfQ5EEA) for details.
+
+Currently Prometheus supports created timestamps only on the traditional Prometheus Protobuf protocol (WIP for other protocols). As a result, when enabling this feature, the Prometheus protobuf scrape protocol will be prioritized (See `scrape_config.scrape_protocols` settings for more details).
+
+Besides enabling this feature in Prometheus, created timestamps need to be exposed by the application being scraped.
+
+## Concurrent evaluation of independent rules
+
+`--enable-feature=concurrent-rule-eval`
+
+By default, rule groups execute concurrently, but the rules within a group execute sequentially; this is because rules can use the
+output of a preceding rule as its input. However, if there is no detectable relationship between rules then there is no
+reason to run them sequentially.
+When the `concurrent-rule-eval` feature flag is enabled, rules without any dependency on other rules within a rule group will be evaluated concurrently.
+This has the potential to improve rule group evaluation latency and resource utilization at the expense of adding more concurrent query load.
+
+The number of concurrent rule evaluations can be configured with `--rules.max-concurrent-rule-evals`, which is set to `4` by default.
+
+## Metadata WAL Records
+
+`--enable-feature=metadata-wal-records`
+
+When enabled, Prometheus will store metadata in-memory and keep track of
+metadata changes as WAL records on a per-series basis.
+
+This must be used if
+you are also using remote write 2.0 as it will only gather metadata from the WAL.

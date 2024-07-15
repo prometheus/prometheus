@@ -85,7 +85,7 @@ function bumpVersion() {
     fi
   done
   # increase the version on all packages
-  npm version "${version}" --workspaces
+  npm version "${version}" --workspaces  --include-workspace-root
 }
 
 if [[ "$1" == "--copy" ]]; then

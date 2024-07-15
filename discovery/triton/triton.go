@@ -26,6 +26,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/mwitkow/go-conntrack"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
@@ -69,12 +70,19 @@ type SDConfig struct {
 	Version         int              `yaml:"version"`
 }
 
+// NewDiscovererMetrics implements discovery.Config.
+func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return &tritonMetrics{
+		refreshMetrics: rmi,
+	}
+}
+
 // Name returns the name of the Config.
 func (*SDConfig) Name() string { return "triton" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return New(opts.Logger, c)
+	return New(opts.Logger, c, opts.Metrics)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -138,7 +146,12 @@ type Discovery struct {
 }
 
 // New returns a new Discovery which periodically refreshes its targets.
-func New(logger log.Logger, conf *SDConfig) (*Discovery, error) {
+func New(logger log.Logger, conf *SDConfig, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+	m, ok := metrics.(*tritonMetrics)
+	if !ok {
+		return nil, fmt.Errorf("invalid discovery metrics type")
+	}
+
 	tls, err := config.NewTLSConfig(&conf.TLSConfig)
 	if err != nil {
 		return nil, err
@@ -159,10 +172,13 @@ func New(logger log.Logger, conf *SDConfig) (*Discovery, error) {
 		sdConfig: conf,
 	}
 	d.Discovery = refresh.NewDiscovery(
-		logger,
-		"triton",
-		time.Duration(conf.RefreshInterval),
-		d.refresh,
+		refresh.Options{
+			Logger:              logger,
+			Mech:                "triton",
+			Interval:            time.Duration(conf.RefreshInterval),
+			RefreshF:            d.refresh,
+			MetricsInstantiator: m.refreshMetrics,
+		},
 	)
 	return d, nil
 }
@@ -195,7 +211,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		endpoint = fmt.Sprintf("%s?groups=%s", endpoint, groups)
 	}
 
-	req, err := http.NewRequest("GET", endpoint, nil)
+	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
 	}

@@ -8,6 +8,11 @@
 # If you are using Kubernetes 1.7.2 or earlier, please take note of the comments
 # for the kubernetes-cadvisor job; you will need to edit or remove this job.
 
+# Keep at most 100 sets of details of targets dropped by relabeling.
+# This information is used to display in the UI for troubleshooting.
+global:
+  keep_dropped_targets: 100
+
 # Scrape config for API servers.
 #
 # Kubernetes exposes API servers as endpoints to the default/kubernetes

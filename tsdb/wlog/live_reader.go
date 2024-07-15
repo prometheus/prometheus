@@ -16,6 +16,7 @@ package wlog
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"io"
@@ -24,7 +25,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/golang/snappy"
 	"github.com/klauspost/compress/zstd"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -135,7 +135,7 @@ func (r *LiveReader) Next() bool {
 		switch ok, err := r.buildRecord(); {
 		case ok:
 			return true
-		case err != nil && err != io.EOF:
+		case err != nil && !errors.Is(err, io.EOF):
 			r.err = err
 			return false
 		}
@@ -157,7 +157,7 @@ func (r *LiveReader) Next() bool {
 
 		if r.writeIndex != pageSize {
 			n, err := r.fillBuffer()
-			if n == 0 || (err != nil && err != io.EOF) {
+			if n == 0 || (err != nil && !errors.Is(err, io.EOF)) {
 				r.err = err
 				return false
 			}
@@ -174,7 +174,7 @@ func (r *LiveReader) Record() []byte {
 // Rebuild a full record from potentially partial records. Returns false
 // if there was an error or if we weren't able to read a record for any reason.
 // Returns true if we read a full record. Any record data is appended to
-// LiveReader.rec
+// LiveReader.rec.
 func (r *LiveReader) buildRecord() (bool, error) {
 	for {
 		// Check that we have data in the internal buffer to read.
@@ -265,7 +265,7 @@ func validateRecord(typ recType, i int) error {
 		}
 		return nil
 	default:
-		return errors.Errorf("unexpected record type %d", typ)
+		return fmt.Errorf("unexpected record type %d", typ)
 	}
 }
 
@@ -322,15 +322,8 @@ func (r *LiveReader) readRecord() ([]byte, int, error) {
 
 	rec := r.buf[r.readIndex+recordHeaderSize : r.readIndex+recordHeaderSize+length]
 	if c := crc32.Checksum(rec, castagnoliTable); c != crc {
-		return nil, 0, errors.Errorf("unexpected checksum %x, expected %x", c, crc)
+		return nil, 0, fmt.Errorf("unexpected checksum %x, expected %x", c, crc)
 	}
 
 	return rec, length + recordHeaderSize, nil
-}
-
-func min(i, j int) int {
-	if i < j {
-		return i
-	}
-	return j
 }

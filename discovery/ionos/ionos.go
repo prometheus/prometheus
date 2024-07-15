@@ -14,10 +14,12 @@
 package ionos
 
 import (
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
@@ -41,7 +43,12 @@ func init() {
 type Discovery struct{}
 
 // NewDiscovery returns a new refresh.Discovery for IONOS Cloud.
-func NewDiscovery(conf *SDConfig, logger log.Logger) (*refresh.Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*refresh.Discovery, error) {
+	m, ok := metrics.(*ionosMetrics)
+	if !ok {
+		return nil, fmt.Errorf("invalid discovery metrics type")
+	}
+
 	if conf.ionosEndpoint == "" {
 		conf.ionosEndpoint = "https://api.ionos.com"
 	}
@@ -52,10 +59,13 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*refresh.Discovery, error)
 	}
 
 	return refresh.NewDiscovery(
-		logger,
-		"ionos",
-		time.Duration(conf.RefreshInterval),
-		d.refresh,
+		refresh.Options{
+			Logger:              logger,
+			Mech:                "ionos",
+			Interval:            time.Duration(conf.RefreshInterval),
+			RefreshF:            d.refresh,
+			MetricsInstantiator: m.refreshMetrics,
+		},
 	), nil
 }
 
@@ -79,6 +89,13 @@ type SDConfig struct {
 	ionosEndpoint string // For tests only.
 }
 
+// NewDiscovererMetrics implements discovery.Config.
+func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return &ionosMetrics{
+		refreshMetrics: rmi,
+	}
+}
+
 // Name returns the name of the IONOS Cloud service discovery.
 func (c SDConfig) Name() string {
 	return "ionos"
@@ -86,7 +103,7 @@ func (c SDConfig) Name() string {
 
 // NewDiscoverer returns a new discovery.Discoverer for IONOS Cloud.
 func (c SDConfig) NewDiscoverer(options discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(&c, options.Logger)
+	return NewDiscovery(&c, options.Logger, options.Metrics)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
