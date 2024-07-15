@@ -2095,8 +2095,6 @@ type memSeries struct {
 
 	ooo *memSeriesOOOFields
 
-	mmMaxTime int64 // Max time of any mmapped chunk, only used during WAL replay.
-
 	nextAt                           int64 // Timestamp at which to cut the next chunk.
 	histogramChunkHasComputedEndTime bool  // True if nextAt has been predicted for the current histograms chunk; false otherwise.
 
@@ -2217,6 +2215,15 @@ func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkD
 	}
 
 	return removedInOrder + removedOOO
+}
+
+// mmMaxTime returns the time of any mmapped chunk.
+// Only used during WAL replay, so we can skip calling append() for samples it will reject.
+func (s *memSeries) mmMaxTime() int64 {
+	if len(s.mmappedChunks) > 0 {
+		return s.mmappedChunks[len(s.mmappedChunks)-1].maxTime
+	}
+	return math.MinInt64
 }
 
 // cleanupAppendIDsBelow cleans up older appendIDs. Has to be called after

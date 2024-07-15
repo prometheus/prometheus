@@ -479,13 +479,11 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*m
 		}
 		*mSeries.ooo = memSeriesOOOFields{oooMmappedChunks: oooMmc}
 	}
-	// Cache the last mmapped chunk time, so we can skip calling append() for samples it will reject.
-	if len(mmc) == 0 {
-		mSeries.mmMaxTime = math.MinInt64
-	} else {
-		mSeries.mmMaxTime = mmc[len(mmc)-1].maxTime
-		h.updateMinMaxTime(mmc[0].minTime, mSeries.mmMaxTime)
+
+	if len(mmc) > 0 {
+		h.updateMinMaxTime(mmc[0].minTime, mmc[len(mmc)-1].maxTime)
 	}
+
 	if len(oooMmc) != 0 {
 		// Mint and maxt can be in any chunk, they are not sorted.
 		mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
@@ -585,7 +583,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 				unknownRefs++
 				continue
 			}
-			if s.T <= ms.mmMaxTime {
+			if s.T <= ms.mmMaxTime() {
 				continue
 			}
 			if _, chunkCreated := ms.append(s.T, s.V, 0, appendChunkOpts); chunkCreated {
@@ -614,7 +612,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 				unknownHistogramRefs++
 				continue
 			}
-			if s.t <= ms.mmMaxTime {
+			if s.t <= ms.mmMaxTime() {
 				continue
 			}
 			var chunkCreated bool
