@@ -1589,18 +1589,18 @@ func parseListRulesPaginationRequest(r *http.Request) (*listRulesPaginationReque
 		err           error
 	)
 
-	if r.URL.Query().Get("maxRuleGroups") != "" {
-		maxRuleGroups, err = strconv.ParseInt(r.URL.Query().Get("maxRuleGroups"), 10, 32)
+	if r.URL.Query().Get("max_rule_groups") != "" {
+		maxRuleGroups, err = strconv.ParseInt(r.URL.Query().Get("max_rule_groups"), 10, 32)
 		if err != nil || maxRuleGroups < 0 {
 			return nil, &parsePaginationError{
-				err:       fmt.Errorf("maxRuleGroups need to be a valid number greater than or equal to 0: %w", err),
-				parameter: "maxRuleGroups",
+				err:       fmt.Errorf("max_rule_groups need to be a valid number greater than or equal to 0: %w", err),
+				parameter: "max_rule_groups",
 			}
 		}
 	}
 
-	if r.URL.Query().Get("nextToken") != "" {
-		nextToken = r.URL.Query().Get("nextToken")
+	if r.URL.Query().Get("next_token") != "" {
+		nextToken = r.URL.Query().Get("next_token")
 	}
 
 	if maxRuleGroups >= 0 || nextToken != "" {

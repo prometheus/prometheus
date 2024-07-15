@@ -695,6 +695,8 @@ URL query parameters:
 - `file[]=<string>`: only return rules with the given filepath. If the parameter is repeated, rules with any of the provided filepaths are returned. When the parameter is absent or empty, no filtering is done.
 - `exclude_alerts=<bool>`: only return rules, do not return active alerts. 
 - `match[]=<label_selector>`: only return rules that have configured labels that satisfy the label selectors. If the parameter is repeated, rules that match any of the sets of label selectors are returned. Note that matching is on the labels in the definition of each rule, not on the values after template expansion (for alerting rules). Optional.
+- `max_groups=<number>`: return up to `max_groups` rule groups. In case there are more groups, a `nextToken` property will be present in the response. The value in that property can be used in subsequent requests in the `next_token` property to paginate over the remaining rule groups. The `nextToken` property will not be present in the last response.
+- `next_token`: the pagination token that was returned in previous request when the `max_groups` property is set. The pagination token is used to iteratively paginate over a large number of rule groups.
 
 ```json
 $ curl http://localhost:9090/api/v1/rules
