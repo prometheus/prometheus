@@ -627,6 +627,20 @@ func (oh *HeadAndOOOIndexReader) Series(ref storage.SeriesRef, builder *labels.S
 	return nil
 }
 
+// LabelValues needs to be overridden from the headIndexReader implementation
+// so we can return labels within either in-order range or ooo range.
+func (oh *HeadAndOOOIndexReader) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
+	if oh.maxt < oh.head.MinTime() && oh.maxt < oh.head.MinOOOTime() || oh.mint > oh.head.MaxTime() && oh.mint > oh.head.MaxOOOTime() {
+		return []string{}, nil
+	}
+
+	if len(matchers) == 0 {
+		return oh.head.postings.LabelValues(ctx, name), nil
+	}
+
+	return labelValuesWithMatchers(ctx, oh, name, matchers...)
+}
+
 type HeadAndOOOChunkReader struct {
 	head        *Head
 	mint, maxt  int64
