@@ -11,10 +11,10 @@ The documentation is available alongside all the project documentation at
 
 ## Content
 
-- [Getting started](getting_started.md)
-- [Installation](installation.md)
-- [Configuration](configuration/configuration.md)
-- [Querying](querying/basics.md)
-- [Storage](storage.md)
-- [Federation](federation.md)
-- [Migration](migration.md)
+- [Getting started](https://prometheus.io/docs/prometheus/latest/getting_started)
+- [Installation](https://prometheus.io/docs/prometheus/latest/installation)
+- [Configuration](https://prometheus.io/docs/prometheus/latest/configuration)
+- [Querying](https://prometheus.io/docs/prometheus/latest/querying/basics)
+- [Storage](https://prometheus.io/docs/prometheus/latest/storage)
+- [Federation](https://prometheus.io/docs/prometheus/latest/federation)
+- [Migration](https://prometheus.io/docs/prometheus/latest/migration)
