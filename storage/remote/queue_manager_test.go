@@ -717,7 +717,7 @@ func TestShouldReshard(t *testing.T) {
 		{
 			// resharding shouldn't take place if we haven't successfully sent
 			// since the last shardUpdateDuration, even if the send deadline is very low
-			startingShards:    5,
+			startingShards:    10,
 			samplesIn:         1000,
 			samplesOut:        10,
 			lastSendTimestamp: time.Now().Unix() - int64(shardUpdateDuration),
@@ -725,7 +725,7 @@ func TestShouldReshard(t *testing.T) {
 			sendDeadline:      model.Duration(100 * time.Millisecond),
 		},
 		{
-			startingShards:    5,
+			startingShards:    10,
 			samplesIn:         1000,
 			samplesOut:        10,
 			lastSendTimestamp: time.Now().Unix(),
@@ -735,12 +735,11 @@ func TestShouldReshard(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		_, m := newTestClientAndQueueManager(t, defaultFlushDeadline, config.RemoteWriteProtoMsgV1)
+		_, m := newTestClientAndQueueManager(t, time.Duration(c.sendDeadline), config.RemoteWriteProtoMsgV1)
 		m.numShards = c.startingShards
 		m.dataIn.incr(c.samplesIn)
 		m.dataOut.incr(c.samplesOut)
 		m.lastSendTimestamp.Store(c.lastSendTimestamp)
-
 		m.Start()
 
 		desiredShards := m.calculateDesiredShards()
