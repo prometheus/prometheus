@@ -369,7 +369,7 @@ func TestWriteStorageApplyConfig_PartialUpdate(t *testing.T) {
 }
 
 func TestOTLPWriteHandler(t *testing.T) {
-	exportRequest := generateOTLPWriteRequest(t)
+	exportRequest := generateOTLPWriteRequest()
 
 	buf, err := exportRequest.MarshalProto()
 	require.NoError(t, err)
@@ -392,7 +392,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 	require.Len(t, appendable.exemplars, 1)  // 1 (exemplar)
 }
 
-func generateOTLPWriteRequest(t *testing.T) pmetricotlp.ExportRequest {
+func generateOTLPWriteRequest() pmetricotlp.ExportRequest {
 	d := pmetric.NewMetrics()
 
 	// Generate One Counter, One Gauge, One Histogram, One Exponential-Histogram
@@ -422,6 +422,7 @@ func generateOTLPWriteRequest(t *testing.T) pmetricotlp.ExportRequest {
 	counterDataPoint.Attributes().PutStr("foo.bar", "baz")
 
 	counterExemplar := counterDataPoint.Exemplars().AppendEmpty()
+
 	counterExemplar.SetTimestamp(pcommon.NewTimestampFromTime(timestamp))
 	counterExemplar.SetDoubleValue(10.0)
 	counterExemplar.SetSpanID(pcommon.SpanID{0, 1, 2, 3, 4, 5, 6, 7})

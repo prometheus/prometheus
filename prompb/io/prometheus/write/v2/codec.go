@@ -86,7 +86,6 @@ func (h Histogram) IsFloatHistogram() bool {
 
 // ToIntHistogram returns integer Prometheus histogram from the remote implementation
 // of integer histogram. If it's a float histogram, the method returns nil.
-// TODO(bwplotka): Add support for incoming NHCB.
 func (h Histogram) ToIntHistogram() *histogram.Histogram {
 	if h.IsFloatHistogram() {
 		return nil
@@ -102,13 +101,13 @@ func (h Histogram) ToIntHistogram() *histogram.Histogram {
 		PositiveBuckets:  h.GetPositiveDeltas(),
 		NegativeSpans:    spansProtoToSpans(h.GetNegativeSpans()),
 		NegativeBuckets:  h.GetNegativeDeltas(),
+		CustomValues:     h.GetCustomValues(),
 	}
 }
 
 // ToFloatHistogram returns float Prometheus histogram from the remote implementation
 // of float histogram. If the underlying implementation is an integer histogram, a
 // conversion is performed.
-// TODO(bwplotka): Add support for incoming NHCB.
 func (h Histogram) ToFloatHistogram() *histogram.FloatHistogram {
 	if h.IsFloatHistogram() {
 		return &histogram.FloatHistogram{
@@ -122,6 +121,7 @@ func (h Histogram) ToFloatHistogram() *histogram.FloatHistogram {
 			PositiveBuckets:  h.GetPositiveCounts(),
 			NegativeSpans:    spansProtoToSpans(h.GetNegativeSpans()),
 			NegativeBuckets:  h.GetNegativeCounts(),
+			CustomValues:     h.GetCustomValues(),
 		}
 	}
 	// Conversion from integer histogram.
@@ -136,6 +136,7 @@ func (h Histogram) ToFloatHistogram() *histogram.FloatHistogram {
 		PositiveBuckets:  deltasToCounts(h.GetPositiveDeltas()),
 		NegativeSpans:    spansProtoToSpans(h.GetNegativeSpans()),
 		NegativeBuckets:  deltasToCounts(h.GetNegativeDeltas()),
+		CustomValues:     h.GetCustomValues(),
 	}
 }
 
@@ -171,6 +172,7 @@ func FromIntHistogram(timestamp int64, h *histogram.Histogram) Histogram {
 		PositiveSpans:  spansToSpansProto(h.PositiveSpans),
 		PositiveDeltas: h.PositiveBuckets,
 		ResetHint:      Histogram_ResetHint(h.CounterResetHint),
+		CustomValues:   h.CustomValues,
 		Timestamp:      timestamp,
 	}
 }
@@ -188,6 +190,7 @@ func FromFloatHistogram(timestamp int64, fh *histogram.FloatHistogram) Histogram
 		PositiveSpans:  spansToSpansProto(fh.PositiveSpans),
 		PositiveCounts: fh.PositiveBuckets,
 		ResetHint:      Histogram_ResetHint(fh.CounterResetHint),
+		CustomValues:   fh.CustomValues,
 		Timestamp:      timestamp,
 	}
 }

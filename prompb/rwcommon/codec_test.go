@@ -144,10 +144,12 @@ func TestToHistogram_Empty(t *testing.T) {
 	})
 }
 
+// NOTE(bwplotka): This is technically not a valid histogram, but it represents
+// important cases to test when copying or converting to/from int/float histograms.
 func testIntHistogram() histogram.Histogram {
 	return histogram.Histogram{
 		CounterResetHint: histogram.GaugeType,
-		Schema:           0,
+		Schema:           1,
 		Count:            19,
 		Sum:              2.7,
 		ZeroThreshold:    1e-128,
@@ -163,13 +165,16 @@ func testIntHistogram() histogram.Histogram {
 			{Offset: 0, Length: 1},
 		},
 		NegativeBuckets: []int64{1, 2, -2, 1, -1, 0},
+		CustomValues:    []float64{21421, 523},
 	}
 }
 
+// NOTE(bwplotka): This is technically not a valid histogram, but it represents
+// important cases to test when copying or converting to/from int/float histograms.
 func testFloatHistogram() histogram.FloatHistogram {
 	return histogram.FloatHistogram{
 		CounterResetHint: histogram.GaugeType,
-		Schema:           0,
+		Schema:           1,
 		Count:            19,
 		Sum:              2.7,
 		ZeroThreshold:    1e-128,
@@ -185,22 +190,29 @@ func testFloatHistogram() histogram.FloatHistogram {
 			{Offset: 0, Length: 1},
 		},
 		NegativeBuckets: []float64{1, 3, 1, 2, 1, 1},
+		CustomValues:    []float64{21421, 523},
 	}
 }
 
 func TestFromIntToFloatOrIntHistogram(t *testing.T) {
-	testIntHist := testIntHistogram()
-	testFloatHist := testFloatHistogram()
-
 	t.Run("v1", func(t *testing.T) {
-		h := prompb.FromIntHistogram(123, testIntHist.Copy())
+		// v1 does not support nhcb.
+		testIntHistWithoutNHCB := testIntHistogram()
+		testIntHistWithoutNHCB.CustomValues = nil
+		testFloatHistWithoutNHCB := testFloatHistogram()
+		testFloatHistWithoutNHCB.CustomValues = nil
+
+		h := prompb.FromIntHistogram(123, &testIntHistWithoutNHCB)
 		require.False(t, h.IsFloatHistogram())
 		require.Equal(t, int64(123), h.Timestamp)
-		require.Equal(t, testIntHist, *h.ToIntHistogram())
-		require.Equal(t, testFloatHist, *h.ToFloatHistogram())
+		require.Equal(t, testIntHistWithoutNHCB, *h.ToIntHistogram())
+		require.Equal(t, testFloatHistWithoutNHCB, *h.ToFloatHistogram())
 	})
 	t.Run("v2", func(t *testing.T) {
-		h := writev2.FromIntHistogram(123, testIntHist.Copy())
+		testIntHist := testIntHistogram()
+		testFloatHist := testFloatHistogram()
+
+		h := writev2.FromIntHistogram(123, &testIntHist)
 		require.False(t, h.IsFloatHistogram())
 		require.Equal(t, int64(123), h.Timestamp)
 		require.Equal(t, testIntHist, *h.ToIntHistogram())
@@ -209,17 +221,21 @@ func TestFromIntToFloatOrIntHistogram(t *testing.T) {
 }
 
 func TestFromFloatToFloatHistogram(t *testing.T) {
-	testFloatHist := testFloatHistogram()
-
 	t.Run("v1", func(t *testing.T) {
-		h := prompb.FromFloatHistogram(123, testFloatHist.Copy())
+		// v1 does not support nhcb.
+		testFloatHistWithoutNHCB := testFloatHistogram()
+		testFloatHistWithoutNHCB.CustomValues = nil
+
+		h := prompb.FromFloatHistogram(123, &testFloatHistWithoutNHCB)
 		require.True(t, h.IsFloatHistogram())
 		require.Equal(t, int64(123), h.Timestamp)
 		require.Nil(t, h.ToIntHistogram())
-		require.Equal(t, testFloatHist, *h.ToFloatHistogram())
+		require.Equal(t, testFloatHistWithoutNHCB, *h.ToFloatHistogram())
 	})
 	t.Run("v2", func(t *testing.T) {
-		h := writev2.FromFloatHistogram(123, testFloatHist.Copy())
+		testFloatHist := testFloatHistogram()
+
+		h := writev2.FromFloatHistogram(123, &testFloatHist)
 		require.True(t, h.IsFloatHistogram())
 		require.Equal(t, int64(123), h.Timestamp)
 		require.Nil(t, h.ToIntHistogram())
