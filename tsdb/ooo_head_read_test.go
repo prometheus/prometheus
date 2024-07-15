@@ -421,17 +421,17 @@ func testOOOHeadChunkReader_LabelValues(t *testing.T, scenario sampleTypeScenari
 			name:       "LabelValues calls with ooo head query range not overlapping out-of-order data",
 			queryMinT:  100,
 			queryMaxT:  100,
-			expValues1: []string{},
-			expValues2: []string{},
-			expValues3: []string{},
-			expValues4: []string{},
+			expValues1: []string{"bar1"},
+			expValues2: nil,
+			expValues3: []string{"bar1", "bar2"},
+			expValues4: []string{"bar1", "bar2"},
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			// We first want to test using a head index reader that covers the biggest query interval
-			oh := NewOOOHeadIndexReader(head, tc.queryMinT, tc.queryMaxT, 0)
+			oh := NewHeadAndOOOIndexReader(head, tc.queryMinT, tc.queryMaxT, 0)
 			matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar1")}
 			values, err := oh.LabelValues(ctx, "foo", matchers...)
 			sort.Strings(values)
