@@ -67,8 +67,10 @@ class Encoder {
           [[unlikely]];
           ChunkFinalizer::finalize(storage_, ls_id, chunk);
         }
-      } else if (timestamp < state.timestamp()) {
-        outdated_sample_encoder_.encode(*this, ls_id, timestamp, value);
+      } else {
+        if (timestamp < state.timestamp()) {
+          outdated_sample_encoder_.encode(*this, ls_id, timestamp, value);
+        }
         return;
       }
     }
