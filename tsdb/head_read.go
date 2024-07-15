@@ -251,6 +251,7 @@ func (s *memSeries) headChunkID(pos int) chunks.HeadChunkID {
 const oooChunkIDMask = 1 << 23
 
 // oooHeadChunkID returns the HeadChunkID referred to by the given position.
+// Only the bottom 24 bits are used. Bit 23 is always 1 for an OOO chunk; for the rest:
 // * 0 <= pos < len(s.oooMmappedChunks) refer to s.oooMmappedChunks[pos]
 // * pos == len(s.oooMmappedChunks) refers to s.oooHeadChunk
 // The caller must ensure that s.ooo is not nil.

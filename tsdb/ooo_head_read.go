@@ -594,7 +594,6 @@ func NewHeadAndOOOIndexReader(head *Head, mint, maxt int64, lastGarbageCollected
 
 func (oh *HeadAndOOOIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	s := oh.head.series.getByID(chunks.HeadSeriesRef(ref))
-
 	if s == nil {
 		oh.head.metrics.seriesNotFound.Inc()
 		return storage.ErrNotFound
@@ -609,12 +608,10 @@ func (oh *HeadAndOOOIndexReader) Series(ref storage.SeriesRef, builder *labels.S
 	defer s.Unlock()
 	*chks = (*chks)[:0]
 
-	if s.ooo == nil {
-		getSeriesChunks(s, oh.mint, oh.maxt, chks)
-	} else {
+	if s.ooo != nil {
 		return getOOOSeriesChunks(s, oh.mint, oh.maxt, oh.lastGarbageCollectedMmapRef, 0, true, chks)
 	}
-
+	getSeriesChunks(s, oh.mint, oh.maxt, chks)
 	return nil
 }
 
