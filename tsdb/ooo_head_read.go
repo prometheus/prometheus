@@ -118,8 +118,8 @@ func (oh *OOOHeadIndexReader) series(ref storage.SeriesRef, builder *labels.Scra
 					addChunk(c.minTime, c.maxTime, ref, chk.chunk)
 				}
 			} else {
-				var enc chunkenc.Chunk
-				addChunk(c.minTime, c.maxTime, ref, enc)
+				var emptyChunk chunkenc.Chunk
+				addChunk(c.minTime, c.maxTime, ref, emptyChunk)
 			}
 		}
 	}

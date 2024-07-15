@@ -940,7 +940,7 @@ func (a *headAppender) Commit() (err error) {
 					// !ok means there are no markers collected for these samples yet. So we first flush the samples
 					// before setting this m-map marker.
 
-					// r != 0 means we have already m-mapped a chunk for this series in the same Commit().
+					// r != nil means we have already m-mapped a chunk for this series in the same Commit().
 					// Hence, before we m-map again, we should add the samples and m-map markers
 					// seen till now to the WBL records.
 					collectOOORecords()
