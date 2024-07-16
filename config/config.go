@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1318,5 +1319,22 @@ type OTLPConfig struct {
 func (c *OTLPConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultOTLPConfig
 	type plain OTLPConfig
-	return unmarshal((*plain)(c))
+	if err := unmarshal((*plain)(c)); err != nil {
+		return err
+	}
+
+	seen := map[string]struct{}{}
+	i := 0
+	for i < len(c.PromoteResourceAttributes) {
+		s := strings.TrimSpace(c.PromoteResourceAttributes[i])
+		if _, exists := seen[s]; exists {
+			c.PromoteResourceAttributes = slices.Delete(c.PromoteResourceAttributes, i, i+1)
+			continue
+		}
+
+		seen[s] = struct{}{}
+		c.PromoteResourceAttributes[i] = s
+		i++
+	}
+	return nil
 }
