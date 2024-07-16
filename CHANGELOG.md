@@ -2,6 +2,8 @@
 
 ## unreleased
 
+* [FEATURE] OTLP receiver: Add new option `otlp.promote_resource_attributes`, for any OTel resource attributes that should be promoted to metric labels. #14200
+
 ## 2.53.1 / 2024-07-10
 
 Fix a bug which would drop samples in remote-write if the sending flow stalled
