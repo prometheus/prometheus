@@ -27,12 +27,15 @@ import {
   IconChevronDown,
   IconChevronRight,
   IconCloudDataConnection,
+  IconCpu,
   IconDatabase,
   IconDatabaseSearch,
   IconFileAnalytics,
   IconFlag,
   IconHeartRateMonitor,
   IconInfoCircle,
+  IconSearch,
+  IconServer,
   IconServerCog,
 } from "@tabler/icons-react";
 import {
@@ -66,13 +69,13 @@ import ReadinessWrapper from "./components/ReadinessWrapper";
 
 const queryClient = new QueryClient();
 
-const navIconStyle = { width: rem(15), height: rem(15) };
+const navIconStyle = { width: rem(16), height: rem(16) };
 
 const mainNavPages = [
   {
     title: "Query",
     path: "/query",
-    icon: <IconDatabaseSearch style={navIconStyle} />,
+    icon: <IconSearch style={navIconStyle} />,
     element: <QueryPage />,
     inAgentMode: false,
   },
@@ -238,7 +241,7 @@ function App() {
                   component={NavLink}
                   to="/"
                   className={classes.link}
-                  leftSection={<IconFileAnalytics style={navIconStyle} />}
+                  leftSection={<IconServer style={navIconStyle} />}
                   rightSection={<IconChevronDown style={navIconStyle} />}
                   onClick={(e) => {
                     e.preventDefault();
