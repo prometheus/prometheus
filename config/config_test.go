@@ -50,6 +50,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/ovhcloud"
 	"github.com/prometheus/prometheus/discovery/puppetdb"
 	"github.com/prometheus/prometheus/discovery/scaleway"
+	"github.com/prometheus/prometheus/discovery/tailscale"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/discovery/triton"
 	"github.com/prometheus/prometheus/discovery/uyuni"
@@ -1267,6 +1268,35 @@ var expectedConf = &Config{
 					Role:             "baremetal",
 					SecretKey:        "11111111-1111-1111-1111-111111111111",
 					Zone:             "fr-par-1",
+				},
+			},
+		},
+		{
+			JobName: "tailscale",
+
+			HonorTimestamps:       true,
+			ScrapeInterval:        model.Duration(15 * time.Second),
+			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:     true,
+			BodySizeLimit:         globBodySizeLimit,
+			SampleLimit:           globSampleLimit,
+			TargetLimit:           globTargetLimit,
+			LabelLimit:            globLabelLimit,
+			LabelNameLengthLimit:  globLabelNameLengthLimit,
+			LabelValueLengthLimit: globLabelValueLengthLimit,
+			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&tailscale.SDConfig{
+					APIToken:        "abcdef",
+					RefreshInterval: model.Duration(60 * time.Second),
+					Tailnet:         "foo@bar.test",
+					TagSeparator:    ",",
+					URL:             "https://api.tailscale.com",
 				},
 			},
 		},
