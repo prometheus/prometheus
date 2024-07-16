@@ -106,7 +106,11 @@ class Panel extends Component<PanelProps, PanelState> {
       return;
     }
 
-    if (prevOpts.resolution !== resolution || prevOpts.type !== type || showExemplars !== prevOpts.showExemplars) {
+    if (
+      prevOpts.resolution !== resolution ||
+      prevOpts.type !== type ||
+      (showExemplars && showExemplars !== prevOpts.showExemplars)
+    ) {
       this.executeQuery();
     }
   }
