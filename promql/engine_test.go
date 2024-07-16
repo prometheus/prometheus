@@ -1543,15 +1543,15 @@ load 1ms
 	// Add some samples with negative timestamp.
 	db := storage.DB
 	app := db.Appender(context.Background())
-	ref, err := app.Append(0, lblsneg, -1000000, 1000)
+	ref, err := app.Append(0, lblsneg, -1000000, 1000, nil)
 	require.NoError(t, err)
 	for ts := int64(-1000000 + 1000); ts <= 0; ts += 1000 {
-		_, err := app.Append(ref, labels.EmptyLabels(), ts, -float64(ts/1000)+1)
+		_, err := app.Append(ref, labels.EmptyLabels(), ts, -float64(ts/1000)+1, nil)
 		require.NoError(t, err)
 	}
 
 	// To test the fix for https://github.com/prometheus/prometheus/issues/8433.
-	_, err = app.Append(0, labels.FromStrings("__name__", "metric_timestamp"), 3600*1000, 1000)
+	_, err = app.Append(0, labels.FromStrings("__name__", "metric_timestamp"), 3600*1000, 1000, nil)
 	require.NoError(t, err)
 
 	require.NoError(t, app.Commit())
@@ -3222,7 +3222,7 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 
 				ts := idx0 * int64(10*time.Minute/time.Millisecond)
 				app := storage.Appender(context.Background())
-				_, err := app.Append(0, labels.FromStrings("__name__", "float_series", "idx", "0"), ts, 42)
+				_, err := app.Append(0, labels.FromStrings("__name__", "float_series", "idx", "0"), ts, 42, nil)
 				require.NoError(t, err)
 				for idx1, h := range c.histograms {
 					lbls := labels.FromStrings("__name__", seriesName, "idx", strconv.Itoa(idx1))
@@ -3663,7 +3663,7 @@ func TestNativeHistogram_MulDivOperator(t *testing.T) {
 					_, err = app.AppendHistogram(0, lbls, ts, h.Copy(), nil)
 				}
 				require.NoError(t, err)
-				_, err = app.Append(0, labels.FromStrings("__name__", floatSeriesName), ts, c.scalar)
+				_, err = app.Append(0, labels.FromStrings("__name__", floatSeriesName), ts, c.scalar, nil)
 				require.NoError(t, err)
 				require.NoError(t, app.Commit())
 

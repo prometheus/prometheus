@@ -162,7 +162,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 				l := labels.Labels{}
 				p.Metric(&l)
 
-				if _, err := app.Append(0, l, *ts, v); err != nil {
+				if _, err := app.Append(0, l, *ts, v, nil); err != nil {
 					return fmt.Errorf("add sample: %w", err)
 				}
 

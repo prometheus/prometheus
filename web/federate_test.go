@@ -347,7 +347,7 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 		var err error
 		switch i {
 		case 0, 3:
-			_, err = app.Append(0, l, 100*60*1000, float64(i*100))
+			_, err = app.Append(0, l, 100*60*1000, float64(i*100), nil)
 			expVec = append(expVec, promql.Sample{
 				T:      100 * 60 * 1000,
 				F:      float64(i * 100),
