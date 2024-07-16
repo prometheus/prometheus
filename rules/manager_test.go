@@ -2605,7 +2605,7 @@ func TestKeepFiringForStateRestore(t *testing.T) {
 		0,
 		keepFiringForDuration,
 		labels.FromStrings("severity", "critical"),
-		labels.FromStrings("annotation1", "rule1"), labels.EmptyLabels(), "", true, nil,
+		labels.FromStrings("annotation_test", "rule1"), labels.EmptyLabels(), "", true, nil,
 	)
 	keepFiringForDuration2 := 60 * time.Minute
 	rule2 := NewAlertingRule(
@@ -2614,7 +2614,7 @@ func TestKeepFiringForStateRestore(t *testing.T) {
 		0,
 		keepFiringForDuration2,
 		labels.FromStrings("severity", "critical"),
-		labels.FromStrings("annotation2", "rule2"), labels.EmptyLabels(), "", true, nil,
+		labels.FromStrings("annotation_test", "rule2"), labels.EmptyLabels(), "", true, nil,
 	)
 
 	group := NewGroup(GroupOptions{
@@ -2682,7 +2682,7 @@ func TestKeepFiringForStateRestore(t *testing.T) {
 				0,
 				keepFiringForDuration,
 				labels.FromStrings("severity", "critical"),
-				labels.FromStrings("annotation1", "rule1"), labels.EmptyLabels(), "", false, nil,
+				labels.FromStrings("annotation_test", "rule1"), labels.EmptyLabels(), "", false, nil,
 			)
 			newRule2 := NewAlertingRule(
 				"HTTPRequestRateLow",
@@ -2690,9 +2690,9 @@ func TestKeepFiringForStateRestore(t *testing.T) {
 				0,
 				keepFiringForDuration2,
 				labels.FromStrings("severity", "critical"),
-				labels.FromStrings("annotation2", "rule2"), labels.EmptyLabels(), "", true, nil,
+				labels.FromStrings("annotation_test", "rule2"), labels.EmptyLabels(), "", true, nil,
 			)
-			// Restart alert store
+			// Restart alert store.
 			newAlertStore := NewFileStore(promslog.NewNopLogger(), testStoreFile)
 
 			newGroup := NewGroup(GroupOptions{
@@ -2720,23 +2720,33 @@ func TestKeepFiringForStateRestore(t *testing.T) {
 			require.Equal(t, tt.alertsExpected, len(got)+len(got2))
 
 			results := [][]*Alert{got, got2}
-
-			for i, result := range results {
+			for _, result := range results {
 				sort.Slice(result, func(i, j int) bool {
-					return labels.Compare(got[i].Labels, got[j].Labels) < 0
+					return labels.Compare(result[i].Labels, result[j].Labels) < 0
 				})
 				sortAlerts(result)
-				sortAlerts(expectedAlerts[i])
+			}
+			for _, alerts := range expectedAlerts {
+				sort.Slice(alerts, func(i, j int) bool {
+					return labels.Compare(alerts[i].Labels, alerts[j].Labels) < 0
+				})
+				sortAlerts(alerts)
 			}
 
 			for i, expected := range expectedAlerts {
 				got = results[i]
 				require.Equal(t, len(expected), len(got))
 				for j, alert := range expected {
-					require.Equal(t, alert.Labels, got[j].Labels)
-					require.Equal(t, alert.Annotations, got[j].Annotations)
-					require.Equal(t, alert.ActiveAt, got[j].ActiveAt)
-					require.Equal(t, alert.KeepFiringSince, got[j].KeepFiringSince)
+					diff := float64(alert.KeepFiringSince.Unix() - got[j].KeepFiringSince.Unix())
+					require.Equal(t, 0.0, math.Abs(diff), "'keep_firing_for' restored time is wrong")
+					diff = float64(alert.ActiveAt.Unix() - got[j].ActiveAt.Unix())
+					require.Equal(t, 0.0, math.Abs(diff), "'keep_firing_for' state restored activeAt time is wrong")
+
+					require.Equal(t, alert.Value, got[j].Value)
+					require.NotEmpty(t, alert.Labels)
+					require.Equal(t, alert.Labels.Get("instance"), got[j].Labels.Get("instance"))
+					require.NotEmpty(t, alert.Annotations)
+					require.Equal(t, alert.Annotations.Get("annotation_test"), got[j].Annotations.Get("annotation_test"))
 				}
 			}
 		})

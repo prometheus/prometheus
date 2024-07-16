@@ -127,7 +127,6 @@ func NewGroup(o GroupOptions) *Group {
 	}
 
 	alertStoreFunc := o.AlertStoreFunc
-	//var alertStore *AlertStore
 	if alertStoreFunc == nil {
 		alertStoreFunc = DefaultAlertStoreFunc
 	}
@@ -546,13 +545,13 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			// Restore alerts when feature is enabled and it is the first evaluation for the group
 			if ar, ok := rule.(*AlertingRule); ok {
 				restoredAlerts, _ := g.alertStore.GetAlerts(ar.GetFingerprint(GroupKey(g.File(), g.Name())))
-				if restoredAlerts != nil && len(restoredAlerts) > 0 {
+				if len(restoredAlerts) > 0 {
 					ar.SetActiveAlerts(restoredAlerts)
 					logger.Info("Restored alerts from store", "rule", ar.name, "alerts", len(restoredAlerts))
 				}
 			}
 		}
-		
+
 		vector, err := rule.Eval(ctx, ruleQueryOffset, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit())
 		if err != nil {
 			rule.SetHealth(HealthBad)

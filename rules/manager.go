@@ -27,6 +27,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -35,7 +36,6 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/strutil"
-	"golang.org/x/sync/semaphore"
 )
 
 // QueryFunc processes PromQL queries.
@@ -89,7 +89,7 @@ func DefaultEvalIterationFunc(ctx context.Context, g *Group, evalTimestamp time.
 	g.setLastEvalTimestamp(evalTimestamp)
 
 	if g.alertStore != nil {
-		//feature enabled
+		// feature enabled.
 		go func() {
 			g.alertStoreFunc(g)
 		}()
