@@ -156,6 +156,12 @@ var expectedConf = &Config{
 		},
 	},
 
+	OTLPConfig: OTLPConfig{
+		PromoteResourceAttributes: []string{
+			"k8s.cluster.name", "k8s.job.name", "k8s.namespace.name",
+		},
+	},
+
 	RemoteReadConfigs: []*RemoteReadConfig{
 		{
 			URL:           mustParseURL("http://remote1/read"),
@@ -1469,6 +1475,18 @@ func TestRemoteWriteRetryOnRateLimit(t *testing.T) {
 
 	require.True(t, got.RemoteWriteConfigs[0].QueueConfig.RetryOnRateLimit)
 	require.False(t, got.RemoteWriteConfigs[1].QueueConfig.RetryOnRateLimit)
+}
+
+func TestOTLPSanitizeResourceAttributes(t *testing.T) {
+	want, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_resource_attributes.good.yml"), false, false, log.NewNopLogger())
+	require.NoError(t, err)
+
+	out, err := yaml.Marshal(want)
+	require.NoError(t, err)
+	var got Config
+	require.NoError(t, yaml.UnmarshalStrict(out, &got))
+
+	require.Equal(t, []string{"k8s.cluster.name", "k8s.job.name", "k8s.namespace.name"}, got.OTLPConfig.PromoteResourceAttributes)
 }
 
 func TestLoadConfig(t *testing.T) {
