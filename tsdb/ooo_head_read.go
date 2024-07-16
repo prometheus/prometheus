@@ -477,12 +477,12 @@ func NewHeadAndOOOQuerier(mint, maxt int64, head *Head, oooIsoState *oooIsolatio
 	}
 }
 
-func (q *HeadAndOOOQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	return q.querier.LabelValues(ctx, name, matchers...)
+func (q *HeadAndOOOQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return q.querier.LabelValues(ctx, name, hints, matchers...)
 }
 
-func (q *HeadAndOOOQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	return q.querier.LabelNames(ctx, matchers...)
+func (q *HeadAndOOOQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return q.querier.LabelNames(ctx, hints, matchers...)
 }
 
 func (q *HeadAndOOOQuerier) Close() error {
@@ -520,12 +520,12 @@ func NewHeadAndOOOChunkQuerier(mint, maxt int64, head *Head, oooIsoState *oooIso
 	}
 }
 
-func (q *HeadAndOOOChunkQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	return q.querier.LabelValues(ctx, name, matchers...)
+func (q *HeadAndOOOChunkQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return q.querier.LabelValues(ctx, name, hints, matchers...)
 }
 
-func (q *HeadAndOOOChunkQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	return q.querier.LabelNames(ctx, matchers...)
+func (q *HeadAndOOOChunkQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return q.querier.LabelNames(ctx, hints, matchers...)
 }
 
 func (q *HeadAndOOOChunkQuerier) Close() error {
