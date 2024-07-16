@@ -22,7 +22,7 @@ type AlertStore interface {
 type FileStore struct {
 	logger       log.Logger
 	alertsByRule map[uint64][]*Alert
-	//protects the `alertsByRule` map
+	// protects the `alertsByRule` map.
 	stateMtx sync.RWMutex
 	path     string
 }
@@ -37,7 +37,7 @@ func NewFileStore(l log.Logger, storagePath string) *FileStore {
 	return s
 }
 
-// initState reads the state from file storage into the alertsByRule map
+// initState reads the state from file storage into the alertsByRule map.
 func (s *FileStore) initState() {
 	file, err := os.OpenFile(s.path, os.O_RDWR|os.O_CREATE, 0o666)
 	if err != nil {
@@ -58,7 +58,7 @@ func (s *FileStore) initState() {
 }
 
 // GetAlerts returns the stored alerts for an alerting rule
-// Alert state is read from the in memory map which is populated during initialization
+// Alert state is read from the in memory map which is populated during initialization.
 func (s *FileStore) GetAlerts(key uint64) (map[uint64]*Alert, error) {
 	s.stateMtx.RLock()
 	defer s.stateMtx.RUnlock()
@@ -78,7 +78,7 @@ func (s *FileStore) GetAlerts(key uint64) (map[uint64]*Alert, error) {
 	return alerts, nil
 }
 
-// SetAlerts updates the stateByRule map and writes state to file storage
+// SetAlerts updates the stateByRule map and writes state to file storage.
 func (s *FileStore) SetAlerts(key uint64, alerts []*Alert) error {
 	s.stateMtx.Lock()
 	defer s.stateMtx.Unlock()

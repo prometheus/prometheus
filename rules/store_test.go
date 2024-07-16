@@ -6,8 +6,9 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 func TestAlertStore(t *testing.T) {
@@ -27,14 +28,22 @@ func TestAlertStore(t *testing.T) {
 	alertsByRule[4] = []*Alert{}
 
 	for key, alerts := range alertsByRule {
+		sortAlerts(alerts)
 		err := alertStore.SetAlerts(key, alerts)
 		require.NoError(t, err)
 
 		got, err := alertStore.GetAlerts(key)
 		require.NoError(t, err)
 		require.Equal(t, len(alerts), len(got))
+
+		result := make([]*Alert, 0, len(got))
+		for _, value := range got {
+			result = append(result, value)
+		}
+		sortAlerts(result)
+
 		j := 0
-		for _, al := range got {
+		for _, al := range result {
 			require.Equal(t, alerts[j].State, al.State)
 			require.Equal(t, alerts[j].Labels, al.Labels)
 			require.Equal(t, alerts[j].Annotations, al.Annotations)
