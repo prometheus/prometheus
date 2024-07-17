@@ -365,6 +365,7 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query, sortSeries bool)
 		return nil, fmt.Errorf("error sending request: %w", err)
 	}
 
+	//nolint:usestdlibvars
 	if httpResp.StatusCode/100 != 2 {
 		// Make an attempt at getting an error message.
 		body, _ := io.ReadAll(httpResp.Body)
