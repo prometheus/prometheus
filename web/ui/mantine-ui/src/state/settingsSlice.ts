@@ -1,5 +1,6 @@
 import { PayloadAction, createSlice } from "@reduxjs/toolkit";
 import { useAppSelector } from "./hooks";
+import { initializeFromLocalStorage } from "./initializeFromLocalStorage";
 
 interface Settings {
   consolesLink: string | null;
@@ -19,7 +20,15 @@ declare const GLOBAL_CONSOLES_LINK: string;
 declare const GLOBAL_AGENT_MODE: string;
 declare const GLOBAL_READY: string;
 
-const initialState: Settings = {
+export const localStorageKeyUseLocalTime = "settings.useLocalTime";
+export const localStorageKeyEnableQueryHistory = "settings.enableQueryHistory";
+export const localStorageKeyEnableAutocomplete = "settings.enableAutocomplete";
+export const localStorageKeyEnableSyntaxHighlighting =
+  "settings.enableSyntaxHighlighting";
+export const localStorageKeyEnableLinter = "settings.enableLinter";
+export const localStorageKeyShowAnnotations = "settings.showAnnotations";
+
+export const initialState: Settings = {
   consolesLink:
     GLOBAL_CONSOLES_LINK === "CONSOLES_LINK_PLACEHOLDER" ||
     GLOBAL_CONSOLES_LINK === "" ||
@@ -29,12 +38,30 @@ const initialState: Settings = {
   agentMode: GLOBAL_AGENT_MODE === "true",
   ready: GLOBAL_READY === "true",
   pathPrefix: "",
-  useLocalTime: false,
-  enableQueryHistory: false,
-  enableAutocomplete: true,
-  enableSyntaxHighlighting: true,
-  enableLinter: true,
-  showAnnotations: false,
+  useLocalTime: initializeFromLocalStorage<boolean>(
+    localStorageKeyUseLocalTime,
+    false
+  ),
+  enableQueryHistory: initializeFromLocalStorage<boolean>(
+    localStorageKeyEnableQueryHistory,
+    false
+  ),
+  enableAutocomplete: initializeFromLocalStorage<boolean>(
+    localStorageKeyEnableAutocomplete,
+    true
+  ),
+  enableSyntaxHighlighting: initializeFromLocalStorage<boolean>(
+    localStorageKeyEnableSyntaxHighlighting,
+    true
+  ),
+  enableLinter: initializeFromLocalStorage<boolean>(
+    localStorageKeyEnableLinter,
+    true
+  ),
+  showAnnotations: initializeFromLocalStorage<boolean>(
+    localStorageKeyShowAnnotations,
+    true
+  ),
 };
 
 export const settingsSlice = createSlice({

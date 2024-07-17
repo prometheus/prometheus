@@ -6,6 +6,7 @@ import {
   setCollapsedPools,
   updateTargetFilters,
 } from "./targetsPageSlice";
+import { updateSettings } from "./settingsSlice";
 
 const persistToLocalStorage = <T>(key: string, value: T) => {
   localStorage.setItem(key, JSON.stringify(value));
@@ -29,5 +30,22 @@ startAppListening({
   actionCreator: updateTargetFilters,
   effect: ({ payload }) => {
     persistToLocalStorage(localStorageKeyTargetFilters, payload);
+  },
+});
+
+startAppListening({
+  actionCreator: updateSettings,
+  effect: ({ payload }) => {
+    Object.entries(payload).forEach(([key, value]) => {
+      switch (key) {
+        case "useLocalTime":
+        case "enableQueryHistory":
+        case "enableAutocomplete":
+        case "enableSyntaxHighlighting":
+        case "enableLinter":
+        case "showAnnotations":
+          return persistToLocalStorage(`settings.${key}`, value);
+      }
+    });
   },
 });
