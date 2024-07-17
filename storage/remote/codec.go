@@ -580,10 +580,12 @@ func (s *chunkedSeriesSet) Next() bool {
 	}
 
 	s.current = &chunkedSeries{
-		labels: res.ChunkedSeries[0].Labels,
-		chunks: res.ChunkedSeries[0].Chunks,
-		mint:   s.mint,
-		maxt:   s.maxt,
+		ChunkedSeries: prompb.ChunkedSeries{
+			Labels: res.ChunkedSeries[0].Labels,
+			Chunks: res.ChunkedSeries[0].Chunks,
+		},
+		mint: s.mint,
+		maxt: s.maxt,
 	}
 
 	return true
@@ -602,25 +604,24 @@ func (s *chunkedSeriesSet) Warnings() annotations.Annotations {
 }
 
 type chunkedSeries struct {
-	labels     []prompb.Label
-	chunks     []prompb.Chunk
+	prompb.ChunkedSeries
 	mint, maxt int64
 }
 
 var _ storage.Series = &chunkedSeries{}
 
 func (s *chunkedSeries) Labels() labels.Labels {
-	b := labels.NewScratchBuilder(len(s.labels))
-	return labelProtosToLabels(&b, s.labels)
+	b := labels.NewScratchBuilder(0)
+	return s.ToLabels(&b, nil)
 }
 
 func (s *chunkedSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
 	csIt, ok := it.(*chunkedSeriesIterator)
 	if ok {
-		csIt.reset(s.chunks, s.mint, s.maxt)
+		csIt.reset(s.Chunks, s.mint, s.maxt)
 		return csIt
 	}
-	return newChunkedSeriesIterator(s.chunks, s.mint, s.maxt)
+	return newChunkedSeriesIterator(s.Chunks, s.mint, s.maxt)
 }
 
 type chunkedSeriesIterator struct {
@@ -823,15 +824,6 @@ func FromLabelMatchers(matchers []*prompb.LabelMatcher) ([]*labels.Matcher, erro
 		result = append(result, matcher)
 	}
 	return result, nil
-}
-
-// LabelProtosToMetric unpack a []*prompb.Label to a model.Metric.
-func LabelProtosToMetric(labelPairs []*prompb.Label) model.Metric {
-	metric := make(model.Metric, len(labelPairs))
-	for _, l := range labelPairs {
-		metric[model.LabelName(l.Name)] = model.LabelValue(l.Value)
-	}
-	return metric
 }
 
 // DecodeWriteRequest from an io.Reader into a prompb.WriteRequest, handling

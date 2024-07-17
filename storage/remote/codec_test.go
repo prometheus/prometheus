@@ -820,11 +820,13 @@ func TestChunkedSeries(t *testing.T) {
 		chks := buildTestChunks(t)
 
 		s := chunkedSeries{
-			labels: []prompb.Label{
-				{Name: "foo", Value: "bar"},
-				{Name: "asdf", Value: "zxcv"},
+			ChunkedSeries: prompb.ChunkedSeries{
+				Labels: []prompb.Label{
+					{Name: "foo", Value: "bar"},
+					{Name: "asdf", Value: "zxcv"},
+				},
+				Chunks: chks,
 			},
-			chunks: chks,
 		}
 
 		require.Equal(t, labels.FromStrings("asdf", "zxcv", "foo", "bar"), s.Labels())
