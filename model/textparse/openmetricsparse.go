@@ -105,9 +105,9 @@ type openMetricsParserOptions struct {
 	SkipCT bool
 }
 
-type openMetricsOption func(*openMetricsParserOptions)
+type OpenMetricsOption func(*openMetricsParserOptions)
 
-func WithSkipCT(skipCT bool) openMetricsOption {
+func WithSkipCT(skipCT bool) OpenMetricsOption {
 	return func(o *openMetricsParserOptions) {
 		o.SkipCT = skipCT
 	}
@@ -123,7 +123,7 @@ func NewOpenMetricsParser(b []byte, st *labels.SymbolTable) Parser {
 }
 
 // NewOpenMetricsParserWithOpts returns a new parser of the byte slice with options.
-func NewOpenMetricsParserWithOpts(b []byte, st *labels.SymbolTable, opts ...openMetricsOption) Parser {
+func NewOpenMetricsParserWithOpts(b []byte, st *labels.SymbolTable, opts ...OpenMetricsOption) Parser {
 	parser := &OpenMetricsParser{
 		l:       &openMetricsLexer{b: b},
 		builder: labels.NewScratchBuilderWithSymbolTable(st, 16),
@@ -629,7 +629,6 @@ func (p *OpenMetricsParser) parseMetricSuffix(t token) (Entry, error) {
 	}
 
 	if p.skipCT {
-
 		var newLbs labels.Labels
 		p.Metric(&newLbs)
 		name := newLbs.Get(model.MetricNameLabel)
