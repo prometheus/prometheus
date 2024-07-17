@@ -222,7 +222,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 }
 
 func backfill(maxSamplesInAppender int, input []byte, outputDir string, humanReadable, quiet bool, maxBlockDuration time.Duration) (err error) {
-	p := textparse.NewOpenMetricsParser(input, nil) // Don't need a SymbolTable to get max and min timestamps.
+	p := textparse.NewOpenMetricsParserWithOpts(input, nil, textparse.WithSkipCT(false)) // Don't need a SymbolTable to get max and min timestamps.
 	maxt, mint, err := getMinAndMaxTimestamps(p)
 	if err != nil {
 		return fmt.Errorf("getting min and max timestamp: %w", err)

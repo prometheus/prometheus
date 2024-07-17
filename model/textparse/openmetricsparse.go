@@ -100,6 +100,18 @@ type OpenMetricsParser struct {
 	// false when the CreatedTimestamp method is called.
 	skipCT bool
 }
+type openMetricsParserOptions struct {
+	// SkipCT skips the parsing of _created lines by default.
+	SkipCT bool
+}
+
+type openMetricsOption func(*openMetricsParserOptions)
+
+func WithSkipCT(skipCT bool) openMetricsOption {
+	return func(o *openMetricsParserOptions) {
+		o.SkipCT = skipCT
+	}
+}
 
 // NewOpenMetricsParser returns a new parser of the byte slice.
 func NewOpenMetricsParser(b []byte, st *labels.SymbolTable) Parser {
@@ -108,6 +120,23 @@ func NewOpenMetricsParser(b []byte, st *labels.SymbolTable) Parser {
 		builder: labels.NewScratchBuilderWithSymbolTable(st, 16),
 		skipCT:  true,
 	}
+}
+
+// NewOpenMetricsParserWithOpts returns a new parser of the byte slice with options.
+func NewOpenMetricsParserWithOpts(b []byte, st *labels.SymbolTable, opts ...openMetricsOption) Parser {
+	parser := &OpenMetricsParser{
+		l:       &openMetricsLexer{b: b},
+		builder: labels.NewScratchBuilderWithSymbolTable(st, 16),
+	}
+	OpenMetricsParserOptions := openMetricsParserOptions{
+		SkipCT: true,
+	}
+	for _, opt := range opts {
+		opt(&OpenMetricsParserOptions)
+	}
+	parser.skipCT = OpenMetricsParserOptions.SkipCT
+
+	return parser
 }
 
 // Series returns the bytes of the series, the timestamp if set, and the value
@@ -599,17 +628,21 @@ func (p *OpenMetricsParser) parseMetricSuffix(t token) (Entry, error) {
 		}
 	}
 
-	var newLbs labels.Labels
-	p.Metric(&newLbs)
-	name := newLbs.Get(model.MetricNameLabel)
-	switch p.mtype {
-	case model.MetricTypeCounter, model.MetricTypeSummary, model.MetricTypeHistogram:
-		if strings.HasSuffix(name, "_created") && p.skipCT {
-			return p.Next()
+	if p.skipCT {
+
+		var newLbs labels.Labels
+		p.Metric(&newLbs)
+		name := newLbs.Get(model.MetricNameLabel)
+		switch p.mtype {
+		case model.MetricTypeCounter, model.MetricTypeSummary, model.MetricTypeHistogram:
+			if strings.HasSuffix(name, "_created") {
+				return p.Next()
+			}
+		default:
+			break
 		}
-	default:
-		break
 	}
+
 	return EntrySeries, nil
 }
 
