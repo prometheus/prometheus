@@ -9,6 +9,7 @@ import {
   ScrollArea,
   Group,
   Stack,
+  Text,
 } from "@mantine/core";
 import { IconAlertTriangle, IconInfoCircle } from "@tabler/icons-react";
 import {
@@ -168,12 +169,15 @@ const DataTable: FC<DataTableProps> = ({ expr, evalTime, retriggerIdx }) => {
                   {s.values &&
                     s.values.map((v, idx) => (
                       <div key={idx}>
-                        {v[1]} @{" "}
-                        {
-                          <span title={formatTimestamp(v[0], useLocalTime)}>
-                            {v[0]}
-                          </span>
-                        }
+                        {v[1]}{" "}
+                        <Text
+                          span
+                          c="gray.7"
+                          size="1em"
+                          title={formatTimestamp(v[0], useLocalTime)}
+                        >
+                          @ {v[0]}
+                        </Text>
                       </div>
                     ))}
                 </Table.Td>
