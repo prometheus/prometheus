@@ -287,7 +287,7 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 			// Assume we hit different family, no CT line found.
 			return nil
 		}
-		// We are sure this series is for sure the same metric family as in currLset
+		// We are sure this series is the same metric family as in currLset
 		// because otherwise we would have EntryType first which we ruled out before.
 		var peekedLset labels.Labels
 		peek.Metric(&peekedLset)
