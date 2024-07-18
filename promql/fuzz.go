@@ -12,7 +12,6 @@
 // limitations under the License.
 
 // Only build when go-fuzz is in use
-//go:build gofuzz
 
 package promql
 
@@ -66,6 +65,13 @@ func fuzzParseMetricWithContentType(in []byte, contentType string) int {
 		// An invalid content type is being passed, which should not happen
 		// in this context.
 		panic(warning)
+	}
+
+	switch contentType {
+	case "application/openmetrics-text":
+		p = textparse.NewOpenMetricsParserWithOpts(in, symbolTable, textparse.WithSkipCT(false))
+	default:
+		break
 	}
 
 	var err error
