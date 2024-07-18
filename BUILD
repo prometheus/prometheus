@@ -84,7 +84,7 @@ cc_test(
 
 cc_library(
     name = "prometheus",
-    hdrs = glob(["prometheus/*.h"]),
+    hdrs = glob(["prometheus/**/*.h"]),
     deps = [
         ":bare_bones",
         ":primitives",
@@ -93,7 +93,7 @@ cc_library(
 
 cc_test(
     name = "prometheus_test",
-    srcs = glob(["prometheus/tests/*_tests.cpp"]),
+    srcs = glob(["prometheus/tests/**/*_tests.cpp"]),
     deps = [
         ":prometheus",
         "@gtest//:gtest_main",
