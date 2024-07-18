@@ -791,7 +791,7 @@ thing_count 17
 thing_sum 324789.3
 thing_bucket{le="0.0"} 0
 thing_bucket{le="+Inf"} 17
-# HELP yum Summary with _created between summary and quantiles
+# HELP yum Summary with _created between sum and quantiles
 # TYPE yum summary
 yum_count 17.0
 yum_sum 324789.3
