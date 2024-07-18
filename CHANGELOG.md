@@ -20,6 +20,7 @@ This release changes the default for GOGC, the Go runtime control for the trade-
 * [ENHANCEMENT] Rules: Add `rule_group_last_restore_duration_seconds` metric to measure the time it takes to restore a rule group. #13974
 * [ENHANCEMENT] OTLP: Improve remote write format translation performance by using label set hashes for metric identifiers instead of string based ones. #14006 #13991
 * [ENHANCEMENT] TSDB: Optimize querying with regexp matchers. #13620
+* [ENHANCEMENT] Storage: Implement limit in Querier. #14109, #14489
 * [BUGFIX] OTLP: Don't generate target_info unless there are metrics and at least one identifying label is defined. #13991
 * [BUGFIX] Scrape: Do no try to ingest native histograms when the native histograms feature is turned off. This happened when protobuf scrape was enabled by for example the created time feature. #13987
 * [BUGFIX] Scaleway SD: Use the instance's public IP if no private IP is available as the `__address__` meta label. #13941

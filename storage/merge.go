@@ -198,7 +198,14 @@ func (q *mergeGenericQuerier) lvals(ctx context.Context, lq labelGenericQueriers
 	if err != nil {
 		return nil, ws, err
 	}
-	return mergeStrings(s1, s2), ws, nil
+
+	s1 = truncateToLimit(s1, hints)
+	s2 = truncateToLimit(s2, hints)
+
+	merged := mergeStrings(s1, s2)
+	merged = truncateToLimit(merged, hints)
+
+	return merged, ws, nil
 }
 
 func mergeStrings(a, b []string) []string {
@@ -243,6 +250,7 @@ func (q *mergeGenericQuerier) LabelNames(ctx context.Context, hints *LabelHints,
 		if err != nil {
 			return nil, nil, fmt.Errorf("LabelNames() from merge generic querier: %w", err)
 		}
+		names = truncateToLimit(names, hints)
 		for _, name := range names {
 			labelNamesMap[name] = struct{}{}
 		}
@@ -256,6 +264,7 @@ func (q *mergeGenericQuerier) LabelNames(ctx context.Context, hints *LabelHints,
 		labelNames = append(labelNames, name)
 	}
 	slices.Sort(labelNames)
+	labelNames = truncateToLimit(labelNames, hints)
 	return labelNames, warnings, nil
 }
 
@@ -268,6 +277,13 @@ func (q *mergeGenericQuerier) Close() error {
 		}
 	}
 	return errs.Err()
+}
+
+func truncateToLimit(s []string, hints *LabelHints) []string {
+	if hints != nil && hints.Limit > 0 && len(s) > hints.Limit {
+		s = s[:hints.Limit]
+	}
+	return s
 }
 
 // VerticalSeriesMergeFunc returns merged series implementation that merges series with same labels together.
