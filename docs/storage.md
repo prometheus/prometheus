@@ -137,6 +137,18 @@ will be used.
 Expired block cleanup happens in the background. It may take up to two hours
 to remove expired blocks. Blocks must be fully expired before they are removed.
 
+## Right-Sizing Retention Size
+
+If you are utilizing `storage.tsdb.retention.size` to set a size limit, you 
+will want to consider the right size for this value relative to the storage you 
+have allocated for Prometheus. It is wise to reduce the retention size to provide 
+a buffer, ensuring that older entries will be removed before the allocated storage 
+for Prometheus becomes full.
+
+At present, we recommend setting the retention size to, at most, 80-85% of your 
+allocated Prometheus disk space. This increases the likelihood that older entires 
+will be removed prior to hitting any disk limitations.
+
 ## Remote storage integrations
 
 Prometheus's local storage is limited to a single node's scalability and durability.

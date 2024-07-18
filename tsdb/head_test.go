@@ -4730,6 +4730,14 @@ func TestChunkSnapshotTakenAfterIncompleteSnapshot(t *testing.T) {
 
 // TestWBLReplay checks the replay at a low level.
 func TestWBLReplay(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testWBLReplay(t, scenario)
+		})
+	}
+}
+
+func testWBLReplay(t *testing.T, scenario sampleTypeScenario) {
 	dir := t.TempDir()
 	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, wlog.CompressionSnappy)
 	require.NoError(t, err)
@@ -4745,11 +4753,11 @@ func TestWBLReplay(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, h.Init(0))
 
-	var expOOOSamples []sample
+	var expOOOSamples []chunks.Sample
 	l := labels.FromStrings("foo", "bar")
-	appendSample := func(mins int64, isOOO bool) {
+	appendSample := func(mins int64, val float64, isOOO bool) {
 		app := h.Appender(context.Background())
-		ts, v := mins*time.Minute.Milliseconds(), float64(mins)
+		ts, v := mins*time.Minute.Milliseconds(), val
 		_, err := app.Append(0, l, ts, v)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
@@ -4760,15 +4768,15 @@ func TestWBLReplay(t *testing.T) {
 	}
 
 	// In-order sample.
-	appendSample(60, false)
+	appendSample(60, 60, false)
 
 	// Out of order samples.
-	appendSample(40, true)
-	appendSample(35, true)
-	appendSample(50, true)
-	appendSample(55, true)
-	appendSample(59, true)
-	appendSample(31, true)
+	appendSample(40, 40, true)
+	appendSample(35, 35, true)
+	appendSample(50, 50, true)
+	appendSample(55, 55, true)
+	appendSample(59, 59, true)
+	appendSample(31, 31, true)
 
 	// Check that Head's time ranges are set properly.
 	require.Equal(t, 60*time.Minute.Milliseconds(), h.MinTime())
@@ -4792,22 +4800,23 @@ func TestWBLReplay(t *testing.T) {
 	require.False(t, ok)
 	require.NotNil(t, ms)
 
-	xor, err := ms.ooo.oooHeadChunk.chunk.ToXOR()
+	chks, err := ms.ooo.oooHeadChunk.chunk.ToEncodedChunks(math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
+	require.Len(t, chks, 1)
 
-	it := xor.Iterator(nil)
-	actOOOSamples := make([]sample, 0, len(expOOOSamples))
-	for it.Next() == chunkenc.ValFloat {
-		ts, v := it.At()
-		actOOOSamples = append(actOOOSamples, sample{t: ts, f: v})
-	}
+	it := chks[0].chunk.Iterator(nil)
+	actOOOSamples, err := storage.ExpandSamples(it, nil)
+	require.NoError(t, err)
 
 	// OOO chunk will be sorted. Hence sort the expected samples.
 	sort.Slice(expOOOSamples, func(i, j int) bool {
-		return expOOOSamples[i].t < expOOOSamples[j].t
+		return expOOOSamples[i].T() < expOOOSamples[j].T()
 	})
 
-	require.Equal(t, expOOOSamples, actOOOSamples)
+	// Passing in true for the 'ignoreCounterResets' parameter prevents differences in counter reset headers
+	// from being factored in to the sample comparison
+	// TODO(fionaliao): understand counter reset behaviour, might want to modify this later
+	requireEqualSamples(t, l.String(), expOOOSamples, actOOOSamples, true)
 
 	require.NoError(t, h.Close())
 }
