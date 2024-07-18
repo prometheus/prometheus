@@ -3664,7 +3664,9 @@ func TestNativeHistogramMaxSchemaSet(t *testing.T) {
 		},
 	}
 	for name, tc := range testcases {
+		tc := tc
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			testNativeHistogramMaxSchemaSet(t, tc.minBucketFactor, tc.expectedSchema)
 		})
 	}
@@ -3706,8 +3708,8 @@ func testNativeHistogramMaxSchemaSet(t *testing.T, minBucketFactor string, expec
 	// Create a scrape loop with the HTTP server as the target.
 	configStr := fmt.Sprintf(`
 global:
-  scrape_interval: 1s
-  scrape_timeout: 1s
+  scrape_interval: 50ms
+  scrape_timeout: 25ms
 scrape_configs:
   - job_name: test
     %s
@@ -3720,7 +3722,7 @@ scrape_configs:
 	s.DB.EnableNativeHistograms()
 	reg := prometheus.NewRegistry()
 
-	mng, err := NewManager(&Options{EnableNativeHistogramsIngestion: true}, nil, s, reg)
+	mng, err := NewManager(&Options{DiscoveryReloadInterval: model.Duration(10 * time.Millisecond), EnableNativeHistogramsIngestion: true, skipDiscoveryReloadIntervalCheck: true}, nil, s, reg)
 	require.NoError(t, err)
 	cfg, err := config.Load(configStr, false, log.NewNopLogger())
 	require.NoError(t, err)
@@ -3751,7 +3753,7 @@ scrape_configs:
 			countSeries++
 		}
 		return countSeries > 0
-	}, 15*time.Second, 100*time.Millisecond)
+	}, 5*time.Second, 100*time.Millisecond)
 
 	// Check that native histogram schema is as expected.
 	q, err := s.Querier(0, math.MaxInt64)
