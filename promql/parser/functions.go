@@ -17,9 +17,9 @@ package parser
 // used by function nodes.
 type Function struct {
 	Name         string
+	ReturnType   ValueType
 	ArgTypes     []ValueType
 	Variadic     int
-	ReturnType   ValueType
 	Experimental bool
 }
 

@@ -31,10 +31,10 @@ import (
 )
 
 type ActiveQueryTracker struct {
-	mmapedFile    []byte
-	getNextIndex  chan int
 	logger        log.Logger
 	closer        io.Closer
+	getNextIndex  chan int
+	mmapedFile    []byte
 	maxConcurrent int
 }
 

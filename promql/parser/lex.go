@@ -24,9 +24,9 @@ import (
 
 // Item represents a token or text string returned from the scanner.
 type Item struct {
+	Val string       // The value of this Item.
 	Typ ItemType     // The type of this Item.
 	Pos posrange.Pos // The starting position, in bytes, of this Item in the input string.
-	Val string       // The value of this Item.
 }
 
 // String returns a descriptive string for the Item.
@@ -250,25 +250,27 @@ const (
 
 // Lexer holds the state of the scanner.
 type Lexer struct {
-	input       string       // The string being scanned.
-	state       stateFn      // The next lexing function to enter.
-	pos         posrange.Pos // Current position in the input.
-	start       posrange.Pos // Start position of this Item.
-	width       posrange.Pos // Width of last rune read from input.
-	lastPos     posrange.Pos // Position of most recent Item returned by NextItem.
-	itemp       *Item        // Pointer to where the next scanned item should be placed.
-	scannedItem bool         // Set to true every time an item is scanned.
+	state   stateFn      // The next lexing function to enter.
+	itemp   *Item        // Pointer to where the next scanned item should be placed.
+	input   string       // The string being scanned.
+	pos     posrange.Pos // Current position in the input.
+	start   posrange.Pos // Start position of this Item.
+	width   posrange.Pos // Width of last rune read from input.
+	lastPos posrange.Pos // Position of most recent Item returned by NextItem.
 
-	parenDepth  int  // Nesting depth of ( ) exprs.
+	parenDepth     int            // Nesting depth of ( ) exprs.
+	histogramState histogramState // Determines whether or not inside of a histogram description.
+	stringOpen     rune           // Quote rune of the string currently being read.
+
+	scannedItem bool // Set to true every time an item is scanned.
+
 	braceOpen   bool // Whether a { is opened.
 	bracketOpen bool // Whether a [ is opened.
 	gotColon    bool // Whether we got a ':' after [ was opened.
-	stringOpen  rune // Quote rune of the string currently being read.
 
 	// series description variables for internal PromQL testing framework as well as in promtool rules unit tests.
 	// see https://prometheus.io/docs/prometheus/latest/configuration/unit_testing_rules/#series
-	seriesDesc     bool           // Whether we are lexing a series description.
-	histogramState histogramState // Determines whether or not inside of a histogram description.
+	seriesDesc bool // Whether we are lexing a series description.
 }
 
 // next returns the next rune in the input.
@@ -297,7 +299,7 @@ func (l *Lexer) backup() {
 
 // emit passes an Item back to the client.
 func (l *Lexer) emit(t ItemType) {
-	*l.itemp = Item{t, l.start, l.input[l.start:l.pos]}
+	*l.itemp = Item{Typ: t, Pos: l.start, Val: l.input[l.start:l.pos]}
 	l.start = l.pos
 	l.scannedItem = true
 }
@@ -332,7 +334,7 @@ func (l *Lexer) acceptRun(valid string) {
 // errorf returns an error token and terminates the scan by passing
 // back a nil pointer that will be the next state, terminating l.NextItem.
 func (l *Lexer) errorf(format string, args ...interface{}) stateFn {
-	*l.itemp = Item{ERROR, l.start, fmt.Sprintf(format, args...)}
+	*l.itemp = Item{Typ: ERROR, Pos: l.start, Val: fmt.Sprintf(format, args...)}
 	l.scannedItem = true
 
 	return nil
