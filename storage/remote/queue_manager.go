@@ -2196,6 +2196,9 @@ func buildV2WriteRequest(logger log.Logger, samples []writev2.TimeSeries, labels
 		Symbols:    labels,
 		Timeseries: timeSeries,
 	}
+	if model.NameValidationScheme == model.UTF8Validation {
+		req.Utf8Names = true
+	}
 
 	if pBuf == nil {
 		pBuf = &[]byte{} // For convenience in tests. Not efficient.
