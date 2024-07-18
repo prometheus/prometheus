@@ -128,13 +128,13 @@ func NewOpenMetricsParserWithOpts(b []byte, st *labels.SymbolTable, opts ...Open
 		l:       &openMetricsLexer{b: b},
 		builder: labels.NewScratchBuilderWithSymbolTable(st, 16),
 	}
-	OpenMetricsParserOptions := openMetricsParserOptions{
+	DefaultOpenMetricsParserOptions := openMetricsParserOptions{
 		SkipCT: true,
 	}
 	for _, opt := range opts {
-		opt(&OpenMetricsParserOptions)
+		opt(&DefaultOpenMetricsParserOptions)
 	}
-	parser.skipCT = OpenMetricsParserOptions.SkipCT
+	parser.skipCT = DefaultOpenMetricsParserOptions.SkipCT
 
 	return parser
 }
