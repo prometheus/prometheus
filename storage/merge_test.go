@@ -1390,6 +1390,34 @@ func BenchmarkMergeSeriesSet(b *testing.B) {
 	}
 }
 
+func BenchmarkMergeLabelValuesWithLimit(b *testing.B) {
+	var queriers []genericQuerier
+
+	for i := 0; i < 5; i++ {
+		var lbls []string
+		for j := 0; j < 100000; j++ {
+			lbls = append(lbls, fmt.Sprintf("querier_%d_label_%d", i, j))
+		}
+		q := &mockQuerier{resp: lbls}
+		queriers = append(queriers, newGenericQuerierFrom(q))
+	}
+
+	mergeQuerier := &mergeGenericQuerier{
+		queriers: queriers, // Assume querying 5 blocks.
+		mergeFn: func(l ...Labels) Labels {
+			return l[0]
+		},
+	}
+
+	b.Run("benchmark", func(b *testing.B) {
+		ctx := context.Background()
+		hints := &LabelHints{
+			Limit: 1000,
+		}
+		mergeQuerier.LabelValues(ctx, "name", hints)
+	})
+}
+
 func visitMockQueriers(t *testing.T, qr Querier, f func(t *testing.T, q *mockQuerier)) int {
 	count := 0
 	switch x := qr.(type) {
@@ -1428,6 +1456,7 @@ func TestMergeQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 		name        string
 		primaries   []Querier
 		secondaries []Querier
+		limit       int
 
 		expectedSelectsSeries []labels.Labels
 		expectedLabels        []string
@@ -1553,7 +1582,31 @@ func TestMergeQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 			expectedLabels:   []string{"a", "b"},
 			expectedWarnings: annotations.New().Add(warnStorage),
 		},
+		{
+			name: "successful queriers with limit",
+			primaries: []Querier{
+				&mockQuerier{resp: []string{"a", "d"}, warnings: annotations.New().Add(warnStorage), err: nil},
+			},
+			secondaries: []Querier{
+				&mockQuerier{resp: []string{"b", "c"}, warnings: annotations.New().Add(warnStorage), err: nil},
+			},
+			limit: 1,
+			expectedSelectsSeries: []labels.Labels{
+				labels.FromStrings("test", "a"),
+				labels.FromStrings("test", "b"),
+				labels.FromStrings("test", "c"),
+				labels.FromStrings("test", "d"),
+			},
+			expectedLabels:   []string{"a"},
+			expectedWarnings: annotations.New().Add(warnStorage),
+		},
 	} {
+		var labelHints *LabelHints
+		if tcase.limit > 0 {
+			labelHints = &LabelHints{
+				Limit: tcase.limit,
+			}
+		}
 		t.Run(tcase.name, func(t *testing.T) {
 			q := NewMergeQuerier(tcase.primaries, tcase.secondaries, func(s ...Series) Series { return s[0] })
 
@@ -1577,7 +1630,7 @@ func TestMergeQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 				require.Equal(t, len(tcase.primaries)+len(tcase.secondaries), n)
 			})
 			t.Run("LabelNames", func(t *testing.T) {
-				res, w, err := q.LabelNames(ctx, nil)
+				res, w, err := q.LabelNames(ctx, labelHints)
 				require.Subset(t, tcase.expectedWarnings, w)
 				require.ErrorIs(t, err, tcase.expectedErrs[1], "expected error doesn't match")
 				requireEqualSlice(t, tcase.expectedLabels, res)
@@ -1590,7 +1643,7 @@ func TestMergeQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 				})
 			})
 			t.Run("LabelValues", func(t *testing.T) {
-				res, w, err := q.LabelValues(ctx, "test", nil)
+				res, w, err := q.LabelValues(ctx, "test", labelHints)
 				require.Subset(t, tcase.expectedWarnings, w)
 				require.ErrorIs(t, err, tcase.expectedErrs[2], "expected error doesn't match")
 				requireEqualSlice(t, tcase.expectedLabels, res)
@@ -1604,7 +1657,7 @@ func TestMergeQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 			})
 			t.Run("LabelValuesWithMatchers", func(t *testing.T) {
 				matcher := labels.MustNewMatcher(labels.MatchEqual, "otherLabel", "someValue")
-				res, w, err := q.LabelValues(ctx, "test2", nil, matcher)
+				res, w, err := q.LabelValues(ctx, "test2", labelHints, matcher)
 				require.Subset(t, tcase.expectedWarnings, w)
 				require.ErrorIs(t, err, tcase.expectedErrs[3], "expected error doesn't match")
 				requireEqualSlice(t, tcase.expectedLabels, res)
