@@ -19,7 +19,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1324,17 +1323,20 @@ func (c *OTLPConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 
 	seen := map[string]struct{}{}
-	i := 0
-	for i < len(c.PromoteResourceAttributes) {
-		s := strings.TrimSpace(c.PromoteResourceAttributes[i])
-		if _, exists := seen[s]; exists {
-			c.PromoteResourceAttributes = slices.Delete(c.PromoteResourceAttributes, i, i+1)
+	var err error
+	for i, attr := range c.PromoteResourceAttributes {
+		attr = strings.TrimSpace(attr)
+		if attr == "" {
+			err = errors.Join(err, fmt.Errorf("empty promoted OTel resource attribute"))
+			continue
+		}
+		if _, exists := seen[attr]; exists {
+			err = errors.Join(err, fmt.Errorf("duplicated promoted OTel resource attribute %q", attr))
 			continue
 		}
 
-		seen[s] = struct{}{}
-		c.PromoteResourceAttributes[i] = s
-		i++
+		seen[attr] = struct{}{}
+		c.PromoteResourceAttributes[i] = attr
 	}
-	return nil
+	return err
 }

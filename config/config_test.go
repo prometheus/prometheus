@@ -1478,15 +1478,23 @@ func TestRemoteWriteRetryOnRateLimit(t *testing.T) {
 }
 
 func TestOTLPSanitizeResourceAttributes(t *testing.T) {
-	want, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_resource_attributes.good.yml"), false, false, log.NewNopLogger())
-	require.NoError(t, err)
+	t.Run("good config", func(t *testing.T) {
+		want, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_resource_attributes.good.yml"), false, false, log.NewNopLogger())
+		require.NoError(t, err)
 
-	out, err := yaml.Marshal(want)
-	require.NoError(t, err)
-	var got Config
-	require.NoError(t, yaml.UnmarshalStrict(out, &got))
+		out, err := yaml.Marshal(want)
+		require.NoError(t, err)
+		var got Config
+		require.NoError(t, yaml.UnmarshalStrict(out, &got))
 
-	require.Equal(t, []string{"k8s.cluster.name", "k8s.job.name", "k8s.namespace.name"}, got.OTLPConfig.PromoteResourceAttributes)
+		require.Equal(t, []string{"k8s.cluster.name", "k8s.job.name", "k8s.namespace.name"}, got.OTLPConfig.PromoteResourceAttributes)
+	})
+
+	t.Run("bad config", func(t *testing.T) {
+		_, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_resource_attributes.bad.yml"), false, false, log.NewNopLogger())
+		require.ErrorContains(t, err, `duplicated promoted OTel resource attribute "k8s.job.name"`)
+		require.ErrorContains(t, err, `empty promoted OTel resource attribute`)
+	})
 }
 
 func TestLoadConfig(t *testing.T) {
