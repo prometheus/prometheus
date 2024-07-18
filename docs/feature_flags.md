@@ -249,3 +249,11 @@ In the event of multiple consecutive Head compactions being possible, only the f
 Note that during this delay, the Head continues its usual operations, which include serving and appending series.
 
 Despite the delay in compaction, the blocks produced are time-aligned in the same manner as they would be if the delay was not in place.
+
+## UTF-8 Name Support
+
+`--enable-feature=utf8-names`
+
+When enabled, changes the metric and label name validation scheme inside Prometheus to allow the full UTF-8 character set.
+By itself, this flag does not enable the request of UTF-8 names via content negotiation.
+Users will also have to set `metric_name_validation_scheme` in scrape configs to enable the feature either on the global config or on a per-scrape config basis.
