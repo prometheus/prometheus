@@ -1,6 +1,6 @@
 {
   "name": "@prometheus-io/codemirror-promql",
-  "version": "0.53.0",
+  "version": "0.53.1",
   "description": "a CodeMirror mode for the PromQL language",
   "types": "dist/esm/index.d.ts",
   "module": "dist/esm/index.js",
@@ -29,15 +29,15 @@
   },
   "homepage": "https://github.com/prometheus/prometheus/blob/main/web/ui/module/codemirror-promql/README.md",
   "dependencies": {
-    "@prometheus-io/lezer-promql": "0.53.0",
+    "@prometheus-io/lezer-promql": "0.53.1",
     "lru-cache": "^7.18.3"
   },
   "devDependencies": {
-    "@codemirror/autocomplete": "^6.16.2",
+    "@codemirror/autocomplete": "^6.17.0",
     "@codemirror/language": "^6.10.2",
-    "@codemirror/lint": "^6.8.0",
+    "@codemirror/lint": "^6.8.1",
     "@codemirror/state": "^6.3.3",
-    "@codemirror/view": "^6.22.1",
+    "@codemirror/view": "^6.28.3",
     "@lezer/common": "^1.2.1",
     "@lezer/highlight": "^1.2.0",
     "@lezer/lr": "^1.4.1",
