@@ -6363,6 +6363,166 @@ func TestHeadAppender_AppendCTZeroSample(t *testing.T) {
 	}
 }
 
+func TestHeadAppender_AppendHistogramCTZeroSample(t *testing.T) {
+	testHistogram := tsdbutil.GenerateTestHistogram(1)
+	testFloatHistogram := tsdbutil.GenerateTestFloatHistogram(1)
+	lbls := labels.FromStrings("foo", "bar")
+	type appendableHistograms struct {
+		ts int64
+		h  *histogram.Histogram
+		fh *histogram.FloatHistogram
+		ct int64
+	}
+	for _, tc := range []struct {
+		name                 string
+		appendableHistograms []appendableHistograms
+		expectedHistograms   []chunks.Sample
+	}{
+		{
+			name: "In order ct+normal sample/histogram",
+			appendableHistograms: []appendableHistograms{
+				{ts: 100, h: testHistogram, ct: 1},
+				{ts: 101, h: testHistogram, ct: 1},
+			},
+			expectedHistograms: func() []chunks.Sample {
+				hNoCounterReset := *testHistogram
+				hNoCounterReset.CounterResetHint = histogram.NotCounterReset
+				return []chunks.Sample{
+					sample{t: 1, h: &histogram.Histogram{}},
+					sample{t: 100, h: testHistogram},
+					sample{t: 101, h: &hNoCounterReset},
+				}
+			}(),
+		},
+		{
+			name: "In order ct+normal sample/floathistogram",
+			appendableHistograms: []appendableHistograms{
+				{ts: 100, fh: testFloatHistogram, ct: 1},
+				{ts: 101, fh: testFloatHistogram, ct: 1},
+			},
+			expectedHistograms: func() []chunks.Sample {
+				fhNoCounterReset := *testFloatHistogram
+				fhNoCounterReset.CounterResetHint = histogram.NotCounterReset
+				return []chunks.Sample{
+					sample{t: 1, fh: &histogram.FloatHistogram{}},
+					sample{t: 100, fh: testFloatHistogram},
+					sample{t: 101, fh: &fhNoCounterReset},
+				}
+			}(),
+		},
+		{
+			name: "Consecutive appends with same ct ignore ct/histogram",
+			appendableHistograms: []appendableHistograms{
+				{ts: 100, h: testHistogram, ct: 1},
+				{ts: 101, h: testHistogram, ct: 1},
+			},
+			expectedHistograms: func() []chunks.Sample {
+				hNoCounterReset := *testHistogram
+				hNoCounterReset.CounterResetHint = histogram.NotCounterReset
+				return []chunks.Sample{
+					sample{t: 1, h: &histogram.Histogram{}},
+					sample{t: 100, h: testHistogram},
+					sample{t: 101, h: &hNoCounterReset},
+				}
+			}(),
+		},
+		{
+			name: "Consecutive appends with same ct ignore ct/floathistogram",
+			appendableHistograms: []appendableHistograms{
+				{ts: 100, fh: testFloatHistogram, ct: 1},
+				{ts: 101, fh: testFloatHistogram, ct: 1},
+			},
+			expectedHistograms: func() []chunks.Sample {
+				fhNoCounterReset := *testFloatHistogram
+				fhNoCounterReset.CounterResetHint = histogram.NotCounterReset
+				return []chunks.Sample{
+					sample{t: 1, fh: &histogram.FloatHistogram{}},
+					sample{t: 100, fh: testFloatHistogram},
+					sample{t: 101, fh: &fhNoCounterReset},
+				}
+			}(),
+		},
+		{
+			name: "Consecutive appends with newer ct do not ignore ct/histogram",
+			appendableHistograms: []appendableHistograms{
+				{ts: 100, h: testHistogram, ct: 1},
+				{ts: 102, h: testHistogram, ct: 101},
+			},
+			expectedHistograms: []chunks.Sample{
+				sample{t: 1, h: &histogram.Histogram{}},
+				sample{t: 100, h: testHistogram},
+				sample{t: 101, h: &histogram.Histogram{CounterResetHint: histogram.CounterReset}},
+				sample{t: 102, h: testHistogram},
+			},
+		},
+		{
+			name: "Consecutive appends with newer ct do not ignore ct/floathistogram",
+			appendableHistograms: []appendableHistograms{
+				{ts: 100, fh: testFloatHistogram, ct: 1},
+				{ts: 102, fh: testFloatHistogram, ct: 101},
+			},
+			expectedHistograms: []chunks.Sample{
+				sample{t: 1, fh: &histogram.FloatHistogram{}},
+				sample{t: 100, fh: testFloatHistogram},
+				sample{t: 101, fh: &histogram.FloatHistogram{CounterResetHint: histogram.CounterReset}},
+				sample{t: 102, fh: testFloatHistogram},
+			},
+		},
+		{
+			name: "CT equals to previous sample timestamp is ignored/histogram",
+			appendableHistograms: []appendableHistograms{
+				{ts: 100, h: testHistogram, ct: 1},
+				{ts: 101, h: testHistogram, ct: 100},
+			},
+			expectedHistograms: func() []chunks.Sample {
+				hNoCounterReset := *testHistogram
+				hNoCounterReset.CounterResetHint = histogram.NotCounterReset
+				return []chunks.Sample{
+					sample{t: 1, h: &histogram.Histogram{}},
+					sample{t: 100, h: testHistogram},
+					sample{t: 101, h: &hNoCounterReset},
+				}
+			}(),
+		},
+		{
+			name: "CT equals to previous sample timestamp is ignored/floathistogram",
+			appendableHistograms: []appendableHistograms{
+				{ts: 100, fh: testFloatHistogram, ct: 1},
+				{ts: 101, fh: testFloatHistogram, ct: 100},
+			},
+			expectedHistograms: func() []chunks.Sample {
+				fhNoCounterReset := *testFloatHistogram
+				fhNoCounterReset.CounterResetHint = histogram.NotCounterReset
+				return []chunks.Sample{
+					sample{t: 1, fh: &histogram.FloatHistogram{}},
+					sample{t: 100, fh: testFloatHistogram},
+					sample{t: 101, fh: &fhNoCounterReset},
+				}
+			}(),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			head, _ := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
+			defer func() {
+				require.NoError(t, head.Close())
+			}()
+			appender := head.Appender(context.Background())
+			for _, sample := range tc.appendableHistograms {
+				ref, err := appender.AppendHistogramCTZeroSample(0, lbls, sample.ts, sample.ct, sample.h, sample.fh)
+				require.NoError(t, err)
+				_, err = appender.AppendHistogram(ref, lbls, sample.ts, sample.h, sample.fh)
+				require.NoError(t, err)
+			}
+			require.NoError(t, appender.Commit())
+
+			q, err := NewBlockQuerier(head, math.MinInt64, math.MaxInt64)
+			require.NoError(t, err)
+			result := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+			require.Equal(t, tc.expectedHistograms, result[`{foo="bar"}`])
+		})
+	}
+}
+
 func TestHeadCompactableDoesNotCompactEmptyHead(t *testing.T) {
 	// Use a chunk range of 1 here so that if we attempted to determine if the head
 	// was compactable using default values for min and max times, `Head.compactable()`
