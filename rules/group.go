@@ -621,8 +621,6 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			}
 		}
 
-		// If the rule has no dependencies, it can run concurrently because no other rules in this group depend on its output.
-		// Try run concurrently if there are slots available.
 		if ctrl := g.concurrencyController; ctrl.Allow(ctx, g, rule) {
 			wg.Add(1)
 

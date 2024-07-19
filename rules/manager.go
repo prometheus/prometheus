@@ -457,8 +457,8 @@ func (c ruleDependencyController) AnalyseRules(rules []Rule) {
 // Its purpose is to bound the amount of concurrency in rule evaluations to avoid overwhelming the Prometheus
 // server with additional query load. Concurrency is controlled globally, not on a per-group basis.
 type RuleConcurrencyController interface {
-	// Allow determines whether any concurrent evaluation slots are available.
-	// If Allow() returns true, then Done() must be called to release the acquired slot.
+	// Allow determines if the given rule is allowed to be evaluated concurrently.
+	// If Allow() returns true, then Done() must be called to release the acquired slot and corresponding cleanup is done.
 	Allow(ctx context.Context, group *Group, rule Rule) bool
 
 	// Done releases a concurrent evaluation slot.
@@ -478,10 +478,14 @@ func newRuleConcurrencyController(maxConcurrency int64) RuleConcurrencyControlle
 
 func (c *concurrentRuleEvalController) Allow(_ context.Context, _ *Group, rule Rule) bool {
 	// To allow a rule to be executed concurrently, we need 3 conditions:
-	// 1. We must have available "concurrency slots"
-	// 2. The rule must not have any rules that depend on it.
-	// 3. The rule itself must not depend on any other rules.
-	return c.sema.TryAcquire(1) && rule.NoDependentRules() && rule.NoDependencyRules()
+	// 1. The rule must not have any rules that depend on it.
+	// 2. The rule itself must not depend on any other rules.
+	// 3. If 1 & 2 are true, then and only then we should try to acquire the concurrency slot.
+	if rule.NoDependentRules() && rule.NoDependencyRules() {
+		return c.sema.TryAcquire(1)
+	}
+
+	return false
 }
 
 func (c *concurrentRuleEvalController) Done(_ context.Context, _ *Group, _ Rule) {
