@@ -7,9 +7,9 @@ import (
 )
 
 const (
-	prw20WrittenSamplesHeader   = "X-Prometheus-Remote-Write-Written-Samples"
-	rw20WrittenHistogramsHeader = "X-Prometheus-Remote-Write-Written-Histograms"
-	rw20WrittenExemplarsHeader  = "X-Prometheus-Remote-Write-Written-Exemplars"
+	rw20WrittenSamplesHeader    = "X-Prometheus-Remote-Write-Samples-Written"
+	rw20WrittenHistogramsHeader = "X-Prometheus-Remote-Write-Histograms-Written"
+	rw20WrittenExemplarsHeader  = "X-Prometheus-Remote-Write-Exemplars-Written"
 )
 
 // WriteResponseStats represents the response write statistics specified in https://github.com/prometheus/docs/pull/2486
@@ -51,7 +51,7 @@ func (s WriteResponseStats) Add(rs WriteResponseStats) WriteResponseStats {
 // Make sure to use it before http.ResponseWriter.WriteHeader and .Write.
 func (s WriteResponseStats) SetHeaders(w http.ResponseWriter) {
 	h := w.Header()
-	h.Set(prw20WrittenSamplesHeader, strconv.Itoa(s.Samples))
+	h.Set(rw20WrittenSamplesHeader, strconv.Itoa(s.Samples))
 	h.Set(rw20WrittenHistogramsHeader, strconv.Itoa(s.Histograms))
 	h.Set(rw20WrittenExemplarsHeader, strconv.Itoa(s.Exemplars))
 }
@@ -69,7 +69,7 @@ func ParseWriteResponseStats(r *http.Response) (s WriteResponseStats, err error)
 		errs []error
 		h    = r.Header
 	)
-	if v := h.Get(prw20WrittenSamplesHeader); v != "" { // Empty means zero.
+	if v := h.Get(rw20WrittenSamplesHeader); v != "" { // Empty means zero.
 		s.Confirmed = true
 		if s.Samples, err = strconv.Atoi(v); err != nil {
 			s.Samples = 0
