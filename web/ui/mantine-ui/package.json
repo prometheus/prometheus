@@ -30,13 +30,14 @@
     "@types/lodash": "^4.17.7",
     "@uiw/react-codemirror": "^4.21.22",
     "dayjs": "^1.11.10",
-    "echarts": "^5.5.1",
     "lodash": "^4.17.21",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-infinite-scroll-component": "^6.1.0",
     "react-redux": "^9.1.0",
-    "react-router-dom": "^6.22.1"
+    "react-router-dom": "^6.22.1",
+    "uplot": "^1.6.30",
+    "uplot-react": "^1.2.2"
   },
   "devDependencies": {
     "@types/react": "^18.2.55",

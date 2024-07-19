@@ -1,0 +1,26 @@
+.uplot {
+  .u-legend {
+    text-align: left;
+    margin-left: 25px;
+
+    .u-marker {
+      margin-right: 8px;
+      height: 0.8em;
+      width: 0.8em;
+    }
+
+    th {
+      font-weight: 500;
+      font-size: var(--mantine-font-size-xs);
+    }
+  }
+
+  .u-inline tr {
+    display: block;
+    /* display: table;
+
+    * {
+      display: table-cell;
+    } */
+  }
+}
