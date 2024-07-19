@@ -462,7 +462,7 @@ type RuleConcurrencyController interface {
 	Allow(ctx context.Context, group *Group, rule Rule) bool
 
 	// Done releases a concurrent evaluation slot.
-	Done(ctx context.Context, group *Group, rule Rule)
+	Done(ctx context.Context)
 }
 
 // concurrentRuleEvalController holds a weighted semaphore which controls the concurrent evaluation of rules.
@@ -488,7 +488,7 @@ func (c *concurrentRuleEvalController) Allow(_ context.Context, _ *Group, rule R
 	return false
 }
 
-func (c *concurrentRuleEvalController) Done(_ context.Context, _ *Group, _ Rule) {
+func (c *concurrentRuleEvalController) Done(_ context.Context) {
 	c.sema.Release(1)
 }
 
@@ -499,4 +499,4 @@ func (c sequentialRuleEvalController) Allow(_ context.Context, _ *Group, _ Rule)
 	return false
 }
 
-func (c sequentialRuleEvalController) Done(_ context.Context, _ *Group, _ Rule) {}
+func (c sequentialRuleEvalController) Done(_ context.Context) {}

@@ -626,7 +626,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 			go eval(i, rule, func() {
 				wg.Done()
-				ctrl.Done(ctx, g, rule)
+				ctrl.Done(ctx)
 			})
 		} else {
 			eval(i, rule, nil)
