@@ -459,10 +459,10 @@ func (c ruleDependencyController) AnalyseRules(rules []Rule) {
 type RuleConcurrencyController interface {
 	// Allow determines whether any concurrent evaluation slots are available.
 	// If Allow() returns true, then Done() must be called to release the acquired slot.
-	Allow() bool
+	Allow(ctx context.Context, group *Group, rule Rule) bool
 
 	// Done releases a concurrent evaluation slot.
-	Done()
+	Done(ctx context.Context, group *Group, rule Rule)
 }
 
 // concurrentRuleEvalController holds a weighted semaphore which controls the concurrent evaluation of rules.
@@ -479,45 +479,23 @@ func newRuleConcurrencyController(maxConcurrency int64) RuleConcurrencyControlle
 	}
 }
 
-func (c *concurrentRuleEvalController) RuleEligible(g *Group, r Rule) bool {
-	c.depMapsMu.Lock()
-	defer c.depMapsMu.Unlock()
-
-	depMap, found := c.depMaps[g]
-	if !found {
-		depMap = buildDependencyMap(g.rules)
-		c.depMaps[g] = depMap
-	}
-
-	return depMap.isIndependent(r)
+func (c *concurrentRuleEvalController) Allow(_ context.Context, _ *Group, rule Rule) bool {
+	// To allow a rule to be executed concurrently, we need 3 conditions:
+	// 1. We must have available "concurrency slots"
+	// 2. The rule must not have any rules that depend on it.
+	// 3. The rule itself must not depend on any other rules.
+	return c.sema.TryAcquire(1) && rule.NoDependentRules() && rule.NoDependencyRules()
 }
 
-func (c *concurrentRuleEvalController) Allow() bool {
-	return c.sema.TryAcquire(1)
-}
-
-func (c *concurrentRuleEvalController) Done() {
+func (c *concurrentRuleEvalController) Done(_ context.Context, _ *Group, _ Rule) {
 	c.sema.Release(1)
-}
-
-func (c *concurrentRuleEvalController) Invalidate() {
-	c.depMapsMu.Lock()
-	defer c.depMapsMu.Unlock()
-
-	// Clear out the memoized dependency maps because some or all groups may have been updated.
-	c.depMaps = map[*Group]dependencyMap{}
 }
 
 // sequentialRuleEvalController is a RuleConcurrencyController that runs every rule sequentially.
 type sequentialRuleEvalController struct{}
 
-func (c sequentialRuleEvalController) RuleEligible(_ *Group, _ Rule) bool {
-	return false
+func (c sequentialRuleEvalController) Allow(_ context.Context, _ *Group, rule Rule) bool {
+	return rule.NoDependentRules() && rule.NoDependencyRules()
 }
 
-func (c sequentialRuleEvalController) Allow() bool {
-	return false
-}
-
-func (c sequentialRuleEvalController) Done()       {}
-func (c sequentialRuleEvalController) Invalidate() {}
+func (c sequentialRuleEvalController) Done(_ context.Context, _ *Group, _ Rule) {}
