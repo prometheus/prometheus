@@ -194,16 +194,16 @@ ParenExpr {
 }
 
 OffsetExpr {
-  expr Offset AnotherKindOfDuration
+  expr Offset NumberDurationLiteralInDurationContext
 }
 
 MatrixSelector {
   // TODO: Can this not be more specific than "expr"?
-  expr "[" AnotherKindOfDuration "]"
+  expr "[" NumberDurationLiteralInDurationContext "]"
 }
 
 SubqueryExpr {
-  expr "[" AnotherKindOfDuration ":" ("" | AnotherKindOfDuration) "]"
+  expr "[" NumberDurationLiteralInDurationContext ":" ("" | NumberDurationLiteralInDurationContext) "]"
 }
 
 UnaryExpr {
@@ -256,7 +256,7 @@ NumberDurationLiteral  {
  ("-"|"+")?~signed (number | inf | nan)
 }
 
-AnotherKindOfDuration {
+NumberDurationLiteralInDurationContext {
  ("-"|"+")?~signed (number | inf | nan)
 }
 

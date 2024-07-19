@@ -73,7 +73,7 @@ PromQL(
                             VectorSelector(
                                 Identifier
                             ),
-                          AnotherKindOfDuration
+                          NumberDurationLiteralInDurationContext
                         )
                   )
                 )
@@ -103,7 +103,7 @@ PromQL(
                             VectorSelector(
                                 Identifier
                             ),
-                          AnotherKindOfDuration
+                          NumberDurationLiteralInDurationContext
                       )
                   )
               )
@@ -240,21 +240,21 @@ PromQL(
   )
 )
 
-# AnotherKindOfDuration units
+# NumberDurationLiteralInDurationContext units
 
 foo[1y2w3d4h5m6s7ms]
 
 ==>
 
-PromQL(MatrixSelector(VectorSelector(Identifier),AnotherKindOfDuration))
+PromQL(MatrixSelector(VectorSelector(Identifier),NumberDurationLiteralInDurationContext))
 
-# Incorrectly ordered AnotherKindOfDuration units
+# Incorrectly ordered NumberDurationLiteralInDurationContext units
 
 foo[1m2h]
 
 ==>
 
-PromQL(MatrixSelector(VectorSelector(Identifier),AnotherKindOfDuration,⚠))
+PromQL(MatrixSelector(VectorSelector(Identifier),NumberDurationLiteralInDurationContext,⚠))
 
 # Using a function name as a metric name
 
@@ -357,7 +357,7 @@ PromQL(
                 VectorSelector(
                     Identifier
                 ),
-              AnotherKindOfDuration
+              NumberDurationLiteralInDurationContext
             )
       )
     )
@@ -483,7 +483,7 @@ PromQL(
           FunctionCallBody(
                 MatrixSelector(
                   VectorSelector(Identifier),
-                  AnotherKindOfDuration
+                  NumberDurationLiteralInDurationContext
                 )
           )
         ),
@@ -496,7 +496,7 @@ PromQL(
               FunctionIdentifier(Rate),
               FunctionCallBody(
                 StepInvariantExpr(
-                  MatrixSelector(VectorSelector(Identifier), AnotherKindOfDuration),
+                  MatrixSelector(VectorSelector(Identifier), NumberDurationLiteralInDurationContext),
                   At,
                   NumberDurationLiteral
                 )
@@ -633,21 +633,21 @@ PromQL(BinaryExpr(NumberDurationLiteral,⚠,VectorSelector(LabelMatchers(Unquote
 foo offset -5d
 
 ==>
-PromQL(OffsetExpr(VectorSelector(Identifier), Offset, AnotherKindOfDuration))
+PromQL(OffsetExpr(VectorSelector(Identifier), Offset, NumberDurationLiteralInDurationContext))
 
 # Negative offset with space
 
 foo offset - 5d
 
 ==>
-PromQL(OffsetExpr(VectorSelector(Identifier), Offset, AnotherKindOfDuration))
+PromQL(OffsetExpr(VectorSelector(Identifier), Offset, NumberDurationLiteralInDurationContext))
 
 # Positive offset
 
 foo offset 5d
 
 ==>
-PromQL(OffsetExpr(VectorSelector(Identifier), Offset, AnotherKindOfDuration))
+PromQL(OffsetExpr(VectorSelector(Identifier), Offset, NumberDurationLiteralInDurationContext))
 
 # Parsing only metric names with alternative @top { "top": "MetricName" }
 
