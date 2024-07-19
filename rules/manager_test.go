@@ -2096,7 +2096,7 @@ func TestBoundedRuleEvalConcurrency(t *testing.T) {
 	wg.Wait()
 
 	// Synchronous queries also count towards inflight, so at most we can have maxConcurrency+$groupCount inflight evaluations.
-	require.EqualValues(t, maxInflight.Load(), int32(maxConcurrency)+int32(groupCount))
+	require.LessOrEqual(t, maxInflight.Load(), int32(maxConcurrency)+int32(groupCount))
 }
 
 func TestUpdateWhenStopped(t *testing.T) {

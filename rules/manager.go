@@ -491,8 +491,8 @@ func (c *concurrentRuleEvalController) Done(_ context.Context, _ *Group, _ Rule)
 // sequentialRuleEvalController is a RuleConcurrencyController that runs every rule sequentially.
 type sequentialRuleEvalController struct{}
 
-func (c sequentialRuleEvalController) Allow(_ context.Context, _ *Group, rule Rule) bool {
-	return rule.NoDependentRules() && rule.NoDependencyRules()
+func (c sequentialRuleEvalController) Allow(_ context.Context, _ *Group, _ Rule) bool {
+	return false
 }
 
 func (c sequentialRuleEvalController) Done(_ context.Context, _ *Group, _ Rule) {}
