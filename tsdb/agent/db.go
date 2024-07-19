@@ -972,6 +972,11 @@ func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int
 	return storage.SeriesRef(series.ref), nil
 }
 
+func (a *appender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	// TODO(bwplotka/arthursens): Wire metadata in the Agent's appender.
+	return 0, nil
+}
+
 func (a *appender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Metadata) (storage.SeriesRef, error) {
 	// TODO: Wire metadata in the Agent's appender.
 	return 0, nil

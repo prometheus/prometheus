@@ -306,6 +306,11 @@ func (t *timestampTracker) AppendHistogram(_ storage.SeriesRef, _ labels.Labels,
 	return 0, nil
 }
 
+func (t *timestampTracker) AppendHistogramCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	// TODO: Implement
+	return 0, nil
+}
+
 func (t *timestampTracker) UpdateMetadata(_ storage.SeriesRef, _ labels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
 	// TODO: Add and increment a `metadata` field when we get around to wiring metadata in remote_write.
 	// UpadteMetadata is no-op for remote write (where timestampTracker is being used) for now.

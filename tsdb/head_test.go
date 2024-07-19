@@ -6038,6 +6038,160 @@ func TestHeadAppender_AppendCTZeroSample(t *testing.T) {
 	}
 }
 
+func TestHeadAppender_AppendHistogramCTZeroSample(t *testing.T) {
+	testHistogram := tsdbutil.GenerateTestHistogram(1)
+	testFloatHistogram := tsdbutil.GenerateTestFloatHistogram(1)
+	lbls := labels.FromStrings("foo", "bar")
+	type appendableHistograms struct {
+		ts int64
+		h  *histogram.Histogram
+		fh *histogram.FloatHistogram
+		ct int64
+	}
+	type expectedHistograms struct {
+		ts int64
+		h  *histogram.Histogram
+		fh *histogram.FloatHistogram
+	}
+	for _, tc := range []struct {
+		name                 string
+		appendableHistograms []appendableHistograms
+		expectedHistograms   []expectedHistograms
+	}{
+		{
+			name: "In order ct+normal sample/histogram",
+			appendableHistograms: []appendableHistograms{
+				{ts: 100, h: testHistogram, ct: 1},
+			},
+			expectedHistograms: []expectedHistograms{
+				{ts: 1, h: &histogram.Histogram{}},
+				{ts: 100, h: testHistogram},
+			},
+		},
+		{
+			name: "In order ct+normal sample/floathistogram",
+			appendableHistograms: []appendableHistograms{
+				{ts: 100, fh: testFloatHistogram, ct: 1},
+			},
+			expectedHistograms: []expectedHistograms{
+				{ts: 1, fh: &histogram.FloatHistogram{}},
+				{ts: 100, fh: testFloatHistogram},
+			},
+		},
+		{
+			name: "Consecutive appends with same ct ignore ct/histogram",
+			appendableHistograms: []appendableHistograms{
+				{ts: 100, h: testHistogram, ct: 1},
+				{ts: 101, h: testHistogram, ct: 1},
+			},
+			expectedHistograms: []expectedHistograms{
+				{ts: 1, h: &histogram.Histogram{}},
+				{ts: 100, h: testHistogram},
+				{ts: 101, h: testHistogram},
+			},
+		},
+		{
+			name: "Consecutive appends with same ct ignore ct/floathistogram",
+			appendableHistograms: []appendableHistograms{
+				{ts: 100, fh: testFloatHistogram, ct: 1},
+				{ts: 101, fh: testFloatHistogram, ct: 1},
+			},
+			expectedHistograms: []expectedHistograms{
+				{ts: 1, fh: &histogram.FloatHistogram{}},
+				{ts: 100, fh: testFloatHistogram},
+				{ts: 101, fh: testFloatHistogram},
+			},
+		},
+		{
+			name: "Consecutive appends with newer ct do not ignore ct/histogram",
+			appendableHistograms: []appendableHistograms{
+				{ts: 100, h: testHistogram, ct: 1},
+				{ts: 102, h: testHistogram, ct: 101},
+			},
+			expectedHistograms: []expectedHistograms{
+				{ts: 1, h: &histogram.Histogram{}},
+				{ts: 100, h: testHistogram},
+				{ts: 101, h: &histogram.Histogram{}},
+				{ts: 102, h: testHistogram},
+			},
+		},
+		{
+			name: "Consecutive appends with newer ct do not ignore ct/floathistogram",
+			appendableHistograms: []appendableHistograms{
+				{ts: 100, fh: testFloatHistogram, ct: 1},
+				{ts: 102, fh: testFloatHistogram, ct: 101},
+			},
+			expectedHistograms: []expectedHistograms{
+				{ts: 1, fh: &histogram.FloatHistogram{}},
+				{ts: 100, fh: testFloatHistogram},
+				{ts: 101, fh: &histogram.FloatHistogram{}},
+				{ts: 102, fh: testFloatHistogram},
+			},
+		},
+		{
+			name: "CT equals to previous sample timestamp is ignored/histogram",
+			appendableHistograms: []appendableHistograms{
+				{ts: 100, h: testHistogram, ct: 1},
+				{ts: 101, h: testHistogram, ct: 100},
+			},
+			expectedHistograms: []expectedHistograms{
+				{ts: 1, h: &histogram.Histogram{}},
+				{ts: 100, h: testHistogram},
+				{ts: 101, h: testHistogram},
+			},
+		},
+		{
+			name: "CT equals to previous sample timestamp is ignored/floathistogram",
+			appendableHistograms: []appendableHistograms{
+				{ts: 100, fh: testFloatHistogram, ct: 1},
+				{ts: 101, fh: testFloatHistogram, ct: 100},
+			},
+			expectedHistograms: []expectedHistograms{
+				{ts: 1, fh: &histogram.FloatHistogram{}},
+				{ts: 100, fh: testFloatHistogram},
+				{ts: 101, fh: testFloatHistogram},
+			},
+		},
+	} {
+		head, _ := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
+		defer func() {
+			require.NoError(t, head.Close())
+		}()
+		appender := head.Appender(context.Background())
+		for _, sample := range tc.appendableHistograms {
+			ref, err := appender.AppendHistogramCTZeroSample(0, lbls, sample.ts, sample.ct, sample.h, sample.fh)
+			require.NoError(t, err)
+			_, err = appender.AppendHistogram(ref, lbls, sample.ts, sample.h, sample.fh)
+			require.NoError(t, err)
+		}
+		require.NoError(t, appender.Commit())
+
+		q, err := NewBlockQuerier(head, math.MinInt64, math.MaxInt64)
+		require.NoError(t, err)
+		ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+		require.True(t, ss.Next())
+		s := ss.At()
+		require.False(t, ss.Next())
+		it := s.Iterator(nil)
+		for _, sample := range tc.expectedHistograms {
+			typ := it.Next()
+			switch typ {
+			case chunkenc.ValHistogram:
+				timestamp, h := it.AtHistogram(nil)
+				require.Equal(t, sample.ts, timestamp)
+				require.Equal(t, sample.h, h)
+			case chunkenc.ValFloatHistogram:
+				timestamp, fh := it.AtFloatHistogram(nil)
+				require.Equal(t, sample.ts, timestamp)
+				require.Equal(t, sample.fh, fh)
+			default:
+				t.Fatalf("unexpected type %d", typ)
+			}
+		}
+		require.Equal(t, chunkenc.ValNone, it.Next())
+	}
+}
+
 func TestHeadCompactableDoesNotCompactEmptyHead(t *testing.T) {
 	// Use a chunk range of 1 here so that if we attempted to determine if the head
 	// was compactable using default values for min and max times, `Head.compactable()`

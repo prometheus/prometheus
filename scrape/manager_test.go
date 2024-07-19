@@ -37,8 +37,10 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/runutil"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -852,6 +854,191 @@ func getResultFloats(app *collectResultAppender, expectedMetricName string) (res
 	for _, f := range app.resultFloats {
 		if f.metric.Get(model.MetricNameLabel) == expectedMetricName {
 			result = append(result, f.f)
+		}
+	}
+	return result
+}
+
+// generateTestHistogram generates the same thing as tsdbutil.GenerateTestHistogram,
+// but in the form of dto.Histogram.
+func generateTestHistogram(i int) *dto.Histogram {
+	helper := tsdbutil.GenerateTestHistogram(i)
+	h := &dto.Histogram{}
+	h.SampleCount = proto.Uint64(helper.Count)
+	h.SampleSum = proto.Float64(helper.Sum)
+	h.Schema = proto.Int32(helper.Schema)
+	h.ZeroThreshold = proto.Float64(helper.ZeroThreshold)
+	h.ZeroCount = proto.Uint64(helper.ZeroCount)
+	h.PositiveSpan = make([]*dto.BucketSpan, len(helper.PositiveSpans))
+	for i, span := range helper.PositiveSpans {
+		h.PositiveSpan[i] = &dto.BucketSpan{
+			Offset: proto.Int32(span.Offset),
+			Length: proto.Uint32(span.Length),
+		}
+	}
+	h.PositiveDelta = helper.PositiveBuckets
+	h.NegativeSpan = make([]*dto.BucketSpan, len(helper.NegativeSpans))
+	for i, span := range helper.NegativeSpans {
+		h.NegativeSpan[i] = &dto.BucketSpan{
+			Offset: proto.Int32(span.Offset),
+			Length: proto.Uint32(span.Length),
+		}
+	}
+	h.NegativeDelta = helper.NegativeBuckets
+	return h
+}
+
+func TestManagerCTZeroIngestionHistogram(t *testing.T) {
+	const mName = "expected_histogram"
+	for _, tc := range []struct {
+		name                  string
+		h                     *dto.Histogram
+		enableCTZeroIngestion bool
+
+		expectedValues []*histogram.Histogram
+	}{
+		{
+			name: "disabled with CT on histogram",
+			h: func() *dto.Histogram {
+				h := generateTestHistogram(0)
+				h.CreatedTimestamp = timestamppb.Now()
+				return h
+			}(),
+			enableCTZeroIngestion: false,
+			expectedValues: func() []*histogram.Histogram {
+				h := tsdbutil.GenerateTestHistogram(0)
+				return []*histogram.Histogram{h}
+			}(),
+		},
+		{
+			name: "enabled with CT on histogram",
+			h: func() *dto.Histogram {
+				h := generateTestHistogram(0)
+				h.CreatedTimestamp = timestamppb.Now()
+				return h
+			}(),
+			enableCTZeroIngestion: true,
+			expectedValues: func() []*histogram.Histogram {
+				ct := &histogram.Histogram{}
+				h := tsdbutil.GenerateTestHistogram(0)
+				return []*histogram.Histogram{ct, h}
+			}(),
+		},
+		{
+			name: "enabled without CT on histogram",
+			h: func() *dto.Histogram {
+				h := generateTestHistogram(0)
+				return h
+			}(),
+			enableCTZeroIngestion: true,
+			expectedValues: func() []*histogram.Histogram {
+				h := tsdbutil.GenerateTestHistogram(0)
+				return []*histogram.Histogram{h}
+			}(),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app := &collectResultAppender{}
+			scrapeManager, err := NewManager(
+				&Options{
+					EnableCreatedTimestampZeroIngestion: tc.enableCTZeroIngestion,
+					EnableNativeHistogramsIngestion:     true,
+					skipOffsetting:                      true,
+				},
+				log.NewLogfmtLogger(os.Stderr),
+				&collectResultAppendable{app},
+				prometheus.NewRegistry(),
+			)
+			require.NoError(t, err)
+
+			require.NoError(t, scrapeManager.ApplyConfig(&config.Config{
+				GlobalConfig: config.GlobalConfig{
+					// Disable regular scrapes.
+					ScrapeInterval: model.Duration(9999 * time.Minute),
+					ScrapeTimeout:  model.Duration(5 * time.Second),
+					// Ensure the proto is chosen. We need proto as it's the only protocol
+					// with the CT parsing support.
+					ScrapeProtocols: []config.ScrapeProtocol{config.PrometheusProto},
+				},
+				ScrapeConfigs: []*config.ScrapeConfig{{JobName: "test"}},
+			}))
+
+			once := sync.Once{}
+			// Start fake HTTP target to that allow one scrape only.
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					fail := true
+					once.Do(func() {
+						fail = false
+						w.Header().Set("Content-Type", `application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited`)
+
+						ctrType := dto.MetricType_HISTOGRAM
+						w.Write(protoMarshalDelimited(t, &dto.MetricFamily{
+							Name:   proto.String(mName),
+							Type:   &ctrType,
+							Metric: []*dto.Metric{{Histogram: tc.h}},
+						}))
+					})
+
+					if fail {
+						w.WriteHeader(http.StatusInternalServerError)
+					}
+				}),
+			)
+			defer server.Close()
+
+			serverURL, err := url.Parse(server.URL)
+			require.NoError(t, err)
+
+			// Add fake target directly into tsets + reload. Normally users would use
+			// Manager.Run and wait for minimum 5s refresh interval.
+			scrapeManager.updateTsets(map[string][]*targetgroup.Group{
+				"test": {{
+					Targets: []model.LabelSet{{
+						model.SchemeLabel:  model.LabelValue(serverURL.Scheme),
+						model.AddressLabel: model.LabelValue(serverURL.Host),
+					}},
+				}},
+			})
+			scrapeManager.reload()
+
+			// Wait for one scrape.
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+			defer cancel()
+			require.NoError(t, runutil.Retry(100*time.Millisecond, ctx.Done(), func() error {
+				for _, expected := range tc.expectedValues {
+					if countHistogramSamples(app, mName) != int(expected.Count) {
+						return fmt.Errorf("expected %v histograms for %q", expected, mName)
+					}
+				}
+				return nil
+			}), "after 1 minute")
+			scrapeManager.Stop()
+
+			require.Equal(t, tc.expectedValues, getResultHistograms(app, mName))
+		})
+	}
+}
+
+func countHistogramSamples(a *collectResultAppender, expectedMetricName string) (count int) {
+	a.mtx.Lock()
+	defer a.mtx.Unlock()
+
+	for _, h := range a.resultHistograms {
+		if h.metric.Get(model.MetricNameLabel) == expectedMetricName {
+			count++
+		}
+	}
+	return count
+}
+
+func getResultHistograms(app *collectResultAppender, expectedMetricName string) (result []*histogram.Histogram) {
+	app.mtx.Lock()
+	defer app.mtx.Unlock()
+
+	for _, h := range app.resultHistograms {
+		if h.metric.Get(model.MetricNameLabel) == expectedMetricName {
+			result = append(result, h.h)
 		}
 	}
 	return result

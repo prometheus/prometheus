@@ -79,6 +79,16 @@ func (a *initAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t
 	return a.app.AppendHistogram(ref, l, t, h, fh)
 }
 
+func (a *initAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	if a.app != nil {
+		return a.app.AppendHistogramCTZeroSample(ref, l, t, ct, h, fh)
+	}
+	a.head.initTime(t)
+	a.app = a.head.appender()
+
+	return a.app.AppendHistogramCTZeroSample(ref, l, t, ct, h, fh)
+}
+
 func (a *initAppender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
 	if a.app != nil {
 		return a.app.UpdateMetadata(ref, l, m)
@@ -388,7 +398,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 // storage.CreatedTimestampAppender.AppendCTZeroSample for further documentation.
 func (a *headAppender) AppendCTZeroSample(ref storage.SeriesRef, lset labels.Labels, t, ct int64) (storage.SeriesRef, error) {
 	if ct >= t {
-		return 0, fmt.Errorf("CT is newer or the same as sample's timestamp, ignoring")
+		return 0, storage.ErrCTNewerThanSample
 	}
 
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
@@ -671,6 +681,89 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 	}
 
 	return storage.SeriesRef(s.ref), nil
+}
+
+func (a *headAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, lset labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	if !a.head.opts.EnableNativeHistograms.Load() {
+		return 0, storage.ErrNativeHistogramsDisabled
+	}
+
+	if ct >= t {
+		return 0, storage.ErrCTNewerThanSample
+	}
+	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
+	if s == nil {
+		// Ensure no empty labels have gotten through.
+		lset = lset.WithoutEmpty()
+		if lset.IsEmpty() {
+			return 0, fmt.Errorf("empty labelset: %w", ErrInvalidSample)
+		}
+
+		if l, dup := lset.HasDuplicateLabelNames(); dup {
+			return 0, fmt.Errorf(`label name "%s" is not unique: %w`, l, ErrInvalidSample)
+		}
+
+		var created bool
+		var err error
+		s, created, err = a.head.getOrCreate(lset.Hash(), lset)
+		if err != nil {
+			return 0, err
+		}
+		if created {
+			switch {
+			case h != nil:
+				s.lastHistogramValue = &histogram.Histogram{}
+			case fh != nil:
+				s.lastFloatHistogramValue = &histogram.FloatHistogram{}
+			}
+			a.series = append(a.series, record.RefSeries{
+				Ref:    s.ref,
+				Labels: lset,
+			})
+		}
+	}
+
+	switch {
+	case h != nil:
+		zeroHistogram := &histogram.Histogram{}
+		s.Lock()
+		if err := s.appendableHistogram(ct, zeroHistogram); err != nil {
+			s.Unlock()
+			if errors.Is(err, storage.ErrOutOfOrderSample) {
+				return 0, storage.ErrOutOfOrderCT
+			}
+		}
+		s.pendingCommit = true
+		s.Unlock()
+		a.histograms = append(a.histograms, record.RefHistogramSample{
+			Ref: s.ref,
+			T:   ct,
+			H:   zeroHistogram,
+		})
+		a.histogramSeries = append(a.histogramSeries, s)
+	case fh != nil:
+		zeroFloatHistogram := &histogram.FloatHistogram{}
+		s.Lock()
+		if err := s.appendableFloatHistogram(ct, zeroFloatHistogram); err != nil {
+			s.Unlock()
+			if errors.Is(err, storage.ErrOutOfOrderSample) {
+				return 0, storage.ErrOutOfOrderCT
+			}
+		}
+		s.pendingCommit = true
+		s.Unlock()
+		a.floatHistograms = append(a.floatHistograms, record.RefFloatHistogramSample{
+			Ref: s.ref,
+			T:   ct,
+			FH:  zeroFloatHistogram,
+		})
+		a.floatHistogramSeries = append(a.floatHistogramSeries, s)
+	}
+
+	if ct > a.maxt {
+		a.maxt = ct
+	}
+	return 0, nil
 }
 
 // UpdateMetadata for headAppender assumes the series ref already exists, and so it doesn't

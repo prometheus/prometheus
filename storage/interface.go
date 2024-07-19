@@ -49,7 +49,8 @@ var (
 	// NOTE(bwplotka): This can be both an instrumentation failure or commonly expected
 	// behaviour, and we currently don't have a way to determine this. As a result
 	// it's recommended to ignore this error for now.
-	ErrOutOfOrderCT = fmt.Errorf("created timestamp out of order, ignoring")
+	ErrOutOfOrderCT      = fmt.Errorf("created timestamp out of order, ignoring")
+	ErrCTNewerThanSample = fmt.Errorf("CT is newer or the same as sample's timestamp, ignoring")
 )
 
 // SeriesRef is a generic series reference. In prometheus it is either a
@@ -312,6 +313,20 @@ type HistogramAppender interface {
 	// pointer. AppendHistogram won't mutate the histogram, but in turn
 	// depends on the caller to not mutate it either.
 	AppendHistogram(ref SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error)
+	// AppendHistogramCTZeroSample adds synthetic zero sample for the given ct timestamp,
+	// which will be associated with given series, labels and the incoming
+	// sample's t (timestamp). AppendHistogramCTZeroSample returns error if zero sample can't be
+	// appended, for example when ct is too old, or when it would collide with
+	// incoming sample (sample has priority).
+	//
+	// AppendHistogramCTZeroSample has to be called before the corresponding histogram AppendHistogram.
+	// A series reference number is returned which can be used to modify the
+	// CT for the given series in the same or later transactions.
+	// Returned reference numbers are ephemeral and may be rejected in calls
+	// to AppendHistogramCTZeroSample() at any point.
+	//
+	// If the reference is 0 it must not be used for caching.
+	AppendHistogramCTZeroSample(ref SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error)
 }
 
 // MetadataUpdater provides an interface for associating metadata to stored series.
