@@ -1904,7 +1904,8 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 		addStats(rs)
 
 		if err == nil {
-			// Check the case mentioned in PRW 2.0 https://github.com/prometheus/docs/pull/2486
+			// Check the case mentioned in PRW 2.0
+			// https://prometheus.io/docs/specs/remote_write_spec_2_0/#required-written-response-headers.
 			if sampleCount+histogramCount+exemplarCount > 0 && rs.NoDataWritten() {
 				err = fmt.Errorf("sent v2 request with %v samples, %v histograms and %v exemplars; got 2xx, but PRW 2.0 response header statistics indicate %v samples, %v histograms and %v exemplars were accepted;"+
 					" assumining failure e.g. the target only supports PRW 1.0 prometheus.WriteRequest, but does not check the Content-Type header correctly",

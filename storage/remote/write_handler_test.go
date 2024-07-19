@@ -396,12 +396,11 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			expectedRespBody: "some histogram sample internal append error\n",
 		},
 		{
-			desc:              "Internal exemplar append error; rollback triggered", // TODO(bwplotka): Do we want that?
+			desc:              "Partial write; skipped exemplar; exemplar storage errs are noop",
 			input:             writeV2RequestFixture.Timeseries,
 			appendExemplarErr: errors.New("some exemplar internal append error"),
 
-			expectedCode:     http.StatusInternalServerError,
-			expectedRespBody: "some exemplar internal append error\n",
+			expectedCode: http.StatusNoContent,
 		},
 		{
 			desc:              "Partial write; skipped metadata; metadata storage errs are noop",

@@ -101,6 +101,7 @@ func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[strin
 	return successExitCode
 }
 
+// TODO(bwplotka): Add PRW 2.0 support.
 func parseAndPushMetrics(client *remote.Client, data []byte, labels map[string]string) bool {
 	metricsData, err := fmtutil.MetricTextToWriteRequest(bytes.NewReader(data), labels)
 	if err != nil {

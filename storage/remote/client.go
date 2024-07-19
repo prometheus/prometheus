@@ -273,11 +273,10 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) (WriteRespo
 		httpResp.Body.Close()
 	}()
 
-	rs, err := ParseWriteResponseStats(httpResp)
-	if err != nil {
-		// There were some response header values we can't parse, so fail fast here.
-		return WriteResponseStats{}, err
-	}
+	// TODO(bwplotka): Pass logger and emit debug on error?
+	// Parsing error means there were some response header values we can't parse,
+	// we can continue handling.
+	rs, _ := ParseWriteResponseStats(httpResp)
 
 	//nolint:usestdlibvars
 	if httpResp.StatusCode/100 == 2 {

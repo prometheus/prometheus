@@ -444,8 +444,9 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 				badRequestErrs = append(badRequestErrs, fmt.Errorf("%w for series %v", err, ls.String()))
 				continue
 			}
-			// TODO(bwplotka): Are we confident enough to 500 on exemplars in Prometheus?
-			return 0, http.StatusInternalServerError, err
+			// TODO(bwplotka): Add strict mode which would trigger rollback of everything if needed.
+			// For now we keep the previously released flow (just error not debug leve) of dropping them without rollback and 5xx.
+			level.Error(h.logger).Log("msg", "failed to ingest exemplar, emitting error log, but no error for PRW caller", "err", err.Error(), "series", ls.String(), "exemplar", fmt.Sprintf("%+v", e))
 		}
 
 		m := ts.ToMetadata(req.Symbols)
