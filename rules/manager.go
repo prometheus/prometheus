@@ -467,15 +467,12 @@ type RuleConcurrencyController interface {
 
 // concurrentRuleEvalController holds a weighted semaphore which controls the concurrent evaluation of rules.
 type concurrentRuleEvalController struct {
-	sema      *semaphore.Weighted
-	depMapsMu sync.Mutex
-	depMaps   map[*Group]dependencyMap
+	sema *semaphore.Weighted
 }
 
 func newRuleConcurrencyController(maxConcurrency int64) RuleConcurrencyController {
 	return &concurrentRuleEvalController{
-		sema:    semaphore.NewWeighted(maxConcurrency),
-		depMaps: map[*Group]dependencyMap{},
+		sema: semaphore.NewWeighted(maxConcurrency),
 	}
 }
 
