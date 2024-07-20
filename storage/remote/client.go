@@ -14,7 +14,6 @@
 package remote
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"fmt"
@@ -235,12 +234,12 @@ type RecoverableError struct {
 
 // Store sends a batch of samples to the HTTP endpoint, the request is the proto marshalled
 // and encoded bytes from codec.go.
-func (c *Client) Store(ctx context.Context, req []byte, attempt int) error {
+func (c *Client) Store(ctx context.Context, req []byte, attempt int) (WriteResponseStats, error) {
 	httpReq, err := http.NewRequest(http.MethodPost, c.urlString, bytes.NewReader(req))
 	if err != nil {
 		// Errors from NewRequest are from unparsable URLs, so are not
 		// recoverable.
-		return err
+		return WriteResponseStats{}, err
 	}
 
 	httpReq.Header.Add("Content-Encoding", string(c.writeCompression))
@@ -267,28 +266,34 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) error {
 	if err != nil {
 		// Errors from Client.Do are from (for example) network errors, so are
 		// recoverable.
-		return RecoverableError{err, defaultBackoff}
+		return WriteResponseStats{}, RecoverableError{err, defaultBackoff}
 	}
 	defer func() {
 		io.Copy(io.Discard, httpResp.Body)
 		httpResp.Body.Close()
 	}()
 
+	// TODO(bwplotka): Pass logger and emit debug on error?
+	// Parsing error means there were some response header values we can't parse,
+	// we can continue handling.
+	rs, _ := ParseWriteResponseStats(httpResp)
+
 	//nolint:usestdlibvars
-	if httpResp.StatusCode/100 != 2 {
-		scanner := bufio.NewScanner(io.LimitReader(httpResp.Body, maxErrMsgLen))
-		line := ""
-		if scanner.Scan() {
-			line = scanner.Text()
-		}
-		err = fmt.Errorf("server returned HTTP status %s: %s", httpResp.Status, line)
+	if httpResp.StatusCode/100 == 2 {
+		return rs, nil
 	}
+
+	// Handling errors e.g. read potential error in the body.
+	// TODO(bwplotka): Pass logger and emit debug on error?
+	body, _ := io.ReadAll(io.LimitReader(httpResp.Body, maxErrMsgLen))
+	err = fmt.Errorf("server returned HTTP status %s: %s", httpResp.Status, body)
+
 	//nolint:usestdlibvars
 	if httpResp.StatusCode/100 == 5 ||
 		(c.retryOnRateLimit && httpResp.StatusCode == http.StatusTooManyRequests) {
-		return RecoverableError{err, retryAfterDuration(httpResp.Header.Get("Retry-After"))}
+		return rs, RecoverableError{err, retryAfterDuration(httpResp.Header.Get("Retry-After"))}
 	}
-	return err
+	return rs, err
 }
 
 // retryAfterDuration returns the duration for the Retry-After header. In case of any errors, it
