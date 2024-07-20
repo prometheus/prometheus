@@ -4759,7 +4759,7 @@ func testWBLReplay(t *testing.T, scenario sampleTypeScenario) {
 		app := h.Appender(context.Background())
 
 		ts, v := mins*time.Minute.Milliseconds(), val
-		_, err := app.Append(0, l, ts, v)
+		_, err := app.Append(0, l, ts, v, nil)
 
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
