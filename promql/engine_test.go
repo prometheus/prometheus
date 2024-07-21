@@ -55,7 +55,8 @@ func TestMain(m *testing.M) {
 func TestQueryConcurrency(t *testing.T) {
 	maxConcurrency := 10
 
-	queryTracker := promql.NewActiveQueryTracker(t.TempDir(), maxConcurrency, nil)
+	queryTracker, err := promql.NewActiveQueryTracker(t.TempDir(), maxConcurrency, nil)
+	require.NoError(t, err)
 	opts := promql.EngineOpts{
 		Logger:             nil,
 		Reg:                nil,

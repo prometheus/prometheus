@@ -738,12 +738,18 @@ func main() {
 	}
 
 	if !agentMode {
+		var activeQueryTracker *promql.ActiveQueryTracker
+		activeQueryTracker, err = promql.NewActiveQueryTracker(localStoragePath, cfg.queryConcurrency, log.With(logger, "component", "activeQueryTracker"))
+		if err != nil {
+			level.Error(logger).Log("msg", "failed to create promql.NewActiveQueryTracker", "err", err)
+			os.Exit(1)
+		}
 		opts := promql.EngineOpts{
 			Logger:                   log.With(logger, "component", "query engine"),
 			Reg:                      prometheus.DefaultRegisterer,
 			MaxSamples:               cfg.queryMaxSamples,
 			Timeout:                  time.Duration(cfg.queryTimeout),
-			ActiveQueryTracker:       promql.NewActiveQueryTracker(localStoragePath, cfg.queryConcurrency, log.With(logger, "component", "activeQueryTracker")),
+			ActiveQueryTracker:       activeQueryTracker,
 			LookbackDelta:            time.Duration(cfg.lookbackDelta),
 			NoStepSubqueryIntervalFn: noStepSubqueryInterval.Get,
 			// EnableAtModifier and EnableNegativeOffset have to be

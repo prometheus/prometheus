@@ -31,7 +31,7 @@ import (
 )
 
 type ActiveQueryTracker struct {
-	mmappedFile   []byte
+	mmappedFile   mmap.MMap
 	getNextIndex  chan int
 	logger        log.Logger
 	closer        io.Closer
@@ -104,7 +104,7 @@ func (f *mmappedFile) Close() error {
 	return err
 }
 
-func getMMappedFile(filename string, filesize int, logger log.Logger) ([]byte, io.Closer, error) {
+func getMMappedFile(filename string, filesize int, logger log.Logger) (mmap.MMap, io.Closer, error) {
 	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o666)
 	if err != nil {
 		absPath, pathErr := filepath.Abs(filename)
@@ -114,25 +114,31 @@ func getMMappedFile(filename string, filesize int, logger log.Logger) ([]byte, i
 		level.Error(logger).Log("msg", "Error opening query log file", "file", absPath, "err", err)
 		return nil, nil, err
 	}
-
-	err = file.Truncate(int64(filesize))
+	// Reserve the filesize on disk, so we don't get SIGBUS after memory mapping a sparse file and attempting write.
+	zeroes := make([]byte, filesize)
+	_, err = file.Write(zeroes)
 	if err != nil {
 		file.Close()
-		level.Error(logger).Log("msg", "Error setting filesize.", "filesize", filesize, "err", err)
+		level.Error(logger).Log("msg", "Error filling query log file to size.", "filesize", filesize, "err", err)
+		return nil, nil, err
+	}
+	err = file.Sync()
+	if err != nil {
+		level.Error(logger).Log("msg", "Error syncing query log file to disk.", "err", err)
 		return nil, nil, err
 	}
 
-	fileAsBytes, err := mmap.Map(file, mmap.RDWR, 0)
+	memMap, err := mmap.Map(file, mmap.RDWR, 0)
 	if err != nil {
 		file.Close()
 		level.Error(logger).Log("msg", "Failed to mmap", "file", filename, "Attempted size", filesize, "err", err)
 		return nil, nil, err
 	}
 
-	return fileAsBytes, &mmappedFile{f: file, m: fileAsBytes}, err
+	return memMap, &mmappedFile{f: file, m: memMap}, err
 }
 
-func NewActiveQueryTracker(localStoragePath string, maxConcurrent int, logger log.Logger) *ActiveQueryTracker {
+func NewActiveQueryTracker(localStoragePath string, maxConcurrent int, logger log.Logger) (*ActiveQueryTracker, error) {
 	err := os.MkdirAll(localStoragePath, 0o777)
 	if err != nil {
 		level.Error(logger).Log("msg", "Failed to create directory for logging active queries")
@@ -141,14 +147,14 @@ func NewActiveQueryTracker(localStoragePath string, maxConcurrent int, logger lo
 	filename, filesize := filepath.Join(localStoragePath, "queries.active"), 1+maxConcurrent*entrySize
 	logUnfinishedQueries(filename, filesize, logger)
 
-	fileAsBytes, closer, err := getMMappedFile(filename, filesize, logger)
+	memMap, closer, err := getMMappedFile(filename, filesize, logger)
 	if err != nil {
-		panic("Unable to create mmap-ed active query log")
+		return nil, err
 	}
 
-	copy(fileAsBytes, "[")
+	copy(memMap, "[")
 	activeQueryTracker := ActiveQueryTracker{
-		mmappedFile:   fileAsBytes,
+		mmappedFile:   memMap,
 		closer:        closer,
 		getNextIndex:  make(chan int, maxConcurrent),
 		logger:        logger,
@@ -157,7 +163,7 @@ func NewActiveQueryTracker(localStoragePath string, maxConcurrent int, logger lo
 
 	activeQueryTracker.generateIndices(maxConcurrent)
 
-	return &activeQueryTracker
+	return &activeQueryTracker, nil
 }
 
 func trimStringByBytes(str string, size int) string {
@@ -207,18 +213,19 @@ func (tracker ActiveQueryTracker) GetMaxConcurrent() int {
 
 func (tracker ActiveQueryTracker) Delete(insertIndex int) {
 	copy(tracker.mmappedFile[insertIndex:], strings.Repeat("\x00", entrySize))
+	tracker.mmappedFile.Flush()
 	tracker.getNextIndex <- insertIndex
 }
 
 func (tracker ActiveQueryTracker) Insert(ctx context.Context, query string) (int, error) {
 	select {
 	case i := <-tracker.getNextIndex:
-		fileBytes := tracker.mmappedFile
 		entry := newJSONEntry(query, tracker.logger)
 		start, end := i, i+entrySize
 
-		copy(fileBytes[start:], entry)
-		copy(fileBytes[end-1:], ",")
+		copy(tracker.mmappedFile[start:], entry)
+		copy(tracker.mmappedFile[end-1:], ",")
+		tracker.mmappedFile.Flush()
 		return i, nil
 	case <-ctx.Done():
 		return 0, ctx.Err()
