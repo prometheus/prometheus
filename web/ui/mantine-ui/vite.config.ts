@@ -7,10 +7,14 @@ export default defineConfig({
   server: {
     proxy: {
       "/api": {
-        target: "http://localhost:9090",
+        target: "https://demo.promlabs.com",
+        changeOrigin: true,
+        secure: false,
       },
       "/-/": {
-        target: "http://localhost:9090",
+        target: "https://demo.promlabs.com",
+        changeOrigin: true,
+        secure: false,
       },
     },
   },

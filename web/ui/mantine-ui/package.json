@@ -16,6 +16,7 @@
     "@codemirror/lint": "^6.5.0",
     "@codemirror/state": "^6.4.0",
     "@codemirror/view": "^6.24.0",
+    "@floating-ui/dom": "^1.6.7",
     "@lezer/common": "^1.2.1",
     "@lezer/highlight": "^1.2.0",
     "@mantine/code-highlight": "^7.6.1",

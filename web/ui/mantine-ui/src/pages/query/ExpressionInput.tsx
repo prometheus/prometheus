@@ -107,6 +107,10 @@ export class HistoryCompleteStrategy implements CompleteStrategy {
   }
 }
 
+// This is just a placeholder until query history is implemented, so disable the linter warning.
+// eslint-disable-next-line react-hooks/exhaustive-deps
+const queryHistory = [] as string[];
+
 interface ExpressionInputProps {
   initialExpr: string;
   metricNames: string[];
@@ -166,10 +170,6 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
     }
   }, [formatResult, formatError]);
 
-  // This is just a placeholder until query history is implemented, so disable the linter warning.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const queryHistory = [] as string[];
-
   // (Re)initialize editor based on settings / setting changes.
   useEffect(() => {
     // Build the dynamic part of the config.
@@ -205,7 +205,7 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
                 size="lg"
                 variant="transparent"
                 color="gray"
-                aria-label="Decrease range"
+                aria-label="Show query options"
               >
                 <IconDotsVertical style={{ width: "1rem", height: "1rem" }} />
               </ActionIcon>

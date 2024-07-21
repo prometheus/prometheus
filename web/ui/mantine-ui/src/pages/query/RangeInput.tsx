@@ -1,4 +1,4 @@
-import { FC, useState } from "react";
+import { FC, useEffect, useState } from "react";
 import { ActionIcon, Group, Input } from "@mantine/core";
 import { IconMinus, IconPlus } from "@tabler/icons-react";
 import {
@@ -42,6 +42,10 @@ const RangeInput: FC<RangeInputProps> = ({ range, onChangeRange }) => {
   const [rangeInput, setRangeInput] = useState<string>(
     formatPrometheusDuration(range)
   );
+
+  useEffect(() => {
+    setRangeInput(formatPrometheusDuration(range));
+  }, [range]);
 
   const onChangeRangeInput = (rangeText: string): void => {
     const newRange = parsePrometheusDuration(rangeText);

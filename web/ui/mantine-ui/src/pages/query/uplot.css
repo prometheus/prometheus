@@ -24,3 +24,75 @@
     } */
   }
 }
+
+.uplot {
+  display: inline-block;
+  vertical-align: top;
+  width: min-content;
+}
+
+.u-over {
+  box-shadow: 0px 0px 0px 0.5px #ccc;
+  cursor: crosshair;
+}
+
+.u-legend {
+  text-align: left;
+  margin-top: 20px;
+  padding-left: 20px;
+}
+
+.u-inline tr {
+  margin-right: 8px;
+}
+
+.u-label {
+  font-size: 12px;
+}
+
+.u-tooltip {
+  font-size: 0.8em;
+  white-space: nowrap;
+  /* background: var(--mantine-color-gray-7);
+  color: var(--mantine-color-gray-1); */
+  /* background: rgba(0, 0, 0, 0.8); */
+  /* color: #fff; */
+  background: rgba(255, 255, 255, 0.95);
+  border: 2px solid var(--mantine-color-gray-6);
+  color: var(--mantine-color-gray-9);
+  border-radius: 4px;
+  position: absolute;
+  padding: 0.8em 1.5em;
+  margin: 0.75rem;
+  z-index: 10;
+  pointer-events: none;
+
+  .series-value {
+    margin: 5px 0;
+  }
+
+  .series-label {
+    margin-top: 0.5em;
+    margin-bottom: 0.3em;
+    font-weight: bold;
+  }
+
+  .labels {
+    font-size: 0.9em;
+    line-height: 1.3em;
+
+    div {
+      margin-bottom: 0.2em;
+    }
+
+    .no-labels {
+      font-style: italic;
+    }
+  }
+
+  .detail-swatch {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+  }
+}

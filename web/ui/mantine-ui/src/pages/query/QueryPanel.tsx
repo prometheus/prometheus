@@ -7,6 +7,7 @@ import {
   Input,
   SegmentedControl,
   Stack,
+  Select,
 } from "@mantine/core";
 import {
   IconChartAreaFilled,
@@ -122,7 +123,53 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
                 }
               />
 
-              <Input value="" placeholder="Res. (s)" style={{ width: 80 }} />
+              <Select
+                placeholder="Resolution"
+                maxDropdownHeight={500}
+                data={[
+                  {
+                    group: "Automatic resolution",
+                    items: [
+                      { label: "Low", value: "low" },
+                      { label: "Medium", value: "medium" },
+                      { label: "High", value: "high" },
+                    ],
+                  },
+                  {
+                    group: "Fixed resolution",
+                    items: [
+                      { label: "10s", value: "10" },
+                      { label: "30s", value: "30" },
+                      { label: "1m", value: "60" },
+                      { label: "5m", value: "300" },
+                      { label: "15m", value: "900" },
+                      { label: "1h", value: "3600" },
+                    ],
+                  },
+                  {
+                    group: "Custom resolution",
+                    items: [{ label: "Enter value", value: "custom" }],
+                  },
+                ]}
+                w={160}
+                // value={value ? value.value : null}
+                onChange={(_value, option) => {
+                  dispatch(
+                    setVisualizer({
+                      idx,
+                      visualizer: {
+                        ...panel.visualizer,
+                        resolution: option
+                          ? option.value
+                            ? parseInt(option.value)
+                            : null
+                          : null,
+                      },
+                    })
+                  );
+                }}
+                clearable
+              />
             </Group>
 
             <SegmentedControl
@@ -211,6 +258,18 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
             showExemplars={panel.visualizer.showExemplars}
             displayMode={panel.visualizer.displayMode}
             retriggerIdx={retriggerIdx}
+            onSelectRange={(start: number, end: number) =>
+              dispatch(
+                setVisualizer({
+                  idx,
+                  visualizer: {
+                    ...panel.visualizer,
+                    range: (end - start) * 1000,
+                    endTime: end * 1000,
+                  },
+                })
+              )
+            }
           />
         </Tabs.Panel>
       </Tabs>
