@@ -7,14 +7,49 @@ export enum GraphDisplayMode {
   Heatmap = "heatmap",
 }
 
+export type GraphResolution =
+  | {
+      type: "auto";
+      density: "low" | "medium" | "high";
+    }
+  | {
+      type: "fixed";
+      value: number; // Resolution step in milliseconds.
+    }
+  | {
+      type: "custom";
+      value: number; // Resolution step in milliseconds.
+    };
+
+export const getEffectiveResolution = (
+  resolution: GraphResolution,
+  range: number
+) => {
+  switch (resolution.type) {
+    case "auto": {
+      const factor =
+        resolution.density === "high"
+          ? 750
+          : resolution.density === "medium"
+            ? 250
+            : 100;
+      return Math.max(Math.floor(range / factor), 1);
+    }
+    case "fixed":
+      return resolution.value; // TODO: Scope this to a list?
+    case "custom":
+      return resolution.value;
+  }
+};
+
 // NOTE: This is not represented as a discriminated union type
 // because we want to preserve and partially share settings while
 // switching between display modes.
 export interface Visualizer {
   activeTab: "table" | "graph" | "explain";
   endTime: number | null; // Timestamp in milliseconds.
-  range: number; // Range in seconds.
-  resolution: number | null; // Resolution step in seconds.
+  range: number; // Range in milliseconds.
+  resolution: GraphResolution;
   displayMode: GraphDisplayMode;
   showExemplars: boolean;
 }
@@ -41,7 +76,7 @@ const newDefaultPanel = (): Panel => ({
     activeTab: "table",
     endTime: null,
     range: 3600 * 1000,
-    resolution: null,
+    resolution: { type: "auto", density: "medium" },
     displayMode: GraphDisplayMode.Lines,
     showExemplars: false,
   },

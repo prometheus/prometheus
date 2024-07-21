@@ -1,29 +1,24 @@
-import { FC, useEffect, useId, useLayoutEffect, useState } from "react";
+import { FC, useEffect, useId, useState } from "react";
 import { Alert, Skeleton, Box, LoadingOverlay } from "@mantine/core";
 import { IconAlertTriangle, IconInfoCircle } from "@tabler/icons-react";
-import {
-  InstantQueryResult,
-  RangeSamples,
-} from "../../api/responseTypes/query";
+import { InstantQueryResult } from "../../api/responseTypes/query";
 import { useAPIQuery } from "../../api/api";
 import classes from "./Graph.module.css";
-import { GraphDisplayMode } from "../../state/queryPageSlice";
-import { formatSeries } from "../../lib/formatSeries";
-import uPlot, { Series } from "uplot";
-import UplotReact from "uplot-react";
+import {
+  GraphDisplayMode,
+  GraphResolution,
+  getEffectiveResolution,
+} from "../../state/queryPageSlice";
 import "uplot/dist/uPlot.min.css";
 import "./uplot.css";
 import { useElementSize } from "@mantine/hooks";
-import { formatTimestamp } from "../../lib/formatTime";
-import { computePosition, shift, flip, offset, Axis } from "@floating-ui/dom";
-import { colorPool } from "./ColorPool";
-import UPlotChart, { UPlotChartProps, UPlotChartRange } from "./UPlotChart";
+import UPlotChart, { UPlotChartRange } from "./UPlotChart";
 
 export interface GraphProps {
   expr: string;
   endTime: number | null;
   range: number;
-  resolution: number | null;
+  resolution: GraphResolution;
   showExemplars: boolean;
   displayMode: GraphDisplayMode;
   retriggerIdx: number;
@@ -45,8 +40,7 @@ const Graph: FC<GraphProps> = ({
 
   const effectiveEndTime = (endTime !== null ? endTime : Date.now()) / 1000;
   const startTime = effectiveEndTime - range / 1000;
-  const effectiveResolution =
-    resolution || Math.max(Math.floor(range / 250000), 1);
+  const effectiveResolution = getEffectiveResolution(resolution, range) / 1000;
 
   const { data, error, isFetching, isLoading, refetch } =
     useAPIQuery<InstantQueryResult>({
@@ -62,7 +56,7 @@ const Graph: FC<GraphProps> = ({
     });
 
   // Keep the displayed chart range separate from the actual query range, so that
-  // the chart will keep displaying the old range while a new query for a different range
+  // the chart will keep displaying the old range while a query for a new range
   // is still in progress.
   const [displayedChartRange, setDisplayedChartRange] =
     useState<UPlotChartRange>({
@@ -77,6 +71,8 @@ const Graph: FC<GraphProps> = ({
       endTime: effectiveEndTime,
       resolution: effectiveResolution,
     });
+    // We actually want to update the displayed range only once the new data is there.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
   useEffect(() => {

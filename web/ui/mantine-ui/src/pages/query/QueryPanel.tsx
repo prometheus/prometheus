@@ -4,10 +4,10 @@ import {
   Center,
   Space,
   Box,
-  Input,
   SegmentedControl,
   Stack,
   Select,
+  TextInput,
 } from "@mantine/core";
 import {
   IconChartAreaFilled,
@@ -20,6 +20,8 @@ import { FC, useState } from "react";
 import { useAppDispatch, useAppSelector } from "../../state/hooks";
 import {
   GraphDisplayMode,
+  GraphResolution,
+  getEffectiveResolution,
   removePanel,
   setExpr,
   setVisualizer,
@@ -29,6 +31,10 @@ import TimeInput from "./TimeInput";
 import RangeInput from "./RangeInput";
 import ExpressionInput from "./ExpressionInput";
 import Graph from "./Graph";
+import {
+  formatPrometheusDuration,
+  parsePrometheusDuration,
+} from "../../lib/formatTime";
 
 export interface PanelProps {
   idx: number;
@@ -45,7 +51,39 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
   const [retriggerIdx, setRetriggerIdx] = useState<number>(0);
 
   const panel = useAppSelector((state) => state.queryPage.panels[idx]);
+  const resolution = panel.visualizer.resolution;
   const dispatch = useAppDispatch();
+
+  const [customResolutionInput, setCustomResolutionInput] = useState<string>(
+    formatPrometheusDuration(
+      getEffectiveResolution(resolution, panel.visualizer.range)
+    )
+  );
+
+  const setResolution = (res: GraphResolution) => {
+    dispatch(
+      setVisualizer({
+        idx,
+        visualizer: {
+          ...panel.visualizer,
+          resolution: res,
+        },
+      })
+    );
+  };
+
+  const onChangeCustomResolutionInput = (resText: string): void => {
+    const newResolution = parsePrometheusDuration(resText);
+    if (newResolution === null) {
+      setCustomResolutionInput(
+        formatPrometheusDuration(
+          getEffectiveResolution(resolution, panel.visualizer.range)
+        )
+      );
+    } else {
+      setResolution({ type: "custom", value: newResolution });
+    }
+  };
 
   return (
     <Stack gap="lg">
@@ -124,52 +162,99 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
               />
 
               <Select
+                title="Resolution"
                 placeholder="Resolution"
                 maxDropdownHeight={500}
                 data={[
                   {
                     group: "Automatic resolution",
                     items: [
-                      { label: "Low", value: "low" },
-                      { label: "Medium", value: "medium" },
-                      { label: "High", value: "high" },
+                      { label: "Low res.", value: "low" },
+                      { label: "Medium res.", value: "medium" },
+                      { label: "High res.", value: "high" },
                     ],
                   },
                   {
                     group: "Fixed resolution",
                     items: [
-                      { label: "10s", value: "10" },
-                      { label: "30s", value: "30" },
-                      { label: "1m", value: "60" },
-                      { label: "5m", value: "300" },
-                      { label: "15m", value: "900" },
-                      { label: "1h", value: "3600" },
+                      { label: "10s", value: "10000" },
+                      { label: "30s", value: "30000" },
+                      { label: "1m", value: "60000" },
+                      { label: "5m", value: "300000" },
+                      { label: "15m", value: "900000" },
+                      { label: "1h", value: "3600000" },
                     ],
                   },
                   {
                     group: "Custom resolution",
-                    items: [{ label: "Enter value", value: "custom" }],
+                    items: [{ label: "Enter value...", value: "custom" }],
                   },
                 ]}
                 w={160}
-                // value={value ? value.value : null}
+                value={
+                  resolution.type === "auto"
+                    ? resolution.density
+                    : resolution.type === "fixed"
+                      ? resolution.value.toString()
+                      : "custom"
+                }
                 onChange={(_value, option) => {
-                  dispatch(
-                    setVisualizer({
-                      idx,
-                      visualizer: {
-                        ...panel.visualizer,
-                        resolution: option
-                          ? option.value
-                            ? parseInt(option.value)
-                            : null
-                          : null,
-                      },
-                    })
-                  );
+                  if (["low", "medium", "high"].includes(option.value)) {
+                    setResolution({
+                      type: "auto",
+                      density: option.value as "low" | "medium" | "high",
+                    });
+                    return;
+                  }
+
+                  if (option.value === "custom") {
+                    // Start the custom resolution at the current effective resolution.
+                    const effectiveResolution = getEffectiveResolution(
+                      resolution,
+                      panel.visualizer.range
+                    );
+                    setResolution({
+                      type: "custom",
+                      value: effectiveResolution,
+                    });
+                    setCustomResolutionInput(
+                      formatPrometheusDuration(effectiveResolution)
+                    );
+                    return;
+                  }
+
+                  const value = parseInt(option.value);
+                  if (!isNaN(value)) {
+                    setResolution({
+                      type: "fixed",
+                      value,
+                    });
+                  } else {
+                    throw new Error("Invalid resolution value");
+                  }
                 }}
-                clearable
               />
+
+              {resolution.type === "custom" && (
+                <TextInput
+                  placeholder="Resolution"
+                  value={customResolutionInput}
+                  onChange={(event) =>
+                    setCustomResolutionInput(event.currentTarget.value)
+                  }
+                  onBlur={() =>
+                    onChangeCustomResolutionInput(customResolutionInput)
+                  }
+                  onKeyDown={(event) =>
+                    event.key === "Enter" &&
+                    onChangeCustomResolutionInput(customResolutionInput)
+                  }
+                  aria-label="Range"
+                  style={{
+                    width: `calc(44px + ${customResolutionInput.length + 3}ch)`,
+                  }}
+                />
+              )}
             </Group>
 
             <SegmentedControl

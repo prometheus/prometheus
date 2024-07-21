@@ -79,6 +79,7 @@ const RangeInput: FC<RangeInputProps> = ({ range, onChangeRange }) => {
   return (
     <Group gap={5}>
       <Input
+        title="Range"
         value={rangeInput}
         onChange={(event) => setRangeInput(event.currentTarget.value)}
         onBlur={() => onChangeRangeInput(rangeInput)}

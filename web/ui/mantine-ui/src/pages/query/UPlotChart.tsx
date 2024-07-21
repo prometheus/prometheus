@@ -1,11 +1,5 @@
-import { FC, useEffect, useId, useState } from "react";
-import { Alert, Skeleton, Box, LoadingOverlay } from "@mantine/core";
-import { IconAlertTriangle, IconInfoCircle } from "@tabler/icons-react";
-import {
-  InstantQueryResult,
-  RangeSamples,
-} from "../../api/responseTypes/query";
-import { useAPIQuery } from "../../api/api";
+import { FC, useEffect, useState } from "react";
+import { RangeSamples } from "../../api/responseTypes/query";
 import classes from "./Graph.module.css";
 import { GraphDisplayMode } from "../../state/queryPageSlice";
 import { formatSeries } from "../../lib/formatSeries";
@@ -13,9 +7,8 @@ import uPlot, { Series } from "uplot";
 import UplotReact from "uplot-react";
 import "uplot/dist/uPlot.min.css";
 import "./uplot.css";
-import { useElementSize } from "@mantine/hooks";
 import { formatTimestamp } from "../../lib/formatTime";
-import { computePosition, shift, flip, offset, Axis } from "@floating-ui/dom";
+import { computePosition, shift, flip, offset } from "@floating-ui/dom";
 import { colorPool } from "./ColorPool";
 
 const formatYAxisTickValue = (y: number | null): string => {
@@ -132,7 +125,7 @@ const tooltipPlugin = () => {
       },
       // When a series is selected by hovering close to it, store the
       // index of the selected series.
-      setSeries: (self: uPlot, seriesIdx: number | null, opts: Series) => {
+      setSeries: (_u: uPlot, seriesIdx: number | null, _opts: Series) => {
         selectedSeriesIdx = seriesIdx;
       },
       // When the cursor is moved, update the tooltip with the current
@@ -155,8 +148,12 @@ const tooltipPlugin = () => {
         const ts = u.data[0][idx];
         const value = u.data[selectedSeriesIdx][idx];
         const series = u.series[selectedSeriesIdx];
+        // @ts-expect-error - uPlot doesn't have a field for labels, but we just attach some anyway.
         const labels = series.labels;
-        const color = series.stroke();
+        if (typeof series.stroke !== "function") {
+          throw new Error("series.stroke is not a function");
+        }
+        const color = series.stroke(u, selectedSeriesIdx);
 
         const x = left + boundingLeft;
         const y = top + boundingTop;
@@ -205,29 +202,31 @@ const tooltipPlugin = () => {
 // A helper function to automatically create enough space for the Y axis
 // ticket labels depending on their length.
 const autoPadLeft = (
-  self: uPlot,
+  u: uPlot,
   values: string[],
   axisIdx: number,
   cycleNum: number
 ) => {
-  const axis = self.axes[axisIdx];
+  const axis = u.axes[axisIdx];
 
   // bail out, force convergence
   if (cycleNum > 1) {
+    // @ts-expect-error - got this from a uPlot demo example, not sure if it's correct.
     return axis._size;
   }
 
-  let axisSize = axis.ticks.size + axis.gap;
+  let axisSize = axis.ticks!.size! + axis.gap!;
 
-  // find longest value
+  // Find longest tick text.
   const longestVal = (values ?? []).reduce(
     (acc, val) => (val.length > acc.length ? val : acc),
     ""
   );
 
   if (longestVal != "") {
-    self.ctx.font = axis.font[0];
-    axisSize += self.ctx.measureText(longestVal).width / devicePixelRatio;
+    console.log("axis.font", axis.font![0]);
+    u.ctx.font = axis.font![0];
+    axisSize += u.ctx.measureText(longestVal).width / devicePixelRatio;
   }
 
   return Math.ceil(axisSize);
@@ -236,7 +235,7 @@ const autoPadLeft = (
 const getOptions = (
   width: number,
   result: RangeSamples[],
-  onSelectRange: (start: number, end: number) => void
+  onSelectRange: (_start: number, _end: number) => void
 ): uPlot.Options => ({
   width: width - 30,
   height: 550,
@@ -258,7 +257,7 @@ const getOptions = (
     live: false,
     markers: {
       fill: (
-        self: uPlot,
+        _u: uPlot,
         seriesIdx: number
       ): CSSStyleDeclaration["borderColor"] => {
         return colorPool[seriesIdx % colorPool.length];
@@ -285,7 +284,7 @@ const getOptions = (
     },
     // Y axis (sample value).
     {
-      values: (u: uPlot, splits: number[]) => splits.map(formatYAxisTickValue),
+      values: (_u: uPlot, splits: number[]) => splits.map(formatYAxisTickValue),
       border: {
         show: true,
         stroke: "#333",
@@ -298,6 +297,7 @@ const getOptions = (
     },
   ],
   series: [
+    {},
     ...result.map((r, idx) => ({
       label: formatSeries(r.metric),
       width: 2,
@@ -323,44 +323,43 @@ export const normalizeData = (
   endTime: number,
   resolution: number
 ): uPlot.AlignedData => {
-  const timeData: (number | null)[][] = [];
-  timeData[0] = [];
+  const timeData: number[] = [];
   for (let t = startTime; t <= endTime; t += resolution) {
-    timeData[0].push(t);
+    timeData.push(t);
   }
 
-  return timeData.concat(
-    inputData.map(({ values, histograms }) => {
-      // Insert nulls for all missing steps.
-      const data: (number | null)[] = [];
-      let valuePos = 0;
-      let histogramPos = 0;
+  const values = inputData.map(({ values, histograms }) => {
+    // Insert nulls for all missing steps.
+    const data: (number | null)[] = [];
+    let valuePos = 0;
+    let histogramPos = 0;
 
-      for (let t = startTime; t <= endTime; t += resolution) {
-        // Allow for floating point inaccuracy.
-        const currentValue = values && values[valuePos];
-        const currentHistogram = histograms && histograms[histogramPos];
-        if (
-          currentValue &&
-          values.length > valuePos &&
-          currentValue[0] < t + resolution / 100
-        ) {
-          data.push(parseValue(currentValue[1]));
-          valuePos++;
-        } else if (
-          currentHistogram &&
-          histograms.length > histogramPos &&
-          currentHistogram[0] < t + resolution / 100
-        ) {
-          data.push(parseValue(currentHistogram[1].sum));
-          histogramPos++;
-        } else {
-          data.push(null);
-        }
+    for (let t = startTime; t <= endTime; t += resolution) {
+      // Allow for floating point inaccuracy.
+      const currentValue = values && values[valuePos];
+      const currentHistogram = histograms && histograms[histogramPos];
+      if (
+        currentValue &&
+        values.length > valuePos &&
+        currentValue[0] < t + resolution / 100
+      ) {
+        data.push(parseValue(currentValue[1]));
+        valuePos++;
+      } else if (
+        currentHistogram &&
+        histograms.length > histogramPos &&
+        currentHistogram[0] < t + resolution / 100
+      ) {
+        data.push(parseValue(currentHistogram[1].sum));
+        histogramPos++;
+      } else {
+        data.push(null);
       }
-      return data;
-    })
-  );
+    }
+    return data;
+  });
+
+  return [timeData, ...values];
 };
 
 const parseValue = (value: string): null | number => {
@@ -388,7 +387,6 @@ export interface UPlotChartProps {
 const UPlotChart: FC<UPlotChartProps> = ({
   data,
   range: { startTime, endTime, resolution },
-  displayMode,
   width,
   onSelectRange,
 }) => {

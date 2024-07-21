@@ -13,7 +13,7 @@ import {
   PromQLExtension,
   newCompleteStrategy,
 } from "@prometheus-io/codemirror-promql";
-import { FC, useEffect, useState } from "react";
+import { FC, useEffect, useMemo, useState } from "react";
 import CodeMirror, {
   EditorState,
   EditorView,
@@ -107,10 +107,6 @@ export class HistoryCompleteStrategy implements CompleteStrategy {
   }
 }
 
-// This is just a placeholder until query history is implemented, so disable the linter warning.
-// eslint-disable-next-line react-hooks/exhaustive-deps
-const queryHistory = [] as string[];
-
 interface ExpressionInputProps {
   initialExpr: string;
   metricNames: string[];
@@ -163,12 +159,14 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
     if (formatResult) {
       setExpr(formatResult.data);
       notifications.show({
-        color: "green",
         title: "Expression formatted",
         message: "Expression formatted successfully!",
       });
     }
   }, [formatResult, formatError]);
+
+  // This is just a placeholder until query history is implemented, so disable the linter warning.
+  const queryHistory = useMemo<string[]>(() => [], []);
 
   // (Re)initialize editor based on settings / setting changes.
   useEffect(() => {

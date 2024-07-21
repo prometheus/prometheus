@@ -26,6 +26,7 @@ const TimeInput: FC<TimeInputProps> = ({
     <Group gap={5}>
       <DatesProvider settings={{ timezone: useLocalTime ? undefined : "UTC" }}>
         <DateTimePicker
+          title="End time"
           w={230}
           valueFormat="YYYY-MM-DD HH:mm:ss"
           withSeconds
