@@ -332,9 +332,9 @@ func (r *AlertingRule) NoDependencyRules() bool {
 	return r.noDependencyRules.Load()
 }
 
-// resolvedRetention is the duration for which a resolved alert instance
+// ResolvedRetention is the duration for which a resolved alert instance
 // is kept in memory state and consequently repeatedly sent to the AlertManager.
-const resolvedRetention = 15 * time.Minute
+var ResolvedRetention = 15 * time.Minute
 
 // Eval evaluates the rule expression and then creates pending alerts and fires
 // or removes previously pending alerts accordingly.
@@ -461,7 +461,7 @@ func (r *AlertingRule) Eval(ctx context.Context, queryOffset time.Duration, ts t
 			//    Alertmanager crashes or restarts between receiving the resolved alert
 			//    from Prometheus and sending the resolved notification. This tends to
 			//    occur for routes with large Group intervals.
-			if a.State == StatePending || (!a.ResolvedAt.IsZero() && ts.Sub(a.ResolvedAt) > resolvedRetention) {
+			if a.State == StatePending || (!a.ResolvedAt.IsZero() && ts.Sub(a.ResolvedAt) > ResolvedRetention) {
 				delete(r.active, fp)
 			}
 			if a.State != StateInactive && !keepFiring {
