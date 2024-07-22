@@ -10,6 +10,7 @@ import "./uplot.css";
 import { formatTimestamp } from "../../lib/formatTime";
 import { computePosition, shift, flip, offset } from "@floating-ui/dom";
 import { colorPool } from "./ColorPool";
+import { useSettings } from "../../state/settingsSlice";
 
 const formatYAxisTickValue = (y: number | null): string => {
   if (y === null) {
@@ -87,7 +88,7 @@ const formatLabels = (labels: { [key: string]: string }): string => `
                 .join("")}
             </div>`;
 
-const tooltipPlugin = () => {
+const tooltipPlugin = (useLocalTime: boolean) => {
   let over: HTMLDivElement;
   let boundingLeft: number;
   let boundingTop: number;
@@ -162,7 +163,7 @@ const tooltipPlugin = () => {
 
         // TODO: Use local time in formatTimestamp!
         overlay.innerHTML = `
-            <div class="date">${formatTimestamp(ts, false)}</div>
+            <div class="date">${formatTimestamp(ts, useLocalTime)}</div>
             <div class="series-value">
               <span class="detail-swatch" style="background-color: ${color}"></span>
               <span>${labels.__name__ ? labels.__name__ + ": " : " "}<strong>${value}</strong></span>
@@ -235,6 +236,7 @@ const autoPadLeft = (
 const getOptions = (
   width: number,
   result: RangeSamples[],
+  useLocalTime: boolean,
   onSelectRange: (_start: number, _end: number) => void
 ): uPlot.Options => ({
   width: width - 30,
@@ -251,7 +253,10 @@ const getOptions = (
       setScale: false,
     },
   },
-  plugins: [tooltipPlugin()],
+  tzDate: useLocalTime
+    ? undefined
+    : (ts) => uPlot.tzDate(new Date(ts * 1e3), "Etc/UTC"),
+  plugins: [tooltipPlugin(useLocalTime)],
   legend: {
     show: true,
     live: false,
@@ -391,14 +396,15 @@ const UPlotChart: FC<UPlotChartProps> = ({
   onSelectRange,
 }) => {
   const [options, setOptions] = useState<uPlot.Options | null>(null);
+  const { useLocalTime } = useSettings();
 
   useEffect(() => {
     if (width === 0) {
       return;
     }
 
-    setOptions(getOptions(width, data, onSelectRange));
-  }, [width, data, onSelectRange]);
+    setOptions(getOptions(width, data, useLocalTime, onSelectRange));
+  }, [width, data, useLocalTime, onSelectRange]);
 
   const seriesData: uPlot.AlignedData = normalizeData(
     data,

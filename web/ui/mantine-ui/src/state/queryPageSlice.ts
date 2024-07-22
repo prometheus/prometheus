@@ -21,6 +21,8 @@ export type GraphResolution =
       value: number; // Resolution step in milliseconds.
     };
 
+// From the UI settings, compute the effective resolution
+// in milliseconds to use for the graph query.
 export const getEffectiveResolution = (
   resolution: GraphResolution,
   range: number
@@ -36,7 +38,7 @@ export const getEffectiveResolution = (
       return Math.max(Math.floor(range / factor), 1);
     }
     case "fixed":
-      return resolution.value; // TODO: Scope this to a list?
+      return resolution.value;
     case "custom":
       return resolution.value;
   }
