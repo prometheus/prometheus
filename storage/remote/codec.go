@@ -24,10 +24,10 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"

@@ -26,11 +26,11 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"gopkg.in/yaml.v2"
 

@@ -20,9 +20,9 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
-	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -50,30 +50,30 @@ var (
 	}
 
 	writeRequestFixture = &prompb.WriteRequest{
-		Timeseries: []prompb.TimeSeries{
+		Timeseries: []*prompb.TimeSeries{
 			{
-				Labels: []prompb.Label{
+				Labels: []*prompb.Label{
 					{Name: "__name__", Value: "test_metric1"},
 					{Name: "b", Value: "c"},
 					{Name: "baz", Value: "qux"},
 					{Name: "d", Value: "e"},
 					{Name: "foo", Value: "bar"},
 				},
-				Samples:    []prompb.Sample{{Value: 1, Timestamp: 1}},
-				Exemplars:  []prompb.Exemplar{{Labels: []prompb.Label{{Name: "f", Value: "g"}}, Value: 1, Timestamp: 1}},
-				Histograms: []prompb.Histogram{prompb.FromIntHistogram(1, &testHistogram), prompb.FromFloatHistogram(2, testHistogram.ToFloat(nil))},
+				Samples:    []*prompb.Sample{{Value: 1, Timestamp: 1}},
+				Exemplars:  []*prompb.Exemplar{{Labels: []*prompb.Label{{Name: "f", Value: "g"}}, Value: 1, Timestamp: 1}},
+				Histograms: []*prompb.Histogram{prompb.FromIntHistogram(1, &testHistogram), prompb.FromFloatHistogram(2, testHistogram.ToFloat(nil))},
 			},
 			{
-				Labels: []prompb.Label{
+				Labels: []*prompb.Label{
 					{Name: "__name__", Value: "test_metric1"},
 					{Name: "b", Value: "c"},
 					{Name: "baz", Value: "qux"},
 					{Name: "d", Value: "e"},
 					{Name: "foo", Value: "bar"},
 				},
-				Samples:    []prompb.Sample{{Value: 2, Timestamp: 2}},
-				Exemplars:  []prompb.Exemplar{{Labels: []prompb.Label{{Name: "h", Value: "i"}}, Value: 2, Timestamp: 2}},
-				Histograms: []prompb.Histogram{prompb.FromIntHistogram(3, &testHistogram), prompb.FromFloatHistogram(4, testHistogram.ToFloat(nil))},
+				Samples:    []*prompb.Sample{{Value: 2, Timestamp: 2}},
+				Exemplars:  []*prompb.Exemplar{{Labels: []*prompb.Label{{Name: "h", Value: "i"}}, Value: 2, Timestamp: 2}},
+				Histograms: []*prompb.Histogram{prompb.FromIntHistogram(3, &testHistogram), prompb.FromFloatHistogram(4, testHistogram.ToFloat(nil))},
 			},
 		},
 	}
@@ -93,30 +93,30 @@ var (
 	// NOTE: Use TestWriteV2RequestFixture and copy the diff to regenerate if needed.
 	writeV2RequestFixture = &writev2.Request{
 		Symbols: []string{"", "__name__", "test_metric1", "b", "c", "baz", "qux", "d", "e", "foo", "bar", "f", "g", "h", "i", "Test gauge for test purposes", "Maybe op/sec who knows (:", "Test counter for test purposes"},
-		Timeseries: []writev2.TimeSeries{
+		Timeseries: []*writev2.TimeSeries{
 			{
 				LabelsRefs: []uint32{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, // Symbolized writeRequestFixture.Timeseries[0].Labels
-				Metadata: writev2.Metadata{
+				Metadata: &writev2.Metadata{
 					Type: writev2.Metadata_METRIC_TYPE_GAUGE, // writeV2RequestSeries1Metadata.Type.
 
 					HelpRef: 15, // Symbolized writeV2RequestSeries1Metadata.Help.
 					UnitRef: 16, // Symbolized writeV2RequestSeries1Metadata.Unit.
 				},
-				Samples:    []writev2.Sample{{Value: 1, Timestamp: 1}},
-				Exemplars:  []writev2.Exemplar{{LabelsRefs: []uint32{11, 12}, Value: 1, Timestamp: 1}},
-				Histograms: []writev2.Histogram{writev2.FromIntHistogram(1, &testHistogram), writev2.FromFloatHistogram(2, testHistogram.ToFloat(nil))},
+				Samples:    []*writev2.Sample{{Value: 1, Timestamp: 1}},
+				Exemplars:  []*writev2.Exemplar{{LabelsRefs: []uint32{11, 12}, Value: 1, Timestamp: 1}},
+				Histograms: []*writev2.Histogram{writev2.FromIntHistogram(1, &testHistogram), writev2.FromFloatHistogram(2, testHistogram.ToFloat(nil))},
 			},
 			{
 				LabelsRefs: []uint32{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, // Same series as first.
-				Metadata: writev2.Metadata{
+				Metadata: &writev2.Metadata{
 					Type: writev2.Metadata_METRIC_TYPE_COUNTER, // writeV2RequestSeries2Metadata.Type.
 
 					HelpRef: 17, // Symbolized writeV2RequestSeries2Metadata.Help.
 					// No unit.
 				},
-				Samples:    []writev2.Sample{{Value: 2, Timestamp: 2}},
-				Exemplars:  []writev2.Exemplar{{LabelsRefs: []uint32{13, 14}, Value: 2, Timestamp: 2}},
-				Histograms: []writev2.Histogram{writev2.FromIntHistogram(3, &testHistogram), writev2.FromFloatHistogram(4, testHistogram.ToFloat(nil))},
+				Samples:    []*writev2.Sample{{Value: 2, Timestamp: 2}},
+				Exemplars:  []*writev2.Exemplar{{LabelsRefs: []uint32{13, 14}, Value: 2, Timestamp: 2}},
+				Histograms: []*writev2.Histogram{writev2.FromIntHistogram(3, &testHistogram), writev2.FromFloatHistogram(4, testHistogram.ToFloat(nil))},
 			},
 		},
 	}
@@ -130,28 +130,28 @@ func TestWriteV2RequestFixture(t *testing.T) {
 	exemplar1LabelRefs := st.SymbolizeLabels(writeRequestFixture.Timeseries[0].Exemplars[0].ToExemplar(&b, nil).Labels, nil)
 	exemplar2LabelRefs := st.SymbolizeLabels(writeRequestFixture.Timeseries[1].Exemplars[0].ToExemplar(&b, nil).Labels, nil)
 	expected := &writev2.Request{
-		Timeseries: []writev2.TimeSeries{
+		Timeseries: []*writev2.TimeSeries{
 			{
 				LabelsRefs: labelRefs,
-				Metadata: writev2.Metadata{
+				Metadata: &writev2.Metadata{
 					Type:    writev2.Metadata_METRIC_TYPE_GAUGE,
 					HelpRef: st.Symbolize(writeV2RequestSeries1Metadata.Help),
 					UnitRef: st.Symbolize(writeV2RequestSeries1Metadata.Unit),
 				},
-				Samples:    []writev2.Sample{{Value: 1, Timestamp: 1}},
-				Exemplars:  []writev2.Exemplar{{LabelsRefs: exemplar1LabelRefs, Value: 1, Timestamp: 1}},
-				Histograms: []writev2.Histogram{writev2.FromIntHistogram(1, &testHistogram), writev2.FromFloatHistogram(2, testHistogram.ToFloat(nil))},
+				Samples:    []*writev2.Sample{{Value: 1, Timestamp: 1}},
+				Exemplars:  []*writev2.Exemplar{{LabelsRefs: exemplar1LabelRefs, Value: 1, Timestamp: 1}},
+				Histograms: []*writev2.Histogram{writev2.FromIntHistogram(1, &testHistogram), writev2.FromFloatHistogram(2, testHistogram.ToFloat(nil))},
 			},
 			{
 				LabelsRefs: labelRefs,
-				Metadata: writev2.Metadata{
+				Metadata: &writev2.Metadata{
 					Type:    writev2.Metadata_METRIC_TYPE_COUNTER,
 					HelpRef: st.Symbolize(writeV2RequestSeries2Metadata.Help),
 					// No unit.
 				},
-				Samples:    []writev2.Sample{{Value: 2, Timestamp: 2}},
-				Exemplars:  []writev2.Exemplar{{LabelsRefs: exemplar2LabelRefs, Value: 2, Timestamp: 2}},
-				Histograms: []writev2.Histogram{writev2.FromIntHistogram(3, &testHistogram), writev2.FromFloatHistogram(4, testHistogram.ToFloat(nil))},
+				Samples:    []*writev2.Sample{{Value: 2, Timestamp: 2}},
+				Exemplars:  []*writev2.Exemplar{{LabelsRefs: exemplar2LabelRefs, Value: 2, Timestamp: 2}},
+				Histograms: []*writev2.Histogram{writev2.FromIntHistogram(3, &testHistogram), writev2.FromFloatHistogram(4, testHistogram.ToFloat(nil))},
 			},
 		},
 		Symbols: st.Symbols(),
@@ -162,12 +162,12 @@ func TestWriteV2RequestFixture(t *testing.T) {
 
 func TestValidateLabelsAndMetricName(t *testing.T) {
 	tests := []struct {
-		input       []prompb.Label
+		input       []*prompb.Label
 		expectedErr string
 		description string
 	}{
 		{
-			input: []prompb.Label{
+			input: []*prompb.Label{
 				{Name: "__name__", Value: "name"},
 				{Name: "labelName", Value: "labelValue"},
 			},
@@ -175,7 +175,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 			description: "regular labels",
 		},
 		{
-			input: []prompb.Label{
+			input: []*prompb.Label{
 				{Name: "__name__", Value: "name"},
 				{Name: "_labelName", Value: "labelValue"},
 			},
@@ -183,7 +183,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 			description: "label name with _",
 		},
 		{
-			input: []prompb.Label{
+			input: []*prompb.Label{
 				{Name: "__name__", Value: "name"},
 				{Name: "@labelName", Value: "labelValue"},
 			},
@@ -191,7 +191,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 			description: "label name with @",
 		},
 		{
-			input: []prompb.Label{
+			input: []*prompb.Label{
 				{Name: "__name__", Value: "name"},
 				{Name: "123labelName", Value: "labelValue"},
 			},
@@ -199,7 +199,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 			description: "label name starts with numbers",
 		},
 		{
-			input: []prompb.Label{
+			input: []*prompb.Label{
 				{Name: "__name__", Value: "name"},
 				{Name: "", Value: "labelValue"},
 			},
@@ -207,7 +207,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 			description: "label name is empty string",
 		},
 		{
-			input: []prompb.Label{
+			input: []*prompb.Label{
 				{Name: "__name__", Value: "name"},
 				{Name: "labelName", Value: string([]byte{0xff})},
 			},
@@ -215,14 +215,14 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 			description: "label value is an invalid UTF-8 value",
 		},
 		{
-			input: []prompb.Label{
+			input: []*prompb.Label{
 				{Name: "__name__", Value: "@invalid_name"},
 			},
 			expectedErr: "invalid metric name: @invalid_name",
 			description: "metric name starts with @",
 		},
 		{
-			input: []prompb.Label{
+			input: []*prompb.Label{
 				{Name: "__name__", Value: "name1"},
 				{Name: "__name__", Value: "name2"},
 			},
@@ -230,7 +230,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 			description: "duplicate label names",
 		},
 		{
-			input: []prompb.Label{
+			input: []*prompb.Label{
 				{Name: "label1", Value: "name"},
 				{Name: "label2", Value: "name"},
 			},
@@ -238,7 +238,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 			description: "duplicate label values",
 		},
 		{
-			input: []prompb.Label{
+			input: []*prompb.Label{
 				{Name: "", Value: "name"},
 				{Name: "label2", Value: "name"},
 			},
@@ -263,11 +263,11 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 func TestConcreteSeriesSet(t *testing.T) {
 	series1 := &concreteSeries{
 		labels: labels.FromStrings("foo", "bar"),
-		floats: []prompb.Sample{{Value: 1, Timestamp: 2}},
+		floats: []*prompb.Sample{{Value: 1, Timestamp: 2}},
 	}
 	series2 := &concreteSeries{
 		labels: labels.FromStrings("foo", "baz"),
-		floats: []prompb.Sample{{Value: 3, Timestamp: 4}},
+		floats: []*prompb.Sample{{Value: 3, Timestamp: 4}},
 	}
 	c := &concreteSeriesSet{
 		series: []storage.Series{series1, series2},
@@ -297,7 +297,7 @@ func TestConcreteSeriesClonesLabels(t *testing.T) {
 func TestConcreteSeriesIterator_FloatSamples(t *testing.T) {
 	series := &concreteSeries{
 		labels: labels.FromStrings("foo", "bar"),
-		floats: []prompb.Sample{
+		floats: []*prompb.Sample{
 			{Value: 1, Timestamp: 1},
 			{Value: 1.5, Timestamp: 1},
 			{Value: 2, Timestamp: 2},
@@ -345,7 +345,7 @@ func TestConcreteSeriesIterator_FloatSamples(t *testing.T) {
 
 func TestConcreteSeriesIterator_HistogramSamples(t *testing.T) {
 	histograms := tsdbutil.GenerateTestHistograms(5)
-	histProtos := make([]prompb.Histogram, len(histograms))
+	histProtos := make([]*prompb.Histogram, len(histograms))
 	for i, h := range histograms {
 		// Results in ts sequence of 1, 1, 2, 3, 4.
 		var ts int64
@@ -402,7 +402,7 @@ func TestConcreteSeriesIterator_FloatAndHistogramSamples(t *testing.T) {
 	// Series starts as histograms, then transitions to floats at ts=8 (with an overlap from ts=8 to ts=10), then
 	// transitions back to histograms at ts=16.
 	histograms := tsdbutil.GenerateTestHistograms(15)
-	histProtos := make([]prompb.Histogram, len(histograms))
+	histProtos := make([]*prompb.Histogram, len(histograms))
 	for i, h := range histograms {
 		if i < 10 {
 			histProtos[i] = prompb.FromIntHistogram(int64(i+1), h)
@@ -412,7 +412,7 @@ func TestConcreteSeriesIterator_FloatAndHistogramSamples(t *testing.T) {
 	}
 	series := &concreteSeries{
 		labels: labels.FromStrings("foo", "bar"),
-		floats: []prompb.Sample{
+		floats: []*prompb.Sample{
 			{Value: 1, Timestamp: 8},
 			{Value: 2, Timestamp: 9},
 			{Value: 3, Timestamp: 10},
@@ -504,11 +504,11 @@ func TestConcreteSeriesIterator_FloatAndHistogramSamples(t *testing.T) {
 
 func TestFromQueryResultWithDuplicates(t *testing.T) {
 	ts1 := prompb.TimeSeries{
-		Labels: []prompb.Label{
+		Labels: []*prompb.Label{
 			{Name: "foo", Value: "bar"},
 			{Name: "foo", Value: "def"},
 		},
-		Samples: []prompb.Sample{
+		Samples: []*prompb.Sample{
 			{Value: 0.0, Timestamp: 0},
 		},
 	}
@@ -554,17 +554,17 @@ func TestNegotiateResponseType(t *testing.T) {
 
 func TestMergeLabels(t *testing.T) {
 	for _, tc := range []struct {
-		primary, secondary, expected []prompb.Label
+		primary, secondary, expected []*prompb.Label
 	}{
 		{
-			primary:   []prompb.Label{{Name: "aaa", Value: "foo"}, {Name: "bbb", Value: "foo"}, {Name: "ddd", Value: "foo"}},
-			secondary: []prompb.Label{{Name: "bbb", Value: "bar"}, {Name: "ccc", Value: "bar"}},
-			expected:  []prompb.Label{{Name: "aaa", Value: "foo"}, {Name: "bbb", Value: "foo"}, {Name: "ccc", Value: "bar"}, {Name: "ddd", Value: "foo"}},
+			primary:   []*prompb.Label{{Name: "aaa", Value: "foo"}, {Name: "bbb", Value: "foo"}, {Name: "ddd", Value: "foo"}},
+			secondary: []*prompb.Label{{Name: "bbb", Value: "bar"}, {Name: "ccc", Value: "bar"}},
+			expected:  []*prompb.Label{{Name: "aaa", Value: "foo"}, {Name: "bbb", Value: "foo"}, {Name: "ccc", Value: "bar"}, {Name: "ddd", Value: "foo"}},
 		},
 		{
-			primary:   []prompb.Label{{Name: "bbb", Value: "bar"}, {Name: "ccc", Value: "bar"}},
-			secondary: []prompb.Label{{Name: "aaa", Value: "foo"}, {Name: "bbb", Value: "foo"}, {Name: "ddd", Value: "foo"}},
-			expected:  []prompb.Label{{Name: "aaa", Value: "foo"}, {Name: "bbb", Value: "bar"}, {Name: "ccc", Value: "bar"}, {Name: "ddd", Value: "foo"}},
+			primary:   []*prompb.Label{{Name: "bbb", Value: "bar"}, {Name: "ccc", Value: "bar"}},
+			secondary: []*prompb.Label{{Name: "aaa", Value: "foo"}, {Name: "bbb", Value: "foo"}, {Name: "ddd", Value: "foo"}},
+			expected:  []*prompb.Label{{Name: "aaa", Value: "foo"}, {Name: "bbb", Value: "bar"}, {Name: "ccc", Value: "bar"}, {Name: "ddd", Value: "foo"}},
 		},
 	} {
 		require.Equal(t, tc.expected, MergeLabels(tc.primary, tc.secondary))
@@ -592,21 +592,21 @@ func TestDecodeWriteV2Request(t *testing.T) {
 func TestStreamResponse(t *testing.T) {
 	lbs1 := prompb.FromLabels(labels.FromStrings("instance", "localhost1", "job", "demo1"), nil)
 	lbs2 := prompb.FromLabels(labels.FromStrings("instance", "localhost2", "job", "demo2"), nil)
-	chunk := prompb.Chunk{
+	chunk := &prompb.Chunk{
 		Type: prompb.Chunk_XOR,
 		Data: make([]byte, 100),
 	}
-	lbSize, chunkSize := 0, chunk.Size()
+	lbSize, chunkSize := 0, chunk.SizeVT()
 	for _, lb := range lbs1 {
-		lbSize += lb.Size()
+		lbSize += lb.SizeVT()
 	}
 	maxBytesInFrame := lbSize + chunkSize*2
 	testData := []*prompb.ChunkedSeries{{
 		Labels: lbs1,
-		Chunks: []prompb.Chunk{chunk, chunk, chunk, chunk},
+		Chunks: []*prompb.Chunk{chunk, chunk, chunk, chunk},
 	}, {
 		Labels: lbs2,
-		Chunks: []prompb.Chunk{chunk, chunk, chunk, chunk},
+		Chunks: []*prompb.Chunk{chunk, chunk, chunk, chunk},
 	}}
 	css := newMockChunkSeriesSet(testData)
 	writer := mockWriter{}
@@ -619,16 +619,16 @@ func TestStreamResponse(t *testing.T) {
 	require.NoError(t, err)
 	expectData := []*prompb.ChunkedSeries{{
 		Labels: lbs1,
-		Chunks: []prompb.Chunk{chunk, chunk},
+		Chunks: []*prompb.Chunk{chunk, chunk},
 	}, {
 		Labels: lbs1,
-		Chunks: []prompb.Chunk{chunk, chunk},
+		Chunks: []*prompb.Chunk{chunk, chunk},
 	}, {
 		Labels: lbs2,
-		Chunks: []prompb.Chunk{chunk, chunk},
+		Chunks: []*prompb.Chunk{chunk, chunk},
 	}, {
 		Labels: lbs2,
-		Chunks: []prompb.Chunk{chunk, chunk},
+		Chunks: []*prompb.Chunk{chunk, chunk},
 	}}
 	require.Equal(t, expectData, writer.actual)
 }
@@ -680,7 +680,7 @@ func (c *mockChunkSeriesSet) Err() error {
 }
 
 type mockChunkIterator struct {
-	chunks []prompb.Chunk
+	chunks []*prompb.Chunk
 	index  int
 }
 

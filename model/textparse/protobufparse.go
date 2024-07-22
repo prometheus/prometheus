@@ -31,7 +31,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 
-	dto "github.com/prometheus/prometheus/prompb/io/prometheus/client"
+	dto "github.com/prometheus/client_model/go"
 )
 
 // ProtobufParser is a very inefficient way of unmarshaling the old Prometheus
@@ -595,7 +595,7 @@ func readDelimited(b []byte, mf *dto.MetricFamily) (n int, err error) {
 		return 0, fmt.Errorf("protobufparse: insufficient length of buffer, expected at least %d bytes, got %d bytes", totalLength, len(b))
 	}
 	mf.Reset()
-	return totalLength, mf.UnmarshalVT(b[varIntLength:totalLength])
+	return totalLength, proto.Unmarshal(b[varIntLength:totalLength], mf)
 }
 
 // formatOpenMetricsFloat works like the usual Go string formatting of a fleat

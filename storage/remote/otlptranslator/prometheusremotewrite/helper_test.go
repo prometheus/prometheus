@@ -13,9 +13,10 @@
 package prometheusremotewrite
 
 import (
+	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 
 	"github.com/prometheus/prometheus/prompb"
@@ -155,7 +156,9 @@ func TestCreateAttributes(t *testing.T) {
 			}
 			lbls := createAttributes(resource, attrs, settings, nil, false)
 
-			assert.ElementsMatch(t, lbls, tc.expectedLabels)
+			for i := range lbls {
+				require.True(t, proto.Equal(lbls[i], &tc.expectedLabels[i]))
+			}
 		})
 	}
 }

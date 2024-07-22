@@ -87,7 +87,7 @@ func MetricFamiliesToWriteRequest(mf map[string]*dto.MetricFamily, extraLabels m
 }
 
 func toTimeseries(wr *prompb.WriteRequest, labels map[string]string, timestamp int64, value float64) {
-	var ts *prompb.TimeSeries
+	ts := &prompb.TimeSeries{}
 	ts.Labels = makeLabels(labels)
 	ts.Samples = []*prompb.Sample{
 		{

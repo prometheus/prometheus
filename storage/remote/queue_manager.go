@@ -24,7 +24,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/gogo/protobuf/proto"
+	"github.com/golang/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -1537,6 +1537,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 	batchQueue := queue.Chan()
 	pendingData := make([]*prompb.TimeSeries, max)
 	for i := range pendingData {
+		pendingData[i] = &prompb.TimeSeries{}
 		pendingData[i].Samples = []*prompb.Sample{{}}
 		if s.qm.sendExemplars {
 			pendingData[i].Exemplars = []*prompb.Exemplar{{}}
@@ -1544,6 +1545,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 	}
 	pendingDataV2 := make([]*writev2.TimeSeries, max)
 	for i := range pendingDataV2 {
+		pendingDataV2[i] = &writev2.TimeSeries{}
 		pendingDataV2[i].Samples = []*writev2.Sample{{}}
 	}
 
@@ -1945,6 +1947,7 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 		pendingData[nPending].Samples = pendingData[nPending].Samples[:0]
 		// todo: should we also safeguard against empty metadata here?
 		if d.metadata != nil {
+			pendingData[nPending].Metadata = &writev2.Metadata{}
 			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(d.metadata.Type)
 			pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Help)
 			pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Unit)
@@ -2201,7 +2204,7 @@ func buildV2WriteRequest(logger log.Logger, samples []*writev2.TimeSeries, label
 		pBuf = &[]byte{} // For convenience in tests. Not efficient.
 	}
 
-	data, err := req.OptimizedMarshal(*pBuf)
+	data, err := req.MarshalVT()
 	if err != nil {
 		return nil, highest, lowest, err
 	}
