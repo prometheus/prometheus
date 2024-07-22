@@ -51,7 +51,7 @@ func NewMergeQuerier(primaries, secondaries []Querier, mergeFn VerticalSeriesMer
 	case len(primaries) == 1 && len(secondaries) == 0:
 		return primaries[0]
 	case len(primaries) == 0 && len(secondaries) == 1:
-		return secondaries[0]
+		return &querierAdapter{newSecondaryQuerierFrom(secondaries[0])}
 	}
 
 	queriers := make([]genericQuerier, 0, len(primaries)+len(secondaries))
@@ -89,7 +89,7 @@ func NewMergeChunkQuerier(primaries, secondaries []ChunkQuerier, mergeFn Vertica
 	case len(primaries) == 1 && len(secondaries) == 0:
 		return primaries[0]
 	case len(primaries) == 0 && len(secondaries) == 1:
-		return secondaries[0]
+		return &chunkQuerierAdapter{newSecondaryQuerierFromChunk(secondaries[0])}
 	}
 
 	queriers := make([]genericQuerier, 0, len(primaries)+len(secondaries))
