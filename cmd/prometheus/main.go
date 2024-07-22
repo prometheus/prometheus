@@ -168,6 +168,8 @@ type flagConfig struct {
 	corsRegexString string
 
 	promlogConfig promlog.Config
+
+	promqlEnableDelayedNameRemoval bool
 }
 
 // setFeatureListOptions sets the corresponding options from the featureList.
@@ -234,6 +236,9 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 				config.DefaultConfig.GlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				level.Info(logger).Log("msg", "Experimental created timestamp zero ingestion enabled. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
+			case "promql-delayed-name-removal":
+				c.promqlEnableDelayedNameRemoval = true
+				level.Info(logger).Log("msg", "PromQL delayed name removal enabled.")
 			case "":
 				continue
 			case "promql-at-modifier", "promql-negative-offset":
@@ -475,7 +480,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, auto-gomemlimit, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, remote-write-receiver (DEPRECATED), extra-scrape-metrics, new-service-discovery-manager, auto-gomaxprocs, no-default-scrape-port, native-histograms, otlp-write-receiver, created-timestamp-zero-ingestion, concurrent-rule-eval. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, auto-gomemlimit, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, remote-write-receiver (DEPRECATED), extra-scrape-metrics, new-service-discovery-manager, auto-gomaxprocs, no-default-scrape-port, native-histograms, otlp-write-receiver, created-timestamp-zero-ingestion, promql-delayed-name-removal, concurrent-rule-eval. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
@@ -778,9 +783,10 @@ func main() {
 			NoStepSubqueryIntervalFn: noStepSubqueryInterval.Get,
 			// EnableAtModifier and EnableNegativeOffset have to be
 			// always on for regular PromQL as of Prometheus v2.33.
-			EnableAtModifier:     true,
-			EnableNegativeOffset: true,
-			EnablePerStepStats:   cfg.enablePerStepStats,
+			EnableAtModifier:         true,
+			EnableNegativeOffset:     true,
+			EnablePerStepStats:       cfg.enablePerStepStats,
+			EnableDelayedNameRemoval: cfg.promqlEnableDelayedNameRemoval,
 		}
 
 		queryEngine = promql.NewEngine(opts)

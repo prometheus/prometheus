@@ -313,6 +313,11 @@ type EngineOpts struct {
 
 	// EnablePerStepStats if true allows for per-step stats to be computed on request. Disabled otherwise.
 	EnablePerStepStats bool
+
+	// EnableDelayedNameRemoval delays the removal of the __name__ label to the last step of the query evaluation.
+	// This is useful in certain scenarios where the __name__ label must be preserved or where aggregations by __name__
+	// may otherwise lead to duplicate labelset errors.
+	EnableDelayedNameRemoval bool
 }
 
 // Engine handles the lifetime of queries from beginning to end.
@@ -330,6 +335,7 @@ type Engine struct {
 	enableAtModifier         bool
 	enableNegativeOffset     bool
 	enablePerStepStats       bool
+	enableDelayedNameRemoval bool
 }
 
 // NewEngine returns a new engine.
@@ -420,6 +426,7 @@ func NewEngine(opts EngineOpts) *Engine {
 		enableAtModifier:         opts.EnableAtModifier,
 		enableNegativeOffset:     opts.EnableNegativeOffset,
 		enablePerStepStats:       opts.EnablePerStepStats,
+		enableDelayedNameRemoval: opts.EnableDelayedNameRemoval,
 	}
 }
 
@@ -712,6 +719,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 			lookbackDelta:            s.LookbackDelta,
 			samplesStats:             query.sampleStats,
 			noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
+			enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
 		}
 		query.sampleStats.InitStepTracking(start, start, 1)
 
@@ -770,6 +778,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		lookbackDelta:            s.LookbackDelta,
 		samplesStats:             query.sampleStats,
 		noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
+		enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
 	}
 	query.sampleStats.InitStepTracking(evaluator.startTimestamp, evaluator.endTimestamp, evaluator.interval)
 	val, warnings, err := evaluator.Eval(s.Expr)
@@ -1032,6 +1041,7 @@ type evaluator struct {
 	lookbackDelta            time.Duration
 	samplesStats             *stats.QuerySamples
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
+	enableDelayedNameRemoval bool
 }
 
 // errorf causes a panic with the input formatted into an error.
@@ -1073,7 +1083,9 @@ func (ev *evaluator) Eval(expr parser.Expr) (v parser.Value, ws annotations.Anno
 	defer ev.recover(expr, &ws, &err)
 
 	v, ws = ev.eval(expr)
-	ev.cleanupMetricLabels(v)
+	if ev.enableDelayedNameRemoval {
+		ev.cleanupMetricLabels(v)
+	}
 	return v, ws, nil
 }
 
@@ -1102,6 +1114,9 @@ type EvalNodeHelper struct {
 	rightSigs    map[string]Sample
 	matchedSigs  map[string]map[uint64]struct{}
 	resultMetric map[string]labels.Labels
+
+	// Additional options for the evaluation.
+	enableDelayedNameRemoval bool
 }
 
 func (enh *EvalNodeHelper) resetBuilder(lbls labels.Labels) {
@@ -1151,7 +1166,7 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 			biggestLen = len(matrixes[i])
 		}
 	}
-	enh := &EvalNodeHelper{Out: make(Vector, 0, biggestLen)}
+	enh := &EvalNodeHelper{Out: make(Vector, 0, biggestLen), enableDelayedNameRemoval: ev.enableDelayedNameRemoval}
 	type seriesAndTimestamp struct {
 		Series
 		ts int64
@@ -1241,6 +1256,9 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 
 		// If this could be an instant query, shortcut so as not to change sort order.
 		if ev.endTimestamp == ev.startTimestamp {
+			if !ev.enableDelayedNameRemoval && result.ContainsSameLabelset() {
+				ev.errorf("vector cannot contain metrics with the same labelset")
+			}
 			mat := make(Matrix, len(result))
 			for i, s := range result {
 				if s.H == nil {
@@ -1300,7 +1318,7 @@ func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping 
 
 	var warnings annotations.Annotations
 
-	enh := &EvalNodeHelper{}
+	enh := &EvalNodeHelper{enableDelayedNameRemoval: ev.enableDelayedNameRemoval}
 	tempNumSamples := ev.currentSamples
 
 	// Create a mapping from input series to output groups.
@@ -1609,7 +1627,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 		var prevSS *Series
 		inMatrix := make(Matrix, 1)
 		inArgs[matrixArgIndex] = inMatrix
-		enh := &EvalNodeHelper{Out: make(Vector, 0, 1)}
+		enh := &EvalNodeHelper{Out: make(Vector, 0, 1), enableDelayedNameRemoval: ev.enableDelayedNameRemoval}
 		// Process all the calls for one time series at a time.
 		it := storage.NewBuffer(selRange)
 		var chkIter chunkenc.Iterator
@@ -1634,6 +1652,9 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 			chkIter = s.Iterator(chkIter)
 			it.Reset(chkIter)
 			metric := selVS.Series[i].Labels()
+			if !ev.enableDelayedNameRemoval && shouldDropName {
+				metric = metric.DropMetricName()
+			}
 			ss := Series{
 				Metric:         metric,
 				ShouldDropName: shouldDropName,
@@ -1758,6 +1779,9 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 			}, warnings
 		}
 
+		if !ev.enableDelayedNameRemoval && mat.ContainsSameLabelset() {
+			ev.errorf("vector cannot contain metrics with the same labelset")
+		}
 		return mat, warnings
 
 	case *parser.ParenExpr:
@@ -1768,10 +1792,16 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 		mat := val.(Matrix)
 		if e.Op == parser.SUB {
 			for i := range mat {
+				if !ev.enableDelayedNameRemoval {
+					mat[i].Metric = mat[i].Metric.DropMetricName()
+				}
 				mat[i].ShouldDropName = true
 				for j := range mat[i].Floats {
 					mat[i].Floats[j].F = -mat[i].Floats[j].F
 				}
+			}
+			if !ev.enableDelayedNameRemoval && mat.ContainsSameLabelset() {
+				ev.errorf("vector cannot contain metrics with the same labelset")
 			}
 		}
 		return mat, ws
@@ -1906,6 +1936,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 			lookbackDelta:            ev.lookbackDelta,
 			samplesStats:             ev.samplesStats.NewChild(),
 			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
+			enableDelayedNameRemoval: ev.enableDelayedNameRemoval,
 		}
 
 		if e.Step != 0 {
@@ -1950,6 +1981,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 			lookbackDelta:            ev.lookbackDelta,
 			samplesStats:             ev.samplesStats.NewChild(),
 			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
+			enableDelayedNameRemoval: ev.enableDelayedNameRemoval,
 		}
 		res, ws := newEv.eval(e.Expr)
 		ev.currentSamples = newEv.currentSamples
@@ -2541,6 +2573,9 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			continue
 		}
 		metric := resultMetric(ls.Metric, rs.Metric, op, matching, enh)
+		if !ev.enableDelayedNameRemoval && returnBool {
+			metric = metric.DropMetricName()
+		}
 		insertedSigs, exists := matchedSigs[sig]
 		if matching.Card == parser.CardOneToOne {
 			if exists {
@@ -2666,6 +2701,9 @@ func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scala
 			lhsSample.F = float
 			lhsSample.H = histogram
 			if shouldDropMetricName(op) || returnBool {
+				if !ev.enableDelayedNameRemoval {
+					lhsSample.Metric = lhsSample.Metric.DropMetricName()
+				}
 				lhsSample.ShouldDropName = true
 			}
 			enh.Out = append(enh.Out, lhsSample)

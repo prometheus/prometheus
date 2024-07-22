@@ -457,6 +457,9 @@ func funcClamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 		return enh.Out, nil
 	}
 	for _, el := range vec {
+		if !enh.enableDelayedNameRemoval {
+			el.Metric = el.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:         el.Metric,
 			F:              math.Max(min, math.Min(max, el.F)),
@@ -471,6 +474,9 @@ func funcClampMax(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 	vec := vals[0].(Vector)
 	max := vals[1].(Vector)[0].F
 	for _, el := range vec {
+		if !enh.enableDelayedNameRemoval {
+			el.Metric = el.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:         el.Metric,
 			F:              math.Min(max, el.F),
@@ -485,6 +491,9 @@ func funcClampMin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 	vec := vals[0].(Vector)
 	min := vals[1].(Vector)[0].F
 	for _, el := range vec {
+		if !enh.enableDelayedNameRemoval {
+			el.Metric = el.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:         el.Metric,
 			F:              math.Max(min, el.F),
@@ -841,6 +850,9 @@ func funcPresentOverTime(vals []parser.Value, args parser.Expressions, enh *Eval
 func simpleFunc(vals []parser.Value, enh *EvalNodeHelper, f func(float64) float64) Vector {
 	for _, el := range vals[0].(Vector) {
 		if el.H == nil { // Process only float samples.
+			if !enh.enableDelayedNameRemoval {
+				el.Metric = el.Metric.DropMetricName()
+			}
 			enh.Out = append(enh.Out, Sample{
 				Metric:         el.Metric,
 				F:              f(el.F),
@@ -988,6 +1000,9 @@ func funcSgn(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) 
 func funcTimestamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	vec := vals[0].(Vector)
 	for _, el := range vec {
+		if !enh.enableDelayedNameRemoval {
+			el.Metric = el.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:         el.Metric,
 			F:              float64(el.T) / 1000,
@@ -1098,6 +1113,9 @@ func funcHistogramCount(vals []parser.Value, args parser.Expressions, enh *EvalN
 		if sample.H == nil {
 			continue
 		}
+		if !enh.enableDelayedNameRemoval {
+			sample.Metric = sample.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:         sample.Metric,
 			F:              sample.H.Count,
@@ -1116,6 +1134,9 @@ func funcHistogramSum(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		if sample.H == nil {
 			continue
 		}
+		if !enh.enableDelayedNameRemoval {
+			sample.Metric = sample.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:         sample.Metric,
 			F:              sample.H.Sum,
@@ -1133,6 +1154,9 @@ func funcHistogramAvg(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		// Skip non-histogram samples.
 		if sample.H == nil {
 			continue
+		}
+		if !enh.enableDelayedNameRemoval {
+			sample.Metric = sample.Metric.DropMetricName()
 		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:         sample.Metric,
@@ -1174,6 +1198,9 @@ func funcHistogramStdDev(vals []parser.Value, args parser.Expressions, enh *Eval
 		}
 		variance += cVariance
 		variance /= sample.H.Count
+		if !enh.enableDelayedNameRemoval {
+			sample.Metric = sample.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:         sample.Metric,
 			F:              math.Sqrt(variance),
@@ -1214,6 +1241,9 @@ func funcHistogramStdVar(vals []parser.Value, args parser.Expressions, enh *Eval
 		}
 		variance += cVariance
 		variance /= sample.H.Count
+		if !enh.enableDelayedNameRemoval {
+			sample.Metric = sample.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:         sample.Metric,
 			F:              variance,
@@ -1233,6 +1263,9 @@ func funcHistogramFraction(vals []parser.Value, args parser.Expressions, enh *Ev
 		// Skip non-histogram samples.
 		if sample.H == nil {
 			continue
+		}
+		if !enh.enableDelayedNameRemoval {
+			sample.Metric = sample.Metric.DropMetricName()
 		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:         sample.Metric,
@@ -1305,6 +1338,9 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			continue
 		}
 
+		if !enh.enableDelayedNameRemoval {
+			sample.Metric = sample.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:         sample.Metric,
 			F:              histogramQuantile(q, sample.H),
@@ -1497,6 +1533,9 @@ func dateWrapper(vals []parser.Value, enh *EvalNodeHelper, f func(time.Time) flo
 
 	for _, el := range vals[0].(Vector) {
 		t := time.Unix(int64(el.F), 0).UTC()
+		if !enh.enableDelayedNameRemoval {
+			el.Metric = el.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:         el.Metric,
 			F:              f(t),
