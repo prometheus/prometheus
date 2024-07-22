@@ -949,7 +949,7 @@ func (m *mockQuerier) Select(_ context.Context, sortSeries bool, _ *SelectHints,
 	} else if len(m.resp) > 0 {
 		ret = make([]Series, 0, len(m.resp))
 		for _, l := range m.resp {
-			ret = append(ret, NewListSeries(labels.FromStrings("test", string(l)), nil))
+			ret = append(ret, NewListSeries(labels.FromStrings("test", l), nil))
 		}
 	}
 	if sortSeries {
