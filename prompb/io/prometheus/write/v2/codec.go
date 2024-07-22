@@ -160,8 +160,8 @@ func deltasToCounts(deltas []int64) []float64 {
 }
 
 // FromIntHistogram returns remote Histogram from the integer Histogram.
-func FromIntHistogram(timestamp int64, h *histogram.Histogram) Histogram {
-	return Histogram{
+func FromIntHistogram(timestamp int64, h *histogram.Histogram) *Histogram {
+	return &Histogram{
 		Count:          &Histogram_CountInt{CountInt: h.Count},
 		Sum:            h.Sum,
 		Schema:         h.Schema,
@@ -178,8 +178,8 @@ func FromIntHistogram(timestamp int64, h *histogram.Histogram) Histogram {
 }
 
 // FromFloatHistogram returns remote Histogram from the float Histogram.
-func FromFloatHistogram(timestamp int64, fh *histogram.FloatHistogram) Histogram {
-	return Histogram{
+func FromFloatHistogram(timestamp int64, fh *histogram.FloatHistogram) *Histogram {
+	return &Histogram{
 		Count:          &Histogram_CountFloat{CountFloat: fh.Count},
 		Sum:            fh.Sum,
 		Schema:         fh.Schema,

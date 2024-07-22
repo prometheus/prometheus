@@ -96,7 +96,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(dataPoints pmetric.NumberDa
 				return
 			}
 
-			createdLabels := make([]prompb.Label, len(lbls))
+			createdLabels := make([]*prompb.Label, len(lbls))
 			copy(createdLabels, lbls)
 			for i, l := range createdLabels {
 				if l.Name == model.MetricNameLabel {

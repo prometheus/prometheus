@@ -88,14 +88,14 @@ func (h *readHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	externalLabels := h.config().GlobalConfig.ExternalLabels.Map()
 
-	sortedExternalLabels := make([]prompb.Label, 0, len(externalLabels))
+	sortedExternalLabels := make([]*prompb.Label, 0, len(externalLabels))
 	for name, value := range externalLabels {
-		sortedExternalLabels = append(sortedExternalLabels, prompb.Label{
+		sortedExternalLabels = append(sortedExternalLabels, &prompb.Label{
 			Name:  name,
 			Value: value,
 		})
 	}
-	slices.SortFunc(sortedExternalLabels, func(a, b prompb.Label) int {
+	slices.SortFunc(sortedExternalLabels, func(a, b *prompb.Label) int {
 		return strings.Compare(a.Name, b.Name)
 	})
 
@@ -119,7 +119,7 @@ func (h *readHandler) remoteReadSamples(
 	w http.ResponseWriter,
 	req *prompb.ReadRequest,
 	externalLabels map[string]string,
-	sortedExternalLabels []prompb.Label,
+	sortedExternalLabels []*prompb.Label,
 ) {
 	w.Header().Set("Content-Type", "application/x-protobuf")
 	w.Header().Set("Content-Encoding", "snappy")
@@ -186,7 +186,7 @@ func (h *readHandler) remoteReadSamples(
 	}
 }
 
-func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.ResponseWriter, req *prompb.ReadRequest, externalLabels map[string]string, sortedExternalLabels []prompb.Label) {
+func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.ResponseWriter, req *prompb.ReadRequest, externalLabels map[string]string, sortedExternalLabels []*prompb.Label) {
 	w.Header().Set("Content-Type", "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse")
 
 	f, ok := w.(http.Flusher)

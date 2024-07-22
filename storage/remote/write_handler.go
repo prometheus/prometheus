@@ -278,7 +278,7 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	return nil
 }
 
-func (h *writeHandler) appendV1Samples(app storage.Appender, ss []prompb.Sample, labels labels.Labels) error {
+func (h *writeHandler) appendV1Samples(app storage.Appender, ss []*prompb.Sample, labels labels.Labels) error {
 	var ref storage.SeriesRef
 	var err error
 	for _, s := range ss {
@@ -295,7 +295,7 @@ func (h *writeHandler) appendV1Samples(app storage.Appender, ss []prompb.Sample,
 	return nil
 }
 
-func (h *writeHandler) appendV1Histograms(app storage.Appender, hh []prompb.Histogram, labels labels.Labels) error {
+func (h *writeHandler) appendV1Histograms(app storage.Appender, hh []*prompb.Histogram, labels labels.Labels) error {
 	var err error
 	for _, hp := range hh {
 		if hp.IsFloatHistogram() {

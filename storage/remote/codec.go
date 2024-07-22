@@ -130,8 +130,8 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 		iter = series.Iterator(iter)
 
 		var (
-			samples    []prompb.Sample
-			histograms []prompb.Histogram
+			samples    []*prompb.Sample
+			histograms []*prompb.Histogram
 		)
 
 		for valType := iter.Next(); valType != chunkenc.ValNone; valType = iter.Next() {
@@ -146,7 +146,7 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 			switch valType {
 			case chunkenc.ValFloat:
 				ts, val := iter.At()
-				samples = append(samples, prompb.Sample{
+				samples = append(samples, &prompb.Sample{
 					Timestamp: ts,
 					Value:     val,
 				})
@@ -221,13 +221,13 @@ func StreamChunkedReadResponses(
 	stream io.Writer,
 	queryIndex int64,
 	ss storage.ChunkSeriesSet,
-	sortedExternalLabels []prompb.Label,
+	sortedExternalLabels []*prompb.Label,
 	maxBytesInFrame int,
 	marshalPool *sync.Pool,
 ) (annotations.Annotations, error) {
 	var (
-		chks []prompb.Chunk
-		lbls []prompb.Label
+		chks []*prompb.Chunk
+		lbls []*prompb.Label
 		iter chunks.Iterator
 	)
 
@@ -238,7 +238,7 @@ func StreamChunkedReadResponses(
 
 		maxDataLength := maxBytesInFrame
 		for _, lbl := range lbls {
-			maxDataLength -= lbl.Size()
+			maxDataLength -= lbl.SizeVT()
 		}
 		frameBytesLeft := maxDataLength
 
@@ -253,13 +253,13 @@ func StreamChunkedReadResponses(
 			}
 
 			// Cut the chunk.
-			chks = append(chks, prompb.Chunk{
+			chks = append(chks, &prompb.Chunk{
 				MinTimeMs: chk.MinTime,
 				MaxTimeMs: chk.MaxTime,
 				Type:      prompb.Chunk_Encoding(chk.Chunk.Encoding()),
 				Data:      chk.Chunk.Bytes(),
 			})
-			frameBytesLeft -= chks[len(chks)-1].Size()
+			frameBytesLeft -= chks[len(chks)-1].SizeVT()
 
 			// We are fine with minor inaccuracy of max bytes per frame. The inaccuracy will be max of full chunk size.
 			isNext = iter.Next()
@@ -297,8 +297,8 @@ func StreamChunkedReadResponses(
 
 // MergeLabels merges two sets of sorted proto labels, preferring those in
 // primary to those in secondary when there is an overlap.
-func MergeLabels(primary, secondary []prompb.Label) []prompb.Label {
-	result := make([]prompb.Label, 0, len(primary)+len(secondary))
+func MergeLabels(primary, secondary []*prompb.Label) []*prompb.Label {
+	result := make([]*prompb.Label, 0, len(primary)+len(secondary))
 	i, j := 0, 0
 	for i < len(primary) && j < len(secondary) {
 		switch {
@@ -366,8 +366,8 @@ func (c *concreteSeriesSet) Warnings() annotations.Annotations { return nil }
 // concreteSeries implements storage.Series.
 type concreteSeries struct {
 	labels     labels.Labels
-	floats     []prompb.Sample
-	histograms []prompb.Histogram
+	floats     []*prompb.Sample
+	histograms []*prompb.Histogram
 }
 
 func (c *concreteSeries) Labels() labels.Labels {
@@ -439,7 +439,7 @@ func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
 		if c.series.floats[c.floatsCur].Timestamp <= c.series.histograms[c.histogramsCur].Timestamp {
 			c.curValType = chunkenc.ValFloat
 		} else {
-			c.curValType = getHistogramValType(&c.series.histograms[c.histogramsCur])
+			c.curValType = getHistogramValType(c.series.histograms[c.histogramsCur])
 		}
 		// When the timestamps do not overlap the cursor for the non-selected sample type has advanced too
 		// far; we decrement it back down here.
@@ -453,7 +453,7 @@ func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	case c.floatsCur < len(c.series.floats):
 		c.curValType = chunkenc.ValFloat
 	case c.histogramsCur < len(c.series.histograms):
-		c.curValType = getHistogramValType(&c.series.histograms[c.histogramsCur])
+		c.curValType = getHistogramValType(c.series.histograms[c.histogramsCur])
 	}
 	return c.curValType
 }
@@ -542,7 +542,7 @@ func (c *concreteSeriesIterator) Err() error {
 
 // validateLabelsAndMetricName validates the label names/values and metric names returned from remote read,
 // also making sure that there are no labels with duplicate names.
-func validateLabelsAndMetricName(ls []prompb.Label) error {
+func validateLabelsAndMetricName(ls []*prompb.Label) error {
 	for i, l := range ls {
 		if l.Name == labels.MetricName && !model.IsValidMetricName(model.LabelValue(l.Value)) {
 			return fmt.Errorf("invalid metric name: %v", l.Value)
