@@ -120,9 +120,15 @@ power consumption in Watts:
 
     integral(power_rate[1d]) / 1000 / 3600
 
-For those metrics that produce `1`s or `0`s, integrating them over time will
-give the _time in seconds_ that the value was `1`, for example, to get the
-_amount of time_ a particular metric has been absent during the past day
-(sampled every 5 minutes):
+For those "boolean" metrics that produce `1`s or `0`s, integrating them over
+time will give the _time in seconds_ that the value was `1`, for example, to
+get the _amount of time_ a particular metric has been absent during the past
+day (sampled every 5 minutes):
 
     integral(absent(metric_name)[1d:5m])
+
+As another case for measuring _amount of time_, for example a boolean metric
+representing a service level agreement (SLA) being met divided by the total
+time, will give the SLA ratio:
+
+    integral(service_sla_ok[7d]) / (3600 * 24 * 7)
