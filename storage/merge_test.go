@@ -1505,6 +1505,25 @@ func TestMergeQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 			expectedErrs: [4]error{errStorage, errStorage, errStorage, errStorage},
 		},
 		{
+			name:      "nil primary querier with failed secondary",
+			primaries: nil,
+			secondaries: []Querier{
+				&mockQuerier{resp: []string{"b"}, warnings: nil, err: errStorage},
+			},
+			expectedLabels:   []string{},
+			expectedWarnings: annotations.New().Add(errStorage),
+		},
+		{
+			name:      "nil primary querier with two failed secondaries",
+			primaries: nil,
+			secondaries: []Querier{
+				&mockQuerier{resp: []string{"b"}, warnings: nil, err: errStorage},
+				&mockQuerier{resp: []string{"c"}, warnings: nil, err: errStorage},
+			},
+			expectedLabels:   []string{},
+			expectedWarnings: annotations.New().Add(errStorage),
+		},
+		{
 			name: "one successful primary querier with failed secondaries",
 			primaries: []Querier{
 				&mockQuerier{resp: []string{"a"}, warnings: nil, err: nil},
