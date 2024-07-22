@@ -1561,7 +1561,7 @@ func TestMergeQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 				res, w, err := q.LabelNames(ctx, nil)
 				require.Subset(t, tcase.expectedWarnings, w)
 				require.ErrorIs(t, err, tcase.expectedErrs[1], "expected error doesn't match")
-				require.Equal(t, tcase.expectedLabels, res)
+				requireEqualSlice(t, tcase.expectedLabels, res)
 
 				if err != nil {
 					return
@@ -1574,7 +1574,7 @@ func TestMergeQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 				res, w, err := q.LabelValues(ctx, "test", nil)
 				require.Subset(t, tcase.expectedWarnings, w)
 				require.ErrorIs(t, err, tcase.expectedErrs[2], "expected error doesn't match")
-				require.Equal(t, tcase.expectedLabels, res)
+				requireEqualSlice(t, tcase.expectedLabels, res)
 
 				if err != nil {
 					return
@@ -1588,7 +1588,7 @@ func TestMergeQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 				res, w, err := q.LabelValues(ctx, "test2", nil, matcher)
 				require.Subset(t, tcase.expectedWarnings, w)
 				require.ErrorIs(t, err, tcase.expectedErrs[3], "expected error doesn't match")
-				require.Equal(t, tcase.expectedLabels, res)
+				requireEqualSlice(t, tcase.expectedLabels, res)
 
 				if err != nil {
 					return
@@ -1601,6 +1601,15 @@ func TestMergeQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 				})
 			})
 		})
+	}
+}
+
+// Check slice but ignore difference between nil and empty.
+func requireEqualSlice[T any](t require.TestingT, a, b []T, msgAndArgs ...interface{}) {
+	if len(a) == 0 {
+		require.Empty(t, b, msgAndArgs...)
+	} else {
+		require.Equal(t, a, b, msgAndArgs...)
 	}
 }
 
