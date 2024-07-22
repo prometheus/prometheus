@@ -69,7 +69,7 @@ class OutdatedChunkMerger {
     uint32_t ls_id_;
   };
 
-  class SampleMergeIterator {
+  class OutdatedSampleIterator {
    public:
     using iterator_category = std::forward_iterator_tag;
     using value_type = encoder::Sample;
@@ -77,20 +77,18 @@ class OutdatedChunkMerger {
     using pointer = encoder::Sample*;
     using reference = encoder::Sample&;
 
-    explicit SampleMergeIterator(SamplesSpan::iterator& begin, SamplesSpan::iterator end, int64_t max_timestamp)
-        : iterator_(&begin), end_(end), max_timestamp_(max_timestamp) {
-      skip_repeatable_timestamps();
-    }
+    explicit OutdatedSampleIterator(SamplesSpan::iterator& begin, SamplesSpan::iterator end, int64_t max_timestamp)
+        : iterator_(&begin), end_(end), max_timestamp_(max_timestamp) {}
 
     const encoder::Sample& operator*() const noexcept { return **iterator_; }
 
-    PROMPP_ALWAYS_INLINE SampleMergeIterator& operator++() noexcept {
+    PROMPP_ALWAYS_INLINE OutdatedSampleIterator& operator++() noexcept {
+      skip_non_unique_samples();
       ++*iterator_;
-      skip_repeatable_timestamps();
       return *this;
     }
 
-    PROMPP_ALWAYS_INLINE SampleMergeIterator operator++(int) noexcept {
+    PROMPP_ALWAYS_INLINE OutdatedSampleIterator operator++(int) noexcept {
       auto result = *this;
       this->operator++();
       return result;
@@ -105,7 +103,7 @@ class OutdatedChunkMerger {
     SamplesSpan::iterator end_;
     int64_t max_timestamp_{};
 
-    void skip_repeatable_timestamps() const {
+    void skip_non_unique_samples() const {
       for (; *iterator_ != end_; ++*iterator_) {
         if (auto next = std::next(*iterator_); next == end_ || (*iterator_)->timestamp != next->timestamp) {
           break;
@@ -204,7 +202,7 @@ class OutdatedChunkMerger {
   template <ChunkEncodingType encoding_type, ChunkType chunk_type>
   void merge_outdated_samples(const chunk::DataChunk& source_chunk, int64_t max_timestamp, const EncodeIterator& encode_iterator, SamplesSpan& samples) {
     auto begin = samples.begin();
-    std::ranges::set_union(SampleMergeIterator{begin, samples.end(), max_timestamp}, IteratorSentinel{},
+    std::ranges::set_union(OutdatedSampleIterator{begin, samples.end(), max_timestamp}, IteratorSentinel{},
                            Decoder::create_decode_iterator<encoding_type, chunk_type>(storage_, source_chunk), decoder::DecodeIteratorSentinel{},
                            encode_iterator);
     samples = {begin, samples.end()};
