@@ -459,6 +459,7 @@ func (c ruleDependencyController) AnalyseRules(rules []Rule) {
 type RuleConcurrencyController interface {
 	// Allow determines if the given rule is allowed to be evaluated concurrently.
 	// If Allow() returns true, then Done() must be called to release the acquired slot and corresponding cleanup is done.
+	// It is important that both *Group and Rule are not retained and only be used for the duration of the call.
 	Allow(ctx context.Context, group *Group, rule Rule) bool
 
 	// Done releases a concurrent evaluation slot.
