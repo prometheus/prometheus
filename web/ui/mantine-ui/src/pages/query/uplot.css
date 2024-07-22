@@ -31,6 +31,10 @@
   width: min-content;
 }
 
+.u-under {
+  background-color: light-dark(unset, #1f1f1f);
+}
+
 .u-over {
   box-shadow: 0px 0px 0px 0.5px #ccc;
   cursor: crosshair;
@@ -57,9 +61,10 @@
   color: var(--mantine-color-gray-1); */
   /* background: rgba(0, 0, 0, 0.8); */
   /* color: #fff; */
-  background: rgba(255, 255, 255, 0.95);
-  border: 2px solid var(--mantine-color-gray-6);
-  color: var(--mantine-color-gray-9);
+  background: light-dark(rgba(255, 255, 255, 0.95), rgba(25, 25, 25, 0.95));
+  color: light-dark(var(--mantine-color-gray-9), var(--mantine-color-gray-5));
+  border: 2px solid
+    light-dark(var(--mantine-color-gray-6), var(--mantine-color-gray-6));
   border-radius: 4px;
   position: absolute;
   padding: 0.8em 1.5em;

@@ -11,6 +11,8 @@ import { formatTimestamp } from "../../lib/formatTime";
 import { computePosition, shift, flip, offset } from "@floating-ui/dom";
 import { colorPool } from "./ColorPool";
 import { useSettings } from "../../state/settingsSlice";
+import { useComputedColorScheme } from "@mantine/core";
+import { fill } from "lodash";
 
 const formatYAxisTickValue = (y: number | null): string => {
   if (y === null) {
@@ -236,6 +238,7 @@ const getOptions = (
   width: number,
   result: RangeSamples[],
   useLocalTime: boolean,
+  light: boolean,
   onSelectRange: (_start: number, _end: number) => void
 ): uPlot.Options => ({
   width: width - 30,
@@ -264,7 +267,7 @@ const getOptions = (
         _u: uPlot,
         seriesIdx: number
       ): CSSStyleDeclaration["borderColor"] => {
-        return colorPool[seriesIdx % colorPool.length];
+        return colorPool[(seriesIdx - 1) % colorPool.length];
       },
     },
   },
@@ -278,10 +281,13 @@ const getOptions = (
     // X axis (time).
     {
       labelSize: 20,
-      stroke: "#333",
+      stroke: light ? "#333" : "#eee",
+      ticks: {
+        stroke: light ? "#333" : "#eee",
+      },
       grid: {
         show: false,
-        stroke: "#eee",
+        stroke: light ? "#eee" : "#333",
         width: 2,
         dash: [],
       },
@@ -289,14 +295,23 @@ const getOptions = (
     // Y axis (sample value).
     {
       values: (_u: uPlot, splits: number[]) => splits.map(formatYAxisTickValue),
-      border: {
+      // border: {
+      //   show: true,
+      //   stroke: light ? "#00000010" : "#ffffff10",
+      //   width: 2,
+      // },
+      ticks: {
+        stroke: light ? "#00000010" : "#ffffff10",
+      },
+      grid: {
         show: true,
-        stroke: "#333",
-        width: 1,
+        stroke: light ? "#00000010" : "#ffffff10",
+        width: 2,
+        dash: [],
       },
       labelGap: 8,
       labelSize: 8 + 12 + 8,
-      stroke: "#333",
+      stroke: light ? "#333" : "#eee",
       size: autoPadLeft,
     },
   ],
@@ -396,14 +411,17 @@ const UPlotChart: FC<UPlotChartProps> = ({
 }) => {
   const [options, setOptions] = useState<uPlot.Options | null>(null);
   const { useLocalTime } = useSettings();
+  const theme = useComputedColorScheme();
 
   useEffect(() => {
     if (width === 0) {
       return;
     }
 
-    setOptions(getOptions(width, data, useLocalTime, onSelectRange));
-  }, [width, data, useLocalTime, onSelectRange]);
+    setOptions(
+      getOptions(width, data, useLocalTime, theme === "light", onSelectRange)
+    );
+  }, [width, data, useLocalTime, theme, onSelectRange]);
 
   const seriesData: uPlot.AlignedData = normalizeData(
     data,

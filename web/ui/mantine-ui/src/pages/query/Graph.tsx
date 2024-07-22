@@ -143,7 +143,7 @@ const Graph: FC<GraphProps> = ({
         zIndex={1000}
         h={570}
         overlayProps={{ radius: "sm", blur: 0.5 }}
-        loaderProps={{ type: "dots", color: "gray" }}
+        loaderProps={{ type: "dots", color: "gray.6" }}
         // loaderProps={{
         //   children: <Skeleton m={0} w="100%" h="100%" />,
         // }}
