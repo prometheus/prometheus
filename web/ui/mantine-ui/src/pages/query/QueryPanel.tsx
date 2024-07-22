@@ -98,7 +98,21 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
           dispatch(removePanel(idx));
         }}
       />
-      <Tabs defaultValue="table" keepMounted={false}>
+      <Tabs
+        value={panel.visualizer.activeTab}
+        onChange={(v) =>
+          dispatch(
+            setVisualizer({
+              idx,
+              visualizer: {
+                ...panel.visualizer,
+                activeTab: v as "table" | "graph",
+              },
+            })
+          )
+        }
+        keepMounted={false}
+      >
         <Tabs.List>
           <Tabs.Tab value="table" leftSection={<IconTable style={iconStyle} />}>
             Table
