@@ -14,6 +14,7 @@
 package writev2
 
 import (
+	math_bits "math/bits"
 	"slices"
 )
 
@@ -21,7 +22,7 @@ func (m Sample) T() int64   { return m.Timestamp }
 func (m Sample) V() float64 { return m.Value }
 
 func (m *Request) OptimizedMarshal(dst []byte) ([]byte, error) {
-	siz := m.Size()
+	siz := m.SizeVT()
 	if cap(dst) < siz {
 		dst = make([]byte, siz)
 	}
@@ -39,10 +40,7 @@ func (m *Request) OptimizedMarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
-	if m.XXX_unrecognized != nil {
-		i -= len(m.XXX_unrecognized)
-		copy(dAtA[i:], m.XXX_unrecognized)
-	}
+	// Removed XXX_unrecognized handling
 	if len(m.Timeseries) > 0 {
 		for iNdEx := len(m.Timeseries) - 1; iNdEx >= 0; iNdEx-- {
 			{
@@ -73,20 +71,13 @@ func (m *Request) OptimizedMarshalToSizedBuffer(dAtA []byte) (int, error) {
 // but marshals m.LabelsRefs in place without extra allocations.
 func (m *TimeSeries) OptimizedMarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
-	_ = i
-	var l int
-	_ = l
-	if m.XXX_unrecognized != nil {
-		i -= len(m.XXX_unrecognized)
-		copy(dAtA[i:], m.XXX_unrecognized)
-	}
 	if m.CreatedTimestamp != 0 {
 		i = encodeVarintTypes(dAtA, i, uint64(m.CreatedTimestamp))
 		i--
 		dAtA[i] = 0x30
 	}
 	{
-		size, err := m.Metadata.MarshalToSizedBuffer(dAtA[:i])
+		size, err := m.Metadata.MarshalToVT(dAtA[:i]) // Adjusted for vtproto
 		if err != nil {
 			return 0, err
 		}
@@ -98,7 +89,7 @@ func (m *TimeSeries) OptimizedMarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if len(m.Histograms) > 0 {
 		for iNdEx := len(m.Histograms) - 1; iNdEx >= 0; iNdEx-- {
 			{
-				size, err := m.Histograms[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				size, err := m.Histograms[iNdEx].MarshalToVT(dAtA[:i]) // Adjusted for vtproto
 				if err != nil {
 					return 0, err
 				}
@@ -112,7 +103,7 @@ func (m *TimeSeries) OptimizedMarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if len(m.Exemplars) > 0 {
 		for iNdEx := len(m.Exemplars) - 1; iNdEx >= 0; iNdEx-- {
 			{
-				size, err := m.Exemplars[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				size, err := m.Exemplars[iNdEx].MarshalToVT(dAtA[:i]) // Adjusted for vtproto
 				if err != nil {
 					return 0, err
 				}
@@ -126,7 +117,7 @@ func (m *TimeSeries) OptimizedMarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if len(m.Samples) > 0 {
 		for iNdEx := len(m.Samples) - 1; iNdEx >= 0; iNdEx-- {
 			{
-				size, err := m.Samples[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				size, err := m.Samples[iNdEx].MarshalToVT(dAtA[:i]) // Adjusted for vtproto
 				if err != nil {
 					return 0, err
 				}
@@ -139,8 +130,6 @@ func (m *TimeSeries) OptimizedMarshalToSizedBuffer(dAtA []byte) (int, error) {
 	}
 
 	if len(m.LabelsRefs) > 0 {
-		// This is the trick: encode the varints in reverse order to make it easier
-		// to do it in place. Then reverse the whole thing.
 		var j10 int
 		start := i
 		for _, num := range m.LabelsRefs {
@@ -155,11 +144,25 @@ func (m *TimeSeries) OptimizedMarshalToSizedBuffer(dAtA []byte) (int, error) {
 			j10++
 		}
 		slices.Reverse(dAtA[i:start])
-		// --- end of trick
-
 		i = encodeVarintTypes(dAtA, i, uint64(j10))
 		i--
 		dAtA[i] = 0xa
 	}
 	return len(dAtA) - i, nil
+}
+
+func encodeVarintTypes(dAtA []byte, offset int, v uint64) int {
+	offset -= sovTypes(v)
+	base := offset
+	for v >= 1<<7 {
+		dAtA[offset] = uint8(v&0x7f | 0x80)
+		v >>= 7
+		offset++
+	}
+	dAtA[offset] = uint8(v)
+	return base
+}
+
+func sovTypes(x uint64) (n int) {
+	return (math_bits.Len64(x|1) + 6) / 7
 }

@@ -73,7 +73,7 @@ func (m byBucketBoundsData) Less(i, j int) bool { return m[i].bound < m[j].bound
 func (m byBucketBoundsData) Swap(i, j int)      { m[i], m[j] = m[j], m[i] }
 
 // ByLabelName enables the usage of sort.Sort() with a slice of labels.
-type ByLabelName []prompb.Label
+type ByLabelName []*prompb.Label
 
 func (a ByLabelName) Len() int           { return len(a) }
 func (a ByLabelName) Less(i, j int) bool { return a[i].Name < a[j].Name }
@@ -83,7 +83,7 @@ func (a ByLabelName) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 // The label slice should not contain duplicate label names; this method sorts the slice by label name before creating
 // the signature.
 // The algorithm is the same as in Prometheus' labels.StableHash function.
-func timeSeriesSignature(labels []prompb.Label) uint64 {
+func timeSeriesSignature(labels []*prompb.Label) uint64 {
 	sort.Sort(ByLabelName(labels))
 
 	// Use xxhash.Sum64(b) for fast path as it's faster.
@@ -117,15 +117,15 @@ var seps = []byte{'\xff'}
 // if logOnOverwrite is true, the overwrite is logged. Resulting label names are sanitized.
 // If settings.PromoteResourceAttributes is not empty, it's a set of resource attributes that should be promoted to labels.
 func createAttributes(resource pcommon.Resource, attributes pcommon.Map, settings Settings,
-	ignoreAttrs []string, logOnOverwrite bool, extras ...string) []prompb.Label {
+	ignoreAttrs []string, logOnOverwrite bool, extras ...string) []*prompb.Label {
 	resourceAttrs := resource.Attributes()
 	serviceName, haveServiceName := resourceAttrs.Get(conventions.AttributeServiceName)
 	instance, haveInstanceID := resourceAttrs.Get(conventions.AttributeServiceInstanceID)
 
-	promotedAttrs := make([]prompb.Label, 0, len(settings.PromoteResourceAttributes))
+	promotedAttrs := make([]*prompb.Label, 0, len(settings.PromoteResourceAttributes))
 	for _, name := range settings.PromoteResourceAttributes {
 		if value, exists := resourceAttrs.Get(name); exists {
-			promotedAttrs = append(promotedAttrs, prompb.Label{Name: name, Value: value.AsString()})
+			promotedAttrs = append(promotedAttrs, &prompb.Label{Name: name, Value: value.AsString()})
 		}
 	}
 	sort.Stable(ByLabelName(promotedAttrs))
@@ -143,12 +143,12 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 
 	// Ensure attributes are sorted by key for consistent merging of keys which
 	// collide when sanitized.
-	labels := make([]prompb.Label, 0, maxLabelCount)
+	labels := make([]*prompb.Label, 0, maxLabelCount)
 	// XXX: Should we always drop service namespace/service name/service instance ID from the labels
 	// (as they get mapped to other Prometheus labels)?
 	attributes.Range(func(key string, value pcommon.Value) bool {
 		if !slices.Contains(ignoreAttrs, key) {
-			labels = append(labels, prompb.Label{Name: key, Value: value.AsString()})
+			labels = append(labels, &prompb.Label{Name: key, Value: value.AsString()})
 		}
 		return true
 	})
@@ -212,7 +212,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 
 	labels = labels[:0]
 	for k, v := range l {
-		labels = append(labels, prompb.Label{Name: k, Value: v})
+		labels = append(labels, &prompb.Label{Name: k, Value: v})
 	}
 
 	return labels
@@ -328,20 +328,20 @@ type exemplarType interface {
 	Exemplars() pmetric.ExemplarSlice
 }
 
-func getPromExemplars[T exemplarType](pt T) []prompb.Exemplar {
-	promExemplars := make([]prompb.Exemplar, 0, pt.Exemplars().Len())
+func getPromExemplars[T exemplarType](pt T) []*prompb.Exemplar {
+	promExemplars := make([]*prompb.Exemplar, 0, pt.Exemplars().Len())
 	for i := 0; i < pt.Exemplars().Len(); i++ {
 		exemplar := pt.Exemplars().At(i)
 		exemplarRunes := 0
 
-		promExemplar := prompb.Exemplar{
+		promExemplar := &prompb.Exemplar{
 			Value:     exemplar.DoubleValue(),
 			Timestamp: timestamp.FromTime(exemplar.Timestamp().AsTime()),
 		}
 		if traceID := exemplar.TraceID(); !traceID.IsEmpty() {
 			val := hex.EncodeToString(traceID[:])
 			exemplarRunes += utf8.RuneCountInString(traceIDKey) + utf8.RuneCountInString(val)
-			promLabel := prompb.Label{
+			promLabel := &prompb.Label{
 				Name:  traceIDKey,
 				Value: val,
 			}
@@ -350,7 +350,7 @@ func getPromExemplars[T exemplarType](pt T) []prompb.Exemplar {
 		if spanID := exemplar.SpanID(); !spanID.IsEmpty() {
 			val := hex.EncodeToString(spanID[:])
 			exemplarRunes += utf8.RuneCountInString(spanIDKey) + utf8.RuneCountInString(val)
-			promLabel := prompb.Label{
+			promLabel := &prompb.Label{
 				Name:  spanIDKey,
 				Value: val,
 			}
@@ -358,11 +358,11 @@ func getPromExemplars[T exemplarType](pt T) []prompb.Exemplar {
 		}
 
 		attrs := exemplar.FilteredAttributes()
-		labelsFromAttributes := make([]prompb.Label, 0, attrs.Len())
+		labelsFromAttributes := make([]*prompb.Label, 0, attrs.Len())
 		attrs.Range(func(key string, value pcommon.Value) bool {
 			val := value.AsString()
 			exemplarRunes += utf8.RuneCountInString(key) + utf8.RuneCountInString(val)
-			promLabel := prompb.Label{
+			promLabel := &prompb.Label{
 				Name:  key,
 				Value: val,
 			}
@@ -474,24 +474,24 @@ func (c *PrometheusConverter) addSummaryDataPoints(dataPoints pmetric.SummaryDat
 // createLabels returns a copy of baseLabels, adding to it the pair model.MetricNameLabel=name.
 // If extras are provided, corresponding label pairs are also added to the returned slice.
 // If extras is uneven length, the last (unpaired) extra will be ignored.
-func createLabels(name string, baseLabels []prompb.Label, extras ...string) []prompb.Label {
+func createLabels(name string, baseLabels []*prompb.Label, extras ...string) []*prompb.Label {
 	extraLabelCount := len(extras) / 2
-	labels := make([]prompb.Label, len(baseLabels), len(baseLabels)+extraLabelCount+1) // +1 for name
+	labels := make([]*prompb.Label, len(baseLabels), len(baseLabels)+extraLabelCount+1) // +1 for name
 	copy(labels, baseLabels)
 
 	n := len(extras)
 	n -= n % 2
 	for extrasIdx := 0; extrasIdx < n; extrasIdx += 2 {
-		labels = append(labels, prompb.Label{Name: extras[extrasIdx], Value: extras[extrasIdx+1]})
+		labels = append(labels, &prompb.Label{Name: extras[extrasIdx], Value: extras[extrasIdx+1]})
 	}
 
-	labels = append(labels, prompb.Label{Name: model.MetricNameLabel, Value: name})
+	labels = append(labels, &prompb.Label{Name: model.MetricNameLabel, Value: name})
 	return labels
 }
 
 // getOrCreateTimeSeries returns the time series corresponding to the label set if existent, and false.
 // Otherwise it creates a new one and returns that, and true.
-func (c *PrometheusConverter) getOrCreateTimeSeries(lbls []prompb.Label) (*prompb.TimeSeries, bool) {
+func (c *PrometheusConverter) getOrCreateTimeSeries(lbls []*prompb.Label) (*prompb.TimeSeries, bool) {
 	h := timeSeriesSignature(lbls)
 	ts := c.unique[h]
 	if ts != nil {
@@ -527,10 +527,10 @@ func (c *PrometheusConverter) getOrCreateTimeSeries(lbls []prompb.Label) (*promp
 // addTimeSeriesIfNeeded adds a corresponding time series if it doesn't already exist.
 // If the time series doesn't already exist, it gets added with startTimestamp for its value and timestamp for its timestamp,
 // both converted to milliseconds.
-func (c *PrometheusConverter) addTimeSeriesIfNeeded(lbls []prompb.Label, startTimestamp pcommon.Timestamp, timestamp pcommon.Timestamp) {
+func (c *PrometheusConverter) addTimeSeriesIfNeeded(lbls []*prompb.Label, startTimestamp pcommon.Timestamp, timestamp pcommon.Timestamp) {
 	ts, created := c.getOrCreateTimeSeries(lbls)
 	if created {
-		ts.Samples = []prompb.Sample{
+		ts.Samples = []*prompb.Sample{
 			{
 				// convert ns to ms
 				Value:     float64(convertTimeStamp(startTimestamp)),

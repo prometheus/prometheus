@@ -21,7 +21,6 @@ syntax = "proto3";
 package io.prometheus.client;
 option go_package = "io_prometheus_client";
 
-import "gogoproto/gogo.proto";
 import "google/protobuf/timestamp.proto";
 
 message LabelPair {
@@ -63,7 +62,7 @@ message Quantile {
 message Summary {
   uint64            sample_count = 1;
   double            sample_sum   = 2;
-  repeated Quantile quantile     = 3 [(gogoproto.nullable) = false];
+  repeated Quantile quantile     = 3;
 
   google.protobuf.Timestamp  created_timestamp = 4;
 }
@@ -77,7 +76,7 @@ message Histogram {
   double sample_count_float = 4; // Overrides sample_count if > 0.
   double sample_sum         = 2;
   // Buckets for the classic histogram.
-  repeated Bucket bucket = 3 [(gogoproto.nullable) = false]; // Ordered in increasing order of upper_bound, +Inf bucket is optional.
+  repeated Bucket bucket = 3; // Ordered in increasing order of upper_bound, +Inf bucket is optional.
 
   google.protobuf.Timestamp created_timestamp = 15;
 
@@ -95,7 +94,7 @@ message Histogram {
   double zero_count_float = 8; // Overrides sb_zero_count if > 0.
 
   // Negative buckets for the native histogram.
-  repeated BucketSpan negative_span = 9 [(gogoproto.nullable) = false];
+  repeated BucketSpan negative_span = 9;
   // Use either "negative_delta" or "negative_count", the former for
   // regular histograms with integer counts, the latter for float
   // histograms.
@@ -106,7 +105,7 @@ message Histogram {
   // Use a no-op span (offset 0, length 0) for a native histogram without any
   // observations yet and with a zero_threshold of 0. Otherwise, it would be
   // indistinguishable from a classic histogram.
-  repeated BucketSpan positive_span = 12 [(gogoproto.nullable) = false];
+  repeated BucketSpan positive_span = 12;
   // Use either "positive_delta" or "positive_count", the former for
   // regular histograms with integer counts, the latter for float
   // histograms.
@@ -136,13 +135,13 @@ message BucketSpan {
 }
 
 message Exemplar {
-  repeated LabelPair        label     = 1 [(gogoproto.nullable) = false];
+  repeated LabelPair        label     = 1;
   double                    value     = 2;
   google.protobuf.Timestamp timestamp = 3; // OpenMetrics-style.
 }
 
 message Metric {
-  repeated LabelPair label        = 1 [(gogoproto.nullable) = false];
+  repeated LabelPair label        = 1;
   Gauge              gauge        = 2;
   Counter            counter      = 3;
   Summary            summary      = 4;
@@ -155,6 +154,6 @@ message MetricFamily {
   string          name   = 1;
   string          help   = 2;
   MetricType      type   = 3;
-  repeated Metric metric = 4 [(gogoproto.nullable) = false];
+  repeated Metric metric = 4;
   string          unit   = 5;
 }

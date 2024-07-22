@@ -23,9 +23,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/gogo/protobuf/proto"
-	"github.com/gogo/protobuf/types"
+	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/common/model"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -382,7 +382,7 @@ func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
 // CreatedTimestamp returns CT or nil if CT is not present or
 // invalid (as timestamp e.g. negative value) on counters, summaries or histograms.
 func (p *ProtobufParser) CreatedTimestamp() *int64 {
-	var ct *types.Timestamp
+	var ct *timestamppb.Timestamp
 	switch p.mf.GetType() {
 	case dto.MetricType_COUNTER:
 		ct = p.mf.GetMetric()[p.metricPos].GetCounter().GetCreatedTimestamp()
@@ -392,11 +392,7 @@ func (p *ProtobufParser) CreatedTimestamp() *int64 {
 		ct = p.mf.GetMetric()[p.metricPos].GetHistogram().GetCreatedTimestamp()
 	default:
 	}
-	ctAsTime, err := types.TimestampFromProto(ct)
-	if err != nil {
-		// Errors means ct == nil or invalid timestamp, which we silently ignore.
-		return nil
-	}
+	ctAsTime := ct.AsTime()
 	ctMilis := ctAsTime.UnixMilli()
 	return &ctMilis
 }
@@ -599,7 +595,7 @@ func readDelimited(b []byte, mf *dto.MetricFamily) (n int, err error) {
 		return 0, fmt.Errorf("protobufparse: insufficient length of buffer, expected at least %d bytes, got %d bytes", totalLength, len(b))
 	}
 	mf.Reset()
-	return totalLength, mf.Unmarshal(b[varIntLength:totalLength])
+	return totalLength, mf.UnmarshalVT(b[varIntLength:totalLength])
 }
 
 // formatOpenMetricsFloat works like the usual Go string formatting of a fleat

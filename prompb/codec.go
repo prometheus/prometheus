@@ -35,7 +35,7 @@ func (m ChunkedSeries) ToLabels(b *labels.ScratchBuilder, _ []string) labels.Lab
 	return labelProtosToLabels(b, m.GetLabels())
 }
 
-func labelProtosToLabels(b *labels.ScratchBuilder, labelPairs []Label) labels.Labels {
+func labelProtosToLabels(b *labels.ScratchBuilder, labelPairs []*Label) labels.Labels {
 	b.Reset()
 	for _, l := range labelPairs {
 		b.Add(l.Name, l.Value)
@@ -126,7 +126,7 @@ func (h Histogram) ToFloatHistogram() *histogram.FloatHistogram {
 	}
 }
 
-func spansProtoToSpans(s []BucketSpan) []histogram.Span {
+func spansProtoToSpans(s []*BucketSpan) []histogram.Span {
 	spans := make([]histogram.Span, len(s))
 	for i := 0; i < len(s); i++ {
 		spans[i] = histogram.Span{Offset: s[i].Offset, Length: s[i].Length}
@@ -179,10 +179,10 @@ func FromFloatHistogram(timestamp int64, fh *histogram.FloatHistogram) Histogram
 	}
 }
 
-func spansToSpansProto(s []histogram.Span) []BucketSpan {
-	spans := make([]BucketSpan, len(s))
+func spansToSpansProto(s []histogram.Span) []*BucketSpan {
+	spans := make([]*BucketSpan, len(s))
 	for i := 0; i < len(s); i++ {
-		spans[i] = BucketSpan{Offset: s[i].Offset, Length: s[i].Length}
+		spans[i] = &BucketSpan{Offset: s[i].Offset, Length: s[i].Length}
 	}
 
 	return spans
