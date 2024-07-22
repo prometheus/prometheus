@@ -5,18 +5,36 @@ import {
   IconPlus,
 } from "@tabler/icons-react";
 import { useAppDispatch, useAppSelector } from "../../state/hooks";
-import { addPanel } from "../../state/queryPageSlice";
+import { addPanel, setPanels } from "../../state/queryPageSlice";
 import Panel from "./QueryPanel";
 import { LabelValuesResult } from "../../api/responseTypes/labelValues";
 import { useAPIQuery } from "../../api/api";
 import { useEffect, useState } from "react";
 import { InstantQueryResult } from "../../api/responseTypes/query";
 import { humanizeDuration } from "../../lib/formatTime";
+import { decodePanelOptionsFromURLParams } from "./urlStateEncoding";
 
 export default function QueryPage() {
   const panels = useAppSelector((state) => state.queryPage.panels);
   const dispatch = useAppDispatch();
   const [timeDelta, setTimeDelta] = useState(0);
+
+  useEffect(() => {
+    const handleURLChange = () => {
+      const panels = decodePanelOptionsFromURLParams(window.location.search);
+      if (panels.length > 0) {
+        dispatch(setPanels(panels));
+      }
+    };
+
+    handleURLChange();
+
+    window.addEventListener("popstate", handleURLChange);
+
+    return () => {
+      window.removeEventListener("popstate", handleURLChange);
+    };
+  }, [dispatch]);
 
   const { data: metricNamesResult, error: metricNamesError } =
     useAPIQuery<LabelValuesResult>({

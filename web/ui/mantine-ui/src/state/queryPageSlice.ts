@@ -1,5 +1,11 @@
 import { randomId } from "@mantine/hooks";
-import { PayloadAction, createSlice } from "@reduxjs/toolkit";
+import {
+  PayloadAction,
+  createListenerMiddleware,
+  createSlice,
+} from "@reduxjs/toolkit";
+import { encodePanelOptionsToURLParams } from "../pages/query/urlStateEncoding";
+import { update } from "lodash";
 
 export enum GraphDisplayMode {
   Lines = "lines",
@@ -69,7 +75,7 @@ interface QueryPageState {
   panels: Panel[];
 }
 
-const newDefaultPanel = (): Panel => ({
+export const newDefaultPanel = (): Panel => ({
   id: randomId(),
   expr: "",
   exprStale: false,
@@ -88,32 +94,44 @@ const initialState: QueryPageState = {
   panels: [newDefaultPanel()],
 };
 
+const updateURL = (panels: Panel[]) => {
+  const query = "?" + encodePanelOptionsToURLParams(panels).toString();
+  window.history.pushState({}, "", query);
+};
+
 export const queryPageSlice = createSlice({
   name: "queryPage",
   initialState,
   reducers: {
+    setPanels: (state, { payload }: PayloadAction<Panel[]>) => {
+      state.panels = payload;
+    },
     addPanel: (state) => {
       state.panels.push(newDefaultPanel());
+      updateURL(state.panels);
     },
     removePanel: (state, { payload }: PayloadAction<number>) => {
       state.panels.splice(payload, 1);
+      updateURL(state.panels);
     },
     setExpr: (
       state,
       { payload }: PayloadAction<{ idx: number; expr: string }>
     ) => {
       state.panels[payload.idx].expr = payload.expr;
+      updateURL(state.panels);
     },
     setVisualizer: (
       state,
       { payload }: PayloadAction<{ idx: number; visualizer: Visualizer }>
     ) => {
       state.panels[payload.idx].visualizer = payload.visualizer;
+      updateURL(state.panels);
     },
   },
 });
 
-export const { addPanel, removePanel, setExpr, setVisualizer } =
+export const { setPanels, addPanel, removePanel, setExpr, setVisualizer } =
   queryPageSlice.actions;
 
 export default queryPageSlice.reducer;

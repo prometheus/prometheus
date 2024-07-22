@@ -225,7 +225,6 @@ const autoPadLeft = (
   );
 
   if (longestVal != "") {
-    console.log("axis.font", axis.font![0]);
     u.ctx.font = axis.font![0];
     axisSize += u.ctx.measureText(longestVal).width / devicePixelRatio;
   }
