@@ -547,6 +547,19 @@ TEST_F(EncodeOutdatedChunkTestFixture, EncodeUint32ConstantActualSample) {
   EXPECT_EQ(BareBones::Vector<int64_t>{1}, decode_open_chunk_timestamp_list(0));
 }
 
+TEST_F(EncodeOutdatedChunkTestFixture, EncodeUint32ConstantNonUniqueSample) {
+  // Arrange
+
+  // Act
+  encoder_.encode(0, 1, 1.0);
+  encoder_.encode(0, 1, 2.0);
+
+  // Assert
+  ASSERT_EQ(DataChunk::EncodingType::kUint32Constant, chunk(0).encoding_type);
+  EXPECT_EQ(1.0, chunk(0).encoder.uint32_constant.value());
+  EXPECT_EQ(BareBones::Vector<int64_t>{1}, decode_open_chunk_timestamp_list(0));
+}
+
 TEST_F(EncodeOutdatedChunkTestFixture, EncodeUint32ConstantOutdatedSample) {
   // Arrange
 
@@ -573,6 +586,19 @@ TEST_F(EncodeOutdatedChunkTestFixture, EncodeDoubleConstantActualSample) {
 
   // Assert
   ASSERT_EQ(DataChunk::EncodingType::kDoubleConstant, chunk(0).encoding_type);
+  EXPECT_EQ(BareBones::Vector<int64_t>{1}, decode_open_chunk_timestamp_list(0));
+}
+
+TEST_F(EncodeOutdatedChunkTestFixture, EncodeDoubleConstantNonUniqueSample) {
+  // Arrange
+
+  // Act
+  encoder_.encode(0, 1, 1.1);
+  encoder_.encode(0, 1, 1.2);
+
+  // Assert
+  ASSERT_EQ(DataChunk::EncodingType::kDoubleConstant, chunk(0).encoding_type);
+  EXPECT_EQ(1.1, storage_.double_constant_encoders[chunk(0).encoder.double_constant].value());
   EXPECT_EQ(BareBones::Vector<int64_t>{1}, decode_open_chunk_timestamp_list(0));
 }
 
@@ -606,6 +632,23 @@ TEST_F(EncodeOutdatedChunkTestFixture, EncodeTwoDoubleConstantActualSample) {
   EXPECT_EQ((BareBones::Vector<int64_t>{1, 2}), decode_open_chunk_timestamp_list(0));
 }
 
+TEST_F(EncodeOutdatedChunkTestFixture, EncodeTwoDoubleConstantNonUniqueSample) {
+  // Arrange
+
+  // Act
+  encoder_.encode(0, 1, 1.1);
+  encoder_.encode(0, 2, 1.2);
+  encoder_.encode(0, 2, 1.3);
+
+  // Assert
+  ASSERT_EQ(DataChunk::EncodingType::kTwoDoubleConstant, chunk(0).encoding_type);
+  auto& encoder = storage_.two_double_constant_encoders[chunk(0).encoder.two_double_constant];
+  EXPECT_EQ(1.1, encoder.value1());
+  EXPECT_EQ(1, encoder.value1_count());
+  EXPECT_EQ(1.2, encoder.value2());
+  EXPECT_EQ((BareBones::Vector<int64_t>{1, 2}), decode_open_chunk_timestamp_list(0));
+}
+
 TEST_F(EncodeOutdatedChunkTestFixture, EncodeTwoDoubleConstantOutdatedSample) {
   // Arrange
 
@@ -635,6 +678,26 @@ TEST_F(EncodeOutdatedChunkTestFixture, EncodeIntegerValuesGorillaEncoderActualSa
 
   // Assert
   ASSERT_EQ(DataChunk::EncodingType::kAscIntegerValuesGorilla, chunk(0).encoding_type);
+  EXPECT_EQ((BareBones::Vector<int64_t>{1, 2, 3}), decode_open_chunk_timestamp_list(0));
+}
+
+TEST_F(EncodeOutdatedChunkTestFixture, EncodeIntegerValuesGorillaEncoderNonUniqueSample) {
+  // Arrange
+
+  // Act
+  encoder_.encode(0, 1, 1.0);
+  encoder_.encode(0, 2, 2.0);
+  encoder_.encode(0, 3, STALE_NAN);
+  encoder_.encode(0, 3, 3.0);
+
+  // Assert
+  ASSERT_EQ(DataChunk::EncodingType::kAscIntegerValuesGorilla, chunk(0).encoding_type);
+  EXPECT_EQ((SampleList{
+                {1, 1.0},
+                {2, 2.0},
+                {3, STALE_NAN},
+            }),
+            Decoder::decode_chunk<DataChunk::Type::kOpen>(storage_, chunk(0)));
   EXPECT_EQ((BareBones::Vector<int64_t>{1, 2, 3}), decode_open_chunk_timestamp_list(0));
 }
 
@@ -673,6 +736,28 @@ TEST_F(EncodeOutdatedChunkTestFixture, EncodeValuesGorillaActualSample) {
   EXPECT_EQ((BareBones::Vector<int64_t>{1, 2, 3}), decode_open_chunk_timestamp_list(0));
 }
 
+TEST_F(EncodeOutdatedChunkTestFixture, EncodeValuesGorillaNonUniqueSample) {
+  // Arrange
+
+  // Act
+  encoder_.encode(0, 1, 1.1);
+  encoder_.encode(1, 1, 1.1);
+  encoder_.encode(0, 2, 2.1);
+  encoder_.encode(1, 2, 2.1);
+  encoder_.encode(0, 3, STALE_NAN);
+  encoder_.encode(0, 3, 3.0);
+
+  // Assert
+  ASSERT_EQ(DataChunk::EncodingType::kValuesGorilla, chunk(0).encoding_type);
+  EXPECT_TRUE(std::ranges::equal((SampleList{
+                                     {.timestamp = 1, .value = 1.1},
+                                     {.timestamp = 2, .value = 2.1},
+                                     {.timestamp = 3, .value = STALE_NAN},
+                                 }),
+                                 Decoder::decode_chunk<DataChunk::Type::kOpen>(storage_, chunk(0))));
+  EXPECT_EQ((BareBones::Vector<int64_t>{1, 2, 3}), decode_open_chunk_timestamp_list(0));
+}
+
 TEST_F(EncodeOutdatedChunkTestFixture, EncodeValuesGorillaOutdatedSample) {
   // Arrange
 
@@ -702,6 +787,22 @@ TEST_F(EncodeOutdatedChunkTestFixture, EncodeGorillaActualSample) {
   encoder_.encode(0, 2, 2.1);
   encoder_.encode(0, 3, STALE_NAN);
   encoder_.encode(0, 3, STALE_NAN);
+
+  // Assert
+  ASSERT_EQ(DataChunk::EncodingType::kGorilla, chunk(0).encoding_type);
+  auto& encoder = storage_.gorilla_encoders[chunk(0).encoder.gorilla];
+  EXPECT_EQ((SampleList{{.timestamp = 1, .value = 1.1}, {.timestamp = 2, .value = 2.1}, {.timestamp = 3, .value = STALE_NAN}}),
+            Decoder::decode_gorilla_chunk(encoder.stream().stream));
+}
+
+TEST_F(EncodeOutdatedChunkTestFixture, EncodeGorillaNonUniqueSample) {
+  // Arrange
+
+  // Act
+  encoder_.encode(0, 1, 1.1);
+  encoder_.encode(0, 2, 2.1);
+  encoder_.encode(0, 3, STALE_NAN);
+  encoder_.encode(0, 3, 3.0);
 
   // Assert
   ASSERT_EQ(DataChunk::EncodingType::kGorilla, chunk(0).encoding_type);

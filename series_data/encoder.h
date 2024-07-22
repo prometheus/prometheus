@@ -128,30 +128,6 @@ class Encoder {
     }
   }
 
-  [[nodiscard]] bool is_actual_value(const chunk::DataChunk& chunk, double value) const noexcept {
-    if (chunk.encoding_type == chunk::DataChunk::EncodingType::kUint32Constant) {
-      return chunk.encoder.uint32_constant.is_actual(value);
-    }
-
-    if (chunk.encoding_type == chunk::DataChunk::EncodingType::kDoubleConstant) {
-      return storage_.double_constant_encoders[chunk.encoder.double_constant].is_actual(value);
-    }
-
-    if (chunk.encoding_type == chunk::DataChunk::EncodingType::kTwoDoubleConstant) {
-      return storage_.two_double_constant_encoders[chunk.encoder.two_double_constant].is_actual(value);
-    }
-
-    if (chunk.encoding_type == chunk::DataChunk::EncodingType::kAscIntegerValuesGorilla) {
-      return storage_.asc_integer_values_gorilla_encoders[chunk.encoder.asc_integer_values_gorilla].is_actual(value);
-    }
-
-    if (chunk.encoding_type == chunk::DataChunk::EncodingType::kValuesGorilla) {
-      return storage_.values_gorilla_encoders[chunk.encoder.values_gorilla].is_actual(value);
-    }
-
-    return false;
-  }
-
   PROMPP_ALWAYS_INLINE void switch_to_double_constant_encoder(chunk::DataChunk& chunk, double value) const {
     chunk.encoding_type = chunk::DataChunk::EncodingType::kDoubleConstant;
     auto& encoder = storage_.double_constant_encoders.emplace_back(value);
