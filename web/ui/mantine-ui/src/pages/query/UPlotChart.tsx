@@ -9,7 +9,7 @@ import "uplot/dist/uPlot.min.css";
 import "./uplot.css";
 import { formatTimestamp } from "../../lib/formatTime";
 import { computePosition, shift, flip, offset } from "@floating-ui/dom";
-import { colorPool } from "./ColorPool";
+import { getSeriesColor } from "./ColorPool";
 import { useSettings } from "../../state/settingsSlice";
 import { useComputedColorScheme } from "@mantine/core";
 
@@ -266,9 +266,10 @@ const getOptions = (
       fill: (
         _u: uPlot,
         seriesIdx: number
-      ): CSSStyleDeclaration["borderColor"] => {
-        return colorPool[(seriesIdx - 1) % colorPool.length];
-      },
+      ): CSSStyleDeclaration["borderColor"] =>
+        // Because the index here is coming from uPlot, we need to subtract 1. Series 0
+        // represents the X axis, so we need to skip it.
+        getSeriesColor(seriesIdx - 1, light),
     },
   },
   // @ts-expect-error - uPlot enum types don't work across module boundaries,
@@ -317,12 +318,15 @@ const getOptions = (
   ],
   series: [
     {},
-    ...result.map((r, idx) => ({
-      label: formatSeries(r.metric),
-      width: 2,
-      labels: r.metric,
-      stroke: colorPool[idx % colorPool.length],
-    })),
+    ...result.map(
+      (r, idx): uPlot.Series => ({
+        label: formatSeries(r.metric),
+        width: 1.5,
+        // @ts-expect-error - uPlot doesn't have a field for labels, but we just attach some anyway.
+        labels: r.metric,
+        stroke: getSeriesColor(idx, light),
+      })
+    ),
   ],
   hooks: {
     setSelect: [

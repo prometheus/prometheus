@@ -1,4 +1,11 @@
-export const colorPool = [
+import { lighten } from "@mantine/core";
+
+export const getSeriesColor = (idx: number, light: boolean): string => {
+  const color = colorPool[idx % colorPool.length];
+  return light ? color : lighten(color, 0.4);
+};
+
+const colorPool = [
   "#008000",
   "#008080",
   "#800000",
