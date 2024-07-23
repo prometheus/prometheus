@@ -260,7 +260,7 @@ URL query parameters:
   series to return. At least one `match[]` argument must be provided.
 - `start=<rfc3339 | unix_timestamp>`: Start timestamp.
 - `end=<rfc3339 | unix_timestamp>`: End timestamp.
-- `limit=<number>`: Maximum number of returned series. Optional.
+- `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 
 You can URL-encode these parameters directly in the request body by using the `POST` method and
 `Content-Type: application/x-www-form-urlencoded` header. This is useful when specifying a large
@@ -311,7 +311,7 @@ URL query parameters:
 - `end=<rfc3339 | unix_timestamp>`: End timestamp. Optional.
 - `match[]=<series_selector>`: Repeated series selector argument that selects the
   series from which to read the label names. Optional.
-- `limit=<number>`: Maximum number of returned series. Optional.
+- `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 
 
 The `data` section of the JSON response is a list of string label names.
@@ -362,7 +362,7 @@ URL query parameters:
 - `end=<rfc3339 | unix_timestamp>`: End timestamp. Optional.
 - `match[]=<series_selector>`: Repeated series selector argument that selects the
   series from which to read the label values. Optional.
-- `limit=<number>`: Maximum number of returned series. Optional.
+- `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 
 
 The `data` section of the JSON response is a list of string label values.
@@ -693,7 +693,8 @@ URL query parameters:
 - `rule_name[]=<string>`: only return rules with the given rule name. If the parameter is repeated, rules with any of the provided names are returned. If we've filtered out all the rules of a group, the group is not returned. When the parameter is absent or empty, no filtering is done.
 - `rule_group[]=<string>`: only return rules with the given rule group name. If the parameter is repeated, rules with any of the provided rule group names are returned. When the parameter is absent or empty, no filtering is done.
 - `file[]=<string>`: only return rules with the given filepath. If the parameter is repeated, rules with any of the provided filepaths are returned. When the parameter is absent or empty, no filtering is done.
-- `exclude_alerts=<bool>`: only return rules, do not return active alerts.
+- `exclude_alerts=<bool>`: only return rules, do not return active alerts. 
+- `match[]=<label_selector>`: only return rules that have configured labels that satisfy the label selectors. If the parameter is repeated, rules that match any of the sets of label selectors are returned. Note that matching is on the labels in the definition of each rule, not on the values after template expansion (for alerting rules). Optional.
 
 ```json
 $ curl http://localhost:9090/api/v1/rules

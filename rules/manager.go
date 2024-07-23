@@ -380,13 +380,13 @@ func (m *Manager) RuleGroups() []*Group {
 }
 
 // Rules returns the list of the manager's rules.
-func (m *Manager) Rules() []Rule {
+func (m *Manager) Rules(matcherSets ...[]*labels.Matcher) []Rule {
 	m.mtx.RLock()
 	defer m.mtx.RUnlock()
 
 	var rules []Rule
 	for _, g := range m.groups {
-		rules = append(rules, g.rules...)
+		rules = append(rules, g.Rules(matcherSets...)...)
 	}
 
 	return rules
