@@ -304,7 +304,6 @@ const getOptions = (
 ): uPlot.Options => ({
   width: width - 30,
   height: 550,
-  // padding: [null, autoPadRight, null, null],
   cursor: {
     focus: {
       prox: 1000,
@@ -312,7 +311,8 @@ const getOptions = (
     // Whether dragging on the chart should select a zoom area.
     drag: {
       x: true,
-      // Don't zoom into the existing via uPlot, we want to load new (finger-grained) data instead.
+      // Don't zoom into the existing data via uPlot. We want to load new
+      // (finer-grained) data instead, which we do via a setSelect hook.
       setScale: false,
     },
   },
@@ -399,7 +399,7 @@ const getOptions = (
   },
 });
 
-export const normalizeData = (
+const normalizeData = (
   inputData: RangeSamples[],
   startTime: number,
   endTime: number,
@@ -492,10 +492,6 @@ const UPlotChart: FC<UPlotChartProps> = ({
     endTime,
     resolution
   );
-  // data[0].values?.map((v) => v[0]),
-  // ...data.map((r) => r.values?.map((v) => parseFloat(v[1]))),
-  // ...normalizeData(data, startTime, endTime, resolution),
-  // ];
 
   if (options === null) {
     return;
