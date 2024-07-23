@@ -33,8 +33,6 @@ import ExpressionInput from "./ExpressionInput";
 import Graph from "./Graph";
 import {
   formatPrometheusDuration,
-  formatTimestamp,
-  now,
   parsePrometheusDuration,
 } from "../../lib/formatTime";
 

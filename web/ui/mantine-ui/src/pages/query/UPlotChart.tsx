@@ -12,7 +12,6 @@ import { computePosition, shift, flip, offset } from "@floating-ui/dom";
 import { colorPool } from "./ColorPool";
 import { useSettings } from "../../state/settingsSlice";
 import { useComputedColorScheme } from "@mantine/core";
-import { fill } from "lodash";
 
 const formatYAxisTickValue = (y: number | null): string => {
   if (y === null) {
@@ -127,7 +126,8 @@ const tooltipPlugin = (useLocalTime: boolean) => {
         boundingTop = bbox.top;
       },
       // When a series is selected by hovering close to it, store the
-      // index of the selected series.
+      // index of the selected series, so we can update the hover tooltip
+      // in setCursor.
       setSeries: (_u: uPlot, seriesIdx: number | null, _opts: Series) => {
         selectedSeriesIdx = seriesIdx;
       },

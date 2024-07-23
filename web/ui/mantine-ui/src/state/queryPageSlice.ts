@@ -1,11 +1,6 @@
 import { randomId } from "@mantine/hooks";
-import {
-  PayloadAction,
-  createListenerMiddleware,
-  createSlice,
-} from "@reduxjs/toolkit";
+import { PayloadAction, createSlice } from "@reduxjs/toolkit";
 import { encodePanelOptionsToURLParams } from "../pages/query/urlStateEncoding";
-import { update } from "lodash";
 
 export enum GraphDisplayMode {
   Lines = "lines",
