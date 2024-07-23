@@ -337,7 +337,7 @@ const getOptions = (
   // see https://github.com/leeoniya/uPlot/issues/973.
   drawOrder: ["series", "axes"],
   focus: {
-    alpha: 0.4,
+    alpha: 1,
   },
   axes: [
     // X axis (time).
@@ -345,7 +345,7 @@ const getOptions = (
       labelSize: 20,
       stroke: light ? "#333" : "#eee",
       ticks: {
-        stroke: light ? "#333" : "#eee",
+        stroke: light ? "#00000010" : "#ffffff20",
       },
       grid: {
         show: false,
@@ -357,17 +357,12 @@ const getOptions = (
     // Y axis (sample value).
     {
       values: (_u: uPlot, splits: number[]) => splits.map(formatYAxisTickValue),
-      // border: {
-      //   show: true,
-      //   stroke: light ? "#00000010" : "#ffffff10",
-      //   width: 2,
-      // },
       ticks: {
-        stroke: light ? "#00000010" : "#ffffff10",
+        stroke: light ? "#00000010" : "#ffffff20",
       },
       grid: {
         show: true,
-        stroke: light ? "#00000010" : "#ffffff10",
+        stroke: light ? "#00000010" : "#ffffff20",
         width: 2,
         dash: [],
       },

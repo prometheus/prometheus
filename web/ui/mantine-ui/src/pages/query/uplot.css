@@ -101,3 +101,17 @@
     height: 10px;
   }
 }
+
+.u-select {
+  background: rgba(255, 200, 150, 0.2);
+}
+
+.u-hz .u-cursor-x,
+.u-vt .u-cursor-y {
+  border-right: 1px dashed light-dark(#607d8b, #90adbc);
+}
+
+.u-hz .u-cursor-y,
+.u-vt .u-cursor-x {
+  border-bottom: 1px dashed light-dark(#607d8b, #90adbc);
+}
