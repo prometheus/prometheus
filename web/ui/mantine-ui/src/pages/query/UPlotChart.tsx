@@ -234,6 +234,67 @@ const autoPadLeft = (
   return Math.ceil(axisSize);
 };
 
+// This filter functions ensures that only points that are disconnected
+// from their neighbors are drawn. Otherwise, we just draw line segments
+// without dots on them.
+//
+// Adapted from https://github.com/leeoniya/uPlot/blob/91de800538ee5d6f45f448d98b660a4a658e587b/demos/points.html#L15-L64
+const onlyDrawPointsForDisconnectedSamplesFilter = (
+  u: uPlot,
+  seriesIdx: number,
+  show: boolean,
+  gaps?: null | number[][]
+) => {
+  const filtered = [];
+
+  const series = u.series[seriesIdx];
+
+  if (!show && gaps && gaps.length) {
+    const [firstIdx, lastIdx] = series.idxs!;
+    const xData = u.data[0];
+    const yData = u.data[seriesIdx];
+    const firstPos = Math.round(u.valToPos(xData[firstIdx], "x", true));
+    const lastPos = Math.round(u.valToPos(xData[lastIdx], "x", true));
+
+    if (gaps[0][0] === firstPos) {
+      filtered.push(firstIdx);
+    }
+
+    // show single points between consecutive gaps that share end/start
+    for (let i = 0; i < gaps.length; i++) {
+      const thisGap = gaps[i];
+      const nextGap = gaps[i + 1];
+
+      if (nextGap && thisGap[1] === nextGap[0]) {
+        // approx when data density is > 1pt/px, since gap start/end pixels are rounded
+        let approxIdx = u.posToIdx(thisGap[1], true);
+
+        if (yData[approxIdx] == null) {
+          // scan left/right alternating to find closest index with non-null value
+          for (let j = 1; j < 100; j++) {
+            if (yData[approxIdx + j] != null) {
+              approxIdx += j;
+              break;
+            }
+            if (yData[approxIdx - j] != null) {
+              approxIdx -= j;
+              break;
+            }
+          }
+        }
+
+        filtered.push(approxIdx);
+      }
+    }
+
+    if (gaps[gaps.length - 1][1] === lastPos) {
+      filtered.push(lastIdx);
+    }
+  }
+
+  return filtered.length ? filtered : null;
+};
+
 const getOptions = (
   width: number,
   result: RangeSamples[],
@@ -320,6 +381,9 @@ const getOptions = (
     {},
     ...result.map(
       (r, idx): uPlot.Series => ({
+        points: {
+          filter: onlyDrawPointsForDisconnectedSamplesFilter,
+        },
         label: formatSeries(r.metric),
         width: 1.5,
         // @ts-expect-error - uPlot doesn't have a field for labels, but we just attach some anyway.
