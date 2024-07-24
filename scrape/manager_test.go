@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/util/runutil"
@@ -868,4 +869,140 @@ func TestUnregisterMetrics(t *testing.T) {
 		// Unregister all metrics.
 		manager.UnregisterMetrics()
 	}
+}
+
+func TestManagerHistogramCTZeroIngestion(t *testing.T) {
+	const mName = "expected_histogram"
+	for _, tc := range []struct {
+		name                  string
+		enableCTZeroIngestion bool
+		histogramSample       *dto.Histogram
+
+		expectedValues []histogram.Histogram
+	}{
+		{
+			name: "disabled with CT on histogram",
+			histogramSample: &dto.Histogram{
+				SampleCount:   proto.Uint64(4),
+				SampleSum:     proto.Float64(6),
+				Schema:        proto.Int32(3),
+				ZeroThreshold: proto.Float64(2.938735877055719e-39),
+				ZeroCount:     proto.Uint64(1),
+				PositiveSpan: []*dto.BucketSpan{
+					{Offset: proto.Int32(0), Length: proto.Uint32(1)},
+					{Offset: proto.Int32(7), Length: proto.Uint32(1)},
+					{Offset: proto.Int32(4), Length: proto.Uint32(1)},
+				},
+				PositiveDelta:    []int64{1, 0, 0},
+				CreatedTimestamp: timestamppb.Now(),
+			},
+			enableCTZeroIngestion: true,
+			expectedValues: []histogram.Histogram{
+				// CT
+				{Count: 0, Sum: 0, Schema: 0, ZeroThreshold: 0.0, ZeroCount: 0},
+				// Exposed sample
+				{
+					Count:         4,
+					Sum:           6,
+					Schema:        3,
+					ZeroThreshold: 2.938735877055719e-39,
+					ZeroCount:     1,
+					PositiveSpans: []histogram.Span{
+						{Offset: 0, Length: 1},
+						{Offset: 7, Length: 1},
+						{Offset: 4, Length: 1},
+					},
+				},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app := &collectResultAppender{}
+			scrapeManager, err := NewManager(
+				&Options{
+					EnableCreatedTimestampZeroIngestion: tc.enableCTZeroIngestion,
+					skipOffsetting:                      true,
+				},
+				log.NewLogfmtLogger(os.Stderr),
+				&collectResultAppendable{app},
+				prometheus.NewRegistry(),
+			)
+			require.NoError(t, err)
+			require.NoError(t, scrapeManager.ApplyConfig(&config.Config{
+				GlobalConfig: config.GlobalConfig{
+					// Disable regular scrapes.
+					ScrapeInterval: model.Duration(9999 * time.Minute),
+					ScrapeTimeout:  model.Duration(5 * time.Second),
+					// Ensure the proto is chosen. We need proto as it's the only protocol
+					// with the CT parsing support.
+					ScrapeProtocols: []config.ScrapeProtocol{config.PrometheusProto},
+				},
+				ScrapeConfigs: []*config.ScrapeConfig{{JobName: "test"}},
+			}))
+			once := sync.Once{}
+			// Start fake HTTP target to that allow one scrape only.
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					fail := true
+					once.Do(func() {
+						fail = false
+						w.Header().Set("Content-Type", `application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited`)
+
+						ctrType := dto.MetricType_HISTOGRAM
+						w.Write(protoMarshalDelimited(t, &dto.MetricFamily{
+							Name:   proto.String(mName),
+							Type:   &ctrType,
+							Metric: []*dto.Metric{{Histogram: tc.histogramSample}},
+						}))
+					})
+
+					if fail {
+						w.WriteHeader(http.StatusInternalServerError)
+					}
+				}),
+			)
+			defer server.Close()
+			serverURL, err := url.Parse(server.URL)
+			require.NoError(t, err)
+
+			// Add fake target directly into tsets + reload. Normally users would use
+			// Manager.Run and wait for minimum 5s refresh interval.
+			scrapeManager.updateTsets(map[string][]*targetgroup.Group{
+				"test": {{
+					Targets: []model.LabelSet{{
+						model.SchemeLabel:  model.LabelValue(serverURL.Scheme),
+						model.AddressLabel: model.LabelValue(serverURL.Host),
+					}},
+				}},
+			})
+			scrapeManager.reload()
+
+			// Wait for one scrape.
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+			defer cancel()
+			require.NoError(t, runutil.Retry(100*time.Millisecond, ctx.Done(), func() error {
+				for _, expected := range tc.expectedValues {
+					if countHistogramSamples(app, expected.String()) != int(expected.Count) {
+						return fmt.Errorf("expected %v histograms for %s", expected, expected.String())
+					}
+				}
+				return nil
+			}), "after 1 minute")
+			scrapeManager.Stop()
+
+			for _, expected := range tc.expectedValues {
+				require.Equal(t, expected, getResultHistograms(app, expected.String()))
+			}
+		})
+	}
+}
+
+func countHistogramSamples(a *collectResultAppender, expectedMetricName string) (count int) {
+	fmt.Println("Implement me")
+	return count
+}
+
+func getResultHistograms(app *collectResultAppender, expectedMetricName string) (result []histogramSample) {
+	fmt.Println("Implement me")
+	return result
 }

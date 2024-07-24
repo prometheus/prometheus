@@ -5971,6 +5971,66 @@ func TestHeadAppender_AppendCTZeroSample(t *testing.T) {
 	}
 }
 
+//histogram.Histogram{Count: 0, Sum: 0, Schema: 3, ZeroThreshold: 0.0, ZeroCount: 0}
+func TestHeadAppender_AppendHistogramCTZeroSample(t *testing.T) {
+	type appendableSamples struct {
+		ts int64
+		histogram *histogram.Histogram
+		ct  int64
+	}
+	for _, tc := range []struct {
+		name              string
+		appendableSamples []appendableSamples
+		expectedSamples   []sample
+	}{
+		{
+			name: "In order ct+normal sample",
+			appendableSamples: []appendableSamples{
+				{ts: 100, ct: 1, histogram: &histogram.Histogram{Count: 1, Sum: 10, Schema: 0, ZeroThreshold: 0.0, ZeroCount: 0}},
+			},
+			expectedSamples: []sample{
+				{h: &histogram.Histogram{}, t: 1},
+				{h: &histogram.Histogram{Count: 1, Sum: 10, Schema: 0, ZeroThreshold: 0.0, ZeroCount: 0}, t: 100},
+			},
+		},
+	} {
+		h, _ := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
+		defer func() {
+			require.NoError(t, h.Close())
+		}()
+		a := h.Appender(context.Background())
+		lbls := labels.FromStrings("foo", "bar")
+		for _, sample := range tc.appendableSamples {
+			_, err := a.AppendHistogramCTZeroSample(0, lbls, sample.ts, sample.ct, "histogram")
+			require.NoError(t, err)
+			_, err = a.AppendHistogram(0, lbls, sample.ts, sample.histogram, nil)
+			require.NoError(t, err)
+		}
+
+		require.NoError(t, a.Commit())
+
+		q, err := NewBlockQuerier(h, math.MinInt64, math.MaxInt64)
+		require.NoError(t, err)
+		ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+		require.True(t, ss.Next())
+		s := ss.At()
+		require.False(t, ss.Next())
+		it := s.Iterator(nil)
+		actHistograms := make([]*histogram.Histogram, len(tc.expectedSamples))
+		for _, sample := range tc.expectedSamples {
+			require.Equal(t, chunkenc.ValHistogram, it.Next())
+			timestamp, value := it.AtHistogram(sample.h)
+			actHistograms = append(actHistograms, value)
+		}
+		compareSeries(
+			t,
+			map[string][]chunks.Sample{"histogram": {chunks.NewHistogramSample(sample.h)}},
+			map[string][]chunks.Sample{"dummy": actHistograms},
+		)
+		require.Equal(t, chunkenc.ValNone, it.Next())
+
+	}}
+
 func TestHeadCompactableDoesNotCompactEmptyHead(t *testing.T) {
 	// Use a chunk range of 1 here so that if we attempted to determine if the head
 	// was compactable using default values for min and max times, `Head.compactable()`

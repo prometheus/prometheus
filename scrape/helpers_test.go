@@ -63,6 +63,10 @@ func (a nopAppender) AppendCTZeroSample(storage.SeriesRef, labels.Labels, int64,
 	return 0, nil
 }
 
+func (a nopAppender) AppendHistogramCTZeroSample(storage.SeriesRef, labels.Labels, int64, int64, string) (storage.SeriesRef, error) {
+	return 0, nil
+}
+
 func (a nopAppender) Commit() error   { return nil }
 func (a nopAppender) Rollback() error { return nil }
 
@@ -170,6 +174,19 @@ func (a *collectResultAppender) UpdateMetadata(ref storage.SeriesRef, l labels.L
 
 func (a *collectResultAppender) AppendCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64) (storage.SeriesRef, error) {
 	return a.Append(ref, l, ct, 0.0)
+}
+
+func (a *collectResultAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64, hType string) (storage.SeriesRef, error) {
+	switch hType {
+	case "histogram":
+		zeroHistogram := &histogram.Histogram{Count: 0, Sum: 0, Schema: 3, ZeroThreshold: 0.0, ZeroCount: 0}
+		return a.AppendHistogram(ref, l, ct, zeroHistogram, nil)
+	case "float":
+		zeroFloatHistogram := &histogram.FloatHistogram{Count: 0, Sum: 0, Schema: 3, ZeroThreshold: 0.0, ZeroCount: 0}
+		return a.AppendHistogram(ref, l, ct, nil, zeroFloatHistogram)
+	default:
+		return 0, fmt.Errorf("unknown histogram type %s", hType)
+	}
 }
 
 func (a *collectResultAppender) Commit() error {

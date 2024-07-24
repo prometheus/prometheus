@@ -218,6 +218,20 @@ func (f *fanoutAppender) AppendCTZeroSample(ref SeriesRef, l labels.Labels, t, c
 	return ref, nil
 }
 
+func (f *fanoutAppender) AppendHistogramCTZeroSample(ref SeriesRef, l labels.Labels, t, ct int64, hType string) (SeriesRef, error) {
+	ref, err := f.primary.AppendHistogramCTZeroSample(ref, l, t, ct, hType)
+	if err != nil {
+		return ref, err
+	}
+
+	for _, appender := range f.secondaries {
+		if _, err := appender.AppendHistogramCTZeroSample(ref, l, t, ct, hType); err != nil {
+			return 0, err
+		}
+	}
+	return ref, nil
+}
+
 func (f *fanoutAppender) Commit() (err error) {
 	err = f.primary.Commit()
 

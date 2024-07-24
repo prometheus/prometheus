@@ -1586,6 +1586,10 @@ func (n notReadyAppender) AppendCTZeroSample(ref storage.SeriesRef, l labels.Lab
 	return 0, tsdb.ErrNotReady
 }
 
+func (n notReadyAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64, hType string) (storage.SeriesRef, error) {
+	return 0, tsdb.ErrNotReady
+}
+
 func (n notReadyAppender) Commit() error { return tsdb.ErrNotReady }
 
 func (n notReadyAppender) Rollback() error { return tsdb.ErrNotReady }

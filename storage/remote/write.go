@@ -316,6 +316,11 @@ func (t *timestampTracker) AppendCTZeroSample(_ storage.SeriesRef, _ labels.Labe
 	return 0, nil
 }
 
+func (t *timestampTracker) AppendHistogramCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64, _ string) (storage.SeriesRef, error) {
+	// AppendHistogramCTZeroSample is no-op for remote-write for now.
+	return 0, nil
+}
+
 // Commit implements storage.Appender.
 func (t *timestampTracker) Commit() error {
 	t.writeStorage.samplesIn.incr(t.samples + t.exemplars + t.histograms)
