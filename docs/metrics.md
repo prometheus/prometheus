@@ -1,6 +1,6 @@
 ## Prometheus Metrics
 
-### List of Metrics Exported By Prometheus
+### Partial List of Metrics Exported By Prometheus
 
 | Metric Name                                                  | Type      | Description                                                                                                                                                                         |
 |--------------------------------------------------------------|-----------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -110,7 +110,7 @@
 | prometheus_tsdb_data_replay_duration_seconds | gauge  | Time taken to replay the data on disk.                                                                                                                        |
 | prometheus_tsdb_exemplar_exemplars_appended_total | counter | Total number of appended exemplars.                                                                                                                        |
 | prometheus_tsdb_exemplar_exemplars_in_storage | gauge | Number of exemplars currently in circular storage.                                                                                                                        |
-| prometheus_tsdb_exemplar_last_exemplars_timestamp_seconds | gauge | The timestamp of the oldest exemplar stored in circular storage. Useful to check for what timerange the current exemplar buffer limit allows. This usually means the last timestampfor all exemplars for a typical setup. This is not true though if one of the series timestamp is in future compared to rest series.                                                                                                                        |
+| prometheus_tsdb_exemplar_last_exemplars_timestamp_seconds | gauge | The timestamp of the oldest exemplar stored in circular storage. Useful to check for what time range the current exemplar buffer limit allows. This usually means the last timestamp for all exemplars for a typical setup. This is not true though if one of the series timestamp is in future compared to rest series.                                                                                                                        |
 | prometheus_tsdb_exemplar_max_exemplars | gauge | Total number of exemplars the exemplar storage can store, resizeable.                                                                                                                        |
 | prometheus_tsdb_exemplar_out_of_order_exemplars_total | counter | Total number of out of order exemplar ingestion failed attempts.                                                                                                                        |
 | prometheus_tsdb_exemplar_series_with_exemplars_in_storage | gauge | Number of series with exemplars currently in circular storage.                                                                                                                        |
