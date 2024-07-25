@@ -1567,7 +1567,6 @@ func funcInfo(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper)
 
 		lb := labels.NewBuilder(s.Metric)
 		dataLabels.Range(func(l labels.Label) {
-			fmt.Printf("Data label %q = %q\n", l.Name, l.Value)
 			if lb.Get(l.Name) == "" {
 				lb.Set(l.Name, l.Value)
 			}
