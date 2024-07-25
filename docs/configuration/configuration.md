@@ -257,9 +257,11 @@ params:
 
 # Sets the `Authorization` header on every scrape request with the
 # configured username and password.
+# username and username_file are mutually exclusive.
 # password and password_file are mutually exclusive.
 basic_auth:
   [ username: <string> ]
+  [ username_file: <string> ]
   [ password: <secret> ]
   [ password_file: <string> ]
 
@@ -643,11 +645,13 @@ subscription_id: <string>
 # Authentication information used to authenticate to the Azure API.
 # Note that `basic_auth`, `authorization` and `oauth2` options are
 # mutually exclusive.
+# `username` and `username_file` are mutually exclusive.
 # `password` and `password_file` are mutually exclusive.
 
 # Optional HTTP basic authentication information, currently not support by Azure.
 basic_auth:
   [ username: <string> ]
+  [ username_file: <string> ]
   [ password: <secret> ]
   [ password_file: <string> ]
 
@@ -756,11 +760,13 @@ tags:
 # Authentication information used to authenticate to the consul server.
 # Note that `basic_auth`, `authorization` and `oauth2` options are
 # mutually exclusive.
+# `username` and `username_file` are mutually exclusive.
 # `password` and `password_file` are mutually exclusive.
 
 # Optional HTTP basic authentication information.
 basic_auth:
   [ username: <string> ]
+  [ username_file: <string> ]
   [ password: <secret> ]
   [ password_file: <string> ]
 
@@ -842,11 +848,13 @@ The following meta labels are available on targets during [relabeling](#relabel_
 # Authentication information used to authenticate to the API server.
 # Note that `basic_auth` and `authorization` options are
 # mutually exclusive.
+# username and username_file are mutually exclusive.
 # password and password_file are mutually exclusive.
 
 # Optional HTTP basic authentication information, not currently supported by DigitalOcean.
 basic_auth:
   [ username: <string> ]
+  [ username_file: <string> ]
   [ password: <secret> ]
   [ password_file: <string> ]
 
@@ -964,11 +972,13 @@ tls_config:
 # Authentication information used to authenticate to the Docker daemon.
 # Note that `basic_auth` and `authorization` options are
 # mutually exclusive.
+# username and username_file are mutually exclusive.
 # password and password_file are mutually exclusive.
 
 # Optional HTTP basic authentication information.
 basic_auth:
   [ username: <string> ]
+  [ username_file: <string> ]
   [ password: <secret> ]
   [ password_file: <string> ]
 
@@ -1141,11 +1151,13 @@ role: <string>
 # Authentication information used to authenticate to the Docker daemon.
 # Note that `basic_auth` and `authorization` options are
 # mutually exclusive.
+# username and username_file are mutually exclusive.
 # password and password_file are mutually exclusive.
 
 # Optional HTTP basic authentication information.
 basic_auth:
   [ username: <string> ]
+  [ username_file: <string> ]
   [ password: <secret> ]
   [ password_file: <string> ]
 
@@ -1288,11 +1300,13 @@ filters:
 # Authentication information used to authenticate to the EC2 API.
 # Note that `basic_auth`, `authorization` and `oauth2` options are
 # mutually exclusive.
+# `username` and `username_file` are mutually exclusive.
 # `password` and `password_file` are mutually exclusive.
 
 # Optional HTTP basic authentication information, currently not supported by AWS.
 basic_auth:
   [ username: <string> ]
+  [ username_file: <string> ]
   [ password: <secret> ]
   [ password_file: <string> ]
 
@@ -1569,6 +1583,7 @@ tls_config:
 # Optional HTTP basic authentication information.
 basic_auth:
   [ username: <string> ]
+  [ username_file: <string> ]
   [ password: <secret> ]
   [ password_file: <string> ]
 
@@ -1788,12 +1803,14 @@ role: <string>
 # Authentication information used to authenticate to the API server.
 # Note that `basic_auth` and `authorization` options are
 # mutually exclusive.
+# username and username_file are mutually exclusive.
 # password and password_file are mutually exclusive.
 
 # Optional HTTP basic authentication information, required when role is robot
 # Role hcloud does not support basic auth.
 basic_auth:
   [ username: <string> ]
+  [ username_file: <string> ]
   [ password: <secret> ]
   [ password_file: <string> ]
 
@@ -1885,11 +1902,13 @@ url: <string>
 # Authentication information used to authenticate to the API server.
 # Note that `basic_auth`, `authorization` and `oauth2` options are
 # mutually exclusive.
+# `username` and `username_file` are mutually exclusive.
 # `password` and `password_file` are mutually exclusive.
 
 # Optional HTTP basic authentication information.
 basic_auth:
   [ username: <string> ]
+  [ username_file: <string> ]
   [ password: <secret> ]
   [ password_file: <string> ]
 
@@ -1965,12 +1984,14 @@ datacenter_id: <string>
 # Authentication information used to authenticate to the API server.
 # Note that `basic_auth` and `authorization` options are
 # mutually exclusive.
+# username and username_file are mutually exclusive.
 # password and password_file are mutually exclusive.
 
 # Optional HTTP basic authentication information, required when using IONOS
 # Cloud username and password as authentication method.
 basic_auth:
   [ username: <string> ]
+  [ username_file: <string> ]
   [ password: <secret> ]
   [ password_file: <string> ]
 
@@ -2201,11 +2222,13 @@ role: <string>
 
 # Optional authentication information used to authenticate to the API server.
 # Note that `basic_auth` and `authorization` options are mutually exclusive.
+# username and username_file are mutually exclusive.
 # password and password_file are mutually exclusive.
 
 # Optional HTTP basic authentication information.
 basic_auth:
   [ username: <string> ]
+  [ username_file: <string> ]
   [ password: <secret> ]
   [ password_file: <string> ]
 
@@ -2335,11 +2358,13 @@ tls_config:
 # Authentication information used to authenticate to the Docker daemon.
 # Note that `basic_auth` and `authorization` options are
 # mutually exclusive.
+# username and username_file are mutually exclusive.
 # password and password_file are mutually exclusive.
 
 # Optional HTTP basic authentication information.
 basic_auth:
   [ username: <string> ]
+  [ username_file: <string> ]
   [ password: <secret> ]
   [ password_file: <string> ]
 
@@ -2420,11 +2445,13 @@ See below for the configuration options for Lightsail discovery:
 # Authentication information used to authenticate to the Lightsail API.
 # Note that `basic_auth`, `authorization` and `oauth2` options are
 # mutually exclusive.
+# `username` and `username_file` are mutually exclusive.
 # `password` and `password_file` are mutually exclusive.
 
 # Optional HTTP basic authentication information, currently not supported by AWS.
 basic_auth:
   [ username: <string> ]
+  [ username_file: <string> ]
   [ password: <secret> ]
   [ password_file: <string> ]
 
@@ -2504,12 +2531,14 @@ The following meta labels are available on targets during [relabeling](#relabel_
 # Authentication information used to authenticate to the API server.
 # Note that `basic_auth` and `authorization` options are
 # mutually exclusive.
+# username and username_file are mutually exclusive.
 # password and password_file are mutually exclusive.
 # Note: Linode APIv4 Token must be created with scopes: 'linodes:read_only', 'ips:read_only', and 'events:read_only'
 
 # Optional HTTP basic authentication information, not currently supported by Linode APIv4.
 basic_auth:
   [ username: <string> ]
+  [ username_file: <string> ]
   [ password: <secret> ]
   [ password_file: <string> ]
 
@@ -2605,9 +2634,11 @@ servers:
 # Sets the `Authorization` header on every request with the
 # configured username and password.
 # This is mutually exclusive with other authentication mechanisms.
+# username and username_file are mutually exclusive.
 # password and password_file are mutually exclusive.
 basic_auth:
   [ username: <string> ]
+  [ username_file: <string> ]
   [ password: <secret> ]
   [ password_file: <string> ]
 
@@ -2715,11 +2746,13 @@ The following meta labels are available on targets during [relabeling](#relabel_
 # Authentication information used to authenticate to the nomad server.
 # Note that `basic_auth`, `authorization` and `oauth2` options are
 # mutually exclusive.
+# `username` and `username_file` are mutually exclusive.
 # `password` and `password_file` are mutually exclusive.
 
 # Optional HTTP basic authentication information.
 basic_auth:
   [ username: <string> ]
+  [ username_file: <string> ]
   [ password: <secret> ]
   [ password_file: <string> ]
 
@@ -2898,9 +2931,11 @@ server: <string>
 
 # Sets the `Authorization` header on every request with the
 # configured username and password.
+# username and username_file are mutually exclusive.
 # password and password_file are mutually exclusive.
 basic_auth:
   [ username: <string> ]
+  [ username_file: <string> ]
   [ password: <secret> ]
   [ password_file: <string> ]
 
@@ -3107,6 +3142,7 @@ password: <secret>
 # Optional HTTP basic authentication information, currently not supported by Uyuni.
 basic_auth:
   [ username: <string> ]
+  [ username_file: <string> ]
   [ password: <secret> ]
   [ password_file: <string> ]
 
@@ -3184,11 +3220,13 @@ The following meta labels are available on targets during [relabeling](#relabel_
 # Authentication information used to authenticate to the API server.
 # Note that `basic_auth` and `authorization` options are
 # mutually exclusive.
+# username and username_file are mutually exclusive.
 # password and password_file are mutually exclusive.
 
 # Optional HTTP basic authentication information, not currently supported by Vultr.
 basic_auth:
   [ username: <string> ]
+  [ username_file: <string> ]
   [ password: <secret> ]
   [ password_file: <string> ]
 
@@ -3384,9 +3422,11 @@ through the `__alerts_path__` label.
 
 # Sets the `Authorization` header on every request with the
 # configured username and password.
+# username and username_file are mutually exclusive.
 # password and password_file are mutually exclusive.
 basic_auth:
   [ username: <string> ]
+  [ username_file: <string> ]
   [ password: <secret> ]
   [ password_file: <string> ]
 
@@ -3618,9 +3658,11 @@ write_relabel_configs:
 
 # Sets the `Authorization` header on every remote write request with the
 # configured username and password.
+# username and username_file are mutually exclusive.
 # password and password_file are mutually exclusive.
 basic_auth:
   [ username: <string> ]
+  [ username_file: <string> ]
   [ password: <secret> ]
   [ password_file: <string> ]
 
@@ -3779,9 +3821,11 @@ headers:
 
 # Sets the `Authorization` header on every remote read request with the
 # configured username and password.
+# username and username_file are mutually exclusive.
 # password and password_file are mutually exclusive.
 basic_auth:
   [ username: <string> ]
+  [ username_file: <string> ]
   [ password: <secret> ]
   [ password_file: <string> ]
 
