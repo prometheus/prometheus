@@ -204,7 +204,7 @@ func main() {
 	pushMetricsHeaders := pushMetricsCmd.Flag("header", "Prometheus remote write header.").StringMap()
 
 	testCmd := app.Command("test", "Unit testing.")
-	junitOutFile := testCmd.Flag("junit", "The JUnit xml output file.").OpenFile(os.O_CREATE|os.O_WRONLY, 0o644)
+	junitOutFile := testCmd.Flag("junit", "File path to store JUnit XML test results.").OpenFile(os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	testRulesCmd := testCmd.Command("rules", "Unit tests for rules.")
 	testRulesRun := testRulesCmd.Flag("run", "If set, will only run test groups whose names match the regular expression. Can be specified multiple times.").Strings()
 	testRulesFiles := testRulesCmd.Arg(
@@ -380,7 +380,7 @@ func main() {
 
 	case testRulesCmd.FullCommand():
 		results := io.Discard
-		if junitOutFile != nil {
+		if *junitOutFile != nil {
 			results = *junitOutFile
 		}
 		os.Exit(RulesUnitTestResult(results,

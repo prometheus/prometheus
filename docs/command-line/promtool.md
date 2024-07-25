@@ -446,7 +446,7 @@ Unit testing.
 
 | Flag | Description |
 | --- | --- |
-| <code class="text-nowrap">--junit</code> | The JUnit xml output file. |
+| <code class="text-nowrap">--junit</code> | File path to store JUnit XML test results. |
 
 
 

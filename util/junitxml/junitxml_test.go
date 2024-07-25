@@ -1,4 +1,4 @@
-// Copyright 2024 Kushal Shukla
+// Copyright 2024 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -15,31 +15,37 @@ package junitxml
 
 import (
 	"bytes"
+	"encoding/xml"
 	"errors"
 	"testing"
-
-	"github.com/grafana/regexp"
 )
 
 func TestJunitOutput(t *testing.T) {
 	var buf bytes.Buffer
-	FakeTestSuites().WriteXML(&buf)
+	var test JUnitXML
+	x := FakeTestSuites()
+	if err := x.WriteXML(&buf); err != nil {
+		t.Fatalf("Failed to encode XML: %v", err)
+	}
+
 	output := buf.Bytes()
 
-	reTop := regexp.MustCompile(`(?s)^<testsuites\W.*</testsuites>$`)
-	reSuites := regexp.MustCompile(`(?s)<testsuite .*?</testsuite>`)
-	reCases := regexp.MustCompile(`(?s)<testcase .*?</testcase>`)
+	err := xml.Unmarshal(output, &test)
+	if err != nil {
+		t.Errorf("Unmarshal failed with error: %v", err)
+	}
+	var total int
+	var cases int
+	total = len(test.Suites)
+	if total != 3 {
+		t.Errorf("JUnit output had %d testsuite elements; expected 3\n", total)
+	}
+	for _, i := range test.Suites {
+		cases += len(i.Cases)
+	}
 
-	if !reTop.Match(output) {
-		t.Errorf("JUnit output has no outer <testsuites>\n")
-	}
-	suites := reSuites.FindAll(output, -1)
-	if len(suites) != 3 {
-		t.Errorf("JUnit output had %d testsuite elements; expected 3\n", len(suites))
-	}
-	cases := reCases.FindAll(output, -1)
-	if len(cases) != 7 {
-		t.Errorf("JUnit output had %d testcase; expected 7\n", len(cases))
+	if cases != 7 {
+		t.Errorf("JUnit output had %d testcase; expected 7\n", cases)
 	}
 }
 

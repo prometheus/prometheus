@@ -104,14 +104,15 @@ func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *reg
 	}
 
 	evalInterval := time.Duration(unitTestInp.EvaluationInterval)
-	currentTime := time.Now().Format("2006-01-02T15:04:05")
-	ts.Settime(currentTime)
+	ts.Settime(time.Now().Format("2006-01-02T15:04:05"))
 	// Giving number for groups mentioned in the file for ordering.
 	// Lower number group should be evaluated before higher number group.
 	groupOrderMap := make(map[string]int)
 	for i, gn := range unitTestInp.GroupEvalOrder {
 		if _, ok := groupOrderMap[gn]; ok {
-			return []error{fmt.Errorf("group name repeated in evaluation order: %s", gn)}
+			err := fmt.Errorf("group name repeated in evaluation order: %s", gn)
+			ts.Abort(err)
+			return []error{err}
 		}
 		groupOrderMap[gn] = i
 	}
