@@ -376,6 +376,79 @@ func BenchmarkNativeHistograms(b *testing.B) {
 	}
 }
 
+func BenchmarkInfoFunction(b *testing.B) {
+	// Initialize test storage and generate test series data.
+	testStorage := teststorage.New(b)
+	defer testStorage.Close()
+
+	start := time.Unix(0, 0)
+	end := start.Add(2 * time.Hour)
+	step := 30 * time.Second
+
+	// Generate time series data for the benchmark.
+	if err := generateInfoFunctionTestSeries(testStorage, 100, 2000, 3600); err != nil {
+		b.Fatal(err)
+	}
+
+	// Define test cases with queries to benchmark.
+	cases := []struct {
+		name  string
+		query string
+	}{
+		{
+			name:  "Joining info metrics with other metrics with group_left example 1",
+			query: "rate(http_server_request_duration_seconds_count[2m]) * on (job, instance) group_left (k8s_cluster_name) target_info{k8s_cluster_name=\"us-east\"}",
+		},
+		{
+			name:  "Joining info metrics with other metrics with info() example 2",
+			query: "info(rate(http_server_request_duration_seconds_count[2m]),{k8s_cluster_name=\"us-east\"})",
+		},
+		{
+			name:  "Joining info metrics with other metrics with group_left example 2",
+			query: "sum by (k8s_cluster_name, http_status_code) (rate(http_server_request_duration_seconds_count[2m]) * on (job, instance) group_left (k8s_cluster_name) target_info)",
+		},
+		{
+			name:  "Joining info metrics with other metrics with info() example 2",
+			query: "sum by (k8s_cluster_name, http_status_code) (info(rate(http_server_request_duration_seconds_count[2m])))",
+		},
+	}
+
+	// Initialize the PromQL engine once for all benchmarks.
+	opts := promql.EngineOpts{
+		Logger:               nil,
+		Reg:                  nil,
+		MaxSamples:           50000000,
+		Timeout:              100 * time.Second,
+		EnableAtModifier:     true,
+		EnableNegativeOffset: true,
+	}
+	engine := promql.NewEngine(opts)
+
+	// Benchmark each query type.
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				b.StopTimer() // Stop the timer to include setup time.
+				qry, err := engine.NewRangeQuery(context.Background(), testStorage, nil, tc.query, start, end, step)
+				if err != nil {
+					b.Error(err)
+					continue
+				}
+				b.StartTimer() // Start the timer before executing the query.
+				result := qry.Exec(context.Background())
+
+				if result.Err != nil {
+					b.Error(result.Err)
+				}
+			}
+		})
+	}
+
+	// Report allocations.
+	b.ReportAllocs()
+}
+
 func generateNativeHistogramSeries(app storage.Appender, numSeries int) error {
 	commonLabels := []string{labels.MetricName, "native_histogram_series", "foo", "bar"}
 	series := make([][]*histogram.Histogram, numSeries)
