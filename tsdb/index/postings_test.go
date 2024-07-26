@@ -393,7 +393,7 @@ func BenchmarkMerge(t *testing.B) {
 	}
 
 	its := make([]Postings, len(refs))
-	for _, nSeries := range []int{1, 10, 100, 1000, 10000, 100000} {
+	for _, nSeries := range []int{1, 10, 10000, 100000} {
 		t.Run(strconv.Itoa(nSeries), func(bench *testing.B) {
 			ctx := context.Background()
 			for i := 0; i < bench.N; i++ {
