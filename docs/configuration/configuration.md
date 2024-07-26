@@ -152,6 +152,10 @@ alerting:
 remote_write:
   [ - <remote_write> ... ]
 
+# Settings related to the OTLP receiver feature.
+otlp:
+  [ promote_resource_attributes: [<string>, ...] | default = [ ] ]
+
 # Settings related to the remote read feature.
 remote_read:
   [ - <remote_read> ... ]
@@ -458,13 +462,15 @@ metric_relabel_configs:
 [ keep_dropped_targets: <int> | default = 0 ]
 
 # Limit on total number of positive and negative buckets allowed in a single
-# native histogram. If this is exceeded, the entire scrape will be treated as
-# failed. 0 means no limit.
+# native histogram. The resolution of a histogram with more buckets will be
+# reduced until the number of buckets is within the limit. If the limit cannot
+# be reached, the scrape will fail.
+# 0 means no limit.
 [ native_histogram_bucket_limit: <int> | default = 0 ]
 
 # Lower limit for the growth factor of one bucket to the next in each native
 # histogram. The resolution of a histogram with a lower growth factor will be
-# reduced until it is within the limit.
+# reduced as much as possible until it is within the limit.
 # To set an upper limit for the schema (equivalent to "scale" in OTel's
 # exponential histograms), use the following factor limits:
 # 

@@ -108,11 +108,19 @@ func (oh *OOOHeadIndexReader) series(ref storage.SeriesRef, builder *labels.Scra
 		c := s.ooo.oooHeadChunk
 		if c.OverlapsClosedInterval(oh.mint, oh.maxt) && maxMmapRef == 0 {
 			ref := chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.oooHeadChunkID(len(s.ooo.oooMmappedChunks))))
-			var xor chunkenc.Chunk
 			if len(c.chunk.samples) > 0 { // Empty samples happens in tests, at least.
-				xor, _ = c.chunk.ToXOR() // Ignoring error because it can't fail.
+				chks, err := s.ooo.oooHeadChunk.chunk.ToEncodedChunks(c.minTime, c.maxTime)
+				if err != nil {
+					handleChunkWriteError(err)
+					return nil
+				}
+				for _, chk := range chks {
+					addChunk(c.minTime, c.maxTime, ref, chk.chunk)
+				}
+			} else {
+				var emptyChunk chunkenc.Chunk
+				addChunk(c.minTime, c.maxTime, ref, emptyChunk)
 			}
-			addChunk(c.minTime, c.maxTime, ref, xor)
 		}
 	}
 	for i := len(s.ooo.oooMmappedChunks) - 1; i >= 0; i-- {
@@ -341,14 +349,20 @@ func NewOOOCompactionHead(ctx context.Context, head *Head) (*OOOCompactionHead, 
 			continue
 		}
 
-		mmapRef := ms.mmapCurrentOOOHeadChunk(head.chunkDiskMapper)
-		if mmapRef == 0 && len(ms.ooo.oooMmappedChunks) > 0 {
+		var lastMmapRef chunks.ChunkDiskMapperRef
+		mmapRefs := ms.mmapCurrentOOOHeadChunk(head.chunkDiskMapper)
+		if len(mmapRefs) == 0 && len(ms.ooo.oooMmappedChunks) > 0 {
 			// Nothing was m-mapped. So take the mmapRef from the existing slice if it exists.
-			mmapRef = ms.ooo.oooMmappedChunks[len(ms.ooo.oooMmappedChunks)-1].ref
+			mmapRefs = []chunks.ChunkDiskMapperRef{ms.ooo.oooMmappedChunks[len(ms.ooo.oooMmappedChunks)-1].ref}
 		}
-		seq, off := mmapRef.Unpack()
+		if len(mmapRefs) == 0 {
+			lastMmapRef = 0
+		} else {
+			lastMmapRef = mmapRefs[len(mmapRefs)-1]
+		}
+		seq, off := lastMmapRef.Unpack()
 		if seq > lastSeq || (seq == lastSeq && off > lastOff) {
-			ch.lastMmapRef, lastSeq, lastOff = mmapRef, seq, off
+			ch.lastMmapRef, lastSeq, lastOff = lastMmapRef, seq, off
 		}
 		if len(ms.ooo.oooMmappedChunks) > 0 {
 			ch.postings = append(ch.postings, seriesRef)
