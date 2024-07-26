@@ -207,25 +207,23 @@ func (p *MemPostings) Stats(label string, limit int) *PostingsStats {
 	}
 }
 
-// Get returns a postings list for the given label pair.
-func (p *MemPostings) Get(name, value string) Postings {
-	var lp []storage.SeriesRef
+// Postings returns a postings iterator for the given label values.
+func (p *MemPostings) Postings(ctx context.Context, name string, values ...string) Postings {
 	p.mtx.RLock()
-	l := p.m[name]
-	if l != nil {
-		lp = l[value]
+	defer p.mtx.RUnlock()
+	postingsMapForName := p.m[name]
+	res := make([]*ListPostings, 0, len(values))
+	for _, value := range values {
+		if lp := postingsMapForName[value]; lp != nil {
+			res = append(res, newListPostings(lp...))
+		}
 	}
-	p.mtx.RUnlock()
-
-	if lp == nil {
-		return EmptyPostings()
-	}
-	return newListPostings(lp...)
+	return Merge(ctx, res...)
 }
 
 // All returns a postings list over all documents ever added.
 func (p *MemPostings) All() Postings {
-	return p.Get(AllPostingsKey())
+	return p.Postings(context.Background(), allPostingsKey.Name, allPostingsKey.Value)
 }
 
 // EnsureOrder ensures that all postings lists are sorted. After it returns all further
@@ -397,7 +395,7 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 	}
 
 	// Now `vals` only contains the values that matched, get their postings.
-	its := make([]Postings, 0, len(vals))
+	its := make([]*ListPostings, 0, len(vals))
 	p.mtx.RLock()
 	e := p.m[name]
 	for _, v := range vals {
@@ -406,7 +404,7 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 			// If we didn't let the mutex go, we'd have these postings here, but they would be pointing nowhere
 			// because there would be a `MemPostings.Delete()` call waiting for the lock to delete these labels,
 			// because the series were deleted already.
-			its = append(its, NewListPostings(refs))
+			its = append(its, newListPostings(refs...))
 		}
 	}
 	// Let the mutex go before merging.
