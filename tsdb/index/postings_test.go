@@ -979,7 +979,7 @@ func TestMemPostings_Delete(t *testing.T) {
 		p.Add(2, labels.FromStrings("lbl1", "b"))
 		p.Add(3, labels.FromStrings("lbl2", "a"))
 
-		before := p.Get(allPostingsKey.Name, allPostingsKey.Value)
+		before := p.Postings(context.Background(), allPostingsKey.Name, allPostingsKey.Value)
 		deletedRefs := map[storage.SeriesRef]struct{}{
 			2: {},
 		}
@@ -987,7 +987,7 @@ func TestMemPostings_Delete(t *testing.T) {
 			{Name: "lbl1", Value: "b"}: {},
 		}
 		p.Delete(deletedRefs, affectedLabels)
-		after := p.Get(allPostingsKey.Name, allPostingsKey.Value)
+		after := p.Postings(context.Background(), allPostingsKey.Name, allPostingsKey.Value)
 
 		// Make sure postings gotten before the delete have the old data when
 		// iterated over.
@@ -1001,7 +1001,7 @@ func TestMemPostings_Delete(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, []storage.SeriesRef{1, 3}, expanded)
 
-		deleted := p.Get("lbl1", "b")
+		deleted := p.Postings(context.Background(), "lbl1", "b")
 		expanded, err = ExpandPostings(deleted)
 		require.NoError(t, err)
 		require.Empty(t, expanded, "expected empty postings, got %v", expanded)
@@ -1020,7 +1020,7 @@ func TestMemPostings_Delete(t *testing.T) {
 			{Name: "lbl1", Value: "c"}: {},
 		}
 		p.Delete(deletedRefs, affectedLabels)
-		after := p.Get(allPostingsKey.Name, allPostingsKey.Value)
+		after := p.Postings(context.Background(), allPostingsKey.Name, allPostingsKey.Value)
 		expanded, err := ExpandPostings(after)
 		require.NoError(t, err)
 		require.Empty(t, expanded)
@@ -1031,7 +1031,7 @@ func TestMemPostings_Delete(t *testing.T) {
 		deletedRefs := map[storage.SeriesRef]struct{}{}
 		affectedLabels := map[labels.Label]struct{}{}
 		p.Delete(deletedRefs, affectedLabels)
-		after := p.Get(allPostingsKey.Name, allPostingsKey.Value)
+		after := p.Postings(context.Background(), allPostingsKey.Name, allPostingsKey.Value)
 		expanded, err := ExpandPostings(after)
 		require.NoError(t, err)
 		require.Empty(t, expanded)
@@ -1104,7 +1104,7 @@ func BenchmarkMemPostings_Delete(b *testing.B) {
 									return
 								default:
 									// Get a random value of this label.
-									p.Get(lbl, itoa(rand.Intn(10000))).Next()
+									p.Postings(context.Background(), lbl, itoa(rand.Intn(10000))).Next()
 								}
 							}
 						}(i)
@@ -1529,7 +1529,7 @@ func TestMemPostings_Unordered_Add_Get(t *testing.T) {
 		// First, add next series.
 		next := ref + 1
 		mp.Add(next, labels.FromStrings(labels.MetricName, "test", "series", strconv.Itoa(int(next))))
-		nextPostings := mp.Get(labels.MetricName, "test")
+		nextPostings := mp.Postings(context.Background(), labels.MetricName, "test")
 
 		// Now add current ref.
 		mp.Add(ref, labels.FromStrings(labels.MetricName, "test", "series", strconv.Itoa(int(ref))))
@@ -1554,7 +1554,7 @@ func TestMemPostings_Concurrent_Add_Get(t *testing.T) {
 		defer wg.Done()
 		for ref := range refs {
 			mp.Add(ref, labels.FromStrings(labels.MetricName, "test", "series", strconv.Itoa(int(ref))))
-			p := mp.Get(labels.MetricName, "test")
+			p := mp.Postings(context.Background(), labels.MetricName, "test")
 
 			_, err := ExpandPostings(p)
 			if err != nil {
@@ -1572,7 +1572,7 @@ func TestMemPostings_Concurrent_Add_Get(t *testing.T) {
 		// We don't read the value of the postings here,
 		// this is tested in TestMemPostings_Unordered_Add_Get where it's easier to achieve the determinism.
 		// This test just checks that there's no data race.
-		p := mp.Get(labels.MetricName, "test")
+		p := mp.Postings(context.Background(), labels.MetricName, "test")
 		_, err := ExpandPostings(p)
 		require.NoError(t, err)
 	}
