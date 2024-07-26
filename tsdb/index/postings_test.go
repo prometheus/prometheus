@@ -979,7 +979,7 @@ func TestMemPostings_Delete(t *testing.T) {
 	p.Add(2, labels.FromStrings("lbl1", "b"))
 	p.Add(3, labels.FromStrings("lbl2", "a"))
 
-	before := p.Get(allPostingsKey.Name, allPostingsKey.Value)
+	before := p.Postings(context.Background(), allPostingsKey.Name, allPostingsKey.Value)
 	deletedRefs := map[storage.SeriesRef]struct{}{
 		2: {},
 	}
@@ -987,7 +987,7 @@ func TestMemPostings_Delete(t *testing.T) {
 		{Name: "lbl1", Value: "b"}: {},
 	}
 	p.Delete(deletedRefs, affectedLabels)
-	after := p.Get(allPostingsKey.Name, allPostingsKey.Value)
+	after := p.Postings(context.Background(), allPostingsKey.Name, allPostingsKey.Value)
 
 	// Make sure postings gotten before the delete have the old data when
 	// iterated over.
@@ -1001,7 +1001,7 @@ func TestMemPostings_Delete(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []storage.SeriesRef{1, 3}, expanded)
 
-	deleted := p.Get("lbl1", "b")
+	deleted := p.Postings(context.Background(), "lbl1", "b")
 	expanded, err = ExpandPostings(deleted)
 	require.NoError(t, err)
 	require.Empty(t, expanded, "expected empty postings, got %v", expanded)
@@ -1073,7 +1073,7 @@ func BenchmarkMemPostings_Delete(b *testing.B) {
 									return
 								default:
 									// Get a random value of this label.
-									p.Get(lbl, itoa(rand.Intn(10000))).Next()
+									p.Postings(context.Background(), lbl, itoa(rand.Intn(10000))).Next()
 								}
 							}
 						}(i)

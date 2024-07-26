@@ -235,25 +235,9 @@ func (p *MemPostings) Stats(label string, limit int, labelSizeFunc func(string, 
 	}
 }
 
-// Get returns a postings list for the given label pair.
-func (p *MemPostings) Get(name, value string) Postings {
-	var lp []storage.SeriesRef
-	p.mtx.RLock()
-	l := p.m[name]
-	if l != nil {
-		lp = l[value]
-	}
-	p.mtx.RUnlock()
-
-	if lp == nil {
-		return EmptyPostings()
-	}
-	return newListPostings(lp...)
-}
-
 // All returns a postings list over all documents ever added.
 func (p *MemPostings) All() Postings {
-	return p.Get(AllPostingsKey())
+	return p.Postings(context.Background(), allPostingsKey.Name, allPostingsKey.Value)
 }
 
 // EnsureOrder ensures that all postings lists are sorted. After it returns all further
@@ -490,7 +474,7 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 	}
 
 	// Now `vals` only contains the values that matched, get their postings.
-	its := make([]Postings, 0, len(vals))
+	its := make([]*ListPostings, 0, len(vals))
 	lps := make([]ListPostings, len(vals))
 	p.mtx.RLock()
 	e := p.m[name]
@@ -510,11 +494,27 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 	return Merge(ctx, its...)
 }
 
+// Postings returns a postings iterator for the given label values.
+func (p *MemPostings) Postings(ctx context.Context, name string, values ...string) Postings {
+	res := make([]*ListPostings, 0, len(values))
+	lps := make([]ListPostings, len(values))
+	p.mtx.RLock()
+	postingsMapForName := p.m[name]
+	for i, value := range values {
+		if lp := postingsMapForName[value]; lp != nil {
+			lps[i] = ListPostings{list: lp}
+			res = append(res, &lps[i])
+		}
+	}
+	p.mtx.RUnlock()
+	return Merge(ctx, res...)
+}
+
 func (p *MemPostings) PostingsForAllLabelValues(ctx context.Context, name string) Postings {
 	p.mtx.RLock()
 
 	e := p.m[name]
-	its := make([]Postings, 0, len(e))
+	its := make([]*ListPostings, 0, len(e))
 	lps := make([]ListPostings, len(e))
 	i := 0
 	for _, refs := range e {
