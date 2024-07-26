@@ -543,7 +543,7 @@ func (d *Decoder) FloatHistogramSamples(rec []byte, histograms []RefFloatHistogr
 	return histograms, nil
 }
 
-// Decode decodes a Histogram from a byte slice.
+// DecodeFloatHistogram decodes a Histogram from a byte slice.
 func DecodeFloatHistogram(buf *encoding.Decbuf, fh *histogram.FloatHistogram) {
 	fh.CounterResetHint = histogram.CounterResetHint(buf.Byte())
 

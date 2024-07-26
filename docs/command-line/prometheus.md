@@ -26,10 +26,11 @@ The Prometheus monitoring server
 | <code class="text-nowrap">--web.enable-lifecycle</code> | Enable shutdown and reload via HTTP request. | `false` |
 | <code class="text-nowrap">--web.enable-admin-api</code> | Enable API endpoints for admin control actions. | `false` |
 | <code class="text-nowrap">--web.enable-remote-write-receiver</code> | Enable API endpoint accepting remote write requests. | `false` |
+| <code class="text-nowrap">--web.remote-write-receiver.accepted-protobuf-messages</code> | List of the remote write protobuf messages to accept when receiving the remote writes. Supported values: prometheus.WriteRequest, io.prometheus.write.v2.Request | `prometheus.WriteRequest` |
 | <code class="text-nowrap">--web.console.templates</code> | Path to the console template directory, available at /consoles. | `consoles` |
 | <code class="text-nowrap">--web.console.libraries</code> | Path to the console library directory. | `console_libraries` |
 | <code class="text-nowrap">--web.page-title</code> | Document title of Prometheus instance. | `Prometheus Time Series Collection and Processing Server` |
-| <code class="text-nowrap">--web.cors.origin</code> | Regex for CORS origin. It is fully anchored. Example: 'https?://(domain1|domain2)\.com' | `.*` |
+| <code class="text-nowrap">--web.cors.origin</code> | Regex for CORS origin. It is fully anchored. Example: 'https?://(domain1\|domain2)\.com' | `.*` |
 | <code class="text-nowrap">--storage.tsdb.path</code> | Base path for metrics storage. Use with server mode only. | `data/` |
 | <code class="text-nowrap">--storage.tsdb.retention</code> | [DEPRECATED] How long to retain samples in storage. This flag has been deprecated, use "storage.tsdb.retention.time" instead. Use with server mode only. |  |
 | <code class="text-nowrap">--storage.tsdb.retention.time</code> | How long to retain samples in storage. When this flag is set it overrides "storage.tsdb.retention". If neither this flag nor "storage.tsdb.retention" nor "storage.tsdb.retention.size" is set, the retention time defaults to 15d. Units Supported: y, w, d, h, m, s, ms. Use with server mode only. |  |

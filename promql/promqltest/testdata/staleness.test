@@ -32,6 +32,9 @@ eval instant at 20s count_over_time(metric[1s])
 eval instant at 20s count_over_time(metric[10s])
   {} 1
 
+eval instant at 20s count_over_time(metric[10])
+  {} 1
+
 
 clear
 

@@ -142,7 +142,7 @@ func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 	}
 
 	slices.SortFunc(series, func(a, b *memSeries) int {
-		return labels.Compare(a.lset, b.lset)
+		return labels.Compare(a.labels(), b.labels())
 	})
 
 	// Convert back to list.
@@ -189,7 +189,7 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchB
 		h.head.metrics.seriesNotFound.Inc()
 		return storage.ErrNotFound
 	}
-	builder.Assign(s.lset)
+	builder.Assign(s.labels())
 
 	if chks == nil {
 		return nil
@@ -259,7 +259,7 @@ func (h *headIndexReader) LabelValueFor(_ context.Context, id storage.SeriesRef,
 		return "", storage.ErrNotFound
 	}
 
-	value := memSeries.lset.Get(label)
+	value := memSeries.labels().Get(label)
 	if value == "" {
 		return "", storage.ErrNotFound
 	}
@@ -283,7 +283,7 @@ func (h *headIndexReader) LabelNamesFor(ctx context.Context, series index.Postin
 			// when series was garbage collected after the caller got the series IDs.
 			continue
 		}
-		memSeries.lset.Range(func(lbl labels.Label) {
+		memSeries.labels().Range(func(lbl labels.Label) {
 			namesMap[lbl.Name] = struct{}{}
 		})
 	}
@@ -487,54 +487,23 @@ func (s *memSeries) oooMergedChunks(meta chunks.Meta, cdm *chunks.ChunkDiskMappe
 
 	// We create a temporary slice of chunk metas to hold the information of all
 	// possible chunks that may overlap with the requested chunk.
-	tmpChks := make([]chunkMetaAndChunkDiskMapperRef, 0, len(s.ooo.oooMmappedChunks))
-
-	oooHeadRef := chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.oooHeadChunkID(len(s.ooo.oooMmappedChunks))))
-	if s.ooo.oooHeadChunk != nil && s.ooo.oooHeadChunk.OverlapsClosedInterval(mint, maxt) {
-		// We only want to append the head chunk if this chunk existed when
-		// Series() was called. This brings consistency in case new data
-		// is added in between Series() and Chunk() calls.
-		if oooHeadRef == meta.OOOLastRef {
-			tmpChks = append(tmpChks, chunkMetaAndChunkDiskMapperRef{
-				meta: chunks.Meta{
-					// Ignoring samples added before and after the last known min and max time for this chunk.
-					MinTime: meta.OOOLastMinTime,
-					MaxTime: meta.OOOLastMaxTime,
-					Ref:     oooHeadRef,
-				},
-			})
-		}
-	}
+	tmpChks := make([]chunkMetaAndChunkDiskMapperRef, 0, len(s.ooo.oooMmappedChunks)+1)
 
 	for i, c := range s.ooo.oooMmappedChunks {
-		chunkRef := chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.oooHeadChunkID(i)))
-		// We can skip chunks that came in later than the last known OOOLastRef.
-		if chunkRef > meta.OOOLastRef {
-			break
-		}
-
-		switch {
-		case chunkRef == meta.OOOLastRef:
-			tmpChks = append(tmpChks, chunkMetaAndChunkDiskMapperRef{
-				meta: chunks.Meta{
-					MinTime: meta.OOOLastMinTime,
-					MaxTime: meta.OOOLastMaxTime,
-					Ref:     chunkRef,
-				},
-				ref:      c.ref,
-				origMinT: c.minTime,
-				origMaxT: c.maxTime,
-			})
-		case c.OverlapsClosedInterval(mint, maxt):
+		if c.OverlapsClosedInterval(mint, maxt) {
 			tmpChks = append(tmpChks, chunkMetaAndChunkDiskMapperRef{
 				meta: chunks.Meta{
 					MinTime: c.minTime,
 					MaxTime: c.maxTime,
-					Ref:     chunkRef,
+					Ref:     chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.oooHeadChunkID(i))),
 				},
 				ref: c.ref,
 			})
 		}
+	}
+	// Add in data copied from the head OOO chunk.
+	if meta.Chunk != nil {
+		tmpChks = append(tmpChks, chunkMetaAndChunkDiskMapperRef{meta: meta})
 	}
 
 	// Next we want to sort all the collected chunks by min time so we can find
@@ -548,22 +517,8 @@ func (s *memSeries) oooMergedChunks(meta chunks.Meta, cdm *chunks.ChunkDiskMappe
 			continue
 		}
 		var iterable chunkenc.Iterable
-		if c.meta.Ref == oooHeadRef {
-			var xor *chunkenc.XORChunk
-			var err error
-			// If head chunk min and max time match the meta OOO markers
-			// that means that the chunk has not expanded so we can append
-			// it as it is.
-			if s.ooo.oooHeadChunk.minTime == meta.OOOLastMinTime && s.ooo.oooHeadChunk.maxTime == meta.OOOLastMaxTime {
-				xor, err = s.ooo.oooHeadChunk.chunk.ToXOR() // TODO(jesus.vazquez) (This is an optimization idea that has no priority and might not be that useful) See if we could use a copy of the underlying slice. That would leave the more expensive ToXOR() function only for the usecase where Bytes() is called.
-			} else {
-				// We need to remove samples that are outside of the markers
-				xor, err = s.ooo.oooHeadChunk.chunk.ToXORBetweenTimestamps(meta.OOOLastMinTime, meta.OOOLastMaxTime)
-			}
-			if err != nil {
-				return nil, fmt.Errorf("failed to convert ooo head chunk to xor chunk: %w", err)
-			}
-			iterable = xor
+		if c.meta.Chunk != nil {
+			iterable = c.meta.Chunk
 		} else {
 			chk, err := cdm.Chunk(c.ref)
 			if err != nil {
@@ -573,16 +528,7 @@ func (s *memSeries) oooMergedChunks(meta chunks.Meta, cdm *chunks.ChunkDiskMappe
 				}
 				return nil, err
 			}
-			if c.meta.Ref == meta.OOOLastRef &&
-				(c.origMinT != meta.OOOLastMinTime || c.origMaxT != meta.OOOLastMaxTime) {
-				// The head expanded and was memory mapped so now we need to
-				// wrap the chunk within a chunk that doesnt allows us to iterate
-				// through samples out of the OOOLastMinT and OOOLastMaxT
-				// markers.
-				iterable = boundedIterable{chk, meta.OOOLastMinTime, meta.OOOLastMaxTime}
-			} else {
-				iterable = chk
-			}
+			iterable = chk
 		}
 		mc.chunkIterables = append(mc.chunkIterables, iterable)
 		if c.meta.MaxTime > absoluteMax {
@@ -591,74 +537,6 @@ func (s *memSeries) oooMergedChunks(meta chunks.Meta, cdm *chunks.ChunkDiskMappe
 	}
 
 	return mc, nil
-}
-
-var _ chunkenc.Iterable = &boundedIterable{}
-
-// boundedIterable is an implementation of chunkenc.Iterable that uses a
-// boundedIterator that only iterates through samples which timestamps are
-// >= minT and <= maxT.
-type boundedIterable struct {
-	chunk chunkenc.Chunk
-	minT  int64
-	maxT  int64
-}
-
-func (b boundedIterable) Iterator(iterator chunkenc.Iterator) chunkenc.Iterator {
-	it := b.chunk.Iterator(iterator)
-	if it == nil {
-		panic("iterator shouldn't be nil")
-	}
-	return boundedIterator{it, b.minT, b.maxT}
-}
-
-var _ chunkenc.Iterator = &boundedIterator{}
-
-// boundedIterator is an implementation of Iterator that only iterates through
-// samples which timestamps are >= minT and <= maxT.
-type boundedIterator struct {
-	chunkenc.Iterator
-	minT int64
-	maxT int64
-}
-
-// Next the first time its called it will advance as many positions as necessary
-// until its able to find a sample within the bounds minT and maxT.
-// If there are samples within bounds it will advance one by one amongst them.
-// If there are no samples within bounds it will return false.
-func (b boundedIterator) Next() chunkenc.ValueType {
-	for b.Iterator.Next() == chunkenc.ValFloat {
-		t, _ := b.Iterator.At()
-		switch {
-		case t < b.minT:
-			continue
-		case t > b.maxT:
-			return chunkenc.ValNone
-		default:
-			return chunkenc.ValFloat
-		}
-	}
-	return chunkenc.ValNone
-}
-
-func (b boundedIterator) Seek(t int64) chunkenc.ValueType {
-	if t < b.minT {
-		// We must seek at least up to b.minT if it is asked for something before that.
-		val := b.Iterator.Seek(b.minT)
-		if !(val == chunkenc.ValFloat) {
-			return chunkenc.ValNone
-		}
-		t, _ := b.Iterator.At()
-		if t <= b.maxT {
-			return chunkenc.ValFloat
-		}
-	}
-	if t > b.maxT {
-		// We seek anyway so that the subsequent Next() calls will also return false.
-		b.Iterator.Seek(t)
-		return chunkenc.ValNone
-	}
-	return b.Iterator.Seek(t)
 }
 
 // safeHeadChunk makes sure that the chunk can be accessed without a race condition.

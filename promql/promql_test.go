@@ -23,6 +23,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
@@ -45,6 +46,8 @@ func TestConcurrentRangeQueries(t *testing.T) {
 		MaxSamples: 50000000,
 		Timeout:    100 * time.Second,
 	}
+	// Enable experimental functions testing
+	parser.EnableExperimentalFunctions = true
 	engine := promql.NewEngine(opts)
 
 	const interval = 10000 // 10s interval.

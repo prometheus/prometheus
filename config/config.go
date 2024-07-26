@@ -180,6 +180,7 @@ var (
 	// DefaultRemoteWriteConfig is the default remote write configuration.
 	DefaultRemoteWriteConfig = RemoteWriteConfig{
 		RemoteTimeout:    model.Duration(30 * time.Second),
+		ProtobufMessage:  RemoteWriteProtoMsgV1,
 		QueueConfig:      DefaultQueueConfig,
 		MetadataConfig:   DefaultMetadataConfig,
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
@@ -226,6 +227,9 @@ var (
 	DefaultExemplarsConfig = ExemplarsConfig{
 		MaxExemplars: 100000,
 	}
+
+	// DefaultOTLPConfig is the default OTLP configuration.
+	DefaultOTLPConfig = OTLPConfig{}
 )
 
 // Config is the top-level configuration for Prometheus's config files.
@@ -241,6 +245,7 @@ type Config struct {
 
 	RemoteWriteConfigs []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
 	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
+	OTLPConfig         OTLPConfig           `yaml:"otlp,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -279,7 +284,7 @@ func (c *Config) GetScrapeConfigs() ([]*ScrapeConfig, error) {
 
 	jobNames := map[string]string{}
 	for i, scfg := range c.ScrapeConfigs {
-		// We do these checks for library users that would not call Validate in
+		// We do these checks for library users that would not call validate in
 		// Unmarshal.
 		if err := scfg.Validate(c.GlobalConfig); err != nil {
 			return nil, err
@@ -1055,6 +1060,49 @@ func CheckTargetAddress(address model.LabelValue) error {
 	return nil
 }
 
+// RemoteWriteProtoMsg represents the known protobuf message for the remote write
+// 1.0 and 2.0 specs.
+type RemoteWriteProtoMsg string
+
+// Validate returns error if the given reference for the protobuf message is not supported.
+func (s RemoteWriteProtoMsg) Validate() error {
+	switch s {
+	case RemoteWriteProtoMsgV1, RemoteWriteProtoMsgV2:
+		return nil
+	default:
+		return fmt.Errorf("unknown remote write protobuf message %v, supported: %v", s, RemoteWriteProtoMsgs{RemoteWriteProtoMsgV1, RemoteWriteProtoMsgV2}.String())
+	}
+}
+
+type RemoteWriteProtoMsgs []RemoteWriteProtoMsg
+
+func (m RemoteWriteProtoMsgs) Strings() []string {
+	ret := make([]string, 0, len(m))
+	for _, typ := range m {
+		ret = append(ret, string(typ))
+	}
+	return ret
+}
+
+func (m RemoteWriteProtoMsgs) String() string {
+	return strings.Join(m.Strings(), ", ")
+}
+
+var (
+	// RemoteWriteProtoMsgV1 represents the deprecated `prometheus.WriteRequest` protobuf
+	// message introduced in the https://prometheus.io/docs/specs/remote_write_spec/.
+	//
+	// NOTE: This string is used for both HTTP header values and config value, so don't change
+	// this reference.
+	RemoteWriteProtoMsgV1 RemoteWriteProtoMsg = "prometheus.WriteRequest"
+	// RemoteWriteProtoMsgV2 represents the `io.prometheus.write.v2.Request` protobuf
+	// message introduced in https://prometheus.io/docs/specs/remote_write_spec_2_0/
+	//
+	// NOTE: This string is used for both HTTP header values and config value, so don't change
+	// this reference.
+	RemoteWriteProtoMsgV2 RemoteWriteProtoMsg = "io.prometheus.write.v2.Request"
+)
+
 // RemoteWriteConfig is the configuration for writing to remote storage.
 type RemoteWriteConfig struct {
 	URL                  *config.URL       `yaml:"url"`
@@ -1064,6 +1112,9 @@ type RemoteWriteConfig struct {
 	Name                 string            `yaml:"name,omitempty"`
 	SendExemplars        bool              `yaml:"send_exemplars,omitempty"`
 	SendNativeHistograms bool              `yaml:"send_native_histograms,omitempty"`
+	// ProtobufMessage specifies the protobuf message to use against the remote
+	// receiver as specified in https://prometheus.io/docs/specs/remote_write_spec_2_0/
+	ProtobufMessage RemoteWriteProtoMsg `yaml:"protobuf_message,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
@@ -1096,6 +1147,10 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	}
 	if err := validateHeaders(c.Headers); err != nil {
 		return err
+	}
+
+	if err := c.ProtobufMessage.Validate(); err != nil {
+		return fmt.Errorf("invalid protobuf_message value: %w", err)
 	}
 
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
@@ -1252,4 +1307,36 @@ func getGoGCEnv() int {
 		}
 	}
 	return DefaultRuntimeConfig.GoGC
+}
+
+// OTLPConfig is the configuration for writing to the OTLP endpoint.
+type OTLPConfig struct {
+	PromoteResourceAttributes []string `yaml:"promote_resource_attributes,omitempty"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *OTLPConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultOTLPConfig
+	type plain OTLPConfig
+	if err := unmarshal((*plain)(c)); err != nil {
+		return err
+	}
+
+	seen := map[string]struct{}{}
+	var err error
+	for i, attr := range c.PromoteResourceAttributes {
+		attr = strings.TrimSpace(attr)
+		if attr == "" {
+			err = errors.Join(err, fmt.Errorf("empty promoted OTel resource attribute"))
+			continue
+		}
+		if _, exists := seen[attr]; exists {
+			err = errors.Join(err, fmt.Errorf("duplicated promoted OTel resource attribute %q", attr))
+			continue
+		}
+
+		seen[attr] = struct{}{}
+		c.PromoteResourceAttributes[i] = attr
+	}
+	return err
 }

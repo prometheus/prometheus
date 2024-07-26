@@ -265,6 +265,8 @@ type Options struct {
 	IsAgent                    bool
 	AppName                    string
 
+	AcceptRemoteWriteProtoMsgs []config.RemoteWriteProtoMsg
+
 	Gatherer   prometheus.Gatherer
 	Registerer prometheus.Registerer
 }
@@ -353,6 +355,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		o.Registerer,
 		nil,
 		o.EnableRemoteWriteReceiver,
+		o.AcceptRemoteWriteProtoMsgs,
 		o.EnableOTLPWriteReceiver,
 	)
 

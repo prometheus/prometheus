@@ -151,7 +151,42 @@ func (g *Group) Name() string { return g.name }
 func (g *Group) File() string { return g.file }
 
 // Rules returns the group's rules.
-func (g *Group) Rules() []Rule { return g.rules }
+func (g *Group) Rules(matcherSets ...[]*labels.Matcher) []Rule {
+	if len(matcherSets) == 0 {
+		return g.rules
+	}
+	var rules []Rule
+	for _, rule := range g.rules {
+		if matchesMatcherSets(matcherSets, rule.Labels()) {
+			rules = append(rules, rule)
+		}
+	}
+	return rules
+}
+
+func matches(lbls labels.Labels, matchers ...*labels.Matcher) bool {
+	for _, m := range matchers {
+		if v := lbls.Get(m.Name); !m.Matches(v) {
+			return false
+		}
+	}
+	return true
+}
+
+// matchesMatcherSets ensures all matches in each matcher set are ANDed and the set of those is ORed.
+func matchesMatcherSets(matcherSets [][]*labels.Matcher, lbls labels.Labels) bool {
+	if len(matcherSets) == 0 {
+		return true
+	}
+
+	var ok bool
+	for _, matchers := range matcherSets {
+		if matches(lbls, matchers...) {
+			ok = true
+		}
+	}
+	return ok
+}
 
 // Queryable returns the group's querable.
 func (g *Group) Queryable() storage.Queryable { return g.opts.Queryable }
@@ -586,14 +621,12 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			}
 		}
 
-		// If the rule has no dependencies, it can run concurrently because no other rules in this group depend on its output.
-		// Try run concurrently if there are slots available.
-		if ctrl := g.concurrencyController; isRuleEligibleForConcurrentExecution(rule) && ctrl.Allow() {
+		if ctrl := g.concurrencyController; ctrl.Allow(ctx, g, rule) {
 			wg.Add(1)
 
 			go eval(i, rule, func() {
 				wg.Done()
-				ctrl.Done()
+				ctrl.Done(ctx)
 			})
 		} else {
 			eval(i, rule, nil)
@@ -1058,8 +1091,4 @@ func buildDependencyMap(rules []Rule) dependencyMap {
 	}
 
 	return dependencies
-}
-
-func isRuleEligibleForConcurrentExecution(rule Rule) bool {
-	return rule.NoDependentRules() && rule.NoDependencyRules()
 }

@@ -65,7 +65,7 @@ func (i ItemType) IsAggregator() bool { return i > aggregatorsStart && i < aggre
 // IsAggregatorWithParam returns true if the Item is an aggregator that takes a parameter.
 // Returns false otherwise.
 func (i ItemType) IsAggregatorWithParam() bool {
-	return i == TOPK || i == BOTTOMK || i == COUNT_VALUES || i == QUANTILE
+	return i == TOPK || i == BOTTOMK || i == COUNT_VALUES || i == QUANTILE || i == LIMITK || i == LIMIT_RATIO
 }
 
 // IsKeyword returns true if the Item corresponds to a keyword.
@@ -118,6 +118,8 @@ var key = map[string]ItemType{
 	"bottomk":      BOTTOMK,
 	"count_values": COUNT_VALUES,
 	"quantile":     QUANTILE,
+	"limitk":       LIMITK,
+	"limit_ratio":  LIMIT_RATIO,
 
 	// Keywords.
 	"offset":      OFFSET,
@@ -476,7 +478,7 @@ func lexStatements(l *Lexer) stateFn {
 			skipSpaces(l)
 		}
 		l.bracketOpen = true
-		return lexDuration
+		return lexNumberOrDuration
 	case r == ']':
 		if !l.bracketOpen {
 			return l.errorf("unexpected right bracket %q", r)
@@ -844,18 +846,6 @@ func lexLineComment(l *Lexer) stateFn {
 	return lexStatements
 }
 
-func lexDuration(l *Lexer) stateFn {
-	if l.scanNumber() {
-		return l.errorf("missing unit character in duration")
-	}
-	if !acceptRemainingDuration(l) {
-		return l.errorf("bad duration syntax: %q", l.input[l.start:l.pos])
-	}
-	l.backup()
-	l.emit(DURATION)
-	return lexStatements
-}
-
 // lexNumber scans a number: decimal, hex, oct or float.
 func lexNumber(l *Lexer) stateFn {
 	if !l.scanNumber() {
@@ -907,6 +897,7 @@ func acceptRemainingDuration(l *Lexer) bool {
 // scanNumber scans numbers of different formats. The scanned Item is
 // not necessarily a valid number. This case is caught by the parser.
 func (l *Lexer) scanNumber() bool {
+	initialPos := l.pos
 	// Modify the digit pattern if the number is hexadecimal.
 	digitPattern := "0123456789"
 	// Disallow hexadecimal in series descriptions as the syntax is ambiguous.
@@ -978,7 +969,10 @@ func (l *Lexer) scanNumber() bool {
 		// Handle digits at the end since we already consumed before this loop.
 		l.acceptRun(digitPattern)
 	}
-
+	// Empty string is not a valid number.
+	if l.pos == initialPos {
+		return false
+	}
 	// Next thing must not be alphanumeric unless it's the times token
 	// for series repetitions.
 	if r := l.peek(); (l.seriesDesc && r == 'x') || !isAlphaNumeric(r) {
