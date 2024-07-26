@@ -1409,12 +1409,15 @@ func BenchmarkMemPostings_PostingsForLabelMatching(b *testing.B) {
 	slowRegexp := "^" + slowRegexpString() + "$"
 	b.Logf("Slow regexp length = %d", len(slowRegexp))
 	slow := regexp.MustCompile(slowRegexp)
+	const seriesPerLabel = 10
 
 	for _, labelValueCount := range []int{1_000, 10_000, 100_000} {
 		b.Run(fmt.Sprintf("labels=%d", labelValueCount), func(b *testing.B) {
 			mp := NewMemPostings()
 			for i := 0; i < labelValueCount; i++ {
-				mp.Add(storage.SeriesRef(i), labels.FromStrings("label", strconv.Itoa(i)))
+				for j := 0; j < seriesPerLabel; j++ {
+					mp.Add(storage.SeriesRef(i*seriesPerLabel+j), labels.FromStrings("__name__", strconv.Itoa(j), "label", strconv.Itoa(i)))
+				}
 			}
 
 			fp, err := ExpandPostings(mp.PostingsForLabelMatching(context.Background(), "label", fast.MatchString))
@@ -1432,6 +1435,18 @@ func BenchmarkMemPostings_PostingsForLabelMatching(b *testing.B) {
 			b.Run("matcher=slow", func(b *testing.B) {
 				for i := 0; i < b.N; i++ {
 					mp.PostingsForLabelMatching(context.Background(), "label", slow.MatchString).Next()
+				}
+			})
+
+			b.Run("matcher=all", func(b *testing.B) {
+				for i := 0; i < b.N; i++ {
+					// Match everything.
+					p := mp.PostingsForLabelMatching(context.Background(), "label", func(_ string) bool { return true })
+					var sum storage.SeriesRef
+					// Iterate through all results to exercise merge function.
+					for p.Next() {
+						sum += p.At()
+					}
 				}
 			})
 		})
