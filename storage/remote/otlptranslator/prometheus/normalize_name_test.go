@@ -200,4 +200,6 @@ func TestBuildCompliantNameWithoutSuffixes(t *testing.T) {
 	require.Equal(t, "envoy__rule_engine_zlib_buf_error", BuildCompliantName(createGauge("envoy__rule_engine_zlib_buf_error", ""), "", false))
 	require.Equal(t, ":foo::bar", BuildCompliantName(createGauge(":foo::bar", ""), "", false))
 	require.Equal(t, ":foo::bar", BuildCompliantName(createCounter(":foo::bar", ""), "", false))
+	require.Equal(t, "foo_bar", BuildCompliantName(createGauge("foo.bar", "1"), "", false))
+	require.Equal(t, "system_io", BuildCompliantName(createCounter("system.io", "foo/bar"), "", false))
 }
