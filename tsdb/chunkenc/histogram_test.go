@@ -549,6 +549,35 @@ func TestHistogramChunkAppendable(t *testing.T) {
 		require.Equal(t, NotCounterReset, nextChunk.GetCounterResetHeader())
 	}
 
+	{
+		// Start a new chunk with a histogram that has an empty bucket.
+		// Add a histogram that has the same bucket missing.
+		// This should be appendable and can happen if we are merging from chunks
+		// where the first sample came from a recoded chunk that added the
+		// empty bucket.
+		h1 := eh.Copy()
+		// Add a bucket that is empty -10 offsets from the first bucket.
+		h1.PositiveSpans = make([]histogram.Span, len(eh.PositiveSpans)+1)
+		h1.PositiveSpans[0] = histogram.Span{Offset: eh.PositiveSpans[0].Offset - 10, Length: 1}
+		h1.PositiveSpans[1] = histogram.Span{Offset: eh.PositiveSpans[0].Offset + 9, Length: eh.PositiveSpans[0].Length}
+		for i, v := range eh.PositiveSpans[1:] {
+			h1.PositiveSpans[i+2] = v
+		}
+		h1.PositiveBuckets = make([]int64, len(eh.PositiveBuckets)+1)
+		h1.PositiveBuckets[0] = 0
+		for i, v := range eh.PositiveBuckets {
+			h1.PositiveBuckets[i+1] = v
+		}
+
+		c, hApp, ts, _ := setup(h1)
+		h2 := eh.Copy()
+
+		_, _, ok, _ := hApp.appendable(h2)
+		require.True(t, ok)
+
+		assertNoNewHistogramChunkOnAppend(t, c, hApp, ts+1, h2, UnknownCounterReset)
+	}
+
 	{ // Custom buckets, no change.
 		c, hApp, ts, h1 := setup(cbh)
 		h2 := h1.Copy()

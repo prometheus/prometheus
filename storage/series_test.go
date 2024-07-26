@@ -141,6 +141,20 @@ func TestHistogramSeriesToChunks(t *testing.T) {
 		},
 		PositiveBuckets: []int64{2, 1}, // Abs: 2, 3
 	}
+	// h1 but with an extra empty bucket at offset -10.
+	// This can happen if h1 is from a recoded chunk, where a later histogram had a bucket at offset -10.
+	h1ExtraBuckets := &histogram.Histogram{
+		Count:         7,
+		ZeroCount:     2,
+		ZeroThreshold: 0.001,
+		Sum:           100,
+		Schema:        0,
+		PositiveSpans: []histogram.Span{
+			{Offset: -10, Length: 1},
+			{Offset: 9, Length: 2},
+		},
+		PositiveBuckets: []int64{0, 2, 1}, // Abs: 0, 2, 3
+	}
 	// Appendable to h1.
 	h2 := &histogram.Histogram{
 		Count:         12,
@@ -178,6 +192,20 @@ func TestHistogramSeriesToChunks(t *testing.T) {
 			{Offset: 0, Length: 2},
 		},
 		PositiveBuckets: []float64{3, 1},
+	}
+	// fh1 but with an extra empty bucket at offset -10.
+	// This can happen if fh1 is from a recoded chunk, where a later histogram had a bucket at offset -10.
+	fh1ExtraBuckets := &histogram.FloatHistogram{
+		Count:         6,
+		ZeroCount:     2,
+		ZeroThreshold: 0.001,
+		Sum:           100,
+		Schema:        0,
+		PositiveSpans: []histogram.Span{
+			{Offset: -10, Length: 1},
+			{Offset: 9, Length: 2},
+		},
+		PositiveBuckets: []float64{0, 3, 1},
 	}
 	// Appendable to fh1.
 	fh2 := &histogram.FloatHistogram{
@@ -398,6 +426,20 @@ func TestHistogramSeriesToChunks(t *testing.T) {
 				fhSample{t: 2, fh: gfh1},
 			},
 			expectedCounterResetHeaders: []chunkenc.CounterResetHeader{chunkenc.GaugeType},
+		},
+		"histogram with extra empty bucket followed by histogram encodes to one chunk": {
+			samples: []chunks.Sample{
+				hSample{t: 1, h: h1ExtraBuckets},
+				hSample{t: 2, h: h1},
+			},
+			expectedCounterResetHeaders: []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset},
+		},
+		"float histogram with extra empty bucket followed by float histogram encodes to one chunk": {
+			samples: []chunks.Sample{
+				fhSample{t: 1, fh: fh1ExtraBuckets},
+				fhSample{t: 2, fh: fh1},
+			},
+			expectedCounterResetHeaders: []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset},
 		},
 	}
 
