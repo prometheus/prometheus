@@ -335,15 +335,6 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 			return 0, err
 		}
 	}
-	s.Lock()
-	isOOO, _, err := s.appendable(t, v, a.headMaxt, a.minValidTime, a.oooTimeWindow)
-	if err == nil {
-		if isOOO && hints != nil && hints.DiscardOutOfOrder {
-			a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
-			return 0, storage.ErrOutOfOrderSample
-		}
-	}
-	s.Unlock()
 
 	if value.IsStaleNaN(v) {
 		switch {
@@ -357,8 +348,12 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	s.Lock()
 	// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 	// to skip that sample from the WAL and write only in the WBL.
-	_, delta, err := s.appendable(t, v, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+	isOOO, delta, err := s.appendable(t, v, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 	if err == nil {
+		if isOOO && hints != nil && hints.DiscardOutOfOrder {
+			a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
+			return 0, storage.ErrOutOfOrderSample
+		}
 		s.pendingCommit = true
 	}
 	s.Unlock()

@@ -36,6 +36,12 @@ func New(t testutil.T) *TestStorage {
 	return stor
 }
 
+func NewOpts(t testutil.T, headOpts *tsdb.HeadOptions) *TestStorage {
+	stor, err := NewWithError()
+	require.NoError(t, err)
+	return stor
+}
+
 // NewWithError returns a new TestStorage for user facing tests, which reports
 // errors directly.
 func NewWithError() (*TestStorage, error) {

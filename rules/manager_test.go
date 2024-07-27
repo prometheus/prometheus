@@ -43,6 +43,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/teststorage"
@@ -1190,7 +1191,59 @@ func countStaleNaN(t *testing.T, st storage.Storage) int {
 	}
 	return c
 }
+func TestRuleMovedBetweenFiles(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
 
+	headOpts := &tsdb.HeadOptions{}
+	headOpts.OutOfOrderTimeWindow.Store(2 * int64(time.Hour))
+
+	storage := teststorage.NewOpts(t, headOpts)
+	defer storage.Close()
+	opts := promql.EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
+	}
+	engine := promql.NewEngine(opts)
+	ruleManager := NewManager(&ManagerOptions{
+		Appendable: storage,
+		Queryable:  storage,
+		QueryFunc:  EngineQueryFunc(engine, storage),
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
+	})
+	var stopped bool
+	ruleManager.start()
+	defer func() {
+		if !stopped {
+			ruleManager.Stop()
+		}
+	}()
+
+	// Create initial rule files
+
+	// Load initial configuration
+
+	// Wait for rule to be evaluated
+
+	// Move rule to second file
+
+	// Reload configuration
+
+	// Wait for rule to be evaluated in new location and potential staleness marker
+
+	// Query the data
+
+	// Verify that we have continuous data without gaps
+
+	// Verify no out-of-order samples
+
+	// Verify no staleness markers
+
+}
 func TestGroupHasAlertingRules(t *testing.T) {
 	tests := []struct {
 		group *Group
