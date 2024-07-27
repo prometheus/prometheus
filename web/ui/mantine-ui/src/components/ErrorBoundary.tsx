@@ -5,6 +5,7 @@ import { useLocation } from "react-router-dom";
 
 interface Props {
   children?: ReactNode;
+  title?: string;
 }
 
 interface State {
@@ -30,7 +31,7 @@ class ErrorBoundary extends Component<Props, State> {
       return (
         <Alert
           color="red"
-          title="Error querying page data"
+          title={this.props.title || "Error querying page data"}
           icon={<IconAlertTriangle size={14} />}
           maw={500}
           mx="auto"

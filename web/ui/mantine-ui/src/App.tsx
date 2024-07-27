@@ -48,7 +48,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import QueryPage from "./pages/query/QueryPage";
 import AlertsPage from "./pages/AlertsPage";
 import RulesPage from "./pages/RulesPage";
-import TargetsPage from "./pages/TargetsPage";
+import TargetsPage from "./pages/targets/TargetsPage";
 import ServiceDiscoveryPage from "./pages/ServiceDiscoveryPage";
 import StatusPage from "./pages/StatusPage";
 import TSDBStatusPage from "./pages/TSDBStatusPage";

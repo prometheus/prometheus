@@ -2,25 +2,19 @@ import { PayloadAction, createSlice } from "@reduxjs/toolkit";
 import { initializeFromLocalStorage } from "./initializeFromLocalStorage";
 
 export const localStorageKeyCollapsedPools = "targetsPage.collapsedPools";
-export const localStorageKeyTargetFilters = "targetsPage.filters";
-
-interface TargetFilters {
-  scrapePool: string | null;
-  health: string[];
-}
+export const localStorageKeyTargetHealthFilter = "targetsPage.healthFilter";
 
 interface TargetsPage {
-  filters: TargetFilters;
+  selectedPool: string | null;
+  healthFilter: string[];
   collapsedPools: string[];
 }
 
 const initialState: TargetsPage = {
-  filters: initializeFromLocalStorage<TargetFilters>(
-    localStorageKeyTargetFilters,
-    {
-      scrapePool: null,
-      health: [],
-    }
+  selectedPool: null,
+  healthFilter: initializeFromLocalStorage<string[]>(
+    localStorageKeyTargetHealthFilter,
+    []
   ),
   collapsedPools: initializeFromLocalStorage<string[]>(
     localStorageKeyCollapsedPools,
@@ -32,11 +26,11 @@ export const targetsPageSlice = createSlice({
   name: "targetsPage",
   initialState,
   reducers: {
-    updateTargetFilters: (
-      state,
-      { payload }: PayloadAction<Partial<TargetFilters>>
-    ) => {
-      Object.assign(state.filters, payload);
+    setSelectedPool: (state, { payload }: PayloadAction<string | null>) => {
+      state.selectedPool = payload;
+    },
+    setHealthFilter: (state, { payload }: PayloadAction<string[]>) => {
+      state.healthFilter = payload;
     },
     setCollapsedPools: (state, { payload }: PayloadAction<string[]>) => {
       state.collapsedPools = payload;
@@ -44,7 +38,7 @@ export const targetsPageSlice = createSlice({
   },
 });
 
-export const { updateTargetFilters, setCollapsedPools } =
+export const { setSelectedPool, setHealthFilter, setCollapsedPools } =
   targetsPageSlice.actions;
 
 export default targetsPageSlice.reducer;

@@ -18,25 +18,26 @@ import {
   IconLayoutNavbarExpand,
   IconSearch,
 } from "@tabler/icons-react";
-import { StateMultiSelect } from "../components/StateMultiSelect";
-import { useSuspenseAPIQuery } from "../api/api";
-import { ScrapePoolsResult } from "../api/responseTypes/scrapePools";
-import { Target, TargetsResult } from "../api/responseTypes/targets";
-import React from "react";
-import badgeClasses from "../Badge.module.css";
+import { StateMultiSelect } from "../../components/StateMultiSelect";
+import { useSuspenseAPIQuery } from "../../api/api";
+import { ScrapePoolsResult } from "../../api/responseTypes/scrapePools";
+import { Target, TargetsResult } from "../../api/responseTypes/targets";
+import React, { useEffect } from "react";
+import badgeClasses from "../../Badge.module.css";
 import {
   humanizeDurationRelative,
   humanizeDuration,
   now,
-} from "../lib/formatTime";
-import { LabelBadges } from "../components/LabelBadges";
-import { useAppDispatch, useAppSelector } from "../state/hooks";
+} from "../../lib/formatTime";
+import { LabelBadges } from "../../components/LabelBadges";
+import { useAppDispatch, useAppSelector } from "../../state/hooks";
 import {
   setCollapsedPools,
   updateTargetFilters,
-} from "../state/targetsPageSlice";
-import EndpointLink from "../components/EndpointLink";
-import CustomInfiniteScroll from "../components/CustomInfiniteScroll";
+} from "../../state/targetsPageSlice";
+import EndpointLink from "../../components/EndpointLink";
+import CustomInfiniteScroll from "../../components/CustomInfiniteScroll";
+import { filter } from "lodash";
 
 type ScrapePool = {
   targets: Target[];
@@ -89,7 +90,10 @@ const groupTargets = (targets: Target[]): ScrapePools => {
   return pools;
 };
 
+const scrapePoolQueryParam = "scrapePool";
+
 export default function TargetsPage() {
+  // Load the list of all available scrape pools.
   const {
     data: {
       data: { scrapePools },
@@ -98,6 +102,29 @@ export default function TargetsPage() {
     path: `/scrape_pools`,
   });
 
+  const dispatch = useAppDispatch();
+
+  // If there is a selected pool in the URL, extract it on initial load.
+  useEffect(() => {
+    const selectedPool = new URLSearchParams(window.location.search).get(
+      scrapePoolQueryParam
+    );
+    if (selectedPool !== null) {
+      dispatch(updateTargetFilters({ scrapePool: selectedPool }));
+    }
+  }, [dispatch]);
+
+  const filters = useAppSelector((state) => state.targetsPage.filters);
+
+  let poolToShow = filters.scrapePool;
+  let limitedDueToManyPools = false;
+
+  if (poolToShow === null && scrapePools.length > 20) {
+    poolToShow = scrapePools[0];
+    limitedDueToManyPools = true;
+  }
+
+  // Based on the selected pool (if any), load the list of targets.
   const {
     data: {
       data: { activeTargets },
@@ -106,11 +133,10 @@ export default function TargetsPage() {
     path: `/targets`,
     params: {
       state: "active",
+      scrapePool: poolToShow === null ? "" : poolToShow,
     },
   });
 
-  const dispatch = useAppDispatch();
-  const filters = useAppSelector((state) => state.targetsPage.filters);
   const collapsedPools = useAppSelector(
     (state) => state.targetsPage.collapsedPools
   );
@@ -123,7 +149,12 @@ export default function TargetsPage() {
       <Group mb="md" mt="xs">
         <Select
           placeholder="Select scrape pool"
-          data={["All pools", ...scrapePools]}
+          data={[{ label: "All pools", value: "" }, ...scrapePools]}
+          value={filters.scrapePool}
+          onChange={(value) =>
+            dispatch(updateTargetFilters({ scrapePool: value || null }))
+          }
+          searchable
         />
         <StateMultiSelect
           options={["unknown", "up", "down"]}
@@ -131,8 +162,8 @@ export default function TargetsPage() {
             o === "unknown"
               ? badgeClasses.healthUnknown
               : o === "up"
-              ? badgeClasses.healthOk
-              : badgeClasses.healthErr
+                ? badgeClasses.healthOk
+                : badgeClasses.healthErr
           }
           placeholder="Filter by target state"
           values={filters.health}
@@ -171,6 +202,15 @@ export default function TargetsPage() {
             No targets found that match your filter criteria.
           </Alert>
         )}
+        {limitedDueToManyPools && (
+          <Alert
+            title="Found many pools, showing only one"
+            icon={<IconInfoCircle size={14} />}
+          >
+            There are many scrape pools configured. Showing only the first one.
+            Use the dropdown to select a different pool.
+          </Alert>
+        )}
         <Accordion
           multiple
           variant="separated"
@@ -192,8 +232,8 @@ export default function TargetsPage() {
                     pool.upCount === 0
                       ? "5px solid var(--mantine-color-red-4)"
                       : pool.upCount !== pool.targets.length
-                      ? "5px solid var(--mantine-color-orange-5)"
-                      : "5px solid var(--mantine-color-green-4)",
+                        ? "5px solid var(--mantine-color-orange-5)"
+                        : "5px solid var(--mantine-color-green-4)",
                 }}
               >
                 <Accordion.Control>
