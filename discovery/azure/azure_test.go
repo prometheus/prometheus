@@ -16,6 +16,7 @@ package azure
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"testing"
 
@@ -28,7 +29,9 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v4"
 	cache "github.com/Code-Hex/go-generics-cache"
 	"github.com/Code-Hex/go-generics-cache/policy/lru"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 )
@@ -481,6 +484,25 @@ func TestNewAzureResourceFromID(t *testing.T) {
 }
 
 func TestAzureSDRefresh(t *testing.T) {
+
+	// var expectedTG []*targetgroup.Group
+	azureSDConfig := &DefaultSDConfig
+
+	azureClient, err := createNewMockAzureClient(nil)
+	require.NoError(t, err)
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := azureSDConfig.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+
+	sd, err := NewDiscovery(azureSDConfig, nil, metrics)
+	require.NoError(t, err)
+
+	tg, err := sd.refreshAzureClient(azureClient, context.Background())
+	t.Log(tg[0].Source)
+	require.NoError(t, err)
+
 }
 
 type mockAzureClient struct {
@@ -596,8 +618,8 @@ func newDefaultMockVMServer() fake.VirtualMachinesServer {
 			page1 := armcompute.VirtualMachinesClientListAllResponse{
 				VirtualMachineListResult: armcompute.VirtualMachineListResult{
 					Value: []*armcompute.VirtualMachine{
-						defaultVMWithIdAndName(to.Ptr("/fake/resource/id-1"), to.Ptr("fake-vm-1")),
-						defaultVMWithIdAndName(to.Ptr("/fake/resource/id-2"), to.Ptr("fake-vm-2")),
+						defaultVMWithIdAndName(to.Ptr("/subscriptions/00000000-0000-0000-0000-000000000000/test"), to.Ptr("fake-vm-1")),
+						defaultVMWithIdAndName(to.Ptr("/subscriptions/00000000-0000-0000-0000-000000000000/test"), to.Ptr("fake-vm-2")),
 					},
 				},
 			}
@@ -605,8 +627,8 @@ func newDefaultMockVMServer() fake.VirtualMachinesServer {
 			page2 := armcompute.VirtualMachinesClientListAllResponse{
 				VirtualMachineListResult: armcompute.VirtualMachineListResult{
 					Value: []*armcompute.VirtualMachine{
-						defaultVMWithIdAndName(to.Ptr("/fake/resource/id-3"), to.Ptr("fake-vm-3")),
-						defaultVMWithIdAndName(to.Ptr("/fake/resource/id-4"), to.Ptr("fake-vm-4")),
+						defaultVMWithIdAndName(to.Ptr("/subscriptions/00000000-0000-0000-0000-000000000000/test"), to.Ptr("fake-vm-3")),
+						defaultVMWithIdAndName(to.Ptr("/subscriptions/00000000-0000-0000-0000-000000000000/test"), to.Ptr("fake-vm-4")),
 					},
 				},
 			}
@@ -629,12 +651,12 @@ func newDefaultMockVMSSServer() fake.VirtualMachineScaleSetsServer {
 				VirtualMachineScaleSetListWithLinkResult: armcompute.VirtualMachineScaleSetListWithLinkResult{
 					Value: []*armcompute.VirtualMachineScaleSet{
 						{
-							ID:   to.Ptr("/fake/scaleset/id-1"),
-							Name: to.Ptr("fake-scaleset-1"),
+							ID:   to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourceGroups/group/providers/PROVIDER/TYPE/name"),
+							Name: to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourceGroups/group/providers/PROVIDER/TYPE/name"),
 						},
 						{
-							ID:   to.Ptr("/fake/scaleset/id-2"),
-							Name: to.Ptr("fake-scaleset-2"),
+							ID:   to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourceGroups/group/providers/PROVIDER/TYPE/name"),
+							Name: to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourceGroups/group/providers/PROVIDER/TYPE/name"),
 						},
 					},
 				},
@@ -644,11 +666,11 @@ func newDefaultMockVMSSServer() fake.VirtualMachineScaleSetsServer {
 				VirtualMachineScaleSetListWithLinkResult: armcompute.VirtualMachineScaleSetListWithLinkResult{
 					Value: []*armcompute.VirtualMachineScaleSet{
 						{
-							ID:   to.Ptr("/fake/scaleset/id-3"),
-							Name: to.Ptr("fake-scaleset-3"),
+							ID:   to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourceGroups/group/providers/PROVIDER/TYPE/name"),
+							Name: to.Ptr("subscriptions-scaleset-3"),
 						},
 						{
-							ID:   to.Ptr("/fake/scaleset/id-4"),
+							ID:   to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourceGroups/group/providers/PROVIDER/TYPE/name"),
 							Name: to.Ptr("fake-scaleset-4"),
 						},
 					},
@@ -705,8 +727,8 @@ func newDefaultMockVMSSVMServer() fake.VirtualMachineScaleSetVMsServer {
 			page1 := armcompute.VirtualMachineScaleSetVMsClientListResponse{
 				VirtualMachineScaleSetVMListResult: armcompute.VirtualMachineScaleSetVMListResult{
 					Value: []*armcompute.VirtualMachineScaleSetVM{
-						defaultVMSSVMWithIdAndName(to.Ptr("/fake/scalesetvm/id-1"), to.Ptr("fake-scalesetvm-1")),
-						defaultVMSSVMWithIdAndName(to.Ptr("/fake/scalesetvm/id-2"), to.Ptr("fake-scalesetvm-2")),
+						defaultVMSSVMWithIdAndName(to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourceGroups/group/providers/PROVIDER/TYPE/name"), to.Ptr("fake-scalesetvm-1")),
+						defaultVMSSVMWithIdAndName(to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourceGroups/group/providers/PROVIDER/TYPE/name"), to.Ptr("fake-scalesetvm-2")),
 					},
 				},
 			}
@@ -714,8 +736,8 @@ func newDefaultMockVMSSVMServer() fake.VirtualMachineScaleSetVMsServer {
 			page2 := armcompute.VirtualMachineScaleSetVMsClientListResponse{
 				VirtualMachineScaleSetVMListResult: armcompute.VirtualMachineScaleSetVMListResult{
 					Value: []*armcompute.VirtualMachineScaleSetVM{
-						defaultVMSSVMWithIdAndName(to.Ptr("/fake/scalesetvm/id-3"), to.Ptr("fake-scalesetvm-3")),
-						defaultVMSSVMWithIdAndName(to.Ptr("/fake/scalesetvm/id-4"), to.Ptr("fake-scalesetvm-4")),
+						defaultVMSSVMWithIdAndName(to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourceGroups/group/providers/PROVIDER/TYPE/name"), to.Ptr("fake-scalesetvm-3")),
+						defaultVMSSVMWithIdAndName(to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourceGroups/group/providers/PROVIDER/TYPE/name"), to.Ptr("fake-scalesetvm-4")),
 					},
 				},
 			}
