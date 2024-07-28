@@ -744,13 +744,15 @@ func TestScrapeLoopStop(t *testing.T) {
 	)
 
 	sl := newBasicScrapeLoop(t, context.Background(), scraper, app, 10*time.Millisecond)
+	sl.reportExtraMetrics = true // So we can check scrape_count.
 
 	// Terminate loop after 2 scrapes.
+	const expectedScrapes = 2
 	numScrapes := 0
 
 	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
 		numScrapes++
-		if numScrapes == 2 {
+		if numScrapes == expectedScrapes {
 			go sl.stop()
 			<-sl.ctx.Done()
 		}
@@ -769,15 +771,16 @@ func TestScrapeLoopStop(t *testing.T) {
 		require.FailNow(t, "Scrape wasn't stopped.")
 	}
 
-	// We expected 1 actual sample for each scrape plus 5 for report samples.
+	// We expected 1 actual sample for each scrape plus 9 for report samples.
+	const expectedSamplesPerScrape = 10
 	// At least 2 scrapes were made, plus the final stale markers.
-	require.GreaterOrEqual(t, len(appender.resultFloats), 6*3, "Expected at least 3 scrapes with 6 samples each.")
-	require.Zero(t, len(appender.resultFloats)%6, "There is a scrape with missing samples.")
+	require.GreaterOrEqual(t, len(appender.resultFloats), expectedSamplesPerScrape*(expectedScrapes+1), "Expected at least 3 scrapes with 10 samples each.")
+	require.Zero(t, len(appender.resultFloats)%expectedSamplesPerScrape, "There is a scrape with missing samples.")
 	// All samples in a scrape must have the same timestamp.
 	var ts int64
 	for i, s := range appender.resultFloats {
 		switch {
-		case i%6 == 0:
+		case i%expectedSamplesPerScrape == 0:
 			ts = s.t
 		case s.t != ts:
 			t.Fatalf("Unexpected multiple timestamps within single scrape")
@@ -787,6 +790,9 @@ func TestScrapeLoopStop(t *testing.T) {
 	for _, s := range appender.resultFloats[len(appender.resultFloats)-5:] {
 		require.True(t, value.IsStaleNaN(s.f), "Appended last sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(s.f))
 	}
+
+	scrapeCounts := getResultFloats(appender, "scrape_count")
+	require.Equal(t, float64(expectedScrapes), scrapeCounts[len(scrapeCounts)-2])
 }
 
 func TestScrapeLoopRun(t *testing.T) {
