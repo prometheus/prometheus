@@ -1085,8 +1085,9 @@ func (m RemoteWriteProtoMsgs) String() string {
 }
 
 var (
-	// RemoteWriteProtoMsgV1 represents the deprecated `prometheus.WriteRequest` protobuf
-	// message introduced in the https://prometheus.io/docs/specs/remote_write_spec/.
+	// RemoteWriteProtoMsgV1 represents the `prometheus.WriteRequest` protobuf
+	// message introduced in the https://prometheus.io/docs/specs/remote_write_spec/,
+	// which will eventually be deprecated.
 	//
 	// NOTE: This string is used for both HTTP header values and config value, so don't change
 	// this reference.
