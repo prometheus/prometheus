@@ -143,6 +143,17 @@ class Decoder {
     return storage.timestamp_encoder.get_state(chunk.timestamp_encoder_state_id).timestamp();
   }
 
+  [[nodiscard]] PROMPP_ALWAYS_INLINE static int64_t get_finalized_chunk_last_timestamp(const DataStorage& storage,
+                                                                                       uint32_t ls_id,
+                                                                                       chunk::FinalizedChunkList::ChunksList::const_iterator chunk_it,
+                                                                                       chunk::FinalizedChunkList::ChunksList::const_iterator end_it) noexcept {
+    if (auto next_chunk_it = std::next(chunk_it); next_chunk_it != end_it) {
+      return get_chunk_first_timestamp<chunk::DataChunk::Type::kFinalized>(storage, *next_chunk_it);
+    } else {
+      return get_chunk_first_timestamp<chunk::DataChunk::Type::kOpen>(storage, storage.open_chunks[ls_id]);
+    }
+  }
+
   [[nodiscard]] PROMPP_ALWAYS_INLINE static double get_open_chunk_last_value(const DataStorage& storage, const chunk::DataChunk& chunk) noexcept {
     using enum chunk::DataChunk::EncodingType;
 

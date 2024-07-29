@@ -58,4 +58,22 @@ PROMPP_ALWAYS_INLINE constexpr T to_bytes(T bits) noexcept {
 constexpr uint8_t kUint64Bits = to_bits(sizeof(uint64_t));
 constexpr uint8_t kByteBits = to_bits(sizeof(uint8_t));
 
+template <class T>
+PROMPP_ALWAYS_INLINE constexpr T be(T value) noexcept {
+  if constexpr (std::endian::native == std::endian::little) {
+    return std::byteswap(value);
+  } else {
+    return value;
+  }
+}
+
+template <class T>
+PROMPP_ALWAYS_INLINE constexpr T be_to_native(T value) noexcept {
+  if constexpr (std::endian::native == std::endian::little) {
+    return std::byteswap(value);
+  } else {
+    return value;
+  }
+}
+
 }  // namespace BareBones::Bit

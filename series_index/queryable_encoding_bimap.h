@@ -12,8 +12,13 @@ namespace series_index {
 template <class Filament, class TrieIndex>
 class QueryableEncodingBimap : public BareBones::SnugComposite::DecodingTable<Filament> {
  public:
+  using Base = BareBones::SnugComposite::DecodingTable<Filament>;
+  using Set = phmap::btree_set<typename Base::Proxy, typename Base::LessComparator, BareBones::Allocator<typename Base::Proxy>>;
+
   [[nodiscard]] PROMPP_ALWAYS_INLINE const TrieIndex& trie_index() const noexcept { return trie_index_; }
   [[nodiscard]] PROMPP_ALWAYS_INLINE const SeriesReverseIndex& reverse_index() const noexcept { return reverse_index_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const Set& ls_id_set() const noexcept { return ls_id_set_; }
+
   PROMPP_ALWAYS_INLINE void build_sorting_index() {
     if (sorting_index_.empty()) {
       sorting_index_.build();
@@ -49,9 +54,6 @@ class QueryableEncodingBimap : public BareBones::SnugComposite::DecodingTable<Fi
   }
 
  private:
-  using Base = BareBones::SnugComposite::DecodingTable<Filament>;
-  using Set = phmap::btree_set<typename Base::Proxy, typename Base::LessComparator, BareBones::Allocator<typename Base::Proxy>>;
-
   TrieIndex trie_index_;
   SeriesReverseIndex reverse_index_;
   size_t ls_id_set_allocated_memory_{};

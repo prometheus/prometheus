@@ -59,6 +59,19 @@ class VarInt {
 
     return result;
   }
+
+  PROMPP_ALWAYS_INLINE static size_t length(uint64_t value) noexcept {
+    return value < (1ULL << 7)    ? 1
+           : value < (1ULL << 14) ? 2
+           : value < (1ULL << 21) ? 3
+           : value < (1ULL << 28) ? 4
+           : value < (1ULL << 35) ? 5
+           : value < (1ULL << 42) ? 6
+           : value < (1ULL << 49) ? 7
+           : value < (1ULL << 56) ? 8
+           : value < (1ULL << 63) ? 9
+                                  : 10;
+  }
 };
 
 }  // namespace BareBones::Encoding
