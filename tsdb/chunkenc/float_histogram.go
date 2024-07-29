@@ -304,7 +304,7 @@ func (a *FloatHistogramAppender) appendable(h *histogram.FloatHistogram) (
 	return
 }
 
-// expandIntSpansAndBuckets returns the inserts to expand the bucket spans 'a' so that
+// expandFloatSpansAndBuckets returns the inserts to expand the bucket spans 'a' so that
 // they match the spans in 'b'. 'b' must cover the same or more buckets than
 // 'a', otherwise the function will return false.
 // The function also returns the inserts to expand 'b' to also cover all the
