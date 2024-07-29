@@ -63,6 +63,39 @@ func TestHistogramStatsDecoding(t *testing.T) {
 				histogram.NotCounterReset,
 			},
 		},
+		{
+			name: "unknown counter reset at the beginning",
+			histograms: []*histogram.Histogram{
+				tsdbutil.GenerateTestHistogramWithHint(1, histogram.UnknownCounterReset),
+			},
+			expectedHints: []histogram.CounterResetHint{
+				histogram.NotCounterReset,
+			},
+		},
+		{
+			name: "detect real counter reset",
+			histograms: []*histogram.Histogram{
+				tsdbutil.GenerateTestHistogramWithHint(2, histogram.UnknownCounterReset),
+				tsdbutil.GenerateTestHistogramWithHint(1, histogram.UnknownCounterReset),
+			},
+			expectedHints: []histogram.CounterResetHint{
+				histogram.NotCounterReset,
+				histogram.CounterReset,
+			},
+		},
+		{
+			name: "detect real counter reset after stale NaN",
+			histograms: []*histogram.Histogram{
+				tsdbutil.GenerateTestHistogramWithHint(2, histogram.UnknownCounterReset),
+				{Sum: math.Float64frombits(value.StaleNaN)},
+				tsdbutil.GenerateTestHistogramWithHint(1, histogram.UnknownCounterReset),
+			},
+			expectedHints: []histogram.CounterResetHint{
+				histogram.NotCounterReset,
+				histogram.UnknownCounterReset,
+				histogram.CounterReset,
+			},
+		},
 	}
 
 	for _, tc := range cases {
