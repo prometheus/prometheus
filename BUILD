@@ -88,6 +88,7 @@ cc_library(
     deps = [
         ":bare_bones",
         ":primitives",
+        "@com_google_absl//absl/crc:crc32c",
     ],
 )
 
