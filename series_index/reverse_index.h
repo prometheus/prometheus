@@ -70,6 +70,15 @@ class CompactSeriesIdSequence {
     return {reinterpret_cast<const SeriesIdSequence::value_type*>(sequence_impl_buffer_.data()), elements_count_};
   }
 
+  template <class Processor>
+  PROMPP_ALWAYS_INLINE auto process_series(Processor&& processor) const noexcept {
+    if (type_ == Type::kArray) {
+      return processor(array());
+    } else {
+      return processor(sequence());
+    }
+  }
+
  private:
   Type type_;
   uint32_t elements_count_{};
@@ -81,9 +90,7 @@ class CompactSeriesIdSequence {
     new (&sequence_impl_buffer_) SeriesIdSequence();
     type_ = Type::kSequence;
 
-    for (auto value_copy : buffer_copy) {
-      const_cast<SeriesIdSequence&>(sequence()).push_back(value_copy);
-    }
+    std::ranges::copy(buffer_copy, std::back_inserter(const_cast<SeriesIdSequence&>(sequence())));
   }
 };
 

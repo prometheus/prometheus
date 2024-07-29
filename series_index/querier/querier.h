@@ -188,18 +188,12 @@ class Querier {
     if (sequence->type() == CompactSeriesIdSequence::Type::kArray) {
       std::memcpy(memory, sequence->array().data(), sequence->count() * sizeof(uint32_t));
     } else {
-      for (auto series_id : sequence->sequence()) {
-        *memory++ = series_id;
-      }
+      std::ranges::copy(sequence->sequence(), memory);
     }
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE static SeriesIdSpan substract_sequence(SeriesIdSpan result_set, const CompactSeriesIdSequence* sequence) {
-    if (sequence->type() == CompactSeriesIdSequence::Type::kArray) {
-      return SetSubstractor::substract(result_set, sequence->array());
-    }
-
-    return SetSubstractor::substract(result_set, sequence->sequence());
+    return sequence->process_series([&result_set](const auto& series_ids) PROMPP_LAMBDA_INLINE { return SetSubstractor::substract(result_set, series_ids); });
   }
 };
 

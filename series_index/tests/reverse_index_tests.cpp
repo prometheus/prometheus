@@ -12,20 +12,18 @@ class CompactSeriesIdSequenceFixture : public testing::Test {};
 
 TEST_F(CompactSeriesIdSequenceFixture, SwitchToSequence) {
   // Arrange
+  std::vector<uint32_t> series_ids(CompactSeriesIdSequence::kMaxElementsInArray + 1);
+  std::iota(series_ids.begin(), series_ids.end(), 0U);
+
   CompactSeriesIdSequence sequence{CompactSeriesIdSequence::Type::kArray};
-  for (uint32_t i = 0; i < CompactSeriesIdSequence::kMaxElementsInArray; ++i) {
-    sequence.push_back(i);
-  }
 
   // Act
-  auto type_before = sequence.type();
-  sequence.push_back(CompactSeriesIdSequence::kMaxElementsInArray);
-  auto type_after = sequence.type();
+  std::ranges::copy(series_ids, std::back_inserter(sequence));
 
   // Assert
-  EXPECT_EQ(CompactSeriesIdSequence::Type::kArray, type_before);
-  EXPECT_EQ(CompactSeriesIdSequence::Type::kSequence, type_after);
+  ASSERT_EQ(CompactSeriesIdSequence::Type::kSequence, sequence.type());
   EXPECT_EQ(CompactSeriesIdSequence::kMaxElementsInArray + 1, sequence.count());
+  EXPECT_TRUE(std::ranges::equal(series_ids, sequence.sequence()));
 }
 
 TEST_F(CompactSeriesIdSequenceFixture, IterateOverEmptyArray) {
