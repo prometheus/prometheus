@@ -793,7 +793,7 @@ func main() {
 		queryEngine = promql.NewEngine(opts)
 		var alertStore rules.AlertStore
 		if cfg.enableAlertStatePersistence {
-			alertStore = rules.NewFileStore(log.With(logger, "component", "alertStore"), cfg.alertStoragePath)
+			alertStore = rules.NewFileStore(log.With(logger, "component", "alertStore"), cfg.alertStoragePath, prometheus.DefaultRegisterer)
 		}
 
 		ruleManager = rules.NewManager(&rules.ManagerOptions{
@@ -813,8 +813,7 @@ func main() {
 			DefaultRuleQueryOffset: func() time.Duration {
 				return time.Duration(cfgFile.GlobalConfig.RuleQueryOffset)
 			},
-			AlertStore:     alertStore,
-			AlertStoreFunc: rules.DefaultAlertStoreFunc,
+			AlertStore: alertStore,
 		})
 	}
 

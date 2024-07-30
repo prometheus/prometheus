@@ -6,13 +6,14 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
 )
 
 func TestAlertStore(t *testing.T) {
-	alertStore := NewFileStore(log.NewNopLogger(), "alertstoretest")
+	alertStore := NewFileStore(log.NewNopLogger(), "alertstoretest", prometheus.NewRegistry())
 	t.Cleanup(func() {
 		os.Remove("alertstoretest")
 	})
@@ -29,7 +30,7 @@ func TestAlertStore(t *testing.T) {
 
 	for key, alerts := range alertsByRule {
 		sortAlerts(alerts)
-		err := alertStore.SetAlerts(key, alerts)
+		err := alertStore.SetAlerts(key, "test/test1", alerts)
 		require.NoError(t, err)
 
 		got, err := alertStore.GetAlerts(key)
