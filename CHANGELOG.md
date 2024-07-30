@@ -39,6 +39,7 @@ Remote-write v2 is enabled by default, but can be disabled via feature-flag `web
 * [BUGFIX] Remote-Write: Fix data corruption in remote write if max_sample_age is applied. #14078
 * [BUGFIX] Notifier: Fix Alertmanager discovery not updating under heavy load. #14174
 * [BUGFIX] Regexes: some Unicode characters were not matched by case-insensitive comparison. #14170,#14299
+* [BUGFIX] Remote-Read: Resolve occasional segmentation fault on query. #14515
 
 ## 2.53.1 / 2024-07-10
 
