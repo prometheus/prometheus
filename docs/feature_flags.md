@@ -20,14 +20,6 @@ values according to the values of the current environment variables. References
 to undefined variables are replaced by the empty string.
 The `$` character can be escaped by using `$$`.
 
-## Remote Write Receiver
-
-`--enable-feature=remote-write-receiver`
-
-The remote write receiver allows Prometheus to accept remote write requests from other Prometheus servers. More details can be found [here](storage.md#overview).
-
-Activating the remote write receiver via a feature flag is deprecated. Use `--web.enable-remote-write-receiver` instead. This feature flag will be ignored in future versions of Prometheus.
-
 ## Exemplars storage
 
 `--enable-feature=exemplar-storage`
