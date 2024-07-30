@@ -22,9 +22,8 @@ func TestDBAppenderSeriesWithMetadata(t *testing.T) {
 	// Add a sample with metadata.
 	_, err := app1.Append(0, labels.FromStrings(
 		"__name__", "http_requests_total",
-		"job", "ingester",
-		"metadata.foo.service", "ingester",
-		"metadata.foo.request_type", "outbound",
+		"job", "foo",
+		"metadata.foo.service", "foo",
 		"metadata.node.ip", "192.168.1.1",
 	), 0, 0)
 	require.NoError(t, err)
@@ -32,9 +31,8 @@ func TestDBAppenderSeriesWithMetadata(t *testing.T) {
 	// Add a sample with the same metadata but different value.
 	_, err = app1.Append(0, labels.FromStrings(
 		"__name__", "http_requests_total",
-		"job", "ingester",
-		"metadata.foo.service", "ingester",
-		"metadata.foo.request_type", "outbound",
+		"job", "foo",
+		"metadata.foo.service", "foo",
 		"metadata.node.ip", "192.168.1.2",
 	), 1, 1)
 	require.NoError(t, err)
@@ -51,7 +49,7 @@ func TestDBAppenderSeriesWithMetadata(t *testing.T) {
 	require.Equal(t, map[string][]chunks.Sample{
 		labels.FromStrings(
 			"__name__", "http_requests_total",
-			"job", "ingester",
+			"job", "foo",
 		).String(): {
 			sample{t: 0, f: 0},
 			sample{t: 1, f: 1},

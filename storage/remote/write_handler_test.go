@@ -699,6 +699,54 @@ func TestCommitErr_V2Message(t *testing.T) {
 	require.Equal(t, "commit error\n", string(body))
 }
 
+func TestRemoteWriteWithNewMetadata(t *testing.T) {
+	dir := t.TempDir()
+
+	opts := tsdb.DefaultOptions()
+	// TODO(jesusvazquez) Add new metadata flag and turn it on
+
+	db, err := tsdb.Open(dir, nil, nil, opts, nil)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
+
+	handler := NewWriteHandler(log.NewNopLogger(), nil, db.Head(), []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
+
+	ts := []prompb.TimeSeries{
+		{
+			Labels: []prompb.Label{
+				{Name: "__name__", Value: "http_requests_total"},
+				{Name: "job", Value: "foo"},
+				{Name: "metadata.foo.service", Value: "foo"},
+				{Name: "metadata.node.ip", Value: "192.168.1.1"},
+			},
+			Samples: []prompb.Sample{{Value: 0, Timestamp: 0}},
+		},
+		{
+			Labels: []prompb.Label{
+				{Name: "__name__", Value: "http_requests_total"},
+				{Name: "job", Value: "foo"},
+				{Name: "metadata.foo.service", Value: "foo"},
+				{Name: "metadata.node.ip", Value: "192.168.1.2"},
+			},
+			Samples: []prompb.Sample{{Value: 1, Timestamp: 1}},
+		},
+	}
+
+	buf, _, _, err := buildWriteRequest(nil, ts, nil, nil, nil, nil, "snappy")
+	require.NoError(t, err)
+
+	req, err := http.NewRequest("", "", bytes.NewReader(buf))
+	require.NoError(t, err)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	require.Equal(t, http.StatusNoContent, recorder.Code)
+	require.Equal(t, uint64(2), db.Head().NumSeries())
+}
+
 func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 	b.Skip("Not a valid benchmark (does not count to b.N)")
 	dir := b.TempDir()
