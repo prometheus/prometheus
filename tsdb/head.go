@@ -630,8 +630,8 @@ func (h *Head) Init(minValidTime int64) (err error) {
 	if h.opts.EnableSharding {
 		h.opts.EnableSharding = false
 		defer func() {
+			h.opts.EnableSharding = true
 			if err == nil {
-				h.opts.EnableSharding = true
 				// No locking is needed here as nobody should be writing while we're in Init.
 				for _, stripe := range h.series.series {
 					for _, s := range stripe {
