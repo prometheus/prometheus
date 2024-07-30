@@ -120,8 +120,6 @@ const DataTable: FC<DataTableProps> = ({ expr, evalTime, retriggerIdx }) => {
 
   const doFormat = result.length <= maxFormattableSeries;
 
-  console.log("rendering with", result.length, limitResults);
-
   return (
     <>
       {limitResults &&
