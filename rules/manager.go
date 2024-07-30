@@ -88,33 +88,7 @@ func DefaultEvalIterationFunc(ctx context.Context, g *Group, evalTimestamp time.
 
 	if g.alertStore != nil {
 		// feature enabled.
-		go func() {
-			g.alertStoreFunc(g)
-		}()
-	}
-}
-
-// DefaultAlertStoreFunc is the default implementation of
-// AlertStateStoreFunc that is periodically invoked to store the state
-// of alerting rules in a group at a given point in time.
-func DefaultAlertStoreFunc(g *Group) {
-	for _, rule := range g.rules {
-		ar, ok := rule.(*AlertingRule)
-		if !ok {
-			continue
-		}
-		if ar.KeepFiringFor() != 0 {
-			alertsToStore := make([]*Alert, 0)
-			ar.ForEachActiveAlert(func(alert *Alert) {
-				if !alert.KeepFiringSince.IsZero() {
-					alertsToStore = append(alertsToStore, alert)
-				}
-			})
-			err := g.alertStore.SetAlerts(ar.GetFingerprint(GroupKey(g.File(), g.Name())), alertsToStore)
-			if err != nil {
-				g.logger.Error("Failed to store alerting rule state", "rule", ar.Name(), "err", err)
-			}
-		}
+		g.StoreKeepFiringForState()
 	}
 }
 
@@ -152,9 +126,9 @@ type ManagerOptions struct {
 	ConcurrentEvalsEnabled    bool
 	RuleConcurrencyController RuleConcurrencyController
 	RuleDependencyController  RuleDependencyController
-	Metrics                   *Metrics
 	AlertStore                AlertStore
-	AlertStoreFunc            AlertStateStoreFunc
+
+	Metrics                   *Metrics
 }
 
 // NewManager returns an implementation of Manager, ready to be started
@@ -223,8 +197,6 @@ func (m *Manager) Stop() {
 
 	m.logger.Info("Rule manager stopped")
 }
-
-type AlertStateStoreFunc func(g *Group)
 
 // Update the rule manager's state as the config requires. If
 // loading the new rules failed the old rule set is restored.
@@ -387,7 +359,6 @@ func (m *Manager) LoadGroups(
 				QueryOffset:       (*time.Duration)(rg.QueryOffset),
 				done:              m.done,
 				EvalIterationFunc: groupEvalIterationFunc,
-				AlertStoreFunc:    m.opts.AlertStoreFunc,
 				AlertStore:        m.opts.AlertStore,
 			})
 		}
