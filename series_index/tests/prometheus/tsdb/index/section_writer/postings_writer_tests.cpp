@@ -74,12 +74,22 @@ INSTANTIATE_TEST_SUITE_P(EmptyLabelSet,
                                                                         "\x00"
                                                                         "\x0B\x5E\xFE\xA7"sv}));
 
-// INSTANTIATE_TEST_SUITE_P(LabelWithEmptyValue,
-//                          PostingsWriterFixture,
-//                          testing::Values(PostingsWriterCase{.label_sets = {{{"key", ""}}},
-//                                                             .expected = "\x00\x00\x00\x04"
-//                                                                         "\x00\x00\x00\x00"
-//                                                                         "\x48\x67\x4B\xC7"sv}));
+INSTANTIATE_TEST_SUITE_P(LabelWithEmptyValue,
+                         PostingsWriterFixture,
+                         testing::Values(PostingsWriterCase{.label_sets = {{{"key", ""}}},
+                                                            .expected = "\x00\x00\x00\x08"
+                                                                        "\x00\x00\x00\x01"
+                                                                        "\x00\x00\x00\x02"
+                                                                        "\x55\x02\xAD\xD1"
+
+                                                                        "\x00\x00\x00\x08"
+                                                                        "\x00\x00\x00\x01"
+                                                                        "\x02"
+                                                                        "\x00"
+                                                                        "\x00"
+                                                                        "\x00"
+
+                                                                        "\x0B\x5E\xFE\xA7"sv}));
 
 INSTANTIATE_TEST_SUITE_P(Test,
                          PostingsWriterFixture,

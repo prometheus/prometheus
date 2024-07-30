@@ -53,13 +53,15 @@ INSTANTIATE_TEST_SUITE_P(EmptyLabelSet,
                                                                        "\x00\x00\x00\x01"
                                                                        "\x0"
                                                                        "\x56\xD0\xEE\x42"sv}));
-// INSTANTIATE_TEST_SUITE_P(LabelWithEmptyValue,
-//                          SymbolsWriterFixture,
-//                          testing::Values(SymbolsWriterCase{.label_sets = {{{"key", ""}}},
-//                                                            .expected = "\x00\x00\x00\x05"
-//                                                                        "\x00\x00\x00\x01"
-//                                                                        "\x0"
-//                                                                        "\x56\xD0\xEE\x42"sv}));
+INSTANTIATE_TEST_SUITE_P(LabelWithEmptyValue,
+                         SymbolsWriterFixture,
+                         testing::Values(SymbolsWriterCase{.label_sets = {{{"key", ""}}},
+                                                           .expected = "\x00\x00\x00\x09"
+                                                                       "\x00\x00\x00\x02"
+                                                                       "\x0"
+                                                                       "\x03"
+                                                                       "key"
+                                                                       "\x22\x8B\x97\x4E"sv}));
 
 INSTANTIATE_TEST_SUITE_P(TestUniquenessAndSorting,
                          SymbolsWriterFixture,

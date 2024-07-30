@@ -61,12 +61,12 @@ INSTANTIATE_TEST_SUITE_P(EmptyLabelSet,
                                                                             "\x00\x00\x00\x00"
                                                                             "\x48\x67\x4B\xC7"sv}));
 
-// INSTANTIATE_TEST_SUITE_P(LabelWithEmptyValue,
-//                          LabelIndicesWriterFixture,
-//                          testing::Values(LabelIndicesWriterCase{.label_sets = {{{"key", ""}}},
-//                                                                 .expected = "\x00\x00\x00\x04"
-//                                                                             "\x00\x00\x00\x00"
-//                                                                             "\x48\x67\x4B\xC7"sv}));
+INSTANTIATE_TEST_SUITE_P(LabelWithEmptyValue,
+                         LabelIndicesWriterFixture,
+                         testing::Values(LabelIndicesWriterCase{.label_sets = {{{"key", ""}}},
+                                                                .expected = "\x00\x00\x00\x04"
+                                                                            "\x00\x00\x00\x00"
+                                                                            "\x48\x67\x4B\xC7"sv}));
 
 INSTANTIATE_TEST_SUITE_P(Test,
                          LabelIndicesWriterFixture,

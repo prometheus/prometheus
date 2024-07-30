@@ -57,7 +57,16 @@ TEST_P(SeriesWriterFixture, Test) {
 
 INSTANTIATE_TEST_SUITE_P(EmptyLabelSet, SeriesWriterFixture, testing::Values(SeriesWriterCase{.label_sets = {}, .expected = ""}));
 
-// INSTANTIATE_TEST_SUITE_P(GG, SeriesWriterFixture, testing::Values(SeriesWriterCase{.label_sets = {}, .expected = ""}));
+INSTANTIATE_TEST_SUITE_P(LabelWithEmptyValue,
+                         SeriesWriterFixture,
+                         testing::Values(SeriesWriterCase{.label_sets = {{{"key", ""}}},
+                                                          .expected = "\x04"
+                                                                      "\x01"
+                                                                      "\x01"
+                                                                      "\x00"
+                                                                      "\x00"
+                                                                      "\x30\x63\x73\x01"
+                                                                      "\x00\x00\x00\x00\x00\x00\x00"sv}));
 
 INSTANTIATE_TEST_SUITE_P(Test,
                          SeriesWriterFixture,
