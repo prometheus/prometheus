@@ -33,6 +33,8 @@ class BasicLabelSet {
 
   BasicLabelSet() = default;
   BasicLabelSet(std::initializer_list<LabelType> values) {
+    reserve(values.size());
+
     for (auto& label : values) {
       add(label);
     }
@@ -62,6 +64,8 @@ class BasicLabelSet {
   }
 
   inline __attribute__((always_inline)) auto size() const noexcept { return labels_.size(); }
+
+  inline __attribute__((always_inline)) void reserve(size_t size) noexcept { labels_.reserve(size); }
 
   using iterator = typename Container<LabelType>::iterator;
   using const_iterator = typename Container<LabelType>::const_iterator;
@@ -199,6 +203,10 @@ class Sample {
     timestamp_ = s.timestamp();
     value_ = s.value();
     return *this;
+  }
+
+  bool operator==(const Sample& other) const noexcept {
+    return timestamp_ == other.timestamp_ && std::bit_cast<uint64_t>(value_) == std::bit_cast<uint64_t>(other.value_);
   }
 
   template <class T>

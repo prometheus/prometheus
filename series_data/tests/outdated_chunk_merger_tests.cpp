@@ -434,7 +434,7 @@ TEST_F(OutdatedChunkMergerFixture, UseLastValueForSameTimestampInOutdatedChunk) 
   // Assert
   EXPECT_TRUE(std::ranges::equal(
       ExpectedSampleList{
-          {.timestamp = 0, .value = 0.0},
+          {.timestamp = 0, .value = 0.1},
           {.timestamp = 1, .value = 1.1},
           {.timestamp = 2, .value = 2.1},
           {.timestamp = 3, .value = 3.1},

@@ -84,7 +84,7 @@ func (s *EncoderSuite) TestEncode() {
 	encodeCount := 10000
 	enc := cppbridge.NewWALEncoder(0, 0)
 
-	for i := 0; i < encodeCount; i++ {
+	for i := 1; i < encodeCount; i++ {
 		h, err := cppbridge.NewWALProtobufHashdex(s.makeData(int64(i)), hlimits)
 		s.Require().NoError(err)
 
@@ -102,6 +102,29 @@ func (s *EncoderSuite) TestEncode() {
 		tbyte := s.transferringData(seg)
 		s.EqualValues(size, len(tbyte))
 	}
+}
+
+func (s *EncoderSuite) TestEncodeDuplicateTS() {
+	s.T().Log("encode data")
+	hlimits := cppbridge.DefaultWALHashdexLimits()
+	enc := cppbridge.NewWALEncoder(0, 0)
+
+	h, err := cppbridge.NewWALProtobufHashdex(s.makeData(int64(0)), hlimits)
+	s.Require().NoError(err)
+
+	segKey, seg, err := enc.Encode(s.baseCtx, h)
+	s.Require().NoError(err)
+	s.Equal(segKey.Segment, enc.LastEncodedSegment())
+
+	s.Equal(s.startTimestamp, seg.EarliestTimestamp())
+	s.Equal(s.startTimestamp, seg.LatestTimestamp())
+	s.EqualValues(4294967276, seg.RemainingTableSize())
+	s.EqualValues(1, seg.Series())
+	s.EqualValues(1, seg.Samples())
+	size := seg.Size()
+
+	tbyte := s.transferringData(seg)
+	s.EqualValues(size, len(tbyte))
 }
 
 func (s *EncoderSuite) TestEncodeError() {

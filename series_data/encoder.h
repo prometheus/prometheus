@@ -46,7 +46,7 @@ class Encoder {
       } else {
         encoder.encode(timestamp, value);
       }
-    } else if (timestamp < encoder.timestamp() || !encoder.is_actual(value)) {
+    } else if (timestamp < encoder.timestamp()) {
       outdated_sample_encoder_.encode(*this, ls_id, timestamp, value);
     }
   }
@@ -68,13 +68,9 @@ class Encoder {
           ChunkFinalizer::finalize(storage_, ls_id, chunk);
         }
       } else {
-        if (timestamp == state.timestamp()) {
-          if (is_actual_value(chunk, value)) {
-            return;
-          }
+        if (timestamp < state.timestamp()) {
+          outdated_sample_encoder_.encode(*this, ls_id, timestamp, value);
         }
-
-        outdated_sample_encoder_.encode(*this, ls_id, timestamp, value);
         return;
       }
     }
@@ -130,30 +126,6 @@ class Encoder {
     } else if (chunk.encoding_type == chunk::DataChunk::EncodingType::kValuesGorilla) {
       storage_.values_gorilla_encoders[chunk.encoder.values_gorilla].encode(value);
     }
-  }
-
-  [[nodiscard]] bool is_actual_value(const chunk::DataChunk& chunk, double value) const noexcept {
-    if (chunk.encoding_type == chunk::DataChunk::EncodingType::kUint32Constant) {
-      return chunk.encoder.uint32_constant.is_actual(value);
-    }
-
-    if (chunk.encoding_type == chunk::DataChunk::EncodingType::kDoubleConstant) {
-      return storage_.double_constant_encoders[chunk.encoder.double_constant].is_actual(value);
-    }
-
-    if (chunk.encoding_type == chunk::DataChunk::EncodingType::kTwoDoubleConstant) {
-      return storage_.two_double_constant_encoders[chunk.encoder.two_double_constant].is_actual(value);
-    }
-
-    if (chunk.encoding_type == chunk::DataChunk::EncodingType::kAscIntegerValuesGorilla) {
-      return storage_.asc_integer_values_gorilla_encoders[chunk.encoder.asc_integer_values_gorilla].is_actual(value);
-    }
-
-    if (chunk.encoding_type == chunk::DataChunk::EncodingType::kValuesGorilla) {
-      return storage_.values_gorilla_encoders[chunk.encoder.values_gorilla].is_actual(value);
-    }
-
-    return false;
   }
 
   PROMPP_ALWAYS_INLINE void switch_to_double_constant_encoder(chunk::DataChunk& chunk, double value) const {

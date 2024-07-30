@@ -53,7 +53,9 @@ class Symbol {
         out.write(reinterpret_cast<char*>(&size_to_save), sizeof(size_to_save));
 
         // write data
-        out.write(&data[first_to_save], size_to_save);
+        if (size_to_save > 0) {
+          out.write(&data[first_to_save], size_to_save);
+        }
       }
 
       inline __attribute__((always_inline)) uint32_t save_size(data_type const&, Checkpoint const* from = nullptr) const {
