@@ -10,12 +10,12 @@ Tooling for the Prometheus monitoring system.
 
 ## Flags
 
-| Flag | Description |
-| --- | --- |
-| <code class="text-nowrap">-h</code>, <code class="text-nowrap">--help</code> | Show context-sensitive help (also try --help-long and --help-man). |
-| <code class="text-nowrap">--version</code> | Show application version. |
-| <code class="text-nowrap">--experimental</code> | Enable experimental commands. |
-| <code class="text-nowrap">--enable-feature</code> | Comma separated feature names to enable (only PromQL related and no-default-scrape-port). See https://prometheus.io/docs/prometheus/latest/feature_flags/ for the options and more details. |
+| Flag | Description | Default |
+| --- | --- | --- |
+| <code class="text-nowrap">-h</code>, <code class="text-nowrap">--help</code> | Show context-sensitive help (also try --help-long and --help-man). |  |
+| <code class="text-nowrap">--version</code> | Show application version. |  |
+| <code class="text-nowrap">--experimental</code> | Enable experimental commands. |  |
+| <code class="text-nowrap">--enable-feature</code> | Comma separated feature names to enable (only PromQL related and no-default-scrape-port). See https://prometheus.io/docs/prometheus/latest/feature_flags/ for the options and more details. | `no-default-scrape-port` |
 
 
 
