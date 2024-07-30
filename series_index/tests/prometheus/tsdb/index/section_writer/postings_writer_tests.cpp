@@ -11,6 +11,7 @@ namespace {
 
 using PromPP::Primitives::LabelViewSet;
 using PromPP::Prometheus::tsdb::index::StreamWriter;
+using series_index::prometheus::tsdb::index::ChunkMetadata;
 using series_index::prometheus::tsdb::index::SeriesReferencesMap;
 using series_index::prometheus::tsdb::index::SymbolReferencesMap;
 using series_index::prometheus::tsdb::index::section_writer::PostingsWriter;
@@ -18,8 +19,11 @@ using series_index::prometheus::tsdb::index::section_writer::SeriesWriter;
 using series_index::prometheus::tsdb::index::section_writer::SymbolsWriter;
 using std::operator""sv;
 
+using ChunkMetadataList = std::vector<std::vector<ChunkMetadata>>;
+
 struct PostingsWriterCase {
   std::vector<LabelViewSet> label_sets;
+  ChunkMetadataList chunk_metadata_list;
   std::string_view expected;
 };
 
@@ -41,7 +45,8 @@ class PostingsWriterFixture : public testing::TestWithParam<PostingsWriterCase> 
     }
 
     SymbolsWriter<QueryableEncodingBimap>{lss_, symbol_references_, stream_writer_}.write();
-    SeriesWriter<QueryableEncodingBimap>{lss_, symbol_references_, series_references_, stream_writer_}.write();
+    SeriesWriter<QueryableEncodingBimap, ChunkMetadataList>{lss_, GetParam().chunk_metadata_list, symbol_references_, series_references_, stream_writer_}
+        .write();
 
     stream_.str("");
     stream_.clear();
@@ -62,6 +67,7 @@ TEST_P(PostingsWriterFixture, Test) {
 INSTANTIATE_TEST_SUITE_P(EmptyLabelSet,
                          PostingsWriterFixture,
                          testing::Values(PostingsWriterCase{.label_sets = {},
+                                                            .chunk_metadata_list = {},
                                                             .expected = "\x00\x00\x00\x04"
                                                                         "\x00\x00\x00\x00"
                                                                         "\x48\x67\x4B\xC7"
@@ -77,6 +83,7 @@ INSTANTIATE_TEST_SUITE_P(EmptyLabelSet,
 INSTANTIATE_TEST_SUITE_P(LabelWithEmptyValue,
                          PostingsWriterFixture,
                          testing::Values(PostingsWriterCase{.label_sets = {{{"key", ""}}},
+                                                            .chunk_metadata_list = {{}},
                                                             .expected = "\x00\x00\x00\x08"
                                                                         "\x00\x00\x00\x01"
                                                                         "\x00\x00\x00\x02"
@@ -95,6 +102,7 @@ INSTANTIATE_TEST_SUITE_P(Test,
                          PostingsWriterFixture,
                          testing::Values(PostingsWriterCase{
                              .label_sets = {{{"job", "cron"}, {"server", "localhost"}}, {{"job", "cron"}, {"server", "127.0.0.1"}}},
+                             .chunk_metadata_list = {{}, {}},
                              .expected = "\x00\x00\x00\x0C"
                                          "\x00\x00\x00\x02"
                                          "\x00\x00\x00\x04"

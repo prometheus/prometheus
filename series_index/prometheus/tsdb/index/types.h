@@ -29,6 +29,12 @@ using SymbolReferencesMap = phmap::flat_hash_map<SymbolLssId, PromPP::Prometheus
 using SeriesReferencesMap =
     phmap::flat_hash_map<PromPP::Primitives::LabelSetID, PromPP::Prometheus::tsdb::index::SeriesReference, std::hash<PromPP::Primitives::LabelSetID>>;
 
+struct ChunkMetadata {
+  PromPP::Primitives::Timestamp min_timestamp{};
+  PromPP::Primitives::Timestamp max_timestamp{};
+  uint32_t size{};
+};
+
 }  // namespace series_index::prometheus::tsdb::index
 
 template <>
