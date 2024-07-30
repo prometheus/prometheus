@@ -2578,8 +2578,8 @@ func TestKeepFiringForStateRestore(t *testing.T) {
 		},
 	)
 
-	alertStore := NewFileStore(promslog.NewNopLogger(), testStoreFile)
 	ng := testEngine(t)
+	alertStore := NewFileStore(promslog.NewNopLogger(), testStoreFile, prometheus.NewRegistry())
 	opts := &ManagerOptions{
 		QueryFunc:       EngineQueryFunc(ng, testStorage),
 		Appendable:      testStorage,
@@ -2618,13 +2618,12 @@ func TestKeepFiringForStateRestore(t *testing.T) {
 	)
 
 	group := NewGroup(GroupOptions{
-		Name:           "default",
-		Interval:       time.Second,
-		Rules:          []Rule{rule, rule2},
-		ShouldRestore:  true,
-		Opts:           opts,
-		AlertStoreFunc: DefaultAlertStoreFunc,
-		AlertStore:     alertStore,
+		Name:          "default",
+		Interval:      time.Second,
+		Rules:         []Rule{rule, rule2},
+		ShouldRestore: true,
+		Opts:          opts,
+		AlertStore:    alertStore,
 	})
 
 	groups := make(map[string]*Group)
@@ -2667,7 +2666,7 @@ func TestKeepFiringForStateRestore(t *testing.T) {
 				group.Eval(opts.Context, evalTime)
 				group.setLastEvalTimestamp(evalTime)
 				// Manager will store alert state.
-				DefaultAlertStoreFunc(group)
+				group.StoreKeepFiringForState()
 			}
 
 			exp := rule.ActiveAlerts()
@@ -2693,16 +2692,15 @@ func TestKeepFiringForStateRestore(t *testing.T) {
 				labels.FromStrings("annotation_test", "rule2"), labels.EmptyLabels(), "", true, nil,
 			)
 			// Restart alert store.
-			newAlertStore := NewFileStore(promslog.NewNopLogger(), testStoreFile)
+			newAlertStore := NewFileStore(promslog.NewNopLogger(), testStoreFile, prometheus.NewRegistry())
 
 			newGroup := NewGroup(GroupOptions{
-				Name:           "default",
-				Interval:       time.Second,
-				Rules:          []Rule{newRule, newRule2},
-				ShouldRestore:  true,
-				Opts:           opts,
-				AlertStore:     newAlertStore,
-				AlertStoreFunc: DefaultAlertStoreFunc,
+				Name:          "default",
+				Interval:      time.Second,
+				Rules:         []Rule{newRule, newRule2},
+				ShouldRestore: true,
+				Opts:          opts,
+				AlertStore:    newAlertStore,
 			})
 
 			newGroups := make(map[string]*Group)
