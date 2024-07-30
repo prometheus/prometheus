@@ -61,6 +61,10 @@ class QueryableEncodingBimap : public BareBones::SnugComposite::DecodingTable<Fi
   void update_indexes(uint32_t ls_id, Set::const_iterator ls_id_set_iterator) {
     auto label_set = this->operator[](ls_id);
     for (auto label = label_set.begin(); label != label_set.end(); ++label) {
+      if (!is_valid_label((*label).second)) {
+        continue;
+      }
+
       reverse_index_.add(label, ls_id);
       trie_index_.names_trie().insert((*label).first, label.name_id());
 
@@ -75,6 +79,8 @@ class QueryableEncodingBimap : public BareBones::SnugComposite::DecodingTable<Fi
       sorting_index_.update(ls_id_set_iterator);
     }
   }
+
+  PROMPP_ALWAYS_INLINE static bool is_valid_label(std::string_view value) noexcept { return !value.empty(); }
 };
 
 }  // namespace series_index
