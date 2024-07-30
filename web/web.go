@@ -123,9 +123,12 @@ func newMetrics(r prometheus.Registerer) *metrics {
 		),
 		requestDuration: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
-				Name:    "prometheus_http_request_duration_seconds",
-				Help:    "Histogram of latencies for HTTP requests.",
-				Buckets: []float64{.1, .2, .4, 1, 3, 8, 20, 60, 120},
+				Name:                            "prometheus_http_request_duration_seconds",
+				Help:                            "Histogram of latencies for HTTP requests.",
+				Buckets:                         []float64{.1, .2, .4, 1, 3, 8, 20, 60, 120},
+				NativeHistogramBucketFactor:     1.1,
+				NativeHistogramMaxBucketNumber:  100,
+				NativeHistogramMinResetDuration: 1 * time.Hour,
 			},
 			[]string{"handler"},
 		),
@@ -262,6 +265,8 @@ type Options struct {
 	IsAgent                    bool
 	AppName                    string
 
+	AcceptRemoteWriteProtoMsgs []config.RemoteWriteProtoMsg
+
 	Gatherer   prometheus.Gatherer
 	Registerer prometheus.Registerer
 }
@@ -350,6 +355,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		o.Registerer,
 		nil,
 		o.EnableRemoteWriteReceiver,
+		o.AcceptRemoteWriteProtoMsgs,
 		o.EnableOTLPWriteReceiver,
 	)
 

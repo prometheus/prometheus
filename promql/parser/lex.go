@@ -65,7 +65,7 @@ func (i ItemType) IsAggregator() bool { return i > aggregatorsStart && i < aggre
 // IsAggregatorWithParam returns true if the Item is an aggregator that takes a parameter.
 // Returns false otherwise.
 func (i ItemType) IsAggregatorWithParam() bool {
-	return i == TOPK || i == BOTTOMK || i == COUNT_VALUES || i == QUANTILE
+	return i == TOPK || i == BOTTOMK || i == COUNT_VALUES || i == QUANTILE || i == LIMITK || i == LIMIT_RATIO
 }
 
 // IsKeyword returns true if the Item corresponds to a keyword.
@@ -118,6 +118,8 @@ var key = map[string]ItemType{
 	"bottomk":      BOTTOMK,
 	"count_values": COUNT_VALUES,
 	"quantile":     QUANTILE,
+	"limitk":       LIMITK,
+	"limit_ratio":  LIMIT_RATIO,
 
 	// Keywords.
 	"offset":      OFFSET,
@@ -135,15 +137,16 @@ var key = map[string]ItemType{
 }
 
 var histogramDesc = map[string]ItemType{
-	"sum":        SUM_DESC,
-	"count":      COUNT_DESC,
-	"schema":     SCHEMA_DESC,
-	"offset":     OFFSET_DESC,
-	"n_offset":   NEGATIVE_OFFSET_DESC,
-	"buckets":    BUCKETS_DESC,
-	"n_buckets":  NEGATIVE_BUCKETS_DESC,
-	"z_bucket":   ZERO_BUCKET_DESC,
-	"z_bucket_w": ZERO_BUCKET_WIDTH_DESC,
+	"sum":           SUM_DESC,
+	"count":         COUNT_DESC,
+	"schema":        SCHEMA_DESC,
+	"offset":        OFFSET_DESC,
+	"n_offset":      NEGATIVE_OFFSET_DESC,
+	"buckets":       BUCKETS_DESC,
+	"n_buckets":     NEGATIVE_BUCKETS_DESC,
+	"z_bucket":      ZERO_BUCKET_DESC,
+	"z_bucket_w":    ZERO_BUCKET_WIDTH_DESC,
+	"custom_values": CUSTOM_VALUES_DESC,
 }
 
 // ItemTypeStr is the default string representations for common Items. It does not
@@ -313,6 +316,11 @@ func (l *Lexer) accept(valid string) bool {
 	return false
 }
 
+// is peeks and returns true if the next rune is contained in the provided string.
+func (l *Lexer) is(valid string) bool {
+	return strings.ContainsRune(valid, l.peek())
+}
+
 // acceptRun consumes a run of runes from the valid set.
 func (l *Lexer) acceptRun(valid string) {
 	for strings.ContainsRune(valid, l.next()) {
@@ -470,7 +478,7 @@ func lexStatements(l *Lexer) stateFn {
 			skipSpaces(l)
 		}
 		l.bracketOpen = true
-		return lexDuration
+		return lexNumberOrDuration
 	case r == ']':
 		if !l.bracketOpen {
 			return l.errorf("unexpected right bracket %q", r)
@@ -519,7 +527,7 @@ func lexHistogram(l *Lexer) stateFn {
 		return lexHistogram
 	case r == '-':
 		l.emit(SUB)
-		return lexNumber
+		return lexHistogram
 	case r == 'x':
 		l.emit(TIMES)
 		return lexNumber
@@ -568,10 +576,16 @@ Loop:
 					return lexHistogram
 				}
 				l.errorf("missing `:` for histogram descriptor")
-			} else {
-				l.errorf("bad histogram descriptor found: %q", word)
+				break Loop
 			}
-
+			// Current word is Inf or NaN.
+			if desc, ok := key[strings.ToLower(word)]; ok {
+				if desc == NUMBER {
+					l.emit(desc)
+					return lexHistogram
+				}
+			}
+			l.errorf("bad histogram descriptor found: %q", word)
 			break Loop
 		}
 	}
@@ -832,18 +846,6 @@ func lexLineComment(l *Lexer) stateFn {
 	return lexStatements
 }
 
-func lexDuration(l *Lexer) stateFn {
-	if l.scanNumber() {
-		return l.errorf("missing unit character in duration")
-	}
-	if !acceptRemainingDuration(l) {
-		return l.errorf("bad duration syntax: %q", l.input[l.start:l.pos])
-	}
-	l.backup()
-	l.emit(DURATION)
-	return lexStatements
-}
-
 // lexNumber scans a number: decimal, hex, oct or float.
 func lexNumber(l *Lexer) stateFn {
 	if !l.scanNumber() {
@@ -895,18 +897,81 @@ func acceptRemainingDuration(l *Lexer) bool {
 // scanNumber scans numbers of different formats. The scanned Item is
 // not necessarily a valid number. This case is caught by the parser.
 func (l *Lexer) scanNumber() bool {
-	digits := "0123456789"
+	initialPos := l.pos
+	// Modify the digit pattern if the number is hexadecimal.
+	digitPattern := "0123456789"
 	// Disallow hexadecimal in series descriptions as the syntax is ambiguous.
-	if !l.seriesDesc && l.accept("0") && l.accept("xX") {
-		digits = "0123456789abcdefABCDEF"
+	if !l.seriesDesc &&
+		l.accept("0") && l.accept("xX") {
+		l.accept("_") // eg., 0X_1FFFP-16 == 0.1249847412109375
+		digitPattern = "0123456789abcdefABCDEF"
 	}
-	l.acceptRun(digits)
-	if l.accept(".") {
-		l.acceptRun(digits)
+	const (
+		// Define dot, exponent, and underscore patterns.
+		dotPattern        = "."
+		exponentPattern   = "eE"
+		underscorePattern = "_"
+		// Anti-patterns are rune sets that cannot follow their respective rune.
+		dotAntiPattern        = "_."
+		exponentAntiPattern   = "._eE" // and EOL.
+		underscoreAntiPattern = "._eE" // and EOL.
+	)
+	// All numbers follow the prefix: [.][d][d._eE]*
+	l.accept(dotPattern)
+	l.accept(digitPattern)
+	// [d._eE]* hereon.
+	dotConsumed := false
+	exponentConsumed := false
+	for l.is(digitPattern + dotPattern + underscorePattern + exponentPattern) {
+		// "." cannot repeat.
+		if l.is(dotPattern) {
+			if dotConsumed {
+				l.accept(dotPattern)
+				return false
+			}
+		}
+		// "eE" cannot repeat.
+		if l.is(exponentPattern) {
+			if exponentConsumed {
+				l.accept(exponentPattern)
+				return false
+			}
+		}
+		// Handle dots.
+		if l.accept(dotPattern) {
+			dotConsumed = true
+			if l.accept(dotAntiPattern) {
+				return false
+			}
+			// Fractional hexadecimal literals are not allowed.
+			if len(digitPattern) > 10 /* 0x[\da-fA-F].[\d]+p[\d] */ {
+				return false
+			}
+			continue
+		}
+		// Handle exponents.
+		if l.accept(exponentPattern) {
+			exponentConsumed = true
+			l.accept("+-")
+			if l.accept(exponentAntiPattern) || l.peek() == eof {
+				return false
+			}
+			continue
+		}
+		// Handle underscores.
+		if l.accept(underscorePattern) {
+			if l.accept(underscoreAntiPattern) || l.peek() == eof {
+				return false
+			}
+
+			continue
+		}
+		// Handle digits at the end since we already consumed before this loop.
+		l.acceptRun(digitPattern)
 	}
-	if l.accept("eE") {
-		l.accept("+-")
-		l.acceptRun("0123456789")
+	// Empty string is not a valid number.
+	if l.pos == initialPos {
+		return false
 	}
 	// Next thing must not be alphanumeric unless it's the times token
 	// for series repetitions.

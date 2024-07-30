@@ -24,16 +24,19 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
 
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/rules"
@@ -189,7 +192,7 @@ func TestSendAlerts(t *testing.T) {
 
 	for i, tc := range testCases {
 		tc := tc
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			senderFunc := senderFunc(func(alerts ...*notifier.Alert) {
 				require.NotEmpty(t, tc.in, "sender called with 0 alert")
 				require.Equal(t, tc.exp, alerts)
@@ -497,4 +500,66 @@ func TestDocumentation(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, string(expectedContent), generatedContent, "Generated content does not match documentation. Hint: run `make cli-documentation`.")
+}
+
+func TestRwProtoMsgFlagParser(t *testing.T) {
+	defaultOpts := config.RemoteWriteProtoMsgs{
+		config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2,
+	}
+
+	for _, tcase := range []struct {
+		args        []string
+		expected    []config.RemoteWriteProtoMsg
+		expectedErr error
+	}{
+		{
+			args:     nil,
+			expected: defaultOpts,
+		},
+		{
+			args:        []string{"--test-proto-msgs", "test"},
+			expectedErr: errors.New("unknown remote write protobuf message test, supported: prometheus.WriteRequest, io.prometheus.write.v2.Request"),
+		},
+		{
+			args:     []string{"--test-proto-msgs", "io.prometheus.write.v2.Request"},
+			expected: config.RemoteWriteProtoMsgs{config.RemoteWriteProtoMsgV2},
+		},
+		{
+			args: []string{
+				"--test-proto-msgs", "io.prometheus.write.v2.Request",
+				"--test-proto-msgs", "io.prometheus.write.v2.Request",
+			},
+			expectedErr: errors.New("duplicated io.prometheus.write.v2.Request flag value, got [io.prometheus.write.v2.Request] already"),
+		},
+		{
+			args: []string{
+				"--test-proto-msgs", "io.prometheus.write.v2.Request",
+				"--test-proto-msgs", "prometheus.WriteRequest",
+			},
+			expected: config.RemoteWriteProtoMsgs{config.RemoteWriteProtoMsgV2, config.RemoteWriteProtoMsgV1},
+		},
+		{
+			args: []string{
+				"--test-proto-msgs", "io.prometheus.write.v2.Request",
+				"--test-proto-msgs", "prometheus.WriteRequest",
+				"--test-proto-msgs", "io.prometheus.write.v2.Request",
+			},
+			expectedErr: errors.New("duplicated io.prometheus.write.v2.Request flag value, got [io.prometheus.write.v2.Request prometheus.WriteRequest] already"),
+		},
+	} {
+		t.Run(strings.Join(tcase.args, ","), func(t *testing.T) {
+			a := kingpin.New("test", "")
+			var opt []config.RemoteWriteProtoMsg
+			a.Flag("test-proto-msgs", "").Default(defaultOpts.Strings()...).SetValue(rwProtoMsgFlagValue(&opt))
+
+			_, err := a.Parse(tcase.args)
+			if tcase.expectedErr != nil {
+				require.Error(t, err)
+				require.Equal(t, tcase.expectedErr, err)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tcase.expected, opt)
+			}
+		})
+	}
 }

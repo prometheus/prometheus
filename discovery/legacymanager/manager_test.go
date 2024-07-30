@@ -720,7 +720,7 @@ func staticConfig(addrs ...string) discovery.StaticConfig {
 	var cfg discovery.StaticConfig
 	for i, addr := range addrs {
 		cfg = append(cfg, &targetgroup.Group{
-			Source: fmt.Sprint(i),
+			Source: strconv.Itoa(i),
 			Targets: []model.LabelSet{
 				{model.AddressLabel: model.LabelValue(addr)},
 			},
@@ -733,7 +733,6 @@ func verifyPresence(t *testing.T, tSets map[poolKey]map[string]*targetgroup.Grou
 	t.Helper()
 	if _, ok := tSets[poolKey]; !ok {
 		t.Fatalf("'%s' should be present in Pool keys: %v", poolKey, tSets)
-		return
 	}
 
 	match := false
@@ -1091,7 +1090,6 @@ func TestCoordinationWithReceiver(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
 		t.Run(tc.title, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()

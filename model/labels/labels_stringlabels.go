@@ -17,11 +17,11 @@ package labels
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"unsafe"
 
 	"github.com/cespare/xxhash/v2"
-	"golang.org/x/exp/slices"
 )
 
 // Labels is implemented by a single flat string holding name/value pairs.
@@ -112,9 +112,9 @@ func (ls Labels) HashForLabels(b []byte, names ...string) (uint64, []byte) {
 		}
 		if name == names[j] {
 			b = append(b, name...)
-			b = append(b, seps[0])
+			b = append(b, sep)
 			b = append(b, value...)
-			b = append(b, seps[0])
+			b = append(b, sep)
 		}
 	}
 
@@ -138,9 +138,9 @@ func (ls Labels) HashWithoutLabels(b []byte, names ...string) (uint64, []byte) {
 			continue
 		}
 		b = append(b, name...)
-		b = append(b, seps[0])
+		b = append(b, sep)
 		b = append(b, value...)
-		b = append(b, seps[0])
+		b = append(b, sep)
 	}
 	return xxhash.Sum64(b), b
 }
@@ -188,8 +188,7 @@ func (ls Labels) BytesWithoutLabels(buf []byte, names ...string) []byte {
 
 // Copy returns a copy of the labels.
 func (ls Labels) Copy() Labels {
-	buf := append([]byte{}, ls.data...)
-	return Labels{data: yoloString(buf)}
+	return Labels{data: strings.Clone(ls.data)}
 }
 
 // Get returns the value for the label with the given name.
@@ -300,11 +299,6 @@ func Equal(ls, o Labels) bool {
 func EmptyLabels() Labels {
 	return Labels{}
 }
-
-func yoloString(b []byte) string {
-	return *((*string)(unsafe.Pointer(&b)))
-}
-
 func yoloBytes(s string) (b []byte) {
 	*(*string)(unsafe.Pointer(&b)) = s
 	(*reflect.SliceHeader)(unsafe.Pointer(&b)).Cap = len(s)
@@ -364,13 +358,11 @@ func Compare(a, b Labels) int {
 
 	// Now we know that there is some difference before the end of a and b.
 	// Go back through the fields and find which field that difference is in.
-	firstCharDifferent := i
-	for i = 0; ; {
-		size, nextI := decodeSize(a.data, i)
-		if nextI+size > firstCharDifferent {
-			break
-		}
+	firstCharDifferent, i := i, 0
+	size, nextI := decodeSize(a.data, i)
+	for nextI+size <= firstCharDifferent {
 		i = nextI + size
+		size, nextI = decodeSize(a.data, i)
 	}
 	// Difference is inside this entry.
 	aStr, _ := decodeString(a.data, i)
@@ -456,6 +448,25 @@ func (ls *Labels) InternStrings(intern func(string) string) {
 
 // ReleaseStrings is a no-op for the same reason as InternStrings.
 func (ls Labels) ReleaseStrings(release func(string)) {
+}
+
+// Builder allows modifying Labels.
+type Builder struct {
+	base Labels
+	del  []string
+	add  []Label
+}
+
+// Reset clears all current state for the builder.
+func (b *Builder) Reset(base Labels) {
+	b.base = base
+	b.del = b.del[:0]
+	b.add = b.add[:0]
+	b.base.Range(func(l Label) {
+		if l.Value == "" {
+			b.del = append(b.del, l.Name)
+		}
+	})
 }
 
 // Labels returns the labels from the builder.
@@ -661,4 +672,25 @@ func (b *ScratchBuilder) Overwrite(ls *Labels) {
 	}
 	marshalLabelsToSizedBuffer(b.add, b.overwriteBuffer)
 	ls.data = yoloString(b.overwriteBuffer)
+}
+
+// Symbol-table is no-op, just for api parity with dedupelabels.
+type SymbolTable struct{}
+
+func NewSymbolTable() *SymbolTable { return nil }
+
+func (t *SymbolTable) Len() int { return 0 }
+
+// NewBuilderWithSymbolTable creates a Builder, for api parity with dedupelabels.
+func NewBuilderWithSymbolTable(_ *SymbolTable) *Builder {
+	return NewBuilder(EmptyLabels())
+}
+
+// NewScratchBuilderWithSymbolTable creates a ScratchBuilder, for api parity with dedupelabels.
+func NewScratchBuilderWithSymbolTable(_ *SymbolTable, n int) ScratchBuilder {
+	return NewScratchBuilder(n)
+}
+
+func (b *ScratchBuilder) SetSymbolTable(_ *SymbolTable) {
+	// no-op
 }

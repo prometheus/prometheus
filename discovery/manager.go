@@ -120,6 +120,16 @@ func Name(n string) func(*Manager) {
 	}
 }
 
+// Updatert sets the updatert of the manager.
+// Used to speed up tests.
+func Updatert(u time.Duration) func(*Manager) {
+	return func(m *Manager) {
+		m.mtx.Lock()
+		defer m.mtx.Unlock()
+		m.updatert = u
+	}
+}
+
 // HTTPClientOptions sets the list of HTTP client options to expose to
 // Discoverers. It is up to Discoverers to choose to use the options provided.
 func HTTPClientOptions(opts ...config.HTTPClientOption) func(*Manager) {
@@ -167,6 +177,13 @@ type Manager struct {
 // Providers returns the currently configured SD providers.
 func (m *Manager) Providers() []*Provider {
 	return m.providers
+}
+
+// UnregisterMetrics unregisters manager metrics. It does not unregister
+// service discovery or refresh metrics, whose lifecycle is managed independent
+// of the discovery Manager.
+func (m *Manager) UnregisterMetrics() {
+	m.metrics.Unregister(m.registerer)
 }
 
 // Run starts the background processing.

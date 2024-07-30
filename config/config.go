@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -36,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/storage/remote/azuread"
+	"github.com/prometheus/prometheus/storage/remote/googleiam"
 )
 
 var (
@@ -82,7 +84,7 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 		return cfg, nil
 	}
 
-	b := labels.ScratchBuilder{}
+	b := labels.NewScratchBuilder(0)
 	cfg.GlobalConfig.ExternalLabels.Range(func(v labels.Label) {
 		newV := os.Expand(v.Value, func(s string) string {
 			if s == "$" {
@@ -97,6 +99,7 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 		if newV != v.Value {
 			level.Debug(logger).Log("msg", "External label replaced", "label", v.Name, "input", v.Value, "output", newV)
 		}
+		// Note newV can be blank. https://github.com/prometheus/prometheus/issues/11024
 		b.Add(v.Name, newV)
 	})
 	cfg.GlobalConfig.ExternalLabels = b.Labels()
@@ -144,9 +147,15 @@ var (
 		ScrapeInterval:     model.Duration(1 * time.Minute),
 		ScrapeTimeout:      model.Duration(10 * time.Second),
 		EvaluationInterval: model.Duration(1 * time.Minute),
+		RuleQueryOffset:    model.Duration(0 * time.Minute),
 		// When native histogram feature flag is enabled, ScrapeProtocols default
 		// changes to DefaultNativeHistogramScrapeProtocols.
 		ScrapeProtocols: DefaultScrapeProtocols,
+	}
+
+	DefaultRuntimeConfig = RuntimeConfig{
+		// Go runtime tuning.
+		GoGC: 75,
 	}
 
 	// DefaultScrapeConfig is the default scrape configuration.
@@ -172,6 +181,7 @@ var (
 	// DefaultRemoteWriteConfig is the default remote write configuration.
 	DefaultRemoteWriteConfig = RemoteWriteConfig{
 		RemoteTimeout:    model.Duration(30 * time.Second),
+		ProtobufMessage:  RemoteWriteProtoMsgV1,
 		QueueConfig:      DefaultQueueConfig,
 		MetadataConfig:   DefaultMetadataConfig,
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
@@ -218,11 +228,15 @@ var (
 	DefaultExemplarsConfig = ExemplarsConfig{
 		MaxExemplars: 100000,
 	}
+
+	// DefaultOTLPConfig is the default OTLP configuration.
+	DefaultOTLPConfig = OTLPConfig{}
 )
 
 // Config is the top-level configuration for Prometheus's config files.
 type Config struct {
 	GlobalConfig      GlobalConfig    `yaml:"global"`
+	Runtime           RuntimeConfig   `yaml:"runtime,omitempty"`
 	AlertingConfig    AlertingConfig  `yaml:"alerting,omitempty"`
 	RuleFiles         []string        `yaml:"rule_files,omitempty"`
 	ScrapeConfigFiles []string        `yaml:"scrape_config_files,omitempty"`
@@ -232,6 +246,7 @@ type Config struct {
 
 	RemoteWriteConfigs []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
 	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
+	OTLPConfig         OTLPConfig           `yaml:"otlp,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -270,7 +285,7 @@ func (c *Config) GetScrapeConfigs() ([]*ScrapeConfig, error) {
 
 	jobNames := map[string]string{}
 	for i, scfg := range c.ScrapeConfigs {
-		// We do these checks for library users that would not call Validate in
+		// We do these checks for library users that would not call validate in
 		// Unmarshal.
 		if err := scfg.Validate(c.GlobalConfig); err != nil {
 			return nil, err
@@ -331,6 +346,14 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// We have to restore it here.
 	if c.GlobalConfig.isZero() {
 		c.GlobalConfig = DefaultGlobalConfig
+	}
+
+	// If a runtime block was open but empty the default runtime config is overwritten.
+	// We have to restore it here.
+	if c.Runtime.isZero() {
+		c.Runtime = DefaultRuntimeConfig
+		// Use the GOGC env var value if the runtime section is empty.
+		c.Runtime.GoGC = getGoGCEnv()
 	}
 
 	for _, rf := range c.RuleFiles {
@@ -396,6 +419,8 @@ type GlobalConfig struct {
 	ScrapeProtocols []ScrapeProtocol `yaml:"scrape_protocols,omitempty"`
 	// How frequently to evaluate rules by default.
 	EvaluationInterval model.Duration `yaml:"evaluation_interval,omitempty"`
+	// Offset the rule evaluation timestamp of this particular group by the specified duration into the past to ensure the underlying metrics have been received.
+	RuleQueryOffset model.Duration `yaml:"rule_query_offset,omitempty"`
 	// File to which PromQL queries are logged.
 	QueryLogFile string `yaml:"query_log_file,omitempty"`
 	// The labels to add to any timeseries that this Prometheus instance scrapes.
@@ -555,8 +580,20 @@ func (c *GlobalConfig) isZero() bool {
 		c.ScrapeInterval == 0 &&
 		c.ScrapeTimeout == 0 &&
 		c.EvaluationInterval == 0 &&
+		c.RuleQueryOffset == 0 &&
 		c.QueryLogFile == "" &&
 		c.ScrapeProtocols == nil
+}
+
+// RuntimeConfig configures the values for the process behavior.
+type RuntimeConfig struct {
+	// The Go garbage collection target percentage.
+	GoGC int `yaml:"gogc,omitempty"`
+}
+
+// isZero returns true iff the global config is the zero value.
+func (c *RuntimeConfig) isZero() bool {
+	return c.GoGC == 0
 }
 
 type ScrapeConfigs struct {
@@ -940,6 +977,8 @@ type AlertmanagerConfig struct {
 
 	// List of Alertmanager relabel configurations.
 	RelabelConfigs []*relabel.Config `yaml:"relabel_configs,omitempty"`
+	// Relabel alerts before sending to the specific alertmanager.
+	AlertRelabelConfigs []*relabel.Config `yaml:"alert_relabel_configs,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -982,6 +1021,12 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 		}
 	}
 
+	for _, rlcfg := range c.AlertRelabelConfigs {
+		if rlcfg == nil {
+			return errors.New("empty or null Alertmanager alert relabeling rule")
+		}
+	}
+
 	return nil
 }
 
@@ -1016,6 +1061,49 @@ func CheckTargetAddress(address model.LabelValue) error {
 	return nil
 }
 
+// RemoteWriteProtoMsg represents the known protobuf message for the remote write
+// 1.0 and 2.0 specs.
+type RemoteWriteProtoMsg string
+
+// Validate returns error if the given reference for the protobuf message is not supported.
+func (s RemoteWriteProtoMsg) Validate() error {
+	switch s {
+	case RemoteWriteProtoMsgV1, RemoteWriteProtoMsgV2:
+		return nil
+	default:
+		return fmt.Errorf("unknown remote write protobuf message %v, supported: %v", s, RemoteWriteProtoMsgs{RemoteWriteProtoMsgV1, RemoteWriteProtoMsgV2}.String())
+	}
+}
+
+type RemoteWriteProtoMsgs []RemoteWriteProtoMsg
+
+func (m RemoteWriteProtoMsgs) Strings() []string {
+	ret := make([]string, 0, len(m))
+	for _, typ := range m {
+		ret = append(ret, string(typ))
+	}
+	return ret
+}
+
+func (m RemoteWriteProtoMsgs) String() string {
+	return strings.Join(m.Strings(), ", ")
+}
+
+var (
+	// RemoteWriteProtoMsgV1 represents the deprecated `prometheus.WriteRequest` protobuf
+	// message introduced in the https://prometheus.io/docs/specs/remote_write_spec/.
+	//
+	// NOTE: This string is used for both HTTP header values and config value, so don't change
+	// this reference.
+	RemoteWriteProtoMsgV1 RemoteWriteProtoMsg = "prometheus.WriteRequest"
+	// RemoteWriteProtoMsgV2 represents the `io.prometheus.write.v2.Request` protobuf
+	// message introduced in https://prometheus.io/docs/specs/remote_write_spec_2_0/
+	//
+	// NOTE: This string is used for both HTTP header values and config value, so don't change
+	// this reference.
+	RemoteWriteProtoMsgV2 RemoteWriteProtoMsg = "io.prometheus.write.v2.Request"
+)
+
 // RemoteWriteConfig is the configuration for writing to remote storage.
 type RemoteWriteConfig struct {
 	URL                  *config.URL       `yaml:"url"`
@@ -1025,6 +1113,9 @@ type RemoteWriteConfig struct {
 	Name                 string            `yaml:"name,omitempty"`
 	SendExemplars        bool              `yaml:"send_exemplars,omitempty"`
 	SendNativeHistograms bool              `yaml:"send_native_histograms,omitempty"`
+	// ProtobufMessage specifies the protobuf message to use against the remote
+	// receiver as specified in https://prometheus.io/docs/specs/remote_write_spec_2_0/
+	ProtobufMessage RemoteWriteProtoMsg `yaml:"protobuf_message,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
@@ -1033,6 +1124,7 @@ type RemoteWriteConfig struct {
 	MetadataConfig   MetadataConfig          `yaml:"metadata_config,omitempty"`
 	SigV4Config      *sigv4.SigV4Config      `yaml:"sigv4,omitempty"`
 	AzureADConfig    *azuread.AzureADConfig  `yaml:"azuread,omitempty"`
+	GoogleIAMConfig  *googleiam.Config       `yaml:"google_iam,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -1059,6 +1151,10 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 		return err
 	}
 
+	if err := c.ProtobufMessage.Validate(); err != nil {
+		return fmt.Errorf("invalid protobuf_message value: %w", err)
+	}
+
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
 	// Thus we just do its validation here.
@@ -1066,17 +1162,33 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 		return err
 	}
 
-	httpClientConfigAuthEnabled := c.HTTPClientConfig.BasicAuth != nil ||
-		c.HTTPClientConfig.Authorization != nil || c.HTTPClientConfig.OAuth2 != nil
+	return validateAuthConfigs(c)
+}
 
-	if httpClientConfigAuthEnabled && (c.SigV4Config != nil || c.AzureADConfig != nil) {
-		return fmt.Errorf("at most one of basic_auth, authorization, oauth2, sigv4, & azuread must be configured")
+// validateAuthConfigs validates that at most one of basic_auth, authorization, oauth2, sigv4, azuread or google_iam must be configured.
+func validateAuthConfigs(c *RemoteWriteConfig) error {
+	var authConfigured []string
+	if c.HTTPClientConfig.BasicAuth != nil {
+		authConfigured = append(authConfigured, "basic_auth")
 	}
-
-	if c.SigV4Config != nil && c.AzureADConfig != nil {
-		return fmt.Errorf("at most one of basic_auth, authorization, oauth2, sigv4, & azuread must be configured")
+	if c.HTTPClientConfig.Authorization != nil {
+		authConfigured = append(authConfigured, "authorization")
 	}
-
+	if c.HTTPClientConfig.OAuth2 != nil {
+		authConfigured = append(authConfigured, "oauth2")
+	}
+	if c.SigV4Config != nil {
+		authConfigured = append(authConfigured, "sigv4")
+	}
+	if c.AzureADConfig != nil {
+		authConfigured = append(authConfigured, "azuread")
+	}
+	if c.GoogleIAMConfig != nil {
+		authConfigured = append(authConfigured, "google_iam")
+	}
+	if len(authConfigured) > 1 {
+		return fmt.Errorf("at most one of basic_auth, authorization, oauth2, sigv4, azuread or google_iam must be configured. Currently configured: %v", authConfigured)
+	}
 	return nil
 }
 
@@ -1095,7 +1207,7 @@ func validateHeadersForTracing(headers map[string]string) error {
 func validateHeaders(headers map[string]string) error {
 	for header := range headers {
 		if strings.ToLower(header) == "authorization" {
-			return errors.New("authorization header must be changed via the basic_auth, authorization, oauth2, sigv4, or azuread parameter")
+			return errors.New("authorization header must be changed via the basic_auth, authorization, oauth2, sigv4, azuread or google_iam parameter")
 		}
 		if _, ok := reservedHeaders[strings.ToLower(header)]; ok {
 			return fmt.Errorf("%s is a reserved header. It must not be changed", header)
@@ -1197,4 +1309,52 @@ func filePath(filename string) string {
 
 func fileErr(filename string, err error) error {
 	return fmt.Errorf("%q: %w", filePath(filename), err)
+}
+
+func getGoGCEnv() int {
+	goGCEnv := os.Getenv("GOGC")
+	// If the GOGC env var is set, use the same logic as upstream Go.
+	if goGCEnv != "" {
+		// Special case for GOGC=off.
+		if strings.ToLower(goGCEnv) == "off" {
+			return -1
+		}
+		i, err := strconv.Atoi(goGCEnv)
+		if err == nil {
+			return i
+		}
+	}
+	return DefaultRuntimeConfig.GoGC
+}
+
+// OTLPConfig is the configuration for writing to the OTLP endpoint.
+type OTLPConfig struct {
+	PromoteResourceAttributes []string `yaml:"promote_resource_attributes,omitempty"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *OTLPConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultOTLPConfig
+	type plain OTLPConfig
+	if err := unmarshal((*plain)(c)); err != nil {
+		return err
+	}
+
+	seen := map[string]struct{}{}
+	var err error
+	for i, attr := range c.PromoteResourceAttributes {
+		attr = strings.TrimSpace(attr)
+		if attr == "" {
+			err = errors.Join(err, fmt.Errorf("empty promoted OTel resource attribute"))
+			continue
+		}
+		if _, exists := seen[attr]; exists {
+			err = errors.Join(err, fmt.Errorf("duplicated promoted OTel resource attribute %q", attr))
+			continue
+		}
+
+		seen[attr] = struct{}{}
+		c.PromoteResourceAttributes[i] = attr
+	}
+	return err
 }

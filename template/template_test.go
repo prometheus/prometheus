@@ -23,6 +23,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 )
@@ -38,6 +39,12 @@ func TestTemplateExpansion(t *testing.T) {
 			// Simple value.
 			text:   "{{ 1 }}",
 			output: "1",
+		},
+		{
+			// Native histogram value.
+			text:   "{{ . | value }}",
+			input:  &sample{Value: &histogram.FloatHistogram{Count: 3, Sum: 10}},
+			output: (&histogram.FloatHistogram{Count: 3, Sum: 10}).String(),
 		},
 		{
 			// Non-ASCII space (not allowed in text/template, see https://github.com/golang/go/blob/master/src/text/template/parse/lex.go#L98)
@@ -83,6 +90,18 @@ func TestTemplateExpansion(t *testing.T) {
 				},
 			},
 			output: "11",
+		},
+		{
+			// Get value of a native histogram from query.
+			text: "{{ query \"metric{instance='a'}\" | first | value }}",
+			queryResult: promql.Vector{
+				{
+					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
+					T:      0,
+					H:      &histogram.FloatHistogram{Count: 3, Sum: 10},
+				},
+			},
+			output: (&histogram.FloatHistogram{Count: 3, Sum: 10}).String(),
 		},
 		{
 			// Get label from query.

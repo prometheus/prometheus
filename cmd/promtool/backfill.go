@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/oklog/ulid"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
@@ -88,7 +89,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 	blockDuration := getCompatibleBlockDuration(maxBlockDuration)
 	mint = blockDuration * (mint / blockDuration)
 
-	db, err := tsdb.OpenDBReadOnly(outputDir, nil)
+	db, err := tsdb.OpenDBReadOnly(outputDir, "", nil)
 	if err != nil {
 		return err
 	}
@@ -127,7 +128,8 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 
 			ctx := context.Background()
 			app := w.Appender(ctx)
-			p := textparse.NewOpenMetricsParser(input)
+			symbolTable := labels.NewSymbolTable() // One table per block means it won't grow too large.
+			p := textparse.NewOpenMetricsParser(input, symbolTable)
 			samplesCount := 0
 			for {
 				e, err := p.Next()
@@ -190,6 +192,10 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 				if quiet {
 					break
 				}
+				// Empty block, don't print.
+				if block.Compare(ulid.ULID{}) == 0 {
+					break
+				}
 				blocks, err := db.Blocks()
 				if err != nil {
 					return fmt.Errorf("get blocks: %w", err)
@@ -216,7 +222,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 }
 
 func backfill(maxSamplesInAppender int, input []byte, outputDir string, humanReadable, quiet bool, maxBlockDuration time.Duration) (err error) {
-	p := textparse.NewOpenMetricsParser(input)
+	p := textparse.NewOpenMetricsParser(input, nil) // Don't need a SymbolTable to get max and min timestamps.
 	maxt, mint, err := getMinAndMaxTimestamps(p)
 	if err != nil {
 		return fmt.Errorf("getting min and max timestamp: %w", err)

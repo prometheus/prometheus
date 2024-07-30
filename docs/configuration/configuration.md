@@ -70,6 +70,10 @@ global:
 
   # How frequently to evaluate rules.
   [ evaluation_interval: <duration> | default = 1m ]
+                        
+  # Offset the rule evaluation timestamp of this particular group by the specified duration into the past to ensure the underlying metrics have been received.
+  # Metric availability delays are more likely to occur when Prometheus is running as a remote write target, but can also occur when there's anomalies with scraping.
+  [ rule_query_offset: <duration> | default = 0s ]
 
   # The labels to add to any time series or alerts when communicating with
   # external systems (federation, remote storage, Alertmanager).
@@ -117,6 +121,12 @@ global:
   # that will be kept in memory. 0 means no limit.
   [ keep_dropped_targets: <int> | default = 0 ]
 
+runtime:
+  # Configure the Go garbage collector GOGC parameter
+  # See: https://tip.golang.org/doc/gc-guide#GOGC
+  # Lowering this number increases CPU usage.
+  [ gogc: <int> | default = 75 ]
+
 # Rule files specifies a list of globs. Rules and alerts are read from
 # all matching files.
 rule_files:
@@ -141,6 +151,10 @@ alerting:
 # Settings related to the remote write feature.
 remote_write:
   [ - <remote_write> ... ]
+
+# Settings related to the OTLP receiver feature.
+otlp:
+  [ promote_resource_attributes: [<string>, ...] | default = [ ] ]
 
 # Settings related to the remote read feature.
 remote_read:
@@ -448,13 +462,15 @@ metric_relabel_configs:
 [ keep_dropped_targets: <int> | default = 0 ]
 
 # Limit on total number of positive and negative buckets allowed in a single
-# native histogram. If this is exceeded, the entire scrape will be treated as
-# failed. 0 means no limit.
+# native histogram. The resolution of a histogram with more buckets will be
+# reduced until the number of buckets is within the limit. If the limit cannot
+# be reached, the scrape will fail.
+# 0 means no limit.
 [ native_histogram_bucket_limit: <int> | default = 0 ]
 
 # Lower limit for the growth factor of one bucket to the next in each native
 # histogram. The resolution of a histogram with a lower growth factor will be
-# reduced until it is within the limit.
+# reduced as much as possible until it is within the limit.
 # To set an upper limit for the schema (equivalent to "scale" in OTel's
 # exponential histograms), use the following factor limits:
 # 
@@ -600,8 +616,10 @@ See below for the configuration options for Azure discovery:
 # The Azure environment.
 [ environment: <string> | default = AzurePublicCloud ]
 
-# The authentication method, either OAuth or ManagedIdentity.
+# The authentication method, either OAuth, ManagedIdentity or SDK.
 # See https://docs.microsoft.com/en-us/azure/active-directory/managed-identities-azure-resources/overview
+# SDK authentication method uses environment variables by default.
+# See https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication
 [ authentication_method: <string> | default = OAuth]
 # The subscription ID. Always required.
 subscription_id: <string>
@@ -929,6 +947,9 @@ tls_config:
 # The host to use if the container is in host networking mode.
 [ host_networking_host: <string> | default = "localhost" ]
 
+# Match the first network if the container has multiple networks defined, thus avoiding collecting duplicate targets.
+[ match_first_network: <boolean> | default = true ]
+
 # Optional filters to limit the discovery process to a subset of available
 # resources.
 # The available filters are listed in the upstream documentation:
@@ -1217,6 +1238,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_ec2_ipv6_addresses`: comma separated list of IPv6 addresses assigned to the instance's network interfaces, if present
 * `__meta_ec2_owner_id`: the ID of the AWS account that owns the EC2 instance
 * `__meta_ec2_platform`: the Operating System platform, set to 'windows' on Windows servers, absent otherwise
+* `__meta_ec2_primary_ipv6_addresses`: comma separated list of the Primary IPv6 addresses of the instance, if present. The list is ordered based on the position of each corresponding network interface in the attachment order.
 * `__meta_ec2_primary_subnet_id`: the subnet ID of the primary network interface, if available
 * `__meta_ec2_private_dns_name`: the private DNS name of the instance, if available
 * `__meta_ec2_private_ip`: the private IP address of the instance, if present
@@ -1347,7 +1369,7 @@ interface.
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
 * `__meta_openstack_address_pool`: the pool of the private IP.
-* `__meta_openstack_instance_flavor`: the flavor of the OpenStack instance.
+* `__meta_openstack_instance_flavor`: the flavor name of the OpenStack instance, or the flavor ID if the flavor name isn't available.
 * `__meta_openstack_instance_id`: the OpenStack instance ID.
 * `__meta_openstack_instance_image`: the ID of the image the OpenStack instance is using.
 * `__meta_openstack_instance_name`: the OpenStack instance name.
@@ -1355,7 +1377,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_openstack_private_ip`: the private IP of the OpenStack instance.
 * `__meta_openstack_project_id`: the project (tenant) owning this instance.
 * `__meta_openstack_public_ip`: the public IP of the OpenStack instance.
-* `__meta_openstack_tag_<tagkey>`: each tag value of the instance.
+* `__meta_openstack_tag_<key>`: each metadata item of the instance, with any unsupported characters converted to an underscore.
 * `__meta_openstack_user_id`: the user account owning the tenant.
 
 See below for the configuration options for OpenStack discovery:
@@ -1465,6 +1487,7 @@ For OVHcloud's [public cloud instances](https://www.ovhcloud.com/en/public-cloud
 * `__meta_ovhcloud_dedicated_server_ipv6`: the IPv6 of the server
 * `__meta_ovhcloud_dedicated_server_link_speed`: the link speed of the server
 * `__meta_ovhcloud_dedicated_server_name`: the name of the server
+* `__meta_ovhcloud_dedicated_server_no_intervention`: whether datacenter intervention is disabled for the server
 * `__meta_ovhcloud_dedicated_server_os`: the operating system of the server
 * `__meta_ovhcloud_dedicated_server_rack`: the rack of the server
 * `__meta_ovhcloud_dedicated_server_reverse`: the reverse DNS name of the server
@@ -1595,7 +1618,16 @@ and serves as an interface to plug in custom service discovery mechanisms.
 
 It reads a set of files containing a list of zero or more
 `<static_config>`s. Changes to all defined files are detected via disk watches
-and applied immediately. Files may be provided in YAML or JSON format. Only
+and applied immediately. 
+
+While those individual files are watched for changes,
+the parent directory is also watched implicitly. This is to handle [atomic
+renaming](https://github.com/fsnotify/fsnotify/blob/c1467c02fba575afdb5f4201072ab8403bbf00f4/README.md?plain=1#L128) efficiently and to detect new files that match the configured globs.
+This may cause issues if the parent directory contains a large number of other files,
+as each of these files will be watched too, even though the events related
+to them are not relevant.
+
+Files may be provided in YAML or JSON format. Only
 changes resulting in well-formed target groups are applied.
 
 Files must contain a list of static configs, using these formats:
@@ -2116,11 +2148,14 @@ Available meta labels:
   * `__meta_kubernetes_endpointslice_address_target_kind`: Kind of the referenced object.
   * `__meta_kubernetes_endpointslice_address_target_name`: Name of referenced object.
   * `__meta_kubernetes_endpointslice_address_type`: The ip protocol family of the address of the target.
-  * `__meta_kubernetes_endpointslice_endpoint_conditions_ready`:  Set to `true` or `false` for the referenced endpoint's ready state.
-  * `__meta_kubernetes_endpointslice_endpoint_conditions_serving`:  Set to `true` or `false` for the referenced endpoint's serving state.
-  * `__meta_kubernetes_endpointslice_endpoint_conditions_terminating`:  Set to `true` or `false` for the referenced endpoint's terminating state.
-  * `__meta_kubernetes_endpointslice_endpoint_topology_kubernetes_io_hostname`:  Name of the node hosting the referenced endpoint.
+  * `__meta_kubernetes_endpointslice_endpoint_conditions_ready`: Set to `true` or `false` for the referenced endpoint's ready state.
+  * `__meta_kubernetes_endpointslice_endpoint_conditions_serving`: Set to `true` or `false` for the referenced endpoint's serving state.
+  * `__meta_kubernetes_endpointslice_endpoint_conditions_terminating`: Set to `true` or `false` for the referenced endpoint's terminating state.
+  * `__meta_kubernetes_endpointslice_endpoint_topology_kubernetes_io_hostname`: Name of the node hosting the referenced endpoint.
   * `__meta_kubernetes_endpointslice_endpoint_topology_present_kubernetes_io_hostname`: Flag that shows if the referenced object has a kubernetes.io/hostname annotation.
+  * `__meta_kubernetes_endpointslice_endpoint_hostname`: Hostname of the referenced endpoint.
+  * `__meta_kubernetes_endpointslice_endpoint_node_name`: Name of the Node hosting the referenced endpoint.
+  * `__meta_kubernetes_endpointslice_endpoint_zone`: Zone the referenced endpoint exists in (only available when using the `discovery.k8s.io/v1` API group).
   * `__meta_kubernetes_endpointslice_port`: Port of the referenced endpoint.
   * `__meta_kubernetes_endpointslice_port_name`: Named port of the referenced endpoint.
   * `__meta_kubernetes_endpointslice_port_protocol`: Protocol of the referenced endpoint.
@@ -2447,11 +2482,15 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_linode_private_ipv4`: the private IPv4 of the linode instance
 * `__meta_linode_public_ipv4`: the public IPv4 of the linode instance
 * `__meta_linode_public_ipv6`: the public IPv6 of the linode instance
+* `__meta_linode_private_ipv4_rdns`: the reverse DNS for the first private IPv4 of the linode instance
+* `__meta_linode_public_ipv4_rdns`: the reverse DNS for the first public IPv4 of the linode instance
+* `__meta_linode_public_ipv6_rdns`: the reverse DNS for the first public IPv6 of the linode instance
 * `__meta_linode_region`: the region of the linode instance
 * `__meta_linode_type`: the type of the linode instance
 * `__meta_linode_status`: the status of the linode instance
 * `__meta_linode_tags`: a list of tags of the linode instance joined by the tag separator
 * `__meta_linode_group`: the display group a linode instance is a member of
+* `__meta_linode_gpus`: the number of GPU's of the linode instance 
 * `__meta_linode_hypervisor`: the virtualization software powering the linode instance
 * `__meta_linode_backups`: the backup service status of the linode instance
 * `__meta_linode_specs_disk_bytes`: the amount of storage space the linode instance has access to
@@ -2459,6 +2498,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_linode_specs_vcpus`: the number of VCPUS this linode has access to
 * `__meta_linode_specs_transfer_bytes`: the amount of network transfer the linode instance is allotted each month
 * `__meta_linode_extra_ips`: a list of all extra IPv4 addresses assigned to the linode instance joined by the tag separator
+* `__meta_linode_ipv6_ranges`: a list of IPv6 ranges with mask assigned to the linode instance joined by the tag separator
 
 ```yaml
 # Authentication information used to authenticate to the API server.
@@ -2488,6 +2528,9 @@ authorization:
 # Cannot be used at the same time as basic_auth or authorization.
 oauth2:
   [ <oauth2> ]
+
+# Optional region to filter on.
+[ region: <string> ]
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
@@ -2939,9 +2982,10 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_scaleway_instance_type`: commercial type of the server
 * `__meta_scaleway_instance_zone`: the zone of the server (ex: `fr-par-1`, complete list [here](https://developers.scaleway.com/en/products/instance/api/#introduction))
 
-This role uses the private IPv4 address by default. This can be
+This role uses the first address it finds in the following order: private IPv4, public IPv4, public IPv6. This can be
 changed with relabeling, as demonstrated in [the Prometheus scaleway-sd
 configuration file](/documentation/examples/prometheus-scaleway.yml).
+Should an instance have no address before relabeling, it will not be added to the target list and you will not be able to relabel it.
 
 #### Baremetal role
 
@@ -3226,7 +3270,7 @@ are set to the scheme and metrics path of the target respectively. The `__param_
 label is set to the value of the first passed URL parameter called `<name>`.
 
 The `__scrape_interval__` and `__scrape_timeout__` labels are set to the target's
-interval and timeout. This is **experimental** and could change in the future.
+interval and timeout.
 
 Additional labels prefixed with `__meta_` may be available during the
 relabeling phase. They are set by the service discovery mechanism that provided
@@ -3357,8 +3401,8 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
-# Optionally configures AWS's Signature Verification 4 signing process to
-# sign requests. Cannot be set at the same time as basic_auth, authorization, or oauth2.
+# Optionally configures AWS's Signature Verification 4 signing process to sign requests.
+# Cannot be set at the same time as basic_auth, authorization, oauth2, azuread or google_iam.
 # To use the default credentials from the AWS SDK, use `sigv4: {}`.
 sigv4:
   # The AWS region. If blank, the region from the default credentials chain
@@ -3518,6 +3562,10 @@ static_configs:
 # List of Alertmanager relabel configurations.
 relabel_configs:
   [ - <relabel_config> ... ]
+
+# List of alert relabel configurations.
+alert_relabel_configs:
+  [ - <relabel_config> ... ]
 ```
 
 ### `<remote_write>`
@@ -3532,6 +3580,17 @@ this functionality.
 ```yaml
 # The URL of the endpoint to send samples to.
 url: <string>
+
+# protobuf message to use when writing to the remote write endpoint.
+#
+# * The `prometheus.WriteRequest` represents the message introduced in Remote Write 1.0, which
+# will be deprecated eventually.
+# * The `io.prometheus.write.v2.Request` was introduced in Remote Write 2.0 and replaces the former,
+# by improving efficiency and sending metadata, created timestamp and native histograms by default.
+#
+# Before changing this value, consult with your remote storage provider (or test) what message it supports.
+# Read more on https://prometheus.io/docs/specs/remote_write_spec_2_0/#io-prometheus-write-v2-request
+[ protobuf_message: <prometheus.WriteRequest | io.prometheus.write.v2.Request> | default = prometheus.WriteRequest ]
 
 # Timeout for requests to the remote write endpoint.
 [ remote_timeout: <duration> | default = 30s ]
@@ -3554,6 +3613,7 @@ write_relabel_configs:
 [ send_exemplars: <boolean> | default = false ]
 
 # Enables sending of native histograms, also known as sparse histograms, over remote write.
+# For the `io.prometheus.write.v2.Request` message, this option is noop (always true).
 [ send_native_histograms: <boolean> | default = false ]
 
 # Sets the `Authorization` header on every remote write request with the
@@ -3567,7 +3627,7 @@ basic_auth:
 # Optional `Authorization` header configuration.
 authorization:
   # Sets the authentication type.
-  [ type: <string> | default: Bearer ]
+  [ type: <string> | default = Bearer ]
   # Sets the credentials. It is mutually exclusive with
   # `credentials_file`.
   [ credentials: <secret> ]
@@ -3595,12 +3655,12 @@ sigv4:
   [ role_arn: <string> ]
 
 # Optional OAuth 2.0 configuration.
-# Cannot be used at the same time as basic_auth, authorization, sigv4, or azuread.
+# Cannot be used at the same time as basic_auth, authorization, sigv4, azuread or google_iam.
 oauth2:
   [ <oauth2> ]
 
 # Optional AzureAD configuration.
-# Cannot be used at the same time as basic_auth, authorization, oauth2, or sigv4.
+# Cannot be used at the same time as basic_auth, authorization, oauth2, sigv4 or google_iam.
 azuread:
   # The Azure Cloud. Options are 'AzurePublic', 'AzureChina', or 'AzureGovernment'.
   [ cloud: <string> | default = AzurePublic ]
@@ -3615,6 +3675,19 @@ azuread:
       [ client_secret: <string> ]
       [ tenant_id: <string> ] ]
 
+  # Azure SDK auth.
+  # See https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication
+  [ sdk:
+      [ tenant_id: <string> ] ]
+
+# WARNING: Remote write is NOT SUPPORTED by Google Cloud. This configuration is reserved for future use.
+# Optional Google Cloud Monitoring configuration.
+# Cannot be used at the same time as basic_auth, authorization, oauth2, sigv4 or azuread.
+# To use the default credentials from the Google Cloud SDK, use `google_iam: {}`.
+google_iam:
+  # Service account key with monitoring write permessions.
+  credentials_file: <file_name>
+
 # Configures the remote write request's TLS settings.
 tls_config:
   [ <tls_config> ]
@@ -3626,7 +3699,7 @@ tls_config:
 # contain port numbers.
 [ no_proxy: <string> ]
 # Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
-[ proxy_from_environment: <boolean> | default: false ]
+[ proxy_from_environment: <boolean> | default = false ]
 # Specifies headers to send to proxies during CONNECT requests.
 [ proxy_connect_header:
   [ <string>: [<secret>, ...] ] ]
@@ -3635,7 +3708,7 @@ tls_config:
 [ follow_redirects: <boolean> | default = true ]
 
 # Whether to enable HTTP2.
-[ enable_http2: <boolean> | default: true ]
+[ enable_http2: <boolean> | default = true ]
 
 # Configures the queue used to write to remote storage.
 queue_config:
@@ -3643,14 +3716,15 @@ queue_config:
   # samples from the WAL. It is recommended to have enough capacity in each
   # shard to buffer several requests to keep throughput up while processing
   # occasional slow remote requests.
-  [ capacity: <int> | default = 2500 ]
+  [ capacity: <int> | default = 10000 ]
   # Maximum number of shards, i.e. amount of concurrency.
-  [ max_shards: <int> | default = 200 ]
+  [ max_shards: <int> | default = 50 ]
   # Minimum number of shards, i.e. amount of concurrency.
   [ min_shards: <int> | default = 1 ]
   # Maximum number of samples per send.
-  [ max_samples_per_send: <int> | default = 500]
-  # Maximum time a sample will wait in buffer.
+  [ max_samples_per_send: <int> | default = 2000]
+  # Maximum time a sample will wait for a send. The sample might wait less
+  # if the buffer is full. Further time might pass due to potential retries.
   [ batch_send_deadline: <duration> | default = 5s ]
   # Initial retry delay. Gets doubled for every retry.
   [ min_backoff: <duration> | default = 30ms ]
@@ -3664,7 +3738,10 @@ queue_config:
   # which means that all samples are sent.
   [ sample_age_limit: <duration> | default = 0s ]
 
-# Configures the sending of series metadata to remote storage.
+# Configures the sending of series metadata to remote storage
+# if the `prometheus.WriteRequest` message was chosen. When
+# `io.prometheus.write.v2.Request` is used, metadata is always sent.
+#
 # Metadata configuration is subject to change at any point
 # or be removed in future releases.
 metadata_config:
@@ -3778,6 +3855,10 @@ NOTE: Out-of-order ingestion is an experimental feature, but you do not need any
 # into the TSDB, i.e. it is an in-order sample or an out-of-order/out-of-bounds sample
 # that is within the out-of-order window, or (b) too-old, i.e. not in-order
 # and before the out-of-order window.
+#
+# When out_of_order_time_window is greater than 0, it also affects experimental agent. It allows 
+# the agent's WAL to accept out-of-order samples that fall within the specified time window relative 
+# to the timestamp of the last appended sample for the same series.
 [ out_of_order_time_window: <duration> | default = 0s ]
 ```
 

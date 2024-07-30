@@ -76,6 +76,7 @@ const (
 	globLabelLimit            = 30
 	globLabelNameLengthLimit  = 200
 	globLabelValueLengthLimit = 200
+	globalGoGC                = 42
 )
 
 var expectedConf = &Config{
@@ -96,6 +97,10 @@ var expectedConf = &Config{
 		ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
 	},
 
+	Runtime: RuntimeConfig{
+		GoGC: globalGoGC,
+	},
+
 	RuleFiles: []string{
 		filepath.FromSlash("testdata/first.rules"),
 		filepath.FromSlash("testdata/my/*.rules"),
@@ -103,9 +108,10 @@ var expectedConf = &Config{
 
 	RemoteWriteConfigs: []*RemoteWriteConfig{
 		{
-			URL:           mustParseURL("http://remote1/push"),
-			RemoteTimeout: model.Duration(30 * time.Second),
-			Name:          "drop_expensive",
+			URL:             mustParseURL("http://remote1/push"),
+			ProtobufMessage: RemoteWriteProtoMsgV1,
+			RemoteTimeout:   model.Duration(30 * time.Second),
+			Name:            "drop_expensive",
 			WriteRelabelConfigs: []*relabel.Config{
 				{
 					SourceLabels: model.LabelNames{"__name__"},
@@ -132,11 +138,12 @@ var expectedConf = &Config{
 			},
 		},
 		{
-			URL:            mustParseURL("http://remote2/push"),
-			RemoteTimeout:  model.Duration(30 * time.Second),
-			QueueConfig:    DefaultQueueConfig,
-			MetadataConfig: DefaultMetadataConfig,
-			Name:           "rw_tls",
+			URL:             mustParseURL("http://remote2/push"),
+			ProtobufMessage: RemoteWriteProtoMsgV2,
+			RemoteTimeout:   model.Duration(30 * time.Second),
+			QueueConfig:     DefaultQueueConfig,
+			MetadataConfig:  DefaultMetadataConfig,
+			Name:            "rw_tls",
 			HTTPClientConfig: config.HTTPClientConfig{
 				TLSConfig: config.TLSConfig{
 					CertFile: filepath.FromSlash("testdata/valid_cert_file"),
@@ -146,6 +153,12 @@ var expectedConf = &Config{
 				EnableHTTP2:     true,
 			},
 			Headers: map[string]string{"name": "value"},
+		},
+	},
+
+	OTLPConfig: OTLPConfig{
+		PromoteResourceAttributes: []string{
+			"k8s.cluster.name", "k8s.job.name", "k8s.namespace.name",
 		},
 	},
 
@@ -993,6 +1006,7 @@ var expectedConf = &Config{
 					HostNetworkingHost: "localhost",
 					RefreshInterval:    model.Duration(60 * time.Second),
 					HTTPClientConfig:   config.DefaultHTTPClientConfig,
+					MatchFirstNetwork:  true,
 				},
 			},
 		},
@@ -1463,6 +1477,26 @@ func TestRemoteWriteRetryOnRateLimit(t *testing.T) {
 	require.False(t, got.RemoteWriteConfigs[1].QueueConfig.RetryOnRateLimit)
 }
 
+func TestOTLPSanitizeResourceAttributes(t *testing.T) {
+	t.Run("good config", func(t *testing.T) {
+		want, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_resource_attributes.good.yml"), false, false, log.NewNopLogger())
+		require.NoError(t, err)
+
+		out, err := yaml.Marshal(want)
+		require.NoError(t, err)
+		var got Config
+		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+
+		require.Equal(t, []string{"k8s.cluster.name", "k8s.job.name", "k8s.namespace.name"}, got.OTLPConfig.PromoteResourceAttributes)
+	})
+
+	t.Run("bad config", func(t *testing.T) {
+		_, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_resource_attributes.bad.yml"), false, false, log.NewNopLogger())
+		require.ErrorContains(t, err, `duplicated promoted OTel resource attribute "k8s.job.name"`)
+		require.ErrorContains(t, err, `empty promoted OTel resource attribute`)
+	})
+}
+
 func TestLoadConfig(t *testing.T) {
 	// Parse a valid file that sets a global scrape timeout. This tests whether parsing
 	// an overwritten default field in the global config permanently changes the default.
@@ -1792,7 +1826,11 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "remote_write_authorization_header.bad.yml",
-		errMsg:   `authorization header must be changed via the basic_auth, authorization, oauth2, sigv4, or azuread parameter`,
+		errMsg:   `authorization header must be changed via the basic_auth, authorization, oauth2, sigv4, azuread or google_iam parameter`,
+	},
+	{
+		filename: "remote_write_wrong_msg.bad.yml",
+		errMsg:   `invalid protobuf_message value: unknown remote write protobuf message io.prometheus.writet.v2.Request, supported: prometheus.WriteRequest, io.prometheus.write.v2.Request`,
 	},
 	{
 		filename: "remote_write_url_missing.bad.yml",
@@ -1840,7 +1878,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "azure_authentication_method.bad.yml",
-		errMsg:   "unknown authentication_type \"invalid\". Supported types are \"OAuth\" or \"ManagedIdentity\"",
+		errMsg:   "unknown authentication_type \"invalid\". Supported types are \"OAuth\", \"ManagedIdentity\" or \"SDK\"",
 	},
 	{
 		filename: "azure_bearertoken_basicauth.bad.yml",
@@ -2081,6 +2119,7 @@ func TestEmptyGlobalBlock(t *testing.T) {
 	c, err := Load("global:\n", false, log.NewNopLogger())
 	require.NoError(t, err)
 	exp := DefaultConfig
+	exp.Runtime = DefaultRuntimeConfig
 	require.Equal(t, exp, *c)
 }
 

@@ -14,7 +14,7 @@
 package relabel
 
 import (
-	"fmt"
+	"strconv"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -657,7 +657,7 @@ func TestRelabelValidate(t *testing.T) {
 		},
 	}
 	for i, test := range tests {
-		t.Run(fmt.Sprint(i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			err := test.config.Validate()
 			if test.expected == "" {
 				require.NoError(t, err)
@@ -850,4 +850,66 @@ func BenchmarkRelabel(b *testing.B) {
 			}
 		})
 	}
+}
+
+func TestConfig_UnmarshalThenMarshal(t *testing.T) {
+	tests := []struct {
+		name      string
+		inputYaml string
+	}{
+		{
+			name: "Values provided",
+			inputYaml: `source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_port]
+separator: ;
+regex: \\d+
+target_label: __meta_kubernetes_pod_container_port_number
+replacement: $1
+action: replace
+`,
+		},
+		{
+			name: "No regex provided",
+			inputYaml: `source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_port]
+separator: ;
+target_label: __meta_kubernetes_pod_container_port_number
+replacement: $1
+action: keepequal
+`,
+		},
+		{
+			name: "Default regex provided",
+			inputYaml: `source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_port]
+separator: ;
+regex: (.*)
+target_label: __meta_kubernetes_pod_container_port_number
+replacement: $1
+action: replace
+`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			unmarshalled := Config{}
+			err := yaml.Unmarshal([]byte(test.inputYaml), &unmarshalled)
+			require.NoError(t, err)
+
+			marshalled, err := yaml.Marshal(&unmarshalled)
+			require.NoError(t, err)
+
+			require.Equal(t, test.inputYaml, string(marshalled))
+		})
+	}
+}
+
+func TestRegexp_ShouldMarshalAndUnmarshalZeroValue(t *testing.T) {
+	var zero Regexp
+
+	marshalled, err := yaml.Marshal(&zero)
+	require.NoError(t, err)
+	require.Equal(t, "null\n", string(marshalled))
+
+	var unmarshalled Regexp
+	err = yaml.Unmarshal(marshalled, &unmarshalled)
+	require.NoError(t, err)
+	require.Nil(t, unmarshalled.Regexp)
 }

@@ -23,12 +23,14 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -85,8 +87,69 @@ func TestAlertingRuleState(t *testing.T) {
 	}
 }
 
+func TestAlertingRuleTemplateWithHistogram(t *testing.T) {
+	h := histogram.FloatHistogram{
+		Schema:        0,
+		Count:         30,
+		Sum:           1111.1,
+		ZeroThreshold: 0.001,
+		ZeroCount:     2,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 1},
+			{Offset: 1, Length: 5},
+		},
+		PositiveBuckets: []float64{1, 1, 2, 1, 1, 1},
+		NegativeSpans: []histogram.Span{
+			{Offset: 1, Length: 4},
+			{Offset: 4, Length: 3},
+		},
+		NegativeBuckets: []float64{-2, 2, 2, 7, 5, 5, 2},
+	}
+
+	q := func(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
+		return []promql.Sample{{H: &h}}, nil
+	}
+
+	expr, err := parser.ParseExpr("foo")
+	require.NoError(t, err)
+
+	rule := NewAlertingRule(
+		"HistogramAsValue",
+		expr,
+		time.Minute,
+		0,
+		labels.FromStrings("histogram", "{{ $value }}"),
+		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
+	)
+
+	evalTime := time.Now()
+	res, err := rule.Eval(context.TODO(), 0, evalTime, q, nil, 0)
+	require.NoError(t, err)
+
+	require.Len(t, res, 2)
+	for _, smpl := range res {
+		smplName := smpl.Metric.Get("__name__")
+		if smplName == "ALERTS" {
+			result := promql.Sample{
+				Metric: labels.FromStrings(
+					"__name__", "ALERTS",
+					"alertname", "HistogramAsValue",
+					"alertstate", "pending",
+					"histogram", h.String(),
+				),
+				T: timestamp.FromTime(evalTime),
+				F: 1,
+			}
+			testutil.RequireEqual(t, result, smpl)
+		} else {
+			// If not 'ALERTS', it has to be 'ALERTS_FOR_STATE'.
+			require.Equal(t, "ALERTS_FOR_STATE", smplName)
+		}
+	}
+}
+
 func TestAlertingRuleLabelsUpdate(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70 stale
 	`)
@@ -167,7 +230,7 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 		t.Logf("case %d", i)
 		evalTime := baseTime.Add(time.Duration(i) * time.Minute)
 		result[0].T = timestamp.FromTime(evalTime)
-		res, err := rule.Eval(context.TODO(), evalTime, EngineQueryFunc(testEngine, storage), nil, 0)
+		res, err := rule.Eval(context.TODO(), 0, evalTime, EngineQueryFunc(testEngine, storage), nil, 0)
 		require.NoError(t, err)
 
 		var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
@@ -184,13 +247,13 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 		testutil.RequireEqual(t, result, filteredRes)
 	}
 	evalTime := baseTime.Add(time.Duration(len(results)) * time.Minute)
-	res, err := rule.Eval(context.TODO(), evalTime, EngineQueryFunc(testEngine, storage), nil, 0)
+	res, err := rule.Eval(context.TODO(), 0, evalTime, EngineQueryFunc(testEngine, storage), nil, 0)
 	require.NoError(t, err)
 	require.Empty(t, res)
 }
 
 func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70
 	`)
@@ -252,7 +315,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 
 	var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
 	res, err := ruleWithoutExternalLabels.Eval(
-		context.TODO(), evalTime, EngineQueryFunc(testEngine, storage), nil, 0,
+		context.TODO(), 0, evalTime, EngineQueryFunc(testEngine, storage), nil, 0,
 	)
 	require.NoError(t, err)
 	for _, smpl := range res {
@@ -266,7 +329,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 	}
 
 	res, err = ruleWithExternalLabels.Eval(
-		context.TODO(), evalTime, EngineQueryFunc(testEngine, storage), nil, 0,
+		context.TODO(), 0, evalTime, EngineQueryFunc(testEngine, storage), nil, 0,
 	)
 	require.NoError(t, err)
 	for _, smpl := range res {
@@ -283,7 +346,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 }
 
 func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70
 	`)
@@ -345,7 +408,7 @@ func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
 
 	var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
 	res, err := ruleWithoutExternalURL.Eval(
-		context.TODO(), evalTime, EngineQueryFunc(testEngine, storage), nil, 0,
+		context.TODO(), 0, evalTime, EngineQueryFunc(testEngine, storage), nil, 0,
 	)
 	require.NoError(t, err)
 	for _, smpl := range res {
@@ -359,7 +422,7 @@ func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
 	}
 
 	res, err = ruleWithExternalURL.Eval(
-		context.TODO(), evalTime, EngineQueryFunc(testEngine, storage), nil, 0,
+		context.TODO(), 0, evalTime, EngineQueryFunc(testEngine, storage), nil, 0,
 	)
 	require.NoError(t, err)
 	for _, smpl := range res {
@@ -376,7 +439,7 @@ func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
 }
 
 func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70
 	`)
@@ -414,7 +477,7 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 
 	var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
 	res, err := rule.Eval(
-		context.TODO(), evalTime, EngineQueryFunc(testEngine, storage), nil, 0,
+		context.TODO(), 0, evalTime, EngineQueryFunc(testEngine, storage), nil, 0,
 	)
 	require.NoError(t, err)
 	for _, smpl := range res {
@@ -430,7 +493,7 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 }
 
 func TestAlertingRuleQueryInTemplate(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			http_requests{job="app-server", instance="0"}	70 85 70 70
 	`)
@@ -481,7 +544,7 @@ instance: {{ $v.Labels.instance }}, value: {{ printf "%.0f" $v.Value }};
 		close(getDoneCh)
 	}()
 	_, err = ruleWithQueryInTemplate.Eval(
-		context.TODO(), evalTime, slowQueryFunc, nil, 0,
+		context.TODO(), 0, evalTime, slowQueryFunc, nil, 0,
 	)
 	require.NoError(t, err)
 }
@@ -533,13 +596,13 @@ func TestAlertingRuleDuplicate(t *testing.T) {
 		"",
 		true, log.NewNopLogger(),
 	)
-	_, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil, 0)
+	_, err := rule.Eval(ctx, 0, now, EngineQueryFunc(engine, storage), nil, 0)
 	require.Error(t, err)
 	require.EqualError(t, err, "vector contains metrics with the same labelset after applying alert labels")
 }
 
 func TestAlertingRuleLimit(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			metric{label="1"} 1
 			metric{label="2"} 1
@@ -581,7 +644,7 @@ func TestAlertingRuleLimit(t *testing.T) {
 	evalTime := time.Unix(0, 0)
 
 	for _, test := range tests {
-		switch _, err := rule.Eval(context.TODO(), evalTime, EngineQueryFunc(testEngine, storage), nil, test.limit); {
+		switch _, err := rule.Eval(context.TODO(), 0, evalTime, EngineQueryFunc(testEngine, storage), nil, test.limit); {
 		case err != nil:
 			require.EqualError(t, err, test.err)
 		case test.err != "":
@@ -648,19 +711,17 @@ func TestQueryForStateSeries(t *testing.T) {
 			labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
 		)
 
-		alert := &Alert{
-			State:       0,
-			Labels:      labels.EmptyLabels(),
-			Annotations: labels.EmptyLabels(),
-			Value:       0,
-			ActiveAt:    time.Time{},
-			FiredAt:     time.Time{},
-			ResolvedAt:  time.Time{},
-			LastSentAt:  time.Time{},
-			ValidUntil:  time.Time{},
-		}
+		sample := rule.forStateSample(nil, time.Time{}, 0)
 
-		series, err := rule.QueryforStateSeries(context.Background(), alert, querier)
+		seriesSet, err := rule.QueryForStateSeries(context.Background(), querier)
+
+		var series storage.Series
+		for seriesSet.Next() {
+			if seriesSet.At().Labels().Len() == sample.Metric.Len() {
+				series = seriesSet.At()
+				break
+			}
+		}
 
 		require.Equal(t, tst.expectedSeries, series)
 		require.Equal(t, tst.expectedError, err)
@@ -723,7 +784,7 @@ func TestSendAlertsDontAffectActiveAlerts(t *testing.T) {
 }
 
 func TestKeepFiringFor(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70 10x5
 	`)
@@ -810,7 +871,7 @@ func TestKeepFiringFor(t *testing.T) {
 		t.Logf("case %d", i)
 		evalTime := baseTime.Add(time.Duration(i) * time.Minute)
 		result[0].T = timestamp.FromTime(evalTime)
-		res, err := rule.Eval(context.TODO(), evalTime, EngineQueryFunc(testEngine, storage), nil, 0)
+		res, err := rule.Eval(context.TODO(), 0, evalTime, EngineQueryFunc(testEngine, storage), nil, 0)
 		require.NoError(t, err)
 
 		var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
@@ -827,13 +888,13 @@ func TestKeepFiringFor(t *testing.T) {
 		testutil.RequireEqual(t, result, filteredRes)
 	}
 	evalTime := baseTime.Add(time.Duration(len(results)) * time.Minute)
-	res, err := rule.Eval(context.TODO(), evalTime, EngineQueryFunc(testEngine, storage), nil, 0)
+	res, err := rule.Eval(context.TODO(), 0, evalTime, EngineQueryFunc(testEngine, storage), nil, 0)
 	require.NoError(t, err)
 	require.Empty(t, res)
 }
 
 func TestPendingAndKeepFiringFor(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 10x10
 	`)
@@ -864,7 +925,7 @@ func TestPendingAndKeepFiringFor(t *testing.T) {
 
 	baseTime := time.Unix(0, 0)
 	result.T = timestamp.FromTime(baseTime)
-	res, err := rule.Eval(context.TODO(), baseTime, EngineQueryFunc(testEngine, storage), nil, 0)
+	res, err := rule.Eval(context.TODO(), 0, baseTime, EngineQueryFunc(testEngine, storage), nil, 0)
 	require.NoError(t, err)
 
 	require.Len(t, res, 2)
@@ -879,7 +940,7 @@ func TestPendingAndKeepFiringFor(t *testing.T) {
 	}
 
 	evalTime := baseTime.Add(time.Minute)
-	res, err = rule.Eval(context.TODO(), evalTime, EngineQueryFunc(testEngine, storage), nil, 0)
+	res, err = rule.Eval(context.TODO(), 0, evalTime, EngineQueryFunc(testEngine, storage), nil, 0)
 	require.NoError(t, err)
 	require.Empty(t, res)
 }
@@ -913,7 +974,7 @@ func TestAlertingEvalWithOrigin(t *testing.T) {
 		true, log.NewNopLogger(),
 	)
 
-	_, err = rule.Eval(ctx, now, func(ctx context.Context, qs string, _ time.Time) (promql.Vector, error) {
+	_, err = rule.Eval(ctx, 0, now, func(ctx context.Context, qs string, _ time.Time) (promql.Vector, error) {
 		detail = FromOriginContext(ctx)
 		return nil, nil
 	}, nil, 0)
@@ -962,4 +1023,25 @@ func TestAlertingRule_SetNoDependencyRules(t *testing.T) {
 
 	rule.SetNoDependencyRules(true)
 	require.True(t, rule.NoDependencyRules())
+}
+
+func TestAlertingRule_ActiveAlertsCount(t *testing.T) {
+	rule := NewAlertingRule(
+		"TestRule",
+		nil,
+		time.Minute,
+		0,
+		labels.FromStrings("severity", "critical"),
+		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
+	)
+
+	require.Equal(t, 0, rule.ActiveAlertsCount())
+
+	// Set an active alert.
+	lbls := labels.FromStrings("a1", "1")
+	h := lbls.Hash()
+	al := &Alert{State: StateFiring, Labels: lbls, ActiveAt: time.Now()}
+	rule.active[h] = al
+
+	require.Equal(t, 1, rule.ActiveAlertsCount())
 }
