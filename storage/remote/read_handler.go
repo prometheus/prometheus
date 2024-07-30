@@ -47,11 +47,11 @@ type readHandler struct {
 // NewReadHandler creates a http.Handler that accepts remote read requests and
 // writes them to the provided queryable.
 func NewReadHandler(logger log.Logger, r prometheus.Registerer, queryable storage.SampleAndChunkQueryable, config func() config.Config, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame int) http.Handler {
-	waitDuration := prometheus.NewCounter(prometheus.CounterOpts{
+	concurrencyLimitHit := prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: "prometheus",
 		Subsystem: "api",
-		Name:      "remote_read_wait_duration_seconds_total",
-		Help:      "Total number of seconds spent waiting at the query gate before remote read query execution",
+		Name:      "remote_read_concurrency_limit_hit_total",
+		Help:      "Total number of query gate concurrency limit hits while trying to execute remote read query",
 	})
 
 	h := &readHandler{
@@ -59,7 +59,7 @@ func NewReadHandler(logger log.Logger, r prometheus.Registerer, queryable storag
 		queryable:                 queryable,
 		config:                    config,
 		remoteReadSampleLimit:     remoteReadSampleLimit,
-		remoteReadGate:            gate.New(remoteReadConcurrencyLimit, &waitDuration),
+		remoteReadGate:            gate.New(remoteReadConcurrencyLimit, &concurrencyLimitHit),
 		remoteReadMaxBytesInFrame: remoteReadMaxBytesInFrame,
 		queries: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: "prometheus",
@@ -70,7 +70,7 @@ func NewReadHandler(logger log.Logger, r prometheus.Registerer, queryable storag
 		marshalPool: &sync.Pool{},
 	}
 	if r != nil {
-		r.MustRegister(h.queries, waitDuration)
+		r.MustRegister(h.queries, concurrencyLimitHit)
 	}
 	return h
 }
