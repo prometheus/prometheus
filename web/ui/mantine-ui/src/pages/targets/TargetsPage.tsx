@@ -1,4 +1,12 @@
-import { ActionIcon, Box, Group, Input, Select, Skeleton } from "@mantine/core";
+import {
+  ActionIcon,
+  Box,
+  Group,
+  Input,
+  Select,
+  Skeleton,
+  TextInput,
+} from "@mantine/core";
 import {
   IconLayoutNavbarCollapse,
   IconLayoutNavbarExpand,
@@ -13,6 +21,7 @@ import { useAppDispatch, useAppSelector } from "../../state/hooks";
 import {
   setCollapsedPools,
   setHealthFilter,
+  setSearchFilter,
   setSelectedPool,
 } from "../../state/targetsPageSlice";
 import ScrapePoolList from "./ScrapePoolsList";
@@ -42,9 +51,8 @@ export default function TargetsPage() {
     }
   }, [dispatch]);
 
-  const { selectedPool, healthFilter, collapsedPools } = useAppSelector(
-    (state) => state.targetsPage
-  );
+  const { selectedPool, healthFilter, searchFilter, collapsedPools } =
+    useAppSelector((state) => state.targetsPage);
 
   let poolToShow = selectedPool;
   let limitedDueToManyPools = false;
@@ -77,11 +85,15 @@ export default function TargetsPage() {
           values={healthFilter}
           onChange={(values) => dispatch(setHealthFilter(values))}
         />
-        <Input
+        <TextInput
           flex={1}
           leftSection={<IconSearch size={14} />}
           placeholder="Filter by endpoint or labels"
-        ></Input>
+          value={searchFilter}
+          onChange={(event) =>
+            dispatch(setSearchFilter(event.currentTarget.value))
+          }
+        ></TextInput>
         <ActionIcon
           size="input-sm"
           title={

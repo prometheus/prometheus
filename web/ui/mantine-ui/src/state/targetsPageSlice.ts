@@ -7,6 +7,7 @@ export const localStorageKeyTargetHealthFilter = "targetsPage.healthFilter";
 interface TargetsPage {
   selectedPool: string | null;
   healthFilter: string[];
+  searchFilter: string;
   collapsedPools: string[];
 }
 
@@ -16,6 +17,7 @@ const initialState: TargetsPage = {
     localStorageKeyTargetHealthFilter,
     []
   ),
+  searchFilter: "",
   collapsedPools: initializeFromLocalStorage<string[]>(
     localStorageKeyCollapsedPools,
     []
@@ -32,13 +34,20 @@ export const targetsPageSlice = createSlice({
     setHealthFilter: (state, { payload }: PayloadAction<string[]>) => {
       state.healthFilter = payload;
     },
+    setSearchFilter: (state, { payload }: PayloadAction<string>) => {
+      state.searchFilter = payload;
+    },
     setCollapsedPools: (state, { payload }: PayloadAction<string[]>) => {
       state.collapsedPools = payload;
     },
   },
 });
 
-export const { setSelectedPool, setHealthFilter, setCollapsedPools } =
-  targetsPageSlice.actions;
+export const {
+  setSelectedPool,
+  setHealthFilter,
+  setSearchFilter,
+  setCollapsedPools,
+} = targetsPageSlice.actions;
 
 export default targetsPageSlice.reducer;

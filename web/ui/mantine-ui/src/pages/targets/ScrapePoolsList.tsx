@@ -1,6 +1,7 @@
 import {
   Accordion,
   Alert,
+  Anchor,
   Badge,
   Group,
   RingProgress,
@@ -8,10 +9,11 @@ import {
   Table,
   Text,
 } from "@mantine/core";
+import { KVSearch, Query, QueryNode } from "@nexucis/kvsearch";
 import { IconAlertTriangle, IconInfoCircle } from "@tabler/icons-react";
 import { useSuspenseAPIQuery } from "../../api/api";
 import { Target, TargetsResult } from "../../api/responseTypes/targets";
-import React, { FC } from "react";
+import React, { FC, useState } from "react";
 import badgeClasses from "../../Badge.module.css";
 import {
   humanizeDurationRelative,
@@ -49,10 +51,15 @@ const healthBadgeClass = (state: string) => {
   }
 };
 
+const kvSearch = new KVSearch<Target>({
+  shouldSort: true,
+  indexedKeys: ["labels", "scrapePool", ["labels", /.*/]],
+});
+
 const groupTargets = (
   poolNames: string[],
-  targets: Target[],
-  healthFilter: string[]
+  allTargets: Target[],
+  shownTargets: Target[]
 ): ScrapePools => {
   const pools: ScrapePools = {};
 
@@ -66,19 +73,12 @@ const groupTargets = (
     };
   }
 
-  for (const target of targets) {
+  for (const target of allTargets) {
     if (!pools[target.scrapePool]) {
       // TODO: Should we do better here?
       throw new Error(
         "Received target information for an unknown scrape pool, likely the list of scrape pools has changed. Please reload the page."
       );
-    }
-
-    if (
-      healthFilter.length === 0 ||
-      healthFilter.includes(target.health.toLowerCase())
-    ) {
-      pools[target.scrapePool].targets.push(target);
     }
 
     pools[target.scrapePool].count++;
@@ -96,6 +96,10 @@ const groupTargets = (
     }
   }
 
+  for (const target of shownTargets) {
+    pools[target.scrapePool].targets.push(target);
+  }
+
   return pools;
 };
 
@@ -111,6 +115,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
   limited,
 }) => {
   const dispatch = useAppDispatch();
+  const [showEmptyPools, setShowEmptyPools] = useState(true);
 
   // Based on the selected pool (if any), load the list of targets.
   const {
@@ -125,23 +130,56 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
     },
   });
 
-  const { healthFilter, collapsedPools } = useAppSelector(
+  const { healthFilter, searchFilter, collapsedPools } = useAppSelector(
     (state) => state.targetsPage
   );
+
+  const search = searchFilter.trim();
+  const healthFilteredTargets = activeTargets.filter(
+    (target) =>
+      healthFilter.length === 0 ||
+      healthFilter.includes(target.health.toLowerCase())
+  );
+  const filteredTargets =
+    search === ""
+      ? healthFilteredTargets
+      : kvSearch
+          .filter(searchFilter, healthFilteredTargets)
+          .map((value) => value.original);
 
   const allPools = groupTargets(
     selectedPool ? [selectedPool] : poolNames,
     activeTargets,
-    healthFilter
+    filteredTargets
   );
   const allPoolNames = Object.keys(allPools);
+  const shownPoolNames = showEmptyPools
+    ? allPoolNames
+    : allPoolNames.filter((pn) => allPools[pn].targets.length !== 0);
 
   return (
     <Stack>
-      {allPoolNames.length === 0 && (
-        <Alert title="No matching targets" icon={<IconInfoCircle size={14} />}>
-          No targets found that match your filter criteria.
+      {allPoolNames.length === 0 ? (
+        <Alert
+          title="No scrape pools found"
+          icon={<IconInfoCircle size={14} />}
+        >
+          No scrape pools found.
         </Alert>
+      ) : (
+        !showEmptyPools &&
+        allPoolNames.length !== shownPoolNames.length && (
+          <Alert
+            title="Hiding pools with no matching targets"
+            icon={<IconInfoCircle size={14} />}
+          >
+            Hiding {allPoolNames.length - shownPoolNames.length} empty pools due
+            to filters or no targets.
+            <Anchor ml="md" fz="1em" onClick={() => setShowEmptyPools(true)}>
+              Show empty pools
+            </Anchor>
+          </Alert>
+        )
       )}
       {limited && (
         <Alert
@@ -162,7 +200,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
           )
         }
       >
-        {allPoolNames.map((poolName) => {
+        {shownPoolNames.map((poolName) => {
           const pool = allPools[poolName];
           return (
             <Accordion.Item
@@ -208,12 +246,26 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
               <Accordion.Panel>
                 {pool.count === 0 ? (
                   <Alert title="No targets" icon={<IconInfoCircle />}>
-                    No targets in this scrape pool.
+                    No active targets in this scrape pool.
+                    <Anchor
+                      ml="md"
+                      fz="1em"
+                      onClick={() => setShowEmptyPools(false)}
+                    >
+                      Hide empty pools
+                    </Anchor>
                   </Alert>
                 ) : pool.targets.length === 0 ? (
                   <Alert title="No matching targets" icon={<IconInfoCircle />}>
                     No targets in this pool match your filter criteria (omitted{" "}
                     {pool.count} filtered targets).
+                    <Anchor
+                      ml="md"
+                      fz="1em"
+                      onClick={() => setShowEmptyPools(false)}
+                    >
+                      Hide empty pools
+                    </Anchor>
                   </Alert>
                 ) : (
                   <CustomInfiniteScroll
