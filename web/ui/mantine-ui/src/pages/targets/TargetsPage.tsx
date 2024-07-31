@@ -1,12 +1,4 @@
-import {
-  ActionIcon,
-  Box,
-  Checkbox,
-  Group,
-  Input,
-  Select,
-  Skeleton,
-} from "@mantine/core";
+import { ActionIcon, Box, Group, Input, Select, Skeleton } from "@mantine/core";
 import {
   IconLayoutNavbarCollapse,
   IconLayoutNavbarExpand,

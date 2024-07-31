@@ -22,10 +22,12 @@ const createQueryFn =
     pathPrefix,
     path,
     params,
+    recordResponseTime,
   }: {
     pathPrefix: string;
     path: string;
     params?: Record<string, string>;
+    recordResponseTime?: (time: number) => void;
   }) =>
   async ({ signal }: { signal: AbortSignal }) => {
     const queryString = params
@@ -33,6 +35,8 @@ const createQueryFn =
       : "";
 
     try {
+      const startTime = Date.now();
+
       const res = await fetch(
         `${pathPrefix}/${API_PATH}${path}${queryString}`,
         {
@@ -53,6 +57,10 @@ const createQueryFn =
       }
 
       const apiRes = (await res.json()) as APIResponse<T>;
+
+      if (recordResponseTime) {
+        recordResponseTime(Date.now() - startTime);
+      }
 
       if (apiRes.status === "error") {
         throw new Error(
@@ -84,6 +92,7 @@ type QueryOptions = {
   path: string;
   params?: Record<string, string>;
   enabled?: boolean;
+  recordResponseTime?: (time: number) => void;
 };
 
 export const useAPIQuery = <T>({
@@ -91,6 +100,7 @@ export const useAPIQuery = <T>({
   path,
   params,
   enabled,
+  recordResponseTime,
 }: QueryOptions) => {
   const { pathPrefix } = useSettings();
 
@@ -100,7 +110,7 @@ export const useAPIQuery = <T>({
     refetchOnWindowFocus: false,
     gcTime: 0,
     enabled,
-    queryFn: createQueryFn({ pathPrefix, path, params }),
+    queryFn: createQueryFn({ pathPrefix, path, params, recordResponseTime }),
   });
 };
 

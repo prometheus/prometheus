@@ -84,26 +84,7 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
           </Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel pt="sm" value="table">
-          <Stack gap="lg" mt="sm">
-            <TimeInput
-              time={panel.visualizer.endTime}
-              range={panel.visualizer.range}
-              description="Evaluation time"
-              onChangeTime={(time) =>
-                dispatch(
-                  setVisualizer({
-                    idx,
-                    visualizer: { ...panel.visualizer, endTime: time },
-                  })
-                )
-              }
-            />
-            <DataTable
-              expr={panel.expr}
-              evalTime={panel.visualizer.endTime}
-              retriggerIdx={retriggerIdx}
-            />
-          </Stack>
+          <DataTable panelIdx={idx} retriggerIdx={retriggerIdx} />
         </Tabs.Panel>
         <Tabs.Panel
           pt="sm"

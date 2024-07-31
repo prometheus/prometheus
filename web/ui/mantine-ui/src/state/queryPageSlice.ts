@@ -36,7 +36,7 @@ export const getEffectiveResolution = (
           : resolution.density === "medium"
             ? 250
             : 100;
-      return Math.max(Math.floor(range / factor), 1);
+      return Math.max(Math.floor(range / factor / 1000) * 1000, 1000);
     }
     case "fixed":
       return resolution.value;
