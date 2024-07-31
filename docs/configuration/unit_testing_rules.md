@@ -119,7 +119,7 @@ series: <string>
 #         Observation counts in negative buckets. Each represents an absolute count.
 #     - n_offset (int):
 #         The starting index of the first entry in the negative buckets.
-#     - counter_reset_hint (one of 'unknown', 'counter', 'not_counter' or 'gauge')
+#     - counter_reset_hint (one of 'unknown', 'reset', 'not_reset' or 'gauge')
 #         The counter reset hint associated with this histogram. Defaults to 'unknown' if not set.
 values: <string>
 ```

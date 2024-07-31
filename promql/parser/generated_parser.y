@@ -153,10 +153,10 @@ END
 // Counter reset hints.
 %token counterResetHintsStart
 %token <item>
-UNKNOWN
-COUNTER
-NOT_COUNTER
-GAUGE
+UNKNOWN_COUNTER_RESET
+COUNTER_RESET
+NOT_COUNTER_RESET
+GAUGE_TYPE
 %token counterResetHintsEnd
 
 // Start symbols for the generated parser.
@@ -876,7 +876,7 @@ bucket_set_list : bucket_set_list SPACE number
                 | bucket_set_list error
                 ;
 
-counter_reset_hint : UNKNOWN | COUNTER | NOT_COUNTER | GAUGE;
+counter_reset_hint : UNKNOWN_COUNTER_RESET | COUNTER_RESET | NOT_COUNTER_RESET | GAUGE_TYPE;
 
 /*
  * Keyword lists.

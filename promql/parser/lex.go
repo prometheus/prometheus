@@ -151,10 +151,10 @@ var histogramDesc = map[string]ItemType{
 }
 
 var counterResetHints = map[string]ItemType{
-	"unknown":     UNKNOWN,
-	"counter":     COUNTER,
-	"not_counter": NOT_COUNTER,
-	"gauge":       GAUGE,
+	"unknown":   UNKNOWN_COUNTER_RESET,
+	"reset":     COUNTER_RESET,
+	"not_reset": NOT_COUNTER_RESET,
+	"gauge":     GAUGE_TYPE,
 }
 
 // ItemTypeStr is the default string representations for common Items. It does not

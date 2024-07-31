@@ -4253,9 +4253,37 @@ func TestParseHistogramSeries(t *testing.T) {
 			expectedError: `1:7: parse error: unexpected "<Item 57372>" "schema" in series values`,
 		},
 		{
-			name:          "unknown counter reset hint value",
+			name:          "invalid counter reset hint value",
 			input:         `{} {{counter_reset_hint:foo}}`,
 			expectedError: `1:25: parse error: bad histogram descriptor found: "foo"`,
+		},
+		{
+			name:  "'unknown' counter reset hint value",
+			input: `{} {{counter_reset_hint:unknown}}`,
+			expected: []histogram.FloatHistogram{{
+				CounterResetHint: histogram.UnknownCounterReset,
+			}},
+		},
+		{
+			name:  "'reset' counter reset hint value",
+			input: `{} {{counter_reset_hint:reset}}`,
+			expected: []histogram.FloatHistogram{{
+				CounterResetHint: histogram.CounterReset,
+			}},
+		},
+		{
+			name:  "'not_reset' counter reset hint value",
+			input: `{} {{counter_reset_hint:not_reset}}`,
+			expected: []histogram.FloatHistogram{{
+				CounterResetHint: histogram.NotCounterReset,
+			}},
+		},
+		{
+			name:  "'gauge' counter reset hint value",
+			input: `{} {{counter_reset_hint:gauge}}`,
+			expected: []histogram.FloatHistogram{{
+				CounterResetHint: histogram.GaugeType,
+			}},
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

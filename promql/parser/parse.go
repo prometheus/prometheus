@@ -586,13 +586,13 @@ func (p *parser) buildHistogramFromMap(desc *map[string]interface{}) *histogram.
 
 		if ok {
 			switch resetHint.Typ {
-			case UNKNOWN:
+			case UNKNOWN_COUNTER_RESET:
 				output.CounterResetHint = histogram.UnknownCounterReset
-			case COUNTER:
+			case COUNTER_RESET:
 				output.CounterResetHint = histogram.CounterReset
-			case NOT_COUNTER:
+			case NOT_COUNTER_RESET:
 				output.CounterResetHint = histogram.NotCounterReset
-			case GAUGE:
+			case GAUGE_TYPE:
 				output.CounterResetHint = histogram.GaugeType
 			default:
 				p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing counter_reset_hint: unknown value %v", resetHint.Typ)

@@ -121,10 +121,10 @@ const START = 57430
 const END = 57431
 const preprocessorEnd = 57432
 const counterResetHintsStart = 57433
-const UNKNOWN = 57434
-const COUNTER = 57435
-const NOT_COUNTER = 57436
-const GAUGE = 57437
+const UNKNOWN_COUNTER_RESET = 57434
+const COUNTER_RESET = 57435
+const NOT_COUNTER_RESET = 57436
+const GAUGE_TYPE = 57437
 const counterResetHintsEnd = 57438
 const startSymbolsStart = 57439
 const START_METRIC = 57440
@@ -225,10 +225,10 @@ var yyToknames = [...]string{
 	"END",
 	"preprocessorEnd",
 	"counterResetHintsStart",
-	"UNKNOWN",
-	"COUNTER",
-	"NOT_COUNTER",
-	"GAUGE",
+	"UNKNOWN_COUNTER_RESET",
+	"COUNTER_RESET",
+	"NOT_COUNTER_RESET",
+	"GAUGE_TYPE",
 	"counterResetHintsEnd",
 	"startSymbolsStart",
 	"START_METRIC",
