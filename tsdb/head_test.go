@@ -4514,6 +4514,166 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 	}
 }
 
+func TestOOOHistogramCounterResetHeaders(t *testing.T) {
+	for _, floatHisto := range []bool{true, false} {
+		t.Run(fmt.Sprintf("floatHistogram=%t", floatHisto), func(t *testing.T) {
+			l := labels.FromStrings("a", "b")
+			head, _ := newTestHead(t, 1000, wlog.CompressionNone, true)
+			head.opts.OutOfOrderCapMax.Store(5)
+
+			t.Cleanup(func() {
+				require.NoError(t, head.Close())
+			})
+			require.NoError(t, head.Init(0))
+
+			appendHistogram := func(ts int64, h *histogram.Histogram) {
+				app := head.Appender(context.Background())
+				var err error
+				if floatHisto {
+					_, err = app.AppendHistogram(0, l, ts, nil, h.ToFloat(nil))
+				} else {
+					_, err = app.AppendHistogram(0, l, ts, h.Copy(), nil)
+				}
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+			}
+
+			type expOOOMmappedChunks struct {
+				header     chunkenc.CounterResetHeader
+				mint, maxt int64
+				numSamples uint16
+			}
+
+			var expChunks []expOOOMmappedChunks
+			checkOOOExpCounterResetHeader := func(newChunks ...expOOOMmappedChunks) {
+				expChunks = append(expChunks, newChunks...)
+
+				ms, _, err := head.getOrCreate(l.Hash(), l)
+				require.NoError(t, err)
+
+				require.Len(t, ms.ooo.oooMmappedChunks, len(expChunks))
+
+				for i, mmapChunk := range ms.ooo.oooMmappedChunks {
+					chk, err := head.chunkDiskMapper.Chunk(mmapChunk.ref)
+					require.NoError(t, err)
+					if floatHisto {
+						require.Equal(t, expChunks[i].header, chk.(*chunkenc.FloatHistogramChunk).GetCounterResetHeader())
+					} else {
+						require.Equal(t, expChunks[i].header, chk.(*chunkenc.HistogramChunk).GetCounterResetHeader())
+					}
+					require.Equal(t, expChunks[i].mint, mmapChunk.minTime)
+					require.Equal(t, expChunks[i].maxt, mmapChunk.maxTime)
+					require.Equal(t, expChunks[i].numSamples, mmapChunk.numSamples)
+				}
+			}
+
+			// Append an in-order histogram, so the rest of the samples can be detected as OOO.
+			appendHistogram(1000, tsdbutil.GenerateTestHistogram(1000))
+
+			// OOO histogram
+			for i := 1; i <= 5; i++ {
+				appendHistogram(100+int64(i), tsdbutil.GenerateTestHistogram(1000+i))
+			}
+			// Nothing mmapped yet.
+			checkOOOExpCounterResetHeader()
+
+			// 6th observation (which triggers a head chunk mmapping).
+			appendHistogram(int64(112), tsdbutil.GenerateTestHistogram(1002))
+
+			// One mmapped chunk with (ts, val) [(101, 1001), (102, 1002), (103, 1003), (104, 1004), (105, 1005)].
+			checkOOOExpCounterResetHeader(expOOOMmappedChunks{
+				header:     chunkenc.UnknownCounterReset,
+				mint:       101,
+				maxt:       105,
+				numSamples: 5,
+			})
+
+			// Add more samples, there's a counter reset at ts 122.
+			appendHistogram(int64(110), tsdbutil.GenerateTestHistogram(1001))
+			appendHistogram(int64(124), tsdbutil.GenerateTestHistogram(904))
+			appendHistogram(int64(123), tsdbutil.GenerateTestHistogram(903))
+			appendHistogram(int64(122), tsdbutil.GenerateTestHistogram(902))
+
+			// New samples not mmapped yet.
+			checkOOOExpCounterResetHeader()
+
+			// 11th observation (which triggers another head chunk mmapping).
+			appendHistogram(int64(200), tsdbutil.GenerateTestHistogram(2000))
+
+			// Two new mmapped chunks [(110, 1001), (112, 1002)], [(122, 902), (123, 903), (124, 904)].
+			checkOOOExpCounterResetHeader(
+				expOOOMmappedChunks{
+					header:     chunkenc.UnknownCounterReset,
+					mint:       110,
+					maxt:       112,
+					numSamples: 2,
+				},
+				expOOOMmappedChunks{
+					header:     chunkenc.CounterReset,
+					mint:       122,
+					maxt:       124,
+					numSamples: 3,
+				},
+			)
+
+			// Count is lower than previous sample at ts 200, so the NotCounterReset is ignored.
+			appendHistogram(int64(205), tsdbutil.SetHistogramNotCounterReset(tsdbutil.GenerateTestHistogram(1000)))
+
+			appendHistogram(int64(210), tsdbutil.SetHistogramCounterReset(tsdbutil.GenerateTestHistogram(2010)))
+
+			appendHistogram(int64(220), tsdbutil.GenerateTestHistogram(2020))
+
+			appendHistogram(int64(215), tsdbutil.GenerateTestHistogram(2005))
+
+			// 16th observation (which triggers another head chunk mmapping).
+			appendHistogram(int64(350), tsdbutil.GenerateTestHistogram(4000))
+
+			// Four new mmapped chunks: [(200, 2000)] [(205, 1000)], [(210, 2010)], [(215, 2015), (220, 2020)]
+			checkOOOExpCounterResetHeader(
+				expOOOMmappedChunks{
+					header:     chunkenc.UnknownCounterReset,
+					mint:       200,
+					maxt:       200,
+					numSamples: 1,
+				},
+				expOOOMmappedChunks{
+					header:     chunkenc.CounterReset,
+					mint:       205,
+					maxt:       205,
+					numSamples: 1,
+				},
+				expOOOMmappedChunks{
+					header:     chunkenc.CounterReset,
+					mint:       210,
+					maxt:       210,
+					numSamples: 1,
+				},
+				expOOOMmappedChunks{
+					header:     chunkenc.CounterReset,
+					mint:       215,
+					maxt:       220,
+					numSamples: 2,
+				},
+			)
+
+			// Adding five more samples (21 in total), so another mmapped chunk is created.
+			appendHistogram(300, tsdbutil.SetHistogramCounterReset(tsdbutil.GenerateTestHistogram(3000)))
+
+			for i := 1; i <= 4; i++ {
+				appendHistogram(300+int64(i), tsdbutil.GenerateTestHistogram(3000+i))
+			}
+
+			// One mmapped chunk with (ts, val) [(300, 3000), (301, 3001), (302, 3002), (303, 3003), (350, 4000)].
+			checkOOOExpCounterResetHeader(expOOOMmappedChunks{
+				header:     chunkenc.CounterReset,
+				mint:       300,
+				maxt:       350,
+				numSamples: 5,
+			})
+		})
+	}
+}
+
 func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 	dir := t.TempDir()
 	opts := DefaultOptions()
