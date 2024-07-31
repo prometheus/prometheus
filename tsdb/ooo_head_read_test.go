@@ -474,6 +474,8 @@ func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 5
 	opts.OutOfOrderTimeWindow = 120 * time.Minute.Milliseconds()
+	opts.EnableNativeHistograms = true
+	opts.EnableOOONativeHistograms = true
 
 	s1 := labels.FromStrings("l", "v1")
 	minutes := func(m int64) int64 { return m * time.Minute.Milliseconds() }
@@ -876,6 +878,8 @@ func testOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 5
 	opts.OutOfOrderTimeWindow = 120 * time.Minute.Milliseconds()
+	opts.EnableNativeHistograms = true
+	opts.EnableOOONativeHistograms = true
 
 	s1 := labels.FromStrings("l", "v1")
 	minutes := func(m int64) int64 { return m * time.Minute.Milliseconds() }
