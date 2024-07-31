@@ -126,7 +126,7 @@ func NewDestinationGroup(
 		ctx,
 		dgCfg.ManagerKeeper,
 		NewManager,
-		dg.encoderSelector(isShrinkable(dgCfg.Relabeling)),
+		dg.encoderSelector(isShrinkable(dgCfg)),
 		managerRefillCtor,
 		mangerRefillSenderCtor,
 		clock,
@@ -264,7 +264,7 @@ func (dg *DestinationGroup) ResetTo(
 	if err := dg.managerKeeper.ResetTo(
 		dialers,
 		dgCfg.ManagerKeeper,
-		dg.encoderSelector(isShrinkable(dgCfg.Relabeling)),
+		dg.encoderSelector(isShrinkable(dgCfg)),
 		dg.cfg.Dir,
 	); err != nil {
 		return err
@@ -430,8 +430,12 @@ func (dg *DestinationGroup) reshardingOutputRelabelers(
 	return nil
 }
 
-func isShrinkable(relabeling []*cppbridge.RelabelConfig) bool {
-	for _, r := range relabeling {
+func isShrinkable(dgCfg *DestinationGroupConfig) bool {
+	if len(dgCfg.ExternalLabels) != 0 {
+		return false
+	}
+
+	for _, r := range dgCfg.Relabeling {
 		if r.Action != cppbridge.Drop &&
 			r.Action != cppbridge.Keep &&
 			r.Action != cppbridge.DropEqual &&
