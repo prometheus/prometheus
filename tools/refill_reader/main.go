@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -137,6 +138,7 @@ func list(ctx context.Context, r *bufio.Reader, size int) error {
 			Offset:         off,
 			Size:           h.FrameSize(),
 		}
+
 		var n int
 		if h.GetType() == frames.SegmentType {
 			si := frames.NewSegmentInfoEmpty()
@@ -157,6 +159,7 @@ func list(ctx context.Context, r *bufio.Reader, size int) error {
 
 		// move cursor position
 		move := int(h.GetSize() - uint32(n))
+		log.Println("move", move)
 		off += int(h.FrameSize())
 		if off > size {
 			return errors.New("data oversize")

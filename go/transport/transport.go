@@ -12,10 +12,23 @@ import (
 	"golang.org/x/net/websocket"
 )
 
+const (
+	defaultReadTimeout  = 0 * time.Second
+	defaultWriteTimeout = 300 * time.Second
+)
+
 // Config - config for Transport.
 type Config struct {
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
+}
+
+// DefaultConfig generate default config for Transport.
+func DefaultConfig() *Config {
+	return &Config{
+		ReadTimeout:  defaultReadTimeout,
+		WriteTimeout: defaultWriteTimeout,
+	}
 }
 
 // NetTransport - transport implementation.

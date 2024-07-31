@@ -105,6 +105,7 @@ OVERRIDE_ALLOCATOR_SYMBOL(void, free, (void *ptr), (ptr));
 #undef OVERRIDE_ALLOCATOR_SYMBOL
 #undef DEFINE_ALLOCATOR_SYMBOL
 
+#if !defined(__SANITIZE_ADDRESS__)
 #define SELECT_ARCH(arch, flavor)  \
   arch##_prompp_jemalloc_init();   \
   malloc_func = arch##_malloc;   \
@@ -116,6 +117,10 @@ OVERRIDE_ALLOCATOR_SYMBOL(void, free, (void *ptr), (ptr));
   memalign_func = arch##_memalign;   \
   free_func = arch##_free;       \
   prompp_flavor = flavor;
+#else
+#define SELECT_ARCH(arch, flavor)  \
+  prompp_flavor = flavor;
+#endif
 
 static __attribute__((constructor)) void initialize() {
   switch (determine_arch_flavor()) {

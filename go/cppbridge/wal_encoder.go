@@ -2,6 +2,7 @@ package cppbridge
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -9,6 +10,9 @@ import (
 
 	"github.com/prometheus/prometheus/pp/go/frames"
 )
+
+// ErrMustImplementCptrable - error on sharded data must implement cptrable interface.
+var ErrMustImplementCptrable = errors.New("sharded data must implement cptrable interface")
 
 // SegmentKey is a key to store segment data in Exchange and Refill
 type SegmentKey struct {
@@ -36,6 +40,8 @@ func (key SegmentKey) String() string {
 
 // SegmentStats - stats data for encoded segment.
 type SegmentStats interface {
+	// AllocatedMemory - returns size of allocated memory label set.
+	AllocatedMemory() uint64
 	// EarliestTimestamp - returns timestamp in ms of earliest sample in segment.
 	EarliestTimestamp() int64
 	// LatestTimestamp - returns timestamp in ms of latest sample in segment.
@@ -50,14 +56,20 @@ type SegmentStats interface {
 
 // WALEncoderStats - stats data for encoded segment.
 type WALEncoderStats struct {
-	samples           uint32
-	series            uint32
 	earliestTimestamp int64
 	latestTimestamp   int64
+	allocatedMemory   uint64
+	samples           uint32
+	series            uint32
 	remainderSize     uint32
 }
 
 var _ SegmentStats = (*WALEncoderStats)(nil)
+
+// AllocatedMemory - returns size of allocated memory label set.
+func (s WALEncoderStats) AllocatedMemory() uint64 {
+	return s.allocatedMemory
+}
 
 // EarliestTimestamp - returns timestamp in ms of earliest sample in segment.
 func (s WALEncoderStats) EarliestTimestamp() int64 {
@@ -169,12 +181,36 @@ func (e *WALEncoder) Add(ctx context.Context, shardedData ShardedData) (SegmentS
 
 	cptrContainer, ok := shardedData.(cptrable)
 	if !ok {
-		return nil, fmt.Errorf("sharded data must implement cptrable interface")
+		return nil, ErrMustImplementCptrable
 	}
 
 	// shardedData.hashdex - Hashdex, struct(init from GO), filling in C/C++
 	stats, exception := walEncoderAdd(e.encoder, cptrContainer.cptr())
-	return stats, handleException(exception)
+	return &stats, handleException(exception)
+}
+
+// AddInnerSeries - add to encode incoming data(relabeling and cached) through C++ encoder.
+func (e *WALEncoder) AddInnerSeries(ctx context.Context, innerSeries []*InnerSeries) (SegmentStats, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	stats, exception := walEncoderAddInnerSeries(e.encoder, innerSeries)
+	return &stats, handleException(exception)
+}
+
+// AddRelabeledSeries - add to encode incoming data(relabeling and not cached) through C++ encoder.
+func (e *WALEncoder) AddRelabeledSeries(
+	ctx context.Context,
+	relabeledSeries *RelabeledSeries,
+	relabelerStateUpdate *RelabelerStateUpdate,
+) (SegmentStats, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	stats, exception := walEncoderAddRelabeledSeries(e.encoder, relabeledSeries, relabelerStateUpdate)
+	return &stats, handleException(exception)
 }
 
 // Finalize - finalize the encoded data in the C++ encoder to Segment.
@@ -217,7 +253,7 @@ func (e *WALEncoder) AddWithStaleNans(
 
 	cptrContainer, ok := shardedData.(cptrable)
 	if !ok {
-		return nil, nil, fmt.Errorf("sharded data must implement cptrable interface")
+		return nil, nil, ErrMustImplementCptrable
 	}
 
 	stats, state, exception := walEncoderAddWithStaleNans(
@@ -226,7 +262,7 @@ func (e *WALEncoder) AddWithStaleNans(
 		sourceState.pointer,
 		staleTS,
 	)
-	return stats, &SourceState{state}, handleException(exception)
+	return &stats, &SourceState{state}, handleException(exception)
 }
 
 // CollectSource - destroy source state and mark all series as stale.
@@ -236,10 +272,96 @@ func (e *WALEncoder) CollectSource(ctx context.Context, sourceState *SourceState
 	}
 
 	stats, exception := walEncoderCollectSource(e.encoder, sourceState.pointer, staleTS)
-	return stats, handleException(exception)
+	return &stats, handleException(exception)
 }
 
 // LastEncodedSegment - get last encoded segment ID.
 func (e *WALEncoder) LastEncodedSegment() uint32 {
+	return e.lastEncodedSegment
+}
+
+// WALEncoderLightweight - go wrapper for C-WALEncoderLightweight.
+//
+//	encoder - pointer to a C++ encoder initiated in C++ memory;
+//	lastEncodedSegment - last encoded segment id;
+//	shardID - current encoder shard id;
+type WALEncoderLightweight struct {
+	encoder            uintptr
+	lastEncodedSegment uint32
+	shardID            uint16
+}
+
+// NewWALEncoderLightweight - init new WALEncoderLightweight.
+func NewWALEncoderLightweight(shardID uint16, logShards uint8) *WALEncoderLightweight {
+	e := &WALEncoderLightweight{
+		encoder:            walEncoderLightweightCtor(shardID, logShards),
+		shardID:            shardID,
+		lastEncodedSegment: math.MaxUint32,
+	}
+	runtime.SetFinalizer(e, func(e *WALEncoderLightweight) {
+		walEncoderLightweightDtor(e.encoder)
+	})
+	return e
+}
+
+// Add - add to encode incoming data(ShardedData) through C++ encoder.
+func (e *WALEncoderLightweight) Add(ctx context.Context, shardedData ShardedData) (SegmentStats, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	cptrContainer, ok := shardedData.(cptrable)
+	if !ok {
+		return nil, ErrMustImplementCptrable
+	}
+
+	// shardedData.hashdex - Hashdex, struct(init from GO), filling in C/C++
+	stats, exception := walEncoderLightweightAdd(e.encoder, cptrContainer.cptr())
+	return &stats, handleException(exception)
+}
+
+// AddInnerSeries - add to encode incoming data(relabeling and cached) through C++ encoder.
+func (e *WALEncoderLightweight) AddInnerSeries(ctx context.Context, innerSeries []*InnerSeries) (SegmentStats, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	stats, exception := walEncoderLightweightAddInnerSeries(e.encoder, innerSeries)
+	return &stats, handleException(exception)
+}
+
+// AddRelabeledSeries - add to encode incoming data(relabeling and not cached) through C++ encoder.
+func (e *WALEncoderLightweight) AddRelabeledSeries(
+	ctx context.Context,
+	relabeledSeries *RelabeledSeries,
+	relabelerStateUpdate *RelabelerStateUpdate,
+) (SegmentStats, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	stats, exception := walEncoderLightweightAddRelabeledSeries(e.encoder, relabeledSeries, relabelerStateUpdate)
+	return &stats, handleException(exception)
+}
+
+// Finalize - finalize the encoded data in the C++ encoder to Segment.
+func (e *WALEncoderLightweight) Finalize(ctx context.Context) (SegmentKey, Segment, error) {
+	if ctx.Err() != nil {
+		return SegmentKey{}, nil, ctx.Err()
+	}
+
+	// transfer go-slice in C/C++
+	stats, segment, exception := walEncoderLightweightFinalize(e.encoder)
+	e.lastEncodedSegment++
+	segKey := SegmentKey{
+		ShardID: e.shardID,
+		Segment: e.lastEncodedSegment,
+	}
+
+	return segKey, NewEncodedSegment(segment, stats), handleException(exception)
+}
+
+// LastEncodedSegment - get last encoded segment ID.
+func (e *WALEncoderLightweight) LastEncodedSegment() uint32 {
 	return e.lastEncodedSegment
 }

@@ -152,6 +152,26 @@ func (s *EncoderSuite) TestEncoder_Add() {
 	_ = segmentStats
 }
 
+func (s *EncoderSuite) TestEncoderLightweight_AddFinalize() {
+	limits := cppbridge.DefaultWALHashdexLimits()
+	data := s.makeData(100)
+	protoHashdex, err := cppbridge.NewWALProtobufHashdex(data, limits)
+	s.Require().NoError(err)
+
+	encoder := cppbridge.NewWALEncoderLightweight(0, 0)
+	segmentStatsAdd, err := encoder.Add(s.baseCtx, protoHashdex)
+	s.Require().NoError(err)
+
+	_, segmentStatsFinalize, err := encoder.Finalize(s.baseCtx)
+	s.Require().NoError(err)
+	s.Equal(segmentStatsFinalize.AllocatedMemory(), segmentStatsAdd.AllocatedMemory())
+	s.Equal(segmentStatsFinalize.EarliestTimestamp(), segmentStatsAdd.EarliestTimestamp())
+	s.Equal(segmentStatsFinalize.LatestTimestamp(), segmentStatsAdd.LatestTimestamp())
+	s.Equal(segmentStatsFinalize.RemainingTableSize(), segmentStatsAdd.RemainingTableSize())
+	s.Equal(segmentStatsFinalize.Samples(), segmentStatsAdd.Samples())
+	s.Equal(segmentStatsFinalize.Series(), segmentStatsAdd.Series())
+}
+
 func (s *EncoderSuite) TestEncodeErrorCPPExceptions() {
 	wr := &prompb.WriteRequest{
 		Timeseries: []prompb.TimeSeries{
