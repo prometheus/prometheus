@@ -338,9 +338,9 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 
 	if value.IsStaleNaN(v) {
 		switch {
-		case s.lastHistogramValue != nil:
+		case s.lastValueIsHistogram:
 			return a.AppendHistogram(ref, lset, t, &histogram.Histogram{Sum: v}, nil)
-		case s.lastFloatHistogramValue != nil:
+		case s.lastValueIsFloatHistogram:
 			return a.AppendHistogram(ref, lset, t, nil, &histogram.FloatHistogram{Sum: v})
 		}
 	}
@@ -466,7 +466,7 @@ func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTi
 			// like federation and erroring out at that time would be extremely noisy.
 			// This only checks against the latest in-order sample.
 			// The OOO headchunk has its own method to detect these duplicates.
-			if s.lastHistogramValue != nil || s.lastFloatHistogramValue != nil {
+			if s.lastValueIsHistogram || s.lastValueIsFloatHistogram {
 				return false, 0, storage.NewDuplicateHistogramToFloatErr(t, v)
 			}
 			if math.Float64bits(s.lastValue) != math.Float64bits(v) {
@@ -507,7 +507,7 @@ func (s *memSeries) appendableHistogram(t int64, h *histogram.Histogram) error {
 
 	// We are allowing exact duplicates as we can encounter them in valid cases
 	// like federation and erroring out at that time would be extremely noisy.
-	if !h.Equals(s.lastHistogramValue) {
+	if !h.Equals(s.lastHistogramValue()) {
 		return storage.ErrDuplicateSampleForTimestamp
 	}
 	return nil
@@ -528,7 +528,7 @@ func (s *memSeries) appendableFloatHistogram(t int64, fh *histogram.FloatHistogr
 
 	// We are allowing exact duplicates as we can encounter them in valid cases
 	// like federation and erroring out at that time would be extremely noisy.
-	if !fh.Equals(s.lastFloatHistogramValue) {
+	if !fh.Equals(s.lastFloatHistogramValue()) {
 		return storage.ErrDuplicateSampleForTimestamp
 	}
 	return nil
@@ -614,9 +614,9 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		if created {
 			switch {
 			case h != nil:
-				s.lastHistogramValue = &histogram.Histogram{}
+				s.setLastHistogramValue(&histogram.Histogram{})
 			case fh != nil:
-				s.lastFloatHistogramValue = &histogram.FloatHistogram{}
+				s.setLastFloatHistogramValue(&histogram.FloatHistogram{})
 			}
 			a.series = append(a.series, record.RefSeries{
 				Ref:    s.ref,
@@ -1126,9 +1126,7 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, o chunkOpts) (sa
 
 	c.maxTime = t
 
-	s.lastValue = v
-	s.lastHistogramValue = nil
-	s.lastFloatHistogramValue = nil
+	s.setLastFloatValue(v)
 
 	if appendID > 0 {
 		s.txs.add(appendID)
@@ -1166,8 +1164,7 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 
 	newChunk, recoded, s.app, _ = s.app.AppendHistogram(prevApp, t, h, false) // false=request a new chunk if needed
 
-	s.lastHistogramValue = h
-	s.lastFloatHistogramValue = nil
+	s.setLastHistogramValue(h)
 
 	if appendID > 0 {
 		s.txs.add(appendID)
@@ -1223,8 +1220,7 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 
 	newChunk, recoded, s.app, _ = s.app.AppendFloatHistogram(prevApp, t, fh, false) // False means request a new chunk if needed.
 
-	s.lastHistogramValue = nil
-	s.lastFloatHistogramValue = fh
+	s.setLastFloatHistogramValue(fh)
 
 	if appendID > 0 {
 		s.txs.add(appendID)

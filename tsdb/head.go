@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -2118,13 +2119,15 @@ type memSeries struct {
 	nextAt                           int64 // Timestamp at which to cut the next chunk.
 	histogramChunkHasComputedEndTime bool  // True if nextAt has been predicted for the current histograms chunk; false otherwise.
 	pendingCommit                    bool  // Whether there are samples waiting to be committed to this series.
+	lastValueIsHistogram             bool  // Whether lastHistogramOrFloatHistogramValue is a *histogram.Histogram
+	lastValueIsFloatHistogram        bool  // Whether lastHistogramOrFloatHistogramValue is a *histogram.FloatHistogram
 
 	// We keep the last value here (in addition to appending it to the chunk) so we can check for duplicates.
 	lastValue float64
 
 	// We keep the last histogram value here (in addition to appending it to the chunk) so we can check for duplicates.
-	lastHistogramValue      *histogram.Histogram
-	lastFloatHistogramValue *histogram.FloatHistogram
+	// The lastValueIsHistogram and lastValueIsFloatHistogram above indicate whether the last value was a histogram or float histogram (or neither).
+	lastHistogramOrFloatHistogramValue unsafe.Pointer // Pointer to the last *histogram.Histogram or *histogram.FloatHistogram value.
 
 	// Current appender for the head chunk. Set when a new head chunk is cut.
 	// It is nil only if headChunks is nil. E.g. if there was an appender that created a new series, but rolled back the commit
@@ -2133,6 +2136,33 @@ type memSeries struct {
 
 	// txs is nil if isolation is disabled.
 	txs *txRing
+}
+
+func (s *memSeries) lastHistogramValue() *histogram.Histogram {
+	return (*histogram.Histogram)(s.lastHistogramOrFloatHistogramValue)
+}
+
+func (s *memSeries) lastFloatHistogramValue() *histogram.FloatHistogram {
+	return (*histogram.FloatHistogram)(s.lastHistogramOrFloatHistogramValue)
+}
+
+func (s *memSeries) setLastFloatValue(v float64) {
+	s.lastValueIsHistogram = false
+	s.lastValueIsFloatHistogram = false
+	s.lastValue = v
+	s.lastHistogramOrFloatHistogramValue = nil
+}
+
+func (s *memSeries) setLastHistogramValue(h *histogram.Histogram) {
+	s.lastValueIsHistogram = true
+	s.lastValueIsFloatHistogram = false
+	s.lastHistogramOrFloatHistogramValue = unsafe.Pointer(h)
+}
+
+func (s *memSeries) setLastFloatHistogramValue(h *histogram.FloatHistogram) {
+	s.lastValueIsHistogram = false
+	s.lastValueIsFloatHistogram = true
+	s.lastHistogramOrFloatHistogramValue = unsafe.Pointer(h)
 }
 
 // memSeriesOOOFields contains the fields required by memSeries
