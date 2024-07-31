@@ -29,6 +29,7 @@ using DecodingTableFilament = Filaments::LabelSet<Symbol::DecodingTable, LabelNa
 using DecodingTable = BareBones::SnugComposite::DecodingTable<DecodingTableFilament>;
 using EncodingBimapFilament = Filaments::LabelSet<Symbol::EncodingBimap, LabelNameSet::EncodingBimap>;
 using EncodingBimap = BareBones::SnugComposite::EncodingBimap<EncodingBimapFilament>;
+using EncodingTable = BareBones::SnugComposite::EncodingTable<EncodingBimapFilament>;
 using ParallelEncodingBimap = BareBones::SnugComposite::ParallelEncodingBimap<Filaments::LabelSet<Symbol::EncodingBimap, LabelNameSet::EncodingBimap>>;
 using OrderedEncodingBimap =
     BareBones::SnugComposite::OrderedEncodingBimap<Filaments::LabelSet<Symbol::OrderedEncodingBimap, LabelNameSet::OrderedEncodingBimap>>;

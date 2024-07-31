@@ -511,16 +511,16 @@ class LabelSet {
         // pos of first seq in the portion, if we are writing wal
         uint32_t first_to_save = 0;
         if (from != nullptr) {
-          first_to_save = from->size_;
+          first_to_save = from->next_item_index_;
           res += sizeof(uint32_t);
         }
 
         // size
-        uint32_t size_to_save = size_ - first_to_save;
+        uint32_t size_to_save = next_item_index_ - first_to_save;
         res += sizeof(uint32_t);
 
         // data
-        res += sizeof(data.symbols_ids_sequences[first_to_save]) * size_to_save;
+        res += sizeof(data.symbols_ids_sequences[0]) * size_to_save;
 
         // label name sets table
         if (from != nullptr) {
@@ -566,6 +566,7 @@ class LabelSet {
     symbols_ids_sequences_type symbols_ids_sequences;
     LabelNameSetsTableType label_name_sets_table;
     uint32_t next_item_index_{};
+    uint32_t shrinked_size_{};
     data_type() noexcept = default;
     data_type(const data_type&) = delete;
     data_type(data_type&&) = delete;
@@ -575,8 +576,9 @@ class LabelSet {
     using checkpoint_type = Checkpoint;
 
     PROMPP_ALWAYS_INLINE void shrink_to(uint32_t size) {
-      assert(size < symbols_ids_sequences.size());
+      assert(size <= symbols_ids_sequences.size());
 
+      shrinked_size_ += symbols_ids_sequences.size() - size;
       symbols_ids_sequences.resize(size);
     }
 
@@ -717,7 +719,7 @@ class LabelSet {
   // FIXME inline of this function causes 30ns lost in indexing performance
   template <class T>
   // TODO requires is_label_set
-  LabelSet(data_type& data, const T& label_set) noexcept : pos_(data.symbols_ids_sequences.size()) {
+  LabelSet(data_type& data, const T& label_set) noexcept : pos_(data.symbols_ids_sequences.size() + data.shrinked_size_) {
     lns_id_ = data.label_name_sets_table.find_or_emplace(label_set.names());
 
     // resize, if there are new symbols (in lns table)
@@ -817,12 +819,12 @@ class LabelSet {
 
     template <class T>
     inline __attribute__((always_inline)) bool operator==(const T& b) const noexcept {
-      return std::ranges::equal(begin(), end(), b.begin(), b.end());
+      return std::ranges::equal(begin(), end(), b.begin(), b.end(), [](const auto& a, const auto& b) { return a == b; });
     }
 
     template <class T>
     inline __attribute__((always_inline)) bool operator<(const T& b) const noexcept {
-      return std::ranges::lexicographical_compare(begin(), end(), b.begin(), b.end());
+      return std::ranges::lexicographical_compare(begin(), end(), b.begin(), b.end(), [](const auto& a, const auto& b) { return a < b; });
     }
 
     inline __attribute__((always_inline)) friend size_t hash_value(const composite_type& ls) noexcept {
@@ -837,7 +839,8 @@ class LabelSet {
   inline __attribute__((always_inline)) composite_type composite(const data_type& data) const noexcept {
     auto lns = data.label_name_sets_table[lns_id_];
 
-    auto [values_begin, values_end] = BareBones::StreamVByte::decoder<BareBones::StreamVByte::Codec1234>(data.symbols_ids_sequences.begin() + pos_, lns.size());
+    auto [values_begin, values_end] =
+        BareBones::StreamVByte::decoder<BareBones::StreamVByte::Codec1234>(data.symbols_ids_sequences.begin() + pos_ - data.shrinked_size_, lns.size());
 
     return composite_type(&data, std::move(lns), std::move(values_begin), std::move(values_end));
   }
@@ -851,18 +854,20 @@ class LabelSet {
 
     // check that streamvbyte keys are in range
     auto keys_size = BareBones::StreamVByte::keys_size(lns.size());
-    if (pos_ + keys_size > data.symbols_ids_sequences.size()) {
+    if (pos_ - data.shrinked_size_ + keys_size > data.symbols_ids_sequences.size()) {
       throw BareBones::Exception(0x22f5a82dd120e0e7, "LabelSets data validation error: expected LabelSets keys length is out of data symbols vector range");
     }
 
     // check that streamvbyte data is in range
-    auto data_size = BareBones::StreamVByte::decode_data_size<BareBones::StreamVByte::Codec1234>(lns.size(), data.symbols_ids_sequences.begin() + pos_);
-    if (pos_ + keys_size + data_size > data.symbols_ids_sequences.size()) {
+    auto data_size = BareBones::StreamVByte::decode_data_size<BareBones::StreamVByte::Codec1234>(
+        lns.size(), data.symbols_ids_sequences.begin() + pos_ - data.shrinked_size_);
+    if (pos_ - data.shrinked_size_ + keys_size + data_size > data.symbols_ids_sequences.size()) {
       throw BareBones::Exception(0xd02e54dac8e1d328, "LabelSets data validation error: expected LabelSets values length is out of data symbols vector range");
     }
 
     // check that all symbols are in range
-    auto [values_begin, _] = BareBones::StreamVByte::decoder<BareBones::StreamVByte::Codec1234>(data.symbols_ids_sequences.begin() + pos_, lns.size());
+    auto [values_begin, values_end] =
+        BareBones::StreamVByte::decoder<BareBones::StreamVByte::Codec1234>(data.symbols_ids_sequences.begin() + pos_ - data.shrinked_size_, lns.size());
     for (auto i = lns.begin(); i != lns.end(); ++i) {
       if (*values_begin++ >= data.symbols_tables[i.id()]->size()) {
         throw BareBones::Exception(0x0f0c520ad6285f15,

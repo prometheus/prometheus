@@ -154,7 +154,7 @@ class EncodingTableLabelSetFixture : public testing::Test {
  protected:
   BareBones::SnugComposite::EncodingTable<FillamentLabelSet> encoding_table_;
   BareBones::SnugComposite::DecodingTable<FillamentLabelSet> decoding_table_;
-  std::array<LabelSetForTest, 3> ls_;
+  std::array<LabelSetForTest, 6> ls_;
 
   void SetUp() override {
     ls_[0].emplace_back("1", "1");
@@ -163,6 +163,9 @@ class EncodingTableLabelSetFixture : public testing::Test {
     ls_[1].emplace_back("3", "3");
 
     ls_[2].emplace_back("4", "4");
+    ls_[3].emplace_back("5", "5");
+    ls_[4].emplace_back("6", "6");
+    ls_[5].emplace_back("7", "7");
   }
 
   auto create_and_load_checkpoint(BareBones::SnugComposite::EncodingTable<FillamentLabelSet>::checkpoint_type* from) {
@@ -273,6 +276,31 @@ TEST_F(EncodingTableLabelSetFixture, EmptyCheckpointWithoutShrink) {
 
   // Assert
   check_decoding_table();
+}
+
+TEST_F(EncodingTableLabelSetFixture, CheckSaveSize) {
+  // Arrange
+
+  encoding_table_.find_or_emplace(ls_[0]);
+  encoding_table_.find_or_emplace(ls_[1]);
+
+  auto checkpoint = encoding_table_.checkpoint();
+
+  encoding_table_.shrink_to_checkpoint_size(checkpoint);
+
+  encoding_table_.find_or_emplace(ls_[1]);
+  encoding_table_.find_or_emplace(ls_[2]);
+  encoding_table_.find_or_emplace(ls_[3]);
+  encoding_table_.find_or_emplace(ls_[4]);
+  encoding_table_.find_or_emplace(ls_[5]);
+
+  auto checkpoint2 = encoding_table_.checkpoint();
+
+  auto delta = checkpoint2 - checkpoint;
+  std::stringstream ss;
+  ss << delta;
+
+  EXPECT_EQ(ss.str().length(), delta.save_size());
 }
 
 }  // namespace

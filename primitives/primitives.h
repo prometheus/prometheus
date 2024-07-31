@@ -4,10 +4,15 @@
 #include <bitset>
 #include <cstdint>
 #include <ranges>
+#include <string_view>
+#include <vector>
+
+#include <parallel_hashmap/phmap.h>
 
 #define XXH_INLINE_ALL
 #include "xxHash/xxhash.h"
 
+#include "bare_bones/preprocess.h"
 #include "bare_bones/vector.h"
 
 namespace PromPP {
@@ -211,6 +216,12 @@ class Sample {
 
   template <class T>
   // TODO requires is_sample
+  PROMPP_ALWAYS_INLINE bool operator==(const T& s) const noexcept {
+    return timestamp_ == s.timestamp() && std::bit_cast<uint64_t>(value_) == std::bit_cast<uint64_t>(s.value());
+  }
+
+  template <class T>
+  // TODO requires is_sample
   inline __attribute__((always_inline)) explicit Sample(const T& s) noexcept : timestamp_(s.timestamp()), value_(s.value()) {}
 
   inline __attribute__((always_inline)) Sample(timestamp_type timestamp, value_type value) noexcept : timestamp_(timestamp), value_(value) {}
@@ -286,6 +297,435 @@ class BasicTimeseries {
 using Timeseries = BasicTimeseries<LabelSet, BareBones::Vector<Sample>>;
 using TimeseriesSemiview = BasicTimeseries<LabelViewSet, BareBones::Vector<Sample>>;
 
+class LabelsBuilderState {
+  PromPP::Primitives::LabelViewSet buf_view_;
+  PromPP::Primitives::LabelSet buf_;
+  std::vector<Label> add_;
+  std::vector<std::string> del_;
+
+  template <class Labels>
+  void sort_labels(Labels& labels) {
+    std::ranges::sort(labels, [](const auto& a, const auto& b) {
+      if (a.first == b.first) {
+        return a.second < b.second;
+      }
+      return a.first < b.first;
+    });
+  }
+
+ public:
+  // del - add label name to remove from label set.
+  template <class LNameType>
+  PROMPP_ALWAYS_INLINE void del(LNameType& lname) {
+    std::erase_if(add_, [&lname](Label& lv) { return lv.first == lname; });
+
+    if (auto i = std::ranges::find_if(del_, [&lname](const std::string_view& ln) { return ln == lname; }); i != del_.end()) {
+      return;
+    }
+
+    del_.emplace_back(lname);
+  }
+
+  // get - returns the value for the label with the given name. Returns an empty string if the label doesn't exist.
+  template <class LSSLabelSet>
+  PROMPP_ALWAYS_INLINE std::string_view get(std::string_view lname, LSSLabelSet* base) {
+    if (auto i = std::ranges::find_if(add_, [&lname](const Label& l) { return l.first == lname; }); i != add_.end()) {
+      return (*i).second;
+    }
+
+    if (auto i = std::ranges::find_if(del_, [&lname](const std::string_view& ln) { return ln == lname; }); i != del_.end()) {
+      return "";
+    }
+
+    if (base != nullptr) [[likely]] {
+      for (const auto& [ln, lv] : *base) {
+        if (ln == lname) {
+          return lv;
+        }
+      }
+    }
+
+    return "";
+  }
+
+  // contains check the given name if exist.
+  template <class LSSLabelSet>
+  PROMPP_ALWAYS_INLINE bool contains(std::string_view lname, LSSLabelSet* base) {
+    if (auto i = std::ranges::find_if(add_, [&lname](const Label& l) { return l.first == lname; }); i != add_.end()) {
+      return true;
+    }
+
+    if (base != nullptr) [[likely]] {
+      for (const auto& [ln, lv] : *base) {
+        if (lv == "") {
+          continue;
+        }
+
+        if (ln == lname) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  // returns size of building labels.
+  template <class LSSLabelSet>
+  PROMPP_ALWAYS_INLINE size_t size(LSSLabelSet* base) {
+    size_t count{0};
+    if (base != nullptr) [[likely]] {
+      for (const auto& ls : *base) {
+        if (auto i = std::ranges::find_if(add_, [&ls](const Label& l) { return l.first == ls.first; }); i != add_.end()) {
+          continue;
+        }
+
+        if (auto i = std::ranges::find_if(del_, [&ls](const std::string& ln) { return ln == ls.first; }); i != del_.end()) {
+          continue;
+        }
+
+        if (ls.second == "") {
+          continue;
+        }
+
+        ++count;
+      }
+    }
+
+    count += add_.size();
+    return count;
+  }
+
+  // returns true if ls represents an empty set of labels.
+  template <class LSSLabelSet>
+  PROMPP_ALWAYS_INLINE bool is_empty(LSSLabelSet* base) {
+    return size(base) == 0;
+  }
+
+  // label_view_set - returns the label_view set from the builder. If no modifications were made, the original labels are returned.
+  template <class LSSLabelSet>
+  PROMPP_ALWAYS_INLINE const LabelViewSet& label_view_set(LSSLabelSet* base) {
+    buf_view_.clear();
+    if (base != nullptr) [[likely]] {
+      for (const auto& ls : *base) {
+        if (auto i = std::ranges::find_if(add_, [&ls](const Label& l) { return l.first == ls.first; }); i != add_.end()) {
+          continue;
+        }
+
+        if (auto i = std::ranges::find_if(del_, [&ls](const std::string_view& ln) { return ln == ls.first; }); i != del_.end()) {
+          continue;
+        }
+
+        if (ls.second == "") {
+          continue;
+        }
+
+        buf_view_.add(ls);
+      }
+    }
+
+    if (add_.size() != 0) {
+      std::ranges::for_each(add_, [&](const Label& l) { buf_view_.add(l); });
+      sort_labels(buf_view_);
+    }
+
+    return buf_view_;
+  }
+
+  // label_set - returns the label set from the builder. If no modifications were made, the original labels are returned.
+  template <class LSSLabelSet>
+  PROMPP_ALWAYS_INLINE const LabelSet& label_set(LSSLabelSet* base) {
+    buf_.clear();
+    if (base != nullptr) [[likely]] {
+      for (const auto& ls : *base) {
+        if (auto i = std::ranges::find_if(add_, [&ls](const Label& l) { return l.first == ls.first; }); i != add_.end()) {
+          continue;
+        }
+
+        if (auto i = std::ranges::find_if(del_, [&ls](const std::string& ln) { return ln == ls.first; }); i != del_.end()) {
+          continue;
+        }
+
+        if (ls.second == "") {
+          continue;
+        }
+
+        buf_.add(Label{ls.first, ls.second});
+      }
+    }
+
+    if (add_.size() != 0) {
+      std::ranges::for_each(add_, [&](const Label& l) { buf_.add(l); });
+      sort_labels(buf_);
+    }
+
+    return buf_;
+  }
+
+  // range - calls f on each label in the builder.
+  template <class LSSLabelSet, class Callback>
+  PROMPP_ALWAYS_INLINE void range(LSSLabelSet* base, Callback func) {
+    // take a copy of add and del, so they are unaffected by calls to set() or del().
+    std::vector<Label> cadd = add_;
+    std::vector<std::string> cdel = del_;
+
+    if (base != nullptr) [[likely]] {
+      for (const auto& ls : *base) {
+        if (auto i = std::ranges::find_if(cadd, [&ls](const Label& l) { return l.first == ls.first; }); i != cadd.end()) {
+          continue;
+        }
+
+        if (auto i = std::ranges::find_if(cdel, [&ls](const std::string& ln) { return ln == ls.first; }); i != cdel.end()) {
+          continue;
+        }
+
+        if (ls.second == "") {
+          continue;
+        }
+
+        if (bool ok = func(ls.first, ls.second); !ok) {
+          return;
+        }
+      }
+    }
+    std::ranges::all_of(cadd, [&](const Label& l) { return func(l.first, l.second); });
+  }
+
+  // reset - clears all current state for the builder.
+  template <class LSSLabelSet>
+  PROMPP_ALWAYS_INLINE void reset([[maybe_unused]] LSSLabelSet* base) {
+    buf_view_.clear();
+    buf_.clear();
+    add_.clear();
+    del_.clear();
+  }
+
+  // set - the name/value pair as a label. A value of "" means delete that label.
+  template <class LNameType, class LValueType>
+  PROMPP_ALWAYS_INLINE void set(LNameType& lname, LValueType& lvalue) {
+    if (lvalue.size() == 0) [[unlikely]] {
+      del(lname);
+      return;
+    }
+
+    if (auto i = std::ranges::find_if(add_, [&lname](const Label& l) { return l.first == lname; }); i != add_.end()) {
+      (*i).second = lvalue;
+      return;
+    }
+
+    add_.emplace_back(lname, lvalue);
+  }
+};
+
+class LabelsBuilderStateMap {
+  PromPP::Primitives::LabelViewSet building_buf_view_;
+  PromPP::Primitives::LabelSet building_buf_;
+  phmap::flat_hash_map<Symbol, Symbol> buffer_;
+
+  template <class Labels>
+  void sort_labels(Labels& labels) {
+    std::ranges::sort(labels, [](const auto& a, const auto& b) {
+      if (a.first == b.first) {
+        return a.second < b.second;
+      }
+      return a.first < b.first;
+    });
+  }
+
+ public:
+  // del add label name to remove from label set.
+  template <class LNameType>
+  PROMPP_ALWAYS_INLINE void del(LNameType& lname) {
+    buffer_.erase(lname);
+  }
+
+  // get returns the value for the label with the given name. Returns an empty string if the label doesn't exist.
+  template <class LSSLabelSet>
+  PROMPP_ALWAYS_INLINE std::string_view get(std::string_view lname, [[maybe_unused]] LSSLabelSet* base) {
+    if (auto it = buffer_.find(lname); it != buffer_.end()) {
+      return (*it).second;
+    }
+
+    return "";
+  }
+
+  // contains check the given name if exist.
+  template <class LSSLabelSet>
+  PROMPP_ALWAYS_INLINE bool contains(std::string_view lname, [[maybe_unused]] LSSLabelSet* base) {
+    if (auto it = buffer_.find(lname); it != buffer_.end()) {
+      return true;
+    }
+
+    return false;
+  }
+
+  // set - the name/value pair as a label. A value of "" means delete that label.
+  template <class LNameType, class LValueType>
+  PROMPP_ALWAYS_INLINE void set(LNameType& lname, LValueType& lvalue) {
+    if (lvalue.size() == 0) [[unlikely]] {
+      del(lname);
+      return;
+    }
+
+    if (auto it = buffer_.find(lname); it != buffer_.end()) {
+      (*it).second = lvalue;
+      return;
+    }
+
+    buffer_[lname] = lvalue;
+  }
+
+  // returns size of building labels.
+  template <class LSSLabelSet>
+  PROMPP_ALWAYS_INLINE size_t size([[maybe_unused]] LSSLabelSet* base) {
+    return buffer_.size();
+  }
+
+  // returns true if ls represents an empty set of labels.
+  template <class LSSLabelSet>
+  PROMPP_ALWAYS_INLINE bool is_empty(LSSLabelSet* base) {
+    return size(base) == 0;
+  }
+
+  // label_view_set - returns the label_view set from the builder. If no modifications were made, the original labels are returned.
+  template <class LSSLabelSet>
+  PROMPP_ALWAYS_INLINE const LabelViewSet& label_view_set([[maybe_unused]] LSSLabelSet* base) {
+    building_buf_view_.clear();
+    for (const auto& it : buffer_) {
+      if (it.second == "") [[unlikely]] {
+        continue;
+      }
+
+      building_buf_view_.add(LabelView{it.first, it.second});
+    }
+
+    if (building_buf_view_.size() != 0) {
+      sort_labels(building_buf_view_);
+    }
+
+    return building_buf_view_;
+  }
+
+  // label_set - returns the label set from the builder. If no modifications were made, the original labels are returned.
+  template <class LSSLabelSet>
+  PROMPP_ALWAYS_INLINE const LabelSet& label_set([[maybe_unused]] LSSLabelSet* base) {
+    building_buf_.clear();
+
+    for (const auto& it : buffer_) {
+      if (it.second == "") [[unlikely]] {
+        continue;
+      }
+
+      building_buf_.add(Label{it.first, it.second});
+    }
+
+    if (building_buf_.size() != 0) {
+      sort_labels(building_buf_);
+    }
+
+    return building_buf_;
+  }
+
+  // range - calls f on each label in the builder.
+  // TODO without copy buffer_, all changes in a another cycle.
+  template <class LSSLabelSet, class Callback>
+  PROMPP_ALWAYS_INLINE void range([[maybe_unused]] LSSLabelSet* base, Callback func) {
+    // take a copy of add and del, so they are unaffected by calls to set() or del().
+    phmap::flat_hash_map<Symbol, Symbol> cbuffer_ = buffer_;
+
+    for (const auto& it : cbuffer_) {
+      if (it.second == "") [[unlikely]] {
+        continue;
+      }
+
+      if (bool ok = func(it.first, it.second); !ok) {
+        return;
+      }
+    }
+  }
+
+  // reset - clears all current state for the builder.
+  template <class LSSLabelSet>
+  PROMPP_ALWAYS_INLINE void reset(LSSLabelSet* base) {
+    building_buf_view_.clear();
+    building_buf_.clear();
+    buffer_.clear();
+
+    if (base == nullptr) [[unlikely]] {
+      return;
+    }
+
+    for (const auto& [lname, lvalue] : *base) {
+      if (lvalue == "") {
+        continue;
+      }
+
+      buffer_[lname] = lvalue;
+    }
+  }
+};
+
+// LabelsBuilder - builder for label set.
+template <class LabelSet, class BuilderState>
+class LabelsBuilder {
+  BuilderState& state_;
+  LabelSet* base_ = nullptr;
+
+ public:
+  PROMPP_ALWAYS_INLINE explicit LabelsBuilder(BuilderState& state) : state_(state) {}
+
+  // del - add label name to remove from label set.
+  template <class LNameType>
+  PROMPP_ALWAYS_INLINE void del(LNameType& lname) {
+    state_.del(lname);
+  }
+
+  // get - returns the value for the label with the given name. Returns an empty string if the label doesn't exist.
+  PROMPP_ALWAYS_INLINE std::string_view get(std::string_view lname) { return state_.get(lname, base_); }
+
+  // contains check the given name if exist.
+  PROMPP_ALWAYS_INLINE bool contains(std::string_view lname) { return state_.contains(lname, base_); }
+
+  // returns size of building labels.
+  PROMPP_ALWAYS_INLINE size_t size() { return state_.size(base_); }
+
+  // returns true if ls represents an empty set of labels.
+  PROMPP_ALWAYS_INLINE bool is_empty() { return state_.is_empty(base_); }
+
+  // label_view_set - returns the label_view set from the builder. If no modifications were made, the original labels are returned.
+  PROMPP_ALWAYS_INLINE const PromPP::Primitives::LabelViewSet& label_view_set() { return state_.label_view_set(base_); }
+
+  // label_set - returns the label set from the builder. If no modifications were made, the original labels are returned.
+  PROMPP_ALWAYS_INLINE const PromPP::Primitives::LabelSet& label_set() { return state_.label_set(base_); }
+
+  // range - calls f on each label in the builder.
+  template <class Callback>
+  PROMPP_ALWAYS_INLINE void range(Callback func) {
+    state_.range(base_, func);
+  }
+
+  // reset - clears all current state for the builder.
+  PROMPP_ALWAYS_INLINE void reset() {
+    state_.reset(nullptr);
+    base_ = nullptr;
+  }
+
+  // reset - clears all current state for the builder and init from LabelSet.
+  PROMPP_ALWAYS_INLINE void reset(LabelSet* ls) {
+    state_.reset(ls);
+    base_ = ls;
+  }
+
+  // set - the name/value pair as a label. A value of "" means delete that label.
+  template <class LNameType, class LValueType>
+  PROMPP_ALWAYS_INLINE void set(LNameType& lname, LValueType& lvalue) {
+    state_.set(lname, lvalue);
+  }
+
+  PROMPP_ALWAYS_INLINE LabelsBuilder(LabelsBuilder&&) noexcept = default;
+  PROMPP_ALWAYS_INLINE ~LabelsBuilder() = default;
+};
+
 }  // namespace Primitives
 }  // namespace PromPP
 
@@ -305,6 +745,14 @@ PROMPP_ALWAYS_INLINE constexpr bool operator!=(const PromPP::Primitives::LabelVi
 
 PROMPP_ALWAYS_INLINE constexpr bool operator!=(const PromPP::Primitives::Label& label, const PromPP::Primitives::LabelView& label_view) noexcept {
   return !(label_view == label);
+}
+
+PROMPP_ALWAYS_INLINE constexpr bool operator<(const PromPP::Primitives::Label& label, const PromPP::Primitives::LabelView& label_view) noexcept {
+  return label.first < label_view.first && label.second < label_view.second;
+}
+
+PROMPP_ALWAYS_INLINE constexpr bool operator<(const PromPP::Primitives::LabelView& label_view, const PromPP::Primitives::Label& label) noexcept {
+  return label_view.first < label.first && label_view.second < label.second;
 }
 
 template <>
