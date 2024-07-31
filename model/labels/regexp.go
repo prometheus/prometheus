@@ -69,7 +69,7 @@ func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 		}
 		// Simplify the syntax tree to run faster.
 		parsed = parsed.Simplify()
-		m.re, err = regexp.Compile("^(?:" + parsed.String() + ")$")
+		m.re, err = regexp.Compile("^(?s:" + parsed.String() + ")$")
 		if err != nil {
 			return nil, err
 		}

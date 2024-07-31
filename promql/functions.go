@@ -1377,7 +1377,7 @@ func (ev *evaluator) evalLabelReplace(args parser.Expressions) (parser.Value, an
 		regexStr = stringFromArg(args[4])
 	)
 
-	regex, err := regexp.Compile("^(?:" + regexStr + ")$")
+	regex, err := regexp.Compile("^(?s:" + regexStr + ")$")
 	if err != nil {
 		panic(fmt.Errorf("invalid regular expression in label_replace(): %s", regexStr))
 	}
