@@ -38,7 +38,7 @@ import { useSettings } from "../../state/settingsSlice";
 dayjs.extend(timezone);
 
 const maxFormattableSeries = 1000;
-const maxDisplayableSeries = 1000;
+const maxDisplayableSeries = 10000;
 
 const limitSeries = <S extends InstantSample | RangeSamples>(
   series: S[],
