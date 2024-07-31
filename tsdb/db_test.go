@@ -63,7 +63,10 @@ func TestMain(m *testing.M) {
 	flag.Parse()
 	defaultIsolationDisabled = !isolationEnabled
 
-	goleak.VerifyTestMain(m, goleak.IgnoreTopFunction("github.com/prometheus/prometheus/tsdb.(*SegmentWAL).cut.func1"), goleak.IgnoreTopFunction("github.com/prometheus/prometheus/tsdb.(*SegmentWAL).cut.func2"))
+	goleak.VerifyTestMain(m,
+		goleak.IgnoreTopFunction("github.com/prometheus/prometheus/tsdb.(*SegmentWAL).cut.func1"),
+		goleak.IgnoreTopFunction("github.com/prometheus/prometheus/tsdb.(*SegmentWAL).cut.func2"),
+		goleak.IgnoreTopFunction("go.opencensus.io/stats/view.(*worker).start"))
 }
 
 func openTestDB(t testing.TB, opts *Options, rngs []int64) (db *DB) {
@@ -1001,7 +1004,7 @@ func TestWALFlushedOnDBClose(t *testing.T) {
 	q, err := db.Querier(0, 1)
 	require.NoError(t, err)
 
-	values, ws, err := q.LabelValues(ctx, "labelname")
+	values, ws, err := q.LabelValues(ctx, "labelname", nil)
 	require.NoError(t, err)
 	require.Empty(t, ws)
 	require.Equal(t, []string{"labelvalue"}, values)
@@ -1976,7 +1979,7 @@ func TestQuerierWithBoundaryChunks(t *testing.T) {
 	defer q.Close()
 
 	// The requested interval covers 2 blocks, so the querier's label values for blockID should give us 2 values, one from each block.
-	b, ws, err := q.LabelValues(ctx, "blockID")
+	b, ws, err := q.LabelValues(ctx, "blockID", nil)
 	require.NoError(t, err)
 	var nilAnnotations annotations.Annotations
 	require.Equal(t, nilAnnotations, ws)
@@ -2288,7 +2291,7 @@ func TestDB_LabelNames(t *testing.T) {
 		q, err := db.Querier(math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
 		var ws annotations.Annotations
-		labelNames, ws, err = q.LabelNames(ctx)
+		labelNames, ws, err = q.LabelNames(ctx, nil)
 		require.NoError(t, err)
 		require.Empty(t, ws)
 		require.NoError(t, q.Close())

@@ -9,7 +9,7 @@ import {
   Table,
   Text,
 } from "@mantine/core";
-import { KVSearch, Query, QueryNode } from "@nexucis/kvsearch";
+import { KVSearch } from "@nexucis/kvsearch";
 import { IconAlertTriangle, IconInfoCircle } from "@tabler/icons-react";
 import { useSuspenseAPIQuery } from "../../api/api";
 import { Target, TargetsResult } from "../../api/responseTypes/targets";

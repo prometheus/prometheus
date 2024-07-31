@@ -2,7 +2,6 @@ import {
   ActionIcon,
   Box,
   Group,
-  Input,
   Select,
   Skeleton,
   TextInput,

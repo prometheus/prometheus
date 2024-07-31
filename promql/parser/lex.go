@@ -137,16 +137,24 @@ var key = map[string]ItemType{
 }
 
 var histogramDesc = map[string]ItemType{
-	"sum":           SUM_DESC,
-	"count":         COUNT_DESC,
-	"schema":        SCHEMA_DESC,
-	"offset":        OFFSET_DESC,
-	"n_offset":      NEGATIVE_OFFSET_DESC,
-	"buckets":       BUCKETS_DESC,
-	"n_buckets":     NEGATIVE_BUCKETS_DESC,
-	"z_bucket":      ZERO_BUCKET_DESC,
-	"z_bucket_w":    ZERO_BUCKET_WIDTH_DESC,
-	"custom_values": CUSTOM_VALUES_DESC,
+	"sum":                SUM_DESC,
+	"count":              COUNT_DESC,
+	"schema":             SCHEMA_DESC,
+	"offset":             OFFSET_DESC,
+	"n_offset":           NEGATIVE_OFFSET_DESC,
+	"buckets":            BUCKETS_DESC,
+	"n_buckets":          NEGATIVE_BUCKETS_DESC,
+	"z_bucket":           ZERO_BUCKET_DESC,
+	"z_bucket_w":         ZERO_BUCKET_WIDTH_DESC,
+	"custom_values":      CUSTOM_VALUES_DESC,
+	"counter_reset_hint": COUNTER_RESET_HINT_DESC,
+}
+
+var counterResetHints = map[string]ItemType{
+	"unknown":   UNKNOWN_COUNTER_RESET,
+	"reset":     COUNTER_RESET,
+	"not_reset": NOT_COUNTER_RESET,
+	"gauge":     GAUGE_TYPE,
 }
 
 // ItemTypeStr is the default string representations for common Items. It does not
@@ -478,7 +486,7 @@ func lexStatements(l *Lexer) stateFn {
 			skipSpaces(l)
 		}
 		l.bracketOpen = true
-		return lexDuration
+		return lexNumberOrDuration
 	case r == ']':
 		if !l.bracketOpen {
 			return l.errorf("unexpected right bracket %q", r)
@@ -585,6 +593,11 @@ Loop:
 					return lexHistogram
 				}
 			}
+			if desc, ok := counterResetHints[strings.ToLower(word)]; ok {
+				l.emit(desc)
+				return lexHistogram
+			}
+
 			l.errorf("bad histogram descriptor found: %q", word)
 			break Loop
 		}
@@ -846,18 +859,6 @@ func lexLineComment(l *Lexer) stateFn {
 	return lexStatements
 }
 
-func lexDuration(l *Lexer) stateFn {
-	if l.scanNumber() {
-		return l.errorf("missing unit character in duration")
-	}
-	if !acceptRemainingDuration(l) {
-		return l.errorf("bad duration syntax: %q", l.input[l.start:l.pos])
-	}
-	l.backup()
-	l.emit(DURATION)
-	return lexStatements
-}
-
 // lexNumber scans a number: decimal, hex, oct or float.
 func lexNumber(l *Lexer) stateFn {
 	if !l.scanNumber() {
@@ -909,6 +910,7 @@ func acceptRemainingDuration(l *Lexer) bool {
 // scanNumber scans numbers of different formats. The scanned Item is
 // not necessarily a valid number. This case is caught by the parser.
 func (l *Lexer) scanNumber() bool {
+	initialPos := l.pos
 	// Modify the digit pattern if the number is hexadecimal.
 	digitPattern := "0123456789"
 	// Disallow hexadecimal in series descriptions as the syntax is ambiguous.
@@ -980,7 +982,10 @@ func (l *Lexer) scanNumber() bool {
 		// Handle digits at the end since we already consumed before this loop.
 		l.acceptRun(digitPattern)
 	}
-
+	// Empty string is not a valid number.
+	if l.pos == initialPos {
+		return false
+	}
 	// Next thing must not be alphanumeric unless it's the times token
 	// for series repetitions.
 	if r := l.peek(); (l.seriesDesc && r == 'x') || !isAlphaNumeric(r) {

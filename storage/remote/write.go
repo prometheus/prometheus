@@ -100,7 +100,7 @@ func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, dir string, f
 				Namespace: namespace,
 				Subsystem: subsystem,
 				Name:      "highest_timestamp_in_seconds",
-				Help:      "Highest timestamp that has come into the remote storage via the Appender interface, in seconds since epoch.",
+				Help:      "Highest timestamp that has come into the remote storage via the Appender interface, in seconds since epoch. Initialized to 0 when no data has been received yet.",
 			}),
 		},
 	}
@@ -176,6 +176,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			HTTPClientConfig: rwConf.HTTPClientConfig,
 			SigV4Config:      rwConf.SigV4Config,
 			AzureADConfig:    rwConf.AzureADConfig,
+			GoogleIAMConfig:  rwConf.GoogleIAMConfig,
 			Headers:          rwConf.Headers,
 			RetryOnRateLimit: rwConf.QueueConfig.RetryOnRateLimit,
 		})

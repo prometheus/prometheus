@@ -1,7 +1,7 @@
 {
   "name": "prometheus-io",
   "description": "Monorepo for the Prometheus UI",
-  "version": "0.53.0",
+  "version": "0.53.1",
   "private": true,
   "scripts": {
     "build": "bash build_ui.sh --all",
@@ -18,7 +18,7 @@
     "@types/jest": "^29.5.12",
     "@typescript-eslint/eslint-plugin": "^6.21.0",
     "@typescript-eslint/parser": "^6.21.0",
-    "ts-jest": "^29.1.2",
+    "ts-jest": "^29.2.2",
     "typescript": "^5.2.2",
     "vite": "^5.1.0"
   }

@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"go.uber.org/goleak"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -51,7 +50,7 @@ const (
 func TestMain(m *testing.M) {
 	// Enable experimental functions testing
 	parser.EnableExperimentalFunctions = true
-	goleak.VerifyTestMain(m)
+	testutil.TolerantVerifyLeak(m)
 }
 
 func TestQueryConcurrency(t *testing.T) {
@@ -238,11 +237,11 @@ func (q *errQuerier) Select(context.Context, bool, *storage.SelectHints, ...*lab
 	return errSeriesSet{err: q.err}
 }
 
-func (*errQuerier) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (*errQuerier) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
-func (*errQuerier) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (*errQuerier) LabelNames(context.Context, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 func (*errQuerier) Close() error { return nil }

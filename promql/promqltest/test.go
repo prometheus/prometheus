@@ -55,6 +55,11 @@ const (
 	DefaultMaxSamplesPerQuery = 10000
 )
 
+type TBRun interface {
+	testing.TB
+	Run(string, func(*testing.T)) bool
+}
+
 var testStartTime = time.Unix(0, 0).UTC()
 
 // LoadedStorage returns storage with generated data using the provided load statements.
@@ -89,7 +94,7 @@ func NewTestEngine(enablePerStepStats bool, lookbackDelta time.Duration, maxSamp
 }
 
 // RunBuiltinTests runs an acceptance test suite against the provided engine.
-func RunBuiltinTests(t *testing.T, engine promql.QueryEngine) {
+func RunBuiltinTests(t TBRun, engine promql.QueryEngine) {
 	t.Cleanup(func() { parser.EnableExperimentalFunctions = false })
 	parser.EnableExperimentalFunctions = true
 
