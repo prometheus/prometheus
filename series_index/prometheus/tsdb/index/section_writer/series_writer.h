@@ -11,35 +11,51 @@ class SeriesWriter {
  public:
   using StreamWriter = PromPP::Prometheus::tsdb::index::StreamWriter;
 
+  static constexpr uint32_t kAllSeries = std::numeric_limits<uint32_t>::max();
+
   SeriesWriter(const Lss& lss,
                const ChunkMetadataList& chunk_metadata_list,
                const SymbolReferencesMap& symbol_references,
-               SeriesReferencesMap& series_references,
-               StreamWriter& writer)
-      : lss_(lss), chunk_metadata_list_(chunk_metadata_list), symbol_references_(symbol_references), series_references_(series_references), writer_(writer) {}
+               SeriesReferencesMap& series_references)
+      : lss_(lss),
+        iterator_(lss_.ls_id_set().begin()),
+        chunk_metadata_list_(chunk_metadata_list),
+        symbol_references_(symbol_references),
+        series_references_(series_references) {}
 
-  void write() {
-    writer_.align_to(PromPP::Prometheus::tsdb::index::kSeriesAlignment);
+  void write(StreamWriter& writer, uint32_t series_count = kAllSeries) {
+    writer.align_to(PromPP::Prometheus::tsdb::index::kSeriesAlignment);
 
-    for (auto ls_id : lss_.ls_id_set()) {
-      emplace_series_reference(ls_id);
+    write_series(writer, series_count);
+
+    if (!has_more_data()) {
+      free_memory();
+    }
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool has_more_data() const noexcept { return iterator_ != lss_.ls_id_set().end(); }
+
+ private:
+  const Lss& lss_;
+  Lss::LsIdSetIterator iterator_;
+  const ChunkMetadataList& chunk_metadata_list_;
+  const SymbolReferencesMap& symbol_references_;
+  SeriesReferencesMap& series_references_;
+
+  std::string serialized_series_str_;
+  uint64_t chunk_offset_{};
+
+  void write_series(StreamWriter& writer, uint32_t series_count) {
+    for (uint32_t i = 0; has_more_data() && i < series_count; ++i, ++iterator_) {
+      auto ls_id = *iterator_;
+      emplace_series_reference(ls_id, writer.position());
 
       serialized_series_str_.clear();
       serialize_labels(ls_id);
       serialize_chunks(ls_id);
-      write_series();
+      write_serialized_series(writer);
     }
   }
-
- private:
-  const Lss& lss_;
-  const ChunkMetadataList& chunk_metadata_list_;
-  const SymbolReferencesMap& symbol_references_;
-  SeriesReferencesMap& series_references_;
-  StreamWriter& writer_;
-
-  std::string serialized_series_str_;
-  uint64_t chunk_offset_{};
 
   void serialize_labels(PromPP::Primitives::LabelSetID ls_id) {
     const auto& labels = lss_[ls_id];
@@ -60,8 +76,6 @@ class SeriesWriter {
 
     for (auto& chunk : chunks) {
       if (previous_max_timestamp == std::numeric_limits<PromPP::Primitives::Timestamp>::max()) {
-        std::cout << chunk.min_timestamp << std::endl;
-
         StreamWriter::write_varint(chunk.min_timestamp, serialized_series_str_);
         StreamWriter::write_uvarint(chunk.max_timestamp - chunk.min_timestamp, serialized_series_str_);
         StreamWriter::write_uvarint(chunk_offset_, serialized_series_str_);
@@ -77,22 +91,27 @@ class SeriesWriter {
     }
   }
 
-  PROMPP_ALWAYS_INLINE void emplace_series_reference(PromPP::Primitives::LabelSetID ls_id) {
-    auto section_ref = writer_.position() / PromPP::Prometheus::tsdb::index::kSeriesAlignment;
+  PROMPP_ALWAYS_INLINE void emplace_series_reference(PromPP::Primitives::LabelSetID ls_id, size_t position) {
+    auto section_ref = position / PromPP::Prometheus::tsdb::index::kSeriesAlignment;
     series_references_.try_emplace(ls_id, section_ref);
   }
 
-  void write_series() {
-    writer_.write_uvarint(serialized_series_str_.length());
-    writer_.write(serialized_series_str_);
-    writer_.compute_and_write_crc32(serialized_series_str_);
-    writer_.align_to(PromPP::Prometheus::tsdb::index::kSeriesAlignment);
+  void write_serialized_series(StreamWriter& writer) {
+    writer.write_uvarint(serialized_series_str_.length());
+    writer.write(serialized_series_str_);
+    writer.compute_and_write_crc32(serialized_series_str_);
+    writer.align_to(PromPP::Prometheus::tsdb::index::kSeriesAlignment);
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE PromPP::Prometheus::tsdb::index::SymbolReference get_symbol_reference(SymbolLssId symbol_id) const noexcept {
     auto reference_it = symbol_references_.find(symbol_id);
     assert(reference_it != symbol_references_.end());
     return reference_it->second;
+  }
+
+  PROMPP_ALWAYS_INLINE void free_memory() noexcept {
+    serialized_series_str_.clear();
+    serialized_series_str_.shrink_to_fit();
   }
 };
 

@@ -33,7 +33,7 @@ class PostingsWriterFixture : public testing::TestWithParam<PostingsWriterCase> 
   using QueryableEncodingBimap = series_index::QueryableEncodingBimap<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimapFilament, TrieIndex>;
 
   std::ostringstream stream_;
-  StreamWriter stream_writer_{stream_};
+  StreamWriter stream_writer_{&stream_};
   QueryableEncodingBimap lss_;
   SymbolReferencesMap symbol_references_;
   SeriesReferencesMap series_references_;
@@ -44,12 +44,10 @@ class PostingsWriterFixture : public testing::TestWithParam<PostingsWriterCase> 
       lss_.find_or_emplace(label_set);
     }
 
-    SymbolsWriter<QueryableEncodingBimap>{lss_, symbol_references_, stream_writer_}.write();
-    SeriesWriter<QueryableEncodingBimap, ChunkMetadataList>{lss_, GetParam().chunk_metadata_list, symbol_references_, series_references_, stream_writer_}
-        .write();
-
-    stream_.str("");
-    stream_.clear();
+    std::ostringstream stream;
+    StreamWriter stream_writer{&stream};
+    SymbolsWriter<QueryableEncodingBimap>{lss_, symbol_references_, stream_writer}.write();
+    SeriesWriter<QueryableEncodingBimap, ChunkMetadataList>{lss_, GetParam().chunk_metadata_list, symbol_references_, series_references_}.write(stream_writer);
   }
 };
 

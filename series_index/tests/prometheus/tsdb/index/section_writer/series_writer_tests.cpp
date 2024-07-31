@@ -18,10 +18,12 @@ using series_index::prometheus::tsdb::index::section_writer::SymbolsWriter;
 using std::operator""sv;
 
 using ChunkMetadataList = std::vector<std::vector<ChunkMetadata>>;
+using LabelViewSetList = std::vector<LabelViewSet>;
 
 struct SeriesWriterCase {
-  std::vector<LabelViewSet> label_sets;
+  LabelViewSetList label_sets;
   ChunkMetadataList chunk_metadata_list;
+  uint32_t series_count;
   std::string_view expected;
 };
 
@@ -29,44 +31,46 @@ class SeriesWriterFixture : public testing::TestWithParam<SeriesWriterCase> {
  protected:
   using TrieIndex = series_index::TrieIndex<series_index::trie::CedarTrie, series_index::trie::CedarMatchesList>;
   using QueryableEncodingBimap = series_index::QueryableEncodingBimap<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimapFilament, TrieIndex>;
-  using ChunkMetadataList = std::vector<std::vector<ChunkMetadata>>;
 
   std::ostringstream stream_;
-  StreamWriter stream_writer_{stream_};
+  StreamWriter stream_writer_{&stream_};
   QueryableEncodingBimap lss_;
   SymbolReferencesMap symbol_references_;
   SeriesReferencesMap series_references_;
-  SeriesWriter<QueryableEncodingBimap, ChunkMetadataList> series_writer_{lss_, GetParam().chunk_metadata_list, symbol_references_, series_references_,
-                                                                         stream_writer_};
 
-  void SetUp() final {
-    for (auto& label_set : GetParam().label_sets) {
+  void fill_lss_and_symbols(const LabelViewSetList& label_sets) {
+    for (auto& label_set : label_sets) {
       lss_.find_or_emplace(label_set);
     }
 
-    SymbolsWriter<QueryableEncodingBimap>{lss_, symbol_references_, stream_writer_}.write();
-
-    stream_.str("");
-    stream_.clear();
+    std::ostringstream stream;
+    StreamWriter stream_writer{&stream};
+    SymbolsWriter<QueryableEncodingBimap>{lss_, symbol_references_, stream_writer}.write();
   }
 };
 
-TEST_P(SeriesWriterFixture, Test) {
+TEST_P(SeriesWriterFixture, FullWrite) {
   // Arrange
+  fill_lss_and_symbols(GetParam().label_sets);
+  SeriesWriter<QueryableEncodingBimap, ChunkMetadataList> series_writer{lss_, GetParam().chunk_metadata_list, symbol_references_, series_references_};
 
   // Act
-  series_writer_.write();
+  series_writer.write(stream_writer_, GetParam().series_count);
 
   // Assert
   EXPECT_EQ(GetParam().expected, stream_.view());
+  EXPECT_FALSE(series_writer.has_more_data());
 }
 
-INSTANTIATE_TEST_SUITE_P(EmptyLabelSet, SeriesWriterFixture, testing::Values(SeriesWriterCase{.label_sets = {}, .chunk_metadata_list = {}, .expected = ""}));
+INSTANTIATE_TEST_SUITE_P(EmptyLabelSet,
+                         SeriesWriterFixture,
+                         testing::Values(SeriesWriterCase{.label_sets = {}, .chunk_metadata_list = {}, .series_count = 1, .expected = ""}));
 
 INSTANTIATE_TEST_SUITE_P(LabelWithEmptyValue,
                          SeriesWriterFixture,
                          testing::Values(SeriesWriterCase{.label_sets = {{{"key", ""}}},
                                                           .chunk_metadata_list = {{}},
+                                                          .series_count = 1,
                                                           .expected = "\x04"
                                                                       "\x01"
                                                                       "\x01"
@@ -77,30 +81,35 @@ INSTANTIATE_TEST_SUITE_P(LabelWithEmptyValue,
 
 INSTANTIATE_TEST_SUITE_P(TwoSeries,
                          SeriesWriterFixture,
-                         testing::Values(SeriesWriterCase{
-                             .label_sets = {{{"job", "cron"}, {"server", "localhost"}}, {{"job", "cron"}, {"server", "127.0.0.1"}}},
-                             .chunk_metadata_list = {{}, {}},
-                             .expected = "\x06"
-                                         "\x02"
-                                         "\x03\x02"
-                                         "\x05\x01"
-                                         "\x00"
-                                         "\x53\xCF\xE1\x2F"
-                                         "\x00\x00\x00\x00\x00"
+                         testing::Values(SeriesWriterCase{.label_sets =
+                                                              {
+                                                                  {{"job", "cron"}, {"server", "localhost"}},
+                                                                  {{"job", "cron"}, {"server", "127.0.0.1"}},
+                                                              },
+                                                          .chunk_metadata_list = {{}, {}},
+                                                          .series_count = 2,
+                                                          .expected = "\x06"
+                                                                      "\x02"
+                                                                      "\x03\x02"
+                                                                      "\x05\x01"
+                                                                      "\x00"
+                                                                      "\x53\xCF\xE1\x2F"
+                                                                      "\x00\x00\x00\x00\x00"
 
-                                         "\x06"
-                                         "\x02"
-                                         "\x03\x02"
-                                         "\x05\x04"
-                                         "\x00"
-                                         "\x0E\xE7\x18\x84"
-                                         "\x00\x00\x00\x00\x00"sv}));
+                                                                      "\x06"
+                                                                      "\x02"
+                                                                      "\x03\x02"
+                                                                      "\x05\x04"
+                                                                      "\x00"
+                                                                      "\x0E\xE7\x18\x84"
+                                                                      "\x00\x00\x00\x00\x00"sv}));
 
 INSTANTIATE_TEST_SUITE_P(WithChunks,
                          SeriesWriterFixture,
                          testing::Values(SeriesWriterCase{.label_sets = {{{"job", "cron"}}},
                                                           .chunk_metadata_list = {{{.min_timestamp = 1000, .max_timestamp = 2001, .size = 100},
                                                                                    {.min_timestamp = 2002, .max_timestamp = 4004, .size = 125}}},
+                                                          .series_count = 1,
                                                           .expected = "\x0E"
                                                                       "\x01"
                                                                       "\x02"
@@ -119,5 +128,44 @@ INSTANTIATE_TEST_SUITE_P(WithChunks,
                                                                       "\x69\xFD\xD7\x80"
 
                                                                       "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"sv}));
+
+TEST_F(SeriesWriterFixture, PartialWrite) {
+  // Arrange
+  fill_lss_and_symbols(LabelViewSetList{
+      {{"job", "cron"}, {"server", "localhost"}},
+      {{"job", "cron"}, {"server", "127.0.0.1"}},
+  });
+  ChunkMetadataList chunk_metadata_list{{}, {}};
+  SeriesWriter<QueryableEncodingBimap, ChunkMetadataList> series_writer{lss_, chunk_metadata_list, symbol_references_, series_references_};
+
+  // Act
+  series_writer.write(stream_writer_, 1);
+  auto has_more_data_after_first_write = series_writer.has_more_data();
+  auto first_series_data = stream_.str();
+  stream_.str("");
+  series_writer.write(stream_writer_, 1);
+
+  // Assert
+  EXPECT_EQ(
+      "\x06"
+      "\x02"
+      "\x03\x02"
+      "\x05\x01"
+      "\x00"
+      "\x53\xCF\xE1\x2F"
+      "\x00\x00\x00\x00\x00"sv,
+      first_series_data);
+  EXPECT_EQ(
+      "\x06"
+      "\x02"
+      "\x03\x02"
+      "\x05\x04"
+      "\x00"
+      "\x0E\xE7\x18\x84"
+      "\x00\x00\x00\x00\x00"sv,
+      stream_.view());
+  EXPECT_TRUE(has_more_data_after_first_write);
+  EXPECT_FALSE(series_writer.has_more_data());
+}
 
 }  // namespace

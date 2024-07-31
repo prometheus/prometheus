@@ -14,6 +14,7 @@ class QueryableEncodingBimap : public BareBones::SnugComposite::DecodingTable<Fi
  public:
   using Base = BareBones::SnugComposite::DecodingTable<Filament>;
   using Set = phmap::btree_set<typename Base::Proxy, typename Base::LessComparator, BareBones::Allocator<typename Base::Proxy>>;
+  using LsIdSetIterator = Set::const_iterator;
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE const TrieIndex& trie_index() const noexcept { return trie_index_; }
   [[nodiscard]] PROMPP_ALWAYS_INLINE const SeriesReverseIndex& reverse_index() const noexcept { return reverse_index_; }

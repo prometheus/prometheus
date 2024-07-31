@@ -24,7 +24,7 @@ class SymbolsWriterFixture : public testing::TestWithParam<SymbolsWriterCase> {
   using QueryableEncodingBimap = series_index::QueryableEncodingBimap<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimapFilament, TrieIndex>;
 
   std::ostringstream stream_;
-  StreamWriter stream_writer_{stream_};
+  StreamWriter stream_writer_{&stream_};
   QueryableEncodingBimap lss_;
   SymbolReferencesMap symbol_references_;
   SymbolsWriter<QueryableEncodingBimap> symbols_writer_{lss_, symbol_references_, stream_writer_};
