@@ -62,9 +62,13 @@ func (f *histogramStatsIterator) AtHistogram(h *histogram.Histogram) (int64, *hi
 		return t, h
 	}
 
-	h.CounterResetHint = f.getResetHint(f.currentH)
-	h.Count = f.currentH.Count
-	h.Sum = f.currentH.Sum
+	returnValue := histogram.Histogram{
+		CounterResetHint: f.getResetHint(f.currentH),
+		Count:            f.currentH.Count,
+		Sum:              f.currentH.Sum,
+	}
+	returnValue.CopyTo(h)
+
 	f.setLastH(f.currentH)
 	return t, h
 }
@@ -89,9 +93,13 @@ func (f *histogramStatsIterator) AtFloatHistogram(fh *histogram.FloatHistogram) 
 		return t, fh
 	}
 
-	fh.CounterResetHint = f.getFloatResetHint(f.currentFH.CounterResetHint)
-	fh.Count = f.currentFH.Count
-	fh.Sum = f.currentFH.Sum
+	returnValue := histogram.FloatHistogram{
+		CounterResetHint: f.getFloatResetHint(f.currentFH.CounterResetHint),
+		Count:            f.currentFH.Count,
+		Sum:              f.currentFH.Sum,
+	}
+	returnValue.CopyTo(fh)
+
 	f.setLastFH(f.currentFH)
 	return t, fh
 }
