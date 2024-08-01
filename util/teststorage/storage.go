@@ -36,12 +36,6 @@ func New(t testutil.T) *TestStorage {
 	return stor
 }
 
-func NewOpts(t testutil.T, headOpts *tsdb.HeadOptions) *TestStorage {
-	stor, err := NewWithError()
-	require.NoError(t, err)
-	return stor
-}
-
 // NewWithError returns a new TestStorage for user facing tests, which reports
 // errors directly.
 func NewWithError() (*TestStorage, error) {
@@ -57,6 +51,8 @@ func NewWithError() (*TestStorage, error) {
 	opts.MaxBlockDuration = int64(24 * time.Hour / time.Millisecond)
 	opts.RetentionDuration = 0
 	opts.EnableNativeHistograms = true
+	opts.OutOfOrderTimeWindow = 600000
+
 	db, err := tsdb.Open(dir, nil, nil, opts, tsdb.NewDBStats())
 	if err != nil {
 		return nil, fmt.Errorf("opening test storage: %w", err)

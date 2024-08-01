@@ -43,7 +43,6 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/teststorage"
@@ -1196,10 +1195,7 @@ func TestRuleMovedBetweenFiles(t *testing.T) {
 		t.Skip("skipping test in short mode.")
 	}
 
-	headOpts := &tsdb.HeadOptions{}
-	headOpts.OutOfOrderTimeWindow.Store(2 * int64(time.Hour))
-
-	storage := teststorage.NewOpts(t, headOpts)
+	storage := teststorage.New(t)
 	defer storage.Close()
 	opts := promql.EngineOpts{
 		Logger:     nil,
@@ -1223,26 +1219,64 @@ func TestRuleMovedBetweenFiles(t *testing.T) {
 		}
 	}()
 
-	// Create initial rule files
+	// file paths defination
+	file1 := "fixtures/rules2.yaml"
+	file2 := "fixtures/rules1.yaml"
 
-	// Load initial configuration
+	// Load initial configuration of rules2
+	require.NoError(t, ruleManager.Update(1*time.Second, []string{file1}, labels.EmptyLabels(), "", nil))
 
 	// Wait for rule to be evaluated
+	time.Sleep(5 * time.Second)
 
-	// Move rule to second file
-
-	// Reload configuration
+	// Reload configuration  of rules1
+	require.NoError(t, ruleManager.Update(1*time.Second, []string{file2}, labels.EmptyLabels(), "", nil))
 
 	// Wait for rule to be evaluated in new location and potential staleness marker
+	time.Sleep(5 * time.Second)
+
+	// Print files content after reloading
+	content1, _ := os.ReadFile(file1)
+	fmt.Printf("Content of %s:\n%s\n", file1, string(content1))
+	content2, _ := os.ReadFile(file2)
+	fmt.Printf("Content of %s:\n%s\n", file2, string(content2))
 
 	// Query the data
+	querier, err := storage.Querier(0, time.Now().Unix()*1000)
+	require.NoError(t, err)
+	defer querier.Close()
+
+	matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_2")
+	require.NoError(t, err)
+
+	set := querier.Select(context.Background(), false, nil, matcher)
+	samples, err := readSeriesSet(set)
+	require.NoError(t, err)
+
+	// Print the samples
+	fmt.Printf("Samples: %+v\n", samples)
 
 	// Verify that we have continuous data without gaps
+	require.NotEmpty(t, samples)
+	metric := labels.FromStrings(model.MetricNameLabel, "test_2").String()
+	_, ok := samples[metric]
+
+	require.True(t, ok, "Series %s not returned.", metric)
+
+	// Print the metric
+	fmt.Printf("Metric: %s\n", metric)
 
 	// Verify no out-of-order samples
+	for _, s := range samples {
+		var prevT int64
+		for _, p := range s {
+			fmt.Printf("Comparing timestamp %d with previous %d\n", p.T, prevT)
+			require.Greater(t, p.T, prevT)
+			prevT = p.T
+		}
+	}
 
-	// Verify no staleness markers
-
+	require.Equal(t, 0, countStaleNaN(t, storage)) // Not expecting any stale markers.
 }
 func TestGroupHasAlertingRules(t *testing.T) {
 	tests := []struct {
@@ -1276,7 +1310,6 @@ func TestGroupHasAlertingRules(t *testing.T) {
 			want: false,
 		},
 	}
-
 	for i, test := range tests {
 		got := test.group.HasAlertingRules()
 		require.Equal(t, test.want, got, "test case %d failed, expected:%t got:%t", i, test.want, got)
