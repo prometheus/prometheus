@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage/remote/azuread"
+	"github.com/prometheus/prometheus/storage/remote/googleiam"
 )
 
 const maxErrMsgLen = 1024
@@ -131,6 +132,7 @@ type ClientConfig struct {
 	HTTPClientConfig config_util.HTTPClientConfig
 	SigV4Config      *sigv4.SigV4Config
 	AzureADConfig    *azuread.AzureADConfig
+	GoogleIAMConfig  *googleiam.Config
 	Headers          map[string]string
 	RetryOnRateLimit bool
 	WriteProtoMsg    config.RemoteWriteProtoMsg
@@ -187,6 +189,13 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 
 	if conf.AzureADConfig != nil {
 		t, err = azuread.NewAzureADRoundTripper(conf.AzureADConfig, t)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if conf.GoogleIAMConfig != nil {
+		t, err = googleiam.NewRoundTripper(conf.GoogleIAMConfig, t)
 		if err != nil {
 			return nil, err
 		}
