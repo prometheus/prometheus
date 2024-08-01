@@ -617,9 +617,7 @@ func (s *shards) reconfiguringShardLsses(numberOfShards uint16) error {
 				s.memoryInUse.Delete(prometheus.Labels{"allocator": "main_lss", "id": fmt.Sprintf("%d", shardID)})
 				continue
 			}
-			if err := s.shardLsses[shardID].Reset(); err != nil {
-				return err
-			}
+			s.shardLsses[shardID].Reset()
 		}
 		// cut
 		s.shardLsses = s.shardLsses[:numberOfShards]
@@ -633,18 +631,12 @@ func (s *shards) reconfiguringShardLsses(numberOfShards uint16) error {
 	)
 	for shardID := 0; shardID < int(numberOfShards); shardID++ {
 		if s.shardLsses[shardID] != nil {
-			if err := s.shardLsses[shardID].Reset(); err != nil {
-				return err
-			}
+			s.shardLsses[shardID].Reset()
 			continue
 		}
 
 		// create if not exist
-		lss, err := cppbridge.NewLabelSetStorage()
-		if err != nil {
-			return err
-		}
-		s.shardLsses[shardID] = lss
+		s.shardLsses[shardID] = cppbridge.NewQueryableLssStorage()
 	}
 
 	return nil
@@ -733,9 +725,7 @@ func (s *shards) updateOrCreateStatelessRelabeler(
 func (s *shards) rotate() error {
 	var shardID uint16
 	for ; shardID < s.numberOfShards; shardID++ {
-		if err := s.shardLsses[shardID].Reset(); err != nil {
-			return err
-		}
+		s.shardLsses[shardID].Reset()
 	}
 
 	for rkey, inputRelabeler := range s.inputRelabelers {
