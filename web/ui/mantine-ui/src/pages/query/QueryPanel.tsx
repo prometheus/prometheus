@@ -23,12 +23,12 @@ import {
   setExpr,
   setVisualizer,
 } from "../../state/queryPageSlice";
-import DataTable from "./DataTable";
 import TimeInput from "./TimeInput";
 import RangeInput from "./RangeInput";
 import ExpressionInput from "./ExpressionInput";
 import Graph from "./Graph";
 import ResolutionInput from "./ResolutionInput";
+import TableTab from "./TableTab";
 
 export interface PanelProps {
   idx: number;
@@ -84,7 +84,7 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
           </Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel pt="sm" value="table">
-          <DataTable panelIdx={idx} retriggerIdx={retriggerIdx} />
+          <TableTab panelIdx={idx} retriggerIdx={retriggerIdx} />
         </Tabs.Panel>
         <Tabs.Panel
           pt="sm"

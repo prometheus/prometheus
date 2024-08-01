@@ -7,6 +7,7 @@ export type SuccessAPIResponse<T> = {
   status: "success";
   data: T;
   warnings?: string[];
+  infos?: string[];
 };
 
 export type ErrorAPIResponse = {

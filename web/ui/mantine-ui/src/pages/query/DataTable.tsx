@@ -1,17 +1,8 @@
-import {
-  FC,
-  ReactNode,
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useState,
-} from "react";
+import { FC, ReactNode, useState } from "react";
 import {
   Table,
   Alert,
-  Skeleton,
   Box,
-  LoadingOverlay,
   SegmentedControl,
   ScrollArea,
   Group,
@@ -26,7 +17,6 @@ import {
   RangeSamples,
 } from "../../api/responseTypes/query";
 import SeriesName from "./SeriesName";
-import { useAPIQuery } from "../../api/api";
 import classes from "./DataTable.module.css";
 import dayjs from "dayjs";
 import timezone from "dayjs/plugin/timezone";
@@ -35,13 +25,10 @@ import HistogramChart from "./HistogramChart";
 import { Histogram } from "../../types/types";
 import { bucketRangeString } from "./HistogramHelpers";
 import { useSettings } from "../../state/settingsSlice";
-import { useAppDispatch, useAppSelector } from "../../state/hooks";
-import { setVisualizer } from "../../state/queryPageSlice";
-import TimeInput from "./TimeInput";
 dayjs.extend(timezone);
 
-const maxFormattableSeries = 1000;
-const maxDisplayableSeries = 10000;
+const maxFormattableSeries = 10;
+const maxDisplayableSeries = 100;
 
 const limitSeries = <S extends InstantSample | RangeSamples>(
   series: S[],
@@ -54,256 +41,139 @@ const limitSeries = <S extends InstantSample | RangeSamples>(
 };
 
 export interface DataTableProps {
-  panelIdx: number;
-  retriggerIdx: number;
+  data: InstantQueryResult;
+  limitResults: boolean;
+  setLimitResults: (limit: boolean) => void;
 }
 
-const DataTable: FC<DataTableProps> = ({ panelIdx, retriggerIdx }) => {
+const DataTable: FC<DataTableProps> = ({
+  data,
+  limitResults,
+  setLimitResults,
+}) => {
   const [scale, setScale] = useState<string>("exponential");
-  const [limitResults, setLimitResults] = useState<boolean>(true);
-  const [responseTime, setResponseTime] = useState<number>(0);
-
-  const { expr, visualizer } = useAppSelector(
-    (state) => state.queryPage.panels[panelIdx]
-  );
-  const dispatch = useAppDispatch();
-
-  const { endTime, range } = visualizer;
-
-  const { data, error, isFetching, isLoading, refetch } =
-    useAPIQuery<InstantQueryResult>({
-      key: useId(),
-      path: "/query",
-      params: {
-        query: expr,
-        time: `${(endTime !== null ? endTime : Date.now()) / 1000}`,
-      },
-      enabled: expr !== "",
-      recordResponseTime: setResponseTime,
-    });
-
-  useEffect(() => {
-    expr !== "" && refetch();
-  }, [retriggerIdx, refetch, expr, endTime]);
-
-  useLayoutEffect(() => {
-    setLimitResults(true);
-  }, [data, isFetching]);
-
   const { useLocalTime } = useSettings();
 
-  // Show a skeleton only on the first load, not on subsequent ones.
-  if (isLoading) {
-    return (
-      <Box>
-        {Array.from(Array(5), (_, i) => (
-          <Skeleton key={i} height={30} mb={15} />
-        ))}
-      </Box>
-    );
-  }
-
-  if (error) {
-    return (
-      <Alert
-        color="red"
-        title="Error executing query"
-        icon={<IconAlertTriangle size={14} />}
-      >
-        {error.message}
-      </Alert>
-    );
-  }
-
-  if (data === undefined) {
-    return <Alert variant="transparent">No data queried yet</Alert>;
-  }
-
-  const { result, resultType } = data.data;
-
-  if (result.length === 0) {
-    return (
-      <Alert title="Empty query result" icon={<IconInfoCircle size={14} />}>
-        This query returned no data.
-      </Alert>
-    );
-  }
-
+  const { result, resultType } = data;
   const doFormat = result.length <= maxFormattableSeries;
 
   return (
-    <Stack gap="lg" mt="sm">
-      {isLoading ? (
-        <Box>
-          {Array.from(Array(5), (_, i) => (
-            <Skeleton key={i} height={30} mb={15} />
-          ))}
-        </Box>
-      ) : data === undefined ? (
-        <Alert variant="transparent">No data queried yet</Alert>
-      ) : result.length === 0 ? (
-        <Alert title="Empty query result" icon={<IconInfoCircle size={14} />}>
-          This query returned no data.
-        </Alert>
-      ) : (
-        <>
-          <Group justify="space-between">
-            <TimeInput
-              time={endTime}
-              range={range}
-              description="Evaluation time"
-              onChangeTime={(time) =>
-                dispatch(
-                  setVisualizer({
-                    idx: panelIdx,
-                    visualizer: { ...visualizer, endTime: time },
-                  })
-                )
-              }
-            />
-            <Text size="xs" c="gray">
-              Load time: {responseTime}ms &ensp; Result series: {result.length}
-            </Text>
-          </Group>
+    <Stack gap="lg" mt={0}>
+      {limitResults &&
+        ["vector", "matrix"].includes(resultType) &&
+        result.length > maxDisplayableSeries && (
+          <Alert
+            color="orange"
+            icon={<IconAlertTriangle size={14} />}
+            title="Showing limited results"
+          >
+            Fetched {data.result.length} metrics, only displaying first{" "}
+            {maxDisplayableSeries} for performance reasons.
+            <Anchor ml="md" fz="1em" onClick={() => setLimitResults(false)}>
+              Show all results
+            </Anchor>
+          </Alert>
+        )}
 
-          {limitResults &&
-            ["vector", "matrix"].includes(resultType) &&
-            result.length > maxDisplayableSeries && (
+      {!doFormat && (
+        <Alert
+          title="Formatting turned off"
+          icon={<IconInfoCircle size={14} />}
+        >
+          Showing more than {maxFormattableSeries} series, turning off label
+          formatting to improve rendering performance.
+        </Alert>
+      )}
+
+      <Box pos="relative" className={classes.tableWrapper}>
+        <Table fz="xs">
+          <Table.Tbody>
+            {resultType === "vector" ? (
+              limitSeries<InstantSample>(result, limitResults).map((s, idx) => (
+                <Table.Tr key={idx}>
+                  <Table.Td>
+                    <SeriesName labels={s.metric} format={doFormat} />
+                  </Table.Td>
+                  <Table.Td className={classes.numberCell}>
+                    {s.value && s.value[1]}
+                    {s.histogram && (
+                      <Stack>
+                        <HistogramChart
+                          histogram={s.histogram[1]}
+                          index={idx}
+                          scale={scale}
+                        />
+                        <Group justify="space-between" align="center" p={10}>
+                          <Group align="center" gap="1rem">
+                            <span>
+                              <strong>Count:</strong> {s.histogram[1].count}
+                            </span>
+                            <span>
+                              <strong>Sum:</strong> {s.histogram[1].sum}
+                            </span>
+                          </Group>
+                          <Group align="center" gap="1rem">
+                            <span>x-axis scale:</span>
+                            <SegmentedControl
+                              size={"xs"}
+                              value={scale}
+                              onChange={setScale}
+                              data={["exponential", "linear"]}
+                            />
+                          </Group>
+                        </Group>
+                        {histogramTable(s.histogram[1])}
+                      </Stack>
+                    )}
+                  </Table.Td>
+                </Table.Tr>
+              ))
+            ) : resultType === "matrix" ? (
+              limitSeries<RangeSamples>(result, limitResults).map((s, idx) => (
+                <Table.Tr key={idx}>
+                  <Table.Td>
+                    <SeriesName labels={s.metric} format={doFormat} />
+                  </Table.Td>
+                  <Table.Td className={classes.numberCell}>
+                    {s.values &&
+                      s.values.map((v, idx) => (
+                        <div key={idx}>
+                          {v[1]}{" "}
+                          <Text
+                            span
+                            c="gray.7"
+                            size="1em"
+                            title={formatTimestamp(v[0], useLocalTime)}
+                          >
+                            @ {v[0]}
+                          </Text>
+                        </div>
+                      ))}
+                  </Table.Td>
+                </Table.Tr>
+              ))
+            ) : resultType === "scalar" ? (
+              <Table.Tr>
+                <Table.Td>Scalar value</Table.Td>
+                <Table.Td className={classes.numberCell}>{result[1]}</Table.Td>
+              </Table.Tr>
+            ) : resultType === "string" ? (
+              <Table.Tr>
+                <Table.Td>String value</Table.Td>
+                <Table.Td>{result[1]}</Table.Td>
+              </Table.Tr>
+            ) : (
               <Alert
                 color="red"
+                title="Invalid query response"
                 icon={<IconAlertTriangle size={14} />}
-                title="Showing limited results"
               >
-                Fetched {data.data.result.length} metrics, only displaying first{" "}
-                {maxDisplayableSeries} for performance reasons.
-                <Anchor ml="md" fz="1em" onClick={() => setLimitResults(false)}>
-                  Show all results
-                </Anchor>
+                Invalid result value type
               </Alert>
             )}
-
-          {!doFormat && (
-            <Alert
-              title="Formatting turned off"
-              icon={<IconInfoCircle size={14} />}
-            >
-              Showing more than {maxFormattableSeries} series, turning off label
-              formatting for performance reasons.
-            </Alert>
-          )}
-
-          <Box pos="relative" className={classes.tableWrapper}>
-            <LoadingOverlay
-              visible={isFetching}
-              zIndex={1000}
-              overlayProps={{ radius: "sm", blur: 1 }}
-              loaderProps={{
-                children: <Skeleton m={0} w="100%" h="100%" />,
-              }}
-              styles={{ loader: { width: "100%", height: "100%" } }}
-            />
-
-            <Table fz="xs">
-              <Table.Tbody>
-                {resultType === "vector" ? (
-                  limitSeries<InstantSample>(result, limitResults).map(
-                    (s, idx) => (
-                      <Table.Tr key={idx}>
-                        <Table.Td>
-                          <SeriesName labels={s.metric} format={doFormat} />
-                        </Table.Td>
-                        <Table.Td className={classes.numberCell}>
-                          {s.value && s.value[1]}
-                          {s.histogram && (
-                            <Stack>
-                              <HistogramChart
-                                histogram={s.histogram[1]}
-                                index={idx}
-                                scale={scale}
-                              />
-                              <Group
-                                justify="space-between"
-                                align="center"
-                                p={10}
-                              >
-                                <Group align="center" gap="1rem">
-                                  <span>
-                                    <strong>Count:</strong>{" "}
-                                    {s.histogram[1].count}
-                                  </span>
-                                  <span>
-                                    <strong>Sum:</strong> {s.histogram[1].sum}
-                                  </span>
-                                </Group>
-                                <Group align="center" gap="1rem">
-                                  <span>x-axis scale:</span>
-                                  <SegmentedControl
-                                    size={"xs"}
-                                    value={scale}
-                                    onChange={setScale}
-                                    data={["exponential", "linear"]}
-                                  />
-                                </Group>
-                              </Group>
-                              {histogramTable(s.histogram[1])}
-                            </Stack>
-                          )}
-                        </Table.Td>
-                      </Table.Tr>
-                    )
-                  )
-                ) : resultType === "matrix" ? (
-                  limitSeries<RangeSamples>(result, limitResults).map(
-                    (s, idx) => (
-                      <Table.Tr key={idx}>
-                        <Table.Td>
-                          <SeriesName labels={s.metric} format={doFormat} />
-                        </Table.Td>
-                        <Table.Td className={classes.numberCell}>
-                          {s.values &&
-                            s.values.map((v, idx) => (
-                              <div key={idx}>
-                                {v[1]}{" "}
-                                <Text
-                                  span
-                                  c="gray.7"
-                                  size="1em"
-                                  title={formatTimestamp(v[0], useLocalTime)}
-                                >
-                                  @ {v[0]}
-                                </Text>
-                              </div>
-                            ))}
-                        </Table.Td>
-                      </Table.Tr>
-                    )
-                  )
-                ) : resultType === "scalar" ? (
-                  <Table.Tr>
-                    <Table.Td>Scalar value</Table.Td>
-                    <Table.Td className={classes.numberCell}>
-                      {result[1]}
-                    </Table.Td>
-                  </Table.Tr>
-                ) : resultType === "string" ? (
-                  <Table.Tr>
-                    <Table.Td>String value</Table.Td>
-                    <Table.Td>{result[1]}</Table.Td>
-                  </Table.Tr>
-                ) : (
-                  <Alert
-                    color="red"
-                    title="Invalid query response"
-                    icon={<IconAlertTriangle size={14} />}
-                  >
-                    Invalid result value type
-                  </Alert>
-                )}
-              </Table.Tbody>
-            </Table>
-          </Box>
-        </>
-      )}
+          </Table.Tbody>
+        </Table>
+      </Box>
     </Stack>
   );
 };
