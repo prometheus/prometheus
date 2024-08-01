@@ -5,14 +5,32 @@ import (
 	"testing"
 	"testing/quick"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/pp/go/model"
 )
 
-func TestLabelSet_FromMap(t *testing.T) {
+type LabelSetSuite struct {
+	suite.Suite
+}
+
+func TestLabelSet(t *testing.T) {
+	suite.Run(t, new(LabelSetSuite))
+}
+
+func (s *LabelSetSuite) TestLabelSet_FromSlice() {
+	ls := model.LabelSetFromSlice([]model.SimpleLabel{
+		{"__name__", "example"},
+		{"instance", "instance"},
+		{"job", "test"},
+		{"container", "~unknown"},
+		{"flags", "empty"},
+	})
+	s.Equal("__name__:example;container:~unknown;flags:empty;instance:instance;job:test;", ls.String())
+}
+
+func (s *LabelSetSuite) TestLabelSet_FromMap() {
 	ls := model.LabelSetFromMap(map[string]string{
 		"__name__":  "example",
 		"instance":  "instance",
@@ -20,10 +38,10 @@ func TestLabelSet_FromMap(t *testing.T) {
 		"container": "~unknown",
 		"flags":     "empty",
 	})
-	assert.Equal(t, "__name__:example;container:~unknown;flags:empty;instance:instance;job:test;", ls.String())
+	s.Equal("__name__:example;container:~unknown;flags:empty;instance:instance;job:test;", ls.String())
 }
 
-func TestLabelSet_FromPairs(t *testing.T) {
+func (s *LabelSetSuite) TestLabelSet_FromPairs() {
 	ls := model.LabelSetFromPairs(
 		"__name__", "example",
 		"instance", "instance",
@@ -31,11 +49,11 @@ func TestLabelSet_FromPairs(t *testing.T) {
 		"container", "~unknown",
 		"flags", "empty",
 	)
-	assert.Equal(t, "__name__:example;container:~unknown;flags:empty;instance:instance;job:test;", ls.String())
+	s.Equal("__name__:example;container:~unknown;flags:empty;instance:instance;job:test;", ls.String())
 }
 
-func TestLabelSet_FromPairs_panic(t *testing.T) {
-	assert.Panics(t, func() {
+func (s *LabelSetSuite) TestLabelSet_FromPairs_panic() {
+	s.Panics(func() {
 		model.LabelSetFromPairs(
 			"__name__", "example",
 			"instance", "instance",
@@ -46,7 +64,7 @@ func TestLabelSet_FromPairs_panic(t *testing.T) {
 	})
 }
 
-func TestLabelSet_Get(t *testing.T) {
+func (s *LabelSetSuite) TestLabelSet_Get() {
 	ls := model.LabelSetFromMap(map[string]string{
 		"__name__":  "example",
 		"instance":  "instance",
@@ -54,11 +72,11 @@ func TestLabelSet_Get(t *testing.T) {
 		"container": "~unknown",
 		"flags":     "empty",
 	})
-	assert.Equal(t, "test", ls.Get("job", ""))
-	assert.Equal(t, "not found", ls.Get("plugin", "not found"))
+	s.Equal("test", ls.Get("job", ""))
+	s.Equal("not found", ls.Get("plugin", "not found"))
 }
 
-func TestLabelSet_With(t *testing.T) {
+func (s *LabelSetSuite) TestLabelSet_With() {
 	ls := model.LabelSetFromPairs(
 		"__name__", "example",
 		"instance", "instance",
@@ -66,18 +84,18 @@ func TestLabelSet_With(t *testing.T) {
 		"container", "~unknown",
 		"flags", "empty",
 	)
-	assert.Equal(t,
+	s.Equal(
 		"__name__:example;container:~unknown;flags:empty;instance:instance;job:test;",
 		ls.With("flags", "empty").String())
-	assert.Equal(t,
+	s.Equal(
 		"__name__:example;container:service;flags:empty;instance:instance;job:test;",
 		ls.With("container", "service").String())
-	assert.Equal(t,
+	s.Equal(
 		"__name__:example;container:~unknown;flags:empty;image:added;instance:instance;job:test;",
 		ls.With("image", "added").String())
 }
 
-func TestLabelSet_WithPairs(t *testing.T) {
+func (s *LabelSetSuite) TestLabelSet_WithPairs() {
 	ls := model.LabelSetFromPairs(
 		"__name__", "example",
 		"instance", "instance",
@@ -90,12 +108,12 @@ func TestLabelSet_WithPairs(t *testing.T) {
 		"container", "service",
 		"image", "added",
 	)
-	assert.Equal(t,
+	s.Equal(
 		"__name__:example;container:service;flags:empty;image:added;instance:instance;job:test;",
 		merged.String())
 }
 
-func TestLabelSet_Merge(t *testing.T) {
+func (s *LabelSetSuite) TestLabelSet_Merge() {
 	ls := model.LabelSetFromPairs(
 		"__name__", "example",
 		"instance", "instance",
@@ -108,12 +126,12 @@ func TestLabelSet_Merge(t *testing.T) {
 		"container", "service",
 		"image", "added",
 	))
-	assert.Equal(t,
+	s.Equal(
 		"__name__:example;container:service;flags:empty;image:added;instance:instance;job:test;",
 		merged.String())
 }
 
-func TestLabelSet_Merge_empty(t *testing.T) {
+func (s *LabelSetSuite) TestLabelSet_Merge_empty() {
 	ls := model.LabelSetFromPairs(
 		"__name__", "example",
 		"instance", "instance",
@@ -122,12 +140,12 @@ func TestLabelSet_Merge_empty(t *testing.T) {
 		"flags", "empty",
 	)
 	merged := ls.Merge(model.EmptyLabelSet())
-	assert.Equal(t,
+	s.Equal(
 		"__name__:example;container:~unknown;flags:empty;instance:instance;job:test;",
 		merged.String())
 }
 
-func TestLabelSet_Split(t *testing.T) {
+func (s *LabelSetSuite) TestLabelSet_Split() {
 	ls := model.LabelSetFromPairs(
 		"__name__", "example",
 		"instance", "instance",
@@ -136,68 +154,230 @@ func TestLabelSet_Split(t *testing.T) {
 		"flags", "empty",
 	)
 	extracted, rest := ls.SplitBy("flags", "container", "image")
-	assert.Equal(t, "container:~unknown;flags:empty;", extracted.String())
-	assert.Equal(t, "__name__:example;instance:instance;job:test;", rest.String())
+	s.Equal("container:~unknown;flags:empty;", extracted.String())
+	s.Equal("__name__:example;instance:instance;job:test;", rest.String())
 }
 
-func TestLabelSet_Map_Quick(t *testing.T) {
+func (s *LabelSetSuite) TestLabelSet_Map_Quick() {
 	identity := func(m map[string]string) map[string]string { return m }
 	convertation := func(m map[string]string) map[string]string {
 		return model.LabelSetFromMap(m).ToMap()
 	}
-	require.NoError(t, quick.CheckEqual(identity, convertation, nil))
+	s.Require().NoError(quick.CheckEqual(identity, convertation, nil))
 }
 
-func TestLabelSet_MarshalJSON_Quick(t *testing.T) {
+func (s *LabelSetSuite) TestLabelSet_MarshalJSON_Quick() {
 	identity := func(m map[string]string) map[string]string { return m }
 	convertation := func(m map[string]string) map[string]string {
 		ls := model.LabelSetFromMap(m)
 		blob, err := json.Marshal(ls)
-		require.NoError(t, err)
+		s.Require().NoError(err)
 		res := map[string]string{}
 		err = json.Unmarshal(blob, &res)
-		require.NoError(t, err)
+		s.Require().NoError(err)
 		return res
 	}
-	require.NoError(t, quick.CheckEqual(identity, convertation, nil))
+	s.Require().NoError(quick.CheckEqual(identity, convertation, nil))
 }
 
-func TestLabelSet_UnmarshalJSON_Quick(t *testing.T) {
+func (s *LabelSetSuite) TestLabelSet_UnmarshalJSON_Quick() {
 	identity := func(m map[string]string) map[string]string { return m }
 	convertation := func(m map[string]string) map[string]string {
 		blob, err := json.Marshal(m)
-		require.NoError(t, err)
+		s.Require().NoError(err)
 		var ls model.LabelSet
 		err = json.Unmarshal(blob, &ls)
-		require.NoError(t, err)
+		s.Require().NoError(err)
 		return ls.ToMap()
 	}
-	require.NoError(t, quick.CheckEqual(identity, convertation, nil))
+	s.Require().NoError(quick.CheckEqual(identity, convertation, nil))
 }
 
-func TestLabelSet_MarshalYAML_Quick(t *testing.T) {
+func (s *LabelSetSuite) TestLabelSet_MarshalYAML_Quick() {
 	identity := func(m map[string]string) map[string]string { return m }
 	convertation := func(m map[string]string) map[string]string {
 		ls := model.LabelSetFromMap(m)
 		blob, err := yaml.Marshal(ls)
-		require.NoError(t, err)
+		s.Require().NoError(err)
 		res := map[string]string{}
 		err = yaml.Unmarshal(blob, &res)
-		require.NoError(t, err)
+		s.Require().NoError(err)
 		return res
 	}
-	require.NoError(t, quick.CheckEqual(identity, convertation, nil))
+	s.Require().NoError(quick.CheckEqual(identity, convertation, nil))
 }
 
-func TestLabelSet_UnmarshalYAML_Quick(t *testing.T) {
+func (s *LabelSetSuite) TestLabelSet_UnmarshalYAML_Quick() {
 	identity := func(m map[string]string) map[string]string { return m }
 	convertation := func(m map[string]string) map[string]string {
 		blob, err := yaml.Marshal(m)
-		require.NoError(t, err)
+		s.Require().NoError(err)
 		var ls model.LabelSet
 		err = yaml.Unmarshal(blob, &ls)
-		require.NoError(t, err)
+		s.Require().NoError(err)
 		return ls.ToMap()
 	}
-	require.NoError(t, quick.CheckEqual(identity, convertation, nil))
+	s.Require().NoError(quick.CheckEqual(identity, convertation, nil))
 }
+
+func (s *LabelSetSuite) TestLabelSetSimpleBuilder_Build() {
+	labels := []model.SimpleLabel{
+		{"__name__", "example"},
+		{"container", "~unknown"},
+		{"instance", "instance"},
+		{"job", "test"},
+		{"flags", "empty"},
+	}
+
+	builder := model.NewLabelSetSimpleBuilder()
+	for _, l := range labels {
+		builder.Add(l.Name, l.Value)
+	}
+	ls := builder.Build()
+	s.Equal("__name__:example;container:~unknown;flags:empty;instance:instance;job:test;", ls.String())
+}
+
+func (s *LabelSetSuite) TestLabelSetSimpleBuilder_Get() {
+	labels := []model.SimpleLabel{
+		{"__name__", "example"},
+		{"container", "~unknown"},
+		{"instance", "instance"},
+		{"job", "test"},
+		{"flags", "empty"},
+	}
+
+	builder := model.NewLabelSetSimpleBuilderSize(len(labels))
+	for _, l := range labels {
+		builder.Add(l.Name, l.Value)
+	}
+
+	s.Equal("~unknown", builder.Get("container"))
+	s.Equal("", builder.Get("container2"))
+}
+
+func (s *LabelSetSuite) TestLabelSetSimpleBuilder_Has() {
+	labels := []model.SimpleLabel{
+		{"__name__", "example"},
+		{"container", "~unknown"},
+		{"instance", "instance"},
+		{"job", "test"},
+		{"flags", "empty"},
+	}
+
+	builder := model.NewLabelSetSimpleBuilder()
+	for _, l := range labels {
+		builder.Add(l.Name, l.Value)
+	}
+
+	s.True(builder.Has("container"))
+	s.False(builder.Has("container2"))
+}
+
+func (s *LabelSetSuite) TestLabelSetSimpleBuilder_HasDuplicateLabelNames() {
+	labels := []model.SimpleLabel{
+		{"__name__", "example"},
+		{"container", "~unknown"},
+		{"instance", "instance"},
+		{"job", "test"},
+		{"container", "empty"},
+	}
+
+	builder := model.NewLabelSetSimpleBuilder()
+	for _, l := range labels {
+		builder.Add(l.Name, l.Value)
+	}
+
+	dup, has := builder.HasDuplicateLabelNames()
+	s.Equal("container", dup)
+	s.True(has)
+}
+
+func (s *LabelSetSuite) TestLabelSetSimpleBuilder_HasNotDuplicateLabelNames() {
+	labels := []model.SimpleLabel{
+		{"__name__", "example"},
+		{"container", "~unknown"},
+		{"instance", "instance"},
+		{"job", "test"},
+		{"flags", "empty"},
+	}
+
+	builder := model.NewLabelSetSimpleBuilder()
+	for _, l := range labels {
+		builder.Add(l.Name, l.Value)
+	}
+
+	dup, has := builder.HasDuplicateLabelNames()
+	s.Equal("", dup)
+	s.False(has)
+}
+
+func (s *LabelSetSuite) TestLabelSetSimpleBuilder_Reset() {
+	labels := []model.SimpleLabel{
+		{"__name__", "example"},
+		{"flags", "empty"},
+		{"container", "~unknown"},
+		{"instance", "instance"},
+		{"job", "test"},
+	}
+
+	builder := model.NewLabelSetSimpleBuilder()
+	for _, l := range labels {
+		builder.Add(l.Name, l.Value)
+	}
+	ls := builder.Build()
+	s.Equal("__name__:example;container:~unknown;flags:empty;instance:instance;job:test;", ls.String())
+
+	builder.Reset()
+
+	ls = builder.Build()
+	s.Equal("", ls.String())
+}
+
+func (s *LabelSetSuite) TestLabelSetSimpleBuilder_Sort() {
+	labels := []model.SimpleLabel{
+		{"__name__", "example"},
+		{"flags", "empty"},
+		{"container", "~unknown"},
+		{"instance", "instance"},
+		{"job", "test"},
+	}
+
+	builder := model.NewLabelSetSimpleBuilder()
+	for _, l := range labels {
+		builder.Add(l.Name, l.Value)
+	}
+	builder.Sort()
+	ls := builder.Build()
+	builder.Sort()
+	s.Equal("__name__:example;container:~unknown;flags:empty;instance:instance;job:test;", ls.String())
+}
+
+func BenchmarkDecoderV3(b *testing.B) {
+	labels := []model.SimpleLabel{
+		{"__name__", "example"},
+		{"container", "~unknown"},
+		{"instance", "instance"},
+		{"job", "test"},
+		{"flags", "empty"},
+		{"flags1", "empty"},
+	}
+
+	builder := model.NewLabelSetSimpleBuilder()
+	for _, l := range labels {
+		builder.Add(l.Name, l.Value)
+	}
+
+	for i := 0; i < b.N; i++ {
+		v := builder.Has("flagsq")
+		if !v {
+			//
+		}
+
+		// v := builder.Get("flagsq")
+		// if v == "" {
+		// 	//
+		// }
+	}
+}
+
+// BenchmarkDecoderV3-8   	12041396	       104.2 ns/op	       0 B/op	       0 allocs/op

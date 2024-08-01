@@ -6,7 +6,7 @@
 
 namespace series_data::encoder::value {
 
-static constexpr BareBones::Encoding::Gorilla::DodSignificantLengths kDodSignificantLengths = {.first = 4, .second = 12, .third = 21};
+static constexpr BareBones::Encoding::Gorilla::DodSignificantLengths kAscIntegerDodSignificantLengths = {.first = 4, .second = 12, .third = 21};
 
 class PROMPP_ATTRIBUTE_PACKED AscIntegerValuesGorillaEncoder {
  public:
@@ -69,7 +69,7 @@ class PROMPP_ATTRIBUTE_PACKED AscIntegerValuesGorillaEncoder {
   }
 
  public:
-  using Encoder = BareBones::Encoding::Gorilla::ZigZagTimestampEncoder<kDodSignificantLengths>;
+  using Encoder = BareBones::Encoding::Gorilla::ZigZagTimestampEncoder<kAscIntegerDodSignificantLengths>;
   using ValueType = BareBones::Encoding::Gorilla::ValueType;
 
   BareBones::Encoding::Gorilla::TimestampEncoderState state_;

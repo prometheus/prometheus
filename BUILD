@@ -1,4 +1,5 @@
 load("//:bazel/rules/cc_static_library.bzl", "cc_static_library")
+
 package(default_visibility = ["//visibility:public"])
 
 filegroup(
@@ -19,10 +20,11 @@ cc_library(
     hdrs = glob(["bare_bones/*.h"]),
     deps = [
         "//third_party",
-        "@lz4//:lz4",
+        "@lz4",
         "@parallel_hashmap",
         "@scope_exit",
         "@xxHash",
+        "@md5",
         # "@zlib//:zlib",
         # "@lzma//:lzma",
         # "@elf//:elf",
@@ -31,7 +33,7 @@ cc_library(
 )
 
 cc_library(
-    name  = "bare_bones_exceptions",
+    name = "bare_bones_exceptions",
     srcs = ["bare_bones/exception.cpp"],
     deps = [
         ":bare_bones_headers",
@@ -41,8 +43,8 @@ cc_library(
 cc_library(
     name = "bare_bones",
     deps = [
-        ":bare_bones_headers",
         ":bare_bones_exceptions",
+        ":bare_bones_headers",
     ],
 )
 
@@ -89,6 +91,9 @@ cc_library(
         ":bare_bones",
         ":primitives",
         "@com_google_absl//absl/crc:crc32c",
+        "@md5",
+        "@re2",
+        "@utf8",
     ],
 )
 
@@ -98,6 +103,7 @@ cc_test(
     deps = [
         ":prometheus",
         "@gtest//:gtest_main",
+        "@roaring",
     ],
 )
 
@@ -105,10 +111,10 @@ cc_library(
     name = "wal",
     hdrs = glob(["wal/*.h"]),
     deps = [
-        "@roaring",
         ":bare_bones",
         ":primitives",
         ":prometheus",
+        "@roaring",
     ],
 )
 
@@ -123,11 +129,12 @@ cc_test(
 
 cc_library(
     name = "entrypoint",
+    srcs = glob(["entrypoint/*.cpp"]),
     hdrs = glob([
         "entrypoint/*.h",
         "entrypoint/*.hpp",
     ]),
-    srcs = glob(["entrypoint/*.cpp"]),
+    linkstatic = True,
     deps = [
         ":bare_bones",
         ":primitives",
@@ -136,7 +143,6 @@ cc_library(
         "//bazel/toolchain:with_asan": [],
         "//conditions:default": ["@jemalloc"],
     }),
-    linkstatic = True,
 )
 
 cc_static_library(
@@ -148,11 +154,11 @@ cc_static_library(
 
 cc_library(
     name = "entrypoint_init",
+    srcs = glob(["entrypoint/init/*.cpp"]),
     hdrs = glob([
         "entrypoint/init/*.h",
         "entrypoint/init/*.hpp",
     ]),
-    srcs = glob(["entrypoint/init/*.cpp"]),
     linkstatic = True,
 )
 
@@ -167,13 +173,13 @@ cc_library(
     name = "performance_tests_headers",
     hdrs = glob(["performance_tests/**/*.h"]),
     deps = [
-        ":wal",
-        ":prometheus",
         ":primitives",
+        ":prometheus",
         ":series_index",
         ":series_data",
+        ":wal",
+        "//third_party",
         "@gtest//:gtest_main",
-        "//third_party:third_party",
     ],
 )
 
@@ -183,7 +189,7 @@ cc_binary(
     malloc = "@jemalloc",
     deps = [
         ":performance_tests_headers",
-    ]
+    ],
 )
 
 cc_library(
@@ -200,8 +206,8 @@ cc_binary(
     srcs = glob(["integration_tests/*.cpp"]),
     malloc = "@jemalloc",
     deps = [
-        ":integration_tests_headers"
-    ]
+        ":integration_tests_headers",
+    ],
 )
 
 cc_library(
@@ -210,9 +216,9 @@ cc_library(
     hdrs = glob(["ceph/sdk/**/*.h"]),
     includes = ["./ceph"],
     deps = [
-        "@ceph//:ceph",
-        "@snappy//:snappy",
-        ":bare_bones_headers"
+        ":bare_bones_headers",
+        "@ceph",
+        "@snappy",
     ],
 )
 
@@ -222,19 +228,19 @@ cc_library(
     includes = ["./ceph/cls"],
     deps = [
         ":ceph_sdk",
-        "@lru_cache//:lru_cache",
+        "@lru_cache",
     ],
 )
 
 cc_test(
     name = "cls_common_test",
     srcs = glob([
-        "ceph/cls/common/tests/**/*.cpp"
+        "ceph/cls/common/tests/**/*.cpp",
     ]),
     deps = [
         ":cls_common",
         "@gtest//:gtest_main",
-    ]
+    ],
 )
 
 cc_library(
@@ -243,37 +249,38 @@ cc_library(
         "ceph/cls/cls_wal/modules/**/*.h",
         "ceph/cls/cls_wal/config/**/*.h",
         "ceph/cls/cls_wal/constants.h",
-        "ceph/cls/cls_wal/tests/**/*.h"
+        "ceph/cls/cls_wal/tests/**/*.h",
     ]),
     includes = ["ceph/cls/cls_wal"],
     deps = [
         ":bare_bones_headers",
+        ":cls_common",
         ":prometheus",
-        ":wal",
-        ":series_index",
         ":series_data",
-        ":cls_common"
-    ]
+        ":series_index",
+        ":wal",
+    ],
 )
 
 cc_binary(
     name = "cls_wal",
     srcs = glob(["ceph/cls/cls_wal/*.cpp"]),
-    deps = [
-        ":cls_wal_modules"
-    ],
     linkshared = True,
+    deps = [
+        ":ceph_sdk",
+        ":cls_wal_modules",
+    ],
 )
 
 cc_test(
     name = "cls_wal_test",
     srcs = glob([
-        "ceph/cls/cls_wal/tests/**/*.cpp"
+        "ceph/cls/cls_wal/tests/**/*.cpp",
     ]),
     deps = [
         ":cls_wal_modules",
         "@gtest//:gtest_main",
-    ]
+    ],
 )
 
 cc_library(
@@ -284,9 +291,9 @@ cc_library(
         ":prometheus",
         ":wal",
         "@cedar",
+        "@re2",
         "@xcdat",
-        "@re2"
-    ]
+    ],
 )
 
 cc_test(
@@ -297,7 +304,7 @@ cc_test(
     deps = [
         ":series_index",
         "@gtest//:gtest_main",
-    ]
+    ],
 )
 
 cc_library(
@@ -324,27 +331,27 @@ cc_library(
     name = "cls_block_catalog_modules",
     hdrs = glob([
         "ceph/cls/block_catalog/modules/**/*.h",
-         "ceph/cls/block_catalog/constants.h",
-         "ceph/cls/block_catalog/perf_counters.h",
-         "ceph/cls/block_catalog/tests/**/*.h"
-         ]),
+        "ceph/cls/block_catalog/constants.h",
+        "ceph/cls/block_catalog/perf_counters.h",
+        "ceph/cls/block_catalog/tests/**/*.h",
+    ]),
     includes = ["ceph/cls/block_catalog"],
     deps = [
         ":bare_bones_headers",
-        ":prometheus",
         ":cls_common",
-    ]
+        ":prometheus",
+    ],
 )
 
 cc_binary(
     name = "cls_block_catalog",
     srcs = glob([
         "ceph/cls/block_catalog/*.cpp",
-        ]),
+    ]),
+    linkshared = True,
     deps = [
         ":cls_block_catalog_modules",
     ],
-    linkshared = True,
 )
 
 cc_test(
@@ -355,5 +362,5 @@ cc_test(
     deps = [
         ":cls_block_catalog_modules",
         "@gtest//:gtest_main",
-    ]
+    ],
 )

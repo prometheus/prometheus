@@ -52,9 +52,9 @@ struct DodSignificantLengths {
   uint8_t third;
 };
 
-static constexpr DodSignificantLengths kDefaultDogSignificantLengths = DodSignificantLengths{.first = 5, .second = 15, .third = 18};
+static constexpr DodSignificantLengths kDefaultDodSignificantLengths = DodSignificantLengths{.first = 5, .second = 15, .third = 18};
 
-template <DodSignificantLengths kDogSignificantLengths = kDefaultDogSignificantLengths>
+template <DodSignificantLengths kDogSignificantLengths = kDefaultDodSignificantLengths>
 class ZigZagTimestampEncoder {
  public:
   template <class BitSequence>
@@ -281,7 +281,7 @@ concept TimestampDecoderInterface = requires(TimestampEncoderState& state, BitSe
   { TimestampDecoder::decode_delta_of_delta(state, reader) } -> std::same_as<void>;
 };
 
-template <DodSignificantLengths kDogSignificantLengths = kDefaultDogSignificantLengths>
+template <DodSignificantLengths kDogSignificantLengths = kDefaultDodSignificantLengths>
 class ZigZagTimestampDecoder {
  public:
   PROMPP_ALWAYS_INLINE static void decode(TimestampEncoderState& state, BitSequenceReader& reader) {

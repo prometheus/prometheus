@@ -15,6 +15,7 @@
 #include "bare_bones/exception.h"
 #include "bare_bones/gorilla.h"
 #include "bare_bones/lz4_stream.h"
+#include "bare_bones/preprocess.h"
 #include "bare_bones/snug_composite.h"
 #include "bare_bones/sparse_vector.h"
 #include "bare_bones/vector.h"
@@ -95,7 +96,7 @@ concept TimeseriesGenerator =
 
 enum class BasicEncoderVersion : uint8_t { kUnknown = 0, kV1, kV2, kV3 };
 
-template <class LabelSetsTable = Primitives::SnugComposites::LabelSet::EncodingBimap>
+template <class LabelSetsTable = Primitives::SnugComposites::LabelSet::EncodingBimap, bool shrink_lss = false>
 class BasicEncoder {
  public:
   class Buffer {
@@ -245,9 +246,8 @@ class BasicEncoder {
     typename LabelSetsTable::checkpoint_type label_sets_checkpoint;
     BareBones::Vector<EncoderWithID> encoders;
 
-    inline __attribute__((always_inline)) Redundant(uint32_t _segment,
-                                                    typename LabelSetsTable::checkpoint_type _label_sets_checkpoint,
-                                                    uint32_t _encoders_count)
+    inline __attribute__((always_inline))
+    Redundant(uint32_t _segment, typename LabelSetsTable::checkpoint_type _label_sets_checkpoint, uint32_t _encoders_count)
         : segment(_segment), encoders_count(_encoders_count), label_sets_checkpoint(_label_sets_checkpoint) {}
   };
 
@@ -313,7 +313,7 @@ class BasicEncoder {
                                  buffer_.latest_sample(), (std::numeric_limits<int64_t>::max() - ts_base_));
     }
 
-    gorilla_.resize(label_sets_.size());
+    gorilla_.resize(label_sets_.next_item_index());
 
     auto redundant = std::make_unique<Redundant>(next_encoded_segment_, label_sets_checkpoint_, label_sets_.size());
     constexpr Primitives::LabelSetID max_last_id = std::numeric_limits<Primitives::LabelSetID>::max();
@@ -322,6 +322,7 @@ class BasicEncoder {
       buffer_.for_each([&](Primitives::LabelSetID ls_id, Primitives::Timestamp ts, Primitives::Sample::value_type v) {
         assert(last_id == max_last_id || ls_id >= last_id);
         if (last_id == max_last_id || last_id != ls_id) {
+          last_id = ls_id;
           redundant->encoders.emplace_back(gorilla_[ls_id], ls_id);
         }
         gorilla_[ls_id].encode(ts - ts_base_, v, gorilla_ts_bitseq, gorilla_v_bitseq);
@@ -335,7 +336,7 @@ class BasicEncoder {
       });
     } else {
       buffer_.for_each([&](Primitives::LabelSetID ls_id, Primitives::Timestamp ts, Primitives::Sample::value_type v) {
-        if (!last_id || last_id != ls_id) {
+        if (last_id == max_last_id || last_id != ls_id) {
           last_id = ls_id;
           redundant->encoders.emplace_back(gorilla_[ls_id], ls_id);
         }
@@ -366,6 +367,9 @@ class BasicEncoder {
     label_sets_checkpoint_ = label_sets_.checkpoint();
     label_sets_bytes_ += label_sets_checkpoint_.save_size(&redundant->label_sets_checkpoint);
     lz4stream_ << (label_sets_checkpoint_ - redundant->label_sets_checkpoint);
+    if constexpr (shrink_lss) {
+      label_sets_.shrink_to_checkpoint_size(label_sets_checkpoint_);
+    }
 
     // write ls ids
     ls_id_bytes_ += ls_id_delta_rle_seq.save_size() + ls_id_crc.save_size();
@@ -444,9 +448,12 @@ class BasicEncoder {
 
   inline __attribute__((always_inline)) size_t remainder_size() const noexcept { return label_sets_.data().remainder_size(); }
 
+  inline __attribute__((always_inline)) size_t allocated_memory() const noexcept { return label_sets_.allocated_memory() + gorilla_.allocated_memory(); }
+
   template <typename T>
   inline __attribute__((always_inline)) Primitives::LabelSetID add(const T& tmsr) {
     Primitives::LabelSetID ls_id = label_sets_.find_or_emplace(tmsr.label_set());
+
     for (const auto& smpl : tmsr.samples()) {
       buffer_.add(ls_id, smpl);
     }
@@ -460,6 +467,23 @@ class BasicEncoder {
       buffer_.add(ls_id, smpl);
     }
     return ls_id;
+  }
+
+  template <typename Samples>
+  PROMPP_ALWAYS_INLINE void add_samples_on_ls_id(uint32_t ls_id, const Samples& samples) {
+    for (const auto& smpl : samples) {
+      buffer_.add(ls_id, smpl);
+    }
+  }
+
+  template <typename LabelSet>
+  PROMPP_ALWAYS_INLINE Primitives::LabelSetID add_label_set(const LabelSet& label_set) {
+    return label_sets_.find_or_emplace(label_set);
+  }
+
+  template <typename LabelSet>
+  PROMPP_ALWAYS_INLINE Primitives::LabelSetID add_label_set(const LabelSet& label_set, size_t hashval) {
+    return label_sets_.find_or_emplace(label_set, hashval);
   }
 
   /// @brief Use it for selecting the proper @ref add_many() function's callback type.

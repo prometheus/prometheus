@@ -33,7 +33,7 @@ class AscIntegerValuesGorillaDecodeIterator : public SeparatedTimestampValueDeco
 
  private:
   using GorillaState = BareBones::Encoding::Gorilla::GorillaState;
-  using Decoder = BareBones::Encoding::Gorilla::ZigZagTimestampDecoder<encoder::value::kDodSignificantLengths>;
+  using Decoder = BareBones::Encoding::Gorilla::ZigZagTimestampDecoder<encoder::value::kAscIntegerDodSignificantLengths>;
   using ValueType = BareBones::Encoding::Gorilla::ValueType;
 
   BareBones::Encoding::Gorilla::TimestampEncoderState state_;

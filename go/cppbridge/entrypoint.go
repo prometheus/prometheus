@@ -12,7 +12,7 @@ package cppbridge
 // #cgo amd64,!sanitize,dbg LDFLAGS: -l:amd64_entrypoint_dbg.a
 // #cgo amd64,sanitize,!dbg LDFLAGS: -l:amd64_entrypoint_opt_asan.a
 // #cgo amd64,sanitize,dbg LDFLAGS: -l:amd64_entrypoint_dbg_asan.a
-// #cgo LDFLAGS: -static-libgcc -static-libstdc++ -l:libstdc++.a
+// #cgo LDFLAGS: -static-libgcc -static-libstdc++ -l:libstdc++.a -l:libm.a
 // #cgo static LDFLAGS: -static
 // #include "entrypoint.h"
 import "C" //nolint:gocritic // because otherwise it won't work
@@ -201,6 +201,49 @@ func walEncoderAdd(encoder, hashdex uintptr) (stats WALEncoderStats, exception [
 	return res.WALEncoderStats, res.exception
 }
 
+func walEncoderAddInnerSeries(encoder uintptr, innerSeries []*InnerSeries) (stats WALEncoderStats, exception []byte) {
+	var args = struct {
+		innerSeries []*InnerSeries
+		encoder     uintptr
+	}{innerSeries, encoder}
+	var res struct {
+		WALEncoderStats
+		exception []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_wal_encoder_add_inner_series,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.WALEncoderStats, res.exception
+}
+
+func walEncoderAddRelabeledSeries(
+	encoder uintptr,
+	relabeledSeries *RelabeledSeries,
+	relabelerStateUpdate *RelabelerStateUpdate,
+) (stats WALEncoderStats, exception []byte) {
+	var args = struct {
+		relabelerStateUpdate *RelabelerStateUpdate
+		relabeledSeries      *RelabeledSeries
+		encoder              uintptr
+	}{relabelerStateUpdate, relabeledSeries, encoder}
+	var res struct {
+		WALEncoderStats
+		exception []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_wal_encoder_add_relabeled_series,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.WALEncoderStats, res.exception
+}
+
 // walEncoderFinalize - finalize the encoded data in the C++ encoder to Segment.
 func walEncoderFinalize(encoder uintptr) (stats WALEncoderStats, segment, exception []byte) {
 	var args = struct {
@@ -277,6 +320,129 @@ func walEncoderDtor(encoder uintptr) {
 
 	fastcgo.UnsafeCall1(
 		C.prompp_wal_encoder_dtor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
+//
+// EncoderLightweight
+//
+
+// walEncoderLightweightCtor - wrapper for constructor C-EncoderLightweight.
+func walEncoderLightweightCtor(shardID uint16, logShards uint8) uintptr {
+	var args = struct {
+		shardID   uint16
+		logShards uint8
+	}{shardID, logShards}
+	var res struct {
+		encoder uintptr
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_wal_encoder_lightweight_ctor,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.encoder
+}
+
+// walEncoderLightweightAdd - add to encode incoming data(ShardedData) through C++ EncoderLightweight.
+func walEncoderLightweightAdd(encoder, hashdex uintptr) (stats WALEncoderStats, exception []byte) {
+	var args = struct {
+		encoder uintptr
+		hashdex uintptr
+	}{encoder, hashdex}
+	var res struct {
+		WALEncoderStats
+		exception []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_wal_encoder_lightweight_add,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.WALEncoderStats, res.exception
+}
+
+// walEncoderLightweightAddInnerSeries - add inner series to current segment.
+func walEncoderLightweightAddInnerSeries(
+	encoder uintptr,
+	innerSeries []*InnerSeries,
+) (stats WALEncoderStats, exception []byte) {
+	var args = struct {
+		innerSeries []*InnerSeries
+		encoder     uintptr
+	}{innerSeries, encoder}
+	var res struct {
+		WALEncoderStats
+		exception []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_wal_encoder_lightweight_add_inner_series,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.WALEncoderStats, res.exception
+}
+
+// walEncoderLightweightAddRelabeledSeries - add relabeled series to current segment.
+func walEncoderLightweightAddRelabeledSeries(
+	encoder uintptr,
+	relabeledSeries *RelabeledSeries,
+	relabelerStateUpdate *RelabelerStateUpdate,
+) (stats WALEncoderStats, exception []byte) {
+	var args = struct {
+		relabelerStateUpdate *RelabelerStateUpdate
+		relabeledSeries      *RelabeledSeries
+		encoder              uintptr
+	}{relabelerStateUpdate, relabeledSeries, encoder}
+	var res struct {
+		WALEncoderStats
+		exception []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_wal_encoder_lightweight_add_relabeled_series,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.WALEncoderStats, res.exception
+}
+
+// walEncoderLightweightFinalize - finalize the encoded data in the C++ EncoderLightweight to Segment.
+func walEncoderLightweightFinalize(encoder uintptr) (stats WALEncoderStats, segment, exception []byte) {
+	var args = struct {
+		encoder uintptr
+	}{encoder}
+	var res struct {
+		WALEncoderStats
+		segment   []byte
+		exception []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_wal_encoder_lightweight_finalize,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.WALEncoderStats, res.segment, res.exception
+}
+
+// walEncoderLightweightDtor - wrapper for destructor C-EncoderLightweight.
+func walEncoderLightweightDtor(encoder uintptr) {
+	var args = struct {
+		encoder uintptr
+	}{encoder}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_wal_encoder_lightweight_dtor,
 		uintptr(unsafe.Pointer(&args)),
 	)
 }
@@ -378,6 +544,431 @@ func walDecoderDtor(decoder uintptr) {
 
 	fastcgo.UnsafeCall1(
 		C.prompp_wal_decoder_dtor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
+//
+// LabelSetStorage EncodingBimap
+//
+
+// primitivesLSSCtor - wrapper for constructor C-EncodingBimap.
+func primitivesLSSCtor() uintptr {
+	var res struct {
+		lss uintptr
+	}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_primitives_lss_ctor,
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.lss
+}
+
+// primitivesLSSDtor - wrapper for destructor C-EncodingBimap.
+func primitivesLSSDtor(lss uintptr) {
+	var args = struct {
+		lss uintptr
+	}{lss}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_primitives_lss_dtor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
+// primitivesLSSAllocatedMemory -  return size of allocated memory for label sets in C++.
+func primitivesLSSAllocatedMemory(lss uintptr) uint64 {
+	var args = struct {
+		lss uintptr
+	}{lss}
+	var res struct {
+		allocatedMemory uint64
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_primitives_lss_allocated_memory,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.allocatedMemory
+}
+
+//
+// LabelSetStorage OrderedEncodingBimap
+//
+
+// primitivesOrderedLSSCtor - wrapper for constructor C-OrderedEncodingBimap.
+func primitivesOrderedLSSCtor() uintptr {
+	var res struct {
+		orderedLss uintptr
+	}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_primitives_ordered_lss_ctor,
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.orderedLss
+}
+
+// primitivesOrderedLSSDtor - wrapper for destructor C-OrderedEncodingBimap.
+func primitivesOrderedLSSDtor(orderedLss uintptr) {
+	var args = struct {
+		orderedLss uintptr
+	}{orderedLss}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_primitives_ordered_lss_dtor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
+// primitivesOrderedLSSAllocatedMemory -  return size of allocated memory for ordered label sets in C++.
+func primitivesOrderedLSSAllocatedMemory(orderedLss uintptr) uint64 {
+	var args = struct {
+		orderedLss uintptr
+	}{orderedLss}
+	var res struct {
+		allocatedMemory uint64
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_primitives_ordered_lss_allocated_memory,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.allocatedMemory
+}
+
+//
+// StatelessRelabeler
+//
+
+// prometheusStatelessRelabelerCtor - wrapper for constructor C-StatelessRelabeler.
+func prometheusStatelessRelabelerCtor(cfgs []*RelabelConfig) (statelessRelabeler uintptr, exception []byte) {
+	var args = struct {
+		cfgs []*RelabelConfig
+	}{cfgs}
+	var res struct {
+		statelessRelabeler uintptr
+		exception          []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_prometheus_stateless_relabeler_ctor,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.statelessRelabeler, res.exception
+}
+
+// prometheusStatelessRelabelerDtor - wrapper for destructor C-StatelessRelabeler.
+func prometheusStatelessRelabelerDtor(statelessRelabeler uintptr) {
+	var args = struct {
+		statelessRelabeler uintptr
+	}{statelessRelabeler}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_prometheus_stateless_relabeler_dtor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
+// prometheusStatelessRelabelerResetTo reset configs and replace on new converting go-config..
+func prometheusStatelessRelabelerResetTo(statelessRelabeler uintptr, cfgs []*RelabelConfig) (exception []byte) {
+	var args = struct {
+		statelessRelabeler uintptr
+		cfgs               []*RelabelConfig
+	}{statelessRelabeler, cfgs}
+	var res struct {
+		exception []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_prometheus_stateless_relabeler_reset_to,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.exception
+}
+
+//
+// InnerSeries
+//
+
+// prometheusInnerSeriesCtor - wrapper for constructor C-InnerSeries(vector).
+func prometheusInnerSeriesCtor(innerSeries *InnerSeries) {
+	var args = struct {
+		innerSeries *InnerSeries
+	}{innerSeries}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_prometheus_inner_series_ctor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
+// prometheusInnerSeriesDtor - wrapper for destructor C-InnerSeries(vector).
+func prometheusInnerSeriesDtor(innerSeries *InnerSeries) {
+	var args = struct {
+		innerSeries *InnerSeries
+	}{innerSeries}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_prometheus_inner_series_dtor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
+//
+// RelabeledSeries
+//
+
+// prometheusRelabeledSeriesCtor - wrapper for constructor C-RelabeledSeries(vector).
+func prometheusRelabeledSeriesCtor(relabeledSeries *RelabeledSeries) {
+	var args = struct {
+		relabeledSeries *RelabeledSeries
+	}{relabeledSeries}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_prometheus_relabeled_series_ctor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
+// prometheusRelabeledSeriesDtor - wrapper for destructor C-RelabeledSeries(vector).
+func prometheusRelabeledSeriesDtor(relabeledSeries *RelabeledSeries) {
+	var args = struct {
+		relabeledSeries *RelabeledSeries
+	}{relabeledSeries}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_prometheus_relabeled_series_dtor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
+//
+// RelabelerStateUpdate
+//
+
+// prometheusRelabelerStateUpdateCtor - wrapper for constructor C-RelabelerStateUpdate(vector), filling in c++.
+func prometheusRelabelerStateUpdateCtor(relabelerStateUpdate *RelabelerStateUpdate, generation uint32) {
+	var args = struct {
+		relabelerStateUpdate *RelabelerStateUpdate
+		generation           uint32
+	}{relabelerStateUpdate, generation}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_prometheus_relabeler_state_update_ctor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
+// prometheusRelabelerStateUpdateDtor - wrapper for destructor C-RelabelerStateUpdate(vector).
+func prometheusRelabelerStateUpdateDtor(relabelerStateUpdate *RelabelerStateUpdate) {
+	var args = struct {
+		relabelerStateUpdate *RelabelerStateUpdate
+	}{relabelerStateUpdate}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_prometheus_relabeler_state_update_dtor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
+//
+// PerShardRelabeler
+//
+
+// prometheusPerShardRelabelerCtor - wrapper for constructor C-PerShardRelabeler.
+func prometheusPerShardRelabelerCtor(
+	externalLabels []Label,
+	statelessRelabeler uintptr,
+	lssGeneration uint32,
+	numberOfShards, shardID uint16,
+) (perShardRelabeler uintptr, exception []byte) {
+	var args = struct {
+		externalLabels     []Label
+		statelessRelabeler uintptr
+		lssGeneration      uint32
+		numberOfShards     uint16
+		shardID            uint16
+	}{externalLabels, statelessRelabeler, lssGeneration, numberOfShards, shardID}
+	var res struct {
+		perShardRelabeler uintptr
+		exception         []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_prometheus_per_shard_relabeler_ctor,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.perShardRelabeler, res.exception
+}
+
+// prometheusPerShardRelabelerDtor - wrapper for destructor C-PerShardRelabeler.
+func prometheusPerShardRelabelerDtor(perShardRelabeler uintptr) {
+	var args = struct {
+		perShardRelabeler uintptr
+	}{perShardRelabeler}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_prometheus_per_shard_relabeler_dtor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
+// prometheusPerShardRelabelerCacheAllocatedMemory - return size of allocated memory for cache map.
+func prometheusPerShardRelabelerCacheAllocatedMemory(perShardRelabeler uintptr) uint64 {
+	var args = struct {
+		perShardRelabeler uintptr
+	}{perShardRelabeler}
+	var res struct {
+		cacheAllocatedMemory uint64
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_prometheus_per_shard_relabeler_cache_allocated_memory,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.cacheAllocatedMemory
+}
+
+// prometheusPerShardRelabelerInputRelabeling - wrapper for relabeling incoming hashdex(first stage).
+func prometheusPerShardRelabelerInputRelabeling(
+	perShardRelabeler, lss, hashdex uintptr,
+	labelLimits *LabelLimits,
+	shardsInnerSeries []*InnerSeries,
+	shardsRelabeledSeries []*RelabeledSeries,
+) []byte {
+	var args = struct {
+		shardsInnerSeries     []*InnerSeries
+		shardsRelabeledSeries []*RelabeledSeries
+		labelLimits           *LabelLimits
+		perShardRelabeler     uintptr
+		hashdex               uintptr
+		lss                   uintptr
+	}{shardsInnerSeries, shardsRelabeledSeries, labelLimits, perShardRelabeler, hashdex, lss}
+	var res struct {
+		exception []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_prometheus_per_shard_relabeler_input_relabeling,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.exception
+}
+
+// prometheusPerShardRelabelerAppendRelabelerSeries - wrapper for add relabeled ls to lss,
+// add to result and add to cache update(second stage).
+func prometheusPerShardRelabelerAppendRelabelerSeries(
+	perShardRelabeler, lss uintptr,
+	innerSeries *InnerSeries,
+	relabeledSeries *RelabeledSeries,
+	relabelerStateUpdate *RelabelerStateUpdate,
+) []byte {
+	var args = struct {
+		innerSeries          *InnerSeries
+		relabeledSeries      *RelabeledSeries
+		relabelerStateUpdate *RelabelerStateUpdate
+		perShardRelabeler    uintptr
+		lss                  uintptr
+	}{innerSeries, relabeledSeries, relabelerStateUpdate, perShardRelabeler, lss}
+	var res struct {
+		exception []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_prometheus_per_shard_relabeler_append_relabeler_series,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.exception
+}
+
+// prometheusPerShardRelabelerUpdateRelabelerState - wrapper for add to cache relabled data(third stage).
+func prometheusPerShardRelabelerUpdateRelabelerState(
+	relabelerStateUpdate *RelabelerStateUpdate,
+	perShardRelabeler uintptr,
+	relabeledShardID uint16,
+) []byte {
+	var args = struct {
+		relabelerStateUpdate *RelabelerStateUpdate
+		perShardRelabeler    uintptr
+		relabeledShardID     uint16
+	}{relabelerStateUpdate, perShardRelabeler, relabeledShardID}
+	var res struct {
+		exception []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_prometheus_per_shard_relabeler_update_relabeler_state,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.exception
+}
+
+// prometheusPerShardRelabelerOutputRelabeling - wrapper for relabeling output series(fourth stage).
+func prometheusPerShardRelabelerOutputRelabeling(
+	perShardRelabeler, lss uintptr,
+	incomingInnerSeries, encodersInnerSeries []*InnerSeries,
+	relabeledSeries *RelabeledSeries,
+	generation uint32,
+) []byte {
+	var args = struct {
+		relabeledSeries     *RelabeledSeries
+		incomingInnerSeries []*InnerSeries
+		encodersInnerSeries []*InnerSeries
+		perShardRelabeler   uintptr
+		lss                 uintptr
+		generation          uint32
+	}{relabeledSeries, incomingInnerSeries, encodersInnerSeries, perShardRelabeler, lss, generation}
+	var res struct {
+		exception []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_prometheus_per_shard_relabeler_output_relabeling,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.exception
+}
+
+// prometheusPerShardRelabelerResetTo - reset cache and store lss generation.
+func prometheusPerShardRelabelerResetTo(
+	externalLabels []Label,
+	perShardRelabeler uintptr,
+	lssGeneration uint32,
+	numberOfShards uint16,
+) {
+	var args = struct {
+		externalLabels    []Label
+		perShardRelabeler uintptr
+		lssGeneration     uint32
+		numberOfShards    uint16
+	}{externalLabels, perShardRelabeler, lssGeneration, numberOfShards}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_prometheus_per_shard_relabeler_reset_to,
 		uintptr(unsafe.Pointer(&args)),
 	)
 }

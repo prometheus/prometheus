@@ -27,22 +27,22 @@ class TimestampEncoder {
 
   template <class BitSequence>
   PROMPP_ALWAYS_INLINE static void encode_delta_of_delta(BareBones::Encoding::Gorilla::TimestampEncoderState& state, int64_t ts, BitSequence& stream) {
-    static constexpr uint8_t kDogSignificantLengths[] = {14, 17, 20};
+    static constexpr uint8_t kDodSignificantLengths[] = {14, 17, 20};
 
     auto ts_delta = ts - state.last_ts;
     const int64_t dod = ts_delta - state.last_ts_delta;
 
     if (dod == 0) {
       stream.write_zero_bit();
-    } else if (bit_range(dod, kDogSignificantLengths[0])) {
-      stream.write_bits((0b10 << kDogSignificantLengths[0]) | (std::bit_cast<uint64_t>(dod) & get_bit_mask(kDogSignificantLengths[0])),
-                        2 + kDogSignificantLengths[0]);
-    } else if (bit_range(dod, kDogSignificantLengths[1])) {
-      stream.write_bits((0b110 << kDogSignificantLengths[1]) | (std::bit_cast<uint64_t>(dod) & get_bit_mask(kDogSignificantLengths[1])),
-                        3 + kDogSignificantLengths[1]);
-    } else if (bit_range(dod, kDogSignificantLengths[2])) {
-      stream.write_bits((0b1110 << kDogSignificantLengths[2]) | (std::bit_cast<uint64_t>(dod) & get_bit_mask(kDogSignificantLengths[2])),
-                        4 + kDogSignificantLengths[2]);
+    } else if (bit_range(dod, kDodSignificantLengths[0])) {
+      stream.write_bits((0b10 << kDodSignificantLengths[0]) | (std::bit_cast<uint64_t>(dod) & get_bit_mask(kDodSignificantLengths[0])),
+                        2 + kDodSignificantLengths[0]);
+    } else if (bit_range(dod, kDodSignificantLengths[1])) {
+      stream.write_bits((0b110 << kDodSignificantLengths[1]) | (std::bit_cast<uint64_t>(dod) & get_bit_mask(kDodSignificantLengths[1])),
+                        3 + kDodSignificantLengths[1]);
+    } else if (bit_range(dod, kDodSignificantLengths[2])) {
+      stream.write_bits((0b1110 << kDodSignificantLengths[2]) | (std::bit_cast<uint64_t>(dod) & get_bit_mask(kDodSignificantLengths[2])),
+                        4 + kDodSignificantLengths[2]);
     } else {
       stream.write_bits(0b1111, 4);
       stream.write_bits(std::bit_cast<uint64_t>(dod), BareBones::Bit::kUint64Bits);

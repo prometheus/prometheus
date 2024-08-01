@@ -1,3 +1,4 @@
+load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@bazel_tools//tools/build_defs/cc:action_names.bzl", "ACTION_NAMES")
 load(
     "@bazel_tools//tools/cpp:cc_toolchain_config_lib.bzl",
@@ -7,7 +8,6 @@ load(
     "tool_path",
     "with_feature_set",
 )
-load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 
 all_compile_actions = [
     ACTION_NAMES.assemble,
@@ -172,7 +172,7 @@ def _impl(ctx):
                         ),
                     ]),
                 ),
-            ]
+            ],
         ),
         feature(
             name = "sanitizers-address",
