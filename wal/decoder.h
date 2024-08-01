@@ -32,6 +32,8 @@ class TimeseriesProtobufWriter {
     ++processed_series_;
   }
 
+  PROMPP_ALWAYS_INLINE void operator()(PromPP::Primitives::LabelSetID, Reader::timeseries_type timeseries) { operator()(timeseries); }
+
   template <class Stats>
   PROMPP_ALWAYS_INLINE void get_statistic(Stats& stats) {
     stats.created_at = decoder_.created_at_tsns();
@@ -77,7 +79,7 @@ class Decoder {
   PROMPP_ALWAYS_INLINE void decode_dry(Input& in, Stats* stats) {
     std::ispanstream inspan(std::string_view(in.data(), in.size()));
     inspan >> reader_;
-    reader_.process_segment([](uint32_t, uint64_t, double) PROMPP_LAMBDA_INLINE {});
+    reader_.process_segment([](uint32_t, int64_t, double) PROMPP_LAMBDA_INLINE {});
     stats->segment_id = reader_.last_processed_segment();
   }
 

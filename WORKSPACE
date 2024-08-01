@@ -64,6 +64,9 @@ http_archive(
     sha256 = "b61435437713e2d98ce2a5539a0bff7e6e9e6a6b9fe507dbf490a852b8c2904f",
     strip_prefix = "parallel-hashmap-1.35",
     url = "https://github.com/greg7mdp/parallel-hashmap/archive/refs/tags/1.35.zip",
+    patches = [
+        "//third_party/patches/parallel_hashmap:phmap_base.h.patch",
+    ],
 )
 
 http_archive(

@@ -12,7 +12,7 @@ std::chrono::nanoseconds load_gorilla_from_wal_and_iterate_over_series_label_nam
   auto start = std::chrono::steady_clock::now();
   uint64_t sum_of_ls_name_symbols_ids = 0;
   uint64_t count = 0;
-  wal.process_segment([&](WAL::Reader::timeseries_type timeseries) {
+  wal.process_segment([&](PromPP::Primitives::LabelSetID, WAL::Reader::timeseries_type timeseries) {
     count += timeseries.samples().size();
     for (auto i = timeseries.label_set().names().begin(); i != timeseries.label_set().names().end(); ++i) {
       sum_of_ls_name_symbols_ids += i.id();
