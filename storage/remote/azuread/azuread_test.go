@@ -246,7 +246,7 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 		{
 			cfg: &AzureADConfig{
 				Cloud: &AzureADCloudConfig{
-					Name: "AzurePublic",
+					Name: "PublicAzure",
 				},
 				ManagedIdentity: &ManagedIdentityConfig{
 					ClientID: dummyClientID,
@@ -258,7 +258,7 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 		{
 			cfg: &AzureADConfig{
 				Cloud: &AzureADCloudConfig{
-					Name: "AzurePublic",
+					Name: "PublicAzure",
 				},
 				OAuth: &OAuthConfig{
 					ClientID:     dummyClientID,
@@ -272,7 +272,7 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 		{
 			cfg: &AzureADConfig{
 				Cloud: &AzureADCloudConfig{
-					Name: "AzurePublic",
+					Name: "PublicAzure",
 				},
 				SDK: &SDKConfig{
 					TenantID: dummyTenantID,
