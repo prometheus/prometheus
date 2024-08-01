@@ -22,29 +22,37 @@ func (s *LSSSuite) SetupTest() {
 }
 
 func (s *LSSSuite) TestLSS() {
-	lss, err := cppbridge.NewLabelSetStorage()
-	s.Require().NoError(err)
+	lss := cppbridge.NewLssStorage()
 
 	s.Equal(uint64(0), lss.AllocatedMemory())
 	cp := lss.Pointer()
 	s.Require().NotEqual(0, cp)
 
-	err = lss.Reset()
+	lss.Reset()
 	newcp := lss.Pointer()
-	s.Require().NoError(err)
 	s.Require().NotEqual(cp, newcp)
 }
 
 func (s *LSSSuite) TestOrderedLSS() {
-	lss, err := cppbridge.NewOrderedLabelSetStorage()
-	s.Require().NoError(err)
+	lss := cppbridge.NewOrderedLssStorage()
 
 	s.Equal(uint64(0), lss.AllocatedMemory())
 	cp := lss.Pointer()
 	s.Require().NotEqual(0, cp)
 
-	err = lss.Reset()
+	lss.Reset()
 	newcp := lss.Pointer()
-	s.Require().NoError(err)
+	s.Require().NotEqual(cp, newcp)
+}
+
+func (s *LSSSuite) TestQueryableLSS() {
+	lss := cppbridge.NewQueryableLssStorage()
+
+	s.NotEqual(uint64(0), lss.AllocatedMemory())
+	cp := lss.Pointer()
+	s.Require().NotEqual(0, cp)
+
+	lss.Reset()
+	newcp := lss.Pointer()
 	s.Require().NotEqual(cp, newcp)
 }
