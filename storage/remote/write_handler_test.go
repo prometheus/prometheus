@@ -398,7 +398,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 		{
 			desc:              "Partial write; skipped exemplar; exemplar storage errs are noop",
 			input:             writeV2RequestFixture.Timeseries,
-			appendExemplarErr: errors.New("some exemplar append error"),
+			appendExemplarErr: errors.New("some exemplar internal append error"),
 
 			expectedCode: http.StatusNoContent,
 		},
@@ -449,9 +449,9 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 
 			if tc.expectedCode == http.StatusInternalServerError {
 				// We don't expect writes for partial writes with retry-able code.
-				expectHeaderValue(t, 0, resp.Header.Get("X-Prometheus-Remote-Write-Written-Samples"))
-				expectHeaderValue(t, 0, resp.Header.Get("X-Prometheus-Remote-Write-Written-Histograms"))
-				expectHeaderValue(t, 0, resp.Header.Get("X-Prometheus-Remote-Write-Written-Exemplars"))
+				expectHeaderValue(t, 0, resp.Header.Get(rw20WrittenSamplesHeader))
+				expectHeaderValue(t, 0, resp.Header.Get(rw20WrittenHistogramsHeader))
+				expectHeaderValue(t, 0, resp.Header.Get(rw20WrittenExemplarsHeader))
 
 				require.Empty(t, len(appendable.samples))
 				require.Empty(t, len(appendable.histograms))
@@ -462,12 +462,12 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 
 			// Double check mandatory 2.0 stats.
 			// writeV2RequestFixture has 2 series with 1 sample, 2 histograms, 1 exemplar each.
-			expectHeaderValue(t, 2, resp.Header.Get("X-Prometheus-Remote-Write-Written-Samples"))
-			expectHeaderValue(t, 4, resp.Header.Get("X-Prometheus-Remote-Write-Written-Histograms"))
+			expectHeaderValue(t, 2, resp.Header.Get(rw20WrittenSamplesHeader))
+			expectHeaderValue(t, 4, resp.Header.Get(rw20WrittenHistogramsHeader))
 			if tc.appendExemplarErr != nil {
-				expectHeaderValue(t, 0, resp.Header.Get("X-Prometheus-Remote-Write-Written-Exemplars"))
+				expectHeaderValue(t, 0, resp.Header.Get(rw20WrittenExemplarsHeader))
 			} else {
-				expectHeaderValue(t, 2, resp.Header.Get("X-Prometheus-Remote-Write-Written-Exemplars"))
+				expectHeaderValue(t, 2, resp.Header.Get(rw20WrittenExemplarsHeader))
 			}
 
 			// Double check what was actually appended.

@@ -442,6 +442,15 @@ Unit testing.
 
 
 
+#### Flags
+
+| Flag | Description |
+| --- | --- |
+| <code class="text-nowrap">--junit</code> | File path to store JUnit XML test results. |
+
+
+
+
 ##### `promtool test rules`
 
 Unit tests for rules.
