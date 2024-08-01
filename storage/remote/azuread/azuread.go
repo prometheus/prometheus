@@ -213,30 +213,30 @@ func (c *AzureADConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 // UnmarshalYAML unmarshal the Azure AD cloud config yaml.
-func (config *AzureADCloudConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *AzureADCloudConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	var name string
 	if err := unmarshal(&name); err == nil {
 		// Legacy format used, just set the name
-		config.Name = name
+		c.Name = name
 		return nil
 	}
 
 	type plain AzureADCloudConfig
-	*config = AzureADCloudConfig{}
-	if err := unmarshal((*plain)(config)); err != nil {
+	*c = AzureADCloudConfig{}
+	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
 
-	return config.Validate()
+	return c.Validate()
 }
 
 // MarshalYAML marshal the Azure AD cloud config to yaml.
-func (config AzureADCloudConfig) MarshalYAML() (interface{}, error) {
-	if config.Name != AzureCustom {
-		return config.Name, nil
-	} else {
-		return config, nil
+func (c AzureADCloudConfig) MarshalYAML() (interface{}, error) {
+	if c.Name != AzureCustom {
+		return c.Name, nil
 	}
+
+	return c, nil
 }
 
 // NewAzureADRoundTripper creates round tripper adding Azure AD authorization to calls.
@@ -411,8 +411,8 @@ func (tokenProvider *tokenProvider) updateRefreshTime(accessToken azcore.AccessT
 }
 
 // getAudience returns audiences for different clouds.
-func (cfg *AzureADConfig) getAudience() (string, error) {
-	switch strings.ToLower(cfg.Cloud.Name) {
+func (c *AzureADConfig) getAudience() (string, error) {
+	switch strings.ToLower(c.Cloud.Name) {
 	case strings.ToLower(AzureChina):
 		return IngestionChinaAudience, nil
 	case strings.ToLower(AzureGovernment):
@@ -420,15 +420,15 @@ func (cfg *AzureADConfig) getAudience() (string, error) {
 	case strings.ToLower(AzurePublic):
 		return IngestionPublicAudience, nil
 	case strings.ToLower(AzureCustom):
-		return cfg.Cloud.TokenAudience, nil
+		return c.Cloud.TokenAudience, nil
 	default:
-		return "", errors.New("Cloud is not specified or is incorrect: " + cfg.Cloud.Name)
+		return "", errors.New("Cloud is not specified or is incorrect: " + c.Cloud.Name)
 	}
 }
 
 // getCloudConfiguration returns the cloud Configuration which contains AAD endpoint for different clouds.
-func (cfg *AzureADConfig) getCloudConfiguration() (cloud.Configuration, error) {
-	switch strings.ToLower(cfg.Cloud.Name) {
+func (c *AzureADConfig) getCloudConfiguration() (cloud.Configuration, error) {
+	switch strings.ToLower(c.Cloud.Name) {
 	case strings.ToLower(AzureChina):
 		return cloud.AzureChina, nil
 	case strings.ToLower(AzureGovernment):
@@ -437,9 +437,9 @@ func (cfg *AzureADConfig) getCloudConfiguration() (cloud.Configuration, error) {
 		return cloud.AzurePublic, nil
 	case strings.ToLower(AzureCustom):
 		return cloud.Configuration{
-			ActiveDirectoryAuthorityHost: cfg.Cloud.AadEndpoint, Services: map[cloud.ServiceName]cloud.ServiceConfiguration{},
+			ActiveDirectoryAuthorityHost: c.Cloud.AadEndpoint, Services: map[cloud.ServiceName]cloud.ServiceConfiguration{},
 		}, nil
 	default:
-		return cloud.Configuration{}, errors.New("Cloud is not specified or is incorrect: " + cfg.Cloud.Name)
+		return cloud.Configuration{}, errors.New("Cloud is not specified or is incorrect: " + c.Cloud.Name)
 	}
 }

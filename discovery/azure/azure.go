@@ -208,30 +208,30 @@ func (c *AzureCloudConfig) Validate() error {
 }
 
 // UnmarshalYAML unmarshal the Azure cloud config yaml.
-func (config *AzureCloudConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *AzureCloudConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	var name string
 	if err := unmarshal(&name); err == nil {
 		// Legacy format used, just set the name
-		config.Name = name
+		c.Name = name
 		return nil
 	}
 
 	type plain AzureCloudConfig
-	*config = AzureCloudConfig{}
-	if err := unmarshal((*plain)(config)); err != nil {
+	*c = AzureCloudConfig{}
+	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
 
-	return config.Validate()
+	return c.Validate()
 }
 
 // MarshalYAML marshal the Azure cloud config to yaml.
-func (config AzureCloudConfig) MarshalYAML() (interface{}, error) {
-	if config.Name != azureCustom {
-		return config.Name, nil
-	} else {
-		return config, nil
+func (c AzureCloudConfig) MarshalYAML() (interface{}, error) {
+	if c.Name != azureCustom {
+		return c.Name, nil
 	}
+
+	return c, nil
 }
 
 type Discovery struct {
