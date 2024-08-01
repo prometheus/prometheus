@@ -2,6 +2,7 @@ package model
 
 import (
 	"encoding/json"
+	"slices"
 	"sort"
 	"strings"
 	"unsafe"
@@ -63,15 +64,38 @@ func LabelSetFromMap(m map[string]string) LabelSet {
 	return ls
 }
 
+// LabelSetFromSlice is a constructor for predefined LabelSet.
+func LabelSetFromSlice(s []SimpleLabel) LabelSet {
+	if len(s) > 1 {
+		slices.SortFunc(s, func(a, b SimpleLabel) int { return strings.Compare(a.Name, b.Name) })
+	}
+
+	var size int
+	for _, l := range s {
+		size += len(l.Name) + len(l.Value) + additionalSymbols
+	}
+
+	ls := LabelSet{
+		data:  make([]byte, 0, size),
+		pairs: make([]pair, 0, len(s)),
+	}
+
+	for _, l := range s {
+		ls.append(l.Name, l.Value)
+	}
+
+	return ls
+}
+
 // LabelSetFromPairs is a short constructor for tests
 func LabelSetFromPairs(kv ...string) LabelSet {
-	if len(kv)%2 != 0 {
+	if len(kv)%additionalSymbols != 0 {
 		panic("kv is not pairs")
 	}
 
-	idx := make([]int, len(kv)/2)
+	idx := make([]int, len(kv)/additionalSymbols)
 	for i := range idx {
-		idx[i] = 2 * i
+		idx[i] = additionalSymbols * i
 	}
 	if len(idx) > 1 {
 		sort.Slice(idx, func(i, j int) bool { return kv[idx[i]] < kv[idx[j]] })
@@ -84,7 +108,7 @@ func LabelSetFromPairs(kv ...string) LabelSet {
 
 	ls := LabelSet{
 		data:  make([]byte, 0, size),
-		pairs: make([]pair, 0, len(kv)/2),
+		pairs: make([]pair, 0, len(kv)/additionalSymbols),
 	}
 
 	for _, i := range idx {
@@ -398,6 +422,10 @@ func (ls LabelSet) valueLen(i int) int {
 	return int(ls.pairs[i].value.len)
 }
 
+//
+// LabelSetBuilder
+//
+
 // LabelSetBuilder used for carry labels pairs
 type LabelSetBuilder struct {
 	pairs map[string]string
@@ -413,6 +441,11 @@ func NewLabelSetBuilder() *LabelSetBuilder {
 // Build label set
 func (builder *LabelSetBuilder) Build() LabelSet {
 	return LabelSetFromMap(builder.pairs)
+}
+
+// Add a name/value pair. Note that if you add the same name twice, the last one added will be recorded.
+func (builder *LabelSetBuilder) Add(key, value string) {
+	builder.pairs[key] = value
 }
 
 // Set key-value in label set
@@ -437,4 +470,126 @@ func (builder *LabelSetBuilder) NewWith(key, value string) *LabelSetBuilder {
 	}
 	res[key] = value
 	return &LabelSetBuilder{pairs: res}
+}
+
+// Reset clear builder container.
+func (builder *LabelSetBuilder) Reset() {
+	for name := range builder.pairs {
+		delete(builder.pairs, name)
+	}
+}
+
+// Has returns true if the label with the given name is present.
+func (builder *LabelSetBuilder) Has(name string) bool {
+	_, ok := builder.pairs[name]
+	return ok
+}
+
+// Get returns the value for the label with the given name. Returns an empty string if the label doesn't exist.
+func (builder *LabelSetBuilder) Get(name string) string {
+	return builder.pairs[name]
+}
+
+//
+// LabelSetSimpleBuilder
+//
+
+// SimpleLabel is a key/value pair of strings.
+type SimpleLabel struct {
+	Name  string
+	Value string
+}
+
+// LabelSetSimpleBuilder used for carry labels pairs with check depuplicate.
+type LabelSetSimpleBuilder struct {
+	pairs  []SimpleLabel
+	sorted bool
+}
+
+// NewLabelSetSimpleBuilder is a constructor.
+func NewLabelSetSimpleBuilder() *LabelSetSimpleBuilder {
+	return &LabelSetSimpleBuilder{pairs: []SimpleLabel{}}
+}
+
+// NewLabelSetSimpleBuilderSize is a constructor with container size.
+func NewLabelSetSimpleBuilderSize(size int) *LabelSetSimpleBuilder {
+	return &LabelSetSimpleBuilder{pairs: make([]SimpleLabel, 0, size)}
+}
+
+// Add a name/value pair. Note if you Add the same name twice you will get a duplicate label, which is invalid.
+func (builder *LabelSetSimpleBuilder) Add(name, value string) {
+	builder.pairs = append(builder.pairs, SimpleLabel{Name: name, Value: value})
+	builder.sorted = false
+}
+
+// Build label set.
+func (builder *LabelSetSimpleBuilder) Build() LabelSet {
+	if !builder.sorted {
+		builder.Sort()
+	}
+
+	var size int
+	for _, l := range builder.pairs {
+		size += len(l.Name) + len(l.Value) + additionalSymbols
+	}
+
+	ls := LabelSet{
+		data:  make([]byte, 0, size),
+		pairs: make([]pair, 0, len(builder.pairs)),
+	}
+
+	for _, l := range builder.pairs {
+		ls.append(l.Name, l.Value)
+	}
+
+	return ls
+}
+
+// Get returns the value for the label with the given name. Returns an empty string if the label doesn't exist.
+func (builder *LabelSetSimpleBuilder) Get(name string) string {
+	for _, l := range builder.pairs {
+		if l.Name == name {
+			return l.Value
+		}
+	}
+	return ""
+}
+
+// Has returns true if the label with the given name is present.
+func (builder *LabelSetSimpleBuilder) Has(name string) bool {
+	for _, l := range builder.pairs {
+		if l.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// HasDuplicateLabelNames returns whether ls has duplicate label names.
+func (builder *LabelSetSimpleBuilder) HasDuplicateLabelNames() (string, bool) {
+	builder.Sort()
+	for i, l := range builder.pairs {
+		if i == 0 {
+			continue
+		}
+		if l.Name == builder.pairs[i-1].Name {
+			return l.Name, true
+		}
+	}
+	return "", false
+}
+
+// Reset clear builder container.
+func (builder *LabelSetSimpleBuilder) Reset() {
+	builder.pairs = builder.pairs[:0]
+	builder.sorted = false
+}
+
+// Sort the labels added so far by name.
+func (builder *LabelSetSimpleBuilder) Sort() {
+	if builder.sorted {
+		return
+	}
+	slices.SortFunc(builder.pairs, func(a, b SimpleLabel) int { return strings.Compare(a.Name, b.Name) })
+	builder.sorted = true
 }

@@ -31,7 +31,6 @@ linters-settings:
   govet:
     # report about shadowed variables
     check-shadowing: true
-
     # settings per analyzer
     settings:
       printf: # analyzer name, run `go tool vet help` to see all analyzers

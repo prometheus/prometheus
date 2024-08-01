@@ -183,12 +183,12 @@ class DecodingTable {
       // index of first item in the portion
       uint32_t first_to_save_i = 0;
       if (from != nullptr) {
-        first_to_save_i = from->size_;
+        first_to_save_i = from->next_item_index_;
         res += sizeof(uint32_t);
       }
 
       // size
-      uint32_t size_to_save = size_ - first_to_save_i;
+      uint32_t size_to_save = next_item_index_ - first_to_save_i;
       res += sizeof(uint32_t);
 
       // if there are no items to write, we finish here
@@ -489,9 +489,17 @@ class EncodingTable : private DecodingTable<Filament> {
   template <class Class>
   PROMPP_ALWAYS_INLINE uint32_t find_or_emplace(const Class& c) noexcept {
     return *set_.lazy_emplace(c, [&](const auto& ctor) {
+      ctor(Base::next_item_index());
       Base::items_.emplace_back(Base::data_, c);
-      ctor(++id_);
-    });
+    }) + shift_;
+  }
+
+  template <class Class>
+  PROMPP_ALWAYS_INLINE uint32_t find_or_emplace(const Class& c, size_t hashval) noexcept {
+    return *set_.lazy_emplace_with_hash(c, phmap::phmap_mix<sizeof(size_t)>()(hashval), [&](const auto& ctor) {
+      ctor(Base::next_item_index());
+      Base::items_.emplace_back(Base::data_, c);
+    }) + shift_;
   }
 
   PROMPP_ALWAYS_INLINE auto checkpoint() const noexcept { return checkpoint_type(*this, next_item_index()); }
@@ -502,19 +510,20 @@ class EncodingTable : private DecodingTable<Filament> {
                                  checkpoint.next_item_index(), next_item_index());
     }
 
+    shift_ += Base::items_.size();
     Base::items_.resize(0);
     Base::data_.shrink_to(0);
     set_.clear();
   }
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t next_item_index() const noexcept { return id_ + 1; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t next_item_index() const noexcept { return shift_ + Base::next_item_index(); }
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return Base::allocated_memory() + set_allocated_memory_; }
 
  private:
   uint32_t set_allocated_memory_{};
   phmap::flat_hash_set<typename Base::Proxy, typename Base::Hasher, typename Base::EqualityComparator, BareBones::Allocator<typename Base::Proxy, uint32_t>>
       set_{{}, 0, Base::hasher_, Base::equality_comparator_, BareBones::Allocator<typename Base::Proxy, uint32_t>{set_allocated_memory_}};
-  uint32_t id_ = std::numeric_limits<uint32_t>::max();
+  uint32_t shift_{0};
 };
 
 template <class Filament>
@@ -689,6 +698,11 @@ class OrderedEncodingBimap : public DecodingTable<Filament> {
     set_.insert(i, typename Base::Proxy(id));
 
     return id;
+  }
+
+  template <class Class>
+  inline __attribute__((always_inline)) uint32_t find_or_emplace(const Class& c, [[maybe_unused]] size_t hashval) noexcept {
+    return find_or_emplace(c);
   }
 
   template <class Class>
