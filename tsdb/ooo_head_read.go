@@ -115,7 +115,7 @@ func (oh *OOOHeadIndexReader) series(ref storage.SeriesRef, builder *labels.Scra
 					return nil
 				}
 				for _, chk := range chks {
-					addChunk(c.minTime, c.maxTime, ref, chk.chunk)
+					addChunk(chk.minTime, chk.maxTime, ref, chk.chunk)
 				}
 			} else {
 				var emptyChunk chunkenc.Chunk
