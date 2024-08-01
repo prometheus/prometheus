@@ -69,13 +69,7 @@ class QueryableEncodingBimap : public BareBones::SnugComposite::DecodingTable<Fi
       }
 
       reverse_index_.add(label, ls_id);
-      trie_index_.names_trie().insert((*label).first, label.name_id());
-
-      if (auto values_trie = trie_index_.values_trie(label.name_id()); values_trie) {
-        values_trie->insert((*label).second, label.value_id());
-      } else {
-        trie_index_.insert_values_trie()->insert((*label).second, label.value_id());
-      }
+      trie_index_.insert((*label).first, label.name_id(), (*label).second, label.value_id());
     }
 
     if (!sorting_index_.empty()) {
