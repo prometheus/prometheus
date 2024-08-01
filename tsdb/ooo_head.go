@@ -15,8 +15,10 @@ package tsdb
 
 import (
 	"fmt"
-	"github.com/prometheus/prometheus/model/histogram"
 	"sort"
+
+
+	"github.com/prometheus/prometheus/model/histogram"
 
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 

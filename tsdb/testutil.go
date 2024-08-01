@@ -14,8 +14,10 @@
 package tsdb
 
 import (
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"testing"
+
+
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 
