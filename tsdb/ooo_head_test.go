@@ -16,7 +16,6 @@ package tsdb
 import (
 	"testing"
 
-
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 
 	"github.com/stretchr/testify/require"

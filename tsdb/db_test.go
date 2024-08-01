@@ -5876,7 +5876,7 @@ func testOOONativeHistogramsWithCounterResets(t *testing.T, scenario sampleTypeS
 		//			expCounterResetHints: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset},
 		//		},
 		//	},
-		//},
+		// },
 		{
 			name:     "Counter resets in both in-order and OOO samples",
 			queryMin: minutes(40),

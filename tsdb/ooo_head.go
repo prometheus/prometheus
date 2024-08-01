@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"sort"
 
-
 	"github.com/prometheus/prometheus/model/histogram"
 
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
