@@ -982,6 +982,11 @@ func (a *appender) AppendCTZeroSample(storage.SeriesRef, labels.Labels, int64, i
 	return 0, nil
 }
 
+func (a *appender) AppendHistogramCTZeroSample(storage.SeriesRef, labels.Labels, int64, int64, string) (storage.SeriesRef, error) {
+	// TODO(arthursens): Wire metadata in the Agent's appender.
+	return 0, nil
+}
+
 // Commit submits the collected samples and purges the batch.
 func (a *appender) Commit() error {
 	if err := a.log(); err != nil {

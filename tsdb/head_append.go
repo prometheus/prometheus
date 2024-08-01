@@ -98,6 +98,17 @@ func (a *initAppender) AppendCTZeroSample(ref storage.SeriesRef, lset labels.Lab
 	return a.app.AppendCTZeroSample(ref, lset, t, ct)
 }
 
+func (a *initAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, lset labels.Labels, t, ct int64, hType string) (storage.SeriesRef, error) {
+	if a.app != nil {
+		return a.app.AppendHistogramCTZeroSample(ref, lset, t, ct, hType)
+	}
+
+	a.head.initTime(t)
+	a.app = a.head.appender()
+
+	return a.app.AppendHistogramCTZeroSample(ref, lset, t, ct, hType)
+}
+
 // initTime initializes a head with the first timestamp. This only needs to be called
 // for a completely fresh head with an empty WAL.
 func (h *Head) initTime(t int64) {
@@ -387,7 +398,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 // storage.CreatedTimestampAppender.AppendCTZeroSample for further documentation.
 func (a *headAppender) AppendCTZeroSample(ref storage.SeriesRef, lset labels.Labels, t, ct int64) (storage.SeriesRef, error) {
 	if ct >= t {
-		return 0, fmt.Errorf("CT is newer or the same as sample's timestamp, ignoring")
+		return 0, storage.ErrCTNewerThanSample
 	}
 
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
@@ -529,6 +540,92 @@ func (s *memSeries) appendableFloatHistogram(t int64, fh *histogram.FloatHistogr
 		return storage.ErrDuplicateSampleForTimestamp
 	}
 	return nil
+}
+
+func (a *headAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, lset labels.Labels, t, ct int64, hType string) (storage.SeriesRef, error) {
+	if !a.head.opts.EnableNativeHistograms.Load() {
+		return 0, storage.ErrNativeHistogramsDisabled
+	}
+
+	if ct >= t {
+		return 0, storage.ErrCTNewerThanSample
+	}
+	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
+	if s == nil {
+		// Ensure no empty labels have gotten through.
+		lset = lset.WithoutEmpty()
+		if lset.IsEmpty() {
+			return 0, fmt.Errorf("empty labelset: %w", ErrInvalidSample)
+		}
+
+		if l, dup := lset.HasDuplicateLabelNames(); dup {
+			return 0, fmt.Errorf(`label name "%s" is not unique: %w`, l, ErrInvalidSample)
+		}
+
+		var created bool
+		var err error
+		s, created, err = a.head.getOrCreate(lset.Hash(), lset)
+		if err != nil {
+			return 0, err
+		}
+		if created {
+			switch hType {
+			case sampleMetricTypeHistogram:
+				s.lastHistogramValue = &histogram.Histogram{}
+			case sampleMetricTypeFloat:
+				s.lastFloatHistogramValue = &histogram.FloatHistogram{}
+			default:
+				return 0, fmt.Errorf("unknown histogram type: %s", hType)
+			}
+			a.series = append(a.series, record.RefSeries{
+				Ref:    s.ref,
+				Labels: lset,
+			})
+		}
+	}
+
+	switch hType {
+	case sampleMetricTypeHistogram:
+		zeroHistogram := &histogram.Histogram{Sum: 0, Count: 0, Schema: 0, ZeroThreshold: 0, ZeroCount: 0}
+		s.Lock()
+		if err := s.appendableHistogram(ct, zeroHistogram); err != nil {
+			s.Unlock()
+			if errors.Is(err, storage.ErrOutOfOrderSample) {
+				return 0, storage.ErrOutOfOrderCT
+			}
+		}
+		s.pendingCommit = true
+		s.Unlock()
+		a.histograms = append(a.histograms, record.RefHistogramSample{
+			Ref: s.ref,
+			T:   ct,
+			H:   zeroHistogram,
+		})
+		a.histogramSeries = append(a.histogramSeries, s)
+	case sampleMetricTypeFloat:
+		zeroFloatHistogram := &histogram.FloatHistogram{Sum: 0, Count: 0, Schema: 0, ZeroThreshold: 0, ZeroCount: 0}
+		s.Lock()
+		if err := s.appendableFloatHistogram(ct, zeroFloatHistogram); err != nil {
+			s.Unlock()
+			if errors.Is(err, storage.ErrOutOfOrderSample) {
+				return 0, storage.ErrOutOfOrderCT
+			}
+		}
+		s.pendingCommit = true
+		s.Unlock()
+		a.floatHistograms = append(a.floatHistograms, record.RefFloatHistogramSample{
+			Ref: s.ref,
+			T:   ct,
+			FH:  zeroFloatHistogram,
+		})
+	default:
+		return 0, fmt.Errorf("unknown histogram type: %s", hType)
+	}
+
+	if ct > a.maxt {
+		a.maxt = ct
+	}
+	return 0, nil
 }
 
 // AppendExemplar for headAppender assumes the series ref already exists, and so it doesn't
