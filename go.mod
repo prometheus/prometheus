@@ -17,7 +17,7 @@ require (
 	github.com/bboreham/go-loser v0.0.0-20230920113527-fcc2c21820a3
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/dennwc/varint v1.0.0
-	github.com/digitalocean/godo v1.118.0
+	github.com/digitalocean/godo v1.119.0
 	github.com/docker/docker v27.0.3+incompatible
 	github.com/edsrzf/mmap-go v1.1.0
 	github.com/envoyproxy/go-control-plane v0.12.0
@@ -33,17 +33,17 @@ require (
 	github.com/google/go-cmp v0.6.0
 	github.com/google/pprof v0.0.0-20240711041743-f6c9dda6c6da
 	github.com/google/uuid v1.6.0
-	github.com/gophercloud/gophercloud v1.13.0
+	github.com/gophercloud/gophercloud v1.14.0
 	github.com/grafana/regexp v0.0.0-20240518133315-a468a5bfb3bc
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
 	github.com/hashicorp/consul/api v1.29.2
 	github.com/hashicorp/nomad/api v0.0.0-20240717122358-3d93bd3778f3
-	github.com/hetznercloud/hcloud-go/v2 v2.10.2
+	github.com/hetznercloud/hcloud-go/v2 v2.12.0
 	github.com/ionos-cloud/sdk-go/v6 v6.1.11
 	github.com/json-iterator/go v1.1.12
 	github.com/klauspost/compress v1.17.9
 	github.com/kolo/xmlrpc v0.0.0-20220921171641-a4b6fa1dd06b
-	github.com/linode/linodego v1.37.0
+	github.com/linode/linodego v1.38.0
 	github.com/miekg/dns v1.1.61
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f
@@ -82,7 +82,7 @@ require (
 	golang.org/x/text v0.16.0
 	golang.org/x/time v0.5.0
 	golang.org/x/tools v0.23.0
-	google.golang.org/api v0.188.0
+	google.golang.org/api v0.189.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20240711142825-46eb208f015d
 	google.golang.org/grpc v1.65.0
 	google.golang.org/protobuf v1.34.2
@@ -96,9 +96,9 @@ require (
 )
 
 require (
-	cloud.google.com/go/auth v0.7.0 // indirect
-	cloud.google.com/go/auth/oauth2adapt v0.2.2 // indirect
-	cloud.google.com/go/compute/metadata v0.4.0 // indirect
+	cloud.google.com/go/auth v0.7.2 // indirect
+	cloud.google.com/go/auth/oauth2adapt v0.2.3 // indirect
+	cloud.google.com/go/compute/metadata v0.5.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.10.0 // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.2.2 // indirect
 	github.com/Microsoft/go-winio v0.6.1 // indirect
@@ -191,7 +191,7 @@ require (
 	golang.org/x/exp v0.0.0-20240119083558-1b970713d09a // indirect
 	golang.org/x/mod v0.19.0 // indirect
 	golang.org/x/term v0.22.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20240708141625-4ad9e859172b // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20240722135656-d784300faade // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gotest.tools/v3 v3.0.3 // indirect

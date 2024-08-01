@@ -17,8 +17,8 @@ export const promQLHighLight = styleTags({
     LineComment: tags.comment,
     LabelName: tags.labelName,
     StringLiteral: tags.string,
-    NumberLiteral: tags.number,
-    Duration: tags.number,
+    NumberDurationLiteral: tags.number,
+    NumberDurationLiteralInDurationContext: tags.number,
     Identifier: tags.variableName,
     'Abs Absent AbsentOverTime Acos Acosh Asin Asinh Atan Atanh AvgOverTime Ceil Changes Clamp ClampMax ClampMin Cos Cosh CountOverTime DaysInMonth DayOfMonth DayOfWeek DayOfYear Deg Delta Deriv Exp Floor HistogramAvg HistogramCount HistogramFraction HistogramQuantile HistogramSum HoltWinters Hour Idelta Increase Irate LabelReplace LabelJoin LastOverTime Ln Log10 Log2 MaxOverTime MinOverTime Minute Month Pi PredictLinear PresentOverTime QuantileOverTime Rad Rate Resets Round Scalar Sgn Sin Sinh Sort SortDesc SortByLabel SortByLabelDesc Sqrt StddevOverTime StdvarOverTime SumOverTime Tan Tanh Time Timestamp Vector Year':
         tags.function(tags.variableName),
