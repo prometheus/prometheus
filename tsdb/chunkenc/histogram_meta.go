@@ -280,6 +280,9 @@ type Insert struct {
 	num int
 }
 
+// Deprecated: expandSpansForward, use expandIntSpansAndBuckets or
+// expandFloatSpansAndBuckets instead.
+// expandSpansForward is left here for reference.
 // expandSpansForward returns the inserts to expand the bucket spans 'a' so that
 // they match the spans in 'b'. 'b' must cover the same or more buckets than
 // 'a', otherwise the function will return false.
@@ -573,16 +576,4 @@ func counterResetHint(crh CounterResetHeader, numRead uint16) histogram.CounterR
 		// might not be worth the effort and/or risk. To be vetted...
 		return histogram.UnknownCounterReset
 	}
-}
-
-// Handle pathological case of empty span when advancing span idx.
-// Call it with idx==-1 to find the first non empty span.
-func nextNonEmptySpanSliceIdx(idx int, bucketIdx int32, spans []histogram.Span) (newIdx int, newBucketIdx int32) {
-	for idx++; idx < len(spans); idx++ {
-		if spans[idx].Length > 0 {
-			return idx, bucketIdx + spans[idx].Offset + 1
-		}
-		bucketIdx += spans[idx].Offset
-	}
-	return idx, 0
 }
