@@ -19,4 +19,5 @@ for TEST_PACKAGE in "${TEST_PACKAGES[@]}"; do
   QUERY_COMMAND+=$(printf "tests(%s)" "${TEST_PACKAGE}")
 done
 
-bazel query "${QUERY_COMMAND}" | xargs bazel test --compilation_mode="${OPT}" --test_output=errors ${SANITIZERS_MODE_FLAG}
+bazel query "${QUERY_COMMAND}" | \
+  xargs bazel test --compilation_mode="${OPT}" --local_cpu_resources=HOST_CPUS*0.2 --test_output=errors ${SANITIZERS_MODE_FLAG}

@@ -552,14 +552,18 @@ func walDecoderDtor(decoder uintptr) {
 // LabelSetStorage EncodingBimap
 //
 
-// primitivesLSSCtor - wrapper for constructor C-EncodingBimap.
-func primitivesLSSCtor() uintptr {
+// primitivesLSSCtor - wrapper for constructor C-Lss.
+func primitivesLSSCtor(lss_type uint32) uintptr {
+	var args = struct {
+		lss_type uint32
+	}{lss_type}
 	var res struct {
 		lss uintptr
 	}
 
-	fastcgo.UnsafeCall1(
+	fastcgo.UnsafeCall2(
 		C.prompp_primitives_lss_ctor,
+		uintptr(unsafe.Pointer(&args)),
 		uintptr(unsafe.Pointer(&res)),
 	)
 
@@ -589,54 +593,6 @@ func primitivesLSSAllocatedMemory(lss uintptr) uint64 {
 
 	fastcgo.UnsafeCall2(
 		C.prompp_primitives_lss_allocated_memory,
-		uintptr(unsafe.Pointer(&args)),
-		uintptr(unsafe.Pointer(&res)),
-	)
-
-	return res.allocatedMemory
-}
-
-//
-// LabelSetStorage OrderedEncodingBimap
-//
-
-// primitivesOrderedLSSCtor - wrapper for constructor C-OrderedEncodingBimap.
-func primitivesOrderedLSSCtor() uintptr {
-	var res struct {
-		orderedLss uintptr
-	}
-
-	fastcgo.UnsafeCall1(
-		C.prompp_primitives_ordered_lss_ctor,
-		uintptr(unsafe.Pointer(&res)),
-	)
-
-	return res.orderedLss
-}
-
-// primitivesOrderedLSSDtor - wrapper for destructor C-OrderedEncodingBimap.
-func primitivesOrderedLSSDtor(orderedLss uintptr) {
-	var args = struct {
-		orderedLss uintptr
-	}{orderedLss}
-
-	fastcgo.UnsafeCall1(
-		C.prompp_primitives_ordered_lss_dtor,
-		uintptr(unsafe.Pointer(&args)),
-	)
-}
-
-// primitivesOrderedLSSAllocatedMemory -  return size of allocated memory for ordered label sets in C++.
-func primitivesOrderedLSSAllocatedMemory(orderedLss uintptr) uint64 {
-	var args = struct {
-		orderedLss uintptr
-	}{orderedLss}
-	var res struct {
-		allocatedMemory uint64
-	}
-
-	fastcgo.UnsafeCall2(
-		C.prompp_primitives_ordered_lss_allocated_memory,
 		uintptr(unsafe.Pointer(&args)),
 		uintptr(unsafe.Pointer(&res)),
 	)
