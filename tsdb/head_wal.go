@@ -1030,7 +1030,7 @@ func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (unknownRefs, unknownHi
 				unknownHistogramRefs++
 				continue
 			}
-			if s.t <= ms.mmMaxTime {
+			if s.t <= ms.mmMaxTime() {
 				continue
 			}
 			var chunkCreated bool
