@@ -7,9 +7,12 @@
 namespace {
 
 using BareBones::AllocationSize;
+using BareBones::BitSequenceReader;
 using BareBones::CompactBitSequence;
 
 const size_t NUM_VALUES = 1000;
+
+constexpr std::array kAllocationSizesTable = {AllocationSize{0U}, AllocationSize{32U}};
 
 std::vector<uint64_t> generate_uint64_vector() {
   std::vector<uint64_t> data;
@@ -185,8 +188,6 @@ TEST_F(BitSequenceCopyWithSizeConstructorFixture, SourceStreamIsEmpty) {
 
 class CompactBitSequenceFixture : public testing::Test {
  protected:
-  static constexpr std::array kAllocationSizesTable = {AllocationSize{0U}, AllocationSize{32U}};
-
   CompactBitSequence<kAllocationSizesTable> stream_;
 };
 
@@ -280,6 +281,68 @@ TEST_F(CompactBitSequenceFixture, PushUint64_2) {
   // Assert
   ASSERT_EQ(64U, stream_.size_in_bits());
   EXPECT_EQ(0b1010101010101010101010101010101010101010101010101010101010101010, bytes[0]);
+}
+
+template <class T>
+class BitSequenceReaderFixture : public testing::Test {};
+
+typedef testing::Types<BareBones::BitSequence, CompactBitSequence<kAllocationSizesTable>> BitSequenceTypes;
+TYPED_TEST_SUITE(BitSequenceReaderFixture, BitSequenceTypes);
+
+TYPED_TEST(BitSequenceReaderFixture, read_u64) {
+  // Arrange
+  constexpr auto value = 0b0101010101010101010101010101010101010101010101010101010101010101U;
+  TypeParam stream;
+  stream.push_back_u64(value);
+
+  // Act
+  auto reader = stream.reader();
+
+  // Assert
+  EXPECT_EQ(value, reader.read_u64());
+}
+
+TYPED_TEST(BitSequenceReaderFixture, read_u64_2) {
+  // Arrange
+  constexpr auto value = 0b0101010101010101010101010101010101010101010101010101010101010101U;
+  TypeParam stream;
+  stream.push_back_single_zero_bit();
+  stream.push_back_u64(value);
+
+  // Act
+  auto reader = stream.reader();
+  reader.ff(1);
+
+  // Assert
+  EXPECT_EQ(value, reader.read_u64());
+}
+
+TYPED_TEST(BitSequenceReaderFixture, read_bits_u64) {
+  // Arrange
+  constexpr auto value = 0b0101010101010101010101010101010101010101010101010101010101010101U;
+  TypeParam stream;
+  stream.push_back_u64(value);
+
+  // Act
+  auto reader = stream.reader();
+
+  // Assert
+  EXPECT_EQ(value, reader.read_bits_u64(BareBones::Bit::to_bits(sizeof(uint64_t))));
+}
+
+TYPED_TEST(BitSequenceReaderFixture, read_bits_u64_2) {
+  // Arrange
+  constexpr auto value = 0b0101010101010101010101010101010101010101010101010101010101010101U;
+  TypeParam stream;
+  stream.push_back_single_zero_bit();
+  stream.push_back_u64(value);
+
+  // Act
+  auto reader = stream.reader();
+  reader.ff(1);
+
+  // Assert
+  EXPECT_EQ(value, reader.read_bits_u64(BareBones::Bit::to_bits(sizeof(uint64_t))));
 }
 
 }  // namespace

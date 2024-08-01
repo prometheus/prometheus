@@ -235,7 +235,7 @@ class BasicEncoder {
   };
 
   struct __attribute__((__packed__)) EncoderWithID {
-    BareBones::Encoding::Gorilla::StreamEncoder<BareBones::Encoding::Gorilla::ZigZagTimestampEncoder> encoder;
+    BareBones::Encoding::Gorilla::StreamEncoder<BareBones::Encoding::Gorilla::ZigZagTimestampEncoder<>, BareBones::Encoding::Gorilla::ValuesEncoder> encoder;
     Primitives::LabelSetID id;
   };
 
@@ -272,7 +272,9 @@ class BasicEncoder {
   LabelSetsTable label_sets_;
   typename LabelSetsTable::checkpoint_type label_sets_checkpoint_;
   Buffer buffer_;
-  BareBones::Vector<BareBones::Encoding::Gorilla::StreamEncoder<BareBones::Encoding::Gorilla::ZigZagTimestampEncoder>> gorilla_;
+  BareBones::Vector<
+      BareBones::Encoding::Gorilla::StreamEncoder<BareBones::Encoding::Gorilla::ZigZagTimestampEncoder<>, BareBones::Encoding::Gorilla::ValuesEncoder>>
+      gorilla_;
   BareBones::LZ4Stream::ostream lz4stream_{nullptr};
 
   const uuids::uuid uuid_;
@@ -608,11 +610,13 @@ class BasicEncoder {
                                  (next_encoded_segment_ - 1), redundant_segment_id);
     }
 
-    BareBones::Vector<BareBones::Encoding::Gorilla::StreamDecoder<BareBones::Encoding::Gorilla::ZigZagTimestampDecoder>> decoders;
+    BareBones::Vector<
+        BareBones::Encoding::Gorilla::StreamDecoder<BareBones::Encoding::Gorilla::ZigZagTimestampDecoder<>, BareBones::Encoding::Gorilla::ValuesDecoder>>
+        decoders;
 
     // move out the encoders into decoders.
-    for (auto&& encoder : encoders) {
-      decoders.emplace_back(std::move(encoder));
+    for (auto& encoder : encoders) {
+      decoders.emplace_back(encoder.state());
     }
 
     auto original_exceptions = out.exceptions();
@@ -651,7 +655,9 @@ class BasicEncoder {
 
 template <class LabelSetsTable = Primitives::SnugComposites::LabelSet::DecodingTable, size_t LZ4DecompressedBufferSize = 256>
 class BasicDecoder {
-  BareBones::Vector<BareBones::Encoding::Gorilla::StreamDecoder<BareBones::Encoding::Gorilla::ZigZagTimestampDecoder>> gorilla_;
+  BareBones::Vector<
+      BareBones::Encoding::Gorilla::StreamDecoder<BareBones::Encoding::Gorilla::ZigZagTimestampDecoder<>, BareBones::Encoding::Gorilla::ValuesDecoder>>
+      gorilla_;
   BareBones::LZ4Stream::basic_istream<LZ4DecompressedBufferSize> lz4stream_{nullptr};
   LabelSetsTable& label_sets_;
 
@@ -1017,7 +1023,7 @@ class BasicDecoder {
   using timeseries_type = const Primitives::BasicTimeseries<typename LabelSetsTable::value_type*>&;
 
   template <class Callback>
-    requires std::is_invocable_v<Callback, timeseries_type>
+    requires std::is_invocable_v<Callback, Primitives::LabelSetID, timeseries_type>
   __attribute__((flatten)) void process_segment(Callback&& func) {
     Primitives::BasicTimeseries<typename LabelSetsTable::value_type*> timeseries;
 
@@ -1027,7 +1033,7 @@ class BasicDecoder {
     process_segment([&](Primitives::LabelSetID ls_id, Primitives::Timestamp ts, Primitives::Sample::value_type v) {
       if (ls_id != last_ls_id) {
         if (last_ls_id != std::numeric_limits<Primitives::LabelSetID>::max()) {
-          func(timeseries);
+          func(last_ls_id, timeseries);
         }
 
         last_ls = label_sets_[ls_id];
@@ -1040,7 +1046,7 @@ class BasicDecoder {
     });
 
     if (last_ls_id != std::numeric_limits<Primitives::LabelSetID>::max()) {
-      func(timeseries);
+      func(last_ls_id, timeseries);
     }
   }
 };

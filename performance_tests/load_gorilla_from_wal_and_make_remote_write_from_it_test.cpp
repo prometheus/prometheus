@@ -15,7 +15,8 @@ std::chrono::nanoseconds load_gorilla_from_wal_and_make_remote_write_from_it::pr
   std::string protobuf_buffer;
   auto start = std::chrono::steady_clock::now();
   protozero::pbf_writer pb_message(protobuf_buffer);
-  wal.process_segment([&](WAL::Reader::timeseries_type timeseries) { Prometheus::RemoteWrite::write_timeseries(pb_message, timeseries); });
+  wal.process_segment(
+      [&](PromPP::Primitives::LabelSetID, WAL::Reader::timeseries_type timeseries) { Prometheus::RemoteWrite::write_timeseries(pb_message, timeseries); });
   protobuf_buffer_total_size += protobuf_buffer.size();
   auto end = std::chrono::steady_clock::now();
   auto period = end - start;
