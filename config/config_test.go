@@ -156,6 +156,12 @@ var expectedConf = &Config{
 		},
 	},
 
+	OTLPConfig: OTLPConfig{
+		PromoteResourceAttributes: []string{
+			"k8s.cluster.name", "k8s.job.name", "k8s.namespace.name",
+		},
+	},
+
 	RemoteReadConfigs: []*RemoteReadConfig{
 		{
 			URL:           mustParseURL("http://remote1/read"),
@@ -1471,6 +1477,26 @@ func TestRemoteWriteRetryOnRateLimit(t *testing.T) {
 	require.False(t, got.RemoteWriteConfigs[1].QueueConfig.RetryOnRateLimit)
 }
 
+func TestOTLPSanitizeResourceAttributes(t *testing.T) {
+	t.Run("good config", func(t *testing.T) {
+		want, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_resource_attributes.good.yml"), false, false, log.NewNopLogger())
+		require.NoError(t, err)
+
+		out, err := yaml.Marshal(want)
+		require.NoError(t, err)
+		var got Config
+		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+
+		require.Equal(t, []string{"k8s.cluster.name", "k8s.job.name", "k8s.namespace.name"}, got.OTLPConfig.PromoteResourceAttributes)
+	})
+
+	t.Run("bad config", func(t *testing.T) {
+		_, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_resource_attributes.bad.yml"), false, false, log.NewNopLogger())
+		require.ErrorContains(t, err, `duplicated promoted OTel resource attribute "k8s.job.name"`)
+		require.ErrorContains(t, err, `empty promoted OTel resource attribute`)
+	})
+}
+
 func TestLoadConfig(t *testing.T) {
 	// Parse a valid file that sets a global scrape timeout. This tests whether parsing
 	// an overwritten default field in the global config permanently changes the default.
@@ -1800,7 +1826,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "remote_write_authorization_header.bad.yml",
-		errMsg:   `authorization header must be changed via the basic_auth, authorization, oauth2, sigv4, or azuread parameter`,
+		errMsg:   `authorization header must be changed via the basic_auth, authorization, oauth2, sigv4, azuread or google_iam parameter`,
 	},
 	{
 		filename: "remote_write_wrong_msg.bad.yml",

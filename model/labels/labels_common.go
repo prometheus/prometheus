@@ -29,10 +29,11 @@ const (
 	BucketLabel  = "le"
 	InstanceName = "instance"
 
-	labelSep = '\xfe'
+	labelSep = '\xfe' // Used at beginning of `Bytes` return.
+	sep      = '\xff' // Used between labels in `Bytes` and `Hash`.
 )
 
-var seps = []byte{'\xff'}
+var seps = []byte{sep} // Used with Hash, which has no WriteByte method.
 
 // Label is a key/value pair of strings.
 type Label struct {

@@ -38,10 +38,10 @@ func (ls Labels) Bytes(buf []byte) []byte {
 	b.WriteByte(labelSep)
 	for i, l := range ls {
 		if i > 0 {
-			b.WriteByte(seps[0])
+			b.WriteByte(sep)
 		}
 		b.WriteString(l.Name)
-		b.WriteByte(seps[0])
+		b.WriteByte(sep)
 		b.WriteString(l.Value)
 	}
 	return b.Bytes()
@@ -86,9 +86,9 @@ func (ls Labels) Hash() uint64 {
 		}
 
 		b = append(b, v.Name...)
-		b = append(b, seps[0])
+		b = append(b, sep)
 		b = append(b, v.Value...)
-		b = append(b, seps[0])
+		b = append(b, sep)
 	}
 	return xxhash.Sum64(b)
 }
@@ -106,9 +106,9 @@ func (ls Labels) HashForLabels(b []byte, names ...string) (uint64, []byte) {
 			i++
 		default:
 			b = append(b, ls[i].Name...)
-			b = append(b, seps[0])
+			b = append(b, sep)
 			b = append(b, ls[i].Value...)
-			b = append(b, seps[0])
+			b = append(b, sep)
 			i++
 			j++
 		}
@@ -130,9 +130,9 @@ func (ls Labels) HashWithoutLabels(b []byte, names ...string) (uint64, []byte) {
 			continue
 		}
 		b = append(b, ls[i].Name...)
-		b = append(b, seps[0])
+		b = append(b, sep)
 		b = append(b, ls[i].Value...)
-		b = append(b, seps[0])
+		b = append(b, sep)
 	}
 	return xxhash.Sum64(b), b
 }
@@ -151,10 +151,10 @@ func (ls Labels) BytesWithLabels(buf []byte, names ...string) []byte {
 			i++
 		default:
 			if b.Len() > 1 {
-				b.WriteByte(seps[0])
+				b.WriteByte(sep)
 			}
 			b.WriteString(ls[i].Name)
-			b.WriteByte(seps[0])
+			b.WriteByte(sep)
 			b.WriteString(ls[i].Value)
 			i++
 			j++
@@ -177,10 +177,10 @@ func (ls Labels) BytesWithoutLabels(buf []byte, names ...string) []byte {
 			continue
 		}
 		if b.Len() > 1 {
-			b.WriteByte(seps[0])
+			b.WriteByte(sep)
 		}
 		b.WriteString(ls[i].Name)
-		b.WriteByte(seps[0])
+		b.WriteByte(sep)
 		b.WriteString(ls[i].Value)
 	}
 	return b.Bytes()

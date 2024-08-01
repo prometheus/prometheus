@@ -84,6 +84,7 @@ NEGATIVE_BUCKETS_DESC
 ZERO_BUCKET_DESC
 ZERO_BUCKET_WIDTH_DESC
 CUSTOM_VALUES_DESC
+COUNTER_RESET_HINT_DESC
 %token histogramDescEnd
 
 // Operators.
@@ -149,6 +150,14 @@ START
 END
 %token preprocessorEnd
 
+// Counter reset hints.
+%token counterResetHintsStart
+%token <item>
+UNKNOWN_COUNTER_RESET
+COUNTER_RESET
+NOT_COUNTER_RESET
+GAUGE_TYPE
+%token counterResetHintsEnd
 
 // Start symbols for the generated parser.
 %token	startSymbolsStart
@@ -163,7 +172,7 @@ START_METRIC_SELECTOR
 // Type definitions for grammar rules.
 %type <matchers> label_match_list
 %type <matcher> label_matcher
-%type <item> aggregate_op grouping_label match_op maybe_label metric_identifier unary_op at_modifier_preprocessors string_identifier
+%type <item> aggregate_op grouping_label match_op maybe_label metric_identifier unary_op at_modifier_preprocessors string_identifier counter_reset_hint
 %type <labels> label_set metric
 %type <lblList> label_set_list
 %type <label> label_set_item
@@ -839,6 +848,11 @@ histogram_desc_item
                    $$ = yylex.(*parser).newMap()
                    $$["n_offset"] = $3
                 }
+                | COUNTER_RESET_HINT_DESC COLON counter_reset_hint
+                {
+                   $$ = yylex.(*parser).newMap()
+                   $$["counter_reset_hint"] = $3
+                }
                 ;
 
 bucket_set      : LEFT_BRACKET bucket_set_list SPACE RIGHT_BRACKET
@@ -862,6 +876,7 @@ bucket_set_list : bucket_set_list SPACE number
                 | bucket_set_list error
                 ;
 
+counter_reset_hint : UNKNOWN_COUNTER_RESET | COUNTER_RESET | NOT_COUNTER_RESET | GAUGE_TYPE;
 
 /*
  * Keyword lists.

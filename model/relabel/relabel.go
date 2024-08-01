@@ -213,6 +213,10 @@ func (re Regexp) IsZero() bool {
 
 // String returns the original string used to compile the regular expression.
 func (re Regexp) String() string {
+	if re.Regexp == nil {
+		return ""
+	}
+
 	str := re.Regexp.String()
 	// Trim the anchor `^(?:` prefix and `)$` suffix.
 	return str[4 : len(str)-2]

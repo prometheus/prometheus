@@ -359,6 +359,7 @@ var samplePrometheusCfg = config.Config{
 	ScrapeConfigs:      []*config.ScrapeConfig{},
 	RemoteWriteConfigs: []*config.RemoteWriteConfig{},
 	RemoteReadConfigs:  []*config.RemoteReadConfig{},
+	OTLPConfig:         config.OTLPConfig{},
 }
 
 var sampleFlagMap = map[string]string{

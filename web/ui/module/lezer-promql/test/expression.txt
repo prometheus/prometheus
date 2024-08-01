@@ -4,7 +4,7 @@
 
 ==>
 
-PromQL(NumberLiteral)
+PromQL(NumberDurationLiteral)
 
 # Double-quoted string literal
 
@@ -46,7 +46,7 @@ PromQL(StringLiteral)
 
 ==>
 
-PromQL(BinaryExpr(NumberLiteral, Add, NumberLiteral))
+PromQL(BinaryExpr(NumberDurationLiteral, Add, NumberDurationLiteral))
 
 # Complex expression
 
@@ -73,7 +73,7 @@ PromQL(
                             VectorSelector(
                                 Identifier
                             ),
-                          Duration
+                          NumberDurationLiteralInDurationContext
                         )
                   )
                 )
@@ -103,7 +103,7 @@ PromQL(
                             VectorSelector(
                                 Identifier
                             ),
-                          Duration
+                          NumberDurationLiteralInDurationContext
                       )
                   )
               )
@@ -240,21 +240,21 @@ PromQL(
   )
 )
 
-# Duration units
+# NumberDurationLiteralInDurationContext units
 
 foo[1y2w3d4h5m6s7ms]
 
 ==>
 
-PromQL(MatrixSelector(VectorSelector(Identifier),Duration))
+PromQL(MatrixSelector(VectorSelector(Identifier),NumberDurationLiteralInDurationContext))
 
-# Incorrectly ordered duration units
+# Incorrectly ordered NumberDurationLiteralInDurationContext units
 
 foo[1m2h]
 
 ==>
 
-PromQL(SubqueryExpr(VectorSelector(Identifier),Duration,⚠,Duration))
+PromQL(MatrixSelector(VectorSelector(Identifier),NumberDurationLiteralInDurationContext,⚠))
 
 # Using a function name as a metric name
 
@@ -311,7 +311,7 @@ PromQL(
         ),
       Gtr,
       BoolModifier(Bool),
-      NumberLiteral
+      NumberDurationLiteral
     )
 )
 
@@ -357,7 +357,7 @@ PromQL(
                 VectorSelector(
                     Identifier
                 ),
-              Duration
+              NumberDurationLiteralInDurationContext
             )
       )
     )
@@ -389,8 +389,8 @@ PromQL(
       FunctionIdentifier(Clamp),
       FunctionCallBody(
         VectorSelector(Identifier),
-        NumberLiteral,
-        NumberLiteral
+        NumberDurationLiteral,
+        NumberDurationLiteral
       )
     )
 )
@@ -450,7 +450,7 @@ PromQL(
             Identifier
         ),
       At,
-      NumberLiteral
+      NumberDurationLiteral
   )
 )
 
@@ -483,7 +483,7 @@ PromQL(
           FunctionCallBody(
                 MatrixSelector(
                   VectorSelector(Identifier),
-                  Duration
+                  NumberDurationLiteralInDurationContext
                 )
           )
         ),
@@ -491,14 +491,14 @@ PromQL(
         AggregateExpr(
           AggregateOp(Topk),
           FunctionCallBody(
-            NumberLiteral,
+            NumberDurationLiteral,
             FunctionCall(
               FunctionIdentifier(Rate),
               FunctionCallBody(
                 StepInvariantExpr(
-                  MatrixSelector(VectorSelector(Identifier), Duration),
+                  MatrixSelector(VectorSelector(Identifier), NumberDurationLiteralInDurationContext),
                   At,
-                  NumberLiteral
+                  NumberDurationLiteral
                 )
               )
             )
@@ -518,7 +518,7 @@ PromQL(
             Identifier
         ),
       At,
-      NumberLiteral
+      NumberDurationLiteral
     )
 )
 
@@ -533,7 +533,7 @@ PromQL(
             Identifier
         ),
       At,
-      NumberLiteral
+      NumberDurationLiteral
     )
 )
 
@@ -556,98 +556,98 @@ PromQL(VectorSelector(Identifier))
 NaN
 
 ==>
-PromQL(NumberLiteral)
+PromQL(NumberDurationLiteral)
 
 # Lower-cased NaN.
 
 nan
 
 ==>
-PromQL(NumberLiteral)
+PromQL(NumberDurationLiteral)
 
 # Inf.
 
 Inf
 
 ==>
-PromQL(NumberLiteral)
+PromQL(NumberDurationLiteral)
 
 # Negative Inf.
 
 -Inf
 
 ==>
-PromQL(NumberLiteral)
+PromQL(NumberDurationLiteral)
 
 # Positive Inf.
 
 +Inf
 
 ==>
-PromQL(NumberLiteral)
+PromQL(NumberDurationLiteral)
 
 # Lower-cased Inf.
 
 inf
 
 ==>
-PromQL(NumberLiteral)
+PromQL(NumberDurationLiteral)
 
 # Upper-cased Inf.
 
 INF
 
 ==>
-PromQL(NumberLiteral)
+PromQL(NumberDurationLiteral)
 
 # Negative number literal.
 
 -42
 
 ==>
-PromQL(NumberLiteral)
+PromQL(NumberDurationLiteral)
 
 # Explicitly positive number literal.
 
 +42
 
 ==>
-PromQL(NumberLiteral)
+PromQL(NumberDurationLiteral)
 
 # Trying to illegally use NaN as a metric name.
 
 NaN{foo="bar"}
 
 ==>
-PromQL(BinaryExpr(NumberLiteral,⚠,VectorSelector(LabelMatchers(UnquotedLabelMatcher(LabelName,MatchOp(EqlSingle),StringLiteral)))))
+PromQL(BinaryExpr(NumberDurationLiteral,⚠,VectorSelector(LabelMatchers(UnquotedLabelMatcher(LabelName,MatchOp(EqlSingle),StringLiteral)))))
 
 # Trying to illegally use Inf as a metric name.
 
 Inf{foo="bar"}
 
 ==>
-PromQL(BinaryExpr(NumberLiteral,⚠,VectorSelector(LabelMatchers(UnquotedLabelMatcher(LabelName,MatchOp(EqlSingle),StringLiteral)))))
+PromQL(BinaryExpr(NumberDurationLiteral,⚠,VectorSelector(LabelMatchers(UnquotedLabelMatcher(LabelName,MatchOp(EqlSingle),StringLiteral)))))
 
 # Negative offset
 
 foo offset -5d
 
 ==>
-PromQL(OffsetExpr(VectorSelector(Identifier), Offset, Sub, Duration))
+PromQL(OffsetExpr(VectorSelector(Identifier), Offset, NumberDurationLiteralInDurationContext))
 
 # Negative offset with space
 
 foo offset - 5d
 
 ==>
-PromQL(OffsetExpr(VectorSelector(Identifier), Offset, Sub, Duration))
+PromQL(OffsetExpr(VectorSelector(Identifier), Offset, NumberDurationLiteralInDurationContext))
 
 # Positive offset
 
 foo offset 5d
 
 ==>
-PromQL(OffsetExpr(VectorSelector(Identifier), Offset, Duration))
+PromQL(OffsetExpr(VectorSelector(Identifier), Offset, NumberDurationLiteralInDurationContext))
 
 # Parsing only metric names with alternative @top { "top": "MetricName" }
 
@@ -661,7 +661,7 @@ MetricName(Identifier)
 1 + foo atan2 bar
 
 ==>
-PromQL(BinaryExpr(NumberLiteral,Add,BinaryExpr(VectorSelector(Identifier),Atan2,VectorSelector(Identifier))))
+PromQL(BinaryExpr(NumberDurationLiteral,Add,BinaryExpr(VectorSelector(Identifier),Atan2,VectorSelector(Identifier))))
 
 # Testing quoted metric name
 

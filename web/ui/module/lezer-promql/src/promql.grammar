@@ -29,7 +29,7 @@ expr[@isGroup=Expr] {
   BinaryExpr |
   FunctionCall |
   MatrixSelector |
-  NumberLiteral |
+  NumberDurationLiteral |
   OffsetExpr |
   ParenExpr |
   StringLiteral |
@@ -194,16 +194,16 @@ ParenExpr {
 }
 
 OffsetExpr {
-  expr Offset Sub? Duration
+  expr Offset NumberDurationLiteralInDurationContext
 }
 
 MatrixSelector {
   // TODO: Can this not be more specific than "expr"?
-  expr "[" Duration "]"
+  expr "[" NumberDurationLiteralInDurationContext "]"
 }
 
 SubqueryExpr {
-  expr "[" Duration ":" ("" | Duration) "]"
+  expr "[" NumberDurationLiteralInDurationContext ":" ("" | NumberDurationLiteralInDurationContext) "]"
 }
 
 UnaryExpr {
@@ -245,14 +245,18 @@ QuotedLabelName {
 }
 
 StepInvariantExpr {
-  expr At ( NumberLiteral | AtModifierPreprocessors "(" ")" )
+  expr At ( NumberDurationLiteral | AtModifierPreprocessors "(" ")" )
 }
 
 AtModifierPreprocessors {
   Start | End
 }
 
-NumberLiteral  {
+NumberDurationLiteral  {
+ ("-"|"+")?~signed (number | inf | nan)
+}
+
+NumberDurationLiteralInDurationContext {
  ("-"|"+")?~signed (number | inf | nan)
 }
 
@@ -264,7 +268,7 @@ NumberLiteral  {
 
   number {
       (std.digit+ (("_")? std.digit)* ("." std.digit+ (("_")? std.digit)*)? | "." std.digit+ (("_")? std.digit)*) (("e" | "E") ("+" | "-")? std.digit+ (("_")? std.digit)*)? |
-      "0x" (std.digit | $[a-fA-F])+
+      "0x" (std.digit | $[a-fA-F])+ | duration
   }
   StringLiteral { // TODO: This is for JS, make this work for PromQL.
     '"' (![\\\n"] | "\\" _)* '"'? |
@@ -272,7 +276,7 @@ NumberLiteral  {
     "`" ![`]* "`"
   }
 
-  Duration {
+  duration {
     // Each line below is just the same regex repeated over and over, but each time with one of the units made non-optional,
     // to ensure that at least one <number>+<unit> pair is provided and an empty string is not recognized as a valid duration.
     ( ( std.digit+ "y" ) ( std.digit+ "w" )? ( std.digit+ "d" )? ( std.digit+ "h" )? ( std.digit+ "m" )? ( std.digit+ "s" )? ( std.digit+ "ms" )? ) |

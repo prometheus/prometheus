@@ -21,7 +21,6 @@ import {
   BinaryExpr,
   BoolModifier,
   Div,
-  Duration,
   Eql,
   EqlRegex,
   EqlSingle,
@@ -40,7 +39,6 @@ import {
   Mul,
   Neq,
   NeqRegex,
-  NumberLiteral,
   OffsetExpr,
   Or,
   Pow,
@@ -54,6 +52,8 @@ import {
   UnquotedLabelMatcher,
   QuotedLabelMatcher,
   QuotedLabelName,
+  NumberDurationLiteralInDurationContext,
+  NumberDurationLiteral,
 } from '@prometheus-io/lezer-promql';
 import { Completion, CompletionContext, CompletionResult } from '@codemirror/autocomplete';
 import { EditorState } from '@codemirror/state';
@@ -179,7 +179,8 @@ function computeStartCompleteLabelPositionInLabelMatcherOrInGroupingLabel(node: 
 // It is an important step because the start position will be used by CMN to find the string and then to use it to filter the CompletionResult.
 // A wrong `start` position will lead to have the completion not working.
 // Note: this method is exported only for testing purpose.
-export function computeStartCompletePosition(node: SyntaxNode, pos: number): number {
+export function computeStartCompletePosition(state: EditorState, node: SyntaxNode, pos: number): number {
+  const currentText = state.doc.slice(node.from, pos).toString();
   let start = node.from;
   if (node.type.id === LabelMatchers || node.type.id === GroupingLabels) {
     start = computeStartCompleteLabelPositionInLabelMatcherOrInGroupingLabel(node, pos);
@@ -191,11 +192,16 @@ export function computeStartCompletePosition(node: SyntaxNode, pos: number): num
     start++;
   } else if (
     node.type.id === OffsetExpr ||
-    (node.type.id === NumberLiteral && node.parent?.type.id === 0 && node.parent.parent?.type.id === SubqueryExpr) ||
+    // Since duration and number are equivalent, writing go[5] or go[5d] is syntactically accurate.
+    // Before we were able to guess when we had to autocomplete the duration later based on the error node,
+    // which is not possible anymore.
+    // So we have to analyze the string about the current node to see if the duration unit is already present or not.
+    (node.type.id === NumberDurationLiteralInDurationContext && !durationTerms.map((v) => v.label).includes(currentText[currentText.length - 1])) ||
+    (node.type.id === NumberDurationLiteral && node.parent?.type.id === 0 && node.parent.parent?.type.id === SubqueryExpr) ||
     (node.type.id === 0 &&
       (node.parent?.type.id === OffsetExpr ||
         node.parent?.type.id === MatrixSelector ||
-        (node.parent?.type.id === SubqueryExpr && containsAtLeastOneChild(node.parent, Duration))))
+        (node.parent?.type.id === SubqueryExpr && containsAtLeastOneChild(node.parent, NumberDurationLiteralInDurationContext))))
   ) {
     start = pos;
   }
@@ -230,7 +236,7 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
         result.push({ kind: ContextKind.Duration });
         break;
       }
-      if (node.parent?.type.id === SubqueryExpr && containsAtLeastOneChild(node.parent, Duration)) {
+      if (node.parent?.type.id === SubqueryExpr && containsAtLeastOneChild(node.parent, NumberDurationLiteralInDurationContext)) {
         // we are likely in the given situation:
         //    `rate(foo[5d:5])`
         // so we should autocomplete a duration
@@ -434,7 +440,7 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
         result.push({ kind: ContextKind.MetricName, metricName: state.sliceDoc(node.from, node.to).slice(1, -1) });
       }
       break;
-    case NumberLiteral:
+    case NumberDurationLiteral:
       if (node.parent?.type.id === 0 && node.parent.parent?.type.id === SubqueryExpr) {
         // Here we are likely in this situation:
         //     `go[5d:4]`
@@ -449,7 +455,7 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
         result.push({ kind: ContextKind.Number });
       }
       break;
-    case Duration:
+    case NumberDurationLiteralInDurationContext:
     case OffsetExpr:
       result.push({ kind: ContextKind.Duration });
       break;
@@ -591,7 +597,7 @@ export class HybridComplete implements CompleteStrategy {
       }
     }
     return asyncResult.then((result) => {
-      return arrayToCompletionResult(result, computeStartCompletePosition(tree, pos), pos, completeSnippet, span);
+      return arrayToCompletionResult(result, computeStartCompletePosition(state, tree, pos), pos, completeSnippet, span);
     });
   }
 

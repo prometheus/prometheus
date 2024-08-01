@@ -8,9 +8,15 @@ sort_rank: 1
 
 Prometheus provides a functional query language called PromQL (Prometheus Query
 Language) that lets the user select and aggregate time series data in real
-time. The result of an expression can either be shown as a graph, viewed as
-tabular data in Prometheus's expression browser, or consumed by external
-systems via the [HTTP API](api.md).
+time. 
+
+When you send a query request to Prometheus, it can be an _instant query_, evaluated at one point in time,
+or a _range query_ at equally-spaced steps between a start and an end time. PromQL works exactly the same
+in each cases; the range query is just like an instant query run multiple times at different timestamps.
+
+In the Prometheus UI, the "Table" tab is for instant queries and the "Graph" tab is for range queries.
+
+Other programs can fetch the result of a PromQL expression via the [HTTP API](api.md).
 
 ## Examples
 
@@ -94,9 +100,7 @@ Examples:
 
 ## Time series selectors
 
-Time series selectors are responsible for selecting the times series and raw or inferred sample timestamps and values.
-
-Time series *selectors* are not to be confused with higher level concept of instant and range *queries* that can execute the time series *selectors*. A higher level instant query would evaluate the given selector at one point in time, however the range query would evaluate the selector at multiple different times in between a minimum and maximum timestamp at regular steps.
+These are the basic building-blocks that instruct PromQL what data to fetch.
 
 ### Instant vector selectors
 

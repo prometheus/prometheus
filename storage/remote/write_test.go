@@ -379,7 +379,11 @@ func TestOTLPWriteHandler(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-protobuf")
 
 	appendable := &mockAppendable{}
-	handler := NewOTLPWriteHandler(nil, appendable)
+	handler := NewOTLPWriteHandler(nil, appendable, func() config.Config {
+		return config.Config{
+			OTLPConfig: config.DefaultOTLPConfig,
+		}
+	})
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)

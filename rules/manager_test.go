@@ -32,7 +32,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
-	"go.uber.org/goleak"
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -50,7 +49,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m)
+	prom_testutil.TolerantVerifyLeak(m)
 }
 
 func TestAlertingRule(t *testing.T) {

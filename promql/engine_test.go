@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"go.uber.org/goleak"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -51,7 +50,7 @@ const (
 func TestMain(m *testing.M) {
 	// Enable experimental functions testing
 	parser.EnableExperimentalFunctions = true
-	goleak.VerifyTestMain(m)
+	testutil.TolerantVerifyLeak(m)
 }
 
 func TestQueryConcurrency(t *testing.T) {

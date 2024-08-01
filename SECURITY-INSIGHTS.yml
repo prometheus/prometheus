@@ -1,0 +1,48 @@
+header:
+  schema-version: '1.0.0'
+  expiration-date: '2025-07-30T01:00:00.000Z'
+  last-updated: '2024-07-30'
+  last-reviewed: '2024-07-30'
+  project-url: https://github.com/prometheus/prometheus
+  changelog: https://github.com/prometheus/prometheus/blob/main/CHANGELOG.md
+  license: https://github.com/prometheus/prometheus/blob/main/LICENSE
+project-lifecycle:
+  status: active
+  bug-fixes-only: false
+  core-maintainers:
+    - https://github.com/prometheus/prometheus/blob/main/MAINTAINERS.md
+contribution-policy:
+  accepts-pull-requests: true
+  accepts-automated-pull-requests: true
+dependencies:
+  third-party-packages: true
+  dependencies-lists:
+    - https://github.com/prometheus/prometheus/blob/main/go.mod
+    - https://github.com/prometheus/prometheus/blob/main/web/ui/package.json
+  env-dependencies-policy:
+    policy-url: https://github.com/prometheus/prometheus/blob/main/CONTRIBUTING.md#dependency-management
+distribution-points:
+  - https://github.com/prometheus/prometheus/releases
+documentation:
+  - https://prometheus.io/docs/introduction/overview/
+security-contacts:
+  - type: email
+    value: prometheus-team@googlegroups.com
+security-testing:
+  - tool-type: sca
+    tool-name: Dependabot
+    tool-version: latest
+    integration:
+      ad-hoc: false
+      ci: true
+      before-release: true
+  - tool-type: sast
+    tool-name: CodeQL
+    tool-version: latest
+    integration:
+      ad-hoc: false
+      ci: true
+      before-release: true
+vulnerability-reporting:
+  accepts-vulnerability-reports: true
+  security-policy: https://github.com/prometheus/prometheus/security/policy
