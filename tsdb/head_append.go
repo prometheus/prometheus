@@ -1183,7 +1183,6 @@ func (a *headAppender) Commit() (err error) {
 		series.Unlock()
 	}
 
-	histogramsAppended += len(a.floatHistograms)
 	for i, s := range a.floatHistograms {
 		series = a.floatHistogramSeries[i]
 		series.Lock()
