@@ -628,7 +628,7 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		return 0, storage.ErrOutOfBounds
 	}
 	// Also fail fast if OOO is enabled, but OOO native histogram ingestion is disabled.
-	if a.oooTimeWindow > 0 && t < a.minValidTime && !a.head.opts.EnableOOONativeHistograms.Load() {
+	if a.oooTimeWindow > 0 && t < a.minValidTime && t >= a.headMaxt-a.oooTimeWindow && !a.head.opts.EnableOOONativeHistograms.Load() {
 		return 0, storage.ErrOOONativeHistogramsDisabled
 	}
 
