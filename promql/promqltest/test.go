@@ -71,7 +71,7 @@ func LoadedStorage(t testutil.T, input string) *teststorage.TestStorage {
 	for _, cmd := range test.cmds {
 		switch cmd.(type) {
 		case *loadCmd:
-			require.NoError(t, test.exec(cmd, nil))
+			require.NoError(t, test.exec(cmd, nil, nil))
 		default:
 			t.Errorf("only 'load' commands accepted, got '%s'", cmd)
 		}
@@ -111,11 +111,18 @@ func RunBuiltinTests(t TBRun, engine promql.QueryEngine) {
 }
 
 // RunTest parses and runs the test against the provided engine.
-func RunTest(t testutil.T, input string, engine promql.QueryEngine) {
-	require.NoError(t, runTest(t, input, engine))
+func RunTest(t TBRun, input string, engine promql.QueryEngine) {
+	// This slightly awkward setup exists so that we can inject a custom runner to test runTest in unit tests.
+	runner := func(name string, test func() error) {
+		t.Run(name, func(t *testing.T) {
+			require.NoError(t, test())
+		})
+	}
+
+	require.NoError(t, runTest(t, input, engine, runner))
 }
 
-func runTest(t testutil.T, input string, engine promql.QueryEngine) error {
+func runTest(t testutil.T, input string, engine promql.QueryEngine, runner TestRunner) error {
 	test, err := newTest(t, input)
 
 	// Why do this before checking err? newTest() can create the test storage and then return an error,
@@ -137,7 +144,7 @@ func runTest(t testutil.T, input string, engine promql.QueryEngine) error {
 	}
 
 	for _, cmd := range test.cmds {
-		if err := test.exec(cmd, engine); err != nil {
+		if err := test.exec(cmd, engine, runner); err != nil {
 			// TODO(fabxc): aggregate command errors, yield diffs for result
 			// comparison errors.
 			return err
@@ -224,8 +231,9 @@ func parseSeries(defLine string, line int) (labels.Labels, []parser.SequenceValu
 }
 
 func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
-	instantParts := patEvalInstant.FindStringSubmatch(lines[i])
-	rangeParts := patEvalRange.FindStringSubmatch(lines[i])
+	originalLine := lines[i]
+	instantParts := patEvalInstant.FindStringSubmatch(originalLine)
+	rangeParts := patEvalRange.FindStringSubmatch(originalLine)
 
 	if instantParts == nil && rangeParts == nil {
 		return i, nil, raise(i, "invalid evaluation command. Must be either 'eval[_fail|_warn|_ordered] instant [at <offset:duration>] <query>' or 'eval[_fail|_warn] range from <from> to <to> step <step> <query>'")
@@ -248,10 +256,10 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 	if err != nil {
 		parser.EnrichParseError(err, func(parseErr *parser.ParseErr) {
 			parseErr.LineOffset = i
-			posOffset := posrange.Pos(strings.Index(lines[i], expr))
+			posOffset := posrange.Pos(strings.Index(originalLine, expr))
 			parseErr.PositionRange.Start += posOffset
 			parseErr.PositionRange.End += posOffset
-			parseErr.Query = lines[i]
+			parseErr.Query = originalLine
 		})
 		return i, nil, err
 	}
@@ -272,7 +280,7 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 			return i, nil, formatErr("invalid timestamp definition %q: %s", at, err)
 		}
 		ts := testStartTime.Add(time.Duration(offset))
-		cmd = newInstantEvalCmd(expr, ts, i+1)
+		cmd = newInstantEvalCmd(expr, ts, i+1, originalLine)
 	} else {
 		from := rangeParts[2]
 		to := rangeParts[3]
@@ -297,7 +305,7 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 			return i, nil, formatErr("invalid step definition %q: %s", step, err)
 		}
 
-		cmd = newRangeEvalCmd(expr, testStartTime.Add(time.Duration(parsedFrom)), testStartTime.Add(time.Duration(parsedTo)), time.Duration(parsedStep), i+1)
+		cmd = newRangeEvalCmd(expr, testStartTime.Add(time.Duration(parsedFrom)), testStartTime.Add(time.Duration(parsedTo)), time.Duration(parsedStep), i+1, originalLine)
 	}
 
 	switch mod {
@@ -644,6 +652,7 @@ type evalCmd struct {
 	end   time.Time
 	step  time.Duration
 	line  int
+	raw   string // Unparsed line from test file
 
 	isRange             bool // if false, instant query
 	fail, warn, ordered bool
@@ -663,24 +672,26 @@ func (e entry) String() string {
 	return fmt.Sprintf("%d: %s", e.pos, e.vals)
 }
 
-func newInstantEvalCmd(expr string, start time.Time, line int) *evalCmd {
+func newInstantEvalCmd(expr string, start time.Time, line int, raw string) *evalCmd {
 	return &evalCmd{
 		expr:  expr,
 		start: start,
 		line:  line,
+		raw:   raw,
 
 		metrics:  map[uint64]labels.Labels{},
 		expected: map[uint64]entry{},
 	}
 }
 
-func newRangeEvalCmd(expr string, start, end time.Time, step time.Duration, line int) *evalCmd {
+func newRangeEvalCmd(expr string, start, end time.Time, step time.Duration, line int, raw string) *evalCmd {
 	return &evalCmd{
 		expr:    expr,
 		start:   start,
 		end:     end,
 		step:    step,
 		line:    line,
+		raw:     raw,
 		isRange: true,
 
 		metrics:  map[uint64]labels.Labels{},
@@ -964,7 +975,7 @@ func hasAtModifier(path []parser.Node) bool {
 }
 
 // exec processes a single step of the test.
-func (t *test) exec(tc testCommand, engine promql.QueryEngine) error {
+func (t *test) exec(tc testCommand, engine promql.QueryEngine, runner TestRunner) error {
 	switch cmd := tc.(type) {
 	case *clearCmd:
 		t.clear()
@@ -981,7 +992,7 @@ func (t *test) exec(tc testCommand, engine promql.QueryEngine) error {
 		}
 
 	case *evalCmd:
-		return t.execEval(cmd, engine)
+		t.execEval(cmd, engine, runner)
 
 	default:
 		panic("promql.Test.exec: unknown test command type")
@@ -989,12 +1000,18 @@ func (t *test) exec(tc testCommand, engine promql.QueryEngine) error {
 	return nil
 }
 
-func (t *test) execEval(cmd *evalCmd, engine promql.QueryEngine) error {
-	if cmd.isRange {
-		return t.execRangeEval(cmd, engine)
-	}
+type TestRunner func(name string, test func() error)
 
-	return t.execInstantEval(cmd, engine)
+func (t *test) execEval(cmd *evalCmd, engine promql.QueryEngine, runner TestRunner) {
+	name := fmt.Sprintf("line %v: %v", cmd.line, cmd.raw)
+
+	runner(name, func() error {
+		if cmd.isRange {
+			return t.execRangeEval(cmd, engine)
+		}
+
+		return t.execInstantEval(cmd, engine)
+	})
 }
 
 func (t *test) execRangeEval(cmd *evalCmd, engine promql.QueryEngine) error {

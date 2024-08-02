@@ -558,12 +558,21 @@ eval range from 0 to 5m step 5m testmetric
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			err := runTest(t, testCase.input, NewTestEngine(false, 0, DefaultMaxSamplesPerQuery))
+			var assertedError error
+			runner := func(_ string, test func() error) {
+				assertedError = test()
+			}
 
-			if testCase.expectedError == "" {
+			err := runTest(t, testCase.input, NewTestEngine(false, 0, DefaultMaxSamplesPerQuery), runner)
+
+			switch {
+			case testCase.expectedError == "":
 				require.NoError(t, err)
-			} else {
+				require.NoError(t, assertedError)
+			case err != nil:
 				require.EqualError(t, err, testCase.expectedError)
+			default:
+				require.EqualError(t, assertedError, testCase.expectedError)
 			}
 		})
 	}
