@@ -6605,7 +6605,7 @@ func TestOOOHistogramCompactionWithCounterResets(t *testing.T) {
 			ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
 			require.NoError(t, err)
 			require.False(t, created)
-			require.Greater(t, ms.ooo.oooHeadChunk.chunk.NumSamples(), 0)
+			require.Positive(t, ms.ooo.oooHeadChunk.chunk.NumSamples())
 		}
 
 		checkNonEmptyOOOChunk(series1)
