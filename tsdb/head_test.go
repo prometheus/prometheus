@@ -4520,6 +4520,7 @@ func TestOOOHistogramCounterResetHeaders(t *testing.T) {
 			l := labels.FromStrings("a", "b")
 			head, _ := newTestHead(t, 1000, wlog.CompressionNone, true)
 			head.opts.OutOfOrderCapMax.Store(5)
+			head.opts.EnableOOONativeHistograms.Store(true)
 
 			t.Cleanup(func() {
 				require.NoError(t, head.Close())
