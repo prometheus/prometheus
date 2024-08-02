@@ -83,8 +83,10 @@ type Options struct {
 	// Option to enable the ingestion of the created timestamp as a synthetic zero sample.
 	// See: https://github.com/prometheus/proposals/blob/main/proposals/2023-06-13_created-timestamp.md
 	EnableCreatedTimestampZeroIngestion bool
-	// Option to enable the ingestion of native histograms.
+    // Option to enable the ingestion of native histograms.
 	EnableNativeHistogramsIngestion bool
+	// if UTF8 is not allowed, use this method
+	NameEscapingScheme string
 
 	// Optional HTTP client options to use when scraping.
 	HTTPClientOptions []config_util.HTTPClientOption
@@ -92,6 +94,8 @@ type Options struct {
 	// private option for testability.
 	skipOffsetting bool
 }
+
+const DefaultNameEscapingScheme = model.ValueEncodingEscaping
 
 // Manager maintains a set of scrape pools and manages start/stop cycles
 // when receiving new target groups from the discovery manager.
