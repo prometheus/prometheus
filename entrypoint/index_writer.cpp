@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include "lss.hpp"
 #include "primitives/go_slice.h"
 #include "series_index/prometheus/tsdb/index/index_writer.h"
 
@@ -13,8 +14,6 @@ using IndexWriterPtr = std::unique_ptr<IndexWriter>;
 
 static_assert(sizeof(IndexWriterPtr) == sizeof(void*));
 
-static IndexWriter::QueryableEncodingBimap test_lss;
-
 static PromPP::Primitives::Go::BytesStream create_bytes_stream(PromPP::Primitives::Go::Slice<char>& buffer) {
   buffer.resize(0);
   return PromPP::Primitives::Go::BytesStream{&buffer};
@@ -22,21 +21,24 @@ static PromPP::Primitives::Go::BytesStream create_bytes_stream(PromPP::Primitive
 
 extern "C" void prompp_index_writer_ctor(void* args, void* res) {
   struct Arguments {
-    const IndexWriter::QueryableEncodingBimap* lss;
+    entrypoint::LssVariantPtr lss;
     const ChunkMetadataList* chunk_metadata_list;
   };
   struct Result {
     IndexWriterPtr writer;
   };
 
-  if (test_lss.size() == 0) {
-    test_lss.find_or_emplace(PromPP::Primitives::LabelViewSet{{"job", "cron"}, {"server", "localhost"}, {"process", "php"}});
-    test_lss.find_or_emplace(PromPP::Primitives::LabelViewSet{{"job", "cro1"}, {"server", "127.0.0.1"}, {"process", "nodejs"}});
-    test_lss.find_or_emplace(PromPP::Primitives::LabelViewSet{{"joa", "cron"}, {"server", "127.0.0.1"}, {"process", "nodejs"}});
-  }
-
   auto in = reinterpret_cast<Arguments*>(args);
-  new (res) Result{.writer = std::make_unique<IndexWriter>(test_lss, *in->chunk_metadata_list)};
+  auto out = new (res) Result;
+  if (auto lss = std::get_if<entrypoint::QueryableEncodingBimap>(in->lss.get()); lss) {
+    if (lss->size() == 0) {
+      lss->find_or_emplace(PromPP::Primitives::LabelViewSet{{"job", "cron"}, {"server", "localhost"}, {"process", "php"}});
+      lss->find_or_emplace(PromPP::Primitives::LabelViewSet{{"job", "cro1"}, {"server", "127.0.0.1"}, {"process", "nodejs"}});
+      lss->find_or_emplace(PromPP::Primitives::LabelViewSet{{"joa", "cron"}, {"server", "127.0.0.1"}, {"process", "nodejs"}});
+    }
+
+    out->writer = std::make_unique<IndexWriter>(*lss, *in->chunk_metadata_list);
+  }
 }
 
 extern "C" void prompp_index_writer_dtor(void* args) {

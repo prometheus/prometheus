@@ -1,6 +1,7 @@
 package cppbridge
 
 import (
+	"errors"
 	"runtime"
 )
 
@@ -15,15 +16,20 @@ type IndexWriter struct {
 	data   []byte
 }
 
-func NewIndexWriter(lss uintptr, chunk_metadata_list *[][]ChunkMetadata) *IndexWriter {
+func NewIndexWriter(lss uintptr, chunk_metadata_list *[][]ChunkMetadata) (*IndexWriter, error) {
+	writerPtr := indexWriterCtor(lss, chunk_metadata_list)
+	if writerPtr == uintptr(0) {
+		return nil, errors.New("invalid lss")
+	}
+
 	writer := &IndexWriter{
-		writer: indexWriterCtor(lss, chunk_metadata_list),
+		writer: writerPtr,
 	}
 	runtime.SetFinalizer(writer, func(writer *IndexWriter) {
 		freeBytes(writer.data)
 		indexWriterDtor(writer.writer)
 	})
-	return writer
+	return writer, nil
 }
 
 func (writer *IndexWriter) WriteHeader() []byte {
