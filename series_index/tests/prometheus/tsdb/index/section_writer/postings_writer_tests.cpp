@@ -20,6 +20,7 @@ using series_index::prometheus::tsdb::index::section_writer::SymbolsWriter;
 using std::operator""sv;
 
 using ChunkMetadataList = std::vector<std::vector<ChunkMetadata>>;
+using LabelViewSetList = std::vector<LabelViewSet>;
 
 struct PostingsWriterCase {
   std::vector<LabelViewSet> label_sets;
@@ -37,22 +38,23 @@ class PostingsWriterFixture : public testing::TestWithParam<PostingsWriterCase> 
   QueryableEncodingBimap lss_;
   SymbolReferencesMap symbol_references_;
   SeriesReferencesMap series_references_;
-  PostingsWriter<QueryableEncodingBimap> postings_writer{lss_, series_references_, stream_writer_};
 
-  void SetUp() final {
-    for (auto& label_set : GetParam().label_sets) {
+  void fill_data(const LabelViewSetList& label_sets, const ChunkMetadataList& chunk_metadata_list) {
+    for (auto& label_set : label_sets) {
       lss_.find_or_emplace(label_set);
     }
 
     std::ostringstream stream;
     StreamWriter stream_writer{&stream};
     SymbolsWriter<QueryableEncodingBimap>{lss_, symbol_references_, stream_writer}.write();
-    SeriesWriter<QueryableEncodingBimap, ChunkMetadataList>{lss_, GetParam().chunk_metadata_list, symbol_references_, series_references_}.write(stream_writer);
+    SeriesWriter<QueryableEncodingBimap, ChunkMetadataList>{lss_, chunk_metadata_list, symbol_references_, series_references_}.write(stream_writer);
   }
 };
 
-TEST_P(PostingsWriterFixture, Test) {
+TEST_P(PostingsWriterFixture, FullWrite) {
   // Arrange
+  fill_data(GetParam().label_sets, GetParam().chunk_metadata_list);
+  PostingsWriter<QueryableEncodingBimap> postings_writer{lss_, series_references_, stream_writer_};
 
   // Act
   postings_writer.write_postings();
@@ -146,5 +148,86 @@ INSTANTIATE_TEST_SUITE_P(Test,
                                          "localhost"
                                          "\x38"
                                          "\xF7\x79\x10\x67"sv}));
+
+TEST_F(PostingsWriterFixture, PartialWrite) {
+  // Arrange
+  ChunkMetadataList chunk_metadata_list = {{}, {}};
+  fill_data(
+      LabelViewSetList{
+          {{"server", "localhost"}},
+          {{"server", "127.0.0.1"}},
+      },
+      chunk_metadata_list);
+  PostingsWriter<QueryableEncodingBimap> postings_writer{lss_, series_references_, stream_writer_};
+
+  // Act
+  postings_writer.write_postings(0);
+  auto has_more_data_after_first_write = postings_writer.has_more_data();
+  auto first_batch_data = stream_.str();
+  stream_.str("");
+
+  postings_writer.write_postings(1);
+  auto has_more_data_after_second_write = postings_writer.has_more_data();
+  auto second_batch_data = stream_.str();
+  stream_.str("");
+
+  postings_writer.write_postings(0);
+  auto has_more_data_after_third_write = postings_writer.has_more_data();
+  auto third_batch_data = stream_.str();
+  stream_.str("");
+
+  postings_writer.write_postings_table_offsets();
+
+  // Assert
+  EXPECT_TRUE(has_more_data_after_first_write);
+  EXPECT_EQ(
+      "\x00\x00\x00\x0C"
+      "\x00\x00\x00\x02"
+      "\x00\x00\x00\x03"
+      "\x00\x00\x00\x04"
+      "\x49\x58\x48\xD7"sv,
+      first_batch_data);
+
+  EXPECT_TRUE(has_more_data_after_second_write);
+  EXPECT_EQ(
+      "\x00\x00\x00\x08"
+      "\x00\x00\x00\x01"
+      "\x00\x00\x00\x03"
+      "\xA7\x69\x2E\xD2"sv,
+      second_batch_data);
+
+  EXPECT_FALSE(has_more_data_after_third_write);
+  EXPECT_EQ(
+      "\x00\x00\x00\x08"
+      "\x00\x00\x00\x01"
+      "\x00\x00\x00\x04"
+      "\x73\xA3\x4A\x39"sv,
+      third_batch_data);
+
+  EXPECT_EQ(
+      "\x00\x00\x00\x2E"
+      "\x00\x00\x00\x03"
+
+      "\x02"
+      "\x00\x00"
+      "\x00"
+
+      "\x02"
+      "\x06"
+      "server"
+      "\x09"
+      "127.0.0.1"
+      "\x14"
+
+      "\x02"
+      "\x06"
+      "server"
+      "\x09"
+      "localhost"
+      "\x24"
+
+      "\xAA\x6D\x56\x15"sv,
+      stream_.view());
+}
 
 }  // namespace

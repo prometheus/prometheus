@@ -33,6 +33,8 @@ class LabelIndicesWriter {
     writer_.write_uint32(label_indices_table_.size());
     writer_.write(label_indices_table_);
     writer_.compute_and_write_crc32(label_indices_table_);
+
+    free_memory();
   }
 
  private:
@@ -81,6 +83,14 @@ class LabelIndicesWriter {
     auto reference_it = symbol_references_.find(symbol_id);
     assert(reference_it != symbol_references_.end());
     return reference_it->second;
+  }
+
+  PROMPP_ALWAYS_INLINE void free_memory() {
+    label_index_.clear();
+    label_index_.shrink_to_fit();
+
+    label_indices_table_.clear();
+    label_indices_table_.shrink_to_fit();
   }
 };
 

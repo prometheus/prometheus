@@ -17,16 +17,16 @@ class StreamWriter {
   class NumberPlaceholder {
    public:
     explicit NumberPlaceholder(std::string& memory) : NumberPlaceholder(memory, memory.length()) {}
-    NumberPlaceholder(std::string& memory, uint32_t offset) : memory_(memory), offset_(offset) {}
+    NumberPlaceholder(std::string& memory, uint32_t offset) : memory_(&memory), offset_(offset) {}
 
     PROMPP_ALWAYS_INLINE NumberType get() const noexcept { return BareBones::Bit::be_to_native(*number()); }
     PROMPP_ALWAYS_INLINE void set(NumberType value) const noexcept { *number() = BareBones::Bit::be(value); }
 
    private:
-    std::string& memory_;
+    std::string* memory_;
     uint32_t offset_;
 
-    [[nodiscard]] PROMPP_ALWAYS_INLINE NumberType* number() const noexcept { return reinterpret_cast<NumberType*>(memory_.data() + offset_); }
+    [[nodiscard]] PROMPP_ALWAYS_INLINE NumberType* number() const noexcept { return reinterpret_cast<NumberType*>(memory_->data() + offset_); }
   };
 
   class Writer {
