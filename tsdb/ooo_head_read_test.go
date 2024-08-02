@@ -370,6 +370,7 @@ func TestOOOHeadChunkReader_LabelValues(t *testing.T) {
 func testOOOHeadChunkReader_LabelValues(t *testing.T, scenario sampleTypeScenario) {
 	chunkRange := int64(2000)
 	head, _ := newTestHead(t, chunkRange, wlog.CompressionNone, true)
+	head.opts.EnableOOONativeHistograms.Store(true)
 	t.Cleanup(func() { require.NoError(t, head.Close()) })
 
 	ctx := context.Background()
