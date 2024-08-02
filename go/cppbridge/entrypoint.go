@@ -4,14 +4,34 @@ package cppbridge
 // #cgo LDFLAGS: -L.
 // #cgo sanitize LDFLAGS: -fsanitize=address
 // #cgo sanitize CFLAGS: -fsanitize=address
-// #cgo arm64,!sanitize,!dbg LDFLAGS: -l:arm64_entrypoint_opt.a
-// #cgo arm64,!sanitize,dbg LDFLAGS: -l:arm64_entrypoint_dbg.a
-// #cgo arm64,sanitize,!dbg LDFLAGS: -l:arm64_entrypoint_opt_asan.a
-// #cgo arm64,sanitize,dbg LDFLAGS: -l:arm64_entrypoint_dbg_asan.a
-// #cgo amd64,!sanitize,!dbg LDFLAGS: -l:amd64_entrypoint_opt.a
-// #cgo amd64,!sanitize,dbg LDFLAGS: -l:amd64_entrypoint_dbg.a
-// #cgo amd64,sanitize,!dbg LDFLAGS: -l:amd64_entrypoint_opt_asan.a
-// #cgo amd64,sanitize,dbg LDFLAGS: -l:amd64_entrypoint_dbg_asan.a
+// #cgo arm64,!sanitize,!dbg LDFLAGS: -l:arm64_entrypoint_init_aio_opt.a
+// #cgo arm64,!sanitize,!dbg LDFLAGS: -l:arm64_armv8_a_entrypoint_aio_prefixed_opt.a
+// #cgo arm64,!sanitize,!dbg LDFLAGS: -l:arm64_armv8_a_crc_entrypoint_aio_prefixed_opt.a
+// #cgo arm64,!sanitize,dbg LDFLAGS: -l:arm64_entrypoint_init_aio_dbg.a
+// #cgo arm64,!sanitize,dbg LDFLAGS: -l:arm64_armv8_a_entrypoint_aio_prefixed_dbg.a
+// #cgo arm64,!sanitize,dbg LDFLAGS: -l:arm64_armv8_a_crc_entrypoint_aio_prefixed_dbg.a
+// #cgo arm64,sanitize,!dbg LDFLAGS: -l:arm64_entrypoint_init_aio_opt_asan.a
+// #cgo arm64,sanitize,!dbg LDFLAGS: -l:arm64_armv8_a_entrypoint_aio_prefixed_opt_asan.a
+// #cgo arm64,sanitize,!dbg LDFLAGS: -l:arm64_armv8_a_crc_entrypoint_aio_prefixed_opt_asan.a
+// #cgo arm64,sanitize,dbg LDFLAGS: -l:arm64_entrypoint_init_aio_dbg_asan.a
+// #cgo arm64,sanitize,dbg LDFLAGS: -l:arm64_armv8_a_entrypoint_aio_prefixed_dbg_asan.a
+// #cgo arm64,sanitize,dbg LDFLAGS: -l:arm64_armv8_a_crc_entrypoint_aio_prefixed_dbg_asan.a
+// #cgo amd64,!sanitize,!dbg LDFLAGS: -l:amd64_entrypoint_init_aio_opt.a
+// #cgo amd64,!sanitize,!dbg LDFLAGS: -l:amd64_k8_entrypoint_aio_prefixed_opt.a
+// #cgo amd64,!sanitize,!dbg LDFLAGS: -l:amd64_nehalem_entrypoint_aio_prefixed_opt.a
+// #cgo amd64,!sanitize,!dbg LDFLAGS: -l:amd64_haswell_entrypoint_aio_prefixed_opt.a
+// #cgo amd64,!sanitize,dbg LDFLAGS: -l:amd64_entrypoint_init_aio_dbg.a
+// #cgo amd64,!sanitize,dbg LDFLAGS: -l:amd64_k8_entrypoint_aio_prefixed_dbg.a
+// #cgo amd64,!sanitize,dbg LDFLAGS: -l:amd64_nehalem_entrypoint_aio_prefixed_dbg.a
+// #cgo amd64,!sanitize,dbg LDFLAGS: -l:amd64_haswell_entrypoint_aio_prefixed_dbg.a
+// #cgo amd64,sanitize,!dbg LDFLAGS: -l:amd64_entrypoint_init_aio_opt_asan.a
+// #cgo amd64,sanitize,!dbg LDFLAGS: -l:amd64_k8_entrypoint_aio_prefixed_opt_asan.a
+// #cgo amd64,sanitize,!dbg LDFLAGS: -l:amd64_nehalem_entrypoint_aio_prefixed_opt_asan.a
+// #cgo amd64,sanitize,!dbg LDFLAGS: -l:amd64_haswell_entrypoint_aio_prefixed_opt_asan.a
+// #cgo amd64,sanitize,dbg LDFLAGS: -l:amd64_entrypoint_init_aio_dbg_asan.a
+// #cgo amd64,sanitize,dbg LDFLAGS: -l:amd64_k8_entrypoint_aio_prefixed_dbg_asan.a
+// #cgo amd64,sanitize,dbg LDFLAGS: -l:amd64_nehalem_entrypoint_aio_prefixed_dbg_asan.a
+// #cgo amd64,sanitize,dbg LDFLAGS: -l:amd64_haswell_entrypoint_aio_prefixed_dbg_asan.a
 // #cgo LDFLAGS: -static-libgcc -static-libstdc++ -l:libstdc++.a -l:libm.a
 // #cgo static LDFLAGS: -static
 // #include "entrypoint.h"
@@ -552,14 +572,18 @@ func walDecoderDtor(decoder uintptr) {
 // LabelSetStorage EncodingBimap
 //
 
-// primitivesLSSCtor - wrapper for constructor C-EncodingBimap.
-func primitivesLSSCtor() uintptr {
+// primitivesLSSCtor - wrapper for constructor C-Lss.
+func primitivesLSSCtor(lss_type uint32) uintptr {
+	var args = struct {
+		lss_type uint32
+	}{lss_type}
 	var res struct {
 		lss uintptr
 	}
 
-	fastcgo.UnsafeCall1(
+	fastcgo.UnsafeCall2(
 		C.prompp_primitives_lss_ctor,
+		uintptr(unsafe.Pointer(&args)),
 		uintptr(unsafe.Pointer(&res)),
 	)
 
@@ -589,54 +613,6 @@ func primitivesLSSAllocatedMemory(lss uintptr) uint64 {
 
 	fastcgo.UnsafeCall2(
 		C.prompp_primitives_lss_allocated_memory,
-		uintptr(unsafe.Pointer(&args)),
-		uintptr(unsafe.Pointer(&res)),
-	)
-
-	return res.allocatedMemory
-}
-
-//
-// LabelSetStorage OrderedEncodingBimap
-//
-
-// primitivesOrderedLSSCtor - wrapper for constructor C-OrderedEncodingBimap.
-func primitivesOrderedLSSCtor() uintptr {
-	var res struct {
-		orderedLss uintptr
-	}
-
-	fastcgo.UnsafeCall1(
-		C.prompp_primitives_ordered_lss_ctor,
-		uintptr(unsafe.Pointer(&res)),
-	)
-
-	return res.orderedLss
-}
-
-// primitivesOrderedLSSDtor - wrapper for destructor C-OrderedEncodingBimap.
-func primitivesOrderedLSSDtor(orderedLss uintptr) {
-	var args = struct {
-		orderedLss uintptr
-	}{orderedLss}
-
-	fastcgo.UnsafeCall1(
-		C.prompp_primitives_ordered_lss_dtor,
-		uintptr(unsafe.Pointer(&args)),
-	)
-}
-
-// primitivesOrderedLSSAllocatedMemory -  return size of allocated memory for ordered label sets in C++.
-func primitivesOrderedLSSAllocatedMemory(orderedLss uintptr) uint64 {
-	var args = struct {
-		orderedLss uintptr
-	}{orderedLss}
-	var res struct {
-		allocatedMemory uint64
-	}
-
-	fastcgo.UnsafeCall2(
-		C.prompp_primitives_ordered_lss_allocated_memory,
 		uintptr(unsafe.Pointer(&args)),
 		uintptr(unsafe.Pointer(&res)),
 	)

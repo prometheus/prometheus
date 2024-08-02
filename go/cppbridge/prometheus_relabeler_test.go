@@ -163,8 +163,7 @@ func (s *RelabelerSuite) TestInvalidAction() {
 		},
 	}
 
-	lss, err := cppbridge.NewLabelSetStorage()
-	s.Require().NoError(err)
+	lss := cppbridge.NewQueryableLssStorage()
 
 	statelessRelabeler, err := cppbridge.NewStatelessRelabeler(rCfgs)
 	s.Require().NoError(err)
@@ -195,55 +194,6 @@ func (s *RelabelerSuite) TestPerShardRelabelerWithNullPtrStatelessRelabeler() {
 	s.Require().Error(err)
 }
 
-func (s *RelabelerSuite) TestPerShardRelabelerWithNullPtrLSS() {
-	wr := prompb.WriteRequest{
-		Timeseries: []prompb.TimeSeries{
-			{
-				Labels: []prompb.Label{
-					{Name: "__name__", Value: "value"},
-					{Name: "job", Value: "abc"},
-					{Name: "instance", Value: "value1"},
-				},
-				Samples: []prompb.Sample{
-					{Value: 0.1, Timestamp: time.Now().UnixMilli()},
-				},
-			},
-		},
-	}
-	data, err := wr.Marshal()
-	s.Require().NoError(err)
-
-	nilLss := struct {
-		p          cppbridge.CLSS
-		generation uint32
-	}{&cppbridge.NilLabelSetStorage{}, 0}
-	lss := (*cppbridge.LabelSetStorage)(unsafe.Pointer(&nilLss))
-
-	statelessRelabeler, err := cppbridge.NewStatelessRelabeler([]*cppbridge.RelabelConfig{})
-	s.Require().NoError(err)
-
-	var numberOfShards uint16 = 1
-	psr, err := cppbridge.NewInputPerShardRelabeler(statelessRelabeler, lss.Generation(), numberOfShards, 0)
-	s.Require().NoError(err)
-
-	hlimits := cppbridge.DefaultWALHashdexLimits()
-	h, err := cppbridge.NewWALProtobufHashdex(data, hlimits)
-	s.Require().NoError(err)
-
-	shardsInnerSeries := cppbridge.NewShardsInnerSeries(numberOfShards)
-	shardsRelabeledSeries := cppbridge.NewShardsRelabeledSeries(numberOfShards)
-
-	err = psr.InputRelabeling(s.baseCtx, lss, nil, h, shardsInnerSeries, shardsRelabeledSeries)
-	s.Require().Error(err)
-
-	lss, err = cppbridge.NewLabelSetStorage()
-	s.Require().NoError(err)
-
-	psr.ResetTo(lss.Generation(), numberOfShards)
-	err = psr.InputRelabeling(s.baseCtx, lss, nil, h, shardsInnerSeries, shardsRelabeledSeries)
-	s.Require().NoError(err)
-}
-
 func (s *RelabelerSuite) TestInputPerShardRelabeler() {
 	wr := prompb.WriteRequest{
 		Timeseries: []prompb.TimeSeries{
@@ -270,8 +220,7 @@ func (s *RelabelerSuite) TestInputPerShardRelabeler() {
 		},
 	}
 
-	lss, err := cppbridge.NewLabelSetStorage()
-	s.Require().NoError(err)
+	lss := cppbridge.NewQueryableLssStorage()
 
 	statelessRelabeler, err := cppbridge.NewStatelessRelabeler(rCfgs)
 	s.Require().NoError(err)
@@ -300,8 +249,7 @@ func (s *RelabelerSuite) TestOutputPerShardRelabeler() {
 		},
 	}
 
-	lss, err := cppbridge.NewLabelSetStorage()
-	s.Require().NoError(err)
+	lss := cppbridge.NewQueryableLssStorage()
 
 	statelessRelabeler, err := cppbridge.NewStatelessRelabeler(rCfgs)
 	s.Require().NoError(err)

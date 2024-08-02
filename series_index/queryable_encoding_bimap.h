@@ -48,6 +48,11 @@ class QueryableEncodingBimap : public BareBones::SnugComposite::DecodingTable<Fi
     return ls_id;
   }
 
+  template <class LabelSet>
+  PROMPP_ALWAYS_INLINE uint32_t find_or_emplace(const LabelSet& label_set, [[maybe_unused]] size_t hash) noexcept {
+    return find_or_emplace(label_set);
+  }
+
  protected:
   PROMPP_ALWAYS_INLINE void after_items_load(uint32_t first_loaded_id) noexcept override {
     for (auto id = first_loaded_id; id < Base::items_.size(); ++id) {

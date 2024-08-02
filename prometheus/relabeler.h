@@ -885,16 +885,12 @@ class PerShardRelabeler {
   }
 
   // input_relabeling - relabeling incoming hashdex(first stage).
-  template <class Hashdex, class LSS>
-  PROMPP_ALWAYS_INLINE void input_relabeling(LSS* lss,
+  template <class LSS, class Hashdex>
+  PROMPP_ALWAYS_INLINE void input_relabeling(LSS& lss,
                                              LabelLimits* label_limits,
                                              Hashdex& hashdex,
                                              PromPP::Primitives::Go::SliceView<InnerSeries*>& shards_inner_series,
                                              PromPP::Primitives::Go::SliceView<RelabeledSeries*>& shards_relabeled_series) {
-    if (lss == nullptr) [[unlikely]] {
-      throw BareBones::Exception(0x7e799e1cbc084340, "lss is null pointer");
-    }
-
     PromPP::Primitives::LabelsBuilder builder =
         PromPP::Primitives::LabelsBuilder<typename LSS::value_type, PromPP::Primitives::LabelsBuilderStateMap>(builder_state_);
 
@@ -905,7 +901,7 @@ class PerShardRelabeler {
 
       timeseries_buf_.clear();
       item.read(timeseries_buf_);
-      uint32_t ls_id = lss->find_or_emplace(timeseries_buf_.label_set(), item.hash());
+      uint32_t ls_id = lss.find_or_emplace(timeseries_buf_.label_set(), item.hash());
 
       if (cache_drop_.contains(ls_id)) {
         continue;
@@ -922,7 +918,7 @@ class PerShardRelabeler {
         continue;
       }
 
-      typename LSS::value_type label_set = (*lss)[ls_id];
+      typename LSS::value_type label_set = lss[ls_id];
       builder.reset(&label_set);
 
       relabelStatus rstatus = stateless_relabeler_->relabeling_process(buf_, builder);
@@ -956,17 +952,13 @@ class PerShardRelabeler {
 
   // append_relabeler_series add relabeled ls to lss, add to result and add to cache update(second stage).
   template <class LSS>
-  PROMPP_ALWAYS_INLINE void append_relabeler_series(LSS* lss,
+  PROMPP_ALWAYS_INLINE void append_relabeler_series(LSS& lss,
                                                     InnerSeries* inner_series,
                                                     RelabeledSeries* relabeled_series,
                                                     RelabelerStateUpdate* relabeler_state_update) {
-    if (lss == nullptr) [[unlikely]] {
-      throw BareBones::Exception(0xa6ca759f5fe30c5e, "lss is null pointer");
-    }
-
     relabeler_state_update->set_generation(generation_);
     for (auto& relabeled_serie : relabeled_series->data()) {
-      uint32_t ls_id = lss->find_or_emplace(relabeled_serie.ls, relabeled_serie.hash);
+      uint32_t ls_id = lss.find_or_emplace(relabeled_serie.ls, relabeled_serie.hash);
 
       inner_series->emplace_back(relabeled_serie.samples, ls_id);
       relabeler_state_update->emplace_back(relabeled_serie.ls_id, ls_id);
@@ -1012,15 +1004,11 @@ class PerShardRelabeler {
 
   // output_relabeling - relabeling output series(fourth stage).
   template <class LSS>
-  PROMPP_ALWAYS_INLINE void output_relabeling(LSS* lss,
+  PROMPP_ALWAYS_INLINE void output_relabeling(const LSS& lss,
                                               RelabeledSeries* relabeled_series,
                                               PromPP::Primitives::Go::SliceView<InnerSeries*>& incoming_inner_series,
                                               PromPP::Primitives::Go::SliceView<InnerSeries*>& encoders_inner_series,
                                               uint32_t generation) {
-    if (lss == nullptr) [[unlikely]] {
-      throw BareBones::Exception(0xded58bcc3bf6a264, "lss is null pointer");
-    }
-
     if (generation != generation_) [[unlikely]] {
       reset_to(generation, number_of_shards_);
     }
@@ -1044,10 +1032,10 @@ class PerShardRelabeler {
           return;
         }
 
-        if (inner_serie.ls_id >= lss->size()) [[unlikely]] {
-          throw BareBones::Exception(0x7763a97e1717e835, "ls_id out of range: %d size: %d shard_id: %d", inner_serie.ls_id, lss->size(), shard_id_);
+        if (inner_serie.ls_id >= lss.size()) [[unlikely]] {
+          throw BareBones::Exception(0x7763a97e1717e835, "ls_id out of range: %d size: %d shard_id: %d", inner_serie.ls_id, lss.size(), shard_id_);
         }
-        typename LSS::value_type labels = (*lss)[inner_serie.ls_id];
+        typename LSS::value_type labels = lss[inner_serie.ls_id];
         builder.reset(&labels);
         process_external_labels(builder);
 

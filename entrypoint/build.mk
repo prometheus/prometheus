@@ -10,30 +10,18 @@ result_suffix := $(result_suffix)_asan
 endif
 
 archives := $(patsubst %, build/$(platform)_%_entrypoint_aio.a, $(escaped_flavors))
-prefixed_archives := $(patsubst %.a, %_prefixed.a, $(archives))
+prefixed_archives := $(patsubst build/%.a, result/%_prefixed_$(result_suffix).a, $(archives))
 
-result/$(platform)_entrypoint_$(result_suffix).a: build/entrypoint.mri
-	@mkdir -p ${@D}
-	@ar -M < $<
-
-.PRECIOUS: build/entrypoint.mri
-build/entrypoint.mri: build/entrypoint_init_aio.a
-build/entrypoint.mri: $(prefixed_archives)
-	@printf 'create %s\n' "result/$(platform)_entrypoint_$(result_suffix).a" > $@
-	@for i in $^; do\
-		printf 'addlib %s\n' "$$i";\
-	done >> $@
-	@printf 'save\nend\n' >> $@
-
-build/entrypoint_init_aio.a: init/entrypoint.cpp
+result/$(platform)_entrypoint_init_aio_$(result_suffix).a: init/entrypoint.cpp
 	@mkdir -p ${@D}
 	@$(bazel_in_root);\
 		$(call bazel_build_march,$(generic_flavor)) -- //:entrypoint_init_aio
-	@cp -f ../bazel-bin/${@F} $@
+	@cp -f ../bazel-bin/entrypoint_init_aio.a $@
 
 # Build flavoured prefixed_archives with prefixed symbols
 .PRECIOUS: $(prefixed_archives)
-$(prefixed_archives): build/%_entrypoint_aio_prefixed.a: build/%.pairs | build/%_entrypoint_aio.a
+$(prefixed_archives): result/%_entrypoint_aio_prefixed_$(result_suffix).a: build/%.pairs | build/%_entrypoint_aio.a
+	@mkdir -p ${@D}
 	@objcopy --redefine-syms=$< $| $@
 
 .INTERMEDIATE: build/%.pairs
