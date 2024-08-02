@@ -928,3 +928,55 @@ func prometheusPerShardRelabelerResetTo(
 		uintptr(unsafe.Pointer(&args)),
 	)
 }
+
+func seriesDataDataStorageCtor() uintptr {
+	var res struct {
+		dataStorage uintptr
+	}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_series_data_data_storage_ctor,
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.dataStorage
+}
+
+func seriesDataDataStorageDtor(dataStorage uintptr) {
+	var args = struct {
+		dataStorage uintptr
+	}{dataStorage}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_series_data_data_storage_dtor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
+func seriesDataEncoderCtor(dataStorage uintptr) uintptr {
+	var args = struct {
+		dataStorage uintptr
+	}{dataStorage}
+	var res struct {
+		encoder uintptr
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_series_data_encoder_ctor,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.encoder
+}
+
+func seriesDataEncoderDtor(encoder uintptr) {
+	var args = struct {
+		encoder uintptr
+	}{encoder}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_series_data_encoder_dtor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
