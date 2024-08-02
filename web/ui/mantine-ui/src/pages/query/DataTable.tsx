@@ -27,8 +27,8 @@ import { bucketRangeString } from "./HistogramHelpers";
 import { useSettings } from "../../state/settingsSlice";
 dayjs.extend(timezone);
 
-const maxFormattableSeries = 10;
-const maxDisplayableSeries = 100;
+const maxFormattableSeries = 1000;
+const maxDisplayableSeries = 10000;
 
 const limitSeries = <S extends InstantSample | RangeSamples>(
   series: S[],
