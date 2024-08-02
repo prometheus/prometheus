@@ -16,7 +16,7 @@
     "@fortawesome/react-fontawesome": "0.2.0",
     "@lezer/common": "^1.2.1",
     "@lezer/highlight": "^1.2.0",
-    "@lezer/lr": "^1.4.1",
+    "@lezer/lr": "^1.4.2",
     "@nexucis/fuzzy": "^0.4.1",
     "@nexucis/kvsearch": "^0.8.1",
     "@prometheus-io/codemirror-promql": "0.53.1",
