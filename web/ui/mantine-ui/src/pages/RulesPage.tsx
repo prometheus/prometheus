@@ -109,6 +109,15 @@ export default function RulesPage() {
           <Accordion multiple variant="separated">
             {g.rules.map((r, j) => (
               <Accordion.Item
+                styles={{
+                  item: {
+                    // TODO: This transparency hack is an OK workaround to make the collapsed items
+                    // have a different background color than their surrounding group card in dark mode,
+                    // but it would be better to use CSS to override the light/dark colors for
+                    // collapsed/expanded accordion items.
+                    backgroundColor: "#c0c0c015",
+                  },
+                }}
                 key={j}
                 value={j.toString()}
                 style={{
@@ -116,8 +125,8 @@ export default function RulesPage() {
                     r.health === "err"
                       ? "5px solid var(--mantine-color-red-4)"
                       : r.health === "unknown"
-                      ? "5px solid var(--mantine-color-gray-5)"
-                      : "5px solid var(--mantine-color-green-4)",
+                        ? "5px solid var(--mantine-color-gray-5)"
+                        : "5px solid var(--mantine-color-green-4)",
                 }}
               >
                 <Accordion.Control>

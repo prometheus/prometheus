@@ -14,7 +14,6 @@ import { IconAlertTriangle, IconInfoCircle } from "@tabler/icons-react";
 import { useSuspenseAPIQuery } from "../../api/api";
 import { Target, TargetsResult } from "../../api/responseTypes/targets";
 import React, { FC, useState } from "react";
-import badgeClasses from "../../Badge.module.css";
 import {
   humanizeDurationRelative,
   humanizeDuration,
@@ -25,6 +24,9 @@ import { useAppDispatch, useAppSelector } from "../../state/hooks";
 import { setCollapsedPools } from "../../state/targetsPageSlice";
 import EndpointLink from "../../components/EndpointLink";
 import CustomInfiniteScroll from "../../components/CustomInfiniteScroll";
+
+import badgeClasses from "../../Badge.module.css";
+import panelClasses from "../../Panel.module.css";
 
 type ScrapePool = {
   targets: Target[];
@@ -38,6 +40,15 @@ type ScrapePools = {
   [scrapePool: string]: ScrapePool;
 };
 
+const poolPanelHealthClass = (pool: ScrapePool) =>
+  pool.count > 1 && pool.downCount === pool.count
+    ? panelClasses.panelHealthErr
+    : pool.downCount >= 1
+      ? panelClasses.panelHealthWarn
+      : pool.unknownCount === pool.count
+        ? panelClasses.panelHealthUnknown
+        : panelClasses.panelHealthOk;
+
 const healthBadgeClass = (state: string) => {
   switch (state.toLowerCase()) {
     case "up":
@@ -47,7 +58,8 @@ const healthBadgeClass = (state: string) => {
     case "unknown":
       return badgeClasses.healthUnknown;
     default:
-      return badgeClasses.warn;
+      // Should never happen.
+      return badgeClasses.healthWarn;
   }
 };
 
@@ -206,14 +218,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
             <Accordion.Item
               key={poolName}
               value={poolName}
-              style={{
-                borderLeft:
-                  pool.upCount === 0
-                    ? "5px solid var(--mantine-color-red-4)"
-                    : pool.upCount !== pool.count
-                      ? "5px solid var(--mantine-color-orange-5)"
-                      : "5px solid var(--mantine-color-green-4)",
-              }}
+              className={poolPanelHealthClass(pool)}
             >
               <Accordion.Control>
                 <Group wrap="nowrap" justify="space-between" mr="lg">

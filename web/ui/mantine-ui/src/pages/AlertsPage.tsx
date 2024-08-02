@@ -14,6 +14,7 @@ import {
 import { useSuspenseAPIQuery } from "../api/api";
 import { AlertingRulesResult } from "../api/responseTypes/rules";
 import badgeClasses from "../Badge.module.css";
+import panelClasses from "../Panel.module.css";
 import RuleDefinition from "../components/RuleDefinition";
 import { humanizeDurationRelative, now } from "../lib/formatTime";
 import { Fragment } from "react";
@@ -113,16 +114,24 @@ export default function AlertsPage() {
 
                   return (
                     <Accordion.Item
+                      styles={{
+                        item: {
+                          // TODO: This transparency hack is an OK workaround to make the collapsed items
+                          // have a different background color than their surrounding group card in dark mode,
+                          // but it would be better to use CSS to override the light/dark colors for
+                          // collapsed/expanded accordion items.
+                          backgroundColor: "#c0c0c015",
+                        },
+                      }}
                       key={j}
                       value={j.toString()}
-                      style={{
-                        borderLeft:
-                          numFiring > 0
-                            ? "5px solid var(--mantine-color-red-4)"
-                            : numPending > 0
-                              ? "5px solid var(--mantine-color-orange-5)"
-                              : "5px solid var(--mantine-color-green-4)",
-                      }}
+                      className={
+                        numFiring > 0
+                          ? panelClasses.panelHealthErr
+                          : numPending > 0
+                            ? panelClasses.panelHealthWarn
+                            : panelClasses.panelHealthOk
+                      }
                     >
                       <Accordion.Control>
                         <Group wrap="nowrap" justify="space-between" mr="lg">
