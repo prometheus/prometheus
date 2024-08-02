@@ -628,6 +628,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				w.writer.AppendHistograms(histogramsToSend)
 				histogramsToSend = histogramsToSend[:0]
 			}
+
 		case record.FloatHistogramSamples:
 			// Skip if experimental "histograms over remote write" is not enabled.
 			if !w.sendHistograms {
@@ -666,11 +667,13 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				return err
 			}
 			w.writer.StoreMetadata(meta)
-		case record.Tombstones:
 
-		default:
+		case record.Unknown:
 			// Could be corruption, or reading from a WAL from a newer Prometheus.
 			w.recordDecodeFailsMetric.Inc()
+
+		default:
+			// We're not interested in other types of records.
 		}
 	}
 	if err := r.Err(); err != nil {
@@ -699,14 +702,12 @@ func (w *Watcher) readSegmentForGC(r *LiveReader, segmentNum int, _ bool) error 
 			}
 			w.writer.UpdateSeriesSegment(series, segmentNum)
 
-		// Ignore these; we're only interested in series.
-		case record.Samples:
-		case record.Exemplars:
-		case record.Tombstones:
-
-		default:
+		case record.Unknown:
 			// Could be corruption, or reading from a WAL from a newer Prometheus.
 			w.recordDecodeFailsMetric.Inc()
+
+		default:
+			// We're only interested in series.
 		}
 	}
 	if err := r.Err(); err != nil {
