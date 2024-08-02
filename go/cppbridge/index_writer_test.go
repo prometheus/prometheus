@@ -37,7 +37,7 @@ func (s *IndexWriterSuite) TestInvalidLss() {
 	lss := cppbridge.NewLssStorage()
 	writer, err := cppbridge.NewIndexWriter(lss.Pointer(), &s.chunk_metadata_list)
 
-	s.EqualError(err, "Invalid lss")
+	s.EqualError(err, "invalid lss")
 	s.Nil(writer)
 }
 
