@@ -8040,8 +8040,8 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 			createBlock(t, db.Dir(), series)
 
 			for _, s := range series {
-				key := s.Labels().String()
-				slice := exp[key]
+				lbls := s.Labels().String()
+				slice := exp[lbls]
 				it = s.Iterator(it)
 				smpls, err := storage.ExpandSamples(it, nil)
 				require.NoError(t, err)
@@ -8049,7 +8049,7 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 				sort.Slice(slice, func(i, j int) bool {
 					return slice[i].T() < slice[j].T()
 				})
-				exp[key] = slice
+				exp[lbls] = slice
 			}
 		}
 
@@ -8082,10 +8082,10 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 		// due to origin from different overlapping chunks anymore.
 		for _, ss := range exp {
 			for i, s := range ss[1:] {
-				if s.H() != nil && ss[i].H() != nil && s.H().CounterResetHint == histogram.UnknownCounterReset {
+				if s.Type() == chunkenc.ValHistogram && ss[i].Type() == chunkenc.ValHistogram && s.H().CounterResetHint == histogram.UnknownCounterReset {
 					s.H().CounterResetHint = histogram.NotCounterReset
 				}
-				if s.FH() != nil && ss[i].FH() != nil && s.FH().CounterResetHint == histogram.UnknownCounterReset {
+				if s.Type() == chunkenc.ValFloatHistogram && ss[i].Type() == chunkenc.ValFloatHistogram && s.FH().CounterResetHint == histogram.UnknownCounterReset {
 					s.FH().CounterResetHint = histogram.NotCounterReset
 				}
 			}
@@ -8330,29 +8330,47 @@ func compareSeries(t require.TestingT, expected, actual map[string][]chunks.Samp
 		// package.
 		require.Equal(t, expected, actual, "number of series differs")
 	}
-	for key, eSamples := range expected {
-		aSamples, ok := actual[key]
+	for key, expSamples := range expected {
+		actSamples, ok := actual[key]
 		if !ok {
 			require.Equal(t, expected, actual, "expected series %q not found", key)
 		}
-		if len(eSamples) != len(aSamples) {
-			require.Equal(t, eSamples, aSamples, "number of samples for series %q differs", key)
+		if len(expSamples) != len(actSamples) {
+			require.Equal(t, expSamples, actSamples, "number of samples for series %q differs", key)
 		}
-		for i, eS := range eSamples {
-			aS := aSamples[i]
-			aH, eH := aS.H(), eS.H()
-			aFH, eFH := aS.FH(), eS.FH()
-			switch {
-			case aH != nil && eH != nil && aH.CounterResetHint == histogram.UnknownCounterReset && eH.CounterResetHint != histogram.GaugeType:
-				eH = eH.Copy()
-				eH.CounterResetHint = histogram.UnknownCounterReset
-				eS = sample{t: eS.T(), h: eH}
-			case aFH != nil && eFH != nil && aFH.CounterResetHint == histogram.UnknownCounterReset && eFH.CounterResetHint != histogram.GaugeType:
-				eFH = eFH.Copy()
-				eFH.CounterResetHint = histogram.UnknownCounterReset
-				eS = sample{t: eS.T(), fh: eFH}
+
+		for i, eS := range expSamples {
+			aS := actSamples[i]
+
+			// Must use the interface as Equal does not work when actual types differ
+			// not only does the type differ, but chunk.Sample.FH() interface may auto convert from chunk.Sample.H()!
+			require.Equal(t, eS.T(), aS.T(), "timestamp of sample %d in series %q differs", i, key)
+
+			require.Equal(t, eS.Type(), aS.Type(), "type of sample %d in series %q differs", i, key)
+
+			switch eS.Type() {
+			case chunkenc.ValFloat:
+				require.Equal(t, eS.F(), aS.F(), "sample %d in series %q differs", i, key)
+			case chunkenc.ValHistogram:
+				eH, aH := eS.H(), aS.H()
+				if aH.CounterResetHint == histogram.UnknownCounterReset && aH.CounterResetHint != histogram.GaugeType {
+					eH = eH.Copy()
+					// It is always safe to set the counter reset hint to UnknownCounterReset
+					eH.CounterResetHint = histogram.UnknownCounterReset
+					eS = sample{t: eS.T(), h: eH}
+				}
+				require.Equal(t, eH, aH, "histogram sample %d in series %q differs", i, key)
+
+			case chunkenc.ValFloatHistogram:
+				eFH, aFH := eS.FH(), aS.FH()
+				if aFH.CounterResetHint == histogram.UnknownCounterReset && aFH.CounterResetHint != histogram.GaugeType {
+					eFH = eFH.Copy()
+					// It is always safe to set the counter reset hint to UnknownCounterReset
+					eFH.CounterResetHint = histogram.UnknownCounterReset
+					eS = sample{t: eS.T(), fh: eFH}
+				}
+				require.Equal(t, eFH, aFH, "float histogram sample %d in series %q differs", i, key)
 			}
-			require.Equal(t, eS, aS, "sample %d in series %q differs", i, key)
 		}
 	}
 }
