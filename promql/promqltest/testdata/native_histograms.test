@@ -748,3 +748,17 @@ eval instant at 5m histogram_quantile(0.5, custom_buckets_histogram)
 
 eval instant at 5m sum(custom_buckets_histogram)
     {} {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1 2 1]}}
+
+clear
+
+# Test 'this native histogram metric is not a gauge' warning for rate
+load 30s
+    some_metric {{schema:0 sum:1 count:1 buckets:[1] counter_reset_hint:gauge}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:gauge}} {{schema:0 sum:3 count:3 buckets:[3] counter_reset_hint:gauge}}
+
+# Test the case where we only have two points for rate
+eval_warn instant at 30s rate(some_metric[30s])
+    {} {{count:0.03333333333333333 sum:0.03333333333333333 buckets:[0.03333333333333333]}}
+
+# Test the case where we have more than two points for rate
+eval_warn instant at 1m rate(some_metric[1m])
+    {} {{count:0.03333333333333333 sum:0.03333333333333333 buckets:[0.03333333333333333]}}

@@ -97,9 +97,10 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		lastT = samples.Histograms[numSamplesMinusOne].T
 		var newAnnos annotations.Annotations
 		resultHistogram, newAnnos = histogramRate(samples.Histograms, isCounter, metricName, args[0].PositionRange())
+		annos.Merge(newAnnos)
 		if resultHistogram == nil {
 			// The histograms are not compatible with each other.
-			return enh.Out, annos.Merge(newAnnos)
+			return enh.Out, annos
 		}
 	case len(samples.Floats) > 1:
 		numSamplesMinusOne = len(samples.Floats) - 1
@@ -189,6 +190,10 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 
 	var annos annotations.Annotations
 
+	if isCounter && (prev.CounterResetHint == histogram.GaugeType || last.CounterResetHint == histogram.GaugeType) {
+		annos.Add(annotations.NewNativeHistogramNotCounterWarning(metricName, pos))
+	}
+
 	// First iteration to find out two things:
 	// - What's the smallest relevant schema?
 	// - Are all data points histograms?
@@ -241,7 +246,7 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 	}
 
 	h.CounterResetHint = histogram.GaugeType
-	return h.Compact(0), nil
+	return h.Compact(0), annos
 }
 
 // === delta(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
