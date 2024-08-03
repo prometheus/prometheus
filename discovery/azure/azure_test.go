@@ -31,6 +31,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/discovery"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 )
@@ -482,26 +483,46 @@ func TestNewAzureResourceFromID(t *testing.T) {
 	}
 }
 
-func TestAzureSDRefresh(t *testing.T) {
-
-	// var expectedTG []*targetgroup.Group
+func testAzureSDRefresh(vmResp []armcompute.VirtualMachinesClientListAllResponse, vmssResp []armcompute.VirtualMachineScaleSetsClientListAllResponse, vmssvmResp []armcompute.VirtualMachineScaleSetVMsClientListResponse, logger log.Logger) ([]*targetgroup.Group, error) {
 	azureSDConfig := &DefaultSDConfig
 
-	azureClient, err := createNewMockAzureClient(nil)
-	require.NoError(t, err)
+	azureClient, err := createNewMockAzureClient(vmResp, vmssResp, vmssvmResp, logger)
+	if err != nil {
+		return nil, err
+	}
 
 	reg := prometheus.NewRegistry()
 	refreshMetrics := discovery.NewRefreshMetrics(reg)
 	metrics := azureSDConfig.NewDiscovererMetrics(reg, refreshMetrics)
-	require.NoError(t, metrics.Register())
 
 	sd, err := NewDiscovery(azureSDConfig, nil, metrics)
-	require.NoError(t, err)
+	if err != nil {
+		return nil, err
+	}
+
+	networkID := "test"
+	primary := true
+	ipAddress := "10.0.0.1"
+	networkInterface := &armnetwork.Interface{
+		ID: &networkID,
+		Properties: &armnetwork.InterfacePropertiesFormat{
+			Primary: &primary,
+			IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
+				{Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
+					PrivateIPAddress: &ipAddress,
+				}},
+			},
+		},
+	}
+	// Save the network details to cache
+	sd.cache.Set(*networkInterface.ID, networkInterface)
 
 	tg, err := sd.refreshAzureClient(azureClient, context.Background())
-	t.Log(tg[0].Source)
-	require.NoError(t, err)
+	if err != nil {
+		return nil, err
+	}
 
+	return tg, nil
 }
 
 type mockAzureClient struct {
@@ -516,20 +537,113 @@ type vmOptions struct {
 	tags       map[string]*string
 }
 
-func createNewMockAzureClient(logger log.Logger) (client, error) {
+// It should be as simple as writing down the VMs and getting the Target groups.
+// You know what I mean?
+
+// This means we will have to refactor a lot here.m
+
+func TestAzureRefresh(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		scenario   string
+		vmResp     []armcompute.VirtualMachinesClientListAllResponse
+		vmssResp   []armcompute.VirtualMachineScaleSetsClientListAllResponse
+		vmssvmResp []armcompute.VirtualMachineScaleSetVMsClientListResponse
+		expectedTG []*targetgroup.Group
+	}{
+		{
+			scenario: "Test Multiple VMs, VMSS and VMSSVMs in Multiple Responses",
+			vmResp: []armcompute.VirtualMachinesClientListAllResponse{
+				{
+					VirtualMachineListResult: armcompute.VirtualMachineListResult{
+						Value: []*armcompute.VirtualMachine{
+							defaultVMWithIdAndName(to.Ptr("/subscriptions/bd5d2ee2-2989-4589-95fb-605e6167c89/resourceGroups/test1/providers/Microsoft.Compute/virtualMachine/vm1"), to.Ptr("vm1")),
+							defaultVMWithIdAndName(to.Ptr("/subscriptions/bd5d2ee2-2989-4589-95fb-605e6167c89/resourceGroups/test1/providers/Microsoft.Compute/virtualMachine/vm2"), to.Ptr("vm2")),
+						},
+					},
+				},
+				{
+					VirtualMachineListResult: armcompute.VirtualMachineListResult{
+						Value: []*armcompute.VirtualMachine{
+							defaultVMWithIdAndName(to.Ptr("/subscriptions/bd5d2ee2-2989-4589-95fb-605e6167c89/resourceGroups/test1/providers/Microsoft.Compute/virtualMachine/vm3"), to.Ptr("vm3")),
+							defaultVMWithIdAndName(to.Ptr("/subscriptions/bd5d2ee2-2989-4589-95fb-605e6167c89/resourceGroups/test1/providers/Microsoft.Compute/virtualMachine/vm4"), to.Ptr("vm4")),
+						},
+					},
+				},
+			},
+			vmssResp: []armcompute.VirtualMachineScaleSetsClientListAllResponse{
+				{
+					VirtualMachineScaleSetListWithLinkResult: armcompute.VirtualMachineScaleSetListWithLinkResult{
+						Value: []*armcompute.VirtualMachineScaleSet{
+							{
+								ID:       to.Ptr("/subscriptions/bd5d2ee2-2989-4589-95fb-605e6167c89/resourceGroups/test1/providers/Microsoft.Compute/virtualMachineScaleSets/vmScaleSet1"),
+								Name:     to.Ptr("vmScaleSet1"),
+								Location: to.Ptr("australiaeast"),
+								Type:     to.Ptr("Microsoft.Compute/virtualMachineScaleSets"),
+							},
+							{
+								ID:       to.Ptr("/subscriptions/bd5d2ee2-2989-4589-95fb-605e6167c89/resourceGroups/test1/providers/Microsoft.Compute/virtualMachineScaleSets/vmScaleSet2"),
+								Name:     to.Ptr("vmScaleSet2"),
+								Location: to.Ptr("australiaeast"),
+								Type:     to.Ptr("Microsoft.Compute/virtualMachineScaleSets"),
+							},
+						},
+					},
+				},
+			},
+			vmssvmResp: []armcompute.VirtualMachineScaleSetVMsClientListResponse{
+				{
+					VirtualMachineScaleSetVMListResult: armcompute.VirtualMachineScaleSetVMListResult{
+						Value: []*armcompute.VirtualMachineScaleSetVM{
+							defaultVMSSVMWithIdAndName(to.Ptr("/subscriptions/bd5d2ee2-2989-4589-95fb-605e6167c89/resourceGroups/test1/providers/Microsoft.Compute/virtualMachineScaleSets/vmScaleSet1/virtualMachines/vmScaleSet1_777e48b7"), to.Ptr("vmScaleSet1_777e48b7")),
+							defaultVMSSVMWithIdAndName(to.Ptr("/subscriptions/bd5d2ee2-2989-4589-95fb-605e6167c89/resourceGroups/test1/providers/Microsoft.Compute/virtualMachineScaleSets/vmScaleSet1/virtualMachines/vmScaleSet1_9f135d64"), to.Ptr("vmScaleSet1_9f135d64")),
+						},
+					},
+				},
+				{
+					VirtualMachineScaleSetVMListResult: armcompute.VirtualMachineScaleSetVMListResult{
+						Value: []*armcompute.VirtualMachineScaleSetVM{
+							defaultVMSSVMWithIdAndName(to.Ptr("/subscriptions/bd5d2ee2-2989-4589-95fb-605e6167c89/resourceGroups/test1/providers/Microsoft.Compute/virtualMachineScaleSets/vmScaleSet2/virtualMachines/vmScaleSet2_777e48b7"), to.Ptr("vmScaleSet2_777e48b7")),
+							defaultVMSSVMWithIdAndName(to.Ptr("/subscriptions/bd5d2ee2-2989-4589-95fb-605e6167c89/resourceGroups/test1/providers/Microsoft.Compute/virtualMachineScaleSets/vmScaleSet2/virtualMachines/vmScaleSet2_9f135d64"), to.Ptr("vmScaleSet2_9f135d64")),
+						},
+					},
+				},
+			},
+		},
+	}
+	for _, test := range tests {
+		tc := test
+		t.Run(tc.scenario, func(t *testing.T) {
+			_, err := testAzureSDRefresh(tc.vmResp, tc.vmssResp, tc.vmssvmResp, log.NewNopLogger())
+			if err != nil {
+				t.Fatalf("unexpected error occurred while fetching target groups: %v", err)
+			}
+
+			// Check the returned TGs against expected TGs
+		})
+	}
+}
+
+func createNewMockAzureClient(vmResp []armcompute.VirtualMachinesClientListAllResponse, vmssResp []armcompute.VirtualMachineScaleSetsClientListAllResponse, vmssvmResp []armcompute.VirtualMachineScaleSetVMsClientListResponse, logger log.Logger) (client, error) {
 	networkID := "/subscriptions/00000000-0000-0000-0000-000000000000/network1"
 	ipAddress := "10.20.30.40"
 	primary := true
 
+	var vmClient *armcompute.VirtualMachinesClient
+	var vmssClient *armcompute.VirtualMachineScaleSetsClient
+	var vmssvmClient *armcompute.VirtualMachineScaleSetVMsClient
+
+	var err error
+
 	c := mockAzureClient{}
 
 	// Create mock servers.
-	mockVMServer := newDefaultMockVMServer()
-	mockVMSSServer := newDefaultMockVMSSServer()
-	mockVMScaleSetVMServer := newDefaultMockVMSSVMServer()
+	mockVMServer := newDefaultMockVMServer(vmResp)
+	mockVMSSServer := newDefaultMockVMSSServer(vmssResp)
+	mockVMScaleSetVMServer := newDefaultMockVMSSVMServer(vmssvmResp)
 
 	// Connect our client with the mock servers using mock transports (round-trippers).
-	vmClient, err := armcompute.NewVirtualMachinesClient("fake-subscription-id", &azfake.TokenCredential{}, &arm.ClientOptions{
+	vmClient, err = armcompute.NewVirtualMachinesClient("fake-subscription-id", &azfake.TokenCredential{}, &arm.ClientOptions{
 		ClientOptions: azcore.ClientOptions{
 			Transport: fake.NewVirtualMachinesServerTransport(&mockVMServer),
 		},
@@ -538,7 +652,7 @@ func createNewMockAzureClient(logger log.Logger) (client, error) {
 		return &mockAzureClient{}, err
 	}
 
-	vmssClient, err := armcompute.NewVirtualMachineScaleSetsClient("fake-subscription-id", &azfake.TokenCredential{}, &arm.ClientOptions{
+	vmssClient, err = armcompute.NewVirtualMachineScaleSetsClient("fake-subscription-id", &azfake.TokenCredential{}, &arm.ClientOptions{
 		ClientOptions: azcore.ClientOptions{
 			Transport: fake.NewVirtualMachineScaleSetsServerTransport(&mockVMSSServer),
 		},
@@ -547,7 +661,7 @@ func createNewMockAzureClient(logger log.Logger) (client, error) {
 		return &mockAzureClient{}, err
 	}
 
-	vmssvmClient, err := armcompute.NewVirtualMachineScaleSetVMsClient("fake-subscription-id", &azfake.TokenCredential{}, &arm.ClientOptions{
+	vmssvmClient, err = armcompute.NewVirtualMachineScaleSetVMsClient("fake-subscription-id", &azfake.TokenCredential{}, &arm.ClientOptions{
 		ClientOptions: azcore.ClientOptions{
 			Transport: fake.NewVirtualMachineScaleSetVMsServerTransport(&mockVMScaleSetVMServer),
 		},
@@ -582,8 +696,8 @@ func defaultVMWithIdAndName(id *string, name *string) *armcompute.VirtualMachine
 	return &armcompute.VirtualMachine{
 		ID:       id,
 		Name:     name,
-		Type:     to.Ptr("type"),
-		Location: to.Ptr("westeurope"),
+		Type:     to.Ptr("Microsoft.Compute/virtualMachines"),
+		Location: to.Ptr("australiaeast"),
 		Properties: &armcompute.VirtualMachineProperties{
 			OSProfile: &armcompute.OSProfile{
 				ComputerName: to.Ptr("computer_name"),
@@ -594,7 +708,11 @@ func defaultVMWithIdAndName(id *string, name *string) *armcompute.VirtualMachine
 				},
 			},
 			NetworkProfile: &armcompute.NetworkProfile{
-				NetworkInterfaces: []*armcompute.NetworkInterfaceReference{},
+				NetworkInterfaces: []*armcompute.NetworkInterfaceReference{
+					{
+						ID: to.Ptr("test"),
+					},
+				},
 			},
 			HardwareProfile: &armcompute.HardwareProfile{
 				VMSize: &vmSize,
@@ -608,77 +726,24 @@ func defaultVMWithIdAndName(id *string, name *string) *armcompute.VirtualMachine
 
 // we need to create a mock server and basically get data from it. lets write a function which creates a mock server
 
-func newDefaultMockVMServer() fake.VirtualMachinesServer {
-
+func newDefaultMockVMServer(vmResp []armcompute.VirtualMachinesClientListAllResponse) fake.VirtualMachinesServer {
 	fakeVirtualMachinesServer := fake.VirtualMachinesServer{
-
 		NewListAllPager: func(options *armcompute.VirtualMachinesClientListAllOptions) (resp azfake.PagerResponder[armcompute.VirtualMachinesClientListAllResponse]) {
-
-			page1 := armcompute.VirtualMachinesClientListAllResponse{
-				VirtualMachineListResult: armcompute.VirtualMachineListResult{
-					Value: []*armcompute.VirtualMachine{
-						defaultVMWithIdAndName(to.Ptr("/subscriptions/00000000-0000-0000-0000-000000000000/test"), to.Ptr("fake-vm-1")),
-						defaultVMWithIdAndName(to.Ptr("/subscriptions/00000000-0000-0000-0000-000000000000/test"), to.Ptr("fake-vm-2")),
-					},
-				},
+			for _, page := range vmResp {
+				resp.AddPage(http.StatusOK, page, nil)
 			}
-
-			page2 := armcompute.VirtualMachinesClientListAllResponse{
-				VirtualMachineListResult: armcompute.VirtualMachineListResult{
-					Value: []*armcompute.VirtualMachine{
-						defaultVMWithIdAndName(to.Ptr("/subscriptions/00000000-0000-0000-0000-000000000000/test"), to.Ptr("fake-vm-3")),
-						defaultVMWithIdAndName(to.Ptr("/subscriptions/00000000-0000-0000-0000-000000000000/test"), to.Ptr("fake-vm-4")),
-					},
-				},
-			}
-
-			resp.AddPage(http.StatusOK, page1, nil)
-			resp.AddPage(http.StatusOK, page2, nil)
-
 			return
 		},
 	}
 	return fakeVirtualMachinesServer
 }
 
-func newDefaultMockVMSSServer() fake.VirtualMachineScaleSetsServer {
+func newDefaultMockVMSSServer(vmssResp []armcompute.VirtualMachineScaleSetsClientListAllResponse) fake.VirtualMachineScaleSetsServer {
 	fakeVirtualMachineScaleSetsServer := fake.VirtualMachineScaleSetsServer{
-
 		NewListAllPager: func(options *armcompute.VirtualMachineScaleSetsClientListAllOptions) (resp azfake.PagerResponder[armcompute.VirtualMachineScaleSetsClientListAllResponse]) {
-
-			page1 := armcompute.VirtualMachineScaleSetsClientListAllResponse{
-				VirtualMachineScaleSetListWithLinkResult: armcompute.VirtualMachineScaleSetListWithLinkResult{
-					Value: []*armcompute.VirtualMachineScaleSet{
-						{
-							ID:   to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourceGroups/group/providers/PROVIDER/TYPE/name"),
-							Name: to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourceGroups/group/providers/PROVIDER/TYPE/name"),
-						},
-						{
-							ID:   to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourceGroups/group/providers/PROVIDER/TYPE/name"),
-							Name: to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourceGroups/group/providers/PROVIDER/TYPE/name"),
-						},
-					},
-				},
+			for _, page := range vmssResp {
+				resp.AddPage(http.StatusOK, page, nil)
 			}
-
-			page2 := armcompute.VirtualMachineScaleSetsClientListAllResponse{
-				VirtualMachineScaleSetListWithLinkResult: armcompute.VirtualMachineScaleSetListWithLinkResult{
-					Value: []*armcompute.VirtualMachineScaleSet{
-						{
-							ID:   to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourceGroups/group/providers/PROVIDER/TYPE/name"),
-							Name: to.Ptr("subscriptions-scaleset-3"),
-						},
-						{
-							ID:   to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourceGroups/group/providers/PROVIDER/TYPE/name"),
-							Name: to.Ptr("fake-scaleset-4"),
-						},
-					},
-				},
-			}
-
-			resp.AddPage(http.StatusOK, page1, nil)
-			resp.AddPage(http.StatusOK, page2, nil)
-
 			return
 		},
 	}
@@ -692,9 +757,9 @@ func defaultVMSSVMWithIdAndName(id *string, name *string) *armcompute.VirtualMac
 	return &armcompute.VirtualMachineScaleSetVM{
 		ID:         id,
 		Name:       name,
-		Type:       to.Ptr("type"),
-		Location:   to.Ptr("westeurope"),
+		Type:       to.Ptr("Microsoft.Compute/virtualMachines"),
 		InstanceID: to.Ptr("123"),
+		Location:   to.Ptr("australiaeast"),
 		Properties: &armcompute.VirtualMachineScaleSetVMProperties{
 			OSProfile: &armcompute.OSProfile{
 				ComputerName: to.Ptr("computer_name"),
@@ -705,7 +770,9 @@ func defaultVMSSVMWithIdAndName(id *string, name *string) *armcompute.VirtualMac
 				},
 			},
 			NetworkProfile: &armcompute.NetworkProfile{
-				NetworkInterfaces: []*armcompute.NetworkInterfaceReference{},
+				NetworkInterfaces: []*armcompute.NetworkInterfaceReference{
+					{ID: to.Ptr("test")},
+				},
 			},
 			HardwareProfile: &armcompute.HardwareProfile{
 				VMSize: &vmSize,
@@ -717,33 +784,12 @@ func defaultVMSSVMWithIdAndName(id *string, name *string) *armcompute.VirtualMac
 	}
 }
 
-func newDefaultMockVMSSVMServer() fake.VirtualMachineScaleSetVMsServer {
-
+func newDefaultMockVMSSVMServer(vmssvmResp []armcompute.VirtualMachineScaleSetVMsClientListResponse) fake.VirtualMachineScaleSetVMsServer {
 	fakeVirtualMachineScaleSetVMsServer := fake.VirtualMachineScaleSetVMsServer{
-
 		NewListPager: func(resourceGroupName string, virtualMachineScaleSetName string, options *armcompute.VirtualMachineScaleSetVMsClientListOptions) (resp azfake.PagerResponder[armcompute.VirtualMachineScaleSetVMsClientListResponse]) {
-
-			page1 := armcompute.VirtualMachineScaleSetVMsClientListResponse{
-				VirtualMachineScaleSetVMListResult: armcompute.VirtualMachineScaleSetVMListResult{
-					Value: []*armcompute.VirtualMachineScaleSetVM{
-						defaultVMSSVMWithIdAndName(to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourceGroups/group/providers/PROVIDER/TYPE/name"), to.Ptr("fake-scalesetvm-1")),
-						defaultVMSSVMWithIdAndName(to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourceGroups/group/providers/PROVIDER/TYPE/name"), to.Ptr("fake-scalesetvm-2")),
-					},
-				},
+			for _, page := range vmssvmResp {
+				resp.AddPage(http.StatusOK, page, nil)
 			}
-
-			page2 := armcompute.VirtualMachineScaleSetVMsClientListResponse{
-				VirtualMachineScaleSetVMListResult: armcompute.VirtualMachineScaleSetVMListResult{
-					Value: []*armcompute.VirtualMachineScaleSetVM{
-						defaultVMSSVMWithIdAndName(to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourceGroups/group/providers/PROVIDER/TYPE/name"), to.Ptr("fake-scalesetvm-3")),
-						defaultVMSSVMWithIdAndName(to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourceGroups/group/providers/PROVIDER/TYPE/name"), to.Ptr("fake-scalesetvm-4")),
-					},
-				},
-			}
-
-			resp.AddPage(http.StatusOK, page1, nil)
-			resp.AddPage(http.StatusOK, page2, nil)
-
 			return
 		},
 	}
