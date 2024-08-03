@@ -144,9 +144,9 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64) (chks []memChunk, err error
 			if newChunk != nil { // A new chunk was allocated.
 				if !recoded {
 					chks = append(chks, memChunk{chunk, cmint, cmaxt, nil})
+					cmint = s.t
 				}
 				chunk = newChunk
-				cmint = s.t
 			}
 		case chunkenc.EncFloatHistogram:
 			// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
@@ -159,9 +159,9 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64) (chks []memChunk, err error
 			if newChunk != nil { // A new chunk was allocated.
 				if !recoded {
 					chks = append(chks, memChunk{chunk, cmint, cmaxt, nil})
+					cmint = s.t
 				}
 				chunk = newChunk
-				cmint = s.t
 			}
 		}
 		cmaxt = s.t
