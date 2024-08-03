@@ -201,7 +201,7 @@ func (oh *OOORangeHead) Index() (IndexReader, error) {
 }
 
 func (oh *OOORangeHead) Chunks() (ChunkReader, error) {
-	return NewOOOHeadChunkReader(oh.head, oh.mint, oh.maxt, oh.isoState), nil
+	return NewOOOHeadChunkReader(oh.head, oh.mint, oh.maxt, oh.isoState, 0), nil
 }
 
 func (oh *OOORangeHead) Tombstones() (tombstones.Reader, error) {
