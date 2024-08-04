@@ -31,6 +31,13 @@ import (
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
+// Type assertions.
+var (
+	_ chunkenc.Chunk    = &MultiChunk{}
+	_ chunkenc.Iterable = &mergedOOOChunks{}
+	_ IndexReader       = &OOOHeadIndexReader{}
+)
+
 type chunkInterval struct {
 	// because we permutate the order of chunks, we cannot determine at test declaration time which chunkRefs we expect in the Output.
 	// This ID matches expected output chunks against test input chunks, the test runner will assert the chunkRef for the matching chunk
