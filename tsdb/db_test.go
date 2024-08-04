@@ -3982,7 +3982,15 @@ func newTestDB(t *testing.T) *DB {
 
 func TestOOOWALWrite(t *testing.T) {
 	minutes := func(m int64) int64 { return m * time.Minute.Milliseconds() }
-	s1, s2 := labels.FromStrings("l", "v1"), labels.FromStrings("l", "v2")
+
+	s := labels.NewSymbolTable()
+	scratchBuilder1 := labels.NewScratchBuilderWithSymbolTable(s, 1)
+	scratchBuilder1.Add("l", "v1")
+	s1 := scratchBuilder1.Labels()
+	scratchBuilder2 := labels.NewScratchBuilderWithSymbolTable(s, 1)
+	scratchBuilder2.Add("l", "v2")
+	s2 := scratchBuilder2.Labels()
+
 	scenarios := map[string]struct {
 		appendSample       func(app storage.Appender, l labels.Labels, mins int64) (storage.SeriesRef, error)
 		expectedOOORecords []interface{}
