@@ -4337,10 +4337,8 @@ func testOOOWALWrite(t *testing.T,
 			require.NoError(t, sr.Close())
 		}()
 
-		var (
-			records []interface{}
-			dec     record.Decoder
-		)
+		var records []interface{}
+		dec := record.NewDecoder(nil)
 		for r.Next() {
 			rec := r.Record()
 			switch typ := dec.Type(rec); typ {
