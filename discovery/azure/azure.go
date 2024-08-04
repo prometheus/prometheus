@@ -350,8 +350,7 @@ func newAzureResourceFromID(id string, logger log.Logger) (*arm.ResourceID, erro
 	return resourceID, nil
 }
 
-func (d *Discovery) refreshAzureClient(client client, ctx context.Context) ([]*targetgroup.Group, error) {
-
+func (d *Discovery) refreshAzureClient(ctx context.Context, client client) ([]*targetgroup.Group, error) {
 	machines, err := client.getVMs(ctx, d.cfg.ResourceGroup)
 	if err != nil {
 		d.metrics.failuresCount.Inc()
@@ -420,7 +419,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		return nil, fmt.Errorf("could not create Azure client: %w", err)
 	}
 
-	return d.refreshAzureClient(client, ctx)
+	return d.refreshAzureClient(ctx, client)
 }
 
 func (d *Discovery) vmToLabelSet(ctx context.Context, client client, vm virtualMachine) (model.LabelSet, error) {
