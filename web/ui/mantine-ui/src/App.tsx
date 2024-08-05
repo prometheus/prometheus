@@ -307,6 +307,8 @@ function App() {
             header={{ height: 56 }}
             navbar={{
               width: 300,
+              // TODO: On pages with a long title like "/status", the navbar
+              // breaks in an ugly way for narrow windows. Fix this.
               breakpoint: "sm",
               collapsed: { desktop: true, mobile: !opened },
             }}
