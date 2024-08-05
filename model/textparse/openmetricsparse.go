@@ -102,7 +102,6 @@ type openMetricsParserOptions struct {
 	SkipCTSeries bool
 }
 
-// SkipCTSeries skips the parsing of _created lines.
 type OpenMetricsOption func(*openMetricsParserOptions)
 
 // WithOMParserCTSeriesSkipped turns off exposing _created lines
