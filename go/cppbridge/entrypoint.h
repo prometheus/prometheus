@@ -60,6 +60,20 @@ void prompp_primitives_lss_dtor(void* args);
  */
 void prompp_primitives_lss_allocated_memory(void* args, void* res);
 
+/**
+ * @brief insert label set into lss
+ *
+ * @param args {
+ *     lss uintptr              // pointer to constructed label sets;
+ *     label_set model.LabelSet // label set
+ * }
+ *
+ * @param res {
+ *     ls_id uint32 // inserted (or found) label set id
+ * }
+ */
+void prompp_primitives_lss_find_or_emplace(void* args, void* res);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif
@@ -298,6 +312,29 @@ void prompp_prometheus_per_shard_relabeler_output_relabeling(void* args, void* r
  * }
  */
 void prompp_prometheus_per_shard_relabeler_reset_to(void* args);
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/**
+ * @brief Query data chunks
+ *
+ * @param args {
+ *     data_storage uintptr     // data storage
+ *     start_timestamp_ms int64 // start timestamp milliseconds
+ *     end_timestamp_ms int64   // end timestamp milliseconds
+ *     ls_ids []uint32          // label set ids
+ * }
+ *
+ * @param res {
+ *     serialized_chunks []byte // serialized chunks
+ * }
+ */
+void prompp_series_data_data_storage_query(void* args, void* res);
 
 #ifdef __cplusplus
 }  // extern "C"

@@ -37,6 +37,20 @@ void prompp_primitives_lss_dtor(void* args);
  */
 void prompp_primitives_lss_allocated_memory(void* args, void* res);
 
+/**
+ * @brief insert label set into lss
+ *
+ * @param args {
+ *     lss uintptr              // pointer to constructed label sets;
+ *     label_set model.LabelSet // label set
+ * }
+ *
+ * @param res {
+ *     ls_id uint32 // inserted (or found) label set id
+ * }
+ */
+void prompp_primitives_lss_find_or_emplace(void* args, void* res);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif
