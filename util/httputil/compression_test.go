@@ -145,7 +145,7 @@ func TestCompressionHandler_Deflate(t *testing.T) {
 func BenchmarkNewCompressedResponseWriter(b *testing.B) {
 	handler := http.HandlerFunc(getCompressionHandlerFunc().ServeHTTP)
 
-	req, err := http.NewRequest("GET", "/foo", nil)
+	req, err := http.NewRequest(http.MethodGet, "/foo", nil)
 	if err != nil {
 		b.Fatal(err)
 	}
