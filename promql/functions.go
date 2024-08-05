@@ -190,6 +190,8 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 
 	var annos annotations.Annotations
 
+	// We check for gauge type histograms in the loop below, but the loop below does not run on the first and last point,
+	// so check the first and last point now.
 	if isCounter && (prev.CounterResetHint == histogram.GaugeType || last.CounterResetHint == histogram.GaugeType) {
 		annos.Add(annotations.NewNativeHistogramNotCounterWarning(metricName, pos))
 	}
