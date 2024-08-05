@@ -3169,12 +3169,11 @@ func BenchmarkQueries(b *testing.B) {
 
 					qHead, err := NewBlockQuerier(NewRangeHead(head, 1, nSamples), 1, nSamples)
 					require.NoError(b, err)
-					qOOOHead, err := NewBlockQuerier(NewOOORangeHead(head, 1, nSamples, 0), 1, nSamples)
-					require.NoError(b, err)
+					isoState := head.oooIso.TrackReadAfter(0)
+					qOOOHead := NewHeadAndOOOQuerier(1, nSamples, head, isoState, qHead)
 
 					queryTypes = append(queryTypes, qt{
-						fmt.Sprintf("_Head_oooPercent:%d", oooPercentage),
-						storage.NewMergeQuerier([]storage.Querier{qHead, qOOOHead}, nil, storage.ChainedSeriesMerge),
+						fmt.Sprintf("_Head_oooPercent:%d", oooPercentage), qOOOHead,
 					})
 				}
 
