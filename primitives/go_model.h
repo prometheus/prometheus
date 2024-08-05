@@ -97,7 +97,7 @@ struct LabelSet {
   [[nodiscard]] PROMPP_ALWAYS_INLINE auto begin() const noexcept { return Iterator(this); }
   [[nodiscard]] PROMPP_ALWAYS_INLINE static IteratorSentinel end() noexcept { return {}; }
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE auto names() const noexcept { return Names(this); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE auto names() const noexcept { return Names{.label_set = this}; }
 
   PROMPP_ALWAYS_INLINE friend size_t hash_value(const LabelSet& label_set) noexcept {
     return BareBones::accumulate(label_set, 0ULL, [](size_t hash, const auto& label) PROMPP_LAMBDA_INLINE {
