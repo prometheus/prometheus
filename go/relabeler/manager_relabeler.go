@@ -214,7 +214,7 @@ func (msr *ManagerRelabeler) AppendWithStaleNans(
 	ctx context.Context,
 	incomingData *IncomingData,
 	labelLimits *cppbridge.LabelLimits,
-	sourceState *cppbridge.SourceStaleNansState,
+	sourceStates *SourceStates,
 	staleNansTS int64,
 	relabelerID string,
 ) error {
@@ -232,6 +232,9 @@ func (msr *ManagerRelabeler) AppendWithStaleNans(
 	msr.rotateWG.Add(len(*msr.destinationGroups))
 	msr.rotateLock.Unlock()
 
+	if sourceStates != nil {
+		sourceStates.ResizeIfNeed(int(msr.shards.numberOfShards))
+	}
 	inputPromise := NewInputRelabelingPromise(msr.shards.numberOfShards)
 	// incomingData.numberOfDestroy = int32(msr.shards.numberOfShards) * int32(len(msr.shards.inputRelabelers))
 	incomingData.numberOfDestroy = int32(msr.shards.numberOfShards)
@@ -240,7 +243,7 @@ func (msr *ManagerRelabeler) AppendWithStaleNans(
 		inputPromise,
 		incomingData,
 		labelLimits,
-		sourceState,
+		sourceStates,
 		staleNansTS,
 		relabelerID,
 	))
@@ -585,9 +588,7 @@ func (s *shards) reshards(
 
 	s.reconfiguringStages(numberOfShards)
 
-	if err := s.reconfiguringShardLsses(numberOfShards); err != nil {
-		return err
-	}
+	s.reconfiguringShardLsses(numberOfShards)
 
 	if err := s.reconfiguringInputRelabeler(inputRelabelerConfigs, numberOfShards); err != nil {
 		return err
@@ -631,9 +632,9 @@ func (s *shards) relabelerIDIsExist(relabelerID string) bool {
 }
 
 // reconfiguringShardLsses reconfiguring lss for all shards.
-func (s *shards) reconfiguringShardLsses(numberOfShards uint16) error {
+func (s *shards) reconfiguringShardLsses(numberOfShards uint16) {
 	if s.numberOfShards == numberOfShards {
-		return nil
+		return
 	}
 
 	if len(s.shardLsses) > int(numberOfShards) {
@@ -648,7 +649,7 @@ func (s *shards) reconfiguringShardLsses(numberOfShards uint16) error {
 		}
 		// cut
 		s.shardLsses = s.shardLsses[:numberOfShards]
-		return nil
+		return
 	}
 
 	// resize
@@ -665,8 +666,6 @@ func (s *shards) reconfiguringShardLsses(numberOfShards uint16) error {
 		// create if not exist
 		s.shardLsses[shardID] = cppbridge.NewQueryableLssStorage()
 	}
-
-	return nil
 }
 
 // reconfiguringInputRelabeler reconfiguring input relabelers for all shards.
@@ -805,14 +804,30 @@ func (s *shards) shardLoop(shardID uint16) {
 			shardsInnerSeries := cppbridge.NewShardsInnerSeries(s.numberOfShards)
 			shardsRelabeledSeries := cppbridge.NewShardsRelabeledSeries(s.numberOfShards)
 
-			err := s.inputRelabelers[relabelerKey{task.RelabelerID(), shardID}].InputRelabeling(
-				task.Ctx(),
-				s.shardLsses[shardID],
-				task.LabelLimits(),
-				task.ShardedData(),
-				shardsInnerSeries,
-				shardsRelabeledSeries,
-			)
+			var err error
+			if task.WithStaleNans() {
+				err = s.inputRelabelers[relabelerKey{task.RelabelerID(), shardID}].InputRelabelingWithStalenans(
+					task.Ctx(),
+					s.shardLsses[shardID],
+					task.LabelLimits(),
+					task.SourceStateByShard(shardID),
+					task.StaleNansTS(),
+					task.ShardedData(),
+					shardsInnerSeries,
+					shardsRelabeledSeries,
+				)
+
+			} else {
+				err = s.inputRelabelers[relabelerKey{task.RelabelerID(), shardID}].InputRelabeling(
+					task.Ctx(),
+					s.shardLsses[shardID],
+					task.LabelLimits(),
+					task.ShardedData(),
+					shardsInnerSeries,
+					shardsRelabeledSeries,
+				)
+			}
+
 			task.IncomingDataDestroy()
 			if err != nil {
 				task.AddError(shardID, fmt.Errorf("failed input relabeling shard %d: %w", shardID, err))
@@ -959,7 +974,7 @@ type TaskInputRelabeling struct {
 	promise      *InputRelabelingPromise
 	incomingData *IncomingData
 	labelLimits  *cppbridge.LabelLimits
-	sourceState  *cppbridge.SourceStaleNansState
+	sourceStates *SourceStates
 	staleNansTS  int64
 	relabelerID  string
 }
@@ -970,7 +985,7 @@ func NewTaskInputRelabeling(
 	promise *InputRelabelingPromise,
 	incomingData *IncomingData,
 	labelLimits *cppbridge.LabelLimits,
-	sourceState *cppbridge.SourceStaleNansState,
+	sourceStates *SourceStates,
 	staleNansTS int64,
 	relabelerID string,
 ) *TaskInputRelabeling {
@@ -979,7 +994,7 @@ func NewTaskInputRelabeling(
 		promise:      promise,
 		incomingData: incomingData,
 		labelLimits:  labelLimits,
-		sourceState:  sourceState,
+		sourceStates: sourceStates,
 		staleNansTS:  staleNansTS,
 		relabelerID:  relabelerID,
 	}
@@ -1015,9 +1030,14 @@ func (t *TaskInputRelabeling) ShardedData() cppbridge.ShardedData {
 	return t.incomingData.ShardedData()
 }
 
-// SourceState return state for stalenans.
-func (t *TaskInputRelabeling) SourceState() *cppbridge.SourceStaleNansState {
-	return t.sourceState
+// SourceStateByShard return state for stalenans for shard.
+func (t *TaskInputRelabeling) SourceStateByShard(shardID uint16) *cppbridge.SourceStaleNansState {
+	return t.sourceStates.GetByShard(shardID)
+}
+
+// WithStaleNans check task for stalenans states.
+func (t *TaskInputRelabeling) WithStaleNans() bool {
+	return t.sourceStates != nil
 }
 
 // StaleNansTS return timestamp for stalenans.
@@ -1535,5 +1555,49 @@ func (rt *RotateTimer) RotateAtNext() time.Time {
 func (rt *RotateTimer) Stop() {
 	if !rt.timer.Stop() {
 		<-rt.timer.Chan()
+	}
+}
+
+// SourceStates state for stalenans for all shards.
+type SourceStates struct {
+	states []*cppbridge.SourceStaleNansState
+}
+
+// NewSourceStates init new SourceStates with 1 mandatory shard.
+func NewSourceStates() *SourceStates {
+	return &SourceStates{
+		states: []*cppbridge.SourceStaleNansState{cppbridge.NewSourceStaleNansState()},
+	}
+}
+
+// GetByShard return SourceStaleNansState for shard.
+func (s *SourceStates) GetByShard(shardID uint16) *cppbridge.SourceStaleNansState {
+	return s.states[shardID]
+}
+
+// ResizeIfNeed resize states according to the number of shards.
+func (s *SourceStates) ResizeIfNeed(numberOfShards int) {
+	if len(s.states) == numberOfShards {
+		return
+	}
+
+	if len(s.states) > numberOfShards {
+		// cut
+		s.states = s.states[:numberOfShards]
+		return
+	}
+
+	// grow
+	s.states = append(
+		s.states,
+		make([]*cppbridge.SourceStaleNansState, numberOfShards-len(s.states))...,
+	)
+	for shardID := 0; shardID < numberOfShards; shardID++ {
+		if s.states[shardID] != nil {
+			continue
+		}
+
+		// create if not exist
+		s.states[shardID] = cppbridge.NewSourceStaleNansState()
 	}
 }
