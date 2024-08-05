@@ -1,4 +1,4 @@
-cloud: 
+cloud:
   name: "AzurePublic"
   token_audience: https://monitor.azure.com/.default
   aad_endpoint: https://login.microsoftonline.com/
