@@ -101,13 +101,13 @@ type OpenMetricsParser struct {
 	skipCT bool
 }
 type openMetricsParserOptions struct {
-	// SkipCT skips the parsing of _created lines by default.
+	// SkipCT skips the parsing of _created lines.
 	SkipCT bool
 }
 
 type OpenMetricsOption func(*openMetricsParserOptions)
 
-func WithSkipCT(skipCT bool) OpenMetricsOption {
+func WithOMParserCTSeriesSkipped(skipCT bool) OpenMetricsOption {
 	return func(o *openMetricsParserOptions) {
 		o.SkipCT = skipCT
 	}
@@ -118,7 +118,7 @@ func NewOpenMetricsParser(b []byte, st *labels.SymbolTable) Parser {
 	return &OpenMetricsParser{
 		l:       &openMetricsLexer{b: b},
 		builder: labels.NewScratchBuilderWithSymbolTable(st, 16),
-		skipCT:  true,
+		skipCT:  false,
 	}
 }
 
