@@ -98,18 +98,18 @@ type OpenMetricsParser struct {
 	// lines ending with _created are skipped by default as they are
 	// parsed by the CreatedTimestamp method. The skipCT flag is set to
 	// false when the CreatedTimestamp method is called.
-	skipCT bool
+	skipCTSeries bool
 }
 type openMetricsParserOptions struct {
 	// SkipCT skips the parsing of _created lines.
-	SkipCT bool
+	SkipCTSeries bool
 }
 
 type OpenMetricsOption func(*openMetricsParserOptions)
 
-func WithOMParserCTSeriesSkipped(skipCT bool) OpenMetricsOption {
+func WithOMParserCTSeriesSkipped(skipCTSeries bool) OpenMetricsOption {
 	return func(o *openMetricsParserOptions) {
-		o.SkipCT = skipCT
+		o.SkipCTSeries = skipCTSeries
 	}
 }
 
@@ -118,7 +118,7 @@ func NewOpenMetricsParser(b []byte, st *labels.SymbolTable) Parser {
 	return &OpenMetricsParser{
 		l:       &openMetricsLexer{b: b},
 		builder: labels.NewScratchBuilderWithSymbolTable(st, 16),
-		skipCT:  false,
+		skipCTSeries:  false,
 	}
 }
 
@@ -129,12 +129,12 @@ func NewOpenMetricsParserWithOpts(b []byte, st *labels.SymbolTable, opts ...Open
 		builder: labels.NewScratchBuilderWithSymbolTable(st, 16),
 	}
 	DefaultOpenMetricsParserOptions := openMetricsParserOptions{
-		SkipCT: true,
+		SkipCTSeries: true,
 	}
 	for _, opt := range opts {
 		opt(&DefaultOpenMetricsParserOptions)
 	}
-	parser.skipCT = DefaultOpenMetricsParserOptions.SkipCT
+	parser.skipCTSeries = DefaultOpenMetricsParserOptions.SkipCTSeries
 
 	return parser
 }
@@ -336,7 +336,7 @@ func deepCopy(p *OpenMetricsParser) OpenMetricsParser {
 		builder: p.builder,
 		mtype:   p.mtype,
 		val:     p.val,
-		skipCT:  false,
+		skipCTSeries:  false,
 	}
 	return newParser
 }
@@ -628,7 +628,7 @@ func (p *OpenMetricsParser) parseMetricSuffix(t token) (Entry, error) {
 		}
 	}
 
-	if p.skipCT {
+	if p.skipCTSeries {
 		var newLbs labels.Labels
 		p.Metric(&newLbs)
 		name := newLbs.Get(model.MetricNameLabel)

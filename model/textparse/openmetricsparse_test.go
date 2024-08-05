@@ -961,15 +961,15 @@ go_gc_duration_seconds_created`)
 	_, err := parser.Next()
 	require.NoError(t, err)
 	require.Equal(t, "go_goroutines", string(parser.l.b[parser.offsets[0]:parser.offsets[1]]))
-	require.True(t, parser.skipCT)
+	require.True(t, parser.skipCTSeries)
 
 	// Create a deep copy of the parser
 	copyParser := deepCopy(parser)
 	etype, err := copyParser.Next()
 	require.NoError(t, err)
 	require.Equal(t, EntryType, etype)
-	require.True(t, parser.skipCT)
-	require.False(t, copyParser.skipCT)
+	require.True(t, parser.skipCTSeries)
+	require.False(t, copyParser.skipCTSeries)
 
 	// Modify the original parser further
 	parser.Next()
@@ -977,12 +977,12 @@ go_gc_duration_seconds_created`)
 	parser.Next()
 	require.Equal(t, "go_gc_duration_seconds", string(parser.l.b[parser.offsets[0]:parser.offsets[1]]))
 	require.Equal(t, "summary", string(parser.mtype))
-	require.False(t, copyParser.skipCT)
-	require.True(t, parser.skipCT)
+	require.False(t, copyParser.skipCTSeries)
+	require.True(t, parser.skipCTSeries)
 
 	// Ensure the copy remains unchanged
 	copyParser.Next()
 	copyParser.Next()
 	require.Equal(t, "go_gc_duration_seconds", string(copyParser.l.b[copyParser.offsets[0]:copyParser.offsets[1]]))
-	require.False(t, copyParser.skipCT)
+	require.False(t, copyParser.skipCTSeries)
 }
