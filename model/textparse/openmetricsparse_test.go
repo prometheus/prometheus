@@ -330,7 +330,7 @@ fizz_created 17.0`
 		},
 	}
 
-	p := NewOpenMetricsParserWithOpts([]byte(input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
+	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
 	checkParseResults(t, p, exp)
 }
 
@@ -918,7 +918,7 @@ foobar{quantile="0.99"} 150.0`
 		},
 	}
 
-	p := NewOpenMetricsParserWithOpts([]byte(input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
+	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
 	i := 0
 
 	var res labels.Labels
@@ -955,7 +955,7 @@ go_gc_duration_seconds
 go_gc_duration_seconds_created`)
 
 	st := labels.NewSymbolTable()
-	parser := NewOpenMetricsParserWithOpts(input, st, WithOMParserCTSeriesSkipped()).(*OpenMetricsParser)
+	parser := NewOpenMetricsParser(input, st, WithOMParserCTSeriesSkipped()).(*OpenMetricsParser)
 
 	// Modify the original parser state
 	_, err := parser.Next()

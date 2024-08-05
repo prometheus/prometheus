@@ -117,17 +117,8 @@ func WithOMParserCTSeriesSkipped() OpenMetricsOption {
 	}
 }
 
-// NewOpenMetricsParser returns a new parser of the byte slice.
-func NewOpenMetricsParser(b []byte, st *labels.SymbolTable) Parser {
-	return &OpenMetricsParser{
-		l:            &openMetricsLexer{b: b},
-		builder:      labels.NewScratchBuilderWithSymbolTable(st, 16),
-		skipCTSeries: false,
-	}
-}
-
-// NewOpenMetricsParserWithOpts returns a new parser of the byte slice with options.
-func NewOpenMetricsParserWithOpts(b []byte, st *labels.SymbolTable, opts ...OpenMetricsOption) Parser {
+// NewOpenMetricsParser returns a new parser of the byte slice with option to skip CT series parsing.
+func NewOpenMetricsParser(b []byte, st *labels.SymbolTable, opts ...OpenMetricsOption) Parser {
 	options := &openMetricsParserOptions{}
 
 	for _, opt := range opts {
@@ -142,6 +133,7 @@ func NewOpenMetricsParserWithOpts(b []byte, st *labels.SymbolTable, opts ...Open
 
 	return parser
 }
+
 
 // Series returns the bytes of the series, the timestamp if set, and the value
 // of the current sample.
