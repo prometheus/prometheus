@@ -22,6 +22,7 @@ import {
   IconInfoCircle,
   IconRefresh,
   IconRepeat,
+  IconTimeline,
 } from "@tabler/icons-react";
 import { useSuspenseAPIQuery } from "../api/api";
 import { RulesResult } from "../api/responseTypes/rules";
@@ -133,17 +134,17 @@ export default function RulesPage() {
                   <Group wrap="nowrap" justify="space-between" mr="lg">
                     <Group gap="xs" wrap="nowrap">
                       {r.type === "alerting" ? (
-                        <IconBell size={15} />
+                        <Tooltip label="Alerting rule" withArrow>
+                          <IconBell size={15} />
+                        </Tooltip>
                       ) : (
-                        <IconDatabaseImport size={15} />
+                        <Tooltip label="Recording rule" withArrow>
+                          <IconTimeline size={15} />
+                        </Tooltip>
                       )}
                       <Text>{r.name}</Text>
                     </Group>
-                    <Group mt="md" gap="xs">
-                      <Badge className={healthBadgeClass(r.health)}>
-                        {r.health}
-                      </Badge>
-
+                    <Group mt="md" gap="xs" wrap="nowrap">
                       <Group gap="xs" wrap="wrap">
                         <Tooltip label="Last rule evaluation" withArrow>
                           <Badge
@@ -172,6 +173,9 @@ export default function RulesPage() {
                           </Badge>
                         </Tooltip>
                       </Group>
+                      <Badge className={healthBadgeClass(r.health)}>
+                        {r.health}
+                      </Badge>
                     </Group>
                   </Group>
                 </Accordion.Control>
