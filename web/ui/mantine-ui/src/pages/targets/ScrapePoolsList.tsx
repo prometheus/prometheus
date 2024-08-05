@@ -27,6 +27,7 @@ import CustomInfiniteScroll from "../../components/CustomInfiniteScroll";
 
 import badgeClasses from "../../Badge.module.css";
 import panelClasses from "../../Panel.module.css";
+import TargetLabels from "./TargetLabels";
 
 type ScrapePool = {
   targets: Target[];
@@ -312,7 +313,10 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                                   </Badge>
                                 </Table.Td>
                                 <Table.Td>
-                                  <LabelBadges labels={target.labels} />
+                                  <TargetLabels
+                                    labels={target.labels}
+                                    discoveredLabels={target.discoveredLabels}
+                                  />
                                 </Table.Td>
                                 <Table.Td>
                                   {humanizeDurationRelative(

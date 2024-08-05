@@ -20,7 +20,7 @@ export const LabelBadges: FC<LabelBadgesProps> = ({
         <Badge
           variant={variant ? variant : "light"}
           color={color ? color : undefined}
-          className={badgeClasses.labelBadge}
+          className={color ? undefined : badgeClasses.labelBadge}
           styles={{
             label: {
               textTransform: "none",
