@@ -134,7 +134,6 @@ func NewOpenMetricsParser(b []byte, st *labels.SymbolTable, opts ...OpenMetricsO
 	return parser
 }
 
-
 // Series returns the bytes of the series, the timestamp if set, and the value
 // of the current sample.
 func (p *OpenMetricsParser) Series() ([]byte, *int64, float64) {

@@ -479,7 +479,6 @@ const (
 	promtestdataSampleCount = 410
 )
 
-
 func newOpenMetricsParserNoOptions(b []byte, st *labels.SymbolTable) Parser {
 	return NewOpenMetricsParser(b, st)
 }
