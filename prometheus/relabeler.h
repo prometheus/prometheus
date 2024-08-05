@@ -23,6 +23,7 @@
 #pragma GCC diagnostic pop
 
 #include "bare_bones/allocator.h"
+#include "bare_bones/gorilla.h"
 #include "bare_bones/preprocess.h"
 #include "bare_bones/vector.h"
 #include "primitives/go_model.h"
@@ -831,6 +832,67 @@ class RelabelerStateUpdate {
   }
 };
 
+// Opaque type for storing state between calls
+using SourceState = void*;
+
+// StaleNaNsState state for stale nans.
+class StaleNaNsState {
+  void* parent;
+  roaring::Roaring prev_bitset;
+  roaring::Roaring cur_bitset;
+
+ public:
+  template <typename T>
+  PROMPP_ALWAYS_INLINE explicit StaleNaNsState(T* t) : parent(t) {}
+
+  PROMPP_ALWAYS_INLINE void add(uint32_t id) { cur_bitset.add(id); }
+
+  template <typename Callback>
+  PROMPP_ALWAYS_INLINE void swap(Callback fn) {
+    prev_bitset -= cur_bitset;
+    for (uint32_t ls_id : prev_bitset) {
+      fn(ls_id);
+    }
+    // drop old, store new..
+    prev_bitset = std::move(cur_bitset);
+  }
+
+  template <typename T>
+  PROMPP_ALWAYS_INLINE bool parent_eq(T* t) {
+    return parent == t;
+  }
+
+  template <typename T>
+  PROMPP_ALWAYS_INLINE void reset_to(T* t) {
+    parent = t;
+    prev_bitset = roaring::Roaring{};
+    cur_bitset = roaring::Roaring{};
+  }
+};
+
+template <class LSS>
+class LSSWithStaleNaNs {
+  LSS& parent_lss_;
+  StaleNaNsState* state_;
+
+ public:
+  using value_type = typename LSS::value_type;
+
+  PROMPP_ALWAYS_INLINE LSSWithStaleNaNs(LSS& lss, StaleNaNsState* state) : parent_lss_{lss}, state_{state} {}
+
+  template <class Class>
+  PROMPP_ALWAYS_INLINE uint32_t find_or_emplace(const Class& c, size_t hashval) noexcept {
+    uint32_t ls_id = parent_lss_.find_or_emplace(c, hashval);
+    state_->add(ls_id);
+    return ls_id;
+  }
+
+  PROMPP_ALWAYS_INLINE value_type operator[](uint32_t i) const noexcept {
+    assert(i < parent_lss_.size());
+    return parent_lss_[i];
+  }
+};
+
 // PerShardRelabeler - relabeler for shard.
 //
 // buf_                 - stringstream for construct pattern part;
@@ -903,51 +965,89 @@ class PerShardRelabeler {
       item.read(timeseries_buf_);
       uint32_t ls_id = lss.find_or_emplace(timeseries_buf_.label_set(), item.hash());
 
-      if (cache_drop_.contains(ls_id)) {
-        continue;
-      }
-
-      if (cache_keep_.contains(ls_id)) {
-        shards_inner_series[shard_id_]->emplace_back(timeseries_buf_.samples(), ls_id);
-        continue;
-      }
-
-      auto it = cache_relabel_.find(ls_id);
-      if (it != cache_relabel_.end()) {
-        shards_inner_series[it->second.shard_id]->emplace_back(timeseries_buf_.samples(), it->second.ls_id);
-        continue;
-      }
-
-      typename LSS::value_type label_set = lss[ls_id];
-      builder.reset(&label_set);
-
-      relabelStatus rstatus = stateless_relabeler_->relabeling_process(buf_, builder);
-      hard_validate(rstatus, builder, label_limits);
-      switch (rstatus) {
-        case rsDrop: {
-          cache_drop_.add(ls_id);
-          continue;
-        }
-        case rsInvalid: {
-          cache_drop_.add(ls_id);
-          continue;
-        }
-        case rsKeep: {
-          cache_keep_.add(ls_id);
-          shards_inner_series[shard_id_]->emplace_back(timeseries_buf_.samples(), ls_id);
-          continue;
-        }
-        case rsRelabel: {
-          PromPP::Primitives::LabelSet new_label_set = builder.label_set();
-          size_t hash = hash_value(new_label_set);
-          size_t new_shard_id = hash % number_of_shards_;
-          shards_relabeled_series[new_shard_id]->emplace_back(new_label_set, timeseries_buf_.samples(), hash, ls_id);
-        }
-      }
+      input_relabel_process(lss, label_limits, builder, shards_inner_series, shards_relabeled_series, timeseries_buf_.samples(), ls_id);
     }
 
     cache_keep_.runOptimize();
     cache_drop_.runOptimize();
+  }
+
+  // input_relabeling_with_stalenan relabeling with stalenans incoming hashdex(first stage).
+  template <class LSS, class Hashdex>
+  PROMPP_ALWAYS_INLINE SourceState input_relabeling_with_stalenans(LSS& lss,
+                                                                   Hashdex& hashdex,
+                                                                   PromPP::Primitives::Go::SliceView<InnerSeries*>& shards_inner_series,
+                                                                   PromPP::Primitives::Go::SliceView<RelabeledSeries*>& shards_relabeled_series,
+                                                                   LabelLimits* label_limits,
+                                                                   SourceState state,
+                                                                   PromPP::Primitives::Timestamp stale_ts) {
+    PromPP::Prometheus::Relabel::StaleNaNsState* result =
+        state ? reinterpret_cast<PromPP::Prometheus::Relabel::StaleNaNsState*>(state) : new PromPP::Prometheus::Relabel::StaleNaNsState(&lss);
+    if (!result->parent_eq(&lss)) {
+      // this state is not our state, so cleaning up bits!
+      result->reset_to(&lss);
+    }
+
+    LSSWithStaleNaNs wrapped_lss(lss, result);
+    input_relabeling(wrapped_lss, label_limits, hashdex, shards_inner_series, shards_relabeled_series);
+
+    BareBones::Vector<PromPP::Primitives::Sample> smpl{{stale_ts, BareBones::Encoding::Gorilla::STALE_NAN}};
+    PromPP::Primitives::LabelsBuilder builder =
+        PromPP::Primitives::LabelsBuilder<typename LSS::value_type, PromPP::Primitives::LabelsBuilderStateMap>(builder_state_);
+    result->swap([&](uint32_t ls_id) { input_relabel_process(lss, label_limits, builder, shards_inner_series, shards_relabeled_series, smpl, ls_id); });
+
+    return result;
+  }
+
+  template <class LSS, class LabelsBuilder>
+  PROMPP_ALWAYS_INLINE void input_relabel_process(LSS& lss,
+                                                  LabelLimits* label_limits,
+                                                  LabelsBuilder& builder,
+                                                  PromPP::Primitives::Go::SliceView<InnerSeries*>& shards_inner_series,
+                                                  PromPP::Primitives::Go::SliceView<RelabeledSeries*>& shards_relabeled_series,
+                                                  BareBones::Vector<PromPP::Primitives::Sample>& samples,
+                                                  uint32_t ls_id) {
+    if (cache_drop_.contains(ls_id)) {
+      return;
+    }
+
+    if (cache_keep_.contains(ls_id)) {
+      shards_inner_series[shard_id_]->emplace_back(samples, ls_id);
+      return;
+    }
+
+    auto it = cache_relabel_.find(ls_id);
+    if (it != cache_relabel_.end()) {
+      shards_inner_series[it->second.shard_id]->emplace_back(samples, it->second.ls_id);
+      return;
+    }
+
+    typename LSS::value_type label_set = lss[ls_id];
+    builder.reset(&label_set);
+
+    relabelStatus rstatus = stateless_relabeler_->relabeling_process(buf_, builder);
+    hard_validate(rstatus, builder, label_limits);
+    switch (rstatus) {
+      case rsDrop: {
+        cache_drop_.add(ls_id);
+        return;
+      }
+      case rsInvalid: {
+        cache_drop_.add(ls_id);
+        return;
+      }
+      case rsKeep: {
+        cache_keep_.add(ls_id);
+        shards_inner_series[shard_id_]->emplace_back(samples, ls_id);
+        return;
+      }
+      case rsRelabel: {
+        PromPP::Primitives::LabelSet new_label_set = builder.label_set();
+        size_t hash = hash_value(new_label_set);
+        size_t new_shard_id = hash % number_of_shards_;
+        shards_relabeled_series[new_shard_id]->emplace_back(new_label_set, samples, hash, ls_id);
+      }
+    }
   }
 
   // append_relabeler_series add relabeled ls to lss, add to result and add to cache update(second stage).

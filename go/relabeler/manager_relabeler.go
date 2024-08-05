@@ -192,11 +192,30 @@ func NewManagerRelabeler(
 	return msr, nil
 }
 
-// Append append to relabeling heshdex data.
+// Append append to relabeling hashdex data.
 func (msr *ManagerRelabeler) Append(
 	ctx context.Context,
 	incomingData *IncomingData,
 	labelLimits *cppbridge.LabelLimits,
+	relabelerID string,
+) error {
+	return msr.AppendWithStaleNans(
+		ctx,
+		incomingData,
+		labelLimits,
+		nil,
+		0,
+		relabelerID,
+	)
+}
+
+// AppendWithStaleNans append to relabeling hashdex data with check state stalenans.
+func (msr *ManagerRelabeler) AppendWithStaleNans(
+	ctx context.Context,
+	incomingData *IncomingData,
+	labelLimits *cppbridge.LabelLimits,
+	sourceState *cppbridge.SourceStaleNansState,
+	staleNansTS int64,
 	relabelerID string,
 ) error {
 	msr.appendLock.Lock()
@@ -216,7 +235,15 @@ func (msr *ManagerRelabeler) Append(
 	inputPromise := NewInputRelabelingPromise(msr.shards.numberOfShards)
 	// incomingData.numberOfDestroy = int32(msr.shards.numberOfShards) * int32(len(msr.shards.inputRelabelers))
 	incomingData.numberOfDestroy = int32(msr.shards.numberOfShards)
-	msr.shards.enqueueInputRelabeling(NewTaskInputRelabeling(ctx, inputPromise, incomingData, labelLimits, relabelerID))
+	msr.shards.enqueueInputRelabeling(NewTaskInputRelabeling(
+		ctx,
+		inputPromise,
+		incomingData,
+		labelLimits,
+		sourceState,
+		staleNansTS,
+		relabelerID,
+	))
 	if err := inputPromise.Wait(ctx); err != nil {
 		Errorf("failed input promise: %s", err)
 		// reset msr.rotateWG on error
@@ -932,6 +959,8 @@ type TaskInputRelabeling struct {
 	promise      *InputRelabelingPromise
 	incomingData *IncomingData
 	labelLimits  *cppbridge.LabelLimits
+	sourceState  *cppbridge.SourceStaleNansState
+	staleNansTS  int64
 	relabelerID  string
 }
 
@@ -941,6 +970,8 @@ func NewTaskInputRelabeling(
 	promise *InputRelabelingPromise,
 	incomingData *IncomingData,
 	labelLimits *cppbridge.LabelLimits,
+	sourceState *cppbridge.SourceStaleNansState,
+	staleNansTS int64,
 	relabelerID string,
 ) *TaskInputRelabeling {
 	return &TaskInputRelabeling{
@@ -948,6 +979,8 @@ func NewTaskInputRelabeling(
 		promise:      promise,
 		incomingData: incomingData,
 		labelLimits:  labelLimits,
+		sourceState:  sourceState,
+		staleNansTS:  staleNansTS,
 		relabelerID:  relabelerID,
 	}
 }
@@ -980,6 +1013,16 @@ func (t *TaskInputRelabeling) LabelLimits() *cppbridge.LabelLimits {
 // ShardedData - return ShardedData.
 func (t *TaskInputRelabeling) ShardedData() cppbridge.ShardedData {
 	return t.incomingData.ShardedData()
+}
+
+// SourceState return state for stalenans.
+func (t *TaskInputRelabeling) SourceState() *cppbridge.SourceStaleNansState {
+	return t.sourceState
+}
+
+// StaleNansTS return timestamp for stalenans.
+func (t *TaskInputRelabeling) StaleNansTS() int64 {
+	return t.staleNansTS
 }
 
 // IncomingDataDestroy increment or destroy IncomingData.

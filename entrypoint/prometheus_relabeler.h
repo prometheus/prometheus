@@ -110,6 +110,15 @@ void prompp_prometheus_relabeler_state_update_ctor(void* res);
  */
 void prompp_prometheus_relabeler_state_update_dtor(void* args);
 
+/**
+ * @brief Destroy StaleNaNsState.
+ *
+ * @param args {
+ *      sourceState uintptr // pointer to StaleNaNsState;
+ * }
+ */
+void prompp_prometheus_stalenans_state_dtor(void* args);
+
 //
 // PerShardRelabeler
 //
@@ -171,6 +180,27 @@ void prompp_prometheus_per_shard_relabeler_cache_allocated_memory(void* args, vo
  * }
  */
 void prompp_prometheus_per_shard_relabeler_input_relabeling(void* args, void* res);
+
+/**
+ * @brief relabeling incomig hashdex(first stage) with state stalenans.
+ *
+ * @param args {
+ *     shards_inner_series     []*InnerSeries     // go slice with InnerSeries;
+ *     shards_relabeled_series []*RelabeledSeries // go slice with RelabeledSeries;
+ *     label_limits            *LabelLimits       // pointer to LabelLimits;
+ *     per_shard_relabeler     uintptr            // pointer to constructed per shard relabeler;
+ *     hashdex                 uintptr            // pointer to filled hashdex;
+ *     lss                     uintptr            // pointer to constructed label sets;
+ *     source_state            uintptr            // pointer to source state (null on first call)
+ *     stale_ts                int64              // timestamp for StaleNaNs
+ * }
+ *
+ * @param res {
+ *     source_state            uintptr            // pointer to internal source state
+ *     error                   []byte             // error string if thrown;
+ * }
+ */
+void prompp_prometheus_per_shard_relabeler_input_relabeling_with_stalenans(void* args, void* res);
 
 /**
  * @brief add relabeled ls to lss, add to result and add to cache update(second stage).
