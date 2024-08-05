@@ -95,21 +95,26 @@ type OpenMetricsParser struct {
 	exemplarTs    int64
 	hasExemplarTs bool
 
-	// lines ending with _created are skipped by default as they are
-	// parsed by the CreatedTimestamp method. The skipCT flag is set to
-	// false when the CreatedTimestamp method is called.
 	skipCTSeries bool
 }
+
 type openMetricsParserOptions struct {
-	// SkipCT skips the parsing of _created lines.
 	SkipCTSeries bool
 }
 
+// SkipCTSeries skips the parsing of _created lines.
 type OpenMetricsOption func(*openMetricsParserOptions)
 
-func WithOMParserCTSeriesSkipped(skipCTSeries bool) OpenMetricsOption {
+// WithOMParserCTSeriesSkipped turns off exposing _created lines
+// as series, which makes those only used for parsing created timestamp
+// for `CreatedTimestamp` method purposes.
+//
+// It's recommended to use this option to avoid using _created lines for other
+// purposes than created timestamp, but leave false by default for the
+// best-effort compatibility.
+func WithOMParserCTSeriesSkipped() OpenMetricsOption {
 	return func(o *openMetricsParserOptions) {
-		o.SkipCTSeries = skipCTSeries
+		o.SkipCTSeries = true
 	}
 }
 
@@ -124,17 +129,17 @@ func NewOpenMetricsParser(b []byte, st *labels.SymbolTable) Parser {
 
 // NewOpenMetricsParserWithOpts returns a new parser of the byte slice with options.
 func NewOpenMetricsParserWithOpts(b []byte, st *labels.SymbolTable, opts ...OpenMetricsOption) Parser {
-	parser := &OpenMetricsParser{
-		l:       &openMetricsLexer{b: b},
-		builder: labels.NewScratchBuilderWithSymbolTable(st, 16),
-	}
-	DefaultOpenMetricsParserOptions := openMetricsParserOptions{
-		SkipCTSeries: true,
-	}
+	options := &openMetricsParserOptions{}
+
 	for _, opt := range opts {
-		opt(&DefaultOpenMetricsParserOptions)
+		opt(options)
 	}
-	parser.skipCTSeries = DefaultOpenMetricsParserOptions.SkipCTSeries
+
+	parser := &OpenMetricsParser{
+		l:            &openMetricsLexer{b: b},
+		builder:      labels.NewScratchBuilderWithSymbolTable(st, 16),
+		skipCTSeries: options.SkipCTSeries,
+	}
 
 	return parser
 }
