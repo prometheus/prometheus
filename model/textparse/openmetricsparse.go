@@ -116,9 +116,9 @@ func WithOMParserCTSeriesSkipped(skipCTSeries bool) OpenMetricsOption {
 // NewOpenMetricsParser returns a new parser of the byte slice.
 func NewOpenMetricsParser(b []byte, st *labels.SymbolTable) Parser {
 	return &OpenMetricsParser{
-		l:       &openMetricsLexer{b: b},
-		builder: labels.NewScratchBuilderWithSymbolTable(st, 16),
-		skipCTSeries:  false,
+		l:            &openMetricsLexer{b: b},
+		builder:      labels.NewScratchBuilderWithSymbolTable(st, 16),
+		skipCTSeries: false,
 	}
 }
 
@@ -332,11 +332,11 @@ func deepCopy(p *OpenMetricsParser) OpenMetricsParser {
 	}
 
 	newParser := OpenMetricsParser{
-		l:       newLexer,
-		builder: p.builder,
-		mtype:   p.mtype,
-		val:     p.val,
-		skipCTSeries:  false,
+		l:            newLexer,
+		builder:      p.builder,
+		mtype:        p.mtype,
+		val:          p.val,
+		skipCTSeries: false,
 	}
 	return newParser
 }
