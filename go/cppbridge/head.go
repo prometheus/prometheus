@@ -41,3 +41,29 @@ func NewHeadEncoderWithDataStorageAndOutdatedSampleEncoder(dataStorage *HeadData
 func NewHeadEncoder() *HeadEncoder {
 	return NewHeadEncoderWithDataStorageAndOutdatedSampleEncoder(NewHeadDataStorage())
 }
+
+func (e *HeadEncoder) Encode(seriesID uint32, timestamp int64, value float64) {
+	seriesDataEncoderEncode(e.encoder, seriesID, timestamp, value)
+}
+
+func (e *HeadEncoder) EncodeInnerSeriesSlice(innerSeriesSlice []*InnerSeries) {
+	seriesDataEncoderEncodeInnerSeriesSlice(e.encoder, innerSeriesSlice)
+}
+
+type HeadDataQuerier struct {
+	querier     uintptr
+	dataStorage *HeadDataStorage
+}
+
+func NewHeadDataQueryable(dataStorage *HeadDataStorage) *HeadDataQuerier {
+	querier := &HeadDataQuerier{
+		querier:     seriesDataQuerierCtor(dataStorage.dataStorage),
+		dataStorage: dataStorage,
+	}
+
+	runtime.SetFinalizer(querier, func(querier *HeadDataQuerier) {
+		seriesDataQuerierDtor(querier.querier)
+	})
+
+	return querier
+}
