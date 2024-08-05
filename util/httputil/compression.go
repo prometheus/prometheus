@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/clipperhouse/split"
 	"github.com/klauspost/compress/gzip"
 	"github.com/klauspost/compress/zlib"
 )
@@ -56,9 +57,9 @@ func (c *compressedResponseWriter) Close() {
 
 // Constructs a new compressedResponseWriter based on client request headers.
 func newCompressedResponseWriter(writer http.ResponseWriter, req *http.Request) *compressedResponseWriter {
-	encodings := strings.Split(req.Header.Get(acceptEncodingHeader), ",")
-	for _, encoding := range encodings {
-		switch strings.TrimSpace(encoding) {
+	encodings := split.String(req.Header.Get(acceptEncodingHeader), ",")
+	for encodings.Next() {
+		switch strings.TrimSpace(encodings.Value()) {
 		case gzipEncoding:
 			writer.Header().Set(contentEncodingHeader, gzipEncoding)
 			return &compressedResponseWriter{

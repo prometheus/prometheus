@@ -141,3 +141,23 @@ func TestCompressionHandler_Deflate(t *testing.T) {
 	expected := "Hello World!"
 	require.Equal(t, expected, actual, "expected response with content")
 }
+
+func BenchmarkNewCompressedResponseWriter(b *testing.B) {
+	handler := http.HandlerFunc(getCompressionHandlerFunc().ServeHTTP)
+
+	req, err := http.NewRequest("GET", "/foo", nil)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	resp := httptest.NewRecorder()
+
+	encodings := []string{"", gzipEncoding, deflateEncoding, "invalid"}
+
+	for i := 0; i < b.N; i++ {
+		for _, encoding := range encodings {
+			req.Header.Set("accept-encoding", encoding)
+		}
+		handler.ServeHTTP(resp, req)
+	}
+}

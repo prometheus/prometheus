@@ -16,6 +16,7 @@ require (
 	github.com/aws/aws-sdk-go v1.54.19
 	github.com/bboreham/go-loser v0.0.0-20230920113527-fcc2c21820a3
 	github.com/cespare/xxhash/v2 v2.3.0
+	github.com/clipperhouse/split v0.1.0
 	github.com/dennwc/varint v1.0.0
 	github.com/digitalocean/godo v1.119.0
 	github.com/docker/docker v27.0.3+incompatible
