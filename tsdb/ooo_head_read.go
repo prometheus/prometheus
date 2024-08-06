@@ -243,14 +243,16 @@ type OOOHeadChunkReader struct {
 	head       *Head
 	mint, maxt int64
 	isoState   *oooIsolationState
+	maxMmapRef chunks.ChunkDiskMapperRef
 }
 
-func NewOOOHeadChunkReader(head *Head, mint, maxt int64, isoState *oooIsolationState) *OOOHeadChunkReader {
+func NewOOOHeadChunkReader(head *Head, mint, maxt int64, isoState *oooIsolationState, maxMmapRef chunks.ChunkDiskMapperRef) *OOOHeadChunkReader {
 	return &OOOHeadChunkReader{
-		head:     head,
-		mint:     mint,
-		maxt:     maxt,
-		isoState: isoState,
+		head:       head,
+		mint:       mint,
+		maxt:       maxt,
+		isoState:   isoState,
+		maxMmapRef: maxMmapRef,
 	}
 }
 
@@ -269,7 +271,7 @@ func (cr OOOHeadChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, 
 		s.Unlock()
 		return nil, nil, storage.ErrNotFound
 	}
-	mc, err := s.oooMergedChunks(meta, cr.head.chunkDiskMapper, cr.mint, cr.maxt)
+	mc, err := s.oooMergedChunks(meta, cr.head.chunkDiskMapper, cr.mint, cr.maxt, cr.maxMmapRef)
 	s.Unlock()
 	if err != nil {
 		return nil, nil, err
@@ -386,7 +388,7 @@ func (ch *OOOCompactionHead) Index() (IndexReader, error) {
 }
 
 func (ch *OOOCompactionHead) Chunks() (ChunkReader, error) {
-	return NewOOOHeadChunkReader(ch.oooIR.head, ch.oooIR.mint, ch.oooIR.maxt, nil), nil
+	return NewOOOHeadChunkReader(ch.oooIR.head, ch.oooIR.mint, ch.oooIR.maxt, nil, ch.lastMmapRef), nil
 }
 
 func (ch *OOOCompactionHead) Tombstones() (tombstones.Reader, error) {
