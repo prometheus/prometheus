@@ -196,13 +196,13 @@ func NewManagerRelabeler(
 func (msr *ManagerRelabeler) Append(
 	ctx context.Context,
 	incomingData *IncomingData,
-	labelLimits *cppbridge.LabelLimits,
+	metricLimits *cppbridge.MetricLimits,
 	relabelerID string,
 ) error {
 	return msr.AppendWithStaleNans(
 		ctx,
 		incomingData,
-		labelLimits,
+		metricLimits,
 		nil,
 		0,
 		relabelerID,
@@ -213,7 +213,7 @@ func (msr *ManagerRelabeler) Append(
 func (msr *ManagerRelabeler) AppendWithStaleNans(
 	ctx context.Context,
 	incomingData *IncomingData,
-	labelLimits *cppbridge.LabelLimits,
+	metricLimits *cppbridge.MetricLimits,
 	sourceStates *SourceStates,
 	staleNansTS int64,
 	relabelerID string,
@@ -242,7 +242,7 @@ func (msr *ManagerRelabeler) AppendWithStaleNans(
 		ctx,
 		inputPromise,
 		incomingData,
-		labelLimits,
+		metricLimits,
 		sourceStates,
 		staleNansTS,
 		relabelerID,
@@ -809,7 +809,7 @@ func (s *shards) shardLoop(shardID uint16) {
 				err = s.inputRelabelers[relabelerKey{task.RelabelerID(), shardID}].InputRelabelingWithStalenans(
 					task.Ctx(),
 					s.shardLsses[shardID],
-					task.LabelLimits(),
+					task.MetricLimits(),
 					task.SourceStateByShard(shardID),
 					task.StaleNansTS(),
 					task.ShardedData(),
@@ -821,7 +821,7 @@ func (s *shards) shardLoop(shardID uint16) {
 				err = s.inputRelabelers[relabelerKey{task.RelabelerID(), shardID}].InputRelabeling(
 					task.Ctx(),
 					s.shardLsses[shardID],
-					task.LabelLimits(),
+					task.MetricLimits(),
 					task.ShardedData(),
 					shardsInnerSeries,
 					shardsRelabeledSeries,
@@ -973,7 +973,7 @@ type TaskInputRelabeling struct {
 	ctx          context.Context
 	promise      *InputRelabelingPromise
 	incomingData *IncomingData
-	labelLimits  *cppbridge.LabelLimits
+	metricLimits *cppbridge.MetricLimits
 	sourceStates *SourceStates
 	staleNansTS  int64
 	relabelerID  string
@@ -984,7 +984,7 @@ func NewTaskInputRelabeling(
 	ctx context.Context,
 	promise *InputRelabelingPromise,
 	incomingData *IncomingData,
-	labelLimits *cppbridge.LabelLimits,
+	metricLimits *cppbridge.MetricLimits,
 	sourceStates *SourceStates,
 	staleNansTS int64,
 	relabelerID string,
@@ -993,7 +993,7 @@ func NewTaskInputRelabeling(
 		ctx:          ctx,
 		promise:      promise,
 		incomingData: incomingData,
-		labelLimits:  labelLimits,
+		metricLimits: metricLimits,
 		sourceStates: sourceStates,
 		staleNansTS:  staleNansTS,
 		relabelerID:  relabelerID,
@@ -1020,9 +1020,9 @@ func (t *TaskInputRelabeling) RelabelerID() string {
 	return t.relabelerID
 }
 
-// LabelLimits return *cppbridge.LabelLimits.
-func (t *TaskInputRelabeling) LabelLimits() *cppbridge.LabelLimits {
-	return t.labelLimits
+// MetricLimits return *cppbridge.MetricLimits.
+func (t *TaskInputRelabeling) MetricLimits() *cppbridge.MetricLimits {
+	return t.metricLimits
 }
 
 // ShardedData - return ShardedData.

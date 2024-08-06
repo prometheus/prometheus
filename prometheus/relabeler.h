@@ -261,18 +261,21 @@ PROMPP_ALWAYS_INLINE void soft_validate(relabelStatus& rstatus, LabelsBuilder& b
   }
 };
 
-// LabelLimits limits on label set.
-struct LabelLimits {
+// MetricLimits limits on label set and samples.
+struct MetricLimits {
   size_t label_limit{0};
   size_t label_name_length_limit{0};
   size_t label_value_length_limit{0};
+  size_t sample_limit{0};
 
   PROMPP_ALWAYS_INLINE bool label_limit_exceeded(size_t labels_count) { return label_limit > 0 && labels_count > label_limit; }
+
+  PROMPP_ALWAYS_INLINE bool samples_limit_exceeded(size_t samples_count) { return sample_limit > 0 && samples_count >= sample_limit; }
 };
 
 // hard_validate on empty, name label(__name__) mandatory, valid label name and value) validate label set.
 template <class LabelsBuilder>
-PROMPP_ALWAYS_INLINE void hard_validate(relabelStatus& rstatus, LabelsBuilder& builder, LabelLimits* limits) {
+PROMPP_ALWAYS_INLINE void hard_validate(relabelStatus& rstatus, LabelsBuilder& builder, MetricLimits* limits) {
   if (rstatus == rsDrop) {
     return;
   }
@@ -946,15 +949,29 @@ class PerShardRelabeler {
     return cache_allocated_memory_ + cache_keep_.getSizeInBytes() + cache_drop_.getSizeInBytes();
   }
 
+  PROMPP_ALWAYS_INLINE size_t calculate_samples(BareBones::Vector<PromPP::Primitives::Sample>& samples) {
+    size_t samples_count{0};
+    for (const auto smpl : samples) {
+      if (BareBones::Encoding::Gorilla::isstalenan(smpl.value())) {
+        continue;
+      }
+      ++samples_count;
+    }
+
+    return samples_count;
+  }
+
   // input_relabeling - relabeling incoming hashdex(first stage).
   template <class LSS, class Hashdex>
   PROMPP_ALWAYS_INLINE void input_relabeling(LSS& lss,
-                                             LabelLimits* label_limits,
+                                             MetricLimits* metric_limits,
                                              Hashdex& hashdex,
                                              PromPP::Primitives::Go::SliceView<InnerSeries*>& shards_inner_series,
                                              PromPP::Primitives::Go::SliceView<RelabeledSeries*>& shards_relabeled_series) {
     PromPP::Primitives::LabelsBuilder builder =
         PromPP::Primitives::LabelsBuilder<typename LSS::value_type, PromPP::Primitives::LabelsBuilderStateMap>(builder_state_);
+
+    size_t samples_count{0};
 
     for (const auto& item : hashdex) {
       if ((item.hash() % number_of_shards_) != shard_id_) {
@@ -965,7 +982,19 @@ class PerShardRelabeler {
       item.read(timeseries_buf_);
       uint32_t ls_id = lss.find_or_emplace(timeseries_buf_.label_set(), item.hash());
 
-      input_relabel_process(lss, label_limits, builder, shards_inner_series, shards_relabeled_series, timeseries_buf_.samples(), ls_id);
+      bool added = input_relabel_process(lss, metric_limits, builder, shards_inner_series, shards_relabeled_series, timeseries_buf_.samples(), ls_id);
+      if (!added) {
+        continue;
+      }
+
+      if (metric_limits == nullptr) {
+        continue;
+      }
+
+      samples_count += calculate_samples(timeseries_buf_.samples());
+      if (metric_limits->samples_limit_exceeded(samples_count)) {
+        break;
+      }
     }
 
     cache_keep_.runOptimize();
@@ -978,7 +1007,7 @@ class PerShardRelabeler {
                                                                    Hashdex& hashdex,
                                                                    PromPP::Primitives::Go::SliceView<InnerSeries*>& shards_inner_series,
                                                                    PromPP::Primitives::Go::SliceView<RelabeledSeries*>& shards_relabeled_series,
-                                                                   LabelLimits* label_limits,
+                                                                   MetricLimits* metric_limits,
                                                                    SourceState state,
                                                                    PromPP::Primitives::Timestamp stale_ts) {
     PromPP::Prometheus::Relabel::StaleNaNsState* result =
@@ -989,65 +1018,67 @@ class PerShardRelabeler {
     }
 
     LSSWithStaleNaNs wrapped_lss(lss, result);
-    input_relabeling(wrapped_lss, label_limits, hashdex, shards_inner_series, shards_relabeled_series);
+    input_relabeling(wrapped_lss, metric_limits, hashdex, shards_inner_series, shards_relabeled_series);
 
     BareBones::Vector<PromPP::Primitives::Sample> smpl{{stale_ts, BareBones::Encoding::Gorilla::STALE_NAN}};
     PromPP::Primitives::LabelsBuilder builder =
         PromPP::Primitives::LabelsBuilder<typename LSS::value_type, PromPP::Primitives::LabelsBuilderStateMap>(builder_state_);
-    result->swap([&](uint32_t ls_id) { input_relabel_process(lss, label_limits, builder, shards_inner_series, shards_relabeled_series, smpl, ls_id); });
+    result->swap([&](uint32_t ls_id) { input_relabel_process(lss, metric_limits, builder, shards_inner_series, shards_relabeled_series, smpl, ls_id); });
 
     return result;
   }
 
   template <class LSS, class LabelsBuilder>
-  PROMPP_ALWAYS_INLINE void input_relabel_process(LSS& lss,
-                                                  LabelLimits* label_limits,
+  PROMPP_ALWAYS_INLINE bool input_relabel_process(LSS& lss,
+                                                  MetricLimits* metric_limits,
                                                   LabelsBuilder& builder,
                                                   PromPP::Primitives::Go::SliceView<InnerSeries*>& shards_inner_series,
                                                   PromPP::Primitives::Go::SliceView<RelabeledSeries*>& shards_relabeled_series,
                                                   BareBones::Vector<PromPP::Primitives::Sample>& samples,
                                                   uint32_t ls_id) {
     if (cache_drop_.contains(ls_id)) {
-      return;
+      return false;
     }
 
     if (cache_keep_.contains(ls_id)) {
       shards_inner_series[shard_id_]->emplace_back(samples, ls_id);
-      return;
+      return true;
     }
 
     auto it = cache_relabel_.find(ls_id);
     if (it != cache_relabel_.end()) {
       shards_inner_series[it->second.shard_id]->emplace_back(samples, it->second.ls_id);
-      return;
+      return true;
     }
 
     typename LSS::value_type label_set = lss[ls_id];
     builder.reset(&label_set);
 
     relabelStatus rstatus = stateless_relabeler_->relabeling_process(buf_, builder);
-    hard_validate(rstatus, builder, label_limits);
+    hard_validate(rstatus, builder, metric_limits);
     switch (rstatus) {
       case rsDrop: {
         cache_drop_.add(ls_id);
-        return;
+        return false;
       }
       case rsInvalid: {
         cache_drop_.add(ls_id);
-        return;
+        return false;
       }
       case rsKeep: {
         cache_keep_.add(ls_id);
         shards_inner_series[shard_id_]->emplace_back(samples, ls_id);
-        return;
+        return true;
       }
       case rsRelabel: {
         PromPP::Primitives::LabelSet new_label_set = builder.label_set();
         size_t hash = hash_value(new_label_set);
         size_t new_shard_id = hash % number_of_shards_;
         shards_relabeled_series[new_shard_id]->emplace_back(new_label_set, samples, hash, ls_id);
+        return true;
       }
     }
+    return false;
   }
 
   // append_relabeler_series add relabeled ls to lss, add to result and add to cache update(second stage).

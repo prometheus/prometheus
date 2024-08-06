@@ -788,7 +788,7 @@ TEST_F(TestStatelessRelabeler, KeepEQInvalidLabelLimit) {
   EXPECT_EQ(Relabel::rsKeep, rstatus);
 
   // label_limit 0
-  Relabel::LabelLimits ll{};
+  Relabel::MetricLimits ll{};
   Relabel::hard_validate(rstatus, builder, &ll);
   EXPECT_EQ(Relabel::rsKeep, rstatus);
 

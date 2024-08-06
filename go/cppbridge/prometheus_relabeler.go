@@ -489,11 +489,12 @@ func (rsu *RelabelerStateUpdate) Generation() uint32 {
 	return rsu.generation
 }
 
-// LabelLimits limits on label set.
-type LabelLimits struct {
+// MetricLimits limits on label set and samples.
+type MetricLimits struct {
 	LabelLimit            int64
 	LabelNameLengthLimit  int64
 	LabelValueLengthLimit int64
+	SampleLimit           int64
 }
 
 // SourceStaleNansState wrap pointer to source state for stalenans (null on first call).
@@ -601,7 +602,7 @@ func (ipsr *InputPerShardRelabeler) Generation() uint32 {
 func (ipsr *InputPerShardRelabeler) InputRelabeling(
 	ctx context.Context,
 	lss *LabelSetStorage,
-	labelLimits *LabelLimits,
+	labelLimits *MetricLimits,
 	shardedData ShardedData,
 	shardsInnerSeries []*InnerSeries,
 	shardsRelabeledSeries []*RelabeledSeries,
@@ -630,7 +631,7 @@ func (ipsr *InputPerShardRelabeler) InputRelabeling(
 func (ipsr *InputPerShardRelabeler) InputRelabelingWithStalenans(
 	ctx context.Context,
 	lss *LabelSetStorage,
-	labelLimits *LabelLimits,
+	labelLimits *MetricLimits,
 	sourceState *SourceStaleNansState,
 	staleNansTS int64,
 	shardedData ShardedData,

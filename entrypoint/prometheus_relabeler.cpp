@@ -190,7 +190,7 @@ extern "C" void prompp_prometheus_per_shard_relabeler_input_relabeling(void* arg
   struct Arguments {
     PromPP::Primitives::Go::SliceView<PromPP::Prometheus::Relabel::InnerSeries*> shards_inner_series;
     PromPP::Primitives::Go::SliceView<PromPP::Prometheus::Relabel::RelabeledSeries*> shards_relabeled_series;
-    PromPP::Prometheus::Relabel::LabelLimits* label_limits;
+    PromPP::Prometheus::Relabel::MetricLimits* metric_limits;
     PromPP::Prometheus::Relabel::PerShardRelabeler* per_shard_relabeler;
     HashdexVariant* hashdex;
     entrypoint::LssVariantPtr lss;
@@ -207,7 +207,7 @@ extern "C" void prompp_prometheus_per_shard_relabeler_input_relabeling(void* arg
         [in](auto& hashdex) PROMPP_LAMBDA_INLINE {
           std::visit(
               [in, &hashdex](auto& lss) PROMPP_LAMBDA_INLINE {
-                in->per_shard_relabeler->input_relabeling(lss, in->label_limits, hashdex, in->shards_inner_series, in->shards_relabeled_series);
+                in->per_shard_relabeler->input_relabeling(lss, in->metric_limits, hashdex, in->shards_inner_series, in->shards_relabeled_series);
               },
               *in->lss);
         },
@@ -222,7 +222,7 @@ extern "C" void prompp_prometheus_per_shard_relabeler_input_relabeling_with_stal
   struct Arguments {
     PromPP::Primitives::Go::SliceView<PromPP::Prometheus::Relabel::InnerSeries*> shards_inner_series;
     PromPP::Primitives::Go::SliceView<PromPP::Prometheus::Relabel::RelabeledSeries*> shards_relabeled_series;
-    PromPP::Prometheus::Relabel::LabelLimits* label_limits;
+    PromPP::Prometheus::Relabel::MetricLimits* metric_limits;
     PromPP::Prometheus::Relabel::PerShardRelabeler* per_shard_relabeler;
     HashdexVariant* hashdex;
     entrypoint::LssVariantPtr lss;
@@ -243,7 +243,7 @@ extern "C" void prompp_prometheus_per_shard_relabeler_input_relabeling_with_stal
           std::visit(
               [in, out, &hashdex](auto& lss) PROMPP_LAMBDA_INLINE {
                 out->source_state = in->per_shard_relabeler->input_relabeling_with_stalenans(lss, hashdex, in->shards_inner_series, in->shards_relabeled_series,
-                                                                                             in->label_limits, in->source_state, in->stale_ts);
+                                                                                             in->metric_limits, in->source_state, in->stale_ts);
               },
               *in->lss);
         },

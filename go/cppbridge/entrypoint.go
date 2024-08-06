@@ -840,14 +840,14 @@ func prometheusPerShardRelabelerCacheAllocatedMemory(perShardRelabeler uintptr) 
 // prometheusPerShardRelabelerInputRelabeling - wrapper for relabeling incoming hashdex(first stage).
 func prometheusPerShardRelabelerInputRelabeling(
 	perShardRelabeler, lss, hashdex uintptr,
-	labelLimits *LabelLimits,
+	labelLimits *MetricLimits,
 	shardsInnerSeries []*InnerSeries,
 	shardsRelabeledSeries []*RelabeledSeries,
 ) []byte {
 	var args = struct {
 		shardsInnerSeries     []*InnerSeries
 		shardsRelabeledSeries []*RelabeledSeries
-		labelLimits           *LabelLimits
+		labelLimits           *MetricLimits
 		perShardRelabeler     uintptr
 		hashdex               uintptr
 		lss                   uintptr
@@ -870,14 +870,14 @@ func prometheusPerShardRelabelerInputRelabeling(
 func prometheusPerShardRelabelerInputRelabelingWithStalenans(
 	perShardRelabeler, lss, hashdex, sourceState uintptr,
 	staleNansTS int64,
-	labelLimits *LabelLimits,
+	labelLimits *MetricLimits,
 	shardsInnerSeries []*InnerSeries,
 	shardsRelabeledSeries []*RelabeledSeries,
 ) (state uintptr, exception []byte) {
 	var args = struct {
 		shardsInnerSeries     []*InnerSeries
 		shardsRelabeledSeries []*RelabeledSeries
-		labelLimits           *LabelLimits
+		labelLimits           *MetricLimits
 		perShardRelabeler     uintptr
 		hashdex               uintptr
 		lss                   uintptr
