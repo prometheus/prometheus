@@ -428,6 +428,34 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		require.Equal(t, emptyBucketH.PositiveSpans, h2.PositiveSpans)
 	}
 
+	{ // New histogram that has new buckets AND buckets missing but the buckets missing were empty.
+		emptyBucketH := eh.Copy()
+		emptyBucketH.PositiveBuckets = []float64{6, 0, 3, 2, 4, 0, 1}
+		c, hApp, ts, h1 := setup(emptyBucketH)
+		h2 := h1.Copy()
+		h2.PositiveSpans = []histogram.Span{
+			{Offset: 0, Length: 1},
+			{Offset: 3, Length: 1},
+			{Offset: 3, Length: 2},
+			{Offset: 5, Length: 2},
+		}
+		h2.PositiveBuckets = []float64{7, 4, 3, 5, 2, 3}
+
+		posInterjections, negInterjections, backwardPositiveInserts, backwardNegativeInserts, ok, cr := hApp.appendable(h2)
+		require.NotEmpty(t, posInterjections)
+		require.Empty(t, negInterjections)
+		require.NotEmpty(t, backwardPositiveInserts)
+		require.Empty(t, backwardNegativeInserts)
+		require.True(t, ok)
+		require.False(t, cr)
+
+		assertRecodedFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, UnknownCounterReset)
+
+		// Check that h2 was recoded.
+		require.Equal(t, []float64{7, 0, 4, 3, 5, 0, 2, 3}, h2.PositiveBuckets)
+		require.Equal(t, emptyBucketH.PositiveSpans, h2.PositiveSpans)
+	}
+
 	{ // New histogram that has a counter reset while buckets are same.
 		c, hApp, ts, h1 := setup(eh)
 		h2 := h1.Copy()
