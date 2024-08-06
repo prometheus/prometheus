@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/binary"
 	"flag"
@@ -22,6 +23,8 @@ import (
 	"hash/crc32"
 	"math"
 	"math/rand"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path"
 	"path/filepath"
@@ -39,6 +42,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"go.uber.org/goleak"
+
+	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/storage/remote"
+
+	"github.com/gogo/protobuf/proto"
+	"github.com/golang/snappy"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -7356,4 +7365,96 @@ func TestBlockQuerierAndBlockChunkQuerier(t *testing.T) {
 	require.Equal(t, 1, count)
 	// Make sure only block-1 is queried.
 	require.Equal(t, "block-1", lbls.Get("block"))
+}
+
+type blockedResponseRecorder struct {
+	r *httptest.ResponseRecorder
+
+	writeUnlocked atomic.Bool
+	writeStarted  atomic.Bool
+}
+
+func (br *blockedResponseRecorder) Write(buf []byte) (int, error) {
+	if !br.writeStarted.Load() {
+		br.writeStarted.Store(true)
+	}
+	for !br.writeUnlocked.Load() {
+		time.Sleep(time.Millisecond)
+	}
+	return br.r.Write(buf)
+}
+
+func (br *blockedResponseRecorder) Header() http.Header { return br.r.Header() }
+
+func (br *blockedResponseRecorder) WriteHeader(code int) { br.r.WriteHeader(code) }
+
+func (br *blockedResponseRecorder) Flush() { br.r.Flush() }
+
+// TODO: add doc.
+func TestBlockCompactionDuringRemoteRead(t *testing.T) {
+	db := openTestDB(t, nil, []int64{10, 20})
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
+	db.DisableCompactions()
+
+	createBlock(t, db.dir, genSeries(2, 1, 0, 10))
+	createBlock(t, db.dir, genSeries(2, 1, 10, 20))
+	createBlock(t, db.dir, genSeries(2, 1, 20, 30))
+	// Register the blocks.
+	require.NoError(t, db.reloadBlocks())
+
+	readAPI := remote.NewReadHandler(nil, nil, db, func() config.Config {
+		return config.Config{}
+	},
+		0, 1, 0,
+	)
+
+	matcher, err := labels.NewMatcher(labels.MatchRegexp, "__name__", ".*")
+	require.NoError(t, err)
+
+	query, err := remote.ToQuery(0, 10, []*labels.Matcher{matcher}, nil)
+	require.NoError(t, err)
+
+	req := &prompb.ReadRequest{
+		Queries:               []*prompb.Query{query},
+		AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
+	}
+	data, err := proto.Marshal(req)
+	require.NoError(t, err)
+
+	request, err := http.NewRequest(http.MethodPost, "", bytes.NewBuffer(snappy.Encode(nil, data)))
+	require.NoError(t, err)
+
+	blockedRecorder := &blockedResponseRecorder{r: httptest.NewRecorder()}
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		readAPI.ServeHTTP(blockedRecorder, request)
+		require.Equal(t, http.StatusOK, blockedRecorder.r.Code)
+		defer wg.Done()
+	}()
+
+	// The read API started sending data.
+	for !blockedRecorder.writeStarted.Load() {
+		time.Sleep(time.Millisecond)
+	}
+
+	// Compact the queried block.
+	wg.Add(1)
+	go func() {
+		require.NoError(t, db.Compact(context.Background()))
+		defer wg.Done()
+	}()
+
+	// Compaction should block as it cannot close the queried block.
+	// Wait a little bit to make sure of that.
+	time.Sleep(time.Second)
+
+	// Resume the read API data sending.
+	blockedRecorder.writeUnlocked.Store(true)
+
+	// The block should be no longer needed and compaction should resume.
+	wg.Wait()
 }
