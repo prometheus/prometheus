@@ -453,7 +453,13 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 
 		// Check that h2 was recoded.
 		require.Equal(t, []float64{7, 0, 4, 3, 5, 0, 2, 3}, h2.PositiveBuckets)
-		require.Equal(t, emptyBucketH.PositiveSpans, h2.PositiveSpans)
+		require.Equal(t, []histogram.Span{
+			{Offset: 0, Length: 2}, // Added empty bucket.
+			{Offset: 2, Length: 1}, // Existing - offset adjusted.
+			{Offset: 3, Length: 2}, // Existing.
+			{Offset: 3, Length: 1}, // Added empty bucket.
+			{Offset: 1, Length: 2}, // Existing + the extra bucket.
+		}, h2.PositiveSpans)
 	}
 
 	{ // New histogram that has a counter reset while buckets are same.

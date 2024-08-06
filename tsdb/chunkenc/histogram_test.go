@@ -471,7 +471,13 @@ func TestHistogramChunkAppendable(t *testing.T) {
 
 		// Check that h2 was recoded.
 		require.Equal(t, []int64{7, -7, 2, 1, -3, 3, 1, 1}, h2.PositiveBuckets) // counts: 7, 0, 2, 3 , 0, 3, 5 (total 23)
-		require.Equal(t, emptyBucketH.PositiveSpans, h2.PositiveSpans)
+		require.Equal(t, []histogram.Span{
+			{Offset: 0, Length: 2}, // Added empty bucket.
+			{Offset: 2, Length: 1}, // Existing - offset adjusted.
+			{Offset: 3, Length: 2}, // Added empty bucket.
+			{Offset: 3, Length: 1}, // Existing - offset adjusted.
+			{Offset: 1, Length: 2}, // Existing.
+		}, h2.PositiveSpans)
 	}
 
 	{ // New histogram that has a counter reset while buckets are same.
