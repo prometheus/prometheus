@@ -1,4 +1,4 @@
-import { Anchor, Badge, Group } from "@mantine/core";
+import { Anchor, Badge, Group, Stack } from "@mantine/core";
 import { FC } from "react";
 
 export interface EndpointLinkProps {
@@ -30,7 +30,7 @@ const EndpointLink: FC<EndpointLinkProps> = ({ endpoint, globalUrl }) => {
     ? endpoint.replace(search, "")
     : `${protocol}//${host}${pathname}`;
   return (
-    <>
+    <Stack gap={0}>
       <Anchor size="sm" href={globalUrl}>
         {displayLink}
       </Anchor>
@@ -51,7 +51,7 @@ const EndpointLink: FC<EndpointLinkProps> = ({ endpoint, globalUrl }) => {
           })}
         </Group>
       )}
-    </>
+    </Stack>
   );
 };
 
