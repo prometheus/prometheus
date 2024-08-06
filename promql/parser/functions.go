@@ -53,6 +53,24 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
 	},
+	"adelta": {
+		Name:         "adelta",
+		ArgTypes:     []ValueType{ValueTypeMatrix},
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
+	},
+	"aincrease": {
+		Name:         "aincrease",
+		ArgTypes:     []ValueType{ValueTypeMatrix},
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
+	},
+	"arate": {
+		Name:         "arate",
+		ArgTypes:     []ValueType{ValueTypeMatrix},
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
+	},
 	"asin": {
 		Name:       "asin",
 		ArgTypes:   []ValueType{ValueTypeVector},

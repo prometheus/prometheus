@@ -101,6 +101,29 @@ eval instant at 50m increase(http_requests[100m])
 
 clear
 
+# Tests for increase()/aincrease().
+load 15s
+	http_requests{path="/foo"}  0x40 0+1x20 20x40
+	http_requests{path="/bar"}  0x40 0+1x10 0+1x10 10x40
+
+eval instant at 21m5s increase(http_requests[15m])
+	{path="/foo"} 20.112994350282488
+	{path="/bar"} 20.112994350282488
+
+eval instant at 21m5s increase(http_requests[100m])
+	{path="/foo"} 20.07936507936508
+	{path="/bar"} 20.07936507936508
+
+eval instant at 21m5s aincrease(http_requests[15m])
+	{path="/foo"} 20
+	{path="/bar"} 20
+
+eval instant at 21m5s aincrease(http_requests[100m])
+	{path="/foo"} 20
+	{path="/bar"} 20
+
+clear
+
 # Test for increase() with counter reset.
 # When the counter is reset, it always starts at 0.
 # So the sequence 3 2 (decreasing counter = reset) is interpreted the same as 3 0 1 2.
