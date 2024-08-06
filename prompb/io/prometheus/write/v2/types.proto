@@ -49,6 +49,10 @@ message Request {
   repeated string symbols = 4;
   // timeseries represents an array of distinct series with 0 or more samples.
   repeated TimeSeries timeseries = 5 [(gogoproto.nullable) = false];
+  // If true, metric names and labels can use the full UTF-8 character set.
+  // Otherwise, apply the legacy naming convention.
+  // XXXX do we even need this?  content negotiation should take care of it
+  bool utf8_names = 6;
 }
 
 // TimeSeries represents a single series.
