@@ -65,9 +65,10 @@ func (s Scalar) MarshalJSON() ([]byte, error) {
 
 // Series is a stream of data points belonging to a metric.
 type Series struct {
-	Metric     labels.Labels `json:"metric"`
-	Floats     []FPoint      `json:"values,omitempty"`
-	Histograms []HPoint      `json:"histograms,omitempty"`
+	Metric         labels.Labels `json:"metric"`
+	Floats         []FPoint      `json:"values,omitempty"`
+	Histograms     []HPoint      `json:"histograms,omitempty"`
+	ShouldDropName bool
 }
 
 func (s Series) String() string {
@@ -193,7 +194,8 @@ type Sample struct {
 	F float64
 	H *histogram.FloatHistogram
 
-	Metric labels.Labels
+	Metric         labels.Labels
+	ShouldDropName bool
 }
 
 func (s Sample) String() string {

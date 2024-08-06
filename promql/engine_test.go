@@ -1714,7 +1714,8 @@ load 1ms
 						{F: 3600, T: 6 * 60 * 1000},
 						{F: 3600, T: 7 * 60 * 1000},
 					},
-					Metric: labels.EmptyLabels(),
+					Metric:         labels.EmptyLabels(),
+					ShouldDropName: true,
 				},
 			},
 		},
@@ -1930,20 +1931,24 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						promql.Matrix{
 							promql.Series{
-								Floats: []promql.FPoint{{F: 3, T: 7985000}, {F: 3, T: 7990000}, {F: 3, T: 7995000}, {F: 3, T: 8000000}},
-								Metric: labels.FromStrings("job", "api-server", "instance", "0", "group", "canary"),
+								Floats:         []promql.FPoint{{F: 3, T: 7985000}, {F: 3, T: 7990000}, {F: 3, T: 7995000}, {F: 3, T: 8000000}},
+								Metric:         labels.FromStrings("job", "api-server", "instance", "0", "group", "canary"),
+								ShouldDropName: true,
 							},
 							promql.Series{
-								Floats: []promql.FPoint{{F: 4, T: 7985000}, {F: 4, T: 7990000}, {F: 4, T: 7995000}, {F: 4, T: 8000000}},
-								Metric: labels.FromStrings("job", "api-server", "instance", "1", "group", "canary"),
+								Floats:         []promql.FPoint{{F: 4, T: 7985000}, {F: 4, T: 7990000}, {F: 4, T: 7995000}, {F: 4, T: 8000000}},
+								Metric:         labels.FromStrings("job", "api-server", "instance", "1", "group", "canary"),
+								ShouldDropName: true,
 							},
 							promql.Series{
-								Floats: []promql.FPoint{{F: 1, T: 7985000}, {F: 1, T: 7990000}, {F: 1, T: 7995000}, {F: 1, T: 8000000}},
-								Metric: labels.FromStrings("job", "api-server", "instance", "0", "group", "production"),
+								Floats:         []promql.FPoint{{F: 1, T: 7985000}, {F: 1, T: 7990000}, {F: 1, T: 7995000}, {F: 1, T: 8000000}},
+								Metric:         labels.FromStrings("job", "api-server", "instance", "0", "group", "production"),
+								ShouldDropName: true,
 							},
 							promql.Series{
-								Floats: []promql.FPoint{{F: 2, T: 7985000}, {F: 2, T: 7990000}, {F: 2, T: 7995000}, {F: 2, T: 8000000}},
-								Metric: labels.FromStrings("job", "api-server", "instance", "1", "group", "production"),
+								Floats:         []promql.FPoint{{F: 2, T: 7985000}, {F: 2, T: 7990000}, {F: 2, T: 7995000}, {F: 2, T: 8000000}},
+								Metric:         labels.FromStrings("job", "api-server", "instance", "1", "group", "production"),
+								ShouldDropName: true,
 							},
 						},
 						nil,
@@ -3297,11 +3302,11 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 
 				// sum_over_time().
 				queryString = fmt.Sprintf("sum_over_time(%s[%dm:1m])", seriesNameOverTime, offset)
-				queryAndCheck(queryString, newTs, []promql.Sample{{T: newTs, H: &c.expected, Metric: labels.EmptyLabels()}})
+				queryAndCheck(queryString, newTs, []promql.Sample{{T: newTs, H: &c.expected, Metric: labels.EmptyLabels(), ShouldDropName: true}})
 
 				// avg_over_time().
 				queryString = fmt.Sprintf("avg_over_time(%s[%dm:1m])", seriesNameOverTime, offset)
-				queryAndCheck(queryString, newTs, []promql.Sample{{T: newTs, H: &c.expectedAvg, Metric: labels.EmptyLabels()}})
+				queryAndCheck(queryString, newTs, []promql.Sample{{T: newTs, H: &c.expectedAvg, Metric: labels.EmptyLabels(), ShouldDropName: true}})
 			})
 			idx0++
 		}
@@ -3681,11 +3686,11 @@ func TestNativeHistogram_MulDivOperator(t *testing.T) {
 
 				// histogram * scalar.
 				queryString := fmt.Sprintf(`%s * %f`, seriesName, c.scalar)
-				queryAndCheck(queryString, []promql.Sample{{T: ts, H: &c.expectedMul, Metric: labels.EmptyLabels()}})
+				queryAndCheck(queryString, []promql.Sample{{T: ts, H: &c.expectedMul, Metric: labels.EmptyLabels(), ShouldDropName: true}})
 
 				// scalar * histogram.
 				queryString = fmt.Sprintf(`%f * %s`, c.scalar, seriesName)
-				queryAndCheck(queryString, []promql.Sample{{T: ts, H: &c.expectedMul, Metric: labels.EmptyLabels()}})
+				queryAndCheck(queryString, []promql.Sample{{T: ts, H: &c.expectedMul, Metric: labels.EmptyLabels(), ShouldDropName: true}})
 
 				// histogram * float.
 				queryString = fmt.Sprintf(`%s * %s`, seriesName, floatSeriesName)
@@ -3697,7 +3702,7 @@ func TestNativeHistogram_MulDivOperator(t *testing.T) {
 
 				// histogram / scalar.
 				queryString = fmt.Sprintf(`%s / %f`, seriesName, c.scalar)
-				queryAndCheck(queryString, []promql.Sample{{T: ts, H: &c.expectedDiv, Metric: labels.EmptyLabels()}})
+				queryAndCheck(queryString, []promql.Sample{{T: ts, H: &c.expectedDiv, Metric: labels.EmptyLabels(), ShouldDropName: true}})
 
 				// histogram / float.
 				queryString = fmt.Sprintf(`%s / %s`, seriesName, floatSeriesName)
