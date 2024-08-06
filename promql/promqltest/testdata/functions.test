@@ -694,10 +694,31 @@ eval instant at 1m avg_over_time(metric[1m])
 eval instant at 1m sum_over_time(metric[1m])/count_over_time(metric[1m])
   {} 3
 
+# Default integral: mid-point rule (prev+curr)/2 * delta-time
+eval instant at 1m integral(metric[1m])
+  {} 120
+
+eval instant at 1m integral(metric[1m], 2)
+  {} 120
+
+# Left-point integral: prev * delta-time
+eval instant at 1m integral(metric[1m], 0)
+  {} 100
+
+# Right-point integral: curr * delta-time
+eval instant at 1m integral(metric[1m], 1)
+  {} 140
+
+eval instant at 1m integral(metric5b[1m])
+  {} Inf
+
 eval instant at 1m avg_over_time(metric2[1m])
   {} Inf
 
 eval instant at 1m sum_over_time(metric2[1m])/count_over_time(metric2[1m])
+  {} Inf
+
+eval instant at 1m integral(metric2[1m])/count_over_time(metric2[1m])
   {} Inf
 
 eval instant at 1m avg_over_time(metric3[1m])
@@ -782,6 +803,199 @@ load 10s
 
 eval instant at 1m sum_over_time(metric[1m])
   {} 2
+
+# Test integral
+clear
+load 10s
+  metricbignum 0 1 1e100 1 -1e100 1 0
+  metricinf 1 Inf 1 -Inf 1
+  http_requests_total{app="ok", status="200"} 0+100x10000
+  http_requests_total{app="ok", status="500"}   0+0x10000
+  http_requests_total{app="justok", status="200"} 0+99.01x100 9901+100x9900
+  http_requests_total{app="justok", status="500"}  0+0.99x100     99+0x9900
+  http_requests_total{app="ko", status="200"} 0+99x100 9900+100x9900
+  http_requests_total{app="ko", status="500"}  0+1x100    100+0x9900
+  metricoscillator 0 1 2 1 0 -1 -2 -1 0
+  metricnan1 NaN NaN 1 NaN NaN NaN
+  metricnan2 NaN NaN 1 NaN NaN 2 NaN NaN NaN NaN NaN NaN NaN
+
+# mid-point
+eval instant at 1m integral(metricbignum[2m])
+  {} 30
+
+# mid-point fallback after warning
+eval_warn instant at 1m integral(metricbignum[2m], 3)
+  {} 30
+
+# left-point
+eval instant at 1m integral(metricbignum[2m], 0)
+  {} 30
+
+# right-point
+eval instant at 1m integral(metricbignum[2m], 1)
+  {} 30
+
+eval instant at 1m integral(metricinf[2m])
+  {} NaN
+
+## SLA and integral()
+## Note that we evaluate at 10010s (i.e. one step beyond the 10000s range) to ensure rate() has stabilized for the interval
+#
+# app="ok" has no 500s at all
+eval instant at 10010s integral(((sum by (app) (rate(http_requests_total{app="ok", status="500"}[10s])) / sum by (app) (rate(http_requests_total{app="ok"}[10s]))) < bool 0.01)[10000s:10s], 1) / 10000 * 100
+  {app="ok"} 100.00
+
+# app="justok" has 1/10th period of 500s just there below 1%
+eval instant at 10010s integral(((sum by (app) (rate(http_requests_total{app="justok", status="500"}[10s])) / sum by (app) (rate(http_requests_total{app="justok"}[10s]))) < bool 0.01)[10000s:10s], 1) / 10000 * 100
+  {app="justok"} 100.00
+
+# app="ko" has 1/10th period of 500s above 1%
+eval instant at 10010s integral(((sum by (app) (rate(http_requests_total{app="ko", status="500"}[10s])) / sum by (app) (rate(http_requests_total{app="ko"}[10s]))) < bool 0.01)[10000s:10s], 1) / 10000 * 100
+  {app="ko"} 90.00
+
+## Simple discrete zero-up-zero-down-zero oscillator
+# mid-point
+eval instant at 2m integral(metricoscillator[2m])
+  {} 0
+
+# left-point
+eval instant at 2m integral(metricoscillator[2m], 0)
+  {} 0
+
+# right-point
+eval instant at 2m integral(metricoscillator[2m], 1)
+  {} 0
+
+## Simple integral test for single non-NaN point
+# mid-point
+eval instant at 10s integral(metricnan1[10s])
+  {} 0
+
+eval instant at 20s integral(metricnan1[20s])
+  {} 5
+
+eval instant at 30s integral(metricnan1[30s])
+  {} 10
+
+# left-point
+eval instant at 10s integral(metricnan1[10s], 0)
+  {} 0
+
+eval instant at 20s integral(metricnan1[20s], 0)
+  {} 0
+
+eval instant at 30s integral(metricnan1[30s], 0)
+  {} 10
+
+# right-point
+eval instant at 10s integral(metricnan1[10s], 1)
+  {} 0
+
+eval instant at 20s integral(metricnan1[20s], 1)
+  {} 10
+
+eval instant at 30s integral(metricnan1[30s], 1)
+  {} 10
+
+## Integral test for couple non-NaN points
+# mid-point
+eval instant at 50s integral(metricnan2[50s])
+  {} 20
+
+eval instant at 60s integral(metricnan2[60s])
+  {} 30
+
+eval instant at 60s integral(metricnan2[60s])
+  {} 30
+
+# left-point
+eval instant at 50s integral(metricnan2[50s], 0)
+  {} 10
+
+eval instant at 60s integral(metricnan2[60s], 0)
+  {} 30
+
+eval instant at 60s integral(metricnan2[60s], 0)
+  {} 30
+
+# right-point
+eval instant at 50s integral(metricnan2[50s], 1)
+  {} 30
+
+eval instant at 60s integral(metricnan2[60s], 1)
+  {} 30
+
+eval instant at 60s integral(metricnan2[60s], 1)
+  {} 30
+
+## Below two integral tests must give same result for mid-point, left-point, and right-point
+# - integral over 2m range
+# - same integral over 2m (whole) range, slotted with sum_over_time() each 10s
+#
+# 1) mid-point
+eval instant at 2m integral(metricnan2[2m])
+  {} 30
+
+eval instant at 2m sum_over_time(integral(metricnan2[10s])[2m:10s])
+  {} 30
+
+# 2) left-point
+eval instant at 2m integral(metricnan2[2m], 0)
+  {} 30
+
+eval instant at 2m sum_over_time(integral(metricnan2[10s], 0)[2m:10s])
+  {} 30
+
+# 3) right-point
+eval instant at 2m integral(metricnan2[2m], 1)
+  {} 30
+
+eval instant at 2m sum_over_time(integral(metricnan2[10s], 1)[2m:10s])
+  {} 30
+
+# Verify: \int_{0}^{1} (3x^2 - 30x + 14) \, dx = 0
+# 0~ish with 0.005 tolerance, can't further increase resolution as you'd get too many samples error
+eval instant at 1s round(integral(vector(3 * time()^2 - 30 * time() + 14)[1s:50ms]), 0.005)
+  {} 0
+
+# integral of sin(x), should be 0 (with a 1e-13 tolerance)
+# mid-point
+eval instant at 1m round(integral(sin(vector(time()/60*2*pi()))[1m:200ms]), 1e-14)
+  {} 0
+
+# left-point
+eval instant at 1m round(integral(sin(vector(time()/60*2*pi()))[1m:200ms], 0), 1e-14)
+  {} 0
+
+# right-point
+eval instant at 1m round(integral(sin(vector(time()/60*2*pi()))[1m:200ms], 1), 1e-14)
+  {} 0
+
+# "running" integral eval range of sin(x), period at 1m
+# mid-point
+eval range from 1m to 2m step 10s round(integral(sin(vector(time()/60*2*pi()))[1m:200ms]), 1e-14)
+  {} 0+0x6
+
+# left-point
+eval range from 1m to 2m step 10s round(integral(sin(vector(time()/60*2*pi()))[1m:200ms], 0), 1e-14)
+  {} 0+0x6
+
+# right-point
+eval range from 1m to 2m step 10s round(integral(sin(vector(time()/60*2*pi()))[1m:200ms], 1), 1e-14)
+  {} 0+0x6
+
+# "running" integral eval range of cos(x), period at 1m
+# mid-point
+eval range from 1m to 2m step 10s round(integral(cos(vector(time()/60*2*pi()))[1m:200ms]), 1e-14)
+  {} 0+0x6
+
+# left-point
+eval range from 1m to 2m step 10s round(integral(cos(vector(time()/60*2*pi()))[1m:200ms], 0), 1e-14)
+  {} 0+0x6
+
+# right-point
+eval range from 1m to 2m step 10s round(integral(cos(vector(time()/60*2*pi()))[1m:200ms], 1), 1e-14)
+  {} 0+0x6
 
 # Tests for stddev_over_time and stdvar_over_time.
 clear

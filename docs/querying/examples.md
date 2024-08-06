@@ -105,3 +105,30 @@ Alternatively, if we wanted the returned timeseries to be more evenly sampled,
 we could use the following to get approximately 10% of them:
 
     limit_ratio(0.1, app_foo_metric_bar)
+
+Calculate the total cost over past week given the per-node hourly cost:
+
+    integral(hourly_cost[7d]) / 3600
+
+Ditto above, but use left-point sampling for the integral, for example if
+instant corresponds to the start of the interval (use `1` for right-point):
+
+    integral(hourly_cost[7d], 0) / 3600
+
+Calculate the total energy consumed in kWh over last day, given the instant
+power consumption in Watts:
+
+    integral(power_rate[1d]) / 1000 / 3600
+
+For those "boolean" metrics that produce `1`s or `0`s, integrating them over
+time will give the _time in seconds_ that the value was `1`, for example, to
+get the _amount of time_ a particular metric has been absent during the past
+day (sampled every 5 minutes):
+
+    integral(absent(metric_name)[1d:5m])
+
+As another case for measuring _amount of time_, for example a boolean metric
+representing a service level agreement (SLA) being met divided by the total
+time, will give the SLA ratio:
+
+    integral(service_sla_ok[7d]) / (3600 * 24 * 7)
