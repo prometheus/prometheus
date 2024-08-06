@@ -26,6 +26,7 @@ import (
 	"sync"
 
 	"github.com/bboreham/go-loser"
+	"golang.org/x/exp/maps"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -367,6 +368,135 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 		}
 		list[i], list[i-1] = list[i-1], list[i]
 	}
+}
+
+func (p *MemPostings) InfoMetricDataLabels(ctx context.Context, lbls labels.Labels, t int64, latestTimestamp func(storage.SeriesRef, int64) (int64, error), matchers ...*labels.Matcher) (labels.Labels, error) {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+
+	// For this prototype, we support only the target_info metric.
+	// Find corresponding series.
+	infoSrs := map[storage.SeriesRef]map[string]struct{}{}
+	for _, sr := range p.m[labels.MetricName]["target_info"] {
+		infoSrs[sr] = map[string]struct{}{}
+	}
+	if len(infoSrs) == 0 {
+		// There are no target_info series.
+		return labels.Labels{}, nil
+	}
+
+	lblMap := lbls.Map()
+	// Given that we have target_info's series refs, first find those series with identifying labels matching lblMap.
+	// When we have filtered it down to those series, we can pick their (matching) data labels.
+	instanceVal := lblMap["instance"]
+	hasInstance := instanceVal != ""
+	for _, sr := range p.m["instance"][instanceVal] {
+		if _, exists := infoSrs[sr]; !exists {
+			continue
+		}
+		// This series' instance label matches.
+		infoSrs[sr]["instance"] = struct{}{}
+	}
+	jobVal := lblMap["job"]
+	hasJob := jobVal != ""
+	for _, sr := range p.m["job"][jobVal] {
+		if _, exists := infoSrs[sr]; !exists {
+			continue
+		}
+		// This series' job label matches.
+		infoSrs[sr]["job"] = struct{}{}
+	}
+	// Keep info series where both identifying labels match instance and job in lbls.
+	for sr, m := range infoSrs {
+		_, infoHasInstance := m["instance"]
+		_, infoHasJob := m["job"]
+		if infoHasInstance != hasInstance || infoHasJob != hasJob {
+			// This candidate didn't match both identifying labels.
+			delete(infoSrs, sr)
+		}
+	}
+
+	if len(infoSrs) == 0 {
+		return labels.Labels{}, nil
+	}
+
+	// Pick the most up to date matching info series.
+	infoSr := maps.Keys(infoSrs)[0]
+	if len(infoSrs) > 1 {
+		// Resolve conflict by picking the series with the newest sample <= t.
+		maxT := int64(0)
+		for sr := range infoSrs {
+			srT, err := latestTimestamp(sr, t)
+			if err != nil {
+				return labels.Labels{}, err
+			}
+
+			if srT > maxT {
+				maxT = srT
+				infoSr = sr
+			}
+		}
+	}
+
+	// Pick info metric data labels.
+	allMatches := true
+	dlb := labels.NewScratchBuilder(0)
+	for name, valueMap := range p.m {
+		if !allMatches {
+			// One of the label matchers wasn't a fit.
+			break
+		}
+
+		if name == labels.MetricName || name == "instance" || name == "job" || name == "" {
+			continue
+		}
+
+		// If there are label matchers, this data label must match at least one of them.
+		isCandidate := len(matchers) == 0
+		for _, m := range matchers {
+			if m.Name == name {
+				isCandidate = true
+				break
+			}
+		}
+		if !isCandidate {
+			// There are data label matchers, and none of them correspond to this one => ignore.
+			continue
+		}
+
+		for val, srs := range valueMap {
+			if !slices.Contains(srs, infoSr) {
+				// The info series doesn't have this data label name/value pair.
+				continue
+			}
+
+			// All matchers corresponding to the label name (if any) should match.
+			isMatch := true
+			for _, m := range matchers {
+				if m.Name != name {
+					continue
+				}
+
+				isMatch = isMatch && m.Matches(val)
+				if !isMatch {
+					break
+				}
+			}
+			if isMatch {
+				// The info series has this label name/value pair.
+				dlb.Add(name, val)
+			} else {
+				allMatches = false
+			}
+
+			break
+		}
+	}
+
+	if allMatches {
+		return dlb.Labels(), nil
+	}
+	return labels.Labels{}, nil
 }
 
 func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) Postings {

@@ -238,6 +238,10 @@ func (errQuerier) Select(context.Context, bool, *storage.SelectHints, ...*labels
 	return storage.ErrSeriesSet(errSelect)
 }
 
+func (errQuerier) InfoMetricDataLabels(context.Context, labels.Labels, int64, ...*labels.Matcher) (labels.Labels, annotations.Annotations, error) {
+	return labels.Labels{}, nil, errors.New("info metric data labels error")
+}
+
 func (errQuerier) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, errors.New("label values error")
 }

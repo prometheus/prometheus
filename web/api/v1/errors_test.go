@@ -190,6 +190,10 @@ func (t errorTestQuerier) Select(_ context.Context, sortSeries bool, hints *stor
 	return storage.ErrSeriesSet(t.err)
 }
 
+func (t errorTestQuerier) InfoMetricDataLabels(context.Context, labels.Labels, int64, ...*labels.Matcher) (labels.Labels, annotations.Annotations, error) {
+	return labels.Labels{}, nil, t.err
+}
+
 type errorTestSeriesSet struct {
 	err error
 }

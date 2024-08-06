@@ -24,6 +24,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -75,6 +76,65 @@ func newBlockBaseQuerier(b BlockReader, mint, maxt int64) (*blockBaseQuerier, er
 		chunks:     chunkr,
 		tombstones: tombsr,
 	}, nil
+}
+
+func (q *blockBaseQuerier) InfoMetricDataLabels(ctx context.Context, lbls labels.Labels, t int64, matchers ...*labels.Matcher) (labels.Labels, annotations.Annotations, error) {
+	return q.index.InfoMetricDataLabels(ctx, lbls, t, q, matchers...)
+}
+
+func (q *blockBaseQuerier) LatestTimestamp(t int64, chks []chunks.Meta) (int64, error) {
+	// Find the info metric's latest non-stale timestamp versus t among the chunks.
+	st := int64(math.MinInt64)
+	for _, meta := range chks {
+		chk, _, err := q.chunks.ChunkOrIterable(meta)
+		if err != nil {
+			if errors.Is(err, fmt.Errorf("not found")) {
+				continue
+			}
+			return 0, err
+		}
+
+		// Find the latest non-stale sample.
+		it := chk.Iterator(nil)
+		curST := int64(math.MinInt64)
+		prevST := int64(math.MinInt64)
+		prevV := float64(0)
+		for vt := it.Next(); vt != chunkenc.ValNone; vt = it.Next() {
+			st, v := it.At()
+			if st > t {
+				// We've progressed past t, pick the previous timestamp if non-stale.
+				if !value.IsStaleNaN(prevV) {
+					curST = prevST
+				}
+				break
+			}
+			if vt != chunkenc.ValFloat {
+				continue
+			}
+
+			if st < t {
+				prevST = t
+				prevV = v
+				continue
+			}
+
+			// st == t.
+			if !value.IsStaleNaN(v) {
+				// We've got a non-stale sample exactly at t.
+				curST = st
+			}
+			break
+		}
+
+		if curST > t {
+			panic(fmt.Sprintf("chunk range should be max %d", t))
+		}
+		if curST > 0 && curST > st {
+			st = curST
+		}
+	}
+
+	return st, nil
 }
 
 func (q *blockBaseQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
