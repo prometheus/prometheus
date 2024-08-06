@@ -2406,6 +2406,7 @@ TEST_F(TestLSSWithStaleNaNs, FindOrEmplace) {
   auto fn = [&](const uint32_t ls_id) { EXPECT_EQ(ls_id, current_ls_id); };
   result->swap(fn);
   result->swap(fn);
+  delete result;
 }
 
 }  // namespace
