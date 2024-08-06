@@ -411,6 +411,7 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 			{Offset: 3, Length: 2},
 			{Offset: 5, Length: 1},
 		}
+		savedH2Spans := h2.PositiveSpans
 		h2.PositiveBuckets = []float64{7, 4, 3, 5, 2}
 
 		posInterjections, negInterjections, backwardPositiveInserts, backwardNegativeInserts, ok, cr := hApp.appendable(h2)
@@ -426,6 +427,7 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		// Check that h2 was recoded.
 		require.Equal(t, []float64{7, 0, 4, 3, 5, 0, 2}, h2.PositiveBuckets)
 		require.Equal(t, emptyBucketH.PositiveSpans, h2.PositiveSpans)
+		require.NotEqual(t, savedH2Spans, h2.PositiveSpans, "recoding must make a copy")
 	}
 
 	{ // New histogram that has new buckets AND buckets missing but the buckets missing were empty.
@@ -439,6 +441,7 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 			{Offset: 3, Length: 2},
 			{Offset: 5, Length: 2},
 		}
+		savedH2Spans := h2.PositiveSpans
 		h2.PositiveBuckets = []float64{7, 4, 3, 5, 2, 3}
 
 		posInterjections, negInterjections, backwardPositiveInserts, backwardNegativeInserts, ok, cr := hApp.appendable(h2)
@@ -460,6 +463,7 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 			{Offset: 3, Length: 1}, // Added empty bucket.
 			{Offset: 1, Length: 2}, // Existing + the extra bucket.
 		}, h2.PositiveSpans)
+		require.NotEqual(t, savedH2Spans, h2.PositiveSpans, "recoding must make a copy")
 	}
 
 	{ // New histogram that has a counter reset while buckets are same.

@@ -782,9 +782,10 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 			// of the chunk.
 			if len(pForwardInserts) == 0 && len(nForwardInserts) == 0 {
 				// No new chunks from the histogram, so the spans of the appender can accommodate the new buckets.
-				h.PositiveSpans = resize(h.PositiveSpans, len(a.pSpans))
+				// However we need to make a copy in case the input is sharing spans from an iterator.
+				h.PositiveSpans = make([]histogram.Span, len(a.pSpans))
 				copy(h.PositiveSpans, a.pSpans)
-				h.NegativeSpans = resize(h.NegativeSpans, len(a.nSpans))
+				h.NegativeSpans = make([]histogram.Span, len(a.nSpans))
 				copy(h.NegativeSpans, a.nSpans)
 			} else {
 				// Spans need pre-adjusting to accommodate the new buckets.
