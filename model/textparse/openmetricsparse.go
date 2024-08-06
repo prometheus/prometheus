@@ -263,8 +263,8 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 		peekWithoutNameLsetHash uint64
 	)
 	p.Metric(&currLset)
-	currWithoutNameLsetHash, buf := currLset.HashWithoutLabels(buf, labels.MetricName, "le", "quantile")
-	// Search for the _created line for the currName using ephemeral parser until
+	currFamilyLsetHash, buf := currLset.HashWithoutLabels(buf, labels.MetricName, "le", "quantile")
+	// Search for the _created line for the currFamilyLsetHash using ephemeral parser until
 	// we see EOF or new metric family. We have to do it as we don't know where (and if)
 	// that CT line is.
 	// TODO(bwplotka): Make sure OM 1.1/2.0 pass CT via metadata or exemplar-like to avoid this.
@@ -272,7 +272,7 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 	for {
 		eType, err := peek.Next()
 		if err != nil {
-			// This means p will give error too later on, so def no CT line found.
+			// This means peek will give error too later on, so def no CT line found.
 			// This might result in partial scrape with wrong/missing CT, but only
 			// spec improvement would help.
 			// TODO(bwplotka): Make sure OM 1.1/2.0 pass CT via metadata or exemplar-like to avoid this.
@@ -282,8 +282,7 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 			// Assume we hit different family, no CT line found.
 			return nil
 		}
-		// We are sure this series is the same metric family as in currLset
-		// because otherwise we would have EntryType first which we ruled out before.
+
 		var peekedLset labels.Labels
 		peek.Metric(&peekedLset)
 		peekedName := peekedLset.Get(model.MetricNameLabel)
@@ -294,7 +293,7 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 
 		// We got a CT line here, but let's search if CT line is actually for our series, edge case.
 		peekWithoutNameLsetHash, _ = peekedLset.HashWithoutLabels(buf, labels.MetricName, "le", "quantile")
-		if peekWithoutNameLsetHash != currWithoutNameLsetHash {
+		if peekWithoutNameLsetHash != currFamilyLsetHash {
 			// CT line for a different series, for our series no CT.
 			return nil
 		}
