@@ -38,11 +38,11 @@ const (
 	ipv6chars = "0123456789abcdef"
 )
 
-func RandIpv4() string {
-	return fmt.Sprintf("%d.%d.%d.%d", RandNumber(1, 255), RandNumber(0, 255), RandNumber(0, 255), RandNumber(0, 255))
+func randIpv4() string {
+	return fmt.Sprintf("%d.%d.%d.%d", randNumber(1, 255), randNumber(0, 255), randNumber(0, 255), randNumber(0, 255))
 }
 
-func RandIpv6() string {
+func randIpv6() string {
 	address := "2000"
 
 	for i := 0; i < 7; i++ {
@@ -56,11 +56,11 @@ func RandIpv6() string {
 	return address
 }
 
-func RandNumber(minimum, maximum int) int {
+func randNumber(minimum, maximum int) int {
 	return rand.Intn(maximum-minimum) + minimum
 }
 
-func RandString(n int) string {
+func randString(n int) string {
 	b := make([]byte, n)
 	for i := range b {
 		b[i] = chars[rand.Intn(len(chars))]
@@ -70,7 +70,7 @@ func RandString(n int) string {
 }
 
 // Struct for test data.
-type EC2Data struct {
+type ec2DataStore struct {
 	region string
 
 	azNames  []string
@@ -82,35 +82,35 @@ type EC2Data struct {
 	instances []*ec2.Instance
 }
 
-var ec2Data EC2Data
+var ec2Data ec2DataStore
 
 // Generate test data.
 func GenerateTestAzData() {
 	// tabula rasa
-	ec2Data = EC2Data{}
+	ec2Data = ec2DataStore{}
 
 	// region information
-	ec2Data.region = fmt.Sprintf("region-%s", RandString(4))
+	ec2Data.region = fmt.Sprintf("region-%s", randString(4))
 
 	// availability zone information
-	azCount := RandNumber(3, 5)
+	azCount := randNumber(3, 5)
 	ec2Data.azNames = make([]string, azCount)
 	ec2Data.azIDs = make([]string, azCount)
 	ec2Data.azToAZID = make(map[string]string, azCount)
 
 	for i := 0; i < azCount; i++ {
-		ec2Data.azNames[i] = fmt.Sprintf("azname-%s", RandString(5))
-		ec2Data.azIDs[i] = fmt.Sprintf("azid-%s", RandString(5))
+		ec2Data.azNames[i] = fmt.Sprintf("azname-%s", randString(5))
+		ec2Data.azIDs[i] = fmt.Sprintf("azid-%s", randString(5))
 		ec2Data.azToAZID[ec2Data.azNames[i]] = ec2Data.azIDs[i]
 	}
 
 	// ownerId for the reservation
-	ec2Data.ownerID = fmt.Sprintf("ownerid-%s", RandString(5))
+	ec2Data.ownerID = fmt.Sprintf("ownerid-%s", randString(5))
 }
 
 func GenerateTestInstanceData() int {
 	// without VPC configuration, just the "basics"
-	azIdx := RandNumber(0, len(ec2Data.azNames))
+	azIdx := randNumber(0, len(ec2Data.azNames))
 
 	placement := ec2.Placement{}
 	placement.SetAvailabilityZone(ec2Data.azNames[azIdx])
@@ -120,24 +120,24 @@ func GenerateTestInstanceData() int {
 	state.SetName("running")
 
 	instance := ec2.Instance{}
-	instance.SetArchitecture(fmt.Sprintf("architecture-%s", RandString(8)))
-	instance.SetImageId(fmt.Sprintf("ami-%s", RandString(8)))
-	instance.SetInstanceId(fmt.Sprintf("instance-id-%s", RandString(8)))
-	instance.SetInstanceLifecycle(fmt.Sprintf("instance-lifecycle-%s", RandString(8)))
-	instance.SetInstanceType(fmt.Sprintf("instance-type-%s", RandString(8)))
+	instance.SetArchitecture(fmt.Sprintf("architecture-%s", randString(8)))
+	instance.SetImageId(fmt.Sprintf("ami-%s", randString(8)))
+	instance.SetInstanceId(fmt.Sprintf("instance-id-%s", randString(8)))
+	instance.SetInstanceLifecycle(fmt.Sprintf("instance-lifecycle-%s", randString(8)))
+	instance.SetInstanceType(fmt.Sprintf("instance-type-%s", randString(8)))
 	instance.SetPlacement(&placement)
-	instance.SetPlatform(fmt.Sprintf("platform-%s", RandString(8)))
-	instance.SetPrivateDnsName(fmt.Sprintf("private-dns-%s", RandString(8)))
-	instance.SetPrivateIpAddress(RandIpv4())
-	instance.SetPublicDnsName(fmt.Sprintf("public-ip-%s", RandString(8)))
-	instance.SetPublicIpAddress(RandIpv4())
+	instance.SetPlatform(fmt.Sprintf("platform-%s", randString(8)))
+	instance.SetPrivateDnsName(fmt.Sprintf("private-dns-%s", randString(8)))
+	instance.SetPrivateIpAddress(randIpv4())
+	instance.SetPublicDnsName(fmt.Sprintf("public-ip-%s", randString(8)))
+	instance.SetPublicIpAddress(randIpv4())
 	instance.SetState(&state)
 
-	tags := make([]*ec2.Tag, RandNumber(2, 5))
+	tags := make([]*ec2.Tag, randNumber(2, 5))
 	for i := 0; i < len(tags); i++ {
 		tags[i] = &ec2.Tag{}
-		tags[i].SetKey(fmt.Sprintf("tag-%d-key-%s", i, RandString(8)))
-		tags[i].SetValue(fmt.Sprintf("tag-%d-value-%s", i, RandString(8)))
+		tags[i].SetKey(fmt.Sprintf("tag-%d-key-%s", i, randString(8)))
+		tags[i].SetValue(fmt.Sprintf("tag-%d-value-%s", i, randString(8)))
 	}
 
 	instance.SetTags(tags)
@@ -199,7 +199,7 @@ func TestRefreshAZIDsHandleError(t *testing.T) {
 	ctx := context.Background()
 	client := &mockEC2Client{}
 
-	ec2Data = EC2Data{}
+	ec2Data = ec2DataStore{}
 
 	d := &EC2Discovery{
 		ec2: client,
@@ -216,7 +216,7 @@ func TestRefreshNoPrivateIp(t *testing.T) {
 	GenerateTestAzData()
 
 	instance := ec2.Instance{}
-	instance.SetInstanceId(fmt.Sprintf("instance-id-%s", RandString(8)))
+	instance.SetInstanceId(fmt.Sprintf("instance-id-%s", randString(8)))
 
 	ec2Data.instances = append(ec2Data.instances, &instance)
 
@@ -247,7 +247,7 @@ func TestRefreshNoVpc(t *testing.T) {
 	d := &EC2Discovery{
 		ec2: client,
 		cfg: &EC2SDConfig{
-			Port:   RandNumber(1024, 65535),
+			Port:   randNumber(1024, 65535),
 			Region: ec2Data.region,
 		},
 	}
@@ -273,13 +273,13 @@ func TestRefreshIpv4(t *testing.T) {
 	d := &EC2Discovery{
 		ec2: client,
 		cfg: &EC2SDConfig{
-			Port:   RandNumber(1024, 65535),
+			Port:   randNumber(1024, 65535),
 			Region: ec2Data.region,
 		},
 	}
 
 	ec2Data.instances[0].SetSubnetId(ec2Data.azIDs[azIdx])
-	ec2Data.instances[0].SetVpcId(fmt.Sprintf("vpc-%s", RandString(8)))
+	ec2Data.instances[0].SetVpcId(fmt.Sprintf("vpc-%s", randString(8)))
 
 	enis := make([]*ec2.InstanceNetworkInterface, 4)
 
@@ -333,13 +333,13 @@ func TestRefreshIpv6(t *testing.T) {
 	d := &EC2Discovery{
 		ec2: client,
 		cfg: &EC2SDConfig{
-			Port:   RandNumber(1024, 65535),
+			Port:   randNumber(1024, 65535),
 			Region: ec2Data.region,
 		},
 	}
 
 	ec2Data.instances[0].SetSubnetId(ec2Data.azIDs[azIdx])
-	ec2Data.instances[0].SetVpcId(fmt.Sprintf("vpc-%s", RandString(8)))
+	ec2Data.instances[0].SetVpcId(fmt.Sprintf("vpc-%s", randString(8)))
 
 	attachments := make([]*ec2.InstanceNetworkInterfaceAttachment, 4)
 	enis := make([]*ec2.InstanceNetworkInterface, 4)
@@ -351,7 +351,7 @@ func TestRefreshIpv6(t *testing.T) {
 
 	ips[0] = make([]*ec2.InstanceIpv6Address, 1)
 	ips[0][0] = &ec2.InstanceIpv6Address{}
-	ips[0][0].SetIpv6Address(RandIpv6())
+	ips[0][0].SetIpv6Address(randIpv6())
 	ips[0][0].SetIsPrimaryIpv6(false)
 
 	enis[0] = &ec2.InstanceNetworkInterface{}
@@ -365,10 +365,10 @@ func TestRefreshIpv6(t *testing.T) {
 
 	ips[1] = make([]*ec2.InstanceIpv6Address, 2)
 	ips[1][0] = &ec2.InstanceIpv6Address{}
-	ips[1][0].SetIpv6Address(RandIpv6())
+	ips[1][0].SetIpv6Address(randIpv6())
 	ips[1][0].SetIsPrimaryIpv6(false)
 	ips[1][1] = &ec2.InstanceIpv6Address{}
-	ips[1][1].SetIpv6Address(RandIpv6())
+	ips[1][1].SetIpv6Address(randIpv6())
 	ips[1][1].SetIsPrimaryIpv6(true)
 
 	enis[1] = &ec2.InstanceNetworkInterface{}
@@ -382,7 +382,7 @@ func TestRefreshIpv6(t *testing.T) {
 
 	ips[2] = make([]*ec2.InstanceIpv6Address, 1)
 	ips[2][0] = &ec2.InstanceIpv6Address{}
-	ips[2][0].SetIpv6Address(RandIpv6())
+	ips[2][0].SetIpv6Address(randIpv6())
 	ips[2][0].SetIsPrimaryIpv6(true)
 
 	enis[2] = &ec2.InstanceNetworkInterface{}
