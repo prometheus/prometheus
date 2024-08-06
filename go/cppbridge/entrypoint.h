@@ -64,7 +64,7 @@ void prompp_primitives_lss_allocated_memory(void* args, void* res);
  * @brief insert label set into lss
  *
  * @param args {
- *     lss uintptr              // pointer to constructed label sets;
+ *     lss uintptr              // pointer to constructed lss;
  *     label_set model.LabelSet // label set
  * }
  *
@@ -73,6 +73,21 @@ void prompp_primitives_lss_allocated_memory(void* args, void* res);
  * }
  */
 void prompp_primitives_lss_find_or_emplace(void* args, void* res);
+
+/**
+ * @brief query label sets from lss
+ *
+ * @param args {
+ *     lss uintptr                         // pointer to constructed queryable lss;
+ *     label_matchers []model.LabelMatcher // label matchers
+ * }
+ *
+ * @param res {
+ *     status uint32    // query status
+ *     matches []uint32 // matched ls ids
+ * }
+ */
+void prompp_primitives_lss_query(void* args, void* res);
 
 #ifdef __cplusplus
 }  // extern "C"

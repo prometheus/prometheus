@@ -1,6 +1,8 @@
 #include "primitives_lss.h"
+
 #include "_helpers.hpp"
 #include "lss.hpp"
+#include "series_index/querier/querier.h"
 
 extern "C" void prompp_primitives_lss_ctor(void* args, void* res) {
   struct Arguments {
@@ -44,4 +46,23 @@ extern "C" void prompp_primitives_lss_find_or_emplace(void* args, void* res) {
 
   auto in = reinterpret_cast<Arguments*>(args);
   new (res) Result{.ls_id = std::visit([in](auto& lss) PROMPP_LAMBDA_INLINE { return lss.find_or_emplace(in->label_set); }, *in->lss)};
+}
+
+extern "C" void prompp_primitives_lss_query(void* args, void* res) {
+  struct Arguments {
+    entrypoint::LssVariantPtr lss;
+    PromPP::Primitives::Go::SliceView<PromPP::Prometheus::LabelMatcherTrait<PromPP::Primitives::Go::String>> label_matchers;
+  };
+  struct Result {
+    series_index::querier::QuerierStatus status;
+    PromPP::Primitives::Go::Slice<uint32_t> matches;
+  };
+  using Querier = series_index::querier::Querier<entrypoint::QueryableEncodingBimap, PromPP::Primitives::Go::Slice>;
+
+  auto in = reinterpret_cast<Arguments*>(args);
+  auto query_result = Querier{std::get<entrypoint::QueryableEncodingBimap>(*in->lss)}.query(in->label_matchers);
+
+  auto out = reinterpret_cast<Result*>(res);
+  out->status = query_result.status;
+  out->matches = std::move(query_result.series_ids);
 }

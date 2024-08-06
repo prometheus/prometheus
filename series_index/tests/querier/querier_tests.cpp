@@ -9,11 +9,11 @@
 namespace {
 
 using PromPP::Primitives::LabelViewSet;
-using PromPP::Prometheus::LabelMatcher;
+using PromPP::Prometheus::LabelMatchers;
+using PromPP::Prometheus::MatcherType;
 using PromPP::Prometheus::Selector;
 using series_index::QueryableEncodingBimap;
 using series_index::querier::Querier;
-using series_index::querier::QuerierResult;
 using series_index::querier::QuerierStatus;
 using series_index::trie::CedarMatchesList;
 using series_index::trie::CedarTrie;
@@ -48,20 +48,16 @@ INSTANTIATE_TEST_SUITE_P(
     MatchersComparatorByTypeAndCardinalityFixture,
     testing::Values(
         MatchersComparatorByTypeAndCardinalityCase{
-            .selector = {.matchers = {{.matcher = {.type = LabelMatcher::Type::kExactNotMatch}, .result = {.cardinality = 1}},
-                                      {.matcher = {.type = LabelMatcher::Type::kExactNotMatch}, .result = {.cardinality = 0}}}},
-            .expected = {.matchers = {{.matcher = {.type = LabelMatcher::Type::kExactNotMatch}, .result = {.cardinality = 1}},
-                                      {.matcher = {.type = LabelMatcher::Type::kExactNotMatch}, .result = {.cardinality = 0}}}}},
-        MatchersComparatorByTypeAndCardinalityCase{
-            .selector = {.matchers = {{.matcher = {.type = LabelMatcher::Type::kExactNotMatch}}, {.matcher = {.type = LabelMatcher::Type::kExactMatch}}}},
-            .expected = {.matchers = {{.matcher = {.type = LabelMatcher::Type::kExactMatch}}, {.matcher = {.type = LabelMatcher::Type::kExactNotMatch}}}}},
-        MatchersComparatorByTypeAndCardinalityCase{
-            .selector = {.matchers = {{.matcher = {.type = LabelMatcher::Type::kExactNotMatch}},
-                                      {.matcher = {.type = LabelMatcher::Type::kExactMatch}, .result = {.cardinality = 2}},
-                                      {.matcher = {.type = LabelMatcher::Type::kExactMatch}, .result = {.cardinality = 1}}}},
-            .expected = {.matchers = {{.matcher = {.type = LabelMatcher::Type::kExactMatch}, .result = {.cardinality = 1}},
-                                      {.matcher = {.type = LabelMatcher::Type::kExactMatch}, .result = {.cardinality = 2}},
-                                      {.matcher = {.type = LabelMatcher::Type::kExactNotMatch}}}}}));
+            .selector = {.matchers = {{.cardinality = 1, .type = MatcherType::kExactNotMatch}, {.cardinality = 0, .type = MatcherType::kExactNotMatch}}},
+            .expected = {.matchers = {{.cardinality = 1, .type = MatcherType::kExactNotMatch}, {.cardinality = 0, .type = MatcherType::kExactNotMatch}}}},
+        MatchersComparatorByTypeAndCardinalityCase{.selector = {.matchers = {{.type = MatcherType::kExactNotMatch}, {.type = MatcherType::kExactMatch}}},
+                                                   .expected = {.matchers = {{.type = MatcherType::kExactMatch}, {.type = MatcherType::kExactNotMatch}}}},
+        MatchersComparatorByTypeAndCardinalityCase{.selector = {.matchers = {{.type = MatcherType::kExactNotMatch},
+                                                                             {.cardinality = 2, .type = MatcherType::kExactMatch},
+                                                                             {.cardinality = 1, .type = MatcherType::kExactMatch}}},
+                                                   .expected = {.matchers = {{.cardinality = 1, .type = MatcherType::kExactMatch},
+                                                                             {.cardinality = 2, .type = MatcherType::kExactMatch},
+                                                                             {.type = MatcherType::kExactNotMatch}}}}));
 
 struct QuerierTestCase {
   struct Expected {
@@ -69,7 +65,7 @@ struct QuerierTestCase {
     QuerierStatus status{QuerierStatus::kNoMatch};
   };
 
-  Selector selector{};
+  LabelMatchers label_matchers;
   Expected expected;
 };
 
@@ -94,10 +90,9 @@ class QuerierFixture : public testing::TestWithParam<QuerierTestCase> {
 
 TEST_P(QuerierFixture, Test) {
   // Arrange
-  Selector selector = GetParam().selector;
 
   // Act
-  auto result = querier_.query(selector);
+  auto result = querier_.query(GetParam().label_matchers);
 
   // Assert
   EXPECT_EQ(GetParam().expected.status, result.status);
@@ -106,66 +101,60 @@ TEST_P(QuerierFixture, Test) {
 
 INSTANTIATE_TEST_SUITE_P(NoMatches,
                          QuerierFixture,
-                         testing::Values(QuerierTestCase{
-                             .selector = {.matchers = {{.matcher = {.name = "job", .value = "cro", .type = LabelMatcher::Type::kExactMatch}}}},
-                             .expected = {}}));
+                         testing::Values(QuerierTestCase{.label_matchers = {{.name = "job", .value = "cro", .type = MatcherType::kExactMatch}},
+                                                         .expected = {}}));
 
-INSTANTIATE_TEST_SUITE_P(
-    SingleMatcher,
-    QuerierFixture,
-    testing::Values(QuerierTestCase{.selector = {.matchers = {{.matcher = {.name = "job", .value = "cron", .type = LabelMatcher::Type::kExactMatch}}}},
-                                    .expected = {.series_id_list = {0, 1, 2}, .status = QuerierStatus::kMatch}},
-                    QuerierTestCase{.selector = {.matchers = {{.matcher = {.name = "job", .value = ".+", .type = LabelMatcher::Type::kRegexpMatch}}}},
-                                    .expected = {.series_id_list = {0, 1, 2}, .status = QuerierStatus::kMatch}}));
+INSTANTIATE_TEST_SUITE_P(SingleMatcher,
+                         QuerierFixture,
+                         testing::Values(QuerierTestCase{.label_matchers = {{.name = "job", .value = "cron", .type = MatcherType::kExactMatch}},
+                                                         .expected = {.series_id_list = {0, 1, 2}, .status = QuerierStatus::kMatch}},
+                                         QuerierTestCase{.label_matchers = {{.name = "job", .value = ".+", .type = MatcherType::kRegexpMatch}},
+                                                         .expected = {.series_id_list = {0, 1, 2}, .status = QuerierStatus::kMatch}}));
 
-INSTANTIATE_TEST_SUITE_P(
-    TwoPositiveMatchers,
-    QuerierFixture,
-    testing::Values(QuerierTestCase{.selector = {.matchers = {{.matcher = {.name = "job", .value = "cron", .type = LabelMatcher::Type::kExactMatch}},
-                                                              {.matcher = {.name = "task", .value = "php", .type = LabelMatcher::Type::kExactMatch}}}},
-                                    .expected = {.series_id_list = {1}, .status = QuerierStatus::kMatch}},
-                    QuerierTestCase{.selector = {.matchers = {{.matcher = {.name = "task", .value = "php|python", .type = LabelMatcher::Type::kRegexpMatch}},
-                                                              {.matcher = {.name = "job", .value = "cron", .type = LabelMatcher::Type::kExactMatch}}}},
-                                    .expected = {.series_id_list = {1, 2}, .status = QuerierStatus::kMatch}}));
+INSTANTIATE_TEST_SUITE_P(TwoPositiveMatchers,
+                         QuerierFixture,
+                         testing::Values(QuerierTestCase{.label_matchers = {{.name = "job", .value = "cron", .type = MatcherType::kExactMatch},
+                                                                            {.name = "task", .value = "php", .type = MatcherType::kExactMatch}},
+                                                         .expected = {.series_id_list = {1}, .status = QuerierStatus::kMatch}},
+                                         QuerierTestCase{.label_matchers = {{.name = "task", .value = "php|python", .type = MatcherType::kRegexpMatch},
+                                                                            {.name = "job", .value = "cron", .type = MatcherType::kExactMatch}},
+                                                         .expected = {.series_id_list = {1, 2}, .status = QuerierStatus::kMatch}}));
 
 INSTANTIATE_TEST_SUITE_P(EmptyMatcher,
                          QuerierFixture,
-                         testing::Values(QuerierTestCase{
-                             .selector = {.matchers = {{.matcher = {.name = "job", .value = "cron", .type = LabelMatcher::Type::kExactMatch}},
-                                                       {.matcher = {.name = "job1", .value = "", .type = LabelMatcher::Type::kRegexpMatch}}}},
-                             .expected = {.series_id_list = {0, 1, 2}, .status = QuerierStatus::kMatch}}));
+                         testing::Values(QuerierTestCase{.label_matchers = {{.name = "job", .value = "cron", .type = MatcherType::kExactMatch},
+                                                                            {.name = "job1", .value = "", .type = MatcherType::kRegexpMatch}},
+                                                         .expected = {.series_id_list = {0, 1, 2}, .status = QuerierStatus::kMatch}}));
 
-INSTANTIATE_TEST_SUITE_P(
-    NegativeMatcher,
-    QuerierFixture,
-    testing::Values(QuerierTestCase{.selector = {.matchers = {{.matcher = {.name = "job", .value = "cron", .type = LabelMatcher::Type::kExactMatch}},
-                                                              {.matcher = {.name = "task", .value = "php", .type = LabelMatcher::Type::kExactNotMatch}}}},
-                                    .expected = {.series_id_list = {0, 2}, .status = QuerierStatus::kMatch}},
-                    QuerierTestCase{.selector = {.matchers = {{.matcher = {.name = "job", .value = "cron", .type = LabelMatcher::Type::kExactMatch}},
-                                                              {.matcher = {.name = "task", .value = "", .type = LabelMatcher::Type::kExactMatch}}}},
-                                    .expected = {.series_id_list = {}, .status = QuerierStatus::kNoMatch}},
-                    QuerierTestCase{.selector = {.matchers = {{.matcher = {.name = "job", .value = "cron", .type = LabelMatcher::Type::kExactMatch}},
-                                                              {.matcher = {.name = "task", .value = "unknown", .type = LabelMatcher::Type::kExactNotMatch}}}},
-                                    .expected = {.series_id_list = {0, 1, 2}, .status = QuerierStatus::kMatch}},
-                    QuerierTestCase{.selector = {.matchers = {{.matcher = {.name = "job", .value = "cron", .type = LabelMatcher::Type::kExactMatch}},
-                                                              {.matcher = {.name = "job1", .value = "^$", .type = LabelMatcher::Type::kRegexpNotMatch}}}},
-                                    .expected = {.series_id_list = {}, .status = QuerierStatus::kNoMatch}},
-                    QuerierTestCase{.selector = {.matchers = {{.matcher = {.name = "job", .value = "cron", .type = LabelMatcher::Type::kExactMatch}},
-                                                              {.matcher = {.name = "job1", .value = ".+", .type = LabelMatcher::Type::kRegexpNotMatch}}}},
-                                    .expected = {.series_id_list = {0, 1, 2}, .status = QuerierStatus::kMatch}},
-                    QuerierTestCase{.selector = {.matchers = {{.matcher = {.name = "job", .value = "cron", .type = LabelMatcher::Type::kExactMatch}},
-                                                              {.matcher = {.name = "job", .value = ".+", .type = LabelMatcher::Type::kRegexpNotMatch}}}},
-                                    .expected = {.series_id_list = {}, .status = QuerierStatus::kNoMatch}}));
+INSTANTIATE_TEST_SUITE_P(NegativeMatcher,
+                         QuerierFixture,
+                         testing::Values(QuerierTestCase{.label_matchers = {{.name = "job", .value = "cron", .type = MatcherType::kExactMatch},
+                                                                            {.name = "task", .value = "php", .type = MatcherType::kExactNotMatch}},
+                                                         .expected = {.series_id_list = {0, 2}, .status = QuerierStatus::kMatch}},
+                                         QuerierTestCase{.label_matchers = {{.name = "job", .value = "cron", .type = MatcherType::kExactMatch},
+                                                                            {.name = "task", .value = "", .type = MatcherType::kExactMatch}},
+                                                         .expected = {.series_id_list = {}, .status = QuerierStatus::kNoMatch}},
+                                         QuerierTestCase{.label_matchers = {{.name = "job", .value = "cron", .type = MatcherType::kExactMatch},
+                                                                            {.name = "task", .value = "unknown", .type = MatcherType::kExactNotMatch}},
+                                                         .expected = {.series_id_list = {0, 1, 2}, .status = QuerierStatus::kMatch}},
+                                         QuerierTestCase{.label_matchers = {{.name = "job", .value = "cron", .type = MatcherType::kExactMatch},
+                                                                            {.name = "job1", .value = "^$", .type = MatcherType::kRegexpNotMatch}},
+                                                         .expected = {.series_id_list = {}, .status = QuerierStatus::kNoMatch}},
+                                         QuerierTestCase{.label_matchers = {{.name = "job", .value = "cron", .type = MatcherType::kExactMatch},
+                                                                            {.name = "job1", .value = ".+", .type = MatcherType::kRegexpNotMatch}},
+                                                         .expected = {.series_id_list = {0, 1, 2}, .status = QuerierStatus::kMatch}},
+                                         QuerierTestCase{.label_matchers = {{.name = "job", .value = "cron", .type = MatcherType::kExactMatch},
+                                                                            {.name = "job", .value = ".+", .type = MatcherType::kRegexpNotMatch}},
+                                                         .expected = {.series_id_list = {}, .status = QuerierStatus::kNoMatch}}));
 
-INSTANTIATE_TEST_SUITE_P(
-    AnythingMatcher,
-    QuerierFixture,
-    testing::Values(QuerierTestCase{.selector = {.matchers = {{.matcher = {.name = "job", .value = "cron", .type = LabelMatcher::Type::kExactMatch}},
-                                                              {.matcher = {.name = "job1", .value = ".*", .type = LabelMatcher::Type::kRegexpMatch}}}},
-                                    .expected = {.series_id_list = {0, 1, 2}, .status = QuerierStatus::kMatch}},
-                    QuerierTestCase{.selector = {.matchers = {{.matcher = {.name = "job", .value = "cron", .type = LabelMatcher::Type::kExactMatch}},
-                                                              {.matcher = {.name = "job1", .value = ".*", .type = LabelMatcher::Type::kRegexpMatch}},
-                                                              {.matcher = {.name = "task", .value = "php", .type = LabelMatcher::Type::kExactNotMatch}}}},
-                                    .expected = {.series_id_list = {0, 2}, .status = QuerierStatus::kMatch}}));
+INSTANTIATE_TEST_SUITE_P(AnythingMatcher,
+                         QuerierFixture,
+                         testing::Values(QuerierTestCase{.label_matchers = {{.name = "job", .value = "cron", .type = MatcherType::kExactMatch},
+                                                                            {.name = "job1", .value = ".*", .type = MatcherType::kRegexpMatch}},
+                                                         .expected = {.series_id_list = {0, 1, 2}, .status = QuerierStatus::kMatch}},
+                                         QuerierTestCase{.label_matchers = {{.name = "job", .value = "cron", .type = MatcherType::kExactMatch},
+                                                                            {.name = "job1", .value = ".*", .type = MatcherType::kRegexpMatch},
+                                                                            {.name = "task", .value = "php", .type = MatcherType::kExactNotMatch}},
+                                                         .expected = {.series_id_list = {0, 2}, .status = QuerierStatus::kMatch}}));
 
 }  // namespace

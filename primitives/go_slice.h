@@ -73,15 +73,17 @@ class String {
     assert(i < len_);
     return data_[i];
   }
+
+  PROMPP_ALWAYS_INLINE operator std::string_view() const noexcept { return {data_, len_}; }
 };  // class String
 
 template <class T>
 class Slice {
   static_assert(BareBones::IsTriviallyReallocatable<T>::value, "type parameter of this class should be trivially reallocatable");
 
-  T* data_;
-  size_t len_;
-  size_t cap_;
+  T* data_{};
+  size_t len_{};
+  size_t cap_{};
 
  public:
   using iterator_category = std::contiguous_iterator_tag;
@@ -89,7 +91,8 @@ class Slice {
   using const_iterator = const T*;
   using iterator = T*;
 
-  Slice() : data_(nullptr), len_(0), cap_(0) {}
+  Slice() = default;
+  explicit Slice(size_t size) { resize(size); }
   Slice(const Slice& o) : len_(o.len_) {
     reserve(len_);
     if constexpr (BareBones::IsTriviallyCopyable<T>::value) {
@@ -100,6 +103,7 @@ class Slice {
       }
     }
   }
+  Slice(Slice&& other) noexcept : data_(std::exchange(other.data_, nullptr)), len_(std::exchange(other.len_, 0ULL)), cap_(std::exchange(other.cap_, 0ULL)) {}
 
   Slice& operator=(const Slice& o) noexcept {
     len_ = o.len_;
@@ -111,6 +115,18 @@ class Slice {
       for (size_t i = 0; i != len_; ++i) {
         new (data_ + i) T(o[i]);
       }
+    }
+
+    return *this;
+  }
+  Slice& operator=(Slice&& other) noexcept {
+    if (this != &other) {
+      [[likely]];
+      free();
+
+      data_ = std::exchange(other.data_, nullptr);
+      len_ = std::exchange(other.len_, 0ULL);
+      cap_ = std::exchange(other.cap_, 0ULL);
     }
 
     return *this;
