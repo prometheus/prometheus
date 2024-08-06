@@ -22,6 +22,7 @@ func NewHeadDataStorage() *HeadDataStorage {
 	return ds
 }
 
+// Reset - resets data storage.
 func (ds *HeadDataStorage) Reset() {
 	seriesDataDataStorageReset(ds.dataStorage)
 }
