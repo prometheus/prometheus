@@ -900,3 +900,16 @@ action: replace
 		})
 	}
 }
+
+func TestRegexp_ShouldMarshalAndUnmarshalZeroValue(t *testing.T) {
+	var zero Regexp
+
+	marshalled, err := yaml.Marshal(&zero)
+	require.NoError(t, err)
+	require.Equal(t, "null\n", string(marshalled))
+
+	var unmarshalled Regexp
+	err = yaml.Unmarshal(marshalled, &unmarshalled)
+	require.NoError(t, err)
+	require.Nil(t, unmarshalled.Regexp)
+}

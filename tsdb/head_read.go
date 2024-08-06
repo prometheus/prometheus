@@ -170,7 +170,7 @@ func (h *headIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCou
 		}
 
 		// Check if the series belong to the shard.
-		if s.shardHash%shardCount != shardIndex {
+		if s.shardHash()%shardCount != shardIndex {
 			continue
 		}
 
