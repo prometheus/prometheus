@@ -448,7 +448,8 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 		}
 
 		p.series = p.l.b[p.start:p.l.i]
-		return p.parseMetricSuffix(p.nextToken())
+		suffixEntry, err := p.parseMetricSuffix(p.nextToken())
+		return p.skipCTParsing(suffixEntry, err)
 	case tMName:
 		p.offsets = append(p.offsets, p.start, p.l.i)
 		p.series = p.l.b[p.start:p.l.i]
@@ -462,7 +463,9 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 			p.series = p.l.b[p.start:p.l.i]
 			t2 = p.nextToken()
 		}
-		return p.parseMetricSuffix(t2)
+
+		suffixEntry, err := p.parseMetricSuffix(t2)
+		return p.skipCTParsing(suffixEntry, err)
 
 	default:
 		err = p.parseError("expected a valid start token", t)
@@ -578,6 +581,25 @@ func (p *OpenMetricsParser) parseLVals(offsets []int, isExemplar bool) ([]int, e
 	}
 }
 
+// skipCTParsing checks if the current series is a _created series and skips it if necessary.
+func (p *OpenMetricsParser) skipCTParsing(e Entry, err error) (Entry, error) {
+	if e != EntrySeries || !p.skipCTSeries || err != nil {
+		return e, err
+	}
+	var newLbs labels.Labels
+	p.Metric(&newLbs)
+	name := newLbs.Get(model.MetricNameLabel)
+	switch p.mtype {
+	case model.MetricTypeCounter, model.MetricTypeSummary, model.MetricTypeHistogram:
+		if strings.HasSuffix(name, "_created") {
+			return p.Next()
+		}
+	default:
+		break
+	}
+	return EntrySeries, nil
+}
+
 // parseMetricSuffix parses the end of the line after the metric name and
 // labels. It starts parsing with the provided token.
 func (p *OpenMetricsParser) parseMetricSuffix(t token) (Entry, error) {
@@ -620,20 +642,6 @@ func (p *OpenMetricsParser) parseMetricSuffix(t token) (Entry, error) {
 			}
 		default:
 			return EntryInvalid, p.parseError("expected next entry after timestamp", t3)
-		}
-	}
-
-	if p.skipCTSeries {
-		var newLbs labels.Labels
-		p.Metric(&newLbs)
-		name := newLbs.Get(model.MetricNameLabel)
-		switch p.mtype {
-		case model.MetricTypeCounter, model.MetricTypeSummary, model.MetricTypeHistogram:
-			if strings.HasSuffix(name, "_created") {
-				return p.Next()
-			}
-		default:
-			break
 		}
 	}
 
