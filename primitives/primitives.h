@@ -716,6 +716,9 @@ class LabelsBuilder {
     base_ = ls;
   }
 
+  // reset_base base reset for the builder.
+  PROMPP_ALWAYS_INLINE void reset_base() { base_ = nullptr; }
+
   // set - the name/value pair as a label. A value of "" means delete that label.
   template <class LNameType, class LValueType>
   PROMPP_ALWAYS_INLINE void set(LNameType& lname, LValueType& lvalue) {
