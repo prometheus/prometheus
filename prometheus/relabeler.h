@@ -1075,10 +1075,9 @@ class PerShardRelabeler {
         size_t hash = hash_value(new_label_set);
         size_t new_shard_id = hash % number_of_shards_;
         shards_relabeled_series[new_shard_id]->emplace_back(new_label_set, samples, hash, ls_id);
-        return true;
       }
     }
-    return false;
+    return true;
   }
 
   // append_relabeler_series add relabeled ls to lss, add to result and add to cache update(second stage).

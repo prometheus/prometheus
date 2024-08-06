@@ -2093,7 +2093,7 @@ TEST_F(TestPerShardRelabeler, InputRelabelingWithStalenans) {
   vector_shards_inner_series_[1] = std::make_unique<PromPP::Prometheus::Relabel::InnerSeries>();
   HashdexTest empty_hx;
   PromPP::Primitives::Timestamp stale_ts = 1712567047055;
-  newstate = prs.input_relabeling_with_stalenans(lss, empty_hx, shards_inner_series_, relabeled_results_, nullptr, newstate, stale_ts);
+  prs.input_relabeling_with_stalenans(lss, empty_hx, shards_inner_series_, relabeled_results_, nullptr, newstate, stale_ts);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
   EXPECT_EQ(shards_inner_series_[1]->data()[0].samples[0].timestamp(), stale_ts);
   EXPECT_EQ(std::bit_cast<uint64_t>(shards_inner_series_[1]->data()[0].samples[0].value()), std::bit_cast<uint64_t>(BareBones::Encoding::Gorilla::STALE_NAN));
@@ -2355,6 +2355,7 @@ TEST_F(TestStaleNaNsState, ParentEQ) {
 
   PromPP::Prometheus::Relabel::StaleNaNsState* result = new PromPP::Prometheus::Relabel::StaleNaNsState(&lss);
   EXPECT_TRUE(result->parent_eq(&lss));
+  delete result;
 }
 
 TEST_F(TestStaleNaNsState, NotParentEQ) {
@@ -2363,6 +2364,7 @@ TEST_F(TestStaleNaNsState, NotParentEQ) {
 
   PromPP::Prometheus::Relabel::StaleNaNsState* result = new PromPP::Prometheus::Relabel::StaleNaNsState(&lss1);
   EXPECT_FALSE(result->parent_eq(&lss2));
+  delete result;
 }
 
 TEST_F(TestStaleNaNsState, ResetTo) {
@@ -2374,6 +2376,7 @@ TEST_F(TestStaleNaNsState, ResetTo) {
 
   result->reset_to(&lss2);
   EXPECT_TRUE(result->parent_eq(&lss2));
+  delete result;
 }
 
 TEST_F(TestStaleNaNsState, Swap) {
@@ -2386,6 +2389,7 @@ TEST_F(TestStaleNaNsState, Swap) {
   auto fn = [&](const uint32_t ls_id) { EXPECT_EQ(ls_id, current_ls_id); };
   result->swap(fn);
   result->swap(fn);
+  delete result;
 }
 
 struct TestLSSWithStaleNaNs : public testing::Test {};
