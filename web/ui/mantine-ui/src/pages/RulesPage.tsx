@@ -17,7 +17,6 @@ import {
 import {
   IconAlertTriangle,
   IconBell,
-  IconDatabaseImport,
   IconHourglass,
   IconInfoCircle,
   IconRefresh,
@@ -131,7 +130,7 @@ export default function RulesPage() {
                 }}
               >
                 <Accordion.Control>
-                  <Group wrap="nowrap" justify="space-between" mr="lg">
+                  <Group justify="space-between" mr="lg">
                     <Group gap="xs" wrap="nowrap">
                       {r.type === "alerting" ? (
                         <Tooltip label="Alerting rule" withArrow>
@@ -144,7 +143,7 @@ export default function RulesPage() {
                       )}
                       <Text>{r.name}</Text>
                     </Group>
-                    <Group mt="md" gap="xs" wrap="nowrap">
+                    <Group gap="xs">
                       <Group gap="xs" wrap="wrap">
                         <Tooltip label="Last rule evaluation" withArrow>
                           <Badge
