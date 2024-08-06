@@ -2398,6 +2398,51 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: `sum by ("foo")({"some.metric"})`,
+		expected: &AggregateExpr{
+			Op: SUM,
+			Expr: &VectorSelector{
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some.metric"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 15,
+					End:   30,
+				},
+			},
+			Grouping: []string{"foo"},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   31,
+			},
+		},
+	},
+	{
+		input:  `sum by ("foo)(some_metric{})`,
+		fail:   true,
+		errMsg: "unterminated quoted string",
+	},
+	{
+		input: `sum by ("foo", bar, 'baz')({"some.metric"})`,
+		expected: &AggregateExpr{
+			Op: SUM,
+			Expr: &VectorSelector{
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some.metric"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 27,
+					End:   42,
+				},
+			},
+			Grouping: []string{"foo", "bar", "baz"},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   43,
+			},
+		},
+	},
+	{
 		input: "avg by (foo)(some_metric)",
 		expected: &AggregateExpr{
 			Op: AVG,
@@ -3844,6 +3889,7 @@ func readable(s string) string {
 }
 
 func TestParseExpressions(t *testing.T) {
+	model.NameValidationScheme = model.UTF8Validation
 	for _, test := range testExpr {
 		t.Run(readable(test.input), func(t *testing.T) {
 			expr, err := ParseExpr(test.input)
