@@ -117,7 +117,7 @@ func WithOMParserCTSeriesSkipped() OpenMetricsOption {
 	}
 }
 
-// NewOpenMetricsParser returns a new parser of the byte slice with option to skip CT series parsing.
+// NewOpenMetricsParser returns a new parser for the byte slice with option to skip CT series parsing.
 func NewOpenMetricsParser(b []byte, st *labels.SymbolTable, opts ...OpenMetricsOption) Parser {
 	options := &openMetricsParserOptions{}
 
