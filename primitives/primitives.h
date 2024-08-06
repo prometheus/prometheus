@@ -706,7 +706,7 @@ class LabelsBuilder {
 
   // reset - clears all current state for the builder.
   PROMPP_ALWAYS_INLINE void reset() {
-    state_.reset(nullptr);
+    state_.reset(static_cast<LabelSet*>(nullptr));
     base_ = nullptr;
   }
 

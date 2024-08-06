@@ -1059,15 +1059,18 @@ class PerShardRelabeler {
     switch (rstatus) {
       case rsDrop: {
         cache_drop_.add(ls_id);
+        builder.reset();
         return false;
       }
       case rsInvalid: {
         cache_drop_.add(ls_id);
+        builder.reset();
         return false;
       }
       case rsKeep: {
         cache_keep_.add(ls_id);
         shards_inner_series[shard_id_]->emplace_back(samples, ls_id);
+        builder.reset();
         return true;
       }
       case rsRelabel: {
@@ -1077,6 +1080,7 @@ class PerShardRelabeler {
         shards_relabeled_series[new_shard_id]->emplace_back(new_label_set, samples, hash, ls_id);
       }
     }
+    builder.reset();
     return true;
   }
 
