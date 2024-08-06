@@ -866,6 +866,28 @@ func FindMinMaxTime(s *parser.EvalStmt) (int64, int64) {
 	return minTimestamp, maxTimestamp
 }
 
+func alignTimestamp(timestamp, align int64) int64 {
+	var alignedTstamp int64
+	if align == 0 {
+		return timestamp
+	}
+	if timestamp >= 0 {
+		alignedTstamp = (timestamp / align) * align
+	} else {
+		// For negative start values, we need to round down to the previous slot
+		alignedTstamp = ((timestamp - align + 1) / align) * align
+	}
+	return alignedTstamp
+}
+
+func adjustOffsetForAlign(ts int64, offset, align time.Duration) time.Duration {
+	if align == 0 {
+		return offset
+	}
+	alignedTs := alignTimestamp(ts-offset.Milliseconds(), align.Milliseconds())
+	return time.Duration(ts-alignedTs) * time.Millisecond
+}
+
 func getTimeRangesForSelector(s *parser.EvalStmt, n *parser.VectorSelector, path []parser.Node, evalRange time.Duration) (int64, int64) {
 	start, end := timestamp.FromTime(s.Start), timestamp.FromTime(s.End)
 	subqOffset, subqRange, subqTs := subqueryTimes(path)
@@ -897,6 +919,14 @@ func getTimeRangesForSelector(s *parser.EvalStmt, n *parser.VectorSelector, path
 	offsetMilliseconds := durationMilliseconds(n.OriginalOffset)
 	start -= offsetMilliseconds
 	end -= offsetMilliseconds
+
+	/*
+		if n.Alignment != 0 {
+			alignMillisecs := durationMilliseconds(n.Alignment)
+			start = alignTimestamp(start, alignMillisecs)
+			end = alignTimestamp(end, alignMillisecs)
+		}
+	*/
 
 	return start, end
 }
@@ -3437,9 +3467,9 @@ func newStepInvariantExpr(expr parser.Expr) parser.Expr {
 // and subquery in the tree to accommodate the timestamp of @ modifier.
 // The offset is adjusted w.r.t. the given evaluation time.
 func setOffsetForAtModifier(evalTime int64, expr parser.Expr) {
-	getOffset := func(ts *int64, originalOffset time.Duration, path []parser.Node) time.Duration {
+	getOffset := func(ts *int64, originalOffset, align time.Duration, path []parser.Node) time.Duration {
 		if ts == nil {
-			return originalOffset
+			return adjustOffsetForAlign(evalTime, originalOffset, align)
 		}
 
 		subqOffset, _, subqTs := subqueryTimes(path)
@@ -3449,20 +3479,20 @@ func setOffsetForAtModifier(evalTime int64, expr parser.Expr) {
 
 		offsetForTs := time.Duration(evalTime-*ts) * time.Millisecond
 		offsetDiff := offsetForTs - subqOffset
-		return originalOffset + offsetDiff
+		return adjustOffsetForAlign(evalTime, originalOffset+offsetDiff, align)
 	}
 
 	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
 		switch n := node.(type) {
 		case *parser.VectorSelector:
-			n.Offset = getOffset(n.Timestamp, n.OriginalOffset, path)
+			n.Offset = getOffset(n.Timestamp, n.OriginalOffset, n.Alignment, path)
 
 		case *parser.MatrixSelector:
 			vs := n.VectorSelector.(*parser.VectorSelector)
-			vs.Offset = getOffset(vs.Timestamp, vs.OriginalOffset, path)
+			vs.Offset = getOffset(vs.Timestamp, vs.OriginalOffset, vs.Alignment, path)
 
 		case *parser.SubqueryExpr:
-			n.Offset = getOffset(n.Timestamp, n.OriginalOffset, path)
+			n.Offset = getOffset(n.Timestamp, n.OriginalOffset, n.Alignment, path)
 		}
 		return nil
 	})

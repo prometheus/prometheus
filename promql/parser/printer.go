@@ -131,8 +131,15 @@ func (node *Call) String() string {
 }
 
 func (node *MatrixSelector) String() string {
-	// Copy the Vector selector before changing the offset
+	// Copy the Vector selector before changing the align, offset, at
 	vecSelector := *node.VectorSelector.(*VectorSelector)
+	align := ""
+	switch {
+	case vecSelector.Alignment > time.Duration(0):
+		align = fmt.Sprintf(" align %s", model.Duration(vecSelector.Alignment))
+	case vecSelector.Alignment < time.Duration(0):
+		align = fmt.Sprintf(" align -%s", model.Duration(-vecSelector.Alignment))
+	}
 	offset := ""
 	switch {
 	case vecSelector.OriginalOffset > time.Duration(0):
@@ -150,15 +157,16 @@ func (node *MatrixSelector) String() string {
 		at = " @ end()"
 	}
 
-	// Do not print the @ and offset twice.
-	offsetVal, atVal, preproc := vecSelector.OriginalOffset, vecSelector.Timestamp, vecSelector.StartOrEnd
+	// Do not print the @, offset and align twice.
+	alignVal, offsetVal, atVal, preproc := vecSelector.Alignment, vecSelector.OriginalOffset, vecSelector.Timestamp, vecSelector.StartOrEnd
+	vecSelector.Alignment = 0
 	vecSelector.OriginalOffset = 0
 	vecSelector.Timestamp = nil
 	vecSelector.StartOrEnd = 0
 
-	str := fmt.Sprintf("%s[%s]%s%s", vecSelector.String(), model.Duration(node.Range), at, offset)
+	str := fmt.Sprintf("%s[%s]%s%s%s", vecSelector.String(), model.Duration(node.Range), at, offset, align)
 
-	vecSelector.OriginalOffset, vecSelector.Timestamp, vecSelector.StartOrEnd = offsetVal, atVal, preproc
+	vecSelector.Alignment, vecSelector.OriginalOffset, vecSelector.Timestamp, vecSelector.StartOrEnd = alignVal, offsetVal, atVal, preproc
 
 	return str
 }
@@ -167,11 +175,18 @@ func (node *SubqueryExpr) String() string {
 	return fmt.Sprintf("%s%s", node.Expr.String(), node.getSubqueryTimeSuffix())
 }
 
-// getSubqueryTimeSuffix returns the '[<range>:<step>] @ <timestamp> offset <offset>' suffix of the subquery.
+// getSubqueryTimeSuffix returns the '[<range>:<step>] @ <timestamp> offset <offset> align <align>' suffix of the subquery.
 func (node *SubqueryExpr) getSubqueryTimeSuffix() string {
 	step := ""
 	if node.Step != 0 {
 		step = model.Duration(node.Step).String()
+	}
+	align := ""
+	switch {
+	case node.Alignment > time.Duration(0):
+		align = fmt.Sprintf(" align %s", model.Duration(node.Alignment))
+	case node.Alignment < time.Duration(0):
+		align = fmt.Sprintf(" align -%s", model.Duration(-node.Alignment))
 	}
 	offset := ""
 	switch {
@@ -189,7 +204,7 @@ func (node *SubqueryExpr) getSubqueryTimeSuffix() string {
 	case node.StartOrEnd == END:
 		at = " @ end()"
 	}
-	return fmt.Sprintf("[%s:%s]%s%s", model.Duration(node.Range), step, at, offset)
+	return fmt.Sprintf("[%s:%s]%s%s%s", model.Duration(node.Range), step, at, offset, align)
 }
 
 func (node *NumberLiteral) String() string {
@@ -220,6 +235,13 @@ func (node *VectorSelector) String() string {
 		}
 		labelStrings = append(labelStrings, matcher.String())
 	}
+	align := ""
+	switch {
+	case node.Alignment > time.Duration(0):
+		align = fmt.Sprintf(" align %s", model.Duration(node.Alignment))
+	case node.Alignment < time.Duration(0):
+		align = fmt.Sprintf(" align -%s", model.Duration(-node.Alignment))
+	}
 	offset := ""
 	switch {
 	case node.OriginalOffset > time.Duration(0):
@@ -238,8 +260,8 @@ func (node *VectorSelector) String() string {
 	}
 
 	if len(labelStrings) == 0 {
-		return fmt.Sprintf("%s%s%s", node.Name, at, offset)
+		return fmt.Sprintf("%s%s%s%s", node.Name, at, offset, align)
 	}
 	sort.Strings(labelStrings)
-	return fmt.Sprintf("%s{%s}%s%s", node.Name, strings.Join(labelStrings, ","), at, offset)
+	return fmt.Sprintf("%s{%s}%s%s%s", node.Name, strings.Join(labelStrings, ","), at, offset, align)
 }

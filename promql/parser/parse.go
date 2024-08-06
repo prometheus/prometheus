@@ -920,6 +920,42 @@ func (p *parser) newMetricNameMatcher(value Item) *labels.Matcher {
 	return m
 }
 
+// addAlign is used to set the alignment in the generated parser.
+func (p *parser) addAlign(e Node, alignment time.Duration) {
+	var alignmentp *time.Duration
+	var endPosp *posrange.Pos
+
+	switch s := e.(type) {
+	case *VectorSelector:
+		alignmentp = &s.Alignment
+		endPosp = &s.PosRange.End
+	case *MatrixSelector:
+		vs, ok := s.VectorSelector.(*VectorSelector)
+		if !ok {
+			p.addParseErrf(e.PositionRange(), "ranges only allowed for vector selectors")
+			return
+		}
+		alignmentp = &vs.Alignment
+		endPosp = &s.EndPos
+	case *SubqueryExpr:
+		alignmentp = &s.Alignment
+		endPosp = &s.EndPos
+	default:
+		p.addParseErrf(e.PositionRange(), "alignment modifier must be preceded by an instant vector selector or range vector selector or a subquery")
+		return
+	}
+
+	// it is already ensured by parseDuration func that there never will be a zero offset modifier
+	switch {
+	case *alignmentp != 0:
+		p.addParseErrf(e.PositionRange(), "offset may not be set multiple times")
+	case alignmentp != nil:
+		*alignmentp = alignment
+	}
+
+	*endPosp = p.lastClosing
+}
+
 // addOffset is used to set the offset in the generated parser.
 func (p *parser) addOffset(e Node, offset time.Duration) {
 	var orgoffsetp *time.Duration

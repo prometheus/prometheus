@@ -135,6 +135,7 @@ LIMIT_RATIO
 // Keywords.
 %token	keywordsStart
 %token <item>
+ALIGN
 BOOL
 BY
 GROUP_LEFT
@@ -186,7 +187,7 @@ START_METRIC_SELECTOR
 %type <int> int
 %type <uint> uint
 %type <float> number series_value signed_number signed_or_unsigned_number
-%type <node> step_invariant_expr aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_duration_literal offset_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector
+%type <node> step_invariant_expr aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_duration_literal align_expr offset_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector
 
 %start start
 
@@ -199,7 +200,7 @@ START_METRIC_SELECTOR
 %right POW
 
 // Offset modifiers do not have associativity.
-%nonassoc OFFSET
+%nonassoc ALIGN OFFSET
 
 // This ensures that it is always attempted to parse range or subquery selectors when a left
 // bracket is encountered.
@@ -229,6 +230,7 @@ expr            :
                 | matrix_selector
                 | number_duration_literal
                 | offset_expr
+		| align_expr
                 | paren_expr
                 | string_literal
                 | subquery_expr
@@ -448,6 +450,24 @@ offset_expr: expr OFFSET number_duration_literal
                         }
                 | expr OFFSET error
                         { yylex.(*parser).unexpected("offset", "number or duration"); $$ = $1 }
+                ;
+
+align_expr: expr ALIGN number_duration_literal
+                        {
+  		            numLit, _ := $3.(*NumberLiteral)
+      		            dur := time.Duration(numLit.Val * 1000) * time.Millisecond
+                 	    yylex.(*parser).addAlign($1, dur)
+                            $$ = $1
+                        }
+                | expr ALIGN SUB number_duration_literal
+                        {
+  		            numLit, _ := $4.(*NumberLiteral)
+      		            dur := time.Duration(numLit.Val * 1000) * time.Millisecond
+                 	    yylex.(*parser).addAlign($1, -dur)
+                            $$ = $1
+                        }
+                | expr ALIGN error
+                        { yylex.(*parser).unexpected("align", "number or duration"); $$ = $1 }
                 ;
 /*
  * @ modifiers.

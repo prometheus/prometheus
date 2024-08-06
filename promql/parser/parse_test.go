@@ -1512,6 +1512,34 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: `foo ALIGN 1h`,
+		expected: &VectorSelector{
+			Name:      "foo",
+			Alignment: 1 * time.Hour,
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   12,
+			},
+		},
+	},
+	{
+		input: `foo ALIGN 1d`,
+		expected: &VectorSelector{
+			Name:      "foo",
+			Alignment: 24 * time.Hour,
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   12,
+			},
+		},
+	},
+	{
 		input: `foo OFFSET 1m30ms`,
 		expected: &VectorSelector{
 			Name:           "foo",
