@@ -466,11 +466,16 @@ func (dgs *DestinationGroups) RemoveByID(ids []int) {
 //
 
 type shardHead struct {
-	encoder *cppbridge.HeadEncoder
+	dataStorage *cppbridge.HeadDataStorage
+	encoder     *cppbridge.HeadEncoder
 }
 
 func (h *shardHead) AppendInnerSeriesSlice(innerSeriesSlice []*cppbridge.InnerSeries) {
 	h.encoder.EncodeInnerSeriesSlice(innerSeriesSlice)
+}
+
+func (h *shardHead) ResetDataStorage() {
+	h.dataStorage.Reset()
 }
 
 type shard struct {
@@ -713,7 +718,11 @@ func (s *shards) reconfigureHeads(numberOfShards uint16) error {
 			continue
 		}
 
-		s.heads[shardID] = &shardHead{encoder: cppbridge.NewHeadEncoder()}
+		dataStorage := cppbridge.NewHeadDataStorage()
+		s.heads[shardID] = &shardHead{
+			dataStorage: dataStorage,
+			encoder:     cppbridge.NewHeadEncoderWithDataStorage(dataStorage),
+		}
 	}
 
 	return nil
@@ -803,6 +812,7 @@ func (s *shards) rotate() error {
 	var shardID uint16
 	for ; shardID < s.numberOfShards; shardID++ {
 		s.shardLsses[shardID].Reset()
+		s.heads[shardID].ResetDataStorage()
 	}
 
 	for rkey, inputRelabeler := range s.inputRelabelers {

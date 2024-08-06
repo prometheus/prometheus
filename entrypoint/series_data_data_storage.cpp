@@ -10,6 +10,15 @@ extern "C" void prompp_series_data_data_storage_ctor(void* res) {
   out->data_storage = new series_data::DataStorage();
 }
 
+extern "C" void prompp_series_data_data_storage_reset(void* args) {
+  struct Arguments {
+    series_data::DataStorage* data_storage;
+  };
+
+  Arguments* in = reinterpret_cast<Arguments*>(args);
+  in->data_storage->reset();
+}
+
 extern "C" void prompp_series_data_data_storage_dtor(void* args) {
   struct Arguments {
     series_data::DataStorage* data_storage;

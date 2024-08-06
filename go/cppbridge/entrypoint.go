@@ -942,6 +942,17 @@ func seriesDataDataStorageCtor() uintptr {
 	return res.dataStorage
 }
 
+func seriesDataDataStorageReset(dataStorage uintptr) {
+	var args = struct {
+		dataStorage uintptr
+	}{dataStorage}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_series_data_data_storage_reset,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
 func seriesDataDataStorageDtor(dataStorage uintptr) {
 	var args = struct {
 		dataStorage uintptr

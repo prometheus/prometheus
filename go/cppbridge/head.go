@@ -22,7 +22,11 @@ func NewHeadDataStorage() *HeadDataStorage {
 	return ds
 }
 
-// NewHeadDataStorage is Go wrapper around series_data::Encoder.
+func (ds *HeadDataStorage) Reset() {
+	seriesDataDataStorageReset(ds.dataStorage)
+}
+
+// HeadEncoder is Go wrapper around series_data::Encoder.
 type HeadEncoder struct {
 	encoder     uintptr
 	dataStorage *HeadDataStorage
