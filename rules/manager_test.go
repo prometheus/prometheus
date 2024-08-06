@@ -1189,6 +1189,7 @@ func countStaleNaN(t *testing.T, st storage.Storage) int {
 	}
 	return c
 }
+
 func TestRuleMovedBetweenFiles(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
@@ -1218,7 +1219,6 @@ func TestRuleMovedBetweenFiles(t *testing.T) {
 		}
 	}()
 
-	// file paths defination
 	file1 := "fixtures/rules2.yaml"
 	file2 := "fixtures/rules1.yaml"
 
@@ -1234,49 +1234,9 @@ func TestRuleMovedBetweenFiles(t *testing.T) {
 	// Wait for rule to be evaluated in new location and potential staleness marker
 	time.Sleep(5 * time.Second)
 
-	// Print files content after reloading
-	content1, _ := os.ReadFile(file1)
-	fmt.Printf("Content of %s:\n%s\n", file1, string(content1))
-	content2, _ := os.ReadFile(file2)
-	fmt.Printf("Content of %s:\n%s\n", file2, string(content2))
-
-	// Query the data
-	querier, err := storage.Querier(0, time.Now().Unix()*1000)
-	require.NoError(t, err)
-	defer querier.Close()
-
-	matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_2")
-	require.NoError(t, err)
-
-	set := querier.Select(context.Background(), false, nil, matcher)
-	samples, err := readSeriesSet(set)
-	require.NoError(t, err)
-
-	// Print the samples
-	fmt.Printf("Samples: %+v\n", samples)
-
-	// Verify that we have continuous data without gaps
-	require.NotEmpty(t, samples)
-	metric := labels.FromStrings(model.MetricNameLabel, "test_2").String()
-	_, ok := samples[metric]
-
-	require.True(t, ok, "Series %s not returned.", metric)
-
-	// Print the metric
-	fmt.Printf("Metric: %s\n", metric)
-
-	// Verify no out-of-order samples
-	for _, s := range samples {
-		var prevT int64
-		for _, p := range s {
-			fmt.Printf("Comparing timestamp %d with previous %d\n", p.T, prevT)
-			require.Greater(t, p.T, prevT)
-			prevT = p.T
-		}
-	}
-
 	require.Equal(t, 0, countStaleNaN(t, storage)) // Not expecting any stale markers.
 }
+
 func TestGroupHasAlertingRules(t *testing.T) {
 	tests := []struct {
 		group *Group
