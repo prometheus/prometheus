@@ -149,6 +149,7 @@ type ManagerRelabeler struct {
 // NewManagerRelabeler - init new *ManagerRelabeler.
 //
 //revive:disable-next-line:function-length long but readable.
+//revive:disable-next-line:cyclomatic long but understandable.
 func NewManagerRelabeler(
 	clock clockwork.Clock,
 	registerer prometheus.Registerer,
@@ -193,6 +194,8 @@ func NewManagerRelabeler(
 }
 
 // Append append to relabeling heshdex data.
+//
+//revive:disable-next-line:function-length long but readable.
 func (msr *ManagerRelabeler) Append(
 	ctx context.Context,
 	incomingData *IncomingData,
@@ -226,9 +229,9 @@ func (msr *ManagerRelabeler) Append(
 		return err
 	}
 
-	headAppendingTask := NewTaskAppendSeriesToHead(ctx, inputPromise)
-	msr.shards.enqueueHeadAppending(headAppendingTask)
-	headAppendingTask.WaitGroup().Wait()
+	msr.shards.forEachShard(func(shard Shard) {
+		shard.Head().AppendInnerSeriesSlice(inputPromise.ShardsInnerSeries(shard.ShardID()))
+	})
 
 	// blocking groups from internal rotations
 	_ = msr.destinationGroups.RangeGo(
@@ -466,6 +469,23 @@ type shardHead struct {
 	encoder *cppbridge.HeadEncoder
 }
 
+func (h *shardHead) AppendInnerSeriesSlice(innerSeriesSlice []*cppbridge.InnerSeries) {
+	h.encoder.EncodeInnerSeriesSlice(innerSeriesSlice)
+}
+
+type shard struct {
+	id   uint16
+	head *shardHead
+}
+
+func (s *shard) ShardID() uint16 {
+	return s.id
+}
+
+func (s *shard) Head() Head {
+	return s.head
+}
+
 // shards for relabelers.
 type shards struct {
 	stop                            chan struct{}
@@ -478,7 +498,7 @@ type shards struct {
 	stageInputRelabeling            []chan *TaskInputRelabeling
 	stageAppendRelabelerSeries      []chan *TaskAppendRelabelerSeries
 	stageUpdateRelabelerState       []chan *TaskUpdateRelabelerState
-	stageHeadAppending              []chan *TaskAppendSeriesToHead
+	genericTaskCh                   []chan *GenericTask
 	stageOutputRelabeling           []chan *TaskOutputRelabeling
 	stageOutputUpdateRelabelerState []chan *TaskOutputUpdateRelabelerState
 	numberOfShards                  uint16
@@ -533,11 +553,13 @@ func (s *shards) enqueueMetricUpdate(task *TaskMetricUpdate) {
 }
 
 // enqueueHeadAppending append all series after input relabeling stage to head.
-func (s *shards) enqueueHeadAppending(task *TaskAppendSeriesToHead) {
-	task.WaitGroup().Add(int(s.numberOfShards))
-	for _, s := range s.stageHeadAppending {
-		s <- task
+func (s *shards) forEachShard(fn ShardFn) {
+	task := NewGenericTask(fn)
+	task.wg.Add(int(s.numberOfShards))
+	for _, shardGenericTaskCh := range s.genericTaskCh {
+		shardGenericTaskCh <- task
 	}
+	task.wg.Wait()
 }
 
 // enqueueOutputRelabeling send task to shard for output relabeling.
@@ -603,7 +625,7 @@ func (s *shards) reconfiguringStages(numberOfShards uint16) {
 	s.stageInputRelabeling = make([]chan *TaskInputRelabeling, numberOfShards)
 	s.stageAppendRelabelerSeries = make([]chan *TaskAppendRelabelerSeries, numberOfShards)
 	s.stageUpdateRelabelerState = make([]chan *TaskUpdateRelabelerState, numberOfShards)
-	s.stageHeadAppending = make([]chan *TaskAppendSeriesToHead, numberOfShards)
+	s.genericTaskCh = make([]chan *GenericTask, numberOfShards)
 	s.stageOutputRelabeling = make([]chan *TaskOutputRelabeling, numberOfShards)
 	s.stageOutputUpdateRelabelerState = make([]chan *TaskOutputUpdateRelabelerState, numberOfShards)
 
@@ -613,7 +635,7 @@ func (s *shards) reconfiguringStages(numberOfShards uint16) {
 		s.stageInputRelabeling[shardID] = make(chan *TaskInputRelabeling, chanBufferSize)
 		s.stageAppendRelabelerSeries[shardID] = make(chan *TaskAppendRelabelerSeries, chanBufferSize)
 		s.stageUpdateRelabelerState[shardID] = make(chan *TaskUpdateRelabelerState, chanBufferSize)
-		s.stageHeadAppending = make([]chan *TaskAppendSeriesToHead, chanBufferSize)
+		s.genericTaskCh[shardID] = make(chan *GenericTask, chanBufferSize)
 		s.stageOutputRelabeling[shardID] = make(chan *TaskOutputRelabeling, chanBufferSize)
 		s.stageOutputUpdateRelabelerState[shardID] = make(chan *TaskOutputUpdateRelabelerState, chanBufferSize)
 	}
@@ -802,13 +824,14 @@ func (s *shards) run() {
 // shardLoop run relabeling on the shard.
 //
 //revive:disable-next-line:function-length long but readable.
+//revive:disable-next-line:cognitive-complexity long but understandable.
+//revive:disable-next-line:cyclomatic long but understandable.
 func (s *shards) shardLoop(shardID uint16) {
 	for {
 		select {
 		case <-s.stop:
 			s.donesWG.Done()
 			return
-
 		case task := <-s.stageMetricUpdate[shardID]:
 			s.memoryInUse.With(
 				prometheus.Labels{"allocator": "main_lss", "id": fmt.Sprintf("%d", shardID)},
@@ -889,7 +912,6 @@ func (s *shards) shardLoop(shardID uint16) {
 			)
 
 			task.AddResult(shardID, innerSeries)
-
 		case task := <-s.stageUpdateRelabelerState[shardID]:
 			if err := s.inputRelabelers[relabelerKey{task.RelabelerID(), shardID}].UpdateRelabelerState(
 				task.Ctx(),
@@ -899,9 +921,9 @@ func (s *shards) shardLoop(shardID uint16) {
 				Errorf("failed input update relabeler state %d: %s", shardID, err)
 				continue
 			}
-		case task := <-s.stageHeadAppending[shardID]:
-			s.heads[shardID].encoder.EncodeInnerSeriesSlice(task.promise.data[shardID])
-			task.WaitGroup().Done()
+		case task := <-s.genericTaskCh[shardID]:
+			task.shardFn(&shard{id: shardID, head: s.heads[shardID]})
+			task.wg.Done()
 		case task := <-s.stageOutputRelabeling[shardID]:
 			_ = task.DestinationGroups().RangeGo(
 				func(dgid int, dg *DestinationGroup) error {
@@ -1235,32 +1257,29 @@ func (p *InputRelabelingPromise) Wait(ctx context.Context) error {
 	}
 }
 
-type TaskAppendSeriesToHead struct {
-	ctx     context.Context
-	promise *InputRelabelingPromise
+// Head - head appender interface.
+type Head interface {
+	AppendInnerSeriesSlice(innerSeriesSlice []*cppbridge.InnerSeries)
+}
+
+// Shard interface.
+type Shard interface {
+	ShardID() uint16
+	Head() Head
+}
+
+// ShardFn - shard function.
+type ShardFn func(shard Shard)
+
+// GenericTask - generic task, will be executed on each shard.
+type GenericTask struct {
+	shardFn ShardFn
 	wg      *sync.WaitGroup
 }
 
-func (t *TaskAppendSeriesToHead) WaitGroup() *sync.WaitGroup {
-	return t.wg
-}
-
-// Ctx - return task context.
-func (t *TaskAppendSeriesToHead) Ctx() context.Context {
-	return t.ctx
-}
-
-// Promise - return IncomingRelabelingPromise.
-func (t *TaskAppendSeriesToHead) Promise() *InputRelabelingPromise {
-	return t.promise
-}
-
-func NewTaskAppendSeriesToHead(ctx context.Context, promise *InputRelabelingPromise) *TaskAppendSeriesToHead {
-	return &TaskAppendSeriesToHead{
-		ctx:     ctx,
-		promise: promise,
-		wg:      &sync.WaitGroup{},
-	}
+// NewGenericTask - constructor.
+func NewGenericTask(shardFn ShardFn) *GenericTask {
+	return &GenericTask{shardFn: shardFn, wg: &sync.WaitGroup{}}
 }
 
 //

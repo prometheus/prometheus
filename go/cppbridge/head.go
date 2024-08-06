@@ -4,10 +4,12 @@ import (
 	"runtime"
 )
 
+// HeadDataStorage is Go wrapper around series_data::Data_storage.
 type HeadDataStorage struct {
 	dataStorage uintptr
 }
 
+// NewHeadDataStorage - constructor.
 func NewHeadDataStorage() *HeadDataStorage {
 	ds := &HeadDataStorage{
 		dataStorage: seriesDataDataStorageCtor(),
@@ -20,12 +22,14 @@ func NewHeadDataStorage() *HeadDataStorage {
 	return ds
 }
 
+// NewHeadDataStorage is Go wrapper around series_data::Encoder.
 type HeadEncoder struct {
 	encoder     uintptr
 	dataStorage *HeadDataStorage
 }
 
-func NewHeadEncoderWithDataStorageAndOutdatedSampleEncoder(dataStorage *HeadDataStorage) *HeadEncoder {
+// NewHeadEncoderWithDataStorage - constructor.
+func NewHeadEncoderWithDataStorage(dataStorage *HeadDataStorage) *HeadEncoder {
 	encoder := &HeadEncoder{
 		encoder:     seriesDataEncoderCtor(dataStorage.dataStorage),
 		dataStorage: dataStorage,
@@ -38,32 +42,17 @@ func NewHeadEncoderWithDataStorageAndOutdatedSampleEncoder(dataStorage *HeadData
 	return encoder
 }
 
+// NewHeadEncoder - constructor.
 func NewHeadEncoder() *HeadEncoder {
-	return NewHeadEncoderWithDataStorageAndOutdatedSampleEncoder(NewHeadDataStorage())
+	return NewHeadEncoderWithDataStorage(NewHeadDataStorage())
 }
 
+// Encode - encodes single triplet.
 func (e *HeadEncoder) Encode(seriesID uint32, timestamp int64, value float64) {
 	seriesDataEncoderEncode(e.encoder, seriesID, timestamp, value)
 }
 
+// EncodeInnerSeriesSlice - encodes InnerSeries slice produced by relabeler.
 func (e *HeadEncoder) EncodeInnerSeriesSlice(innerSeriesSlice []*InnerSeries) {
 	seriesDataEncoderEncodeInnerSeriesSlice(e.encoder, innerSeriesSlice)
-}
-
-type HeadDataQuerier struct {
-	querier     uintptr
-	dataStorage *HeadDataStorage
-}
-
-func NewHeadDataQueryable(dataStorage *HeadDataStorage) *HeadDataQuerier {
-	querier := &HeadDataQuerier{
-		querier:     seriesDataQuerierCtor(dataStorage.dataStorage),
-		dataStorage: dataStorage,
-	}
-
-	runtime.SetFinalizer(querier, func(querier *HeadDataQuerier) {
-		seriesDataQuerierDtor(querier.querier)
-	})
-
-	return querier
 }

@@ -1006,31 +1006,3 @@ func seriesDataEncoderDtor(encoder uintptr) {
 		uintptr(unsafe.Pointer(&args)),
 	)
 }
-
-func seriesDataQuerierCtor(dataStorage uintptr) uintptr {
-	var args = struct {
-		dataStorage uintptr
-	}{dataStorage}
-	var res struct {
-		querier uintptr
-	}
-
-	fastcgo.UnsafeCall2(
-		C.prompp_series_data_querier_ctor,
-		uintptr(unsafe.Pointer(&args)),
-		uintptr(unsafe.Pointer(&res)),
-	)
-
-	return res.querier
-}
-
-func seriesDataQuerierDtor(queryable uintptr) {
-	var args = struct {
-		queryable uintptr
-	}{queryable}
-
-	fastcgo.UnsafeCall1(
-		C.prompp_series_data_querier_dtor,
-		uintptr(unsafe.Pointer(&args)),
-	)
-}
