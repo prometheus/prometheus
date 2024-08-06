@@ -90,22 +90,23 @@ type Expressions []Expr
 
 // AggregateExpr represents an aggregation operation on a Vector.
 type AggregateExpr struct {
-	Op       ItemType // The used aggregation operation.
 	Expr     Expr     // The Vector expression over which is aggregated.
 	Param    Expr     // Parameter used by some aggregators.
 	Grouping []string // The labels by which to group the Vector.
-	Without  bool     // Whether to drop the given labels rather than keep them.
 	PosRange posrange.PositionRange
+	Op       ItemType // The used aggregation operation.
+	Without  bool     // Whether to drop the given labels rather than keep them.
 }
 
 // BinaryExpr represents a binary expression between two child expressions.
 type BinaryExpr struct {
-	Op       ItemType // The operation of the expression.
-	LHS, RHS Expr     // The operands on the respective sides of the operator.
+	LHS, RHS Expr // The operands on the respective sides of the operator.
 
 	// The matching behavior for the operation if both operands are Vectors.
 	// If they are not this field is nil.
 	VectorMatching *VectorMatching
+
+	Op ItemType // The operation of the expression.
 
 	// If a comparison operator, return 0/1 rather than filtering.
 	ReturnBool bool
@@ -131,8 +132,9 @@ type MatrixSelector struct {
 
 // SubqueryExpr represents a subquery.
 type SubqueryExpr struct {
-	Expr  Expr
-	Range time.Duration
+	Expr      Expr
+	Timestamp *int64
+	Range     time.Duration
 	// OriginalOffset is the actual offset that was set in the query.
 	// This never changes.
 	OriginalOffset time.Duration
@@ -140,7 +142,6 @@ type SubqueryExpr struct {
 	// which is calculated using the original offset, at modifier time,
 	// eval time, and subquery offsets in the AST tree.
 	Offset     time.Duration
-	Timestamp  *int64
 	StartOrEnd ItemType // Set when @ is used with start() or end()
 	Step       time.Duration
 
@@ -170,8 +171,9 @@ type StringLiteral struct {
 // UnaryExpr represents a unary operation on another expression.
 // Currently unary operations are only supported for Scalars.
 type UnaryExpr struct {
-	Op   ItemType
 	Expr Expr
+
+	Op ItemType
 
 	StartPos posrange.Pos
 }
@@ -191,7 +193,15 @@ func (e *StepInvariantExpr) PositionRange() posrange.PositionRange {
 
 // VectorSelector represents a Vector selection.
 type VectorSelector struct {
-	Name string
+	// The unexpanded seriesSet populated at query preparation time.
+	UnexpandedSeriesSet storage.SeriesSet
+	Timestamp           *int64
+	Name                string
+	LabelMatchers       []*labels.Matcher
+
+	Series []storage.Series
+
+	PosRange posrange.PositionRange
 	// OriginalOffset is the actual offset that was set in the query.
 	// This never changes.
 	OriginalOffset time.Duration
@@ -199,16 +209,8 @@ type VectorSelector struct {
 	// which is calculated using the original offset, at modifier time,
 	// eval time, and subquery offsets in the AST tree.
 	Offset               time.Duration
-	Timestamp            *int64
-	SkipHistogramBuckets bool     // Set when decoding native histogram buckets is not needed for query evaluation.
 	StartOrEnd           ItemType // Set when @ is used with start() or end()
-	LabelMatchers        []*labels.Matcher
-
-	// The unexpanded seriesSet populated at query preparation time.
-	UnexpandedSeriesSet storage.SeriesSet
-	Series              []storage.Series
-
-	PosRange posrange.PositionRange
+	SkipHistogramBuckets bool     // Set when decoding native histogram buckets is not needed for query evaluation.
 }
 
 // TestStmt is an internal helper statement that allows execution
@@ -282,17 +284,17 @@ func (vmc VectorMatchCardinality) String() string {
 // VectorMatching describes how elements from two Vectors in a binary
 // operation are supposed to be matched.
 type VectorMatching struct {
-	// The cardinality of the two Vectors.
-	Card VectorMatchCardinality
 	// MatchingLabels contains the labels which define equality of a pair of
 	// elements from the Vectors.
 	MatchingLabels []string
-	// On includes the given label names from matching,
-	// rather than excluding them.
-	On bool
 	// Include contains additional labels that should be included in
 	// the result from the side with the lower cardinality.
 	Include []string
+	// The cardinality of the two Vectors.
+	Card VectorMatchCardinality
+	// On includes the given label names from matching,
+	// rather than excluding them.
+	On bool
 }
 
 // Visitor allows visiting a Node and its child nodes. The Visit method is

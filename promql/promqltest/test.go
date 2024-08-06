@@ -152,12 +152,13 @@ func runTest(t testutil.T, input string, engine promql.QueryEngine) error {
 type test struct {
 	testutil.T
 
-	cmds []testCommand
+	context context.Context
 
 	storage *teststorage.TestStorage
 
-	context   context.Context
 	cancelCtx context.CancelFunc
+
+	cmds []testCommand
 }
 
 // newTest returns an initialized empty Test.
@@ -407,10 +408,10 @@ func (*evalCmd) testCmd()  {}
 // loadCmd is a command that loads sequences of sample values for specific
 // metrics into the storage.
 type loadCmd struct {
-	gap       time.Duration
 	metrics   map[uint64]labels.Labels
 	defs      map[uint64][]promql.Sample
 	exemplars map[uint64][]exemplar.Exemplar
+	gap       time.Duration
 	withNHCB  bool
 }
 
@@ -476,9 +477,9 @@ func getHistogramMetricBase(m labels.Labels, suffix string) (labels.Labels, uint
 }
 
 type tempHistogramWrapper struct {
+	histogramByTs map[int64]tempHistogram
 	metric        labels.Labels
 	upperBounds   []float64
-	histogramByTs map[int64]tempHistogram
 }
 
 func newTempHistogramWrapper() tempHistogramWrapper {
@@ -639,24 +640,24 @@ func appendSample(a storage.Appender, s promql.Sample, m labels.Labels) error {
 // evalCmd is a command that evaluates an expression for the given time (range)
 // and expects a specific result.
 type evalCmd struct {
-	expr  string
-	start time.Time
-	end   time.Time
-	step  time.Duration
-	line  int
+	start              time.Time
+	end                time.Time
+	expectedFailRegexp *regexp.Regexp
+
+	metrics             map[uint64]labels.Labels
+	expected            map[uint64]entry
+	expr                string
+	expectedFailMessage string
+	step                time.Duration
+	line                int
 
 	isRange             bool // if false, instant query
 	fail, warn, ordered bool
-	expectedFailMessage string
-	expectedFailRegexp  *regexp.Regexp
-
-	metrics  map[uint64]labels.Labels
-	expected map[uint64]entry
 }
 
 type entry struct {
-	pos  int
 	vals []parser.SequenceValue
+	pos  int
 }
 
 func (e entry) String() string {
@@ -886,8 +887,8 @@ func (cmd clearCmd) String() string {
 }
 
 type atModifierTestCase struct {
-	expr     string
 	evalTime time.Time
+	expr     string
 }
 
 func atModifierTestCases(exprStr string, evalTime time.Time) ([]atModifierTestCase, error) {
@@ -1167,14 +1168,14 @@ func parseNumber(s string) (float64, error) {
 // LazyLoader lazily loads samples into storage.
 // This is specifically implemented for unit testing of rules.
 type LazyLoader struct {
+	storage storage.Storage
+	context context.Context
 	loadCmd *loadCmd
 
-	storage          storage.Storage
-	SubqueryInterval time.Duration
-
 	queryEngine *promql.Engine
-	context     context.Context
 	cancelCtx   context.CancelFunc
+
+	SubqueryInterval time.Duration
 
 	opts LazyLoaderOpts
 }

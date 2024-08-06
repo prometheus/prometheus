@@ -35,8 +35,8 @@ func (String) Type() parser.ValueType { return parser.ValueTypeString }
 
 // String represents a string value.
 type String struct {
-	T int64
 	V string
+	T int64
 }
 
 func (s String) String() string {
@@ -113,8 +113,8 @@ func (p FPoint) MarshalJSON() ([]byte, error) {
 // HPoint represents a single histogram data point for a given timestamp.
 // H must never be nil.
 type HPoint struct {
-	T int64
 	H *histogram.FloatHistogram
+	T int64
 }
 
 func (p HPoint) String() string {
@@ -189,11 +189,11 @@ func totalHPointSize(histograms []HPoint) int {
 // sample or a histogram sample. If H is nil, it is a float sample. Otherwise,
 // it is a histogram sample.
 type Sample struct {
-	T int64
-	F float64
 	H *histogram.FloatHistogram
 
 	Metric labels.Labels
+	T      int64
+	F      float64
 }
 
 func (s Sample) String() string {
@@ -222,8 +222,8 @@ func (s Sample) MarshalJSON() ([]byte, error) {
 		return json.Marshal(f)
 	}
 	h := struct {
-		M labels.Labels `json:"metric"`
 		H HPoint        `json:"histogram"`
+		M labels.Labels `json:"metric"`
 	}{
 		M: s.Metric,
 		H: HPoint{T: s.T, H: s.H},
@@ -417,12 +417,12 @@ func (ss *StorageSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
 }
 
 type storageSeriesIterator struct {
+	currH                *histogram.FloatHistogram
 	floats               []FPoint
 	histograms           []HPoint
 	iFloats, iHistograms int
 	currT                int64
 	currF                float64
-	currH                *histogram.FloatHistogram
 }
 
 func newStorageSeriesIterator(series Series) *storageSeriesIterator {

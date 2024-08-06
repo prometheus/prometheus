@@ -188,13 +188,13 @@ type query struct {
 	stats *stats.QueryTimers
 	// Sample stats for the query execution.
 	sampleStats *stats.QuerySamples
-	// Result matrix for reuse.
-	matrix Matrix
 	// Cancellation function for the query.
 	cancel func()
 
 	// The engine against which the query is executed.
 	ng *Engine
+	// Result matrix for reuse.
+	matrix Matrix
 }
 
 type QueryOrigin struct{}
@@ -287,16 +287,17 @@ type QueryTracker interface {
 type EngineOpts struct {
 	Logger             log.Logger
 	Reg                prometheus.Registerer
-	MaxSamples         int
-	Timeout            time.Duration
 	ActiveQueryTracker QueryTracker
-	// LookbackDelta determines the time since the last sample after which a time
-	// series is considered stale.
-	LookbackDelta time.Duration
 
 	// NoStepSubqueryIntervalFn is the default evaluation interval of
 	// a subquery in milliseconds if no step in range vector was specified `[30m:<step>]`.
 	NoStepSubqueryIntervalFn func(rangeMillis int64) int64
+
+	MaxSamples int
+	Timeout    time.Duration
+	// LookbackDelta determines the time since the last sample after which a time
+	// series is considered stale.
+	LookbackDelta time.Duration
 
 	// EnableAtModifier if true enables @ modifier. Disabled otherwise. This
 	// is supposed to be enabled for regular PromQL (as of Prometheus v2.33)
@@ -319,14 +320,14 @@ type EngineOpts struct {
 // It is connected to a querier.
 type Engine struct {
 	logger                   log.Logger
-	metrics                  *engineMetrics
-	timeout                  time.Duration
-	maxSamplesPerQuery       int
 	activeQueryTracker       QueryTracker
 	queryLogger              QueryLogger
-	queryLoggerLock          sync.RWMutex
-	lookbackDelta            time.Duration
+	metrics                  *engineMetrics
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
+	timeout                  time.Duration
+	maxSamplesPerQuery       int
+	lookbackDelta            time.Duration
+	queryLoggerLock          sync.RWMutex
 	enableAtModifier         bool
 	enableNegativeOffset     bool
 	enablePerStepStats       bool
@@ -1022,16 +1023,17 @@ func (e errWithWarnings) Error() string { return e.err.Error() }
 type evaluator struct {
 	ctx context.Context
 
+	logger                   log.Logger
+	samplesStats             *stats.QuerySamples
+	noStepSubqueryIntervalFn func(rangeMillis int64) int64
+
 	startTimestamp int64 // Start time in milliseconds.
 	endTimestamp   int64 // End time in milliseconds.
 	interval       int64 // Interval in milliseconds.
 
-	maxSamples               int
-	currentSamples           int
-	logger                   log.Logger
-	lookbackDelta            time.Duration
-	samplesStats             *stats.QuerySamples
-	noStepSubqueryIntervalFn func(rangeMillis int64) int64
+	maxSamples     int
+	currentSamples int
+	lookbackDelta  time.Duration
 }
 
 // errorf causes a panic with the input formatted into an error.
@@ -1084,23 +1086,24 @@ type EvalSeriesHelper struct {
 
 // EvalNodeHelper stores extra information and caches for evaluating a single node across steps.
 type EvalNodeHelper struct {
-	// Evaluation timestamp.
-	Ts int64
-	// Vector that can be used for output.
-	Out Vector
-
 	// Caches.
 	// funcHistogramQuantile for classic histograms.
 	signatureToMetricWithBuckets map[string]*metricWithBuckets
 
-	lb           *labels.Builder
-	lblBuf       []byte
-	lblResultBuf []byte
+	lb *labels.Builder
 
 	// For binary vector matching.
 	rightSigs    map[string]Sample
 	matchedSigs  map[string]map[uint64]struct{}
 	resultMetric map[string]labels.Labels
+	// Vector that can be used for output.
+	Out Vector
+
+	lblBuf       []byte
+	lblResultBuf []byte
+
+	// Evaluation timestamp.
+	Ts int64
 }
 
 func (enh *EvalNodeHelper) resetBuilder(lbls labels.Labels) {
@@ -2773,15 +2776,15 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 }
 
 type groupedAggregation struct {
+	histogramValue    *histogram.FloatHistogram
+	heap              vectorByValueHeap
+	floatValue        float64
+	floatMean         float64 // Mean, or "compensating value" for Kahan summation.
+	groupCount        int
 	seen              bool // Was this output groups seen in the input at this timestamp.
 	hasFloat          bool // Has at least 1 float64 sample aggregated.
 	hasHistogram      bool // Has at least 1 histogram sample aggregated.
-	floatValue        float64
-	histogramValue    *histogram.FloatHistogram
-	floatMean         float64 // Mean, or "compensating value" for Kahan summation.
-	groupCount        int
 	groupAggrComplete bool // Used by LIMITK to short-cut series loop when we've reached K elem on every group
-	heap              vectorByValueHeap
 }
 
 // aggregation evaluates sum, avg, count, stdvar, stddev or quantile at one timestep on inputMatrix.

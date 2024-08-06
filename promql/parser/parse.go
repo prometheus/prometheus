@@ -45,22 +45,23 @@ type Parser interface {
 }
 
 type parser struct {
-	lex Lexer
-
-	inject    ItemType
-	injecting bool
+	generatedParserResult interface{}
 
 	// functions contains all functions supported by the parser instance.
 	functions map[string]*Function
+
+	parseErrors ParseErrors
+	lex         Lexer
+
+	yyParser yyParserImpl
+
+	inject ItemType
 
 	// Everytime an Item is lexed that could be the end
 	// of certain expressions its end position is stored here.
 	lastClosing posrange.Pos
 
-	yyParser yyParserImpl
-
-	generatedParserResult interface{}
-	parseErrors           ParseErrors
+	injecting bool
 }
 
 type Opt func(p *parser)
@@ -121,9 +122,10 @@ func (p *parser) Close() {
 
 // ParseErr wraps a parsing error with line and position context.
 type ParseErr struct {
+	Err   error
+	Query string
+
 	PositionRange posrange.PositionRange
-	Err           error
-	Query         string
 
 	// LineOffset is an additional line offset to be added. Only used inside unit tests.
 	LineOffset int
@@ -224,9 +226,9 @@ func ParseMetricSelectors(matchers []string) (m [][]*labels.Matcher, err error) 
 
 // SequenceValue is an omittable value in a sequence of time series values.
 type SequenceValue struct {
+	Histogram *histogram.FloatHistogram
 	Value     float64
 	Omitted   bool
-	Histogram *histogram.FloatHistogram
 }
 
 func (v SequenceValue) String() string {
