@@ -10,7 +10,10 @@
 
 namespace series_index::querier {
 
-template <class Index, template <class> class MemoryPoolContainer = std::vector>
+template <class Item>
+using StdVector = std::vector<Item>;
+
+template <class Index, template <class> class MemoryPoolContainer = StdVector>
 class Querier {
  public:
   class MatchersComparatorByTypeAndCardinality {
