@@ -236,13 +236,15 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                           value: (pool.upCount / pool.count) * 100,
                           color: "green.4",
                         },
-                        {
-                          value: (pool.downCount / pool.count) * 100,
-                          color: "red.5",
-                        },
+                        // Important that gray is the middle one, since the middle one seems to be
+                        // the default color if all three values are 0 (empty pool = gray).
                         {
                           value: (pool.unknownCount / pool.count) * 100,
                           color: "gray.4",
+                        },
+                        {
+                          value: (pool.downCount / pool.count) * 100,
+                          color: "red.5",
                         },
                       ]}
                     />
