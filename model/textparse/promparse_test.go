@@ -479,14 +479,12 @@ const (
 	promtestdataSampleCount = 410
 )
 
-func newOpenMetricsParserNoOptions(b []byte, st *labels.SymbolTable) Parser {
-	return NewOpenMetricsParser(b, st)
-}
-
 func BenchmarkParse(b *testing.B) {
 	for parserName, parser := range map[string]func([]byte, *labels.SymbolTable) Parser{
-		"prometheus":  NewPromParser,
-		"openmetrics": newOpenMetricsParserNoOptions,
+		"prometheus": NewPromParser,
+		"openmetrics": func(b []byte, st *labels.SymbolTable) Parser {
+			return NewOpenMetricsParser(b, st)
+		},
 	} {
 		for _, fn := range []string{"promtestdata.txt", "promtestdata.nometa.txt"} {
 			f, err := os.Open(fn)
