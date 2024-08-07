@@ -112,17 +112,10 @@ func RunBuiltinTests(t TBRun, engine promql.QueryEngine) {
 
 // RunTest parses and runs the test against the provided engine.
 func RunTest(t TBRun, input string, engine promql.QueryEngine) {
-	// This slightly awkward setup exists so that we can inject a custom runner to test runTest in unit tests.
-	runner := func(name string, test func() error) {
-		t.Run(name, func(t *testing.T) {
-			require.NoError(t, test())
-		})
-	}
-
-	require.NoError(t, runTest(t, input, engine, runner))
+	require.NoError(t, runTest(t, input, engine))
 }
 
-func runTest(t testutil.T, input string, engine promql.QueryEngine, runner TestRunner) error {
+func runTest(t TBRun, input string, engine promql.QueryEngine) error {
 	test, err := newTest(t, input)
 
 	// Why do this before checking err? newTest() can create the test storage and then return an error,
@@ -144,7 +137,7 @@ func runTest(t testutil.T, input string, engine promql.QueryEngine, runner TestR
 	}
 
 	for _, cmd := range test.cmds {
-		if err := test.exec(cmd, engine, runner); err != nil {
+		if err := test.exec(cmd, engine, t); err != nil {
 			// TODO(fabxc): aggregate command errors, yield diffs for result
 			// comparison errors.
 			return err
@@ -975,7 +968,7 @@ func hasAtModifier(path []parser.Node) bool {
 }
 
 // exec processes a single step of the test.
-func (t *test) exec(tc testCommand, engine promql.QueryEngine, runner TestRunner) error {
+func (t *test) exec(tc testCommand, engine promql.QueryEngine, tb TBRun) error {
 	switch cmd := tc.(type) {
 	case *clearCmd:
 		t.clear()
@@ -992,7 +985,7 @@ func (t *test) exec(tc testCommand, engine promql.QueryEngine, runner TestRunner
 		}
 
 	case *evalCmd:
-		t.execEval(cmd, engine, runner)
+		t.execEval(cmd, engine, tb)
 
 	default:
 		panic("promql.Test.exec: unknown test command type")
@@ -1000,17 +993,19 @@ func (t *test) exec(tc testCommand, engine promql.QueryEngine, runner TestRunner
 	return nil
 }
 
-type TestRunner func(name string, test func() error)
+// This is replaced in unit tests for runTest so that we can check that subtests fail for the
+// expected reason.
+var requireNoError = require.NoError
 
-func (t *test) execEval(cmd *evalCmd, engine promql.QueryEngine, runner TestRunner) {
+func (t *test) execEval(cmd *evalCmd, engine promql.QueryEngine, tb TBRun) {
 	name := fmt.Sprintf("line %v: %v", cmd.line, cmd.raw)
 
-	runner(name, func() error {
+	tb.Run(name, func(tb *testing.T) {
 		if cmd.isRange {
-			return t.execRangeEval(cmd, engine)
+			requireNoError(tb, t.execRangeEval(cmd, engine))
+		} else {
+			requireNoError(tb, t.execInstantEval(cmd, engine))
 		}
-
-		return t.execInstantEval(cmd, engine)
 	})
 }
 
