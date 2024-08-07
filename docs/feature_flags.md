@@ -73,7 +73,7 @@ this feature flag will be ignored.
 
 `--enable-feature=agent`
 
-When enabled, Prometheus runs in agent mode. The agent mode is limited to
+When enabled, Prometheus runs in [agent mode](prometheus_agent.md). The agent mode is limited to
 discovery, scrape and remote write.
 
 This is useful when you do not need to query the Prometheus data locally, but
