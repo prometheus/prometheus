@@ -454,7 +454,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 		if p.isCreatedSeries() && p.skipCTSeries {
 			return p.Next()
 		}
-		return suffixEntry, nil
+		return suffixEntry, err
 	case tMName:
 		p.offsets = append(p.offsets, p.start, p.l.i)
 		p.series = p.l.b[p.start:p.l.i]
@@ -476,7 +476,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 		if p.isCreatedSeries() && p.skipCTSeries {
 			return p.Next()
 		}
-		return suffixEntry, nil
+		return suffixEntry, err
 
 	default:
 		err = p.parseError("expected a valid start token", t)
