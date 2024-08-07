@@ -448,7 +448,13 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 
 		p.series = p.l.b[p.start:p.l.i]
 		suffixEntry, err := p.parseMetricSuffix(p.nextToken())
-		return p.skipCTParsing(suffixEntry, err)
+		if err != nil {
+			return EntryInvalid, err
+		}
+		if p.isCreatedSeries() && p.skipCTSeries {
+			return p.Next()
+		}
+		return suffixEntry, nil
 	case tMName:
 		p.offsets = append(p.offsets, p.start, p.l.i)
 		p.series = p.l.b[p.start:p.l.i]
@@ -464,7 +470,13 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 		}
 
 		suffixEntry, err := p.parseMetricSuffix(t2)
-		return p.skipCTParsing(suffixEntry, err)
+		if err != nil {
+			return EntryInvalid, err
+		}
+		if p.isCreatedSeries() && p.skipCTSeries {
+			return p.Next()
+		}
+		return suffixEntry, nil
 
 	default:
 		err = p.parseError("expected a valid start token", t)
@@ -580,23 +592,20 @@ func (p *OpenMetricsParser) parseLVals(offsets []int, isExemplar bool) ([]int, e
 	}
 }
 
-// skipCTParsing checks if the current series is a _created series and skips it if necessary.
-func (p *OpenMetricsParser) skipCTParsing(e Entry, err error) (Entry, error) {
-	if e != EntrySeries || !p.skipCTSeries || err != nil {
-		return e, err
-	}
+// isCreatedSeries returns true if the current series is a _created series.
+func (p *OpenMetricsParser) isCreatedSeries() bool {
 	var newLbs labels.Labels
 	p.Metric(&newLbs)
 	name := newLbs.Get(model.MetricNameLabel)
 	switch p.mtype {
 	case model.MetricTypeCounter, model.MetricTypeSummary, model.MetricTypeHistogram:
 		if strings.HasSuffix(name, "_created") {
-			return p.Next()
+			return true
 		}
 	default:
 		break
 	}
-	return EntrySeries, nil
+	return false
 }
 
 // parseMetricSuffix parses the end of the line after the metric name and
