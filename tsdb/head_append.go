@@ -466,6 +466,9 @@ func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTi
 			// like federation and erroring out at that time would be extremely noisy.
 			// This only checks against the latest in-order sample.
 			// The OOO headchunk has its own method to detect these duplicates.
+			if s.lastHistogramValue != nil || s.lastFloatHistogramValue != nil {
+				return false, 0, storage.NewDuplicateHistogramToFloatErr(t, v)
+			}
 			if math.Float64bits(s.lastValue) != math.Float64bits(v) {
 				return false, 0, storage.NewDuplicateFloatErr(t, s.lastValue, v)
 			}
