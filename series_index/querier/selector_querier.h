@@ -71,7 +71,7 @@ class SelectorQuerier {
 
   template <class LabelMatcher>
   PROMPP_ALWAYS_INLINE const TrieIndex::Trie* get_values_trie(const LabelMatcher& label_matcher, Selector::Matcher& matcher) const noexcept {
-    if (auto index = index_.names_trie().lookup(std::string_view(label_matcher.name)); index) {
+    if (auto index = index_.names_trie().lookup(static_cast<std::string_view>(label_matcher.name)); index) {
       matcher.label_name_id = *index;
       return index_.values_trie(*index);
     }
@@ -111,7 +111,7 @@ class SelectorQuerier {
       return QuerierStatus::kNoMatch;
     }
 
-    if (auto value = trie->lookup(std::string_view(label_matcher.value)); value) {
+    if (auto value = trie->lookup(static_cast<std::string_view>(label_matcher.value)); value) {
       matcher.matches.emplace_back(*value);
       matcher.status = MatchStatus::kPartialMatch;
       return QuerierStatus::kMatch;
@@ -142,7 +142,7 @@ class SelectorQuerier {
 
   template <class LabelMatcher>
   QuerierStatus query_values_by_regexp(const LabelMatcher& label_matcher, const TrieIndex::Trie* trie, Selector::Matcher& matcher) {
-    auto regexp = RegexpParser::parse(std::string_view(label_matcher.value));
+    auto regexp = RegexpParser::parse(static_cast<std::string_view>(label_matcher.value));
     switch (RegexpMatchAnalyzer::analyze(regexp.get())) {
       case RegexpMatchAnalyzer::Status::kError: {
         matcher.status = MatchStatus::kError;
