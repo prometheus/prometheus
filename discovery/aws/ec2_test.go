@@ -203,50 +203,54 @@ func TestRefreshAZIDsHandleError(t *testing.T) {
 	require.Equal(t, "No AZs found", err.Error())
 }
 
-func TestRefreshNoPrivateIp(t *testing.T) {
-	ctx := context.Background()
-	client := newMockEC2Client()
-	ec2Data := &client.ec2Data
+// Tests for the refresh function.
+//
+//	name - the name of the test
+//	generator - a generator function for the input and expected output
+type generator_function func(*EC2Discovery) []*targetgroup.Group
 
-	GenerateTestAzData(ec2Data)
+var refreshTests = []struct {
+	name      string
+	generator generator_function
+}{
+	{
+		name:      "NoPrivateIp",
+		generator: generateRefreshNoPrivateIp,
+	},
+	{
+		name:      "NoVpc",
+		generator: generateRefreshNoVpc,
+	},
+	{
+		name:      "Ipv4",
+		generator: generateRefreshIpv4,
+	},
+	{
+		name:      "Ipv6",
+		generator: generateRefreshIpv6,
+	},
+}
+
+func generateRefreshNoPrivateIp(d *EC2Discovery) []*targetgroup.Group {
+	ec2Data := &d.ec2.(*mockEC2Client).ec2Data
 
 	instance := ec2.Instance{}
 	instance.SetInstanceId(fmt.Sprintf("instance-id-%s", randString(8)))
 
 	ec2Data.instances = append(ec2Data.instances, &instance)
 
-	d := &EC2Discovery{
-		ec2: client,
-		cfg: &EC2SDConfig{
-			Region: ec2Data.region,
-		},
-	}
-
 	expected := make([]*targetgroup.Group, 1)
 	expected[0] = &targetgroup.Group{
 		Source: ec2Data.region,
 	}
 
-	g, err := d.refresh(ctx)
-	require.Equal(t, expected, g)
-	require.NoError(t, err)
+	return expected
 }
 
-func TestRefreshNoVpc(t *testing.T) {
-	ctx := context.Background()
-	client := newMockEC2Client()
-	ec2Data := &client.ec2Data
+func generateRefreshNoVpc(d *EC2Discovery) []*targetgroup.Group {
+	ec2Data := &d.ec2.(*mockEC2Client).ec2Data
 
-	GenerateTestAzData(ec2Data)
 	azIdx := GenerateTestInstanceData(ec2Data)
-
-	d := &EC2Discovery{
-		ec2: client,
-		cfg: &EC2SDConfig{
-			Port:   randNumber(1024, 65535),
-			Region: ec2Data.region,
-		},
-	}
 
 	expected := make([]*targetgroup.Group, 1)
 	expected[0] = &targetgroup.Group{
@@ -254,26 +258,13 @@ func TestRefreshNoVpc(t *testing.T) {
 	}
 	expected[0].Targets = append(expected[0].Targets, GenerateExpectedLabels(ec2Data, azIdx, d.cfg.Port))
 
-	g, err := d.refresh(ctx)
-	require.Equal(t, expected, g)
-	require.NoError(t, err)
+	return expected
 }
 
-func TestRefreshIpv4(t *testing.T) {
-	ctx := context.Background()
-	client := newMockEC2Client()
-	ec2Data := &client.ec2Data
+func generateRefreshIpv4(d *EC2Discovery) []*targetgroup.Group {
+	ec2Data := &d.ec2.(*mockEC2Client).ec2Data
 
-	GenerateTestAzData(ec2Data)
 	azIdx := GenerateTestInstanceData(ec2Data)
-
-	d := &EC2Discovery{
-		ec2: client,
-		cfg: &EC2SDConfig{
-			Port:   randNumber(1024, 65535),
-			Region: ec2Data.region,
-		},
-	}
 
 	ec2Data.instances[0].SetSubnetId(ec2Data.azIDs[azIdx])
 	ec2Data.instances[0].SetVpcId(fmt.Sprintf("vpc-%s", randString(8)))
@@ -315,26 +306,13 @@ func TestRefreshIpv4(t *testing.T) {
 	}
 	expected[0].Targets = append(expected[0].Targets, labels)
 
-	g, err := d.refresh(ctx)
-	require.Equal(t, expected, g)
-	require.NoError(t, err)
+	return expected
 }
 
-func TestRefreshIpv6(t *testing.T) {
-	ctx := context.Background()
-	client := &mockEC2Client{}
-	ec2Data := &client.ec2Data
+func generateRefreshIpv6(d *EC2Discovery) []*targetgroup.Group {
+	ec2Data := &d.ec2.(*mockEC2Client).ec2Data
 
-	GenerateTestAzData(ec2Data)
 	azIdx := GenerateTestInstanceData(ec2Data)
-
-	d := &EC2Discovery{
-		ec2: client,
-		cfg: &EC2SDConfig{
-			Port:   randNumber(1024, 65535),
-			Region: ec2Data.region,
-		},
-	}
 
 	ec2Data.instances[0].SetSubnetId(ec2Data.azIDs[azIdx])
 	ec2Data.instances[0].SetVpcId(fmt.Sprintf("vpc-%s", randString(8)))
@@ -422,9 +400,36 @@ func TestRefreshIpv6(t *testing.T) {
 	}
 	expected[0].Targets = append(expected[0].Targets, labels)
 
-	g, err := d.refresh(ctx)
-	require.Equal(t, expected, g)
-	require.NoError(t, err)
+	return expected
+}
+
+func TestRefresh(t *testing.T) {
+	ctx := context.Background()
+	client := newMockEC2Client()
+
+	// iterate through the refreshTests array
+	for _, tt := range refreshTests {
+		t.Run(tt.name, func(t *testing.T) {
+			// generate basic availability zone test data
+			client.ec2Data = ec2DataStore{}
+			GenerateTestAzData(&client.ec2Data)
+
+			d := &EC2Discovery{
+				ec2: client,
+				cfg: &EC2SDConfig{
+					Port:   randNumber(1024, 65535),
+					Region: client.ec2Data.region,
+				},
+			}
+
+			expected := tt.generator(d)
+
+			g, err := d.refresh(ctx)
+			require.Equal(t, expected, g)
+			require.NoError(t, err)
+		})
+	}
+
 }
 
 // EC2 client mock.
