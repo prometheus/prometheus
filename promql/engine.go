@@ -2784,6 +2784,7 @@ type groupedAggregation struct {
 	seen              bool // Was this output groups seen in the input at this timestamp.
 	hasFloat          bool // Has at least 1 float64 sample aggregated.
 	hasHistogram      bool // Has at least 1 histogram sample aggregated.
+	abandonHistogram  bool // If true, group has seen mixed exponential and custom buckets, or incompatible custom buckets.
 	groupAggrComplete bool // Used by LIMITK to short-cut series loop when we've reached K elem on every group.
 	incrementalMean   bool // True after reverting to incremental calculation of the mean value.
 }
@@ -2809,10 +2810,11 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 		// Initialize this group if it's the first time we've seen it.
 		if !group.seen {
 			*group = groupedAggregation{
-				seen:       true,
-				floatValue: f,
-				floatMean:  f,
-				groupCount: 1,
+				seen:             true,
+				floatValue:       f,
+				floatMean:        f,
+				abandonHistogram: false,
+				groupCount:       1,
 			}
 			switch op {
 			case parser.AVG, parser.SUM:
@@ -2833,6 +2835,10 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			continue
 		}
 
+		if group.abandonHistogram {
+			continue
+		}
+
 		switch op {
 		case parser.SUM:
 			if h != nil {
@@ -2841,6 +2847,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 					_, err := group.histogramValue.Add(h)
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
+						group.abandonHistogram = true
 					}
 				}
 				// Otherwise the aggregation contained floats
@@ -2987,7 +2994,9 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				annos.Add(annotations.NewMixedFloatsHistogramsAggWarning(e.Expr.PositionRange()))
 				continue
 			}
-			if aggr.hasHistogram {
+			if aggr.abandonHistogram {
+				continue
+			} else if aggr.hasHistogram {
 				aggr.histogramValue.Compact(0)
 			} else {
 				aggr.floatValue += aggr.floatKahanC
