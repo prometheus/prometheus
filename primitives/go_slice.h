@@ -66,7 +66,7 @@ class String {
     return String({data, value.size()});
   }
 
-  PROMPP_ALWAYS_INLINE static void free(String& str) noexcept {
+  PROMPP_ALWAYS_INLINE static void free_str(String& str) noexcept {
     std::free(const_cast<char*>(str.data_));
     str.reset_to(nullptr, 0);
   }

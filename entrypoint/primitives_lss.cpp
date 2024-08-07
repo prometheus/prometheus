@@ -113,8 +113,8 @@ extern "C" void prompp_primitives_lss_free_label_sets(void* args) {
 
   for (auto& label_set : in->label_sets) {
     for (auto& label : label_set) {
-      String::free(label.name);
-      String::free(label.value);
+      String::free_str(label.name);
+      String::free_str(label.value);
     }
   }
 
