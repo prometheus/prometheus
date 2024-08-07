@@ -3000,11 +3000,12 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				annos.Add(annotations.NewMixedFloatsHistogramsAggWarning(e.Expr.PositionRange()))
 				continue
 			}
-			if aggr.abandonHistogram {
+			switch {
+			case aggr.abandonHistogram:
 				continue
-			} else if aggr.hasHistogram {
+			case aggr.hasHistogram:
 				aggr.histogramValue.Compact(0)
-			} else {
+			default:
 				aggr.floatValue += aggr.floatKahanC
 			}
 		default:
