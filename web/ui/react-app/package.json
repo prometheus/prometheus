@@ -22,7 +22,7 @@
     "@prometheus-io/codemirror-promql": "0.54.0-rc.1",
     "bootstrap": "^4.6.2",
     "css.escape": "^1.5.1",
-    "downshift": "^9.0.6",
+    "downshift": "^9.0.7",
     "http-proxy-middleware": "^3.0.0",
     "jquery": "^3.7.1",
     "jquery.flot.tooltip": "^0.9.0",
