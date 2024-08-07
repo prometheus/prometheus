@@ -885,7 +885,8 @@ func adjustOffsetForAlign(ts int64, offset, align time.Duration) time.Duration {
 		return offset
 	}
 	alignedTs := alignTimestamp(ts-offset.Milliseconds(), align.Milliseconds())
-	return time.Duration(ts-alignedTs) * time.Millisecond
+	alignedOffset := time.Duration(ts-alignedTs) * time.Millisecond
+	return alignedOffset
 }
 
 func getTimeRangesForSelector(s *parser.EvalStmt, n *parser.VectorSelector, path []parser.Node, evalRange time.Duration) (int64, int64) {
@@ -920,13 +921,11 @@ func getTimeRangesForSelector(s *parser.EvalStmt, n *parser.VectorSelector, path
 	start -= offsetMilliseconds
 	end -= offsetMilliseconds
 
-	/*
-		if n.Alignment != 0 {
-			alignMillisecs := durationMilliseconds(n.Alignment)
-			start = alignTimestamp(start, alignMillisecs)
-			end = alignTimestamp(end, alignMillisecs)
-		}
-	*/
+	if n.Alignment != 0 {
+		alignMillisecs := durationMilliseconds(n.Alignment)
+		start = alignTimestamp(start, alignMillisecs)
+		end = alignTimestamp(end, alignMillisecs)
+	}
 
 	return start, end
 }

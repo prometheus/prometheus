@@ -50,7 +50,7 @@ eval instant at 10s metric @120s offset 10s align 60s
   metric{job="1"} 6
   metric{job="2"} 12
 
-eval instant at 10s metric @130s offset 10s align 60s
+eval instant at 0s metric @130s offset 10s align 60s
   metric{job="1"} 12
   metric{job="2"} 24
 
@@ -61,35 +61,51 @@ eval instant at 100s metric_ms @ 1.234 align 2ms
 eval instant at 100s metric_ms @ 1.234 align 3ms
   metric_ms 1233
 
+
 # Range vector selectors.
-#eval instant at 25s sum_over_time(metric{job="1"}[100s] @ 100)
-#  {job="1"} 55
-#
-#eval instant at 25s sum_over_time(metric{job="1"}[100s] @ 100 offset 50s)
-#  {job="1"} 15
-#
-#eval instant at 25s sum_over_time(metric{job="1"}[100s] offset 50s @ 100)
-#  {job="1"} 15
-#
-#eval instant at 25s sum_over_time(metric{job="1"}[100] @ 100 offset 50)
-#  {job="1"} 15
-#
-#eval instant at 25s sum_over_time(metric{job="1"}[100] offset 50s @ 100)
-#  {job="1"} 15
-#
-## Different timestamps.
-#eval instant at 25s metric{job="1"} @ 50 + metric{job="1"} @ 100
-#  {job="1"} 15
-#
-#eval instant at 25s rate(metric{job="1"}[100s] @ 100) + label_replace(rate(metric{job="2"}[123s] @ 200), "job", "1", "", "")
-#  {job="1"} 0.3
-#
-#eval instant at 25s sum_over_time(metric{job="1"}[100s] @ 100) + label_replace(sum_over_time(metric{job="2"}[100s] @ 100), "job", "1", "", "")
-#  {job="1"} 165
-#
-#eval instant at 25s sum_over_time(metric{job="1"}[100] @ 100) + label_replace(sum_over_time(metric{job="2"}[100] @ 100), "job", "1", "", "")
-#  {job="1"} 165
-#
+# align 10s -> same result (slots aligned)
+eval range from 50s to 100s step 10s metric - metric align 10s
+  {job="1"} 0+0x5
+  {job="2"} 0+0x5
+
+# align 20s -> will set initial 50s to 40s, i.e. series will be one point behind
+eval range from 50s to 100s step 10s metric - metric align 20s
+  {job="1"} 1+0x5
+  {job="2"} 2+0x5
+
+# align 30s -> will set initial 50s to 30s, i.e. series will be two points behind
+eval range from 50s to 100s step 10s metric - metric align 30s
+  {job="1"} 2+0x5
+  {job="2"} 4+0x5
+
+# Instant aggregations with `@`
+eval instant at 0s sum_over_time(metric[20s] @ 100) - sum_over_time(metric[20s] @ 100 align 10s)
+  {job="1"} 0
+  {job="2"} 0
+
+eval instant at 0s sum_over_time(metric[20s] @ 90) - sum_over_time(metric[20s] @ 100 align 30s)
+  {job="1"} 0
+  {job="2"} 0
+
+eval instant at 0s sum_over_time(metric[30s] @ 30) - sum_over_time(metric[30s] @ 50 align 30s)
+  {job="1"} 0
+  {job="2"} 0
+
+eval instant at 0s sum_over_time(metric[90s] @ 90) - sum_over_time(metric[90s] @ 119 align 30s)
+  {job="1"} 0
+  {job="2"} 0
+
+# Instant aggregations with offset
+# align 10s -> no-op
+eval instant at 100s sum_over_time(metric[20s] offset 50s) - sum_over_time(metric[20s] offset 50s align 10s)
+  {job="1"} 0
+  {job="2"} 0
+
+# at 100s, offset 50s align 20s (align(100-50, 20) = 40) -> same as offset 60s (equal to @40s)
+eval instant at 100s sum_over_time(metric[20s] offset 60s) - sum_over_time(metric[20s] offset 50s align 20s)
+  {job="1"} 0
+  {job="2"} 0
+
 ## Subqueries.
 #
 ## 10*(1+2+...+9) + 10.
