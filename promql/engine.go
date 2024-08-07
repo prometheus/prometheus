@@ -2357,7 +2357,7 @@ loop:
 			histograms = append(histograms, HPoint{H: &histogram.FloatHistogram{}})
 		}
 		if histograms[n].H == nil {
-			// Initialize to non zero to AtFloatHistogram does a copy for sure.
+			// Make sure to pass non zero H to AtFloatHistogram so that it does a deep-copy.
 			// Not an issue in the loop above since that uses an intermediate buffer.
 			histograms[n].H = &histogram.FloatHistogram{}
 		}
