@@ -37,10 +37,10 @@ struct PROMPP_ATTRIBUTE_PACKED DataChunk {
   encoder::timestamp::State::Id timestamp_encoder_state_id{encoder::timestamp::State::kInvalidId};
   EncodingType encoding_type{EncodingType::kUnknown};
 
-  DataChunk() = default;
-  DataChunk(const DataChunk&) noexcept = default;
+  constexpr DataChunk() = default;
+  constexpr DataChunk(const DataChunk&) noexcept = default;
 
-  DataChunk(uint32_t encoder_id, encoder::timestamp::State::Id _timestamp_encoder_state_id, EncodingType _encoding_type)
+  constexpr DataChunk(uint32_t encoder_id, encoder::timestamp::State::Id _timestamp_encoder_state_id, EncodingType _encoding_type)
       : encoder{.double_constant = encoder_id}, timestamp_encoder_state_id(_timestamp_encoder_state_id), encoding_type(_encoding_type) {}
 
   DataChunk& operator=(const DataChunk& other) noexcept {
