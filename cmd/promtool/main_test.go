@@ -35,6 +35,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
+	"github.com/prometheus/prometheus/promql/promqltest"
 )
 
 var promtoolPath = os.Args[0]
@@ -548,4 +549,47 @@ func TestCheckRulesWithRuleFiles(t *testing.T) {
 		exitCode := CheckRules(newLintConfig(lintOptionDuplicateRules, true), "./testdata/prometheus-rules.lint.yml")
 		require.Equal(t, lintErrExitCode, exitCode, "")
 	})
+}
+
+func TestTSDBDumpCommand(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+
+	storage := promqltest.LoadedStorage(t, `
+	load 1m
+		metric{foo="bar"} 1 2 3
+	`)
+	t.Cleanup(func() { storage.Close() })
+
+	for _, c := range []struct {
+		name           string
+		subCmd         string
+		sandboxDirRoot string
+	}{
+		{
+			name:   "dump",
+			subCmd: "dump",
+		},
+		{
+			name:           "dump with sandbox dir root",
+			subCmd:         "dump",
+			sandboxDirRoot: t.TempDir(),
+		},
+		{
+			name:   "dump-openmetrics",
+			subCmd: "dump-openmetrics",
+		},
+		{
+			name:           "dump-openmetrics with sandbox dir root",
+			subCmd:         "dump-openmetrics",
+			sandboxDirRoot: t.TempDir(),
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			args := []string{"-test.main", "tsdb", c.subCmd, storage.Dir()}
+			cmd := exec.Command(promtoolPath, args...)
+			require.NoError(t, cmd.Run())
+		})
+	}
 }
