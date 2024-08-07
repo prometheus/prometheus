@@ -31,6 +31,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
@@ -220,6 +221,10 @@ func (DummyScrapePoolsRetriever) ScrapePools() []string {
 // DummyTargetRetriever implements github.com/prometheus/prometheus/web/api/v1.targetRetriever.
 type DummyTargetRetriever struct{}
 
+func (r DummyTargetRetriever) TargetsAll() map[string][]*scrape.Target {
+	return nil
+}
+
 // TargetsActive implements targetRetriever.
 func (DummyTargetRetriever) TargetsActive() map[string][]*scrape.Target {
 	return map[string][]*scrape.Target{}
@@ -237,6 +242,10 @@ func (DummyTargetRetriever) TargetsDroppedCounts() map[string]int {
 
 // DummyAlertmanagerRetriever implements AlertmanagerRetriever.
 type DummyAlertmanagerRetriever struct{}
+
+func (r DummyAlertmanagerRetriever) TargetsAll() map[string][]notifier.Target {
+	return nil
+}
 
 // Alertmanagers implements AlertmanagerRetriever.
 func (DummyAlertmanagerRetriever) Alertmanagers() []*url.URL { return nil }
