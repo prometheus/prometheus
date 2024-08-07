@@ -18,6 +18,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/klauspost/compress/gzip"
@@ -189,6 +190,10 @@ testmetric{label="\"bar\""} 1`
 }
 
 func checkParseResults(t *testing.T, p Parser, exp []expectedParse) {
+	checkParseResultsWithCT(t, p, exp, false)
+}
+
+func checkParseResultsWithCT(t *testing.T, p Parser, exp []expectedParse, ctLinesRemoved bool) {
 	i := 0
 
 	var res labels.Labels
@@ -205,6 +210,16 @@ func checkParseResults(t *testing.T, p Parser, exp []expectedParse) {
 			m, ts, v := p.Series()
 
 			p.Metric(&res)
+
+			if ctLinesRemoved {
+				// Are CT series skipped?
+				_, typ := p.Type()
+				if typ == model.MetricTypeCounter || typ == model.MetricTypeSummary || typ == model.MetricTypeHistogram {
+					if strings.HasSuffix(res.Get(labels.MetricName), "_created") {
+						t.Fatalf("we exped created lines skipped")
+					}
+				}
+			}
 
 			require.Equal(t, exp[i].m, string(m))
 			require.Equal(t, exp[i].t, ts)
