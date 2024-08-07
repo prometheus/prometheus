@@ -445,6 +445,9 @@ func main() {
 	serverOnlyFlag(a, "rules.max-concurrent-evals", "Global concurrency limit for independent rules that can run concurrently. When set, \"query.max-concurrency\" may need to be adjusted accordingly.").
 		Default("4").Int64Var(&cfg.maxConcurrentEvals)
 
+	a.Flag("rules.alerting.resolved-retention", "ResolvedRetention is the duration for which a resolved alert instance is kept in memory state and consequently repeatedly sent to the AlertManager.").
+		Hidden().Default("15m").DurationVar(&rules.ResolvedRetention)
+
 	a.Flag("scrape.adjust-timestamps", "Adjust scrape timestamps by up to `scrape.timestamp-tolerance` to align them to the intended schedule. See https://github.com/prometheus/prometheus/issues/7846 for more context. Experimental. This flag will be removed in a future release.").
 		Hidden().Default("true").BoolVar(&scrape.AlignScrapeTimestamps)
 
