@@ -131,7 +131,6 @@ func (q *blockQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 		p = q.index.SortedPostings(p)
 	}
 
-	includeInfoMetricDataLabels := false
 	if hints != nil {
 		mint = hints.Start
 		maxt = hints.End
@@ -140,21 +139,9 @@ func (q *blockQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 			// When you're only looking up metadata (for example series API), you don't need to load any chunks.
 			return newBlockSeriesSet(q.index, newNopChunkReader(), q.tombstones, p, mint, maxt, disableTrimming)
 		}
-		includeInfoMetricDataLabels = hints.IncludeInfoMetricDataLabels
-		hints.IncludeInfoMetricDataLabels = false
 	}
 
-	ss := newBlockSeriesSet(q.index, q.chunks, q.tombstones, p, mint, maxt, disableTrimming)
-	if includeInfoMetricDataLabels {
-		// fmt.Printf("blockQuerier.Select: Returning SeriesSetWithInfoLabels\n")
-		return &storage.SeriesSetWithInfoLabels{
-			Base:  ss,
-			Hints: hints,
-			Q:     q,
-			Ctx:   ctx,
-		}
-	}
-	return ss
+	return newBlockSeriesSet(q.index, q.chunks, q.tombstones, p, mint, maxt, disableTrimming)
 }
 
 // blockChunkQuerier provides chunk querying access to a single block database.

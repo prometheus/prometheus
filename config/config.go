@@ -231,6 +231,9 @@ var (
 
 	// DefaultOTLPConfig is the default OTLP configuration.
 	DefaultOTLPConfig = OTLPConfig{}
+
+	// DefaultIncludeInfoMetricLabelsConfig is the default configuration for including info metric labels.
+	DefaultIncludeInfoMetricLabelsConfig = IncludeInfoMetricLabelsConfig{}
 )
 
 // Config is the top-level configuration for Prometheus's config files.
@@ -243,6 +246,7 @@ type Config struct {
 	ScrapeConfigs     []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
 	StorageConfig     StorageConfig   `yaml:"storage,omitempty"`
 	TracingConfig     TracingConfig   `yaml:"tracing,omitempty"`
+	PromQLConfig      PromQLConfig    `yaml:"promql,omitempty"`
 
 	RemoteWriteConfigs []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
 	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
@@ -1358,4 +1362,34 @@ func (c *OTLPConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		c.PromoteResourceAttributes[i] = attr
 	}
 	return err
+}
+
+// PromQLConfig is the PromQL engine configuration.
+type PromQLConfig struct {
+	IncludeInfoMetricLabels *IncludeInfoMetricLabelsConfig `yaml:"include_info_metric_labels,omitempty"`
+}
+
+// IncludeInfoMetricLabelsConfig is configuration for automatically including info metric data labels in the PromQL engine.
+type IncludeInfoMetricLabelsConfig struct {
+	// InfoMetrics is a map from info metric names to their identifying labels.
+	InfoMetrics map[string][]string `yaml:"info_metrics,omitempty"`
+	// DataLabelMatchers is a list of info metric data label matchers.
+	DataLabelMatchers []labelMatcher `yaml:"data_label_matchers"`
+}
+
+type labelMatcher struct {
+	Name  string `yaml:"name"`
+	Type  string `yaml:"type"`
+	Value string `yaml:"value"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *IncludeInfoMetricLabelsConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultIncludeInfoMetricLabelsConfig
+	type plain IncludeInfoMetricLabelsConfig
+	if err := unmarshal((*plain)(c)); err != nil {
+		return err
+	}
+
+	return nil
 }
