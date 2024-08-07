@@ -59,7 +59,7 @@ func TestQueryConcurrency(t *testing.T) {
 	dir, err := os.MkdirTemp("", "test_concurrency")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir)
-	queryTracker := promql.NewActiveQueryTracker(dir, maxConcurrency, nil)
+	queryTracker, _ := promql.NewActiveQueryTracker(dir, maxConcurrency, nil)
 	t.Cleanup(func() {
 		require.NoError(t, queryTracker.Close())
 	})
