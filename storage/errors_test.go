@@ -25,13 +25,14 @@ func TestErrDuplicateSampleForTimestamp(t *testing.T) {
 	require.ErrorIs(t, ErrDuplicateSampleForTimestamp, errDuplicateSampleForTimestamp{})
 
 	// Same type only is if it has same properties.
-	err1 := NewDuplicateFloatErr(1_000, 10, 20)
-	err2 := NewDuplicateFloatErr(1_001, 30, 40)
+	err := NewDuplicateFloatErr(1_000, 10, 20)
+	sameErr := NewDuplicateFloatErr(1_000, 10, 20)
+	differentErr := NewDuplicateFloatErr(1_001, 30, 40)
 
-	require.ErrorIs(t, err1, err1)
-	require.NotErrorIs(t, err1, err2)
+	require.ErrorIs(t, err, sameErr)
+	require.NotErrorIs(t, err, differentErr)
 
 	// Also works when err is wrapped.
-	require.ErrorIs(t, fmt.Errorf("failed: %w", err1), err1)
-	require.NotErrorIs(t, fmt.Errorf("failed: %w", err1), err2)
+	require.ErrorIs(t, fmt.Errorf("failed: %w", err), sameErr)
+	require.NotErrorIs(t, fmt.Errorf("failed: %w", err), differentErr)
 }
