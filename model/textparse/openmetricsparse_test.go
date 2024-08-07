@@ -25,6 +25,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
+func int64p(x int64) *int64 { return &x }
+
 func TestOpenMetricsParse(t *testing.T) {
 	input := `# HELP go_gc_duration_seconds A summary of the GC invocation durations.
 # TYPE go_gc_duration_seconds summary
@@ -91,8 +93,6 @@ fizz_created 17.0`
 	input += "\n# HELP metric foo\x00bar"
 	input += "\nnull_byte_metric{a=\"abc\x00\"} 1"
 	input += "\n# EOF\n"
-
-	int64p := func(x int64) *int64 { return &x }
 
 	exp := []expectedParse{
 		{
@@ -331,7 +331,7 @@ fizz_created 17.0`
 	}
 
 	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
-	checkParseResults(t, p, exp)
+	checkParseResultsWithCT(t, p, exp, true)
 }
 
 func TestUTF8OpenMetricsParse(t *testing.T) {
@@ -346,6 +346,7 @@ func TestUTF8OpenMetricsParse(t *testing.T) {
 # UNIT "go.gc_duration_seconds" seconds
 {"go.gc_duration_seconds",quantile="0"} 4.9351e-05
 {"go.gc_duration_seconds",quantile="0.25"} 7.424100000000001e-05
+{"go.gc_duration_seconds_created"} 12313
 {"go.gc_duration_seconds",quantile="0.5",a="b"} 8.3835e-05
 {"http.status",q="0.9",a="b"} 8.3835e-05
 {"http.status",q="0.9",a="b"} 8.3835e-05
@@ -369,10 +370,12 @@ func TestUTF8OpenMetricsParse(t *testing.T) {
 			m:    `{"go.gc_duration_seconds",quantile="0"}`,
 			v:    4.9351e-05,
 			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "0"),
+			ct:   int64p(12313),
 		}, {
 			m:    `{"go.gc_duration_seconds",quantile="0.25"}`,
 			v:    7.424100000000001e-05,
 			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "0.25"),
+			ct:   int64p(12313),
 		}, {
 			m:    `{"go.gc_duration_seconds",quantile="0.5",a="b"}`,
 			v:    8.3835e-05,
@@ -401,8 +404,8 @@ choices}`, "strange©™\n'quoted' \"name\"", "6"),
 		},
 	}
 
-	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable())
-	checkParseResults(t, p, exp)
+	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
+	checkParseResultsWithCT(t, p, exp, true)
 }
 
 func TestOpenMetricsParseErrors(t *testing.T) {

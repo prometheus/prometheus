@@ -447,7 +447,13 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 		}
 
 		p.series = p.l.b[p.start:p.l.i]
-		return p.parseMetricSuffix(p.nextToken())
+		if err := p.parseSeriesEndOfLine(p.nextToken()); err != nil {
+			return EntryInvalid, err
+		}
+		if p.skipCTSeries && p.isCreatedSeries() {
+			return p.Next()
+		}
+		return EntrySeries, nil
 	case tMName:
 		p.offsets = append(p.offsets, p.start, p.l.i)
 		p.series = p.l.b[p.start:p.l.i]
@@ -462,15 +468,13 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 			t2 = p.nextToken()
 		}
 
-		suffixEntry, err := p.parseMetricSuffix(t2)
-		if err != nil {
-			return suffixEntry, err
+		if err := p.parseSeriesEndOfLine(t2); err != nil {
+			return EntryInvalid, err
 		}
 		if p.skipCTSeries && p.isCreatedSeries() {
 			return p.Next()
 		}
-		return suffixEntry, err
-
+		return EntrySeries, nil
 	default:
 		err = p.parseError("expected a valid start token", t)
 	}
@@ -601,52 +605,53 @@ func (p *OpenMetricsParser) isCreatedSeries() bool {
 	return false
 }
 
-// parseMetricSuffix parses the end of the line after the metric name and
-// labels. It starts parsing with the provided token.
-func (p *OpenMetricsParser) parseMetricSuffix(t token) (Entry, error) {
+// parseSeriesEndOfLine parses the series end of the line (value, optional
+// timestamp, commentary, etc.) after the metric name and labels.
+// It starts parsing with the provided token.
+func (p *OpenMetricsParser) parseSeriesEndOfLine(t token) error {
 	if p.offsets[0] == -1 {
-		return EntryInvalid, fmt.Errorf("metric name not set while parsing: %q", p.l.b[p.start:p.l.i])
+		return fmt.Errorf("metric name not set while parsing: %q", p.l.b[p.start:p.l.i])
 	}
 
 	var err error
 	p.val, err = p.getFloatValue(t, "metric")
 	if err != nil {
-		return EntryInvalid, err
+		return err
 	}
 
 	p.hasTS = false
 	switch t2 := p.nextToken(); t2 {
 	case tEOF:
-		return EntryInvalid, errors.New("data does not end with # EOF")
+		return errors.New("data does not end with # EOF")
 	case tLinebreak:
 		break
 	case tComment:
 		if err := p.parseComment(); err != nil {
-			return EntryInvalid, err
+			return err
 		}
 	case tTimestamp:
 		p.hasTS = true
 		var ts float64
 		// A float is enough to hold what we need for millisecond resolution.
 		if ts, err = parseFloat(yoloString(p.l.buf()[1:])); err != nil {
-			return EntryInvalid, fmt.Errorf("%w while parsing: %q", err, p.l.b[p.start:p.l.i])
+			return fmt.Errorf("%w while parsing: %q", err, p.l.b[p.start:p.l.i])
 		}
 		if math.IsNaN(ts) || math.IsInf(ts, 0) {
-			return EntryInvalid, fmt.Errorf("invalid timestamp %f", ts)
+			return fmt.Errorf("invalid timestamp %f", ts)
 		}
 		p.ts = int64(ts * 1000)
 		switch t3 := p.nextToken(); t3 {
 		case tLinebreak:
 		case tComment:
 			if err := p.parseComment(); err != nil {
-				return EntryInvalid, err
+				return err
 			}
 		default:
-			return EntryInvalid, p.parseError("expected next entry after timestamp", t3)
+			return p.parseError("expected next entry after timestamp", t3)
 		}
 	}
 
-	return EntrySeries, nil
+	return nil
 }
 
 func (p *OpenMetricsParser) getFloatValue(t token, after string) (float64, error) {
