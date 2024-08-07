@@ -406,6 +406,7 @@ func TestQueryLog(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
 	}
+	t.Parallel()
 
 	cwd, err := os.Getwd()
 	require.NoError(t, err)
@@ -424,6 +425,7 @@ func TestQueryLog(t *testing.T) {
 					}
 
 					t.Run(p.String(), func(t *testing.T) {
+						t.Parallel()
 						p.run(t)
 					})
 				}

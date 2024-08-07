@@ -1,6 +1,7 @@
 module github.com/prometheus/prometheus
 
-go 1.21.0
+// Waiting for this (https://go.dev/blog/loopvar-preview) to avoid uneeded copying
+go 1.22.0
 
 toolchain go1.22.5
 
