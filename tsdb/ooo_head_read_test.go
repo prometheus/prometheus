@@ -296,9 +296,6 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 			for _, headChunk := range []bool{false, true} {
 				t.Run(fmt.Sprintf("name=%s, permutation=%d, headChunk=%t", tc.name, perm, headChunk), func(t *testing.T) {
 					h, _ := newTestHead(t, 1000, wlog.CompressionNone, true)
-					defer func() {
-						require.NoError(t, h.Close())
-					}()
 					require.NoError(t, h.Init(0))
 
 					s1, _, _ := h.getOrCreate(s1ID, s1Lset)
@@ -370,7 +367,6 @@ func TestOOOHeadChunkReader_LabelValues(t *testing.T) {
 func testOOOHeadChunkReader_LabelValues(t *testing.T, scenario sampleTypeScenario) {
 	chunkRange := int64(2000)
 	head, _ := newTestHead(t, chunkRange, wlog.CompressionNone, true)
-	t.Cleanup(func() { require.NoError(t, head.Close()) })
 
 	ctx := context.Background()
 

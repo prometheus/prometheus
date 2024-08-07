@@ -4409,7 +4409,6 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 
 	sort.Slice(gotMetadataBlock, func(i, j int) bool { return gotMetadataBlock[i].Ref < gotMetadataBlock[j].Ref })
 	require.Equal(t, wantMetadata, gotMetadataBlock)
-	require.NoError(t, hb.Close())
 }
 
 func TestMetadataAssertInMemoryData(t *testing.T) {
