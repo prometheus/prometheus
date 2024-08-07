@@ -207,15 +207,15 @@ func TestRefreshAZIDsHandleError(t *testing.T) {
 //
 //	name - the name of the test
 //	generator - a generator function for the input and expected output
-type generator_function func(*EC2Discovery) []*targetgroup.Group
+type generatorFunction func(*EC2Discovery) []*targetgroup.Group
 
 var refreshTests = []struct {
 	name      string
-	generator generator_function
+	generator generatorFunction
 }{
 	{
 		name:      "NoPrivateIp",
-		generator: generateRefreshNoPrivateIp,
+		generator: generateRefreshNoPrivateIP,
 	},
 	{
 		name:      "NoVpc",
@@ -231,7 +231,7 @@ var refreshTests = []struct {
 	},
 }
 
-func generateRefreshNoPrivateIp(d *EC2Discovery) []*targetgroup.Group {
+func generateRefreshNoPrivateIP(d *EC2Discovery) []*targetgroup.Group {
 	ec2Data := &d.ec2.(*mockEC2Client).ec2Data
 
 	instance := ec2.Instance{}
@@ -429,7 +429,6 @@ func TestRefresh(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
-
 }
 
 // EC2 client mock.
