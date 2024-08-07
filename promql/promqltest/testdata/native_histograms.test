@@ -776,6 +776,9 @@ load 6m
 eval_warn range from 0 to 12m step 6m sum(metric)
   {} {{sum:7 count:5 buckets:[2 3 2]}} {{schema:-53 sum:16 count:3 custom_values:[5 10] buckets:[1 2]}} _
 
+eval_warn range from 0 to 12m step 6m avg(metric)
+  {} {{sum:3.5 count:2.5 buckets:[1 1.5 1]}} {{schema:-53 sum:8 count:1.5 custom_values:[5 10] buckets:[0.5 1]}} _
+
 clear
 
 # Test incompatible custom bucket schemas.
@@ -789,3 +792,6 @@ load 6m
 # T=12: incompatible followed by compatible, should be ignored and emit a warning
 eval_warn range from 0 to 12m step 6m sum(metric)
   {} _ {{schema:-53 sum:2 count:2 custom_values:[5 10] buckets:[2]}} _
+
+eval_warn range from 0 to 12m step 6m avg(metric)
+  {} _ {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} _

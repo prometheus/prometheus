@@ -2868,10 +2868,14 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 					toAdd, err := left.Sub(right)
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
+						group.abandonHistogram = true
+						continue
 					}
 					_, err = group.histogramValue.Add(toAdd)
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
+						group.abandonHistogram = true
+						continue
 					}
 				}
 				// Otherwise the aggregation contained floats
@@ -2968,6 +2972,8 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				continue
 			}
 			switch {
+			case aggr.abandonHistogram:
+				continue
 			case aggr.hasHistogram:
 				aggr.histogramValue = aggr.histogramValue.Compact(0)
 			case aggr.incrementalMean:
