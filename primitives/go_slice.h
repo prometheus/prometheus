@@ -74,7 +74,7 @@ class String {
     return data_[i];
   }
 
-  PROMPP_ALWAYS_INLINE operator std::string_view() const noexcept { return {data_, len_}; }
+  explicit PROMPP_ALWAYS_INLINE operator std::string_view() const noexcept { return {data_, len_}; }
 };  // class String
 
 template <class T>
