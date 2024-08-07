@@ -1778,7 +1778,7 @@ func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface
 		return
 	}
 
-	b, err := codec.Encode(resp)
+	b, err := codec.Encode(req, resp)
 	if err != nil {
 		level.Error(api.logger).Log("msg", "error marshaling response", "url", req.URL, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -1795,14 +1795,14 @@ func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface
 func (api *API) negotiateCodec(req *http.Request, resp *Response) (Codec, error) {
 	for _, clause := range goautoneg.ParseAccept(req.Header.Get("Accept")) {
 		for _, codec := range api.codecs {
-			if codec.ContentType().Satisfies(clause) && codec.CanEncode(resp) {
+			if codec.ContentType().Satisfies(clause) && codec.CanEncode(req, resp) {
 				return codec, nil
 			}
 		}
 	}
 
 	defaultCodec := api.codecs[0]
-	if !defaultCodec.CanEncode(resp) {
+	if !defaultCodec.CanEncode(req, resp) {
 		return nil, fmt.Errorf("cannot encode response as %s", defaultCodec.ContentType())
 	}
 
