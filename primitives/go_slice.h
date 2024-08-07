@@ -1,8 +1,8 @@
 #pragma once
 
-#include <assert.h>
 #include <algorithm>
 #include <bit>
+#include <cassert>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -55,27 +55,41 @@ class String {
   using value_type = const char;
   using const_iterator = const char*;
 
-  inline __attribute__((always_inline)) explicit String() = default;
+  explicit String() = default;
+  explicit String(std::string_view value) : data_(value.data()), len_(value.size()) {}
 
-  inline __attribute__((always_inline)) void reset_to(const char* data, size_t len) {
+  PROMPP_ALWAYS_INLINE static String allocate(std::string_view value) noexcept {
+    auto data = reinterpret_cast<char*>(std::malloc(value.size() + 1));
+    std::memcpy(data, value.data(), value.size());
+    data[value.size()] = '\0';
+
+    return String({data, value.size()});
+  }
+
+  PROMPP_ALWAYS_INLINE static void free(String& str) noexcept {
+    std::free(const_cast<char*>(str.data_));
+    str.reset_to(nullptr, 0);
+  }
+
+  PROMPP_ALWAYS_INLINE void reset_to(const char* data, size_t len) {
     data_ = data;
     len_ = len;
   }
 
-  inline __attribute__((always_inline)) const char* data() const noexcept { return data_; }
-  inline __attribute__((always_inline)) bool empty() const noexcept { return !len_; }
-  inline __attribute__((always_inline)) size_t size() const noexcept { return len_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const char* data() const noexcept { return data_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool empty() const noexcept { return !len_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t size() const noexcept { return len_; }
 
-  inline __attribute__((always_inline)) const_iterator begin() const noexcept { return data_; }
-  inline __attribute__((always_inline)) const_iterator end() const noexcept { return data_ + len_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const_iterator begin() const noexcept { return data_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const_iterator end() const noexcept { return data_ + len_; }
 
-  inline __attribute__((always_inline)) const char& operator[](uint32_t i) const {
+  PROMPP_ALWAYS_INLINE const char& operator[](uint32_t i) const {
     assert(i < len_);
     return data_[i];
   }
 
   explicit PROMPP_ALWAYS_INLINE operator std::string_view() const noexcept { return {data_, len_}; }
-};  // class String
+};
 
 template <class T>
 class Slice {
@@ -340,3 +354,6 @@ class BytesStream : public std::ostream {
 };
 
 }  // namespace PromPP::Primitives::Go
+
+template <class T>
+struct BareBones::IsTriviallyReallocatable<PromPP::Primitives::Go::Slice<T>> : std::true_type {};

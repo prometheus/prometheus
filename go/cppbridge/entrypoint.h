@@ -75,7 +75,7 @@ void prompp_primitives_lss_allocated_memory(void* args, void* res);
 void prompp_primitives_lss_find_or_emplace(void* args, void* res);
 
 /**
- * @brief query label sets from lss
+ * @brief query series from lss
  *
  * @param args {
  *     lss uintptr                         // pointer to constructed queryable lss;
@@ -84,10 +84,33 @@ void prompp_primitives_lss_find_or_emplace(void* args, void* res);
  *
  * @param res {
  *     status uint32    // query status
- *     matches []uint32 // matched ls ids
+ *     matches []uint32 // matched series ids
  * }
  */
 void prompp_primitives_lss_query(void* args, void* res);
+
+/**
+ * @brief get label sets by series id
+ *
+ * @param args {
+ *     lss uintptr    // pointer to constructed lss;
+ *     ls_id []uint32 // series ids
+ * }
+ *
+ * @param res {
+ *     label_sets [][]struct {key, value String} // label sets
+ * }
+ */
+void prompp_primitives_lss_get_label_sets(void* args, void* res);
+
+/**
+ * @brief free label sets returned by prompp_primitives_lss_get_label_sets
+ *
+ * @param args {
+ *     label_sets [][]struct {key, value String} // label set
+ * }
+ */
+void prompp_primitives_lss_free_label_sets(void* args);
 
 #ifdef __cplusplus
 }  // extern "C"

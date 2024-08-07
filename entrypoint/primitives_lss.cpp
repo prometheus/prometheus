@@ -66,3 +66,57 @@ extern "C" void prompp_primitives_lss_query(void* args, void* res) {
   out->status = query_result.status;
   out->matches = std::move(query_result.series_ids);
 }
+
+void prompp_primitives_lss_get_label_sets(void* args, void* res) {
+  using PromPP::Primitives::Go::Slice;
+  using PromPP::Primitives::Go::String;
+
+  struct Arguments {
+    entrypoint::LssVariantPtr lss;
+    Slice<uint32_t> series_ids;
+  };
+  struct Result {
+    Slice<Slice<PromPP::Primitives::Go::Label>> label_sets;
+  };
+
+  auto in = reinterpret_cast<Arguments*>(args);
+  auto out = reinterpret_cast<Result*>(res);
+
+  std::visit(
+      [in, out](auto& lss) PROMPP_LAMBDA_INLINE {
+        out->label_sets.resize(in->series_ids.size());
+
+        for (size_t i = 0; i < in->series_ids.size(); ++i) {
+          auto in_label_set = lss[in->series_ids[i]];
+          auto& out_label_set = out->label_sets[i];
+          out_label_set.reserve(in_label_set.size());
+          std::ranges::transform(in_label_set, std::back_inserter(out_label_set), [](const auto& label) PROMPP_LAMBDA_INLINE {
+            return PromPP::Primitives::Go::Label({
+                .name{String::allocate(label.first)},
+                .value{String::allocate(label.second)},
+            });
+          });
+        }
+      },
+      *in->lss);
+}
+
+extern "C" void prompp_primitives_lss_free_label_sets(void* args) {
+  using PromPP::Primitives::Go::Slice;
+  using PromPP::Primitives::Go::String;
+
+  struct Arguments {
+    Slice<Slice<PromPP::Primitives::Go::Label>> label_sets;
+  };
+
+  auto in = reinterpret_cast<Arguments*>(args);
+
+  for (auto& label_set : in->label_sets) {
+    for (auto& label : label_set) {
+      String::free(label.name);
+      String::free(label.value);
+    }
+  }
+
+  in->label_sets.~Slice();
+}

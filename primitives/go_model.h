@@ -18,6 +18,11 @@ struct LabelView {
   StringView value;
 };
 
+struct Label {
+  String name;
+  String value;
+};
+
 struct LabelSet {
   class IteratorSentinel {};
 
@@ -169,3 +174,12 @@ void read_timeseries(const TimeSeries& go_time_series, Timeseries& time_series) 
 }
 
 }  // namespace PromPP::Primitives::Go
+
+template <>
+struct BareBones::IsTriviallyReallocatable<PromPP::Primitives::Go::StringView> : std::true_type {};
+
+template <>
+struct BareBones::IsTriviallyReallocatable<PromPP::Primitives::Go::LabelView> : std::true_type {};
+
+template <>
+struct BareBones::IsTriviallyReallocatable<PromPP::Primitives::Go::Label> : std::true_type {};
