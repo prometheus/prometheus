@@ -447,14 +447,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 		}
 
 		p.series = p.l.b[p.start:p.l.i]
-		suffixEntry, err := p.parseMetricSuffix(p.nextToken())
-		if err != nil {
-			return EntryInvalid, err
-		}
-		if p.isCreatedSeries() && p.skipCTSeries {
-			return p.Next()
-		}
-		return suffixEntry, err
+		return p.parseMetricSuffix(p.nextToken())
 	case tMName:
 		p.offsets = append(p.offsets, p.start, p.l.i)
 		p.series = p.l.b[p.start:p.l.i]
@@ -471,9 +464,9 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 
 		suffixEntry, err := p.parseMetricSuffix(t2)
 		if err != nil {
-			return EntryInvalid, err
+			return suffixEntry, err
 		}
-		if p.isCreatedSeries() && p.skipCTSeries {
+		if p.skipCTSeries && p.isCreatedSeries() {
 			return p.Next()
 		}
 		return suffixEntry, err
