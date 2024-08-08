@@ -24,7 +24,7 @@ struct PROMPP_ATTRIBUTE_PACKED DataChunk {
 
   union PROMPP_ATTRIBUTE_PACKED EncoderData {
     encoder::value::Uint32ConstantEncoder uint32_constant;
-    uint32_t double_constant;
+    uint32_t double_constant{0};
     uint32_t two_double_constant;
     uint32_t asc_integer_values_gorilla;
     uint32_t values_gorilla;
@@ -37,10 +37,10 @@ struct PROMPP_ATTRIBUTE_PACKED DataChunk {
   encoder::timestamp::State::Id timestamp_encoder_state_id{encoder::timestamp::State::kInvalidId};
   EncodingType encoding_type{EncodingType::kUnknown};
 
-  constexpr DataChunk() = default;
-  constexpr DataChunk(const DataChunk&) noexcept = default;
+  DataChunk() = default;
+  DataChunk(const DataChunk&) noexcept = default;
 
-  constexpr DataChunk(uint32_t encoder_id, encoder::timestamp::State::Id _timestamp_encoder_state_id, EncodingType _encoding_type)
+  DataChunk(uint32_t encoder_id, encoder::timestamp::State::Id _timestamp_encoder_state_id, EncodingType _encoding_type)
       : encoder{.double_constant = encoder_id}, timestamp_encoder_state_id(_timestamp_encoder_state_id), encoding_type(_encoding_type) {}
 
   DataChunk& operator=(const DataChunk& other) noexcept {
