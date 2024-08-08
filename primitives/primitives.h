@@ -45,6 +45,13 @@ class BasicLabelSet {
     }
   }
 
+  template <class LabelSet>
+  explicit BasicLabelSet(const LabelSet& other) {
+    for (const auto& label : other) {
+      labels_.emplace_back(label);
+    }
+  };
+
   BasicLabelSet(const BasicLabelSet&) = default;
   BasicLabelSet(BasicLabelSet&&) noexcept = default;
 
@@ -245,6 +252,9 @@ class BasicTimeseries {
   BasicTimeseries& operator=(BasicTimeseries&&) noexcept = default;
 
   BasicTimeseries(const LabelSetType& label_set, const SamplesType samples) noexcept : label_set_(label_set), samples_(samples) {}
+
+  template <class LabelSet>
+  BasicTimeseries(const LabelSet& label_set, const SamplesType samples) noexcept : label_set_(label_set), samples_(samples) {}
 
   inline __attribute__((always_inline)) auto& label_set() noexcept {
     if constexpr (std::is_pointer<LabelSetType>::value) {

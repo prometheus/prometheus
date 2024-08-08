@@ -2,6 +2,7 @@ package cppbridge_test
 
 import (
 	"context"
+	"math/rand/v2"
 	"strconv"
 	"testing"
 	"time"
@@ -247,5 +248,73 @@ func (s *EncoderDecoderSuite) EncodeDecodeBench(i int64) {
 func (s *EncoderDecoderSuite) TestEncodeDecodeBenchmark() {
 	for i := 0; i < 10; i++ {
 		s.EncodeDecodeBench(int64(i))
+	}
+}
+
+func (s *EncoderDecoderSuite) TestEncodeDecodeToHashdex() {
+	hlimits := cppbridge.DefaultWALHashdexLimits()
+	dec := cppbridge.NewWALDecoder(cppbridge.EncodersVersion())
+	enc := cppbridge.NewWALEncoder(0, 0)
+
+	enc2 := cppbridge.NewWALEncoder(0, 0)
+	dec2 := cppbridge.NewWALDecoder(cppbridge.EncodersVersion())
+
+	time.Sleep(60 * time.Second)
+
+	count := 11
+	for i := 1; i < count; i++ {
+		seriesCount := rand.IntN(5000-100) + 100
+		s.T().Log("generate protobuf")
+		var expectedWr *prompb.WriteRequest
+		if i%2 == 0 {
+			expectedWr = s.makeData(seriesCount, int64(i-1))
+		} else {
+			expectedWr = s.makeData(seriesCount, int64(i))
+		}
+		data, err := expectedWr.Marshal()
+		s.Require().NoError(err)
+
+		s.T().Log("sharding protobuf")
+		h, err := cppbridge.NewWALProtobufHashdex(data, hlimits)
+		s.Require().NoError(err)
+
+		s.T().Log("encoding protobuf")
+		_, gos, err := enc.Encode(s.baseCtx, h)
+		s.Require().NoError(err)
+
+		s.EqualValues(seriesCount, gos.Series())
+		s.EqualValues(seriesCount*3, gos.Samples())
+
+		s.T().Log("transferring segment")
+		segByte := s.transferringData(gos)
+
+		s.T().Log("decoding to hashdex")
+		dhx, stat, err := dec.DecodeToHashdex(s.baseCtx, segByte)
+		s.Require().NoError(err)
+
+		s.EqualValues(seriesCount, stat.Series())
+		s.EqualValues(seriesCount*3, stat.Samples())
+
+		s.T().Log("encoding hashdex")
+		_, gos2, err := enc2.Encode(s.baseCtx, dhx)
+		s.Require().NoError(err)
+
+		s.EqualValues(seriesCount, gos2.Series())
+		s.EqualValues(seriesCount*3, gos2.Samples())
+
+		s.T().Log("transferring segment")
+		segByte = s.transferringData(gos2)
+
+		s.T().Log("decoding to protobuf")
+		protocont, err := dec2.Decode(s.baseCtx, segByte)
+		s.Require().NoError(err)
+
+		s.T().Log("compare income and outcome protobuf")
+		actualWr := &prompb.WriteRequest{}
+		s.Require().NoError(protocont.UnmarshalTo(actualWr))
+		s.Equal(expectedWr.String(), actualWr.String())
+
+		s.EqualValues(seriesCount, protocont.Series())
+		s.EqualValues(seriesCount*3, protocont.Samples())
 	}
 }

@@ -148,6 +148,15 @@ func (d *WALDecoder) Decode(ctx context.Context, segment []byte) (ProtobufConten
 	return NewDecodedProtobuf(protobuf, stats), handleException(exception)
 }
 
+// DecodeToHashdex decode incoming encoding data and return WALBasicDecoderHashdex.
+func (d *WALDecoder) DecodeToHashdex(ctx context.Context, segment []byte) (ShardedData, ProtobufStats, error) {
+	if ctx.Err() != nil {
+		return nil, nil, ctx.Err()
+	}
+	stats, hashdex, cluster, replica, exception := walDecoderDecodeToHashdex(d.decoder, segment)
+	return NewWALBasicDecoderHashdex(hashdex, cluster, replica), stats, handleException(exception)
+}
+
 // DecodeDry - decode incoming encoding data, restores decoder.
 func (d *WALDecoder) DecodeDry(ctx context.Context, segment []byte) (uint32, error) {
 	if ctx.Err() != nil {

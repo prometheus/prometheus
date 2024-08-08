@@ -91,6 +91,15 @@ void prompp_wal_go_model_hashdex_dtor(void* args);
  */
 void prompp_wal_go_model_hashdex_presharding(void* args, void* res);
 
+/**
+ * @brief Destroy hashdex
+ *
+ * @param args {
+ *     hashdex uintptr // pointer to constructed hashdex
+ * }
+ */
+void prompp_wal_basic_decoder_hashdex_dtor(void* args);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

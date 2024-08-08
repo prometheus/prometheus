@@ -4,10 +4,12 @@
 #include <string_view>
 
 #include "bare_bones/exception.h"
+#include "bare_bones/preprocess.h"
 #include "bare_bones/vector.h"
 #include "primitives/go_model.h"
 #include "primitives/primitives.h"
 #include "prometheus/remote_write.h"
+#include "wal.h"
 
 #include "third_party/protozero/pbf_reader.hpp"
 
@@ -15,7 +17,7 @@ namespace PromPP::WAL {
 
 template <class LabelSet>
 void set_cluser_and_replica_values(const LabelSet& label_set, std::string_view& cluster, std::string_view& replica) {
-  for (auto& [name, value] : label_set) {
+  for (const auto& [name, value] : label_set) {
     if (name == "cluster") {
       cluster = value;
     }
@@ -165,4 +167,62 @@ class ProtobufHashdex {
   inline __attribute__((always_inline)) const_iterator begin() const noexcept { return std::begin(items_); }
   inline __attribute__((always_inline)) const_iterator end() const noexcept { return std::end(items_); }
 };
+
+class BasicDecoderHashdex {
+ public:
+  class Item {
+    size_t hash_;
+    Primitives::TimeseriesSemiview data_;
+
+   public:
+    template <class LabelSet>
+    PROMPP_ALWAYS_INLINE explicit Item(LabelSet& ls, Primitives::Timestamp ts, double value) {
+      data_ = Primitives::TimeseriesSemiview(ls, BareBones::Vector<Primitives::Sample>{{ts, value}});
+      hash_ = hash_value(ls);
+    }
+
+    PROMPP_ALWAYS_INLINE size_t hash() const { return hash_; }
+
+    template <class Timeseries>
+    PROMPP_ALWAYS_INLINE void read(Timeseries& timeseries) const {
+      timeseries = data_;
+    }
+  };
+
+ private:
+  std::vector<Item> items_;
+  std::string_view replica_;
+  std::string_view cluster_;
+  uint32_t series_{0};
+
+ public:
+  using const_iterator = std::vector<Item>::const_iterator;
+
+  // presharding from decoder make presharding slice with hash and TimeseriesSemiview.
+  PROMPP_ALWAYS_INLINE void presharding(BasicDecoder<>& decoder) {
+    BasicDecoder<>::label_set_value_type ls_view;  // composite_type
+    Primitives::LabelSetID last_ls_id = std::numeric_limits<Primitives::LabelSetID>::max();
+    const auto& label_sets = decoder.label_sets();
+    bool first = true;
+    decoder.process_segment([&](Primitives::LabelSetID ls_id, Primitives::Timestamp ts, double value) PROMPP_LAMBDA_INLINE {
+      if (last_ls_id != ls_id) {
+        ls_view = label_sets[ls_id];
+        last_ls_id = ls_id;
+        ++series_;
+      }
+      items_.emplace_back(ls_view, ts, value);
+      if (first) [[unlikely]] {
+        first = false;
+        set_cluser_and_replica_values(ls_view, cluster_, replica_);
+      }
+    });
+  }
+
+  PROMPP_ALWAYS_INLINE const_iterator begin() const noexcept { return std::begin(items_); }
+  PROMPP_ALWAYS_INLINE const_iterator end() const noexcept { return std::end(items_); }
+  PROMPP_ALWAYS_INLINE uint32_t series() const noexcept { return series_; }
+  constexpr const std::string_view replica() const noexcept { return replica_; }
+  constexpr const std::string_view cluster() const noexcept { return cluster_; }
+};
+
 }  // namespace PromPP::WAL

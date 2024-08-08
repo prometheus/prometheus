@@ -74,6 +74,27 @@ class Decoder {
     protobuf_writer.get_statistic(stats);
   }
 
+  // decode_to_hashdex decoding incoming data and add to hashdex.
+  template <class Input, class Hashdex, class Stats>
+  PROMPP_ALWAYS_INLINE void decode_to_hashdex(Input& in, Hashdex& hx, Stats& stats) {
+    std::ispanstream inspan(std::string_view(in.data(), in.size()));
+    inspan >> reader_;
+    uint64_t samples_before = reader_.samples();
+
+    hx.presharding(reader_);
+
+    // write stats
+    stats.created_at = reader_.created_at_tsns();
+    stats.encoded_at = reader_.encoded_at_tsns();
+    stats.samples = reader_.samples() - samples_before;
+    stats.series = hx.series();
+    stats.earliest_block_sample = reader_.earliest_sample();
+    stats.latest_block_sample = reader_.latest_sample();
+    if constexpr (have_segment_id<Stats>) {
+      stats.segment_id = reader_.last_processed_segment();
+    }
+  }
+
   // decode_dry - decoding incoming data without protbuf.
   template <class Input, class Stats>
   PROMPP_ALWAYS_INLINE void decode_dry(Input& in, Stats* stats) {

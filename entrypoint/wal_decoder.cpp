@@ -57,6 +57,42 @@ extern "C" void prompp_wal_decoder_decode(void* args, void* res) {
   }
 }
 
+extern "C" void prompp_wal_decoder_decode_to_hashdex(void* args, void* res) {
+  struct Arguments {
+    PromPP::WAL::Decoder* decoder;
+    PromPP::Primitives::Go::SliceView<char> segment;
+  };
+  using Result = struct {
+    int64_t created_at;
+    int64_t encoded_at;
+    uint32_t samples;
+    uint32_t series;
+    uint32_t segment_id;
+    PromPP::Primitives::Timestamp earliest_block_sample;
+    PromPP::Primitives::Timestamp latest_block_sample;
+    HashdexVariant* hashdex_variant;
+    PromPP::Primitives::Go::String cluster;
+    PromPP::Primitives::Go::String replica;
+    PromPP::Primitives::Go::Slice<char> error;
+  };
+
+  Arguments* in = reinterpret_cast<Arguments*>(args);
+  Result* out = new (res) Result();
+
+  try {
+    out->hashdex_variant = new HashdexVariant{std::in_place_index<HashdexType::decoder>};
+    auto& hashdex = std::get<PromPP::WAL::BasicDecoderHashdex>(*out->hashdex_variant);
+    in->decoder->decode_to_hashdex(in->segment, hashdex, *out);
+    auto cluster = hashdex.cluster();
+    out->cluster.reset_to(cluster.data(), cluster.size());
+    auto replica = hashdex.replica();
+    out->replica.reset_to(replica.data(), replica.size());
+  } catch (...) {
+    auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
+    handle_current_exception(__func__, err_stream);
+  }
+}
+
 extern "C" void prompp_wal_decoder_decode_dry(void* args, void* res) {
   struct Arguments {
     PromPP::WAL::Decoder* decoder;

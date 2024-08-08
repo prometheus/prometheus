@@ -144,6 +144,17 @@ func walGoModelHashdexDtor(hashdex uintptr) {
 	)
 }
 
+func walBasicDecoderHashdexDtor(hashdex uintptr) {
+	var args = struct {
+		hashdex uintptr
+	}{hashdex}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_wal_basic_decoder_hashdex_dtor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
 func walGoModelHashdexPresharding(hashdex uintptr, data []model.TimeSeries) (cluster, replica string, err []byte) {
 	var args = struct {
 		hashdex uintptr
@@ -508,6 +519,37 @@ func walDecoderDecode(decoder uintptr, segment []byte) (stats DecodedSegmentStat
 	)
 
 	return res.DecodedSegmentStats, res.protobuf, res.error
+}
+
+// walDecoderDecode - decode WAL-segment into protobuf message through C++ decoder.
+func walDecoderDecodeToHashdex(
+	decoder uintptr,
+	segment []byte,
+) (
+	stats DecodedSegmentStats,
+	hashdex uintptr,
+	cluster, replica string,
+	err []byte,
+) {
+	var args = struct {
+		decoder uintptr
+		segment []byte
+	}{decoder, segment}
+	var res struct {
+		DecodedSegmentStats
+		hashdex uintptr
+		cluster string
+		replica string
+		error   []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_wal_decoder_decode_to_hashdex,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.DecodedSegmentStats, res.hashdex, res.cluster, res.replica, res.error
 }
 
 // decoderDecode - decode WAL-segment and drop decoded data through C++ decoder.
