@@ -421,7 +421,7 @@ func TestHeadIndexReader_PostingsForLabelMatching(t *testing.T) {
 		})
 		app := h.Appender(context.Background())
 		for _, s := range series {
-			app.Append(0, s, 0, 0)
+			app.Append(0, s, 0, 0, nil)
 		}
 		require.NoError(t, app.Commit())
 
