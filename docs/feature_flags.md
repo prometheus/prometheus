@@ -200,8 +200,9 @@ won't work when you push OTLP metrics.
 
 `--enable-feature=promql-experimental-functions`
 
-Enables PromQL functions that are considered experimental and whose name or
-semantics could change.
+Enables PromQL functions that are considered experimental. These functions
+might change their name, syntax, or semantics. They might also get removed
+entirely.
 
 ## Created Timestamps Zero Injection
 
