@@ -5695,7 +5695,7 @@ func TestCuttingNewHeadChunks(t *testing.T) {
 	}
 }
 
-// TestHeadDetectsDuplcateSampleAtSizeLimit tests a regression where a duplicate sample
+// TestHeadDetectsDuplicateSampleAtSizeLimit tests a regression where a duplicate sample
 // is appended to the head, right when the head chunk is at the size limit.
 // The test adds all samples as duplicate, thus expecting that the result has
 // exactly half of the samples.
