@@ -1371,6 +1371,8 @@ type PromQLConfig struct {
 
 // IncludeInfoMetricLabelsConfig is configuration for automatically including info metric data labels in the PromQL engine.
 type IncludeInfoMetricLabelsConfig struct {
+	// AutomaticInclusionEnabled controls whether automatic inclusion of info metric data labels in the PromQL engine is enabled.
+	AutomaticInclusionEnabled bool `yaml:"automatic_inclusion_enabled,omitempty"`
 	// InfoMetrics is a map from info metric names to their identifying labels.
 	InfoMetrics map[string][]string `yaml:"info_metrics,omitempty"`
 	// DataLabelMatchers is a list of info metric data label matchers.

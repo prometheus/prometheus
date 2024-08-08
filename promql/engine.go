@@ -36,7 +36,6 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/exp/maps"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -319,8 +318,9 @@ type EngineOpts struct {
 }
 
 type IncludeInfoMetricLabelsOpts struct {
-	InfoMetrics       map[string][]string
-	DataLabelMatchers map[string][]*labels.Matcher
+	AutomaticInclusionEnabled bool
+	InfoMetrics               map[string][]string
+	DataLabelMatchers         map[string][]*labels.Matcher
 }
 
 // Engine handles the lifetime of queries from beginning to end.
@@ -952,7 +952,7 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 			evalRange = 0
 			hints.By, hints.Grouping = extractGroupsFromPath(path)
 			n.UnexpandedSeriesSet = querier.Select(ctx, false, hints, n.LabelMatchers...)
-			if len(ng.includeInfoMetricLabels.InfoMetrics) > 0 {
+			if ng.includeInfoMetricLabels.AutomaticInclusionEnabled && len(ng.includeInfoMetricLabels.InfoMetrics) > 0 {
 				n.InfoSelectHints = hints
 			}
 
@@ -1036,7 +1036,7 @@ func (ev *evaluator) expandSeriesSet(ctx context.Context, sel *parser.VectorSele
 		return res, annots, err
 	}
 
-	series, ws := ev.combineWithInfoSeries(res, infoSeries, sel.Offset, maps.Keys(ev.includeInfoMetricLabels.DataLabelMatchers))
+	series, ws := ev.combineWithInfoSeries(res, infoSeries, sel.Offset, sel.InfoSelectHints)
 	return series, annots.Merge(ws), nil
 }
 
@@ -1137,6 +1137,10 @@ type EvalNodeHelper struct {
 	rightSigs    map[string]Sample
 	matchedSigs  map[string]map[uint64]struct{}
 	resultMetric map[string]labels.Labels
+
+	// For base and info vector matching.
+	infoSamplesBySig map[string]Sample
+	labelBuilder     *labels.ScratchBuilder
 }
 
 func (enh *EvalNodeHelper) resetBuilder(lbls labels.Labels) {
@@ -1456,8 +1460,8 @@ func (ev *evaluator) rangeEvalAgg(aggExpr *parser.AggregateExpr, sortedGrouping 
 }
 
 // expandSeriesToMatrix expands a set of storage.Series to a Matrix.
-func (ev *evaluator) expandSeriesToMatrix(series []storage.Series, offset time.Duration) Matrix {
-	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
+func (ev *evaluator) expandSeriesToMatrix(series []storage.Series, offset time.Duration, start, end, interval int64) Matrix {
+	numSteps := int((end-start)/interval) + 1
 
 	mat := make(Matrix, 0, len(series))
 	var prevSS *Series
@@ -1474,7 +1478,7 @@ func (ev *evaluator) expandSeriesToMatrix(series []storage.Series, offset time.D
 			Metric: s.Labels(),
 		}
 
-		for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
+		for ts, step := start, -1; ts <= end; ts += interval {
 			step++
 			_, f, h, ok := ev.vectorSelectorSingle(it, offset, ts)
 			if ok {
@@ -1867,7 +1871,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 		return ev.eval(e.Expr)
 
 	case *parser.UnaryExpr:
-		fmt.Printf("UnaryExpr: %s\n", e.Expr)
+		// fmt.Printf("UnaryExpr: %s\n", e.Expr)
 		val, ws := ev.eval(e.Expr)
 		mat := val.(Matrix)
 		if e.Op == parser.SUB {
@@ -1943,7 +1947,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 		if err != nil {
 			ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
 		}
-		mat := ev.expandSeriesToMatrix(e.Series, e.Offset)
+		mat := ev.expandSeriesToMatrix(e.Series, e.Offset, ev.startTimestamp, ev.endTimestamp, ev.interval)
 		return mat, ws
 
 	case *parser.MatrixSelector:

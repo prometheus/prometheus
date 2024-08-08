@@ -21,6 +21,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -28,7 +30,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/teststorage"
-	"github.com/stretchr/testify/require"
 )
 
 func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *promql.Engine, interval, numIntervals int) error {
@@ -394,40 +395,55 @@ func BenchmarkInfoFunction(b *testing.B) {
 
 	// Define test cases with queries to benchmark.
 	cases := []struct {
-		name  string
-		query string
+		name                    string
+		query                   string
+		includeInfoMetricLabels bool
 	}{
 		{
 			name:  "Joining info metrics with other metrics with group_left example 1",
 			query: "rate(http_server_request_duration_seconds_count[2m]) * on (job, instance) group_left (k8s_cluster_name) target_info{k8s_cluster_name=\"us-east\"}",
 		},
 		{
-			name:  "Joining info metrics with other metrics with info() example 1",
-			query: "rate(http_server_request_duration_seconds_count[2m])",
+			name:                    "Joining info metrics with other metrics with info() example 1",
+			query:                   "rate(http_server_request_duration_seconds_count[2m])",
+			includeInfoMetricLabels: true,
 		},
 		{
 			name:  "Joining info metrics with other metrics with group_left example 2",
 			query: "sum by (k8s_cluster_name, http_status_code) (rate(http_server_request_duration_seconds_count[2m]) * on (job, instance) group_left (k8s_cluster_name) target_info)",
 		},
 		{
-			name:  "Joining info metrics with other metrics with info() example 2",
-			query: "sum by (k8s_cluster_name, http_status_code) (rate(http_server_request_duration_seconds_count[2m]))",
+			name:                    "Joining info metrics with other metrics with info() example 2",
+			query:                   "sum by (k8s_cluster_name, http_status_code) (rate(http_server_request_duration_seconds_count[2m]))",
+			includeInfoMetricLabels: true,
 		},
 	}
 
-	// Initialize the PromQL engine once for all benchmarks.
-	opts := promql.EngineOpts{
-		Logger:               nil,
-		Reg:                  nil,
-		MaxSamples:           50000000,
-		Timeout:              100 * time.Second,
-		EnableAtModifier:     true,
-		EnableNegativeOffset: true,
-	}
-	engine := promql.NewEngine(opts)
-
 	// Benchmark each query type.
 	for _, tc := range cases {
+		// Initialize the PromQL engine once for all benchmarks.
+		opts := promql.EngineOpts{
+			Logger:               nil,
+			Reg:                  nil,
+			MaxSamples:           50000000,
+			Timeout:              100 * time.Second,
+			EnableAtModifier:     true,
+			EnableNegativeOffset: true,
+		}
+		if tc.includeInfoMetricLabels {
+			opts.IncludeInfoMetricLabels = promql.IncludeInfoMetricLabelsOpts{
+				AutomaticInclusionEnabled: true,
+				InfoMetrics: map[string][]string{
+					"target_info": {"instance", "job"},
+				},
+				DataLabelMatchers: map[string][]*labels.Matcher{
+					"k8s_cluster_name": {
+						labels.MustNewMatcher(labels.MatchRegexp, "k8s_cluster_name", ".+"),
+					},
+				},
+			}
+		}
+		engine := promql.NewEngine(opts)
 		b.Run(tc.name, func(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {

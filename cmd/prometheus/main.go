@@ -1346,8 +1346,9 @@ func validatePromQLConfig(cfg *config.Config) (promql.IncludeInfoMetricLabelsOpt
 		dataLabelMatchers[m.Name] = append(dataLabelMatchers[m.Name], m)
 	}
 	return promql.IncludeInfoMetricLabelsOpts{
-		InfoMetrics:       c.InfoMetrics,
-		DataLabelMatchers: dataLabelMatchers,
+		AutomaticInclusionEnabled: c.AutomaticInclusionEnabled,
+		InfoMetrics:               c.InfoMetrics,
+		DataLabelMatchers:         dataLabelMatchers,
 	}, nil
 }
 
