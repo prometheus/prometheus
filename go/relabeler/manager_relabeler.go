@@ -611,9 +611,7 @@ func (s *shards) reshards(
 		return err
 	}
 
-	if err := s.reconfigureHeads(numberOfShards); err != nil {
-		return err
-	}
+	s.reconfigureHeads(numberOfShards)
 
 	s.numberOfShards = numberOfShards
 
@@ -693,9 +691,9 @@ func (s *shards) reconfiguringShardLsses(numberOfShards uint16) error {
 	return nil
 }
 
-func (s *shards) reconfigureHeads(numberOfShards uint16) error {
+func (s *shards) reconfigureHeads(numberOfShards uint16) {
 	if s.numberOfShards == numberOfShards {
-		return nil
+		return
 	}
 
 	if len(s.heads) > int(numberOfShards) {
@@ -705,7 +703,7 @@ func (s *shards) reconfigureHeads(numberOfShards uint16) error {
 			}
 		}
 		s.heads = s.heads[:numberOfShards]
-		return nil
+		return
 	}
 
 	s.heads = append(
@@ -725,7 +723,7 @@ func (s *shards) reconfigureHeads(numberOfShards uint16) error {
 		}
 	}
 
-	return nil
+	return
 }
 
 // reconfiguringInputRelabeler reconfiguring input relabelers for all shards.
