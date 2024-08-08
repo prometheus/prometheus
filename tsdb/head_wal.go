@@ -959,9 +959,9 @@ func (s *memSeries) encodeToSnapshotRecord(b []byte) []byte {
 			buf.PutBE64int64(0)
 			buf.PutBEFloat64(s.lastValue)
 		case chunkenc.EncHistogram:
-			record.EncodeHistogram(&buf, s.lastHistogramValue)
+			record.EncodeHistogram(&buf, s.lastHistogramValue())
 		default: // chunkenc.FloatHistogram.
-			record.EncodeFloatHistogram(&buf, s.lastFloatHistogramValue)
+			record.EncodeFloatHistogram(&buf, s.lastFloatHistogramValue())
 		}
 	}
 	s.Unlock()
@@ -1401,9 +1401,12 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 				series.nextAt = csr.mc.maxTime // This will create a new chunk on append.
 				series.headChunks = csr.mc
 				series.lastValue = csr.lastValue
-				series.lastHistogramValue = csr.lastHistogramValue
-				series.lastFloatHistogramValue = csr.lastFloatHistogramValue
-
+				if csr.lastHistogramValue != nil {
+					series.setLastHistogramValue(csr.lastHistogramValue)
+				}
+				if csr.lastFloatHistogramValue != nil {
+					series.setLastFloatHistogramValue(csr.lastFloatHistogramValue)
+				}
 				app, err := series.headChunks.chunk.Appender()
 				if err != nil {
 					errChan <- err
