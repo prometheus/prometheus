@@ -11,7 +11,7 @@ using ChunkType = series_data::chunk::DataChunk::Type;
 
 struct DataChunkInfo {
   DataChunk chunk;
-  uint32_t ls_id;
+  uint32_t series_id;
   ChunkType type;
 
   bool operator==(const DataChunkInfo&) const noexcept = default;
@@ -23,7 +23,7 @@ struct DataStorageIteratorCase {
   std::vector<DataChunkInfo> expected_chunks{};
 };
 
-constexpr uint32_t kDefaultLsId = 0;
+constexpr uint32_t kDefaultSeriesId = 0;
 constexpr DataChunk kOpenChunk = DataChunk(0, 1, EncodingType::kGorilla);
 
 class DataStorageIteratorTrait : public testing::TestWithParam<DataStorageIteratorCase> {
@@ -49,8 +49,8 @@ TEST_P(DataStorageSeriesChunkIterator, OpenedChunk) {
   std::vector<DataChunkInfo> chunks;
 
   // Act
-  std::ranges::transform(data_storage_.chunks(kDefaultLsId), std::back_inserter(chunks),
-                         [](const auto& data) { return DataChunkInfo{.chunk = data.chunk(), .ls_id = data.ls_id(), .type = data.chunk_type()}; });
+  std::ranges::transform(data_storage_.chunks(kDefaultSeriesId), std::back_inserter(chunks),
+                         [](const auto& data) { return DataChunkInfo{.chunk = data.chunk(), .series_id = data.series_id(), .type = data.chunk_type()}; });
 
   // Assert
   EXPECT_EQ(GetParam().expected_chunks, chunks);
@@ -62,25 +62,26 @@ INSTANTIATE_TEST_SUITE_P(OpenedChunk,
                          DataStorageSeriesChunkIterator,
                          testing::Values(DataStorageIteratorCase{
                              .open_chunks = {kOpenChunk},
-                             .expected_chunks = {DataChunkInfo{.chunk = kOpenChunk, .ls_id = kDefaultLsId, .type = ChunkType::kOpen}}}));
+                             .expected_chunks = {DataChunkInfo{.chunk = kOpenChunk, .series_id = kDefaultSeriesId, .type = ChunkType::kOpen}}}));
 
 INSTANTIATE_TEST_SUITE_P(
     FinalizedChunk,
     DataStorageSeriesChunkIterator,
-    testing::Values(DataStorageIteratorCase{.open_chunks = {kOpenChunk},
-                                            .finalized_chunks = {{DataChunk(1, 2, EncodingType::kValuesGorilla)}},
-                                            .expected_chunks = {DataChunkInfo{.chunk = DataChunk(1, 2, EncodingType::kValuesGorilla),
-                                                                              .ls_id = kDefaultLsId,
-                                                                              .type = ChunkType::kFinalized},
-                                                                DataChunkInfo{.chunk = kOpenChunk, .ls_id = kDefaultLsId, .type = ChunkType::kOpen}}},
-                    DataStorageIteratorCase{
-                        .open_chunks = {kOpenChunk},
-                        .finalized_chunks = {{DataChunk(1, 2, EncodingType::kValuesGorilla), DataChunk(2, 3, EncodingType::kUint32Constant)}},
-                        .expected_chunks = {
-                            DataChunkInfo{.chunk = DataChunk(1, 2, EncodingType::kValuesGorilla), .ls_id = kDefaultLsId, .type = ChunkType::kFinalized},
-                            DataChunkInfo{.chunk = DataChunk(2, 3, EncodingType::kUint32Constant), .ls_id = kDefaultLsId, .type = ChunkType::kFinalized},
-                            DataChunkInfo{.chunk = kOpenChunk, .ls_id = kDefaultLsId, .type = ChunkType::kOpen},
-                        }}));
+    testing::Values(
+        DataStorageIteratorCase{.open_chunks = {kOpenChunk},
+                                .finalized_chunks = {{DataChunk(1, 2, EncodingType::kValuesGorilla)}},
+                                .expected_chunks = {DataChunkInfo{.chunk = DataChunk(1, 2, EncodingType::kValuesGorilla),
+                                                                  .series_id = kDefaultSeriesId,
+                                                                  .type = ChunkType::kFinalized},
+                                                    DataChunkInfo{.chunk = kOpenChunk, .series_id = kDefaultSeriesId, .type = ChunkType::kOpen}}},
+        DataStorageIteratorCase{
+            .open_chunks = {kOpenChunk},
+            .finalized_chunks = {{DataChunk(1, 2, EncodingType::kValuesGorilla), DataChunk(2, 3, EncodingType::kUint32Constant)}},
+            .expected_chunks = {
+                DataChunkInfo{.chunk = DataChunk(1, 2, EncodingType::kValuesGorilla), .series_id = kDefaultSeriesId, .type = ChunkType::kFinalized},
+                DataChunkInfo{.chunk = DataChunk(2, 3, EncodingType::kUint32Constant), .series_id = kDefaultSeriesId, .type = ChunkType::kFinalized},
+                DataChunkInfo{.chunk = kOpenChunk, .series_id = kDefaultSeriesId, .type = ChunkType::kOpen},
+            }}));
 
 class DataStorageChunkIterator : public DataStorageIteratorTrait {};
 
@@ -90,7 +91,7 @@ TEST_P(DataStorageChunkIterator, Test) {
 
   // Act
   std::ranges::transform(data_storage_.chunks(), std::back_inserter(chunks),
-                         [](const auto& data) { return DataChunkInfo{.chunk = data.chunk(), .ls_id = data.ls_id(), .type = data.chunk_type()}; });
+                         [](const auto& data) { return DataChunkInfo{.chunk = data.chunk(), .series_id = data.series_id(), .type = data.chunk_type()}; });
 
   // Assert
   EXPECT_EQ(GetParam().expected_chunks, chunks);
@@ -103,11 +104,11 @@ INSTANTIATE_TEST_SUITE_P(
     DataStorageChunkIterator,
     testing::Values(
         DataStorageIteratorCase{.open_chunks = {DataChunk{0, 1, EncodingType::kGorilla}},
-                                .expected_chunks = {DataChunkInfo{.chunk = DataChunk(0, 1, EncodingType::kGorilla), .ls_id = 0, .type = ChunkType::kOpen}}},
+                                .expected_chunks = {DataChunkInfo{.chunk = DataChunk(0, 1, EncodingType::kGorilla), .series_id = 0, .type = ChunkType::kOpen}}},
         DataStorageIteratorCase{
             .open_chunks = {DataChunk{0, 1, EncodingType::kGorilla}, DataChunk{1, 2, EncodingType::kUint32Constant}},
-            .expected_chunks = {DataChunkInfo{.chunk = DataChunk(0, 1, EncodingType::kGorilla), .ls_id = 0, .type = ChunkType::kOpen},
-                                DataChunkInfo{.chunk = DataChunk(1, 2, EncodingType::kUint32Constant), .ls_id = 1, .type = ChunkType::kOpen}}}));
+            .expected_chunks = {DataChunkInfo{.chunk = DataChunk(0, 1, EncodingType::kGorilla), .series_id = 0, .type = ChunkType::kOpen},
+                                DataChunkInfo{.chunk = DataChunk(1, 2, EncodingType::kUint32Constant), .series_id = 1, .type = ChunkType::kOpen}}}));
 
 INSTANTIATE_TEST_SUITE_P(FinalizedChunks,
                          DataStorageChunkIterator,
@@ -115,8 +116,8 @@ INSTANTIATE_TEST_SUITE_P(FinalizedChunks,
                              .open_chunks = {DataChunk{0, 1, EncodingType::kGorilla}, DataChunk{1, 2, EncodingType::kUint32Constant}},
                              .finalized_chunks = {{}, {DataChunk{2, 3, EncodingType::kAscIntegerValuesGorilla}}},
                              .expected_chunks = {
-                                 DataChunkInfo{.chunk = DataChunk(0, 1, EncodingType::kGorilla), .ls_id = 0, .type = ChunkType::kOpen},
-                                 DataChunkInfo{.chunk = DataChunk(2, 3, EncodingType::kAscIntegerValuesGorilla), .ls_id = 1, .type = ChunkType::kFinalized},
-                                 DataChunkInfo{.chunk = DataChunk(1, 2, EncodingType::kUint32Constant), .ls_id = 1, .type = ChunkType::kOpen}}}));
+                                 DataChunkInfo{.chunk = DataChunk(0, 1, EncodingType::kGorilla), .series_id = 0, .type = ChunkType::kOpen},
+                                 DataChunkInfo{.chunk = DataChunk(2, 3, EncodingType::kAscIntegerValuesGorilla), .series_id = 1, .type = ChunkType::kFinalized},
+                                 DataChunkInfo{.chunk = DataChunk(1, 2, EncodingType::kUint32Constant), .series_id = 1, .type = ChunkType::kOpen}}}));
 
 }  // namespace

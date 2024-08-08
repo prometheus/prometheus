@@ -57,6 +57,15 @@ class Decoder {
   }
 
   template <class Callback>
+  static void decode_chunk(const DataStorage& storage, const chunk::DataChunk& chunk, chunk::DataChunk::Type chunk_type, Callback&& callback) {
+    if (chunk_type == chunk::DataChunk::Type::kOpen) {
+      decode_chunk<chunk::DataChunk::Type::kOpen>(storage, chunk, std::forward<Callback>(callback));
+    } else {
+      decode_chunk<chunk::DataChunk::Type::kFinalized>(storage, chunk, std::forward<Callback>(callback));
+    }
+  }
+
+  template <class Callback>
   PROMPP_ALWAYS_INLINE static void decode_gorilla_chunk(const encoder::CompactBitSequence& stream, Callback&& callback) {
     std::ranges::for_each(decoder::GorillaDecodeIterator(stream), decoder::DecodeIteratorSentinel{}, std::forward<Callback>(callback));
   }

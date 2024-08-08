@@ -14,7 +14,6 @@
 namespace series_data {
 
 struct DataStorage {
- private:
   class IteratorSentinel {};
 
   class SeriesChunkIterator {
@@ -32,7 +31,8 @@ struct DataStorage {
         }
       }
 
-      [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t ls_id() const noexcept { return std::distance(storage_->open_chunks.begin(), open_chunk_); }
+      [[nodiscard]] PROMPP_ALWAYS_INLINE const DataStorage* storage() const noexcept { return storage_; }
+      [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t series_id() const noexcept { return std::distance(storage_->open_chunks.begin(), open_chunk_); }
       [[nodiscard]] PROMPP_ALWAYS_INLINE chunk::DataChunk::Type chunk_type() const noexcept {
         return finalized_chunk_iterator_ == finalized_chunk_end_iterator_ ? chunk::DataChunk::Type::kOpen : chunk::DataChunk::Type::kFinalized;
       }
