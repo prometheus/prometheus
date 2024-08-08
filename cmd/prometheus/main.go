@@ -384,6 +384,9 @@ func main() {
 	serverOnlyFlag(a, "storage.tsdb.allow-overlapping-blocks", "[DEPRECATED] This flag has no effect. Overlapping blocks are enabled by default now.").
 		Default("true").Hidden().BoolVar(&b)
 
+	serverOnlyFlag(a, "storage.tsdb.allow-overlapping-compaction", "Allow compaction of overlapping blocks. If set to false, TSDB stops vertical compaction and leaves overlapping blocks there. The use case is to let another component handle the compaction of overlapping blocks.").
+		Default("true").Hidden().BoolVar(&cfg.tsdb.EnableOverlappingCompaction)
+
 	serverOnlyFlag(a, "storage.tsdb.wal-compression", "Compress the tsdb WAL.").
 		Hidden().Default("true").BoolVar(&cfg.tsdb.WALCompression)
 
@@ -1719,6 +1722,7 @@ type tsdbOptions struct {
 	EnableMemorySnapshotOnShutdown bool
 	EnableNativeHistograms         bool
 	EnableDelayedCompaction        bool
+	EnableOverlappingCompaction    bool
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -1739,8 +1743,8 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableMemorySnapshotOnShutdown: opts.EnableMemorySnapshotOnShutdown,
 		EnableNativeHistograms:         opts.EnableNativeHistograms,
 		OutOfOrderTimeWindow:           opts.OutOfOrderTimeWindow,
-		EnableOverlappingCompaction:    true,
 		EnableDelayedCompaction:        opts.EnableDelayedCompaction,
+		EnableOverlappingCompaction:    opts.EnableOverlappingCompaction,
 	}
 }
 

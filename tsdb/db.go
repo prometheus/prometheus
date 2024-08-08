@@ -187,7 +187,6 @@ type Options struct {
 	// The reason why this flag exists is because there are various users of the TSDB
 	// that do not want vertical compaction happening on ingest time. Instead,
 	// they'd rather keep overlapping blocks and let another component do the overlapping compaction later.
-	// For Prometheus, this will always be true.
 	EnableOverlappingCompaction bool
 
 	// EnableSharding enables query sharding support in TSDB.
