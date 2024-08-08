@@ -3161,7 +3161,7 @@ seriesLoop:
 	return mat, annos
 }
 
-// aggregationK evaluates count_values on vec.
+// aggregationCountValues evaluates count_values on vec.
 // Outputs as many series per group as there are values in the input.
 func (ev *evaluator) aggregationCountValues(e *parser.AggregateExpr, grouping []string, valueLabel string, vec Vector, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	type groupCount struct {
