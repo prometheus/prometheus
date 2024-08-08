@@ -14,62 +14,132 @@
 package promql
 
 import (
+	"fmt"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
 
 func TestHistogramStatsDecoding(t *testing.T) {
-	histograms := []*histogram.Histogram{
-		tsdbutil.GenerateTestHistogram(0),
-		tsdbutil.GenerateTestHistogram(1),
-		tsdbutil.GenerateTestHistogram(2),
-		tsdbutil.GenerateTestHistogram(2),
+	cases := []struct {
+		name          string
+		histograms    []*histogram.Histogram
+		expectedHints []histogram.CounterResetHint
+	}{
+		{
+			name: "unknown counter reset triggers detection",
+			histograms: []*histogram.Histogram{
+				tsdbutil.GenerateTestHistogramWithHint(0, histogram.NotCounterReset),
+				tsdbutil.GenerateTestHistogramWithHint(1, histogram.UnknownCounterReset),
+				tsdbutil.GenerateTestHistogramWithHint(2, histogram.CounterReset),
+				tsdbutil.GenerateTestHistogramWithHint(2, histogram.UnknownCounterReset),
+			},
+			expectedHints: []histogram.CounterResetHint{
+				histogram.NotCounterReset,
+				histogram.NotCounterReset,
+				histogram.CounterReset,
+				histogram.NotCounterReset,
+			},
+		},
+		{
+			name: "stale sample before unknown reset hint",
+			histograms: []*histogram.Histogram{
+				tsdbutil.GenerateTestHistogramWithHint(0, histogram.NotCounterReset),
+				tsdbutil.GenerateTestHistogramWithHint(1, histogram.UnknownCounterReset),
+				{Sum: math.Float64frombits(value.StaleNaN)},
+				tsdbutil.GenerateTestHistogramWithHint(1, histogram.UnknownCounterReset),
+			},
+			expectedHints: []histogram.CounterResetHint{
+				histogram.NotCounterReset,
+				histogram.NotCounterReset,
+				histogram.UnknownCounterReset,
+				histogram.NotCounterReset,
+			},
+		},
+		{
+			name: "unknown counter reset at the beginning",
+			histograms: []*histogram.Histogram{
+				tsdbutil.GenerateTestHistogramWithHint(1, histogram.UnknownCounterReset),
+			},
+			expectedHints: []histogram.CounterResetHint{
+				histogram.NotCounterReset,
+			},
+		},
+		{
+			name: "detect real counter reset",
+			histograms: []*histogram.Histogram{
+				tsdbutil.GenerateTestHistogramWithHint(2, histogram.UnknownCounterReset),
+				tsdbutil.GenerateTestHistogramWithHint(1, histogram.UnknownCounterReset),
+			},
+			expectedHints: []histogram.CounterResetHint{
+				histogram.NotCounterReset,
+				histogram.CounterReset,
+			},
+		},
+		{
+			name: "detect real counter reset after stale NaN",
+			histograms: []*histogram.Histogram{
+				tsdbutil.GenerateTestHistogramWithHint(2, histogram.UnknownCounterReset),
+				{Sum: math.Float64frombits(value.StaleNaN)},
+				tsdbutil.GenerateTestHistogramWithHint(1, histogram.UnknownCounterReset),
+			},
+			expectedHints: []histogram.CounterResetHint{
+				histogram.NotCounterReset,
+				histogram.UnknownCounterReset,
+				histogram.CounterReset,
+			},
+		},
 	}
-	histograms[0].CounterResetHint = histogram.NotCounterReset
-	histograms[1].CounterResetHint = histogram.UnknownCounterReset
-	histograms[2].CounterResetHint = histogram.CounterReset
-	histograms[3].CounterResetHint = histogram.UnknownCounterReset
 
-	expectedHints := []histogram.CounterResetHint{
-		histogram.NotCounterReset,
-		histogram.NotCounterReset,
-		histogram.CounterReset,
-		histogram.NotCounterReset,
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Run("histogram_stats", func(t *testing.T) {
+				decodedStats := make([]*histogram.Histogram, 0)
+				statsIterator := NewHistogramStatsIterator(newHistogramSeries(tc.histograms).Iterator(nil))
+				for statsIterator.Next() != chunkenc.ValNone {
+					_, h := statsIterator.AtHistogram(nil)
+					decodedStats = append(decodedStats, h)
+				}
+				for i := 0; i < len(tc.histograms); i++ {
+					require.Equal(t, tc.expectedHints[i], decodedStats[i].CounterResetHint, fmt.Sprintf("mismatch in counter reset hint for histogram %d", i))
+					h := tc.histograms[i]
+					if value.IsStaleNaN(h.Sum) {
+						require.True(t, value.IsStaleNaN(decodedStats[i].Sum))
+						require.Equal(t, uint64(0), decodedStats[i].Count)
+					} else {
+						require.Equal(t, tc.histograms[i].Count, decodedStats[i].Count)
+						require.Equal(t, tc.histograms[i].Sum, decodedStats[i].Sum)
+					}
+				}
+			})
+			t.Run("float_histogram_stats", func(t *testing.T) {
+				decodedStats := make([]*histogram.FloatHistogram, 0)
+				statsIterator := NewHistogramStatsIterator(newHistogramSeries(tc.histograms).Iterator(nil))
+				for statsIterator.Next() != chunkenc.ValNone {
+					_, h := statsIterator.AtFloatHistogram(nil)
+					decodedStats = append(decodedStats, h)
+				}
+				for i := 0; i < len(tc.histograms); i++ {
+					require.Equal(t, tc.expectedHints[i], decodedStats[i].CounterResetHint)
+					fh := tc.histograms[i].ToFloat(nil)
+					if value.IsStaleNaN(fh.Sum) {
+						require.True(t, value.IsStaleNaN(decodedStats[i].Sum))
+						require.Equal(t, float64(0), decodedStats[i].Count)
+					} else {
+						require.Equal(t, fh.Count, decodedStats[i].Count)
+						require.Equal(t, fh.Sum, decodedStats[i].Sum)
+					}
+				}
+			})
+		})
 	}
-
-	t.Run("histogram_stats", func(t *testing.T) {
-		decodedStats := make([]*histogram.Histogram, 0)
-		statsIterator := NewHistogramStatsIterator(newHistogramSeries(histograms).Iterator(nil))
-		for statsIterator.Next() != chunkenc.ValNone {
-			_, h := statsIterator.AtHistogram(nil)
-			decodedStats = append(decodedStats, h)
-		}
-		for i := 0; i < len(histograms); i++ {
-			require.Equal(t, expectedHints[i], decodedStats[i].CounterResetHint)
-			require.Equal(t, histograms[i].Count, decodedStats[i].Count)
-			require.Equal(t, histograms[i].Sum, decodedStats[i].Sum)
-		}
-	})
-	t.Run("float_histogram_stats", func(t *testing.T) {
-		decodedStats := make([]*histogram.FloatHistogram, 0)
-		statsIterator := NewHistogramStatsIterator(newHistogramSeries(histograms).Iterator(nil))
-		for statsIterator.Next() != chunkenc.ValNone {
-			_, h := statsIterator.AtFloatHistogram(nil)
-			decodedStats = append(decodedStats, h)
-		}
-		for i := 0; i < len(histograms); i++ {
-			fh := histograms[i].ToFloat(nil)
-			require.Equal(t, expectedHints[i], decodedStats[i].CounterResetHint)
-			require.Equal(t, fh.Count, decodedStats[i].Count)
-			require.Equal(t, fh.Sum, decodedStats[i].Sum)
-		}
-	})
 }
 
 type histogramSeries struct {
