@@ -31,7 +31,7 @@ extern "C" {
  * @brief Construct index writer
  *
  * @param args {
- *     lss         uintptr     // pointer to constructed head
+ *     lss         uintptr      // pointer to constructed lss
  *     chunks_meta *[][]struct{ // index in first slice is series id
  *         min_t int64
  *         max_t int64
@@ -441,19 +441,119 @@ void prompp_prometheus_per_shard_relabeler_reset_to(void* args);
 extern "C" {
 #endif
 
+/**
+ * @brief Construct a new series data DataStorage
+ *
+ * @param res {
+ *     dataStorage uintptr // pointer to constructed data storage
+ * }
+ */
 void prompp_series_data_data_storage_ctor(void* res);
+
+/**
+ * @brief Resets DataStorage to initial state
+ *
+ * @param args {
+ *     dataStorage uintptr // pointer to constructed data storage
+ * }
+ */
 void prompp_series_data_data_storage_reset(void* args);
+
+/**
+ * @brief series data DataStorage destructor.
+ *
+ * @param args {
+ *     dataStorage uintptr // pointer to constructed data storage
+ * }
+ */
 void prompp_series_data_data_storage_dtor(void* args);
+
+/**
+ * @brief Construct a new ChunkRecoder object
+ *
+ * @param args {
+ *     dataStorage   uintptr  // pointer to constructed data storage
+ * }
+ * @param res {
+ *     chunk_recoder uintptr // pointer to chunk recoder
+ * }
+ */
+void prompp_series_data_chunk_recoder_ctor(void* args, void* res);
+
+/**
+ * @brief Get chunk encoded in prometheus format
+ *
+ * @param args {
+ *     chunk_recoder uintptr // pointer to chunk recoder
+ * }
+ * @param res {
+ *     min_t         int64
+ *     max_t         int64
+ *     series_id     uint32
+ *     has_more_data bool
+ *     data          []byte // SliceView to recoded chunk data
+ * }
+ */
+void prompp_series_data_chunk_recoder_recode_next_chunk(void* args, void* res);
+
+/**
+ * @brief Destruct ChunkRecoder object
+ *
+ * @param args {
+ *     chunk_recoder  uintptr  // pointer to chunk recoder
+ * }
+ */
+void prompp_series_data_chunk_recoder_dtor(void* args);
 
 #ifdef __cplusplus
 }  // extern "C"
-#endif#ifdef __cplusplus
+#endif
+#ifdef __cplusplus
 extern "C" {
 #endif
 
+/**
+ * @brief series data Encoder constructor.
+ *
+ * @param args {
+ *     encoder uintptr // pointer to constructed encoder
+ * }
+ *
+ * @param res {
+ *     encoder uintptr // pointer to constructed encoder
+ * }
+ */
 void prompp_series_data_encoder_ctor(void* args, void* res);
+
+/**
+ * @brief adds single series to data storage
+ *
+ * @param args {
+ *     encoder uintptr // pointer to constructed encoder
+ *     seriesID uint32 // series id
+ *     timestamp int64 // timestamp
+ *     value float64   // value
+ * }
+ */
 void prompp_series_data_encoder_encode(void* args);
+
+/**
+ * @brief adds slice of inner series to data storage
+ *
+ * @param args {
+ *     encoder uintptr // pointer to constructed encoder
+ *     innerSeriesSlice []*InnerSeries // pointer to inner series slice.
+ * }
+ */
 void prompp_series_data_encoder_encode_inner_series_slice(void* args);
+
+/**
+ * @brief series data Encoder destructor.
+ *
+ * @param args {
+ *     encoder uintptr // pointer to constructed encoder
+ * }
+ */
 void prompp_series_data_encoder_dtor(void* args);
 
 #ifdef __cplusplus

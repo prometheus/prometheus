@@ -226,6 +226,14 @@ class PROMPP_ATTRIBUTE_PACKED CompactBitSequenceBase {
     allocation_size_index_ = kNoAllocationIndex;
   }
 
+  PROMPP_ALWAYS_INLINE void rewind() noexcept {
+    if (size_in_bits_ > 0) {
+      [[likely]];
+      memset(memory_, '\0', allocated_memory());
+      size_in_bits_ = 0;
+    }
+  }
+
  protected:
   static constexpr uint32_t kNoAllocationIndex = std::numeric_limits<uint8_t>::max();
 

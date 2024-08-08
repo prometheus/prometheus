@@ -65,6 +65,20 @@ class Decoder {
     }
   }
 
+  static uint8_t get_samples_count(const DataStorage& storage, const chunk::DataChunk& chunk, chunk::DataChunk::Type chunk_type) noexcept {
+    using enum chunk::DataChunk::Type;
+
+    if (chunk.encoding_type == chunk::DataChunk::EncodingType::kGorilla) {
+      [[unlikely]];
+      return encoder::BitSequenceWithItemsCount::count(chunk_type == kOpen ? storage.get_values_gorilla_stream<kOpen>(chunk.encoder.gorilla)
+                                                                           : storage.get_values_gorilla_stream<kFinalized>(chunk.encoder.gorilla));
+    } else {
+      return (chunk_type == kOpen ? storage.get_timestamp_stream<kOpen>(chunk.timestamp_encoder_state_id)
+                                  : storage.get_timestamp_stream<kFinalized>(chunk.timestamp_encoder_state_id))
+          .count();
+    }
+  }
+
   template <class Callback>
   PROMPP_ALWAYS_INLINE static void decode_gorilla_chunk(const encoder::CompactBitSequence& stream, Callback&& callback) {
     std::ranges::for_each(decoder::GorillaDecodeIterator(stream), decoder::DecodeIteratorSentinel{}, std::forward<Callback>(callback));

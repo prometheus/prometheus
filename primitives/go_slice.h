@@ -6,6 +6,7 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <span>
 #include <type_traits>
 
 #include "bare_bones/preprocess.h"
@@ -24,23 +25,25 @@ class SliceView {
   using value_type = const T;
   using const_iterator = const T*;
 
-  inline __attribute__((always_inline)) explicit SliceView() = default;
+  PROMPP_ALWAYS_INLINE explicit SliceView() = default;
 
-  inline __attribute__((always_inline)) void reset_to(const T* data, size_t len) {
+  PROMPP_ALWAYS_INLINE void reset_to(const T* data, size_t len) {
     data_ = data;
     len_ = len;
     cap_ = len;
   }
 
-  inline __attribute__((always_inline)) const T* data() const noexcept { return data_; }
-  inline __attribute__((always_inline)) bool empty() const noexcept { return !len_; }
-  inline __attribute__((always_inline)) size_t size() const noexcept { return len_; }
-  inline __attribute__((always_inline)) size_t capacity() const noexcept { return cap_; }
+  PROMPP_ALWAYS_INLINE void reset_to(std::span<const T> buffer) { reset_to(buffer.data(), buffer.size()); }
 
-  inline __attribute__((always_inline)) const_iterator begin() const noexcept { return data_; }
-  inline __attribute__((always_inline)) const_iterator end() const noexcept { return data_ + len_; }
+  PROMPP_ALWAYS_INLINE const T* data() const noexcept { return data_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool empty() const noexcept { return !len_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t size() const noexcept { return len_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t capacity() const noexcept { return cap_; }
 
-  inline __attribute__((always_inline)) const T& operator[](uint32_t i) const {
+  PROMPP_ALWAYS_INLINE const_iterator begin() const noexcept { return data_; }
+  PROMPP_ALWAYS_INLINE const_iterator end() const noexcept { return data_ + len_; }
+
+  PROMPP_ALWAYS_INLINE const T& operator[](uint32_t i) const {
     assert(i < len_);
     return data_[i];
   }

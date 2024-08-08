@@ -1038,6 +1038,46 @@ func seriesDataEncoderDtor(encoder uintptr) {
 	)
 }
 
+func seriesDataChunkRecoderCtor(dataStorage uintptr) uintptr {
+	var args = struct {
+		dataStorage uintptr
+	}{dataStorage}
+	var res struct {
+		chunkRecoder uintptr
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_series_data_chunk_recoder_ctor,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.chunkRecoder
+}
+
+func seriesDataChunkRecoderRecodeNextChunk(chunkRecoder uintptr, recodedChunk *RecodedChunk) {
+	var args = struct {
+		chunkRecoder uintptr
+	}{chunkRecoder}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_series_data_chunk_recoder_recode_next_chunk,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(recodedChunk)),
+	)
+}
+
+func seriesDataChunkRecoderDtor(chunkRecoder uintptr) {
+	var args = struct {
+		chunkRecoder uintptr
+	}{chunkRecoder}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_series_data_chunk_recoder_dtor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
 func indexWriterCtor(lss uintptr, chunk_metadata_list *[][]ChunkMetadata) uintptr {
 	var args = struct {
 		lss                 uintptr

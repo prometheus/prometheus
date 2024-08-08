@@ -1,6 +1,7 @@
 package cppbridge
 
 import (
+	"math"
 	"runtime"
 )
 
@@ -60,4 +61,42 @@ func (e *HeadEncoder) Encode(seriesID uint32, timestamp int64, value float64) {
 // EncodeInnerSeriesSlice - encodes InnerSeries slice produced by relabeler.
 func (e *HeadEncoder) EncodeInnerSeriesSlice(innerSeriesSlice []*InnerSeries) {
 	seriesDataEncoderEncodeInnerSeriesSlice(e.encoder, innerSeriesSlice)
+}
+
+type RecodedChunk struct {
+	MinT        int64
+	MaxT        int64
+	SeriesId    uint32
+	HasMoreData bool
+	ChunkData   []byte
+}
+
+const (
+	InvalidSeriesId = math.MaxUint32
+)
+
+// ChunkRecoder is Go wrapper around C++ ChunkRecoder.
+type ChunkRecoder struct {
+	recoder      uintptr
+	recodedChunk RecodedChunk
+
+	dataStorage *HeadDataStorage
+}
+
+func NewChunkRecoder(dataStorage *HeadDataStorage) *ChunkRecoder {
+	chunkRecoder := &ChunkRecoder{
+		recoder:     seriesDataChunkRecoderCtor(dataStorage.dataStorage),
+		dataStorage: dataStorage,
+	}
+
+	runtime.SetFinalizer(chunkRecoder, func(chunkRecoder *ChunkRecoder) {
+		seriesDataChunkRecoderDtor(chunkRecoder.recoder)
+	})
+
+	return chunkRecoder
+}
+
+func (recoder *ChunkRecoder) RecodeNextChunk() RecodedChunk {
+	seriesDataChunkRecoderRecodeNextChunk(recoder.recoder, &recoder.recodedChunk)
+	return recoder.recodedChunk
 }
