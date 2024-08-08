@@ -7,6 +7,7 @@ import { Progress, Stack, Title } from "@mantine/core";
 import { useSuspenseQuery } from "@tanstack/react-query";
 
 const ReadinessLoader: FC = () => {
+  const { pathPrefix } = useSettings();
   const dispatch = useAppDispatch();
 
   // Query key is incremented every second to retrigger the status fetching.
@@ -20,7 +21,7 @@ const ReadinessLoader: FC = () => {
     gcTime: 0,
     queryFn: async ({ signal }: { signal: AbortSignal }) => {
       try {
-        const res = await fetch("/-/ready", {
+        const res = await fetch(`${pathPrefix}/-/ready`, {
           cache: "no-store",
           credentials: "same-origin",
           signal,
