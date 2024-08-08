@@ -115,6 +115,18 @@ func (e *StepInvariantExpr) Pretty(level int) string {
 	return e.Expr.Pretty(level)
 }
 
+func (e *LetExpr) Pretty(level int) string {
+	in := indent(level)
+	return fmt.Sprintf(
+		"%slet %s=%s\n%sin %s",
+		in,
+		e.Name,
+		e.Expr.Pretty(level+1),
+		in,
+		e.InExpr.Pretty(level+1),
+	)
+}
+
 func (e *MatrixSelector) Pretty(level int) string {
 	return getCommonPrefixIndent(level, e)
 }

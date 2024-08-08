@@ -19,6 +19,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash"
+	"hash/fnv"
 	"math"
 	"reflect"
 	"runtime"
@@ -3311,8 +3313,11 @@ func PreprocessExpr(expr parser.Expr, start, end time.Time) parser.Expr {
 
 	isStepInvariant := preprocessExprHelper(expr, start, end)
 	if isStepInvariant {
-		return newStepInvariantExpr(expr)
+		expr = newStepInvariantExpr(expr)
 	}
+
+	expr = preprocessCse(expr)
+
 	return expr
 }
 
@@ -3406,6 +3411,111 @@ func preprocessExprHelper(expr parser.Expr, start, end time.Time) bool {
 
 func newStepInvariantExpr(expr parser.Expr) parser.Expr {
 	return &parser.StepInvariantExpr{Expr: expr}
+}
+
+type cseNode struct {
+	node   parser.Node
+	parent parser.Node
+}
+
+func preprocessCse(expr parser.Expr) parser.Expr {
+	// Perform a post-order traversal of the expression tree. Compute hashes along the way.
+	// Keep a map of hash -> expr for all expressions encountered.
+
+	nodeHash := make(map[parser.Node]uint64)
+	cseInfo := make(map[uint64][]*cseNode)
+	cseScan(expr, nil, cseInfo, nodeHash)
+
+	// Then do another top-down pass to find the largest common subexpressions.
+	// If we encounter one, and they're equal, capture the expression as a Let
+	// expr and replace matching expressions with a reference to the Let.
+	// If they're not equal (which would be a very rare hash collision), we
+	// simply keep scanning downward.
+
+	// TODO: Filter matching to those that are truly equal.
+	// Replace the matching node with a reference to the Let.
+	exp2 := rewriteCse(expr, nodeHash, cseInfo)
+	return exp2
+}
+
+func rewriteCse(expr parser.Expr, nodeHash map[parser.Node]uint64, cseInfo map[uint64][]*cseNode) parser.Expr {
+	errStop := errors.New("stop")
+	varNum := 0
+
+	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
+		e, ok := node.(parser.Expr)
+		if !ok {
+			// Only interested in exprs.
+			return nil
+		}
+
+		if h, ok := nodeHash[e]; ok {
+			if matching, ok := cseInfo[h]; ok {
+				if len(matching) > 1 {
+					varName := fmt.Sprintf("var%d", varNum)
+					varNum++
+					replacement := &parser.LetExpr{
+						Name:   varName,
+						Expr:   e,
+						InExpr: nil,
+					}
+
+					for _, match := range matching {
+						if match.node == node {
+							continue
+						}
+
+						switch p := match.parent.(type) {
+						case *parser.BinaryExpr:
+							if p.LHS == match.node {
+								p.LHS = replacement
+							} else {
+								p.RHS = replacement
+							}
+						case *parser.Call:
+							for i, arg := range p.Args {
+								if arg == match.node {
+									p.Args[i] = replacement
+								}
+							}
+						case *parser.MatrixSelector:
+							if p.VectorSelector == match.node {
+								p.VectorSelector = replacement
+							}
+						case *parser.SubqueryExpr:
+							if p.Expr == match.node {
+								p.Expr = replacement
+							}
+						default:
+							panic(fmt.Sprintf("unexpected parent type %T", p))
+						}
+
+					}
+
+					return errStop
+				}
+			}
+		}
+		return nil
+	})
+
+	return expr
+}
+
+func cseScan(n parser.Node, parent parser.Node, cseMap map[uint64][]*cseNode, nodeHash map[parser.Node]uint64) hash.Hash64 {
+	h := fnv.New64a()
+	// TODO: fix this hash computation so it isn't n^2.
+	h.Write([]byte(n.String()))
+
+	for _, child := range parser.Children(n) {
+		childHash := cseScan(child, n, cseMap, nodeHash)
+		h.Write(childHash.Sum(nil))
+	}
+
+	s := h.Sum64()
+	cseMap[s] = append(cseMap[s], &cseNode{node: n, parent: parent})
+	nodeHash[n] = s
+	return h
 }
 
 // setOffsetForAtModifier modifies the offset of vector and matrix selector

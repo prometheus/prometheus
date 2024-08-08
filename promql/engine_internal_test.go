@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/promql/parser"
@@ -79,4 +80,27 @@ func TestRecoverEvaluatorErrorWithWarnings(t *testing.T) {
 	defer ev.recover(nil, &ws, &err)
 
 	panic(e)
+}
+
+func TestCseScan(t *testing.T) {
+	e, err := parser.ParseExpr("(http_requests_total{} + http_requests_total{})")
+	require.NoError(t, err)
+
+	nodeHash := make(map[parser.Node]uint64)
+	cseInfo := make(map[uint64][]*cseNode)
+	cseScan(e, nil, cseInfo, nodeHash)
+
+	// There should be 3 distinct hashed values:
+	// 1. http_requests_total{}
+	// 2. http_requests_total{}+http_requests_total{}
+	// 3. (http_requests_total{}+http_requests_total{})
+
+	assert.Len(t, cseInfo, 3)
+
+	for k, v := range cseInfo {
+		println(k)
+		for _, n := range v {
+			println("  ", n.node.String())
+		}
+	}
 }

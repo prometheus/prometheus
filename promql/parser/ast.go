@@ -189,6 +189,23 @@ func (e *StepInvariantExpr) PositionRange() posrange.PositionRange {
 	return e.Expr.PositionRange()
 }
 
+// A LetExpr is a let expression that binds a name to an expression, allowing
+// the expression to be bound as `Name` and reused inside of InExpr.
+type LetExpr struct {
+	Name   string
+	Expr   Expr
+	InExpr Expr
+}
+
+func (e *LetExpr) String() string {
+	return fmt.Sprintf("let %s = %s in %s", e.Name, e.Expr, e.InExpr)
+}
+
+func (e *LetExpr) PositionRange() posrange.PositionRange {
+	// ???
+	return mergeRanges(e.Expr, e.InExpr)
+}
+
 // VectorSelector represents a Vector selection.
 type VectorSelector struct {
 	Name string
@@ -241,6 +258,7 @@ func (e *BinaryExpr) Type() ValueType {
 	return ValueTypeVector
 }
 func (e *StepInvariantExpr) Type() ValueType { return e.Expr.Type() }
+func (e *LetExpr) Type() ValueType           { return e.InExpr.Type() }
 
 func (*AggregateExpr) PromQLExpr()     {}
 func (*BinaryExpr) PromQLExpr()        {}
@@ -253,6 +271,7 @@ func (*StringLiteral) PromQLExpr()     {}
 func (*UnaryExpr) PromQLExpr()         {}
 func (*VectorSelector) PromQLExpr()    {}
 func (*StepInvariantExpr) PromQLExpr() {}
+func (*LetExpr) PromQLExpr()           {}
 
 // VectorMatchCardinality describes the cardinality relationship
 // of two Vectors in a binary operation.
@@ -326,6 +345,25 @@ func Walk(v Visitor, node Node, path []Node) error {
 	return err
 }
 
+func WalkPostOrder(v Visitor, node Node, path []Node) error {
+	var err error
+	path = append(path, node)
+
+	for _, e := range Children(node) {
+		if err := WalkPostOrder(v, e, path); err != nil {
+			return err
+		}
+	}
+
+	if v, err = v.Visit(node, path); v == nil || err != nil {
+		return err
+	}
+
+	// ???
+	// _, err = v.Visit(nil, nil)
+	return nil
+}
+
 func ExtractSelectors(expr Expr) [][]*labels.Matcher {
 	var selectors [][]*labels.Matcher
 	Inspect(expr, func(node Node, _ []Node) error {
@@ -354,6 +392,11 @@ func (f inspector) Visit(node Node, path []Node) (Visitor, error) {
 func Inspect(node Node, f inspector) {
 	//nolint: errcheck
 	Walk(f, node, nil)
+}
+
+func InspectPostOrder(node Node, f inspector) {
+	//nolint: errcheck
+	WalkPostOrder(f, node, nil)
 }
 
 // Children returns a list of all child nodes of a syntax tree node.
