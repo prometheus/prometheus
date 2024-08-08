@@ -1057,7 +1057,7 @@ func (ev *evaluator) recover(expr parser.Expr, ws *annotations.Annotations, errp
 		buf := make([]byte, 64<<10)
 		buf = buf[:runtime.Stack(buf, false)]
 
-		level.Error(ev.logger).Log("msg", "runtime panic in parser", "expr", expr.String(), "err", e, "stacktrace", string(buf))
+		level.Error(ev.logger).Log("msg", "runtime panic during query evaluation", "expr", expr.String(), "err", e, "stacktrace", string(buf))
 		*errp = fmt.Errorf("unexpected error: %w", err)
 	case errWithWarnings:
 		*errp = err.err
