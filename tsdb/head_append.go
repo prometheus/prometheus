@@ -1091,7 +1091,7 @@ func (s *memSeries) insert(t int64, v float64, chunkDiskMapper *chunks.ChunkDisk
 		chunkCreated = true
 	}
 
-	ok := c.chunk.Insert(t, v)
+	ok := c.chunk.Insert(t, v, nil, nil)
 	if ok {
 		if chunkCreated || t < c.minTime {
 			c.minTime = t
