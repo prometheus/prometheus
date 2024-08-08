@@ -2,7 +2,7 @@ package cppbridge_test
 
 import (
 	"context"
-	"math/rand/v2"
+	"math/rand"
 	"strconv"
 	"testing"
 	"time"
@@ -259,11 +259,9 @@ func (s *EncoderDecoderSuite) TestEncodeDecodeToHashdex() {
 	enc2 := cppbridge.NewWALEncoder(0, 0)
 	dec2 := cppbridge.NewWALDecoder(cppbridge.EncodersVersion())
 
-	time.Sleep(60 * time.Second)
-
 	count := 11
 	for i := 1; i < count; i++ {
-		seriesCount := rand.IntN(5000-100) + 100
+		seriesCount := rand.Intn(5000-100) + 100
 		s.T().Log("generate protobuf")
 		var expectedWr *prompb.WriteRequest
 		if i%2 == 0 {
