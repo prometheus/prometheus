@@ -214,10 +214,8 @@ func checkParseResultsWithCT(t *testing.T, p Parser, exp []expectedParse, ctLine
 			if ctLinesRemoved {
 				// Are CT series skipped?
 				_, typ := p.Type()
-				if typ == model.MetricTypeCounter || typ == model.MetricTypeSummary || typ == model.MetricTypeHistogram {
-					if strings.HasSuffix(res.Get(labels.MetricName), "_created") {
-						t.Fatalf("we exped created lines skipped")
-					}
+				if TypeRequiresCT(typ) && strings.HasSuffix(res.Get(labels.MetricName), "_created") {
+					t.Fatalf("we exped created lines skipped")
 				}
 			}
 

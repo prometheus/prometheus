@@ -252,7 +252,7 @@ func (p *OpenMetricsParser) Exemplar(e *exemplar.Exemplar) bool {
 // CreatedTimestamp returns the created timestamp for a current Metric if exists or nil.
 // NOTE(Maniktherana): Might use additional CPU/mem resources due to deep copy of parser required for peeking given 1.0 OM specification on _created series.
 func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
-	if !typeRequiresCT(p.mtype) {
+	if !TypeRequiresCT(p.mtype) {
 		// Not a CT supported metric type, fast path.
 		return nil
 	}
@@ -302,8 +302,8 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 	}
 }
 
-// typeRequiresCT returns true if the metric type requires a _created timestamp.
-func typeRequiresCT(t model.MetricType) bool {
+// TypeRequiresCT returns true if the metric type requires a _created timestamp.
+func TypeRequiresCT(t model.MetricType) bool {
 	switch t {
 	case model.MetricTypeCounter, model.MetricTypeSummary, model.MetricTypeHistogram:
 		return true
@@ -594,13 +594,8 @@ func (p *OpenMetricsParser) isCreatedSeries() bool {
 	var newLbs labels.Labels
 	p.Metric(&newLbs)
 	name := newLbs.Get(model.MetricNameLabel)
-	switch p.mtype {
-	case model.MetricTypeCounter, model.MetricTypeSummary, model.MetricTypeHistogram:
-		if strings.HasSuffix(name, "_created") {
+	if TypeRequiresCT(p.mtype) && strings.HasSuffix(name, "_created") {
 			return true
-		}
-	default:
-		break
 	}
 	return false
 }

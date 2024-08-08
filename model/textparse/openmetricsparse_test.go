@@ -779,6 +779,9 @@ func TestOMNullByteHandling(t *testing.T) {
 	}
 }
 
+// While not desirable, there are cases were CT fails to parse and
+// these tests show them.
+// TODO(maniktherana): Make sure OM 1.1/2.0 pass CT via metadata or exemplar-like to avoid this.
 func TestCTParseFailures(t *testing.T) {
 	input := `# HELP something Histogram with _created between buckets and summary
 # TYPE something histogram
