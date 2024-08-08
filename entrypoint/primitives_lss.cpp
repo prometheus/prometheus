@@ -68,6 +68,7 @@ extern "C" void prompp_primitives_lss_query(void* args, void* res) {
 }
 
 void prompp_primitives_lss_get_label_sets(void* args, void* res) {
+  using PromPP::Primitives::Go::Label;
   using PromPP::Primitives::Go::Slice;
   using PromPP::Primitives::Go::String;
 
@@ -76,7 +77,7 @@ void prompp_primitives_lss_get_label_sets(void* args, void* res) {
     Slice<uint32_t> series_ids;
   };
   struct Result {
-    Slice<Slice<PromPP::Primitives::Go::Label>> label_sets;
+    Slice<Slice<Label>> label_sets;
   };
 
   auto in = reinterpret_cast<Arguments*>(args);
@@ -90,12 +91,8 @@ void prompp_primitives_lss_get_label_sets(void* args, void* res) {
           auto in_label_set = lss[in->series_ids[i]];
           auto& out_label_set = out->label_sets[i];
           out_label_set.reserve(in_label_set.size());
-          std::ranges::transform(in_label_set, std::back_inserter(out_label_set), [](const auto& label) PROMPP_LAMBDA_INLINE {
-            return PromPP::Primitives::Go::Label({
-                .name{String::allocate(label.first)},
-                .value{String::allocate(label.second)},
-            });
-          });
+          std::ranges::transform(in_label_set, std::back_inserter(out_label_set),
+                                 [](const auto& label) PROMPP_LAMBDA_INLINE { return Label({.name{label.first}, .value{label.second}}); });
         }
       },
       *in->lss);
@@ -103,20 +100,10 @@ void prompp_primitives_lss_get_label_sets(void* args, void* res) {
 
 extern "C" void prompp_primitives_lss_free_label_sets(void* args) {
   using PromPP::Primitives::Go::Slice;
-  using PromPP::Primitives::Go::String;
 
   struct Arguments {
     Slice<Slice<PromPP::Primitives::Go::Label>> label_sets;
   };
 
-  auto in = reinterpret_cast<Arguments*>(args);
-
-  for (auto& label_set : in->label_sets) {
-    for (auto& label : label_set) {
-      String::free_str(label.name);
-      String::free_str(label.value);
-    }
-  }
-
-  in->label_sets.~Slice();
+  reinterpret_cast<Arguments*>(args)->label_sets.~Slice();
 }

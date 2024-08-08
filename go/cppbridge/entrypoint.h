@@ -359,29 +359,6 @@ extern "C" {
 #endif
 
 /**
- * @brief Query data chunks
- *
- * @param args {
- *     data_storage uintptr     // data storage
- *     start_timestamp_ms int64 // start timestamp milliseconds
- *     end_timestamp_ms int64   // end timestamp milliseconds
- *     ls_ids []uint32          // label set ids
- * }
- *
- * @param res {
- *     serialized_chunks []byte // serialized chunks
- * }
- */
-void prompp_series_data_data_storage_query(void* args, void* res);
-
-#ifdef __cplusplus
-}  // extern "C"
-#endif
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-/**
  * @brief Construct a new WAL Decoder
  *
  * @param args {
