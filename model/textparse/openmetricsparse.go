@@ -595,7 +595,7 @@ func (p *OpenMetricsParser) isCreatedSeries() bool {
 	p.Metric(&newLbs)
 	name := newLbs.Get(model.MetricNameLabel)
 	if TypeRequiresCT(p.mtype) && strings.HasSuffix(name, "_created") {
-			return true
+		return true
 	}
 	return false
 }
