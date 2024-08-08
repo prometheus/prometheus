@@ -92,7 +92,7 @@ void prompp_primitives_lss_get_label_sets(void* args, void* res) {
           auto& out_label_set = out->label_sets[i];
           out_label_set.reserve(in_label_set.size());
           std::ranges::transform(in_label_set, std::back_inserter(out_label_set),
-                                 [](const auto& label) PROMPP_LAMBDA_INLINE { return Label({.name{label.first}, .value{label.second}}); });
+                                 [](const auto& label) PROMPP_LAMBDA_INLINE { return Label({.name = String{label.first}, .value = String{label.second}}); });
         }
       },
       *in->lss);
