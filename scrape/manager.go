@@ -139,8 +139,9 @@ func (m *Manager) UnregisterMetrics() {
 }
 
 func (m *Manager) reloader() {
+	// TODO: OK?
 	reloadIntervalDuration := m.opts.DiscoveryReloadInterval
-	if reloadIntervalDuration < model.Duration(5*time.Second) {
+	if reloadIntervalDuration == model.Duration(0) {
 		reloadIntervalDuration = model.Duration(5 * time.Second)
 	}
 

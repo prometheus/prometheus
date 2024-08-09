@@ -939,11 +939,13 @@ func TestTargetSetTargetGroupsPresentOnConfigChange(t *testing.T) {
 	discoveryManager.ApplyConfig(c)
 
 	// Original targets should be present as soon as possible.
+	// An empty list should be sent for prometheus2 to drop any stale targets
 	syncedTargets = <-discoveryManager.SyncCh()
 	mu.Unlock()
-	require.Len(t, syncedTargets, 1)
+	require.Len(t, syncedTargets, 2)
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
 	require.Len(t, syncedTargets["prometheus"], 1)
+	require.Empty(t, syncedTargets["prometheus2"])
 
 	// prometheus2 configs should be ready on second sync.
 	syncedTargets = <-discoveryManager.SyncCh()
@@ -1275,6 +1277,7 @@ func TestCoordinationWithReceiver(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "1"}},
 							},
 						},
+						"mock1": {},
 					},
 				},
 				{
