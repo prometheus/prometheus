@@ -132,9 +132,7 @@ type HashdexContent interface {
 	Series() uint32
 	EarliestBlockSample() int64
 	LatestBlockSample() int64
-	Cluster() string
-	Replica() string
-	Destroy()
+	ShardedData() ShardedData
 }
 
 // DecodedHashdex is GO wrapper for decoded hashdex content.
@@ -153,24 +151,9 @@ func NewDecodedHashdex(hashdex uintptr, cluster, replica string, stats DecodedSe
 	}
 }
 
-// Cluster get Cluster name.
-func (dh *DecodedHashdex) Cluster() string {
-	return dh.hashdex.Cluster()
-}
-
-// Replica get Replica name.
-func (dh *DecodedHashdex) Replica() string {
-	return dh.hashdex.Replica()
-}
-
-// cptr pointer to underlying c++ object.
-func (dh *DecodedHashdex) cptr() uintptr {
-	return dh.hashdex.cptr()
-}
-
-// Destroy pointer to nil.
-func (dh *DecodedHashdex) Destroy() {
-	dh.hashdex = nil
+// ShardedData return hashdex as ShardedData.
+func (dh *DecodedHashdex) ShardedData() ShardedData {
+	return dh.hashdex
 }
 
 // WALDecoder - go wrapper for C-WALDecoder.
