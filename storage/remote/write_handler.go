@@ -502,7 +502,7 @@ func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	otlpCfg := h.configFunc().OTLPConfig
 
 	converter := otlptranslator.NewPrometheusConverter()
-	if err := converter.FromMetrics(req.Metrics(), otlptranslator.Settings{
+	if err := converter.FromMetrics(r.Context(), req.Metrics(), otlptranslator.Settings{
 		AddMetricSuffixes:         true,
 		PromoteResourceAttributes: otlpCfg.PromoteResourceAttributes,
 	}); err != nil {

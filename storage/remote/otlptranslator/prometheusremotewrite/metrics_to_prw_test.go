@@ -17,6 +17,7 @@
 package prometheusremotewrite
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -26,6 +27,38 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 )
+
+func TestFromMetrics(t *testing.T) {
+	t.Run("successful", func(t *testing.T) {
+		converter := NewPrometheusConverter()
+		payload := createExportRequest(5, 128, 128, 2, 0)
+
+		err := converter.FromMetrics(context.Background(), payload.Metrics(), Settings{})
+		require.NoError(t, err)
+	})
+
+	t.Run("context cancellation", func(t *testing.T) {
+		converter := NewPrometheusConverter()
+		ctx, cancel := context.WithCancel(context.Background())
+		// Verify that converter.FromMetrics respects cancellation.
+		cancel()
+		payload := createExportRequest(5, 128, 128, 2, 0)
+
+		err := converter.FromMetrics(ctx, payload.Metrics(), Settings{})
+		require.ErrorIs(t, err, context.Canceled)
+	})
+
+	t.Run("context timeout", func(t *testing.T) {
+		converter := NewPrometheusConverter()
+		// Verify that converter.FromMetrics respects timeout.
+		ctx, cancel := context.WithTimeout(context.Background(), 0)
+		t.Cleanup(cancel)
+		payload := createExportRequest(5, 128, 128, 2, 0)
+
+		err := converter.FromMetrics(ctx, payload.Metrics(), Settings{})
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+	})
+}
 
 func BenchmarkPrometheusConverter_FromMetrics(b *testing.B) {
 	for _, resourceAttributeCount := range []int{0, 5, 50} {
@@ -49,7 +82,7 @@ func BenchmarkPrometheusConverter_FromMetrics(b *testing.B) {
 
 											for i := 0; i < b.N; i++ {
 												converter := NewPrometheusConverter()
-												require.NoError(b, converter.FromMetrics(payload.Metrics(), Settings{}))
+												require.NoError(b, converter.FromMetrics(context.Background(), payload.Metrics(), Settings{}))
 												require.NotNil(b, converter.TimeSeries())
 											}
 										})

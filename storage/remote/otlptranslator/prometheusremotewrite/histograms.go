@@ -17,6 +17,7 @@
 package prometheusremotewrite
 
 import (
+	"context"
 	"fmt"
 	"math"
 
@@ -32,9 +33,13 @@ const defaultZeroThreshold = 1e-128
 
 // addExponentialHistogramDataPoints adds OTel exponential histogram data points to the corresponding time series
 // as native histogram samples.
-func (c *PrometheusConverter) addExponentialHistogramDataPoints(dataPoints pmetric.ExponentialHistogramDataPointSlice,
+func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Context, dataPoints pmetric.ExponentialHistogramDataPointSlice,
 	resource pcommon.Resource, settings Settings, promName string) error {
 	for x := 0; x < dataPoints.Len(); x++ {
+		if err := c.everyN.checkContext(ctx); err != nil {
+			return err
+		}
+
 		pt := dataPoints.At(x)
 
 		histogram, err := exponentialToNativeHistogram(pt)
@@ -54,15 +59,18 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(dataPoints pmetr
 		ts, _ := c.getOrCreateTimeSeries(lbls)
 		ts.Histograms = append(ts.Histograms, histogram)
 
-		exemplars := getPromExemplars[pmetric.ExponentialHistogramDataPoint](pt)
+		exemplars, err := getPromExemplars[pmetric.ExponentialHistogramDataPoint](ctx, &c.everyN, pt)
+		if err != nil {
+			return err
+		}
 		ts.Exemplars = append(ts.Exemplars, exemplars...)
 	}
 
 	return nil
 }
 
-// exponentialToNativeHistogram translates OTel Exponential Histogram data point
-// to Prometheus Native Histogram.
+// exponentialToNativeHistogram translates an OTel Exponential Histogram data point
+// to a Prometheus Native Histogram.
 func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint) (prompb.Histogram, error) {
 	scale := p.Scale()
 	if scale < -4 {
