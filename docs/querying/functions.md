@@ -617,7 +617,7 @@ Like `sort`, `sort_desc` only affects the results of instant queries, as range q
 
 ## `sort_by_label()`
 
-**This function has to be enabled via the [feature flag](../feature_flags.md) `--enable-feature=promql-experimental-functions`.**
+**This function has to be enabled via the [feature flag](../feature_flags.md#experimental-promql-functions) `--enable-feature=promql-experimental-functions`.**
 
 `sort_by_label(v instant-vector, label string, ...)` returns vector elements sorted by their label values and sample value in case of label values being equal, in ascending order.
 
@@ -627,7 +627,7 @@ This function uses [natural sort order](https://en.wikipedia.org/wiki/Natural_so
 
 ## `sort_by_label_desc()`
 
-**This function has to be enabled via the [feature flag](../feature_flags.md) `--enable-feature=promql-experimental-functions`.**
+**This function has to be enabled via the [feature flag](../feature_flags.md#experimental-promql-functions) `--enable-feature=promql-experimental-functions`.**
 
 Same as `sort_by_label`, but sorts in descending order.
 
@@ -676,7 +676,7 @@ over time and return an instant vector with per-series aggregation results:
 * `last_over_time(range-vector)`: the most recent point value in the specified interval.
 * `present_over_time(range-vector)`: the value 1 for any series in the specified interval.
 
-If the [feature flag](../feature_flags.md)
+If the [feature flag](../feature_flags.md#experimental-promql-functions)
 `--enable-feature=promql-experimental-functions` is set, the following
 additional functions are available:
 
