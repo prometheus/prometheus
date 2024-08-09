@@ -278,6 +278,10 @@ func (b *bucketIterator) Next() (int, bool) {
 type Insert struct {
 	pos int
 	num int
+
+	// Optional: bucketIdx is the index of the bucket that is inserted.
+	// Can be used to adjust spans.
+	bucketIdx int
 }
 
 // Deprecated: expandSpansForward, use expandIntSpansAndBuckets or
@@ -576,4 +580,66 @@ func counterResetHint(crh CounterResetHeader, numRead uint16) histogram.CounterR
 		// might not be worth the effort and/or risk. To be vetted...
 		return histogram.UnknownCounterReset
 	}
+}
+
+// adjustForInserts adjusts the spans for the given inserts.
+func adjustForInserts(spans []histogram.Span, inserts []Insert) (mergedSpans []histogram.Span) {
+	if len(inserts) == 0 {
+		return spans
+	}
+
+	it := newBucketIterator(spans)
+
+	var (
+		lastBucket int
+		i          int
+		insertIdx  = inserts[i].bucketIdx
+		insertNum  = inserts[i].num
+	)
+
+	addBucket := func(b int) {
+		offset := b - lastBucket - 1
+		if offset == 0 && len(mergedSpans) > 0 {
+			mergedSpans[len(mergedSpans)-1].Length++
+		} else {
+			if len(mergedSpans) == 0 {
+				offset++
+			}
+			mergedSpans = append(mergedSpans, histogram.Span{
+				Offset: int32(offset),
+				Length: 1,
+			})
+		}
+
+		lastBucket = b
+	}
+	consumeInsert := func() {
+		// Consume the insert.
+		insertNum--
+		if insertNum == 0 {
+			i++
+			if i < len(inserts) {
+				insertIdx = inserts[i].bucketIdx
+				insertNum = inserts[i].num
+			}
+		} else {
+			insertIdx++
+		}
+	}
+
+	bucket, ok := it.Next()
+	for ok {
+		if i < len(inserts) && insertIdx < bucket {
+			addBucket(insertIdx)
+			consumeInsert()
+		} else {
+			addBucket(bucket)
+			bucket, ok = it.Next()
+		}
+	}
+	for i < len(inserts) {
+		addBucket(inserts[i].bucketIdx)
+		consumeInsert()
+	}
+	return
 }

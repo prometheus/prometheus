@@ -158,7 +158,7 @@ type chunkVerify struct {
 
 func TestOOOChunks_ToEncodedChunks(t *testing.T) {
 	h1 := tsdbutil.GenerateTestHistogram(1)
-	// Make h2 appendible but with more buckets, to trigger recoding.
+	// Make h2 appendable but with more buckets, to trigger recoding.
 	h2 := h1.Copy()
 	h2.PositiveSpans = append(h2.PositiveSpans, histogram.Span{Offset: 1, Length: 1})
 	h2.PositiveBuckets = append(h2.PositiveBuckets, 12)
@@ -170,6 +170,40 @@ func TestOOOChunks_ToEncodedChunks(t *testing.T) {
 	}{
 		"empty": {
 			samples: []sample{},
+		},
+		"has floats": {
+			samples: []sample{
+				{t: 1000, f: 43.0},
+				{t: 1100, f: 42.0},
+			},
+			expectedCounterResets: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.UnknownCounterReset},
+			expectedChunks: []chunkVerify{
+				{encoding: chunkenc.EncXOR, minTime: 1000, maxTime: 1100},
+			},
+		},
+		"mix of floats and histograms": {
+			samples: []sample{
+				{t: 1000, f: 43.0},
+				{t: 1100, h: h1},
+				{t: 1200, f: 42.0},
+			},
+			expectedCounterResets: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.UnknownCounterReset, histogram.UnknownCounterReset},
+			expectedChunks: []chunkVerify{
+				{encoding: chunkenc.EncXOR, minTime: 1000, maxTime: 1000},
+				{encoding: chunkenc.EncHistogram, minTime: 1100, maxTime: 1100},
+				{encoding: chunkenc.EncXOR, minTime: 1200, maxTime: 1200},
+			},
+		},
+		"has a counter reset": {
+			samples: []sample{
+				{t: 1000, h: h2},
+				{t: 1100, h: h1},
+			},
+			expectedCounterResets: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.CounterReset},
+			expectedChunks: []chunkVerify{
+				{encoding: chunkenc.EncHistogram, minTime: 1000, maxTime: 1000},
+				{encoding: chunkenc.EncHistogram, minTime: 1100, maxTime: 1100},
+			},
 		},
 		"has a recoded histogram": { // Regression test for wrong minT, maxT in histogram recoding.
 			samples: []sample{
@@ -221,6 +255,8 @@ func TestOOOChunks_ToEncodedChunks(t *testing.T) {
 				case chunkenc.EncXOR:
 					for j, s := range samples {
 						require.Equal(t, chunkenc.ValFloat, s.Type())
+						// XOR chunks don't have counter reset hints, so we shouldn't expect anything else than UnknownCounterReset.
+						require.Equal(t, histogram.UnknownCounterReset, tc.expectedCounterResets[sampleIndex+j], "sample reset hint %d", sampleIndex+j)
 						require.Equal(t, tc.samples[sampleIndex+j].f, s.F(), "sample %d", sampleIndex+j)
 					}
 				case chunkenc.EncHistogram:

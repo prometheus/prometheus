@@ -419,6 +419,7 @@ loop:
 				// fill in the bucket in b and advance a.
 				if aCount == 0 {
 					bInter.num++ // Mark that we need to insert a bucket in b.
+					bInter.bucketIdx = aIdx
 					// Advance a
 					if aInter.num > 0 {
 						aInserts = append(aInserts, aInter)
@@ -436,6 +437,7 @@ loop:
 				return nil, nil, false
 			case aIdx > bIdx: // a misses a value that is in b. Forward b and recompare.
 				aInter.num++
+				bInter.bucketIdx = bIdx
 				// Advance b
 				if bInter.num > 0 {
 					bInserts = append(bInserts, bInter)
@@ -453,6 +455,7 @@ loop:
 			// fill in the bucket in b and advance a.
 			if aCount == 0 {
 				bInter.num++
+				bInter.bucketIdx = aIdx
 				// Advance a
 				if aInter.num > 0 {
 					aInserts = append(aInserts, aInter)
@@ -471,6 +474,7 @@ loop:
 			return nil, nil, false
 		case !aOK && bOK: // a misses a value that is in b. Forward b and recompare.
 			aInter.num++
+			bInter.bucketIdx = bIdx
 			// Advance b
 			if bInter.num > 0 {
 				bInserts = append(bInserts, bInter)
@@ -773,6 +777,23 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 			happ.appendFloatHistogram(t, h)
 			return newChunk, false, app, nil
 		}
+		if len(pBackwardInserts) > 0 || len(nBackwardInserts) > 0 {
+			// The histogram needs to be expanded to have the extra empty buckets
+			// of the chunk.
+			if len(pForwardInserts) == 0 && len(nForwardInserts) == 0 {
+				// No new chunks from the histogram, so the spans of the appender can accommodate the new buckets.
+				// However we need to make a copy in case the input is sharing spans from an iterator.
+				h.PositiveSpans = make([]histogram.Span, len(a.pSpans))
+				copy(h.PositiveSpans, a.pSpans)
+				h.NegativeSpans = make([]histogram.Span, len(a.nSpans))
+				copy(h.NegativeSpans, a.nSpans)
+			} else {
+				// Spans need pre-adjusting to accommodate the new buckets.
+				h.PositiveSpans = adjustForInserts(h.PositiveSpans, pBackwardInserts)
+				h.NegativeSpans = adjustForInserts(h.NegativeSpans, nBackwardInserts)
+			}
+			a.recodeHistogram(h, pBackwardInserts, nBackwardInserts)
+		}
 		if len(pForwardInserts) > 0 || len(nForwardInserts) > 0 {
 			if appendOnly {
 				return nil, false, a, fmt.Errorf("float histogram layout change with %d positive and %d negative forwards inserts", len(pForwardInserts), len(nForwardInserts))
@@ -783,13 +804,6 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 			)
 			app.(*FloatHistogramAppender).appendFloatHistogram(t, h)
 			return chk, true, app, nil
-		}
-		if len(pBackwardInserts) > 0 || len(nBackwardInserts) > 0 {
-			// The histogram needs to be expanded to have the extra empty buckets
-			// of the chunk.
-			h.PositiveSpans = a.pSpans
-			h.NegativeSpans = a.nSpans
-			a.recodeHistogram(h, pBackwardInserts, nBackwardInserts)
 		}
 		a.appendFloatHistogram(t, h)
 		return nil, false, a, nil
