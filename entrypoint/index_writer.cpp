@@ -29,16 +29,7 @@ extern "C" void prompp_index_writer_ctor(void* args, void* res) {
   };
 
   auto in = reinterpret_cast<Arguments*>(args);
-  auto out = new (res) Result;
-  if (auto lss = std::get_if<entrypoint::QueryableEncodingBimap>(in->lss.get()); lss) {
-    if (lss->size() == 0) {
-      lss->find_or_emplace(PromPP::Primitives::LabelViewSet{{"job", "cron"}, {"server", "localhost"}, {"process", "php"}});
-      lss->find_or_emplace(PromPP::Primitives::LabelViewSet{{"job", "cro1"}, {"server", "127.0.0.1"}, {"process", "nodejs"}});
-      lss->find_or_emplace(PromPP::Primitives::LabelViewSet{{"joa", "cron"}, {"server", "127.0.0.1"}, {"process", "nodejs"}});
-    }
-
-    out->writer = std::make_unique<IndexWriter>(*lss, *in->chunk_metadata_list);
-  }
+  new (res) Result{.writer = std::make_unique<IndexWriter>(std::get<entrypoint::QueryableEncodingBimap>(*in->lss), *in->chunk_metadata_list)};
 }
 
 extern "C" void prompp_index_writer_dtor(void* args) {
