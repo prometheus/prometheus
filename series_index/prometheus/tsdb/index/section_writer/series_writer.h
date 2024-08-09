@@ -91,12 +91,12 @@ class SeriesWriter {
     }
   }
 
-  PROMPP_ALWAYS_INLINE void emplace_series_reference(PromPP::Primitives::LabelSetID ls_id, size_t position) {
+  PROMPP_ALWAYS_INLINE void emplace_series_reference(PromPP::Primitives::LabelSetID ls_id, size_t position) const {
     auto section_ref = position / PromPP::Prometheus::tsdb::index::kSeriesAlignment;
     series_references_.try_emplace(ls_id, section_ref);
   }
 
-  void write_serialized_series(StreamWriter& writer) {
+  void write_serialized_series(StreamWriter& writer) const {
     writer.write_uvarint(serialized_series_str_.length());
     writer.write(serialized_series_str_);
     writer.compute_and_write_crc32(serialized_series_str_);

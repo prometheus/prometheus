@@ -20,7 +20,7 @@ class CompactSeriesIdSequence {
 
   static constexpr uint32_t kMaxElementsInArray = sizeof(SeriesIdSequence) / sizeof(SeriesIdSequence::value_type);
   using Array = std::array<SeriesIdSequence::value_type, kMaxElementsInArray>;
-  using value_type = typename SeriesIdSequence::value_type;
+  using value_type = SeriesIdSequence::value_type;
 
   PROMPP_ALWAYS_INLINE explicit CompactSeriesIdSequence(Type type) : type_(type) {
     if (type_ == Type::kSequence) {

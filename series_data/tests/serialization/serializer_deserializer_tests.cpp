@@ -322,7 +322,7 @@ class DeserializerIteratorFixture : public SerializerDeserializerTrait, public t
  protected:
   using DecodedChunks = std::vector<SampleList>;
 
-  DecodedChunks decode_chunks() {
+  DecodedChunks decode_chunks() const {
     DecodedChunks result;
     for (auto& chunk : Deserializer{get_buffer()}) {
       result.emplace_back(decode_chunk(chunk.decode_iterator()));

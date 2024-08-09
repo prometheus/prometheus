@@ -38,7 +38,7 @@ class LabelIndicesWriterFixture : public testing::TestWithParam<LabelIndicesWrit
 
     std::ostringstream stream;
     StreamWriter stream_writer{&stream};
-    SymbolsWriter<QueryableEncodingBimap>{lss_, symbol_references_, stream_writer}.write();
+    SymbolsWriter{lss_, symbol_references_, stream_writer}.write();
   }
 };
 

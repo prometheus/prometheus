@@ -46,15 +46,15 @@ class PostingsWriterFixture : public testing::TestWithParam<PostingsWriterCase> 
 
     std::ostringstream stream;
     StreamWriter stream_writer{&stream};
-    SymbolsWriter<QueryableEncodingBimap>{lss_, symbol_references_, stream_writer}.write();
-    SeriesWriter<QueryableEncodingBimap, ChunkMetadataList>{lss_, chunk_metadata_list, symbol_references_, series_references_}.write(stream_writer);
+    SymbolsWriter{lss_, symbol_references_, stream_writer}.write();
+    SeriesWriter{lss_, chunk_metadata_list, symbol_references_, series_references_}.write(stream_writer);
   }
 };
 
 TEST_P(PostingsWriterFixture, FullWrite) {
   // Arrange
   fill_data(GetParam().label_sets, GetParam().chunk_metadata_list);
-  PostingsWriter<QueryableEncodingBimap> postings_writer{lss_, series_references_, stream_writer_};
+  PostingsWriter postings_writer{lss_, series_references_, stream_writer_};
 
   // Act
   postings_writer.write_postings();

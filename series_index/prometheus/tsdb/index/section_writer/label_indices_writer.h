@@ -45,7 +45,7 @@ class LabelIndicesWriter {
   std::string label_index_;
   std::string label_indices_table_;
 
-  void write_label_index() {
+  void write_label_index() const {
     writer_.write_uint32(label_index_.size());
     writer_.write(label_index_);
     writer_.compute_and_write_crc32(label_index_);

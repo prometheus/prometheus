@@ -22,9 +22,7 @@ class Deserializer {
 
       [[nodiscard]] PROMPP_ALWAYS_INLINE PromPP::Primitives::LabelSetID label_set_id() const noexcept { return chunk_iterator_->label_set_id; }
       [[nodiscard]] PROMPP_ALWAYS_INLINE chunk::DataChunk::EncodingType encoding_type() const noexcept { return chunk_iterator_->encoding_type; }
-      [[nodiscard]] PROMPP_ALWAYS_INLINE decoder::UniversalDecodeIterator decode_iterator() const {
-        return Deserializer::create_decode_iterator(buffer_, *chunk_iterator_);
-      }
+      [[nodiscard]] PROMPP_ALWAYS_INLINE decoder::UniversalDecodeIterator decode_iterator() const { return create_decode_iterator(buffer_, *chunk_iterator_); }
 
      private:
       friend class Iterator;
@@ -44,7 +42,7 @@ class Deserializer {
     using pointer = value_type*;
     using reference = value_type&;
 
-    explicit Iterator(std::span<const uint8_t> buffer) : data_(buffer, Deserializer::get_chunks(buffer)) {}
+    explicit Iterator(std::span<const uint8_t> buffer) : data_(buffer, get_chunks(buffer)) {}
 
     [[nodiscard]] PROMPP_ALWAYS_INLINE const Data& operator*() const noexcept { return data_; }
     [[nodiscard]] PROMPP_ALWAYS_INLINE const Data* operator->() const noexcept { return &data_; }

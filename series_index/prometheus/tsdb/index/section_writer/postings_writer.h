@@ -41,7 +41,7 @@ class PostingsWriter {
     }
   }
 
-  void write_postings_table_offsets() {
+  void write_postings_table_offsets() const {
     entries_placeholder_->set(entries_);
 
     writer_.write_uint32(postings_table_offsets_.size());
@@ -84,7 +84,7 @@ class PostingsWriter {
     ++entries_;
   }
 
-  void write_serialized_posting() {
+  void write_serialized_posting() const {
     writer_.write_uint32(serialized_posting_.size());
     writer_.write(serialized_posting_);
     writer_.compute_and_write_crc32(serialized_posting_);
@@ -112,7 +112,7 @@ class PostingsWriter {
 
     series_reference_list_.clear();
 
-    if constexpr (std::is_same_v<SeriesIdList, series_index::CompactSeriesIdSequence>) {
+    if constexpr (std::is_same_v<SeriesIdList, CompactSeriesIdSequence>) {
       series_reference_list_.reserve(series_id_sequence.count());
       series_id_sequence.process_series([this, &get_series_reference](const auto& series) PROMPP_LAMBDA_INLINE {
         std::ranges::transform(series, std::back_inserter(series_reference_list_), get_series_reference);
