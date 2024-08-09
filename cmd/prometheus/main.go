@@ -157,17 +157,19 @@ type flagConfig struct {
 	memlimitRatio float64
 	// These options are extracted from featureList
 	// for ease of use.
-	enableExpandExternalLabels bool
-	enableNewSDManager         bool
-	enablePerStepStats         bool
-	enableAutoGOMAXPROCS       bool
-	enableAutoGOMEMLIMIT       bool
-	enableConcurrentRuleEval   bool
+	enableExpandExternalLabels  bool
+	enableNewSDManager          bool
+	enablePerStepStats          bool
+	enableAutoGOMAXPROCS        bool
+	enableAutoGOMEMLIMIT        bool
+	enableConcurrentRuleEval    bool
+	enableAlertStatePersistence bool
 
 	prometheusURL   string
 	corsRegexString string
 
-	promlogConfig promlog.Config
+	promlogConfig    promlog.Config
+	alertStoragePath string
 }
 
 // setFeatureListOptions sets the corresponding options from the featureList.
@@ -215,6 +217,9 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "concurrent-rule-eval":
 				c.enableConcurrentRuleEval = true
 				level.Info(logger).Log("msg", "Experimental concurrent rule evaluation enabled.")
+			case "alert-state-persistence":
+				level.Info(logger).Log("msg", "Experimental alert state persistence storage enabled for alerting rules using keep_firing_for.")
+				c.enableAlertStatePersistence = true
 			case "no-default-scrape-port":
 				c.scrape.NoDefaultPort = true
 				level.Info(logger).Log("msg", "No default port will be appended to scrape targets' addresses.")
@@ -447,6 +452,8 @@ func main() {
 
 	serverOnlyFlag(a, "rules.alert.resend-delay", "Minimum amount of time to wait before resending an alert to Alertmanager.").
 		Default("1m").SetValue(&cfg.resendDelay)
+	serverOnlyFlag(a, "rules.alert.state-storage-path", "Path for alert state storage.").
+		Default("data/alerts").StringVar(&cfg.alertStoragePath)
 
 	serverOnlyFlag(a, "rules.max-concurrent-evals", "Global concurrency limit for independent rules that can run concurrently. When set, \"query.max-concurrency\" may need to be adjusted accordingly.").
 		Default("4").Int64Var(&cfg.maxConcurrentEvals)
@@ -790,6 +797,10 @@ func main() {
 		}
 
 		queryEngine = promql.NewEngine(opts)
+		var alertStore rules.AlertStore
+		if cfg.enableAlertStatePersistence {
+			alertStore = rules.NewFileStore(log.With(logger, "component", "alertStore"), cfg.alertStoragePath, prometheus.DefaultRegisterer)
+		}
 
 		ruleManager = rules.NewManager(&rules.ManagerOptions{
 			Appendable:             fanoutStorage,
@@ -808,6 +819,7 @@ func main() {
 			DefaultRuleQueryOffset: func() time.Duration {
 				return time.Duration(cfgFile.GlobalConfig.RuleQueryOffset)
 			},
+			AlertStore: alertStore,
 		})
 	}
 
