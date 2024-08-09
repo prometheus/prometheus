@@ -63,7 +63,7 @@ require (
 	github.com/stretchr/testify v1.9.0
 	github.com/vultr/govultr/v2 v2.17.2
 	go.opentelemetry.io/collector/pdata v1.12.0
-	go.opentelemetry.io/collector/semconv v0.105.0
+	go.opentelemetry.io/collector/semconv v0.106.1
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.53.0
 	go.opentelemetry.io/otel v1.28.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.28.0
