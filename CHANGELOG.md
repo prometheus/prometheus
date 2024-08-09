@@ -1,6 +1,11 @@
 # Changelog
 
-## unreleased
+## 2.53.2 / 2024-08-09
+
+Fix a bug where Prometheus would crash with a segmentation fault if a remote-read
+request accessed a block on disk at about the same time as TSDB created a new block.
+
+[BUGFIX] Remote-Read: Resolve occasional segmentation fault on query. #14515,#14523
 
 ## 2.53.1 / 2024-07-10
 
