@@ -795,3 +795,24 @@ eval_warn range from 0 to 12m step 6m sum(metric)
 
 eval_warn range from 0 to 12m step 6m avg(metric)
   {} _ {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} _
+
+clear
+
+load 1m
+  metric{group="just-floats", series="1"} 2
+  metric{group="just-floats", series="2"} 3
+  metric{group="just-exponential-histograms", series="1"} {{sum:3 count:4 buckets:[1 2 1]}}
+  metric{group="just-exponential-histograms", series="2"} {{sum:2 count:3 buckets:[1 1 1]}}
+  metric{group="just-custom-histograms", series="1"} {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}}
+  metric{group="just-custom-histograms", series="2"} {{schema:-53 sum:3 count:4 custom_values:[2] buckets:[7]}}
+  metric{group="floats-and-histograms", series="1"} 2
+  metric{group="floats-and-histograms", series="2"} {{sum:2 count:3 buckets:[1 1 1]}}
+  metric{group="exponential-and-custom-histograms", series="1"} {{sum:2 count:3 buckets:[1 1 1]}}
+  metric{group="exponential-and-custom-histograms", series="2"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+  metric{group="incompatible-custom-histograms", series="1"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+  metric{group="incompatible-custom-histograms", series="2"} {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}}
+
+eval_warn instant at 0 sum by (group) (metric)
+  {group="just-floats"} 5
+  {group="just-exponential-histograms"} {{sum:5 count:7 buckets:[2 3 2]}}
+  {group="just-custom-histograms"} {{schema:-53 sum:4 count:5 custom_values:[2] buckets:[8]}}
