@@ -14,6 +14,7 @@
 package v1
 
 import (
+	"net/http"
 	"unsafe"
 
 	jsoniter "github.com/json-iterator/go"
@@ -42,11 +43,11 @@ func (j JSONCodec) ContentType() MIMEType {
 	return MIMEType{Type: "application", SubType: "json"}
 }
 
-func (j JSONCodec) CanEncode(_ *Response) bool {
+func (j JSONCodec) CanEncode(_ *http.Request, _ *Response) bool {
 	return true
 }
 
-func (j JSONCodec) Encode(resp *Response) ([]byte, error) {
+func (j JSONCodec) Encode(_ *http.Request, resp *Response) ([]byte, error) {
 	json := jsoniter.ConfigCompatibleWithStandardLibrary
 	return json.Marshal(resp)
 }
