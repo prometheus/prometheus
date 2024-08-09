@@ -24,6 +24,7 @@ class DecodeIteratorTrait : public DecodeIteratorTypeTrait {
   explicit DecodeIteratorTrait(double value, uint8_t count) : sample_{.value = value}, remaining_samples_{count} {}
 
   const encoder::Sample& operator*() const noexcept { return sample_; }
+  const encoder::Sample* operator->() const noexcept { return &sample_; }
 
   PROMPP_ALWAYS_INLINE bool operator==(const DecodeIteratorSentinel&) const noexcept { return remaining_samples_ == 0; }
   [[nodiscard]] PROMPP_ALWAYS_INLINE uint8_t remaining_samples() const noexcept { return remaining_samples_; }
