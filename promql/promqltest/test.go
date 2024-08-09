@@ -990,11 +990,22 @@ func (t *test) exec(tc testCommand, engine promql.QueryEngine) error {
 }
 
 func (t *test) execEval(cmd *evalCmd, engine promql.QueryEngine) error {
-	if cmd.isRange {
-		return t.execRangeEval(cmd, engine)
+	do := func() error {
+		if cmd.isRange {
+			return t.execRangeEval(cmd, engine)
+		}
+
+		return t.execInstantEval(cmd, engine)
 	}
 
-	return t.execInstantEval(cmd, engine)
+	if tt, ok := t.T.(*testing.T); ok {
+		tt.Run(fmt.Sprintf("line %d/%s", cmd.line, cmd.expr), func(t *testing.T) {
+			require.NoError(t, do())
+		})
+		return nil
+	}
+
+	return do()
 }
 
 func (t *test) execRangeEval(cmd *evalCmd, engine promql.QueryEngine) error {
