@@ -42,6 +42,7 @@ import (
 
 	"github.com/prometheus/prometheus/pp/go/cppbridge/fastcgo"
 	"github.com/prometheus/prometheus/pp/go/model"
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 func freeBytes(b []byte) {
@@ -618,6 +619,72 @@ func primitivesLSSAllocatedMemory(lss uintptr) uint64 {
 	)
 
 	return res.allocatedMemory
+}
+
+func primitivesLSSFindOrEmplace(lss uintptr, labelSet model.LabelSet) uint32 {
+	var args = struct {
+		lss      uintptr
+		labelSet model.LabelSet
+	}{lss, labelSet}
+	var res struct {
+		labelSetID uint32
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_primitives_lss_find_or_emplace,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.labelSetID
+}
+
+func primitivesLSSQuery(lss uintptr, matchers []model.LabelMatcher) (uint32, []uint32) {
+	var args = struct {
+		lss      uintptr
+		matchers []model.LabelMatcher
+	}{lss, matchers}
+	var res struct {
+		status  uint32
+		matches []uint32
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_primitives_lss_query,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.status, res.matches
+}
+
+func primitivesLSSGetLabelSets(lss uintptr, labelSetIDs []uint32) []labels.Labels {
+	var args = struct {
+		lss         uintptr
+		labelSetIDs []uint32
+	}{lss, labelSetIDs}
+	var res struct {
+		labelSets []labels.Labels
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_primitives_lss_get_label_sets,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.labelSets
+}
+
+func primitivesLSSFreeLabelSets(labelSets []labels.Labels) {
+	var args = struct {
+		labelSets []labels.Labels
+	}{labelSets}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_primitives_lss_free_label_sets,
+		uintptr(unsafe.Pointer(&args)),
+	)
 }
 
 //

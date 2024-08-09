@@ -195,6 +195,58 @@ void prompp_primitives_lss_dtor(void* args);
  */
 void prompp_primitives_lss_allocated_memory(void* args, void* res);
 
+/**
+ * @brief insert label set into lss
+ *
+ * @param args {
+ *     lss uintptr              // pointer to constructed lss;
+ *     label_set model.LabelSet // label set
+ * }
+ *
+ * @param res {
+ *     ls_id uint32 // inserted (or found) label set id
+ * }
+ */
+void prompp_primitives_lss_find_or_emplace(void* args, void* res);
+
+/**
+ * @brief query series from lss
+ *
+ * @param args {
+ *     lss uintptr                         // pointer to constructed queryable lss;
+ *     label_matchers []model.LabelMatcher // label matchers
+ * }
+ *
+ * @param res {
+ *     status uint32    // query status
+ *     matches []uint32 // matched series ids
+ * }
+ */
+void prompp_primitives_lss_query(void* args, void* res);
+
+/**
+ * @brief get label sets by series id
+ *
+ * @param args {
+ *     lss uintptr    // pointer to constructed lss;
+ *     ls_id []uint32 // series ids
+ * }
+ *
+ * @param res {
+ *     label_sets [][]struct {key, value String} // label sets
+ * }
+ */
+void prompp_primitives_lss_get_label_sets(void* args, void* res);
+
+/**
+ * @brief free label sets returned by prompp_primitives_lss_get_label_sets
+ *
+ * @param args {
+ *     label_sets [][]struct {key, value String} // label set
+ * }
+ */
+void prompp_primitives_lss_free_label_sets(void* args);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif
@@ -441,19 +493,82 @@ void prompp_prometheus_per_shard_relabeler_reset_to(void* args);
 extern "C" {
 #endif
 
+/**
+ * @brief Construct a new series data DataStorage
+ *
+ * @param res {
+ *     dataStorage uintptr // pointer to constructed data storage
+ * }
+ */
 void prompp_series_data_data_storage_ctor(void* res);
+
+/**
+ * @brief Resets DataStorage to initial state
+ *
+ * @param args {
+ *     dataStorage uintptr // pointer to constructed data storage
+ * }
+ */
 void prompp_series_data_data_storage_reset(void* args);
+
+/**
+ * @brief series data DataStorage destructor.
+ *
+ * @param args {
+ *     dataStorage uintptr // pointer to constructed data storage
+ * }
+ */
 void prompp_series_data_data_storage_dtor(void* args);
 
 #ifdef __cplusplus
 }  // extern "C"
-#endif#ifdef __cplusplus
+#endif
+#ifdef __cplusplus
 extern "C" {
 #endif
 
+/**
+ * @brief series data Encoder constructor.
+ *
+ * @param args {
+ *     encoder uintptr // pointer to constructed encoder
+ * }
+ *
+ * @param res {
+ *     encoder uintptr // pointer to constructed encoder
+ * }
+ */
 void prompp_series_data_encoder_ctor(void* args, void* res);
+
+/**
+ * @brief adds single series to data storage
+ *
+ * @param args {
+ *     encoder uintptr // pointer to constructed encoder
+ *     seriesID uint32 // series id
+ *     timestamp int64 // timestamp
+ *     value float64   // value
+ * }
+ */
 void prompp_series_data_encoder_encode(void* args);
+
+/**
+ * @brief adds slice of inner series to data storage
+ *
+ * @param args {
+ *     encoder uintptr // pointer to constructed encoder
+ *     innerSeriesSlice []*InnerSeries // pointer to inner series slice.
+ * }
+ */
 void prompp_series_data_encoder_encode_inner_series_slice(void* args);
+
+/**
+ * @brief series data Encoder destructor.
+ *
+ * @param args {
+ *     encoder uintptr // pointer to constructed encoder
+ * }
+ */
 void prompp_series_data_encoder_dtor(void* args);
 
 #ifdef __cplusplus

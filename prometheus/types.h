@@ -18,7 +18,7 @@ struct ReadHints {
 
 struct Query {
   ReadHints hints{};
-  Selector selector;
+  LabelMatchers label_matchers;
   int64_t start_timestamp_ms{};
   int64_t end_timestamp_ms{};
 

@@ -26,7 +26,7 @@ class ProtobufReader {
       while (reader.next()) {
         switch (reader.tag()) {
           case Tag::LabelMatcher::kType: {
-            label_matcher.type = LabelMatcher::as_type(reader.get_enum());
+            label_matcher.type = MatcherTypeFromInt(reader.get_enum());
             break;
           }
 
@@ -51,8 +51,8 @@ class ProtobufReader {
     });
   }
 
-  PROMPP_ALWAYS_INLINE static bool read_label_matcher(protozero::pbf_reader reader, Selector& selector) {
-    return read_label_matcher(reader, selector.matchers.emplace_back().matcher);
+  PROMPP_ALWAYS_INLINE static bool read_label_matcher(protozero::pbf_reader reader, LabelMatchers& label_matchers) {
+    return read_label_matcher(reader, label_matchers.emplace_back());
   }
 
   static bool read_query(protozero::pbf_reader reader, Query& query) noexcept {
@@ -70,7 +70,7 @@ class ProtobufReader {
           }
 
           case Tag::Query::kLabelMatchers: {
-            if (!read_label_matcher(reader.get_message(), query.selector)) {
+            if (!read_label_matcher(reader.get_message(), query.label_matchers)) {
               return false;
             }
             break;
@@ -138,13 +138,15 @@ class ProtobufWriter {
   PROMPP_ALWAYS_INLINE static void write_query(protozero::basic_pbf_writer<Buffer>& writer, const Query& query) {
     writer.add_int64(Tag::Query::kStartTimestampMs, query.start_timestamp_ms);
     writer.add_int64(Tag::Query::kEndTimestampMs, query.end_timestamp_ms);
-    write_selector(writer, Tag::Query::kLabelMatchers, query.selector);
+    write_label_matchers(writer, Tag::Query::kLabelMatchers, query.label_matchers);
   }
 
   template <class Buffer>
-  PROMPP_ALWAYS_INLINE static void write_selector(protozero::basic_pbf_writer<Buffer>& writer, protozero::pbf_tag_type tag, const Selector& selector) {
-    for (auto& matcher : selector.matchers) {
-      write_label_matcher(writer, tag, matcher.matcher);
+  PROMPP_ALWAYS_INLINE static void write_label_matchers(protozero::basic_pbf_writer<Buffer>& writer,
+                                                        protozero::pbf_tag_type tag,
+                                                        const LabelMatchers& label_matchers) {
+    for (auto& matcher : label_matchers) {
+      write_label_matcher(writer, tag, matcher);
     }
   }
 

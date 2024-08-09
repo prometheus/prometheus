@@ -26,7 +26,11 @@ class QueryableEncodingBimap : public BareBones::SnugComposite::DecodingTable<Fi
       sorting_index_.build();
     }
   }
-  PROMPP_ALWAYS_INLINE void sort_series_ids(std::span<uint32_t> series_ids) const noexcept { sorting_index_.sort(series_ids.begin(), series_ids.end()); }
+
+  template <class Iterator>
+  PROMPP_ALWAYS_INLINE void sort_series_ids(Iterator begin, Iterator end) const noexcept {
+    sorting_index_.sort(begin, end);
+  }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept {
     return trie_index_.allocated_memory() + reverse_index_.allocated_memory() + ls_id_set_allocated_memory_ + sorting_index_.allocated_memory() +
