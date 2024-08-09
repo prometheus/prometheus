@@ -61,10 +61,12 @@ func (s DecodedSegmentStats) Series() uint32 {
 	return s.series
 }
 
+// EarliestBlockSample return earliest sample timestamp from block.
 func (s DecodedSegmentStats) EarliestBlockSample() int64 {
 	return s.earliestBlockSample
 }
 
+// LatestBlockSample return latest sample timestamp from block.
 func (s DecodedSegmentStats) LatestBlockSample() int64 {
 	return s.latestBlockSample
 }
@@ -132,6 +134,7 @@ type HashdexContent interface {
 	LatestBlockSample() int64
 	Cluster() string
 	Replica() string
+	Destroy()
 }
 
 // DecodedHashdex is GO wrapper for decoded hashdex content.
