@@ -58,7 +58,7 @@ func NewReadHandler(logger log.Logger, r prometheus.Registerer, queryable storag
 
 		queries: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: "prometheus",
-			Subsystem: "api", // TODO: changes to storage in Prometheus 3.0.
+			Subsystem: "storage",
 			Name:      "remote_read_queries",
 			Help:      "The current number of remote read queries being executed or waiting.",
 		}),
