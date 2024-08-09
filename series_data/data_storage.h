@@ -142,6 +142,11 @@ struct DataStorage {
     }
   }
 
+  void reset() noexcept {
+    this->~DataStorage();
+    new (this) DataStorage();
+  }
+
  private:
   template <chunk::DataChunk::Type chunk_type>
   void erase_timestamp_stream(uint32_t stream_id) {
