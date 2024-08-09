@@ -37,6 +37,7 @@ import (
 	disv1 "k8s.io/api/discovery/v1"
 	networkv1 "k8s.io/api/networking/v1"
 	"k8s.io/api/networking/v1beta1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
@@ -864,9 +865,12 @@ func (d *Discovery) informerWatchErrorHandler(r *cache.Reflector, err error) {
 
 func (d *Discovery) mustNewSharedInformer(lw cache.ListerWatcher, exampleObject runtime.Object, defaultEventHandlerResyncPeriod time.Duration) cache.SharedInformer {
 	informer := cache.NewSharedInformer(lw, exampleObject, defaultEventHandlerResyncPeriod)
-	// Invoking SetWatchErrorHandler should fail only if the informer has been started beforehand.
+	// Invoking SetWatchErrorHandler or SetTransform should fail only if the informer has been started beforehand.
 	// Such a scenario would suggest an incorrect use of the API, thus the panic.
 	if err := informer.SetWatchErrorHandler(d.informerWatchErrorHandler); err != nil {
+		panic(err)
+	}
+	if err := informer.SetTransform(trimUnneededFields); err != nil {
 		panic(err)
 	}
 	return informer
@@ -874,12 +878,56 @@ func (d *Discovery) mustNewSharedInformer(lw cache.ListerWatcher, exampleObject 
 
 func (d *Discovery) mustNewSharedIndexInformer(lw cache.ListerWatcher, exampleObject runtime.Object, defaultEventHandlerResyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
 	informer := cache.NewSharedIndexInformer(lw, exampleObject, defaultEventHandlerResyncPeriod, indexers)
-	// Invoking SetWatchErrorHandler should fail only if the informer has been started beforehand.
+	// Invoking SetWatchErrorHandler or SetTransform should fail only if the informer has been started beforehand.
 	// Such a scenario would suggest an incorrect use of the API, thus the panic.
 	if err := informer.SetWatchErrorHandler(d.informerWatchErrorHandler); err != nil {
 		panic(err)
 	}
+	if err := informer.SetTransform(trimUnneededFields); err != nil {
+		panic(err)
+	}
 	return informer
+}
+
+// trimUnneededFields strips unnecessary fields that may be large, it can be used as a cache.TransformFunc.
+func trimUnneededFields(obj interface{}) (interface{}, error) {
+	if accessor, err := meta.Accessor(obj); err == nil {
+		accessor.SetManagedFields(nil)
+		accessor.SetFinalizers(nil)
+	}
+
+	switch o := obj.(type) {
+	case *apiv1.Pod:
+		o.Spec.EphemeralContainers = nil
+		o.Spec.Tolerations = nil
+		o.Spec.Affinity = nil
+		o.Spec.TopologySpreadConstraints = nil
+		o.Spec.Volumes = nil
+		for i := range o.Spec.Containers {
+			o.Spec.Containers[i].Command = nil
+			o.Spec.Containers[i].Args = nil
+			o.Spec.Containers[i].Env = nil
+			o.Spec.Containers[i].EnvFrom = nil
+			o.Spec.Containers[i].VolumeMounts = nil
+		}
+		for i := range o.Spec.InitContainers {
+			o.Spec.InitContainers[i].Command = nil
+			o.Spec.InitContainers[i].Args = nil
+			o.Spec.InitContainers[i].Env = nil
+			o.Spec.InitContainers[i].EnvFrom = nil
+			o.Spec.InitContainers[i].VolumeMounts = nil
+		}
+	case *apiv1.Service:
+		o.Spec.Selector = nil
+	case *apiv1.Node:
+		o.Spec.Taints = nil
+		o.Status.Images = nil
+		o.Status.NodeInfo = apiv1.NodeSystemInfo{}
+		o.Status.Capacity = nil
+		o.Status.Allocatable = nil
+	}
+
+	return obj, nil
 }
 
 func checkDiscoveryV1Supported(client kubernetes.Interface) (bool, error) {
