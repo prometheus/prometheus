@@ -12,7 +12,8 @@ jobs:
     if: github.repository_owner == 'prometheus'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/stale@v9
+      # pin to SHA of v9.0.0: https://github.com/actions/stale/releases/tag/v9.0.0
+      - uses: actions/stale@28ca1036281a5e5922ead5184a1bbf96e5fc984e
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           # opt out of defaults to avoid marking issues as stale and closing them
