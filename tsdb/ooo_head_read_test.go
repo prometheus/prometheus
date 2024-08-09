@@ -31,6 +31,13 @@ import (
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
+// Type assertions.
+var (
+	_ chunkenc.Chunk    = &MultiChunk{}
+	_ chunkenc.Iterable = &mergedOOOChunks{}
+	_ IndexReader       = &OOOHeadIndexReader{}
+)
+
 type chunkInterval struct {
 	// because we permutate the order of chunks, we cannot determine at test declaration time which chunkRefs we expect in the Output.
 	// This ID matches expected output chunks against test input chunks, the test runner will assert the chunkRef for the matching chunk
@@ -370,6 +377,7 @@ func TestOOOHeadChunkReader_LabelValues(t *testing.T) {
 func testOOOHeadChunkReader_LabelValues(t *testing.T, scenario sampleTypeScenario) {
 	chunkRange := int64(2000)
 	head, _ := newTestHead(t, chunkRange, wlog.CompressionNone, true)
+	head.opts.EnableOOONativeHistograms.Store(true)
 	t.Cleanup(func() { require.NoError(t, head.Close()) })
 
 	ctx := context.Background()
@@ -474,6 +482,8 @@ func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 5
 	opts.OutOfOrderTimeWindow = 120 * time.Minute.Milliseconds()
+	opts.EnableNativeHistograms = true
+	opts.EnableOOONativeHistograms = true
 
 	s1 := labels.FromStrings("l", "v1")
 	minutes := func(m int64) int64 { return m * time.Minute.Milliseconds() }
@@ -876,6 +886,8 @@ func testOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 5
 	opts.OutOfOrderTimeWindow = 120 * time.Minute.Milliseconds()
+	opts.EnableNativeHistograms = true
+	opts.EnableOOONativeHistograms = true
 
 	s1 := labels.FromStrings("l", "v1")
 	minutes := func(m int64) int64 { return m * time.Minute.Milliseconds() }
