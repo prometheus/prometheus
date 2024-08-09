@@ -3,6 +3,7 @@
 ## unreleased
 
 * [FEATURE] OTLP receiver: Add new option `otlp.promote_resource_attributes`, for any OTel resource attributes that should be promoted to metric labels. #14200
+* [FEATURE] PromQL engine: Support automatic inclusion of info metric data labels.
 
 ## 2.54.0-rc.1 / 2024-08-05
 
