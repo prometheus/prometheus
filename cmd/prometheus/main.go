@@ -374,11 +374,6 @@ func main() {
 	serverOnlyFlag(a, "storage.tsdb.no-lockfile", "Do not create lockfile in data directory.").
 		Default("false").BoolVar(&cfg.tsdb.NoLockfile)
 
-	// TODO: Remove in Prometheus 3.0.
-	var b bool
-	serverOnlyFlag(a, "storage.tsdb.allow-overlapping-blocks", "[DEPRECATED] This flag has no effect. Overlapping blocks are enabled by default now.").
-		Default("true").Hidden().BoolVar(&b)
-
 	serverOnlyFlag(a, "storage.tsdb.wal-compression", "Compress the tsdb WAL.").
 		Hidden().Default("true").BoolVar(&cfg.tsdb.WALCompression)
 
@@ -455,9 +450,6 @@ func main() {
 	serverOnlyFlag(a, "alertmanager.drain-notification-queue-on-shutdown", "Send any outstanding Alertmanager notifications when shutting down. If false, any outstanding Alertmanager notifications will be dropped when shutting down.").
 		Default("true").BoolVar(&cfg.notifier.DrainOnShutdown)
 
-	// TODO: Remove in Prometheus 3.0.
-	alertmanagerTimeout := a.Flag("alertmanager.timeout", "[DEPRECATED] This flag has no effect.").Hidden().String()
-
 	serverOnlyFlag(a, "query.lookback-delta", "The maximum lookback duration for retrieving metrics during expression evaluations and federation.").
 		Default("5m").SetValue(&cfg.lookbackDelta)
 
@@ -531,10 +523,6 @@ func main() {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, fmt.Errorf("could not compile CORS regex string %q: %w", cfg.corsRegexString, err))
 		os.Exit(2)
-	}
-
-	if *alertmanagerTimeout != "" {
-		level.Warn(logger).Log("msg", "The flag --alertmanager.timeout has no effect and will be removed in the future.")
 	}
 
 	// Throw error for invalid config before starting other components.
