@@ -294,7 +294,7 @@ func (s *EncoderDecoderSuite) TestEncodeDecodeToHashdex() {
 		s.EqualValues(seriesCount*3, hContent.Samples())
 
 		s.T().Log("encoding hashdex")
-		_, gos2, err := enc2.Encode(s.baseCtx, hContent)
+		_, gos2, err := enc2.Encode(s.baseCtx, hContent.ShardedData())
 		s.Require().NoError(err)
 
 		s.EqualValues(seriesCount, gos2.Series())
