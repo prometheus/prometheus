@@ -21,7 +21,7 @@ using series_data::querier::QueriedChunkList;
 using series_data::serialization::Deserializer;
 using series_data::serialization::Serializer;
 
-class SerializerDeserializerFixture : public testing::Test {
+class SerializerDeserializerTrait {
  protected:
   DataStorage storage_;
   Serializer serializer_{storage_};
@@ -41,6 +41,8 @@ class SerializerDeserializerFixture : public testing::Test {
     return result;
   }
 };
+
+class SerializerDeserializerFixture : public SerializerDeserializerTrait, public testing::Test {};
 
 TEST_F(SerializerDeserializerFixture, EmptyChunksList) {
   // Arrange
@@ -314,6 +316,56 @@ TEST_F(SerializerDeserializerFixture, FinalizedAllChunkTypes) {
           {.timestamp = 113, .value = 2.0},
       },
       decode_chunk(deserializer.create_decode_iterator(deserializer.get_chunks()[6]))));
+}
+
+class DeserializerIteratorFixture : public SerializerDeserializerTrait, public testing::Test {
+ protected:
+  using DecodedChunks = std::vector<SampleList>;
+
+  DecodedChunks decode_chunks() {
+    DecodedChunks result;
+    for (auto& chunk : Deserializer{get_buffer()}) {
+      result.emplace_back(decode_chunk(chunk.decode_iterator()));
+    }
+    return result;
+  }
+};
+
+TEST_F(DeserializerIteratorFixture, EmptyChunksList) {
+  // Arrange
+
+  // Act
+  serializer_.serialize({}, stream_);
+  auto decoded_chunks = decode_chunks();
+
+  // Assert
+  EXPECT_TRUE(std::ranges::equal(DecodedChunks{}, decoded_chunks));
+}
+
+TEST_F(DeserializerIteratorFixture, OneChunk) {
+  // Arrange
+  encoder_.encode(0, 1, 1.0);
+  encoder_.encode(0, 2, 1.0);
+
+  // Act
+  serializer_.serialize({QueriedChunk{0}}, stream_);
+  auto decoded_chunks = decode_chunks();
+
+  // Assert
+  EXPECT_TRUE(std::ranges::equal(DecodedChunks{SampleList{{.timestamp = 1, .value = 1.0}, {.timestamp = 2, .value = 1.0}}}, decoded_chunks));
+}
+
+TEST_F(DeserializerIteratorFixture, TwoChunks) {
+  // Arrange
+  encoder_.encode(0, 1, 1.0);
+  encoder_.encode(1, 2, 1.0);
+
+  // Act
+  serializer_.serialize({QueriedChunk{0}, QueriedChunk{1}}, stream_);
+  auto decoded_chunks = decode_chunks();
+
+  // Assert
+  EXPECT_TRUE(std::ranges::equal(DecodedChunks{SampleList{{.timestamp = 1, .value = 1.0}}, SampleList{{.timestamp = 2, .value = 1.0}}}, decoded_chunks));
 }
 
 }  // namespace

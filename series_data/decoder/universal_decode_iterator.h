@@ -18,6 +18,9 @@ class UniversalDecodeIterator : public DecodeIteratorTypeTrait {
   PROMPP_ALWAYS_INLINE const encoder::Sample& operator*() const noexcept {
     return std::visit([](auto& iterator) PROMPP_LAMBDA_INLINE -> auto const& { return *iterator; }, iterator_);
   }
+  PROMPP_ALWAYS_INLINE const encoder::Sample* operator->() const noexcept {
+    return std::visit([](auto& iterator) PROMPP_LAMBDA_INLINE -> auto const* { return iterator.operator->(); }, iterator_);
+  }
 
   PROMPP_ALWAYS_INLINE bool operator==(const DecodeIteratorSentinel& sentinel) const noexcept {
     return std::visit([&sentinel](const auto& iterator) PROMPP_LAMBDA_INLINE { return iterator == sentinel; }, iterator_);
