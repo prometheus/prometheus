@@ -948,3 +948,92 @@ func prometheusPerShardRelabelerResetTo(
 		uintptr(unsafe.Pointer(&args)),
 	)
 }
+
+func seriesDataDataStorageCtor() uintptr {
+	var res struct {
+		dataStorage uintptr
+	}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_series_data_data_storage_ctor,
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.dataStorage
+}
+
+func seriesDataDataStorageReset(dataStorage uintptr) {
+	var args = struct {
+		dataStorage uintptr
+	}{dataStorage}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_series_data_data_storage_reset,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
+func seriesDataDataStorageDtor(dataStorage uintptr) {
+	var args = struct {
+		dataStorage uintptr
+	}{dataStorage}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_series_data_data_storage_dtor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
+func seriesDataEncoderCtor(dataStorage uintptr) uintptr {
+	var args = struct {
+		dataStorage uintptr
+	}{dataStorage}
+	var res struct {
+		encoder uintptr
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_series_data_encoder_ctor,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.encoder
+}
+
+func seriesDataEncoderEncode(encoder uintptr, seriesID uint32, timestamp int64, value float64) {
+	var args = struct {
+		encoder   uintptr
+		seriesID  uint32
+		timestamp int64
+		value     float64
+	}{encoder, seriesID, timestamp, value}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_series_data_encoder_encode,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
+func seriesDataEncoderEncodeInnerSeriesSlice(encoder uintptr, innerSeriesSlice []*InnerSeries) {
+	var args = struct {
+		encoder          uintptr
+		innerSeriesSlice []*InnerSeries
+	}{encoder, innerSeriesSlice}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_series_data_encoder_encode_inner_series_slice,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
+func seriesDataEncoderDtor(encoder uintptr) {
+	var args = struct {
+		encoder uintptr
+	}{encoder}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_series_data_encoder_dtor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}

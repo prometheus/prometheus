@@ -358,6 +358,28 @@ void prompp_prometheus_per_shard_relabeler_reset_to(void* args);
 extern "C" {
 #endif
 
+void prompp_series_data_data_storage_ctor(void* res);
+void prompp_series_data_data_storage_reset(void* args);
+void prompp_series_data_data_storage_dtor(void* args);
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif#ifdef __cplusplus
+extern "C" {
+#endif
+
+void prompp_series_data_encoder_ctor(void* args, void* res);
+void prompp_series_data_encoder_encode(void* args);
+void prompp_series_data_encoder_encode_inner_series_slice(void* args);
+void prompp_series_data_encoder_dtor(void* args);
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * @brief Construct a new WAL Decoder
  *
