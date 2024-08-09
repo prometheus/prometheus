@@ -1,10 +1,6 @@
 # Changelog
 
-## 2.54.0-rc.1 / 2024-08-05
-
-* [BUGFIX] TSDB: Exclude OOO chunks mapped after compaction starts (introduced by #14396). #14584
-
-## 2.54.0-rc.0 / 2024-07-19
+## 2.54.0 / 2024-08-09
 
 Release 2.54 brings a release candidate of a major new version of [Remote Write: 2.0](https://prometheus.io/docs/specs/remote_write_spec_2_0/).
 This is experimental at this time and may still change.
@@ -22,7 +18,7 @@ Remote-write v2 is enabled by default, but can be disabled via feature-flag `web
 * [ENHANCEMENT] TSDB: Optimise seek within index. #14393
 * [ENHANCEMENT] TSDB: Optimise deletion of stale series. #14307
 * [ENHANCEMENT] TSDB: Reduce locking to optimise adding and removing series. #13286,#14286
-* [ENHANCEMENT] TSDB: Small optimisation: streamline special handling for out-of-order data. #14396
+* [ENHANCEMENT] TSDB: Small optimisation: streamline special handling for out-of-order data. #14396,#14584
 * [ENHANCEMENT] Regexps: Optimize patterns with multiple prefixes. #13843,#14368
 * [ENHANCEMENT] Regexps: Optimize patterns containing multiple literal strings. #14173
 * [ENHANCEMENT] AWS SD: expose Primary IPv6 addresses as __meta_ec2_primary_ipv6_addresses. #14156
