@@ -251,11 +251,6 @@ func main() {
 		runtime.SetMutexProfileFraction(20)
 	}
 
-	var (
-		oldFlagRetentionDuration model.Duration
-		newFlagRetentionDuration model.Duration
-	)
-
 	// Unregister the default GoCollector, and reregister with our defaults.
 	if prometheus.Unregister(collectors.NewGoCollector()) {
 		prometheus.MustRegister(
@@ -362,11 +357,9 @@ func main() {
 		"Size at which to split the tsdb WAL segment files. Example: 100MB").
 		Hidden().PlaceHolder("<bytes>").BytesVar(&cfg.tsdb.WALSegmentSize)
 
-	serverOnlyFlag(a, "storage.tsdb.retention", "[DEPRECATED] How long to retain samples in storage. This flag has been deprecated, use \"storage.tsdb.retention.time\" instead.").
-		SetValue(&oldFlagRetentionDuration)
-
+	var flagRetentionDuration model.Duration
 	serverOnlyFlag(a, "storage.tsdb.retention.time", "How long to retain samples in storage. When this flag is set it overrides \"storage.tsdb.retention\". If neither this flag nor \"storage.tsdb.retention\" nor \"storage.tsdb.retention.size\" is set, the retention time defaults to "+defaultRetentionString+". Units Supported: y, w, d, h, m, s, ms.").
-		SetValue(&newFlagRetentionDuration)
+		SetValue(&flagRetentionDuration)
 
 	serverOnlyFlag(a, "storage.tsdb.retention.size", "Maximum number of bytes that can be stored for blocks. A unit is required, supported units: B, KB, MB, GB, TB, PB, EB. Ex: \"512MB\". Based on powers-of-2, so 1KB is 1024B.").
 		BytesVar(&cfg.tsdb.MaxBytes)
@@ -583,15 +576,8 @@ func main() {
 	cfg.web.RoutePrefix = "/" + strings.Trim(cfg.web.RoutePrefix, "/")
 
 	if !agentMode {
-		// Time retention settings.
-		if oldFlagRetentionDuration != 0 {
-			level.Warn(logger).Log("deprecation_notice", "'storage.tsdb.retention' flag is deprecated use 'storage.tsdb.retention.time' instead.")
-			cfg.tsdb.RetentionDuration = oldFlagRetentionDuration
-		}
-
-		// When the new flag is set it takes precedence.
-		if newFlagRetentionDuration != 0 {
-			cfg.tsdb.RetentionDuration = newFlagRetentionDuration
+		if flagRetentionDuration != 0 {
+			cfg.tsdb.RetentionDuration = flagRetentionDuration
 		}
 
 		if cfg.tsdb.RetentionDuration == 0 && cfg.tsdb.MaxBytes == 0 {
