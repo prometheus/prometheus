@@ -248,7 +248,6 @@ func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matc
 			its = append(its, allPostings)
 		case m.Type == labels.MatchRegexp && (m.Value == ".*" || m.Value == "^.*$"):
 			// .* regexp matches any string: do nothing.
-			break
 		case m.Type == labels.MatchNotRegexp && (m.Value == ".*" || m.Value == "^.*$"):
 			return index.EmptyPostings(), nil
 		case labelMustBeSet[m.Name]:
