@@ -121,6 +121,55 @@ func (p *DecodedProtobuf) UnmarshalTo(v proto.Unmarshaler) error {
 	return err
 }
 
+// HashdexContent decoded to WALBasicDecoderHashdex segment.
+type HashdexContent interface {
+	CreatedAt() int64
+	EncodedAt() int64
+	Samples() uint32
+	SegmentID() uint32
+	Series() uint32
+	EarliestBlockSample() int64
+	LatestBlockSample() int64
+	Cluster() string
+	Replica() string
+}
+
+// DecodedHashdex is GO wrapper for decoded hashdex content.
+type DecodedHashdex struct {
+	hashdex *WALBasicDecoderHashdex
+	DecodedSegmentStats
+}
+
+var _ HashdexContent = (*DecodedHashdex)(nil)
+
+// NewDecodedHashdex init new DecodedHashdex.
+func NewDecodedHashdex(hashdex uintptr, cluster, replica string, stats DecodedSegmentStats) *DecodedHashdex {
+	return &DecodedHashdex{
+		hashdex:             NewWALBasicDecoderHashdex(hashdex, cluster, replica),
+		DecodedSegmentStats: stats,
+	}
+}
+
+// Cluster get Cluster name.
+func (dh *DecodedHashdex) Cluster() string {
+	return dh.hashdex.Cluster()
+}
+
+// Replica get Replica name.
+func (dh *DecodedHashdex) Replica() string {
+	return dh.hashdex.Replica()
+}
+
+// cptr pointer to underlying c++ object.
+func (dh *DecodedHashdex) cptr() uintptr {
+	return dh.hashdex.cptr()
+}
+
+// Destroy pointer to nil.
+func (dh *DecodedHashdex) Destroy() {
+	dh.hashdex = nil
+}
+
 // WALDecoder - go wrapper for C-WALDecoder.
 //
 //	decoder - pointer to a C++ decoder initiated in C++ memory;
@@ -149,12 +198,12 @@ func (d *WALDecoder) Decode(ctx context.Context, segment []byte) (ProtobufConten
 }
 
 // DecodeToHashdex decode incoming encoding data and return WALBasicDecoderHashdex.
-func (d *WALDecoder) DecodeToHashdex(ctx context.Context, segment []byte) (ShardedData, ProtobufStats, error) {
+func (d *WALDecoder) DecodeToHashdex(ctx context.Context, segment []byte) (HashdexContent, error) {
 	if ctx.Err() != nil {
-		return nil, nil, ctx.Err()
+		return nil, ctx.Err()
 	}
 	stats, hashdex, cluster, replica, exception := walDecoderDecodeToHashdex(d.decoder, segment)
-	return NewWALBasicDecoderHashdex(hashdex, cluster, replica), stats, handleException(exception)
+	return NewDecodedHashdex(hashdex, cluster, replica, stats), handleException(exception)
 }
 
 // DecodeDry - decode incoming encoding data, restores decoder.

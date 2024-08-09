@@ -287,14 +287,14 @@ func (s *EncoderDecoderSuite) TestEncodeDecodeToHashdex() {
 		segByte := s.transferringData(gos)
 
 		s.T().Log("decoding to hashdex")
-		dhx, stat, err := dec.DecodeToHashdex(s.baseCtx, segByte)
+		hContent, err := dec.DecodeToHashdex(s.baseCtx, segByte)
 		s.Require().NoError(err)
 
-		s.EqualValues(seriesCount, stat.Series())
-		s.EqualValues(seriesCount*3, stat.Samples())
+		s.EqualValues(seriesCount, hContent.Series())
+		s.EqualValues(seriesCount*3, hContent.Samples())
 
 		s.T().Log("encoding hashdex")
-		_, gos2, err := enc2.Encode(s.baseCtx, dhx)
+		_, gos2, err := enc2.Encode(s.baseCtx, hContent)
 		s.Require().NoError(err)
 
 		s.EqualValues(seriesCount, gos2.Series())

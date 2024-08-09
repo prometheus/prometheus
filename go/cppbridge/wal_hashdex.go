@@ -170,7 +170,7 @@ type WALBasicDecoderHashdex struct {
 }
 
 // NewWALBasicDecoderHashdex init new WALBasicDecoderHashdex with c-pointer PromPP::WAL::WALBasicDecoderHashdex.
-func NewWALBasicDecoderHashdex(hashdex uintptr, cluster, replica string) ShardedData {
+func NewWALBasicDecoderHashdex(hashdex uintptr, cluster, replica string) *WALBasicDecoderHashdex {
 	h := &WALBasicDecoderHashdex{
 		hashdex: hashdex,
 		cluster: cluster,
