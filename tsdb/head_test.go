@@ -5919,6 +5919,35 @@ func TestPostingsCardinalityStats(t *testing.T) {
 	require.Equal(t, statsForSomeLabel1, head.PostingsCardinalityStats("n", 1))
 }
 
+func TestHeadAppender_AppendFloatWithSameTimestampAsPreviousHistogram(t *testing.T) {
+	head, _ := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
+	t.Cleanup(func() { head.Close() })
+
+	ls := labels.FromStrings(labels.MetricName, "test")
+
+	{
+		// Append a float 10.0 @ 1_000
+		app := head.Appender(context.Background())
+		_, err := app.Append(0, ls, 1_000, 10.0)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	}
+
+	{
+		// Append a float histogram @ 2_000
+		app := head.Appender(context.Background())
+		h := tsdbutil.GenerateTestHistogram(1)
+		_, err := app.AppendHistogram(0, ls, 2_000, h, nil)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	}
+
+	app := head.Appender(context.Background())
+	_, err := app.Append(0, ls, 2_000, 10.0)
+	require.Error(t, err)
+	require.ErrorIs(t, err, storage.NewDuplicateHistogramToFloatErr(2_000, 10.0))
+}
+
 func TestHeadAppender_AppendCTZeroSample(t *testing.T) {
 	type appendableSamples struct {
 		ts  int64
