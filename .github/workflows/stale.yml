@@ -1,0 +1,32 @@
+name: Stale Check
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: '0 0 * * *'
+permissions:
+  issues: write
+  pull-requests: write
+jobs:
+  stale:
+    # only run on repos in prometheus org, and skip this workflow in forks.
+    if: github.repository_owner == 'prometheus'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@v9
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          # opt out of defaults to avoid marking issues as stale and closing them
+          # https://github.com/actions/stale#days-before-close
+          # https://github.com/actions/stale#days-before-stale
+          days-before-stale: -1
+          days-before-close: -1
+          # Setting it to empty string to skip comments.
+          # https://github.com/actions/stale#stale-pr-message
+          # https://github.com/actions/stale#stale-issue-message
+          stale-pr-message: ''
+          stale-issue-message: ''
+          operations-per-run: 30
+          # override days-before-stale, for only marking the pull requests as stale
+          days-before-pr-stale: 60
+          stale-pr-label: stale
+          exempt-pr-labels: keepalive
