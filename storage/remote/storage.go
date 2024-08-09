@@ -115,6 +115,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 		c, err := NewReadClient(name, &ClientConfig{
 			URL:              rrConf.URL,
 			Timeout:          rrConf.RemoteTimeout,
+			ChunkedReadLimit: rrConf.ChunkedReadLimit,
 			HTTPClientConfig: rrConf.HTTPClientConfig,
 			Headers:          rrConf.Headers,
 		})
