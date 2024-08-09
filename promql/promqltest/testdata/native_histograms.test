@@ -772,7 +772,7 @@ load 6m
 
 # T=0: only exponential
 # T=6: only custom
-# T=12: mixed, should be ignored and emit an warning
+# T=12: mixed, should be ignored and emit a warning
 eval_warn range from 0 to 12m step 6m sum(metric)
   {} {{sum:7 count:5 buckets:[2 3 2]}} {{schema:-53 sum:16 count:3 custom_values:[5 10] buckets:[1 2]}} _
 
