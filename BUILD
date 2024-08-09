@@ -139,6 +139,7 @@ cc_library(
         ":primitives",
         ":wal",
         ":series_index",
+        ":series_data",
     ] + select({
         "//bazel/toolchain:with_asan": [],
         "//conditions:default": ["@jemalloc"],
