@@ -16,7 +16,7 @@ COPY npm_licenses.tar.bz2                   /npm_licenses.tar.bz2
 
 WORKDIR /prometheus
 RUN ln -s /usr/share/prometheus/console_libraries /usr/share/prometheus/consoles/ /etc/prometheus/ && \
-    chown -R nobody:nobody /etc/prometheus /prometheus
+    chgrp -R 0 /prometheus && chmod -R g+rwX /prometheus /etc/prometheus /prometheus
 
 USER       nobody
 EXPOSE     9090
