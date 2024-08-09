@@ -63,13 +63,20 @@ func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 		// available, even if the string matcher is faster.
 		m.matchString = m.stringMatcher.Matches
 	} else {
-		parsed, err := syntax.Parse(v, syntax.Perl)
+		var parsed *syntax.Regexp
+		var err error
+		if v == ".*" || v == "^.*$" { // special case for .* to match everything
+			flags := syntax.ClassNL | syntax.OneLine | syntax.PerlX | syntax.UnicodeGroups | syntax.DotNL
+			parsed, err = syntax.Parse(v, flags)
+		} else {
+			parsed, err = syntax.Parse(v, syntax.Perl)
+		}
 		if err != nil {
 			return nil, err
 		}
 		// Simplify the syntax tree to run faster.
 		parsed = parsed.Simplify()
-		m.re, err = regexp.Compile("^(?:" + parsed.String() + ")$")
+		m.re, err = regexp.Compile("^(?s:" + parsed.String() + ")$")
 		if err != nil {
 			return nil, err
 		}
