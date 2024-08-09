@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strconv"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -36,6 +37,7 @@ const (
 	openstackLabelAddressPool    = openstackLabelPrefix + "address_pool"
 	openstackLabelInstanceFlavor = openstackLabelPrefix + "instance_flavor"
 	openstackLabelInstanceID     = openstackLabelPrefix + "instance_id"
+	openstackLabelInstanceImage  = openstackLabelPrefix + "instance_image"
 	openstackLabelInstanceName   = openstackLabelPrefix + "instance_name"
 	openstackLabelInstanceStatus = openstackLabelPrefix + "instance_status"
 	openstackLabelPrivateIP      = openstackLabelPrefix + "private_ip"
@@ -119,7 +121,7 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 	}
 	pager := servers.List(client, opts)
 	tg := &targetgroup.Group{
-		Source: fmt.Sprintf("OS_" + i.region),
+		Source: "OS_" + i.region,
 	}
 	err = pager.EachPage(func(page pagination.Page) (bool, error) {
 		if ctx.Err() != nil {
@@ -144,12 +146,24 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 				openstackLabelUserID:         model.LabelValue(s.UserID),
 			}
 
-			id, ok := s.Flavor["id"].(string)
-			if !ok {
-				level.Warn(i.logger).Log("msg", "Invalid type for flavor id, expected string")
-				continue
+			flavorName, nameOk := s.Flavor["original_name"].(string)
+			// "original_name" is only available for microversion >= 2.47. It was added in favor of "id".
+			if !nameOk {
+				flavorID, idOk := s.Flavor["id"].(string)
+				if !idOk {
+					level.Warn(i.logger).Log("msg", "Invalid type for both flavor original_name and flavor id, expected string")
+					continue
+				}
+				labels[openstackLabelInstanceFlavor] = model.LabelValue(flavorID)
+			} else {
+				labels[openstackLabelInstanceFlavor] = model.LabelValue(flavorName)
 			}
-			labels[openstackLabelInstanceFlavor] = model.LabelValue(id)
+
+			imageID, ok := s.Image["id"].(string)
+			if ok {
+				labels[openstackLabelInstanceImage] = model.LabelValue(imageID)
+			}
+
 			for k, v := range s.Metadata {
 				name := strutil.SanitizeLabelName(k)
 				labels[openstackLabelTagPrefix+model.LabelName(name)] = model.LabelValue(v)
@@ -187,7 +201,7 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 					if val, ok := floatingIPList[floatingIPKey{id: s.ID, fixed: addr}]; ok {
 						lbls[openstackLabelPublicIP] = model.LabelValue(val)
 					}
-					addr = net.JoinHostPort(addr, fmt.Sprintf("%d", i.port))
+					addr = net.JoinHostPort(addr, strconv.Itoa(i.port))
 					lbls[model.AddressLabel] = model.LabelValue(addr)
 
 					tg.Targets = append(tg.Targets, lbls)

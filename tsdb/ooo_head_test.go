@@ -21,7 +21,7 @@ import (
 
 const testMaxSize int = 32
 
-// Formulas chosen to make testing easy:
+// Formulas chosen to make testing easy.
 func valEven(pos int) int { return pos*2 + 2 } // s[0]=2, s[1]=4, s[2]=6, ..., s[31]=64 - Predictable pre-existing values
 func valOdd(pos int) int  { return pos*2 + 1 } // s[0]=1, s[1]=3, s[2]=5, ..., s[31]=63 - New values will interject at chosen position because they sort before the pre-existing vals.
 
@@ -52,7 +52,7 @@ func TestOOOInsert(t *testing.T) {
 			chunk := NewOOOChunk()
 			chunk.samples = makeEvenSampleSlice(numPreExisting)
 			newSample := samplify(valOdd(insertPos))
-			chunk.Insert(newSample.t, newSample.v)
+			chunk.Insert(newSample.t, newSample.f)
 
 			var expSamples []sample
 			// Our expected new samples slice, will be first the original samples.
@@ -81,9 +81,9 @@ func TestOOOInsertDuplicate(t *testing.T) {
 			chunk.samples = makeEvenSampleSlice(num)
 
 			dupSample := chunk.samples[dupPos]
-			dupSample.v = 0.123
+			dupSample.f = 0.123
 
-			ok := chunk.Insert(dupSample.t, dupSample.v)
+			ok := chunk.Insert(dupSample.t, dupSample.f)
 
 			expSamples := makeEvenSampleSlice(num) // We expect no change.
 			require.False(t, ok)

@@ -68,7 +68,7 @@ func newRuleImporter(logger log.Logger, config ruleImporterConfig, apiClient que
 }
 
 // loadGroups parses groups from a list of recording rule files.
-func (importer *ruleImporter) loadGroups(ctx context.Context, filenames []string) (errs []error) {
+func (importer *ruleImporter) loadGroups(_ context.Context, filenames []string) (errs []error) {
 	groups, errs := importer.ruleManager.LoadGroups(importer.config.evalInterval, labels.Labels{}, "", nil, filenames...)
 	if errs != nil {
 		return errs
@@ -100,7 +100,7 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 	startInMs := start.Unix() * int64(time.Second/time.Millisecond)
 	endInMs := end.Unix() * int64(time.Second/time.Millisecond)
 
-	for startOfBlock := blockDuration * (startInMs / blockDuration); startOfBlock <= endInMs; startOfBlock = startOfBlock + blockDuration {
+	for startOfBlock := blockDuration * (startInMs / blockDuration); startOfBlock <= endInMs; startOfBlock += blockDuration {
 		endOfBlock := startOfBlock + blockDuration - 1
 
 		currStart := max(startOfBlock/int64(time.Second/time.Millisecond), start.Unix())
@@ -233,18 +233,4 @@ func (m *multipleAppender) flushAndCommit(ctx context.Context) error {
 		return fmt.Errorf("multiappender flush: %w", err)
 	}
 	return nil
-}
-
-func max(x, y int64) int64 {
-	if x > y {
-		return x
-	}
-	return y
-}
-
-func min(x, y int64) int64 {
-	if x < y {
-		return x
-	}
-	return y
 }

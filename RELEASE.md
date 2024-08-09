@@ -49,7 +49,16 @@ Release cadence of first pre-releases being cut is 6 weeks.
 | v2.42          | 2023-01-25                                 | Kemal Akkoyun (GitHub: @kakkoyun)           |
 | v2.43          | 2023-03-08                                 | Julien Pivotto (GitHub: @roidelapluie)      |
 | v2.44          | 2023-04-19                                 | Bryan Boreham (GitHub: @bboreham)           |
-| v2.45          | 2023-05-31                                 | **searching for volunteer**                 |
+| v2.45 LTS      | 2023-05-31                                 | Jesus Vazquez (Github: @jesusvazquez)       |
+| v2.46          | 2023-07-12                                 | Julien Pivotto (GitHub: @roidelapluie)      |
+| v2.47          | 2023-08-23                                 | Bryan Boreham (GitHub: @bboreham)           |
+| v2.48          | 2023-10-04                                 | Levi Harrison (GitHub: @LeviHarrison)       |
+| v2.49          | 2023-12-05                                 | Bartek Plotka (GitHub: @bwplotka)           |
+| v2.50          | 2024-01-16                                 | Augustin Husson (GitHub: @nexucis)          |
+| v2.51          | 2024-03-07                                 | Bryan Boreham (GitHub: @bboreham)           |
+| v2.52          | 2024-04-22                                 | Arthur Silva Sens (GitHub: @ArthurSens)     |
+| v2.53 LTS      | 2024-06-03                                 | George Krajcsovits (GitHub: @krajorama)     |
+| v2.54          | 2024-07-17                                 | Bryan Boreham (GitHub: @bboreham)           |
 
 If you are interested in volunteering please create a pull request against the [prometheus/prometheus](https://github.com/prometheus/prometheus) repository and propose yourself for the release series of your choice.
 
@@ -104,14 +113,16 @@ This is also a good time to consider any experimental features and feature
 flags for promotion to stable or for deprecation or ultimately removal. Do any
 of these in pull requests, one per feature.
 
+> NOTE: As a validation step check if all security alerts are closed after this step: https://github.com/prometheus/prometheus/security/dependabot. Sometimes it's ok
+> if not critical and e.g. fix is not released yet (or it does not relate to 
+> upgrading) or when we are unaffected.
+ 
 #### Manually updating Go dependencies
 
 This is usually only needed for `+incompatible` and `v0.0.0` non-semver updates.
 
 ```bash
-make update-go-deps
-git add go.mod go.sum
-git commit -m "Update dependencies"
+make update-all-go-deps
 ```
 
 #### Manually updating React dependencies
@@ -138,6 +149,8 @@ At the start of a new major or minor release cycle create the corresponding rele
 Changes for a patch release or release candidate should be merged into the previously mentioned release branch via pull request.
 
 Bump the version in the `VERSION` file and update `CHANGELOG.md`. Do this in a proper PR pointing to the release branch as this gives others the opportunity to chime in on the release in general and on the addition to the changelog in particular. For a release candidate, append something like `-rc.0` to the version (with the corresponding changes to the tag name, the release name etc.).
+
+When updating the `CHANGELOG.md` look at all PRs included in the release since the last release and verify if they need a changelog entry.
 
 Note that `CHANGELOG.md` should only document changes relevant to users of Prometheus, including external API changes, performance improvements, and new features. Do not document changes of internal interfaces, code refactorings and clean-ups, changes to the build process, etc. People interested in these are asked to refer to the git history.
 

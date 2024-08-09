@@ -28,11 +28,14 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/KimMachineGun/automemlimit/memlimit"
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/alecthomas/units"
 	"github.com/go-kit/log"
@@ -41,6 +44,8 @@ import (
 	"github.com/mwitkow/go-conntrack"
 	"github.com/oklog/run"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	versioncollector "github.com/prometheus/client_golang/prometheus/collectors/version"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promlog"
 	promlogflag "github.com/prometheus/common/promlog/flag"
@@ -63,6 +68,7 @@ import (
 	"github.com/prometheus/prometheus/notifier"
 	_ "github.com/prometheus/prometheus/plugins" // Register plugins.
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
@@ -70,6 +76,7 @@ import (
 	"github.com/prometheus/prometheus/tracing"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/agent"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/documentcli"
 	"github.com/prometheus/prometheus/util/logging"
 	prom_runtime "github.com/prometheus/prometheus/util/runtime"
@@ -96,7 +103,7 @@ var (
 )
 
 func init() {
-	prometheus.MustRegister(version.NewCollector(strings.ReplaceAll(appName, "-", "_")))
+	prometheus.MustRegister(versioncollector.NewCollector(strings.ReplaceAll(appName, "-", "_")))
 
 	var err error
 	defaultRetentionDuration, err = model.ParseDuration(defaultRetentionString)
@@ -134,6 +141,7 @@ type flagConfig struct {
 	forGracePeriod      model.Duration
 	outageTolerance     model.Duration
 	resendDelay         model.Duration
+	maxConcurrentEvals  int64
 	web                 web.Options
 	scrape              scrape.Options
 	tsdb                tsdbOptions
@@ -145,13 +153,16 @@ type flagConfig struct {
 	queryMaxSamples     int
 	RemoteFlushDeadline model.Duration
 
-	featureList []string
+	featureList   []string
+	memlimitRatio float64
 	// These options are extracted from featureList
 	// for ease of use.
 	enableExpandExternalLabels bool
 	enableNewSDManager         bool
 	enablePerStepStats         bool
 	enableAutoGOMAXPROCS       bool
+	enableAutoGOMEMLIMIT       bool
+	enableConcurrentRuleEval   bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -168,6 +179,9 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "remote-write-receiver":
 				c.web.EnableRemoteWriteReceiver = true
 				level.Warn(logger).Log("msg", "Remote write receiver enabled via feature flag remote-write-receiver. This is DEPRECATED. Use --web.enable-remote-write-receiver.")
+			case "otlp-write-receiver":
+				c.web.EnableOTLPWriteReceiver = true
+				level.Info(logger).Log("msg", "Experimental OTLP write receiver enabled")
 			case "expand-external-labels":
 				c.enableExpandExternalLabels = true
 				level.Info(logger).Log("msg", "Experimental expand-external-labels enabled")
@@ -180,6 +194,9 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "extra-scrape-metrics":
 				c.scrape.ExtraMetrics = true
 				level.Info(logger).Log("msg", "Experimental additional scrape metrics enabled")
+			case "metadata-wal-records":
+				c.scrape.AppendMetadata = true
+				level.Info(logger).Log("msg", "Experimental metadata records in WAL enabled, required for remote write 2.0")
 			case "new-service-discovery-manager":
 				c.enableNewSDManager = true
 				level.Info(logger).Log("msg", "Experimental service discovery manager")
@@ -192,13 +209,31 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "auto-gomaxprocs":
 				c.enableAutoGOMAXPROCS = true
 				level.Info(logger).Log("msg", "Automatically set GOMAXPROCS to match Linux container CPU quota")
+			case "auto-gomemlimit":
+				c.enableAutoGOMEMLIMIT = true
+				level.Info(logger).Log("msg", "Automatically set GOMEMLIMIT to match Linux container or system memory limit")
+			case "concurrent-rule-eval":
+				c.enableConcurrentRuleEval = true
+				level.Info(logger).Log("msg", "Experimental concurrent rule evaluation enabled.")
 			case "no-default-scrape-port":
 				c.scrape.NoDefaultPort = true
 				level.Info(logger).Log("msg", "No default port will be appended to scrape targets' addresses.")
+			case "promql-experimental-functions":
+				parser.EnableExperimentalFunctions = true
+				level.Info(logger).Log("msg", "Experimental PromQL functions enabled.")
 			case "native-histograms":
 				c.tsdb.EnableNativeHistograms = true
-				c.scrape.EnableProtobufNegotiation = true
-				level.Info(logger).Log("msg", "Experimental native histogram support enabled.")
+				c.scrape.EnableNativeHistogramsIngestion = true
+				// Change relevant global variables. Hacky, but it's hard to pass a new option or default to unmarshallers.
+				config.DefaultConfig.GlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
+				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
+				level.Info(logger).Log("msg", "Experimental native histogram support enabled. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
+			case "created-timestamp-zero-ingestion":
+				c.scrape.EnableCreatedTimestampZeroIngestion = true
+				// Change relevant global variables. Hacky, but it's hard to pass a new option or default to unmarshallers.
+				config.DefaultConfig.GlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
+				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
+				level.Info(logger).Log("msg", "Experimental created timestamp zero ingestion enabled. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
 			case "":
 				continue
 			case "promql-at-modifier", "promql-negative-offset":
@@ -207,11 +242,6 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 				level.Warn(logger).Log("msg", "Unknown option for --enable-feature", "option", o)
 			}
 		}
-	}
-
-	if c.tsdb.EnableNativeHistograms && c.tsdb.EnableMemorySnapshotOnShutdown {
-		c.tsdb.EnableMemorySnapshotOnShutdown = false
-		level.Warn(logger).Log("msg", "memory-snapshot-on-shutdown has been disabled automatically because memory-snapshot-on-shutdown and native-histograms cannot be enabled at the same time.")
 	}
 
 	return nil
@@ -227,6 +257,18 @@ func main() {
 		oldFlagRetentionDuration model.Duration
 		newFlagRetentionDuration model.Duration
 	)
+
+	// Unregister the default GoCollector, and reregister with our defaults.
+	if prometheus.Unregister(collectors.NewGoCollector()) {
+		prometheus.MustRegister(
+			collectors.NewGoCollector(
+				collectors.WithGoCollectorRuntimeMetrics(
+					collectors.MetricsGC,
+					collectors.MetricsScheduler,
+				),
+			),
+		)
+	}
 
 	cfg := flagConfig{
 		notifier: notifier.Options{
@@ -250,6 +292,9 @@ func main() {
 
 	a.Flag("web.listen-address", "Address to listen on for UI, API, and telemetry.").
 		Default("0.0.0.0:9090").StringVar(&cfg.web.ListenAddress)
+
+	a.Flag("auto-gomemlimit.ratio", "The ratio of reserved GOMEMLIMIT memory to the detected maximum container or system memory").
+		Default("0.9").FloatVar(&cfg.memlimitRatio)
 
 	webConfig := a.Flag(
 		"web.config.file",
@@ -280,8 +325,14 @@ func main() {
 	a.Flag("web.enable-admin-api", "Enable API endpoints for admin control actions.").
 		Default("false").BoolVar(&cfg.web.EnableAdminAPI)
 
+	// TODO(bwplotka): Consider allowing those remote receive flags to be changed in config.
+	// See https://github.com/prometheus/prometheus/issues/14410
 	a.Flag("web.enable-remote-write-receiver", "Enable API endpoint accepting remote write requests.").
 		Default("false").BoolVar(&cfg.web.EnableRemoteWriteReceiver)
+
+	supportedRemoteWriteProtoMsgs := config.RemoteWriteProtoMsgs{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2}
+	a.Flag("web.remote-write-receiver.accepted-protobuf-messages", fmt.Sprintf("List of the remote write protobuf messages to accept when receiving the remote writes. Supported values: %v", supportedRemoteWriteProtoMsgs.String())).
+		Default(supportedRemoteWriteProtoMsgs.Strings()...).SetValue(rwProtoMsgFlagValue(&cfg.web.AcceptRemoteWriteProtoMsgs))
 
 	a.Flag("web.console.templates", "Path to the console template directory, available at /consoles.").
 		Default("consoles").StringVar(&cfg.web.ConsoleTemplatesPath)
@@ -333,8 +384,14 @@ func main() {
 	serverOnlyFlag(a, "storage.tsdb.wal-compression", "Compress the tsdb WAL.").
 		Hidden().Default("true").BoolVar(&cfg.tsdb.WALCompression)
 
+	serverOnlyFlag(a, "storage.tsdb.wal-compression-type", "Compression algorithm for the tsdb WAL.").
+		Hidden().Default(string(wlog.CompressionSnappy)).EnumVar(&cfg.tsdb.WALCompressionType, string(wlog.CompressionSnappy), string(wlog.CompressionZstd))
+
 	serverOnlyFlag(a, "storage.tsdb.head-chunks-write-queue-size", "Size of the queue through which head chunks are written to the disk to be m-mapped, 0 disables the queue completely. Experimental.").
 		Default("0").IntVar(&cfg.tsdb.HeadChunksWriteQueueSize)
+
+	serverOnlyFlag(a, "storage.tsdb.samples-per-chunk", "Target number of samples per chunk.").
+		Default("120").Hidden().IntVar(&cfg.tsdb.SamplesPerChunk)
 
 	agentOnlyFlag(a, "storage.agent.path", "Base path for metrics storage.").
 		Default("data-agent/").StringVar(&cfg.agentStoragePath)
@@ -345,6 +402,9 @@ func main() {
 
 	agentOnlyFlag(a, "storage.agent.wal-compression", "Compress the agent WAL.").
 		Default("true").BoolVar(&cfg.agent.WALCompression)
+
+	agentOnlyFlag(a, "storage.agent.wal-compression-type", "Compression algorithm for the agent WAL.").
+		Hidden().Default(string(wlog.CompressionSnappy)).EnumVar(&cfg.agent.WALCompressionType, string(wlog.CompressionSnappy), string(wlog.CompressionZstd))
 
 	agentOnlyFlag(a, "storage.agent.wal-truncate-frequency",
 		"The frequency at which to truncate the WAL and remove old data.").
@@ -382,6 +442,9 @@ func main() {
 	serverOnlyFlag(a, "rules.alert.resend-delay", "Minimum amount of time to wait before resending an alert to Alertmanager.").
 		Default("1m").SetValue(&cfg.resendDelay)
 
+	serverOnlyFlag(a, "rules.max-concurrent-evals", "Global concurrency limit for independent rules that can run concurrently. When set, \"query.max-concurrency\" may need to be adjusted accordingly.").
+		Default("4").Int64Var(&cfg.maxConcurrentEvals)
+
 	a.Flag("scrape.adjust-timestamps", "Adjust scrape timestamps by up to `scrape.timestamp-tolerance` to align them to the intended schedule. See https://github.com/prometheus/prometheus/issues/7846 for more context. Experimental. This flag will be removed in a future release.").
 		Hidden().Default("true").BoolVar(&scrape.AlignScrapeTimestamps)
 
@@ -390,6 +453,9 @@ func main() {
 
 	serverOnlyFlag(a, "alertmanager.notification-queue-capacity", "The capacity of the queue for pending Alertmanager notifications.").
 		Default("10000").IntVar(&cfg.notifier.QueueCapacity)
+
+	serverOnlyFlag(a, "alertmanager.drain-notification-queue-on-shutdown", "Send any outstanding Alertmanager notifications when shutting down. If false, any outstanding Alertmanager notifications will be dropped when shutting down.").
+		Default("true").BoolVar(&cfg.notifier.DrainOnShutdown)
 
 	// TODO: Remove in Prometheus 3.0.
 	alertmanagerTimeout := a.Flag("alertmanager.timeout", "[DEPRECATED] This flag has no effect.").Hidden().String()
@@ -409,7 +475,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-at-modifier, promql-negative-offset, promql-per-step-stats, remote-write-receiver (DEPRECATED), extra-scrape-metrics, new-service-discovery-manager, auto-gomaxprocs, no-default-scrape-port, native-histograms. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, auto-gomemlimit, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, remote-write-receiver (DEPRECATED), extra-scrape-metrics, new-service-discovery-manager, auto-gomaxprocs, no-default-scrape-port, native-histograms, otlp-write-receiver, created-timestamp-zero-ingestion, concurrent-rule-eval. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
@@ -425,7 +491,7 @@ func main() {
 
 	_, err := a.Parse(os.Args[1:])
 	if err != nil {
-		fmt.Fprintln(os.Stderr, fmt.Errorf("Error parsing commandline arguments: %w", err))
+		fmt.Fprintln(os.Stderr, fmt.Errorf("Error parsing command line arguments: %w", err))
 		a.Usage(os.Args[1:])
 		os.Exit(2)
 	}
@@ -445,6 +511,11 @@ func main() {
 	if !agentMode && len(agentOnlyFlags) > 0 {
 		fmt.Fprintf(os.Stderr, "The following flag(s) can only be used in agent mode: %q", agentOnlyFlags)
 		os.Exit(3)
+	}
+
+	if cfg.memlimitRatio <= 0.0 || cfg.memlimitRatio > 1.0 {
+		fmt.Fprintf(os.Stderr, "--auto-gomemlimit.ratio must be greater than 0 and less than or equal to 1.")
+		os.Exit(1)
 	}
 
 	localStoragePath := cfg.serverStoragePath
@@ -490,7 +561,7 @@ func main() {
 		if cfgFile.StorageConfig.ExemplarsConfig == nil {
 			cfgFile.StorageConfig.ExemplarsConfig = &config.DefaultExemplarsConfig
 		}
-		cfg.tsdb.MaxExemplars = int64(cfgFile.StorageConfig.ExemplarsConfig.MaxExemplars)
+		cfg.tsdb.MaxExemplars = cfgFile.StorageConfig.ExemplarsConfig.MaxExemplars
 	}
 	if cfgFile.StorageConfig.TSDBConfig != nil {
 		cfg.tsdb.OutOfOrderTimeWindow = cfgFile.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
@@ -584,7 +655,7 @@ func main() {
 	var (
 		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
 		scraper       = &readyScrapeManager{}
-		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper)
+		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.scrape.AppendMetadata)
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 
@@ -600,18 +671,73 @@ func main() {
 		discoveryManagerNotify  discoveryManager
 	)
 
+	// Kubernetes client metrics are used by Kubernetes SD.
+	// They are registered here in the main function, because SD mechanisms
+	// can only register metrics specific to a SD instance.
+	// Kubernetes client metrics are the same for the whole process -
+	// they are not specific to an SD instance.
+	err = discovery.RegisterK8sClientMetricsWithPrometheus(prometheus.DefaultRegisterer)
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to register Kubernetes client metrics", "err", err)
+		os.Exit(1)
+	}
+
+	sdMetrics, err := discovery.CreateAndRegisterSDMetrics(prometheus.DefaultRegisterer)
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to register service discovery metrics", "err", err)
+		os.Exit(1)
+	}
+
 	if cfg.enableNewSDManager {
-		discovery.RegisterMetrics()
-		discoveryManagerScrape = discovery.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), discovery.Name("scrape"))
-		discoveryManagerNotify = discovery.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), discovery.Name("notify"))
+		{
+			discMgr := discovery.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), prometheus.DefaultRegisterer, sdMetrics, discovery.Name("scrape"))
+			if discMgr == nil {
+				level.Error(logger).Log("msg", "failed to create a discovery manager scrape")
+				os.Exit(1)
+			}
+			discoveryManagerScrape = discMgr
+		}
+
+		{
+			discMgr := discovery.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), prometheus.DefaultRegisterer, sdMetrics, discovery.Name("notify"))
+			if discMgr == nil {
+				level.Error(logger).Log("msg", "failed to create a discovery manager notify")
+				os.Exit(1)
+			}
+			discoveryManagerNotify = discMgr
+		}
 	} else {
-		legacymanager.RegisterMetrics()
-		discoveryManagerScrape = legacymanager.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), legacymanager.Name("scrape"))
-		discoveryManagerNotify = legacymanager.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), legacymanager.Name("notify"))
+		{
+			discMgr := legacymanager.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), prometheus.DefaultRegisterer, sdMetrics, legacymanager.Name("scrape"))
+			if discMgr == nil {
+				level.Error(logger).Log("msg", "failed to create a discovery manager scrape")
+				os.Exit(1)
+			}
+			discoveryManagerScrape = discMgr
+		}
+
+		{
+			discMgr := legacymanager.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), prometheus.DefaultRegisterer, sdMetrics, legacymanager.Name("notify"))
+			if discMgr == nil {
+				level.Error(logger).Log("msg", "failed to create a discovery manager notify")
+				os.Exit(1)
+			}
+			discoveryManagerNotify = discMgr
+		}
+	}
+
+	scrapeManager, err := scrape.NewManager(
+		&cfg.scrape,
+		log.With(logger, "component", "scrape manager"),
+		fanoutStorage,
+		prometheus.DefaultRegisterer,
+	)
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to create a scrape manager", "err", err)
+		os.Exit(1)
 	}
 
 	var (
-		scrapeManager  = scrape.NewManager(&cfg.scrape, log.With(logger, "component", "scrape manager"), fanoutStorage)
 		tracingManager = tracing.NewManager(logger)
 
 		queryEngine *promql.Engine
@@ -624,6 +750,20 @@ func main() {
 		}
 		if _, err := maxprocs.Set(maxprocs.Logger(l)); err != nil {
 			level.Warn(logger).Log("component", "automaxprocs", "msg", "Failed to set GOMAXPROCS automatically", "err", err)
+		}
+	}
+
+	if cfg.enableAutoGOMEMLIMIT {
+		if _, err := memlimit.SetGoMemLimitWithOpts(
+			memlimit.WithRatio(cfg.memlimitRatio),
+			memlimit.WithProvider(
+				memlimit.ApplyFallback(
+					memlimit.FromCgroup,
+					memlimit.FromSystem,
+				),
+			),
+		); err != nil {
+			level.Warn(logger).Log("component", "automemlimit", "msg", "Failed to set GOMEMLIMIT automatically", "err", err)
 		}
 	}
 
@@ -646,17 +786,22 @@ func main() {
 		queryEngine = promql.NewEngine(opts)
 
 		ruleManager = rules.NewManager(&rules.ManagerOptions{
-			Appendable:      fanoutStorage,
-			Queryable:       localStorage,
-			QueryFunc:       rules.EngineQueryFunc(queryEngine, fanoutStorage),
-			NotifyFunc:      rules.SendAlerts(notifierManager, cfg.web.ExternalURL.String()),
-			Context:         ctxRule,
-			ExternalURL:     cfg.web.ExternalURL,
-			Registerer:      prometheus.DefaultRegisterer,
-			Logger:          log.With(logger, "component", "rule manager"),
-			OutageTolerance: time.Duration(cfg.outageTolerance),
-			ForGracePeriod:  time.Duration(cfg.forGracePeriod),
-			ResendDelay:     time.Duration(cfg.resendDelay),
+			Appendable:             fanoutStorage,
+			Queryable:              localStorage,
+			QueryFunc:              rules.EngineQueryFunc(queryEngine, fanoutStorage),
+			NotifyFunc:             rules.SendAlerts(notifierManager, cfg.web.ExternalURL.String()),
+			Context:                ctxRule,
+			ExternalURL:            cfg.web.ExternalURL,
+			Registerer:             prometheus.DefaultRegisterer,
+			Logger:                 log.With(logger, "component", "rule manager"),
+			OutageTolerance:        time.Duration(cfg.outageTolerance),
+			ForGracePeriod:         time.Duration(cfg.forGracePeriod),
+			ResendDelay:            time.Duration(cfg.resendDelay),
+			MaxConcurrentEvals:     cfg.maxConcurrentEvals,
+			ConcurrentEvalsEnabled: cfg.enableConcurrentRuleEval,
+			DefaultRuleQueryOffset: func() time.Duration {
+				return time.Duration(cfgFile.GlobalConfig.RuleQueryOffset)
+			},
 		})
 	}
 
@@ -846,8 +991,8 @@ func main() {
 			func() error {
 				// Don't forget to release the reloadReady channel so that waiting blocks can exit normally.
 				select {
-				case <-term:
-					level.Warn(logger).Log("msg", "Received SIGTERM, exiting gracefully...")
+				case sig := <-term:
+					level.Warn(logger).Log("msg", "Received an OS signal, exiting gracefully...", "signal", sig.String())
 					reloadReady.Close()
 				case <-webHandler.Quit():
 					level.Warn(logger).Log("msg", "Received termination request via web service, exiting gracefully...")
@@ -1049,6 +1194,7 @@ func main() {
 
 				startTimeMargin := int64(2 * time.Duration(cfg.tsdb.MinBlockDuration).Seconds() * 1000)
 				localStorage.Set(db, startTimeMargin)
+				db.SetWriteNotified(remoteStorage)
 				close(dbOpen)
 				<-cancel
 				return nil
@@ -1063,7 +1209,7 @@ func main() {
 	}
 	if agentMode {
 		// WAL storage.
-		opts := cfg.agent.ToAgentOptions()
+		opts := cfg.agent.ToAgentOptions(cfg.tsdb.OutOfOrderTimeWindow)
 		cancel := make(chan struct{})
 		g.Add(
 			func() error {
@@ -1099,9 +1245,11 @@ func main() {
 					"TruncateFrequency", cfg.agent.TruncateFrequency,
 					"MinWALTime", cfg.agent.MinWALTime,
 					"MaxWALTime", cfg.agent.MaxWALTime,
+					"OutOfOrderTimeWindow", cfg.agent.OutOfOrderTimeWindow,
 				)
 
 				localStorage.Set(db, 0)
+				db.SetWriteNotified(remoteStorage)
 				close(dbOpen)
 				<-cancel
 				return nil
@@ -1251,6 +1399,17 @@ func reloadConfig(filename string, expandExternalLabels, enableExemplarStorage b
 		return fmt.Errorf("one or more errors occurred while applying the new configuration (--config.file=%q)", filename)
 	}
 
+	oldGoGC := debug.SetGCPercent(conf.Runtime.GoGC)
+	if oldGoGC != conf.Runtime.GoGC {
+		level.Info(logger).Log("msg", "updated GOGC", "old", oldGoGC, "new", conf.Runtime.GoGC)
+	}
+	// Write the new setting out to the ENV var for runtime API output.
+	if conf.Runtime.GoGC >= 0 {
+		os.Setenv("GOGC", strconv.Itoa(conf.Runtime.GoGC))
+	} else {
+		os.Setenv("GOGC", "off")
+	}
+
 	noStepSuqueryInterval.Set(conf.GlobalConfig.EvaluationInterval)
 	l := []interface{}{"msg", "Completed loading of configuration file", "filename", filename, "totalDuration", time.Since(start)}
 	level.Info(logger).Log(append(l, timings...)...)
@@ -1262,7 +1421,7 @@ func startsOrEndsWithQuote(s string) bool {
 		strings.HasSuffix(s, "\"") || strings.HasSuffix(s, "'")
 }
 
-// compileCORSRegexString compiles given string and adds anchors
+// compileCORSRegexString compiles given string and adds anchors.
 func compileCORSRegexString(s string) (*regexp.Regexp, error) {
 	r, err := relabel.NewRegexp(s)
 	if err != nil {
@@ -1368,17 +1527,17 @@ func (s *readyStorage) StartTime() (int64, error) {
 }
 
 // Querier implements the Storage interface.
-func (s *readyStorage) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+func (s *readyStorage) Querier(mint, maxt int64) (storage.Querier, error) {
 	if x := s.get(); x != nil {
-		return x.Querier(ctx, mint, maxt)
+		return x.Querier(mint, maxt)
 	}
 	return nil, tsdb.ErrNotReady
 }
 
 // ChunkQuerier implements the Storage interface.
-func (s *readyStorage) ChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
+func (s *readyStorage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
 	if x := s.get(); x != nil {
-		return x.ChunkQuerier(ctx, mint, maxt)
+		return x.ChunkQuerier(mint, maxt)
 	}
 	return nil, tsdb.ErrNotReady
 }
@@ -1423,6 +1582,10 @@ func (n notReadyAppender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels,
 	return 0, tsdb.ErrNotReady
 }
 
+func (n notReadyAppender) AppendCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64) (storage.SeriesRef, error) {
+	return 0, tsdb.ErrNotReady
+}
+
 func (n notReadyAppender) Commit() error { return tsdb.ErrNotReady }
 
 func (n notReadyAppender) Rollback() error { return tsdb.ErrNotReady }
@@ -1451,11 +1614,11 @@ func (s *readyStorage) CleanTombstones() error {
 }
 
 // Delete implements the api_v1.TSDBAdminStats and api_v2.TSDBAdmin interfaces.
-func (s *readyStorage) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
+func (s *readyStorage) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Matcher) error {
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
 		case *tsdb.DB:
-			return db.Delete(mint, maxt, ms...)
+			return db.Delete(ctx, mint, maxt, ms...)
 		case *agent.DB:
 			return agent.ErrUnsupported
 		default:
@@ -1481,11 +1644,11 @@ func (s *readyStorage) Snapshot(dir string, withHead bool) error {
 }
 
 // Stats implements the api_v1.TSDBAdminStats interface.
-func (s *readyStorage) Stats(statsByLabelName string) (*tsdb.Stats, error) {
+func (s *readyStorage) Stats(statsByLabelName string, limit int) (*tsdb.Stats, error) {
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
 		case *tsdb.DB:
-			return db.Head().Stats(statsByLabelName), nil
+			return db.Head().Stats(statsByLabelName, limit), nil
 		case *agent.DB:
 			return nil, agent.ErrUnsupported
 		default:
@@ -1541,7 +1704,9 @@ type tsdbOptions struct {
 	MaxBytes                       units.Base2Bytes
 	NoLockfile                     bool
 	WALCompression                 bool
+	WALCompressionType             string
 	HeadChunksWriteQueueSize       int
+	SamplesPerChunk                int
 	StripeSize                     int
 	MinBlockDuration               model.Duration
 	MaxBlockDuration               model.Duration
@@ -1559,9 +1724,9 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		RetentionDuration:              int64(time.Duration(opts.RetentionDuration) / time.Millisecond),
 		MaxBytes:                       int64(opts.MaxBytes),
 		NoLockfile:                     opts.NoLockfile,
-		AllowOverlappingCompaction:     true,
-		WALCompression:                 opts.WALCompression,
+		WALCompression:                 wlog.ParseCompressionType(opts.WALCompression, opts.WALCompressionType),
 		HeadChunksWriteQueueSize:       opts.HeadChunksWriteQueueSize,
+		SamplesPerChunk:                opts.SamplesPerChunk,
 		StripeSize:                     opts.StripeSize,
 		MinBlockDuration:               int64(time.Duration(opts.MinBlockDuration) / time.Millisecond),
 		MaxBlockDuration:               int64(time.Duration(opts.MaxBlockDuration) / time.Millisecond),
@@ -1570,6 +1735,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableMemorySnapshotOnShutdown: opts.EnableMemorySnapshotOnShutdown,
 		EnableNativeHistograms:         opts.EnableNativeHistograms,
 		OutOfOrderTimeWindow:           opts.OutOfOrderTimeWindow,
+		EnableOverlappingCompaction:    true,
 	}
 }
 
@@ -1578,21 +1744,27 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 type agentOptions struct {
 	WALSegmentSize         units.Base2Bytes
 	WALCompression         bool
+	WALCompressionType     string
 	StripeSize             int
 	TruncateFrequency      model.Duration
 	MinWALTime, MaxWALTime model.Duration
 	NoLockfile             bool
+	OutOfOrderTimeWindow   int64
 }
 
-func (opts agentOptions) ToAgentOptions() agent.Options {
+func (opts agentOptions) ToAgentOptions(outOfOrderTimeWindow int64) agent.Options {
+	if outOfOrderTimeWindow < 0 {
+		outOfOrderTimeWindow = 0
+	}
 	return agent.Options{
-		WALSegmentSize:    int(opts.WALSegmentSize),
-		WALCompression:    opts.WALCompression,
-		StripeSize:        opts.StripeSize,
-		TruncateFrequency: time.Duration(opts.TruncateFrequency),
-		MinWALTime:        durationToInt64Millis(time.Duration(opts.MinWALTime)),
-		MaxWALTime:        durationToInt64Millis(time.Duration(opts.MaxWALTime)),
-		NoLockfile:        opts.NoLockfile,
+		WALSegmentSize:       int(opts.WALSegmentSize),
+		WALCompression:       wlog.ParseCompressionType(opts.WALCompression, opts.WALCompressionType),
+		StripeSize:           opts.StripeSize,
+		TruncateFrequency:    time.Duration(opts.TruncateFrequency),
+		MinWALTime:           durationToInt64Millis(time.Duration(opts.MinWALTime)),
+		MaxWALTime:           durationToInt64Millis(time.Duration(opts.MaxWALTime)),
+		NoLockfile:           opts.NoLockfile,
+		OutOfOrderTimeWindow: outOfOrderTimeWindow,
 	}
 }
 
@@ -1603,4 +1775,40 @@ type discoveryManager interface {
 	ApplyConfig(cfg map[string]discovery.Configs) error
 	Run() error
 	SyncCh() <-chan map[string][]*targetgroup.Group
+}
+
+// rwProtoMsgFlagParser is a custom parser for config.RemoteWriteProtoMsg enum.
+type rwProtoMsgFlagParser struct {
+	msgs *[]config.RemoteWriteProtoMsg
+}
+
+func rwProtoMsgFlagValue(msgs *[]config.RemoteWriteProtoMsg) kingpin.Value {
+	return &rwProtoMsgFlagParser{msgs: msgs}
+}
+
+// IsCumulative is used by kingpin to tell if it's an array or not.
+func (p *rwProtoMsgFlagParser) IsCumulative() bool {
+	return true
+}
+
+func (p *rwProtoMsgFlagParser) String() string {
+	ss := make([]string, 0, len(*p.msgs))
+	for _, t := range *p.msgs {
+		ss = append(ss, string(t))
+	}
+	return strings.Join(ss, ",")
+}
+
+func (p *rwProtoMsgFlagParser) Set(opt string) error {
+	t := config.RemoteWriteProtoMsg(opt)
+	if err := t.Validate(); err != nil {
+		return err
+	}
+	for _, prev := range *p.msgs {
+		if prev == t {
+			return fmt.Errorf("duplicated %v flag value, got %v already", t, *p.msgs)
+		}
+	}
+	*p.msgs = append(*p.msgs, t)
+	return nil
 }

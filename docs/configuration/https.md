@@ -44,6 +44,13 @@ tls_server_config:
   # CA certificate for client certificate authentication to the server.
   [ client_ca_file: <filename> ]
 
+  # Verify that the client certificate has a Subject Alternate Name (SAN)
+  # which is an exact match to an entry in this list, else terminate the
+  # connection. SAN match can be one or multiple of the following: DNS,
+  # IP, e-mail, or URI address from https://pkg.go.dev/crypto/x509#Certificate.
+  [ client_allowed_sans:
+    [ - <string> ] ]
+
   # Minimum TLS version that is acceptable.
   [ min_version: <string> | default = "TLS12" ]
 

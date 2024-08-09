@@ -24,6 +24,7 @@ import (
 
 	"github.com/digitalocean/godo"
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
@@ -62,6 +63,13 @@ func init() {
 	discovery.RegisterConfig(&SDConfig{})
 }
 
+// NewDiscovererMetrics implements discovery.Config.
+func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return &digitaloceanMetrics{
+		refreshMetrics: rmi,
+	}
+}
+
 // SDConfig is the configuration for DigitalOcean based service discovery.
 type SDConfig struct {
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
@@ -75,7 +83,7 @@ func (*SDConfig) Name() string { return "digitalocean" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger)
+	return NewDiscovery(c, opts.Logger, opts.Metrics)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -103,7 +111,12 @@ type Discovery struct {
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
-func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+	m, ok := metrics.(*digitaloceanMetrics)
+	if !ok {
+		return nil, fmt.Errorf("invalid discovery metrics type")
+	}
+
 	d := &Discovery{
 		port: conf.Port,
 	}
@@ -125,10 +138,13 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 	}
 
 	d.Discovery = refresh.NewDiscovery(
-		logger,
-		"digitalocean",
-		time.Duration(conf.RefreshInterval),
-		d.refresh,
+		refresh.Options{
+			Logger:              logger,
+			Mech:                "digitalocean",
+			Interval:            time.Duration(conf.RefreshInterval),
+			RefreshF:            d.refresh,
+			MetricsInstantiator: m.refreshMetrics,
+		},
 	)
 	return d, nil
 }
@@ -161,7 +177,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		}
 
 		labels := model.LabelSet{
-			doLabelID:          model.LabelValue(fmt.Sprintf("%d", droplet.ID)),
+			doLabelID:          model.LabelValue(strconv.Itoa(droplet.ID)),
 			doLabelName:        model.LabelValue(droplet.Name),
 			doLabelImage:       model.LabelValue(droplet.Image.Slug),
 			doLabelImageName:   model.LabelValue(droplet.Image.Name),

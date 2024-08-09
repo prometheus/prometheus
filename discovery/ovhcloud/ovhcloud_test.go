@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
@@ -65,7 +66,7 @@ endpoint: %s
 
 	_, err := createClient(&conf)
 
-	require.ErrorContains(t, err, "missing application key")
+	require.ErrorContains(t, err, "missing authentication information")
 }
 
 func TestParseIPs(t *testing.T) {
@@ -121,8 +122,17 @@ func TestParseIPs(t *testing.T) {
 func TestDiscoverer(t *testing.T) {
 	conf, _ := getMockConf("vps")
 	logger := testutil.NewLogger(t)
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := conf.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+	defer refreshMetrics.Unregister()
+
 	_, err := conf.NewDiscoverer(discovery.DiscovererOptions{
-		Logger: logger,
+		Logger:  logger,
+		Metrics: metrics,
 	})
 
 	require.NoError(t, err)

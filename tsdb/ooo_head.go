@@ -18,6 +18,10 @@ import (
 	"sort"
 
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+
+	"github.com/oklog/ulid"
+
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
 
@@ -71,24 +75,22 @@ func (o *OOOChunk) NumSamples() int {
 	return len(o.samples)
 }
 
-func (o *OOOChunk) ToXOR() (*chunkenc.XORChunk, error) {
-	x := chunkenc.NewXORChunk()
-	app, err := x.Appender()
-	if err != nil {
-		return nil, err
+// ToEncodedChunks returns chunks with the samples in the OOOChunk.
+//
+//nolint:revive // unexported-return.
+func (o *OOOChunk) ToEncodedChunks(mint, maxt int64) (chks []memChunk, err error) {
+	if len(o.samples) == 0 {
+		return nil, nil
 	}
-	for _, s := range o.samples {
-		app.Append(s.t, s.v)
-	}
-	return x, nil
-}
-
-func (o *OOOChunk) ToXORBetweenTimestamps(mint, maxt int64) (*chunkenc.XORChunk, error) {
-	x := chunkenc.NewXORChunk()
-	app, err := x.Appender()
-	if err != nil {
-		return nil, err
-	}
+	// The most common case is that there will be a single chunk, with the same type of samples in it - this is always true for float samples.
+	chks = make([]memChunk, 0, 1)
+	var (
+		cmint int64
+		cmaxt int64
+		chunk chunkenc.Chunk
+		app   chunkenc.Appender
+	)
+	prevEncoding := chunkenc.EncNone // Yes we could call the chunk for this, but this is more efficient.
 	for _, s := range o.samples {
 		if s.t < mint {
 			continue
@@ -96,9 +98,77 @@ func (o *OOOChunk) ToXORBetweenTimestamps(mint, maxt int64) (*chunkenc.XORChunk,
 		if s.t > maxt {
 			break
 		}
-		app.Append(s.t, s.v)
+		encoding := chunkenc.EncXOR
+		if s.h != nil {
+			encoding = chunkenc.EncHistogram
+		} else if s.fh != nil {
+			encoding = chunkenc.EncFloatHistogram
+		}
+
+		// prevApp is the appender for the previous sample.
+		prevApp := app
+
+		if encoding != prevEncoding { // For the first sample, this will always be true as EncNone != EncXOR | EncHistogram | EncFloatHistogram
+			if prevEncoding != chunkenc.EncNone {
+				chks = append(chks, memChunk{chunk, cmint, cmaxt, nil})
+			}
+			cmint = s.t
+			switch encoding {
+			case chunkenc.EncXOR:
+				chunk = chunkenc.NewXORChunk()
+			case chunkenc.EncHistogram:
+				chunk = chunkenc.NewHistogramChunk()
+			case chunkenc.EncFloatHistogram:
+				chunk = chunkenc.NewFloatHistogramChunk()
+			default:
+				chunk = chunkenc.NewXORChunk()
+			}
+			app, err = chunk.Appender()
+			if err != nil {
+				return
+			}
+		}
+		switch encoding {
+		case chunkenc.EncXOR:
+			app.Append(s.t, s.f)
+		case chunkenc.EncHistogram:
+			// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
+			prevHApp, _ := prevApp.(*chunkenc.HistogramAppender)
+			var (
+				newChunk chunkenc.Chunk
+				recoded  bool
+			)
+			newChunk, recoded, app, _ = app.AppendHistogram(prevHApp, s.t, s.h, false)
+			if newChunk != nil { // A new chunk was allocated.
+				if !recoded {
+					chks = append(chks, memChunk{chunk, cmint, cmaxt, nil})
+				}
+				chunk = newChunk
+				cmint = s.t
+			}
+		case chunkenc.EncFloatHistogram:
+			// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
+			prevHApp, _ := prevApp.(*chunkenc.FloatHistogramAppender)
+			var (
+				newChunk chunkenc.Chunk
+				recoded  bool
+			)
+			newChunk, recoded, app, _ = app.AppendFloatHistogram(prevHApp, s.t, s.fh, false)
+			if newChunk != nil { // A new chunk was allocated.
+				if !recoded {
+					chks = append(chks, memChunk{chunk, cmint, cmaxt, nil})
+				}
+				chunk = newChunk
+				cmint = s.t
+			}
+		}
+		cmaxt = s.t
+		prevEncoding = encoding
 	}
-	return x, nil
+	if prevEncoding != chunkenc.EncNone {
+		chks = append(chks, memChunk{chunk, cmint, cmaxt, nil})
+	}
+	return chks, nil
 }
 
 var _ BlockReader = &OOORangeHead{}
@@ -111,22 +181,27 @@ type OOORangeHead struct {
 	// the timerange of the query and having preexisting pointers to the first
 	// and last timestamp help with that.
 	mint, maxt int64
+
+	isoState *oooIsolationState
 }
 
-func NewOOORangeHead(head *Head, mint, maxt int64) *OOORangeHead {
+func NewOOORangeHead(head *Head, mint, maxt int64, minRef chunks.ChunkDiskMapperRef) *OOORangeHead {
+	isoState := head.oooIso.TrackReadAfter(minRef)
+
 	return &OOORangeHead{
-		head: head,
-		mint: mint,
-		maxt: maxt,
+		head:     head,
+		mint:     mint,
+		maxt:     maxt,
+		isoState: isoState,
 	}
 }
 
 func (oh *OOORangeHead) Index() (IndexReader, error) {
-	return NewOOOHeadIndexReader(oh.head, oh.mint, oh.maxt), nil
+	return NewOOOHeadIndexReader(oh.head, oh.mint, oh.maxt, oh.isoState.minRef), nil
 }
 
 func (oh *OOORangeHead) Chunks() (ChunkReader, error) {
-	return NewOOOHeadChunkReader(oh.head, oh.mint, oh.maxt), nil
+	return NewOOOHeadChunkReader(oh.head, oh.mint, oh.maxt, oh.isoState), nil
 }
 
 func (oh *OOORangeHead) Tombstones() (tombstones.Reader, error) {
@@ -135,13 +210,13 @@ func (oh *OOORangeHead) Tombstones() (tombstones.Reader, error) {
 	return tombstones.NewMemTombstones(), nil
 }
 
+var oooRangeHeadULID = ulid.MustParse("0000000000XXXX000RANGEHEAD")
+
 func (oh *OOORangeHead) Meta() BlockMeta {
-	var id [16]byte
-	copy(id[:], "____ooo_head____")
 	return BlockMeta{
 		MinTime: oh.mint,
 		MaxTime: oh.maxt,
-		ULID:    id,
+		ULID:    oooRangeHeadULID,
 		Stats: BlockStats{
 			NumSeries: oh.head.NumSeries(),
 		},

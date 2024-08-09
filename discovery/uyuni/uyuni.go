@@ -20,11 +20,13 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/kolo/xmlrpc"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
@@ -110,12 +112,19 @@ type Discovery struct {
 	logger          log.Logger
 }
 
+// NewDiscovererMetrics implements discovery.Config.
+func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return &uyuniMetrics{
+		refreshMetrics: rmi,
+	}
+}
+
 // Name returns the name of the Config.
 func (*SDConfig) Name() string { return "uyuni" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger)
+	return NewDiscovery(c, opts.Logger, opts.Metrics)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -146,7 +155,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.Password == "" {
 		return errors.New("Uyuni SD configuration requires a password")
 	}
-	return nil
+	return c.HTTPClientConfig.Validate()
 }
 
 func login(rpcclient *xmlrpc.Client, user, pass string, duration int) (string, error) {
@@ -203,7 +212,12 @@ func getEndpointInfoForSystems(
 }
 
 // NewDiscovery returns a uyuni discovery for the given configuration.
-func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+	m, ok := metrics.(*uyuniMetrics)
+	if !ok {
+		return nil, fmt.Errorf("invalid discovery metrics type")
+	}
+
 	apiURL, err := url.Parse(conf.Server)
 	if err != nil {
 		return nil, err
@@ -227,10 +241,13 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 	}
 
 	d.Discovery = refresh.NewDiscovery(
-		logger,
-		"uyuni",
-		time.Duration(conf.RefreshInterval),
-		d.refresh,
+		refresh.Options{
+			Logger:              logger,
+			Mech:                "uyuni",
+			Interval:            time.Duration(conf.RefreshInterval),
+			RefreshF:            d.refresh,
+			MetricsInstantiator: m.refreshMetrics,
+		},
 	)
 	return d, nil
 }
@@ -253,7 +270,7 @@ func (d *Discovery) getEndpointLabels(
 		model.AddressLabel:       model.LabelValue(addr),
 		uyuniLabelMinionHostname: model.LabelValue(networkInfo.Hostname),
 		uyuniLabelPrimaryFQDN:    model.LabelValue(networkInfo.PrimaryFQDN),
-		uyuniLablelSystemID:      model.LabelValue(fmt.Sprintf("%d", endpoint.SystemID)),
+		uyuniLablelSystemID:      model.LabelValue(strconv.Itoa(endpoint.SystemID)),
 		uyuniLablelGroups:        model.LabelValue(strings.Join(managedGroupNames, d.separator)),
 		uyuniLablelEndpointName:  model.LabelValue(endpoint.EndpointName),
 		uyuniLablelExporter:      model.LabelValue(endpoint.ExporterName),

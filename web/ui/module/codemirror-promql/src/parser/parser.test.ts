@@ -96,6 +96,11 @@ describe('promql operations', () => {
       expectedDiag: [] as Diagnostic[],
     },
     {
+      expr: 'mad_over_time(rate(metric_name[5m])[1h:] offset 1m)',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
       expr: 'max_over_time(rate(metric_name[5m])[1h:] offset 1m)',
       expectedValueType: ValueType.vector,
       expectedDiag: [] as Diagnostic[],
@@ -200,12 +205,22 @@ describe('promql operations', () => {
       expectedDiag: [] as Diagnostic[],
     },
     {
+      expr: 'foo and on(test,"blub") bar',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
       expr: 'foo and on() bar',
       expectedValueType: ValueType.vector,
       expectedDiag: [] as Diagnostic[],
     },
     {
       expr: 'foo and ignoring(test,blub) bar',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'foo and ignoring(test,"blub") bar',
       expectedValueType: ValueType.vector,
       expectedDiag: [] as Diagnostic[],
     },
@@ -221,6 +236,11 @@ describe('promql operations', () => {
     },
     {
       expr: 'foo / on(test,blub) group_left(bar) bar',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'foo / on(test,blub) group_left("bar") bar',
       expectedValueType: ValueType.vector,
       expectedDiag: [] as Diagnostic[],
     },
@@ -753,6 +773,42 @@ describe('promql operations', () => {
       expectedDiag: [],
     },
     {
+      expr:
+        'histogram_avg(                                           # Root of the query, final result, returns the average of observations.\n' +
+        '  sum by(method, path) (                                 # Argument to histogram_avg(), an aggregated histogram.\n' +
+        '    rate(                                                # Argument to sum(), the per-second increase of a histogram over 5m.\n' +
+        '      demo_api_request_duration_seconds{job="demo"}[5m]  # Argument to rate(), a vector of sparse histogram series over the last 5m.\n' +
+        '    )\n' +
+        '  )\n' +
+        ')',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr:
+        'histogram_stddev(                                           # Root of the query, final result, returns the standard deviation of observations.\n' +
+        '  sum by(method, path) (                                 # Argument to histogram_stddev(), an aggregated histogram.\n' +
+        '    rate(                                                # Argument to sum(), the per-second increase of a histogram over 5m.\n' +
+        '      demo_api_request_duration_seconds{job="demo"}[5m]  # Argument to rate(), a vector of sparse histogram series over the last 5m.\n' +
+        '    )\n' +
+        '  )\n' +
+        ')',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr:
+        'histogram_stdvar(                                           # Root of the query, final result, returns the standard variance of observations.\n' +
+        '  sum by(method, path) (                                 # Argument to histogram_stdvar(), an aggregated histogram.\n' +
+        '    rate(                                                # Argument to sum(), the per-second increase of a histogram over 5m.\n' +
+        '      demo_api_request_duration_seconds{job="demo"}[5m]  # Argument to rate(), a vector of sparse histogram series over the last 5m.\n' +
+        '    )\n' +
+        '  )\n' +
+        ')',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
       expr: '1 @ start()',
       expectedValueType: ValueType.scalar,
       expectedDiag: [
@@ -781,6 +837,134 @@ describe('promql operations', () => {
     },
     {
       expr: 'sum (rate(foo[5m])) @ 456',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: '{"foo"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      // with metric name in the middle
+      expr: '{a="b","foo",c~="d"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: '{"foo", a="bc"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: '{"colon:in:the:middle"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: '{"dot.in.the.middle"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: '{"😀 in metric name"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      // quotes with escape
+      expr: '{"this is \"foo\" metric"}', // eslint-disable-line
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: '{"foo","colon:in:the:middle"="val"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: '{"foo","dot.in.the.middle"="val"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: '{"foo","😀 in label name"="val"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      // quotes with escape
+      expr: '{"foo","this is \"bar\" label"="val"}', // eslint-disable-line
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: 'foo{"bar"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 0,
+          message: 'metric name must not be set twice: foo or bar',
+          severity: 'error',
+          to: 10,
+        },
+      ],
+    },
+    {
+      expr: '{"foo", __name__="bar"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 0,
+          message: 'metric name must not be set twice: foo or bar',
+          severity: 'error',
+          to: 23,
+        },
+      ],
+    },
+    {
+      expr: '{"foo", "__name__"="bar"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 0,
+          message: 'metric name must not be set twice: foo or bar',
+          severity: 'error',
+          to: 25,
+        },
+      ],
+    },
+    {
+      expr: '{"__name__"="foo", __name__="bar"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 0,
+          message: 'metric name must not be set twice: foo or bar',
+          severity: 'error',
+          to: 34,
+        },
+      ],
+    },
+    {
+      expr: '{"foo", "bar"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 0,
+          to: 14,
+          message: 'metric name must not be set twice: foo or bar',
+          severity: 'error',
+        },
+      ],
+    },
+    {
+      expr: `{'foo\`metric':'bar'}`, // eslint-disable-line
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: '{`foo\"metric`=`bar`}', // eslint-disable-line
       expectedValueType: ValueType.vector,
       expectedDiag: [],
     },

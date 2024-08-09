@@ -1,8 +1,8 @@
 <h1 align="center" style="border-bottom: none">
-    <a href="//prometheus.io" target="_blank"><img alt="Prometheus" src="/documentation/images/prometheus-logo.svg"></a><br>Prometheus
+    <a href="https://prometheus.io" target="_blank"><img alt="Prometheus" src="/documentation/images/prometheus-logo.svg"></a><br>Prometheus
 </h1>
 
-<p align="center">Visit <a href="//prometheus.io" target="_blank">prometheus.io</a> for the full documentation,
+<p align="center">Visit <a href="https://prometheus.io" target="_blank">prometheus.io</a> for the full documentation,
 examples and guides.</p>
 
 <div align="center">
@@ -14,6 +14,7 @@ examples and guides.</p>
 [![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/486/badge)](https://bestpractices.coreinfrastructure.org/projects/486)
 [![Gitpod ready-to-code](https://img.shields.io/badge/Gitpod-ready--to--code-blue?logo=gitpod)](https://gitpod.io/#https://github.com/prometheus/prometheus)
 [![Fuzzing Status](https://oss-fuzz-build-logs.storage.googleapis.com/badges/prometheus.svg)](https://bugs.chromium.org/p/oss-fuzz/issues/list?sort=-opened&can=1&q=proj:prometheus)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/prometheus/prometheus/badge)](https://securityscorecards.dev/viewer/?uri=github.com/prometheus/prometheus)
 
 </div>
 
@@ -34,7 +35,7 @@ The features that distinguish Prometheus from other metrics and monitoring syste
 
 ## Architecture overview
 
-![Architecture overview](https://cdn.jsdelivr.net/gh/prometheus/prometheus@c34257d069c630685da35bcef084632ffd5d6209/documentation/images/architecture.svg)
+![Architecture overview](documentation/images/architecture.svg)
 
 ## Install
 
@@ -148,7 +149,7 @@ We are publishing our Remote Write protobuf independently at
 You can use that as a library:
 
 ```shell
-go get go.buf.build/protocolbuffers/go/prometheus/prometheus
+go get buf.build/gen/go/prometheus/prometheus/protocolbuffers/go@latest
 ```
 
 This is experimental.

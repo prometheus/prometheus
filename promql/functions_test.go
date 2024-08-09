@@ -11,11 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package promql
+package promql_test
 
 import (
 	"context"
-	"math"
 	"testing"
 	"time"
 
@@ -23,6 +22,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
@@ -33,13 +33,13 @@ func TestDeriv(t *testing.T) {
 	// so we test it by hand.
 	storage := teststorage.New(t)
 	defer storage.Close()
-	opts := EngineOpts{
+	opts := promql.EngineOpts{
 		Logger:     nil,
 		Reg:        nil,
 		MaxSamples: 10000,
 		Timeout:    10 * time.Second,
 	}
-	engine := NewEngine(opts)
+	engine := promql.NewEngine(opts)
 
 	a := storage.Appender(context.Background())
 
@@ -51,37 +51,32 @@ func TestDeriv(t *testing.T) {
 	// https://github.com/prometheus/prometheus/issues/7180
 	for i = 0; i < 15; i++ {
 		jitter := 12 * i % 2
-		a.Append(0, metric, int64(start+interval*i+jitter), 1)
+		a.Append(0, metric, start+interval*i+jitter, 1)
 	}
 
 	require.NoError(t, a.Commit())
 
-	query, err := engine.NewInstantQuery(storage, nil, "deriv(foo[30m])", timestamp.Time(1493712846939))
+	ctx := context.Background()
+	query, err := engine.NewInstantQuery(ctx, storage, nil, "deriv(foo[30m])", timestamp.Time(1493712846939))
 	require.NoError(t, err)
 
-	result := query.Exec(context.Background())
+	result := query.Exec(ctx)
 	require.NoError(t, result.Err)
 
 	vec, _ := result.Vector()
-	require.Equal(t, 1, len(vec), "Expected 1 result, got %d", len(vec))
-	require.Equal(t, 0.0, vec[0].V, "Expected 0.0 as value, got %f", vec[0].V)
+	require.Len(t, vec, 1, "Expected 1 result, got %d", len(vec))
+	require.Equal(t, 0.0, vec[0].F, "Expected 0.0 as value, got %f", vec[0].F)
 }
 
 func TestFunctionList(t *testing.T) {
 	// Test that Functions and parser.Functions list the same functions.
-	for i := range FunctionCalls {
+	for i := range promql.FunctionCalls {
 		_, ok := parser.Functions[i]
 		require.True(t, ok, "function %s exists in promql package, but not in parser package", i)
 	}
 
 	for i := range parser.Functions {
-		_, ok := FunctionCalls[i]
+		_, ok := promql.FunctionCalls[i]
 		require.True(t, ok, "function %s exists in parser package, but not in promql package", i)
 	}
-}
-
-func TestKahanSum(t *testing.T) {
-	vals := []float64{1.0, math.Pow(10, 100), 1.0, -1 * math.Pow(10, 100)}
-	expected := 2.0
-	require.Equal(t, expected, kahanSum(vals))
 }

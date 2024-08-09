@@ -230,6 +230,8 @@ vector of fewer elements with aggregated values:
 * `bottomk` (smallest k elements by sample value)
 * `topk` (largest k elements by sample value)
 * `quantile` (calculate φ-quantile (0 ≤ φ ≤ 1) over dimensions)
+* `limitk` (sample n elements)
+* `limit_ratio` (sample elements with approximately 𝑟 ratio if `𝑟 > 0`, and the complement of such samples if `𝑟 = -(1.0 - 𝑟)`)
 
 These operators can either be used to aggregate over **all** label dimensions
 or preserve distinct dimensions by including a `without` or `by` clause. These
@@ -249,8 +251,8 @@ all other labels are preserved in the output. `by` does the opposite and drops
 labels that are not listed in the `by` clause, even if their label values are
 identical between all elements of the vector.
 
-`parameter` is only required for `count_values`, `quantile`, `topk` and
-`bottomk`.
+`parameter` is only required for `count_values`, `quantile`, `topk`,
+`bottomk`, `limitk` and `limit_ratio`.
 
 `count_values` outputs one time series per unique sample value. Each series has
 an additional label. The name of that label is given by the aggregation
@@ -261,10 +263,15 @@ time series is the number of times that sample value was present.
 the input samples, including the original labels, are returned in the result
 vector. `by` and `without` are only used to bucket the input vector.
 
+`limitk` and `limit_ratio` also return a subset of the input samples,
+including the original labels in the result vector, these are experimental
+operators that must be enabled with `--enable-feature=promql-experimental-functions`.
+
 `quantile` calculates the φ-quantile, the value that ranks at number φ*N among
 the N metric values of the dimensions aggregated over. φ is provided as the
 aggregation parameter. For example, `quantile(0.5, ...)` calculates the median,
 `quantile(0.95, ...)` the 95th percentile. For φ = `NaN`, `NaN` is returned. For φ < 0, `-Inf` is returned. For φ > 1, `+Inf` is returned.
+
 
 Example:
 
@@ -291,6 +298,33 @@ To get the 5 largest HTTP requests counts across all instances we could write:
 
     topk(5, http_requests_total)
 
+To sample 10 timeseries, for example to inspect labels and their values, we
+could write:
+
+    limitk(10, http_requests_total)
+
+To deterministically sample approximately 10% of timeseries we could write:
+
+    limit_ratio(0.1, http_requests_total)
+
+Given that `limit_ratio()` implements a deterministic sampling algorithm (based
+on labels' hash), you can get the _complement_ of the above samples, i.e.
+approximately 90%, but precisely those not returned by `limit_ratio(0.1, ...)`
+with:
+
+    limit_ratio(-0.9, http_requests_total)
+
+You can also use this feature to e.g. verify that `avg()` is a representative
+aggregation for your samples' values, by checking that the difference between
+averaging two samples' subsets is "small" when compared to the standard
+deviation.
+
+    abs(
+      avg(limit_ratio(0.5, http_requests_total))
+      -
+      avg(limit_ratio(-0.5, http_requests_total))
+    ) <= bool stddev(http_requests_total)
+
 ## Binary operator precedence
 
 The following list shows the precedence of binary operators in Prometheus, from
@@ -310,7 +344,7 @@ so `2 ^ 3 ^ 2` is equivalent to `2 ^ (3 ^ 2)`.
 ## Operators for native histograms
 
 Native histograms are an experimental feature. Ingesting native histograms has
-to be enabled via a [feature flag](../feature_flags/#native-histograms). Once
+to be enabled via a [feature flag](../../feature_flags.md#native-histograms). Once
 native histograms have been ingested, they can be queried (even after the
 feature flag has been disabled again). However, the operator support for native
 histograms is still very limited.
@@ -318,19 +352,23 @@ histograms is still very limited.
 Logical/set binary operators work as expected even if histogram samples are
 involved. They only check for the existence of a vector element and don't
 change their behavior depending on the sample type of an element (float or
-histogram).
+histogram). The `count` aggregation operator works similarly.
 
-The binary `+` operator between two native histograms and the `sum` aggregation
-operator to aggregate native histograms are fully supported. Even if the
-histograms involved have different bucket layouts, the buckets are
-automatically converted appropriately so that the operation can be
+The binary `+` and `-` operators between two native histograms and the `sum`
+and `avg` aggregation operators to aggregate native histograms are fully
+supported. Even if the histograms involved have different bucket layouts, the
+buckets are automatically converted appropriately so that the operation can be
 performed. (With the currently supported bucket schemas, that's always
-possible.) If either operator has to sum up a mix of histogram samples and
+possible.) If either operator has to aggregate a mix of histogram samples and
 float samples, the corresponding vector element is removed from the output
 vector entirely.
 
-All other operators do not behave in a meaningful way. They either treat the
-histogram sample as if it were a float sample of value 0, or (in case of
-arithmetic operations between a scalar and a vector) they leave the histogram
-sample unchanged. This behavior will change to a meaningful one before native
-histograms are a stable feature.
+The binary `*` operator works between a native histogram and a float in any
+order, while the binary `/` operator can be used between a native histogram
+and a float in that exact order.
+
+All other operators (and unmentioned cases for the above operators) do not
+behave in a meaningful way. They either treat the histogram sample as if it
+were a float sample of value 0, or (in case of arithmetic operations between a
+scalar and a vector) they leave the histogram sample unchanged. This behavior
+will change to a meaningful one before native histograms are a stable feature.

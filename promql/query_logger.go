@@ -16,6 +16,9 @@ package promql
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,8 +34,11 @@ type ActiveQueryTracker struct {
 	mmapedFile    []byte
 	getNextIndex  chan int
 	logger        log.Logger
+	closer        io.Closer
 	maxConcurrent int
 }
+
+var _ io.Closer = &ActiveQueryTracker{}
 
 type Entry struct {
 	Query     string `json:"query"`
@@ -81,7 +87,24 @@ func logUnfinishedQueries(filename string, filesize int, logger log.Logger) {
 	}
 }
 
-func getMMapedFile(filename string, filesize int, logger log.Logger) ([]byte, error) {
+type mmapedFile struct {
+	f io.Closer
+	m mmap.MMap
+}
+
+func (f *mmapedFile) Close() error {
+	err := f.m.Unmap()
+	if err != nil {
+		err = fmt.Errorf("mmapedFile: unmapping: %w", err)
+	}
+	if fErr := f.f.Close(); fErr != nil {
+		return errors.Join(fmt.Errorf("close mmapedFile.f: %w", fErr), err)
+	}
+
+	return err
+}
+
+func getMMapedFile(filename string, filesize int, logger log.Logger) ([]byte, io.Closer, error) {
 	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o666)
 	if err != nil {
 		absPath, pathErr := filepath.Abs(filename)
@@ -89,22 +112,24 @@ func getMMapedFile(filename string, filesize int, logger log.Logger) ([]byte, er
 			absPath = filename
 		}
 		level.Error(logger).Log("msg", "Error opening query log file", "file", absPath, "err", err)
-		return nil, err
+		return nil, nil, err
 	}
 
 	err = file.Truncate(int64(filesize))
 	if err != nil {
+		file.Close()
 		level.Error(logger).Log("msg", "Error setting filesize.", "filesize", filesize, "err", err)
-		return nil, err
+		return nil, nil, err
 	}
 
 	fileAsBytes, err := mmap.Map(file, mmap.RDWR, 0)
 	if err != nil {
+		file.Close()
 		level.Error(logger).Log("msg", "Failed to mmap", "file", filename, "Attempted size", filesize, "err", err)
-		return nil, err
+		return nil, nil, err
 	}
 
-	return fileAsBytes, err
+	return fileAsBytes, &mmapedFile{f: file, m: fileAsBytes}, err
 }
 
 func NewActiveQueryTracker(localStoragePath string, maxConcurrent int, logger log.Logger) *ActiveQueryTracker {
@@ -116,7 +141,7 @@ func NewActiveQueryTracker(localStoragePath string, maxConcurrent int, logger lo
 	filename, filesize := filepath.Join(localStoragePath, "queries.active"), 1+maxConcurrent*entrySize
 	logUnfinishedQueries(filename, filesize, logger)
 
-	fileAsBytes, err := getMMapedFile(filename, filesize, logger)
+	fileAsBytes, closer, err := getMMapedFile(filename, filesize, logger)
 	if err != nil {
 		panic("Unable to create mmap-ed active query log")
 	}
@@ -124,6 +149,7 @@ func NewActiveQueryTracker(localStoragePath string, maxConcurrent int, logger lo
 	copy(fileAsBytes, "[")
 	activeQueryTracker := ActiveQueryTracker{
 		mmapedFile:    fileAsBytes,
+		closer:        closer,
 		getNextIndex:  make(chan int, maxConcurrent),
 		logger:        logger,
 		maxConcurrent: maxConcurrent,
@@ -197,4 +223,15 @@ func (tracker ActiveQueryTracker) Insert(ctx context.Context, query string) (int
 	case <-ctx.Done():
 		return 0, ctx.Err()
 	}
+}
+
+// Close closes tracker.
+func (tracker *ActiveQueryTracker) Close() error {
+	if tracker == nil || tracker.closer == nil {
+		return nil
+	}
+	if err := tracker.closer.Close(); err != nil {
+		return fmt.Errorf("close ActiveQueryTracker.closer: %w", err)
+	}
+	return nil
 }

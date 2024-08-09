@@ -14,6 +14,7 @@ Tooling for the Prometheus monitoring system.
 | --- | --- |
 | <code class="text-nowrap">-h</code>, <code class="text-nowrap">--help</code> | Show context-sensitive help (also try --help-long and --help-man). |
 | <code class="text-nowrap">--version</code> | Show application version. |
+| <code class="text-nowrap">--experimental</code> | Enable experimental commands. |
 | <code class="text-nowrap">--enable-feature</code> | Comma separated feature names to enable (only PromQL related and no-default-scrape-port). See https://prometheus.io/docs/prometheus/latest/feature_flags/ for the options and more details. |
 
 
@@ -27,8 +28,10 @@ Tooling for the Prometheus monitoring system.
 | check | Check the resources for validity. |
 | query | Run query against a Prometheus server. |
 | debug | Fetch debug information. |
+| push | Push to a Prometheus server. |
 | test | Unit testing. |
 | tsdb | Run tsdb commands. |
+| promql | PromQL formatting and editing. Requires the --experimental flag. |
 
 
 
@@ -180,9 +183,9 @@ Check if the rule files are valid or not.
 
 ###### Arguments
 
-| Argument | Description | Required |
-| --- | --- | --- |
-| rule-files | The rule files to check. | Yes |
+| Argument | Description |
+| --- | --- |
+| rule-files | The rule files to check, default is read from standard input. |
 
 
 
@@ -321,6 +324,25 @@ Run labels query.
 
 
 
+##### `promtool query analyze`
+
+Run queries against your Prometheus to analyze the usage pattern of certain metrics.
+
+
+
+###### Flags
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| <code class="text-nowrap">--server</code> | Prometheus server to query. |  |
+| <code class="text-nowrap">--type</code> | Type of metric: histogram. |  |
+| <code class="text-nowrap">--duration</code> | Time frame to analyze. | `1h` |
+| <code class="text-nowrap">--time</code> | Query time (RFC3339 or Unix timestamp), defaults to now. |  |
+| <code class="text-nowrap">--match</code> | Series selector. Can be specified multiple times. |  |
+
+
+
+
 ### `promtool debug`
 
 Fetch debug information.
@@ -372,6 +394,48 @@ Fetch all debug information.
 
 
 
+### `promtool push`
+
+Push to a Prometheus server.
+
+
+
+#### Flags
+
+| Flag | Description |
+| --- | --- |
+| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. |
+
+
+
+
+##### `promtool push metrics`
+
+Push metrics to a prometheus remote write (for testing purpose only).
+
+
+
+###### Flags
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| <code class="text-nowrap">--label</code> | Label to attach to metrics. Can be specified multiple times. | `job=promtool` |
+| <code class="text-nowrap">--timeout</code> | The time to wait for pushing metrics. | `30s` |
+| <code class="text-nowrap">--header</code> | Prometheus remote write header. |  |
+
+
+
+
+###### Arguments
+
+| Argument | Description | Required |
+| --- | --- | --- |
+| remote-write-url | Prometheus remote write url to push metrics. | Yes |
+| metric-files | The metric files to push, default is read from standard input. |  |
+
+
+
+
 ### `promtool test`
 
 Unit testing.
@@ -381,6 +445,16 @@ Unit testing.
 ##### `promtool test rules`
 
 Unit tests for rules.
+
+
+
+###### Flags
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| <code class="text-nowrap">--run</code> | If set, will only run test groups whose names match the regular expression. Can be specified multiple times. |  |
+| <code class="text-nowrap">--diff</code> | [Experimental] Print colored differential output between expected & received output. | `false` |
+
 
 
 
@@ -443,6 +517,7 @@ Analyze churn, label pair cardinality and compaction efficiency.
 | --- | --- | --- |
 | <code class="text-nowrap">--limit</code> | How many items to show in each list. | `20` |
 | <code class="text-nowrap">--extended</code> | Run extended analysis. |  |
+| <code class="text-nowrap">--match</code> | Series selector to analyze. Only 1 set of matchers is supported now. |  |
 
 
 
@@ -491,9 +566,37 @@ Dump samples from a TSDB.
 
 | Flag | Description | Default |
 | --- | --- | --- |
+| <code class="text-nowrap">--sandbox-dir-root</code> | Root directory where a sandbox directory would be created in case WAL replay generates chunks. The sandbox directory is cleaned up at the end. | `data/` |
 | <code class="text-nowrap">--min-time</code> | Minimum timestamp to dump. | `-9223372036854775808` |
 | <code class="text-nowrap">--max-time</code> | Maximum timestamp to dump. | `9223372036854775807` |
-| <code class="text-nowrap">--match</code> | Series selector. | `{__name__=~'(?s:.*)'}` |
+| <code class="text-nowrap">--match</code> | Series selector. Can be specified multiple times. | `{__name__=~'(?s:.*)'}` |
+
+
+
+
+###### Arguments
+
+| Argument | Description | Default |
+| --- | --- | --- |
+| db path | Database path (default is data/). | `data/` |
+
+
+
+
+##### `promtool tsdb dump-openmetrics`
+
+[Experimental] Dump samples from a TSDB into OpenMetrics text format, excluding native histograms and staleness markers, which are not representable in OpenMetrics.
+
+
+
+###### Flags
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| <code class="text-nowrap">--sandbox-dir-root</code> | Root directory where a sandbox directory would be created in case WAL replay generates chunks. The sandbox directory is cleaned up at the end. | `data/` |
+| <code class="text-nowrap">--min-time</code> | Minimum timestamp to dump. | `-9223372036854775808` |
+| <code class="text-nowrap">--max-time</code> | Maximum timestamp to dump. | `9223372036854775807` |
+| <code class="text-nowrap">--match</code> | Series selector. Can be specified multiple times. | `{__name__=~'(?s:.*)'}` |
 
 
 
@@ -564,5 +667,74 @@ Create blocks of data for new recording rules.
 | Argument | Description | Required |
 | --- | --- | --- |
 | rule-files | A list of one or more files containing recording rules to be backfilled. All recording rules listed in the files will be backfilled. Alerting rules are not evaluated. | Yes |
+
+
+
+
+### `promtool promql`
+
+PromQL formatting and editing. Requires the `--experimental` flag.
+
+
+
+##### `promtool promql format`
+
+Format PromQL query to pretty printed form.
+
+
+
+###### Arguments
+
+| Argument | Description | Required |
+| --- | --- | --- |
+| query | PromQL query. | Yes |
+
+
+
+
+##### `promtool promql label-matchers`
+
+Edit label matchers contained within an existing PromQL query.
+
+
+
+##### `promtool promql label-matchers set`
+
+Set a label matcher in the query.
+
+
+
+###### Flags
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| <code class="text-nowrap">-t</code>, <code class="text-nowrap">--type</code> | Type of the label matcher to set. | `=` |
+
+
+
+
+###### Arguments
+
+| Argument | Description | Required |
+| --- | --- | --- |
+| query | PromQL query. | Yes |
+| name | Name of the label matcher to set. | Yes |
+| value | Value of the label matcher to set. | Yes |
+
+
+
+
+##### `promtool promql label-matchers delete`
+
+Delete a label from the query.
+
+
+
+###### Arguments
+
+| Argument | Description | Required |
+| --- | --- | --- |
+| query | PromQL query. | Yes |
+| name | Name of the label to delete. | Yes |
 
 

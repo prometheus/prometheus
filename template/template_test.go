@@ -23,6 +23,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 )
@@ -38,6 +39,12 @@ func TestTemplateExpansion(t *testing.T) {
 			// Simple value.
 			text:   "{{ 1 }}",
 			output: "1",
+		},
+		{
+			// Native histogram value.
+			text:   "{{ . | value }}",
+			input:  &sample{Value: &histogram.FloatHistogram{Count: 3, Sum: 10}},
+			output: (&histogram.FloatHistogram{Count: 3, Sum: 10}).String(),
 		},
 		{
 			// Non-ASCII space (not allowed in text/template, see https://github.com/golang/go/blob/master/src/text/template/parse/lex.go#L98)
@@ -70,7 +77,7 @@ func TestTemplateExpansion(t *testing.T) {
 		{
 			text:        "{{ query \"1.5\" | first | value }}",
 			output:      "1.5",
-			queryResult: promql.Vector{{Point: promql.Point{T: 0, V: 1.5}}},
+			queryResult: promql.Vector{{T: 0, F: 1.5}},
 		},
 		{
 			// Get value from query.
@@ -78,10 +85,23 @@ func TestTemplateExpansion(t *testing.T) {
 			queryResult: promql.Vector{
 				{
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
-					Point:  promql.Point{T: 0, V: 11},
+					T:      0,
+					F:      11,
 				},
 			},
 			output: "11",
+		},
+		{
+			// Get value of a native histogram from query.
+			text: "{{ query \"metric{instance='a'}\" | first | value }}",
+			queryResult: promql.Vector{
+				{
+					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
+					T:      0,
+					H:      &histogram.FloatHistogram{Count: 3, Sum: 10},
+				},
+			},
+			output: (&histogram.FloatHistogram{Count: 3, Sum: 10}).String(),
 		},
 		{
 			// Get label from query.
@@ -90,7 +110,8 @@ func TestTemplateExpansion(t *testing.T) {
 			queryResult: promql.Vector{
 				{
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
-					Point:  promql.Point{T: 0, V: 11},
+					T:      0,
+					F:      11,
 				},
 			},
 			output: "a",
@@ -101,7 +122,8 @@ func TestTemplateExpansion(t *testing.T) {
 			queryResult: promql.Vector{
 				{
 					Metric: labels.FromStrings(labels.MetricName, "metric", "__value__", "a"),
-					Point:  promql.Point{T: 0, V: 11},
+					T:      0,
+					F:      11,
 				},
 			},
 			output: "a",
@@ -112,7 +134,8 @@ func TestTemplateExpansion(t *testing.T) {
 			queryResult: promql.Vector{
 				{
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
-					Point:  promql.Point{T: 0, V: 11},
+					T:      0,
+					F:      11,
 				},
 			},
 			output: "",
@@ -123,7 +146,8 @@ func TestTemplateExpansion(t *testing.T) {
 			queryResult: promql.Vector{
 				{
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
-					Point:  promql.Point{T: 0, V: 11},
+					T:      0,
+					F:      11,
 				},
 			},
 			output: "",
@@ -133,7 +157,8 @@ func TestTemplateExpansion(t *testing.T) {
 			queryResult: promql.Vector{
 				{
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
-					Point:  promql.Point{T: 0, V: 11},
+					T:      0,
+					F:      11,
 				},
 			},
 			output: "",
@@ -145,10 +170,12 @@ func TestTemplateExpansion(t *testing.T) {
 			queryResult: promql.Vector{
 				{
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "b"),
-					Point:  promql.Point{T: 0, V: 21},
+					T:      0,
+					F:      21,
 				}, {
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
-					Point:  promql.Point{T: 0, V: 11},
+					T:      0,
+					F:      11,
 				},
 			},
 			output: "a:11: b:21: ",

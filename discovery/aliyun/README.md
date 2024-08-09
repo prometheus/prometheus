@@ -1,6 +1,6 @@
-## 阿里云ECS服务发现配置
+## Aliyun ECS service discovery config
 
-### 样例prometheus.yaml
+### prometheus-example.yaml
 
 ```yaml
 global:
@@ -14,42 +14,45 @@ scrape_configs:
   scrape_timeout: 10s
   metrics_path: /metrics
   scheme: https
-  aliyun_sd_configs:
-    - port:  8888                                 # 服务发现后的prometheus抓取采集点port
-      user_id: <aliyun userId>                    # Aliyun 用户身份表示id userId, 填写会为discovery target带上__meta_ecs_user_id的label，可不填写
+  ecs_sd_configs:
+    - port:  8888                                 # Prometheus crawling collection point port after service discovery
+      user_id: <aliyun userId>                    # Aliyun user id, optional, filling this in will add the label __meta_ecs_user_id to the discovery target.
       refresh_interval: 30s
-      region_id: cn-hangzhou                      # 设置获取ECS的regionId
-      access_key: <aliyun ak>                     # Aliyun 鉴权字段 AK
-      access_key_secret: <aliyun sk>              # Aliyun 鉴权字段 SK
-      tag_filters:                                # Aliyun ECS tag filter， 按tagKey tagValue匹配筛选实例
+      region_id: cn-hangzhou                      # the region of ecs
+      access_key: <aliyun ak>                     # Aliyun AccessKeyID
+      access_key_secret: <aliyun sk>              # Aliyun AccessKeySecret
+      tag_filters:                                # Aliyun ECS tag filter
        - key: 'testK'
          values: ['*', 'test1*']
        - key: 'testM'
          values: ['test2*']
-#      limit: 40                                  # 从接口取到的最大实例个数限制，不填为获取所有ecs实例
+#     limit: 100                                  # The maximum number of instances to query, default value is 100, get all instances when less than zero.
 
-# relabel为可选配置，用于手动筛选实例
+# Optional, for manual screening of instances
   relabel_configs:
-
-#   1. 手动设置使用ECS的哪种IP
-#   默认ECS会按 经典网络公网IP > 经典网络内网IP > VPC网络公网IP > VPC网络内网IP 的顺序查找并赋予此ECS的采集IP，此时的采集点port为aliyun_sd_configs.port设置
-#   用户可用过一下relabel设置，手动设置ECS的采集IP
-    - source_labels: [__meta_ecs_public_ip]       # 经典网络公网ip __meta_ecs_public_ip
-#    - source_labels: [__meta_ecs_inner_ip]       # 经典网络内网ip __meta_ecs_inner_ip
-#    - source_labels: [__meta_ecs_eip]            # VPC网络 公网ip __meta_ecs_eip
-#    - source_labels: [__meta_ecs_private_ip]     # VPC网络 内网ip __meta_ecs_private_ip
+    
+# 1. Manually set the IP address of the ECS
+#    By default, the ECS will search and assign the collection IP to this ECS in the order of 
+#    classic network public IP > classic network private IP > VPC network public IP > VPC network private IP.
+#    The collection point port is set by aliyun_sd_configs.port.
+    - source_labels: [__meta_ecs_public_ip]      # classic network public IP
+#   - source_labels: [__meta_ecs_inner_ip]       # classic network private IP
+#   - source_labels: [__meta_ecs_eip]            # VPC network public IP
+#   - source_labels: [__meta_ecs_private_ip]     # VPC network private IP
       regex: (.*)
       target_label: __address__
-      replacement: $1:<port>                      # 注意此处为手动设置relabel时的采集port
+      replacement: $1:<port>                      # Set the collection port when relabeling
 
-#   2. 按ECS属性过滤 keep为只保留此条件筛选到的target，drop为过滤掉此条件筛选到的target
-#   __meta_ecs_instance_id          实例id
-#   __meta_ecs_region_id            实例regionId 注意配置中aliyun_sd_configs.region_id决定了获取的ECS的regionId
-#   __meta_ecs_status               实例状态 Running：运行中、Starting：启动中、Stopping：停止中、Stopped：已停止
-#   __meta_ecs_zone_id              实例区域id
-#   __meta_ecs_network_type         实例网络类型  classic：经典网络、vpc：VPC
-#   __meta_ecs_tag_<TagKey>         实例tag TagKey为tag的名
-    - source_labels:  ["__meta_ecs_instance_id"]
-      regex: ".+"       # or other value regex
-      action: keep      # keep / drop
+# 2. Filter by ECS attribute 
+#    [keep] means only keep the target filtered by this condition, 
+#    [drop] means filter out the target filtered by this condition.
+#     __meta_ecs_instance_id          instance id
+#     __meta_ecs_region_id            instance region, Note that aliyun_sd_configs.region_id in the configuration determines the region of the ECS query
+#     __meta_ecs_status               instance status, including Running, Starting, Stopping and Stopped
+#     __meta_ecs_zone_id              instance zone id
+#     __meta_ecs_network_type         instance network type, including  classic and vpc
+#     __meta_ecs_tag_<TagKey>         instance tag
+#   - source_labels:  ["__meta_ecs_instance_id"]
+#     regex: ".+"       # or other value regex
+#     action: keep      # keep / drop
 ```

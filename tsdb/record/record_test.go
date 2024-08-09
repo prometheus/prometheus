@@ -18,18 +18,18 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestRecord_EncodeDecode(t *testing.T) {
 	var enc Encoder
-	var dec Decoder
+	dec := NewDecoder(labels.NewSymbolTable())
 
 	series := []RefSeries{
 		{
@@ -45,7 +45,7 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	}
 	decSeries, err := dec.Series(enc.Series(series, nil), nil)
 	require.NoError(t, err)
-	require.Equal(t, series, decSeries)
+	testutil.RequireEqual(t, series, decSeries)
 
 	metadata := []RefMetadata{
 		{
@@ -102,13 +102,13 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	}, decTstones)
 
 	exemplars := []RefExemplar{
-		{Ref: 0, T: 12423423, V: 1.2345, Labels: labels.FromStrings("traceID", "qwerty")},
-		{Ref: 123, T: -1231, V: -123, Labels: labels.FromStrings("traceID", "asdf")},
-		{Ref: 2, T: 0, V: 99999, Labels: labels.FromStrings("traceID", "zxcv")},
+		{Ref: 0, T: 12423423, V: 1.2345, Labels: labels.FromStrings("trace_id", "qwerty")},
+		{Ref: 123, T: -1231, V: -123, Labels: labels.FromStrings("trace_id", "asdf")},
+		{Ref: 2, T: 0, V: 99999, Labels: labels.FromStrings("trace_id", "zxcv")},
 	}
 	decExemplars, err := dec.Exemplars(enc.Exemplars(exemplars, nil), nil)
 	require.NoError(t, err)
-	require.Equal(t, exemplars, decExemplars)
+	testutil.RequireEqual(t, exemplars, decExemplars)
 
 	histograms := []RefHistogramSample{
 		{
@@ -159,7 +159,7 @@ func TestRecord_EncodeDecode(t *testing.T) {
 		floatHistograms[i] = RefFloatHistogramSample{
 			Ref: h.Ref,
 			T:   h.T,
-			FH:  h.H.ToFloat(),
+			FH:  h.H.ToFloat(nil),
 		}
 	}
 	decFloatHistograms, err := dec.FloatHistogramSamples(enc.FloatHistogramSamples(floatHistograms, nil), nil)
@@ -187,7 +187,7 @@ func TestRecord_EncodeDecode(t *testing.T) {
 // Bugfix check for pull/521 and pull/523.
 func TestRecord_Corrupted(t *testing.T) {
 	var enc Encoder
-	var dec Decoder
+	dec := NewDecoder(labels.NewSymbolTable())
 
 	t.Run("Test corrupted series record", func(t *testing.T) {
 		series := []RefSeries{
@@ -209,7 +209,7 @@ func TestRecord_Corrupted(t *testing.T) {
 
 		corrupted := enc.Samples(samples, nil)[:8]
 		_, err := dec.Samples(corrupted, nil)
-		require.Equal(t, errors.Cause(err), encoding.ErrInvalidSize)
+		require.ErrorIs(t, err, encoding.ErrInvalidSize)
 	})
 
 	t.Run("Test corrupted tombstone record", func(t *testing.T) {
@@ -227,12 +227,12 @@ func TestRecord_Corrupted(t *testing.T) {
 
 	t.Run("Test corrupted exemplar record", func(t *testing.T) {
 		exemplars := []RefExemplar{
-			{Ref: 0, T: 12423423, V: 1.2345, Labels: labels.FromStrings("traceID", "asdf")},
+			{Ref: 0, T: 12423423, V: 1.2345, Labels: labels.FromStrings("trace_id", "asdf")},
 		}
 
 		corrupted := enc.Exemplars(exemplars, nil)[:8]
 		_, err := dec.Exemplars(corrupted, nil)
-		require.Equal(t, errors.Cause(err), encoding.ErrInvalidSize)
+		require.ErrorIs(t, err, encoding.ErrInvalidSize)
 	})
 
 	t.Run("Test corrupted metadata record", func(t *testing.T) {
@@ -242,7 +242,7 @@ func TestRecord_Corrupted(t *testing.T) {
 
 		corrupted := enc.Metadata(meta, nil)[:8]
 		_, err := dec.Metadata(corrupted, nil)
-		require.Equal(t, errors.Cause(err), encoding.ErrInvalidSize)
+		require.ErrorIs(t, err, encoding.ErrInvalidSize)
 	})
 
 	t.Run("Test corrupted histogram record", func(t *testing.T) {
@@ -267,7 +267,7 @@ func TestRecord_Corrupted(t *testing.T) {
 
 		corrupted := enc.HistogramSamples(histograms, nil)[:8]
 		_, err := dec.HistogramSamples(corrupted, nil)
-		require.Equal(t, errors.Cause(err), encoding.ErrInvalidSize)
+		require.ErrorIs(t, err, encoding.ErrInvalidSize)
 	})
 }
 

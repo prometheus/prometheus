@@ -28,48 +28,6 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
-var (
-	failedConfigs = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "prometheus_sd_failed_configs",
-			Help: "Current number of service discovery configurations that failed to load.",
-		},
-		[]string{"name"},
-	)
-	discoveredTargets = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "prometheus_sd_discovered_targets",
-			Help: "Current number of discovered targets.",
-		},
-		[]string{"name", "config"},
-	)
-	receivedUpdates = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "prometheus_sd_received_updates_total",
-			Help: "Total number of update events received from the SD providers.",
-		},
-		[]string{"name"},
-	)
-	delayedUpdates = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "prometheus_sd_updates_delayed_total",
-			Help: "Total number of update events that couldn't be sent immediately.",
-		},
-		[]string{"name"},
-	)
-	sentUpdates = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "prometheus_sd_updates_total",
-			Help: "Total number of update events sent to the SD consumers.",
-		},
-		[]string{"name"},
-	)
-)
-
-func RegisterMetrics() {
-	prometheus.MustRegister(failedConfigs, discoveredTargets, receivedUpdates, delayedUpdates, sentUpdates)
-}
-
 type poolKey struct {
 	setName  string
 	provider string
@@ -92,7 +50,7 @@ type Provider struct {
 	newSubs map[string]struct{}
 }
 
-// Discoverer return the Discoverer of the provider
+// Discoverer return the Discoverer of the provider.
 func (p *Provider) Discoverer() Discoverer {
 	return p.d
 }
@@ -106,8 +64,24 @@ func (p *Provider) Config() interface{} {
 	return p.config
 }
 
+// Registers the metrics needed for SD mechanisms.
+// Does not register the metrics for the Discovery Manager.
+// TODO(ptodev): Add ability to unregister the metrics?
+func CreateAndRegisterSDMetrics(reg prometheus.Registerer) (map[string]DiscovererMetrics, error) {
+	// Some SD mechanisms use the "refresh" package, which has its own metrics.
+	refreshSdMetrics := NewRefreshMetrics(reg)
+
+	// Register the metrics specific for each SD mechanism, and the ones for the refresh package.
+	sdMetrics, err := RegisterSDMetrics(reg, refreshSdMetrics)
+	if err != nil {
+		return nil, fmt.Errorf("failed to register service discovery metrics: %w", err)
+	}
+
+	return sdMetrics, nil
+}
+
 // NewManager is the Discovery Manager constructor.
-func NewManager(ctx context.Context, logger log.Logger, options ...func(*Manager)) *Manager {
+func NewManager(ctx context.Context, logger log.Logger, registerer prometheus.Registerer, sdMetrics map[string]DiscovererMetrics, options ...func(*Manager)) *Manager {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -118,10 +92,22 @@ func NewManager(ctx context.Context, logger log.Logger, options ...func(*Manager
 		ctx:         ctx,
 		updatert:    5 * time.Second,
 		triggerSend: make(chan struct{}, 1),
+		registerer:  registerer,
+		sdMetrics:   sdMetrics,
 	}
 	for _, option := range options {
 		option(mgr)
 	}
+
+	// Register the metrics.
+	// We have to do this after setting all options, so that the name of the Manager is set.
+	if metrics, err := NewManagerMetrics(registerer, mgr.name); err == nil {
+		mgr.metrics = metrics
+	} else {
+		level.Error(logger).Log("msg", "Failed to create discovery manager metrics", "manager", mgr.name, "err", err)
+		return nil
+	}
+
 	return mgr
 }
 
@@ -131,6 +117,16 @@ func Name(n string) func(*Manager) {
 		m.mtx.Lock()
 		defer m.mtx.Unlock()
 		m.name = n
+	}
+}
+
+// Updatert sets the updatert of the manager.
+// Used to speed up tests.
+func Updatert(u time.Duration) func(*Manager) {
+	return func(m *Manager) {
+		m.mtx.Lock()
+		defer m.mtx.Unlock()
+		m.updatert = u
 	}
 }
 
@@ -170,6 +166,12 @@ type Manager struct {
 
 	// lastProvider counts providers registered during Manager's lifetime.
 	lastProvider uint
+
+	// A registerer for all service discovery metrics.
+	registerer prometheus.Registerer
+
+	metrics   *Metrics
+	sdMetrics map[string]DiscovererMetrics
 }
 
 // Providers returns the currently configured SD providers.
@@ -177,14 +179,19 @@ func (m *Manager) Providers() []*Provider {
 	return m.providers
 }
 
+// UnregisterMetrics unregisters manager metrics. It does not unregister
+// service discovery or refresh metrics, whose lifecycle is managed independent
+// of the discovery Manager.
+func (m *Manager) UnregisterMetrics() {
+	m.metrics.Unregister(m.registerer)
+}
+
 // Run starts the background processing.
 func (m *Manager) Run() error {
 	go m.sender()
-	for range m.ctx.Done() {
-		m.cancelDiscoverers()
-		return m.ctx.Err()
-	}
-	return nil
+	<-m.ctx.Done()
+	m.cancelDiscoverers()
+	return m.ctx.Err()
 }
 
 // SyncCh returns a read only channel used by all the clients to receive target updates.
@@ -202,7 +209,7 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 	for name, scfg := range cfg {
 		failedCount += m.registerProviders(scfg, name)
 	}
-	failedConfigs.WithLabelValues(m.name).Set(float64(failedCount))
+	m.metrics.FailedConfigs.Set(float64(failedCount))
 
 	var (
 		wg sync.WaitGroup
@@ -232,13 +239,13 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 			// Remove obsolete subs' targets.
 			if _, ok := prov.newSubs[s]; !ok {
 				delete(m.targets, poolKey{s, prov.name})
-				discoveredTargets.DeleteLabelValues(m.name, s)
+				m.metrics.DiscoveredTargets.DeleteLabelValues(m.name, s)
 			}
 		}
 		// Set metrics and targets for new subs.
 		for s := range prov.newSubs {
 			if _, ok := prov.subs[s]; !ok {
-				discoveredTargets.WithLabelValues(m.name, s).Set(0)
+				m.metrics.DiscoveredTargets.WithLabelValues(s).Set(0)
 			}
 			if l := len(refTargets); l > 0 {
 				m.targets[poolKey{s, prov.name}] = make(map[string]*targetgroup.Group, l)
@@ -318,7 +325,7 @@ func (m *Manager) updater(ctx context.Context, p *Provider, updates chan []*targ
 		case <-ctx.Done():
 			return
 		case tgs, ok := <-updates:
-			receivedUpdates.WithLabelValues(m.name).Inc()
+			m.metrics.ReceivedUpdates.Inc()
 			if !ok {
 				level.Debug(m.logger).Log("msg", "Discoverer channel closed", "provider", p.name)
 				// Wait for provider cancellation to ensure targets are cleaned up when expected.
@@ -351,11 +358,11 @@ func (m *Manager) sender() {
 		case <-ticker.C: // Some discoverers send updates too often, so we throttle these with the ticker.
 			select {
 			case <-m.triggerSend:
-				sentUpdates.WithLabelValues(m.name).Inc()
+				m.metrics.SentUpdates.Inc()
 				select {
 				case m.syncCh <- m.allGroups():
 				default:
-					delayedUpdates.WithLabelValues(m.name).Inc()
+					m.metrics.DelayedUpdates.Inc()
 					level.Debug(m.logger).Log("msg", "Discovery receiver's channel was full so will retry the next cycle")
 					select {
 					case m.triggerSend <- struct{}{}:
@@ -407,7 +414,7 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 		}
 	}
 	for setName, v := range n {
-		discoveredTargets.WithLabelValues(m.name, setName).Set(float64(v))
+		m.metrics.DiscoveredTargets.WithLabelValues(setName).Set(float64(v))
 	}
 	return tSets
 }
@@ -430,6 +437,7 @@ func (m *Manager) registerProviders(cfgs Configs, setName string) int {
 		d, err := cfg.NewDiscoverer(DiscovererOptions{
 			Logger:            log.With(m.logger, "discovery", typ, "config", setName),
 			HTTPClientOptions: m.httpOpts,
+			Metrics:           m.sdMetrics[typ],
 		})
 		if err != nil {
 			level.Error(m.logger).Log("msg", "Cannot create service discovery", "err", err, "type", typ, "config", setName)

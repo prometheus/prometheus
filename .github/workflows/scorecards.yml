@@ -1,0 +1,50 @@
+# Copyright 2022 Google LLC
+
+name: Scorecards supply-chain security
+on:
+  pull_request:
+  push:
+    branches: [ "main" ]
+
+# Declare default permissions as read only.
+permissions: read-all
+
+jobs:
+  analysis:
+    name: Scorecards analysis
+    runs-on: ubuntu-latest
+    permissions:
+      # Needed to upload the results to code-scanning dashboard.
+      security-events: write
+      # Used to receive a badge.
+      id-token: write
+
+    steps:
+      - name: "Checkout code"
+        uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # tag=v4.1.6
+        with:
+          persist-credentials: false
+
+      - name: "Run analysis"
+        uses: ossf/scorecard-action@dc50aa9510b46c811795eb24b2f1ba02a914e534 # tag=v2.3.3
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          # Publish the results for public repositories to enable scorecard badges. For more details, see
+          # https://github.com/ossf/scorecard-action#publishing-results.
+          publish_results: ${{ github.event_name != 'pull_request' }}
+
+      # Upload the results as artifacts (optional). Commenting out will disable uploads of run results in SARIF
+      # format to the repository Actions tab.
+      - name: "Upload artifact"
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # tag=v4.3.3
+        with:
+          name: SARIF file
+          path: results.sarif
+          retention-days: 5
+
+      # Upload the results to GitHub's code scanning dashboard.
+      - name: "Upload to code-scanning"
+        uses: github/codeql-action/upload-sarif@b611370bb5703a7efb587f9d136a52ea24c5c38c # tag=v3.25.11
+        with:
+          sarif_file: results.sarif

@@ -21,6 +21,34 @@
             },
           },
           {
+            alert: 'PrometheusSDRefreshFailure',
+            expr: |||
+              increase(prometheus_sd_refresh_failures_total{%(prometheusSelector)s}[10m]) > 0
+            ||| % $._config,
+            'for': '20m',
+            labels: {
+              severity: 'warning',
+            },
+            annotations: {
+              summary: 'Failed Prometheus SD refresh.',
+              description: 'Prometheus %(prometheusName)s has failed to refresh SD with mechanism {{$labels.mechanism}}.' % $._config,
+            },
+          },
+          {
+            alert: 'PrometheusKubernetesListWatchFailures',
+            expr: |||
+              increase(prometheus_sd_kubernetes_failures_total{%(prometheusSelector)s}[5m]) > 0
+            ||| % $._config,
+            'for': '15m',
+            labels: {
+              severity: 'warning',
+            },
+            annotations: {
+              summary: 'Requests in Kubernetes SD are failing.',
+              description: 'Kubernetes service discovery of Prometheus %(prometheusName)s is experiencing {{ printf "%%.0f" $value }} failures with LIST/WATCH requests to the Kubernetes API in the last 5 minutes.' % $._config,
+            },
+          },
+          {
             alert: 'PrometheusNotificationQueueRunningFull',
             expr: |||
               # Without min_over_time, failed scrapes could create false negatives, see
@@ -108,7 +136,7 @@
             alert: 'PrometheusNotIngestingSamples',
             expr: |||
               (
-                rate(prometheus_tsdb_head_samples_appended_total{%(prometheusSelector)s}[5m]) <= 0
+                sum without(type) (rate(prometheus_tsdb_head_samples_appended_total{%(prometheusSelector)s}[5m])) <= 0
               and
                 (
                   sum without(scrape_job) (prometheus_target_metadata_cache_entries{%(prometheusSelector)s}) > 0

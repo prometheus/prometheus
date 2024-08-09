@@ -13,6 +13,7 @@ interface RulesContentProps {
 interface RuleGroup {
   name: string;
   file: string;
+  interval: string;
   rules: Rule[];
   evaluationTime: string;
   lastEvaluation: string;
@@ -58,12 +59,15 @@ export const RulesContent: FC<RulesContentProps> = ({ response }) => {
             <Table bordered key={i}>
               <thead>
                 <tr>
-                  <td colSpan={3}>
+                  <td>
                     <a href={'#' + g.name}>
                       <h4 id={g.name} className="text-break">
                         {g.name}
                       </h4>
                     </a>
+                  </td>
+                  <td colSpan={2}>
+                    <h4>Interval: {humanizeDuration(parseFloat(g.interval) * 1000)}</h4>
                   </td>
                   <td>
                     <h4>{formatRelative(g.lastEvaluation, now())}</h4>

@@ -22,19 +22,13 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/util/strutil"
-)
-
-var (
-	epAddCount    = eventCount.WithLabelValues("endpoints", "add")
-	epUpdateCount = eventCount.WithLabelValues("endpoints", "update")
-	epDeleteCount = eventCount.WithLabelValues("endpoints", "delete")
 )
 
 // Endpoints discovers new endpoint targets.
@@ -55,10 +49,21 @@ type Endpoints struct {
 }
 
 // NewEndpoints returns a new endpoints discovery.
-func NewEndpoints(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node cache.SharedInformer) *Endpoints {
+func NewEndpoints(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node cache.SharedInformer, eventCount *prometheus.CounterVec) *Endpoints {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
+
+	epAddCount := eventCount.WithLabelValues(RoleEndpoint.String(), MetricLabelRoleAdd)
+	epUpdateCount := eventCount.WithLabelValues(RoleEndpoint.String(), MetricLabelRoleUpdate)
+	epDeleteCount := eventCount.WithLabelValues(RoleEndpoint.String(), MetricLabelRoleDelete)
+
+	svcAddCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleAdd)
+	svcUpdateCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleUpdate)
+	svcDeleteCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleDelete)
+
+	podUpdateCount := eventCount.WithLabelValues(RolePod.String(), MetricLabelRoleUpdate)
+
 	e := &Endpoints{
 		logger:           l,
 		endpointsInf:     eps,
@@ -69,7 +74,7 @@ func NewEndpoints(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node ca
 		podStore:         pod.GetStore(),
 		nodeInf:          node,
 		withNodeMetadata: node != nil,
-		queue:            workqueue.NewNamed("endpoints"),
+		queue:            workqueue.NewNamed(RoleEndpoint.String()),
 	}
 
 	_, err := e.endpointsInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -128,6 +133,29 @@ func NewEndpoints(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node ca
 	if err != nil {
 		level.Error(l).Log("msg", "Error adding services event handler.", "err", err)
 	}
+	_, err = e.podInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		UpdateFunc: func(old, cur interface{}) {
+			podUpdateCount.Inc()
+			oldPod, ok := old.(*apiv1.Pod)
+			if !ok {
+				return
+			}
+
+			curPod, ok := cur.(*apiv1.Pod)
+			if !ok {
+				return
+			}
+
+			// the Pod's phase may change without triggering an update on the Endpoints/Service.
+			// https://github.com/prometheus/prometheus/issues/11305.
+			if curPod.Status.Phase != oldPod.Status.Phase {
+				e.enqueuePod(namespacedName(curPod.Namespace, curPod.Name))
+			}
+		},
+	})
+	if err != nil {
+		level.Error(l).Log("msg", "Error adding pods event handler.", "err", err)
+	}
 	if e.withNodeMetadata {
 		_, err = e.nodeInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc: func(o interface{}) {
@@ -155,6 +183,18 @@ func (e *Endpoints) enqueueNode(nodeName string) {
 	endpoints, err := e.endpointsInf.GetIndexer().ByIndex(nodeIndex, nodeName)
 	if err != nil {
 		level.Error(e.logger).Log("msg", "Error getting endpoints for node", "node", nodeName, "err", err)
+		return
+	}
+
+	for _, endpoint := range endpoints {
+		e.enqueue(endpoint)
+	}
+}
+
+func (e *Endpoints) enqueuePod(podNamespacedName string) {
+	endpoints, err := e.endpointsInf.GetIndexer().ByIndex(podIndex, podNamespacedName)
+	if err != nil {
+		level.Error(e.logger).Log("msg", "Error getting endpoints for pod", "pod", podNamespacedName, "err", err)
 		return
 	}
 
@@ -247,9 +287,6 @@ func endpointsSourceFromNamespaceAndName(namespace, name string) string {
 }
 
 const (
-	endpointsLabelPrefix           = metaLabelPrefix + "endpoints_label_"
-	endpointsLabelPresentPrefix    = metaLabelPrefix + "endpoints_labelpresent_"
-	endpointsNameLabel             = metaLabelPrefix + "endpoints_name"
 	endpointNodeName               = metaLabelPrefix + "endpoint_node_name"
 	endpointHostname               = metaLabelPrefix + "endpoint_hostname"
 	endpointReadyLabel             = metaLabelPrefix + "endpoint_ready"
@@ -264,16 +301,11 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
 		Source: endpointsSource(eps),
 	}
 	tg.Labels = model.LabelSet{
-		namespaceLabel:     lv(eps.Namespace),
-		endpointsNameLabel: lv(eps.Name),
+		namespaceLabel: lv(eps.Namespace),
 	}
 	e.addServiceLabels(eps.Namespace, eps.Name, tg)
 	// Add endpoints labels metadata.
-	for k, v := range eps.Labels {
-		ln := strutil.SanitizeLabelName(k)
-		tg.Labels[model.LabelName(endpointsLabelPrefix+ln)] = lv(v)
-		tg.Labels[model.LabelName(endpointsLabelPresentPrefix+ln)] = presentValue
-	}
+	addObjectMetaLabels(tg.Labels, eps.ObjectMeta, RoleEndpoint)
 
 	type podEntry struct {
 		pod          *apiv1.Pod
@@ -304,7 +336,11 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
 		}
 
 		if e.withNodeMetadata {
-			target = addNodeLabels(target, e.nodeInf, e.logger, addr.NodeName)
+			if addr.NodeName != nil {
+				target = addNodeLabels(target, e.nodeInf, e.logger, addr.NodeName)
+			} else if addr.TargetRef != nil && addr.TargetRef.Kind == "Node" {
+				target = addNodeLabels(target, e.nodeInf, e.logger, &addr.TargetRef.Name)
+			}
 		}
 
 		pod := e.resolvePodRef(addr.TargetRef)
@@ -313,7 +349,7 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
 			tg.Targets = append(tg.Targets, target)
 			return
 		}
-		s := pod.Namespace + "/" + pod.Name
+		s := namespacedName(pod.Namespace, pod.Name)
 
 		sp, ok := seenPods[s]
 		if !ok {
@@ -370,6 +406,11 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
 	// For all seen pods, check all container ports. If they were not covered
 	// by one of the service endpoints, generate targets for them.
 	for _, pe := range seenPods {
+		// PodIP can be empty when a pod is starting or has been evicted.
+		if len(pe.pod.Status.PodIP) == 0 {
+			continue
+		}
+
 		for _, c := range pe.pod.Spec.Containers {
 			for _, cport := range c.Ports {
 				hasSeenPort := func() bool {
@@ -457,13 +498,7 @@ func addNodeLabels(tg model.LabelSet, nodeInf cache.SharedInformer, logger log.L
 
 	node := obj.(*apiv1.Node)
 	// Allocate one target label for the node name,
-	// and two target labels for each node label.
-	nodeLabelset := make(model.LabelSet, 1+2*len(node.GetLabels()))
-	nodeLabelset[nodeNameLabel] = lv(*nodeName)
-	for k, v := range node.GetLabels() {
-		ln := strutil.SanitizeLabelName(k)
-		nodeLabelset[model.LabelName(nodeLabelPrefix+ln)] = lv(v)
-		nodeLabelset[model.LabelName(nodeLabelPresentPrefix+ln)] = presentValue
-	}
+	nodeLabelset := make(model.LabelSet)
+	addObjectMetaLabels(nodeLabelset, node.ObjectMeta, RoleNode)
 	return tg.Merge(nodeLabelset)
 }

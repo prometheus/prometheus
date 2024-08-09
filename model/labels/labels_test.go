@@ -16,6 +16,8 @@ package labels
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -25,21 +27,28 @@ import (
 
 func TestLabels_String(t *testing.T) {
 	cases := []struct {
-		lables   Labels
+		labels   Labels
 		expected string
 	}{
 		{
-			lables:   FromStrings("t1", "t1", "t2", "t2"),
+			labels:   FromStrings("t1", "t1", "t2", "t2"),
 			expected: "{t1=\"t1\", t2=\"t2\"}",
 		},
 		{
-			lables:   Labels{},
+			labels:   Labels{},
 			expected: "{}",
 		},
 	}
 	for _, c := range cases {
-		str := c.lables.String()
+		str := c.labels.String()
 		require.Equal(t, c.expected, str)
+	}
+}
+
+func BenchmarkString(b *testing.B) {
+	ls := New(benchmarkLabels...)
+	for i := 0; i < b.N; i++ {
+		_ = ls.String()
 	}
 }
 
@@ -114,7 +123,7 @@ func TestLabels_MatchLabels(t *testing.T) {
 
 	for i, test := range tests {
 		got := labels.MatchLabels(test.on, test.providedNames...)
-		require.Equal(t, test.expected, got, "unexpected labelset for test case %d", i)
+		require.True(t, Equal(test.expected, got), "unexpected labelset for test case %d", i)
 	}
 }
 
@@ -207,7 +216,7 @@ func TestLabels_WithoutEmpty(t *testing.T) {
 		},
 	} {
 		t.Run("", func(t *testing.T) {
-			require.Equal(t, test.expected, test.input.WithoutEmpty())
+			require.True(t, Equal(test.expected, test.input.WithoutEmpty()))
 		})
 	}
 }
@@ -363,6 +372,18 @@ func TestLabels_Compare(t *testing.T) {
 		},
 		{
 			compared: FromStrings(
+				"aaa", "111",
+				"bb", "222"),
+			expected: 1,
+		},
+		{
+			compared: FromStrings(
+				"aaa", "111",
+				"bbbb", "222"),
+			expected: -1,
+		},
+		{
+			compared: FromStrings(
 				"aaa", "111"),
 			expected: 1,
 		},
@@ -380,6 +401,10 @@ func TestLabels_Compare(t *testing.T) {
 				"bbb", "222"),
 			expected: 0,
 		},
+		{
+			compared: EmptyLabels(),
+			expected: 1,
+		},
 	}
 
 	sign := func(a int) int {
@@ -395,6 +420,8 @@ func TestLabels_Compare(t *testing.T) {
 	for i, test := range tests {
 		got := Compare(labels, test.compared)
 		require.Equal(t, sign(test.expected), sign(got), "unexpected comparison result for test case %d", i)
+		got = Compare(test.compared, labels)
+		require.Equal(t, -sign(test.expected), sign(got), "unexpected comparison result for reverse test case %d", i)
 	}
 }
 
@@ -425,74 +452,153 @@ func TestLabels_Has(t *testing.T) {
 
 func TestLabels_Get(t *testing.T) {
 	require.Equal(t, "", FromStrings("aaa", "111", "bbb", "222").Get("foo"))
-	require.Equal(t, "111", FromStrings("aaa", "111", "bbb", "222").Get("aaa"))
+	require.Equal(t, "111", FromStrings("aaaa", "111", "bbb", "222").Get("aaaa"))
+	require.Equal(t, "222", FromStrings("aaaa", "111", "bbb", "222").Get("bbb"))
+}
+
+func TestLabels_DropMetricName(t *testing.T) {
+	require.True(t, Equal(FromStrings("aaa", "111", "bbb", "222"), FromStrings("aaa", "111", "bbb", "222").DropMetricName()))
+	require.True(t, Equal(FromStrings("aaa", "111"), FromStrings(MetricName, "myname", "aaa", "111").DropMetricName()))
+
+	original := FromStrings("__aaa__", "111", MetricName, "myname", "bbb", "222")
+	check := FromStrings("__aaa__", "111", MetricName, "myname", "bbb", "222")
+	require.True(t, Equal(FromStrings("__aaa__", "111", "bbb", "222"), check.DropMetricName()))
+	require.True(t, Equal(original, check))
+}
+
+func ScratchBuilderForBenchmark() ScratchBuilder {
+	// (Only relevant to -tags dedupelabels: stuff the symbol table before adding the real labels, to avoid having everything fitting into 1 byte.)
+	b := NewScratchBuilder(256)
+	for i := 0; i < 256; i++ {
+		b.Add(fmt.Sprintf("name%d", i), fmt.Sprintf("value%d", i))
+	}
+	b.Labels()
+	b.Reset()
+	return b
+}
+
+func NewForBenchmark(ls ...Label) Labels {
+	b := ScratchBuilderForBenchmark()
+	for _, l := range ls {
+		b.Add(l.Name, l.Value)
+	}
+	b.Sort()
+	return b.Labels()
+}
+
+func FromStringsForBenchmark(ss ...string) Labels {
+	if len(ss)%2 != 0 {
+		panic("invalid number of strings")
+	}
+	b := ScratchBuilderForBenchmark()
+	for i := 0; i < len(ss); i += 2 {
+		b.Add(ss[i], ss[i+1])
+	}
+	b.Sort()
+	return b.Labels()
 }
 
 // BenchmarkLabels_Get was written to check whether a binary search can improve the performance vs the linear search implementation
 // The results have shown that binary search would only be better when searching last labels in scenarios with more than 10 labels.
 // In the following list, `old` is the linear search while `new` is the binary search implementation (without calling sort.Search, which performs even worse here)
-// name                                        old time/op    new time/op    delta
-// Labels_Get/with_5_labels/get_first_label      5.12ns ± 0%   14.24ns ± 0%   ~     (p=1.000 n=1+1)
-// Labels_Get/with_5_labels/get_middle_label     13.5ns ± 0%    18.5ns ± 0%   ~     (p=1.000 n=1+1)
-// Labels_Get/with_5_labels/get_last_label       21.9ns ± 0%    18.9ns ± 0%   ~     (p=1.000 n=1+1)
-// Labels_Get/with_10_labels/get_first_label     5.11ns ± 0%   19.47ns ± 0%   ~     (p=1.000 n=1+1)
-// Labels_Get/with_10_labels/get_middle_label    26.2ns ± 0%    19.3ns ± 0%   ~     (p=1.000 n=1+1)
-// Labels_Get/with_10_labels/get_last_label      42.8ns ± 0%    23.4ns ± 0%   ~     (p=1.000 n=1+1)
-// Labels_Get/with_30_labels/get_first_label     5.10ns ± 0%   24.63ns ± 0%   ~     (p=1.000 n=1+1)
-// Labels_Get/with_30_labels/get_middle_label    75.8ns ± 0%    29.7ns ± 0%   ~     (p=1.000 n=1+1)
-// Labels_Get/with_30_labels/get_last_label       169ns ± 0%      29ns ± 0%   ~     (p=1.000 n=1+1)
+//
+//	name                                        old time/op    new time/op    delta
+//	Labels_Get/with_5_labels/get_first_label      5.12ns ± 0%   14.24ns ± 0%   ~     (p=1.000 n=1+1)
+//	Labels_Get/with_5_labels/get_middle_label     13.5ns ± 0%    18.5ns ± 0%   ~     (p=1.000 n=1+1)
+//	Labels_Get/with_5_labels/get_last_label       21.9ns ± 0%    18.9ns ± 0%   ~     (p=1.000 n=1+1)
+//	Labels_Get/with_10_labels/get_first_label     5.11ns ± 0%   19.47ns ± 0%   ~     (p=1.000 n=1+1)
+//	Labels_Get/with_10_labels/get_middle_label    26.2ns ± 0%    19.3ns ± 0%   ~     (p=1.000 n=1+1)
+//	Labels_Get/with_10_labels/get_last_label      42.8ns ± 0%    23.4ns ± 0%   ~     (p=1.000 n=1+1)
+//	Labels_Get/with_30_labels/get_first_label     5.10ns ± 0%   24.63ns ± 0%   ~     (p=1.000 n=1+1)
+//	Labels_Get/with_30_labels/get_middle_label    75.8ns ± 0%    29.7ns ± 0%   ~     (p=1.000 n=1+1)
+//	Labels_Get/with_30_labels/get_last_label       169ns ± 0%      29ns ± 0%   ~     (p=1.000 n=1+1)
 func BenchmarkLabels_Get(b *testing.B) {
 	maxLabels := 30
 	allLabels := make([]Label, maxLabels)
 	for i := 0; i < maxLabels; i++ {
-		allLabels[i] = Label{Name: strings.Repeat(string('a'+byte(i)), 5)}
+		allLabels[i] = Label{Name: strings.Repeat(string('a'+byte(i)), 5+(i%5))}
 	}
 	for _, size := range []int{5, 10, maxLabels} {
 		b.Run(fmt.Sprintf("with %d labels", size), func(b *testing.B) {
-			labels := New(allLabels[:size]...)
+			labels := NewForBenchmark(allLabels[:size]...)
 			for _, scenario := range []struct {
 				desc, label string
 			}{
-				{"get first label", allLabels[0].Name},
-				{"get middle label", allLabels[size/2].Name},
-				{"get last label", allLabels[size-1].Name},
+				{"first label", allLabels[0].Name},
+				{"middle label", allLabels[size/2].Name},
+				{"last label", allLabels[size-1].Name},
+				{"not-found label", "benchmark"},
 			} {
 				b.Run(scenario.desc, func(b *testing.B) {
-					b.ResetTimer()
-					for i := 0; i < b.N; i++ {
-						_ = labels.Get(scenario.label)
-					}
+					b.Run("get", func(b *testing.B) {
+						for i := 0; i < b.N; i++ {
+							_ = labels.Get(scenario.label)
+						}
+					})
+					b.Run("has", func(b *testing.B) {
+						for i := 0; i < b.N; i++ {
+							_ = labels.Has(scenario.label)
+						}
+					})
 				})
 			}
 		})
 	}
 }
 
+var comparisonBenchmarkScenarios = []struct {
+	desc        string
+	base, other Labels
+}{
+	{
+		"equal",
+		FromStringsForBenchmark("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
+		FromStringsForBenchmark("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
+	},
+	{
+		"not equal",
+		FromStringsForBenchmark("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
+		FromStringsForBenchmark("a_label_name", "a_label_value", "another_label_name", "a_different_label_value"),
+	},
+	{
+		"different sizes",
+		FromStringsForBenchmark("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
+		FromStringsForBenchmark("a_label_name", "a_label_value"),
+	},
+	{
+		"lots",
+		FromStringsForBenchmark("aaa", "bbb", "ccc", "ddd", "eee", "fff", "ggg", "hhh", "iii", "jjj", "kkk", "lll", "mmm", "nnn", "ooo", "ppp", "qqq", "rrz"),
+		FromStringsForBenchmark("aaa", "bbb", "ccc", "ddd", "eee", "fff", "ggg", "hhh", "iii", "jjj", "kkk", "lll", "mmm", "nnn", "ooo", "ppp", "qqq", "rrr"),
+	},
+	{
+		"real long equal",
+		FromStringsForBenchmark("__name__", "kube_pod_container_status_last_terminated_exitcode", "cluster", "prod-af-north-0", " container", "prometheus", "instance", "kube-state-metrics-0:kube-state-metrics:ksm", "job", "kube-state-metrics/kube-state-metrics", " namespace", "observability-prometheus", "pod", "observability-prometheus-0", "uid", "d3ec90b2-4975-4607-b45d-b9ad64bb417e"),
+		FromStringsForBenchmark("__name__", "kube_pod_container_status_last_terminated_exitcode", "cluster", "prod-af-north-0", " container", "prometheus", "instance", "kube-state-metrics-0:kube-state-metrics:ksm", "job", "kube-state-metrics/kube-state-metrics", " namespace", "observability-prometheus", "pod", "observability-prometheus-0", "uid", "d3ec90b2-4975-4607-b45d-b9ad64bb417e"),
+	},
+	{
+		"real long different end",
+		FromStringsForBenchmark("__name__", "kube_pod_container_status_last_terminated_exitcode", "cluster", "prod-af-north-0", " container", "prometheus", "instance", "kube-state-metrics-0:kube-state-metrics:ksm", "job", "kube-state-metrics/kube-state-metrics", " namespace", "observability-prometheus", "pod", "observability-prometheus-0", "uid", "d3ec90b2-4975-4607-b45d-b9ad64bb417e"),
+		FromStringsForBenchmark("__name__", "kube_pod_container_status_last_terminated_exitcode", "cluster", "prod-af-north-0", " container", "prometheus", "instance", "kube-state-metrics-0:kube-state-metrics:ksm", "job", "kube-state-metrics/kube-state-metrics", " namespace", "observability-prometheus", "pod", "observability-prometheus-0", "uid", "deadbeef-0000-1111-2222-b9ad64bb417e"),
+	},
+}
+
 func BenchmarkLabels_Equals(b *testing.B) {
-	for _, scenario := range []struct {
-		desc        string
-		base, other Labels
-	}{
-		{
-			"equal",
-			FromStrings("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
-			FromStrings("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
-		},
-		{
-			"not equal",
-			FromStrings("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
-			FromStrings("a_label_name", "a_label_value", "another_label_name", "a_different_label_value"),
-		},
-		{
-			"different sizes",
-			FromStrings("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
-			FromStrings("a_label_name", "a_label_value"),
-		},
-	} {
+	for _, scenario := range comparisonBenchmarkScenarios {
 		b.Run(scenario.desc, func(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				_ = Equal(scenario.base, scenario.other)
+			}
+		})
+	}
+}
+
+func BenchmarkLabels_Compare(b *testing.B) {
+	for _, scenario := range comparisonBenchmarkScenarios {
+		b.Run(scenario.desc, func(b *testing.B) {
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_ = Compare(scenario.base, scenario.other)
 			}
 		})
 	}
@@ -518,6 +624,7 @@ func TestLabels_BytesWithoutLabels(t *testing.T) {
 }
 
 func TestBuilder(t *testing.T) {
+	reuseBuilder := NewBuilderWithSymbolTable(NewSymbolTable())
 	for i, tcase := range []struct {
 		base Labels
 		del  []string
@@ -528,6 +635,11 @@ func TestBuilder(t *testing.T) {
 		{
 			base: FromStrings("aaa", "111"),
 			want: FromStrings("aaa", "111"),
+		},
+		{
+			base: EmptyLabels(),
+			set:  []Label{{"aaa", "444"}, {"bbb", "555"}, {"ccc", "666"}},
+			want: FromStrings("aaa", "444", "bbb", "555", "ccc", "666"),
 		},
 		{
 			base: FromStrings("aaa", "111", "bbb", "222", "ccc", "333"),
@@ -587,8 +699,7 @@ func TestBuilder(t *testing.T) {
 			want: FromStrings("aaa", "111", "ddd", "444"),
 		},
 	} {
-		t.Run(fmt.Sprint(i), func(t *testing.T) {
-			b := NewBuilder(tcase.base)
+		test := func(t *testing.T, b *Builder) {
 			for _, lbl := range tcase.set {
 				b.Set(lbl.Name, lbl.Value)
 			}
@@ -596,7 +707,7 @@ func TestBuilder(t *testing.T) {
 				b.Keep(tcase.keep...)
 			}
 			b.Del(tcase.del...)
-			require.Equal(t, tcase.want, b.Labels())
+			require.True(t, Equal(tcase.want, b.Labels()))
 
 			// Check what happens when we call Range and mutate the builder.
 			b.Range(func(l Label) {
@@ -605,8 +716,27 @@ func TestBuilder(t *testing.T) {
 				}
 			})
 			require.Equal(t, tcase.want.BytesWithoutLabels(nil, "aaa", "bbb"), b.Labels().Bytes(nil))
+		}
+		t.Run(fmt.Sprintf("NewBuilder %d", i), func(t *testing.T) {
+			test(t, NewBuilder(tcase.base))
+		})
+		t.Run(fmt.Sprintf("NewSymbolTable %d", i), func(t *testing.T) {
+			b := NewBuilderWithSymbolTable(NewSymbolTable())
+			b.Reset(tcase.base)
+			test(t, b)
+		})
+		t.Run(fmt.Sprintf("reuseBuilder %d", i), func(t *testing.T) {
+			reuseBuilder.Reset(tcase.base)
+			test(t, reuseBuilder)
 		})
 	}
+	t.Run("set_after_del", func(t *testing.T) {
+		b := NewBuilder(FromStrings("aaa", "111"))
+		b.Del("bbb")
+		b.Set("bbb", "222")
+		require.Equal(t, FromStrings("aaa", "111", "bbb", "222"), b.Labels())
+		require.Equal(t, "222", b.Get("bbb"))
+	})
 }
 
 func TestScratchBuilder(t *testing.T) {
@@ -635,22 +765,23 @@ func TestScratchBuilder(t *testing.T) {
 			want: FromStrings("ddd", "444"),
 		},
 	} {
-		t.Run(fmt.Sprint(i), func(t *testing.T) {
-			b := ScratchBuilder{}
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			b := NewScratchBuilder(len(tcase.add))
 			for _, lbl := range tcase.add {
 				b.Add(lbl.Name, lbl.Value)
 			}
 			b.Sort()
-			require.Equal(t, tcase.want, b.Labels())
+			require.True(t, Equal(tcase.want, b.Labels()))
 			b.Assign(tcase.want)
-			require.Equal(t, tcase.want, b.Labels())
+			require.True(t, Equal(tcase.want, b.Labels()))
 		})
 	}
 }
 
 func TestLabels_Hash(t *testing.T) {
 	lbls := FromStrings("foo", "bar", "baz", "qux")
-	require.Equal(t, lbls.Hash(), lbls.Hash())
+	hash1, hash2 := lbls.Hash(), lbls.Hash()
+	require.Equal(t, hash1, hash2)
 	require.NotEqual(t, lbls.Hash(), FromStrings("foo", "bar").Hash(), "different labels match.")
 }
 
@@ -709,24 +840,24 @@ func BenchmarkLabels_Hash(b *testing.B) {
 	}
 }
 
-func BenchmarkBuilder(b *testing.B) {
-	m := []Label{
-		{"job", "node"},
-		{"instance", "123.123.1.211:9090"},
-		{"path", "/api/v1/namespaces/<namespace>/deployments/<name>"},
-		{"method", "GET"},
-		{"namespace", "system"},
-		{"status", "500"},
-		{"prometheus", "prometheus-core-1"},
-		{"datacenter", "eu-west-1"},
-		{"pod_name", "abcdef-99999-defee"},
-	}
+var benchmarkLabels = []Label{
+	{"job", "node"},
+	{"instance", "123.123.1.211:9090"},
+	{"path", "/api/v1/namespaces/<namespace>/deployments/<name>"},
+	{"method", http.MethodGet},
+	{"namespace", "system"},
+	{"status", "500"},
+	{"prometheus", "prometheus-core-1"},
+	{"datacenter", "eu-west-1"},
+	{"pod_name", "abcdef-99999-defee"},
+}
 
+func BenchmarkBuilder(b *testing.B) {
 	var l Labels
 	builder := NewBuilder(EmptyLabels())
 	for i := 0; i < b.N; i++ {
 		builder.Reset(EmptyLabels())
-		for _, l := range m {
+		for _, l := range benchmarkLabels {
 			builder.Set(l.Name, l.Value)
 		}
 		l = builder.Labels()
@@ -735,18 +866,7 @@ func BenchmarkBuilder(b *testing.B) {
 }
 
 func BenchmarkLabels_Copy(b *testing.B) {
-	m := map[string]string{
-		"job":        "node",
-		"instance":   "123.123.1.211:9090",
-		"path":       "/api/v1/namespaces/<namespace>/deployments/<name>",
-		"method":     "GET",
-		"namespace":  "system",
-		"status":     "500",
-		"prometheus": "prometheus-core-1",
-		"datacenter": "eu-west-1",
-		"pod_name":   "abcdef-99999-defee",
-	}
-	l := FromMap(m)
+	l := NewForBenchmark(benchmarkLabels...)
 
 	for i := 0; i < b.N; i++ {
 		l = l.Copy()

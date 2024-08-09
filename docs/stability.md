@@ -18,12 +18,13 @@ Things considered stable for 2.x:
 * Configuration file format (minus the service discovery remote read/write, see below)
 * Rule/alert file format
 * Console template syntax and semantics
+* Remote write sending, per the [1.0 specification](https://prometheus.io/docs/concepts/remote_write_spec/).
 
 Things considered unstable for 2.x:
 
 * Any feature listed as experimental or subject to change, including:
   * The [`holt_winters` PromQL function](https://github.com/prometheus/prometheus/issues/2458)
-  * Remote read, remote write and the remote read endpoint
+  * Remote write receiving, remote read and the remote read endpoint
 * Server-side HTTPS and basic authentication
 * Service discovery integrations, with the exception of `static_configs` and `file_sd_configs`
 * Go APIs of packages that are part of the server

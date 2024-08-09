@@ -21,13 +21,19 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/version"
+	"k8s.io/apimachinery/pkg/watch"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
+	kubetesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
+
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -49,13 +55,30 @@ func makeDiscoveryWithVersion(role Role, nsDiscovery NamespaceDiscovery, k8sVer 
 	fakeDiscovery, _ := clientset.Discovery().(*fakediscovery.FakeDiscovery)
 	fakeDiscovery.FakedServerVersion = &version.Info{GitVersion: k8sVer}
 
-	return &Discovery{
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := newDiscovererMetrics(reg, refreshMetrics)
+	err := metrics.Register()
+	if err != nil {
+		panic(err)
+	}
+	// TODO(ptodev): Unregister the metrics at the end of the test.
+
+	kubeMetrics, ok := metrics.(*kubernetesMetrics)
+	if !ok {
+		panic("invalid discovery metrics type")
+	}
+
+	d := &Discovery{
 		client:             clientset,
 		logger:             log.NewNopLogger(),
 		role:               role,
 		namespaceDiscovery: &nsDiscovery,
 		ownNamespace:       "own-ns",
-	}, clientset
+		metrics:            kubeMetrics,
+	}
+
+	return d, clientset
 }
 
 // makeDiscoveryWithMetadata creates a kubernetes.Discovery instance with the specified metadata config.
@@ -109,17 +132,11 @@ func (d k8sDiscoveryTest) Run(t *testing.T) {
 	}
 
 	resChan := make(chan map[string]*targetgroup.Group)
-	go readResultWithTimeout(t, ch, d.expectedMaxItems, time.Second, resChan)
+	go readResultWithTimeout(t, ctx, ch, d.expectedMaxItems, time.Second, resChan)
 
 	dd, ok := d.discovery.(hasSynced)
-	if !ok {
-		t.Errorf("discoverer does not implement hasSynced interface")
-		return
-	}
-	if !cache.WaitForCacheSync(ctx.Done(), dd.hasSynced) {
-		t.Errorf("discoverer failed to sync: %v", dd)
-		return
-	}
+	require.True(t, ok, "discoverer does not implement hasSynced interface")
+	require.True(t, cache.WaitForCacheSync(ctx.Done(), dd.hasSynced), "discoverer failed to sync: %v", dd)
 
 	if d.afterStart != nil {
 		d.afterStart()
@@ -128,13 +145,18 @@ func (d k8sDiscoveryTest) Run(t *testing.T) {
 	if d.expectedRes != nil {
 		res := <-resChan
 		requireTargetGroups(t, d.expectedRes, res)
+	} else {
+		// Stop readResultWithTimeout and wait for it.
+		cancel()
+		<-resChan
 	}
 }
 
 // readResultWithTimeout reads all targetgroups from channel with timeout.
 // It merges targetgroups by source and sends the result to result channel.
-func readResultWithTimeout(t *testing.T, ch <-chan []*targetgroup.Group, max int, timeout time.Duration, resChan chan<- map[string]*targetgroup.Group) {
+func readResultWithTimeout(t *testing.T, ctx context.Context, ch <-chan []*targetgroup.Group, max int, stopAfter time.Duration, resChan chan<- map[string]*targetgroup.Group) {
 	res := make(map[string]*targetgroup.Group)
+	timeout := time.After(stopAfter)
 Loop:
 	for {
 		select {
@@ -149,11 +171,14 @@ Loop:
 				// Reached max target groups we may get, break fast.
 				break Loop
 			}
-		case <-time.After(timeout):
+		case <-timeout:
 			// Because we use queue, an object that is created then
 			// deleted or updated may be processed only once.
 			// So possibly we may skip events, timed out here.
 			t.Logf("timed out, got %d (max: %d) items, some events are skipped", len(res), max)
+			break Loop
+		case <-ctx.Done():
+			t.Logf("stopped, got %d (max: %d) items", len(res), max)
 			break Loop
 		}
 	}
@@ -290,6 +315,42 @@ func TestCheckNetworkingV1Supported(t *testing.T) {
 				require.NoError(t, err)
 			}
 			require.Equal(t, tc.wantSupported, supported)
+		})
+	}
+}
+
+func TestFailuresCountMetric(t *testing.T) {
+	tests := []struct {
+		role             Role
+		minFailedWatches int
+	}{
+		{RoleNode, 1},
+		{RolePod, 1},
+		{RoleService, 1},
+		{RoleEndpoint, 3},
+		{RoleEndpointSlice, 3},
+		{RoleIngress, 1},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(string(tc.role), func(t *testing.T) {
+			t.Parallel()
+
+			n, c := makeDiscovery(tc.role, NamespaceDiscovery{})
+			// The counter is initialized and no failures at the beginning.
+			require.Equal(t, float64(0), prom_testutil.ToFloat64(n.metrics.failuresCount))
+
+			// Simulate an error on watch requests.
+			c.Discovery().(*fakediscovery.FakeDiscovery).PrependWatchReactor("*", func(action kubetesting.Action) (bool, watch.Interface, error) {
+				return true, nil, apierrors.NewUnauthorized("unauthorized")
+			})
+
+			// Start the discovery.
+			k8sDiscoveryTest{discovery: n}.Run(t)
+
+			// At least the errors of the initial watches should be caught (watches are retried on errors).
+			require.GreaterOrEqual(t, prom_testutil.ToFloat64(n.metrics.failuresCount), float64(tc.minFailedWatches))
 		})
 	}
 }

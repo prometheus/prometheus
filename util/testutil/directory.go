@@ -33,7 +33,7 @@ const (
 	// NilCloser is a no-op Closer.
 	NilCloser = nilCloser(true)
 
-	// The number of times that a TemporaryDirectory will retry its removal
+	// The number of times that a TemporaryDirectory will retry its removal.
 	temporaryDirectoryRemoveRetries = 2
 )
 

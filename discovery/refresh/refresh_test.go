@@ -19,10 +19,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -65,7 +67,20 @@ func TestRefresh(t *testing.T) {
 		return nil, fmt.Errorf("some error")
 	}
 	interval := time.Millisecond
-	d := NewDiscovery(nil, "test", interval, refresh)
+
+	metrics := discovery.NewRefreshMetrics(prometheus.NewRegistry())
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+
+	d := NewDiscovery(
+		Options{
+			Logger:              nil,
+			Mech:                "test",
+			Interval:            interval,
+			RefreshF:            refresh,
+			MetricsInstantiator: metrics,
+		},
+	)
 
 	ch := make(chan []*targetgroup.Group)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -82,7 +97,7 @@ func TestRefresh(t *testing.T) {
 	defer tick.Stop()
 	select {
 	case <-ch:
-		t.Fatal("Unexpected target group")
+		require.FailNow(t, "Unexpected target group")
 	case <-tick.C:
 	}
 }

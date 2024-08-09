@@ -55,9 +55,10 @@ func (r *ewmaRate) tick() {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
-	if r.init {
+	switch {
+	case r.init:
 		r.lastRate += r.alpha * (instantRate - r.lastRate)
-	} else if newEvents > 0 {
+	case newEvents > 0:
 		r.init = true
 		r.lastRate = instantRate
 	}

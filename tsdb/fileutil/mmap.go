@@ -14,9 +14,8 @@
 package fileutil
 
 import (
+	"fmt"
 	"os"
-
-	"github.com/pkg/errors"
 )
 
 type MmapFile struct {
@@ -31,7 +30,7 @@ func OpenMmapFile(path string) (*MmapFile, error) {
 func OpenMmapFileWithSize(path string, size int) (mf *MmapFile, retErr error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, errors.Wrap(err, "try lock file")
+		return nil, fmt.Errorf("try lock file: %w", err)
 	}
 	defer func() {
 		if retErr != nil {
@@ -41,14 +40,14 @@ func OpenMmapFileWithSize(path string, size int) (mf *MmapFile, retErr error) {
 	if size <= 0 {
 		info, err := f.Stat()
 		if err != nil {
-			return nil, errors.Wrap(err, "stat")
+			return nil, fmt.Errorf("stat: %w", err)
 		}
 		size = int(info.Size())
 	}
 
 	b, err := mmap(f, size)
 	if err != nil {
-		return nil, errors.Wrapf(err, "mmap, size %d", size)
+		return nil, fmt.Errorf("mmap, size %d: %w", size, err)
 	}
 
 	return &MmapFile{f: f, b: b}, nil

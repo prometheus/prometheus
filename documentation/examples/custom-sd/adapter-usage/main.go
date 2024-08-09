@@ -28,8 +28,10 @@ import (
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
+	prom_discovery "github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/documentation/examples/custom-sd/adapter"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -125,9 +127,9 @@ func (d *discovery) parseServiceNodes(resp *http.Response, name string) (*target
 		// since the service may be registered remotely through a different node.
 		var addr string
 		if node.ServiceAddress != "" {
-			addr = net.JoinHostPort(node.ServiceAddress, fmt.Sprintf("%d", node.ServicePort))
+			addr = net.JoinHostPort(node.ServiceAddress, strconv.Itoa(node.ServicePort))
 		} else {
-			addr = net.JoinHostPort(node.Address, fmt.Sprintf("%d", node.ServicePort))
+			addr = net.JoinHostPort(node.Address, strconv.Itoa(node.ServicePort))
 		}
 
 		target := model.LabelSet{model.AddressLabel: model.LabelValue(addr)}
@@ -268,7 +270,21 @@ func main() {
 	if err != nil {
 		fmt.Println("err: ", err)
 	}
-	sdAdapter := adapter.NewAdapter(ctx, *outputFile, "exampleSD", disc, logger)
+
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to create discovery metrics", "err", err)
+		os.Exit(1)
+	}
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := prom_discovery.NewRefreshMetrics(reg)
+	metrics, err := prom_discovery.RegisterSDMetrics(reg, refreshMetrics)
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to register service discovery metrics", "err", err)
+		os.Exit(1)
+	}
+
+	sdAdapter := adapter.NewAdapter(ctx, *outputFile, "exampleSD", disc, logger, metrics, reg)
 	sdAdapter.Run()
 
 	<-ctx.Done()
