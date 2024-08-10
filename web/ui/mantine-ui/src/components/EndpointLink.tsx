@@ -31,7 +31,7 @@ const EndpointLink: FC<EndpointLinkProps> = ({ endpoint, globalUrl }) => {
     : `${protocol}//${host}${pathname}`;
   return (
     <Stack gap={0}>
-      <Anchor size="sm" href={globalUrl}>
+      <Anchor size="sm" href={globalUrl} target="_blank">
         {displayLink}
       </Anchor>
       {params.length > 0 && (
