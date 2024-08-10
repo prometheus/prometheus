@@ -166,6 +166,9 @@ func rangeQueryCases() []benchCase {
 			expr: "sum(a_X)",
 		},
 		{
+			expr: "avg(a_X)",
+		},
+		{
 			expr: "sum without (l)(h_X)",
 		},
 		{

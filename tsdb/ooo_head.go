@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
 	"github.com/oklog/ulid"
@@ -39,13 +40,13 @@ func NewOOOChunk() *OOOChunk {
 
 // Insert inserts the sample such that order is maintained.
 // Returns false if insert was not possible due to the same timestamp already existing.
-func (o *OOOChunk) Insert(t int64, v float64) bool {
+func (o *OOOChunk) Insert(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) bool {
 	// Although out-of-order samples can be out-of-order amongst themselves, we
 	// are opinionated and expect them to be usually in-order meaning we could
 	// try to append at the end first if the new timestamp is higher than the
 	// last known timestamp.
 	if len(o.samples) == 0 || t > o.samples[len(o.samples)-1].t {
-		o.samples = append(o.samples, sample{t, v, nil, nil})
+		o.samples = append(o.samples, sample{t, v, h, fh})
 		return true
 	}
 
@@ -54,7 +55,7 @@ func (o *OOOChunk) Insert(t int64, v float64) bool {
 
 	if i >= len(o.samples) {
 		// none found. append it at the end
-		o.samples = append(o.samples, sample{t, v, nil, nil})
+		o.samples = append(o.samples, sample{t, v, h, fh})
 		return true
 	}
 
@@ -66,7 +67,7 @@ func (o *OOOChunk) Insert(t int64, v float64) bool {
 	// Expand length by 1 to make room. use a zero sample, we will overwrite it anyway.
 	o.samples = append(o.samples, sample{})
 	copy(o.samples[i+1:], o.samples[i:])
-	o.samples[i] = sample{t, v, nil, nil}
+	o.samples[i] = sample{t, v, h, fh}
 
 	return true
 }
@@ -142,9 +143,9 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64) (chks []memChunk, err error
 			if newChunk != nil { // A new chunk was allocated.
 				if !recoded {
 					chks = append(chks, memChunk{chunk, cmint, cmaxt, nil})
+					cmint = s.t
 				}
 				chunk = newChunk
-				cmint = s.t
 			}
 		case chunkenc.EncFloatHistogram:
 			// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
@@ -157,9 +158,9 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64) (chks []memChunk, err error
 			if newChunk != nil { // A new chunk was allocated.
 				if !recoded {
 					chks = append(chks, memChunk{chunk, cmint, cmaxt, nil})
+					cmint = s.t
 				}
 				chunk = newChunk
-				cmint = s.t
 			}
 		}
 		cmaxt = s.t
