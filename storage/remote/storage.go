@@ -184,8 +184,8 @@ func (s *Storage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
 }
 
 // Appender implements storage.Storage.
-func (s *Storage) Appender(ctx context.Context) storage.Appender {
-	return s.rws.Appender(ctx)
+func (s *Storage) Appender(ctx context.Context, hints *storage.AppendHints) storage.Appender {
+	return s.rws.Appender(ctx, nil)
 }
 
 // LowestSentTimestamp returns the lowest sent timestamp across all queues.

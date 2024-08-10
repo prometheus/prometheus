@@ -419,7 +419,7 @@ func TestHeadIndexReader_PostingsForLabelMatching(t *testing.T) {
 		t.Cleanup(func() {
 			require.NoError(t, h.Close())
 		})
-		app := h.Appender(context.Background())
+		app := h.Appender(context.Background(), nil)
 		for _, s := range series {
 			app.Append(0, s, 0, 0)
 		}

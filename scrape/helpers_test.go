@@ -37,7 +37,7 @@ import (
 
 type nopAppendable struct{}
 
-func (a nopAppendable) Appender(_ context.Context) storage.Appender {
+func (a nopAppendable) Appender(_ context.Context, hints *storage.AppendHints) storage.Appender {
 	return nopAppender{}
 }
 
@@ -87,7 +87,7 @@ type collectResultAppendable struct {
 	*collectResultAppender
 }
 
-func (a *collectResultAppendable) Appender(_ context.Context) storage.Appender {
+func (a *collectResultAppendable) Appender(_ context.Context, hints *storage.AppendHints) storage.Appender {
 	return a
 }
 

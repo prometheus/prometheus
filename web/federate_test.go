@@ -340,7 +340,7 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 		},
 		NegativeBuckets: []int64{2, 2, -2, 0},
 	}
-	app := db.Appender(context.Background())
+	app := db.Appender(context.Background(), nil)
 	for i := 0; i < 6; i++ {
 		l := labels.FromStrings("__name__", "test_metric", "foo", strconv.Itoa(i))
 		expL := labels.FromStrings("__name__", "test_metric", "instance", "", "foo", strconv.Itoa(i))

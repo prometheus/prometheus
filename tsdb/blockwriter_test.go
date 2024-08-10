@@ -33,7 +33,7 @@ func TestBlockWriter(t *testing.T) {
 	require.NoError(t, err)
 
 	// Add some series.
-	app := w.Appender(ctx)
+	app := w.Appender(ctx, nil)
 	ts1, v1 := int64(44), float64(7)
 	_, err = app.Append(0, labels.FromStrings("a", "b"), ts1, v1)
 	require.NoError(t, err)

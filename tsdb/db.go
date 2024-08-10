@@ -1103,8 +1103,8 @@ func (db *DB) run(ctx context.Context) {
 }
 
 // Appender opens a new appender against the database.
-func (db *DB) Appender(ctx context.Context) storage.Appender {
-	return dbAppender{db: db, Appender: db.head.Appender(ctx)}
+func (db *DB) Appender(ctx context.Context, hints *storage.AppendHints) storage.Appender {
+	return dbAppender{db: db, Appender: db.head.Appender(ctx, nil)}
 }
 
 // ApplyConfig applies a new config to the DB.

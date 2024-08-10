@@ -45,7 +45,7 @@ func TestDB_InvalidSeries(t *testing.T) {
 	s := createTestAgentDB(t, nil, DefaultOptions())
 	defer s.Close()
 
-	app := s.Appender(context.Background())
+	app := s.Appender(context.Background(), nil)
 
 	t.Run("Samples", func(t *testing.T) {
 		_, err := app.Append(0, labels.Labels{}, 0, 0)
@@ -127,7 +127,7 @@ func TestCommit(t *testing.T) {
 	)
 
 	s := createTestAgentDB(t, nil, DefaultOptions())
-	app := s.Appender(context.TODO())
+	app := s.Appender(context.TODO(), nil)
 
 	lbls := labelsForTest(t.Name(), numSeries)
 	for _, l := range lbls {
@@ -242,7 +242,7 @@ func TestRollback(t *testing.T) {
 	)
 
 	s := createTestAgentDB(t, nil, DefaultOptions())
-	app := s.Appender(context.TODO())
+	app := s.Appender(context.TODO(), nil)
 
 	lbls := labelsForTest(t.Name(), numSeries)
 	for _, l := range lbls {
@@ -359,7 +359,7 @@ func TestFullTruncateWAL(t *testing.T) {
 	defer func() {
 		require.NoError(t, s.Close())
 	}()
-	app := s.Appender(context.TODO())
+	app := s.Appender(context.TODO(), nil)
 
 	lbls := labelsForTest(t.Name(), numSeries)
 	for _, l := range lbls {
@@ -419,7 +419,7 @@ func TestPartialTruncateWAL(t *testing.T) {
 	defer func() {
 		require.NoError(t, s.Close())
 	}()
-	app := s.Appender(context.TODO())
+	app := s.Appender(context.TODO(), nil)
 
 	// Create first batch of 800 series with 1000 data-points with a fixed lastTs as 500.
 	var lastTs int64 = 500
@@ -515,7 +515,7 @@ func TestWALReplay(t *testing.T) {
 	)
 
 	s := createTestAgentDB(t, nil, DefaultOptions())
-	app := s.Appender(context.TODO())
+	app := s.Appender(context.TODO(), nil)
 
 	lbls := labelsForTest(t.Name(), numSeries)
 	for _, l := range lbls {
@@ -616,7 +616,7 @@ func Test_ExistingWAL_NextRef(t *testing.T) {
 	seriesCount := 10
 
 	// Append <seriesCount> series
-	app := db.Appender(context.Background())
+	app := db.Appender(context.Background(), nil)
 	for i := 0; i < seriesCount; i++ {
 		lset := labels.FromStrings(model.MetricNameLabel, fmt.Sprintf("series_%d", i))
 		_, err := app.Append(0, lset, 0, 100)
@@ -703,7 +703,7 @@ func gatherFamily(t *testing.T, reg prometheus.Gatherer, familyName string) *dto
 
 func TestStorage_DuplicateExemplarsIgnored(t *testing.T) {
 	s := createTestAgentDB(t, nil, DefaultOptions())
-	app := s.Appender(context.Background())
+	app := s.Appender(context.Background(), nil)
 	defer s.Close()
 
 	sRef, err := app.Append(0, labels.FromStrings("a", "1"), 0, 0)
@@ -765,7 +765,7 @@ func TestDBAllowOOOSamples(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderTimeWindow = math.MaxInt64
 	s := createTestAgentDB(t, reg, opts)
-	app := s.Appender(context.TODO())
+	app := s.Appender(context.TODO(), nil)
 
 	// Let's add some samples in the [offset, offset+numDatapoints) range.
 	lbls := labelsForTest(t.Name(), numSeries)
@@ -828,7 +828,7 @@ func TestDBAllowOOOSamples(t *testing.T) {
 		t.Fatalf("unable to create storage for the agent: %v", err)
 	}
 
-	app = db.Appender(context.Background())
+	app = db.Appender(context.Background(), nil)
 
 	// Now the lastTs will have been recorded successfully.
 	// Let's try appending twice as many OOO samples in the [0, numDatapoints) range.
@@ -900,7 +900,7 @@ func TestDBOutOfOrderTimeWindow(t *testing.T) {
 			opts := DefaultOptions()
 			opts.OutOfOrderTimeWindow = c.outOfOrderTimeWindow
 			s := createTestAgentDB(t, reg, opts)
-			app := s.Appender(context.TODO())
+			app := s.Appender(context.TODO(), nil)
 
 			lbls := labelsForTest(t.Name()+"_histogram", 1)
 			lset := labels.New(lbls[0]...)
@@ -936,7 +936,7 @@ func BenchmarkCreateSeries(b *testing.B) {
 	s := createTestAgentDB(b, nil, DefaultOptions())
 	defer s.Close()
 
-	app := s.Appender(context.Background()).(*appender)
+	app := s.Appender(context.Background(), nil).(*appender)
 	lbls := make([]labels.Labels, b.N)
 
 	for i, l := range labelsForTest("benchmark", b.N) {

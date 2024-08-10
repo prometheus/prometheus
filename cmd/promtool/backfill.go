@@ -127,7 +127,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 			}()
 
 			ctx := context.Background()
-			app := w.Appender(ctx)
+			app := w.Appender(ctx, nil)
 			symbolTable := labels.NewSymbolTable() // One table per block means it won't grow too large.
 			p := textparse.NewOpenMetricsParser(input, symbolTable)
 			samplesCount := 0
@@ -178,7 +178,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 					return fmt.Errorf("commit: %w", err)
 				}
 
-				app = w.Appender(ctx)
+				app = w.Appender(ctx, nil)
 				samplesCount = 0
 			}
 

@@ -560,7 +560,7 @@ func TestStaleness(t *testing.T) {
 		})
 
 		// A time series that has two samples and then goes stale.
-		app := st.Appender(context.Background())
+		app := st.Appender(context.Background(), nil)
 		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1)
 		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
 		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 2000, math.Float64frombits(value.StaleNaN))
@@ -936,7 +936,7 @@ func TestNotify(t *testing.T) {
 		Opts:          opts,
 	})
 
-	app := storage.Appender(context.Background())
+	app := storage.Appender(context.Background(), nil)
 	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
 	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 2000, 3)
 	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 5000, 3)
@@ -1259,7 +1259,7 @@ func TestRuleHealthUpdates(t *testing.T) {
 	})
 
 	// A time series that has two samples.
-	app := st.Appender(context.Background())
+	app := st.Appender(context.Background(), nil)
 	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1)
 	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
 	err = app.Commit()
@@ -1413,7 +1413,7 @@ func TestNativeHistogramsInRecordingRules(t *testing.T) {
 	db := storage.DB
 	hists := tsdbutil.GenerateTestHistograms(5)
 	ts := time.Now()
-	app := db.Appender(context.Background())
+	app := db.Appender(context.Background(), nil)
 	for i, h := range hists {
 		l := labels.FromStrings("__name__", "histogram_metric", "idx", strconv.Itoa(i))
 		_, err := app.AppendHistogram(0, l, ts.UnixMilli(), h.Copy(), nil)

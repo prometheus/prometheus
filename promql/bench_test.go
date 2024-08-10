@@ -68,7 +68,7 @@ func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *promql.Engine, in
 	pointsPerSparseSeries := numIntervals / 50
 
 	for s := 0; s < numIntervals; s++ {
-		a := stor.Appender(context.Background())
+		a := stor.Appender(context.Background(), nil)
 		ts := int64(s * interval)
 		for i, metric := range metrics {
 			ref, _ := a.Append(refs[i], metric, ts, float64(s)+float64(i)/float64(len(metrics)))
@@ -313,7 +313,7 @@ func BenchmarkNativeHistograms(b *testing.B) {
 	testStorage := teststorage.New(b)
 	defer testStorage.Close()
 
-	app := testStorage.Appender(context.TODO())
+	app := testStorage.Appender(context.TODO(), nil)
 	if err := generateNativeHistogramSeries(app, 3000); err != nil {
 		b.Fatal(err)
 	}

@@ -1009,7 +1009,9 @@ func simpleTestScrapeLoop(t testing.TB) (context.Context, *scrapeLoop) {
 	t.Cleanup(func() { s.Close() })
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sl := newBasicScrapeLoop(t, ctx, &testScraper{}, s.Appender, 0)
+	sl := newBasicScrapeLoop(t, ctx, &testScraper{}, func(ctx context.Context) storage.Appender {
+		return s.Appender(ctx, nil)
+	}, 0)
 	t.Cleanup(func() { cancel() })
 
 	return ctx, sl
@@ -1050,7 +1052,9 @@ func TestScrapeLoopFailWithInvalidLabelsAfterRelabel(t *testing.T) {
 		Separator:   ";",
 		Replacement: "$1",
 	}}
-	sl := newBasicScrapeLoop(t, ctx, &testScraper{}, s.Appender, 0)
+	sl := newBasicScrapeLoop(t, ctx, &testScraper{}, func(ctx context.Context) storage.Appender {
+		return s.Appender(ctx, nil)
+	}, 0)
 	sl.sampleMutator = func(l labels.Labels) labels.Labels {
 		return mutateSampleLabels(l, target, true, relabelConfig)
 	}
@@ -1206,7 +1210,7 @@ func TestScrapeLoopCache(t *testing.T) {
 	var (
 		signal  = make(chan struct{}, 1)
 		scraper = &testScraper{}
-		app     = func(ctx context.Context) storage.Appender { appender.next = s.Appender(ctx); return appender }
+		app     = func(ctx context.Context) storage.Appender { appender.next = s.Appender(ctx, nil); return appender }
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1264,7 +1268,7 @@ func TestScrapeLoopCacheMemoryExhaustionProtection(t *testing.T) {
 	s := teststorage.New(t)
 	defer s.Close()
 
-	sapp := s.Appender(context.Background())
+	sapp := s.Appender(context.Background(), nil)
 
 	appender := &collectResultAppender{next: sapp}
 	var (
@@ -2587,7 +2591,7 @@ func TestScrapeLoop_RespectTimestamps(t *testing.T) {
 	s := teststorage.New(t)
 	defer s.Close()
 
-	app := s.Appender(context.Background())
+	app := s.Appender(context.Background(), nil)
 	capp := &collectResultAppender{next: app}
 	sl := newBasicScrapeLoop(t, context.Background(), nil, func(ctx context.Context) storage.Appender { return capp }, 0)
 
@@ -2611,7 +2615,7 @@ func TestScrapeLoop_DiscardTimestamps(t *testing.T) {
 	s := teststorage.New(t)
 	defer s.Close()
 
-	app := s.Appender(context.Background())
+	app := s.Appender(context.Background(), nil)
 
 	capp := &collectResultAppender{next: app}
 
@@ -2639,7 +2643,9 @@ func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
 	defer s.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sl := newBasicScrapeLoop(t, ctx, &testScraper{}, s.Appender, 0)
+	sl := newBasicScrapeLoop(t, ctx, &testScraper{}, func(ctx context.Context) storage.Appender {
+		return s.Appender(ctx, nil)
+	}, 0)
 	defer cancel()
 
 	// We add a good and a bad metric to check that both are discarded.
@@ -2675,7 +2681,7 @@ func TestScrapeLoopDiscardUnnamedMetrics(t *testing.T) {
 	s := teststorage.New(t)
 	defer s.Close()
 
-	app := s.Appender(context.Background())
+	app := s.Appender(context.Background(), nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	sl := newBasicScrapeLoop(t, context.Background(), &testScraper{}, func(ctx context.Context) storage.Appender { return app }, 0)
@@ -2930,7 +2936,9 @@ func TestScrapeAddFast(t *testing.T) {
 	defer s.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sl := newBasicScrapeLoop(t, ctx, &testScraper{}, s.Appender, 0)
+	sl := newBasicScrapeLoop(t, ctx, &testScraper{}, func(ctx context.Context) storage.Appender {
+		return s.Appender(ctx, nil)
+	}, 0)
 	defer cancel()
 
 	slApp := sl.appender(ctx)
@@ -3000,7 +3008,9 @@ func TestScrapeReportSingleAppender(t *testing.T) {
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sl := newBasicScrapeLoop(t, ctx, scraper, s.Appender, 10*time.Millisecond)
+	sl := newBasicScrapeLoop(t, ctx, scraper, func(ctx context.Context) storage.Appender {
+		return s.Appender(ctx, nil)
+	}, 10*time.Millisecond)
 
 	numScrapes := 0
 

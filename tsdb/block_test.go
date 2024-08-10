@@ -634,7 +634,7 @@ func createHead(tb testing.TB, w *wlog.WL, series []storage.Series, chunkDir str
 
 	var it chunkenc.Iterator
 	ctx := context.Background()
-	app := head.Appender(ctx)
+	app := head.Appender(ctx, nil)
 	for _, s := range series {
 		ref := storage.SeriesRef(0)
 		it = s.Iterator(it)
@@ -646,7 +646,7 @@ func createHead(tb testing.TB, w *wlog.WL, series []storage.Series, chunkDir str
 				// The behaviour of appender is undefined if samples of different types
 				// are appended to the same series in a single Commit().
 				require.NoError(tb, app.Commit())
-				app = head.Appender(ctx)
+				app = head.Appender(ctx, nil)
 			}
 
 			switch typ {
@@ -683,7 +683,7 @@ func createHeadWithOOOSamples(tb testing.TB, w *wlog.WL, series []storage.Series
 
 	var it chunkenc.Iterator
 	totalSamples := 0
-	app := head.Appender(context.Background())
+	app := head.Appender(context.Background(), nil)
 	for _, s := range series {
 		ref := storage.SeriesRef(0)
 		it = s.Iterator(it)
@@ -712,7 +712,7 @@ func createHeadWithOOOSamples(tb testing.TB, w *wlog.WL, series []storage.Series
 	oooSamplesAppended := 0
 	require.Equal(tb, float64(0), prom_testutil.ToFloat64(head.metrics.outOfOrderSamplesAppended))
 
-	app = head.Appender(context.Background())
+	app = head.Appender(context.Background(), nil)
 	for i, lset := range oooSampleLabels {
 		ref := storage.SeriesRef(0)
 		for _, sample := range oooSamples[i] {

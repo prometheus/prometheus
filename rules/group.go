@@ -541,7 +541,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				numDuplicates = 0
 			)
 
-			app := g.opts.Appendable.Appender(ctx)
+			app := g.opts.Appendable.Appender(ctx, nil)
 			seriesReturned := make(map[string]labels.Labels, len(g.seriesInPreviousEval[i]))
 			defer func() {
 				if err := app.Commit(); err != nil {
@@ -655,7 +655,7 @@ func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
 	if len(g.staleSeries) == 0 {
 		return
 	}
-	app := g.opts.Appendable.Appender(ctx)
+	app := g.opts.Appendable.Appender(ctx, nil)
 	queryOffset := g.QueryOffset()
 	for _, s := range g.staleSeries {
 		// Rule that produced series no longer configured, mark it stale.

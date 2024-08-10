@@ -164,7 +164,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 				return mutateSampleLabels(l, opts.target, opts.honorLabels, opts.mrc)
 			},
 			func(l labels.Labels) labels.Labels { return mutateReportSampleLabels(l, opts.target) },
-			func(ctx context.Context) storage.Appender { return app.Appender(ctx) },
+			func(ctx context.Context) storage.Appender { return app.Appender(ctx, nil) },
 			cache,
 			sp.symbolTable,
 			offsetSeed,

@@ -62,7 +62,7 @@ type Appendable interface {
 	// Appender returns a new appender for the storage. The implementation
 	// can choose whether or not to use the context, for deadlines or to check
 	// for errors.
-	Appender(ctx context.Context) Appender
+	Appender(ctx context.Context, hints *AppendHints) Appender
 }
 
 // SampleAndChunkQueryable allows retrieving samples as well as encoded samples in form of chunks.
@@ -225,6 +225,9 @@ type SelectHints struct {
 type LabelHints struct {
 	// Maximum number of results returned. Use a value of 0 to disable.
 	Limit int
+}
+type AppendHints struct {
+	DiscardOutOfOrder bool
 }
 
 // TODO(bwplotka): Move to promql/engine_test.go?

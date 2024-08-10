@@ -434,7 +434,7 @@ func TestStreamReadEndpoint(t *testing.T) {
 func addNativeHistogramsToTestSuite(t *testing.T, storage *teststorage.TestStorage, n int) {
 	lbls := labels.FromStrings("__name__", "test_histogram_metric1", "baz", "qux")
 
-	app := storage.Appender(context.TODO())
+	app := storage.Appender(context.TODO(), nil)
 	for i, fh := range tsdbutil.GenerateTestFloatHistograms(n) {
 		_, err := app.AppendHistogram(0, lbls, int64(i)*int64(60*time.Second/time.Millisecond), nil, fh)
 		require.NoError(t, err)

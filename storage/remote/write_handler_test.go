@@ -810,7 +810,7 @@ func requireEqual(t *testing.T, expected, actual interface{}, msgAndArgs ...inte
 		msgAndArgs...)
 }
 
-func (m *mockAppendable) Appender(_ context.Context) storage.Appender {
+func (m *mockAppendable) Appender(_ context.Context, hints *storage.AppendHints) storage.Appender {
 	if m.latestSample == nil {
 		m.latestSample = map[uint64]int64{}
 	}

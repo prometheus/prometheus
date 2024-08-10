@@ -307,7 +307,7 @@ func TestTimeMetrics(t *testing.T) {
 		"prometheus_tsdb_head_max_time_seconds",
 	))
 
-	app := db.Appender(context.Background())
+	app := db.Appender(context.Background(), nil)
 	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 1)
 	require.NoError(t, err)
 	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 2000, 1)

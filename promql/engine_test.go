@@ -1541,7 +1541,7 @@ load 1ms
 
 	// Add some samples with negative timestamp.
 	db := storage.DB
-	app := db.Appender(context.Background())
+	app := db.Appender(context.Background(), nil)
 	ref, err := app.Append(0, lblsneg, -1000000, 1000)
 	require.NoError(t, err)
 	for ts := int64(-1000000 + 1000); ts <= 0; ts += 1000 {
@@ -3220,7 +3220,7 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 				engine := newTestEngine()
 
 				ts := idx0 * int64(10*time.Minute/time.Millisecond)
-				app := storage.Appender(context.Background())
+				app := storage.Appender(context.Background(), nil)
 				_, err := app.Append(0, labels.FromStrings("__name__", "float_series", "idx", "0"), ts, 42)
 				require.NoError(t, err)
 				for idx1, h := range c.histograms {
@@ -3494,7 +3494,7 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 				seriesName := "sparse_histogram_series"
 
 				ts := idx0 * int64(10*time.Minute/time.Millisecond)
-				app := storage.Appender(context.Background())
+				app := storage.Appender(context.Background(), nil)
 				for idx1, h := range c.histograms {
 					lbls := labels.FromStrings("__name__", seriesName, "idx", strconv.Itoa(idx1))
 					// Since we mutate h later, we need to create a copy here.
@@ -3651,7 +3651,7 @@ func TestNativeHistogram_MulDivOperator(t *testing.T) {
 				engine := newTestEngine()
 
 				ts := idx0 * int64(10*time.Minute/time.Millisecond)
-				app := storage.Appender(context.Background())
+				app := storage.Appender(context.Background(), nil)
 				h := c.histogram
 				lbls := labels.FromStrings("__name__", seriesName)
 				// Since we mutate h later, we need to create a copy here.
