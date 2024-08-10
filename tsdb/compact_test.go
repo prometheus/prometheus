@@ -2000,11 +2000,11 @@ func TestDelayedCompaction(t *testing.T) {
 			// The first compaction is expected to result in 1 block.
 			db.DisableCompactions()
 			app := db.Appender(context.Background())
-			_, err := app.Append(0, label, 0, 0)
+			_, err := app.Append(0, label, 0, 0, nil)
 			require.NoError(t, err)
-			_, err = app.Append(0, label, 11, 0)
+			_, err = app.Append(0, label, 11, 0, nil)
 			require.NoError(t, err)
-			_, err = app.Append(0, label, 21, 0)
+			_, err = app.Append(0, label, 21, 0, nil)
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
@@ -2031,9 +2031,9 @@ func TestDelayedCompaction(t *testing.T) {
 			// This also ensures that no delay happens between consecutive compactions.
 			db.DisableCompactions()
 			app = db.Appender(context.Background())
-			_, err = app.Append(0, label, 31, 0)
+			_, err = app.Append(0, label, 31, 0, nil)
 			require.NoError(t, err)
-			_, err = app.Append(0, label, 41, 0)
+			_, err = app.Append(0, label, 41, 0, nil)
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
@@ -2066,7 +2066,7 @@ func TestDelayedCompaction(t *testing.T) {
 
 			db.DisableCompactions()
 			app = db.Appender(context.Background())
-			_, err = app.Append(0, label, 51, 0)
+			_, err = app.Append(0, label, 51, 0, nil)
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
@@ -2134,9 +2134,9 @@ func TestDelayedCompactionDoesNotBlockUnrelatedOps(t *testing.T) {
 			if c.whenCompactable {
 				label := labels.FromStrings("foo", "bar")
 				app := db.Appender(context.Background())
-				_, err := app.Append(0, label, 301, 0)
+				_, err := app.Append(0, label, 301, 0, nil)
 				require.NoError(t, err)
-				_, err = app.Append(0, label, 317, 0)
+				_, err = app.Append(0, label, 317, 0, nil)
 				require.NoError(t, err)
 				require.NoError(t, app.Commit())
 				// The Head is compactable and will still be at the end.

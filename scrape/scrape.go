@@ -60,8 +60,6 @@ var AlignScrapeTimestamps = true
 
 var errNameLabelMandatory = fmt.Errorf("missing metric name (%s label)", labels.MetricName)
 
-var hints = &storage.AppendHints{DiscardOutOfOrder: true}
-
 // scrapePool manages scrapes for sets of targets.
 type scrapePool struct {
 	appendable storage.Appendable
@@ -1310,7 +1308,7 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	if forcedErr := sl.getForcedError(); forcedErr != nil {
 		scrapeErr = forcedErr
 		// Add stale markers.
-		if _, _, _, err := sl.append(app, []byte{}, "", appendTime, hints); err != nil {
+		if _, _, _, err := sl.append(app, []byte{}, "", appendTime); err != nil {
 			app.Rollback()
 			app = sl.appender(sl.appenderCtx)
 			level.Warn(sl.l).Log("msg", "Append failed", "err", err)
@@ -1357,14 +1355,14 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 
 	// A failed scrape is the same as an empty scrape,
 	// we still call sl.append to trigger stale markers.
-	total, added, seriesAdded, appErr = sl.append(app, b, contentType, appendTime, hints)
+	total, added, seriesAdded, appErr = sl.append(app, b, contentType, appendTime)
 	if appErr != nil {
 		app.Rollback()
 		app = sl.appender(sl.appenderCtx)
 		level.Debug(sl.l).Log("msg", "Append failed", "err", appErr)
 		// The append failed, probably due to a parse error or sample limit.
 		// Call sl.append again with an empty scrape to trigger stale markers.
-		if _, _, _, err := sl.append(app, []byte{}, "", appendTime, hints); err != nil {
+		if _, _, _, err := sl.append(app, []byte{}, "", appendTime); err != nil {
 			app.Rollback()
 			app = sl.appender(sl.appenderCtx)
 			level.Warn(sl.l).Log("msg", "Append failed", "err", err)
@@ -1443,7 +1441,7 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 			level.Warn(sl.l).Log("msg", "Stale commit failed", "err", err)
 		}
 	}()
-	if _, _, _, err = sl.append(app, []byte{}, "", staleTime, hints); err != nil {
+	if _, _, _, err = sl.append(app, []byte{}, "", staleTime); err != nil {
 		app.Rollback()
 		app = sl.appender(sl.appenderCtx)
 		level.Warn(sl.l).Log("msg", "Stale append failed", "err", err)
@@ -1475,7 +1473,7 @@ type appendErrors struct {
 	numExemplarOutOfOrder int
 }
 
-func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string, ts time.Time, hints *storage.AppendHints) (total, added, seriesAdded int, err error) {
+func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
 	p, err := textparse.New(b, contentType, sl.scrapeClassicHistograms, sl.symbolTable)
 	if err != nil {
 		level.Debug(sl.l).Log(
@@ -1764,7 +1762,7 @@ loop:
 	if err == nil {
 		sl.cache.forEachStale(func(lset labels.Labels) bool {
 			// Series no longer exposed, mark it stale.
-			_, err = app.Append(0, lset, defTime, math.Float64frombits(value.StaleNaN), hints)
+			_, err = app.Append(0, lset, defTime, math.Float64frombits(value.StaleNaN), nil)
 			switch {
 			case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
 				// Do not count these in logging, as this is expected if a target

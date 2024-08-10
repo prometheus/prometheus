@@ -5930,7 +5930,7 @@ func TestHeadAppender_AppendFloatWithSameTimestampAsPreviousHistogram(t *testing
 	{
 		// Append a float 10.0 @ 1_000
 		app := head.Appender(context.Background())
-		_, err := app.Append(0, ls, 1_000, 10.0)
+		_, err := app.Append(0, ls, 1_000, 10.0, nil)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 	}
@@ -5945,7 +5945,7 @@ func TestHeadAppender_AppendFloatWithSameTimestampAsPreviousHistogram(t *testing
 	}
 
 	app := head.Appender(context.Background())
-	_, err := app.Append(0, ls, 2_000, 10.0)
+	_, err := app.Append(0, ls, 2_000, 10.0, nil)
 	require.Error(t, err)
 	require.ErrorIs(t, err, storage.NewDuplicateHistogramToFloatErr(2_000, 10.0))
 }
