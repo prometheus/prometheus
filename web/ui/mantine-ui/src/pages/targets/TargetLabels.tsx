@@ -1,14 +1,7 @@
 import { FC } from "react";
 import { Labels } from "../../api/responseTypes/targets";
 import { LabelBadges } from "../../components/LabelBadges";
-import {
-  ActionIcon,
-  Collapse,
-  Divider,
-  Group,
-  Stack,
-  Text,
-} from "@mantine/core";
+import { ActionIcon, Collapse, Group, Stack, Text } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { IconChevronDown, IconChevronUp } from "@tabler/icons-react";
 

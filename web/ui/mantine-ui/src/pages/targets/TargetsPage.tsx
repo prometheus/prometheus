@@ -12,21 +12,25 @@ import {
   IconSearch,
 } from "@tabler/icons-react";
 import { StateMultiSelect } from "../../components/StateMultiSelect";
-import { useSuspenseAPIQuery } from "../../api/api";
-import { ScrapePoolsResult } from "../../api/responseTypes/scrapePools";
-import { Suspense, useEffect } from "react";
+import { Suspense } from "react";
 import badgeClasses from "../../Badge.module.css";
 import { useAppDispatch, useAppSelector } from "../../state/hooks";
 import {
   setCollapsedPools,
-  setHealthFilter,
-  setSearchFilter,
-  setSelectedPool,
+  setShowLimitAlert,
 } from "../../state/targetsPageSlice";
-import ScrapePoolList from "./ScrapePoolsList";
+import {
+  ArrayParam,
+  StringParam,
+  useQueryParam,
+  withDefault,
+} from "use-query-params";
 import ErrorBoundary from "../../components/ErrorBoundary";
+import ScrapePoolList from "./ScrapePoolsList";
+import { useSuspenseAPIQuery } from "../../api/api";
+import { ScrapePoolsResult } from "../../api/responseTypes/scrapePools";
 
-const scrapePoolQueryParam = "scrapePool";
+export const targetPoolDisplayLimit = 3;
 
 export default function TargetsPage() {
   // Load the list of all available scrape pools.
@@ -40,25 +44,33 @@ export default function TargetsPage() {
 
   const dispatch = useAppDispatch();
 
-  // If there is a selected pool in the URL, extract it on initial load.
-  useEffect(() => {
-    const uriPool = new URLSearchParams(window.location.search).get(
-      scrapePoolQueryParam
-    );
-    if (uriPool !== null) {
-      dispatch(setSelectedPool(uriPool));
-    }
-  }, [dispatch]);
+  const [scrapePool, setScrapePool] = useQueryParam("scrapePool", StringParam);
+  const [healthFilter, setHealthFilter] = useQueryParam(
+    "healthFilter",
+    withDefault(ArrayParam, [])
+  );
+  const [searchFilter, setSearchFilter] = useQueryParam(
+    "searchFilter",
+    withDefault(StringParam, "")
+  );
 
-  const { selectedPool, healthFilter, searchFilter, collapsedPools } =
-    useAppSelector((state) => state.targetsPage);
+  const { collapsedPools, showLimitAlert } = useAppSelector(
+    (state) => state.targetsPage
+  );
 
-  let poolToShow = selectedPool;
-  let limitedDueToManyPools = false;
-
-  if (poolToShow === null && scrapePools.length > 20) {
-    poolToShow = scrapePools[0];
-    limitedDueToManyPools = true;
+  // When we have more than X targets, we want to limit the display by selecting the first
+  // scrape pool and reflecting that in the URL as well. We also want to show an alert
+  // about the fact that we are limiting the display, but the tricky bit is that this
+  // alert should only be shown once, upon the first "redirect" that causes the limiting,
+  // not again when the page is reloaded with the same URL parameters. That's why we remember
+  // `showLimitAlert` in Redux (just useState() doesn't work properly, because the component
+  // for some Suspense-related reasons seems to be mounted/unmounted multiple times, so the
+  // state cell would get initialized multiple times as well).
+  const limited =
+    scrapePools.length > targetPoolDisplayLimit && scrapePool === undefined;
+  if (limited) {
+    setScrapePool(scrapePools[0]);
+    dispatch(setShowLimitAlert(true));
   }
 
   return (
@@ -67,8 +79,11 @@ export default function TargetsPage() {
         <Select
           placeholder="Select scrape pool"
           data={[{ label: "All pools", value: "" }, ...scrapePools]}
-          value={selectedPool}
-          onChange={(value) => dispatch(setSelectedPool(value || null))}
+          value={(limited && scrapePools[0]) || scrapePool || null}
+          onChange={(value) => {
+            setScrapePool(value);
+            showLimitAlert && dispatch(setShowLimitAlert(false));
+          }}
           searchable
         />
         <StateMultiSelect
@@ -81,17 +96,15 @@ export default function TargetsPage() {
                 : badgeClasses.healthErr
           }
           placeholder="Filter by target state"
-          values={healthFilter}
-          onChange={(values) => dispatch(setHealthFilter(values))}
+          values={(healthFilter?.filter((v) => v !== null) as string[]) || []}
+          onChange={(values) => setHealthFilter(values)}
         />
         <TextInput
           flex={1}
           leftSection={<IconSearch size={14} />}
           placeholder="Filter by endpoint or labels"
-          value={searchFilter}
-          onChange={(event) =>
-            dispatch(setSearchFilter(event.currentTarget.value))
-          }
+          value={searchFilter || ""}
+          onChange={(event) => setSearchFilter(event.currentTarget.value)}
         ></TextInput>
         <ActionIcon
           size="input-sm"
@@ -127,8 +140,9 @@ export default function TargetsPage() {
         >
           <ScrapePoolList
             poolNames={scrapePools}
-            selectedPool={poolToShow}
-            limited={limitedDueToManyPools}
+            selectedPool={(limited && scrapePools[0]) || scrapePool || null}
+            healthFilter={healthFilter as string[]}
+            searchFilter={searchFilter}
           />
         </Suspense>
       </ErrorBoundary>

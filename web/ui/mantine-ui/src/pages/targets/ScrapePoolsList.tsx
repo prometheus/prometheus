@@ -8,26 +8,37 @@ import {
   Stack,
   Table,
   Text,
+  Tooltip,
 } from "@mantine/core";
 import { KVSearch } from "@nexucis/kvsearch";
-import { IconAlertTriangle, IconInfoCircle } from "@tabler/icons-react";
+import {
+  IconAlertTriangle,
+  IconHourglass,
+  IconInfoCircle,
+  IconRefresh,
+} from "@tabler/icons-react";
 import { useSuspenseAPIQuery } from "../../api/api";
 import { Target, TargetsResult } from "../../api/responseTypes/targets";
-import React, { FC, useState } from "react";
+import React, { FC } from "react";
 import {
   humanizeDurationRelative,
   humanizeDuration,
   now,
 } from "../../lib/formatTime";
-import { LabelBadges } from "../../components/LabelBadges";
 import { useAppDispatch, useAppSelector } from "../../state/hooks";
-import { setCollapsedPools } from "../../state/targetsPageSlice";
+import {
+  setCollapsedPools,
+  setShowLimitAlert,
+} from "../../state/targetsPageSlice";
 import EndpointLink from "../../components/EndpointLink";
 import CustomInfiniteScroll from "../../components/CustomInfiniteScroll";
 
 import badgeClasses from "../../Badge.module.css";
 import panelClasses from "../../Panel.module.css";
 import TargetLabels from "./TargetLabels";
+import { useDebouncedValue } from "@mantine/hooks";
+import { targetPoolDisplayLimit } from "./TargetsPage";
+import { BooleanParam, useQueryParam, withDefault } from "use-query-params";
 
 type ScrapePool = {
   targets: Target[];
@@ -119,16 +130,21 @@ const groupTargets = (
 type ScrapePoolListProp = {
   poolNames: string[];
   selectedPool: string | null;
-  limited: boolean;
+  healthFilter: string[];
+  searchFilter: string;
 };
 
 const ScrapePoolList: FC<ScrapePoolListProp> = ({
   poolNames,
   selectedPool,
-  limited,
+  healthFilter,
+  searchFilter,
 }) => {
   const dispatch = useAppDispatch();
-  const [showEmptyPools, setShowEmptyPools] = useState(true);
+  const [showEmptyPools, setShowEmptyPools] = useQueryParam(
+    "showEmptyPools",
+    withDefault(BooleanParam, true)
+  );
 
   // Based on the selected pool (if any), load the list of targets.
   const {
@@ -143,11 +159,14 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
     },
   });
 
-  const { healthFilter, searchFilter, collapsedPools } = useAppSelector(
+  const { collapsedPools, showLimitAlert } = useAppSelector(
     (state) => state.targetsPage
   );
 
-  const search = searchFilter.trim();
+  const [debouncedSearch] = useDebouncedValue<string>(searchFilter, 250);
+
+  // TODO: Memoize all this computation, especially groupTargets().
+  const search = debouncedSearch.trim();
   const healthFilteredTargets = activeTargets.filter(
     (target) =>
       healthFilter.length === 0 ||
@@ -157,7 +176,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
     search === ""
       ? healthFilteredTargets
       : kvSearch
-          .filter(searchFilter, healthFilteredTargets)
+          .filter(search, healthFilteredTargets)
           .map((value) => value.original);
 
   const allPools = groupTargets(
@@ -194,13 +213,15 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
           </Alert>
         )
       )}
-      {limited && (
+      {showLimitAlert && (
         <Alert
           title="Found many pools, showing only one"
           icon={<IconInfoCircle size={14} />}
+          withCloseButton
+          onClose={() => dispatch(setShowLimitAlert(false))}
         >
-          There are more than 20 scrape pools. Showing only the first one. Use
-          the dropdown to select a different pool.
+          There are more than {targetPoolDisplayLimit} scrape pools. Showing
+          only the first one. Use the dropdown to select a different pool.
         </Alert>
       )}
       <Accordion
@@ -283,10 +304,10 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                         <Table.Thead>
                           <Table.Tr>
                             <Table.Th w="30%">Endpoint</Table.Th>
-                            <Table.Th w={100}>State</Table.Th>
                             <Table.Th>Labels</Table.Th>
                             <Table.Th w="10%">Last scrape</Table.Th>
-                            <Table.Th w="10%">Scrape duration</Table.Th>
+                            {/* <Table.Th w="10%">Scrape duration</Table.Th> */}
+                            <Table.Th w={100}>State</Table.Th>
                           </Table.Tr>
                         </Table.Thead>
                         <Table.Tbody>
@@ -307,13 +328,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                                     globalUrl={target.globalUrl}
                                   />
                                 </Table.Td>
-                                <Table.Td>
-                                  <Badge
-                                    className={healthBadgeClass(target.health)}
-                                  >
-                                    {target.health}
-                                  </Badge>
-                                </Table.Td>
+
                                 <Table.Td>
                                   <TargetLabels
                                     labels={target.labels}
@@ -321,15 +336,53 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                                   />
                                 </Table.Td>
                                 <Table.Td>
-                                  {humanizeDurationRelative(
-                                    target.lastScrape,
-                                    now()
-                                  )}
+                                  <Group gap="xs" wrap="wrap">
+                                    <Tooltip
+                                      label="Last target scrape"
+                                      withArrow
+                                    >
+                                      <Badge
+                                        variant="light"
+                                        className={badgeClasses.statsBadge}
+                                        styles={{
+                                          label: { textTransform: "none" },
+                                        }}
+                                        leftSection={<IconRefresh size={12} />}
+                                      >
+                                        {humanizeDurationRelative(
+                                          target.lastScrape,
+                                          now()
+                                        )}
+                                      </Badge>
+                                    </Tooltip>
+
+                                    <Tooltip
+                                      label="Duration of last target scrape"
+                                      withArrow
+                                    >
+                                      <Badge
+                                        variant="light"
+                                        className={badgeClasses.statsBadge}
+                                        styles={{
+                                          label: { textTransform: "none" },
+                                        }}
+                                        leftSection={
+                                          <IconHourglass size={12} />
+                                        }
+                                      >
+                                        {humanizeDuration(
+                                          target.lastScrapeDuration * 1000
+                                        )}
+                                      </Badge>
+                                    </Tooltip>
+                                  </Group>
                                 </Table.Td>
                                 <Table.Td>
-                                  {humanizeDuration(
-                                    target.lastScrapeDuration * 1000
-                                  )}
+                                  <Badge
+                                    className={healthBadgeClass(target.health)}
+                                  >
+                                    {target.health}
+                                  </Badge>
                                 </Table.Td>
                               </Table.Tr>
                               {target.lastError && (

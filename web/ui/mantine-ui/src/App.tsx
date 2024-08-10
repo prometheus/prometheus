@@ -60,6 +60,8 @@ import { useAppDispatch } from "./state/hooks";
 import { updateSettings, useSettings } from "./state/settingsSlice";
 import SettingsMenu from "./components/SettingsMenu";
 import ReadinessWrapper from "./components/ReadinessWrapper";
+import { QueryParamProvider } from "use-query-params";
+import { ReactRouter6Adapter } from "use-query-params/adapters/react-router-6";
 
 const queryClient = new QueryClient();
 
@@ -295,134 +297,136 @@ function App() {
 
   return (
     <BrowserRouter basename={pathPrefix}>
-      <MantineProvider defaultColorScheme="auto" theme={theme}>
-        <Notifications position="top-right" />
+      <QueryParamProvider adapter={ReactRouter6Adapter}>
+        <MantineProvider defaultColorScheme="auto" theme={theme}>
+          <Notifications position="top-right" />
 
-        <QueryClientProvider client={queryClient}>
-          <AppShell
-            header={{ height: 56 }}
-            navbar={{
-              width: 300,
-              // TODO: On pages with a long title like "/status", the navbar
-              // breaks in an ugly way for narrow windows. Fix this.
-              breakpoint: "sm",
-              collapsed: { desktop: true, mobile: !opened },
-            }}
-            padding="md"
-          >
-            <AppShell.Header bg="rgb(65, 73, 81)" c="#fff">
-              <Group h="100%" px="md">
-                <Group style={{ flex: 1 }} justify="space-between">
-                  <Group gap={65}>
-                    <Link
-                      to="/"
-                      style={{ textDecoration: "none", color: "white" }}
-                    >
-                      <Group gap={10}>
-                        <img src={PrometheusLogo} height={30} />
-                        <Text fz={20}>Prometheus{agentMode && " Agent"}</Text>
+          <QueryClientProvider client={queryClient}>
+            <AppShell
+              header={{ height: 56 }}
+              navbar={{
+                width: 300,
+                // TODO: On pages with a long title like "/status", the navbar
+                // breaks in an ugly way for narrow windows. Fix this.
+                breakpoint: "sm",
+                collapsed: { desktop: true, mobile: !opened },
+              }}
+              padding="md"
+            >
+              <AppShell.Header bg="rgb(65, 73, 81)" c="#fff">
+                <Group h="100%" px="md">
+                  <Group style={{ flex: 1 }} justify="space-between">
+                    <Group gap={65}>
+                      <Link
+                        to="/"
+                        style={{ textDecoration: "none", color: "white" }}
+                      >
+                        <Group gap={10}>
+                          <img src={PrometheusLogo} height={30} />
+                          <Text fz={20}>Prometheus{agentMode && " Agent"}</Text>
+                        </Group>
+                      </Link>
+                      <Group gap={12} visibleFrom="sm">
+                        {navLinks}
                       </Group>
-                    </Link>
-                    <Group gap={12} visibleFrom="sm">
-                      {navLinks}
+                    </Group>
+                    <Group visibleFrom="xs">
+                      <ThemeSelector />
+                      <SettingsMenu />
                     </Group>
                   </Group>
-                  <Group visibleFrom="xs">
-                    <ThemeSelector />
-                    <SettingsMenu />
-                  </Group>
+                  <Burger
+                    opened={opened}
+                    onClick={toggle}
+                    hiddenFrom="sm"
+                    size="sm"
+                    color="gray.2"
+                  />
                 </Group>
-                <Burger
-                  opened={opened}
-                  onClick={toggle}
-                  hiddenFrom="sm"
-                  size="sm"
-                  color="gray.2"
-                />
-              </Group>
-            </AppShell.Header>
+              </AppShell.Header>
 
-            <AppShell.Navbar py="md" px={4} bg="rgb(65, 73, 81)" c="#fff">
-              {navLinks}
-              <Group mt="md" hiddenFrom="xs" justify="center">
-                <ThemeSelector />
-                <SettingsMenu />
-              </Group>
-            </AppShell.Navbar>
+              <AppShell.Navbar py="md" px={4} bg="rgb(65, 73, 81)" c="#fff">
+                {navLinks}
+                <Group mt="md" hiddenFrom="xs" justify="center">
+                  <ThemeSelector />
+                  <SettingsMenu />
+                </Group>
+              </AppShell.Navbar>
 
-            <AppShell.Main>
-              <ErrorBoundary key={location.pathname}>
-                <Suspense
-                  fallback={
-                    <Box mt="lg">
-                      {Array.from(Array(10), (_, i) => (
-                        <Skeleton
-                          key={i}
-                          height={40}
-                          mb={15}
-                          width={1000}
-                          mx="auto"
+              <AppShell.Main>
+                <ErrorBoundary key={location.pathname}>
+                  <Suspense
+                    fallback={
+                      <Box mt="lg">
+                        {Array.from(Array(10), (_, i) => (
+                          <Skeleton
+                            key={i}
+                            height={40}
+                            mb={15}
+                            width={1000}
+                            mx="auto"
+                          />
+                        ))}
+                      </Box>
+                    }
+                  >
+                    <Routes>
+                      <Route
+                        path="/"
+                        element={
+                          <Navigate
+                            to={agentMode ? "/agent" : "/query"}
+                            replace
+                          />
+                        }
+                      />
+                      {agentMode ? (
+                        <Route
+                          path="/agent"
+                          element={
+                            <ReadinessWrapper>
+                              <AgentPage />
+                            </ReadinessWrapper>
+                          }
+                        />
+                      ) : (
+                        <>
+                          <Route
+                            path="/query"
+                            element={
+                              <ReadinessWrapper>
+                                <QueryPage />
+                              </ReadinessWrapper>
+                            }
+                          />
+                          <Route
+                            path="/alerts"
+                            element={
+                              <ReadinessWrapper>
+                                <AlertsPage />
+                              </ReadinessWrapper>
+                            }
+                          />
+                        </>
+                      )}
+                      {allStatusPages.map((p) => (
+                        <Route
+                          key={p.path}
+                          path={p.path}
+                          element={
+                            <ReadinessWrapper>{p.element}</ReadinessWrapper>
+                          }
                         />
                       ))}
-                    </Box>
-                  }
-                >
-                  <Routes>
-                    <Route
-                      path="/"
-                      element={
-                        <Navigate
-                          to={agentMode ? "/agent" : "/query"}
-                          replace
-                        />
-                      }
-                    />
-                    {agentMode ? (
-                      <Route
-                        path="/agent"
-                        element={
-                          <ReadinessWrapper>
-                            <AgentPage />
-                          </ReadinessWrapper>
-                        }
-                      />
-                    ) : (
-                      <>
-                        <Route
-                          path="/query"
-                          element={
-                            <ReadinessWrapper>
-                              <QueryPage />
-                            </ReadinessWrapper>
-                          }
-                        />
-                        <Route
-                          path="/alerts"
-                          element={
-                            <ReadinessWrapper>
-                              <AlertsPage />
-                            </ReadinessWrapper>
-                          }
-                        />
-                      </>
-                    )}
-                    {allStatusPages.map((p) => (
-                      <Route
-                        key={p.path}
-                        path={p.path}
-                        element={
-                          <ReadinessWrapper>{p.element}</ReadinessWrapper>
-                        }
-                      />
-                    ))}
-                  </Routes>
-                </Suspense>
-              </ErrorBoundary>
-            </AppShell.Main>
-          </AppShell>
-          {/* <ReactQueryDevtools initialIsOpen={false} /> */}
-        </QueryClientProvider>
-      </MantineProvider>
+                    </Routes>
+                  </Suspense>
+                </ErrorBoundary>
+              </AppShell.Main>
+            </AppShell>
+            {/* <ReactQueryDevtools initialIsOpen={false} /> */}
+          </QueryClientProvider>
+        </MantineProvider>
+      </QueryParamProvider>
     </BrowserRouter>
   );
 }

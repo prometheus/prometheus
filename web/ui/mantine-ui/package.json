@@ -39,7 +39,8 @@
     "react-redux": "^9.1.0",
     "react-router-dom": "^6.22.1",
     "uplot": "^1.6.30",
-    "uplot-react": "^1.2.2"
+    "uplot-react": "^1.2.2",
+    "use-query-params": "^2.2.1"
   },
   "devDependencies": {
     "@types/react": "^18.2.55",

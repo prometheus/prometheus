@@ -5,49 +5,32 @@ export const localStorageKeyCollapsedPools = "targetsPage.collapsedPools";
 export const localStorageKeyTargetHealthFilter = "targetsPage.healthFilter";
 
 interface TargetsPage {
-  selectedPool: string | null;
-  healthFilter: string[];
-  searchFilter: string;
   collapsedPools: string[];
+  showLimitAlert: boolean;
 }
 
 const initialState: TargetsPage = {
-  selectedPool: null,
-  healthFilter: initializeFromLocalStorage<string[]>(
-    localStorageKeyTargetHealthFilter,
-    []
-  ),
-  searchFilter: "",
   collapsedPools: initializeFromLocalStorage<string[]>(
     localStorageKeyCollapsedPools,
     []
   ),
+  showLimitAlert: false,
 };
 
 export const targetsPageSlice = createSlice({
   name: "targetsPage",
   initialState,
   reducers: {
-    setSelectedPool: (state, { payload }: PayloadAction<string | null>) => {
-      state.selectedPool = payload;
-    },
-    setHealthFilter: (state, { payload }: PayloadAction<string[]>) => {
-      state.healthFilter = payload;
-    },
-    setSearchFilter: (state, { payload }: PayloadAction<string>) => {
-      state.searchFilter = payload;
-    },
     setCollapsedPools: (state, { payload }: PayloadAction<string[]>) => {
       state.collapsedPools = payload;
+    },
+    setShowLimitAlert: (state, { payload }: PayloadAction<boolean>) => {
+      state.showLimitAlert = payload;
     },
   },
 });
 
-export const {
-  setSelectedPool,
-  setHealthFilter,
-  setSearchFilter,
-  setCollapsedPools,
-} = targetsPageSlice.actions;
+export const { setCollapsedPools, setShowLimitAlert } =
+  targetsPageSlice.actions;
 
 export default targetsPageSlice.reducer;

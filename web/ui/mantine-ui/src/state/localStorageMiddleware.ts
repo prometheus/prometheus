@@ -2,9 +2,7 @@ import { createListenerMiddleware } from "@reduxjs/toolkit";
 import { AppDispatch, RootState } from "./store";
 import {
   localStorageKeyCollapsedPools,
-  localStorageKeyTargetHealthFilter,
   setCollapsedPools,
-  setHealthFilter,
 } from "./targetsPageSlice";
 import { updateSettings } from "./settingsSlice";
 
@@ -23,13 +21,6 @@ startAppListening({
   actionCreator: setCollapsedPools,
   effect: ({ payload }) => {
     persistToLocalStorage(localStorageKeyCollapsedPools, payload);
-  },
-});
-
-startAppListening({
-  actionCreator: setHealthFilter,
-  effect: ({ payload }) => {
-    persistToLocalStorage(localStorageKeyTargetHealthFilter, payload);
   },
 });
 
