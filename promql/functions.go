@@ -436,10 +436,10 @@ func funcSortByLabel(vals []parser.Value, args parser.Expressions, enh *EvalNode
 
 // === sort_by_label_desc(vector parser.ValueTypeVector, label parser.ValueTypeString...) (Vector, Annotations) ===
 func funcSortByLabelDesc(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	// In case the labels are the same, NaN should sort to the bottom, so take
-	// ascending sort with NaN first and reverse it.
-	var anno annotations.Annotations
-	vals[0], anno = funcSortDesc(vals, args, enh)
+	slices.SortFunc(vals[0].(Vector), func(a, b Sample) int {
+		return labels.Compare(b.Metric, a.Metric)
+	})
+
 	labels := stringSliceFromArgs(args[1:])
 	slices.SortFunc(vals[0].(Vector), func(a, b Sample) int {
 		// Iterate over each given label
@@ -461,7 +461,7 @@ func funcSortByLabelDesc(vals []parser.Value, args parser.Expressions, enh *Eval
 		return 0
 	})
 
-	return vals[0].(Vector), anno
+	return vals[0].(Vector), nil
 }
 
 // === clamp(Vector parser.ValueTypeVector, min, max Scalar) (Vector, Annotations) ===
