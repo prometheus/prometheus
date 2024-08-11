@@ -14,8 +14,8 @@ namespace series_index::prometheus::tsdb::index {
 template <class ChunkMetadataList>
 class IndexWriter {
  public:
-  using TrieIndex = TrieIndex<trie::CedarTrie, trie::CedarMatchesList>;
-  using QueryableEncodingBimap = QueryableEncodingBimap<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimapFilament, TrieIndex>;
+  using TrieIndex = series_index::TrieIndex<trie::CedarTrie, trie::CedarMatchesList>;
+  using QueryableEncodingBimap = series_index::QueryableEncodingBimap<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimapFilament, TrieIndex>;
   using StreamWriter = PromPP::Prometheus::tsdb::index::StreamWriter;
   using SeriesWriter = section_writer::SeriesWriter<QueryableEncodingBimap, ChunkMetadataList>;
   using PostingsWriter = section_writer::PostingsWriter<QueryableEncodingBimap>;
