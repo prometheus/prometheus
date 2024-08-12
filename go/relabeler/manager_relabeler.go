@@ -59,6 +59,9 @@ func (i *IncomingData) Destroy() {
 		return
 	}
 	i.Hashdex = nil
+	if i.Data == nil {
+		return
+	}
 	i.Data.Destroy()
 }
 
