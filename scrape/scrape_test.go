@@ -3722,7 +3722,7 @@ scrape_configs:
 
 	mng, err := NewManager(&Options{EnableNativeHistogramsIngestion: true}, nil, s, reg)
 	require.NoError(t, err)
-	cfg, err := config.Load(configStr, false, log.NewNopLogger())
+	cfg, err := config.Load(configStr, log.NewNopLogger())
 	require.NoError(t, err)
 	mng.ApplyConfig(cfg)
 	tsets := make(chan map[string][]*targetgroup.Group)

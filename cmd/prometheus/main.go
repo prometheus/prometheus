@@ -157,12 +157,11 @@ type flagConfig struct {
 	memlimitRatio float64
 	// These options are extracted from featureList
 	// for ease of use.
-	enableExpandExternalLabels bool
-	enableNewSDManager         bool
-	enablePerStepStats         bool
-	enableAutoGOMAXPROCS       bool
-	enableAutoGOMEMLIMIT       bool
-	enableConcurrentRuleEval   bool
+	enableNewSDManager       bool
+	enablePerStepStats       bool
+	enableAutoGOMAXPROCS     bool
+	enableAutoGOMEMLIMIT     bool
+	enableConcurrentRuleEval bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -182,9 +181,6 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "otlp-write-receiver":
 				c.web.EnableOTLPWriteReceiver = true
 				level.Info(logger).Log("msg", "Experimental OTLP write receiver enabled")
-			case "expand-external-labels":
-				c.enableExpandExternalLabels = true
-				level.Info(logger).Log("msg", "Experimental expand-external-labels enabled")
 			case "exemplar-storage":
 				c.tsdb.EnableExemplarStorage = true
 				level.Info(logger).Log("msg", "Experimental in-memory exemplar storage enabled")
@@ -473,7 +469,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, auto-gomemlimit, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, remote-write-receiver (DEPRECATED), extra-scrape-metrics, new-service-discovery-manager, auto-gomaxprocs, no-default-scrape-port, native-histograms, otlp-write-receiver, created-timestamp-zero-ingestion, concurrent-rule-eval. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, auto-gomemlimit, exemplar-storage, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, remote-write-receiver (DEPRECATED), extra-scrape-metrics, new-service-discovery-manager, auto-gomaxprocs, no-default-scrape-port, native-histograms, otlp-write-receiver, created-timestamp-zero-ingestion, concurrent-rule-eval. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
@@ -539,7 +535,7 @@ func main() {
 
 	// Throw error for invalid config before starting other components.
 	var cfgFile *config.Config
-	if cfgFile, err = config.LoadFile(cfg.configFile, agentMode, false, log.NewNopLogger()); err != nil {
+	if cfgFile, err = config.LoadFile(cfg.configFile, agentMode, log.NewNopLogger()); err != nil {
 		absPath, pathErr := filepath.Abs(cfg.configFile)
 		if pathErr != nil {
 			absPath = cfg.configFile
@@ -1098,11 +1094,11 @@ func main() {
 				for {
 					select {
 					case <-hup:
-						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, reloaders...); err != nil {
 							level.Error(logger).Log("msg", "Error reloading config", "err", err)
 						}
 					case rc := <-webHandler.Reload():
-						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, reloaders...); err != nil {
 							level.Error(logger).Log("msg", "Error reloading config", "err", err)
 							rc <- err
 						} else {
@@ -1133,7 +1129,7 @@ func main() {
 					return nil
 				}
 
-				if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, reloaders...); err != nil {
+				if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, reloaders...); err != nil {
 					return fmt.Errorf("error loading config from %q: %w", cfg.configFile, err)
 				}
 
@@ -1359,7 +1355,7 @@ type reloader struct {
 	reloader func(*config.Config) error
 }
 
-func reloadConfig(filename string, expandExternalLabels, enableExemplarStorage bool, logger log.Logger, noStepSuqueryInterval *safePromQLNoStepSubqueryInterval, rls ...reloader) (err error) {
+func reloadConfig(filename string, enableExemplarStorage bool, logger log.Logger, noStepSuqueryInterval *safePromQLNoStepSubqueryInterval, rls ...reloader) (err error) {
 	start := time.Now()
 	timings := []interface{}{}
 	level.Info(logger).Log("msg", "Loading configuration file", "filename", filename)
@@ -1373,7 +1369,7 @@ func reloadConfig(filename string, expandExternalLabels, enableExemplarStorage b
 		}
 	}()
 
-	conf, err := config.LoadFile(filename, agentMode, expandExternalLabels, logger)
+	conf, err := config.LoadFile(filename, agentMode, logger)
 	if err != nil {
 		return fmt.Errorf("couldn't load configuration (--config.file=%q): %w", filename, err)
 	}

@@ -67,7 +67,7 @@ var (
 )
 
 // Load parses the YAML input s into a Config.
-func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, error) {
+func Load(s string, logger log.Logger) (*Config, error) {
 	cfg := &Config{}
 	// If the entire config body is empty the UnmarshalYAML method is
 	// never called. We thus have to set the DefaultConfig at the entry
@@ -79,7 +79,7 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 		return nil, err
 	}
 
-	if !expandExternalLabels {
+	if cfg.GlobalConfig.ExternalLabels == nil || cfg.GlobalConfig.ExternalLabels.Len() == 0 {
 		return cfg, nil
 	}
 
@@ -106,12 +106,12 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 }
 
 // LoadFile parses the given YAML file into a Config.
-func LoadFile(filename string, agentMode, expandExternalLabels bool, logger log.Logger) (*Config, error) {
+func LoadFile(filename string, agentMode bool, logger log.Logger) (*Config, error) {
 	content, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := Load(string(content), expandExternalLabels, logger)
+	cfg, err := Load(string(content), logger)
 	if err != nil {
 		return nil, fmt.Errorf("parsing YAML file %s: %w", filename, err)
 	}

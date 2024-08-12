@@ -567,7 +567,7 @@ func checkFileExists(fn string) error {
 func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]string, error) {
 	fmt.Println("Checking", filename)
 
-	cfg, err := config.LoadFile(filename, agentMode, false, log.NewNopLogger())
+	cfg, err := config.LoadFile(filename, agentMode, log.NewNopLogger())
 	if err != nil {
 		return nil, err
 	}
