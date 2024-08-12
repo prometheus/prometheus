@@ -1793,9 +1793,13 @@ func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface
 }
 
 func (api *API) negotiateCodec(req *http.Request, resp *Response) (Codec, error) {
-	for _, clause := range goautoneg.ParseAccept(req.Header.Get("Accept")) {
-		for _, codec := range api.codecs {
-			if codec.ContentType().Satisfies(clause) && codec.CanEncode(req, resp) {
+	for _, codec := range api.codecs {
+		if !codec.CanEncode(req, resp) {
+			continue
+		}
+
+		for _, clause := range goautoneg.ParseAccept(req.Header.Get("Accept")) {
+			if codec.ContentType().Satisfies(clause) {
 				return codec, nil
 			}
 		}
