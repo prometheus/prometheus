@@ -391,9 +391,10 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		if rwcfg == nil {
 			return errors.New("empty or null remote write config section")
 		}
-		// Skip empty names, we fill their name with their config hash in remote write code.
+
+		// Skip empty names, we could fill their name with their config hash in remote write code.
 		if _, ok := rwNames[rwcfg.Name]; ok && rwcfg.Name != "" {
-			return fmt.Errorf("found multiple remote write configs with job name %q", rwcfg.Name)
+			return fmt.Errorf("found multiple remote write configs with name %q", rwcfg.Name)
 		}
 		rwNames[rwcfg.Name] = struct{}{}
 	}

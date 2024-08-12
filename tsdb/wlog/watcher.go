@@ -34,15 +34,21 @@ import (
 )
 
 const (
-	checkpointPeriod   = 5 * time.Second
-	segmentCheckPeriod = 100 * time.Millisecond
-	consumer           = "consumer"
+	consumer = "consumer"
 )
 
-var (
-	ErrIgnorable = errors.New("ignore me")
-	readTimeout  = 15 * time.Second
-)
+var ErrIgnorable = errors.New("ignore me")
+
+// WALWatcher allows chosing between Watcher and StatefulWatcher.
+type WALWatcher interface {
+	// Used as an identifier for StatefulWatcher.
+	Name() string
+	Start()
+	Notify()
+	// Only makes sense for StatefulWatcher.
+	PurgeState()
+	Stop()
+}
 
 // WriteTo is an interface used by the Watcher to send the samples it's read
 // from the WAL on to somewhere else. Functions will be called concurrently
@@ -73,11 +79,10 @@ type WriteNotified interface {
 }
 
 type WatcherMetrics struct {
-	recordsRead           *prometheus.CounterVec
-	recordDecodeFails     *prometheus.CounterVec
-	samplesSentPreTailing *prometheus.CounterVec
-	currentSegment        *prometheus.GaugeVec
-	notificationsSkipped  *prometheus.CounterVec
+	recordsRead          *prometheus.CounterVec
+	recordDecodeFails    *prometheus.CounterVec
+	currentSegment       *prometheus.GaugeVec
+	notificationsSkipped *prometheus.CounterVec
 }
 
 // Watcher watches the TSDB WAL for a given WriteTo.
@@ -99,13 +104,17 @@ type Watcher struct {
 
 	recordsReadMetric       *prometheus.CounterVec
 	recordDecodeFailsMetric prometheus.Counter
-	samplesSentPreTailing   prometheus.Counter
 	currentSegmentMetric    prometheus.Gauge
 	notificationsSkipped    prometheus.Counter
 
 	readNotify chan struct{}
 	quit       chan struct{}
 	done       chan struct{}
+
+	// To ease their use in tests.
+	checkpointPeriod   time.Duration
+	segmentCheckPeriod time.Duration
+	readTimeout        time.Duration
 
 	// For testing, stop when we hit this segment.
 	MaxSegment int
@@ -128,15 +137,6 @@ func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 				Subsystem: "wal_watcher",
 				Name:      "record_decode_failures_total",
 				Help:      "Number of records read by the WAL watcher that resulted in an error when decoding.",
-			},
-			[]string{consumer},
-		),
-		samplesSentPreTailing: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Namespace: "prometheus",
-				Subsystem: "wal_watcher",
-				Name:      "samples_sent_pre_tailing_total",
-				Help:      "Number of sample records read by the WAL watcher and sent to remote write during replay of existing WAL.",
 			},
 			[]string{consumer},
 		),
@@ -163,7 +163,6 @@ func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 	if reg != nil {
 		reg.MustRegister(m.recordsRead)
 		reg.MustRegister(m.recordDecodeFails)
-		reg.MustRegister(m.samplesSentPreTailing)
 		reg.MustRegister(m.currentSegment)
 		reg.MustRegister(m.notificationsSkipped)
 	}
@@ -191,8 +190,16 @@ func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logge
 		quit:       make(chan struct{}),
 		done:       make(chan struct{}),
 
+		checkpointPeriod:   5 * time.Second,
+		segmentCheckPeriod: 100 * time.Millisecond,
+		readTimeout:        15 * time.Second,
+
 		MaxSegment: -1,
 	}
+}
+
+func (w *Watcher) Name() string {
+	return w.name
 }
 
 func (w *Watcher) Notify() {
@@ -213,7 +220,6 @@ func (w *Watcher) setMetrics() {
 	if w.metrics != nil {
 		w.recordsReadMetric = w.metrics.recordsRead.MustCurryWith(prometheus.Labels{consumer: w.name})
 		w.recordDecodeFailsMetric = w.metrics.recordDecodeFails.WithLabelValues(w.name)
-		w.samplesSentPreTailing = w.metrics.samplesSentPreTailing.WithLabelValues(w.name)
 		w.currentSegmentMetric = w.metrics.currentSegment.WithLabelValues(w.name)
 		w.notificationsSkipped = w.metrics.notificationsSkipped.WithLabelValues(w.name)
 	}
@@ -237,11 +243,14 @@ func (w *Watcher) Stop() {
 		w.metrics.recordsRead.DeleteLabelValues(w.name, "series")
 		w.metrics.recordsRead.DeleteLabelValues(w.name, "samples")
 		w.metrics.recordDecodeFails.DeleteLabelValues(w.name)
-		w.metrics.samplesSentPreTailing.DeleteLabelValues(w.name)
 		w.metrics.currentSegment.DeleteLabelValues(w.name)
 	}
 
 	level.Info(w.logger).Log("msg", "WAL watcher stopped", "queue", w.name)
+}
+
+func (w *Watcher) PurgeState() {
+	level.Debug(w.logger).Log("msg", "Watcher has no state to purge")
 }
 
 func (w *Watcher) loop() {
@@ -375,13 +384,13 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 		return w.readAndHandleError(reader, segmentNum, tail, size)
 	}
 
-	checkpointTicker := time.NewTicker(checkpointPeriod)
+	checkpointTicker := time.NewTicker(w.checkpointPeriod)
 	defer checkpointTicker.Stop()
 
-	segmentTicker := time.NewTicker(segmentCheckPeriod)
+	segmentTicker := time.NewTicker(w.segmentCheckPeriod)
 	defer segmentTicker.Stop()
 
-	readTicker := time.NewTicker(readTimeout)
+	readTicker := time.NewTicker(w.readTimeout)
 	defer readTicker.Stop()
 
 	gcSem := make(chan struct{}, 1)
@@ -420,17 +429,16 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 			if last > segmentNum {
 				return w.readAndHandleError(reader, segmentNum, tail, size)
 			}
-			continue
 
 		// we haven't read due to a notification in quite some time, try reading anyways
 		case <-readTicker.C:
-			level.Debug(w.logger).Log("msg", "Watcher is reading the WAL due to timeout, haven't received any write notifications recently", "timeout", readTimeout)
+			level.Debug(w.logger).Log("msg", "Watcher is reading the WAL due to timeout, haven't received any write notifications recently", "timeout", w.readTimeout)
 			err := w.readAndHandleError(reader, segmentNum, tail, size)
 			if err != nil {
 				return err
 			}
 			// reset the ticker so we don't read too often
-			readTicker.Reset(readTimeout)
+			readTicker.Reset(w.readTimeout)
 
 		case <-w.readNotify:
 			err := w.readAndHandleError(reader, segmentNum, tail, size)
@@ -438,7 +446,7 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 				return err
 			}
 			// reset the ticker so we don't read too often
-			readTicker.Reset(readTimeout)
+			readTicker.Reset(w.readTimeout)
 		}
 	}
 }
@@ -452,9 +460,10 @@ func (w *Watcher) garbageCollectSeries(segmentNum int) error {
 	if dir == "" || dir == w.lastCheckpoint {
 		return nil
 	}
+	// TODO: shouldn't we set this later, after readCheckpoint??
 	w.lastCheckpoint = dir
 
-	index, err := checkpointNum(dir)
+	index, err := checkpointIndex(dir)
 	if err != nil {
 		return fmt.Errorf("error parsing checkpoint filename: %w", err)
 	}
@@ -470,7 +479,7 @@ func (w *Watcher) garbageCollectSeries(segmentNum int) error {
 		return fmt.Errorf("readCheckpoint: %w", err)
 	}
 
-	// Clear series with a checkpoint or segment index # lower than the checkpoint we just read.
+	// Clear series with a checkpoint or segment index lower than the checkpoint index we just read.
 	w.writer.SeriesReset(index)
 	return nil
 }
@@ -671,9 +680,9 @@ type segmentReadFn func(w *Watcher, r *LiveReader, segmentNum int, tail bool) er
 // Read all the series records from a Checkpoint directory.
 func (w *Watcher) readCheckpoint(checkpointDir string, readFn segmentReadFn) error {
 	level.Debug(w.logger).Log("msg", "Reading checkpoint", "dir", checkpointDir)
-	index, err := checkpointNum(checkpointDir)
+	index, err := checkpointIndex(checkpointDir)
 	if err != nil {
-		return fmt.Errorf("checkpointNum: %w", err)
+		return fmt.Errorf("checkpointIndex: %w", err)
 	}
 
 	// Ensure we read the whole contents of every segment in the checkpoint dir.
@@ -708,7 +717,7 @@ func (w *Watcher) readCheckpoint(checkpointDir string, readFn segmentReadFn) err
 	return nil
 }
 
-func checkpointNum(dir string) (int, error) {
+func checkpointIndex(dir string) (int, error) {
 	// Checkpoint dir names are in the format checkpoint.000001
 	// dir may contain a hidden directory, so only check the base directory
 	chunks := strings.Split(filepath.Base(dir), ".")

@@ -277,3 +277,7 @@ specified interval. The interval is defined by the
 Configuration reloads are triggered by detecting changes in the checksum of the
 main configuration file or any referenced files, such as rule and scrape
 configurations.
+
+## Remote Write Stateful Watcher
+
+TODO

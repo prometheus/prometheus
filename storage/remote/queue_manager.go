@@ -415,7 +415,7 @@ type QueueManager struct {
 	relabelConfigs       []*relabel.Config
 	sendExemplars        bool
 	sendNativeHistograms bool
-	watcher              *wlog.Watcher
+	watcher              wlog.WALWatcher
 	metadataWatcher      *MetadataWatcher
 
 	clientMtx   sync.RWMutex
@@ -456,6 +456,7 @@ func NewQueueManager(
 	readerMetrics *wlog.LiveReaderMetrics,
 	logger log.Logger,
 	dir string,
+	statefulWatcher bool,
 	samplesIn *ewmaRate,
 	cfg config.QueueConfig,
 	mCfg config.MetadataConfig,
@@ -519,7 +520,11 @@ func NewQueueManager(
 	if t.protoMsg != config.RemoteWriteProtoMsgV1 {
 		walMetadata = true
 	}
+
 	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite, walMetadata)
+	if statefulWatcher {
+		t.watcher = wlog.NewStatefulWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite, walMetadata)
+	}
 
 	// The current MetadataWatcher implementation is mutually exclusive
 	// with the new approach, which stores metadata as WAL records and
