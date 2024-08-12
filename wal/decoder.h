@@ -11,6 +11,7 @@
 #endif
 
 #include "bare_bones/preprocess.h"
+#include "primitives/go_slice.h"
 #include "prometheus/remote_write.h"
 #include "third_party/protozero/pbf_writer.hpp"
 #include "wal.h"
@@ -21,6 +22,13 @@ concept have_segment_id = requires(const T& t) {
 };
 
 namespace PromPP::WAL {
+
+// MetaInjection metedata for injection metrics.
+struct MetaInjection {
+  int64_t sent_at{0};
+  Primitives::Go::String agent_uuid;
+  Primitives::Go::String hostname;
+};
 
 template <class BasicDecoder, class Output>
 class TimeseriesProtobufWriter {
@@ -79,14 +87,33 @@ class Decoder {
   PROMPP_ALWAYS_INLINE void decode_to_hashdex(Input& in, Hashdex& hx, Stats& stats) {
     std::ispanstream inspan(std::string_view(in.data(), in.size()));
     inspan >> reader_;
-    uint64_t samples_before = reader_.samples();
 
     hx.presharding(reader_);
 
     // write stats
     stats.created_at = reader_.created_at_tsns();
     stats.encoded_at = reader_.encoded_at_tsns();
-    stats.samples = reader_.samples() - samples_before;
+    stats.samples = hx.size();
+    stats.series = hx.series();
+    stats.earliest_block_sample = reader_.earliest_sample();
+    stats.latest_block_sample = reader_.latest_sample();
+    if constexpr (have_segment_id<Stats>) {
+      stats.segment_id = reader_.last_processed_segment();
+    }
+  }
+
+  // decode_to_hashdex decoding incoming data and add to hashdex with metadata.
+  template <class Input, class Hashdex, class Stats, class Meta>
+  PROMPP_ALWAYS_INLINE void decode_to_hashdex(Input& in, Hashdex& hx, Stats& stats, Meta& meta) {
+    std::ispanstream inspan(std::string_view(in.data(), in.size()));
+    inspan >> reader_;
+
+    hx.presharding(reader_, meta);
+
+    // write stats
+    stats.created_at = reader_.created_at_tsns();
+    stats.encoded_at = reader_.encoded_at_tsns();
+    stats.samples = hx.size();
     stats.series = hx.series();
     stats.earliest_block_sample = reader_.earliest_sample();
     stats.latest_block_sample = reader_.latest_sample();

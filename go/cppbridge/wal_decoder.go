@@ -144,9 +144,14 @@ type DecodedHashdex struct {
 var _ HashdexContent = (*DecodedHashdex)(nil)
 
 // NewDecodedHashdex init new DecodedHashdex.
-func NewDecodedHashdex(hashdex uintptr, cluster, replica string, stats DecodedSegmentStats) *DecodedHashdex {
+func NewDecodedHashdex(
+	hashdex uintptr,
+	meta *MetaInjection,
+	cluster, replica string,
+	stats DecodedSegmentStats,
+) *DecodedHashdex {
 	return &DecodedHashdex{
-		hashdex:             NewWALBasicDecoderHashdex(hashdex, cluster, replica),
+		hashdex:             NewWALBasicDecoderHashdex(hashdex, meta, cluster, replica),
 		DecodedSegmentStats: stats,
 	}
 }
@@ -189,7 +194,25 @@ func (d *WALDecoder) DecodeToHashdex(ctx context.Context, segment []byte) (Hashd
 		return nil, ctx.Err()
 	}
 	stats, hashdex, cluster, replica, exception := walDecoderDecodeToHashdex(d.decoder, segment)
-	return NewDecodedHashdex(hashdex, cluster, replica, stats), handleException(exception)
+	return NewDecodedHashdex(hashdex, nil, cluster, replica, stats), handleException(exception)
+}
+
+// DecodeToHashdexWithMetricInjection decode incoming encoding data and return WALBasicDecoderHashdex
+// with metadata for injection metrics.
+func (d *WALDecoder) DecodeToHashdexWithMetricInjection(
+	ctx context.Context,
+	segment []byte,
+	meta *MetaInjection,
+) (HashdexContent, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	stats, hashdex, cluster, replica, exception := walDecoderDecodeToHashdexWithMetricInjection(
+		d.decoder,
+		meta,
+		segment,
+	)
+	return NewDecodedHashdex(hashdex, meta, cluster, replica, stats), handleException(exception)
 }
 
 // DecodeDry - decode incoming encoding data, restores decoder.

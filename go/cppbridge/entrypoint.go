@@ -521,7 +521,7 @@ func walDecoderDecode(decoder uintptr, segment []byte) (stats DecodedSegmentStat
 	return res.DecodedSegmentStats, res.protobuf, res.error
 }
 
-// walDecoderDecode - decode WAL-segment into protobuf message through C++ decoder.
+// walDecoderDecodeToHashdex decode WAL-segment into BasicDecoderHashdex through C++ decoder.
 func walDecoderDecodeToHashdex(
 	decoder uintptr,
 	segment []byte,
@@ -545,6 +545,40 @@ func walDecoderDecodeToHashdex(
 
 	fastcgo.UnsafeCall2(
 		C.prompp_wal_decoder_decode_to_hashdex,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.DecodedSegmentStats, res.hashdex, res.cluster, res.replica, res.error
+}
+
+// walDecoderDecodeToHashdexWithMetricInjection decode WAL-segment into BasicDecoderHashdex through C++ decoder
+// with metadata for injection metrics.
+func walDecoderDecodeToHashdexWithMetricInjection(
+	decoder uintptr,
+	meta *MetaInjection,
+	segment []byte,
+) (
+	stats DecodedSegmentStats,
+	hashdex uintptr,
+	cluster, replica string,
+	err []byte,
+) {
+	var args = struct {
+		decoder uintptr
+		meta    *MetaInjection
+		segment []byte
+	}{decoder, meta, segment}
+	var res struct {
+		DecodedSegmentStats
+		hashdex uintptr
+		cluster string
+		replica string
+		error   []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_wal_decoder_decode_to_hashdex_with_metric_injection,
 		uintptr(unsafe.Pointer(&args)),
 		uintptr(unsafe.Pointer(&res)),
 	)

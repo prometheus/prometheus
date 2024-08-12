@@ -162,21 +162,31 @@ func (HashdexFactory) GoModel(data []model.TimeSeries, limits WALHashdexLimits) 
 	return NewWALGoModelHashdex(limits, data)
 }
 
+// MetaInjection metedata for injection metrics.
+type MetaInjection struct {
+	SentAt    int64
+	AgentUUID string
+	Hostname  string
+}
+
 // WALBasicDecoderHashdex Go wrapper for PromPP::WAL::WALBasicDecoderHashdex.
 type WALBasicDecoderHashdex struct {
-	hashdex uintptr
-	cluster string
-	replica string
+	hashdex  uintptr
+	metadata *MetaInjection
+	cluster  string
+	replica  string
 }
 
 // NewWALBasicDecoderHashdex init new WALBasicDecoderHashdex with c-pointer PromPP::WAL::WALBasicDecoderHashdex.
-func NewWALBasicDecoderHashdex(hashdex uintptr, cluster, replica string) *WALBasicDecoderHashdex {
+func NewWALBasicDecoderHashdex(hashdex uintptr, meta *MetaInjection, cluster, replica string) *WALBasicDecoderHashdex {
 	h := &WALBasicDecoderHashdex{
-		hashdex: hashdex,
-		cluster: cluster,
-		replica: replica,
+		hashdex:  hashdex,
+		metadata: meta,
+		cluster:  cluster,
+		replica:  replica,
 	}
 	runtime.SetFinalizer(h, func(h *WALBasicDecoderHashdex) {
+		runtime.KeepAlive(h.metadata)
 		if h.hashdex == 0 {
 			return
 		}

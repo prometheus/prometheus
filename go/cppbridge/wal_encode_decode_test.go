@@ -3,7 +3,9 @@ package cppbridge_test
 import (
 	"context"
 	"math/rand"
+	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -315,4 +317,122 @@ func (s *EncoderDecoderSuite) TestEncodeDecodeToHashdex() {
 		s.EqualValues(seriesCount, protocont.Series())
 		s.EqualValues(seriesCount*3, protocont.Samples())
 	}
+}
+
+func (s *EncoderDecoderSuite) TestEncodeDecodeToHashdexWithMetricInjection() {
+	hlimits := cppbridge.DefaultWALHashdexLimits()
+	dec := cppbridge.NewWALDecoder(cppbridge.EncodersVersion())
+	enc := cppbridge.NewWALEncoder(0, 0)
+
+	enc2 := cppbridge.NewWALEncoder(0, 0)
+	dec2 := cppbridge.NewWALDecoder(cppbridge.EncodersVersion())
+
+	count := 11
+	for i := 1; i < count; i++ {
+		meta := cppbridge.MetaInjection{
+			SentAt:    time.Now().UnixNano(),
+			AgentUUID: "UUID",
+			Hostname:  "SOMEHOSTNAME",
+		}
+
+		seriesCount := rand.Intn(500-100) + 100
+		s.T().Log("generate protobuf")
+		var expectedWr *prompb.WriteRequest
+		if i%2 == 0 {
+			expectedWr = s.makeData(seriesCount, int64(i-1))
+		} else {
+			expectedWr = s.makeData(seriesCount, int64(i))
+		}
+		data, err := expectedWr.Marshal()
+		s.Require().NoError(err)
+
+		s.T().Log("sharding protobuf")
+		h, err := cppbridge.NewWALProtobufHashdex(data, hlimits)
+		s.Require().NoError(err)
+
+		s.T().Log("encoding protobuf")
+		_, gos, err := enc.Encode(s.baseCtx, h)
+		s.Require().NoError(err)
+
+		s.EqualValues(seriesCount, gos.Series())
+		s.EqualValues(seriesCount*3, gos.Samples())
+
+		s.T().Log("transferring segment")
+		segByte := s.transferringData(gos)
+
+		s.T().Log("decoding to hashdex")
+		tsNow := time.Now().UnixMilli()
+		hContent, err := dec.DecodeToHashdexWithMetricInjection(s.baseCtx, segByte, &meta)
+		s.Require().NoError(err)
+
+		s.EqualValues(seriesCount+3, hContent.Series())
+		s.EqualValues((seriesCount*3)+3, hContent.Samples())
+
+		s.T().Log("encoding hashdex")
+		_, gos2, err := enc2.Encode(s.baseCtx, hContent.ShardedData())
+		s.Require().NoError(err)
+
+		s.EqualValues(seriesCount+3, gos2.Series())
+		s.EqualValues((seriesCount*3)+3, gos2.Samples())
+
+		s.T().Log("transferring segment")
+		segByte = s.transferringData(gos2)
+
+		s.T().Log("decoding to protobuf")
+		protocont, err := dec2.Decode(s.baseCtx, segByte)
+		s.Require().NoError(err)
+
+		s.T().Log("compare income and outcome protobuf")
+		actualWr := &prompb.WriteRequest{}
+		s.Require().NoError(protocont.UnmarshalTo(actualWr))
+		s.metricInjection(expectedWr, &meta, tsNow)
+		slices.SortFunc(expectedWr.Timeseries, func(a, b prompb.TimeSeries) int { return strings.Compare(a.String(), b.String()) })
+		slices.SortFunc(actualWr.Timeseries, func(a, b prompb.TimeSeries) int { return strings.Compare(a.String(), b.String()) })
+		s.Equal(expectedWr.String(), actualWr.String())
+
+		s.EqualValues(seriesCount+3, protocont.Series())
+		s.EqualValues((seriesCount*3)+3, protocont.Samples())
+	}
+}
+
+func (*EncoderDecoderSuite) metricInjection(wr *prompb.WriteRequest, meta *cppbridge.MetaInjection, ts int64) {
+	tsNowClient := float64(meta.SentAt / int64(time.Second))
+	wr.Timeseries = append(wr.Timeseries,
+		prompb.TimeSeries{
+			Labels: []prompb.Label{
+				{Name: "__name__", Value: "okagent__timestamp"},
+				{Name: "agent_uuid", Value: meta.AgentUUID},
+				{Name: "conf", Value: "/usr/local/okagent/etc/config.yaml"},
+				{Name: "instance", Value: meta.Hostname},
+				{Name: "job", Value: "heartbeat"},
+				{Name: "okmeter_plugin", Value: "heartbeat"},
+				{Name: "okmeter_plugin_instance", Value: "/usr/local/okagent/etc/config.yaml"},
+			},
+			Samples: []prompb.Sample{
+				{Value: tsNowClient, Timestamp: ts},
+			},
+		},
+		prompb.TimeSeries{
+			Labels: []prompb.Label{
+				{Name: "__name__", Value: "okagent__heartbeat"},
+				{Name: "agent_uuid", Value: meta.AgentUUID},
+				{Name: "instance", Value: meta.Hostname},
+				{Name: "job", Value: "collector"},
+			},
+			Samples: []prompb.Sample{
+				{Value: 1, Timestamp: ts},
+			},
+		},
+		prompb.TimeSeries{
+			Labels: []prompb.Label{
+				{Name: "__name__", Value: "time__offset__collector"},
+				{Name: "agent_uuid", Value: meta.AgentUUID},
+				{Name: "instance", Value: meta.Hostname},
+				{Name: "job", Value: "collector"},
+			},
+			Samples: []prompb.Sample{
+				{Value: float64(ts/1000) - tsNowClient, Timestamp: ts},
+			},
+		},
+	)
 }

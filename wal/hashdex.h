@@ -176,7 +176,7 @@ class BasicDecoderHashdex {
 
    public:
     template <class LabelSet>
-    PROMPP_ALWAYS_INLINE explicit Item(LabelSet& ls, Primitives::Timestamp ts, double value) {
+    PROMPP_ALWAYS_INLINE explicit Item(const LabelSet& ls, Primitives::Timestamp ts, double value) {
       data_ = Primitives::TimeseriesSemiview(ls, BareBones::Vector<Primitives::Sample>{{ts, value}});
       hash_ = hash_value(ls);
     }
@@ -194,6 +194,33 @@ class BasicDecoderHashdex {
   std::string_view replica_;
   std::string_view cluster_;
   uint32_t series_{0};
+
+  // metrics_injection injection of additional metrics with Heartbeat.
+  template <class Meta>
+  void metric_injection(const Meta& meta, std::chrono::system_clock::time_point now) {
+    auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
+    auto sent_at = std::chrono::nanoseconds{meta.sent_at};
+    Primitives::SymbolView agent_uuid{meta.agent_uuid.begin(), meta.agent_uuid.size()};
+    Primitives::SymbolView hostname{meta.hostname.begin(), meta.hostname.size()};
+
+    items_.emplace_back(Primitives::LabelViewSet{{"__name__", "okagent__timestamp"},
+                                                 {"agent_uuid", agent_uuid},
+                                                 {"conf", "/usr/local/okagent/etc/config.yaml"},
+                                                 {"instance", hostname},
+                                                 {"job", "heartbeat"},
+                                                 {"okmeter_plugin", "heartbeat"},
+                                                 {"okmeter_plugin_instance", "/usr/local/okagent/etc/config.yaml"}},
+                        now_ms.count(), std::chrono::duration<double>(std::chrono::duration_cast<std::chrono::seconds>(sent_at)).count());
+
+    items_.emplace_back(Primitives::LabelViewSet{{"__name__", "okagent__heartbeat"}, {"agent_uuid", agent_uuid}, {"instance", hostname}, {"job", "collector"}},
+                        now_ms.count(), std::chrono::duration<double>(std::chrono::seconds(1)).count());
+
+    items_.emplace_back(
+        Primitives::LabelViewSet{{"__name__", "time__offset__collector"}, {"agent_uuid", agent_uuid}, {"instance", hostname}, {"job", "collector"}},
+        now_ms.count(), std::chrono::duration<double>(std::chrono::duration_cast<std::chrono::seconds>(now_ms - sent_at)).count());
+
+    series_ += 3;
+  }
 
  public:
   using const_iterator = std::vector<Item>::const_iterator;
@@ -218,9 +245,18 @@ class BasicDecoderHashdex {
     });
   }
 
+  // presharding from decoder make presharding slice with hash and TimeseriesSemiview with metadata.
+  template <class Meta>
+  PROMPP_ALWAYS_INLINE void presharding(BasicDecoder<>& decoder, const Meta& meta) {
+    auto now = std::chrono::system_clock::now();
+    presharding(decoder);
+    metric_injection(meta, now);
+  }
+
   PROMPP_ALWAYS_INLINE const_iterator begin() const noexcept { return std::begin(items_); }
   PROMPP_ALWAYS_INLINE const_iterator end() const noexcept { return std::end(items_); }
   PROMPP_ALWAYS_INLINE uint32_t series() const noexcept { return series_; }
+  PROMPP_ALWAYS_INLINE size_t size() const noexcept { return items_.size(); }
   constexpr const std::string_view replica() const noexcept { return replica_; }
   constexpr const std::string_view cluster() const noexcept { return cluster_; }
 };
