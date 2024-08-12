@@ -77,7 +77,7 @@ func (oh *HeadAndOOOIndexReader) Series(ref storage.SeriesRef, builder *labels.S
 	if s.ooo != nil {
 		return getOOOSeriesChunks(s, oh.mint, oh.maxt, oh.lastGarbageCollectedMmapRef, 0, true, chks)
 	}
-	getSeriesChunks(s, oh.mint, oh.maxt, chks)
+	*chks = appendSeriesChunks(s, oh.mint, oh.maxt, *chks)
 	return nil
 }
 
@@ -127,7 +127,7 @@ func getOOOSeriesChunks(s *memSeries, mint, maxt int64, lastGarbageCollectedMmap
 	}
 
 	if includeInOrder {
-		getSeriesChunks(s, mint, maxt, &tmpChks)
+		tmpChks = appendSeriesChunks(s, mint, maxt, tmpChks)
 	}
 
 	// There is nothing to do if we did not collect any chunk.
@@ -253,13 +253,14 @@ func (cr *HeadAndOOOChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chu
 	}
 
 	s.Lock()
-	mc, err := s.oooMergedChunks(meta, cr.head.chunkDiskMapper, cr.cr, cr.mint, cr.maxt, cr.maxMmapRef)
+	mc, err := s.mergedChunks(meta, cr.head.chunkDiskMapper, cr.cr, cr.mint, cr.maxt, cr.maxMmapRef)
 	s.Unlock()
 
 	return nil, mc, err
 }
 
-// Pass through special behaviour for current head chunk.
+// ChunkOrIterableWithCopy: implements ChunkReaderWithCopy. The special Copy behaviour
+// is only implemented for the in-order head chunk.
 func (cr *HeadAndOOOChunkReader) ChunkOrIterableWithCopy(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {
 	_, _, isOOO := unpackHeadChunkRef(meta.Ref)
 	if !isOOO {

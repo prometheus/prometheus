@@ -321,8 +321,15 @@ func BenchmarkQuerierSelect(b *testing.B) {
 			require.NoError(b, block.Close())
 		}()
 
-		benchmarkSelect(b, block, numSeries, false)
+		benchmarkSelect(b, (*queryableBlock)(block), numSeries, false)
 	})
+}
+
+// Type wrapper to let a Block be a Queryable in benchmarkSelect().
+type queryableBlock Block
+
+func (pb *queryableBlock) Querier(mint, maxt int64) (storage.Querier, error) {
+	return NewBlockQuerier((*Block)(pb), mint, maxt)
 }
 
 func BenchmarkQuerierSelectWithOutOfOrder(b *testing.B) {

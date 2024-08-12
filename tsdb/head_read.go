@@ -199,19 +199,18 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchB
 	defer s.Unlock()
 
 	*chks = (*chks)[:0]
-
-	getSeriesChunks(s, h.mint, h.maxt, chks)
+	*chks = appendSeriesChunks(s, h.mint, h.maxt, *chks)
 
 	return nil
 }
 
-func getSeriesChunks(s *memSeries, mint, maxt int64, chks *[]chunks.Meta) {
+func appendSeriesChunks(s *memSeries, mint, maxt int64, chks []chunks.Meta) []chunks.Meta {
 	for i, c := range s.mmappedChunks {
 		// Do not expose chunks that are outside of the specified range.
 		if !c.OverlapsClosedInterval(mint, maxt) {
 			continue
 		}
-		*chks = append(*chks, chunks.Meta{
+		chks = append(chks, chunks.Meta{
 			MinTime: c.minTime,
 			MaxTime: c.maxTime,
 			Ref:     chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.headChunkID(i))),
@@ -230,7 +229,7 @@ func getSeriesChunks(s *memSeries, mint, maxt int64, chks *[]chunks.Meta) {
 				maxTime = chk.maxTime
 			}
 			if chk.OverlapsClosedInterval(mint, maxt) {
-				*chks = append(*chks, chunks.Meta{
+				chks = append(chks, chunks.Meta{
 					MinTime: chk.minTime,
 					MaxTime: maxTime,
 					Ref:     chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.headChunkID(len(s.mmappedChunks)+j))),
@@ -239,6 +238,7 @@ func getSeriesChunks(s *memSeries, mint, maxt int64, chks *[]chunks.Meta) {
 			j++
 		}
 	}
+	return chks
 }
 
 // headChunkID returns the HeadChunkID referred to by the given position.
@@ -259,7 +259,7 @@ func (s *memSeries) oooHeadChunkID(pos int) chunks.HeadChunkID {
 	return (chunks.HeadChunkID(pos) + s.ooo.firstOOOChunkID) | oooChunkIDMask
 }
 
-func unpackHeadChunkRef(ref chunks.ChunkRef) (chunks.HeadSeriesRef, chunks.HeadChunkID, bool) {
+func unpackHeadChunkRef(ref chunks.ChunkRef) (seriesID chunks.HeadSeriesRef, chunkID chunks.HeadChunkID, isOOO bool) {
 	sid, cid := chunks.HeadChunkRef(ref).Unpack()
 	return sid, (cid & (oooChunkIDMask - 1)), (cid & oooChunkIDMask) != 0
 }
@@ -481,14 +481,14 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 	return elem, true, offset == 0, nil
 }
 
-// oooMergedChunks return an iterable over one or more OOO chunks for the given
+// mergedChunks return an iterable over one or more OOO chunks for the given
 // chunks.Meta reference from memory or by m-mapping it from the disk. The
 // returned iterable will be a merge of all the overlapping chunks, if any,
 // amongst all the chunks in the OOOHead.
 // If hr is non-nil then in-order chunks are included.
 // This function is not thread safe unless the caller holds a lock.
 // The caller must ensure that s.ooo is not nil.
-func (s *memSeries) oooMergedChunks(meta chunks.Meta, cdm *chunks.ChunkDiskMapper, hr *headChunkReader, mint, maxt int64, maxMmapRef chunks.ChunkDiskMapperRef) (*mergedOOOChunks, error) {
+func (s *memSeries) mergedChunks(meta chunks.Meta, cdm *chunks.ChunkDiskMapper, hr *headChunkReader, mint, maxt int64, maxMmapRef chunks.ChunkDiskMapperRef) (chunkenc.Iterable, error) {
 	_, cid, _ := unpackHeadChunkRef(meta.Ref)
 
 	// ix represents the index of chunk in the s.mmappedChunks slice. The chunk meta's are
@@ -531,8 +531,7 @@ func (s *memSeries) oooMergedChunks(meta chunks.Meta, cdm *chunks.ChunkDiskMappe
 	}
 
 	if hr != nil { // Include in-order chunks.
-		var metas []chunks.Meta
-		getSeriesChunks(s, max(meta.MinTime, mint), min(meta.MaxTime, maxt), &metas)
+		metas := appendSeriesChunks(s, max(meta.MinTime, mint), min(meta.MaxTime, maxt), nil)
 		for _, m := range metas {
 			tmpChks = append(tmpChks, chunkMetaAndChunkDiskMapperRef{
 				meta: m,
