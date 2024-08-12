@@ -811,7 +811,7 @@ eval instant at 5m histogram_sum(rate(const_histogram[5m]))
 eval instant at 5m histogram_fraction(0.0, 1.0, rate(const_histogram[5m]))
     {} NaN
 
-# Zero buckets mean no observations, so there is no value that observations fall bellow,
+# Zero buckets mean no observations, so there is no value that observations fall below,
 # which means that any quantile is a NaN.
 eval instant at 5m histogram_quantile(1.0, rate(const_histogram[5m]))
     {} NaN
