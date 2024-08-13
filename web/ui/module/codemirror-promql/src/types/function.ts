@@ -340,7 +340,7 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
   [Info]: {
     name: 'info',
     argTypes: [ValueType.vector, ValueType.vector],
-    variadic: 0,
+    variadic: 1,
     returnType: ValueType.vector,
   },
   [Irate]: {
