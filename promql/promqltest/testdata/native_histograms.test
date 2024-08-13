@@ -787,6 +787,52 @@ eval_warn instant at 30s rate(some_metric[30s])
 
 clear
 
+# Histogram with constant buckets.
+load 1m
+    const_histogram {{schema:0 sum:1 count:1 buckets:[1 1 1]}} {{schema:0 sum:1 count:1 buckets:[1 1 1]}} {{schema:0 sum:1 count:1 buckets:[1 1 1]}} {{schema:0 sum:1 count:1 buckets:[1 1 1]}} {{schema:0 sum:1 count:1 buckets:[1 1 1]}}
+
+# There is no change to the bucket count over time, thus rate is 0 in each bucket.
+# However native histograms do not represent empty buckets, so here the zeros are implicit.
+eval instant at 5m rate(const_histogram[5m])
+    {} {{schema:0 sum:0 count:0}}
+
+# Zero buckets mean no observations, thus the denominator in the average is 0
+# leading to 0/0, which is NaN.
+eval instant at 5m histogram_avg(rate(const_histogram[5m]))
+    {} NaN
+
+# Zero buckets mean no observations, so count is 0.
+eval instant at 5m histogram_count(rate(const_histogram[5m]))
+    {} 0.0
+
+# Zero buckets mean no observations and empty histogram has a sum of 0 by definition.
+eval instant at 5m histogram_sum(rate(const_histogram[5m]))
+    {} 0.0
+
+# Zero buckets mean no observations, thus the denominator in the fraction is 0,
+# leading to 0/0, which is NaN.
+eval instant at 5m histogram_fraction(0.0, 1.0, rate(const_histogram[5m]))
+    {} NaN
+
+# Workaround to calculate the observation count corresponding to NaN fraction.
+eval instant at 5m histogram_count(rate(const_histogram[5m])) == 0.0 or histogram_fraction(0.0, 1.0, rate(const_histogram[5m])) * histogram_count(rate(const_histogram[5m]))
+    {} 0.0
+
+# Zero buckets mean no observations, so there is no value that observations fall below,
+# which means that any quantile is a NaN.
+eval instant at 5m histogram_quantile(1.0, rate(const_histogram[5m]))
+    {} NaN
+
+# Zero buckets mean no observations, so there is no standard deviation.
+eval instant at 5m histogram_stddev(rate(const_histogram[5m]))
+    {} NaN
+
+# Zero buckets mean no observations, so there is no standard variance.
+eval instant at 5m histogram_stdvar(rate(const_histogram[5m]))
+    {} NaN
+
+clear
+
 # Test mixing exponential and custom buckets.
 load 6m
   metric{series="exponential"}         {{sum:4 count:3 buckets:[1 2 1]}}  _                                                                 {{sum:4 count:3 buckets:[1 2 1]}}
