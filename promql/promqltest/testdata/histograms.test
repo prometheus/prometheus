@@ -497,8 +497,7 @@ eval instant at 5m rate(const_histogram_bucket[5m])
     {le="2.0"} 0
     {le="+Inf"} 0
 
-# There is no change to the bucket count over time, thus rate is 0 in each bucket.
-# However native histograms do not represent empty buckets, so here the zeros are implicit.
+# Native histograms do not represent empty buckets, so here the zeros are implicit.
 eval instant at 5m rate(const_histogram[5m])
     {} {{schema:-53 sum:0 count:0 custom_values:[0.0 1.0 2.0]}}
 
@@ -507,7 +506,5 @@ eval instant at 5m rate(const_histogram[5m])
 eval instant at 5m histogram_quantile(1.0, sum by (le) (rate(const_histogram_bucket[5m])))
     {} NaN
 
-# Zero buckets mean no observations, so there is no value that observations fall below,
-# which means that any quantile is a NaN.
 eval instant at 5m histogram_quantile(1.0, sum(rate(const_histogram[5m])))
     {} NaN

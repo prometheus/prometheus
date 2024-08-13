@@ -794,7 +794,8 @@ load 1m
 eval instant at 5m rate(const_histogram[5m])
     {} {{schema:0 sum:0 count:0}}
 
-# Zero buckets mean no observations, so average has no meaningful value.
+# Zero buckets mean no observations, thus the denominator in the average is 0
+# leading to 0/0, which is NaN.
 eval instant at 5m histogram_avg(rate(const_histogram[5m]))
     {} NaN
 
@@ -802,14 +803,18 @@ eval instant at 5m histogram_avg(rate(const_histogram[5m]))
 eval instant at 5m histogram_count(rate(const_histogram[5m]))
     {} 0.0
 
-# Zero buckets mean no observations, so the sum should be NaN, However
-# we return 0 for compatibility with classic histograms.
+# Zero buckets mean no observations and empty histogram has a sum of 0 by definition.
 eval instant at 5m histogram_sum(rate(const_histogram[5m]))
     {} 0.0
 
-# BUG??? Zero buckets mean no observations, thus any fraction should be 0.
+# Zero buckets mean no observations, thus the denominator in the fraction is 0,
+# leading to 0/0, which is NaN.
 eval instant at 5m histogram_fraction(0.0, 1.0, rate(const_histogram[5m]))
     {} NaN
+
+# Workaround to calculate the observation count corresponding to NaN fraction.
+eval instant at 5m histogram_count(rate(const_histogram[5m])) == 0.0 or histogram_fraction(0.0, 1.0, rate(const_histogram[5m])) * histogram_count(rate(const_histogram[5m]))
+    {} 0.0
 
 # Zero buckets mean no observations, so there is no value that observations fall below,
 # which means that any quantile is a NaN.
