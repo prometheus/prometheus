@@ -374,7 +374,7 @@ func testOOOHeadChunkReader_LabelValues(t *testing.T, scenario sampleTypeScenari
 
 	ctx := context.Background()
 
-	app := head.Appender(context.Background())
+	app := head.Appender(context.Background(), nil)
 
 	// Add in-order samples
 	_, _, err := scenario.appendFunc(app, labels.FromStrings("foo", "bar1"), 100, int64(1))
@@ -817,13 +817,13 @@ func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
 			db := newTestDBWithOpts(t, opts)
 
-			app := db.Appender(context.Background())
+			app := db.Appender(context.Background(), nil)
 			s1Ref, _, err := scenario.appendFunc(app, s1, tc.firstInOrderSampleAt, tc.firstInOrderSampleAt/1*time.Minute.Milliseconds())
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
 			// OOO few samples for s1.
-			app = db.Appender(context.Background())
+			app = db.Appender(context.Background(), nil)
 			for _, s := range tc.inputSamples {
 				_, _, err := scenario.appendFunc(app, s1, s.Ts, s.V)
 				require.NoError(t, err)
@@ -982,13 +982,13 @@ func testOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
 			db := newTestDBWithOpts(t, opts)
 
-			app := db.Appender(context.Background())
+			app := db.Appender(context.Background(), nil)
 			s1Ref, _, err := scenario.appendFunc(app, s1, tc.firstInOrderSampleAt, tc.firstInOrderSampleAt/1*time.Minute.Milliseconds())
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
 			// OOO few samples for s1.
-			app = db.Appender(context.Background())
+			app = db.Appender(context.Background(), nil)
 			for _, s := range tc.initialSamples {
 				_, _, err := scenario.appendFunc(app, s1, s.Ts, s.V)
 				require.NoError(t, err)
@@ -1006,7 +1006,7 @@ func testOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 
 			// Now we keep receiving ooo samples
 			// OOO few samples for s1.
-			app = db.Appender(context.Background())
+			app = db.Appender(context.Background(), nil)
 			for _, s := range tc.samplesAfterSeriesCall {
 				_, _, err = scenario.appendFunc(app, s1, s.Ts, s.V)
 				require.NoError(t, err)

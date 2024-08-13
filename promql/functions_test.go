@@ -41,7 +41,7 @@ func TestDeriv(t *testing.T) {
 	}
 	engine := promql.NewEngine(opts)
 
-	a := storage.Appender(context.Background())
+	a := storage.Appender(context.Background(), nil)
 
 	var start, interval, i int64
 	metric := labels.FromStrings("__name__", "foo")

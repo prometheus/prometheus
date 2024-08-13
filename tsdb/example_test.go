@@ -35,7 +35,7 @@ func Example() {
 	noErr(err)
 
 	// Open an appender for writing.
-	app := db.Appender(context.Background())
+	app := db.Appender(context.Background(), nil)
 
 	series := labels.FromStrings("foo", "bar")
 
@@ -55,7 +55,7 @@ func Example() {
 
 	// In case you want to do more appends after app.Commit(),
 	// you need a new appender.
-	app = db.Appender(context.Background())
+	app = db.Appender(context.Background(), nil)
 	// ... adding more samples.
 
 	// Open a querier for reading.

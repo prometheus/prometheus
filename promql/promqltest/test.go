@@ -970,7 +970,7 @@ func (t *test) exec(tc testCommand, engine promql.QueryEngine) error {
 		t.clear()
 
 	case *loadCmd:
-		app := t.storage.Appender(t.context)
+		app := t.storage.Appender(t.context, nil)
 		if err := cmd.append(app); err != nil {
 			app.Rollback()
 			return err
@@ -1256,7 +1256,7 @@ func (ll *LazyLoader) clear() error {
 
 // appendTill appends the defined time series to the storage till the given timestamp (in milliseconds).
 func (ll *LazyLoader) appendTill(ts int64) error {
-	app := ll.storage.Appender(ll.Context())
+	app := ll.storage.Appender(ll.Context(), nil)
 	for h, smpls := range ll.loadCmd.defs {
 		m := ll.loadCmd.metrics[h]
 		for i, s := range smpls {

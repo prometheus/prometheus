@@ -237,7 +237,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 }
 
 // Appender implements storage.Storage.
-func (rws *WriteStorage) Appender(_ context.Context) storage.Appender {
+func (rws *WriteStorage) Appender(_ context.Context, hints *storage.AppendHints) storage.Appender {
 	return &timestampTracker{
 		writeStorage:         rws,
 		highestRecvTimestamp: rws.highestTimestamp,

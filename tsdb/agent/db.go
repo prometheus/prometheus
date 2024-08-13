@@ -745,7 +745,7 @@ func (db *DB) ExemplarQuerier(context.Context) (storage.ExemplarQuerier, error) 
 }
 
 // Appender implements storage.Storage.
-func (db *DB) Appender(context.Context) storage.Appender {
+func (db *DB) Appender(ctx context.Context, hints *storage.AppendHints) storage.Appender {
 	return db.appenderPool.Get().(storage.Appender)
 }
 

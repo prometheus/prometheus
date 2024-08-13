@@ -1189,7 +1189,7 @@ func BenchmarkCompactionFromHead(b *testing.B) {
 			h, err := NewHead(nil, nil, nil, nil, opts, nil)
 			require.NoError(b, err)
 			for ln := 0; ln < labelNames; ln++ {
-				app := h.Appender(context.Background())
+				app := h.Appender(context.Background(), nil)
 				for lv := 0; lv < labelValues; lv++ {
 					app.Append(0, labels.FromStrings(strconv.Itoa(ln), fmt.Sprintf("%d%s%d", lv, postingsBenchSuffix, ln)), 0, 0)
 				}
@@ -1221,7 +1221,7 @@ func BenchmarkCompactionFromOOOHead(b *testing.B) {
 			h, err := NewHead(nil, nil, nil, nil, opts, nil)
 			require.NoError(b, err)
 			for ln := 0; ln < labelNames; ln++ {
-				app := h.Appender(context.Background())
+				app := h.Appender(context.Background(), nil)
 				for lv := 0; lv < labelValues; lv++ {
 					lbls := labels.FromStrings(strconv.Itoa(ln), fmt.Sprintf("%d%s%d", lv, postingsBenchSuffix, ln))
 					_, err = app.Append(0, lbls, int64(totalSamples), 0)
@@ -1262,7 +1262,7 @@ func TestDisableAutoCompactions(t *testing.T) {
 	// Trigger a compaction to check that it was skipped and
 	// no new blocks were created when compaction is disabled.
 	db.DisableCompactions()
-	app := db.Appender(context.Background())
+	app := db.Appender(context.Background(), nil)
 	for i := int64(0); i < 3; i++ {
 		_, err := app.Append(0, label, i*blockRange, 0)
 		require.NoError(t, err)
@@ -1379,7 +1379,7 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 			defaultLabel := labels.FromStrings("foo", "bar")
 
 			// Add some data to the head that is enough to trigger a compaction.
-			app := db.Appender(context.Background())
+			app := db.Appender(context.Background(), nil)
 			_, err := app.Append(0, defaultLabel, 1, 0)
 			require.NoError(t, err)
 			_, err = app.Append(0, defaultLabel, 2, 0)
@@ -1460,7 +1460,7 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 				lbls labels.Labels, from, to int, h *histogram.Histogram, exp *[]chunks.Sample,
 			) {
 				t.Helper()
-				app := head.Appender(ctx)
+				app := head.Appender(ctx, nil)
 				for tsMinute := from; tsMinute <= to; tsMinute++ {
 					var err error
 					if floatTest {
@@ -1488,7 +1488,7 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 			}
 			appendFloat := func(lbls labels.Labels, from, to int, exp *[]chunks.Sample) {
 				t.Helper()
-				app := head.Appender(ctx)
+				app := head.Appender(ctx, nil)
 				for tsMinute := from; tsMinute <= to; tsMinute++ {
 					_, err := app.Append(0, lbls, minute(tsMinute), float64(tsMinute))
 					require.NoError(t, err)
@@ -1655,8 +1655,8 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 					}
 				}
 
-				oldApp := oldHead.Appender(context.Background())
-				sparseApp := sparseHead.Appender(context.Background())
+				oldApp := oldHead.Appender(context.Background(), nil)
+				sparseApp := sparseHead.Appender(context.Background(), nil)
 				numOldSeriesPerHistogram := 0
 
 				var oldULIDs []ulid.ULID
@@ -1999,7 +1999,7 @@ func TestDelayedCompaction(t *testing.T) {
 
 			// The first compaction is expected to result in 1 block.
 			db.DisableCompactions()
-			app := db.Appender(context.Background())
+			app := db.Appender(context.Background(), nil)
 			_, err := app.Append(0, label, 0, 0)
 			require.NoError(t, err)
 			_, err = app.Append(0, label, 11, 0)
@@ -2030,7 +2030,7 @@ func TestDelayedCompaction(t *testing.T) {
 			// This ensures that the logic for compaction delay doesn't only work for the first compaction, but also takes into account the future compactions.
 			// This also ensures that no delay happens between consecutive compactions.
 			db.DisableCompactions()
-			app = db.Appender(context.Background())
+			app = db.Appender(context.Background(), nil)
 			_, err = app.Append(0, label, 31, 0)
 			require.NoError(t, err)
 			_, err = app.Append(0, label, 41, 0)
@@ -2065,7 +2065,7 @@ func TestDelayedCompaction(t *testing.T) {
 			}
 
 			db.DisableCompactions()
-			app = db.Appender(context.Background())
+			app = db.Appender(context.Background(), nil)
 			_, err = app.Append(0, label, 51, 0)
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
@@ -2133,7 +2133,7 @@ func TestDelayedCompactionDoesNotBlockUnrelatedOps(t *testing.T) {
 
 			if c.whenCompactable {
 				label := labels.FromStrings("foo", "bar")
-				app := db.Appender(context.Background())
+				app := db.Appender(context.Background(), nil)
 				_, err := app.Append(0, label, 301, 0)
 				require.NoError(t, err)
 				_, err = app.Append(0, label, 317, 0)

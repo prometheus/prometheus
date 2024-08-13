@@ -37,7 +37,7 @@ func TestFanout_SelectSorted(t *testing.T) {
 
 	priStorage := teststorage.New(t)
 	defer priStorage.Close()
-	app1 := priStorage.Appender(ctx)
+	app1 := priStorage.Appender(ctx, nil)
 	app1.Append(0, inputLabel, 0, 0)
 	inputTotalSize++
 	app1.Append(0, inputLabel, 1000, 1)
@@ -49,7 +49,7 @@ func TestFanout_SelectSorted(t *testing.T) {
 
 	remoteStorage1 := teststorage.New(t)
 	defer remoteStorage1.Close()
-	app2 := remoteStorage1.Appender(ctx)
+	app2 := remoteStorage1.Appender(ctx, nil)
 	app2.Append(0, inputLabel, 3000, 3)
 	inputTotalSize++
 	app2.Append(0, inputLabel, 4000, 4)
@@ -62,7 +62,7 @@ func TestFanout_SelectSorted(t *testing.T) {
 	remoteStorage2 := teststorage.New(t)
 	defer remoteStorage2.Close()
 
-	app3 := remoteStorage2.Appender(ctx)
+	app3 := remoteStorage2.Appender(ctx, nil)
 	app3.Append(0, inputLabel, 6000, 6)
 	inputTotalSize++
 	app3.Append(0, inputLabel, 7000, 7)
@@ -230,9 +230,12 @@ type errChunkQuerier struct{ errQuerier }
 func (errStorage) ChunkQuerier(_, _ int64) (storage.ChunkQuerier, error) {
 	return errChunkQuerier{}, nil
 }
-func (errStorage) Appender(_ context.Context) storage.Appender { return nil }
-func (errStorage) StartTime() (int64, error)                   { return 0, nil }
-func (errStorage) Close() error                                { return nil }
+
+func (errStorage) Appender(_ context.Context, hints *storage.AppendHints) storage.Appender {
+	return nil
+}
+func (errStorage) StartTime() (int64, error) { return 0, nil }
+func (errStorage) Close() error              { return nil }
 
 func (errQuerier) Select(context.Context, bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
 	return storage.ErrSeriesSet(errSelect)

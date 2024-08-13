@@ -218,7 +218,7 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	samplesAppended := 0
 
 	app := &timeLimitAppender{
-		Appender: h.appendable.Appender(ctx),
+		Appender: h.appendable.Appender(ctx, nil),
 		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
 	}
 
@@ -328,7 +328,7 @@ func (h *writeHandler) appendV1Histograms(app storage.Appender, hh []prompb.Hist
 // Once we have 5xx type of error, we immediately stop and rollback all appends.
 func (h *writeHandler) writeV2(ctx context.Context, req *writev2.Request) (_ WriteResponseStats, errHTTPCode int, _ error) {
 	app := &timeLimitAppender{
-		Appender: h.appendable.Appender(ctx),
+		Appender: h.appendable.Appender(ctx, nil),
 		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
 	}
 

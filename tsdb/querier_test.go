@@ -502,7 +502,7 @@ func TestBlockQuerier_AgainstHeadWithOpenChunks(t *testing.T) {
 			require.NoError(t, err)
 			defer h.Close()
 
-			app := h.Appender(context.Background())
+			app := h.Appender(context.Background(), nil)
 			for _, s := range testData {
 				for _, chk := range s.chunks {
 					for _, sample := range chk {
@@ -2685,7 +2685,7 @@ func TestPostingsForMatchers(t *testing.T) {
 		require.NoError(t, h.Close())
 	}()
 
-	app := h.Appender(context.Background())
+	app := h.Appender(context.Background(), nil)
 	app.Append(0, labels.FromStrings("n", "1"), 0, 0)
 	app.Append(0, labels.FromStrings("n", "1", "i", "a"), 0, 0)
 	app.Append(0, labels.FromStrings("n", "1", "i", "b"), 0, 0)
@@ -3037,7 +3037,7 @@ func appendSeries(t *testing.T, ctx context.Context, wg *sync.WaitGroup, h *Head
 	defer wg.Done()
 
 	for i := 0; ctx.Err() == nil; i++ {
-		app := h.Appender(context.Background())
+		app := h.Appender(context.Background(), nil)
 		_, err := app.Append(0, labels.FromStrings(labels.MetricName, "metric", "seq", strconv.Itoa(i), "always_0", "0"), 0, 0)
 		require.NoError(t, err)
 		err = app.Commit()
@@ -3413,13 +3413,13 @@ func BenchmarkHeadChunkQuerier(b *testing.B) {
 
 	// 3h of data.
 	numTimeseries := 100
-	app := db.Appender(context.Background())
+	app := db.Appender(context.Background(), nil)
 	for i := 0; i < 120*6; i++ {
 		for j := 0; j < numTimeseries; j++ {
 			lbls := labels.FromStrings("foo", fmt.Sprintf("bar%d", j))
 			if i%10 == 0 {
 				require.NoError(b, app.Commit())
-				app = db.Appender(context.Background())
+				app = db.Appender(context.Background(), nil)
 			}
 			_, err := app.Append(0, lbls, int64(i*15)*time.Second.Milliseconds(), float64(i*100))
 			require.NoError(b, err)
@@ -3458,13 +3458,13 @@ func BenchmarkHeadQuerier(b *testing.B) {
 
 	// 3h of data.
 	numTimeseries := 100
-	app := db.Appender(context.Background())
+	app := db.Appender(context.Background(), nil)
 	for i := 0; i < 120*6; i++ {
 		for j := 0; j < numTimeseries; j++ {
 			lbls := labels.FromStrings("foo", fmt.Sprintf("bar%d", j))
 			if i%10 == 0 {
 				require.NoError(b, app.Commit())
-				app = db.Appender(context.Background())
+				app = db.Appender(context.Background(), nil)
 			}
 			_, err := app.Append(0, lbls, int64(i*15)*time.Second.Milliseconds(), float64(i*100))
 			require.NoError(b, err)
@@ -3522,7 +3522,7 @@ func TestQueryWithDeletedHistograms(t *testing.T) {
 			}()
 
 			db.EnableNativeHistograms()
-			appender := db.Appender(context.Background())
+			appender := db.Appender(context.Background(), nil)
 
 			var (
 				err       error
@@ -3581,7 +3581,7 @@ func TestQueryWithOneChunkCompletelyDeleted(t *testing.T) {
 	}()
 
 	db.EnableNativeHistograms()
-	appender := db.Appender(context.Background())
+	appender := db.Appender(context.Background(), nil)
 
 	var (
 		err       error

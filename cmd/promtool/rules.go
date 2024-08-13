@@ -189,7 +189,7 @@ func newMultipleAppender(ctx context.Context, blockWriter *tsdb.BlockWriter) *mu
 	return &multipleAppender{
 		maxSamplesInMemory: maxSamplesInMemory,
 		writer:             blockWriter,
-		appender:           blockWriter.Appender(ctx),
+		appender:           blockWriter.Appender(ctx, nil),
 	}
 }
 
@@ -220,7 +220,7 @@ func (m *multipleAppender) commit(ctx context.Context) error {
 	if err := m.appender.Commit(); err != nil {
 		return fmt.Errorf("multiappender commit: %w", err)
 	}
-	m.appender = m.writer.Appender(ctx)
+	m.appender = m.writer.Appender(ctx, nil)
 	m.currentSampleCount = 0
 	return nil
 }

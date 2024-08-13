@@ -84,8 +84,8 @@ func (w *BlockWriter) initHead() error {
 
 // Appender returns a new appender on the database.
 // Appender can't be called concurrently. However, the returned Appender can safely be used concurrently.
-func (w *BlockWriter) Appender(ctx context.Context) storage.Appender {
-	return w.head.Appender(ctx)
+func (w *BlockWriter) Appender(ctx context.Context, hints *storage.AppendHints) storage.Appender {
+	return w.head.Appender(ctx, nil)
 }
 
 // Flush implements the Writer interface. This is where actual block writing

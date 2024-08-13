@@ -48,7 +48,7 @@ func CreateBlock(series []storage.Series, dir string, chunkRange int64, logger l
 	sampleCount := 0
 	const commitAfter = 10000
 	ctx := context.Background()
-	app := w.Appender(ctx)
+	app := w.Appender(ctx, nil)
 	var it chunkenc.Iterator
 
 	for _, s := range series {
@@ -64,7 +64,7 @@ func CreateBlock(series []storage.Series, dir string, chunkRange int64, logger l
 				if err = app.Commit(); err != nil {
 					return "", err
 				}
-				app = w.Appender(ctx)
+				app = w.Appender(ctx, nil)
 				sampleCount = 0
 			}
 
@@ -95,7 +95,7 @@ func CreateBlock(series []storage.Series, dir string, chunkRange int64, logger l
 			if err = app.Commit(); err != nil {
 				return "", err
 			}
-			app = w.Appender(ctx)
+			app = w.Appender(ctx, nil)
 			sampleCount = 0
 		}
 	}

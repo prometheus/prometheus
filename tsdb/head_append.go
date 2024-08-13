@@ -47,7 +47,7 @@ func (a *initAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	}
 
 	a.head.initTime(t)
-	a.app = a.head.appender()
+	a.app = a.head.appender(nil)
 	return a.app.Append(ref, lset, t, v)
 }
 
@@ -63,7 +63,7 @@ func (a *initAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e 
 	// We should never reach here given we would call Append before AppendExemplar
 	// and we probably want to always base head/WAL min time on sample times.
 	a.head.initTime(e.Ts)
-	a.app = a.head.appender()
+	a.app = a.head.appender(nil)
 
 	return a.app.AppendExemplar(ref, l, e)
 }
@@ -73,7 +73,7 @@ func (a *initAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t
 		return a.app.AppendHistogram(ref, l, t, h, fh)
 	}
 	a.head.initTime(t)
-	a.app = a.head.appender()
+	a.app = a.head.appender(nil)
 
 	return a.app.AppendHistogram(ref, l, t, h, fh)
 }
@@ -83,7 +83,7 @@ func (a *initAppender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m 
 		return a.app.UpdateMetadata(ref, l, m)
 	}
 
-	a.app = a.head.appender()
+	a.app = a.head.appender(nil)
 	return a.app.UpdateMetadata(ref, l, m)
 }
 
@@ -93,7 +93,7 @@ func (a *initAppender) AppendCTZeroSample(ref storage.SeriesRef, lset labels.Lab
 	}
 
 	a.head.initTime(t)
-	a.app = a.head.appender()
+	a.app = a.head.appender(nil)
 
 	return a.app.AppendCTZeroSample(ref, lset, t, ct)
 }
@@ -133,7 +133,7 @@ func (a *initAppender) Rollback() error {
 }
 
 // Appender returns a new Appender on the database.
-func (h *Head) Appender(_ context.Context) storage.Appender {
+func (h *Head) Appender(_ context.Context, hints *storage.AppendHints) storage.Appender {
 	h.metrics.activeAppenders.Inc()
 
 	// The head cache might not have a starting point yet. The init appender
@@ -143,10 +143,10 @@ func (h *Head) Appender(_ context.Context) storage.Appender {
 			head: h,
 		}
 	}
-	return h.appender()
+	return h.appender(hints)
 }
 
-func (h *Head) appender() *headAppender {
+func (h *Head) appender(hints *storage.AppendHints) *headAppender {
 	minValidTime := h.appendableMinValidTime()
 	appendID, cleanupAppendIDsBelow := h.iso.newAppendID(minValidTime) // Every appender gets an ID that is cleared upon commit/rollback.
 
@@ -171,6 +171,7 @@ func (h *Head) appender() *headAppender {
 		metadata:              h.getMetadataBuffer(),
 		appendID:              appendID,
 		cleanupAppendIDsBelow: cleanupAppendIDsBelow,
+		hints:                 hints,
 	}
 }
 
@@ -317,6 +318,7 @@ type headAppender struct {
 
 	appendID, cleanupAppendIDsBelow uint64
 	closed                          bool
+	hints                           *storage.AppendHints
 }
 
 func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
@@ -346,13 +348,17 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	}
 
 	s.Lock()
+	defer s.Unlock()
 	// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 	// to skip that sample from the WAL and write only in the WBL.
-	_, delta, err := s.appendable(t, v, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+	isOOO, delta, err := s.appendable(t, v, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 	if err == nil {
+		if isOOO && a.hints != nil && a.hints.DiscardOutOfOrder {
+			a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
+			return 0, storage.ErrOutOfOrderSample
+		}
 		s.pendingCommit = true
 	}
-	s.Unlock()
 	if delta > 0 {
 		a.head.metrics.oooHistogram.Observe(float64(delta) / 1000)
 	}

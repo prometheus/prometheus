@@ -1563,9 +1563,9 @@ func (s *readyStorage) ExemplarQuerier(ctx context.Context) (storage.ExemplarQue
 }
 
 // Appender implements the Storage interface.
-func (s *readyStorage) Appender(ctx context.Context) storage.Appender {
+func (s *readyStorage) Appender(ctx context.Context, hints *storage.AppendHints) storage.Appender {
 	if x := s.get(); x != nil {
-		return x.Appender(ctx)
+		return x.Appender(ctx, nil)
 	}
 	return notReadyAppender{}
 }

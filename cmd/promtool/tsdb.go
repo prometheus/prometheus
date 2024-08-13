@@ -202,7 +202,7 @@ func (b *writeBenchmark) ingestScrapesShard(lbls []labels.Labels, scrapeCount in
 	total := uint64(0)
 
 	for i := 0; i < scrapeCount; i++ {
-		app := b.storage.Appender(context.TODO())
+		app := b.storage.Appender(context.TODO(), nil)
 		ts += timeDelta
 
 		for _, s := range scrape {
