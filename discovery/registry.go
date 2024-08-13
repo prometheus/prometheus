@@ -281,3 +281,16 @@ func RegisterSDMetrics(registerer prometheus.Registerer, rmm RefreshMetricsManag
 	}
 	return metrics, nil
 }
+
+// GetRegisteredConfigs returns the types of registered configs.
+func GetRegisteredConfigs() map[string]reflect.Type {
+	types := make(map[string]reflect.Type)
+	for field, name := range configFieldNames {
+		types[name] = field.Elem()
+	}
+	return types
+}
+
+func GetFieldName(name string) string {
+	return strings.TrimPrefix(name, configFieldPrefix)
+}

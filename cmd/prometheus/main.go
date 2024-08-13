@@ -78,6 +78,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/agent"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/documentcli"
+	"github.com/prometheus/prometheus/util/jsonschema"
 	"github.com/prometheus/prometheus/util/logging"
 	prom_runtime "github.com/prometheus/prometheus/util/runtime"
 	"github.com/prometheus/prometheus/web"
@@ -488,6 +489,17 @@ func main() {
 
 	a.Flag("write-documentation", "Generate command line documentation. Internal use.").Hidden().Action(func(ctx *kingpin.ParseContext) error {
 		if err := documentcli.GenerateMarkdown(a.Model(), os.Stdout); err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+			return err
+		}
+		os.Exit(0)
+		return nil
+	}).Bool()
+
+	a.Flag("write-json-schema", "Generate JSON Schema. Internal use.").Hidden().Action(func(ctx *kingpin.ParseContext) error {
+		if err := jsonschema.GenerateJSONSchema(os.Stdout); err != nil {
+			fmt.Println(err)
 			os.Exit(1)
 			return err
 		}
