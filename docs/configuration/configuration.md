@@ -152,6 +152,10 @@ alerting:
 remote_write:
   [ - <remote_write> ... ]
 
+# Settings related to the OTLP receiver feature.
+otlp:
+  [ promote_resource_attributes: [<string>, ...] | default = [ ] ]
+
 # Settings related to the remote read feature.
 remote_read:
   [ - <remote_read> ... ]
@@ -458,13 +462,15 @@ metric_relabel_configs:
 [ keep_dropped_targets: <int> | default = 0 ]
 
 # Limit on total number of positive and negative buckets allowed in a single
-# native histogram. If this is exceeded, the entire scrape will be treated as
-# failed. 0 means no limit.
+# native histogram. The resolution of a histogram with more buckets will be
+# reduced until the number of buckets is within the limit. If the limit cannot
+# be reached, the scrape will fail.
+# 0 means no limit.
 [ native_histogram_bucket_limit: <int> | default = 0 ]
 
 # Lower limit for the growth factor of one bucket to the next in each native
 # histogram. The resolution of a histogram with a lower growth factor will be
-# reduced until it is within the limit.
+# reduced as much as possible until it is within the limit.
 # To set an upper limit for the schema (equivalent to "scale" in OTel's
 # exponential histograms), use the following factor limits:
 # 
@@ -3399,8 +3405,8 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
-# Optionally configures AWS's Signature Verification 4 signing process to
-# sign requests. Cannot be set at the same time as basic_auth, authorization, or oauth2.
+# Optionally configures AWS's Signature Verification 4 signing process to sign requests.
+# Cannot be set at the same time as basic_auth, authorization, oauth2, azuread or google_iam.
 # To use the default credentials from the AWS SDK, use `sigv4: {}`.
 sigv4:
   # The AWS region. If blank, the region from the default credentials chain
@@ -3653,12 +3659,12 @@ sigv4:
   [ role_arn: <string> ]
 
 # Optional OAuth 2.0 configuration.
-# Cannot be used at the same time as basic_auth, authorization, sigv4, or azuread.
+# Cannot be used at the same time as basic_auth, authorization, sigv4, azuread or google_iam.
 oauth2:
   [ <oauth2> ]
 
 # Optional AzureAD configuration.
-# Cannot be used at the same time as basic_auth, authorization, oauth2, or sigv4.
+# Cannot be used at the same time as basic_auth, authorization, oauth2, sigv4 or google_iam.
 azuread:
   # The Azure Cloud. Options are 'AzurePublic', 'AzureChina', or 'AzureGovernment'.
   [ cloud: <string> | default = AzurePublic ]
@@ -3677,6 +3683,14 @@ azuread:
   # See https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication
   [ sdk:
       [ tenant_id: <string> ] ]
+
+# WARNING: Remote write is NOT SUPPORTED by Google Cloud. This configuration is reserved for future use.
+# Optional Google Cloud Monitoring configuration.
+# Cannot be used at the same time as basic_auth, authorization, oauth2, sigv4 or azuread.
+# To use the default credentials from the Google Cloud SDK, use `google_iam: {}`.
+google_iam:
+  # Service account key with monitoring write permessions.
+  credentials_file: <file_name>
 
 # Configures the remote write request's TLS settings.
 tls_config:

@@ -10,6 +10,10 @@ _Please add changes here that are only in the release-3.0 branch. These will be 
 
 ## unreleased
 
+* [FEATURE] OTLP receiver: Add new option `otlp.promote_resource_attributes`, for any OTel resource attributes that should be promoted to metric labels. #14200
+* [FEATURE] Remote-Write: Add sender and receiver support for [Remote Write 2.0-rc.2](https://prometheus.io/docs/specs/remote_write_spec_2_0/) specification #14395 #14427 #14444
+* [ENHANCEMENT] Remote-Write: 1.x messages against Remote Write 2.x Receivers will have now correct values for `prometheus_storage_<samples|histograms|exemplar>_failed_total` in case of partial errors #14444
+
 ## 2.53.1 / 2024-07-10
 
 Fix a bug which would drop samples in remote-write if the sending flow stalled

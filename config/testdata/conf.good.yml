@@ -45,6 +45,9 @@ remote_write:
     headers:
       name: value
 
+otlp:
+  promote_resource_attributes: ["k8s.cluster.name", "k8s.job.name", "k8s.namespace.name"]
+
 remote_read:
   - url: http://remote1/read
     read_recent: true
