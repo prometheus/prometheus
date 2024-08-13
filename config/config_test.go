@@ -2050,10 +2050,6 @@ func TestExpandExternalLabels(t *testing.T) {
 
 	c, err := LoadFile("testdata/external_labels.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
-	testutil.RequireEqual(t, labels.FromStrings("bar", "foo", "baz", "foo${TEST}bar", "foo", "${TEST}", "qux", "foo$${TEST}", "xyz", "foo$$bar"), c.GlobalConfig.ExternalLabels)
-
-	c, err = LoadFile("testdata/external_labels.good.yml", false, log.NewNopLogger())
-	require.NoError(t, err)
 	testutil.RequireEqual(t, labels.FromStrings("bar", "foo", "baz", "foobar", "foo", "", "qux", "foo${TEST}", "xyz", "foo$bar"), c.GlobalConfig.ExternalLabels)
 
 	os.Setenv("TEST", "TestValue")
