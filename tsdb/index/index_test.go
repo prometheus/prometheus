@@ -574,9 +574,9 @@ func TestChunksRefOrdering(t *testing.T) {
 	require.NoError(t, idx.AddSymbol("2"))
 	require.NoError(t, idx.AddSymbol("__name__"))
 
-	c50 := chunks.Meta{Ref: 50}
-	c100 := chunks.Meta{Ref: 100}
-	c200 := chunks.Meta{Ref: 200}
+	c50 := chunks.Meta{Ref: 50, Chunk: chunkenc.NewXORChunk()}
+	c100 := chunks.Meta{Ref: 100, Chunk: chunkenc.NewXORChunk()}
+	c200 := chunks.Meta{Ref: 200, Chunk: chunkenc.NewXORChunk()}
 
 	require.NoError(t, idx.AddSeries(1, labels.FromStrings("__name__", "1"), c100))
 	require.EqualError(t, idx.AddSeries(2, labels.FromStrings("__name__", "2"), c50), "unsorted chunk reference: 50, previous: 100")
@@ -594,20 +594,31 @@ func TestChunksTimeOrdering(t *testing.T) {
 	require.NoError(t, idx.AddSymbol("2"))
 	require.NoError(t, idx.AddSymbol("__name__"))
 
+	chk := chunkenc.NewXORChunk()
+	app, err := chk.Appender()
+	require.NoError(t, err)
+	app.Append(1, 1)
+
 	require.NoError(t, idx.AddSeries(1, labels.FromStrings("__name__", "1"),
-		chunks.Meta{Ref: 1, MinTime: 0, MaxTime: 10}, // Also checks that first chunk can have MinTime: 0.
-		chunks.Meta{Ref: 2, MinTime: 11, MaxTime: 20},
-		chunks.Meta{Ref: 3, MinTime: 21, MaxTime: 30},
+		chunks.Meta{Ref: 1, MinTime: 0, MaxTime: 10, Chunk: chk}, // Also checks that first chunk can have MinTime: 0.
+		chunks.Meta{Ref: 2, MinTime: 11, MaxTime: 20, Chunk: chk},
+		chunks.Meta{Ref: 3, MinTime: 21, MaxTime: 30, Chunk: chk},
 	))
 
 	require.EqualError(t, idx.AddSeries(1, labels.FromStrings("__name__", "2"),
-		chunks.Meta{Ref: 10, MinTime: 0, MaxTime: 10},
-		chunks.Meta{Ref: 20, MinTime: 10, MaxTime: 20},
+		chunks.Meta{Ref: 10, MinTime: 0, MaxTime: 10, Chunk: chk},
+		chunks.Meta{Ref: 20, MinTime: 10, MaxTime: 20, Chunk: chk},
 	), "chunk minT 10 is not higher than previous chunk maxT 10")
 
 	require.EqualError(t, idx.AddSeries(1, labels.FromStrings("__name__", "2"),
-		chunks.Meta{Ref: 10, MinTime: 100, MaxTime: 30},
+		chunks.Meta{Ref: 10, MinTime: 100, MaxTime: 30, Chunk: chk},
 	), "chunk maxT 30 is less than minT 100")
+
+	// Empty chunk should not raise any errors.
+	require.NoError(t, idx.AddSeries(1, labels.FromStrings("__name__", "2"),
+		chunks.Meta{Ref: 10, MinTime: 0, MaxTime: 10, Chunk: chunkenc.NewXORChunk()},
+		chunks.Meta{Ref: 20, MinTime: 10, MaxTime: 20, Chunk: chunkenc.NewXORChunk()},
+	))
 
 	require.NoError(t, idx.Close())
 }
@@ -619,7 +630,7 @@ func TestReader_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 		input = append(input, &indexWriterSeries{
 			labels: labels.FromStrings("__name__", fmt.Sprintf("%4d", i)),
 			chunks: []chunks.Meta{
-				{Ref: 1, MinTime: 0, MaxTime: 10},
+				{Ref: 1, MinTime: 0, MaxTime: 10, Chunk: chunkenc.NewXORChunk()},
 			},
 		})
 	}
@@ -641,7 +652,7 @@ func TestReader_LabelNamesForHonorsContextCancel(t *testing.T) {
 		input = append(input, &indexWriterSeries{
 			labels: labels.FromStrings(labels.MetricName, fmt.Sprintf("%4d", i)),
 			chunks: []chunks.Meta{
-				{Ref: 1, MinTime: 0, MaxTime: 10},
+				{Ref: 1, MinTime: 0, MaxTime: 10, Chunk: chunkenc.NewXORChunk()},
 			},
 		})
 	}

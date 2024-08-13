@@ -450,6 +450,11 @@ func (w *Writer) AddSeries(ref storage.SeriesRef, lset labels.Labels, chunks ...
 		}
 		lastChunkRef = c.Ref
 
+		// Skip empty chunks
+		if c.Chunk.NumSamples() == 0 {
+			continue
+		}
+
 		if ix > 0 && c.MinTime <= lastMaxT {
 			return fmt.Errorf("chunk minT %d is not higher than previous chunk maxT %d", c.MinTime, lastMaxT)
 		}
