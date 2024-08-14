@@ -2786,11 +2786,12 @@ type groupedAggregation struct {
 	heap           vectorByValueHeap
 
 	// All bools together for better packing within the struct.
-	seen              bool // Was this output groups seen in the input at this timestamp.
-	hasFloat          bool // Has at least 1 float64 sample aggregated.
-	hasHistogram      bool // Has at least 1 histogram sample aggregated.
-	groupAggrComplete bool // Used by LIMITK to short-cut series loop when we've reached K elem on every group.
-	incrementalMean   bool // True after reverting to incremental calculation of the mean value.
+	seen                   bool // Was this output groups seen in the input at this timestamp.
+	hasFloat               bool // Has at least 1 float64 sample aggregated.
+	hasHistogram           bool // Has at least 1 histogram sample aggregated.
+	incompatibleHistograms bool // If true, group has seen mixed exponential and custom buckets, or incompatible custom buckets.
+	groupAggrComplete      bool // Used by LIMITK to short-cut series loop when we've reached K elem on every group.
+	incrementalMean        bool // True after reverting to incremental calculation of the mean value.
 }
 
 // aggregation evaluates sum, avg, count, stdvar, stddev or quantile at one timestep on inputMatrix.
@@ -2814,10 +2815,11 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 		// Initialize this group if it's the first time we've seen it.
 		if !group.seen {
 			*group = groupedAggregation{
-				seen:       true,
-				floatValue: f,
-				floatMean:  f,
-				groupCount: 1,
+				seen:                   true,
+				floatValue:             f,
+				floatMean:              f,
+				incompatibleHistograms: false,
+				groupCount:             1,
 			}
 			switch op {
 			case parser.AVG, parser.SUM:
@@ -2838,6 +2840,10 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			continue
 		}
 
+		if group.incompatibleHistograms {
+			continue
+		}
+
 		switch op {
 		case parser.SUM:
 			if h != nil {
@@ -2846,6 +2852,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 					_, err := group.histogramValue.Add(h)
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
+						group.incompatibleHistograms = true
 					}
 				}
 				// Otherwise the aggregation contained floats
@@ -2866,10 +2873,14 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 					toAdd, err := left.Sub(right)
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
+						group.incompatibleHistograms = true
+						continue
 					}
 					_, err = group.histogramValue.Add(toAdd)
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
+						group.incompatibleHistograms = true
+						continue
 					}
 				}
 				// Otherwise the aggregation contained floats
@@ -2966,6 +2977,8 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				continue
 			}
 			switch {
+			case aggr.incompatibleHistograms:
+				continue
 			case aggr.hasHistogram:
 				aggr.histogramValue = aggr.histogramValue.Compact(0)
 			case aggr.incrementalMean:
@@ -2992,9 +3005,12 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				annos.Add(annotations.NewMixedFloatsHistogramsAggWarning(e.Expr.PositionRange()))
 				continue
 			}
-			if aggr.hasHistogram {
+			switch {
+			case aggr.incompatibleHistograms:
+				continue
+			case aggr.hasHistogram:
 				aggr.histogramValue.Compact(0)
-			} else {
+			default:
 				aggr.floatValue += aggr.floatKahanC
 			}
 		default:
