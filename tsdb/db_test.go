@@ -5854,51 +5854,51 @@ func testOOONativeHistogramsWithCounterResets(t *testing.T, scenario sampleTypeS
 		batches         []sampleBatch
 		expectedSamples []chunks.Sample
 	}{
-		//{
-		//	name:     "Counter reset within in-order samples",
-		//	queryMin: minutes(40),
-		//	queryMax: minutes(55),
-		//	batches: []sampleBatch{
-		//		// In-order samples
-		//		{
-		//			from:  40,
-		//			until: 50,
-		//			shouldReset: func(v int64) bool {
-		//				return v == 45
-		//			},
-		//			expCounterResetHints: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.CounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset},
-		//		},
-		//	},
-		// },
-		//{
-		//	name:     "Counter reset right at beginning of OOO samples",
-		//	queryMin: minutes(40),
-		//	queryMax: minutes(55),
-		//	batches: []sampleBatch{
-		//		// In-order samples
-		//		{
-		//			from:                 40,
-		//			until:                45,
-		//			shouldReset:          defaultResetFunc,
-		//			expCounterResetHints: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset},
-		//		},
-		//		{
-		//			from:                 50,
-		//			until:                55,
-		//			shouldReset:          defaultResetFunc,
-		//			expCounterResetHints: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset},
-		//		},
-		//		// OOO samples
-		//		{
-		//			from:  45,
-		//			until: 50,
-		//			shouldReset: func(v int64) bool {
-		//				return v == 45
-		//			},
-		//			expCounterResetHints: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset},
-		//		},
-		//	},
-		// },
+		{
+			name:     "Counter reset within in-order samples",
+			queryMin: minutes(40),
+			queryMax: minutes(55),
+			batches: []sampleBatch{
+				// In-order samples
+				{
+					from:  40,
+					until: 50,
+					shouldReset: func(v int64) bool {
+						return v == 45
+					},
+					expCounterResetHints: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.CounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset},
+				},
+			},
+		},
+		{
+			name:     "Counter reset right at beginning of OOO samples",
+			queryMin: minutes(40),
+			queryMax: minutes(55),
+			batches: []sampleBatch{
+				// In-order samples
+				{
+					from:                 40,
+					until:                45,
+					shouldReset:          defaultResetFunc,
+					expCounterResetHints: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset},
+				},
+				{
+					from:                 50,
+					until:                55,
+					shouldReset:          defaultResetFunc,
+					expCounterResetHints: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset},
+				},
+				// OOO samples
+				{
+					from:  45,
+					until: 50,
+					shouldReset: func(v int64) bool {
+						return v == 45
+					},
+					expCounterResetHints: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset},
+				},
+			},
+		},
 		{
 			name:     "Counter resets in both in-order and OOO samples",
 			queryMin: minutes(40),
