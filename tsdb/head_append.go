@@ -840,7 +840,7 @@ func (a *headAppender) Commit() (err error) {
 		floatsAppended     = len(a.samples)
 		histogramsAppended = len(a.histograms) + len(a.floatHistograms)
 		// number of samples out of order but accepted: with ooo enabled and within time window
-		floatOOOAccepted int
+		oooFloatsAccepted int
 		// number of samples rejected due to: out of order but OOO support disabled.
 		floatOOORejected int
 		histoOOORejected int
@@ -936,7 +936,7 @@ func (a *headAppender) Commit() (err error) {
 			// Sample is OOO and OOO handling is enabled
 			// and the delta is within the OOO tolerance.
 			var mmapRefs []chunks.ChunkDiskMapperRef
-			ok, chunkCreated, mmapRefs = series.insert(s.T, s.V, a.head.chunkDiskMapper, oooCapMax)
+			ok, chunkCreated, mmapRefs = series.insert(s.T, s.V, nil, nil, a.head.chunkDiskMapper, oooCapMax)
 			if chunkCreated {
 				r, ok := oooMmapMarkers[series.ref]
 				if !ok || r != nil {
@@ -969,7 +969,7 @@ func (a *headAppender) Commit() (err error) {
 				if s.T > oooMaxT {
 					oooMaxT = s.T
 				}
-				floatOOOAccepted++
+				oooFloatsAccepted++
 			} else {
 				// Sample is an exact duplicate of the last sample.
 				// NOTE: We can only detect updates if they clash with a sample in the OOOHeadChunk,
@@ -1065,7 +1065,7 @@ func (a *headAppender) Commit() (err error) {
 	a.head.metrics.tooOldSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(floatTooOldRejected))
 	a.head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeFloat).Add(float64(floatsAppended))
 	a.head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeHistogram).Add(float64(histogramsAppended))
-	a.head.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeFloat).Add(float64(floatOOOAccepted))
+	a.head.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeFloat).Add(float64(oooFloatsAccepted))
 	a.head.updateMinMaxTime(inOrderMint, inOrderMaxt)
 	a.head.updateMinOOOMaxOOOTime(oooMinT, oooMaxT)
 
@@ -1083,7 +1083,7 @@ func (a *headAppender) Commit() (err error) {
 }
 
 // insert is like append, except it inserts. Used for OOO samples.
-func (s *memSeries) insert(t int64, v float64, chunkDiskMapper *chunks.ChunkDiskMapper, oooCapMax int64) (inserted, chunkCreated bool, mmapRefs []chunks.ChunkDiskMapperRef) {
+func (s *memSeries) insert(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, chunkDiskMapper *chunks.ChunkDiskMapper, oooCapMax int64) (inserted, chunkCreated bool, mmapRefs []chunks.ChunkDiskMapperRef) {
 	if s.ooo == nil {
 		s.ooo = &memSeriesOOOFields{}
 	}
@@ -1094,7 +1094,7 @@ func (s *memSeries) insert(t int64, v float64, chunkDiskMapper *chunks.ChunkDisk
 		chunkCreated = true
 	}
 
-	ok := c.chunk.Insert(t, v, nil, nil)
+	ok := c.chunk.Insert(t, v, h, fh)
 	if ok {
 		if chunkCreated || t < c.minTime {
 			c.minTime = t
