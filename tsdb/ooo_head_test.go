@@ -40,6 +40,10 @@ func makeEvenSampleSlice(n int, sampleFunc func(ts int64) sample) []sample {
 	return s
 }
 
+// TestOOOInsert tests the following cases:
+// - Number of pre-existing samples anywhere from 0 to testMaxSize-1.
+// - Insert new sample before first pre-existing samples, after the last, and anywhere in between.
+// - With a chunk initial capacity of testMaxSize/8 and testMaxSize, which lets us test non-full and full chunks, and chunks that need to expand themselves.
 func TestOOOInsert(t *testing.T) {
 	scenarios := map[string]struct {
 		sampleFunc func(ts int64) sample
@@ -101,6 +105,7 @@ func testOOOInsert(t *testing.T,
 	}
 }
 
+// TestOOOInsertDuplicate tests the correct behavior when inserting a sample that is a duplicate of any
 // pre-existing samples, with between 1 and testMaxSize pre-existing samples and
 // with a chunk initial capacity of testMaxSize/8 and testMaxSize, which lets us test non-full and full chunks, and chunks that need to expand themselves.
 func TestOOOInsertDuplicate(t *testing.T) {
