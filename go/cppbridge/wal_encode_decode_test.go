@@ -395,6 +395,97 @@ func (s *EncoderDecoderSuite) TestEncodeDecodeToHashdexWithMetricInjection() {
 	}
 }
 
+func (s *EncoderDecoderSuite) TestEncodeDecodeToHashdexClusterReplica() {
+	hlimits := cppbridge.DefaultWALHashdexLimits()
+	dec := cppbridge.NewWALDecoder(cppbridge.EncodersVersion())
+	enc := cppbridge.NewWALEncoder(0, 0)
+
+	enc2 := cppbridge.NewWALEncoder(0, 0)
+	dec2 := cppbridge.NewWALDecoder(cppbridge.EncodersVersion())
+
+	s.T().Log("generate protobuf")
+	expectedReplica := "replica_name"
+	expectedCluster := "cluster_name"
+	expectedWr := &prompb.WriteRequest{
+		Timeseries: []prompb.TimeSeries{
+			{
+				Labels: []prompb.Label{
+					{
+						Name:  "__name__",
+						Value: "test",
+					},
+					{
+						Name:  "__replica__",
+						Value: expectedReplica,
+					},
+					{
+						Name:  "cluster",
+						Value: expectedCluster,
+					},
+					{
+						Name:  "job",
+						Value: "tester",
+					},
+				},
+				Samples: []prompb.Sample{
+					{
+						Timestamp: time.Now().UnixMilli(),
+						Value:     4444,
+					},
+				},
+			},
+		},
+	}
+
+	data, err := expectedWr.Marshal()
+	s.Require().NoError(err)
+
+	s.T().Log("sharding protobuf")
+	h, err := cppbridge.NewWALProtobufHashdex(data, hlimits)
+	s.Require().NoError(err)
+
+	s.T().Log("encoding protobuf")
+	_, gos, err := enc.Encode(s.baseCtx, h)
+	s.Require().NoError(err)
+
+	s.EqualValues(1, gos.Series())
+	s.EqualValues(1, gos.Samples())
+
+	s.T().Log("transferring segment")
+	segByte := s.transferringData(gos)
+
+	s.T().Log("decoding to hashdex")
+	hContent, err := dec.DecodeToHashdex(s.baseCtx, segByte)
+	s.Require().NoError(err)
+
+	s.EqualValues(1, hContent.Series())
+	s.EqualValues(1, hContent.Samples())
+	s.Equal(expectedReplica, hContent.ShardedData().Replica())
+	s.Equal(expectedCluster, hContent.ShardedData().Cluster())
+
+	s.T().Log("encoding hashdex")
+	_, gos2, err := enc2.Encode(s.baseCtx, hContent.ShardedData())
+	s.Require().NoError(err)
+
+	s.EqualValues(1, gos2.Series())
+	s.EqualValues(1, gos2.Samples())
+
+	s.T().Log("transferring segment")
+	segByte = s.transferringData(gos2)
+
+	s.T().Log("decoding to protobuf")
+	protocont, err := dec2.Decode(s.baseCtx, segByte)
+	s.Require().NoError(err)
+
+	s.T().Log("compare income and outcome protobuf")
+	actualWr := &prompb.WriteRequest{}
+	s.Require().NoError(protocont.UnmarshalTo(actualWr))
+	s.Equal(expectedWr.String(), actualWr.String())
+
+	s.EqualValues(1, protocont.Series())
+	s.EqualValues(1, protocont.Samples())
+}
+
 func (*EncoderDecoderSuite) metricInjection(wr *prompb.WriteRequest, meta *cppbridge.MetaInjection, ts int64) {
 	tsNowClient := float64(meta.SentAt / int64(time.Second))
 	wr.Timeseries = append(wr.Timeseries,

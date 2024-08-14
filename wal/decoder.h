@@ -10,25 +10,13 @@
 #error "Your C++ Standard library doesn't implement the std::spanstream. Make sure that you use conformant Library (e.g., libstdc++ from GCC 12)"
 #endif
 
+#include "bare_bones/concepts.h"
 #include "bare_bones/preprocess.h"
-#include "primitives/go_slice.h"
 #include "prometheus/remote_write.h"
 #include "third_party/protozero/pbf_writer.hpp"
 #include "wal.h"
 
-template <class T>
-concept have_segment_id = requires(const T& t) {
-  { t.segment_id };
-};
-
 namespace PromPP::WAL {
-
-// MetaInjection metedata for injection metrics.
-struct MetaInjection {
-  int64_t sent_at{0};
-  Primitives::Go::String agent_uuid;
-  Primitives::Go::String hostname;
-};
 
 template <class BasicDecoder, class Output>
 class TimeseriesProtobufWriter {
@@ -51,7 +39,7 @@ class TimeseriesProtobufWriter {
     stats.earliest_block_sample = decoder_.earliest_sample();
     stats.latest_block_sample = decoder_.latest_sample();
 
-    if constexpr (have_segment_id<Stats>) {
+    if constexpr (BareBones::concepts::have_field_segment_id<Stats>) {
       stats.segment_id = decoder_.last_processed_segment();
     }
   }
@@ -82,44 +70,14 @@ class Decoder {
     protobuf_writer.get_statistic(stats);
   }
 
-  // decode_to_hashdex decoding incoming data and add to hashdex.
-  template <class Input, class Hashdex, class Stats>
-  PROMPP_ALWAYS_INLINE void decode_to_hashdex(Input& in, Hashdex& hx, Stats& stats) {
-    std::ispanstream inspan(std::string_view(in.data(), in.size()));
-    inspan >> reader_;
-
-    hx.presharding(reader_);
-
-    // write stats
-    stats.created_at = reader_.created_at_tsns();
-    stats.encoded_at = reader_.encoded_at_tsns();
-    stats.samples = hx.size();
-    stats.series = hx.series();
-    stats.earliest_block_sample = reader_.earliest_sample();
-    stats.latest_block_sample = reader_.latest_sample();
-    if constexpr (have_segment_id<Stats>) {
-      stats.segment_id = reader_.last_processed_segment();
-    }
-  }
-
   // decode_to_hashdex decoding incoming data and add to hashdex with metadata.
-  template <class Input, class Hashdex, class Stats, class Meta>
-  PROMPP_ALWAYS_INLINE void decode_to_hashdex(Input& in, Hashdex& hx, Stats& stats, Meta& meta) {
+  template <class Input, class Hashdex, class Stats, class... PreshardingArgs>
+  PROMPP_ALWAYS_INLINE void decode_to_hashdex(Input& in, Hashdex& hx, Stats& stats, PreshardingArgs&&... presharding_args) {
     std::ispanstream inspan(std::string_view(in.data(), in.size()));
     inspan >> reader_;
 
-    hx.presharding(reader_, meta);
-
-    // write stats
-    stats.created_at = reader_.created_at_tsns();
-    stats.encoded_at = reader_.encoded_at_tsns();
-    stats.samples = hx.size();
-    stats.series = hx.series();
-    stats.earliest_block_sample = reader_.earliest_sample();
-    stats.latest_block_sample = reader_.latest_sample();
-    if constexpr (have_segment_id<Stats>) {
-      stats.segment_id = reader_.last_processed_segment();
-    }
+    hx.presharding(reader_, std::forward<PreshardingArgs>(presharding_args)...);
+    hx.write_stats(reader_, stats);
   }
 
   // decode_dry - decoding incoming data without protbuf.

@@ -31,4 +31,9 @@ concept SteadyClockInterface = requires(Clock& clock) {
   { clock.now() };
 };
 
+template <class T>
+concept have_field_segment_id = requires(const T& t) {
+  { t.segment_id };
+};
+
 }  // namespace BareBones::concepts
