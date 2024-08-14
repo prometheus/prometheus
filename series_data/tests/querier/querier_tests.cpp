@@ -49,6 +49,7 @@ class QuerierFixture : public testing::TestWithParam<QuerierCase> {
 
       encoder.encode(ls_id, 12, 1.0);
       encoder.encode(ls_id, 13, 1.0);
+      encoder.encode(ls_id, 14, 1.0);
     }
   }
 };
@@ -66,7 +67,7 @@ TEST_P(QuerierFixture, Test) {
 INSTANTIATE_TEST_SUITE_P(NoChunks,
                          QuerierFixture,
                          testing::Values(QuerierCase{.query = {.start_timestamp_ms = 0, .end_timestamp_ms = 0, .label_set_ids = {0}}, .expected = {}},
-                                         QuerierCase{.query = {.start_timestamp_ms = 14, .end_timestamp_ms = 15, .label_set_ids = {0}}, .expected = {}}));
+                                         QuerierCase{.query = {.start_timestamp_ms = 15, .end_timestamp_ms = 16, .label_set_ids = {0}}, .expected = {}}));
 
 INSTANTIATE_TEST_SUITE_P(
     QueryFinalizedChunk,
@@ -75,13 +76,17 @@ INSTANTIATE_TEST_SUITE_P(
                     QuerierCase{.query = {.start_timestamp_ms = 1, .end_timestamp_ms = 1, .label_set_ids = {0}}, .expected = {QueriedChunk(0, 0)}},
                     QuerierCase{.query = {.start_timestamp_ms = 5, .end_timestamp_ms = 5, .label_set_ids = {0}}, .expected = {QueriedChunk(0, 0)}},
                     QuerierCase{.query = {.start_timestamp_ms = 6, .end_timestamp_ms = 6, .label_set_ids = {0}}, .expected = {QueriedChunk(0, 1)}},
-                    QuerierCase{.query = {.start_timestamp_ms = 10, .end_timestamp_ms = 11, .label_set_ids = {0}}, .expected = {QueriedChunk(0, 1)}}));
+                    QuerierCase{.query = {.start_timestamp_ms = 10, .end_timestamp_ms = 11, .label_set_ids = {0}}, .expected = {QueriedChunk(0, 1)}},
+                    QuerierCase{.query = {.start_timestamp_ms = 7, .end_timestamp_ms = 10, .label_set_ids = {0}}, .expected = {QueriedChunk(0, 1)}}));
 
 INSTANTIATE_TEST_SUITE_P(
     QueryOpenChunk,
     QuerierFixture,
     testing::Values(QuerierCase{.query = {.start_timestamp_ms = 12, .end_timestamp_ms = 12, .label_set_ids = {0}}, .expected = {QueriedChunk(0)}},
-                    QuerierCase{.query = {.start_timestamp_ms = 13, .end_timestamp_ms = 13, .label_set_ids = {0}}, .expected = {QueriedChunk(0)}}));
+                    QuerierCase{.query = {.start_timestamp_ms = 12, .end_timestamp_ms = 14, .label_set_ids = {0}}, .expected = {QueriedChunk(0)}},
+                    QuerierCase{.query = {.start_timestamp_ms = 13, .end_timestamp_ms = 13, .label_set_ids = {0}}, .expected = {QueriedChunk(0)}},
+                    QuerierCase{.query = {.start_timestamp_ms = 14, .end_timestamp_ms = 14, .label_set_ids = {0}}, .expected = {QueriedChunk(0)}},
+                    QuerierCase{.query = {.start_timestamp_ms = 12, .end_timestamp_ms = 15, .label_set_ids = {0}}, .expected = {QueriedChunk(0)}}));
 
 INSTANTIATE_TEST_SUITE_P(MultipeChunks,
                          QuerierFixture,
