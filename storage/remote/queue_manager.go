@@ -1109,9 +1109,9 @@ func (t *QueueManager) shouldReshard(desiredShards int) bool {
 	if desiredShards == t.numShards {
 		return false
 	}
-	// We shouldn't reshard if Prometheus hasn't been able to send to the
-	// remote endpoint successfully within some period of time.
-	minSendTimestamp := time.Now().Add(-2 * time.Duration(t.cfg.BatchSendDeadline)).Unix()
+	// We shouldn't reshard if Prometheus hasn't been able to send
+	// since the last time it checked if it should reshard.
+	minSendTimestamp := time.Now().Add(-1 * shardUpdateDuration).Unix()
 	lsts := t.lastSendTimestamp.Load()
 	if lsts < minSendTimestamp {
 		level.Warn(t.logger).Log("msg", "Skipping resharding, last successful send was beyond threshold", "lastSendTimestamp", lsts, "minSendTimestamp", minSendTimestamp)

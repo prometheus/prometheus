@@ -137,16 +137,24 @@ var key = map[string]ItemType{
 }
 
 var histogramDesc = map[string]ItemType{
-	"sum":           SUM_DESC,
-	"count":         COUNT_DESC,
-	"schema":        SCHEMA_DESC,
-	"offset":        OFFSET_DESC,
-	"n_offset":      NEGATIVE_OFFSET_DESC,
-	"buckets":       BUCKETS_DESC,
-	"n_buckets":     NEGATIVE_BUCKETS_DESC,
-	"z_bucket":      ZERO_BUCKET_DESC,
-	"z_bucket_w":    ZERO_BUCKET_WIDTH_DESC,
-	"custom_values": CUSTOM_VALUES_DESC,
+	"sum":                SUM_DESC,
+	"count":              COUNT_DESC,
+	"schema":             SCHEMA_DESC,
+	"offset":             OFFSET_DESC,
+	"n_offset":           NEGATIVE_OFFSET_DESC,
+	"buckets":            BUCKETS_DESC,
+	"n_buckets":          NEGATIVE_BUCKETS_DESC,
+	"z_bucket":           ZERO_BUCKET_DESC,
+	"z_bucket_w":         ZERO_BUCKET_WIDTH_DESC,
+	"custom_values":      CUSTOM_VALUES_DESC,
+	"counter_reset_hint": COUNTER_RESET_HINT_DESC,
+}
+
+var counterResetHints = map[string]ItemType{
+	"unknown":   UNKNOWN_COUNTER_RESET,
+	"reset":     COUNTER_RESET,
+	"not_reset": NOT_COUNTER_RESET,
+	"gauge":     GAUGE_TYPE,
 }
 
 // ItemTypeStr is the default string representations for common Items. It does not
@@ -585,6 +593,11 @@ Loop:
 					return lexHistogram
 				}
 			}
+			if desc, ok := counterResetHints[strings.ToLower(word)]; ok {
+				l.emit(desc)
+				return lexHistogram
+			}
+
 			l.errorf("bad histogram descriptor found: %q", word)
 			break Loop
 		}
@@ -1045,17 +1058,4 @@ func isDigit(r rune) bool {
 // isAlpha reports whether r is an alphabetic or underscore.
 func isAlpha(r rune) bool {
 	return r == '_' || ('a' <= r && r <= 'z') || ('A' <= r && r <= 'Z')
-}
-
-// isLabel reports whether the string can be used as label.
-func isLabel(s string) bool {
-	if len(s) == 0 || !isAlpha(rune(s[0])) {
-		return false
-	}
-	for _, c := range s[1:] {
-		if !isAlphaNumeric(c) {
-			return false
-		}
-	}
-	return true
 }

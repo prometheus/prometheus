@@ -92,7 +92,7 @@ series: <string>
 #
 # Native histogram notation:
 #     Native histograms can be used instead of floating point numbers using the following notation:
-#     {{schema:1 sum:-0.3 count:3.1 z_bucket:7.1 z_bucket_w:0.05 buckets:[5.1 10 7] offset:-3 n_buckets:[4.1 5] n_offset:-5}}
+#     {{schema:1 sum:-0.3 count:3.1 z_bucket:7.1 z_bucket_w:0.05 buckets:[5.1 10 7] offset:-3 n_buckets:[4.1 5] n_offset:-5 counter_reset_hint:gauge}}
 #     Native histograms support the same expanding notation as floating point numbers, i.e. 'axn', 'a+bxn' and 'a-bxn'.
 #     All properties are optional and default to 0. The order is not important. The following properties are supported:
 #     - schema (int): 
@@ -119,6 +119,8 @@ series: <string>
 #         Observation counts in negative buckets. Each represents an absolute count.
 #     - n_offset (int):
 #         The starting index of the first entry in the negative buckets.
+#     - counter_reset_hint (one of 'unknown', 'reset', 'not_reset' or 'gauge')
+#         The counter reset hint associated with this histogram. Defaults to 'unknown' if not set.
 values: <string>
 ```
 

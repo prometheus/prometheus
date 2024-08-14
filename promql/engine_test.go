@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"go.uber.org/goleak"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -51,7 +50,7 @@ const (
 func TestMain(m *testing.M) {
 	// Enable experimental functions testing
 	parser.EnableExperimentalFunctions = true
-	goleak.VerifyTestMain(m)
+	testutil.TolerantVerifyLeak(m)
 }
 
 func TestQueryConcurrency(t *testing.T) {
@@ -3797,4 +3796,63 @@ func makeInt64Pointer(val int64) *int64 {
 	valp := new(int64)
 	*valp = val
 	return valp
+}
+
+func TestHistogramCopyFromIteratorRegression(t *testing.T) {
+	// Loading the following histograms creates two chunks because there's a
+	// counter reset. Not only the counter is lower in the last histogram
+	// but also there's missing buckets.
+	// This in turns means that chunk iterators will have different spans.
+	load := `load 1m
+histogram {{sum:4 count:4 buckets:[2 2]}} {{sum:6 count:6 buckets:[3 3]}} {{sum:1 count:1 buckets:[1]}}
+`
+	storage := promqltest.LoadedStorage(t, load)
+	t.Cleanup(func() { storage.Close() })
+	engine := promqltest.NewTestEngine(false, 0, promqltest.DefaultMaxSamplesPerQuery)
+
+	verify := func(t *testing.T, qry promql.Query, expected []histogram.FloatHistogram) {
+		res := qry.Exec(context.Background())
+		require.NoError(t, res.Err)
+
+		m, ok := res.Value.(promql.Matrix)
+		require.True(t, ok)
+
+		require.Len(t, m, 1)
+		series := m[0]
+
+		require.Empty(t, series.Floats)
+		require.Len(t, series.Histograms, len(expected))
+		for i, e := range expected {
+			series.Histograms[i].H.CounterResetHint = histogram.UnknownCounterReset // Don't care.
+			require.Equal(t, &e, series.Histograms[i].H)
+		}
+	}
+
+	qry, err := engine.NewRangeQuery(context.Background(), storage, nil, "increase(histogram[60s])", time.Unix(0, 0), time.Unix(0, 0).Add(1*time.Minute), time.Minute)
+	require.NoError(t, err)
+	verify(t, qry, []histogram.FloatHistogram{
+		{
+			Count:           2,
+			Sum:             2,                                        // Increase from 4 to 6 is 2.
+			PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}}, // Two buckets changed between the first and second histogram.
+			PositiveBuckets: []float64{1, 1},                          // Increase from 2 to 3 is 1 in both buckets.
+		},
+	})
+
+	qry, err = engine.NewInstantQuery(context.Background(), storage, nil, "histogram[60s]", time.Unix(0, 0).Add(2*time.Minute))
+	require.NoError(t, err)
+	verify(t, qry, []histogram.FloatHistogram{
+		{
+			Count:           6,
+			Sum:             6,
+			PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+			PositiveBuckets: []float64{3, 3},
+		},
+		{
+			Count:           1,
+			Sum:             1,
+			PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+			PositiveBuckets: []float64{1},
+		},
+	})
 }

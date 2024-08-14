@@ -278,8 +278,15 @@ func (b *bucketIterator) Next() (int, bool) {
 type Insert struct {
 	pos int
 	num int
+
+	// Optional: bucketIdx is the index of the bucket that is inserted.
+	// Can be used to adjust spans.
+	bucketIdx int
 }
 
+// Deprecated: expandSpansForward, use expandIntSpansAndBuckets or
+// expandFloatSpansAndBuckets instead.
+// expandSpansForward is left here for reference.
 // expandSpansForward returns the inserts to expand the bucket spans 'a' so that
 // they match the spans in 'b'. 'b' must cover the same or more buckets than
 // 'a', otherwise the function will return false.
@@ -575,14 +582,64 @@ func counterResetHint(crh CounterResetHeader, numRead uint16) histogram.CounterR
 	}
 }
 
-// Handle pathological case of empty span when advancing span idx.
-// Call it with idx==-1 to find the first non empty span.
-func nextNonEmptySpanSliceIdx(idx int, bucketIdx int32, spans []histogram.Span) (newIdx int, newBucketIdx int32) {
-	for idx++; idx < len(spans); idx++ {
-		if spans[idx].Length > 0 {
-			return idx, bucketIdx + spans[idx].Offset + 1
-		}
-		bucketIdx += spans[idx].Offset
+// adjustForInserts adjusts the spans for the given inserts.
+func adjustForInserts(spans []histogram.Span, inserts []Insert) (mergedSpans []histogram.Span) {
+	if len(inserts) == 0 {
+		return spans
 	}
-	return idx, 0
+
+	it := newBucketIterator(spans)
+
+	var (
+		lastBucket int
+		i          int
+		insertIdx  = inserts[i].bucketIdx
+		insertNum  = inserts[i].num
+	)
+
+	addBucket := func(b int) {
+		offset := b - lastBucket - 1
+		if offset == 0 && len(mergedSpans) > 0 {
+			mergedSpans[len(mergedSpans)-1].Length++
+		} else {
+			if len(mergedSpans) == 0 {
+				offset++
+			}
+			mergedSpans = append(mergedSpans, histogram.Span{
+				Offset: int32(offset),
+				Length: 1,
+			})
+		}
+
+		lastBucket = b
+	}
+	consumeInsert := func() {
+		// Consume the insert.
+		insertNum--
+		if insertNum == 0 {
+			i++
+			if i < len(inserts) {
+				insertIdx = inserts[i].bucketIdx
+				insertNum = inserts[i].num
+			}
+		} else {
+			insertIdx++
+		}
+	}
+
+	bucket, ok := it.Next()
+	for ok {
+		if i < len(inserts) && insertIdx < bucket {
+			addBucket(insertIdx)
+			consumeInsert()
+		} else {
+			addBucket(bucket)
+			bucket, ok = it.Next()
+		}
+	}
+	for i < len(inserts) {
+		addBucket(inserts[i].bucketIdx)
+		consumeInsert()
+	}
+	return
 }

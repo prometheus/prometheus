@@ -23,6 +23,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"runtime/pprof"
 	"sort"
 	"strconv"
 	"strings"
@@ -87,6 +88,43 @@ func newTestHeadWithOptions(t testing.TB, compressWAL wlog.CompressionType, opts
 	}))
 
 	return h, wal
+}
+
+// BenchmarkLoadRealWLs will be skipped unless the BENCHMARK_LOAD_REAL_WLS_DIR environment variable is set.
+// BENCHMARK_LOAD_REAL_WLS_DIR should be the folder where `wal` and `chunks_head` are located.
+// Optionally, BENCHMARK_LOAD_REAL_WLS_PROFILE can be set to a file path to write a CPU profile.
+func BenchmarkLoadRealWLs(b *testing.B) {
+	dir := os.Getenv("BENCHMARK_LOAD_REAL_WLS_DIR")
+	if dir == "" {
+		b.Skipped()
+	}
+
+	profileFile := os.Getenv("BENCHMARK_LOAD_REAL_WLS_PROFILE")
+	if profileFile != "" {
+		b.Logf("Will profile in %s", profileFile)
+		f, err := os.Create(profileFile)
+		require.NoError(b, err)
+		b.Cleanup(func() { f.Close() })
+		require.NoError(b, pprof.StartCPUProfile(f))
+		b.Cleanup(pprof.StopCPUProfile)
+	}
+
+	wal, err := wlog.New(nil, nil, filepath.Join(dir, "wal"), wlog.CompressionNone)
+	require.NoError(b, err)
+	b.Cleanup(func() { wal.Close() })
+
+	wbl, err := wlog.New(nil, nil, filepath.Join(dir, "wbl"), wlog.CompressionNone)
+	require.NoError(b, err)
+	b.Cleanup(func() { wbl.Close() })
+
+	// Load the WAL.
+	for i := 0; i < b.N; i++ {
+		opts := DefaultHeadOptions()
+		opts.ChunkDirRoot = dir
+		h, err := NewHead(nil, nil, wal, wbl, opts, nil)
+		require.NoError(b, err)
+		h.Init(0)
+	}
 }
 
 func BenchmarkCreateSeries(b *testing.B) {
@@ -5879,6 +5917,35 @@ func TestPostingsCardinalityStats(t *testing.T) {
 	require.NotEqual(t, statsForSomeLabel1, statsForSomeLabel)
 	// Using cache.
 	require.Equal(t, statsForSomeLabel1, head.PostingsCardinalityStats("n", 1))
+}
+
+func TestHeadAppender_AppendFloatWithSameTimestampAsPreviousHistogram(t *testing.T) {
+	head, _ := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
+	t.Cleanup(func() { head.Close() })
+
+	ls := labels.FromStrings(labels.MetricName, "test")
+
+	{
+		// Append a float 10.0 @ 1_000
+		app := head.Appender(context.Background())
+		_, err := app.Append(0, ls, 1_000, 10.0)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	}
+
+	{
+		// Append a float histogram @ 2_000
+		app := head.Appender(context.Background())
+		h := tsdbutil.GenerateTestHistogram(1)
+		_, err := app.AppendHistogram(0, ls, 2_000, h, nil)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	}
+
+	app := head.Appender(context.Background())
+	_, err := app.Append(0, ls, 2_000, 10.0)
+	require.Error(t, err)
+	require.ErrorIs(t, err, storage.NewDuplicateHistogramToFloatErr(2_000, 10.0))
 }
 
 func TestHeadAppender_AppendCTZeroSample(t *testing.T) {
