@@ -2127,7 +2127,7 @@ type memSeries struct {
 
 	// We keep the last histogram value here (in addition to appending it to the chunk) so we can check for duplicates.
 	// The lastValueIsHistogram and lastValueIsFloatHistogram above indicate whether the last value was a histogram or float histogram (or neither).
-	lastHistogramOrFloatHistogramValue unsafe.Pointer // Pointer to the last *histogram.Histogram or *histogram.FloatHistogram value.
+	lastHistogramOrFloatHistogramValue unsafe.Pointer // Last *histogram.Histogram or *histogram.FloatHistogram value.
 
 	// Current appender for the head chunk. Set when a new head chunk is cut.
 	// It is nil only if headChunks is nil. E.g. if there was an appender that created a new series, but rolled back the commit
