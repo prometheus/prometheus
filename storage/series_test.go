@@ -72,7 +72,7 @@ func TestListSeriesIterator(t *testing.T) {
 	require.Equal(t, chunkenc.ValNone, it.Seek(2))
 }
 
-// TestSeriesSetToChunkSet test the property of SeriesSet that says
+// TestChunkSeriesSetToSeriesSet test the property of SeriesSet that says
 // returned series should be iterable even after Next is called.
 func TestChunkSeriesSetToSeriesSet(t *testing.T) {
 	series := []struct {
