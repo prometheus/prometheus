@@ -46,9 +46,12 @@ eval instant at 1m histogram_fraction(1, 2, single_histogram)
 eval instant at 1m histogram_fraction(0, 8, single_histogram)
 	{} 1
 
-# Median is 1.5 due to linear estimation of the midpoint of the middle bucket, whose values are within range 1 < x <= 2.
+# Median is 1.414213562373095 (2**2**-1, or sqrt(2)) due to
+# exponential interpolation, i.e. the "midpoint" within range 1 < x <=
+# 2 is assumed where the bucket boundary would be if we increased the
+# resolution of the histogram by one step.
 eval instant at 1m histogram_quantile(0.5, single_histogram)
-	{} 1.5
+	{} 1.414213562373095
 
 clear
 
@@ -68,8 +71,9 @@ eval instant at 5m histogram_avg(multi_histogram)
 eval instant at 5m histogram_fraction(1, 2, multi_histogram)
 	{} 0.5
 
+# See explanation for exponential interpolation above.
 eval instant at 5m histogram_quantile(0.5, multi_histogram)
-	{} 1.5
+	{} 1.414213562373095
 
 
 # Each entry should look the same as the first.
@@ -85,8 +89,9 @@ eval instant at 50m histogram_avg(multi_histogram)
 eval instant at 50m histogram_fraction(1, 2, multi_histogram)
 	{} 0.5
 
+# See explanation for exponential interpolation above.
 eval instant at 50m histogram_quantile(0.5, multi_histogram)
-	{} 1.5
+	{} 1.414213562373095
 
 clear
 
@@ -109,8 +114,9 @@ eval instant at 5m histogram_avg(incr_histogram)
 eval instant at 5m histogram_fraction(1, 2, incr_histogram)
 	{} 0.6
 
+# See explanation for exponential interpolation above.
 eval instant at 5m histogram_quantile(0.5, incr_histogram)
-	{} 1.5
+	{} 1.414213562373095
 
 
 eval instant at 50m incr_histogram
@@ -129,16 +135,18 @@ eval instant at 50m histogram_avg(incr_histogram)
 eval instant at 50m histogram_fraction(1, 2, incr_histogram)
 	{} 0.8571428571428571
 
+# See explanation for exponential interpolation above.
 eval instant at 50m histogram_quantile(0.5, incr_histogram)
-	{} 1.5
+	{} 1.414213562373095
 
 # Per-second average rate of increase should be 1/(5*60) for count and buckets, then 2/(5*60) for sum.
 eval instant at 50m rate(incr_histogram[10m])
     {} {{count:0.0033333333333333335 sum:0.006666666666666667 offset:1 buckets:[0.0033333333333333335]}}
 
 # Calculate the 50th percentile of observations over the last 10m.
+# See explanation for exponential interpolation above.
 eval instant at 50m histogram_quantile(0.5, rate(incr_histogram[10m]))
-	{} 1.5
+	{} 1.414213562373095
 
 clear
 
@@ -211,8 +219,9 @@ eval instant at 1m histogram_avg(negative_histogram)
 eval instant at 1m histogram_fraction(-2, -1, negative_histogram)
 	{} 0.5
 
+# Exponential interpolation works the same as for positive buckets, just mirrored.
 eval instant at 1m histogram_quantile(0.5, negative_histogram)
-	{} -1.5
+	{} -1.414213562373095
 
 clear
 
@@ -233,8 +242,9 @@ eval instant at 5m histogram_avg(two_samples_histogram)
 eval instant at 5m histogram_fraction(-2, -1, two_samples_histogram)
 	{} 0.5
 
+# See explanation for exponential interpolation above.
 eval instant at 5m histogram_quantile(0.5, two_samples_histogram)
-	{} -1.5
+	{} -1.414213562373095
 
 clear
 
@@ -392,20 +402,24 @@ eval_warn instant at 10m histogram_quantile(1.001, histogram_quantile_1)
 eval instant at 10m histogram_quantile(1, histogram_quantile_1)
     {} 16
 
+# The following quantiles are within a bucket. Exponential
+# interpolation is applied (rather than linear, as it is done for
+# classic histograms), leading to slightly different quantile values.
 eval instant at 10m histogram_quantile(0.99, histogram_quantile_1)
-    {} 15.759999999999998
+    {} 15.67072476139083
 
 eval instant at 10m histogram_quantile(0.9, histogram_quantile_1)
-    {} 13.600000000000001
+    {} 12.99603834169977
 
 eval instant at 10m histogram_quantile(0.6, histogram_quantile_1)
-    {} 4.799999999999997
+    {} 4.594793419988138
 
 eval instant at 10m histogram_quantile(0.5, histogram_quantile_1)
-    {} 1.6666666666666665
+    {} 1.5874010519681994
 
+# Linear interpolation within the zero bucket after all.
 eval instant at 10m histogram_quantile(0.1, histogram_quantile_1)
-    {} 0.0006000000000000001
+    {} 0.0006
 
 eval instant at 10m histogram_quantile(0, histogram_quantile_1)
     {} 0
@@ -425,17 +439,20 @@ eval_warn instant at 10m histogram_quantile(1.001, histogram_quantile_2)
 eval instant at 10m histogram_quantile(1, histogram_quantile_2)
     {} 0
 
+# Again, the quantile values here are slightly different from what
+# they would be with linear interpolation. Note that quantiles
+# ending up in the zero bucket are linearly interpolated after all.
 eval instant at 10m histogram_quantile(0.99, histogram_quantile_2)
-    {} -6.000000000000048e-05
+    {} -0.00006
 
 eval instant at 10m histogram_quantile(0.9, histogram_quantile_2)
-    {} -0.0005999999999999996
+    {} -0.0006
 
 eval instant at 10m histogram_quantile(0.5, histogram_quantile_2)
-    {} -1.6666666666666667
+    {} -1.5874010519681996
 
 eval instant at 10m histogram_quantile(0.1, histogram_quantile_2)
-    {} -13.6
+    {} -12.996038341699768
 
 eval instant at 10m histogram_quantile(0, histogram_quantile_2)
     {} -16
@@ -445,7 +462,9 @@ eval_warn instant at 10m histogram_quantile(-1, histogram_quantile_2)
 
 clear
 
-# Apply quantile function to histogram with both positive and negative buckets with zero bucket.
+# Apply quantile function to histogram with both positive and negative
+# buckets with zero bucket.
+# First positive buckets with exponential interpolation.
 load 10m
     histogram_quantile_3 {{schema:0 count:24 sum:100 z_bucket:4 z_bucket_w:0.001 buckets:[2 3 0 1 4] n_buckets:[2 3 0 1 4]}}x1
 
@@ -456,31 +475,34 @@ eval instant at 10m histogram_quantile(1, histogram_quantile_3)
     {} 16
 
 eval instant at 10m histogram_quantile(0.99, histogram_quantile_3)
-    {} 15.519999999999996
+    {} 15.34822590920423
 
 eval instant at 10m histogram_quantile(0.9, histogram_quantile_3)
-    {} 11.200000000000003
+    {} 10.556063286183155
 
 eval instant at 10m histogram_quantile(0.7, histogram_quantile_3)
-    {} 1.2666666666666657
+    {} 1.2030250360821164
 
+# Linear interpolation in the zero bucket, symmetrically centered around
+# the zero point.
 eval instant at 10m histogram_quantile(0.55, histogram_quantile_3)
-    {} 0.0006000000000000005
+    {} 0.0006
 
 eval instant at 10m histogram_quantile(0.5, histogram_quantile_3)
     {} 0
 
 eval instant at 10m histogram_quantile(0.45, histogram_quantile_3)
-    {} -0.0005999999999999996
+    {} -0.0006
 
+# Finally negative buckets with mirrored exponential interpolation.
 eval instant at 10m histogram_quantile(0.3, histogram_quantile_3)
-    {} -1.266666666666667
+    {} -1.2030250360821169
 
 eval instant at 10m histogram_quantile(0.1, histogram_quantile_3)
-    {} -11.2
+    {} -10.556063286183155
 
 eval instant at 10m histogram_quantile(0.01, histogram_quantile_3)
-    {} -15.52
+    {} -15.34822590920423
 
 eval instant at 10m histogram_quantile(0, histogram_quantile_3)
     {} -16
@@ -489,6 +511,90 @@ eval_warn instant at 10m histogram_quantile(-1, histogram_quantile_3)
     {} -Inf
 
 clear
+
+# Try different schemas. (The interpolation logic must not depend on the schema.)
+clear
+load 1m
+    var_res_histogram{schema="-1"} {{schema:-1 sum:6 count:5 buckets:[0 5]}}
+    var_res_histogram{schema="0"}  {{schema:0 sum:4 count:5 buckets:[0 5]}}
+    var_res_histogram{schema="+1"} {{schema:1 sum:4 count:5 buckets:[0 5]}}
+
+eval instant at 1m histogram_quantile(0.5, var_res_histogram)
+    {schema="-1"}  2.0
+    {schema="0"}   1.4142135623730951
+    {schema="+1"}  1.189207
+
+eval instant at 1m histogram_fraction(0, 2, var_res_histogram{schema="-1"})
+    {schema="-1"}  0.5
+
+eval instant at 1m histogram_fraction(0, 1.4142135623730951, var_res_histogram{schema="0"})
+    {schema="0"}  0.5
+
+eval instant at 1m histogram_fraction(0, 1.189207, var_res_histogram{schema="+1"})
+    {schema="+1"}  0.5
+
+# The same as above, but one bucket "further to the right".
+clear
+load 1m
+    var_res_histogram{schema="-1"} {{schema:-1 sum:6 count:5 buckets:[0 0 5]}}
+    var_res_histogram{schema="0"}  {{schema:0 sum:4 count:5 buckets:[0 0 5]}}
+    var_res_histogram{schema="+1"} {{schema:1 sum:4 count:5 buckets:[0 0 5]}}
+
+eval instant at 1m histogram_quantile(0.5, var_res_histogram)
+    {schema="-1"}  8.0
+    {schema="0"}   2.82842712474619
+    {schema="+1"}  1.6817928305074292
+
+eval instant at 1m histogram_fraction(0, 8, var_res_histogram{schema="-1"})
+    {schema="-1"}  0.5
+
+eval instant at 1m histogram_fraction(0, 2.82842712474619, var_res_histogram{schema="0"})
+    {schema="0"}  0.5
+
+eval instant at 1m histogram_fraction(0, 1.6817928305074292, var_res_histogram{schema="+1"})
+    {schema="+1"}  0.5
+
+# And everything again but for negative buckets.
+clear
+load 1m
+    var_res_histogram{schema="-1"} {{schema:-1 sum:6 count:5 n_buckets:[0 5]}}
+    var_res_histogram{schema="0"}  {{schema:0 sum:4 count:5 n_buckets:[0 5]}}
+    var_res_histogram{schema="+1"} {{schema:1 sum:4 count:5 n_buckets:[0 5]}}
+
+eval instant at 1m histogram_quantile(0.5, var_res_histogram)
+    {schema="-1"}  -2.0
+    {schema="0"}   -1.4142135623730951
+    {schema="+1"}  -1.189207
+
+eval instant at 1m histogram_fraction(-2, 0, var_res_histogram{schema="-1"})
+    {schema="-1"}  0.5
+
+eval instant at 1m histogram_fraction(-1.4142135623730951, 0, var_res_histogram{schema="0"})
+    {schema="0"}  0.5
+
+eval instant at 1m histogram_fraction(-1.189207, 0, var_res_histogram{schema="+1"})
+    {schema="+1"}  0.5
+
+clear
+load 1m
+    var_res_histogram{schema="-1"} {{schema:-1 sum:6 count:5 n_buckets:[0 0 5]}}
+    var_res_histogram{schema="0"}  {{schema:0 sum:4 count:5 n_buckets:[0 0 5]}}
+    var_res_histogram{schema="+1"} {{schema:1 sum:4 count:5 n_buckets:[0 0 5]}}
+
+eval instant at 1m histogram_quantile(0.5, var_res_histogram)
+    {schema="-1"}  -8.0
+    {schema="0"}   -2.82842712474619
+    {schema="+1"}  -1.6817928305074292
+
+eval instant at 1m histogram_fraction(-8, 0, var_res_histogram{schema="-1"})
+    {schema="-1"}  0.5
+
+eval instant at 1m histogram_fraction(-2.82842712474619, 0, var_res_histogram{schema="0"})
+    {schema="0"}  0.5
+
+eval instant at 1m histogram_fraction(-1.6817928305074292, 0, var_res_histogram{schema="+1"})
+    {schema="+1"}  0.5
+
 
 # Apply fraction function to empty histogram.
 load 10m
@@ -515,11 +621,18 @@ eval instant at 10m histogram_fraction(-0.001, 0, histogram_fraction_2)
 eval instant at 10m histogram_fraction(0, 0.001, histogram_fraction_2)
     {} 0.16666666666666666
 
+# Note that this result and the one above add up to 1.
+eval instant at 10m histogram_fraction(0.001, inf, histogram_fraction_2)
+    {} 0.8333333333333334
+
+# We are in the zero bucket, resulting in linear interpolation
 eval instant at 10m histogram_fraction(0, 0.0005, histogram_fraction_2)
     {} 0.08333333333333333
 
-eval instant at 10m histogram_fraction(0.001, inf, histogram_fraction_2)
-    {} 0.8333333333333334
+# Demonstrate that the inverse operation with histogram_quantile yields
+# the original value with the non-trivial result above.
+eval instant at 10m histogram_quantile(0.08333333333333333, histogram_fraction_2)
+    {} 0.0005
 
 eval instant at 10m histogram_fraction(-inf, -0.001, histogram_fraction_2)
     {} 0
@@ -527,17 +640,30 @@ eval instant at 10m histogram_fraction(-inf, -0.001, histogram_fraction_2)
 eval instant at 10m histogram_fraction(1, 2, histogram_fraction_2)
     {} 0.25
 
+# More non-trivial results with interpolation involved below, including
+# some round-trips via histogram_quantile to prove that the inverse
+# operation leads to the same results.
+
+eval instant at 10m histogram_fraction(0, 1.5, histogram_fraction_2)
+    {} 0.4795739585136224
+
 eval instant at 10m histogram_fraction(1.5, 2, histogram_fraction_2)
-    {} 0.125
+    {} 0.10375937481971091
 
 eval instant at 10m histogram_fraction(1, 8, histogram_fraction_2)
     {} 0.3333333333333333
 
+eval instant at 10m histogram_fraction(0, 6, histogram_fraction_2)
+    {} 0.6320802083934297
+
+eval instant at 10m histogram_quantile(0.6320802083934297, histogram_fraction_2)
+    {} 6
+
 eval instant at 10m histogram_fraction(1, 6, histogram_fraction_2)
-    {} 0.2916666666666667
+    {} 0.29874687506009634
 
 eval instant at 10m histogram_fraction(1.5, 6, histogram_fraction_2)
-    {} 0.16666666666666666
+    {} 0.15250624987980724
 
 eval instant at 10m histogram_fraction(-2, -1, histogram_fraction_2)
     {} 0
@@ -600,6 +726,12 @@ eval instant at 10m histogram_fraction(0, 0.001, histogram_fraction_3)
 eval instant at 10m histogram_fraction(-0.0005, 0, histogram_fraction_3)
     {} 0.08333333333333333
 
+eval instant at 10m histogram_fraction(-inf, -0.0005, histogram_fraction_3)
+    {} 0.9166666666666666
+
+eval instant at 10m histogram_quantile(0.9166666666666666, histogram_fraction_3)
+    {} -0.0005
+
 eval instant at 10m histogram_fraction(0.001, inf, histogram_fraction_3)
     {} 0
 
@@ -625,16 +757,22 @@ eval instant at 10m histogram_fraction(-2, -1, histogram_fraction_3)
     {} 0.25
 
 eval instant at 10m histogram_fraction(-2, -1.5, histogram_fraction_3)
-    {} 0.125
+    {} 0.10375937481971091
 
 eval instant at 10m histogram_fraction(-8, -1, histogram_fraction_3)
     {} 0.3333333333333333
 
+eval instant at 10m histogram_fraction(-inf, -6, histogram_fraction_3)
+    {} 0.36791979160657035
+
+eval instant at 10m histogram_quantile(0.36791979160657035, histogram_fraction_3)
+    {} -6
+
 eval instant at 10m histogram_fraction(-6, -1, histogram_fraction_3)
-    {} 0.2916666666666667
+    {} 0.29874687506009634
 
 eval instant at 10m histogram_fraction(-6, -1.5, histogram_fraction_3)
-    {} 0.16666666666666666
+    {} 0.15250624987980724
 
 eval instant at 10m histogram_fraction(42, 3.1415, histogram_fraction_3)
     {} 0
@@ -684,6 +822,18 @@ eval instant at 10m histogram_fraction(0, 0.001, histogram_fraction_4)
 eval instant at 10m histogram_fraction(-0.0005, 0.0005, histogram_fraction_4)
     {} 0.08333333333333333
 
+eval instant at 10m histogram_fraction(-inf, 0.0005, histogram_fraction_4)
+    {} 0.5416666666666666
+
+eval instant at 10m histogram_quantile(0.5416666666666666, histogram_fraction_4)
+    {} 0.0005
+
+eval instant at 10m histogram_fraction(-inf, -0.0005, histogram_fraction_4)
+    {} 0.4583333333333333
+
+eval instant at 10m histogram_quantile(0.4583333333333333, histogram_fraction_4)
+    {} -0.0005
+
 eval instant at 10m histogram_fraction(0.001, inf, histogram_fraction_4)
     {} 0.4166666666666667
 
@@ -694,31 +844,31 @@ eval instant at 10m histogram_fraction(1, 2, histogram_fraction_4)
     {} 0.125
 
 eval instant at 10m histogram_fraction(1.5, 2, histogram_fraction_4)
-    {} 0.0625
+    {} 0.051879687409855414
 
 eval instant at 10m histogram_fraction(1, 8, histogram_fraction_4)
     {} 0.16666666666666666
 
 eval instant at 10m histogram_fraction(1, 6, histogram_fraction_4)
-    {} 0.14583333333333334
+    {} 0.14937343753004825
 
 eval instant at 10m histogram_fraction(1.5, 6, histogram_fraction_4)
-    {} 0.08333333333333333
+    {} 0.07625312493990366
 
 eval instant at 10m histogram_fraction(-2, -1, histogram_fraction_4)
     {} 0.125
 
 eval instant at 10m histogram_fraction(-2, -1.5, histogram_fraction_4)
-    {} 0.0625
+    {} 0.051879687409855456
 
 eval instant at 10m histogram_fraction(-8, -1, histogram_fraction_4)
     {} 0.16666666666666666
 
 eval instant at 10m histogram_fraction(-6, -1, histogram_fraction_4)
-    {} 0.14583333333333334
+    {} 0.14937343753004817
 
 eval instant at 10m histogram_fraction(-6, -1.5, histogram_fraction_4)
-    {} 0.08333333333333333
+    {} 0.07625312493990362
 
 eval instant at 10m histogram_fraction(42, 3.1415, histogram_fraction_4)
     {} 0
