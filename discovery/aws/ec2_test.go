@@ -204,32 +204,8 @@ func TestRefreshAZIDsHandleError(t *testing.T) {
 }
 
 // Tests for the refresh function.
-//
-//	name - the name of the test
-//	generator - a generator function for the input and expected output
+// The generator function type which creates input and expected output data.
 type generatorFunction func(*EC2Discovery) []*targetgroup.Group
-
-var refreshTests = []struct {
-	name      string
-	generator generatorFunction
-}{
-	{
-		name:      "NoPrivateIp",
-		generator: generateRefreshNoPrivateIP,
-	},
-	{
-		name:      "NoVpc",
-		generator: generateRefreshNoVpc,
-	},
-	{
-		name:      "Ipv4",
-		generator: generateRefreshIpv4,
-	},
-	{
-		name:      "Ipv6",
-		generator: generateRefreshIpv6,
-	},
-}
 
 func generateRefreshNoPrivateIP(d *EC2Discovery) []*targetgroup.Group {
 	ec2Data := &d.ec2.(*mockEC2Client).ec2Data
@@ -407,8 +383,28 @@ func TestRefresh(t *testing.T) {
 	ctx := context.Background()
 	client := newMockEC2Client()
 
-	// iterate through the refreshTests array
-	for _, tt := range refreshTests {
+	// iterate through the test cases
+	for _, tt := range []struct {
+		name      string
+		generator generatorFunction
+	}{
+		{
+			name:      "NoPrivateIp",
+			generator: generateRefreshNoPrivateIP,
+		},
+		{
+			name:      "NoVpc",
+			generator: generateRefreshNoVpc,
+		},
+		{
+			name:      "Ipv4",
+			generator: generateRefreshIpv4,
+		},
+		{
+			name:      "Ipv6",
+			generator: generateRefreshIpv6,
+		},
+	} {
 		t.Run(tt.name, func(t *testing.T) {
 			// generate basic availability zone test data
 			client.ec2Data = ec2DataStore{}
