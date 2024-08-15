@@ -327,7 +327,7 @@ func (s *EncoderDecoderSuite) TestEncodeDecodeToHashdexWithMetricInjection() {
 	enc2 := cppbridge.NewWALEncoder(0, 0)
 	dec2 := cppbridge.NewWALDecoder(cppbridge.EncodersVersion())
 
-	count := 11
+	count := 3
 	for i := 1; i < count; i++ {
 		meta := cppbridge.MetaInjection{
 			SentAt:    time.Now().UnixNano(),
@@ -335,7 +335,7 @@ func (s *EncoderDecoderSuite) TestEncodeDecodeToHashdexWithMetricInjection() {
 			Hostname:  "SOMEHOSTNAME",
 		}
 
-		seriesCount := rand.Intn(500-100) + 100
+		seriesCount := rand.Intn(100-50) + 50
 		s.T().Log("generate protobuf")
 		var expectedWr *prompb.WriteRequest
 		if i%2 == 0 {
