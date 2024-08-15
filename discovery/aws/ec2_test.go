@@ -83,7 +83,7 @@ type ec2DataStore struct {
 }
 
 // Generate test data.
-func GenerateTestAzData(ec2Data *ec2DataStore) {
+func generateTestAzData(ec2Data *ec2DataStore) {
 	// region information
 	ec2Data.region = fmt.Sprintf("region-%s", randString(4))
 
@@ -103,7 +103,7 @@ func GenerateTestAzData(ec2Data *ec2DataStore) {
 	ec2Data.ownerID = fmt.Sprintf("ownerid-%s", randString(5))
 }
 
-func GenerateTestInstanceData(ec2Data *ec2DataStore) int {
+func generateTestInstanceData(ec2Data *ec2DataStore) int {
 	// without VPC configuration, just the "basics"
 	azIdx := randNumber(0, len(ec2Data.azNames))
 
@@ -142,7 +142,7 @@ func GenerateTestInstanceData(ec2Data *ec2DataStore) int {
 	return azIdx
 }
 
-func GenerateExpectedLabels(ec2Data *ec2DataStore, azIdx, port int) model.LabelSet {
+func generateExpectedLabels(ec2Data *ec2DataStore, azIdx, port int) model.LabelSet {
 	labels := model.LabelSet{
 		"__address__":                     model.LabelValue(fmt.Sprintf("%s:%d", *ec2Data.instances[0].PrivateIpAddress, port)),
 		"__meta_ec2_ami":                  model.LabelValue(*ec2Data.instances[0].ImageId),
@@ -180,7 +180,7 @@ func TestRefreshAZIDs(t *testing.T) {
 	client := newMockEC2Client()
 	ec2Data := &client.ec2Data
 
-	GenerateTestAzData(ec2Data)
+	generateTestAzData(ec2Data)
 
 	d := &EC2Discovery{
 		ec2: client,
@@ -250,13 +250,13 @@ func generateRefreshNoPrivateIP(d *EC2Discovery) []*targetgroup.Group {
 func generateRefreshNoVpc(d *EC2Discovery) []*targetgroup.Group {
 	ec2Data := &d.ec2.(*mockEC2Client).ec2Data
 
-	azIdx := GenerateTestInstanceData(ec2Data)
+	azIdx := generateTestInstanceData(ec2Data)
 
 	expected := make([]*targetgroup.Group, 1)
 	expected[0] = &targetgroup.Group{
 		Source: ec2Data.region,
 	}
-	expected[0].Targets = append(expected[0].Targets, GenerateExpectedLabels(ec2Data, azIdx, d.cfg.Port))
+	expected[0].Targets = append(expected[0].Targets, generateExpectedLabels(ec2Data, azIdx, d.cfg.Port))
 
 	return expected
 }
@@ -264,7 +264,7 @@ func generateRefreshNoVpc(d *EC2Discovery) []*targetgroup.Group {
 func generateRefreshIpv4(d *EC2Discovery) []*targetgroup.Group {
 	ec2Data := &d.ec2.(*mockEC2Client).ec2Data
 
-	azIdx := GenerateTestInstanceData(ec2Data)
+	azIdx := generateTestInstanceData(ec2Data)
 
 	ec2Data.instances[0].SetSubnetId(ec2Data.azIDs[azIdx])
 	ec2Data.instances[0].SetVpcId(fmt.Sprintf("vpc-%s", randString(8)))
@@ -294,7 +294,7 @@ func generateRefreshIpv4(d *EC2Discovery) []*targetgroup.Group {
 
 	ec2Data.instances[0].SetNetworkInterfaces(enis)
 
-	labels := GenerateExpectedLabels(ec2Data, azIdx, d.cfg.Port)
+	labels := generateExpectedLabels(ec2Data, azIdx, d.cfg.Port)
 
 	labels["__meta_ec2_primary_subnet_id"] = model.LabelValue(*ec2Data.instances[0].SubnetId)
 	labels["__meta_ec2_subnet_id"] = model.LabelValue(fmt.Sprintf(",%s,%s,", ec2Data.azIDs[azIdx], ec2Data.azIDs[secondAzID]))
@@ -312,7 +312,7 @@ func generateRefreshIpv4(d *EC2Discovery) []*targetgroup.Group {
 func generateRefreshIpv6(d *EC2Discovery) []*targetgroup.Group {
 	ec2Data := &d.ec2.(*mockEC2Client).ec2Data
 
-	azIdx := GenerateTestInstanceData(ec2Data)
+	azIdx := generateTestInstanceData(ec2Data)
 
 	ec2Data.instances[0].SetSubnetId(ec2Data.azIDs[azIdx])
 	ec2Data.instances[0].SetVpcId(fmt.Sprintf("vpc-%s", randString(8)))
@@ -377,7 +377,7 @@ func generateRefreshIpv6(d *EC2Discovery) []*targetgroup.Group {
 
 	ec2Data.instances[0].SetNetworkInterfaces(enis)
 
-	labels := GenerateExpectedLabels(ec2Data, azIdx, d.cfg.Port)
+	labels := generateExpectedLabels(ec2Data, azIdx, d.cfg.Port)
 
 	labels["__meta_ec2_ipv6_addresses"] = model.LabelValue(
 		fmt.Sprintf(",%s,%s,%s,%s,",
@@ -412,7 +412,7 @@ func TestRefresh(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// generate basic availability zone test data
 			client.ec2Data = ec2DataStore{}
-			GenerateTestAzData(&client.ec2Data)
+			generateTestAzData(&client.ec2Data)
 
 			d := &EC2Discovery{
 				ec2: client,
