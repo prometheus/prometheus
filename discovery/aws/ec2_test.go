@@ -425,8 +425,8 @@ func TestRefresh(t *testing.T) {
 			expected := tt.generator(d)
 
 			g, err := d.refresh(ctx)
-			require.Equal(t, expected, g)
 			require.NoError(t, err)
+			require.Equal(t, expected, g)
 		})
 	}
 }
