@@ -20,6 +20,7 @@ import (
 	"math"
 	"os"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -152,10 +153,16 @@ func TestTSDBDump(t *testing.T) {
 			expectedMetrics, err := os.ReadFile(tt.expectedDump)
 			require.NoError(t, err)
 			expectedMetrics = normalizeNewLine(expectedMetrics)
-			// even though in case of one matcher samples are not sorted, the order in the cases above should stay the same.
-			require.Equal(t, string(expectedMetrics), dumpedMetrics)
+			// Sort both, because Prometheus does not guarantee the output order.
+			require.Equal(t, sortLines(string(expectedMetrics)), sortLines(dumpedMetrics))
 		})
 	}
+}
+
+func sortLines(buf string) string {
+	lines := strings.Split(buf, "\n")
+	slices.Sort(lines)
+	return strings.Join(lines, "\n")
 }
 
 func TestTSDBDumpOpenMetrics(t *testing.T) {
@@ -169,7 +176,7 @@ func TestTSDBDumpOpenMetrics(t *testing.T) {
 	require.NoError(t, err)
 	expectedMetrics = normalizeNewLine(expectedMetrics)
 	dumpedMetrics := getDumpedSamples(t, storage.Dir(), math.MinInt64, math.MaxInt64, []string{"{__name__=~'(?s:.*)'}"}, formatSeriesSetOpenMetrics)
-	require.Equal(t, string(expectedMetrics), dumpedMetrics)
+	require.Equal(t, sortLines(string(expectedMetrics)), sortLines(dumpedMetrics))
 }
 
 func TestTSDBDumpOpenMetricsRoundTrip(t *testing.T) {
