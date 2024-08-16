@@ -10,6 +10,7 @@ import { useComputedColorScheme } from "@mantine/core";
 import "uplot/dist/uPlot.min.css";
 import "./uplot.css";
 import { getUPlotData, getUPlotOptions } from "./uPlotChartHelpers";
+import { setStackedOpts } from "./uPlotStackHelpers";
 
 export interface UPlotChartRange {
   startTime: number;
@@ -26,13 +27,19 @@ export interface UPlotChartProps {
   onSelectRange: (start: number, end: number) => void;
 }
 
+// This wrapper component translates the incoming Prometheus RangeSamples[] data to the
+// uPlot format and sets up the uPlot options object depending on the UI settings.
 const UPlotChart: FC<UPlotChartProps> = ({
   data,
   range: { startTime, endTime, resolution },
   width,
+  displayMode,
   onSelectRange,
 }) => {
   const [options, setOptions] = useState<uPlot.Options | null>(null);
+  const [processedData, setProcessedData] = useState<uPlot.AlignedData | null>(
+    null
+  );
   const { useLocalTime } = useSettings();
   const theme = useComputedColorScheme();
 
@@ -41,32 +48,49 @@ const UPlotChart: FC<UPlotChartProps> = ({
       return;
     }
 
-    setOptions(
-      getUPlotOptions(
-        width,
-        data,
-        useLocalTime,
-        theme === "light",
-        onSelectRange
-      )
+    const seriesData: uPlot.AlignedData = getUPlotData(
+      data,
+      startTime,
+      endTime,
+      resolution
     );
-  }, [width, data, useLocalTime, theme, onSelectRange]);
 
-  const seriesData: uPlot.AlignedData = getUPlotData(
+    const opts = getUPlotOptions(
+      seriesData,
+      width,
+      data,
+      useLocalTime,
+      theme === "light",
+      onSelectRange
+    );
+
+    if (displayMode === GraphDisplayMode.Stacked) {
+      setProcessedData(setStackedOpts(opts, seriesData).data);
+    } else {
+      setProcessedData(seriesData);
+    }
+
+    setOptions(opts);
+  }, [
+    width,
     data,
+    displayMode,
     startTime,
     endTime,
-    resolution
-  );
+    resolution,
+    useLocalTime,
+    theme,
+    onSelectRange,
+  ]);
 
-  if (options === null) {
+  if (options === null || processedData === null) {
     return;
   }
 
   return (
     <UplotReact
       options={options}
-      data={seriesData}
+      data={processedData}
       className={classes.uplotChart}
     />
   );

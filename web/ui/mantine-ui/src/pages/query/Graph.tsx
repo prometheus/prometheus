@@ -2,7 +2,7 @@ import { FC, useEffect, useId, useState } from "react";
 import { Alert, Skeleton, Box, LoadingOverlay } from "@mantine/core";
 import { IconAlertTriangle, IconInfoCircle } from "@tabler/icons-react";
 import { InstantQueryResult } from "../../api/responseTypes/query";
-import { useAPIQuery } from "../../api/api";
+import { SuccessAPIResponse, useAPIQuery } from "../../api/api";
 import classes from "./Graph.module.css";
 import {
   GraphDisplayMode,
@@ -55,37 +55,45 @@ const Graph: FC<GraphProps> = ({
       enabled: expr !== "",
     });
 
-  // Keep the displayed chart range separate from the actual query range, so that
-  // the chart will keep displaying the old range while a query for a new range
-  // is still in progress.
-  const [displayedChartRange, setDisplayedChartRange] =
-    useState<UPlotChartRange>({
-      startTime: startTime,
-      endTime: effectiveEndTime,
-      resolution: effectiveResolution,
-    });
+  // Bundle the chart data and the displayed range together. This has two purposes:
+  // 1. If we update them separately, we cause unnecessary rerenders of the uPlot chart itself.
+  // 2. We want to keep displaying the old range in the chart while a query for a new range
+  //    is still in progress.
+  const [dataAndRange, setDataAndRange] = useState<{
+    data: SuccessAPIResponse<InstantQueryResult>;
+    range: UPlotChartRange;
+  } | null>(null);
 
   useEffect(() => {
-    setDisplayedChartRange({
-      startTime: startTime,
-      endTime: effectiveEndTime,
-      resolution: effectiveResolution,
-    });
-    // We actually want to update the displayed range only once the new data is there.
+    if (data !== undefined) {
+      setDataAndRange({
+        data: data,
+        range: {
+          startTime: startTime,
+          endTime: effectiveEndTime,
+          resolution: effectiveResolution,
+        },
+      });
+    }
+    // We actually want to update the displayed range only once the new data is there,
+    // so we don't want to include any of the range-related parameters in the dependencies.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
+  // Re-execute the query when the user presses Enter (or hits the Execute button).
   useEffect(() => {
     expr !== "" && refetch();
   }, [retriggerIdx, refetch, expr, endTime, range, resolution]);
 
+  // The useElementSize hook above only gets a valid size on the second render, so this
+  // is a workaround to make the component render twice after mount.
   useEffect(() => {
-    if (data !== undefined && rerender) {
+    if (dataAndRange !== null && rerender) {
       setRerender(false);
     }
-  }, [data, rerender, setRerender]);
+  }, [dataAndRange, rerender, setRerender]);
 
-  // TODO: Share all the loading/error/empty data notices with the DataTable.
+  // TODO: Share all the loading/error/empty data notices with the DataTable?
 
   // Show a skeleton only on the first load, not on subsequent ones.
   if (isLoading) {
@@ -110,11 +118,11 @@ const Graph: FC<GraphProps> = ({
     );
   }
 
-  if (data === undefined) {
+  if (dataAndRange === null) {
     return <Alert variant="transparent">No data queried yet</Alert>;
   }
 
-  const { result, resultType } = data.data;
+  const { result, resultType } = dataAndRange.data.data;
 
   if (resultType !== "matrix") {
     return (
@@ -150,8 +158,8 @@ const Graph: FC<GraphProps> = ({
         // styles={{ loader: { width: "100%", height: "100%" } }}
       />
       <UPlotChart
-        data={data.data.result}
-        range={displayedChartRange}
+        data={dataAndRange.data.data.result}
+        range={dataAndRange.range}
         width={width}
         showExemplars={showExemplars}
         displayMode={displayMode}

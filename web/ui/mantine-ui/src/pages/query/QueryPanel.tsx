@@ -14,7 +14,7 @@ import {
   IconGraph,
   IconTable,
 } from "@tabler/icons-react";
-import { FC, useState } from "react";
+import { FC, useCallback, useState } from "react";
 import { useAppDispatch, useAppSelector } from "../../state/hooks";
 import {
   GraphDisplayMode,
@@ -46,6 +46,24 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
 
   const panel = useAppSelector((state) => state.queryPage.panels[idx]);
   const dispatch = useAppDispatch();
+
+  const onSelectRange = useCallback(
+    (start: number, end: number) =>
+      dispatch(
+        setVisualizer({
+          idx,
+          visualizer: {
+            ...panel.visualizer,
+            range: (end - start) * 1000,
+            endTime: end * 1000,
+          },
+        })
+      ),
+    // TODO: How to have panel.visualizer in the dependencies, but not re-create
+    // the callback every time it changes by the callback's own update? This leads
+    // to extra renders of the plot further down.
+    [dispatch, idx, panel.visualizer]
+  );
 
   return (
     <Stack gap="lg">
@@ -220,18 +238,7 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
             showExemplars={panel.visualizer.showExemplars}
             displayMode={panel.visualizer.displayMode}
             retriggerIdx={retriggerIdx}
-            onSelectRange={(start: number, end: number) =>
-              dispatch(
-                setVisualizer({
-                  idx,
-                  visualizer: {
-                    ...panel.visualizer,
-                    range: (end - start) * 1000,
-                    endTime: end * 1000,
-                  },
-                })
-              )
-            }
+            onSelectRange={onSelectRange}
           />
         </Tabs.Panel>
       </Tabs>

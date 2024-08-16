@@ -3,7 +3,7 @@ import { formatSeries } from "../../lib/formatSeries";
 import { formatTimestamp } from "../../lib/formatTime";
 import { getSeriesColor } from "./colorPool";
 import { computePosition, shift, flip, offset } from "@floating-ui/dom";
-import uPlot, { Series } from "uplot";
+import uPlot, { AlignedData, Series } from "uplot";
 
 const formatYAxisTickValue = (y: number | null): string => {
   if (y === null) {
@@ -81,7 +81,7 @@ const formatLabels = (labels: { [key: string]: string }): string => `
                 .join("")}
             </div>`;
 
-const tooltipPlugin = (useLocalTime: boolean) => {
+const tooltipPlugin = (useLocalTime: boolean, data: AlignedData) => {
   let over: HTMLDivElement;
   let boundingLeft: number;
   let boundingTop: number;
@@ -141,7 +141,7 @@ const tooltipPlugin = (useLocalTime: boolean) => {
         }
 
         const ts = u.data[0][idx];
-        const value = u.data[selectedSeriesIdx][idx];
+        const value = data[selectedSeriesIdx][idx];
         const series = u.series[selectedSeriesIdx];
         // @ts-expect-error - uPlot doesn't have a field for labels, but we just attach some anyway.
         const labels = series.labels;
@@ -286,6 +286,7 @@ const onlyDrawPointsForDisconnectedSamplesFilter = (
 };
 
 export const getUPlotOptions = (
+  data: AlignedData,
   width: number,
   result: RangeSamples[],
   useLocalTime: boolean,
@@ -309,7 +310,7 @@ export const getUPlotOptions = (
   tzDate: useLocalTime
     ? undefined
     : (ts) => uPlot.tzDate(new Date(ts * 1e3), "Etc/UTC"),
-  plugins: [tooltipPlugin(useLocalTime)],
+  plugins: [tooltipPlugin(useLocalTime, data)],
   legend: {
     show: true,
     live: false,
@@ -408,15 +409,15 @@ export const getUPlotData = (
   }
 
   const values = inputData.map(({ values, histograms }) => {
-    // Insert nulls for all missing steps.
     const data: (number | null)[] = [];
     let valuePos = 0;
     let histogramPos = 0;
 
     for (let t = startTime; t <= endTime; t += resolution) {
-      // Allow for floating point inaccuracy.
       const currentValue = values && values[valuePos];
       const currentHistogram = histograms && histograms[histogramPos];
+
+      // Allow for floating point inaccuracy.
       if (
         currentValue &&
         values.length > valuePos &&
@@ -432,6 +433,7 @@ export const getUPlotData = (
         data.push(parseValue(currentHistogram[1].sum));
         histogramPos++;
       } else {
+        // Insert nulls for all missing steps.
         data.push(null);
       }
     }
