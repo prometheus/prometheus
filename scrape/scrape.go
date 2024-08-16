@@ -817,6 +817,7 @@ type cacheEntry struct {
 	lastIter uint64
 	hash     uint64
 	lset     labels.Labels
+	ts       int64 // Timestamp of last scraped value.
 }
 
 type scrapeLoop struct {
@@ -980,11 +981,11 @@ func (c *scrapeCache) get(met []byte) (*cacheEntry, bool, bool) {
 	return e, true, alreadyScraped
 }
 
-func (c *scrapeCache) addRef(met []byte, ref storage.SeriesRef, lset labels.Labels, hash uint64) {
+func (c *scrapeCache) addRef(met []byte, ref storage.SeriesRef, lset labels.Labels, hash uint64, ts int64) {
 	if ref == 0 {
 		return
 	}
-	c.series[string(met)] = &cacheEntry{ref: ref, lastIter: c.iter, lset: lset, hash: hash}
+	c.series[string(met)] = &cacheEntry{ref: ref, lastIter: c.iter, lset: lset, hash: hash, ts: ts}
 }
 
 func (c *scrapeCache) addDropped(met []byte) {
@@ -1631,7 +1632,7 @@ loop:
 			updateMetadata(lset, true)
 		}
 
-		if seriesAlreadyScraped {
+		if seriesAlreadyScraped && ce.ts == t {
 			err = storage.ErrDuplicateSampleForTimestamp
 		} else {
 			if ctMs := p.CreatedTimestamp(); sl.enableCTZeroIngestion && ctMs != nil {
@@ -1673,7 +1674,7 @@ loop:
 				// Bypass staleness logic if there is an explicit timestamp.
 				sl.cache.trackStaleness(hash, lset)
 			}
-			sl.cache.addRef(met, ref, lset, hash)
+			sl.cache.addRef(met, ref, lset, hash, t)
 			if sampleAdded && sampleLimitErr == nil && bucketLimitErr == nil {
 				seriesAdded++
 			}
@@ -1921,7 +1922,7 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s []byte, t int64, v
 	switch {
 	case err == nil:
 		if !ok {
-			sl.cache.addRef(s, ref, lset, lset.Hash())
+			sl.cache.addRef(s, ref, lset, lset.Hash(), t)
 		}
 		return nil
 	case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrDuplicateSampleForTimestamp):

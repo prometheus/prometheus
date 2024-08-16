@@ -35,6 +35,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
+	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -1491,7 +1492,7 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 	hash := lset.Hash()
 
 	// Create a fake entry in the cache
-	sl.cache.addRef(metric, fakeRef, lset, hash)
+	sl.cache.addRef(metric, fakeRef, lset, hash, 0)
 	now := time.Now()
 
 	slApp := sl.appender(context.Background())
@@ -3627,6 +3628,7 @@ func TestScrapeLoopSeriesAddedDuplicates(t *testing.T) {
 	require.Equal(t, 3, total)
 	require.Equal(t, 3, added)
 	require.Equal(t, 1, seriesAdded)
+	require.Equal(t, 2.0, prom_testutil.ToFloat64(sl.metrics.targetScrapeSampleDuplicate))
 
 	slApp = sl.appender(ctx)
 	total, added, seriesAdded, err = sl.append(slApp, []byte("test_metric 1\ntest_metric 1\ntest_metric 1\n"), "", time.Time{})
@@ -3635,12 +3637,18 @@ func TestScrapeLoopSeriesAddedDuplicates(t *testing.T) {
 	require.Equal(t, 3, total)
 	require.Equal(t, 3, added)
 	require.Equal(t, 0, seriesAdded)
+	require.Equal(t, 4.0, prom_testutil.ToFloat64(sl.metrics.targetScrapeSampleDuplicate))
 
-	metric := dto.Metric{}
-	err = sl.metrics.targetScrapeSampleDuplicate.Write(&metric)
+	// When different timestamps are supplied, multiple samples are accepted.
+	slApp = sl.appender(ctx)
+	total, added, seriesAdded, err = sl.append(slApp, []byte("test_metric 1 1001\ntest_metric 1 1002\ntest_metric 1 1003\n"), "", time.Time{})
 	require.NoError(t, err)
-	value := metric.GetCounter().GetValue()
-	require.Equal(t, 4.0, value)
+	require.NoError(t, slApp.Commit())
+	require.Equal(t, 3, total)
+	require.Equal(t, 3, added)
+	require.Equal(t, 0, seriesAdded)
+	// Metric is not higher than last time.
+	require.Equal(t, 4.0, prom_testutil.ToFloat64(sl.metrics.targetScrapeSampleDuplicate))
 }
 
 // This tests running a full scrape loop and checking that the scrape option
