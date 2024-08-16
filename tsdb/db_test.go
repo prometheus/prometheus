@@ -2690,8 +2690,9 @@ func TestDBReadOnly_Querier_NoAlteration(t *testing.T) {
 		require.NoError(t, db.Close())
 
 		// Simulate a corrupted chunk: without a header.
-		_, err := os.Create(path.Join(mmappedChunksDir(db.dir), "000001"))
+		chunk, err := os.Create(path.Join(mmappedChunksDir(db.dir), "000001"))
 		require.NoError(t, err)
+		require.NoError(t, chunk.Close())
 
 		spinUpQuerierAndCheck(db.dir, t.TempDir(), 1)
 
