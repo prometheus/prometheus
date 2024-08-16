@@ -788,7 +788,7 @@ TEST_F(TestStatelessRelabeler, KeepEQInvalidLabelLimit) {
   EXPECT_EQ(Relabel::rsKeep, rstatus);
 
   // label_limit 0
-  Relabel::LabelLimits ll{};
+  Relabel::MetricLimits ll{};
   Relabel::hard_validate(rstatus, builder, &ll);
   EXPECT_EQ(Relabel::rsKeep, rstatus);
 
@@ -2060,6 +2060,45 @@ TEST_F(TestPerShardRelabeler, ReplaceToNewLS2_OrderedEncodingBimap) {
   EXPECT_EQ(rlabels, expected_labels);
 }
 
+TEST_F(TestPerShardRelabeler, InputRelabelingWithStalenans) {
+  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap lss;
+
+  RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2};  // Keep
+  std::vector<RelabelConfigTest*> rcts;
+  rcts.emplace_back(&rct);
+
+  Relabel::StatelessRelabeler sr(rcts);
+
+  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 0, 2, 1);
+
+  HashdexTest hx;
+  make_hashdex(hx, make_label_set({{"__name__", "value"}, {"job", "abc"}}), make_samples({{1712567046855, 0.1}}));
+  PromPP::Prometheus::Relabel::SourceState state = nullptr;
+
+  PromPP::Prometheus::Relabel::SourceState newstate =
+      prs.input_relabeling_with_stalenans(lss, hx, shards_inner_series_, relabeled_results_, nullptr, state, 1712567046855);
+  // shard id 1
+  EXPECT_EQ(relabeled_results_[0]->size(), 0);
+  EXPECT_EQ(relabeled_results_[1]->size(), 0);
+  EXPECT_EQ(shards_inner_series_[0]->size(), 0);
+  EXPECT_EQ(shards_inner_series_[1]->size(), 1);
+
+  PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data(0);
+  prs.append_relabeler_series(lss, shards_inner_series_[1], relabeled_results_[1], &update_data);
+  EXPECT_EQ(shards_inner_series_[1]->size(), 1);
+  EXPECT_EQ(update_data.size(), 0);
+
+  prs.update_relabeler_state(&update_data, 1);
+
+  vector_shards_inner_series_[1] = std::make_unique<PromPP::Prometheus::Relabel::InnerSeries>();
+  HashdexTest empty_hx;
+  PromPP::Primitives::Timestamp stale_ts = 1712567047055;
+  prs.input_relabeling_with_stalenans(lss, empty_hx, shards_inner_series_, relabeled_results_, nullptr, newstate, stale_ts);
+  EXPECT_EQ(shards_inner_series_[1]->size(), 1);
+  EXPECT_EQ(shards_inner_series_[1]->data()[0].samples[0].timestamp(), stale_ts);
+  EXPECT_EQ(std::bit_cast<uint64_t>(shards_inner_series_[1]->data()[0].samples[0].value()), std::bit_cast<uint64_t>(BareBones::Encoding::Gorilla::STALE_NAN));
+}
+
 struct TestProcessExternalLabels : public testing::Test {
   // external_labels
   std::vector<std::pair<PromPP::Primitives::Go::String, PromPP::Primitives::Go::String>> vector_external_labels_;
@@ -2307,6 +2346,67 @@ TEST_F(TestLabelsValidator, LabelValueIsInValid) {
   for (const std::string_view lvalue : lvs) {
     EXPECT_FALSE(PromPP::Prometheus::Relabel::label_value_is_valid(lvalue));
   }
+}
+
+struct TestStaleNaNsState : public testing::Test {};
+
+TEST_F(TestStaleNaNsState, ParentEQ) {
+  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap lss;
+
+  PromPP::Prometheus::Relabel::StaleNaNsState* result = new PromPP::Prometheus::Relabel::StaleNaNsState(&lss);
+  EXPECT_TRUE(result->parent_eq(&lss));
+  delete result;
+}
+
+TEST_F(TestStaleNaNsState, NotParentEQ) {
+  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap lss1;
+  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap lss2;
+
+  PromPP::Prometheus::Relabel::StaleNaNsState* result = new PromPP::Prometheus::Relabel::StaleNaNsState(&lss1);
+  EXPECT_FALSE(result->parent_eq(&lss2));
+  delete result;
+}
+
+TEST_F(TestStaleNaNsState, ResetTo) {
+  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap lss1;
+  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap lss2;
+
+  PromPP::Prometheus::Relabel::StaleNaNsState* result = new PromPP::Prometheus::Relabel::StaleNaNsState(&lss1);
+  EXPECT_TRUE(result->parent_eq(&lss1));
+
+  result->reset_to(&lss2);
+  EXPECT_TRUE(result->parent_eq(&lss2));
+  delete result;
+}
+
+TEST_F(TestStaleNaNsState, Swap) {
+  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap lss;
+  PromPP::Prometheus::Relabel::StaleNaNsState* result = new PromPP::Prometheus::Relabel::StaleNaNsState(&lss);
+
+  uint32_t current_ls_id{42};
+  result->add(current_ls_id);
+
+  auto fn = [&](const uint32_t ls_id) { EXPECT_EQ(ls_id, current_ls_id); };
+  result->swap(fn);
+  result->swap(fn);
+  delete result;
+}
+
+struct TestLSSWithStaleNaNs : public testing::Test {};
+
+TEST_F(TestLSSWithStaleNaNs, FindOrEmplace) {
+  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap lss;
+  PromPP::Prometheus::Relabel::StaleNaNsState* result = new PromPP::Prometheus::Relabel::StaleNaNsState(&lss);
+  PromPP::Prometheus::Relabel::LSSWithStaleNaNs wrapped_lss(lss, result);
+
+  LabelViewSetForTest label_set = make_label_set({{"__name__", "value"}, {"job", "abs"}});
+  uint32_t current_ls_id = wrapped_lss.find_or_emplace(label_set, hash_value(label_set));
+
+  EXPECT_EQ(lss[current_ls_id], label_set);
+  auto fn = [&](const uint32_t ls_id) { EXPECT_EQ(ls_id, current_ls_id); };
+  result->swap(fn);
+  result->swap(fn);
+  delete result;
 }
 
 }  // namespace

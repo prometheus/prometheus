@@ -324,7 +324,7 @@ func (s *ManagerRelabelerSuite) TestManagerRelabelerRelabeling() {
 	s.Require().NoError(err)
 }
 
-func (s *ManagerRelabelerSuite) TestManagerRelabelerRelabeling2() {
+func (s *ManagerRelabelerSuite) TestManagerRelabelerRelabelingAddNewLabel() {
 	relabelerID := s.T().Name()
 	destination := make(chan string, 16)
 
@@ -1114,13 +1114,6 @@ func (*ManagerRelabelerSuite) mkDir(dName string) (string, error) {
 	return os.MkdirTemp("", filepath.Clean(fmt.Sprintf("refill-%s-", dName)))
 }
 
-func (*ManagerRelabelerSuite) walEncoder() relabeler.ManagerEncoderCtor {
-	return func(shardID uint16, logShards uint8) relabeler.ManagerEncoder {
-		return cppbridge.NewWALEncoderLightweight(shardID, logShards)
-		// return cppbridge.NewWALEncoder(shardID, logShards)
-	}
-}
-
 func (*ManagerRelabelerSuite) encoderSelector(isShrinkable bool) relabeler.ManagerEncoderCtor {
 	if isShrinkable {
 		return func(shardID uint16, shardsNumberPower uint8) relabeler.ManagerEncoder {
@@ -1145,6 +1138,7 @@ func (*ManagerRelabelerSuite) transportNewAutoAck(
 			m := new(sync.Mutex)
 			var ack func(uint32)
 			decoder := cppbridge.NewWALDecoder(3)
+			frID := 0
 			transport := &TransportMock{
 				OnAckFunc: func(fn func(uint32)) {
 					m.Lock()
@@ -1182,6 +1176,7 @@ func (*ManagerRelabelerSuite) transportNewAutoAck(
 						if wr.String() == "" {
 							return
 						}
+						frID++
 						select {
 						case dest <- wr.String():
 						default:
@@ -1201,4 +1196,350 @@ func (*ManagerRelabelerSuite) transportNewAutoAck(
 			return transport, nil
 		},
 	}
+}
+
+func (s *ManagerRelabelerSuite) TestManagerRelabelerKeepWithStaleNans() {
+	relabelerID := s.T().Name()
+	destination := make(chan string, 16)
+
+	clock := clockwork.NewFakeClock()
+	var numberOfShards uint16 = 3
+
+	relabelingCfgs := []*cppbridge.RelabelConfig{
+		{
+			SourceLabels: []string{"job"},
+			Regex:        "abc",
+			Action:       cppbridge.Keep,
+		},
+	}
+	destinationGroup1 := s.makeDestinationGroup(
+		"destination_1",
+		destination,
+		clock,
+		nil,
+		relabelingCfgs,
+		numberOfShards,
+	)
+
+	relabelingCfgs = []*cppbridge.RelabelConfig{
+		{
+			SourceLabels: []string{"job"},
+			Regex:        "abc",
+			Action:       cppbridge.Keep,
+		},
+	}
+	destinationGroup2 := s.makeDestinationGroup(
+		"destination_2",
+		destination,
+		clock,
+		nil,
+		relabelingCfgs,
+		numberOfShards,
+	)
+
+	s.T().Log("make input relabeler")
+	inputRelabelerConfigs := []*relabeler.InputRelabelerConfig{
+		relabeler.NewInputRelabelerConfig(
+			relabelerID,
+			[]*cppbridge.RelabelConfig{
+				{
+					SourceLabels: []string{"job"},
+					Regex:        "abc",
+					Action:       cppbridge.Keep,
+				},
+			},
+		),
+	}
+
+	destinationGroups := &relabeler.DestinationGroups{
+		destinationGroup1,
+		destinationGroup2,
+	}
+
+	s.T().Log("make ManagerRelabeler")
+	msr, err := relabeler.NewManagerRelabeler(
+		clock,
+		nil,
+		inputRelabelerConfigs,
+		destinationGroups,
+		numberOfShards,
+	)
+	s.Require().NoError(err)
+
+	s.T().Log("run main shards")
+	go msr.Run(s.baseCtx)
+
+	hlimits := cppbridge.DefaultWALHashdexLimits()
+
+	s.T().Log("append first data")
+	firstWr := &prompb.WriteRequest{
+		Timeseries: []prompb.TimeSeries{
+			{
+				Labels: []prompb.Label{
+					{Name: "__name__", Value: "value"},
+					{Name: "instance", Value: "value1"},
+					{Name: "job", Value: "abc"},
+				},
+				Samples: []prompb.Sample{
+					{Value: 0.1, Timestamp: time.Now().UnixMilli()},
+				},
+			},
+		},
+	}
+	h := s.makeIncomingData(firstWr, hlimits)
+	sourceStates := relabeler.NewSourceStates()
+	staleNansTS := time.Now().UnixMilli()
+	err = msr.AppendWithStaleNans(s.baseCtx, h, nil, sourceStates, staleNansTS, relabelerID)
+	s.Require().NoError(err)
+
+	time.AfterFunc(100*time.Millisecond, func() {
+		clock.Advance(500 * time.Millisecond)
+	})
+
+	s.T().Log("wait send to 2 destinations")
+	s.Equal(firstWr.String(), <-destination)
+	s.Equal(firstWr.String(), <-destination)
+
+	s.T().Log("append second data")
+	secondWr := &prompb.WriteRequest{
+		Timeseries: []prompb.TimeSeries{
+			{
+				Labels: []prompb.Label{
+					{Name: "__name__", Value: "value"},
+					{Name: "instance", Value: "value3"},
+					{Name: "job", Value: "abc"},
+				},
+				Samples: []prompb.Sample{
+					{Value: 0.2, Timestamp: time.Now().UnixMilli()},
+				},
+			},
+		},
+	}
+
+	h = s.makeIncomingData(secondWr, hlimits)
+	staleNansTS = time.Now().UnixMilli()
+	err = msr.AppendWithStaleNans(s.baseCtx, h, nil, sourceStates, staleNansTS, relabelerID)
+	s.Require().NoError(err)
+
+	time.AfterFunc(100*time.Millisecond, func() {
+		clock.Advance(500 * time.Millisecond)
+	})
+
+	s.T().Log("wait send to 2 destinations")
+	firstWr.Timeseries = append(firstWr.Timeseries, secondWr.Timeseries...)
+	firstWr.Timeseries[0].Samples[0].Value = math.NaN()
+	firstWr.Timeseries[0].Samples[0].Timestamp = staleNansTS
+
+	s.Equal(firstWr.String(), <-destination)
+	s.Equal(firstWr.String(), <-destination)
+
+	s.T().Log("shutdown manager")
+	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 150*time.Millisecond)
+	err = msr.Shutdown(shutdownCtx)
+	cancel()
+	s.Require().NoError(err)
+}
+
+func (s *ManagerRelabelerSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() {
+	relabelerID := s.T().Name()
+	destination := make(chan string, 16)
+
+	clock := clockwork.NewFakeClock()
+	var numberOfShards uint16 = 3
+
+	relabelingCfgs := []*cppbridge.RelabelConfig{
+		{
+			Regex:       ".*",
+			TargetLabel: "lname",
+			Replacement: "blabla",
+			Action:      cppbridge.Replace,
+		},
+	}
+	destinationGroup1 := s.makeDestinationGroup(
+		"destination_1",
+		destination,
+		clock,
+		nil,
+		relabelingCfgs,
+		numberOfShards,
+	)
+
+	relabelingCfgs = []*cppbridge.RelabelConfig{
+		{
+			Regex:       ".*",
+			TargetLabel: "lname",
+			Replacement: "blabla",
+			Action:      cppbridge.Replace,
+		},
+	}
+	destinationGroup2 := s.makeDestinationGroup(
+		"destination_2",
+		destination,
+		clock,
+		nil,
+		relabelingCfgs,
+		numberOfShards,
+	)
+
+	s.T().Log("make input relabeler")
+	inputRelabelerConfigs := []*relabeler.InputRelabelerConfig{
+		relabeler.NewInputRelabelerConfig(
+			relabelerID,
+			[]*cppbridge.RelabelConfig{
+				{
+					SourceLabels: []string{"job"},
+					Regex:        "abc",
+					Action:       cppbridge.Keep,
+				},
+			},
+		),
+	}
+
+	destinationGroups := &relabeler.DestinationGroups{
+		destinationGroup1,
+		destinationGroup2,
+	}
+
+	s.T().Log("make ManagerRelabeler")
+	msr, err := relabeler.NewManagerRelabeler(
+		clock,
+		nil,
+		inputRelabelerConfigs,
+		destinationGroups,
+		numberOfShards,
+	)
+	s.Require().NoError(err)
+
+	s.T().Log("run main shards")
+	go msr.Run(s.baseCtx)
+
+	hlimits := cppbridge.DefaultWALHashdexLimits()
+
+	s.T().Log("append first data")
+	wr := &prompb.WriteRequest{
+		Timeseries: []prompb.TimeSeries{
+			{
+				Labels: []prompb.Label{
+					{Name: "__name__", Value: "some:job2:boj"},
+					{Name: "instance", Value: "value1"},
+					{Name: "job", Value: "abc"},
+				},
+				Samples: []prompb.Sample{
+					{Value: 0.1, Timestamp: 100},
+				},
+			},
+		},
+	}
+	h := s.makeIncomingData(wr, hlimits)
+	sourceStates := relabeler.NewSourceStates()
+	staleNansTS := time.Now().UnixMilli()
+	err = msr.AppendWithStaleNans(s.baseCtx, h, nil, sourceStates, staleNansTS, relabelerID)
+	s.Require().NoError(err)
+
+	time.AfterFunc(100*time.Millisecond, func() {
+		clock.Advance(500 * time.Millisecond)
+	})
+
+	s.T().Log("first wait send to 2 destinations")
+	wr.Timeseries[0].Labels = append(wr.Timeseries[0].Labels, prompb.Label{Name: "lname", Value: "blabla"})
+	s.Equal(wr.String(), <-destination)
+	s.Equal(wr.String(), <-destination)
+
+	s.T().Log("rotate")
+	clock.Advance(2 * time.Hour)
+	time.Sleep(100 * time.Millisecond)
+
+	s.T().Log("first final frame")
+	for i := 0; i < 1<<relabeler.DefaultShardsNumberPower*2; i++ {
+		s.Equal(finalFrame, <-destination)
+	}
+
+	s.T().Log("append second data")
+	secondWr := &prompb.WriteRequest{
+		Timeseries: []prompb.TimeSeries{
+			{
+				Labels: []prompb.Label{
+					{Name: "__name__", Value: "some:job2:boj"},
+					{Name: "instance", Value: "value2"},
+					{Name: "job", Value: "abc"},
+				},
+				Samples: []prompb.Sample{
+					{Value: 0.1, Timestamp: 101},
+				},
+			},
+			{
+				Labels: []prompb.Label{
+					{Name: "__name__", Value: "value"},
+					{Name: "instance", Value: "value2"},
+					{Name: "job", Value: "abv"},
+				},
+				Samples: []prompb.Sample{
+					{Value: 0.1, Timestamp: time.Now().UnixMilli()},
+				},
+			},
+		},
+	}
+	h = s.makeIncomingData(secondWr, hlimits)
+	staleNansTS = time.Now().UnixMilli()
+	err = msr.AppendWithStaleNans(s.baseCtx, h, nil, sourceStates, staleNansTS, relabelerID)
+	s.Require().NoError(err)
+
+	time.AfterFunc(100*time.Millisecond, func() {
+		clock.Advance(500 * time.Millisecond)
+	})
+
+	s.T().Log("second wait send to 2 destinations")
+	secondWr.Timeseries[0].Labels = append(secondWr.Timeseries[0].Labels, prompb.Label{Name: "lname", Value: "blabla"})
+	secondWr.Timeseries = secondWr.Timeseries[:1]
+	s.Equal(secondWr.String(), <-destination)
+	s.Equal(secondWr.String(), <-destination)
+
+	s.T().Log("append third data")
+	thirdWr := &prompb.WriteRequest{
+		Timeseries: []prompb.TimeSeries{
+			{
+				Labels: []prompb.Label{
+					{Name: "__name__", Value: "some:job2:boj"},
+					{Name: "instance", Value: "value3"},
+					{Name: "job", Value: "abc"},
+				},
+				Samples: []prompb.Sample{
+					{Value: 0.1, Timestamp: 101},
+				},
+			},
+			{
+				Labels: []prompb.Label{
+					{Name: "__name__", Value: "value"},
+					{Name: "instance", Value: "value2"},
+					{Name: "job", Value: "abv"},
+				},
+				Samples: []prompb.Sample{
+					{Value: 0.1, Timestamp: time.Now().UnixMilli()},
+				},
+			},
+		},
+	}
+	h = s.makeIncomingData(thirdWr, hlimits)
+	staleNansTS = time.Now().UnixMilli()
+	err = msr.AppendWithStaleNans(s.baseCtx, h, nil, sourceStates, staleNansTS, relabelerID)
+	s.Require().NoError(err)
+
+	time.AfterFunc(100*time.Millisecond, func() {
+		clock.Advance(500 * time.Millisecond)
+	})
+
+	s.T().Log("third wait send to 2 destinations")
+	thirdWr.Timeseries[0].Labels = append(thirdWr.Timeseries[0].Labels, prompb.Label{Name: "lname", Value: "blabla"})
+	thirdWr.Timeseries = thirdWr.Timeseries[:1]
+	secondWr.Timeseries[0].Samples[0].Value = math.NaN()
+	secondWr.Timeseries[0].Samples[0].Timestamp = staleNansTS
+	secondWr.Timeseries = append(secondWr.Timeseries, thirdWr.Timeseries...)
+	s.Equal(secondWr.String(), <-destination)
+	s.Equal(secondWr.String(), <-destination)
+
+	s.T().Log("shutdown manager")
+	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 100*time.Millisecond)
+	err = msr.Shutdown(shutdownCtx)
+	cancel()
+	s.Require().NoError(err)
 }
