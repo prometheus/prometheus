@@ -16,6 +16,7 @@ package tsdb
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"slices"
 
@@ -279,9 +280,12 @@ func mergeInOrderAndOOOHeadChunks(chk chunkenc.Chunk, iter chunkenc.Iterable, ma
 	case err != nil:
 		return chk, iter, maxT, err
 	case iter != nil:
-		// This is unexpected as in-order head never returns an iterable.
+		// In-order head never returns an iterable.
 		return nil, nil, 0, fmt.Errorf("unexpected iterable from in-order head")
-	case chk != nil && oooHeadChunk != nil:
+	case chk == nil:
+		// In-order head either returns a storage.ErrNotFound or a chunk.
+		return nil, nil, 0, fmt.Errorf("unexpected nil chunk from in-order head")
+	case oooHeadChunk != nil:
 		// Merge the in-order head chunk with the OOO head chunk.
 		return nil, &mergedOOOChunks{
 			chunkIterables: []chunkenc.Iterable{chk, oooHeadChunk},
