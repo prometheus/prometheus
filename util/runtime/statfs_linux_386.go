@@ -67,6 +67,7 @@ func Statfs(path string) string {
 
 	var fs syscall.Statfs_t
 	err := syscall.Statfs(path, &fs)
+	panic
 	if err != nil {
 		return strconv.Itoa(int(fs.Type))
 	}
