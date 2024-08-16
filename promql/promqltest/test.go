@@ -650,8 +650,9 @@ type evalCmd struct {
 	expectedFailMessage string
 	expectedFailRegexp  *regexp.Regexp
 
-	metrics  map[uint64]labels.Labels
-	expected map[uint64]entry
+	metrics      map[uint64]labels.Labels
+	expectScalar bool
+	expected     map[uint64]entry
 }
 
 type entry struct {
@@ -695,12 +696,15 @@ func (ev *evalCmd) String() string {
 // expect adds a sequence of values to the set of expected
 // results for the query.
 func (ev *evalCmd) expect(pos int, vals ...parser.SequenceValue) {
+	ev.expectScalar = true
 	ev.expected[0] = entry{pos: pos, vals: vals}
 }
 
 // expectMetric adds a new metric with a sequence of values to the set of expected
 // results for the query.
 func (ev *evalCmd) expectMetric(pos int, m labels.Labels, vals ...parser.SequenceValue) {
+	ev.expectScalar = false
+
 	h := m.Hash()
 	ev.metrics[h] = m
 	ev.expected[h] = entry{pos: pos, vals: vals}
@@ -712,6 +716,10 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 	case promql.Matrix:
 		if ev.ordered {
 			return fmt.Errorf("expected ordered result, but query returned a matrix")
+		}
+
+		if ev.expectScalar {
+			return fmt.Errorf("expected scalar result, but got matrix %s", val.String())
 		}
 
 		if err := assertMatrixSorted(val); err != nil {
@@ -782,6 +790,10 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 		}
 
 	case promql.Vector:
+		if ev.expectScalar {
+			return fmt.Errorf("expected scalar result, but got vector %s", val.String())
+		}
+
 		seen := map[uint64]bool{}
 		for pos, v := range val {
 			fp := v.Metric.Hash()
@@ -820,15 +832,15 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 		}
 
 	case promql.Scalar:
-		if len(ev.expected) != 1 {
-			return fmt.Errorf("expected vector result, but got scalar %s", val.String())
+		if !ev.expectScalar {
+			return fmt.Errorf("expected vector or matrix result, but got %s", val.String())
 		}
 		exp0 := ev.expected[0].vals[0]
 		if exp0.Histogram != nil {
-			return fmt.Errorf("expected Histogram %v but got scalar %s", exp0.Histogram.TestExpression(), val.String())
+			return fmt.Errorf("expected histogram %v but got %s", exp0.Histogram.TestExpression(), val.String())
 		}
 		if !almost.Equal(exp0.Value, val.V, defaultEpsilon) {
-			return fmt.Errorf("expected Scalar %v but got %v", val.V, exp0.Value)
+			return fmt.Errorf("expected scalar %v but got %v", exp0.Value, val.V)
 		}
 
 	default:
