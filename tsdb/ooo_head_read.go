@@ -244,20 +244,8 @@ func (cr *HeadAndOOOChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chu
 	sid, _, isOOO := unpackHeadChunkRef(meta.Ref)
 	if !isOOO {
 		chk, iter, err := cr.cr.ChunkOrIterable(meta)
-		switch {
-		case err != nil:
-			return chk, iter, err
-		case iter != nil:
-			// Assume that meta.Chunk is included. @krajorama: in-order head never returns an iterable so this is true by definition.
-			return chk, iter, nil
-		case chk != nil && meta.Chunk != nil:
-			// Merge the in-order head chunk with the OOO head chunk.
-			return nil, &mergedOOOChunks{
-				chunkIterables: []chunkenc.Iterable{chk, meta.Chunk},
-			}, nil
-		default:
-			return chk, nil, nil
-		}
+		chk, iter, _, err = mergeInOrderAndOOOHeadChunks(chk, iter, 0, err, meta.Chunk)
+		return chk, iter, err
 	}
 
 	s := cr.head.series.getByID(sid)
@@ -279,36 +267,27 @@ func (cr *HeadAndOOOChunkReader) ChunkOrIterableWithCopy(meta chunks.Meta) (chun
 	_, _, isOOO := unpackHeadChunkRef(meta.Ref)
 	if !isOOO {
 		chk, iterable, maxT, err := cr.cr.ChunkOrIterableWithCopy(meta)
-		switch {
-		case err != nil:
-			return chk, iterable, maxT, err
-		case iterable != nil:
-			// Assume that meta.Chunk is included. @krajorama: in-order head never returns an iterable so this is true by definition.
-			return chk, iterable, maxT, nil
-		case chk != nil && meta.Chunk != nil:
-			// Merge the in-order head chunk with the OOO head chunk.
-			// @krajorama: assuming that maxT is the max time of the in-order head chunk.
-			return nil, &mergedOOOChunks{
-				chunkIterables: []chunkenc.Iterable{chk, meta.Chunk},
-			}, maxT, nil
-		default:
-			return chk, nil, maxT, nil
-		}
+		return mergeInOrderAndOOOHeadChunks(chk, iterable, maxT, err, meta.Chunk)
 	}
 	chk, iter, err := cr.ChunkOrIterable(meta)
+	return chk, iter, 0, err
+}
+
+// mergeInOrderAndOOOHeadChunks merges the in-order head chunk with the OOO head chunks in case the two overlapped.
+func mergeInOrderAndOOOHeadChunks(chk chunkenc.Chunk, iter chunkenc.Iterable, maxT int64, err error, oooHeadChunk chunkenc.Chunk) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {
 	switch {
 	case err != nil:
-		return chk, iter, 0, err
+		return chk, iter, maxT, err
 	case iter != nil:
-		// Assume that meta.Chunk is included. @krajorama: in-order head never returns an iterable so this is true by definition.
-		return chk, iter, 0, nil
-	case chk != nil && meta.Chunk != nil:
+		// This is unexpected as in-order head never returns an iterable.
+		return nil, nil, 0, fmt.Errorf("unexpected iterable from in-order head")
+	case chk != nil && oooHeadChunk != nil:
 		// Merge the in-order head chunk with the OOO head chunk.
 		return nil, &mergedOOOChunks{
-			chunkIterables: []chunkenc.Iterable{chk, meta.Chunk},
-		}, 0, nil
+			chunkIterables: []chunkenc.Iterable{chk, oooHeadChunk},
+		}, maxT, nil
 	default:
-		return chk, nil, 0, nil
+		return chk, nil, maxT, nil
 	}
 }
 
