@@ -489,11 +489,30 @@ func (rsu *RelabelerStateUpdate) Generation() uint32 {
 	return rsu.generation
 }
 
-// LabelLimits limits on label set.
-type LabelLimits struct {
+// MetricLimits limits on label set and samples.
+type MetricLimits struct {
 	LabelLimit            int64
 	LabelNameLengthLimit  int64
 	LabelValueLengthLimit int64
+	SampleLimit           int64
+}
+
+// SourceStaleNansState wrap pointer to source state for stalenans (null on first call).
+type SourceStaleNansState struct {
+	pointer uintptr
+}
+
+// NewSourceStaleNansState init new SourceStaleNansState.
+func NewSourceStaleNansState() *SourceStaleNansState {
+	ss := new(SourceStaleNansState)
+	runtime.SetFinalizer(ss, func(s *SourceStaleNansState) {
+		if s.pointer == 0 {
+			return
+		}
+		prometheusRelabelerStalenansStateDtor(s.pointer)
+	})
+
+	return ss
 }
 
 // InputPerShardRelabeler - go wrapper for C-PerShardRelabeler, relabeler for shard.
@@ -583,7 +602,7 @@ func (ipsr *InputPerShardRelabeler) Generation() uint32 {
 func (ipsr *InputPerShardRelabeler) InputRelabeling(
 	ctx context.Context,
 	lss *LabelSetStorage,
-	labelLimits *LabelLimits,
+	labelLimits *MetricLimits,
 	shardedData ShardedData,
 	shardsInnerSeries []*InnerSeries,
 	shardsRelabeledSeries []*RelabeledSeries,
@@ -594,7 +613,7 @@ func (ipsr *InputPerShardRelabeler) InputRelabeling(
 
 	cptrContainer, ok := shardedData.(cptrable)
 	if !ok {
-		return fmt.Errorf("sharded data must implement cptrable interface")
+		return ErrMustImplementCptrable
 	}
 	exception := prometheusPerShardRelabelerInputRelabeling(
 		ipsr.cptr,
@@ -606,6 +625,43 @@ func (ipsr *InputPerShardRelabeler) InputRelabeling(
 	)
 
 	return handleException(exception)
+}
+
+// InputRelabelingWithStalenans relabeling incoming hashdex(first stage) with state stalenans.
+func (ipsr *InputPerShardRelabeler) InputRelabelingWithStalenans(
+	ctx context.Context,
+	lss *LabelSetStorage,
+	labelLimits *MetricLimits,
+	sourceState *SourceStaleNansState,
+	staleNansTS int64,
+	shardedData ShardedData,
+	shardsInnerSeries []*InnerSeries,
+	shardsRelabeledSeries []*RelabeledSeries,
+) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	cptrContainer, ok := shardedData.(cptrable)
+	if !ok {
+		return ErrMustImplementCptrable
+	}
+	state, exception := prometheusPerShardRelabelerInputRelabelingWithStalenans(
+		ipsr.cptr,
+		lss.Pointer(),
+		cptrContainer.cptr(),
+		sourceState.pointer,
+		staleNansTS,
+		labelLimits,
+		shardsInnerSeries,
+		shardsRelabeledSeries,
+	)
+	if exception != nil {
+		return handleException(exception)
+	}
+
+	sourceState.pointer = state
+	return nil
 }
 
 // NumberOfShards return current numberOfShards.
