@@ -243,7 +243,21 @@ func NewHeadAndOOOChunkReader(head *Head, mint, maxt int64, cr *headChunkReader,
 func (cr *HeadAndOOOChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
 	sid, _, isOOO := unpackHeadChunkRef(meta.Ref)
 	if !isOOO {
-		return cr.cr.ChunkOrIterable(meta)
+		chk, iter, err := cr.cr.ChunkOrIterable(meta)
+		switch {
+		case err != nil:
+			return chk, iter, err
+		case iter != nil:
+			// Assume that meta.Chunk is included. @krajorama: in-order head never returns an iterable so this is true by definition.
+			return chk, iter, nil
+		case chk != nil && meta.Chunk != nil:
+			// Merge the in-order head chunk with the OOO head chunk.
+			return nil, &mergedOOOChunks{
+				chunkIterables: []chunkenc.Iterable{chk, meta.Chunk},
+			}, nil
+		default:
+			return chk, nil, nil
+		}
 	}
 
 	s := cr.head.series.getByID(sid)
@@ -264,10 +278,38 @@ func (cr *HeadAndOOOChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chu
 func (cr *HeadAndOOOChunkReader) ChunkOrIterableWithCopy(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {
 	_, _, isOOO := unpackHeadChunkRef(meta.Ref)
 	if !isOOO {
-		return cr.cr.ChunkOrIterableWithCopy(meta)
+		chk, iterable, maxT, err := cr.cr.ChunkOrIterableWithCopy(meta)
+		switch {
+		case err != nil:
+			return chk, iterable, maxT, err
+		case iterable != nil:
+			// Assume that meta.Chunk is included. @krajorama: in-order head never returns an iterable so this is true by definition.
+			return chk, iterable, maxT, nil
+		case chk != nil && meta.Chunk != nil:
+			// Merge the in-order head chunk with the OOO head chunk.
+			// @krajorama: assuming that maxT is the max time of the in-order head chunk.
+			return nil, &mergedOOOChunks{
+				chunkIterables: []chunkenc.Iterable{chk, meta.Chunk},
+			}, maxT, nil
+		default:
+			return chk, nil, maxT, nil
+		}
 	}
 	chk, iter, err := cr.ChunkOrIterable(meta)
-	return chk, iter, 0, err
+	switch {
+	case err != nil:
+		return chk, iter, 0, err
+	case iter != nil:
+		// Assume that meta.Chunk is included. @krajorama: in-order head never returns an iterable so this is true by definition.
+		return chk, iter, 0, nil
+	case chk != nil && meta.Chunk != nil:
+		// Merge the in-order head chunk with the OOO head chunk.
+		return nil, &mergedOOOChunks{
+			chunkIterables: []chunkenc.Iterable{chk, meta.Chunk},
+		}, 0, nil
+	default:
+		return chk, nil, 0, nil
+	}
 }
 
 func (cr *HeadAndOOOChunkReader) Close() error {
