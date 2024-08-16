@@ -827,6 +827,22 @@ func prometheusRelabelerStateUpdateDtor(relabelerStateUpdate *RelabelerStateUpda
 }
 
 //
+// StalenansState
+//
+
+// prometheusRelabelerStateUpdateDtor wrapper for destructor C-StalenansState.
+func prometheusRelabelerStalenansStateDtor(stalenansState uintptr) {
+	var args = struct {
+		stalenansState uintptr
+	}{stalenansState}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_prometheus_stalenans_state_dtor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
+//
 // PerShardRelabeler
 //
 
@@ -891,14 +907,14 @@ func prometheusPerShardRelabelerCacheAllocatedMemory(perShardRelabeler uintptr) 
 // prometheusPerShardRelabelerInputRelabeling - wrapper for relabeling incoming hashdex(first stage).
 func prometheusPerShardRelabelerInputRelabeling(
 	perShardRelabeler, lss, hashdex uintptr,
-	labelLimits *LabelLimits,
+	labelLimits *MetricLimits,
 	shardsInnerSeries []*InnerSeries,
 	shardsRelabeledSeries []*RelabeledSeries,
 ) []byte {
 	var args = struct {
 		shardsInnerSeries     []*InnerSeries
 		shardsRelabeledSeries []*RelabeledSeries
-		labelLimits           *LabelLimits
+		labelLimits           *MetricLimits
 		perShardRelabeler     uintptr
 		hashdex               uintptr
 		lss                   uintptr
@@ -914,6 +930,39 @@ func prometheusPerShardRelabelerInputRelabeling(
 	)
 
 	return res.exception
+}
+
+// prometheusPerShardRelabelerInputRelabelingWithStalenans wrapper for relabeling incoming
+// hashdex(first stage) with state stalenans.
+func prometheusPerShardRelabelerInputRelabelingWithStalenans(
+	perShardRelabeler, lss, hashdex, sourceState uintptr,
+	staleNansTS int64,
+	labelLimits *MetricLimits,
+	shardsInnerSeries []*InnerSeries,
+	shardsRelabeledSeries []*RelabeledSeries,
+) (state uintptr, exception []byte) {
+	var args = struct {
+		shardsInnerSeries     []*InnerSeries
+		shardsRelabeledSeries []*RelabeledSeries
+		labelLimits           *MetricLimits
+		perShardRelabeler     uintptr
+		hashdex               uintptr
+		lss                   uintptr
+		sourceState           uintptr
+		staleNansTS           int64
+	}{shardsInnerSeries, shardsRelabeledSeries, labelLimits, perShardRelabeler, hashdex, lss, sourceState, staleNansTS}
+	var res struct {
+		sourceState uintptr
+		exception   []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_prometheus_per_shard_relabeler_input_relabeling_with_stalenans,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.sourceState, res.exception
 }
 
 // prometheusPerShardRelabelerAppendRelabelerSeries - wrapper for add relabeled ls to lss,

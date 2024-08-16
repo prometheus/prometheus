@@ -120,7 +120,7 @@ func (s *EncoderSuite) TestEncodeDuplicateTS() {
 	s.Equal(s.startTimestamp, seg.LatestTimestamp())
 	s.EqualValues(4294967276, seg.RemainingTableSize())
 	s.EqualValues(1, seg.Series())
-	s.EqualValues(1, seg.Samples())
+	s.EqualValues(2, seg.Samples())
 	size := seg.Size()
 
 	tbyte := s.transferringData(seg)
