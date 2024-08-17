@@ -92,7 +92,7 @@ func TestBackfill(t *testing.T) {
 		Description          string
 		MaxSamplesInAppender int
 		MaxBlockDuration     time.Duration
-		labels               map[string]string
+		Labels               map[string]string
 		Expected             struct {
 			MinTime       int64
 			MaxTime       int64
@@ -649,7 +649,7 @@ http_requests_total{code="200"} 3 1629863088.000
 			Description:          "Sample with external labels.",
 			MaxSamplesInAppender: 5000,
 			MaxBlockDuration:     2048 * time.Hour,
-			labels:               map[string]string{"cluster_id": "123", "org_id": "999"},
+			Labels:               map[string]string{"cluster_id": "123", "org_id": "999"},
 			Expected: struct {
 				MinTime       int64
 				MaxTime       int64
@@ -733,7 +733,7 @@ after_eof 1 2
 
 			outputDir := t.TempDir()
 
-			err := backfill(test.MaxSamplesInAppender, []byte(test.ToParse), outputDir, false, false, test.MaxBlockDuration, test.labels)
+			err := backfill(test.MaxSamplesInAppender, []byte(test.ToParse), outputDir, false, false, test.MaxBlockDuration, test.Labels)
 
 			if !test.IsOk {
 				require.Error(t, err, test.Description)

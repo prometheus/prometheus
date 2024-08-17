@@ -102,6 +102,8 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 		nextSampleTs int64 = math.MaxInt64
 	)
 
+	lb := labels.NewBuilder(labels.EmptyLabels())
+
 	for t := mint; t <= maxt; t += blockDuration {
 		tsUpper := t + blockDuration
 		if nextSampleTs != math.MaxInt64 && nextSampleTs >= tsUpper {
@@ -162,7 +164,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 				l := labels.Labels{}
 				p.Metric(&l)
 
-				lb := labels.NewBuilder(l)
+				lb.Reset(l)
 				for name, value := range customLabels {
 					lb.Set(name, value)
 				}
