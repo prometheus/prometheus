@@ -481,14 +481,14 @@ func New(logger log.Logger, o *Options) *Handler {
 
 	router.Get("/-/healthy", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, o.AppName+" is Healthy.\n")
+		fmt.Fprint(w, o.AppName+" is Healthy.\n")
 	})
 	router.Head("/-/healthy", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 	router.Get("/-/ready", readyf(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, o.AppName+" is Ready.\n")
+		fmt.Fprint(w, o.AppName+" is Ready.\n")
 	}))
 	router.Head("/-/ready", readyf(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
