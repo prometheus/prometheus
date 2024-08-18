@@ -721,8 +721,8 @@ eval instant at 10m histogram_sum(scalar(histogram_fraction(-Inf, +Inf, sum(hist
 # Apply multiplication and division operator to histogram
 load 10m
     histogram_mul_div {{schema:0 count:21 sum:33 z_bucket:3 z_bucket_w:0.001 buckets:[3 3 3] n_buckets:[3 3 3]}}x1
-	float_series_3 3+0x1
-	float_series_0 0+0x1
+    float_series_3 3+0x1
+    float_series_0 0+0x1
 
 eval instant at 10m histogram_mul_div*3
     {} {{schema:0 count:63 sum:99 z_bucket:9 z_bucket_w:0.001 buckets:[9 9 9] n_buckets:[9 9 9]}}
@@ -754,11 +754,15 @@ eval instant at 10m histogram_mul_div*float_series_0
 eval instant at 10m float_series_0*histogram_mul_div
     {} {{schema:0 count:0 sum:0 z_bucket:0 z_bucket_w:0.001 buckets:[0 0 0] n_buckets:[0 0 0]}}
 
+# TODO: (NeerajGartia21) remove all the histogram buckets in case of division with zero. See: https://github.com/prometheus/prometheus/issues/13934
 eval instant at 10m histogram_mul_div/0
     {} {{schema:0 count:Inf sum:Inf z_bucket:Inf z_bucket_w:0.001 buckets:[Inf Inf Inf] n_buckets:[Inf Inf Inf]}}
 
 eval instant at 10m histogram_mul_div/float_series_0
     {} {{schema:0 count:Inf sum:Inf z_bucket:Inf z_bucket_w:0.001 buckets:[Inf Inf Inf] n_buckets:[Inf Inf Inf]}}
+
+eval instant at 10m histogram_mul_div*0/0
+    {} {{schema:0 count:NaN sum:NaN z_bucket:NaN z_bucket_w:0.001 buckets:[NaN NaN NaN] n_buckets:[NaN NaN NaN]}}
 
 clear
 
