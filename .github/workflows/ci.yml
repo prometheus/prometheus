@@ -4,6 +4,9 @@ on:
   pull_request:
   push:
 
+permissions:
+  contents: read
+  
 jobs:
   test_go:
     name: Go tests
