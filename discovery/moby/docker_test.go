@@ -60,9 +60,9 @@ host: %s
 	tg := tgs[0]
 	require.NotNil(t, tg)
 	require.NotNil(t, tg.Targets)
-	require.Len(t, tg.Targets, 6)
+	require.Len(t, tg.Targets, 8)
 
-	for i, lbls := range []model.LabelSet{
+	expected := []model.LabelSet{
 		{
 			"__address__":                "172.19.0.2:9100",
 			"__meta_docker_container_id": "c301b928faceb1a18fe379f6bc178727ef920bb30b0f9b8592b32b36255a0eca",
@@ -163,7 +163,43 @@ host: %s
 			"__meta_docker_network_scope":                              "local",
 			"__meta_docker_port_private":                               "9104",
 		},
-	} {
+		{
+			"__address__":                "172.20.0.3:3306",
+			"__meta_docker_container_id": "f84b2a0cfaa58d9e70b0657e2b3c6f44f0e973de4163a871299b4acf127b224f",
+			"__meta_docker_container_label_com_docker_compose_project": "dockersd",
+			"__meta_docker_container_label_com_docker_compose_service": "mysql",
+			"__meta_docker_container_label_com_docker_compose_version": "2.2.2",
+			"__meta_docker_container_name":                             "/dockersd_multi_networks",
+			"__meta_docker_container_network_mode":                     "dockersd_private_none",
+			"__meta_docker_network_id":                                 "e804771e55254a360fdb70dfdd78d3610fdde231b14ef2f837a00ac1eeb9e601",
+			"__meta_docker_network_ingress":                            "false",
+			"__meta_docker_network_internal":                           "false",
+			"__meta_docker_network_ip":                                 "172.20.0.3",
+			"__meta_docker_network_name":                               "dockersd_private",
+			"__meta_docker_network_scope":                              "local",
+			"__meta_docker_port_private":                               "3306",
+		},
+		{
+			"__address__":                "172.20.0.3:33060",
+			"__meta_docker_container_id": "f84b2a0cfaa58d9e70b0657e2b3c6f44f0e973de4163a871299b4acf127b224f",
+			"__meta_docker_container_label_com_docker_compose_project": "dockersd",
+			"__meta_docker_container_label_com_docker_compose_service": "mysql",
+			"__meta_docker_container_label_com_docker_compose_version": "2.2.2",
+			"__meta_docker_container_name":                             "/dockersd_multi_networks",
+			"__meta_docker_container_network_mode":                     "dockersd_private_none",
+			"__meta_docker_network_id":                                 "e804771e55254a360fdb70dfdd78d3610fdde231b14ef2f837a00ac1eeb9e601",
+			"__meta_docker_network_ingress":                            "false",
+			"__meta_docker_network_internal":                           "false",
+			"__meta_docker_network_ip":                                 "172.20.0.3",
+			"__meta_docker_network_name":                               "dockersd_private",
+			"__meta_docker_network_scope":                              "local",
+			"__meta_docker_port_private":                               "33060",
+		},
+	}
+	sortFunc(expected)
+	sortFunc(tg.Targets)
+
+	for i, lbls := range expected {
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
 			require.Equal(t, lbls, tg.Targets[i])
 		})
@@ -202,13 +238,8 @@ host: %s
 	tg := tgs[0]
 	require.NotNil(t, tg)
 	require.NotNil(t, tg.Targets)
-	require.Len(t, tg.Targets, 9)
+	require.Len(t, tg.Targets, 13)
 
-	sortFunc := func(labelSets []model.LabelSet) {
-		sort.Slice(labelSets, func(i, j int) bool {
-			return labelSets[i]["__address__"] < labelSets[j]["__address__"]
-		})
-	}
 	expected := []model.LabelSet{
 		{
 			"__address__":                "172.19.0.2:9100",
@@ -359,6 +390,70 @@ host: %s
 			"__meta_docker_network_scope":                              "local",
 			"__meta_docker_port_private":                               "9104",
 		},
+		{
+			"__address__":                "172.20.0.3:3306",
+			"__meta_docker_container_id": "f84b2a0cfaa58d9e70b0657e2b3c6f44f0e973de4163a871299b4acf127b224f",
+			"__meta_docker_container_label_com_docker_compose_project": "dockersd",
+			"__meta_docker_container_label_com_docker_compose_service": "mysql",
+			"__meta_docker_container_label_com_docker_compose_version": "2.2.2",
+			"__meta_docker_container_name":                             "/dockersd_multi_networks",
+			"__meta_docker_container_network_mode":                     "dockersd_private_none",
+			"__meta_docker_network_id":                                 "e804771e55254a360fdb70dfdd78d3610fdde231b14ef2f837a00ac1eeb9e601",
+			"__meta_docker_network_ingress":                            "false",
+			"__meta_docker_network_internal":                           "false",
+			"__meta_docker_network_ip":                                 "172.20.0.3",
+			"__meta_docker_network_name":                               "dockersd_private",
+			"__meta_docker_network_scope":                              "local",
+			"__meta_docker_port_private":                               "3306",
+		},
+		{
+			"__address__":                "172.20.0.3:33060",
+			"__meta_docker_container_id": "f84b2a0cfaa58d9e70b0657e2b3c6f44f0e973de4163a871299b4acf127b224f",
+			"__meta_docker_container_label_com_docker_compose_project": "dockersd",
+			"__meta_docker_container_label_com_docker_compose_service": "mysql",
+			"__meta_docker_container_label_com_docker_compose_version": "2.2.2",
+			"__meta_docker_container_name":                             "/dockersd_multi_networks",
+			"__meta_docker_container_network_mode":                     "dockersd_private_none",
+			"__meta_docker_network_id":                                 "e804771e55254a360fdb70dfdd78d3610fdde231b14ef2f837a00ac1eeb9e601",
+			"__meta_docker_network_ingress":                            "false",
+			"__meta_docker_network_internal":                           "false",
+			"__meta_docker_network_ip":                                 "172.20.0.3",
+			"__meta_docker_network_name":                               "dockersd_private",
+			"__meta_docker_network_scope":                              "local",
+			"__meta_docker_port_private":                               "33060",
+		},
+		{
+			"__address__":                "172.21.0.3:3306",
+			"__meta_docker_container_id": "f84b2a0cfaa58d9e70b0657e2b3c6f44f0e973de4163a871299b4acf127b224f",
+			"__meta_docker_container_label_com_docker_compose_project": "dockersd",
+			"__meta_docker_container_label_com_docker_compose_service": "mysql",
+			"__meta_docker_container_label_com_docker_compose_version": "2.2.2",
+			"__meta_docker_container_name":                             "/dockersd_multi_networks",
+			"__meta_docker_container_network_mode":                     "dockersd_private_none",
+			"__meta_docker_network_id":                                 "bfcf66a6b64f7d518f009e34290dc3f3c66a08164257ad1afc3bd31d75f656e8",
+			"__meta_docker_network_ingress":                            "false",
+			"__meta_docker_network_internal":                           "false",
+			"__meta_docker_network_ip":                                 "172.21.0.3",
+			"__meta_docker_network_name":                               "dockersd_private1",
+			"__meta_docker_network_scope":                              "local",
+			"__meta_docker_port_private":                               "3306",
+		},
+		{
+			"__address__":                "172.21.0.3:33060",
+			"__meta_docker_container_id": "f84b2a0cfaa58d9e70b0657e2b3c6f44f0e973de4163a871299b4acf127b224f",
+			"__meta_docker_container_label_com_docker_compose_project": "dockersd",
+			"__meta_docker_container_label_com_docker_compose_service": "mysql",
+			"__meta_docker_container_label_com_docker_compose_version": "2.2.2",
+			"__meta_docker_container_name":                             "/dockersd_multi_networks",
+			"__meta_docker_container_network_mode":                     "dockersd_private_none",
+			"__meta_docker_network_id":                                 "bfcf66a6b64f7d518f009e34290dc3f3c66a08164257ad1afc3bd31d75f656e8",
+			"__meta_docker_network_ingress":                            "false",
+			"__meta_docker_network_internal":                           "false",
+			"__meta_docker_network_ip":                                 "172.21.0.3",
+			"__meta_docker_network_name":                               "dockersd_private1",
+			"__meta_docker_network_scope":                              "local",
+			"__meta_docker_port_private":                               "33060",
+		},
 	}
 
 	sortFunc(expected)
@@ -369,4 +464,10 @@ host: %s
 			require.Equal(t, lbls, tg.Targets[i])
 		})
 	}
+}
+
+func sortFunc(labelSets []model.LabelSet) {
+	sort.Slice(labelSets, func(i, j int) bool {
+		return labelSets[i]["__address__"] < labelSets[j]["__address__"]
+	})
 }
