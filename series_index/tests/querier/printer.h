@@ -1,6 +1,6 @@
 #pragma once
 
-#include "prometheus/selector.h"
+#include "prometheus/label_matcher.h"
 
 namespace series_index::querier {
 

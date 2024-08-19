@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "bare_bones/preprocess.h"
-#include "prometheus/selector.h"
+#include "prometheus/label_matcher.h"
 #include "series_index/trie/concepts.h"
 
 #pragma GCC diagnostic push

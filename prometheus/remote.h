@@ -6,7 +6,7 @@
 #include "third_party/protozero/pbf_reader.hpp"
 #include "third_party/protozero/pbf_writer.hpp"
 
-#include "selector.h"
+#include "label_matcher.h"
 #include "types.h"
 
 namespace PromPP::Prometheus::Remote {

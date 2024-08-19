@@ -1,6 +1,6 @@
 #pragma once
 
-#include "selector.h"
+#include "label_matcher.h"
 
 namespace PromPP::Prometheus {
 
