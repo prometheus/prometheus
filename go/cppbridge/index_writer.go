@@ -7,7 +7,7 @@ import (
 type ChunkMetadata struct {
 	MinTimestamp int64
 	MaxTimestamp int64
-	Size         uint32
+	Size         uint32 // todo: size -> offset
 }
 
 type IndexWriter struct {
