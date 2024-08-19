@@ -13,6 +13,7 @@
 
 import { SyntaxNode } from '@lezer/common';
 import {
+  AlignExpr,
   AggregateExpr,
   BinaryExpr,
   FunctionCall,
@@ -34,6 +35,8 @@ export function getType(node: SyntaxNode | null): ValueType {
     return ValueType.none;
   }
   switch (node.type.id) {
+    case AlignExpr:
+      return getType(node.firstChild);
     case AggregateExpr:
       return ValueType.vector;
     case VectorSelector:

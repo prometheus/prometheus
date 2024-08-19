@@ -12,6 +12,7 @@
 // limitations under the License.
 
 import {
+    Align,
     And,
     Avg,
     Atan2,
@@ -60,6 +61,7 @@ export const specializeIdentifier = (value, stack) => {
 };
 
 const contextualKeywordTokens = {
+    align: Align,
     avg: Avg,
     atan2: Atan2,
     bottomk: Bottomk,

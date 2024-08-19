@@ -25,6 +25,7 @@
 }
 
 expr[@isGroup=Expr] {
+  AlignExpr |
   AggregateExpr |
   BinaryExpr |
   FunctionCall |
@@ -193,6 +194,10 @@ ParenExpr {
   "(" expr ")"
 }
 
+AlignExpr {
+  expr Align NumberDurationLiteralInDurationContext
+}
+
 OffsetExpr {
   expr Offset NumberDurationLiteralInDurationContext
 }
@@ -322,6 +327,7 @@ NumberDurationLiteralInDurationContext {
   GroupLeft,
   GroupRight,
   Offset
+  Align
 }
 
 // Contextual keywords

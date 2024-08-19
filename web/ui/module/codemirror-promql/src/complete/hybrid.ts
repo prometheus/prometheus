@@ -16,6 +16,7 @@ import { SyntaxNode } from '@lezer/common';
 import { PrometheusClient } from '../client';
 import {
   Add,
+  AlignExpr,
   AggregateExpr,
   And,
   BinaryExpr,
@@ -192,6 +193,7 @@ export function computeStartCompletePosition(state: EditorState, node: SyntaxNod
     start++;
   } else if (
     node.type.id === OffsetExpr ||
+    node.type.id === AlignExpr ||
     // Since duration and number are equivalent, writing go[5] or go[5d] is syntactically accurate.
     // Before we were able to guess when we had to autocomplete the duration later based on the error node,
     // which is not possible anymore.
@@ -200,6 +202,7 @@ export function computeStartCompletePosition(state: EditorState, node: SyntaxNod
     (node.type.id === NumberDurationLiteral && node.parent?.type.id === 0 && node.parent.parent?.type.id === SubqueryExpr) ||
     (node.type.id === 0 &&
       (node.parent?.type.id === OffsetExpr ||
+        node.parent?.type.id === AlignExpr ||
         node.parent?.type.id === MatrixSelector ||
         (node.parent?.type.id === SubqueryExpr && containsAtLeastOneChild(node.parent, NumberDurationLiteralInDurationContext))))
   ) {
@@ -215,7 +218,7 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
   const result: Context[] = [];
   switch (node.type.id) {
     case 0: // 0 is the id of the error node
-      if (node.parent?.type.id === OffsetExpr) {
+      if (node.parent?.type.id === OffsetExpr || node.parent?.type.id === AlignExpr) {
         // we are likely in the given situation:
         // `metric_name offset 5` that leads to this tree:
         // `OffsetExpr(VectorSelector(Identifier),Offset,⚠)`
@@ -456,6 +459,7 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
       }
       break;
     case NumberDurationLiteralInDurationContext:
+    case AlignExpr:
     case OffsetExpr:
       result.push({ kind: ContextKind.Duration });
       break;

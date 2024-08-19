@@ -14,6 +14,7 @@
 import { Diagnostic } from '@codemirror/lint';
 import { SyntaxNode, Tree } from '@lezer/common';
 import {
+  Align,
   AggregateExpr,
   And,
   BinaryExpr,
