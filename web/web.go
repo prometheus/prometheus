@@ -488,7 +488,7 @@ func New(logger log.Logger, o *Options) *Handler {
 	})
 	router.Get("/-/ready", readyf(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, o.AppName+" is Ready.\n")
+		fmt.Fprintf(w, "%s is Ready.\n", o.AppName)
 	}))
 	router.Head("/-/ready", readyf(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
