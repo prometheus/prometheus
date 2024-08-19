@@ -674,7 +674,6 @@ func (n *Manager) sendOne(ctx context.Context, c *http.Client, url string, b []b
 	}()
 
 	// Any HTTP status 2xx is OK.
-	//nolint:usestdlibvars
 	if resp.StatusCode/100 != 2 {
 		return fmt.Errorf("bad response status %s", resp.Status)
 	}
