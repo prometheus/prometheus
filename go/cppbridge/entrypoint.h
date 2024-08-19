@@ -33,9 +33,9 @@ extern "C" {
  * @param args {
  *     lss         uintptr      // pointer to constructed lss
  *     chunks_meta *[][]struct{ // index in first slice is series id
- *         min_t int64
- *         max_t int64
- *         size  uint32
+ *         min_t     int64
+ *         max_t     int64
+ *         reference uint64
  *     }
  * }
  * @param res {

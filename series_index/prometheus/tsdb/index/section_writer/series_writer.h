@@ -43,7 +43,6 @@ class SeriesWriter {
   SeriesReferencesMap& series_references_;
 
   std::string serialized_series_str_;
-  uint64_t chunk_offset_{};
 
   void write_series(StreamWriter& writer, uint32_t series_count) {
     for (uint32_t i = 0; has_more_data() && i < series_count; ++i, ++iterator_) {
@@ -72,21 +71,21 @@ class SeriesWriter {
     StreamWriter::write_uvarint(chunks.size(), serialized_series_str_);
 
     PromPP::Primitives::Timestamp previous_max_timestamp = std::numeric_limits<PromPP::Primitives::Timestamp>::max();
-    uint64_t previous_chunk_size = 0;
+    uint64_t previous_chunk_reference = 0;
 
     for (auto& chunk : chunks) {
       if (previous_max_timestamp == std::numeric_limits<PromPP::Primitives::Timestamp>::max()) {
+        [[unlikely]];
         StreamWriter::write_varint(chunk.min_timestamp, serialized_series_str_);
         StreamWriter::write_uvarint(chunk.max_timestamp - chunk.min_timestamp, serialized_series_str_);
-        StreamWriter::write_uvarint(chunk_offset_, serialized_series_str_);
+        StreamWriter::write_uvarint(chunk.reference, serialized_series_str_);
       } else {
         StreamWriter::write_uvarint(chunk.min_timestamp - previous_max_timestamp, serialized_series_str_);
         StreamWriter::write_uvarint(chunk.max_timestamp - chunk.min_timestamp, serialized_series_str_);
-        StreamWriter::write_varint(previous_chunk_size, serialized_series_str_);
+        StreamWriter::write_varint(chunk.reference - previous_chunk_reference, serialized_series_str_);
       }
 
-      chunk_offset_ += chunk.size;
-      previous_chunk_size = chunk.size;
+      previous_chunk_reference = chunk.reference;
       previous_max_timestamp = chunk.max_timestamp;
     }
   }

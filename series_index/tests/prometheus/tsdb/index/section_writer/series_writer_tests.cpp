@@ -107,15 +107,16 @@ INSTANTIATE_TEST_SUITE_P(TwoSeries,
 INSTANTIATE_TEST_SUITE_P(WithChunks,
                          SeriesWriterFixture,
                          testing::Values(SeriesWriterCase{.label_sets = {{{"job", "cron"}}},
-                                                          .chunk_metadata_list = {{{.min_timestamp = 1000, .max_timestamp = 2001, .size = 100},
-                                                                                   {.min_timestamp = 2002, .max_timestamp = 4004, .size = 125}}},
+                                                          .chunk_metadata_list = {{{.min_timestamp = 1000, .max_timestamp = 2001, .reference = 0},
+                                                                                   {.min_timestamp = 2002, .max_timestamp = 4004, .reference = 100},
+                                                                                   {.min_timestamp = 4005, .max_timestamp = 5005, .reference = 125}}},
                                                           .series_count = 1,
-                                                          .expected = "\x0E"
+                                                          .expected = "\x12"
                                                                       "\x01"
                                                                       "\x02"
                                                                       "\x01"
 
-                                                                      "\x02"
+                                                                      "\x03"
 
                                                                       "\xD0\x0F"
                                                                       "\xE9\x07"
@@ -125,9 +126,13 @@ INSTANTIATE_TEST_SUITE_P(WithChunks,
                                                                       "\xD2\x0F"
                                                                       "\xC8\x01"
 
-                                                                      "\x69\xFD\xD7\x80"
+                                                                      "\x01"
+                                                                      "\xE8\x07"
+                                                                      "\x32"
 
-                                                                      "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"sv}));
+                                                                      "\x4B\x2C\xA5\xB3"
+
+                                                                      "\x00\x00\x00\x00\x00\x00\x00\x00\x00"sv}));
 
 TEST_F(SeriesWriterFixture, PartialWrite) {
   // Arrange
