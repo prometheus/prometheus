@@ -1,22 +1,22 @@
 #pragma once
 
-#include "prometheus/selector.h"
+#include "prometheus/label_matcher.h"
 
 namespace series_index::querier {
 
-inline std::string_view MatcherTypeToString(PromPP::Prometheus::LabelMatcher::Type type) {
-  using LabelMatcher = PromPP::Prometheus::LabelMatcher;
+inline std::string_view MatcherTypeToString(PromPP::Prometheus::MatcherType type) {
+  using enum PromPP::Prometheus::MatcherType;
 
   switch (type) {
-    case LabelMatcher::Type::kExactMatch:
+    case kExactMatch:
       return "kExactMatch";
-    case LabelMatcher::Type::kExactNotMatch:
+    case kExactNotMatch:
       return "kExactNotMatch";
-    case LabelMatcher::Type::kRegexpMatch:
+    case kRegexpMatch:
       return "kRegexpMatch";
-    case LabelMatcher::Type::kRegexpNotMatch:
+    case kRegexpNotMatch:
       return "kRegexpNotMatch";
-    case LabelMatcher::Type::kUnknown:
+    case kUnknown:
       return "kUnknown";
 
     default:
@@ -51,16 +51,16 @@ inline std::ostream& operator<<(std::ostream& stream, const PromPP::Prometheus::
   return stream;
 }
 
-inline std::ostream& operator<<(std::ostream& stream, const PromPP::Prometheus::Selector::MatchResult& match_result) {
+inline std::ostream& operator<<(std::ostream& stream, const PromPP::Prometheus::Selector::Matcher& matcher) {
   stream << "result: { matches: { ";
-  for (auto it = match_result.matches.begin(); it != match_result.matches.end(); ++it) {
-    if (it != match_result.matches.begin()) {
+  for (auto it = matcher.matches.begin(); it != matcher.matches.end(); ++it) {
+    if (it != matcher.matches.begin()) {
       stream << ", ";
     }
     stream << *it;
   }
-  stream << " }, status: " << MatchStatusToString(match_result.status) << "}, label_name_id: " << match_result.label_name_id
-         << ", cardinality: " << match_result.cardinality;
+  stream << " }, status: " << MatchStatusToString(matcher.status) << "}, label_name_id: " << matcher.label_name_id << ", cardinality: " << matcher.cardinality
+         << ", type: " << MatcherTypeToString(matcher.type);
   return stream;
 }
 
@@ -71,7 +71,7 @@ inline std::ostream& operator<<(std::ostream& stream, const PromPP::Prometheus::
       stream << ", ";
     }
     stream << "{\n"
-           << "matcher: {" << it->matcher << "}\nresult: {" << it->result << "}\n}";
+           << "matcher: {" << *it << "}\n}";
   }
   stream << "}";
   return stream;
