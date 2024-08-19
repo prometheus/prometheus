@@ -2,6 +2,10 @@ package cppbridge
 
 import (
 	"runtime"
+	"unsafe"
+
+	"github.com/prometheus/prometheus/pp/go/model"
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 const (
@@ -39,6 +43,56 @@ func newLabelSetStorage(lss_type uint32) *LabelSetStorage {
 // AllocatedMemory return size of allocated memory for label sets in C++.
 func (lss *LabelSetStorage) AllocatedMemory() uint64 {
 	return primitivesLSSAllocatedMemory(lss.pointer.pointer)
+}
+
+func (lss *LabelSetStorage) FindOrEmplace(labelSet model.LabelSet) uint32 {
+	return primitivesLSSFindOrEmplace(lss.Pointer(), labelSet)
+}
+
+const (
+	LSSQueryStatusNoPositiveMatchers uint32 = iota
+	LSSQueryStatusRegexpError
+	LSSQueryStatusNoMatch
+	LSSQueryStatusMatch
+)
+
+type LSSQueryResult struct {
+	status  uint32
+	matches []uint32 // c allocated
+}
+
+func (r *LSSQueryResult) Status() uint32 {
+	return r.status
+}
+
+func (r *LSSQueryResult) Matches() []uint32 {
+	return r.matches
+}
+
+func (lss *LabelSetStorage) Query(matchers []model.LabelMatcher) *LSSQueryResult {
+	result := &LSSQueryResult{}
+	result.status, result.matches = primitivesLSSQuery(lss.Pointer(), matchers)
+	runtime.SetFinalizer(result, func(result *LSSQueryResult) {
+		freeBytes(*(*[]byte)(unsafe.Pointer(&result.matches)))
+	})
+	return result
+}
+
+type LabelSetStorageGetLabelSetsResult struct {
+	labelSets []labels.Labels // c allocated
+}
+
+func (r *LabelSetStorageGetLabelSetsResult) LabelsSets() []labels.Labels {
+	return r.labelSets
+}
+
+// GetLabelSets - returns copy of lss data.
+func (lss *LabelSetStorage) GetLabelSets(labelSetIDs []uint32) *LabelSetStorageGetLabelSetsResult {
+	result := &LabelSetStorageGetLabelSetsResult{labelSets: primitivesLSSGetLabelSets(lss.Pointer(), labelSetIDs)}
+	runtime.SetFinalizer(result, func(result *LabelSetStorageGetLabelSetsResult) {
+		primitivesLSSFreeLabelSets(result.labelSets)
+	})
+	return result
 }
 
 // Pointer return c-pointer.
