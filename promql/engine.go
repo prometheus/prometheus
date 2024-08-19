@@ -2356,6 +2356,11 @@ loop:
 		} else {
 			histograms = append(histograms, HPoint{H: &histogram.FloatHistogram{}})
 		}
+		if histograms[n].H == nil {
+			// Make sure to pass non zero H to AtFloatHistogram so that it does a deep-copy.
+			// Not an issue in the loop above since that uses an intermediate buffer.
+			histograms[n].H = &histogram.FloatHistogram{}
+		}
 		histograms[n].T, histograms[n].H = it.AtFloatHistogram(histograms[n].H)
 		if value.IsStaleNaN(histograms[n].H.Sum) {
 			histograms = histograms[:n]
