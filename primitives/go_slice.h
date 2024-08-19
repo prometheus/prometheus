@@ -58,7 +58,7 @@ class String {
   explicit String() = default;
   explicit String(std::string_view value) : data_(value.data()), len_(value.size()) {}
 
-  PROMPP_ALWAYS_INLINE static String allocate(std::string_view value) noexcept {
+  PROMPP_ALWAYS_INLINE static String allocate_and_copy(std::string_view value) noexcept {
     auto data = reinterpret_cast<char*>(std::malloc(value.size() + 1));
     std::memcpy(data, value.data(), value.size());
     data[value.size()] = '\0';
