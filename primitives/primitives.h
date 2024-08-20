@@ -706,7 +706,7 @@ class LabelsBuilder {
 
   // reset - clears all current state for the builder.
   PROMPP_ALWAYS_INLINE void reset() {
-    state_.reset(nullptr);
+    state_.reset(static_cast<LabelSet*>(nullptr));
     base_ = nullptr;
   }
 
@@ -715,6 +715,9 @@ class LabelsBuilder {
     state_.reset(ls);
     base_ = ls;
   }
+
+  // reset_base base reset for the builder.
+  PROMPP_ALWAYS_INLINE void reset_base() { base_ = nullptr; }
 
   // set - the name/value pair as a label. A value of "" means delete that label.
   template <class LNameType, class LValueType>

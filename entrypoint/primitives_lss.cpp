@@ -62,9 +62,7 @@ extern "C" void prompp_primitives_lss_query(void* args, void* res) {
   auto in = reinterpret_cast<Arguments*>(args);
   auto query_result = Querier{std::get<entrypoint::QueryableEncodingBimap>(*in->lss)}.query(in->label_matchers);
 
-  auto out = reinterpret_cast<Result*>(res);
-  out->status = query_result.status;
-  out->matches = std::move(query_result.series_ids);
+  new (res) Result{.status = query_result.status, .matches = std::move(query_result.series_ids)};
 }
 
 void prompp_primitives_lss_get_label_sets(void* args, void* res) {
@@ -81,7 +79,7 @@ void prompp_primitives_lss_get_label_sets(void* args, void* res) {
   };
 
   auto in = reinterpret_cast<Arguments*>(args);
-  auto out = reinterpret_cast<Result*>(res);
+  auto out = new (res) Result();
 
   std::visit(
       [in, out](auto& lss) PROMPP_LAMBDA_INLINE {

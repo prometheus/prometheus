@@ -2,7 +2,7 @@
 
 #include <cassert>
 
-#include "prometheus/selector.h"
+#include "prometheus/label_matcher.h"
 #include "regexp_searcher.h"
 #include "series_index/trie_index.h"
 

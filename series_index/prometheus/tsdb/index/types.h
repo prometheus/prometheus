@@ -32,7 +32,7 @@ using SeriesReferencesMap =
 struct ChunkMetadata {
   PromPP::Primitives::Timestamp min_timestamp{};
   PromPP::Primitives::Timestamp max_timestamp{};
-  uint32_t size{};
+  uint64_t reference{};
 };
 
 }  // namespace series_index::prometheus::tsdb::index
