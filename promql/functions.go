@@ -467,15 +467,15 @@ func funcSortByLabelDesc(vals []parser.Value, args parser.Expressions, enh *Eval
 // === clamp(Vector parser.ValueTypeVector, min, max Scalar) (Vector, Annotations) ===
 func funcClamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	vec := vals[0].(Vector)
-	min := vals[1].(Vector)[0].F
-	max := vals[2].(Vector)[0].F
-	if max < min {
+	minVal := vals[1].(Vector)[0].F
+	maxVal := vals[2].(Vector)[0].F
+	if maxVal < minVal {
 		return enh.Out, nil
 	}
 	for _, el := range vec {
 		enh.Out = append(enh.Out, Sample{
 			Metric: el.Metric.DropMetricName(),
-			F:      math.Max(min, math.Min(max, el.F)),
+			F:      math.Max(minVal, math.Min(maxVal, el.F)),
 		})
 	}
 	return enh.Out, nil
@@ -484,11 +484,11 @@ func funcClamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 // === clamp_max(Vector parser.ValueTypeVector, max Scalar) (Vector, Annotations) ===
 func funcClampMax(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	vec := vals[0].(Vector)
-	max := vals[1].(Vector)[0].F
+	maxVal := vals[1].(Vector)[0].F
 	for _, el := range vec {
 		enh.Out = append(enh.Out, Sample{
 			Metric: el.Metric.DropMetricName(),
-			F:      math.Min(max, el.F),
+			F:      math.Min(maxVal, el.F),
 		})
 	}
 	return enh.Out, nil
@@ -497,11 +497,11 @@ func funcClampMax(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 // === clamp_min(Vector parser.ValueTypeVector, min Scalar) (Vector, Annotations) ===
 func funcClampMin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	vec := vals[0].(Vector)
-	min := vals[1].(Vector)[0].F
+	minVal := vals[1].(Vector)[0].F
 	for _, el := range vec {
 		enh.Out = append(enh.Out, Sample{
 			Metric: el.Metric.DropMetricName(),
-			F:      math.Max(min, el.F),
+			F:      math.Max(minVal, el.F),
 		})
 	}
 	return enh.Out, nil
@@ -700,13 +700,13 @@ func funcMaxOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 		return enh.Out, nil
 	}
 	return aggrOverTime(vals, enh, func(s Series) float64 {
-		max := s.Floats[0].F
+		maxVal := s.Floats[0].F
 		for _, f := range s.Floats {
-			if f.F > max || math.IsNaN(max) {
-				max = f.F
+			if f.F > maxVal || math.IsNaN(maxVal) {
+				maxVal = f.F
 			}
 		}
-		return max
+		return maxVal
 	}), nil
 }
 
@@ -720,13 +720,13 @@ func funcMinOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 		return enh.Out, nil
 	}
 	return aggrOverTime(vals, enh, func(s Series) float64 {
-		min := s.Floats[0].F
+		minVal := s.Floats[0].F
 		for _, f := range s.Floats {
-			if f.F < min || math.IsNaN(min) {
-				min = f.F
+			if f.F < minVal || math.IsNaN(minVal) {
+				minVal = f.F
 			}
 		}
-		return min
+		return minVal
 	}), nil
 }
 

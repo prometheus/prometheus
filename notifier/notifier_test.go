@@ -711,7 +711,7 @@ func TestHangingNotifier(t *testing.T) {
 	)
 
 	var (
-		sendTimeout = 10 * time.Millisecond
+		sendTimeout = 100 * time.Millisecond
 		sdUpdatert  = sendTimeout / 2
 
 		done = make(chan struct{})

@@ -2757,7 +2757,7 @@ func testOutOfOrderSamplesMetric(t *testing.T, scenario sampleTypeScenario) {
 
 	require.Equal(t, int64(math.MinInt64), db.head.minValidTime.Load())
 	require.NoError(t, db.Compact(ctx))
-	require.Greater(t, db.head.minValidTime.Load(), int64(0))
+	require.Positive(t, db.head.minValidTime.Load())
 
 	app = db.Appender(ctx)
 	_, err = appendSample(app, db.head.minValidTime.Load()-2)
@@ -3677,7 +3677,7 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 	require.Len(t, ms.mmappedChunks, 25)
 	expMmapChunks := make([]*mmappedChunk, 0, 20)
 	for _, mmap := range ms.mmappedChunks {
-		require.Greater(t, mmap.numSamples, uint16(0))
+		require.Positive(t, mmap.numSamples)
 		cpy := *mmap
 		expMmapChunks = append(expMmapChunks, &cpy)
 	}

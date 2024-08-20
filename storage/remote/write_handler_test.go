@@ -453,10 +453,10 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				expectHeaderValue(t, 0, resp.Header.Get(rw20WrittenHistogramsHeader))
 				expectHeaderValue(t, 0, resp.Header.Get(rw20WrittenExemplarsHeader))
 
-				require.Empty(t, len(appendable.samples))
-				require.Empty(t, len(appendable.histograms))
-				require.Empty(t, len(appendable.exemplars))
-				require.Empty(t, len(appendable.metadata))
+				require.Empty(t, appendable.samples)
+				require.Empty(t, appendable.histograms)
+				require.Empty(t, appendable.exemplars)
+				require.Empty(t, appendable.metadata)
 				return
 			}
 

@@ -87,7 +87,6 @@ func (d *robotDiscovery) refresh(context.Context) ([]*targetgroup.Group, error) 
 		resp.Body.Close()
 	}()
 
-	//nolint:usestdlibvars
 	if resp.StatusCode/100 != 2 {
 		return nil, fmt.Errorf("non 2xx status '%d' response during hetzner service discovery with role robot", resp.StatusCode)
 	}
