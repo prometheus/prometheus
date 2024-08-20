@@ -284,6 +284,13 @@ class Slice {
     *(data_ + pos) = std::move(item);
   }
 
+  template <class... Args>
+  PROMPP_ALWAYS_INLINE T& emplace_back(Args&&... args) noexcept {
+    reserve(len_ + 1);
+    new (data_ + len_) T(std::forward<Args>(args)...);
+    return *(data_ + len_++);
+  }
+
   template <std::random_access_iterator IteratorType, class IteratorSentinelType>
     requires std::is_same<typename std::iterator_traits<IteratorType>::value_type, T>::value && std::sentinel_for<IteratorSentinelType, IteratorType>
   inline __attribute__((always_inline)) void push_back(IteratorType begin, IteratorSentinelType end) noexcept {

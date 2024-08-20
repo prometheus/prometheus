@@ -78,6 +78,50 @@ func (lss *LabelSetStorage) Query(matchers []model.LabelMatcher) *LSSQueryResult
 	return result
 }
 
+type LSSQueryLabelNamesResult struct {
+	status uint32
+	names  []string // c allocated
+}
+
+func (r *LSSQueryLabelNamesResult) Status() uint32 {
+	return r.status
+}
+
+func (r *LSSQueryLabelNamesResult) Names() []string {
+	return r.names
+}
+
+func (lss *LabelSetStorage) QueryLabelNames(matchers []model.LabelMatcher) *LSSQueryLabelNamesResult {
+	result := &LSSQueryLabelNamesResult{}
+	result.status, result.names = primitivesLSSQueryLabelNames(lss.Pointer(), matchers)
+	runtime.SetFinalizer(result, func(result *LSSQueryLabelNamesResult) {
+		freeBytes(*(*[]byte)(unsafe.Pointer(&result.names)))
+	})
+	return result
+}
+
+type LSSQueryLabelValuesResult struct {
+	status uint32
+	values []string // c allocated
+}
+
+func (r *LSSQueryLabelValuesResult) Status() uint32 {
+	return r.status
+}
+
+func (r *LSSQueryLabelValuesResult) Values() []string {
+	return r.values
+}
+
+func (lss *LabelSetStorage) QueryLabelValues(label_name string, matchers []model.LabelMatcher) *LSSQueryLabelValuesResult {
+	result := &LSSQueryLabelValuesResult{}
+	result.status, result.values = primitivesLSSQueryLabelValues(lss.Pointer(), label_name, matchers)
+	runtime.SetFinalizer(result, func(result *LSSQueryLabelValuesResult) {
+		freeBytes(*(*[]byte)(unsafe.Pointer(&result.values)))
+	})
+	return result
+}
+
 type LabelSetStorageGetLabelSetsResult struct {
 	labelSets []labels.Labels // c allocated
 }

@@ -15,6 +15,10 @@ enum class QuerierStatus : uint32_t {
   kMatch,
 };
 
+PROMPP_ALWAYS_INLINE bool is_querier_status_error(QuerierStatus status) noexcept {
+  return status != QuerierStatus::kMatch && status != QuerierStatus::kNoMatch;
+}
+
 template <class TrieIndex>
 class SelectorQuerier {
  public:

@@ -247,6 +247,37 @@ void prompp_primitives_lss_get_label_sets(void* args, void* res);
  */
 void prompp_primitives_lss_free_label_sets(void* args);
 
+/**
+ * @brief return size of allocated memory for label sets.
+ *
+ * @param args {
+ *     lss uintptr                         // pointer to constructed queryable lss;
+ *     label_matchers []model.LabelMatcher // label matchers
+ * }
+ *
+ * @param res {
+ *     status uint32   // query status
+ *     names  []string // Slice of string freed by freeBytes in GO
+ * }
+ */
+void prompp_primitives_lss_query_label_names(void* args, void* res);
+
+/**
+ * @brief return size of allocated memory for label sets.
+ *
+ * @param args {
+ *     lss uintptr                         // pointer to constructed queryable lss;
+ *     label_name string                   // label name
+ *     label_matchers []model.LabelMatcher // label matchers
+ * }
+ *
+ * @param res {
+ *     status uint32   // query status
+ *     values []string // Slice of string freed by freeBytes in GO
+ * }
+ */
+void prompp_primitives_lss_query_label_values(void* args, void* res);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif
