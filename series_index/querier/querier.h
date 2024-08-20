@@ -43,7 +43,7 @@ class Querier {
       status = series_ids.empty() ? QuerierStatus::kNoMatch : QuerierStatus::kMatch;
     }
 
-    [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_error() const noexcept { return status != QuerierStatus::kMatch && status != QuerierStatus::kNoMatch; }
+    [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_error() const noexcept { return is_querier_status_error(status); }
   };
 
   explicit Querier(const Index& index) : index_(index) {}
