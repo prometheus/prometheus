@@ -866,16 +866,16 @@ func displayHistogram(dataType string, datas []int, total int) {
 	fmt.Println()
 }
 
-func generateBucket(min, max int) (start, end, step int) {
-	s := (max - min) / 10
+func generateBucket(minVal, maxVal int) (start, end, step int) {
+	s := (maxVal - minVal) / 10
 
 	step = 10
 	for step < s && step <= 10000 {
 		step *= 10
 	}
 
-	start = min - min%step
-	end = max - max%step + step
+	start = minVal - minVal%step
+	end = maxVal - maxVal%step + step
 
 	return
 }
