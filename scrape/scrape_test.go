@@ -1256,9 +1256,9 @@ func TestScrapeLoopFailLegacyUnderUTF8(t *testing.T) {
 func makeTestMetrics(n int) []byte {
 	// Construct a metrics string to parse
 	sb := bytes.Buffer{}
+	fmt.Fprintf(&sb, "# TYPE metric_a gauge\n")
+	fmt.Fprintf(&sb, "# HELP metric_a help text\n")
 	for i := 0; i < n; i++ {
-		fmt.Fprintf(&sb, "# TYPE metric_a gauge\n")
-		fmt.Fprintf(&sb, "# HELP metric_a help text\n")
 		fmt.Fprintf(&sb, "metric_a{foo=\"%d\",bar=\"%d\"} 1\n", i, i*100)
 	}
 	fmt.Fprintf(&sb, "# EOF\n")
