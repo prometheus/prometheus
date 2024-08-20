@@ -18,6 +18,7 @@ import (
 	"unsafe"
 
 	jsoniter "github.com/json-iterator/go"
+	"github.com/munnerz/goautoneg"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
@@ -43,8 +44,13 @@ func (j JSONCodec) ContentType() MIMEType {
 	return MIMEType{Type: "application", SubType: "json"}
 }
 
-func (j JSONCodec) CanEncode(_ *http.Request, _ *Response) bool {
-	return true
+func (j JSONCodec) CanEncode(req *http.Request, _ *Response) bool {
+	for _, clause := range goautoneg.ParseAccept(req.Header.Get("Accept")) {
+		if j.ContentType().Satisfies(clause) {
+			return true
+		}
+	}
+	return false
 }
 
 func (j JSONCodec) Encode(_ *http.Request, resp *Response) ([]byte, error) {
