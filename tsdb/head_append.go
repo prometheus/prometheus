@@ -1634,12 +1634,12 @@ func (s *memSeries) histogramsAppendPreprocessor(t int64, e chunkenc.Encoding, o
 // It assumes that the time range is 1/ratioToFull full.
 // Assuming that the samples will keep arriving at the same rate, it will make the
 // remaining n chunks within this chunk range (before max) equally sized.
-func computeChunkEndTime(start, cur, max int64, ratioToFull float64) int64 {
-	n := float64(max-start) / (float64(cur-start+1) * ratioToFull)
+func computeChunkEndTime(start, cur, maxT int64, ratioToFull float64) int64 {
+	n := float64(maxT-start) / (float64(cur-start+1) * ratioToFull)
 	if n <= 1 {
-		return max
+		return maxT
 	}
-	return int64(float64(start) + float64(max-start)/math.Floor(n))
+	return int64(float64(start) + float64(maxT-start)/math.Floor(n))
 }
 
 func (s *memSeries) cutNewHeadChunk(mint int64, e chunkenc.Encoding, chunkRange int64) *memChunk {

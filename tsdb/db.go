@@ -699,7 +699,7 @@ func (db *DBReadOnly) LastBlockID() (string, error) {
 		return "", err
 	}
 
-	max := uint64(0)
+	maxT := uint64(0)
 
 	lastBlockID := ""
 
@@ -711,8 +711,8 @@ func (db *DBReadOnly) LastBlockID() (string, error) {
 			continue // Not a block dir.
 		}
 		timestamp := ulidObj.Time()
-		if timestamp > max {
-			max = timestamp
+		if timestamp > maxT {
+			maxT = timestamp
 			lastBlockID = dirName
 		}
 	}
@@ -2333,13 +2333,13 @@ func blockDirs(dir string) ([]string, error) {
 	return dirs, nil
 }
 
-func exponential(d, min, max time.Duration) time.Duration {
+func exponential(d, minD, maxD time.Duration) time.Duration {
 	d *= 2
-	if d < min {
-		d = min
+	if d < minD {
+		d = minD
 	}
-	if d > max {
-		d = max
+	if d > maxD {
+		d = maxD
 	}
 	return d
 }

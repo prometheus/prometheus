@@ -292,7 +292,7 @@ func NewHeadAndOOOChunkReader(head *Head, mint, maxt int64, cr *headChunkReader,
 
 func (cr *HeadAndOOOChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
 	sid, _, isOOO := unpackHeadChunkRef(meta.Ref)
-	if !isOOO {
+	if !isOOO && meta.Chunk == nil { // meta.Chunk can have a copy of OOO head samples, even on non-OOO chunk ID.
 		return cr.cr.ChunkOrIterable(meta)
 	}
 
@@ -303,6 +303,10 @@ func (cr *HeadAndOOOChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chu
 	}
 
 	s.Lock()
+	if s.ooo == nil { // Must have s.ooo non-nil to call mergedChunks().
+		s.Unlock()
+		return cr.cr.ChunkOrIterable(meta)
+	}
 	mc, err := s.mergedChunks(meta, cr.head.chunkDiskMapper, cr.cr, cr.mint, cr.maxt, cr.maxMmapRef)
 	s.Unlock()
 

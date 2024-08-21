@@ -121,6 +121,11 @@ global:
   # that will be kept in memory. 0 means no limit.
   [ keep_dropped_targets: <int> | default = 0 ]
 
+  # Specifies the validation scheme for metric and label names. Either blank or
+  # "legacy" for letters, numbers, colons, and underscores; or "utf8" for full
+  # UTF-8 support.
+  [ metric_name_validation_scheme <string> | default "legacy" ]
+
 runtime:
   # Configure the Go garbage collector GOGC parameter
   # See: https://tip.golang.org/doc/gc-guide#GOGC
@@ -460,6 +465,11 @@ metric_relabel_configs:
 # Per-job limit on the number of targets dropped by relabeling
 # that will be kept in memory. 0 means no limit.
 [ keep_dropped_targets: <int> | default = 0 ]
+
+# Specifies the validation scheme for metric and label names. Either blank or
+# "legacy" for letters, numbers, colons, and underscores; or "utf8" for full
+# UTF-8 support.
+[ metric_name_validation_scheme <string> | default "legacy" ]
 
 # Limit on total number of positive and negative buckets allowed in a single
 # native histogram. The resolution of a histogram with more buckets will be
