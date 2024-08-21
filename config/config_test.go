@@ -62,6 +62,11 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
+func init() {
+	// This can be removed when the default validation scheme in common is updated.
+	model.NameValidationScheme = model.UTF8Validation
+}
+
 func mustParseURL(u string) *config.URL {
 	parsed, err := url.Parse(u)
 	if err != nil {
@@ -2042,6 +2047,10 @@ var expectedErrors = []struct {
 }
 
 func TestBadConfigs(t *testing.T) {
+	model.NameValidationScheme = model.LegacyValidation
+	defer func() {
+		model.NameValidationScheme = model.UTF8Validation
+	}()
 	for _, ee := range expectedErrors {
 		_, err := LoadFile("testdata/"+ee.filename, false, false, log.NewNopLogger())
 		require.Error(t, err, "%s", ee.filename)
@@ -2051,6 +2060,10 @@ func TestBadConfigs(t *testing.T) {
 }
 
 func TestBadStaticConfigsJSON(t *testing.T) {
+	model.NameValidationScheme = model.LegacyValidation
+	defer func() {
+		model.NameValidationScheme = model.UTF8Validation
+	}()
 	content, err := os.ReadFile("testdata/static_config.bad.json")
 	require.NoError(t, err)
 	var tg targetgroup.Group
@@ -2059,6 +2072,10 @@ func TestBadStaticConfigsJSON(t *testing.T) {
 }
 
 func TestBadStaticConfigsYML(t *testing.T) {
+	model.NameValidationScheme = model.LegacyValidation
+	defer func() {
+		model.NameValidationScheme = model.UTF8Validation
+	}()
 	content, err := os.ReadFile("testdata/static_config.bad.yml")
 	require.NoError(t, err)
 	var tg targetgroup.Group
@@ -2323,17 +2340,17 @@ func TestScrapeConfigNameValidationSettings(t *testing.T) {
 		{
 			name:         "global setting implies local settings",
 			inputFile:    "scrape_config_global_validation_mode",
-			expectScheme: "utf8",
+			expectScheme: "legacy",
 		},
 		{
 			name:         "local setting",
 			inputFile:    "scrape_config_local_validation_mode",
-			expectScheme: "utf8",
+			expectScheme: "legacy",
 		},
 		{
 			name:         "local setting overrides global setting",
 			inputFile:    "scrape_config_local_global_validation_mode",
-			expectScheme: "legacy",
+			expectScheme: "utf8",
 		},
 	}
 

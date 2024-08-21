@@ -62,6 +62,11 @@ import (
 	"github.com/prometheus/prometheus/util/documentcli"
 )
 
+func init() {
+	// This can be removed when the default validation scheme in common is updated.
+	model.NameValidationScheme = model.UTF8Validation
+}
+
 const (
 	successExitCode = 0
 	failureExitCode = 1
