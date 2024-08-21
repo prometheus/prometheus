@@ -64,11 +64,12 @@ func (e *HeadEncoder) EncodeInnerSeriesSlice(innerSeriesSlice []*InnerSeries) {
 }
 
 type RecodedChunk struct {
-	MinT        int64
-	MaxT        int64
-	SeriesId    uint32
-	HasMoreData bool
-	ChunkData   []byte
+	MinT         int64
+	MaxT         int64
+	SeriesId     uint32
+	SamplesCount uint8
+	HasMoreData  bool
+	ChunkData    []byte
 }
 
 const (

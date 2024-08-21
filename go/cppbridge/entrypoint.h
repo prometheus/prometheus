@@ -257,7 +257,7 @@ void prompp_primitives_lss_free_label_sets(void* args);
  *
  * @param res {
  *     status uint32   // query status
- *     names  []string // Slice of string freed by freeBytes in GO
+ *     names  []string // Slice of string freed by freeBytes in GO pointed to lss memory, so it may be invalid after mutating lss state
  * }
  */
 void prompp_primitives_lss_query_label_names(void* args, void* res);
@@ -273,7 +273,7 @@ void prompp_primitives_lss_query_label_names(void* args, void* res);
  *
  * @param res {
  *     status uint32   // query status
- *     values []string // Slice of string freed by freeBytes in GO
+ *     values []string // Slice of string freed by freeBytes in GO pointed to lss memory, so it may be invalid after mutating lss state
  * }
  */
 void prompp_primitives_lss_query_label_values(void* args, void* res);
@@ -602,6 +602,7 @@ void prompp_series_data_chunk_recoder_ctor(void* args, void* res);
  * @param res {
  *     min_t         int64
  *     max_t         int64
+ *     samples_count uint8
  *     series_id     uint32
  *     has_more_data bool
  *     data          []byte // SliceView to recoded chunk data
