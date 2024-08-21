@@ -3824,18 +3824,18 @@ histogram {{sum:4 count:4 buckets:[2 2]}} {{sum:6 count:6 buckets:[3 3]}} {{sum:
 		}
 	}
 
-	qry, err := engine.NewRangeQuery(context.Background(), storage, nil, "increase(histogram[60s])", time.Unix(0, 0), time.Unix(0, 0).Add(1*time.Minute), time.Minute)
+	qry, err := engine.NewRangeQuery(context.Background(), storage, nil, "increase(histogram[90s])", time.Unix(0, 0), time.Unix(0, 0).Add(60*time.Second), time.Minute)
 	require.NoError(t, err)
 	verify(t, qry, []histogram.FloatHistogram{
 		{
-			Count:           2,
-			Sum:             2,                                        // Increase from 4 to 6 is 2.
+			Count:           3,
+			Sum:             3,                                        // Increase from 4 to 6 is 2. Interpolation adds 1.
 			PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}}, // Two buckets changed between the first and second histogram.
-			PositiveBuckets: []float64{1, 1},                          // Increase from 2 to 3 is 1 in both buckets.
+			PositiveBuckets: []float64{1.5, 1.5},                      // Increase from 2 to 3 is 1 in both buckets. Interpolation adds 0.5.
 		},
 	})
 
-	qry, err = engine.NewInstantQuery(context.Background(), storage, nil, "histogram[60s]", time.Unix(0, 0).Add(2*time.Minute))
+	qry, err = engine.NewInstantQuery(context.Background(), storage, nil, "histogram[61s]", time.Unix(0, 0).Add(2*time.Minute))
 	require.NoError(t, err)
 	verify(t, qry, []histogram.FloatHistogram{
 		{

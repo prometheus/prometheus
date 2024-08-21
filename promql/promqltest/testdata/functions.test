@@ -799,7 +799,7 @@ load 10s
 eval instant at 1m sum_over_time(metric[2m])
   {} 2
 
-eval instant at 1m avg_over_time(metric[1m])
+eval instant at 1m avg_over_time(metric[2m])
   {} 0.5
 
 # Tests for stddev_over_time and stdvar_over_time.
