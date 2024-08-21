@@ -166,7 +166,7 @@ func NewTemplateExpander(
 				return html_template.HTML(text)
 			},
 			"match":     regexp.MatchString,
-			"title":     strings.Title,
+			"title":     strings.Title, //nolint:staticcheck
 			"toUpper":   strings.ToUpper,
 			"toLower":   strings.ToLower,
 			"graphLink": strutil.GraphLinkForExpression,
