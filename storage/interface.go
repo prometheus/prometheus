@@ -243,6 +243,10 @@ func (f QueryableFunc) Querier(mint, maxt int64) (Querier, error) {
 	return f(mint, maxt)
 }
 
+type AppendHints struct {
+	DiscardOutOfOrder bool
+}
+
 // Appender provides batched appends against a storage.
 // It must be completed with a call to Commit or Rollback and must not be reused afterwards.
 //
@@ -270,6 +274,9 @@ type Appender interface {
 	// Rollback rolls back all modifications made in the appender so far.
 	// Appender has to be discarded after rollback.
 	Rollback() error
+
+	// New SetHints method to set the append hints.
+	SetHints(hints *AppendHints)
 
 	ExemplarAppender
 	HistogramAppender

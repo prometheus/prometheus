@@ -43,6 +43,10 @@ func (a nopAppendable) Appender(_ context.Context) storage.Appender {
 
 type nopAppender struct{}
 
+func (a nopAppender) SetHints(hints *storage.AppendHints) {
+	panic("unimplemented")
+}
+
 func (a nopAppender) Append(storage.SeriesRef, labels.Labels, int64, float64) (storage.SeriesRef, error) {
 	return 0, nil
 }
@@ -112,6 +116,11 @@ type collectResultAppender struct {
 	pendingExemplars     []exemplar.Exemplar
 	resultMetadata       []metadata.Metadata
 	pendingMetadata      []metadata.Metadata
+}
+
+// SetHints implements storage.Appender.
+func (a *collectResultAppender) SetHints(hints *storage.AppendHints) {
+	panic("unimplemented")
 }
 
 func (a *collectResultAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {

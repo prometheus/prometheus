@@ -34,11 +34,16 @@ import (
 // initAppender is a helper to initialize the time bounds of the head
 // upon the first sample it receives.
 type initAppender struct {
-	app  storage.Appender
-	head *Head
+	app   storage.Appender
+	head  *Head
+	hints *storage.AppendHints
 }
 
 var _ storage.GetRef = &initAppender{}
+
+func (a *initAppender) SetHints(hints *storage.AppendHints) {
+	a.hints = hints
+}
 
 func (a *initAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	if a.app != nil {
@@ -326,8 +331,12 @@ type headAppender struct {
 
 	appendID, cleanupAppendIDsBelow uint64
 	closed                          bool
+	hints                           *storage.AppendHints
 }
 
+func (a *headAppender) SetHints(hints *storage.AppendHints) {
+	a.hints = hints
+}
 func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	// Fail fast if OOO is disabled and the sample is out of bounds.
 	// Otherwise a full check will be done later to decide if the sample is in-order or out-of-order.
@@ -359,13 +368,18 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	}
 
 	s.Lock()
+
+	defer s.Unlock()
 	// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 	// to skip that sample from the WAL and write only in the WBL.
-	_, delta, err := s.appendable(t, v, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+	isOOO, delta, err := s.appendable(t, v, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 	if err == nil {
+		if isOOO && a.hints != nil && a.hints.DiscardOutOfOrder {
+			a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
+			return 0, storage.ErrOutOfOrderSample
+		}
 		s.pendingCommit = true
 	}
-	s.Unlock()
 	if delta > 0 {
 		a.head.metrics.oooHistogram.Observe(float64(delta) / 1000)
 	}
