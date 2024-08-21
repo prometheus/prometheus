@@ -55,16 +55,50 @@ export const decodePanelOptionsFromURLParams = (query: string): Panel[] => {
     decodeSetting("end_input", (value) => {
       panel.visualizer.endTime = parseTime(value);
     });
-    decodeSetting("moment_input", (value) => {
-      panel.visualizer.endTime = parseTime(value);
-    });
+    // Legacy "step_input" parameter, overriden below by
+    // "res_type" / "res_density" / "res_step" if present.
     decodeSetting("step_input", (value) => {
       if (parseInt(value) > 0) {
         panel.visualizer.resolution = {
           type: "custom",
-          value: parseInt(value) * 1000,
+          step: parseInt(value) * 1000,
         };
       }
+    });
+    decodeSetting("res_type", (value) => {
+      switch (value) {
+        case "auto":
+          decodeSetting("res_density", (density) => {
+            if (["low", "medium", "high"].includes(density)) {
+              panel.visualizer.resolution = {
+                type: "auto",
+                density: density as "low" | "medium" | "high",
+              };
+            }
+          });
+          break;
+        case "fixed":
+          decodeSetting("res_step", (step) => {
+            panel.visualizer.resolution = {
+              type: "fixed",
+              step: parseFloat(step) * 1000,
+            };
+          });
+          break;
+        case "custom":
+          decodeSetting("res_step", (step) => {
+            panel.visualizer.resolution = {
+              type: "custom",
+              step: parseFloat(step) * 1000,
+            };
+          });
+          break;
+        default:
+          console.log("Unknown resolution type", value);
+      }
+    });
+    decodeSetting("moment_input", (value) => {
+      panel.visualizer.endTime = parseTime(value);
     });
 
     panels.push(panel);
@@ -93,14 +127,30 @@ export const encodePanelOptionsToURLParams = (
       addParam(idx, "moment_input", formatTime(p.visualizer.endTime));
     }
     addParam(idx, "range_input", formatPrometheusDuration(p.visualizer.range));
-    // TODO: Support the other new resolution types.
-    if (p.visualizer.resolution.type === "custom") {
-      addParam(
-        idx,
-        "step_input",
-        (p.visualizer.resolution.value / 1000).toString()
-      );
+
+    switch (p.visualizer.resolution.type) {
+      case "auto":
+        addParam(idx, "res_type", "auto");
+        addParam(idx, "res_density", p.visualizer.resolution.density);
+        break;
+      case "fixed":
+        addParam(idx, "res_type", "fixed");
+        addParam(
+          idx,
+          "res_step",
+          (p.visualizer.resolution.step / 1000).toString()
+        );
+        break;
+      case "custom":
+        addParam(idx, "res_type", "custom");
+        addParam(
+          idx,
+          "res_step",
+          (p.visualizer.resolution.step / 1000).toString()
+        );
+        break;
     }
+
     addParam(idx, "display_mode", p.visualizer.displayMode);
     addParam(idx, "show_exemplars", p.visualizer.showExemplars ? "1" : "0");
   });
