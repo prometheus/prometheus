@@ -3853,3 +3853,25 @@ func TestScrapeLoopSeriesAdded_DroppedLabel(t *testing.T) {
 	require.Equal(t, 1, added)
 	require.Equal(t, 0, seriesAdded) // should be zero this time, series are already present
 }
+
+// Test scraping of a target that returns the exact same sample each time, but with labels
+// in a different order on scrape response.
+func TestScrapeLoopSeriesAdded_LabelOrder(t *testing.T) {
+	ctx, sl := simpleTestScrapeLoop(t)
+
+	slApp := sl.appender(ctx)
+	total, added, seriesAdded, err := sl.append(slApp, []byte("test_metric{job=\"j1\", instance=\"i1\", cluster=\"foo\", backend=\"1\"} 1\n"), "", time.Time{})
+	require.NoError(t, err)
+	require.NoError(t, slApp.Commit())
+	require.Equal(t, 1, total)
+	require.Equal(t, 1, added)
+	require.Equal(t, 1, seriesAdded) // inial scrape should mark series as added
+
+	slApp = sl.appender(ctx)
+	total, added, seriesAdded, err = sl.append(slApp, []byte("test_metric{job=\"j1\", cluster=\"foo\", backend=\"1\", instance=\"i1\"} 1\n"), "", time.Time{})
+	require.NoError(t, slApp.Commit())
+	require.NoError(t, err)
+	require.Equal(t, 1, total)
+	require.Equal(t, 1, added)
+	require.Equal(t, 0, seriesAdded) // should be zero this time, series are already present
+}
