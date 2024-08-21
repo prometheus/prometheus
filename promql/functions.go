@@ -406,17 +406,22 @@ func funcSortDesc(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 
 // === sort_by_label(vector parser.ValueTypeVector, label parser.ValueTypeString...) (Vector, Annotations) ===
 func funcSortByLabel(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	// In case the labels are the same, NaN should sort to the bottom, so take
-	// ascending sort with NaN first and reverse it.
-	var anno annotations.Annotations
-	vals[0], anno = funcSort(vals, args, enh)
-	labels := stringSliceFromArgs(args[1:])
+	// First, sort by the full label set. This ensures a consistent ordering in case sorting by the
+	// labels provided as arguments is not conclusive.
 	slices.SortFunc(vals[0].(Vector), func(a, b Sample) int {
-		// Iterate over each given label
+		return labels.Compare(a.Metric, b.Metric)
+	})
+
+	labels := stringSliceFromArgs(args[1:])
+	// Next, sort by the labels provided as arguments.
+	slices.SortFunc(vals[0].(Vector), func(a, b Sample) int {
+		// Iterate over each given label.
 		for _, label := range labels {
 			lv1 := a.Metric.Get(label)
 			lv2 := b.Metric.Get(label)
 
+			// If we encounter multiple samples with the same label values, the sorting which was
+			// performed in the first step will act as a "tie breaker".
 			if lv1 == lv2 {
 				continue
 			}
@@ -431,22 +436,27 @@ func funcSortByLabel(vals []parser.Value, args parser.Expressions, enh *EvalNode
 		return 0
 	})
 
-	return vals[0].(Vector), anno
+	return vals[0].(Vector), nil
 }
 
 // === sort_by_label_desc(vector parser.ValueTypeVector, label parser.ValueTypeString...) (Vector, Annotations) ===
 func funcSortByLabelDesc(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	// In case the labels are the same, NaN should sort to the bottom, so take
-	// ascending sort with NaN first and reverse it.
-	var anno annotations.Annotations
-	vals[0], anno = funcSortDesc(vals, args, enh)
-	labels := stringSliceFromArgs(args[1:])
+	// First, sort by the full label set. This ensures a consistent ordering in case sorting by the
+	// labels provided as arguments is not conclusive.
 	slices.SortFunc(vals[0].(Vector), func(a, b Sample) int {
-		// Iterate over each given label
+		return labels.Compare(b.Metric, a.Metric)
+	})
+
+	labels := stringSliceFromArgs(args[1:])
+	// Next, sort by the labels provided as arguments.
+	slices.SortFunc(vals[0].(Vector), func(a, b Sample) int {
+		// Iterate over each given label.
 		for _, label := range labels {
 			lv1 := a.Metric.Get(label)
 			lv2 := b.Metric.Get(label)
 
+			// If we encounter multiple samples with the same label values, the sorting which was
+			// performed in the first step will act as a "tie breaker".
 			if lv1 == lv2 {
 				continue
 			}
@@ -461,7 +471,7 @@ func funcSortByLabelDesc(vals []parser.Value, args parser.Expressions, enh *Eval
 		return 0
 	})
 
-	return vals[0].(Vector), anno
+	return vals[0].(Vector), nil
 }
 
 // === clamp(Vector parser.ValueTypeVector, min, max Scalar) (Vector, Annotations) ===
