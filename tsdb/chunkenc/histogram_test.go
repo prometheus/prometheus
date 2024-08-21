@@ -428,6 +428,7 @@ func TestHistogramChunkAppendable(t *testing.T) {
 			{Offset: 4, Length: 1},
 			{Offset: 1, Length: 1},
 		}
+		savedH2Spans := h2.PositiveSpans
 		h2.PositiveBuckets = []int64{7, -5, 1, 0, 1} // counts: 7, 2, 3, 3, 4 (total 18)
 
 		posInterjections, negInterjections, backwardPositiveInserts, backwardNegativeInserts, ok, cr := hApp.appendable(h2)
@@ -443,6 +444,44 @@ func TestHistogramChunkAppendable(t *testing.T) {
 		// Check that h2 was recoded.
 		require.Equal(t, []int64{7, -7, 2, 1, -3, 3, 1}, h2.PositiveBuckets) // counts: 7, 0, 2, 3 , 0, 3, 4 (total 18)
 		require.Equal(t, emptyBucketH.PositiveSpans, h2.PositiveSpans)
+		require.NotEqual(t, savedH2Spans, h2.PositiveSpans, "recoding must make a copy")
+	}
+
+	{ // New histogram that has new buckets AND buckets missing but the buckets missing were empty.
+		emptyBucketH := eh.Copy()
+		emptyBucketH.PositiveBuckets = []int64{6, -6, 1, 1, -2, 1, 1} // counts: 6, 0, 1, 2, 0, 1, 2 (total 12)
+		c, hApp, ts, h1 := setup(emptyBucketH)
+		h2 := h1.Copy()
+		h2.PositiveSpans = []histogram.Span{ // Missing buckets at offset 1 and 9.
+			{Offset: 0, Length: 1},
+			{Offset: 3, Length: 1},
+			{Offset: 3, Length: 1},
+			{Offset: 4, Length: 1},
+			{Offset: 1, Length: 2},
+		}
+		savedH2Spans := h2.PositiveSpans
+		h2.PositiveBuckets = []int64{7, -5, 1, 0, 1, 1} // counts: 7, 2, 3, 3, 4, 5 (total 23)
+
+		posInterjections, negInterjections, backwardPositiveInserts, backwardNegativeInserts, ok, cr := hApp.appendable(h2)
+		require.NotEmpty(t, posInterjections)
+		require.Empty(t, negInterjections)
+		require.NotEmpty(t, backwardPositiveInserts)
+		require.Empty(t, backwardNegativeInserts)
+		require.True(t, ok)
+		require.False(t, cr)
+
+		assertRecodedHistogramChunkOnAppend(t, c, hApp, ts+1, h2, UnknownCounterReset)
+
+		// Check that h2 was recoded.
+		require.Equal(t, []int64{7, -7, 2, 1, -3, 3, 1, 1}, h2.PositiveBuckets) // counts: 7, 0, 2, 3 , 0, 3, 5 (total 23)
+		require.Equal(t, []histogram.Span{
+			{Offset: 0, Length: 2}, // Added empty bucket.
+			{Offset: 2, Length: 1}, // Existing - offset adjusted.
+			{Offset: 3, Length: 2}, // Added empty bucket.
+			{Offset: 3, Length: 1}, // Existing - offset adjusted.
+			{Offset: 1, Length: 2}, // Existing.
+		}, h2.PositiveSpans)
+		require.NotEqual(t, savedH2Spans, h2.PositiveSpans, "recoding must make a copy")
 	}
 
 	{ // New histogram that has a counter reset while buckets are same.

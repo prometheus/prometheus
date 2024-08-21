@@ -727,23 +727,23 @@ func lexValueSequence(l *Lexer) stateFn {
 // was only modified to integrate with our lexer.
 func lexEscape(l *Lexer) stateFn {
 	var n int
-	var base, max uint32
+	var base, maxVal uint32
 
 	ch := l.next()
 	switch ch {
 	case 'a', 'b', 'f', 'n', 'r', 't', 'v', '\\', l.stringOpen:
 		return lexString
 	case '0', '1', '2', '3', '4', '5', '6', '7':
-		n, base, max = 3, 8, 255
+		n, base, maxVal = 3, 8, 255
 	case 'x':
 		ch = l.next()
-		n, base, max = 2, 16, 255
+		n, base, maxVal = 2, 16, 255
 	case 'u':
 		ch = l.next()
-		n, base, max = 4, 16, unicode.MaxRune
+		n, base, maxVal = 4, 16, unicode.MaxRune
 	case 'U':
 		ch = l.next()
-		n, base, max = 8, 16, unicode.MaxRune
+		n, base, maxVal = 8, 16, unicode.MaxRune
 	case eof:
 		l.errorf("escape sequence not terminated")
 		return lexString
@@ -772,7 +772,7 @@ func lexEscape(l *Lexer) stateFn {
 		}
 	}
 
-	if x > max || 0xD800 <= x && x < 0xE000 {
+	if x > maxVal || 0xD800 <= x && x < 0xE000 {
 		l.errorf("escape sequence is an invalid Unicode code point")
 	}
 	return lexString
@@ -1058,17 +1058,4 @@ func isDigit(r rune) bool {
 // isAlpha reports whether r is an alphabetic or underscore.
 func isAlpha(r rune) bool {
 	return r == '_' || ('a' <= r && r <= 'z') || ('A' <= r && r <= 'Z')
-}
-
-// isLabel reports whether the string can be used as label.
-func isLabel(s string) bool {
-	if len(s) == 0 || !isAlpha(rune(s[0])) {
-		return false
-	}
-	for _, c := range s[1:] {
-		if !isAlphaNumeric(c) {
-			return false
-		}
-	}
-	return true
 }

@@ -287,7 +287,6 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) (WriteRespo
 	// we can continue handling.
 	rs, _ := ParseWriteResponseStats(httpResp)
 
-	//nolint:usestdlibvars
 	if httpResp.StatusCode/100 == 2 {
 		return rs, nil
 	}
@@ -297,7 +296,6 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) (WriteRespo
 	body, _ := io.ReadAll(io.LimitReader(httpResp.Body, maxErrMsgLen))
 	err = fmt.Errorf("server returned HTTP status %s: %s", httpResp.Status, body)
 
-	//nolint:usestdlibvars
 	if httpResp.StatusCode/100 == 5 ||
 		(c.retryOnRateLimit && httpResp.StatusCode == http.StatusTooManyRequests) {
 		return rs, RecoverableError{err, retryAfterDuration(httpResp.Header.Get("Retry-After"))}
@@ -382,7 +380,6 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 		return nil, fmt.Errorf("error reading response. HTTP status code: %s: %w", httpResp.Status, err)
 	}
 
-	//nolint:usestdlibvars
 	if httpResp.StatusCode/100 != 2 {
 		return nil, fmt.Errorf("remote server %s returned HTTP status %s: %s", c.urlString, httpResp.Status, strings.TrimSpace(string(compressed)))
 	}

@@ -230,11 +230,11 @@ func TestTailSamples(t *testing.T) {
 			for i := first; i <= last; i++ {
 				segment, err := OpenReadSegment(SegmentName(watcher.walDir, i))
 				require.NoError(t, err)
-				defer segment.Close()
 
 				reader := NewLiveReader(nil, NewLiveReaderMetrics(nil), segment)
 				// Use tail true so we can ensure we got the right number of samples.
 				watcher.readSegment(reader, i, true)
+				require.NoError(t, segment.Close())
 			}
 
 			expectedSeries := seriesCount

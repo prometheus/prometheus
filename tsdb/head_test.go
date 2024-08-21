@@ -2757,7 +2757,7 @@ func testOutOfOrderSamplesMetric(t *testing.T, scenario sampleTypeScenario) {
 
 	require.Equal(t, int64(math.MinInt64), db.head.minValidTime.Load())
 	require.NoError(t, db.Compact(ctx))
-	require.Greater(t, db.head.minValidTime.Load(), int64(0))
+	require.Positive(t, db.head.minValidTime.Load())
 
 	app = db.Appender(ctx)
 	_, err = appendSample(app, db.head.minValidTime.Load()-2)
@@ -3677,7 +3677,7 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 	require.Len(t, ms.mmappedChunks, 25)
 	expMmapChunks := make([]*mmappedChunk, 0, 20)
 	for _, mmap := range ms.mmappedChunks {
-		require.Greater(t, mmap.numSamples, uint16(0))
+		require.Positive(t, mmap.numSamples)
 		cpy := *mmap
 		expMmapChunks = append(expMmapChunks, &cpy)
 	}
@@ -5695,7 +5695,7 @@ func TestCuttingNewHeadChunks(t *testing.T) {
 	}
 }
 
-// TestHeadDetectsDuplcateSampleAtSizeLimit tests a regression where a duplicate sample
+// TestHeadDetectsDuplicateSampleAtSizeLimit tests a regression where a duplicate sample
 // is appended to the head, right when the head chunk is at the size limit.
 // The test adds all samples as duplicate, thus expecting that the result has
 // exactly half of the samples.
@@ -5917,6 +5917,35 @@ func TestPostingsCardinalityStats(t *testing.T) {
 	require.NotEqual(t, statsForSomeLabel1, statsForSomeLabel)
 	// Using cache.
 	require.Equal(t, statsForSomeLabel1, head.PostingsCardinalityStats("n", 1))
+}
+
+func TestHeadAppender_AppendFloatWithSameTimestampAsPreviousHistogram(t *testing.T) {
+	head, _ := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
+	t.Cleanup(func() { head.Close() })
+
+	ls := labels.FromStrings(labels.MetricName, "test")
+
+	{
+		// Append a float 10.0 @ 1_000
+		app := head.Appender(context.Background())
+		_, err := app.Append(0, ls, 1_000, 10.0)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	}
+
+	{
+		// Append a float histogram @ 2_000
+		app := head.Appender(context.Background())
+		h := tsdbutil.GenerateTestHistogram(1)
+		_, err := app.AppendHistogram(0, ls, 2_000, h, nil)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	}
+
+	app := head.Appender(context.Background())
+	_, err := app.Append(0, ls, 2_000, 10.0)
+	require.Error(t, err)
+	require.ErrorIs(t, err, storage.NewDuplicateHistogramToFloatErr(2_000, 10.0))
 }
 
 func TestHeadAppender_AppendCTZeroSample(t *testing.T) {
