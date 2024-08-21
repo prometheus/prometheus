@@ -152,6 +152,7 @@ type flagConfig struct {
 	queryConcurrency    int
 	queryMaxSamples     int
 	RemoteFlushDeadline model.Duration
+	nameEscapingScheme  string
 
 	featureList   []string
 	memlimitRatio float64
@@ -231,6 +232,12 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 				config.DefaultConfig.GlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				level.Info(logger).Log("msg", "Experimental created timestamp zero ingestion enabled. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
+			case "delayed-compaction":
+				c.tsdb.EnableDelayedCompaction = true
+				level.Info(logger).Log("msg", "Experimental delayed compaction is enabled.")
+			case "utf8-names":
+				model.NameValidationScheme = model.UTF8Validation
+				level.Info(logger).Log("msg", "Experimental UTF-8 support enabled")
 			case "":
 				continue
 			default:
@@ -480,6 +487,15 @@ func main() {
 	if err := cfg.setFeatureListOptions(logger); err != nil {
 		fmt.Fprintln(os.Stderr, fmt.Errorf("Error parsing feature list: %w", err))
 		os.Exit(1)
+	}
+
+	if cfg.nameEscapingScheme != "" {
+		scheme, err := model.ToEscapingScheme(cfg.nameEscapingScheme)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, `Invalid name escaping scheme: %q; Needs to be one of "values", "underscores", or "dots"`, cfg.nameEscapingScheme)
+			os.Exit(1)
+		}
+		model.NameEscapingScheme = scheme
 	}
 
 	if agentMode && len(serverOnlyFlags) > 0 {
@@ -1679,6 +1695,8 @@ type tsdbOptions struct {
 	MaxExemplars                   int64
 	EnableMemorySnapshotOnShutdown bool
 	EnableNativeHistograms         bool
+	EnableDelayedCompaction        bool
+	EnableOverlappingCompaction    bool
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -1699,7 +1717,8 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableMemorySnapshotOnShutdown: opts.EnableMemorySnapshotOnShutdown,
 		EnableNativeHistograms:         opts.EnableNativeHistograms,
 		OutOfOrderTimeWindow:           opts.OutOfOrderTimeWindow,
-		EnableOverlappingCompaction:    true,
+		EnableDelayedCompaction:        opts.EnableDelayedCompaction,
+		EnableOverlappingCompaction:    opts.EnableOverlappingCompaction,
 	}
 }
 

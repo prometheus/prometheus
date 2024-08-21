@@ -97,9 +97,10 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		lastT = samples.Histograms[numSamplesMinusOne].T
 		var newAnnos annotations.Annotations
 		resultHistogram, newAnnos = histogramRate(samples.Histograms, isCounter, metricName, args[0].PositionRange())
+		annos.Merge(newAnnos)
 		if resultHistogram == nil {
 			// The histograms are not compatible with each other.
-			return enh.Out, annos.Merge(newAnnos)
+			return enh.Out, annos
 		}
 	case len(samples.Floats) > 1:
 		numSamplesMinusOne = len(samples.Floats) - 1
@@ -178,16 +179,28 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 // Otherwise, it returns the calculated histogram and an empty annotation.
 func histogramRate(points []HPoint, isCounter bool, metricName string, pos posrange.PositionRange) (*histogram.FloatHistogram, annotations.Annotations) {
 	prev := points[0].H
+	usingCustomBuckets := prev.UsesCustomBuckets()
 	last := points[len(points)-1].H
 	if last == nil {
 		return nil, annotations.New().Add(annotations.NewMixedFloatsHistogramsWarning(metricName, pos))
 	}
+
 	minSchema := prev.Schema
 	if last.Schema < minSchema {
 		minSchema = last.Schema
 	}
 
+	if last.UsesCustomBuckets() != usingCustomBuckets {
+		return nil, annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
+	}
+
 	var annos annotations.Annotations
+
+	// We check for gauge type histograms in the loop below, but the loop below does not run on the first and last point,
+	// so check the first and last point now.
+	if isCounter && (prev.CounterResetHint == histogram.GaugeType || last.CounterResetHint == histogram.GaugeType) {
+		annos.Add(annotations.NewNativeHistogramNotCounterWarning(metricName, pos))
+	}
 
 	// First iteration to find out two things:
 	// - What's the smallest relevant schema?
@@ -207,6 +220,9 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 		}
 		if curr.Schema < minSchema {
 			minSchema = curr.Schema
+		}
+		if curr.UsesCustomBuckets() != usingCustomBuckets {
+			return nil, annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
 		}
 	}
 
@@ -241,7 +257,7 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 	}
 
 	h.CounterResetHint = histogram.GaugeType
-	return h.Compact(0), nil
+	return h.Compact(0), annos
 }
 
 // === delta(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
@@ -451,15 +467,15 @@ func funcSortByLabelDesc(vals []parser.Value, args parser.Expressions, enh *Eval
 // === clamp(Vector parser.ValueTypeVector, min, max Scalar) (Vector, Annotations) ===
 func funcClamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	vec := vals[0].(Vector)
-	min := vals[1].(Vector)[0].F
-	max := vals[2].(Vector)[0].F
-	if max < min {
+	minVal := vals[1].(Vector)[0].F
+	maxVal := vals[2].(Vector)[0].F
+	if maxVal < minVal {
 		return enh.Out, nil
 	}
 	for _, el := range vec {
 		enh.Out = append(enh.Out, Sample{
 			Metric: el.Metric.DropMetricName(),
-			F:      math.Max(min, math.Min(max, el.F)),
+			F:      math.Max(minVal, math.Min(maxVal, el.F)),
 		})
 	}
 	return enh.Out, nil
@@ -468,11 +484,11 @@ func funcClamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 // === clamp_max(Vector parser.ValueTypeVector, max Scalar) (Vector, Annotations) ===
 func funcClampMax(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	vec := vals[0].(Vector)
-	max := vals[1].(Vector)[0].F
+	maxVal := vals[1].(Vector)[0].F
 	for _, el := range vec {
 		enh.Out = append(enh.Out, Sample{
 			Metric: el.Metric.DropMetricName(),
-			F:      math.Min(max, el.F),
+			F:      math.Min(maxVal, el.F),
 		})
 	}
 	return enh.Out, nil
@@ -481,11 +497,11 @@ func funcClampMax(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 // === clamp_min(Vector parser.ValueTypeVector, min Scalar) (Vector, Annotations) ===
 func funcClampMin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	vec := vals[0].(Vector)
-	min := vals[1].(Vector)[0].F
+	minVal := vals[1].(Vector)[0].F
 	for _, el := range vec {
 		enh.Out = append(enh.Out, Sample{
 			Metric: el.Metric.DropMetricName(),
-			F:      math.Max(min, el.F),
+			F:      math.Max(minVal, el.F),
 		})
 	}
 	return enh.Out, nil
@@ -573,9 +589,28 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 		return vec, nil
 	}
 	return aggrOverTime(vals, enh, func(s Series) float64 {
-		var mean, count, c float64
+		var (
+			sum, mean, count, kahanC float64
+			incrementalMean          bool
+		)
 		for _, f := range s.Floats {
 			count++
+			if !incrementalMean {
+				newSum, newC := kahanSumInc(f.F, sum, kahanC)
+				// Perform regular mean calculation as long as
+				// the sum doesn't overflow and (in any case)
+				// for the first iteration (even if we start
+				// with ±Inf) to not run into division-by-zero
+				// problems below.
+				if count == 1 || !math.IsInf(newSum, 0) {
+					sum, kahanC = newSum, newC
+					continue
+				}
+				// Handle overflow by reverting to incremental calculation of the mean value.
+				incrementalMean = true
+				mean = sum / (count - 1)
+				kahanC /= count - 1
+			}
 			if math.IsInf(mean, 0) {
 				if math.IsInf(f.F, 0) && (mean > 0) == (f.F > 0) {
 					// The `mean` and `f.F` values are `Inf` of the same sign.  They
@@ -593,13 +628,13 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 					continue
 				}
 			}
-			mean, c = kahanSumInc(f.F/count-mean/count, mean, c)
+			correctedMean := mean + kahanC
+			mean, kahanC = kahanSumInc(f.F/count-correctedMean/count, mean, kahanC)
 		}
-
-		if math.IsInf(mean, 0) {
-			return mean
+		if incrementalMean {
+			return mean + kahanC
 		}
-		return mean + c
+		return (sum + kahanC) / count
 	}), nil
 }
 
@@ -665,13 +700,13 @@ func funcMaxOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 		return enh.Out, nil
 	}
 	return aggrOverTime(vals, enh, func(s Series) float64 {
-		max := s.Floats[0].F
+		maxVal := s.Floats[0].F
 		for _, f := range s.Floats {
-			if f.F > max || math.IsNaN(max) {
-				max = f.F
+			if f.F > maxVal || math.IsNaN(maxVal) {
+				maxVal = f.F
 			}
 		}
-		return max
+		return maxVal
 	}), nil
 }
 
@@ -685,13 +720,13 @@ func funcMinOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 		return enh.Out, nil
 	}
 	return aggrOverTime(vals, enh, func(s Series) float64 {
-		min := s.Floats[0].F
+		minVal := s.Floats[0].F
 		for _, f := range s.Floats {
-			if f.F < min || math.IsNaN(min) {
-				min = f.F
+			if f.F < minVal || math.IsNaN(minVal) {
+				minVal = f.F
 			}
 		}
-		return min
+		return minVal
 	}), nil
 }
 

@@ -68,6 +68,10 @@ func fuzzParseMetricWithContentType(in []byte, contentType string) int {
 		panic(warning)
 	}
 
+	if contentType == "application/openmetrics-text" {
+		p = textparse.NewOpenMetricsParser(in, symbolTable)
+	}
+
 	var err error
 	for {
 		_, err = p.Next()
