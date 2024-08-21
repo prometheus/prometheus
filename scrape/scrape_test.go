@@ -683,6 +683,7 @@ func newBasicScrapeLoop(t testing.TB, ctx context.Context, scraper scraper, app 
 		false,
 		newTestScrapeMetrics(t),
 		false,
+		false,
 	)
 }
 
@@ -824,6 +825,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		nil,
 		false,
 		scrapeMetrics,
+		false,
 		false,
 	)
 
@@ -968,6 +970,7 @@ func TestScrapeLoopMetadata(t *testing.T) {
 		nil,
 		false,
 		scrapeMetrics,
+		false,
 		false,
 	)
 	defer cancel()
@@ -3792,4 +3795,61 @@ scrape_configs:
 	for _, h := range histogramSamples {
 		require.Equal(t, expectedSchema, h.Schema)
 	}
+}
+
+// Consider a scrape response returns samples with a label that changes on every scrape.
+// For example it identifies a backed serving the metrics response:
+// Scrape 1: test_metric{backend="1"}
+// Scrape 2: test_metric{backend="2"}
+// Scrape 3: test_metric{backend="3"}
+// Scrape 4: test_metric{backend="1"}
+// Scrape 5: test_metric{backend="2"}
+// ...
+// Scraped metrics would have a high churn, so we might want to drop this backend label
+// with metric_relabe_configs:
+//
+//	metric_relabel_configs:
+//	- action: labeldrop
+//	  regex: backend
+//
+// This will work well and series in TSDB won't have backend label.
+// But we must not mark these series as added to TSDB on each scrape, which could
+// happen if scrape cache was using raw series string (test_metric{backend="N"}).
+func TestScrapeLoopSeriesAdded_DroppedLabel(t *testing.T) {
+	var (
+		target = &Target{}
+		mrc    = []*relabel.Config{
+			{
+				Regex:  relabel.MustNewRegexp("backend"),
+				Action: relabel.LabelDrop,
+			},
+		}
+	)
+
+	s := teststorage.New(t)
+	t.Cleanup(func() { s.Close() })
+	ctx, cancel := context.WithCancel(context.Background())
+	sl := newBasicScrapeLoop(t, ctx, &testScraper{}, s.Appender, 0)
+	t.Cleanup(func() { cancel() })
+
+	sl.sampleMutator = func(l labels.Labels) labels.Labels {
+		return mutateSampleLabels(l, target, true, mrc)
+	}
+	sl.labelsDropped = true
+
+	slApp := sl.appender(ctx)
+	total, added, seriesAdded, err := sl.append(slApp, []byte("test_metric{job=\"j1\", instance=\"i1\", cluster=\"foo\", backend=\"1\"} 1\n"), "", time.Time{})
+	require.NoError(t, err)
+	require.NoError(t, slApp.Commit())
+	require.Equal(t, 1, total)
+	require.Equal(t, 1, added)
+	require.Equal(t, 1, seriesAdded) // inial scrape should mark series as added
+
+	slApp = sl.appender(ctx)
+	total, added, seriesAdded, err = sl.append(slApp, []byte("test_metric{job=\"j1\", instance=\"i1\", cluster=\"foo\", backend=\"2\"} 1\n"), "", time.Time{})
+	require.NoError(t, slApp.Commit())
+	require.NoError(t, err)
+	require.Equal(t, 1, total)
+	require.Equal(t, 1, added)
+	require.Equal(t, 0, seriesAdded) // should be zero this time, series are already present
 }

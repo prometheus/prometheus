@@ -132,6 +132,16 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 		return nil, fmt.Errorf("error creating HTTP client: %w", err)
 	}
 
+	var lsetMutated bool
+	for _, mrc := range cfg.MetricRelabelConfigs {
+		if mrc.Action == relabel.LabelDrop {
+			lsetMutated = true
+		}
+		if mrc.Action == relabel.LabelKeep {
+			lsetMutated = true
+		}
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	sp := &scrapePool{
 		cancel:               cancel,
@@ -186,6 +196,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 			options.PassMetadataInContext,
 			metrics,
 			options.skipOffsetting,
+			lsetMutated,
 		)
 	}
 	sp.metrics.targetScrapePoolTargetLimit.WithLabelValues(sp.config.JobName).Set(float64(sp.config.TargetLimit))
@@ -853,6 +864,7 @@ type scrapeLoop struct {
 	interval                 time.Duration
 	timeout                  time.Duration
 	scrapeClassicHistograms  bool
+	labelsDropped            bool // True if metric_relabel_configs is dropping any labels from scraped metrics.
 
 	// Feature flagged options.
 	enableNativeHistogramIngestion bool
@@ -1160,6 +1172,7 @@ func newScrapeLoop(ctx context.Context,
 	passMetadataInContext bool,
 	metrics *scrapeMetrics,
 	skipOffsetting bool,
+	labelsDropped bool,
 ) *scrapeLoop {
 	if l == nil {
 		l = log.NewNopLogger()
@@ -1211,6 +1224,7 @@ func newScrapeLoop(ctx context.Context,
 		appendMetadataToWAL:            appendMetadataToWAL,
 		metrics:                        metrics,
 		skipOffsetting:                 skipOffsetting,
+		labelsDropped:                  labelsDropped,
 	}
 	sl.ctx, sl.cancel = context.WithCancel(ctx)
 
@@ -1597,6 +1611,17 @@ loop:
 		meta = metadata.Metadata{}
 		metadataChanged = false
 
+		if sl.labelsDropped {
+			// If we have a scrape with a label that's being dropped then that label should be not be used
+			// for scrape cache. It's possible that dropped label has a different value on every scrape
+			// in which case scrape cache get() would report it as a new sample each time.
+			// That would cause this time series to be reported as being continuesly added to TSDB
+			// when it's not.
+			p.Metric(&lset)
+			lset = sl.sampleMutator(lset)
+			met = []byte(lset.String())
+		}
+
 		if sl.cache.getDropped(met) {
 			continue
 		}
@@ -1614,12 +1639,17 @@ loop:
 			// Update metadata only if it changed in the current iteration.
 			updateMetadata(lset, false)
 		} else {
-			p.Metric(&lset)
+			// If labels are mutated then we already have current lset.
+			if !sl.labelsDropped {
+				p.Metric(&lset)
+			}
 			hash = lset.Hash()
 
-			// Hash label set as it is seen local to the target. Then add target labels
-			// and relabeling and store the final label set.
-			lset = sl.sampleMutator(lset)
+			if !sl.labelsDropped {
+				// Hash label set as it is seen local to the target. Then add target labels
+				// and relabeling and store the final label set.
+				lset = sl.sampleMutator(lset)
+			}
 
 			// The label set may be set to empty to indicate dropping.
 			if lset.IsEmpty() {
