@@ -5042,10 +5042,16 @@ func Test_Querier_OOOQuery(t *testing.T) {
 	series1 := labels.FromStrings("foo", "bar1")
 
 	minutes := func(m int64) int64 { return m * time.Minute.Milliseconds() }
-	addSample := func(db *DB, fromMins, toMins, queryMinT, queryMaxT int64, expSamples []chunks.Sample) ([]chunks.Sample, int) {
+	addSample := func(db *DB, fromMins, toMins, queryMinT, queryMaxT int64, expSamples []chunks.Sample, filter func(int64) bool) ([]chunks.Sample, int) {
+		if filter == nil {
+			filter = func(int64) bool { return true }
+		}
 		app := db.Appender(context.Background())
 		totalAppended := 0
 		for m := fromMins; m <= toMins; m += time.Minute.Milliseconds() {
+			if !filter(m / time.Minute.Milliseconds()) {
+				continue
+			}
 			_, err := app.Append(0, series1, m, float64(m))
 			if m >= queryMinT && m <= queryMaxT {
 				expSamples = append(expSamples, sample{t: m, f: float64(m)})
@@ -5084,6 +5090,15 @@ func Test_Querier_OOOQuery(t *testing.T) {
 			oooMinT:     minutes(0),
 			oooMaxT:     minutes(99),
 		},
+		{
+			name:        "query overlapping inorder and ooo samples returns all ingested samples",
+			queryMinT:   minutes(0),
+			queryMaxT:   minutes(200),
+			inOrderMinT: minutes(100),
+			inOrderMaxT: minutes(200),
+			oooMinT:     minutes(180 - opts.OutOfOrderCapMax/2), // Make sure to fit into the OOO head.
+			oooMaxT:     minutes(180),
+		},
 	}
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
@@ -5093,13 +5108,20 @@ func Test_Querier_OOOQuery(t *testing.T) {
 				require.NoError(t, db.Close())
 			}()
 
-			var expSamples []chunks.Sample
+			var (
+				expSamples []chunks.Sample
+				inoSamples int
+			)
 
-			// Add in-order samples.
-			expSamples, _ = addSample(db, tc.inOrderMinT, tc.inOrderMaxT, tc.queryMinT, tc.queryMaxT, expSamples)
+			// Add in-order samples (at even minutes).
+			expSamples, inoSamples = addSample(db, tc.inOrderMinT, tc.inOrderMaxT, tc.queryMinT, tc.queryMaxT, expSamples, func(t int64) bool { return t%2 == 0 })
+			// Sanity check that filter is not too zealous.
+			require.Positive(t, inoSamples, 0)
 
-			// Add out-of-order samples.
-			expSamples, oooSamples := addSample(db, tc.oooMinT, tc.oooMaxT, tc.queryMinT, tc.queryMaxT, expSamples)
+			// Add out-of-order samples (at odd minutes).
+			expSamples, oooSamples := addSample(db, tc.oooMinT, tc.oooMaxT, tc.queryMinT, tc.queryMaxT, expSamples, func(t int64) bool { return t%2 == 1 })
+			// Sanity check that filter is not too zealous.
+			require.Positive(t, oooSamples, 0)
 
 			sort.Slice(expSamples, func(i, j int) bool {
 				return expSamples[i].T() < expSamples[j].T()
