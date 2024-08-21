@@ -718,7 +718,7 @@ eval instant at 10m histogram_fraction(-Inf, +Inf, histogram_fraction_4)
 eval instant at 10m histogram_sum(scalar(histogram_fraction(-Inf, +Inf, sum(histogram_fraction_4))) * histogram_fraction_4)
     {} 100
 
-# Apply multiplication and division operator to histogram
+# Apply multiplication and division operator to histogram.
 load 10m
     histogram_mul_div {{schema:0 count:21 sum:33 z_bucket:3 z_bucket_w:0.001 buckets:[3 3 3] n_buckets:[3 3 3]}}x1
     float_series_3 3+0x1
