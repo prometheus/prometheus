@@ -9,6 +9,7 @@ namespace {
 using PromPP::Primitives::LabelSetID;
 using PromPP::Primitives::Sample;
 using PromPP::Primitives::Timestamp;
+using PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap;
 
 class SampleForTest {
   PromPP::Primitives::Timestamp timestamp_;
@@ -319,10 +320,20 @@ INSTANTIATE_TEST_SUITE_P(DontSkipNonUniqueSamples,
                                  .latest_sample = 102,
                              }));
 
-struct Wal : public testing::Test {};
+struct Wal : public testing::Test {
+ protected:
+  using WALEncoder = PromPP::WAL::BasicEncoder<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>;
+  using LssMetadataImmutableStorage = PromPP::Primitives::lss_metadata::ImmutableStorage<PromPP::Primitives::lss_metadata::NopChangesCollector>;
+  using LssMetadataMutableStorage = PromPP::Primitives::lss_metadata::MutableStorage<PromPP::Primitives::lss_metadata::ChangesCollector>;
+  using WALDecoder = PromPP::WAL::BasicDecoder<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap, LssMetadataImmutableStorage>;
+
+  EncodingBimap encoding_bimap_;
+  LssMetadataImmutableStorage lss_metadata_storage_;
+  std::stringstream stream_;
+};
 
 TEST_F(Wal, BasicEncoderBasicDecoder) {
-  PromPP::WAL::BasicEncoder<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap> writer;
+  WALEncoder writer;
 
   const LabelSetForTest etalons_label_set = generate_label_set();
   const samples_sequence_type etalons_samples = generate_samples(1000, 1.123);
@@ -344,20 +355,18 @@ TEST_F(Wal, BasicEncoderBasicDecoder) {
     ++outcome_label_set_writer;
   }
 
-  EXPECT_EQ(writer.samples(), 0);
+  EXPECT_EQ(writer.samples(), 0U);
   auto writer_earliest_sample = writer.buffer().earliest_sample();
   auto writer_latest_sample = writer.buffer().latest_sample();
 
-  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap encoding_bimap;
-  PromPP::WAL::BasicDecoder<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap> reader{encoding_bimap, PromPP::WAL::BasicEncoderVersion::kV3};
-  std::stringstream stream_buffer;
+  WALDecoder reader{encoding_bimap_, lss_metadata_storage_, PromPP::WAL::BasicEncoderVersion::kV4};
 
   // save wal
-  stream_buffer << writer;
+  stream_ << writer;
   EXPECT_EQ(writer.samples(), NUM_VALUES);
 
   // read wal
-  stream_buffer >> reader;
+  stream_ >> reader;
 
   // check reader label_set
   auto outcomes_reader = reader.label_sets().items()[0].composite(etalons_timeseries.data());
@@ -392,11 +401,9 @@ TEST_F(Wal, BasicEncoderBasicDecoder) {
 }
 
 TEST_F(Wal, Snapshots) {
-  using WALEncoder = PromPP::WAL::BasicEncoder<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>;
-  using WALDecoder = PromPP::WAL::BasicDecoder<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>;
   WALEncoder encoder(2, 3);
   PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap encoding_bimap;
-  WALDecoder decoder{encoding_bimap, PromPP::WAL::BasicEncoderVersion::kV3};
+  WALDecoder decoder{encoding_bimap, lss_metadata_storage_, PromPP::WAL::BasicEncoderVersion::kV4};
   std::stringstream writer_stream;
   std::vector<std::unique_ptr<WALEncoder::Redundant>> redundants;
   std::ofstream devnull("/dev/null");
@@ -425,7 +432,8 @@ TEST_F(Wal, Snapshots) {
 
   // read wal from snapshot
   PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap encoding_bimap2;
-  WALDecoder decoder2{encoding_bimap2, PromPP::WAL::BasicEncoderVersion::kV3};
+  LssMetadataImmutableStorage lss_metadata_storage2;
+  WALDecoder decoder2{encoding_bimap2, lss_metadata_storage2, PromPP::WAL::BasicEncoderVersion::kV4};
   decoder2.load_snapshot(stream_buffer);
 
   EXPECT_GT(stream_buffer.tellg(), 0);
@@ -437,10 +445,8 @@ TEST_F(Wal, Snapshots) {
   EXPECT_EQ(reader_sbuf1.view(), reader_sbuf2.view());
   EXPECT_EQ(decoder.decoders(), decoder2.decoders());
 }
-}  // namespace
 
 TEST_F(Wal, BasicEncoderMany) {
-  using WALEncoder = PromPP::WAL::BasicEncoder<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>;
   using AddManyCallbackType = WALEncoder::add_many_generator_callback_type;
   using enum AddManyCallbackType;
   WALEncoder encoder(2, 3);
@@ -465,7 +471,7 @@ TEST_F(Wal, BasicEncoderMany) {
   };
 
   //
-  decltype(encoder)::SourceState state = encoder.add_many<without_hash_value, TimeSeriesForTest>(0, ts[0], generator);
+  decltype(encoder)::SourceState state = encoder.add_many<without_hash_value, TimeSeriesForTest>(nullptr, ts[0], generator);
   state = encoder.add_many<without_hash_value, TimeSeriesForTest>(state, ts[1], generator_2);
   decltype(encoder)::DestroySourceState(state);
 
@@ -497,3 +503,41 @@ TEST_F(Wal, BasicEncoderMany) {
     ++ind;
   });
 }
+
+TEST_F(Wal, NoLssMetadataAtV3) {
+  // Arrange
+  LssMetadataMutableStorage lss_storage;
+  lss_storage.add(0, {.help = "help", .type = "type", .unit = "unit"});
+
+  WALEncoder writer;
+  writer.set_lss_metadata(lss_storage.get_changes());
+
+  WALDecoder reader{encoding_bimap_, lss_metadata_storage_, PromPP::WAL::BasicEncoderVersion::kV3};
+
+  // Act
+  stream_ << writer;
+  stream_ >> reader;
+
+  // Assert
+  EXPECT_EQ(PromPP::Primitives::lss_metadata::Metadata{}, lss_metadata_storage_.get(0));
+}
+
+TEST_F(Wal, LssMetadataAtV4) {
+  // Arrange
+  LssMetadataMutableStorage lss_storage;
+  lss_storage.add(0, {.help = "help", .type = "type", .unit = "unit"});
+
+  WALEncoder writer;
+  writer.set_lss_metadata(lss_storage.get_changes());
+
+  WALDecoder reader{encoding_bimap_, lss_metadata_storage_, PromPP::WAL::BasicEncoderVersion::kV4};
+
+  // Act
+  stream_ << writer;
+  stream_ >> reader;
+
+  // Assert
+  EXPECT_EQ((PromPP::Primitives::lss_metadata::Metadata{.help = "help", .type = "type", .unit = "unit"}), lss_metadata_storage_.get(0));
+}
+
+}  // namespace
