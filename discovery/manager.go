@@ -64,7 +64,7 @@ func (p *Provider) Config() interface{} {
 	return p.config
 }
 
-// Registers the metrics needed for SD mechanisms.
+// CreateAndRegisterSDMetrics registers the metrics needed for SD mechanisms.
 // Does not register the metrics for the Discovery Manager.
 // TODO(ptodev): Add ability to unregister the metrics?
 func CreateAndRegisterSDMetrics(reg prometheus.Registerer) (map[string]DiscovererMetrics, error) {

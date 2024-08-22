@@ -263,8 +263,8 @@ func (cr *HeadAndOOOChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chu
 	return nil, mc, err
 }
 
-// ChunkOrIterableWithCopy: implements ChunkReaderWithCopy. The special Copy behaviour
-// is only implemented for the in-order head chunk.
+// ChunkOrIterableWithCopy implements ChunkReaderWithCopy. The special Copy
+// behaviour is only implemented for the in-order head chunk.
 func (cr *HeadAndOOOChunkReader) ChunkOrIterableWithCopy(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {
 	_, _, isOOO := unpackHeadChunkRef(meta.Ref)
 	if !isOOO {

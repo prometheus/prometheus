@@ -471,7 +471,7 @@ func (ls lintConfig) lintDuplicateRules() bool {
 	return ls.all || ls.duplicateRules
 }
 
-// Check server status - healthy & ready.
+// CheckServerStatus - healthy & ready.
 func CheckServerStatus(serverURL *url.URL, checkEndpoint string, roundTripper http.RoundTripper) error {
 	if serverURL.Scheme == "" {
 		serverURL.Scheme = "http"
