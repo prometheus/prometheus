@@ -1194,6 +1194,52 @@ func countStaleNaN(t *testing.T, st storage.Storage) int {
 	}
 	return c
 }
+func TestRuleMovedBetweenGroups(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+
+	storage := teststorage.New(t)
+	defer storage.Close()
+	opts := promql.EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
+	}
+	engine := promql.NewEngine(opts)
+	ruleManager := NewManager(&ManagerOptions{
+		Appendable: storage,
+		Queryable:  storage,
+		QueryFunc:  EngineQueryFunc(engine, storage),
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
+	})
+	var stopped bool
+	ruleManager.start()
+	defer func() {
+		if !stopped {
+			ruleManager.Stop()
+		}
+	}()
+
+	rule2 := "fixtures/rules2.yaml"
+	rule1 := "fixtures/rules1.yaml"
+
+	// Load initial configuration of rules2
+	require.NoError(t, ruleManager.Update(1*time.Second, []string{rule2}, labels.EmptyLabels(), "", nil))
+
+	// Wait for rule to be evaluated
+	time.Sleep(5 * time.Second)
+
+	// Reload configuration  of rules1
+	require.NoError(t, ruleManager.Update(1*time.Second, []string{rule1}, labels.EmptyLabels(), "", nil))
+
+	// Wait for rule to be evaluated in new location and potential staleness marker
+	time.Sleep(5 * time.Second)
+
+	require.Equal(t, 0, countStaleNaN(t, storage)) // Not expecting any stale markers.
+}
 
 func TestGroupHasAlertingRules(t *testing.T) {
 	tests := []struct {
