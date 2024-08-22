@@ -75,6 +75,7 @@ type Group struct {
 
 	// concurrencyController controls the rules evaluation concurrency.
 	concurrencyController RuleConcurrencyController
+	hints                 *storage.AppendHints
 }
 
 // GroupEvalIterationFunc is used to implement and extend rule group
@@ -141,6 +142,7 @@ func NewGroup(o GroupOptions) *Group {
 		metrics:               metrics,
 		evalIterationFunc:     evalIterationFunc,
 		concurrencyController: concurrencyController,
+		hints:                 &storage.AppendHints{DiscardOutOfOrder: true},
 	}
 }
 
@@ -560,6 +562,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				if s.H != nil {
 					_, err = app.AppendHistogram(0, s.Metric, s.T, nil, s.H)
 				} else {
+					app.SetHints(g.hints)
 					_, err = app.Append(0, s.Metric, s.T, s.F)
 				}
 
@@ -656,6 +659,7 @@ func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
 		return
 	}
 	app := g.opts.Appendable.Appender(ctx)
+	app.SetHints(g.hints)
 	queryOffset := g.QueryOffset()
 	for _, s := range g.staleSeries {
 		// Rule that produced series no longer configured, mark it stale.
