@@ -36,4 +36,4 @@ jobs:
         uses: golangci/golangci-lint-action@aaa42aa0628b4ae2578232a66b541047968fac86 # v6.1.0
         with:
           args: --verbose
-          version: v1.60.1
+          version: v1.60.2
