@@ -561,9 +561,9 @@ func TestStaleness(t *testing.T) {
 
 		// A time series that has two samples and then goes stale.
 		app := st.Appender(context.Background())
-		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1)
-		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
-		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 2000, math.Float64frombits(value.StaleNaN))
+		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1, nil)
+		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2, nil)
+		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 2000, math.Float64frombits(value.StaleNaN), nil)
 
 		err = app.Commit()
 		require.NoError(t, err)
@@ -937,10 +937,10 @@ func TestNotify(t *testing.T) {
 	})
 
 	app := storage.Appender(context.Background())
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 2000, 3)
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 5000, 3)
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 6000, 0)
+	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2, nil)
+	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 2000, 3, nil)
+	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 5000, 3, nil)
+	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 6000, 0, nil)
 
 	err = app.Commit()
 	require.NoError(t, err)
@@ -1190,6 +1190,53 @@ func countStaleNaN(t *testing.T, st storage.Storage) int {
 	return c
 }
 
+func TestRuleMovedBetweenFiles(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+
+	storage := teststorage.New(t)
+	defer storage.Close()
+	opts := promql.EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
+	}
+	engine := promql.NewEngine(opts)
+	ruleManager := NewManager(&ManagerOptions{
+		Appendable: storage,
+		Queryable:  storage,
+		QueryFunc:  EngineQueryFunc(engine, storage),
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
+	})
+	var stopped bool
+	ruleManager.start()
+	defer func() {
+		if !stopped {
+			ruleManager.Stop()
+		}
+	}()
+
+	file1 := "fixtures/rules2.yaml"
+	file2 := "fixtures/rules1.yaml"
+
+	// Load initial configuration of rules2
+	require.NoError(t, ruleManager.Update(1*time.Second, []string{file1}, labels.EmptyLabels(), "", nil))
+
+	// Wait for rule to be evaluated
+	time.Sleep(5 * time.Second)
+
+	// Reload configuration  of rules1
+	require.NoError(t, ruleManager.Update(1*time.Second, []string{file2}, labels.EmptyLabels(), "", nil))
+
+	// Wait for rule to be evaluated in new location and potential staleness marker
+	time.Sleep(5 * time.Second)
+
+	require.Equal(t, 0, countStaleNaN(t, storage)) // Not expecting any stale markers.
+}
+
 func TestGroupHasAlertingRules(t *testing.T) {
 	tests := []struct {
 		group *Group
@@ -1222,7 +1269,6 @@ func TestGroupHasAlertingRules(t *testing.T) {
 			want: false,
 		},
 	}
-
 	for i, test := range tests {
 		got := test.group.HasAlertingRules()
 		require.Equal(t, test.want, got, "test case %d failed, expected:%t got:%t", i, test.want, got)
@@ -1260,8 +1306,8 @@ func TestRuleHealthUpdates(t *testing.T) {
 
 	// A time series that has two samples.
 	app := st.Appender(context.Background())
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1)
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
+	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1, nil)
+	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2, nil)
 	err = app.Commit()
 	require.NoError(t, err)
 

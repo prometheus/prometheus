@@ -48,10 +48,10 @@ func TestDB_InvalidSeries(t *testing.T) {
 	app := s.Appender(context.Background())
 
 	t.Run("Samples", func(t *testing.T) {
-		_, err := app.Append(0, labels.Labels{}, 0, 0)
+		_, err := app.Append(0, labels.Labels{}, 0, 0, nil)
 		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject empty labels")
 
-		_, err = app.Append(0, labels.FromStrings("a", "1", "a", "2"), 0, 0)
+		_, err = app.Append(0, labels.FromStrings("a", "1", "a", "2"), 0, 0, nil)
 		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject duplicate labels")
 	})
 
@@ -64,7 +64,7 @@ func TestDB_InvalidSeries(t *testing.T) {
 	})
 
 	t.Run("Exemplars", func(t *testing.T) {
-		sRef, err := app.Append(0, labels.FromStrings("a", "1"), 0, 0)
+		sRef, err := app.Append(0, labels.FromStrings("a", "1"), 0, 0, nil)
 		require.NoError(t, err, "should not reject valid series")
 
 		_, err = app.AppendExemplar(0, labels.EmptyLabels(), exemplar.Exemplar{})
@@ -135,7 +135,7 @@ func TestCommit(t *testing.T) {
 
 		for i := 0; i < numDatapoints; i++ {
 			sample := chunks.GenerateSamples(0, 1)
-			ref, err := app.Append(0, lset, sample[0].T(), sample[0].F())
+			ref, err := app.Append(0, lset, sample[0].T(), sample[0].F(), nil)
 			require.NoError(t, err)
 
 			e := exemplar.Exemplar{
@@ -250,7 +250,7 @@ func TestRollback(t *testing.T) {
 
 		for i := 0; i < numDatapoints; i++ {
 			sample := chunks.GenerateSamples(0, 1)
-			_, err := app.Append(0, lset, sample[0].T(), sample[0].F())
+			_, err := app.Append(0, lset, sample[0].T(), sample[0].F(), nil)
 			require.NoError(t, err)
 		}
 	}
@@ -366,7 +366,7 @@ func TestFullTruncateWAL(t *testing.T) {
 		lset := labels.New(l...)
 
 		for i := 0; i < numDatapoints; i++ {
-			_, err := app.Append(0, lset, int64(lastTs), 0)
+			_, err := app.Append(0, lset, int64(lastTs), 0, nil)
 			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())
@@ -428,7 +428,7 @@ func TestPartialTruncateWAL(t *testing.T) {
 		lset := labels.New(l...)
 
 		for i := 0; i < numDatapoints; i++ {
-			_, err := app.Append(0, lset, lastTs, 0)
+			_, err := app.Append(0, lset, lastTs, 0, nil)
 			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())
@@ -467,7 +467,7 @@ func TestPartialTruncateWAL(t *testing.T) {
 		lset := labels.New(l...)
 
 		for i := 0; i < numDatapoints; i++ {
-			_, err := app.Append(0, lset, lastTs, 0)
+			_, err := app.Append(0, lset, lastTs, 0, nil)
 			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())
@@ -522,7 +522,7 @@ func TestWALReplay(t *testing.T) {
 		lset := labels.New(l...)
 
 		for i := 0; i < numDatapoints; i++ {
-			_, err := app.Append(0, lset, lastTs, 0)
+			_, err := app.Append(0, lset, lastTs, 0, nil)
 			require.NoError(t, err)
 		}
 	}
@@ -619,7 +619,7 @@ func Test_ExistingWAL_NextRef(t *testing.T) {
 	app := db.Appender(context.Background())
 	for i := 0; i < seriesCount; i++ {
 		lset := labels.FromStrings(model.MetricNameLabel, fmt.Sprintf("series_%d", i))
-		_, err := app.Append(0, lset, 0, 100)
+		_, err := app.Append(0, lset, 0, 100, nil)
 		require.NoError(t, err)
 	}
 
@@ -706,7 +706,7 @@ func TestStorage_DuplicateExemplarsIgnored(t *testing.T) {
 	app := s.Appender(context.Background())
 	defer s.Close()
 
-	sRef, err := app.Append(0, labels.FromStrings("a", "1"), 0, 0)
+	sRef, err := app.Append(0, labels.FromStrings("a", "1"), 0, 0, nil)
 	require.NoError(t, err, "should not reject valid series")
 
 	// Write a few exemplars to our appender and call Commit().
@@ -773,7 +773,7 @@ func TestDBAllowOOOSamples(t *testing.T) {
 		lset := labels.New(l...)
 
 		for i := offset; i < numDatapoints+offset; i++ {
-			ref, err := app.Append(0, lset, int64(i), float64(i))
+			ref, err := app.Append(0, lset, int64(i), float64(i), nil)
 			require.NoError(t, err)
 
 			e := exemplar.Exemplar{
@@ -837,7 +837,7 @@ func TestDBAllowOOOSamples(t *testing.T) {
 		lset := labels.New(l...)
 
 		for i := 0; i < numDatapoints; i++ {
-			ref, err := app.Append(0, lset, int64(i), float64(i))
+			ref, err := app.Append(0, lset, int64(i), float64(i), nil)
 			require.NoError(t, err)
 
 			e := exemplar.Exemplar{
@@ -913,11 +913,11 @@ func TestDBOutOfOrderTimeWindow(t *testing.T) {
 
 			lbls = labelsForTest(t.Name(), 1)
 			lset = labels.New(lbls[0]...)
-			_, err = app.Append(0, lset, c.firstTs, 0)
+			_, err = app.Append(0, lset, c.firstTs, 0, nil)
 			require.NoError(t, err)
 			err = app.Commit()
 			require.NoError(t, err)
-			_, err = app.Append(0, lset, c.secondTs, 0)
+			_, err = app.Append(0, lset, c.secondTs, 0, nil)
 			require.ErrorIs(t, err, c.expectedError)
 
 			expectedAppendedSamples := float64(2)

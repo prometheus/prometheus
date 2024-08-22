@@ -877,6 +877,7 @@ type scrapeLoop struct {
 	metrics *scrapeMetrics
 
 	skipOffsetting bool // For testability.
+	hints          *storage.AppendHints
 }
 
 // scrapeCache tracks mappings of exposed metric strings to label sets and
@@ -1211,6 +1212,7 @@ func newScrapeLoop(ctx context.Context,
 		appendMetadataToWAL:            appendMetadataToWAL,
 		metrics:                        metrics,
 		skipOffsetting:                 skipOffsetting,
+		hints:                          &storage.AppendHints{DiscardOutOfOrder: true},
 	}
 	sl.ctx, sl.cancel = context.WithCancel(ctx)
 
@@ -1665,7 +1667,7 @@ loop:
 					ref, err = app.AppendHistogram(ref, lset, t, nil, fh)
 				}
 			} else {
-				ref, err = app.Append(ref, lset, t, val)
+				ref, err = app.Append(ref, lset, t, val, nil)
 			}
 		}
 
@@ -1777,7 +1779,7 @@ loop:
 	if err == nil {
 		sl.cache.forEachStale(func(lset labels.Labels) bool {
 			// Series no longer exposed, mark it stale.
-			_, err = app.Append(0, lset, defTime, math.Float64frombits(value.StaleNaN))
+			_, err = app.Append(0, lset, defTime, math.Float64frombits(value.StaleNaN), sl.hints)
 			switch {
 			case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
 				// Do not count these in logging, as this is expected if a target
@@ -1852,29 +1854,29 @@ func (sl *scrapeLoop) report(app storage.Appender, start time.Time, duration tim
 	}
 	b := labels.NewBuilderWithSymbolTable(sl.symbolTable)
 
-	if err = sl.addReportSample(app, scrapeHealthMetricName, ts, health, b); err != nil {
+	if err = sl.addReportSample(app, scrapeHealthMetricName, ts, health, b, nil); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeDurationMetricName, ts, duration.Seconds(), b); err != nil {
+	if err = sl.addReportSample(app, scrapeDurationMetricName, ts, duration.Seconds(), b, nil); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeSamplesMetricName, ts, float64(scraped), b); err != nil {
+	if err = sl.addReportSample(app, scrapeSamplesMetricName, ts, float64(scraped), b, nil); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, samplesPostRelabelMetricName, ts, float64(added), b); err != nil {
+	if err = sl.addReportSample(app, samplesPostRelabelMetricName, ts, float64(added), b, nil); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, ts, float64(seriesAdded), b); err != nil {
+	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, ts, float64(seriesAdded), b, nil); err != nil {
 		return
 	}
 	if sl.reportExtraMetrics {
-		if err = sl.addReportSample(app, scrapeTimeoutMetricName, ts, sl.timeout.Seconds(), b); err != nil {
+		if err = sl.addReportSample(app, scrapeTimeoutMetricName, ts, sl.timeout.Seconds(), b, nil); err != nil {
 			return
 		}
-		if err = sl.addReportSample(app, scrapeSampleLimitMetricName, ts, float64(sl.sampleLimit), b); err != nil {
+		if err = sl.addReportSample(app, scrapeSampleLimitMetricName, ts, float64(sl.sampleLimit), b, nil); err != nil {
 			return
 		}
-		if err = sl.addReportSample(app, scrapeBodySizeBytesMetricName, ts, float64(bytes), b); err != nil {
+		if err = sl.addReportSample(app, scrapeBodySizeBytesMetricName, ts, float64(bytes), b, nil); err != nil {
 			return
 		}
 	}
@@ -1887,36 +1889,36 @@ func (sl *scrapeLoop) reportStale(app storage.Appender, start time.Time) (err er
 	stale := math.Float64frombits(value.StaleNaN)
 	b := labels.NewBuilder(labels.EmptyLabels())
 
-	if err = sl.addReportSample(app, scrapeHealthMetricName, ts, stale, b); err != nil {
+	if err = sl.addReportSample(app, scrapeHealthMetricName, ts, stale, b, sl.hints); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeDurationMetricName, ts, stale, b); err != nil {
+	if err = sl.addReportSample(app, scrapeDurationMetricName, ts, stale, b, sl.hints); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeSamplesMetricName, ts, stale, b); err != nil {
+	if err = sl.addReportSample(app, scrapeSamplesMetricName, ts, stale, b, sl.hints); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, samplesPostRelabelMetricName, ts, stale, b); err != nil {
+	if err = sl.addReportSample(app, samplesPostRelabelMetricName, ts, stale, b, sl.hints); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, ts, stale, b); err != nil {
+	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, ts, stale, b, sl.hints); err != nil {
 		return
 	}
 	if sl.reportExtraMetrics {
-		if err = sl.addReportSample(app, scrapeTimeoutMetricName, ts, stale, b); err != nil {
+		if err = sl.addReportSample(app, scrapeTimeoutMetricName, ts, stale, b, sl.hints); err != nil {
 			return
 		}
-		if err = sl.addReportSample(app, scrapeSampleLimitMetricName, ts, stale, b); err != nil {
+		if err = sl.addReportSample(app, scrapeSampleLimitMetricName, ts, stale, b, sl.hints); err != nil {
 			return
 		}
-		if err = sl.addReportSample(app, scrapeBodySizeBytesMetricName, ts, stale, b); err != nil {
+		if err = sl.addReportSample(app, scrapeBodySizeBytesMetricName, ts, stale, b, sl.hints); err != nil {
 			return
 		}
 	}
 	return
 }
 
-func (sl *scrapeLoop) addReportSample(app storage.Appender, s []byte, t int64, v float64, b *labels.Builder) error {
+func (sl *scrapeLoop) addReportSample(app storage.Appender, s []byte, t int64, v float64, b *labels.Builder, hints *storage.AppendHints) error {
 	ce, ok, _ := sl.cache.get(s)
 	var ref storage.SeriesRef
 	var lset labels.Labels
@@ -1932,7 +1934,7 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s []byte, t int64, v
 		lset = sl.reportSampleMutator(b.Labels())
 	}
 
-	ref, err := app.Append(ref, lset, t, v)
+	ref, err := app.Append(ref, lset, t, v, hints)
 	switch {
 	case err == nil:
 		if !ok {
