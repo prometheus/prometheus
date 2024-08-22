@@ -47,8 +47,10 @@ extern "C" void prompp_series_data_chunk_recoder_recode_next_chunk(void* args, v
     entrypoint::ChunkRecoderPtr chunk_recoder;
   };
   struct Result {
-    entrypoint::ChunkRecoder::ChunkInfo info;
+    PromPP::Primitives::Timestamp min_t;
+    PromPP::Primitives::Timestamp max_t;
     uint32_t series_id;
+    uint8_t samples_count;
     bool has_more_data;
     PromPP::Primitives::Go::SliceView<uint8_t> buffer;
   };
@@ -56,7 +58,7 @@ extern "C" void prompp_series_data_chunk_recoder_recode_next_chunk(void* args, v
   auto in = reinterpret_cast<Arguments*>(args);
   auto out = reinterpret_cast<Result*>(res);
   out->series_id = in->chunk_recoder->series_id();
-  out->info = in->chunk_recoder->recode_next_chunk();
+  in->chunk_recoder->recode_next_chunk(*out);
   out->has_more_data = in->chunk_recoder->has_more_data();
   out->buffer.reset_to(in->chunk_recoder->bytes());
 }

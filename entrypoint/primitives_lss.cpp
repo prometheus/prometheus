@@ -2,7 +2,11 @@
 
 #include "_helpers.hpp"
 #include "lss.hpp"
-#include "series_index/querier/querier.h"
+#include "series_index/querier/label_names_querier.h"
+#include "series_index/querier/label_values_querier.h"
+
+using GoLabelMatchers = PromPP::Primitives::Go::SliceView<PromPP::Prometheus::LabelMatcherTrait<PromPP::Primitives::Go::String>>;
+using GoSliceOfString = PromPP::Primitives::Go::Slice<PromPP::Primitives::Go::String>;
 
 extern "C" void prompp_primitives_lss_ctor(void* args, void* res) {
   struct Arguments {
@@ -51,7 +55,7 @@ extern "C" void prompp_primitives_lss_find_or_emplace(void* args, void* res) {
 extern "C" void prompp_primitives_lss_query(void* args, void* res) {
   struct Arguments {
     entrypoint::LssVariantPtr lss;
-    PromPP::Primitives::Go::SliceView<PromPP::Prometheus::LabelMatcherTrait<PromPP::Primitives::Go::String>> label_matchers;
+    GoLabelMatchers label_matchers;
   };
   struct Result {
     series_index::querier::QuerierStatus status;
@@ -104,4 +108,42 @@ extern "C" void prompp_primitives_lss_free_label_sets(void* args) {
   };
 
   reinterpret_cast<Arguments*>(args)->label_sets.~Slice();
+}
+
+extern "C" void prompp_primitives_lss_query_label_names(void* args, void* res) {
+  struct Arguments {
+    entrypoint::LssVariantPtr lss;
+    GoLabelMatchers label_matchers;
+  };
+  struct Result {
+    series_index::querier::QuerierStatus status{series_index::querier::QuerierStatus::kNoMatch};
+    GoSliceOfString names;
+  };
+
+  using LabelNamesQuerier = series_index::querier::LabelNamesQuerier<entrypoint::QueryableEncodingBimap>;
+
+  auto in = reinterpret_cast<Arguments*>(args);
+  auto out = new (res) Result();
+  out->status = LabelNamesQuerier{std::get<entrypoint::QueryableEncodingBimap>(*in->lss)}.query(
+      in->label_matchers, [out](std::string_view name) PROMPP_LAMBDA_INLINE { out->names.emplace_back(name); });
+}
+
+extern "C" void prompp_primitives_lss_query_label_values(void* args, void* res) {
+  struct Arguments {
+    entrypoint::LssVariantPtr lss;
+    PromPP::Primitives::Go::String label_name;
+    GoLabelMatchers label_matchers;
+  };
+  struct Result {
+    series_index::querier::QuerierStatus status{series_index::querier::QuerierStatus::kNoMatch};
+    GoSliceOfString values;
+  };
+
+  using LabelValuesQuerier = series_index::querier::LabelValuesQuerier<entrypoint::QueryableEncodingBimap>;
+
+  auto in = reinterpret_cast<Arguments*>(args);
+  auto out = new (res) Result();
+  out->status = LabelValuesQuerier{std::get<entrypoint::QueryableEncodingBimap>(*in->lss)}.query(
+      static_cast<std::string_view>(in->label_name), in->label_matchers,
+      [out](std::string_view value) PROMPP_LAMBDA_INLINE { out->values.emplace_back(value); });
 }

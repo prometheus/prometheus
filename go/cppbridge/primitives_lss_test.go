@@ -60,31 +60,46 @@ func (s *LSSSuite) TestQueryableLSS() {
 	s.Require().NotEqual(cp, newcp)
 }
 
-func (s *LSSSuite) TestQueryableLSSQuery() {
-	lss := cppbridge.NewQueryableLssStorage()
+type QueryableLSSSuite struct {
+	suite.Suite
+	baseCtx     context.Context
+	lss         *cppbridge.LabelSetStorage
+	labelSets   []model.LabelSet
+	labelSetIDs []uint32
+}
 
-	labelSets := []model.LabelSet{
+func TestQueryableLSSSuite(t *testing.T) {
+	suite.Run(t, new(QueryableLSSSuite))
+}
+
+func (s *QueryableLSSSuite) SetupTest() {
+	s.baseCtx = context.Background()
+	s.lss = cppbridge.NewQueryableLssStorage()
+
+	s.labelSets = []model.LabelSet{
 		model.NewLabelSetBuilder().Set("lol", "kek").Build(),
 		model.NewLabelSetBuilder().Set("lol", "kek").Set("che", "bureck").Build(),
 		model.NewLabelSetBuilder().Set("foo", "bar").Build(),
 		model.NewLabelSetBuilder().Set("foo", "baz").Build(),
 	}
-	labelSetIDs := make([]uint32, 0, len(labelSets))
 
-	for _, labelSet := range labelSets {
-		labelSetIDs = append(labelSetIDs, lss.FindOrEmplace(labelSet))
+	s.labelSetIDs = make([]uint32, 0, len(s.labelSets))
+	for _, labelSet := range s.labelSets {
+		s.labelSetIDs = append(s.labelSetIDs, s.lss.FindOrEmplace(labelSet))
 	}
+}
 
+func (s *QueryableLSSSuite) TestQuery() {
 	// match
 	{
 		labelMatchers := []model.LabelMatcher{
 			{Name: "lol", Value: "kek", MatcherType: model.MatcherTypeExactMatch},
 		}
-		queryResult := lss.Query(labelMatchers)
+		queryResult := s.lss.Query(labelMatchers)
 		s.Require().Equal(cppbridge.LSSQueryStatusMatch, queryResult.Status())
 		s.Require().Len(queryResult.Matches(), 2)
-		s.Require().Equal(labelSetIDs[0], queryResult.Matches()[0])
-		s.Require().Equal(labelSetIDs[1], queryResult.Matches()[1])
+		s.Require().Equal(s.labelSetIDs[0], queryResult.Matches()[0])
+		s.Require().Equal(s.labelSetIDs[1], queryResult.Matches()[1])
 	}
 
 	// no positive matchers
@@ -92,7 +107,7 @@ func (s *LSSSuite) TestQueryableLSSQuery() {
 		labelMatchers := []model.LabelMatcher{
 			{Name: "kek", Value: "lol", MatcherType: model.MatcherTypeExactNotMatch},
 		}
-		queryResult := lss.Query(labelMatchers)
+		queryResult := s.lss.Query(labelMatchers)
 		s.Require().Equal(cppbridge.LSSQueryStatusNoPositiveMatchers, queryResult.Status())
 	}
 
@@ -101,7 +116,7 @@ func (s *LSSSuite) TestQueryableLSSQuery() {
 		labelMatchers := []model.LabelMatcher{
 			{Name: "kek", Value: "lol", MatcherType: model.MatcherTypeExactMatch},
 		}
-		queryResult := lss.Query(labelMatchers)
+		queryResult := s.lss.Query(labelMatchers)
 		s.Require().Equal(cppbridge.LSSQueryStatusNoMatch, queryResult.Status())
 	}
 
@@ -110,29 +125,15 @@ func (s *LSSSuite) TestQueryableLSSQuery() {
 		labelMatchers := []model.LabelMatcher{
 			{Name: "kek", Value: ".[", MatcherType: model.MatcherTypeRegexpMatch},
 		}
-		queryResult := lss.Query(labelMatchers)
+		queryResult := s.lss.Query(labelMatchers)
 		s.Require().Equal(cppbridge.LSSQueryStatusRegexpError, queryResult.Status())
 	}
 }
 
-func (s *LSSSuite) TestQueryableLSSGetLabelSets() {
-	lss := cppbridge.NewQueryableLssStorage()
+func (s *QueryableLSSSuite) TestGetLabelSets() {
+	fetchedLabelSets := s.lss.GetLabelSets(s.labelSetIDs)
 
-	labelSets := []model.LabelSet{
-		model.NewLabelSetBuilder().Set("lol", "kek").Build(),
-		model.NewLabelSetBuilder().Set("lol", "kek").Set("che", "bureck").Build(),
-		model.NewLabelSetBuilder().Set("foo", "bar").Build(),
-		model.NewLabelSetBuilder().Set("foo", "baz").Build(),
-	}
-	labelSetIDs := make([]uint32, 0, len(labelSets))
-
-	for _, labelSet := range labelSets {
-		labelSetIDs = append(labelSetIDs, lss.FindOrEmplace(labelSet))
-	}
-
-	fetchedLabelSets := lss.GetLabelSets(labelSetIDs)
-
-	for index, labelSet := range labelSets {
+	for index, labelSet := range s.labelSets {
 		s.Require().True(isLabelSetEqualsToLabels(labelSet, fetchedLabelSets.LabelsSets()[index]))
 	}
 }
@@ -144,4 +145,79 @@ func isLabelSetEqualsToLabels(labelSet model.LabelSet, labels labels.Labels) boo
 		labelsString += label.Name + ":" + label.Value + ";"
 	}
 	return labelSetString == labelsString
+}
+
+type queryLabelNameCase struct {
+	matchers        []model.LabelMatcher
+	expected_status uint32
+	expected_names  []string
+}
+
+var queryLabelNamesCases = []queryLabelNameCase{
+	{
+		matchers:        []model.LabelMatcher{},
+		expected_status: cppbridge.LSSQueryStatusMatch,
+		expected_names:  []string{"che", "foo", "lol"},
+	},
+	{
+		matchers:        []model.LabelMatcher{{Name: "lol", Value: ".+", MatcherType: model.MatcherTypeRegexpMatch}},
+		expected_status: cppbridge.LSSQueryStatusMatch,
+		expected_names:  []string{"che", "lol"},
+	},
+}
+
+func (s *QueryableLSSSuite) TestQueryLabelNames() {
+	for _, test_case := range queryLabelNamesCases {
+		s.testQueryLabelNamesImpl(test_case)
+	}
+}
+
+func (s *QueryableLSSSuite) testQueryLabelNamesImpl(test_case queryLabelNameCase) {
+	// Arrange
+
+	// Act
+	result := s.lss.QueryLabelNames(test_case.matchers)
+
+	// Assert
+	s.Equal(test_case.expected_status, result.Status())
+	s.Equal(test_case.expected_names, result.Names())
+}
+
+type queryLabelValuesCase struct {
+	label_name      string
+	matchers        []model.LabelMatcher
+	expected_status uint32
+	expected_values []string
+}
+
+var queryLabelValuesCases = []queryLabelValuesCase{
+	{
+		label_name:      "foo",
+		matchers:        []model.LabelMatcher{},
+		expected_status: cppbridge.LSSQueryStatusMatch,
+		expected_values: []string{"bar", "baz"},
+	},
+	{
+		label_name:      "foo",
+		matchers:        []model.LabelMatcher{{Name: "foo", Value: ".+", MatcherType: model.MatcherTypeRegexpMatch}},
+		expected_status: cppbridge.LSSQueryStatusMatch,
+		expected_values: []string{"bar", "baz"},
+	},
+}
+
+func (s *QueryableLSSSuite) TestQueryLabelValues() {
+	for _, test_case := range queryLabelValuesCases {
+		s.testQueryLabelValuesImpl(test_case)
+	}
+}
+
+func (s *QueryableLSSSuite) testQueryLabelValuesImpl(test_case queryLabelValuesCase) {
+	// Arrange
+
+	// Act
+	result := s.lss.QueryLabelValues(test_case.label_name, test_case.matchers)
+
+	// Assert
+	s.Equal(test_case.expected_status, result.Status())
+	s.Equal(test_case.expected_values, result.Values())
 }

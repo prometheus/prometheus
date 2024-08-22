@@ -9,38 +9,31 @@
 
 namespace entrypoint {
 
+template <class ChunkInfo>
+concept ChunkInfoInterface = requires(ChunkInfo& info) {
+  { info.min_t } -> std::same_as<PromPP::Primitives::Timestamp&>;
+  { info.max_t } -> std::same_as<PromPP::Primitives::Timestamp&>;
+  { info.samples_count } -> std::same_as<uint8_t&>;
+};
+
 class ChunkRecoder {
  public:
-  struct ChunkInfo {
-    PromPP::Primitives::Timestamp min_t{};
-    PromPP::Primitives::Timestamp max_t{};
-  };
-
   static constexpr auto kInvalidSeriesId = std::numeric_limits<uint32_t>::max();
 
   explicit ChunkRecoder(const series_data::DataStorage* data_storage) : iterator_(data_storage) {}
 
-  [[nodiscard]] ChunkInfo recode_next_chunk() {
+  void recode_next_chunk(ChunkInfoInterface auto& info) {
     stream_.rewind();
 
-    ChunkInfo info;
     if (has_more_data()) {
-      write_samples_count();
-
-      Encoder encoder;
-      Decoder::decode_chunk(*iterator_->storage(), iterator_->chunk(), iterator_->chunk_type(), [&](const Sample& sample) PROMPP_LAMBDA_INLINE {
-        if (encoder.state().state == BareBones::Encoding::Gorilla::GorillaState::kFirstPoint) {
-          [[unlikely]];
-          info.min_t = sample.timestamp;
-        }
-        encoder.encode(sample.timestamp, sample.value, stream_, stream_);
-      });
-      info.max_t = encoder.state().timestamp_encoder.last_ts;
-
+      write_samples_count(info);
+      recode_chunk(info);
       ++iterator_;
+    } else {
+      info.min_t = 0;
+      info.max_t = 0;
+      info.samples_count = 0;
     }
-
-    return info;
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE std::span<const uint8_t> bytes() const noexcept { return stream_.bytes(); }
@@ -56,9 +49,22 @@ class ChunkRecoder {
   series_data::DataStorage::ChunkIterator iterator_;
   PromPP::Prometheus::tsdb::chunkenc::BStream<series_data::encoder::kAllocationSizesTable> stream_;
 
-  PROMPP_ALWAYS_INLINE void write_samples_count() {
-    uint16_t samples_count = Decoder::get_samples_count(*iterator_->storage(), iterator_->chunk(), iterator_->chunk_type());
+  PROMPP_ALWAYS_INLINE void write_samples_count(ChunkInfoInterface auto& info) {
+    info.samples_count = Decoder::get_samples_count(*iterator_->storage(), iterator_->chunk(), iterator_->chunk_type());
+    uint16_t samples_count = info.samples_count;
     stream_.write_bits(samples_count, BareBones::Bit::to_bits(sizeof(samples_count)));
+  }
+
+  void recode_chunk(ChunkInfoInterface auto& info) {
+    Encoder encoder;
+    Decoder::decode_chunk(*iterator_->storage(), iterator_->chunk(), iterator_->chunk_type(), [&](const Sample& sample) PROMPP_LAMBDA_INLINE {
+      if (encoder.state().state == BareBones::Encoding::Gorilla::GorillaState::kFirstPoint) {
+        [[unlikely]];
+        info.min_t = sample.timestamp;
+      }
+      encoder.encode(sample.timestamp, sample.value, stream_, stream_);
+    });
+    info.max_t = encoder.state().timestamp_encoder.last_ts;
   }
 };
 

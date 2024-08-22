@@ -31,11 +31,12 @@ func (s *ChunkRecoderSuite) TestEmptyStorage() {
 
 	// Assert
 	s.Equal(cppbridge.RecodedChunk{
-		MinT:        0,
-		MaxT:        0,
-		SeriesId:    cppbridge.InvalidSeriesId,
-		HasMoreData: false,
-		ChunkData:   nil,
+		MinT:         0,
+		MaxT:         0,
+		SamplesCount: 0,
+		SeriesId:     cppbridge.InvalidSeriesId,
+		HasMoreData:  false,
+		ChunkData:    nil,
 	}, chunk)
 }
 
@@ -52,11 +53,12 @@ func (s *ChunkRecoderSuite) TestStorageWithOneChunk() {
 
 	// Assert
 	s.Equal(cppbridge.RecodedChunk{
-		MinT:        1,
-		MaxT:        2,
-		SeriesId:    0,
-		HasMoreData: false,
-		ChunkData:   []byte{0x00, 0x02, 0x02, 0x3f, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00},
+		MinT:         1,
+		MaxT:         2,
+		SamplesCount: 2,
+		SeriesId:     0,
+		HasMoreData:  false,
+		ChunkData:    []byte{0x00, 0x02, 0x02, 0x3f, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00},
 	}, chunk1)
 	s.Equal(cppbridge.RecodedChunk{
 		MinT:        0,
@@ -82,17 +84,19 @@ func (s *ChunkRecoderSuite) TestStorageWithTwoChunks() {
 
 	// Assert
 	s.Equal(cppbridge.RecodedChunk{
-		MinT:        1,
-		MaxT:        2,
-		SeriesId:    0,
-		HasMoreData: true,
-		ChunkData:   []byte{0x00, 0x02, 0x02, 0x3f, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00},
+		MinT:         1,
+		MaxT:         2,
+		SamplesCount: 2,
+		SeriesId:     0,
+		HasMoreData:  true,
+		ChunkData:    []byte{0x00, 0x02, 0x02, 0x3f, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00},
 	}, chunk1)
 	s.Equal(cppbridge.RecodedChunk{
-		MinT:        3,
-		MaxT:        4,
-		SeriesId:    1,
-		HasMoreData: false,
-		ChunkData:   []byte{0x00, 0x02, 0x06, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00},
+		MinT:         3,
+		MaxT:         4,
+		SamplesCount: 2,
+		SeriesId:     1,
+		HasMoreData:  false,
+		ChunkData:    []byte{0x00, 0x02, 0x06, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00},
 	}, chunk2)
 }

@@ -687,6 +687,45 @@ func primitivesLSSFreeLabelSets(labelSets []labels.Labels) {
 	)
 }
 
+func primitivesLSSQueryLabelNames(lss uintptr, matchers []model.LabelMatcher) (uint32, []string) {
+	var args = struct {
+		lss      uintptr
+		matchers []model.LabelMatcher
+	}{lss, matchers}
+	var res struct {
+		status uint32
+		names  []string
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_primitives_lss_query_label_names,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.status, res.names
+}
+
+func primitivesLSSQueryLabelValues(lss uintptr, label_name string, matchers []model.LabelMatcher) (uint32, []string) {
+	var args = struct {
+		lss        uintptr
+		label_name string
+		matchers   []model.LabelMatcher
+	}{lss, label_name, matchers}
+	var res struct {
+		status uint32
+		values []string
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_primitives_lss_query_label_values,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.status, res.values
+}
+
 //
 // StatelessRelabeler
 //

@@ -31,6 +31,11 @@ concept is_shrinkable = requires(FilamentDataType& data_type) {
   { data_type.shrink_to(uint32_t()) };
 };
 
+template <class Table, class Class>
+concept have_find_or_emplace = requires(Table& table, const Class& data) {
+  { table.find_or_emplace(data) } -> std::same_as<uint32_t>;
+};
+
 template <class Filament>
 class DecodingTable {
   static_assert(!std::is_integral<typename Filament::composite_type>::value, "Filament::composite_type can't be an integral type");
@@ -115,11 +120,14 @@ class DecodingTable {
     typename data_type::checkpoint_type data_checkpoint_;
 
    public:
-    explicit inline __attribute__((always_inline)) Checkpoint(const DecodingTable& decoding_table, uint32_t next_item_index) noexcept
-        : decoding_table_(&decoding_table),
-          next_item_index_(next_item_index),
-          size_(decoding_table.size()),
-          data_checkpoint_(decoding_table.data().checkpoint()) {}
+    PROMPP_ALWAYS_INLINE Checkpoint(const DecodingTable& decoding_table, uint32_t next_item_index) noexcept
+        : Checkpoint(decoding_table, next_item_index, decoding_table.size(), decoding_table.data().checkpoint()) {}
+
+    PROMPP_ALWAYS_INLINE Checkpoint(const DecodingTable& decoding_table,
+                                    uint32_t next_item_index,
+                                    uint32_t size,
+                                    const typename data_type::checkpoint_type& data_checkpoint) noexcept
+        : decoding_table_(&decoding_table), next_item_index_(next_item_index), size_(size), data_checkpoint_(data_checkpoint) {}
 
     [[nodiscard]] PROMPP_ALWAYS_INLINE size_t size() const noexcept { return size_; }
     [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t next_item_index() const noexcept { return next_item_index_; }
@@ -136,12 +144,12 @@ class DecodingTable {
       out.put(1);
 
       // write mode
-      SerializationMode mode = (from != nullptr) ? SerializationMode::DELTA : SerializationMode::SNAPSHOT;
+      const auto mode = get_serialization_mode(from);
       out.put(static_cast<char>(mode));
 
       // write index of first item in the portion
       uint32_t first_to_save_i = 0;
-      if (from != nullptr) {
+      if (mode == SerializationMode::DELTA) {
         first_to_save_i = from->next_item_index_;
         out.write(reinterpret_cast<const char*>(&from->next_item_index_), sizeof(from->next_item_index_));
       }
@@ -162,11 +170,15 @@ class DecodingTable {
                 sizeof(Filament) * size_to_save);
 
       // write data
-      if (from != nullptr) {
+      if (mode == SerializationMode::DELTA) {
         data_checkpoint_.save(out, decoding_table_->data(), &from->data_checkpoint_);
       } else {
         data_checkpoint_.save(out, decoding_table_->data());
       }
+    }
+
+    [[nodiscard]] PROMPP_ALWAYS_INLINE static SerializationMode get_serialization_mode(const Checkpoint* from) noexcept {
+      return (from == nullptr || from->next_item_index_ == 0) ? SerializationMode::SNAPSHOT : SerializationMode::DELTA;
     }
 
     template <OutputStream S>
@@ -177,12 +189,12 @@ class DecodingTable {
 
     size_t save_size(const Checkpoint* from = nullptr) const noexcept {
       // version is written and read by methods put() and get() and they write and read 1 byte
-      SerializationMode mode = (from != nullptr) ? SerializationMode::DELTA : SerializationMode::SNAPSHOT;
+      const auto mode = get_serialization_mode(from);
       size_t res = 1 + sizeof(mode);
 
       // index of first item in the portion
       uint32_t first_to_save_i = 0;
-      if (from != nullptr) {
+      if (mode == SerializationMode::DELTA) {
         first_to_save_i = from->next_item_index_;
         res += sizeof(uint32_t);
       }
@@ -199,7 +211,7 @@ class DecodingTable {
       res += sizeof(Filament) * size_to_save;
 
       // data
-      if (from != nullptr) {
+      if (mode == SerializationMode::DELTA) {
         res += data_checkpoint_.save_size(decoding_table_->data(), &from->data_checkpoint_);
       } else {
         res += data_checkpoint_.save_size(decoding_table_->data());
@@ -265,7 +277,7 @@ class DecodingTable {
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t next_item_index() const noexcept { return items_.size(); }
 
-  inline __attribute__((always_inline)) auto checkpoint() const noexcept { return checkpoint_type(*this, items_.size()); }
+  inline __attribute__((always_inline)) auto checkpoint() const noexcept { return checkpoint_type(*this, next_item_index()); }
 
   inline __attribute__((always_inline)) virtual void rollback(const checkpoint_type& s) noexcept {
     assert(s.size() <= items_.size());
