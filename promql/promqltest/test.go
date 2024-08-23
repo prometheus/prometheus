@@ -79,7 +79,7 @@ func LoadedStorage(t testutil.T, input string) *teststorage.TestStorage {
 	return test.storage
 }
 
-func NewTestEngine(enablePerStepStats bool, lookbackDelta time.Duration, maxSamples int) *promql.Engine {
+func NewTestEngine(enablePerStepStats bool, lookbackDelta time.Duration, maxSamples int, opts ...func(*promql.EngineOpts)) *promql.Engine {
 	o := promql.EngineOpts{
 		Logger:                   nil,
 		Reg:                      nil,
@@ -91,6 +91,9 @@ func NewTestEngine(enablePerStepStats bool, lookbackDelta time.Duration, maxSamp
 		EnablePerStepStats:       enablePerStepStats,
 		LookbackDelta:            lookbackDelta,
 		EnableDelayedNameRemoval: true,
+	}
+	for _, cb := range opts {
+		cb(&o)
 	}
 	return promql.NewEngine(o)
 }

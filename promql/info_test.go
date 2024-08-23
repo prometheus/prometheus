@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/regexp"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -27,7 +28,7 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-func TestInfoFunc(t *testing.T) {
+func TestIncludeInfoMetricDataLabels(t *testing.T) {
 	const (
 		load1 = `
 load 10s
@@ -54,16 +55,29 @@ load 10s
 	)
 
 	testCases := []struct {
-		name   string
-		load   string
-		query  string
-		result promql.Matrix
-		expErr error
+		name                       string
+		load                       string
+		query                      string
+		includeInfoMetricLabelOpts promql.IncludeInfoMetricLabelsOpts
+		result                     promql.Matrix
+		expErr                     error
 	}{
 		{
 			name:  "include one info metric data label",
 			load:  load1,
-			query: `info(metric, {data=~".+"})`,
+			query: `metric`,
+			includeInfoMetricLabelOpts: promql.IncludeInfoMetricLabelsOpts{
+				AutomaticInclusionEnabled: true,
+				InfoMetrics: map[string][]string{
+					"target_info": {"instance", "job"},
+				},
+				DataLabelMatchers: map[string][]*labels.Matcher{
+					"data": {
+						labels.MustNewMatcher(labels.MatchRegexp, "data", ".+"),
+					},
+				},
+				IgnoreMetrics: []*regexp.Regexp{regexp.MustCompile(".+_info$")},
+			},
 			result: promql.Matrix{
 				promql.Series{
 					Metric: labels.FromStrings(
@@ -93,7 +107,13 @@ load 10s
 		{
 			name:  "include all info metric data labels",
 			load:  load1,
-			query: `info(metric)`,
+			query: `metric`,
+			includeInfoMetricLabelOpts: promql.IncludeInfoMetricLabelsOpts{
+				AutomaticInclusionEnabled: true,
+				InfoMetrics: map[string][]string{
+					"target_info": {"instance", "job"},
+				},
+			},
 			result: promql.Matrix{
 				promql.Series{
 					Metric: labels.FromStrings(
@@ -124,7 +144,13 @@ load 10s
 		{
 			name:  "try including all info metric data labels, but non-matching identifying labels",
 			load:  load1,
-			query: `info(metric_not_matching_target_info)`,
+			query: `metric_not_matching_target_info`,
+			includeInfoMetricLabelOpts: promql.IncludeInfoMetricLabelsOpts{
+				AutomaticInclusionEnabled: true,
+				InfoMetrics: map[string][]string{
+					"target_info": {"instance", "job"},
+				},
+			},
 			result: promql.Matrix{
 				promql.Series{
 					Metric: labels.FromStrings(
@@ -153,7 +179,19 @@ load 10s
 		{
 			name:  "try including a certain info metric data label with a non-matching matcher not accepting empty labels",
 			load:  load1,
-			query: `info(metric, {non_existent=~".+"})`,
+			query: `metric`,
+			includeInfoMetricLabelOpts: promql.IncludeInfoMetricLabelsOpts{
+				AutomaticInclusionEnabled: true,
+				InfoMetrics: map[string][]string{
+					"target_info": {"instance", "job"},
+				},
+				DataLabelMatchers: map[string][]*labels.Matcher{
+					"non_existent": {
+						labels.MustNewMatcher(labels.MatchRegexp, "non_existent", ".+"),
+					},
+				},
+				IgnoreMetrics: []*regexp.Regexp{regexp.MustCompile(".+_info$")},
+			},
 			// metric is ignored, due there being a data label matcher not matching empty labels,
 			// and there being no info series matches.
 			result: promql.Matrix{},
@@ -164,7 +202,22 @@ load 10s
 			// We might need another construct than vector selector to get around this limitation.
 			name:  "include a certain info metric data label together with a non-matching matcher accepting empty labels",
 			load:  load1,
-			query: `info(metric, {data=~".+", non_existent=~".*"})`,
+			query: `metric`,
+			includeInfoMetricLabelOpts: promql.IncludeInfoMetricLabelsOpts{
+				AutomaticInclusionEnabled: true,
+				InfoMetrics: map[string][]string{
+					"target_info": {"instance", "job"},
+				},
+				DataLabelMatchers: map[string][]*labels.Matcher{
+					"data": {
+						labels.MustNewMatcher(labels.MatchRegexp, "data", ".+"),
+					},
+					"non_existent": {
+						labels.MustNewMatcher(labels.MatchRegexp, "non_existent", ".*"),
+					},
+				},
+				IgnoreMetrics: []*regexp.Regexp{regexp.MustCompile(".+_info$")},
+			},
 			// Since the non_existent matcher matches empty labels, it's simply ignored when there's no match.
 			result: promql.Matrix{
 				promql.Series{
@@ -195,7 +248,13 @@ load 10s
 		{
 			name:  "info series data labels overlapping with those of base series are ignored",
 			load:  load1,
-			query: `info(metric_with_overlapping_label)`,
+			query: `metric_with_overlapping_label`,
+			includeInfoMetricLabelOpts: promql.IncludeInfoMetricLabelsOpts{
+				AutomaticInclusionEnabled: true,
+				InfoMetrics: map[string][]string{
+					"target_info": {"instance", "job"},
+				},
+			},
 			result: promql.Matrix{
 				promql.Series{
 					Metric: labels.FromStrings(
@@ -226,7 +285,19 @@ load 10s
 		{
 			name:  "include data labels from target_info specifically",
 			load:  load1,
-			query: `info(metric, {__name__="target_info"})`,
+			query: `metric`,
+			includeInfoMetricLabelOpts: promql.IncludeInfoMetricLabelsOpts{
+				AutomaticInclusionEnabled: true,
+				InfoMetrics: map[string][]string{
+					"target_info": {"instance", "job"},
+				},
+				DataLabelMatchers: map[string][]*labels.Matcher{
+					labels.MetricName: {
+						labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "target_info"),
+					},
+				},
+				IgnoreMetrics: []*regexp.Regexp{regexp.MustCompile(".+_info$")},
+			},
 			result: promql.Matrix{
 				promql.Series{
 					Metric: labels.FromStrings(
@@ -257,7 +328,19 @@ load 10s
 		{
 			name:  "try to include all data labels from a non-existent info metric",
 			load:  load1,
-			query: `info(metric, {__name__="non_existent"})`,
+			query: `metric`,
+			includeInfoMetricLabelOpts: promql.IncludeInfoMetricLabelsOpts{
+				AutomaticInclusionEnabled: true,
+				InfoMetrics: map[string][]string{
+					"target_info": {"instance", "job"},
+				},
+				DataLabelMatchers: map[string][]*labels.Matcher{
+					labels.MetricName: {
+						labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "non_existent"),
+					},
+				},
+				IgnoreMetrics: []*regexp.Regexp{regexp.MustCompile(".+_info$")},
+			},
 			result: promql.Matrix{
 				promql.Series{
 					Metric: labels.FromStrings(
@@ -284,53 +367,51 @@ load 10s
 			},
 		},
 		{
-			name:   "try to include a certain data label from a non-existent info metric",
-			load:   load1,
-			query:  `info(metric, {__name__="non_existent", data=~".+"})`,
+			name:  "try to include a certain data label from a non-existent info metric",
+			load:  load1,
+			query: `metric`,
+			includeInfoMetricLabelOpts: promql.IncludeInfoMetricLabelsOpts{
+				AutomaticInclusionEnabled: true,
+				InfoMetrics: map[string][]string{
+					"target_info": {"instance", "job"},
+				},
+				DataLabelMatchers: map[string][]*labels.Matcher{
+					labels.MetricName: {
+						labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "non_existent"),
+					},
+					"data": {
+						labels.MustNewMatcher(labels.MatchRegexp, "data", ".+"),
+					},
+				},
+				IgnoreMetrics: []*regexp.Regexp{regexp.MustCompile(".+_info$")},
+			},
 			result: promql.Matrix{},
 		},
 		{
-			// Other info metrics are currently not supported.
 			name:  "include data labels from build_info",
 			load:  load1,
-			query: `info(metric, {__name__="build_info"})`,
-			result: promql.Matrix{
-				promql.Series{
-					Metric: labels.FromStrings(
-						labels.MetricName, "metric",
-						"build_data", "build",
-						"instance", "a",
-						"job", "1",
-						"label", "value",
-					),
-					Floats: []promql.FPoint{
-						{
-							T: 0,
-							F: 0,
-						},
-						{
-							T: 10000,
-							F: 1,
-						},
-						{
-							T: 20000,
-							F: 2,
-						},
+			query: `metric`,
+			includeInfoMetricLabelOpts: promql.IncludeInfoMetricLabelsOpts{
+				AutomaticInclusionEnabled: true,
+				InfoMetrics: map[string][]string{
+					"target_info": {"instance", "job"},
+					"build_info":  {"instance", "job"},
+				},
+				DataLabelMatchers: map[string][]*labels.Matcher{
+					labels.MetricName: {
+						labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "build_info"),
+					},
+					"data": {
+						labels.MustNewMatcher(labels.MatchRegexp, "data", ".+"),
 					},
 				},
+				IgnoreMetrics: []*regexp.Regexp{regexp.MustCompile(".+_info$")},
 			},
-		},
-		{
-			name:  "include data labels from build_info and target_info",
-			load:  load1,
-			query: `info(metric, {__name__=~".+_info"})`,
 			result: promql.Matrix{
 				promql.Series{
 					Metric: labels.FromStrings(
 						labels.MetricName, "metric",
-						"another_data", "another info",
-						"build_data", "build",
-						"data", "info",
+						"data", "build",
 						"instance", "a",
 						"job", "1",
 						"label", "value",
@@ -355,7 +436,19 @@ load 10s
 		{
 			name:  "info metrics themselves are ignored when it comes to enriching with info metric data labels",
 			load:  load1,
-			query: `info(build_info, {__name__=~".+_info", build_data=~".+"})`,
+			query: `target_info`,
+			includeInfoMetricLabelOpts: promql.IncludeInfoMetricLabelsOpts{
+				AutomaticInclusionEnabled: true,
+				InfoMetrics: map[string][]string{
+					"target_info": {"instance", "job"},
+				},
+				DataLabelMatchers: map[string][]*labels.Matcher{
+					"data": {
+						labels.MustNewMatcher(labels.MatchRegexp, "data", ".+"),
+					},
+				},
+				IgnoreMetrics: []*regexp.Regexp{regexp.MustCompile(".+_info$")},
+			},
 			result: promql.Matrix{
 				promql.Series{
 					Metric: labels.FromStrings(
@@ -386,7 +479,13 @@ load 10s
 			// TODO: This case should be handled by picking the series with the newest sample.
 			name:  "conflicting info series are resolved through picking the latest sample",
 			load:  load2,
-			query: `info(metric)`,
+			query: `metric`,
+			includeInfoMetricLabelOpts: promql.IncludeInfoMetricLabelsOpts{
+				AutomaticInclusionEnabled: true,
+				InfoMetrics: map[string][]string{
+					"target_info": {"instance", "job"},
+				},
+			},
 			result: promql.Matrix{
 				promql.Series{
 					Metric: labels.FromStrings(
@@ -429,7 +528,13 @@ load 10s
 		{
 			name:  "include info metric data labels from a metric which data labels change over time",
 			load:  load3,
-			query: `info(metric)`,
+			query: `metric`,
+			includeInfoMetricLabelOpts: promql.IncludeInfoMetricLabelsOpts{
+				AutomaticInclusionEnabled: true,
+				InfoMetrics: map[string][]string{
+					"target_info": {"instance", "job"},
+				},
+			},
 			result: promql.Matrix{
 				promql.Series{
 					Metric: labels.FromStrings(
@@ -470,7 +575,9 @@ load 10s
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			engine := promqltest.NewTestEngine(false, 0, promqltest.DefaultMaxSamplesPerQuery)
+			engine := promqltest.NewTestEngine(false, 0, promqltest.DefaultMaxSamplesPerQuery, func(o *promql.EngineOpts) {
+				o.IncludeInfoMetricLabels = tc.includeInfoMetricLabelOpts
+			})
 			ctx := context.Background()
 			storage := promqltest.LoadedStorage(t, tc.load)
 			t.Cleanup(func() { _ = storage.Close() })

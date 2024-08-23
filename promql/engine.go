@@ -318,6 +318,8 @@ type EngineOpts struct {
 	// This is useful in certain scenarios where the __name__ label must be preserved or where applying a
 	// regex-matcher to the __name__ label may otherwise lead to duplicate labelset errors.
 	EnableDelayedNameRemoval bool
+
+	IncludeInfoMetricLabels IncludeInfoMetricLabelsOpts
 }
 
 // Engine handles the lifetime of queries from beginning to end.
@@ -336,6 +338,7 @@ type Engine struct {
 	enableNegativeOffset     bool
 	enablePerStepStats       bool
 	enableDelayedNameRemoval bool
+	includeInfoMetricLabels  IncludeInfoMetricLabelsOpts
 }
 
 // NewEngine returns a new engine.
@@ -427,6 +430,7 @@ func NewEngine(opts EngineOpts) *Engine {
 		enableNegativeOffset:     opts.EnableNegativeOffset,
 		enablePerStepStats:       opts.EnablePerStepStats,
 		enableDelayedNameRemoval: opts.EnableDelayedNameRemoval,
+		includeInfoMetricLabels:  opts.IncludeInfoMetricLabels,
 	}
 }
 
@@ -721,6 +725,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 			noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
 			enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
 			querier:                  querier,
+			includeInfoMetricLabels:  ng.includeInfoMetricLabels,
 		}
 		query.sampleStats.InitStepTracking(start, start, 1)
 
@@ -781,6 +786,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
 		enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
 		querier:                  querier,
+		includeInfoMetricLabels:  ng.includeInfoMetricLabels,
 	}
 	query.sampleStats.InitStepTracking(evaluator.startTimestamp, evaluator.endTimestamp, evaluator.interval)
 	val, warnings, err := evaluator.Eval(s.Expr)
@@ -949,7 +955,9 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 			evalRange = 0
 			hints.By, hints.Grouping = extractGroupsFromPath(path)
 			n.UnexpandedSeriesSet = querier.Select(ctx, false, hints, n.LabelMatchers...)
-			n.SelectHints = hints
+			if ng.includeInfoMetricLabels.AutomaticInclusionEnabled && len(ng.includeInfoMetricLabels.InfoMetrics) > 0 {
+				n.SelectHints = hints
+			}
 
 		case *parser.MatrixSelector:
 			evalRange = n.Range
@@ -996,20 +1004,20 @@ func (ev *evaluator) checkAndExpandSeriesSet(ctx context.Context, expr parser.Ex
 		if e.Series != nil {
 			return nil, nil
 		}
-		series, ws, err := expandSeriesSet(ctx, e.UnexpandedSeriesSet)
+		series, ws, err := ev.expandSeriesSet(ctx, e)
 		if e.SkipHistogramBuckets {
 			for i := range series {
 				series[i] = newHistogramStatsSeries(series[i])
 			}
 		}
 		e.Series = series
-		ev.selectHints = e.SelectHints
 		return ws, err
 	}
 	return nil, nil
 }
 
-func expandSeriesSet(ctx context.Context, it storage.SeriesSet) (res []storage.Series, ws annotations.Annotations, err error) {
+func (ev *evaluator) expandSeriesSet(ctx context.Context, sel *parser.VectorSelector) (res []storage.Series, ws annotations.Annotations, err error) {
+	it := sel.UnexpandedSeriesSet
 	for it.Next() {
 		select {
 		case <-ctx.Done():
@@ -1018,7 +1026,32 @@ func expandSeriesSet(ctx context.Context, it storage.SeriesSet) (res []storage.S
 		}
 		res = append(res, it.At())
 	}
-	return res, it.Warnings(), it.Err()
+	annots := it.Warnings()
+	if it.Err() != nil || sel.SelectHints == nil {
+		return res, annots, it.Err()
+	}
+
+	ignoreSeries := map[int]struct{}{}
+loop:
+	for i, s := range res {
+		lblMap := s.Labels().Map()
+		name := lblMap[labels.MetricName]
+		for _, reIgnore := range ev.includeInfoMetricLabels.IgnoreMetrics {
+			if reIgnore.MatchString(name) {
+				ignoreSeries[i] = struct{}{}
+				continue loop
+			}
+		}
+	}
+
+	infoSeries, ws, err := ev.fetchInfoSeries(ctx, res, ignoreSeries, sel.SelectHints)
+	annots.Merge(ws)
+	if err != nil {
+		return res, annots, err
+	}
+
+	series, ws := ev.combineWithInfoSeries(res, infoSeries, ignoreSeries, sel.Offset, sel.SelectHints)
+	return series, annots.Merge(ws), nil
 }
 
 type errWithWarnings struct {
@@ -1048,8 +1081,7 @@ type evaluator struct {
 	enableDelayedNameRemoval bool
 	querier                  storage.Querier
 
-	// selectHints is the top-most SelectHints in the expression tree.
-	selectHints *storage.SelectHints
+	includeInfoMetricLabels IncludeInfoMetricLabelsOpts
 }
 
 // errorf causes a panic with the input formatted into an error.
@@ -1654,8 +1686,6 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 			return ev.evalLabelReplace(e.Args)
 		case "label_join":
 			return ev.evalLabelJoin(e.Args)
-		case "info":
-			return ev.evalInfo(ev.ctx, e.Args)
 		}
 
 		if !matrixArg {
@@ -1965,6 +1995,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 			samplesStats:             ev.samplesStats.NewChild(),
 			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
 			enableDelayedNameRemoval: ev.enableDelayedNameRemoval,
+			includeInfoMetricLabels:  ev.includeInfoMetricLabels,
 		}
 
 		if e.Step != 0 {
@@ -2010,6 +2041,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 			samplesStats:             ev.samplesStats.NewChild(),
 			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
 			enableDelayedNameRemoval: ev.enableDelayedNameRemoval,
+			includeInfoMetricLabels:  ev.includeInfoMetricLabels,
 		}
 		res, ws := newEv.eval(e.Expr)
 		ev.currentSamples = newEv.currentSamples

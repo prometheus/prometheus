@@ -145,7 +145,6 @@ FunctionIdentifier {
   Hour |
   Idelta |
   Increase |
-  Info |
   Irate |
   LabelReplace |
   LabelJoin |
@@ -393,7 +392,6 @@ NumberDurationLiteralInDurationContext {
   Hour { condFn<"hour"> }
   Idelta { condFn<"idelta"> }
   Increase { condFn<"increase"> }
-  Info { condFn<"info"> }
   Irate { condFn<"irate"> }
   LabelReplace { condFn<"label_replace"> }
   LabelJoin { condFn<"label_join"> }

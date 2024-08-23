@@ -796,12 +796,6 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 			p.expectType(arg, n.Func.ArgTypes[i], fmt.Sprintf("call to function %q", n.Func.Name))
 		}
 
-		if n.Func.Name == "info" && len(n.Args) > 1 {
-			if n.Args[1].(*VectorSelector).Name != "" {
-				p.addParseErrf(n.Args[1].PositionRange(), "expected label selectors only, got vector selector instead")
-			}
-		}
-
 	case *ParenExpr:
 		p.checkAST(n.Expr)
 

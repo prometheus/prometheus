@@ -794,6 +794,11 @@ func main() {
 	}
 
 	if !agentMode {
+		includeInfoMetricLabelsOpts, err := validatePromQLConfig(cfgFile)
+		if err != nil {
+			level.Error(logger).Log("msg", "failed to validate PromQL config", "err", err)
+			os.Exit(1)
+		}
 		opts := promql.EngineOpts{
 			Logger:                   log.With(logger, "component", "query engine"),
 			Reg:                      prometheus.DefaultRegisterer,
@@ -804,10 +809,11 @@ func main() {
 			NoStepSubqueryIntervalFn: noStepSubqueryInterval.Get,
 			// EnableAtModifier and EnableNegativeOffset have to be
 			// always on for regular PromQL as of Prometheus v2.33.
-			EnableAtModifier:         true,
-			EnableNegativeOffset:     true,
-			EnablePerStepStats:       cfg.enablePerStepStats,
+			EnableAtModifier:        true,
+			EnableNegativeOffset:    true,
+			EnablePerStepStats:      cfg.enablePerStepStats,
 			EnableDelayedNameRemoval: cfg.promqlEnableDelayedNameRemoval,
+			IncludeInfoMetricLabels: includeInfoMetricLabelsOpts,
 		}
 
 		queryEngine = promql.NewEngine(opts)
@@ -1330,6 +1336,63 @@ func main() {
 		os.Exit(1)
 	}
 	level.Info(logger).Log("msg", "See you next time!")
+}
+
+func validatePromQLConfig(cfg *config.Config) (promql.IncludeInfoMetricLabelsOpts, error) {
+	c := cfg.PromQLConfig.IncludeInfoMetricLabels
+	if c == nil {
+		return promql.IncludeInfoMetricLabelsOpts{}, nil
+	}
+
+	dataLabelMatchers := map[string][]*labels.Matcher{}
+	for _, lm := range c.DataLabelMatchers {
+		var t labels.MatchType
+		switch lm.Type {
+		case "equal":
+			t = labels.MatchEqual
+		case "notEqual":
+			t = labels.MatchNotEqual
+		case "regexp":
+			t = labels.MatchRegexp
+		case "notRegexp":
+			t = labels.MatchNotRegexp
+		default:
+			return promql.IncludeInfoMetricLabelsOpts{}, fmt.Errorf("unrecognized matcher type: %q", lm.Type)
+		}
+
+		m, err := labels.NewMatcher(t, lm.Name, lm.Value)
+		if err != nil {
+			return promql.IncludeInfoMetricLabelsOpts{}, fmt.Errorf("invalid label matcher specification: %w", err)
+		}
+		dataLabelMatchers[m.Name] = append(dataLabelMatchers[m.Name], m)
+	}
+
+	ignoreMetrics := make([]*regexp.Regexp, 0, len(c.IgnoreMetrics))
+	for i, s := range c.IgnoreMetrics {
+		if !strings.HasPrefix(s, "^") {
+			s = "^" + s
+		}
+		if !strings.HasSuffix(s, "$") {
+			s += "$"
+		}
+		re, err := regexp.Compile(s)
+		if err != nil {
+			return promql.IncludeInfoMetricLabelsOpts{}, fmt.Errorf("ignore_metrics regular expression #%d is invalid: %w", i+1, err)
+		}
+
+		ignoreMetrics = append(ignoreMetrics, re)
+	}
+	if c.IgnoreMetrics == nil {
+		// Default to info metrics.
+		ignoreMetrics = append(ignoreMetrics, regexp.MustCompile("^.+_info$"))
+	}
+
+	return promql.IncludeInfoMetricLabelsOpts{
+		AutomaticInclusionEnabled: c.AutomaticInclusionEnabled,
+		InfoMetrics:               c.InfoMetrics,
+		DataLabelMatchers:         dataLabelMatchers,
+		IgnoreMetrics:             ignoreMetrics,
+	}, nil
 }
 
 func openDBWithMetrics(dir string, logger log.Logger, reg prometheus.Registerer, opts *tsdb.Options, stats *tsdb.DBStats) (*tsdb.DB, error) {
