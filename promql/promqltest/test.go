@@ -838,7 +838,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 }
 
 // compareNativeHistogram is helper function to compare two native histograms
-// which can tolerate some differ in the field of float type, such as Count, Sum
+// which can tolerate some differ in the field of float type, such as Count, Sum.
 func compareNativeHistogram(exp, cur *histogram.FloatHistogram) bool {
 	if exp == nil || cur == nil {
 		return false
