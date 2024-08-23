@@ -21,6 +21,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 )
@@ -272,7 +273,7 @@ func TestLabels_IsValid(t *testing.T) {
 		},
 	} {
 		t.Run("", func(t *testing.T) {
-			require.Equal(t, test.expected, test.input.IsValid())
+			require.Equal(t, test.expected, test.input.IsValid(model.LegacyValidation))
 		})
 	}
 }
