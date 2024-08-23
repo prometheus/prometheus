@@ -308,10 +308,9 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 					var expChunks []chunks.Meta
 					for _, e := range tc.expChunks {
 						meta := chunks.Meta{
-							Chunk:    chunkenc.Chunk(nil),
-							MinTime:  e.mint,
-							MaxTime:  e.maxt,
-							MergeOOO: true, // Only OOO chunks are tested here, so we always request merge from OOO head.
+							Chunk:   chunkenc.Chunk(nil),
+							MinTime: e.mint,
+							MaxTime: e.maxt,
 						}
 
 						// Ref to whatever Ref the chunk has, that we refer to by ID
@@ -485,7 +484,7 @@ func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 		cr := NewHeadAndOOOChunkReader(db.head, 0, 1000, nil, nil, 0)
 		defer cr.Close()
 		c, iterable, err := cr.ChunkOrIterable(chunks.Meta{
-			Ref: 0x1800000, Chunk: chunkenc.Chunk(nil), MinTime: 100, MaxTime: 300, MergeOOO: true,
+			Ref: 0x1800000, Chunk: chunkenc.Chunk(nil), MinTime: 100, MaxTime: 300,
 		})
 		require.Nil(t, iterable)
 		require.Equal(t, err, fmt.Errorf("not found"))
@@ -1026,94 +1025,6 @@ func testOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 				require.NoError(t, err)
 				requireEqualSamples(t, s1.String(), tc.expChunksSamples[i], resultSamples, true)
 			}
-		})
-	}
-}
-
-// TestSortByMinTimeAndMinRef tests that the sort function for chunk metas does sort
-// by chunk meta MinTime and in case of same references by the lower reference.
-func TestSortByMinTimeAndMinRef(t *testing.T) {
-	tests := []struct {
-		name  string
-		input []chunkMetaAndChunkDiskMapperRef
-		exp   []chunkMetaAndChunkDiskMapperRef
-	}{
-		{
-			name: "chunks are ordered by min time",
-			input: []chunkMetaAndChunkDiskMapperRef{
-				{
-					meta: chunks.Meta{
-						Ref:     0,
-						MinTime: 0,
-					},
-					ref: chunks.ChunkDiskMapperRef(0),
-				},
-				{
-					meta: chunks.Meta{
-						Ref:     1,
-						MinTime: 1,
-					},
-					ref: chunks.ChunkDiskMapperRef(1),
-				},
-			},
-			exp: []chunkMetaAndChunkDiskMapperRef{
-				{
-					meta: chunks.Meta{
-						Ref:     0,
-						MinTime: 0,
-					},
-					ref: chunks.ChunkDiskMapperRef(0),
-				},
-				{
-					meta: chunks.Meta{
-						Ref:     1,
-						MinTime: 1,
-					},
-					ref: chunks.ChunkDiskMapperRef(1),
-				},
-			},
-		},
-		{
-			name: "if same mintime, lower reference goes first",
-			input: []chunkMetaAndChunkDiskMapperRef{
-				{
-					meta: chunks.Meta{
-						Ref:     10,
-						MinTime: 0,
-					},
-					ref: chunks.ChunkDiskMapperRef(0),
-				},
-				{
-					meta: chunks.Meta{
-						Ref:     5,
-						MinTime: 0,
-					},
-					ref: chunks.ChunkDiskMapperRef(1),
-				},
-			},
-			exp: []chunkMetaAndChunkDiskMapperRef{
-				{
-					meta: chunks.Meta{
-						Ref:     5,
-						MinTime: 0,
-					},
-					ref: chunks.ChunkDiskMapperRef(1),
-				},
-				{
-					meta: chunks.Meta{
-						Ref:     10,
-						MinTime: 0,
-					},
-					ref: chunks.ChunkDiskMapperRef(0),
-				},
-			},
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
-			slices.SortFunc(tc.input, refLessByMinTimeAndMinRef)
-			require.Equal(t, tc.exp, tc.input)
 		})
 	}
 }
