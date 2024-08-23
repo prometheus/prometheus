@@ -304,6 +304,14 @@ func (h *FloatHistogram) Div(scalar float64) *FloatHistogram {
 	h.ZeroCount /= scalar
 	h.Count /= scalar
 	h.Sum /= scalar
+	if scalar == 0 {
+		h.PositiveBuckets = nil
+		h.NegativeBuckets = nil
+		h.PositiveSpans = nil
+		h.NegativeSpans = nil
+		h.ZeroCount = 0
+		return h
+	}
 	for i := range h.PositiveBuckets {
 		h.PositiveBuckets[i] /= scalar
 	}

@@ -960,6 +960,30 @@ eval instant at 10m histogram_mul_div*0/0
 
 clear
 
+# Apply binary operators to mixed histogram and float samples.
+# these tests will be moved to their respective locations when tests from engine_test.go will be moved here.
+
+load 10m
+    histogram_sample {{schema:0 count:24 sum:100 z_bucket:4 z_bucket_w:0.001 buckets:[2 3 0 1 4] n_buckets:[2 3 0 1 4]}}x1
+    float_sample 0x1
+
+eval instant at 10m float_sample+histogram_sample
+
+eval instant at 10m histogram_sample+float_sample
+
+eval instant at 10m float_sample-histogram_sample
+
+eval instant at 10m histogram_sample-float_sample
+
+eval instant at 10m histogram_sample*histogram_sample
+
+eval instant at 10m histogram_sample/histogram_sample
+
+eval instant at 10m float_sample/histogram_sample
+
+eval instant at 10m histogram_sample/0
+     {} {{schema:0 count:Inf sum:Inf z_bucket_w:0.001}}
+
 # Counter reset only noticeable in a single bucket.
 load 5m
      reset_in_bucket {{schema:0 count:4 sum:5 buckets:[1 2 1]}} {{schema:0 count:5 sum:6 buckets:[1 1 3]}} {{schema:0 count:6 sum:7 buckets:[1 2 3]}}
