@@ -376,12 +376,12 @@ func (h *headChunkReader) chunk(meta chunks.Meta, copyLastChunk bool) (chunkenc.
 
 	s.Lock()
 	defer s.Unlock()
-	return h.chunkFromSeries(s, cid, copyLastChunk)
+	return h.head.chunkFromSeries(s, cid, h.mint, h.maxt, h.isoState, copyLastChunk)
 }
 
 // Call with s locked.
-func (h *headChunkReader) chunkFromSeries(s *memSeries, cid chunks.HeadChunkID, copyLastChunk bool) (chunkenc.Chunk, int64, error) {
-	c, headChunk, isOpen, err := s.chunk(cid, h.head.chunkDiskMapper, &h.head.memChunkPool)
+func (h *Head) chunkFromSeries(s *memSeries, cid chunks.HeadChunkID, mint, maxt int64, isoState *isolationState, copyLastChunk bool) (chunkenc.Chunk, int64, error) {
+	c, headChunk, isOpen, err := s.chunk(cid, h.chunkDiskMapper, &h.memChunkPool)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -390,12 +390,12 @@ func (h *headChunkReader) chunkFromSeries(s *memSeries, cid chunks.HeadChunkID, 
 			// Set this to nil so that Go GC can collect it after it has been used.
 			c.chunk = nil
 			c.prev = nil
-			h.head.memChunkPool.Put(c)
+			h.memChunkPool.Put(c)
 		}
 	}()
 
 	// This means that the chunk is outside the specified range.
-	if !c.OverlapsClosedInterval(h.mint, h.maxt) {
+	if !c.OverlapsClosedInterval(mint, maxt) {
 		return nil, 0, storage.ErrNotFound
 	}
 
@@ -407,7 +407,7 @@ func (h *headChunkReader) chunkFromSeries(s *memSeries, cid chunks.HeadChunkID, 
 		newB := make([]byte, len(b))
 		copy(newB, b) // TODO(codesome): Use bytes.Clone() when we upgrade to Go 1.20.
 		// TODO(codesome): Put back in the pool (non-trivial).
-		chk, err = h.head.opts.ChunkPool.Get(s.headChunks.chunk.Encoding(), newB)
+		chk, err = h.opts.ChunkPool.Get(s.headChunks.chunk.Encoding(), newB)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -417,7 +417,7 @@ func (h *headChunkReader) chunkFromSeries(s *memSeries, cid chunks.HeadChunkID, 
 		Chunk:    chk,
 		s:        s,
 		cid:      cid,
-		isoState: h.isoState,
+		isoState: isoState,
 	}, maxTime, nil
 }
 
@@ -538,7 +538,7 @@ func (s *memSeries) mergedChunks(meta chunks.Meta, cdm *chunks.ChunkDiskMapper, 
 		case c.ref == 0: // This is an in-order head chunk.
 			_, cid := chunks.HeadChunkRef(c.meta.Ref).Unpack()
 			var err error
-			iterable, _, err = hr.chunkFromSeries(s, cid, false)
+			iterable, _, err = hr.head.chunkFromSeries(s, cid, hr.mint, hr.maxt, hr.isoState, false)
 			if err != nil {
 				return nil, fmt.Errorf("invalid head chunk: %w", err)
 			}
