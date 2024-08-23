@@ -276,10 +276,9 @@ export class Parser {
     }
 
     if (funcSignature.name === 'info') {
-      if (args.length > 1) {
-        if (args[1].getChild(Identifier)) {
-          this.addDiagnostic(node, `expected label selectors as the second argument to "info" function, got ${args[1].type}`);
-        }
+      // Verify that the data label selector expression is not prefixed with metric name.
+      if (args.length > 1 && args[1].getChild(Identifier)) {
+        this.addDiagnostic(node, `expected label selectors as the second argument to "info" function, got ${args[1].type}`);
       }
     }
 
