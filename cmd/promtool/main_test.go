@@ -219,7 +219,7 @@ func TestCheckTargetConfig(t *testing.T) {
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := checkConfig(false, "testdata/"+test.file, false)
+			_, err := checkConfig(false, "testdata/"+test.file, false, newLintConfig(lintOptionNone, false))
 			if test.err != "" {
 				require.Equalf(t, test.err, err.Error(), "Expected error %q, got %q", test.err, err.Error())
 				return
@@ -302,7 +302,7 @@ func TestCheckConfigSyntax(t *testing.T) {
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := checkConfig(false, "testdata/"+test.file, test.syntaxOnly)
+			_, err := checkConfig(false, "testdata/"+test.file, test.syntaxOnly, newLintConfig(lintOptionNone, false))
 			expectedErrMsg := test.err
 			if strings.Contains(runtime.GOOS, "windows") {
 				expectedErrMsg = test.errWindows
@@ -336,7 +336,7 @@ func TestAuthorizationConfig(t *testing.T) {
 
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := checkConfig(false, "testdata/"+test.file, false)
+			_, err := checkConfig(false, "testdata/"+test.file, false, newLintConfig(lintOptionNone, false))
 			if test.err != "" {
 				require.Contains(t, err.Error(), test.err, "Expected error to contain %q, got %q", test.err, err.Error())
 				return
@@ -414,7 +414,7 @@ func TestExitCodes(t *testing.T) {
 				t.Run(strconv.FormatBool(lintFatal), func(t *testing.T) {
 					args := []string{"-test.main", "check", "config", "testdata/" + c.file}
 					if lintFatal {
-						args = append(args, "--lint-fatal")
+						args = append(args, "--lint-fatal", "--lint=all")
 					}
 					tool := exec.Command(promtoolPath, args...)
 					err := tool.Run()
@@ -530,6 +530,13 @@ func TestCheckRules(t *testing.T) {
 
 		exitCode := CheckRules(newLintConfig(lintOptionDuplicateRules, true))
 		require.Equal(t, lintErrExitCode, exitCode, "")
+	})
+
+	t.Run("config-lint-fatal", func(t *testing.T) {
+		_, err := checkConfig(false, "./testdata/prometheus-config.lint.yml", false, newLintConfig(lintOptionLongScrapeInterval, false))
+		expectedErrMsg := "lint error Long Scrape Interval found. Data point will be marked as stale. Job: long_scrape_interval_test. Interval: 1h"
+		require.Equalf(t, expectedErrMsg, err.Error(), "Expected error %q, got %q", expectedErrMsg, err.Error())
+		return
 	})
 }
 

@@ -1,2 +1,3 @@
-rule_files:
-  - prometheus-rules.lint.yml
+scrape_configs:
+  - job_name: long_scrape_interval_test
+    scrape_interval: 1h
