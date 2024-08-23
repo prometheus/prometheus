@@ -543,7 +543,6 @@ func TestCheckRules(t *testing.T) {
 		_, err := checkConfig(false, "./testdata/prometheus-config.lint.yml", false, newLintConfig(lintOptionLongScrapeInterval, false))
 		expectedErrMsg := "lint error Long Scrape Interval found. Data point will be marked as stale. Job: long_scrape_interval_test. Interval: 1h"
 		require.Equalf(t, expectedErrMsg, err.Error(), "Expected error %q, got %q", expectedErrMsg, err.Error())
-		return
 	})
 }
 
