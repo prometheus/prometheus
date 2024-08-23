@@ -1752,14 +1752,27 @@ func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labe
 // (potentially) a long time, since that could eventually delay next scrape and/or cause query timeouts.
 func (h *Head) mmapHeadChunks() {
 	var count int
+	lockedSeries := make([]*memSeries, 0)
 	for i := 0; i < h.series.size; i++ {
 		h.series.locks[i].RLock()
 		for _, series := range h.series.series[i] {
+			switch {
+			case series.TryLock():
+				count += series.mmapChunks(h.chunkDiskMapper)
+				series.Unlock()
+			default:
+				// If the series is locked, lets call mmapChunks outside the striped lock
+				// to prevent a deadlock with the head.gc method.
+				lockedSeries = append(lockedSeries, series)
+			}
+		}
+		h.series.locks[i].RUnlock()
+		for _, series := range lockedSeries {
 			series.Lock()
 			count += series.mmapChunks(h.chunkDiskMapper)
 			series.Unlock()
 		}
-		h.series.locks[i].RUnlock()
+		lockedSeries = lockedSeries[:0]
 	}
 	h.metrics.mmapChunksTotal.Add(float64(count))
 }
