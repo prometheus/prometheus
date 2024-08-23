@@ -602,8 +602,8 @@ void prompp_series_data_chunk_recoder_ctor(void* args, void* res);
  * @param res {
  *     min_t         int64
  *     max_t         int64
- *     samples_count uint8
  *     series_id     uint32
+ *     samples_count uint8
  *     has_more_data bool
  *     data          []byte // SliceView to recoded chunk data
  * }
