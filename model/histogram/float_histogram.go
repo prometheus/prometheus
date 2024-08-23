@@ -17,12 +17,6 @@ import (
 	"fmt"
 	"math"
 	"strings"
-
-	"github.com/prometheus/prometheus/util/almost"
-)
-
-const (
-	defaultEpsilon = 0.000001
 )
 
 // FloatHistogram is similar to Histogram but uses float64 for all
@@ -462,8 +456,8 @@ func (h *FloatHistogram) Equals(h2 *FloatHistogram) bool {
 	}
 
 	if h.Schema != h2.Schema ||
-		!almost.Equal(h.Count, h2.Count, defaultEpsilon) ||
-		!almost.Equal(h.Sum, h2.Sum, defaultEpsilon) {
+		math.Float64bits(h.Count) != math.Float64bits(h2.Count) ||
+		math.Float64bits(h.Sum) != math.Float64bits(h2.Sum) {
 		return false
 	}
 
@@ -474,7 +468,7 @@ func (h *FloatHistogram) Equals(h2 *FloatHistogram) bool {
 	}
 
 	if h.ZeroThreshold != h2.ZeroThreshold ||
-		!almost.Equal(h.ZeroCount, h2.ZeroCount, defaultEpsilon) {
+		math.Float64bits(h.ZeroCount) != math.Float64bits(h2.ZeroCount) {
 		return false
 	}
 
@@ -1316,7 +1310,7 @@ func FloatBucketsMatch(b1, b2 []float64) bool {
 		return false
 	}
 	for i, b := range b1 {
-		if !almost.Equal(b, b2[i], defaultEpsilon) {
+		if math.Float64bits(b) != math.Float64bits(b2[i]) {
 			return false
 		}
 	}
