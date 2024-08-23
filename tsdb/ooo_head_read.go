@@ -139,10 +139,11 @@ func getOOOSeriesChunks(s *memSeries, mint, maxt int64, lastGarbageCollectedMmap
 
 	addChunk := func(minT, maxT int64, ref chunks.ChunkRef, chunk chunkenc.Chunk) {
 		tmpChks = append(tmpChks, chunks.Meta{
-			MinTime: minT,
-			MaxTime: maxT,
-			Ref:     ref,
-			Chunk:   chunk,
+			MinTime:  minT,
+			MaxTime:  maxT,
+			Ref:      ref,
+			Chunk:    chunk,
+			MergeOOO: true,
 		})
 	}
 
@@ -210,6 +211,7 @@ func getOOOSeriesChunks(s *memSeries, mint, maxt int64, lastGarbageCollectedMmap
 			if c.Chunk != nil {
 				(*chks)[len(*chks)-1].Chunk = c.Chunk
 			}
+			(*chks)[len(*chks)-1].MergeOOO = (*chks)[len(*chks)-1].MergeOOO || c.MergeOOO
 		}
 	}
 
@@ -291,8 +293,8 @@ func NewHeadAndOOOChunkReader(head *Head, mint, maxt int64, cr *headChunkReader,
 }
 
 func (cr *HeadAndOOOChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
-	sid, _, isOOO := unpackHeadChunkRef(meta.Ref)
-	if !isOOO && meta.Chunk == nil { // meta.Chunk can have a copy of OOO head samples, even on non-OOO chunk ID.
+	sid, _, _ := unpackHeadChunkRef(meta.Ref)
+	if !meta.MergeOOO {
 		return cr.cr.ChunkOrIterable(meta)
 	}
 
@@ -313,11 +315,10 @@ func (cr *HeadAndOOOChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chu
 	return nil, mc, err
 }
 
-// ChunkOrIterableWithCopy: implements ChunkReaderWithCopy. The special Copy behaviour
-// is only implemented for the in-order head chunk.
+// ChunkOrIterableWithCopy implements ChunkReaderWithCopy. The special Copy
+// behaviour is only implemented for the in-order head chunk.
 func (cr *HeadAndOOOChunkReader) ChunkOrIterableWithCopy(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {
-	_, _, isOOO := unpackHeadChunkRef(meta.Ref)
-	if !isOOO {
+	if !meta.MergeOOO {
 		return cr.cr.ChunkOrIterableWithCopy(meta)
 	}
 	chk, iter, err := cr.ChunkOrIterable(meta)

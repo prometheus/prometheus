@@ -106,8 +106,8 @@ const (
 	EntryInvalid   Entry = -1
 	EntryType      Entry = 0
 	EntryHelp      Entry = 1
-	EntrySeries    Entry = 2 // A series with a simple float64 as value.
+	EntrySeries    Entry = 2 // EntrySeries marks a series with a simple float64 as value.
 	EntryComment   Entry = 3
 	EntryUnit      Entry = 4
-	EntryHistogram Entry = 5 // A series with a native histogram as a value.
+	EntryHistogram Entry = 5 // EntryHistogram marks a series with a native histogram as a value.
 )

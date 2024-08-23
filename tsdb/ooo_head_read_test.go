@@ -315,9 +315,10 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 					var expChunks []chunks.Meta
 					for _, e := range tc.expChunks {
 						meta := chunks.Meta{
-							Chunk:   chunkenc.Chunk(nil),
-							MinTime: e.mint,
-							MaxTime: e.maxt,
+							Chunk:    chunkenc.Chunk(nil),
+							MinTime:  e.mint,
+							MaxTime:  e.maxt,
+							MergeOOO: true, // Only OOO chunks are tested here, so we always request merge from OOO head.
 						}
 
 						// Ref to whatever Ref the chunk has, that we refer to by ID
@@ -494,7 +495,7 @@ func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 		cr := NewHeadAndOOOChunkReader(db.head, 0, 1000, nil, nil, 0)
 		defer cr.Close()
 		c, iterable, err := cr.ChunkOrIterable(chunks.Meta{
-			Ref: 0x1800000, Chunk: chunkenc.Chunk(nil), MinTime: 100, MaxTime: 300,
+			Ref: 0x1800000, Chunk: chunkenc.Chunk(nil), MinTime: 100, MaxTime: 300, MergeOOO: true,
 		})
 		require.Nil(t, iterable)
 		require.Equal(t, err, fmt.Errorf("not found"))

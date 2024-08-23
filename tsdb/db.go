@@ -49,7 +49,7 @@ import (
 )
 
 const (
-	// Default duration of a block in milliseconds.
+	// DefaultBlockDuration in milliseconds.
 	DefaultBlockDuration = int64(2 * time.Hour / time.Millisecond)
 
 	// Block dir suffixes to make deletion and creation operations atomic.

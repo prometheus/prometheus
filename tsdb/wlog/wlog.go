@@ -38,8 +38,8 @@ import (
 )
 
 const (
-	DefaultSegmentSize = 128 * 1024 * 1024 // 128 MB
-	pageSize           = 32 * 1024         // 32KB
+	DefaultSegmentSize = 128 * 1024 * 1024 // DefaultSegmentSize is 128 MB.
+	pageSize           = 32 * 1024         // pageSize is 32KB.
 	recordHeaderSize   = 7
 	WblDirName         = "wbl"
 )

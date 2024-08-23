@@ -5463,7 +5463,6 @@ func testQuerierOOOQuery(t *testing.T,
 	sampleFunc func(ts int64) chunks.Sample,
 ) {
 	opts := DefaultOptions()
-	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 24 * time.Hour.Milliseconds()
 
 	series1 := labels.FromStrings("foo", "bar1")
@@ -5487,6 +5486,7 @@ func testQuerierOOOQuery(t *testing.T,
 			totalAppended++
 		}
 		require.NoError(t, app.Commit())
+		require.Positive(t, totalAppended, 0) // Sanity check that filter is not too zealous.
 		return expSamples, totalAppended
 	}
 
@@ -5500,12 +5500,14 @@ func testQuerierOOOQuery(t *testing.T,
 
 	tests := []struct {
 		name      string
+		oooCap    int64
 		queryMinT int64
 		queryMaxT int64
 		batches   []sampleBatch
 	}{
 		{
 			name:      "query interval covering ooomint and inordermaxt returns all ingested samples",
+			oooCap:    30,
 			queryMinT: minutes(0),
 			queryMaxT: minutes(200),
 			batches: []sampleBatch{
@@ -5524,6 +5526,7 @@ func testQuerierOOOQuery(t *testing.T,
 		},
 		{
 			name:      "partial query interval returns only samples within interval",
+			oooCap:    30,
 			queryMinT: minutes(20),
 			queryMaxT: minutes(180),
 			batches: []sampleBatch{
@@ -5566,7 +5569,8 @@ func testQuerierOOOQuery(t *testing.T,
 			},
 		},
 		{
-			name:      "query overlapping inorder and ooo samples returns all ingested samples",
+			name:      "query overlapping inorder and ooo samples returns all ingested samples at the end of the interval",
+			oooCap:    30,
 			queryMinT: minutes(0),
 			queryMaxT: minutes(200),
 			batches: []sampleBatch{
@@ -5577,8 +5581,80 @@ func testQuerierOOOQuery(t *testing.T,
 					isOOO:  false,
 				},
 				{
-					minT:   minutes(180 - opts.OutOfOrderCapMax/2), // Make sure to fit into the OOO head.
+					minT:   minutes(170),
 					maxT:   minutes(180),
+					filter: func(t int64) bool { return t%2 == 1 },
+					isOOO:  true,
+				},
+			},
+		},
+		{
+			name:      "query overlapping inorder and ooo in-memory samples returns all ingested samples at the beginning of the interval",
+			oooCap:    30,
+			queryMinT: minutes(0),
+			queryMaxT: minutes(200),
+			batches: []sampleBatch{
+				{
+					minT:   minutes(100),
+					maxT:   minutes(200),
+					filter: func(t int64) bool { return t%2 == 0 },
+					isOOO:  false,
+				},
+				{
+					minT:   minutes(100),
+					maxT:   minutes(110),
+					filter: func(t int64) bool { return t%2 == 1 },
+					isOOO:  true,
+				},
+			},
+		},
+		{
+			name:      "query inorder contain ooo mmaped samples returns all ingested samples at the beginning of the interval",
+			oooCap:    5,
+			queryMinT: minutes(0),
+			queryMaxT: minutes(200),
+			batches: []sampleBatch{
+				{
+					minT:   minutes(100),
+					maxT:   minutes(200),
+					filter: func(t int64) bool { return t%2 == 0 },
+					isOOO:  false,
+				},
+				{
+					minT:   minutes(101),
+					maxT:   minutes(101 + (5-1)*2), // Append samples to fit in a single mmmaped OOO chunk and fit inside the first in-order mmaped chunk.
+					filter: func(t int64) bool { return t%2 == 1 },
+					isOOO:  true,
+				},
+				{
+					minT:   minutes(191),
+					maxT:   minutes(193), // Append some more OOO samples to trigger mapping the OOO chunk, but use time 151 to not overlap with in-order head chunk.
+					filter: func(t int64) bool { return t%2 == 1 },
+					isOOO:  true,
+				},
+			},
+		},
+		{
+			name:      "query overlapping inorder and ooo mmaped samples returns all ingested samples at the beginning of the interval",
+			oooCap:    30,
+			queryMinT: minutes(0),
+			queryMaxT: minutes(200),
+			batches: []sampleBatch{
+				{
+					minT:   minutes(100),
+					maxT:   minutes(200),
+					filter: func(t int64) bool { return t%2 == 0 },
+					isOOO:  false,
+				},
+				{
+					minT:   minutes(101),
+					maxT:   minutes(101 + (30-1)*2), // Append samples to fit in a single mmmaped OOO chunk and overlap the first in-order mmaped chunk.
+					filter: func(t int64) bool { return t%2 == 1 },
+					isOOO:  true,
+				},
+				{
+					minT:   minutes(191),
+					maxT:   minutes(193), // Append some more OOO samples to trigger mapping the OOO chunk, but use time 151 to not overlap with in-order head chunk.
 					filter: func(t int64) bool { return t%2 == 1 },
 					isOOO:  true,
 				},
@@ -5587,6 +5663,7 @@ func testQuerierOOOQuery(t *testing.T,
 	}
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
+			opts.OutOfOrderCapMax = tc.oooCap
 			db := openTestDB(t, opts, nil)
 			db.DisableCompactions()
 			db.EnableNativeHistograms()
@@ -5600,7 +5677,6 @@ func testQuerierOOOQuery(t *testing.T,
 
 			for _, batch := range tc.batches {
 				expSamples, appendedCount = addSample(db, batch.minT, batch.maxT, tc.queryMinT, tc.queryMaxT, expSamples, batch.filter, batch.counterReset)
-				require.Positive(t, appendedCount) // Sanity check that filter is not too zealous.
 				if batch.isOOO {
 					oooSamples += appendedCount
 				}
@@ -5698,7 +5774,7 @@ func testChunkQuerierOOOQuery(t *testing.T,
 		app := db.Appender(context.Background())
 		totalAppended := 0
 		for m := fromMins; m <= toMins; m += time.Minute.Milliseconds() {
-			if !filter(m) {
+			if !filter(m / time.Minute.Milliseconds()) {
 				continue
 			}
 			_, err := appendFunc(app, m, counterReset)
@@ -5709,6 +5785,7 @@ func testChunkQuerierOOOQuery(t *testing.T,
 			totalAppended++
 		}
 		require.NoError(t, app.Commit())
+		require.Positive(t, totalAppended) // Sanity check that filter is not too zealous.
 		return expSamples, totalAppended
 	}
 
@@ -5722,12 +5799,14 @@ func testChunkQuerierOOOQuery(t *testing.T,
 
 	tests := []struct {
 		name      string
+		oooCap    int64
 		queryMinT int64
 		queryMaxT int64
 		batches   []sampleBatch
 	}{
 		{
 			name:      "query interval covering ooomint and inordermaxt returns all ingested samples",
+			oooCap:    30,
 			queryMinT: minutes(0),
 			queryMaxT: minutes(200),
 			batches: []sampleBatch{
@@ -5746,6 +5825,7 @@ func testChunkQuerierOOOQuery(t *testing.T,
 		},
 		{
 			name:      "partial query interval returns only samples within interval",
+			oooCap:    30,
 			queryMinT: minutes(20),
 			queryMaxT: minutes(180),
 			batches: []sampleBatch{
@@ -5787,9 +5867,102 @@ func testChunkQuerierOOOQuery(t *testing.T,
 				},
 			},
 		},
+		{
+			name:      "query overlapping inorder and ooo samples returns all ingested samples at the end of the interval",
+			oooCap:    30,
+			queryMinT: minutes(0),
+			queryMaxT: minutes(200),
+			batches: []sampleBatch{
+				{
+					minT:   minutes(100),
+					maxT:   minutes(200),
+					filter: func(t int64) bool { return t%2 == 0 },
+					isOOO:  false,
+				},
+				{
+					minT:   minutes(170),
+					maxT:   minutes(180),
+					filter: func(t int64) bool { return t%2 == 1 },
+					isOOO:  true,
+				},
+			},
+		},
+		{
+			name:      "query overlapping inorder and ooo in-memory samples returns all ingested samples at the beginning of the interval",
+			oooCap:    30,
+			queryMinT: minutes(0),
+			queryMaxT: minutes(200),
+			batches: []sampleBatch{
+				{
+					minT:   minutes(100),
+					maxT:   minutes(200),
+					filter: func(t int64) bool { return t%2 == 0 },
+					isOOO:  false,
+				},
+				{
+					minT:   minutes(100),
+					maxT:   minutes(110),
+					filter: func(t int64) bool { return t%2 == 1 },
+					isOOO:  true,
+				},
+			},
+		},
+		{
+			name:      "query inorder contain ooo mmaped samples returns all ingested samples at the beginning of the interval",
+			oooCap:    5,
+			queryMinT: minutes(0),
+			queryMaxT: minutes(200),
+			batches: []sampleBatch{
+				{
+					minT:   minutes(100),
+					maxT:   minutes(200),
+					filter: func(t int64) bool { return t%2 == 0 },
+					isOOO:  false,
+				},
+				{
+					minT:   minutes(101),
+					maxT:   minutes(101 + (5-1)*2), // Append samples to fit in a single mmmaped OOO chunk and fit inside the first in-order mmaped chunk.
+					filter: func(t int64) bool { return t%2 == 1 },
+					isOOO:  true,
+				},
+				{
+					minT:   minutes(191),
+					maxT:   minutes(193), // Append some more OOO samples to trigger mapping the OOO chunk, but use time 151 to not overlap with in-order head chunk.
+					filter: func(t int64) bool { return t%2 == 1 },
+					isOOO:  true,
+				},
+			},
+		},
+		{
+			name:      "query overlapping inorder and ooo mmaped samples returns all ingested samples at the beginning of the interval",
+			oooCap:    30,
+			queryMinT: minutes(0),
+			queryMaxT: minutes(200),
+			batches: []sampleBatch{
+				{
+					minT:   minutes(100),
+					maxT:   minutes(200),
+					filter: func(t int64) bool { return t%2 == 0 },
+					isOOO:  false,
+				},
+				{
+					minT:   minutes(101),
+					maxT:   minutes(101 + (30-1)*2), // Append samples to fit in a single mmmaped OOO chunk and overlap the first in-order mmaped chunk.
+					filter: func(t int64) bool { return t%2 == 1 },
+					isOOO:  true,
+				},
+				{
+					minT:   minutes(191),
+					maxT:   minutes(193), // Append some more OOO samples to trigger mapping the OOO chunk, but use time 151 to not overlap with in-order head chunk.
+					filter: func(t int64) bool { return t%2 == 1 },
+					isOOO:  true,
+				},
+			},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
+			opts.OutOfOrderCapMax = tc.oooCap
 			db := openTestDB(t, opts, nil)
 			db.DisableCompactions()
 			db.EnableNativeHistograms()
