@@ -100,11 +100,6 @@ func (c MultiChunk) Reset([]byte) {
 	// no-op
 }
 
-// lastGarbageCollectedMmapRef gives the last mmap chunk that may be being garbage collected and so
-// any chunk at or before this ref will not be considered. 0 disables this check.
-//
-// maxMmapRef tells upto what max m-map chunk that we can consider. If it is non-0, then
-// the oooHeadChunk will not be considered.
 func (oh *HeadAndOOOIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	s := oh.head.series.getByID(chunks.HeadSeriesRef(ref))
 
