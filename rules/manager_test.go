@@ -1194,6 +1194,7 @@ func countStaleNaN(t *testing.T, st storage.Storage) int {
 	}
 	return c
 }
+
 func TestRuleMovedBetweenGroups(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")

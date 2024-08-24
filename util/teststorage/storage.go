@@ -50,7 +50,7 @@ func NewWithError() (*TestStorage, error) {
 	opts.MinBlockDuration = int64(24 * time.Hour / time.Millisecond)
 	opts.MaxBlockDuration = int64(24 * time.Hour / time.Millisecond)
 	opts.RetentionDuration = 0
-	//opts.EnableNativeHistograms = true
+	opts.EnableNativeHistograms = true
 	opts.OutOfOrderTimeWindow = 600000
 	db, err := tsdb.Open(dir, nil, nil, opts, tsdb.NewDBStats())
 	if err != nil {

@@ -337,6 +337,7 @@ type headAppender struct {
 func (a *headAppender) SetHints(hints *storage.AppendHints) {
 	a.hints = hints
 }
+
 func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	// Fail fast if OOO is disabled and the sample is out of bounds.
 	// Otherwise a full check will be done later to decide if the sample is in-order or out-of-order.

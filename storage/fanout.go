@@ -150,6 +150,7 @@ type fanoutAppender struct {
 func (f *fanoutAppender) SetHints(hints *AppendHints) {
 	panic("unimplemented")
 }
+
 func (f *fanoutAppender) Append(ref SeriesRef, l labels.Labels, t int64, v float64) (SeriesRef, error) {
 	ref, err := f.primary.Append(ref, l, t, v)
 	if err != nil {
