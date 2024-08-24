@@ -58,15 +58,16 @@ type WriteTo interface {
 	StoreSeries([]record.RefSeries, int)
 	StoreMetadata([]record.RefMetadata)
 
-	// Next two methods are intended for garbage-collection: first we call
-	// UpdateSeriesSegment on all current series
+	// UpdateSeriesSegment and SeriesReset are intended for
+	// garbage-collection:
+	// First we call UpdateSeriesSegment on all current series.
 	UpdateSeriesSegment([]record.RefSeries, int)
-	// Then SeriesReset is called to allow the deletion
-	// of all series created in a segment lower than the argument.
+	// Then SeriesReset is called to allow the deletion of all series
+	// created in a segment lower than the argument.
 	SeriesReset(int)
 }
 
-// Used to notify the watcher that data has been written so that it can read.
+// WriteNotified notifies the watcher that data has been written so that it can read.
 type WriteNotified interface {
 	Notify()
 }

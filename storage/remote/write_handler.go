@@ -236,11 +236,16 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	b := labels.NewScratchBuilder(0)
 	for _, ts := range req.Timeseries {
 		ls := ts.ToLabels(&b, nil)
+
+		// TODO(bwplotka): Even as per 1.0 spec, this should be a 400 error, while other samples are
+		// potentially written. Perhaps unify with fixed writeV2 implementation a bit.
 		if !ls.Has(labels.MetricName) || !ls.IsValid() {
 			level.Warn(h.logger).Log("msg", "Invalid metric names or labels", "got", ls.String())
 			samplesWithInvalidLabels++
-			// TODO(bwplotka): Even as per 1.0 spec, this should be a 400 error, while other samples are
-			// potentially written. Perhaps unify with fixed writeV2 implementation a bit.
+			continue
+		} else if duplicateLabel, hasDuplicate := ls.HasDuplicateLabelNames(); hasDuplicate {
+			level.Warn(h.logger).Log("msg", "Invalid labels for series.", "labels", ls.String(), "duplicated_label", duplicateLabel)
+			samplesWithInvalidLabels++
 			continue
 		}
 
@@ -377,6 +382,10 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		// specific limits and follow https://prometheus.io/docs/specs/remote_write_spec_2_0/#invalid-samples case.
 		if !ls.Has(labels.MetricName) || !ls.IsValid() {
 			badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid metric name or labels, got %v", ls.String()))
+			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
+			continue
+		} else if duplicateLabel, hasDuplicate := ls.HasDuplicateLabelNames(); hasDuplicate {
+			badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid labels for series, labels %v, duplicated label %s", ls.String(), duplicateLabel))
 			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
 			continue
 		}

@@ -227,9 +227,9 @@ type LabelHints struct {
 	Limit int
 }
 
-// TODO(bwplotka): Move to promql/engine_test.go?
 // QueryableFunc is an adapter to allow the use of ordinary functions as
 // Queryables. It follows the idea of http.HandlerFunc.
+// TODO(bwplotka): Move to promql/engine_test.go?
 type QueryableFunc func(mint, maxt int64) (Querier, error)
 
 // Querier calls f() with the given parameters.

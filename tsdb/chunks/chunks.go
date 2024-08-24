@@ -133,6 +133,9 @@ type Meta struct {
 	// Time range the data covers.
 	// When MaxTime == math.MaxInt64 the chunk is still open and being appended to.
 	MinTime, MaxTime int64
+
+	// Flag to indicate that this meta needs merge with OOO data.
+	MergeOOO bool
 }
 
 // ChunkFromSamples requires all samples to have the same type.

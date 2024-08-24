@@ -573,7 +573,7 @@ func (ng *Engine) validateOpts(expr parser.Expr) error {
 	return validationErr
 }
 
-// NewTestQuery: inject special behaviour into Query for testing.
+// NewTestQuery injects special behaviour into Query for testing.
 func (ng *Engine) NewTestQuery(f func(context.Context) error) Query {
 	qry := &query{
 		q:           "test statement",
@@ -3531,14 +3531,14 @@ func makeInt64Pointer(val int64) *int64 {
 	return valp
 }
 
-// Add RatioSampler interface to allow unit-testing (previously: Randomizer).
+// RatioSampler allows unit-testing (previously: Randomizer).
 type RatioSampler interface {
 	// Return this sample "offset" between [0.0, 1.0]
 	sampleOffset(ts int64, sample *Sample) float64
 	AddRatioSample(r float64, sample *Sample) bool
 }
 
-// Use Hash(labels.String()) / maxUint64 as a "deterministic"
+// HashRatioSampler uses Hash(labels.String()) / maxUint64 as a "deterministic"
 // value in [0.0, 1.0].
 type HashRatioSampler struct{}
 

@@ -31,7 +31,7 @@ import (
 	"github.com/prometheus/prometheus/util/fmtutil"
 )
 
-// Push metrics to a prometheus remote write (for testing purpose only).
+// PushMetrics to a prometheus remote write (for testing purpose only).
 func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[string]string, timeout time.Duration, labels map[string]string, files ...string) int {
 	addressURL, err := url.Parse(url.String())
 	if err != nil {
