@@ -329,6 +329,7 @@ type headAppender struct {
 func (a *headAppender) SetHints(hints *storage.AppendHints) {
 	a.hints = hints
 }
+
 func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	// For OOO inserts, this restriction is irrelevant and will be checked later once we confirm the sample is an in-order append.
 	// If OOO inserts are disabled, we may as well as check this as early as we can and avoid more work.
