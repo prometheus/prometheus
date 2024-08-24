@@ -86,6 +86,75 @@ func TestNewScrapePool(t *testing.T) {
 	require.NotNil(t, sp.newLoop, "newLoop function not initialized.")
 }
 
+func TestScrapeLoop_HandlesOutOfOrderTimestamps(t *testing.T) {
+	s := teststorage.New(t)
+	defer s.Close()
+
+	// Create an appender for adding samples to the storage.
+	app := s.Appender(context.Background())
+	capp := &collectResultAppender{next: app}
+	sl := newBasicScrapeLoop(t, context.Background(), nil, func(ctx context.Context) storage.Appender { return capp }, 0)
+
+	// Current time for generating timestamps.
+	now := time.Now()
+
+	// Calculate timestamps for the samples based on the current time.
+	now = now.Truncate(time.Minute) // round down the now timestamp to the nearest minute
+	timestampInorder1 := now
+	timestampOutOfOrder := now.Add(-5 * time.Minute)
+	timestampInorder2 := now.Add(5 * time.Minute)
+
+	slApp := sl.appender(context.Background())
+	_, _, _, err := sl.append(slApp, []byte(`metric_a{a="1",b="1"} 1`), "", timestampInorder1)
+	require.NoError(t, err)
+
+	_, _, _, err = sl.append(slApp, []byte(`metric_a{a="1",b="1"} 2`), "", timestampOutOfOrder)
+	require.NoError(t, err)
+
+	_, _, _, err = sl.append(slApp, []byte(`metric_a{a="1",b="1"} 3`), "", timestampInorder2)
+	require.NoError(t, err)
+
+	require.NoError(t, slApp.Commit())
+
+	// Query the samples back from the storage.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	q, err := s.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
+	require.NoError(t, err)
+	defer q.Close()
+
+	// Use a matcher to filter the metric name.
+	series := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "metric_a"))
+
+	var results []floatSample
+	for series.Next() {
+		it := series.At().Iterator(nil)
+		for it.Next() == chunkenc.ValFloat {
+			t, v := it.At()
+			results = append(results, floatSample{
+				metric: series.At().Labels(),
+				t:      t,
+				f:      v,
+			})
+		}
+		require.NoError(t, it.Err())
+	}
+	require.NoError(t, series.Err())
+	want := []floatSample{
+		{
+			metric: labels.FromStrings("__name__", "metric_a", "a", "1", "b", "1"),
+			t:      timestamp.FromTime(timestampInorder1),
+			f:      1,
+		},
+		{
+			metric: labels.FromStrings("__name__", "metric_a", "a", "1", "b", "1"),
+			t:      timestamp.FromTime(timestampInorder2),
+			f:      3,
+		},
+	}
+	require.Equal(t, want, results, "Appended samples not as expected:\n%s", results)
+}
+
 func TestDroppedTargetsList(t *testing.T) {
 	var (
 		app = &nopAppendable{}
