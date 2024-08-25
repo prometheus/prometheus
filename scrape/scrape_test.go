@@ -962,7 +962,7 @@ func TestScrapeLoopMetadata(t *testing.T) {
 		0,
 		false,
 		false,
-		false,
+		true, // EnableCTZeroIngestion
 		false,
 		false,
 		nil,
@@ -977,30 +977,36 @@ func TestScrapeLoopMetadata(t *testing.T) {
 # HELP test_metric some help text
 # UNIT test_metric metric
 test_metric 1
+test_metric_created 1000
 # TYPE test_metric_no_help gauge
 # HELP test_metric_no_type other help text
 # EOF`), "application/openmetrics-text", time.Now())
 	require.NoError(t, err)
 	require.NoError(t, slApp.Commit())
-	require.Equal(t, 1, total)
+	// It returns 2 below because _created lines are still being ingested as a metric when using OpenMetrics.
+	// TODO: _created lines should be ingested as metadata only, and not as a metric.
+	require.Equal(t, 2, total)
 
 	md, ok := cache.GetMetadata("test_metric")
 	require.True(t, ok, "expected metadata to be present")
 	require.Equal(t, model.MetricTypeCounter, md.Type, "unexpected metric type")
 	require.Equal(t, "some help text", md.Help)
 	require.Equal(t, "metric", md.Unit)
+	require.Equal(t, int64(1000), md.CreatedTimestamp)
 
 	md, ok = cache.GetMetadata("test_metric_no_help")
 	require.True(t, ok, "expected metadata to be present")
 	require.Equal(t, model.MetricTypeGauge, md.Type, "unexpected metric type")
 	require.Equal(t, "", md.Help)
 	require.Equal(t, "", md.Unit)
+	require.Equal(t, int64(0), md.CreatedTimestamp)
 
 	md, ok = cache.GetMetadata("test_metric_no_type")
 	require.True(t, ok, "expected metadata to be present")
 	require.Equal(t, model.MetricTypeUnknown, md.Type, "unexpected metric type")
 	require.Equal(t, "other help text", md.Help)
 	require.Equal(t, "", md.Unit)
+	require.Equal(t, int64(0), md.CreatedTimestamp)
 }
 
 func simpleTestScrapeLoop(t testing.TB) (context.Context, *scrapeLoop) {

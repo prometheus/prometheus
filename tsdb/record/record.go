@@ -134,8 +134,9 @@ func ToMetricType(m uint8) model.MetricType {
 }
 
 const (
-	unitMetaName = "UNIT"
-	helpMetaName = "HELP"
+	unitMetaName         = "UNIT"
+	helpMetaName         = "HELP"
+	createdTimestampName = "CREATED_TIMESTAMP"
 )
 
 // ErrNotFound is returned if a looked up resource was not found. Duplicate ErrNotFound from head.go.
@@ -157,10 +158,11 @@ type RefSample struct {
 
 // RefMetadata is the metadata associated with a series ID.
 type RefMetadata struct {
-	Ref  chunks.HeadSeriesRef
-	Type uint8
-	Unit string
-	Help string
+	Ref              chunks.HeadSeriesRef
+	Type             uint8
+	Unit             string
+	Help             string
+	CreatedTimestamp int64
 }
 
 // RefExemplar is an exemplar with the labels, timestamp, value the exemplar was collected/observed with, and a reference to a series.
@@ -253,23 +255,31 @@ func (d *Decoder) Metadata(rec []byte, metadata []RefMetadata) ([]RefMetadata, e
 		// We're currently aware of two more metadata fields other than TYPE; that is UNIT and HELP.
 		// We can skip the rest of the fields (if we encounter any), but we must decode them anyway
 		// so we can correctly align with the start with the next metadata record.
-		var unit, help string
+		var unit, help, fieldValueStr string
+		var ct, fieldValueInt int64
 		for i := 0; i < numFields; i++ {
 			fieldName := dec.UvarintStr()
-			fieldValue := dec.UvarintStr()
 			switch fieldName {
 			case unitMetaName:
-				unit = fieldValue
+				fieldValueStr = dec.UvarintStr()
+				unit = fieldValueStr
 			case helpMetaName:
-				help = fieldValue
+				fieldValueStr = dec.UvarintStr()
+				help = fieldValueStr
+			case createdTimestampName:
+				fieldValueInt = dec.Varint64()
+				ct = fieldValueInt
+			default:
+				_ = dec.UvarintStr() // To be skipped
 			}
 		}
 
 		metadata = append(metadata, RefMetadata{
-			Ref:  chunks.HeadSeriesRef(ref),
-			Type: typ,
-			Unit: unit,
-			Help: help,
+			Ref:              chunks.HeadSeriesRef(ref),
+			Type:             typ,
+			Unit:             unit,
+			Help:             help,
+			CreatedTimestamp: ct,
 		})
 	}
 	if dec.Err() != nil {
@@ -615,11 +625,13 @@ func (e *Encoder) Metadata(metadata []RefMetadata, b []byte) []byte {
 
 		buf.PutByte(m.Type)
 
-		buf.PutUvarint(2) // num_fields: We currently have two more metadata fields, UNIT and HELP.
+		buf.PutUvarint(3) // num_fields: We currently have three more metadata fields, UNIT, HELP, and CREATED_TIMESTAMP.
 		buf.PutUvarintStr(unitMetaName)
 		buf.PutUvarintStr(m.Unit)
 		buf.PutUvarintStr(helpMetaName)
 		buf.PutUvarintStr(m.Help)
+		buf.PutUvarintStr(createdTimestampName)
+		buf.PutVarint64(m.CreatedTimestamp)
 	}
 
 	return buf.Get()

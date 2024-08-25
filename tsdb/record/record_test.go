@@ -49,22 +49,25 @@ func TestRecord_EncodeDecode(t *testing.T) {
 
 	metadata := []RefMetadata{
 		{
-			Ref:  100,
-			Type: uint8(Counter),
-			Unit: "",
-			Help: "some magic counter",
+			Ref:              100,
+			Type:             uint8(Counter),
+			Unit:             "",
+			Help:             "some magic counter",
+			CreatedTimestamp: 1234,
 		},
 		{
-			Ref:  1,
-			Type: uint8(Counter),
-			Unit: "seconds",
-			Help: "CPU time counter",
+			Ref:              1,
+			Type:             uint8(Counter),
+			Unit:             "seconds",
+			Help:             "CPU time counter",
+			CreatedTimestamp: 1000,
 		},
 		{
-			Ref:  147741,
-			Type: uint8(Gauge),
-			Unit: "percentage",
-			Help: "current memory usage",
+			Ref:              147741,
+			Type:             uint8(Gauge),
+			Unit:             "percentage",
+			Help:             "current memory usage",
+			CreatedTimestamp: 1020,
 		},
 	}
 	decMetadata, err := dec.Metadata(enc.Metadata(metadata, nil), nil)
@@ -329,21 +332,25 @@ func TestRecord_MetadataDecodeUnknownExtraFields(t *testing.T) {
 	// Write first metadata entry, all known fields.
 	enc.PutUvarint64(101)
 	enc.PutByte(byte(Counter))
-	enc.PutUvarint(2)
+	enc.PutUvarint(3)
 	enc.PutUvarintStr(unitMetaName)
 	enc.PutUvarintStr("")
 	enc.PutUvarintStr(helpMetaName)
 	enc.PutUvarintStr("some magic counter")
+	enc.PutUvarintStr(createdTimestampName)
+	enc.PutVarint64(1234)
 
 	// Write second metadata entry, known fields + unknown fields.
 	enc.PutUvarint64(99)
 	enc.PutByte(byte(Counter))
-	enc.PutUvarint(3)
+	enc.PutUvarint(4)
 	// Known fields.
 	enc.PutUvarintStr(unitMetaName)
 	enc.PutUvarintStr("seconds")
 	enc.PutUvarintStr(helpMetaName)
 	enc.PutUvarintStr("CPU time counter")
+	enc.PutUvarintStr(createdTimestampName)
+	enc.PutVarint64(1000)
 	// Unknown fields.
 	enc.PutUvarintStr("an extra field name to be skipped")
 	enc.PutUvarintStr("with its value")
@@ -351,7 +358,7 @@ func TestRecord_MetadataDecodeUnknownExtraFields(t *testing.T) {
 	// Write third metadata entry, with unknown fields and different order.
 	enc.PutUvarint64(47250)
 	enc.PutByte(byte(Gauge))
-	enc.PutUvarint(4)
+	enc.PutUvarint(5)
 	enc.PutUvarintStr("extra name one")
 	enc.PutUvarintStr("extra value one")
 	enc.PutUvarintStr(helpMetaName)
@@ -360,6 +367,8 @@ func TestRecord_MetadataDecodeUnknownExtraFields(t *testing.T) {
 	enc.PutUvarintStr("extra value two")
 	enc.PutUvarintStr(unitMetaName)
 	enc.PutUvarintStr("percentage")
+	enc.PutUvarintStr(createdTimestampName)
+	enc.PutVarint64(1020)
 
 	// Should yield known fields for all entries and skip over unknown fields.
 	expectedMetadata := []RefMetadata{
@@ -368,16 +377,19 @@ func TestRecord_MetadataDecodeUnknownExtraFields(t *testing.T) {
 			Type: uint8(Counter),
 			Unit: "",
 			Help: "some magic counter",
+			CreatedTimestamp: 1234,
 		}, {
 			Ref:  99,
 			Type: uint8(Counter),
 			Unit: "seconds",
 			Help: "CPU time counter",
+			CreatedTimestamp: 1000,
 		}, {
 			Ref:  47250,
 			Type: uint8(Gauge),
 			Unit: "percentage",
 			Help: "current memory usage",
+			CreatedTimestamp: 1020,
 		},
 	}
 

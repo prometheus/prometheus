@@ -1288,7 +1288,7 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 		for _, t := range tt {
 			if metric == "" {
 				for _, mm := range t.ListMetadata() {
-					m := metadata.Metadata{Type: mm.Type, Help: mm.Help, Unit: mm.Unit}
+					m := metadata.Metadata{Type: mm.Type, Help: mm.Help, Unit: mm.Unit, CreatedTimestamp: mm.CreatedTimestamp}
 					ms, ok := metrics[mm.Metric]
 
 					if limitPerMetric > 0 && len(ms) >= limitPerMetric {

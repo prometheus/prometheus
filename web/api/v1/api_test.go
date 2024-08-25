@@ -1137,7 +1137,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 	}
 
 	tests := []test{
-		{
+		{ // 0
 			endpoint: api.query,
 			query: url.Values{
 				"query": []string{"2"},
@@ -1151,7 +1151,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				},
 			},
 		},
-		{
+		{ // 1
 			endpoint: api.query,
 			query: url.Values{
 				"query": []string{"0.333"},
@@ -1165,7 +1165,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				},
 			},
 		},
-		{
+		{ // 2
 			endpoint: api.query,
 			query: url.Values{
 				"query": []string{"0.333"},
@@ -1179,7 +1179,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				},
 			},
 		},
-		{
+		{ // 3
 			endpoint: api.query,
 			query: url.Values{
 				"query": []string{"0.333"},
@@ -1192,7 +1192,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				},
 			},
 		},
-		{
+		{ // 4
 			endpoint: api.queryRange,
 			query: url.Values{
 				"query": []string{"time()"},
@@ -1215,7 +1215,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 		},
 		// Test empty vector result
-		{
+		{ // 5
 			endpoint: api.query,
 			query: url.Values{
 				"query": []string{"bottomk(2, notExists)"},
@@ -1223,7 +1223,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			responseAsJSON: `{"resultType":"vector","result":[]}`,
 		},
 		// Test empty matrix result
-		{
+		{ // 6
 			endpoint: api.queryRange,
 			query: url.Values{
 				"query": []string{"bottomk(2, notExists)"},
@@ -1234,7 +1234,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			responseAsJSON: `{"resultType":"matrix","result":[]}`,
 		},
 		// Missing query params in range queries.
-		{
+		{ // 7
 			endpoint: api.queryRange,
 			query: url.Values{
 				"query": []string{"time()"},
@@ -1243,7 +1243,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 			errType: errorBadData,
 		},
-		{
+		{ // 8
 			endpoint: api.queryRange,
 			query: url.Values{
 				"query": []string{"time()"},
@@ -1252,7 +1252,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 			errType: errorBadData,
 		},
-		{
+		{ // 9
 			endpoint: api.queryRange,
 			query: url.Values{
 				"query": []string{"time()"},
@@ -1262,7 +1262,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			errType: errorBadData,
 		},
 		// Bad query expression.
-		{
+		{ // 10
 			endpoint: api.query,
 			query: url.Values{
 				"query": []string{"invalid][query"},
@@ -1270,7 +1270,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 			errType: errorBadData,
 		},
-		{
+		{ // 11
 			endpoint: api.queryRange,
 			query: url.Values{
 				"query": []string{"invalid][query"},
@@ -1281,7 +1281,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			errType: errorBadData,
 		},
 		// Invalid step.
-		{
+		{ // 12
 			endpoint: api.queryRange,
 			query: url.Values{
 				"query": []string{"time()"},
@@ -1292,7 +1292,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			errType: errorBadData,
 		},
 		// Start after end.
-		{
+		{ // 13
 			endpoint: api.queryRange,
 			query: url.Values{
 				"query": []string{"time()"},
@@ -1303,7 +1303,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			errType: errorBadData,
 		},
 		// Start overflows int64 internally.
-		{
+		{ // 14
 			endpoint: api.queryRange,
 			query: url.Values{
 				"query": []string{"time()"},
@@ -1313,21 +1313,21 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 			errType: errorBadData,
 		},
-		{
+		{ // 15
 			endpoint: api.formatQuery,
 			query: url.Values{
 				"query": []string{"foo+bar"},
 			},
 			response: "foo + bar",
 		},
-		{
+		{ // 16
 			endpoint: api.formatQuery,
 			query: url.Values{
 				"query": []string{"invalid_expression/"},
 			},
 			errType: errorBadData,
 		},
-		{
+		{ // 17
 			endpoint: api.series,
 			query: url.Values{
 				"match[]": []string{`test_metric2`},
@@ -1336,14 +1336,14 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				labels.FromStrings("__name__", "test_metric2", "foo", "boo"),
 			},
 		},
-		{
+		{ // 18
 			endpoint: api.series,
 			query: url.Values{
 				"match[]": []string{`{foo=""}`},
 			},
 			errType: errorBadData,
 		},
-		{
+		{ // 19
 			endpoint: api.series,
 			query: url.Values{
 				"match[]": []string{`test_metric1{foo=~".+o"}`},
@@ -1352,7 +1352,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				labels.FromStrings("__name__", "test_metric1", "foo", "boo"),
 			},
 		},
-		{
+		{ // 20
 			endpoint: api.series,
 			query: url.Values{
 				"match[]": []string{`test_metric1{foo=~".+o$"}`, `test_metric1{foo=~".+o"}`},
@@ -1362,7 +1362,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 		},
 		// Try to overlap the selected series set as much as possible to test the result de-duplication works well.
-		{
+		{ // 21
 			endpoint: api.series,
 			query: url.Values{
 				"match[]": []string{`test_metric4{foo=~".+o$"}`, `test_metric4{dup=~"^1"}`},
@@ -1373,7 +1373,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				labels.FromStrings("__name__", "test_metric4", "foo", "boo"),
 			},
 		},
-		{
+		{ // 22
 			endpoint: api.series,
 			query: url.Values{
 				"match[]": []string{`test_metric1{foo=~".+o"}`, `none`},
@@ -1383,7 +1383,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 		},
 		// Start and end before series starts.
-		{
+		{ // 23
 			endpoint: api.series,
 			query: url.Values{
 				"match[]": []string{`test_metric2`},
@@ -1393,7 +1393,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			response: []labels.Labels{},
 		},
 		// Start and end after series ends.
-		{
+		{ // 24
 			endpoint: api.series,
 			query: url.Values{
 				"match[]": []string{`test_metric2`},
@@ -1403,7 +1403,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			response: []labels.Labels{},
 		},
 		// Start before series starts, end after series ends.
-		{
+		{ // 25
 			endpoint: api.series,
 			query: url.Values{
 				"match[]": []string{`test_metric2`},
@@ -1415,7 +1415,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 		},
 		// Start and end within series.
-		{
+		{ // 26
 			endpoint: api.series,
 			query: url.Values{
 				"match[]": []string{`test_metric2`},
@@ -1427,7 +1427,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 		},
 		// Start within series, end after.
-		{
+		{ // 27
 			endpoint: api.series,
 			query: url.Values{
 				"match[]": []string{`test_metric2`},
@@ -1439,7 +1439,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 		},
 		// Start before series, end within series.
-		{
+		{ // 28
 			endpoint: api.series,
 			query: url.Values{
 				"match[]": []string{`test_metric2`},
@@ -1451,7 +1451,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 		},
 		// Series request with limit.
-		{
+		{ // 29
 			endpoint: api.series,
 			query: url.Values{
 				"match[]": []string{"test_metric1"},
@@ -1460,7 +1460,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			responseLen:   1, // API does not specify which particular value will come back.
 			warningsCount: 1,
 		},
-		{
+		{ // 30
 			endpoint: api.series,
 			query: url.Values{
 				"match[]": []string{"test_metric1"},
@@ -1469,7 +1469,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			responseLen:   2, // API does not specify which particular value will come back.
 			warningsCount: 0, // No warnings if limit isn't exceeded.
 		},
-		{
+		{ // 31
 			endpoint: api.series,
 			query: url.Values{
 				"match[]": []string{"test_metric1"},
@@ -1479,15 +1479,15 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			warningsCount: 0, // No warnings if limit isn't exceeded.
 		},
 		// Missing match[] query params in series requests.
-		{
+		{ // 32
 			endpoint: api.series,
 			errType:  errorBadData,
 		},
-		{
+		{ // 33
 			endpoint: api.dropSeries,
 			errType:  errorInternal,
 		},
-		{
+		{ // 34
 			endpoint: api.targets,
 			response: &TargetDiscovery{
 				ActiveTargets: []*Target{
@@ -1533,7 +1533,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				DroppedTargetCounts: map[string]int{"blackbox": 1},
 			},
 		},
-		{
+		{ // 35
 			endpoint: api.targets,
 			query: url.Values{
 				"state": []string{"any"},
@@ -1582,7 +1582,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				DroppedTargetCounts: map[string]int{"blackbox": 1},
 			},
 		},
-		{
+		{ // 36
 			endpoint: api.targets,
 			query: url.Values{
 				"state": []string{"active"},
@@ -1619,7 +1619,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				DroppedTargets: []*DroppedTarget{},
 			},
 		},
-		{
+		{ // 37
 			endpoint: api.targets,
 			query: url.Values{
 				"state": []string{"Dropped"},
@@ -1642,7 +1642,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 		},
 		// With a matching metric.
-		{
+		{ // 38
 			endpoint: api.targetMetadata,
 			query: url.Values{
 				"metric": []string{"go_threads"},
@@ -1672,7 +1672,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 		},
 		// With a matching target.
-		{
+		{ // 39
 			endpoint: api.targetMetadata,
 			query: url.Values{
 				"match_target": []string{"{job=\"blackbox\"}"},
@@ -1703,7 +1703,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 		},
 		// Without a target or metric.
-		{
+		{ // 40
 			endpoint: api.targetMetadata,
 			metadata: []targetMetadata{
 				{
@@ -1757,14 +1757,14 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 		},
 		// Without a matching metric.
-		{
+		{ // 41
 			endpoint: api.targetMetadata,
 			query: url.Values{
 				"match_target": []string{"{job=\"non-existentblackbox\"}"},
 			},
 			response: []metricMetadata{},
 		},
-		{
+		{ // 42
 			endpoint: api.alertmanagers,
 			response: &AlertmanagerDiscovery{
 				ActiveAlertmanagers: []*AlertmanagerTarget{
@@ -1780,7 +1780,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 		},
 		// With metadata available.
-		{
+		{ // 43
 			endpoint: api.metricMetadata,
 			metadata: []targetMetadata{
 				{
@@ -1797,20 +1797,21 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 							Type:   model.MetricTypeGauge,
 							Help:   "Information about the Go environment.",
 							Unit:   "",
+							CreatedTimestamp: 1000,
 						},
 					},
 				},
 			},
 			response: map[string][]metadata.Metadata{
 				"prometheus_engine_query_duration_seconds": {{Type: model.MetricTypeSummary, Help: "Query timings", Unit: ""}},
-				"go_info": {{Type: model.MetricTypeGauge, Help: "Information about the Go environment.", Unit: ""}},
+				"go_info": {{Type: model.MetricTypeGauge, Help: "Information about the Go environment.", Unit: "", CreatedTimestamp: 1000}},
 			},
 			responseAsJSON: `{"prometheus_engine_query_duration_seconds":[{"type":"summary","unit":"",
-"help":"Query timings"}], "go_info":[{"type":"gauge","unit":"",
-"help":"Information about the Go environment."}]}`,
+"help":"Query timings", "created_timestamp": 0}], "go_info":[{"type":"gauge","unit":"",
+"help":"Information about the Go environment.", "created_timestamp": 1000}]}`,
 		},
 		// With duplicate metadata for a metric that comes from different targets.
-		{
+		{ // 44
 			endpoint: api.metricMetadata,
 			metadata: []targetMetadata{
 				{
@@ -1840,10 +1841,10 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				"go_threads": {{Type: model.MetricTypeGauge, Help: "Number of OS threads created"}},
 			},
 			responseAsJSON: `{"go_threads": [{"type":"gauge","unit":"",
-"help":"Number of OS threads created"}]}`,
+"help":"Number of OS threads created", "created_timestamp": 0}]}`,
 		},
 		// With non-duplicate metadata for the same metric from different targets.
-		{
+		{ // 45
 			endpoint: api.metricMetadata,
 			metadata: []targetMetadata{
 				{
@@ -1876,8 +1877,8 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				},
 			},
 			responseAsJSON: `{"go_threads": [{"type":"gauge","unit":"",
-"help":"Number of OS threads created"},{"type":"gauge","unit":"",
-"help":"Number of OS threads that were created."}]}`,
+"help":"Number of OS threads created", "created_timestamp": 0},{"type":"gauge","unit":"",
+"help":"Number of OS threads that were created.", "created_timestamp": 0}]}`,
 			sorter: func(m interface{}) {
 				v := m.(map[string][]metadata.Metadata)["go_threads"]
 
@@ -1887,7 +1888,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 		},
 		// With a limit for the number of metrics returned.
-		{
+		{ // 46
 			endpoint: api.metricMetadata,
 			query: url.Values{
 				"limit": []string{"2"},
@@ -1925,7 +1926,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			responseLen: 2,
 		},
 		// With a limit for the number of metadata per metric.
-		{
+		{ // 47
 			endpoint: api.metricMetadata,
 			query:    url.Values{"limit_per_metric": []string{"1"}},
 			metadata: []targetMetadata{
@@ -1961,10 +1962,10 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					{Type: model.MetricTypeSummary, Help: "A summary of the GC invocation durations."},
 				},
 			},
-			responseAsJSON: `{"go_gc_duration_seconds":[{"help":"A summary of the GC invocation durations.","type":"summary","unit":""}],"go_threads": [{"type":"gauge","unit":"","help":"Number of OS threads created"}]}`,
+			responseAsJSON: `{"go_gc_duration_seconds":[{"help":"A summary of the GC invocation durations.","type":"summary","unit":"", "created_timestamp": 0}],"go_threads": [{"type":"gauge","unit":"","help":"Number of OS threads created", "created_timestamp": 0}]}`,
 		},
 		// With a limit for the number of metadata per metric and per metric.
-		{
+		{ // 48
 			endpoint: api.metricMetadata,
 			query:    url.Values{"limit_per_metric": []string{"1"}, "limit": []string{"1"}},
 			metadata: []targetMetadata{
@@ -1997,7 +1998,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 		},
 
 		// With a limit for the number of metadata per metric and per metric, while having multiple targets.
-		{
+		{ // 49
 			endpoint: api.metricMetadata,
 			query:    url.Values{"limit_per_metric": []string{"1"}, "limit": []string{"1"}},
 			metadata: []targetMetadata{
@@ -2046,7 +2047,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			responseMetadataTotal: 1,
 		},
 		// When requesting a specific metric that is present.
-		{
+		{ // 50
 			endpoint: api.metricMetadata,
 			query:    url.Values{"metric": []string{"go_threads"}},
 			metadata: []targetMetadata{
@@ -2085,7 +2086,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					{Type: model.MetricTypeGauge, Help: "Number of OS threads that were created."},
 				},
 			},
-			responseAsJSON: `{"go_threads": [{"type":"gauge","unit":"","help":"Number of OS threads created"},{"type":"gauge","unit":"","help":"Number of OS threads that were created."}]}`,
+			responseAsJSON: `{"go_threads": [{"type":"gauge","unit":"","help":"Number of OS threads created", "created_timestamp": 0},{"type":"gauge","unit":"","help":"Number of OS threads that were created.", "created_timestamp": 0}]}`,
 			sorter: func(m interface{}) {
 				v := m.(map[string][]metadata.Metadata)["go_threads"]
 
@@ -2095,7 +2096,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 		},
 		// With a specific metric that is not present.
-		{
+		{ // 51
 			endpoint: api.metricMetadata,
 			query:    url.Values{"metric": []string{"go_gc_duration_seconds"}},
 			metadata: []targetMetadata{
@@ -2114,21 +2115,21 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			response: map[string][]metadata.Metadata{},
 		},
 		// With no available metadata.
-		{
+		{ // 52
 			endpoint: api.metricMetadata,
 			response: map[string][]metadata.Metadata{},
 		},
-		{
+		{ // 53
 			endpoint: api.serveConfig,
 			response: &prometheusConfig{
 				YAML: samplePrometheusCfg.String(),
 			},
 		},
-		{
+		{ // 54
 			endpoint: api.serveFlags,
 			response: sampleFlagMap,
 		},
-		{
+		{ // 55
 			endpoint: api.alerts,
 			response: &AlertDiscovery{
 				Alerts: []*Alert{
@@ -2149,7 +2150,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				}
 			},
 		},
-		{
+		{ // 56
 			endpoint: api.rules,
 			response: &RuleDiscovery{
 				RuleGroups: []*RuleGroup{
@@ -2241,7 +2242,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 			zeroFunc: rulesZeroFunc,
 		},
-		{
+		{ // 57
 			endpoint: api.rules,
 			query: url.Values{
 				"exclude_alerts": []string{"true"},
@@ -2329,7 +2330,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 			zeroFunc: rulesZeroFunc,
 		},
-		{
+		{ // 58
 			endpoint: api.rules,
 			query: url.Values{
 				"type": []string{"alert"},
@@ -2410,7 +2411,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 			zeroFunc: rulesZeroFunc,
 		},
-		{
+		{ // 59
 			endpoint: api.rules,
 			query: url.Values{
 				"type": []string{"record"},
@@ -2443,7 +2444,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 			zeroFunc: rulesZeroFunc,
 		},
-		{
+		{ // 60
 			endpoint: api.rules,
 			query:    url.Values{"rule_name[]": []string{"test_metric4"}},
 			response: &RuleDiscovery{
@@ -2471,12 +2472,12 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 			zeroFunc: rulesZeroFunc,
 		},
-		{
+		{ // 61
 			endpoint: api.rules,
 			query:    url.Values{"rule_group[]": []string{"respond-with-nothing"}},
 			response: &RuleDiscovery{RuleGroups: []*RuleGroup{}},
 		},
-		{
+		{ // 62
 			endpoint: api.rules,
 			query:    url.Values{"file[]": []string{"/path/to/file"}, "rule_name[]": []string{"test_metric4"}},
 			response: &RuleDiscovery{
@@ -2504,7 +2505,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 			zeroFunc: rulesZeroFunc,
 		},
-		{
+		{ // 63
 			endpoint: api.rules,
 			query: url.Values{
 				"match[]": []string{`{testlabel="rule"}`},
@@ -2541,7 +2542,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 			zeroFunc: rulesZeroFunc,
 		},
-		{
+		{ // 64
 			endpoint: api.rules,
 			query: url.Values{
 				"type":    []string{"alert"},
@@ -2572,7 +2573,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 			zeroFunc: rulesZeroFunc,
 		},
-		{
+		{ // 65
 			endpoint: api.rules,
 			query: url.Values{
 				"match[]": []string{`{testlabel="abc"}`},
@@ -2582,7 +2583,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 		},
 		// This is testing OR condition, the api response should return rule if it matches one of the label selector
-		{
+		{ // 66
 			endpoint: api.rules,
 			query: url.Values{
 				"match[]": []string{`{testlabel="abc"}`, `{testlabel="rule"}`},
@@ -2619,7 +2620,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 			zeroFunc: rulesZeroFunc,
 		},
-		{
+		{ // 67
 			endpoint: api.rules,
 			query: url.Values{
 				"type":    []string{"record"},
@@ -2646,7 +2647,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 			zeroFunc: rulesZeroFunc,
 		},
-		{
+		{ // 68
 			endpoint: api.rules,
 			query: url.Values{
 				"type":    []string{"alert"},
@@ -2677,7 +2678,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 			zeroFunc: rulesZeroFunc,
 		},
-		{
+		{ // 69
 			endpoint: api.queryExemplars,
 			query: url.Values{
 				"query": []string{`test_metric3{foo="boo"} - test_metric4{foo="bar"}`},
@@ -2710,7 +2711,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				},
 			},
 		},
-		{
+		{ // 70
 			endpoint: api.queryExemplars,
 			query: url.Values{
 				"query": []string{`{foo="boo"}`},
@@ -2730,7 +2731,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				},
 			},
 		},
-		{
+		{ // 71
 			endpoint: api.queryExemplars,
 			query: url.Values{
 				"query": []string{`{foo="boo"}`},
@@ -2753,7 +2754,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				},
 			},
 		},
-		{
+		{ // 72
 			endpoint: api.queryExemplars,
 			query: url.Values{
 				"query": []string{`{__name__="test_metric5"}`},
