@@ -84,6 +84,10 @@ global:
   # Reloading the configuration will reopen the file.
   [ query_log_file: <string> ]
 
+  # File to which scrape failures are logged.
+  # Reloading the configuration will reopen the file.
+  [ scrape_failure_log_file: <string> ]
+
   # An uncompressed response body larger than this many bytes will cause the
   # scrape to fail. 0 means no limit. Example: 100MB.
   # This is an experimental feature, this behaviour could
@@ -318,6 +322,10 @@ http_headers:
     [ secrets: [<secret>, ...] ]
     # Files to read header values from.
     [ files: [<string>, ...] ] ]
+
+# File to which scrape failures are logged.
+# Reloading the configuration will reopen the file.
+[ scrape_failure_log_file: <string> ]
 
 # List of Azure service discovery configurations.
 azure_sd_configs:
