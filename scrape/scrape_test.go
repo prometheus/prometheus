@@ -1225,7 +1225,69 @@ func BenchmarkScrapeLoopAppendOM(b *testing.B) {
 		_, _, _, _ = sl.append(slApp, metrics, "application/openmetrics-text", ts)
 	}
 }
+func runScrapeLoop(ctx context.Context, t *testing.T, appender storage.Appender, cue int, action func(*scrapeLoop)) {
+	var (
+		scraper = &testScraper{}
+		app     = func(ctx context.Context) storage.Appender { return appender }
+	)
+	sl := newBasicScrapeLoop(t, ctx, scraper, app, 10*time.Millisecond)
+	numScrapes := 0
+	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
+		numScrapes++
+		if numScrapes == cue {
+			action(sl)
+		}
+		w.Write([]byte(fmt.Sprintf("metric_a %d\n", 42+numScrapes)))
+		return nil
+	}
+	sl.run(nil)
+}
+func TestSetHintsHandlingStaleness(t *testing.T) {
+	s := teststorage.New(t)
+	defer s.Close()
 
+	// Create an appender for adding samples to the storage.
+	app := s.Appender(context.Background())
+	capp := &collectResultAppender{next: app}
+	var (
+		signal = make(chan struct{}, 1)
+	)
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		runScrapeLoop(ctx, t, capp, 2, func(sl *scrapeLoop) {
+			go sl.stop()
+			go func() {
+				runScrapeLoop(ctx, t, capp, 4, func(_ *scrapeLoop) {
+					cancel()
+				})
+				signal <- struct{}{}
+			}()
+		})
+	}()
+	select {
+	case <-signal:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("Scrape wasn't stopped.")
+	}
+	/*for _, v := range capp.resultFloats {
+		if v.metric.Get("__name__") == "metric_a" {
+			fmt.Println(v)
+		}
+	}*/
+	var prevT int64
+	for _, v := range capp.resultFloats {
+		if v.metric.Get("__name__") == "metric_a" {
+			// Check for out-of-order samples
+			//fmt.Println(v)
+			if v.t <= prevT {
+				// Ensure out-of-order sample's value is NaN
+				require.True(t, math.IsNaN(v.f), "Expected NaN value for out-of-order sample at timestamp %d", v.t)
+			}
+			prevT = v.t
+		}
+	}
+
+}
 func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
 	appender := &collectResultAppender{}
 	var (
@@ -4101,7 +4163,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrapeForTimestampedMetrics(t *
 	case <-time.After(5 * time.Second):
 		t.Fatalf("Scrape wasn't stopped.")
 	}
-
+	fmt.Println(appender.resultFloats)
 	// 1 successfully scraped sample, 1 stale marker after first fail, 5 report samples for
 	// each scrape successful or not.
 	require.Len(t, appender.resultFloats, 27, "Appended samples not as expected:\n%s", appender)
