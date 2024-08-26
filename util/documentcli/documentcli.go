@@ -23,6 +23,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"reflect"
 	"strings"
 
 	"github.com/alecthomas/kingpin/v2"
@@ -73,6 +74,16 @@ func createFlagRow(flag *kingpin.FlagModel) []string {
 	name := fmt.Sprintf(`<code class="text-nowrap">--%s</code>`, flag.Name)
 	if flag.Short != '\x00' {
 		name = fmt.Sprintf(`<code class="text-nowrap">-%c</code>, <code class="text-nowrap">--%s</code>`, flag.Short, flag.Name)
+	}
+
+	valueType := reflect.TypeOf(flag.Value)
+	if valueType.Kind() == reflect.Ptr {
+		valueType = valueType.Elem()
+	}
+	if valueType.Kind() == reflect.Struct {
+		if _, found := valueType.FieldByName("slice"); found {
+			name = fmt.Sprintf(`%s <code class="text-nowrap">...<code class="text-nowrap">`, name)
+		}
 	}
 
 	return []string{name, strings.ReplaceAll(flag.Help, "|", `\|`), defaultVal}

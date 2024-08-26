@@ -15,7 +15,7 @@ Tooling for the Prometheus monitoring system.
 | <code class="text-nowrap">-h</code>, <code class="text-nowrap">--help</code> | Show context-sensitive help (also try --help-long and --help-man). |
 | <code class="text-nowrap">--version</code> | Show application version. |
 | <code class="text-nowrap">--experimental</code> | Enable experimental commands. |
-| <code class="text-nowrap">--enable-feature</code> | Comma separated feature names to enable (only PromQL related and no-default-scrape-port). See https://prometheus.io/docs/prometheus/latest/feature_flags/ for the options and more details. |
+| <code class="text-nowrap">--enable-feature</code> <code class="text-nowrap">...<code class="text-nowrap"> | Comma separated feature names to enable (only PromQL related and no-default-scrape-port). See https://prometheus.io/docs/prometheus/latest/feature_flags/ for the options and more details. |
 
 
 
@@ -281,7 +281,7 @@ Run series query.
 
 | Flag | Description |
 | --- | --- |
-| <code class="text-nowrap">--match</code> | Series selector. Can be specified multiple times. |
+| <code class="text-nowrap">--match</code> <code class="text-nowrap">...<code class="text-nowrap"> | Series selector. Can be specified multiple times. |
 | <code class="text-nowrap">--start</code> | Start time (RFC3339 or Unix timestamp). |
 | <code class="text-nowrap">--end</code> | End time (RFC3339 or Unix timestamp). |
 
@@ -309,7 +309,7 @@ Run labels query.
 | --- | --- |
 | <code class="text-nowrap">--start</code> | Start time (RFC3339 or Unix timestamp). |
 | <code class="text-nowrap">--end</code> | End time (RFC3339 or Unix timestamp). |
-| <code class="text-nowrap">--match</code> | Series selector. Can be specified multiple times. |
+| <code class="text-nowrap">--match</code> <code class="text-nowrap">...<code class="text-nowrap"> | Series selector. Can be specified multiple times. |
 
 
 
@@ -338,7 +338,7 @@ Run queries against your Prometheus to analyze the usage pattern of certain metr
 | <code class="text-nowrap">--type</code> | Type of metric: histogram. |  |
 | <code class="text-nowrap">--duration</code> | Time frame to analyze. | `1h` |
 | <code class="text-nowrap">--time</code> | Query time (RFC3339 or Unix timestamp), defaults to now. |  |
-| <code class="text-nowrap">--match</code> | Series selector. Can be specified multiple times. |  |
+| <code class="text-nowrap">--match</code> <code class="text-nowrap">...<code class="text-nowrap"> | Series selector. Can be specified multiple times. |  |
 
 
 
@@ -461,7 +461,7 @@ Unit tests for rules.
 
 | Flag | Description | Default |
 | --- | --- | --- |
-| <code class="text-nowrap">--run</code> | If set, will only run test groups whose names match the regular expression. Can be specified multiple times. |  |
+| <code class="text-nowrap">--run</code> <code class="text-nowrap">...<code class="text-nowrap"> | If set, will only run test groups whose names match the regular expression. Can be specified multiple times. |  |
 | <code class="text-nowrap">--diff</code> | [Experimental] Print colored differential output between expected & received output. | `false` |
 
 
@@ -578,7 +578,7 @@ Dump samples from a TSDB.
 | <code class="text-nowrap">--sandbox-dir-root</code> | Root directory where a sandbox directory would be created in case WAL replay generates chunks. The sandbox directory is cleaned up at the end. | `data/` |
 | <code class="text-nowrap">--min-time</code> | Minimum timestamp to dump. | `-9223372036854775808` |
 | <code class="text-nowrap">--max-time</code> | Maximum timestamp to dump. | `9223372036854775807` |
-| <code class="text-nowrap">--match</code> | Series selector. Can be specified multiple times. | `{__name__=~'(?s:.*)'}` |
+| <code class="text-nowrap">--match</code> <code class="text-nowrap">...<code class="text-nowrap"> | Series selector. Can be specified multiple times. | `{__name__=~'(?s:.*)'}` |
 
 
 
@@ -605,7 +605,7 @@ Dump samples from a TSDB.
 | <code class="text-nowrap">--sandbox-dir-root</code> | Root directory where a sandbox directory would be created in case WAL replay generates chunks. The sandbox directory is cleaned up at the end. | `data/` |
 | <code class="text-nowrap">--min-time</code> | Minimum timestamp to dump. | `-9223372036854775808` |
 | <code class="text-nowrap">--max-time</code> | Maximum timestamp to dump. | `9223372036854775807` |
-| <code class="text-nowrap">--match</code> | Series selector. Can be specified multiple times. | `{__name__=~'(?s:.*)'}` |
+| <code class="text-nowrap">--match</code> <code class="text-nowrap">...<code class="text-nowrap"> | Series selector. Can be specified multiple times. | `{__name__=~'(?s:.*)'}` |
 
 
 

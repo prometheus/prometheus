@@ -73,19 +73,19 @@ func TestReadyAndHealthy(t *testing.T) {
 	port := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
 
 	opts := &Options{
-		ListenAddress:  port,
-		ReadTimeout:    30 * time.Second,
-		MaxConnections: 512,
-		Context:        nil,
-		Storage:        nil,
-		LocalStorage:   &dbAdapter{db},
-		TSDBDir:        dbDir,
-		QueryEngine:    nil,
-		ScrapeManager:  &scrape.Manager{},
-		RuleManager:    &rules.Manager{},
-		Notifier:       nil,
-		RoutePrefix:    "/",
-		EnableAdminAPI: true,
+		ListenAddresses: []string{port},
+		ReadTimeout:     30 * time.Second,
+		MaxConnections:  512,
+		Context:         nil,
+		Storage:         nil,
+		LocalStorage:    &dbAdapter{db},
+		TSDBDir:         dbDir,
+		QueryEngine:     nil,
+		ScrapeManager:   &scrape.Manager{},
+		RuleManager:     &rules.Manager{},
+		Notifier:        nil,
+		RoutePrefix:     "/",
+		EnableAdminAPI:  true,
 		ExternalURL: &url.URL{
 			Scheme: "http",
 			Host:   "localhost" + port,
@@ -101,9 +101,9 @@ func TestReadyAndHealthy(t *testing.T) {
 
 	webHandler.config = &config.Config{}
 	webHandler.notifier = &notifier.Manager{}
-	l, err := webHandler.Listener()
+	l, err := webHandler.Listeners()
 	if err != nil {
-		panic(fmt.Sprintf("Unable to start web listener: %s", err))
+		panic(fmt.Sprintf("Unable to start web listeners: %s", err))
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -198,19 +198,19 @@ func TestRoutePrefix(t *testing.T) {
 	port := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
 
 	opts := &Options{
-		ListenAddress:  port,
-		ReadTimeout:    30 * time.Second,
-		MaxConnections: 512,
-		Context:        nil,
-		TSDBDir:        dbDir,
-		LocalStorage:   &dbAdapter{db},
-		Storage:        nil,
-		QueryEngine:    nil,
-		ScrapeManager:  nil,
-		RuleManager:    nil,
-		Notifier:       nil,
-		RoutePrefix:    "/prometheus",
-		EnableAdminAPI: true,
+		ListenAddresses: []string{port},
+		ReadTimeout:     30 * time.Second,
+		MaxConnections:  512,
+		Context:         nil,
+		TSDBDir:         dbDir,
+		LocalStorage:    &dbAdapter{db},
+		Storage:         nil,
+		QueryEngine:     nil,
+		ScrapeManager:   nil,
+		RuleManager:     nil,
+		Notifier:        nil,
+		RoutePrefix:     "/prometheus",
+		EnableAdminAPI:  true,
 		ExternalURL: &url.URL{
 			Host:   "localhost.localdomain" + port,
 			Scheme: "http",
@@ -220,9 +220,9 @@ func TestRoutePrefix(t *testing.T) {
 	opts.Flags = map[string]string{}
 
 	webHandler := New(nil, opts)
-	l, err := webHandler.Listener()
+	l, err := webHandler.Listeners()
 	if err != nil {
-		panic(fmt.Sprintf("Unable to start web listener: %s", err))
+		panic(fmt.Sprintf("Unable to start web listeners: %s", err))
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -299,8 +299,8 @@ func TestDebugHandler(t *testing.T) {
 		{"/foo", "/bar/debug/pprof/goroutine", 404},
 	} {
 		opts := &Options{
-			RoutePrefix:   tc.prefix,
-			ListenAddress: "somehost:9090",
+			RoutePrefix:     tc.prefix,
+			ListenAddresses: []string{"somehost:9090"},
 			ExternalURL: &url.URL{
 				Host:   "localhost.localdomain:9090",
 				Scheme: "http",
@@ -324,8 +324,8 @@ func TestDebugHandler(t *testing.T) {
 func TestHTTPMetrics(t *testing.T) {
 	t.Parallel()
 	handler := New(nil, &Options{
-		RoutePrefix:   "/",
-		ListenAddress: "somehost:9090",
+		RoutePrefix:     "/",
+		ListenAddresses: []string{"somehost:9090"},
 		ExternalURL: &url.URL{
 			Host:   "localhost.localdomain:9090",
 			Scheme: "http",
@@ -381,18 +381,18 @@ func TestShutdownWithStaleConnection(t *testing.T) {
 	port := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
 
 	opts := &Options{
-		ListenAddress:  port,
-		ReadTimeout:    timeout,
-		MaxConnections: 512,
-		Context:        nil,
-		Storage:        nil,
-		LocalStorage:   &dbAdapter{db},
-		TSDBDir:        dbDir,
-		QueryEngine:    nil,
-		ScrapeManager:  &scrape.Manager{},
-		RuleManager:    &rules.Manager{},
-		Notifier:       nil,
-		RoutePrefix:    "/",
+		ListenAddresses: []string{port},
+		ReadTimeout:     timeout,
+		MaxConnections:  512,
+		Context:         nil,
+		Storage:         nil,
+		LocalStorage:    &dbAdapter{db},
+		TSDBDir:         dbDir,
+		QueryEngine:     nil,
+		ScrapeManager:   &scrape.Manager{},
+		RuleManager:     &rules.Manager{},
+		Notifier:        nil,
+		RoutePrefix:     "/",
 		ExternalURL: &url.URL{
 			Scheme: "http",
 			Host:   "localhost" + port,
@@ -408,9 +408,9 @@ func TestShutdownWithStaleConnection(t *testing.T) {
 
 	webHandler.config = &config.Config{}
 	webHandler.notifier = &notifier.Manager{}
-	l, err := webHandler.Listener()
+	l, err := webHandler.Listeners()
 	if err != nil {
-		panic(fmt.Sprintf("Unable to start web listener: %s", err))
+		panic(fmt.Sprintf("Unable to start web listeners: %s", err))
 	}
 
 	closed := make(chan struct{})
@@ -448,7 +448,7 @@ func TestHandleMultipleQuitRequests(t *testing.T) {
 	port := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
 
 	opts := &Options{
-		ListenAddress:   port,
+		ListenAddresses: []string{port},
 		MaxConnections:  512,
 		EnableLifecycle: true,
 		RoutePrefix:     "/",
@@ -461,9 +461,9 @@ func TestHandleMultipleQuitRequests(t *testing.T) {
 	webHandler := New(nil, opts)
 	webHandler.config = &config.Config{}
 	webHandler.notifier = &notifier.Manager{}
-	l, err := webHandler.Listener()
+	l, err := webHandler.Listeners()
 	if err != nil {
-		panic(fmt.Sprintf("Unable to start web listener: %s", err))
+		panic(fmt.Sprintf("Unable to start web listeners: %s", err))
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	closed := make(chan struct{})
@@ -513,17 +513,17 @@ func TestAgentAPIEndPoints(t *testing.T) {
 	port := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
 
 	opts := &Options{
-		ListenAddress:  port,
-		ReadTimeout:    30 * time.Second,
-		MaxConnections: 512,
-		Context:        nil,
-		Storage:        nil,
-		QueryEngine:    nil,
-		ScrapeManager:  &scrape.Manager{},
-		RuleManager:    &rules.Manager{},
-		Notifier:       nil,
-		RoutePrefix:    "/",
-		EnableAdminAPI: true,
+		ListenAddresses: []string{port},
+		ReadTimeout:     30 * time.Second,
+		MaxConnections:  512,
+		Context:         nil,
+		Storage:         nil,
+		QueryEngine:     nil,
+		ScrapeManager:   &scrape.Manager{},
+		RuleManager:     &rules.Manager{},
+		Notifier:        nil,
+		RoutePrefix:     "/",
+		EnableAdminAPI:  true,
 		ExternalURL: &url.URL{
 			Scheme: "http",
 			Host:   "localhost" + port,
@@ -540,9 +540,9 @@ func TestAgentAPIEndPoints(t *testing.T) {
 	webHandler.SetReady(true)
 	webHandler.config = &config.Config{}
 	webHandler.notifier = &notifier.Manager{}
-	l, err := webHandler.Listener()
+	l, err := webHandler.Listeners()
 	if err != nil {
-		panic(fmt.Sprintf("Unable to start web listener: %s", err))
+		panic(fmt.Sprintf("Unable to start web listeners: %s", err))
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -627,4 +627,84 @@ func cleanupSnapshot(t *testing.T, dbDir string, resp *http.Response) {
 	require.NotZero(t, snapshot.Data.Name, "snapshot directory not returned")
 	require.NoError(t, os.Remove(filepath.Join(dbDir, "snapshots", snapshot.Data.Name)))
 	require.NoError(t, os.Remove(filepath.Join(dbDir, "snapshots")))
+}
+
+func TestMultipleListenAddresses(t *testing.T) {
+	t.Parallel()
+
+	dbDir := t.TempDir()
+
+	db, err := tsdb.Open(dbDir, nil, nil, nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
+
+	// Create multiple ports for testing multiple ListenAddresses
+	port1 := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
+	port2 := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
+
+	opts := &Options{
+		ListenAddresses: []string{port1, port2},
+		ReadTimeout:     30 * time.Second,
+		MaxConnections:  512,
+		Context:         nil,
+		Storage:         nil,
+		LocalStorage:    &dbAdapter{db},
+		TSDBDir:         dbDir,
+		QueryEngine:     nil,
+		ScrapeManager:   &scrape.Manager{},
+		RuleManager:     &rules.Manager{},
+		Notifier:        nil,
+		RoutePrefix:     "/",
+		EnableAdminAPI:  true,
+		ExternalURL: &url.URL{
+			Scheme: "http",
+			Host:   "localhost" + port1,
+			Path:   "/",
+		},
+		Version:  &PrometheusVersion{},
+		Gatherer: prometheus.DefaultGatherer,
+	}
+
+	opts.Flags = map[string]string{}
+
+	webHandler := New(nil, opts)
+
+	webHandler.config = &config.Config{}
+	webHandler.notifier = &notifier.Manager{}
+	l, err := webHandler.Listeners()
+	if err != nil {
+		panic(fmt.Sprintf("Unable to start web listener: %s", err))
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		err := webHandler.Run(ctx, l, "")
+		if err != nil {
+			panic(fmt.Sprintf("Can't start web handler:%s", err))
+		}
+	}()
+
+	// Give some time for the web goroutine to run since we need the server
+	// to be up before starting tests.
+	time.Sleep(5 * time.Second)
+
+	// Set to ready.
+	webHandler.SetReady(true)
+
+	for _, port := range []string{port1, port2} {
+		baseURL := "http://localhost" + port
+
+		resp, err := http.Get(baseURL + "/-/healthy")
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		cleanupTestResponse(t, resp)
+
+		resp, err = http.Get(baseURL + "/-/ready")
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		cleanupTestResponse(t, resp)
+	}
 }
