@@ -482,3 +482,29 @@ load_with_nhcb 5m
 eval_fail instant at 50m histogram_quantile(0.99, {__name__=~"request_duration_seconds\\d*_bucket"})
 
 eval_fail instant at 50m histogram_quantile(0.99, {__name__=~"request_duration_seconds\\d*"})
+
+# Histogram with constant buckets.
+load_with_nhcb 1m
+    const_histogram_bucket{le="0.0"} 1 1 1 1 1
+    const_histogram_bucket{le="1.0"} 1 1 1 1 1
+    const_histogram_bucket{le="2.0"} 1 1 1 1 1
+    const_histogram_bucket{le="+Inf"} 1 1 1 1 1
+
+# There is no change to the bucket count over time, thus rate is 0 in each bucket.
+eval instant at 5m rate(const_histogram_bucket[5m])
+    {le="0.0"} 0
+    {le="1.0"} 0
+    {le="2.0"} 0
+    {le="+Inf"} 0
+
+# Native histograms do not represent empty buckets, so here the zeros are implicit.
+eval instant at 5m rate(const_histogram[5m])
+    {} {{schema:-53 sum:0 count:0 custom_values:[0.0 1.0 2.0]}}
+
+# Zero buckets mean no observations, so there is no value that observations fall below,
+# which means that any quantile is a NaN.
+eval instant at 5m histogram_quantile(1.0, sum by (le) (rate(const_histogram_bucket[5m])))
+    {} NaN
+
+eval instant at 5m histogram_quantile(1.0, sum(rate(const_histogram[5m])))
+    {} NaN

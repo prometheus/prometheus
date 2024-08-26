@@ -3,8 +3,50 @@
 ## unreleased
 
 * [FEATURE] OTLP receiver: Add new option `otlp.promote_resource_attributes`, for any OTel resource attributes that should be promoted to metric labels. #14200
-* [FEATURE] Remote-Write: Add sender and receiver support for [Remote Write 2.0-rc.2](https://prometheus.io/docs/specs/remote_write_spec_2_0/) specification #14395 #14427 #14444
-* [ENHANCEMENT] Remote-Write: 1.x messages against Remote Write 2.x Receivers will have now correct values for `prometheus_storage_<samples|histograms|exemplar>_failed_total` in case of partial errors #14444
+* [ENHANCEMENT] OTLP receiver: Warn when encountering exponential histograms with zero count and non-zero sum. #14706
+* [BUGFIX] tsdb/wlog.Watcher.readSegmentForGC: Only count unknown record types against record_decode_failures_total metric. #14042
+
+## 2.54.0-rc.1 / 2024-08-05
+
+Release 2.54 brings a release candidate of a major new version of [Remote Write: 2.0](https://prometheus.io/docs/specs/remote_write_spec_2_0/).
+This is experimental at this time and may still change.
+Remote-write v2 is enabled by default, but can be disabled via feature-flag `web.remote-write-receiver.accepted-protobuf-messages`.
+
+* [CHANGE] Remote-Write: `highest_timestamp_in_seconds` and `queue_highest_sent_timestamp_seconds` metrics now initialized to 0. #14437
+* [CHANGE] API: Split warnings from info annotations in API response. #14327
+* [FEATURE] Remote-Write: Version 2.0 experimental, plus metadata in WAL via feature flag `metadata-wal-records` (defaults on). #14395,#14427,#14444
+* [FEATURE] PromQL: add limitk() and limit_ratio() aggregation operators. #12503
+* [ENHANCEMENT] PromQL: Accept underscores in literal numbers, e.g. 1_000_000 for 1 million. #12821
+* [ENHANCEMENT] PromQL: float literal numbers and durations are now interchangeable (experimental). Example: `time() - my_timestamp > 10m`. #9138
+* [ENHANCEMENT] PromQL: use Kahan summation for sum(). #14074,#14362
+* [ENHANCEMENT] PromQL (experimental native histograms): Optimize `histogram_count` and `histogram_sum` functions. #14097
+* [ENHANCEMENT] TSDB: Better support for out-of-order experimental native histogram samples. #14438
+* [ENHANCEMENT] TSDB: Optimise seek within index. #14393
+* [ENHANCEMENT] TSDB: Optimise deletion of stale series. #14307
+* [ENHANCEMENT] TSDB: Reduce locking to optimise adding and removing series. #13286,#14286
+* [ENHANCEMENT] TSDB: Small optimisation: streamline special handling for out-of-order data. #14396,#14584
+* [ENHANCEMENT] Regexps: Optimize patterns with multiple prefixes. #13843,#14368
+* [ENHANCEMENT] Regexps: Optimize patterns containing multiple literal strings. #14173
+* [ENHANCEMENT] AWS SD: expose Primary IPv6 addresses as __meta_ec2_primary_ipv6_addresses. #14156
+* [ENHANCEMENT] Docker SD: add MatchFirstNetwork for containers with multiple networks. #10490
+* [ENHANCEMENT] OpenStack SD: Use `flavor.original_name` if available. #14312
+* [ENHANCEMENT] UI (experimental native histograms): more accurate representation. #13680,#14430
+* [ENHANCEMENT] Agent: `out_of_order_time_window` config option now applies to agent. #14094
+* [ENHANCEMENT] Notifier: Send any outstanding Alertmanager notifications when shutting down. #14290
+* [ENHANCEMENT] Rules: Add label-matcher support to Rules API. #10194
+* [ENHANCEMENT] HTTP API: Add url to message logged on error while sending response. #14209
+* [BUGFIX] CLI: escape `|` characters when generating docs. #14420
+* [BUGFIX] PromQL (experimental native histograms): Fix some binary operators between native histogram values. #14454
+* [BUGFIX] TSDB: LabelNames API could fail during compaction. #14279
+* [BUGFIX] TSDB: Fix rare issue where pending OOO read can be left dangling if creating querier fails. #14341
+* [BUGFIX] TSDB: fix check for context cancellation in LabelNamesFor. #14302
+* [BUGFIX] Rules: Fix rare panic on reload. #14366
+* [BUGFIX] Config: In YAML marshalling, do not output a regexp field if it was never set. #14004
+* [BUGFIX] Remote-Write: reject samples with future timestamps. #14304
+* [BUGFIX] Remote-Write: Fix data corruption in remote write if max_sample_age is applied. #14078
+* [BUGFIX] Notifier: Fix Alertmanager discovery not updating under heavy load. #14174
+* [BUGFIX] Regexes: some Unicode characters were not matched by case-insensitive comparison. #14170,#14299
+* [BUGFIX] Remote-Read: Resolve occasional segmentation fault on query. #14515
 
 ## 2.53.1 / 2024-07-10
 

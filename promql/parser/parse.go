@@ -580,6 +580,28 @@ func (p *parser) buildHistogramFromMap(desc *map[string]interface{}) *histogram.
 		}
 	}
 
+	val, ok = (*desc)["counter_reset_hint"]
+	if ok {
+		resetHint, ok := val.(Item)
+
+		if ok {
+			switch resetHint.Typ {
+			case UNKNOWN_COUNTER_RESET:
+				output.CounterResetHint = histogram.UnknownCounterReset
+			case COUNTER_RESET:
+				output.CounterResetHint = histogram.CounterReset
+			case NOT_COUNTER_RESET:
+				output.CounterResetHint = histogram.NotCounterReset
+			case GAUGE_TYPE:
+				output.CounterResetHint = histogram.GaugeType
+			default:
+				p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing counter_reset_hint: unknown value %v", resetHint.Typ)
+			}
+		} else {
+			p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing counter_reset_hint: %v", val)
+		}
+	}
+
 	buckets, spans := p.buildHistogramBucketsAndSpans(desc, "buckets", "offset")
 	output.PositiveBuckets = buckets
 	output.PositiveSpans = spans

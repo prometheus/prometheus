@@ -1109,9 +1109,9 @@ func (t *QueueManager) shouldReshard(desiredShards int) bool {
 	if desiredShards == t.numShards {
 		return false
 	}
-	// We shouldn't reshard if Prometheus hasn't been able to send to the
-	// remote endpoint successfully within some period of time.
-	minSendTimestamp := time.Now().Add(-2 * time.Duration(t.cfg.BatchSendDeadline)).Unix()
+	// We shouldn't reshard if Prometheus hasn't been able to send
+	// since the last time it checked if it should reshard.
+	minSendTimestamp := time.Now().Add(-1 * shardUpdateDuration).Unix()
 	lsts := t.lastSendTimestamp.Load()
 	if lsts < minSendTimestamp {
 		level.Warn(t.logger).Log("msg", "Skipping resharding, last successful send was beyond threshold", "lastSendTimestamp", lsts, "minSendTimestamp", minSendTimestamp)
@@ -1522,7 +1522,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 	// Send batches of at most MaxSamplesPerSend samples to the remote storage.
 	// If we have fewer samples than that, flush them out after a deadline anyways.
 	var (
-		max = s.qm.cfg.MaxSamplesPerSend
+		maxCount = s.qm.cfg.MaxSamplesPerSend
 
 		pBuf    = proto.NewBuffer(nil)
 		pBufRaw []byte
@@ -1530,19 +1530,19 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 	)
 	// TODO(@tpaschalis) Should we also raise the max if we have WAL metadata?
 	if s.qm.sendExemplars {
-		max += int(float64(max) * 0.1)
+		maxCount += int(float64(maxCount) * 0.1)
 	}
 
 	// TODO: Dry all of this, we should make an interface/generic for the timeseries type.
 	batchQueue := queue.Chan()
-	pendingData := make([]prompb.TimeSeries, max)
+	pendingData := make([]prompb.TimeSeries, maxCount)
 	for i := range pendingData {
 		pendingData[i].Samples = []prompb.Sample{{}}
 		if s.qm.sendExemplars {
 			pendingData[i].Exemplars = []prompb.Exemplar{{}}
 		}
 	}
-	pendingDataV2 := make([]writev2.TimeSeries, max)
+	pendingDataV2 := make([]writev2.TimeSeries, maxCount)
 	for i := range pendingDataV2 {
 		pendingDataV2[i].Samples = []writev2.Sample{{}}
 	}

@@ -435,6 +435,8 @@ Outer:
 	return nil
 }
 
+func minInt64() int64 { return math.MinInt64 }
+
 // resetSeriesWithMMappedChunks is only used during the WAL replay.
 func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*mmappedChunk, walSeriesRef chunks.HeadSeriesRef) (overlapped bool) {
 	if mSeries.ref != walSeriesRef {
@@ -481,10 +483,11 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*m
 	}
 	// Cache the last mmapped chunk time, so we can skip calling append() for samples it will reject.
 	if len(mmc) == 0 {
-		mSeries.mmMaxTime = math.MinInt64
+		mSeries.shardHashOrMemoryMappedMaxTime = uint64(minInt64())
 	} else {
-		mSeries.mmMaxTime = mmc[len(mmc)-1].maxTime
-		h.updateMinMaxTime(mmc[0].minTime, mSeries.mmMaxTime)
+		mmMaxTime := mmc[len(mmc)-1].maxTime
+		mSeries.shardHashOrMemoryMappedMaxTime = uint64(mmMaxTime)
+		h.updateMinMaxTime(mmc[0].minTime, mmMaxTime)
 	}
 	if len(oooMmc) != 0 {
 		// Mint and maxt can be in any chunk, they are not sorted.
@@ -585,7 +588,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 				unknownRefs++
 				continue
 			}
-			if s.T <= ms.mmMaxTime {
+			if s.T <= ms.mmMaxTime() {
 				continue
 			}
 			if _, chunkCreated := ms.append(s.T, s.V, 0, appendChunkOpts); chunkCreated {
@@ -614,7 +617,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 				unknownHistogramRefs++
 				continue
 			}
-			if s.t <= ms.mmMaxTime {
+			if s.t <= ms.mmMaxTime() {
 				continue
 			}
 			var chunkCreated bool
@@ -887,7 +890,7 @@ func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (unknownRefs uint64) {
 				unknownRefs++
 				continue
 			}
-			ok, chunkCreated, _ := ms.insert(s.T, s.V, h.chunkDiskMapper, oooCapMax)
+			ok, chunkCreated, _ := ms.insert(s.T, s.V, nil, nil, h.chunkDiskMapper, oooCapMax, h.logger)
 			if chunkCreated {
 				h.metrics.chunksCreated.Inc()
 				h.metrics.chunks.Inc()

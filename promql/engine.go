@@ -584,7 +584,7 @@ func (ng *Engine) validateOpts(expr parser.Expr) error {
 	return validationErr
 }
 
-// NewTestQuery: inject special behaviour into Query for testing.
+// NewTestQuery injects special behaviour into Query for testing.
 func (ng *Engine) NewTestQuery(f func(context.Context) error) Query {
 	qry := &query{
 		q:           "test statement",
@@ -1068,7 +1068,7 @@ func (ev *evaluator) recover(expr parser.Expr, ws *annotations.Annotations, errp
 		buf := make([]byte, 64<<10)
 		buf = buf[:runtime.Stack(buf, false)]
 
-		level.Error(ev.logger).Log("msg", "runtime panic in parser", "expr", expr.String(), "err", e, "stacktrace", string(buf))
+		level.Error(ev.logger).Log("msg", "runtime panic during query evaluation", "expr", expr.String(), "err", e, "stacktrace", string(buf))
 		*errp = fmt.Errorf("unexpected error: %w", err)
 	case errWithWarnings:
 		*errp = err.err
@@ -2367,6 +2367,11 @@ loop:
 		} else {
 			histograms = append(histograms, HPoint{H: &histogram.FloatHistogram{}})
 		}
+		if histograms[n].H == nil {
+			// Make sure to pass non-nil H to AtFloatHistogram so that it does a deep-copy.
+			// Not an issue in the loop above since that uses an intermediate buffer.
+			histograms[n].H = &histogram.FloatHistogram{}
+		}
 		histograms[n].T, histograms[n].H = it.AtFloatHistogram(histograms[n].H)
 		if value.IsStaleNaN(histograms[n].H.Sum) {
 			histograms = histograms[:n]
@@ -2784,15 +2789,20 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 }
 
 type groupedAggregation struct {
-	seen              bool // Was this output groups seen in the input at this timestamp.
-	hasFloat          bool // Has at least 1 float64 sample aggregated.
-	hasHistogram      bool // Has at least 1 histogram sample aggregated.
-	floatValue        float64
-	histogramValue    *histogram.FloatHistogram
-	floatMean         float64 // Mean, or "compensating value" for Kahan summation.
-	groupCount        int
-	groupAggrComplete bool // Used by LIMITK to short-cut series loop when we've reached K elem on every group
-	heap              vectorByValueHeap
+	floatValue     float64
+	histogramValue *histogram.FloatHistogram
+	floatMean      float64
+	floatKahanC    float64 // "Compensating value" for Kahan summation.
+	groupCount     float64
+	heap           vectorByValueHeap
+
+	// All bools together for better packing within the struct.
+	seen                   bool // Was this output groups seen in the input at this timestamp.
+	hasFloat               bool // Has at least 1 float64 sample aggregated.
+	hasHistogram           bool // Has at least 1 histogram sample aggregated.
+	incompatibleHistograms bool // If true, group has seen mixed exponential and custom buckets, or incompatible custom buckets.
+	groupAggrComplete      bool // Used by LIMITK to short-cut series loop when we've reached K elem on every group.
+	incrementalMean        bool // True after reverting to incremental calculation of the mean value.
 }
 
 // aggregation evaluates sum, avg, count, stdvar, stddev or quantile at one timestep on inputMatrix.
@@ -2816,15 +2826,14 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 		// Initialize this group if it's the first time we've seen it.
 		if !group.seen {
 			*group = groupedAggregation{
-				seen:       true,
-				floatValue: f,
-				groupCount: 1,
+				seen:                   true,
+				floatValue:             f,
+				floatMean:              f,
+				incompatibleHistograms: false,
+				groupCount:             1,
 			}
 			switch op {
-			case parser.AVG:
-				group.floatMean = f
-				fallthrough
-			case parser.SUM:
+			case parser.AVG, parser.SUM:
 				if h == nil {
 					group.hasFloat = true
 				} else {
@@ -2832,7 +2841,6 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 					group.hasHistogram = true
 				}
 			case parser.STDVAR, parser.STDDEV:
-				group.floatMean = f
 				group.floatValue = 0
 			case parser.QUANTILE:
 				group.heap = make(vectorByValueHeap, 1)
@@ -2840,6 +2848,10 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			case parser.GROUP:
 				group.floatValue = 1
 			}
+			continue
+		}
+
+		if group.incompatibleHistograms {
 			continue
 		}
 
@@ -2851,6 +2863,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 					_, err := group.histogramValue.Add(h)
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
+						group.incompatibleHistograms = true
 					}
 				}
 				// Otherwise the aggregation contained floats
@@ -2858,7 +2871,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				// point in copying the histogram in that case.
 			} else {
 				group.hasFloat = true
-				group.floatValue, group.floatMean = kahanSumInc(f, group.floatValue, group.floatMean)
+				group.floatValue, group.floatKahanC = kahanSumInc(f, group.floatValue, group.floatKahanC)
 			}
 
 		case parser.AVG:
@@ -2866,15 +2879,19 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			if h != nil {
 				group.hasHistogram = true
 				if group.histogramValue != nil {
-					left := h.Copy().Div(float64(group.groupCount))
-					right := group.histogramValue.Copy().Div(float64(group.groupCount))
+					left := h.Copy().Div(group.groupCount)
+					right := group.histogramValue.Copy().Div(group.groupCount)
 					toAdd, err := left.Sub(right)
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
+						group.incompatibleHistograms = true
+						continue
 					}
 					_, err = group.histogramValue.Add(toAdd)
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
+						group.incompatibleHistograms = true
+						continue
 					}
 				}
 				// Otherwise the aggregation contained floats
@@ -2882,6 +2899,22 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				// point in copying the histogram in that case.
 			} else {
 				group.hasFloat = true
+				if !group.incrementalMean {
+					newV, newC := kahanSumInc(f, group.floatValue, group.floatKahanC)
+					if !math.IsInf(newV, 0) {
+						// The sum doesn't overflow, so we propagate it to the
+						// group struct and continue with the regular
+						// calculation of the mean value.
+						group.floatValue, group.floatKahanC = newV, newC
+						break
+					}
+					// If we are here, we know that the sum _would_ overflow. So
+					// instead of continue to sum up, we revert to incremental
+					// calculation of the mean value from here on.
+					group.incrementalMean = true
+					group.floatMean = group.floatValue / (group.groupCount - 1)
+					group.floatKahanC /= group.groupCount - 1
+				}
 				if math.IsInf(group.floatMean, 0) {
 					if math.IsInf(f, 0) && (group.floatMean > 0) == (f > 0) {
 						// The `floatMean` and `s.F` values are `Inf` of the same sign.  They
@@ -2899,8 +2932,13 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 						break
 					}
 				}
-				// Divide each side of the `-` by `group.groupCount` to avoid float64 overflows.
-				group.floatMean += f/float64(group.groupCount) - group.floatMean/float64(group.groupCount)
+				currentMean := group.floatMean + group.floatKahanC
+				group.floatMean, group.floatKahanC = kahanSumInc(
+					// Divide each side of the `-` by `group.groupCount` to avoid float64 overflows.
+					f/group.groupCount-currentMean/group.groupCount,
+					group.floatMean,
+					group.floatKahanC,
+				)
 			}
 
 		case parser.GROUP:
@@ -2923,7 +2961,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			if h == nil { // Ignore native histograms.
 				group.groupCount++
 				delta := f - group.floatMean
-				group.floatMean += delta / float64(group.groupCount)
+				group.floatMean += delta / group.groupCount
 				group.floatValue += delta * (f - group.floatMean)
 			}
 
@@ -2949,20 +2987,25 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				annos.Add(annotations.NewMixedFloatsHistogramsAggWarning(e.Expr.PositionRange()))
 				continue
 			}
-			if aggr.hasHistogram {
+			switch {
+			case aggr.incompatibleHistograms:
+				continue
+			case aggr.hasHistogram:
 				aggr.histogramValue = aggr.histogramValue.Compact(0)
-			} else {
-				aggr.floatValue = aggr.floatMean
+			case aggr.incrementalMean:
+				aggr.floatValue = aggr.floatMean + aggr.floatKahanC
+			default:
+				aggr.floatValue = (aggr.floatValue + aggr.floatKahanC) / aggr.groupCount
 			}
 
 		case parser.COUNT:
-			aggr.floatValue = float64(aggr.groupCount)
+			aggr.floatValue = aggr.groupCount
 
 		case parser.STDVAR:
-			aggr.floatValue /= float64(aggr.groupCount)
+			aggr.floatValue /= aggr.groupCount
 
 		case parser.STDDEV:
-			aggr.floatValue = math.Sqrt(aggr.floatValue / float64(aggr.groupCount))
+			aggr.floatValue = math.Sqrt(aggr.floatValue / aggr.groupCount)
 
 		case parser.QUANTILE:
 			aggr.floatValue = quantile(q, aggr.heap)
@@ -2973,10 +3016,13 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				annos.Add(annotations.NewMixedFloatsHistogramsAggWarning(e.Expr.PositionRange()))
 				continue
 			}
-			if aggr.hasHistogram {
+			switch {
+			case aggr.incompatibleHistograms:
+				continue
+			case aggr.hasHistogram:
 				aggr.histogramValue.Compact(0)
-			} else {
-				aggr.floatValue += aggr.floatMean // Add Kahan summation compensating term.
+			default:
+				aggr.floatValue += aggr.floatKahanC
 			}
 		default:
 			// For other aggregations, we already have the right value.
@@ -3142,7 +3188,7 @@ seriesLoop:
 	return mat, annos
 }
 
-// aggregationK evaluates count_values on vec.
+// aggregationCountValues evaluates count_values on vec.
 // Outputs as many series per group as there are values in the input.
 func (ev *evaluator) aggregationCountValues(e *parser.AggregateExpr, grouping []string, valueLabel string, vec Vector, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	type groupCount struct {
@@ -3496,14 +3542,14 @@ func makeInt64Pointer(val int64) *int64 {
 	return valp
 }
 
-// Add RatioSampler interface to allow unit-testing (previously: Randomizer).
+// RatioSampler allows unit-testing (previously: Randomizer).
 type RatioSampler interface {
 	// Return this sample "offset" between [0.0, 1.0]
 	sampleOffset(ts int64, sample *Sample) float64
 	AddRatioSample(r float64, sample *Sample) bool
 }
 
-// Use Hash(labels.String()) / maxUint64 as a "deterministic"
+// HashRatioSampler uses Hash(labels.String()) / maxUint64 as a "deterministic"
 // value in [0.0, 1.0].
 type HashRatioSampler struct{}
 

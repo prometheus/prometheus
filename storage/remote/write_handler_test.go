@@ -339,6 +339,15 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			expectedRespBody: "invalid metric name or labels, got {__name__=\"\"}\n",
 		},
 		{
+			desc: "Partial write; first series with duplicate labels",
+			input: append(
+				// Series with __name__="test_metric1",test_metric1="test_metric1",test_metric1="test_metric1" labels.
+				[]writev2.TimeSeries{{LabelsRefs: []uint32{1, 2, 2, 2, 2, 2}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
+				writeV2RequestFixture.Timeseries...),
+			expectedCode:     http.StatusBadRequest,
+			expectedRespBody: "invalid labels for series, labels {__name__=\"test_metric1\", test_metric1=\"test_metric1\", test_metric1=\"test_metric1\"}, duplicated label test_metric1\n",
+		},
+		{
 			desc: "Partial write; first series with one OOO sample",
 			input: func() []writev2.TimeSeries {
 				f := proto.Clone(writeV2RequestFixture).(*writev2.Request)
@@ -453,10 +462,10 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				expectHeaderValue(t, 0, resp.Header.Get(rw20WrittenHistogramsHeader))
 				expectHeaderValue(t, 0, resp.Header.Get(rw20WrittenExemplarsHeader))
 
-				require.Empty(t, len(appendable.samples))
-				require.Empty(t, len(appendable.histograms))
-				require.Empty(t, len(appendable.exemplars))
-				require.Empty(t, len(appendable.metadata))
+				require.Empty(t, appendable.samples)
+				require.Empty(t, appendable.histograms)
+				require.Empty(t, appendable.exemplars)
+				require.Empty(t, appendable.metadata)
 				return
 			}
 
@@ -836,6 +845,13 @@ func (m *mockAppendable) Append(_ storage.SeriesRef, l labels.Labels, t int64, v
 		return 0, storage.ErrDuplicateSampleForTimestamp
 	}
 
+	if l.IsEmpty() {
+		return 0, tsdb.ErrInvalidSample
+	}
+	if _, hasDuplicates := l.HasDuplicateLabelNames(); hasDuplicates {
+		return 0, tsdb.ErrInvalidSample
+	}
+
 	m.latestSample[l.Hash()] = t
 	m.samples = append(m.samples, mockSample{l, t, v})
 	return 0, nil
@@ -885,6 +901,13 @@ func (m *mockAppendable) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t
 	}
 	if t == latestTs {
 		return 0, storage.ErrDuplicateSampleForTimestamp
+	}
+
+	if l.IsEmpty() {
+		return 0, tsdb.ErrInvalidSample
+	}
+	if _, hasDuplicates := l.HasDuplicateLabelNames(); hasDuplicates {
+		return 0, tsdb.ErrInvalidSample
 	}
 
 	m.latestHistogram[l.Hash()] = t

@@ -121,6 +121,11 @@ global:
   # that will be kept in memory. 0 means no limit.
   [ keep_dropped_targets: <int> | default = 0 ]
 
+  # Specifies the validation scheme for metric and label names. Either blank or
+  # "legacy" for letters, numbers, colons, and underscores; or "utf8" for full
+  # UTF-8 support.
+  [ metric_name_validation_scheme <string> | default "legacy" ]
+
 runtime:
   # Configure the Go garbage collector GOGC parameter
   # See: https://tip.golang.org/doc/gc-guide#GOGC
@@ -460,6 +465,11 @@ metric_relabel_configs:
 # Per-job limit on the number of targets dropped by relabeling
 # that will be kept in memory. 0 means no limit.
 [ keep_dropped_targets: <int> | default = 0 ]
+
+# Specifies the validation scheme for metric and label names. Either blank or
+# "legacy" for letters, numbers, colons, and underscores; or "utf8" for full
+# UTF-8 support.
+[ metric_name_validation_scheme <string> | default "legacy" ]
 
 # Limit on total number of positive and negative buckets allowed in a single
 # native histogram. The resolution of a histogram with more buckets will be
@@ -3265,12 +3275,16 @@ Initially, aside from the configured per-target labels, a target's `job`
 label is set to the `job_name` value of the respective scrape configuration.
 The `__address__` label is set to the `<host>:<port>` address of the target.
 After relabeling, the `instance` label is set to the value of `__address__` by default if
-it was not set during relabeling. The `__scheme__` and `__metrics_path__` labels
-are set to the scheme and metrics path of the target respectively. The `__param_<name>`
-label is set to the value of the first passed URL parameter called `<name>`.
+it was not set during relabeling.
+
+The `__scheme__` and `__metrics_path__` labels
+are set to the scheme and metrics path of the target respectively, as specified in `scrape_config`.
+
+The `__param_<name>`
+label is set to the value of the first passed URL parameter called `<name>`, as defined in `scrape_config`.
 
 The `__scrape_interval__` and `__scrape_timeout__` labels are set to the target's
-interval and timeout.
+interval and timeout, as specified in `scrape_config`.
 
 Additional labels prefixed with `__meta_` may be available during the
 relabeling phase. They are set by the service discovery mechanism that provided
@@ -3401,8 +3415,8 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
-# Optionally configures AWS's Signature Verification 4 signing process to
-# sign requests. Cannot be set at the same time as basic_auth, authorization, or oauth2.
+# Optionally configures AWS's Signature Verification 4 signing process to sign requests.
+# Cannot be set at the same time as basic_auth, authorization, oauth2, azuread or google_iam.
 # To use the default credentials from the AWS SDK, use `sigv4: {}`.
 sigv4:
   # The AWS region. If blank, the region from the default credentials chain
@@ -3655,12 +3669,12 @@ sigv4:
   [ role_arn: <string> ]
 
 # Optional OAuth 2.0 configuration.
-# Cannot be used at the same time as basic_auth, authorization, sigv4, or azuread.
+# Cannot be used at the same time as basic_auth, authorization, sigv4, azuread or google_iam.
 oauth2:
   [ <oauth2> ]
 
 # Optional AzureAD configuration.
-# Cannot be used at the same time as basic_auth, authorization, oauth2, or sigv4.
+# Cannot be used at the same time as basic_auth, authorization, oauth2, sigv4 or google_iam.
 azuread:
   # The Azure Cloud. Options are 'AzurePublic', 'AzureChina', or 'AzureGovernment'.
   [ cloud: <string> | default = AzurePublic ]
@@ -3679,6 +3693,14 @@ azuread:
   # See https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication
   [ sdk:
       [ tenant_id: <string> ] ]
+
+# WARNING: Remote write is NOT SUPPORTED by Google Cloud. This configuration is reserved for future use.
+# Optional Google Cloud Monitoring configuration.
+# Cannot be used at the same time as basic_auth, authorization, oauth2, sigv4 or azuread.
+# To use the default credentials from the Google Cloud SDK, use `google_iam: {}`.
+google_iam:
+  # Service account key with monitoring write permessions.
+  credentials_file: <file_name>
 
 # Configures the remote write request's TLS settings.
 tls_config:

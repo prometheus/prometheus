@@ -308,15 +308,16 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 					var expChunks []chunks.Meta
 					for _, e := range tc.expChunks {
 						meta := chunks.Meta{
-							Chunk:   chunkenc.Chunk(nil),
-							MinTime: e.mint,
-							MaxTime: e.maxt,
+							Chunk:    chunkenc.Chunk(nil),
+							MinTime:  e.mint,
+							MaxTime:  e.maxt,
+							MergeOOO: true, // Only OOO chunks are tested here, so we always request merge from OOO head.
 						}
 
 						// Ref to whatever Ref the chunk has, that we refer to by ID
 						for ref, c := range intervals {
 							if c.ID == e.ID {
-								meta.Ref = chunks.ChunkRef(chunks.NewHeadChunkRef(chunks.HeadSeriesRef(s1ID), chunks.HeadChunkID(ref)))
+								meta.Ref = chunks.ChunkRef(chunks.NewHeadChunkRef(chunks.HeadSeriesRef(s1ID), s1.oooHeadChunkID(ref)))
 								break
 							}
 						}
@@ -341,7 +342,7 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 						})
 					}
 
-					ir := NewOOOHeadIndexReader(h, tc.queryMinT, tc.queryMaxT, 0)
+					ir := NewHeadAndOOOIndexReader(h, tc.queryMinT, tc.queryMaxT, 0)
 
 					var chks []chunks.Meta
 					var b labels.ScratchBuilder
@@ -421,17 +422,17 @@ func testOOOHeadChunkReader_LabelValues(t *testing.T, scenario sampleTypeScenari
 			name:       "LabelValues calls with ooo head query range not overlapping out-of-order data",
 			queryMinT:  100,
 			queryMaxT:  100,
-			expValues1: []string{},
-			expValues2: []string{},
-			expValues3: []string{},
-			expValues4: []string{},
+			expValues1: []string{"bar1"},
+			expValues2: nil,
+			expValues3: []string{"bar1", "bar2"},
+			expValues4: []string{"bar1", "bar2"},
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			// We first want to test using a head index reader that covers the biggest query interval
-			oh := NewOOOHeadIndexReader(head, tc.queryMinT, tc.queryMaxT, 0)
+			oh := NewHeadAndOOOIndexReader(head, tc.queryMinT, tc.queryMaxT, 0)
 			matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar1")}
 			values, err := oh.LabelValues(ctx, "foo", matchers...)
 			sort.Strings(values)
@@ -481,10 +482,10 @@ func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 	t.Run("Getting a non existing chunk fails with not found error", func(t *testing.T) {
 		db := newTestDBWithOpts(t, opts)
 
-		cr := NewOOOHeadChunkReader(db.head, 0, 1000, nil)
+		cr := NewHeadAndOOOChunkReader(db.head, 0, 1000, nil, nil, 0)
 		defer cr.Close()
 		c, iterable, err := cr.ChunkOrIterable(chunks.Meta{
-			Ref: 0x1000000, Chunk: chunkenc.Chunk(nil), MinTime: 100, MaxTime: 300,
+			Ref: 0x1800000, Chunk: chunkenc.Chunk(nil), MinTime: 100, MaxTime: 300, MergeOOO: true,
 		})
 		require.Nil(t, iterable)
 		require.Equal(t, err, fmt.Errorf("not found"))
@@ -832,14 +833,14 @@ func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 
 			// The Series method populates the chunk metas, taking a copy of the
 			// head OOO chunk if necessary. These are then used by the ChunkReader.
-			ir := NewOOOHeadIndexReader(db.head, tc.queryMinT, tc.queryMaxT, 0)
+			ir := NewHeadAndOOOIndexReader(db.head, tc.queryMinT, tc.queryMaxT, 0)
 			var chks []chunks.Meta
 			var b labels.ScratchBuilder
 			err = ir.Series(s1Ref, &b, &chks)
 			require.NoError(t, err)
 			require.Equal(t, len(tc.expChunksSamples), len(chks))
 
-			cr := NewOOOHeadChunkReader(db.head, tc.queryMinT, tc.queryMaxT, nil)
+			cr := NewHeadAndOOOChunkReader(db.head, tc.queryMinT, tc.queryMaxT, nil, nil, 0)
 			defer cr.Close()
 			for i := 0; i < len(chks); i++ {
 				c, iterable, err := cr.ChunkOrIterable(chks[i])
@@ -997,7 +998,7 @@ func testOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 
 			// The Series method populates the chunk metas, taking a copy of the
 			// head OOO chunk if necessary. These are then used by the ChunkReader.
-			ir := NewOOOHeadIndexReader(db.head, tc.queryMinT, tc.queryMaxT, 0)
+			ir := NewHeadAndOOOIndexReader(db.head, tc.queryMinT, tc.queryMaxT, 0)
 			var chks []chunks.Meta
 			var b labels.ScratchBuilder
 			err = ir.Series(s1Ref, &b, &chks)
@@ -1013,7 +1014,7 @@ func testOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 			}
 			require.NoError(t, app.Commit())
 
-			cr := NewOOOHeadChunkReader(db.head, tc.queryMinT, tc.queryMaxT, nil)
+			cr := NewHeadAndOOOChunkReader(db.head, tc.queryMinT, tc.queryMaxT, nil, nil, 0)
 			defer cr.Close()
 			for i := 0; i < len(chks); i++ {
 				c, iterable, err := cr.ChunkOrIterable(chks[i])

@@ -2339,11 +2339,15 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 	)
 
 	var protobufParsing bool
+	var allowUTF8 bool
 
 	server := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			accept := r.Header.Get("Accept")
+			if allowUTF8 {
+				require.Truef(t, strings.Contains(accept, "escaping=allow-utf-8"), "Expected Accept header to allow utf8, got %q", accept)
+			}
 			if protobufParsing {
-				accept := r.Header.Get("Accept")
 				require.True(t, strings.HasPrefix(accept, "application/vnd.google.protobuf;"),
 					"Expected Accept header to prefer application/vnd.google.protobuf.")
 			}
@@ -2351,7 +2355,11 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 			timeout := r.Header.Get("X-Prometheus-Scrape-Timeout-Seconds")
 			require.Equal(t, expectedTimeout, timeout, "Expected scrape timeout header.")
 
-			w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+			if allowUTF8 {
+				w.Header().Set("Content-Type", `text/plain; version=1.0.0; escaping=allow-utf-8`)
+			} else {
+				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+			}
 			w.Write([]byte("metric_a 1\nmetric_b 2\n"))
 		}),
 	)
@@ -2380,13 +2388,22 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 		require.NoError(t, err)
 		contentType, err := ts.readResponse(context.Background(), resp, &buf)
 		require.NoError(t, err)
-		require.Equal(t, "text/plain; version=0.0.4", contentType)
+		if allowUTF8 {
+			require.Equal(t, "text/plain; version=1.0.0; escaping=allow-utf-8", contentType)
+		} else {
+			require.Equal(t, "text/plain; version=0.0.4", contentType)
+		}
 		require.Equal(t, "metric_a 1\nmetric_b 2\n", buf.String())
 	}
 
-	runTest(acceptHeader(config.DefaultScrapeProtocols))
+	runTest(acceptHeader(config.DefaultScrapeProtocols, model.LegacyValidation))
 	protobufParsing = true
-	runTest(acceptHeader(config.DefaultProtoFirstScrapeProtocols))
+	runTest(acceptHeader(config.DefaultProtoFirstScrapeProtocols, model.LegacyValidation))
+	protobufParsing = false
+	allowUTF8 = true
+	runTest(acceptHeader(config.DefaultScrapeProtocols, model.UTF8Validation))
+	protobufParsing = true
+	runTest(acceptHeader(config.DefaultProtoFirstScrapeProtocols, model.UTF8Validation))
 }
 
 func TestTargetScrapeScrapeCancel(t *testing.T) {
@@ -2412,7 +2429,7 @@ func TestTargetScrapeScrapeCancel(t *testing.T) {
 			),
 		},
 		client:       http.DefaultClient,
-		acceptHeader: acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols),
+		acceptHeader: acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols, model.LegacyValidation),
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -2467,7 +2484,7 @@ func TestTargetScrapeScrapeNotFound(t *testing.T) {
 			),
 		},
 		client:       http.DefaultClient,
-		acceptHeader: acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols),
+		acceptHeader: acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols, model.LegacyValidation),
 	}
 
 	resp, err := ts.scrape(context.Background())
@@ -2511,7 +2528,7 @@ func TestTargetScraperBodySizeLimit(t *testing.T) {
 		},
 		client:        http.DefaultClient,
 		bodySizeLimit: bodySizeLimit,
-		acceptHeader:  acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols),
+		acceptHeader:  acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols, model.LegacyValidation),
 		metrics:       newTestScrapeMetrics(t),
 	}
 	var buf bytes.Buffer

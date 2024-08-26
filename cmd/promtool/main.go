@@ -204,6 +204,7 @@ func main() {
 	pushMetricsHeaders := pushMetricsCmd.Flag("header", "Prometheus remote write header.").StringMap()
 
 	testCmd := app.Command("test", "Unit testing.")
+	junitOutFile := testCmd.Flag("junit", "File path to store JUnit XML test results.").OpenFile(os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	testRulesCmd := testCmd.Command("rules", "Unit tests for rules.")
 	testRulesRun := testRulesCmd.Flag("run", "If set, will only run test groups whose names match the regular expression. Can be specified multiple times.").Strings()
 	testRulesFiles := testRulesCmd.Arg(
@@ -378,7 +379,11 @@ func main() {
 		os.Exit(QueryLabels(serverURL, httpRoundTripper, *queryLabelsMatch, *queryLabelsName, *queryLabelsBegin, *queryLabelsEnd, p))
 
 	case testRulesCmd.FullCommand():
-		os.Exit(RulesUnitTest(
+		results := io.Discard
+		if *junitOutFile != nil {
+			results = *junitOutFile
+		}
+		os.Exit(RulesUnitTestResult(results,
 			promqltest.LazyLoaderOpts{
 				EnableAtModifier:     true,
 				EnableNegativeOffset: true,
@@ -466,7 +471,7 @@ func (ls lintConfig) lintDuplicateRules() bool {
 	return ls.all || ls.duplicateRules
 }
 
-// Check server status - healthy & ready.
+// CheckServerStatus - healthy & ready.
 func CheckServerStatus(serverURL *url.URL, checkEndpoint string, roundTripper http.RoundTripper) error {
 	if serverURL.Scheme == "" {
 		serverURL.Scheme = "http"

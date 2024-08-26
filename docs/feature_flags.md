@@ -200,8 +200,9 @@ won't work when you push OTLP metrics.
 
 `--enable-feature=promql-experimental-functions`
 
-Enables PromQL functions that are considered experimental and whose name or
-semantics could change.
+Enables PromQL functions that are considered experimental. These functions
+might change their name, syntax, or semantics. They might also get removed
+entirely.
 
 ## Created Timestamps Zero Injection
 
@@ -234,3 +235,25 @@ metadata changes as WAL records on a per-series basis.
 
 This must be used if
 you are also using remote write 2.0 as it will only gather metadata from the WAL.
+
+## Delay compaction start time
+
+`--enable-feature=delayed-compaction`
+
+A random offset, up to `10%` of the chunk range, is added to the Head compaction start time. This assists Prometheus instances in avoiding simultaneous compactions and reduces the load on shared resources.
+
+Only auto Head compactions and the operations directly resulting from them are subject to this delay.
+
+In the event of multiple consecutive Head compactions being possible, only the first compaction experiences this delay.
+
+Note that during this delay, the Head continues its usual operations, which include serving and appending series.
+
+Despite the delay in compaction, the blocks produced are time-aligned in the same manner as they would be if the delay was not in place.
+
+## UTF-8 Name Support
+
+`--enable-feature=utf8-names`
+
+When enabled, changes the metric and label name validation scheme inside Prometheus to allow the full UTF-8 character set.
+By itself, this flag does not enable the request of UTF-8 names via content negotiation.
+Users will also have to set `metric_name_validation_scheme` in scrape configs to enable the feature either on the global config or on a per-scrape config basis.
