@@ -337,6 +337,16 @@ func TestLabels_ValidationModes(t *testing.T) {
 			callMode:   model.LegacyValidation,
 			expected:   false,
 		},
+		{
+			input: FromStrings(
+				"__name__", "test",
+				"host.name", "localhost",
+				"job", "check",
+			),
+			globalMode: model.UTF8Validation,
+			callMode:   model.LegacyValidation,
+			expected:   false,
+		},
 	} {
 		model.NameValidationScheme = test.globalMode
 		require.Equal(t, test.expected, test.input.IsValid(test.callMode))

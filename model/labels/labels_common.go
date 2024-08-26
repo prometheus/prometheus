@@ -107,6 +107,9 @@ func (ls Labels) IsValid(validationScheme model.ValidationScheme) bool {
 				return strconv.ErrSyntax
 			}
 		}
+		if validationScheme == model.LegacyValidation && model.NameValidationScheme == model.UTF8Validation {
+			if !model.LabelName(l.Name).IsValidLegacy() || !model.LabelValue(l.Value).IsValidLegacy() {
+		}
 		if !model.LabelName(l.Name).IsValid() || !model.LabelValue(l.Value).IsValid() {
 			return strconv.ErrSyntax
 		}
