@@ -699,7 +699,7 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		p := NewOpenMetricsParser([]byte(c.input), labels.NewSymbolTable())
+		p := NewOpenMetricsParser([]byte(c.input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
 		var err error
 		for err == nil {
 			_, err = p.Next()
@@ -764,7 +764,7 @@ func TestOMNullByteHandling(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		p := NewOpenMetricsParser([]byte(c.input), labels.NewSymbolTable())
+		p := NewOpenMetricsParser([]byte(c.input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
 		var err error
 		for err == nil {
 			_, err = p.Next()

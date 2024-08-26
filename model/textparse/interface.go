@@ -91,7 +91,7 @@ func New(b []byte, contentType string, parseClassicHistograms bool, st *labels.S
 	}
 	switch mediaType {
 	case "application/openmetrics-text":
-		return NewOpenMetricsParser(b, st), nil
+		return NewOpenMetricsParser(b, st, WithOMParserCTSeriesSkipped()), nil
 	case "application/vnd.google.protobuf":
 		return NewProtobufParser(b, parseClassicHistograms, st), nil
 	default:
