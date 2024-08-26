@@ -88,7 +88,7 @@ func (node *AggregateExpr) getAggOpStr() string {
 func joinLabels(ss []string) string {
 	for i, s := range ss {
 		// If the label is already quoted, don't quote it again.
-		if s[0] != '"' && s[0] != '\'' && s[0] != '`' && !model.IsValidLegacyMetricName(model.LabelValue(s)) {
+		if s[0] != '"' && s[0] != '\'' && s[0] != '`' && !model.IsValidLegacyMetricName(string(model.LabelValue(s))) {
 			ss[i] = fmt.Sprintf("\"%s\"", s)
 		}
 	}

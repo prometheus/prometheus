@@ -100,7 +100,7 @@ func (ls Labels) IsValid(validationScheme model.ValidationScheme) bool {
 		if l.Name == model.MetricNameLabel {
 			// If the default validation scheme has been overridden with legacy mode,
 			// we need to call the special legacy validation checker.
-			if validationScheme == model.LegacyValidation && model.NameValidationScheme == model.UTF8Validation && !model.IsValidLegacyMetricName(model.LabelValue(l.Value)) {
+			if validationScheme == model.LegacyValidation && model.NameValidationScheme == model.UTF8Validation && !model.IsValidLegacyMetricName(string(model.LabelValue(l.Value))) {
 				return strconv.ErrSyntax
 			}
 			if !model.IsValidMetricName(model.LabelValue(l.Value)) {
@@ -108,7 +108,9 @@ func (ls Labels) IsValid(validationScheme model.ValidationScheme) bool {
 			}
 		}
 		if validationScheme == model.LegacyValidation && model.NameValidationScheme == model.UTF8Validation {
-			if !model.LabelName(l.Name).IsValidLegacy() || !model.LabelValue(l.Value).IsValidLegacy() {
+			if !model.LabelName(l.Name).IsValidLegacy() || !model.LabelValue(l.Value).IsValid() {
+				return strconv.ErrSyntax
+			}
 		}
 		if !model.LabelName(l.Name).IsValid() || !model.LabelValue(l.Value).IsValid() {
 			return strconv.ErrSyntax
