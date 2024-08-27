@@ -43,7 +43,7 @@ func (j JSONCodec) ContentType() MIMEType {
 	return MIMEType{Type: "application", SubType: "json"}
 }
 
-func (j JSONCodec) CanEncode(req *http.Request, _ *Response) bool {
+func (j JSONCodec) CanEncode(_ *http.Request, _ *Response) bool {
 	return true
 }
 
