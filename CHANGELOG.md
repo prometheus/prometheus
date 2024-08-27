@@ -6,7 +6,15 @@
 * [ENHANCEMENT] OTLP receiver: Warn when encountering exponential histograms with zero count and non-zero sum. #14706
 * [BUGFIX] tsdb/wlog.Watcher.readSegmentForGC: Only count unknown record types against record_decode_failures_total metric. #14042
 
-## 2.54.0-rc.1 / 2024-08-05
+## 2.54.1 / 2024-08-27
+
+* [BUGFIX] Scraping: allow multiple samples on same series, with explicit timestamps. #14685
+* [BUGFIX] Docker SD: fix crash in `match_first_network` mode when container is reconnected to a new network. #14654
+* [BUGFIX] PromQL: fix experimental native histograms getting corrupted due to vector selector bug in range queries. #14538
+* [BUGFIX] PromQL: fix experimental native histogram counter reset detection on stale samples. #14514
+* [BUGFIX] PromQL: fix native histograms getting corrupted due to vector selector bug in range queries. #14605
+
+## 2.54.0 / 2024-08-09
 
 Release 2.54 brings a release candidate of a major new version of [Remote Write: 2.0](https://prometheus.io/docs/specs/remote_write_spec_2_0/).
 This is experimental at this time and may still change.
@@ -35,6 +43,7 @@ Remote-write v2 is enabled by default, but can be disabled via feature-flag `web
 * [ENHANCEMENT] Notifier: Send any outstanding Alertmanager notifications when shutting down. #14290
 * [ENHANCEMENT] Rules: Add label-matcher support to Rules API. #10194
 * [ENHANCEMENT] HTTP API: Add url to message logged on error while sending response. #14209
+* [BUGFIX] TSDB: Exclude OOO chunks mapped after compaction starts (introduced by #14396). #14584
 * [BUGFIX] CLI: escape `|` characters when generating docs. #14420
 * [BUGFIX] PromQL (experimental native histograms): Fix some binary operators between native histogram values. #14454
 * [BUGFIX] TSDB: LabelNames API could fail during compaction. #14279
