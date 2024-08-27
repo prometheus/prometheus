@@ -91,7 +91,7 @@ func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, dir string, f
 		flushDeadline:     flushDeadline,
 		samplesIn:         newEWMARate(ewmaWeight, shardUpdateDuration),
 		dir:               dir,
-		interner:          newPool(),
+		interner:          newPool(false),
 		scraper:           sm,
 		quit:              make(chan struct{}),
 		metadataInWAL:     metadataInWal,
@@ -225,6 +225,10 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 	// changed or was removed from the overall remote write config.
 	for _, q := range rws.queues {
 		q.Stop()
+	}
+
+	if len(newHashes) > 1 {
+		rws.interner.shouldIntern = true
 	}
 
 	for _, hash := range newHashes {

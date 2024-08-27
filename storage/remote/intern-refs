@@ -1,0 +1,46 @@
+goos: linux
+goarch: amd64
+pkg: github.com/prometheus/prometheus/storage/remote
+cpu: AMD Ryzen 9 5950X 16-Core Processor            
+BenchmarkStoreSeries/plain-32           	    4168	    256049 ns/op	  228660 B/op	    1596 allocs/op
+BenchmarkStoreSeries/plain-32           	    4500	    254302 ns/op	  228643 B/op	    1596 allocs/op
+BenchmarkStoreSeries/plain-32           	    4552	    255622 ns/op	  228618 B/op	    1596 allocs/op
+BenchmarkStoreSeries/plain-32           	    4460	    254980 ns/op	  228615 B/op	    1596 allocs/op
+BenchmarkStoreSeries/plain-32           	    4506	    259763 ns/op	  228626 B/op	    1596 allocs/op
+BenchmarkStoreSeries/externalLabels-32  	    1262	    895862 ns/op	  869235 B/op	    2596 allocs/op
+BenchmarkStoreSeries/externalLabels-32  	    1324	    897306 ns/op	  869256 B/op	    2597 allocs/op
+BenchmarkStoreSeries/externalLabels-32  	    1297	    894041 ns/op	  869225 B/op	    2597 allocs/op
+BenchmarkStoreSeries/externalLabels-32  	    1315	    907147 ns/op	  869157 B/op	    2596 allocs/op
+BenchmarkStoreSeries/externalLabels-32  	    1207	    895866 ns/op	  869218 B/op	    2597 allocs/op
+BenchmarkStoreSeries/relabel-32         	    1635	    784739 ns/op	  741725 B/op	    5597 allocs/op
+BenchmarkStoreSeries/relabel-32         	    1532	    727039 ns/op	  741748 B/op	    5598 allocs/op
+BenchmarkStoreSeries/relabel-32         	    1604	    729110 ns/op	  741750 B/op	    5597 allocs/op
+BenchmarkStoreSeries/relabel-32         	    1614	    729609 ns/op	  741696 B/op	    5597 allocs/op
+BenchmarkStoreSeries/relabel-32         	    1626	    727394 ns/op	  741669 B/op	    5597 allocs/op
+BenchmarkStoreSeries/externalLabels+relabel-32         	     987	   1208797 ns/op	  837849 B/op	    5597 allocs/op
+BenchmarkStoreSeries/externalLabels+relabel-32         	     985	   1197194 ns/op	  837867 B/op	    5597 allocs/op
+BenchmarkStoreSeries/externalLabels+relabel-32         	     992	   1195505 ns/op	  837853 B/op	    5597 allocs/op
+BenchmarkStoreSeries/externalLabels+relabel-32         	     999	   1201181 ns/op	  837831 B/op	    5597 allocs/op
+BenchmarkStoreSeries/externalLabels+relabel-32         	    1000	   1195945 ns/op	  837889 B/op	    5597 allocs/op
+BenchmarkStoreSeries_TwoEndpoints/plain-32             	    2469	    475513 ns/op	  436320 B/op	    2731 allocs/op
+BenchmarkStoreSeries_TwoEndpoints/plain-32             	    2523	    478113 ns/op	  436257 B/op	    2731 allocs/op
+BenchmarkStoreSeries_TwoEndpoints/plain-32             	    2458	    475820 ns/op	  436279 B/op	    2731 allocs/op
+BenchmarkStoreSeries_TwoEndpoints/plain-32             	    2492	    472694 ns/op	  436243 B/op	    2731 allocs/op
+BenchmarkStoreSeries_TwoEndpoints/plain-32             	    2437	    476160 ns/op	  436259 B/op	    2731 allocs/op
+BenchmarkStoreSeries_TwoEndpoints/externalLabels-32    	     679	   1747548 ns/op	 1717397 B/op	    4731 allocs/op
+BenchmarkStoreSeries_TwoEndpoints/externalLabels-32    	     676	   1754213 ns/op	 1717468 B/op	    4732 allocs/op
+BenchmarkStoreSeries_TwoEndpoints/externalLabels-32    	     674	   1739374 ns/op	 1717653 B/op	    4732 allocs/op
+BenchmarkStoreSeries_TwoEndpoints/externalLabels-32    	     679	   1738507 ns/op	 1717426 B/op	    4732 allocs/op
+BenchmarkStoreSeries_TwoEndpoints/externalLabels-32    	     694	   1739284 ns/op	 1717384 B/op	    4732 allocs/op
+BenchmarkStoreSeries_TwoEndpoints/relabel-32           	     850	   1399855 ns/op	 1462383 B/op	   10733 allocs/op
+BenchmarkStoreSeries_TwoEndpoints/relabel-32           	     834	   1405426 ns/op	 1462345 B/op	   10733 allocs/op
+BenchmarkStoreSeries_TwoEndpoints/relabel-32           	     842	   1424322 ns/op	 1462449 B/op	   10734 allocs/op
+BenchmarkStoreSeries_TwoEndpoints/relabel-32           	     841	   1404540 ns/op	 1462356 B/op	   10733 allocs/op
+BenchmarkStoreSeries_TwoEndpoints/relabel-32           	     843	   1414279 ns/op	 1462380 B/op	   10733 allocs/op
+BenchmarkStoreSeries_TwoEndpoints/externalLabels+relabel-32         	     508	   2351248 ns/op	 1654492 B/op	   10733 allocs/op
+BenchmarkStoreSeries_TwoEndpoints/externalLabels+relabel-32         	     507	   2368400 ns/op	 1654660 B/op	   10734 allocs/op
+BenchmarkStoreSeries_TwoEndpoints/externalLabels+relabel-32         	     505	   2347374 ns/op	 1654649 B/op	   10734 allocs/op
+BenchmarkStoreSeries_TwoEndpoints/externalLabels+relabel-32         	     507	   2349636 ns/op	 1654516 B/op	   10733 allocs/op
+BenchmarkStoreSeries_TwoEndpoints/externalLabels+relabel-32         	     504	   2349570 ns/op	 1654583 B/op	   10733 allocs/op
+PASS
+ok  	github.com/prometheus/prometheus/storage/remote	53.470s

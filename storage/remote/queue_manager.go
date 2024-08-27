@@ -702,8 +702,13 @@ outer:
 			continue
 		}
 		t.seriesMtx.Lock()
-		lbls, ok := t.seriesLabels[s.Ref]
-		if !ok {
+		var lbls labels.Labels
+		if t.interner.shouldIntern {
+			lbls = t.interner.intern(s.Ref, nil)
+		} else {
+			lbls = t.seriesLabels[s.Ref]
+		}
+		if len(lbls) == 0 {
 			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[s.Ref]; !ok {
 				level.Info(t.logger).Log("msg", "Dropped sample for series that was not explicitly dropped via relabelling", "ref", s.Ref)
@@ -764,8 +769,13 @@ outer:
 			continue
 		}
 		t.seriesMtx.Lock()
-		lbls, ok := t.seriesLabels[e.Ref]
-		if !ok {
+		var lbls labels.Labels
+		if t.interner.shouldIntern {
+			lbls = t.interner.intern(e.Ref, nil)
+		} else {
+			lbls = t.seriesLabels[e.Ref]
+		}
+		if len(lbls) == 0 {
 			// Track dropped exemplars in the same EWMA for sharding calc.
 			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[e.Ref]; !ok {
@@ -821,8 +831,13 @@ outer:
 			continue
 		}
 		t.seriesMtx.Lock()
-		lbls, ok := t.seriesLabels[h.Ref]
-		if !ok {
+		var lbls labels.Labels
+		if t.interner.shouldIntern {
+			lbls = t.interner.intern(h.Ref, nil)
+		} else {
+			lbls = t.seriesLabels[h.Ref]
+		}
+		if len(lbls) == 0 {
 			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[h.Ref]; !ok {
 				level.Info(t.logger).Log("msg", "Dropped histogram for series that was not explicitly dropped via relabelling", "ref", h.Ref)
@@ -876,8 +891,13 @@ outer:
 			continue
 		}
 		t.seriesMtx.Lock()
-		lbls, ok := t.seriesLabels[h.Ref]
-		if !ok {
+		var lbls labels.Labels
+		if t.interner.shouldIntern {
+			lbls = t.interner.intern(h.Ref, nil)
+		} else {
+			lbls = t.seriesLabels[h.Ref]
+		}
+		if len(lbls) == 0 {
 			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[h.Ref]; !ok {
 				level.Info(t.logger).Log("msg", "Dropped histogram for series that was not explicitly dropped via relabelling", "ref", h.Ref)
@@ -960,9 +980,6 @@ func (t *QueueManager) Stop() {
 
 	// On shutdown, release the strings in the labels from the intern pool.
 	t.seriesMtx.Lock()
-	for _, labels := range t.seriesLabels {
-		t.releaseLabels(labels)
-	}
 	t.seriesMtx.Unlock()
 	t.metrics.unregister()
 }
@@ -985,15 +1002,11 @@ func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 			continue
 		}
 		lbls := t.builder.Labels()
-		t.internLabels(lbls)
-
-		// We should not ever be replacing a series labels in the map, but just
-		// in case we do we need to ensure we do not leak the replaced interned
-		// strings.
-		if orig, ok := t.seriesLabels[s.Ref]; ok {
-			t.releaseLabels(orig)
+		if t.interner.shouldIntern {
+			t.interner.intern(s.Ref, lbls)
+		} else {
+			t.seriesLabels[s.Ref] = lbls
 		}
-		t.seriesLabels[s.Ref] = lbls
 	}
 }
 
@@ -1037,8 +1050,9 @@ func (t *QueueManager) SeriesReset(index int) {
 	for k, v := range t.seriesSegmentIndexes {
 		if v < index {
 			delete(t.seriesSegmentIndexes, k)
-			t.releaseLabels(t.seriesLabels[k])
-			delete(t.seriesLabels, k)
+			t.interner.release(k)
+			//t.releaseLabels(t.seriesLabels[k])
+			//delete(t.seriesLabels, k)
 			delete(t.seriesMetadata, k)
 			delete(t.droppedSeries, k)
 		}
@@ -1057,14 +1071,6 @@ func (t *QueueManager) client() WriteClient {
 	t.clientMtx.RLock()
 	defer t.clientMtx.RUnlock()
 	return t.storeClient
-}
-
-func (t *QueueManager) internLabels(lbls labels.Labels) {
-	lbls.InternStrings(t.interner.intern)
-}
-
-func (t *QueueManager) releaseLabels(ls labels.Labels) {
-	ls.ReleaseStrings(t.interner.release)
 }
 
 // processExternalLabels merges externalLabels into b. If b contains

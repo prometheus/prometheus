@@ -24,67 +24,79 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 )
 
 func TestIntern(t *testing.T) {
-	interner := newPool()
-	testString := "TestIntern"
-	interner.intern(testString)
-	interned, ok := interner.pool[testString]
+	interner := newPool(true)
+	testString := "TestIntern_DeleteRef"
+	ref := chunks.HeadSeriesRef(1234)
+
+	lset := labels.FromStrings("name", testString)
+	interner.intern(ref, lset)
+	interned, ok := interner.pool[ref]
 
 	require.True(t, ok)
+	require.Equal(t, lset, interned.lset)
 	require.Equal(t, int64(1), interned.refs.Load(), fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs.Load()))
 }
 
 func TestIntern_MultiRef(t *testing.T) {
-	interner := newPool()
-	testString := "TestIntern_MultiRef"
+	interner := newPool(true)
+	testString := "TestIntern_DeleteRef"
+	ref := chunks.HeadSeriesRef(1234)
 
-	interner.intern(testString)
-	interned, ok := interner.pool[testString]
+	lset := labels.FromStrings("name", testString)
+	interner.intern(ref, lset)
+	interned, ok := interner.pool[ref]
 
 	require.True(t, ok)
+	require.Equal(t, lset, interned.lset)
 	require.Equal(t, int64(1), interned.refs.Load(), fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs.Load()))
 
-	interner.intern(testString)
-	interned, ok = interner.pool[testString]
+	interner.intern(ref, lset)
+	interned, ok = interner.pool[ref]
 
-	require.True(t, ok)
+	require.NotNil(t, interned)
 	require.Equal(t, int64(2), interned.refs.Load(), fmt.Sprintf("expected refs to be 2 but it was %d", interned.refs.Load()))
 }
 
 func TestIntern_DeleteRef(t *testing.T) {
-	interner := newPool()
+	interner := newPool(true)
 	testString := "TestIntern_DeleteRef"
+	ref := chunks.HeadSeriesRef(1234)
+	interner.intern(ref, labels.FromStrings("name", testString))
+	interned, ok := interner.pool[ref]
 
-	interner.intern(testString)
-	interned, ok := interner.pool[testString]
-
-	require.True(t, ok)
+	require.NotNil(t, interned)
 	require.Equal(t, int64(1), interned.refs.Load(), fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs.Load()))
 
-	interner.release(testString)
-	_, ok = interner.pool[testString]
+	interner.release(ref)
+	_, ok = interner.pool[ref]
 	require.False(t, ok)
 }
 
 func TestIntern_MultiRef_Concurrent(t *testing.T) {
-	interner := newPool()
+	interner := newPool(true)
 	testString := "TestIntern_MultiRef_Concurrent"
+	ref := chunks.HeadSeriesRef(1234)
 
-	interner.intern(testString)
-	interned, ok := interner.pool[testString]
-	require.True(t, ok)
+	interner.intern(ref, labels.FromStrings("name", testString))
+	interned, ok := interner.pool[ref]
+
+	require.NotNil(t, interned)
 	require.Equal(t, int64(1), interned.refs.Load(), fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs.Load()))
 
-	go interner.release(testString)
+	go interner.release(ref)
 
-	interner.intern(testString)
+	interner.intern(ref, labels.FromStrings("name", testString))
 
 	time.Sleep(time.Millisecond)
 
 	interner.mtx.RLock()
-	interned, ok = interner.pool[testString]
+	interned, ok = interner.pool[ref]
 	interner.mtx.RUnlock()
 	require.True(t, ok)
 	require.Equal(t, int64(1), interned.refs.Load(), fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs.Load()))
