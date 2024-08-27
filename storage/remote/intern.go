@@ -20,6 +20,7 @@ package remote
 
 import (
 	"sync"
+	"unique"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -35,22 +36,20 @@ var noReferenceReleases = promauto.NewCounter(prometheus.CounterOpts{
 
 type pool struct {
 	mtx  sync.RWMutex
-	pool map[string]*entry
+	pool map[unique.Handle[string]]*entry
 }
 
 type entry struct {
 	refs atomic.Int64
-
-	s string
 }
 
-func newEntry(s string) *entry {
-	return &entry{s: s}
+func newEntry() *entry {
+	return &entry{}
 }
 
 func newPool() *pool {
 	return &pool{
-		pool: map[string]*entry{},
+		pool: map[unique.Handle[string]]*entry{},
 	}
 }
 
@@ -60,27 +59,28 @@ func (p *pool) intern(s string) string {
 	}
 
 	p.mtx.RLock()
-	interned, ok := p.pool[s]
+	h := unique.Make(s)
+	interned, ok := p.pool[h]
 	p.mtx.RUnlock()
 	if ok {
 		interned.refs.Inc()
-		return interned.s
+		return s
 	}
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
-	if interned, ok := p.pool[s]; ok {
+	if interned, ok := p.pool[h]; ok {
 		interned.refs.Inc()
-		return interned.s
+		return s
 	}
-
-	p.pool[s] = newEntry(s)
-	p.pool[s].refs.Store(1)
+	p.pool[h] = newEntry()
+	p.pool[h].refs.Store(1)
 	return s
 }
 
 func (p *pool) release(s string) {
 	p.mtx.RLock()
-	interned, ok := p.pool[s]
+	h := unique.Make(s)
+	interned, ok := p.pool[h]
 	p.mtx.RUnlock()
 
 	if !ok {
@@ -98,5 +98,5 @@ func (p *pool) release(s string) {
 	if interned.refs.Load() != 0 {
 		return
 	}
-	delete(p.pool, s)
+	delete(p.pool, h)
 }
