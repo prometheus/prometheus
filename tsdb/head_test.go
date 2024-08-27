@@ -4617,7 +4617,7 @@ func TestOOOHistogramCounterResetHeaders(t *testing.T) {
 				},
 			)
 
-			// Count is lower than previous sample at ts 200, so the NotCounterReset is ignored.
+			// Count is lower than previous sample at ts 200, and NotCounterReset is always ignored on append.
 			appendHistogram(int64(205), tsdbutil.SetHistogramNotCounterReset(tsdbutil.GenerateTestHistogram(1000)))
 
 			appendHistogram(int64(210), tsdbutil.SetHistogramCounterReset(tsdbutil.GenerateTestHistogram(2010)))

@@ -5442,7 +5442,7 @@ func TestQuerierOOOQuery(t *testing.T) {
 			// Adding counter reset to all histograms means each histogram will have its own chunk.
 			appendFunc: func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error) {
 				h := tsdbutil.GenerateTestHistogram(int(ts))
-				h.CounterResetHint = histogram.CounterReset // for this scenario, ignore the counterReset argument
+				h.CounterResetHint = histogram.CounterReset // For this scenario, ignore the counterReset argument.
 				return app.AppendHistogram(0, labels.FromStrings("foo", "bar1"), ts, h, nil)
 			},
 			sampleFunc: func(ts int64) chunks.Sample {
@@ -5544,7 +5544,7 @@ func testQuerierOOOQuery(t *testing.T,
 			},
 		},
 		{
-			name:      "alternating OOO batches", // in order: 100-200 normal. out of order first path: 0, 2, 4, ... 98 (no counter reset), second pass: 1, 3, 5, ... 99 (with counter reset)
+			name:      "alternating OOO batches", // In order: 100-200 normal. out of order first path: 0, 2, 4, ... 98 (no counter reset), second pass: 1, 3, 5, ... 99 (with counter reset).
 			queryMinT: minutes(0),
 			queryMaxT: minutes(200),
 			batches: []sampleBatch{
@@ -5741,7 +5741,7 @@ func TestChunkQuerierOOOQuery(t *testing.T) {
 			// Adding counter reset to all histograms means each histogram will have its own chunk.
 			appendFunc: func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error) {
 				h := tsdbutil.GenerateTestHistogram(int(ts))
-				h.CounterResetHint = histogram.CounterReset // for this scenario, ignore the counterReset argument
+				h.CounterResetHint = histogram.CounterReset // For this scenario, ignore the counterReset argument.
 				return app.AppendHistogram(0, labels.FromStrings("foo", "bar1"), ts, h, nil)
 			},
 			sampleFunc: func(ts int64) chunks.Sample {
@@ -5843,7 +5843,7 @@ func testChunkQuerierOOOQuery(t *testing.T,
 			},
 		},
 		{
-			name:      "alternating OOO batches", // in order: 100-200 normal. out of order first path: 0, 2, 4, ... 98 (no counter reset), second pass: 1, 3, 5, ... 99 (with counter reset)
+			name:      "alternating OOO batches", // In order: 100-200 normal. out of order first path: 0, 2, 4, ... 98 (no counter reset), second pass: 1, 3, 5, ... 99 (with counter reset).
 			queryMinT: minutes(0),
 			queryMaxT: minutes(200),
 			batches: []sampleBatch{
@@ -6006,8 +6006,8 @@ func testChunkQuerierOOOQuery(t *testing.T,
 	}
 }
 
-// This test verifies the counter reset headers for in-order and out-of-order samples upon ingestion.
-// Note that when the counter reset(s) occur in OOO samples, the header is set to UnknownCounterReset
+// TestOOONativeHistogramsWithCounterResets verifies the counter reset headers for in-order and out-of-order samples
+// upon ingestion. Note that when the counter reset(s) occur in OOO samples, the header is set to UnknownCounterReset
 // rather than CounterReset. This is because with OOO native histogram samples, it cannot be definitely
 // determined if a counter reset occurred because the samples are not consecutive, and another sample
 // could potentially come in that would change the status of the header. In this case, the UnknownCounterReset
@@ -6274,9 +6274,9 @@ func testOOOAppendAndQuery(t *testing.T, scenario sampleTypeScenario) {
 	addSample(s2, 255, 265, false)
 	verifyOOOMinMaxTimes(250, 265)
 	testQuery(math.MinInt64, math.MaxInt64)
-	testQuery(minutes(250), minutes(265)) // Test querying ono data time range
-	testQuery(minutes(290), minutes(300)) // Test querying in-order data time range
-	testQuery(minutes(250), minutes(300)) // Test querying the entire range
+	testQuery(minutes(250), minutes(265)) // Test querying ono data time range.
+	testQuery(minutes(290), minutes(300)) // Test querying in-order data time range.
+	testQuery(minutes(250), minutes(300)) // Test querying the entire range.
 
 	// Out of time window.
 	addSample(s1, 59, 59, true)
@@ -6846,7 +6846,7 @@ func TestOOOHistogramCompactionWithCounterResets(t *testing.T) {
 		// Check that blocks are created after compaction.
 		require.Len(t, db.Blocks(), 5)
 
-		// Check samples after compaction
+		// Check samples after compaction.
 		verifyDBSamples(series1ExpSamplesPostCompact, series2ExpSamplesPostCompact)
 
 		// 0th WBL file will be deleted and 1st will be the only present.
@@ -6867,7 +6867,7 @@ func TestOOOHistogramCompactionWithCounterResets(t *testing.T) {
 
 			for _, s := range series1ExpSamplesPostCompact {
 				if s.T() >= fromMins*time.Minute.Milliseconds() {
-					// samples should be sorted, so break out of loop when we reach a timestamp that's too big
+					// Samples should be sorted, so break out of loop when we reach a timestamp that's too big.
 					if s.T() > toMins*time.Minute.Milliseconds() {
 						break
 					}
@@ -7004,7 +7004,7 @@ func testOOOCompactionFailure(t *testing.T, scenario sampleTypeScenario) {
 
 	// There is a 0th WBL file.
 	verifyFirstWBLFileIs0 := func(count int) {
-		require.NoError(t, db.head.wbl.Sync()) // syncing to make sure wbl is flushed in windows
+		require.NoError(t, db.head.wbl.Sync()) // Syncing to make sure wbl is flushed in windows.
 		files, err := os.ReadDir(db.head.wbl.Dir())
 		require.NoError(t, err)
 		require.Len(t, files, count)
@@ -7058,7 +7058,7 @@ func testOOOCompactionFailure(t *testing.T, scenario sampleTypeScenario) {
 	require.Len(t, db.Blocks(), 3)
 	require.Equal(t, oldBlocks, db.Blocks())
 
-	// There should be a single m-map file
+	// There should be a single m-map file.
 	verifyMmapFiles("000001")
 
 	// All but last WBL file will be deleted.
@@ -7154,7 +7154,7 @@ func TestWBLCorruption(t *testing.T) {
 	// should be deleted after replay.
 
 	// Checking where we corrupt it.
-	require.NoError(t, db.head.wbl.Sync()) // syncing to make sure wbl is flushed in windows
+	require.NoError(t, db.head.wbl.Sync()) // Syncing to make sure wbl is flushed in windows.
 	files, err := os.ReadDir(db.head.wbl.Dir())
 	require.NoError(t, err)
 	require.Len(t, files, 2)
@@ -7177,7 +7177,7 @@ func TestWBLCorruption(t *testing.T) {
 	addSamples(310, 320, false)
 
 	// Verifying that we have data after corruption point.
-	require.NoError(t, db.head.wbl.Sync()) // syncing to make sure wbl is flushed in windows
+	require.NoError(t, db.head.wbl.Sync()) // Syncing to make sure wbl is flushed in windows.
 	files, err = os.ReadDir(db.head.wbl.Dir())
 	require.NoError(t, err)
 	require.Len(t, files, 3)
