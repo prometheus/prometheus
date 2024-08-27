@@ -91,7 +91,7 @@ func New(b []byte, contentType string, parseClassicHistograms bool, skipOMSeries
 	}
 	switch mediaType {
 	case "application/openmetrics-text":
-		opts := func(o * openMetricsParserOptions) {
+		opts := func(o *openMetricsParserOptions) {
 			o.SkipCTSeries = skipOMSeries
 		}
 		return NewOpenMetricsParser(b, st, opts), nil
