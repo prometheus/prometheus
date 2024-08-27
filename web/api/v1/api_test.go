@@ -4116,7 +4116,7 @@ func (t *testCodec) CanEncode(_ *http.Request, _ *Response) bool {
 	return t.canEncode
 }
 
-func (t *testCodec) Encode(_ *http.Request, _ *Response) ([]byte, error) {
+func (t *testCodec) Encode(_ *Response) ([]byte, error) {
 	return []byte(fmt.Sprintf("response from %v codec", t.contentType)), nil
 }
 

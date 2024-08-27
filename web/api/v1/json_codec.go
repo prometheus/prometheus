@@ -53,7 +53,7 @@ func (j JSONCodec) CanEncode(req *http.Request, _ *Response) bool {
 	return false
 }
 
-func (j JSONCodec) Encode(_ *http.Request, resp *Response) ([]byte, error) {
+func (j JSONCodec) Encode(resp *Response) ([]byte, error) {
 	json := jsoniter.ConfigCompatibleWithStandardLibrary
 	return json.Marshal(resp)
 }

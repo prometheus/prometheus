@@ -28,7 +28,7 @@ type Codec interface {
 	CanEncode(req *http.Request, resp *Response) bool
 
 	// Encode encodes resp, ready for transmission to an API consumer.
-	Encode(req *http.Request, resp *Response) ([]byte, error)
+	Encode(resp *Response) ([]byte, error)
 }
 
 type MIMEType struct {

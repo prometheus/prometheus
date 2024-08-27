@@ -15,7 +15,6 @@ package v1
 
 import (
 	"math"
-	"net/http"
 	"testing"
 
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -198,7 +197,7 @@ func TestJsonCodec_Encode(t *testing.T) {
 	codec := JSONCodec{}
 
 	for _, c := range cases {
-		body, err := codec.Encode(&http.Request{}, &Response{
+		body, err := codec.Encode(&Response{
 			Status: statusSuccess,
 			Data:   c.response,
 		})

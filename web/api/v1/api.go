@@ -1777,7 +1777,7 @@ func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface
 		return
 	}
 
-	b, err := codec.Encode(req, resp)
+	b, err := codec.Encode(resp)
 	if err != nil {
 		level.Error(api.logger).Log("msg", "error marshaling response", "url", req.URL, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
