@@ -957,7 +957,9 @@ tls_config:
 # The host to use if the container is in host networking mode.
 [ host_networking_host: <string> | default = "localhost" ]
 
-# Match the first network if the container has multiple networks defined, thus avoiding collecting duplicate targets.
+# Sort all non-nil networks in ascending order based on network name and
+# get the first network if the container has multiple networks defined, 
+# thus avoiding collecting duplicate targets.
 [ match_first_network: <boolean> | default = true ]
 
 # Optional filters to limit the discovery process to a subset of available
