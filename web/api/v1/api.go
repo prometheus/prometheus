@@ -34,6 +34,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/regexp"
 	jsoniter "github.com/json-iterator/go"
+	"github.com/munnerz/goautoneg"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
@@ -1792,9 +1793,11 @@ func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface
 }
 
 func (api *API) negotiateCodec(req *http.Request, resp *Response) (Codec, error) {
-	for _, codec := range api.codecs {
-		if codec.CanEncode(req, resp) {
-			return codec, nil
+	for _, clause := range goautoneg.ParseAccept(req.Header.Get("Accept")) {
+		for _, codec := range api.codecs {
+			if codec.ContentType().Satisfies(clause) && codec.CanEncode(req, resp) {
+				return codec, nil
+			}
 		}
 	}
 

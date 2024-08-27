@@ -45,12 +45,7 @@ func (j JSONCodec) ContentType() MIMEType {
 }
 
 func (j JSONCodec) CanEncode(req *http.Request, _ *Response) bool {
-	for _, clause := range goautoneg.ParseAccept(req.Header.Get("Accept")) {
-		if j.ContentType().Satisfies(clause) {
-			return true
-		}
-	}
-	return false
+	return true
 }
 
 func (j JSONCodec) Encode(resp *Response) ([]byte, error) {
