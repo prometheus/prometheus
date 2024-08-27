@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.54.1 / 2024-08-27
+
+* [BUGFIX] Scraping: allow multiple samples on same series, with explicit timestamps. #14685
+* [BUGFIX] Docker SD: fix crash in `match_first_network` mode when container is reconnected to a new network. #14654
+* [BUGFIX] PromQL: fix experimental native histograms getting corrupted due to vector selector bug in range queries. #14538
+* [BUGFIX] PromQL: fix experimental native histogram counter reset detection on stale samples. #14514
+* [BUGFIX] PromQL: fix native histograms getting corrupted due to vector selector bug in range queries. #14605
+
 ## 2.54.0 / 2024-08-09
 
 Release 2.54 brings a release candidate of a major new version of [Remote Write: 2.0](https://prometheus.io/docs/specs/remote_write_spec_2_0/).
