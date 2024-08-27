@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"unique"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -60,6 +61,13 @@ const (
 	reasonDroppedSeries              = "dropped_series"
 	reasonUnintentionalDroppedSeries = "unintentionally_dropped_series"
 )
+
+var handlesPool = sync.Pool{
+	New: func() interface{} {
+		//t.Log("Created")
+		return make([]unique.Handle[string], 0)
+	},
+}
 
 type queueManagerMetrics struct {
 	reg prometheus.Registerer
@@ -398,6 +406,11 @@ type WriteClient interface {
 	Endpoint() string
 }
 
+type internRef struct {
+	//handles []unique.Handle[string]
+	lset labels.Labels
+}
+
 // QueueManager manages a queue of samples to be sent to the Storage
 // indicated by the provided WriteClient. Implements writeTo interface
 // used by WAL Watcher.
@@ -424,10 +437,11 @@ type QueueManager struct {
 	enc         Compression
 
 	seriesMtx      sync.Mutex // Covers seriesLabels, seriesMetadata, droppedSeries and builder.
-	seriesLabels   map[chunks.HeadSeriesRef]labels.Labels
+	seriesLabels   map[chunks.HeadSeriesRef]internRef
 	seriesMetadata map[chunks.HeadSeriesRef]*metadata.Metadata
 	droppedSeries  map[chunks.HeadSeriesRef]struct{}
 	builder        *labels.Builder
+	handles        []unique.Handle[string]
 
 	seriesSegmentMtx     sync.Mutex // Covers seriesSegmentIndexes - if you also lock seriesMtx, take seriesMtx first.
 	seriesSegmentIndexes map[chunks.HeadSeriesRef]int
@@ -492,7 +506,7 @@ func NewQueueManager(
 		sendExemplars:        enableExemplarRemoteWrite,
 		sendNativeHistograms: enableNativeHistogramRemoteWrite,
 
-		seriesLabels:         make(map[chunks.HeadSeriesRef]labels.Labels),
+		seriesLabels:         make(map[chunks.HeadSeriesRef]internRef),
 		seriesMetadata:       make(map[chunks.HeadSeriesRef]*metadata.Metadata),
 		seriesSegmentIndexes: make(map[chunks.HeadSeriesRef]int),
 		droppedSeries:        make(map[chunks.HeadSeriesRef]struct{}),
@@ -730,7 +744,7 @@ outer:
 			default:
 			}
 			if t.shards.enqueue(s.Ref, timeSeries{
-				seriesLabels: lbls,
+				seriesLabels: lbls.lset,
 				metadata:     meta,
 				timestamp:    s.T,
 				value:        s.V,
@@ -788,7 +802,7 @@ outer:
 			default:
 			}
 			if t.shards.enqueue(e.Ref, timeSeries{
-				seriesLabels:   lbls,
+				seriesLabels:   lbls.lset,
 				metadata:       meta,
 				timestamp:      e.T,
 				value:          e.V,
@@ -834,6 +848,7 @@ outer:
 			continue
 		}
 		meta := t.seriesMetadata[h.Ref]
+
 		t.seriesMtx.Unlock()
 
 		backoff := model.Duration(5 * time.Millisecond)
@@ -844,7 +859,7 @@ outer:
 			default:
 			}
 			if t.shards.enqueue(h.Ref, timeSeries{
-				seriesLabels: lbls,
+				seriesLabels: lbls.lset,
 				metadata:     meta,
 				timestamp:    h.T,
 				histogram:    h.H,
@@ -889,6 +904,7 @@ outer:
 			continue
 		}
 		meta := t.seriesMetadata[h.Ref]
+
 		t.seriesMtx.Unlock()
 
 		backoff := model.Duration(5 * time.Millisecond)
@@ -899,7 +915,7 @@ outer:
 			default:
 			}
 			if t.shards.enqueue(h.Ref, timeSeries{
-				seriesLabels:   lbls,
+				seriesLabels:   lbls.lset,
 				metadata:       meta,
 				timestamp:      h.T,
 				floatHistogram: h.FH,
@@ -960,8 +976,8 @@ func (t *QueueManager) Stop() {
 
 	// On shutdown, release the strings in the labels from the intern pool.
 	t.seriesMtx.Lock()
-	for _, labels := range t.seriesLabels {
-		t.releaseLabels(labels)
+	for k := range t.seriesLabels {
+		delete(t.seriesLabels, k)
 	}
 	t.seriesMtx.Unlock()
 	t.metrics.unregister()
@@ -990,10 +1006,11 @@ func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 		// We should not ever be replacing a series labels in the map, but just
 		// in case we do we need to ensure we do not leak the replaced interned
 		// strings.
-		if orig, ok := t.seriesLabels[s.Ref]; ok {
-			t.releaseLabels(orig)
+		if _, ok := t.seriesLabels[s.Ref]; ok {
+			delete(t.seriesLabels, s.Ref)
 		}
-		t.seriesLabels[s.Ref] = lbls
+
+		t.seriesLabels[s.Ref] = internRef{lset: lbls}
 	}
 }
 
@@ -1037,7 +1054,8 @@ func (t *QueueManager) SeriesReset(index int) {
 	for k, v := range t.seriesSegmentIndexes {
 		if v < index {
 			delete(t.seriesSegmentIndexes, k)
-			t.releaseLabels(t.seriesLabels[k])
+			//t.releaseLabels(t.seriesLabels[k])
+			//delete(t.seriesLabels, k)
 			delete(t.seriesLabels, k)
 			delete(t.seriesMetadata, k)
 			delete(t.droppedSeries, k)
@@ -1060,11 +1078,10 @@ func (t *QueueManager) client() WriteClient {
 }
 
 func (t *QueueManager) internLabels(lbls labels.Labels) {
-	lbls.InternStrings(t.interner.intern)
-}
-
-func (t *QueueManager) releaseLabels(ls labels.Labels) {
-	ls.ReleaseStrings(t.interner.release)
+	for i := range lbls {
+		t.interner.intern(lbls[i].Name)
+		t.interner.intern(lbls[i].Value)
+	}
 }
 
 // processExternalLabels merges externalLabels into b. If b contains

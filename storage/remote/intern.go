@@ -36,51 +36,47 @@ var noReferenceReleases = promauto.NewCounter(prometheus.CounterOpts{
 
 type pool struct {
 	mtx  sync.RWMutex
-	pool map[unique.Handle[string]]*entry
+	pool map[string]*entry
 }
 
 type entry struct {
-	refs atomic.Int64
+	refs   atomic.Int64
+	handle unique.Handle[string]
 }
 
-func newEntry() *entry {
-	return &entry{}
+func newEntry(s string) *entry {
+	return &entry{handle: unique.Make(s)}
 }
 
 func newPool() *pool {
 	return &pool{
-		pool: map[unique.Handle[string]]*entry{},
+		pool: map[string]*entry{},
 	}
 }
 
-func (p *pool) intern(s string) string {
-	if s == "" {
-		return ""
-	}
-
+func (p *pool) intern(s string) unique.Handle[string] {
 	p.mtx.RLock()
-	h := unique.Make(s)
-	interned, ok := p.pool[h]
+	interned, ok := p.pool[s]
 	p.mtx.RUnlock()
 	if ok {
 		interned.refs.Inc()
-		return s
+		return interned.handle
 	}
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
-	if interned, ok := p.pool[h]; ok {
+	if interned, ok := p.pool[s]; ok {
 		interned.refs.Inc()
-		return s
+		return interned.handle
 	}
-	p.pool[h] = newEntry()
-	p.pool[h].refs.Store(1)
-	return s
+
+	p.pool[s] = newEntry(s)
+	p.pool[s].refs.Store(1)
+	return p.pool[s].handle
 }
 
 func (p *pool) release(s string) {
 	p.mtx.RLock()
-	h := unique.Make(s)
-	interned, ok := p.pool[h]
+	interned, ok := p.pool[s]
 	p.mtx.RUnlock()
 
 	if !ok {
@@ -98,5 +94,5 @@ func (p *pool) release(s string) {
 	if interned.refs.Load() != 0 {
 		return
 	}
-	delete(p.pool, h)
+	delete(p.pool, s)
 }
