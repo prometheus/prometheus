@@ -49,7 +49,6 @@ import (
 	toolkit_web "github.com/prometheus/exporter-toolkit/web"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.uber.org/atomic"
-	"golang.org/x/net/netutil"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
@@ -59,6 +58,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/httputil"
+	"github.com/prometheus/prometheus/util/netconnlimit"
 	api_v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/prometheus/prometheus/web/ui"
 )
@@ -244,7 +244,7 @@ type Options struct {
 	Version               *PrometheusVersion
 	Flags                 map[string]string
 
-	ListenAddress              string
+	ListenAddresses            []string
 	CORSOrigin                 *regexp.Regexp
 	ReadTimeout                time.Duration
 	MaxConnections             int
@@ -334,7 +334,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		},
 		o.Flags,
 		api_v1.GlobalURLOptions{
-			ListenAddress: o.ListenAddress,
+			ListenAddress: o.ListenAddresses[0],
 			Host:          o.ExternalURL.Host,
 			Scheme:        o.ExternalURL.Scheme,
 		},
@@ -566,15 +566,29 @@ func (h *Handler) Reload() <-chan chan error {
 	return h.reloadCh
 }
 
-// Listener creates the TCP listener for web requests.
-func (h *Handler) Listener() (net.Listener, error) {
-	level.Info(h.logger).Log("msg", "Start listening for connections", "address", h.options.ListenAddress)
+// Listeners creates the TCP listeners for web requests.
+func (h *Handler) Listeners() ([]net.Listener, error) {
+	var listeners []net.Listener
+	sem := netconnlimit.NewSharedSemaphore(h.options.MaxConnections)
+	for _, address := range h.options.ListenAddresses {
+		listener, err := h.Listener(address, sem)
+		if err != nil {
+			return listeners, err
+		}
+		listeners = append(listeners, listener)
+	}
+	return listeners, nil
+}
 
-	listener, err := net.Listen("tcp", h.options.ListenAddress)
+// Listener creates the TCP listener for web requests.
+func (h *Handler) Listener(address string, sem chan struct{}) (net.Listener, error) {
+	level.Info(h.logger).Log("msg", "Start listening for connections", "address", address)
+
+	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return listener, err
 	}
-	listener = netutil.LimitListener(listener, h.options.MaxConnections)
+	listener = netconnlimit.SharedLimitListener(listener, sem)
 
 	// Monitor incoming connections with conntrack.
 	listener = conntrack.NewListener(listener,
@@ -585,10 +599,10 @@ func (h *Handler) Listener() (net.Listener, error) {
 }
 
 // Run serves the HTTP endpoints.
-func (h *Handler) Run(ctx context.Context, listener net.Listener, webConfig string) error {
-	if listener == nil {
+func (h *Handler) Run(ctx context.Context, listeners []net.Listener, webConfig string) error {
+	if len(listeners) == 0 {
 		var err error
-		listener, err = h.Listener()
+		listeners, err = h.Listeners()
 		if err != nil {
 			return err
 		}
@@ -623,7 +637,7 @@ func (h *Handler) Run(ctx context.Context, listener net.Listener, webConfig stri
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- toolkit_web.Serve(listener, httpSrv, &toolkit_web.FlagConfig{WebConfigFile: &webConfig}, h.logger)
+		errCh <- toolkit_web.ServeMultiple(listeners, httpSrv, &toolkit_web.FlagConfig{WebConfigFile: &webConfig}, h.logger)
 	}()
 
 	select {

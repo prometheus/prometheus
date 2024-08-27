@@ -300,8 +300,8 @@ func main() {
 	a.Flag("config.file", "Prometheus configuration file path.").
 		Default("prometheus.yml").StringVar(&cfg.configFile)
 
-	a.Flag("web.listen-address", "Address to listen on for UI, API, and telemetry.").
-		Default("0.0.0.0:9090").StringVar(&cfg.web.ListenAddress)
+	a.Flag("web.listen-address", "Address to listen on for UI, API, and telemetry. Can be repeated.").
+		Default("0.0.0.0:9090").StringsVar(&cfg.web.ListenAddresses)
 
 	a.Flag("auto-gomemlimit.ratio", "The ratio of reserved GOMEMLIMIT memory to the detected maximum container or system memory").
 		Default("0.9").FloatVar(&cfg.memlimitRatio)
@@ -315,7 +315,7 @@ func main() {
 		"Maximum duration before timing out read of the request, and closing idle connections.").
 		Default("5m").SetValue(&cfg.webTimeout)
 
-	a.Flag("web.max-connections", "Maximum number of simultaneous connections.").
+	a.Flag("web.max-connections", "Maximum number of simultaneous connections across all listeners.").
 		Default("512").IntVar(&cfg.web.MaxConnections)
 
 	a.Flag("web.external-url",
@@ -547,7 +547,7 @@ func main() {
 		localStoragePath = cfg.agentStoragePath
 	}
 
-	cfg.web.ExternalURL, err = computeExternalURL(cfg.prometheusURL, cfg.web.ListenAddress)
+	cfg.web.ExternalURL, err = computeExternalURL(cfg.prometheusURL, cfg.web.ListenAddresses[0])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, fmt.Errorf("parse external URL %q: %w", cfg.prometheusURL, err))
 		os.Exit(2)
@@ -993,9 +993,9 @@ func main() {
 		})
 	}
 
-	listener, err := webHandler.Listener()
+	listeners, err := webHandler.Listeners()
 	if err != nil {
-		level.Error(logger).Log("msg", "Unable to start web listener", "err", err)
+		level.Error(logger).Log("msg", "Unable to start web listeners", "err", err)
 		os.Exit(1)
 	}
 
@@ -1290,7 +1290,7 @@ func main() {
 		// Web handler.
 		g.Add(
 			func() error {
-				if err := webHandler.Run(ctxWeb, listener, *webConfig); err != nil {
+				if err := webHandler.Run(ctxWeb, listeners, *webConfig); err != nil {
 					return fmt.Errorf("error starting web server: %w", err)
 				}
 				return nil

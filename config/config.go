@@ -781,7 +781,9 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	default:
 		return fmt.Errorf("unknown name validation method specified, must be either 'legacy' or 'utf8', got %s", globalConfig.MetricNameValidationScheme)
 	}
-	c.MetricNameValidationScheme = globalConfig.MetricNameValidationScheme
+	if c.MetricNameValidationScheme == "" {
+		c.MetricNameValidationScheme = globalConfig.MetricNameValidationScheme
+	}
 
 	return nil
 }
