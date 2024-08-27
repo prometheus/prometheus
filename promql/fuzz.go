@@ -61,15 +61,11 @@ const (
 var symbolTable = labels.NewSymbolTable()
 
 func fuzzParseMetricWithContentType(in []byte, contentType string) int {
-	p, warning := textparse.New(in, contentType, false, symbolTable)
+	p, warning := textparse.New(in, contentType, false, false, symbolTable)
 	if warning != nil {
 		// An invalid content type is being passed, which should not happen
 		// in this context.
 		panic(warning)
-	}
-
-	if contentType == "application/openmetrics-text" {
-		p = textparse.NewOpenMetricsParser(in, symbolTable)
 	}
 
 	var err error
