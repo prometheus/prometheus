@@ -996,6 +996,9 @@ func (a *headAppender) Commit() (err error) {
 		if chunkCreated {
 			a.head.metrics.chunks.Inc()
 			a.head.metrics.chunksCreated.Inc()
+			a.head.seriesForMMapLock.Lock()
+			a.head.seriesForMMap = append(a.head.seriesForMMap, series)
+			a.head.seriesForMMapLock.Unlock()
 		}
 
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
@@ -1025,6 +1028,9 @@ func (a *headAppender) Commit() (err error) {
 		if chunkCreated {
 			a.head.metrics.chunks.Inc()
 			a.head.metrics.chunksCreated.Inc()
+			a.head.seriesForMMapLock.Lock()
+			a.head.seriesForMMap = append(a.head.seriesForMMap, series)
+			a.head.seriesForMMapLock.Unlock()
 		}
 	}
 
@@ -1050,6 +1056,9 @@ func (a *headAppender) Commit() (err error) {
 		if chunkCreated {
 			a.head.metrics.chunks.Inc()
 			a.head.metrics.chunksCreated.Inc()
+			a.head.seriesForMMapLock.Lock()
+			a.head.seriesForMMap = append(a.head.seriesForMMap, series)
+			a.head.seriesForMMapLock.Unlock()
 		}
 	}
 

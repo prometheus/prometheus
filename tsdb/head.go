@@ -97,6 +97,9 @@ type Head struct {
 	// All series addressable by their ID or hash.
 	series *stripeSeries
 
+	seriesForMMap     []*memSeries
+	seriesForMMapLock sync.Mutex
+
 	deletedMtx sync.Mutex
 	deleted    map[chunks.HeadSeriesRef]int // Deleted series, and what WAL segment they must be kept until.
 
@@ -1751,17 +1754,19 @@ func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labe
 // sample append path, since waiting on a lock inside an append would lock the entire memSeries for
 // (potentially) a long time, since that could eventually delay next scrape and/or cause query timeouts.
 func (h *Head) mmapHeadChunks() {
+	h.seriesForMMapLock.Lock()
+	series := h.seriesForMMap
+	h.seriesForMMapLock.Unlock()
 	var count int
-	for i := 0; i < h.series.size; i++ {
-		h.series.locks[i].RLock()
-		for _, series := range h.series.series[i] {
-			series.Lock()
-			count += series.mmapChunks(h.chunkDiskMapper)
-			series.Unlock()
-		}
-		h.series.locks[i].RUnlock()
+	for _, s := range series {
+		s.Lock()
+		count += s.mmapChunks(h.chunkDiskMapper)
+		s.Unlock()
 	}
 	h.metrics.mmapChunksTotal.Add(float64(count))
+	h.seriesForMMapLock.Lock()
+	h.seriesForMMap = append(h.seriesForMMap[:0], h.seriesForMMap[len(h.seriesForMMap):]...)
+	h.seriesForMMapLock.Unlock()
 }
 
 // seriesHashmap lets TSDB find a memSeries by its label set, via a 64-bit hash.
