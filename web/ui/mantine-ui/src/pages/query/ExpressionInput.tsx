@@ -5,6 +5,7 @@ import {
   InputBase,
   Loader,
   Menu,
+  Modal,
   rem,
   useComputedColorScheme,
 } from "@mantine/core";
@@ -13,11 +14,12 @@ import {
   PromQLExtension,
   newCompleteStrategy,
 } from "@prometheus-io/codemirror-promql";
-import { FC, useEffect, useMemo, useState } from "react";
+import { FC, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import CodeMirror, {
   EditorState,
   EditorView,
   Prec,
+  ReactCodeMirrorRef,
   highlightSpecialChars,
   keymap,
   placeholder,
@@ -62,6 +64,8 @@ import {
 import { useAPIQuery } from "../../api/api";
 import { notifications } from "@mantine/notifications";
 import { useSettings } from "../../state/settingsSlice";
+import MetricsExplorer from "./MetricsExplorer/MetricsExplorer";
+import ErrorBoundary from "../../components/ErrorBoundary";
 
 const promqlExtension = new PromQLExtension();
 
@@ -165,6 +169,11 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
     }
   }, [formatResult, formatError]);
 
+  const cmRef = useRef<ReactCodeMirrorRef>(null);
+
+  const [showMetricsExplorer, setShowMetricsExplorer] = useState(false);
+
+  // TODO: Implement query history.
   // This is just a placeholder until query history is implemented, so disable the linter warning.
   const queryHistory = useMemo<string[]>(() => [], []);
 
@@ -214,6 +223,7 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
                 leftSection={
                   <IconSearch style={{ width: rem(14), height: rem(14) }} />
                 }
+                onClick={() => setShowMetricsExplorer(true)}
               >
                 Explore metrics
               </Menu.Item>
@@ -248,6 +258,7 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
         value={expr}
         onChange={setExpr}
         autoFocus
+        ref={cmRef}
         extensions={[
           baseTheme,
           highlightSpecialChars(),
@@ -305,6 +316,35 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
       <Button variant="primary" onClick={() => executeQuery(expr)}>
         Execute
       </Button>
+      <Modal
+        size="95%"
+        opened={showMetricsExplorer}
+        onClose={() => setShowMetricsExplorer(false)}
+        title="Explore metrics"
+      >
+        <ErrorBoundary key={location.pathname} title="Error showing metrics">
+          <Suspense fallback={<Loader />}>
+            <MetricsExplorer
+              metricNames={metricNames}
+              insertText={(text: string) => {
+                if (cmRef.current && cmRef.current.view) {
+                  const view = cmRef.current.view;
+                  view.dispatch(
+                    view.state.update({
+                      changes: {
+                        from: view.state.selection.ranges[0].from,
+                        to: view.state.selection.ranges[0].to,
+                        insert: text,
+                      },
+                    })
+                  );
+                }
+              }}
+              close={() => setShowMetricsExplorer(false)}
+            />
+          </Suspense>
+        </ErrorBoundary>
+      </Modal>
     </Group>
   );
 };
