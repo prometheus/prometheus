@@ -1216,6 +1216,7 @@ func newScrapeLoop(ctx context.Context,
 		appendMetadataToWAL:            appendMetadataToWAL,
 		metrics:                        metrics,
 		skipOffsetting:                 skipOffsetting,
+		validationScheme:               validationScheme,
 	}
 	sl.ctx, sl.cancel = context.WithCancel(ctx)
 
