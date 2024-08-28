@@ -47,7 +47,7 @@ import (
 // the re-arrangement work is actually causing problems (which has to be seen),
 // that expectation needs to be changed.
 type ProtobufParser struct {
-	in        []byte // The intput to parse.
+	in        []byte // The input to parse.
 	inPos     int    // Position within the input.
 	metricPos int    // Position within Metric slice.
 	// fieldPos is the position within a Summary or (legacy) Histogram. -2
@@ -71,7 +71,7 @@ type ProtobufParser struct {
 
 	mf *dto.MetricFamily
 
-	// Wether to also parse a classic histogram that is also present as a
+	// Whether to also parse a classic histogram that is also present as a
 	// native histogram.
 	parseClassicHistograms bool
 

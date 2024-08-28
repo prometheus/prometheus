@@ -2018,7 +2018,7 @@ func TestDelayedCompaction(t *testing.T) {
 				// This implies that the compaction delay doesn't block or wait on the initial trigger.
 				// 3 is an arbitrary value because it's difficult to determine the precise value.
 				require.GreaterOrEqual(t, prom_testutil.ToFloat64(db.metrics.compactionsTriggered)-prom_testutil.ToFloat64(db.metrics.compactionsSkipped), 3.0)
-				// The delay doesn't change the head blocks alignement.
+				// The delay doesn't change the head blocks alignment.
 				require.Eventually(t, func() bool {
 					return db.head.MinTime() == db.compactor.(*LeveledCompactor).ranges[0]+1
 				}, 500*time.Millisecond, 10*time.Millisecond)
