@@ -1,7 +1,10 @@
 import { FC, useEffect, useId, useState } from "react";
 import { Alert, Skeleton, Box, LoadingOverlay } from "@mantine/core";
 import { IconAlertTriangle, IconInfoCircle } from "@tabler/icons-react";
-import { InstantQueryResult } from "../../api/responseTypes/query";
+import {
+  InstantQueryResult,
+  RangeQueryResult,
+} from "../../api/responseTypes/query";
 import { SuccessAPIResponse, useAPIQuery } from "../../api/api";
 import classes from "./Graph.module.css";
 import {
@@ -43,7 +46,7 @@ const Graph: FC<GraphProps> = ({
   const effectiveResolution = getEffectiveResolution(resolution, range) / 1000;
 
   const { data, error, isFetching, isLoading, refetch } =
-    useAPIQuery<InstantQueryResult>({
+    useAPIQuery<RangeQueryResult>({
       key: useId(),
       path: "/query_range",
       params: {
@@ -60,7 +63,7 @@ const Graph: FC<GraphProps> = ({
   // 2. We want to keep displaying the old range in the chart while a query for a new range
   //    is still in progress.
   const [dataAndRange, setDataAndRange] = useState<{
-    data: SuccessAPIResponse<InstantQueryResult>;
+    data: SuccessAPIResponse<RangeQueryResult>;
     range: UPlotChartRange;
   } | null>(null);
 
@@ -122,19 +125,7 @@ const Graph: FC<GraphProps> = ({
     return <Alert variant="transparent">No data queried yet</Alert>;
   }
 
-  const { result, resultType } = dataAndRange.data.data;
-
-  if (resultType !== "matrix") {
-    return (
-      <Alert
-        title="Invalid query result"
-        icon={<IconAlertTriangle size={14} />}
-      >
-        This query returned a result of type "{resultType}", but a matrix was
-        expected.
-      </Alert>
-    );
-  }
+  const { result } = dataAndRange.data.data;
 
   if (result.length === 0) {
     return (

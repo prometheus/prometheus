@@ -42,3 +42,10 @@ export type InstantQueryResult =
       resultType: "string";
       result: SampleValue;
     };
+
+// Result type for /api/v1/query_range endpoint.
+// See: https://prometheus.io/docs/prometheus/latest/querying/api/#range-queries
+export type RangeQueryResult = {
+  resultType: "matrix";
+  result: RangeSamples[];
+};
