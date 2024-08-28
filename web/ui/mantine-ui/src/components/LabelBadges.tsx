@@ -1,4 +1,4 @@
-import { Badge, BadgeVariant, Group, MantineColor } from "@mantine/core";
+import { Badge, BadgeVariant, Group, MantineColor, Stack } from "@mantine/core";
 import { FC } from "react";
 import { escapeString } from "../lib/escapeString";
 import badgeClasses from "../Badge.module.css";
@@ -7,14 +7,16 @@ export interface LabelBadgesProps {
   labels: Record<string, string>;
   variant?: BadgeVariant;
   color?: MantineColor;
+  wrapper?: typeof Group | typeof Stack;
 }
 
 export const LabelBadges: FC<LabelBadgesProps> = ({
   labels,
   variant,
   color,
+  wrapper: Wrapper = Group,
 }) => (
-  <Group gap="xs">
+  <Wrapper gap="xs">
     {Object.entries(labels).map(([k, v]) => {
       return (
         <Badge
@@ -32,5 +34,5 @@ export const LabelBadges: FC<LabelBadgesProps> = ({
         </Badge>
       );
     })}
-  </Group>
+  </Wrapper>
 );

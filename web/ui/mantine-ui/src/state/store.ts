@@ -3,12 +3,14 @@ import queryPageSlice from "./queryPageSlice";
 import settingsSlice from "./settingsSlice";
 import targetsPageSlice from "./targetsPageSlice";
 import { localStorageMiddleware } from "./localStorageMiddleware";
+import serviceDiscoveryPageSlice from "./serviceDiscoveryPageSlice";
 
 const store = configureStore({
   reducer: {
     settings: settingsSlice,
     queryPage: queryPageSlice,
     targetsPage: targetsPageSlice,
+    serviceDiscoveryPage: serviceDiscoveryPageSlice,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().prepend(localStorageMiddleware.middleware),

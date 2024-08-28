@@ -1,9 +1,13 @@
 import { createListenerMiddleware } from "@reduxjs/toolkit";
 import { AppDispatch, RootState } from "./store";
 import {
-  localStorageKeyCollapsedPools,
-  setCollapsedPools,
+  localStorageKeyCollapsedPools as localStorageKeyTargetsPageCollapsedPools,
+  setCollapsedPools as targetsPageSetCollapsedPools,
 } from "./targetsPageSlice";
+import {
+  localStorageKeyCollapsedPools as localStorageKeyServiceDiscoveryPageCollapsedPools,
+  setCollapsedPools as ServiceDiscoveryPageSetCollapsedPools,
+} from "./serviceDiscoveryPageSlice";
 import { updateSettings } from "./settingsSlice";
 
 const persistToLocalStorage = <T>(key: string, value: T) => {
@@ -18,9 +22,19 @@ const startAppListening = localStorageMiddleware.startListening.withTypes<
 >();
 
 startAppListening({
-  actionCreator: setCollapsedPools,
+  actionCreator: targetsPageSetCollapsedPools,
   effect: ({ payload }) => {
-    persistToLocalStorage(localStorageKeyCollapsedPools, payload);
+    persistToLocalStorage(localStorageKeyTargetsPageCollapsedPools, payload);
+  },
+});
+
+startAppListening({
+  actionCreator: ServiceDiscoveryPageSetCollapsedPools,
+  effect: ({ payload }) => {
+    persistToLocalStorage(
+      localStorageKeyServiceDiscoveryPageCollapsedPools,
+      payload
+    );
   },
 });
 

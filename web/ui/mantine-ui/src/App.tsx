@@ -46,7 +46,6 @@ import QueryPage from "./pages/query/QueryPage";
 import AlertsPage from "./pages/AlertsPage";
 import RulesPage from "./pages/RulesPage";
 import TargetsPage from "./pages/targets/TargetsPage";
-import ServiceDiscoveryPage from "./pages/ServiceDiscoveryPage";
 import StatusPage from "./pages/StatusPage";
 import TSDBStatusPage from "./pages/TSDBStatusPage";
 import FlagsPage from "./pages/FlagsPage";
@@ -62,6 +61,7 @@ import SettingsMenu from "./components/SettingsMenu";
 import ReadinessWrapper from "./components/ReadinessWrapper";
 import { QueryParamProvider } from "use-query-params";
 import { ReactRouter6Adapter } from "use-query-params/adapters/react-router-6";
+import ServiceDiscoveryPage from "./pages/service-discovery/ServiceDiscoveryPage";
 
 const queryClient = new QueryClient();
 
