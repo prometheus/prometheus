@@ -12,6 +12,8 @@ class Encoder {
  public:
   Encoder(DataStorage& storage, OutdatedSampleEncoder& outdated_sample_encoder) : storage_(storage), outdated_sample_encoder_(outdated_sample_encoder) {}
 
+  DataStorage& storage() noexcept { return storage_; }
+
   PROMPP_ALWAYS_INLINE void encode(uint32_t ls_id, int64_t timestamp, double value) {
     ++storage_.samples_count;
 

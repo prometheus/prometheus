@@ -122,7 +122,7 @@ void prompp_primitives_lss_free_label_sets(void* args);
  *
  * @param res {
  *     status uint32   // query status
- *     names  []string // Slice of string freed by freeBytes in GO
+ *     names  []string // Slice of string freed by freeBytes in GO pointed to lss memory, so it may be invalid after mutating lss state
  * }
  */
 void prompp_primitives_lss_query_label_names(void* args, void* res);
@@ -138,7 +138,7 @@ void prompp_primitives_lss_query_label_names(void* args, void* res);
  *
  * @param res {
  *     status uint32   // query status
- *     values []string // Slice of string freed by freeBytes in GO
+ *     values []string // Slice of string freed by freeBytes in GO pointed to lss memory, so it may be invalid after mutating lss state
  * }
  */
 void prompp_primitives_lss_query_label_values(void* args, void* res);
@@ -457,7 +457,7 @@ extern "C" {
  * @brief series data Encoder constructor.
  *
  * @param args {
- *     encoder uintptr // pointer to constructed encoder
+ *     data_storage uintptr // pointer to constructed data storage
  * }
  *
  * @param res {
@@ -487,6 +487,15 @@ void prompp_series_data_encoder_encode(void* args);
  * }
  */
 void prompp_series_data_encoder_encode_inner_series_slice(void* args);
+
+/**
+ * @brief merge outdated chunks
+ *
+ * @param args {
+ *     encoder uintptr // pointer to constructed encoder
+ * }
+ */
+void prompp_series_data_encoder_merge_out_of_order_chunks(void* args);
 
 /**
  * @brief series data Encoder destructor.

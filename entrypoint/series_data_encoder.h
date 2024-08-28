@@ -6,7 +6,7 @@ extern "C" {
  * @brief series data Encoder constructor.
  *
  * @param args {
- *     encoder uintptr // pointer to constructed encoder
+ *     data_storage uintptr // pointer to constructed data storage
  * }
  *
  * @param res {
@@ -36,6 +36,15 @@ void prompp_series_data_encoder_encode(void* args);
  * }
  */
 void prompp_series_data_encoder_encode_inner_series_slice(void* args);
+
+/**
+ * @brief merge outdated chunks
+ *
+ * @param args {
+ *     encoder uintptr // pointer to constructed encoder
+ * }
+ */
+void prompp_series_data_encoder_merge_out_of_order_chunks(void* args);
 
 /**
  * @brief series data Encoder destructor.
