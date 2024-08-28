@@ -704,11 +704,11 @@ outer:
 		t.seriesMtx.Lock()
 		var lbls labels.Labels
 		if t.interner.shouldIntern {
-			lbls = t.interner.intern(s.Ref, nil)
+			lbls = t.interner.intern(s.Ref, labels.EmptyLabels())
 		} else {
 			lbls = t.seriesLabels[s.Ref]
 		}
-		if len(lbls) == 0 {
+		if lbls.Len() == 0 {
 			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[s.Ref]; !ok {
 				level.Info(t.logger).Log("msg", "Dropped sample for series that was not explicitly dropped via relabelling", "ref", s.Ref)
@@ -771,11 +771,11 @@ outer:
 		t.seriesMtx.Lock()
 		var lbls labels.Labels
 		if t.interner.shouldIntern {
-			lbls = t.interner.intern(e.Ref, nil)
+			lbls = t.interner.intern(e.Ref, labels.EmptyLabels())
 		} else {
 			lbls = t.seriesLabels[e.Ref]
 		}
-		if len(lbls) == 0 {
+		if lbls.Len() == 0 {
 			// Track dropped exemplars in the same EWMA for sharding calc.
 			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[e.Ref]; !ok {
@@ -833,11 +833,11 @@ outer:
 		t.seriesMtx.Lock()
 		var lbls labels.Labels
 		if t.interner.shouldIntern {
-			lbls = t.interner.intern(h.Ref, nil)
+			lbls = t.interner.intern(h.Ref, labels.EmptyLabels())
 		} else {
 			lbls = t.seriesLabels[h.Ref]
 		}
-		if len(lbls) == 0 {
+		if lbls.Len() == 0 {
 			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[h.Ref]; !ok {
 				level.Info(t.logger).Log("msg", "Dropped histogram for series that was not explicitly dropped via relabelling", "ref", h.Ref)
@@ -893,11 +893,11 @@ outer:
 		t.seriesMtx.Lock()
 		var lbls labels.Labels
 		if t.interner.shouldIntern {
-			lbls = t.interner.intern(h.Ref, nil)
+			lbls = t.interner.intern(h.Ref, labels.EmptyLabels())
 		} else {
 			lbls = t.seriesLabels[h.Ref]
 		}
-		if len(lbls) == 0 {
+		if lbls.Len() == 0 {
 			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[h.Ref]; !ok {
 				level.Info(t.logger).Log("msg", "Dropped histogram for series that was not explicitly dropped via relabelling", "ref", h.Ref)

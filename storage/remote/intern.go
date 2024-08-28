@@ -102,8 +102,8 @@ func (p *pool) intern(ref chunks.HeadSeriesRef, lset labels.Labels) labels.Label
 		return interned.lset
 	}
 
-	if len(lset) == 0 {
-		return nil
+	if lset.Len() == 0 {
+		return labels.EmptyLabels()
 	}
 
 	p.pool[ref] = newEntry(lset)
