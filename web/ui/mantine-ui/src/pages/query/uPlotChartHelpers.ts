@@ -153,7 +153,6 @@ const tooltipPlugin = (useLocalTime: boolean, data: AlignedData) => {
         const x = left + boundingLeft;
         const y = top + boundingTop;
 
-        // TODO: Use local time in formatTimestamp!
         overlay.innerHTML = `
             <div class="date">${formatTimestamp(ts, useLocalTime)}</div>
             <div class="series-value">
