@@ -23,8 +23,6 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/tsdb/chunks"
 	"go.uber.org/atomic"
 )
 
@@ -36,33 +34,53 @@ var noReferenceReleases = promauto.NewCounter(prometheus.CounterOpts{
 })
 
 type pool struct {
-	mtx          sync.RWMutex
-	pool         map[chunks.HeadSeriesRef]*entry
-	shouldIntern bool
+	mtx  sync.RWMutex
+	pool map[string]*entry
 }
 
 type entry struct {
 	refs atomic.Int64
-	lset labels.Labels
+
+	s string
 }
 
-func newEntry(lset labels.Labels) *entry {
-	return &entry{lset: lset}
+func newEntry(s string) *entry {
+	return &entry{s: s}
 }
 
-func newPool(shouldIntern bool) *pool {
+func newPool() *pool {
 	return &pool{
-		pool:         map[chunks.HeadSeriesRef]*entry{},
-		shouldIntern: shouldIntern,
+		pool: map[string]*entry{},
 	}
 }
 
-func (p *pool) release(ref chunks.HeadSeriesRef) {
-	if !p.shouldIntern {
-		return
+func (p *pool) intern(s string) string {
+	if s == "" {
+		return ""
 	}
+
 	p.mtx.RLock()
-	interned, ok := p.pool[ref]
+	interned, ok := p.pool[s]
+	p.mtx.RUnlock()
+	if ok {
+		interned.refs.Inc()
+		return interned.s
+	}
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	if interned, ok := p.pool[s]; ok {
+		interned.refs.Inc()
+		return interned.s
+	}
+
+	p.pool[s] = newEntry(s)
+	p.pool[s].refs.Store(1)
+	return s
+}
+
+func (p *pool) release(s string) {
+	p.mtx.RLock()
+	interned, ok := p.pool[s]
 	p.mtx.RUnlock()
 
 	if !ok {
@@ -80,33 +98,5 @@ func (p *pool) release(ref chunks.HeadSeriesRef) {
 	if interned.refs.Load() != 0 {
 		return
 	}
-	delete(p.pool, ref)
-}
-
-func (p *pool) intern(ref chunks.HeadSeriesRef, lset labels.Labels) labels.Labels {
-	if !p.shouldIntern {
-		return lset
-	}
-
-	p.mtx.RLock()
-	interned, ok := p.pool[ref]
-	p.mtx.RUnlock()
-	if ok {
-		interned.refs.Inc()
-		return interned.lset
-	}
-	p.mtx.Lock()
-	defer p.mtx.Unlock()
-	if interned, ok := p.pool[ref]; ok {
-		interned.refs.Inc()
-		return interned.lset
-	}
-
-	if lset.Len() == 0 {
-		return labels.EmptyLabels()
-	}
-
-	p.pool[ref] = newEntry(lset)
-	p.pool[ref].refs.Store(1)
-	return p.pool[ref].lset
+	delete(p.pool, s)
 }
