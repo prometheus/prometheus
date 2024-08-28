@@ -1256,6 +1256,8 @@ func TestSetHintsHandlingStaleness(t *testing.T) {
 	go func() {
 		runScrapeLoop(ctx, t, capp, 2, func(sl *scrapeLoop) {
 			go sl.stop()
+			// Wait a bit then start a new target.
+			time.Sleep(5 * time.Millisecond)
 			go func() {
 				runScrapeLoop(ctx, t, capp, 4, func(_ *scrapeLoop) {
 					cancel()
@@ -1278,9 +1280,10 @@ func TestSetHintsHandlingStaleness(t *testing.T) {
 	for _, v := range capp.resultFloats {
 		if v.metric.Get("__name__") == "metric_a" {
 			// Check for out-of-order samples
-			//fmt.Println(v)
+			fmt.Println(v)
 			if v.t <= prevT {
 				// Ensure out-of-order sample's value is NaN
+				//fmt.Println(prevT)
 				require.True(t, math.IsNaN(v.f), "Expected NaN value for out-of-order sample at timestamp %d", v.t)
 			}
 			prevT = v.t
