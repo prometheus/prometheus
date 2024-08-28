@@ -19,7 +19,7 @@ import {
 } from "@tabler/icons-react";
 import { useSuspenseAPIQuery } from "../../api/api";
 import { Target, TargetsResult } from "../../api/responseTypes/targets";
-import React, { FC } from "react";
+import React, { FC, useMemo } from "react";
 import {
   humanizeDurationRelative,
   humanizeDuration,
@@ -80,10 +80,11 @@ const kvSearch = new KVSearch<Target>({
   indexedKeys: ["labels", "scrapePool", ["labels", /.*/]],
 });
 
-const groupTargets = (
+const buildPoolsData = (
   poolNames: string[],
-  allTargets: Target[],
-  shownTargets: Target[]
+  targets: Target[],
+  search: string,
+  healthFilter: (string | null)[]
 ): ScrapePools => {
   const pools: ScrapePools = {};
 
@@ -97,7 +98,7 @@ const groupTargets = (
     };
   }
 
-  for (const target of allTargets) {
+  for (const target of targets) {
     if (!pools[target.scrapePool]) {
       // TODO: Should we do better here?
       throw new Error(
@@ -120,7 +121,16 @@ const groupTargets = (
     }
   }
 
-  for (const target of shownTargets) {
+  const filteredTargets: Target[] = (
+    search === ""
+      ? targets
+      : kvSearch.filter(search, targets).map((value) => value.original)
+  ).filter(
+    (target) =>
+      healthFilter.length === 0 || healthFilter.includes(target.health)
+  );
+
+  for (const target of filteredTargets) {
     pools[target.scrapePool].targets.push(target);
   }
 
@@ -140,12 +150,6 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
   healthFilter,
   searchFilter,
 }) => {
-  const dispatch = useAppDispatch();
-  const [showEmptyPools, setShowEmptyPools] = useQueryParam(
-    "showEmptyPools",
-    withDefault(BooleanParam, true)
-  );
-
   // Based on the selected pool (if any), load the list of targets.
   const {
     data: {
@@ -159,31 +163,29 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
     },
   });
 
+  const dispatch = useAppDispatch();
+  const [showEmptyPools, setShowEmptyPools] = useQueryParam(
+    "showEmptyPools",
+    withDefault(BooleanParam, true)
+  );
+
   const { collapsedPools, showLimitAlert } = useAppSelector(
     (state) => state.targetsPage
   );
 
-  const [debouncedSearch] = useDebouncedValue<string>(searchFilter, 250);
+  const [debouncedSearch] = useDebouncedValue<string>(searchFilter.trim(), 250);
 
-  // TODO: Memoize all this computation, especially groupTargets().
-  const search = debouncedSearch.trim();
-  const healthFilteredTargets = activeTargets.filter(
-    (target) =>
-      healthFilter.length === 0 ||
-      healthFilter.includes(target.health.toLowerCase())
+  const allPools = useMemo(
+    () =>
+      buildPoolsData(
+        selectedPool ? [selectedPool] : poolNames,
+        activeTargets,
+        debouncedSearch,
+        healthFilter
+      ),
+    [selectedPool, poolNames, activeTargets, debouncedSearch, healthFilter]
   );
-  const filteredTargets =
-    search === ""
-      ? healthFilteredTargets
-      : kvSearch
-          .filter(search, healthFilteredTargets)
-          .map((value) => value.original);
 
-  const allPools = groupTargets(
-    selectedPool ? [selectedPool] : poolNames,
-    activeTargets,
-    filteredTargets
-  );
   const allPoolNames = Object.keys(allPools);
   const shownPoolNames = showEmptyPools
     ? allPoolNames
