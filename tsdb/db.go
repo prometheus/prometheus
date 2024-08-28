@@ -1489,9 +1489,7 @@ func (db *DB) compactBlocks() (err error) {
 		default:
 		}
 
-		db.mtx.RLock()
 		uids, err := db.compactor.Compact(db.dir, plan, db.blocks)
-		db.mtx.RUnlock()
 		if err != nil {
 			return fmt.Errorf("compact %s: %w", plan, err)
 		}
