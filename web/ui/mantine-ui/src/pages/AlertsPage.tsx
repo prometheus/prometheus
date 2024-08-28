@@ -68,7 +68,7 @@ const kvSearch = new KVSearch<AlertingRule>({
 
 const buildAlertsPageData = (
   data: AlertingRulesResult,
-  debouncedSearch: string,
+  search: string,
   stateFilter: (string | null)[]
 ) => {
   const pageData: AlertsPageData = {
@@ -109,11 +109,9 @@ const buildAlertsPageData = (
     }
 
     const filteredRules: AlertingRule[] = (
-      debouncedSearch === ""
+      search === ""
         ? group.rules
-        : kvSearch
-            .filter(debouncedSearch, group.rules)
-            .map((value) => value.original)
+        : kvSearch.filter(search, group.rules).map((value) => value.original)
     ).filter((r) => stateFilter.length === 0 || stateFilter.includes(r.state));
 
     pageData.groups.push({
