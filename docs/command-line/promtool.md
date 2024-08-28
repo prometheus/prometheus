@@ -641,6 +641,15 @@ Import samples from OpenMetrics input and produce TSDB blocks. Please refer to t
 
 
 
+###### Flags
+
+| Flag | Description |
+| --- | --- |
+| <code class="text-nowrap">--label</code> | Label to attach to metrics. Can be specified multiple times. Example --label=label_name=label_value |
+
+
+
+
 ###### Arguments
 
 | Argument | Description | Default | Required |

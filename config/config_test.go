@@ -165,10 +165,11 @@ var expectedConf = &Config{
 
 	RemoteReadConfigs: []*RemoteReadConfig{
 		{
-			URL:           mustParseURL("http://remote1/read"),
-			RemoteTimeout: model.Duration(1 * time.Minute),
-			ReadRecent:    true,
-			Name:          "default",
+			URL:              mustParseURL("http://remote1/read"),
+			RemoteTimeout:    model.Duration(1 * time.Minute),
+			ChunkedReadLimit: DefaultChunkedReadLimit,
+			ReadRecent:       true,
+			Name:             "default",
 			HTTPClientConfig: config.HTTPClientConfig{
 				FollowRedirects: true,
 				EnableHTTP2:     false,
@@ -178,6 +179,7 @@ var expectedConf = &Config{
 		{
 			URL:              mustParseURL("http://remote3/read"),
 			RemoteTimeout:    model.Duration(1 * time.Minute),
+			ChunkedReadLimit: DefaultChunkedReadLimit,
 			ReadRecent:       false,
 			Name:             "read_special",
 			RequiredMatchers: model.LabelSet{"job": "special"},
