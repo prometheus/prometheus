@@ -15,11 +15,11 @@ export type GraphResolution =
     }
   | {
       type: "fixed";
-      value: number; // Resolution step in milliseconds.
+      step: number; // Resolution step in milliseconds.
     }
   | {
       type: "custom";
-      value: number; // Resolution step in milliseconds.
+      step: number; // Resolution step in milliseconds.
     };
 
 // From the UI settings, compute the effective resolution
@@ -39,9 +39,9 @@ export const getEffectiveResolution = (
       return Math.max(Math.floor(range / factor / 1000) * 1000, 1000);
     }
     case "fixed":
-      return resolution.value;
+      return resolution.step;
     case "custom":
-      return resolution.value;
+      return resolution.step;
   }
 };
 

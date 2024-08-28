@@ -27,7 +27,7 @@ const ResolutionInput: FC<ResolutionInputProps> = ({
   const onChangeCustomResolutionInput = (resText: string): void => {
     const newResolution = parsePrometheusDuration(resText);
 
-    if (resolution.type === "custom" && newResolution === resolution.value) {
+    if (resolution.type === "custom" && newResolution === resolution.step) {
       // Nothing changed.
       return;
     }
@@ -37,7 +37,7 @@ const ResolutionInput: FC<ResolutionInputProps> = ({
         formatPrometheusDuration(getEffectiveResolution(resolution, range))
       );
     } else {
-      onChangeResolution({ type: "custom", value: newResolution });
+      onChangeResolution({ type: "custom", step: newResolution });
     }
   };
 
@@ -77,7 +77,7 @@ const ResolutionInput: FC<ResolutionInputProps> = ({
           resolution.type === "auto"
             ? resolution.density
             : resolution.type === "fixed"
-              ? resolution.value.toString()
+              ? resolution.step.toString()
               : "custom"
         }
         onChange={(_value, option) => {
@@ -97,7 +97,7 @@ const ResolutionInput: FC<ResolutionInputProps> = ({
             );
             onChangeResolution({
               type: "custom",
-              value: effectiveResolution,
+              step: effectiveResolution,
             });
             setCustomResolutionInput(
               formatPrometheusDuration(effectiveResolution)
@@ -109,7 +109,7 @@ const ResolutionInput: FC<ResolutionInputProps> = ({
           if (!isNaN(value)) {
             onChangeResolution({
               type: "fixed",
-              value,
+              step: value,
             });
           } else {
             throw new Error("Invalid resolution value");
