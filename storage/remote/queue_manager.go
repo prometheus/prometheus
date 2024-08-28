@@ -1051,6 +1051,7 @@ func (t *QueueManager) SeriesReset(index int) {
 		if v < index {
 			delete(t.seriesSegmentIndexes, k)
 			t.interner.release(k)
+			delete(t.seriesLabels, k)
 			//t.releaseLabels(t.seriesLabels[k])
 			//delete(t.seriesLabels, k)
 			delete(t.seriesMetadata, k)
