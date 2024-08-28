@@ -111,8 +111,7 @@ func (ls Labels) IsValid(validationScheme model.ValidationScheme) bool {
 			if !model.LabelName(l.Name).IsValidLegacy() || !model.LabelValue(l.Value).IsValid() {
 				return strconv.ErrSyntax
 			}
-		}
-		if !model.LabelName(l.Name).IsValid() || !model.LabelValue(l.Value).IsValid() {
+		} else if !model.LabelName(l.Name).IsValid() || !model.LabelValue(l.Value).IsValid() {
 			return strconv.ErrSyntax
 		}
 		return nil
