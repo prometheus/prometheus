@@ -1,10 +1,7 @@
 import { FC, useEffect, useId, useState } from "react";
 import { Alert, Skeleton, Box, LoadingOverlay } from "@mantine/core";
 import { IconAlertTriangle, IconInfoCircle } from "@tabler/icons-react";
-import {
-  InstantQueryResult,
-  RangeQueryResult,
-} from "../../api/responseTypes/query";
+import { RangeQueryResult } from "../../api/responseTypes/query";
 import { SuccessAPIResponse, useAPIQuery } from "../../api/api";
 import classes from "./Graph.module.css";
 import {
