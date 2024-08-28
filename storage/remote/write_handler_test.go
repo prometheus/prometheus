@@ -310,11 +310,12 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 		expectedCode     int
 		expectedRespBody string
 
-		commitErr          error
-		appendSampleErr    error
-		appendHistogramErr error
-		appendExemplarErr  error
-		updateMetadataErr  error
+		commitErr             error
+		appendSampleErr       error
+		appendCTZeroSampleErr error
+		appendHistogramErr    error
+		appendExemplarErr     error
+		updateMetadataErr     error
 	}{
 		{
 			desc:         "All timeseries accepted",
@@ -440,11 +441,12 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
 
 			appendable := &mockAppendable{
-				commitErr:          tc.commitErr,
-				appendSampleErr:    tc.appendSampleErr,
-				appendHistogramErr: tc.appendHistogramErr,
-				appendExemplarErr:  tc.appendExemplarErr,
-				updateMetadataErr:  tc.updateMetadataErr,
+				commitErr:             tc.commitErr,
+				appendSampleErr:       tc.appendSampleErr,
+				appendCTZeroSampleErr: tc.appendCTZeroSampleErr,
+				appendHistogramErr:    tc.appendHistogramErr,
+				appendExemplarErr:     tc.appendExemplarErr,
+				updateMetadataErr:     tc.updateMetadataErr,
 			}
 			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2})
 
@@ -472,7 +474,8 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 
 			// Double check mandatory 2.0 stats.
 			// writeV2RequestFixture has 2 series with 1 sample, 2 histograms, 1 exemplar each.
-			expectHeaderValue(t, 2, resp.Header.Get(rw20WrittenSamplesHeader))
+			// We expect 3 samples because the first series has regular sample + CT.
+			expectHeaderValue(t, 3, resp.Header.Get(rw20WrittenSamplesHeader))
 			expectHeaderValue(t, 4, resp.Header.Get(rw20WrittenHistogramsHeader))
 			if tc.appendExemplarErr != nil {
 				expectHeaderValue(t, 0, resp.Header.Get(rw20WrittenExemplarsHeader))
@@ -489,6 +492,10 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				ls := ts.ToLabels(&b, writeV2RequestFixture.Symbols)
 
 				for _, s := range ts.Samples {
+					if ts.CreatedTimestamp != 0 {
+						requireEqual(t, mockSample{ls, ts.CreatedTimestamp, 0}, appendable.samples[i])
+						i++
+					}
 					requireEqual(t, mockSample{ls, s.Timestamp, s.Value}, appendable.samples[i])
 					i++
 				}
@@ -779,11 +786,12 @@ type mockAppendable struct {
 	metadata        []mockMetadata
 
 	// optional errors to inject.
-	commitErr          error
-	appendSampleErr    error
-	appendHistogramErr error
-	appendExemplarErr  error
-	updateMetadataErr  error
+	commitErr             error
+	appendSampleErr       error
+	appendCTZeroSampleErr error
+	appendHistogramErr    error
+	appendExemplarErr     error
+	updateMetadataErr     error
 }
 
 type mockSample struct {
@@ -936,9 +944,32 @@ func (m *mockAppendable) UpdateMetadata(_ storage.SeriesRef, l labels.Labels, mp
 	return 0, nil
 }
 
-func (m *mockAppendable) AppendCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
-	// AppendCTZeroSample is no-op for remote-write for now.
-	// TODO(bwplotka): Add support for PRW 2.0 for CT zero feature (but also we might
-	// replace this with in-metadata CT storage, see https://github.com/prometheus/prometheus/issues/14218).
+func (m *mockAppendable) AppendCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64) (storage.SeriesRef, error) {
+	if m.appendCTZeroSampleErr != nil {
+		return 0, m.appendCTZeroSampleErr
+	}
+
+	// Created Timestamp can't be higher than the original sample's timestamp.
+	if ct > t {
+		return 0, storage.ErrOutOfOrderSample
+	}
+
+	latestTs := m.latestSample[l.Hash()]
+	if ct < latestTs {
+		return 0, storage.ErrOutOfOrderSample
+	}
+	if ct == latestTs {
+		return 0, storage.ErrDuplicateSampleForTimestamp
+	}
+
+	if l.IsEmpty() {
+		return 0, tsdb.ErrInvalidSample
+	}
+	if _, hasDuplicates := l.HasDuplicateLabelNames(); hasDuplicates {
+		return 0, tsdb.ErrInvalidSample
+	}
+
+	m.latestSample[l.Hash()] = ct
+	m.samples = append(m.samples, mockSample{l, ct, 0})
 	return 0, nil
 }

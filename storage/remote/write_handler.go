@@ -394,7 +394,21 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		var ref storage.SeriesRef
 
 		// Samples.
-		for _, s := range ts.Samples {
+		for i, s := range ts.Samples {
+			// CT only needs to be ingested for the first sample, it will be considered
+			// out of order for the rest.
+			if i == 0 && ts.CreatedTimestamp != 0 {
+				ref, err = app.AppendCTZeroSample(ref, ls, s.Timestamp, ts.CreatedTimestamp)
+				if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) {
+					// Even for the first sample OOO is a common scenario.
+					// We don't fail the request and just log it.
+					level.Debug(h.logger).Log("msg", "Error when appending CT in remote write request", "err", err, "series", ls.String(), "created_timestamp", ts.CreatedTimestamp, "timestamp", s.Timestamp)
+				}
+				if err == nil {
+					rs.Samples++
+				}
+			}
+
 			ref, err = app.Append(ref, ls, s.GetTimestamp(), s.GetValue())
 			if err == nil {
 				rs.Samples++
