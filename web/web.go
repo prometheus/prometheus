@@ -260,27 +260,28 @@ type Options struct {
 	Version               *PrometheusVersion
 	Flags                 map[string]string
 
-	ListenAddresses            []string
-	CORSOrigin                 *regexp.Regexp
-	ReadTimeout                time.Duration
-	MaxConnections             int
-	ExternalURL                *url.URL
-	RoutePrefix                string
-	UseLocalAssets             bool
-	UserAssetsPath             string
-	ConsoleTemplatesPath       string
-	ConsoleLibrariesPath       string
+	ListenAddresses                     []string
+	CORSOrigin                          *regexp.Regexp
+	ReadTimeout                         time.Duration
+	MaxConnections                      int
+	ExternalURL                         *url.URL
+	RoutePrefix                         string
+	UseLocalAssets                      bool
+	UserAssetsPath                      string
+	ConsoleTemplatesPath                string
+	ConsoleLibrariesPath                string
 	UseOldUI                   bool
-	EnableLifecycle            bool
-	EnableAdminAPI             bool
-	PageTitle                  string
-	RemoteReadSampleLimit      int
-	RemoteReadConcurrencyLimit int
-	RemoteReadBytesInFrame     int
-	EnableRemoteWriteReceiver  bool
-	EnableOTLPWriteReceiver    bool
-	IsAgent                    bool
-	AppName                    string
+	EnableLifecycle                     bool
+	EnableAdminAPI                      bool
+	PageTitle                           string
+	RemoteReadSampleLimit               int
+	RemoteReadConcurrencyLimit          int
+	RemoteReadBytesInFrame              int
+	EnableRemoteWriteReceiver           bool
+	EnableOTLPWriteReceiver             bool
+	EnableCreatedTimestampZeroIngestion bool
+	IsAgent                             bool
+	AppName                             string
 
 	AcceptRemoteWriteProtoMsgs []config.RemoteWriteProtoMsg
 
@@ -374,6 +375,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		o.EnableRemoteWriteReceiver,
 		o.AcceptRemoteWriteProtoMsgs,
 		o.EnableOTLPWriteReceiver,
+		o.EnableCreatedTimestampZeroIngestion,
 	)
 
 	if o.RoutePrefix != "/" {
