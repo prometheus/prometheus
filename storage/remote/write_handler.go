@@ -48,6 +48,8 @@ type writeHandler struct {
 	samplesAppendedWithoutMetadata prometheus.Counter
 
 	acceptedProtoMsgs map[config.RemoteWriteProtoMsg]struct{}
+
+	ingestCTZeroSample bool
 }
 
 const maxAheadTime = 10 * time.Minute
@@ -57,7 +59,7 @@ const maxAheadTime = 10 * time.Minute
 //
 // NOTE(bwplotka): When accepting v2 proto and spec, partial writes are possible
 // as per https://prometheus.io/docs/specs/remote_write_spec_2_0/#partial-write.
-func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, acceptedProtoMsgs []config.RemoteWriteProtoMsg) http.Handler {
+func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, acceptedProtoMsgs []config.RemoteWriteProtoMsg, ingestCTZeroSample bool) http.Handler {
 	protoMsgs := map[config.RemoteWriteProtoMsg]struct{}{}
 	for _, acc := range acceptedProtoMsgs {
 		protoMsgs[acc] = struct{}{}
@@ -78,6 +80,8 @@ func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable 
 			Name:      "remote_write_without_metadata_appended_samples_total",
 			Help:      "The total number of received remote write samples (and histogram samples) which were ingested without corresponding metadata.",
 		}),
+
+		ingestCTZeroSample: ingestCTZeroSample,
 	}
 	return h
 }
@@ -393,22 +397,17 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		allSamplesSoFar := rs.AllSamples()
 		var ref storage.SeriesRef
 
-		// Samples.
-		for i, s := range ts.Samples {
+		if h.ingestCTZeroSample {
 			// CT only needs to be ingested for the first sample, it will be considered
 			// out of order for the rest.
-			if i == 0 && ts.CreatedTimestamp != 0 {
-				ref, err = app.AppendCTZeroSample(ref, ls, s.Timestamp, ts.CreatedTimestamp)
-				if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) {
-					// Even for the first sample OOO is a common scenario.
-					// We don't fail the request and just log it.
-					level.Debug(h.logger).Log("msg", "Error when appending CT in remote write request", "err", err, "series", ls.String(), "created_timestamp", ts.CreatedTimestamp, "timestamp", s.Timestamp)
-				}
-				if err == nil {
-					rs.Samples++
-				}
+			ref, err = h.handleCTZeroSample(app, ref, ls, ts.Samples[0], ts.CreatedTimestamp, rs)
+			if err != nil {
+				h.logger.Debug("Error when appending CT in remote write request", "err", err, "series", ls.String(), "created_timestamp", ts.CreatedTimestamp, "timestamp", ts.Samples[0].Timestamp)
 			}
+		}
 
+		// Samples.
+		for _, s := range ts.Samples {
 			ref, err = app.Append(ref, ls, s.GetTimestamp(), s.GetValue())
 			if err == nil {
 				rs.Samples++
@@ -491,6 +490,25 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 	}
 	// TODO(bwplotka): Better concat formatting? Perhaps add size limit?
 	return samplesWithoutMetadata, http.StatusBadRequest, errors.Join(badRequestErrs...)
+}
+
+// handleCTZeroSample appends CT as a zero-value sample with CT value as the sample timestamp.
+// It doens't return errors in case of out of order CT.
+func (h *writeHandler) handleCTZeroSample(app storage.Appender, ref storage.SeriesRef, l labels.Labels, sample writev2.Sample, ct int64, rs *WriteResponseStats) (storage.SeriesRef, error) {
+	var err error
+	if sample.Timestamp != 0 && ct != 0 {
+		ref, err = app.AppendCTZeroSample(ref, l, sample.Timestamp, ct)
+		if err == nil {
+			rs.Samples++
+		}
+		if err != nil && errors.Is(err, storage.ErrOutOfOrderCT) {
+			// Even for the first sample OOO is a common scenario because
+			// we can't tell if a CT was already ingested in a previous request.
+			// We ignore the error.
+			err = nil
+		}
+	}
+	return ref, err
 }
 
 // NewOTLPWriteHandler creates a http.Handler that accepts OTLP write requests and
