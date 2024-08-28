@@ -1765,7 +1765,7 @@ func (h *Head) mmapHeadChunks() {
 	}
 	h.metrics.mmapChunksTotal.Add(float64(count))
 	h.seriesForMMapLock.Lock()
-	h.seriesForMMap = append(h.seriesForMMap[:0], h.seriesForMMap[len(h.seriesForMMap):]...)
+	h.seriesForMMap = append(h.seriesForMMap[:0], h.seriesForMMap[len(series):]...)
 	h.seriesForMMapLock.Unlock()
 }
 
