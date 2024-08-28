@@ -10,30 +10,30 @@ namespace series_data {
 template <EncoderInterface Encoder>
 class OutdatedChunkMerger {
  public:
-  OutdatedChunkMerger(DataStorage& storage, Encoder& encoder) : storage_(storage), encoder_(encoder) {}
+  explicit OutdatedChunkMerger(Encoder& encoder) : encoder_(encoder) {}
 
   void merge() {
-    for (auto& [ls_id, chunk] : storage_.outdated_chunks) {
+    for (auto& [ls_id, chunk] : encoder_.storage().outdated_chunks) {
       merge(ls_id, chunk);
     }
 
-    storage_.outdated_chunks.clear();
+    encoder_.storage().outdated_chunks.clear();
   }
 
   void merge(uint32_t ls_id, const chunk::OutdatedChunk& chunk) {
     auto decoded_samples = decode_samples(chunk);
 
     SamplesSpan samples{decoded_samples.begin(), decoded_samples.end()};
-    auto& finalized_chunks = storage_.finalized_chunks;
+    auto& finalized_chunks = encoder_.storage().finalized_chunks;
     if (auto finalized_chunks_it = finalized_chunks.find(ls_id); finalized_chunks_it != finalized_chunks.end()) {
       merge_outdated_samples_in_finalized_chunks(ls_id, finalized_chunks_it->second, samples);
     }
 
     if (!samples.empty()) {
-      merge_outdated_samples<ChunkType::kOpen>(ls_id, storage_.open_chunks[ls_id], std::numeric_limits<int64_t>::max(), samples);
+      merge_outdated_samples<ChunkType::kOpen>(ls_id, encoder_.storage().open_chunks[ls_id], std::numeric_limits<int64_t>::max(), samples);
     }
 
-    storage_.merged_samples_count += decoded_samples.size();
+    encoder_.storage().merged_samples_count += decoded_samples.size();
   }
 
  private:
@@ -48,13 +48,12 @@ class OutdatedChunkMerger {
    public:
     using difference_type = ptrdiff_t;
 
-    EncodeIterator(Encoder& encoder, chunk::DataChunk& chunk, DataStorage& storage, uint32_t ls_id)
-        : encoder_(&encoder), chunk_(&chunk), storage_(&storage), ls_id_(ls_id) {}
+    EncodeIterator(Encoder& encoder, chunk::DataChunk& chunk, uint32_t ls_id) : encoder_(&encoder), chunk_(&chunk), ls_id_(ls_id) {}
 
     [[nodiscard]] PROMPP_ALWAYS_INLINE EncodeIterator& operator*() noexcept { return *this; }
     [[nodiscard]] PROMPP_ALWAYS_INLINE EncodeIterator& operator=(const encoder::Sample& sample) noexcept {
       encoder_->encode(ls_id_, sample.timestamp, sample.value, *chunk_);
-      --storage_->samples_count;
+      --encoder_->storage().samples_count;
       return *this;
     }
     [[nodiscard]] PROMPP_ALWAYS_INLINE EncodeIterator& operator++() noexcept { return *this; }
@@ -65,7 +64,6 @@ class OutdatedChunkMerger {
    private:
     Encoder* encoder_;
     chunk::DataChunk* chunk_;
-    DataStorage* storage_;
     uint32_t ls_id_;
   };
 
@@ -112,7 +110,6 @@ class OutdatedChunkMerger {
     }
   };
 
-  DataStorage& storage_;
   Encoder& encoder_;
 
   [[nodiscard]] static SampleList decode_samples(const chunk::OutdatedChunk& chunk) {
@@ -124,7 +121,7 @@ class OutdatedChunkMerger {
   void merge_outdated_samples_in_finalized_chunks(uint32_t ls_id, const chunk::FinalizedChunkList& finalized_chunks, SamplesSpan& samples) {
     for (auto it = finalized_chunks.begin(), next_it = std::next(it); it != finalized_chunks.end(); ++next_it) {
       if (next_it == finalized_chunks.end()) {
-        if (auto open_chunk_timestamp = Decoder::get_chunk_first_timestamp<ChunkType::kOpen>(storage_, storage_.open_chunks[ls_id]);
+        if (auto open_chunk_timestamp = Decoder::get_chunk_first_timestamp<ChunkType::kOpen>(encoder_.storage(), encoder_.storage().open_chunks[ls_id]);
             open_chunk_timestamp > samples.front().timestamp) {
           merge_outdated_samples<ChunkType::kFinalized>(ls_id, *it, open_chunk_timestamp, samples);
         }
@@ -132,7 +129,7 @@ class OutdatedChunkMerger {
         return;
       }
 
-      if (auto next_chunk_timestamp = Decoder::get_chunk_first_timestamp<ChunkType::kFinalized>(storage_, *next_it);
+      if (auto next_chunk_timestamp = Decoder::get_chunk_first_timestamp<ChunkType::kFinalized>(encoder_.storage(), *next_it);
           next_chunk_timestamp > samples.front().timestamp) {
         merge_outdated_samples<ChunkType::kFinalized>(ls_id, *it, next_chunk_timestamp, samples);
         it = next_it;
@@ -147,7 +144,7 @@ class OutdatedChunkMerger {
     auto chunk = merge_outdated_samples_in_new_chunk<chunk_type>(ls_id, source_chunk, max_timestamp, samples);
 
     if constexpr (chunk_type == ChunkType::kFinalized) {
-      ChunkFinalizer::finalize(storage_, ls_id, chunk);
+      ChunkFinalizer::finalize(encoder_.storage(), ls_id, chunk);
       erase_finalized_chunk(ls_id, source_chunk);
     } else {
       replace_open_chunk(ls_id, chunk);
@@ -166,32 +163,32 @@ class OutdatedChunkMerger {
       }
 
       case kUint32Constant: {
-        merge_outdated_samples<kUint32Constant, chunk_type>(source_chunk, max_timestamp, EncodeIterator{encoder_, chunk, storage_, ls_id}, samples);
+        merge_outdated_samples<kUint32Constant, chunk_type>(source_chunk, max_timestamp, EncodeIterator{encoder_, chunk, ls_id}, samples);
         break;
       }
 
       case kDoubleConstant: {
-        merge_outdated_samples<kDoubleConstant, chunk_type>(source_chunk, max_timestamp, EncodeIterator{encoder_, chunk, storage_, ls_id}, samples);
+        merge_outdated_samples<kDoubleConstant, chunk_type>(source_chunk, max_timestamp, EncodeIterator{encoder_, chunk, ls_id}, samples);
         break;
       }
 
       case kTwoDoubleConstant: {
-        merge_outdated_samples<kTwoDoubleConstant, chunk_type>(source_chunk, max_timestamp, EncodeIterator{encoder_, chunk, storage_, ls_id}, samples);
+        merge_outdated_samples<kTwoDoubleConstant, chunk_type>(source_chunk, max_timestamp, EncodeIterator{encoder_, chunk, ls_id}, samples);
         break;
       }
 
       case kAscIntegerValuesGorilla: {
-        merge_outdated_samples<kAscIntegerValuesGorilla, chunk_type>(source_chunk, max_timestamp, EncodeIterator{encoder_, chunk, storage_, ls_id}, samples);
+        merge_outdated_samples<kAscIntegerValuesGorilla, chunk_type>(source_chunk, max_timestamp, EncodeIterator{encoder_, chunk, ls_id}, samples);
         break;
       }
 
       case kValuesGorilla: {
-        merge_outdated_samples<kValuesGorilla, chunk_type>(source_chunk, max_timestamp, EncodeIterator{encoder_, chunk, storage_, ls_id}, samples);
+        merge_outdated_samples<kValuesGorilla, chunk_type>(source_chunk, max_timestamp, EncodeIterator{encoder_, chunk, ls_id}, samples);
         break;
       }
 
       case kGorilla: {
-        merge_outdated_samples<kGorilla, chunk_type>(source_chunk, max_timestamp, EncodeIterator{encoder_, chunk, storage_, ls_id}, samples);
+        merge_outdated_samples<kGorilla, chunk_type>(source_chunk, max_timestamp, EncodeIterator{encoder_, chunk, ls_id}, samples);
         break;
       }
     }
@@ -203,21 +200,21 @@ class OutdatedChunkMerger {
   void merge_outdated_samples(const chunk::DataChunk& source_chunk, int64_t max_timestamp, const EncodeIterator& encode_iterator, SamplesSpan& samples) {
     auto begin = samples.begin();
     std::ranges::set_union(OutdatedSampleIterator{begin, samples.end(), max_timestamp}, IteratorSentinel{},
-                           Decoder::create_decode_iterator<encoding_type, chunk_type>(storage_, source_chunk), decoder::DecodeIteratorSentinel{},
+                           Decoder::create_decode_iterator<encoding_type, chunk_type>(encoder_.storage(), source_chunk), decoder::DecodeIteratorSentinel{},
                            encode_iterator);
     samples = {begin, samples.end()};
   }
 
   void erase_finalized_chunk(uint32_t ls_id, const chunk::DataChunk& chunk) const {
-    if (auto finalized_it = storage_.finalized_chunks.find(ls_id); finalized_it != storage_.finalized_chunks.end()) {
-      storage_.erase_chunk<chunk::DataChunk::Type::kFinalized>(chunk);
+    if (auto finalized_it = encoder_.storage().finalized_chunks.find(ls_id); finalized_it != encoder_.storage().finalized_chunks.end()) {
+      encoder_.storage().template erase_chunk<chunk::DataChunk::Type::kFinalized>(chunk);
       finalized_it->second.erase(chunk);
     }
   }
 
   void replace_open_chunk(uint32_t ls_id, const chunk::DataChunk& chunk) const {
-    auto& open_chunk = storage_.open_chunks[ls_id];
-    storage_.erase_chunk<chunk::DataChunk::Type::kOpen>(open_chunk);
+    auto& open_chunk = encoder_.storage().open_chunks[ls_id];
+    encoder_.storage().template erase_chunk<chunk::DataChunk::Type::kOpen>(open_chunk);
     open_chunk = chunk;
   }
 };

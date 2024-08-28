@@ -61,3 +61,7 @@ func (e *HeadEncoder) Encode(seriesID uint32, timestamp int64, value float64) {
 func (e *HeadEncoder) EncodeInnerSeriesSlice(innerSeriesSlice []*InnerSeries) {
 	seriesDataEncoderEncodeInnerSeriesSlice(e.encoder, innerSeriesSlice)
 }
+
+func (e *HeadEncoder) MergeOutOfOrderChunks() {
+	seriesDataEncoderMergeOutOfOrderChunks(e.encoder)
+}

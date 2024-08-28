@@ -1182,6 +1182,17 @@ func seriesDataEncoderEncodeInnerSeriesSlice(encoder uintptr, innerSeriesSlice [
 	)
 }
 
+func seriesDataEncoderMergeOutOfOrderChunks(encoder uintptr) {
+	var args = struct {
+		encoder uintptr
+	}{encoder}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_series_data_encoder_merge_out_of_order_chunks,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
 func seriesDataEncoderDtor(encoder uintptr) {
 	var args = struct {
 		encoder uintptr

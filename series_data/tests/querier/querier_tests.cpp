@@ -29,7 +29,7 @@ class QuerierFixture : public testing::TestWithParam<QuerierCase> {
 
   void SetUp() override {
     std::chrono::system_clock clock;
-    OutdatedSampleEncoder outdated_sample_encoder{storage_, clock};
+    OutdatedSampleEncoder outdated_sample_encoder{clock};
     Encoder encoder{storage_, outdated_sample_encoder};
 
     for (uint32_t ls_id = 0; ls_id < 2; ++ls_id) {

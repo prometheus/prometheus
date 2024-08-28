@@ -26,7 +26,7 @@ class OutdatedSampleEncoderFixture : public testing::Test {
 
   DataStorage storage_;
   testing::StrictMock<SystemClockMock> clock_;
-  OutdatedSampleEncoder<decltype(clock_), 2> outdated_sample_encoder_{storage_, clock_};
+  OutdatedSampleEncoder<decltype(clock_), 2> outdated_sample_encoder_{clock_};
   Encoder<decltype(outdated_sample_encoder_)> encoder_{storage_, outdated_sample_encoder_};
 };
 
