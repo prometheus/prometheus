@@ -14,7 +14,12 @@ import {
 import { Suspense } from "react";
 import { useAppDispatch, useAppSelector } from "../../state/hooks";
 
-import { StringParam, useQueryParam, withDefault } from "use-query-params";
+import {
+  ArrayParam,
+  StringParam,
+  useQueryParam,
+  withDefault,
+} from "use-query-params";
 import ErrorBoundary from "../../components/ErrorBoundary";
 import ScrapePoolList from "./ServiceDiscoveryPoolsList";
 import { useSuspenseAPIQuery } from "../../api/api";
@@ -23,6 +28,8 @@ import {
   setCollapsedPools,
   setShowLimitAlert,
 } from "../../state/serviceDiscoveryPageSlice";
+import { StateMultiSelect } from "../../components/StateMultiSelect";
+import badgeClasses from "../../Badge.module.css";
 
 export const targetPoolDisplayLimit = 20;
 
@@ -38,9 +45,13 @@ export default function ServiceDiscoveryPage() {
 
   const dispatch = useAppDispatch();
 
-  const [scrapePool, setScrapePool] = useQueryParam("scrapePool", StringParam);
+  const [scrapePool, setScrapePool] = useQueryParam("pool", StringParam);
+  const [stateFilter, setStateFilter] = useQueryParam(
+    "state",
+    withDefault(ArrayParam, [])
+  );
   const [searchFilter, setSearchFilter] = useQueryParam(
-    "searchFilter",
+    "search",
     withDefault(StringParam, "")
   );
 
@@ -75,6 +86,15 @@ export default function ServiceDiscoveryPage() {
             showLimitAlert && dispatch(setShowLimitAlert(false));
           }}
           searchable
+        />
+        <StateMultiSelect
+          options={["active", "dropped"]}
+          optionClass={(o) =>
+            o === "active" ? badgeClasses.healthOk : badgeClasses.healthInfo
+          }
+          placeholder="Filter by state"
+          values={(stateFilter?.filter((v) => v !== null) as string[]) || []}
+          onChange={(values) => setStateFilter(values)}
         />
         <TextInput
           flex={1}
@@ -118,6 +138,7 @@ export default function ServiceDiscoveryPage() {
           <ScrapePoolList
             poolNames={scrapePools}
             selectedPool={(limited && scrapePools[0]) || scrapePool || null}
+            stateFilter={stateFilter as string[]}
             searchFilter={searchFilter}
           />
         </Suspense>

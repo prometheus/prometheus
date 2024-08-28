@@ -17,7 +17,7 @@ import {
   Target,
   TargetsResult,
 } from "../../api/responseTypes/targets";
-import { FC } from "react";
+import { FC, useMemo } from "react";
 import { useAppDispatch, useAppSelector } from "../../state/hooks";
 import {
   setCollapsedPools,
@@ -62,10 +62,12 @@ const droppedTargetKVSearch = new KVSearch<DroppedTarget>({
   indexedKeys: ["discoveredLabels", ["discoveredLabels", /.*/]],
 });
 
-const groupTargets = (
+const buildPoolsData = (
   poolNames: string[],
   activeTargets: Target[],
-  droppedTargets: DroppedTarget[]
+  droppedTargets: DroppedTarget[],
+  search: string,
+  stateFilter: (string | null)[]
 ): ScrapePools => {
   const pools: ScrapePools = {};
 
@@ -88,8 +90,19 @@ const groupTargets = (
 
     pool.active++;
     pool.total++;
+  }
 
-    pool.targets.push({
+  const filteredActiveTargets =
+    stateFilter.length !== 0 && !stateFilter.includes("active")
+      ? []
+      : search === ""
+        ? activeTargets
+        : activeTargetKVSearch
+            .filter(search, activeTargets)
+            .map((value) => value.original);
+
+  for (const target of filteredActiveTargets) {
+    pools[target.scrapePool].targets.push({
       discoveredLabels: target.discoveredLabels,
       labels: target.labels,
       isDropped: false,
@@ -107,17 +120,24 @@ const groupTargets = (
     }
 
     pool.total++;
+  }
 
-    pool.targets.push({
+  const filteredDroppedTargets =
+    stateFilter.length !== 0 && !stateFilter.includes("dropped")
+      ? []
+      : search === ""
+        ? droppedTargets
+        : droppedTargetKVSearch
+            .filter(search, droppedTargets)
+            .map((value) => value.original);
+
+  for (const target of filteredDroppedTargets) {
+    pools[target.discoveredLabels.job].targets.push({
       discoveredLabels: target.discoveredLabels,
       isDropped: true,
       labels: {},
     });
   }
-
-  // for (const target of shownTargets) {
-  //   pools[target.scrapePool].targets.push(target);
-  // }
 
   return pools;
 };
@@ -125,12 +145,14 @@ const groupTargets = (
 type ScrapePoolListProp = {
   poolNames: string[];
   selectedPool: string | null;
+  stateFilter: string[];
   searchFilter: string;
 };
 
 const ScrapePoolList: FC<ScrapePoolListProp> = ({
   poolNames,
   selectedPool,
+  stateFilter,
   searchFilter,
 }) => {
   const dispatch = useAppDispatch();
@@ -157,24 +179,23 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
 
   const [debouncedSearch] = useDebouncedValue<string>(searchFilter, 250);
 
-  // TODO: Memoize all this computation, especially groupTargets().
-  // const search = debouncedSearch.trim();
-  // const healthFilteredTargets = activeTargets.filter(
-  //   (target) =>
-  //     healthFilter.length === 0 ||
-  //     healthFilter.includes(target.health.toLowerCase())
-  // );
-  // const filteredTargets =
-  //   search === ""
-  //     ? healthFilteredTargets
-  //     : kvSearch
-  //         .filter(search, healthFilteredTargets)
-  //         .map((value) => value.original);
-
-  const allPools = groupTargets(
-    selectedPool ? [selectedPool] : poolNames,
-    activeTargets,
-    droppedTargets
+  const allPools = useMemo(
+    () =>
+      buildPoolsData(
+        selectedPool ? [selectedPool] : poolNames,
+        activeTargets,
+        droppedTargets,
+        debouncedSearch,
+        stateFilter
+      ),
+    [
+      selectedPool,
+      poolNames,
+      activeTargets,
+      droppedTargets,
+      debouncedSearch,
+      stateFilter,
+    ]
   );
   const allPoolNames = Object.keys(allPools);
   const shownPoolNames = showEmptyPools
@@ -240,17 +261,22 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                     <RingProgress
                       size={25}
                       thickness={5}
-                      sections={[
-                        {
-                          value: (pool.active / pool.total) * 100,
-                          color: "green.4",
-                        },
-                        {
-                          value:
-                            ((pool.total - pool.active) / pool.total) * 100,
-                          color: "grape.4",
-                        },
-                      ]}
+                      sections={
+                        pool.total === 0
+                          ? []
+                          : [
+                              {
+                                value: (pool.active / pool.total) * 100,
+                                color: "green.4",
+                              },
+                              {
+                                value:
+                                  ((pool.total - pool.active) / pool.total) *
+                                  100,
+                                color: "blue.6",
+                              },
+                            ]
+                      }
                     />
                   </Group>
                 </Group>
