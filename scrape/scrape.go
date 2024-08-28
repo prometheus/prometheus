@@ -1651,7 +1651,7 @@ loop:
 			updateMetadata(lset, true)
 		}
 
-		if seriesAlreadyScraped {
+		if seriesAlreadyScraped && parsedTimestamp == nil {
 			err = storage.ErrDuplicateSampleForTimestamp
 		} else {
 			if ctMs := p.CreatedTimestamp(); sl.enableCTZeroIngestion && ctMs != nil {
