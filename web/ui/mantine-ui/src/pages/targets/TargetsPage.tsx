@@ -30,7 +30,7 @@ import ScrapePoolList from "./ScrapePoolsList";
 import { useSuspenseAPIQuery } from "../../api/api";
 import { ScrapePoolsResult } from "../../api/responseTypes/scrapePools";
 
-export const targetPoolDisplayLimit = 3;
+export const targetPoolDisplayLimit = 20;
 
 export default function TargetsPage() {
   // Load the list of all available scrape pools.
@@ -44,13 +44,13 @@ export default function TargetsPage() {
 
   const dispatch = useAppDispatch();
 
-  const [scrapePool, setScrapePool] = useQueryParam("scrapePool", StringParam);
+  const [scrapePool, setScrapePool] = useQueryParam("pool", StringParam);
   const [healthFilter, setHealthFilter] = useQueryParam(
-    "healthFilter",
+    "health",
     withDefault(ArrayParam, [])
   );
   const [searchFilter, setSearchFilter] = useQueryParam(
-    "searchFilter",
+    "search",
     withDefault(StringParam, "")
   );
 
@@ -95,7 +95,7 @@ export default function TargetsPage() {
                 ? badgeClasses.healthOk
                 : badgeClasses.healthErr
           }
-          placeholder="Filter by target state"
+          placeholder="Filter by target health"
           values={(healthFilter?.filter((v) => v !== null) as string[]) || []}
           onChange={(values) => setHealthFilter(values)}
         />
@@ -104,7 +104,9 @@ export default function TargetsPage() {
           leftSection={<IconSearch size={14} />}
           placeholder="Filter by endpoint or labels"
           value={searchFilter || ""}
-          onChange={(event) => setSearchFilter(event.currentTarget.value)}
+          onChange={(event) =>
+            setSearchFilter(event.currentTarget.value || null)
+          }
         ></TextInput>
         <ActionIcon
           size="input-sm"
