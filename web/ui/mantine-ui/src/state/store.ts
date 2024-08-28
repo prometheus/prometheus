@@ -2,7 +2,6 @@ import { configureStore } from "@reduxjs/toolkit";
 import queryPageSlice from "./queryPageSlice";
 import settingsSlice from "./settingsSlice";
 import targetsPageSlice from "./targetsPageSlice";
-import alertsPageSlice from "./alertsPageSlice";
 import { localStorageMiddleware } from "./localStorageMiddleware";
 
 const store = configureStore({
@@ -10,7 +9,6 @@ const store = configureStore({
     settings: settingsSlice,
     queryPage: queryPageSlice,
     targetsPage: targetsPageSlice,
-    alertsPage: alertsPageSlice,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().prepend(localStorageMiddleware.middleware),

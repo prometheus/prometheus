@@ -18,7 +18,7 @@ type CommonRuleFields = {
   lastEvaluation: string;
 };
 
-type AlertingRule = {
+export type AlertingRule = {
   type: "alerting";
   // For alerting rules, the 'labels' field is always present, even when there are no labels.
   labels: Record<string, string>;
@@ -46,7 +46,7 @@ interface RuleGroup {
   lastEvaluation: string;
 }
 
-type AlertingRuleGroup = Omit<RuleGroup, "rules"> & {
+export type AlertingRuleGroup = Omit<RuleGroup, "rules"> & {
   rules: AlertingRule[];
 };
 

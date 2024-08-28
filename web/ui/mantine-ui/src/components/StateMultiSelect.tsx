@@ -33,6 +33,7 @@ export function StatePill({ value, onRemove, ...others }: StatePillProps) {
 interface StateMultiSelectProps {
   options: string[];
   optionClass: (option: string) => string;
+  optionCount?: (option: string) => number;
   placeholder: string;
   values: string[];
   onChange: (values: string[]) => void;
@@ -41,6 +42,7 @@ interface StateMultiSelectProps {
 export const StateMultiSelect: FC<StateMultiSelectProps> = ({
   options,
   optionClass,
+  optionCount,
   placeholder,
   values,
   onChange,
@@ -60,7 +62,7 @@ export const StateMultiSelect: FC<StateMultiSelectProps> = ({
 
   const renderedValues = values.map((item) => (
     <StatePill
-      value={item}
+      value={optionCount ? `${item} (${optionCount(item)})` : item}
       className={optionClass(item)}
       onRemove={() => handleValueRemove(item)}
       key={item}
@@ -123,7 +125,12 @@ export const StateMultiSelect: FC<StateMultiSelectProps> = ({
                   {values.includes(value) ? (
                     <CheckIcon size={12} color="gray" />
                   ) : null}
-                  <StatePill value={value} className={optionClass(value)} />
+                  <StatePill
+                    value={
+                      optionCount ? `${value} (${optionCount(value)})` : value
+                    }
+                    className={optionClass(value)}
+                  />
                 </Group>
               </Combobox.Option>
             );
