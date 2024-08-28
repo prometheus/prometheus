@@ -59,6 +59,7 @@ func TestIntern_MultiRef(t *testing.T) {
 	interner.intern(ref, lset)
 	interned, ok = interner.pool[ref]
 
+	require.True(t, ok)
 	require.NotNil(t, interned)
 	require.Equal(t, int64(2), interned.refs.Load(), fmt.Sprintf("expected refs to be 2 but it was %d", interned.refs.Load()))
 }
@@ -71,6 +72,7 @@ func TestIntern_DeleteRef(t *testing.T) {
 	interned, ok := interner.pool[ref]
 
 	require.NotNil(t, interned)
+	require.True(t, ok)
 	require.Equal(t, int64(1), interned.refs.Load(), fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs.Load()))
 
 	interner.release(ref)
@@ -87,6 +89,7 @@ func TestIntern_MultiRef_Concurrent(t *testing.T) {
 	interned, ok := interner.pool[ref]
 
 	require.NotNil(t, interned)
+	require.True(t, ok)
 	require.Equal(t, int64(1), interned.refs.Load(), fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs.Load()))
 
 	go interner.release(ref)

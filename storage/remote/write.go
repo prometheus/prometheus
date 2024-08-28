@@ -69,7 +69,6 @@ type WriteStorage struct {
 	metadataInWAL     bool
 	samplesIn         *ewmaRate
 	flushDeadline     time.Duration
-	interner          *pool
 	scraper           ReadyScrapeManager
 	quit              chan struct{}
 
@@ -91,7 +90,6 @@ func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, dir string, f
 		flushDeadline:     flushDeadline,
 		samplesIn:         newEWMARate(ewmaWeight, shardUpdateDuration),
 		dir:               dir,
-		interner:          newPool(false),
 		scraper:           sm,
 		quit:              make(chan struct{}),
 		metadataInWAL:     metadataInWal,
@@ -210,7 +208,6 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rwConf.WriteRelabelConfigs,
 			c,
 			rws.flushDeadline,
-			rws.interner,
 			rws.highestTimestamp,
 			rws.scraper,
 			rwConf.SendExemplars,
@@ -226,11 +223,6 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 	for _, q := range rws.queues {
 		q.Stop()
 	}
-
-	if len(newHashes) > 1 {
-		rws.interner.shouldIntern = true
-	}
-
 	for _, hash := range newHashes {
 		newQueues[hash].Start()
 	}

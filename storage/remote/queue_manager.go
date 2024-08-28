@@ -441,7 +441,6 @@ type QueueManager struct {
 	dataIn, dataDropped, dataOut, dataOutDuration *ewmaRate
 
 	metrics              *queueManagerMetrics
-	interner             *pool
 	highestRecvTimestamp *maxTimestamp
 }
 
@@ -463,7 +462,6 @@ func NewQueueManager(
 	relabelConfigs []*relabel.Config,
 	client WriteClient,
 	flushDeadline time.Duration,
-	interner *pool,
 	highestRecvTimestamp *maxTimestamp,
 	sm ReadyScrapeManager,
 	enableExemplarRemoteWrite bool,
@@ -508,7 +506,6 @@ func NewQueueManager(
 		dataOutDuration: newEWMARate(ewmaWeight, shardUpdateDuration),
 
 		metrics:              metrics,
-		interner:             interner,
 		highestRecvTimestamp: highestRecvTimestamp,
 
 		protoMsg: protoMsg,
@@ -702,12 +699,7 @@ outer:
 			continue
 		}
 		t.seriesMtx.Lock()
-		var lbls labels.Labels
-		if t.interner.shouldIntern {
-			lbls = t.interner.intern(s.Ref, labels.EmptyLabels())
-		} else {
-			lbls = t.seriesLabels[s.Ref]
-		}
+		lbls := t.seriesLabels[s.Ref]
 		if lbls.Len() == 0 {
 			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[s.Ref]; !ok {
@@ -769,12 +761,7 @@ outer:
 			continue
 		}
 		t.seriesMtx.Lock()
-		var lbls labels.Labels
-		if t.interner.shouldIntern {
-			lbls = t.interner.intern(e.Ref, labels.EmptyLabels())
-		} else {
-			lbls = t.seriesLabels[e.Ref]
-		}
+		lbls := t.seriesLabels[e.Ref]
 		if lbls.Len() == 0 {
 			// Track dropped exemplars in the same EWMA for sharding calc.
 			t.dataDropped.incr(1)
@@ -831,12 +818,7 @@ outer:
 			continue
 		}
 		t.seriesMtx.Lock()
-		var lbls labels.Labels
-		if t.interner.shouldIntern {
-			lbls = t.interner.intern(h.Ref, labels.EmptyLabels())
-		} else {
-			lbls = t.seriesLabels[h.Ref]
-		}
+		lbls := t.seriesLabels[h.Ref]
 		if lbls.Len() == 0 {
 			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[h.Ref]; !ok {
@@ -891,12 +873,7 @@ outer:
 			continue
 		}
 		t.seriesMtx.Lock()
-		var lbls labels.Labels
-		if t.interner.shouldIntern {
-			lbls = t.interner.intern(h.Ref, labels.EmptyLabels())
-		} else {
-			lbls = t.seriesLabels[h.Ref]
-		}
+		lbls := t.seriesLabels[h.Ref]
 		if lbls.Len() == 0 {
 			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[h.Ref]; !ok {
@@ -1002,11 +979,7 @@ func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 			continue
 		}
 		lbls := t.builder.Labels()
-		if t.interner.shouldIntern {
-			t.interner.intern(s.Ref, lbls)
-		} else {
-			t.seriesLabels[s.Ref] = lbls
-		}
+		t.seriesLabels[s.Ref] = lbls
 	}
 }
 
@@ -1050,10 +1023,7 @@ func (t *QueueManager) SeriesReset(index int) {
 	for k, v := range t.seriesSegmentIndexes {
 		if v < index {
 			delete(t.seriesSegmentIndexes, k)
-			t.interner.release(k)
 			delete(t.seriesLabels, k)
-			//t.releaseLabels(t.seriesLabels[k])
-			//delete(t.seriesLabels, k)
 			delete(t.seriesMetadata, k)
 			delete(t.droppedSeries, k)
 		}
