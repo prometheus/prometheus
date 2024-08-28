@@ -955,9 +955,6 @@ func (t *QueueManager) Stop() {
 		t.metadataWatcher.Stop()
 	}
 
-	// On shutdown, release the strings in the labels from the intern pool.
-	t.seriesMtx.Lock()
-	t.seriesMtx.Unlock()
 	t.metrics.unregister()
 }
 
