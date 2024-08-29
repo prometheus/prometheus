@@ -92,6 +92,7 @@ func TestBackfill(t *testing.T) {
 		Description          string
 		MaxSamplesInAppender int
 		MaxBlockDuration     time.Duration
+		Labels               map[string]string
 		Expected             struct {
 			MinTime       int64
 			MaxTime       int64
@@ -637,6 +638,49 @@ http_requests_total{code="400"} 1024 7199
 			},
 		},
 		{
+			ToParse: `# HELP http_requests_total The total number of HTTP requests.
+# TYPE http_requests_total counter
+http_requests_total{code="200"} 1 1624463088.000
+http_requests_total{code="200"} 2 1629503088.000
+http_requests_total{code="200"} 3 1629863088.000
+# EOF
+`,
+			IsOk:                 true,
+			Description:          "Sample with external labels.",
+			MaxSamplesInAppender: 5000,
+			MaxBlockDuration:     2048 * time.Hour,
+			Labels:               map[string]string{"cluster_id": "123", "org_id": "999"},
+			Expected: struct {
+				MinTime       int64
+				MaxTime       int64
+				NumBlocks     int
+				BlockDuration int64
+				Samples       []backfillSample
+			}{
+				MinTime:       1624463088000,
+				MaxTime:       1629863088000,
+				NumBlocks:     2,
+				BlockDuration: int64(1458 * time.Hour / time.Millisecond),
+				Samples: []backfillSample{
+					{
+						Timestamp: 1624463088000,
+						Value:     1,
+						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "200", "cluster_id", "123", "org_id", "999"),
+					},
+					{
+						Timestamp: 1629503088000,
+						Value:     2,
+						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "200", "cluster_id", "123", "org_id", "999"),
+					},
+					{
+						Timestamp: 1629863088000,
+						Value:     3,
+						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "200", "cluster_id", "123", "org_id", "999"),
+					},
+				},
+			},
+		},
+		{
 			ToParse: `# HELP rpc_duration_seconds A summary of the RPC duration in seconds.
 # TYPE rpc_duration_seconds summary
 rpc_duration_seconds{quantile="0.01"} 3102
@@ -689,7 +733,7 @@ after_eof 1 2
 
 			outputDir := t.TempDir()
 
-			err := backfill(test.MaxSamplesInAppender, []byte(test.ToParse), outputDir, false, false, test.MaxBlockDuration)
+			err := backfill(test.MaxSamplesInAppender, []byte(test.ToParse), outputDir, false, false, test.MaxBlockDuration, test.Labels)
 
 			if !test.IsOk {
 				require.Error(t, err, test.Description)

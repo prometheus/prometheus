@@ -253,6 +253,7 @@ func main() {
 	importQuiet := importCmd.Flag("quiet", "Do not print created blocks.").Short('q').Bool()
 	maxBlockDuration := importCmd.Flag("max-block-duration", "Maximum duration created blocks may span. Anything less than 2h is ignored.").Hidden().PlaceHolder("<duration>").Duration()
 	openMetricsImportCmd := importCmd.Command("openmetrics", "Import samples from OpenMetrics input and produce TSDB blocks. Please refer to the storage docs for more details.")
+	openMetricsLabels := openMetricsImportCmd.Flag("label", "Label to attach to metrics. Can be specified multiple times. Example --label=label_name=label_value").StringMap()
 	importFilePath := openMetricsImportCmd.Arg("input file", "OpenMetrics file to read samples from.").Required().String()
 	importDBPath := openMetricsImportCmd.Arg("output directory", "Output directory for generated blocks.").Default(defaultDBPath).String()
 	importRulesCmd := importCmd.Command("rules", "Create blocks of data for new recording rules.")
@@ -408,7 +409,7 @@ func main() {
 		os.Exit(checkErr(dumpSamples(ctx, *dumpOpenMetricsPath, *dumpOpenMetricsSandboxDirRoot, *dumpOpenMetricsMinTime, *dumpOpenMetricsMaxTime, *dumpOpenMetricsMatch, formatSeriesSetOpenMetrics)))
 	// TODO(aSquare14): Work on adding support for custom block size.
 	case openMetricsImportCmd.FullCommand():
-		os.Exit(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable, *importQuiet, *maxBlockDuration))
+		os.Exit(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable, *importQuiet, *maxBlockDuration, *openMetricsLabels))
 
 	case importRulesCmd.FullCommand():
 		os.Exit(checkErr(importRules(serverURL, httpRoundTripper, *importRulesStart, *importRulesEnd, *importRulesOutputDir, *importRulesEvalInterval, *maxBlockDuration, *importRulesFiles...)))
