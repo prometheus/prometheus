@@ -23,7 +23,6 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
-	"runtime/pprof"
 	"sort"
 	"strconv"
 	"strings"
