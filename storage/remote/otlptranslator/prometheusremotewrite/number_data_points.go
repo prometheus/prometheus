@@ -58,7 +58,6 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 		if pt.Flags().NoRecordedValue() {
 			sample.Value = math.Float64frombits(value.StaleNaN)
 		}
-		c.handleStartTime(convertTimeStamp(pt.StartTimestamp()), timestamp, sample.Value, labels, settings)
 		c.addSample(sample, labels)
 	}
 
@@ -96,7 +95,10 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 		if pt.Flags().NoRecordedValue() {
 			sample.Value = math.Float64frombits(value.StaleNaN)
 		}
-		c.handleStartTime(convertTimeStamp(startTimestampNs), timestamp, sample.Value, lbls, settings)
+		isMonotonic := metric.Sum().IsMonotonic()
+		if isMonotonic {
+			c.handleStartTime(convertTimeStamp(startTimestampNs), timestamp, sample.Value, lbls, settings)
+		}
 		ts := c.addSample(sample, lbls)
 		if ts != nil {
 			exemplars, err := getPromExemplars[pmetric.NumberDataPoint](ctx, &c.everyN, pt)
@@ -107,7 +109,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 		}
 
 		// add created time series if needed
-		if settings.ExportCreatedMetric && metric.Sum().IsMonotonic() {
+		if settings.ExportCreatedMetric && isMonotonic {
 			if startTimestampNs == 0 {
 				return nil
 			}

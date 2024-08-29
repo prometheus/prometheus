@@ -632,7 +632,6 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timesta
 		Value:     float64(1),
 		Timestamp: ts,
 	}
-	converter.handleStartTime(ts, ts, sample.Value, labels, settings)
 	converter.addSample(sample, labels)
 }
 
