@@ -576,7 +576,7 @@ func (c *PrometheusConverter) handleStartTime(startTs, ts int64, value float64, 
 	if !settings.EnableCreatedTimestampZeroIngestion {
 		return
 	}
-	if value != 0 && startTs > 0 && startTs == ts {
+	if startTs > 0 && startTs == ts {
 		// See https://github.com/prometheus/prometheus/issues/14600 for context.
 		// XXX: In the future created timestamps should be encoded in metric metadata instead.
 		c.addSample(&prompb.Sample{Timestamp: ts - 1}, labels)
