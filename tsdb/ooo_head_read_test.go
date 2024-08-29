@@ -33,7 +33,6 @@ import (
 
 // Type assertions.
 var (
-	_ chunkenc.Chunk    = &MultiChunk{}
 	_ chunkenc.Iterable = &mergedOOOChunks{}
 	_ IndexReader       = &HeadAndOOOIndexReader{}
 )

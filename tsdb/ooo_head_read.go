@@ -54,53 +54,6 @@ func NewHeadAndOOOIndexReader(head *Head, mint, maxt int64, lastGarbageCollected
 	return &HeadAndOOOIndexReader{hr, lastGarbageCollectedMmapRef}
 }
 
-type MultiChunk struct {
-	chunks []chunkenc.Chunk
-}
-
-func (c MultiChunk) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
-	switch len(c.chunks) {
-	case 0:
-		return chunkenc.NewNopIterator()
-	case 1:
-		return c.chunks[0].Iterator(it)
-	default:
-		iterators := make([]chunkenc.Iterator, 0, len(c.chunks))
-		for _, chk := range c.chunks {
-			iterators = append(iterators, chk.Iterator(nil))
-		}
-		return storage.ChainSampleIteratorFromIterators(it, iterators)
-	}
-}
-
-func (c MultiChunk) Appender() (chunkenc.Appender, error) {
-	return nil, errors.New("not implemented")
-}
-
-func (c MultiChunk) Bytes() []byte {
-	return nil
-}
-
-func (c MultiChunk) Compact() {
-	// no-op
-}
-
-func (c MultiChunk) Encoding() chunkenc.Encoding {
-	return chunkenc.EncNone
-}
-
-func (c MultiChunk) NumSamples() int {
-	sum := 0
-	for _, chk := range c.chunks {
-		sum += chk.NumSamples()
-	}
-	return sum
-}
-
-func (c MultiChunk) Reset([]byte) {
-	// no-op
-}
-
 func (oh *HeadAndOOOIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	s := oh.head.series.getByID(chunks.HeadSeriesRef(ref))
 
@@ -148,16 +101,14 @@ func getOOOSeriesChunks(s *memSeries, mint, maxt int64, lastGarbageCollectedMmap
 		if c.OverlapsClosedInterval(mint, maxt) && maxMmapRef == 0 {
 			ref := chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.oooHeadChunkID(len(s.ooo.oooMmappedChunks))))
 			if len(c.chunk.samples) > 0 { // Empty samples happens in tests, at least.
-				headChunks := MultiChunk{}
 				chks, err := s.ooo.oooHeadChunk.chunk.ToEncodedChunks(c.minTime, c.maxTime)
 				if err != nil {
 					handleChunkWriteError(err)
 					return nil
 				}
 				for _, chk := range chks {
-					headChunks.chunks = append(headChunks.chunks, chk.chunk)
+					addChunk(chk.minTime, chk.maxTime, ref, chk.chunk)
 				}
-				addChunk(c.minTime, c.maxTime, ref, headChunks)
 			} else {
 				var emptyChunk chunkenc.Chunk
 				addChunk(c.minTime, c.maxTime, ref, emptyChunk)
