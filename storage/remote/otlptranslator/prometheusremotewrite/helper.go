@@ -572,13 +572,14 @@ func (c *PrometheusConverter) addTimeSeriesIfNeeded(lbls []prompb.Label, startTi
 }
 
 // handleStartTime adds a zero sample 1 millisecond before ts iff startTs == ts.
+// The reason for doing this is that PRW v1 doesn't support Created Timestamps. After switching to PRW v2's direct CT support,
+// make use of its direct support fort Created Timestamps instead.
 func (c *PrometheusConverter) handleStartTime(startTs, ts int64, value float64, labels []prompb.Label, settings Settings) {
 	if !settings.EnableCreatedTimestampZeroIngestion {
 		return
 	}
 	if startTs > 0 && startTs == ts {
 		// See https://github.com/prometheus/prometheus/issues/14600 for context.
-		// XXX: In the future created timestamps should be encoded in metric metadata instead.
 		c.addSample(&prompb.Sample{Timestamp: ts - 1}, labels)
 	}
 }
