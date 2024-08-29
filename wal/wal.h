@@ -19,9 +19,7 @@
 #include "bare_bones/snug_composite.h"
 #include "bare_bones/sparse_vector.h"
 #include "bare_bones/vector.h"
-#include "primitives/lss_metadata/changes_collector.h"
-#include "primitives/lss_metadata/storage.h"
-#include "primitives/lss_metadata/types.h"
+
 #include "primitives/primitives.h"
 #include "primitives/snug_composites.h"
 
@@ -96,13 +94,7 @@ template <typename Callable, typename AddCallable, typename Timeseries>
 concept TimeseriesGenerator =
     TimeseriesWithoutHashValGenerator<Callable, AddCallable, Timeseries> || TimeseriesWithHashValGenerator<Callable, AddCallable, Timeseries>;
 
-enum class BasicEncoderVersion : uint8_t {
-  kUnknown = 0,
-  kV1,
-  kV2,
-  kV3,
-  kV4,
-};
+enum class BasicEncoderVersion : uint8_t { kUnknown = 0, kV1, kV2, kV3 };
 
 template <class LabelSetsTable = Primitives::SnugComposites::LabelSet::EncodingBimap, bool shrink_lss = false>
 class BasicEncoder {
@@ -225,9 +217,8 @@ class BasicEncoder {
     typename LabelSetsTable::checkpoint_type label_sets_checkpoint;
     BareBones::Vector<EncoderWithID> encoders;
 
-    inline __attribute__((always_inline)) Redundant(uint32_t _segment,
-                                                    typename LabelSetsTable::checkpoint_type _label_sets_checkpoint,
-                                                    uint32_t _encoders_count)
+    inline __attribute__((always_inline))
+    Redundant(uint32_t _segment, typename LabelSetsTable::checkpoint_type _label_sets_checkpoint, uint32_t _encoders_count)
         : segment(_segment), encoders_count(_encoders_count), label_sets_checkpoint(_label_sets_checkpoint) {}
   };
 
@@ -244,7 +235,7 @@ class BasicEncoder {
   // Opaque type for storing state between add_many() calls
   using SourceState = void*;
 
-  static constexpr BasicEncoderVersion version = BasicEncoderVersion::kV4;
+  static constexpr BasicEncoderVersion version = BasicEncoderVersion::kV3;
 
   static void DestroySourceState(SourceState h) { delete reinterpret_cast<StaleNaNsState<>*>(h); }
 
@@ -252,7 +243,6 @@ class BasicEncoder {
   LabelSetsTable label_sets_;
   typename LabelSetsTable::checkpoint_type label_sets_checkpoint_;
   Buffer buffer_;
-  Primitives::lss_metadata::MetadataBlobSharedPtr lss_metadata_;
   BareBones::Vector<
       BareBones::Encoding::Gorilla::StreamEncoder<BareBones::Encoding::Gorilla::ZigZagTimestampEncoder<>, BareBones::Encoding::Gorilla::ValuesEncoder>>
       gorilla_;
@@ -377,18 +367,11 @@ class BasicEncoder {
     v_bytes_ += gorilla_v_bitseq.save_size() + v_crc.save_size();
     lz4stream_ << gorilla_v_bitseq << v_crc;
 
-    if (!lss_metadata_ || lss_metadata_->empty()) {
-      lz4stream_.put(Primitives::lss_metadata::kNoData);
-    } else {
-      lz4stream_.write(lss_metadata_->data(), lss_metadata_->size());
-    }
-
     lz4stream_ << std::flush;
     lz4stream_.set_stream(nullptr);
 
     samples_ += buffer_.samples_count();
     buffer_.clear();
-    lss_metadata_.reset();
     ++next_encoded_segment_;
     return redundant;
   }
@@ -473,8 +456,6 @@ class BasicEncoder {
   PROMPP_ALWAYS_INLINE Primitives::LabelSetID add_label_set(const LabelSet& label_set, size_t hashval) {
     return label_sets_.find_or_emplace(label_set, hashval);
   }
-
-  PROMPP_ALWAYS_INLINE void set_lss_metadata(Primitives::lss_metadata::MetadataBlobSharedPtr lss_metadata) noexcept { lss_metadata_ = std::move(lss_metadata); }
 
   /// @brief Use it for selecting the proper @ref add_many() function's callback type.
   ///        It affects the forwarded `void add(const Timeseries&,...)` callback.
@@ -667,14 +648,13 @@ class BasicEncoder {
   }
 };
 
-template <class LabelSetsTable, class LssMetadataStorage, size_t LZ4DecompressedBufferSize = 256>
+template <class LabelSetsTable = Primitives::SnugComposites::LabelSet::DecodingTable, size_t LZ4DecompressedBufferSize = 256>
 class BasicDecoder {
   BareBones::Vector<
       BareBones::Encoding::Gorilla::StreamDecoder<BareBones::Encoding::Gorilla::ZigZagTimestampDecoder<>, BareBones::Encoding::Gorilla::ValuesDecoder>>
       gorilla_;
   BareBones::LZ4Stream::basic_istream<LZ4DecompressedBufferSize> lz4stream_{nullptr};
   LabelSetsTable& label_sets_;
-  LssMetadataStorage& lss_metadata_storage_;
 
   uuids::uuid uuid_;
   uint32_t last_processed_segment_ = std::numeric_limits<uint32_t>::max();
@@ -774,10 +754,6 @@ class BasicDecoder {
 
       // read values
       in >> segment_gorilla_v_bitseq_ >> segment_v_crc_;
-
-      if (encoder_version_ == BasicEncoderVersion::kV4) {
-        in >> lss_metadata_storage_;
-      }
     } catch (...) {
       clear_segment();
       invalidate();
@@ -789,7 +765,7 @@ class BasicDecoder {
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE std::istream& get_stream(std::istream& stream) noexcept {
-    if (encoder_version_ >= BasicEncoderVersion::kV3) {
+    if (encoder_version_ == BasicEncoderVersion::kV3) {
       lz4stream_.set_stream(&stream);
       return lz4stream_;
     }
@@ -798,8 +774,7 @@ class BasicDecoder {
   }
 
  public:
-  BasicDecoder(LabelSetsTable& label_sets, LssMetadataStorage& lss_metadata_storage, BasicEncoderVersion encoder_version)
-      : label_sets_(label_sets), lss_metadata_storage_(lss_metadata_storage), encoder_version_(encoder_version) {}
+  BasicDecoder(LabelSetsTable& label_sets, BasicEncoderVersion encoder_version) : label_sets_(label_sets), encoder_version_(encoder_version) {}
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_empty() const noexcept { return last_processed_segment_ == std::numeric_limits<uint32_t>::max(); }
   [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_valid() const noexcept { return encoder_version_ != BasicEncoderVersion::kUnknown; }
@@ -1072,6 +1047,5 @@ class BasicDecoder {
 };
 
 using Writer = BasicEncoder<>;
-using Reader = BasicDecoder<Primitives::SnugComposites::LabelSet::DecodingTable,
-                            Primitives::lss_metadata::ImmutableStorage<Primitives::lss_metadata::NopChangesCollector>>;
+using Reader = BasicDecoder<>;
 }  // namespace PromPP::WAL

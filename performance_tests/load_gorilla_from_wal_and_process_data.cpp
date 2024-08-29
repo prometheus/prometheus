@@ -14,8 +14,7 @@ void load_gorilla_from_wal_and_process_data::execute(const Config& config, Metri
   std::chrono::nanoseconds period(0);
 
   Primitives::SnugComposites::LabelSet::DecodingTable label_set;
-  PromPP::Primitives::lss_metadata::ImmutableStorage<PromPP::Primitives::lss_metadata::NopChangesCollector> lss_metadata;
-  WAL::Reader wal{label_set, lss_metadata, WAL::BasicEncoderVersion::kV3};
+  WAL::Reader wal{label_set, WAL::BasicEncoderVersion::kV3};
   while (!in.eof()) {
     uint32_t series = wal.series();
     uint64_t samples = wal.samples();
