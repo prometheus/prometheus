@@ -8,7 +8,6 @@ import (
 	"math/rand"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/jonboulle/clockwork"
@@ -43,9 +42,8 @@ type MetricData interface {
 
 // IncomingData implements.
 type IncomingData struct {
-	Hashdex         cppbridge.ShardedData
-	Data            MetricData
-	numberOfDestroy int32
+	Hashdex cppbridge.ShardedData
+	Data    MetricData
 }
 
 // ShardedData return hashdex.
@@ -55,9 +53,6 @@ func (i *IncomingData) ShardedData() cppbridge.ShardedData {
 
 // Destroy increment or destroy IncomingData.
 func (i *IncomingData) Destroy() {
-	if atomic.AddInt32(&i.numberOfDestroy, -1) != 0 {
-		return
-	}
 	i.Hashdex = nil
 	i.Data.Destroy()
 }

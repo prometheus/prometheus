@@ -176,6 +176,8 @@ func (w *BlockWriter) Write(block Block) (err error) {
 		return fmt.Errorf("failed to move temporary block dir {%s} to {%s}: %w", tmp, dir, err)
 	}
 
+	fmt.Println(*blockMeta)
+
 	return
 }
 

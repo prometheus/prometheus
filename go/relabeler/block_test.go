@@ -31,4 +31,5 @@ func TestNewBlock(t *testing.T) {
 	blockWriter := block.NewBlockWriter(dir, block.DefaultChunkSegmentSize)
 	err = blockWriter.Write(NewBlock(lss, ds))
 	require.NoError(t, err)
+
 }
