@@ -198,9 +198,6 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "new-service-discovery-manager":
 				c.enableNewSDManager = true
 				level.Info(logger).Log("msg", "Experimental service discovery manager")
-			case "agent":
-				agentMode = true
-				level.Info(logger).Log("msg", "Experimental agent mode enabled.")
 			case "promql-per-step-stats":
 				c.enablePerStepStats = true
 				level.Info(logger).Log("msg", "Experimental per-step statistics reporting")
@@ -461,8 +458,10 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, auto-gomemlimit, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, new-service-discovery-manager, auto-gomaxprocs, no-default-scrape-port, native-histograms, otlp-write-receiver, created-timestamp-zero-ingestion, concurrent-rule-eval. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: auto-gomemlimit, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, new-service-discovery-manager, auto-gomaxprocs, no-default-scrape-port, native-histograms, otlp-write-receiver, created-timestamp-zero-ingestion, concurrent-rule-eval. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
+
+	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
 
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
 
