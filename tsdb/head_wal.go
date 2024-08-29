@@ -569,6 +569,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 		samplesPerChunk: h.opts.SamplesPerChunk,
 	}
 
+	memSeriesCache := make(map[chunks.HeadSeriesRef]*memSeries)
 	for in := range wp.input {
 		if in.existingSeries != nil {
 			mmc := mmappedChunks[in.walSeriesRef]
@@ -580,10 +581,14 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 		}
 
 		for _, s := range in.samples {
-			ms := h.series.getByID(s.Ref)
-			if ms == nil {
-				unknownRefs++
-				continue
+			ms, ok := memSeriesCache[s.Ref]
+			if !ok {
+				ms = h.series.getByID(s.Ref)
+				if ms == nil {
+					unknownRefs++
+					continue
+				}
+				memSeriesCache[s.Ref] = ms
 			}
 			if s.T <= ms.mmMaxTime {
 				continue
@@ -609,10 +614,15 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 			if s.t < minValidTime {
 				continue
 			}
-			ms := h.series.getByID(s.ref)
-			if ms == nil {
-				unknownHistogramRefs++
-				continue
+
+			ms, ok := memSeriesCache[s.ref]
+			if !ok {
+				ms = h.series.getByID(s.ref)
+				if ms == nil {
+					unknownHistogramRefs++
+					continue
+				}
+				memSeriesCache[s.ref] = ms
 			}
 			if s.t <= ms.mmMaxTime {
 				continue
