@@ -441,21 +441,10 @@ func BenchmarkLoadWLs(b *testing.B) {
 
 // BenchmarkLoadRealWLs will be skipped unless the BENCHMARK_LOAD_REAL_WLS_DIR environment variable is set.
 // BENCHMARK_LOAD_REAL_WLS_DIR should be the folder where `wal` and `chunks_head` are located.
-// Optionally, BENCHMARK_LOAD_REAL_WLS_PROFILE can be set to a file path to write a CPU profile.
 func BenchmarkLoadRealWLs(b *testing.B) {
 	dir := os.Getenv("BENCHMARK_LOAD_REAL_WLS_DIR")
 	if dir == "" {
 		b.Skipped()
-	}
-
-	profileFile := os.Getenv("BENCHMARK_LOAD_REAL_WLS_PROFILE")
-	if profileFile != "" {
-		b.Logf("Will profile in %s", profileFile)
-		f, err := os.Create(profileFile)
-		require.NoError(b, err)
-		b.Cleanup(func() { f.Close() })
-		require.NoError(b, pprof.StartCPUProfile(f))
-		b.Cleanup(pprof.StopCPUProfile)
 	}
 
 	wal, err := wlog.New(nil, nil, filepath.Join(dir, "wal"), wlog.CompressionNone)
