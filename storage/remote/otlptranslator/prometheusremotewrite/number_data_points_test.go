@@ -22,10 +22,11 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
+
+	"github.com/prometheus/prometheus/prompb"
 )
 
 func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
@@ -71,7 +72,8 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 				metric.Gauge().DataPoints(),
 				pcommon.NewResource(),
 				Settings{
-					ExportCreatedMetric: true,
+					ExportCreatedMetric:                 true,
+					EnableCreatedTimestampZeroIngestion: true,
 				},
 				metric.Name(),
 			)
@@ -171,6 +173,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 					timeSeriesSignature(labels): {
 						Labels: labels,
 						Samples: []prompb.Sample{
+							{Value: 0, Timestamp: convertTimeStamp(ts) - 1},
 							{Value: 1, Timestamp: convertTimeStamp(ts)},
 						},
 					},
@@ -249,7 +252,8 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				pcommon.NewResource(),
 				metric,
 				Settings{
-					ExportCreatedMetric: true,
+					ExportCreatedMetric:                 true,
+					EnableCreatedTimestampZeroIngestion: true,
 				},
 				metric.Name(),
 			)
