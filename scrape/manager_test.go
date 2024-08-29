@@ -724,8 +724,6 @@ func TestManagerCTZeroIngestion(t *testing.T) {
 		name                  string
 		counterSample         *dto.Counter
 		enableCTZeroIngestion bool
-
-		expectedValues []float64
 	}{
 		{
 			name: "disabled with CT on counter",
@@ -734,7 +732,6 @@ func TestManagerCTZeroIngestion(t *testing.T) {
 				// Timestamp does not matter as long as it exists in this test.
 				CreatedTimestamp: timestamppb.Now(),
 			},
-			expectedValues: []float64{1.0},
 		},
 		{
 			name: "enabled with CT on counter",
@@ -744,7 +741,6 @@ func TestManagerCTZeroIngestion(t *testing.T) {
 				CreatedTimestamp: timestamppb.Now(),
 			},
 			enableCTZeroIngestion: true,
-			expectedValues:        []float64{0.0, 1.0},
 		},
 		{
 			name: "enabled without CT on counter",
@@ -752,7 +748,6 @@ func TestManagerCTZeroIngestion(t *testing.T) {
 				Value: proto.Float64(1.0),
 			},
 			enableCTZeroIngestion: true,
-			expectedValues:        []float64{1.0},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -819,44 +814,42 @@ func TestManagerCTZeroIngestion(t *testing.T) {
 			})
 			scrapeManager.reload()
 
+			var got []float64
 			// Wait for one scrape.
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 			defer cancel()
 			require.NoError(t, runutil.Retry(100*time.Millisecond, ctx.Done(), func() error {
-				if countFloatSamples(app, mName) != len(tc.expectedValues) {
-					return fmt.Errorf("expected %v samples", tc.expectedValues)
+				app.mtx.Lock()
+				defer app.mtx.Unlock()
+
+				// Check if scrape happened and grab the relevant samples, they have to be there - or it's a bug
+				// and it's not worth waiting.
+				for _, f := range app.resultFloats {
+					if f.metric.Get(model.MetricNameLabel) == mName {
+						got = append(got, f.f)
+					}
 				}
-				return nil
+				if len(app.resultFloats) > 0 {
+					return nil
+				}
+				return fmt.Errorf("expected some samples, got none")
 			}), "after 1 minute")
 			scrapeManager.Stop()
 
-			require.Equal(t, tc.expectedValues, getResultFloats(app, mName))
+			// Check for zero samples, assuming we only injected always one sample.
+			// Did it contain CT to inject? If yes, was CT zero enabled?
+			if tc.counterSample.CreatedTimestamp.IsValid() && tc.enableCTZeroIngestion {
+				require.Len(t, got, 2)
+				require.Equal(t, 0.0, got[0])
+				require.Equal(t, tc.counterSample.GetValue(), got[1])
+				return
+			}
+
+			// Expect only one, valid sample.
+			require.Len(t, got, 1)
+			require.Equal(t, tc.counterSample.GetValue(), got[0])
 		})
 	}
-}
-
-func countFloatSamples(a *collectResultAppender, expectedMetricName string) (count int) {
-	a.mtx.Lock()
-	defer a.mtx.Unlock()
-
-	for _, f := range a.resultFloats {
-		if f.metric.Get(model.MetricNameLabel) == expectedMetricName {
-			count++
-		}
-	}
-	return count
-}
-
-func getResultFloats(app *collectResultAppender, expectedMetricName string) (result []float64) {
-	app.mtx.Lock()
-	defer app.mtx.Unlock()
-
-	for _, f := range app.resultFloats {
-		if f.metric.Get(model.MetricNameLabel) == expectedMetricName {
-			result = append(result, f.f)
-		}
-	}
-	return result
 }
 
 func TestUnregisterMetrics(t *testing.T) {
