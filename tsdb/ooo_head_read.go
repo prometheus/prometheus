@@ -16,6 +16,7 @@ package tsdb
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"slices"
 
@@ -91,11 +92,10 @@ func getOOOSeriesChunks(s *memSeries, mint, maxt int64, lastGarbageCollectedMmap
 
 	addChunk := func(minT, maxT int64, ref chunks.ChunkRef, chunk chunkenc.Chunk) {
 		tmpChks = append(tmpChks, chunks.Meta{
-			MinTime:  minT,
-			MaxTime:  maxT,
-			Ref:      ref,
-			Chunk:    chunk,
-			MergeOOO: true,
+			MinTime: minT,
+			MaxTime: maxT,
+			Ref:     ref,
+			Chunk:   chunk,
 		})
 	}
 
@@ -140,32 +140,37 @@ func getOOOSeriesChunks(s *memSeries, mint, maxt int64, lastGarbageCollectedMmap
 	// those that overlap.
 	slices.SortFunc(tmpChks, lessByMinTimeAndMinRef)
 
-	// Next we want to iterate the sorted collected chunks and only return the
-	// chunks Meta the first chunk that overlaps with others.
+	// Next we want to iterate the sorted collected chunks and return composites for chunks that overlap with others.
 	// Example chunks of a series: 5:(100, 200) 6:(500, 600) 7:(150, 250) 8:(550, 650)
-	// In the example 5 overlaps with 7 and 6 overlaps with 8 so we only want to
-	// return chunk Metas for chunk 5 and chunk 6e
-	*chks = append(*chks, tmpChks[0])
-	maxTime := tmpChks[0].MaxTime // Tracks the maxTime of the previous "to be merged chunk".
+	// In the example 5 overlaps with 7 and 6 overlaps with 8 so we will return
+	// [5,7], [6,8].
+	toBeMerged := tmpChks[0]
 	for _, c := range tmpChks[1:] {
-		switch {
-		case c.MinTime > maxTime:
-			*chks = append(*chks, c)
-			maxTime = c.MaxTime
-		case c.MaxTime > maxTime:
-			maxTime = c.MaxTime
-			(*chks)[len(*chks)-1].MaxTime = c.MaxTime
-			fallthrough
-		default:
-			// If the head OOO chunk is part of an output chunk, copy the chunk pointer.
-			if c.Chunk != nil {
-				(*chks)[len(*chks)-1].Chunk = c.Chunk
+		if c.MinTime > toBeMerged.MaxTime {
+			// This chunk doesn't overlap. Send current toBeMerged to output and start a new one.
+			*chks = append(*chks, toBeMerged)
+			toBeMerged = c
+		} else {
+			// Merge this chunk with existing toBeMerged.
+			if mm, ok := toBeMerged.Chunk.(*multiMeta); ok {
+				mm.metas = append(mm.metas, c)
+			} else {
+				toBeMerged.Chunk = &multiMeta{metas: []chunks.Meta{toBeMerged, c}}
 			}
-			(*chks)[len(*chks)-1].MergeOOO = (*chks)[len(*chks)-1].MergeOOO || c.MergeOOO
+			if toBeMerged.MaxTime < c.MaxTime {
+				toBeMerged.MaxTime = c.MaxTime
+			}
 		}
 	}
+	*chks = append(*chks, toBeMerged)
 
 	return nil
+}
+
+// Fake Chunk object to pass a set of Metas inside Meta.Chunk.
+type multiMeta struct {
+	chunkenc.Chunk // We don't expect any of the methods to be called.
+	metas          []chunks.Meta
 }
 
 // LabelValues needs to be overridden from the headIndexReader implementation
@@ -180,29 +185,6 @@ func (oh *HeadAndOOOIndexReader) LabelValues(ctx context.Context, name string, m
 	}
 
 	return labelValuesWithMatchers(ctx, oh, name, matchers...)
-}
-
-type chunkMetaAndChunkDiskMapperRef struct {
-	meta chunks.Meta
-	ref  chunks.ChunkDiskMapperRef
-}
-
-func refLessByMinTimeAndMinRef(a, b chunkMetaAndChunkDiskMapperRef) int {
-	switch {
-	case a.meta.MinTime < b.meta.MinTime:
-		return -1
-	case a.meta.MinTime > b.meta.MinTime:
-		return 1
-	}
-
-	switch {
-	case a.meta.Ref < b.meta.Ref:
-		return -1
-	case a.meta.Ref > b.meta.Ref:
-		return 1
-	default:
-		return 0
-	}
 }
 
 func lessByMinTimeAndMinRef(a, b chunks.Meta) int {
@@ -243,36 +225,55 @@ func NewHeadAndOOOChunkReader(head *Head, mint, maxt int64, cr *headChunkReader,
 }
 
 func (cr *HeadAndOOOChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
-	sid, _, _ := unpackHeadChunkRef(meta.Ref)
-	if !meta.MergeOOO {
-		return cr.cr.ChunkOrIterable(meta)
-	}
-
-	s := cr.head.series.getByID(sid)
-	// This means that the series has been garbage collected.
-	if s == nil {
-		return nil, nil, storage.ErrNotFound
-	}
-
-	s.Lock()
-	if s.ooo == nil { // Must have s.ooo non-nil to call mergedChunks().
-		s.Unlock()
-		return cr.cr.ChunkOrIterable(meta)
-	}
-	mc, err := s.mergedChunks(meta, cr.head.chunkDiskMapper, cr.cr, cr.mint, cr.maxt, cr.maxMmapRef)
-	s.Unlock()
-
-	return nil, mc, err
+	c, it, _, err := cr.chunkOrIterable(meta, false)
+	return c, it, err
 }
 
 // ChunkOrIterableWithCopy implements ChunkReaderWithCopy. The special Copy
 // behaviour is only implemented for the in-order head chunk.
 func (cr *HeadAndOOOChunkReader) ChunkOrIterableWithCopy(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {
-	if !meta.MergeOOO {
-		return cr.cr.ChunkOrIterableWithCopy(meta)
+	return cr.chunkOrIterable(meta, true)
+}
+
+func (cr *HeadAndOOOChunkReader) chunkOrIterable(meta chunks.Meta, copyLastChunk bool) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {
+	sid, cid, isOOO := unpackHeadChunkRef(meta.Ref)
+	s := cr.head.series.getByID(sid)
+	// This means that the series has been garbage collected.
+	if s == nil {
+		return nil, nil, 0, storage.ErrNotFound
 	}
-	chk, iter, err := cr.ChunkOrIterable(meta)
-	return chk, iter, 0, err
+	var isoState *isolationState
+	if cr.cr != nil {
+		isoState = cr.cr.isoState
+	}
+
+	s.Lock()
+	defer s.Unlock()
+
+	if meta.Chunk == nil {
+		c, maxt, err := cr.head.chunkFromSeries(s, cid, isOOO, meta.MinTime, meta.MaxTime, isoState, copyLastChunk)
+		return c, nil, maxt, err
+	}
+	mm, ok := meta.Chunk.(*multiMeta)
+	if !ok { // Complete chunk was supplied.
+		return meta.Chunk, nil, meta.MaxTime, nil
+	}
+	// We have a composite meta: construct a composite iterable.
+	mc := &mergedOOOChunks{}
+	for _, m := range mm.metas {
+		switch {
+		case m.Chunk != nil:
+			mc.chunkIterables = append(mc.chunkIterables, m.Chunk)
+		default:
+			_, cid, isOOO := unpackHeadChunkRef(m.Ref)
+			iterable, _, err := cr.head.chunkFromSeries(s, cid, isOOO, m.MinTime, m.MaxTime, isoState, copyLastChunk)
+			if err != nil {
+				return nil, nil, 0, fmt.Errorf("invalid head chunk: %w", err)
+			}
+			mc.chunkIterables = append(mc.chunkIterables, iterable)
+		}
+	}
+	return nil, mc, meta.MaxTime, nil
 }
 
 func (cr *HeadAndOOOChunkReader) Close() error {
