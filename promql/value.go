@@ -199,7 +199,7 @@ type Sample struct {
 	Metric labels.Labels
 	// DropName is used to indicate whether the __name__ label should be dropped
 	// as part of the query evaluation.
-	DropName bool `json:"-"`
+	DropName bool
 }
 
 func (s Sample) String() string {
