@@ -443,7 +443,7 @@ func BenchmarkLoadWLs(b *testing.B) {
 func BenchmarkLoadRealWLs(b *testing.B) {
 	dir := os.Getenv("BENCHMARK_LOAD_REAL_WLS_DIR")
 	if dir == "" {
-		b.Skipped()
+		b.SkipNow()
 	}
 
 	wal, err := wlog.New(nil, nil, filepath.Join(dir, "wal"), wlog.CompressionNone)
