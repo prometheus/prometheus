@@ -14,6 +14,7 @@ package prometheusremotewrite
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -156,6 +157,24 @@ func TestCreateAttributes(t *testing.T) {
 			lbls := createAttributes(resource, attrs, settings, nil, false)
 
 			assert.ElementsMatch(t, lbls, tc.expectedLabels)
+		})
+	}
+}
+
+func Test_convertTimeStamp(t *testing.T) {
+	tests := []struct {
+		name string
+		arg  pcommon.Timestamp
+		want int64
+	}{
+		{"zero", 0, 0},
+		{"1ms", 1_000_000, 1},
+		{"1s", pcommon.Timestamp(time.Unix(1, 0).UnixNano()), 1000},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := convertTimeStamp(tt.arg)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
