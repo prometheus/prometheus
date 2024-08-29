@@ -16,6 +16,7 @@ package config
 import (
 	"crypto/tls"
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -164,10 +165,11 @@ var expectedConf = &Config{
 
 	RemoteReadConfigs: []*RemoteReadConfig{
 		{
-			URL:           mustParseURL("http://remote1/read"),
-			RemoteTimeout: model.Duration(1 * time.Minute),
-			ReadRecent:    true,
-			Name:          "default",
+			URL:              mustParseURL("http://remote1/read"),
+			RemoteTimeout:    model.Duration(1 * time.Minute),
+			ChunkedReadLimit: DefaultChunkedReadLimit,
+			ReadRecent:       true,
+			Name:             "default",
 			HTTPClientConfig: config.HTTPClientConfig{
 				FollowRedirects: true,
 				EnableHTTP2:     false,
@@ -177,6 +179,7 @@ var expectedConf = &Config{
 		{
 			URL:              mustParseURL("http://remote3/read"),
 			RemoteTimeout:    model.Duration(1 * time.Minute),
+			ChunkedReadLimit: DefaultChunkedReadLimit,
 			ReadRecent:       false,
 			Name:             "read_special",
 			RequiredMatchers: model.LabelSet{"job": "special"},
@@ -2299,4 +2302,53 @@ func TestScrapeConfigDisableCompression(t *testing.T) {
 	require.NoError(t, yaml.UnmarshalStrict(out, got))
 
 	require.False(t, got.ScrapeConfigs[0].EnableCompression)
+}
+
+func TestScrapeConfigNameValidationSettings(t *testing.T) {
+	model.NameValidationScheme = model.UTF8Validation
+	defer func() {
+		model.NameValidationScheme = model.LegacyValidation
+	}()
+
+	tests := []struct {
+		name         string
+		inputFile    string
+		expectScheme string
+	}{
+		{
+			name:         "blank config implies default",
+			inputFile:    "scrape_config_default_validation_mode",
+			expectScheme: "",
+		},
+		{
+			name:         "global setting implies local settings",
+			inputFile:    "scrape_config_global_validation_mode",
+			expectScheme: "utf8",
+		},
+		{
+			name:         "local setting",
+			inputFile:    "scrape_config_local_validation_mode",
+			expectScheme: "utf8",
+		},
+		{
+			name:         "local setting overrides global setting",
+			inputFile:    "scrape_config_local_global_validation_mode",
+			expectScheme: "legacy",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			want, err := LoadFile(fmt.Sprintf("testdata/%s.yml", tc.inputFile), false, false, log.NewNopLogger())
+			require.NoError(t, err)
+
+			out, err := yaml.Marshal(want)
+
+			require.NoError(t, err)
+			got := &Config{}
+			require.NoError(t, yaml.UnmarshalStrict(out, got))
+
+			require.Equal(t, tc.expectScheme, got.ScrapeConfigs[0].MetricNameValidationScheme)
+		})
+	}
 }

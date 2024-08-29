@@ -170,7 +170,7 @@ func (h *headIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCou
 		}
 
 		// Check if the series belong to the shard.
-		if s.shardHash()%shardCount != shardIndex {
+		if s.shardHash%shardCount != shardIndex {
 			continue
 		}
 
@@ -430,7 +430,7 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 	// incremented by 1 when new chunk is created, hence (id - firstChunkID) gives the slice index.
 	// The max index for the s.mmappedChunks slice can be len(s.mmappedChunks)-1, hence if the ix
 	// is >= len(s.mmappedChunks), it represents one of the chunks on s.headChunks linked list.
-	// The order of elemens is different for slice and linked list.
+	// The order of elements is different for slice and linked list.
 	// For s.mmappedChunks slice newer chunks are appended to it.
 	// For s.headChunks list newer chunks are prepended to it.
 	//

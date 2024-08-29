@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -198,7 +199,7 @@ type mockedRemoteClient struct {
 	b     labels.ScratchBuilder
 }
 
-func (c *mockedRemoteClient) Read(_ context.Context, query *prompb.Query) (*prompb.QueryResult, error) {
+func (c *mockedRemoteClient) Read(_ context.Context, query *prompb.Query, sortSeries bool) (storage.SeriesSet, error) {
 	if c.got != nil {
 		return nil, fmt.Errorf("expected only one call to remote client got: %v", query)
 	}
@@ -227,7 +228,7 @@ func (c *mockedRemoteClient) Read(_ context.Context, query *prompb.Query) (*prom
 			q.Timeseries = append(q.Timeseries, &prompb.TimeSeries{Labels: s.Labels})
 		}
 	}
-	return q, nil
+	return FromQueryResult(sortSeries, q), nil
 }
 
 func (c *mockedRemoteClient) reset() {
