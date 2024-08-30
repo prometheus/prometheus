@@ -1395,6 +1395,64 @@ func BenchmarkStoreSeries(b *testing.B) {
 	}
 }
 
+// Check how long it takes to add N series, including external labels processing, simulate having two remote writes configured.
+func BenchmarkStoreSeries_TwoEndpoints(b *testing.B) {
+	externalLabels := []labels.Label{
+		{Name: "cluster", Value: "mycluster"},
+		{Name: "replica", Value: "1"},
+	}
+	relabelConfigs := []*relabel.Config{{
+		SourceLabels: model.LabelNames{"namespace"},
+		Separator:    ";",
+		Regex:        relabel.MustNewRegexp("kube.*"),
+		TargetLabel:  "job",
+		Replacement:  "$1",
+		Action:       relabel.Replace,
+	}}
+	testCases := []struct {
+		name           string
+		externalLabels []labels.Label
+		ts             []prompb.TimeSeries
+		relabelConfigs []*relabel.Config
+	}{
+		{name: "plain"},
+		{name: "externalLabels", externalLabels: externalLabels},
+		{name: "relabel", relabelConfigs: relabelConfigs},
+		{
+			name:           "externalLabels+relabel",
+			externalLabels: externalLabels,
+			relabelConfigs: relabelConfigs,
+		},
+	}
+
+	// numSeries chosen to be big enough that StoreSeries dominates creating a new queue manager.
+	const numSeries = 1000
+	_, series := createTimeseries(0, numSeries, extraLabels...)
+
+	for _, tc := range testCases {
+		b.Run(tc.name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				c := NewTestWriteClient(config.RemoteWriteProtoMsgV1)
+				dir := b.TempDir()
+				cfg := config.DefaultQueueConfig
+				mcfg := config.DefaultMetadataConfig
+				metrics := newQueueManagerMetrics(nil, "", "")
+				m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, config.RemoteWriteProtoMsgV1)
+				m.externalLabels = tc.externalLabels
+				m.relabelConfigs = tc.relabelConfigs
+
+				m.StoreSeries(series, 0)
+
+				m2 := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, config.RemoteWriteProtoMsgV1)
+				m2.externalLabels = tc.externalLabels
+				m2.relabelConfigs = tc.relabelConfigs
+
+				m2.StoreSeries(series, 0)
+			}
+		})
+	}
+}
+
 func BenchmarkStartup(b *testing.B) {
 	dir := os.Getenv("WALDIR")
 	if dir == "" {
