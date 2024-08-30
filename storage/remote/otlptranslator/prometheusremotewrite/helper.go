@@ -268,7 +268,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 				sum.Value = math.Float64frombits(value.StaleNaN)
 			}
 
-			c.handleStartTime(startTimestampMs, timestamp, sum.Value, sumlabels, settings)
+			c.handleStartTime(startTimestampMs, timestamp, sumlabels, settings)
 			c.addSample(sum, sumlabels)
 
 		}
@@ -283,7 +283,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 		}
 
 		countlabels := createLabels(baseName+countStr, baseLabels)
-		c.handleStartTime(startTimestampMs, timestamp, count.Value, countlabels, settings)
+		c.handleStartTime(startTimestampMs, timestamp, countlabels, settings)
 		c.addSample(count, countlabels)
 
 		// cumulative count for conversion to cumulative histogram
@@ -308,7 +308,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 			}
 			boundStr := strconv.FormatFloat(bound, 'f', -1, 64)
 			labels := createLabels(baseName+bucketStr, baseLabels, leStr, boundStr)
-			c.handleStartTime(startTimestampMs, timestamp, bucket.Value, labels, settings)
+			c.handleStartTime(startTimestampMs, timestamp, labels, settings)
 			ts := c.addSample(bucket, labels)
 
 			bucketBounds = append(bucketBounds, bucketBoundsData{ts: ts, bound: bound})
@@ -323,7 +323,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 			infBucket.Value = float64(pt.Count())
 		}
 		infLabels := createLabels(baseName+bucketStr, baseLabels, leStr, pInfStr)
-		c.handleStartTime(startTimestampMs, timestamp, infBucket.Value, infLabels, settings)
+		c.handleStartTime(startTimestampMs, timestamp, infLabels, settings)
 		ts := c.addSample(infBucket, infLabels)
 
 		bucketBounds = append(bucketBounds, bucketBoundsData{ts: ts, bound: math.Inf(1)})
@@ -462,7 +462,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 		}
 		// sum and count of the summary should append suffix to baseName
 		sumlabels := createLabels(baseName+sumStr, baseLabels)
-		c.handleStartTime(startTimestampMs, timestamp, sum.Value, sumlabels, settings)
+		c.handleStartTime(startTimestampMs, timestamp, sumlabels, settings)
 		c.addSample(sum, sumlabels)
 
 		// treat count as a sample in an individual TimeSeries
@@ -474,7 +474,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 			count.Value = math.Float64frombits(value.StaleNaN)
 		}
 		countlabels := createLabels(baseName+countStr, baseLabels)
-		c.handleStartTime(startTimestampMs, timestamp, count.Value, countlabels, settings)
+		c.handleStartTime(startTimestampMs, timestamp, countlabels, settings)
 		c.addSample(count, countlabels)
 
 		// process each percentile/quantile
@@ -489,7 +489,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 			}
 			percentileStr := strconv.FormatFloat(qt.Quantile(), 'f', -1, 64)
 			qtlabels := createLabels(baseName, baseLabels, quantileStr, percentileStr)
-			c.handleStartTime(startTimestampMs, timestamp, quantile.Value, qtlabels, settings)
+			c.handleStartTime(startTimestampMs, timestamp, qtlabels, settings)
 			c.addSample(quantile, qtlabels)
 		}
 
@@ -574,7 +574,7 @@ func (c *PrometheusConverter) addTimeSeriesIfNeeded(lbls []prompb.Label, startTi
 // handleStartTime adds a zero sample 1 millisecond before ts iff startTs == ts.
 // The reason for doing this is that PRW v1 doesn't support Created Timestamps. After switching to PRW v2's direct CT support,
 // make use of its direct support fort Created Timestamps instead.
-func (c *PrometheusConverter) handleStartTime(startTs, ts int64, value float64, labels []prompb.Label, settings Settings) {
+func (c *PrometheusConverter) handleStartTime(startTs, ts int64, labels []prompb.Label, settings Settings) {
 	if !settings.EnableCreatedTimestampZeroIngestion {
 		return
 	}

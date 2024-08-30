@@ -97,7 +97,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 		}
 		isMonotonic := metric.Sum().IsMonotonic()
 		if isMonotonic {
-			c.handleStartTime(convertTimeStamp(startTimestampNs), timestamp, sample.Value, lbls, settings)
+			c.handleStartTime(convertTimeStamp(startTimestampNs), timestamp, lbls, settings)
 		}
 		ts := c.addSample(sample, lbls)
 		if ts != nil {
