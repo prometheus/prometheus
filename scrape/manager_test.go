@@ -22,6 +22,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -848,6 +849,137 @@ func TestManagerCTZeroIngestion(t *testing.T) {
 			// Expect only one, valid sample.
 			require.Len(t, got, 1)
 			require.Equal(t, tc.counterSample.GetValue(), got[0])
+		})
+	}
+}
+
+func TestManagerCTZeroIngestionOM(t *testing.T) {
+	const mName = "foo"
+
+	for _, tc := range []struct {
+		name                  string
+		counterSample         string
+		expCT             int64
+		enableCTZeroIngestion bool
+	}{
+		{
+			name: "disabled with CT on counter",
+			counterSample: `# TYPE foo counter
+foo_total 17.0 1520879607.789 # {id="counter-test"} 5
+foo_created 1000
+# EOF`,
+			enableCTZeroIngestion: false,
+		},
+		{
+			name: "enabled with CT on counter",
+			counterSample: `# TYPE foo counter
+foo_total 17.0 1520879607.789 # {id="counter-test"} 5
+foo_created 1000
+# EOF`,
+			enableCTZeroIngestion: true,
+		},
+		{
+			name: "enabled without CT on counter",
+			counterSample: `# TYPE foo counter
+foo_total 17.0 1520879607.789 # {id="counter-test"} 5
+# EOF`,
+			enableCTZeroIngestion: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app := &collectResultAppender{}
+			scrapeManager, err := NewManager(
+				&Options{
+					EnableCreatedTimestampZeroIngestion: tc.enableCTZeroIngestion,
+					skipOffsetting:                      true,
+				},
+				log.NewLogfmtLogger(os.Stderr),
+				&collectResultAppendable{app},
+				prometheus.NewRegistry(),
+			)
+			require.NoError(t, err)
+
+			require.NoError(t, scrapeManager.ApplyConfig(&config.Config{
+				GlobalConfig: config.GlobalConfig{
+					// Disable regular scrapes.
+					ScrapeInterval: model.Duration(9999 * time.Minute),
+					ScrapeTimeout:  model.Duration(5 * time.Second),
+					// Ensure the proto is chosen. We need proto as it's the only protocol
+					// with the CT parsing support.
+					ScrapeProtocols: []config.ScrapeProtocol{config.OpenMetricsText1_0_0},
+				},
+				ScrapeConfigs: []*config.ScrapeConfig{{JobName: "test"}},
+			}))
+
+			once := sync.Once{}
+			// Start fake HTTP target to that allow one scrape only.
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					fail := true
+					once.Do(func() {
+						fail = false
+						w.Header().Set("Content-Type", `application/openmetrics-text; version=1.0.0`)
+
+						w.Write([]byte(tc.counterSample))
+					})
+
+					if fail {
+						w.WriteHeader(http.StatusInternalServerError)
+					}
+				}),
+			)
+			defer server.Close()
+
+			serverURL, err := url.Parse(server.URL)
+			require.NoError(t, err)
+
+			// Add fake target directly into tsets + reload. Normally users would use
+			// Manager.Run and wait for minimum 5s refresh interval.
+			scrapeManager.updateTsets(map[string][]*targetgroup.Group{
+				"test": {{
+					Targets: []model.LabelSet{{
+						model.SchemeLabel:  model.LabelValue(serverURL.Scheme),
+						model.AddressLabel: model.LabelValue(serverURL.Host),
+					}},
+				}},
+			})
+			scrapeManager.reload()
+
+			var got []int64
+			// Wait for one scrape.
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+			defer cancel()
+			require.NoError(t, runutil.Retry(100*time.Millisecond, ctx.Done(), func() error {
+				app.mtx.Lock()
+				defer app.mtx.Unlock()
+
+				// Check if scrape happened and grab the relevant samples, they have to be there - or it's a bug
+				// and it's not worth waiting.
+				for _, f := range app.resultFloats {
+					mName := f.metric.Get(model.MetricNameLabel)
+					if strings.HasSuffix(mName, "_created") {
+						got = append(got, int64(f.f))
+					}
+				}
+				if len(app.resultFloats) > 0 {
+					return nil
+				}
+				return fmt.Errorf("expected some samples, got none")
+			}), "after 1 minute")
+			scrapeManager.Stop()
+
+			// Check for zero samples, assuming we only injected always one sample.
+			// Did it contain CT to inject? If yes, was CT zero enabled?
+			// if tc.counterSample.CreatedTimestamp.IsValid() && tc.enableCTZeroIngestion {
+			// 	require.Len(t, got, 2)
+			// 	require.Equal(t, 0.0, got[0])
+			// 	require.Equal(t, tc.counterSample.GetValue(), got[1])
+			// 	return
+			// }
+
+			// Expect only one, valid sample.
+			require.Len(t, got, 1)
+			require.Equal(t, tc.expCT, got[0])
 		})
 	}
 }
