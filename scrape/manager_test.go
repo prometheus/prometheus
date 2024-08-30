@@ -921,8 +921,8 @@ func TestManagerCTZeroIngestion(t *testing.T) {
 			case "application/openmetrics-text; version=1.0.0":
 				if tc.enableCTZeroIngestion && tc.exp.ts == 0 {
 					require.Len(t, got, 2)
+					require.Equal(t, 0.0, got[0])
 					require.Equal(t, tc.exp.value, got[1])
-					require.Equal(t, 0.0, got[1])
 					return
 				}
 
