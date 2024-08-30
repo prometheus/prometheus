@@ -90,6 +90,7 @@ func NewTestEngine(enablePerStepStats bool, lookbackDelta time.Duration, maxSamp
 		EnableNegativeOffset:     true,
 		EnablePerStepStats:       enablePerStepStats,
 		LookbackDelta:            lookbackDelta,
+		EnableDelayedNameRemoval: true,
 	})
 }
 
@@ -769,7 +770,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 					return fmt.Errorf("expected histogram value at index %v for %s to have timestamp %v, but it had timestamp %v (result has %s)", i, ev.metrics[hash], expected.T, actual.T, formatSeriesResult(s))
 				}
 
-				if !actual.H.Equals(expected.H.Compact(0)) {
+				if !compareNativeHistogram(expected.H.Compact(0), actual.H.Compact(0)) {
 					return fmt.Errorf("expected histogram value at index %v (t=%v) for %s to be %v, but got %v (result has %s)", i, actual.T, ev.metrics[hash], expected.H, actual.H, formatSeriesResult(s))
 				}
 			}
@@ -804,7 +805,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 			if expH != nil && v.H == nil {
 				return fmt.Errorf("expected histogram %s for %s but got float value %v", HistogramTestExpression(expH), v.Metric, v.F)
 			}
-			if expH != nil && !expH.Compact(0).Equals(v.H) {
+			if expH != nil && !compareNativeHistogram(expH.Compact(0), v.H.Compact(0)) {
 				return fmt.Errorf("expected %v for %s but got %s", HistogramTestExpression(expH), v.Metric, HistogramTestExpression(v.H))
 			}
 			if !almost.Equal(exp0.Value, v.F, defaultEpsilon) {
@@ -835,6 +836,121 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 		panic(fmt.Errorf("promql.Test.compareResult: unexpected result type %T", result))
 	}
 	return nil
+}
+
+// compareNativeHistogram is helper function to compare two native histograms
+// which can tolerate some differ in the field of float type, such as Count, Sum.
+func compareNativeHistogram(exp, cur *histogram.FloatHistogram) bool {
+	if exp == nil || cur == nil {
+		return false
+	}
+
+	if exp.Schema != cur.Schema ||
+		!almost.Equal(exp.Count, cur.Count, defaultEpsilon) ||
+		!almost.Equal(exp.Sum, cur.Sum, defaultEpsilon) {
+		return false
+	}
+
+	if exp.UsesCustomBuckets() {
+		if !histogram.FloatBucketsMatch(exp.CustomValues, cur.CustomValues) {
+			return false
+		}
+	}
+
+	if exp.ZeroThreshold != cur.ZeroThreshold ||
+		!almost.Equal(exp.ZeroCount, cur.ZeroCount, defaultEpsilon) {
+		return false
+	}
+
+	if !spansMatch(exp.NegativeSpans, cur.NegativeSpans) {
+		return false
+	}
+	if !floatBucketsMatch(exp.NegativeBuckets, cur.NegativeBuckets) {
+		return false
+	}
+
+	if !spansMatch(exp.PositiveSpans, cur.PositiveSpans) {
+		return false
+	}
+	if !floatBucketsMatch(exp.PositiveBuckets, cur.PositiveBuckets) {
+		return false
+	}
+
+	return true
+}
+
+func floatBucketsMatch(b1, b2 []float64) bool {
+	if len(b1) != len(b2) {
+		return false
+	}
+	for i, b := range b1 {
+		if !almost.Equal(b, b2[i], defaultEpsilon) {
+			return false
+		}
+	}
+	return true
+}
+
+func spansMatch(s1, s2 []histogram.Span) bool {
+	if len(s1) == 0 && len(s2) == 0 {
+		return true
+	}
+
+	s1idx, s2idx := 0, 0
+	for {
+		if s1idx >= len(s1) {
+			return allEmptySpans(s2[s2idx:])
+		}
+		if s2idx >= len(s2) {
+			return allEmptySpans(s1[s1idx:])
+		}
+
+		currS1, currS2 := s1[s1idx], s2[s2idx]
+		s1idx++
+		s2idx++
+		if currS1.Length == 0 {
+			// This span is zero length, so we add consecutive such spans
+			// until we find a non-zero span.
+			for ; s1idx < len(s1) && s1[s1idx].Length == 0; s1idx++ {
+				currS1.Offset += s1[s1idx].Offset
+			}
+			if s1idx < len(s1) {
+				currS1.Offset += s1[s1idx].Offset
+				currS1.Length = s1[s1idx].Length
+				s1idx++
+			}
+		}
+		if currS2.Length == 0 {
+			// This span is zero length, so we add consecutive such spans
+			// until we find a non-zero span.
+			for ; s2idx < len(s2) && s2[s2idx].Length == 0; s2idx++ {
+				currS2.Offset += s2[s2idx].Offset
+			}
+			if s2idx < len(s2) {
+				currS2.Offset += s2[s2idx].Offset
+				currS2.Length = s2[s2idx].Length
+				s2idx++
+			}
+		}
+
+		if currS1.Length == 0 && currS2.Length == 0 {
+			// The last spans of both set are zero length. Previous spans match.
+			return true
+		}
+
+		if currS1.Offset != currS2.Offset || currS1.Length != currS2.Length {
+			return false
+		}
+	}
+}
+
+func allEmptySpans(s []histogram.Span) bool {
+	for _, ss := range s {
+		if ss.Length > 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func (ev *evalCmd) checkExpectedFailure(actual error) error {
@@ -1247,6 +1363,7 @@ func (ll *LazyLoader) clear() error {
 		NoStepSubqueryIntervalFn: func(int64) int64 { return durationMilliseconds(ll.SubqueryInterval) },
 		EnableAtModifier:         ll.opts.EnableAtModifier,
 		EnableNegativeOffset:     ll.opts.EnableNegativeOffset,
+		EnableDelayedNameRemoval: true,
 	}
 
 	ll.queryEngine = promql.NewEngine(opts)

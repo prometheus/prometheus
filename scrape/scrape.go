@@ -111,6 +111,7 @@ type scrapeLoopOptions struct {
 	interval                 time.Duration
 	timeout                  time.Duration
 	scrapeClassicHistograms  bool
+	validationScheme         model.ValidationScheme
 
 	mrc               []*relabel.Config
 	cache             *scrapeCache
@@ -186,6 +187,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 			options.PassMetadataInContext,
 			metrics,
 			options.skipOffsetting,
+			opts.validationScheme,
 		)
 	}
 	sp.metrics.targetScrapePoolTargetLimit.WithLabelValues(sp.config.JobName).Set(float64(sp.config.TargetLimit))
@@ -346,6 +348,7 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 				cache:                    cache,
 				interval:                 interval,
 				timeout:                  timeout,
+				validationScheme:         validationScheme,
 			})
 		)
 		if err != nil {
@@ -853,6 +856,7 @@ type scrapeLoop struct {
 	interval                 time.Duration
 	timeout                  time.Duration
 	scrapeClassicHistograms  bool
+	validationScheme         model.ValidationScheme
 
 	// Feature flagged options.
 	enableNativeHistogramIngestion bool
@@ -1160,6 +1164,7 @@ func newScrapeLoop(ctx context.Context,
 	passMetadataInContext bool,
 	metrics *scrapeMetrics,
 	skipOffsetting bool,
+	validationScheme model.ValidationScheme,
 ) *scrapeLoop {
 	if l == nil {
 		l = log.NewNopLogger()
@@ -1211,6 +1216,7 @@ func newScrapeLoop(ctx context.Context,
 		appendMetadataToWAL:            appendMetadataToWAL,
 		metrics:                        metrics,
 		skipOffsetting:                 skipOffsetting,
+		validationScheme:               validationScheme,
 	}
 	sl.ctx, sl.cancel = context.WithCancel(ctx)
 
@@ -1631,7 +1637,7 @@ loop:
 				err = errNameLabelMandatory
 				break loop
 			}
-			if !lset.IsValid() {
+			if !lset.IsValid(sl.validationScheme) {
 				err = fmt.Errorf("invalid metric name or label names: %s", lset.String())
 				break loop
 			}
@@ -1646,7 +1652,7 @@ loop:
 			updateMetadata(lset, true)
 		}
 
-		if seriesAlreadyScraped {
+		if seriesAlreadyScraped && parsedTimestamp == nil {
 			err = storage.ErrDuplicateSampleForTimestamp
 		} else {
 			if ctMs := p.CreatedTimestamp(); sl.enableCTZeroIngestion && ctMs != nil {
