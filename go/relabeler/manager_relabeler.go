@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 	"math"
 	"math/rand"
 	"runtime"
@@ -63,66 +64,6 @@ type relabelerKey struct {
 	shardID     uint16
 }
 
-// InputRelabelerConfig internal config for input relabelers.
-type InputRelabelerConfig struct {
-	Name           string                     `yaml:"name"`                      // name of input relabeler, required
-	RelabelConfigs []*cppbridge.RelabelConfig `yaml:"relabel_configs,omitempty"` // list of relabeler configs
-}
-
-// NewInputRelabelerConfig init new InputRelabelerConfig.
-func NewInputRelabelerConfig(name string, configs []*cppbridge.RelabelConfig) *InputRelabelerConfig {
-	return &InputRelabelerConfig{name, configs}
-}
-
-// Copy return copy *InputRelabelerConfig.
-func (c *InputRelabelerConfig) Copy() *InputRelabelerConfig {
-	newCfg := &InputRelabelerConfig{
-		Name:           c.Name,
-		RelabelConfigs: make([]*cppbridge.RelabelConfig, 0, len(c.RelabelConfigs)),
-	}
-
-	for _, rcfg := range c.RelabelConfigs {
-		newCfg.RelabelConfigs = append(newCfg.RelabelConfigs, rcfg.Copy())
-	}
-
-	return newCfg
-}
-
-// GetName return name of input relabeler.
-func (c *InputRelabelerConfig) GetName() string {
-	return c.Name
-}
-
-// GetConfigs return configs with rulers relabeling.
-func (c *InputRelabelerConfig) GetConfigs() []*cppbridge.RelabelConfig {
-	return c.RelabelConfigs
-}
-
-// UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *InputRelabelerConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	type plain InputRelabelerConfig
-	if err := unmarshal((*plain)(c)); err != nil {
-		return err
-	}
-
-	return c.Validate()
-}
-
-// Validate validates receiver config.
-func (c *InputRelabelerConfig) Validate() error {
-	if c.Name == "" {
-		return errors.New("name is empty")
-	}
-
-	for _, rlcfg := range c.RelabelConfigs {
-		if rlcfg == nil {
-			return errors.New("empty or null target relabeling rule in receiver config")
-		}
-	}
-
-	return nil
-}
-
 // ManagerRelabeler - manager for relabeling.
 type ManagerRelabeler struct {
 	appendLock *sync.Mutex
@@ -148,7 +89,7 @@ type ManagerRelabeler struct {
 func NewManagerRelabeler(
 	clock clockwork.Clock,
 	registerer prometheus.Registerer,
-	inputRelabelerConfigs []*InputRelabelerConfig,
+	inputRelabelerConfigs []*config.InputRelabelerConfig,
 	destinationGroups *DestinationGroups,
 	numberOfShards uint16,
 ) (*ManagerRelabeler, error) {
@@ -235,7 +176,7 @@ func (msr *ManagerRelabeler) AppendWithStaleNans(
 	}
 	inputPromise := NewInputRelabelingPromise(msr.shards.numberOfShards)
 	// incomingData.numberOfDestroy = int32(msr.shards.numberOfShards) * int32(len(msr.shards.inputRelabelers))
-	incomingData.numberOfDestroy = int32(msr.shards.numberOfShards)
+	//incomingData.numberOfDestroy = int32(msr.shards.numberOfShards)
 	msr.shards.enqueueInputRelabeling(NewTaskInputRelabeling(
 		ctx,
 		inputPromise,
@@ -331,7 +272,7 @@ func (msr *ManagerRelabeler) AppendWithStaleNans(
 
 // ApplyConfig update ManagerRelabeler for new config.
 func (msr *ManagerRelabeler) ApplyConfig(
-	inputRelabelerConfigs []*InputRelabelerConfig,
+	inputRelabelerConfigs []*config.InputRelabelerConfig,
 	numberOfShards uint16,
 ) error {
 	if numberOfShards == 0 {
@@ -538,7 +479,7 @@ type shards struct {
 
 // newshards init new shards.
 func newshards(
-	inputRelabelerConfigs []*InputRelabelerConfig,
+	inputRelabelerConfigs []*config.InputRelabelerConfig,
 	numberOfShards uint16,
 	registerer prometheus.Registerer,
 ) (*shards, error) {
@@ -621,7 +562,7 @@ func (s *shards) enqueueOutputUpdateRelabelerState(
 
 // reshards changes the number of shards to the required amount.
 func (s *shards) reshards(
-	inputRelabelerConfigs []*InputRelabelerConfig,
+	inputRelabelerConfigs []*config.InputRelabelerConfig,
 	numberOfShards uint16,
 ) error {
 	s.stop = make(chan struct{})
@@ -749,7 +690,7 @@ func (s *shards) reconfigureHeads(numberOfShards uint16) {
 
 // reconfiguringInputRelabeler reconfiguring input relabelers for all shards.
 func (s *shards) reconfiguringInputRelabeler(
-	inputRelabelerConfigs []*InputRelabelerConfig,
+	inputRelabelerConfigs []*config.InputRelabelerConfig,
 	numberOfShards uint16,
 ) error {
 	updated := make(map[relabelerKey]struct{})

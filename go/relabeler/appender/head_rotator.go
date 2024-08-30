@@ -7,7 +7,7 @@ type Storage interface {
 }
 
 type HeadBuilder interface {
-	Build() relabeler.UpgradableHeadInterface
+	Build() (relabeler.UpgradableHeadInterface, error)
 }
 
 type HeadRotator struct {
@@ -15,7 +15,19 @@ type HeadRotator struct {
 	headBuilder HeadBuilder
 }
 
-func (r *HeadRotator) Rotate(head relabeler.UpgradableHeadInterface) relabeler.UpgradableHeadInterface {
+func NewHeadRotator(storage Storage, headBuilder HeadBuilder) *HeadRotator {
+	return &HeadRotator{
+		storage:     storage,
+		headBuilder: headBuilder,
+	}
+}
+
+func (r *HeadRotator) Rotate(head relabeler.UpgradableHeadInterface) (relabeler.UpgradableHeadInterface, error) {
+	rotatedHead, err := r.headBuilder.Build()
+	if err != nil {
+		return nil, err
+	}
+
 	r.storage.Add(head)
-	return r.headBuilder.Build()
+	return rotatedHead, nil
 }

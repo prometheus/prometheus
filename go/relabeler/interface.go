@@ -3,6 +3,7 @@ package relabeler
 import (
 	"context"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
+	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 )
 
 // DataStorage - data storage interface.
@@ -31,6 +32,7 @@ type HeadInterface interface {
 	OnShard(shardID uint16, fn ShardFnInterface) error
 	NumberOfShards() uint16
 	Finalize()
+	Reconfigure(inputRelabelerConfigs []*config.InputRelabelerConfig, numberOfShards uint16) error
 	Close() error
 }
 
@@ -40,6 +42,7 @@ type UpgradableHeadInterface interface {
 
 type DistributorInterface interface {
 	Send(ctx context.Context, head HeadInterface, shardedData [][]*cppbridge.InnerSeries) error
+	DestinationGroups() DestinationGroups
 	Rotate()
 }
 
@@ -48,13 +51,13 @@ type UpgradableDistributorInterface interface {
 }
 
 type HeadRotator interface {
-	Rotate(head UpgradableHeadInterface) UpgradableHeadInterface
+	Rotate(head UpgradableHeadInterface) (UpgradableHeadInterface, error)
 }
 
 type HeadUpgrader interface {
-	Upgrade(head UpgradableHeadInterface) UpgradableHeadInterface
+	Upgrade(head UpgradableHeadInterface) (UpgradableHeadInterface, error)
 }
 
 type DistributorUpgrader interface {
-	Upgrade(distributor UpgradableDistributorInterface) UpgradableDistributorInterface
+	Upgrade(distributor UpgradableDistributorInterface) (UpgradableDistributorInterface, error)
 }

@@ -9,7 +9,7 @@ import (
 const DefaultRotateDuration = 2 * time.Hour
 
 type Rotatable interface {
-	Rotate(headRotator relabeler.HeadRotator)
+	Rotate(headRotator relabeler.HeadRotator) error
 }
 
 type Rotator struct {
@@ -25,6 +25,8 @@ func NewRotator(rotatable Rotatable, headRotator relabeler.HeadRotator, clock cl
 		rotatable:   rotatable,
 		headRotator: headRotator,
 		rotateTimer: relabeler.NewRotateTimer(clock, rotateDuration),
+		done:        make(chan struct{}),
+		close:       make(chan struct{}),
 	}
 
 	go r.rotateLoop()
@@ -41,7 +43,10 @@ func (r *Rotator) rotateLoop() {
 			return
 
 		case <-r.rotateTimer.Chan():
-			r.rotatable.Rotate(r.headRotator)
+			if err := r.rotatable.Rotate(r.headRotator); err != nil {
+				// todo: log rotation error
+			}
+			r.rotateTimer.Reset()
 		}
 	}
 }

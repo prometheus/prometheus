@@ -5,6 +5,7 @@ import (
 	"errors"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler"
+	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 	"github.com/prometheus/prometheus/pp/go/util"
 	"github.com/prometheus/client_golang/prometheus"
 	"sync"
@@ -27,9 +28,9 @@ type Head struct {
 }
 
 func New(
-	inputRelabelerConfigs []*relabeler.InputRelabelerConfig,
+	inputRelabelerConfigs []*config.InputRelabelerConfig,
 	numberOfShards uint16,
-	registerer prometheus.Registerer) *Head {
+	registerer prometheus.Registerer) (*Head, error) {
 	factory := util.NewUnconflictRegisterer(registerer)
 	h := &Head{
 		stopc: make(chan struct{}),
@@ -49,24 +50,24 @@ func New(
 	}
 
 	if err := h.reconfigure(inputRelabelerConfigs, numberOfShards); err != nil {
-		return nil
+		return nil, err
 	}
 
 	h.run()
 
-	return h
+	return h, nil
 }
 
 type destructibleIncomingData struct {
 	data          *relabeler.IncomingData
-	destructCount atomic.Uint64
+	destructCount atomic.Int64
 }
 
-func newIncomingDataDestructor(data *relabeler.IncomingData, destructCount uint64) *destructibleIncomingData {
+func newIncomingDataDestructor(data *relabeler.IncomingData, destructCount int) *destructibleIncomingData {
 	d := &destructibleIncomingData{
 		data: data,
 	}
-	d.destructCount.Store(destructCount)
+	d.destructCount.Store(int64(destructCount))
 	return d
 }
 
@@ -89,7 +90,7 @@ func (h *Head) Append(ctx context.Context, incomingData *relabeler.IncomingData,
 	h.enqueueInputRelabeling(NewTaskInputRelabeling(
 		ctx,
 		inputPromise,
-		newIncomingDataDestructor(incomingData, uint64(h.numberOfShards)),
+		newIncomingDataDestructor(incomingData, int(h.numberOfShards)),
 		metricLimits,
 		sourceStates,
 		staleNansTS,
@@ -127,7 +128,16 @@ func (h *Head) Finalize() {
 	})
 }
 
-func (h *Head) Shutdown(_ context.Context) error {
+func (h *Head) Reconfigure(inputRelabelerConfigs []*config.InputRelabelerConfig, numberOfShards uint16) error {
+	h.stop()
+	if err := h.reconfigure(inputRelabelerConfigs, numberOfShards); err != nil {
+		return err
+	}
+	h.run()
+	return nil
+}
+
+func (h *Head) Close() error {
 	h.stop()
 	return nil
 }
@@ -151,7 +161,7 @@ func (h *Head) forEachShard(fn relabeler.ShardFnInterface) error {
 }
 
 func (h *Head) onShard(shardID uint16, fn relabeler.ShardFnInterface) error {
-	task := NewGenericTask(fn, make([]error, shardID))
+	task := NewGenericTask(fn, make([]error, shardID+1))
 	task.wg.Add(1)
 	h.genericTaskCh[shardID] <- task
 	task.wg.Wait()

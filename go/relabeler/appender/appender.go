@@ -2,6 +2,7 @@ package appender
 
 import (
 	"context"
+	"fmt"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler"
 	"github.com/prometheus/prometheus/storage"
@@ -10,13 +11,13 @@ import (
 
 type QueryableAppender struct {
 	lock        sync.Mutex
-	openHead    relabeler.UpgradableHeadInterface
+	head        relabeler.UpgradableHeadInterface
 	distributor relabeler.UpgradableDistributorInterface
 }
 
 func NewQueryableAppender(head relabeler.UpgradableHeadInterface, distributor relabeler.UpgradableDistributorInterface) *QueryableAppender {
 	return &QueryableAppender{
-		openHead:    head,
+		head:        head,
 		distributor: distributor,
 	}
 }
@@ -48,32 +49,52 @@ func (qa *QueryableAppender) AppendWithStaleNans(
 	qa.lock.Lock()
 	defer qa.lock.Unlock()
 
-	data, err := qa.openHead.Append(ctx, incomingData, metricLimits, sourceStates, staleNansTS, relabelerID)
+	data, err := qa.head.Append(ctx, incomingData, metricLimits, sourceStates, staleNansTS, relabelerID)
 	if err != nil {
 		return err
 	}
 
-	if err = qa.distributor.Send(ctx, qa.openHead, data); err != nil {
+	if err = qa.distributor.Send(ctx, qa.head, data); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (qa *QueryableAppender) Rotate(headRotator relabeler.HeadRotator) {
+func (qa *QueryableAppender) Rotate(headRotator relabeler.HeadRotator) error {
 	qa.lock.Lock()
 	defer qa.lock.Unlock()
 
-	qa.openHead = headRotator.Rotate(qa.openHead)
+	qa.head.Finalize()
+	rotatedHead, err := headRotator.Rotate(qa.head)
+	if err != nil {
+		return err
+	}
+
+	qa.head = rotatedHead
 	qa.distributor.Rotate()
+
+	return nil
 }
 
-func (qa *QueryableAppender) Upgrade(headUpgrader relabeler.HeadUpgrader, distributorUpgrader relabeler.DistributorUpgrader) {
+func (qa *QueryableAppender) Upgrade(headUpgrader relabeler.HeadUpgrader, distributorUpgrader relabeler.DistributorUpgrader) error {
 	qa.lock.Lock()
 	defer qa.lock.Unlock()
-	qa.openHead.Finalize()
-	qa.openHead = headUpgrader.Upgrade(qa.openHead)
-	qa.distributor = distributorUpgrader.Upgrade(qa.distributor)
+
+	upgradedHead, err := headUpgrader.Upgrade(qa.head)
+	if err != nil {
+		return fmt.Errorf("failed to upgrade head: %w", err)
+	}
+
+	upgradedDistributor, err := distributorUpgrader.Upgrade(qa.distributor)
+	if err != nil {
+		return fmt.Errorf("failed to upgrade distributor: %w", err)
+	}
+
+	qa.head = upgradedHead
+	qa.distributor = upgradedDistributor
+
+	return nil
 }
 
 func (qa *QueryableAppender) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {

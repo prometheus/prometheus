@@ -7,10 +7,10 @@ import (
 )
 
 type Distributor struct {
-	destinationGroups DestinationGroups
+	destinationGroups relabeler.DestinationGroups
 }
 
-func NewDistributor(destinationGroups DestinationGroups) *Distributor {
+func NewDistributor(destinationGroups relabeler.DestinationGroups) *Distributor {
 	return &Distributor{
 		destinationGroups: destinationGroups,
 	}
@@ -19,7 +19,7 @@ func NewDistributor(destinationGroups DestinationGroups) *Distributor {
 func (d *Distributor) Send(ctx context.Context, head relabeler.HeadInterface, shardedData [][]*cppbridge.InnerSeries) error {
 	outputPromise := NewOutputRelabelingPromise(&d.destinationGroups, head.NumberOfShards())
 	err := head.ForEachShard(func(shard relabeler.ShardInterface) error {
-		return d.destinationGroups.RangeGo(func(destinationGroupID int, destinationGroup *DestinationGroup) error {
+		return d.destinationGroups.RangeGo(func(destinationGroupID int, destinationGroup *relabeler.DestinationGroup) error {
 			outputInnerSeries := cppbridge.NewShardsInnerSeries(1 << destinationGroup.ShardsNumberPower())
 			relabeledSeries := cppbridge.NewRelabeledSeries()
 			if err := destinationGroup.OutputRelabeling(
@@ -47,7 +47,7 @@ func (d *Distributor) Send(ctx context.Context, head relabeler.HeadInterface, sh
 	}
 
 	return d.destinationGroups.RangeGo(
-		func(destinationGroupID int, destinationGroup *DestinationGroup) error {
+		func(destinationGroupID int, destinationGroup *relabeler.DestinationGroup) error {
 			destinationGroup.EncodersLock()
 			defer destinationGroup.EncodersUnlock()
 
@@ -78,15 +78,19 @@ func (d *Distributor) Send(ctx context.Context, head relabeler.HeadInterface, sh
 	)
 }
 
+func (d *Distributor) DestinationGroups() relabeler.DestinationGroups {
+	return d.destinationGroups
+}
+
 func (d *Distributor) Rotate() {
-	_ = d.destinationGroups.RangeGo(func(_ int, destinationGroup *DestinationGroup) error {
+	_ = d.destinationGroups.RangeGo(func(_ int, destinationGroup *relabeler.DestinationGroup) error {
 		destinationGroup.Rotate()
 		return nil
 	})
 }
 
 func (d *Distributor) Shutdown(ctx context.Context) error {
-	return d.destinationGroups.RangeGo(func(_ int, destinationGroup *DestinationGroup) error {
+	return d.destinationGroups.RangeGo(func(_ int, destinationGroup *relabeler.DestinationGroup) error {
 		return destinationGroup.Shutdown(ctx)
 	})
 }

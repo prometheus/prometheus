@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler"
+	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -30,7 +31,7 @@ func (ds *DataStorage) Raw() *cppbridge.HeadDataStorage {
 
 // reshards changes the number of shards to the required amount.
 func (h *Head) reconfigure(
-	inputRelabelerConfigs []*relabeler.InputRelabelerConfig,
+	inputRelabelerConfigs []*config.InputRelabelerConfig,
 	numberOfShards uint16,
 ) error {
 	h.reconfigureStages(numberOfShards)
@@ -113,7 +114,7 @@ func (h *Head) reconfigureLsses(numberOfShards uint16) {
 
 // reconfiguringInputRelabeler reconfiguring input relabelers for all shards.
 func (h *Head) reconfigureInputRelabeler(
-	inputRelabelerConfigs []*relabeler.InputRelabelerConfig,
+	inputRelabelerConfigs []*config.InputRelabelerConfig,
 	numberOfShards uint16,
 ) error {
 	updated := make(map[relabelerKey]struct{})

@@ -4,6 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/prometheus/prometheus/pp/go/relabeler/appender"
+	"github.com/prometheus/prometheus/pp/go/relabeler/distributor"
+	"github.com/prometheus/prometheus/pp/go/relabeler/head"
+	"github.com/stretchr/testify/require"
 	"math"
 	"os"
 	"path/filepath"
@@ -92,23 +96,16 @@ func (s *AppenderSuite) TestManagerRelabelerKeep() {
 		),
 	}
 
-	destinationGroups := &relabeler.DestinationGroups{
+	destinationGroups := distributor.DestinationGroups{
 		destinationGroup1,
 		destinationGroup2,
 	}
 
-	s.T().Log("make ManagerRelabeler")
-	msr, err := relabeler.NewManagerRelabeler(
-		clock,
-		nil,
-		inputRelabelerConfigs,
-		destinationGroups,
-		numberOfShards,
-	)
-	s.Require().NoError(err)
-
-	s.T().Log("run main shards")
-	go msr.Run(s.baseCtx)
+	dstrb := distributor.NewDistributor(destinationGroups)
+	hd, err := head.New(inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+	require.NoError(s.T(), err)
+	s.T().Log("make appender")
+	app := appender.NewQueryableAppender(hd, dstrb)
 
 	hlimits := cppbridge.DefaultWALHashdexLimits()
 
@@ -128,7 +125,7 @@ func (s *AppenderSuite) TestManagerRelabelerKeep() {
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	err = msr.Append(s.baseCtx, h, nil, relabelerID)
+	err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -155,7 +152,7 @@ func (s *AppenderSuite) TestManagerRelabelerKeep() {
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	err = msr.Append(s.baseCtx, h, nil, relabelerID)
+	err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -168,7 +165,7 @@ func (s *AppenderSuite) TestManagerRelabelerKeep() {
 
 	s.T().Log("shutdown manager")
 	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 150*time.Millisecond)
-	err = msr.Shutdown(shutdownCtx)
+	err = dstrb.Shutdown(shutdownCtx)
 	cancel()
 	s.Require().NoError(err)
 }
@@ -230,23 +227,16 @@ func (s *AppenderSuite) TestManagerRelabelerRelabeling() {
 		),
 	}
 
-	destinationGroups := &relabeler.DestinationGroups{
+	destinationGroups := distributor.DestinationGroups{
 		destinationGroup1,
 		destinationGroup2,
 	}
 
-	s.T().Log("make ManagerRelabeler")
-	msr, err := relabeler.NewManagerRelabeler(
-		clock,
-		nil,
-		inputRelabelerConfigs,
-		destinationGroups,
-		numberOfShards,
-	)
-	s.Require().NoError(err)
-
-	s.T().Log("run main shards")
-	go msr.Run(s.baseCtx)
+	dstrb := distributor.NewDistributor(destinationGroups)
+	hd, err := head.New(inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+	require.NoError(s.T(), err)
+	s.T().Log("make appender")
+	app := appender.NewQueryableAppender(hd, dstrb)
 
 	hlimits := cppbridge.DefaultWALHashdexLimits()
 
@@ -266,7 +256,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabeling() {
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	err = msr.Append(s.baseCtx, h, nil, relabelerID)
+	err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -304,7 +294,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabeling() {
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	err = msr.Append(s.baseCtx, h, nil, relabelerID)
+	err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -319,7 +309,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabeling() {
 
 	s.T().Log("shutdown manager")
 	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 100*time.Millisecond)
-	err = msr.Shutdown(shutdownCtx)
+	err = dstrb.Shutdown(shutdownCtx)
 	cancel()
 	s.Require().NoError(err)
 }
@@ -379,23 +369,16 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingAddNewLabel() {
 		),
 	}
 
-	destinationGroups := &relabeler.DestinationGroups{
+	destinationGroups := distributor.DestinationGroups{
 		destinationGroup1,
 		destinationGroup2,
 	}
 
-	s.T().Log("make ManagerRelabeler")
-	msr, err := relabeler.NewManagerRelabeler(
-		clock,
-		nil,
-		inputRelabelerConfigs,
-		destinationGroups,
-		numberOfShards,
-	)
-	s.Require().NoError(err)
-
-	s.T().Log("run main shards")
-	go msr.Run(s.baseCtx)
+	dstrb := distributor.NewDistributor(destinationGroups)
+	hd, err := head.New(inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+	require.NoError(s.T(), err)
+	s.T().Log("make appender")
+	app := appender.NewQueryableAppender(hd, dstrb)
 
 	hlimits := cppbridge.DefaultWALHashdexLimits()
 
@@ -415,7 +398,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingAddNewLabel() {
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	err = msr.Append(s.baseCtx, h, nil, relabelerID)
+	err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -453,7 +436,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingAddNewLabel() {
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	err = msr.Append(s.baseCtx, h, nil, relabelerID)
+	err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -468,7 +451,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingAddNewLabel() {
 
 	s.T().Log("shutdown manager")
 	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 100*time.Millisecond)
-	err = msr.Shutdown(shutdownCtx)
+	err = dstrb.Shutdown(shutdownCtx)
 	cancel()
 	s.Require().NoError(err)
 }
@@ -532,24 +515,16 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsEnd() {
 		),
 	}
 
-	destinationGroups := &relabeler.DestinationGroups{
+	destinationGroups := distributor.DestinationGroups{
 		destinationGroup1,
 		destinationGroup2,
 	}
 
-	s.T().Log("make ManagerRelabeler")
-	msr, err := relabeler.NewManagerRelabeler(
-		clock,
-		nil,
-		inputRelabelerConfigs,
-		destinationGroups,
-		numberOfShards,
-	)
-	s.Require().NoError(err)
-
-	s.T().Log("run main shards")
-	go msr.Run(s.baseCtx)
-
+	dstrb := distributor.NewDistributor(destinationGroups)
+	hd, err := head.New(inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+	require.NoError(s.T(), err)
+	s.T().Log("make appender")
+	app := appender.NewQueryableAppender(hd, dstrb)
 	hlimits := cppbridge.DefaultWALHashdexLimits()
 
 	s.T().Log("append first data")
@@ -568,7 +543,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsEnd() {
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	err = msr.Append(s.baseCtx, h, nil, relabelerID)
+	err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -606,7 +581,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsEnd() {
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	err = msr.Append(s.baseCtx, h, nil, relabelerID)
+	err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -621,7 +596,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsEnd() {
 
 	s.T().Log("shutdown manager")
 	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 100*time.Millisecond)
-	err = msr.Shutdown(shutdownCtx)
+	err = dstrb.Shutdown(shutdownCtx)
 	cancel()
 	s.Require().NoError(err)
 }
@@ -685,23 +660,16 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsRelabel(
 		),
 	}
 
-	destinationGroups := &relabeler.DestinationGroups{
+	destinationGroups := distributor.DestinationGroups{
 		destinationGroup1,
 		destinationGroup2,
 	}
 
-	s.T().Log("make ManagerRelabeler")
-	msr, err := relabeler.NewManagerRelabeler(
-		clock,
-		nil,
-		inputRelabelerConfigs,
-		destinationGroups,
-		numberOfShards,
-	)
-	s.Require().NoError(err)
-
-	s.T().Log("run main shards")
-	go msr.Run(s.baseCtx)
+	dstrb := distributor.NewDistributor(destinationGroups)
+	hd, err := head.New(inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+	require.NoError(s.T(), err)
+	s.T().Log("make appender")
+	app := appender.NewQueryableAppender(hd, dstrb)
 
 	hlimits := cppbridge.DefaultWALHashdexLimits()
 
@@ -721,7 +689,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsRelabel(
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	err = msr.Append(s.baseCtx, h, nil, relabelerID)
+	err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -759,7 +727,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsRelabel(
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	err = msr.Append(s.baseCtx, h, nil, relabelerID)
+	err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -774,10 +742,14 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsRelabel(
 
 	s.T().Log("shutdown manager")
 	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 100*time.Millisecond)
-	err = msr.Shutdown(shutdownCtx)
+	err = dstrb.Shutdown(shutdownCtx)
 	cancel()
 	s.Require().NoError(err)
 }
+
+type noOpStorage struct{}
+
+func (noOpStorage) Add(head relabeler.UpgradableHeadInterface) {}
 
 func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 	relabelerID := s.T().Name()
@@ -834,23 +806,21 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 		),
 	}
 
-	destinationGroups := &relabeler.DestinationGroups{
+	destinationGroups := distributor.DestinationGroups{
 		destinationGroup1,
 		destinationGroup2,
 	}
 
-	s.T().Log("make ManagerRelabeler")
-	msr, err := relabeler.NewManagerRelabeler(
-		clock,
-		nil,
-		inputRelabelerConfigs,
-		destinationGroups,
-		numberOfShards,
-	)
-	s.Require().NoError(err)
+	dstrb := distributor.NewDistributor(destinationGroups)
+	hd, err := head.New(inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+	require.NoError(s.T(), err)
+	s.T().Log("make appender")
+	app := appender.NewQueryableAppender(hd, dstrb)
 
-	s.T().Log("run main shards")
-	go msr.Run(s.baseCtx)
+	headRotator := appender.NewHeadRotator(noOpStorage{}, head.BuildFunc(func() (relabeler.UpgradableHeadInterface, error) {
+		return head.New(inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+	}))
+	rotator := appender.NewRotator(app, headRotator, clock, appender.DefaultRotateDuration)
 
 	hlimits := cppbridge.DefaultWALHashdexLimits()
 
@@ -870,7 +840,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	err = msr.Append(s.baseCtx, h, nil, relabelerID)
+	err := app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -917,7 +887,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	err = msr.Append(s.baseCtx, h, nil, relabelerID)
+	err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -956,7 +926,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	err = msr.Append(s.baseCtx, h, nil, relabelerID)
+	err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -971,9 +941,10 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 
 	s.T().Log("shutdown manager")
 	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 100*time.Millisecond)
-	err = msr.Shutdown(shutdownCtx)
+	err = dstrb.Shutdown(shutdownCtx)
 	cancel()
 	s.Require().NoError(err)
+	s.Require().NoError(rotator.Close())
 }
 
 func (s *AppenderSuite) makeDestinationGroup(
@@ -983,11 +954,11 @@ func (s *AppenderSuite) makeDestinationGroup(
 	externalLabels []cppbridge.Label,
 	relabelingCfgs []*cppbridge.RelabelConfig,
 	numberOfShards uint16,
-) *relabeler.DestinationGroup {
+) *distributor.DestinationGroup {
 	s.T().Log("make DestinationGroupConfig")
 	dir, err := s.mkDir(destinationName)
 	s.Require().NoError(err)
-	dgcfg := &relabeler.DestinationGroupConfig{
+	dgcfg := &distributor.DestinationGroupConfig{
 		Name:           destinationName,
 		Dir:            dir,
 		Relabeling:     relabelingCfgs,
@@ -1015,7 +986,7 @@ func (s *AppenderSuite) makeDestinationGroup(
 	})
 	refillSenderCtor := s.constructorForRefillSender(&ManagerRefillSenderMock{})
 
-	destinationGroup, err := relabeler.NewDestinationGroup(
+	destinationGroup, err := distributor.NewDestinationGroup(
 		s.baseCtx,
 		dgcfg,
 		s.encoderSelector,
@@ -1272,23 +1243,16 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans() {
 		),
 	}
 
-	destinationGroups := &relabeler.DestinationGroups{
+	destinationGroups := distributor.DestinationGroups{
 		destinationGroup1,
 		destinationGroup2,
 	}
 
-	s.T().Log("make ManagerRelabeler")
-	msr, err := relabeler.NewManagerRelabeler(
-		clock,
-		nil,
-		inputRelabelerConfigs,
-		destinationGroups,
-		numberOfShards,
-	)
-	s.Require().NoError(err)
-
-	s.T().Log("run main shards")
-	go msr.Run(s.baseCtx)
+	dstrb := distributor.NewDistributor(destinationGroups)
+	hd, err := head.New(inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+	require.NoError(s.T(), err)
+	s.T().Log("make appender")
+	app := appender.NewQueryableAppender(hd, dstrb)
 
 	hlimits := cppbridge.DefaultWALHashdexLimits()
 
@@ -1310,7 +1274,7 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans() {
 	h := s.makeIncomingData(firstWr, hlimits)
 	sourceStates := relabeler.NewSourceStates()
 	staleNansTS := time.Now().UnixMilli()
-	err = msr.AppendWithStaleNans(s.baseCtx, h, nil, sourceStates, staleNansTS, relabelerID)
+	err = app.AppendWithStaleNans(s.baseCtx, h, nil, sourceStates, staleNansTS, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -1339,7 +1303,7 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans() {
 
 	h = s.makeIncomingData(secondWr, hlimits)
 	staleNansTS = time.Now().UnixMilli()
-	err = msr.AppendWithStaleNans(s.baseCtx, h, nil, sourceStates, staleNansTS, relabelerID)
+	err = app.AppendWithStaleNans(s.baseCtx, h, nil, sourceStates, staleNansTS, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -1356,7 +1320,7 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans() {
 
 	s.T().Log("shutdown manager")
 	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 150*time.Millisecond)
-	err = msr.Shutdown(shutdownCtx)
+	err = dstrb.Shutdown(shutdownCtx)
 	cancel()
 	s.Require().NoError(err)
 }
@@ -1416,23 +1380,16 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 		),
 	}
 
-	destinationGroups := &relabeler.DestinationGroups{
+	destinationGroups := distributor.DestinationGroups{
 		destinationGroup1,
 		destinationGroup2,
 	}
 
-	s.T().Log("make ManagerRelabeler")
-	msr, err := relabeler.NewManagerRelabeler(
-		clock,
-		nil,
-		inputRelabelerConfigs,
-		destinationGroups,
-		numberOfShards,
-	)
-	s.Require().NoError(err)
-
-	s.T().Log("run main shards")
-	go msr.Run(s.baseCtx)
+	dstrb := distributor.NewDistributor(destinationGroups)
+	hd, err := head.New(inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+	require.NoError(s.T(), err)
+	s.T().Log("make appender")
+	app := appender.NewQueryableAppender(hd, dstrb)
 
 	hlimits := cppbridge.DefaultWALHashdexLimits()
 
@@ -1454,7 +1411,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 	h := s.makeIncomingData(wr, hlimits)
 	sourceStates := relabeler.NewSourceStates()
 	staleNansTS := time.Now().UnixMilli()
-	err = msr.AppendWithStaleNans(s.baseCtx, h, nil, sourceStates, staleNansTS, relabelerID)
+	err = app.AppendWithStaleNans(s.baseCtx, h, nil, sourceStates, staleNansTS, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -1502,7 +1459,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 	}
 	h = s.makeIncomingData(secondWr, hlimits)
 	staleNansTS = time.Now().UnixMilli()
-	err = msr.AppendWithStaleNans(s.baseCtx, h, nil, sourceStates, staleNansTS, relabelerID)
+	err = app.AppendWithStaleNans(s.baseCtx, h, nil, sourceStates, staleNansTS, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -1542,7 +1499,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 	}
 	h = s.makeIncomingData(thirdWr, hlimits)
 	staleNansTS = time.Now().UnixMilli()
-	err = msr.AppendWithStaleNans(s.baseCtx, h, nil, sourceStates, staleNansTS, relabelerID)
+	err = app.AppendWithStaleNans(s.baseCtx, h, nil, sourceStates, staleNansTS, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -1560,7 +1517,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 
 	s.T().Log("shutdown manager")
 	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 100*time.Millisecond)
-	err = msr.Shutdown(shutdownCtx)
+	err = dstrb.Shutdown(shutdownCtx)
 	cancel()
 	s.Require().NoError(err)
 }
