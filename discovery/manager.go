@@ -394,8 +394,16 @@ func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) {
 		m.targets[poolKey] = make(map[string]*targetgroup.Group)
 	}
 	for _, tg := range tgs {
-		if tg != nil { // Some Discoverers send nil target group so need to check for it to avoid panics.
+		// Some Discoverers send nil target group so need to check for it to avoid panics.
+		if tg == nil {
+			continue
+		}
+		if len(tg.Targets) > 0 {
 			m.targets[poolKey][tg.Source] = tg
+		} else {
+			// The target group is empty, drop the corresponding entry to avoid leaks.
+			// In case the group yielded targets before, allGroups() will take care of making consumers drop them.
+			delete(m.targets[poolKey], tg.Source)
 		}
 	}
 }
