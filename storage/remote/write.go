@@ -69,6 +69,7 @@ type WriteStorage struct {
 	metadataInWAL     bool
 	samplesIn         *ewmaRate
 	flushDeadline     time.Duration
+	interner          *pool
 	scraper           ReadyScrapeManager
 	quit              chan struct{}
 
@@ -77,7 +78,7 @@ type WriteStorage struct {
 }
 
 // NewWriteStorage creates and runs a WriteStorage.
-func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager, metadataInWal bool) *WriteStorage {
+func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager, metadataInWal, shouldIntern bool) *WriteStorage {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -101,6 +102,9 @@ func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, dir string, f
 				Help:      "Highest timestamp that has come into the remote storage via the Appender interface, in seconds since epoch. Initialized to 0 when no data has been received yet.",
 			}),
 		},
+	}
+	if shouldIntern {
+		rws.interner = newPool()
 	}
 	if reg != nil {
 		reg.MustRegister(rws.highestTimestamp)
@@ -208,6 +212,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rwConf.WriteRelabelConfigs,
 			c,
 			rws.flushDeadline,
+			rws.interner,
 			rws.highestTimestamp,
 			rws.scraper,
 			rwConf.SendExemplars,

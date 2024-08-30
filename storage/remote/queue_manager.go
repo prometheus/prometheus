@@ -441,6 +441,7 @@ type QueueManager struct {
 	dataIn, dataDropped, dataOut, dataOutDuration *ewmaRate
 
 	metrics              *queueManagerMetrics
+	interner             *pool
 	highestRecvTimestamp *maxTimestamp
 }
 
@@ -462,6 +463,7 @@ func NewQueueManager(
 	relabelConfigs []*relabel.Config,
 	client WriteClient,
 	flushDeadline time.Duration,
+	interner *pool,
 	highestRecvTimestamp *maxTimestamp,
 	sm ReadyScrapeManager,
 	enableExemplarRemoteWrite bool,
@@ -506,6 +508,7 @@ func NewQueueManager(
 		dataOutDuration: newEWMARate(ewmaWeight, shardUpdateDuration),
 
 		metrics:              metrics,
+		interner:             interner,
 		highestRecvTimestamp: highestRecvTimestamp,
 
 		protoMsg: protoMsg,
@@ -955,6 +958,14 @@ func (t *QueueManager) Stop() {
 		t.metadataWatcher.Stop()
 	}
 
+	// On shutdown, release the strings in the labels from the intern pool.
+	if t.interner != nil {
+		t.seriesMtx.Lock()
+		for _, labels := range t.seriesLabels {
+			t.releaseLabels(labels)
+		}
+		t.seriesMtx.Unlock()
+	}
 	t.metrics.unregister()
 }
 
@@ -976,6 +987,17 @@ func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 			continue
 		}
 		lbls := t.builder.Labels()
+		if t.interner != nil {
+			t.internLabels(lbls)
+
+			// We should not ever be replacing a series labels in the map, but just
+			// in case we do we need to ensure we do not leak the replaced interned
+			// strings.
+			if orig, ok := t.seriesLabels[s.Ref]; ok {
+				t.releaseLabels(orig)
+			}
+		}
+
 		t.seriesLabels[s.Ref] = lbls
 	}
 }
@@ -1023,6 +1045,10 @@ func (t *QueueManager) SeriesReset(index int) {
 			delete(t.seriesLabels, k)
 			delete(t.seriesMetadata, k)
 			delete(t.droppedSeries, k)
+
+			if t.interner != nil {
+				t.releaseLabels(t.seriesLabels[k])
+			}
 		}
 	}
 }
@@ -1039,6 +1065,14 @@ func (t *QueueManager) client() WriteClient {
 	t.clientMtx.RLock()
 	defer t.clientMtx.RUnlock()
 	return t.storeClient
+}
+
+func (t *QueueManager) internLabels(lbls labels.Labels) {
+	lbls.InternStrings(t.interner.intern)
+}
+
+func (t *QueueManager) releaseLabels(ls labels.Labels) {
+	ls.ReleaseStrings(t.interner.release)
 }
 
 // processExternalLabels merges externalLabels into b. If b contains
