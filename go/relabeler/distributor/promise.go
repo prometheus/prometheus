@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
+	"github.com/prometheus/prometheus/pp/go/relabeler"
 	"sync"
 )
 
 // OutputRelabelingPromise - promise for processing output data.
 type OutputRelabelingPromise struct {
-	destinationGroups       *DestinationGroups
+	destinationGroups       *relabeler.DestinationGroups
 	mx                      *sync.Mutex
 	done                    chan struct{}
 	dgOutputInnerSeries     [][][]*cppbridge.InnerSeries   // [groupID[encoderShardID[mainShardID]]]
@@ -19,7 +20,7 @@ type OutputRelabelingPromise struct {
 }
 
 // NewOutputRelabelingPromise - init new *OutputRelabelingPromise.
-func NewOutputRelabelingPromise(destinationGroups *DestinationGroups, numberOfShards uint16) *OutputRelabelingPromise {
+func NewOutputRelabelingPromise(destinationGroups *relabeler.DestinationGroups, numberOfShards uint16) *OutputRelabelingPromise {
 	groups := len(*destinationGroups)
 	p := &OutputRelabelingPromise{
 		destinationGroups:       destinationGroups,
@@ -112,7 +113,7 @@ func (p *OutputRelabelingPromise) AddOutputRelabeledSeries(
 }
 
 // DestinationGroups return pointer to DestinationGroups.
-func (p *OutputRelabelingPromise) DestinationGroups() *DestinationGroups {
+func (p *OutputRelabelingPromise) DestinationGroups() *relabeler.DestinationGroups {
 	return p.destinationGroups
 }
 
