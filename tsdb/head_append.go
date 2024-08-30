@@ -954,6 +954,8 @@ func (a *headAppender) Commit() (err error) {
 		if a.head.wbl == nil {
 			// WBL is not enabled. So no need to collect.
 			wblSamples = nil
+			wblHistograms = nil
+			wblFloatHistograms = nil
 			oooMmapMarkers = nil
 			oooMmapMarkersCount = 0
 			return
