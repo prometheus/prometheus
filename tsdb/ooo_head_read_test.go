@@ -39,6 +39,11 @@ type chunkInterval struct {
 	maxt int64
 }
 
+type expChunk struct {
+	c chunkInterval
+	m []chunkInterval
+}
+
 // permutateChunkIntervals returns all possible orders of the given chunkIntervals.
 func permutateChunkIntervals(in []chunkInterval, out [][]chunkInterval, left, right int) [][]chunkInterval {
 	if left == right {
@@ -65,7 +70,7 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 		queryMinT           int64
 		queryMaxT           int64
 		inputChunkIntervals []chunkInterval
-		expChunks           []chunkInterval
+		expChunks           []expChunk
 	}{
 		{
 			name:      "Empty result and no error when head is empty",
@@ -107,8 +112,8 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 			// ts                    0       100       150       200       250       300       350       400       450       500       550       600       650       700
 			// Query Interval                [-----------------------------------------------------------]
 			// Chunk 0:                                 [---------------------------------------]
-			expChunks: []chunkInterval{
-				{0, 150, 350},
+			expChunks: []expChunk{
+				{c: chunkInterval{0, 150, 350}},
 			},
 		},
 		{
@@ -121,8 +126,8 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 			// ts                    0       100       150       200       250       300       350       400       450       500       550       600       650       700
 			// Query Interval:                          [---------------------------------------]
 			// Chunk 0:                       [-----------------------------------------------------------]
-			expChunks: []chunkInterval{
-				{0, 100, 400},
+			expChunks: []expChunk{
+				{c: chunkInterval{0, 100, 400}},
 			},
 		},
 		{
@@ -142,9 +147,9 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 			// Chunk 2:                                  [-------------------]
 			// Chunk 3:                                                                                                                  [-------------------]
 			// Output Graphically              [-----------------------------]                                                 [-----------------------------]
-			expChunks: []chunkInterval{
-				{0, 100, 250},
-				{1, 500, 650},
+			expChunks: []expChunk{
+				{c: chunkInterval{0, 100, 250}, m: []chunkInterval{{0, 100, 200}, {2, 150, 250}}},
+				{c: chunkInterval{1, 500, 650}, m: []chunkInterval{{1, 500, 600}, {3, 550, 650}}},
 			},
 		},
 		{
@@ -164,8 +169,8 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 			// Chunk 2:                                                                [-------------------]
 			// Chunk 3:                                                                                    [------------------]
 			// Output Graphically              [------------------------------------------------------------------------------]
-			expChunks: []chunkInterval{
-				{0, 100, 500},
+			expChunks: []expChunk{
+				{c: chunkInterval{0, 100, 500}, m: []chunkInterval{{0, 100, 200}, {1, 200, 300}, {2, 300, 400}, {3, 400, 500}}},
 			},
 		},
 		{
@@ -185,11 +190,11 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 			// Chunk 2:                                                                [------------------]
 			// Chunk 3:                                                                                    [------------------]
 			// Output Graphically              [------------------][------------------][------------------][------------------]
-			expChunks: []chunkInterval{
-				{0, 100, 199},
-				{1, 200, 299},
-				{2, 300, 399},
-				{3, 400, 499},
+			expChunks: []expChunk{
+				{c: chunkInterval{0, 100, 199}},
+				{c: chunkInterval{1, 200, 299}},
+				{c: chunkInterval{2, 300, 399}},
+				{c: chunkInterval{3, 400, 499}},
 			},
 		},
 		{
@@ -209,8 +214,8 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 			// Chunk 2:                                                     [------------------]
 			// Chunk 3:                                                                                             [------------------]
 			// Output Graphically              [-----------------------------------------------]
-			expChunks: []chunkInterval{
-				{0, 100, 350},
+			expChunks: []expChunk{
+				{c: chunkInterval{0, 100, 350}, m: []chunkInterval{{0, 100, 200}, {1, 150, 300}, {2, 250, 350}}},
 			},
 		},
 		{
@@ -228,8 +233,8 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 			// Chunk 1:             [-----------------------------]
 			// Chunk 2:                                [------------------------------]
 			// Output Graphically   [-----------------------------------------------------------------------------------------]
-			expChunks: []chunkInterval{
-				{1, 0, 500},
+			expChunks: []expChunk{
+				{c: chunkInterval{1, 0, 500}, m: []chunkInterval{{1, 0, 200}, {2, 150, 300}, {0, 250, 500}}},
 			},
 		},
 		{
@@ -251,9 +256,9 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 			// Chunk 3:                                                                                                                                      [-------------------]
 			// Chunk 4:                                                                                                                             [---------------------------------------]
 			// Output Graphically              [---------------------------------------]                                                            [------------------------------------------------]
-			expChunks: []chunkInterval{
-				{0, 100, 300},
-				{4, 600, 850},
+			expChunks: []expChunk{
+				{c: chunkInterval{0, 100, 300}, m: []chunkInterval{{0, 100, 300}, {2, 150, 250}}},
+				{c: chunkInterval{4, 600, 850}, m: []chunkInterval{{4, 600, 800}, {3, 650, 750}, {1, 770, 850}}},
 			},
 		},
 		{
@@ -271,10 +276,10 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 			// Chunk 1:                                                              [----------]
 			// Chunk 2:                                           [--------]
 			// Output Graphically              [-------]          [--------]         [----------]
-			expChunks: []chunkInterval{
-				{0, 100, 150},
-				{1, 300, 350},
-				{2, 200, 250},
+			expChunks: []expChunk{
+				{c: chunkInterval{0, 100, 150}},
+				{c: chunkInterval{2, 200, 250}},
+				{c: chunkInterval{1, 300, 350}},
 			},
 		},
 	}
@@ -305,25 +310,38 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 					s1.ooo = &memSeriesOOOFields{}
 
 					// define our expected chunks, by looking at the expected ChunkIntervals and setting...
+					// Ref to whatever Ref the chunk has, that we refer to by ID
+					findID := func(id int) chunks.ChunkRef {
+						for ref, c := range intervals {
+							if c.ID == id {
+								return chunks.ChunkRef(chunks.NewHeadChunkRef(chunks.HeadSeriesRef(s1ID), s1.oooHeadChunkID(ref)))
+							}
+						}
+						return 0
+					}
 					var expChunks []chunks.Meta
 					for _, e := range tc.expChunks {
-						meta := chunks.Meta{
-							Chunk:    chunkenc.Chunk(nil),
-							MinTime:  e.mint,
-							MaxTime:  e.maxt,
-							MergeOOO: true, // Only OOO chunks are tested here, so we always request merge from OOO head.
-						}
-
-						// Ref to whatever Ref the chunk has, that we refer to by ID
-						for ref, c := range intervals {
-							if c.ID == e.ID {
-								meta.Ref = chunks.ChunkRef(chunks.NewHeadChunkRef(chunks.HeadSeriesRef(s1ID), s1.oooHeadChunkID(ref)))
-								break
+						var chunk chunkenc.Chunk
+						if len(e.m) > 0 {
+							mm := &multiMeta{}
+							for _, x := range e.m {
+								meta := chunks.Meta{
+									MinTime: x.mint,
+									MaxTime: x.maxt,
+									Ref:     findID(x.ID),
+								}
+								mm.metas = append(mm.metas, meta)
 							}
+							chunk = mm
+						}
+						meta := chunks.Meta{
+							Chunk:   chunk,
+							MinTime: e.c.mint,
+							MaxTime: e.c.maxt,
+							Ref:     findID(e.c.ID),
 						}
 						expChunks = append(expChunks, meta)
 					}
-					slices.SortFunc(expChunks, lessByMinTimeAndMinRef) // We always want the chunks to come back sorted by minTime asc.
 
 					if headChunk && len(intervals) > 0 {
 						// Put the last interval in the head chunk
@@ -485,7 +503,7 @@ func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 		cr := NewHeadAndOOOChunkReader(db.head, 0, 1000, nil, nil, 0)
 		defer cr.Close()
 		c, iterable, err := cr.ChunkOrIterable(chunks.Meta{
-			Ref: 0x1800000, Chunk: chunkenc.Chunk(nil), MinTime: 100, MaxTime: 300, MergeOOO: true,
+			Ref: 0x1800000, Chunk: chunkenc.Chunk(nil), MinTime: 100, MaxTime: 300,
 		})
 		require.Nil(t, iterable)
 		require.Equal(t, err, fmt.Errorf("not found"))
@@ -498,6 +516,7 @@ func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 		queryMaxT            int64
 		firstInOrderSampleAt int64
 		inputSamples         []testValue
+		expSingleChunks      bool
 		expChunkError        bool
 		expChunksSamples     []chunks.SampleSlice
 	}{
@@ -510,7 +529,8 @@ func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 				{Ts: minutes(30), V: 0},
 				{Ts: minutes(40), V: 0},
 			},
-			expChunkError: false,
+			expChunkError:   false,
+			expSingleChunks: true,
 			// ts (in minutes)         0       10       20       30       40       50       60       70       80       90       100
 			// Query Interval          [------------------------------------------------------------------------------------------]
 			// Chunk 0: Current Head                              [--------] (With 2 samples)
@@ -690,7 +710,8 @@ func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 				{Ts: minutes(40), V: 3},
 				{Ts: minutes(42), V: 3},
 			},
-			expChunkError: false,
+			expChunkError:   false,
+			expSingleChunks: true,
 			// ts (in minutes)         0       10       20       30       40       50       60       70       80       90       100
 			// Query Interval          [------------------------------------------------------------------------------------------]
 			// Chunk 0                          [-------]
@@ -845,9 +866,13 @@ func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 			for i := 0; i < len(chks); i++ {
 				c, iterable, err := cr.ChunkOrIterable(chks[i])
 				require.NoError(t, err)
-				require.Nil(t, c)
-
-				it := iterable.Iterator(nil)
+				var it chunkenc.Iterator
+				if tc.expSingleChunks {
+					it = c.Iterator(nil)
+				} else {
+					require.Nil(t, c)
+					it = iterable.Iterator(nil)
+				}
 				resultSamples, err := storage.ExpandSamples(it, nil)
 				require.NoError(t, err)
 				requireEqualSamples(t, s1.String(), tc.expChunksSamples[i], resultSamples, true)
@@ -1026,94 +1051,6 @@ func testOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 				require.NoError(t, err)
 				requireEqualSamples(t, s1.String(), tc.expChunksSamples[i], resultSamples, true)
 			}
-		})
-	}
-}
-
-// TestSortByMinTimeAndMinRef tests that the sort function for chunk metas does sort
-// by chunk meta MinTime and in case of same references by the lower reference.
-func TestSortByMinTimeAndMinRef(t *testing.T) {
-	tests := []struct {
-		name  string
-		input []chunkMetaAndChunkDiskMapperRef
-		exp   []chunkMetaAndChunkDiskMapperRef
-	}{
-		{
-			name: "chunks are ordered by min time",
-			input: []chunkMetaAndChunkDiskMapperRef{
-				{
-					meta: chunks.Meta{
-						Ref:     0,
-						MinTime: 0,
-					},
-					ref: chunks.ChunkDiskMapperRef(0),
-				},
-				{
-					meta: chunks.Meta{
-						Ref:     1,
-						MinTime: 1,
-					},
-					ref: chunks.ChunkDiskMapperRef(1),
-				},
-			},
-			exp: []chunkMetaAndChunkDiskMapperRef{
-				{
-					meta: chunks.Meta{
-						Ref:     0,
-						MinTime: 0,
-					},
-					ref: chunks.ChunkDiskMapperRef(0),
-				},
-				{
-					meta: chunks.Meta{
-						Ref:     1,
-						MinTime: 1,
-					},
-					ref: chunks.ChunkDiskMapperRef(1),
-				},
-			},
-		},
-		{
-			name: "if same mintime, lower reference goes first",
-			input: []chunkMetaAndChunkDiskMapperRef{
-				{
-					meta: chunks.Meta{
-						Ref:     10,
-						MinTime: 0,
-					},
-					ref: chunks.ChunkDiskMapperRef(0),
-				},
-				{
-					meta: chunks.Meta{
-						Ref:     5,
-						MinTime: 0,
-					},
-					ref: chunks.ChunkDiskMapperRef(1),
-				},
-			},
-			exp: []chunkMetaAndChunkDiskMapperRef{
-				{
-					meta: chunks.Meta{
-						Ref:     5,
-						MinTime: 0,
-					},
-					ref: chunks.ChunkDiskMapperRef(1),
-				},
-				{
-					meta: chunks.Meta{
-						Ref:     10,
-						MinTime: 0,
-					},
-					ref: chunks.ChunkDiskMapperRef(0),
-				},
-			},
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
-			slices.SortFunc(tc.input, refLessByMinTimeAndMinRef)
-			require.Equal(t, tc.exp, tc.input)
 		})
 	}
 }

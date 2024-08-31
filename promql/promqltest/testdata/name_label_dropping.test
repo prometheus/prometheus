@@ -1,0 +1,84 @@
+# Test for __name__ label drop.
+load 5m
+	metric{env="1"}	0 60 120
+	another_metric{env="1"}	60 120 180
+
+# Does not drop __name__ for vector selector
+eval instant at 15m metric{env="1"}
+	metric{env="1"} 120
+
+# Drops __name__ for unary operators
+eval instant at 15m -metric
+	{env="1"} -120
+
+# Drops __name__ for binary operators
+eval instant at 15m metric + another_metric
+	{env="1"} 300
+
+# Does not drop __name__ for binary comparison operators
+eval instant at 15m metric <= another_metric
+	metric{env="1"} 120
+
+# Drops __name__ for binary comparison operators with "bool" modifier
+eval instant at 15m metric <= bool another_metric
+	{env="1"} 1
+
+# Drops __name__ for vector-scalar operations
+eval instant at 15m metric * 2
+	{env="1"} 240
+
+# Drops __name__ for instant-vector functions
+eval instant at 15m clamp(metric, 0, 100)
+	{env="1"} 100
+
+# Drops __name__ for range-vector functions
+eval instant at 15m rate(metric{env="1"}[10m])
+	{env="1"} 0.2
+
+# Does not drop __name__ for last_over_time function
+eval instant at 15m last_over_time(metric{env="1"}[10m])
+	metric{env="1"} 120
+
+# Drops name for other _over_time functions
+eval instant at 15m max_over_time(metric{env="1"}[10m])
+	{env="1"} 120
+
+# Allows relabeling (to-be-dropped) __name__  via label_replace
+eval instant at 15m label_replace(rate({env="1"}[10m]), "my_name", "rate_$1", "__name__", "(.+)")
+	{my_name="rate_metric", env="1"} 0.2
+	{my_name="rate_another_metric", env="1"} 0.2
+
+# Allows preserving __name__ via label_replace
+eval instant at 15m label_replace(rate({env="1"}[10m]), "__name__", "rate_$1", "__name__", "(.+)")
+	rate_metric{env="1"} 0.2
+	rate_another_metric{env="1"} 0.2
+
+# Allows relabeling (to-be-dropped) __name__  via label_join
+eval instant at 15m label_join(rate({env="1"}[10m]), "my_name", "_", "__name__")
+	{my_name="metric", env="1"} 0.2
+	{my_name="another_metric", env="1"} 0.2
+
+# Allows preserving __name__ via label_join
+eval instant at 15m label_join(rate({env="1"}[10m]), "__name__", "_", "__name__", "env")
+	metric_1{env="1"} 0.2
+	another_metric_1{env="1"} 0.2
+
+# Does not drop metric names fro aggregation operators
+eval instant at 15m sum by (__name__, env) (metric{env="1"})
+	metric{env="1"} 120
+
+# Aggregation operators by __name__ lead to duplicate labelset errors (aggregation is partitioned by not yet removed __name__ label)
+# This is an accidental side effect of delayed __name__ label dropping
+eval_fail instant at 15m sum by (__name__) (rate({env="1"}[10m]))
+
+# Aggregation operators aggregate metrics with same labelset and to-be-dropped names
+# This is an accidental side effect of delayed __name__ label dropping
+eval instant at 15m sum(rate({env="1"}[10m])) by (env)
+	{env="1"} 0.4
+
+# Aggregationk operators propagate __name__ label dropping information
+eval instant at 15m topk(10, sum by (__name__, env) (metric{env="1"}))
+	metric{env="1"} 120
+
+eval instant at 15m topk(10, sum by (__name__, env) (rate(metric{env="1"}[10m])))
+	{env="1"} 0.2

@@ -603,7 +603,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			}
 
 		case record.Metadata:
-			if !w.sendMetadata || !tail {
+			if !w.sendMetadata {
 				break
 			}
 			meta, err := dec.Metadata(rec, metadata[:0])

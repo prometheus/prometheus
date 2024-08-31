@@ -939,11 +939,13 @@ func TestTargetSetTargetGroupsPresentOnConfigChange(t *testing.T) {
 	discoveryManager.ApplyConfig(c)
 
 	// Original targets should be present as soon as possible.
+	// An empty list should be sent for prometheus2 to drop any stale targets
 	syncedTargets = <-discoveryManager.SyncCh()
 	mu.Unlock()
-	require.Len(t, syncedTargets, 1)
+	require.Len(t, syncedTargets, 2)
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
 	require.Len(t, syncedTargets["prometheus"], 1)
+	require.Empty(t, syncedTargets["prometheus2"])
 
 	// prometheus2 configs should be ready on second sync.
 	syncedTargets = <-discoveryManager.SyncCh()
@@ -1049,8 +1051,8 @@ func TestDiscovererConfigs(t *testing.T) {
 }
 
 // TestTargetSetRecreatesEmptyStaticConfigs ensures that reloading a config file after
-// removing all targets from the static_configs sends an update with empty targetGroups.
-// This is required to signal the receiver that this target set has no current targets.
+// removing all targets from the static_configs cleans the corresponding targetGroups entries to avoid leaks and sends an empty update.
+// The update is required to signal the consumers that the previous targets should be dropped.
 func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1083,16 +1085,14 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	discoveryManager.ApplyConfig(c)
 
 	syncedTargets = <-discoveryManager.SyncCh()
+	require.Len(t, discoveryManager.targets, 1)
 	p = pk("static", "prometheus", 1)
 	targetGroups, ok := discoveryManager.targets[p]
-	require.True(t, ok, "'%v' should be present in target groups", p)
-	group, ok := targetGroups[""]
-	require.True(t, ok, "missing '' key in target groups %v", targetGroups)
-
-	require.Empty(t, group.Targets, "Invalid number of targets.")
-	require.Len(t, syncedTargets, 1)
-	require.Len(t, syncedTargets["prometheus"], 1)
-	require.Nil(t, syncedTargets["prometheus"][0].Labels)
+	require.True(t, ok, "'%v' should be present in targets", p)
+	// Otherwise the targetGroups will leak, see https://github.com/prometheus/prometheus/issues/12436.
+	require.Empty(t, targetGroups, 0, "'%v' should no longer have any associated target groups", p)
+	require.Len(t, syncedTargets, 1, "an update with no targetGroups should still be sent.")
+	require.Empty(t, syncedTargets["prometheus"], 0)
 }
 
 func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
@@ -1275,6 +1275,7 @@ func TestCoordinationWithReceiver(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "1"}},
 							},
 						},
+						"mock1": {},
 					},
 				},
 				{

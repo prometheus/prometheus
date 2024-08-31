@@ -648,7 +648,7 @@ func TestAlertingRuleLimit(t *testing.T) {
 		case err != nil:
 			require.EqualError(t, err, test.err)
 		case test.err != "":
-			t.Errorf("Expected errror %s, got none", test.err)
+			t.Errorf("Expected error %s, got none", test.err)
 		}
 	}
 }

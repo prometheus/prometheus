@@ -617,6 +617,16 @@ func lexBuckets(l *Lexer) stateFn {
 		l.bracketOpen = false
 		l.emit(RIGHT_BRACKET)
 		return lexHistogram
+	case isAlpha(r):
+		// Current word is Inf or NaN.
+		word := l.input[l.start:l.pos]
+		if desc, ok := key[strings.ToLower(word)]; ok {
+			if desc == NUMBER {
+				l.emit(desc)
+				return lexStatements
+			}
+		}
+		return lexBuckets
 	default:
 		return l.errorf("invalid character in buckets description: %q", r)
 	}
