@@ -811,14 +811,6 @@ func TestManagerCTZeroIngestion(t *testing.T) {
 			)
 			require.NoError(t, err)
 
-			var scrapeProtoConfig []config.ScrapeProtocol
-			switch tc.typ {
-			case "application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited":
-				scrapeProtoConfig = []config.ScrapeProtocol{config.PrometheusProto}
-			case "application/openmetrics-text; version=1.0.0":
-				scrapeProtoConfig = []config.ScrapeProtocol{config.OpenMetricsText1_0_0}
-			}
-
 			require.NoError(t, scrapeManager.ApplyConfig(&config.Config{
 				GlobalConfig: config.GlobalConfig{
 					// Disable regular scrapes.
@@ -826,7 +818,7 @@ func TestManagerCTZeroIngestion(t *testing.T) {
 					ScrapeTimeout:  model.Duration(5 * time.Second),
 					// Ensure the proto is chosen. We need proto as it's the only protocol
 					// with the CT parsing support.
-					ScrapeProtocols: scrapeProtoConfig,
+					ScrapeProtocols: []config.ScrapeProtocol{config.PrometheusProto, config.OpenMetricsText1_0_0},
 				},
 				ScrapeConfigs: []*config.ScrapeConfig{{JobName: "test"}},
 			}))
