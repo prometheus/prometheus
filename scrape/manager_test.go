@@ -730,7 +730,7 @@ func TestManagerCTZeroIngestion(t *testing.T) {
 		counterSampleProto    *dto.Counter
 		counterSampleText     string
 		enableCTZeroIngestion bool
-		exp                   exp
+		exp                   []exp
 		typ                   string
 	}{
 		{
@@ -763,39 +763,45 @@ func TestManagerCTZeroIngestion(t *testing.T) {
 		{
 			name: "OMText disabled with CT on counter",
 			counterSampleText: `# TYPE expected_counter counter
-			expected_counter 17.0 1520879607.789
-			expected_counter_created 1000
-			# EOF`,
-			exp: exp{
+expected_counter 17.0 1520879607.789
+expected_counter_created 1000
+# EOF`,
+			exp: []exp{{
 				value: 17.0,
 				ts:    1520879607789,
-			},
-			typ: "application/openmetrics-text; version=1.0.0",
+			}},
+			typ: "application/openmetrics-text; version=1.0.0; charset=utf-8",
 		},
 		{
 			name: "OMText enabled with CT on counter",
 			counterSampleText: `# TYPE expected_counter counter
-			expected_counter 17.0 1520879607.789
-			expected_counter_created 1000
-			# EOF`,
+expected_counter 17.0 1520879607.789
+expected_counter_created 1000
+# EOF`,
 			enableCTZeroIngestion: true,
-			exp: exp{
-				value: 0.0,
-				ts:    1000,
+			exp: []exp{
+				{
+					value: 0.0,
+					ts:    1000,
+				},
+				{
+					value: 17.0,
+					ts:    1520879607789,
+				},
 			},
-			typ: "application/openmetrics-text; version=1.0.0",
+			typ: "application/openmetrics-text; version=1.0.0; charset=utf-8",
 		},
 		{
 			name: "OMText enabled without CT on counter",
 			counterSampleText: `# TYPE expected_counter counter
-			expected_counter 17.0 1520879607.789
-			# EOF`,
+expected_counter 17.0 1520879607.789
+# EOF`,
 			enableCTZeroIngestion: true,
-			exp: exp{
+			exp: []exp{{
 				value: 17.0,
 				ts:    1520879607789,
-			},
-			typ: "application/openmetrics-text; version=1.0.0",
+			}},
+			typ: "application/openmetrics-text; version=1.0.0; charset=utf-8",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -814,11 +820,9 @@ func TestManagerCTZeroIngestion(t *testing.T) {
 			require.NoError(t, scrapeManager.ApplyConfig(&config.Config{
 				GlobalConfig: config.GlobalConfig{
 					// Disable regular scrapes.
-					ScrapeInterval: model.Duration(9999 * time.Minute),
-					ScrapeTimeout:  model.Duration(5 * time.Second),
-					// Ensure the proto is chosen. We need proto as it's the only protocol
-					// with the CT parsing support.
-					ScrapeProtocols: []config.ScrapeProtocol{config.PrometheusProto, config.OpenMetricsText1_0_0},
+					ScrapeInterval:  model.Duration(9999 * time.Minute),
+					ScrapeTimeout:   model.Duration(5 * time.Second),
+					ScrapeProtocols: []config.ScrapeProtocol{config.OpenMetricsText1_0_0, config.PrometheusProto},
 				},
 				ScrapeConfigs: []*config.ScrapeConfig{{JobName: "test"}},
 			}))
@@ -835,7 +839,7 @@ func TestManagerCTZeroIngestion(t *testing.T) {
 					Type:   &ctrType,
 					Metric: []*dto.Metric{{Counter: tc.counterSampleProto}},
 				})
-			case "application/openmetrics-text; version=1.0.0":
+			case "application/openmetrics-text; version=1.0.0; charset=utf-8":
 				toWrite = []byte(tc.counterSampleText)
 			}
 
@@ -910,17 +914,18 @@ func TestManagerCTZeroIngestion(t *testing.T) {
 				require.Len(t, got, 1)
 				require.Equal(t, tc.counterSampleProto.GetValue(), got[0])
 
-			case "application/openmetrics-text; version=1.0.0":
-				if tc.enableCTZeroIngestion && tc.exp.ts == 0 {
-					require.Len(t, got, 2)
-					require.Equal(t, 0.0, got[0])
-					require.Equal(t, tc.exp.value, got[1])
+			case "application/openmetrics-text; version=1.0.0; charset=utf-8":
+				if tc.enableCTZeroIngestion {
+					require.Len(t, got, len(tc.exp))
+					for i, e := range tc.exp {
+						require.Equal(t, e.value, got[i])
+					}
 					return
 				}
 
 				// Expect only one, valid sample.
 				require.Len(t, got, 1)
-				require.Equal(t, tc.exp.value, got[0])
+				require.Equal(t, tc.exp[0].value, got[0])
 			}
 		})
 	}
