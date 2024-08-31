@@ -915,17 +915,10 @@ expected_counter 17.0 1520879607.789
 				require.Equal(t, tc.counterSampleProto.GetValue(), got[0])
 
 			case "application/openmetrics-text; version=1.0.0; charset=utf-8":
-				if tc.enableCTZeroIngestion {
-					require.Len(t, got, len(tc.exp))
-					for i, e := range tc.exp {
-						require.Equal(t, e.value, got[i])
-					}
-					return
+				require.Len(t, got, len(tc.exp))
+				for i, e := range tc.exp {
+					require.Equal(t, e.value, got[i])
 				}
-
-				// Expect only one, valid sample.
-				require.Len(t, got, 1)
-				require.Equal(t, tc.exp[0].value, got[0])
 			}
 		})
 	}
