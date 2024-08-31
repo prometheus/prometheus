@@ -86,10 +86,25 @@ func TestNewScrapePool(t *testing.T) {
 	require.NotNil(t, sp.newLoop, "newLoop function not initialized.")
 }
 
-func TestScrapeLoop_HandlesOutOfOrderTimestamps(t *testing.T) {
-	s := teststorage.New(t)
-	defer s.Close()
+func TestStorageHandlesOutOfOrderTimestamps(t *testing.T) {
+	// Test with default OutOfOrderTimeWindow (0)
+	t.Run("Out-Of-Order Sample Disabled", func(t *testing.T) {
+		s := teststorage.New(t)
+		defer s.Close()
 
+		runScrapeLoopTest(t, s, false)
+	})
+
+	// Test with specific OutOfOrderTimeWindow (600000)
+	t.Run("Out-Of-Order Sample Enabled", func(t *testing.T) {
+		s := teststorage.New(t, 600000)
+		defer s.Close()
+
+		runScrapeLoopTest(t, s, true)
+	})
+}
+
+func runScrapeLoopTest(t *testing.T, s *teststorage.TestStorage, expectOutOfOrder bool) {
 	// Create an appender for adding samples to the storage.
 	app := s.Appender(context.Background())
 	capp := &collectResultAppender{next: app}
@@ -140,6 +155,8 @@ func TestScrapeLoop_HandlesOutOfOrderTimestamps(t *testing.T) {
 		require.NoError(t, it.Err())
 	}
 	require.NoError(t, series.Err())
+
+	// Define the expected results
 	want := []floatSample{
 		{
 			metric: labels.FromStrings("__name__", "metric_a", "a", "1", "b", "1"),
@@ -152,7 +169,12 @@ func TestScrapeLoop_HandlesOutOfOrderTimestamps(t *testing.T) {
 			f:      3,
 		},
 	}
-	require.Equal(t, want, results, "Appended samples not as expected:\n%s", results)
+
+	if expectOutOfOrder {
+		require.NotEqual(t, want, results, "Expected results to include out-of-order sample:\n%s", results)
+	} else {
+		require.Equal(t, want, results, "Appended samples not as expected:\n%s", results)
+	}
 }
 
 func TestDroppedTargetsList(t *testing.T) {
@@ -1225,6 +1247,7 @@ func BenchmarkScrapeLoopAppendOM(b *testing.B) {
 		_, _, _, _ = sl.append(slApp, metrics, "application/openmetrics-text", ts)
 	}
 }
+
 func runScrapeLoop(ctx context.Context, t *testing.T, appender storage.Appender, cue int, action func(*scrapeLoop)) {
 	var (
 		scraper = &testScraper{}
@@ -1242,6 +1265,7 @@ func runScrapeLoop(ctx context.Context, t *testing.T, appender storage.Appender,
 	}
 	sl.run(nil)
 }
+
 func TestSetHintsHandlingStaleness(t *testing.T) {
 	s := teststorage.New(t)
 	defer s.Close()
@@ -1249,9 +1273,7 @@ func TestSetHintsHandlingStaleness(t *testing.T) {
 	// Create an appender for adding samples to the storage.
 	app := s.Appender(context.Background())
 	capp := &collectResultAppender{next: app}
-	var (
-		signal = make(chan struct{}, 1)
-	)
+	signal := make(chan struct{}, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		runScrapeLoop(ctx, t, capp, 2, func(sl *scrapeLoop) {
@@ -1283,14 +1305,14 @@ func TestSetHintsHandlingStaleness(t *testing.T) {
 			fmt.Println(v)
 			if v.t <= prevT {
 				// Ensure out-of-order sample's value is NaN
-				//fmt.Println(prevT)
+				// fmt.Println(prevT)
 				require.True(t, math.IsNaN(v.f), "Expected NaN value for out-of-order sample at timestamp %d", v.t)
 			}
 			prevT = v.t
 		}
 	}
-
 }
+
 func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
 	appender := &collectResultAppender{}
 	var (

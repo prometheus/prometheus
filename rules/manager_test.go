@@ -1200,7 +1200,7 @@ func TestRuleMovedBetweenGroups(t *testing.T) {
 		t.Skip("skipping test in short mode.")
 	}
 
-	storage := teststorage.New(t)
+	storage := teststorage.New(t, 600000)
 	defer storage.Close()
 	opts := promql.EngineOpts{
 		Logger:     nil,
