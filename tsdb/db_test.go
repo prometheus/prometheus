@@ -4268,9 +4268,9 @@ func TestMetadataInWAL(t *testing.T) {
 
 	// Add a first round of metadata to the first three series.
 	// Re-take the Appender, as the previous Commit will have it closed.
-	m1 := metadata.Metadata{Type: "gauge", Unit: "unit_1", Help: "help_1"}
-	m2 := metadata.Metadata{Type: "gauge", Unit: "unit_2", Help: "help_2"}
-	m3 := metadata.Metadata{Type: "gauge", Unit: "unit_3", Help: "help_3"}
+	m1 := metadata.Metadata{Type: "gauge", Unit: "unit_1", Help: "help_1", CreatedTimestamp: 1234}
+	m2 := metadata.Metadata{Type: "gauge", Unit: "unit_2", Help: "help_2", CreatedTimestamp: 1000}
+	m3 := metadata.Metadata{Type: "gauge", Unit: "unit_3", Help: "help_3"} // Last one without Created Timestamp.
 	app = db.Appender(ctx)
 	updateMetadata(t, app, s1, m1)
 	updateMetadata(t, app, s2, m2)
@@ -4280,8 +4280,8 @@ func TestMetadataInWAL(t *testing.T) {
 	// Add a replicated metadata entry to the first series,
 	// a completely new metadata entry for the fourth series,
 	// and a changed metadata entry to the second series.
-	m4 := metadata.Metadata{Type: "counter", Unit: "unit_4", Help: "help_4"}
-	m5 := metadata.Metadata{Type: "counter", Unit: "unit_5", Help: "help_5"}
+	m4 := metadata.Metadata{Type: "counter", Unit: "unit_4", Help: "help_4", CreatedTimestamp: 2000}
+	m5 := metadata.Metadata{Type: "counter", Unit: "unit_5", Help: "help_5", CreatedTimestamp: 3000}
 	app = db.Appender(ctx)
 	updateMetadata(t, app, s1, m1)
 	updateMetadata(t, app, s4, m4)
@@ -4298,11 +4298,11 @@ func TestMetadataInWAL(t *testing.T) {
 	}
 
 	expectedMetadata := []record.RefMetadata{
-		{Ref: 1, Type: record.GetMetricType(m1.Type), Unit: m1.Unit, Help: m1.Help},
-		{Ref: 2, Type: record.GetMetricType(m2.Type), Unit: m2.Unit, Help: m2.Help},
-		{Ref: 3, Type: record.GetMetricType(m3.Type), Unit: m3.Unit, Help: m3.Help},
-		{Ref: 4, Type: record.GetMetricType(m4.Type), Unit: m4.Unit, Help: m4.Help},
-		{Ref: 2, Type: record.GetMetricType(m5.Type), Unit: m5.Unit, Help: m5.Help},
+		{Ref: 1, Type: record.GetMetricType(m1.Type), Unit: m1.Unit, Help: m1.Help, CreatedTimestamp: m1.CreatedTimestamp},
+		{Ref: 2, Type: record.GetMetricType(m2.Type), Unit: m2.Unit, Help: m2.Help, CreatedTimestamp: m2.CreatedTimestamp},
+		{Ref: 3, Type: record.GetMetricType(m3.Type), Unit: m3.Unit, Help: m3.Help, CreatedTimestamp: 0},
+		{Ref: 4, Type: record.GetMetricType(m4.Type), Unit: m4.Unit, Help: m4.Help, CreatedTimestamp: m4.CreatedTimestamp},
+		{Ref: 2, Type: record.GetMetricType(m5.Type), Unit: m5.Unit, Help: m5.Help, CreatedTimestamp: m5.CreatedTimestamp},
 	}
 	require.Len(t, gotMetadataBlocks, 2)
 	require.Equal(t, expectedMetadata[:3], gotMetadataBlocks[0])

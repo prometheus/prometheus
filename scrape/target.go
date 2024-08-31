@@ -85,10 +85,11 @@ type MetricMetadataStore interface {
 
 // MetricMetadata is a piece of metadata for a metric.
 type MetricMetadata struct {
-	Metric string
-	Type   model.MetricType
-	Help   string
-	Unit   string
+	Metric           string
+	Type             model.MetricType
+	Help             string
+	Unit             string
+	CreatedTimestamp int64
 }
 
 func (t *Target) ListMetadata() []MetricMetadata {

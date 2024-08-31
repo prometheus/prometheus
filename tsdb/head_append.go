@@ -693,10 +693,11 @@ func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels,
 
 	if hasNewMetadata {
 		a.metadata = append(a.metadata, record.RefMetadata{
-			Ref:  s.ref,
-			Type: record.GetMetricType(meta.Type),
-			Unit: meta.Unit,
-			Help: meta.Help,
+			Ref:              s.ref,
+			Type:             record.GetMetricType(meta.Type),
+			Unit:             meta.Unit,
+			Help:             meta.Help,
+			CreatedTimestamp: meta.CreatedTimestamp,
 		})
 		a.metadataSeries = append(a.metadataSeries, s)
 	}
@@ -1056,7 +1057,7 @@ func (a *headAppender) Commit() (err error) {
 	for i, m := range a.metadata {
 		series = a.metadataSeries[i]
 		series.Lock()
-		series.meta = &metadata.Metadata{Type: record.ToMetricType(m.Type), Unit: m.Unit, Help: m.Help}
+		series.meta = &metadata.Metadata{Type: record.ToMetricType(m.Type), Unit: m.Unit, Help: m.Help, CreatedTimestamp: m.CreatedTimestamp}
 		series.Unlock()
 	}
 

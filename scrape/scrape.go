@@ -1084,6 +1084,23 @@ func (c *scrapeCache) setUnit(metric, unit []byte) {
 	c.metaMtx.Unlock()
 }
 
+func (c *scrapeCache) setCreatedTimestamp(metric []byte, ct int64) {
+	c.metaMtx.Lock()
+
+	e, ok := c.metadata[string(metric)]
+	if !ok {
+		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
+		c.metadata[string(metric)] = e
+	}
+	if e.CreatedTimestamp != ct {
+		e.CreatedTimestamp = ct
+		e.lastIterChange = c.iter
+	}
+	e.lastIter = c.iter
+
+	c.metaMtx.Unlock()
+}
+
 func (c *scrapeCache) GetMetadata(metric string) (MetricMetadata, bool) {
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
@@ -1093,10 +1110,11 @@ func (c *scrapeCache) GetMetadata(metric string) (MetricMetadata, bool) {
 		return MetricMetadata{}, false
 	}
 	return MetricMetadata{
-		Metric: metric,
-		Type:   m.Type,
-		Help:   m.Help,
-		Unit:   m.Unit,
+		Metric:           metric,
+		Type:             m.Type,
+		Help:             m.Help,
+		Unit:             m.Unit,
+		CreatedTimestamp: m.CreatedTimestamp,
 	}, true
 }
 
@@ -1108,10 +1126,11 @@ func (c *scrapeCache) ListMetadata() []MetricMetadata {
 
 	for m, e := range c.metadata {
 		res = append(res, MetricMetadata{
-			Metric: m,
-			Type:   e.Type,
-			Help:   e.Help,
-			Unit:   e.Unit,
+			Metric:           m,
+			Type:             e.Type,
+			Help:             e.Help,
+			Unit:             e.Unit,
+			CreatedTimestamp: e.CreatedTimestamp,
 		})
 	}
 	return res
@@ -1534,6 +1553,7 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 			meta.Type = metaEntry.Type
 			meta.Unit = metaEntry.Unit
 			meta.Help = metaEntry.Help
+			meta.CreatedTimestamp = metaEntry.CreatedTimestamp
 			return true
 		}
 		return false
@@ -1616,9 +1636,6 @@ loop:
 			ref = ce.ref
 			lset = ce.lset
 			hash = ce.hash
-
-			// Update metadata only if it changed in the current iteration.
-			updateMetadata(lset, false)
 		} else {
 			p.Metric(&lset)
 			hash = lset.Hash()
@@ -1647,21 +1664,22 @@ loop:
 				sl.metrics.targetScrapePoolExceededLabelLimits.Inc()
 				break loop
 			}
-
-			// Append metadata for new series if they were present.
-			updateMetadata(lset, true)
 		}
 
 		if seriesAlreadyScraped && parsedTimestamp == nil {
 			err = storage.ErrDuplicateSampleForTimestamp
 		} else {
-			if ctMs := p.CreatedTimestamp(); sl.enableCTZeroIngestion && ctMs != nil {
+			ctMs := p.CreatedTimestamp()
+			if sl.enableCTZeroIngestion && ctMs != nil {
 				ref, err = app.AppendCTZeroSample(ref, lset, t, *ctMs)
 				if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) { // OOO is a common case, ignoring completely for now.
 					// CT is an experimental feature. For now, we don't need to fail the
 					// scrape on errors updating the created timestamp, log debug.
 					level.Debug(sl.l).Log("msg", "Error when appending CT in scrape loop", "series", string(met), "ct", *ctMs, "t", t, "err", err)
 				}
+			}
+			if ctMs != nil {
+				sl.cache.setCreatedTimestamp(met, *ctMs)
 			}
 
 			if isHistogram && sl.enableNativeHistogramIngestion {
@@ -1674,6 +1692,10 @@ loop:
 				ref, err = app.Append(ref, lset, t, val)
 			}
 		}
+
+		// If they were present, append metadata for new series
+		// or for existing series if the metadata has changed.
+		updateMetadata(lset, !ok)
 
 		if err == nil {
 			if (parsedTimestamp == nil || sl.trackTimestampsStaleness) && ce != nil {

@@ -17,7 +17,8 @@ import "github.com/prometheus/common/model"
 
 // Metadata stores a series' metadata information.
 type Metadata struct {
-	Type model.MetricType `json:"type"`
-	Unit string           `json:"unit"`
-	Help string           `json:"help"`
+	Type             model.MetricType `json:"type"`
+	Unit             string           `json:"unit"`
+	Help             string           `json:"help"`
+	CreatedTimestamp int64            `json:"created_timestamp"`
 }
