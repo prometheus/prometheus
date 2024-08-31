@@ -1,0 +1,8 @@
+cff-version: 1.2.0
+title: "Prometheus"
+message: "If you use this software, please cite it as below."
+authors:
+  - family-names: Rabenstein
+    given-names: Björn
+  - family-names: Volz
+    given-names: Julius
