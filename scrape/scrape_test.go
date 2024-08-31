@@ -1248,26 +1248,8 @@ func BenchmarkScrapeLoopAppendOM(b *testing.B) {
 	}
 }
 
-func runScrapeLoop(ctx context.Context, t *testing.T, appender storage.Appender, cue int, action func(*scrapeLoop)) {
-	var (
-		scraper = &testScraper{}
-		app     = func(ctx context.Context) storage.Appender { return appender }
-	)
-	sl := newBasicScrapeLoop(t, ctx, scraper, app, 10*time.Millisecond)
-	numScrapes := 0
-	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
-		numScrapes++
-		if numScrapes == cue {
-			action(sl)
-		}
-		w.Write([]byte(fmt.Sprintf("metric_a %d\n", 42+numScrapes)))
-		return nil
-	}
-	sl.run(nil)
-}
-
 func TestSetHintsHandlingStaleness(t *testing.T) {
-	s := teststorage.New(t)
+	s := teststorage.New(t, 600000)
 	defer s.Close()
 
 	// Create an appender for adding samples to the storage.
@@ -1275,6 +1257,26 @@ func TestSetHintsHandlingStaleness(t *testing.T) {
 	capp := &collectResultAppender{next: app}
 	signal := make(chan struct{}, 1)
 	ctx, cancel := context.WithCancel(context.Background())
+
+	// Function to run the scrape loop
+	runScrapeLoop := func(ctx context.Context, t *testing.T, appender storage.Appender, cue int, action func(*scrapeLoop)) {
+		var (
+			scraper = &testScraper{}
+			app     = func(ctx context.Context) storage.Appender { return appender }
+		)
+		sl := newBasicScrapeLoop(t, ctx, scraper, app, 10*time.Millisecond)
+		numScrapes := 0
+		scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
+			numScrapes++
+			if numScrapes == cue {
+				action(sl)
+			}
+			w.Write([]byte(fmt.Sprintf("metric_a %d\n", 42+numScrapes)))
+			return nil
+		}
+		sl.run(nil)
+	}
+
 	go func() {
 		runScrapeLoop(ctx, t, capp, 2, func(sl *scrapeLoop) {
 			go sl.stop()
@@ -1288,24 +1290,19 @@ func TestSetHintsHandlingStaleness(t *testing.T) {
 			}()
 		})
 	}()
+
 	select {
 	case <-signal:
 	case <-time.After(5 * time.Second):
 		t.Fatalf("Scrape wasn't stopped.")
 	}
-	/*for _, v := range capp.resultFloats {
-		if v.metric.Get("__name__") == "metric_a" {
-			fmt.Println(v)
-		}
-	}*/
+
 	var prevT int64
 	for _, v := range capp.resultFloats {
 		if v.metric.Get("__name__") == "metric_a" {
 			// Check for out-of-order samples
 			fmt.Println(v)
 			if v.t <= prevT {
-				// Ensure out-of-order sample's value is NaN
-				// fmt.Println(prevT)
 				require.True(t, math.IsNaN(v.f), "Expected NaN value for out-of-order sample at timestamp %d", v.t)
 			}
 			prevT = v.t
