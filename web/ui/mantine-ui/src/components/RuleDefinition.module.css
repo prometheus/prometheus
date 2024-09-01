@@ -4,3 +4,12 @@
     var(--mantine-color-gray-9)
   );
 }
+
+.queryButton {
+  opacity: 0;
+  transition: opacity 0.1s ease-in-out;
+}
+
+.codebox:hover .queryButton {
+  opacity: 1;
+}

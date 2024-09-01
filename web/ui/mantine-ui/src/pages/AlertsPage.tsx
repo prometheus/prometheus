@@ -11,6 +11,7 @@ import {
   Alert,
   TextInput,
   Anchor,
+  Divider,
 } from "@mantine/core";
 import { useSuspenseAPIQuery } from "../api/api";
 import { AlertingRule, AlertingRulesResult } from "../api/responseTypes/rules";
@@ -352,7 +353,9 @@ export default function AlertsPage() {
                                             {a.state}
                                           </Badge>
                                         </Table.Td>
-                                        <Table.Td>
+                                        <Table.Td
+                                          style={{ whiteSpace: "nowrap" }}
+                                        >
                                           <Tooltip label={a.activeAt}>
                                             <Box>
                                               {humanizeDurationRelative(
@@ -363,12 +366,24 @@ export default function AlertsPage() {
                                             </Box>
                                           </Tooltip>
                                         </Table.Td>
-                                        <Table.Td>{a.value}</Table.Td>
+                                        <Table.Td
+                                          style={{ whiteSpace: "nowrap" }}
+                                        >
+                                          {isNaN(Number(a.value))
+                                            ? a.value
+                                            : Number(a.value)}
+                                        </Table.Td>
                                       </Table.Tr>
                                       {showAnnotations && (
                                         <Table.Tr>
                                           <Table.Td colSpan={4}>
-                                            <Table mt="md" mb="xl">
+                                            <Table
+                                              mt="md"
+                                              mb="xl"
+                                              withTableBorder
+                                              withColumnBorders
+                                              bg="var(--mantine-color-body)"
+                                            >
                                               <Table.Tbody>
                                                 {Object.entries(
                                                   a.annotations

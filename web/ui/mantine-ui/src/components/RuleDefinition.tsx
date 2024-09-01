@@ -1,5 +1,14 @@
-import { Badge, Box, Card, Group, useComputedColorScheme } from "@mantine/core";
-import { IconClockPause, IconClockPlay } from "@tabler/icons-react";
+import {
+  ActionIcon,
+  Badge,
+  Box,
+  Card,
+  Group,
+  rem,
+  Tooltip,
+  useComputedColorScheme,
+} from "@mantine/core";
+import { IconClockPause, IconClockPlay, IconSearch } from "@tabler/icons-react";
 import { FC } from "react";
 import { formatPrometheusDuration } from "../lib/formatTime";
 import codeboxClasses from "./RuleDefinition.module.css";
@@ -14,15 +23,17 @@ import {
 } from "../codemirror/theme";
 import { PromQLExtension } from "@prometheus-io/codemirror-promql";
 import { LabelBadges } from "./LabelBadges";
+import { useSettings } from "../state/settingsSlice";
 
 const promqlExtension = new PromQLExtension();
 
 const RuleDefinition: FC<{ rule: Rule }> = ({ rule }) => {
   const theme = useComputedColorScheme();
+  const { pathPrefix } = useSettings();
 
   return (
     <>
-      <Card p="xs" className={codeboxClasses.codebox} shadow="xs">
+      <Card p="xs" className={codeboxClasses.codebox} fz="sm" shadow="none">
         <CodeMirror
           basicSetup={false}
           value={rule.query}
@@ -37,9 +48,27 @@ const RuleDefinition: FC<{ rule: Rule }> = ({ rule }) => {
             EditorView.lineWrapping,
           ]}
         />
+
+        <Tooltip label={"Query rule expression"} withArrow position="top">
+          <ActionIcon
+            pos="absolute"
+            top={7}
+            right={7}
+            variant="light"
+            onClick={() => {
+              window.open(
+                `${pathPrefix}/query?g0.expr=${encodeURIComponent(rule.query)}&g0.tab=1`,
+                "_blank"
+              );
+            }}
+            className={codeboxClasses.queryButton}
+          >
+            <IconSearch style={{ width: rem(14) }} />
+          </ActionIcon>
+        </Tooltip>
       </Card>
       {rule.type === "alerting" && (
-        <Group mt="md" gap="xs">
+        <Group mt="lg" gap="xs">
           {rule.duration && (
             <Badge
               variant="light"
@@ -61,7 +90,7 @@ const RuleDefinition: FC<{ rule: Rule }> = ({ rule }) => {
         </Group>
       )}
       {rule.labels && Object.keys(rule.labels).length > 0 && (
-        <Box mt="md">
+        <Box mt="lg">
           <LabelBadges labels={rule.labels} />
         </Box>
       )}
