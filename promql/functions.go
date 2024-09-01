@@ -1563,7 +1563,7 @@ func (ev *evaluator) evalLabelJoin(args parser.Expressions) (parser.Value, annot
 
 // === label_join(vector model.ValVector, dest_labelname, separator, src_labelname...) (Vector, Annotations) ===
 func funcLabelJoin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	panic("funcLabelReplace wrong implementation called")
+	panic("funcLabelJoin wrong implementation called")
 }
 
 // Common code for date related functions.

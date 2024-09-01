@@ -79,8 +79,8 @@ func LoadedStorage(t testutil.T, input string) *teststorage.TestStorage {
 	return test.storage
 }
 
-func NewTestEngine(enablePerStepStats bool, lookbackDelta time.Duration, maxSamples int) *promql.Engine {
-	return promql.NewEngine(promql.EngineOpts{
+func NewTestEngine(enablePerStepStats bool, lookbackDelta time.Duration, maxSamples int, opts ...func(*promql.EngineOpts)) *promql.Engine {
+	o := promql.EngineOpts{
 		Logger:                   nil,
 		Reg:                      nil,
 		MaxSamples:               maxSamples,
@@ -91,7 +91,11 @@ func NewTestEngine(enablePerStepStats bool, lookbackDelta time.Duration, maxSamp
 		EnablePerStepStats:       enablePerStepStats,
 		LookbackDelta:            lookbackDelta,
 		EnableDelayedNameRemoval: true,
-	})
+	}
+	for _, cb := range opts {
+		cb(&o)
+	}
+	return promql.NewEngine(o)
 }
 
 // RunBuiltinTests runs an acceptance test suite against the provided engine.

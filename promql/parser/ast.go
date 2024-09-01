@@ -208,6 +208,9 @@ type VectorSelector struct {
 	UnexpandedSeriesSet storage.SeriesSet
 	Series              []storage.Series
 
+	// SelectHints are the SelectHints to use when selecting corresponding info series, if enabled.
+	SelectHints *storage.SelectHints
+
 	PosRange posrange.PositionRange
 }
 
