@@ -57,14 +57,11 @@ class TimeseriesProtobufWriter {
 
 class Decoder {
  private:
-  using LssMetadataStorage = PromPP::Primitives::lss_metadata::ImmutableStorage<PromPP::Primitives::lss_metadata::NopChangesCollector>;
-
   Primitives::SnugComposites::LabelSet::DecodingTable label_set_;
-  LssMetadataStorage lss_metadata_storage_;
   Reader reader_;
 
  public:
-  explicit PROMPP_ALWAYS_INLINE Decoder(BasicEncoderVersion encoder_version) noexcept : reader_(label_set_, lss_metadata_storage_, encoder_version) {}
+  explicit PROMPP_ALWAYS_INLINE Decoder(BasicEncoderVersion encoder_version) noexcept : reader_(label_set_, encoder_version) {}
 
   // decode - decoding incoming data and make protbuf.
   template <class Input, class Output, class Stats>
