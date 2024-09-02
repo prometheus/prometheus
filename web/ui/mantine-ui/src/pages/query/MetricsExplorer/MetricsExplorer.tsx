@@ -1,19 +1,14 @@
-import { FC, useState } from "react";
+import { FC, useMemo, useState } from "react";
 import { useSuspenseAPIQuery } from "../../../api/api";
 import { MetadataResult } from "../../../api/responseTypes/metadata";
-import {
-  ActionIcon,
-  Alert,
-  Anchor,
-  Group,
-  Stack,
-  Table,
-  TextInput,
-} from "@mantine/core";
+import { ActionIcon, Group, Stack, Table, TextInput } from "@mantine/core";
 import React from "react";
 import { Fuzzy } from "@nexucis/fuzzy";
 import sanitizeHTML from "sanitize-html";
-import { IconCopy, IconTerminal, IconZoomIn } from "@tabler/icons-react";
+import { IconCodePlus, IconCopy, IconZoomCode } from "@tabler/icons-react";
+import LabelsExplorer from "./LabelsExplorer";
+import { useDebouncedValue } from "@mantine/hooks";
+import classes from "./MetricsExplorer.module.css";
 
 const fuz = new Fuzzy({
   pre: '<b style="color: rgb(0, 102, 191)">',
@@ -43,14 +38,22 @@ const MetricsExplorer: FC<MetricsExplorerProps> = ({
   insertText,
   close,
 }) => {
-  // const metricMeta = promAPI.useFetchAPI<MetricMetadata>(`/api/v1/metadata`);
+  console.log("metricNames");
   // Fetch the alerting rules data.
   const { data } = useSuspenseAPIQuery<MetadataResult>({
     path: `/metadata`,
   });
   const [selectedMetric, setSelectedMetric] = useState<string | null>(null);
 
-  const [filterText, setFilterText] = useState<string>("");
+  const [filterText, setFilterText] = useState("");
+  const [debouncedFilterText] = useDebouncedValue(filterText, 250);
+
+  const searchMatches = useMemo(() => {
+    if (debouncedFilterText === "") {
+      return metricNames.map((m) => ({ original: m, rendered: m }));
+    }
+    return getSearchMatches(debouncedFilterText, metricNames);
+  }, [debouncedFilterText, metricNames]);
 
   const getMeta = (m: string) =>
     data.data[m.replace(/(_count|_sum|_bucket)$/, "")] || [
@@ -59,14 +62,14 @@ const MetricsExplorer: FC<MetricsExplorerProps> = ({
 
   if (selectedMetric !== null) {
     return (
-      <Alert>
-        TODO: The labels explorer for a metric still needs to be implemented.
-        <br />
-        <br />
-        <Anchor fz="1em" onClick={() => setSelectedMetric(null)}>
-          Back to metrics list
-        </Anchor>
-      </Alert>
+      <LabelsExplorer
+        metricName={selectedMetric}
+        insertText={(text: string) => {
+          insertText(text);
+          close();
+        }}
+        hideLabelsExplorer={() => setSelectedMetric(null)}
+      />
     );
   }
 
@@ -90,18 +93,19 @@ const MetricsExplorer: FC<MetricsExplorerProps> = ({
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
-          {(filterText === ""
-            ? metricNames.map((m) => ({ original: m, rendered: m }))
-            : getSearchMatches(filterText, metricNames)
-          ).map((m) => (
+          {searchMatches.map((m) => (
             <Table.Tr key={m.original}>
               <Table.Td>
                 <Group justify="space-between">
-                  <div
-                    dangerouslySetInnerHTML={{
-                      __html: sanitizeHTML(m.rendered, sanitizeOpts),
-                    }}
-                  />
+                  {debouncedFilterText === "" ? (
+                    m.original
+                  ) : (
+                    <div
+                      dangerouslySetInnerHTML={{
+                        __html: sanitizeHTML(m.rendered, sanitizeOpts),
+                      }}
+                    />
+                  )}
                   <Group gap="xs">
                     <ActionIcon
                       size="sm"
@@ -112,7 +116,7 @@ const MetricsExplorer: FC<MetricsExplorerProps> = ({
                         setSelectedMetric(m.original);
                       }}
                     >
-                      <IconZoomIn
+                      <IconZoomCode
                         style={{ width: "70%", height: "70%" }}
                         stroke={1.5}
                       />
@@ -121,13 +125,13 @@ const MetricsExplorer: FC<MetricsExplorerProps> = ({
                       size="sm"
                       color="gray"
                       variant="light"
-                      title="Insert at cursor"
+                      title="Insert at cursor and close explorer"
                       onClick={() => {
                         insertText(m.original);
                         close();
                       }}
                     >
-                      <IconTerminal
+                      <IconCodePlus
                         style={{ width: "70%", height: "70%" }}
                         stroke={1.5}
                       />
@@ -149,18 +153,18 @@ const MetricsExplorer: FC<MetricsExplorerProps> = ({
                   </Group>
                 </Group>
               </Table.Td>
-              <Table.Td c="cyan.9" fs="italic" px="lg">
+              <Table.Td px="lg">
                 {getMeta(m.original).map((meta, idx) => (
                   <React.Fragment key={idx}>
-                    {meta.type}
+                    <span className={classes.typeLabel}>{meta.type}</span>
                     <br />
                   </React.Fragment>
                 ))}
               </Table.Td>
-              <Table.Td c="pink.9">
+              <Table.Td>
                 {getMeta(m.original).map((meta, idx) => (
                   <React.Fragment key={idx}>
-                    {meta.help}
+                    <span className={classes.helpLabel}>{meta.help}</span>
                     <br />
                   </React.Fragment>
                 ))}

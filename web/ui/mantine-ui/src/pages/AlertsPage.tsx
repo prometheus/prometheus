@@ -11,7 +11,6 @@ import {
   Alert,
   TextInput,
   Anchor,
-  Divider,
 } from "@mantine/core";
 import { useSuspenseAPIQuery } from "../api/api";
 import { AlertingRule, AlertingRulesResult } from "../api/responseTypes/rules";

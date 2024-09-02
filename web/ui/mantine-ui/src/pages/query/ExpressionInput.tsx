@@ -1,5 +1,6 @@
 import {
   ActionIcon,
+  Box,
   Button,
   Group,
   InputBase,
@@ -7,6 +8,7 @@ import {
   Menu,
   Modal,
   rem,
+  Skeleton,
   useComputedColorScheme,
 } from "@mantine/core";
 import {
@@ -198,8 +200,6 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
 
   return (
     <Group align="flex-start" wrap="nowrap" gap="xs">
-      {/* TODO: For wrapped long lines, the input grows in width more and more, the
-          longer the line is. Figure out why and fix it. */}
       {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
       <InputBase<any>
         leftSection={
@@ -313,7 +313,13 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
         multiline
       />
 
-      <Button variant="primary" onClick={() => executeQuery(expr)}>
+      <Button
+        variant="primary"
+        onClick={() => executeQuery(expr)}
+        // Without this, the button can be squeezed to a width
+        // that doesn't fit its text when the window is too narrow.
+        style={{ flexShrink: 0 }}
+      >
         Execute
       </Button>
       <Modal
@@ -323,7 +329,15 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
         title="Explore metrics"
       >
         <ErrorBoundary key={location.pathname} title="Error showing metrics">
-          <Suspense fallback={<Loader />}>
+          <Suspense
+            fallback={
+              <Box mt="lg">
+                {Array.from(Array(20), (_, i) => (
+                  <Skeleton key={i} height={30} mb={15} width="100%" />
+                ))}
+              </Box>
+            }
+          >
             <MetricsExplorer
               metricNames={metricNames}
               insertText={(text: string) => {

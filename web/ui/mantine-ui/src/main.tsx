@@ -4,6 +4,7 @@ import App from "./App.tsx";
 import store from "./state/store.ts";
 import { Provider } from "react-redux";
 import "./fonts/codicon.ttf";
+import "./promql.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
