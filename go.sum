@@ -414,8 +414,8 @@ github.com/hashicorp/nomad/api v0.0.0-20240717122358-3d93bd3778f3/go.mod h1:svtx
 github.com/hashicorp/serf v0.8.2/go.mod h1:6hOLApaqBFA1NXqRQAsxw9QxuDEvNxSQRwA/JwenrHc=
 github.com/hashicorp/serf v0.10.1 h1:Z1H2J60yRKvfDYAOZLd2MU0ND4AH/WDz7xYHDWQsIPY=
 github.com/hashicorp/serf v0.10.1/go.mod h1:yL2t6BqATOLGc5HF7qbFkTfXoPIY0WZdWHfEvMqbG+4=
-github.com/hetznercloud/hcloud-go/v2 v2.12.0 h1:nOgfNTo0gyXZJJdM8mo/XH5MO/e80wAEpldRzdWayhY=
-github.com/hetznercloud/hcloud-go/v2 v2.12.0/go.mod h1:dhix40Br3fDiBhwaSG/zgaYOFFddpfBm/6R1Zz0IiF0=
+github.com/hetznercloud/hcloud-go/v2 v2.13.1 h1:jq0GP4QaYE5d8xR/Zw17s9qoaESRJMXfGmtD1a/qckQ=
+github.com/hetznercloud/hcloud-go/v2 v2.13.1/go.mod h1:dhix40Br3fDiBhwaSG/zgaYOFFddpfBm/6R1Zz0IiF0=
 github.com/hpcloud/tail v1.0.0/go.mod h1:ab1qPbhIpdTxEkNHXyeSf5vhxWSCs/tWer42PpOxQnU=
 github.com/hudl/fargo v1.3.0/go.mod h1:y3CKSmjA+wD2gak7sUSXTAoopbhU08POFhmITJgmKTg=
 github.com/ianlancetaylor/demangle v0.0.0-20181102032728-5e5cf60278f6/go.mod h1:aSSvb/t6k1mPoxDqO4vJh6VOCGPwU4O0C2/Eqndh1Sc=
