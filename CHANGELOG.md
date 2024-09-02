@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.54.2 / 2024-09-02
+
+* [BUGFIX] Scraping: Fixed significant performance regression in OM Text parsing related to Created Timestamp parsing; that logic has been moved behind an experimental `created-timestamp-zero-ingestion` flag as it should be. #14809
+
 ## 2.54.1 / 2024-08-27
 
 * [BUGFIX] Scraping: allow multiple samples on same series, with explicit timestamps. #14685
