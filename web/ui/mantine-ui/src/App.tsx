@@ -321,7 +321,7 @@ function App() {
                         to="/"
                         style={{ textDecoration: "none", color: "white" }}
                       >
-                        <Group gap={10}>
+                        <Group gap={10} wrap="nowrap">
                           <img src={PrometheusLogo} height={30} />
                           <Text fz={20}>Prometheus{agentMode && " Agent"}</Text>
                         </Group>

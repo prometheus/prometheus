@@ -34,5 +34,7 @@
 /* Font used for autocompletion item icons. */
 @font-face {
   font-family: "codicon";
-  src: local("codicon"), url(./fonts/codicon.ttf) format("truetype");
+  src:
+    local("codicon"),
+    url(./fonts/codicon.ttf) format("truetype");
 }
