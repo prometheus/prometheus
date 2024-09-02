@@ -1995,15 +1995,15 @@ func TestProtobufParse(t *testing.T) {
 						"__name__", "without_quantiles_sum",
 					),
 				},
-				{ // 78
+				{ // 81
 					m:    "empty_histogram",
 					help: "A histogram without observations and with a zero threshold of zero but with a no-op span to identify it as a native histogram.",
 				},
-				{ // 79
+				{ // 82
 					m:   "empty_histogram",
 					typ: model.MetricTypeHistogram,
 				},
-				{ // 80
+				{ // 83
 					m: "empty_histogram",
 					shs: &histogram.Histogram{
 						CounterResetHint: histogram.UnknownCounterReset,
@@ -2014,15 +2014,15 @@ func TestProtobufParse(t *testing.T) {
 						"__name__", "empty_histogram",
 					),
 				},
-				{ // 81
+				{ // 84
 					m:    "test_counter_with_createdtimestamp",
 					help: "A counter with a created timestamp.",
 				},
-				{ // 82
+				{ // 85
 					m:   "test_counter_with_createdtimestamp",
 					typ: model.MetricTypeCounter,
 				},
-				{ // 83
+				{ // 86
 					m:  "test_counter_with_createdtimestamp",
 					v:  42,
 					ct: 1000,
@@ -2030,15 +2030,15 @@ func TestProtobufParse(t *testing.T) {
 						"__name__", "test_counter_with_createdtimestamp",
 					),
 				},
-				{ // 84
+				{ // 87
 					m:    "test_summary_with_createdtimestamp",
 					help: "A summary with a created timestamp.",
 				},
-				{ // 85
+				{ // 88
 					m:   "test_summary_with_createdtimestamp",
 					typ: model.MetricTypeSummary,
 				},
-				{ // 86
+				{ // 89
 					m:  "test_summary_with_createdtimestamp_count",
 					v:  42,
 					ct: 1000,
@@ -2046,7 +2046,7 @@ func TestProtobufParse(t *testing.T) {
 						"__name__", "test_summary_with_createdtimestamp_count",
 					),
 				},
-				{ // 87
+				{ // 90
 					m:  "test_summary_with_createdtimestamp_sum",
 					v:  1.234,
 					ct: 1000,
@@ -2054,15 +2054,15 @@ func TestProtobufParse(t *testing.T) {
 						"__name__", "test_summary_with_createdtimestamp_sum",
 					),
 				},
-				{ // 88
+				{ // 91
 					m:    "test_histogram_with_createdtimestamp",
 					help: "A histogram with a created timestamp.",
 				},
-				{ // 89
+				{ // 92
 					m:   "test_histogram_with_createdtimestamp",
 					typ: model.MetricTypeHistogram,
 				},
-				{ // 90
+				{ // 93
 					m:  "test_histogram_with_createdtimestamp",
 					ct: 1000,
 					shs: &histogram.Histogram{
@@ -2074,15 +2074,15 @@ func TestProtobufParse(t *testing.T) {
 						"__name__", "test_histogram_with_createdtimestamp",
 					),
 				},
-				{ // 91
+				{ // 94
 					m:    "test_gaugehistogram_with_createdtimestamp",
 					help: "A gauge histogram with a created timestamp.",
 				},
-				{ // 92
+				{ // 95
 					m:   "test_gaugehistogram_with_createdtimestamp",
 					typ: model.MetricTypeGaugeHistogram,
 				},
-				{ // 93
+				{ // 96
 					m:  "test_gaugehistogram_with_createdtimestamp",
 					ct: 1000,
 					shs: &histogram.Histogram{
@@ -2094,15 +2094,15 @@ func TestProtobufParse(t *testing.T) {
 						"__name__", "test_gaugehistogram_with_createdtimestamp",
 					),
 				},
-				{ // 94
+				{ // 97
 					m:    "test_histogram_with_native_histogram_exemplars",
 					help: "A histogram with native histogram exemplars.",
 				},
-				{ // 95
+				{ // 98
 					m:   "test_histogram_with_native_histogram_exemplars",
 					typ: model.MetricTypeHistogram,
 				},
-				{ // 96
+				{ // 99
 					m: "test_histogram_with_native_histogram_exemplars",
 					t: 1234568,
 					shs: &histogram.Histogram{
@@ -2130,7 +2130,7 @@ func TestProtobufParse(t *testing.T) {
 						{Labels: labels.FromStrings("dummyID", "59772"), Value: -0.00052, HasTs: true, Ts: 1625851160156},
 					},
 				},
-				{ // 97
+				{ // 100
 					m: "test_histogram_with_native_histogram_exemplars_count",
 					t: 1234568,
 					v: 175,
@@ -2138,7 +2138,7 @@ func TestProtobufParse(t *testing.T) {
 						"__name__", "test_histogram_with_native_histogram_exemplars_count",
 					),
 				},
-				{ // 98
+				{ // 101
 					m: "test_histogram_with_native_histogram_exemplars_sum",
 					t: 1234568,
 					v: 0.0008280461746287094,
@@ -2146,7 +2146,7 @@ func TestProtobufParse(t *testing.T) {
 						"__name__", "test_histogram_with_native_histogram_exemplars_sum",
 					),
 				},
-				{ // 99
+				{ // 102
 					m: "test_histogram_with_native_histogram_exemplars_bucket\xffle\xff-0.0004899999999999998",
 					t: 1234568,
 					v: 2,
@@ -2155,7 +2155,7 @@ func TestProtobufParse(t *testing.T) {
 						"le", "-0.0004899999999999998",
 					),
 				},
-				{ // 100
+				{ // 103
 					m: "test_histogram_with_native_histogram_exemplars_bucket\xffle\xff-0.0003899999999999998",
 					t: 1234568,
 					v: 4,
@@ -2167,7 +2167,7 @@ func TestProtobufParse(t *testing.T) {
 						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
 					},
 				},
-				{ // 101
+				{ // 104
 					m: "test_histogram_with_native_histogram_exemplars_bucket\xffle\xff-0.0002899999999999998",
 					t: 1234568,
 					v: 16,
@@ -2179,7 +2179,7 @@ func TestProtobufParse(t *testing.T) {
 						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
 					},
 				},
-				{ // 102
+				{ // 105
 					m: "test_histogram_with_native_histogram_exemplars_bucket\xffle\xff+Inf",
 					t: 1234568,
 					v: 175,
