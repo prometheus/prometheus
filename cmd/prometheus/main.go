@@ -169,6 +169,8 @@ type flagConfig struct {
 	corsRegexString string
 
 	promlogConfig promlog.Config
+
+	promqlEnableDelayedNameRemoval bool
 }
 
 // setFeatureListOptions sets the corresponding options from the featureList.
@@ -238,6 +240,9 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "delayed-compaction":
 				c.tsdb.EnableDelayedCompaction = true
 				level.Info(logger).Log("msg", "Experimental delayed compaction is enabled.")
+			case "promql-delayed-name-removal":
+				c.promqlEnableDelayedNameRemoval = true
+				level.Info(logger).Log("msg", "Experimental PromQL delayed name removal enabled.")
 			case "utf8-names":
 				model.NameValidationScheme = model.UTF8Validation
 				level.Info(logger).Log("msg", "Experimental UTF-8 support enabled")
@@ -487,7 +492,7 @@ func main() {
 
 	a.Flag("scrape.name-escaping-scheme", `Method for escaping legacy invalid names when sending to Prometheus that does not support UTF-8. Can be one of "values", "underscores", or "dots".`).Default(scrape.DefaultNameEscapingScheme.String()).StringVar(&cfg.nameEscapingScheme)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, auto-gomemlimit, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, remote-write-receiver (DEPRECATED), extra-scrape-metrics, new-service-discovery-manager, auto-gomaxprocs, no-default-scrape-port, native-histograms, otlp-write-receiver, created-timestamp-zero-ingestion, concurrent-rule-eval, delayed-compaction, utf8-names. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, auto-gomaxprocs, auto-gomemlimit, concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, expand-external-labels, extra-scrape-metrics, memory-snapshot-on-shutdown, native-histograms, new-service-discovery-manager, no-default-scrape-port, otlp-write-receiver, promql-experimental-functions, promql-delayed-name-removal, promql-per-step-stats, remote-write-receiver (DEPRECATED), utf8-names. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
@@ -799,9 +804,10 @@ func main() {
 			NoStepSubqueryIntervalFn: noStepSubqueryInterval.Get,
 			// EnableAtModifier and EnableNegativeOffset have to be
 			// always on for regular PromQL as of Prometheus v2.33.
-			EnableAtModifier:     true,
-			EnableNegativeOffset: true,
-			EnablePerStepStats:   cfg.enablePerStepStats,
+			EnableAtModifier:         true,
+			EnableNegativeOffset:     true,
+			EnablePerStepStats:       cfg.enablePerStepStats,
+			EnableDelayedNameRemoval: cfg.promqlEnableDelayedNameRemoval,
 		}
 
 		queryEngine = promql.NewEngine(opts)
