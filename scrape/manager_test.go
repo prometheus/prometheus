@@ -20,6 +20,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"sync"
 	"testing"
@@ -36,6 +37,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
+	_ "github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
@@ -722,8 +724,6 @@ func TestManagerCTZeroIngestion(t *testing.T) {
 		name                  string
 		counterSample         *dto.Counter
 		enableCTZeroIngestion bool
-
-		expectedValues []float64
 	}{
 		{
 			name: "disabled with CT on counter",
@@ -732,7 +732,6 @@ func TestManagerCTZeroIngestion(t *testing.T) {
 				// Timestamp does not matter as long as it exists in this test.
 				CreatedTimestamp: timestamppb.Now(),
 			},
-			expectedValues: []float64{1.0},
 		},
 		{
 			name: "enabled with CT on counter",
@@ -742,7 +741,6 @@ func TestManagerCTZeroIngestion(t *testing.T) {
 				CreatedTimestamp: timestamppb.Now(),
 			},
 			enableCTZeroIngestion: true,
-			expectedValues:        []float64{0.0, 1.0},
 		},
 		{
 			name: "enabled without CT on counter",
@@ -750,7 +748,6 @@ func TestManagerCTZeroIngestion(t *testing.T) {
 				Value: proto.Float64(1.0),
 			},
 			enableCTZeroIngestion: true,
-			expectedValues:        []float64{1.0},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -817,44 +814,42 @@ func TestManagerCTZeroIngestion(t *testing.T) {
 			})
 			scrapeManager.reload()
 
+			var got []float64
 			// Wait for one scrape.
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 			defer cancel()
 			require.NoError(t, runutil.Retry(100*time.Millisecond, ctx.Done(), func() error {
-				if countFloatSamples(app, mName) != len(tc.expectedValues) {
-					return fmt.Errorf("expected %v samples", tc.expectedValues)
+				app.mtx.Lock()
+				defer app.mtx.Unlock()
+
+				// Check if scrape happened and grab the relevant samples, they have to be there - or it's a bug
+				// and it's not worth waiting.
+				for _, f := range app.resultFloats {
+					if f.metric.Get(model.MetricNameLabel) == mName {
+						got = append(got, f.f)
+					}
 				}
-				return nil
+				if len(app.resultFloats) > 0 {
+					return nil
+				}
+				return fmt.Errorf("expected some samples, got none")
 			}), "after 1 minute")
 			scrapeManager.Stop()
 
-			require.Equal(t, tc.expectedValues, getResultFloats(app, mName))
+			// Check for zero samples, assuming we only injected always one sample.
+			// Did it contain CT to inject? If yes, was CT zero enabled?
+			if tc.counterSample.CreatedTimestamp.IsValid() && tc.enableCTZeroIngestion {
+				require.Len(t, got, 2)
+				require.Equal(t, 0.0, got[0])
+				require.Equal(t, tc.counterSample.GetValue(), got[1])
+				return
+			}
+
+			// Expect only one, valid sample.
+			require.Len(t, got, 1)
+			require.Equal(t, tc.counterSample.GetValue(), got[0])
 		})
 	}
-}
-
-func countFloatSamples(a *collectResultAppender, expectedMetricName string) (count int) {
-	a.mtx.Lock()
-	defer a.mtx.Unlock()
-
-	for _, f := range a.resultFloats {
-		if f.metric.Get(model.MetricNameLabel) == expectedMetricName {
-			count++
-		}
-	}
-	return count
-}
-
-func getResultFloats(app *collectResultAppender, expectedMetricName string) (result []float64) {
-	app.mtx.Lock()
-	defer app.mtx.Unlock()
-
-	for _, f := range app.resultFloats {
-		if f.metric.Get(model.MetricNameLabel) == expectedMetricName {
-			result = append(result, f.f)
-		}
-	}
-	return result
 }
 
 func TestUnregisterMetrics(t *testing.T) {
@@ -868,4 +863,415 @@ func TestUnregisterMetrics(t *testing.T) {
 		// Unregister all metrics.
 		manager.UnregisterMetrics()
 	}
+}
+
+func applyConfig(
+	t *testing.T,
+	config string,
+	scrapeManager *Manager,
+	discoveryManager *discovery.Manager,
+) {
+	t.Helper()
+
+	cfg := loadConfiguration(t, config)
+	require.NoError(t, scrapeManager.ApplyConfig(cfg))
+
+	c := make(map[string]discovery.Configs)
+	scfgs, err := cfg.GetScrapeConfigs()
+	require.NoError(t, err)
+	for _, v := range scfgs {
+		c[v.JobName] = v.ServiceDiscoveryConfigs
+	}
+	require.NoError(t, discoveryManager.ApplyConfig(c))
+}
+
+func runManagers(t *testing.T, ctx context.Context) (*discovery.Manager, *Manager) {
+	t.Helper()
+
+	reg := prometheus.NewRegistry()
+	sdMetrics, err := discovery.RegisterSDMetrics(reg, discovery.NewRefreshMetrics(reg))
+	require.NoError(t, err)
+	discoveryManager := discovery.NewManager(
+		ctx,
+		log.NewNopLogger(),
+		reg,
+		sdMetrics,
+		discovery.Updatert(100*time.Millisecond),
+	)
+	scrapeManager, err := NewManager(
+		&Options{DiscoveryReloadInterval: model.Duration(100 * time.Millisecond)},
+		nil,
+		nopAppendable{},
+		prometheus.NewRegistry(),
+	)
+	require.NoError(t, err)
+	go discoveryManager.Run()
+	go scrapeManager.Run(discoveryManager.SyncCh())
+	return discoveryManager, scrapeManager
+}
+
+func writeIntoFile(t *testing.T, content, filePattern string) *os.File {
+	t.Helper()
+
+	file, err := os.CreateTemp("", filePattern)
+	require.NoError(t, err)
+	_, err = file.WriteString(content)
+	require.NoError(t, err)
+	return file
+}
+
+func requireTargets(
+	t *testing.T,
+	scrapeManager *Manager,
+	jobName string,
+	waitToAppear bool,
+	expectedTargets []string,
+) {
+	t.Helper()
+
+	require.Eventually(t, func() bool {
+		targets, ok := scrapeManager.TargetsActive()[jobName]
+		if !ok {
+			if waitToAppear {
+				return false
+			}
+			t.Fatalf("job %s shouldn't be dropped", jobName)
+		}
+		if expectedTargets == nil {
+			return targets == nil
+		}
+		if len(targets) != len(expectedTargets) {
+			return false
+		}
+		sTargets := []string{}
+		for _, t := range targets {
+			sTargets = append(sTargets, t.String())
+		}
+		sort.Strings(expectedTargets)
+		sort.Strings(sTargets)
+		for i, t := range sTargets {
+			if t != expectedTargets[i] {
+				return false
+			}
+		}
+		return true
+	}, 1*time.Second, 100*time.Millisecond)
+}
+
+// TestTargetDisappearsAfterProviderRemoved makes sure that when a provider is dropped, (only) its targets are dropped.
+func TestTargetDisappearsAfterProviderRemoved(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	myJob := "my-job"
+	myJobSDTargetURL := "my:9876"
+	myJobStaticTargetURL := "my:5432"
+
+	sdFileContent := fmt.Sprintf(`[{"targets": ["%s"]}]`, myJobSDTargetURL)
+	sDFile := writeIntoFile(t, sdFileContent, "*targets.json")
+
+	baseConfig := `
+scrape_configs:
+- job_name: %s
+  static_configs:
+  - targets: ['%s']
+  file_sd_configs:
+  - files: ['%s']
+`
+
+	discoveryManager, scrapeManager := runManagers(t, ctx)
+	defer scrapeManager.Stop()
+
+	applyConfig(
+		t,
+		fmt.Sprintf(
+			baseConfig,
+			myJob,
+			myJobStaticTargetURL,
+			sDFile.Name(),
+		),
+		scrapeManager,
+		discoveryManager,
+	)
+	// Make sure the jobs targets are taken into account
+	requireTargets(
+		t,
+		scrapeManager,
+		myJob,
+		true,
+		[]string{
+			fmt.Sprintf("http://%s/metrics", myJobSDTargetURL),
+			fmt.Sprintf("http://%s/metrics", myJobStaticTargetURL),
+		},
+	)
+
+	// Apply a new config where a provider is removed
+	baseConfig = `
+scrape_configs:
+- job_name: %s
+  static_configs:
+  - targets: ['%s']
+`
+	applyConfig(
+		t,
+		fmt.Sprintf(
+			baseConfig,
+			myJob,
+			myJobStaticTargetURL,
+		),
+		scrapeManager,
+		discoveryManager,
+	)
+	// Make sure the corresponding target was dropped
+	requireTargets(
+		t,
+		scrapeManager,
+		myJob,
+		false,
+		[]string{
+			fmt.Sprintf("http://%s/metrics", myJobStaticTargetURL),
+		},
+	)
+
+	// Apply a new config with no providers
+	baseConfig = `
+scrape_configs:
+- job_name: %s
+`
+	applyConfig(
+		t,
+		fmt.Sprintf(
+			baseConfig,
+			myJob,
+		),
+		scrapeManager,
+		discoveryManager,
+	)
+	// Make sure the corresponding target was dropped
+	requireTargets(
+		t,
+		scrapeManager,
+		myJob,
+		false,
+		nil,
+	)
+}
+
+// TestOnlyProviderStaleTargetsAreDropped makes sure that when a job has only one provider with multiple targets
+// and when the provider can no longer discover some of those targets, only those stale targets are dropped.
+func TestOnlyProviderStaleTargetsAreDropped(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	jobName := "my-job"
+	jobTarget1URL := "foo:9876"
+	jobTarget2URL := "foo:5432"
+
+	sdFile1Content := fmt.Sprintf(`[{"targets": ["%s"]}]`, jobTarget1URL)
+	sdFile2Content := fmt.Sprintf(`[{"targets": ["%s"]}]`, jobTarget2URL)
+	sDFile1 := writeIntoFile(t, sdFile1Content, "*targets.json")
+	sDFile2 := writeIntoFile(t, sdFile2Content, "*targets.json")
+
+	baseConfig := `
+scrape_configs:
+- job_name: %s
+  file_sd_configs:
+  - files: ['%s', '%s']
+`
+	discoveryManager, scrapeManager := runManagers(t, ctx)
+	defer scrapeManager.Stop()
+
+	applyConfig(
+		t,
+		fmt.Sprintf(baseConfig, jobName, sDFile1.Name(), sDFile2.Name()),
+		scrapeManager,
+		discoveryManager,
+	)
+
+	// Make sure the job's targets are taken into account
+	requireTargets(
+		t,
+		scrapeManager,
+		jobName,
+		true,
+		[]string{
+			fmt.Sprintf("http://%s/metrics", jobTarget1URL),
+			fmt.Sprintf("http://%s/metrics", jobTarget2URL),
+		},
+	)
+
+	// Apply the same config for the same job but with a non existing file to make the provider
+	// unable to discover some targets
+	applyConfig(
+		t,
+		fmt.Sprintf(baseConfig, jobName, sDFile1.Name(), "/idontexistdoi.json"),
+		scrapeManager,
+		discoveryManager,
+	)
+
+	// The old target should get dropped
+	requireTargets(
+		t,
+		scrapeManager,
+		jobName,
+		false,
+		[]string{fmt.Sprintf("http://%s/metrics", jobTarget1URL)},
+	)
+}
+
+// TestProviderStaleTargetsAreDropped makes sure that when a job has only one provider and when that provider
+// should no longer discover targets, the targets of that provider are dropped.
+// See: https://github.com/prometheus/prometheus/issues/12858
+func TestProviderStaleTargetsAreDropped(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	jobName := "my-job"
+	jobTargetURL := "foo:9876"
+
+	sdFileContent := fmt.Sprintf(`[{"targets": ["%s"]}]`, jobTargetURL)
+	sDFile := writeIntoFile(t, sdFileContent, "*targets.json")
+
+	baseConfig := `
+scrape_configs:
+- job_name: %s
+  file_sd_configs:
+  - files: ['%s']
+`
+	discoveryManager, scrapeManager := runManagers(t, ctx)
+	defer scrapeManager.Stop()
+
+	applyConfig(
+		t,
+		fmt.Sprintf(baseConfig, jobName, sDFile.Name()),
+		scrapeManager,
+		discoveryManager,
+	)
+
+	// Make sure the job's targets are taken into account
+	requireTargets(
+		t,
+		scrapeManager,
+		jobName,
+		true,
+		[]string{
+			fmt.Sprintf("http://%s/metrics", jobTargetURL),
+		},
+	)
+
+	// Apply the same config for the same job but with a non existing file to make the provider
+	// unable to discover some targets
+	applyConfig(
+		t,
+		fmt.Sprintf(baseConfig, jobName, "/idontexistdoi.json"),
+		scrapeManager,
+		discoveryManager,
+	)
+
+	// The old target should get dropped
+	requireTargets(
+		t,
+		scrapeManager,
+		jobName,
+		false,
+		nil,
+	)
+}
+
+// TestOnlyStaleTargetsAreDropped makes sure that when a job has multiple providers, when aone of them should no,
+// longer discover targets, only the stale targets of that provier are dropped.
+func TestOnlyStaleTargetsAreDropped(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	myJob := "my-job"
+	myJobSDTargetURL := "my:9876"
+	myJobStaticTargetURL := "my:5432"
+	otherJob := "other-job"
+	otherJobTargetURL := "other:1234"
+
+	sdFileContent := fmt.Sprintf(`[{"targets": ["%s"]}]`, myJobSDTargetURL)
+	sDFile := writeIntoFile(t, sdFileContent, "*targets.json")
+
+	baseConfig := `
+scrape_configs:
+- job_name: %s
+  static_configs:
+  - targets: ['%s']
+  file_sd_configs:
+  - files: ['%s']
+- job_name: %s
+  static_configs:
+  - targets: ['%s']
+`
+
+	discoveryManager, scrapeManager := runManagers(t, ctx)
+	defer scrapeManager.Stop()
+
+	// Apply the initial config with an existing file
+	applyConfig(
+		t,
+		fmt.Sprintf(
+			baseConfig,
+			myJob,
+			myJobStaticTargetURL,
+			sDFile.Name(),
+			otherJob,
+			otherJobTargetURL,
+		),
+		scrapeManager,
+		discoveryManager,
+	)
+	// Make sure the jobs targets are taken into account
+	requireTargets(
+		t,
+		scrapeManager,
+		myJob,
+		true,
+		[]string{
+			fmt.Sprintf("http://%s/metrics", myJobSDTargetURL),
+			fmt.Sprintf("http://%s/metrics", myJobStaticTargetURL),
+		},
+	)
+	requireTargets(
+		t,
+		scrapeManager,
+		otherJob,
+		true,
+		[]string{fmt.Sprintf("http://%s/metrics", otherJobTargetURL)},
+	)
+
+	// Apply the same config with a non existing file for myJob
+	applyConfig(
+		t,
+		fmt.Sprintf(
+			baseConfig,
+			myJob,
+			myJobStaticTargetURL,
+			"/idontexistdoi.json",
+			otherJob,
+			otherJobTargetURL,
+		),
+		scrapeManager,
+		discoveryManager,
+	)
+
+	// Only the SD target should get dropped for myJob
+	requireTargets(
+		t,
+		scrapeManager,
+		myJob,
+		false,
+		[]string{
+			fmt.Sprintf("http://%s/metrics", myJobStaticTargetURL),
+		},
+	)
+	// The otherJob should keep its target
+	requireTargets(
+		t,
+		scrapeManager,
+		otherJob,
+		false,
+		[]string{fmt.Sprintf("http://%s/metrics", otherJobTargetURL)},
+	)
 }

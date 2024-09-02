@@ -17,7 +17,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"sort"
 	"strconv"
@@ -1711,7 +1710,8 @@ load 1ms
 						{F: 3600, T: 6 * 60 * 1000},
 						{F: 3600, T: 7 * 60 * 1000},
 					},
-					Metric: labels.EmptyLabels(),
+					Metric:   labels.EmptyLabels(),
+					DropName: true,
 				},
 			},
 		},
@@ -1927,20 +1927,24 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						promql.Matrix{
 							promql.Series{
-								Floats: []promql.FPoint{{F: 3, T: 7985000}, {F: 3, T: 7990000}, {F: 3, T: 7995000}, {F: 3, T: 8000000}},
-								Metric: labels.FromStrings("job", "api-server", "instance", "0", "group", "canary"),
+								Floats:   []promql.FPoint{{F: 3, T: 7985000}, {F: 3, T: 7990000}, {F: 3, T: 7995000}, {F: 3, T: 8000000}},
+								Metric:   labels.FromStrings("job", "api-server", "instance", "0", "group", "canary"),
+								DropName: true,
 							},
 							promql.Series{
-								Floats: []promql.FPoint{{F: 4, T: 7985000}, {F: 4, T: 7990000}, {F: 4, T: 7995000}, {F: 4, T: 8000000}},
-								Metric: labels.FromStrings("job", "api-server", "instance", "1", "group", "canary"),
+								Floats:   []promql.FPoint{{F: 4, T: 7985000}, {F: 4, T: 7990000}, {F: 4, T: 7995000}, {F: 4, T: 8000000}},
+								Metric:   labels.FromStrings("job", "api-server", "instance", "1", "group", "canary"),
+								DropName: true,
 							},
 							promql.Series{
-								Floats: []promql.FPoint{{F: 1, T: 7985000}, {F: 1, T: 7990000}, {F: 1, T: 7995000}, {F: 1, T: 8000000}},
-								Metric: labels.FromStrings("job", "api-server", "instance", "0", "group", "production"),
+								Floats:   []promql.FPoint{{F: 1, T: 7985000}, {F: 1, T: 7990000}, {F: 1, T: 7995000}, {F: 1, T: 8000000}},
+								Metric:   labels.FromStrings("job", "api-server", "instance", "0", "group", "production"),
+								DropName: true,
 							},
 							promql.Series{
-								Floats: []promql.FPoint{{F: 2, T: 7985000}, {F: 2, T: 7990000}, {F: 2, T: 7995000}, {F: 2, T: 8000000}},
-								Metric: labels.FromStrings("job", "api-server", "instance", "1", "group", "production"),
+								Floats:   []promql.FPoint{{F: 2, T: 7985000}, {F: 2, T: 7990000}, {F: 2, T: 7995000}, {F: 2, T: 8000000}},
+								Metric:   labels.FromStrings("job", "api-server", "instance", "1", "group", "production"),
+								DropName: true,
 							},
 						},
 						nil,
@@ -3293,11 +3297,11 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 
 				// sum_over_time().
 				queryString = fmt.Sprintf("sum_over_time(%s[%dm:1m])", seriesNameOverTime, offset+1)
-				queryAndCheck(queryString, newTs, []promql.Sample{{T: newTs, H: &c.expected, Metric: labels.EmptyLabels()}})
+				queryAndCheck(queryString, newTs, []promql.Sample{{T: newTs, H: &c.expected, Metric: labels.EmptyLabels(), DropName: true}})
 
 				// avg_over_time().
 				queryString = fmt.Sprintf("avg_over_time(%s[%dm:1m])", seriesNameOverTime, offset+1)
-				queryAndCheck(queryString, newTs, []promql.Sample{{T: newTs, H: &c.expectedAvg, Metric: labels.EmptyLabels()}})
+				queryAndCheck(queryString, newTs, []promql.Sample{{T: newTs, H: &c.expectedAvg, Metric: labels.EmptyLabels(), DropName: true}})
 			})
 			idx0++
 		}
@@ -3536,171 +3540,6 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 			})
 		}
 		idx0++
-	}
-}
-
-func TestNativeHistogram_MulDivOperator(t *testing.T) {
-	// TODO(codesome): Integrate histograms into the PromQL testing framework
-	// and write more tests there.
-	originalHistogram := histogram.Histogram{
-		Schema:        0,
-		Count:         21,
-		Sum:           33,
-		ZeroThreshold: 0.001,
-		ZeroCount:     3,
-		PositiveSpans: []histogram.Span{
-			{Offset: 0, Length: 3},
-		},
-		PositiveBuckets: []int64{3, 0, 0},
-		NegativeSpans: []histogram.Span{
-			{Offset: 0, Length: 3},
-		},
-		NegativeBuckets: []int64{3, 0, 0},
-	}
-
-	cases := []struct {
-		scalar      float64
-		histogram   histogram.Histogram
-		expectedMul histogram.FloatHistogram
-		expectedDiv histogram.FloatHistogram
-	}{
-		{
-			scalar:    3,
-			histogram: originalHistogram,
-			expectedMul: histogram.FloatHistogram{
-				Schema:        0,
-				Count:         63,
-				Sum:           99,
-				ZeroThreshold: 0.001,
-				ZeroCount:     9,
-				PositiveSpans: []histogram.Span{
-					{Offset: 0, Length: 3},
-				},
-				PositiveBuckets: []float64{9, 9, 9},
-				NegativeSpans: []histogram.Span{
-					{Offset: 0, Length: 3},
-				},
-				NegativeBuckets: []float64{9, 9, 9},
-			},
-			expectedDiv: histogram.FloatHistogram{
-				Schema:        0,
-				Count:         7,
-				Sum:           11,
-				ZeroThreshold: 0.001,
-				ZeroCount:     1,
-				PositiveSpans: []histogram.Span{
-					{Offset: 0, Length: 3},
-				},
-				PositiveBuckets: []float64{1, 1, 1},
-				NegativeSpans: []histogram.Span{
-					{Offset: 0, Length: 3},
-				},
-				NegativeBuckets: []float64{1, 1, 1},
-			},
-		},
-		{
-			scalar:    0,
-			histogram: originalHistogram,
-			expectedMul: histogram.FloatHistogram{
-				Schema:        0,
-				Count:         0,
-				Sum:           0,
-				ZeroThreshold: 0.001,
-				ZeroCount:     0,
-				PositiveSpans: []histogram.Span{
-					{Offset: 0, Length: 3},
-				},
-				PositiveBuckets: []float64{0, 0, 0},
-				NegativeSpans: []histogram.Span{
-					{Offset: 0, Length: 3},
-				},
-				NegativeBuckets: []float64{0, 0, 0},
-			},
-			expectedDiv: histogram.FloatHistogram{
-				Schema:        0,
-				Count:         math.Inf(1),
-				Sum:           math.Inf(1),
-				ZeroThreshold: 0.001,
-				ZeroCount:     math.Inf(1),
-				PositiveSpans: []histogram.Span{
-					{Offset: 0, Length: 3},
-				},
-				PositiveBuckets: []float64{math.Inf(1), math.Inf(1), math.Inf(1)},
-				NegativeSpans: []histogram.Span{
-					{Offset: 0, Length: 3},
-				},
-				NegativeBuckets: []float64{math.Inf(1), math.Inf(1), math.Inf(1)},
-			},
-		},
-	}
-
-	idx0 := int64(0)
-	for _, c := range cases {
-		for _, floatHisto := range []bool{true, false} {
-			t.Run(fmt.Sprintf("floatHistogram=%t %d", floatHisto, idx0), func(t *testing.T) {
-				storage := teststorage.New(t)
-				t.Cleanup(func() { storage.Close() })
-
-				seriesName := "sparse_histogram_series"
-				floatSeriesName := "float_series"
-
-				engine := newTestEngine()
-
-				ts := idx0 * int64(10*time.Minute/time.Millisecond)
-				app := storage.Appender(context.Background())
-				h := c.histogram
-				lbls := labels.FromStrings("__name__", seriesName)
-				// Since we mutate h later, we need to create a copy here.
-				var err error
-				if floatHisto {
-					_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy().ToFloat(nil))
-				} else {
-					_, err = app.AppendHistogram(0, lbls, ts, h.Copy(), nil)
-				}
-				require.NoError(t, err)
-				_, err = app.Append(0, labels.FromStrings("__name__", floatSeriesName), ts, c.scalar)
-				require.NoError(t, err)
-				require.NoError(t, app.Commit())
-
-				queryAndCheck := func(queryString string, exp promql.Vector) {
-					qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(ts))
-					require.NoError(t, err)
-
-					res := qry.Exec(context.Background())
-					require.NoError(t, res.Err)
-
-					vector, err := res.Vector()
-					require.NoError(t, err)
-
-					testutil.RequireEqual(t, exp, vector)
-				}
-
-				// histogram * scalar.
-				queryString := fmt.Sprintf(`%s * %f`, seriesName, c.scalar)
-				queryAndCheck(queryString, []promql.Sample{{T: ts, H: &c.expectedMul, Metric: labels.EmptyLabels()}})
-
-				// scalar * histogram.
-				queryString = fmt.Sprintf(`%f * %s`, c.scalar, seriesName)
-				queryAndCheck(queryString, []promql.Sample{{T: ts, H: &c.expectedMul, Metric: labels.EmptyLabels()}})
-
-				// histogram * float.
-				queryString = fmt.Sprintf(`%s * %s`, seriesName, floatSeriesName)
-				queryAndCheck(queryString, []promql.Sample{{T: ts, H: &c.expectedMul, Metric: labels.EmptyLabels()}})
-
-				// float * histogram.
-				queryString = fmt.Sprintf(`%s * %s`, floatSeriesName, seriesName)
-				queryAndCheck(queryString, []promql.Sample{{T: ts, H: &c.expectedMul, Metric: labels.EmptyLabels()}})
-
-				// histogram / scalar.
-				queryString = fmt.Sprintf(`%s / %f`, seriesName, c.scalar)
-				queryAndCheck(queryString, []promql.Sample{{T: ts, H: &c.expectedDiv, Metric: labels.EmptyLabels()}})
-
-				// histogram / float.
-				queryString = fmt.Sprintf(`%s / %s`, seriesName, floatSeriesName)
-				queryAndCheck(queryString, []promql.Sample{{T: ts, H: &c.expectedDiv, Metric: labels.EmptyLabels()}})
-			})
-			idx0++
-		}
 	}
 }
 

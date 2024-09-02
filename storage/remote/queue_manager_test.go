@@ -930,7 +930,7 @@ func createHistograms(numSamples, numSeries int, floatHistogram bool) ([]record.
 }
 
 func createSeriesMetadata(series []record.RefSeries) []record.RefMetadata {
-	metas := make([]record.RefMetadata, len(series))
+	metas := make([]record.RefMetadata, 0, len(series))
 
 	for _, s := range series {
 		metas = append(metas, record.RefMetadata{
