@@ -1634,14 +1634,12 @@ loop:
 		if seriesAlreadyScraped && parsedTimestamp == nil {
 			err = storage.ErrDuplicateSampleForTimestamp
 		} else {
-			if sl.enableCTZeroIngestion {
-				if ctMs := p.CreatedTimestamp(); ctMs != nil {
-					ref, err = app.AppendCTZeroSample(ref, lset, t, *ctMs)
-					if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) { // OOO is a common case, ignoring completely for now.
-						// CT is an experimental feature. For now, we don't need to fail the
-						// scrape on errors updating the created timestamp, log debug.
-						level.Debug(sl.l).Log("msg", "Error when appending CT in scrape loop", "series", string(met), "ct", *ctMs, "t", t, "err", err)
-					}
+			if ctMs := p.CreatedTimestamp(); sl.enableCTZeroIngestion && ctMs != nil {
+				ref, err = app.AppendCTZeroSample(ref, lset, t, *ctMs)
+				if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) { // OOO is a common case, ignoring completely for now.
+					// CT is an experimental feature. For now, we don't need to fail the
+					// scrape on errors updating the created timestamp, log debug.
+					level.Debug(sl.l).Log("msg", "Error when appending CT in scrape loop", "series", string(met), "ct", *ctMs, "t", t, "err", err)
 				}
 			}
 
