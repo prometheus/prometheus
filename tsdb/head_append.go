@@ -321,8 +321,8 @@ type headAppender struct {
 }
 
 func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
-	// For OOO inserts, this restriction is irrelevant and will be checked later once we confirm the sample is an in-order append.
-	// Fail fast if OOO is disabled.
+	// Fail fast if OOO is disabled and the sample is out of bounds.
+	// Otherwise a full check will be done later to decide if the sample is in-order or out-of-order.
 	if a.oooTimeWindow == 0 && t < a.minValidTime {
 		a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
 		return 0, storage.ErrOutOfBounds
@@ -625,15 +625,11 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		return 0, storage.ErrNativeHistogramsDisabled
 	}
 
-	// For OOO inserts, this restriction is irrelevant and will be checked later once we confirm the histogram sample is an in-order append.
-	// Fail fast if OOO is disabled.
-	if a.oooTimeWindow == 0 && t < a.minValidTime {
+	// Fail fast if OOO is disabled and the sample is out of bounds.
+	// Otherwise a full check will be done later to decide if the sample is in-order or out-of-order.
+	if (a.oooTimeWindow == 0 || !a.head.opts.EnableOOONativeHistograms.Load()) && t < a.minValidTime {
 		a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
 		return 0, storage.ErrOutOfBounds
-	}
-	// Also fail fast if OOO is enabled, but OOO native histogram ingestion is disabled.
-	if a.oooTimeWindow > 0 && t < a.minValidTime && t >= a.headMaxt-a.oooTimeWindow && !a.head.opts.EnableOOONativeHistograms.Load() {
-		return 0, storage.ErrOOONativeHistogramsDisabled
 	}
 
 	if h != nil {
@@ -696,6 +692,8 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		if err != nil {
 			switch {
 			case errors.Is(err, storage.ErrOutOfOrderSample):
+				fallthrough
+			case errors.Is(err, storage.ErrOOONativeHistogramsDisabled):
 				a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
 			case errors.Is(err, storage.ErrTooOldSample):
 				a.head.metrics.tooOldSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
@@ -723,6 +721,8 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		if err != nil {
 			switch {
 			case errors.Is(err, storage.ErrOutOfOrderSample):
+				fallthrough
+			case errors.Is(err, storage.ErrOOONativeHistogramsDisabled):
 				a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
 			case errors.Is(err, storage.ErrTooOldSample):
 				a.head.metrics.tooOldSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()

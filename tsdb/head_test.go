@@ -2667,22 +2667,37 @@ func TestIsolationWithoutAdd(t *testing.T) {
 func TestOutOfOrderSamplesMetric(t *testing.T) {
 	for name, scenario := range sampleTypeScenarios {
 		t.Run(name, func(t *testing.T) {
-			testOutOfOrderSamplesMetric(t, scenario)
+			options := DefaultOptions()
+			options.EnableNativeHistograms = true
+			options.EnableOOONativeHistograms = true
+			testOutOfOrderSamplesMetric(t, scenario, options, storage.ErrOutOfOrderSample)
 		})
 	}
 }
 
-func testOutOfOrderSamplesMetric(t *testing.T, scenario sampleTypeScenario) {
-	dir := t.TempDir()
+func TestOutOfOrderSamplesMetricNativeHistogramOOODisabled(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		if scenario.sampleType != "histogram" {
+			continue
+		}
+		t.Run(name, func(t *testing.T) {
+			options := DefaultOptions()
+			options.OutOfOrderTimeWindow = (1000 * time.Minute).Milliseconds()
+			options.EnableNativeHistograms = true
+			options.EnableOOONativeHistograms = false
+			testOutOfOrderSamplesMetric(t, scenario, options, storage.ErrOOONativeHistogramsDisabled)
+		})
+	}
+}
 
-	db, err := Open(dir, nil, nil, DefaultOptions(), nil)
+func testOutOfOrderSamplesMetric(t *testing.T, scenario sampleTypeScenario, options *Options, expectOutOfOrderError error) {
+	dir := t.TempDir()
+	db, err := Open(dir, nil, nil, options, nil)
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, db.Close())
 	}()
 	db.DisableCompactions()
-	db.EnableNativeHistograms()
-	db.EnableOOONativeHistograms()
 
 	appendSample := func(appender storage.Appender, ts int64) (storage.SeriesRef, error) {
 		ref, _, err := scenario.appendFunc(appender, labels.FromStrings("a", "b"), ts, 99)
@@ -2701,15 +2716,15 @@ func testOutOfOrderSamplesMetric(t *testing.T, scenario sampleTypeScenario) {
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(scenario.sampleType)))
 	app = db.Appender(ctx)
 	_, err = appendSample(app, 2)
-	require.Equal(t, storage.ErrOutOfOrderSample, err)
+	require.Equal(t, expectOutOfOrderError, err)
 	require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(scenario.sampleType)))
 
 	_, err = appendSample(app, 3)
-	require.Equal(t, storage.ErrOutOfOrderSample, err)
+	require.Equal(t, expectOutOfOrderError, err)
 	require.Equal(t, 2.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(scenario.sampleType)))
 
 	_, err = appendSample(app, 4)
-	require.Equal(t, storage.ErrOutOfOrderSample, err)
+	require.Equal(t, expectOutOfOrderError, err)
 	require.Equal(t, 3.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(scenario.sampleType)))
 	require.NoError(t, app.Commit())
 
@@ -2744,15 +2759,15 @@ func testOutOfOrderSamplesMetric(t *testing.T, scenario sampleTypeScenario) {
 	// Test out of order metric.
 	app = db.Appender(ctx)
 	_, err = appendSample(app, db.head.minValidTime.Load()+DefaultBlockDuration+2)
-	require.Equal(t, storage.ErrOutOfOrderSample, err)
+	require.Equal(t, expectOutOfOrderError, err)
 	require.Equal(t, 4.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(scenario.sampleType)))
 
 	_, err = appendSample(app, db.head.minValidTime.Load()+DefaultBlockDuration+3)
-	require.Equal(t, storage.ErrOutOfOrderSample, err)
+	require.Equal(t, expectOutOfOrderError, err)
 	require.Equal(t, 5.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(scenario.sampleType)))
 
 	_, err = appendSample(app, db.head.minValidTime.Load()+DefaultBlockDuration+4)
-	require.Equal(t, storage.ErrOutOfOrderSample, err)
+	require.Equal(t, expectOutOfOrderError, err)
 	require.Equal(t, 6.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(scenario.sampleType)))
 	require.NoError(t, app.Commit())
 }
