@@ -438,6 +438,32 @@ func BenchmarkLoadWLs(b *testing.B) {
 	}
 }
 
+// BenchmarkLoadRealWLs will be skipped unless the BENCHMARK_LOAD_REAL_WLS_DIR environment variable is set.
+// BENCHMARK_LOAD_REAL_WLS_DIR should be the folder where `wal` and `chunks_head` are located.
+func BenchmarkLoadRealWLs(b *testing.B) {
+	dir := os.Getenv("BENCHMARK_LOAD_REAL_WLS_DIR")
+	if dir == "" {
+		b.SkipNow()
+	}
+
+	wal, err := wlog.New(nil, nil, filepath.Join(dir, "wal"), wlog.CompressionNone)
+	require.NoError(b, err)
+	b.Cleanup(func() { wal.Close() })
+
+	wbl, err := wlog.New(nil, nil, filepath.Join(dir, "wbl"), wlog.CompressionNone)
+	require.NoError(b, err)
+	b.Cleanup(func() { wbl.Close() })
+
+	// Load the WAL.
+	for i := 0; i < b.N; i++ {
+		opts := DefaultHeadOptions()
+		opts.ChunkDirRoot = dir
+		h, err := NewHead(nil, nil, wal, wbl, opts, nil)
+		require.NoError(b, err)
+		require.NoError(b, h.Init(0))
+	}
+}
+
 // TestHead_HighConcurrencyReadAndWrite generates 1000 series with a step of 15s and fills a whole block with samples,
 // this means in total it generates 4000 chunks because with a step of 15s there are 4 chunks per block per series.
 // While appending the samples to the head it concurrently queries them from multiple go routines and verifies that the
