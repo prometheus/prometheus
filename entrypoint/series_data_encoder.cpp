@@ -1,35 +1,49 @@
-#include "series_data/data_storage.h"
 #include "series_data_encoder.h"
-#include "series_data/encoder.h"
-#include "series_data/outdated_sample_encoder.h"
-#include "prometheus/relabeler.h"
-#include "primitives/primitives.h"
 
 #include <chrono>
 
-struct SeriesDataEncoderWrapper {
-    std::chrono::system_clock clock{};
-    series_data::OutdatedSampleEncoder<std::chrono::system_clock> outdated_sample_encoder;
-    series_data::Encoder<decltype(outdated_sample_encoder)> encoder;
+#include "primitives/primitives.h"
+#include "prometheus/relabeler.h"
+#include "series_data/data_storage.h"
+#include "series_data/encoder.h"
+#include "series_data/outdated_chunk_merger.h"
+#include "series_data/outdated_sample_encoder.h"
 
-    explicit SeriesDataEncoderWrapper(series_data::DataStorage& data_storage) : outdated_sample_encoder{data_storage, clock}, encoder{data_storage, outdated_sample_encoder} {}
+namespace {
+
+using OutdatedSampleEncoder = series_data::OutdatedSampleEncoder<std::chrono::system_clock>;
+using Encoder = series_data::Encoder<OutdatedSampleEncoder>;
+using OutdatedChunkMerger = series_data::OutdatedChunkMerger<Encoder>;
+
+struct SeriesDataEncoderWrapper {
+  std::chrono::system_clock clock;
+  OutdatedSampleEncoder outdated_sample_encoder{clock};
+  Encoder encoder;
+
+  explicit SeriesDataEncoderWrapper(series_data::DataStorage& data_storage) : encoder{data_storage, outdated_sample_encoder} {}
 };
+
+using SeriesDataEncoderWrapperPtr = std::unique_ptr<SeriesDataEncoderWrapper>;
+
+static_assert(sizeof(SeriesDataEncoderWrapperPtr) == sizeof(void*));
+
+}  // namespace
 
 extern "C" void prompp_series_data_encoder_ctor(void* args, void* res) {
   struct Arguments {
     series_data::DataStorage* data_storage;
   };
   using Result = struct {
-    SeriesDataEncoderWrapper* encoder_wrapper;
+    SeriesDataEncoderWrapperPtr encoder_wrapper;
   };
 
   auto* in = reinterpret_cast<Arguments*>(args);
-  new (res) Result{.encoder_wrapper = new SeriesDataEncoderWrapper(*in->data_storage)};
+  new (res) Result{.encoder_wrapper = std::make_unique<SeriesDataEncoderWrapper>(*in->data_storage)};
 }
 
 extern "C" void prompp_series_data_encoder_encode(void* args) {
   struct Arguments {
-    SeriesDataEncoderWrapper* encoder_wrapper;
+    SeriesDataEncoderWrapperPtr encoder_wrapper;
     uint32_t series_id;
     int64_t timestamp;
     double value;
@@ -41,7 +55,7 @@ extern "C" void prompp_series_data_encoder_encode(void* args) {
 
 extern "C" void prompp_series_data_encoder_encode_inner_series_slice(void* args) {
   struct Arguments {
-    SeriesDataEncoderWrapper* encoder_wrapper;
+    SeriesDataEncoderWrapperPtr encoder_wrapper;
     PromPP::Primitives::Go::SliceView<PromPP::Prometheus::Relabel::InnerSeries*> inner_series_slice;
   };
 
@@ -60,11 +74,18 @@ extern "C" void prompp_series_data_encoder_encode_inner_series_slice(void* args)
   });
 }
 
-extern "C" void prompp_series_data_encoder_dtor(void* args) {
+extern "C" void prompp_series_data_encoder_merge_out_of_order_chunks(void* args) {
   struct Arguments {
-    SeriesDataEncoderWrapper* encoder_wrapper;
+    SeriesDataEncoderWrapperPtr encoder_wrapper;
   };
 
-  Arguments* in = reinterpret_cast<Arguments*>(args);
-  delete in->encoder_wrapper;
+  OutdatedChunkMerger{reinterpret_cast<Arguments*>(args)->encoder_wrapper->encoder}.merge();
+}
+
+extern "C" void prompp_series_data_encoder_dtor(void* args) {
+  struct Arguments {
+    SeriesDataEncoderWrapperPtr encoder_wrapper;
+  };
+
+  reinterpret_cast<Arguments*>(args)->~Arguments();
 }

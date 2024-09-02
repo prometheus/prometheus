@@ -4,31 +4,36 @@
 #include "primitives/go_slice.h"
 #include "series_data/data_storage.h"
 
+namespace {
+
+using DataStoragePtr = std::unique_ptr<series_data::DataStorage>;
+
+static_assert(sizeof(DataStoragePtr) == sizeof(void*));
+
+};  // namespace
+
 extern "C" void prompp_series_data_data_storage_ctor(void* res) {
   using Result = struct {
-    series_data::DataStorage* data_storage;
+    DataStoragePtr data_storage;
   };
 
-  Result* out = new (res) Result();
-  out->data_storage = new series_data::DataStorage();
+  new (res) Result{.data_storage = std::make_unique<series_data::DataStorage>()};
 }
 
 extern "C" void prompp_series_data_data_storage_reset(void* args) {
   struct Arguments {
-    series_data::DataStorage* data_storage;
+    DataStoragePtr data_storage;
   };
 
-  Arguments* in = reinterpret_cast<Arguments*>(args);
-  in->data_storage->reset();
+  reinterpret_cast<Arguments*>(args)->data_storage->reset();
 }
 
 extern "C" void prompp_series_data_data_storage_dtor(void* args) {
   struct Arguments {
-    series_data::DataStorage* data_storage;
+    DataStoragePtr data_storage;
   };
 
-  Arguments* in = reinterpret_cast<Arguments*>(args);
-  delete in->data_storage;
+  reinterpret_cast<Arguments*>(args)->~Arguments();
 }
 
 extern "C" void prompp_series_data_chunk_recoder_ctor(void* args, void* res) {

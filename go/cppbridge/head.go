@@ -63,6 +63,10 @@ func (e *HeadEncoder) EncodeInnerSeriesSlice(innerSeriesSlice []*InnerSeries) {
 	seriesDataEncoderEncodeInnerSeriesSlice(e.encoder, innerSeriesSlice)
 }
 
+func (e *HeadEncoder) MergeOutOfOrderChunks() {
+	seriesDataEncoderMergeOutOfOrderChunks(e.encoder)
+}
+
 type RecodedChunk struct {
 	MinT         int64
 	MaxT         int64
