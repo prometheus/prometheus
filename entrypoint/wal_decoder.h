@@ -46,6 +46,53 @@ void prompp_wal_decoder_dtor(void* args);
 void prompp_wal_decoder_decode(void* args, void* res);
 
 /**
+ * @brief Decode WAL-segment into BasicDecoderHashdex
+ *
+ * @param args {
+ *     decoder               uintptr // pointer to constructed decoder
+ *     segment               []byte  // segment content
+ * }
+ * @param res {
+ *     created_at            int64   // timestamp in ns when data was start writed to encoder
+ *     encoded_at            int64   // timestamp in ns when segment was encoded
+ *     samples               uint32  // number of samples in segment
+ *     series                uint32  // number of series in segment
+ *     segment_id            uint32  // processed segment id
+ *     earliest_block_sample int64   // min timestamp in block
+ *     latest_block_sample   inte64  // max timestamp in block
+ *     hashdex               uintptr // pointer to filled hashdex
+ *     cluster               string  // value of label cluster from first sample
+ *     replica               string  // value of label __replica__ from first sample
+ *     error                 []byte  // error string if thrown
+ * }
+ */
+void prompp_wal_decoder_decode_to_hashdex(void* args, void* res);
+
+/**
+ * @brief Decode WAL-segment into BasicDecoderHashdex with metadata for injection metrics.
+ *
+ * @param args {
+ *     decoder               uintptr        // pointer to constructed decoder
+ *     meta                  *MetaInjection // pointer to metadata for injection metrics.
+ *     segment               []byte         // segment content
+ * }
+ * @param res {
+ *     created_at            int64          // timestamp in ns when data was start writed to encoder
+ *     encoded_at            int64          // timestamp in ns when segment was encoded
+ *     samples               uint32         // number of samples in segment
+ *     series                uint32         // number of series in segment
+ *     segment_id            uint32         // processed segment id
+ *     earliest_block_sample int64          // min timestamp in block
+ *     latest_block_sample   inte64         // max timestamp in block
+ *     hashdex               uintptr        // pointer to filled hashdex
+ *     cluster               string         // value of label cluster from first sample
+ *     replica               string         // value of label __replica__ from first sample
+ *     error                 []byte         // error string if thrown
+ * }
+ */
+void prompp_wal_decoder_decode_to_hashdex_with_metric_injection(void* args, void* res);
+
+/**
  * @brief Decode WAL-segment and drop decoded data
  *
  * @param args {

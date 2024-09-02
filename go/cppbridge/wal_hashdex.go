@@ -161,3 +161,51 @@ func (HashdexFactory) Protobuf(data []byte, limits WALHashdexLimits) (ShardedDat
 func (HashdexFactory) GoModel(data []model.TimeSeries, limits WALHashdexLimits) (ShardedData, error) {
 	return NewWALGoModelHashdex(limits, data)
 }
+
+// MetaInjection metedata for injection metrics.
+type MetaInjection struct {
+	SentAt    int64
+	AgentUUID string
+	Hostname  string
+}
+
+// WALBasicDecoderHashdex Go wrapper for PromPP::WAL::WALBasicDecoderHashdex.
+type WALBasicDecoderHashdex struct {
+	hashdex  uintptr
+	metadata *MetaInjection
+	cluster  string
+	replica  string
+}
+
+// NewWALBasicDecoderHashdex init new WALBasicDecoderHashdex with c-pointer PromPP::WAL::WALBasicDecoderHashdex.
+func NewWALBasicDecoderHashdex(hashdex uintptr, meta *MetaInjection, cluster, replica string) *WALBasicDecoderHashdex {
+	h := &WALBasicDecoderHashdex{
+		hashdex:  hashdex,
+		metadata: meta,
+		cluster:  cluster,
+		replica:  replica,
+	}
+	runtime.SetFinalizer(h, func(h *WALBasicDecoderHashdex) {
+		runtime.KeepAlive(h.metadata)
+		if h.hashdex == 0 {
+			return
+		}
+		walBasicDecoderHashdexDtor(h.hashdex)
+	})
+	return h
+}
+
+// Cluster get Cluster name.
+func (h *WALBasicDecoderHashdex) Cluster() string {
+	return strings.Clone(h.cluster)
+}
+
+// Replica get Replica name.
+func (h *WALBasicDecoderHashdex) Replica() string {
+	return strings.Clone(h.replica)
+}
+
+// cptr pointer to underlying c++ object.
+func (h *WALBasicDecoderHashdex) cptr() uintptr {
+	return h.hashdex
+}

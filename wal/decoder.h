@@ -10,15 +10,11 @@
 #error "Your C++ Standard library doesn't implement the std::spanstream. Make sure that you use conformant Library (e.g., libstdc++ from GCC 12)"
 #endif
 
+#include "bare_bones/concepts.h"
 #include "bare_bones/preprocess.h"
 #include "prometheus/remote_write.h"
 #include "third_party/protozero/pbf_writer.hpp"
 #include "wal.h"
-
-template <class T>
-concept have_segment_id = requires(const T& t) {
-  { t.segment_id };
-};
 
 namespace PromPP::WAL {
 
@@ -43,7 +39,7 @@ class TimeseriesProtobufWriter {
     stats.earliest_block_sample = decoder_.earliest_sample();
     stats.latest_block_sample = decoder_.latest_sample();
 
-    if constexpr (have_segment_id<Stats>) {
+    if constexpr (BareBones::concepts::have_field_segment_id<Stats>) {
       stats.segment_id = decoder_.last_processed_segment();
     }
   }
@@ -72,6 +68,16 @@ class Decoder {
     TimeseriesProtobufWriter<Reader, Output> protobuf_writer(reader_, out);
     reader_.process_segment(protobuf_writer);
     protobuf_writer.get_statistic(stats);
+  }
+
+  // decode_to_hashdex decoding incoming data and add to hashdex with metadata.
+  template <class Input, class Hashdex, class Stats, class... PreshardingArgs>
+  PROMPP_ALWAYS_INLINE void decode_to_hashdex(Input& in, Hashdex& hx, Stats& stats, PreshardingArgs&&... presharding_args) {
+    std::ispanstream inspan(std::string_view(in.data(), in.size()));
+    inspan >> reader_;
+
+    hx.presharding(reader_, std::forward<PreshardingArgs>(presharding_args)...);
+    hx.write_stats(reader_, stats);
   }
 
   // decode_dry - decoding incoming data without protbuf.

@@ -3,11 +3,15 @@
 #include <cstdint>
 #include <string_view>
 
+#include "bare_bones/concepts.h"
 #include "bare_bones/exception.h"
+#include "bare_bones/preprocess.h"
 #include "bare_bones/vector.h"
 #include "primitives/go_model.h"
+#include "primitives/go_slice.h"
 #include "primitives/primitives.h"
 #include "prometheus/remote_write.h"
+#include "wal.h"
 
 #include "third_party/protozero/pbf_reader.hpp"
 
@@ -15,7 +19,7 @@ namespace PromPP::WAL {
 
 template <class LabelSet>
 void set_cluser_and_replica_values(const LabelSet& label_set, std::string_view& cluster, std::string_view& replica) {
-  for (auto& [name, value] : label_set) {
+  for (const auto& [name, value] : label_set) {
     if (name == "cluster") {
       cluster = value;
     }
@@ -165,4 +169,113 @@ class ProtobufHashdex {
   inline __attribute__((always_inline)) const_iterator begin() const noexcept { return std::begin(items_); }
   inline __attribute__((always_inline)) const_iterator end() const noexcept { return std::end(items_); }
 };
+
+// MetaInjection metedata for injection metrics.
+struct MetaInjection {
+  int64_t sent_at{0};
+  PromPP::Primitives::Go::String agent_uuid;
+  PromPP::Primitives::Go::String hostname;
+};
+
+class BasicDecoderHashdex {
+ public:
+  class Item {
+    size_t hash_;
+    Primitives::TimeseriesSemiview data_;
+
+   public:
+    template <class LabelSet>
+    PROMPP_ALWAYS_INLINE explicit Item(const LabelSet& ls, Primitives::Timestamp ts, double value)
+        : hash_(hash_value(ls)), data_(ls, BareBones::Vector<Primitives::Sample>{{ts, value}}) {}
+
+    PROMPP_ALWAYS_INLINE size_t hash() const { return hash_; }
+
+    template <class Timeseries>
+    PROMPP_ALWAYS_INLINE void read(Timeseries& timeseries) const {
+      timeseries = data_;
+    }
+  };
+
+ private:
+  std::vector<Item> items_;
+  std::string_view replica_;
+  std::string_view cluster_;
+  uint32_t series_{0};
+
+  // metrics_injection injection of additional metrics with Heartbeat.
+  void metric_injection(const MetaInjection& meta, std::chrono::system_clock::time_point now) {
+    auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
+    auto sent_at = std::chrono::nanoseconds{meta.sent_at};
+    Primitives::SymbolView agent_uuid{meta.agent_uuid.begin(), meta.agent_uuid.size()};
+    Primitives::SymbolView hostname{meta.hostname.begin(), meta.hostname.size()};
+
+    items_.emplace_back(Primitives::LabelViewSet{{"__name__", "okagent__timestamp"},
+                                                 {"agent_uuid", agent_uuid},
+                                                 {"conf", "/usr/local/okagent/etc/config.yaml"},
+                                                 {"instance", hostname},
+                                                 {"job", "heartbeat"},
+                                                 {"okmeter_plugin", "heartbeat"},
+                                                 {"okmeter_plugin_instance", "/usr/local/okagent/etc/config.yaml"}},
+                        now_ms.count(), std::chrono::duration<double>(std::chrono::duration_cast<std::chrono::seconds>(sent_at)).count());
+
+    items_.emplace_back(Primitives::LabelViewSet{{"__name__", "okagent__heartbeat"}, {"agent_uuid", agent_uuid}, {"instance", hostname}, {"job", "collector"}},
+                        now_ms.count(), std::chrono::duration<double>(std::chrono::seconds(1)).count());
+
+    items_.emplace_back(
+        Primitives::LabelViewSet{{"__name__", "time__offset__collector"}, {"agent_uuid", agent_uuid}, {"instance", hostname}, {"job", "collector"}},
+        now_ms.count(), std::chrono::duration<double>(std::chrono::duration_cast<std::chrono::seconds>(now_ms - sent_at)).count());
+
+    series_ += 3;
+  }
+
+ public:
+  using const_iterator = std::vector<Item>::const_iterator;
+
+  // presharding from decoder make presharding slice with hash and TimeseriesSemiview.
+  PROMPP_ALWAYS_INLINE void presharding(BasicDecoder<>& decoder) {
+    BasicDecoder<>::label_set_value_type ls_view;  // composite_type
+    Primitives::LabelSetID last_ls_id = std::numeric_limits<Primitives::LabelSetID>::max();
+    const auto& label_sets = decoder.label_sets();
+    decoder.process_segment([&](Primitives::LabelSetID ls_id, Primitives::Timestamp ts, double value) PROMPP_LAMBDA_INLINE {
+      if (last_ls_id != ls_id) {
+        ls_view = label_sets[ls_id];
+        last_ls_id = ls_id;
+        ++series_;
+      }
+      items_.emplace_back(ls_view, ts, value);
+    });
+    if (items_.size()) [[likely]] {
+      set_cluser_and_replica_values(ls_view, cluster_, replica_);
+    }
+  }
+
+  // presharding from decoder make presharding slice with hash and TimeseriesSemiview with metadata.
+  PROMPP_ALWAYS_INLINE void presharding(BasicDecoder<>& decoder, const MetaInjection& meta) {
+    auto now = std::chrono::system_clock::now();
+    presharding(decoder);
+    metric_injection(meta, now);
+  }
+
+  // write_stats write sharding stats.
+  template <class Stats>
+  PROMPP_ALWAYS_INLINE void write_stats(BasicDecoder<>& decoder, Stats& stats) {
+    stats.created_at = decoder.created_at_tsns();
+    stats.encoded_at = decoder.encoded_at_tsns();
+    stats.samples = items_.size();
+    stats.series = series_;
+    stats.earliest_block_sample = decoder.earliest_sample();
+    stats.latest_block_sample = decoder.latest_sample();
+    if constexpr (BareBones::concepts::have_field_segment_id<Stats>) {
+      stats.segment_id = decoder.last_processed_segment();
+    }
+  }
+
+  PROMPP_ALWAYS_INLINE const_iterator begin() const noexcept { return std::begin(items_); }
+  PROMPP_ALWAYS_INLINE const_iterator end() const noexcept { return std::end(items_); }
+  PROMPP_ALWAYS_INLINE uint32_t series() const noexcept { return series_; }
+  PROMPP_ALWAYS_INLINE size_t size() const noexcept { return items_.size(); }
+  constexpr const std::string_view replica() const noexcept { return replica_; }
+  constexpr const std::string_view cluster() const noexcept { return cluster_; }
+};
+
 }  // namespace PromPP::WAL

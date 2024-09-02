@@ -55,6 +55,9 @@ func (i *IncomingData) ShardedData() cppbridge.ShardedData {
 // Destroy increment or destroy IncomingData.
 func (i *IncomingData) Destroy() {
 	i.Hashdex = nil
+	if i.Data == nil {
+		return
+	}
 	i.Data.Destroy()
 }
 

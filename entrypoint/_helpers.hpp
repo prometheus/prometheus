@@ -32,5 +32,5 @@ inline __attribute__((always_inline)) void handle_current_exception(std::string_
 /**
  * used for indexing HashdexVariant.
  */
-enum HashdexType : uint8_t { protobuf = 0, go_model = 1 };
-using HashdexVariant = std::variant<PromPP::WAL::ProtobufHashdex, PromPP::WAL::GoModelHashdex>;
+enum HashdexType : uint8_t { protobuf = 0, go_model = 1, decoder = 2 };
+using HashdexVariant = std::variant<PromPP::WAL::ProtobufHashdex, PromPP::WAL::GoModelHashdex, PromPP::WAL::BasicDecoderHashdex>;
