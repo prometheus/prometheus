@@ -72,13 +72,12 @@ cc_library(
     hdrs = glob(["primitives/**/*.h"]),
     deps = [
         ":bare_bones",
-        "@roaring",
     ],
 )
 
 cc_test(
     name = "primitives_test",
-    srcs = glob(["primitives/tests/**/*_tests.cpp"]),
+    srcs = glob(["primitives/tests/*_tests.cpp"]),
     deps = [
         ":primitives",
         "@gtest//:gtest_main",

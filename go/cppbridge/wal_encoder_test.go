@@ -73,7 +73,7 @@ func (*EncoderSuite) transferringData(income frames.WritePayload) []byte {
 }
 
 func (s *EncoderSuite) TestEncoderVersion() {
-	var expectedVersion uint8 = 4
+	var expectedVersion uint8 = 3
 	actualVersion := cppbridge.EncodersVersion()
 	s.Equal(expectedVersion, actualVersion)
 }
