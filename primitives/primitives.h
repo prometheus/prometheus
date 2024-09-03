@@ -61,18 +61,30 @@ class BasicLabelSet {
 
   inline __attribute__((always_inline)) void clear() noexcept { labels_.clear(); }
 
-  inline __attribute__((always_inline)) void add(const LabelType& label) noexcept {
-    if (__builtin_expect(labels_.empty() || std::get<0>(label) > std::get<0>(labels_.back()), true)) {
+  PROMPP_ALWAYS_INLINE void add(const LabelType& label) noexcept {
+    if (labels_.empty() || label.first > labels_.back().first) {
+      [[likely]];
       labels_.emplace_back(label);
-    } else if (__builtin_expect(std::get<0>(label) == std::get<0>(labels_.back()), false)) {
-      std::get<1>(labels_.back()) = std::get<1>(label);
+    } else if (label.first == labels_.back().first) {
+      [[unlikely]];
+      labels_.back().second = label.second;
     } else {
-      auto i = std::lower_bound(labels_.begin(), labels_.end(), std::get<0>(label), [](const LabelType& a, const auto& b) { return std::get<0>(a) < b; });
-      if (__builtin_expect(std::get<0>(*i) == std::get<0>(label), false)) {
-        std::get<1>(*i) = std::get<1>(label);
+      auto i = std::lower_bound(labels_.begin(), labels_.end(), label.first, [](const LabelType& a, const auto& b) { return a.first < b; });
+      if (i->first == label.first) {
+        [[unlikely]];
+        i->second = label.second;
       } else {
         labels_.insert(i, label);
       }
+    }
+  }
+
+  template <class LabelSet>
+  PROMPP_ALWAYS_INLINE void add(const LabelSet& label_set) {
+    labels_.reserve(labels_.size() + label_set.size());
+
+    for (auto& label : label_set) {
+      add(label);
     }
   }
 
@@ -255,7 +267,7 @@ class BasicTimeseries {
   BasicTimeseries(const LabelSetType& label_set, const SamplesType samples) noexcept : label_set_(label_set), samples_(samples) {}
 
   template <class LabelSet>
-  BasicTimeseries(const LabelSet& label_set, const SamplesType& samples) noexcept : label_set_(label_set), samples_(samples) {}
+  BasicTimeseries(const LabelSet& label_set, SamplesType samples) noexcept : label_set_(label_set), samples_(std::move(samples)) {}
 
   inline __attribute__((always_inline)) auto& label_set() noexcept {
     if constexpr (std::is_pointer<LabelSetType>::value) {
