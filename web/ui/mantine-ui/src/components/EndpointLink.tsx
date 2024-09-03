@@ -35,13 +35,13 @@ const EndpointLink: FC<EndpointLinkProps> = ({ endpoint, globalUrl }) => {
         {displayLink}
       </Anchor>
       {params.length > 0 && (
-        <Group gap="xs" my="md">
+        <Group gap="xs" mt="md">
           {params.map(([labelName, labelValue]: [string, string]) => {
             return (
               <Badge
                 size="sm"
                 variant="light"
-                color="gray.9"
+                color="gray"
                 key={`${labelName}/${labelValue}`}
                 style={{ textTransform: "none" }}
               >
