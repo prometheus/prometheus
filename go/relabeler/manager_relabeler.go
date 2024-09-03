@@ -59,7 +59,9 @@ func (i *IncomingData) Destroy() {
 		return
 	}
 	i.Hashdex = nil
-	i.Data.Destroy()
+	if i.Data != nil {
+		i.Data.Destroy()
+	}
 }
 
 // relabelerKey - key for relabeler.
