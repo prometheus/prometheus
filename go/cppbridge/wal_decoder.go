@@ -61,10 +61,12 @@ func (s DecodedSegmentStats) Series() uint32 {
 	return s.series
 }
 
+// EarliestBlockSample return earliest sample timestamp from block.
 func (s DecodedSegmentStats) EarliestBlockSample() int64 {
 	return s.earliestBlockSample
 }
 
+// LatestBlockSample return latest sample timestamp from block.
 func (s DecodedSegmentStats) LatestBlockSample() int64 {
 	return s.latestBlockSample
 }
@@ -121,6 +123,44 @@ func (p *DecodedProtobuf) UnmarshalTo(v proto.Unmarshaler) error {
 	return err
 }
 
+// HashdexContent decoded to WALBasicDecoderHashdex segment.
+type HashdexContent interface {
+	CreatedAt() int64
+	EncodedAt() int64
+	Samples() uint32
+	SegmentID() uint32
+	Series() uint32
+	EarliestBlockSample() int64
+	LatestBlockSample() int64
+	ShardedData() ShardedData
+}
+
+// DecodedHashdex is GO wrapper for decoded hashdex content.
+type DecodedHashdex struct {
+	hashdex *WALBasicDecoderHashdex
+	DecodedSegmentStats
+}
+
+var _ HashdexContent = (*DecodedHashdex)(nil)
+
+// NewDecodedHashdex init new DecodedHashdex.
+func NewDecodedHashdex(
+	hashdex uintptr,
+	meta *MetaInjection,
+	cluster, replica string,
+	stats DecodedSegmentStats,
+) *DecodedHashdex {
+	return &DecodedHashdex{
+		hashdex:             NewWALBasicDecoderHashdex(hashdex, meta, cluster, replica),
+		DecodedSegmentStats: stats,
+	}
+}
+
+// ShardedData return hashdex as ShardedData.
+func (dh *DecodedHashdex) ShardedData() ShardedData {
+	return dh.hashdex
+}
+
 // WALDecoder - go wrapper for C-WALDecoder.
 //
 //	decoder - pointer to a C++ decoder initiated in C++ memory;
@@ -146,6 +186,33 @@ func (d *WALDecoder) Decode(ctx context.Context, segment []byte) (ProtobufConten
 	}
 	stats, protobuf, exception := walDecoderDecode(d.decoder, segment)
 	return NewDecodedProtobuf(protobuf, stats), handleException(exception)
+}
+
+// DecodeToHashdex decode incoming encoding data and return WALBasicDecoderHashdex.
+func (d *WALDecoder) DecodeToHashdex(ctx context.Context, segment []byte) (HashdexContent, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	stats, hashdex, cluster, replica, exception := walDecoderDecodeToHashdex(d.decoder, segment)
+	return NewDecodedHashdex(hashdex, nil, cluster, replica, stats), handleException(exception)
+}
+
+// DecodeToHashdexWithMetricInjection decode incoming encoding data and return WALBasicDecoderHashdex
+// with metadata for injection metrics.
+func (d *WALDecoder) DecodeToHashdexWithMetricInjection(
+	ctx context.Context,
+	segment []byte,
+	meta *MetaInjection,
+) (HashdexContent, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	stats, hashdex, cluster, replica, exception := walDecoderDecodeToHashdexWithMetricInjection(
+		d.decoder,
+		meta,
+		segment,
+	)
+	return NewDecodedHashdex(hashdex, meta, cluster, replica, stats), handleException(exception)
 }
 
 // DecodeDry - decode incoming encoding data, restores decoder.

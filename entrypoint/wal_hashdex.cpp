@@ -4,6 +4,7 @@
 #include "wal_hashdex.h"
 
 #include "primitives/go_slice.h"
+#include "wal/decoder.h"
 #include "wal/hashdex.h"
 
 extern "C" void prompp_wal_protobuf_hashdex_ctor(void* args, void* res) {
@@ -99,4 +100,8 @@ extern "C" void prompp_wal_go_model_hashdex_presharding(void* args, void* res) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
     handle_current_exception(__func__, err_stream);
   }
+}
+
+extern "C" void prompp_wal_basic_decoder_hashdex_dtor(void* args) {
+  prompp_wal_hashdex_dtor(args);
 }

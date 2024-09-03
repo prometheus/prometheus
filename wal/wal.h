@@ -1016,6 +1016,7 @@ class BasicDecoder {
   }
 
   using timeseries_type = const Primitives::BasicTimeseries<typename LabelSetsTable::value_type*>&;
+  using label_set_value_type = typename LabelSetsTable::value_type;
 
   template <class Callback>
     requires std::is_invocable_v<Callback, Primitives::LabelSetID, timeseries_type>
