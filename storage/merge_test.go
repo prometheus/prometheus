@@ -1345,7 +1345,7 @@ func makeMergeSeriesSet(serieses [][]Series) SeriesSet {
 	for i, s := range serieses {
 		seriesSets[i] = &genericSeriesSetAdapter{NewMockSeriesSet(s...)}
 	}
-	return &seriesSetAdapter{newGenericMergeSeriesSet(seriesSets, (&seriesMergerAdapter{VerticalSeriesMergeFunc: ChainedSeriesMerge}).Merge)}
+	return &seriesSetAdapter{newGenericMergeSeriesSet(seriesSets, 0, (&seriesMergerAdapter{VerticalSeriesMergeFunc: ChainedSeriesMerge}).Merge)}
 }
 
 func benchmarkDrain(b *testing.B, makeSeriesSet func() SeriesSet) {
@@ -1590,28 +1590,31 @@ func TestMergeQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 			secondaries: []Querier{
 				&mockQuerier{resp: []string{"b", "c"}, warnings: annotations.New().Add(warnStorage), err: nil},
 			},
-			limit: 1,
+			limit: 2,
 			expectedSelectsSeries: []labels.Labels{
 				labels.FromStrings("test", "a"),
 				labels.FromStrings("test", "b"),
-				labels.FromStrings("test", "c"),
-				labels.FromStrings("test", "d"),
 			},
-			expectedLabels:   []string{"a"},
+			expectedLabels:   []string{"a", "b"},
 			expectedWarnings: annotations.New().Add(warnStorage),
 		},
 	} {
 		var labelHints *LabelHints
+		var selectHints *SelectHints
 		if tcase.limit > 0 {
 			labelHints = &LabelHints{
 				Limit: tcase.limit,
 			}
+			selectHints = &SelectHints{
+				Limit: tcase.limit,
+			}
 		}
+
 		t.Run(tcase.name, func(t *testing.T) {
 			q := NewMergeQuerier(tcase.primaries, tcase.secondaries, func(s ...Series) Series { return s[0] })
 
 			t.Run("Select", func(t *testing.T) {
-				res := q.Select(context.Background(), false, nil)
+				res := q.Select(context.Background(), false, selectHints)
 				var lbls []labels.Labels
 				for res.Next() {
 					lbls = append(lbls, res.At().Labels())

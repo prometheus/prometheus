@@ -2030,7 +2030,7 @@ func TestPopulateWithDelSeriesIterator_NextWithMinTime(t *testing.T) {
 // TODO(bwplotka): Merge with storage merged series set benchmark.
 func BenchmarkMergedSeriesSet(b *testing.B) {
 	sel := func(sets []storage.SeriesSet) storage.SeriesSet {
-		return storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
+		return storage.NewMergeSeriesSet(sets, 0, storage.ChainedSeriesMerge)
 	}
 
 	for _, k := range []int{

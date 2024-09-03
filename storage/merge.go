@@ -135,13 +135,17 @@ func filterChunkQueriers(qs []ChunkQuerier) []ChunkQuerier {
 // Select returns a set of series that matches the given label matchers.
 func (q *mergeGenericQuerier) Select(ctx context.Context, sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) genericSeriesSet {
 	seriesSets := make([]genericSeriesSet, 0, len(q.queriers))
+	var limit int
+	if hints != nil {
+		limit = hints.Limit
+	}
 	if !q.concurrentSelect {
 		for _, querier := range q.queriers {
 			// We need to sort for merge  to work.
 			seriesSets = append(seriesSets, querier.Select(ctx, true, hints, matchers...))
 		}
 		return &lazyGenericSeriesSet{init: func() (genericSeriesSet, bool) {
-			s := newGenericMergeSeriesSet(seriesSets, q.mergeFn)
+			s := newGenericMergeSeriesSet(seriesSets, limit, q.mergeFn)
 			return s, s.Next()
 		}}
 	}
@@ -169,7 +173,7 @@ func (q *mergeGenericQuerier) Select(ctx context.Context, sortSeries bool, hints
 		seriesSets = append(seriesSets, r)
 	}
 	return &lazyGenericSeriesSet{init: func() (genericSeriesSet, bool) {
-		s := newGenericMergeSeriesSet(seriesSets, q.mergeFn)
+		s := newGenericMergeSeriesSet(seriesSets, limit, q.mergeFn)
 		return s, s.Next()
 	}}
 }
@@ -288,12 +292,12 @@ func truncateToLimit(s []string, hints *LabelHints) []string {
 type VerticalSeriesMergeFunc func(...Series) Series
 
 // NewMergeSeriesSet returns a new SeriesSet that merges many SeriesSets together.
-func NewMergeSeriesSet(sets []SeriesSet, mergeFunc VerticalSeriesMergeFunc) SeriesSet {
+func NewMergeSeriesSet(sets []SeriesSet, limit int, mergeFunc VerticalSeriesMergeFunc) SeriesSet {
 	genericSets := make([]genericSeriesSet, 0, len(sets))
 	for _, s := range sets {
 		genericSets = append(genericSets, &genericSeriesSetAdapter{s})
 	}
-	return &seriesSetAdapter{newGenericMergeSeriesSet(genericSets, (&seriesMergerAdapter{VerticalSeriesMergeFunc: mergeFunc}).Merge)}
+	return &seriesSetAdapter{newGenericMergeSeriesSet(genericSets, limit, (&seriesMergerAdapter{VerticalSeriesMergeFunc: mergeFunc}).Merge)}
 }
 
 // VerticalChunkSeriesMergeFunc returns merged chunk series implementation that merges potentially time-overlapping
@@ -303,12 +307,12 @@ func NewMergeSeriesSet(sets []SeriesSet, mergeFunc VerticalSeriesMergeFunc) Seri
 type VerticalChunkSeriesMergeFunc func(...ChunkSeries) ChunkSeries
 
 // NewMergeChunkSeriesSet returns a new ChunkSeriesSet that merges many SeriesSet together.
-func NewMergeChunkSeriesSet(sets []ChunkSeriesSet, mergeFunc VerticalChunkSeriesMergeFunc) ChunkSeriesSet {
+func NewMergeChunkSeriesSet(sets []ChunkSeriesSet, limit int, mergeFunc VerticalChunkSeriesMergeFunc) ChunkSeriesSet {
 	genericSets := make([]genericSeriesSet, 0, len(sets))
 	for _, s := range sets {
 		genericSets = append(genericSets, &genericChunkSeriesSetAdapter{s})
 	}
-	return &chunkSeriesSetAdapter{newGenericMergeSeriesSet(genericSets, (&chunkSeriesMergerAdapter{VerticalChunkSeriesMergeFunc: mergeFunc}).Merge)}
+	return &chunkSeriesSetAdapter{newGenericMergeSeriesSet(genericSets, limit, (&chunkSeriesMergerAdapter{VerticalChunkSeriesMergeFunc: mergeFunc}).Merge)}
 }
 
 // genericMergeSeriesSet implements genericSeriesSet.
@@ -316,9 +320,11 @@ type genericMergeSeriesSet struct {
 	currentLabels labels.Labels
 	mergeFunc     genericSeriesMergeFunc
 
-	heap        genericSeriesSetHeap
-	sets        []genericSeriesSet
-	currentSets []genericSeriesSet
+	heap         genericSeriesSetHeap
+	sets         []genericSeriesSet
+	currentSets  []genericSeriesSet
+	seriesLimit  int
+	mergedSeries int // tracks the total number of series merged and returned.
 }
 
 // newGenericMergeSeriesSet returns a new genericSeriesSet that merges (and deduplicates)
@@ -326,7 +332,8 @@ type genericMergeSeriesSet struct {
 // Each series set must return its series in labels order, otherwise
 // merged series set will be incorrect.
 // Overlapped situations are merged using provided mergeFunc.
-func newGenericMergeSeriesSet(sets []genericSeriesSet, mergeFunc genericSeriesMergeFunc) genericSeriesSet {
+// If seriesLimit is set, only limited series are returned.
+func newGenericMergeSeriesSet(sets []genericSeriesSet, seriesLimit int, mergeFunc genericSeriesMergeFunc) genericSeriesSet {
 	if len(sets) == 1 {
 		return sets[0]
 	}
@@ -346,13 +353,19 @@ func newGenericMergeSeriesSet(sets []genericSeriesSet, mergeFunc genericSeriesMe
 		}
 	}
 	return &genericMergeSeriesSet{
-		mergeFunc: mergeFunc,
-		sets:      sets,
-		heap:      h,
+		mergeFunc:   mergeFunc,
+		sets:        sets,
+		heap:        h,
+		seriesLimit: seriesLimit,
 	}
 }
 
 func (c *genericMergeSeriesSet) Next() bool {
+	if c.seriesLimit > 0 && c.mergedSeries >= c.seriesLimit {
+		// Exit early if seriesLimit is set.
+		return false
+	}
+
 	// Run in a loop because the "next" series sets may not be valid anymore.
 	// If, for the current label set, all the next series sets come from
 	// failed remote storage sources, we want to keep trying with the next label set.
@@ -388,12 +401,14 @@ func (c *genericMergeSeriesSet) Next() bool {
 
 func (c *genericMergeSeriesSet) At() Labels {
 	if len(c.currentSets) == 1 {
+		c.mergedSeries++
 		return c.currentSets[0].At()
 	}
 	series := make([]Labels, 0, len(c.currentSets))
 	for _, seriesSet := range c.currentSets {
 		series = append(series, seriesSet.At())
 	}
+	c.mergedSeries++
 	return c.mergeFunc(series...)
 }
 
