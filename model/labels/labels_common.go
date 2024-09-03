@@ -29,10 +29,11 @@ const (
 	BucketLabel  = "le"
 	InstanceName = "instance"
 
-	labelSep = '\xfe'
+	labelSep = '\xfe' // Used at beginning of `Bytes` return.
+	sep      = '\xff' // Used between labels in `Bytes` and `Hash`.
 )
 
-var seps = []byte{'\xff'}
+var seps = []byte{sep} // Used with Hash, which has no WriteByte method.
 
 // Label is a key/value pair of strings.
 type Label struct {
@@ -94,12 +95,23 @@ func (ls *Labels) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 // IsValid checks if the metric name or label names are valid.
-func (ls Labels) IsValid() bool {
+func (ls Labels) IsValid(validationScheme model.ValidationScheme) bool {
 	err := ls.Validate(func(l Label) error {
-		if l.Name == model.MetricNameLabel && !model.IsValidMetricName(model.LabelValue(l.Value)) {
-			return strconv.ErrSyntax
+		if l.Name == model.MetricNameLabel {
+			// If the default validation scheme has been overridden with legacy mode,
+			// we need to call the special legacy validation checker.
+			if validationScheme == model.LegacyValidation && model.NameValidationScheme == model.UTF8Validation && !model.IsValidLegacyMetricName(string(model.LabelValue(l.Value))) {
+				return strconv.ErrSyntax
+			}
+			if !model.IsValidMetricName(model.LabelValue(l.Value)) {
+				return strconv.ErrSyntax
+			}
 		}
-		if !model.LabelName(l.Name).IsValid() || !model.LabelValue(l.Value).IsValid() {
+		if validationScheme == model.LegacyValidation && model.NameValidationScheme == model.UTF8Validation {
+			if !model.LabelName(l.Name).IsValidLegacy() || !model.LabelValue(l.Value).IsValid() {
+				return strconv.ErrSyntax
+			}
+		} else if !model.LabelName(l.Name).IsValid() || !model.LabelValue(l.Value).IsValid() {
 			return strconv.ErrSyntax
 		}
 		return nil

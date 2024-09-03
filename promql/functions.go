@@ -97,9 +97,10 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		lastT = samples.Histograms[numSamplesMinusOne].T
 		var newAnnos annotations.Annotations
 		resultHistogram, newAnnos = histogramRate(samples.Histograms, isCounter, metricName, args[0].PositionRange())
+		annos.Merge(newAnnos)
 		if resultHistogram == nil {
 			// The histograms are not compatible with each other.
-			return enh.Out, annos.Merge(newAnnos)
+			return enh.Out, annos
 		}
 	case len(samples.Floats) > 1:
 		numSamplesMinusOne = len(samples.Floats) - 1
@@ -178,16 +179,28 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 // Otherwise, it returns the calculated histogram and an empty annotation.
 func histogramRate(points []HPoint, isCounter bool, metricName string, pos posrange.PositionRange) (*histogram.FloatHistogram, annotations.Annotations) {
 	prev := points[0].H
+	usingCustomBuckets := prev.UsesCustomBuckets()
 	last := points[len(points)-1].H
 	if last == nil {
 		return nil, annotations.New().Add(annotations.NewMixedFloatsHistogramsWarning(metricName, pos))
 	}
+
 	minSchema := prev.Schema
 	if last.Schema < minSchema {
 		minSchema = last.Schema
 	}
 
+	if last.UsesCustomBuckets() != usingCustomBuckets {
+		return nil, annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
+	}
+
 	var annos annotations.Annotations
+
+	// We check for gauge type histograms in the loop below, but the loop below does not run on the first and last point,
+	// so check the first and last point now.
+	if isCounter && (prev.CounterResetHint == histogram.GaugeType || last.CounterResetHint == histogram.GaugeType) {
+		annos.Add(annotations.NewNativeHistogramNotCounterWarning(metricName, pos))
+	}
 
 	// First iteration to find out two things:
 	// - What's the smallest relevant schema?
@@ -207,6 +220,9 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 		}
 		if curr.Schema < minSchema {
 			minSchema = curr.Schema
+		}
+		if curr.UsesCustomBuckets() != usingCustomBuckets {
+			return nil, annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
 		}
 	}
 
@@ -241,7 +257,7 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 	}
 
 	h.CounterResetHint = histogram.GaugeType
-	return h.Compact(0), nil
+	return h.Compact(0), annos
 }
 
 // === delta(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
@@ -390,17 +406,22 @@ func funcSortDesc(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 
 // === sort_by_label(vector parser.ValueTypeVector, label parser.ValueTypeString...) (Vector, Annotations) ===
 func funcSortByLabel(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	// In case the labels are the same, NaN should sort to the bottom, so take
-	// ascending sort with NaN first and reverse it.
-	var anno annotations.Annotations
-	vals[0], anno = funcSort(vals, args, enh)
-	labels := stringSliceFromArgs(args[1:])
+	// First, sort by the full label set. This ensures a consistent ordering in case sorting by the
+	// labels provided as arguments is not conclusive.
 	slices.SortFunc(vals[0].(Vector), func(a, b Sample) int {
-		// Iterate over each given label
+		return labels.Compare(a.Metric, b.Metric)
+	})
+
+	labels := stringSliceFromArgs(args[1:])
+	// Next, sort by the labels provided as arguments.
+	slices.SortFunc(vals[0].(Vector), func(a, b Sample) int {
+		// Iterate over each given label.
 		for _, label := range labels {
 			lv1 := a.Metric.Get(label)
 			lv2 := b.Metric.Get(label)
 
+			// If we encounter multiple samples with the same label values, the sorting which was
+			// performed in the first step will act as a "tie breaker".
 			if lv1 == lv2 {
 				continue
 			}
@@ -415,22 +436,27 @@ func funcSortByLabel(vals []parser.Value, args parser.Expressions, enh *EvalNode
 		return 0
 	})
 
-	return vals[0].(Vector), anno
+	return vals[0].(Vector), nil
 }
 
 // === sort_by_label_desc(vector parser.ValueTypeVector, label parser.ValueTypeString...) (Vector, Annotations) ===
 func funcSortByLabelDesc(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	// In case the labels are the same, NaN should sort to the bottom, so take
-	// ascending sort with NaN first and reverse it.
-	var anno annotations.Annotations
-	vals[0], anno = funcSortDesc(vals, args, enh)
-	labels := stringSliceFromArgs(args[1:])
+	// First, sort by the full label set. This ensures a consistent ordering in case sorting by the
+	// labels provided as arguments is not conclusive.
 	slices.SortFunc(vals[0].(Vector), func(a, b Sample) int {
-		// Iterate over each given label
+		return labels.Compare(b.Metric, a.Metric)
+	})
+
+	labels := stringSliceFromArgs(args[1:])
+	// Next, sort by the labels provided as arguments.
+	slices.SortFunc(vals[0].(Vector), func(a, b Sample) int {
+		// Iterate over each given label.
 		for _, label := range labels {
 			lv1 := a.Metric.Get(label)
 			lv2 := b.Metric.Get(label)
 
+			// If we encounter multiple samples with the same label values, the sorting which was
+			// performed in the first step will act as a "tie breaker".
 			if lv1 == lv2 {
 				continue
 			}
@@ -445,21 +471,25 @@ func funcSortByLabelDesc(vals []parser.Value, args parser.Expressions, enh *Eval
 		return 0
 	})
 
-	return vals[0].(Vector), anno
+	return vals[0].(Vector), nil
 }
 
 // === clamp(Vector parser.ValueTypeVector, min, max Scalar) (Vector, Annotations) ===
 func funcClamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	vec := vals[0].(Vector)
-	min := vals[1].(Vector)[0].F
-	max := vals[2].(Vector)[0].F
-	if max < min {
+	minVal := vals[1].(Vector)[0].F
+	maxVal := vals[2].(Vector)[0].F
+	if maxVal < minVal {
 		return enh.Out, nil
 	}
 	for _, el := range vec {
+		if !enh.enableDelayedNameRemoval {
+			el.Metric = el.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
-			Metric: el.Metric.DropMetricName(),
-			F:      math.Max(min, math.Min(max, el.F)),
+			Metric:   el.Metric,
+			F:        math.Max(minVal, math.Min(maxVal, el.F)),
+			DropName: true,
 		})
 	}
 	return enh.Out, nil
@@ -468,11 +498,15 @@ func funcClamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 // === clamp_max(Vector parser.ValueTypeVector, max Scalar) (Vector, Annotations) ===
 func funcClampMax(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	vec := vals[0].(Vector)
-	max := vals[1].(Vector)[0].F
+	maxVal := vals[1].(Vector)[0].F
 	for _, el := range vec {
+		if !enh.enableDelayedNameRemoval {
+			el.Metric = el.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
-			Metric: el.Metric.DropMetricName(),
-			F:      math.Min(max, el.F),
+			Metric:   el.Metric,
+			F:        math.Min(maxVal, el.F),
+			DropName: true,
 		})
 	}
 	return enh.Out, nil
@@ -481,11 +515,15 @@ func funcClampMax(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 // === clamp_min(Vector parser.ValueTypeVector, min Scalar) (Vector, Annotations) ===
 func funcClampMin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	vec := vals[0].(Vector)
-	min := vals[1].(Vector)[0].F
+	minVal := vals[1].(Vector)[0].F
 	for _, el := range vec {
+		if !enh.enableDelayedNameRemoval {
+			el.Metric = el.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
-			Metric: el.Metric.DropMetricName(),
-			F:      math.Max(min, el.F),
+			Metric:   el.Metric,
+			F:        math.Max(minVal, el.F),
+			DropName: true,
 		})
 	}
 	return enh.Out, nil
@@ -506,8 +544,9 @@ func funcRound(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 	for _, el := range vec {
 		f := math.Floor(el.F*toNearestInverse+0.5) / toNearestInverse
 		enh.Out = append(enh.Out, Sample{
-			Metric: el.Metric.DropMetricName(),
-			F:      f,
+			Metric:   el.Metric,
+			F:        f,
+			DropName: true,
 		})
 	}
 	return enh.Out, nil
@@ -573,9 +612,28 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 		return vec, nil
 	}
 	return aggrOverTime(vals, enh, func(s Series) float64 {
-		var mean, count, c float64
+		var (
+			sum, mean, count, kahanC float64
+			incrementalMean          bool
+		)
 		for _, f := range s.Floats {
 			count++
+			if !incrementalMean {
+				newSum, newC := kahanSumInc(f.F, sum, kahanC)
+				// Perform regular mean calculation as long as
+				// the sum doesn't overflow and (in any case)
+				// for the first iteration (even if we start
+				// with ±Inf) to not run into division-by-zero
+				// problems below.
+				if count == 1 || !math.IsInf(newSum, 0) {
+					sum, kahanC = newSum, newC
+					continue
+				}
+				// Handle overflow by reverting to incremental calculation of the mean value.
+				incrementalMean = true
+				mean = sum / (count - 1)
+				kahanC /= count - 1
+			}
 			if math.IsInf(mean, 0) {
 				if math.IsInf(f.F, 0) && (mean > 0) == (f.F > 0) {
 					// The `mean` and `f.F` values are `Inf` of the same sign.  They
@@ -593,13 +651,13 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 					continue
 				}
 			}
-			mean, c = kahanSumInc(f.F/count-mean/count, mean, c)
+			correctedMean := mean + kahanC
+			mean, kahanC = kahanSumInc(f.F/count-correctedMean/count, mean, kahanC)
 		}
-
-		if math.IsInf(mean, 0) {
-			return mean
+		if incrementalMean {
+			return mean + kahanC
 		}
-		return mean + c
+		return (sum + kahanC) / count
 	}), nil
 }
 
@@ -665,13 +723,13 @@ func funcMaxOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 		return enh.Out, nil
 	}
 	return aggrOverTime(vals, enh, func(s Series) float64 {
-		max := s.Floats[0].F
+		maxVal := s.Floats[0].F
 		for _, f := range s.Floats {
-			if f.F > max || math.IsNaN(max) {
-				max = f.F
+			if f.F > maxVal || math.IsNaN(maxVal) {
+				maxVal = f.F
 			}
 		}
-		return max
+		return maxVal
 	}), nil
 }
 
@@ -685,13 +743,13 @@ func funcMinOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 		return enh.Out, nil
 	}
 	return aggrOverTime(vals, enh, func(s Series) float64 {
-		min := s.Floats[0].F
+		minVal := s.Floats[0].F
 		for _, f := range s.Floats {
-			if f.F < min || math.IsNaN(min) {
-				min = f.F
+			if f.F < minVal || math.IsNaN(minVal) {
+				minVal = f.F
 			}
 		}
-		return min
+		return minVal
 	}), nil
 }
 
@@ -837,9 +895,13 @@ func funcPresentOverTime(vals []parser.Value, args parser.Expressions, enh *Eval
 func simpleFunc(vals []parser.Value, enh *EvalNodeHelper, f func(float64) float64) Vector {
 	for _, el := range vals[0].(Vector) {
 		if el.H == nil { // Process only float samples.
+			if !enh.enableDelayedNameRemoval {
+				el.Metric = el.Metric.DropMetricName()
+			}
 			enh.Out = append(enh.Out, Sample{
-				Metric: el.Metric.DropMetricName(),
-				F:      f(el.F),
+				Metric:   el.Metric,
+				F:        f(el.F),
+				DropName: true,
 			})
 		}
 	}
@@ -983,9 +1045,13 @@ func funcSgn(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) 
 func funcTimestamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	vec := vals[0].(Vector)
 	for _, el := range vec {
+		if !enh.enableDelayedNameRemoval {
+			el.Metric = el.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
-			Metric: el.Metric.DropMetricName(),
-			F:      float64(el.T) / 1000,
+			Metric:   el.Metric,
+			F:        float64(el.T) / 1000,
+			DropName: true,
 		})
 	}
 	return enh.Out, nil
@@ -1092,9 +1158,13 @@ func funcHistogramCount(vals []parser.Value, args parser.Expressions, enh *EvalN
 		if sample.H == nil {
 			continue
 		}
+		if !enh.enableDelayedNameRemoval {
+			sample.Metric = sample.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
-			Metric: sample.Metric.DropMetricName(),
-			F:      sample.H.Count,
+			Metric:   sample.Metric,
+			F:        sample.H.Count,
+			DropName: true,
 		})
 	}
 	return enh.Out, nil
@@ -1109,9 +1179,13 @@ func funcHistogramSum(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		if sample.H == nil {
 			continue
 		}
+		if !enh.enableDelayedNameRemoval {
+			sample.Metric = sample.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
-			Metric: sample.Metric.DropMetricName(),
-			F:      sample.H.Sum,
+			Metric:   sample.Metric,
+			F:        sample.H.Sum,
+			DropName: true,
 		})
 	}
 	return enh.Out, nil
@@ -1126,9 +1200,13 @@ func funcHistogramAvg(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		if sample.H == nil {
 			continue
 		}
+		if !enh.enableDelayedNameRemoval {
+			sample.Metric = sample.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
-			Metric: sample.Metric.DropMetricName(),
-			F:      sample.H.Sum / sample.H.Count,
+			Metric:   sample.Metric,
+			F:        sample.H.Sum / sample.H.Count,
+			DropName: true,
 		})
 	}
 	return enh.Out, nil
@@ -1165,9 +1243,13 @@ func funcHistogramStdDev(vals []parser.Value, args parser.Expressions, enh *Eval
 		}
 		variance += cVariance
 		variance /= sample.H.Count
+		if !enh.enableDelayedNameRemoval {
+			sample.Metric = sample.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
-			Metric: sample.Metric.DropMetricName(),
-			F:      math.Sqrt(variance),
+			Metric:   sample.Metric,
+			F:        math.Sqrt(variance),
+			DropName: true,
 		})
 	}
 	return enh.Out, nil
@@ -1204,9 +1286,13 @@ func funcHistogramStdVar(vals []parser.Value, args parser.Expressions, enh *Eval
 		}
 		variance += cVariance
 		variance /= sample.H.Count
+		if !enh.enableDelayedNameRemoval {
+			sample.Metric = sample.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
-			Metric: sample.Metric.DropMetricName(),
-			F:      variance,
+			Metric:   sample.Metric,
+			F:        variance,
+			DropName: true,
 		})
 	}
 	return enh.Out, nil
@@ -1223,9 +1309,13 @@ func funcHistogramFraction(vals []parser.Value, args parser.Expressions, enh *Ev
 		if sample.H == nil {
 			continue
 		}
+		if !enh.enableDelayedNameRemoval {
+			sample.Metric = sample.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
-			Metric: sample.Metric.DropMetricName(),
-			F:      histogramFraction(lower, upper, sample.H),
+			Metric:   sample.Metric,
+			F:        histogramFraction(lower, upper, sample.H),
+			DropName: true,
 		})
 	}
 	return enh.Out, nil
@@ -1293,9 +1383,13 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			continue
 		}
 
+		if !enh.enableDelayedNameRemoval {
+			sample.Metric = sample.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
-			Metric: sample.Metric.DropMetricName(),
-			F:      histogramQuantile(q, sample.H),
+			Metric:   sample.Metric,
+			F:        histogramQuantile(q, sample.H),
+			DropName: true,
 		})
 	}
 
@@ -1397,6 +1491,11 @@ func (ev *evaluator) evalLabelReplace(args parser.Expressions) (parser.Value, an
 			lb.Reset(el.Metric)
 			lb.Set(dst, string(res))
 			matrix[i].Metric = lb.Labels()
+			if dst == model.MetricNameLabel {
+				matrix[i].DropName = false
+			} else {
+				matrix[i].DropName = el.DropName
+			}
 		}
 	}
 	if matrix.ContainsSameLabelset() {
@@ -1451,6 +1550,12 @@ func (ev *evaluator) evalLabelJoin(args parser.Expressions) (parser.Value, annot
 		lb.Reset(el.Metric)
 		lb.Set(dst, strval)
 		matrix[i].Metric = lb.Labels()
+
+		if dst == model.MetricNameLabel {
+			matrix[i].DropName = false
+		} else {
+			matrix[i].DropName = el.DropName
+		}
 	}
 
 	return matrix, ws
@@ -1473,9 +1578,13 @@ func dateWrapper(vals []parser.Value, enh *EvalNodeHelper, f func(time.Time) flo
 
 	for _, el := range vals[0].(Vector) {
 		t := time.Unix(int64(el.F), 0).UTC()
+		if !enh.enableDelayedNameRemoval {
+			el.Metric = el.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
-			Metric: el.Metric.DropMetricName(),
-			F:      f(t),
+			Metric:   el.Metric,
+			F:        f(t),
+			DropName: true,
 		})
 	}
 	return enh.Out

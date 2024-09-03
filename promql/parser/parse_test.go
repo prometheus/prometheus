@@ -2398,6 +2398,51 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: `sum by ("foo")({"some.metric"})`,
+		expected: &AggregateExpr{
+			Op: SUM,
+			Expr: &VectorSelector{
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some.metric"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 15,
+					End:   30,
+				},
+			},
+			Grouping: []string{"foo"},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   31,
+			},
+		},
+	},
+	{
+		input:  `sum by ("foo)(some_metric{})`,
+		fail:   true,
+		errMsg: "unterminated quoted string",
+	},
+	{
+		input: `sum by ("foo", bar, 'baz')({"some.metric"})`,
+		expected: &AggregateExpr{
+			Op: SUM,
+			Expr: &VectorSelector{
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some.metric"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 27,
+					End:   42,
+				},
+			},
+			Grouping: []string{"foo", "bar", "baz"},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   43,
+			},
+		},
+	},
+	{
 		input: "avg by (foo)(some_metric)",
 		expected: &AggregateExpr{
 			Op: AVG,
@@ -3844,6 +3889,7 @@ func readable(s string) string {
 }
 
 func TestParseExpressions(t *testing.T) {
+	model.NameValidationScheme = model.UTF8Validation
 	for _, test := range testExpr {
 		t.Run(readable(test.input), func(t *testing.T) {
 			expr, err := ParseExpr(test.input)
@@ -4038,32 +4084,34 @@ func TestParseHistogramSeries(t *testing.T) {
 		},
 		{
 			name:  "all properties used",
-			input: `{} {{schema:1 sum:-0.3 count:3.1 z_bucket:7.1 z_bucket_w:0.05 buckets:[5.1 10 7] offset:-3 n_buckets:[4.1 5] n_offset:-5}}`,
+			input: `{} {{schema:1 sum:-0.3 count:3.1 z_bucket:7.1 z_bucket_w:0.05 buckets:[5.1 10 7] offset:-3 n_buckets:[4.1 5] n_offset:-5 counter_reset_hint:gauge}}`,
 			expected: []histogram.FloatHistogram{{
-				Schema:          1,
-				Sum:             -0.3,
-				Count:           3.1,
-				ZeroCount:       7.1,
-				ZeroThreshold:   0.05,
-				PositiveBuckets: []float64{5.1, 10, 7},
-				PositiveSpans:   []histogram.Span{{Offset: -3, Length: 3}},
-				NegativeBuckets: []float64{4.1, 5},
-				NegativeSpans:   []histogram.Span{{Offset: -5, Length: 2}},
+				Schema:           1,
+				Sum:              -0.3,
+				Count:            3.1,
+				ZeroCount:        7.1,
+				ZeroThreshold:    0.05,
+				PositiveBuckets:  []float64{5.1, 10, 7},
+				PositiveSpans:    []histogram.Span{{Offset: -3, Length: 3}},
+				NegativeBuckets:  []float64{4.1, 5},
+				NegativeSpans:    []histogram.Span{{Offset: -5, Length: 2}},
+				CounterResetHint: histogram.GaugeType,
 			}},
 		},
 		{
 			name:  "all properties used - with spaces",
-			input: `{} {{schema:1  sum:0.3  count:3  z_bucket:7 z_bucket_w:5 buckets:[5 10  7  ] offset:-3  n_buckets:[4 5]  n_offset:5  }}`,
+			input: `{} {{schema:1  sum:0.3  count:3  z_bucket:7 z_bucket_w:5 buckets:[5 10  7  ] offset:-3  n_buckets:[4 5]  n_offset:5  counter_reset_hint:gauge  }}`,
 			expected: []histogram.FloatHistogram{{
-				Schema:          1,
-				Sum:             0.3,
-				Count:           3,
-				ZeroCount:       7,
-				ZeroThreshold:   5,
-				PositiveBuckets: []float64{5, 10, 7},
-				PositiveSpans:   []histogram.Span{{Offset: -3, Length: 3}},
-				NegativeBuckets: []float64{4, 5},
-				NegativeSpans:   []histogram.Span{{Offset: 5, Length: 2}},
+				Schema:           1,
+				Sum:              0.3,
+				Count:            3,
+				ZeroCount:        7,
+				ZeroThreshold:    5,
+				PositiveBuckets:  []float64{5, 10, 7},
+				PositiveSpans:    []histogram.Span{{Offset: -3, Length: 3}},
+				NegativeBuckets:  []float64{4, 5},
+				NegativeSpans:    []histogram.Span{{Offset: 5, Length: 2}},
+				CounterResetHint: histogram.GaugeType,
 			}},
 		},
 		{
@@ -4249,6 +4297,39 @@ func TestParseHistogramSeries(t *testing.T) {
 			name:          "space after {{",
 			input:         `{} {{ schema:1}}`,
 			expectedError: `1:7: parse error: unexpected "<Item 57372>" "schema" in series values`,
+		},
+		{
+			name:          "invalid counter reset hint value",
+			input:         `{} {{counter_reset_hint:foo}}`,
+			expectedError: `1:25: parse error: bad histogram descriptor found: "foo"`,
+		},
+		{
+			name:  "'unknown' counter reset hint value",
+			input: `{} {{counter_reset_hint:unknown}}`,
+			expected: []histogram.FloatHistogram{{
+				CounterResetHint: histogram.UnknownCounterReset,
+			}},
+		},
+		{
+			name:  "'reset' counter reset hint value",
+			input: `{} {{counter_reset_hint:reset}}`,
+			expected: []histogram.FloatHistogram{{
+				CounterResetHint: histogram.CounterReset,
+			}},
+		},
+		{
+			name:  "'not_reset' counter reset hint value",
+			input: `{} {{counter_reset_hint:not_reset}}`,
+			expected: []histogram.FloatHistogram{{
+				CounterResetHint: histogram.NotCounterReset,
+			}},
+		},
+		{
+			name:  "'gauge' counter reset hint value",
+			input: `{} {{counter_reset_hint:gauge}}`,
+			expected: []histogram.FloatHistogram{{
+				CounterResetHint: histogram.GaugeType,
+			}},
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

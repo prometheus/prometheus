@@ -523,16 +523,16 @@ load 5m
 	node_uname_info{job="node_exporter", instance="4m1000", release="1.111.3"} 0+10x10
 
 eval_ordered instant at 50m sort_by_label(http_requests, "instance")
-	http_requests{group="production", instance="0", job="api-server"} 100
 	http_requests{group="canary", instance="0", job="api-server"} 300
-	http_requests{group="production", instance="0", job="app-server"} 500
 	http_requests{group="canary", instance="0", job="app-server"} 700
-	http_requests{group="production", instance="1", job="api-server"} 200
+	http_requests{group="production", instance="0", job="api-server"} 100
+	http_requests{group="production", instance="0", job="app-server"} 500
 	http_requests{group="canary", instance="1", job="api-server"} 400
-	http_requests{group="production", instance="1", job="app-server"} 600
 	http_requests{group="canary", instance="1", job="app-server"} 800
-	http_requests{group="production", instance="2", job="api-server"} 100
+	http_requests{group="production", instance="1", job="api-server"} 200
+	http_requests{group="production", instance="1", job="app-server"} 600
 	http_requests{group="canary", instance="2", job="api-server"} NaN
+	http_requests{group="production", instance="2", job="api-server"} 100
 
 eval_ordered instant at 50m sort_by_label(http_requests, "instance", "group")
 	http_requests{group="canary", instance="0", job="api-server"} 300
@@ -585,14 +585,14 @@ eval_ordered instant at 50m sort_by_label(http_requests, "job", "instance", "gro
 eval_ordered instant at 50m sort_by_label_desc(http_requests, "instance")
 	http_requests{group="production", instance="2", job="api-server"} 100
 	http_requests{group="canary", instance="2", job="api-server"} NaN
-	http_requests{group="canary", instance="1", job="app-server"} 800
 	http_requests{group="production", instance="1", job="app-server"} 600
-	http_requests{group="canary", instance="1", job="api-server"} 400
 	http_requests{group="production", instance="1", job="api-server"} 200
-	http_requests{group="canary", instance="0", job="app-server"} 700
+	http_requests{group="canary", instance="1", job="app-server"} 800
+	http_requests{group="canary", instance="1", job="api-server"} 400
 	http_requests{group="production", instance="0", job="app-server"} 500
-	http_requests{group="canary", instance="0", job="api-server"} 300
 	http_requests{group="production", instance="0", job="api-server"} 100
+	http_requests{group="canary", instance="0", job="app-server"} 700
+	http_requests{group="canary", instance="0", job="api-server"} 300
 
 eval_ordered instant at 50m sort_by_label_desc(http_requests, "instance", "group")
 	http_requests{group="production", instance="2", job="api-server"} 100
@@ -748,7 +748,6 @@ eval instant at 1m avg_over_time(metric6c[1m])
 eval instant at 1m sum_over_time(metric6c[1m])/count_over_time(metric6c[1m])
   {} NaN
 
-
 eval instant at 1m avg_over_time(metric7[1m])
   {} NaN
 
@@ -782,6 +781,9 @@ load 10s
 
 eval instant at 1m sum_over_time(metric[1m])
   {} 2
+
+eval instant at 1m avg_over_time(metric[1m])
+  {} 0.5
 
 # Tests for stddev_over_time and stdvar_over_time.
 clear

@@ -245,9 +245,11 @@ func TestFloatHistogramChunkBucketChanges(t *testing.T) {
 	h2.NegativeBuckets = []int64{2, -1} // 2 1 (total 3)
 	// This is how span changes will be handled.
 	hApp, _ := app.(*FloatHistogramAppender)
-	posInterjections, negInterjections, ok, cr := hApp.appendable(h2.ToFloat(nil))
+	posInterjections, negInterjections, backwardPositiveInserts, backwardNegativeInserts, ok, cr := hApp.appendable(h2.ToFloat(nil))
 	require.NotEmpty(t, posInterjections)
 	require.NotEmpty(t, negInterjections)
+	require.Empty(t, backwardPositiveInserts)
+	require.Empty(t, backwardNegativeInserts)
 	require.True(t, ok) // Only new buckets came in.
 	require.False(t, cr)
 	c, app = hApp.recode(posInterjections, negInterjections, h2.PositiveSpans, h2.NegativeSpans)
@@ -333,7 +335,7 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		c, hApp, ts, h1 := setup(eh)
 		h2 := h1.Copy()
 		h2.Schema++
-		_, _, ok, _ := hApp.appendable(h2)
+		_, _, _, _, ok, _ := hApp.appendable(h2)
 		require.False(t, ok)
 
 		assertNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, UnknownCounterReset)
@@ -343,7 +345,7 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		c, hApp, ts, h1 := setup(eh)
 		h2 := h1.Copy()
 		h2.ZeroThreshold += 0.1
-		_, _, ok, _ := hApp.appendable(h2)
+		_, _, _, _, ok, _ := hApp.appendable(h2)
 		require.False(t, ok)
 
 		assertNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, UnknownCounterReset)
@@ -363,9 +365,11 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		h2.Sum = 30
 		h2.PositiveBuckets = []float64{7, 5, 1, 3, 1, 0, 2, 5, 5, 0, 1}
 
-		posInterjections, negInterjections, ok, cr := hApp.appendable(h2)
+		posInterjections, negInterjections, backwardPositiveInserts, backwardNegativeInserts, ok, cr := hApp.appendable(h2)
 		require.NotEmpty(t, posInterjections)
 		require.Empty(t, negInterjections)
+		require.Empty(t, backwardPositiveInserts)
+		require.Empty(t, backwardNegativeInserts)
 		require.True(t, ok) // Only new buckets came in.
 		require.False(t, cr)
 
@@ -385,13 +389,81 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		h2.Sum = 21
 		h2.PositiveBuckets = []float64{6, 3, 2, 4, 5, 1}
 
-		posInterjections, negInterjections, ok, cr := hApp.appendable(h2)
+		posInterjections, negInterjections, backwardPositiveInserts, backwardNegativeInserts, ok, cr := hApp.appendable(h2)
 		require.Empty(t, posInterjections)
 		require.Empty(t, negInterjections)
+		require.Empty(t, backwardPositiveInserts)
+		require.Empty(t, backwardNegativeInserts)
 		require.False(t, ok) // Need to cut a new chunk.
 		require.True(t, cr)
 
 		assertNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, CounterReset)
+	}
+
+	{ // New histogram that has buckets missing but the buckets missing were empty.
+		emptyBucketH := eh.Copy()
+		emptyBucketH.PositiveBuckets = []float64{6, 0, 3, 2, 4, 0, 1}
+		c, hApp, ts, h1 := setup(emptyBucketH)
+		h2 := h1.Copy()
+		h2.PositiveSpans = []histogram.Span{
+			{Offset: 0, Length: 1},
+			{Offset: 3, Length: 1},
+			{Offset: 3, Length: 2},
+			{Offset: 5, Length: 1},
+		}
+		savedH2Spans := h2.PositiveSpans
+		h2.PositiveBuckets = []float64{7, 4, 3, 5, 2}
+
+		posInterjections, negInterjections, backwardPositiveInserts, backwardNegativeInserts, ok, cr := hApp.appendable(h2)
+		require.Empty(t, posInterjections)
+		require.Empty(t, negInterjections)
+		require.NotEmpty(t, backwardPositiveInserts)
+		require.Empty(t, backwardNegativeInserts)
+		require.True(t, ok)
+		require.False(t, cr)
+
+		assertNoNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, UnknownCounterReset)
+
+		// Check that h2 was recoded.
+		require.Equal(t, []float64{7, 0, 4, 3, 5, 0, 2}, h2.PositiveBuckets)
+		require.Equal(t, emptyBucketH.PositiveSpans, h2.PositiveSpans)
+		require.NotEqual(t, savedH2Spans, h2.PositiveSpans, "recoding must make a copy")
+	}
+
+	{ // New histogram that has new buckets AND buckets missing but the buckets missing were empty.
+		emptyBucketH := eh.Copy()
+		emptyBucketH.PositiveBuckets = []float64{6, 0, 3, 2, 4, 0, 1}
+		c, hApp, ts, h1 := setup(emptyBucketH)
+		h2 := h1.Copy()
+		h2.PositiveSpans = []histogram.Span{
+			{Offset: 0, Length: 1},
+			{Offset: 3, Length: 1},
+			{Offset: 3, Length: 2},
+			{Offset: 5, Length: 2},
+		}
+		savedH2Spans := h2.PositiveSpans
+		h2.PositiveBuckets = []float64{7, 4, 3, 5, 2, 3}
+
+		posInterjections, negInterjections, backwardPositiveInserts, backwardNegativeInserts, ok, cr := hApp.appendable(h2)
+		require.NotEmpty(t, posInterjections)
+		require.Empty(t, negInterjections)
+		require.NotEmpty(t, backwardPositiveInserts)
+		require.Empty(t, backwardNegativeInserts)
+		require.True(t, ok)
+		require.False(t, cr)
+
+		assertRecodedFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, UnknownCounterReset)
+
+		// Check that h2 was recoded.
+		require.Equal(t, []float64{7, 0, 4, 3, 5, 0, 2, 3}, h2.PositiveBuckets)
+		require.Equal(t, []histogram.Span{
+			{Offset: 0, Length: 2}, // Added empty bucket.
+			{Offset: 2, Length: 1}, // Existing - offset adjusted.
+			{Offset: 3, Length: 2}, // Existing.
+			{Offset: 3, Length: 1}, // Added empty bucket.
+			{Offset: 1, Length: 2}, // Existing + the extra bucket.
+		}, h2.PositiveSpans)
+		require.NotEqual(t, savedH2Spans, h2.PositiveSpans, "recoding must make a copy")
 	}
 
 	{ // New histogram that has a counter reset while buckets are same.
@@ -400,9 +472,11 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		h2.Sum = 23
 		h2.PositiveBuckets = []float64{6, 2, 3, 2, 4, 5, 1}
 
-		posInterjections, negInterjections, ok, cr := hApp.appendable(h2)
+		posInterjections, negInterjections, backwardPositiveInserts, backwardNegativeInserts, ok, cr := hApp.appendable(h2)
 		require.Empty(t, posInterjections)
 		require.Empty(t, negInterjections)
+		require.Empty(t, backwardPositiveInserts)
+		require.Empty(t, backwardNegativeInserts)
 		require.False(t, ok) // Need to cut a new chunk.
 		require.True(t, cr)
 
@@ -421,9 +495,11 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		h2.Sum = 29
 		h2.PositiveBuckets = []float64{7, 5, 1, 3, 1, 0, 2, 5, 5, 0, 0}
 
-		posInterjections, negInterjections, ok, cr := hApp.appendable(h2)
+		posInterjections, negInterjections, backwardPositiveInserts, backwardNegativeInserts, ok, cr := hApp.appendable(h2)
 		require.Empty(t, posInterjections)
 		require.Empty(t, negInterjections)
+		require.Empty(t, backwardPositiveInserts)
+		require.Empty(t, backwardNegativeInserts)
 		require.False(t, ok) // Need to cut a new chunk.
 		require.True(t, cr)
 
@@ -448,9 +524,11 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		h2.Sum = 26
 		h2.PositiveBuckets = []float64{1, 2, 5, 3, 3, 2, 4, 5, 1}
 
-		posInterjections, negInterjections, ok, cr := hApp.appendable(h2)
+		posInterjections, negInterjections, backwardPositiveInserts, backwardNegativeInserts, ok, cr := hApp.appendable(h2)
 		require.Empty(t, posInterjections)
 		require.Empty(t, negInterjections)
+		require.Empty(t, backwardPositiveInserts)
+		require.Empty(t, backwardNegativeInserts)
 		require.False(t, ok) // Need to cut a new chunk.
 		require.True(t, cr)
 
@@ -524,10 +602,44 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		require.Equal(t, NotCounterReset, nextChunk.GetCounterResetHeader())
 	}
 
+	{
+		// Start a new chunk with a histogram that has an empty bucket.
+		// Add a histogram that has the same bucket missing.
+		// This should be appendable and can happen if we are merging from chunks
+		// where the first sample came from a recoded chunk that added the
+		// empty bucket.
+		h1 := eh.Copy()
+		// Add a bucket that is empty -10 offsets from the first bucket.
+		h1.PositiveSpans = make([]histogram.Span, len(eh.PositiveSpans)+1)
+		h1.PositiveSpans[0] = histogram.Span{Offset: eh.PositiveSpans[0].Offset - 10, Length: 1}
+		h1.PositiveSpans[1] = histogram.Span{Offset: eh.PositiveSpans[0].Offset + 9, Length: eh.PositiveSpans[0].Length}
+		for i, v := range eh.PositiveSpans[1:] {
+			h1.PositiveSpans[i+2] = v
+		}
+		h1.PositiveBuckets = make([]float64, len(eh.PositiveBuckets)+1)
+		h1.PositiveBuckets[0] = 0
+		for i, v := range eh.PositiveBuckets {
+			h1.PositiveBuckets[i+1] = v
+		}
+
+		c, hApp, ts, _ := setup(h1)
+		h2 := eh.Copy()
+
+		posInterjections, negInterjections, backwardPositiveInserts, backwardNegativeInserts, ok, cr := hApp.appendable(h2)
+		require.Empty(t, posInterjections)
+		require.Empty(t, negInterjections)
+		require.NotEmpty(t, backwardPositiveInserts)
+		require.Empty(t, backwardNegativeInserts)
+		require.True(t, ok)
+		require.False(t, cr)
+
+		assertNoNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, UnknownCounterReset)
+	}
+
 	{ // Custom buckets, no change.
 		c, hApp, ts, h1 := setup(cbh)
 		h2 := h1.Copy()
-		_, _, ok, _ := hApp.appendable(h2)
+		_, _, _, _, ok, _ := hApp.appendable(h2)
 		require.True(t, ok)
 
 		assertNoNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, UnknownCounterReset)
@@ -538,7 +650,7 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		h2 := h1.Copy()
 		h2.Count++
 		h2.PositiveBuckets = []float64{6, 3, 3, 2, 4, 5, 2}
-		_, _, ok, _ := hApp.appendable(h2)
+		_, _, _, _, ok, _ := hApp.appendable(h2)
 		require.True(t, ok)
 
 		assertNoNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, UnknownCounterReset)
@@ -549,7 +661,7 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		h2 := h1.Copy()
 		h2.Count--
 		h2.PositiveBuckets = []float64{6, 3, 3, 2, 4, 5, 0}
-		_, _, ok, _ := hApp.appendable(h2)
+		_, _, _, _, ok, _ := hApp.appendable(h2)
 		require.False(t, ok)
 
 		assertNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, CounterReset)
@@ -559,7 +671,7 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		c, hApp, ts, h1 := setup(cbh)
 		h2 := h1.Copy()
 		h2.CustomValues = []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21}
-		_, _, ok, _ := hApp.appendable(h2)
+		_, _, _, _, ok, _ := hApp.appendable(h2)
 		require.False(t, ok)
 
 		assertNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, CounterReset)
@@ -581,9 +693,11 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		// so the new histogram should have new counts >= these per-bucket counts, e.g.:
 		h2.PositiveBuckets = []float64{7, 5, 1, 3, 1, 0, 2, 5, 5, 0, 1} // (total 30)
 
-		posInterjections, negInterjections, ok, cr := hApp.appendable(h2)
+		posInterjections, negInterjections, backwardPositiveInserts, backwardNegativeInserts, ok, cr := hApp.appendable(h2)
 		require.NotEmpty(t, posInterjections)
 		require.Empty(t, negInterjections)
+		require.Empty(t, backwardPositiveInserts)
+		require.Empty(t, backwardNegativeInserts)
 		require.True(t, ok) // Only new buckets came in.
 		require.False(t, cr)
 
@@ -839,9 +953,11 @@ func TestFloatHistogramChunkAppendableWithEmptySpan(t *testing.T) {
 			require.Equal(t, 1, c.NumSamples())
 			hApp, _ := app.(*FloatHistogramAppender)
 
-			pI, nI, okToAppend, counterReset := hApp.appendable(tc.h2)
+			pI, nI, bpI, bnI, okToAppend, counterReset := hApp.appendable(tc.h2)
 			require.Empty(t, pI)
 			require.Empty(t, nI)
+			require.Empty(t, bpI)
+			require.Empty(t, bnI)
 			require.True(t, okToAppend)
 			require.False(t, counterReset)
 		})

@@ -34,6 +34,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
+	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -683,6 +684,7 @@ func newBasicScrapeLoop(t testing.TB, ctx context.Context, scraper scraper, app 
 		false,
 		newTestScrapeMetrics(t),
 		false,
+		model.LegacyValidation,
 	)
 }
 
@@ -825,6 +827,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		false,
 		scrapeMetrics,
 		false,
+		model.LegacyValidation,
 	)
 
 	// The loop must terminate during the initial offset if the context
@@ -969,6 +972,7 @@ func TestScrapeLoopMetadata(t *testing.T) {
 		false,
 		scrapeMetrics,
 		false,
+		model.LegacyValidation,
 	)
 	defer cancel()
 
@@ -1062,6 +1066,40 @@ func TestScrapeLoopFailWithInvalidLabelsAfterRelabel(t *testing.T) {
 	require.Equal(t, 1, total)
 	require.Equal(t, 0, added)
 	require.Equal(t, 0, seriesAdded)
+}
+
+func TestScrapeLoopFailLegacyUnderUTF8(t *testing.T) {
+	// Test that scrapes fail when default validation is utf8 but scrape config is
+	// legacy.
+	model.NameValidationScheme = model.UTF8Validation
+	defer func() {
+		model.NameValidationScheme = model.LegacyValidation
+	}()
+	s := teststorage.New(t)
+	defer s.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sl := newBasicScrapeLoop(t, ctx, &testScraper{}, s.Appender, 0)
+	sl.validationScheme = model.LegacyValidation
+
+	slApp := sl.appender(ctx)
+	total, added, seriesAdded, err := sl.append(slApp, []byte("{\"test.metric\"} 1\n"), "", time.Time{})
+	require.ErrorContains(t, err, "invalid metric name or label names")
+	require.NoError(t, slApp.Rollback())
+	require.Equal(t, 1, total)
+	require.Equal(t, 0, added)
+	require.Equal(t, 0, seriesAdded)
+
+	// When scrapeloop has validation set to UTF-8, the metric is allowed.
+	sl.validationScheme = model.UTF8Validation
+
+	slApp = sl.appender(ctx)
+	total, added, seriesAdded, err = sl.append(slApp, []byte("{\"test.metric\"} 1\n"), "", time.Time{})
+	require.NoError(t, err)
+	require.Equal(t, 1, total)
+	require.Equal(t, 1, added)
+	require.Equal(t, 1, seriesAdded)
 }
 
 func makeTestMetrics(n int) []byte {
@@ -2339,11 +2377,15 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 	)
 
 	var protobufParsing bool
+	var allowUTF8 bool
 
 	server := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			accept := r.Header.Get("Accept")
+			if allowUTF8 {
+				require.Truef(t, strings.Contains(accept, "escaping=allow-utf-8"), "Expected Accept header to allow utf8, got %q", accept)
+			}
 			if protobufParsing {
-				accept := r.Header.Get("Accept")
 				require.True(t, strings.HasPrefix(accept, "application/vnd.google.protobuf;"),
 					"Expected Accept header to prefer application/vnd.google.protobuf.")
 			}
@@ -2351,7 +2393,11 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 			timeout := r.Header.Get("X-Prometheus-Scrape-Timeout-Seconds")
 			require.Equal(t, expectedTimeout, timeout, "Expected scrape timeout header.")
 
-			w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+			if allowUTF8 {
+				w.Header().Set("Content-Type", `text/plain; version=1.0.0; escaping=allow-utf-8`)
+			} else {
+				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+			}
 			w.Write([]byte("metric_a 1\nmetric_b 2\n"))
 		}),
 	)
@@ -2380,13 +2426,22 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 		require.NoError(t, err)
 		contentType, err := ts.readResponse(context.Background(), resp, &buf)
 		require.NoError(t, err)
-		require.Equal(t, "text/plain; version=0.0.4", contentType)
+		if allowUTF8 {
+			require.Equal(t, "text/plain; version=1.0.0; escaping=allow-utf-8", contentType)
+		} else {
+			require.Equal(t, "text/plain; version=0.0.4", contentType)
+		}
 		require.Equal(t, "metric_a 1\nmetric_b 2\n", buf.String())
 	}
 
-	runTest(acceptHeader(config.DefaultScrapeProtocols))
+	runTest(acceptHeader(config.DefaultScrapeProtocols, model.LegacyValidation))
 	protobufParsing = true
-	runTest(acceptHeader(config.DefaultProtoFirstScrapeProtocols))
+	runTest(acceptHeader(config.DefaultProtoFirstScrapeProtocols, model.LegacyValidation))
+	protobufParsing = false
+	allowUTF8 = true
+	runTest(acceptHeader(config.DefaultScrapeProtocols, model.UTF8Validation))
+	protobufParsing = true
+	runTest(acceptHeader(config.DefaultProtoFirstScrapeProtocols, model.UTF8Validation))
 }
 
 func TestTargetScrapeScrapeCancel(t *testing.T) {
@@ -2412,7 +2467,7 @@ func TestTargetScrapeScrapeCancel(t *testing.T) {
 			),
 		},
 		client:       http.DefaultClient,
-		acceptHeader: acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols),
+		acceptHeader: acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols, model.LegacyValidation),
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -2467,7 +2522,7 @@ func TestTargetScrapeScrapeNotFound(t *testing.T) {
 			),
 		},
 		client:       http.DefaultClient,
-		acceptHeader: acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols),
+		acceptHeader: acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols, model.LegacyValidation),
 	}
 
 	resp, err := ts.scrape(context.Background())
@@ -2511,7 +2566,7 @@ func TestTargetScraperBodySizeLimit(t *testing.T) {
 		},
 		client:        http.DefaultClient,
 		bodySizeLimit: bodySizeLimit,
-		acceptHeader:  acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols),
+		acceptHeader:  acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols, model.LegacyValidation),
 		metrics:       newTestScrapeMetrics(t),
 	}
 	var buf bytes.Buffer
@@ -3627,6 +3682,7 @@ func TestScrapeLoopSeriesAddedDuplicates(t *testing.T) {
 	require.Equal(t, 3, total)
 	require.Equal(t, 3, added)
 	require.Equal(t, 1, seriesAdded)
+	require.Equal(t, 2.0, prom_testutil.ToFloat64(sl.metrics.targetScrapeSampleDuplicate))
 
 	slApp = sl.appender(ctx)
 	total, added, seriesAdded, err = sl.append(slApp, []byte("test_metric 1\ntest_metric 1\ntest_metric 1\n"), "", time.Time{})
@@ -3635,12 +3691,18 @@ func TestScrapeLoopSeriesAddedDuplicates(t *testing.T) {
 	require.Equal(t, 3, total)
 	require.Equal(t, 3, added)
 	require.Equal(t, 0, seriesAdded)
+	require.Equal(t, 4.0, prom_testutil.ToFloat64(sl.metrics.targetScrapeSampleDuplicate))
 
-	metric := dto.Metric{}
-	err = sl.metrics.targetScrapeSampleDuplicate.Write(&metric)
+	// When different timestamps are supplied, multiple samples are accepted.
+	slApp = sl.appender(ctx)
+	total, added, seriesAdded, err = sl.append(slApp, []byte("test_metric 1 1001\ntest_metric 1 1002\ntest_metric 1 1003\n"), "", time.Time{})
 	require.NoError(t, err)
-	value := metric.GetCounter().GetValue()
-	require.Equal(t, 4.0, value)
+	require.NoError(t, slApp.Commit())
+	require.Equal(t, 3, total)
+	require.Equal(t, 3, added)
+	require.Equal(t, 0, seriesAdded)
+	// Metric is not higher than last time.
+	require.Equal(t, 4.0, prom_testutil.ToFloat64(sl.metrics.targetScrapeSampleDuplicate))
 }
 
 // This tests running a full scrape loop and checking that the scrape option

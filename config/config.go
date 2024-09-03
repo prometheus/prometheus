@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/storage/remote/azuread"
+	"github.com/prometheus/prometheus/storage/remote/googleiam"
 )
 
 var (
@@ -64,6 +65,11 @@ var (
 		"x-amz-security-token": {},
 		"x-amz-content-sha256": {},
 	}
+)
+
+const (
+	LegacyValidationConfig = "legacy"
+	UTF8ValidationConfig   = "utf8"
 )
 
 // Load parses the YAML input s into a Config.
@@ -215,6 +221,7 @@ var (
 	// DefaultRemoteReadConfig is the default remote read configuration.
 	DefaultRemoteReadConfig = RemoteReadConfig{
 		RemoteTimeout:        model.Duration(1 * time.Minute),
+		ChunkedReadLimit:     DefaultChunkedReadLimit,
 		HTTPClientConfig:     config.DefaultHTTPClientConfig,
 		FilterExternalLabels: true,
 	}
@@ -445,6 +452,8 @@ type GlobalConfig struct {
 	// Keep no more than this many dropped targets per job.
 	// 0 means no limit.
 	KeepDroppedTargets uint `yaml:"keep_dropped_targets,omitempty"`
+	// Allow UTF8 Metric and Label Names.
+	MetricNameValidationScheme string `yaml:"metric_name_validation_scheme,omitempty"`
 }
 
 // ScrapeProtocol represents supported protocol for scraping metrics.
@@ -470,6 +479,7 @@ var (
 	PrometheusText0_0_4  ScrapeProtocol = "PrometheusText0.0.4"
 	OpenMetricsText0_0_1 ScrapeProtocol = "OpenMetricsText0.0.1"
 	OpenMetricsText1_0_0 ScrapeProtocol = "OpenMetricsText1.0.0"
+	UTF8NamesHeader      string         = model.EscapingKey + "=" + model.AllowUTF8
 
 	ScrapeProtocolsHeaders = map[ScrapeProtocol]string{
 		PrometheusProto:      "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited",
@@ -655,6 +665,8 @@ type ScrapeConfig struct {
 	// Keep no more than this many dropped targets per job.
 	// 0 means no limit.
 	KeepDroppedTargets uint `yaml:"keep_dropped_targets,omitempty"`
+	// Allow UTF8 Metric and Label Names.
+	MetricNameValidationScheme string `yaml:"metric_name_validation_scheme,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
@@ -759,6 +771,19 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	}
 	if err := validateAcceptScrapeProtocols(c.ScrapeProtocols); err != nil {
 		return fmt.Errorf("%w for scrape config with job name %q", err, c.JobName)
+	}
+
+	switch globalConfig.MetricNameValidationScheme {
+	case "", LegacyValidationConfig:
+	case UTF8ValidationConfig:
+		if model.NameValidationScheme != model.UTF8Validation {
+			return fmt.Errorf("utf8 name validation requested but feature not enabled via --enable-feature=utf8-names")
+		}
+	default:
+		return fmt.Errorf("unknown name validation method specified, must be either 'legacy' or 'utf8', got %s", globalConfig.MetricNameValidationScheme)
+	}
+	if c.MetricNameValidationScheme == "" {
+		c.MetricNameValidationScheme = globalConfig.MetricNameValidationScheme
 	}
 
 	return nil
@@ -1089,8 +1114,9 @@ func (m RemoteWriteProtoMsgs) String() string {
 }
 
 var (
-	// RemoteWriteProtoMsgV1 represents the deprecated `prometheus.WriteRequest` protobuf
-	// message introduced in the https://prometheus.io/docs/specs/remote_write_spec/.
+	// RemoteWriteProtoMsgV1 represents the `prometheus.WriteRequest` protobuf
+	// message introduced in the https://prometheus.io/docs/specs/remote_write_spec/,
+	// which will eventually be deprecated.
 	//
 	// NOTE: This string is used for both HTTP header values and config value, so don't change
 	// this reference.
@@ -1123,6 +1149,7 @@ type RemoteWriteConfig struct {
 	MetadataConfig   MetadataConfig          `yaml:"metadata_config,omitempty"`
 	SigV4Config      *sigv4.SigV4Config      `yaml:"sigv4,omitempty"`
 	AzureADConfig    *azuread.AzureADConfig  `yaml:"azuread,omitempty"`
+	GoogleIAMConfig  *googleiam.Config       `yaml:"google_iam,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -1160,17 +1187,33 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 		return err
 	}
 
-	httpClientConfigAuthEnabled := c.HTTPClientConfig.BasicAuth != nil ||
-		c.HTTPClientConfig.Authorization != nil || c.HTTPClientConfig.OAuth2 != nil
+	return validateAuthConfigs(c)
+}
 
-	if httpClientConfigAuthEnabled && (c.SigV4Config != nil || c.AzureADConfig != nil) {
-		return fmt.Errorf("at most one of basic_auth, authorization, oauth2, sigv4, & azuread must be configured")
+// validateAuthConfigs validates that at most one of basic_auth, authorization, oauth2, sigv4, azuread or google_iam must be configured.
+func validateAuthConfigs(c *RemoteWriteConfig) error {
+	var authConfigured []string
+	if c.HTTPClientConfig.BasicAuth != nil {
+		authConfigured = append(authConfigured, "basic_auth")
 	}
-
-	if c.SigV4Config != nil && c.AzureADConfig != nil {
-		return fmt.Errorf("at most one of basic_auth, authorization, oauth2, sigv4, & azuread must be configured")
+	if c.HTTPClientConfig.Authorization != nil {
+		authConfigured = append(authConfigured, "authorization")
 	}
-
+	if c.HTTPClientConfig.OAuth2 != nil {
+		authConfigured = append(authConfigured, "oauth2")
+	}
+	if c.SigV4Config != nil {
+		authConfigured = append(authConfigured, "sigv4")
+	}
+	if c.AzureADConfig != nil {
+		authConfigured = append(authConfigured, "azuread")
+	}
+	if c.GoogleIAMConfig != nil {
+		authConfigured = append(authConfigured, "google_iam")
+	}
+	if len(authConfigured) > 1 {
+		return fmt.Errorf("at most one of basic_auth, authorization, oauth2, sigv4, azuread or google_iam must be configured. Currently configured: %v", authConfigured)
+	}
 	return nil
 }
 
@@ -1189,7 +1232,7 @@ func validateHeadersForTracing(headers map[string]string) error {
 func validateHeaders(headers map[string]string) error {
 	for header := range headers {
 		if strings.ToLower(header) == "authorization" {
-			return errors.New("authorization header must be changed via the basic_auth, authorization, oauth2, sigv4, or azuread parameter")
+			return errors.New("authorization header must be changed via the basic_auth, authorization, oauth2, sigv4, azuread or google_iam parameter")
 		}
 		if _, ok := reservedHeaders[strings.ToLower(header)]; ok {
 			return fmt.Errorf("%s is a reserved header. It must not be changed", header)
@@ -1237,13 +1280,20 @@ type MetadataConfig struct {
 	MaxSamplesPerSend int `yaml:"max_samples_per_send,omitempty"`
 }
 
+const (
+	// DefaultChunkedReadLimit is the default value for the maximum size of the protobuf frame client allows.
+	// 50MB is the default. This is equivalent to ~100k full XOR chunks and average labelset.
+	DefaultChunkedReadLimit = 5e+7
+)
+
 // RemoteReadConfig is the configuration for reading from remote storage.
 type RemoteReadConfig struct {
-	URL           *config.URL       `yaml:"url"`
-	RemoteTimeout model.Duration    `yaml:"remote_timeout,omitempty"`
-	Headers       map[string]string `yaml:"headers,omitempty"`
-	ReadRecent    bool              `yaml:"read_recent,omitempty"`
-	Name          string            `yaml:"name,omitempty"`
+	URL              *config.URL       `yaml:"url"`
+	RemoteTimeout    model.Duration    `yaml:"remote_timeout,omitempty"`
+	ChunkedReadLimit uint64            `yaml:"chunked_read_limit,omitempty"`
+	Headers          map[string]string `yaml:"headers,omitempty"`
+	ReadRecent       bool              `yaml:"read_recent,omitempty"`
+	Name             string            `yaml:"name,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
