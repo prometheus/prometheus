@@ -28,7 +28,7 @@ const TableTab: FC<TableTabProps> = ({ panelIdx, retriggerIdx }) => {
   const { endTime, range } = visualizer;
 
   const { data, error, isFetching, refetch } = useAPIQuery<InstantQueryResult>({
-    key: useId(),
+    key: [useId()],
     path: "/query",
     params: {
       query: expr,

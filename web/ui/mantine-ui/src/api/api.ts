@@ -1,4 +1,4 @@
-import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
+import { QueryKey, useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { useSettings } from "../state/settingsSlice";
 
 export const API_PATH = "api/v1";
@@ -89,7 +89,7 @@ const createQueryFn =
   };
 
 type QueryOptions = {
-  key?: string;
+  key?: QueryKey;
   path: string;
   params?: Record<string, string>;
   enabled?: boolean;
@@ -106,7 +106,7 @@ export const useAPIQuery = <T>({
   const { pathPrefix } = useSettings();
 
   return useQuery<SuccessAPIResponse<T>>({
-    queryKey: key ? [key] : [path, params],
+    queryKey: key !== undefined ? key : [path, params],
     retry: false,
     refetchOnWindowFocus: false,
     gcTime: 0,
@@ -119,7 +119,7 @@ export const useSuspenseAPIQuery = <T>({ key, path, params }: QueryOptions) => {
   const { pathPrefix } = useSettings();
 
   return useSuspenseQuery<SuccessAPIResponse<T>>({
-    queryKey: key ? [key] : [path, params],
+    queryKey: key !== undefined ? key : [path, params],
     retry: false,
     refetchOnWindowFocus: false,
     gcTime: 0,

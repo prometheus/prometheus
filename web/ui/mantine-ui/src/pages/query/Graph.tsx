@@ -44,7 +44,7 @@ const Graph: FC<GraphProps> = ({
 
   const { data, error, isFetching, isLoading, refetch } =
     useAPIQuery<RangeQueryResult>({
-      key: useId(),
+      key: [useId()],
       path: "/query_range",
       params: {
         query: expr,

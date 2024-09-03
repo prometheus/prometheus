@@ -15,7 +15,7 @@ const ReadinessLoader: FC = () => {
 
   // Query readiness status.
   const { data: ready } = useSuspenseQuery<boolean>({
-    queryKey: [`ready-${queryKey}`],
+    queryKey: ["ready", queryKey],
     retry: false,
     refetchOnWindowFocus: false,
     gcTime: 0,
@@ -46,8 +46,8 @@ const ReadinessLoader: FC = () => {
       data: { min, max, current },
     },
   } = useSuspenseAPIQuery<WALReplayStatus>({
-    path: `/status/walreplay`,
-    key: `walreplay-${queryKey}`,
+    path: "/status/walreplay",
+    key: ["walreplay", queryKey],
   });
 
   useEffect(() => {
