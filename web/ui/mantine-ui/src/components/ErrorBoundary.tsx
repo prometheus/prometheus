@@ -49,7 +49,9 @@ class ErrorBoundary extends Component<Props, State> {
 const ResettingErrorBoundary = (props: Props) => {
   const location = useLocation();
   return (
-    <ErrorBoundary key={location.pathname}>{props.children}</ErrorBoundary>
+    <ErrorBoundary key={location.pathname} title={props.title}>
+      {props.children}
+    </ErrorBoundary>
   );
 };
 
