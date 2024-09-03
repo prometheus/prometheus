@@ -225,6 +225,15 @@ var expectedConf = &Config{
 				TLSConfig: config.TLSConfig{
 					MinVersion: config.TLSVersion(tls.VersionTLS10),
 				},
+				HTTPHeaders: &config.Headers{
+					Headers: map[string]config.Header{
+						"foo": {
+							Values:  []string{"foobar"},
+							Secrets: []config.Secret{"bar", "foo"},
+							Files:   []string{filepath.FromSlash("testdata/valid_password_file")},
+						},
+					},
+				},
 			},
 
 			ServiceDiscoveryConfigs: discovery.Configs{
@@ -1532,7 +1541,7 @@ func TestElideSecrets(t *testing.T) {
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	require.Len(t, matches, 22, "wrong number of secret matches found")
+	require.Len(t, matches, 24, "wrong number of secret matches found")
 	require.NotContains(t, yamlConfig, "mysecret",
 		"yaml marshal reveals authentication credentials.")
 }
