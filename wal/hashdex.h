@@ -7,6 +7,7 @@
 #include "bare_bones/preprocess.h"
 #include "bare_bones/vector.h"
 #include "concepts.h"
+#include "heartbeat_metrics_inserter.h"
 #include "primitives/go_model.h"
 #include "primitives/go_slice.h"
 #include "primitives/primitives.h"
@@ -170,25 +171,24 @@ class ProtobufHashdex {
   inline __attribute__((always_inline)) const_iterator end() const noexcept { return std::end(items_); }
 };
 
-// MetaInjection metedata for injection metrics.
-struct MetaInjection {
-  int64_t sent_at{0};
-  PromPP::Primitives::Go::String agent_uuid;
-  PromPP::Primitives::Go::String hostname;
-};
-
 class BasicDecoderHashdex {
  public:
+  struct MetaInjection {
+    std::chrono::system_clock::time_point now;
+    std::chrono::nanoseconds sent_at{0};
+    std::string_view agent_uuid;
+    std::string_view hostname;
+  };
+
   class Item {
     size_t hash_;
     Primitives::TimeseriesSemiview data_;
 
    public:
     template <class LabelSet>
-    PROMPP_ALWAYS_INLINE explicit Item(const LabelSet& ls, Primitives::Timestamp ts, double value)
-        : hash_(hash_value(ls)), data_(ls, BareBones::Vector<Primitives::Sample>{{ts, value}}) {}
+    PROMPP_ALWAYS_INLINE explicit Item(const LabelSet& ls, Primitives::Sample sample) : hash_(hash_value(ls)), data_(ls, {sample}) {}
 
-    PROMPP_ALWAYS_INLINE size_t hash() const { return hash_; }
+    [[nodiscard]] PROMPP_ALWAYS_INLINE size_t hash() const { return hash_; }
 
     template <class Timeseries>
     PROMPP_ALWAYS_INLINE void read(Timeseries& timeseries) const {
@@ -203,29 +203,12 @@ class BasicDecoderHashdex {
   uint32_t series_{0};
 
   // metrics_injection injection of additional metrics with Heartbeat.
-  void metric_injection(const MetaInjection& meta, std::chrono::system_clock::time_point now) {
-    auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
-    auto sent_at = std::chrono::nanoseconds{meta.sent_at};
-    Primitives::SymbolView agent_uuid{meta.agent_uuid.begin(), meta.agent_uuid.size()};
-    Primitives::SymbolView hostname{meta.hostname.begin(), meta.hostname.size()};
-
-    items_.emplace_back(Primitives::LabelViewSet{{"__name__", "okagent__timestamp"},
-                                                 {"agent_uuid", agent_uuid},
-                                                 {"conf", "/usr/local/okagent/etc/config.yaml"},
-                                                 {"instance", hostname},
-                                                 {"job", "heartbeat"},
-                                                 {"okmeter_plugin", "heartbeat"},
-                                                 {"okmeter_plugin_instance", "/usr/local/okagent/etc/config.yaml"}},
-                        now_ms.count(), std::chrono::duration<double>(std::chrono::duration_cast<std::chrono::seconds>(sent_at)).count());
-
-    items_.emplace_back(Primitives::LabelViewSet{{"__name__", "okagent__heartbeat"}, {"agent_uuid", agent_uuid}, {"instance", hostname}, {"job", "collector"}},
-                        now_ms.count(), std::chrono::duration<double>(std::chrono::seconds(1)).count());
-
-    items_.emplace_back(
-        Primitives::LabelViewSet{{"__name__", "time__offset__collector"}, {"agent_uuid", agent_uuid}, {"instance", hostname}, {"job", "collector"}},
-        now_ms.count(), std::chrono::duration<double>(std::chrono::duration_cast<std::chrono::seconds>(now_ms - sent_at)).count());
-
-    series_ += 3;
+  void metric_injection(const MetaInjection& meta) {
+    HeartbeatMetricsInserter inserter({.agent_uuid = meta.agent_uuid, .hostname = meta.hostname});
+    inserter.insert(meta.now, meta.sent_at, [this](const auto& timeseries) PROMPP_LAMBDA_INLINE {
+      items_.emplace_back(timeseries.label_set(), timeseries.samples()[0]);
+      ++series_;
+    });
   }
 
  public:
@@ -242,7 +225,7 @@ class BasicDecoderHashdex {
         last_ls_id = ls_id;
         ++series_;
       }
-      items_.emplace_back(ls_view, ts, value);
+      items_.emplace_back(ls_view, Primitives::Sample(ts, value));
     });
     if (items_.size()) [[likely]] {
       set_cluser_and_replica_values(ls_view, cluster_, replica_);
@@ -251,9 +234,8 @@ class BasicDecoderHashdex {
 
   // presharding from decoder make presharding slice with hash and TimeseriesSemiview with metadata.
   PROMPP_ALWAYS_INLINE void presharding(BasicDecoder<>& decoder, const MetaInjection& meta) {
-    auto now = std::chrono::system_clock::now();
     presharding(decoder);
-    metric_injection(meta, now);
+    metric_injection(meta);
   }
 
   // write_stats write sharding stats.

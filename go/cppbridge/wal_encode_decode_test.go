@@ -329,8 +329,10 @@ func (s *EncoderDecoderSuite) TestEncodeDecodeToHashdexWithMetricInjection() {
 
 	count := 3
 	for i := 1; i < count; i++ {
+		now := time.Now()
 		meta := cppbridge.MetaInjection{
-			SentAt:    time.Now().UnixNano(),
+			Now:       now.UnixNano(),
+			SentAt:    now.UnixNano(),
 			AgentUUID: "UUID",
 			Hostname:  "SOMEHOSTNAME",
 		}
@@ -361,7 +363,6 @@ func (s *EncoderDecoderSuite) TestEncodeDecodeToHashdexWithMetricInjection() {
 		segByte := s.transferringData(gos)
 
 		s.T().Log("decoding to hashdex")
-		tsNow := time.Now().UnixMilli()
 		hContent, err := dec.DecodeToHashdexWithMetricInjection(s.baseCtx, segByte, &meta)
 		s.Require().NoError(err)
 
@@ -385,7 +386,7 @@ func (s *EncoderDecoderSuite) TestEncodeDecodeToHashdexWithMetricInjection() {
 		s.T().Log("compare income and outcome protobuf")
 		actualWr := &prompb.WriteRequest{}
 		s.Require().NoError(protocont.UnmarshalTo(actualWr))
-		s.metricInjection(expectedWr, &meta, tsNow)
+		s.metricInjection(expectedWr, &meta, now)
 		slices.SortFunc(expectedWr.Timeseries, func(a, b prompb.TimeSeries) int { return strings.Compare(a.String(), b.String()) })
 		slices.SortFunc(actualWr.Timeseries, func(a, b prompb.TimeSeries) int { return strings.Compare(a.String(), b.String()) })
 		s.Equal(expectedWr.String(), actualWr.String())
@@ -486,8 +487,9 @@ func (s *EncoderDecoderSuite) TestEncodeDecodeToHashdexClusterReplica() {
 	s.EqualValues(1, protocont.Samples())
 }
 
-func (*EncoderDecoderSuite) metricInjection(wr *prompb.WriteRequest, meta *cppbridge.MetaInjection, ts int64) {
-	tsNowClient := float64(meta.SentAt / int64(time.Second))
+func (*EncoderDecoderSuite) metricInjection(wr *prompb.WriteRequest, meta *cppbridge.MetaInjection, ts time.Time) {
+	tsNowClient := float64(meta.SentAt) / float64(time.Second)
+
 	wr.Timeseries = append(wr.Timeseries,
 		prompb.TimeSeries{
 			Labels: []prompb.Label{
@@ -500,7 +502,7 @@ func (*EncoderDecoderSuite) metricInjection(wr *prompb.WriteRequest, meta *cppbr
 				{Name: "okmeter_plugin_instance", Value: "/usr/local/okagent/etc/config.yaml"},
 			},
 			Samples: []prompb.Sample{
-				{Value: tsNowClient, Timestamp: ts},
+				{Value: tsNowClient, Timestamp: ts.UnixMilli()},
 			},
 		},
 		prompb.TimeSeries{
@@ -511,7 +513,7 @@ func (*EncoderDecoderSuite) metricInjection(wr *prompb.WriteRequest, meta *cppbr
 				{Name: "job", Value: "collector"},
 			},
 			Samples: []prompb.Sample{
-				{Value: 1, Timestamp: ts},
+				{Value: 1, Timestamp: ts.UnixMilli()},
 			},
 		},
 		prompb.TimeSeries{
@@ -522,7 +524,7 @@ func (*EncoderDecoderSuite) metricInjection(wr *prompb.WriteRequest, meta *cppbr
 				{Name: "job", Value: "collector"},
 			},
 			Samples: []prompb.Sample{
-				{Value: float64(ts/1000) - tsNowClient, Timestamp: ts},
+				{Value: float64(ts.UnixMilli()*int64(time.Millisecond)-meta.SentAt) / float64(time.Second), Timestamp: ts.UnixMilli()},
 			},
 		},
 	)

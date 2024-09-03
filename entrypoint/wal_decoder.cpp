@@ -94,9 +94,25 @@ extern "C" void prompp_wal_decoder_decode_to_hashdex(void* args, void* res) {
 }
 
 extern "C" void prompp_wal_decoder_decode_to_hashdex_with_metric_injection(void* args, void* res) {
+  struct MetaInjection {
+    std::chrono::system_clock::time_point now;
+    std::chrono::nanoseconds sent_at{0};
+    PromPP::Primitives::Go::String agent_uuid;
+    PromPP::Primitives::Go::String hostname;
+
+    [[nodiscard]] explicit PROMPP_ALWAYS_INLINE operator PromPP::WAL::BasicDecoderHashdex::MetaInjection() const noexcept {
+      return PromPP::WAL::BasicDecoderHashdex::MetaInjection{
+          .now = now,
+          .sent_at = sent_at,
+          .agent_uuid = static_cast<std::string_view>(agent_uuid),
+          .hostname = static_cast<std::string_view>(hostname),
+      };
+    }
+  };
+
   struct Arguments {
     PromPP::WAL::Decoder* decoder;
-    PromPP::WAL::MetaInjection* meta;
+    MetaInjection* meta;
     PromPP::Primitives::Go::SliceView<char> segment;
   };
   using Result = struct {
@@ -119,7 +135,7 @@ extern "C" void prompp_wal_decoder_decode_to_hashdex_with_metric_injection(void*
   try {
     out->hashdex_variant = new HashdexVariant{std::in_place_index<HashdexType::decoder>};
     auto& hashdex = std::get<PromPP::WAL::BasicDecoderHashdex>(*out->hashdex_variant);
-    in->decoder->decode_to_hashdex(in->segment, hashdex, *out, *in->meta);
+    in->decoder->decode_to_hashdex(in->segment, hashdex, *out, static_cast<PromPP::WAL::BasicDecoderHashdex::MetaInjection>(*in->meta));
     auto cluster = hashdex.cluster();
     out->cluster.reset_to(cluster.data(), cluster.size());
     auto replica = hashdex.replica();
