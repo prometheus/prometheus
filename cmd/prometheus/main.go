@@ -1163,12 +1163,12 @@ func main() {
 							rc <- err
 						} else {
 							rc <- nil
-						}
-						if cfg.enableAutoReload {
-							if currentChecksum, err := config.GenerateChecksum(cfg.configFile); err == nil {
-								checksum = currentChecksum
-							} else {
-								level.Error(logger).Log("msg", "Failed to generate checksum during configuration reload", "err", err)
+							if cfg.enableAutoReload {
+								if currentChecksum, err := config.GenerateChecksum(cfg.configFile); err == nil {
+									checksum = currentChecksum
+								} else {
+									level.Error(logger).Log("msg", "Failed to generate checksum during configuration reload", "err", err)
+								}
 							}
 						}
 					case <-time.Tick(time.Duration(cfg.autoReloadInterval)):
