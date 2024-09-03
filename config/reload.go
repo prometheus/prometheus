@@ -36,7 +36,10 @@ func GenerateChecksum(yamlFilePath string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("error reading YAML file: %w", err)
 	}
-	_, _ = hash.Write(yamlContent)
+	_, err = hash.Write(yamlContent)
+	if err != nil {
+		return "", fmt.Errorf("error writing YAML file to hash: %w", err)
+	}
 
 	var config ExternalFilesConfig
 	if err := yaml.Unmarshal(yamlContent, &config); err != nil {
@@ -61,23 +64,26 @@ func GenerateChecksum(yamlFilePath string) (string, error) {
 		for _, pattern := range files[prefix] {
 			matchingFiles, err := filepath.Glob(pattern)
 			if err != nil {
-				return "", fmt.Errorf("error finding files with pattern %s: %w", pattern, err)
+				return "", fmt.Errorf("error finding files with pattern %q: %w", pattern, err)
 			}
 
 			for _, file := range matchingFiles {
-				// Write prefix to the hash ("r" or "s") followed by \0.
-				_, _ = hash.Write([]byte(prefix + "\x00"))
-
-				// Write the file path to the hash, followed by \0 to ensure
-				// separation.
-				_, _ = hash.Write([]byte(file + "\x00"))
+				// Write prefix to the hash ("r" or "s") followed by \0, then
+				// the file path.
+				_, err = hash.Write([]byte(prefix + "\x00" + file + "\x00"))
+				if err != nil {
+					return "", fmt.Errorf("error writing %q path to hash: %w", file, err)
+				}
 
 				// Read and hash the content of the file.
 				content, err := os.ReadFile(file)
 				if err != nil {
 					return "", fmt.Errorf("error reading file %s: %w", file, err)
 				}
-				_, _ = hash.Write(append(content, []byte("\x00")...))
+				_, err = hash.Write(append(content, []byte("\x00")...))
+				if err != nil {
+					return "", fmt.Errorf("error writing %q content to hash: %w", file, err)
+				}
 			}
 		}
 	}
