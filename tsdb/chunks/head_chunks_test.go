@@ -408,7 +408,7 @@ func TestChunkDiskMapper_Truncate_WriteQueueRaceCondition(t *testing.T) {
 	wg.Wait()
 }
 
-// TestHeadReadWriter_TruncateAfterIterateChunksError tests for
+// TestHeadReadWriter_TruncateAfterFailedIterateChunks tests for
 // https://github.com/prometheus/prometheus/issues/7753
 func TestHeadReadWriter_TruncateAfterFailedIterateChunks(t *testing.T) {
 	hrw := createChunkDiskMapper(t, "")

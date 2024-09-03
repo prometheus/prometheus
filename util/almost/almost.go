@@ -22,10 +22,10 @@ import (
 var minNormal = math.Float64frombits(0x0010000000000000) // The smallest positive normal value of type float64.
 
 // Equal returns true if a and b differ by less than their sum
-// multiplied by epsilon.
+// multiplied by epsilon, or if both are StaleNaN, or if both are any other NaN.
 func Equal(a, b, epsilon float64) bool {
-	// StaleNaN is a special value that is used as staleness maker, so
-	// the two values are equal when both are exactly equals to stale NaN.
+	// StaleNaN is a special value that is used as staleness maker, and
+	// we don't want it to compare equal to any other NaN.
 	if value.IsStaleNaN(a) || value.IsStaleNaN(b) {
 		return value.IsStaleNaN(a) && value.IsStaleNaN(b)
 	}
