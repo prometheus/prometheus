@@ -714,9 +714,17 @@ outer:
 			t.seriesMtx.Unlock()
 			continue
 		}
+		// TODO: LOG HERE,
+		//   1. if metadata is missing
+		//   2. see if serielization is broken, not inserted to serialization
+		//   3. deserialize right after serializa in the sender
+		//
 		// TODO(cstyan): Handle or at least log an error if no metadata is found.
 		// See https://github.com/prometheus/prometheus/issues/14405
-		meta := t.seriesMetadata[s.Ref]
+		meta, ok := t.seriesMetadata[s.Ref]
+		if !ok || meta == nil {
+			t.logger.Log("meta", meta, "lbls", lbls, "ref", s.Ref, "ok", ok)
+		}
 		t.seriesMtx.Unlock()
 		// Start with a very small backoff. This should not be t.cfg.MinBackoff
 		// as it can happen without errors, and we want to pickup work after
