@@ -20,6 +20,7 @@ import {
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import {
+  IconBell,
   IconBellFilled,
   IconChevronDown,
   IconChevronRight,
@@ -62,6 +63,7 @@ import ReadinessWrapper from "./components/ReadinessWrapper";
 import { QueryParamProvider } from "use-query-params";
 import { ReactRouter6Adapter } from "use-query-params/adapters/react-router-6";
 import ServiceDiscoveryPage from "./pages/service-discovery/ServiceDiscoveryPage";
+import AlertmanagerDiscoveryPage from "./pages/AlertmanagerDiscoveryPage";
 
 const queryClient = new QueryClient();
 
@@ -105,6 +107,13 @@ const monitoringStatusPages = [
     icon: <IconCloudDataConnection style={navIconStyle} />,
     element: <ServiceDiscoveryPage />,
     inAgentMode: true,
+  },
+  {
+    title: "Alertmanager discovery",
+    path: "/discovered-alertmanagers",
+    icon: <IconBell style={navIconStyle} />,
+    element: <AlertmanagerDiscoveryPage />,
+    inAgentMode: false,
   },
 ];
 

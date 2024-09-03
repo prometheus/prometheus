@@ -25,7 +25,6 @@ import {
 } from "../../state/serviceDiscoveryPageSlice";
 import CustomInfiniteScroll from "../../components/CustomInfiniteScroll";
 
-import TargetLabels from "./TargetLabels";
 import { useDebouncedValue } from "@mantine/hooks";
 import { targetPoolDisplayLimit } from "./ServiceDiscoveryPage";
 import { BooleanParam, useQueryParam, withDefault } from "use-query-params";
