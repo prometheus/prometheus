@@ -22,10 +22,7 @@ import (
 )
 
 func TestGenerateChecksum(t *testing.T) {
-	// Create a temporary directory to hold the test files.
-	tmpDir, err := os.MkdirTemp("", "checksum_test")
-	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir) // Clean up.
+	tmpDir := t.TempDir()
 
 	// Define paths for the temporary files.
 	yamlFilePath := filepath.Join(tmpDir, "test.yml")
