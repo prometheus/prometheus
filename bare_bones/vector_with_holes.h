@@ -22,9 +22,9 @@ union ItemOrHole {
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept {
-    if constexpr (BareBones::concepts::have_allocated_memory<T>) {
+    if constexpr (BareBones::concepts::has_allocated_memory<T>) {
       return value.allocated_memory();
-    } else if constexpr (BareBones::concepts::dereferenceable_have_allocated_memory<T>) {
+    } else if constexpr (BareBones::concepts::dereferenceable_has_allocated_memory<T>) {
       value->allocated_memory();
     } else {
       return 0;
@@ -88,7 +88,7 @@ class VectorWithHoles {
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept {
     size_t allocated_memory = vector_.capacity() * sizeof(Item) + item_index_set_.allocated_memory();
 
-    if constexpr (BareBones::concepts::have_allocated_memory<T> || BareBones::concepts::dereferenceable_have_allocated_memory<T>) {
+    if constexpr (BareBones::concepts::has_allocated_memory<T> || BareBones::concepts::dereferenceable_has_allocated_memory<T>) {
       for (auto item_id : item_index_set_) {
         allocated_memory += vector_[item_id].allocated_memory();
       }

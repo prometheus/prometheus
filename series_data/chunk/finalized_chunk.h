@@ -13,7 +13,7 @@ class FinalizedChunkList {
   explicit FinalizedChunkList(size_t& allocated_memory_) : chunks_(BareBones::Allocator<DataChunk>{allocated_memory_}) {}
 
   template <class GetFinalizedChunkFirstTimestamp>
-  DataChunk& emplace(DataChunk& chunk, GetFinalizedChunkFirstTimestamp&& get_finalized_chunk_first_timestamp) {
+  DataChunk& emplace(const DataChunk& chunk, GetFinalizedChunkFirstTimestamp&& get_finalized_chunk_first_timestamp) {
     auto chunk_first_timestamp = get_finalized_chunk_first_timestamp(chunk);
 
     auto it = chunks_.before_begin();

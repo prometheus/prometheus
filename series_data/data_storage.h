@@ -14,6 +14,142 @@
 namespace series_data {
 
 struct DataStorage {
+  class IteratorSentinel {};
+
+  class SeriesChunkIterator {
+   public:
+    class Data {
+     public:
+      explicit Data(const DataStorage* storage, uint32_t ls_id) : storage_(storage) {
+        if (storage_->open_chunks.size() > ls_id) {
+          open_chunk_ = &storage_->open_chunks[ls_id];
+
+          if (auto it = storage_->finalized_chunks.find(ls_id); it != storage_->finalized_chunks.end()) {
+            finalized_chunk_iterator_ = it->second.begin();
+            finalized_chunk_end_iterator_ = it->second.end();
+          }
+        }
+      }
+
+      [[nodiscard]] PROMPP_ALWAYS_INLINE const DataStorage* storage() const noexcept { return storage_; }
+      [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t series_id() const noexcept { return std::distance(storage_->open_chunks.begin(), open_chunk_); }
+      [[nodiscard]] PROMPP_ALWAYS_INLINE chunk::DataChunk::Type chunk_type() const noexcept {
+        return finalized_chunk_iterator_ == finalized_chunk_end_iterator_ ? chunk::DataChunk::Type::kOpen : chunk::DataChunk::Type::kFinalized;
+      }
+      [[nodiscard]] PROMPP_ALWAYS_INLINE const chunk::DataChunk& chunk() const noexcept {
+        return chunk_type() == chunk::DataChunk::Type::kOpen ? *open_chunk_ : *finalized_chunk_iterator_;
+      }
+
+     private:
+      friend class SeriesChunkIterator;
+
+      const DataStorage* storage_;
+      std::forward_list<chunk::DataChunk>::const_iterator finalized_chunk_iterator_;
+      std::forward_list<chunk::DataChunk>::const_iterator finalized_chunk_end_iterator_;
+      const chunk::DataChunk* open_chunk_{};
+
+      PROMPP_ALWAYS_INLINE void next_value() noexcept {
+        if (finalized_chunk_iterator_ != finalized_chunk_end_iterator_) {
+          ++finalized_chunk_iterator_;
+          return;
+        }
+
+        open_chunk_ = nullptr;
+      }
+
+      [[nodiscard]] PROMPP_ALWAYS_INLINE bool has_value() const noexcept { return open_chunk_ != nullptr; }
+    };
+
+    using iterator_category = std::forward_iterator_tag;
+    using value_type = Data;
+    using difference_type = ptrdiff_t;
+    using pointer = Data*;
+    using reference = Data&;
+
+    explicit SeriesChunkIterator(const DataStorage* data_storage, uint32_t ls_id) : data_(data_storage, ls_id) {}
+
+    [[nodiscard]] PROMPP_ALWAYS_INLINE const Data& operator*() const noexcept { return data_; }
+    [[nodiscard]] PROMPP_ALWAYS_INLINE const Data* operator->() const noexcept { return &data_; }
+
+    PROMPP_ALWAYS_INLINE SeriesChunkIterator& operator++() noexcept {
+      data_.next_value();
+      return *this;
+    }
+
+    PROMPP_ALWAYS_INLINE SeriesChunkIterator operator++(int) noexcept {
+      auto it = *this;
+      ++*this;
+      return it;
+    }
+
+    PROMPP_ALWAYS_INLINE bool operator==(const IteratorSentinel&) const noexcept { return !data_.has_value(); }
+
+   private:
+    Data data_;
+  };
+
+  class ChunkIterator {
+   public:
+    using iterator_category = std::forward_iterator_tag;
+    using value_type = SeriesChunkIterator::Data;
+    using difference_type = ptrdiff_t;
+    using pointer = SeriesChunkIterator::Data*;
+    using reference = SeriesChunkIterator::Data&;
+
+    explicit ChunkIterator(const DataStorage* storage) : storage_(storage), iterator_(storage->open_chunks.begin()), series_chunk_iterator_(storage, 0U) {}
+
+    [[nodiscard]] PROMPP_ALWAYS_INLINE const SeriesChunkIterator::Data& operator*() const noexcept { return *series_chunk_iterator_; }
+    [[nodiscard]] PROMPP_ALWAYS_INLINE const SeriesChunkIterator::Data* operator->() const noexcept { return series_chunk_iterator_.operator->(); }
+
+    PROMPP_ALWAYS_INLINE ChunkIterator& operator++() noexcept {
+      if (++series_chunk_iterator_ == IteratorSentinel{}) {
+        if (++iterator_ != storage_->open_chunks.end()) {
+          series_chunk_iterator_ = SeriesChunkIterator{storage_, static_cast<uint32_t>(std::distance(storage_->open_chunks.begin(), iterator_))};
+        }
+      }
+      return *this;
+    }
+
+    PROMPP_ALWAYS_INLINE ChunkIterator operator++(int) noexcept {
+      auto it = *this;
+      ++*this;
+      return it;
+    }
+
+    PROMPP_ALWAYS_INLINE bool operator==(const IteratorSentinel&) const noexcept {
+      return iterator_ == storage_->open_chunks.end() && series_chunk_iterator_ == IteratorSentinel{};
+    }
+
+   private:
+    const DataStorage* storage_;
+    BareBones::Vector<chunk::DataChunk>::const_iterator iterator_;
+    SeriesChunkIterator series_chunk_iterator_;
+  };
+
+  class SeriesChunks {
+   public:
+    explicit SeriesChunks(const DataStorage* storage, uint32_t series_id) : storage_(storage), series_id_(series_id) {}
+
+    [[nodiscard]] PROMPP_ALWAYS_INLINE SeriesChunkIterator begin() const noexcept { return SeriesChunkIterator{storage_, series_id_}; }
+    [[nodiscard]] PROMPP_ALWAYS_INLINE static IteratorSentinel end() noexcept { return {}; }
+
+   private:
+    const DataStorage* storage_;
+    const uint32_t series_id_;
+  };
+
+  class Chunks {
+   public:
+    explicit Chunks(const DataStorage* storage) : storage_(storage) {}
+
+    [[nodiscard]] PROMPP_ALWAYS_INLINE ChunkIterator begin() const noexcept { return ChunkIterator{storage_}; }
+    [[nodiscard]] PROMPP_ALWAYS_INLINE static IteratorSentinel end() noexcept { return {}; }
+
+   private:
+    const DataStorage* storage_;
+  };
+
+ public:
   BareBones::Vector<chunk::DataChunk> open_chunks;
   encoder::timestamp::Encoder timestamp_encoder;
 
@@ -42,6 +178,9 @@ struct DataStorage {
   uint32_t outdated_samples_count{};
   uint32_t outdated_chunks_count{};
   uint32_t merged_samples_count{};
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE SeriesChunks chunks(uint32_t ls_id) const noexcept { return SeriesChunks{this, ls_id}; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE Chunks chunks() const noexcept { return Chunks{this}; }
 
   void reset_sample_counters() noexcept {
     samples_count = 0;

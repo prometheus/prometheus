@@ -24,7 +24,7 @@ struct PROMPP_ATTRIBUTE_PACKED DataChunk {
 
   union PROMPP_ATTRIBUTE_PACKED EncoderData {
     encoder::value::Uint32ConstantEncoder uint32_constant;
-    uint32_t double_constant;
+    uint32_t double_constant{0};
     uint32_t two_double_constant;
     uint32_t asc_integer_values_gorilla;
     uint32_t values_gorilla;

@@ -20,7 +20,7 @@ class CompactSeriesIdSequence {
 
   static constexpr uint32_t kMaxElementsInArray = sizeof(SeriesIdSequence) / sizeof(SeriesIdSequence::value_type);
   using Array = std::array<SeriesIdSequence::value_type, kMaxElementsInArray>;
-  using value_type = typename SeriesIdSequence::value_type;
+  using value_type = SeriesIdSequence::value_type;
 
   PROMPP_ALWAYS_INLINE explicit CompactSeriesIdSequence(Type type) : type_(type) {
     if (type_ == Type::kSequence) {
@@ -70,6 +70,15 @@ class CompactSeriesIdSequence {
     return {reinterpret_cast<const SeriesIdSequence::value_type*>(sequence_impl_buffer_.data()), elements_count_};
   }
 
+  template <class Processor>
+  PROMPP_ALWAYS_INLINE auto process_series(Processor&& processor) const noexcept {
+    if (type_ == Type::kArray) {
+      return processor(array());
+    } else {
+      return processor(sequence());
+    }
+  }
+
  private:
   Type type_;
   uint32_t elements_count_{};
@@ -81,9 +90,7 @@ class CompactSeriesIdSequence {
     new (&sequence_impl_buffer_) SeriesIdSequence();
     type_ = Type::kSequence;
 
-    for (auto value_copy : buffer_copy) {
-      const_cast<SeriesIdSequence&>(sequence()).push_back(value_copy);
-    }
+    std::ranges::copy(buffer_copy, std::back_inserter(const_cast<SeriesIdSequence&>(sequence())));
   }
 };
 
@@ -117,6 +124,7 @@ class LabelReverseIndex {
   }
   [[nodiscard]] PROMPP_ALWAYS_INLINE const CompactSeriesIdSequence* get_all() const noexcept { return &all_series_; }
 
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t count() const noexcept { return series_by_value_.size(); }
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return all_series_.allocated_memory() + series_by_value_.allocated_memory(); }
 
  private:
@@ -155,6 +163,10 @@ class SeriesReverseIndex {
     return exists(label_name_id) ? labels_by_name_[label_name_id].get(label_value_id) : nullptr;
   }
 
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t names_count() const noexcept { return labels_by_name_.size(); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t values_count(uint32_t label_name_id) const noexcept {
+    return exists(label_name_id) ? labels_by_name_[label_name_id].count() : 0;
+  }
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return labels_by_name_.allocated_memory(); }
 
  private:
