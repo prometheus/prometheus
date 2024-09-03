@@ -14,7 +14,7 @@ const TargetLabels: FC<TargetLabelsProps> = ({ discoveredLabels, labels }) => {
   const [showDiscovered, { toggle: toggleDiscovered }] = useDisclosure(false);
 
   return (
-    <Stack my={showDiscovered ? "sm" : undefined}>
+    <Stack>
       <Group wrap="nowrap" align="flex-start">
         <LabelBadges labels={labels} />
 

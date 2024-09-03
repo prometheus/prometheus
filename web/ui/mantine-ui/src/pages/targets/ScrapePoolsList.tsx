@@ -325,7 +325,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                                     : undefined,
                                 }}
                               >
-                                <Table.Td>
+                                <Table.Td valign="top">
                                   {/* TODO: Process target URL like in old UI */}
                                   <EndpointLink
                                     endpoint={target.scrapeUrl}
@@ -333,19 +333,24 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                                   />
                                 </Table.Td>
 
-                                <Table.Td>
+                                <Table.Td valign="top">
                                   <TargetLabels
                                     labels={target.labels}
                                     discoveredLabels={target.discoveredLabels}
                                   />
                                 </Table.Td>
-                                <Table.Td>
-                                  <Group gap="xs" wrap="wrap">
+                                <Table.Td valign="top">
+                                  <Group
+                                    gap="xs"
+                                    wrap="wrap"
+                                    justify="space-between"
+                                  >
                                     <Tooltip
                                       label="Last target scrape"
                                       withArrow
                                     >
                                       <Badge
+                                        w="max-content"
                                         variant="light"
                                         className={badgeClasses.statsBadge}
                                         styles={{
@@ -365,6 +370,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                                       withArrow
                                     >
                                       <Badge
+                                        w="max-content"
                                         variant="light"
                                         className={badgeClasses.statsBadge}
                                         styles={{
@@ -381,8 +387,9 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                                     </Tooltip>
                                   </Group>
                                 </Table.Td>
-                                <Table.Td>
+                                <Table.Td valign="top">
                                   <Badge
+                                    w="max-content"
                                     className={healthBadgeClass(target.health)}
                                   >
                                     {target.health}
@@ -391,7 +398,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                               </Table.Tr>
                               {target.lastError && (
                                 <Table.Tr>
-                                  <Table.Td colSpan={5}>
+                                  <Table.Td colSpan={5} valign="top">
                                     <Alert
                                       color="red"
                                       mb="sm"
