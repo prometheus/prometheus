@@ -1203,3 +1203,221 @@ func seriesDataEncoderDtor(encoder uintptr) {
 		uintptr(unsafe.Pointer(&args)),
 	)
 }
+
+func seriesDataChunkRecoderCtor(dataStorage uintptr) uintptr {
+	var args = struct {
+		dataStorage uintptr
+	}{dataStorage}
+	var res struct {
+		chunkRecoder uintptr
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_series_data_chunk_recoder_ctor,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.chunkRecoder
+}
+
+func seriesDataChunkRecoderRecodeNextChunk(chunkRecoder uintptr, recodedChunk *RecodedChunk) {
+	var args = struct {
+		chunkRecoder uintptr
+	}{chunkRecoder}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_series_data_chunk_recoder_recode_next_chunk,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(recodedChunk)),
+	)
+}
+
+func seriesDataChunkRecoderDtor(chunkRecoder uintptr) {
+	var args = struct {
+		chunkRecoder uintptr
+	}{chunkRecoder}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_series_data_chunk_recoder_dtor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
+func indexWriterCtor(lss uintptr, chunk_metadata_list *[][]ChunkMetadata) uintptr {
+	var args = struct {
+		lss                 uintptr
+		chunk_metadata_list *[][]ChunkMetadata
+	}{lss, chunk_metadata_list}
+
+	var res struct {
+		writer uintptr
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_index_writer_ctor,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.writer
+}
+
+func indexWriterDtor(writer uintptr) {
+	var args = struct {
+		writer uintptr
+	}{writer}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_index_writer_dtor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
+func indexWriterWriteHeader(writer uintptr, data []byte) []byte {
+	var args = struct {
+		writer uintptr
+	}{writer}
+
+	var res = struct {
+		data []byte
+	}{data}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_index_writer_write_header,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.data
+}
+
+func indexWriterWriteSymbols(writer uintptr, data []byte) []byte {
+	var args = struct {
+		writer uintptr
+	}{writer}
+
+	var res = struct {
+		data []byte
+	}{data}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_index_writer_write_symbols,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.data
+}
+
+func indexWriterWriteNextSeriesBatch(writer uintptr, batch_size uint32, data []byte) ([]byte, bool) {
+	var args = struct {
+		writer     uintptr
+		batch_size uint32
+	}{writer, batch_size}
+
+	var res = struct {
+		data          []byte
+		has_more_data bool
+	}{data, false}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_index_writer_write_next_series_batch,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.data, res.has_more_data
+}
+
+func indexWriterWriteLabelIndices(writer uintptr, data []byte) []byte {
+	var args = struct {
+		writer uintptr
+	}{writer}
+
+	var res = struct {
+		data []byte
+	}{data}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_index_writer_write_label_indices,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.data
+}
+
+func indexWriterWriteNextPostingsBatch(writer uintptr, max_batch_size uint32, data []byte) ([]byte, bool) {
+	var args = struct {
+		writer         uintptr
+		max_batch_size uint32
+	}{writer, max_batch_size}
+
+	var res = struct {
+		data          []byte
+		has_more_data bool
+	}{data, false}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_index_writer_write_next_postings_batch,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.data, res.has_more_data
+}
+
+func indexWriterWriteLabelIndicesTable(writer uintptr, data []byte) []byte {
+	var args = struct {
+		writer uintptr
+	}{writer}
+
+	var res = struct {
+		data []byte
+	}{data}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_index_writer_write_label_indices_table,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.data
+}
+
+func indexWriterWritePostingsTableOffsets(writer uintptr, data []byte) []byte {
+	var args = struct {
+		writer uintptr
+	}{writer}
+
+	var res = struct {
+		data []byte
+	}{data}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_index_writer_write_postings_table_offsets,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.data
+}
+
+func indexWriterWriteTableOfContents(writer uintptr, data []byte) []byte {
+	var args = struct {
+		writer uintptr
+	}{writer}
+
+	var res = struct {
+		data []byte
+	}{data}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_index_writer_write_table_of_contents,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.data
+}

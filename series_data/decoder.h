@@ -11,50 +11,41 @@ namespace series_data {
 
 class Decoder {
  public:
-  template <chunk::DataChunk::Type chunk_type>
-  static void decode_chunk(const DataStorage& storage, const chunk::DataChunk& chunk, encoder::SampleList& result) {
+  template <chunk::DataChunk::Type chunk_type, class Callback>
+  static void decode_chunk(const DataStorage& storage, const chunk::DataChunk& chunk, Callback&& callback) {
     using enum chunk::DataChunk::EncodingType;
     using decoder::DecodeIteratorSentinel;
 
     switch (chunk.encoding_type) {
       case kUint32Constant: {
-        auto& stream = storage.get_timestamp_stream<chunk_type>(chunk.timestamp_encoder_state_id);
-        result.reserve(result.size() + stream.count());
-        std::ranges::copy(create_decode_iterator<kUint32Constant, chunk_type>(storage, chunk), DecodeIteratorSentinel{}, std::back_insert_iterator(result));
+        std::ranges::for_each(create_decode_iterator<kUint32Constant, chunk_type>(storage, chunk), DecodeIteratorSentinel{}, std::forward<Callback>(callback));
         break;
       }
 
       case kDoubleConstant: {
-        auto& stream = storage.get_timestamp_stream<chunk_type>(chunk.timestamp_encoder_state_id);
-        result.reserve(result.size() + stream.count());
-        std::ranges::copy(create_decode_iterator<kDoubleConstant, chunk_type>(storage, chunk), DecodeIteratorSentinel{}, std::back_insert_iterator(result));
+        std::ranges::for_each(create_decode_iterator<kDoubleConstant, chunk_type>(storage, chunk), DecodeIteratorSentinel{}, std::forward<Callback>(callback));
         break;
       }
 
       case kTwoDoubleConstant: {
-        auto& stream = storage.get_timestamp_stream<chunk_type>(chunk.timestamp_encoder_state_id);
-        result.reserve(result.size() + stream.count());
-        std::ranges::copy(create_decode_iterator<kTwoDoubleConstant, chunk_type>(storage, chunk), DecodeIteratorSentinel{}, std::back_insert_iterator(result));
+        std::ranges::for_each(create_decode_iterator<kTwoDoubleConstant, chunk_type>(storage, chunk), DecodeIteratorSentinel{},
+                              std::forward<Callback>(callback));
         break;
       }
 
       case kAscIntegerValuesGorilla: {
-        auto& stream = storage.get_timestamp_stream<chunk_type>(chunk.timestamp_encoder_state_id);
-        result.reserve(result.size() + stream.count());
-        std::ranges::copy(create_decode_iterator<kAscIntegerValuesGorilla, chunk_type>(storage, chunk), DecodeIteratorSentinel{},
-                          std::back_insert_iterator(result));
+        std::ranges::for_each(create_decode_iterator<kAscIntegerValuesGorilla, chunk_type>(storage, chunk), DecodeIteratorSentinel{},
+                              std::forward<Callback>(callback));
         break;
       }
 
       case kValuesGorilla: {
-        auto& stream = storage.get_timestamp_stream<chunk_type>(chunk.timestamp_encoder_state_id);
-        result.reserve(result.size() + stream.count());
-        std::ranges::copy(create_decode_iterator<kValuesGorilla, chunk_type>(storage, chunk), DecodeIteratorSentinel{}, std::back_insert_iterator(result));
+        std::ranges::for_each(create_decode_iterator<kValuesGorilla, chunk_type>(storage, chunk), DecodeIteratorSentinel{}, std::forward<Callback>(callback));
         break;
       }
 
       case kGorilla: {
-        decode_gorilla_chunk(storage.get_gorilla_encoder_stream<chunk_type>(chunk.encoder.gorilla), result);
+        decode_gorilla_chunk<Callback>(storage.get_gorilla_encoder_stream<chunk_type>(chunk.encoder.gorilla), std::forward<Callback>(callback));
         break;
       }
 
@@ -65,29 +56,54 @@ class Decoder {
     }
   }
 
+  template <class Callback>
+  static void decode_chunk(const DataStorage& storage, const chunk::DataChunk& chunk, chunk::DataChunk::Type chunk_type, Callback&& callback) {
+    if (chunk_type == chunk::DataChunk::Type::kOpen) {
+      decode_chunk<chunk::DataChunk::Type::kOpen>(storage, chunk, std::forward<Callback>(callback));
+    } else {
+      decode_chunk<chunk::DataChunk::Type::kFinalized>(storage, chunk, std::forward<Callback>(callback));
+    }
+  }
+
+  static uint8_t get_samples_count(const DataStorage& storage, const chunk::DataChunk& chunk, chunk::DataChunk::Type chunk_type) noexcept {
+    using enum chunk::DataChunk::Type;
+
+    if (chunk.encoding_type == chunk::DataChunk::EncodingType::kGorilla) {
+      [[unlikely]];
+      return encoder::BitSequenceWithItemsCount::count(chunk_type == kOpen ? storage.get_values_gorilla_stream<kOpen>(chunk.encoder.gorilla)
+                                                                           : storage.get_values_gorilla_stream<kFinalized>(chunk.encoder.gorilla));
+    } else {
+      return (chunk_type == kOpen ? storage.get_timestamp_stream<kOpen>(chunk.timestamp_encoder_state_id)
+                                  : storage.get_timestamp_stream<kFinalized>(chunk.timestamp_encoder_state_id))
+          .count();
+    }
+  }
+
+  template <class Callback>
+  PROMPP_ALWAYS_INLINE static void decode_gorilla_chunk(const encoder::CompactBitSequence& stream, Callback&& callback) {
+    std::ranges::for_each(decoder::GorillaDecodeIterator(stream), decoder::DecodeIteratorSentinel{}, std::forward<Callback>(callback));
+  }
+
   template <chunk::DataChunk::Type chunk_type>
   static encoder::SampleList decode_chunk(const DataStorage& storage, const chunk::DataChunk& chunk) {
     encoder::SampleList result;
-    decode_chunk<chunk_type>(storage, chunk, result);
+    decode_chunk<chunk_type>(storage, chunk, [&result](const encoder::Sample& sample) PROMPP_LAMBDA_INLINE { result.emplace_back(sample); });
     return result;
-  }
-
-  PROMPP_ALWAYS_INLINE static void decode_gorilla_chunk(const encoder::CompactBitSequence& stream, encoder::SampleList& result) {
-    auto iterator = decoder::GorillaDecodeIterator(stream);
-    result.reserve(result.size() + iterator.remaining_samples());
-    std::ranges::copy(iterator, decoder::DecodeIteratorSentinel{}, std::back_insert_iterator(result));
   }
 
   PROMPP_ALWAYS_INLINE static encoder::SampleList decode_gorilla_chunk(const encoder::CompactBitSequence& stream) {
     encoder::SampleList result;
-    decode_gorilla_chunk(stream, result);
+    result.reserve(encoder::BitSequenceWithItemsCount::count(stream));
+    decode_gorilla_chunk(stream, [&result](const encoder::Sample& sample) PROMPP_LAMBDA_INLINE { result.emplace_back(sample); });
     return result;
   }
 
   static BareBones::Vector<encoder::SampleList> decode_chunks(const DataStorage& storage, const chunk::FinalizedChunkList& chunks) {
     BareBones::Vector<encoder::SampleList> result;
     for (auto& chunk : chunks) {
-      decode_chunk<chunk::DataChunk::Type::kFinalized>(storage, chunk, result.emplace_back());
+      auto& samples = result.emplace_back();
+      decode_chunk<chunk::DataChunk::Type::kFinalized>(storage, chunk,
+                                                       [&samples](const encoder::Sample& sample) PROMPP_LAMBDA_INLINE { samples.emplace_back(sample); });
     }
     return result;
   }
@@ -96,7 +112,9 @@ class Decoder {
                                                               const chunk::FinalizedChunkList& finalized_chunks,
                                                               const chunk::DataChunk& open_chunk) {
     auto result = decode_chunks(storage, finalized_chunks);
-    decode_chunk<chunk::DataChunk::Type::kOpen>(storage, open_chunk, result.emplace_back());
+    auto& open_chunk_samples = result.emplace_back();
+    decode_chunk<chunk::DataChunk::Type::kOpen>(
+        storage, open_chunk, [&open_chunk_samples](const encoder::Sample& sample) PROMPP_LAMBDA_INLINE { open_chunk_samples.emplace_back(sample); });
     return result;
   }
 
@@ -141,6 +159,17 @@ class Decoder {
     }
 
     return storage.timestamp_encoder.get_state(chunk.timestamp_encoder_state_id).timestamp();
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE static int64_t get_finalized_chunk_last_timestamp(const DataStorage& storage,
+                                                                                       uint32_t ls_id,
+                                                                                       chunk::FinalizedChunkList::ChunksList::const_iterator chunk_it,
+                                                                                       chunk::FinalizedChunkList::ChunksList::const_iterator end_it) noexcept {
+    if (auto next_chunk_it = std::next(chunk_it); next_chunk_it != end_it) {
+      return get_chunk_first_timestamp<chunk::DataChunk::Type::kFinalized>(storage, *next_chunk_it);
+    } else {
+      return get_chunk_first_timestamp<chunk::DataChunk::Type::kOpen>(storage, storage.open_chunks[ls_id]);
+    }
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE static double get_open_chunk_last_value(const DataStorage& storage, const chunk::DataChunk& chunk) noexcept {

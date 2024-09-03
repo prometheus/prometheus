@@ -21,7 +21,7 @@ class SortingIndexFixture : public testing::Test {
   SortingIndex<Set, kItems.size() + 1> index_{set_};
 };
 
-static constexpr uint32_t operator""_idx(const char* value, size_t len) noexcept {
+constexpr uint32_t operator""_idx(const char* value, size_t len) noexcept {
   return std::ranges::find(SortingIndexFixture::kItems, std::string_view(value, len)) - SortingIndexFixture::kItems.begin();
 }
 

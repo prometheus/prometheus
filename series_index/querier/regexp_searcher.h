@@ -346,7 +346,7 @@ class RegexpSearcher {
     return true;
   }
 
-  bool match_prepared_regexp(std::string_view str) {
+  bool match_prepared_regexp(std::string_view str) const {
     // Drastically simplified logic from RE2::Match
     // https://github.com/google/re2/blob/2021-09-01/re2/re2.cc#L616
 

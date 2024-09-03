@@ -13,6 +13,8 @@ namespace series_index::trie {
 
 class CedarEnumerativeIterator {
  public:
+  CedarEnumerativeIterator() = default;
+
   CedarEnumerativeIterator(cedar::da<uint32_t>* trie, size_t from, size_t length, bool next)
       : trie_(trie), from_(from), root_(from_), root_length_(length), length_(length), value_(trie_->begin(from_, length_)) {
     if (next) {
@@ -47,7 +49,7 @@ class CedarEnumerativeIterator {
 
  private:
   std::string restored_key_;
-  cedar::da<uint32_t>* trie_;
+  cedar::da<uint32_t>* trie_{};
   size_t from_{};
   size_t root_{};
   size_t root_length_{};

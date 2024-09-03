@@ -21,6 +21,141 @@ void prompp_mem_info(void* res);
 #ifdef __cplusplus
 }
 #endif
+#pragma once
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/**
+ * @brief Construct index writer
+ *
+ * @param args {
+ *     lss         uintptr      // pointer to constructed lss
+ *     chunks_meta *[][]struct{ // index in first slice is series id
+ *         min_t     int64
+ *         max_t     int64
+ *         reference uint64
+ *     }
+ * }
+ * @param res {
+ *     writer    uintptr
+ * }
+ */
+void prompp_index_writer_ctor(void* args, void* res);
+
+/**
+ * @brief Destroy index writer
+ *
+ * @param args {
+ *     writer    uintptr
+ * }
+ */
+void prompp_index_writer_dtor(void* args);
+
+/**
+ * @brief Write header
+ *
+ * @param args {
+ *     writer    uintptr
+ * }
+ * @param res {
+ *     data []byte // only c allocated memory can be re-used
+ * }
+ */
+void prompp_index_writer_write_header(void* args, void* res);
+
+/**
+ * @brief Write symbols
+ *
+ * @param args {
+ *     writer    uintptr
+ * }
+ * @param res {
+ *     data []byte // only c allocated memory can be re-used
+ * }
+ */
+void prompp_index_writer_write_symbols(void* args, void* res);
+
+/**
+ * @brief Write next series batch
+ *
+ * @param args {
+ *     writer     uintptr
+ *     batch_size uint32
+ * }
+ * @param res {
+ *     data          []byte // only c allocated memory can be re-used
+ *     has_more_data bool   // true if we should repeat this call
+ * }
+ */
+void prompp_index_writer_write_next_series_batch(void* args, void* res);
+
+/**
+ * @brief Write label indices
+ *
+ * @param args {
+ *     writer    uintptr
+ * }
+ * @param res {
+ *     data []byte // only c allocated memory can be re-used
+ * }
+ */
+void prompp_index_writer_write_label_indices(void* args, void* res);
+
+/**
+ * @brief Write next postings batch
+ *
+ * @param args {
+ *     writer         uintptr
+ *     max_batch_size uint32
+ * }
+ * @param res {
+ *     data          []byte // only c allocated memory can be re-used
+ *     has_more_data bool   // true if we should repeat this call
+ * }
+ */
+void prompp_index_writer_write_next_postings_batch(void* args, void* res);
+
+/**
+ * @brief Write label indeces table
+ *
+ * @param args {
+ *     writer    uintptr
+ * }
+ * @param res {
+ *     data []byte // only c allocated memory can be re-used
+ * }
+ */
+void prompp_index_writer_write_label_indices_table(void* args, void* res);
+
+/**
+ * @brief Write postings offset table
+ *
+ * @param args {
+ *     writer    uintptr
+ * }
+ * @param res {
+ *     data []byte // only c allocated memory can be re-used
+ * }
+ */
+void prompp_index_writer_write_postings_table_offsets(void* args, void* res);
+
+/**
+ * @brief Write table of contents
+ *
+ * @param args {
+ *     writer    uintptr
+ * }
+ * @param res {
+ *     data []byte // only c allocated memory can be re-used
+ * }
+ */
+void prompp_index_writer_write_table_of_contents(void* args, void* res);
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -445,6 +580,44 @@ void prompp_series_data_data_storage_reset(void* args);
  * }
  */
 void prompp_series_data_data_storage_dtor(void* args);
+
+/**
+ * @brief Construct a new ChunkRecoder object
+ *
+ * @param args {
+ *     dataStorage   uintptr  // pointer to constructed data storage
+ * }
+ * @param res {
+ *     chunk_recoder uintptr // pointer to chunk recoder
+ * }
+ */
+void prompp_series_data_chunk_recoder_ctor(void* args, void* res);
+
+/**
+ * @brief Get chunk encoded in prometheus format
+ *
+ * @param args {
+ *     chunk_recoder uintptr // pointer to chunk recoder
+ * }
+ * @param res {
+ *     min_t         int64
+ *     max_t         int64
+ *     series_id     uint32
+ *     samples_count uint8
+ *     has_more_data bool
+ *     data          []byte // SliceView to recoded chunk data
+ * }
+ */
+void prompp_series_data_chunk_recoder_recode_next_chunk(void* args, void* res);
+
+/**
+ * @brief Destruct ChunkRecoder object
+ *
+ * @param args {
+ *     chunk_recoder  uintptr  // pointer to chunk recoder
+ * }
+ */
+void prompp_series_data_chunk_recoder_dtor(void* args);
 
 #ifdef __cplusplus
 }  // extern "C"

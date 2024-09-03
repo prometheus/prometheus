@@ -29,7 +29,7 @@ class MatchersComparatorByTypeAndCardinalityFixture : public testing::TestWithPa
  protected:
   Querier<Index>::MatchersComparatorByTypeAndCardinality comparator_;
 
-  void sort(Selector& selector) { std::sort(selector.matchers.begin(), selector.matchers.end(), comparator_); }
+  void sort(Selector& selector) const { std::sort(selector.matchers.begin(), selector.matchers.end(), comparator_); }
 };
 
 TEST_P(MatchersComparatorByTypeAndCardinalityFixture, Test) {
