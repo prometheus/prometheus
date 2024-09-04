@@ -16,7 +16,7 @@ import {
   PromQLExtension,
   newCompleteStrategy,
 } from "@prometheus-io/codemirror-promql";
-import { FC, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { FC, Suspense, useEffect, useRef, useState } from "react";
 import CodeMirror, {
   EditorState,
   EditorView,

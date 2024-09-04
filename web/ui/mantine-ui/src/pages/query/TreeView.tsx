@@ -1,4 +1,4 @@
-import { FC, useState } from "react";
+import { FC } from "react";
 import { useSuspenseAPIQuery } from "../../api/api";
 import { useAppSelector } from "../../state/hooks";
 import ASTNode from "../../promql/ast";

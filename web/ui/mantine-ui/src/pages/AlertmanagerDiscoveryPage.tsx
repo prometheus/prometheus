@@ -1,42 +1,7 @@
-import {
-  ActionIcon,
-  Alert,
-  Box,
-  Card,
-  Group,
-  Select,
-  Skeleton,
-  Stack,
-  Table,
-  Text,
-} from "@mantine/core";
-import {
-  IconBell,
-  IconBellOff,
-  IconInfoCircle,
-  IconLayoutNavbarCollapse,
-  IconLayoutNavbarExpand,
-  IconSearch,
-} from "@tabler/icons-react";
-import { Suspense } from "react";
-import { useAppDispatch, useAppSelector } from "../state/hooks";
+import { Alert, Card, Group, Stack, Table, Text } from "@mantine/core";
+import { IconBell, IconBellOff, IconInfoCircle } from "@tabler/icons-react";
 
-import {
-  ArrayParam,
-  StringParam,
-  useQueryParam,
-  withDefault,
-} from "use-query-params";
-import ErrorBoundary from "../components/ErrorBoundary";
-import ScrapePoolList from "./ServiceDiscoveryPoolsList";
 import { useSuspenseAPIQuery } from "../api/api";
-import { ScrapePoolsResult } from "../api/responseTypes/scrapePools";
-import {
-  setCollapsedPools,
-  setShowLimitAlert,
-} from "../state/serviceDiscoveryPageSlice";
-import { StateMultiSelect } from "../components/StateMultiSelect";
-import badgeClasses from "../Badge.module.css";
 import { AlertmanagersResult } from "../api/responseTypes/alertmanagers";
 import EndpointLink from "../components/EndpointLink";
 

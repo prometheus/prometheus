@@ -17,11 +17,7 @@ import {
   RangeSamples,
 } from "../../api/responseTypes/query";
 import serializeNode from "../../promql/serialize";
-import {
-  IconAlertTriangle,
-  IconPoint,
-  IconPointFilled,
-} from "@tabler/icons-react";
+import { IconPointFilled } from "@tabler/icons-react";
 import classes from "./TreeNode.module.css";
 import clsx from "clsx";
 import { useId } from "@mantine/hooks";
@@ -90,7 +86,7 @@ const TreeNode: FC<{
     [childStates]
   );
 
-  const { data, error, isFetching, refetch } = useAPIQuery<InstantQueryResult>({
+  const { data, error, isFetching } = useAPIQuery<InstantQueryResult>({
     key: [useId()],
     path: "/query",
     params: {
