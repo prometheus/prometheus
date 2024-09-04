@@ -19,6 +19,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"reflect"
 	"runtime"
@@ -271,6 +272,8 @@ func contextErr(err error, env string) error {
 //
 // 2) Enforcement of the maximum number of concurrent queries.
 type QueryTracker interface {
+	io.Closer
+
 	// GetMaxConcurrent returns maximum number of concurrent queries that are allowed by this tracker.
 	GetMaxConcurrent() int
 
@@ -428,6 +431,14 @@ func NewEngine(opts EngineOpts) *Engine {
 		enablePerStepStats:       opts.EnablePerStepStats,
 		enableDelayedNameRemoval: opts.EnableDelayedNameRemoval,
 	}
+}
+
+// Close closes ng.
+func (ng *Engine) Close() error {
+	if ng.activeQueryTracker != nil {
+		return ng.activeQueryTracker.Close()
+	}
+	return nil
 }
 
 // SetQueryLogger sets the query logger.

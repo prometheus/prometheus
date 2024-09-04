@@ -999,12 +999,18 @@ func main() {
 	listeners, err := webHandler.Listeners()
 	if err != nil {
 		level.Error(logger).Log("msg", "Unable to start web listeners", "err", err)
+		if err := queryEngine.Close(); err != nil {
+			level.Warn(logger).Log("msg", "Closing query engine failed", "err", err)
+		}
 		os.Exit(1)
 	}
 
 	err = toolkit_web.Validate(*webConfig)
 	if err != nil {
 		level.Error(logger).Log("msg", "Unable to validate web configuration file", "err", err)
+		if err := queryEngine.Close(); err != nil {
+			level.Warn(logger).Log("msg", "Closing query engine failed", "err", err)
+		}
 		os.Exit(1)
 	}
 
@@ -1025,6 +1031,9 @@ func main() {
 					level.Warn(logger).Log("msg", "Received termination request via web service, exiting gracefully...")
 				case <-cancel:
 					reloadReady.Close()
+				}
+				if err := queryEngine.Close(); err != nil {
+					level.Warn(logger).Log("msg", "Closing query engine failed", "err", err)
 				}
 				return nil
 			},
