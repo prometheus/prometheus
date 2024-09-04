@@ -26,6 +26,7 @@ import {
   IconChevronRight,
   IconCloudDataConnection,
   IconDatabase,
+  IconDeviceDesktopAnalytics,
   IconFlag,
   IconHeartRateMonitor,
   IconInfoCircle,
@@ -197,10 +198,22 @@ function App() {
     dispatch(updateSettings({ pathPrefix }));
   }, [pathPrefix]);
 
-  const { agentMode } = useSettings();
+  const { agentMode, consolesLink } = useSettings();
 
   const navLinks = (
     <>
+      {consolesLink && (
+        <Button
+          component="a"
+          href={consolesLink}
+          className={classes.link}
+          leftSection={<IconDeviceDesktopAnalytics style={navIconStyle} />}
+          px={navLinkXPadding}
+        >
+          Consoles
+        </Button>
+      )}
+
       {mainNavPages
         .filter((p) => !agentMode || p.inAgentMode)
         .map((p) => (
