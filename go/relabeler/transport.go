@@ -399,11 +399,11 @@ func (d *WebSocketDialer) makeHeader(method string, shardMeta ShardMeta) http.He
 				shardMeta.SegmentEncodingVersion,
 			),
 		},
-		"X-Agent-UUID":     []string{d.config.AgentUUID},
-		"X-Agent-Hostname": []string{d.config.AgentHostname},
-		"X-Block-ID":       []string{shardMeta.BlockID.String()},
-		"X-Shard-ID":       []string{strconv.Itoa(int(shardMeta.ShardID))},
-		"X-Shards-Log":     []string{strconv.Itoa(int(shardMeta.ShardsLog))},
+		"X-Agent-UUID":        []string{d.config.AgentUUID},
+		"X-Agent-Hostname":    []string{d.config.AgentHostname},
+		"X-Block-ID":          []string{shardMeta.BlockID.String()},
+		"X-ShardInterface-ID": []string{strconv.Itoa(int(shardMeta.ShardID))},
+		"X-Shards-Log":        []string{strconv.Itoa(int(shardMeta.ShardsLog))},
 	}
 }
 

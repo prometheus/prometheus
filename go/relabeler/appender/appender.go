@@ -11,11 +11,11 @@ import (
 
 type QueryableAppender struct {
 	lock        sync.Mutex
-	head        relabeler.UpgradableHeadInterface
-	distributor relabeler.UpgradableDistributorInterface
+	head        relabeler.Head
+	distributor relabeler.Distributor
 }
 
-func NewQueryableAppender(head relabeler.UpgradableHeadInterface, distributor relabeler.UpgradableDistributorInterface) *QueryableAppender {
+func NewQueryableAppender(head relabeler.Head, distributor relabeler.Distributor) *QueryableAppender {
 	return &QueryableAppender{
 		head:        head,
 		distributor: distributor,
@@ -61,38 +61,32 @@ func (qa *QueryableAppender) AppendWithStaleNans(
 	return nil
 }
 
-func (qa *QueryableAppender) Rotate(headRotator relabeler.HeadRotator) error {
+func (qa *QueryableAppender) Rotate() error {
 	qa.lock.Lock()
 	defer qa.lock.Unlock()
 
-	qa.head.Finalize()
-	rotatedHead, err := headRotator.Rotate(qa.head)
-	if err != nil {
-		return err
+	if err := qa.head.Rotate(); err != nil {
+		return fmt.Errorf("failed to rotate head: %w", err)
 	}
 
-	qa.head = rotatedHead
-	qa.distributor.Rotate()
+	if err := qa.distributor.Rotate(); err != nil {
+		return fmt.Errorf("failed to rotate distributor: %w", err)
+	}
 
 	return nil
 }
 
-func (qa *QueryableAppender) Upgrade(headUpgrader relabeler.HeadUpgrader, distributorUpgrader relabeler.DistributorUpgrader) error {
+func (qa *QueryableAppender) Reconfigure(headConfigurator relabeler.HeadConfigurator, distributorConfigurator relabeler.DistributorConfigurator) error {
 	qa.lock.Lock()
 	defer qa.lock.Unlock()
 
-	upgradedHead, err := headUpgrader.Upgrade(qa.head)
-	if err != nil {
-		return fmt.Errorf("failed to upgrade head: %w", err)
+	if err := headConfigurator.Configure(qa.head); err != nil {
+		return fmt.Errorf("failed to reconfigure head: %w", err)
 	}
 
-	upgradedDistributor, err := distributorUpgrader.Upgrade(qa.distributor)
-	if err != nil {
+	if err := distributorConfigurator.Configure(qa.distributor); err != nil {
 		return fmt.Errorf("failed to upgrade distributor: %w", err)
 	}
-
-	qa.head = upgradedHead
-	qa.distributor = upgradedDistributor
 
 	return nil
 }

@@ -201,11 +201,11 @@ func (t *TaskUpdateRelabelerState) RelabelerStateUpdate() *cppbridge.RelabelerSt
 // GenericTask - generic task, will be executed on each shard.
 type GenericTask struct {
 	errs    []error
-	shardFn relabeler.ShardFnInterface
+	shardFn relabeler.ShardFn
 	wg      *sync.WaitGroup
 }
 
 // NewGenericTask - constructor.
-func NewGenericTask(shardFn relabeler.ShardFnInterface, errs []error) *GenericTask {
+func NewGenericTask(shardFn relabeler.ShardFn, errs []error) *GenericTask {
 	return &GenericTask{errs: errs, shardFn: shardFn, wg: &sync.WaitGroup{}}
 }

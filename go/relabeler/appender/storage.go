@@ -2,10 +2,13 @@ package appender
 
 import (
 	"context"
+	"fmt"
 	"github.com/prometheus/prometheus/pp/go/relabeler"
 	"github.com/prometheus/prometheus/pp/go/relabeler/block"
+	"github.com/prometheus/prometheus/pp/go/util"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"sync"
 	"sync/atomic"
 )
@@ -20,32 +23,35 @@ type QueryableStorage struct {
 	heads       []*headWrapper
 
 	signal chan struct{}
-	close  chan struct{}
-	done   chan struct{}
+	closer *util.Closer
 }
 
 func NewQueryableStorage(blockWriter BlockWriter) *QueryableStorage {
 	qs := &QueryableStorage{
 		blockWriter: blockWriter,
+		signal:      make(chan struct{}),
+		closer:      util.NewCloser(),
 	}
-	go qs.writeLoop()
+	go qs.loop()
+
 	return qs
 }
 
-func (qs *QueryableStorage) writeLoop() {
-	defer close(qs.done)
+func (qs *QueryableStorage) loop() {
+	defer qs.closer.Done()
 
 	var writeFinished chan struct{}
-	writeRequsted := false
+	writeRequested := false
 	closed := false
 
 	for {
 		if closed && writeFinished == nil {
+			fmt.Println("QUERYABLE STORAGE: done")
 			return
 		}
 
-		if writeRequsted && writeFinished == nil {
-			writeRequsted = false
+		if !closed && writeRequested && writeFinished == nil {
+			writeRequested = false
 			writeFinished = make(chan struct{}, 1)
 			go func() {
 				qs.write()
@@ -55,10 +61,10 @@ func (qs *QueryableStorage) writeLoop() {
 
 		select {
 		case <-qs.signal:
-			writeRequsted = true
+			writeRequested = true
 		case <-writeFinished:
 			writeFinished = nil
-		case <-qs.close:
+		case <-qs.closer.Signal():
 			closed = true
 		}
 	}
@@ -74,14 +80,16 @@ func (qs *QueryableStorage) write() {
 	}
 	qs.mtx.Unlock()
 
+	fmt.Println("QUERYABLE STORAGE: write: selected ", len(heads), " heads")
 	var err error
 	for _, head := range heads {
 		err = nil
-		err = head.head.ForEachShard(func(shard relabeler.ShardInterface) error {
+		err = head.head.ForEachShard(func(shard relabeler.Shard) error {
 			return qs.blockWriter.Write(relabeler.NewBlock(shard.LSS().Raw(), shard.DataStorage().Raw()))
 		})
 		if err != nil {
 			// todo: log
+			fmt.Println("QUERYABLE STORAGE: failed to write head: ", err.Error())
 			continue
 		}
 		head.persisted.Store(true)
@@ -90,10 +98,19 @@ func (qs *QueryableStorage) write() {
 	qs.shrink()
 }
 
-func (qs *QueryableStorage) Add(head relabeler.UpgradableHeadInterface) {
+func (qs *QueryableStorage) Add(head relabeler.Head) {
 	qs.mtx.Lock()
-	defer qs.mtx.Unlock()
 	qs.heads = append(qs.heads, &headWrapper{head: head})
+	qs.mtx.Unlock()
+
+	select {
+	case qs.signal <- struct{}{}:
+	case <-qs.closer.Signal():
+	}
+}
+
+func (qs *QueryableStorage) Close() error {
+	return qs.closer.Close()
 }
 
 func (qs *QueryableStorage) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
@@ -129,7 +146,7 @@ func (qs *QueryableStorage) shrink() {
 }
 
 type headWrapper struct {
-	head      relabeler.UpgradableHeadInterface
+	head      relabeler.Head
 	persisted atomic.Bool
 }
 
@@ -140,12 +157,12 @@ type storageQuerier struct {
 	closer func() error
 }
 
-func (q *storageQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (q *storageQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (q *storageQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (q *storageQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	//TODO implement me
 	panic("implement me")
 }
@@ -158,7 +175,7 @@ func (q *storageQuerier) Close() error {
 	return nil
 }
 
-func (q *storageQuerier) Select(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func (q *storageQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	//TODO implement me
 	panic("implement me")
 }

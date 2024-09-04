@@ -102,7 +102,7 @@ func (h *Head) Append(ctx context.Context, incomingData *relabeler.IncomingData,
 		return nil, err
 	}
 
-	_ = h.forEachShard(func(shard relabeler.ShardInterface) error {
+	_ = h.forEachShard(func(shard relabeler.Shard) error {
 		shard.DataStorage().AppendInnerSeriesSlice(inputPromise.ShardsInnerSeries(shard.ShardID()))
 		return nil
 	})
@@ -110,11 +110,11 @@ func (h *Head) Append(ctx context.Context, incomingData *relabeler.IncomingData,
 	return inputPromise.data, nil
 }
 
-func (h *Head) ForEachShard(fn relabeler.ShardFnInterface) error {
+func (h *Head) ForEachShard(fn relabeler.ShardFn) error {
 	return h.forEachShard(fn)
 }
 
-func (h *Head) OnShard(shardID uint16, fn relabeler.ShardFnInterface) error {
+func (h *Head) OnShard(shardID uint16, fn relabeler.ShardFn) error {
 	return h.onShard(shardID, fn)
 }
 
@@ -123,7 +123,7 @@ func (h *Head) NumberOfShards() uint16 {
 }
 
 func (h *Head) Finalize() {
-	_ = h.forEachShard(func(shard relabeler.ShardInterface) error {
+	_ = h.forEachShard(func(shard relabeler.Shard) error {
 		return nil
 	})
 }
@@ -134,6 +134,10 @@ func (h *Head) Reconfigure(inputRelabelerConfigs []*config.InputRelabelerConfig,
 		return err
 	}
 	h.run()
+	return nil
+}
+
+func (h *Head) Rotate() error {
 	return nil
 }
 
@@ -150,7 +154,7 @@ func (h *Head) enqueueInputRelabeling(task *TaskInputRelabeling) {
 }
 
 // enqueueHeadAppending append all series after input relabeling stage to head.
-func (h *Head) forEachShard(fn relabeler.ShardFnInterface) error {
+func (h *Head) forEachShard(fn relabeler.ShardFn) error {
 	task := NewGenericTask(fn, make([]error, h.numberOfShards))
 	task.wg.Add(int(h.numberOfShards))
 	for _, shardGenericTaskCh := range h.genericTaskCh {
@@ -160,7 +164,7 @@ func (h *Head) forEachShard(fn relabeler.ShardFnInterface) error {
 	return errors.Join(task.errs...)
 }
 
-func (h *Head) onShard(shardID uint16, fn relabeler.ShardFnInterface) error {
+func (h *Head) onShard(shardID uint16, fn relabeler.ShardFn) error {
 	task := NewGenericTask(fn, make([]error, shardID+1))
 	task.wg.Add(1)
 	h.genericTaskCh[shardID] <- task

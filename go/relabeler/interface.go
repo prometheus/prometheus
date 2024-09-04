@@ -16,48 +16,40 @@ type LSS interface {
 	Raw() *cppbridge.LabelSetStorage
 }
 
-// ShardInterface interface.
-type ShardInterface interface {
+// Shard interface.
+type Shard interface {
 	ShardID() uint16
 	DataStorage() DataStorage
 	LSS() LSS
 }
 
-// ShardFnInterface - shard function.
-type ShardFnInterface func(shard ShardInterface) error
+// ShardFn - shard function.
+type ShardFn func(shard Shard) error
 
-type HeadInterface interface {
+type Head interface {
 	Append(ctx context.Context, incomingData *IncomingData, metricLimits *cppbridge.MetricLimits, sourceStates *SourceStates, staleNansTS int64, relabelerID string) ([][]*cppbridge.InnerSeries, error)
-	ForEachShard(fn ShardFnInterface) error
-	OnShard(shardID uint16, fn ShardFnInterface) error
+	ForEachShard(fn ShardFn) error
+	OnShard(shardID uint16, fn ShardFn) error
 	NumberOfShards() uint16
 	Finalize()
 	Reconfigure(inputRelabelerConfigs []*config.InputRelabelerConfig, numberOfShards uint16) error
+	Rotate() error
 	Close() error
 }
 
-type UpgradableHeadInterface interface {
-	HeadInterface
-}
-
-type DistributorInterface interface {
-	Send(ctx context.Context, head HeadInterface, shardedData [][]*cppbridge.InnerSeries) error
+type Distributor interface {
+	Send(ctx context.Context, head Head, shardedData [][]*cppbridge.InnerSeries) error
+	// DestinationGroups - workaround.
 	DestinationGroups() DestinationGroups
-	Rotate()
+	// SetDestinationGroups - workaround.
+	SetDestinationGroups(destinationGroups DestinationGroups)
+	Rotate() error
 }
 
-type UpgradableDistributorInterface interface {
-	DistributorInterface
+type HeadConfigurator interface {
+	Configure(head Head) error
 }
 
-type HeadRotator interface {
-	Rotate(head UpgradableHeadInterface) (UpgradableHeadInterface, error)
-}
-
-type HeadUpgrader interface {
-	Upgrade(head UpgradableHeadInterface) (UpgradableHeadInterface, error)
-}
-
-type DistributorUpgrader interface {
-	Upgrade(distributor UpgradableDistributorInterface) (UpgradableDistributorInterface, error)
+type DistributorConfigurator interface {
+	Configure(distributor Distributor) error
 }

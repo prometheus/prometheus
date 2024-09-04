@@ -70,7 +70,7 @@ func (h *Head) reconfigureStages(numberOfShards uint16) {
 }
 
 //// relabelerIDIsExist check on exist relabelerID.
-//func (h *Head) relabelerIDIsExist(relabelerID string) bool {
+//func (h *ShardHead) relabelerIDIsExist(relabelerID string) bool {
 //	s.irrwm.RLock()
 //	_, ok := s.inputRelabelers[relabelerKey{relabelerID, 0}]
 //	s.irrwm.RUnlock()

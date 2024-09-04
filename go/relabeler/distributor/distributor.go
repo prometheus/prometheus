@@ -16,9 +16,9 @@ func NewDistributor(destinationGroups relabeler.DestinationGroups) *Distributor 
 	}
 }
 
-func (d *Distributor) Send(ctx context.Context, head relabeler.HeadInterface, shardedData [][]*cppbridge.InnerSeries) error {
+func (d *Distributor) Send(ctx context.Context, head relabeler.Head, shardedData [][]*cppbridge.InnerSeries) error {
 	outputPromise := NewOutputRelabelingPromise(&d.destinationGroups, head.NumberOfShards())
-	err := head.ForEachShard(func(shard relabeler.ShardInterface) error {
+	err := head.ForEachShard(func(shard relabeler.Shard) error {
 		return d.destinationGroups.RangeGo(func(destinationGroupID int, destinationGroup *relabeler.DestinationGroup) error {
 			outputInnerSeries := cppbridge.NewShardsInnerSeries(1 << destinationGroup.ShardsNumberPower())
 			relabeledSeries := cppbridge.NewRelabeledSeries()
@@ -62,7 +62,7 @@ func (d *Distributor) Send(ctx context.Context, head relabeler.HeadInterface, sh
 			}
 
 			for shardID, outputStateUpdate := range outputStateUpdates {
-				err = head.OnShard(uint16(shardID), func(shard relabeler.ShardInterface) error {
+				err = head.OnShard(uint16(shardID), func(shard relabeler.Shard) error {
 					return d.destinationGroups[destinationGroupID].UpdateRelabelerState(
 						ctx,
 						shard.ShardID(),
@@ -82,11 +82,15 @@ func (d *Distributor) DestinationGroups() relabeler.DestinationGroups {
 	return d.destinationGroups
 }
 
-func (d *Distributor) Rotate() {
-	_ = d.destinationGroups.RangeGo(func(_ int, destinationGroup *relabeler.DestinationGroup) error {
+func (d *Distributor) Rotate() error {
+	return d.destinationGroups.RangeGo(func(_ int, destinationGroup *relabeler.DestinationGroup) error {
 		destinationGroup.Rotate()
 		return nil
 	})
+}
+
+func (d *Distributor) SetDestinationGroups(destinationGroups relabeler.DestinationGroups) {
+	d.destinationGroups = destinationGroups
 }
 
 func (d *Distributor) Shutdown(ctx context.Context) error {

@@ -198,7 +198,7 @@ func (msr *ManagerRelabeler) AppendWithStaleNans(
 		return err
 	}
 
-	msr.shards.forEachShard(func(shard Shard) {
+	msr.shards.forEachShard(func(shard ShardInterface) {
 		shard.Head().AppendInnerSeriesSlice(inputPromise.ShardsInnerSeries(shard.ShardID()))
 	})
 
@@ -456,7 +456,7 @@ func (s *shard) ShardID() uint16 {
 	return s.id
 }
 
-func (s *shard) Head() Head {
+func (s *shard) Head() ShardHead {
 	return s.head
 }
 
@@ -527,7 +527,7 @@ func (s *shards) enqueueMetricUpdate(task *TaskMetricUpdate) {
 }
 
 // enqueueHeadAppending append all series after input relabeling stage to head.
-func (s *shards) forEachShard(fn ShardFn) {
+func (s *shards) forEachShard(fn ShardFnInterface) {
 	task := NewGenericTask(fn)
 	task.wg.Add(int(s.numberOfShards))
 	for _, shardGenericTaskCh := range s.genericTaskCh {
@@ -1267,28 +1267,28 @@ func (p *InputRelabelingPromise) Wait(ctx context.Context) error {
 	}
 }
 
-// Head - head appender interface.
-type Head interface {
+// ShardHead - head appender interface.
+type ShardHead interface {
 	AppendInnerSeriesSlice(innerSeriesSlice []*cppbridge.InnerSeries)
 }
 
-// Shard interface.
-type Shard interface {
+// ShardInterface interface.
+type ShardInterface interface {
 	ShardID() uint16
-	Head() Head
+	Head() ShardHead
 }
 
-// ShardFn - shard function.
-type ShardFn func(shard Shard)
+// ShardFnInterface - shard function.
+type ShardFnInterface func(shard ShardInterface)
 
 // GenericTask - generic task, will be executed on each shard.
 type GenericTask struct {
-	shardFn ShardFn
+	shardFn ShardFnInterface
 	wg      *sync.WaitGroup
 }
 
 // NewGenericTask - constructor.
-func NewGenericTask(shardFn ShardFn) *GenericTask {
+func NewGenericTask(shardFn ShardFnInterface) *GenericTask {
 	return &GenericTask{shardFn: shardFn, wg: &sync.WaitGroup{}}
 }
 
