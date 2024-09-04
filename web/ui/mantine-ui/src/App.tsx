@@ -52,7 +52,7 @@ import TSDBStatusPage from "./pages/TSDBStatusPage";
 import FlagsPage from "./pages/FlagsPage";
 import ConfigPage from "./pages/ConfigPage";
 import AgentPage from "./pages/AgentPage";
-import { Suspense } from "react";
+import { Suspense, useEffect } from "react";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeSelector } from "./components/ThemeSelector";
 import { Notifications } from "@mantine/notifications";
@@ -192,7 +192,10 @@ function App() {
 
   const pathPrefix = getPathPrefix(window.location.pathname);
   const dispatch = useAppDispatch();
-  dispatch(updateSettings({ pathPrefix }));
+
+  useEffect(() => {
+    dispatch(updateSettings({ pathPrefix }));
+  }, [pathPrefix]);
 
   const { agentMode } = useSettings();
 
