@@ -70,7 +70,7 @@ global:
 
   # How frequently to evaluate rules.
   [ evaluation_interval: <duration> | default = 1m ]
-                        
+
   # Offset the rule evaluation timestamp of this particular group by the specified duration into the past to ensure the underlying metrics have been received.
   # Metric availability delays are more likely to occur when Prometheus is running as a remote write target, but can also occur when there's anomalies with scraping.
   [ rule_query_offset: <duration> | default = 0s ]
@@ -120,6 +120,11 @@ global:
   # Limit per scrape config on the number of targets dropped by relabeling
   # that will be kept in memory. 0 means no limit.
   [ keep_dropped_targets: <int> | default = 0 ]
+
+  # Specifies the validation scheme for metric and label names. Either blank or
+  # "legacy" for letters, numbers, colons, and underscores; or "utf8" for full
+  # UTF-8 support.
+  [ metric_name_validation_scheme <string> | default "legacy" ]
 
 runtime:
   # Configure the Go garbage collector GOGC parameter
@@ -302,6 +307,17 @@ tls_config:
 [ proxy_connect_header:
   [ <string>: [<secret>, ...] ] ]
 
+# Custom HTTP headers to be sent along with each request.
+# Headers that are set by Prometheus itself can't be overwritten.
+http_headers:
+  # Header name.
+  [ <string>:
+    # Header values.
+    [ values: [<string>, ...] ]
+    # Headers values. Hidden in configuration page.
+    [ secrets: [<secret>, ...] ]
+    # Files to read header values from.
+    [ files: [<string>, ...] ] ]
 
 # List of Azure service discovery configurations.
 azure_sd_configs:
@@ -460,6 +476,11 @@ metric_relabel_configs:
 # Per-job limit on the number of targets dropped by relabeling
 # that will be kept in memory. 0 means no limit.
 [ keep_dropped_targets: <int> | default = 0 ]
+
+# Specifies the validation scheme for metric and label names. Either blank or
+# "legacy" for letters, numbers, colons, and underscores; or "utf8" for full
+# UTF-8 support.
+[ metric_name_validation_scheme <string> | default "legacy" ]
 
 # Limit on total number of positive and negative buckets allowed in a single
 # native histogram. The resolution of a histogram with more buckets will be
@@ -947,7 +968,9 @@ tls_config:
 # The host to use if the container is in host networking mode.
 [ host_networking_host: <string> | default = "localhost" ]
 
-# Match the first network if the container has multiple networks defined, thus avoiding collecting duplicate targets.
+# Sort all non-nil networks in ascending order based on network name and
+# get the first network if the container has multiple networks defined, 
+# thus avoiding collecting duplicate targets.
 [ match_first_network: <boolean> | default = true ]
 
 # Optional filters to limit the discovery process to a subset of available
@@ -3265,12 +3288,16 @@ Initially, aside from the configured per-target labels, a target's `job`
 label is set to the `job_name` value of the respective scrape configuration.
 The `__address__` label is set to the `<host>:<port>` address of the target.
 After relabeling, the `instance` label is set to the value of `__address__` by default if
-it was not set during relabeling. The `__scheme__` and `__metrics_path__` labels
-are set to the scheme and metrics path of the target respectively. The `__param_<name>`
-label is set to the value of the first passed URL parameter called `<name>`.
+it was not set during relabeling.
+
+The `__scheme__` and `__metrics_path__` labels
+are set to the scheme and metrics path of the target respectively, as specified in `scrape_config`.
+
+The `__param_<name>`
+label is set to the value of the first passed URL parameter called `<name>`, as defined in `scrape_config`.
 
 The `__scrape_interval__` and `__scrape_timeout__` labels are set to the target's
-interval and timeout.
+interval and timeout, as specified in `scrape_config`.
 
 Additional labels prefixed with `__meta_` may be available during the
 relabeling phase. They are set by the service discovery mechanism that provided

@@ -67,6 +67,11 @@ var (
 	}
 )
 
+const (
+	LegacyValidationConfig = "legacy"
+	UTF8ValidationConfig   = "utf8"
+)
+
 // Load parses the YAML input s into a Config.
 func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, error) {
 	cfg := &Config{}
@@ -216,6 +221,7 @@ var (
 	// DefaultRemoteReadConfig is the default remote read configuration.
 	DefaultRemoteReadConfig = RemoteReadConfig{
 		RemoteTimeout:        model.Duration(1 * time.Minute),
+		ChunkedReadLimit:     DefaultChunkedReadLimit,
 		HTTPClientConfig:     config.DefaultHTTPClientConfig,
 		FilterExternalLabels: true,
 	}
@@ -446,6 +452,8 @@ type GlobalConfig struct {
 	// Keep no more than this many dropped targets per job.
 	// 0 means no limit.
 	KeepDroppedTargets uint `yaml:"keep_dropped_targets,omitempty"`
+	// Allow UTF8 Metric and Label Names.
+	MetricNameValidationScheme string `yaml:"metric_name_validation_scheme,omitempty"`
 }
 
 // ScrapeProtocol represents supported protocol for scraping metrics.
@@ -471,6 +479,7 @@ var (
 	PrometheusText0_0_4  ScrapeProtocol = "PrometheusText0.0.4"
 	OpenMetricsText0_0_1 ScrapeProtocol = "OpenMetricsText0.0.1"
 	OpenMetricsText1_0_0 ScrapeProtocol = "OpenMetricsText1.0.0"
+	UTF8NamesHeader      string         = model.EscapingKey + "=" + model.AllowUTF8
 
 	ScrapeProtocolsHeaders = map[ScrapeProtocol]string{
 		PrometheusProto:      "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited",
@@ -656,6 +665,8 @@ type ScrapeConfig struct {
 	// Keep no more than this many dropped targets per job.
 	// 0 means no limit.
 	KeepDroppedTargets uint `yaml:"keep_dropped_targets,omitempty"`
+	// Allow UTF8 Metric and Label Names.
+	MetricNameValidationScheme string `yaml:"metric_name_validation_scheme,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
@@ -760,6 +771,19 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	}
 	if err := validateAcceptScrapeProtocols(c.ScrapeProtocols); err != nil {
 		return fmt.Errorf("%w for scrape config with job name %q", err, c.JobName)
+	}
+
+	switch globalConfig.MetricNameValidationScheme {
+	case "", LegacyValidationConfig:
+	case UTF8ValidationConfig:
+		if model.NameValidationScheme != model.UTF8Validation {
+			return fmt.Errorf("utf8 name validation requested but feature not enabled via --enable-feature=utf8-names")
+		}
+	default:
+		return fmt.Errorf("unknown name validation method specified, must be either 'legacy' or 'utf8', got %s", globalConfig.MetricNameValidationScheme)
+	}
+	if c.MetricNameValidationScheme == "" {
+		c.MetricNameValidationScheme = globalConfig.MetricNameValidationScheme
 	}
 
 	return nil
@@ -1090,8 +1114,9 @@ func (m RemoteWriteProtoMsgs) String() string {
 }
 
 var (
-	// RemoteWriteProtoMsgV1 represents the deprecated `prometheus.WriteRequest` protobuf
-	// message introduced in the https://prometheus.io/docs/specs/remote_write_spec/.
+	// RemoteWriteProtoMsgV1 represents the `prometheus.WriteRequest` protobuf
+	// message introduced in the https://prometheus.io/docs/specs/remote_write_spec/,
+	// which will eventually be deprecated.
 	//
 	// NOTE: This string is used for both HTTP header values and config value, so don't change
 	// this reference.
@@ -1255,13 +1280,20 @@ type MetadataConfig struct {
 	MaxSamplesPerSend int `yaml:"max_samples_per_send,omitempty"`
 }
 
+const (
+	// DefaultChunkedReadLimit is the default value for the maximum size of the protobuf frame client allows.
+	// 50MB is the default. This is equivalent to ~100k full XOR chunks and average labelset.
+	DefaultChunkedReadLimit = 5e+7
+)
+
 // RemoteReadConfig is the configuration for reading from remote storage.
 type RemoteReadConfig struct {
-	URL           *config.URL       `yaml:"url"`
-	RemoteTimeout model.Duration    `yaml:"remote_timeout,omitempty"`
-	Headers       map[string]string `yaml:"headers,omitempty"`
-	ReadRecent    bool              `yaml:"read_recent,omitempty"`
-	Name          string            `yaml:"name,omitempty"`
+	URL              *config.URL       `yaml:"url"`
+	RemoteTimeout    model.Duration    `yaml:"remote_timeout,omitempty"`
+	ChunkedReadLimit uint64            `yaml:"chunked_read_limit,omitempty"`
+	Headers          map[string]string `yaml:"headers,omitempty"`
+	ReadRecent       bool              `yaml:"read_recent,omitempty"`
+	Name             string            `yaml:"name,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.

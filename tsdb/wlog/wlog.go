@@ -38,8 +38,8 @@ import (
 )
 
 const (
-	DefaultSegmentSize = 128 * 1024 * 1024 // 128 MB
-	pageSize           = 32 * 1024         // 32KB
+	DefaultSegmentSize = 128 * 1024 * 1024 // DefaultSegmentSize is 128 MB.
+	pageSize           = 32 * 1024         // pageSize is 32KB.
 	recordHeaderSize   = 7
 	WblDirName         = "wbl"
 )
@@ -612,16 +612,16 @@ func (w *WL) setSegment(segment *Segment) error {
 
 // flushPage writes the new contents of the page to disk. If no more records will fit into
 // the page, the remaining bytes will be set to zero and a new page will be started.
-// If clear is true, this is enforced regardless of how many bytes are left in the page.
-func (w *WL) flushPage(clear bool) error {
+// If forceClear is true, this is enforced regardless of how many bytes are left in the page.
+func (w *WL) flushPage(forceClear bool) error {
 	w.metrics.pageFlushes.Inc()
 
 	p := w.page
-	clear = clear || p.full()
+	shouldClear := forceClear || p.full()
 
 	// No more data will fit into the page or an implicit clear.
 	// Enqueue and clear it.
-	if clear {
+	if shouldClear {
 		p.alloc = pageSize // Write till end of page.
 	}
 
@@ -633,7 +633,7 @@ func (w *WL) flushPage(clear bool) error {
 	p.flushed += n
 
 	// We flushed an entire page, prepare a new one.
-	if clear {
+	if shouldClear {
 		p.reset()
 		w.donePages++
 		w.metrics.pageCompletions.Inc()

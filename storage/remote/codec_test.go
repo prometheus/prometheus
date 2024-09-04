@@ -16,6 +16,7 @@ package remote
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"sync"
 	"testing"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
@@ -704,4 +706,271 @@ func (c *mockChunkIterator) Next() bool {
 
 func (c *mockChunkIterator) Err() error {
 	return nil
+}
+
+func TestChunkedSeriesIterator(t *testing.T) {
+	t.Run("happy path", func(t *testing.T) {
+		chks := buildTestChunks(t)
+
+		it := newChunkedSeriesIterator(chks, 2000, 12000)
+
+		require.NoError(t, it.err)
+		require.NotNil(t, it.cur)
+
+		// Initial next; advance to first valid sample of first chunk.
+		res := it.Next()
+		require.Equal(t, chunkenc.ValFloat, res)
+		require.NoError(t, it.Err())
+
+		ts, v := it.At()
+		require.Equal(t, int64(2000), ts)
+		require.Equal(t, float64(2), v)
+
+		// Next to the second sample of the first chunk.
+		res = it.Next()
+		require.Equal(t, chunkenc.ValFloat, res)
+		require.NoError(t, it.Err())
+
+		ts, v = it.At()
+		require.Equal(t, int64(3000), ts)
+		require.Equal(t, float64(3), v)
+
+		// Attempt to seek to the first sample of the first chunk (should return current sample).
+		res = it.Seek(0)
+		require.Equal(t, chunkenc.ValFloat, res)
+
+		ts, v = it.At()
+		require.Equal(t, int64(3000), ts)
+		require.Equal(t, float64(3), v)
+
+		// Seek to the end of the first chunk.
+		res = it.Seek(4000)
+		require.Equal(t, chunkenc.ValFloat, res)
+
+		ts, v = it.At()
+		require.Equal(t, int64(4000), ts)
+		require.Equal(t, float64(4), v)
+
+		// Next to the first sample of the second chunk.
+		res = it.Next()
+		require.Equal(t, chunkenc.ValFloat, res)
+		require.NoError(t, it.Err())
+
+		ts, v = it.At()
+		require.Equal(t, int64(5000), ts)
+		require.Equal(t, float64(1), v)
+
+		// Seek to the second sample of the third chunk.
+		res = it.Seek(10999)
+		require.Equal(t, chunkenc.ValFloat, res)
+		require.NoError(t, it.Err())
+
+		ts, v = it.At()
+		require.Equal(t, int64(11000), ts)
+		require.Equal(t, float64(3), v)
+
+		// Attempt to seek to something past the last sample (should return false and exhaust the iterator).
+		res = it.Seek(99999)
+		require.Equal(t, chunkenc.ValNone, res)
+		require.NoError(t, it.Err())
+
+		// Attempt to next past the last sample (should return false as the iterator is exhausted).
+		res = it.Next()
+		require.Equal(t, chunkenc.ValNone, res)
+		require.NoError(t, it.Err())
+	})
+
+	t.Run("invalid chunk encoding error", func(t *testing.T) {
+		chks := buildTestChunks(t)
+
+		// Set chunk type to an invalid value.
+		chks[0].Type = 8
+
+		it := newChunkedSeriesIterator(chks, 0, 14000)
+
+		res := it.Next()
+		require.Equal(t, chunkenc.ValNone, res)
+
+		res = it.Seek(1000)
+		require.Equal(t, chunkenc.ValNone, res)
+
+		require.ErrorContains(t, it.err, "invalid chunk encoding")
+		require.Nil(t, it.cur)
+	})
+
+	t.Run("empty chunks", func(t *testing.T) {
+		emptyChunks := make([]prompb.Chunk, 0)
+
+		it1 := newChunkedSeriesIterator(emptyChunks, 0, 1000)
+		require.Equal(t, chunkenc.ValNone, it1.Next())
+		require.Equal(t, chunkenc.ValNone, it1.Seek(1000))
+		require.NoError(t, it1.Err())
+
+		var nilChunks []prompb.Chunk
+
+		it2 := newChunkedSeriesIterator(nilChunks, 0, 1000)
+		require.Equal(t, chunkenc.ValNone, it2.Next())
+		require.Equal(t, chunkenc.ValNone, it2.Seek(1000))
+		require.NoError(t, it2.Err())
+	})
+}
+
+func TestChunkedSeries(t *testing.T) {
+	t.Run("happy path", func(t *testing.T) {
+		chks := buildTestChunks(t)
+
+		s := chunkedSeries{
+			ChunkedSeries: prompb.ChunkedSeries{
+				Labels: []prompb.Label{
+					{Name: "foo", Value: "bar"},
+					{Name: "asdf", Value: "zxcv"},
+				},
+				Chunks: chks,
+			},
+		}
+
+		require.Equal(t, labels.FromStrings("asdf", "zxcv", "foo", "bar"), s.Labels())
+
+		it := s.Iterator(nil)
+		res := it.Next() // Behavior is undefined w/o the initial call to Next.
+
+		require.Equal(t, chunkenc.ValFloat, res)
+		require.NoError(t, it.Err())
+
+		ts, v := it.At()
+		require.Equal(t, int64(0), ts)
+		require.Equal(t, float64(0), v)
+	})
+}
+
+func TestChunkedSeriesSet(t *testing.T) {
+	t.Run("happy path", func(t *testing.T) {
+		buf := &bytes.Buffer{}
+		flusher := &mockFlusher{}
+
+		w := NewChunkedWriter(buf, flusher)
+		r := NewChunkedReader(buf, config.DefaultChunkedReadLimit, nil)
+
+		chks := buildTestChunks(t)
+		l := []prompb.Label{
+			{Name: "foo", Value: "bar"},
+		}
+
+		for i, c := range chks {
+			cSeries := prompb.ChunkedSeries{Labels: l, Chunks: []prompb.Chunk{c}}
+			readResp := prompb.ChunkedReadResponse{
+				ChunkedSeries: []*prompb.ChunkedSeries{&cSeries},
+				QueryIndex:    int64(i),
+			}
+
+			b, err := proto.Marshal(&readResp)
+			require.NoError(t, err)
+
+			_, err = w.Write(b)
+			require.NoError(t, err)
+		}
+
+		ss := NewChunkedSeriesSet(r, io.NopCloser(buf), 0, 14000, func(error) {})
+		require.NoError(t, ss.Err())
+		require.Nil(t, ss.Warnings())
+
+		res := ss.Next()
+		require.True(t, res)
+		require.NoError(t, ss.Err())
+
+		s := ss.At()
+		require.Equal(t, 1, s.Labels().Len())
+		require.True(t, s.Labels().Has("foo"))
+		require.Equal(t, "bar", s.Labels().Get("foo"))
+
+		it := s.Iterator(nil)
+		it.Next()
+		ts, v := it.At()
+		require.Equal(t, int64(0), ts)
+		require.Equal(t, float64(0), v)
+
+		numResponses := 1
+		for ss.Next() {
+			numResponses++
+		}
+		require.Equal(t, numTestChunks, numResponses)
+		require.NoError(t, ss.Err())
+	})
+
+	t.Run("chunked reader error", func(t *testing.T) {
+		buf := &bytes.Buffer{}
+		flusher := &mockFlusher{}
+
+		w := NewChunkedWriter(buf, flusher)
+		r := NewChunkedReader(buf, config.DefaultChunkedReadLimit, nil)
+
+		chks := buildTestChunks(t)
+		l := []prompb.Label{
+			{Name: "foo", Value: "bar"},
+		}
+
+		for i, c := range chks {
+			cSeries := prompb.ChunkedSeries{Labels: l, Chunks: []prompb.Chunk{c}}
+			readResp := prompb.ChunkedReadResponse{
+				ChunkedSeries: []*prompb.ChunkedSeries{&cSeries},
+				QueryIndex:    int64(i),
+			}
+
+			b, err := proto.Marshal(&readResp)
+			require.NoError(t, err)
+
+			b[0] = 0xFF // Corruption!
+
+			_, err = w.Write(b)
+			require.NoError(t, err)
+		}
+
+		ss := NewChunkedSeriesSet(r, io.NopCloser(buf), 0, 14000, func(error) {})
+		require.NoError(t, ss.Err())
+		require.Nil(t, ss.Warnings())
+
+		res := ss.Next()
+		require.False(t, res)
+		require.ErrorContains(t, ss.Err(), "proto: illegal wireType 7")
+	})
+}
+
+// mockFlusher implements http.Flusher.
+type mockFlusher struct{}
+
+func (f *mockFlusher) Flush() {}
+
+const (
+	numTestChunks          = 3
+	numSamplesPerTestChunk = 5
+)
+
+func buildTestChunks(t *testing.T) []prompb.Chunk {
+	startTime := int64(0)
+	chks := make([]prompb.Chunk, 0, numTestChunks)
+
+	time := startTime
+
+	for i := 0; i < numTestChunks; i++ {
+		c := chunkenc.NewXORChunk()
+
+		a, err := c.Appender()
+		require.NoError(t, err)
+
+		minTimeMs := time
+
+		for j := 0; j < numSamplesPerTestChunk; j++ {
+			a.Append(time, float64(i+j))
+			time += int64(1000)
+		}
+
+		chks = append(chks, prompb.Chunk{
+			MinTimeMs: minTimeMs,
+			MaxTimeMs: time,
+			Type:      prompb.Chunk_XOR,
+			Data:      c.Bytes(),
+		})
+	}
+
+	return chks
 }
