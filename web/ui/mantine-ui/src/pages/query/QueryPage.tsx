@@ -5,7 +5,11 @@ import {
   IconPlus,
 } from "@tabler/icons-react";
 import { useAppDispatch, useAppSelector } from "../../state/hooks";
-import { addPanel, setPanels } from "../../state/queryPageSlice";
+import {
+  addPanel,
+  newDefaultPanel,
+  setPanels,
+} from "../../state/queryPageSlice";
 import Panel from "./QueryPanel";
 import { LabelValuesResult } from "../../api/responseTypes/labelValues";
 import { useAPIQuery } from "../../api/api";
@@ -19,6 +23,7 @@ export default function QueryPage() {
   const dispatch = useAppDispatch();
   const [timeDelta, setTimeDelta] = useState(0);
 
+  // Update the panels whenever the URL params change.
   useEffect(() => {
     const handleURLChange = () => {
       const panels = decodePanelOptionsFromURLParams(window.location.search);
@@ -36,6 +41,13 @@ export default function QueryPage() {
     };
   }, [dispatch]);
 
+  // Clear the query page when navigating away from it.
+  useEffect(() => {
+    return () => {
+      dispatch(setPanels([newDefaultPanel()]));
+    };
+  }, [dispatch]);
+
   const { data: metricNamesResult, error: metricNamesError } =
     useAPIQuery<LabelValuesResult>({
       path: "/label/__name__/values",
@@ -50,15 +62,17 @@ export default function QueryPage() {
     });
 
   useEffect(() => {
-    if (timeResult) {
-      if (timeResult.data.resultType !== "scalar") {
-        throw new Error("Unexpected result type from time query");
-      }
-
-      const browserTime = new Date().getTime() / 1000;
-      const serverTime = timeResult.data.result[0];
-      setTimeDelta(Math.abs(browserTime - serverTime));
+    if (!timeResult) {
+      return;
     }
+
+    if (timeResult.data.resultType !== "scalar") {
+      throw new Error("Unexpected result type from time query");
+    }
+
+    const browserTime = new Date().getTime() / 1000;
+    const serverTime = timeResult.data.result[0];
+    setTimeDelta(Math.abs(browserTime - serverTime));
   }, [timeResult]);
 
   return (
