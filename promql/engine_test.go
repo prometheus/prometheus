@@ -3211,7 +3211,7 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 				seriesName := "sparse_histogram_series"
 				seriesNameOverTime := "sparse_histogram_series_over_time"
 
-				engine := newTestEngine()
+				engine := newTestEngine(t)
 
 				ts := idx0 * int64(10*time.Minute/time.Millisecond)
 				app := storage.Appender(context.Background())
