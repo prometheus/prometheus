@@ -727,6 +727,15 @@ load 10m
 eval instant at 10m histogram_mul_div*3
     {} {{schema:0 count:90 sum:99 z_bucket:9 z_bucket_w:0.001 buckets:[9 9 9] n_buckets:[18 18 18]}}
 
+eval instant at 10m histogram_mul_div*-1
+    {} {{schema:0 count:30 sum:-33 z_bucket:3 z_bucket_w:0.001 buckets:[6 6 6] n_buckets:[3 3 3]}}
+
+eval instant at 10m -histogram_mul_div
+    {} {{schema:0 count:30 sum:-33 z_bucket:3 z_bucket_w:0.001 buckets:[6 6 6] n_buckets:[3 3 3]}}
+
+eval instant at 10m histogram_mul_div*-3
+    {} {{schema:0 count:90 sum:-99 z_bucket:9 z_bucket_w:0.001 buckets:[18 18 18] n_buckets:[9 9 9]}}
+
 eval instant at 10m 3*histogram_mul_div
     {} {{schema:0 count:90 sum:99 z_bucket:9 z_bucket_w:0.001 buckets:[9 9 9] n_buckets:[18 18 18]}}
 
@@ -738,6 +747,9 @@ eval instant at 10m float_series_3*histogram_mul_div
 
 eval instant at 10m histogram_mul_div/3
     {} {{schema:0 count:10 sum:11 z_bucket:1 z_bucket_w:0.001 buckets:[1 1 1] n_buckets:[2 2 2]}}
+
+eval instant at 10m histogram_mul_div/-3
+    {} {{schema:0 count:10 sum:-11 z_bucket:1 z_bucket_w:0.001 buckets:[2 2 2] n_buckets:[1 1 1]}}
 
 eval instant at 10m histogram_mul_div/float_series_3
     {} {{schema:0 count:10 sum:11 z_bucket:1 z_bucket_w:0.001 buckets:[1 1 1] n_buckets:[2 2 2]}}
