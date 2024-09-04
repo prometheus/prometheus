@@ -20,6 +20,9 @@ const fakeTSDBStatusResponse: {
       minTime: 1591516800000,
       maxTime: 1598896800143,
     },
+    tsdbStats: {
+      minTime: 1591516800000,
+    },
     labelValueCountByLabelName: [
       {
         name: '__name__',
@@ -64,6 +67,9 @@ const fakeEmptyTSDBStatusResponse: {
       minTime: 9223372036854776000,
       maxTime: -9223372036854776000,
     },
+    tsdbStats: {
+      minTime: 9223372036854776000,
+    },
     labelValueCountByLabelName: [],
     seriesCountByMetricName: [],
     memoryInBytesByLabelName: [],
@@ -83,6 +89,9 @@ const fakeInvalidTimestampTSDBStatusResponse: {
       chunkCount: 0,
       minTime: 9223372036854776000,
       maxTime: -9223372036854776000,
+    },
+    tsdbStats: {
+      minTime: 9223372036854776000,
     },
     labelValueCountByLabelName: [],
     seriesCountByMetricName: [],

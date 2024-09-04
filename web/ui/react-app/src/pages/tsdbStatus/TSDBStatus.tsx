@@ -19,8 +19,13 @@ interface HeadStats {
   maxTime: number;
 }
 
+interface TSDBStats {
+  minTime: number;
+}
+
 export interface TSDBMap {
   headStats: HeadStats;
+  tsdbStats: TSDBStats;
   seriesCountByMetricName: Stats[];
   labelValueCountByLabelName: Stats[];
   memoryInBytesByLabelName: Stats[];
@@ -45,29 +50,49 @@ export const TSDBStatusContent: FC<TSDBMap> = ({
     }
   };
   const { chunkCount, numSeries, numLabelPairs, minTime, maxTime } = headStats;
-  const stats = [
+  const headStatsKV = [
     { header: 'Number of Series', value: numSeries },
     { header: 'Number of Chunks', value: chunkCount },
     { header: 'Number of Label Pairs', value: numLabelPairs },
     { header: 'Current Min Time', value: `${unixToTime(minTime)}` },
     { header: 'Current Max Time', value: `${unixToTime(maxTime)}` },
   ];
+  const tsdbStatsKV = [{ header: 'Current Min Time', value: `${unixToTime(minTime)}` }];
   return (
     <div>
       <h2>TSDB Status</h2>
-      <h3 className="p-2">Head Stats</h3>
+      <h3 className="p-2">TSDB Stats</h3>
       <div className="p-2">
         <Table bordered size="sm" striped>
           <thead>
             <tr>
-              {stats.map(({ header }) => {
+              {tsdbStatsKV.map(({ header }) => {
                 return <th key={header}>{header}</th>;
               })}
             </tr>
           </thead>
           <tbody>
             <tr>
-              {stats.map(({ header, value }) => {
+              {tsdbStatsKV.map(({ header, value }) => {
+                return <td key={header}>{value}</td>;
+              })}
+            </tr>
+          </tbody>
+        </Table>
+      </div>
+      <h3 className="p-2">Head Stats</h3>
+      <div className="p-2">
+        <Table bordered size="sm" striped>
+          <thead>
+            <tr>
+              {headStatsKV.map(({ header }) => {
+                return <th key={header}>{header}</th>;
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              {headStatsKV.map(({ header, value }) => {
                 return <td key={header}>{value}</td>;
               })}
             </tr>
