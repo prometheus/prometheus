@@ -141,7 +141,16 @@ export default function RulesPage() {
                           <IconTimeline size={15} />
                         </Tooltip>
                       )}
-                      <Text>{r.name}</Text>
+                      <Text
+                        ff={
+                          r.type === "recording"
+                            ? '"DejaVu Sans Mono", monospace'
+                            : undefined
+                        }
+                        fz={r.type === "recording" ? "sm" : "md"}
+                      >
+                        {r.name}
+                      </Text>
                     </Group>
                     <Group gap="xs">
                       <Group gap="xs" wrap="wrap">

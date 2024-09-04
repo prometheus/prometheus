@@ -270,7 +270,7 @@ type Options struct {
 	UserAssetsPath             string
 	ConsoleTemplatesPath       string
 	ConsoleLibrariesPath       string
-	UseNewUI                   bool
+	UseOldUI                   bool
 	EnableLifecycle            bool
 	EnableAdminAPI             bool
 	PageTitle                  string
@@ -384,9 +384,9 @@ func New(logger log.Logger, o *Options) *Handler {
 		router = router.WithPrefix(o.RoutePrefix)
 	}
 
-	homePage := "/graph"
-	if o.UseNewUI {
-		homePage = "/query"
+	homePage := "/query"
+	if o.UseOldUI {
+		homePage = "/graph"
 	}
 	if o.IsAgent {
 		homePage = "/agent"
@@ -398,15 +398,15 @@ func New(logger log.Logger, o *Options) *Handler {
 		http.Redirect(w, r, path.Join(o.ExternalURL.Path, homePage), http.StatusFound)
 	})
 
-	if o.UseNewUI {
+	if !o.UseOldUI {
 		router.Get("/graph", func(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, path.Join(o.ExternalURL.Path, "/query?"+r.URL.RawQuery), http.StatusFound)
 		})
 	}
 
-	reactAssetsRoot := "/static/react-app"
-	if h.options.UseNewUI {
-		reactAssetsRoot = "/static/mantine-ui"
+	reactAssetsRoot := "/static/mantine-ui"
+	if h.options.UseOldUI {
+		reactAssetsRoot = "/static/react-app"
 	}
 
 	// The console library examples at 'console_libraries/prom.lib' still depend on old asset files being served under `classic`.
@@ -448,11 +448,11 @@ func New(logger log.Logger, o *Options) *Handler {
 	}
 
 	// Serve the React app.
-	reactRouterPaths := oldUIReactRouterPaths
-	reactRouterServerPaths := oldUIReactRouterServerPaths
-	if h.options.UseNewUI {
-		reactRouterPaths = newUIReactRouterPaths
-		reactRouterServerPaths = newUIReactRouterServerPaths
+	reactRouterPaths := newUIReactRouterPaths
+	reactRouterServerPaths := newUIReactRouterServerPaths
+	if h.options.UseOldUI {
+		reactRouterPaths = oldUIReactRouterPaths
+		reactRouterServerPaths = oldUIReactRouterServerPaths
 	}
 
 	for _, p := range reactRouterPaths {
@@ -480,9 +480,9 @@ func New(logger log.Logger, o *Options) *Handler {
 		})
 	}
 
-	reactStaticAssetsDir := "/static"
-	if h.options.UseNewUI {
-		reactStaticAssetsDir = "/assets"
+	reactStaticAssetsDir := "/assets"
+	if h.options.UseOldUI {
+		reactStaticAssetsDir = "/static"
 	}
 	// Static files required by the React app.
 	router.Get(reactStaticAssetsDir+"/*filepath", func(w http.ResponseWriter, r *http.Request) {

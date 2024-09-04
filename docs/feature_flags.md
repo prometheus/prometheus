@@ -226,11 +226,11 @@ This has the potential to improve rule group evaluation latency and resource uti
 
 The number of concurrent rule evaluations can be configured with `--rules.max-concurrent-rule-evals`, which is set to `4` by default.
 
-## Experimental new web UI
+## Serve old Prometheus UI
 
-Enables the new experimental web UI instead of the old and stable web UI. The new UI is a complete rewrite and aims to be cleaner, less cluttered, and more modern under the hood. It is not feature complete yet and is still under active development.
+Fall back to serving the old (Prometheus 2.x) web UI instead of the new UI. The new UI that was released as part of Prometheus 3.0 is a complete rewrite and aims to be cleaner, less cluttered, and more modern under the hood. However, it is not fully feature complete and battle-tested yet, so some users may still prefer using the old UI.
 
-`--enable-feature=new-ui`
+`--enable-feature=old-ui`
 
 ## Metadata WAL Records
 
