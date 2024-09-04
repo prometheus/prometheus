@@ -619,7 +619,7 @@ Like `sort`, `sort_desc` only affects the results of instant queries, as range q
 
 **This function has to be enabled via the [feature flag](../feature_flags.md#experimental-promql-functions) `--enable-feature=promql-experimental-functions`.**
 
-`sort_by_label(v instant-vector, label string, ...)` returns vector elements sorted by their label values and sample value in case of label values being equal, in ascending order.
+`sort_by_label(v instant-vector, label string, ...)` returns vector elements sorted by the values of the given labels in ascending order. In case these label values are equal, elements are sorted by their full label sets.
 
 Please note that the sort by label functions only affect the results of instant queries, as range query results always have a fixed output ordering.
 

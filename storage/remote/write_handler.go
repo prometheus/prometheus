@@ -28,6 +28,7 @@ import (
 	"github.com/golang/snappy"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -236,11 +237,16 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	b := labels.NewScratchBuilder(0)
 	for _, ts := range req.Timeseries {
 		ls := ts.ToLabels(&b, nil)
-		if !ls.Has(labels.MetricName) || !ls.IsValid() {
+
+		// TODO(bwplotka): Even as per 1.0 spec, this should be a 400 error, while other samples are
+		// potentially written. Perhaps unify with fixed writeV2 implementation a bit.
+		if !ls.Has(labels.MetricName) || !ls.IsValid(model.NameValidationScheme) {
 			level.Warn(h.logger).Log("msg", "Invalid metric names or labels", "got", ls.String())
 			samplesWithInvalidLabels++
-			// TODO(bwplotka): Even as per 1.0 spec, this should be a 400 error, while other samples are
-			// potentially written. Perhaps unify with fixed writeV2 implementation a bit.
+			continue
+		} else if duplicateLabel, hasDuplicate := ls.HasDuplicateLabelNames(); hasDuplicate {
+			level.Warn(h.logger).Log("msg", "Invalid labels for series.", "labels", ls.String(), "duplicated_label", duplicateLabel)
+			samplesWithInvalidLabels++
 			continue
 		}
 
@@ -375,8 +381,12 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		// Validate series labels early.
 		// NOTE(bwplotka): While spec allows UTF-8, Prometheus Receiver may impose
 		// specific limits and follow https://prometheus.io/docs/specs/remote_write_spec_2_0/#invalid-samples case.
-		if !ls.Has(labels.MetricName) || !ls.IsValid() {
+		if !ls.Has(labels.MetricName) || !ls.IsValid(model.NameValidationScheme) {
 			badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid metric name or labels, got %v", ls.String()))
+			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
+			continue
+		} else if duplicateLabel, hasDuplicate := ls.HasDuplicateLabelNames(); hasDuplicate {
+			badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid labels for series, labels %v, duplicated label %s", ls.String(), duplicateLabel))
 			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
 			continue
 		}
@@ -502,11 +512,16 @@ func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	otlpCfg := h.configFunc().OTLPConfig
 
 	converter := otlptranslator.NewPrometheusConverter()
-	if err := converter.FromMetrics(req.Metrics(), otlptranslator.Settings{
+	annots, err := converter.FromMetrics(req.Metrics(), otlptranslator.Settings{
 		AddMetricSuffixes:         true,
 		PromoteResourceAttributes: otlpCfg.PromoteResourceAttributes,
-	}); err != nil {
+	})
+	if err != nil {
 		level.Warn(h.logger).Log("msg", "Error translating OTLP metrics to Prometheus write request", "err", err)
+	}
+	ws, _ := annots.AsStrings("", 0, 0)
+	if len(ws) > 0 {
+		level.Warn(h.logger).Log("msg", "Warnings translating OTLP metrics to Prometheus write request", "warnings", ws)
 	}
 
 	err = h.rwHandler.write(r.Context(), &prompb.WriteRequest{

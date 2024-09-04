@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/teststorage"
@@ -274,7 +275,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 		MaxSamples: 50000000,
 		Timeout:    100 * time.Second,
 	}
-	engine := promql.NewEngine(opts)
+	engine := promqltest.NewTestEngineWithOpts(b, opts)
 
 	const interval = 10000 // 10s interval.
 	// A day of data plus 10k steps.
@@ -365,7 +366,7 @@ func BenchmarkNativeHistograms(b *testing.B) {
 
 	for _, tc := range cases {
 		b.Run(tc.name, func(b *testing.B) {
-			ng := promql.NewEngine(opts)
+			ng := promqltest.NewTestEngineWithOpts(b, opts)
 			for i := 0; i < b.N; i++ {
 				qry, err := ng.NewRangeQuery(context.Background(), testStorage, nil, tc.query, start, end, step)
 				if err != nil {

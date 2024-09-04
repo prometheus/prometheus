@@ -23,7 +23,6 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
-	"runtime/pprof"
 	"sort"
 	"strconv"
 	"strings"
@@ -34,7 +33,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
@@ -88,43 +86,6 @@ func newTestHeadWithOptions(t testing.TB, compressWAL wlog.CompressionType, opts
 	}))
 
 	return h, wal
-}
-
-// BenchmarkLoadRealWLs will be skipped unless the BENCHMARK_LOAD_REAL_WLS_DIR environment variable is set.
-// BENCHMARK_LOAD_REAL_WLS_DIR should be the folder where `wal` and `chunks_head` are located.
-// Optionally, BENCHMARK_LOAD_REAL_WLS_PROFILE can be set to a file path to write a CPU profile.
-func BenchmarkLoadRealWLs(b *testing.B) {
-	dir := os.Getenv("BENCHMARK_LOAD_REAL_WLS_DIR")
-	if dir == "" {
-		b.Skipped()
-	}
-
-	profileFile := os.Getenv("BENCHMARK_LOAD_REAL_WLS_PROFILE")
-	if profileFile != "" {
-		b.Logf("Will profile in %s", profileFile)
-		f, err := os.Create(profileFile)
-		require.NoError(b, err)
-		b.Cleanup(func() { f.Close() })
-		require.NoError(b, pprof.StartCPUProfile(f))
-		b.Cleanup(pprof.StopCPUProfile)
-	}
-
-	wal, err := wlog.New(nil, nil, filepath.Join(dir, "wal"), wlog.CompressionNone)
-	require.NoError(b, err)
-	b.Cleanup(func() { wal.Close() })
-
-	wbl, err := wlog.New(nil, nil, filepath.Join(dir, "wbl"), wlog.CompressionNone)
-	require.NoError(b, err)
-	b.Cleanup(func() { wbl.Close() })
-
-	// Load the WAL.
-	for i := 0; i < b.N; i++ {
-		opts := DefaultHeadOptions()
-		opts.ChunkDirRoot = dir
-		h, err := NewHead(nil, nil, wal, wbl, opts, nil)
-		require.NoError(b, err)
-		h.Init(0)
-	}
 }
 
 func BenchmarkCreateSeries(b *testing.B) {
@@ -473,6 +434,32 @@ func BenchmarkLoadWLs(b *testing.B) {
 					}
 				})
 		}
+	}
+}
+
+// BenchmarkLoadRealWLs will be skipped unless the BENCHMARK_LOAD_REAL_WLS_DIR environment variable is set.
+// BENCHMARK_LOAD_REAL_WLS_DIR should be the folder where `wal` and `chunks_head` are located.
+func BenchmarkLoadRealWLs(b *testing.B) {
+	dir := os.Getenv("BENCHMARK_LOAD_REAL_WLS_DIR")
+	if dir == "" {
+		b.SkipNow()
+	}
+
+	wal, err := wlog.New(nil, nil, filepath.Join(dir, "wal"), wlog.CompressionNone)
+	require.NoError(b, err)
+	b.Cleanup(func() { wal.Close() })
+
+	wbl, err := wlog.New(nil, nil, filepath.Join(dir, "wbl"), wlog.CompressionNone)
+	require.NoError(b, err)
+	b.Cleanup(func() { wbl.Close() })
+
+	// Load the WAL.
+	for i := 0; i < b.N; i++ {
+		opts := DefaultHeadOptions()
+		opts.ChunkDirRoot = dir
+		h, err := NewHead(nil, nil, wal, wbl, opts, nil)
+		require.NoError(b, err)
+		require.NoError(b, h.Init(0))
 	}
 }
 
@@ -5957,16 +5944,16 @@ func TestHeadAppender_AppendCTZeroSample(t *testing.T) {
 	for _, tc := range []struct {
 		name              string
 		appendableSamples []appendableSamples
-		expectedSamples   []model.Sample
+		expectedSamples   []chunks.Sample
 	}{
 		{
 			name: "In order ct+normal sample",
 			appendableSamples: []appendableSamples{
 				{ts: 100, val: 10, ct: 1},
 			},
-			expectedSamples: []model.Sample{
-				{Timestamp: 1, Value: 0},
-				{Timestamp: 100, Value: 10},
+			expectedSamples: []chunks.Sample{
+				sample{t: 1, f: 0},
+				sample{t: 100, f: 10},
 			},
 		},
 		{
@@ -5975,10 +5962,10 @@ func TestHeadAppender_AppendCTZeroSample(t *testing.T) {
 				{ts: 100, val: 10, ct: 1},
 				{ts: 101, val: 10, ct: 1},
 			},
-			expectedSamples: []model.Sample{
-				{Timestamp: 1, Value: 0},
-				{Timestamp: 100, Value: 10},
-				{Timestamp: 101, Value: 10},
+			expectedSamples: []chunks.Sample{
+				sample{t: 1, f: 0},
+				sample{t: 100, f: 10},
+				sample{t: 101, f: 10},
 			},
 		},
 		{
@@ -5987,11 +5974,11 @@ func TestHeadAppender_AppendCTZeroSample(t *testing.T) {
 				{ts: 100, val: 10, ct: 1},
 				{ts: 102, val: 10, ct: 101},
 			},
-			expectedSamples: []model.Sample{
-				{Timestamp: 1, Value: 0},
-				{Timestamp: 100, Value: 10},
-				{Timestamp: 101, Value: 0},
-				{Timestamp: 102, Value: 10},
+			expectedSamples: []chunks.Sample{
+				sample{t: 1, f: 0},
+				sample{t: 100, f: 10},
+				sample{t: 101, f: 0},
+				sample{t: 102, f: 10},
 			},
 		},
 		{
@@ -6000,41 +5987,33 @@ func TestHeadAppender_AppendCTZeroSample(t *testing.T) {
 				{ts: 100, val: 10, ct: 1},
 				{ts: 101, val: 10, ct: 100},
 			},
-			expectedSamples: []model.Sample{
-				{Timestamp: 1, Value: 0},
-				{Timestamp: 100, Value: 10},
-				{Timestamp: 101, Value: 10},
+			expectedSamples: []chunks.Sample{
+				sample{t: 1, f: 0},
+				sample{t: 100, f: 10},
+				sample{t: 101, f: 10},
 			},
 		},
 	} {
-		h, _ := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
-		defer func() {
-			require.NoError(t, h.Close())
-		}()
-		a := h.Appender(context.Background())
-		lbls := labels.FromStrings("foo", "bar")
-		for _, sample := range tc.appendableSamples {
-			_, err := a.AppendCTZeroSample(0, lbls, sample.ts, sample.ct)
-			require.NoError(t, err)
-			_, err = a.Append(0, lbls, sample.ts, sample.val)
-			require.NoError(t, err)
-		}
-		require.NoError(t, a.Commit())
+		t.Run(tc.name, func(t *testing.T) {
+			h, _ := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
+			defer func() {
+				require.NoError(t, h.Close())
+			}()
+			a := h.Appender(context.Background())
+			lbls := labels.FromStrings("foo", "bar")
+			for _, sample := range tc.appendableSamples {
+				_, err := a.AppendCTZeroSample(0, lbls, sample.ts, sample.ct)
+				require.NoError(t, err)
+				_, err = a.Append(0, lbls, sample.ts, sample.val)
+				require.NoError(t, err)
+			}
+			require.NoError(t, a.Commit())
 
-		q, err := NewBlockQuerier(h, math.MinInt64, math.MaxInt64)
-		require.NoError(t, err)
-		ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
-		require.True(t, ss.Next())
-		s := ss.At()
-		require.False(t, ss.Next())
-		it := s.Iterator(nil)
-		for _, sample := range tc.expectedSamples {
-			require.Equal(t, chunkenc.ValFloat, it.Next())
-			timestamp, value := it.At()
-			require.Equal(t, sample.Timestamp, model.Time(timestamp))
-			require.Equal(t, sample.Value, model.SampleValue(value))
-		}
-		require.Equal(t, chunkenc.ValNone, it.Next())
+			q, err := NewBlockQuerier(h, math.MinInt64, math.MaxInt64)
+			require.NoError(t, err)
+			result := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+			require.Equal(t, tc.expectedSamples, result[`{foo="bar"}`])
+		})
 	}
 }
 
