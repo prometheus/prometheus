@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 	"math"
 	"math/rand"
 	"runtime"
