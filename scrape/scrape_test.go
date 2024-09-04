@@ -1257,6 +1257,7 @@ func TestSetHintsHandlingStaleness(t *testing.T) {
 	capp := &collectResultAppender{next: app}
 	signal := make(chan struct{}, 1)
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	// Function to run the scrape loop
 	runScrapeLoop := func(ctx context.Context, t *testing.T, appender storage.Appender, cue int, action func(*scrapeLoop)) {
@@ -1268,6 +1269,7 @@ func TestSetHintsHandlingStaleness(t *testing.T) {
 		numScrapes := 0
 		scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
 			numScrapes++
+			fmt.Printf("Scrape #%d: Writing sample for metric_a with value %d\n", numScrapes, 42+numScrapes)
 			if numScrapes == cue {
 				action(sl)
 			}
@@ -1281,9 +1283,11 @@ func TestSetHintsHandlingStaleness(t *testing.T) {
 		runScrapeLoop(ctx, t, capp, 2, func(sl *scrapeLoop) {
 			go sl.stop()
 			// Wait a bit then start a new target.
-			time.Sleep(5 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond) // Increased delay
 			go func() {
 				runScrapeLoop(ctx, t, capp, 4, func(_ *scrapeLoop) {
+					fmt.Println("Stopping scrape loop after 4 scrapes.")
+					// go sl.stop()
 					cancel()
 				})
 				signal <- struct{}{}
@@ -1293,15 +1297,50 @@ func TestSetHintsHandlingStaleness(t *testing.T) {
 
 	select {
 	case <-signal:
-	case <-time.After(5 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatalf("Scrape wasn't stopped.")
 	}
 
+	/* for _, v := range capp.resultFloats {
+		if v.metric.Get("__name__") == "metric_a" {
+			fmt.Println(v)
+		}
+	}
+
+	/*	ctx1, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		// Query the samples back from the storage.
+		fmt.Println("Querying samples from storage...")
+		q, err := s.Querier(0, time.Now().UnixNano())
+
+		require.NoError(t, err)
+		defer q.Close()
+		//	series := q.Select(ctx1, false, nil)
+
+		// Use a matcher to filter the metric name.
+		series := q.Select(ctx1, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "metric_a"))
+
+		var results []floatSample
+		for series.Next() {
+			it := series.At().Iterator(nil)
+			for it.Next() == chunkenc.ValFloat {
+				t, v := it.At()
+				fmt.Printf("Retrieved sample: metric_a at timestamp %d with value %.2f\n", t, v)
+				results = append(results, floatSample{
+					metric: series.At().Labels(),
+					t:      t,
+					f:      v,
+				})
+			}
+			require.NoError(t, it.Err())
+		}
+		require.NoError(t, series.Err())
+	*/
 	var prevT int64
 	for _, v := range capp.resultFloats {
 		if v.metric.Get("__name__") == "metric_a" {
 			// Check for out-of-order samples
-			fmt.Println(v)
+			fmt.Printf("Final result check: metric_a at timestamp %d with value %.2f\n", v.t, v.f)
 			if v.t <= prevT {
 				require.True(t, math.IsNaN(v.f), "Expected NaN value for out-of-order sample at timestamp %d", v.t)
 			}
