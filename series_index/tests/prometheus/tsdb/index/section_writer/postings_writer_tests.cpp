@@ -34,7 +34,7 @@ class PostingsWriterFixture : public testing::TestWithParam<PostingsWriterCase> 
   using QueryableEncodingBimap = series_index::QueryableEncodingBimap<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimapFilament, TrieIndex>;
 
   std::ostringstream stream_;
-  StreamWriter stream_writer_{&stream_};
+  StreamWriter<decltype(stream_)> stream_writer_{&stream_};
   QueryableEncodingBimap lss_;
   SymbolReferencesMap symbol_references_;
   SeriesReferencesMap series_references_;
@@ -45,9 +45,10 @@ class PostingsWriterFixture : public testing::TestWithParam<PostingsWriterCase> 
     }
 
     std::ostringstream stream;
-    StreamWriter stream_writer{&stream};
+    StreamWriter<decltype(stream_)> stream_writer{&stream};
     SymbolsWriter{lss_, symbol_references_, stream_writer}.write();
-    SeriesWriter{lss_, chunk_metadata_list, symbol_references_, series_references_}.write(stream_writer);
+    SeriesWriter<QueryableEncodingBimap, ChunkMetadataList, decltype(stream_)>{lss_, chunk_metadata_list, symbol_references_, series_references_}.write(
+        stream_writer);
   }
 };
 
@@ -158,7 +159,7 @@ TEST_F(PostingsWriterFixture, PartialWrite) {
           {{"server", "127.0.0.1"}},
       },
       chunk_metadata_list);
-  PostingsWriter<QueryableEncodingBimap> postings_writer{lss_, series_references_, stream_writer_};
+  PostingsWriter<QueryableEncodingBimap, decltype(stream_)> postings_writer{lss_, series_references_, stream_writer_};
 
   // Act
   postings_writer.write_postings(0);

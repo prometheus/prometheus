@@ -164,6 +164,7 @@ func (HashdexFactory) GoModel(data []model.TimeSeries, limits WALHashdexLimits) 
 
 // MetaInjection metedata for injection metrics.
 type MetaInjection struct {
+	Now       int64
 	SentAt    int64
 	AgentUUID string
 	Hostname  string

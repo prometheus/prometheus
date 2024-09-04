@@ -1,17 +1,11 @@
 #pragma once
 
-#include <ostream>
-
+#include "bare_bones/concepts.h"
 #include "series_data/chunk/serialized_chunk.h"
 #include "series_data/data_storage.h"
 #include "series_data/querier/query.h"
 
 namespace series_data::serialization {
-
-template <class Stream>
-concept have_reserve_buffer_method = requires(Stream& stream) {
-  { stream.reserve_buffer(size_t{}) };
-};
 
 class Serializer {
  public:
@@ -24,8 +18,8 @@ class Serializer {
       uint32_t data_size = sizeof(uint32_t);
       auto serialized_chunks = create_serialized_chunks(queried_chunks, timestamp_streams_data, data_size);
 
-      if constexpr (have_reserve_buffer_method<Stream>) {
-        stream.reserve_buffer(data_size);
+      if constexpr (BareBones::concepts::has_reserve<Stream>) {
+        stream.reserve(data_size);
       }
 
       write_chunks_count(queried_chunks, stream);

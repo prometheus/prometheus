@@ -31,43 +31,43 @@ func NewIndexWriter(lss *LabelSetStorage, chunk_metadata_list *[][]ChunkMetadata
 }
 
 func (writer *IndexWriter) WriteHeader() []byte {
-	indexWriterWriteHeader(writer.writer, &writer.data)
+	writer.data = indexWriterWriteHeader(writer.writer, writer.data)
 	return writer.data
 }
 
 func (writer *IndexWriter) WriteSymbols() []byte {
-	indexWriterWriteSymbols(writer.writer, &writer.data)
+	writer.data = indexWriterWriteSymbols(writer.writer, writer.data)
 	return writer.data
 }
 
 func (writer *IndexWriter) WriteNextSeriesBatch(batch_size uint32) ([]byte, bool) {
-	has_more_data := false
-	indexWriterWriteNextSeriesBatch(writer.writer, batch_size, &writer.data, &has_more_data)
+	var has_more_data bool
+	writer.data, has_more_data = indexWriterWriteNextSeriesBatch(writer.writer, batch_size, writer.data)
 	return writer.data, has_more_data
 }
 
 func (writer *IndexWriter) WriteLabelIndices() []byte {
-	indexWriterWriteLabelIndices(writer.writer, &writer.data)
+	writer.data = indexWriterWriteLabelIndices(writer.writer, writer.data)
 	return writer.data
 }
 
 func (writer *IndexWriter) WriteNextPostingsBatch(max_batch_size uint32) ([]byte, bool) {
-	has_more_data := false
-	indexWriterWriteNextPostingsBatch(writer.writer, max_batch_size, &writer.data, &has_more_data)
+	var has_more_data bool
+	writer.data, has_more_data = indexWriterWriteNextPostingsBatch(writer.writer, max_batch_size, writer.data)
 	return writer.data, has_more_data
 }
 
 func (writer *IndexWriter) WriteLabelIndicesTable() []byte {
-	indexWriterWriteLabelIndicesTable(writer.writer, &writer.data)
+	writer.data = indexWriterWriteLabelIndicesTable(writer.writer, writer.data)
 	return writer.data
 }
 
 func (writer *IndexWriter) WritePostingsTableOffsets() []byte {
-	indexWriterWritePostingsTableOffsets(writer.writer, &writer.data)
+	writer.data = indexWriterWritePostingsTableOffsets(writer.writer, writer.data)
 	return writer.data
 }
 
 func (writer *IndexWriter) WriteTableOfContents() []byte {
-	indexWriterWriteTableOfContents(writer.writer, &writer.data)
+	writer.data = indexWriterWriteTableOfContents(writer.writer, writer.data)
 	return writer.data
 }

@@ -124,6 +124,7 @@ class LabelReverseIndex {
   }
   [[nodiscard]] PROMPP_ALWAYS_INLINE const CompactSeriesIdSequence* get_all() const noexcept { return &all_series_; }
 
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t count() const noexcept { return series_by_value_.size(); }
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return all_series_.allocated_memory() + series_by_value_.allocated_memory(); }
 
  private:
@@ -162,6 +163,10 @@ class SeriesReverseIndex {
     return exists(label_name_id) ? labels_by_name_[label_name_id].get(label_value_id) : nullptr;
   }
 
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t names_count() const noexcept { return labels_by_name_.size(); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t values_count(uint32_t label_name_id) const noexcept {
+    return exists(label_name_id) ? labels_by_name_[label_name_id].count() : 0;
+  }
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return labels_by_name_.allocated_memory(); }
 
  private:

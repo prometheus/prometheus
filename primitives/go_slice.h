@@ -339,10 +339,14 @@ class BytesStream : public std::ostream {
  public:
   explicit BytesStream(Slice<char>* s) : std::ostream(&buffer_), buffer_(s) {}
 
+  PROMPP_ALWAYS_INLINE void reserve(size_t size) noexcept { buffer_.reserve(size); }
+
  private:
   class output_buffer : public std::streambuf {
    public:
     explicit output_buffer(Slice<char>* s) : slice_(s) {}
+
+    PROMPP_ALWAYS_INLINE void reserve(size_t size) noexcept { slice_->reserve(size); }
 
    private:
     Slice<char>* slice_;

@@ -1350,13 +1350,13 @@ func indexWriterDtor(writer uintptr) {
 	)
 }
 
-func indexWriterWriteHeader(writer uintptr, data *[]byte) {
+func indexWriterWriteHeader(writer uintptr, data []byte) []byte {
 	var args = struct {
 		writer uintptr
 	}{writer}
 
 	var res = struct {
-		data *[]byte
+		data []byte
 	}{data}
 
 	fastcgo.UnsafeCall2(
@@ -1364,15 +1364,17 @@ func indexWriterWriteHeader(writer uintptr, data *[]byte) {
 		uintptr(unsafe.Pointer(&args)),
 		uintptr(unsafe.Pointer(&res)),
 	)
+
+	return res.data
 }
 
-func indexWriterWriteSymbols(writer uintptr, data *[]byte) {
+func indexWriterWriteSymbols(writer uintptr, data []byte) []byte {
 	var args = struct {
 		writer uintptr
 	}{writer}
 
 	var res = struct {
-		data *[]byte
+		data []byte
 	}{data}
 
 	fastcgo.UnsafeCall2(
@@ -1380,18 +1382,20 @@ func indexWriterWriteSymbols(writer uintptr, data *[]byte) {
 		uintptr(unsafe.Pointer(&args)),
 		uintptr(unsafe.Pointer(&res)),
 	)
+
+	return res.data
 }
 
-func indexWriterWriteNextSeriesBatch(writer uintptr, batch_size uint32, data *[]byte, has_more_data *bool) {
+func indexWriterWriteNextSeriesBatch(writer uintptr, batch_size uint32, data []byte) ([]byte, bool) {
 	var args = struct {
 		writer     uintptr
 		batch_size uint32
 	}{writer, batch_size}
 
 	var res = struct {
+		data          []byte
 		has_more_data bool
-		data          *[]byte
-	}{false, data}
+	}{data, false}
 
 	fastcgo.UnsafeCall2(
 		C.prompp_index_writer_write_next_series_batch,
@@ -1399,16 +1403,16 @@ func indexWriterWriteNextSeriesBatch(writer uintptr, batch_size uint32, data *[]
 		uintptr(unsafe.Pointer(&res)),
 	)
 
-	*has_more_data = res.has_more_data
+	return res.data, res.has_more_data
 }
 
-func indexWriterWriteLabelIndices(writer uintptr, data *[]byte) {
+func indexWriterWriteLabelIndices(writer uintptr, data []byte) []byte {
 	var args = struct {
 		writer uintptr
 	}{writer}
 
 	var res = struct {
-		data *[]byte
+		data []byte
 	}{data}
 
 	fastcgo.UnsafeCall2(
@@ -1416,18 +1420,20 @@ func indexWriterWriteLabelIndices(writer uintptr, data *[]byte) {
 		uintptr(unsafe.Pointer(&args)),
 		uintptr(unsafe.Pointer(&res)),
 	)
+
+	return res.data
 }
 
-func indexWriterWriteNextPostingsBatch(writer uintptr, max_batch_size uint32, data *[]byte, has_more_data *bool) {
+func indexWriterWriteNextPostingsBatch(writer uintptr, max_batch_size uint32, data []byte) ([]byte, bool) {
 	var args = struct {
 		writer         uintptr
 		max_batch_size uint32
 	}{writer, max_batch_size}
 
 	var res = struct {
+		data          []byte
 		has_more_data bool
-		data          *[]byte
-	}{false, data}
+	}{data, false}
 
 	fastcgo.UnsafeCall2(
 		C.prompp_index_writer_write_next_postings_batch,
@@ -1435,16 +1441,16 @@ func indexWriterWriteNextPostingsBatch(writer uintptr, max_batch_size uint32, da
 		uintptr(unsafe.Pointer(&res)),
 	)
 
-	*has_more_data = res.has_more_data
+	return res.data, res.has_more_data
 }
 
-func indexWriterWriteLabelIndicesTable(writer uintptr, data *[]byte) {
+func indexWriterWriteLabelIndicesTable(writer uintptr, data []byte) []byte {
 	var args = struct {
 		writer uintptr
 	}{writer}
 
 	var res = struct {
-		data *[]byte
+		data []byte
 	}{data}
 
 	fastcgo.UnsafeCall2(
@@ -1452,15 +1458,17 @@ func indexWriterWriteLabelIndicesTable(writer uintptr, data *[]byte) {
 		uintptr(unsafe.Pointer(&args)),
 		uintptr(unsafe.Pointer(&res)),
 	)
+
+	return res.data
 }
 
-func indexWriterWritePostingsTableOffsets(writer uintptr, data *[]byte) {
+func indexWriterWritePostingsTableOffsets(writer uintptr, data []byte) []byte {
 	var args = struct {
 		writer uintptr
 	}{writer}
 
 	var res = struct {
-		data *[]byte
+		data []byte
 	}{data}
 
 	fastcgo.UnsafeCall2(
@@ -1468,15 +1476,17 @@ func indexWriterWritePostingsTableOffsets(writer uintptr, data *[]byte) {
 		uintptr(unsafe.Pointer(&args)),
 		uintptr(unsafe.Pointer(&res)),
 	)
+
+	return res.data
 }
 
-func indexWriterWriteTableOfContents(writer uintptr, data *[]byte) {
+func indexWriterWriteTableOfContents(writer uintptr, data []byte) []byte {
 	var args = struct {
 		writer uintptr
 	}{writer}
 
 	var res = struct {
-		data *[]byte
+		data []byte
 	}{data}
 
 	fastcgo.UnsafeCall2(
@@ -1484,4 +1494,6 @@ func indexWriterWriteTableOfContents(writer uintptr, data *[]byte) {
 		uintptr(unsafe.Pointer(&args)),
 		uintptr(unsafe.Pointer(&res)),
 	)
+
+	return res.data
 }

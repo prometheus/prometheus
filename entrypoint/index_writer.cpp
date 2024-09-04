@@ -9,7 +9,7 @@
 using PromPP::Primitives::Go::SliceView;
 using series_index::prometheus::tsdb::index::ChunkMetadata;
 using ChunkMetadataList = SliceView<SliceView<ChunkMetadata>>;
-using IndexWriter = series_index::prometheus::tsdb::index::IndexWriter<ChunkMetadataList>;
+using IndexWriter = series_index::prometheus::tsdb::index::IndexWriter<ChunkMetadataList, PromPP::Primitives::Go::BytesStream>;
 using IndexWriterPtr = std::unique_ptr<IndexWriter>;
 
 static_assert(sizeof(IndexWriterPtr) == sizeof(void*));
@@ -45,10 +45,10 @@ extern "C" void prompp_index_writer_write_header(void* args, void* res) {
     IndexWriterPtr writer;
   };
   struct Result {
-    PromPP::Primitives::Go::Slice<char>* buffer;
+    PromPP::Primitives::Go::Slice<char> buffer;
   };
 
-  auto stream = create_bytes_stream(*reinterpret_cast<Result*>(res)->buffer);
+  auto stream = create_bytes_stream(reinterpret_cast<Result*>(res)->buffer);
   reinterpret_cast<Arguments*>(args)->writer->write_header(stream);
 }
 
@@ -57,10 +57,10 @@ extern "C" void prompp_index_writer_write_symbols(void* args, void* res) {
     IndexWriterPtr writer;
   };
   struct Result {
-    PromPP::Primitives::Go::Slice<char>* buffer;
+    PromPP::Primitives::Go::Slice<char> buffer;
   };
 
-  auto stream = create_bytes_stream(*reinterpret_cast<Result*>(res)->buffer);
+  auto stream = create_bytes_stream(reinterpret_cast<Result*>(res)->buffer);
   reinterpret_cast<Arguments*>(args)->writer->write_symbols(stream);
 }
 
@@ -70,14 +70,14 @@ extern "C" void prompp_index_writer_write_next_series_batch(void* args, void* re
     uint32_t batch_size;
   };
   struct Result {
+    PromPP::Primitives::Go::Slice<char> buffer;
     bool has_more_data;
-    PromPP::Primitives::Go::Slice<char>* buffer;
   };
 
   auto in = reinterpret_cast<Arguments*>(args);
   auto out = reinterpret_cast<Result*>(res);
 
-  auto stream = create_bytes_stream(*out->buffer);
+  auto stream = create_bytes_stream(out->buffer);
   in->writer->write_series(stream, in->batch_size);
   out->has_more_data = in->writer->has_more_series_data();
 }
@@ -87,10 +87,10 @@ extern "C" void prompp_index_writer_write_label_indices(void* args, void* res) {
     IndexWriterPtr writer;
   };
   struct Result {
-    PromPP::Primitives::Go::Slice<char>* buffer;
+    PromPP::Primitives::Go::Slice<char> buffer;
   };
 
-  auto stream = create_bytes_stream(*reinterpret_cast<Result*>(res)->buffer);
+  auto stream = create_bytes_stream(reinterpret_cast<Result*>(res)->buffer);
   reinterpret_cast<Arguments*>(args)->writer->write_label_indices(stream);
 }
 
@@ -100,14 +100,14 @@ extern "C" void prompp_index_writer_write_next_postings_batch(void* args, void* 
     uint32_t max_batch_size;
   };
   struct Result {
+    PromPP::Primitives::Go::Slice<char> buffer;
     bool has_more_data;
-    PromPP::Primitives::Go::Slice<char>* buffer;
   };
 
   auto in = reinterpret_cast<Arguments*>(args);
   auto out = reinterpret_cast<Result*>(res);
 
-  auto stream = create_bytes_stream(*out->buffer);
+  auto stream = create_bytes_stream(out->buffer);
   in->writer->write_postings(stream, in->max_batch_size);
   out->has_more_data = in->writer->has_more_postings_data();
 }
@@ -117,10 +117,10 @@ extern "C" void prompp_index_writer_write_label_indices_table(void* args, void* 
     IndexWriterPtr writer;
   };
   struct Result {
-    PromPP::Primitives::Go::Slice<char>* buffer;
+    PromPP::Primitives::Go::Slice<char> buffer;
   };
 
-  auto stream = create_bytes_stream(*reinterpret_cast<Result*>(res)->buffer);
+  auto stream = create_bytes_stream(reinterpret_cast<Result*>(res)->buffer);
   reinterpret_cast<Arguments*>(args)->writer->write_label_indices_table(stream);
 }
 
@@ -129,10 +129,10 @@ extern "C" void prompp_index_writer_write_postings_table_offsets(void* args, voi
     IndexWriterPtr writer;
   };
   struct Result {
-    PromPP::Primitives::Go::Slice<char>* buffer;
+    PromPP::Primitives::Go::Slice<char> buffer;
   };
 
-  auto stream = create_bytes_stream(*reinterpret_cast<Result*>(res)->buffer);
+  auto stream = create_bytes_stream(reinterpret_cast<Result*>(res)->buffer);
   reinterpret_cast<Arguments*>(args)->writer->write_postings_table_offsets(stream);
 }
 
@@ -141,9 +141,9 @@ extern "C" void prompp_index_writer_write_table_of_contents(void* args, void* re
     IndexWriterPtr writer;
   };
   struct Result {
-    PromPP::Primitives::Go::Slice<char>* buffer;
+    PromPP::Primitives::Go::Slice<char> buffer;
   };
 
-  auto stream = create_bytes_stream(*reinterpret_cast<Result*>(res)->buffer);
+  auto stream = create_bytes_stream(reinterpret_cast<Result*>(res)->buffer);
   reinterpret_cast<Arguments*>(args)->writer->write_toc(stream);
 }

@@ -5,18 +5,23 @@
 namespace BareBones::concepts {
 
 template <class T>
-concept have_allocated_memory = requires(const T& t) {
+concept has_allocated_memory = requires(const T& t) {
   { t.allocated_memory() };
 };
 
 template <class T>
-concept dereferenceable_have_allocated_memory = requires(const T& t) {
+concept dereferenceable_has_allocated_memory = requires(const T& t) {
   { t->allocated_memory() };
 };
 
 template <class T>
-concept have_capacity = requires(const T& t) {
+concept has_capacity = requires(const T& t) {
   { t.capacity() };
+};
+
+template <class T>
+concept has_reserve = requires(T& r) {
+  { r.reserve(size_t{}) };
 };
 
 template <class Clock>
@@ -29,11 +34,6 @@ template <class Clock>
 concept SteadyClockInterface = requires(Clock& clock) {
   { typename Clock::time_point{} } -> std::same_as<std::chrono::steady_clock::time_point>;
   { clock.now() };
-};
-
-template <class T>
-concept have_field_segment_id = requires(const T& t) {
-  { t.segment_id };
 };
 
 }  // namespace BareBones::concepts

@@ -7,10 +7,12 @@
 
 namespace series_index::prometheus::tsdb::index::section_writer {
 
-template <class Lss>
+template <class Lss, class Stream>
 class PostingsWriter {
  public:
-  using StreamWriter = PromPP::Prometheus::tsdb::index::StreamWriter;
+  using StreamWriter = PromPP::Prometheus::tsdb::index::StreamWriter<Stream>;
+  using StringWriter = PromPP::Prometheus::tsdb::index::StringWriter;
+  using NoCrc32 = PromPP::Prometheus::tsdb::index::NoCrc32Tag;
 
   static constexpr uint32_t kUnlimitedBatchSize = std::numeric_limits<uint32_t>::max();
 
@@ -18,11 +20,9 @@ class PostingsWriter {
       : lss_(lss), trie_index_iterator_(lss_.trie_index().begin()), series_references_(series_references), writer_(writer) {}
 
   void write_postings(uint32_t max_batch_size = kUnlimitedBatchSize) {
-    auto const is_batch_filled = [this, max_batch_size, writer_start_position = writer_.position()]()
-                                     PROMPP_LAMBDA_INLINE { return writer_.position() - writer_start_position >= max_batch_size; };
+    auto const is_batch_filled = [this, max_batch_size]() PROMPP_LAMBDA_INLINE { return writer_.size() >= max_batch_size; };
 
-    if (!entries_placeholder_) {
-      entries_placeholder_ = StreamWriter::write_number_placeholder<uint32_t>(postings_table_offsets_);
+    if (entries_ == 0) {
       write_posting_with_all_series();
 
       if (is_batch_filled()) {
@@ -42,11 +42,12 @@ class PostingsWriter {
   }
 
   void write_postings_table_offsets() const {
-    entries_placeholder_->set(entries_);
-
-    writer_.write_uint32(postings_table_offsets_.size());
-    writer_.write(postings_table_offsets_);
-    writer_.compute_and_write_crc32(postings_table_offsets_);
+    const uint32_t payload_size = sizeof(entries_) + table_offsets_writer_.size();
+    writer_.write_payload(payload_size, [this, payload_size]() mutable {
+      writer_.template write_uint32<NoCrc32>(payload_size);
+      writer_.write_uint32(entries_);
+      writer_.write(table_offsets_writer_.writer().buffer());
+    });
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE bool has_more_data() const noexcept { return trie_index_iterator_ != lss_.trie_index().end(); }
@@ -57,9 +58,7 @@ class PostingsWriter {
   const SeriesReferencesMap& series_references_;
   StreamWriter& writer_;
 
-  std::optional<StreamWriter::NumberPlaceholder<uint32_t>> entries_placeholder_;
-  std::string serialized_posting_;
-  std::string postings_table_offsets_;
+  StringWriter table_offsets_writer_;
   std::vector<uint32_t> series_reference_list_;
   uint32_t entries_{};
 
@@ -68,9 +67,6 @@ class PostingsWriter {
 
     series_reference_list_.clear();
     series_reference_list_.shrink_to_fit();
-
-    serialized_posting_.clear();
-    serialized_posting_.shrink_to_fit();
   }
 
   template <class SeriesReference>
@@ -78,28 +74,34 @@ class PostingsWriter {
     add_posting_table_offset_item(name, value, writer_.position());
 
     generate_series_references(series_reference);
-    serialize_posting();
-    write_serialized_posting();
+    write_posting_entry();
 
     ++entries_;
   }
 
-  void write_serialized_posting() const {
-    writer_.write_uint32(serialized_posting_.size());
-    writer_.write(serialized_posting_);
-    writer_.compute_and_write_crc32(serialized_posting_);
+  void write_posting_entry() const {
+    const uint32_t series_count = series_reference_list_.size();
+    const uint32_t payload_size = sizeof(series_count) + series_count * sizeof(PromPP::Prometheus::tsdb::index::SeriesReference);
+
+    writer_.write_payload(payload_size, [this, series_count, payload_size]() mutable {
+      writer_.template write_uint32<NoCrc32>(payload_size);
+      writer_.write_uint32(series_count);
+      for (auto series_reference : series_reference_list_) {
+        writer_.write_uint32(series_reference);
+      }
+    });
   }
 
   void add_posting_table_offset_item(std::string_view name, std::string_view value, size_t position) {
-    postings_table_offsets_.push_back(0x02);
+    table_offsets_writer_.write<NoCrc32>(0x02);
 
-    StreamWriter::write_uvarint(name.length(), postings_table_offsets_);
-    postings_table_offsets_ += name;
+    table_offsets_writer_.write_varint<NoCrc32>(static_cast<uint64_t>(name.length()));
+    table_offsets_writer_.write<NoCrc32>(name);
 
-    StreamWriter::write_uvarint(value.length(), postings_table_offsets_);
-    postings_table_offsets_ += value;
+    table_offsets_writer_.write_varint<NoCrc32>(static_cast<uint64_t>(value.length()));
+    table_offsets_writer_.write<NoCrc32>(value);
 
-    StreamWriter::write_uvarint(position, postings_table_offsets_);
+    table_offsets_writer_.write_varint<NoCrc32>(static_cast<uint64_t>(position));
   }
 
   template <class SeriesIdList>
@@ -124,18 +126,6 @@ class PostingsWriter {
     }
 
     std::ranges::sort(series_reference_list_);
-  }
-
-  void serialize_posting() {
-    const auto size = sizeof(uint32_t) + series_reference_list_.size() * sizeof(PromPP::Prometheus::tsdb::index::SeriesReference);
-
-    serialized_posting_.clear();
-    serialized_posting_.reserve(size);
-    StreamWriter::write_uint32(series_reference_list_.size(), serialized_posting_);
-
-    for (auto series_reference : series_reference_list_) {
-      StreamWriter::write_uint32(series_reference, serialized_posting_);
-    }
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE const CompactSeriesIdSequence& get_series_ids_sequence(uint32_t name_id, uint32_t value_id) const noexcept {

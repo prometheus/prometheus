@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 	"math"
 	"math/rand"
 	"runtime"
@@ -55,10 +54,9 @@ func (i *IncomingData) ShardedData() cppbridge.ShardedData {
 // Destroy increment or destroy IncomingData.
 func (i *IncomingData) Destroy() {
 	i.Hashdex = nil
-	if i.Data == nil {
-		return
+	if i.Data != nil {
+		i.Data.Destroy()
 	}
-	i.Data.Destroy()
 }
 
 // relabelerKey - key for relabeler.

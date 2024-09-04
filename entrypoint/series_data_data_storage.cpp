@@ -10,7 +10,7 @@ using DataStoragePtr = std::unique_ptr<series_data::DataStorage>;
 
 static_assert(sizeof(DataStoragePtr) == sizeof(void*));
 
-};  // namespace
+}  // namespace
 
 extern "C" void prompp_series_data_data_storage_ctor(void* res) {
   using Result = struct {
@@ -38,13 +38,13 @@ extern "C" void prompp_series_data_data_storage_dtor(void* args) {
 
 extern "C" void prompp_series_data_chunk_recoder_ctor(void* args, void* res) {
   struct Arguments {
-    series_data::DataStorage* data_storage;
+    DataStoragePtr data_storage;
   };
   struct Result {
     entrypoint::ChunkRecoderPtr chunk_recoder;
   };
 
-  new (res) Result{.chunk_recoder = std::make_unique<entrypoint::ChunkRecoder>(reinterpret_cast<Arguments*>(args)->data_storage)};
+  new (res) Result{.chunk_recoder = std::make_unique<entrypoint::ChunkRecoder>(reinterpret_cast<Arguments*>(args)->data_storage.get())};
 }
 
 extern "C" void prompp_series_data_chunk_recoder_recode_next_chunk(void* args, void* res) {
@@ -73,5 +73,5 @@ extern "C" void prompp_series_data_chunk_recoder_dtor(void* args) {
     entrypoint::ChunkRecoderPtr chunk_recoder;
   };
 
-  reinterpret_cast<Arguments*>(args)->chunk_recoder.~unique_ptr();
+  reinterpret_cast<Arguments*>(args)->~Arguments();
 }

@@ -9,11 +9,9 @@
 namespace {
 
 using PromPP::Primitives::LabelViewSet;
-using PromPP::Prometheus::tsdb::index::StreamWriter;
 using series_index::prometheus::tsdb::index::ChunkMetadata;
 using series_index::prometheus::tsdb::index::SeriesReferencesMap;
 using series_index::prometheus::tsdb::index::SymbolReferencesMap;
-using series_index::prometheus::tsdb::index::section_writer::SeriesWriter;
 using series_index::prometheus::tsdb::index::section_writer::SymbolsWriter;
 using std::operator""sv;
 
@@ -31,8 +29,11 @@ class SeriesWriterFixture : public testing::TestWithParam<SeriesWriterCase> {
  protected:
   using TrieIndex = series_index::TrieIndex<series_index::trie::CedarTrie, series_index::trie::CedarMatchesList>;
   using QueryableEncodingBimap = series_index::QueryableEncodingBimap<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimapFilament, TrieIndex>;
+  using Stream = std::ostringstream;
+  using StreamWriter = PromPP::Prometheus::tsdb::index::StreamWriter<Stream>;
+  using SeriesWriter = series_index::prometheus::tsdb::index::section_writer::SeriesWriter<QueryableEncodingBimap, ChunkMetadataList, Stream>;
 
-  std::ostringstream stream_;
+  Stream stream_;
   StreamWriter stream_writer_{&stream_};
   QueryableEncodingBimap lss_;
   SymbolReferencesMap symbol_references_;
@@ -141,7 +142,7 @@ TEST_F(SeriesWriterFixture, PartialWrite) {
       {{"job", "cron"}, {"server", "127.0.0.1"}},
   });
   ChunkMetadataList chunk_metadata_list{{}, {}};
-  SeriesWriter<QueryableEncodingBimap, ChunkMetadataList> series_writer{lss_, chunk_metadata_list, symbol_references_, series_references_};
+  SeriesWriter series_writer{lss_, chunk_metadata_list, symbol_references_, series_references_};
 
   // Act
   series_writer.write(stream_writer_, 1);

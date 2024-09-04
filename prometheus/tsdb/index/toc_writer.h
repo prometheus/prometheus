@@ -6,9 +6,10 @@
 
 namespace PromPP::Prometheus::tsdb::index {
 
+template <class Stream>
 class TocWriter {
  public:
-  TocWriter(const Toc& toc, StreamWriter& writer) : toc_(toc), writer_(writer) {}
+  TocWriter(const Toc& toc, StreamWriter<Stream>& writer) : toc_(toc), writer_(writer) {}
 
   void write() {
     Toc toc{
@@ -20,14 +21,14 @@ class TocWriter {
         .postings_offset_table = BareBones::Bit::be(toc_.postings_offset_table),
     };
 
-    std::string_view toc_view{reinterpret_cast<const char*>(&toc), sizeof(toc)};
-    writer_.write(toc_view);
-    writer_.compute_and_write_crc32(toc_view);
+    writer_.reset_crc32();
+    writer_.write({reinterpret_cast<const char*>(&toc), sizeof(toc)});
+    writer_.write_crc32();
   }
 
  private:
   const Toc& toc_;
-  StreamWriter& writer_;
+  StreamWriter<Stream>& writer_;
 };
 
 }  // namespace PromPP::Prometheus::tsdb::index

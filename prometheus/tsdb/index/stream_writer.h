@@ -6,125 +6,172 @@
 #include "absl/crc/crc32c.h"
 
 #include "bare_bones/bit.h"
+#include "bare_bones/concepts.h"
 #include "bare_bones/preprocess.h"
 #include "bare_bones/varint.h"
 
 namespace PromPP::Prometheus::tsdb::index {
 
-class StreamWriter {
+template <class Writer>
+concept WriterInterface = requires(Writer& writer, const Writer& const_writer, const void* memory) {
+  { writer.write(memory, uint32_t()) };
+  { writer.reserve(uint32_t()) };
+  { const_writer.position() } -> std::same_as<uint32_t>;
+  { const_writer.size() } -> std::same_as<uint32_t>;
+};
+
+template <class Stream>
+class StreamWriterImpl {
  public:
-  template <class NumberType>
-  class NumberPlaceholder {
-   public:
-    explicit NumberPlaceholder(std::string& memory) : NumberPlaceholder(memory, memory.length()) {}
-    NumberPlaceholder(std::string& memory, uint32_t offset) : memory_(&memory), offset_(offset) {}
+  explicit StreamWriterImpl(Stream* stream = nullptr) : stream_(stream) {}
 
-    PROMPP_ALWAYS_INLINE NumberType get() const noexcept { return BareBones::Bit::be_to_native(*number()); }
-    PROMPP_ALWAYS_INLINE void set(NumberType value) const noexcept { *number() = BareBones::Bit::be(value); }
-
-   private:
-    std::string* memory_;
-    uint32_t offset_;
-
-    [[nodiscard]] PROMPP_ALWAYS_INLINE NumberType* number() const noexcept { return reinterpret_cast<NumberType*>(memory_->data() + offset_); }
-  };
-
-  class Writer {
-   public:
-    explicit Writer(std::ostream* stream = nullptr) : stream_(stream) {}
-
-    PROMPP_ALWAYS_INLINE void set_stream(std::ostream* stream) noexcept { stream_ = stream; }
-
-    PROMPP_ALWAYS_INLINE void write_bytes(const void* memory, uint32_t size) noexcept {
+  PROMPP_ALWAYS_INLINE void reserve(uint32_t size) noexcept {
+    if constexpr (BareBones::concepts::has_reserve<Stream>) {
       assert(stream_ != nullptr);
 
-      stream_->write(reinterpret_cast<const char*>(memory), static_cast<std::streamsize>(size));
-      position_ += size;
+      stream_->reserve(size_ + size);
     }
+  }
 
-    template <class Number>
-    PROMPP_ALWAYS_INLINE void write_number(Number number) noexcept {
-      write_bytes(&number, sizeof(number));
+  PROMPP_ALWAYS_INLINE void set_stream(Stream* stream) noexcept {
+    stream_ = stream;
+    size_ = 0;
+  }
+
+  PROMPP_ALWAYS_INLINE void write(const void* memory, uint32_t size) noexcept {
+    assert(stream_ != nullptr);
+
+    stream_->write(reinterpret_cast<const char*>(memory), static_cast<std::streamsize>(size));
+    position_ += size;
+    size_ += size;
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t position() const noexcept { return position_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t size() const noexcept { return size_; }
+
+ private:
+  Stream* stream_;
+  uint32_t position_{};
+  uint32_t size_{};
+};
+
+class StringWriterImpl {
+ public:
+  PROMPP_ALWAYS_INLINE void reserve(uint32_t size) noexcept { buffer_.reserve(buffer_.size() + size); }
+
+  PROMPP_ALWAYS_INLINE void write(const void* memory, uint32_t size) noexcept { buffer_.append(reinterpret_cast<const char*>(memory), size); }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const std::string& buffer() const noexcept { return buffer_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t position() const noexcept { return buffer_.size(); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t size() const noexcept { return buffer_.size(); }
+
+  PROMPP_ALWAYS_INLINE void free_memory() noexcept {
+    buffer_.clear();
+    buffer_.shrink_to_fit();
+  }
+
+  PROMPP_ALWAYS_INLINE void clear() noexcept { buffer_.clear(); }
+
+ private:
+  std::string buffer_;
+};
+
+struct Crc32Tag {};
+struct NoCrc32Tag {};
+
+template <WriterInterface WriterImpl>
+class Writer {
+ public:
+  template <class... Args>
+  explicit Writer(Args&&... args)
+    requires(std::constructible_from<WriterImpl, Args...>)
+      : writer_(std::forward<Args>(args)...) {}
+
+  const WriterImpl& writer() const noexcept { return writer_; }
+  WriterImpl& writer() noexcept { return writer_; }
+
+  PROMPP_ALWAYS_INLINE void reserve(uint32_t size) noexcept { writer_.reserve(size); }
+
+  template <class crc32 = Crc32Tag, class NumberType>
+    requires(std::is_same_v<uint64_t, NumberType> || std::is_same_v<int64_t, NumberType>)
+  PROMPP_ALWAYS_INLINE void write_varint(NumberType value) noexcept {
+    uint8_t buffer[BareBones::Encoding::VarInt::kMaxVarIntLength];
+    auto size = BareBones::Encoding::VarInt::write(buffer, value);
+    writer_.write(buffer, size);
+
+    if constexpr (std::is_same_v<crc32, Crc32Tag>) {
+      extend_crc32(buffer, size);
     }
-
-    [[nodiscard]] PROMPP_ALWAYS_INLINE size_t position() const noexcept { return position_; }
-
-   private:
-    std::ostream* stream_;
-    size_t position_{};
-  };
-
-  explicit StreamWriter(std::ostream* stream = nullptr) : writer_(stream) {}
-
-  template <class NumberType>
-  [[nodiscard]] PROMPP_ALWAYS_INLINE static NumberPlaceholder<NumberType> write_number_placeholder(std::string& str) noexcept {
-    NumberPlaceholder<NumberType> result{str};
-
-    NumberType stub{};
-    str.append(reinterpret_cast<const char*>(&stub), sizeof(stub));
-
-    return result;
   }
 
-  PROMPP_ALWAYS_INLINE static void write_uint32(uint32_t value, std::string& str) noexcept {
-    value = BareBones::Bit::be(value);
-    str.append(reinterpret_cast<const char*>(&value), sizeof(value));
+  template <class crc32 = Crc32Tag, class NumberType>
+  PROMPP_ALWAYS_INLINE void write_number(NumberType number) noexcept {
+    writer_.write(&number, sizeof(number));
+
+    if constexpr (std::is_same_v<crc32, Crc32Tag>) {
+      extend_crc32(&number, sizeof(number));
+    }
   }
 
-  PROMPP_ALWAYS_INLINE static void write_uvarint(uint64_t value, std::string& str) noexcept {
-    uint8_t buffer[BareBones::Encoding::VarInt::kMaxVarIntLength];
-    str.append(reinterpret_cast<const char*>(buffer), static_cast<std::streamsize>(BareBones::Encoding::VarInt::write(buffer, value)));
+  template <class crc32 = Crc32Tag>
+  PROMPP_ALWAYS_INLINE void write_uint32(uint32_t value) noexcept {
+    write_number<crc32>(BareBones::Bit::be(value));
   }
 
-  PROMPP_ALWAYS_INLINE static void write_varint(int64_t value, std::string& str) noexcept {
-    uint8_t buffer[BareBones::Encoding::VarInt::kMaxVarIntLength];
-    str.append(reinterpret_cast<const char*>(buffer), static_cast<std::streamsize>(BareBones::Encoding::VarInt::write(buffer, value)));
+  template <class crc32 = Crc32Tag>
+  PROMPP_ALWAYS_INLINE void write(uint8_t byte) noexcept {
+    write_number<crc32>(byte);
   }
 
-  PROMPP_ALWAYS_INLINE static absl::crc32c_t crc32_of_varint(uint64_t value) noexcept {
-    uint8_t buffer[BareBones::Encoding::VarInt::kMaxVarIntLength];
-    return absl::ComputeCrc32c({reinterpret_cast<const char*>(buffer), BareBones::Encoding::VarInt::write(buffer, value)});
+  template <class crc32 = Crc32Tag>
+  PROMPP_ALWAYS_INLINE void write(std::string_view buffer) noexcept {
+    writer_.write(buffer.data(), buffer.size());
+
+    if constexpr (std::is_same_v<crc32, Crc32Tag>) {
+      extend_crc32(buffer);
+    }
   }
 
-  PROMPP_ALWAYS_INLINE void set_stream(std::ostream* stream) noexcept { writer_.set_stream(stream); }
+  PROMPP_ALWAYS_INLINE void write_crc32() noexcept { write_uint32(static_cast<uint32_t>(crc32_)); }
+  PROMPP_ALWAYS_INLINE void reset_crc32() noexcept { crc32_ = absl::crc32c_t{0}; }
 
-  PROMPP_ALWAYS_INLINE void write_uvarint(uint64_t value) noexcept {
-    uint8_t buffer[BareBones::Encoding::VarInt::kMaxVarIntLength];
-    writer_.write_bytes(buffer, BareBones::Encoding::VarInt::write(buffer, value));
-  }
-
-  PROMPP_ALWAYS_INLINE void write_varint(int64_t value) noexcept {
-    uint8_t buffer[BareBones::Encoding::VarInt::kMaxVarIntLength];
-    writer_.write_bytes(buffer, BareBones::Encoding::VarInt::write(buffer, value));
-  }
-
-  PROMPP_ALWAYS_INLINE void write_uint32(uint32_t value) noexcept { writer_.write_number(BareBones::Bit::be(value)); }
-
-  PROMPP_ALWAYS_INLINE void write_uint64(uint64_t value) noexcept { writer_.write_number(BareBones::Bit::be(value)); }
-
-  PROMPP_ALWAYS_INLINE void write(uint8_t byte) noexcept { writer_.write_number(byte); }
-  PROMPP_ALWAYS_INLINE void write(std::string_view buffer) noexcept { writer_.write_bytes(buffer.data(), buffer.size()); }
-
-  PROMPP_ALWAYS_INLINE void compute_and_write_crc32(std::string_view buffer) noexcept { write_uint32(static_cast<uint32_t>(absl::ComputeCrc32c(buffer))); }
-
-  PROMPP_ALWAYS_INLINE void align_to(uint32_t size) {
+  void align_to(uint32_t size) noexcept {
     static constexpr uint64_t kZeroBytesPadding = 0ULL;
 
     if (auto rest = position() % size; rest != 0) {
       auto padding_bytes = size - rest;
       while (padding_bytes >= sizeof(kZeroBytesPadding)) {
-        writer_.write_number(kZeroBytesPadding);
+        write_number<NoCrc32Tag>(kZeroBytesPadding);
         padding_bytes -= sizeof(kZeroBytesPadding);
       }
 
-      writer_.write_bytes(&kZeroBytesPadding, padding_bytes);
+      writer_.write(&kZeroBytesPadding, padding_bytes);
     }
   }
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t position() const noexcept { return writer_.position(); }
+  template <class PayloadWriter>
+  void write_payload(uint32_t payload_size, PayloadWriter&& write_payload) noexcept {
+    reset_crc32();
+    reserve(sizeof(payload_size) + payload_size);
+
+    write_payload();
+
+    write_crc32();
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t position() const noexcept { return writer_.position(); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t size() const noexcept { return writer_.size(); }
 
  private:
-  Writer writer_;
+  WriterImpl writer_;
+  absl::crc32c_t crc32_{0};
+
+  PROMPP_ALWAYS_INLINE void extend_crc32(const void* memory, size_t size) noexcept { extend_crc32({reinterpret_cast<const char*>(memory), size}); }
+  PROMPP_ALWAYS_INLINE void extend_crc32(std::string_view buffer) noexcept { crc32_ = absl::ExtendCrc32c(crc32_, buffer); }
 };
+
+template <class Stream>
+using StreamWriter = Writer<StreamWriterImpl<Stream>>;
+using StringWriter = Writer<StringWriterImpl>;
 
 }  // namespace PromPP::Prometheus::tsdb::index

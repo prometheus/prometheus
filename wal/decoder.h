@@ -10,8 +10,8 @@
 #error "Your C++ Standard library doesn't implement the std::spanstream. Make sure that you use conformant Library (e.g., libstdc++ from GCC 12)"
 #endif
 
-#include "bare_bones/concepts.h"
 #include "bare_bones/preprocess.h"
+#include "concepts.h"
 #include "prometheus/remote_write.h"
 #include "third_party/protozero/pbf_writer.hpp"
 #include "wal.h"
@@ -39,7 +39,7 @@ class TimeseriesProtobufWriter {
     stats.earliest_block_sample = decoder_.earliest_sample();
     stats.latest_block_sample = decoder_.latest_sample();
 
-    if constexpr (BareBones::concepts::have_field_segment_id<Stats>) {
+    if constexpr (concepts::has_field_segment_id<Stats>) {
       stats.segment_id = decoder_.last_processed_segment();
     }
   }

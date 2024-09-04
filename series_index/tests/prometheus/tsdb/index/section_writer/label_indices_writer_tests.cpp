@@ -26,10 +26,10 @@ class LabelIndicesWriterFixture : public testing::TestWithParam<LabelIndicesWrit
   using QueryableEncodingBimap = series_index::QueryableEncodingBimap<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimapFilament, TrieIndex>;
 
   std::ostringstream stream_;
-  StreamWriter stream_writer_{&stream_};
+  StreamWriter<decltype(stream_)> stream_writer_{&stream_};
   QueryableEncodingBimap lss_;
   SymbolReferencesMap symbol_references_;
-  LabelIndicesWriter<QueryableEncodingBimap> label_indices_writer{lss_, symbol_references_, stream_writer_};
+  LabelIndicesWriter<QueryableEncodingBimap, decltype(stream_)> label_indices_writer{lss_, symbol_references_, stream_writer_};
 
   void SetUp() final {
     for (auto& label_set : GetParam().label_sets) {
@@ -37,7 +37,7 @@ class LabelIndicesWriterFixture : public testing::TestWithParam<LabelIndicesWrit
     }
 
     std::ostringstream stream;
-    StreamWriter stream_writer{&stream};
+    StreamWriter<decltype(stream_)> stream_writer{&stream};
     SymbolsWriter{lss_, symbol_references_, stream_writer}.write();
   }
 };

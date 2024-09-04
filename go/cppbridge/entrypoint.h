@@ -60,7 +60,7 @@ void prompp_index_writer_dtor(void* args);
  *     writer    uintptr
  * }
  * @param res {
- *     data *[]byte // only c allocated memory can be re-used
+ *     data []byte // only c allocated memory can be re-used
  * }
  */
 void prompp_index_writer_write_header(void* args, void* res);
@@ -72,7 +72,7 @@ void prompp_index_writer_write_header(void* args, void* res);
  *     writer    uintptr
  * }
  * @param res {
- *     data *[]byte // only c allocated memory can be re-used
+ *     data []byte // only c allocated memory can be re-used
  * }
  */
 void prompp_index_writer_write_symbols(void* args, void* res);
@@ -85,8 +85,8 @@ void prompp_index_writer_write_symbols(void* args, void* res);
  *     batch_size uint32
  * }
  * @param res {
+ *     data          []byte // only c allocated memory can be re-used
  *     has_more_data bool   // true if we should repeat this call
- *     data          *[]byte // only c allocated memory can be re-used
  * }
  */
 void prompp_index_writer_write_next_series_batch(void* args, void* res);
@@ -98,7 +98,7 @@ void prompp_index_writer_write_next_series_batch(void* args, void* res);
  *     writer    uintptr
  * }
  * @param res {
- *     data *[]byte // only c allocated memory can be re-used
+ *     data []byte // only c allocated memory can be re-used
  * }
  */
 void prompp_index_writer_write_label_indices(void* args, void* res);
@@ -111,8 +111,8 @@ void prompp_index_writer_write_label_indices(void* args, void* res);
  *     max_batch_size uint32
  * }
  * @param res {
+ *     data          []byte // only c allocated memory can be re-used
  *     has_more_data bool   // true if we should repeat this call
- *     data          *[]byte // only c allocated memory can be re-used
  * }
  */
 void prompp_index_writer_write_next_postings_batch(void* args, void* res);
@@ -124,7 +124,7 @@ void prompp_index_writer_write_next_postings_batch(void* args, void* res);
  *     writer    uintptr
  * }
  * @param res {
- *     data *[]byte // only c allocated memory can be re-used
+ *     data []byte // only c allocated memory can be re-used
  * }
  */
 void prompp_index_writer_write_label_indices_table(void* args, void* res);
