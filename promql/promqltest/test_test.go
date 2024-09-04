@@ -381,7 +381,7 @@ load 5m
 eval range from 0 to 10m step 5m testmetric
 	testmetric {{schema:-1 sum:4 count:1 buckets:[1] offset:1}} {{schema:-1 sum:7 count:1 buckets:[1] offset:1}} {{schema:-1 sum:8 count:1 buckets:[1] offset:1}}
 `,
-			expectedError: `error in eval testmetric (line 5): expected histogram value at index 1 (t=300000) for {__name__="testmetric"} to be {count:1, sum:7, (1,4]:1}, but got {count:1, sum:5, (1,4]:1} (result has 0 float points [] and 3 histogram points [{count:1, sum:4, (1,4]:1} @[0] {count:1, sum:5, (1,4]:1} @[300000] {count:1, sum:6, (1,4]:1} @[600000]])`,
+			expectedError: `error in eval testmetric (line 5): expected histogram value at index 1 (t=300000) for {__name__="testmetric"} to be {{schema:-1 count:1 sum:7 offset:1 buckets:[1]}}, but got {{schema:-1 count:1 sum:5 counter_reset_hint:not_reset offset:1 buckets:[1]}} (result has 0 float points [] and 3 histogram points [{{schema:-1 count:1 sum:4 offset:1 buckets:[1]}} @[0] {{schema:-1 count:1 sum:5 counter_reset_hint:not_reset offset:1 buckets:[1]}} @[300000] {{schema:-1 count:1 sum:6 counter_reset_hint:not_reset offset:1 buckets:[1]}} @[600000]])`,
 		},
 		"range query with too many points for query time range": {
 			input: testData + `
@@ -532,7 +532,7 @@ load 5m
 eval range from 0 to 5m step 5m testmetric
 	testmetric 2 3
 `,
-			expectedError: `error in eval testmetric (line 5): expected 2 float points and 0 histogram points for {__name__="testmetric"}, but got 0 float points [] and 2 histogram points [{count:0, sum:0} @[0] {count:0, sum:0} @[300000]]`,
+			expectedError: `error in eval testmetric (line 5): expected 2 float points and 0 histogram points for {__name__="testmetric"}, but got 0 float points [] and 2 histogram points [{{}} @[0] {{counter_reset_hint:not_reset}} @[300000]]`,
 		},
 		"range query with expected mixed results": {
 			input: `
@@ -552,7 +552,7 @@ load 5m
 eval range from 0 to 5m step 5m testmetric
 	testmetric {{}} 3
 `,
-			expectedError: `error in eval testmetric (line 5): expected float value at index 0 for {__name__="testmetric"} to have timestamp 300000, but it had timestamp 0 (result has 1 float point [3 @[0]] and 1 histogram point [{count:0, sum:0} @[300000]])`,
+			expectedError: `error in eval testmetric (line 5): expected float value at index 0 for {__name__="testmetric"} to have timestamp 300000, but it had timestamp 0 (result has 1 float point [3 @[0]] and 1 histogram point [{{}} @[300000]])`,
 		},
 		"instant query with expected scalar result": {
 			input: `
