@@ -1,5 +1,5 @@
 import { FC, useEffect, useState } from "react";
-import { ActionIcon, Group, Text, TextInput } from "@mantine/core";
+import { ActionIcon, Group, TextInput } from "@mantine/core";
 import { IconMinus, IconPlus } from "@tabler/icons-react";
 import {
   formatPrometheusDuration,
