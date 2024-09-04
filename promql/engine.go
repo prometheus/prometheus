@@ -1799,6 +1799,9 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 				for j := range mat[i].Floats {
 					mat[i].Floats[j].F = -mat[i].Floats[j].F
 				}
+				for j := range mat[i].Histograms {
+					mat[i].Histograms[j].H = mat[i].Histograms[j].H.Copy().Mul(-1)
+				}
 			}
 			if !ev.enableDelayedNameRemoval && mat.ContainsSameLabelset() {
 				ev.errorf("vector cannot contain metrics with the same labelset")
