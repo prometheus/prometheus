@@ -1487,6 +1487,108 @@ func TestHistogramAppendOnlyErrors(t *testing.T) {
 	})
 }
 
+func TestHistogramUniqueSpansAfterNext(t *testing.T) {
+	// Create two histograms with the same schema and spans.
+	h1 := &histogram.Histogram{
+		Schema:        1,
+		ZeroThreshold: 1e-100,
+		Count:         10,
+		ZeroCount:     2,
+		Sum:           15.0,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []int64{1, 2, 3, 4},
+		NegativeSpans: []histogram.Span{
+			{Offset: 1, Length: 1},
+		},
+		NegativeBuckets: []int64{2},
+	}
+
+	h2 := h1.Copy()
+
+	// Create a chunk and append both histograms.
+	c := NewHistogramChunk()
+	app, err := c.Appender()
+	require.NoError(t, err)
+
+	_, _, _, err = app.AppendHistogram(nil, 0, h1, false)
+	require.NoError(t, err)
+
+	_, _, _, err = app.AppendHistogram(nil, 1, h2, false)
+	require.NoError(t, err)
+
+	// Create an iterator and advance to the first histogram.
+	it := c.Iterator(nil)
+	require.Equal(t, ValHistogram, it.Next())
+	_, rh1 := it.AtHistogram(nil)
+
+	// Advance to the second histogram and retrieve it.
+	require.Equal(t, ValHistogram, it.Next())
+	_, rh2 := it.AtHistogram(nil)
+
+	require.Equal(t, rh1.PositiveSpans, h1.PositiveSpans, "Returned positive spans are as expected")
+	require.Equal(t, rh1.NegativeSpans, h1.NegativeSpans, "Returned negative spans are as expected")
+	require.Equal(t, rh2.PositiveSpans, h1.PositiveSpans, "Returned positive spans are as expected")
+	require.Equal(t, rh2.NegativeSpans, h1.NegativeSpans, "Returned negative spans are as expected")
+
+	// Check that the spans for h1 and h2 are unique slices.
+	require.NotSame(t, &rh1.PositiveSpans[0], &rh2.PositiveSpans[0], "PositiveSpans should be unique between histograms")
+	require.NotSame(t, &rh1.NegativeSpans[0], &rh2.NegativeSpans[0], "NegativeSpans should be unique between histograms")
+}
+
+func TestHistogramUniqueSpansAfterNextWithAtFloatHistogram(t *testing.T) {
+	// Create two histograms with the same schema and spans.
+	h1 := &histogram.Histogram{
+		Schema:        1,
+		ZeroThreshold: 1e-100,
+		Count:         10,
+		ZeroCount:     2,
+		Sum:           15.0,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []int64{1, 2, 3, 4},
+		NegativeSpans: []histogram.Span{
+			{Offset: 1, Length: 1},
+		},
+		NegativeBuckets: []int64{2},
+	}
+
+	h2 := h1.Copy()
+
+	// Create a chunk and append both histograms.
+	c := NewHistogramChunk()
+	app, err := c.Appender()
+	require.NoError(t, err)
+
+	_, _, _, err = app.AppendHistogram(nil, 0, h1, false)
+	require.NoError(t, err)
+
+	_, _, _, err = app.AppendHistogram(nil, 1, h2, false)
+	require.NoError(t, err)
+
+	// Create an iterator and advance to the first histogram.
+	it := c.Iterator(nil)
+	require.Equal(t, ValHistogram, it.Next())
+	_, rh1 := it.AtFloatHistogram(nil)
+
+	// Advance to the second histogram and retrieve it.
+	require.Equal(t, ValHistogram, it.Next())
+	_, rh2 := it.AtFloatHistogram(nil)
+
+	require.Equal(t, rh1.PositiveSpans, h1.PositiveSpans, "Returned positive spans are as expected")
+	require.Equal(t, rh1.NegativeSpans, h1.NegativeSpans, "Returned negative spans are as expected")
+	require.Equal(t, rh2.PositiveSpans, h1.PositiveSpans, "Returned positive spans are as expected")
+	require.Equal(t, rh2.NegativeSpans, h1.NegativeSpans, "Returned negative spans are as expected")
+
+	// Check that the spans for h1 and h2 are unique slices.
+	require.NotSame(t, &rh1.PositiveSpans[0], &rh2.PositiveSpans[0], "PositiveSpans should be unique between histograms")
+	require.NotSame(t, &rh1.NegativeSpans[0], &rh2.NegativeSpans[0], "NegativeSpans should be unique between histograms")
+}
+
 func BenchmarkAppendable(b *testing.B) {
 	// Create a histogram with a bunch of spans and buckets.
 	const (

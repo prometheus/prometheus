@@ -17,7 +17,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"sort"
 	"strconv"
 	"sync"
@@ -55,14 +54,7 @@ func TestMain(m *testing.M) {
 func TestQueryConcurrency(t *testing.T) {
 	maxConcurrency := 10
 
-	dir, err := os.MkdirTemp("", "test_concurrency")
-	require.NoError(t, err)
-	defer os.RemoveAll(dir)
-	queryTracker := promql.NewActiveQueryTracker(dir, maxConcurrency, nil)
-	t.Cleanup(func() {
-		require.NoError(t, queryTracker.Close())
-	})
-
+	queryTracker := promql.NewActiveQueryTracker(t.TempDir(), maxConcurrency, nil)
 	opts := promql.EngineOpts{
 		Logger:             nil,
 		Reg:                nil,
@@ -70,15 +62,17 @@ func TestQueryConcurrency(t *testing.T) {
 		Timeout:            100 * time.Second,
 		ActiveQueryTracker: queryTracker,
 	}
+	engine := promqltest.NewTestEngineWithOpts(t, opts)
 
-	engine := promql.NewEngine(opts)
 	ctx, cancelCtx := context.WithCancel(context.Background())
-	defer cancelCtx()
+	t.Cleanup(cancelCtx)
 
 	block := make(chan struct{})
 	processing := make(chan struct{})
 	done := make(chan int)
-	defer close(done)
+	t.Cleanup(func() {
+		close(done)
+	})
 
 	f := func(context.Context) error {
 		select {
@@ -163,7 +157,7 @@ func TestQueryTimeout(t *testing.T) {
 		MaxSamples: 10,
 		Timeout:    5 * time.Millisecond,
 	}
-	engine := promql.NewEngine(opts)
+	engine := promqltest.NewTestEngineWithOpts(t, opts)
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 
@@ -188,7 +182,7 @@ func TestQueryCancel(t *testing.T) {
 		MaxSamples: 10,
 		Timeout:    10 * time.Second,
 	}
-	engine := promql.NewEngine(opts)
+	engine := promqltest.NewTestEngineWithOpts(t, opts)
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 
@@ -262,7 +256,7 @@ func TestQueryError(t *testing.T) {
 		MaxSamples: 10,
 		Timeout:    10 * time.Second,
 	}
-	engine := promql.NewEngine(opts)
+	engine := promqltest.NewTestEngineWithOpts(t, opts)
 	errStorage := promql.ErrStorage{errors.New("storage error")}
 	queryable := storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
 		return &errQuerier{err: errStorage}, nil
@@ -596,7 +590,7 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 		},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
-			engine := promql.NewEngine(opts)
+			engine := promqltest.NewTestEngineWithOpts(t, opts)
 			hintsRecorder := &noopHintRecordingQueryable{}
 
 			var (
@@ -627,7 +621,7 @@ func TestEngineShutdown(t *testing.T) {
 		MaxSamples: 10,
 		Timeout:    10 * time.Second,
 	}
-	engine := promql.NewEngine(opts)
+	engine := promqltest.NewTestEngineWithOpts(t, opts)
 	ctx, cancelCtx := context.WithCancel(context.Background())
 
 	block := make(chan struct{})
@@ -763,7 +757,7 @@ load 10s
 		t.Run(fmt.Sprintf("%d query=%s", i, c.Query), func(t *testing.T) {
 			var err error
 			var qry promql.Query
-			engine := newTestEngine()
+			engine := newTestEngine(t)
 			if c.Interval == 0 {
 				qry, err = engine.NewInstantQuery(context.Background(), storage, nil, c.Query, c.Start)
 			} else {
@@ -1305,7 +1299,7 @@ load 10s
 	for _, c := range cases {
 		t.Run(c.Query, func(t *testing.T) {
 			opts := promql.NewPrometheusQueryOpts(true, 0)
-			engine := promqltest.NewTestEngine(true, 0, promqltest.DefaultMaxSamplesPerQuery)
+			engine := promqltest.NewTestEngine(t, true, 0, promqltest.DefaultMaxSamplesPerQuery)
 
 			runQuery := func(expErr error) *stats.Statistics {
 				var err error
@@ -1332,7 +1326,7 @@ load 10s
 			if c.SkipMaxCheck {
 				return
 			}
-			engine = promqltest.NewTestEngine(true, 0, stats.Samples.PeakSamples-1)
+			engine = promqltest.NewTestEngine(t, true, 0, stats.Samples.PeakSamples-1)
 			runQuery(promql.ErrTooManySamples(env))
 		})
 	}
@@ -1485,7 +1479,7 @@ load 10s
 
 	for _, c := range cases {
 		t.Run(c.Query, func(t *testing.T) {
-			engine := newTestEngine()
+			engine := newTestEngine(t)
 			testFunc := func(expError error) {
 				var err error
 				var qry promql.Query
@@ -1506,18 +1500,18 @@ load 10s
 			}
 
 			// Within limit.
-			engine = promqltest.NewTestEngine(false, 0, c.MaxSamples)
+			engine = promqltest.NewTestEngine(t, false, 0, c.MaxSamples)
 			testFunc(nil)
 
 			// Exceeding limit.
-			engine = promqltest.NewTestEngine(false, 0, c.MaxSamples-1)
+			engine = promqltest.NewTestEngine(t, false, 0, c.MaxSamples-1)
 			testFunc(promql.ErrTooManySamples(env))
 		})
 	}
 }
 
 func TestAtModifier(t *testing.T) {
-	engine := newTestEngine()
+	engine := newTestEngine(t)
 	storage := promqltest.LoadedStorage(t, `
 load 10s
   metric{job="1"} 0+1x1000
@@ -2000,7 +1994,7 @@ func TestSubquerySelector(t *testing.T) {
 		},
 	} {
 		t.Run("", func(t *testing.T) {
-			engine := newTestEngine()
+			engine := newTestEngine(t)
 			storage := promqltest.LoadedStorage(t, tst.loadString)
 			t.Cleanup(func() { storage.Close() })
 
@@ -2049,7 +2043,7 @@ func TestQueryLogger_basic(t *testing.T) {
 		MaxSamples: 10,
 		Timeout:    10 * time.Second,
 	}
-	engine := promql.NewEngine(opts)
+	engine := promqltest.NewTestEngineWithOpts(t, opts)
 
 	queryExec := func() {
 		ctx, cancelCtx := context.WithCancel(context.Background())
@@ -2100,7 +2094,7 @@ func TestQueryLogger_fields(t *testing.T) {
 		MaxSamples: 10,
 		Timeout:    10 * time.Second,
 	}
-	engine := promql.NewEngine(opts)
+	engine := promqltest.NewTestEngineWithOpts(t, opts)
 
 	f1 := NewFakeQueryLogger()
 	engine.SetQueryLogger(f1)
@@ -2129,7 +2123,7 @@ func TestQueryLogger_error(t *testing.T) {
 		MaxSamples: 10,
 		Timeout:    10 * time.Second,
 	}
-	engine := promql.NewEngine(opts)
+	engine := promqltest.NewTestEngineWithOpts(t, opts)
 
 	f1 := NewFakeQueryLogger()
 	engine.SetQueryLogger(f1)
@@ -3012,7 +3006,7 @@ func TestEngineOptsValidation(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		eng := promql.NewEngine(c.opts)
+		eng := promqltest.NewTestEngineWithOpts(t, c.opts)
 		_, err1 := eng.NewInstantQuery(context.Background(), nil, nil, c.query, time.Unix(10, 0))
 		_, err2 := eng.NewRangeQuery(context.Background(), nil, nil, c.query, time.Unix(0, 0), time.Unix(10, 0), time.Second)
 		if c.fail {
@@ -3026,7 +3020,7 @@ func TestEngineOptsValidation(t *testing.T) {
 }
 
 func TestInstantQueryWithRangeVectorSelector(t *testing.T) {
-	engine := newTestEngine()
+	engine := newTestEngine(t)
 
 	baseT := timestamp.Time(0)
 	storage := promqltest.LoadedStorage(t, `
@@ -3280,7 +3274,7 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 	for _, c := range cases {
 		for _, floatHisto := range []bool{true, false} {
 			t.Run(fmt.Sprintf("floatHistogram=%t %d", floatHisto, idx0), func(t *testing.T) {
-				engine := newTestEngine()
+				engine := newTestEngine(t)
 				storage := teststorage.New(t)
 				t.Cleanup(func() { storage.Close() })
 
@@ -3399,7 +3393,7 @@ metric 0 1 2
 	for _, c := range cases {
 		c := c
 		t.Run(c.name, func(t *testing.T) {
-			engine := promqltest.NewTestEngine(false, c.engineLookback, promqltest.DefaultMaxSamplesPerQuery)
+			engine := promqltest.NewTestEngine(t, false, c.engineLookback, promqltest.DefaultMaxSamplesPerQuery)
 			storage := promqltest.LoadedStorage(t, load)
 			t.Cleanup(func() { storage.Close() })
 
@@ -3436,7 +3430,7 @@ histogram {{sum:4 count:4 buckets:[2 2]}} {{sum:6 count:6 buckets:[3 3]}} {{sum:
 `
 	storage := promqltest.LoadedStorage(t, load)
 	t.Cleanup(func() { storage.Close() })
-	engine := promqltest.NewTestEngine(false, 0, promqltest.DefaultMaxSamplesPerQuery)
+	engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
 
 	verify := func(t *testing.T, qry promql.Query, expected []histogram.FloatHistogram) {
 		res := qry.Exec(context.Background())
