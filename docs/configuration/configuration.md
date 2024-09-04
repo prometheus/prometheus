@@ -70,7 +70,7 @@ global:
 
   # How frequently to evaluate rules.
   [ evaluation_interval: <duration> | default = 1m ]
-                        
+
   # Offset the rule evaluation timestamp of this particular group by the specified duration into the past to ensure the underlying metrics have been received.
   # Metric availability delays are more likely to occur when Prometheus is running as a remote write target, but can also occur when there's anomalies with scraping.
   [ rule_query_offset: <duration> | default = 0s ]
@@ -307,6 +307,17 @@ tls_config:
 [ proxy_connect_header:
   [ <string>: [<secret>, ...] ] ]
 
+# Custom HTTP headers to be sent along with each request.
+# Headers that are set by Prometheus itself can't be overwritten.
+http_headers:
+  # Header name.
+  [ <string>:
+    # Header values.
+    [ values: [<string>, ...] ]
+    # Headers values. Hidden in configuration page.
+    [ secrets: [<secret>, ...] ]
+    # Files to read header values from.
+    [ files: [<string>, ...] ] ]
 
 # List of Azure service discovery configurations.
 azure_sd_configs:

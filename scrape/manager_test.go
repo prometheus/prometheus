@@ -1178,7 +1178,7 @@ scrape_configs:
 	)
 }
 
-// TestOnlyStaleTargetsAreDropped makes sure that when a job has multiple providers, when aone of them should no,
+// TestOnlyStaleTargetsAreDropped makes sure that when a job has multiple providers, when one of them should no
 // longer discover targets, only the stale targets of that provier are dropped.
 func TestOnlyStaleTargetsAreDropped(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
