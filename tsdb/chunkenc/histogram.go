@@ -1188,6 +1188,23 @@ func (it *histogramIterator) Next() ValueType {
 
 	// Recycle bucket and span slices that have not been returned yet. Otherwise, copy them.
 	// copy them.
+	if it.atFloatHistogramCalled || it.atHistogramCalled {
+		if len(it.pSpans) > 0 {
+			newSpans := make([]histogram.Span, len(it.pSpans))
+			copy(newSpans, it.pSpans)
+			it.pSpans = newSpans
+		} else {
+			it.pSpans = nil
+		}
+		if len(it.nSpans) > 0 {
+			newSpans := make([]histogram.Span, len(it.nSpans))
+			copy(newSpans, it.nSpans)
+			it.nSpans = newSpans
+		} else {
+			it.nSpans = nil
+		}
+	}
+
 	if it.atHistogramCalled {
 		it.atHistogramCalled = false
 		if len(it.pBuckets) > 0 {
@@ -1204,21 +1221,8 @@ func (it *histogramIterator) Next() ValueType {
 		} else {
 			it.nBuckets = nil
 		}
-		if len(it.pSpans) > 0 {
-			newSpans := make([]histogram.Span, len(it.pSpans))
-			copy(newSpans, it.pSpans)
-			it.pSpans = newSpans
-		} else {
-			it.pSpans = nil
-		}
-		if len(it.nSpans) > 0 {
-			newSpans := make([]histogram.Span, len(it.nSpans))
-			copy(newSpans, it.nSpans)
-			it.nSpans = newSpans
-		} else {
-			it.nSpans = nil
-		}
 	}
+
 	// FloatBuckets are set from scratch, so simply create empty ones.
 	if it.atFloatHistogramCalled {
 		it.atFloatHistogramCalled = false
