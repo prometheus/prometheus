@@ -18,12 +18,7 @@ const SettingsMenu: FC = () => {
   return (
     <Popover position="bottom" withArrow shadow="md">
       <Popover.Target>
-        <ActionIcon
-          // variant=""
-          color="gray"
-          aria-label="Settings"
-          size={32}
-        >
+        <ActionIcon color="gray" aria-label="Settings" size={32}>
           <IconSettings size={20} />
         </ActionIcon>
       </Popover.Target>
