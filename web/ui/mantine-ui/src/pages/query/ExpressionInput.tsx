@@ -68,6 +68,7 @@ import { notifications } from "@mantine/notifications";
 import { useSettings } from "../../state/settingsSlice";
 import MetricsExplorer from "./MetricsExplorer/MetricsExplorer";
 import ErrorBoundary from "../../components/ErrorBoundary";
+import { useAppSelector } from "../../state/hooks";
 
 const promqlExtension = new PromQLExtension();
 
@@ -127,11 +128,13 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
   removePanel,
 }) => {
   const theme = useComputedColorScheme();
+  const { queryHistory } = useAppSelector((state) => state.queryPage);
   const {
     pathPrefix,
     enableAutocomplete,
     enableSyntaxHighlighting,
     enableLinter,
+    enableQueryHistory,
   } = useSettings();
   const [expr, setExpr] = useState(initialExpr);
   useEffect(() => {
@@ -175,10 +178,6 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
 
   const [showMetricsExplorer, setShowMetricsExplorer] = useState(false);
 
-  // TODO: Implement query history.
-  // This is just a placeholder until query history is implemented, so disable the linter warning.
-  const queryHistory = useMemo<string[]>(() => [], []);
-
   // (Re)initialize editor based on settings / setting changes.
   useEffect(() => {
     // Build the dynamic part of the config.
@@ -193,10 +192,17 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
               cache: { initialMetricList: metricNames },
             },
           }),
-          queryHistory
+          enableQueryHistory ? queryHistory : []
         ),
       });
-  }, [pathPrefix, metricNames, enableAutocomplete, enableLinter, queryHistory]); // TODO: Make this depend on external settings changes, maybe use dynamic config compartment again.
+  }, [
+    pathPrefix,
+    metricNames,
+    enableAutocomplete,
+    enableLinter,
+    enableQueryHistory,
+    queryHistory,
+  ]); // TODO: Make this depend on external settings changes, maybe use dynamic config compartment again.
 
   return (
     <Group align="flex-start" wrap="nowrap" gap="xs">

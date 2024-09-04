@@ -6,9 +6,13 @@ import {
 } from "./targetsPageSlice";
 import {
   localStorageKeyCollapsedPools as localStorageKeyServiceDiscoveryPageCollapsedPools,
-  setCollapsedPools as ServiceDiscoveryPageSetCollapsedPools,
+  setCollapsedPools as serviceDiscoveryPageSetCollapsedPools,
 } from "./serviceDiscoveryPageSlice";
 import { updateSettings } from "./settingsSlice";
+import {
+  addQueryToHistory,
+  localStorageKeyQueryHistory,
+} from "./queryPageSlice";
 
 const persistToLocalStorage = <T>(key: string, value: T) => {
   localStorage.setItem(key, JSON.stringify(value));
@@ -29,11 +33,21 @@ startAppListening({
 });
 
 startAppListening({
-  actionCreator: ServiceDiscoveryPageSetCollapsedPools,
+  actionCreator: serviceDiscoveryPageSetCollapsedPools,
   effect: ({ payload }) => {
     persistToLocalStorage(
       localStorageKeyServiceDiscoveryPageCollapsedPools,
       payload
+    );
+  },
+});
+
+startAppListening({
+  actionCreator: addQueryToHistory,
+  effect: (_, { getState }) => {
+    persistToLocalStorage(
+      localStorageKeyQueryHistory,
+      getState().queryPage.queryHistory
     );
   },
 });

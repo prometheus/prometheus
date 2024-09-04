@@ -1,6 +1,9 @@
 import { randomId } from "@mantine/hooks";
 import { PayloadAction, createSlice } from "@reduxjs/toolkit";
 import { encodePanelOptionsToURLParams } from "../pages/query/urlStateEncoding";
+import { initializeFromLocalStorage } from "./initializeFromLocalStorage";
+
+export const localStorageKeyQueryHistory = "queryPage.queryHistory";
 
 export enum GraphDisplayMode {
   Lines = "lines",
@@ -68,6 +71,7 @@ export type Panel = {
 
 interface QueryPageState {
   panels: Panel[];
+  queryHistory: string[];
 }
 
 export const newDefaultPanel = (): Panel => ({
@@ -87,6 +91,10 @@ export const newDefaultPanel = (): Panel => ({
 
 const initialState: QueryPageState = {
   panels: [newDefaultPanel()],
+  queryHistory: initializeFromLocalStorage<string[]>(
+    localStorageKeyQueryHistory,
+    []
+  ),
 };
 
 const updateURL = (panels: Panel[]) => {
@@ -116,6 +124,12 @@ export const queryPageSlice = createSlice({
       state.panels[payload.idx].expr = payload.expr;
       updateURL(state.panels);
     },
+    addQueryToHistory: (state, { payload: query }: PayloadAction<string>) => {
+      state.queryHistory = [
+        query,
+        ...state.queryHistory.filter((q) => q !== query),
+      ].slice(0, 50);
+    },
     setVisualizer: (
       state,
       { payload }: PayloadAction<{ idx: number; visualizer: Visualizer }>
@@ -126,7 +140,14 @@ export const queryPageSlice = createSlice({
   },
 });
 
-export const { setPanels, addPanel, removePanel, setExpr, setVisualizer } =
-  queryPageSlice.actions;
+export const {
+  setPanels,
+  addPanel,
+  removePanel,
+  setExpr,
+  addQueryToHistory,
+  setShowTree,
+  setVisualizer,
+} = queryPageSlice.actions;
 
 export default queryPageSlice.reducer;

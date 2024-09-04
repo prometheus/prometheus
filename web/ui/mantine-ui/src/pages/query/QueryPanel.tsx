@@ -17,6 +17,7 @@ import {
 import { FC, useCallback, useState } from "react";
 import { useAppDispatch, useAppSelector } from "../../state/hooks";
 import {
+  addQueryToHistory,
   GraphDisplayMode,
   GraphResolution,
   removePanel,
@@ -73,6 +74,10 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
         executeQuery={(expr: string) => {
           setRetriggerIdx((idx) => idx + 1);
           dispatch(setExpr({ idx, expr }));
+
+          if (!metricNames.includes(expr) && expr.trim() !== "") {
+            dispatch(addQueryToHistory(expr));
+          }
         }}
         removePanel={() => {
           dispatch(removePanel(idx));
