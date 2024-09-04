@@ -205,82 +205,88 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
               />
             </Group>
 
-            <SegmentedControl
-              onChange={(value) =>
-                dispatch(
-                  setVisualizer({
-                    idx,
-                    visualizer: {
-                      ...panel.visualizer,
-                      displayMode: value as GraphDisplayMode,
-                    },
-                  })
-                )
-              }
-              value={panel.visualizer.displayMode}
-              data={[
-                {
-                  value: GraphDisplayMode.Lines,
-                  label: (
-                    <Center>
-                      <IconChartLine style={iconStyle} />
-                      <Box ml={10}>Unstacked</Box>
-                    </Center>
-                  ),
-                },
-                {
-                  value: GraphDisplayMode.Stacked,
-                  label: (
-                    <Center>
-                      <IconChartAreaFilled style={iconStyle} />
-                      <Box ml={10}>Stacked</Box>
-                    </Center>
-                  ),
-                },
-                {
-                  value: GraphDisplayMode.Heatmap,
-                  label: (
-                    <Center>
-                      <IconChartGridDots style={iconStyle} />
-                      <Box ml={10}>Heatmap</Box>
-                    </Center>
-                  ),
-                },
-              ]}
-            />
-            {/* <Switch color="gray" defaultChecked label="Show exemplars" /> */}
-            {/* <Switch
-              checked={panel.visualizer.showExemplars}
-              onChange={(event) =>
-                dispatch(
-                  setVisualizer({
-                    idx,
-                    visualizer: {
-                      ...panel.visualizer,
-                      showExemplars: event.currentTarget.checked,
-                    },
-                  })
-                )
-              }
-              color={"rgba(34,139,230,.1)"}
-              size="md"
-              label="Show exemplars"
-              thumbIcon={
-                panel.visualizer.showExemplars ? (
-                  <IconCheck
-                    style={{ width: "0.9rem", height: "0.9rem" }}
-                    color={"rgba(34,139,230,.1)"}
-                    stroke={3}
-                  />
-                ) : (
-                  <IconX
-                    style={{ width: "0.9rem", height: "0.9rem" }}
-                    color="rgba(34,139,230,.1)"
-                    stroke={3}
-                  />
-                )
-              }
-            /> */}
+            <Group gap="lg">
+              <Button
+                variant="subtle"
+                color="gray.9"
+                size="xs"
+                leftSection={
+                  panel.visualizer.showExemplars ? (
+                    <IconCheckbox
+                      style={{
+                        width: "1.5em",
+                        height: "1.5em",
+                        marginRight: -1,
+                      }}
+                    />
+                  ) : (
+                    <IconSquare
+                      style={{
+                        width: "1.3em",
+                        height: "1.3em",
+                      }}
+                    />
+                  )
+                }
+                onClick={() =>
+                  dispatch(
+                    setVisualizer({
+                      idx,
+                      visualizer: {
+                        ...panel.visualizer,
+                        showExemplars: !panel.visualizer.showExemplars,
+                      },
+                    })
+                  )
+                }
+              >
+                Show exemplars
+              </Button>
+
+              <SegmentedControl
+                onChange={(value) =>
+                  dispatch(
+                    setVisualizer({
+                      idx,
+                      visualizer: {
+                        ...panel.visualizer,
+                        displayMode: value as GraphDisplayMode,
+                      },
+                    })
+                  )
+                }
+                value={panel.visualizer.displayMode}
+                data={[
+                  {
+                    value: GraphDisplayMode.Lines,
+                    label: (
+                      <Center>
+                        <IconChartLine style={iconStyle} />
+                        <Box ml={10}>Unstacked</Box>
+                      </Center>
+                    ),
+                  },
+                  {
+                    value: GraphDisplayMode.Stacked,
+                    label: (
+                      <Center>
+                        <IconChartAreaFilled style={iconStyle} />
+                        <Box ml={10}>Stacked</Box>
+                      </Center>
+                    ),
+                  },
+                  // {
+                  //   value: GraphDisplayMode.Heatmap,
+                  //   label: (
+                  //     <Center>
+                  //       <IconChartGridDots style={iconStyle} />
+                  //       <Box ml={10}>Heatmap</Box>
+                  //     </Center>
+                  //   ),
+                  // },
+                ]}
+              />
+            </Group>
           </Group>
           <Space h="lg" />
           <Graph
