@@ -1,5 +1,5 @@
 import { FC, useEffect, useState } from "react";
-import { ActionIcon, Group, Input } from "@mantine/core";
+import { ActionIcon, Group, Text, TextInput } from "@mantine/core";
 import { IconMinus, IconPlus } from "@tabler/icons-react";
 import {
   formatPrometheusDuration,
@@ -78,7 +78,7 @@ const RangeInput: FC<RangeInputProps> = ({ range, onChangeRange }) => {
 
   return (
     <Group gap={5}>
-      <Input
+      <TextInput
         title="Range"
         value={rangeInput}
         onChange={(event) => setRangeInput(event.currentTarget.value)}
