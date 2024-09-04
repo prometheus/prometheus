@@ -7,7 +7,7 @@
 }
 
 .promql-metric-name {
-  /* color: var(--input-color); */
+  /* Should already inherit the right color from the theme. */
 }
 
 .promql-label-name {

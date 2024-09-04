@@ -38,7 +38,6 @@ const MetricsExplorer: FC<MetricsExplorerProps> = ({
   insertText,
   close,
 }) => {
-  console.log("metricNames");
   // Fetch the alerting rules data.
   const { data } = useSuspenseAPIQuery<MetadataResult>({
     path: `/metadata`,
