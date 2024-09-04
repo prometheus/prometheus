@@ -63,11 +63,21 @@ import (
 	"github.com/prometheus/prometheus/web/ui"
 )
 
-// Paths that are handled by the React / Reach router that should all be served the main React app's index.html.
-var reactRouterPaths = []string{
+// Paths handled by the React router that should all serve the main React app's index.html,
+// no matter if agent mode is enabled or not.
+var oldUIReactRouterPaths = []string{
 	"/config",
 	"/flags",
 	"/service-discovery",
+	"/status",
+	"/targets",
+}
+
+var newUIReactRouterPaths = []string{
+	"/config",
+	"/flags",
+	"/service-discovery",
+	"/alertmanager-discovery",
 	"/status",
 	"/targets",
 }
@@ -78,10 +88,16 @@ var reactRouterAgentPaths = []string{
 }
 
 // Paths that are handled by the React router when the Agent mode is not set.
-var reactRouterServerPaths = []string{
+var oldUIReactRouterServerPaths = []string{
 	"/alerts",
 	"/graph",
-	"/query",
+	"/rules",
+	"/tsdb-status",
+}
+
+var newUIReactRouterServerPaths = []string{
+	"/alerts",
+	"/query", // The old /graph redirects to /query on the server side.
 	"/rules",
 	"/tsdb-status",
 }
@@ -382,6 +398,12 @@ func New(logger log.Logger, o *Options) *Handler {
 		http.Redirect(w, r, path.Join(o.ExternalURL.Path, homePage), http.StatusFound)
 	})
 
+	if o.UseNewUI {
+		router.Get("/graph", func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, path.Join(o.ExternalURL.Path, "/query?"+r.URL.RawQuery), http.StatusFound)
+		})
+	}
+
 	reactAssetsRoot := "/static/react-app"
 	if h.options.UseNewUI {
 		reactAssetsRoot = "/static/mantine-ui"
@@ -426,6 +448,13 @@ func New(logger log.Logger, o *Options) *Handler {
 	}
 
 	// Serve the React app.
+	reactRouterPaths := oldUIReactRouterPaths
+	reactRouterServerPaths := oldUIReactRouterServerPaths
+	if h.options.UseNewUI {
+		reactRouterPaths = newUIReactRouterPaths
+		reactRouterServerPaths = newUIReactRouterServerPaths
+	}
+
 	for _, p := range reactRouterPaths {
 		router.Get(p, serveReactApp)
 	}
