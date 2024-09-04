@@ -1348,10 +1348,10 @@ func TestFloatHistogramUniqueSpansAfterNext(t *testing.T) {
 	require.Equal(t, ValFloatHistogram, it.Next())
 	_, rh2 := it.AtFloatHistogram(nil)
 
-	require.Equal(t, rh1.PositiveSpans, h1.PositiveSpans, "Return positive spans are as expected")
-	require.Equal(t, rh1.NegativeSpans, h1.NegativeSpans, "Return negative spans are as expected")
-	require.Equal(t, rh2.PositiveSpans, h1.PositiveSpans, "Return positive spans are as expected")
-	require.Equal(t, rh2.NegativeSpans, h1.NegativeSpans, "Return negative spans are as expected")
+	require.Equal(t, rh1.PositiveSpans, h1.PositiveSpans, "Returned positive spans are as expected")
+	require.Equal(t, rh1.NegativeSpans, h1.NegativeSpans, "Returned negative spans are as expected")
+	require.Equal(t, rh2.PositiveSpans, h1.PositiveSpans, "Returned positive spans are as expected")
+	require.Equal(t, rh2.NegativeSpans, h1.NegativeSpans, "Returned negative spans are as expected")
 
 	// Check that the spans for h1 and h2 are unique slices.
 	require.NotSame(t, &rh1.PositiveSpans[0], &rh2.PositiveSpans[0], "PositiveSpans should be unique between histograms")
