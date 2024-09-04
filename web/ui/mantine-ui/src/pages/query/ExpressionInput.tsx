@@ -58,6 +58,7 @@ import { highlightSelectionMatches } from "@codemirror/search";
 import { lintKeymap } from "@codemirror/lint";
 import {
   IconAlignJustified,
+  IconBinaryTree,
   IconDotsVertical,
   IconSearch,
   IconTerminal,
@@ -118,6 +119,8 @@ interface ExpressionInputProps {
   initialExpr: string;
   metricNames: string[];
   executeQuery: (expr: string) => void;
+  treeShown: boolean;
+  setShowTree: (showTree: boolean) => void;
   removePanel: () => void;
 }
 
@@ -126,6 +129,8 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
   metricNames,
   executeQuery,
   removePanel,
+  treeShown,
+  setShowTree,
 }) => {
   const theme = useComputedColorScheme();
   const { queryHistory } = useAppSelector((state) => state.queryPage);
@@ -244,6 +249,14 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
                 }
               >
                 Format expression
+              </Menu.Item>
+              <Menu.Item
+                leftSection={
+                  <IconBinaryTree style={{ width: rem(14), height: rem(14) }} />
+                }
+                onClick={() => setShowTree(!treeShown)}
+              >
+                {treeShown ? "Hide" : "Show"} tree view
               </Menu.Item>
               <Menu.Item
                 color="red"

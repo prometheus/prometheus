@@ -14,13 +14,14 @@ dayjs.extend(timezone);
 export interface TableTabProps {
   panelIdx: number;
   retriggerIdx: number;
+  expr: string;
 }
 
-const TableTab: FC<TableTabProps> = ({ panelIdx, retriggerIdx }) => {
+const TableTab: FC<TableTabProps> = ({ panelIdx, retriggerIdx, expr }) => {
   const [responseTime, setResponseTime] = useState<number>(0);
   const [limitResults, setLimitResults] = useState<boolean>(true);
 
-  const { expr, visualizer } = useAppSelector(
+  const { visualizer } = useAppSelector(
     (state) => state.queryPage.panels[panelIdx]
   );
   const dispatch = useAppDispatch();

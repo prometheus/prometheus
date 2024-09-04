@@ -6,15 +6,18 @@ import {
   Box,
   SegmentedControl,
   Stack,
+  Button,
+  Skeleton,
 } from "@mantine/core";
 import {
   IconChartAreaFilled,
-  IconChartGridDots,
   IconChartLine,
+  IconCheckbox,
   IconGraph,
+  IconSquare,
   IconTable,
 } from "@tabler/icons-react";
-import { FC, useCallback, useState } from "react";
+import { FC, Suspense, useCallback, useMemo, useState } from "react";
 import { useAppDispatch, useAppSelector } from "../../state/hooks";
 import {
   addQueryToHistory,
@@ -22,6 +25,7 @@ import {
   GraphResolution,
   removePanel,
   setExpr,
+  setShowTree,
   setVisualizer,
 } from "../../state/queryPageSlice";
 import TimeInput from "./TimeInput";
@@ -30,6 +34,10 @@ import ExpressionInput from "./ExpressionInput";
 import Graph from "./Graph";
 import ResolutionInput from "./ResolutionInput";
 import TableTab from "./TableTab";
+import TreeView from "./TreeView";
+import ErrorBoundary from "../../components/ErrorBoundary";
+import ASTNode from "../../promql/ast";
+import serializeNode from "../../promql/serialize";
 
 export interface PanelProps {
   idx: number;
@@ -47,6 +55,17 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
 
   const panel = useAppSelector((state) => state.queryPage.panels[idx]);
   const dispatch = useAppDispatch();
+
+  const [selectedNode, setSelectedNode] = useState<{
+    id: string;
+    node: ASTNode;
+  } | null>(null);
+
+  const expr = useMemo(
+    () =>
+      selectedNode !== null ? serializeNode(selectedNode.node) : panel.expr,
+    [selectedNode, panel.expr]
+  );
 
   const onSelectRange = useCallback(
     (start: number, end: number) =>
@@ -69,6 +88,8 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
   return (
     <Stack gap="lg">
       <ExpressionInput
+        // TODO: Maybe just pass the panelIdx and retriggerIdx to the ExpressionInput
+        // so it can manage its own state?
         initialExpr={panel.expr}
         metricNames={metricNames}
         executeQuery={(expr: string) => {
@@ -79,10 +100,37 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
             dispatch(addQueryToHistory(expr));
           }
         }}
+        treeShown={panel.showTree}
+        setShowTree={(showTree: boolean) => {
+          dispatch(setShowTree({ idx, showTree }));
+          if (!showTree) {
+            setSelectedNode(null);
+          }
+        }}
         removePanel={() => {
           dispatch(removePanel(idx));
         }}
       />
+      {panel.expr.trim() !== "" && panel.showTree && (
+        <ErrorBoundary key={retriggerIdx} title="Error showing tree view">
+          <Suspense
+            fallback={
+              <Box mt="lg">
+                {Array.from(Array(20), (_, i) => (
+                  <Skeleton key={i} height={30} mb={15} width="100%" />
+                ))}
+              </Box>
+            }
+          >
+            <TreeView
+              panelIdx={idx}
+              retriggerIdx={retriggerIdx}
+              selectedNode={selectedNode}
+              setSelectedNode={setSelectedNode}
+            />
+          </Suspense>
+        </ErrorBoundary>
+      )}
       <Tabs
         value={panel.visualizer.activeTab}
         onChange={(v) =>
@@ -107,7 +155,7 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
           </Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel pt="sm" value="table">
-          <TableTab panelIdx={idx} retriggerIdx={retriggerIdx} />
+          <TableTab expr={expr} panelIdx={idx} retriggerIdx={retriggerIdx} />
         </Tabs.Panel>
         <Tabs.Panel
           pt="sm"
@@ -236,7 +284,7 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
           </Group>
           <Space h="lg" />
           <Graph
-            expr={panel.expr}
+            expr={expr}
             endTime={panel.visualizer.endTime}
             range={panel.visualizer.range}
             resolution={panel.visualizer.resolution}

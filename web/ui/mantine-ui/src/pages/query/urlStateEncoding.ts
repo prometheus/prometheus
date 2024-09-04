@@ -35,6 +35,9 @@ export const decodePanelOptionsFromURLParams = (query: string): Panel[] => {
     decodeSetting("expr", (value) => {
       panel.expr = value;
     });
+    decodeSetting("show_tree", (value) => {
+      panel.showTree = value === "1";
+    });
     decodeSetting("tab", (value) => {
       panel.visualizer.activeTab = value === "0" ? "graph" : "table";
     });
@@ -121,6 +124,7 @@ export const encodePanelOptionsToURLParams = (
 
   panels.forEach((p, idx) => {
     addParam(idx, "expr", p.expr);
+    addParam(idx, "show_tree", p.showTree ? "1" : "0");
     addParam(idx, "tab", p.visualizer.activeTab === "graph" ? "0" : "1");
     if (p.visualizer.endTime !== null) {
       addParam(idx, "end_input", formatTime(p.visualizer.endTime));

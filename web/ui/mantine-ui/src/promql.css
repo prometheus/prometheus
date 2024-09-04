@@ -7,7 +7,7 @@
 }
 
 .promql-metric-name {
-  color: light-dark(#000, #fff);
+  /* color: var(--input-color); */
 }
 
 .promql-label-name {
