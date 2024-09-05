@@ -15,6 +15,11 @@ type DataStorage interface {
 
 type LSS interface {
 	Raw() *cppbridge.LabelSetStorage
+	AllocatedMemory() uint64
+}
+
+type InputRelabeler interface {
+	CacheAllocatedMemory() uint64
 }
 
 // Shard interface.
@@ -22,6 +27,7 @@ type Shard interface {
 	ShardID() uint16
 	DataStorage() DataStorage
 	LSS() LSS
+	InputRelabelers() map[string]InputRelabeler
 }
 
 // ShardFn - shard function.
@@ -34,6 +40,7 @@ type Head interface {
 	NumberOfShards() uint16
 	Finalize()
 	Reconfigure(inputRelabelerConfigs []*config.InputRelabelerConfig, numberOfShards uint16) error
+	WriteMetrics()
 	Rotate() error
 	Close() error
 }
@@ -44,6 +51,7 @@ type Distributor interface {
 	DestinationGroups() DestinationGroups
 	// SetDestinationGroups - workaround.
 	SetDestinationGroups(destinationGroups DestinationGroups)
+	WriteMetrics(head Head)
 	Rotate() error
 }
 

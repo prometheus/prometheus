@@ -3,6 +3,7 @@ package head
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler"
 	"github.com/prometheus/prometheus/pp/go/relabeler/config"
@@ -12,6 +13,7 @@ import (
 )
 
 type Head struct {
+	generation                 uint64
 	inputRelabelers            map[relabelerKey]*cppbridge.InputPerShardRelabeler
 	dataStorages               []*DataStorage
 	lsses                      []*cppbridge.LabelSetStorage
@@ -27,13 +29,15 @@ type Head struct {
 }
 
 func New(
+	generation uint64,
 	inputRelabelerConfigs []*config.InputRelabelerConfig,
 	numberOfShards uint16,
 	registerer prometheus.Registerer) (*Head, error) {
 	factory := util.NewUnconflictRegisterer(registerer)
 	h := &Head{
-		stopc: make(chan struct{}),
-		wg:    &sync.WaitGroup{},
+		generation: generation,
+		stopc:      make(chan struct{}),
+		wg:         &sync.WaitGroup{},
 		inputRelabelers: make(
 			map[relabelerKey]*cppbridge.InputPerShardRelabeler,
 			int(numberOfShards)*len(inputRelabelerConfigs),
@@ -41,10 +45,10 @@ func New(
 		// stat
 		memoryInUse: factory.NewGaugeVec(
 			prometheus.GaugeOpts{
-				Name: "prompp_relabeler_cgo_memory_bytes",
+				Name: "prompp_head_cgo_memory_bytes",
 				Help: "Current value memory in use in bytes.",
 			},
-			[]string{"allocator", "id"},
+			[]string{"generation", "allocator", "id"},
 		),
 	}
 
@@ -110,6 +114,30 @@ func (h *Head) Reconfigure(inputRelabelerConfigs []*config.InputRelabelerConfig,
 	}
 	h.run()
 	return nil
+}
+
+func (h *Head) WriteMetrics() {
+	_ = h.forEachShard(func(shard relabeler.Shard) error {
+		h.memoryInUse.With(
+			prometheus.Labels{
+				"generation": fmt.Sprintf("%d", h.generation),
+				"allocator":  "main_lss",
+				"id":         fmt.Sprintf("%d", shard.ShardID()),
+			},
+		).Set(float64(shard.LSS().AllocatedMemory()))
+
+		for relabelerID, inputRelabeler := range shard.InputRelabelers() {
+			h.memoryInUse.With(
+				prometheus.Labels{
+					"generation": fmt.Sprintf("%d", h.generation),
+					"allocator":  fmt.Sprintf("input_relabeler_%s", relabelerID),
+					"id":         fmt.Sprintf("%d", shard.ShardID()),
+				},
+			).Set(float64(inputRelabeler.CacheAllocatedMemory()))
+		}
+
+		return nil
+	})
 }
 
 func (h *Head) Rotate() error {

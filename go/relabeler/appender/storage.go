@@ -113,6 +113,19 @@ func (qs *QueryableStorage) Close() error {
 	return qs.closer.Close()
 }
 
+func (qs *QueryableStorage) WriteMetrics() {
+	qs.mtx.Lock()
+	var heads []*headWrapper
+	for _, head := range qs.heads {
+		heads = append(heads, head)
+	}
+	defer qs.mtx.Unlock()
+
+	for _, head := range heads {
+		head.head.WriteMetrics()
+	}
+}
+
 func (qs *QueryableStorage) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 	qs.mtx.Lock()
 	defer qs.mtx.Unlock()

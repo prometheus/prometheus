@@ -43,6 +43,10 @@ func (h *RotatableHead) Reconfigure(inputRelabelerConfigs []*config.InputRelabel
 	return h.head.Reconfigure(inputRelabelerConfigs, numberOfShards)
 }
 
+func (h *RotatableHead) WriteMetrics() {
+	h.head.WriteMetrics()
+}
+
 func (h *RotatableHead) Close() error {
 	return h.head.Close()
 }
@@ -60,15 +64,15 @@ func NewRotatableHead(storage Storage, builder HeadBuilder) (*RotatableHead, err
 	}, nil
 }
 
-func (r *RotatableHead) Rotate() error {
-	newHead, err := r.builder.Build()
+func (h *RotatableHead) Rotate() error {
+	newHead, err := h.builder.Build()
 	if err != nil {
 		return err
 	}
 
-	r.head.Finalize()
-	r.storage.Add(r.head)
-	r.head = newHead
+	h.head.Finalize()
+	h.storage.Add(h.head)
+	h.head = newHead
 
 	return nil
 }

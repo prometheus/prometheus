@@ -107,7 +107,7 @@ func NewDestinationGroup(
 		// stat
 		memoryInUse: factory.NewGaugeVec(
 			prometheus.GaugeOpts{
-				Name: "prompp_relabeler_cgo_memory_bytes",
+				Name: "prompp_distributor_cgo_memory_bytes",
 				Help: "Current value memory in use in bytes.",
 			},
 			[]string{"allocator", "id"},

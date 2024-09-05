@@ -103,7 +103,7 @@ func (s *AppenderSuite) TestManagerRelabelerKeep() {
 	}
 
 	dstrb := distributor.NewDistributor(destinationGroups)
-	hd, err := head.New(inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+	hd, err := head.New(0, inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
 	require.NoError(s.T(), err)
 	s.T().Log("make appender")
 	app := appender.NewQueryableAppender(hd, dstrb)
@@ -234,7 +234,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabeling() {
 	}
 
 	dstrb := distributor.NewDistributor(destinationGroups)
-	hd, err := head.New(inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+	hd, err := head.New(0, inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
 	require.NoError(s.T(), err)
 	s.T().Log("make appender")
 	app := appender.NewQueryableAppender(hd, dstrb)
@@ -376,7 +376,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingAddNewLabel() {
 	}
 
 	dstrb := distributor.NewDistributor(destinationGroups)
-	hd, err := head.New(inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+	hd, err := head.New(0, inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
 	require.NoError(s.T(), err)
 	s.T().Log("make appender")
 	app := appender.NewQueryableAppender(hd, dstrb)
@@ -522,7 +522,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsEnd() {
 	}
 
 	dstrb := distributor.NewDistributor(destinationGroups)
-	hd, err := head.New(inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+	hd, err := head.New(0, inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
 	require.NoError(s.T(), err)
 	s.T().Log("make appender")
 	app := appender.NewQueryableAppender(hd, dstrb)
@@ -667,7 +667,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsRelabel(
 	}
 
 	dstrb := distributor.NewDistributor(destinationGroups)
-	hd, err := head.New(inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+	hd, err := head.New(0, inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
 	require.NoError(s.T(), err)
 	s.T().Log("make appender")
 	app := appender.NewQueryableAppender(hd, dstrb)
@@ -813,8 +813,12 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 	}
 
 	dstrb := distributor.NewDistributor(destinationGroups)
+	var headGeneration uint64
 	rotatableHead, err := appender.NewRotatableHead(noOpStorage{}, head.BuildFunc(func() (relabeler.Head, error) {
-		return head.New(inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+		h, err := head.New(headGeneration, inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+		require.NoError(s.T(), err)
+		headGeneration++
+		return h, nil
 	}))
 	require.NoError(s.T(), err)
 	s.T().Log("make appender")
@@ -1250,7 +1254,7 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans() {
 	}
 
 	dstrb := distributor.NewDistributor(destinationGroups)
-	hd, err := head.New(inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+	hd, err := head.New(0, inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
 	require.NoError(s.T(), err)
 	s.T().Log("make appender")
 	app := appender.NewQueryableAppender(hd, dstrb)
@@ -1388,7 +1392,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 
 	dstrb := distributor.NewDistributor(destinationGroups)
 	rotatableHead, err := appender.NewRotatableHead(noOpStorage{}, head.BuildFunc(func() (relabeler.Head, error) {
-		return head.New(inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+		return head.New(0, inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
 	}))
 	require.NoError(s.T(), err)
 	s.T().Log("make appender")

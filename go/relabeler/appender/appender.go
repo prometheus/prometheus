@@ -61,6 +61,14 @@ func (qa *QueryableAppender) AppendWithStaleNans(
 	return nil
 }
 
+func (qa *QueryableAppender) WriteMetrics() {
+	qa.lock.Lock()
+	defer qa.lock.Unlock()
+
+	qa.head.WriteMetrics()
+	qa.distributor.WriteMetrics(qa.head)
+}
+
 func (qa *QueryableAppender) Rotate() error {
 	qa.lock.Lock()
 	defer qa.lock.Unlock()

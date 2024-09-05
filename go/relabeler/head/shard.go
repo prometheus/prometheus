@@ -234,26 +234,6 @@ func (h *Head) shardLoop(shardID uint16, stopc chan struct{}) {
 		select {
 		case <-stopc:
 			return
-		//case task := <-h.stageMetricUpdate[shardID]:
-		//	h.memoryInUse.With(
-		//		prometheus.Labels{"allocator": "main_lss", "id": fmt.Sprintf("%d", shardID)},
-		//	).Set(float64(h.lsses[shardID].AllocatedMemory()))
-		//
-		//	for k, r := range h.inputRelabelers {
-		//		if k.shardID != shardID {
-		//			continue
-		//		}
-		//
-		//		h.memoryInUse.With(
-		//			prometheus.Labels{
-		//				"allocator": fmt.Sprintf("input_relabeler_%s", k.relabelerID),
-		//				"id":        fmt.Sprintf("%d", shardID),
-		//			},
-		//		).Set(float64(r.CacheAllocatedMemory()))
-		//	}
-		//
-		//	task.updateOutputRelabersMetrics(shardID)
-
 		case task := <-h.stageInputRelabeling[shardID]:
 			shardsInnerSeries := cppbridge.NewShardsInnerSeries(h.numberOfShards)
 			shardsRelabeledSeries := cppbridge.NewShardsRelabeledSeries(h.numberOfShards)
@@ -340,7 +320,20 @@ func (h *Head) shardLoop(shardID uint16, stopc chan struct{}) {
 				continue
 			}
 		case task := <-h.genericTaskCh[shardID]:
-			task.errs[shardID] = task.shardFn(&shard{id: shardID, dataStorage: h.dataStorages[shardID], lssWrapper: &lssWrapper{lss: h.lsses[shardID]}})
+			inputRelabelers := make(map[string]*cppbridge.InputPerShardRelabeler)
+			for key, inputRelabeler := range h.inputRelabelers {
+				if key.shardID != shardID {
+					continue
+				}
+				ir := inputRelabeler
+				inputRelabelers[key.relabelerID] = ir
+			}
+			task.errs[shardID] = task.shardFn(&shard{
+				id:              shardID,
+				dataStorage:     h.dataStorages[shardID],
+				lssWrapper:      &lssWrapper{lss: h.lsses[shardID]},
+				inputRelabelers: inputRelabelers,
+			})
 			task.wg.Done()
 		}
 	}
@@ -354,10 +347,15 @@ func (w *lssWrapper) Raw() *cppbridge.LabelSetStorage {
 	return w.lss
 }
 
+func (w *lssWrapper) AllocatedMemory() uint64 {
+	return w.lss.AllocatedMemory()
+}
+
 type shard struct {
-	id          uint16
-	lssWrapper  *lssWrapper
-	dataStorage *DataStorage
+	id              uint16
+	lssWrapper      *lssWrapper
+	dataStorage     *DataStorage
+	inputRelabelers map[string]*cppbridge.InputPerShardRelabeler
 }
 
 func (s *shard) ShardID() uint16 {
@@ -370,4 +368,13 @@ func (s *shard) DataStorage() relabeler.DataStorage {
 
 func (s *shard) LSS() relabeler.LSS {
 	return s.lssWrapper
+}
+
+func (s *shard) InputRelabelers() map[string]relabeler.InputRelabeler {
+	result := make(map[string]relabeler.InputRelabeler)
+	for key, inputRelabeler := range s.inputRelabelers {
+		ir := inputRelabeler
+		result[key] = ir
+	}
+	return result
 }

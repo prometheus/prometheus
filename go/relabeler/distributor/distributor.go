@@ -106,6 +106,20 @@ func (d *Distributor) Shutdown(ctx context.Context) error {
 	})
 }
 
+func (d *Distributor) WriteMetrics(head relabeler.Head) {
+	_ = d.ParallelRange(func(destinationGroupID int, destinationGroup *relabeler.DestinationGroup) error {
+		destinationGroup.ObserveEncodersMemory()
+		return nil
+	})
+
+	_ = head.ForEachShard(func(shard relabeler.Shard) error {
+		return d.ParallelRange(func(destinationGroupID int, destinationGroup *relabeler.DestinationGroup) error {
+			destinationGroup.ObserveCacheAllocatedMemory(shard.ShardID())
+			return nil
+		})
+	})
+}
+
 func (d *Distributor) ParallelRange(fn func(destinationGroupID int, destinationGroup *relabeler.DestinationGroup) error) error {
 	d.lock.Lock()
 	defer d.lock.Unlock()
