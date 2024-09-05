@@ -58,8 +58,6 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
-	"github.com/prometheus/prometheus/discovery/legacymanager"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -159,7 +157,6 @@ type flagConfig struct {
 	// These options are extracted from featureList
 	// for ease of use.
 	enableExpandExternalLabels bool
-	enableNewSDManager         bool
 	enablePerStepStats         bool
 	enableAutoGOMAXPROCS       bool
 	enableAutoGOMEMLIMIT       bool
@@ -197,9 +194,6 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "metadata-wal-records":
 				c.scrape.AppendMetadata = true
 				level.Info(logger).Log("msg", "Experimental metadata records in WAL enabled, required for remote write 2.0")
-			case "new-service-discovery-manager":
-				c.enableNewSDManager = true
-				level.Info(logger).Log("msg", "Experimental service discovery manager")
 			case "promql-per-step-stats":
 				c.enablePerStepStats = true
 				level.Info(logger).Log("msg", "Experimental per-step statistics reporting")
@@ -463,7 +457,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: auto-gomemlimit, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, new-service-discovery-manager, auto-gomaxprocs, no-default-scrape-port, native-histograms, otlp-write-receiver, created-timestamp-zero-ingestion, concurrent-rule-eval. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: auto-gomemlimit, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, auto-gomaxprocs, no-default-scrape-port, native-histograms, otlp-write-receiver, created-timestamp-zero-ingestion, concurrent-rule-eval. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
@@ -651,8 +645,8 @@ func main() {
 
 		ctxScrape, cancelScrape = context.WithCancel(context.Background())
 		ctxNotify, cancelNotify = context.WithCancel(context.Background())
-		discoveryManagerScrape  discoveryManager
-		discoveryManagerNotify  discoveryManager
+		discoveryManagerScrape  *discovery.Manager
+		discoveryManagerNotify  *discovery.Manager
 	)
 
 	// Kubernetes client metrics are used by Kubernetes SD.
@@ -672,42 +666,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	if cfg.enableNewSDManager {
-		{
-			discMgr := discovery.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), prometheus.DefaultRegisterer, sdMetrics, discovery.Name("scrape"))
-			if discMgr == nil {
-				level.Error(logger).Log("msg", "failed to create a discovery manager scrape")
-				os.Exit(1)
-			}
-			discoveryManagerScrape = discMgr
-		}
+	discoveryManagerScrape = discovery.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), prometheus.DefaultRegisterer, sdMetrics, discovery.Name("scrape"))
+	if discoveryManagerScrape == nil {
+		level.Error(logger).Log("msg", "failed to create a discovery manager scrape")
+		os.Exit(1)
+	}
 
-		{
-			discMgr := discovery.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), prometheus.DefaultRegisterer, sdMetrics, discovery.Name("notify"))
-			if discMgr == nil {
-				level.Error(logger).Log("msg", "failed to create a discovery manager notify")
-				os.Exit(1)
-			}
-			discoveryManagerNotify = discMgr
-		}
-	} else {
-		{
-			discMgr := legacymanager.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), prometheus.DefaultRegisterer, sdMetrics, legacymanager.Name("scrape"))
-			if discMgr == nil {
-				level.Error(logger).Log("msg", "failed to create a discovery manager scrape")
-				os.Exit(1)
-			}
-			discoveryManagerScrape = discMgr
-		}
-
-		{
-			discMgr := legacymanager.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), prometheus.DefaultRegisterer, sdMetrics, legacymanager.Name("notify"))
-			if discMgr == nil {
-				level.Error(logger).Log("msg", "failed to create a discovery manager notify")
-				os.Exit(1)
-			}
-			discoveryManagerNotify = discMgr
-		}
+	discoveryManagerNotify = discovery.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), prometheus.DefaultRegisterer, sdMetrics, discovery.Name("notify"))
+	if discoveryManagerNotify == nil {
+		level.Error(logger).Log("msg", "failed to create a discovery manager notify")
+		os.Exit(1)
 	}
 
 	scrapeManager, err := scrape.NewManager(
@@ -1763,15 +1731,6 @@ func (opts agentOptions) ToAgentOptions(outOfOrderTimeWindow int64) agent.Option
 		NoLockfile:           opts.NoLockfile,
 		OutOfOrderTimeWindow: outOfOrderTimeWindow,
 	}
-}
-
-// discoveryManager interfaces the discovery manager. This is used to keep using
-// the manager that restarts SD's on reload for a few releases until we feel
-// the new manager can be enabled for all users.
-type discoveryManager interface {
-	ApplyConfig(cfg map[string]discovery.Configs) error
-	Run() error
-	SyncCh() <-chan map[string][]*targetgroup.Group
 }
 
 // rwProtoMsgFlagParser is a custom parser for config.RemoteWriteProtoMsg enum.
