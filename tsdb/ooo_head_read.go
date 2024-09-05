@@ -513,7 +513,7 @@ type HeadAndOOOQuerier struct {
 	head       *Head
 	index      IndexReader
 	chunkr     ChunkReader
-	querier    storage.Querier // This might be nil if head was truncated.
+	querier    storage.Querier // Used for LabelNames, LabelValues, but may be nil if head was truncated in the mean time, in which case we ignore it and not close it in the end.
 }
 
 func NewHeadAndOOOQuerier(mint, maxt int64, head *Head, oooIsoState *oooIsolationState, querier storage.Querier) storage.Querier {
