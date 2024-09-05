@@ -87,6 +87,12 @@ scrape_configs:
           my: label
           your: label
 
+    http_headers:
+      foo:
+        values: ["foobar"]
+        secrets: ["bar", "foo"]
+        files: ["valid_password_file"]
+
     relabel_configs:
       - source_labels: [job, __meta_dns_name]
         regex: (.*)some-[regex]
