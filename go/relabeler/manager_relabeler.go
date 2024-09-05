@@ -391,7 +391,16 @@ func (msr *ManagerRelabeler) rotate() error {
 		},
 	)
 
-	return msr.shards.rotate()
+	msr.shards.forEachShard(func(shard ShardInterface) {
+		shard.LSS().Reset()
+		shard.Head().Reset()
+		generation := shard.LSS().Generation()
+		for _, relabeler := range shard.InputRelabelers() {
+			relabeler.ResetTo(generation, msr.shards.numberOfShards)
+		}
+	})
+
+	return nil
 }
 
 //
@@ -442,13 +451,37 @@ func (h *shardHead) AppendInnerSeriesSlice(innerSeriesSlice []*cppbridge.InnerSe
 	h.encoder.EncodeInnerSeriesSlice(innerSeriesSlice)
 }
 
-func (h *shardHead) ResetDataStorage() {
+func (h *shardHead) Reset() {
 	h.dataStorage.Reset()
 }
 
+type shardLSS struct {
+	lss *cppbridge.LabelSetStorage
+}
+
+func (lss *shardLSS) Reset() {
+	lss.lss.Reset()
+}
+
+func (lss *shardLSS) Generation() uint32 {
+	return lss.lss.Generation()
+}
+
+type shardInputRelabeler struct {
+	relabelers []*cppbridge.InputPerShardRelabeler
+}
+
+func (r *shardInputRelabeler) ResetTo(generation uint32, numberOfShards uint16) {
+	for _, relabeler := range r.relabelers {
+		relabeler.ResetTo(generation, numberOfShards)
+	}
+}
+
 type shard struct {
-	id   uint16
-	head *shardHead
+	id              uint16
+	head            *shardHead
+	lss             *shardLSS
+	inputRelabelers []InputRelabelerInterface
 }
 
 func (s *shard) ShardID() uint16 {
@@ -457,6 +490,14 @@ func (s *shard) ShardID() uint16 {
 
 func (s *shard) Head() ShardHead {
 	return s.head
+}
+
+func (s *shard) LSS() LSSInterface {
+	return s.lss
+}
+
+func (s *shard) InputRelabelers() []InputRelabelerInterface {
+	return s.inputRelabelers
 }
 
 // shards for relabelers.
@@ -769,20 +810,20 @@ func (s *shards) updateOrCreateStatelessRelabeler(
 	return sr, nil
 }
 
-// rotate main lss and input relabelers.
-func (s *shards) rotate() error {
-	var shardID uint16
-	for ; shardID < s.numberOfShards; shardID++ {
-		s.shardLsses[shardID].Reset()
-		s.heads[shardID].ResetDataStorage()
-	}
-
-	for rkey, inputRelabeler := range s.inputRelabelers {
-		inputRelabeler.ResetTo(s.shardLsses[rkey.shardID].Generation(), s.numberOfShards)
-	}
-
-	return nil
-}
+//// rotate main lss and input relabelers.
+//func (s *shards) rotate() error {
+//	var shardID uint16
+//	for ; shardID < s.numberOfShards; shardID++ {
+//		s.shardLsses[shardID].Reset()
+//		s.heads[shardID].ResetDataStorage()
+//	}
+//
+//	for rkey, inputRelabeler := range s.inputRelabelers {
+//		inputRelabeler.ResetTo(s.shardLsses[rkey.shardID].Generation(), s.numberOfShards)
+//	}
+//
+//	return nil
+//}
 
 // run shards loop for relableling.
 func (s *shards) run() {
@@ -910,7 +951,14 @@ func (s *shards) shardLoop(shardID uint16) {
 				continue
 			}
 		case task := <-s.genericTaskCh[shardID]:
-			task.shardFn(&shard{id: shardID, head: s.heads[shardID]})
+			var relabelers []InputRelabelerInterface
+			for key, relabeler := range s.inputRelabelers {
+				if key.shardID == shardID {
+					rc := relabeler
+					relabelers = append(relabelers, rc)
+				}
+			}
+			task.shardFn(&shard{id: shardID, head: s.heads[shardID], lss: &shardLSS{lss: s.shardLsses[shardID]}, inputRelabelers: relabelers})
 			task.wg.Done()
 		case task := <-s.stageOutputRelabeling[shardID]:
 			_ = task.DestinationGroups().RangeGo(
@@ -1269,12 +1317,24 @@ func (p *InputRelabelingPromise) Wait(ctx context.Context) error {
 // ShardHead - head appender interface.
 type ShardHead interface {
 	AppendInnerSeriesSlice(innerSeriesSlice []*cppbridge.InnerSeries)
+	Reset()
+}
+
+type LSSInterface interface {
+	Reset()
+	Generation() uint32
+}
+
+type InputRelabelerInterface interface {
+	ResetTo(generation uint32, numberOfShards uint16)
 }
 
 // ShardInterface interface.
 type ShardInterface interface {
 	ShardID() uint16
 	Head() ShardHead
+	LSS() LSSInterface
+	InputRelabelers() []InputRelabelerInterface
 }
 
 // ShardFnInterface - shard function.
