@@ -128,6 +128,7 @@ type Head struct {
 	writeNotified wlog.WriteNotified
 
 	memTruncationInProcess atomic.Bool
+	memTruncationCallBack  func() // For testing purposes.
 }
 
 type ExemplarStorage interface {
@@ -1128,6 +1129,10 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 	h.lastMemoryTruncationTime.Store(mint)
 	h.memTruncationInProcess.Store(true)
 	defer h.memTruncationInProcess.Store(false)
+
+	if h.memTruncationCallBack != nil {
+		h.memTruncationCallBack()
+	}
 
 	// We wait for pending queries to end that overlap with this truncation.
 	if initialized {
