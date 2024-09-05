@@ -513,7 +513,7 @@ type HeadAndOOOQuerier struct {
 	head       *Head
 	index      IndexReader
 	chunkr     ChunkReader
-	querier    storage.Querier
+	querier    storage.Querier // Used for LabelNames, LabelValues, but may be nil if head was truncated in the mean time, in which case we ignore it and not close it in the end.
 }
 
 func NewHeadAndOOOQuerier(mint, maxt int64, head *Head, oooIsoState *oooIsolationState, querier storage.Querier) storage.Querier {
@@ -534,15 +534,24 @@ func NewHeadAndOOOQuerier(mint, maxt int64, head *Head, oooIsoState *oooIsolatio
 }
 
 func (q *HeadAndOOOQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	if q.querier == nil {
+		return nil, nil, nil
+	}
 	return q.querier.LabelValues(ctx, name, hints, matchers...)
 }
 
 func (q *HeadAndOOOQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	if q.querier == nil {
+		return nil, nil, nil
+	}
 	return q.querier.LabelNames(ctx, hints, matchers...)
 }
 
 func (q *HeadAndOOOQuerier) Close() error {
 	q.chunkr.Close()
+	if q.querier == nil {
+		return nil
+	}
 	return q.querier.Close()
 }
 
