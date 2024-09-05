@@ -276,4 +276,5 @@ specified interval. The interval is defined by the
 
 Configuration reloads are triggered by detecting changes in the checksum of the
 main configuration file or any referenced files, such as rule and scrape
-configurations.
+configurations. To ensure consistency and avoid issues during reloads, it's
+recommended to update these files atomically.
