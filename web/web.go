@@ -378,13 +378,6 @@ func New(logger log.Logger, o *Options) *Handler {
 		http.Redirect(w, r, path.Join(o.ExternalURL.Path, homePage), http.StatusFound)
 	})
 
-	// The console library examples at 'console_libraries/prom.lib' still depend on old asset files being served under `classic`.
-	router.Get("/classic/static/*filepath", func(w http.ResponseWriter, r *http.Request) {
-		r.URL.Path = path.Join("/static", route.Param(r.Context(), "filepath"))
-		fs := server.StaticFileServer(ui.Assets)
-		fs.ServeHTTP(w, r)
-	})
-
 	router.Get("/version", h.version)
 	router.Get("/metrics", promhttp.Handler().ServeHTTP)
 

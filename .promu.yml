@@ -28,8 +28,6 @@ tarball:
     # Whenever there are new files to include in the tarball,
     # remember to make sure the new files will be generated after `make build`.
     files:
-        - consoles
-        - console_libraries
         - documentation/examples/prometheus.yml
         - LICENSE
         - NOTICE
