@@ -1319,7 +1319,7 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans() {
 	s.Equal(firstWr.String(), <-destination)
 	s.Equal(firstWr.String(), <-destination)
 
-	s.T().Log("shutdown manager")
+	s.T().Log("shutdown distributor")
 	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 150*time.Millisecond)
 	err = dstrb.Shutdown(shutdownCtx)
 	cancel()
@@ -1387,10 +1387,18 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 	}
 
 	dstrb := distributor.NewDistributor(destinationGroups)
-	hd, err := head.New(inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+	rotatableHead, err := appender.NewRotatableHead(noOpStorage{}, head.BuildFunc(func() (relabeler.Head, error) {
+		return head.New(inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+	}))
 	require.NoError(s.T(), err)
 	s.T().Log("make appender")
-	app := appender.NewQueryableAppender(hd, dstrb)
+	app := appender.NewQueryableAppender(rotatableHead, dstrb)
+
+	rotator := appender.NewRotator(app, clock, appender.DefaultRotateDuration)
+	defer func() {
+		_ = rotator.Close()
+	}()
+	rotator.Run()
 
 	hlimits := cppbridge.DefaultWALHashdexLimits()
 
