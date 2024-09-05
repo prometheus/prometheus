@@ -2061,7 +2061,7 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 			}
 			headQuerier = nil
 		}
-		if getNew {
+		if getNew || overlapsOOO{
 			rh := NewRangeHead(db.head, newMint, maxt)
 			headQuerier, err = db.blockQuerierFunc(rh, newMint, maxt)
 			if err != nil {
