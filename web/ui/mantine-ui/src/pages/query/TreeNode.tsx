@@ -33,7 +33,8 @@ import { useId } from "@mantine/hooks";
 import { functionSignatures } from "../../promql/functionSignatures";
 
 const nodeIndent = 20;
-const maxLabels = 10;
+const maxLabelNames = 10;
+const maxLabelValues = 10;
 
 type NodeState = "waiting" | "running" | "error" | "success";
 
@@ -209,7 +210,7 @@ const TreeNode: FC<{
       // Sort label values by their number of occurrences within this label name.
       labelExamples[ln] = Object.entries(lvs)
         .sort(([, aCnt], [, bCnt]) => bCnt - aCnt)
-        .slice(0, 5)
+        .slice(0, maxLabelValues)
         .map(([lv, cnt]) => ({ value: lv, count: cnt }));
     });
 
@@ -285,11 +286,14 @@ const TreeNode: FC<{
           <Text c="dimmed" fz="xs" style={{ whiteSpace: "nowrap" }}>
             {resultStats.numSeries} result{resultStats.numSeries !== 1 && "s"}
             &nbsp;&nbsp;–&nbsp;&nbsp;
-            {responseTime}ms &nbsp;&nbsp;–&nbsp;&nbsp;
+            {responseTime}ms
+            {resultStats.sortedLabelCards.length > 0 && (
+              <>&nbsp;&nbsp;–&nbsp;&nbsp;</>
+            )}
           </Text>
           <Group gap="xs" wrap="nowrap">
             {resultStats.sortedLabelCards
-              .slice(0, maxLabels)
+              .slice(0, maxLabelNames)
               .map(([ln, cnt]) => (
                 <Tooltip
                   key={ln}
@@ -302,7 +306,7 @@ const TreeNode: FC<{
                         {resultStats.labelExamples[ln].map(
                           ({ value, count }) => (
                             <List.Item key={value} py={1}>
-                              <Code c="red.3" bg="gray.7">
+                              <Code c="red.3" bg="gray.8">
                                 {escapeString(value)}
                               </Code>{" "}
                               ({count}
@@ -310,7 +314,7 @@ const TreeNode: FC<{
                             </List.Item>
                           )
                         )}
-                        {cnt > 5 && <li>...</li>}
+                        {cnt > maxLabelValues && <li>...</li>}
                       </List>
                     </Box>
                   }
@@ -330,14 +334,14 @@ const TreeNode: FC<{
                   </span>
                 </Tooltip>
               ))}
-            {resultStats.sortedLabelCards.length > maxLabels ? (
+            {resultStats.sortedLabelCards.length > maxLabelNames ? (
               <Text
                 component="span"
                 c="dimmed"
                 fz="xs"
                 style={{ whiteSpace: "nowrap" }}
               >
-                ...{resultStats.sortedLabelCards.length - maxLabels} more...
+                ...{resultStats.sortedLabelCards.length - maxLabelNames} more...
               </Text>
             ) : null}
           </Group>
