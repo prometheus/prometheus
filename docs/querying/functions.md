@@ -669,6 +669,8 @@ over time and return an instant vector with per-series aggregation results:
 * `min_over_time(range-vector)`: the minimum value of all points in the specified interval.
 * `max_over_time(range-vector)`: the maximum value of all points in the specified interval.
 * `sum_over_time(range-vector)`: the sum of all values in the specified interval.
+   Note: for a mathematically correct [numerical integration](https://en.wikipedia.org/wiki/Numerical_integration) using the [rectangle method](https://en.wikipedia.org/wiki/Riemann_sum) also multiply by a factor to expand the rectangles to take up the full time range without gaps.
+   eg. for a `_per_second` gauge metric, with time-period between samples (scrape interval) of 15s, multiply by 15: `sum_over_time(<metric_prefix>_per_second[<duration>]) * 15`
 * `count_over_time(range-vector)`: the count of all values in the specified interval.
 * `quantile_over_time(scalar, range-vector)`: the φ-quantile (0 ≤ φ ≤ 1) of the values in the specified interval.
 * `stddev_over_time(range-vector)`: the population standard deviation of the values in the specified interval.
