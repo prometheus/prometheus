@@ -135,6 +135,7 @@ func (w *BlockWriter) Write(block Block) (err error) {
 
 	// write meta
 	blockMeta.Version = metaVersion1
+	blockMeta.MaxTime += 1
 	metaFileSize, err := writeBlockMetaFile(filepath.Join(tmp, metaFilename), blockMeta)
 	if err != nil {
 		return fmt.Errorf("failed to write block meta file: %w", err)
