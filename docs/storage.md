@@ -157,7 +157,7 @@ a set of interfaces that allow integrating with remote storage systems.
 
 ### Overview
 
-Prometheus integrates with remote storage systems in three ways:
+Prometheus integrates with remote storage systems in four ways:
 
 - Prometheus can write samples that it ingests to a remote URL in a [Remote Write format](https://prometheus.io/docs/specs/remote_write_spec_2_0/).
 - Prometheus can receive samples from other clients in a [Remote Write format](https://prometheus.io/docs/specs/remote_write_spec_2_0/).
