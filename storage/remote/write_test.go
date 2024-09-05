@@ -16,9 +16,12 @@ package remote
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path"
 	"testing"
 	"time"
 
@@ -35,9 +38,9 @@ import (
 	"github.com/prometheus/prometheus/model/relabel"
 )
 
-func testRemoteWriteConfig() *config.RemoteWriteConfig {
+func testRemoteWriteConfig(name string) *config.RemoteWriteConfig {
 	return &config.RemoteWriteConfig{
-		Name: "dev",
+		Name: name,
 		URL: &common_config.URL{
 			URL: &url.URL{
 				Scheme: "http",
@@ -105,7 +108,7 @@ func TestWriteStorageApplyConfig_NoDuplicateWriteConfigs(t *testing.T) {
 		},
 	} {
 		t.Run("", func(t *testing.T) {
-			s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil, false)
+			s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil, false, false)
 			conf := &config.Config{
 				GlobalConfig:       config.DefaultGlobalConfig,
 				RemoteWriteConfigs: tc.cfgs,
@@ -124,36 +127,40 @@ func TestWriteStorageApplyConfig_NoDuplicateWriteConfigs(t *testing.T) {
 }
 
 func TestWriteStorageApplyConfig_RestartOnNameChange(t *testing.T) {
-	dir := t.TempDir()
+	for _, statefulWatcher := range []bool{true, false} {
+		t.Run(fmt.Sprintf("statefulWatcher=%t", statefulWatcher), func(t *testing.T) {
+			dir := t.TempDir()
 
-	cfg := testRemoteWriteConfig()
+			cfg := testRemoteWriteConfig("dev")
 
-	hash, err := toHash(cfg)
-	require.NoError(t, err)
+			hash, err := toHash(cfg)
+			require.NoError(t, err)
 
-	s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil, false)
+			s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil, false, statefulWatcher)
 
-	conf := &config.Config{
-		GlobalConfig:       config.DefaultGlobalConfig,
-		RemoteWriteConfigs: []*config.RemoteWriteConfig{cfg},
+			conf := &config.Config{
+				GlobalConfig:       config.DefaultGlobalConfig,
+				RemoteWriteConfigs: []*config.RemoteWriteConfig{cfg},
+			}
+			require.NoError(t, s.ApplyConfig(conf))
+			require.Equal(t, s.queues[hash].client().Name(), cfg.Name)
+
+			// Change the queues name, ensure the queue has been restarted.
+			conf.RemoteWriteConfigs[0].Name = "dev-2"
+			require.NoError(t, s.ApplyConfig(conf))
+			hash, err = toHash(cfg)
+			require.NoError(t, err)
+			require.Equal(t, s.queues[hash].client().Name(), conf.RemoteWriteConfigs[0].Name)
+
+			require.NoError(t, s.Close())
+		})
 	}
-	require.NoError(t, s.ApplyConfig(conf))
-	require.Equal(t, s.queues[hash].client().Name(), cfg.Name)
-
-	// Change the queues name, ensure the queue has been restarted.
-	conf.RemoteWriteConfigs[0].Name = "dev-2"
-	require.NoError(t, s.ApplyConfig(conf))
-	hash, err = toHash(cfg)
-	require.NoError(t, err)
-	require.Equal(t, s.queues[hash].client().Name(), conf.RemoteWriteConfigs[0].Name)
-
-	require.NoError(t, s.Close())
 }
 
 func TestWriteStorageApplyConfig_UpdateWithRegisterer(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Millisecond, nil, false)
+	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Millisecond, nil, false, false)
 	c1 := &config.RemoteWriteConfig{
 		Name: "named",
 		URL: &common_config.URL{
@@ -194,7 +201,7 @@ func TestWriteStorageApplyConfig_UpdateWithRegisterer(t *testing.T) {
 func TestWriteStorageApplyConfig_Lifecycle(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false)
+	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false, false)
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{
@@ -207,16 +214,93 @@ func TestWriteStorageApplyConfig_Lifecycle(t *testing.T) {
 	require.NoError(t, s.Close())
 }
 
+func TestWriteStorageApplyConfig_StatefulWatcher(t *testing.T) {
+	dir := t.TempDir()
+	markersDir := path.Join(dir, "wal", "remote_write")
+
+	// WriteStorage with a WAL stateful watcher.
+	s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil, false, true)
+	cfg1 := testRemoteWriteConfig("")
+	cfg2 := testRemoteWriteConfig("bar")
+	conf := &config.Config{
+		GlobalConfig:       config.DefaultGlobalConfig,
+		RemoteWriteConfigs: []*config.RemoteWriteConfig{cfg1, cfg2},
+	}
+
+	// 1. remote-write config cfg1 without a name is not accepted.
+	require.Error(t, s.ApplyConfig(conf))
+	require.Empty(t, s.queues)
+
+	// 2. two remote-write configs with the same name is not accpected.
+	conf.RemoteWriteConfigs[0].Name = "bar"
+	require.Error(t, s.ApplyConfig(conf))
+	require.Empty(t, s.queues)
+
+	// 3. Set the cfg1 name back.
+	conf.RemoteWriteConfigs[0].Name = "foo"
+	require.NoError(t, s.ApplyConfig(conf))
+	require.Len(t, s.queues, 2)
+
+	// Ensure the watchers have the appropriate names.
+	hash1, err := toHash(conf.RemoteWriteConfigs[0])
+	require.NoError(t, err)
+	require.Equal(t, "foo", s.queues[hash1].watcher.Name())
+	hash2, err := toHash(conf.RemoteWriteConfigs[1])
+	require.NoError(t, err)
+	require.Equal(t, "bar", s.queues[hash2].watcher.Name())
+
+	// Ensure the progress marker files were clreated.
+	require.FileExists(t, path.Join(markersDir, "foo.json"))
+	require.FileExists(t, path.Join(markersDir, "bar.json"))
+
+	// 4. Simulate a remote-write config entry removal by chaning cfg2 name.
+	conf.RemoteWriteConfigs[1].Name = "baz"
+	require.NoError(t, s.ApplyConfig(conf))
+	require.Len(t, s.queues, 2)
+
+	// Ensure the appropriate progress marker files are present.
+	require.FileExists(t, path.Join(markersDir, "foo.json"))
+	require.FileExists(t, path.Join(markersDir, "baz.json"))
+	require.NoFileExists(t, path.Join(markersDir, "bar.json"))
+
+	require.NoError(t, s.Close())
+
+	// Ensure progress marker files weren't deleted.
+	require.FileExists(t, path.Join(markersDir, "foo.json"))
+	require.FileExists(t, path.Join(markersDir, "baz.json"))
+}
+
+func TestWriteStorageCleanup_StatefulWatcher(t *testing.T) {
+	dir := t.TempDir()
+
+	// There are some stale progress markers files around without corresponding remote-write config entries.
+	markersDir := path.Join(dir, "wal", "remote_write")
+	os.MkdirAll(markersDir, 0o700)
+	f, err := os.Create(path.Join(markersDir, "foo.json"))
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+	f, err = os.Create(path.Join(markersDir, "bar.json"))
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	// WriteStorage should clean them while closing.
+	s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil, false, true)
+	require.NoError(t, s.Close())
+
+	require.NoFileExists(t, path.Join(markersDir, "foo.json"))
+	require.NoFileExists(t, path.Join(markersDir, "bar.json"))
+}
+
 func TestWriteStorageApplyConfig_UpdateExternalLabels(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Second, nil, false)
+	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Second, nil, false, false)
 
 	externalLabels := labels.FromStrings("external", "true")
 	conf := &config.Config{
 		GlobalConfig: config.GlobalConfig{},
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{
-			testRemoteWriteConfig(),
+			testRemoteWriteConfig("dev"),
 		},
 	}
 	hash, err := toHash(conf.RemoteWriteConfigs[0])
@@ -236,136 +320,156 @@ func TestWriteStorageApplyConfig_UpdateExternalLabels(t *testing.T) {
 }
 
 func TestWriteStorageApplyConfig_Idempotent(t *testing.T) {
-	dir := t.TempDir()
+	for _, statefulWatcher := range []bool{true, false} {
+		t.Run(fmt.Sprintf("statefulWatcher=%t", statefulWatcher), func(t *testing.T) {
+			dir := t.TempDir()
 
-	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false)
-	conf := &config.Config{
-		GlobalConfig: config.GlobalConfig{},
-		RemoteWriteConfigs: []*config.RemoteWriteConfig{
-			baseRemoteWriteConfig("http://test-storage.com"),
-		},
+			s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false, statefulWatcher)
+			conf := &config.Config{
+				GlobalConfig: config.GlobalConfig{},
+				RemoteWriteConfigs: []*config.RemoteWriteConfig{
+					baseRemoteWriteConfig("http://test-storage.com"),
+				},
+			}
+			if statefulWatcher {
+				conf.RemoteWriteConfigs[0].Name = "foo"
+			}
+			hash, err := toHash(conf.RemoteWriteConfigs[0])
+			require.NoError(t, err)
+
+			require.NoError(t, s.ApplyConfig(conf))
+			require.Len(t, s.queues, 1)
+
+			require.NoError(t, s.ApplyConfig(conf))
+			require.Len(t, s.queues, 1)
+			_, hashExists := s.queues[hash]
+			require.True(t, hashExists, "Queue pointer should have remained the same")
+
+			require.NoError(t, s.Close())
+		})
 	}
-	hash, err := toHash(conf.RemoteWriteConfigs[0])
-	require.NoError(t, err)
-
-	require.NoError(t, s.ApplyConfig(conf))
-	require.Len(t, s.queues, 1)
-
-	require.NoError(t, s.ApplyConfig(conf))
-	require.Len(t, s.queues, 1)
-	_, hashExists := s.queues[hash]
-	require.True(t, hashExists, "Queue pointer should have remained the same")
-
-	require.NoError(t, s.Close())
 }
 
 func TestWriteStorageApplyConfig_PartialUpdate(t *testing.T) {
-	dir := t.TempDir()
+	for _, statefulWatcher := range []bool{true, false} {
+		t.Run(fmt.Sprintf("statefulWatcher=%t", statefulWatcher), func(t *testing.T) {
+			dir := t.TempDir()
 
-	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false)
+			s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false, statefulWatcher)
 
-	c0 := &config.RemoteWriteConfig{
-		RemoteTimeout: model.Duration(10 * time.Second),
-		QueueConfig:   config.DefaultQueueConfig,
-		WriteRelabelConfigs: []*relabel.Config{
-			{
-				Regex: relabel.MustNewRegexp(".+"),
-			},
-		},
-		ProtobufMessage: config.RemoteWriteProtoMsgV1,
-	}
-	c1 := &config.RemoteWriteConfig{
-		RemoteTimeout: model.Duration(20 * time.Second),
-		QueueConfig:   config.DefaultQueueConfig,
-		HTTPClientConfig: common_config.HTTPClientConfig{
-			BearerToken: "foo",
-		},
-		ProtobufMessage: config.RemoteWriteProtoMsgV1,
-	}
-	c2 := &config.RemoteWriteConfig{
-		RemoteTimeout:   model.Duration(30 * time.Second),
-		QueueConfig:     config.DefaultQueueConfig,
-		ProtobufMessage: config.RemoteWriteProtoMsgV1,
-	}
+			c0 := &config.RemoteWriteConfig{
+				RemoteTimeout: model.Duration(10 * time.Second),
+				QueueConfig:   config.DefaultQueueConfig,
+				WriteRelabelConfigs: []*relabel.Config{
+					{
+						Regex: relabel.MustNewRegexp(".+"),
+					},
+				},
+				ProtobufMessage: config.RemoteWriteProtoMsgV1,
+			}
+			if statefulWatcher {
+				c0.Name = "foo"
+			}
+			c1 := &config.RemoteWriteConfig{
+				RemoteTimeout: model.Duration(20 * time.Second),
+				QueueConfig:   config.DefaultQueueConfig,
+				HTTPClientConfig: common_config.HTTPClientConfig{
+					BearerToken: "foo",
+				},
+				ProtobufMessage: config.RemoteWriteProtoMsgV1,
+			}
+			if statefulWatcher {
+				c1.Name = "bar"
+			}
+			c2 := &config.RemoteWriteConfig{
+				RemoteTimeout:   model.Duration(30 * time.Second),
+				QueueConfig:     config.DefaultQueueConfig,
+				ProtobufMessage: config.RemoteWriteProtoMsgV1,
+			}
+			if statefulWatcher {
+				c2.Name = "baz"
+			}
 
-	conf := &config.Config{
-		GlobalConfig:       config.GlobalConfig{},
-		RemoteWriteConfigs: []*config.RemoteWriteConfig{c0, c1, c2},
-	}
-	// We need to set URL's so that metric creation doesn't panic.
-	for i := range conf.RemoteWriteConfigs {
-		conf.RemoteWriteConfigs[i].URL = &common_config.URL{
-			URL: &url.URL{
-				Host: "http://test-storage.com",
-			},
-		}
-	}
-	require.NoError(t, s.ApplyConfig(conf))
-	require.Len(t, s.queues, 3)
+			conf := &config.Config{
+				GlobalConfig:       config.GlobalConfig{},
+				RemoteWriteConfigs: []*config.RemoteWriteConfig{c0, c1, c2},
+			}
+			// We need to set URL's so that metric creation doesn't panic.
+			for i := range conf.RemoteWriteConfigs {
+				conf.RemoteWriteConfigs[i].URL = &common_config.URL{
+					URL: &url.URL{
+						Host: "http://test-storage.com",
+					},
+				}
+			}
+			require.NoError(t, s.ApplyConfig(conf))
+			require.Len(t, s.queues, 3)
 
-	hashes := make([]string, len(conf.RemoteWriteConfigs))
-	queues := make([]*QueueManager, len(conf.RemoteWriteConfigs))
-	storeHashes := func() {
-		for i := range conf.RemoteWriteConfigs {
-			hash, err := toHash(conf.RemoteWriteConfigs[i])
+			hashes := make([]string, len(conf.RemoteWriteConfigs))
+			queues := make([]*QueueManager, len(conf.RemoteWriteConfigs))
+			storeHashes := func() {
+				for i := range conf.RemoteWriteConfigs {
+					hash, err := toHash(conf.RemoteWriteConfigs[i])
+					require.NoError(t, err)
+					hashes[i] = hash
+					queues[i] = s.queues[hash]
+				}
+			}
+
+			storeHashes()
+			// Update c0 and c2.
+			c0.WriteRelabelConfigs[0] = &relabel.Config{Regex: relabel.MustNewRegexp("foo")}
+			c2.RemoteTimeout = model.Duration(50 * time.Second)
+			conf = &config.Config{
+				GlobalConfig:       config.GlobalConfig{},
+				RemoteWriteConfigs: []*config.RemoteWriteConfig{c0, c1, c2},
+			}
+			require.NoError(t, s.ApplyConfig(conf))
+			require.Len(t, s.queues, 3)
+
+			_, hashExists := s.queues[hashes[0]]
+			require.False(t, hashExists, "The queue for the first remote write configuration should have been restarted because the relabel configuration has changed.")
+			q, hashExists := s.queues[hashes[1]]
+			require.True(t, hashExists, "Hash of unchanged queue should have remained the same")
+			require.Equal(t, q, queues[1], "Pointer of unchanged queue should have remained the same")
+			_, hashExists = s.queues[hashes[2]]
+			require.False(t, hashExists, "The queue for the third remote write configuration should have been restarted because the timeout has changed.")
+
+			storeHashes()
+			secondClient := s.queues[hashes[1]].client()
+			// Update c1.
+			c1.HTTPClientConfig.BearerToken = "bar"
+			err := s.ApplyConfig(conf)
 			require.NoError(t, err)
-			hashes[i] = hash
-			queues[i] = s.queues[hash]
-		}
+			require.Len(t, s.queues, 3)
+
+			_, hashExists = s.queues[hashes[0]]
+			require.True(t, hashExists, "Pointer of unchanged queue should have remained the same")
+			q, hashExists = s.queues[hashes[1]]
+			require.True(t, hashExists, "Hash of queue with secret change should have remained the same")
+			require.NotEqual(t, secondClient, q.client(), "Pointer of a client with a secret change should not be the same")
+			_, hashExists = s.queues[hashes[2]]
+			require.True(t, hashExists, "Pointer of unchanged queue should have remained the same")
+
+			storeHashes()
+			// Delete c0.
+			conf = &config.Config{
+				GlobalConfig:       config.GlobalConfig{},
+				RemoteWriteConfigs: []*config.RemoteWriteConfig{c1, c2},
+			}
+			require.NoError(t, s.ApplyConfig(conf))
+			require.Len(t, s.queues, 2)
+
+			_, hashExists = s.queues[hashes[0]]
+			require.False(t, hashExists, "If a config is removed, the queue should be stopped and recreated.")
+			_, hashExists = s.queues[hashes[1]]
+			require.True(t, hashExists, "Pointer of unchanged queue should have remained the same")
+			_, hashExists = s.queues[hashes[2]]
+			require.True(t, hashExists, "Pointer of unchanged queue should have remained the same")
+
+			require.NoError(t, s.Close())
+		})
 	}
-
-	storeHashes()
-	// Update c0 and c2.
-	c0.WriteRelabelConfigs[0] = &relabel.Config{Regex: relabel.MustNewRegexp("foo")}
-	c2.RemoteTimeout = model.Duration(50 * time.Second)
-	conf = &config.Config{
-		GlobalConfig:       config.GlobalConfig{},
-		RemoteWriteConfigs: []*config.RemoteWriteConfig{c0, c1, c2},
-	}
-	require.NoError(t, s.ApplyConfig(conf))
-	require.Len(t, s.queues, 3)
-
-	_, hashExists := s.queues[hashes[0]]
-	require.False(t, hashExists, "The queue for the first remote write configuration should have been restarted because the relabel configuration has changed.")
-	q, hashExists := s.queues[hashes[1]]
-	require.True(t, hashExists, "Hash of unchanged queue should have remained the same")
-	require.Equal(t, q, queues[1], "Pointer of unchanged queue should have remained the same")
-	_, hashExists = s.queues[hashes[2]]
-	require.False(t, hashExists, "The queue for the third remote write configuration should have been restarted because the timeout has changed.")
-
-	storeHashes()
-	secondClient := s.queues[hashes[1]].client()
-	// Update c1.
-	c1.HTTPClientConfig.BearerToken = "bar"
-	err := s.ApplyConfig(conf)
-	require.NoError(t, err)
-	require.Len(t, s.queues, 3)
-
-	_, hashExists = s.queues[hashes[0]]
-	require.True(t, hashExists, "Pointer of unchanged queue should have remained the same")
-	q, hashExists = s.queues[hashes[1]]
-	require.True(t, hashExists, "Hash of queue with secret change should have remained the same")
-	require.NotEqual(t, secondClient, q.client(), "Pointer of a client with a secret change should not be the same")
-	_, hashExists = s.queues[hashes[2]]
-	require.True(t, hashExists, "Pointer of unchanged queue should have remained the same")
-
-	storeHashes()
-	// Delete c0.
-	conf = &config.Config{
-		GlobalConfig:       config.GlobalConfig{},
-		RemoteWriteConfigs: []*config.RemoteWriteConfig{c1, c2},
-	}
-	require.NoError(t, s.ApplyConfig(conf))
-	require.Len(t, s.queues, 2)
-
-	_, hashExists = s.queues[hashes[0]]
-	require.False(t, hashExists, "If a config is removed, the queue should be stopped and recreated.")
-	_, hashExists = s.queues[hashes[1]]
-	require.True(t, hashExists, "Pointer of unchanged queue should have remained the same")
-	_, hashExists = s.queues[hashes[2]]
-	require.True(t, hashExists, "Pointer of unchanged queue should have remained the same")
-
-	require.NoError(t, s.Close())
 }
 
 func TestOTLPWriteHandler(t *testing.T) {

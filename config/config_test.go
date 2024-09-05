@@ -1850,7 +1850,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "remote_write_dup.bad.yml",
-		errMsg:   `found multiple remote write configs with job name "queue1"`,
+		errMsg:   `found multiple remote write configs with name "queue1"`,
 	},
 	{
 		filename: "remote_read_dup.bad.yml",

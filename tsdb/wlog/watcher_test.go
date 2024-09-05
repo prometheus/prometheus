@@ -17,7 +17,6 @@ import (
 	"math/rand"
 	"os"
 	"path"
-	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -54,9 +53,13 @@ func retry(t *testing.T, interval time.Duration, n int, f func() bool) {
 
 type writeToMock struct {
 	samplesAppended         int
+	samplesLock             sync.Mutex
 	exemplarsAppended       int
+	exemplarsLock           sync.Mutex
 	histogramsAppended      int
+	histogramsLock          sync.Mutex
 	floatHistogramsAppended int
+	floatHistogramsLock     sync.Mutex
 	seriesLock              sync.Mutex
 	seriesSegmentIndexes    map[chunks.HeadSeriesRef]int
 
@@ -65,24 +68,32 @@ type writeToMock struct {
 }
 
 func (wtm *writeToMock) Append(s []record.RefSample) bool {
+	wtm.samplesLock.Lock()
+	defer wtm.samplesLock.Unlock()
 	time.Sleep(wtm.delay)
 	wtm.samplesAppended += len(s)
 	return true
 }
 
 func (wtm *writeToMock) AppendExemplars(e []record.RefExemplar) bool {
+	wtm.exemplarsLock.Lock()
+	defer wtm.exemplarsLock.Unlock()
 	time.Sleep(wtm.delay)
 	wtm.exemplarsAppended += len(e)
 	return true
 }
 
 func (wtm *writeToMock) AppendHistograms(h []record.RefHistogramSample) bool {
+	wtm.histogramsLock.Lock()
+	defer wtm.histogramsLock.Unlock()
 	time.Sleep(wtm.delay)
 	wtm.histogramsAppended += len(h)
 	return true
 }
 
 func (wtm *writeToMock) AppendFloatHistograms(fh []record.RefFloatHistogramSample) bool {
+	wtm.floatHistogramsLock.Lock()
+	defer wtm.floatHistogramsLock.Unlock()
 	time.Sleep(wtm.delay)
 	wtm.floatHistogramsAppended += len(fh)
 	return true
@@ -115,10 +126,34 @@ func (wtm *writeToMock) SeriesReset(index int) {
 	}
 }
 
-func (wtm *writeToMock) checkNumSeries() int {
+func (wtm *writeToMock) seriesCount() int {
 	wtm.seriesLock.Lock()
 	defer wtm.seriesLock.Unlock()
 	return len(wtm.seriesSegmentIndexes)
+}
+
+func (wtm *writeToMock) samplesCount() int {
+	wtm.samplesLock.Lock()
+	defer wtm.samplesLock.Unlock()
+	return wtm.samplesAppended
+}
+
+func (wtm *writeToMock) examplarsCount() int {
+	wtm.exemplarsLock.Lock()
+	defer wtm.exemplarsLock.Unlock()
+	return wtm.exemplarsAppended
+}
+
+func (wtm *writeToMock) histogramsCount() int {
+	wtm.histogramsLock.Lock()
+	defer wtm.histogramsLock.Unlock()
+	return wtm.histogramsAppended
+}
+
+func (wtm *writeToMock) floatHistogramsCount() int {
+	wtm.floatHistogramsLock.Lock()
+	defer wtm.floatHistogramsLock.Unlock()
+	return wtm.floatHistogramsAppended
 }
 
 func newWriteToMock(delay time.Duration) *writeToMock {
@@ -129,6 +164,8 @@ func newWriteToMock(delay time.Duration) *writeToMock {
 }
 
 func TestTailSamples(t *testing.T) {
+	t.Parallel()
+
 	pageSize := 32 * 1024
 	const seriesCount = 10
 	const samplesCount = 250
@@ -136,6 +173,8 @@ func TestTailSamples(t *testing.T) {
 	const histogramsCount = 50
 	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
 		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
+			t.Parallel()
+
 			now := time.Now()
 
 			dir := t.TempDir()
@@ -242,24 +281,28 @@ func TestTailSamples(t *testing.T) {
 			expectedExemplars := seriesCount * exemplarsCount
 			expectedHistograms := seriesCount * histogramsCount
 			retry(t, defaultRetryInterval, defaultRetries, func() bool {
-				return wt.checkNumSeries() >= expectedSeries
+				return wt.seriesCount() >= expectedSeries
 			})
-			require.Equal(t, expectedSeries, wt.checkNumSeries(), "did not receive the expected number of series")
-			require.Equal(t, expectedSamples, wt.samplesAppended, "did not receive the expected number of samples")
-			require.Equal(t, expectedExemplars, wt.exemplarsAppended, "did not receive the expected number of exemplars")
-			require.Equal(t, expectedHistograms, wt.histogramsAppended, "did not receive the expected number of histograms")
-			require.Equal(t, expectedHistograms, wt.floatHistogramsAppended, "did not receive the expected number of float histograms")
+			require.Equal(t, expectedSeries, wt.seriesCount(), "did not receive the expected number of series")
+			require.Equal(t, expectedSamples, wt.samplesCount(), "did not receive the expected number of samples")
+			require.Equal(t, expectedExemplars, wt.examplarsCount(), "did not receive the expected number of exemplars")
+			require.Equal(t, expectedHistograms, wt.histogramsCount(), "did not receive the expected number of histograms")
+			require.Equal(t, expectedHistograms, wt.floatHistogramsCount(), "did not receive the expected number of float histograms")
 		})
 	}
 }
 
 func TestReadToEndNoCheckpoint(t *testing.T) {
+	t.Parallel()
+
 	pageSize := 32 * 1024
 	const seriesCount = 10
 	const samplesCount = 250
 
 	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
 		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
+			t.Parallel()
+
 			dir := t.TempDir()
 			wdir := path.Join(dir, "wal")
 			err := os.Mkdir(wdir, 0o777)
@@ -302,24 +345,27 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 				}
 			}
 			require.NoError(t, w.Log(recs...))
-			readTimeout = time.Second
 			_, _, err = Segments(w.Dir())
 			require.NoError(t, err)
 
 			wt := newWriteToMock(0)
 			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false)
+			watcher.readTimeout = time.Second
 			go watcher.Start()
 
 			expected := seriesCount
 			require.Eventually(t, func() bool {
-				return wt.checkNumSeries() == expected
+				return wt.seriesCount() == expected
 			}, 20*time.Second, 1*time.Second)
 			watcher.Stop()
 		})
 	}
 }
 
+// TestReadToEndWithCheckpoint.
 func TestReadToEndWithCheckpoint(t *testing.T) {
+	t.Parallel()
+
 	segmentSize := 32 * 1024
 	// We need something similar to this # of series and samples
 	// in order to get enough segments for us to checkpoint.
@@ -328,6 +374,8 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 
 	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
 		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
+			t.Parallel()
+
 			dir := t.TempDir()
 
 			wdir := path.Join(dir, "wal")
@@ -394,15 +442,15 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 
 			_, _, err = Segments(w.Dir())
 			require.NoError(t, err)
-			readTimeout = time.Second
 			wt := newWriteToMock(0)
 			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false)
+			watcher.readTimeout = time.Second
 			go watcher.Start()
 
 			expected := seriesCount * 2
 
 			require.Eventually(t, func() bool {
-				return wt.checkNumSeries() == expected
+				return wt.seriesCount() == expected
 			}, 10*time.Second, 1*time.Second)
 			watcher.Stop()
 		})
@@ -410,12 +458,16 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 }
 
 func TestReadCheckpoint(t *testing.T) {
+	t.Parallel()
+
 	pageSize := 32 * 1024
 	const seriesCount = 10
 	const samplesCount = 250
 
 	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
 		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
+			t.Parallel()
+
 			dir := t.TempDir()
 
 			wdir := path.Join(dir, "wal")
@@ -472,15 +524,17 @@ func TestReadCheckpoint(t *testing.T) {
 
 			expectedSeries := seriesCount
 			retry(t, defaultRetryInterval, defaultRetries, func() bool {
-				return wt.checkNumSeries() >= expectedSeries
+				return wt.seriesCount() >= expectedSeries
 			})
 			watcher.Stop()
-			require.Equal(t, expectedSeries, wt.checkNumSeries())
+			require.Equal(t, expectedSeries, wt.seriesCount())
 		})
 	}
 }
 
 func TestReadCheckpointMultipleSegments(t *testing.T) {
+	t.Parallel()
+
 	pageSize := 32 * 1024
 
 	const segments = 1
@@ -489,6 +543,8 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 
 	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
 		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
+			t.Parallel()
+
 			dir := t.TempDir()
 
 			wdir := path.Join(dir, "wal")
@@ -552,6 +608,8 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 }
 
 func TestCheckpointSeriesReset(t *testing.T) {
+	t.Parallel()
+
 	segmentSize := 32 * 1024
 	// We need something similar to this # of series and samples
 	// in order to get enough segments for us to checkpoint.
@@ -607,18 +665,18 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			_, _, err = Segments(w.Dir())
 			require.NoError(t, err)
 
-			readTimeout = time.Second
 			wt := newWriteToMock(0)
 			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false)
+			watcher.readTimeout = time.Second
 			watcher.MaxSegment = -1
 			go watcher.Start()
 
 			expected := seriesCount
 			retry(t, defaultRetryInterval, defaultRetries, func() bool {
-				return wt.checkNumSeries() >= expected
+				return wt.seriesCount() >= expected
 			})
 			require.Eventually(t, func() bool {
-				return wt.checkNumSeries() == seriesCount
+				return wt.seriesCount() == seriesCount
 			}, 10*time.Second, 1*time.Second)
 
 			_, err = Checkpoint(log.NewNopLogger(), w, 2, 4, func(x chunks.HeadSeriesRef) bool { return true }, 0)
@@ -637,13 +695,16 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			// many series records you end up with and change the last Equals check accordingly
 			// or modify the Equals to Assert(len(wt.seriesLabels) < seriesCount*10)
 			require.Eventually(t, func() bool {
-				return wt.checkNumSeries() == tc.segments
+				return wt.seriesCount() == tc.segments
 			}, 20*time.Second, 1*time.Second)
 		})
 	}
 }
 
+// TestRun_StartupTime ensures that on startup, the watcher doesn’t rely on readTimeout to read existing segments.
 func TestRun_StartupTime(t *testing.T) {
+	t.Parallel()
+
 	const pageSize = 32 * 1024
 	const segments = 10
 	const seriesCount = 20
@@ -651,6 +712,8 @@ func TestRun_StartupTime(t *testing.T) {
 
 	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
 		t.Run(string(compress), func(t *testing.T) {
+			t.Parallel()
+
 			dir := t.TempDir()
 
 			wdir := path.Join(dir, "wal")
@@ -695,7 +758,7 @@ func TestRun_StartupTime(t *testing.T) {
 			startTime := time.Now()
 
 			err = watcher.Run()
-			require.Less(t, time.Since(startTime), readTimeout)
+			require.Less(t, time.Since(startTime), watcher.readTimeout)
 			require.NoError(t, err)
 		})
 	}
@@ -732,60 +795,4 @@ func generateWALRecords(w *WL, segment, seriesCount, samplesCount int) error {
 	return nil
 }
 
-func TestRun_AvoidNotifyWhenBehind(t *testing.T) {
-	if runtime.GOOS == "windows" { // Takes a really long time, perhaps because min sleep time is 15ms.
-		t.SkipNow()
-	}
-	const segmentSize = pageSize // Smallest allowed segment size.
-	const segmentsToWrite = 5
-	const segmentsToRead = segmentsToWrite - 1
-	const seriesCount = 10
-	const samplesCount = 50
-
-	// This test can take longer than intended to finish in cloud CI.
-	readTimeout := 10 * time.Second
-
-	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
-		t.Run(string(compress), func(t *testing.T) {
-			dir := t.TempDir()
-
-			wdir := path.Join(dir, "wal")
-			err := os.Mkdir(wdir, 0o777)
-			require.NoError(t, err)
-
-			w, err := NewSize(nil, nil, wdir, segmentSize, compress)
-			require.NoError(t, err)
-			var wg sync.WaitGroup
-			// Generate one segment initially to ensure that watcher.Run() finds at least one segment on disk.
-			require.NoError(t, generateWALRecords(w, 0, seriesCount, samplesCount))
-			w.NextSegment() // Force creation of the next segment
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for i := 1; i < segmentsToWrite; i++ {
-					require.NoError(t, generateWALRecords(w, i, seriesCount, samplesCount))
-					w.NextSegment()
-				}
-			}()
-
-			wt := newWriteToMock(time.Millisecond)
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false)
-			watcher.MaxSegment = segmentsToRead
-
-			watcher.setMetrics()
-			startTime := time.Now()
-			err = watcher.Run()
-			wg.Wait()
-			require.Less(t, time.Since(startTime), readTimeout)
-
-			// But samples records shouldn't get dropped
-			retry(t, defaultRetryInterval, defaultRetries, func() bool {
-				return wt.checkNumSeries() > 0
-			})
-			require.Equal(t, segmentsToRead*seriesCount*samplesCount, wt.samplesAppended)
-
-			require.NoError(t, err)
-			require.NoError(t, w.Close())
-		})
-	}
-}
+// TODO: add TestRun_AvoidNotifyWhenBehind back

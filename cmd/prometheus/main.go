@@ -161,12 +161,13 @@ type flagConfig struct {
 	memlimitRatio float64
 	// These options are extracted from featureList
 	// for ease of use.
-	enableExpandExternalLabels bool
-	enableNewSDManager         bool
-	enablePerStepStats         bool
-	enableAutoGOMAXPROCS       bool
-	enableAutoGOMEMLIMIT       bool
-	enableConcurrentRuleEval   bool
+	enableExpandExternalLabels      bool
+	enableNewSDManager              bool
+	enablePerStepStats              bool
+	enableAutoGOMAXPROCS            bool
+	enableAutoGOMEMLIMIT            bool
+	enableConcurrentRuleEval        bool
+	enableRemoteWriteStatefulWacher bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -259,6 +260,9 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 				continue
 			case "promql-at-modifier", "promql-negative-offset":
 				level.Warn(logger).Log("msg", "This option for --enable-feature is now permanently enabled and therefore a no-op.", "option", o)
+			case "remote-write-stateful-watcher":
+				c.enableRemoteWriteStatefulWacher = true
+				level.Info(logger).Log("msg", "Experimental remote write stateful watcher enabled.")
 			default:
 				level.Warn(logger).Log("msg", "Unknown option for --enable-feature", "option", o)
 			}
@@ -504,7 +508,7 @@ func main() {
 
 	a.Flag("scrape.name-escaping-scheme", `Method for escaping legacy invalid names when sending to Prometheus that does not support UTF-8. Can be one of "values", "underscores", or "dots".`).Default(scrape.DefaultNameEscapingScheme.String()).StringVar(&cfg.nameEscapingScheme)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, auto-gomaxprocs, auto-gomemlimit, auto-reload-config, concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, expand-external-labels, extra-scrape-metrics, memory-snapshot-on-shutdown, native-histograms, new-service-discovery-manager, no-default-scrape-port, otlp-write-receiver, promql-experimental-functions, promql-delayed-name-removal, promql-per-step-stats, remote-write-receiver (DEPRECATED), utf8-names. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, auto-gomaxprocs, auto-gomemlimit, auto-reload-config, concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, expand-external-labels, extra-scrape-metrics, memory-snapshot-on-shutdown, native-histograms, new-service-discovery-manager, no-default-scrape-port, otlp-write-receiver, promql-experimental-functions, promql-delayed-name-removal, promql-per-step-stats, remote-write-receiver (DEPRECATED), remote-write-stateful-watcher, utf8-names. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
@@ -691,9 +695,10 @@ func main() {
 	level.Info(logger).Log("vm_limits", prom_runtime.VMLimits())
 
 	var (
-		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
-		scraper       = &readyScrapeManager{}
-		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.scrape.AppendMetadata)
+		localStorage = &readyStorage{stats: tsdb.NewDBStats()}
+		scraper      = &readyScrapeManager{}
+
+		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.scrape.AppendMetadata, cfg.enableRemoteWriteStatefulWacher)
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 

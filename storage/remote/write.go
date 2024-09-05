@@ -18,10 +18,13 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
@@ -73,12 +76,14 @@ type WriteStorage struct {
 	scraper           ReadyScrapeManager
 	quit              chan struct{}
 
+	statefulWatcher bool
+
 	// For timestampTracker.
 	highestTimestamp *maxTimestamp
 }
 
 // NewWriteStorage creates and runs a WriteStorage.
-func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager, metadataInWal bool) *WriteStorage {
+func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager, metadataInWal, statefulWatcher bool) *WriteStorage {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -95,6 +100,7 @@ func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, dir string, f
 		scraper:           sm,
 		quit:              make(chan struct{}),
 		metadataInWAL:     metadataInWal,
+		statefulWatcher:   statefulWatcher,
 		highestTimestamp: &maxTimestamp{
 			Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
 				Namespace: namespace,
@@ -124,6 +130,49 @@ func (rws *WriteStorage) run() {
 	}
 }
 
+// purgeStaleWatchersMarkers iterates over progress marker files and deleted those of stateful watchers that are no longer in use.
+// rws.mtx should be held before calling this.
+func (rws *WriteStorage) purgeStaleWatchersMarkers() {
+	markersDir := filepath.Join(rws.dir, "wal", wlog.ProgressMarkerDirName)
+	files, err := os.ReadDir(markersDir)
+	if err != nil {
+		level.Error(rws.logger).Log(
+			"msg", "Failed to read the directory containing the stateful watchers' progress marker files",
+			"dir", markersDir,
+			"err", err,
+		)
+	}
+
+	statefulWatchers := make(map[string]struct{})
+	for _, q := range rws.queues {
+		statefulWatchers[q.watcher.Name()] = struct{}{}
+	}
+
+	for _, f := range files {
+		fileName := f.Name()
+		if filepath.Ext(fileName) != wlog.ProgressMarkerFileExt {
+			level.Warn(rws.logger).Log(
+				"msg", "the file doesn't belong in the directory",
+				"file", fileName,
+				"dir", markersDir,
+			)
+			continue
+		}
+		watcherName := fileName[:len(fileName)-len(wlog.ProgressMarkerFileExt)]
+		if _, inUse := statefulWatchers[watcherName]; !inUse {
+			err = os.Remove(filepath.Join(markersDir, fileName))
+			if err != nil {
+				level.Error(rws.logger).Log(
+					"msg", "Failed to remove progress marker file",
+					"dir", markersDir,
+					"file", fileName,
+					"err", err,
+				)
+			}
+		}
+	}
+}
+
 func (rws *WriteStorage) Notify() {
 	rws.mtx.Lock()
 	defer rws.mtx.Unlock()
@@ -148,9 +197,14 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 	newQueues := make(map[string]*QueueManager)
 	newHashes := []string{}
 	for _, rwConf := range conf.RemoteWriteConfigs {
+		if rwConf.Name == "" && rws.statefulWatcher {
+			return fmt.Errorf("empty name for URL: %s, the `--enable-feature=remote-write-stateful-watcher` feature flag requires it to be set as it's used as an identifier", rwConf.URL)
+		}
+
 		if rwConf.ProtobufMessage == config.RemoteWriteProtoMsgV2 && !rws.metadataInWAL {
 			return errors.New("invalid remote write configuration, if you are using remote write version 2.0 the `--enable-feature=metadata-wal-records` feature flag must be enabled")
 		}
+
 		hash, err := toHash(rwConf)
 		if err != nil {
 			return err
@@ -203,6 +257,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rws.liveReaderMetrics,
 			rws.logger,
 			rws.dir,
+			rws.statefulWatcher,
 			rws.samplesIn,
 			rwConf.QueueConfig,
 			rwConf.MetadataConfig,
@@ -221,10 +276,25 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 		newHashes = append(newHashes, hash)
 	}
 
-	// Anything remaining in rws.queues is a queue who's config has
+	// Used to identify stale statefulset watchers whose states should be pruged, see below.
+	newStatefulWatchers := make(map[string]struct{})
+	if rws.statefulWatcher {
+		for _, q := range newQueues {
+			newStatefulWatchers[q.watcher.Name()] = struct{}{}
+		}
+	}
+
+	// Anything remaining in rws.queues is a queue whose config has
 	// changed or was removed from the overall remote write config.
 	for _, q := range rws.queues {
 		q.Stop()
+
+		if rws.statefulWatcher {
+			// Purge the statefulset watcher if its corresponding queue config was removed.
+			if _, found := newStatefulWatchers[q.watcher.Name()]; !found {
+				q.watcher.PurgeState()
+			}
+		}
 	}
 
 	for _, hash := range newHashes {
@@ -270,6 +340,9 @@ func (rws *WriteStorage) Close() error {
 	defer rws.mtx.Unlock()
 	for _, q := range rws.queues {
 		q.Stop()
+	}
+	if rws.statefulWatcher {
+		rws.purgeStaleWatchersMarkers()
 	}
 	close(rws.quit)
 	return nil
