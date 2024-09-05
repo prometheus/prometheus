@@ -166,8 +166,8 @@ github.com/hetznercloud/hcloud-go/v2 v2.9.0 h1:s0N6R7Zoi2DPfMtUF5o9VeUBzTtHVY6MI
 github.com/hetznercloud/hcloud-go/v2 v2.9.0/go.mod h1:qtW/TuU7Bs16ibXl/ktJarWqU2LwHr7eGlwoilHxtgg=
 github.com/imdario/mergo v0.3.16 h1:wwQJbIsHYGMUyLSPrEq1CT16AhnhNJQ51+4fdHUnCl4=
 github.com/imdario/mergo v0.3.16/go.mod h1:WBLT9ZmE3lPoWsEzCh9LPo3TiwVN+ZKEjmz+hD27ysY=
-github.com/influxdata/influxdb v1.11.5 h1:+em5VOl6lhAZubXj5o6SobCwvrRs3XDlBx/MUI4schI=
-github.com/influxdata/influxdb v1.11.5/go.mod h1:k8sWREQl1/9t46VrkrH5adUM4UNGIt206ipO3plbkw8=
+github.com/influxdata/influxdb v1.11.6 h1:zS5MRY+RQ5/XFTer5R8xQRnY17JYSbacvO6OaP164wU=
+github.com/influxdata/influxdb v1.11.6/go.mod h1:F10NoQb9qa04lME3pTPWQrYt4JZ/ke1Eei+1ttgHHrg=
 github.com/ionos-cloud/sdk-go/v6 v6.1.11 h1:J/uRN4UWO3wCyGOeDdMKv8LWRzKu6UIkLEaes38Kzh8=
 github.com/ionos-cloud/sdk-go/v6 v6.1.11/go.mod h1:EzEgRIDxBELvfoa/uBN0kOQaqovLjUWEB7iW4/Q+t4k=
 github.com/jmespath/go-jmespath v0.4.0 h1:BEgLn5cpjn8UN1mAw4NjwDrS35OdebyEtFe+9YPoQUg=
