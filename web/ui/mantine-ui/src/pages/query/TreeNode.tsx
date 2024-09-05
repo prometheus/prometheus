@@ -7,9 +7,18 @@ import {
   useState,
 } from "react";
 import ASTNode, { nodeType } from "../../promql/ast";
-import { getNodeChildren } from "../../promql/utils";
+import { escapeString, getNodeChildren } from "../../promql/utils";
 import { formatNode } from "../../promql/format";
-import { Box, CSSProperties, Group, Loader, Text } from "@mantine/core";
+import {
+  Box,
+  Code,
+  CSSProperties,
+  Group,
+  List,
+  Loader,
+  Text,
+  Tooltip,
+} from "@mantine/core";
 import { useAPIQuery } from "../../api/api";
 import {
   InstantQueryResult,
@@ -21,8 +30,10 @@ import { IconPointFilled } from "@tabler/icons-react";
 import classes from "./TreeNode.module.css";
 import clsx from "clsx";
 import { useId } from "@mantine/hooks";
+import { functionSignatures } from "../../promql/functionSignatures";
 
 const nodeIndent = 20;
+const maxLabels = 10;
 
 type NodeState = "waiting" | "running" | "error" | "success";
 
@@ -68,12 +79,12 @@ const TreeNode: FC<{
   const [responseTime, setResponseTime] = useState<number>(0);
   const [resultStats, setResultStats] = useState<{
     numSeries: number;
-    labelCardinalities: Record<string, number>;
     labelExamples: Record<string, { value: string; count: number }[]>;
+    sortedLabelCards: [string, number][];
   }>({
     numSeries: 0,
-    labelCardinalities: {},
     labelExamples: {},
+    sortedLabelCards: [],
   });
 
   const children = getNodeChildren(node);
@@ -86,11 +97,24 @@ const TreeNode: FC<{
     [childStates]
   );
 
+  // Optimize range vector selector fetches to give us the info we're looking for
+  // more cheaply. E.g. 'foo[7w]' can be expensive to fully fetch, but wrapping it
+  // in 'last_over_time(foo[7w])' is cheaper and also gives us all the info we
+  // need (number of series and labels).
+  let queryNode = node;
+  if (queryNode.type === nodeType.matrixSelector) {
+    queryNode = {
+      type: nodeType.call,
+      func: functionSignatures["last_over_time"],
+      args: [node],
+    };
+  }
+
   const { data, error, isFetching } = useAPIQuery<InstantQueryResult>({
     key: [useId()],
     path: "/query",
     params: {
-      query: serializeNode(node),
+      query: serializeNode(queryNode),
     },
     recordResponseTime: setResponseTime,
     enabled: mergedChildState === "success",
@@ -145,7 +169,7 @@ const TreeNode: FC<{
         borderTopLeftRadius: undefined,
       }));
     }
-  }, [parentRef, reverse, nodeRef]);
+  }, [parentRef, reverse, nodeRef, setConnectorStyle]);
 
   // Update the node info state based on the query result.
   useEffect(() => {
@@ -166,17 +190,12 @@ const TreeNode: FC<{
       result.forEach((s: InstantSample | RangeSamples) => {
         Object.entries(s.metric).forEach(([ln, lv]) => {
           // TODO: If we ever want to include __name__ here again, we cannot use the
-          // count_over_time(foo[7d]) optimization since that removes the metric name.
+          // last_over_time(foo[7d]) optimization since that removes the metric name.
           if (ln !== "__name__") {
-            if (!labelValuesByName.hasOwnProperty(ln)) {
-              labelValuesByName[ln] = { [lv]: 1 };
-            } else {
-              if (!labelValuesByName[ln].hasOwnProperty(lv)) {
-                labelValuesByName[ln][lv] = 1;
-              } else {
-                labelValuesByName[ln][lv]++;
-              }
+            if (!labelValuesByName[ln]) {
+              labelValuesByName[ln] = {};
             }
+            labelValuesByName[ln][lv] = (labelValuesByName[ln][lv] || 0) + 1;
           }
         });
       });
@@ -196,7 +215,9 @@ const TreeNode: FC<{
 
     setResultStats({
       numSeries: resultSeries,
-      labelCardinalities,
+      sortedLabelCards: Object.entries(labelCardinalities).sort(
+        (a, b) => b[1] - a[1]
+      ),
       labelExamples,
     });
   }, [data]);
@@ -204,7 +225,7 @@ const TreeNode: FC<{
   const innerNode = (
     <Group
       w="fit-content"
-      gap="sm"
+      gap="lg"
       my="sm"
       wrap="nowrap"
       pos="relative"
@@ -260,24 +281,67 @@ const TreeNode: FC<{
           </Text>
         </Group>
       ) : (
-        <Text c="dimmed" fz="xs">
-          {resultStats.numSeries} result{resultStats.numSeries !== 1 && "s"} –{" "}
-          {responseTime}ms
-          {/* {resultStats.numSeries > 0 && (
-            <>
-              {labelNames.length > 0 ? (
-                labelNames.map((v, idx) => (
-                  <React.Fragment key={idx}>
-                    {idx !== 0 && ", "}
-                    {v}
-                  </React.Fragment>
-                ))
-              ) : (
-                <>no labels</>
-              )}
-            </>
-          )} */}
-        </Text>
+        <Group gap={0} wrap="nowrap">
+          <Text c="dimmed" fz="xs" style={{ whiteSpace: "nowrap" }}>
+            {resultStats.numSeries} result{resultStats.numSeries !== 1 && "s"}
+            &nbsp;&nbsp;–&nbsp;&nbsp;
+            {responseTime}ms &nbsp;&nbsp;–&nbsp;&nbsp;
+          </Text>
+          <Group gap="xs" wrap="nowrap">
+            {resultStats.sortedLabelCards
+              .slice(0, maxLabels)
+              .map(([ln, cnt]) => (
+                <Tooltip
+                  key={ln}
+                  position="bottom"
+                  withArrow
+                  color="dark.6"
+                  label={
+                    <Box p="xs">
+                      <List fz="xs">
+                        {resultStats.labelExamples[ln].map(
+                          ({ value, count }) => (
+                            <List.Item key={value} py={1}>
+                              <Code c="red.3" bg="gray.7">
+                                {escapeString(value)}
+                              </Code>{" "}
+                              ({count}
+                              x)
+                            </List.Item>
+                          )
+                        )}
+                        {cnt > 5 && <li>...</li>}
+                      </List>
+                    </Box>
+                  }
+                >
+                  <span style={{ cursor: "pointer", whiteSpace: "nowrap" }}>
+                    <Text
+                      component="span"
+                      fz="xs"
+                      className="promql-code promql-label-name"
+                      c="light-dark(var(--mantine-color-green-9), var(--mantine-color-green-6))"
+                    >
+                      {ln}
+                    </Text>
+                    <Text component="span" fz="xs" c="dimmed">
+                      : {cnt}
+                    </Text>
+                  </span>
+                </Tooltip>
+              ))}
+            {resultStats.sortedLabelCards.length > maxLabels ? (
+              <Text
+                component="span"
+                c="dimmed"
+                fz="xs"
+                style={{ whiteSpace: "nowrap" }}
+              >
+                ...{resultStats.sortedLabelCards.length - maxLabels} more...
+              </Text>
+            ) : null}
+          </Group>
+        </Group>
       )}
     </Group>
   );
