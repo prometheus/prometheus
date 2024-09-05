@@ -3492,6 +3492,84 @@ func TestWaitForPendingReadersInTimeRange(t *testing.T) {
 	}
 }
 
+func TestQueryOOOHeadDuringTruncate(t *testing.T) {
+	const maxT int64 = 4000
+
+	dir := t.TempDir()
+	opts := DefaultOptions()
+	opts.EnableNativeHistograms = true
+	opts.OutOfOrderTimeWindow = maxT
+
+	db, err := Open(dir, nil, nil, opts, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
+	db.DisableCompactions()
+
+	var (
+		ref = storage.SeriesRef(0)
+		app = db.Appender(context.Background())
+	)
+	// Add in-order samples at every 100ms starting at 0ms.
+	for i := int64(0); i < maxT; i += 100 {
+		_, err := app.Append(ref, labels.FromStrings("a", "b"), i, 0)
+		require.NoError(t, err)
+	}
+	// Add out-of-order samples at every 100ms starting at 50ms.
+	for i := int64(50); i < maxT; i += 100 {
+		_, err := app.Append(ref, labels.FromStrings("a", "b"), i, 0)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	requireEqualOOOSamples(t, int(maxT/100-1), db)
+
+	// This mocks truncation.
+	db.head.memTruncationInProcess.Store(true)
+	db.head.lastMemoryTruncationTime.Store(3000)
+
+	t.Run("LabelNames", func(t *testing.T) {
+		// Query the head and overlap with the truncation time.
+		q, err := db.Querier(1500, 2500)
+		require.NoError(t, err)
+		ctx := context.Background()
+		res, annots, err := q.LabelNames(ctx, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+		require.NoError(t, err)
+		require.Empty(t, annots)
+		require.Equal(t, []string{"a"}, res)
+		require.NoError(t, q.Close())
+	})
+
+	t.Run("LabelValues", func(t *testing.T) {
+		// Query the head and overlap with the truncation time.
+		q, err := db.Querier(1500, 2500)
+		require.NoError(t, err)
+		ctx := context.Background()
+		res, annots, err := q.LabelValues(ctx, "a", nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+		require.NoError(t, err)
+		require.Empty(t, annots)
+		require.Equal(t, []string{"b"}, res)
+		require.NoError(t, q.Close())
+	})
+
+	t.Run("Select", func(t *testing.T) {
+		// Query the head and overlap with the truncation time.
+		q, err := db.Querier(1500, 2500)
+		require.NoError(t, err)
+		ctx := context.Background()
+		ss := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+		require.True(t, ss.Next())
+		s := ss.At()
+		require.False(t, ss.Next()) // One series.
+		it := s.Iterator(nil)
+		require.NotEqual(t, chunkenc.ValNone, it.Next()) // Has some data.
+		require.Equal(t, int64(1550), it.AtT())          // It's from OOO head.
+		require.NoError(t, it.Err())
+		require.NoError(t, q.Close())
+	})
+}
+
 func TestAppendHistogram(t *testing.T) {
 	l := labels.FromStrings("a", "b")
 	for _, numHistograms := range []int{1, 10, 150, 200, 250, 300} {
