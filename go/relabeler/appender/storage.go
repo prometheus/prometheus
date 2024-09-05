@@ -134,11 +134,13 @@ func (qs *QueryableStorage) Querier(ctx context.Context, mint, maxt int64) (stor
 		mint: mint,
 		maxt: maxt,
 		closer: func() error {
-			qs.shrink()
 			return nil
 		},
 	}
 	for _, head := range qs.heads {
+		if head.persisted.Load() {
+			continue
+		}
 		q.heads = append(q.heads, head)
 	}
 
@@ -152,10 +154,13 @@ func (qs *QueryableStorage) shrink() {
 	var heads []*headWrapper
 	for _, head := range qs.heads {
 		if head.persisted.Load() {
+			_ = head.head.Close()
+			fmt.Println("head persisted and closed")
 			continue
 		}
 		heads = append(heads, head)
 	}
+	qs.heads = heads
 }
 
 type headWrapper struct {
