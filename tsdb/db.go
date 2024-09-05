@@ -2061,7 +2061,7 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 			}
 			headQuerier = nil
 		}
-		if getNew || overlapsOOO{
+		if getNew {
 			rh := NewRangeHead(db.head, newMint, maxt)
 			headQuerier, err = db.blockQuerierFunc(rh, newMint, maxt)
 			if err != nil {
@@ -2070,7 +2070,7 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 		}
 	}
 
-	if overlapsOOO {
+	if overlapsOOO && headQuerier != nil {
 		// We need to fetch from in-order and out-of-order chunks: wrap the headQuerier.
 		isoState := db.head.oooIso.TrackReadAfter(db.lastGarbageCollectedMmapRef)
 		headQuerier = NewHeadAndOOOQuerier(mint, maxt, db.head, isoState, headQuerier)

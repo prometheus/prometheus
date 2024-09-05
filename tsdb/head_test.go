@@ -3493,12 +3493,13 @@ func TestWaitForPendingReadersInTimeRange(t *testing.T) {
 }
 
 func TestQueryOOOHeadDuringTruncate(t *testing.T) {
-	const maxT int64 = 4000
+	const maxT int64 = 6000
 
 	dir := t.TempDir()
 	opts := DefaultOptions()
 	opts.EnableNativeHistograms = true
 	opts.OutOfOrderTimeWindow = maxT
+	opts.MinBlockDuration = maxT / 2 // So that head will compact up to 3000.
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
@@ -3525,14 +3526,16 @@ func TestQueryOOOHeadDuringTruncate(t *testing.T) {
 
 	requireEqualOOOSamples(t, int(maxT/100-1), db)
 
+	db.Compact(context.Background()) // Compact and write blocks up to 3000 (maxtT/2).
 	// This mocks truncation.
 	db.head.memTruncationInProcess.Store(true)
-	db.head.lastMemoryTruncationTime.Store(3000)
+	db.head.lastMemoryTruncationTime.Store(maxT / 2)
 
 	t.Run("LabelNames", func(t *testing.T) {
 		// Query the head and overlap with the truncation time.
 		q, err := db.Querier(1500, 2500)
 		require.NoError(t, err)
+		defer q.Close()
 		ctx := context.Background()
 		res, annots, err := q.LabelNames(ctx, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 		require.NoError(t, err)
@@ -3545,6 +3548,7 @@ func TestQueryOOOHeadDuringTruncate(t *testing.T) {
 		// Query the head and overlap with the truncation time.
 		q, err := db.Querier(1500, 2500)
 		require.NoError(t, err)
+		defer q.Close()
 		ctx := context.Background()
 		res, annots, err := q.LabelValues(ctx, "a", nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 		require.NoError(t, err)
@@ -3557,6 +3561,7 @@ func TestQueryOOOHeadDuringTruncate(t *testing.T) {
 		// Query the head and overlap with the truncation time.
 		q, err := db.Querier(1500, 2500)
 		require.NoError(t, err)
+		defer q.Close()
 		ctx := context.Background()
 		ss := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 		require.True(t, ss.Next())
@@ -3564,7 +3569,7 @@ func TestQueryOOOHeadDuringTruncate(t *testing.T) {
 		require.False(t, ss.Next()) // One series.
 		it := s.Iterator(nil)
 		require.NotEqual(t, chunkenc.ValNone, it.Next()) // Has some data.
-		require.Equal(t, int64(1550), it.AtT())          // It's from OOO head.
+		require.Equal(t, int64(1500), it.AtT())          // At the right time.
 		require.NoError(t, it.Err())
 		require.NoError(t, q.Close())
 	})
