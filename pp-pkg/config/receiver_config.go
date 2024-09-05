@@ -4,14 +4,13 @@ package config
 
 import (
 	"fmt"
-
-	"github.com/prometheus/prometheus/pp/go/relabeler"
+	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 )
 
 // RemoteWriteReceiverConfig config for remote write receiver.
 type RemoteWriteReceiverConfig struct {
-	NumberOfShards uint16                            `yaml:"number_of_shards,omitempty"`
-	Configs        []*relabeler.InputRelabelerConfig `yaml:"remote_write_receivers,omitempty"`
+	NumberOfShards uint16                         `yaml:"number_of_shards,omitempty"`
+	Configs        []*config.InputRelabelerConfig `yaml:"remote_write_receivers,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -28,7 +27,7 @@ func (c *RemoteWriteReceiverConfig) UnmarshalYAML(unmarshal func(interface{}) er
 func (c *RemoteWriteReceiverConfig) Copy() *RemoteWriteReceiverConfig {
 	newCfg := &RemoteWriteReceiverConfig{
 		NumberOfShards: c.NumberOfShards,
-		Configs:        make([]*relabeler.InputRelabelerConfig, 0, len(c.Configs)),
+		Configs:        make([]*config.InputRelabelerConfig, 0, len(c.Configs)),
 	}
 	for _, icfg := range c.Configs {
 		newCfg.Configs = append(newCfg.Configs, icfg.Copy())

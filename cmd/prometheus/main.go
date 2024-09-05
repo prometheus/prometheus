@@ -706,6 +706,7 @@ func main() {
 		receiverConfig,
 		localStoragePath,
 		cfgFile.RemoteWriteConfigs,
+		localStoragePath,
 	)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to create a receiver", "err", err)
@@ -1264,12 +1265,14 @@ func main() {
 		// run receiver.
 		g.Add(
 			func() error {
-				receiver.Run(ctxReceiver)
-				return nil
+				return receiver.Run(ctxReceiver)
 			},
 			func(err error) {
+				receiverCancelCtx, receiverCancelCtxCancel := context.WithCancel(ctxReceiver)
+				defer receiverCancelCtxCancel()
+
 				level.Info(logger).Log("msg", "Stopping Receiver...")
-				if err := receiver.Shutdown(); err != nil {
+				if err := receiver.Shutdown(receiverCancelCtx); err != nil {
 					level.Error(logger).Log("msg", "Receiver shutdown failed", "err", err)
 				}
 				cancelReceiver()

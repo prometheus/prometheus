@@ -4,7 +4,15 @@ package receiver
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"github.com/prometheus/prometheus/pp/go/relabeler/appender"
+	"github.com/prometheus/prometheus/pp/go/relabeler/block"
+	"github.com/prometheus/prometheus/pp/go/relabeler/config"
+	"github.com/prometheus/prometheus/pp/go/relabeler/distributor"
+	"github.com/prometheus/prometheus/pp/go/relabeler/head"
+	"github.com/prometheus/prometheus/pp/go/util"
+	"go.uber.org/atomic"
 	"os"
 	"path"
 	"path/filepath"
@@ -29,17 +37,44 @@ import (
 
 const defaultShutdownTimeout = 40 * time.Second
 
+type HeadConfig struct {
+	inputRelabelerConfigs []*config.InputRelabelerConfig
+	numberOfShards        uint16
+}
+
+type HeadConfigStorage struct {
+	ptr atomic.Pointer[HeadConfig]
+}
+
+func (s *HeadConfigStorage) Load() *HeadConfig {
+	return s.ptr.Load()
+}
+
+func (s *HeadConfigStorage) Store(headConfig *HeadConfig) {
+	s.ptr.Store(headConfig)
+}
+
 type Receiver struct {
-	ctx              context.Context
-	managerRelabeler *relabeler.ManagerRelabeler
-	hashdexFactory   relabeler.HashdexFactory
-	hashdexLimits    cppbridge.WALHashdexLimits
-	haTracker        relabeler.HATracker
-	clock            clockwork.Clock
-	registerer       prometheus.Registerer
-	logger           log.Logger
-	workingDir       string
-	clientID         string
+	ctx context.Context
+
+	distributor         *distributor.Distributor
+	appender            *appender.QueryableAppender
+	storage             *appender.QueryableStorage
+	rotator             *appender.Rotator
+	metricsWriteTrigger *appender.MetricsWriteTrigger
+
+	headConfigStorage *HeadConfigStorage
+
+	hashdexFactory relabeler.HashdexFactory
+	hashdexLimits  cppbridge.WALHashdexLimits
+	haTracker      relabeler.HATracker
+	clock          clockwork.Clock
+	registerer     prometheus.Registerer
+	logger         log.Logger
+	workingDir     string
+	clientID       string
+
+	shutdowner *util.GracefulShutdowner
 }
 
 func NewReceiver(
@@ -49,6 +84,7 @@ func NewReceiver(
 	receiverCfg *op_config.RemoteWriteReceiverConfig,
 	workingDir string,
 	remoteWriteCfgs []*prom_config.OpRemoteWriteConfig,
+	dataDir string,
 ) (*Receiver, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -77,30 +113,57 @@ func NewReceiver(
 		return nil, err
 	}
 
-	mr, err := relabeler.NewManagerRelabeler(
-		clock,
-		registerer,
-		receiverCfg.Configs,
-		destinationGroups,
-		receiverCfg.NumberOfShards,
-	)
-	if err != nil {
-		return nil, err
+	var headConfigStorage = &HeadConfigStorage{}
+
+	headConfigStorage.Store(&HeadConfig{
+		inputRelabelerConfigs: receiverCfg.Configs,
+		numberOfShards:        receiverCfg.NumberOfShards,
+	})
+
+	storage := appender.NewQueryableStorage(block.NewBlockWriter(dataDir, block.DefaultChunkSegmentSize))
+
+	var headGeneration uint64
+	hd, err := appender.NewRotatableHead(storage, head.BuildFunc(func() (relabeler.Head, error) {
+		cfg := headConfigStorage.Load()
+		h, err := head.New(headGeneration, cfg.inputRelabelerConfigs, cfg.numberOfShards, registerer)
+		if err != nil {
+			return nil, err
+		}
+		headGeneration++
+		return h, nil
+	}))
+
+	dstrb := distributor.NewDistributor(*destinationGroups)
+	app := appender.NewQueryableAppender(hd, dstrb)
+
+	mwt := appender.NewMetricsWriteTrigger(appender.DefaultMetricWriteInterval, app, storage)
+
+	r := &Receiver{
+		ctx:               ctx,
+		distributor:       dstrb,
+		appender:          app,
+		storage:           storage,
+		headConfigStorage: headConfigStorage,
+		rotator: appender.NewRotator(
+			app,
+			clock,
+			time.Minute*2,
+		),
+		metricsWriteTrigger: mwt,
+		hashdexFactory:      cppbridge.HashdexFactory{},
+		hashdexLimits:       cppbridge.DefaultWALHashdexLimits(),
+		haTracker:           relabeler.NewHighAvailabilityTracker(ctx, registerer, clock),
+		clock:               clock,
+		registerer:          registerer,
+		logger:              logger,
+		workingDir:          workingDir,
+		clientID:            clientID,
+		shutdowner:          util.NewGracefulShutdowner(),
 	}
 
 	level.Info(logger).Log("msg", "created")
 
-	return &Receiver{
-		managerRelabeler: mr,
-		hashdexFactory:   cppbridge.HashdexFactory{},
-		hashdexLimits:    cppbridge.DefaultWALHashdexLimits(),
-		haTracker:        relabeler.NewHighAvailabilityTracker(ctx, registerer, clock),
-		clock:            clock,
-		registerer:       registerer,
-		logger:           logger,
-		workingDir:       workingDir,
-		clientID:         clientID,
-	}, nil
+	return r, nil
 }
 
 // AppendProtobuf append Protobuf data to relabeling hashdex data.
@@ -116,7 +179,7 @@ func (rr *Receiver) AppendProtobuf(ctx context.Context, data relabeler.ProtobufD
 		return nil
 	}
 	incomingData := &relabeler.IncomingData{Hashdex: hx, Data: data}
-	return rr.managerRelabeler.Append(ctx, incomingData, nil, relabelerID)
+	return rr.appender.Append(ctx, incomingData, nil, relabelerID)
 }
 
 // AppendTimeSeries append TimeSeries data to relabeling hashdex data.
@@ -139,7 +202,7 @@ func (rr *Receiver) AppendTimeSeries(
 		return nil
 	}
 	incomingData := &relabeler.IncomingData{Hashdex: hx, Data: data}
-	return rr.managerRelabeler.AppendWithStaleNans(
+	return rr.appender.AppendWithStaleNans(
 		ctx,
 		incomingData,
 		metricLimits,
@@ -155,133 +218,143 @@ func (rr *Receiver) AppendHashdex(ctx context.Context, hashdex cppbridge.Sharded
 		return nil
 	}
 	incomingData := &relabeler.IncomingData{Hashdex: hashdex}
-	return rr.managerRelabeler.Append(ctx, incomingData, nil, relabelerID)
+	return rr.appender.Append(ctx, incomingData, nil, relabelerID)
 }
 
 // ApplyConfig update config.
 func (rr *Receiver) ApplyConfig(cfg *prom_config.Config) error {
+	fmt.Println("RECONFIGURATION")
+	defer fmt.Println("RECONFIGURATION COMPLETED")
+
 	rCfg, err := cfg.GetReceiverConfig()
 	if err != nil {
 		return err
 	}
 
-	mxdgupds := new(sync.Mutex)
-	dgupds, err := makeDestinationGroupUpdates(
-		cfg.RemoteWriteConfigs,
-		rr.workingDir,
-		rr.clientID,
-		rCfg.NumberOfShards,
+	err = rr.appender.Reconfigure(
+		HeadConfigureFunc(func(head relabeler.Head) error {
+			return head.Reconfigure(rCfg.Configs, rCfg.NumberOfShards)
+		}),
+		DistributorConfigureFunc(func(dstrb relabeler.Distributor) error {
+			mxdgupds := new(sync.Mutex)
+			dgupds, err := makeDestinationGroupUpdates(
+				cfg.RemoteWriteConfigs,
+				rr.workingDir,
+				rr.clientID,
+				rCfg.NumberOfShards,
+			)
+			if err != nil {
+				level.Error(rr.logger).Log("msg", "failed to init destination group update", "err", err)
+				return err
+			}
+			mxDelete := new(sync.Mutex)
+			toDelete := []int{}
+
+			dgs := dstrb.DestinationGroups()
+			if err = dgs.RangeGo(func(destinationGroupID int, dg *relabeler.DestinationGroup) error {
+				var rangeErr error
+				dgu, ok := dgupds[dg.Name()]
+				if !ok {
+					mxDelete.Lock()
+					toDelete = append(toDelete, destinationGroupID)
+					mxDelete.Unlock()
+					ctxShutdown, cancel := context.WithTimeout(rr.ctx, defaultShutdownTimeout)
+					if rangeErr = dg.Shutdown(ctxShutdown); err != nil {
+						level.Error(rr.logger).Log("msg", "failed shutdown DestinationGroup", "err", rangeErr)
+					}
+					cancel()
+					return nil
+				}
+
+				if !dg.Equal(dgu.DestinationGroupConfig) ||
+					!dg.EqualDialers(dgu.DialersConfigs) {
+					var dialers []relabeler.Dialer
+					if !dg.EqualDialers(dgu.DialersConfigs) {
+						dialers, rangeErr = makeDialers(rr.clock, rr.registerer, dgu.DialersConfigs)
+						if rangeErr != nil {
+							return rangeErr
+						}
+					}
+
+					if rangeErr = dg.ResetTo(dgu.DestinationGroupConfig, dialers); err != nil {
+						return rangeErr
+					}
+				}
+				mxdgupds.Lock()
+				delete(dgupds, dg.Name())
+				mxdgupds.Unlock()
+				return nil
+			}); err != nil {
+				level.Error(rr.logger).Log("msg", "failed to apply config DestinationGroups", "err", err)
+				return err
+			}
+			// delete unused DestinationGroup
+			dgs.RemoveByID(toDelete)
+
+			// create new DestinationGroup
+			for _, dgupd := range dgupds {
+				dialers, err := makeDialers(rr.clock, rr.registerer, dgupd.DialersConfigs)
+				if err != nil {
+					level.Error(rr.logger).Log("msg", "failed to make new dialers", "err", err)
+					return err
+				}
+
+				dg, err := relabeler.NewDestinationGroup(
+					rr.ctx,
+					dgupd.DestinationGroupConfig,
+					encoderSelector,
+					refillCtor,
+					refillSenderCtor,
+					rr.clock,
+					dialers,
+					rr.registerer,
+				)
+				if err != nil {
+					level.Error(rr.logger).Log("msg", "failed to init DestinationGroup", "err", err)
+					return err
+				}
+
+				dgs.Add(dg)
+			}
+			dstrb.SetDestinationGroups(dgs)
+			return nil
+		}),
 	)
 	if err != nil {
-		level.Error(rr.logger).Log("msg", "failed to init destination group update", "err", err)
 		return err
 	}
-	mxDelete := new(sync.Mutex)
-	toDelete := []int{}
-
-	rr.managerRelabeler.Lock()
-
-	dgs := rr.managerRelabeler.DestinationGroups()
-	if err = dgs.RangeGo(func(destinationGroupID int, dg *relabeler.DestinationGroup) error {
-		var rangeErr error
-		dgu, ok := dgupds[dg.Name()]
-		if !ok {
-			mxDelete.Lock()
-			toDelete = append(toDelete, destinationGroupID)
-			mxDelete.Unlock()
-			ctxShutdown, cancel := context.WithTimeout(rr.ctx, defaultShutdownTimeout)
-			if rangeErr = dg.Shutdown(ctxShutdown); err != nil {
-				level.Error(rr.logger).Log("msg", "failed shutdown DestinationGroup", "err", rangeErr)
-			}
-			cancel()
-			return nil
-		}
-
-		if !dg.Equal(dgu.DestinationGroupConfig) ||
-			!dg.EqualDialers(dgu.DialersConfigs) {
-			var dialers []relabeler.Dialer
-			if !dg.EqualDialers(dgu.DialersConfigs) {
-				dialers, rangeErr = makeDialers(rr.clock, rr.registerer, dgu.DialersConfigs)
-				if rangeErr != nil {
-					return rangeErr
-				}
-			}
-
-			if rangeErr = dg.ResetTo(dgu.DestinationGroupConfig, dialers); err != nil {
-				return rangeErr
-			}
-		}
-		mxdgupds.Lock()
-		delete(dgupds, dg.Name())
-		mxdgupds.Unlock()
-		return nil
-	}); err != nil {
-		level.Error(rr.logger).Log("msg", "failed to apply config DestinationGroups", "err", err)
-		rr.managerRelabeler.Unlock()
-		return err
-	}
-	// delete unused DestinationGroup
-	dgs.RemoveByID(toDelete)
-
-	// create new DestinationGroup
-	for _, dgupd := range dgupds {
-		dialers, err := makeDialers(rr.clock, rr.registerer, dgupd.DialersConfigs)
-		if err != nil {
-			level.Error(rr.logger).Log("msg", "failed to make new dialers", "err", err)
-			rr.managerRelabeler.Unlock()
-			return err
-		}
-
-		dg, err := relabeler.NewDestinationGroup(
-			rr.ctx,
-			dgupd.DestinationGroupConfig,
-			encoderSelector,
-			refillCtor,
-			refillSenderCtor,
-			rr.clock,
-			dialers,
-			rr.registerer,
-		)
-		if err != nil {
-			level.Error(rr.logger).Log("msg", "failed to init DestinationGroup", "err", err)
-			rr.managerRelabeler.Unlock()
-			return err
-		}
-
-		dgs.Add(dg)
-	}
-
-	// apply cfg for relabelers
-	if err := rr.managerRelabeler.ApplyConfig(
-		rCfg.Configs,
-		rCfg.NumberOfShards,
-	); err != nil {
-		level.Error(rr.logger).Log("msg", "failed to apply config manager relabeler", "err", err)
-		return err
-	}
-
-	rr.managerRelabeler.Unlock()
 
 	return nil
 }
 
 // RelabelerIDIsExist check on exist relabelerID.
 func (rr *Receiver) RelabelerIDIsExist(relabelerID string) bool {
-	return rr.managerRelabeler.RelabelerIDIsExist(relabelerID)
+	cs := rr.headConfigStorage.Load()
+	for _, cfg := range cs.inputRelabelerConfigs {
+		if cfg.Name == relabelerID {
+			return true
+		}
+	}
+
+	return false
 }
 
 // Run main loop.
-func (rr *Receiver) Run(ctx context.Context) {
-	rr.managerRelabeler.Run(ctx)
+func (rr *Receiver) Run(_ context.Context) (err error) {
+	defer rr.shutdowner.Done(err)
+	rr.rotator.Run()
+	<-rr.shutdowner.Signal()
+	return nil
 }
 
 // Shutdown safe shutdown Receiver.
-func (rr *Receiver) Shutdown() error {
-	ctxShutdown, cancel := context.WithTimeout(context.Background(), defaultShutdownTimeout)
-	err := rr.managerRelabeler.Shutdown(ctxShutdown)
-	cancel()
-	level.Info(rr.logger).Log("msg", "stopped")
-	return err
+func (rr *Receiver) Shutdown(ctx context.Context) error {
+	metricWriteErr := rr.metricsWriteTrigger.Close()
+	rotatorErr := rr.rotator.Close()
+	storageErr := rr.storage.Close()
+	distributorErr := rr.distributor.Shutdown(ctx)
+	err := rr.shutdowner.Shutdown(ctx)
+	return errors.Join(metricWriteErr, rotatorErr, storageErr, distributorErr, err)
 }
 
 // makeDestinationGroups create DestinationGroups from configs.
