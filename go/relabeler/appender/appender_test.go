@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/prometheus/prometheus/pp/go/relabeler/appender"
+	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 	"github.com/prometheus/prometheus/pp/go/relabeler/distributor"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head"
 	"github.com/stretchr/testify/require"
@@ -83,8 +84,8 @@ func (s *AppenderSuite) TestManagerRelabelerKeep() {
 	)
 
 	s.T().Log("make input relabeler")
-	inputRelabelerConfigs := []*relabeler.InputRelabelerConfig{
-		relabeler.NewInputRelabelerConfig(
+	inputRelabelerConfigs := []*config.InputRelabelerConfig{
+		config.NewInputRelabelerConfig(
 			relabelerID,
 			[]*cppbridge.RelabelConfig{
 				{
@@ -96,7 +97,7 @@ func (s *AppenderSuite) TestManagerRelabelerKeep() {
 		),
 	}
 
-	destinationGroups := distributor.DestinationGroups{
+	destinationGroups := relabeler.DestinationGroups{
 		destinationGroup1,
 		destinationGroup2,
 	}
@@ -214,8 +215,8 @@ func (s *AppenderSuite) TestManagerRelabelerRelabeling() {
 	)
 
 	s.T().Log("make input relabeler")
-	inputRelabelerConfigs := []*relabeler.InputRelabelerConfig{
-		relabeler.NewInputRelabelerConfig(
+	inputRelabelerConfigs := []*config.InputRelabelerConfig{
+		config.NewInputRelabelerConfig(
 			relabelerID,
 			[]*cppbridge.RelabelConfig{
 				{
@@ -227,7 +228,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabeling() {
 		),
 	}
 
-	destinationGroups := distributor.DestinationGroups{
+	destinationGroups := relabeler.DestinationGroups{
 		destinationGroup1,
 		destinationGroup2,
 	}
@@ -356,8 +357,8 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingAddNewLabel() {
 	)
 
 	s.T().Log("make input relabeler")
-	inputRelabelerConfigs := []*relabeler.InputRelabelerConfig{
-		relabeler.NewInputRelabelerConfig(
+	inputRelabelerConfigs := []*config.InputRelabelerConfig{
+		config.NewInputRelabelerConfig(
 			relabelerID,
 			[]*cppbridge.RelabelConfig{
 				{
@@ -369,7 +370,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingAddNewLabel() {
 		),
 	}
 
-	destinationGroups := distributor.DestinationGroups{
+	destinationGroups := relabeler.DestinationGroups{
 		destinationGroup1,
 		destinationGroup2,
 	}
@@ -502,8 +503,8 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsEnd() {
 	)
 
 	s.T().Log("make input relabeler")
-	inputRelabelerConfigs := []*relabeler.InputRelabelerConfig{
-		relabeler.NewInputRelabelerConfig(
+	inputRelabelerConfigs := []*config.InputRelabelerConfig{
+		config.NewInputRelabelerConfig(
 			relabelerID,
 			[]*cppbridge.RelabelConfig{
 				{
@@ -515,7 +516,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsEnd() {
 		),
 	}
 
-	destinationGroups := distributor.DestinationGroups{
+	destinationGroups := relabeler.DestinationGroups{
 		destinationGroup1,
 		destinationGroup2,
 	}
@@ -647,8 +648,8 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsRelabel(
 	)
 
 	s.T().Log("make input relabeler")
-	inputRelabelerConfigs := []*relabeler.InputRelabelerConfig{
-		relabeler.NewInputRelabelerConfig(
+	inputRelabelerConfigs := []*config.InputRelabelerConfig{
+		config.NewInputRelabelerConfig(
 			relabelerID,
 			[]*cppbridge.RelabelConfig{
 				{
@@ -660,7 +661,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsRelabel(
 		),
 	}
 
-	destinationGroups := distributor.DestinationGroups{
+	destinationGroups := relabeler.DestinationGroups{
 		destinationGroup1,
 		destinationGroup2,
 	}
@@ -749,7 +750,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsRelabel(
 
 type noOpStorage struct{}
 
-func (noOpStorage) Add(head relabeler.UpgradableHeadInterface) {}
+func (noOpStorage) Add(head relabeler.Head) {}
 
 func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 	relabelerID := s.T().Name()
@@ -793,8 +794,8 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 	)
 
 	s.T().Log("make input relabeler")
-	inputRelabelerConfigs := []*relabeler.InputRelabelerConfig{
-		relabeler.NewInputRelabelerConfig(
+	inputRelabelerConfigs := []*config.InputRelabelerConfig{
+		config.NewInputRelabelerConfig(
 			relabelerID,
 			[]*cppbridge.RelabelConfig{
 				{
@@ -806,21 +807,22 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 		),
 	}
 
-	destinationGroups := distributor.DestinationGroups{
+	destinationGroups := relabeler.DestinationGroups{
 		destinationGroup1,
 		destinationGroup2,
 	}
 
 	dstrb := distributor.NewDistributor(destinationGroups)
-	hd, err := head.New(inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
-	require.NoError(s.T(), err)
-	s.T().Log("make appender")
-	app := appender.NewQueryableAppender(hd, dstrb)
-
-	headRotator := appender.NewHeadRotator(noOpStorage{}, head.BuildFunc(func() (relabeler.UpgradableHeadInterface, error) {
+	rotatableHead, err := appender.NewRotatableHead(noOpStorage{}, head.BuildFunc(func() (relabeler.Head, error) {
 		return head.New(inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
 	}))
-	rotator := appender.NewRotator(app, headRotator, clock, appender.DefaultRotateDuration)
+	require.NoError(s.T(), err)
+	s.T().Log("make appender")
+	app := appender.NewQueryableAppender(rotatableHead, dstrb)
+
+	rotator := appender.NewRotator(app, clock, appender.DefaultRotateDuration)
+	rotator.Run()
+	defer func() { _ = rotator.Close() }()
 
 	hlimits := cppbridge.DefaultWALHashdexLimits()
 
@@ -840,7 +842,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	err := app.Append(s.baseCtx, h, nil, relabelerID)
+	err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -944,7 +946,6 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 	err = dstrb.Shutdown(shutdownCtx)
 	cancel()
 	s.Require().NoError(err)
-	s.Require().NoError(rotator.Close())
 }
 
 func (s *AppenderSuite) makeDestinationGroup(
@@ -954,11 +955,11 @@ func (s *AppenderSuite) makeDestinationGroup(
 	externalLabels []cppbridge.Label,
 	relabelingCfgs []*cppbridge.RelabelConfig,
 	numberOfShards uint16,
-) *distributor.DestinationGroup {
+) *relabeler.DestinationGroup {
 	s.T().Log("make DestinationGroupConfig")
 	dir, err := s.mkDir(destinationName)
 	s.Require().NoError(err)
-	dgcfg := &distributor.DestinationGroupConfig{
+	dgcfg := &relabeler.DestinationGroupConfig{
 		Name:           destinationName,
 		Dir:            dir,
 		Relabeling:     relabelingCfgs,
@@ -986,7 +987,7 @@ func (s *AppenderSuite) makeDestinationGroup(
 	})
 	refillSenderCtor := s.constructorForRefillSender(&ManagerRefillSenderMock{})
 
-	destinationGroup, err := distributor.NewDestinationGroup(
+	destinationGroup, err := relabeler.NewDestinationGroup(
 		s.baseCtx,
 		dgcfg,
 		s.encoderSelector,
@@ -1230,8 +1231,8 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans() {
 	)
 
 	s.T().Log("make input relabeler")
-	inputRelabelerConfigs := []*relabeler.InputRelabelerConfig{
-		relabeler.NewInputRelabelerConfig(
+	inputRelabelerConfigs := []*config.InputRelabelerConfig{
+		config.NewInputRelabelerConfig(
 			relabelerID,
 			[]*cppbridge.RelabelConfig{
 				{
@@ -1243,7 +1244,7 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans() {
 		),
 	}
 
-	destinationGroups := distributor.DestinationGroups{
+	destinationGroups := relabeler.DestinationGroups{
 		destinationGroup1,
 		destinationGroup2,
 	}
@@ -1367,8 +1368,8 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 	)
 
 	s.T().Log("make input relabeler")
-	inputRelabelerConfigs := []*relabeler.InputRelabelerConfig{
-		relabeler.NewInputRelabelerConfig(
+	inputRelabelerConfigs := []*config.InputRelabelerConfig{
+		config.NewInputRelabelerConfig(
 			relabelerID,
 			[]*cppbridge.RelabelConfig{
 				{
@@ -1380,7 +1381,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 		),
 	}
 
-	destinationGroups := distributor.DestinationGroups{
+	destinationGroups := relabeler.DestinationGroups{
 		destinationGroup1,
 		destinationGroup2,
 	}

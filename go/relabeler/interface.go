@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler/config"
+	"sync/atomic"
 )
 
 // DataStorage - data storage interface.
@@ -52,4 +53,28 @@ type HeadConfigurator interface {
 
 type DistributorConfigurator interface {
 	Configure(distributor Distributor) error
+}
+
+type DestructibleIncomingData struct {
+	data          *IncomingData
+	destructCount atomic.Int64
+}
+
+func NewDestructibleIncomingData(data *IncomingData, destructCount int) *DestructibleIncomingData {
+	d := &DestructibleIncomingData{
+		data: data,
+	}
+	d.destructCount.Store(int64(destructCount))
+	return d
+}
+
+func (d *DestructibleIncomingData) Data() *IncomingData {
+	return d.data
+}
+
+func (d *DestructibleIncomingData) Destroy() {
+	if d.destructCount.Add(-1) != 0 {
+		return
+	}
+	d.data.Destroy()
 }

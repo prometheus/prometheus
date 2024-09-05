@@ -9,7 +9,6 @@ import (
 	"github.com/prometheus/prometheus/pp/go/util"
 	"github.com/prometheus/client_golang/prometheus"
 	"sync"
-	"sync/atomic"
 )
 
 type Head struct {
@@ -58,30 +57,6 @@ func New(
 	return h, nil
 }
 
-type destructibleIncomingData struct {
-	data          *relabeler.IncomingData
-	destructCount atomic.Int64
-}
-
-func newIncomingDataDestructor(data *relabeler.IncomingData, destructCount int) *destructibleIncomingData {
-	d := &destructibleIncomingData{
-		data: data,
-	}
-	d.destructCount.Store(int64(destructCount))
-	return d
-}
-
-func (d *destructibleIncomingData) Data() *relabeler.IncomingData {
-	return d.data
-}
-
-func (d *destructibleIncomingData) Destroy() {
-	if d.destructCount.Add(-1) != 0 {
-		return
-	}
-	d.data.Destroy()
-}
-
 func (h *Head) Append(ctx context.Context, incomingData *relabeler.IncomingData, metricLimits *cppbridge.MetricLimits, sourceStates *relabeler.SourceStates, staleNansTS int64, relabelerID string) ([][]*cppbridge.InnerSeries, error) {
 	if sourceStates != nil {
 		sourceStates.ResizeIfNeed(int(h.numberOfShards))
@@ -90,7 +65,7 @@ func (h *Head) Append(ctx context.Context, incomingData *relabeler.IncomingData,
 	h.enqueueInputRelabeling(NewTaskInputRelabeling(
 		ctx,
 		inputPromise,
-		newIncomingDataDestructor(incomingData, int(h.numberOfShards)),
+		relabeler.NewDestructibleIncomingData(incomingData, int(h.numberOfShards)),
 		metricLimits,
 		sourceStates,
 		staleNansTS,

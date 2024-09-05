@@ -11,7 +11,7 @@ import (
 type TaskInputRelabeling struct {
 	ctx          context.Context
 	promise      *InputRelabelingPromise
-	incomingData *destructibleIncomingData
+	incomingData *relabeler.DestructibleIncomingData
 	metricLimits *cppbridge.MetricLimits
 	sourceStates *relabeler.SourceStates
 	staleNansTS  int64
@@ -22,7 +22,7 @@ type TaskInputRelabeling struct {
 func NewTaskInputRelabeling(
 	ctx context.Context,
 	promise *InputRelabelingPromise,
-	incomingData *destructibleIncomingData,
+	incomingData *relabeler.DestructibleIncomingData,
 	metricLimits *cppbridge.MetricLimits,
 	sourceStates *relabeler.SourceStates,
 	staleNansTS int64,

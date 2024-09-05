@@ -37,7 +37,7 @@ func (r *Rotator) Run() {
 	close(r.run)
 }
 
-func (r *Rotator) loop() (err error) {
+func (r *Rotator) loop() {
 	defer r.closer.Done()
 	defer r.rotateTimer.Stop()
 

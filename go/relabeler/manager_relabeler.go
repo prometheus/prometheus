@@ -177,12 +177,12 @@ func (msr *ManagerRelabeler) AppendWithStaleNans(
 		sourceStates.ResizeIfNeed(int(msr.shards.numberOfShards))
 	}
 	inputPromise := NewInputRelabelingPromise(msr.shards.numberOfShards)
-	// incomingData.numberOfDestroy = int32(msr.shards.numberOfShards) * int32(len(msr.shards.inputRelabelers))
-	//incomingData.numberOfDestroy = int32(msr.shards.numberOfShards)
+	//incomingData.numberOfDestroy = int32(msr.shards.numberOfShards) * int32(len(msr.shards.inputRelabelers))
+	desctructibleIncomingData := NewDestructibleIncomingData(incomingData, int(msr.shards.numberOfShards))
 	msr.shards.enqueueInputRelabeling(NewTaskInputRelabeling(
 		ctx,
 		inputPromise,
-		incomingData,
+		desctructibleIncomingData,
 		metricLimits,
 		sourceStates,
 		staleNansTS,
@@ -997,7 +997,7 @@ func (task *TaskMetricUpdate) updateOutputRelabersMetrics(shardID uint16) {
 type TaskInputRelabeling struct {
 	ctx          context.Context
 	promise      *InputRelabelingPromise
-	incomingData *IncomingData
+	incomingData *DestructibleIncomingData
 	metricLimits *cppbridge.MetricLimits
 	sourceStates *SourceStates
 	staleNansTS  int64
@@ -1008,7 +1008,7 @@ type TaskInputRelabeling struct {
 func NewTaskInputRelabeling(
 	ctx context.Context,
 	promise *InputRelabelingPromise,
-	incomingData *IncomingData,
+	incomingData *DestructibleIncomingData,
 	metricLimits *cppbridge.MetricLimits,
 	sourceStates *SourceStates,
 	staleNansTS int64,
@@ -1052,7 +1052,7 @@ func (t *TaskInputRelabeling) MetricLimits() *cppbridge.MetricLimits {
 
 // ShardedData - return ShardedData.
 func (t *TaskInputRelabeling) ShardedData() cppbridge.ShardedData {
-	return t.incomingData.ShardedData()
+	return t.incomingData.Data().ShardedData()
 }
 
 // SourceStateByShard return state for stalenans for shard.
