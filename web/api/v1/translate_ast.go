@@ -20,8 +20,10 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
-// Take a Go PromQL AST and translate it to a JSON object for the tree view in the UI.
-// TODO: Could it make sense to do this via the normal JSON marshalling methods?
+// Take a Go PromQL AST and translate it to an object that's nicely JSON-serializable
+// for the tree view in the UI.
+// TODO: Could it make sense to do this via the normal JSON marshalling methods? Maybe
+// too UI-specific though.
 func translateAST(node parser.Expr) interface{} {
 	if node == nil {
 		return nil
