@@ -1,4 +1,4 @@
-import { Stack, Card, Group, Table, Text } from "@mantine/core";
+import { Stack, Card, Table, Text } from "@mantine/core";
 import { useSuspenseAPIQuery } from "../api/api";
 import { TSDBStatusResult } from "../api/responseTypes/tsdbStatus";
 import { formatTimestamp } from "../lib/formatTime";
@@ -71,11 +71,9 @@ export default function TSDBStatusPage() {
         },
       ].map(({ title, unit = "Count", stats, formatAsCode }) => (
         <Card shadow="xs" withBorder p="md">
-          <Group wrap="nowrap" align="center" ml="xs" mb="sm" gap="xs">
-            <Text fz="xl" fw={600}>
-              {title}
-            </Text>
-          </Group>
+          <Text fz="xl" fw={600} ml="xs" mb="sm">
+            {title}
+          </Text>
           <Table layout="fixed">
             <Table.Thead>
               <Table.Tr>
