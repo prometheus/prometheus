@@ -33,6 +33,8 @@ import (
 	"syscall"
 	"time"
 
+	storage2 "github.com/prometheus/prometheus/op-pkg/storage"
+
 	"github.com/KimMachineGun/automemlimit/memlimit"
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/alecthomas/units"
@@ -616,18 +618,39 @@ func main() {
 	level.Info(logger).Log("fd_limits", prom_runtime.FdLimits())
 	level.Info(logger).Log("vm_limits", prom_runtime.VMLimits())
 
+	receiverConfig, err := cfgFile.GetReceiverConfig()
+	if err != nil {
+		level.Error(logger).Log("msg", "failed take a receiver config", "err", err)
+		os.Exit(1)
+	}
+
+	var ctxReceiver, cancelReceiver = context.WithCancel(context.Background())
+	// create receiver
+	receiver, err := receiver.NewReceiver(
+		ctxReceiver,
+		log.With(logger, "component", "receiver"),
+		prometheus.DefaultRegisterer,
+		receiverConfig,
+		localStoragePath,
+		cfgFile.RemoteWriteConfigs,
+		localStoragePath,
+	)
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to create a receiver", "err", err)
+		os.Exit(1)
+	}
+
 	var (
 		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
 		scraper       = &readyScrapeManager{}
 		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper)
-		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
+		opStorage     = storage2.NewQueryableStorage(receiver)
+		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage, opStorage)
 	)
 
 	var (
 		ctxWeb, cancelWeb = context.WithCancel(context.Background())
 		ctxRule           = context.Background()
-
-		ctxReceiver, cancelReceiver = context.WithCancel(context.Background())
 
 		notifierManager = notifier.NewManager(&cfg.notifier, log.With(logger, "component", "notifier"))
 
@@ -690,27 +713,6 @@ func main() {
 			}
 			discoveryManagerNotify = discMgr
 		}
-	}
-
-	receiverConfig, err := cfgFile.GetReceiverConfig()
-	if err != nil {
-		level.Error(logger).Log("msg", "failed take a receiver config", "err", err)
-		os.Exit(1)
-	}
-
-	// create receiver
-	receiver, err := receiver.NewReceiver(
-		ctxReceiver,
-		log.With(logger, "component", "receiver"),
-		prometheus.DefaultRegisterer,
-		receiverConfig,
-		localStoragePath,
-		cfgFile.RemoteWriteConfigs,
-		localStoragePath,
-	)
-	if err != nil {
-		level.Error(logger).Log("msg", "failed to create a receiver", "err", err)
-		os.Exit(1)
 	}
 
 	scrapeManager, err := scrape.NewManager(
@@ -1319,6 +1321,8 @@ func openDBWithMetrics(dir string, logger log.Logger, reg prometheus.Registerer,
 	if err != nil {
 		return nil, err
 	}
+
+	//db.DisableCompactions()
 
 	reg.MustRegister(
 		prometheus.NewGaugeFunc(prometheus.GaugeOpts{

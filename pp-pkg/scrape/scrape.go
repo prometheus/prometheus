@@ -519,7 +519,7 @@ func injectSampleLabels(builder *op_model.LabelSetSimpleBuilder, target *Target,
 				conflictingExposedLabels = append(conflictingExposedLabels, labels.Label{Name: l.Name, Value: existingValue})
 			}
 			// It is now safe to set the target label.
-			builder.Add(l.Name, l.Value)
+			builder.Set(l.Name, l.Value)
 		})
 
 		if len(conflictingExposedLabels) > 0 {
@@ -1113,6 +1113,8 @@ loop:
 			level.Warn(sl.logger).Log(
 				"msg", "label name is not unique, skip series",
 				"series", string(met),
+				"series byte", met,
+				"builder", builder.Build().String(),
 				"name", ln,
 			)
 			continue

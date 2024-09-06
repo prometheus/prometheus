@@ -399,10 +399,11 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/tsdb", wrapAgent(api.serveTSDBStatus))
 	r.Get("/status/walreplay", api.serveWALReplayStatus)
 	r.Post("/read", api.ready(api.remoteRead))
-	r.Post("/write", api.ready(api.remoteWrite))
+	// r.Post("/write", api.ready(api.remoteWrite))
 	r.Post("/otlp/v1/metrics", api.ready(api.otlpWrite))
 
 	// RemoteWriteHandler
+	r.Post("/write", api.ready(api.remoteWriteV2(middleware.ResolveMetadataRemoteWriteVanilla)))
 	r.Post("/remote_write", api.ready(api.remoteWriteV2(middleware.ResolveMetadataRemoteWriteFromHeader)))
 	r.Post("/remote_write/:relabeler_id", api.ready(api.remoteWriteV2(middleware.ResolveMetadataRemoteWrite)))
 	// WebsocketHandler

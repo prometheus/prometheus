@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/prometheus/common/route"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/op-pkg/handler/model"
 )
 
@@ -72,6 +73,16 @@ func ResolveMetadataRemoteWriteFromHeader(next http.HandlerFunc) http.HandlerFun
 		next(writer, request.WithContext(ContextWithMetadata(
 			request.Context(),
 			model.Metadata{RelabelerID: extractRelabelerIDFromHeader(request.Header)},
+		)))
+	}
+}
+
+// ResolveMetadataRemoteWriteVanilla middleware for extract metadata from request header.
+func ResolveMetadataRemoteWriteVanilla(next http.HandlerFunc) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		next(writer, request.WithContext(ContextWithMetadata(
+			request.Context(),
+			model.Metadata{RelabelerID: config.TransparentRelabeler},
 		)))
 	}
 }
