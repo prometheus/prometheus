@@ -13,10 +13,13 @@ import (
 	"sync/atomic"
 )
 
+// BlockWriter writes block on disk.
 type BlockWriter interface {
 	Write(block block.Block) error
 }
 
+// QueryableStorage hold reference to finalized heads and writes blocks from them. Also allows query not yet not
+// persisted heads.
 type QueryableStorage struct {
 	blockWriter BlockWriter
 	mtx         sync.Mutex
@@ -26,6 +29,7 @@ type QueryableStorage struct {
 	closer *util.Closer
 }
 
+// NewQueryableStorage - QueryableStorage constructor.
 func NewQueryableStorage(blockWriter BlockWriter) *QueryableStorage {
 	qs := &QueryableStorage{
 		blockWriter: blockWriter,
@@ -81,10 +85,8 @@ func (qs *QueryableStorage) write() {
 	qs.mtx.Unlock()
 
 	fmt.Println("QUERYABLE STORAGE: write: selected ", len(heads), " heads")
-	var err error
 	for _, head := range heads {
-		err = nil
-		err = head.head.ForEachShard(func(shard relabeler.Shard) error {
+		err := head.head.ForEachShard(func(shard relabeler.Shard) error {
 			return qs.blockWriter.Write(relabeler.NewBlock(shard.LSS().Raw(), shard.DataStorage().Raw()))
 		})
 		if err != nil {
@@ -98,6 +100,7 @@ func (qs *QueryableStorage) write() {
 	qs.shrink()
 }
 
+// Add - Storage interface implementation.
 func (qs *QueryableStorage) Add(head relabeler.Head) {
 	qs.mtx.Lock()
 	qs.heads = append(qs.heads, &headWrapper{head: head})
@@ -113,6 +116,7 @@ func (qs *QueryableStorage) Close() error {
 	return qs.closer.Close()
 }
 
+// WriteMetrics - MetricWriterTarget interface implementation.
 func (qs *QueryableStorage) WriteMetrics() {
 	qs.mtx.Lock()
 	var heads []*headWrapper
@@ -126,6 +130,7 @@ func (qs *QueryableStorage) WriteMetrics() {
 	}
 }
 
+// Querier - storage.Queryable interface implementation.
 func (qs *QueryableStorage) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 	qs.mtx.Lock()
 	defer qs.mtx.Unlock()
@@ -175,16 +180,19 @@ type storageQuerier struct {
 	closer func() error
 }
 
+// LabelValues - storage.Querier interface implementation.
 func (q *storageQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
+// LabelNames - storage.Querier interface implementation.
 func (q *storageQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
+// Close - closes querier.
 func (q *storageQuerier) Close() error {
 	if q.closer != nil {
 		return q.closer()
@@ -193,6 +201,7 @@ func (q *storageQuerier) Close() error {
 	return nil
 }
 
+// Select - storage.Querier interface implementation.
 func (q *storageQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	//TODO implement me
 	panic("implement me")

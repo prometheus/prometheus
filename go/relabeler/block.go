@@ -96,7 +96,7 @@ func (iw *IndexWriterTo) WriteTo(w io.Writer) (n int64, err error) {
 	n += int64(bytesWritten)
 
 	for {
-		data, hasMoreData := iw.iw.WriteNextPostingsBatch(256)
+		data, hasMoreData := iw.iw.WriteNextPostingsBatch(1 << 20)
 		bytesWritten, err = w.Write(data)
 		if err != nil {
 			return n, fmt.Errorf("failed to write postings: %w", err)

@@ -11,6 +11,7 @@ import (
 type DataStorage interface {
 	AppendInnerSeriesSlice(innerSeriesSlice []*cppbridge.InnerSeries)
 	Raw() *cppbridge.HeadDataStorage
+	MergeOutOfOrderChunks()
 }
 
 type LSS interface {

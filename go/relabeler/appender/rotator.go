@@ -8,12 +8,15 @@ import (
 	"time"
 )
 
+// DefaultRotateDuration - default block duration.
 const DefaultRotateDuration = 2 * time.Hour
 
+// Rotatable is something that can be rotated.
 type Rotatable interface {
 	Rotate() error
 }
 
+// Rotator is a rotation trigger.
 type Rotator struct {
 	rotatable   Rotatable
 	rotateTimer *relabeler.RotateTimer
@@ -21,6 +24,7 @@ type Rotator struct {
 	closer      *util.Closer
 }
 
+// NewRotator - Rotator constructor.
 func NewRotator(rotatable Rotatable, clock clockwork.Clock, rotateDuration time.Duration) *Rotator {
 	r := &Rotator{
 		rotatable:   rotatable,
@@ -33,6 +37,7 @@ func NewRotator(rotatable Rotatable, clock clockwork.Clock, rotateDuration time.
 	return r
 }
 
+// Run - runs rotation loop.
 func (r *Rotator) Run() {
 	close(r.run)
 }
@@ -67,6 +72,7 @@ func (r *Rotator) loop() {
 	}
 }
 
+// Close - io.Closer interface implementation.
 func (r *Rotator) Close() error {
 	return r.closer.Close()
 }

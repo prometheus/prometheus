@@ -6,19 +6,23 @@ import (
 )
 
 const (
+	// DefaultMetricWriteInterval default metric scrape interval.
 	DefaultMetricWriteInterval = time.Second * 15
 )
 
+// MetricWriterTarget - something that can write metrics.
 type MetricWriterTarget interface {
 	WriteMetrics()
 }
 
+// MetricsWriteTrigger - metrics write trigger.
 type MetricsWriteTrigger struct {
 	interval time.Duration
 	targets  []MetricWriterTarget
 	closer   *util.Closer
 }
 
+// MetricsWriteTrigger - MetricsWriteTrigger constructor.
 func NewMetricsWriteTrigger(interval time.Duration, targets ...MetricWriterTarget) *MetricsWriteTrigger {
 	t := &MetricsWriteTrigger{
 		interval: interval,
@@ -48,6 +52,7 @@ func (t *MetricsWriteTrigger) loop() {
 	}
 }
 
+// Close - io.Closer interface implementation.
 func (t *MetricsWriteTrigger) Close() error {
 	return t.closer.Close()
 

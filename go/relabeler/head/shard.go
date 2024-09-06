@@ -29,6 +29,10 @@ func (ds *DataStorage) Raw() *cppbridge.HeadDataStorage {
 	return ds.dataStorage
 }
 
+func (ds *DataStorage) MergeOutOfOrderChunks() {
+	ds.encoder.MergeOutOfOrderChunks()
+}
+
 // reshards changes the number of shards to the required amount.
 func (h *Head) reconfigure(
 	inputRelabelerConfigs []*config.InputRelabelerConfig,

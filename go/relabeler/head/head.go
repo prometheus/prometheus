@@ -9,6 +9,7 @@ import (
 	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 	"github.com/prometheus/prometheus/pp/go/util"
 	"github.com/prometheus/client_golang/prometheus"
+	"runtime"
 	"sync"
 )
 
@@ -58,6 +59,10 @@ func New(
 
 	h.run()
 
+	runtime.SetFinalizer(h, func(h *Head) {
+		fmt.Println("HEAD {", generation, "} DESTROYED")
+	})
+
 	return h, nil
 }
 
@@ -103,6 +108,7 @@ func (h *Head) NumberOfShards() uint16 {
 
 func (h *Head) Finalize() {
 	_ = h.forEachShard(func(shard relabeler.Shard) error {
+		shard.DataStorage().MergeOutOfOrderChunks()
 		return nil
 	})
 }
