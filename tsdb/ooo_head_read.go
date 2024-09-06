@@ -31,10 +31,14 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
+var _ IndexReader = &HeadAndOOOIndexReader{}
+
 type HeadAndOOOIndexReader struct {
 	*headIndexReader            // A reference to the headIndexReader so we can reuse as many interface implementation as possible.
 	lastGarbageCollectedMmapRef chunks.ChunkDiskMapperRef
 }
+
+var _ chunkenc.Iterable = &mergedOOOChunks{}
 
 // mergedOOOChunks holds the list of iterables for overlapping chunks.
 type mergedOOOChunks struct {
