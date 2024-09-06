@@ -157,30 +157,26 @@ a set of interfaces that allow integrating with remote storage systems.
 
 ### Overview
 
-Prometheus integrates with remote storage systems in three ways:
+Prometheus integrates with remote storage systems in four ways:
 
-- Prometheus can write samples that it ingests to a remote URL in a standardized format.
-- Prometheus can receive samples from other Prometheus servers in a standardized format.
-- Prometheus can read (back) sample data from a remote URL in a standardized format.
+- Prometheus can write samples that it ingests to a remote URL in a [Remote Write format](https://prometheus.io/docs/specs/remote_write_spec_2_0/).
+- Prometheus can receive samples from other clients in a [Remote Write format](https://prometheus.io/docs/specs/remote_write_spec_2_0/).
+- Prometheus can read (back) sample data from a remote URL in a [Remote Read format](https://github.com/prometheus/prometheus/blob/main/prompb/remote.proto#L31).
+- Prometheus can return sample data requested by clients in a [Remote Read format](https://github.com/prometheus/prometheus/blob/main/prompb/remote.proto#L31).
 
 ![Remote read and write architecture](images/remote_integrations.png)
 
-The read and write protocols both use a snappy-compressed protocol buffer encoding over
-HTTP. The protocols are not considered as stable APIs yet and may change to use gRPC
-over HTTP/2 in the future, when all hops between Prometheus and the remote storage can
-safely be assumed to support HTTP/2.
+The remote read and write protocols both use a snappy-compressed protocol buffer encoding over
+HTTP. The read protocol is not yet considered as stable API.
 
-For details on configuring remote storage integrations in Prometheus, see the
+The write protocol has a [stable specification for 1.0 version](https://prometheus.io/docs/specs/remote_write_spec/)
+and [experimental specification for 2.0 version](https://prometheus.io/docs/specs/remote_write_spec_2_0/),
+both supported by Prometheus server.
+
+For details on configuring remote storage integrations in Prometheus as a client, see the
 [remote write](configuration/configuration.md#remote_write) and
 [remote read](configuration/configuration.md#remote_read) sections of the Prometheus
 configuration documentation.
-
-The built-in remote write receiver can be enabled by setting the
-`--web.enable-remote-write-receiver` command line flag. When enabled,
-the remote write receiver endpoint is `/api/v1/write`.
-
-For details on the request and response messages, see the
-[remote storage protocol buffer definitions](https://github.com/prometheus/prometheus/blob/main/prompb/remote.proto).
 
 Note that on the read path, Prometheus only fetches raw series data for a set of
 label selectors and time ranges from the remote end. All PromQL evaluation on the
@@ -188,6 +184,11 @@ raw data still happens in Prometheus itself. This means that remote read queries
 have some scalability limit, since all necessary data needs to be loaded into the
 querying Prometheus server first and then processed there. However, supporting
 fully distributed evaluation of PromQL was deemed infeasible for the time being.
+
+Prometheus also serves both protocols. The built-in remote write receiver can be enabled
+by setting the `--web.enable-remote-write-receiver` command line flag. When enabled,
+the remote write receiver endpoint is `/api/v1/write`. The remote read endpoint is
+available on [`/api/v1/read`](https://prometheus.io/docs/prometheus/latest/querying/remote_read_api/).
 
 ### Existing integrations
 

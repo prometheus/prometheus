@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"reflect"
 	"sync"
 	"time"
@@ -36,7 +37,7 @@ import (
 )
 
 // NewManager is the Manager constructor.
-func NewManager(o *Options, logger log.Logger, app storage.Appendable, registerer prometheus.Registerer) (*Manager, error) {
+func NewManager(o *Options, logger log.Logger, newScrapeFailureLogger func(string) (log.Logger, error), app storage.Appendable, registerer prometheus.Registerer) (*Manager, error) {
 	if o == nil {
 		o = &Options{}
 	}
@@ -50,15 +51,16 @@ func NewManager(o *Options, logger log.Logger, app storage.Appendable, registere
 	}
 
 	m := &Manager{
-		append:        app,
-		opts:          o,
-		logger:        logger,
-		scrapeConfigs: make(map[string]*config.ScrapeConfig),
-		scrapePools:   make(map[string]*scrapePool),
-		graceShut:     make(chan struct{}),
-		triggerReload: make(chan struct{}, 1),
-		metrics:       sm,
-		buffers:       pool.New(1e3, 100e6, 3, func(sz int) interface{} { return make([]byte, 0, sz) }),
+		append:                 app,
+		opts:                   o,
+		logger:                 logger,
+		newScrapeFailureLogger: newScrapeFailureLogger,
+		scrapeConfigs:          make(map[string]*config.ScrapeConfig),
+		scrapePools:            make(map[string]*scrapePool),
+		graceShut:              make(chan struct{}),
+		triggerReload:          make(chan struct{}, 1),
+		metrics:                sm,
+		buffers:                pool.New(1e3, 100e6, 3, func(sz int) interface{} { return make([]byte, 0, sz) }),
 	}
 
 	m.metrics.setTargetMetadataCacheGatherer(m)
@@ -103,12 +105,14 @@ type Manager struct {
 	append    storage.Appendable
 	graceShut chan struct{}
 
-	offsetSeed    uint64     // Global offsetSeed seed is used to spread scrape workload across HA setup.
-	mtxScrape     sync.Mutex // Guards the fields below.
-	scrapeConfigs map[string]*config.ScrapeConfig
-	scrapePools   map[string]*scrapePool
-	targetSets    map[string][]*targetgroup.Group
-	buffers       *pool.Pool
+	offsetSeed             uint64     // Global offsetSeed seed is used to spread scrape workload across HA setup.
+	mtxScrape              sync.Mutex // Guards the fields below.
+	scrapeConfigs          map[string]*config.ScrapeConfig
+	scrapePools            map[string]*scrapePool
+	newScrapeFailureLogger func(string) (log.Logger, error)
+	scrapeFailureLoggers   map[string]log.Logger
+	targetSets             map[string][]*targetgroup.Group
+	buffers                *pool.Pool
 
 	triggerReload chan struct{}
 
@@ -183,6 +187,11 @@ func (m *Manager) reload() {
 				continue
 			}
 			m.scrapePools[setName] = sp
+			if l, ok := m.scrapeFailureLoggers[scrapeConfig.ScrapeFailureLogFile]; ok {
+				sp.SetScrapeFailureLogger(l)
+			} else {
+				level.Error(sp.logger).Log("msg", "No logger found. This is a bug in Prometheus that should be reported upstream.", "scrape_pool", setName)
+			}
 		}
 
 		wg.Add(1)
@@ -238,10 +247,35 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 	}
 
 	c := make(map[string]*config.ScrapeConfig)
+	scrapeFailureLoggers := map[string]log.Logger{
+		"": nil, // Emptying the file name sets the scrape logger to nil.
+	}
 	for _, scfg := range scfgs {
 		c[scfg.JobName] = scfg
+		if _, ok := scrapeFailureLoggers[scfg.ScrapeFailureLogFile]; !ok {
+			// We promise to reopen the file on each reload.
+			var (
+				l   log.Logger
+				err error
+			)
+			if m.newScrapeFailureLogger != nil {
+				if l, err = m.newScrapeFailureLogger(scfg.ScrapeFailureLogFile); err != nil {
+					return err
+				}
+			}
+			scrapeFailureLoggers[scfg.ScrapeFailureLogFile] = l
+		}
 	}
 	m.scrapeConfigs = c
+
+	oldScrapeFailureLoggers := m.scrapeFailureLoggers
+	for _, s := range oldScrapeFailureLoggers {
+		if closer, ok := s.(io.Closer); ok {
+			defer closer.Close()
+		}
+	}
+
+	m.scrapeFailureLoggers = scrapeFailureLoggers
 
 	if err := m.setOffsetSeed(cfg.GlobalConfig.ExternalLabels); err != nil {
 		return err
@@ -259,6 +293,13 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 			if err != nil {
 				level.Error(m.logger).Log("msg", "error reloading scrape pool", "err", err, "scrape_pool", name)
 				failed = true
+			}
+			fallthrough
+		case ok:
+			if l, ok := m.scrapeFailureLoggers[cfg.ScrapeFailureLogFile]; ok {
+				sp.SetScrapeFailureLogger(l)
+			} else {
+				level.Error(sp.logger).Log("msg", "No logger found. This is a bug in Prometheus that should be reported upstream.", "scrape_pool", name)
 			}
 		}
 	}
