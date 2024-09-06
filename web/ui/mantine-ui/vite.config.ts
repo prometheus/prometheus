@@ -12,6 +12,14 @@ export default defineConfig({
       "/-/": {
         target: "http://localhost:9090",
       },
+      // "/api": {
+      //   target: "https://prometheus.demo.do.prometheus.io/",
+      //   changeOrigin: true,
+      // },
+      // "/-/": {
+      //   target: "https://prometheus.demo.do.prometheus.io/",
+      //   changeOrigin: true,
+      // },
     },
   },
 });
