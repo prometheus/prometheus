@@ -663,8 +663,8 @@ github.com/shurcooL/httpfs v0.0.0-20230704072500-f1e31cf0ba5c/go.mod h1:owqhoLW1
 github.com/shurcooL/sanitized_anchor_name v1.0.0/go.mod h1:1NzhyTcUVG4SuEtjjoZeVRXNmyL/1OwPU0+IJeTBvfc=
 github.com/simonpasquier/klog-gokit v0.3.0 h1:TkFK21cbwDRS+CiystjqbAiq5ubJcVTk9hLUck5Ntcs=
 github.com/simonpasquier/klog-gokit v0.3.0/go.mod h1:+SUlDQNrhVtGt2FieaqNftzzk8P72zpWlACateWxA9k=
-github.com/simonpasquier/klog-gokit/v3 v3.3.0 h1:HMzH999kO5gEgJTaWWO+xjncW5oycspcsBnjn9b853Q=
-github.com/simonpasquier/klog-gokit/v3 v3.3.0/go.mod h1:uSbnWC3T7kt1dQyY9sjv0Ao1SehMAJdVnUNSKhjaDsg=
+github.com/simonpasquier/klog-gokit/v3 v3.5.0 h1:ewnk+ickph0hkQFgdI4pffKIbruAxxWcg0Fe/vQmLOM=
+github.com/simonpasquier/klog-gokit/v3 v3.5.0/go.mod h1:S9flvRzzpaYLYtXI2w8jf9R/IU/Cy14NrbvDUevNP1E=
 github.com/sirupsen/logrus v1.2.0/go.mod h1:LxeOpSwHxABJmUn/MG1IvRgCAasNZTLOkJPxbbu5VWo=
 github.com/sirupsen/logrus v1.4.2/go.mod h1:tLMulIdttU9McNUspp0xgXVQah82FyeX6MwdIuYE2rE=
 github.com/sirupsen/logrus v1.6.0/go.mod h1:7uNnSEd1DgxDLC74fIahvMZmmYsHGZGEOFrfsX/uA88=
