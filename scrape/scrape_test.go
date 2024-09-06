@@ -158,6 +158,9 @@ type testLoop struct {
 	timeout      time.Duration
 }
 
+func (l *testLoop) setScrapeFailureLogger(log.Logger) {
+}
+
 func (l *testLoop) run(errc chan<- error) {
 	if l.runOnce {
 		panic("loop must be started only once")
@@ -3782,7 +3785,7 @@ scrape_configs:
 	s.DB.EnableNativeHistograms()
 	reg := prometheus.NewRegistry()
 
-	mng, err := NewManager(&Options{EnableNativeHistogramsIngestion: true}, nil, s, reg)
+	mng, err := NewManager(&Options{EnableNativeHistogramsIngestion: true}, nil, nil, s, reg)
 	require.NoError(t, err)
 	cfg, err := config.Load(configStr, false, log.NewNopLogger())
 	require.NoError(t, err)
