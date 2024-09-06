@@ -20,14 +20,8 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
-func getStartOrEnd(startOrEnd parser.ItemType) interface{} {
-	if startOrEnd == 0 {
-		return nil
-	}
-
-	return startOrEnd.String()
-}
-
+// Take a Go PromQL AST and translate it to a JSON object for the tree view in the UI.
+// TODO: Could it make sense to do this via the normal JSON marshalling methods?
 func translateAST(node parser.Expr) interface{} {
 	if node == nil {
 		return nil
@@ -150,4 +144,12 @@ func translateMatchers(in []*labels.Matcher) interface{} {
 		})
 	}
 	return out
+}
+
+func getStartOrEnd(startOrEnd parser.ItemType) interface{} {
+	if startOrEnd == 0 {
+		return nil
+	}
+
+	return startOrEnd.String()
 }
