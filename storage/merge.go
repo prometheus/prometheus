@@ -200,7 +200,7 @@ func (q *mergeGenericQuerier) LabelValues(ctx context.Context, name string, hint
 	return res, ws, nil
 }
 
-// mergeResults performs merge sort for results from multiple queriers.
+// mergeResults performs merge sort on the results of invoking the resultsFn against multiple queriers.
 func (q *mergeGenericQuerier) mergeResults(lq labelGenericQueriers, hints *LabelHints, resultsFn func(q LabelQuerier) ([]string, annotations.Annotations, error)) ([]string, annotations.Annotations, error) {
 	if lq.Len() == 0 {
 		return nil, nil, nil
@@ -216,7 +216,7 @@ func (q *mergeGenericQuerier) mergeResults(lq labelGenericQueriers, hints *Label
 	if err != nil {
 		return nil, ws, err
 	}
-	s2, ws, err := q.mergeResults(b, hints, resultsFn)
+	s2, w, err := q.mergeResults(b, hints, resultsFn)
 	ws.Merge(w)
 	if err != nil {
 		return nil, ws, err
@@ -292,6 +292,7 @@ func truncateToLimit(s []string, hints *LabelHints) []string {
 type VerticalSeriesMergeFunc func(...Series) Series
 
 // NewMergeSeriesSet returns a new SeriesSet that merges many SeriesSets together.
+// If limit is set, the SeriesSet will be limited up-to the limit. 0 means disabled.
 func NewMergeSeriesSet(sets []SeriesSet, limit int, mergeFunc VerticalSeriesMergeFunc) SeriesSet {
 	genericSets := make([]genericSeriesSet, 0, len(sets))
 	for _, s := range sets {
