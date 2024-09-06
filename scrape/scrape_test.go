@@ -3838,3 +3838,161 @@ scrape_configs:
 		require.Equal(t, expectedSchema, h.Schema)
 	}
 }
+
+func TestTargetScrapeConfigWithLabels(t *testing.T) {
+	const (
+		configTimeout        = 1500 * time.Millisecond
+		expectedTimeout      = "1.5"
+		expectedTimeoutLabel = "1s500ms"
+		secondTimeout        = 500 * time.Millisecond
+		secondTimeoutLabel   = "500ms"
+		expectedParam        = "value1"
+		secondParam          = "value2"
+		expectedPath         = "/metric-ok"
+		secondPath           = "/metric-nok"
+		httpScheme           = "http"
+		paramLabel           = "__param_param"
+		jobName              = "test"
+	)
+
+	createTestServer := func(t *testing.T, done chan struct{}) *url.URL {
+		server := httptest.NewServer(
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				defer close(done)
+				require.Equal(t, expectedTimeout, r.Header.Get("X-Prometheus-Scrape-Timeout-Seconds"))
+				require.Equal(t, expectedParam, r.URL.Query().Get("param"))
+				require.Equal(t, expectedPath, r.URL.Path)
+
+				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+				w.Write([]byte("metric_a 1\nmetric_b 2\n"))
+			}),
+		)
+		t.Cleanup(server.Close)
+		serverURL, err := url.Parse(server.URL)
+		require.NoError(t, err)
+		return serverURL
+	}
+
+	run := func(t *testing.T, cfg *config.ScrapeConfig, targets []*targetgroup.Group) chan struct{} {
+		done := make(chan struct{})
+		srvURL := createTestServer(t, done)
+
+		// Update target addresses to use the dynamically created server URL.
+		for _, target := range targets {
+			for i := range target.Targets {
+				target.Targets[i][model.AddressLabel] = model.LabelValue(srvURL.Host)
+			}
+		}
+
+		sp, err := newScrapePool(cfg, &nopAppendable{}, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
+		require.NoError(t, err)
+		t.Cleanup(sp.stop)
+
+		sp.Sync(targets)
+		return done
+	}
+
+	cases := []struct {
+		name    string
+		cfg     *config.ScrapeConfig
+		targets []*targetgroup.Group
+	}{
+		{
+			name: "Everything in scrape config",
+			cfg: &config.ScrapeConfig{
+				ScrapeInterval: model.Duration(2 * time.Second),
+				ScrapeTimeout:  model.Duration(configTimeout),
+				Params:         url.Values{"param": []string{expectedParam}},
+				JobName:        jobName,
+				Scheme:         httpScheme,
+				MetricsPath:    expectedPath,
+			},
+			targets: []*targetgroup.Group{
+				{
+					Targets: []model.LabelSet{
+						{model.AddressLabel: model.LabelValue("")},
+					},
+				},
+			},
+		},
+		{
+			name: "Overridden in target",
+			cfg: &config.ScrapeConfig{
+				ScrapeInterval: model.Duration(2 * time.Second),
+				ScrapeTimeout:  model.Duration(secondTimeout),
+				JobName:        jobName,
+				Scheme:         httpScheme,
+				MetricsPath:    secondPath,
+				Params:         url.Values{"param": []string{secondParam}},
+			},
+			targets: []*targetgroup.Group{
+				{
+					Targets: []model.LabelSet{
+						{
+							model.AddressLabel:       model.LabelValue(""),
+							model.ScrapeTimeoutLabel: expectedTimeoutLabel,
+							model.MetricsPathLabel:   expectedPath,
+							paramLabel:               expectedParam,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "Overridden in relabel_config",
+			cfg: &config.ScrapeConfig{
+				ScrapeInterval: model.Duration(2 * time.Second),
+				ScrapeTimeout:  model.Duration(secondTimeout),
+				JobName:        jobName,
+				Scheme:         httpScheme,
+				MetricsPath:    secondPath,
+				Params:         url.Values{"param": []string{secondParam}},
+				RelabelConfigs: []*relabel.Config{
+					{
+						Action:       relabel.DefaultRelabelConfig.Action,
+						Regex:        relabel.DefaultRelabelConfig.Regex,
+						SourceLabels: relabel.DefaultRelabelConfig.SourceLabels,
+						TargetLabel:  model.ScrapeTimeoutLabel,
+						Replacement:  expectedTimeoutLabel,
+					},
+					{
+						Action:       relabel.DefaultRelabelConfig.Action,
+						Regex:        relabel.DefaultRelabelConfig.Regex,
+						SourceLabels: relabel.DefaultRelabelConfig.SourceLabels,
+						TargetLabel:  paramLabel,
+						Replacement:  expectedParam,
+					},
+					{
+						Action:       relabel.DefaultRelabelConfig.Action,
+						Regex:        relabel.DefaultRelabelConfig.Regex,
+						SourceLabels: relabel.DefaultRelabelConfig.SourceLabels,
+						TargetLabel:  model.MetricsPathLabel,
+						Replacement:  expectedPath,
+					},
+				},
+			},
+			targets: []*targetgroup.Group{
+				{
+					Targets: []model.LabelSet{
+						{
+							model.AddressLabel:       model.LabelValue(""),
+							model.ScrapeTimeoutLabel: secondTimeoutLabel,
+							model.MetricsPathLabel:   secondPath,
+							paramLabel:               secondParam,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			select {
+			case <-run(t, c.cfg, c.targets):
+			case <-time.After(10 * time.Second):
+				t.Fatal("timeout after 10 seconds")
+			}
+		})
+	}
+}
