@@ -793,7 +793,7 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 			if n.Args[1].(*VectorSelector).Name != "" {
 				p.addParseErrf(n.Args[1].PositionRange(), "expected label selectors only, got vector selector instead")
 			}
-			// Set Vector Selector flag to bypass emtpy matcher check
+			// Set Vector Selector flag to bypass empty matcher check
 			n.Args[1].(*VectorSelector).BypassEmptyMatcherCheck = true
 		}
 

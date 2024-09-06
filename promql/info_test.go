@@ -466,7 +466,7 @@ load 10s
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			engine := promqltest.NewTestEngine(false, 0, promqltest.DefaultMaxSamplesPerQuery)
+			engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
 			ctx := context.Background()
 			storage := promqltest.LoadedStorage(t, tc.load)
 			t.Cleanup(func() { _ = storage.Close() })

@@ -1453,7 +1453,7 @@ func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, of
 	it := storage.NewMemoizedEmptyIterator(durationMilliseconds(ev.lookbackDelta))
 	var chkIter chunkenc.Iterator
 	for _, s := range series {
-		if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
+		if err := contextDone(ctx, "expression evaluation"); err != nil {
 			ev.error(err)
 		}
 
@@ -1654,7 +1654,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		case "label_join":
 			return ev.evalLabelJoin(ctx, e.Args)
 		case "info":
-			return ev.evalInfo(ev.ctx, e.Args)
+			return ev.evalInfo(ctx, e.Args)
 		}
 
 		if !matrixArg {
@@ -1947,7 +1947,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		if err != nil {
 			ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
 		}
-		mat := ev.evalSeries(e.Series, e.Offset, ev.startTimestamp, ev.endTimestamp, ev.interval, false)
+		mat := ev.evalSeries(ctx, e.Series, e.Offset, ev.startTimestamp, ev.endTimestamp, ev.interval, false)
 		return mat, ws
 
 	case *parser.MatrixSelector:
