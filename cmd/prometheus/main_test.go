@@ -42,6 +42,11 @@ import (
 	"github.com/prometheus/prometheus/rules"
 )
 
+func init() {
+	// This can be removed when the default validation scheme in common is updated.
+	model.NameValidationScheme = model.UTF8Validation
+}
+
 const startupTime = 10 * time.Second
 
 var (

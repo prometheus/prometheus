@@ -1040,6 +1040,7 @@ func TestScrapeLoopSeriesAdded(t *testing.T) {
 }
 
 func TestScrapeLoopFailWithInvalidLabelsAfterRelabel(t *testing.T) {
+	model.NameValidationScheme = model.LegacyValidation
 	s := teststorage.New(t)
 	defer s.Close()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -3768,6 +3769,7 @@ func testNativeHistogramMaxSchemaSet(t *testing.T, minBucketFactor string, expec
 	// Create a scrape loop with the HTTP server as the target.
 	configStr := fmt.Sprintf(`
 global:
+  metric_name_validation_scheme: legacy
   scrape_interval: 1s
   scrape_timeout: 1s
 scrape_configs:

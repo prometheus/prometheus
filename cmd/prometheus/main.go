@@ -101,6 +101,8 @@ var (
 )
 
 func init() {
+	// This can be removed when the default validation scheme in common is updated.
+	model.NameValidationScheme = model.UTF8Validation
 	prometheus.MustRegister(versioncollector.NewCollector(strings.ReplaceAll(appName, "-", "_")))
 
 	var err error
@@ -231,9 +233,6 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "promql-delayed-name-removal":
 				c.promqlEnableDelayedNameRemoval = true
 				level.Info(logger).Log("msg", "Experimental PromQL delayed name removal enabled.")
-			case "utf8-names":
-				model.NameValidationScheme = model.UTF8Validation
-				level.Info(logger).Log("msg", "Experimental UTF-8 support enabled")
 			case "":
 				continue
 			default:

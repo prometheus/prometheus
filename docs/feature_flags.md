@@ -236,10 +236,3 @@ When enabled, Prometheus will change the way in which the `__name__` label is re
 
 This allows optionally preserving the `__name__` label via the `label_replace` and `label_join` functions, and helps prevent the "vector cannot contain metrics with the same labelset" error, which can happen when applying a regex-matcher to the `__name__` label.
 
-## UTF-8 Name Support
-
-`--enable-feature=utf8-names`
-
-When enabled, changes the metric and label name validation scheme inside Prometheus to allow the full UTF-8 character set.
-By itself, this flag does not enable the request of UTF-8 names via content negotiation.
-Users will also have to set `metric_name_validation_scheme` in scrape configs to enable the feature either on the global config or on a per-scrape config basis.
