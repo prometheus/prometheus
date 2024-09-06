@@ -18,6 +18,8 @@
     "@types/jest": "^29.5.12",
     "@typescript-eslint/eslint-plugin": "^6.21.0",
     "@typescript-eslint/parser": "^6.21.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.3.3",
     "ts-jest": "^29.2.2",
     "typescript": "^5.2.2",
     "vite": "^5.1.0"
