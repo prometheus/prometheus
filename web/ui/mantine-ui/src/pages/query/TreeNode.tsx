@@ -131,13 +131,13 @@ const TreeNode: FC<{
     if (error) {
       reportNodeState && reportNodeState("error");
     }
-  }, [error]);
+  }, [error, reportNodeState]);
 
   useEffect(() => {
     if (isFetching) {
       reportNodeState && reportNodeState("running");
     }
-  }, [isFetching]);
+  }, [isFetching, reportNodeState]);
 
   // Update the size and position of tree connector lines based on the node's and its parent's position.
   useLayoutEffect(() => {
@@ -221,7 +221,7 @@ const TreeNode: FC<{
       ),
       labelExamples,
     });
-  }, [data]);
+  }, [data, reportNodeState]);
 
   const innerNode = (
     <Group

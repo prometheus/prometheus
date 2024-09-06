@@ -1,9 +1,18 @@
-import ASTNode, { binaryOperatorType, nodeType, valueType, Call, compOperatorTypes, setOperatorTypes } from './ast';
-import { functionArgNames } from './functionMeta';
+import ASTNode, {
+  binaryOperatorType,
+  nodeType,
+  valueType,
+  Call,
+  compOperatorTypes,
+  setOperatorTypes,
+} from "./ast";
+import { functionArgNames } from "./functionMeta";
 
 export const getNonParenNodeType = (n: ASTNode) => {
   let cur: ASTNode;
-  for (cur = n; cur.type === 'parenExpr'; cur = cur.expr) {}
+  for (cur = n; cur.type === "parenExpr"; cur = cur.expr) {
+    // Continue traversing until a non-parenthesis expression is found
+  }
   return cur.type;
 };
 
@@ -34,7 +43,10 @@ const binOpPrecedence = {
   [binaryOperatorType.atan2]: 2,
 };
 
-export const maybeParenthesizeBinopChild = (op: binaryOperatorType, child: ASTNode): ASTNode => {
+export const maybeParenthesizeBinopChild = (
+  op: binaryOperatorType,
+  child: ASTNode
+): ASTNode => {
   if (child.type !== nodeType.binaryExpr) {
     return child;
   }
@@ -73,7 +85,7 @@ export const getNodeChildren = (node: ASTNode): ASTNode[] => {
     case nodeType.binaryExpr:
       return [node.lhs, node.rhs];
     default:
-      throw new Error('unsupported node type');
+      throw new Error("unsupported node type");
   }
 };
 
@@ -92,18 +104,19 @@ export const getNodeChild = (node: ASTNode, idx: number) => {
     case nodeType.binaryExpr:
       return idx === 0 ? node.lhs : node.rhs;
     default:
-      throw new Error('unsupported node type');
+      throw new Error("unsupported node type");
   }
 };
 
 export const containsPlaceholders = (node: ASTNode): boolean =>
-  node.type === nodeType.placeholder || getNodeChildren(node).some((n) => containsPlaceholders(n));
+  node.type === nodeType.placeholder ||
+  getNodeChildren(node).some((n) => containsPlaceholders(n));
 
 export const nodeValueType = (node: ASTNode): valueType | null => {
   switch (node.type) {
     case nodeType.aggregation:
       return valueType.vector;
-    case nodeType.binaryExpr:
+    case nodeType.binaryExpr: {
       const childTypes = [nodeValueType(node.lhs), nodeValueType(node.rhs)];
 
       if (childTypes.includes(null)) {
@@ -116,6 +129,7 @@ export const nodeValueType = (node: ASTNode): valueType | null => {
       }
 
       return valueType.scalar;
+    }
     case nodeType.call:
       return node.func.returnType;
     case nodeType.matrixSelector:
@@ -135,7 +149,7 @@ export const nodeValueType = (node: ASTNode): valueType | null => {
     case nodeType.vectorSelector:
       return valueType.vector;
     default:
-      throw new Error('invalid node type');
+      throw new Error("invalid node type");
   }
 };
 
@@ -144,50 +158,65 @@ export const childDescription = (node: ASTNode, idx: number): string => {
     case nodeType.aggregation:
       if (aggregatorsWithParam.includes(node.op) && idx === 0) {
         switch (node.op) {
-          case 'topk':
-          case 'bottomk':
-          case 'limitk':
-            return 'k';
-          case 'quantile':
-            return 'quantile';
-          case 'count_values':
-            return 'target label name';
-          case 'limit_ratio':
-            return 'ratio';
+          case "topk":
+          case "bottomk":
+          case "limitk":
+            return "k";
+          case "quantile":
+            return "quantile";
+          case "count_values":
+            return "target label name";
+          case "limit_ratio":
+            return "ratio";
         }
       }
 
-      return 'vector to aggregate';
+      return "vector to aggregate";
     case nodeType.binaryExpr:
-      return idx === 0 ? 'left-hand side' : 'right-hand side';
+      return idx === 0 ? "left-hand side" : "right-hand side";
     case nodeType.call:
-      if (functionArgNames.hasOwnProperty(node.func.name)) {
+      if (node.func.name in functionArgNames) {
         const argNames = functionArgNames[node.func.name];
-        return argNames[Math.min(functionArgNames[node.func.name].length - 1, idx)];
+        return argNames[Math.min(argNames.length - 1, idx)];
       }
-      return 'argument';
+      return "argument";
     case nodeType.parenExpr:
-      return 'expression';
+      return "expression";
     case nodeType.placeholder:
-      return 'argument';
+      return "argument";
     case nodeType.subquery:
-      return 'subquery to execute';
+      return "subquery to execute";
     case nodeType.unaryExpr:
-      return 'expression';
+      return "expression";
     default:
-      throw new Error('invalid node type');
+      throw new Error("invalid node type");
   }
 };
 
-export const aggregatorsWithParam = ['topk', 'bottomk', 'quantile', 'count_values', 'limitk', 'limit_ratio'];
+export const aggregatorsWithParam = [
+  "topk",
+  "bottomk",
+  "quantile",
+  "count_values",
+  "limitk",
+  "limit_ratio",
+];
 
-export const anyValueType = [valueType.scalar, valueType.string, valueType.matrix, valueType.vector];
+export const anyValueType = [
+  valueType.scalar,
+  valueType.string,
+  valueType.matrix,
+  valueType.vector,
+];
 
-export const allowedChildValueTypes = (node: ASTNode, idx: number): valueType[] => {
+export const allowedChildValueTypes = (
+  node: ASTNode,
+  idx: number
+): valueType[] => {
   switch (node.type) {
     case nodeType.aggregation:
       if (aggregatorsWithParam.includes(node.op) && idx === 0) {
-        if (node.op === 'count_values') {
+        if (node.op === "count_values") {
           return [valueType.string];
         }
         return [valueType.scalar];
@@ -211,7 +240,7 @@ export const allowedChildValueTypes = (node: ASTNode, idx: number): valueType[] 
     case nodeType.unaryExpr:
       return anyValueType;
     default:
-      throw new Error('invalid node type');
+      throw new Error("invalid node type");
   }
 };
 
@@ -225,17 +254,19 @@ export const canAddVarArg = (node: Call): boolean => {
 };
 
 export const canRemoveVarArg = (node: Call): boolean => {
-  return node.func.variadic !== 0 && node.args.length >= node.func.argTypes.length;
+  return (
+    node.func.variadic !== 0 && node.args.length >= node.func.argTypes.length
+  );
 };
 
 export const humanizedValueType: Record<valueType, string> = {
-  [valueType.none]: 'none',
-  [valueType.string]: 'string',
-  [valueType.scalar]: 'number (scalar)',
-  [valueType.vector]: 'instant vector',
-  [valueType.matrix]: 'range vector',
+  [valueType.none]: "none",
+  [valueType.string]: "string",
+  [valueType.scalar]: "number (scalar)",
+  [valueType.vector]: "instant vector",
+  [valueType.matrix]: "range vector",
 };
 
 export const escapeString = (str: string) => {
-  return str.replace(/([\\"])/g, '\\$1');
+  return str.replace(/([\\"])/g, "\\$1");
 };

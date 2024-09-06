@@ -196,7 +196,7 @@ function App() {
 
   useEffect(() => {
     dispatch(updateSettings({ pathPrefix }));
-  }, [pathPrefix]);
+  }, [pathPrefix, dispatch]);
 
   const { agentMode, consolesLink } = useSettings();
 

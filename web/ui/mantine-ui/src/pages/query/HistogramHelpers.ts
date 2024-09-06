@@ -137,7 +137,7 @@ export const bucketRangeString = ([
   boundaryRule,
   leftBoundary,
   rightBoundary,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   _,
 ]: [number, string, string, string]): string => {
   return `${leftDelim(boundaryRule)}${leftBoundary} -> ${rightBoundary}${rightDelim(boundaryRule)}`;

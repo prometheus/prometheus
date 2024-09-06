@@ -1,51 +1,51 @@
 export enum nodeType {
-  aggregation = 'aggregation',
-  binaryExpr = 'binaryExpr',
-  call = 'call',
-  matrixSelector = 'matrixSelector',
-  subquery = 'subquery',
-  numberLiteral = 'numberLiteral',
-  parenExpr = 'parenExpr',
-  stringLiteral = 'stringLiteral',
-  unaryExpr = 'unaryExpr',
-  vectorSelector = 'vectorSelector',
-  placeholder = 'placeholder',
+  aggregation = "aggregation",
+  binaryExpr = "binaryExpr",
+  call = "call",
+  matrixSelector = "matrixSelector",
+  subquery = "subquery",
+  numberLiteral = "numberLiteral",
+  parenExpr = "parenExpr",
+  stringLiteral = "stringLiteral",
+  unaryExpr = "unaryExpr",
+  vectorSelector = "vectorSelector",
+  placeholder = "placeholder",
 }
 
 export enum aggregationType {
-  sum = 'sum',
-  min = 'min',
-  max = 'max',
-  avg = 'avg',
-  stddev = 'stddev',
-  stdvar = 'stdvar',
-  count = 'count',
-  group = 'group',
-  countValues = 'count_values',
-  bottomk = 'bottomk',
-  topk = 'topk',
-  quantile = 'quantile',
-  limitK = 'limitk',
-  limitRatio = 'limit_ratio',
+  sum = "sum",
+  min = "min",
+  max = "max",
+  avg = "avg",
+  stddev = "stddev",
+  stdvar = "stdvar",
+  count = "count",
+  group = "group",
+  countValues = "count_values",
+  bottomk = "bottomk",
+  topk = "topk",
+  quantile = "quantile",
+  limitK = "limitk",
+  limitRatio = "limit_ratio",
 }
 
 export enum binaryOperatorType {
-  add = '+',
-  sub = '-',
-  mul = '*',
-  div = '/',
-  mod = '%',
-  pow = '^',
-  eql = '==',
-  neq = '!=',
-  gtr = '>',
-  lss = '<',
-  gte = '>=',
-  lte = '<=',
-  and = 'and',
-  or = 'or',
-  unless = 'unless',
-  atan2 = 'atan2',
+  add = "+",
+  sub = "-",
+  mul = "*",
+  div = "/",
+  mod = "%",
+  pow = "^",
+  eql = "==",
+  neq = "!=",
+  gtr = ">",
+  lss = "<",
+  gte = ">=",
+  lte = "<=",
+  and = "and",
+  or = "or",
+  unless = "unless",
+  atan2 = "atan2",
 }
 
 export const compOperatorTypes: binaryOperatorType[] = [
@@ -64,31 +64,31 @@ export const setOperatorTypes: binaryOperatorType[] = [
 ];
 
 export enum unaryOperatorType {
-  plus = '+',
-  minus = '-',
+  plus = "+",
+  minus = "-",
 }
 
 export enum vectorMatchCardinality {
-  oneToOne = 'one-to-one',
-  manyToOne = 'many-to-one',
-  oneToMany = 'one-to-many',
-  manyToMany = 'many-to-many',
+  oneToOne = "one-to-one",
+  manyToOne = "many-to-one",
+  oneToMany = "one-to-many",
+  manyToMany = "many-to-many",
 }
 
 export enum valueType {
   // TODO: 'none' should never make it out of Prometheus. Do we need this here?
-  none = 'none',
-  vector = 'vector',
-  scalar = 'scalar',
-  matrix = 'matrix',
-  string = 'string',
+  none = "none",
+  vector = "vector",
+  scalar = "scalar",
+  matrix = "matrix",
+  string = "string",
 }
 
 export enum matchType {
-  equal = '=',
-  notEqual = '!=',
-  matchRegexp = '=~',
-  matchNotRegexp = '!~',
+  equal = "=",
+  notEqual = "!=",
+  matchRegexp = "=~",
+  matchNotRegexp = "!~",
 }
 
 export interface Func {
@@ -111,7 +111,7 @@ export interface VectorMatching {
   include: string[];
 }
 
-export type StartOrEnd = 'start' | 'end' | null;
+export type StartOrEnd = "start" | "end" | null;
 
 // AST Node Types.
 
