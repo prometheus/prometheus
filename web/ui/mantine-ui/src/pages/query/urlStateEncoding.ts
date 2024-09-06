@@ -39,7 +39,22 @@ export const decodePanelOptionsFromURLParams = (query: string): Panel[] => {
       panel.showTree = value === "1";
     });
     decodeSetting("tab", (value) => {
-      panel.visualizer.activeTab = value === "0" ? "graph" : "table";
+      // Numeric values are deprecated (from the old UI), but we still support decoding them.
+      switch (value) {
+        case "0":
+        case "graph":
+          panel.visualizer.activeTab = "graph";
+          break;
+        case "1":
+        case "table":
+          panel.visualizer.activeTab = "table";
+          break;
+        case "explain":
+          panel.visualizer.activeTab = "explain";
+          break;
+        default:
+          console.log("Unknown tab", value);
+      }
     });
     decodeSetting("display_mode", (value) => {
       panel.visualizer.displayMode = value as GraphDisplayMode;
@@ -125,7 +140,7 @@ export const encodePanelOptionsToURLParams = (
   panels.forEach((p, idx) => {
     addParam(idx, "expr", p.expr);
     addParam(idx, "show_tree", p.showTree ? "1" : "0");
-    addParam(idx, "tab", p.visualizer.activeTab === "graph" ? "0" : "1");
+    addParam(idx, "tab", p.visualizer.activeTab);
     if (p.visualizer.endTime !== null) {
       addParam(idx, "end_input", formatTime(p.visualizer.endTime));
       addParam(idx, "moment_input", formatTime(p.visualizer.endTime));

@@ -3,7 +3,7 @@ import { useSuspenseAPIQuery } from "../../api/api";
 import { useAppSelector } from "../../state/hooks";
 import ASTNode from "../../promql/ast";
 import TreeNode from "./TreeNode";
-import { Box } from "@mantine/core";
+import { Card } from "@mantine/core";
 
 const TreeView: FC<{
   panelIdx: number;
@@ -31,14 +31,14 @@ const TreeView: FC<{
   });
 
   return (
-    <Box fz="sm" style={{ overflowX: "auto" }} pl="sm">
+    <Card withBorder fz="sm" style={{ overflowX: "auto" }} pl="sm">
       <TreeNode
         node={data.data}
         selectedNode={selectedNode}
         setSelectedNode={setSelectedNode}
         reverse={false}
       />
-    </Box>
+    </Card>
   );
 };
 

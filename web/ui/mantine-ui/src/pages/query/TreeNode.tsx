@@ -88,6 +88,13 @@ const TreeNode: FC<{
     sortedLabelCards: [],
   });
 
+  // Deselect node when node is unmounted.
+  useEffect(() => {
+    return () => {
+      setSelectedNode(null);
+    };
+  }, [setSelectedNode]);
+
   const children = getNodeChildren(node);
 
   const [childStates, setChildStates] = useState<NodeState[]>(
@@ -236,12 +243,12 @@ const TreeNode: FC<{
         // Connector line between this node and its parent.
         <Box pos="absolute" display="inline-block" style={connectorStyle} />
       )}
-      {/* The node itself. */}
+      {/* The node (visible box) itself. */}
       <Box
         ref={nodeRef}
         w="fit-content"
         px={10}
-        py={5}
+        py={4}
         style={{ borderRadius: 4, flexShrink: 0 }}
         className={clsx(classes.nodeText, {
           [classes.nodeTextError]: error,

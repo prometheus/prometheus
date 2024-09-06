@@ -14,6 +14,7 @@ import {
   IconChartLine,
   IconCheckbox,
   IconGraph,
+  IconInfoCircle,
   IconSquare,
   IconTable,
 } from "@tabler/icons-react";
@@ -38,6 +39,7 @@ import TreeView from "./TreeView";
 import ErrorBoundary from "../../components/ErrorBoundary";
 import ASTNode from "../../promql/ast";
 import serializeNode from "../../promql/serialize";
+import ExplainView from "./ExplainViews/ExplainView";
 
 export interface PanelProps {
   idx: number;
@@ -152,6 +154,12 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
           </Tabs.Tab>
           <Tabs.Tab value="graph" leftSection={<IconGraph style={iconStyle} />}>
             Graph
+          </Tabs.Tab>
+          <Tabs.Tab
+            value="explain"
+            leftSection={<IconInfoCircle style={iconStyle} />}
+          >
+            Explain
           </Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel pt="sm" value="table">
@@ -299,6 +307,30 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
             retriggerIdx={retriggerIdx}
             onSelectRange={onSelectRange}
           />
+        </Tabs.Panel>
+        <Tabs.Panel pt="sm" value="explain">
+          <ErrorBoundary
+            key={selectedNode?.id}
+            title="Error showing explain view"
+          >
+            <Suspense
+              fallback={
+                <Box mt="lg">
+                  {Array.from(Array(20), (_, i) => (
+                    <Skeleton key={i} height={30} mb={15} width="100%" />
+                  ))}
+                </Box>
+              }
+            >
+              <ExplainView
+                node={selectedNode?.node ?? null}
+                treeShown={panel.showTree}
+                setShowTree={() => {
+                  dispatch(setShowTree({ idx, showTree: true }));
+                }}
+              />
+            </Suspense>
+          </ErrorBoundary>
         </Tabs.Panel>
       </Tabs>
     </Stack>

@@ -51,14 +51,14 @@ const SeriesName: FC<SeriesNameProps> = ({ labels, format }) => {
     }
 
     return (
-      <div>
+      <span>
         <span className={classes.metricName}>
           {labels ? labels.__name__ : ""}
         </span>
         {"{"}
         {labelNodes}
         {"}"}
-      </div>
+      </span>
     );
   };
 
