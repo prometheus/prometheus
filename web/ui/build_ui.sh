@@ -31,9 +31,7 @@ function buildModule() {
 
 function buildReactApp() {
   echo "build react-app"
-  cd react-app
-  npm run build
-  cd ..
+  (cd react-app && npm run build)
   rm -rf ./static/react-app
   mv ./react-app/build ./static/react-app
 }
