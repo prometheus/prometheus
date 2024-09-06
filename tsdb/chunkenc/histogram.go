@@ -1073,6 +1073,7 @@ func (it *histogramIterator) Reset(b []byte) {
 	if it.atHistogramCalled {
 		it.atHistogramCalled = false
 		it.pBuckets, it.nBuckets = nil, nil
+		it.pSpans, it.nSpans = nil, nil
 	} else {
 		it.pBuckets = it.pBuckets[:0]
 		it.nBuckets = it.nBuckets[:0]
@@ -1185,8 +1186,25 @@ func (it *histogramIterator) Next() ValueType {
 	// The case for the 2nd sample with single deltas is implicitly handled correctly with the double delta code,
 	// so we don't need a separate single delta logic for the 2nd sample.
 
-	// Recycle bucket slices that have not been returned yet. Otherwise,
+	// Recycle bucket and span slices that have not been returned yet. Otherwise, copy them.
 	// copy them.
+	if it.atFloatHistogramCalled || it.atHistogramCalled {
+		if len(it.pSpans) > 0 {
+			newSpans := make([]histogram.Span, len(it.pSpans))
+			copy(newSpans, it.pSpans)
+			it.pSpans = newSpans
+		} else {
+			it.pSpans = nil
+		}
+		if len(it.nSpans) > 0 {
+			newSpans := make([]histogram.Span, len(it.nSpans))
+			copy(newSpans, it.nSpans)
+			it.nSpans = newSpans
+		} else {
+			it.nSpans = nil
+		}
+	}
+
 	if it.atHistogramCalled {
 		it.atHistogramCalled = false
 		if len(it.pBuckets) > 0 {
@@ -1204,6 +1222,7 @@ func (it *histogramIterator) Next() ValueType {
 			it.nBuckets = nil
 		}
 	}
+
 	// FloatBuckets are set from scratch, so simply create empty ones.
 	if it.atFloatHistogramCalled {
 		it.atFloatHistogramCalled = false

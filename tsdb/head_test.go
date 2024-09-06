@@ -33,7 +33,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
@@ -435,6 +434,32 @@ func BenchmarkLoadWLs(b *testing.B) {
 					}
 				})
 		}
+	}
+}
+
+// BenchmarkLoadRealWLs will be skipped unless the BENCHMARK_LOAD_REAL_WLS_DIR environment variable is set.
+// BENCHMARK_LOAD_REAL_WLS_DIR should be the folder where `wal` and `chunks_head` are located.
+func BenchmarkLoadRealWLs(b *testing.B) {
+	dir := os.Getenv("BENCHMARK_LOAD_REAL_WLS_DIR")
+	if dir == "" {
+		b.SkipNow()
+	}
+
+	wal, err := wlog.New(nil, nil, filepath.Join(dir, "wal"), wlog.CompressionNone)
+	require.NoError(b, err)
+	b.Cleanup(func() { wal.Close() })
+
+	wbl, err := wlog.New(nil, nil, filepath.Join(dir, "wbl"), wlog.CompressionNone)
+	require.NoError(b, err)
+	b.Cleanup(func() { wbl.Close() })
+
+	// Load the WAL.
+	for i := 0; i < b.N; i++ {
+		opts := DefaultHeadOptions()
+		opts.ChunkDirRoot = dir
+		h, err := NewHead(nil, nil, wal, wbl, opts, nil)
+		require.NoError(b, err)
+		require.NoError(b, h.Init(0))
 	}
 }
 
@@ -3484,6 +3509,93 @@ func TestWaitForPendingReadersInTimeRange(t *testing.T) {
 	}
 }
 
+func TestQueryOOOHeadDuringTruncate(t *testing.T) {
+	const maxT int64 = 6000
+
+	dir := t.TempDir()
+	opts := DefaultOptions()
+	opts.EnableNativeHistograms = true
+	opts.OutOfOrderTimeWindow = maxT
+	opts.MinBlockDuration = maxT / 2 // So that head will compact up to 3000.
+
+	db, err := Open(dir, nil, nil, opts, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
+	db.DisableCompactions()
+
+	var (
+		ref = storage.SeriesRef(0)
+		app = db.Appender(context.Background())
+	)
+	// Add in-order samples at every 100ms starting at 0ms.
+	for i := int64(0); i < maxT; i += 100 {
+		_, err := app.Append(ref, labels.FromStrings("a", "b"), i, 0)
+		require.NoError(t, err)
+	}
+	// Add out-of-order samples at every 100ms starting at 50ms.
+	for i := int64(50); i < maxT; i += 100 {
+		_, err := app.Append(ref, labels.FromStrings("a", "b"), i, 0)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	requireEqualOOOSamples(t, int(maxT/100-1), db)
+
+	// Synchronization points.
+	allowQueryToStart := make(chan struct{})
+	queryStarted := make(chan struct{})
+	compactionFinished := make(chan struct{})
+
+	db.head.memTruncationCallBack = func() {
+		// Compaction has started, let the query start and wait for it to actually start to simulate race condition.
+		allowQueryToStart <- struct{}{}
+		<-queryStarted
+	}
+
+	go func() {
+		db.Compact(context.Background()) // Compact and write blocks up to 3000 (maxtT/2).
+		compactionFinished <- struct{}{}
+	}()
+
+	// Wait for the compaction to start.
+	<-allowQueryToStart
+
+	q, err := db.Querier(1500, 2500)
+	require.NoError(t, err)
+	queryStarted <- struct{}{} // Unblock the compaction.
+	ctx := context.Background()
+
+	// Label names.
+	res, annots, err := q.LabelNames(ctx, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+	require.NoError(t, err)
+	require.Empty(t, annots)
+	require.Equal(t, []string{"a"}, res)
+
+	// Label values.
+	res, annots, err = q.LabelValues(ctx, "a", nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+	require.NoError(t, err)
+	require.Empty(t, annots)
+	require.Equal(t, []string{"b"}, res)
+
+	// Samples
+	ss := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+	require.True(t, ss.Next())
+	s := ss.At()
+	require.False(t, ss.Next()) // One series.
+	it := s.Iterator(nil)
+	require.NotEqual(t, chunkenc.ValNone, it.Next()) // Has some data.
+	require.Equal(t, int64(1500), it.AtT())          // It is an in-order sample.
+	require.NotEqual(t, chunkenc.ValNone, it.Next()) // Has some data.
+	require.Equal(t, int64(1550), it.AtT())          // it is an out-of-order sample.
+	require.NoError(t, it.Err())
+
+	require.NoError(t, q.Close()) // Cannot be deferred as the compaction waits for queries to close before finishing.
+
+	<-compactionFinished // Wait for compaction otherwise Go test finds stray goroutines.
+}
+
 func TestAppendHistogram(t *testing.T) {
 	l := labels.FromStrings("a", "b")
 	for _, numHistograms := range []int{1, 10, 150, 200, 250, 300} {
@@ -6107,16 +6219,16 @@ func TestHeadAppender_AppendCTZeroSample(t *testing.T) {
 	for _, tc := range []struct {
 		name              string
 		appendableSamples []appendableSamples
-		expectedSamples   []model.Sample
+		expectedSamples   []chunks.Sample
 	}{
 		{
 			name: "In order ct+normal sample",
 			appendableSamples: []appendableSamples{
 				{ts: 100, val: 10, ct: 1},
 			},
-			expectedSamples: []model.Sample{
-				{Timestamp: 1, Value: 0},
-				{Timestamp: 100, Value: 10},
+			expectedSamples: []chunks.Sample{
+				sample{t: 1, f: 0},
+				sample{t: 100, f: 10},
 			},
 		},
 		{
@@ -6125,10 +6237,10 @@ func TestHeadAppender_AppendCTZeroSample(t *testing.T) {
 				{ts: 100, val: 10, ct: 1},
 				{ts: 101, val: 10, ct: 1},
 			},
-			expectedSamples: []model.Sample{
-				{Timestamp: 1, Value: 0},
-				{Timestamp: 100, Value: 10},
-				{Timestamp: 101, Value: 10},
+			expectedSamples: []chunks.Sample{
+				sample{t: 1, f: 0},
+				sample{t: 100, f: 10},
+				sample{t: 101, f: 10},
 			},
 		},
 		{
@@ -6137,11 +6249,11 @@ func TestHeadAppender_AppendCTZeroSample(t *testing.T) {
 				{ts: 100, val: 10, ct: 1},
 				{ts: 102, val: 10, ct: 101},
 			},
-			expectedSamples: []model.Sample{
-				{Timestamp: 1, Value: 0},
-				{Timestamp: 100, Value: 10},
-				{Timestamp: 101, Value: 0},
-				{Timestamp: 102, Value: 10},
+			expectedSamples: []chunks.Sample{
+				sample{t: 1, f: 0},
+				sample{t: 100, f: 10},
+				sample{t: 101, f: 0},
+				sample{t: 102, f: 10},
 			},
 		},
 		{
@@ -6150,41 +6262,33 @@ func TestHeadAppender_AppendCTZeroSample(t *testing.T) {
 				{ts: 100, val: 10, ct: 1},
 				{ts: 101, val: 10, ct: 100},
 			},
-			expectedSamples: []model.Sample{
-				{Timestamp: 1, Value: 0},
-				{Timestamp: 100, Value: 10},
-				{Timestamp: 101, Value: 10},
+			expectedSamples: []chunks.Sample{
+				sample{t: 1, f: 0},
+				sample{t: 100, f: 10},
+				sample{t: 101, f: 10},
 			},
 		},
 	} {
-		h, _ := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
-		defer func() {
-			require.NoError(t, h.Close())
-		}()
-		a := h.Appender(context.Background())
-		lbls := labels.FromStrings("foo", "bar")
-		for _, sample := range tc.appendableSamples {
-			_, err := a.AppendCTZeroSample(0, lbls, sample.ts, sample.ct)
-			require.NoError(t, err)
-			_, err = a.Append(0, lbls, sample.ts, sample.val)
-			require.NoError(t, err)
-		}
-		require.NoError(t, a.Commit())
+		t.Run(tc.name, func(t *testing.T) {
+			h, _ := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
+			defer func() {
+				require.NoError(t, h.Close())
+			}()
+			a := h.Appender(context.Background())
+			lbls := labels.FromStrings("foo", "bar")
+			for _, sample := range tc.appendableSamples {
+				_, err := a.AppendCTZeroSample(0, lbls, sample.ts, sample.ct)
+				require.NoError(t, err)
+				_, err = a.Append(0, lbls, sample.ts, sample.val)
+				require.NoError(t, err)
+			}
+			require.NoError(t, a.Commit())
 
-		q, err := NewBlockQuerier(h, math.MinInt64, math.MaxInt64)
-		require.NoError(t, err)
-		ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
-		require.True(t, ss.Next())
-		s := ss.At()
-		require.False(t, ss.Next())
-		it := s.Iterator(nil)
-		for _, sample := range tc.expectedSamples {
-			require.Equal(t, chunkenc.ValFloat, it.Next())
-			timestamp, value := it.At()
-			require.Equal(t, sample.Timestamp, model.Time(timestamp))
-			require.Equal(t, sample.Value, model.SampleValue(value))
-		}
-		require.Equal(t, chunkenc.ValNone, it.Next())
+			q, err := NewBlockQuerier(h, math.MinInt64, math.MaxInt64)
+			require.NoError(t, err)
+			result := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+			require.Equal(t, tc.expectedSamples, result[`{foo="bar"}`])
+		})
 	}
 }
 

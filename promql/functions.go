@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -130,10 +131,18 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	sampledInterval := float64(lastT-firstT) / 1000
 	averageDurationBetweenSamples := sampledInterval / float64(numSamplesMinusOne)
 
-	// If the first/last samples are close to the boundaries of the range,
-	// extrapolate the result. This is as we expect that another sample
-	// will exist given the spacing between samples we've seen thus far,
-	// with an allowance for noise.
+	// If samples are close enough to the (lower or upper) boundary of the
+	// range, we extrapolate the rate all the way to the boundary in
+	// question. "Close enough" is defined as "up to 10% more than the
+	// average duration between samples within the range", see
+	// extrapolationThreshold below. Essentially, we are assuming a more or
+	// less regular spacing between samples, and if we don't see a sample
+	// where we would expect one, we assume the series does not cover the
+	// whole range, but starts and/or ends within the range. We still
+	// extrapolate the rate in this case, but not all the way to the
+	// boundary, but only by half of the average duration between samples
+	// (which is our guess for where the series actually starts or ends).
+
 	extrapolationThreshold := averageDurationBetweenSamples * 1.1
 	extrapolateToInterval := sampledInterval
 
@@ -483,9 +492,13 @@ func funcClamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 		return enh.Out, nil
 	}
 	for _, el := range vec {
+		if !enh.enableDelayedNameRemoval {
+			el.Metric = el.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
-			Metric: el.Metric.DropMetricName(),
-			F:      math.Max(minVal, math.Min(maxVal, el.F)),
+			Metric:   el.Metric,
+			F:        math.Max(minVal, math.Min(maxVal, el.F)),
+			DropName: true,
 		})
 	}
 	return enh.Out, nil
@@ -496,9 +509,13 @@ func funcClampMax(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 	vec := vals[0].(Vector)
 	maxVal := vals[1].(Vector)[0].F
 	for _, el := range vec {
+		if !enh.enableDelayedNameRemoval {
+			el.Metric = el.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
-			Metric: el.Metric.DropMetricName(),
-			F:      math.Min(maxVal, el.F),
+			Metric:   el.Metric,
+			F:        math.Min(maxVal, el.F),
+			DropName: true,
 		})
 	}
 	return enh.Out, nil
@@ -509,9 +526,13 @@ func funcClampMin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 	vec := vals[0].(Vector)
 	minVal := vals[1].(Vector)[0].F
 	for _, el := range vec {
+		if !enh.enableDelayedNameRemoval {
+			el.Metric = el.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
-			Metric: el.Metric.DropMetricName(),
-			F:      math.Max(minVal, el.F),
+			Metric:   el.Metric,
+			F:        math.Max(minVal, el.F),
+			DropName: true,
 		})
 	}
 	return enh.Out, nil
@@ -532,8 +553,9 @@ func funcRound(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 	for _, el := range vec {
 		f := math.Floor(el.F*toNearestInverse+0.5) / toNearestInverse
 		enh.Out = append(enh.Out, Sample{
-			Metric: el.Metric.DropMetricName(),
-			F:      f,
+			Metric:   el.Metric,
+			F:        f,
+			DropName: true,
 		})
 	}
 	return enh.Out, nil
@@ -882,9 +904,13 @@ func funcPresentOverTime(vals []parser.Value, args parser.Expressions, enh *Eval
 func simpleFunc(vals []parser.Value, enh *EvalNodeHelper, f func(float64) float64) Vector {
 	for _, el := range vals[0].(Vector) {
 		if el.H == nil { // Process only float samples.
+			if !enh.enableDelayedNameRemoval {
+				el.Metric = el.Metric.DropMetricName()
+			}
 			enh.Out = append(enh.Out, Sample{
-				Metric: el.Metric.DropMetricName(),
-				F:      f(el.F),
+				Metric:   el.Metric,
+				F:        f(el.F),
+				DropName: true,
 			})
 		}
 	}
@@ -1028,9 +1054,13 @@ func funcSgn(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) 
 func funcTimestamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	vec := vals[0].(Vector)
 	for _, el := range vec {
+		if !enh.enableDelayedNameRemoval {
+			el.Metric = el.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
-			Metric: el.Metric.DropMetricName(),
-			F:      float64(el.T) / 1000,
+			Metric:   el.Metric,
+			F:        float64(el.T) / 1000,
+			DropName: true,
 		})
 	}
 	return enh.Out, nil
@@ -1137,9 +1167,13 @@ func funcHistogramCount(vals []parser.Value, args parser.Expressions, enh *EvalN
 		if sample.H == nil {
 			continue
 		}
+		if !enh.enableDelayedNameRemoval {
+			sample.Metric = sample.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
-			Metric: sample.Metric.DropMetricName(),
-			F:      sample.H.Count,
+			Metric:   sample.Metric,
+			F:        sample.H.Count,
+			DropName: true,
 		})
 	}
 	return enh.Out, nil
@@ -1154,9 +1188,13 @@ func funcHistogramSum(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		if sample.H == nil {
 			continue
 		}
+		if !enh.enableDelayedNameRemoval {
+			sample.Metric = sample.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
-			Metric: sample.Metric.DropMetricName(),
-			F:      sample.H.Sum,
+			Metric:   sample.Metric,
+			F:        sample.H.Sum,
+			DropName: true,
 		})
 	}
 	return enh.Out, nil
@@ -1171,9 +1209,13 @@ func funcHistogramAvg(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		if sample.H == nil {
 			continue
 		}
+		if !enh.enableDelayedNameRemoval {
+			sample.Metric = sample.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
-			Metric: sample.Metric.DropMetricName(),
-			F:      sample.H.Sum / sample.H.Count,
+			Metric:   sample.Metric,
+			F:        sample.H.Sum / sample.H.Count,
+			DropName: true,
 		})
 	}
 	return enh.Out, nil
@@ -1210,9 +1252,13 @@ func funcHistogramStdDev(vals []parser.Value, args parser.Expressions, enh *Eval
 		}
 		variance += cVariance
 		variance /= sample.H.Count
+		if !enh.enableDelayedNameRemoval {
+			sample.Metric = sample.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
-			Metric: sample.Metric.DropMetricName(),
-			F:      math.Sqrt(variance),
+			Metric:   sample.Metric,
+			F:        math.Sqrt(variance),
+			DropName: true,
 		})
 	}
 	return enh.Out, nil
@@ -1249,9 +1295,13 @@ func funcHistogramStdVar(vals []parser.Value, args parser.Expressions, enh *Eval
 		}
 		variance += cVariance
 		variance /= sample.H.Count
+		if !enh.enableDelayedNameRemoval {
+			sample.Metric = sample.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
-			Metric: sample.Metric.DropMetricName(),
-			F:      variance,
+			Metric:   sample.Metric,
+			F:        variance,
+			DropName: true,
 		})
 	}
 	return enh.Out, nil
@@ -1268,9 +1318,13 @@ func funcHistogramFraction(vals []parser.Value, args parser.Expressions, enh *Ev
 		if sample.H == nil {
 			continue
 		}
+		if !enh.enableDelayedNameRemoval {
+			sample.Metric = sample.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
-			Metric: sample.Metric.DropMetricName(),
-			F:      histogramFraction(lower, upper, sample.H),
+			Metric:   sample.Metric,
+			F:        histogramFraction(lower, upper, sample.H),
+			DropName: true,
 		})
 	}
 	return enh.Out, nil
@@ -1338,9 +1392,13 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			continue
 		}
 
+		if !enh.enableDelayedNameRemoval {
+			sample.Metric = sample.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
-			Metric: sample.Metric.DropMetricName(),
-			F:      histogramQuantile(q, sample.H),
+			Metric:   sample.Metric,
+			F:        histogramQuantile(q, sample.H),
+			DropName: true,
 		})
 	}
 
@@ -1414,7 +1472,7 @@ func funcChanges(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelp
 }
 
 // label_replace function operates only on series; does not look at timestamps or values.
-func (ev *evaluator) evalLabelReplace(args parser.Expressions) (parser.Value, annotations.Annotations) {
+func (ev *evaluator) evalLabelReplace(ctx context.Context, args parser.Expressions) (parser.Value, annotations.Annotations) {
 	var (
 		dst      = stringFromArg(args[1])
 		repl     = stringFromArg(args[2])
@@ -1430,7 +1488,7 @@ func (ev *evaluator) evalLabelReplace(args parser.Expressions) (parser.Value, an
 		panic(fmt.Errorf("invalid destination label name in label_replace(): %s", dst))
 	}
 
-	val, ws := ev.eval(args[0])
+	val, ws := ev.eval(ctx, args[0])
 	matrix := val.(Matrix)
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
@@ -1442,6 +1500,11 @@ func (ev *evaluator) evalLabelReplace(args parser.Expressions) (parser.Value, an
 			lb.Reset(el.Metric)
 			lb.Set(dst, string(res))
 			matrix[i].Metric = lb.Labels()
+			if dst == model.MetricNameLabel {
+				matrix[i].DropName = false
+			} else {
+				matrix[i].DropName = el.DropName
+			}
 		}
 	}
 	if matrix.ContainsSameLabelset() {
@@ -1466,7 +1529,7 @@ func funcVector(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelpe
 }
 
 // label_join function operates only on series; does not look at timestamps or values.
-func (ev *evaluator) evalLabelJoin(args parser.Expressions) (parser.Value, annotations.Annotations) {
+func (ev *evaluator) evalLabelJoin(ctx context.Context, args parser.Expressions) (parser.Value, annotations.Annotations) {
 	var (
 		dst       = stringFromArg(args[1])
 		sep       = stringFromArg(args[2])
@@ -1483,7 +1546,7 @@ func (ev *evaluator) evalLabelJoin(args parser.Expressions) (parser.Value, annot
 		panic(fmt.Errorf("invalid destination label name in label_join(): %s", dst))
 	}
 
-	val, ws := ev.eval(args[0])
+	val, ws := ev.eval(ctx, args[0])
 	matrix := val.(Matrix)
 	srcVals := make([]string, len(srcLabels))
 	lb := labels.NewBuilder(labels.EmptyLabels())
@@ -1496,6 +1559,12 @@ func (ev *evaluator) evalLabelJoin(args parser.Expressions) (parser.Value, annot
 		lb.Reset(el.Metric)
 		lb.Set(dst, strval)
 		matrix[i].Metric = lb.Labels()
+
+		if dst == model.MetricNameLabel {
+			matrix[i].DropName = false
+		} else {
+			matrix[i].DropName = el.DropName
+		}
 	}
 
 	return matrix, ws
@@ -1518,9 +1587,13 @@ func dateWrapper(vals []parser.Value, enh *EvalNodeHelper, f func(time.Time) flo
 
 	for _, el := range vals[0].(Vector) {
 		t := time.Unix(int64(el.F), 0).UTC()
+		if !enh.enableDelayedNameRemoval {
+			el.Metric = el.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
-			Metric: el.Metric.DropMetricName(),
-			F:      f(t),
+			Metric:   el.Metric,
+			F:        f(t),
+			DropName: true,
 		})
 	}
 	return enh.Out

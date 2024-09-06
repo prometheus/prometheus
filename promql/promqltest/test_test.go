@@ -554,11 +554,48 @@ eval range from 0 to 5m step 5m testmetric
 `,
 			expectedError: `error in eval testmetric (line 5): expected float value at index 0 for {__name__="testmetric"} to have timestamp 300000, but it had timestamp 0 (result has 1 float point [3 @[0]] and 1 histogram point [{count:0, sum:0} @[300000]])`,
 		},
+		"instant query with expected scalar result": {
+			input: `
+				eval instant at 1m 3
+					3
+			`,
+		},
+		"instant query with unexpected scalar result": {
+			input: `
+				eval instant at 1m 3
+					2
+			`,
+			expectedError: `error in eval 3 (line 2): expected scalar 2 but got 3`,
+		},
+		"instant query that returns a scalar but expects a vector": {
+			input: `
+				eval instant at 1m 3
+					{} 3
+			`,
+			expectedError: `error in eval 3 (line 2): expected vector or matrix result, but got scalar: 3 @[60000]`,
+		},
+		"instant query that returns a vector but expects a scalar": {
+			input: `
+				eval instant at 1m vector(3)
+					3
+			`,
+			expectedError: `error in eval vector(3) (line 2): expected scalar result, but got vector {} => 3 @[60000]`,
+		},
+		"range query that returns a matrix but expects a scalar": {
+			input: `
+				eval range from 0 to 1m step 30s vector(3)
+					3
+			`,
+			expectedError: `error in eval vector(3) (line 2): expected scalar result, but got matrix {} =>
+3 @[0]
+3 @[30000]
+3 @[60000]`,
+		},
 	}
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			err := runTest(t, testCase.input, NewTestEngine(false, 0, DefaultMaxSamplesPerQuery))
+			err := runTest(t, testCase.input, NewTestEngine(t, false, 0, DefaultMaxSamplesPerQuery))
 
 			if testCase.expectedError == "" {
 				require.NoError(t, err)
