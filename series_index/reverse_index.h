@@ -22,7 +22,7 @@ class CompactSeriesIdSequence {
   using Array = std::array<SeriesIdSequence::value_type, kMaxElementsInArray>;
   using value_type = SeriesIdSequence::value_type;
 
-  PROMPP_ALWAYS_INLINE explicit CompactSeriesIdSequence(Type type) : type_(type) {
+  PROMPP_ALWAYS_INLINE explicit CompactSeriesIdSequence(Type type = Type::kArray) : type_(type) {
     if (type_ == Type::kSequence) {
       new (&sequence_impl_buffer_) SeriesIdSequence();
     }
@@ -36,6 +36,7 @@ class CompactSeriesIdSequence {
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE Type type() const noexcept { return type_; }
   [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t count() const noexcept { return elements_count_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_empty() const noexcept { return elements_count_ == 0; }
 
   void push_back(uint32_t value) {
     if (type_ == Type::kArray) {
@@ -108,12 +109,11 @@ namespace series_index {
 class LabelReverseIndex {
  public:
   PROMPP_ALWAYS_INLINE void add(uint32_t label_value_id, uint32_t series_id) {
-    if (exists(label_value_id)) {
-      series_by_value_[label_value_id].push_back(series_id);
-    } else {
-      series_by_value_.emplace_back(CompactSeriesIdSequence::Type::kArray).push_back(series_id);
+    if (!exists(label_value_id)) {
+      series_by_value_.resize(label_value_id + 1);
     }
 
+    series_by_value_[label_value_id].push_back(series_id);
     all_series_.push_back(series_id);
   }
 
@@ -147,11 +147,11 @@ class SeriesReverseIndex {
  public:
   template <class Label>
   PROMPP_ALWAYS_INLINE void add(const Label& label, uint32_t series_id) {
-    if (exists(label.name_id())) {
-      labels_by_name_[label.name_id()].add(label.value_id(), series_id);
-    } else {
-      labels_by_name_.emplace_back().add(label.value_id(), series_id);
+    if (!exists(label.name_id())) {
+      labels_by_name_.resize(label.name_id() + 1);
     }
+
+    labels_by_name_[label.name_id()].add(label.value_id(), series_id);
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE bool exists(uint32_t label_name_id) const noexcept { return label_name_id < labels_by_name_.size(); }
