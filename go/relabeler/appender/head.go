@@ -24,6 +24,11 @@ type RotatableHead struct {
 	builder HeadBuilder
 }
 
+// ReferenceCounter - relabeler.Head interface implementation.
+func (h *RotatableHead) ReferenceCounter() *relabeler.ReferenceCounter {
+	return h.head.ReferenceCounter()
+}
+
 // Append - relabeler.Head interface implementation.
 func (h *RotatableHead) Append(ctx context.Context, incomingData *relabeler.IncomingData, metricLimits *cppbridge.MetricLimits, sourceStates *relabeler.SourceStates, staleNansTS int64, relabelerID string) ([][]*cppbridge.InnerSeries, error) {
 	return h.head.Append(ctx, incomingData, metricLimits, sourceStates, staleNansTS, relabelerID)

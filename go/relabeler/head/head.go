@@ -14,6 +14,7 @@ import (
 )
 
 type Head struct {
+	referenceCounter           *relabeler.ReferenceCounter
 	generation                 uint64
 	inputRelabelers            map[relabelerKey]*cppbridge.InputPerShardRelabeler
 	dataStorages               []*DataStorage
@@ -36,9 +37,10 @@ func New(
 	registerer prometheus.Registerer) (*Head, error) {
 	factory := util.NewUnconflictRegisterer(registerer)
 	h := &Head{
-		generation: generation,
-		stopc:      make(chan struct{}),
-		wg:         &sync.WaitGroup{},
+		referenceCounter: &relabeler.ReferenceCounter{},
+		generation:       generation,
+		stopc:            make(chan struct{}),
+		wg:               &sync.WaitGroup{},
 		inputRelabelers: make(
 			map[relabelerKey]*cppbridge.InputPerShardRelabeler,
 			int(numberOfShards)*len(inputRelabelerConfigs),
@@ -64,6 +66,10 @@ func New(
 	})
 
 	return h, nil
+}
+
+func (h *Head) ReferenceCounter() *relabeler.ReferenceCounter {
+	return h.referenceCounter
 }
 
 func (h *Head) Append(ctx context.Context, incomingData *relabeler.IncomingData, metricLimits *cppbridge.MetricLimits, sourceStates *relabeler.SourceStates, staleNansTS int64, relabelerID string) ([][]*cppbridge.InnerSeries, error) {

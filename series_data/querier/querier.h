@@ -10,6 +10,7 @@ class Querier {
  public:
   explicit Querier(const DataStorage& storage) : storage_(storage) {}
 
+  template<typename Query>
   [[nodiscard]] PROMPP_ALWAYS_INLINE QueriedChunkList query(const Query& query) const {
     QueriedChunkList chunks;
 

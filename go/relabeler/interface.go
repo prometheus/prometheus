@@ -2,7 +2,9 @@ package relabeler
 
 import (
 	"context"
+	"fmt"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
+	"github.com/prometheus/prometheus/pp/go/model"
 	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 	"sync/atomic"
 )
@@ -12,11 +14,16 @@ type DataStorage interface {
 	AppendInnerSeriesSlice(innerSeriesSlice []*cppbridge.InnerSeries)
 	Raw() *cppbridge.HeadDataStorage
 	MergeOutOfOrderChunks()
+	Query(query cppbridge.HeadDataStorageQuery) *cppbridge.HeadDataStorageSerializedChunks
 }
 
 type LSS interface {
 	Raw() *cppbridge.LabelSetStorage
 	AllocatedMemory() uint64
+	QueryLabelValues(label_name string, matchers []model.LabelMatcher) *cppbridge.LSSQueryLabelValuesResult
+	QueryLabelNames(matchers []model.LabelMatcher) *cppbridge.LSSQueryLabelNamesResult
+	Query(matchers []model.LabelMatcher) *cppbridge.LSSQueryResult
+	GetLabelSets(labelSetIDs []uint32) *cppbridge.LabelSetStorageGetLabelSetsResult
 }
 
 type InputRelabeler interface {
@@ -35,6 +42,7 @@ type Shard interface {
 type ShardFn func(shard Shard) error
 
 type Head interface {
+	ReferenceCounter() *ReferenceCounter
 	Append(ctx context.Context, incomingData *IncomingData, metricLimits *cppbridge.MetricLimits, sourceStates *SourceStates, staleNansTS int64, relabelerID string) ([][]*cppbridge.InnerSeries, error)
 	ForEachShard(fn ShardFn) error
 	OnShard(shardID uint16, fn ShardFn) error
@@ -86,4 +94,18 @@ func (d *DestructibleIncomingData) Destroy() {
 		return
 	}
 	d.data.Destroy()
+}
+
+type ReferenceCounter struct {
+	value atomic.Int64
+}
+
+func (rc *ReferenceCounter) Add(delta int64) int64 {
+	return rc.value.Add(delta)
+}
+
+func (rc *ReferenceCounter) Value() int64 {
+	value := rc.value.Load()
+	fmt.Println("ref count: ", value)
+	return value
 }

@@ -15,7 +15,7 @@ using series_data::chunk::DataChunk;
 using series_data::querier::QueriedChunk;
 using series_data::querier::QueriedChunkList;
 using series_data::querier::Querier;
-using series_data::querier::Query;
+using Query = series_data::querier::Query<BareBones::Vector<PromPP::Primitives::LabelSetID>>;
 
 struct QuerierCase {
   Query query;

@@ -4,6 +4,11 @@
 #include "primitives/go_slice.h"
 #include "series_data/data_storage.h"
 
+#include "series_data/data_storage.h"
+#include "series_data/querier/querier.h"
+#include "series_data/serialization/serializer.h"
+
+
 namespace {
 
 using DataStoragePtr = std::unique_ptr<series_data::DataStorage>;
@@ -27,6 +32,35 @@ extern "C" void prompp_series_data_data_storage_reset(void* args) {
 
   reinterpret_cast<Arguments*>(args)->data_storage->reset();
 }
+
+extern "C" void prompp_series_data_data_storage_query(void* args, void* res) {
+  using series_data::DataStorage;
+  using PromPP::Primitives::Go::Slice;
+  using PromPP::Primitives::LabelSetID;
+  using Query = series_data::querier::Query<Slice<LabelSetID>>;
+  using series_data::querier::Querier;
+  using series_data::serialization::Serializer;
+  using PromPP::Primitives::Go::BytesStream;
+
+  struct Arguments {
+    DataStorage* data_storage;
+    Query query;
+  };
+
+  using Result = struct {
+    Slice<char> serialized_chunks;
+  };
+
+  Arguments* in = reinterpret_cast<Arguments*>(args);
+  Result* out = new (res) Result();
+
+  Querier querier{*in->data_storage};
+  auto queried_chunk_list = querier.query(in->query);
+  Serializer serializer{*in->data_storage};
+  BytesStream bytes_stream{&out->serialized_chunks};
+  serializer.serialize(queried_chunk_list, bytes_stream);
+}
+
 
 extern "C" void prompp_series_data_data_storage_dtor(void* args) {
   struct Arguments {

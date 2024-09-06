@@ -572,6 +572,22 @@ void prompp_series_data_data_storage_ctor(void* res);
  */
 void prompp_series_data_data_storage_reset(void* args);
 
+
+/**
+ * @brief Queries data storage and serializes result.
+ *
+ * @param args {
+ *     dataStorage uintptr // pointer to constructed data storage
+ *     query DataStorageQuery // query
+ * }
+ *
+ * @param args {
+ *     serializedData []byte // serialized data
+ * }
+ */
+void prompp_series_data_data_storage_query(void* args, void* res);
+
+
 /**
  * @brief series data DataStorage destructor.
  *
@@ -618,6 +634,28 @@ void prompp_series_data_chunk_recoder_recode_next_chunk(void* args, void* res);
  * }
  */
 void prompp_series_data_chunk_recoder_dtor(void* args);
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void prompp_series_data_decode_iterator_next(void* args, void* res);
+void prompp_series_data_decode_iterator_sample(void* args, void* res);
+void prompp_series_data_decode_iterator_dtor(void* args);
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void prompp_series_data_deserializer_ctor(void* args, void* res);
+void prompp_series_data_deserializer_create_decode_iterator(void* args, void* res);
+void prompp_series_data_deserializer_dtor(void* args);
 
 #ifdef __cplusplus
 }  // extern "C"

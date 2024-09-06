@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler"
+	"github.com/prometheus/prometheus/pp/go/relabeler/querier"
 	"github.com/prometheus/prometheus/storage"
 	"sync"
 )
@@ -99,7 +100,13 @@ func (qa *QueryableAppender) Reconfigure(headConfigurator relabeler.HeadConfigur
 	return nil
 }
 
-func (qa *QueryableAppender) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-	// todo: implementation required
-	panic("implement me")
+func (qa *QueryableAppender) Querier(mint, maxt int64) (storage.Querier, error) {
+	qa.lock.Lock()
+	defer qa.lock.Unlock()
+	head := qa.head
+	qa.head.ReferenceCounter().Add(1)
+	return querier.NewQuerier(head, mint, maxt, func() error {
+		head.ReferenceCounter().Add(-1)
+		return nil
+	}), nil
 }

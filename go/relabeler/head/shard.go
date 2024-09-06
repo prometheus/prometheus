@@ -3,6 +3,7 @@ package head
 import (
 	"fmt"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
+	"github.com/prometheus/prometheus/pp/go/model"
 	"github.com/prometheus/prometheus/pp/go/relabeler"
 	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 	"github.com/prometheus/client_golang/prometheus"
@@ -31,6 +32,10 @@ func (ds *DataStorage) Raw() *cppbridge.HeadDataStorage {
 
 func (ds *DataStorage) MergeOutOfOrderChunks() {
 	ds.encoder.MergeOutOfOrderChunks()
+}
+
+func (ds *DataStorage) Query(query cppbridge.HeadDataStorageQuery) *cppbridge.HeadDataStorageSerializedChunks {
+	return ds.dataStorage.Query(query)
 }
 
 // reshards changes the number of shards to the required amount.
@@ -353,6 +358,22 @@ func (w *lssWrapper) Raw() *cppbridge.LabelSetStorage {
 
 func (w *lssWrapper) AllocatedMemory() uint64 {
 	return w.lss.AllocatedMemory()
+}
+
+func (w *lssWrapper) QueryLabelValues(label_name string, matchers []model.LabelMatcher) *cppbridge.LSSQueryLabelValuesResult {
+	return w.lss.QueryLabelValues(label_name, matchers)
+}
+
+func (w *lssWrapper) QueryLabelNames(matchers []model.LabelMatcher) *cppbridge.LSSQueryLabelNamesResult {
+	return w.lss.QueryLabelNames(matchers)
+}
+
+func (w *lssWrapper) Query(matchers []model.LabelMatcher) *cppbridge.LSSQueryResult {
+	return w.lss.Query(matchers)
+}
+
+func (w *lssWrapper) GetLabelSets(labelSetIDs []uint32) *cppbridge.LabelSetStorageGetLabelSetsResult {
+	return w.lss.GetLabelSets(labelSetIDs)
 }
 
 type shard struct {

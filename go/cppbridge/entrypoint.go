@@ -1204,6 +1204,24 @@ func seriesDataDataStorageReset(dataStorage uintptr) {
 	)
 }
 
+func seriesDataDataStorageQuery(dataStorage uintptr, query HeadDataStorageQuery) []byte {
+	var args = struct {
+		dataStorage uintptr
+		query       HeadDataStorageQuery
+	}{dataStorage, query}
+	var res struct {
+		serializedChunks []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_series_data_data_storage_query,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.serializedChunks
+}
+
 func seriesDataDataStorageDtor(dataStorage uintptr) {
 	var args = struct {
 		dataStorage uintptr
@@ -1276,6 +1294,98 @@ func seriesDataEncoderDtor(encoder uintptr) {
 
 	fastcgo.UnsafeCall1(
 		C.prompp_series_data_encoder_dtor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
+func seriesDataDeserializerCtor(serializedChunks []byte) uintptr {
+	var args = struct {
+		serializedChunks []byte
+	}{serializedChunks}
+	var res struct {
+		deserializer uintptr
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_series_data_deserializer_ctor,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.deserializer
+}
+
+func seriesDataDeserializerCreateDecodeIterator(deserializer uintptr, chunkMetadata []byte) uintptr {
+	var args = struct {
+		deserializer  uintptr
+		chunkMetadata []byte
+	}{deserializer, chunkMetadata}
+	var res struct {
+		decodeIterator uintptr
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_series_data_deserializer_create_decode_iterator,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.decodeIterator
+}
+
+func seriesDataDecodeIteratorNext(decodeIterator uintptr) bool {
+	var args = struct {
+		decodeIterator uintptr
+	}{decodeIterator}
+	var res struct {
+		hasValue bool
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_series_data_decode_iterator_next,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.hasValue
+}
+
+func seriesDataDecodeIteratorSample(decodeIterator uintptr) (int64, float64) {
+	var args = struct {
+		decodeIterator uintptr
+	}{decodeIterator}
+	var res struct {
+		timestamp int64
+		value     float64
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_series_data_decode_iterator_sample,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.timestamp, res.value
+}
+
+func seriesDataDecodeIteratorDtor(decodeIterator uintptr) {
+	var args = struct {
+		decodeIterator uintptr
+	}{decodeIterator}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_series_data_decode_iterator_dtor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
+func seriesDataDeserializerDtor(deserializer uintptr) {
+	var args = struct {
+		deserializer uintptr
+	}{deserializer}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_series_data_deserializer_dtor,
 		uintptr(unsafe.Pointer(&args)),
 	)
 }

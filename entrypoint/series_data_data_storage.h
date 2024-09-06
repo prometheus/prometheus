@@ -20,6 +20,22 @@ void prompp_series_data_data_storage_ctor(void* res);
  */
 void prompp_series_data_data_storage_reset(void* args);
 
+
+/**
+ * @brief Queries data storage and serializes result.
+ *
+ * @param args {
+ *     dataStorage uintptr // pointer to constructed data storage
+ *     query DataStorageQuery // query
+ * }
+ *
+ * @param args {
+ *     serializedData []byte // serialized data
+ * }
+ */
+void prompp_series_data_data_storage_query(void* args, void* res);
+
+
 /**
  * @brief series data DataStorage destructor.
  *
