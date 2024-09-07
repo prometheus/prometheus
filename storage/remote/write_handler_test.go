@@ -339,6 +339,15 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			expectedRespBody: "invalid metric name or labels, got {__name__=\"\"}\n",
 		},
 		{
+			desc: "Partial write; first series with duplicate labels",
+			input: append(
+				// Series with __name__="test_metric1",test_metric1="test_metric1",test_metric1="test_metric1" labels.
+				[]writev2.TimeSeries{{LabelsRefs: []uint32{1, 2, 2, 2, 2, 2}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
+				writeV2RequestFixture.Timeseries...),
+			expectedCode:     http.StatusBadRequest,
+			expectedRespBody: "invalid labels for series, labels {__name__=\"test_metric1\", test_metric1=\"test_metric1\", test_metric1=\"test_metric1\"}, duplicated label test_metric1\n",
+		},
+		{
 			desc: "Partial write; first series with one OOO sample",
 			input: func() []writev2.TimeSeries {
 				f := proto.Clone(writeV2RequestFixture).(*writev2.Request)
@@ -398,7 +407,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 		{
 			desc:              "Partial write; skipped exemplar; exemplar storage errs are noop",
 			input:             writeV2RequestFixture.Timeseries,
-			appendExemplarErr: errors.New("some exemplar append error"),
+			appendExemplarErr: errors.New("some exemplar internal append error"),
 
 			expectedCode: http.StatusNoContent,
 		},
@@ -449,25 +458,25 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 
 			if tc.expectedCode == http.StatusInternalServerError {
 				// We don't expect writes for partial writes with retry-able code.
-				expectHeaderValue(t, 0, resp.Header.Get("X-Prometheus-Remote-Write-Written-Samples"))
-				expectHeaderValue(t, 0, resp.Header.Get("X-Prometheus-Remote-Write-Written-Histograms"))
-				expectHeaderValue(t, 0, resp.Header.Get("X-Prometheus-Remote-Write-Written-Exemplars"))
+				expectHeaderValue(t, 0, resp.Header.Get(rw20WrittenSamplesHeader))
+				expectHeaderValue(t, 0, resp.Header.Get(rw20WrittenHistogramsHeader))
+				expectHeaderValue(t, 0, resp.Header.Get(rw20WrittenExemplarsHeader))
 
-				require.Empty(t, len(appendable.samples))
-				require.Empty(t, len(appendable.histograms))
-				require.Empty(t, len(appendable.exemplars))
-				require.Empty(t, len(appendable.metadata))
+				require.Empty(t, appendable.samples)
+				require.Empty(t, appendable.histograms)
+				require.Empty(t, appendable.exemplars)
+				require.Empty(t, appendable.metadata)
 				return
 			}
 
 			// Double check mandatory 2.0 stats.
 			// writeV2RequestFixture has 2 series with 1 sample, 2 histograms, 1 exemplar each.
-			expectHeaderValue(t, 2, resp.Header.Get("X-Prometheus-Remote-Write-Written-Samples"))
-			expectHeaderValue(t, 4, resp.Header.Get("X-Prometheus-Remote-Write-Written-Histograms"))
+			expectHeaderValue(t, 2, resp.Header.Get(rw20WrittenSamplesHeader))
+			expectHeaderValue(t, 4, resp.Header.Get(rw20WrittenHistogramsHeader))
 			if tc.appendExemplarErr != nil {
-				expectHeaderValue(t, 0, resp.Header.Get("X-Prometheus-Remote-Write-Written-Exemplars"))
+				expectHeaderValue(t, 0, resp.Header.Get(rw20WrittenExemplarsHeader))
 			} else {
-				expectHeaderValue(t, 2, resp.Header.Get("X-Prometheus-Remote-Write-Written-Exemplars"))
+				expectHeaderValue(t, 2, resp.Header.Get(rw20WrittenExemplarsHeader))
 			}
 
 			// Double check what was actually appended.
@@ -836,6 +845,13 @@ func (m *mockAppendable) Append(_ storage.SeriesRef, l labels.Labels, t int64, v
 		return 0, storage.ErrDuplicateSampleForTimestamp
 	}
 
+	if l.IsEmpty() {
+		return 0, tsdb.ErrInvalidSample
+	}
+	if _, hasDuplicates := l.HasDuplicateLabelNames(); hasDuplicates {
+		return 0, tsdb.ErrInvalidSample
+	}
+
 	m.latestSample[l.Hash()] = t
 	m.samples = append(m.samples, mockSample{l, t, v})
 	return 0, nil
@@ -885,6 +901,13 @@ func (m *mockAppendable) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t
 	}
 	if t == latestTs {
 		return 0, storage.ErrDuplicateSampleForTimestamp
+	}
+
+	if l.IsEmpty() {
+		return 0, tsdb.ErrInvalidSample
+	}
+	if _, hasDuplicates := l.HasDuplicateLabelNames(); hasDuplicates {
+		return 0, tsdb.ErrInvalidSample
 	}
 
 	m.latestHistogram[l.Hash()] = t

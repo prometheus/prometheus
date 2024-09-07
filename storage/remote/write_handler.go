@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -29,6 +28,7 @@ import (
 	"github.com/golang/snappy"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -201,7 +201,7 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	respStats, errHTTPCode, err := h.writeV2(r.Context(), &req)
 
 	// Set required X-Prometheus-Remote-Write-Written-* response headers, in all cases.
-	respStats.SetResponseHeaders(w.Header())
+	respStats.SetHeaders(w)
 
 	if err != nil {
 		if errHTTPCode/5 == 100 { // 5xx
@@ -237,11 +237,16 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	b := labels.NewScratchBuilder(0)
 	for _, ts := range req.Timeseries {
 		ls := ts.ToLabels(&b, nil)
-		if !ls.Has(labels.MetricName) || !ls.IsValid() {
+
+		// TODO(bwplotka): Even as per 1.0 spec, this should be a 400 error, while other samples are
+		// potentially written. Perhaps unify with fixed writeV2 implementation a bit.
+		if !ls.Has(labels.MetricName) || !ls.IsValid(model.NameValidationScheme) {
 			level.Warn(h.logger).Log("msg", "Invalid metric names or labels", "got", ls.String())
 			samplesWithInvalidLabels++
-			// TODO(bwplotka): Even as per 1.0 spec, this should be a 400 error, while other samples are
-			// potentially written. Perhaps unify with fixed writeV2 implementation a bit.
+			continue
+		} else if duplicateLabel, hasDuplicate := ls.HasDuplicateLabelNames(); hasDuplicate {
+			level.Warn(h.logger).Log("msg", "Invalid labels for series.", "labels", ls.String(), "duplicated_label", duplicateLabel)
+			samplesWithInvalidLabels++
 			continue
 		}
 
@@ -318,24 +323,6 @@ func (h *writeHandler) appendV1Histograms(app storage.Appender, hh []prompb.Hist
 	return nil
 }
 
-const (
-	prw20WrittenSamplesHeader   = "X-Prometheus-Remote-Write-Written-Samples"
-	rw20WrittenHistogramsHeader = "X-Prometheus-Remote-Write-Written-Histograms"
-	rw20WrittenExemplarsHeader  = "X-Prometheus-Remote-Write-Written-Exemplars"
-)
-
-type responseStats struct {
-	samples    int
-	histograms int
-	exemplars  int
-}
-
-func (s responseStats) SetResponseHeaders(h http.Header) {
-	h.Set(prw20WrittenSamplesHeader, strconv.Itoa(s.samples))
-	h.Set(rw20WrittenHistogramsHeader, strconv.Itoa(s.histograms))
-	h.Set(rw20WrittenExemplarsHeader, strconv.Itoa(s.exemplars))
-}
-
 // writeV2 is similar to write, but it works with v2 proto message,
 // allows partial 4xx writes and gathers statistics.
 //
@@ -345,14 +332,14 @@ func (s responseStats) SetResponseHeaders(h http.Header) {
 //
 // NOTE(bwplotka): TSDB storage is NOT idempotent, so we don't allow "partial retry-able" errors.
 // Once we have 5xx type of error, we immediately stop and rollback all appends.
-func (h *writeHandler) writeV2(ctx context.Context, req *writev2.Request) (_ responseStats, errHTTPCode int, _ error) {
+func (h *writeHandler) writeV2(ctx context.Context, req *writev2.Request) (_ WriteResponseStats, errHTTPCode int, _ error) {
 	app := &timeLimitAppender{
 		Appender: h.appendable.Appender(ctx),
 		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
 	}
 
-	rs := responseStats{}
-	samplesWithoutMetadata, errHTTPCode, err := h.appendV2(app, req, &rs)
+	s := WriteResponseStats{}
+	samplesWithoutMetadata, errHTTPCode, err := h.appendV2(app, req, &s)
 	if err != nil {
 		if errHTTPCode/5 == 100 {
 			// On 5xx, we always rollback, because we expect
@@ -360,29 +347,29 @@ func (h *writeHandler) writeV2(ctx context.Context, req *writev2.Request) (_ res
 			if rerr := app.Rollback(); rerr != nil {
 				level.Error(h.logger).Log("msg", "writev2 rollback failed on retry-able error", "err", rerr)
 			}
-			return responseStats{}, errHTTPCode, err
+			return WriteResponseStats{}, errHTTPCode, err
 		}
 
 		// Non-retriable (e.g. bad request error case). Can be partially written.
 		commitErr := app.Commit()
 		if commitErr != nil {
 			// Bad requests does not matter as we have internal error (retryable).
-			return responseStats{}, http.StatusInternalServerError, commitErr
+			return WriteResponseStats{}, http.StatusInternalServerError, commitErr
 		}
 		// Bad request error happened, but rest of data (if any) was written.
 		h.samplesAppendedWithoutMetadata.Add(float64(samplesWithoutMetadata))
-		return rs, errHTTPCode, err
+		return s, errHTTPCode, err
 	}
 
 	// All good just commit.
 	if err := app.Commit(); err != nil {
-		return responseStats{}, http.StatusInternalServerError, err
+		return WriteResponseStats{}, http.StatusInternalServerError, err
 	}
 	h.samplesAppendedWithoutMetadata.Add(float64(samplesWithoutMetadata))
-	return rs, 0, nil
+	return s, 0, nil
 }
 
-func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *responseStats) (samplesWithoutMetadata, errHTTPCode int, err error) {
+func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *WriteResponseStats) (samplesWithoutMetadata, errHTTPCode int, err error) {
 	var (
 		badRequestErrs                                   []error
 		outOfOrderExemplarErrs, samplesWithInvalidLabels int
@@ -394,20 +381,24 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		// Validate series labels early.
 		// NOTE(bwplotka): While spec allows UTF-8, Prometheus Receiver may impose
 		// specific limits and follow https://prometheus.io/docs/specs/remote_write_spec_2_0/#invalid-samples case.
-		if !ls.Has(labels.MetricName) || !ls.IsValid() {
+		if !ls.Has(labels.MetricName) || !ls.IsValid(model.NameValidationScheme) {
 			badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid metric name or labels, got %v", ls.String()))
+			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
+			continue
+		} else if duplicateLabel, hasDuplicate := ls.HasDuplicateLabelNames(); hasDuplicate {
+			badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid labels for series, labels %v, duplicated label %s", ls.String(), duplicateLabel))
 			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
 			continue
 		}
 
-		allSamplesSoFar := rs.samples + rs.histograms
+		allSamplesSoFar := rs.AllSamples()
 		var ref storage.SeriesRef
 
 		// Samples.
 		for _, s := range ts.Samples {
 			ref, err = app.Append(ref, ls, s.GetTimestamp(), s.GetValue())
 			if err == nil {
-				rs.samples++
+				rs.Samples++
 				continue
 			}
 			// Handle append error.
@@ -431,7 +422,7 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 				ref, err = app.AppendHistogram(ref, ls, hp.Timestamp, hp.ToIntHistogram(), nil)
 			}
 			if err == nil {
-				rs.histograms++
+				rs.Histograms++
 				continue
 			}
 			// Handle append error.
@@ -453,18 +444,19 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 			e := ep.ToExemplar(&b, req.Symbols)
 			ref, err = app.AppendExemplar(ref, ls, e)
 			if err == nil {
-				rs.exemplars++
+				rs.Exemplars++
 				continue
 			}
 			// Handle append error.
-			// TODO(bwplotka): I left the logic as in v1, but we might want to make it consistent with samples and histograms.
-			// Since exemplar storage is still experimental, we don't fail in anyway, the request on ingestion errors.
 			if errors.Is(err, storage.ErrOutOfOrderExemplar) {
-				outOfOrderExemplarErrs++
-				level.Debug(h.logger).Log("msg", "Out of order exemplar", "err", err.Error(), "series", ls.String(), "exemplar", fmt.Sprintf("%+v", e))
+				outOfOrderExemplarErrs++ // Maintain old metrics, but technically not needed, given we fail here.
+				level.Error(h.logger).Log("msg", "Out of order exemplar", "err", err.Error(), "series", ls.String(), "exemplar", fmt.Sprintf("%+v", e))
+				badRequestErrs = append(badRequestErrs, fmt.Errorf("%w for series %v", err, ls.String()))
 				continue
 			}
-			level.Debug(h.logger).Log("msg", "Error while adding exemplar in AppendExemplar", "series", ls.String(), "exemplar", fmt.Sprintf("%+v", e), "err", err)
+			// TODO(bwplotka): Add strict mode which would trigger rollback of everything if needed.
+			// For now we keep the previously released flow (just error not debug leve) of dropping them without rollback and 5xx.
+			level.Error(h.logger).Log("msg", "failed to ingest exemplar, emitting error log, but no error for PRW caller", "err", err.Error(), "series", ls.String(), "exemplar", fmt.Sprintf("%+v", e))
 		}
 
 		m := ts.ToMetadata(req.Symbols)
@@ -472,7 +464,7 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 			level.Debug(h.logger).Log("msg", "error while updating metadata from remote write", "err", err)
 			// Metadata is attached to each series, so since Prometheus does not reject sample without metadata information,
 			// we don't report remote write error either. We increment metric instead.
-			samplesWithoutMetadata += (rs.samples + rs.histograms) - allSamplesSoFar
+			samplesWithoutMetadata += rs.AllSamples() - allSamplesSoFar
 		}
 	}
 
@@ -490,21 +482,23 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 
 // NewOTLPWriteHandler creates a http.Handler that accepts OTLP write requests and
 // writes them to the provided appendable.
-func NewOTLPWriteHandler(logger log.Logger, appendable storage.Appendable) http.Handler {
+func NewOTLPWriteHandler(logger log.Logger, appendable storage.Appendable, configFunc func() config.Config) http.Handler {
 	rwHandler := &writeHandler{
 		logger:     logger,
 		appendable: appendable,
 	}
 
 	return &otlpWriteHandler{
-		logger:    logger,
-		rwHandler: rwHandler,
+		logger:     logger,
+		rwHandler:  rwHandler,
+		configFunc: configFunc,
 	}
 }
 
 type otlpWriteHandler struct {
-	logger    log.Logger
-	rwHandler *writeHandler
+	logger     log.Logger
+	rwHandler  *writeHandler
+	configFunc func() config.Config
 }
 
 func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -515,11 +509,19 @@ func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	otlpCfg := h.configFunc().OTLPConfig
+
 	converter := otlptranslator.NewPrometheusConverter()
-	if err := converter.FromMetrics(req.Metrics(), otlptranslator.Settings{
-		AddMetricSuffixes: true,
-	}); err != nil {
+	annots, err := converter.FromMetrics(req.Metrics(), otlptranslator.Settings{
+		AddMetricSuffixes:         true,
+		PromoteResourceAttributes: otlpCfg.PromoteResourceAttributes,
+	})
+	if err != nil {
 		level.Warn(h.logger).Log("msg", "Error translating OTLP metrics to Prometheus write request", "err", err)
+	}
+	ws, _ := annots.AsStrings("", 0, 0)
+	if len(ws) > 0 {
+		level.Warn(h.logger).Log("msg", "Warnings translating OTLP metrics to Prometheus write request", "warnings", ws)
 	}
 
 	err = h.rwHandler.write(r.Context(), &prompb.WriteRequest{

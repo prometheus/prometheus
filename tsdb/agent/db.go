@@ -1118,7 +1118,7 @@ func (a *appender) logSeries() error {
 	return nil
 }
 
-// mintTs returns the minimum timestamp that a sample can have
+// minValidTime returns the minimum timestamp that a sample can have
 // and is needed for preventing underflow.
 func (a *appender) minValidTime(lastTs int64) int64 {
 	if lastTs < math.MinInt64+a.opts.OutOfOrderTimeWindow {

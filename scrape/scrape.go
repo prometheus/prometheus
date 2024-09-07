@@ -111,6 +111,7 @@ type scrapeLoopOptions struct {
 	interval                 time.Duration
 	timeout                  time.Duration
 	scrapeClassicHistograms  bool
+	validationScheme         model.ValidationScheme
 
 	mrc               []*relabel.Config
 	cache             *scrapeCache
@@ -186,6 +187,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 			options.PassMetadataInContext,
 			metrics,
 			options.skipOffsetting,
+			opts.validationScheme,
 		)
 	}
 	sp.metrics.targetScrapePoolTargetLimit.WithLabelValues(sp.config.JobName).Set(float64(sp.config.TargetLimit))
@@ -303,6 +305,11 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 		mrc                      = sp.config.MetricRelabelConfigs
 	)
 
+	validationScheme := model.UTF8Validation
+	if sp.config.MetricNameValidationScheme == config.LegacyValidationConfig {
+		validationScheme = model.LegacyValidation
+	}
+
 	sp.targetMtx.Lock()
 
 	forcedErr := sp.refreshTargetLimitErr()
@@ -323,7 +330,7 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 				client:               sp.client,
 				timeout:              timeout,
 				bodySizeLimit:        bodySizeLimit,
-				acceptHeader:         acceptHeader(sp.config.ScrapeProtocols),
+				acceptHeader:         acceptHeader(sp.config.ScrapeProtocols, validationScheme),
 				acceptEncodingHeader: acceptEncodingHeader(enableCompression),
 			}
 			newLoop = sp.newLoop(scrapeLoopOptions{
@@ -341,6 +348,7 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 				cache:                    cache,
 				interval:                 interval,
 				timeout:                  timeout,
+				validationScheme:         validationScheme,
 			})
 		)
 		if err != nil {
@@ -452,6 +460,11 @@ func (sp *scrapePool) sync(targets []*Target) {
 		scrapeClassicHistograms  = sp.config.ScrapeClassicHistograms
 	)
 
+	validationScheme := model.UTF8Validation
+	if sp.config.MetricNameValidationScheme == config.LegacyValidationConfig {
+		validationScheme = model.LegacyValidation
+	}
+
 	sp.targetMtx.Lock()
 	for _, t := range targets {
 		hash := t.hash()
@@ -467,7 +480,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 				client:               sp.client,
 				timeout:              timeout,
 				bodySizeLimit:        bodySizeLimit,
-				acceptHeader:         acceptHeader(sp.config.ScrapeProtocols),
+				acceptHeader:         acceptHeader(sp.config.ScrapeProtocols, validationScheme),
 				acceptEncodingHeader: acceptEncodingHeader(enableCompression),
 				metrics:              sp.metrics,
 			}
@@ -714,11 +727,16 @@ var errBodySizeLimit = errors.New("body size limit exceeded")
 // acceptHeader transforms preference from the options into specific header values as
 // https://www.rfc-editor.org/rfc/rfc9110.html#name-accept defines.
 // No validation is here, we expect scrape protocols to be validated already.
-func acceptHeader(sps []config.ScrapeProtocol) string {
+func acceptHeader(sps []config.ScrapeProtocol, scheme model.ValidationScheme) string {
 	var vals []string
 	weight := len(config.ScrapeProtocolsHeaders) + 1
 	for _, sp := range sps {
-		vals = append(vals, fmt.Sprintf("%s;q=0.%d", config.ScrapeProtocolsHeaders[sp], weight))
+		val := config.ScrapeProtocolsHeaders[sp]
+		if scheme == model.UTF8Validation {
+			val += ";" + config.UTF8NamesHeader
+		}
+		val += fmt.Sprintf(";q=0.%d", weight)
+		vals = append(vals, val)
 		weight--
 	}
 	// Default match anything.
@@ -838,6 +856,7 @@ type scrapeLoop struct {
 	interval                 time.Duration
 	timeout                  time.Duration
 	scrapeClassicHistograms  bool
+	validationScheme         model.ValidationScheme
 
 	// Feature flagged options.
 	enableNativeHistogramIngestion bool
@@ -1145,6 +1164,7 @@ func newScrapeLoop(ctx context.Context,
 	passMetadataInContext bool,
 	metrics *scrapeMetrics,
 	skipOffsetting bool,
+	validationScheme model.ValidationScheme,
 ) *scrapeLoop {
 	if l == nil {
 		l = log.NewNopLogger()
@@ -1196,6 +1216,7 @@ func newScrapeLoop(ctx context.Context,
 		appendMetadataToWAL:            appendMetadataToWAL,
 		metrics:                        metrics,
 		skipOffsetting:                 skipOffsetting,
+		validationScheme:               validationScheme,
 	}
 	sl.ctx, sl.cancel = context.WithCancel(ctx)
 
@@ -1616,7 +1637,7 @@ loop:
 				err = errNameLabelMandatory
 				break loop
 			}
-			if !lset.IsValid() {
+			if !lset.IsValid(sl.validationScheme) {
 				err = fmt.Errorf("invalid metric name or label names: %s", lset.String())
 				break loop
 			}
@@ -1631,15 +1652,17 @@ loop:
 			updateMetadata(lset, true)
 		}
 
-		if seriesAlreadyScraped {
+		if seriesAlreadyScraped && parsedTimestamp == nil {
 			err = storage.ErrDuplicateSampleForTimestamp
 		} else {
-			if ctMs := p.CreatedTimestamp(); sl.enableCTZeroIngestion && ctMs != nil {
-				ref, err = app.AppendCTZeroSample(ref, lset, t, *ctMs)
-				if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) { // OOO is a common case, ignoring completely for now.
-					// CT is an experimental feature. For now, we don't need to fail the
-					// scrape on errors updating the created timestamp, log debug.
-					level.Debug(sl.l).Log("msg", "Error when appending CT in scrape loop", "series", string(met), "ct", *ctMs, "t", t, "err", err)
+			if sl.enableCTZeroIngestion {
+				if ctMs := p.CreatedTimestamp(); ctMs != nil {
+					ref, err = app.AppendCTZeroSample(ref, lset, t, *ctMs)
+					if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) { // OOO is a common case, ignoring completely for now.
+						// CT is an experimental feature. For now, we don't need to fail the
+						// scrape on errors updating the created timestamp, log debug.
+						level.Debug(sl.l).Log("msg", "Error when appending CT in scrape loop", "series", string(met), "ct", *ctMs, "t", t, "err", err)
+					}
 				}
 			}
 

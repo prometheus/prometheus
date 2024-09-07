@@ -19,7 +19,7 @@ remote_write:
     protobuf_message: "io.prometheus.write.v2.Request"
 ```
 
-or for deprecated Remote Write 1.0 message:
+or for the eventually deprecated Remote Write 1.0 message:
 
 ```yaml
 remote_write:

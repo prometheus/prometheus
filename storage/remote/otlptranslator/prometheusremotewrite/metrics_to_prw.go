@@ -27,15 +27,17 @@ import (
 
 	"github.com/prometheus/prometheus/prompb"
 	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 type Settings struct {
-	Namespace           string
-	ExternalLabels      map[string]string
-	DisableTargetInfo   bool
-	ExportCreatedMetric bool
-	AddMetricSuffixes   bool
-	SendMetadata        bool
+	Namespace                 string
+	ExternalLabels            map[string]string
+	DisableTargetInfo         bool
+	ExportCreatedMetric       bool
+	AddMetricSuffixes         bool
+	SendMetadata              bool
+	PromoteResourceAttributes []string
 }
 
 // PrometheusConverter converts from OTel write format to Prometheus remote write format.
@@ -52,7 +54,7 @@ func NewPrometheusConverter() *PrometheusConverter {
 }
 
 // FromMetrics converts pmetric.Metrics to Prometheus remote write format.
-func (c *PrometheusConverter) FromMetrics(md pmetric.Metrics, settings Settings) (errs error) {
+func (c *PrometheusConverter) FromMetrics(md pmetric.Metrics, settings Settings) (annots annotations.Annotations, errs error) {
 	resourceMetricsSlice := md.ResourceMetrics()
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
 		resourceMetrics := resourceMetricsSlice.At(i)
@@ -106,12 +108,14 @@ func (c *PrometheusConverter) FromMetrics(md pmetric.Metrics, settings Settings)
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					errs = multierr.Append(errs, c.addExponentialHistogramDataPoints(
+					ws, err := c.addExponentialHistogramDataPoints(
 						dataPoints,
 						resource,
 						settings,
 						promName,
-					))
+					)
+					annots.Merge(ws)
+					errs = multierr.Append(errs, err)
 				case pmetric.MetricTypeSummary:
 					dataPoints := metric.Summary().DataPoints()
 					if dataPoints.Len() == 0 {
@@ -127,7 +131,7 @@ func (c *PrometheusConverter) FromMetrics(md pmetric.Metrics, settings Settings)
 		addResourceTargetInfo(resource, settings, mostRecentTimestamp, c)
 	}
 
-	return
+	return annots, errs
 }
 
 func isSameMetric(ts *prompb.TimeSeries, lbls []prompb.Label) bool {

@@ -16,6 +16,7 @@ package config
 import (
 	"crypto/tls"
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -60,6 +61,11 @@ import (
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/util/testutil"
 )
+
+func init() {
+	// This can be removed when the default validation scheme in common is updated.
+	model.NameValidationScheme = model.UTF8Validation
+}
 
 func mustParseURL(u string) *config.URL {
 	parsed, err := url.Parse(u)
@@ -156,12 +162,19 @@ var expectedConf = &Config{
 		},
 	},
 
+	OTLPConfig: OTLPConfig{
+		PromoteResourceAttributes: []string{
+			"k8s.cluster.name", "k8s.job.name", "k8s.namespace.name",
+		},
+	},
+
 	RemoteReadConfigs: []*RemoteReadConfig{
 		{
-			URL:           mustParseURL("http://remote1/read"),
-			RemoteTimeout: model.Duration(1 * time.Minute),
-			ReadRecent:    true,
-			Name:          "default",
+			URL:              mustParseURL("http://remote1/read"),
+			RemoteTimeout:    model.Duration(1 * time.Minute),
+			ChunkedReadLimit: DefaultChunkedReadLimit,
+			ReadRecent:       true,
+			Name:             "default",
 			HTTPClientConfig: config.HTTPClientConfig{
 				FollowRedirects: true,
 				EnableHTTP2:     false,
@@ -171,6 +184,7 @@ var expectedConf = &Config{
 		{
 			URL:              mustParseURL("http://remote3/read"),
 			RemoteTimeout:    model.Duration(1 * time.Minute),
+			ChunkedReadLimit: DefaultChunkedReadLimit,
 			ReadRecent:       false,
 			Name:             "read_special",
 			RequiredMatchers: model.LabelSet{"job": "special"},
@@ -1471,6 +1485,26 @@ func TestRemoteWriteRetryOnRateLimit(t *testing.T) {
 	require.False(t, got.RemoteWriteConfigs[1].QueueConfig.RetryOnRateLimit)
 }
 
+func TestOTLPSanitizeResourceAttributes(t *testing.T) {
+	t.Run("good config", func(t *testing.T) {
+		want, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_resource_attributes.good.yml"), false, false, log.NewNopLogger())
+		require.NoError(t, err)
+
+		out, err := yaml.Marshal(want)
+		require.NoError(t, err)
+		var got Config
+		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+
+		require.Equal(t, []string{"k8s.cluster.name", "k8s.job.name", "k8s.namespace.name"}, got.OTLPConfig.PromoteResourceAttributes)
+	})
+
+	t.Run("bad config", func(t *testing.T) {
+		_, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_resource_attributes.bad.yml"), false, false, log.NewNopLogger())
+		require.ErrorContains(t, err, `duplicated promoted OTel resource attribute "k8s.job.name"`)
+		require.ErrorContains(t, err, `empty promoted OTel resource attribute`)
+	})
+}
+
 func TestLoadConfig(t *testing.T) {
 	// Parse a valid file that sets a global scrape timeout. This tests whether parsing
 	// an overwritten default field in the global config permanently changes the default.
@@ -1800,7 +1834,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "remote_write_authorization_header.bad.yml",
-		errMsg:   `authorization header must be changed via the basic_auth, authorization, oauth2, sigv4, or azuread parameter`,
+		errMsg:   `authorization header must be changed via the basic_auth, authorization, oauth2, sigv4, azuread or google_iam parameter`,
 	},
 	{
 		filename: "remote_write_wrong_msg.bad.yml",
@@ -2013,6 +2047,10 @@ var expectedErrors = []struct {
 }
 
 func TestBadConfigs(t *testing.T) {
+	model.NameValidationScheme = model.LegacyValidation
+	defer func() {
+		model.NameValidationScheme = model.UTF8Validation
+	}()
 	for _, ee := range expectedErrors {
 		_, err := LoadFile("testdata/"+ee.filename, false, log.NewNopLogger())
 		require.Error(t, err, "%s", ee.filename)
@@ -2022,6 +2060,10 @@ func TestBadConfigs(t *testing.T) {
 }
 
 func TestBadStaticConfigsJSON(t *testing.T) {
+	model.NameValidationScheme = model.LegacyValidation
+	defer func() {
+		model.NameValidationScheme = model.UTF8Validation
+	}()
 	content, err := os.ReadFile("testdata/static_config.bad.json")
 	require.NoError(t, err)
 	var tg targetgroup.Group
@@ -2030,6 +2072,10 @@ func TestBadStaticConfigsJSON(t *testing.T) {
 }
 
 func TestBadStaticConfigsYML(t *testing.T) {
+	model.NameValidationScheme = model.LegacyValidation
+	defer func() {
+		model.NameValidationScheme = model.UTF8Validation
+	}()
 	content, err := os.ReadFile("testdata/static_config.bad.yml")
 	require.NoError(t, err)
 	var tg targetgroup.Group
@@ -2269,4 +2315,53 @@ func TestScrapeConfigDisableCompression(t *testing.T) {
 	require.NoError(t, yaml.UnmarshalStrict(out, got))
 
 	require.False(t, got.ScrapeConfigs[0].EnableCompression)
+}
+
+func TestScrapeConfigNameValidationSettings(t *testing.T) {
+	model.NameValidationScheme = model.UTF8Validation
+	defer func() {
+		model.NameValidationScheme = model.LegacyValidation
+	}()
+
+	tests := []struct {
+		name         string
+		inputFile    string
+		expectScheme string
+	}{
+		{
+			name:         "blank config implies default",
+			inputFile:    "scrape_config_default_validation_mode",
+			expectScheme: "",
+		},
+		{
+			name:         "global setting implies local settings",
+			inputFile:    "scrape_config_global_validation_mode",
+			expectScheme: "legacy",
+		},
+		{
+			name:         "local setting",
+			inputFile:    "scrape_config_local_validation_mode",
+			expectScheme: "legacy",
+		},
+		{
+			name:         "local setting overrides global setting",
+			inputFile:    "scrape_config_local_global_validation_mode",
+			expectScheme: "utf8",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			want, err := LoadFile(fmt.Sprintf("testdata/%s.yml", tc.inputFile), false, false, log.NewNopLogger())
+			require.NoError(t, err)
+
+			out, err := yaml.Marshal(want)
+
+			require.NoError(t, err)
+			got := &Config{}
+			require.NoError(t, yaml.UnmarshalStrict(out, got))
+
+			require.Equal(t, tc.expectScheme, got.ScrapeConfigs[0].MetricNameValidationScheme)
+		})
+	}
 }

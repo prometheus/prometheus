@@ -503,7 +503,7 @@ eval instant at 1m avg(data{test="-big"})
 eval instant at 1m avg(data{test="bigzero"})
 	{} 0
 
-# Test summing extreme values.
+# Test summing and averaging extreme values.
 clear
 
 load 10s
@@ -529,7 +529,14 @@ load 10s
 eval instant at 1m sum(data{test="ten"})
 	{} 10
 
+eval instant at 1m avg(data{test="ten"})
+	{} 2.5
+
 eval instant at 1m sum by (group) (data{test="pos_inf"})
+	{group="1"} Inf
+	{group="2"} Inf
+
+eval instant at 1m avg by (group) (data{test="pos_inf"})
 	{group="1"} Inf
 	{group="2"} Inf
 
@@ -537,10 +544,21 @@ eval instant at 1m sum by (group) (data{test="neg_inf"})
 	{group="1"} -Inf
 	{group="2"} -Inf
 
+eval instant at 1m avg by (group) (data{test="neg_inf"})
+	{group="1"} -Inf
+	{group="2"} -Inf
+
 eval instant at 1m sum(data{test="inf_inf"})
 	{} NaN
 
+eval instant at 1m avg(data{test="inf_inf"})
+	{} NaN
+
 eval instant at 1m sum by (group) (data{test="nan"})
+	{group="1"} NaN
+	{group="2"} NaN
+
+eval instant at 1m avg by (group) (data{test="nan"})
 	{group="1"} NaN
 	{group="2"} NaN
 

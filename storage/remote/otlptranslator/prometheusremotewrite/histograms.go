@@ -26,6 +26,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 const defaultZeroThreshold = 1e-128
@@ -33,19 +34,21 @@ const defaultZeroThreshold = 1e-128
 // addExponentialHistogramDataPoints adds OTel exponential histogram data points to the corresponding time series
 // as native histogram samples.
 func (c *PrometheusConverter) addExponentialHistogramDataPoints(dataPoints pmetric.ExponentialHistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, promName string) error {
+	resource pcommon.Resource, settings Settings, promName string) (annotations.Annotations, error) {
+	var annots annotations.Annotations
 	for x := 0; x < dataPoints.Len(); x++ {
 		pt := dataPoints.At(x)
 
-		histogram, err := exponentialToNativeHistogram(pt)
+		histogram, ws, err := exponentialToNativeHistogram(pt)
+		annots.Merge(ws)
 		if err != nil {
-			return err
+			return annots, err
 		}
 
 		lbls := createAttributes(
 			resource,
 			pt.Attributes(),
-			settings.ExternalLabels,
+			settings,
 			nil,
 			true,
 			model.MetricNameLabel,
@@ -58,15 +61,16 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(dataPoints pmetr
 		ts.Exemplars = append(ts.Exemplars, exemplars...)
 	}
 
-	return nil
+	return annots, nil
 }
 
 // exponentialToNativeHistogram translates OTel Exponential Histogram data point
 // to Prometheus Native Histogram.
-func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint) (prompb.Histogram, error) {
+func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint) (prompb.Histogram, annotations.Annotations, error) {
+	var annots annotations.Annotations
 	scale := p.Scale()
 	if scale < -4 {
-		return prompb.Histogram{},
+		return prompb.Histogram{}, annots,
 			fmt.Errorf("cannot convert exponential to native histogram."+
 				" Scale must be >= -4, was %d", scale)
 	}
@@ -114,8 +118,11 @@ func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint) (prom
 			h.Sum = p.Sum()
 		}
 		h.Count = &prompb.Histogram_CountInt{CountInt: p.Count()}
+		if p.Count() == 0 && h.Sum != 0 {
+			annots.Add(fmt.Errorf("exponential histogram data point has zero count, but non-zero sum: %f", h.Sum))
+		}
 	}
-	return h, nil
+	return h, annots, nil
 }
 
 // convertBucketsLayout translates OTel Exponential Histogram dense buckets
