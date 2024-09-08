@@ -92,6 +92,13 @@ const TreeNode: FC<{
     sortedLabelCards: [],
   });
 
+  // Select the node when it is mounted and it is the root of the tree.
+  useEffect(() => {
+    if (parentRef === undefined) {
+      setSelectedNode({ id: nodeID, node: node });
+    }
+  }, [parentRef, setSelectedNode, nodeID, node]);
+
   // Deselect node when node is unmounted.
   useEffect(() => {
     return () => {
@@ -400,26 +407,26 @@ const TreeNode: FC<{
         </Box>
       </div>
     );
-  } else {
-    return (
-      <div>
-        {innerNode}
-        {children.map((child, idx) => (
-          <Box ml={nodeIndent} key={idx}>
-            <TreeNode
-              node={child}
-              selectedNode={selectedNode}
-              setSelectedNode={setSelectedNode}
-              parentRef={nodeRef}
-              reverse={false}
-              childIdx={idx}
-              reportNodeState={childReportNodeState}
-            />
-          </Box>
-        ))}
-      </div>
-    );
   }
+
+  return (
+    <div>
+      {innerNode}
+      {children.map((child, idx) => (
+        <Box ml={nodeIndent} key={idx}>
+          <TreeNode
+            node={child}
+            selectedNode={selectedNode}
+            setSelectedNode={setSelectedNode}
+            parentRef={nodeRef}
+            reverse={false}
+            childIdx={idx}
+            reportNodeState={childReportNodeState}
+          />
+        </Box>
+      ))}
+    </div>
+  );
 };
 
 export default TreeNode;
