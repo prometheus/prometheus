@@ -457,7 +457,7 @@ const VectorVectorBinaryExprExplainView: FC<
                   <Box
                     style={{ borderRadius: 3, border: `2px solid ${color}` }}
                   >
-                    <Table fz="xs" withRowBorders={false}>
+                    <Table fz="xs" withRowBorders={false} verticalSpacing={5}>
                       <Table.Tbody>
                         {series.length === 0 ? (
                           <Table.Tr>
@@ -501,7 +501,7 @@ const VectorVectorBinaryExprExplainView: FC<
                                     </Group>
                                   </Table.Td>
                                   {showSampleValues && (
-                                    <Table.Td>{s.value[1]}</Table.Td>
+                                    <Table.Td ta="right">{s.value[1]}</Table.Td>
                                   )}
                                 </Table.Tr>
                               );
@@ -549,7 +549,7 @@ const VectorVectorBinaryExprExplainView: FC<
                       border: `2px solid ${resultGroupColor}`,
                     }}
                   >
-                    <Table fz="xs" withRowBorders={false}>
+                    <Table fz="xs" withRowBorders={false} verticalSpacing={5}>
                       <Table.Tbody>
                         {noLHSMatches || noRHSMatches ? (
                           <Table.Tr>
@@ -603,7 +603,11 @@ const VectorVectorBinaryExprExplainView: FC<
                                         : undefined
                                     }
                                   >
-                                    <Group wrap="nowrap" gap="xs">
+                                    <Group
+                                      wrap="nowrap"
+                                      gap="xs"
+                                      align="flex-start"
+                                    >
                                       <Group wrap="nowrap" gap={0}>
                                         {seriesSwatch(colorForIndex(lIdx))}
                                         <span style={{ color: "#aaa" }}>–</span>
@@ -619,7 +623,7 @@ const VectorVectorBinaryExprExplainView: FC<
                                     </Group>
                                   </Table.Td>
                                   {showSampleValues && (
-                                    <Table.Td className="number-cell">
+                                    <Table.Td ta="right">
                                       {filtered ? (
                                         <span style={{ color: "grey" }}>
                                           filtered
