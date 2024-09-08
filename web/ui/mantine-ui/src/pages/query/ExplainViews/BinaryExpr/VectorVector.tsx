@@ -14,7 +14,6 @@ import {
   Alert,
   Anchor,
   Box,
-  Button,
   Group,
   List,
   Switch,
@@ -393,7 +392,9 @@ const VectorVectorBinaryExprExplainView: FC<
             >
               Too many match groups to display, only showing{" "}
               {Object.keys(matchGroups).length} out of {numGroups} groups.
-              <Anchor onClick={() => setMaxGroups(undefined)}>
+              <br />
+              <br />
+              <Anchor fz="sm" onClick={() => setMaxGroups(undefined)}>
                 Show all groups
               </Anchor>
             </Alert>
@@ -423,20 +424,6 @@ const VectorVectorBinaryExprExplainView: FC<
                   error,
                 } = mg;
 
-                const noLHSMatches = lhs.length === 0;
-                const noRHSMatches = rhs.length === 0;
-
-                const groupColor = colorPool[mgIdx % colorPool.length];
-                const noMatchesColor = "#e0e0e0";
-                const lhsGroupColor = noLHSMatches
-                  ? noMatchesColor
-                  : groupColor;
-                const rhsGroupColor = noRHSMatches
-                  ? noMatchesColor
-                  : groupColor;
-                const resultGroupColor =
-                  noLHSMatches || noRHSMatches ? noMatchesColor : groupColor;
-
                 const matchGroupTitleRow = (color: string) => (
                   <Table.Tr ta="center">
                     <Table.Td
@@ -455,16 +442,22 @@ const VectorVectorBinaryExprExplainView: FC<
                   colorOffset?: number
                 ) => (
                   <Box
-                    style={{ borderRadius: 3, border: `2px solid ${color}` }}
+                    style={{
+                      borderRadius: 3,
+                      border: "2px solid",
+                      borderColor:
+                        series.length === 0
+                          ? "light-dark(var(--mantine-color-gray-4), var(--mantine-color-gray-7))"
+                          : color,
+                    }}
                   >
                     <Table fz="xs" withRowBorders={false} verticalSpacing={5}>
                       <Table.Tbody>
                         {series.length === 0 ? (
                           <Table.Tr>
                             <Table.Td
-                              bg="gray.0"
                               ta="center"
-                              c="gray.6"
+                              c="light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-5))"
                               py="md"
                               fw="bold"
                             >
@@ -510,22 +503,15 @@ const VectorVectorBinaryExprExplainView: FC<
                         )}
                         {seriesCount > series.length && (
                           <Table.Tr>
-                            <Table.Td
-                              bg="gray.0"
-                              ta="center"
-                              c="gray.6"
-                              py="md"
-                              fw="bold"
-                            >
+                            <Table.Td ta="center" py="md" fw="bold" c="gray.6">
                               {seriesCount - series.length} more series omitted
-                              –
-                              <Button
-                                size="sm"
-                                variant="link"
+                              &nbsp;&nbsp;–&nbsp;&nbsp;
+                              <Anchor
+                                size="xs"
                                 onClick={() => setMaxSeriesPerGroup(undefined)}
                               >
-                                show all
-                              </Button>
+                                Show all series
+                              </Anchor>
                             </Table.Td>
                           </Table.Tr>
                         )}
@@ -534,11 +520,16 @@ const VectorVectorBinaryExprExplainView: FC<
                   </Box>
                 );
 
-                const lhsTable = matchGroupTable(lhs, lhsCount, lhsGroupColor);
+                const noLHSMatches = lhs.length === 0;
+                const noRHSMatches = rhs.length === 0;
+
+                const groupColor = colorPool[mgIdx % colorPool.length];
+
+                const lhsTable = matchGroupTable(lhs, lhsCount, groupColor);
                 const rhsTable = matchGroupTable(
                   rhs,
                   rhsCount,
-                  rhsGroupColor,
+                  groupColor,
                   rhsColorOffset
                 );
 
@@ -546,7 +537,11 @@ const VectorVectorBinaryExprExplainView: FC<
                   <Box
                     style={{
                       borderRadius: 3,
-                      border: `2px solid ${resultGroupColor}`,
+                      border: `2px solid`,
+                      borderColor:
+                        noLHSMatches || noRHSMatches || error !== null
+                          ? "light-dark(var(--mantine-color-gray-4), var(--mantine-color-gray-7))"
+                          : groupColor,
                     }}
                   >
                     <Table fz="xs" withRowBorders={false} verticalSpacing={5}>
@@ -554,9 +549,8 @@ const VectorVectorBinaryExprExplainView: FC<
                         {noLHSMatches || noRHSMatches ? (
                           <Table.Tr>
                             <Table.Td
-                              bg="gray.0"
                               ta="center"
-                              c="gray.6"
+                              c="light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-5))"
                               py="md"
                               fw="bold"
                             >
@@ -566,9 +560,8 @@ const VectorVectorBinaryExprExplainView: FC<
                         ) : error !== null ? (
                           <Table.Tr>
                             <Table.Td
-                              bg="gray.0"
                               ta="center"
-                              c="gray.6"
+                              c="light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-5))"
                               py="md"
                               fw="bold"
                             >
