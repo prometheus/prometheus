@@ -429,6 +429,8 @@ type GlobalConfig struct {
 	RuleQueryOffset model.Duration `yaml:"rule_query_offset,omitempty"`
 	// File to which PromQL queries are logged.
 	QueryLogFile string `yaml:"query_log_file,omitempty"`
+	// File to which scrape failures are logged.
+	ScrapeFailureLogFile string `yaml:"scrape_failure_log_file,omitempty"`
 	// The labels to add to any timeseries that this Prometheus instance scrapes.
 	ExternalLabels labels.Labels `yaml:"external_labels,omitempty"`
 	// An uncompressed response body larger than this many bytes will cause the
@@ -529,6 +531,7 @@ func validateAcceptScrapeProtocols(sps []ScrapeProtocol) error {
 // SetDirectory joins any relative file paths with dir.
 func (c *GlobalConfig) SetDirectory(dir string) {
 	c.QueryLogFile = config.JoinDir(dir, c.QueryLogFile)
+	c.ScrapeFailureLogFile = config.JoinDir(dir, c.ScrapeFailureLogFile)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -591,6 +594,7 @@ func (c *GlobalConfig) isZero() bool {
 		c.EvaluationInterval == 0 &&
 		c.RuleQueryOffset == 0 &&
 		c.QueryLogFile == "" &&
+		c.ScrapeFailureLogFile == "" &&
 		c.ScrapeProtocols == nil
 }
 
@@ -632,6 +636,8 @@ type ScrapeConfig struct {
 	ScrapeProtocols []ScrapeProtocol `yaml:"scrape_protocols,omitempty"`
 	// Whether to scrape a classic histogram that is also exposed as a native histogram.
 	ScrapeClassicHistograms bool `yaml:"scrape_classic_histograms,omitempty"`
+	// File to which scrape failures are logged.
+	ScrapeFailureLogFile string `yaml:"scrape_failure_log_file,omitempty"`
 	// The HTTP resource path on which to fetch metrics from targets.
 	MetricsPath string `yaml:"metrics_path,omitempty"`
 	// The URL scheme with which to fetch metrics from targets.
@@ -684,6 +690,7 @@ type ScrapeConfig struct {
 func (c *ScrapeConfig) SetDirectory(dir string) {
 	c.ServiceDiscoveryConfigs.SetDirectory(dir)
 	c.HTTPClientConfig.SetDirectory(dir)
+	c.ScrapeFailureLogFile = config.JoinDir(dir, c.ScrapeFailureLogFile)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -764,6 +771,9 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	}
 	if c.KeepDroppedTargets == 0 {
 		c.KeepDroppedTargets = globalConfig.KeepDroppedTargets
+	}
+	if c.ScrapeFailureLogFile == "" {
+		c.ScrapeFailureLogFile = globalConfig.ScrapeFailureLogFile
 	}
 
 	if c.ScrapeProtocols == nil {

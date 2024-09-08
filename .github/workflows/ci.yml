@@ -11,7 +11,7 @@ jobs:
     container:
       # Whenever the Go version is updated here, .promu.yml
       # should also be updated.
-      image: quay.io/prometheus/golang-builder:1.22-base
+      image: quay.io/prometheus/golang-builder:1.23-base
     steps:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
       - uses: prometheus/promci@45166329da36d74895901808f1c8c97efafc7f84 # v0.3.0
@@ -25,7 +25,7 @@ jobs:
     name: More Go tests
     runs-on: ubuntu-latest
     container:
-      image: quay.io/prometheus/golang-builder:1.22-base
+      image: quay.io/prometheus/golang-builder:1.23-base
     steps:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
       - uses: prometheus/promci@45166329da36d74895901808f1c8c97efafc7f84 # v0.3.0
@@ -39,9 +39,12 @@ jobs:
   test_go_oldest:
     name: Go tests with previous Go version
     runs-on: ubuntu-latest
+    env:
+      # Enforce the Go version.
+      GOTOOLCHAIN: local
     container:
       # The go version in this image should be N-1 wrt test_go.
-      image: quay.io/prometheus/golang-builder:1.21-base
+      image: quay.io/prometheus/golang-builder:1.22-base
     steps:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
       - run: make build
@@ -54,7 +57,7 @@ jobs:
     # Whenever the Go version is updated here, .promu.yml
     # should also be updated.
     container:
-      image: quay.io/prometheus/golang-builder:1.22-base
+      image: quay.io/prometheus/golang-builder:1.23-base
 
     steps:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
@@ -77,7 +80,7 @@ jobs:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
       - uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5.0.2
         with:
-          go-version: 1.22.x
+          go-version: 1.23.x
       - run: |
           $TestTargets = go list ./... | Where-Object { $_ -NotMatch "(github.com/prometheus/prometheus/discovery.*|github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)"}
           go test $TestTargets -vet=off -v
@@ -89,7 +92,7 @@ jobs:
     # Whenever the Go version is updated here, .promu.yml
     # should also be updated.
     container:
-      image: quay.io/prometheus/golang-builder:1.22-base
+      image: quay.io/prometheus/golang-builder:1.23-base
     steps:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
       - run: go install ./cmd/promtool/.
@@ -165,7 +168,7 @@ jobs:
         uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5.0.2
         with:
           cache: false
-          go-version: 1.22.x
+          go-version: 1.23.x
       - name: Run goyacc and check for diff
         run: make install-goyacc check-generated-parser
   golangci:
@@ -177,7 +180,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5.0.2
         with:
-          go-version: 1.22.x
+          go-version: 1.23.x
       - name: Install snmp_exporter/generator dependencies
         run: sudo apt-get update && sudo apt-get -y install libsnmp-dev
         if: github.repository == 'prometheus/snmp_exporter'
