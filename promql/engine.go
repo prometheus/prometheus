@@ -435,6 +435,10 @@ func NewEngine(opts EngineOpts) *Engine {
 
 // Close closes ng.
 func (ng *Engine) Close() error {
+	if ng == nil {
+		return nil
+	}
+
 	if ng.activeQueryTracker != nil {
 		return ng.activeQueryTracker.Close()
 	}
