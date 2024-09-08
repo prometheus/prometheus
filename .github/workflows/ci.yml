@@ -12,6 +12,10 @@ jobs:
       # Whenever the Go version is updated here, .promu.yml
       # should also be updated.
       image: quay.io/prometheus/golang-builder:1.23-base
+    env:
+      # Preliminary fix to make Go tests with race detector not use too much memory,
+      # see https://github.com/prometheus/prometheus/issues/14858.
+      GOMEMLIMIT: 10GiB
     steps:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
       - uses: prometheus/promci@45166329da36d74895901808f1c8c97efafc7f84 # v0.3.0
