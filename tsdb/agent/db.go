@@ -335,7 +335,7 @@ func validateOptions(opts *Options) *Options {
 		opts.WALCompression = wlog.CompressionNone
 	}
 
-	// Revert Stripesize to DefaultStripsize if Stripsize is either 0 or not a power of 2.
+	// Revert StripeSize to DefaultStripSize if StripSize is either 0 or not a power of 2.
 	if opts.StripeSize <= 0 || ((opts.StripeSize & (opts.StripeSize - 1)) != 0) {
 		opts.StripeSize = tsdb.DefaultStripeSize
 	}
@@ -395,7 +395,7 @@ func (db *DB) replayWAL() error {
 		return fmt.Errorf("finding WAL segments: %w", err)
 	}
 
-	// Backfil segments from the most recent checkpoint onwards.
+	// Backfill segments from the most recent checkpoint onwards.
 	for i := startFrom; i <= last; i++ {
 		seg, err := wlog.OpenReadSegment(wlog.SegmentName(db.wal.Dir(), i))
 		if err != nil {

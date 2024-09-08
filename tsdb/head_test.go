@@ -1060,7 +1060,7 @@ func TestMemSeries_truncateChunks_scenarios(t *testing.T) {
 
 	tests := []struct {
 		name                 string
-		headChunks           int                // the number of head chubks to create on memSeries by appending enough samples
+		headChunks           int                // the number of head chunks to create on memSeries by appending enough samples
 		mmappedChunks        int                // the number of mmapped chunks to create on memSeries by appending enough samples
 		truncateBefore       int64              // the mint to pass to truncateChunksBefore()
 		expectedTruncated    int                // the number of chunks that we're expecting be truncated and returned by truncateChunksBefore()
