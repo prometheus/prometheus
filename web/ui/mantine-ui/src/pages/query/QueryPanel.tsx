@@ -296,6 +296,7 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
           <Space h="lg" />
           <Graph
             expr={expr}
+            node={selectedNode?.node ?? null}
             endTime={panel.visualizer.endTime}
             range={panel.visualizer.range}
             resolution={panel.visualizer.resolution}
