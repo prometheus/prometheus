@@ -435,7 +435,7 @@ func main() {
 
 	agentOnlyFlag(a, "storage.agent.wal-truncate-frequency",
 		"The frequency at which to truncate the WAL and remove old data.").
-		Hidden().PlaceHolder("<duration>").SetValue(&cfg.agent.TruncateFrequency)
+		Default("2h").PlaceHolder("<duration>").SetValue(&cfg.agent.TruncateFrequency)
 
 	agentOnlyFlag(a, "storage.agent.retention.min-time",
 		"Minimum age samples may be before being considered for deletion when the WAL is truncated").
