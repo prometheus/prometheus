@@ -3938,6 +3938,7 @@ var testExpr = []struct {
 						Start: 50,
 						End:   72,
 					},
+					BypassEmptyMatcherCheck: true,
 				},
 			},
 			PosRange: posrange.PositionRange{
