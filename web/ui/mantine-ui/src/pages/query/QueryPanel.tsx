@@ -6,16 +6,13 @@ import {
   Box,
   SegmentedControl,
   Stack,
-  Button,
   Skeleton,
 } from "@mantine/core";
 import {
   IconChartAreaFilled,
   IconChartLine,
-  IconCheckbox,
   IconGraph,
   IconInfoCircle,
-  IconSquare,
   IconTable,
 } from "@tabler/icons-react";
 import { FC, Suspense, useCallback, useMemo, useState } from "react";
@@ -129,6 +126,10 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
               retriggerIdx={retriggerIdx}
               selectedNode={selectedNode}
               setSelectedNode={setSelectedNode}
+              closeTreeView={() => {
+                dispatch(setShowTree({ idx, showTree: false }));
+                setSelectedNode(null);
+              }}
             />
           </Suspense>
         </ErrorBoundary>
@@ -165,11 +166,7 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
         <Tabs.Panel pt="sm" value="table">
           <TableTab expr={expr} panelIdx={idx} retriggerIdx={retriggerIdx} />
         </Tabs.Panel>
-        <Tabs.Panel
-          pt="sm"
-          value="graph"
-          // style={{ border: "1px solid lightgrey", borderTop: "none" }}
-        >
+        <Tabs.Panel pt="sm" value="graph">
           <Group mt="xs" justify="space-between">
             <Group>
               <RangeInput
@@ -214,7 +211,7 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
             </Group>
 
             <Group gap="lg">
-              <Button
+              {/* <Button
                 variant="subtle"
                 color="gray.9"
                 size="xs"
@@ -249,7 +246,7 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
                 }
               >
                 Show exemplars
-              </Button>
+              </Button> */}
 
               <SegmentedControl
                 onChange={(value) =>
@@ -325,7 +322,7 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
               <ExplainView
                 node={selectedNode?.node ?? null}
                 treeShown={panel.showTree}
-                setShowTree={() => {
+                showTree={() => {
                   dispatch(setShowTree({ idx, showTree: true }));
                 }}
               />

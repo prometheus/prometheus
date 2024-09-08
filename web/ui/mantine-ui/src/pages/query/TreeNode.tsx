@@ -1,5 +1,6 @@
 import {
   FC,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -57,8 +58,10 @@ const TreeNode: FC<{
   selectedNode: { id: string; node: ASTNode } | null;
   setSelectedNode: (Node: { id: string; node: ASTNode } | null) => void;
   parentRef?: React.RefObject<HTMLDivElement>;
-  reportNodeState?: (state: NodeState) => void;
+  reportNodeState?: (childIdx: number, state: NodeState) => void;
   reverse: boolean;
+  // The index of this node in its parent's children.
+  childIdx: number;
 }> = ({
   node,
   selectedNode,
@@ -66,6 +69,7 @@ const TreeNode: FC<{
   parentRef,
   reportNodeState,
   reverse,
+  childIdx,
 }) => {
   const nodeID = useId();
   const nodeRef = useRef<HTMLDivElement>(null);
@@ -130,21 +134,32 @@ const TreeNode: FC<{
 
   useEffect(() => {
     if (mergedChildState === "error") {
-      reportNodeState && reportNodeState("error");
+      reportNodeState && reportNodeState(childIdx, "error");
     }
-  }, [mergedChildState, reportNodeState]);
+  }, [mergedChildState, reportNodeState, childIdx]);
 
   useEffect(() => {
     if (error) {
-      reportNodeState && reportNodeState("error");
+      reportNodeState && reportNodeState(childIdx, "error");
     }
-  }, [error, reportNodeState]);
+  }, [error, reportNodeState, childIdx]);
 
   useEffect(() => {
     if (isFetching) {
-      reportNodeState && reportNodeState("running");
+      reportNodeState && reportNodeState(childIdx, "running");
     }
-  }, [isFetching, reportNodeState]);
+  }, [isFetching, reportNodeState, childIdx]);
+
+  const childReportNodeState = useCallback(
+    (childIdx: number, state: NodeState) => {
+      setChildStates((prev) => {
+        const newStates = [...prev];
+        newStates[childIdx] = state;
+        return newStates;
+      });
+    },
+    [setChildStates]
+  );
 
   // Update the size and position of tree connector lines based on the node's and its parent's position.
   useLayoutEffect(() => {
@@ -185,7 +200,7 @@ const TreeNode: FC<{
       return;
     }
 
-    reportNodeState && reportNodeState("success");
+    reportNodeState && reportNodeState(childIdx, "success");
 
     let resultSeries = 0;
     const labelValuesByName: Record<string, Record<string, number>> = {};
@@ -228,7 +243,7 @@ const TreeNode: FC<{
       ),
       labelExamples,
     });
-  }, [data, reportNodeState]);
+  }, [data, reportNodeState, childIdx]);
 
   const innerNode = (
     <Group
@@ -367,13 +382,8 @@ const TreeNode: FC<{
             setSelectedNode={setSelectedNode}
             parentRef={nodeRef}
             reverse={true}
-            reportNodeState={(state: NodeState) => {
-              setChildStates((prev) => {
-                const newStates = [...prev];
-                newStates[0] = state;
-                return newStates;
-              });
-            }}
+            childIdx={0}
+            reportNodeState={childReportNodeState}
           />
         </Box>
         {innerNode}
@@ -384,13 +394,8 @@ const TreeNode: FC<{
             setSelectedNode={setSelectedNode}
             parentRef={nodeRef}
             reverse={false}
-            reportNodeState={(state: NodeState) => {
-              setChildStates((prev) => {
-                const newStates = [...prev];
-                newStates[1] = state;
-                return newStates;
-              });
-            }}
+            childIdx={1}
+            reportNodeState={childReportNodeState}
           />
         </Box>
       </div>
@@ -407,13 +412,8 @@ const TreeNode: FC<{
               setSelectedNode={setSelectedNode}
               parentRef={nodeRef}
               reverse={false}
-              reportNodeState={(state: NodeState) => {
-                setChildStates((prev) => {
-                  const newStates = [...prev];
-                  newStates[idx] = state;
-                  return newStates;
-                });
-              }}
+              childIdx={idx}
+              reportNodeState={childReportNodeState}
             />
           </Box>
         ))}

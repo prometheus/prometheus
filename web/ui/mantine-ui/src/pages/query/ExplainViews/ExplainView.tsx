@@ -11,32 +11,35 @@ import classes from "./ExplainView.module.css";
 import SelectorExplainView from "./Selector";
 import AggregationExplainView from "./Aggregation";
 import BinaryExprExplainView from "./BinaryExpr/BinaryExpr";
+import { IconInfoCircle } from "@tabler/icons-react";
 interface ExplainViewProps {
   node: ASTNode | null;
   treeShown: boolean;
-  setShowTree: () => void;
+  showTree: () => void;
 }
 
 const ExplainView: FC<ExplainViewProps> = ({
   node,
   treeShown,
-  setShowTree,
+  showTree: setShowTree,
 }) => {
   if (node === null) {
     return (
-      <Alert>
-        <>
-          To use the Explain view,{" "}
-          {!treeShown && (
-            <>
-              <Anchor fz="unset" onClick={setShowTree}>
-                enable the query tree view
-              </Anchor>{" "}
-              (also available via the expression input dropdown) and then
-            </>
-          )}{" "}
-          select a node in the tree above.
-        </>
+      <Alert title="How to use the Explain view" icon={<IconInfoCircle />}>
+        This tab can help you understand the behavior of individual components
+        of a query.
+        <br />
+        <br />
+        To use the Explain view,{" "}
+        {!treeShown && (
+          <>
+            <Anchor fz="unset" onClick={setShowTree}>
+              enable the query tree view
+            </Anchor>{" "}
+            (also available via the expression input menu) and then
+          </>
+        )}{" "}
+        select a node in the tree above.
       </Alert>
     );
   }

@@ -3,7 +3,7 @@ import { useSuspenseAPIQuery } from "../../api/api";
 import { useAppSelector } from "../../state/hooks";
 import ASTNode from "../../promql/ast";
 import TreeNode from "./TreeNode";
-import { Card } from "@mantine/core";
+import { Card, CloseButton } from "@mantine/core";
 
 const TreeView: FC<{
   panelIdx: number;
@@ -19,7 +19,8 @@ const TreeView: FC<{
       node: ASTNode;
     } | null
   ) => void;
-}> = ({ panelIdx, selectedNode, setSelectedNode }) => {
+  closeTreeView: () => void;
+}> = ({ panelIdx, selectedNode, setSelectedNode, closeTreeView }) => {
   const { expr } = useAppSelector((state) => state.queryPage.panels[panelIdx]);
 
   const { data } = useSuspenseAPIQuery<ASTNode>({
@@ -32,7 +33,17 @@ const TreeView: FC<{
 
   return (
     <Card withBorder fz="sm" style={{ overflowX: "auto" }} pl="sm">
+      <CloseButton
+        aria-label="Close tree view"
+        title="Close tree view"
+        pos="absolute"
+        top={7}
+        size="sm"
+        right={7}
+        onClick={closeTreeView}
+      />
       <TreeNode
+        childIdx={0}
         node={data.data}
         selectedNode={selectedNode}
         setSelectedNode={setSelectedNode}
