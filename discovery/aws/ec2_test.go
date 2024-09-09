@@ -378,7 +378,7 @@ func generateRefreshIpv6(d *EC2Discovery) []*targetgroup.Group {
 	return expected
 }
 
-func TestRefresh(t *testing.T) {
+func TestEC2DiscoveryRefresh(t *testing.T) {
 	ctx := context.Background()
 	client := newMockEC2Client()
 
