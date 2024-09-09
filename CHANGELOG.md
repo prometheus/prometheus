@@ -1,6 +1,12 @@
 # Changelog
 
 ## 3.0.0-beta.0 / 2024-09-05
+
+Release 3.0.0-beta.0 includes new features such as a brand new UI and UTF-8 support enabled by default. As a new major version, several breaking changes are introduced. The breaking changes are mainly around the removal of deprecated feature flags and CLI arguments, and the full list can be found below. Most users should be able to try this release out of the box without any configuration changes.
+
+As is traditional with a beta release, we do **not** recommend users install 3.0.0-beta on critical production systems, but we do want everyone to test it out and find bugs.
+
+* [CHANGE] UI: The old web UI has been replaced by a completely new one that is less cluttered and adds a few new features (PromLens-style tree view, better metrics explorer, "Explain" tab). However, it is still missing some features of the old UI (notably, exemplar display and heatmaps). To switch back to the old UI, you can use the feature flag `--enable-feature=old-ui` for the time being.
 * [CHANGE] PromQL: Range selectors and the lookback delta are now left-open, i.e. a sample coinciding with the lower time limit is excluded rather than included. #13904
 * [CHANGE] Kubernetes SD: Remove support for `discovery.k8s.io/v1beta1` API version of EndpointSlice. This version is no longer served as of Kubernetes v1.25. #14365
 * [CHANGE] Kubernetes SD: Remove support for `networking.k8s.io/v1beta1` API version of Ingress. This version is no longer served as of Kubernetes v1.22. #14365
