@@ -2,32 +2,7 @@ import { Card, Group, Stack, Table, Text } from "@mantine/core";
 import { useSuspenseAPIQuery } from "../api/api";
 import { IconRun, IconWall } from "@tabler/icons-react";
 import { formatTimestamp } from "../lib/formatTime";
-
-const statusConfig: Record<
-  string,
-  {
-    title?: string;
-    formatValue?: (v: string | boolean) => string;
-  }
-> = {
-  startTime: {
-    title: "Start time",
-    formatValue: (v: string | boolean) =>
-      formatTimestamp(new Date(v as string).valueOf() / 1000, false), // TODO: Set useLocalTime parameter correctly.
-  },
-  CWD: { title: "Working directory" },
-  reloadConfigSuccess: {
-    title: "Configuration reload",
-    formatValue: (v: string | boolean) => (v ? "Successful" : "Unsuccessful"),
-  },
-  lastConfigTime: {
-    title: "Last successful configuration reload",
-    formatValue: (v: string | boolean) => new Date(v as string).toUTCString(),
-  },
-  corruptionCount: { title: "WAL corruptions" },
-  goroutineCount: { title: "Goroutines" },
-  storageRetention: { title: "Storage retention" },
-};
+import { useSettings } from "../state/settingsSlice";
 
 export default function StatusPage() {
   const { data: buildinfo } = useSuspenseAPIQuery<Record<string, string>>({
@@ -36,6 +11,35 @@ export default function StatusPage() {
   const { data: runtimeinfo } = useSuspenseAPIQuery<Record<string, string>>({
     path: `/status/runtimeinfo`,
   });
+
+  const { useLocalTime } = useSettings();
+
+  const statusConfig: Record<
+    string,
+    {
+      title?: string;
+      formatValue?: (v: string | boolean) => string;
+    }
+  > = {
+    startTime: {
+      title: "Start time",
+      formatValue: (v: string | boolean) =>
+        formatTimestamp(new Date(v as string).valueOf() / 1000, useLocalTime),
+    },
+    CWD: { title: "Working directory" },
+    reloadConfigSuccess: {
+      title: "Configuration reload",
+      formatValue: (v: string | boolean) => (v ? "Successful" : "Unsuccessful"),
+    },
+    lastConfigTime: {
+      title: "Last successful configuration reload",
+      formatValue: (v: string | boolean) =>
+        formatTimestamp(new Date(v as string).valueOf() / 1000, useLocalTime),
+    },
+    corruptionCount: { title: "WAL corruptions" },
+    goroutineCount: { title: "Goroutines" },
+    storageRetention: { title: "Storage retention" },
+  };
 
   return (
     <Stack gap="lg" maw={1000} mx="auto" mt="xs">
