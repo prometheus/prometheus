@@ -23,6 +23,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -2099,6 +2100,36 @@ func TestHead_LogRollback(t *testing.T) {
 			require.Equal(t, []record.RefSeries{{Ref: 1, Labels: labels.FromStrings("a", "b")}}, series)
 		})
 	}
+}
+
+func TestHead_ReturnsSortedLabelValues(t *testing.T) {
+	h, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
+	defer func() {
+		require.NoError(t, h.Close())
+	}()
+
+	h.initTime(0)
+
+	app := h.appender()
+	for i := 100; i > 0; i-- {
+		for j := 0; j < 10; j++ {
+			lset := labels.FromStrings(
+				"__name__", fmt.Sprintf("metric_%d", i),
+				"label", fmt.Sprintf("value_%d", j),
+			)
+			_, err := app.Append(0, lset, 2100, 1)
+			require.NoError(t, err)
+		}
+	}
+
+	q, err := NewBlockQuerier(h, 1500, 2500)
+	require.NoError(t, err)
+
+	res, _, err := q.LabelValues(context.Background(), "__name__", nil)
+	require.NoError(t, err)
+
+	require.True(t, slices.IsSorted(res))
+	require.NoError(t, q.Close())
 }
 
 // TestWalRepair_DecodingError ensures that a repair is run for an error
