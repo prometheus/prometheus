@@ -110,7 +110,6 @@ func generateTestInstanceData(ec2Data *ec2DataStore) int {
 	placement := ec2.Placement{}
 	placement.SetAvailabilityZone(ec2Data.azNames[azIdx])
 
-	// FIXME: this could be a "global" variable
 	state := ec2.InstanceState{}
 	state.SetName("running")
 
