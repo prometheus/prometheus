@@ -34,6 +34,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
+	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
@@ -2379,8 +2380,11 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 		expectedTimeout = "1.5"
 	)
 
-	var protobufParsing bool
-	var allowUTF8 bool
+	var (
+		protobufParsing bool
+		allowUTF8       bool
+		qValuePattern   = regexp.MustCompile(`q=([0-9]+(\.\d+)?)`)
+	)
 
 	server := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -2391,6 +2395,17 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 			if protobufParsing {
 				require.True(t, strings.HasPrefix(accept, "application/vnd.google.protobuf;"),
 					"Expected Accept header to prefer application/vnd.google.protobuf.")
+			}
+
+			contentTypes := strings.Split(accept, ",")
+			for _, ct := range contentTypes {
+				match := qValuePattern.FindStringSubmatch(ct)
+				require.Len(t, match, 3)
+				qValue, err := strconv.ParseFloat(match[1], 64)
+				require.NoError(t, err, "Error parsing q value")
+				require.GreaterOrEqual(t, qValue, float64(0))
+				require.LessOrEqual(t, qValue, float64(1))
+				require.LessOrEqual(t, len(strings.Split(match[1], ".")[1]), 3, "q value should have at most 3 decimal places")
 			}
 
 			timeout := r.Header.Get("X-Prometheus-Scrape-Timeout-Seconds")
