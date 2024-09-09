@@ -326,12 +326,8 @@ const explainError = (
 const VectorVectorBinaryExprExplainView: FC<
   VectorVectorBinaryExprExplainViewProps
 > = ({ node, lhs, rhs }) => {
-  // TODO: Don't use Mantine's local storage as a one-off here.
-  // const [allowLineBreaks, setAllowLineBreaks] = useLocalStorage<boolean>({
-  //   key: "queryPage.explain.binaryOperators.breakLongLines",
-  //   defaultValue: true,
-  // });
-
+  // TODO: Don't use Mantine's local storage as a one-off here. Decide whether we
+  // want to keep Redux, and then do it only via one or the other everywhere.
   const [showSampleValues, setShowSampleValues] = useLocalStorage<boolean>({
     key: "queryPage.explain.binaryOperators.showSampleValues",
     defaultValue: false,
