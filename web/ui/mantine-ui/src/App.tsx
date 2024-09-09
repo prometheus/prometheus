@@ -339,9 +339,13 @@ function App() {
               padding="md"
             >
               <AppShell.Header bg="rgb(65, 73, 81)" c="#fff">
-                <Group h="100%" px="md">
-                  <Group style={{ flex: 1 }} justify="space-between">
-                    <Group gap={65}>
+                <Group h="100%" px="md" wrap="nowrap">
+                  <Group
+                    style={{ flex: 1 }}
+                    justify="space-between"
+                    wrap="nowrap"
+                  >
+                    <Group gap={65} wrap="nowrap">
                       <Link
                         to="/"
                         style={{ textDecoration: "none", color: "white" }}
@@ -351,11 +355,11 @@ function App() {
                           <Text fz={20}>Prometheus{agentMode && " Agent"}</Text>
                         </Group>
                       </Link>
-                      <Group gap={12} visibleFrom="sm">
+                      <Group gap={12} visibleFrom="sm" wrap="nowrap">
                         {navLinks}
                       </Group>
                     </Group>
-                    <Group visibleFrom="xs">
+                    <Group visibleFrom="xs" wrap="nowrap">
                       <ThemeSelector />
                       <SettingsMenu />
                     </Group>
