@@ -3016,6 +3016,29 @@ func TestEngineOptsValidation(t *testing.T) {
 	}
 }
 
+func TestEngine_Close(t *testing.T) {
+	t.Run("nil engine", func(t *testing.T) {
+		var ng *promql.Engine
+		require.NoError(t, ng.Close())
+	})
+
+	t.Run("non-nil engine", func(t *testing.T) {
+		ng := promql.NewEngine(promql.EngineOpts{
+			Logger:                   nil,
+			Reg:                      nil,
+			MaxSamples:               0,
+			Timeout:                  100 * time.Second,
+			NoStepSubqueryIntervalFn: nil,
+			EnableAtModifier:         true,
+			EnableNegativeOffset:     true,
+			EnablePerStepStats:       false,
+			LookbackDelta:            0,
+			EnableDelayedNameRemoval: true,
+		})
+		require.NoError(t, ng.Close())
+	})
+}
+
 func TestInstantQueryWithRangeVectorSelector(t *testing.T) {
 	engine := newTestEngine(t)
 

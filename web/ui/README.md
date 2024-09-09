@@ -1,4 +1,5 @@
 ## Overview
+
 The `ui` directory contains static files and templates used in the web UI. For
 easier distribution they are compressed (c.f. Makefile) and statically compiled
 into the Prometheus binary using the embed package.
@@ -15,15 +16,23 @@ This will serve all files from your local filesystem. This is for development pu
 
 ### Introduction
 
-The react application is a monorepo composed by multiple different npm packages. The main one is `react-app` which
-contains the code of the react application.
+This directory contains two generations of Prometheus' React-based web UI:
+
+* `react-app`: The old 2.x web UI
+* `mantine-ui`: The new 3.x web UI
+
+Both UIs are built and compiled into Prometheus. The new UI is served by default, but a feature flag
+(`--enable-feature=old-ui`) can be used to switch back to serving the old UI.
 
 Then you have different npm packages located in the folder `modules`. These packages are supposed to be used by the
-react-app and also by others consumers (like Thanos)
+two React apps and also by others consumers (like Thanos).
+
+While most of these applications / modules are part of the same npm workspace, the old UI in the `react-app` directory
+has been separated out of the workspace setup, since its dependencies were too incompatible.
 
 ### Pre-requisite
 
-To be able to build the react application you need:
+To be able to build either of the React applications, you need:
 
 * npm >= v7
 * node >= v20
@@ -38,46 +47,50 @@ need to move to the directory `web/ui` and then download and install them locall
 npm consults the `package.json` and `package-lock.json` files for dependencies to install. It creates a `node_modules`
 directory with all installed dependencies.
 
-**NOTE**: Do not run `npm install` in the `react-app` folder or in any sub folder of the `module` directory.
+**NOTE**: Do not run `npm install` in the `react-app` / `mantine-ui` folder or in any sub folder of the `module` directory.
 
 ### Upgrading npm dependencies
 
-As it is a monorepo, when upgrading a dependency, you have to upgrade it in every packages that composed this monorepo (
-aka, in all sub folder of `module` and in `react-app`)
+As it is a monorepo, when upgrading a dependency, you have to upgrade it in every packages that composed this monorepo
+(aka, in all sub folders of `module` and `react-app` / `mantine-ui`)
 
 Then you have to run the command `npm install` in `web/ui` and not in a sub folder / sub package. It won't simply work.
 
 ### Running a local development server
 
-You can start a development server for the React UI outside of a running Prometheus server by running:
+You can start a development server for the new React UI outside of a running Prometheus server by running:
 
     npm start
 
-This will open a browser window with the React app running on http://localhost:3000/. The page will reload if you make
+(For the old UI, you will have to run the same command from the `react-app` subdirectory.)
+
+This will open a browser window with the React app running on http://localhost:5173/. The page will reload if you make
 edits to the source code. You will also see any lint errors in the console.
 
-**NOTE**: It will reload only if you change the code in `react-app` folder. Any code changes in the folder `module` is
+**NOTE**: It will reload only if you change the code in `mantine-ui` folder. Any code changes in the folder `module` is
 not considered by the command `npm start`. In order to see the changes in the react-app you will have to
 run `npm run build:module`
 
-Due to a `"proxy": "http://localhost:9090"` setting in the `package.json` file, any API requests from the React UI are
+Due to a `"proxy": "http://localhost:9090"` setting in the `mantine-ui/vite.config.ts` file, any API requests from the React UI are
 proxied to `localhost` on port `9090` by the development server. This allows you to run a normal Prometheus server to
 handle API requests, while iterating separately on the UI.
 
-    [browser] ----> [localhost:3000 (dev server)] --(proxy API requests)--> [localhost:9090 (Prometheus)]
+    [browser] ----> [localhost:5173 (dev server)] --(proxy API requests)--> [localhost:9090 (Prometheus)]
 
 ### Running tests
 
-To run the test for the react-app and for all modules, you can simply run:
+To run the test for the new React app and for all modules, you can simply run:
 
 ```bash
 npm test
 ```
 
-if you want to run the test only for a specific module, you need to go to the folder of the module and run
+(For the old UI, you will have to run the same command from the `react-app` subdirectory.)
+
+If you want to run the test only for a specific module, you need to go to the folder of the module and run
 again `npm test`.
 
-For example, in case you only want to run the test of the react-app, go to `web/ui/react-app` and run `npm test`
+For example, in case you only want to run the test of the new React app, go to `web/ui/mantine-ui` and run `npm test`
 
 To generate an HTML-based test coverage report, run:
 
@@ -93,7 +106,7 @@ running tests.
 
 ### Building the app for production
 
-To build a production-optimized version of the React app to a `build` subdirectory, run:
+To build a production-optimized version of both React app versions to a `static/{react-app,mantine-ui}` subdirectory, run:
 
     npm run build
 
@@ -102,10 +115,10 @@ Prometheus `Makefile` when building the full binary.
 
 ### Integration into Prometheus
 
-To build a Prometheus binary that includes a compiled-in version of the production build of the React app, change to the
+To build a Prometheus binary that includes a compiled-in version of the production build of both React app versions, change to the
 root of the repository and run:
 
     make build
 
-This installs dependencies via npm, builds a production build of the React app, and then finally compiles in all web
+This installs dependencies via npm, builds a production build of both React apps, and then finally compiles in all web
 assets into the Prometheus binary.

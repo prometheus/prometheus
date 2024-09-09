@@ -8,6 +8,8 @@ global:
   label_limit: 30
   label_name_length_limit: 200
   label_value_length_limit: 200
+  query_log_file: query.log
+  scrape_failure_log_file: fail.log
   # scrape_timeout is set to the global default (10s).
 
   external_labels:
@@ -72,6 +74,7 @@ scrape_configs:
     # metrics_path defaults to '/metrics'
     # scheme defaults to 'http'.
 
+    scrape_failure_log_file: fail_prom.log
     file_sd_configs:
       - files:
           - foo/*.slow.json
@@ -86,6 +89,12 @@ scrape_configs:
         labels:
           my: label
           your: label
+
+    http_headers:
+      foo:
+        values: ["foobar"]
+        secrets: ["bar", "foo"]
+        files: ["valid_password_file"]
 
     relabel_configs:
       - source_labels: [job, __meta_dns_name]

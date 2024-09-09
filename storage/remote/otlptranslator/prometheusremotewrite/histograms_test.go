@@ -17,6 +17,7 @@
 package prometheusremotewrite
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -754,6 +755,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 
 			converter := NewPrometheusConverter()
 			annots, err := converter.addExponentialHistogramDataPoints(
+				context.Background(),
 				metric.ExponentialHistogram().DataPoints(),
 				pcommon.NewResource(),
 				Settings{
