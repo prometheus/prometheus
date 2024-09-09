@@ -109,13 +109,6 @@ const monitoringStatusPages = [
     element: <ServiceDiscoveryPage />,
     inAgentMode: true,
   },
-  {
-    title: "Alertmanager discovery",
-    path: "/discovered-alertmanagers",
-    icon: <IconBell style={navIconStyle} />,
-    element: <AlertmanagerDiscoveryPage />,
-    inAgentMode: false,
-  },
 ];
 
 const serverStatusPages = [
@@ -146,6 +139,13 @@ const serverStatusPages = [
     icon: <IconServerCog style={navIconStyle} />,
     element: <ConfigPage />,
     inAgentMode: true,
+  },
+  {
+    title: "Alertmanager discovery",
+    path: "/discovered-alertmanagers",
+    icon: <IconBell style={navIconStyle} />,
+    element: <AlertmanagerDiscoveryPage />,
+    inAgentMode: false,
   },
 ];
 
