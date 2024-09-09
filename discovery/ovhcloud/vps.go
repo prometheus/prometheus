@@ -37,7 +37,7 @@ const (
 
 // Model struct from API.
 type vpsModel struct {
-	MaximumAdditionalIP int      `json:"maximumAdditionalIp"`
+	MaximumAdditionalIP int      `json:"maximumAdditionnalIp"`
 	Offer               string   `json:"offer"`
 	Datacenter          []string `json:"datacenter"`
 	Vcore               int      `json:"vcore"`
