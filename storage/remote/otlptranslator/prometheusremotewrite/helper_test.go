@@ -17,6 +17,7 @@
 package prometheusremotewrite
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -280,6 +281,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 			converter := NewPrometheusConverter()
 
 			converter.addSummaryDataPoints(
+				context.Background(),
 				metric.Summary().DataPoints(),
 				pcommon.NewResource(),
 				Settings{
@@ -390,6 +392,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 			converter := NewPrometheusConverter()
 
 			converter.addHistogramDataPoints(
+				context.Background(),
 				metric.Histogram().DataPoints(),
 				pcommon.NewResource(),
 				Settings{

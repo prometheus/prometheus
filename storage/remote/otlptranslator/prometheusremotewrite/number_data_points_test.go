@@ -17,6 +17,7 @@
 package prometheusremotewrite
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -66,6 +67,7 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 			converter := NewPrometheusConverter()
 
 			converter.addGaugeNumberDataPoints(
+				context.Background(),
 				metric.Gauge().DataPoints(),
 				pcommon.NewResource(),
 				Settings{
@@ -242,6 +244,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			converter := NewPrometheusConverter()
 
 			converter.addSumNumberDataPoints(
+				context.Background(),
 				metric.Sum().DataPoints(),
 				pcommon.NewResource(),
 				metric,

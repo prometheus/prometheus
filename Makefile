@@ -49,6 +49,10 @@ ui-bump-version:
 .PHONY: ui-install
 ui-install:
 	cd $(UI_PATH) && npm install
+	# The old React app has been separated from the npm workspaces setup to avoid
+	# issues with conflicting dependencies. This is a temporary solution until the
+	# new Mantine-based UI is fully integrated and the old app can be removed.
+	cd $(UI_PATH)/react-app && npm install
 
 .PHONY: ui-build
 ui-build:
@@ -65,6 +69,10 @@ ui-test:
 .PHONY: ui-lint
 ui-lint:
 	cd $(UI_PATH) && npm run lint
+	# The old React app has been separated from the npm workspaces setup to avoid
+	# issues with conflicting dependencies. This is a temporary solution until the
+	# new Mantine-based UI is fully integrated and the old app can be removed.
+	cd $(UI_PATH)/react-app && npm run lint
 
 .PHONY: assets
 assets: ui-install ui-build

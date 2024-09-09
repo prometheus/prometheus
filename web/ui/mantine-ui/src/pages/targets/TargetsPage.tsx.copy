@@ -1,0 +1,355 @@
+import {
+  Accordion,
+  ActionIcon,
+  Alert,
+  Badge,
+  Group,
+  Input,
+  RingProgress,
+  Select,
+  Stack,
+  Table,
+  Text,
+} from "@mantine/core";
+import {
+  IconAlertTriangle,
+  IconInfoCircle,
+  IconLayoutNavbarCollapse,
+  IconLayoutNavbarExpand,
+  IconSearch,
+} from "@tabler/icons-react";
+import { StateMultiSelect } from "../../components/StateMultiSelect";
+import { useSuspenseAPIQuery } from "../../api/api";
+import { ScrapePoolsResult } from "../../api/responseTypes/scrapePools";
+import { Target, TargetsResult } from "../../api/responseTypes/targets";
+import React, { useEffect } from "react";
+import badgeClasses from "../../Badge.module.css";
+import {
+  humanizeDurationRelative,
+  humanizeDuration,
+  now,
+} from "../../lib/formatTime";
+import { LabelBadges } from "../../components/LabelBadges";
+import { useAppDispatch, useAppSelector } from "../../state/hooks";
+import {
+  setCollapsedPools,
+  updateTargetFilters,
+} from "../../state/targetsPageSlice";
+import EndpointLink from "../../components/EndpointLink";
+import CustomInfiniteScroll from "../../components/CustomInfiniteScroll";
+import { filter } from "lodash";
+
+type ScrapePool = {
+  targets: Target[];
+  upCount: number;
+  downCount: number;
+  unknownCount: number;
+};
+
+type ScrapePools = {
+  [scrapePool: string]: ScrapePool;
+};
+
+const healthBadgeClass = (state: string) => {
+  switch (state.toLowerCase()) {
+    case "up":
+      return badgeClasses.healthOk;
+    case "down":
+      return badgeClasses.healthErr;
+    case "unknown":
+      return badgeClasses.healthUnknown;
+    default:
+      return badgeClasses.warn;
+  }
+};
+
+const groupTargets = (targets: Target[]): ScrapePools => {
+  const pools: ScrapePools = {};
+  targets.forEach((target) => {
+    if (!pools[target.scrapePool]) {
+      pools[target.scrapePool] = {
+        targets: [],
+        upCount: 0,
+        downCount: 0,
+        unknownCount: 0,
+      };
+    }
+    pools[target.scrapePool].targets.push(target);
+    switch (target.health.toLowerCase()) {
+      case "up":
+        pools[target.scrapePool].upCount++;
+        break;
+      case "down":
+        pools[target.scrapePool].downCount++;
+        break;
+      case "unknown":
+        pools[target.scrapePool].unknownCount++;
+        break;
+    }
+  });
+  return pools;
+};
+
+const scrapePoolQueryParam = "scrapePool";
+
+export default function TargetsPage() {
+  // Load the list of all available scrape pools.
+  const {
+    data: {
+      data: { scrapePools },
+    },
+  } = useSuspenseAPIQuery<ScrapePoolsResult>({
+    path: `/scrape_pools`,
+  });
+
+  const dispatch = useAppDispatch();
+
+  // If there is a selected pool in the URL, extract it on initial load.
+  useEffect(() => {
+    const selectedPool = new URLSearchParams(window.location.search).get(
+      scrapePoolQueryParam
+    );
+    if (selectedPool !== null) {
+      dispatch(updateTargetFilters({ scrapePool: selectedPool }));
+    }
+  }, [dispatch]);
+
+  const filters = useAppSelector((state) => state.targetsPage.filters);
+
+  let poolToShow = filters.scrapePool;
+  let limitedDueToManyPools = false;
+
+  if (poolToShow === null && scrapePools.length > 20) {
+    poolToShow = scrapePools[0];
+    limitedDueToManyPools = true;
+  }
+
+  // Based on the selected pool (if any), load the list of targets.
+  const {
+    data: {
+      data: { activeTargets },
+    },
+  } = useSuspenseAPIQuery<TargetsResult>({
+    path: `/targets`,
+    params: {
+      state: "active",
+      scrapePool: poolToShow === null ? "" : poolToShow,
+    },
+  });
+
+  const collapsedPools = useAppSelector(
+    (state) => state.targetsPage.collapsedPools
+  );
+
+  const allPools = groupTargets(activeTargets);
+  const allPoolNames = Object.keys(allPools);
+
+  return (
+    <>
+      <Group mb="md" mt="xs">
+        <Select
+          placeholder="Select scrape pool"
+          data={[{ label: "All pools", value: "" }, ...scrapePools]}
+          value={filters.scrapePool}
+          onChange={(value) =>
+            dispatch(updateTargetFilters({ scrapePool: value || null }))
+          }
+          searchable
+        />
+        <StateMultiSelect
+          options={["unknown", "up", "down"]}
+          optionClass={(o) =>
+            o === "unknown"
+              ? badgeClasses.healthUnknown
+              : o === "up"
+                ? badgeClasses.healthOk
+                : badgeClasses.healthErr
+          }
+          placeholder="Filter by target state"
+          values={filters.health}
+          onChange={(values) =>
+            dispatch(updateTargetFilters({ health: values }))
+          }
+        />
+        <Input
+          flex={1}
+          leftSection={<IconSearch size={14} />}
+          placeholder="Filter by endpoint or labels"
+        ></Input>
+        <ActionIcon
+          size="input-sm"
+          title="Expand all pools"
+          variant="light"
+          onClick={() =>
+            dispatch(
+              setCollapsedPools(collapsedPools.length > 0 ? [] : allPoolNames)
+            )
+          }
+        >
+          {collapsedPools.length > 0 ? (
+            <IconLayoutNavbarExpand size={16} />
+          ) : (
+            <IconLayoutNavbarCollapse size={16} />
+          )}
+        </ActionIcon>
+      </Group>
+      <Stack>
+        {allPoolNames.length === 0 && (
+          <Alert
+            title="No matching targets"
+            icon={<IconInfoCircle size={14} />}
+          >
+            No targets found that match your filter criteria.
+          </Alert>
+        )}
+        {limitedDueToManyPools && (
+          <Alert
+            title="Found many pools, showing only one"
+            icon={<IconInfoCircle size={14} />}
+          >
+            There are many scrape pools configured. Showing only the first one.
+            Use the dropdown to select a different pool.
+          </Alert>
+        )}
+        <Accordion
+          multiple
+          variant="separated"
+          value={allPoolNames.filter((p) => !collapsedPools.includes(p))}
+          onChange={(value) =>
+            dispatch(
+              setCollapsedPools(allPoolNames.filter((p) => !value.includes(p)))
+            )
+          }
+        >
+          {allPoolNames.map((poolName) => {
+            const pool = allPools[poolName];
+            return (
+              <Accordion.Item
+                key={poolName}
+                value={poolName}
+                style={{
+                  borderLeft:
+                    pool.upCount === 0
+                      ? "5px solid var(--mantine-color-red-4)"
+                      : pool.upCount !== pool.targets.length
+                        ? "5px solid var(--mantine-color-orange-5)"
+                        : "5px solid var(--mantine-color-green-4)",
+                }}
+              >
+                <Accordion.Control>
+                  <Group wrap="nowrap" justify="space-between" mr="lg">
+                    <Text>{poolName}</Text>
+                    <Group gap="xs">
+                      <Text c="gray.6">
+                        {pool.upCount} / {pool.targets.length} up
+                      </Text>
+                      <RingProgress
+                        size={25}
+                        thickness={5}
+                        sections={[
+                          {
+                            value: (pool.upCount / pool.targets.length) * 100,
+                            // value: pool.upCount,
+                            color: "green.4",
+                          },
+                          {
+                            value: (pool.downCount / pool.targets.length) * 100,
+                            color: "red.5",
+                          },
+                          {
+                            value:
+                              (pool.unknownCount / pool.targets.length) * 100,
+                            color: "gray.4",
+                          },
+                        ]}
+                      />
+                    </Group>
+                  </Group>
+                </Accordion.Control>
+                <Accordion.Panel>
+                  <CustomInfiniteScroll
+                    allItems={pool.targets.filter(
+                      (t) =>
+                        filters.health.length === 0 ||
+                        filters.health.includes(t.health.toLowerCase())
+                    )}
+                    child={({ items }) => (
+                      <Table>
+                        <Table.Thead>
+                          <Table.Tr>
+                            <Table.Th w="30%">Endpoint</Table.Th>
+                            <Table.Th w={100}>State</Table.Th>
+                            <Table.Th>Labels</Table.Th>
+                            <Table.Th w="10%">Last scrape</Table.Th>
+                            <Table.Th w="10%">Scrape duration</Table.Th>
+                          </Table.Tr>
+                        </Table.Thead>
+                        <Table.Tbody>
+                          {items.map((target, i) => (
+                            // TODO: Find a stable and definitely unique key.
+                            <React.Fragment key={i}>
+                              <Table.Tr
+                                style={{
+                                  borderBottom: target.lastError
+                                    ? "none"
+                                    : undefined,
+                                }}
+                              >
+                                <Table.Td>
+                                  {/* TODO: Process target URL like in old UI */}
+                                  <EndpointLink
+                                    endpoint={target.scrapeUrl}
+                                    globalUrl={target.globalUrl}
+                                  />
+                                </Table.Td>
+                                <Table.Td>
+                                  <Badge
+                                    className={healthBadgeClass(target.health)}
+                                  >
+                                    {target.health}
+                                  </Badge>
+                                </Table.Td>
+                                <Table.Td>
+                                  <LabelBadges labels={target.labels} />
+                                </Table.Td>
+                                <Table.Td>
+                                  {humanizeDurationRelative(
+                                    target.lastScrape,
+                                    now()
+                                  )}
+                                </Table.Td>
+                                <Table.Td>
+                                  {humanizeDuration(
+                                    target.lastScrapeDuration * 1000
+                                  )}
+                                </Table.Td>
+                              </Table.Tr>
+                              {target.lastError && (
+                                <Table.Tr>
+                                  <Table.Td colSpan={5}>
+                                    <Alert
+                                      color="red"
+                                      mb="sm"
+                                      icon={<IconAlertTriangle size={14} />}
+                                    >
+                                      <strong>Error scraping target:</strong>{" "}
+                                      {target.lastError}
+                                    </Alert>
+                                  </Table.Td>
+                                </Table.Tr>
+                              )}
+                            </React.Fragment>
+                          ))}
+                        </Table.Tbody>
+                      </Table>
+                    )}
+                  />
+                </Accordion.Panel>
+              </Accordion.Item>
+            );
+          })}
+        </Accordion>
+      </Stack>
+    </>
+  );
+}
