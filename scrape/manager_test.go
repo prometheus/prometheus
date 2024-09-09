@@ -516,7 +516,7 @@ scrape_configs:
 	)
 
 	opts := Options{}
-	scrapeManager, err := NewManager(&opts, nil, nil, testRegistry)
+	scrapeManager, err := NewManager(&opts, nil, nil, nil, testRegistry)
 	require.NoError(t, err)
 	newLoop := func(scrapeLoopOptions) loop {
 		ch <- struct{}{}
@@ -581,7 +581,7 @@ scrape_configs:
 func TestManagerTargetsUpdates(t *testing.T) {
 	opts := Options{}
 	testRegistry := prometheus.NewRegistry()
-	m, err := NewManager(&opts, nil, nil, testRegistry)
+	m, err := NewManager(&opts, nil, nil, nil, testRegistry)
 	require.NoError(t, err)
 
 	ts := make(chan map[string][]*targetgroup.Group)
@@ -634,7 +634,7 @@ global:
 
 	opts := Options{}
 	testRegistry := prometheus.NewRegistry()
-	scrapeManager, err := NewManager(&opts, nil, nil, testRegistry)
+	scrapeManager, err := NewManager(&opts, nil, nil, nil, testRegistry)
 	require.NoError(t, err)
 
 	// Load the first config.
@@ -711,7 +711,7 @@ scrape_configs:
 	}
 
 	opts := Options{}
-	scrapeManager, err := NewManager(&opts, nil, nil, testRegistry)
+	scrapeManager, err := NewManager(&opts, nil, nil, nil, testRegistry)
 	require.NoError(t, err)
 
 	reload(scrapeManager, cfg1)
@@ -763,6 +763,7 @@ func TestManagerCTZeroIngestion(t *testing.T) {
 					skipOffsetting:                      true,
 				},
 				log.NewLogfmtLogger(os.Stderr),
+				nil,
 				&collectResultAppendable{app},
 				prometheus.NewRegistry(),
 			)
@@ -862,7 +863,7 @@ func TestUnregisterMetrics(t *testing.T) {
 	// Check that all metrics can be unregistered, allowing a second manager to be created.
 	for i := 0; i < 2; i++ {
 		opts := Options{}
-		manager, err := NewManager(&opts, nil, nil, reg)
+		manager, err := NewManager(&opts, nil, nil, nil, reg)
 		require.NotNil(t, manager)
 		require.NoError(t, err)
 		// Unregister all metrics.
@@ -905,6 +906,7 @@ func runManagers(t *testing.T, ctx context.Context) (*discovery.Manager, *Manage
 	)
 	scrapeManager, err := NewManager(
 		&Options{DiscoveryReloadInterval: model.Duration(100 * time.Millisecond)},
+		nil,
 		nil,
 		nopAppendable{},
 		prometheus.NewRegistry(),
