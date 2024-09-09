@@ -14,116 +14,223 @@
 package v1
 
 import (
-	"strconv"
-
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 )
+
+type typeExpr string
+
+const (
+	aggregationType   typeExpr = "aggregation"
+	binaryType        typeExpr = "binaryExpr"
+	callType          typeExpr = "call"
+	matrixType        typeExpr = "matrixExpr"
+	vectorType        typeExpr = "vectorSelector"
+	subqueryType      typeExpr = "subquery"
+	numberLiteralType typeExpr = "numberLiteral"
+	stringLiteralType typeExpr = "stringLiteral"
+	parentExprType    typeExpr = "parenExpr"
+	unaryExprType     typeExpr = "unaryExpr"
+)
+
+type aggregateExpr struct {
+	Type     typeExpr `json:"type"`
+	Op       string   `json:"op"`
+	Expr     any      `json:"expr"`
+	Param    any      `json:"param"`
+	Grouping []string `json:"grouping"`
+	Without  bool     `json:"without"`
+}
+
+type matchingBinaryExpr struct {
+	Card    string   `json:"card"`
+	Labels  []string `json:"labels"`
+	On      bool     `json:"on"`
+	Include []string `json:"include"`
+}
+
+type binaryExpr struct {
+	Type     typeExpr            `json:"type"`
+	Op       string              `json:"op"`
+	LHS      any                 `json:"lhs"`
+	RHS      any                 `json:"rhs"`
+	Matching *matchingBinaryExpr `json:"matching,omitempty"`
+	Bool     bool                `json:"bool"`
+}
+
+type functionCall struct {
+	Name       string
+	ArgTypes   []parser.ValueType `json:"argTypes"`
+	Variadic   int                `json:"variadic"`
+	ReturnType parser.ValueType   `json:"returnType"`
+}
+
+type callExpr struct {
+	Type typeExpr     `json:"type"`
+	Func functionCall `json:"functionCall"`
+	Args []any        `json:"args,omitempty"`
+}
+
+type matcher struct {
+	Name  string `json:"name"`
+	Type  string `json:"type"`
+	Value string `json:"value"`
+}
+
+type matrixSelector struct {
+	Type       typeExpr  `json:"type"`
+	Name       string    `json:"name"`
+	Range      int64     `json:"range"`
+	Offset     int64     `json:"offset"`
+	Matchers   []matcher `json:"matchers"`
+	Timestamp  *int64    `json:"timestamp,omitempty"`
+	StartOrEnd *string   `json:"startOrEnd,omitempty"`
+}
+
+type vectorSelector struct {
+	Type       typeExpr  `json:"type"`
+	Name       string    `json:"name"`
+	Offset     int64     `json:"offset"`
+	Matchers   []matcher `json:"matchers"`
+	Timestamp  *int64    `json:"timestamp,omitempty"`
+	StartOrEnd *string   `json:"startOrEnd,omitempty"`
+}
+
+type SubQueryExpr struct {
+	Type       typeExpr `json:"type"`
+	Expr       any      `json:"expr"`
+	Range      int64    `json:"range"`
+	Offset     int64    `json:"offset"`
+	Step       int64    `json:"step"`
+	Timestamp  *int64   `json:"timestamp,omitempty"`
+	StartOrEnd *string  `json:"startOrEnd,omitempty"`
+}
+
+type numberLiteral struct {
+	Type typeExpr `json:"type"`
+	Val  float64  `json:"val"`
+}
+
+type stringLitteral struct {
+	Type typeExpr `json:"type"`
+	Val  string   `json:"val"`
+}
+
+type parentExpr struct {
+	Type typeExpr `json:"type"`
+	Expr any      `json:"expr"`
+}
+
+type unaryExpr struct {
+	Type typeExpr `json:"type"`
+	Op   string   `json:"op"`
+	Expr any      `json:"expr"`
+}
 
 // Take a Go PromQL AST and translate it to an object that's nicely JSON-serializable
 // for the tree view in the UI.
 // TODO: Could it make sense to do this via the normal JSON marshalling methods? Maybe
 // too UI-specific though.
-func translateAST(node parser.Expr) interface{} {
+func translateAST(node parser.Expr) any {
 	if node == nil {
 		return nil
 	}
 
 	switch n := node.(type) {
 	case *parser.AggregateExpr:
-		return map[string]interface{}{
-			"type":     "aggregation",
-			"op":       n.Op.String(),
-			"expr":     translateAST(n.Expr),
-			"param":    translateAST(n.Param),
-			"grouping": sanitizeList(n.Grouping),
-			"without":  n.Without,
+		return &aggregateExpr{
+			Type:     aggregationType,
+			Op:       n.Op.String(),
+			Expr:     translateAST(n.Expr),
+			Param:    translateAST(n.Param),
+			Grouping: sanitizeList(n.Grouping),
+			Without:  n.Without,
 		}
 	case *parser.BinaryExpr:
-		var matching interface{}
+		var matching *matchingBinaryExpr
 		if m := n.VectorMatching; m != nil {
-			matching = map[string]interface{}{
-				"card":    m.Card.String(),
-				"labels":  sanitizeList(m.MatchingLabels),
-				"on":      m.On,
-				"include": sanitizeList(m.Include),
+			matching = &matchingBinaryExpr{
+				Card:    m.Card.String(),
+				Labels:  sanitizeList(m.MatchingLabels),
+				On:      m.On,
+				Include: sanitizeList(m.Include),
 			}
 		}
 
-		return map[string]interface{}{
-			"type":     "binaryExpr",
-			"op":       n.Op.String(),
-			"lhs":      translateAST(n.LHS),
-			"rhs":      translateAST(n.RHS),
-			"matching": matching,
-			"bool":     n.ReturnBool,
+		return &binaryExpr{
+			Type:     binaryType,
+			Op:       n.Op.String(),
+			LHS:      translateAST(n.LHS),
+			RHS:      translateAST(n.RHS),
+			Matching: matching,
+			Bool:     n.ReturnBool,
 		}
 	case *parser.Call:
-		args := []interface{}{}
+		var args []any
 		for _, arg := range n.Args {
 			args = append(args, translateAST(arg))
 		}
 
-		return map[string]interface{}{
-			"type": "call",
-			"func": map[string]interface{}{
-				"name":       n.Func.Name,
-				"argTypes":   n.Func.ArgTypes,
-				"variadic":   n.Func.Variadic,
-				"returnType": n.Func.ReturnType,
+		return &callExpr{
+			Type: callType,
+			Func: functionCall{
+				Name:       n.Func.Name,
+				ArgTypes:   n.Func.ArgTypes,
+				Variadic:   n.Func.Variadic,
+				ReturnType: n.Func.ReturnType,
 			},
-			"args": args,
+			Args: args,
 		}
 	case *parser.MatrixSelector:
 		vs := n.VectorSelector.(*parser.VectorSelector)
-		return map[string]interface{}{
-			"type":       "matrixSelector",
-			"name":       vs.Name,
-			"range":      n.Range.Milliseconds(),
-			"offset":     vs.OriginalOffset.Milliseconds(),
-			"matchers":   translateMatchers(vs.LabelMatchers),
-			"timestamp":  vs.Timestamp,
-			"startOrEnd": getStartOrEnd(vs.StartOrEnd),
+		return &matrixSelector{
+			Type:       matrixType,
+			Name:       vs.Name,
+			Range:      n.Range.Milliseconds(),
+			Offset:     vs.OriginalOffset.Milliseconds(),
+			Matchers:   translateMatchers(vs.LabelMatchers),
+			Timestamp:  vs.Timestamp,
+			StartOrEnd: getStartOrEnd(vs.StartOrEnd),
 		}
 	case *parser.SubqueryExpr:
-		return map[string]interface{}{
-			"type":       "subquery",
-			"expr":       translateAST(n.Expr),
-			"range":      n.Range.Milliseconds(),
-			"offset":     n.OriginalOffset.Milliseconds(),
-			"step":       n.Step.Milliseconds(),
-			"timestamp":  n.Timestamp,
-			"startOrEnd": getStartOrEnd(n.StartOrEnd),
+		return &SubQueryExpr{
+			Type:       subqueryType,
+			Expr:       translateAST(n.Expr),
+			Range:      n.Range.Milliseconds(),
+			Offset:     n.OriginalOffset.Milliseconds(),
+			Step:       n.Step.Milliseconds(),
+			Timestamp:  n.Timestamp,
+			StartOrEnd: getStartOrEnd(n.StartOrEnd),
 		}
 	case *parser.NumberLiteral:
-		return map[string]string{
-			"type": "numberLiteral",
-			"val":  strconv.FormatFloat(n.Val, 'f', -1, 64),
+		return &numberLiteral{
+			Type: numberLiteralType,
+			Val:  n.Val,
 		}
 	case *parser.ParenExpr:
-		return map[string]interface{}{
-			"type": "parenExpr",
-			"expr": translateAST(n.Expr),
+		return &parentExpr{
+			Type: parentExprType,
+			Expr: translateAST(n.Expr),
 		}
 	case *parser.StringLiteral:
-		return map[string]interface{}{
-			"type": "stringLiteral",
-			"val":  n.Val,
+		return &stringLitteral{
+			Type: stringLiteralType,
+			Val:  n.Val,
 		}
 	case *parser.UnaryExpr:
-		return map[string]interface{}{
-			"type": "unaryExpr",
-			"op":   n.Op.String(),
-			"expr": translateAST(n.Expr),
+		return &unaryExpr{
+			Type: unaryExprType,
+			Op:   n.Op.String(),
+			Expr: translateAST(n.Expr),
 		}
 	case *parser.VectorSelector:
-		return map[string]interface{}{
-			"type":       "vectorSelector",
-			"name":       n.Name,
-			"offset":     n.OriginalOffset.Milliseconds(),
-			"matchers":   translateMatchers(n.LabelMatchers),
-			"timestamp":  n.Timestamp,
-			"startOrEnd": getStartOrEnd(n.StartOrEnd),
+		return &vectorSelector{
+			Type:       vectorType,
+			Name:       n.Name,
+			Offset:     n.OriginalOffset.Milliseconds(),
+			Matchers:   translateMatchers(n.LabelMatchers),
+			Timestamp:  n.Timestamp,
+			StartOrEnd: getStartOrEnd(n.StartOrEnd),
 		}
 	}
 	panic("unsupported node type")
@@ -136,22 +243,22 @@ func sanitizeList(l []string) []string {
 	return l
 }
 
-func translateMatchers(in []*labels.Matcher) interface{} {
-	out := []map[string]interface{}{}
+func translateMatchers(in []*labels.Matcher) []matcher {
+	var out []matcher
 	for _, m := range in {
-		out = append(out, map[string]interface{}{
-			"name":  m.Name,
-			"value": m.Value,
-			"type":  m.Type.String(),
+		out = append(out, matcher{
+			Name:  m.Name,
+			Value: m.Value,
+			Type:  m.Type.String(),
 		})
 	}
 	return out
 }
 
-func getStartOrEnd(startOrEnd parser.ItemType) interface{} {
+func getStartOrEnd(startOrEnd parser.ItemType) *string {
 	if startOrEnd == 0 {
 		return nil
 	}
-
-	return startOrEnd.String()
+	result := startOrEnd.String()
+	return &result
 }
