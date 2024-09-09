@@ -376,19 +376,15 @@ export default function AlertsPage() {
                                       {showAnnotations && (
                                         <Table.Tr>
                                           <Table.Td colSpan={4}>
-                                            <Table
-                                              mt="md"
-                                              mb="xl"
-                                              withTableBorder
-                                              withColumnBorders
-                                              bg="var(--mantine-color-body)"
-                                            >
+                                            <Table mt="md" mb="xl">
                                               <Table.Tbody>
                                                 {Object.entries(
                                                   a.annotations
                                                 ).map(([k, v]) => (
                                                   <Table.Tr key={k}>
-                                                    <Table.Th>{k}</Table.Th>
+                                                    <Table.Th c="light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-4))">
+                                                      {k}
+                                                    </Table.Th>
                                                     <Table.Td>{v}</Table.Td>
                                                   </Table.Tr>
                                                 ))}

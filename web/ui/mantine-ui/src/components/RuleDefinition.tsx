@@ -5,6 +5,7 @@ import {
   Card,
   Group,
   rem,
+  Table,
   Tooltip,
   useComputedColorScheme,
 } from "@mantine/core";
