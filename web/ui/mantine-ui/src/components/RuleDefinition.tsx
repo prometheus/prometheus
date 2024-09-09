@@ -94,20 +94,20 @@ const RuleDefinition: FC<{ rule: Rule }> = ({ rule }) => {
           <LabelBadges labels={rule.labels} />
         </Box>
       )}
-      {/* {Object.keys(r.annotations).length > 0 && (
-    <Group mt="md" gap="xs">
-      {Object.entries(r.annotations).map(([k, v]) => (
-        <Badge
-          variant="light"
-          color="orange.9"
-          styles={{ label: { textTransform: "none" } }}
-          key={k}
-        >
-          {k}: {v}
-        </Badge>
-      ))}
-    </Group>
-  )} */}
+      {rule.type === "alerting" && Object.keys(rule.annotations).length > 0 && (
+        <Table mt="lg" fz="sm">
+          <Table.Tbody>
+            {Object.entries(rule.annotations).map(([k, v]) => (
+              <Table.Tr key={k}>
+                <Table.Th c="light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-4))">
+                  {k}
+                </Table.Th>
+                <Table.Td>{v}</Table.Td>
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </Table>
+      )}
     </>
   );
 };
