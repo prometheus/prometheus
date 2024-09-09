@@ -31,7 +31,7 @@ import (
 )
 
 type ActiveQueryTracker struct {
-	mmappedFile    []byte
+	mmappedFile   []byte
 	getNextIndex  chan int
 	logger        log.Logger
 	closer        io.Closer
@@ -148,7 +148,7 @@ func NewActiveQueryTracker(localStoragePath string, maxConcurrent int, logger lo
 
 	copy(fileAsBytes, "[")
 	activeQueryTracker := ActiveQueryTracker{
-		mmappedFile:    fileAsBytes,
+		mmappedFile:   fileAsBytes,
 		closer:        closer,
 		getNextIndex:  make(chan int, maxConcurrent),
 		logger:        logger,

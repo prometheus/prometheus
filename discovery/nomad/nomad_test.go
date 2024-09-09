@@ -72,7 +72,7 @@ func (s *NomadSDTestSuite) SetupTest(t *testing.T) {
 	s.Mock.Setup()
 
 	s.Mock.HandleServicesList()
-	s.Mock.HandleServiceHasHiccupsGet()
+	s.Mock.HandleServiceHashiCupsGet()
 }
 
 func (m *SDMock) HandleServicesList() {
@@ -86,7 +86,7 @@ func (m *SDMock) HandleServicesList() {
 				"Namespace": "default",
 				"Services": [
 				{
-					"ServiceName": "hashiccups",
+					"ServiceName": "hashicups",
 					"Tags": [
 					"metrics"
 					]
@@ -98,16 +98,16 @@ func (m *SDMock) HandleServicesList() {
 	})
 }
 
-func (m *SDMock) HandleServiceHasHiccupsGet() {
-	m.Mux.HandleFunc("/v1/service/hashiccups", func(w http.ResponseWriter, r *http.Request) {
+func (m *SDMock) HandleServiceHashiCupsGet() {
+	m.Mux.HandleFunc("/v1/service/hashicups", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 
 		fmt.Fprint(w, `
 		[
 			{
-				"ID": "_nomad-task-6a1d5f0a-7362-3f5d-9baf-5ed438918e50-group-hashiccups-hashiccups-hashiccups_ui",
-				"ServiceName": "hashiccups",
+				"ID": "_nomad-task-6a1d5f0a-7362-3f5d-9baf-5ed438918e50-group-hashicups-hashicups-hashicups_ui",
+				"ServiceName": "hashicups",
 				"Namespace": "default",
 				"NodeID": "d92fdc3c-9c2b-298a-e8f4-c33f3a449f09",
 				"Datacenter": "dc1",
@@ -179,9 +179,9 @@ func TestNomadSDRefresh(t *testing.T) {
 		"__meta_nomad_dc":              model.LabelValue("dc1"),
 		"__meta_nomad_namespace":       model.LabelValue("default"),
 		"__meta_nomad_node_id":         model.LabelValue("d92fdc3c-9c2b-298a-e8f4-c33f3a449f09"),
-		"__meta_nomad_service":         model.LabelValue("hashiccups"),
+		"__meta_nomad_service":         model.LabelValue("hashicups"),
 		"__meta_nomad_service_address": model.LabelValue("127.0.0.1"),
-		"__meta_nomad_service_id":      model.LabelValue("_nomad-task-6a1d5f0a-7362-3f5d-9baf-5ed438918e50-group-hashiccups-hashiccups-hashiccups_ui"),
+		"__meta_nomad_service_id":      model.LabelValue("_nomad-task-6a1d5f0a-7362-3f5d-9baf-5ed438918e50-group-hashicups-hashicups-hashicups_ui"),
 		"__meta_nomad_service_port":    model.LabelValue("30456"),
 		"__meta_nomad_tags":            model.LabelValue(",metrics,"),
 	}

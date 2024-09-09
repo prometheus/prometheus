@@ -335,7 +335,7 @@ func validateOptions(opts *Options) *Options {
 		opts.WALCompression = wlog.CompressionNone
 	}
 
-	// Revert StripeSize to DefaultStripSize if StripSize is either 0 or not a power of 2.
+	// Revert StripeSize to DefaultStripeSize if StripeSize is either 0 or not a power of 2.
 	if opts.StripeSize <= 0 || ((opts.StripeSize & (opts.StripeSize - 1)) != 0) {
 		opts.StripeSize = tsdb.DefaultStripeSize
 	}

@@ -26,7 +26,7 @@ import (
 func TestQueryLogging(t *testing.T) {
 	fileAsBytes := make([]byte, 4096)
 	queryLogger := ActiveQueryTracker{
-		mmappedFile:   fileAsBytes,
+		mmappedFile:  fileAsBytes,
 		logger:       nil,
 		getNextIndex: make(chan int, 4),
 	}
@@ -70,7 +70,7 @@ func TestQueryLogging(t *testing.T) {
 func TestIndexReuse(t *testing.T) {
 	queryBytes := make([]byte, 1+3*entrySize)
 	queryLogger := ActiveQueryTracker{
-		mmappedFile:   queryBytes,
+		mmappedFile:  queryBytes,
 		logger:       nil,
 		getNextIndex: make(chan int, 3),
 	}
