@@ -3507,9 +3507,9 @@ func TestQueryOOOHeadDuringTruncate(t *testing.T) {
 			require.False(t, ss.Next()) // One series.
 			it := s.Iterator(nil)
 			require.NotEqual(t, chunkenc.ValNone, it.Next()) // Has some data.
-			require.Equal(t, int64(minT), it.AtT())          // It is an in-order sample.
+			require.Equal(t, minT, it.AtT())                 // It is an in-order sample.
 			require.NotEqual(t, chunkenc.ValNone, it.Next()) // Has some data.
-			require.Equal(t, int64(minT+50), it.AtT())       // it is an out-of-order sample.
+			require.Equal(t, minT+50, it.AtT())              // it is an out-of-order sample.
 			require.NoError(t, it.Err())
 		},
 	)
@@ -3534,9 +3534,9 @@ func TestChunkQueryOOOHeadDuringTruncate(t *testing.T) {
 			// Samples
 			it := meta.Chunk.Iterator(nil)
 			require.NotEqual(t, chunkenc.ValNone, it.Next()) // Has some data.
-			require.Equal(t, int64(minT), it.AtT())          // It is an in-order sample.
+			require.Equal(t, minT, it.AtT())                 // It is an in-order sample.
 			require.NotEqual(t, chunkenc.ValNone, it.Next()) // Has some data.
-			require.Equal(t, int64(minT+50), it.AtT())       // it is an out-of-order sample.
+			require.Equal(t, minT+50, it.AtT())              // it is an out-of-order sample.
 			require.NoError(t, it.Err())
 		},
 	)
