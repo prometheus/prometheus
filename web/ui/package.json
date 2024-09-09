@@ -6,7 +6,7 @@
   "scripts": {
     "build": "bash build_ui.sh --all",
     "build:module": "bash build_ui.sh --build-module",
-    "start": "npm run start -w app",
+    "start": "npm run start -w mantine-ui",
     "test": "npm run test --workspaces",
     "lint": "npm run lint --workspaces"
   },
