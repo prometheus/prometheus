@@ -3114,18 +3114,7 @@ func TestScrapeReportLimit(t *testing.T) {
 		ScrapeTimeout:  model.Duration(100 * time.Millisecond),
 	}
 
-	var (
-		scrapes      int
-		scrapedTwice = make(chan bool)
-	)
-
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "metric_a 44\nmetric_b 44\nmetric_c 44\nmetric_d 44\n")
-		scrapes++
-		if scrapes == 2 {
-			close(scrapedTwice)
-		}
-	}))
+	ts, scrapedTwice := newScrapableServer("metric_a 44\nmetric_b 44\nmetric_c 44\nmetric_d 44\n")
 	defer ts.Close()
 
 	sp, err := newScrapePool(cfg, s, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
@@ -3166,6 +3155,52 @@ func TestScrapeReportLimit(t *testing.T) {
 	}
 
 	require.True(t, found)
+}
+
+func TestScrapeUTF8(t *testing.T) {
+	s := teststorage.New(t)
+	defer s.Close()
+	model.NameValidationScheme = model.UTF8Validation
+	t.Cleanup(func() { model.NameValidationScheme = model.LegacyValidation })
+
+	cfg := &config.ScrapeConfig{
+		JobName:                    "test",
+		Scheme:                     "http",
+		ScrapeInterval:             model.Duration(100 * time.Millisecond),
+		ScrapeTimeout:              model.Duration(100 * time.Millisecond),
+		MetricNameValidationScheme: config.UTF8ValidationConfig,
+	}
+	ts, scrapedTwice := newScrapableServer("{\"with.dots\"} 42\n")
+	defer ts.Close()
+
+	sp, err := newScrapePool(cfg, s, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
+	require.NoError(t, err)
+	defer sp.stop()
+
+	testURL, err := url.Parse(ts.URL)
+	require.NoError(t, err)
+	sp.Sync([]*targetgroup.Group{
+		{
+			Targets: []model.LabelSet{{model.AddressLabel: model.LabelValue(testURL.Host)}},
+		},
+	})
+
+	select {
+	case <-time.After(5 * time.Second):
+		t.Fatalf("target was not scraped twice")
+	case <-scrapedTwice:
+		// If the target has been scraped twice, report samples from the first
+		// scrape have been inserted in the database.
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	q, err := s.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
+	require.NoError(t, err)
+	defer q.Close()
+	series := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "with.dots"))
+
+	require.True(t, series.Next(), "series not found in tsdb")
 }
 
 func TestScrapeLoopLabelLimit(t *testing.T) {
@@ -3364,16 +3399,7 @@ test_summary_count 199
 	// The expected "quantile" values do not have the trailing ".0".
 	expectedQuantileValues := []string{"0.5", "0.9", "0.95", "0.99", "1"}
 
-	scrapeCount := 0
-	scraped := make(chan bool)
-
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, metricsText)
-		scrapeCount++
-		if scrapeCount > 2 {
-			close(scraped)
-		}
-	}))
+	ts, scrapedTwice := newScrapableServer(metricsText)
 	defer ts.Close()
 
 	sp, err := newScrapePool(config, simpleStorage, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
@@ -3392,7 +3418,7 @@ test_summary_count 199
 	select {
 	case <-time.After(5 * time.Second):
 		t.Fatalf("target was not scraped")
-	case <-scraped:
+	case <-scrapedTwice:
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -3840,4 +3866,17 @@ scrape_configs:
 	for _, h := range histogramSamples {
 		require.Equal(t, expectedSchema, h.Schema)
 	}
+}
+
+func newScrapableServer(scrapeText string) (s *httptest.Server, scrapedTwice chan bool) {
+	var scrapes int
+	scrapedTwice = make(chan bool)
+
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, scrapeText)
+		scrapes++
+		if scrapes == 2 {
+			close(scrapedTwice)
+		}
+	})), scrapedTwice
 }
