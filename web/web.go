@@ -277,8 +277,6 @@ type Options struct {
 	RemoteReadSampleLimit      int
 	RemoteReadConcurrencyLimit int
 	RemoteReadBytesInFrame     int
-	EnableRemoteWriteReceiver  bool
-	EnableOTLPWriteReceiver    bool
 	IsAgent                    bool
 	AppName                    string
 
@@ -338,12 +336,7 @@ func New(logger log.Logger, o *Options) *Handler {
 	factoryAr := func(_ context.Context) api_v1.AlertmanagerRetriever { return h.notifier }
 	FactoryRr := func(_ context.Context) api_v1.RulesRetriever { return h.ruleManager }
 
-	var app storage.Appendable
-	if o.EnableRemoteWriteReceiver || o.EnableOTLPWriteReceiver {
-		app = h.storage
-	}
-
-	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, app, h.exemplarStorage, factorySPr, factoryTr, factoryAr,
+	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, h.storage, h.exemplarStorage, factorySPr, factoryTr, factoryAr,
 		func() config.Config {
 			h.mtx.RLock()
 			defer h.mtx.RUnlock()
@@ -371,9 +364,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		o.Gatherer,
 		o.Registerer,
 		nil,
-		o.EnableRemoteWriteReceiver,
 		o.AcceptRemoteWriteProtoMsgs,
-		o.EnableOTLPWriteReceiver,
 	)
 
 	if o.RoutePrefix != "/" {

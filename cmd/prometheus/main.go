@@ -182,12 +182,6 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 		opts := strings.Split(f, ",")
 		for _, o := range opts {
 			switch o {
-			case "remote-write-receiver":
-				c.web.EnableRemoteWriteReceiver = true
-				level.Warn(logger).Log("msg", "Remote write receiver enabled via feature flag remote-write-receiver. This is DEPRECATED. Use --web.enable-remote-write-receiver.")
-			case "otlp-write-receiver":
-				c.web.EnableOTLPWriteReceiver = true
-				level.Info(logger).Log("msg", "Experimental OTLP write receiver enabled")
 			case "expand-external-labels":
 				c.enableExpandExternalLabels = true
 				level.Info(logger).Log("msg", "Experimental expand-external-labels enabled")
@@ -351,11 +345,6 @@ func main() {
 
 	a.Flag("web.enable-admin-api", "Enable API endpoints for admin control actions.").
 		Default("false").BoolVar(&cfg.web.EnableAdminAPI)
-
-	// TODO(bwplotka): Consider allowing those remote receive flags to be changed in config.
-	// See https://github.com/prometheus/prometheus/issues/14410
-	a.Flag("web.enable-remote-write-receiver", "Enable API endpoint accepting remote write requests.").
-		Default("false").BoolVar(&cfg.web.EnableRemoteWriteReceiver)
 
 	supportedRemoteWriteProtoMsgs := config.RemoteWriteProtoMsgs{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2}
 	a.Flag("web.remote-write-receiver.accepted-protobuf-messages", fmt.Sprintf("List of the remote write protobuf messages to accept when receiving the remote writes. Supported values: %v", supportedRemoteWriteProtoMsgs.String())).

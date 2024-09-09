@@ -248,9 +248,7 @@ func NewAPI(
 	gatherer prometheus.Gatherer,
 	registerer prometheus.Registerer,
 	statsRenderer StatsRenderer,
-	rwEnabled bool,
 	acceptRemoteWriteProtoMsgs []config.RemoteWriteProtoMsg,
-	otlpEnabled bool,
 ) *API {
 	a := &API{
 		QueryEngine:       qe,
@@ -287,16 +285,8 @@ func NewAPI(
 		a.statsRenderer = statsRenderer
 	}
 
-	if ap == nil && (rwEnabled || otlpEnabled) {
-		panic("remote write or otlp write enabled, but no appender passed in.")
-	}
-
-	if rwEnabled {
-		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, acceptRemoteWriteProtoMsgs)
-	}
-	if otlpEnabled {
-		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, ap, configFunc)
-	}
+	a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, acceptRemoteWriteProtoMsgs)
+	a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, ap, configFunc)
 
 	return a
 }
