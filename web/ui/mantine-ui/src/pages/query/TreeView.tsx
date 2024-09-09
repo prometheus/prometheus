@@ -7,8 +7,6 @@ import { Card, CloseButton } from "@mantine/core";
 
 const TreeView: FC<{
   panelIdx: number;
-  // TODO: Do we need retriggerIdx for the tree view AST parsing? Maybe for children!
-  retriggerIdx: number;
   selectedNode: {
     id: string;
     node: ASTNode;

@@ -123,7 +123,6 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
           >
             <TreeView
               panelIdx={idx}
-              retriggerIdx={retriggerIdx}
               selectedNode={selectedNode}
               setSelectedNode={setSelectedNode}
               closeTreeView={() => {

@@ -326,7 +326,6 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                                 }}
                               >
                                 <Table.Td valign="top">
-                                  {/* TODO: Process target URL like in old UI */}
                                   <EndpointLink
                                     endpoint={target.scrapeUrl}
                                     globalUrl={target.globalUrl}

@@ -206,7 +206,7 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
     enableLinter,
     enableQueryHistory,
     queryHistory,
-  ]); // TODO: Make this depend on external settings changes, maybe use dynamic config compartment again.
+  ]); // TODO: Maybe use dynamic config compartment again as in the old UI?
 
   return (
     <Group align="flex-start" wrap="nowrap" gap="xs">
