@@ -22,6 +22,7 @@ import { useDisclosure } from "@mantine/hooks";
 import {
   IconBell,
   IconBellFilled,
+  IconBook,
   IconChevronDown,
   IconChevronRight,
   IconCloudDataConnection,
@@ -307,16 +308,16 @@ function App() {
         </Menu.Dropdown>
       </Menu>
 
-      {/* <Button
+      {<Button
         component="a"
         href="https://prometheus.io/docs/prometheus/latest/getting_started/"
         className={classes.link}
-        leftSection={<IconHelp style={navIconStyle} />}
+        leftSection={<IconBook style={navIconStyle} />}
         target="_blank"
         px={navLinkXPadding}
       >
         Help
-      </Button> */}
+      </Button>}
     </>
   );
 
