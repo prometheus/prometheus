@@ -87,7 +87,8 @@ class QueryableEncodingBimap : public BareBones::SnugComposite::DecodingTable<Fi
     }
   }
 
-  PROMPP_ALWAYS_INLINE static bool is_valid_label(std::string_view value) noexcept { return !value.empty(); }
+  // PROMPP_ALWAYS_INLINE static bool is_valid_label(std::string_view value) noexcept { return !value.empty(); }
+  PROMPP_ALWAYS_INLINE static bool is_valid_label(std::string_view value) noexcept { return !value.empty() && value.find('\0') == std::string_view ::npos; }
 };
 
 }  // namespace series_index
