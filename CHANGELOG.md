@@ -11,8 +11,17 @@ _Please add changes here that are only in the release-3.0 branch. These will be 
 ## unreleased
 
 * [FEATURE] OTLP receiver: Add new option `otlp.promote_resource_attributes`, for any OTel resource attributes that should be promoted to metric labels. #14200
+* [FEATURE] Automatic reloading of the Prometheus configuration file at a specified interval #14769
 * [ENHANCEMENT] OTLP receiver: Warn when encountering exponential histograms with zero count and non-zero sum. #14706
 * [ENHANCEMENT] OTLP receiver: Interrupt translation on context cancellation/timeout. #14612
+* [ENHANCEMENT] Put OM text p.CreatedTimestamp behind feature flag. #14815
+* [ENHANCEMENT] Improve promql traces with more context. #14816
+* [ENHANCEMENT] Move AM discovery page from "Monitoring status" to "Server status". #14875
+* [BUGFIX] Do not re-use spans between histograms. #14771
+* [BUGFIX] Protobuf scraping: reset exemplar position. #14810
+* [BUGFIX] TSDB: fix panic in query during truncation with OOO head. #14831
+* [BUGFIX] TSDB: panic in chunk querier. #14874
+* [BUGFIX] promql.Engine.Close: No-op if nil. #14861
 * [BUGFIX] tsdb/wlog.Watcher.readSegmentForGC: Only count unknown record types against record_decode_failures_total metric. #14042
 
 ## 2.54.1 / 2024-08-27
