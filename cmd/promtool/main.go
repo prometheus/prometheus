@@ -79,9 +79,6 @@ const (
 	lintOptionNone               = "none"
 	checkHealth                  = "/-/healthy"
 	checkReadiness               = "/-/ready"
-
-	// Remove when the lookback delta can be set as a command line flag on PromTool.
-	defaultLookbackDelta = 5 * time.Minute
 )
 
 var lintOptions = []string{lintOptionAll, lintOptionDuplicateRules, lintOptionNone}
@@ -149,6 +146,10 @@ func main() {
 	checkRulesLintFatal := checkRulesCmd.Flag(
 		"lint-fatal",
 		"Make lint errors exit with exit code 3.").Default("false").Bool()
+	checkRulesLintLookbackDelta := checkRulesCmd.Flag(
+		"lint.lookback-delta",
+		"The maximum lookback duration. This config is only used for rules linting checks.",
+	).Default("5m").Duration()
 
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
 	checkMetricsExtended := checkCmd.Flag("extended", "Print extended information related to the cardinality of the metrics.").Bool()
@@ -345,7 +346,7 @@ func main() {
 		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout, noDefaultScrapePort, prometheus.DefaultRegisterer))
 
 	case checkConfigCmd.FullCommand():
-		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newLintConfig(*checkConfigLint, *checkConfigLintFatal), *configFiles...))
+		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newLintConfig(*checkConfigLint, *checkConfigLintFatal, *checkRulesLintLookbackDelta), *configFiles...))
 
 	case checkServerHealthCmd.FullCommand():
 		os.Exit(checkErr(CheckServerStatus(serverURL, checkHealth, httpRoundTripper)))
@@ -357,7 +358,7 @@ func main() {
 		os.Exit(CheckWebConfig(*webConfigFiles...))
 
 	case checkRulesCmd.FullCommand():
-		os.Exit(CheckRules(newLintConfig(*checkRulesLint, *checkRulesLintFatal), *ruleFiles...))
+		os.Exit(CheckRules(newLintConfig(*checkRulesLint, *checkRulesLintFatal, *checkRulesLintLookbackDelta), *ruleFiles...))
 
 	case checkMetricsCmd.FullCommand():
 		os.Exit(CheckMetrics(*checkMetricsExtended))
@@ -455,12 +456,14 @@ type lintConfig struct {
 	duplicateRules     bool
 	longScrapeInterval bool
 	fatal              bool
+	lookbackDelta      model.Duration
 }
 
-func newLintConfig(stringVal string, fatal bool) lintConfig {
+func newLintConfig(stringVal string, fatal bool, lookbackDelta time.Duration) lintConfig {
 	items := strings.Split(stringVal, ",")
 	ls := lintConfig{
-		fatal: fatal,
+		fatal:         fatal,
+		lookbackDelta: model.Duration(lookbackDelta),
 	}
 	for _, setting := range items {
 		switch setting {
@@ -627,7 +630,7 @@ func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool, lintSett
 
 	for _, scfg := range scfgs {
 		if lintSettings.lintLongScrapeInterval() {
-			if scfg.ScrapeInterval >= model.Duration(defaultLookbackDelta) {
+			if scfg.ScrapeInterval >= lintSettings.lookbackDelta {
 				errMessage := fmt.Sprintf("Long Scrape Interval found. Data point will be marked as stale. Job: %s. Interval: %s", scfg.JobName, scfg.ScrapeInterval.String())
 				return nil, fmt.Errorf("%w %s", errLint, errMessage)
 			}
