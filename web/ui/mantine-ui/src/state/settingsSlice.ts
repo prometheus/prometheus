@@ -4,6 +4,7 @@ import { initializeFromLocalStorage } from "./initializeFromLocalStorage";
 
 interface Settings {
   consolesLink: string | null;
+  lookbackDelta: string,
   agentMode: boolean;
   ready: boolean;
   pathPrefix: string;
@@ -19,6 +20,7 @@ interface Settings {
 declare const GLOBAL_CONSOLES_LINK: string;
 declare const GLOBAL_AGENT_MODE: string;
 declare const GLOBAL_READY: string;
+declare const GLOBAL_LOOKBACKDELTA: string;
 
 export const localStorageKeyUseLocalTime = "settings.useLocalTime";
 export const localStorageKeyEnableQueryHistory = "settings.enableQueryHistory";
@@ -37,6 +39,11 @@ export const initialState: Settings = {
       : GLOBAL_CONSOLES_LINK,
   agentMode: GLOBAL_AGENT_MODE === "true",
   ready: GLOBAL_READY === "true",
+  lookbackDelta:
+    GLOBAL_LOOKBACKDELTA === "LOOKBACKDELTA_PLACEHOLDER" ||
+    GLOBAL_LOOKBACKDELTA === null
+      ? ""
+      : GLOBAL_LOOKBACKDELTA,
   pathPrefix: "",
   useLocalTime: initializeFromLocalStorage<boolean>(
     localStorageKeyUseLocalTime,

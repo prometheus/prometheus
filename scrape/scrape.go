@@ -524,6 +524,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 				interval:                 interval,
 				timeout:                  timeout,
 				scrapeClassicHistograms:  scrapeClassicHistograms,
+				validationScheme:         validationScheme,
 			})
 			if err != nil {
 				l.setForcedError(err)
