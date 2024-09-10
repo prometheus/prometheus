@@ -33,9 +33,9 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
-	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/discovery"
+	"github.com/prometheus/prometheus/util/yamlutil"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -608,7 +608,7 @@ alerting:
   alertmanagers:
   - static_configs:
 `
-	err := yaml.UnmarshalStrict([]byte(s), cfg)
+	err := yamlutil.UnmarshalStrict([]byte(s), cfg)
 	require.NoError(t, err, "Unable to load YAML config.")
 	require.Len(t, cfg.AlertingConfig.AlertmanagerConfigs, 1)
 
@@ -659,7 +659,7 @@ alerting:
         regex: 'alertmanager:9093'
         action: drop
 `
-	err := yaml.UnmarshalStrict([]byte(s), cfg)
+	err := yamlutil.UnmarshalStrict([]byte(s), cfg)
 	require.NoError(t, err, "Unable to load YAML config.")
 	require.Len(t, cfg.AlertingConfig.AlertmanagerConfigs, 1)
 

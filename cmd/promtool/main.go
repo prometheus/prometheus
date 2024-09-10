@@ -41,7 +41,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 	"github.com/prometheus/exporter-toolkit/web"
-	"gopkg.in/yaml.v2"
 
 	dto "github.com/prometheus/client_model/go"
 	promconfig "github.com/prometheus/common/config"
@@ -60,6 +59,7 @@ import (
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/util/documentcli"
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 const (
@@ -741,7 +741,7 @@ func checkSDFile(filename string) ([]*targetgroup.Group, error) {
 			return nil, err
 		}
 	case ".yml", ".yaml":
-		if err := yaml.UnmarshalStrict(content, &targetGroups); err != nil {
+		if err := yamlutil.UnmarshalStrict(content, &targetGroups); err != nil {
 			return nil, err
 		}
 	default:
