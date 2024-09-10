@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"go.uber.org/atomic"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"

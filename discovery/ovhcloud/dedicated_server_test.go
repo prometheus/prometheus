@@ -24,7 +24,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v2"
+
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 func TestOvhcloudDedicatedServerRefresh(t *testing.T) {
@@ -40,7 +41,7 @@ application_key: %s
 application_secret: %s
 consumer_key: %s`, mock.URL, ovhcloudApplicationKeyTest, ovhcloudApplicationSecretTest, ovhcloudConsumerKeyTest)
 
-	require.NoError(t, yaml.UnmarshalStrict([]byte(cfgString), &cfg))
+	require.NoError(t, yamlutil.UnmarshalStrict([]byte(cfgString), &cfg))
 	d, err := newRefresher(&cfg, log.NewNopLogger())
 	require.NoError(t, err)
 	ctx := context.Background()

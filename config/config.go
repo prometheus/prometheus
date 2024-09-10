@@ -14,6 +14,7 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"net/url"
@@ -31,13 +32,14 @@ import (
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/sigv4"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/storage/remote/azuread"
 	"github.com/prometheus/prometheus/storage/remote/googleiam"
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 var (
@@ -80,7 +82,7 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 	// point as well.
 	*cfg = DefaultConfig
 
-	err := yaml.UnmarshalStrict([]byte(s), cfg)
+	err := yamlutil.UnmarshalStrict([]byte(s), cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -278,11 +280,16 @@ func (c *Config) SetDirectory(dir string) {
 }
 
 func (c Config) String() string {
-	b, err := yaml.Marshal(c)
+	var buf bytes.Buffer
+	node := &yaml.Node{}
+	err := node.Encode(c)
+	yamlEncoder := yaml.NewEncoder(&buf)
+	yamlEncoder.SetIndent(2)
+	err = yamlEncoder.Encode(node)
 	if err != nil {
 		return fmt.Sprintf("<error creating config string: %s>", err)
 	}
-	return string(b)
+	return buf.String()
 }
 
 // GetScrapeConfigs returns the scrape configurations.
@@ -315,7 +322,7 @@ func (c *Config) GetScrapeConfigs() ([]*ScrapeConfig, error) {
 			if err != nil {
 				return nil, fileErr(filename, err)
 			}
-			err = yaml.UnmarshalStrict(content, &cfg)
+			err = yamlutil.UnmarshalStrict(content, &cfg)
 			if err != nil {
 				return nil, fileErr(filename, err)
 			}

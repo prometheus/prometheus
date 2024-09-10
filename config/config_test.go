@@ -29,7 +29,7 @@ import (
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/aws"
@@ -60,6 +60,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 func mustParseURL(u string) *config.URL {
@@ -1503,7 +1504,7 @@ func TestYAMLRoundtrip(t *testing.T) {
 
 	require.NoError(t, err)
 	got := &Config{}
-	require.NoError(t, yaml.UnmarshalStrict(out, got))
+	require.NoError(t, yamlutil.UnmarshalStrict(out, got))
 
 	require.Equal(t, want, got)
 }
@@ -1516,7 +1517,7 @@ func TestRemoteWriteRetryOnRateLimit(t *testing.T) {
 
 	require.NoError(t, err)
 	got := &Config{}
-	require.NoError(t, yaml.UnmarshalStrict(out, got))
+	require.NoError(t, yamlutil.UnmarshalStrict(out, got))
 
 	require.True(t, got.RemoteWriteConfigs[0].QueueConfig.RetryOnRateLimit)
 	require.False(t, got.RemoteWriteConfigs[1].QueueConfig.RetryOnRateLimit)
@@ -1530,7 +1531,7 @@ func TestOTLPSanitizeResourceAttributes(t *testing.T) {
 		out, err := yaml.Marshal(want)
 		require.NoError(t, err)
 		var got Config
-		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+		require.NoError(t, yamlutil.UnmarshalStrict(out, &got))
 
 		require.Equal(t, []string{"k8s.cluster.name", "k8s.job.name", "k8s.namespace.name"}, got.OTLPConfig.PromoteResourceAttributes)
 	})
@@ -2104,7 +2105,7 @@ func TestBadStaticConfigsYML(t *testing.T) {
 	content, err := os.ReadFile("testdata/static_config.bad.yml")
 	require.NoError(t, err)
 	var tg targetgroup.Group
-	err = yaml.UnmarshalStrict(content, &tg)
+	err = yamlutil.UnmarshalStrict(content, &tg)
 	require.Error(t, err)
 }
 
@@ -2341,7 +2342,7 @@ func TestScrapeConfigDisableCompression(t *testing.T) {
 
 	require.NoError(t, err)
 	got := &Config{}
-	require.NoError(t, yaml.UnmarshalStrict(out, got))
+	require.NoError(t, yamlutil.UnmarshalStrict(out, got))
 
 	require.False(t, got.ScrapeConfigs[0].EnableCompression)
 }
@@ -2388,7 +2389,7 @@ func TestScrapeConfigNameValidationSettings(t *testing.T) {
 
 			require.NoError(t, err)
 			got := &Config{}
-			require.NoError(t, yaml.UnmarshalStrict(out, got))
+			require.NoError(t, yamlutil.UnmarshalStrict(out, got))
 
 			require.Equal(t, tc.expectScheme, got.ScrapeConfigs[0].MetricNameValidationScheme)
 		})

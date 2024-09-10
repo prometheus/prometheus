@@ -19,10 +19,11 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 func TestRelabel(t *testing.T) {
@@ -840,7 +841,7 @@ func BenchmarkRelabel(b *testing.B) {
 		},
 	}
 	for i := range tests {
-		err := yaml.UnmarshalStrict([]byte(tests[i].config), &tests[i].cfgs)
+		err := yamlutil.UnmarshalStrict([]byte(tests[i].config), &tests[i].cfgs)
 		require.NoError(b, err)
 	}
 	for _, tt := range tests {

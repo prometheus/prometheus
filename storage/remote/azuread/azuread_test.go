@@ -28,7 +28,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"gopkg.in/yaml.v2"
+
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 const (
@@ -131,7 +132,7 @@ func loadAzureAdConfig(filename string) (*AzureADConfig, error) {
 		return nil, err
 	}
 	cfg := AzureADConfig{}
-	if err = yaml.UnmarshalStrict(content, &cfg); err != nil {
+	if err = yamlutil.UnmarshalStrict(content, &cfg); err != nil {
 		return nil, err
 	}
 	return &cfg, nil

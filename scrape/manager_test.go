@@ -33,7 +33,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/timestamppb"
-	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
@@ -43,6 +42,7 @@ import (
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/util/runutil"
 	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 func TestPopulateLabels(t *testing.T) {
@@ -461,7 +461,7 @@ func loadConfiguration(t testing.TB, c string) *config.Config {
 	t.Helper()
 
 	cfg := &config.Config{}
-	err := yaml.UnmarshalStrict([]byte(c), cfg)
+	err := yamlutil.UnmarshalStrict([]byte(c), cfg)
 	require.NoError(t, err, "Unable to load YAML config.")
 
 	return cfg
@@ -621,7 +621,7 @@ global:
 `
 
 		cfg := &config.Config{}
-		err := yaml.UnmarshalStrict([]byte(cfgText), cfg)
+		err := yamlutil.UnmarshalStrict([]byte(cfgText), cfg)
 		require.NoError(t, err, "Unable to load YAML config cfgYaml.")
 
 		return cfg
