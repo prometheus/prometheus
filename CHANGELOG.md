@@ -22,10 +22,13 @@ As is traditional with a beta release, we do **not** recommend users install 3.0
 * [ENHANCEMENT] OTLP receiver: Warn when encountering exponential histograms with zero count and non-zero sum. #14706
 * [ENHANCEMENT] OTLP receiver: Interrupt translation on context cancellation/timeout. #14612
 * [ENHANCEMENT] Scrape: Only parse created timestamp if `created-timestamp-zero-ingestion` feature flag is enabled. This is as a lot of memory is used when parsing the created timestamp in the OM text format. #14815
+* [ENHANCEMENT] Scrape: Add support for logging scrape failures to a specified file. #14734
 * [ENHANCEMENT] Remote Read client: Enable streaming remote read if the server supports it. #11379
 * [ENHANCEMENT] PromQL: Delay deletion of `__name__` label to the end of the query evaluation. This is **experimental** and enabled under the feature-flag `promql-delayed-name-removal`. #14477
 * [ENHANCEMENT] Move AM discovery page from "Monitoring status" to "Server status". #14875
 * [ENHANCEMENT] Tracing: Improve PromQL tracing, including showing the operation performed for aggregates, operators, and calls.#14816
+* [ENAHNCEMENT] Add support for multiple listening addresses. #14665
+* [ENAHNCEMENT] Add the ability to set custom HTTP headers. This was already present but was previously undocumented and buggy. #14817
 * [BUGFIX] TSDB: Fix shard initialization after WAL repair. #14731
 * [BUGFIX] UTF-8: Ensure correct validation when legacy mode turned on. #14736
 * [BUGFIX] SD: Make discovery manager notify consumers of dropped targets for still defined jobs. #13147
