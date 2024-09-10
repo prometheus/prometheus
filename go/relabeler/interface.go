@@ -15,6 +15,7 @@ type DataStorage interface {
 	Raw() *cppbridge.HeadDataStorage
 	MergeOutOfOrderChunks()
 	Query(query cppbridge.HeadDataStorageQuery) *cppbridge.HeadDataStorageSerializedChunks
+	AllocatedMemory() uint64
 }
 
 type LSS interface {
@@ -42,7 +43,8 @@ type Shard interface {
 type ShardFn func(shard Shard) error
 
 type Head interface {
-	ReferenceCounter() *ReferenceCounter
+	Generation() uint64
+	ReferenceCounter() ReferenceCounter
 	Append(ctx context.Context, incomingData *IncomingData, metricLimits *cppbridge.MetricLimits, sourceStates *SourceStates, staleNansTS int64, relabelerID string) ([][]*cppbridge.InnerSeries, error)
 	ForEachShard(fn ShardFn) error
 	OnShard(shardID uint16, fn ShardFn) error
@@ -96,16 +98,43 @@ func (d *DestructibleIncomingData) Destroy() {
 	d.data.Destroy()
 }
 
-type ReferenceCounter struct {
+type ReferenceCounter interface {
+	Add(delta int64) int64
+	Value() int64
+}
+
+type AtomicReferenceCounter struct {
 	value atomic.Int64
 }
 
-func (rc *ReferenceCounter) Add(delta int64) int64 {
+func (rc *AtomicReferenceCounter) Add(delta int64) int64 {
 	return rc.value.Add(delta)
 }
 
-func (rc *ReferenceCounter) Value() int64 {
+func (rc *AtomicReferenceCounter) Value() int64 {
 	value := rc.value.Load()
-	fmt.Println("ref count: ", value)
+	return value
+}
+
+type LoggedAtomicReferenceCounter struct {
+	prefix string
+	value  atomic.Int64
+}
+
+func NewLoggedAtomicReferenceCounter(prefix string) *LoggedAtomicReferenceCounter {
+	return &LoggedAtomicReferenceCounter{
+		prefix: prefix,
+	}
+}
+
+func (rc *LoggedAtomicReferenceCounter) Add(delta int64) int64 {
+	newValue := rc.value.Add(delta)
+	fmt.Println(rc.prefix, ": Reference Counter: add: ", delta, ", value: ", newValue)
+	return newValue
+}
+
+func (rc *LoggedAtomicReferenceCounter) Value() int64 {
+	value := rc.value.Load()
+	fmt.Println(rc.prefix, ": Reference Counter: value: ", value)
 	return value
 }

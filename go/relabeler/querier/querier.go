@@ -11,28 +11,38 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"sort"
 	"strings"
-	"sync"
+	"time"
 )
 
-type Querier struct {
-	mint   int64
-	maxt   int64
-	head   relabeler.Head
-	closer func() error
+type Deduplicator interface {
+	Add(shard uint16, values ...string)
+	Values() []string
 }
 
-func NewQuerier(head relabeler.Head, mint, maxt int64, closer func() error) *Querier {
+type DeduplicatorFactory interface {
+	Deduplicator(numberOfShards uint16) Deduplicator
+}
+
+type Querier struct {
+	mint                int64
+	maxt                int64
+	head                relabeler.Head
+	deduplicatorFactory DeduplicatorFactory
+	closer              func() error
+}
+
+func NewQuerier(head relabeler.Head, deduplicatorFactory DeduplicatorFactory, mint, maxt int64, closer func() error) *Querier {
 	return &Querier{
-		mint:   mint,
-		maxt:   maxt,
-		head:   head,
-		closer: closer,
+		mint:                mint,
+		maxt:                maxt,
+		head:                head,
+		deduplicatorFactory: deduplicatorFactory,
+		closer:              closer,
 	}
 }
 
 func (q *Querier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	mtx := &sync.Mutex{}
-	dedup := make(map[string]struct{})
+	dedup := q.deduplicatorFactory.Deduplicator(q.head.NumberOfShards())
 	convertedMatchers := convertPrometheusMatchersToOpcoreMatchers(matchers...)
 
 	err := q.head.ForEachShard(func(shard relabeler.Shard) error {
@@ -40,15 +50,11 @@ func (q *Querier) LabelValues(ctx context.Context, name string, matchers ...*lab
 		if queryLabelValuesResult.Status() != cppbridge.LSSQueryStatusMatch {
 			return fmt.Errorf("no matches on shard: %d", shard.ShardID())
 		}
-		mtx.Lock()
-		defer mtx.Unlock()
-		for _, labelValue := range queryLabelValuesResult.Values() {
-			if _, ok := dedup[labelValue]; !ok {
-				dedup[strings.Clone(labelValue)] = struct{}{}
-			}
-		}
+
+		dedup.Add(shard.ShardID(), queryLabelValuesResult.Values()...)
 		return nil
 	})
+
 	anns := *annotations.New()
 	if err != nil {
 		anns.Add(err)
@@ -60,18 +66,14 @@ func (q *Querier) LabelValues(ctx context.Context, name string, matchers ...*lab
 	default:
 	}
 
-	labelValues := make([]string, 0, len(dedup))
-	for value := range dedup {
-		labelValues = append(labelValues, value)
-	}
+	labelValues := dedup.Values()
 	sort.Strings(labelValues)
 
 	return labelValues, anns, nil
 }
 
 func (q *Querier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	mtx := &sync.Mutex{}
-	dedup := make(map[string]struct{})
+	dedup := q.deduplicatorFactory.Deduplicator(q.head.NumberOfShards())
 	convertedMatchers := convertPrometheusMatchersToOpcoreMatchers(matchers...)
 
 	err := q.head.ForEachShard(func(shard relabeler.Shard) error {
@@ -80,14 +82,7 @@ func (q *Querier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) (
 			return fmt.Errorf("no matches on shard: %d", shard.ShardID())
 		}
 
-		mtx.Lock()
-		defer mtx.Unlock()
-		for _, labelName := range queryLabelNamesResult.Names() {
-			if _, ok := dedup[labelName]; !ok {
-				dedup[strings.Clone(labelName)] = struct{}{}
-			}
-		}
-
+		dedup.Add(shard.ShardID(), queryLabelNamesResult.Names()...)
 		return nil
 	})
 
@@ -102,16 +97,17 @@ func (q *Querier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) (
 	default:
 	}
 
-	labelNames := make([]string, 0, len(dedup))
-	for label := range dedup {
-		labelNames = append(labelNames, label)
-	}
+	labelNames := dedup.Values()
 	sort.Strings(labelNames)
 
 	return labelNames, anns, nil
 }
 
 func (q *Querier) Close() error {
+	defer func() {
+		fmt.Println("QUERIER: HEAD {", q.head.Generation(), "} Closed")
+	}()
+
 	if q.closer != nil {
 		return q.closer()
 	}
@@ -120,6 +116,8 @@ func (q *Querier) Close() error {
 }
 
 func (q *Querier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	start := time.Now()
+	fmt.Println("QUERIER: HEAD{", q.head.Generation(), "} SELECT")
 	seriesSets := make([]storage.SeriesSet, q.head.NumberOfShards())
 	convertedMatchers := convertPrometheusMatchersToOpcoreMatchers(matchers...)
 
@@ -131,7 +129,7 @@ func (q *Querier) Select(ctx context.Context, sortSeries bool, hints *storage.Se
 			return fmt.Errorf("failed to query from shard: %d, query status: %d", shard.ShardID(), lssQueryResult.Status())
 		}
 
-		fmt.Printf("shard: %d, queried label sets count: %d\n", shard.ShardID(), len(lssQueryResult.Matches()))
+		fmt.Println("QUERIER: HEAD{", q.head.Generation(), "} SELECT shard: ", shard.ShardID(), ", queried label sets count: ", len(lssQueryResult.Matches()))
 
 		getLabelSetsResult := shard.LSS().GetLabelSets(lssQueryResult.Matches())
 		serializedChunks := shard.DataStorage().Query(cppbridge.HeadDataStorageQuery{
@@ -145,7 +143,7 @@ func (q *Querier) Select(ctx context.Context, sortSeries bool, hints *storage.Se
 			return fmt.Errorf("failed to query shard: %d, empty", shard.ShardID())
 		}
 
-		fmt.Printf("shard: %d, queried chunks: %d\n", shard.ShardID(), len(serializedChunks.ChunkMetadataList()))
+		fmt.Println("QUERIER: HEAD{", q.head.Generation(), "} SELECT shard: ", shard.ShardID(), ", queried chunks: ", len(serializedChunks.ChunkMetadataList()))
 
 		chunksBySeriesID := make(map[uint32][]cppbridge.HeadDataStorageSerializedChunkMetadata)
 		for _, chunkMetadata := range serializedChunks.ChunkMetadataList() {
@@ -162,6 +160,7 @@ func (q *Querier) Select(ctx context.Context, sortSeries bool, hints *storage.Se
 
 		localSeriesSets := make([]*Series, 0, len(chunksBySeriesID))
 		deserializer := cppbridge.NewHeadDataStorageDeserializer(serializedChunks)
+		fmt.Println("QUERIER: HEAD{", q.head.Generation(), "} Select Deserializer created")
 		for _, seriesID := range lssQueryResult.Matches() {
 			chunksMetadata, ok := chunksBySeriesID[seriesID]
 			if !ok {
@@ -187,6 +186,7 @@ func (q *Querier) Select(ctx context.Context, sortSeries bool, hints *storage.Se
 		// todo: error
 	}
 
+	fmt.Println("QUERIER: HEAD{", q.head.Generation(), "} Select finished, duration: ", time.Since(start))
 	return storage.NewMergeSeriesSet(seriesSets, storage.ChainedSeriesMerge)
 }
 

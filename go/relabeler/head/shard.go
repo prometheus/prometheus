@@ -38,6 +38,10 @@ func (ds *DataStorage) Query(query cppbridge.HeadDataStorageQuery) *cppbridge.He
 	return ds.dataStorage.Query(query)
 }
 
+func (ds *DataStorage) AllocatedMemory() uint64 {
+	return ds.dataStorage.AllocatedMemory()
+}
+
 // reshards changes the number of shards to the required amount.
 func (h *Head) reconfigure(
 	inputRelabelerConfigs []*config.InputRelabelerConfig,

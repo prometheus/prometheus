@@ -1,17 +1,15 @@
 package appender
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"github.com/prometheus/prometheus/pp/go/relabeler"
 	"github.com/prometheus/prometheus/pp/go/relabeler/block"
 	"github.com/prometheus/prometheus/pp/go/relabeler/querier"
 	"github.com/prometheus/prometheus/pp/go/util"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/annotations"
+	"strings"
 	"sync"
+	"time"
 )
 
 const (
@@ -89,8 +87,14 @@ func (qs *QueryableStorage) write() {
 	}
 	qs.mtx.Unlock()
 
-	fmt.Println("QUERYABLE STORAGE: write: selected ", len(heads), " heads")
+	var headList []string
 	for _, head := range heads {
+		headList = append(headList, fmt.Sprintf("%d", head.Generation()))
+	}
+
+	fmt.Println("QUERYABLE STORAGE: write: selected {", strings.Join(headList, ", "), "} heads")
+	for _, head := range heads {
+		start := time.Now()
 		err := head.ForEachShard(func(shard relabeler.Shard) error {
 			return qs.blockWriter.Write(relabeler.NewBlock(shard.LSS().Raw(), shard.DataStorage().Raw()))
 		})
@@ -100,6 +104,7 @@ func (qs *QueryableStorage) write() {
 			continue
 		}
 		head.ReferenceCounter().Add(PersistedHeadValue)
+		fmt.Println("QUERYABLE STORAGE: head {", head.Generation(), "} persisted, duration: ", time.Since(start).Nanoseconds(), "ms")
 	}
 
 	qs.shrink()
@@ -109,6 +114,7 @@ func (qs *QueryableStorage) write() {
 func (qs *QueryableStorage) Add(head relabeler.Head) {
 	qs.mtx.Lock()
 	qs.heads = append(qs.heads, head)
+	fmt.Println("QUERYABLE STORAGE: head {", head.Generation(), "} added")
 	qs.mtx.Unlock()
 
 	select {
@@ -126,13 +132,20 @@ func (qs *QueryableStorage) WriteMetrics() {
 	qs.mtx.Lock()
 	var heads []relabeler.Head
 	for _, head := range qs.heads {
+		if head.ReferenceCounter().Add(1) < 0 {
+			head.ReferenceCounter().Add(-1)
+			continue
+		}
 		heads = append(heads, head)
 	}
-	defer qs.mtx.Unlock()
+	qs.mtx.Unlock()
 
 	for _, head := range heads {
 		head.WriteMetrics()
+		head.ReferenceCounter().Add(-1)
 	}
+
+	qs.shrink()
 }
 
 // Querier - storage.Queryable interface implementation.
@@ -147,25 +160,33 @@ func (qs *QueryableStorage) Querier(mint, maxt int64) (storage.Querier, error) {
 		}
 		heads = append(heads, head)
 	}
-
-	defer qs.mtx.Unlock()
+	qs.mtx.Unlock()
 
 	var queriers []storage.Querier
 	for _, head := range heads {
 		h := head
-		queriers = append(queriers, querier.NewQuerier(h, mint, maxt, func() error {
-			h.ReferenceCounter().Add(-1)
-			return nil
-		}))
+		queriers = append(
+			queriers,
+			querier.NewQuerier(
+				h,
+				querier.NoOpShardedDeduplicatorFactory(),
+				mint,
+				maxt,
+				func() error {
+					h.ReferenceCounter().Add(-1)
+					return nil
+				},
+			),
+		)
 	}
 
-	q := &storageQuerier{
-		querier: querier.NewMultiQuerier(queriers...),
-		closer: func() error {
+	q := querier.NewMultiQuerier(
+		queriers,
+		func() error {
 			qs.shrink()
 			return nil
 		},
-	}
+	)
 
 	return q, nil
 }
@@ -176,9 +197,10 @@ func (qs *QueryableStorage) shrink() {
 
 	var heads []relabeler.Head
 	for _, head := range qs.heads {
+		fmt.Println("QUERYABLE STORAGE: SHRINK: HEAD {", head.Generation(), "}: persisted: ", head.ReferenceCounter().Value() < 0, ", ref count: ", refCount(head.ReferenceCounter().Value()))
 		if head.ReferenceCounter().Value() == PersistedHeadValue {
 			_ = head.Close()
-			fmt.Println("head persisted and closed")
+			fmt.Println("QUERYABLE STORAGE: head {", head.Generation(), "} persisted and closed")
 			continue
 		}
 		heads = append(heads, head)
@@ -186,34 +208,9 @@ func (qs *QueryableStorage) shrink() {
 	qs.heads = heads
 }
 
-type storageQuerier struct {
-	querier storage.Querier
-	closer  func() error
-}
-
-// LabelValues - storage.Querier interface implementation.
-func (q *storageQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	return q.querier.LabelValues(ctx, name, matchers...)
-}
-
-// LabelNames - storage.Querier interface implementation.
-func (q *storageQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	return q.querier.LabelNames(ctx, matchers...)
-}
-
-// Close - closes querier.
-func (q *storageQuerier) Close() error {
-	return errors.Join(q.querier.Close(), tryCloseCloser(q.closer))
-}
-
-func tryCloseCloser(close func() error) error {
-	if close == nil {
-		return nil
+func refCount(value int64) int64 {
+	if value < 0 {
+		return value - PersistedHeadValue
 	}
-	return close()
-}
-
-// Select - storage.Querier interface implementation.
-func (q *storageQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	return q.querier.Select(ctx, sortSeries, hints, matchers...)
+	return value
 }
