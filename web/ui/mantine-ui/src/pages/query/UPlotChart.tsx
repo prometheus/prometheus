@@ -23,6 +23,7 @@ export interface UPlotChartProps {
   range: UPlotChartRange;
   width: number;
   showExemplars: boolean;
+  anchorYAxisAtZero: boolean,
   displayMode: GraphDisplayMode;
   onSelectRange: (start: number, end: number) => void;
 }
@@ -34,6 +35,7 @@ const UPlotChart: FC<UPlotChartProps> = ({
   range: { startTime, endTime, resolution },
   width,
   displayMode,
+  anchorYAxisAtZero,
   onSelectRange,
 }) => {
   const [options, setOptions] = useState<uPlot.Options | null>(null);
@@ -63,6 +65,17 @@ const UPlotChart: FC<UPlotChartProps> = ({
       theme === "light",
       onSelectRange
     );
+
+    if (anchorYAxisAtZero) {
+      // force 0 to be the sum minimum this instead of the bottom series
+      opts.scales = opts.scales || {};
+      opts.scales.y = {
+        range: (_u, _min, max) => {
+          const minMax = uPlot.rangeNum(0, max, 0.1, true);
+          return [0, minMax[1]];
+        },
+      };
+    }
 
     if (displayMode === GraphDisplayMode.Stacked) {
       setProcessedData(setStackedOpts(opts, seriesData).data);

@@ -73,6 +73,9 @@ export const decodePanelOptionsFromURLParams = (query: string): Panel[] => {
     decodeSetting("end_input", (value) => {
       panel.visualizer.endTime = parseTime(value);
     });
+    decodeSetting("anchor_y_axis", (value) => {
+      panel.visualizer.anchorYAxisAtZero = value === "1"
+    });
     // Legacy "step_input" parameter, overriden below by
     // "res_type" / "res_density" / "res_step" if present.
     decodeSetting("step_input", (value) => {
@@ -146,6 +149,8 @@ export const encodePanelOptionsToURLParams = (
       addParam(idx, "moment_input", formatTime(p.visualizer.endTime));
     }
     addParam(idx, "range_input", formatPrometheusDuration(p.visualizer.range));
+
+    addParam(idx, "anchor_y_axis", p.visualizer.anchorYAxisAtZero ? "1" : "0");
 
     switch (p.visualizer.resolution.type) {
       case "auto":

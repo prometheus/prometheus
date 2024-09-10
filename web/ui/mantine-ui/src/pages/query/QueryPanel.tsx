@@ -1,6 +1,7 @@
 import {
   Group,
   Tabs,
+  Checkbox,
   Center,
   Space,
   Box,
@@ -54,6 +55,8 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
 
   const panel = useAppSelector((state) => state.queryPage.panels[idx]);
   const dispatch = useAppDispatch();
+
+  const [anchorYAxisAtZero, setAnchorYAxisAtZero] = useState(false);
 
   const [selectedNode, setSelectedNode] = useState<{
     id: string;
@@ -247,6 +250,26 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
                 Show exemplars
               </Button> */}
 
+              <Checkbox
+                label="y axis starts at zero"
+                disabled={panel.visualizer.displayMode !== GraphDisplayMode.Lines}
+                checked={anchorYAxisAtZero}
+                onChange={(value) => {
+                  setAnchorYAxisAtZero(value.currentTarget.checked)
+
+                  dispatch(
+                    setVisualizer({
+                      idx,
+                      visualizer: {
+                        ...panel.visualizer,
+                        anchorYAxisAtZero: value.currentTarget.checked,
+                      },
+                    })
+                  )
+
+                }}
+              />
+
               <SegmentedControl
                 onChange={(value) =>
                   dispatch(
@@ -300,6 +323,7 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
             range={panel.visualizer.range}
             resolution={panel.visualizer.resolution}
             showExemplars={panel.visualizer.showExemplars}
+            anchorYAxisAtZero={panel.visualizer.anchorYAxisAtZero}
             displayMode={panel.visualizer.displayMode}
             retriggerIdx={retriggerIdx}
             onSelectRange={onSelectRange}
