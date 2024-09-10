@@ -20,6 +20,8 @@ jobs:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
       - uses: prometheus/promci@45166329da36d74895901808f1c8c97efafc7f84 # v0.3.0
       - uses: ./.github/promci/actions/setup_environment
+        with:
+          enable_npm: true
       - run: make GOOPTS=--tags=stringlabels GO_ONLY=1 SKIP_GOLANGCI_LINT=1
       - run: go test --tags=stringlabels ./tsdb/ -test.tsdb-isolation=false
       - run: make -C documentation/examples/remote_storage
