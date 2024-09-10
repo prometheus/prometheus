@@ -45,6 +45,11 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
+func init() {
+	// This can be removed when the default validation scheme in common is updated.
+	model.NameValidationScheme = model.UTF8Validation
+}
+
 func TestPopulateLabels(t *testing.T) {
 	cases := []struct {
 		in            labels.Labels

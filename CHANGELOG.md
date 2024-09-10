@@ -1,10 +1,46 @@
 # Changelog
 
-## unreleased
+## 3.0.0-beta.0 / 2024-09-05
 
+Release 3.0.0-beta.0 includes new features such as a brand new UI and UTF-8 support enabled by default. As a new major version, several breaking changes are introduced. The breaking changes are mainly around the removal of deprecated feature flags and CLI arguments, and the full list can be found below. Most users should be able to try this release out of the box without any configuration changes.
+
+As is traditional with a beta release, we do **not** recommend users install 3.0.0-beta on critical production systems, but we do want everyone to test it out and find bugs.
+
+* [CHANGE] UI: The old web UI has been replaced by a completely new one that is less cluttered and adds a few new features (PromLens-style tree view, better metrics explorer, "Explain" tab). However, it is still missing some features of the old UI (notably, exemplar display and heatmaps). To switch back to the old UI, you can use the feature flag `--enable-feature=old-ui` for the time being. #14872
+* [CHANGE] PromQL: Range selectors and the lookback delta are now left-open, i.e. a sample coinciding with the lower time limit is excluded rather than included. #13904
+* [CHANGE] Kubernetes SD: Remove support for `discovery.k8s.io/v1beta1` API version of EndpointSlice. This version is no longer served as of Kubernetes v1.25. #14365
+* [CHANGE] Kubernetes SD: Remove support for `networking.k8s.io/v1beta1` API version of Ingress. This version is no longer served as of Kubernetes v1.22. #14365
+* [CHANGE] UTF-8: Enable UTF-8 support by default. Prometheus now allows all UTF-8 characters in metric and label names. The corresponding `utf8-name` feature flag has been removed. #14705
+* [CHANGE] Console: Remove example files for the console feature. Users can continue using the console feature by supplying their own JavaScript and templates. #14807
+* [CHANGE] SD: Enable the new service discovery manager by default. This SD manager does not restart unchanged discoveries upon reloading. This makes reloads faster and reduces pressure on service discoveries' sources. The corresponding `new-service-discovery-manager` feature flag has been removed. #14770
+* [CHANGE] Agent mode has been promoted to stable. The feature flag `agent` has been removed. To run Prometheus in Agent mode, use the new `--agent` cmdline arg instead. #14747
+* [CHANGE] Remove deprecated `remote-write-receiver`,`promql-at-modifier`, and `promql-negative-offset` feature flags. #13456, #14526
+* [CHANGE] Remove deprecated `storage.tsdb.allow-overlapping-blocks`, `alertmanager.timeout`, and `storage.tsdb.retention` flags. #14640, #14643
+* [FEATURE] Promtool: Allow additional labels to be added to blocks created from openmetrics. #14402
 * [FEATURE] OTLP receiver: Add new option `otlp.promote_resource_attributes`, for any OTel resource attributes that should be promoted to metric labels. #14200
+* [FEATURE] Automatic reloading of the Prometheus configuration file at a specified interval #14769
 * [ENHANCEMENT] OTLP receiver: Warn when encountering exponential histograms with zero count and non-zero sum. #14706
 * [ENHANCEMENT] OTLP receiver: Interrupt translation on context cancellation/timeout. #14612
+* [ENHANCEMENT] Scrape: Only parse created timestamp if `created-timestamp-zero-ingestion` feature flag is enabled. This is as a lot of memory is used when parsing the created timestamp in the OM text format. #14815
+* [ENHANCEMENT] Scrape: Add support for logging scrape failures to a specified file. #14734
+* [ENHANCEMENT] Remote Read client: Enable streaming remote read if the server supports it. #11379
+* [ENHANCEMENT] PromQL: Delay deletion of `__name__` label to the end of the query evaluation. This is **experimental** and enabled under the feature-flag `promql-delayed-name-removal`. #14477
+* [ENHANCEMENT] Move AM discovery page from "Monitoring status" to "Server status". #14875
+* [ENHANCEMENT] Tracing: Improve PromQL tracing, including showing the operation performed for aggregates, operators, and calls.#14816
+* [ENHANCEMENT] Add support for multiple listening addresses. #14665
+* [ENHANCEMENT] Add the ability to set custom HTTP headers. #14817
+* [BUGFIX] TSDB: Fix shard initialization after WAL repair. #14731
+* [BUGFIX] UTF-8: Ensure correct validation when legacy mode turned on. #14736
+* [BUGFIX] SD: Make discovery manager notify consumers of dropped targets for still defined jobs. #13147
+* [BUGFIX] SD: Prevent the new service discovery manager from storing stale targets. #13622
+* [BUGFIX] Remote Write 2.0: Ensure metadata records are sent from the WAL to remote write during WAL replay. #14766
+* [BUGFIX] Scrape: Do no override target parameter labels with config params. #11029
+* [BUGFIX] Scrape: Reset exemplar position when scraping histograms in protobuf. #14810
+* [BUGFIX] Native Histograms: Do not re-use spans between histograms. #14771
+* [BUGFIX] Scrape: Only parse created timestamp if `created-timestamp-zero-ingestion` feature flag is enabled. This is as a lot of memory is used when parsing the created timestamp in the OM text format. #14815
+* [BUGFIX] TSDB: Fix panic in query during truncation with OOO head. #14831
+* [BUGFIX] TSDB: Fix panic in chunk querier. #14874
+* [BUGFIX] promql.Engine.Close: No-op if nil. #14861
 * [BUGFIX] tsdb/wlog.Watcher.readSegmentForGC: Only count unknown record types against record_decode_failures_total metric. #14042
 
 ## 2.54.1 / 2024-08-27

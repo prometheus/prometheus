@@ -6,11 +6,13 @@ load 5m
 
 # Tests for resets().
 eval instant at 50m resets(http_requests[5m])
+
+eval instant at 50m resets(http_requests[10m])
 	{path="/foo"} 0
 	{path="/bar"} 0
 	{path="/biz"} 0
 
-eval instant at 50m resets(http_requests[300])
+eval instant at 50m resets(http_requests[600])
 	{path="/foo"} 0
 	{path="/bar"} 0
 	{path="/biz"} 0
@@ -21,6 +23,11 @@ eval instant at 50m resets(http_requests[20m])
 	{path="/biz"} 0
 
 eval instant at 50m resets(http_requests[30m])
+	{path="/foo"} 1
+	{path="/bar"} 0
+	{path="/biz"} 0
+
+eval instant at 50m resets(http_requests[32m])
 	{path="/foo"} 2
 	{path="/bar"} 1
 	{path="/biz"} 0
@@ -34,28 +41,30 @@ eval instant at 50m resets(nonexistent_metric[50m])
 
 # Tests for changes().
 eval instant at 50m changes(http_requests[5m])
+
+eval instant at 50m changes(http_requests[6m])
 	{path="/foo"} 0
 	{path="/bar"} 0
 	{path="/biz"} 0
 
 eval instant at 50m changes(http_requests[20m])
-	{path="/foo"} 3
-	{path="/bar"} 3
+	{path="/foo"} 2
+	{path="/bar"} 2
 	{path="/biz"} 0
 
 eval instant at 50m changes(http_requests[30m])
-	{path="/foo"} 4
-	{path="/bar"} 5
-	{path="/biz"} 1
+	{path="/foo"} 3
+	{path="/bar"} 4
+	{path="/biz"} 0
 
 eval instant at 50m changes(http_requests[50m])
-	{path="/foo"} 8
-	{path="/bar"} 9
+	{path="/foo"} 7
+	{path="/bar"} 8
 	{path="/biz"} 1
 
 eval instant at 50m changes((http_requests[50m]))
-	{path="/foo"} 8
-	{path="/bar"} 9
+	{path="/foo"} 7
+	{path="/bar"} 8
 	{path="/biz"} 1
 
 eval instant at 50m changes(nonexistent_metric[50m])
@@ -66,7 +75,7 @@ load 5m
   x{a="b"} NaN NaN NaN
   x{a="c"} 0 NaN 0
 
-eval instant at 15m changes(x[15m])
+eval instant at 15m changes(x[20m])
   {a="b"} 0
   {a="c"} 2
 
@@ -75,14 +84,14 @@ clear
 # Tests for increase().
 load 5m
 	http_requests{path="/foo"}	0+10x10
-	http_requests{path="/bar"}	0+10x5 0+10x5
+	http_requests{path="/bar"}	0+18x5 0+18x5
 	http_requests{path="/dings"}   10+10x10
 	http_requests{path="/bumms"}    1+10x10
 
 # Tests for increase().
 eval instant at 50m increase(http_requests[50m])
 	{path="/foo"}   100
-	{path="/bar"}    90
+	{path="/bar"}   160
 	{path="/dings"} 100
 	{path="/bumms"} 100
 
@@ -95,7 +104,7 @@ eval instant at 50m increase(http_requests[50m])
 # value, and therefore the extrapolation happens only by 30s.
 eval instant at 50m increase(http_requests[100m])
 	{path="/foo"}   100
-	{path="/bar"}    90
+	{path="/bar"}   162
 	{path="/dings"} 105
 	{path="/bumms"} 101
 
@@ -115,15 +124,17 @@ clear
 
 # Tests for rate().
 load 5m
-	testcounter_reset_middle	0+10x4 0+10x5
+	testcounter_reset_middle	0+27x4 0+27x5
 	testcounter_reset_end    	0+10x9 0 10
 
 # Counter resets at in the middle of range are handled correctly by rate().
 eval instant at 50m rate(testcounter_reset_middle[50m])
-	{} 0.03
+	{} 0.08
 
 # Counter resets at end of range are ignored by rate().
 eval instant at 50m rate(testcounter_reset_end[5m])
+
+eval instant at 50m rate(testcounter_reset_end[6m])
 	{} 0
 
 clear
@@ -242,24 +253,24 @@ eval instant at 50m deriv(testcounter_reset_middle[100m])
 # intercept at t=3000: 38.63636363636364
 # intercept at t=3000+3600: 76.81818181818181
 eval instant at 50m predict_linear(testcounter_reset_middle[50m], 3600)
-	{} 76.81818181818181
+	{} 70
 
 eval instant at 50m predict_linear(testcounter_reset_middle[50m], 1h)
-	{} 76.81818181818181
+	{} 70
 
 # intercept at t = 3000+3600 = 6600
-eval instant at 50m predict_linear(testcounter_reset_middle[50m] @ 3000, 3600)
+eval instant at 50m predict_linear(testcounter_reset_middle[55m] @ 3000, 3600)
 	{} 76.81818181818181
 
-eval instant at 50m predict_linear(testcounter_reset_middle[50m] @ 3000, 1h)
+eval instant at 50m predict_linear(testcounter_reset_middle[55m] @ 3000, 1h)
 	{} 76.81818181818181
 
 # intercept at t = 600+3600 = 4200
-eval instant at 10m predict_linear(testcounter_reset_middle[50m] @ 3000, 3600)
+eval instant at 10m predict_linear(testcounter_reset_middle[55m] @ 3000, 3600)
 	{} 51.36363636363637
 
 # intercept at t = 4200+3600 = 7800
-eval instant at 70m predict_linear(testcounter_reset_middle[50m] @ 3000, 3600)
+eval instant at 70m predict_linear(testcounter_reset_middle[55m] @ 3000, 3600)
 	{} 89.54545454545455
 
 # With http_requests, there is a sample value exactly at the end of
@@ -467,7 +478,7 @@ load 5m
 	http_requests{job="api-server", instance="1", group="production"}	0+20x10
 	http_requests{job="api-server", instance="0", group="canary"}		0+30x10
 	http_requests{job="api-server", instance="1", group="canary"}		0+40x10
-	http_requests{job="api-server", instance="2", group="canary"}		NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN
+	http_requests{job="api-server", instance="2", group="canary"}		NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN
 	http_requests{job="app-server", instance="0", group="production"}	0+50x10
 	http_requests{job="app-server", instance="1", group="production"}	0+60x10
 	http_requests{job="app-server", instance="0", group="canary"}		0+70x10
@@ -502,7 +513,7 @@ load 5m
 	http_requests{job="api-server", instance="1", group="production"}	0+20x10
 	http_requests{job="api-server", instance="0", group="canary"}		0+30x10
 	http_requests{job="api-server", instance="1", group="canary"}		0+40x10
-	http_requests{job="api-server", instance="2", group="canary"}		NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN
+	http_requests{job="api-server", instance="2", group="canary"}		NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN
 	http_requests{job="app-server", instance="0", group="production"}	0+50x10
 	http_requests{job="app-server", instance="1", group="production"}	0+60x10
 	http_requests{job="app-server", instance="0", group="canary"}		0+70x10
@@ -688,10 +699,10 @@ load 10s
   metric9 -9.988465674311579e+307 -9.988465674311579e+307 -9.988465674311579e+307
   metric10 -9.988465674311579e+307 9.988465674311579e+307
 
-eval instant at 1m avg_over_time(metric[1m])
+eval instant at 55s avg_over_time(metric[1m])
   {} 3
 
-eval instant at 1m sum_over_time(metric[1m])/count_over_time(metric[1m])
+eval instant at 55s sum_over_time(metric[1m])/count_over_time(metric[1m])
   {} 3
 
 eval instant at 1m avg_over_time(metric2[1m])
@@ -758,8 +769,8 @@ eval instant at 1m avg_over_time(metric8[1m])
   {} 9.988465674311579e+307
 
 # This overflows float64.
-eval instant at 1m sum_over_time(metric8[1m])/count_over_time(metric8[1m])
-  {} Inf
+eval instant at 1m sum_over_time(metric8[2m])/count_over_time(metric8[2m])
+  {} +Inf
 
 eval instant at 1m avg_over_time(metric9[1m])
   {} -9.988465674311579e+307
@@ -768,10 +779,16 @@ eval instant at 1m avg_over_time(metric9[1m])
 eval instant at 1m sum_over_time(metric9[1m])/count_over_time(metric9[1m])
   {} -Inf
 
-eval instant at 1m avg_over_time(metric10[1m])
+eval instant at 45s avg_over_time(metric10[1m])
   {} 0
 
-eval instant at 1m sum_over_time(metric10[1m])/count_over_time(metric10[1m])
+eval instant at 1m avg_over_time(metric10[2m])
+  {} 0
+
+eval instant at 45s sum_over_time(metric10[1m])/count_over_time(metric10[1m])
+  {} 0
+
+eval instant at 1m sum_over_time(metric10[2m])/count_over_time(metric10[2m])
   {} 0
 
 # Test if very big intermediate values cause loss of detail.
@@ -779,10 +796,10 @@ clear
 load 10s
   metric 1 1e100 1 -1e100
 
-eval instant at 1m sum_over_time(metric[1m])
+eval instant at 1m sum_over_time(metric[2m])
   {} 2
 
-eval instant at 1m avg_over_time(metric[1m])
+eval instant at 1m avg_over_time(metric[2m])
   {} 0.5
 
 # Tests for stddev_over_time and stdvar_over_time.
@@ -790,13 +807,13 @@ clear
 load 10s
   metric 0 8 8 2 3
 
-eval instant at 1m stdvar_over_time(metric[1m])
+eval instant at 1m stdvar_over_time(metric[2m])
   {} 10.56
 
-eval instant at 1m stddev_over_time(metric[1m])
+eval instant at 1m stddev_over_time(metric[2m])
   {} 3.249615
 
-eval instant at 1m stddev_over_time((metric[1m]))
+eval instant at 1m stddev_over_time((metric[2m]))
   {} 3.249615
 
 # Tests for stddev_over_time and stdvar_over_time #4927.
@@ -826,42 +843,42 @@ load 10s
 	data{test="three samples"} 0 1 2
 	data{test="uneven samples"} 0 1 4
 
-eval instant at 1m quantile_over_time(0, data[1m])
+eval instant at 1m quantile_over_time(0, data[2m])
 	{test="two samples"} 0
 	{test="three samples"} 0
 	{test="uneven samples"} 0
 
-eval instant at 1m quantile_over_time(0.5, data[1m])
+eval instant at 1m quantile_over_time(0.5, data[2m])
 	{test="two samples"} 0.5
 	{test="three samples"} 1
 	{test="uneven samples"} 1
 
-eval instant at 1m quantile_over_time(0.75, data[1m])
+eval instant at 1m quantile_over_time(0.75, data[2m])
 	{test="two samples"} 0.75
 	{test="three samples"} 1.5
 	{test="uneven samples"} 2.5
 
-eval instant at 1m quantile_over_time(0.8, data[1m])
+eval instant at 1m quantile_over_time(0.8, data[2m])
 	{test="two samples"} 0.8
 	{test="three samples"} 1.6
 	{test="uneven samples"} 2.8
 
-eval instant at 1m quantile_over_time(1, data[1m])
+eval instant at 1m quantile_over_time(1, data[2m])
 	{test="two samples"} 1
 	{test="three samples"} 2
 	{test="uneven samples"} 4
 
-eval_warn instant at 1m quantile_over_time(-1, data[1m])
+eval_warn instant at 1m quantile_over_time(-1, data[2m])
 	{test="two samples"} -Inf
 	{test="three samples"} -Inf
 	{test="uneven samples"} -Inf
 
-eval_warn instant at 1m quantile_over_time(2, data[1m])
+eval_warn instant at 1m quantile_over_time(2, data[2m])
 	{test="two samples"} +Inf
 	{test="three samples"} +Inf
 	{test="uneven samples"} +Inf
 
-eval_warn instant at 1m (quantile_over_time(2, (data[1m])))
+eval_warn instant at 1m (quantile_over_time(2, (data[2m])))
 	{test="two samples"} +Inf
 	{test="three samples"} +Inf
 	{test="uneven samples"} +Inf
@@ -969,21 +986,21 @@ load 10s
 	data{type="some_nan3"} NaN 0 1
 	data{type="only_nan"} NaN NaN NaN
 
-eval instant at 1m min_over_time(data[1m])
+eval instant at 1m min_over_time(data[2m])
 	{type="numbers"} 0
 	{type="some_nan"} 0
 	{type="some_nan2"} 1
 	{type="some_nan3"} 0
 	{type="only_nan"} NaN
 
-eval instant at 1m max_over_time(data[1m])
+eval instant at 1m max_over_time(data[2m])
 	{type="numbers"} 3
 	{type="some_nan"} 2
 	{type="some_nan2"} 2
 	{type="some_nan3"} 1
 	{type="only_nan"} NaN
 
-eval instant at 1m last_over_time(data[1m])
+eval instant at 1m last_over_time(data[2m])
 	data{type="numbers"} 3
 	data{type="some_nan"} NaN
 	data{type="some_nan2"} 1
@@ -1076,13 +1093,19 @@ eval instant at 1m absent_over_time(httpd_log_lines_total[30s])
     {} 1
 
 eval instant at 15m absent_over_time(http_requests[5m])
-
-eval instant at 16m absent_over_time(http_requests[5m])
     {} 1
 
+eval instant at 15m absent_over_time(http_requests[10m])
+
 eval instant at 16m absent_over_time(http_requests[6m])
+    {} 1
+
+eval instant at 16m absent_over_time(http_requests[16m])
 
 eval instant at 16m absent_over_time(httpd_handshake_failures_total[1m])
+    {} 1
+
+eval instant at 16m absent_over_time(httpd_handshake_failures_total[2m])
 
 eval instant at 16m absent_over_time({instance="127.0.0.1"}[5m])
 
@@ -1138,17 +1161,18 @@ eval instant at 0m present_over_time(httpd_log_lines_total[30s])
 eval instant at 1m present_over_time(httpd_log_lines_total[30s])
 
 eval instant at 15m present_over_time(http_requests[5m])
+
+eval instant at 15m present_over_time(http_requests[10m])
     {instance="127.0.0.1", job="httpd", path="/bar"} 1
     {instance="127.0.0.1", job="httpd", path="/foo"} 1
 
-eval instant at 16m present_over_time(http_requests[5m])
-
 eval instant at 16m present_over_time(http_requests[6m])
+
+eval instant at 16m present_over_time(http_requests[16m])
     {instance="127.0.0.1", job="httpd", path="/bar"} 1
     {instance="127.0.0.1", job="httpd", path="/foo"} 1
 
 eval instant at 16m present_over_time(httpd_handshake_failures_total[1m])
-    {instance="127.0.0.1", job="node"} 1
 
 eval instant at 16m present_over_time({instance="127.0.0.1"}[5m])
     {instance="127.0.0.1",job="node"} 1
@@ -1169,59 +1193,59 @@ load 5m
 	exp_root_log{l="x"} 10
 	exp_root_log{l="y"} 20
 
-eval instant at 5m exp(exp_root_log)
+eval instant at 1m exp(exp_root_log)
 	{l="x"} 22026.465794806718
 	{l="y"} 485165195.4097903
 
-eval instant at 5m exp(exp_root_log - 10)
+eval instant at 1m exp(exp_root_log - 10)
 	{l="y"} 22026.465794806718
 	{l="x"} 1
 
-eval instant at 5m exp(exp_root_log - 20)
+eval instant at 1m exp(exp_root_log - 20)
 	{l="x"} 4.5399929762484854e-05
 	{l="y"} 1
 
-eval instant at 5m ln(exp_root_log)
+eval instant at 1m ln(exp_root_log)
 	{l="x"} 2.302585092994046
 	{l="y"} 2.995732273553991
 
-eval instant at 5m ln(exp_root_log - 10)
+eval instant at 1m ln(exp_root_log - 10)
 	{l="y"} 2.302585092994046
 	{l="x"} -Inf
 
-eval instant at 5m ln(exp_root_log - 20)
+eval instant at 1m ln(exp_root_log - 20)
 	{l="y"} -Inf
 	{l="x"} NaN
 
-eval instant at 5m exp(ln(exp_root_log))
+eval instant at 1m exp(ln(exp_root_log))
 	{l="y"} 20
 	{l="x"} 10
 
-eval instant at 5m sqrt(exp_root_log)
+eval instant at 1m sqrt(exp_root_log)
 	{l="x"} 3.1622776601683795
 	{l="y"} 4.47213595499958
 
-eval instant at 5m log2(exp_root_log)
+eval instant at 1m log2(exp_root_log)
 	{l="x"} 3.3219280948873626
 	{l="y"} 4.321928094887363
 
-eval instant at 5m log2(exp_root_log - 10)
+eval instant at 1m log2(exp_root_log - 10)
 	{l="y"} 3.3219280948873626
 	{l="x"} -Inf
 
-eval instant at 5m log2(exp_root_log - 20)
+eval instant at 1m log2(exp_root_log - 20)
 	{l="x"} NaN
 	{l="y"} -Inf
 
-eval instant at 5m log10(exp_root_log)
+eval instant at 1m log10(exp_root_log)
 	{l="x"} 1
 	{l="y"} 1.301029995663981
 
-eval instant at 5m log10(exp_root_log - 10)
+eval instant at 1m log10(exp_root_log - 10)
 	{l="y"} 1
 	{l="x"} -Inf
 
-eval instant at 5m log10(exp_root_log - 20)
+eval instant at 1m log10(exp_root_log - 20)
 	{l="x"} NaN
 	{l="y"} -Inf
 
