@@ -26,10 +26,10 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/google/uuid"
 	"github.com/jonboulle/clockwork"
-	"github.com/prometheus/prometheus/pp/go/cppbridge"
-	"github.com/prometheus/prometheus/pp/go/relabeler"
 	"github.com/prometheus/client_golang/prometheus"
 	common_config "github.com/prometheus/common/config"
+	"github.com/prometheus/prometheus/pp/go/cppbridge"
+	"github.com/prometheus/prometheus/pp/go/relabeler"
 	"gopkg.in/yaml.v2"
 
 	prom_config "github.com/prometheus/prometheus/config"
@@ -124,8 +124,7 @@ func NewReceiver(
 		numberOfShards:        receiverCfg.NumberOfShards,
 	})
 
-	//storage := appender.NewQueryableStorage(block.NewBlockWriter(dataDir, block.DefaultChunkSegmentSize))
-	storage := appender.NewQueryableStorage(block.NewDelayedNoOpBlockWriter(5 * time.Second))
+	storage := appender.NewQueryableStorage(block.NewBlockWriter(dataDir, block.DefaultChunkSegmentSize))
 
 	var headGeneration uint64
 	hd, err := appender.NewRotatableHead(storage, head.BuildFunc(func() (relabeler.Head, error) {
@@ -330,6 +329,11 @@ func (rr *Receiver) ApplyConfig(cfg *prom_config.Config) error {
 			// 	dgs.Add(dg)
 			// }
 			dstrb.SetDestinationGroups(dgs)
+
+			rr.headConfigStorage.Store(&HeadConfig{
+				inputRelabelerConfigs: rCfg.Configs,
+				numberOfShards:        numberOfShards,
+			})
 			return nil
 		}),
 	)
@@ -361,17 +365,24 @@ func (rr *Receiver) Run(_ context.Context) (err error) {
 }
 
 func (rr *Receiver) Querier(mint, maxt int64) (storage.Querier, error) {
+	fmt.Println("RECEIVER: Querier")
+	start := time.Now()
+
 	appenderQuerier, err := rr.appender.Querier(mint, maxt)
 	if err != nil {
 		return nil, err
 	}
+
+	fmt.Println("RECEIVER: Querier appender querier created")
 
 	storageQuerier, err := rr.storage.Querier(mint, maxt)
 	if err != nil {
 		return nil, errors.Join(err, appenderQuerier.Close())
 	}
 
-	return querier.NewMultiQuerier(appenderQuerier, storageQuerier), nil
+	fmt.Println("RECEIVER: Querier storage querier created")
+	fmt.Println("RECEIVER: Querier finished, duration: ", time.Since(start))
+	return querier.NewMultiQuerier([]storage.Querier{appenderQuerier, storageQuerier}, nil), nil
 }
 
 // Shutdown safe shutdown Receiver.

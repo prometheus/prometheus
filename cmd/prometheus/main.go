@@ -912,6 +912,7 @@ func main() {
 
 				// Get all rule files matching the configuration paths.
 				var files []string
+				fmt.Println("main: cfg.ruleFiles", cfg.RuleFiles)
 				for _, pat := range cfg.RuleFiles {
 					fs, err := filepath.Glob(pat)
 					if err != nil {

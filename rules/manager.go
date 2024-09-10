@@ -175,9 +175,9 @@ func (m *Manager) Stop() {
 func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string, groupEvalIterationFunc GroupEvalIterationFunc) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
-
+	fmt.Println("RULE MANAGER Update: files", files)
 	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, groupEvalIterationFunc, files...)
-
+	fmt.Println("RULE MANAGER Update: groups:", len(groups))
 	if errs != nil {
 		for _, e := range errs {
 			level.Error(m.logger).Log("msg", "loading groups failed", "err", e)
