@@ -142,7 +142,7 @@ const serverStatusPages = [
   },
   {
     title: "Alertmanager discovery",
-    path: "/discovered-alertmanagers",
+    path: "/alertmanager-discovery",
     icon: <IconBell style={navIconStyle} />,
     element: <AlertmanagerDiscoveryPage />,
     inAgentMode: false,
