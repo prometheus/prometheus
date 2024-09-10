@@ -720,27 +720,39 @@ eval instant at 10m histogram_sum(scalar(histogram_fraction(-Inf, +Inf, sum(hist
 
 # Apply multiplication and division operator to histogram.
 load 10m
-    histogram_mul_div {{schema:0 count:21 sum:33 z_bucket:3 z_bucket_w:0.001 buckets:[3 3 3] n_buckets:[3 3 3]}}x1
+    histogram_mul_div {{schema:0 count:30 sum:33 z_bucket:3 z_bucket_w:0.001 buckets:[3 3 3] n_buckets:[6 6 6]}}x1
     float_series_3 3+0x1
     float_series_0 0+0x1
 
 eval instant at 10m histogram_mul_div*3
-    {} {{schema:0 count:63 sum:99 z_bucket:9 z_bucket_w:0.001 buckets:[9 9 9] n_buckets:[9 9 9]}}
+    {} {{schema:0 count:90 sum:99 z_bucket:9 z_bucket_w:0.001 buckets:[9 9 9] n_buckets:[18 18 18]}}
+
+eval instant at 10m histogram_mul_div*-1
+    {} {{schema:0 count:-30 sum:-33 z_bucket:-3 z_bucket_w:0.001 buckets:[-3 -3 -3] n_buckets:[-6 -6 -6]}}
+
+eval instant at 10m -histogram_mul_div
+    {} {{schema:0 count:-30 sum:-33 z_bucket:-3 z_bucket_w:0.001 buckets:[-3 -3 -3] n_buckets:[-6 -6 -6]}}
+
+eval instant at 10m histogram_mul_div*-3
+    {} {{schema:0 count:-90 sum:-99 z_bucket:-9 z_bucket_w:0.001 buckets:[-9 -9 -9] n_buckets:[-18 -18 -18]}}
 
 eval instant at 10m 3*histogram_mul_div
-    {} {{schema:0 count:63 sum:99 z_bucket:9 z_bucket_w:0.001 buckets:[9 9 9] n_buckets:[9 9 9]}}
+    {} {{schema:0 count:90 sum:99 z_bucket:9 z_bucket_w:0.001 buckets:[9 9 9] n_buckets:[18 18 18]}}
 
 eval instant at 10m histogram_mul_div*float_series_3
-    {} {{schema:0 count:63 sum:99 z_bucket:9 z_bucket_w:0.001 buckets:[9 9 9] n_buckets:[9 9 9]}}
+    {} {{schema:0 count:90 sum:99 z_bucket:9 z_bucket_w:0.001 buckets:[9 9 9] n_buckets:[18 18 18]}}
 
 eval instant at 10m float_series_3*histogram_mul_div
-    {} {{schema:0 count:63 sum:99 z_bucket:9 z_bucket_w:0.001 buckets:[9 9 9] n_buckets:[9 9 9]}}
+    {} {{schema:0 count:90 sum:99 z_bucket:9 z_bucket_w:0.001 buckets:[9 9 9] n_buckets:[18 18 18]}}
 
 eval instant at 10m histogram_mul_div/3
-    {} {{schema:0 count:7 sum:11 z_bucket:1 z_bucket_w:0.001 buckets:[1 1 1] n_buckets:[1 1 1]}}
+    {} {{schema:0 count:10 sum:11 z_bucket:1 z_bucket_w:0.001 buckets:[1 1 1] n_buckets:[2 2 2]}}
+
+eval instant at 10m histogram_mul_div/-3
+    {} {{schema:0 count:-10 sum:-11 z_bucket:-1 z_bucket_w:0.001 buckets:[-1 -1 -1] n_buckets:[-2 -2 -2]}}
 
 eval instant at 10m histogram_mul_div/float_series_3
-    {} {{schema:0 count:7 sum:11 z_bucket:1 z_bucket_w:0.001 buckets:[1 1 1] n_buckets:[1 1 1]}}
+    {} {{schema:0 count:10 sum:11 z_bucket:1 z_bucket_w:0.001 buckets:[1 1 1] n_buckets:[2 2 2]}}
 
 eval instant at 10m histogram_mul_div*0
     {} {{schema:0 count:0 sum:0 z_bucket:0 z_bucket_w:0.001 buckets:[0 0 0] n_buckets:[0 0 0]}}
