@@ -1388,8 +1388,8 @@ is not considered an efficient way of ingesting samples. Use it
 with caution for specific low-volume use cases. It is not suitable for
 replacing the ingestion via scraping.
 
-Enable the OTLP receiver by the feature flag
-`--enable-feature=otlp-write-receiver`. When enabled, the OTLP receiver
+Enable the OTLP receiver by setting
+`--web.enable-otlp-receiver`. When enabled, the OTLP receiver
 endpoint is `/api/v1/otlp/v1/metrics`.
 
 *New in v2.47*
