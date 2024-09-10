@@ -245,8 +245,8 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 func TestNoPanicAfterWALCorruption(t *testing.T) {
 	db := openTestDB(t, &Options{WALSegmentSize: 32 * 1024}, nil)
 
-	// Append until the first mmaped head chunk.
-	// This is to ensure that all samples can be read from the mmaped chunks when the WAL is corrupted.
+	// Append until the first mmapped head chunk.
+	// This is to ensure that all samples can be read from the mmapped chunks when the WAL is corrupted.
 	var expSamples []chunks.Sample
 	var maxt int64
 	ctx := context.Background()
@@ -265,7 +265,7 @@ func TestNoPanicAfterWALCorruption(t *testing.T) {
 
 	// Corrupt the WAL after the first sample of the series so that it has at least one sample and
 	// it is not garbage collected.
-	// The repair deletes all WAL records after the corrupted record and these are read from the mmaped chunk.
+	// The repair deletes all WAL records after the corrupted record and these are read from the mmapped chunk.
 	{
 		walFiles, err := os.ReadDir(path.Join(db.Dir(), "wal"))
 		require.NoError(t, err)
@@ -2650,7 +2650,7 @@ func TestDBReadOnly_Querier_NoAlteration(t *testing.T) {
 
 	spinUpQuerierAndCheck := func(dir, sandboxDir string, chunksCount int) {
 		dBDirHash := dirHash(dir)
-		// Bootsrap a RO db from the same dir and set up a querier.
+		// Bootstrap a RO db from the same dir and set up a querier.
 		dbReadOnly, err := OpenDBReadOnly(dir, sandboxDir, nil)
 		require.NoError(t, err)
 		require.Equal(t, chunksCount, countChunks(dir))
@@ -2669,7 +2669,7 @@ func TestDBReadOnly_Querier_NoAlteration(t *testing.T) {
 			require.NoError(t, db.Close())
 		}()
 
-		// Append until the first mmaped head chunk.
+		// Append until the first mmapped head chunk.
 		for i := 0; i < 121; i++ {
 			app := db.Appender(context.Background())
 			_, err := app.Append(0, labels.FromStrings("foo", "bar"), int64(i), 0)
@@ -5156,7 +5156,7 @@ func Test_Querier_OOOQuery(t *testing.T) {
 			},
 		},
 		{
-			name:      "query inorder contain ooo mmaped samples returns all ingested samples at the beginning of the interval",
+			name:      "query inorder contain ooo mmapped samples returns all ingested samples at the beginning of the interval",
 			oooCap:    5,
 			queryMinT: minutes(0),
 			queryMaxT: minutes(200),
@@ -5169,7 +5169,7 @@ func Test_Querier_OOOQuery(t *testing.T) {
 				},
 				{
 					minT:   minutes(101),
-					maxT:   minutes(101 + (5-1)*2), // Append samples to fit in a single mmmaped OOO chunk and fit inside the first in-order mmaped chunk.
+					maxT:   minutes(101 + (5-1)*2), // Append samples to fit in a single mmapped OOO chunk and fit inside the first in-order mmapped chunk.
 					filter: func(t int64) bool { return t%2 == 1 },
 					isOOO:  true,
 				},
@@ -5182,7 +5182,7 @@ func Test_Querier_OOOQuery(t *testing.T) {
 			},
 		},
 		{
-			name:      "query overlapping inorder and ooo mmaped samples returns all ingested samples at the beginning of the interval",
+			name:      "query overlapping inorder and ooo mmapped samples returns all ingested samples at the beginning of the interval",
 			oooCap:    30,
 			queryMinT: minutes(0),
 			queryMaxT: minutes(200),
@@ -5195,7 +5195,7 @@ func Test_Querier_OOOQuery(t *testing.T) {
 				},
 				{
 					minT:   minutes(101),
-					maxT:   minutes(101 + (30-1)*2), // Append samples to fit in a single mmmaped OOO chunk and overlap the first in-order mmaped chunk.
+					maxT:   minutes(101 + (30-1)*2), // Append samples to fit in a single mmapped OOO chunk and overlap the first in-order mmapped chunk.
 					filter: func(t int64) bool { return t%2 == 1 },
 					isOOO:  true,
 				},
@@ -5367,7 +5367,7 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 			},
 		},
 		{
-			name:      "query inorder contain ooo mmaped samples returns all ingested samples at the beginning of the interval",
+			name:      "query inorder contain ooo mmapped samples returns all ingested samples at the beginning of the interval",
 			oooCap:    5,
 			queryMinT: minutes(0),
 			queryMaxT: minutes(200),
@@ -5380,7 +5380,7 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 				},
 				{
 					minT:   minutes(101),
-					maxT:   minutes(101 + (5-1)*2), // Append samples to fit in a single mmmaped OOO chunk and fit inside the first in-order mmaped chunk.
+					maxT:   minutes(101 + (5-1)*2), // Append samples to fit in a single mmapped OOO chunk and fit inside the first in-order mmapped chunk.
 					filter: func(t int64) bool { return t%2 == 1 },
 					isOOO:  true,
 				},
@@ -5393,7 +5393,7 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 			},
 		},
 		{
-			name:      "query overlapping inorder and ooo mmaped samples returns all ingested samples at the beginning of the interval",
+			name:      "query overlapping inorder and ooo mmapped samples returns all ingested samples at the beginning of the interval",
 			oooCap:    30,
 			queryMinT: minutes(0),
 			queryMaxT: minutes(200),
@@ -5406,7 +5406,7 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 				},
 				{
 					minT:   minutes(101),
-					maxT:   minutes(101 + (30-1)*2), // Append samples to fit in a single mmmaped OOO chunk and overlap the first in-order mmaped chunk.
+					maxT:   minutes(101 + (30-1)*2), // Append samples to fit in a single mmapped OOO chunk and overlap the first in-order mmapped chunk.
 					filter: func(t int64) bool { return t%2 == 1 },
 					isOOO:  true,
 				},
@@ -5555,7 +5555,7 @@ func testOOOAppendAndQuery(t *testing.T, scenario sampleTypeScenario) {
 	addSample(s2, 255, 265, false)
 	verifyOOOMinMaxTimes(250, 265)
 	testQuery(math.MinInt64, math.MaxInt64)
-	testQuery(minutes(250), minutes(265)) // Test querying ono data time range
+	testQuery(minutes(250), minutes(265)) // Test querying ooo data time range
 	testQuery(minutes(290), minutes(300)) // Test querying in-order data time range
 	testQuery(minutes(250), minutes(300)) // Test querying the entire range
 
@@ -7468,7 +7468,7 @@ func TestAbortBlockCompactions(t *testing.T) {
 	defer func() {
 		require.NoError(t, db.Close())
 	}()
-	// It should NOT be compactible at the beginning of the test
+	// It should NOT be compactable at the beginning of the test
 	require.False(t, db.head.compactable(), "head should NOT be compactable")
 
 	// Track the number of compactions run inside db.compactBlocks()
@@ -7478,7 +7478,7 @@ func TestAbortBlockCompactions(t *testing.T) {
 	db.compactor = &mockCompactorFn{
 		planFn: func() ([]string, error) {
 			// On every Plan() run increment compactions. After 4 compactions
-			// update HEAD to make it compactible to force an exit from db.compactBlocks() loop.
+			// update HEAD to make it compactable to force an exit from db.compactBlocks() loop.
 			compactions++
 			if compactions > 3 {
 				chunkRange := db.head.chunkRange.Load()

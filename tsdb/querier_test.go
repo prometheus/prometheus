@@ -3235,7 +3235,7 @@ func (m mockMatcherIndex) LabelValueFor(context.Context, storage.SeriesRef, stri
 }
 
 func (m mockMatcherIndex) LabelNamesFor(ctx context.Context, postings index.Postings) ([]string, error) {
-	return nil, errors.New("label names for for called")
+	return nil, errors.New("label names for called")
 }
 
 func (m mockMatcherIndex) Postings(context.Context, string, ...string) (index.Postings, error) {

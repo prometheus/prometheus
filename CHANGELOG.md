@@ -140,7 +140,7 @@ This release changes the default for GOGC, the Go runtime control for the trade-
 * [ENHANCEMENT] TSDB: Pause regular block compactions if the head needs to be compacted (prioritize head as it increases memory consumption). #13754
 * [ENHANCEMENT] Observability: Improved logging during signal handling termination. #13772
 * [ENHANCEMENT] Observability: All log lines for drop series use "num_dropped" key consistently. #13823
-* [ENHANCEMENT] Observability: Log chunk snapshot and mmaped chunk replay duration during WAL replay. #13838
+* [ENHANCEMENT] Observability: Log chunk snapshot and mmapped chunk replay duration during WAL replay. #13838
 * [ENHANCEMENT] Observability: Log if the block is being created from WBL during compaction. #13846
 * [BUGFIX] PromQL: Fix inaccurate sample number statistic when querying histograms. #13667
 * [BUGFIX] PromQL: Fix `histogram_stddev` and `histogram_stdvar` for cases where the histogram has negative buckets. #13852
@@ -677,7 +677,7 @@ The binaries published with this release are built with Go1.17.8 to avoid [CVE-2
 
 ## 2.33.0 / 2022-01-29
 
-* [CHANGE] PromQL: Promote negative offset and `@` modifer to stable features. #10121
+* [CHANGE] PromQL: Promote negative offset and `@` modifier to stable features. #10121
 * [CHANGE] Web: Promote remote-write-receiver to stable. #10119
 * [FEATURE] Config: Add `stripPort` template function. #10002
 * [FEATURE] Promtool: Add cardinality analysis to `check metrics`, enabled by flag `--extended`. #10045
@@ -914,7 +914,7 @@ This vulnerability has been reported by Aaron Devaney from MDSec.
 * [ENHANCEMENT] Templating: Enable parsing strings in `humanize` functions. #8682
 * [BUGFIX] UI: Provide errors instead of blank page on TSDB Status Page. #8654 #8659
 * [BUGFIX] TSDB: Do not panic when writing very large records to the WAL. #8790
-* [BUGFIX] TSDB: Avoid panic when mmaped memory is referenced after the file is closed. #8723
+* [BUGFIX] TSDB: Avoid panic when mmapped memory is referenced after the file is closed. #8723
 * [BUGFIX] Scaleway Discovery: Fix nil pointer dereference. #8737
 * [BUGFIX] Consul Discovery: Restart no longer required after config update with no targets. #8766
 
@@ -1840,7 +1840,7 @@ information, read the announcement blog post and migration guide.
 ## 1.7.0 / 2017-06-06
 
 * [CHANGE] Compress remote storage requests and responses with unframed/raw snappy.
-* [CHANGE] Properly ellide secrets in config.
+* [CHANGE] Properly elide secrets in config.
 * [FEATURE] Add OpenStack service discovery.
 * [FEATURE] Add ability to limit Kubernetes service discovery to certain namespaces.
 * [FEATURE] Add metric for discovered number of Alertmanagers.

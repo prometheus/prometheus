@@ -1407,7 +1407,7 @@ authorization:
   # `credentials_file`.
   [ credentials: <secret> ]
   # Sets the credentials to the credentials read from the configured file.
-  # It is mutuall exclusive with `credentials`.
+  # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
 # Optional OAuth 2.0 configuration, currently not supported by AWS.
@@ -2627,7 +2627,7 @@ authorization:
   # `credentials_file`.
   [ credentials: <secret> ]
   # Sets the credentials to the credentials read from the configured file.
-  # It is mutuall exclusive with `credentials`.
+  # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
 # Optional OAuth 2.0 configuration, currently not supported by AWS.
@@ -3988,7 +3988,7 @@ azuread:
 # Cannot be used at the same time as basic_auth, authorization, oauth2, sigv4 or azuread.
 # To use the default credentials from the Google Cloud SDK, use `google_iam: {}`.
 google_iam:
-  # Service account key with monitoring write permessions.
+  # Service account key with monitoring write permissions.
   credentials_file: <file_name>
 
 # Configures the remote write request's TLS settings.

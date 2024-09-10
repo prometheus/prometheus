@@ -144,7 +144,7 @@ a buffer, ensuring that older entries will be removed before the allocated stora
 for Prometheus becomes full.
 
 At present, we recommend setting the retention size to, at most, 80-85% of your 
-allocated Prometheus disk space. This increases the likelihood that older entires 
+allocated Prometheus disk space. This increases the likelihood that older entries 
 will be removed prior to hitting any disk limitations.
 
 ## Remote storage integrations

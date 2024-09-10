@@ -1467,7 +1467,7 @@ load 10s
 		},
 		{
 			// Nested subquery.
-			// Now the outmost subquery produces more samples than inner most rate.
+			// Now the outermost subquery produces more samples than inner most rate.
 			Query:      `rate(rate(bigmetric[10s:1s] @ 10)[100s:25s] @ 1000)[17s:1s] @ 2000`,
 			MaxSamples: 36,
 			Start:      time.Unix(10, 0),
