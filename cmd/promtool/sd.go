@@ -20,9 +20,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
@@ -39,7 +39,7 @@ type sdCheckResult struct {
 
 // CheckSD performs service discovery for the given job name and reports the results.
 func CheckSD(sdConfigFiles, sdJobName string, sdTimeout time.Duration, registerer prometheus.Registerer) int {
-	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+	logger := promslog.New(&promslog.Config{})
 
 	cfg, err := config.LoadFile(sdConfigFiles, false, false, logger)
 	if err != nil {

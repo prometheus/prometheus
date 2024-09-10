@@ -2018,23 +2018,58 @@ func TestSubquerySelector(t *testing.T) {
 type FakeQueryLogger struct {
 	closed bool
 	logs   []interface{}
+	attrs  []any
 }
 
 func NewFakeQueryLogger() *FakeQueryLogger {
 	return &FakeQueryLogger{
 		closed: false,
 		logs:   make([]interface{}, 0),
+		attrs:  make([]any, 0),
 	}
 }
 
+// It implements the promql.QueryLogger interface.
 func (f *FakeQueryLogger) Close() error {
 	f.closed = true
 	return nil
 }
 
-func (f *FakeQueryLogger) Log(l ...interface{}) error {
-	f.logs = append(f.logs, l...)
-	return nil
+// It implements the promql.QueryLogger interface.
+func (f *FakeQueryLogger) Info(msg string, args ...any) {
+	log := append([]any{msg}, args...)
+	log = append(log, f.attrs...)
+	f.attrs = f.attrs[:0]
+	f.logs = append(f.logs, log...)
+}
+
+// It implements the promql.QueryLogger interface.
+func (f *FakeQueryLogger) Error(msg string, args ...any) {
+	log := append([]any{msg}, args...)
+	log = append(log, f.attrs...)
+	f.attrs = f.attrs[:0]
+	f.logs = append(f.logs, log...)
+}
+
+// It implements the promql.QueryLogger interface.
+func (f *FakeQueryLogger) Warn(msg string, args ...any) {
+	log := append([]any{msg}, args...)
+	log = append(log, f.attrs...)
+	f.attrs = f.attrs[:0]
+	f.logs = append(f.logs, log...)
+}
+
+// It implements the promql.QueryLogger interface.
+func (f *FakeQueryLogger) Debug(msg string, args ...any) {
+	log := append([]any{msg}, args...)
+	log = append(log, f.attrs...)
+	f.attrs = f.attrs[:0]
+	f.logs = append(f.logs, log...)
+}
+
+// It implements the promql.QueryLogger interface.
+func (f *FakeQueryLogger) With(args ...any) {
+	f.attrs = append(f.attrs, args...)
 }
 
 func TestQueryLogger_basic(t *testing.T) {
@@ -2062,9 +2097,8 @@ func TestQueryLogger_basic(t *testing.T) {
 	f1 := NewFakeQueryLogger()
 	engine.SetQueryLogger(f1)
 	queryExec()
-	for i, field := range []interface{}{"params", map[string]interface{}{"query": "test statement"}} {
-		require.Equal(t, field, f1.logs[i])
-	}
+	require.Contains(t, f1.logs, `params`)
+	require.Contains(t, f1.logs, map[string]interface{}{"query": "test statement"})
 
 	l := len(f1.logs)
 	queryExec()
@@ -2110,11 +2144,8 @@ func TestQueryLogger_fields(t *testing.T) {
 	res := query.Exec(ctx)
 	require.NoError(t, res.Err)
 
-	expected := []string{"foo", "bar"}
-	for i, field := range expected {
-		v := f1.logs[len(f1.logs)-len(expected)+i].(string)
-		require.Equal(t, field, v)
-	}
+	require.Contains(t, f1.logs, `foo`)
+	require.Contains(t, f1.logs, `bar`)
 }
 
 func TestQueryLogger_error(t *testing.T) {
@@ -2140,9 +2171,10 @@ func TestQueryLogger_error(t *testing.T) {
 	res := query.Exec(ctx)
 	require.Error(t, res.Err, "query should have failed")
 
-	for i, field := range []interface{}{"params", map[string]interface{}{"query": "test statement"}, "error", testErr} {
-		require.Equal(t, f1.logs[i], field)
-	}
+	require.Contains(t, f1.logs, `params`)
+	require.Contains(t, f1.logs, map[string]interface{}{"query": "test statement"})
+	require.Contains(t, f1.logs, `error`)
+	require.Contains(t, f1.logs, testErr)
 }
 
 func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {

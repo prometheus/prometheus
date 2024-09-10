@@ -23,8 +23,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -244,7 +245,7 @@ func TestCheckpoint(t *testing.T) {
 			}
 			require.NoError(t, w.Close())
 
-			stats, err := Checkpoint(log.NewNopLogger(), w, 100, 106, func(x chunks.HeadSeriesRef) bool {
+			stats, err := Checkpoint(promslog.NewNopLogger(), w, 100, 106, func(x chunks.HeadSeriesRef) bool {
 				return x%2 == 0
 			}, last/2)
 			require.NoError(t, err)
@@ -354,7 +355,7 @@ func TestCheckpointNoTmpFolderAfterError(t *testing.T) {
 	require.NoError(t, f.Close())
 
 	// Run the checkpoint and since the wlog contains corrupt data this should return an error.
-	_, err = Checkpoint(log.NewNopLogger(), w, 0, 1, nil, 0)
+	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1, nil, 0)
 	require.Error(t, err)
 
 	// Walk the wlog dir to make sure there are no tmp folder left behind after the error.

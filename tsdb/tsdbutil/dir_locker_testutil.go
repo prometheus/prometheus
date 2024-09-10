@@ -18,8 +18,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/go-kit/log"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/util/testutil"
@@ -68,7 +68,7 @@ func TestDirLockerUsage(t *testing.T, open func(t *testing.T, data string, creat
 
 			// Test preconditions (file already exists + lockfile option)
 			if c.fileAlreadyExists {
-				tmpLocker, err := NewDirLocker(tmpdir, "tsdb", log.NewNopLogger(), nil)
+				tmpLocker, err := NewDirLocker(tmpdir, "tsdb", promslog.NewNopLogger(), nil)
 				require.NoError(t, err)
 				err = os.WriteFile(tmpLocker.path, []byte{}, 0o644)
 				require.NoError(t, err)

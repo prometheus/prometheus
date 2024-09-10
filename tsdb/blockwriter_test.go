@@ -19,8 +19,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -29,7 +30,7 @@ import (
 func TestBlockWriter(t *testing.T) {
 	ctx := context.Background()
 	outputDir := t.TempDir()
-	w, err := NewBlockWriter(log.NewNopLogger(), outputDir, DefaultBlockDuration)
+	w, err := NewBlockWriter(promslog.NewNopLogger(), outputDir, DefaultBlockDuration)
 	require.NoError(t, err)
 
 	// Add some series.
