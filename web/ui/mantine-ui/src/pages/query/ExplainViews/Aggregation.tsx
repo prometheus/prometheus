@@ -46,20 +46,34 @@ const describeAggregationType = (
       );
     case "bottomk":
       if (param === null || param.type !== "numberLiteral") {
-        return <>returns the bottom <span className="promql-code promql-number">K</span> series by value</>;
+        return (
+          <>
+            returns the bottom{" "}
+            <span className="promql-code promql-number">K</span> series by value
+          </>
+        );
       }
       return (
         <>
-          returns the bottom <span className="promql-code promql-number">{param.val}</span> series by value
+          returns the bottom{" "}
+          <span className="promql-code promql-number">{param.val}</span> series
+          by value
         </>
       );
     case "topk":
       if (param === null || param.type !== "numberLiteral") {
-        return <>returns the top <span className="promql-code promql-number">K</span> series by value</>;
+        return (
+          <>
+            returns the top <span className="promql-code promql-number">K</span>{" "}
+            series by value
+          </>
+        );
       }
       return (
         <>
-          returns the top <span className="promql-code promql-number">{param.val}</span> series by value
+          returns the top{" "}
+          <span className="promql-code promql-number">{param.val}</span> series
+          by value
         </>
       );
     case "quantile":
@@ -77,20 +91,30 @@ const describeAggregationType = (
 
     case "limitk":
       if (param === null || param.type !== "numberLiteral") {
-        return <>limits the output to <span className="promql-code promql-number">K</span> series</>;
+        return (
+          <>
+            limits the output to{" "}
+            <span className="promql-code promql-number">K</span> series
+          </>
+        );
       }
       return (
         <>
-          limits the output to <span className="promql-code promql-number">{param.val}</span> series
+          limits the output to{" "}
+          <span className="promql-code promql-number">{param.val}</span> series
         </>
       );
     case "limit_ratio":
       if (param === null || param.type !== "numberLiteral") {
         return "limits the output to a ratio of the input series";
       }
-      return `limits the output to a ratio of <span className="promql-code promql-number">${param.val}</span> (${
-        parsePrometheusFloat(param.val) * 100
-      }%) of the input series`;
+      return (
+        <>
+          limits the output to a ratio of{" "}
+          <span className="promql-code promql-number">{param.val}</span> (
+          {parsePrometheusFloat(param.val) * 100}%) of the input series
+        </>
+      );
     default:
       throw new Error(`invalid aggregation type ${aggrType}`);
   }
