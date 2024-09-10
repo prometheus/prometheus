@@ -27,8 +27,8 @@ As is traditional with a beta release, we do **not** recommend users install 3.0
 * [ENHANCEMENT] PromQL: Delay deletion of `__name__` label to the end of the query evaluation. This is **experimental** and enabled under the feature-flag `promql-delayed-name-removal`. #14477
 * [ENHANCEMENT] Move AM discovery page from "Monitoring status" to "Server status". #14875
 * [ENHANCEMENT] Tracing: Improve PromQL tracing, including showing the operation performed for aggregates, operators, and calls.#14816
-* [ENAHNCEMENT] Add support for multiple listening addresses. #14665
-* [ENAHNCEMENT] Add the ability to set custom HTTP headers. #14817
+* [ENHANCEMENT] Add support for multiple listening addresses. #14665
+* [ENHANCEMENT] Add the ability to set custom HTTP headers. #14817
 * [BUGFIX] TSDB: Fix shard initialization after WAL repair. #14731
 * [BUGFIX] UTF-8: Ensure correct validation when legacy mode turned on. #14736
 * [BUGFIX] SD: Make discovery manager notify consumers of dropped targets for still defined jobs. #13147
