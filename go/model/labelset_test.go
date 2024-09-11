@@ -311,6 +311,25 @@ func (s *LabelSetSuite) TestLabelSetSimpleBuilder_HasNotDuplicateLabelNames() {
 	s.False(has)
 }
 
+func (s *LabelSetSuite) TestLabelSetSimpleBuilder_HasNotDuplicateLabelNames_Set() {
+	labels := []model.SimpleLabel{
+		{"__name__", "example"},
+		{"container", "~unknown"},
+		{"instance", "instance"},
+		{"job", "test"},
+		{"container", "empty"},
+	}
+
+	builder := model.NewLabelSetSimpleBuilder()
+	for _, l := range labels {
+		builder.Set(l.Name, l.Value)
+	}
+
+	dup, has := builder.HasDuplicateLabelNames()
+	s.Equal("", dup)
+	s.False(has)
+}
+
 func (s *LabelSetSuite) TestLabelSetSimpleBuilder_Reset() {
 	labels := []model.SimpleLabel{
 		{"__name__", "example"},

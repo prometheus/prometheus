@@ -522,6 +522,32 @@ func (builder *LabelSetSimpleBuilder) Add(name, value string) {
 	builder.sorted = false
 }
 
+// Set the name/value pair as a label. A value of "" means delete that label.
+func (builder *LabelSetSimpleBuilder) Set(n, v string) {
+	if v == "" {
+		// Empty labels are the same as missing labels.
+		builder.Del(n)
+		return
+	}
+	for i, a := range builder.pairs {
+		if a.Name == n {
+			builder.pairs[i].Value = v
+			return
+		}
+	}
+	builder.pairs = append(builder.pairs, SimpleLabel{Name: n, Value: v})
+}
+
+// Del deletes the label of the given name.
+func (builder *LabelSetSimpleBuilder) Del(n string) {
+	for i, a := range builder.pairs {
+		if a.Name == n {
+			builder.pairs = append(builder.pairs[:i], builder.pairs[i+1:]...)
+			return
+		}
+	}
+}
+
 // Build label set.
 func (builder *LabelSetSimpleBuilder) Build() LabelSet {
 	if !builder.sorted {
