@@ -36,6 +36,7 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"go.uber.org/goleak"
@@ -7632,4 +7633,46 @@ func TestGenerateCompactionDelay(t *testing.T) {
 	for i := 0; i < 1000; i++ {
 		assertDelay(db.generateCompactionDelay())
 	}
+}
+
+func TestUTF8(t *testing.T) {
+	tsdbCfg := DefaultOptions()
+	tsdbCfg.UTF8MigrationEscapingScheme = model.UnderscoreEscaping
+	db, err := Open(t.TempDir(), nil, nil, tsdbCfg, nil)
+
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
+
+	app := db.Appender(context.Background())
+
+	l := labels.FromStrings("__name__", "with.dots")
+	_, err = app.Append(0, l, 100, 1.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	require.NoError(t, db.CompactHead(NewRangeHead(db.Head(), 0, 100)))
+
+	q, err := db.Querier(math.MinInt, math.MaxInt64)
+	require.NoError(t, err)
+	require.Equal(t, map[string][]chunks.Sample{
+		l.String(): {sample{t: 100, f: 1.0}},
+	}, query(t, q, labels.MustNewMatcher(labels.MatchEqual, "__name__", "with.dots")))
+
+	q, err = db.Querier(math.MinInt, math.MaxInt64)
+	require.NoError(t, err)
+	require.Equal(t, map[string][]chunks.Sample{}, query(t, q, labels.MustNewMatcher(labels.MatchEqual, "__name__", "with_dots")))
+
+	app = db.Appender(context.Background())
+	l = labels.FromStrings("__name__", "with_dots")
+	_, err = app.Append(0, l, 200, 2.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	q, err = db.Querier(math.MinInt, math.MaxInt64)
+	require.NoError(t, err)
+	require.Equal(t, map[string][]chunks.Sample{
+		labels.FromStrings("__name__", "with.dots").String(): {sample{t: 100, f: 1.0}, sample{t: 200, f: 2.0}},
+	}, query(t, q, labels.MustNewMatcher(labels.MatchEqual, "__name__", "with.dots")))
 }

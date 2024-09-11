@@ -19,9 +19,11 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"strings"
 
 	"github.com/oklog/ulid"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -101,6 +103,104 @@ func (q *blockBaseQuerier) Close() error {
 	return errs.Err()
 }
 
+type utf8MixedSeries struct {
+	s storage.Series
+}
+
+func (u utf8MixedSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
+	return u.s.Iterator(it)
+}
+
+func (u utf8MixedSeries) Labels() labels.Labels {
+	lbls := labels.ScratchBuilder{}
+	u.s.Labels().Range(func(l labels.Label) {
+		var n, v string
+		if l.Name == "__name__" {
+			n = l.Name
+			v = strings.ReplaceAll(l.Value, "_", ".")
+		} else {
+			n = strings.ReplaceAll(l.Name, "_", ".")
+			v = l.Value
+		}
+		lbls.Add(n, v)
+	})
+	return lbls.Labels()
+}
+
+type utf8MixedSeriesSet struct {
+	ss storage.SeriesSet
+}
+
+func (u *utf8MixedSeriesSet) At() storage.Series {
+	return utf8MixedSeries{s: u.ss.At()}
+}
+
+func (u *utf8MixedSeriesSet) Err() error {
+	return u.ss.Err()
+}
+
+func (u *utf8MixedSeriesSet) Next() bool {
+	return u.ss.Next()
+}
+
+func (u *utf8MixedSeriesSet) Warnings() annotations.Annotations {
+	return u.ss.Warnings()
+}
+
+func NewUTF8MixedSeriesSet(ss storage.SeriesSet) storage.SeriesSet {
+	return &utf8MixedSeriesSet{ss: ss}
+}
+
+type utf8MixedQuerier struct {
+	q  storage.Querier
+	es model.EscapingScheme
+}
+
+func (u *utf8MixedQuerier) Close() error {
+	return u.q.Close()
+}
+
+func (u *utf8MixedQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return u.q.LabelNames(ctx, hints, matchers...)
+}
+
+func (u *utf8MixedQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return u.q.LabelValues(ctx, name, hints, matchers...)
+}
+
+func (u *utf8MixedQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	ms2 := make([]*labels.Matcher, 0, len(matchers))
+	change := false
+	for i, m := range matchers {
+		ms2 = append(ms2, &labels.Matcher{})
+		if m.Type == labels.MatchEqual {
+			ms2[i].Name = strings.ReplaceAll(m.Name, ".", "_")
+			if ms2[i].Name == "__name__" {
+				ms2[i].Value = strings.ReplaceAll(m.Value, ".", "_")
+			} else {
+				ms2[i].Value = m.Value
+			}
+			if m.Name != ms2[i].Name || m.Value != ms2[i].Value {
+				change = true
+			}
+		} else {
+			ms2[i] = m
+		}
+		ms2[i].Type = m.Type
+	}
+	sets := []storage.SeriesSet{
+		u.q.Select(ctx, sortSeries, hints, matchers...),
+	}
+	if change {
+		sets = append(sets, NewUTF8MixedSeriesSet(u.q.Select(ctx, sortSeries, hints, ms2...)))
+	}
+	return storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
+}
+
+func NewUTF8MixedQuerier(q storage.Querier, es model.EscapingScheme) storage.Querier {
+	return &utf8MixedQuerier{q: q, es: es}
+}
+
 type blockQuerier struct {
 	*blockBaseQuerier
 }
@@ -111,6 +211,7 @@ func NewBlockQuerier(b BlockReader, mint, maxt int64) (storage.Querier, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return &blockQuerier{blockBaseQuerier: q}, nil
 }
 
