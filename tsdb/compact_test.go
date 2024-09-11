@@ -1371,7 +1371,7 @@ func TestCancelCompactions(t *testing.T) {
 }
 
 // TestDeleteCompactionBlockAfterFailedReload ensures that a failed reloadBlocks immediately after a compaction
-// deletes the resulting block to avoid creatings blocks with the same time range.
+// deletes the resulting block to avoid creating blocks with the same time range.
 func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 	tests := map[string]func(*DB) int{
 		"Test Head Compaction": func(db *DB) int {
@@ -2114,7 +2114,7 @@ func TestDelayedCompactionDoesNotBlockUnrelatedOps(t *testing.T) {
 			t.Parallel()
 
 			tmpdir := t.TempDir()
-			// Some blocks that need compation are present.
+			// Some blocks that need compaction are present.
 			createBlock(t, tmpdir, genSeries(1, 1, 0, 100))
 			createBlock(t, tmpdir, genSeries(1, 1, 100, 200))
 			createBlock(t, tmpdir, genSeries(1, 1, 200, 300))

@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	// Indicates that there is no index entry for an exmplar.
+	// Indicates that there is no index entry for an exemplar.
 	noExemplar = -1
 	// Estimated number of exemplars per series, for sizing the index.
 	estimatedExemplarsPerSeries = 16

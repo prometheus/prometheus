@@ -11,6 +11,7 @@ import { useSuspenseAPIQuery } from "../../../api/api";
 import { Card, Text, Divider, List } from "@mantine/core";
 import { MetadataResult } from "../../../api/responseTypes/metadata";
 import { formatPrometheusDuration } from "../../../lib/formatTime";
+import { useSettings } from "../../../state/settingsSlice";
 
 interface SelectorExplainViewProps {
   node: VectorSelector | MatrixSelector;
@@ -126,6 +127,7 @@ const matchingCriteriaList = (
 
 const SelectorExplainView: FC<SelectorExplainViewProps> = ({ node }) => {
   const baseMetricName = node.name.replace(/(_count|_sum|_bucket)$/, "");
+  const { lookbackDelta } = useSettings();
   const { data: metricMeta } = useSuspenseAPIQuery<MetadataResult>({
     path: `/metadata`,
     params: {
@@ -159,7 +161,7 @@ const SelectorExplainView: FC<SelectorExplainViewProps> = ({ node }) => {
         {node.type === nodeType.vectorSelector ? (
           <>
             This node selects the latest (non-stale) sample value within the
-            last <span className="promql-code promql-duration">5m</span>
+            last <span className="promql-code promql-duration">{lookbackDelta}</span>
           </>
         ) : (
           <>
@@ -208,7 +210,7 @@ const SelectorExplainView: FC<SelectorExplainViewProps> = ({ node }) => {
         If a series has no values in the last{" "}
         <span className="promql-code promql-duration">
           {node.type === nodeType.vectorSelector
-            ? "5m"
+            ? lookbackDelta
             : formatPrometheusDuration(node.range)}
         </span>
         {node.offset > 0 && (

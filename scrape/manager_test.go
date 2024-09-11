@@ -45,6 +45,11 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
+func init() {
+	// This can be removed when the default validation scheme in common is updated.
+	model.NameValidationScheme = model.UTF8Validation
+}
+
 func TestPopulateLabels(t *testing.T) {
 	cases := []struct {
 		in            labels.Labels
@@ -1181,7 +1186,7 @@ scrape_configs:
 }
 
 // TestOnlyStaleTargetsAreDropped makes sure that when a job has multiple providers, when one of them should no
-// longer discover targets, only the stale targets of that provier are dropped.
+// longer discover targets, only the stale targets of that provider are dropped.
 func TestOnlyStaleTargetsAreDropped(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

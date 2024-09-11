@@ -42,6 +42,11 @@ import (
 	"github.com/prometheus/prometheus/rules"
 )
 
+func init() {
+	// This can be removed when the default validation scheme in common is updated.
+	model.NameValidationScheme = model.UTF8Validation
+}
+
 const startupTime = 10 * time.Second
 
 var (
@@ -348,7 +353,7 @@ func getCurrentGaugeValuesFor(t *testing.T, reg prometheus.Gatherer, metricNames
 }
 
 func TestAgentSuccessfulStartup(t *testing.T) {
-	prom := exec.Command(promPath, "-test.main", "--enable-feature=agent", "--web.listen-address=0.0.0.0:0", "--config.file="+agentConfig)
+	prom := exec.Command(promPath, "-test.main", "--agent", "--web.listen-address=0.0.0.0:0", "--config.file="+agentConfig)
 	require.NoError(t, prom.Start())
 
 	actualExitStatus := 0
@@ -366,7 +371,7 @@ func TestAgentSuccessfulStartup(t *testing.T) {
 }
 
 func TestAgentFailedStartupWithServerFlag(t *testing.T) {
-	prom := exec.Command(promPath, "-test.main", "--enable-feature=agent", "--storage.tsdb.path=.", "--web.listen-address=0.0.0.0:0", "--config.file="+promConfig)
+	prom := exec.Command(promPath, "-test.main", "--agent", "--storage.tsdb.path=.", "--web.listen-address=0.0.0.0:0", "--config.file="+promConfig)
 
 	output := bytes.Buffer{}
 	prom.Stderr = &output
@@ -393,7 +398,7 @@ func TestAgentFailedStartupWithServerFlag(t *testing.T) {
 }
 
 func TestAgentFailedStartupWithInvalidConfig(t *testing.T) {
-	prom := exec.Command(promPath, "-test.main", "--enable-feature=agent", "--web.listen-address=0.0.0.0:0", "--config.file="+promConfig)
+	prom := exec.Command(promPath, "-test.main", "--agent", "--web.listen-address=0.0.0.0:0", "--config.file="+promConfig)
 	require.NoError(t, prom.Start())
 
 	actualExitStatus := 0
@@ -431,7 +436,7 @@ func TestModeSpecificFlags(t *testing.T) {
 			args := []string{"-test.main", tc.arg, t.TempDir(), "--web.listen-address=0.0.0.0:0"}
 
 			if tc.mode == "agent" {
-				args = append(args, "--enable-feature=agent", "--config.file="+agentConfig)
+				args = append(args, "--agent", "--config.file="+agentConfig)
 			} else {
 				args = append(args, "--config.file="+promConfig)
 			}

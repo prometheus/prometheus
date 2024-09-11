@@ -108,8 +108,8 @@ eval instant at 50m histogram_stdvar(testhistogram3)
 eval instant at 50m histogram_fraction(0, 0.2, testhistogram3)
 	{start="positive"} 0.6363636363636364
 	{start="negative"} 0
-	
-eval instant at 50m histogram_fraction(0, 0.2, rate(testhistogram3[5m]))
+
+eval instant at 50m histogram_fraction(0, 0.2, rate(testhistogram3[10m]))
 	{start="positive"} 0.6363636363636364
 	{start="negative"} 0
 
@@ -118,8 +118,8 @@ eval instant at 50m histogram_fraction(0, 0.2, rate(testhistogram3[5m]))
 
 eval instant at 50m testhistogram3_bucket{le=".2"} / ignoring(le) testhistogram3_count
 	{start="positive"} 0.6363636363636364
-	
-eval instant at 50m rate(testhistogram3_bucket{le=".2"}[5m]) / ignoring(le) rate(testhistogram3_count[5m])
+
+eval instant at 50m rate(testhistogram3_bucket{le=".2"}[10m]) / ignoring(le) rate(testhistogram3_count[10m])
 	{start="positive"} 0.6363636363636364
 
 # Test histogram_quantile, native and classic.
@@ -241,28 +241,27 @@ eval instant at 50m histogram_quantile(0.8, testhistogram_bucket)
 	{start="negative"} 0.3
 
 # More realistic with rates.
-
-eval instant at 50m histogram_quantile(0.2, rate(testhistogram[5m]))
+eval instant at 50m histogram_quantile(0.2, rate(testhistogram[10m]))
 	{start="positive"} 0.048
 	{start="negative"} -0.2
 
-eval instant at 50m histogram_quantile(0.2, rate(testhistogram_bucket[5m]))
+eval instant at 50m histogram_quantile(0.2, rate(testhistogram_bucket[10m]))
 	{start="positive"} 0.048
 	{start="negative"} -0.2
 
-eval instant at 50m histogram_quantile(0.5, rate(testhistogram[5m]))
+eval instant at 50m histogram_quantile(0.5, rate(testhistogram[10m]))
 	{start="positive"} 0.15
 	{start="negative"} -0.15
 
-eval instant at 50m histogram_quantile(0.5, rate(testhistogram_bucket[5m]))
+eval instant at 50m histogram_quantile(0.5, rate(testhistogram_bucket[10m]))
 	{start="positive"} 0.15
 	{start="negative"} -0.15
 
-eval instant at 50m histogram_quantile(0.8, rate(testhistogram[5m]))
+eval instant at 50m histogram_quantile(0.8, rate(testhistogram[10m]))
 	{start="positive"} 0.72
 	{start="negative"} 0.3
 
-eval instant at 50m histogram_quantile(0.8, rate(testhistogram_bucket[5m]))
+eval instant at 50m histogram_quantile(0.8, rate(testhistogram_bucket[10m]))
 	{start="positive"} 0.72
 	{start="negative"} 0.3
 
@@ -307,115 +306,112 @@ eval instant at 47m histogram_quantile(5./6., rate(testhistogram2_bucket[15m]))
 # Aggregated histogram: Everything in one. Note how native histograms
 # don't require aggregation by le.
 
-eval instant at 50m histogram_quantile(0.3, sum(rate(request_duration_seconds[5m])))
+eval instant at 50m histogram_quantile(0.3, sum(rate(request_duration_seconds[10m])))
 	{} 0.075
 
-eval instant at 50m histogram_quantile(0.3, sum(rate(request_duration_seconds_bucket[5m])) by (le))
+eval instant at 50m histogram_quantile(0.3, sum(rate(request_duration_seconds_bucket[10m])) by (le))
 	{} 0.075
 
-eval instant at 50m histogram_quantile(0.5, sum(rate(request_duration_seconds[5m])))
+eval instant at 50m histogram_quantile(0.5, sum(rate(request_duration_seconds[10m])))
 	{} 0.1277777777777778
 
-eval instant at 50m histogram_quantile(0.5, sum(rate(request_duration_seconds_bucket[5m])) by (le))
+eval instant at 50m histogram_quantile(0.5, sum(rate(request_duration_seconds_bucket[10m])) by (le))
 	{} 0.1277777777777778
 
 # Aggregated histogram: Everything in one. Now with avg, which does not change anything.
 
-eval instant at 50m histogram_quantile(0.3, avg(rate(request_duration_seconds[5m])))
+eval instant at 50m histogram_quantile(0.3, avg(rate(request_duration_seconds[10m])))
 	{} 0.075
 
-eval instant at 50m histogram_quantile(0.3, avg(rate(request_duration_seconds_bucket[5m])) by (le))
+eval instant at 50m histogram_quantile(0.3, avg(rate(request_duration_seconds_bucket[10m])) by (le))
 	{} 0.075
 
-eval instant at 50m histogram_quantile(0.5, avg(rate(request_duration_seconds[5m])))
+eval instant at 50m histogram_quantile(0.5, avg(rate(request_duration_seconds[10m])))
 	{} 0.12777777777777778
 
-eval instant at 50m histogram_quantile(0.5, avg(rate(request_duration_seconds_bucket[5m])) by (le))
+eval instant at 50m histogram_quantile(0.5, avg(rate(request_duration_seconds_bucket[10m])) by (le))
 	{} 0.12777777777777778
 
 # Aggregated histogram: By instance.
 
-eval instant at 50m histogram_quantile(0.3, sum(rate(request_duration_seconds[5m])) by (instance))
+eval instant at 50m histogram_quantile(0.3, sum(rate(request_duration_seconds[10m])) by (instance))
 	{instance="ins1"} 0.075
 	{instance="ins2"} 0.075
 
-eval instant at 50m histogram_quantile(0.3, sum(rate(request_duration_seconds_bucket[5m])) by (le, instance))
+eval instant at 50m histogram_quantile(0.3, sum(rate(request_duration_seconds_bucket[10m])) by (le, instance))
 	{instance="ins1"} 0.075
 	{instance="ins2"} 0.075
 
-eval instant at 50m histogram_quantile(0.5, sum(rate(request_duration_seconds[5m])) by (instance))
+eval instant at 50m histogram_quantile(0.5, sum(rate(request_duration_seconds[10m])) by (instance))
 	{instance="ins1"} 0.1333333333
 	{instance="ins2"} 0.125
 
-eval instant at 50m histogram_quantile(0.5, sum(rate(request_duration_seconds_bucket[5m])) by (le, instance))
+eval instant at 50m histogram_quantile(0.5, sum(rate(request_duration_seconds_bucket[10m])) by (le, instance))
 	{instance="ins1"} 0.1333333333
 	{instance="ins2"} 0.125
 
 # Aggregated histogram: By job.
-
-eval instant at 50m histogram_quantile(0.3, sum(rate(request_duration_seconds[5m])) by (job))
+eval instant at 50m histogram_quantile(0.3, sum(rate(request_duration_seconds[10m])) by (job))
 	{job="job1"} 0.1
 	{job="job2"} 0.0642857142857143
 
-eval instant at 50m histogram_quantile(0.3, sum(rate(request_duration_seconds_bucket[5m])) by (le, job))
+eval instant at 50m histogram_quantile(0.3, sum(rate(request_duration_seconds_bucket[10m])) by (le, job))
 	{job="job1"} 0.1
 	{job="job2"} 0.0642857142857143
 
-eval instant at 50m histogram_quantile(0.5, sum(rate(request_duration_seconds[5m])) by (job))
+eval instant at 50m histogram_quantile(0.5, sum(rate(request_duration_seconds[10m])) by (job))
 	{job="job1"} 0.14
 	{job="job2"} 0.1125
 
-eval instant at 50m histogram_quantile(0.5, sum(rate(request_duration_seconds_bucket[5m])) by (le, job))
+eval instant at 50m histogram_quantile(0.5, sum(rate(request_duration_seconds_bucket[10m])) by (le, job))
 	{job="job1"} 0.14
 	{job="job2"} 0.1125
 
 # Aggregated histogram: By job and instance.
-
-eval instant at 50m histogram_quantile(0.3, sum(rate(request_duration_seconds[5m])) by (job, instance))
+eval instant at 50m histogram_quantile(0.3, sum(rate(request_duration_seconds[10m])) by (job, instance))
 	{instance="ins1", job="job1"} 0.11
 	{instance="ins2", job="job1"} 0.09
 	{instance="ins1", job="job2"} 0.06
 	{instance="ins2", job="job2"} 0.0675
 
-eval instant at 50m histogram_quantile(0.3, sum(rate(request_duration_seconds_bucket[5m])) by (le, job, instance))
+eval instant at 50m histogram_quantile(0.3, sum(rate(request_duration_seconds_bucket[10m])) by (le, job, instance))
 	{instance="ins1", job="job1"} 0.11
 	{instance="ins2", job="job1"} 0.09
 	{instance="ins1", job="job2"} 0.06
 	{instance="ins2", job="job2"} 0.0675
 
-eval instant at 50m histogram_quantile(0.5, sum(rate(request_duration_seconds[5m])) by (job, instance))
+eval instant at 50m histogram_quantile(0.5, sum(rate(request_duration_seconds[10m])) by (job, instance))
 	{instance="ins1", job="job1"} 0.15
 	{instance="ins2", job="job1"} 0.1333333333333333
 	{instance="ins1", job="job2"} 0.1
 	{instance="ins2", job="job2"} 0.1166666666666667
 
-eval instant at 50m histogram_quantile(0.5, sum(rate(request_duration_seconds_bucket[5m])) by (le, job, instance))
+eval instant at 50m histogram_quantile(0.5, sum(rate(request_duration_seconds_bucket[10m])) by (le, job, instance))
 	{instance="ins1", job="job1"} 0.15
 	{instance="ins2", job="job1"} 0.1333333333333333
 	{instance="ins1", job="job2"} 0.1
 	{instance="ins2", job="job2"} 0.1166666666666667
 
 # The unaggregated histogram for comparison. Same result as the previous one.
-
-eval instant at 50m histogram_quantile(0.3, rate(request_duration_seconds[5m]))
+eval instant at 50m histogram_quantile(0.3, rate(request_duration_seconds[10m]))
 	{instance="ins1", job="job1"} 0.11
 	{instance="ins2", job="job1"} 0.09
 	{instance="ins1", job="job2"} 0.06
 	{instance="ins2", job="job2"} 0.0675
 
-eval instant at 50m histogram_quantile(0.3, rate(request_duration_seconds_bucket[5m]))
+eval instant at 50m histogram_quantile(0.3, rate(request_duration_seconds_bucket[10m]))
 	{instance="ins1", job="job1"} 0.11
 	{instance="ins2", job="job1"} 0.09
 	{instance="ins1", job="job2"} 0.06
 	{instance="ins2", job="job2"} 0.0675
 
-eval instant at 50m histogram_quantile(0.5, rate(request_duration_seconds[5m]))
+eval instant at 50m histogram_quantile(0.5, rate(request_duration_seconds[10m]))
 	{instance="ins1", job="job1"} 0.15
 	{instance="ins2", job="job1"} 0.13333333333333333
 	{instance="ins1", job="job2"} 0.1
 	{instance="ins2", job="job2"} 0.11666666666666667
 
-eval instant at 50m histogram_quantile(0.5, rate(request_duration_seconds_bucket[5m]))
+eval instant at 50m histogram_quantile(0.5, rate(request_duration_seconds_bucket[10m]))
 	{instance="ins1", job="job1"} 0.15
 	{instance="ins2", job="job1"} 0.13333333333333333
 	{instance="ins1", job="job2"} 0.1
@@ -448,19 +444,19 @@ eval instant at 50m histogram_quantile(0.99, nonmonotonic_bucket)
     {} 979.75
 
 # Buckets with different representations of the same upper bound.
-eval instant at 50m histogram_quantile(0.5, rate(mixed_bucket[5m]))
+eval instant at 50m histogram_quantile(0.5, rate(mixed_bucket[10m]))
 	{instance="ins1", job="job1"} 0.15
 	{instance="ins2", job="job1"} NaN
 
-eval instant at 50m histogram_quantile(0.5, rate(mixed[5m]))
+eval instant at 50m histogram_quantile(0.5, rate(mixed[10m]))
 	{instance="ins1", job="job1"} 0.2
 	{instance="ins2", job="job1"} NaN
 
-eval instant at 50m histogram_quantile(0.75, rate(mixed_bucket[5m]))
+eval instant at 50m histogram_quantile(0.75, rate(mixed_bucket[10m]))
 	{instance="ins1", job="job1"} 0.2
 	{instance="ins2", job="job1"} NaN
 
-eval instant at 50m histogram_quantile(1, rate(mixed_bucket[5m]))
+eval instant at 50m histogram_quantile(1, rate(mixed_bucket[10m]))
 	{instance="ins1", job="job1"} 0.2
 	{instance="ins2", job="job1"} NaN
 
@@ -469,7 +465,7 @@ load_with_nhcb 5m
 	empty_bucket{le="0.2", job="job1", instance="ins1"}    0x10
 	empty_bucket{le="+Inf", job="job1", instance="ins1"}   0x10
 
-eval instant at 50m histogram_quantile(0.2, rate(empty_bucket[5m]))
+eval instant at 50m histogram_quantile(0.2, rate(empty_bucket[10m]))
 	{instance="ins1", job="job1"} NaN
 
 # Load a duplicate histogram with a different name to test failure scenario on multiple histograms with the same label set.

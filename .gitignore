@@ -22,8 +22,7 @@ benchmark.txt
 /documentation/examples/remote_storage/example_write_adapter/example_write_adapter
 
 npm_licenses.tar.bz2
-/web/ui/static/react-app
-/web/ui/static/mantine-ui
+/web/ui/static
 
 /vendor
 /.build

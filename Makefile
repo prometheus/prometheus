@@ -42,7 +42,7 @@ upgrade-npm-deps:
 
 .PHONY: ui-bump-version
 ui-bump-version:
-	version=$$(sed s/2/0/ < VERSION) && ./scripts/ui_release.sh --bump-version "$${version}"
+	version=$$(./scripts/get_module_version.sh) && ./scripts/ui_release.sh --bump-version "$${version}"
 	cd web/ui && npm install
 	git add "./web/ui/package-lock.json" "./**/package.json"
 

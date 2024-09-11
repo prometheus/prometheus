@@ -87,10 +87,9 @@ or 31 days, whichever is smaller.
 Prometheus has several flags that configure local storage. The most important are:
 
 - `--storage.tsdb.path`: Where Prometheus writes its database. Defaults to `data/`.
-- `--storage.tsdb.retention.time`: How long to retain samples in storage. When this flag is
-  set, it overrides `storage.tsdb.retention`. If neither this flag nor `storage.tsdb.retention`
-  nor `storage.tsdb.retention.size` is set, the retention time defaults to `15d`.
-  Supported units: y, w, d, h, m, s, ms.
+- `--storage.tsdb.retention.time`: How long to retain samples in storage. If neither
+  this flag nor `storage.tsdb.retention.size` is set, the retention time defaults to
+  `15d`. Supported units: y, w, d, h, m, s, ms.
 - `--storage.tsdb.retention.size`: The maximum number of bytes of storage blocks to retain.
   The oldest data will be removed first. Defaults to `0` or disabled. Units supported:
   B, KB, MB, GB, TB, PB, EB. Ex: "512MB". Based on powers-of-2, so 1KB is 1024B. Only
@@ -98,7 +97,6 @@ Prometheus has several flags that configure local storage. The most important ar
   chunks are counted in the total size. So the minimum requirement for the disk is the
   peak space taken by the `wal` (the WAL and Checkpoint) and `chunks_head`
   (m-mapped Head chunks) directory combined (peaks every 2 hours).
-- `--storage.tsdb.retention`: Deprecated in favor of `storage.tsdb.retention.time`.
 - `--storage.tsdb.wal-compression`: Enables compression of the write-ahead log (WAL).
   Depending on your data, you can expect the WAL size to be halved with little extra
   cpu load. This flag was introduced in 2.11.0 and enabled by default in 2.20.0.
@@ -146,7 +144,7 @@ a buffer, ensuring that older entries will be removed before the allocated stora
 for Prometheus becomes full.
 
 At present, we recommend setting the retention size to, at most, 80-85% of your 
-allocated Prometheus disk space. This increases the likelihood that older entires 
+allocated Prometheus disk space. This increases the likelihood that older entries 
 will be removed prior to hitting any disk limitations.
 
 ## Remote storage integrations

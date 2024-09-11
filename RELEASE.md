@@ -187,7 +187,7 @@ the Prometheus server, we use major version zero releases for the libraries.
 Tag the new library release via the following commands:
 
 ```bash
-tag="v$(sed s/2/0/ < VERSION)"
+tag="v$(./scripts/get_module_version.sh)"
 git tag -s "${tag}" -m "${tag}"
 git push origin "${tag}"
 ```

@@ -15,7 +15,6 @@ package kubernetes
 
 import (
 	v1 "k8s.io/api/networking/v1"
-	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -89,56 +88,3 @@ func (i *ingressRuleAdaptorV1) paths() []string {
 }
 
 func (i *ingressRuleAdaptorV1) host() string { return i.rule.Host }
-
-// Adaptor for networking.k8s.io/v1beta1.
-type ingressAdaptorV1Beta1 struct {
-	ingress *v1beta1.Ingress
-}
-
-func newIngressAdaptorFromV1beta1(ingress *v1beta1.Ingress) ingressAdaptor {
-	return &ingressAdaptorV1Beta1{ingress: ingress}
-}
-func (i *ingressAdaptorV1Beta1) getObjectMeta() metav1.ObjectMeta { return i.ingress.ObjectMeta }
-func (i *ingressAdaptorV1Beta1) name() string                     { return i.ingress.Name }
-func (i *ingressAdaptorV1Beta1) namespace() string                { return i.ingress.Namespace }
-func (i *ingressAdaptorV1Beta1) labels() map[string]string        { return i.ingress.Labels }
-func (i *ingressAdaptorV1Beta1) annotations() map[string]string   { return i.ingress.Annotations }
-func (i *ingressAdaptorV1Beta1) ingressClassName() *string        { return i.ingress.Spec.IngressClassName }
-
-func (i *ingressAdaptorV1Beta1) tlsHosts() []string {
-	var hosts []string
-	for _, tls := range i.ingress.Spec.TLS {
-		hosts = append(hosts, tls.Hosts...)
-	}
-	return hosts
-}
-
-func (i *ingressAdaptorV1Beta1) rules() []ingressRuleAdaptor {
-	var rules []ingressRuleAdaptor
-	for _, rule := range i.ingress.Spec.Rules {
-		rules = append(rules, newIngressRuleAdaptorFromV1Beta1(rule))
-	}
-	return rules
-}
-
-type ingressRuleAdaptorV1Beta1 struct {
-	rule v1beta1.IngressRule
-}
-
-func newIngressRuleAdaptorFromV1Beta1(rule v1beta1.IngressRule) ingressRuleAdaptor {
-	return &ingressRuleAdaptorV1Beta1{rule: rule}
-}
-
-func (i *ingressRuleAdaptorV1Beta1) paths() []string {
-	rv := i.rule.IngressRuleValue
-	if rv.HTTP == nil {
-		return nil
-	}
-	paths := make([]string, len(rv.HTTP.Paths))
-	for n, p := range rv.HTTP.Paths {
-		paths[n] = p.Path
-	}
-	return paths
-}
-
-func (i *ingressRuleAdaptorV1Beta1) host() string { return i.rule.Host }

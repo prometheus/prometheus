@@ -604,7 +604,7 @@ func readDelimited(b []byte, mf *dto.MetricFamily) (n int, err error) {
 	return totalLength, mf.Unmarshal(b[varIntLength:totalLength])
 }
 
-// formatOpenMetricsFloat works like the usual Go string formatting of a fleat
+// formatOpenMetricsFloat works like the usual Go string formatting of a float
 // but appends ".0" if the resulting number would otherwise contain neither a
 // "." nor an "e".
 func formatOpenMetricsFloat(f float64) string {

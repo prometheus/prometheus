@@ -2027,7 +2027,7 @@ func (t *QueueManager) sendWriteRequestWithBackoff(ctx context.Context, attempt 
 		// make the problem worse, particularly if we're getting rate limited.
 		//
 		// reshardDisableTimestamp holds the unix timestamp until which resharding
-		// is diableld. We'll update that timestamp if the period we were just told
+		// is disabled. We'll update that timestamp if the period we were just told
 		// to sleep for is newer than the existing disabled timestamp.
 		reshardWaitPeriod := time.Now().Add(time.Duration(sleepDuration) * 2)
 		if oldTS, updated := setAtomicToNewer(&t.reshardDisableEndTimestamp, reshardWaitPeriod.Unix()); updated {

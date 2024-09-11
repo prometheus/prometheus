@@ -41,10 +41,10 @@ const (
 	uyuniMetaLabelPrefix     = model.MetaLabelPrefix + "uyuni_"
 	uyuniLabelMinionHostname = uyuniMetaLabelPrefix + "minion_hostname"
 	uyuniLabelPrimaryFQDN    = uyuniMetaLabelPrefix + "primary_fqdn"
-	uyuniLablelSystemID      = uyuniMetaLabelPrefix + "system_id"
-	uyuniLablelGroups        = uyuniMetaLabelPrefix + "groups"
-	uyuniLablelEndpointName  = uyuniMetaLabelPrefix + "endpoint_name"
-	uyuniLablelExporter      = uyuniMetaLabelPrefix + "exporter"
+	uyuniLabelSystemID       = uyuniMetaLabelPrefix + "system_id"
+	uyuniLabelGroups         = uyuniMetaLabelPrefix + "groups"
+	uyuniLabelEndpointName   = uyuniMetaLabelPrefix + "endpoint_name"
+	uyuniLabelExporter       = uyuniMetaLabelPrefix + "exporter"
 	uyuniLabelProxyModule    = uyuniMetaLabelPrefix + "proxy_module"
 	uyuniLabelMetricsPath    = uyuniMetaLabelPrefix + "metrics_path"
 	uyuniLabelScheme         = uyuniMetaLabelPrefix + "scheme"
@@ -270,10 +270,10 @@ func (d *Discovery) getEndpointLabels(
 		model.AddressLabel:       model.LabelValue(addr),
 		uyuniLabelMinionHostname: model.LabelValue(networkInfo.Hostname),
 		uyuniLabelPrimaryFQDN:    model.LabelValue(networkInfo.PrimaryFQDN),
-		uyuniLablelSystemID:      model.LabelValue(strconv.Itoa(endpoint.SystemID)),
-		uyuniLablelGroups:        model.LabelValue(strings.Join(managedGroupNames, d.separator)),
-		uyuniLablelEndpointName:  model.LabelValue(endpoint.EndpointName),
-		uyuniLablelExporter:      model.LabelValue(endpoint.ExporterName),
+		uyuniLabelSystemID:       model.LabelValue(strconv.Itoa(endpoint.SystemID)),
+		uyuniLabelGroups:         model.LabelValue(strings.Join(managedGroupNames, d.separator)),
+		uyuniLabelEndpointName:   model.LabelValue(endpoint.EndpointName),
+		uyuniLabelExporter:       model.LabelValue(endpoint.ExporterName),
 		uyuniLabelProxyModule:    model.LabelValue(endpoint.Module),
 		uyuniLabelMetricsPath:    model.LabelValue(endpoint.Path),
 		uyuniLabelScheme:         model.LabelValue(scheme),

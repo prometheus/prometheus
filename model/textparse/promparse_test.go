@@ -140,7 +140,7 @@ testmetric{label="\"bar\""} 1`
 			v:    8.3835e-05,
 			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"),
 		}, {
-			// NOTE: Unlike OpenMetrics, Promparse allows spaces between label terms. This appears to be unintended and should probably be fixed.
+			// NOTE: Unlike OpenMetrics, PromParser allows spaces between label terms. This appears to be unintended and should probably be fixed.
 			m:    `go_gc_duration_seconds { quantile = "2.0" a = "b" }`,
 			v:    8.3835e-05,
 			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "2.0", "a", "b"),

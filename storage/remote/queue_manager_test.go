@@ -351,7 +351,7 @@ func TestMetadataDelivery(t *testing.T) {
 
 	require.Equal(t, 0.0, client_testutil.ToFloat64(m.metrics.failedMetadataTotal))
 	require.Len(t, c.receivedMetadata, numMetadata)
-	// One more write than the rounded qoutient should be performed in order to get samples that didn't
+	// One more write than the rounded quotient should be performed in order to get samples that didn't
 	// fit into MaxSamplesPerSend.
 	require.Equal(t, numMetadata/config.DefaultMetadataConfig.MaxSamplesPerSend+1, c.writesReceived)
 	// Make sure the last samples were sent.

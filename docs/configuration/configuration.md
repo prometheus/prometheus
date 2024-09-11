@@ -126,9 +126,9 @@ global:
   [ keep_dropped_targets: <int> | default = 0 ]
 
   # Specifies the validation scheme for metric and label names. Either blank or
-  # "legacy" for letters, numbers, colons, and underscores; or "utf8" for full
-  # UTF-8 support.
-  [ metric_name_validation_scheme <string> | default "legacy" ]
+  # "utf8" for for full UTF-8 support, or "legacy" for letters, numbers, colons,
+  # and underscores.
+  [ metric_name_validation_scheme <string> | default "utf8" ]
 
 runtime:
   # Configure the Go garbage collector GOGC parameter
@@ -485,10 +485,10 @@ metric_relabel_configs:
 # that will be kept in memory. 0 means no limit.
 [ keep_dropped_targets: <int> | default = 0 ]
 
-# Specifies the validation scheme for metric and label names. Either blank or
-# "legacy" for letters, numbers, colons, and underscores; or "utf8" for full
-# UTF-8 support.
-[ metric_name_validation_scheme <string> | default "legacy" ]
+# Specifies the validation scheme for metric and label names. Either blank or 
+# "utf8" for full UTF-8 support, or "legacy" for letters, numbers, colons, and
+# underscores.
+[ metric_name_validation_scheme <string> | default "utf8" ]
 
 # Limit on total number of positive and negative buckets allowed in a single
 # native histogram. The resolution of a histogram with more buckets will be
@@ -1407,7 +1407,7 @@ authorization:
   # `credentials_file`.
   [ credentials: <secret> ]
   # Sets the credentials to the credentials read from the configured file.
-  # It is mutuall exclusive with `credentials`.
+  # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
 # Optional OAuth 2.0 configuration, currently not supported by AWS.
@@ -2298,6 +2298,8 @@ The `endpointslice` role discovers targets from existing endpointslices. For eac
 address referenced in the endpointslice object one target is discovered. If the endpoint is backed by a pod, all
 additional container ports of the pod, not bound to an endpoint port, are discovered as targets as well.
 
+The role requires the `discovery.k8s.io/v1` API version (available since Kubernetes v1.21).
+
 Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the endpoints object.
@@ -2318,7 +2320,7 @@ Available meta labels:
   * `__meta_kubernetes_endpointslice_endpoint_topology_present_kubernetes_io_hostname`: Flag that shows if the referenced object has a kubernetes.io/hostname annotation.
   * `__meta_kubernetes_endpointslice_endpoint_hostname`: Hostname of the referenced endpoint.
   * `__meta_kubernetes_endpointslice_endpoint_node_name`: Name of the Node hosting the referenced endpoint.
-  * `__meta_kubernetes_endpointslice_endpoint_zone`: Zone the referenced endpoint exists in (only available when using the `discovery.k8s.io/v1` API group).
+  * `__meta_kubernetes_endpointslice_endpoint_zone`: Zone the referenced endpoint exists in.
   * `__meta_kubernetes_endpointslice_port`: Port of the referenced endpoint.
   * `__meta_kubernetes_endpointslice_port_name`: Named port of the referenced endpoint.
   * `__meta_kubernetes_endpointslice_port_protocol`: Protocol of the referenced endpoint.
@@ -2330,6 +2332,8 @@ Available meta labels:
 The `ingress` role discovers a target for each path of each ingress.
 This is generally useful for blackbox monitoring of an ingress.
 The address will be set to the host specified in the ingress spec.
+
+The role requires the `networking.k8s.io/v1` API version (available since Kubernetes v1.19).
 
 Available meta labels:
 
@@ -2623,7 +2627,7 @@ authorization:
   # `credentials_file`.
   [ credentials: <secret> ]
   # Sets the credentials to the credentials read from the configured file.
-  # It is mutuall exclusive with `credentials`.
+  # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
 # Optional OAuth 2.0 configuration, currently not supported by AWS.
@@ -3984,7 +3988,7 @@ azuread:
 # Cannot be used at the same time as basic_auth, authorization, oauth2, sigv4 or azuread.
 # To use the default credentials from the Google Cloud SDK, use `google_iam: {}`.
 google_iam:
-  # Service account key with monitoring write permessions.
+  # Service account key with monitoring write permissions.
   credentials_file: <file_name>
 
 # Configures the remote write request's TLS settings.

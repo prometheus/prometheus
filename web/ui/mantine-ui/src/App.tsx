@@ -6,6 +6,7 @@ import classes from "./App.module.css";
 import PrometheusLogo from "./images/prometheus-logo.svg";
 
 import {
+  ActionIcon,
   AppShell,
   Box,
   Burger,
@@ -22,6 +23,7 @@ import { useDisclosure } from "@mantine/hooks";
 import {
   IconBell,
   IconBellFilled,
+  IconBook,
   IconChevronDown,
   IconChevronRight,
   IconCloudDataConnection,
@@ -109,13 +111,6 @@ const monitoringStatusPages = [
     element: <ServiceDiscoveryPage />,
     inAgentMode: true,
   },
-  {
-    title: "Alertmanager discovery",
-    path: "/discovered-alertmanagers",
-    icon: <IconBell style={navIconStyle} />,
-    element: <AlertmanagerDiscoveryPage />,
-    inAgentMode: false,
-  },
 ];
 
 const serverStatusPages = [
@@ -146,6 +141,13 @@ const serverStatusPages = [
     icon: <IconServerCog style={navIconStyle} />,
     element: <ConfigPage />,
     inAgentMode: true,
+  },
+  {
+    title: "Alertmanager discovery",
+    path: "/alertmanager-discovery",
+    icon: <IconBell style={navIconStyle} />,
+    element: <AlertmanagerDiscoveryPage />,
+    inAgentMode: false,
   },
 ];
 
@@ -306,17 +308,24 @@ function App() {
             ))}
         </Menu.Dropdown>
       </Menu>
+    </>
+  );
 
-      {/* <Button
+  const navActionIcons = (
+    <>
+      <ThemeSelector />
+      <SettingsMenu />
+      <ActionIcon
         component="a"
         href="https://prometheus.io/docs/prometheus/latest/getting_started/"
-        className={classes.link}
-        leftSection={<IconHelp style={navIconStyle} />}
         target="_blank"
-        px={navLinkXPadding}
+        color="gray"
+        title="Documentation"
+        aria-label="Documentation"
+        size={32}
       >
-        Help
-      </Button> */}
+        <IconBook size={20} />
+      </ActionIcon>
     </>
   );
 
@@ -359,9 +368,8 @@ function App() {
                         {navLinks}
                       </Group>
                     </Group>
-                    <Group visibleFrom="xs" wrap="nowrap">
-                      <ThemeSelector />
-                      <SettingsMenu />
+                    <Group visibleFrom="xs" wrap="nowrap" gap="xs">
+                      {navActionIcons}
                     </Group>
                   </Group>
                   <Burger
@@ -377,8 +385,7 @@ function App() {
               <AppShell.Navbar py="md" px={4} bg="rgb(65, 73, 81)" c="#fff">
                 {navLinks}
                 <Group mt="md" hiddenFrom="xs" justify="center">
-                  <ThemeSelector />
-                  <SettingsMenu />
+                  {navActionIcons}
                 </Group>
               </AppShell.Navbar>
 

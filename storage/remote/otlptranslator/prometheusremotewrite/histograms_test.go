@@ -171,7 +171,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 					},
 					// Downscale:
 					// 4+2+0+2, 0+0+0+0, 0+0+0+0, 0+0+0+0, 1+0+0+0 = 8, 0, 0, 0, 1
-					// Check from sclaing from previous: 6+2, 0+0, 0+0, 0+0, 1+0 = 8, 0, 0, 0, 1
+					// Check from scaling from previous: 6+2, 0+0, 0+0, 0+0, 1+0 = 8, 0, 0, 0, 1
 					wantDeltas: []int64{8, -7},
 				},
 			},
@@ -222,7 +222,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 					},
 					// Downscale:
 					// 4+2+0+2, 0+0+0+0, 0+0+0+0, 1+0+0+0 = 8, 0, 0, 1
-					// Check from sclaing from previous: 6+2, 0+0, 0+0, 1+0 = 8, 0, 0, 1
+					// Check from scaling from previous: 6+2, 0+0, 0+0, 1+0 = 8, 0, 0, 1
 					wantDeltas: []int64{8, -8, 0, 1},
 				},
 			},

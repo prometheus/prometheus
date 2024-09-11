@@ -26,7 +26,6 @@ import (
 	"github.com/prometheus/common/model"
 	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/discovery/v1"
-	"k8s.io/api/discovery/v1beta1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 
@@ -103,9 +102,9 @@ func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, nod
 			return
 		}
 
-		// TODO(brancz): use cache.Indexer to index endpoints by
-		// disv1beta1.LabelServiceName so this operation doesn't have to
-		// iterate over all endpoint objects.
+		// TODO(brancz): use cache.Indexer to index endpointslices by
+		// LabelServiceName so this operation doesn't have to iterate over all
+		// endpoint objects.
 		for _, obj := range e.endpointSliceStore.List() {
 			esa, err := e.getEndpointSliceAdaptor(obj)
 			if err != nil {
@@ -241,8 +240,6 @@ func (e *EndpointSlice) getEndpointSliceAdaptor(o interface{}) (endpointSliceAda
 	switch endpointSlice := o.(type) {
 	case *v1.EndpointSlice:
 		return newEndpointSliceAdaptorFromV1(endpointSlice), nil
-	case *v1beta1.EndpointSlice:
-		return newEndpointSliceAdaptorFromV1beta1(endpointSlice), nil
 	default:
 		return nil, fmt.Errorf("received unexpected object: %v", o)
 	}

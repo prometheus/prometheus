@@ -10,18 +10,18 @@ eval instant at 10s sum_over_time(metric[50s:5s])
 
 # Every evaluation yields the last value, i.e. 2
 eval instant at 5m sum_over_time(metric[50s:10s])
-  {} 12
+  {} 10
 
 # Series becomes stale at 5m10s (5m after last sample)
-# Hence subquery gets a single sample at 6m-50s=5m10s.
-eval instant at 6m sum_over_time(metric[50s:10s])
+# Hence subquery gets a single sample at 5m10s.
+eval instant at 5m59s sum_over_time(metric[60s:10s])
   {} 2
 
 eval instant at 10s rate(metric[20s:10s])
   {} 0.1
 
 eval instant at 20s rate(metric[20s:5s])
-  {} 0.05
+  {} 0.06666666666666667
 
 clear
 
@@ -49,16 +49,16 @@ load 10s
   metric3 0+3x1000
 
 eval instant at 1000s sum_over_time(metric1[30s:10s])
-  {} 394
+  {} 297
 
-# This is (394*2 - 100), because other than the last 100 at 1000s,
+# This is (97 + 98*2 + 99*2 + 100), because other than 97@975s and 100@1000s,
 # everything else is repeated with the 5s step.
 eval instant at 1000s sum_over_time(metric1[30s:5s])
-  {} 688
+  {} 591
 
-# Offset is aligned with the step.
+# Offset is aligned with the step, so this is from [98@980s, 99@990s, 100@1000s].
 eval instant at 1010s sum_over_time(metric1[30s:10s] offset 10s)
-  {} 394
+  {} 297
 
 # Same result for different offsets due to step alignment.
 eval instant at 1010s sum_over_time(metric1[30s:10s] offset 9s)
@@ -93,16 +93,16 @@ eval instant at 1010s sum_over_time((metric1)[30:10] offset 3)
 
 # Nested subqueries
 eval instant at 1000s rate(sum_over_time(metric1[30s:10s])[50s:10s])
-  {} 0.4
+  {} 0.30000000000000004
 
 eval instant at 1000s rate(sum_over_time(metric2[30s:10s])[50s:10s])
-  {} 0.8
+  {} 0.6000000000000001
   
 eval instant at 1000s rate(sum_over_time(metric3[30s:10s])[50s:10s])
-  {} 1.2
+  {} 0.9
   
 eval instant at 1000s rate(sum_over_time((metric1+metric2+metric3)[30s:10s])[30s:10s])
-  {} 2.4
+  {} 1.8
 
 clear
 
@@ -115,16 +115,20 @@ load 7s
 eval instant at 80s rate(metric[1m])
   {} 2.517857143
 
-# No extrapolation, [2@20, 144@80]: (144 - 2) / 60
-eval instant at 80s rate(metric[1m:10s])
-  {} 2.366666667
+# Extrapolated to range start for counter, [2@20, 144@80]: (144 - 2) / (80 - 20)
+eval instant at 80s rate(metric[1m500ms:10s])
+  {} 2.3666666666666667
+
+# Extrapolated to zero value for counter, [2@20, 144@80]: (144 - 0) / 61
+eval instant at 80s rate(metric[1m1s:10s])
+  {} 2.360655737704918
 
 # Only one value between 10s and 20s, 2@14
 eval instant at 20s min_over_time(metric[10s])
   {} 2
 
-# min(1@10, 2@20)
-eval instant at 20s min_over_time(metric[10s:10s])
+# min(2@20)
+eval instant at 20s min_over_time(metric[15s:10s])
   {} 1
 
 eval instant at 20m min_over_time(rate(metric[5m])[20m:1m])

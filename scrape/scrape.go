@@ -329,9 +329,9 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 		mrc                      = sp.config.MetricRelabelConfigs
 	)
 
-	validationScheme := model.LegacyValidation
-	if sp.config.MetricNameValidationScheme == config.UTF8ValidationConfig {
-		validationScheme = model.UTF8Validation
+	validationScheme := model.UTF8Validation
+	if sp.config.MetricNameValidationScheme == config.LegacyValidationConfig {
+		validationScheme = model.LegacyValidation
 	}
 
 	sp.targetMtx.Lock()
@@ -485,9 +485,9 @@ func (sp *scrapePool) sync(targets []*Target) {
 		scrapeClassicHistograms  = sp.config.ScrapeClassicHistograms
 	)
 
-	validationScheme := model.LegacyValidation
-	if sp.config.MetricNameValidationScheme == config.UTF8ValidationConfig {
-		validationScheme = model.UTF8Validation
+	validationScheme := model.UTF8Validation
+	if sp.config.MetricNameValidationScheme == config.LegacyValidationConfig {
+		validationScheme = model.LegacyValidation
 	}
 
 	sp.targetMtx.Lock()
@@ -524,6 +524,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 				interval:                 interval,
 				timeout:                  timeout,
 				scrapeClassicHistograms:  scrapeClassicHistograms,
+				validationScheme:         validationScheme,
 			})
 			if err != nil {
 				l.setForcedError(err)
