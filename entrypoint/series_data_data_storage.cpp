@@ -61,6 +61,23 @@ extern "C" void prompp_series_data_data_storage_query(void* args, void* res) {
   serializer.serialize(queried_chunk_list, bytes_stream);
 }
 
+extern "C" void prompp_series_data_data_storage_allocated_memory(void* args, void* res) {
+  using series_data::DataStorage;
+
+  struct Arguments {
+    DataStorage* data_storage;
+  };
+
+  struct Result {
+    uint64_t allocated_memory;
+  };
+
+  auto in = reinterpret_cast<Arguments*>(args);
+  Result* out = new (res) Result();
+
+  out->allocated_memory = in->data_storage->allocated_memory();
+}
+
 
 extern "C" void prompp_series_data_data_storage_dtor(void* args) {
   struct Arguments {

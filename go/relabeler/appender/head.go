@@ -24,8 +24,13 @@ type RotatableHead struct {
 	builder HeadBuilder
 }
 
+// Generation - relabeler.Head interface implementation.
+func (h *RotatableHead) Generation() uint64 {
+	return h.head.Generation()
+}
+
 // ReferenceCounter - relabeler.Head interface implementation.
-func (h *RotatableHead) ReferenceCounter() *relabeler.ReferenceCounter {
+func (h *RotatableHead) ReferenceCounter() relabeler.ReferenceCounter {
 	return h.head.ReferenceCounter()
 }
 

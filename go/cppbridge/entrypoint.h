@@ -572,6 +572,18 @@ void prompp_series_data_data_storage_ctor(void* res);
  */
 void prompp_series_data_data_storage_reset(void* args);
 
+/**
+ * @brief Queries data storage and serializes result.
+ *
+ * @param args {
+ *     dataStorage uintptr // pointer to constructed data storage
+ * }
+ *
+ * @param args {
+ *     allocated_memory uint64 // serialized data
+ * }
+ */
+void prompp_series_data_data_storage_allocated_memory(void* args, void* res);
 
 /**
  * @brief Queries data storage and serializes result.

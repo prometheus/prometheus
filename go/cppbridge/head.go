@@ -1,6 +1,7 @@
 package cppbridge
 
 import (
+	"fmt"
 	"math"
 	"runtime"
 	"unsafe"
@@ -27,6 +28,10 @@ func NewHeadDataStorage() *HeadDataStorage {
 // Reset - resets data storage.
 func (ds *HeadDataStorage) Reset() {
 	seriesDataDataStorageReset(ds.dataStorage)
+}
+
+func (ds *HeadDataStorage) AllocatedMemory() uint64 {
+	return seriesDataDataStorageAllocatedMemory(ds.dataStorage)
 }
 
 // HeadEncoder is Go wrapper around series_data::Encoder.
@@ -162,6 +167,7 @@ func NewHeadDataStorageDeserializer(serializedChunks *HeadDataStorageSerializedC
 		serializedChunks: serializedChunks,
 	}
 	runtime.SetFinalizer(d, func(d *HeadDataStorageDeserializer) {
+		fmt.Println("Deserializer destroyed")
 		seriesDataDeserializerDtor(d.deserializer)
 	})
 	return d
