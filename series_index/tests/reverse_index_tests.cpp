@@ -135,6 +135,26 @@ TEST_F(LabelReverseIndexFixture, AddMultipleLabelValues) {
   EXPECT_THAT(index_.get_all()->sequence(), testing::ElementsAre(0U, 1U));
 }
 
+TEST_F(LabelReverseIndexFixture, AddOutOfOrderLabelId) {
+  // Arrange
+
+  // Act
+  index_.add(1, 1);
+  auto item0 = index_.get(0);
+  auto item1 = index_.get(1);
+
+  // Assert
+  ASSERT_NE(nullptr, item0);
+  ASSERT_EQ(CompactSeriesIdSequence::Type::kArray, item0->type());
+  EXPECT_THAT(item0->array(), testing::ElementsAre());
+
+  ASSERT_NE(nullptr, item1);
+  ASSERT_EQ(CompactSeriesIdSequence::Type::kArray, item1->type());
+  EXPECT_THAT(item1->array(), testing::ElementsAre(1U));
+
+  EXPECT_THAT(index_.get_all()->sequence(), testing::ElementsAre(1U));
+}
+
 class SeriesReverseIndexFixture : public testing::Test {
  protected:
   struct Label {
@@ -224,6 +244,22 @@ TEST_F(SeriesReverseIndexFixture, GetByNameAndValueId) {
   EXPECT_THAT(item1->array(), testing::ElementsAre(1U));
 
   EXPECT_EQ(nullptr, item2);
+}
+
+TEST_F(SeriesReverseIndexFixture, AddOutOfOrderNameId) {
+  // Arrange
+
+  // Act
+  index_.add(Label{.label_name_id = 1, .label_value_id = 0}, 0);
+  auto item0 = index_.get(0, 0);
+  auto item1 = index_.get(1, 0);
+
+  // Assert
+  ASSERT_EQ(nullptr, item0);
+
+  ASSERT_NE(nullptr, item1);
+  ASSERT_EQ(CompactSeriesIdSequence::Type::kArray, item1->type());
+  EXPECT_THAT(item1->array(), testing::ElementsAre(0U));
 }
 
 }  // namespace

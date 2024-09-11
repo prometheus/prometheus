@@ -97,11 +97,16 @@ class TrieIndex {
   void insert(std::string_view name, uint32_t name_id, std::string_view value, uint32_t value_id) {
     names_trie_.insert(name, name_id);
 
-    if (auto trie = values_trie(name_id); trie) {
-      trie->insert(value, value_id);
-    } else {
-      insert_values_trie()->insert(value, value_id);
+    if (!values_trie_exists(name_id)) {
+      values_trie_list_.resize(name_id + 1);
     }
+
+    auto& trie = values_trie_list_[name_id];
+    if (!trie) {
+      trie = std::make_unique<Trie>();
+    }
+
+    trie->insert(value, value_id);
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept {
@@ -113,8 +118,6 @@ class TrieIndex {
  private:
   Trie names_trie_;
   std::vector<std::unique_ptr<Trie>> values_trie_list_;
-
-  PROMPP_ALWAYS_INLINE Trie* insert_values_trie() { return values_trie_list_.emplace_back(std::make_unique<Trie>()).get(); }
 };
 
 }  // namespace series_index

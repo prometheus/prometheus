@@ -53,7 +53,7 @@ TEST_F(QueryableEncodingBimapFixture, EmplaceLabelSetWithInvalidLabel) {
   // Arrange
 
   // Act
-  auto ls_id = index_.find_or_emplace(LabelViewSet{{"job", "cron"}, {"key", ""}});
+  auto ls_id = index_.find_or_emplace(LabelViewSet{{"job", "cron"}, {"key", ""}, {"process", "php"}});
 
   // Assert
   {
@@ -68,10 +68,22 @@ TEST_F(QueryableEncodingBimapFixture, EmplaceLabelSetWithInvalidLabel) {
 
   {
     auto second_label = std::next(index_[ls_id].begin());
+    auto series_ids = index_.reverse_index().get(second_label.name_id());
 
     EXPECT_FALSE(index_.trie_index().names_trie().lookup("key"));
-    EXPECT_EQ(nullptr, index_.reverse_index().get(second_label.name_id()));
+    ASSERT_NE(nullptr, series_ids);
+    EXPECT_TRUE(series_ids->is_empty());
     EXPECT_EQ(nullptr, index_.trie_index().values_trie(second_label.name_id()));
+  }
+
+  {
+    auto name_id = index_.trie_index().names_trie().lookup("process");
+    EXPECT_TRUE(name_id);
+    EXPECT_NE(nullptr, index_.reverse_index().get(*name_id));
+
+    auto values_trie = index_.trie_index().values_trie(*name_id);
+    ASSERT_NE(nullptr, values_trie);
+    EXPECT_TRUE(values_trie->lookup("php"));
   }
 }
 
