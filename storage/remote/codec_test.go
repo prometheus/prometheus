@@ -579,7 +579,7 @@ func TestDecodeWriteRequest(t *testing.T) {
 
 	actual, err := DecodeWriteRequest(bytes.NewReader(buf))
 	require.NoError(t, err)
-	require.Equal(t, writeRequestFixture, actual)
+	require.True(t, proto.Equal(writeRequestFixture, actual))
 }
 
 func TestDecodeWriteV2Request(t *testing.T) {
@@ -799,14 +799,14 @@ func TestChunkedSeriesIterator(t *testing.T) {
 	})
 
 	t.Run("empty chunks", func(t *testing.T) {
-		emptyChunks := make([]prompb.Chunk, 0)
+		emptyChunks := make([]*prompb.Chunk, 0)
 
 		it1 := newChunkedSeriesIterator(emptyChunks, 0, 1000)
 		require.Equal(t, chunkenc.ValNone, it1.Next())
 		require.Equal(t, chunkenc.ValNone, it1.Seek(1000))
 		require.NoError(t, it1.Err())
 
-		var nilChunks []prompb.Chunk
+		var nilChunks []*prompb.Chunk
 
 		it2 := newChunkedSeriesIterator(nilChunks, 0, 1000)
 		require.Equal(t, chunkenc.ValNone, it2.Next())
@@ -821,7 +821,7 @@ func TestChunkedSeries(t *testing.T) {
 
 		s := chunkedSeries{
 			ChunkedSeries: prompb.ChunkedSeries{
-				Labels: []prompb.Label{
+				Labels: []*prompb.Label{
 					{Name: "foo", Value: "bar"},
 					{Name: "asdf", Value: "zxcv"},
 				},
@@ -852,12 +852,12 @@ func TestChunkedSeriesSet(t *testing.T) {
 		r := NewChunkedReader(buf, config.DefaultChunkedReadLimit, nil)
 
 		chks := buildTestChunks(t)
-		l := []prompb.Label{
+		l := []*prompb.Label{
 			{Name: "foo", Value: "bar"},
 		}
 
 		for i, c := range chks {
-			cSeries := prompb.ChunkedSeries{Labels: l, Chunks: []prompb.Chunk{c}}
+			cSeries := prompb.ChunkedSeries{Labels: l, Chunks: []*prompb.Chunk{c}}
 			readResp := prompb.ChunkedReadResponse{
 				ChunkedSeries: []*prompb.ChunkedSeries{&cSeries},
 				QueryIndex:    int64(i),
@@ -905,12 +905,12 @@ func TestChunkedSeriesSet(t *testing.T) {
 		r := NewChunkedReader(buf, config.DefaultChunkedReadLimit, nil)
 
 		chks := buildTestChunks(t)
-		l := []prompb.Label{
+		l := []*prompb.Label{
 			{Name: "foo", Value: "bar"},
 		}
 
 		for i, c := range chks {
-			cSeries := prompb.ChunkedSeries{Labels: l, Chunks: []prompb.Chunk{c}}
+			cSeries := prompb.ChunkedSeries{Labels: l, Chunks: []*prompb.Chunk{c}}
 			readResp := prompb.ChunkedReadResponse{
 				ChunkedSeries: []*prompb.ChunkedSeries{&cSeries},
 				QueryIndex:    int64(i),
@@ -945,9 +945,9 @@ const (
 	numSamplesPerTestChunk = 5
 )
 
-func buildTestChunks(t *testing.T) []prompb.Chunk {
+func buildTestChunks(t *testing.T) []*prompb.Chunk {
 	startTime := int64(0)
-	chks := make([]prompb.Chunk, 0, numTestChunks)
+	chks := make([]*prompb.Chunk, 0, numTestChunks)
 
 	time := startTime
 
@@ -964,7 +964,7 @@ func buildTestChunks(t *testing.T) []prompb.Chunk {
 			time += int64(1000)
 		}
 
-		chks = append(chks, prompb.Chunk{
+		chks = append(chks, &prompb.Chunk{
 			MinTimeMs: minTimeMs,
 			MaxTimeMs: time,
 			Type:      prompb.Chunk_XOR,

@@ -190,15 +190,17 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Remote Write 2.x proto message handling.
-	var req writev2.Request
-	if err := proto.Unmarshal(decompressed, &req); err != nil {
+	req := writev2.RequestFromVTPool()
+	// Timeseries as well
+	if err := proto.Unmarshal(decompressed, req); err != nil {
 		// TODO(bwplotka): Add more context to responded error?
 		level.Error(h.logger).Log("msg", "Error decoding v2 remote write request", "protobuf_message", msgType, "err", err.Error())
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	respStats, errHTTPCode, err := h.writeV2(r.Context(), &req)
+	respStats, errHTTPCode, err := h.writeV2(r.Context(), req)
+	req.ReturnToVTPool()
 
 	// Set required X-Prometheus-Remote-Write-Written-* response headers, in all cases.
 	respStats.SetHeaders(w)

@@ -16,3 +16,22 @@ plugins:
     out: .
     opt:
       - paths=source_relative
+      - pool=github.com/prometheus/prometheus/prompb/io/prometheus/write/v2.Request
+      - pool=github.com/prometheus/prometheus/prompb/io/prometheus/write/v2.TimeSeries
+      - pool=github.com/prometheus/prometheus/prompb/io/prometheus/write/v2.Sample
+      - pool=github.com/prometheus/prometheus/prompb/io/prometheus/write/v2.Histogram
+      - pool=github.com/prometheus/prometheus/prompb/io/prometheus/write/v2.Exemplar
+      - pool=github.com/prometheus/prometheus/prompb/io/prometheus/write/v2.Label
+      - pool=github.com/prometheus/prometheus/prompb/io/prometheus/write/v2.Metadata
+      - pool=github.com/prometheus/prometheus/prompb/io/prometheus/write/v2.LabelPair
+      - pool=github.com/prometheus/prometheus/prompb/io/prometheus/write/v2.LabelValue
+      - pool=github.com/prometheus/prometheus/prompb/io/prometheus/write/v2.LabelName
+      - pool=github.com/prometheus/prometheus/prompb/io/prometheus/write/v2.Chunk
+      - pool=github.com/prometheus/prometheus/prompb/io/prometheus/write/v2.Chunk_Type
+      - pool=github.com/prometheus/prometheus/prompb/io/prometheus/write/v2.Chunk_XOR
+      - pool=github.com/prometheus/prometheus/prompb/io/prometheus/write/v2.Chunk_Delta
+      - pool=github.com/prometheus/prometheus/prompb/io/prometheus/write/v2.Chunk_Raw
+      - pool=github.com/prometheus/prometheus/prompb/io/prometheus/write/v2.Chunk_Zstd
+      - pool=github.com/prometheus/prometheus/prompb/io/prometheus/write/v2.Chunk_Snappy
+      - pool=github.com/prometheus/prometheus/prompb/io/prometheus/write/v2.Chunk_Lz4 
+      

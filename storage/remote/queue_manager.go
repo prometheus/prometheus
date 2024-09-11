@@ -2203,16 +2203,21 @@ func buildV2WriteRequest(logger log.Logger, samples []*writev2.TimeSeries, label
 		level.Debug(logger).Log("msg", "dropped data due to their age", "droppedSamples", droppedSamples, "droppedExemplars", droppedExemplars, "droppedHistograms", droppedHistograms)
 	}
 
-	req := &writev2.Request{
-		Symbols:    labels,
-		Timeseries: timeSeries,
-	}
-
+	//req := &writev2.Request{
+	//	Symbols:    labels,
+	//	Timeseries: timeSeries,
+	//}
+	req := writev2.RequestFromVTPool()
+	req.Symbols = labels
+	req.Timeseries = timeSeries
 	if pBuf == nil {
 		pBuf = &[]byte{} // For convenience in tests. Not efficient.
 	}
 
 	data, err := req.MarshalVT()
+	req.Symbols = []string{}
+	req.Timeseries = []*writev2.TimeSeries{}
+	req.ReturnToVTPool()
 	if err != nil {
 		return nil, highest, lowest, err
 	}

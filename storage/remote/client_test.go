@@ -278,13 +278,13 @@ func TestReadClient(t *testing.T) {
 				require.True(t, ok)
 
 				cw := NewChunkedWriter(w, flusher)
-				l := []prompb.Label{
+				l := []*prompb.Label{
 					{Name: "foo", Value: "bar"},
 				}
 
 				chunks := buildTestChunks(t)
 				for i, c := range chunks {
-					cSeries := prompb.ChunkedSeries{Labels: l, Chunks: []prompb.Chunk{c}}
+					cSeries := prompb.ChunkedSeries{Labels: l, Chunks: []*prompb.Chunk{c}}
 					readResp := prompb.ChunkedReadResponse{
 						ChunkedSeries: []*prompb.ChunkedSeries{&cSeries},
 						QueryIndex:    int64(i),
@@ -407,24 +407,24 @@ func sampledResponseHTTPHandler(t *testing.T) http.HandlerFunc {
 				{
 					Timeseries: []*prompb.TimeSeries{
 						{
-							Labels: []prompb.Label{
+							Labels: []*prompb.Label{
 								{Name: "foo2", Value: "bar"},
 							},
-							Samples: []prompb.Sample{
+							Samples: []*prompb.Sample{
 								{Value: float64(1), Timestamp: int64(0)},
 								{Value: float64(2), Timestamp: int64(5)},
 							},
-							Exemplars: []prompb.Exemplar{},
+							Exemplars: []*prompb.Exemplar{},
 						},
 						{
-							Labels: []prompb.Label{
+							Labels: []*prompb.Label{
 								{Name: "foo1", Value: "bar"},
 							},
-							Samples: []prompb.Sample{
+							Samples: []*prompb.Sample{
 								{Value: float64(3), Timestamp: int64(0)},
 								{Value: float64(4), Timestamp: int64(5)},
 							},
-							Exemplars: []prompb.Exemplar{},
+							Exemplars: []*prompb.Exemplar{},
 						},
 					},
 				},

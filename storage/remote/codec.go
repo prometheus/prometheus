@@ -234,7 +234,7 @@ func StreamChunkedReadResponses(
 	for ss.Next() {
 		series := ss.At()
 		iter = series.Iterator(iter)
-		lbls = MergeLabels(prompb.FromLabels(series.Labels(), lbls), sortedExternalLabels)
+			lbls = MergeLabels(prompb.FromLabels(series.Labels(), lbls), sortedExternalLabels)
 
 		maxDataLength := maxBytesInFrame
 		for _, lbl := range lbls {
@@ -863,7 +863,7 @@ func DecodeWriteV2Request(r io.Reader) (*writev2.Request, error) {
 	}
 
 	var req writev2.Request
-	if err := proto.Unmarshal(reqBuf, &req); err != nil {
+	if err := req.UnmarshalVT(reqBuf); err != nil {
 		return nil, err
 	}
 
