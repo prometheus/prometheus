@@ -17,6 +17,7 @@
 package prometheusremotewrite
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -28,6 +29,39 @@ import (
 )
 
 func TestFromMetrics(t *testing.T) {
+	t.Run("successful", func(t *testing.T) {
+		converter := NewPrometheusConverter()
+		payload := createExportRequest(5, 128, 128, 2, 0)
+
+		annots, err := converter.FromMetrics(context.Background(), payload.Metrics(), Settings{})
+		require.NoError(t, err)
+		require.Empty(t, annots)
+	})
+
+	t.Run("context cancellation", func(t *testing.T) {
+		converter := NewPrometheusConverter()
+		ctx, cancel := context.WithCancel(context.Background())
+		// Verify that converter.FromMetrics respects cancellation.
+		cancel()
+		payload := createExportRequest(5, 128, 128, 2, 0)
+
+		annots, err := converter.FromMetrics(ctx, payload.Metrics(), Settings{})
+		require.ErrorIs(t, err, context.Canceled)
+		require.Empty(t, annots)
+	})
+
+	t.Run("context timeout", func(t *testing.T) {
+		converter := NewPrometheusConverter()
+		// Verify that converter.FromMetrics respects timeout.
+		ctx, cancel := context.WithTimeout(context.Background(), 0)
+		t.Cleanup(cancel)
+		payload := createExportRequest(5, 128, 128, 2, 0)
+
+		annots, err := converter.FromMetrics(ctx, payload.Metrics(), Settings{})
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		require.Empty(t, annots)
+	})
+
 	t.Run("exponential histogram warnings for zero count and non-zero sum", func(t *testing.T) {
 		request := pmetricotlp.NewExportRequest()
 		rm := request.Metrics().ResourceMetrics().AppendEmpty()
@@ -51,7 +85,7 @@ func TestFromMetrics(t *testing.T) {
 		}
 
 		converter := NewPrometheusConverter()
-		annots, err := converter.FromMetrics(request.Metrics(), Settings{})
+		annots, err := converter.FromMetrics(context.Background(), request.Metrics(), Settings{})
 		require.NoError(t, err)
 		require.NotEmpty(t, annots)
 		ws, infos := annots.AsStrings("", 0, 0)
@@ -84,7 +118,7 @@ func BenchmarkPrometheusConverter_FromMetrics(b *testing.B) {
 
 											for i := 0; i < b.N; i++ {
 												converter := NewPrometheusConverter()
-												annots, err := converter.FromMetrics(payload.Metrics(), Settings{})
+												annots, err := converter.FromMetrics(context.Background(), payload.Metrics(), Settings{})
 												require.NoError(b, err)
 												require.Empty(b, annots)
 												require.NotNil(b, converter.TimeSeries())

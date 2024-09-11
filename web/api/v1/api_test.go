@@ -59,16 +59,19 @@ import (
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
-var testEngine = promql.NewEngine(promql.EngineOpts{
-	Logger:                   nil,
-	Reg:                      nil,
-	MaxSamples:               10000,
-	Timeout:                  100 * time.Second,
-	NoStepSubqueryIntervalFn: func(int64) int64 { return 60 * 1000 },
-	EnableAtModifier:         true,
-	EnableNegativeOffset:     true,
-	EnablePerStepStats:       true,
-})
+func testEngine(t *testing.T) *promql.Engine {
+	t.Helper()
+	return promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+		Logger:                   nil,
+		Reg:                      nil,
+		MaxSamples:               10000,
+		Timeout:                  100 * time.Second,
+		NoStepSubqueryIntervalFn: func(int64) int64 { return 60 * 1000 },
+		EnableAtModifier:         true,
+		EnableNegativeOffset:     true,
+		EnablePerStepStats:       true,
+	})
+}
 
 // testMetaStore satisfies the scrape.MetricMetadataStore interface.
 // It is used to inject specific metadata as part of a test case.
@@ -306,8 +309,7 @@ func (m *rulesRetrieverMock) CreateRuleGroups() {
 		MaxSamples: 10,
 		Timeout:    100 * time.Second,
 	}
-
-	engine := promql.NewEngine(engineOpts)
+	engine := promqltest.NewTestEngineWithOpts(m.testing, engineOpts)
 	opts := &rules.ManagerOptions{
 		QueryFunc:  rules.EngineQueryFunc(engine, storage),
 		Appendable: storage,
@@ -431,9 +433,10 @@ func TestEndpoints(t *testing.T) {
 
 	now := time.Now()
 
+	ng := testEngine(t)
+
 	t.Run("local", func(t *testing.T) {
-		algr := rulesRetrieverMock{}
-		algr.testing = t
+		algr := rulesRetrieverMock{testing: t}
 
 		algr.CreateAlertingRules()
 		algr.CreateRuleGroups()
@@ -445,7 +448,7 @@ func TestEndpoints(t *testing.T) {
 
 		api := &API{
 			Queryable:             storage,
-			QueryEngine:           testEngine,
+			QueryEngine:           ng,
 			ExemplarQueryable:     storage.ExemplarQueryable(),
 			targetRetriever:       testTargetRetriever.toFactory(),
 			alertmanagerRetriever: testAlertmanagerRetriever{}.toFactory(),
@@ -496,8 +499,7 @@ func TestEndpoints(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		algr := rulesRetrieverMock{}
-		algr.testing = t
+		algr := rulesRetrieverMock{testing: t}
 
 		algr.CreateAlertingRules()
 		algr.CreateRuleGroups()
@@ -509,7 +511,7 @@ func TestEndpoints(t *testing.T) {
 
 		api := &API{
 			Queryable:             remote,
-			QueryEngine:           testEngine,
+			QueryEngine:           ng,
 			ExemplarQueryable:     storage.ExemplarQueryable(),
 			targetRetriever:       testTargetRetriever.toFactory(),
 			alertmanagerRetriever: testAlertmanagerRetriever{}.toFactory(),
@@ -651,7 +653,7 @@ func TestQueryExemplars(t *testing.T) {
 
 	api := &API{
 		Queryable:         storage,
-		QueryEngine:       testEngine,
+		QueryEngine:       testEngine(t),
 		ExemplarQueryable: storage.ExemplarQueryable(),
 	}
 
@@ -870,7 +872,7 @@ func TestStats(t *testing.T) {
 
 	api := &API{
 		Queryable:   storage,
-		QueryEngine: testEngine,
+		QueryEngine: testEngine(t),
 		now: func() time.Time {
 			return time.Unix(123, 0)
 		},
@@ -4032,13 +4034,13 @@ func TestGetGlobalURL(t *testing.T) {
 			false,
 		},
 		{
-			mustParseURL(t, "http://exemple.com"),
+			mustParseURL(t, "http://example.com"),
 			GlobalURLOptions{
 				ListenAddress: "127.0.0.1:9090",
 				Host:          "prometheus.io",
 				Scheme:        "https",
 			},
-			mustParseURL(t, "http://exemple.com"),
+			mustParseURL(t, "http://example.com"),
 			false,
 		},
 		{

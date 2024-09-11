@@ -89,11 +89,11 @@ tests:
 
       # Ensure lookback delta is respected, when a value is missing.
       - expr: timestamp(test_missing)
-        eval_time: 5m
+        eval_time: 4m59s
         exp_samples:
           - value: 0
       - expr: timestamp(test_missing)
-        eval_time: 5m1s
+        eval_time: 5m
         exp_samples: []
 
   # Minimal test case to check edge case of a single sample.
@@ -113,7 +113,7 @@ tests:
       - expr: count_over_time(fixed_data[1h])
         eval_time: 1h
         exp_samples:
-          - value: 61
+          - value: 60
       - expr: timestamp(fixed_data)
         eval_time: 1h
         exp_samples:
@@ -183,7 +183,7 @@ tests:
       - expr: job:test:count_over_time1m
         eval_time: 1m
         exp_samples:
-          - value: 61
+          - value: 60
             labels: 'job:test:count_over_time1m{job="test"}'
       - expr: timestamp(job:test:count_over_time1m)
         eval_time: 1m10s
@@ -194,7 +194,7 @@ tests:
       - expr: job:test:count_over_time1m
         eval_time: 2m
         exp_samples:
-          - value: 61
+          - value: 60
             labels: 'job:test:count_over_time1m{job="test"}'
       - expr: timestamp(job:test:count_over_time1m)
         eval_time: 2m59s999ms

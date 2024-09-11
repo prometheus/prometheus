@@ -203,12 +203,12 @@ Range vector literals work like instant vector literals, except that they
 select a range of samples back from the current instant. Syntactically, a [time
 duration](#time-durations) is appended in square brackets (`[]`) at the end of
 a vector selector to specify how far back in time values should be fetched for
-each resulting range vector element. The range is a closed interval,
-i.e. samples with timestamps coinciding with either boundary of the range are
-still included in the selection.
+each resulting range vector element. The range is a left-open and right-closed interval,
+i.e. samples with timestamps coinciding with the left boundary of the range are excluded from the selection,
+while samples coinciding with the right boundary of the range are included in the selection.
 
-In this example, we select all the values we have recorded within the last 5
-minutes for all time series that have the metric name `http_requests_total` and
+In this example, we select all the values recorded less than 5m ago for all time series
+that have the metric name `http_requests_total` and
 a `job` label set to `prometheus`:
 
     http_requests_total{job="prometheus"}[5m]
@@ -358,7 +358,7 @@ independently of the actual present time series data. This is mainly to support
 cases like aggregation (`sum`, `avg`, and so on), where multiple aggregated
 time series do not precisely align in time. Because of their independence,
 Prometheus needs to assign a value at those timestamps for each relevant time
-series. It does so by taking the newest sample before this timestamp within the lookback period.
+series. It does so by taking the newest sample that is less than the lookback period ago.
 The lookback period is 5 minutes by default.
 
 If a target scrape or rule evaluation no longer returns a sample for a time

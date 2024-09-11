@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -130,10 +131,18 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	sampledInterval := float64(lastT-firstT) / 1000
 	averageDurationBetweenSamples := sampledInterval / float64(numSamplesMinusOne)
 
-	// If the first/last samples are close to the boundaries of the range,
-	// extrapolate the result. This is as we expect that another sample
-	// will exist given the spacing between samples we've seen thus far,
-	// with an allowance for noise.
+	// If samples are close enough to the (lower or upper) boundary of the
+	// range, we extrapolate the rate all the way to the boundary in
+	// question. "Close enough" is defined as "up to 10% more than the
+	// average duration between samples within the range", see
+	// extrapolationThreshold below. Essentially, we are assuming a more or
+	// less regular spacing between samples, and if we don't see a sample
+	// where we would expect one, we assume the series does not cover the
+	// whole range, but starts and/or ends within the range. We still
+	// extrapolate the rate in this case, but not all the way to the
+	// boundary, but only by half of the average duration between samples
+	// (which is our guess for where the series actually starts or ends).
+
 	extrapolationThreshold := averageDurationBetweenSamples * 1.1
 	extrapolateToInterval := sampledInterval
 
@@ -1463,7 +1472,7 @@ func funcChanges(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelp
 }
 
 // label_replace function operates only on series; does not look at timestamps or values.
-func (ev *evaluator) evalLabelReplace(args parser.Expressions) (parser.Value, annotations.Annotations) {
+func (ev *evaluator) evalLabelReplace(ctx context.Context, args parser.Expressions) (parser.Value, annotations.Annotations) {
 	var (
 		dst      = stringFromArg(args[1])
 		repl     = stringFromArg(args[2])
@@ -1479,7 +1488,7 @@ func (ev *evaluator) evalLabelReplace(args parser.Expressions) (parser.Value, an
 		panic(fmt.Errorf("invalid destination label name in label_replace(): %s", dst))
 	}
 
-	val, ws := ev.eval(args[0])
+	val, ws := ev.eval(ctx, args[0])
 	matrix := val.(Matrix)
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
@@ -1520,7 +1529,7 @@ func funcVector(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelpe
 }
 
 // label_join function operates only on series; does not look at timestamps or values.
-func (ev *evaluator) evalLabelJoin(args parser.Expressions) (parser.Value, annotations.Annotations) {
+func (ev *evaluator) evalLabelJoin(ctx context.Context, args parser.Expressions) (parser.Value, annotations.Annotations) {
 	var (
 		dst       = stringFromArg(args[1])
 		sep       = stringFromArg(args[2])
@@ -1537,7 +1546,7 @@ func (ev *evaluator) evalLabelJoin(args parser.Expressions) (parser.Value, annot
 		panic(fmt.Errorf("invalid destination label name in label_join(): %s", dst))
 	}
 
-	val, ws := ev.eval(args[0])
+	val, ws := ev.eval(ctx, args[0])
 	matrix := val.(Matrix)
 	srcVals := make([]string, len(srcLabels))
 	lb := labels.NewBuilder(labels.EmptyLabels())

@@ -113,7 +113,7 @@ func makeTimeseries(wr *prompb.WriteRequest, labels map[string]string, m *dto.Me
 		toTimeseries(wr, labels, timestamp, m.GetCounter().GetValue())
 	case m.Summary != nil:
 		metricName := labels[model.MetricNameLabel]
-		// Preserve metric name order with first quantile labels timeseries then sum suffix timeserie and finally count suffix timeserie
+		// Preserve metric name order with first quantile labels timeseries then sum suffix timeseries and finally count suffix timeseries
 		// Add Summary quantile timeseries
 		quantileLabels := make(map[string]string, len(labels)+1)
 		for key, value := range labels {
@@ -125,16 +125,16 @@ func makeTimeseries(wr *prompb.WriteRequest, labels map[string]string, m *dto.Me
 			toTimeseries(wr, quantileLabels, timestamp, q.GetValue())
 		}
 		// Overwrite label model.MetricNameLabel for count and sum metrics
-		// Add Summary sum timeserie
+		// Add Summary sum timeseries
 		labels[model.MetricNameLabel] = metricName + sumStr
 		toTimeseries(wr, labels, timestamp, m.GetSummary().GetSampleSum())
-		// Add Summary count timeserie
+		// Add Summary count timeseries
 		labels[model.MetricNameLabel] = metricName + countStr
 		toTimeseries(wr, labels, timestamp, float64(m.GetSummary().GetSampleCount()))
 
 	case m.Histogram != nil:
 		metricName := labels[model.MetricNameLabel]
-		// Preserve metric name order with first bucket suffix timeseries then sum suffix timeserie and finally count suffix timeserie
+		// Preserve metric name order with first bucket suffix timeseries then sum suffix timeseries and finally count suffix timeseries
 		// Add Histogram bucket timeseries
 		bucketLabels := make(map[string]string, len(labels)+1)
 		for key, value := range labels {
@@ -146,10 +146,10 @@ func makeTimeseries(wr *prompb.WriteRequest, labels map[string]string, m *dto.Me
 			toTimeseries(wr, bucketLabels, timestamp, float64(b.GetCumulativeCount()))
 		}
 		// Overwrite label model.MetricNameLabel for count and sum metrics
-		// Add Histogram sum timeserie
+		// Add Histogram sum timeseries
 		labels[model.MetricNameLabel] = metricName + sumStr
 		toTimeseries(wr, labels, timestamp, m.GetHistogram().GetSampleSum())
-		// Add Histogram count timeserie
+		// Add Histogram count timeseries
 		labels[model.MetricNameLabel] = metricName + countStr
 		toTimeseries(wr, labels, timestamp, float64(m.GetHistogram().GetSampleCount()))
 
