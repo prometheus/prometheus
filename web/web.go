@@ -270,7 +270,7 @@ type Options struct {
 	UserAssetsPath                      string
 	ConsoleTemplatesPath                string
 	ConsoleLibrariesPath                string
-	UseOldUI                   bool
+	UseOldUI                            bool
 	EnableLifecycle                     bool
 	EnableAdminAPI                      bool
 	PageTitle                           string
