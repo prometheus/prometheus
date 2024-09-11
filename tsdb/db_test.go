@@ -7675,4 +7675,53 @@ func TestUTF8(t *testing.T) {
 	require.Equal(t, map[string][]chunks.Sample{
 		labels.FromStrings("__name__", "with.dots").String(): {sample{t: 100, f: 1.0}, sample{t: 200, f: 2.0}},
 	}, query(t, q, labels.MustNewMatcher(labels.MatchEqual, "__name__", "with.dots")))
+
+	q, err = db.Querier(math.MinInt, math.MaxInt64)
+	require.NoError(t, err)
+	require.Equal(t, map[string][]chunks.Sample{
+		labels.FromStrings("__name__", "with_dots").String(): {sample{t: 200, f: 2.0}},
+	}, query(t, q, labels.MustNewMatcher(labels.MatchEqual, "__name__", "with_dots")))
+
+	app = db.Appender(context.Background())
+	_, err = app.Append(0, labels.FromStrings("__name__", "foob_r"), 300, 3.0)
+	require.NoError(t, err)
+	_, err = app.Append(0, labels.FromStrings("__name__", "foobár"), 400, 4.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	q, err = db.Querier(math.MinInt, math.MaxInt64)
+	require.NoError(t, err)
+	require.Equal(t, map[string][]chunks.Sample{
+		labels.FromStrings("__name__", "foobár").String(): {sample{t: 300, f: 3.0}, sample{t: 400, f: 4.0}},
+	}, query(t, q, labels.MustNewMatcher(labels.MatchEqual, "__name__", "foobár")))
+
+	app = db.Appender(context.Background())
+	_, err = app.Append(0, labels.FromStrings("__name__", "@bazbár"), 300, 4.0)
+	require.NoError(t, err)
+	_, err = app.Append(0, labels.FromStrings("__name__", "_bazb_r"), 300, 3.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	require.NoError(t, db.CompactHead(NewRangeHead(db.Head(), 0, 1000)))
+
+	for _ = range 10000 {
+		q, err = db.Querier(math.MinInt, math.MaxInt64)
+		require.NoError(t, err)
+		require.Equal(t, map[string][]chunks.Sample{
+			labels.FromStrings("__name__", "@bazbár").String(): {sample{t: 300, f: 3.0}},
+		}, query(t, q, labels.MustNewMatcher(labels.MatchEqual, "__name__", "@bazbár")))
+	}
+
+	// Test cases and notes:
+	// - "OOO or repeated timestamps" with different labels that are the same after escaing. not sure if that can be a problem, maybe non-determinism?
+	// - should we make it so compaction makes it so blocks don't have mixed?
+	// - some labels are escaped but some not, then series are not the same
+	// - what if labels are not explicitly mentioned in the query, but still queried? e.g.
+	//		foo.bar{"a.b"="c"}
+	//		foo_bar{"a_b"="b"}
+	//		and i query for __name__="a.b"
+	//		maybe only do it for metric name?
+
+	// Implementation questions:
+	// - could the order of metrics mess things up? should i sort something?
 }

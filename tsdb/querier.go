@@ -104,7 +104,8 @@ func (q *blockBaseQuerier) Close() error {
 }
 
 type utf8MixedSeries struct {
-	s storage.Series
+	s        storage.Series
+	mappings map[string]string
 }
 
 func (u utf8MixedSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
@@ -117,7 +118,10 @@ func (u utf8MixedSeries) Labels() labels.Labels {
 		var n, v string
 		if l.Name == "__name__" {
 			n = l.Name
-			v = strings.ReplaceAll(l.Value, "_", ".")
+			v = u.mappings[l.Value]
+			if v == "" {
+				v = l.Value
+			}
 		} else {
 			n = strings.ReplaceAll(l.Name, "_", ".")
 			v = l.Value
@@ -128,11 +132,12 @@ func (u utf8MixedSeries) Labels() labels.Labels {
 }
 
 type utf8MixedSeriesSet struct {
-	ss storage.SeriesSet
+	ss       storage.SeriesSet
+	mappings map[string]string
 }
 
 func (u *utf8MixedSeriesSet) At() storage.Series {
-	return utf8MixedSeries{s: u.ss.At()}
+	return utf8MixedSeries{s: u.ss.At(), mappings: u.mappings}
 }
 
 func (u *utf8MixedSeriesSet) Err() error {
@@ -147,8 +152,8 @@ func (u *utf8MixedSeriesSet) Warnings() annotations.Annotations {
 	return u.ss.Warnings()
 }
 
-func NewUTF8MixedSeriesSet(ss storage.SeriesSet) storage.SeriesSet {
-	return &utf8MixedSeriesSet{ss: ss}
+func NewUTF8MixedSeriesSet(ss storage.SeriesSet, mappings map[string]string) storage.SeriesSet {
+	return &utf8MixedSeriesSet{ss: ss, mappings: mappings}
 }
 
 type utf8MixedQuerier struct {
@@ -171,17 +176,23 @@ func (u *utf8MixedQuerier) LabelValues(ctx context.Context, name string, hints *
 func (u *utf8MixedQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	ms2 := make([]*labels.Matcher, 0, len(matchers))
 	change := false
+	mappings := map[string]string{}
 	for i, m := range matchers {
 		ms2 = append(ms2, &labels.Matcher{})
 		if m.Type == labels.MatchEqual {
-			ms2[i].Name = strings.ReplaceAll(m.Name, ".", "_")
-			if ms2[i].Name == "__name__" {
-				ms2[i].Value = strings.ReplaceAll(m.Value, ".", "_")
+			ms2[i].Name = model.EscapeName(m.Name, u.es)
+			if ms2[i].Name == model.MetricNameLabel {
+				ms2[i].Value = model.EscapeName(m.Value, u.es)
 			} else {
 				ms2[i].Value = m.Value
 			}
-			if m.Name != ms2[i].Name || m.Value != ms2[i].Value {
+			if m.Name != ms2[i].Name {
 				change = true
+				mappings[ms2[i].Name] = m.Name
+			}
+			if m.Value != ms2[i].Value {
+				change = true
+				mappings[ms2[i].Value] = m.Value
 			}
 		} else {
 			ms2[i] = m
@@ -189,10 +200,13 @@ func (u *utf8MixedQuerier) Select(ctx context.Context, sortSeries bool, hints *s
 		ms2[i].Type = m.Type
 	}
 	sets := []storage.SeriesSet{
-		u.q.Select(ctx, sortSeries, hints, matchers...),
+		// We need to sort for merge  to work.
+		// TODO: maybe only pass true if we indeed have to merge
+		u.q.Select(ctx, true, hints, matchers...),
 	}
 	if change {
-		sets = append(sets, NewUTF8MixedSeriesSet(u.q.Select(ctx, sortSeries, hints, ms2...)))
+		// TODO: maybe utf8MixedSeriesSet should always sort afterwards, so there's no need to sort the underlying query?
+		sets = append(sets, NewUTF8MixedSeriesSet(u.q.Select(ctx, true, hints, ms2...), mappings))
 	}
 	return storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
 }
