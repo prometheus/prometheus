@@ -7696,9 +7696,13 @@ func TestUTF8(t *testing.T) {
 	}, query(t, q, labels.MustNewMatcher(labels.MatchEqual, "__name__", "foobár")))
 
 	app = db.Appender(context.Background())
-	_, err = app.Append(0, labels.FromStrings("__name__", "@bazbár"), 300, 4.0)
+	_, err = app.Append(0, labels.FromStrings("__name__", "@bazbár", "job", "aaz"), 300, 4.0)
 	require.NoError(t, err)
-	_, err = app.Append(0, labels.FromStrings("__name__", "_bazb_r"), 300, 3.0)
+	_, err = app.Append(0, labels.FromStrings("__name__", "_bazb_r", "job", "baz"), 300, 3.0)
+	require.NoError(t, err)
+	_, err = app.Append(0, labels.FromStrings("__name__", "_bazb_r", "job", "aaz"), 300, 3.0)
+	require.NoError(t, err)
+	_, err = app.Append(0, labels.FromStrings("__name__", "_bazb_r", "job", "caz"), 300, 3.0)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -7708,7 +7712,9 @@ func TestUTF8(t *testing.T) {
 		q, err = db.Querier(math.MinInt, math.MaxInt64)
 		require.NoError(t, err)
 		require.Equal(t, map[string][]chunks.Sample{
-			labels.FromStrings("__name__", "@bazbár").String(): {sample{t: 300, f: 3.0}},
+			labels.FromStrings("__name__", "@bazbár", "job", "aaz").String(): {sample{t: 300, f: 3.0}},
+			labels.FromStrings("__name__", "@bazbár", "job", "baz").String(): {sample{t: 300, f: 3.0}},
+			labels.FromStrings("__name__", "@bazbár", "job", "caz").String(): {sample{t: 300, f: 3.0}},
 		}, query(t, q, labels.MustNewMatcher(labels.MatchEqual, "__name__", "@bazbár")))
 	}
 
