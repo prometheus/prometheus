@@ -1463,7 +1463,7 @@ func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, of
 			Metric: s.Labels(),
 		}
 
-		for ts, step := start, -1; ts <= end; ts += interval {
+		for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
 			step++
 			origT, f, h, ok := ev.vectorSelectorSingle(it, offset, ts)
 			if !ok {
@@ -1947,7 +1947,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		if err != nil {
 			ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
 		}
-		mat := ev.evalSeries(ctx, e.Series, e.Offset, ev.startTimestamp, ev.endTimestamp, ev.interval, false)
+		mat := ev.evalSeries(ctx, e.Series, e.Offset, false)
 		return mat, ws
 
 	case *parser.MatrixSelector:
