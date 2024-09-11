@@ -11,6 +11,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"runtime"
+	"runtime/debug"
 	"sync"
 )
 
@@ -171,6 +172,7 @@ func (h *Head) Reconfigure(inputRelabelerConfigs []*config.InputRelabelerConfig,
 
 func (h *Head) WriteMetrics() {
 	_ = h.ForEachShard(func(shard relabeler.Shard) error {
+		fmt.Println("head write metrics lss", shard.ShardID())
 		h.memoryInUse.With(
 			prometheus.Labels{
 				"generation": fmt.Sprintf("%d", h.generation),
@@ -179,6 +181,7 @@ func (h *Head) WriteMetrics() {
 			},
 		).Set(float64(shard.LSS().AllocatedMemory()))
 
+		fmt.Println("head write metrics data storage", shard.ShardID())
 		h.memoryInUse.With(
 			prometheus.Labels{
 				"generation": fmt.Sprintf("%d", h.generation),
@@ -187,6 +190,7 @@ func (h *Head) WriteMetrics() {
 			},
 		).Set(float64(shard.DataStorage().AllocatedMemory()))
 
+		fmt.Println("head write metrics relabeler", shard.ShardID())
 		for relabelerID, inputRelabeler := range shard.InputRelabelers() {
 			h.memoryInUse.With(
 				prometheus.Labels{
@@ -196,6 +200,8 @@ func (h *Head) WriteMetrics() {
 				},
 			).Set(float64(inputRelabeler.CacheAllocatedMemory()))
 		}
+
+		fmt.Println("head write metrics completed", shard.ShardID())
 
 		return nil
 	})
@@ -241,6 +247,7 @@ func (h *Head) enqueueInputRelabeling(task *TaskInputRelabeling) {
 
 // enqueueHeadAppending append all series after input relabeling stage to head.
 func (h *Head) forEachShard(fn relabeler.ShardFn) error {
+	//logWithStack("foreachshard")
 	if h.finalizer.Finalized() {
 		errs := make([]error, h.numberOfShards)
 		wg := &sync.WaitGroup{}
@@ -306,4 +313,9 @@ func (h *Head) stop() {
 	close(h.stopc)
 	h.wg.Wait()
 	h.stopc = make(chan struct{})
+}
+
+func logWithStack(value string) {
+	fmt.Println(value)
+	debug.PrintStack()
 }

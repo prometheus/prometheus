@@ -183,6 +183,7 @@ func (q *Querier) Select(ctx context.Context, sortSeries bool, hints *storage.Se
 		return nil
 	})
 	if err != nil {
+		fmt.Println("QUERIER: Select failed:", err.Error())
 		// todo: error
 	}
 

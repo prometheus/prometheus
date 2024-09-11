@@ -112,7 +112,7 @@ class TrieIndex {
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept {
     return names_trie_.allocated_memory() + values_trie_list_.capacity() * sizeof(values_trie_list_[0]) +
            std::accumulate(values_trie_list_.begin(), values_trie_list_.end(), 0ULL,
-                           [](size_t sum, const auto& value) { return sum + value->allocated_memory(); });
+                           [](size_t sum, const auto& value) { return sum + (value ? value->allocated_memory() : 0); });
   }
 
  private:
