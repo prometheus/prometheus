@@ -293,7 +293,7 @@ func TestStreamReadEndpoint(t *testing.T) {
 
 	require.Len(t, results, 6, "Expected 6 results.")
 
-	require.Equal(t, []*prompb.ChunkedReadResponse{
+	expected := []*prompb.ChunkedReadResponse{
 		{
 			ChunkedSeries: []*prompb.ChunkedSeries{
 				{
@@ -428,7 +428,10 @@ func TestStreamReadEndpoint(t *testing.T) {
 			},
 			QueryIndex: 2,
 		},
-	}, results)
+	}
+	for i, _ := range expected {
+		require.True(t, proto.Equal(expected[i], results[i]))
+	}
 }
 
 func addNativeHistogramsToTestSuite(t *testing.T, storage *teststorage.TestStorage, n int) {

@@ -31,7 +31,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/snappy"
-	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
@@ -1225,6 +1224,7 @@ func v2RequestToWriteRequest(v2Req *writev2.Request) (*prompb.WriteRequest, erro
 
 		req.Timeseries[i].Samples = make([]*prompb.Sample, len(rts.Samples))
 		for j, s := range rts.Samples {
+			req.Timeseries[i].Samples[j] = &prompb.Sample{}
 			req.Timeseries[i].Samples[j].Timestamp = s.Timestamp
 			req.Timeseries[i].Samples[j].Value = s.Value
 		}
@@ -1913,6 +1913,7 @@ func BenchmarkBuildV2WriteRequest(b *testing.B) {
 		buff := make([]byte, 0)
 		seriesBuff := make([]*writev2.TimeSeries, len(tc.batch))
 		for i := range seriesBuff {
+			seriesBuff[i] = &writev2.TimeSeries{}
 			seriesBuff[i].Samples = []*writev2.Sample{{}}
 			seriesBuff[i].Exemplars = []*writev2.Exemplar{{}}
 		}
@@ -2030,9 +2031,15 @@ func TestSendSamplesWithBackoffWithSampleAgeLimit(t *testing.T) {
 	appendData(5, timeShift, false)
 	m.Stop()
 
-	if diff := cmp.Diff(expectedSamples, c.receivedSamples); diff != "" {
-		t.Errorf("mismatch (-want +got):\n%s", diff)
+	for tsID, samples := range expectedSamples {
+		for i, _ := range samples {
+			require.True(t, proto.Equal(samples[i], c.receivedSamples[tsID][i]))
+		}
 	}
+
+	//if diff := cmp.Diff(expectedSamples, c.receivedSamples); diff != "" {
+	//	t.Errorf("mismatch (-want +got):\n%s", diff)
+	//}
 }
 
 func createTimeseriesWithRandomLabelCount(id string, seriesCount int, timeAdd time.Duration, maxLabels int) ([]record.RefSample, []record.RefSeries) {

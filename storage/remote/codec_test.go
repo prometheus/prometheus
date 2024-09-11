@@ -159,7 +159,7 @@ func TestWriteV2RequestFixture(t *testing.T) {
 		Symbols: st.Symbols(),
 	}
 	// Check if it matches static writeV2RequestFixture.
-	require.Equal(t, expected, writeV2RequestFixture)
+	require.True(t, proto.Equal(expected, writeV2RequestFixture))
 }
 
 func TestValidateLabelsAndMetricName(t *testing.T) {
@@ -588,7 +588,7 @@ func TestDecodeWriteV2Request(t *testing.T) {
 
 	actual, err := DecodeWriteV2Request(bytes.NewReader(buf))
 	require.NoError(t, err)
-	require.Equal(t, writeV2RequestFixture, actual)
+	require.True(t, proto.Equal(writeV2RequestFixture, actual))
 }
 
 func TestStreamResponse(t *testing.T) {
@@ -931,7 +931,7 @@ func TestChunkedSeriesSet(t *testing.T) {
 
 		res := ss.Next()
 		require.False(t, res)
-		require.ErrorContains(t, ss.Err(), "proto: illegal wireType 7")
+		require.ErrorContains(t, ss.Err(), "cannot parse invalid wire-format data")
 	})
 }
 
