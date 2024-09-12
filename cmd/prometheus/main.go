@@ -1120,7 +1120,7 @@ func main() {
 						}
 						level.Info(logger).Log("msg", "Configuration file change detected, reloading the configuration.")
 
-						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, reloaders...); err != nil {
 							level.Error(logger).Log("msg", "Error reloading config", "err", err)
 						} else {
 							checksum = currentChecksum
