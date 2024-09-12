@@ -104,9 +104,9 @@ func (q *Querier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) (
 }
 
 func (q *Querier) Close() error {
-	defer func() {
-		fmt.Println("QUERIER: HEAD {", q.head.Generation(), "} Closed")
-	}()
+	// defer func() {
+	// 	fmt.Println("QUERIER: HEAD {", q.head.Generation(), "} Closed")
+	// }()
 
 	if q.closer != nil {
 		return q.closer()
