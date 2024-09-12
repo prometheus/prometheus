@@ -161,11 +161,10 @@ type flagConfig struct {
 	memlimitRatio float64
 	// These options are extracted from featureList
 	// for ease of use.
-	enableExpandExternalLabels bool
-	enablePerStepStats         bool
-	enableAutoGOMAXPROCS       bool
-	enableAutoGOMEMLIMIT       bool
-	enableConcurrentRuleEval   bool
+	enablePerStepStats       bool
+	enableAutoGOMAXPROCS     bool
+	enableAutoGOMEMLIMIT     bool
+	enableConcurrentRuleEval bool
 
 	prometheusURL   string
 	corsRegexString string
