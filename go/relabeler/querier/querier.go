@@ -184,7 +184,7 @@ func (q *Querier) Select(ctx context.Context, sortSeries bool, hints *storage.Se
 		return nil
 	})
 	if err != nil {
-		logger.Warnf("QUERIER: Select failed: %w", err)
+		logger.Warnf("QUERIER: Select failed: %s", err)
 		// todo: error
 	}
 
