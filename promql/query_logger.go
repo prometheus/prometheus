@@ -31,7 +31,7 @@ import (
 )
 
 type ActiveQueryTracker struct {
-	mmapedFile    []byte
+	mmappedFile   []byte
 	getNextIndex  chan int
 	logger        log.Logger
 	closer        io.Closer
@@ -87,24 +87,24 @@ func logUnfinishedQueries(filename string, filesize int, logger log.Logger) {
 	}
 }
 
-type mmapedFile struct {
+type mmappedFile struct {
 	f io.Closer
 	m mmap.MMap
 }
 
-func (f *mmapedFile) Close() error {
+func (f *mmappedFile) Close() error {
 	err := f.m.Unmap()
 	if err != nil {
-		err = fmt.Errorf("mmapedFile: unmapping: %w", err)
+		err = fmt.Errorf("mmappedFile: unmapping: %w", err)
 	}
 	if fErr := f.f.Close(); fErr != nil {
-		return errors.Join(fmt.Errorf("close mmapedFile.f: %w", fErr), err)
+		return errors.Join(fmt.Errorf("close mmappedFile.f: %w", fErr), err)
 	}
 
 	return err
 }
 
-func getMMapedFile(filename string, filesize int, logger log.Logger) ([]byte, io.Closer, error) {
+func getMMappedFile(filename string, filesize int, logger log.Logger) ([]byte, io.Closer, error) {
 	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o666)
 	if err != nil {
 		absPath, pathErr := filepath.Abs(filename)
@@ -129,7 +129,7 @@ func getMMapedFile(filename string, filesize int, logger log.Logger) ([]byte, io
 		return nil, nil, err
 	}
 
-	return fileAsBytes, &mmapedFile{f: file, m: fileAsBytes}, err
+	return fileAsBytes, &mmappedFile{f: file, m: fileAsBytes}, err
 }
 
 func NewActiveQueryTracker(localStoragePath string, maxConcurrent int, logger log.Logger) *ActiveQueryTracker {
@@ -141,14 +141,14 @@ func NewActiveQueryTracker(localStoragePath string, maxConcurrent int, logger lo
 	filename, filesize := filepath.Join(localStoragePath, "queries.active"), 1+maxConcurrent*entrySize
 	logUnfinishedQueries(filename, filesize, logger)
 
-	fileAsBytes, closer, err := getMMapedFile(filename, filesize, logger)
+	fileAsBytes, closer, err := getMMappedFile(filename, filesize, logger)
 	if err != nil {
 		panic("Unable to create mmap-ed active query log")
 	}
 
 	copy(fileAsBytes, "[")
 	activeQueryTracker := ActiveQueryTracker{
-		mmapedFile:    fileAsBytes,
+		mmappedFile:   fileAsBytes,
 		closer:        closer,
 		getNextIndex:  make(chan int, maxConcurrent),
 		logger:        logger,
@@ -206,14 +206,14 @@ func (tracker ActiveQueryTracker) GetMaxConcurrent() int {
 }
 
 func (tracker ActiveQueryTracker) Delete(insertIndex int) {
-	copy(tracker.mmapedFile[insertIndex:], strings.Repeat("\x00", entrySize))
+	copy(tracker.mmappedFile[insertIndex:], strings.Repeat("\x00", entrySize))
 	tracker.getNextIndex <- insertIndex
 }
 
 func (tracker ActiveQueryTracker) Insert(ctx context.Context, query string) (int, error) {
 	select {
 	case i := <-tracker.getNextIndex:
-		fileBytes := tracker.mmapedFile
+		fileBytes := tracker.mmappedFile
 		entry := newJSONEntry(query, tracker.logger)
 		start, end := i, i+entrySize
 

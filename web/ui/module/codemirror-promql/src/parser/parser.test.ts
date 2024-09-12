@@ -528,7 +528,7 @@ describe('promql operations', () => {
         },
       ],
     },
-    // test aggregration
+    // test aggregation
     {
       expr: 'sum by (foo)(some_metric)',
       expectedValueType: ValueType.vector,

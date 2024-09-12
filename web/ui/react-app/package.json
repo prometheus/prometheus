@@ -68,7 +68,9 @@
     "@testing-library/react-hooks": "^7.0.2",
     "@types/enzyme": "^3.10.18",
     "@types/flot": "0.0.36",
+    "@types/jest": "^29.5.12",
     "@types/jquery": "^3.5.30",
+    "@types/node": "^20.14.9",
     "@types/react": "^17.0.71",
     "@types/react-copy-to-clipboard": "^5.0.7",
     "@types/react-dom": "^17.0.25",
@@ -78,8 +80,16 @@
     "@wojtekmaj/enzyme-adapter-react-17": "^0.8.0",
     "enzyme": "^3.11.0",
     "enzyme-to-json": "^3.6.2",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-config-react-app": "^7.0.1",
+    "eslint-plugin-prettier": "^4.2.1",
+    "jest-canvas-mock": "^2.5.2",
+    "jest-fetch-mock": "^3.0.3",
     "mutationobserver-shim": "^0.3.7",
-    "sinon": "^18.0.0"
+    "prettier": "^2.8.8",
+    "react-scripts": "^5.0.1",
+    "sinon": "^18.0.0",
+    "ts-jest": "^29.2.2"
   },
   "jest": {
     "snapshotSerializers": [
