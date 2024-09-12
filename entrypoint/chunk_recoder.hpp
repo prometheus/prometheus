@@ -50,13 +50,19 @@ class ChunkRecoder {
   PromPP::Prometheus::tsdb::chunkenc::BStream<series_data::encoder::kAllocationSizesTable> stream_;
 
   PROMPP_ALWAYS_INLINE void write_samples_count(ChunkInfoInterface auto& info) {
-    info.samples_count = Decoder::get_samples_count(*iterator_->storage(), iterator_->chunk(), iterator_->chunk_type());
+    if (iterator_->chunk().encoding_type != series_data::chunk::DataChunk::EncodingType::kUnknown) {
+      info.samples_count = Decoder::get_samples_count(*iterator_->storage(), iterator_->chunk(), iterator_->chunk_type());
+    } else {
+      info.samples_count = 0;
+    }
+
     uint16_t samples_count = info.samples_count;
     stream_.write_bits(samples_count, BareBones::Bit::to_bits(sizeof(samples_count)));
   }
 
   void recode_chunk(ChunkInfoInterface auto& info) {
     Encoder encoder;
+    info.min_t = 0;
     Decoder::decode_chunk(*iterator_->storage(), iterator_->chunk(), iterator_->chunk_type(), [&](const Sample& sample) PROMPP_LAMBDA_INLINE {
       if (encoder.state().state == BareBones::Encoding::Gorilla::GorillaState::kFirstPoint) {
         [[unlikely]];

@@ -10,7 +10,7 @@ class Querier {
  public:
   explicit Querier(const DataStorage& storage) : storage_(storage) {}
 
-  template<typename Query>
+  template <typename Query>
   [[nodiscard]] PROMPP_ALWAYS_INLINE QueriedChunkList query(const Query& query) const {
     QueriedChunkList chunks;
 
@@ -45,6 +45,9 @@ class Querier {
 
     if (storage_.open_chunks.size() > ls_id) {
       auto& open_chunk = storage_.open_chunks[ls_id];
+      if (open_chunk.encoding_type == series_data::chunk::DataChunk::EncodingType::kUnknown) {
+        return;
+      }
       auto chunk_start_timestamp_ms = Decoder::get_chunk_first_timestamp<ChunkType::kOpen>(storage_, open_chunk);
       if (chunk_start_timestamp_ms > end_timestamp_ms) {
         return;

@@ -518,30 +518,34 @@ func NewLabelSetSimpleBuilderSize(size int) *LabelSetSimpleBuilder {
 
 // Add a name/value pair. Note if you Add the same name twice you will get a duplicate label, which is invalid.
 func (builder *LabelSetSimpleBuilder) Add(name, value string) {
+	if value == "" {
+		// Empty labels are the same as missing labels.
+		return
+	}
 	builder.pairs = append(builder.pairs, SimpleLabel{Name: name, Value: value})
 	builder.sorted = false
 }
 
 // Set the name/value pair as a label. A value of "" means delete that label.
-func (builder *LabelSetSimpleBuilder) Set(n, v string) {
-	if v == "" {
+func (builder *LabelSetSimpleBuilder) Set(name, value string) {
+	if value == "" {
 		// Empty labels are the same as missing labels.
-		builder.Del(n)
+		builder.Del(name)
 		return
 	}
 	for i, a := range builder.pairs {
-		if a.Name == n {
-			builder.pairs[i].Value = v
+		if a.Name == name {
+			builder.pairs[i].Value = value
 			return
 		}
 	}
-	builder.pairs = append(builder.pairs, SimpleLabel{Name: n, Value: v})
+	builder.pairs = append(builder.pairs, SimpleLabel{Name: name, Value: value})
 }
 
 // Del deletes the label of the given name.
-func (builder *LabelSetSimpleBuilder) Del(n string) {
+func (builder *LabelSetSimpleBuilder) Del(name string) {
 	for i, a := range builder.pairs {
-		if a.Name == n {
+		if a.Name == name {
 			builder.pairs = append(builder.pairs[:i], builder.pairs[i+1:]...)
 			return
 		}

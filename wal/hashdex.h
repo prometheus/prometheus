@@ -43,12 +43,12 @@ class GoModelHashdex {
     const PromPP::Primitives::Go::TimeSeries& go_time_series_;
 
    public:
-    Item(size_t hash, const PromPP::Primitives::Go::TimeSeries& go_time_series) : hash_(hash), go_time_series_(go_time_series) {}
+    PROMPP_ALWAYS_INLINE Item(size_t hash, const PromPP::Primitives::Go::TimeSeries& go_time_series) : hash_(hash), go_time_series_(go_time_series) {}
 
-    size_t hash() const { return hash_; }
+    PROMPP_ALWAYS_INLINE size_t hash() const { return hash_; }
 
     template <class Timeseries>
-    void read(Timeseries& timeseries) const {
+    PROMPP_ALWAYS_INLINE void read(Timeseries& timeseries) const {
       PromPP::Primitives::Go::read_timeseries(go_time_series_, timeseries);
     }
   };
@@ -106,11 +106,11 @@ class ProtobufHashdex {
     std::string_view data_;
 
    public:
-    inline __attribute__((always_inline)) explicit Item(size_t hash, std::string_view data) : hash_(hash), data_(data) {}
-    inline __attribute__((always_inline)) size_t hash() const { return hash_; }
+    PROMPP_ALWAYS_INLINE explicit Item(size_t hash, std::string_view data) : hash_(hash), data_(data) {}
+    PROMPP_ALWAYS_INLINE size_t hash() const { return hash_; }
 
     template <class Timeseries>
-    inline __attribute__((always_inline)) void read(Timeseries& timeseries) const {
+    PROMPP_ALWAYS_INLINE void read(Timeseries& timeseries) const {
       Prometheus::RemoteWrite::read_timeseries(protozero::pbf_reader(data_), timeseries);
     }
   };
