@@ -435,6 +435,10 @@ func NewEngine(opts EngineOpts) *Engine {
 
 // Close closes ng.
 func (ng *Engine) Close() error {
+	if ng == nil {
+		return nil
+	}
+
 	if ng.activeQueryTracker != nil {
 		return ng.activeQueryTracker.Close()
 	}
@@ -1816,6 +1820,9 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				mat[i].DropName = true
 				for j := range mat[i].Floats {
 					mat[i].Floats[j].F = -mat[i].Floats[j].F
+				}
+				for j := range mat[i].Histograms {
+					mat[i].Histograms[j].H = mat[i].Histograms[j].H.Copy().Mul(-1)
 				}
 			}
 			if !ev.enableDelayedNameRemoval && mat.ContainsSameLabelset() {

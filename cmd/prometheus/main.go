@@ -154,6 +154,9 @@ type flagConfig struct {
 	RemoteFlushDeadline model.Duration
 	nameEscapingScheme  string
 
+	enableAutoReload   bool
+	autoReloadInterval model.Duration
+
 	featureList   []string
 	memlimitRatio float64
 	// These options are extracted from featureList
@@ -199,6 +202,12 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "auto-gomaxprocs":
 				c.enableAutoGOMAXPROCS = true
 				level.Info(logger).Log("msg", "Automatically set GOMAXPROCS to match Linux container CPU quota")
+			case "auto-reload-config":
+				c.enableAutoReload = true
+				if s := time.Duration(c.autoReloadInterval).Seconds(); s > 0 && s < 1 {
+					c.autoReloadInterval, _ = model.ParseDuration("1s")
+				}
+				level.Info(logger).Log("msg", fmt.Sprintf("Enabled automatic configuration file reloading. Checking for configuration changes every %s.", c.autoReloadInterval))
 			case "auto-gomemlimit":
 				c.enableAutoGOMEMLIMIT = true
 				level.Info(logger).Log("msg", "Automatically set GOMEMLIMIT to match Linux container or system memory limit")
@@ -232,6 +241,9 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 				level.Info(logger).Log("msg", "Experimental PromQL delayed name removal enabled.")
 			case "":
 				continue
+			case "old-ui":
+				c.web.UseOldUI = true
+				level.Info(logger).Log("msg", "Serving previous version of the Prometheus web UI.")
 			default:
 				level.Warn(logger).Log("msg", "Unknown option for --enable-feature", "option", o)
 			}
@@ -278,6 +290,9 @@ func main() {
 
 	a.Flag("config.file", "Prometheus configuration file path.").
 		Default("prometheus.yml").StringVar(&cfg.configFile)
+
+	a.Flag("config.auto-reload-interval", "Specifies the interval for checking and automatically reloading the Prometheus configuration file upon detecting changes.").
+		Default("30s").SetValue(&cfg.autoReloadInterval)
 
 	a.Flag("web.listen-address", "Address to listen on for UI, API, and telemetry. Can be repeated.").
 		Default("0.0.0.0:9090").StringsVar(&cfg.web.ListenAddresses)
@@ -677,6 +692,7 @@ func main() {
 	scrapeManager, err := scrape.NewManager(
 		&cfg.scrape,
 		log.With(logger, "component", "scrape manager"),
+		func(s string) (log.Logger, error) { return logging.NewJSONFileLogger(s) },
 		fanoutStorage,
 		prometheus.DefaultRegisterer,
 	)
@@ -1051,6 +1067,15 @@ func main() {
 		hup := make(chan os.Signal, 1)
 		signal.Notify(hup, syscall.SIGHUP)
 		cancel := make(chan struct{})
+
+		var checksum string
+		if cfg.enableAutoReload {
+			checksum, err = config.GenerateChecksum(cfg.configFile)
+			if err != nil {
+				level.Error(logger).Log("msg", "Failed to generate initial checksum for configuration file", "err", err)
+			}
+		}
+
 		g.Add(
 			func() error {
 				<-reloadReady.C
@@ -1060,6 +1085,12 @@ func main() {
 					case <-hup:
 						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, reloaders...); err != nil {
 							level.Error(logger).Log("msg", "Error reloading config", "err", err)
+						} else if cfg.enableAutoReload {
+							if currentChecksum, err := config.GenerateChecksum(cfg.configFile); err == nil {
+								checksum = currentChecksum
+							} else {
+								level.Error(logger).Log("msg", "Failed to generate checksum during configuration reload", "err", err)
+							}
 						}
 					case rc := <-webHandler.Reload():
 						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, reloaders...); err != nil {
@@ -1067,6 +1098,32 @@ func main() {
 							rc <- err
 						} else {
 							rc <- nil
+							if cfg.enableAutoReload {
+								if currentChecksum, err := config.GenerateChecksum(cfg.configFile); err == nil {
+									checksum = currentChecksum
+								} else {
+									level.Error(logger).Log("msg", "Failed to generate checksum during configuration reload", "err", err)
+								}
+							}
+						}
+					case <-time.Tick(time.Duration(cfg.autoReloadInterval)):
+						if !cfg.enableAutoReload {
+							continue
+						}
+						currentChecksum, err := config.GenerateChecksum(cfg.configFile)
+						if err != nil {
+							level.Error(logger).Log("msg", "Failed to generate checksum during configuration reload", "err", err)
+							continue
+						}
+						if currentChecksum == checksum {
+							continue
+						}
+						level.Info(logger).Log("msg", "Configuration file change detected, reloading the configuration.")
+
+						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, reloaders...); err != nil {
+							level.Error(logger).Log("msg", "Error reloading config", "err", err)
+						} else {
+							checksum = currentChecksum
 						}
 					case <-cancel:
 						return nil

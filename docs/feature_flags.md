@@ -171,7 +171,7 @@ This should **only** be applied to metrics that currently produce such labels.
 `--enable-feature=otlp-write-receiver`
 
 The OTLP receiver allows Prometheus to accept [OpenTelemetry](https://opentelemetry.io/) metrics writes.
-Prometheus is best used as a Pull based system, and staleness, `up` metric, and other Pull enabled features 
+Prometheus is best used as a Pull based system, and staleness, `up` metric, and other Pull enabled features
 won't work when you push OTLP metrics.
 
 ## Experimental PromQL functions
@@ -203,6 +203,12 @@ When the `concurrent-rule-eval` feature flag is enabled, rules without any depen
 This has the potential to improve rule group evaluation latency and resource utilization at the expense of adding more concurrent query load.
 
 The number of concurrent rule evaluations can be configured with `--rules.max-concurrent-rule-evals`, which is set to `4` by default.
+
+## Serve old Prometheus UI
+
+Fall back to serving the old (Prometheus 2.x) web UI instead of the new UI. The new UI that was released as part of Prometheus 3.0 is a complete rewrite and aims to be cleaner, less cluttered, and more modern under the hood. However, it is not fully feature complete and battle-tested yet, so some users may still prefer using the old UI.
+
+`--enable-feature=old-ui`
 
 ## Metadata WAL Records
 
@@ -236,3 +242,15 @@ When enabled, Prometheus will change the way in which the `__name__` label is re
 
 This allows optionally preserving the `__name__` label via the `label_replace` and `label_join` functions, and helps prevent the "vector cannot contain metrics with the same labelset" error, which can happen when applying a regex-matcher to the `__name__` label.
 
+## Auto Reload Config
+
+`--enable-feature=auto-reload-config`
+
+When enabled, Prometheus will automatically reload its configuration file at a
+specified interval. The interval is defined by the
+`--config.auto-reload-interval` flag, which defaults to `30s`.
+
+Configuration reloads are triggered by detecting changes in the checksum of the
+main configuration file or any referenced files, such as rule and scrape
+configurations. To ensure consistency and avoid issues during reloads, it's
+recommended to update these files atomically.

@@ -1469,13 +1469,13 @@ func (s *memSeries) mmapCurrentOOOHeadChunk(chunkDiskMapper *chunks.ChunkDiskMap
 		handleChunkWriteError(err)
 		return nil
 	}
-	chunkRefs := make([]chunks.ChunkDiskMapperRef, 0, 1)
+	chunkRefs := make([]chunks.ChunkDiskMapperRef, 0, len(chks))
 	for _, memchunk := range chks {
 		if len(s.ooo.oooMmappedChunks) >= (oooChunkIDMask - 1) {
 			level.Error(logger).Log("msg", "Too many OOO chunks, dropping data", "series", s.lset.String())
 			break
 		}
-		chunkRef := chunkDiskMapper.WriteChunk(s.ref, s.ooo.oooHeadChunk.minTime, s.ooo.oooHeadChunk.maxTime, memchunk.chunk, true, handleChunkWriteError)
+		chunkRef := chunkDiskMapper.WriteChunk(s.ref, memchunk.minTime, memchunk.maxTime, memchunk.chunk, true, handleChunkWriteError)
 		chunkRefs = append(chunkRefs, chunkRef)
 		s.ooo.oooMmappedChunks = append(s.ooo.oooMmappedChunks, &mmappedChunk{
 			ref:        chunkRef,
