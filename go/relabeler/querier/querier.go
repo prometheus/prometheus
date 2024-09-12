@@ -9,6 +9,7 @@ import (
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/model"
 	"github.com/prometheus/prometheus/pp/go/relabeler"
+	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -183,7 +184,7 @@ func (q *Querier) Select(ctx context.Context, sortSeries bool, hints *storage.Se
 		return nil
 	})
 	if err != nil {
-		fmt.Println("QUERIER: Select failed:", err.Error())
+		logger.Warnf("QUERIER: Select failed: %w", err)
 		// todo: error
 	}
 
