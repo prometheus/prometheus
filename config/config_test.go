@@ -62,6 +62,11 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
+func init() {
+	// This can be removed when the default validation scheme in common is updated.
+	model.NameValidationScheme = model.UTF8Validation
+}
+
 func mustParseURL(u string) *config.URL {
 	parsed, err := url.Parse(u)
 	if err != nil {
@@ -78,14 +83,16 @@ const (
 	globLabelNameLengthLimit  = 200
 	globLabelValueLengthLimit = 200
 	globalGoGC                = 42
+	globScrapeFailureLogFile  = "testdata/fail.log"
 )
 
 var expectedConf = &Config{
 	GlobalConfig: GlobalConfig{
-		ScrapeInterval:     model.Duration(15 * time.Second),
-		ScrapeTimeout:      DefaultGlobalConfig.ScrapeTimeout,
-		EvaluationInterval: model.Duration(30 * time.Second),
-		QueryLogFile:       "",
+		ScrapeInterval:       model.Duration(15 * time.Second),
+		ScrapeTimeout:        DefaultGlobalConfig.ScrapeTimeout,
+		EvaluationInterval:   model.Duration(30 * time.Second),
+		QueryLogFile:         "testdata/query.log",
+		ScrapeFailureLogFile: globScrapeFailureLogFile,
 
 		ExternalLabels: labels.FromStrings("foo", "bar", "monitor", "codelab"),
 
@@ -211,6 +218,7 @@ var expectedConf = &Config{
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
 			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:  "testdata/fail_prom.log",
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -323,6 +331,7 @@ var expectedConf = &Config{
 			LabelNameLengthLimit:  210,
 			LabelValueLengthLimit: 210,
 			ScrapeProtocols:       []ScrapeProtocol{PrometheusText0_0_4},
+			ScrapeFailureLogFile:  globScrapeFailureLogFile,
 
 			HTTPClientConfig: config.HTTPClientConfig{
 				BasicAuth: &config.BasicAuth{
@@ -420,6 +429,7 @@ var expectedConf = &Config{
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
 			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:  globScrapeFailureLogFile,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -475,6 +485,7 @@ var expectedConf = &Config{
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
 			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:  globScrapeFailureLogFile,
 
 			MetricsPath: "/metrics",
 			Scheme:      "http",
@@ -508,6 +519,7 @@ var expectedConf = &Config{
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
 			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:  globScrapeFailureLogFile,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -547,6 +559,7 @@ var expectedConf = &Config{
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
 			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:  globScrapeFailureLogFile,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -586,6 +599,7 @@ var expectedConf = &Config{
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
 			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:  globScrapeFailureLogFile,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -615,6 +629,7 @@ var expectedConf = &Config{
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
 			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:  globScrapeFailureLogFile,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -652,6 +667,7 @@ var expectedConf = &Config{
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
 			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:  globScrapeFailureLogFile,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -686,6 +702,7 @@ var expectedConf = &Config{
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
 			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:  globScrapeFailureLogFile,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -727,6 +744,7 @@ var expectedConf = &Config{
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
 			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:  globScrapeFailureLogFile,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -758,6 +776,7 @@ var expectedConf = &Config{
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
 			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:  globScrapeFailureLogFile,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -792,6 +811,7 @@ var expectedConf = &Config{
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
 			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:  globScrapeFailureLogFile,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -819,6 +839,7 @@ var expectedConf = &Config{
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
 			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:  globScrapeFailureLogFile,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -849,6 +870,7 @@ var expectedConf = &Config{
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
 			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:  globScrapeFailureLogFile,
 
 			MetricsPath:      "/federate",
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -879,6 +901,7 @@ var expectedConf = &Config{
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
 			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:  globScrapeFailureLogFile,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -909,6 +932,7 @@ var expectedConf = &Config{
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
 			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:  globScrapeFailureLogFile,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -936,6 +960,7 @@ var expectedConf = &Config{
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
 			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:  globScrapeFailureLogFile,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -971,6 +996,7 @@ var expectedConf = &Config{
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
 			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:  globScrapeFailureLogFile,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1005,6 +1031,7 @@ var expectedConf = &Config{
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
 			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:  globScrapeFailureLogFile,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1036,6 +1063,7 @@ var expectedConf = &Config{
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
 			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:  globScrapeFailureLogFile,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1066,6 +1094,7 @@ var expectedConf = &Config{
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
 			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:  globScrapeFailureLogFile,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1100,6 +1129,7 @@ var expectedConf = &Config{
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
 			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:  globScrapeFailureLogFile,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1137,6 +1167,7 @@ var expectedConf = &Config{
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
 			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:  globScrapeFailureLogFile,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1193,6 +1224,7 @@ var expectedConf = &Config{
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
 			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:  globScrapeFailureLogFile,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1220,6 +1252,7 @@ var expectedConf = &Config{
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
 			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:  globScrapeFailureLogFile,
 
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -1258,6 +1291,7 @@ var expectedConf = &Config{
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
 			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:  globScrapeFailureLogFile,
 
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -1302,6 +1336,7 @@ var expectedConf = &Config{
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
 			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:  globScrapeFailureLogFile,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1337,6 +1372,7 @@ var expectedConf = &Config{
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
 			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:  globScrapeFailureLogFile,
 
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -1366,6 +1402,7 @@ var expectedConf = &Config{
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
 			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:  globScrapeFailureLogFile,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1398,6 +1435,7 @@ var expectedConf = &Config{
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
 			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:  globScrapeFailureLogFile,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -2051,6 +2089,10 @@ var expectedErrors = []struct {
 }
 
 func TestBadConfigs(t *testing.T) {
+	model.NameValidationScheme = model.LegacyValidation
+	defer func() {
+		model.NameValidationScheme = model.UTF8Validation
+	}()
 	for _, ee := range expectedErrors {
 		_, err := LoadFile("testdata/"+ee.filename, false, false, log.NewNopLogger())
 		require.Error(t, err, "%s", ee.filename)
@@ -2060,6 +2102,10 @@ func TestBadConfigs(t *testing.T) {
 }
 
 func TestBadStaticConfigsJSON(t *testing.T) {
+	model.NameValidationScheme = model.LegacyValidation
+	defer func() {
+		model.NameValidationScheme = model.UTF8Validation
+	}()
 	content, err := os.ReadFile("testdata/static_config.bad.json")
 	require.NoError(t, err)
 	var tg targetgroup.Group
@@ -2068,6 +2114,10 @@ func TestBadStaticConfigsJSON(t *testing.T) {
 }
 
 func TestBadStaticConfigsYML(t *testing.T) {
+	model.NameValidationScheme = model.LegacyValidation
+	defer func() {
+		model.NameValidationScheme = model.UTF8Validation
+	}()
 	content, err := os.ReadFile("testdata/static_config.bad.yml")
 	require.NoError(t, err)
 	var tg targetgroup.Group
@@ -2332,17 +2382,17 @@ func TestScrapeConfigNameValidationSettings(t *testing.T) {
 		{
 			name:         "global setting implies local settings",
 			inputFile:    "scrape_config_global_validation_mode",
-			expectScheme: "utf8",
+			expectScheme: "legacy",
 		},
 		{
 			name:         "local setting",
 			inputFile:    "scrape_config_local_validation_mode",
-			expectScheme: "utf8",
+			expectScheme: "legacy",
 		},
 		{
 			name:         "local setting overrides global setting",
 			inputFile:    "scrape_config_local_global_validation_mode",
-			expectScheme: "legacy",
+			expectScheme: "utf8",
 		},
 	}
 

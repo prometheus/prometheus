@@ -58,8 +58,6 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
-	"github.com/prometheus/prometheus/discovery/legacymanager"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -103,6 +101,8 @@ var (
 )
 
 func init() {
+	// This can be removed when the default validation scheme in common is updated.
+	model.NameValidationScheme = model.UTF8Validation
 	prometheus.MustRegister(versioncollector.NewCollector(strings.ReplaceAll(appName, "-", "_")))
 
 	var err error
@@ -162,7 +162,6 @@ type flagConfig struct {
 	// These options are extracted from featureList
 	// for ease of use.
 	enableExpandExternalLabels bool
-	enableNewSDManager         bool
 	enablePerStepStats         bool
 	enableAutoGOMAXPROCS       bool
 	enableAutoGOMEMLIMIT       bool
@@ -182,9 +181,6 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 		opts := strings.Split(f, ",")
 		for _, o := range opts {
 			switch o {
-			case "remote-write-receiver":
-				c.web.EnableRemoteWriteReceiver = true
-				level.Warn(logger).Log("msg", "Remote write receiver enabled via feature flag remote-write-receiver. This is DEPRECATED. Use --web.enable-remote-write-receiver.")
 			case "otlp-write-receiver":
 				c.web.EnableOTLPWriteReceiver = true
 				level.Info(logger).Log("msg", "Experimental OTLP write receiver enabled")
@@ -203,12 +199,6 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "metadata-wal-records":
 				c.scrape.AppendMetadata = true
 				level.Info(logger).Log("msg", "Experimental metadata records in WAL enabled, required for remote write 2.0")
-			case "new-service-discovery-manager":
-				c.enableNewSDManager = true
-				level.Info(logger).Log("msg", "Experimental service discovery manager")
-			case "agent":
-				agentMode = true
-				level.Info(logger).Log("msg", "Experimental agent mode enabled.")
 			case "promql-per-step-stats":
 				c.enablePerStepStats = true
 				level.Info(logger).Log("msg", "Experimental per-step statistics reporting")
@@ -255,13 +245,11 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "promql-delayed-name-removal":
 				c.promqlEnableDelayedNameRemoval = true
 				level.Info(logger).Log("msg", "Experimental PromQL delayed name removal enabled.")
-			case "utf8-names":
-				model.NameValidationScheme = model.UTF8Validation
-				level.Info(logger).Log("msg", "Experimental UTF-8 support enabled")
 			case "":
 				continue
-			case "promql-at-modifier", "promql-negative-offset":
-				level.Warn(logger).Log("msg", "This option for --enable-feature is now permanently enabled and therefore a no-op.", "option", o)
+			case "old-ui":
+				c.web.UseOldUI = true
+				level.Info(logger).Log("msg", "Serving previous version of the Prometheus web UI.")
 			default:
 				level.Warn(logger).Log("msg", "Unknown option for --enable-feature", "option", o)
 			}
@@ -276,11 +264,6 @@ func main() {
 		runtime.SetBlockProfileRate(20)
 		runtime.SetMutexProfileFraction(20)
 	}
-
-	var (
-		oldFlagRetentionDuration model.Duration
-		newFlagRetentionDuration model.Duration
-	)
 
 	// Unregister the default GoCollector, and reregister with our defaults.
 	if prometheus.Unregister(collectors.NewGoCollector()) {
@@ -391,25 +374,14 @@ func main() {
 		"Size at which to split the tsdb WAL segment files. Example: 100MB").
 		Hidden().PlaceHolder("<bytes>").BytesVar(&cfg.tsdb.WALSegmentSize)
 
-	serverOnlyFlag(a, "storage.tsdb.retention", "[DEPRECATED] How long to retain samples in storage. This flag has been deprecated, use \"storage.tsdb.retention.time\" instead.").
-		SetValue(&oldFlagRetentionDuration)
-
-	serverOnlyFlag(a, "storage.tsdb.retention.time", "How long to retain samples in storage. When this flag is set it overrides \"storage.tsdb.retention\". If neither this flag nor \"storage.tsdb.retention\" nor \"storage.tsdb.retention.size\" is set, the retention time defaults to "+defaultRetentionString+". Units Supported: y, w, d, h, m, s, ms.").
-		SetValue(&newFlagRetentionDuration)
+	serverOnlyFlag(a, "storage.tsdb.retention.time", "How long to retain samples in storage. If neither this flag nor \"storage.tsdb.retention.size\" is set, the retention time defaults to "+defaultRetentionString+". Units Supported: y, w, d, h, m, s, ms.").
+		SetValue(&cfg.tsdb.RetentionDuration)
 
 	serverOnlyFlag(a, "storage.tsdb.retention.size", "Maximum number of bytes that can be stored for blocks. A unit is required, supported units: B, KB, MB, GB, TB, PB, EB. Ex: \"512MB\". Based on powers-of-2, so 1KB is 1024B.").
 		BytesVar(&cfg.tsdb.MaxBytes)
 
 	serverOnlyFlag(a, "storage.tsdb.no-lockfile", "Do not create lockfile in data directory.").
 		Default("false").BoolVar(&cfg.tsdb.NoLockfile)
-
-	// TODO: Remove in Prometheus 3.0.
-	var b bool
-	serverOnlyFlag(a, "storage.tsdb.allow-overlapping-blocks", "[DEPRECATED] This flag has no effect. Overlapping blocks are enabled by default now.").
-		Default("true").Hidden().BoolVar(&b)
-
-	serverOnlyFlag(a, "storage.tsdb.allow-overlapping-compaction", "Allow compaction of overlapping blocks. If set to false, TSDB stops vertical compaction and leaves overlapping blocks there. The use case is to let another component handle the compaction of overlapping blocks.").
-		Default("true").Hidden().BoolVar(&cfg.tsdb.EnableOverlappingCompaction)
 
 	serverOnlyFlag(a, "storage.tsdb.wal-compression", "Compress the tsdb WAL.").
 		Hidden().Default("true").BoolVar(&cfg.tsdb.WALCompression)
@@ -487,9 +459,6 @@ func main() {
 	serverOnlyFlag(a, "alertmanager.drain-notification-queue-on-shutdown", "Send any outstanding Alertmanager notifications when shutting down. If false, any outstanding Alertmanager notifications will be dropped when shutting down.").
 		Default("true").BoolVar(&cfg.notifier.DrainOnShutdown)
 
-	// TODO: Remove in Prometheus 3.0.
-	alertmanagerTimeout := a.Flag("alertmanager.timeout", "[DEPRECATED] This flag has no effect.").Hidden().String()
-
 	serverOnlyFlag(a, "query.lookback-delta", "The maximum lookback duration for retrieving metrics during expression evaluations and federation.").
 		Default("5m").SetValue(&cfg.lookbackDelta)
 
@@ -505,10 +474,10 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("scrape.name-escaping-scheme", `Method for escaping legacy invalid names when sending to Prometheus that does not support UTF-8. Can be one of "values", "underscores", or "dots".`).Default(scrape.DefaultNameEscapingScheme.String()).StringVar(&cfg.nameEscapingScheme)
-
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, auto-gomaxprocs, auto-gomemlimit, auto-reload-config, concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, expand-external-labels, extra-scrape-metrics, memory-snapshot-on-shutdown, native-histograms, new-service-discovery-manager, no-default-scrape-port, otlp-write-receiver, promql-experimental-functions, promql-delayed-name-removal, promql-per-step-stats, remote-write-receiver (DEPRECATED), utf8-names. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: auto-gomemlimit, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, auto-gomaxprocs, no-default-scrape-port, native-histograms, otlp-write-receiver, created-timestamp-zero-ingestion, concurrent-rule-eval. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
+
+	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
 
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
 
@@ -576,10 +545,6 @@ func main() {
 		os.Exit(2)
 	}
 
-	if *alertmanagerTimeout != "" {
-		level.Warn(logger).Log("msg", "The flag --alertmanager.timeout has no effect and will be removed in the future.")
-	}
-
 	// Throw error for invalid config before starting other components.
 	var cfgFile *config.Config
 	if cfgFile, err = config.LoadFile(cfg.configFile, agentMode, false, log.NewNopLogger()); err != nil {
@@ -626,17 +591,6 @@ func main() {
 	cfg.web.RoutePrefix = "/" + strings.Trim(cfg.web.RoutePrefix, "/")
 
 	if !agentMode {
-		// Time retention settings.
-		if oldFlagRetentionDuration != 0 {
-			level.Warn(logger).Log("deprecation_notice", "'storage.tsdb.retention' flag is deprecated use 'storage.tsdb.retention.time' instead.")
-			cfg.tsdb.RetentionDuration = oldFlagRetentionDuration
-		}
-
-		// When the new flag is set it takes precedence.
-		if newFlagRetentionDuration != 0 {
-			cfg.tsdb.RetentionDuration = newFlagRetentionDuration
-		}
-
 		if cfg.tsdb.RetentionDuration == 0 && cfg.tsdb.MaxBytes == 0 {
 			cfg.tsdb.RetentionDuration = defaultRetentionDuration
 			level.Info(logger).Log("msg", "No time or size retention was set so using the default time retention", "duration", defaultRetentionDuration)
@@ -708,8 +662,8 @@ func main() {
 
 		ctxScrape, cancelScrape = context.WithCancel(context.Background())
 		ctxNotify, cancelNotify = context.WithCancel(context.Background())
-		discoveryManagerScrape  discoveryManager
-		discoveryManagerNotify  discoveryManager
+		discoveryManagerScrape  *discovery.Manager
+		discoveryManagerNotify  *discovery.Manager
 	)
 
 	// Kubernetes client metrics are used by Kubernetes SD.
@@ -729,47 +683,22 @@ func main() {
 		os.Exit(1)
 	}
 
-	if cfg.enableNewSDManager {
-		{
-			discMgr := discovery.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), prometheus.DefaultRegisterer, sdMetrics, discovery.Name("scrape"))
-			if discMgr == nil {
-				level.Error(logger).Log("msg", "failed to create a discovery manager scrape")
-				os.Exit(1)
-			}
-			discoveryManagerScrape = discMgr
-		}
+	discoveryManagerScrape = discovery.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), prometheus.DefaultRegisterer, sdMetrics, discovery.Name("scrape"))
+	if discoveryManagerScrape == nil {
+		level.Error(logger).Log("msg", "failed to create a discovery manager scrape")
+		os.Exit(1)
+	}
 
-		{
-			discMgr := discovery.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), prometheus.DefaultRegisterer, sdMetrics, discovery.Name("notify"))
-			if discMgr == nil {
-				level.Error(logger).Log("msg", "failed to create a discovery manager notify")
-				os.Exit(1)
-			}
-			discoveryManagerNotify = discMgr
-		}
-	} else {
-		{
-			discMgr := legacymanager.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), prometheus.DefaultRegisterer, sdMetrics, legacymanager.Name("scrape"))
-			if discMgr == nil {
-				level.Error(logger).Log("msg", "failed to create a discovery manager scrape")
-				os.Exit(1)
-			}
-			discoveryManagerScrape = discMgr
-		}
-
-		{
-			discMgr := legacymanager.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), prometheus.DefaultRegisterer, sdMetrics, legacymanager.Name("notify"))
-			if discMgr == nil {
-				level.Error(logger).Log("msg", "failed to create a discovery manager notify")
-				os.Exit(1)
-			}
-			discoveryManagerNotify = discMgr
-		}
+	discoveryManagerNotify = discovery.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), prometheus.DefaultRegisterer, sdMetrics, discovery.Name("notify"))
+	if discoveryManagerNotify == nil {
+		level.Error(logger).Log("msg", "failed to create a discovery manager notify")
+		os.Exit(1)
 	}
 
 	scrapeManager, err := scrape.NewManager(
 		&cfg.scrape,
 		log.With(logger, "component", "scrape manager"),
+		func(s string) (log.Logger, error) { return logging.NewJSONFileLogger(s) },
 		fanoutStorage,
 		prometheus.DefaultRegisterer,
 	)
@@ -1863,15 +1792,6 @@ func (opts agentOptions) ToAgentOptions(outOfOrderTimeWindow int64) agent.Option
 		NoLockfile:           opts.NoLockfile,
 		OutOfOrderTimeWindow: outOfOrderTimeWindow,
 	}
-}
-
-// discoveryManager interfaces the discovery manager. This is used to keep using
-// the manager that restarts SD's on reload for a few releases until we feel
-// the new manager can be enabled for all users.
-type discoveryManager interface {
-	ApplyConfig(cfg map[string]discovery.Configs) error
-	Run() error
-	SyncCh() <-chan map[string][]*targetgroup.Group
 }
 
 // rwProtoMsgFlagParser is a custom parser for config.RemoteWriteProtoMsg enum.

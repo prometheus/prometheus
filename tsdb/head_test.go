@@ -1060,7 +1060,7 @@ func TestMemSeries_truncateChunks_scenarios(t *testing.T) {
 
 	tests := []struct {
 		name                 string
-		headChunks           int                // the number of head chubks to create on memSeries by appending enough samples
+		headChunks           int                // the number of head chunks to create on memSeries by appending enough samples
 		mmappedChunks        int                // the number of mmapped chunks to create on memSeries by appending enough samples
 		truncateBefore       int64              // the mint to pass to truncateChunksBefore()
 		expectedTruncated    int                // the number of chunks that we're expecting be truncated and returned by truncateChunksBefore()
@@ -3510,6 +3510,56 @@ func TestWaitForPendingReadersInTimeRange(t *testing.T) {
 }
 
 func TestQueryOOOHeadDuringTruncate(t *testing.T) {
+	testQueryOOOHeadDuringTruncate(t,
+		func(db *DB, minT, maxT int64) (storage.LabelQuerier, error) {
+			return db.Querier(minT, maxT)
+		},
+		func(t *testing.T, lq storage.LabelQuerier, minT, _ int64) {
+			// Samples
+			q, ok := lq.(storage.Querier)
+			require.True(t, ok)
+			ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+			require.True(t, ss.Next())
+			s := ss.At()
+			require.False(t, ss.Next()) // One series.
+			it := s.Iterator(nil)
+			require.NotEqual(t, chunkenc.ValNone, it.Next()) // Has some data.
+			require.Equal(t, minT, it.AtT())                 // It is an in-order sample.
+			require.NotEqual(t, chunkenc.ValNone, it.Next()) // Has some data.
+			require.Equal(t, minT+50, it.AtT())              // it is an out-of-order sample.
+			require.NoError(t, it.Err())
+		},
+	)
+}
+
+func TestChunkQueryOOOHeadDuringTruncate(t *testing.T) {
+	testQueryOOOHeadDuringTruncate(t,
+		func(db *DB, minT, maxT int64) (storage.LabelQuerier, error) {
+			return db.ChunkQuerier(minT, maxT)
+		},
+		func(t *testing.T, lq storage.LabelQuerier, minT, _ int64) {
+			// Chunks
+			q, ok := lq.(storage.ChunkQuerier)
+			require.True(t, ok)
+			ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+			require.True(t, ss.Next())
+			s := ss.At()
+			require.False(t, ss.Next()) // One series.
+			metaIt := s.Iterator(nil)
+			require.True(t, metaIt.Next())
+			meta := metaIt.At()
+			// Samples
+			it := meta.Chunk.Iterator(nil)
+			require.NotEqual(t, chunkenc.ValNone, it.Next()) // Has some data.
+			require.Equal(t, minT, it.AtT())                 // It is an in-order sample.
+			require.NotEqual(t, chunkenc.ValNone, it.Next()) // Has some data.
+			require.Equal(t, minT+50, it.AtT())              // it is an out-of-order sample.
+			require.NoError(t, it.Err())
+		},
+	)
+}
+
+func testQueryOOOHeadDuringTruncate(t *testing.T, makeQuerier func(db *DB, minT, maxT int64) (storage.LabelQuerier, error), verify func(t *testing.T, q storage.LabelQuerier, minT, maxT int64)) {
 	const maxT int64 = 6000
 
 	dir := t.TempDir()
@@ -3562,7 +3612,7 @@ func TestQueryOOOHeadDuringTruncate(t *testing.T) {
 	// Wait for the compaction to start.
 	<-allowQueryToStart
 
-	q, err := db.Querier(1500, 2500)
+	q, err := makeQuerier(db, 1500, 2500)
 	require.NoError(t, err)
 	queryStarted <- struct{}{} // Unblock the compaction.
 	ctx := context.Background()
@@ -3579,17 +3629,7 @@ func TestQueryOOOHeadDuringTruncate(t *testing.T) {
 	require.Empty(t, annots)
 	require.Equal(t, []string{"b"}, res)
 
-	// Samples
-	ss := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
-	require.True(t, ss.Next())
-	s := ss.At()
-	require.False(t, ss.Next()) // One series.
-	it := s.Iterator(nil)
-	require.NotEqual(t, chunkenc.ValNone, it.Next()) // Has some data.
-	require.Equal(t, int64(1500), it.AtT())          // It is an in-order sample.
-	require.NotEqual(t, chunkenc.ValNone, it.Next()) // Has some data.
-	require.Equal(t, int64(1550), it.AtT())          // it is an out-of-order sample.
-	require.NoError(t, it.Err())
+	verify(t, q, 1500, 2500)
 
 	require.NoError(t, q.Close()) // Cannot be deferred as the compaction waits for queries to close before finishing.
 
