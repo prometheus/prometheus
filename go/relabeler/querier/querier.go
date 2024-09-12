@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/model"
@@ -117,8 +116,8 @@ func (q *Querier) Close() error {
 }
 
 func (q *Querier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	start := time.Now()
-	fmt.Println("QUERIER: HEAD{", q.head.Generation(), "} SELECT")
+	// start := time.Now()
+	// fmt.Println("QUERIER: HEAD{", q.head.Generation(), "} SELECT")
 	seriesSets := make([]storage.SeriesSet, q.head.NumberOfShards())
 	convertedMatchers := convertPrometheusMatchersToOpcoreMatchers(matchers...)
 
@@ -130,7 +129,7 @@ func (q *Querier) Select(ctx context.Context, sortSeries bool, hints *storage.Se
 			return fmt.Errorf("failed to query from shard: %d, query status: %d", shard.ShardID(), lssQueryResult.Status())
 		}
 
-		fmt.Println("QUERIER: HEAD{", q.head.Generation(), "} SELECT shard: ", shard.ShardID(), ", queried label sets count: ", len(lssQueryResult.Matches()))
+		// fmt.Println("QUERIER: HEAD{", q.head.Generation(), "} SELECT shard: ", shard.ShardID(), ", queried label sets count: ", len(lssQueryResult.Matches()))
 
 		getLabelSetsResult := shard.LSS().GetLabelSets(lssQueryResult.Matches())
 		serializedChunks := shard.DataStorage().Query(cppbridge.HeadDataStorageQuery{
@@ -144,7 +143,7 @@ func (q *Querier) Select(ctx context.Context, sortSeries bool, hints *storage.Se
 			return fmt.Errorf("failed to query shard: %d, empty", shard.ShardID())
 		}
 
-		fmt.Println("QUERIER: HEAD{", q.head.Generation(), "} SELECT shard: ", shard.ShardID(), ", queried chunks: ", len(serializedChunks.ChunkMetadataList()))
+		// fmt.Println("QUERIER: HEAD{", q.head.Generation(), "} SELECT shard: ", shard.ShardID(), ", queried chunks: ", len(serializedChunks.ChunkMetadataList()))
 
 		chunksBySeriesID := make(map[uint32][]cppbridge.HeadDataStorageSerializedChunkMetadata)
 		for _, chunkMetadata := range serializedChunks.ChunkMetadataList() {
@@ -161,7 +160,7 @@ func (q *Querier) Select(ctx context.Context, sortSeries bool, hints *storage.Se
 
 		localSeriesSets := make([]*Series, 0, len(chunksBySeriesID))
 		deserializer := cppbridge.NewHeadDataStorageDeserializer(serializedChunks)
-		fmt.Println("QUERIER: HEAD{", q.head.Generation(), "} Select Deserializer created")
+		// fmt.Println("QUERIER: HEAD{", q.head.Generation(), "} Select Deserializer created")
 		for _, seriesID := range lssQueryResult.Matches() {
 			chunksMetadata, ok := chunksBySeriesID[seriesID]
 			if !ok {
@@ -188,7 +187,7 @@ func (q *Querier) Select(ctx context.Context, sortSeries bool, hints *storage.Se
 		// todo: error
 	}
 
-	fmt.Println("QUERIER: HEAD{", q.head.Generation(), "} Select finished, duration: ", time.Since(start))
+	// fmt.Println("QUERIER: HEAD{", q.head.Generation(), "} Select finished, duration: ", time.Since(start))
 	return storage.NewMergeSeriesSet(seriesSets, storage.ChainedSeriesMerge)
 }
 

@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/annotations"
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 type MultiQuerier struct {
@@ -94,13 +95,13 @@ func (q *MultiQuerier) Close() (err error) {
 	if q.closer != nil {
 		err = errors.Join(err, q.closer())
 	}
-	fmt.Println("MULTIQUERIER: Closed")
+	// fmt.Println("MULTIQUERIER: Closed")
 	return err
 }
 
 func (q *MultiQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	fmt.Println("MULTIQUERIER: Select")
-	start := time.Now()
+	// fmt.Println("MULTIQUERIER: Select")
+	// start := time.Now()
 
 	seriesSets := make([]storage.SeriesSet, len(q.queriers))
 	wg := &sync.WaitGroup{}
@@ -115,7 +116,7 @@ func (q *MultiQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 
 	wg.Wait()
 
-	fmt.Println("MULTIQUERIER: Select finished, duration: ", time.Since(start))
+	// fmt.Println("MULTIQUERIER: Select finished, duration: ", time.Since(start))
 	return storage.NewMergeSeriesSet(seriesSets, storage.ChainedSeriesMerge)
 }
 

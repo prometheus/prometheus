@@ -2,11 +2,11 @@ package relabeler
 
 import (
 	"context"
-	"fmt"
+	"sync/atomic"
+
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/model"
 	"github.com/prometheus/prometheus/pp/go/relabeler/config"
-	"sync/atomic"
 )
 
 // DataStorage - data storage interface.
@@ -129,12 +129,12 @@ func NewLoggedAtomicReferenceCounter(prefix string) *LoggedAtomicReferenceCounte
 
 func (rc *LoggedAtomicReferenceCounter) Add(delta int64) int64 {
 	newValue := rc.value.Add(delta)
-	fmt.Println(rc.prefix, ": Reference Counter: add: ", delta, ", value: ", newValue)
+	// fmt.Println(rc.prefix, ": Reference Counter: add: ", delta, ", value: ", newValue)
 	return newValue
 }
 
 func (rc *LoggedAtomicReferenceCounter) Value() int64 {
 	value := rc.value.Load()
-	fmt.Println(rc.prefix, ": Reference Counter: value: ", value)
+	// fmt.Println(rc.prefix, ": Reference Counter: value: ", value)
 	return value
 }

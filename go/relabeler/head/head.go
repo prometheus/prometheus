@@ -4,15 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
+	"runtime/debug"
+	"sync"
+
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler"
 	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 	"github.com/prometheus/prometheus/pp/go/util"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
-	"runtime"
-	"runtime/debug"
-	"sync"
 )
 
 type Head struct {
@@ -172,7 +173,7 @@ func (h *Head) Reconfigure(inputRelabelerConfigs []*config.InputRelabelerConfig,
 
 func (h *Head) WriteMetrics() {
 	_ = h.ForEachShard(func(shard relabeler.Shard) error {
-		fmt.Println("head write metrics lss", shard.ShardID())
+		// fmt.Println("head write metrics lss", shard.ShardID())
 		h.memoryInUse.With(
 			prometheus.Labels{
 				"generation": fmt.Sprintf("%d", h.generation),
@@ -181,7 +182,7 @@ func (h *Head) WriteMetrics() {
 			},
 		).Set(float64(shard.LSS().AllocatedMemory()))
 
-		fmt.Println("head write metrics data storage", shard.ShardID())
+		// fmt.Println("head write metrics data storage", shard.ShardID())
 		h.memoryInUse.With(
 			prometheus.Labels{
 				"generation": fmt.Sprintf("%d", h.generation),
@@ -190,7 +191,7 @@ func (h *Head) WriteMetrics() {
 			},
 		).Set(float64(shard.DataStorage().AllocatedMemory()))
 
-		fmt.Println("head write metrics relabeler", shard.ShardID())
+		// fmt.Println("head write metrics relabeler", shard.ShardID())
 		for relabelerID, inputRelabeler := range shard.InputRelabelers() {
 			h.memoryInUse.With(
 				prometheus.Labels{
@@ -201,7 +202,7 @@ func (h *Head) WriteMetrics() {
 			).Set(float64(inputRelabeler.CacheAllocatedMemory()))
 		}
 
-		fmt.Println("head write metrics completed", shard.ShardID())
+		// fmt.Println("head write metrics completed", shard.ShardID())
 
 		return nil
 	})

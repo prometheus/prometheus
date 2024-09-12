@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 	"math"
 	"math/rand"
 	"runtime"
 	"sync"
 	"time"
+
+	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
@@ -96,7 +97,7 @@ func NewManagerRelabeler(
 	numberOfShards uint16,
 ) (*ManagerRelabeler, error) {
 	if numberOfShards == 0 {
-		numberOfShards = 1
+		numberOfShards = 2
 	}
 
 	shards, err := newshards(inputRelabelerConfigs, numberOfShards, registerer)
@@ -278,7 +279,7 @@ func (msr *ManagerRelabeler) ApplyConfig(
 	numberOfShards uint16,
 ) error {
 	if numberOfShards == 0 {
-		numberOfShards = 1
+		numberOfShards = 2
 	}
 
 	msr.shards.stopLoop()
