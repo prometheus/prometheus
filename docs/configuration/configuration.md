@@ -76,7 +76,8 @@ global:
   [ rule_query_offset: <duration> | default = 0s ]
 
   # The labels to add to any time series or alerts when communicating with
-  # external systems (federation, remote storage, Alertmanager).
+  # external systems (federation, remote storage, Alertmanager). 
+  # Note that external_labels are always enabled in release-3.0.
   external_labels:
     [ <labelname>: <labelvalue> ... ]
 
