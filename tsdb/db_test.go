@@ -6274,7 +6274,7 @@ func testOOOAppendAndQuery(t *testing.T, scenario sampleTypeScenario) {
 	addSample(s2, 255, 265, false)
 	verifyOOOMinMaxTimes(250, 265)
 	testQuery(math.MinInt64, math.MaxInt64)
-	testQuery(minutes(250), minutes(265)) // Test querying ono data time range.
+	testQuery(minutes(250), minutes(265)) // Test querying ooo data time range.
 	testQuery(minutes(290), minutes(300)) // Test querying in-order data time range.
 	testQuery(minutes(250), minutes(300)) // Test querying the entire range.
 
