@@ -1487,7 +1487,7 @@ func TestRemoteWriteRetryOnRateLimit(t *testing.T) {
 
 func TestOTLPSanitizeResourceAttributes(t *testing.T) {
 	t.Run("good config", func(t *testing.T) {
-		want, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_resource_attributes.good.yml"), false, false, log.NewNopLogger())
+		want, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_resource_attributes.good.yml"), false, log.NewNopLogger())
 		require.NoError(t, err)
 
 		out, err := yaml.Marshal(want)
@@ -1499,7 +1499,7 @@ func TestOTLPSanitizeResourceAttributes(t *testing.T) {
 	})
 
 	t.Run("bad config", func(t *testing.T) {
-		_, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_resource_attributes.bad.yml"), false, false, log.NewNopLogger())
+		_, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_resource_attributes.bad.yml"), false, log.NewNopLogger())
 		require.ErrorContains(t, err, `duplicated promoted OTel resource attribute "k8s.job.name"`)
 		require.ErrorContains(t, err, `empty promoted OTel resource attribute`)
 	})
@@ -2352,7 +2352,7 @@ func TestScrapeConfigNameValidationSettings(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			want, err := LoadFile(fmt.Sprintf("testdata/%s.yml", tc.inputFile), false, false, log.NewNopLogger())
+			want, err := LoadFile(fmt.Sprintf("testdata/%s.yml", tc.inputFile), false, log.NewNopLogger())
 			require.NoError(t, err)
 
 			out, err := yaml.Marshal(want)
