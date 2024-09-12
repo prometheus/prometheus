@@ -1328,7 +1328,7 @@ func BenchmarkSampleSend(b *testing.B) {
 	cfg.MaxShards = 20
 
 	// todo: test with new proto type(s)
-	m := newTestQueueManager(b, cfg, mcfg, defaultFlushDeadline, c, config.RemoteWriteProtoMsgV1)
+	m := newTestQueueManager(b, cfg, mcfg, defaultFlushDeadline, c, config.RemoteWriteProtoMsgV2)
 	m.StoreSeries(series, 0)
 
 	// These should be received by the client.
