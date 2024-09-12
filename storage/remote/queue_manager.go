@@ -1553,7 +1553,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 	}
 	pendingDataV2 := make([]*writev2.TimeSeries, maxCount)
 	for i := range pendingDataV2 {
-		pendingDataV2[i] = &writev2.TimeSeries{}
+		pendingDataV2[i] = writev2.TimeSeriesFromVTPool()
 		pendingDataV2[i].Samples = []*writev2.Sample{{}}
 	}
 
@@ -1567,6 +1567,22 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 		}
 	}
 	defer stop()
+
+	returnTimeSeriesToVTPool := func() {
+		for _, ts := range pendingDataV2 {
+			for _, sample := range ts.Samples {
+				sample.ReturnToVTPool()
+			}
+			for _, examplar := range ts.Exemplars {
+				examplar.ReturnToVTPool()
+			}
+			for _, hist := range ts.Histograms {
+				hist.ReturnToVTPool()
+			}
+			ts.ReturnToVTPool()
+		}
+	}
+	defer returnTimeSeriesToVTPool()
 
 	sendBatch := func(batch []timeSeries, protoMsg config.RemoteWriteProtoMsg, enc Compression, timer bool) {
 		switch protoMsg {
