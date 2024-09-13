@@ -55,6 +55,8 @@ struct PROMPP_ATTRIBUTE_PACKED DataChunk {
 
   bool operator==(const DataChunk&) const noexcept = default;
 
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_empty() const noexcept { return encoding_type == EncodingType::kUnknown; }
+
   PROMPP_ALWAYS_INLINE void reset() noexcept {
     encoder.double_constant = 0;
     timestamp_encoder_state_id = encoder::timestamp::State::kInvalidId;
