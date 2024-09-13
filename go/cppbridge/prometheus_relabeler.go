@@ -8,8 +8,6 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 )
 
@@ -337,23 +335,6 @@ func (sr *StatelessRelabeler) ResetTo(relabelingCfgs []*RelabelConfig) error {
 	return handleException(exception)
 }
 
-var (
-	innerObjectCreate = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "prompp_cppbridge_prometheus_relabeler_objects_create",
-			Help: "The total number of create object.",
-		},
-		[]string{"object"},
-	)
-	innerObjectDestroy = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "prompp_cppbridge_prometheus_relabeler_objects_destroy",
-			Help: "The total number of create destroy.",
-		},
-		[]string{"object"},
-	)
-)
-
 //
 // ShardsInnerSeries
 //
@@ -396,10 +377,8 @@ func (iss *InnerSeries) Size() uint64 {
 func NewInnerSeries() *InnerSeries {
 	rts := &InnerSeries{size: 0}
 	prometheusInnerSeriesCtor(rts)
-	innerObjectCreate.With(prometheus.Labels{"object": "inner_series"}).Inc()
 	runtime.SetFinalizer(rts, func(r *InnerSeries) {
 		prometheusInnerSeriesDtor(r)
-		innerObjectDestroy.With(prometheus.Labels{"object": "inner_series"}).Inc()
 	})
 
 	return rts
@@ -433,10 +412,8 @@ type RelabeledSeries struct {
 func NewRelabeledSeries() *RelabeledSeries {
 	rss := &RelabeledSeries{size: 0}
 	prometheusRelabeledSeriesCtor(rss)
-	innerObjectCreate.With(prometheus.Labels{"object": "relabeled_series"}).Inc()
 	runtime.SetFinalizer(rss, func(r *RelabeledSeries) {
 		prometheusRelabeledSeriesDtor(r)
-		innerObjectDestroy.With(prometheus.Labels{"object": "relabeled_series"}).Inc()
 	})
 
 	return rss
@@ -462,10 +439,8 @@ type RelabelerStateUpdate struct {
 func NewRelabelerStateUpdate() *RelabelerStateUpdate {
 	ud := new(RelabelerStateUpdate)
 	prometheusRelabelerStateUpdateCtor(ud, 0)
-	innerObjectCreate.With(prometheus.Labels{"object": "relabeler_state_update"}).Inc()
 	runtime.SetFinalizer(ud, func(r *RelabelerStateUpdate) {
 		prometheusRelabelerStateUpdateDtor(r)
-		innerObjectDestroy.With(prometheus.Labels{"object": "relabeler_state_update"}).Inc()
 	})
 
 	return ud
@@ -475,10 +450,8 @@ func NewRelabelerStateUpdate() *RelabelerStateUpdate {
 func NewRelabelerStateUpdateWithGeneration(generation uint32) *RelabelerStateUpdate {
 	ud := new(RelabelerStateUpdate)
 	prometheusRelabelerStateUpdateCtor(ud, generation)
-	innerObjectCreate.With(prometheus.Labels{"object": "relabeler_state_update"}).Inc()
 	runtime.SetFinalizer(ud, func(r *RelabelerStateUpdate) {
 		prometheusRelabelerStateUpdateDtor(r)
-		innerObjectDestroy.With(prometheus.Labels{"object": "relabeler_state_update"}).Inc()
 	})
 
 	return ud

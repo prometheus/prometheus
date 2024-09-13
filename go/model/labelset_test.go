@@ -237,6 +237,23 @@ func (s *LabelSetSuite) TestLabelSetSimpleBuilder_Build() {
 	s.Equal("__name__:example;container:~unknown;flags:empty;instance:instance;job:test;", ls.String())
 }
 
+func (s *LabelSetSuite) TestLabelSetSimpleBuilder_BuildWithEmpty() {
+	labels := []model.SimpleLabel{
+		{"__name__", "example"},
+		{"container", "~unknown"},
+		{"instance", ""},
+		{"job", "test"},
+		{"flags", "empty"},
+	}
+
+	builder := model.NewLabelSetSimpleBuilder()
+	for _, l := range labels {
+		builder.Add(l.Name, l.Value)
+	}
+	ls := builder.Build()
+	s.Equal("__name__:example;container:~unknown;flags:empty;job:test;", ls.String())
+}
+
 func (s *LabelSetSuite) TestLabelSetSimpleBuilder_Get() {
 	labels := []model.SimpleLabel{
 		{"__name__", "example"},
@@ -370,33 +387,3 @@ func (s *LabelSetSuite) TestLabelSetSimpleBuilder_Sort() {
 	builder.Sort()
 	s.Equal("__name__:example;container:~unknown;flags:empty;instance:instance;job:test;", ls.String())
 }
-
-func BenchmarkDecoderV3(b *testing.B) {
-	labels := []model.SimpleLabel{
-		{"__name__", "example"},
-		{"container", "~unknown"},
-		{"instance", "instance"},
-		{"job", "test"},
-		{"flags", "empty"},
-		{"flags1", "empty"},
-	}
-
-	builder := model.NewLabelSetSimpleBuilder()
-	for _, l := range labels {
-		builder.Add(l.Name, l.Value)
-	}
-
-	for i := 0; i < b.N; i++ {
-		v := builder.Has("flagsq")
-		if !v {
-			//
-		}
-
-		// v := builder.Get("flagsq")
-		// if v == "" {
-		// 	//
-		// }
-	}
-}
-
-// BenchmarkDecoderV3-8   	12041396	       104.2 ns/op	       0 B/op	       0 allocs/op
