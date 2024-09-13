@@ -947,7 +947,7 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	// A failed scrape is the same as an empty scrape,
 	// we still call sl.append to trigger stale markers.
 	total, added, appErr = sl.append(b, contentType, appendTime)
-	fmt.Printf("total: %d, added: %d\n", total, added)
+	level.Debug(sl.logger).Log("msg", "scrape append", "total", total, "added", added)
 	if appErr != nil {
 		level.Debug(sl.logger).Log("msg", "Append failed", "err", appErr)
 		// The append failed, probably due to a parse error or sample limit.
