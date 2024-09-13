@@ -2091,7 +2091,7 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 		blockQueriers = append(blockQueriers, q)
 	}
 
-	return NewUTF8MixedQuerier(storage.NewMergeQuerier(blockQueriers, nil, storage.ChainedSeriesMerge), db.opts.UTF8MigrationEscapingScheme), nil
+	return storage.NewMergeQuerier(blockQueriers, nil, storage.ChainedSeriesMerge), nil
 }
 
 // blockChunkQuerierForRange returns individual block chunk queriers from the persistent blocks, in-order head block, and the

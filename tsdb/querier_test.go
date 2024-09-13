@@ -29,6 +29,8 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -185,6 +187,7 @@ func createIdxChkReaders(t *testing.T, tc []seriesSamples) (IndexReader, ChunkRe
 	return mi, chkReader, blockMint, blockMaxt
 }
 
+// TODO: rename to querierTestCase
 type blockQuerierTestCase struct {
 	mint, maxt int64
 	ms         []*labels.Matcher
@@ -194,8 +197,8 @@ type blockQuerierTestCase struct {
 }
 
 func testBlockQuerier(t *testing.T, c blockQuerierTestCase, ir IndexReader, cr ChunkReader, stones *tombstones.MemTombstones) {
-	t.Run("sample", func(t *testing.T) {
-		q := blockQuerier{
+	testQueriers(t, c,
+		&blockQuerier{
 			blockBaseQuerier: &blockBaseQuerier{
 				index:      ir,
 				chunks:     cr,
@@ -204,8 +207,21 @@ func testBlockQuerier(t *testing.T, c blockQuerierTestCase, ir IndexReader, cr C
 				mint: c.mint,
 				maxt: c.maxt,
 			},
-		}
+		},
+		&blockChunkQuerier{
+			blockBaseQuerier: &blockBaseQuerier{
+				index:      ir,
+				chunks:     cr,
+				tombstones: stones,
 
+				mint: c.mint,
+				maxt: c.maxt,
+			},
+		})
+}
+
+func testQueriers(t *testing.T, c blockQuerierTestCase, q storage.Querier, cq storage.ChunkQuerier) {
+	t.Run("sample", func(t *testing.T) {
 		res := q.Select(context.Background(), false, c.hints, c.ms...)
 		defer func() { require.NoError(t, q.Close()) }()
 
@@ -229,20 +245,9 @@ func testBlockQuerier(t *testing.T, c blockQuerierTestCase, ir IndexReader, cr C
 		}
 		require.NoError(t, res.Err())
 	})
-
 	t.Run("chunk", func(t *testing.T) {
-		q := blockChunkQuerier{
-			blockBaseQuerier: &blockBaseQuerier{
-				index:      ir,
-				chunks:     cr,
-				tombstones: stones,
-
-				mint: c.mint,
-				maxt: c.maxt,
-			},
-		}
-		res := q.Select(context.Background(), false, c.hints, c.ms...)
-		defer func() { require.NoError(t, q.Close()) }()
+		res := cq.Select(context.Background(), false, c.hints, c.ms...)
+		defer func() { require.NoError(t, cq.Close()) }()
 
 		for {
 			eok, rok := c.expChks.Next(), res.Next()
@@ -413,6 +418,192 @@ func TestBlockQuerier(t *testing.T) {
 			ir, cr, _, _ := createIdxChkReaders(t, testData)
 			testBlockQuerier(t, c, ir, cr, tombstones.NewMemTombstones())
 		})
+	}
+}
+
+var utf8Data = []seriesSamples{
+	{
+		lset: map[string]string{"a": "a", "__name__": "foo.bar"},
+		chunks: [][]sample{
+			{{1, 2, nil, nil}, {2, 3, nil, nil}, {3, 4, nil, nil}},
+			{{5, 2, nil, nil}, {6, 3, nil, nil}, {7, 4, nil, nil}},
+		},
+	},
+	{
+		lset: map[string]string{"a": "b", "__name__": "foo.bar"},
+		chunks: [][]sample{
+			{{1, 1, nil, nil}, {2, 2, nil, nil}, {3, 3, nil, nil}},
+			{{5, 3, nil, nil}, {6, 6, nil, nil}},
+		},
+	},
+}
+
+var underscoreEscapedUTF8Data = []seriesSamples{
+	{
+		lset: map[string]string{"a": "c", "__name__": "foo_bar"},
+		chunks: [][]sample{
+			{{1, 3, nil, nil}, {2, 2, nil, nil}, {3, 6, nil, nil}},
+			{{5, 1, nil, nil}, {6, 7, nil, nil}, {7, 2, nil, nil}},
+		},
+	},
+	{
+		lset: map[string]string{"__name__": "another_metric"},
+		chunks: [][]sample{
+			{{1, 41, nil, nil}, {2, 42, nil, nil}, {3, 43, nil, nil}},
+			{{5, 45, nil, nil}, {6, 46, nil, nil}, {7, 47, nil, nil}},
+		},
+	},
+}
+
+var mixedUTF8Data = append(utf8Data, underscoreEscapedUTF8Data...)
+
+var s1 = storage.NewListSeries(labels.FromStrings("a", "a", "__name__", "foo.bar"),
+	[]chunks.Sample{sample{1, 2, nil, nil}, sample{2, 3, nil, nil}, sample{3, 4, nil, nil}, sample{5, 2, nil, nil}, sample{6, 3, nil, nil}, sample{7, 4, nil, nil}},
+)
+var c1 = storage.NewListChunkSeriesFromSamples(labels.FromStrings("a", "a", "__name__", "foo.bar"),
+	[]chunks.Sample{sample{1, 2, nil, nil}, sample{2, 3, nil, nil}, sample{3, 4, nil, nil}}, []chunks.Sample{sample{5, 2, nil, nil}, sample{6, 3, nil, nil}, sample{7, 4, nil, nil}},
+)
+var s2 = storage.NewListSeries(labels.FromStrings("a", "b", "__name__", "foo.bar"),
+	[]chunks.Sample{sample{1, 1, nil, nil}, sample{2, 2, nil, nil}, sample{3, 3, nil, nil}, sample{5, 3, nil, nil}, sample{6, 6, nil, nil}},
+)
+var c2 = storage.NewListChunkSeriesFromSamples(labels.FromStrings("a", "b", "__name__", "foo.bar"),
+	[]chunks.Sample{sample{1, 1, nil, nil}, sample{2, 2, nil, nil}, sample{3, 3, nil, nil}}, []chunks.Sample{sample{5, 3, nil, nil}, sample{6, 6, nil, nil}},
+)
+
+var s3 = storage.NewListSeries(labels.FromStrings("a", "c", "__name__", "foo_bar"),
+	[]chunks.Sample{sample{1, 3, nil, nil}, sample{2, 2, nil, nil}, sample{3, 6, nil, nil}, sample{5, 1, nil, nil}, sample{6, 7, nil, nil}, sample{7, 2, nil, nil}},
+)
+var c3 = storage.NewListChunkSeriesFromSamples(labels.FromStrings("a", "c", "__name__", "foo_bar"),
+	[]chunks.Sample{sample{1, 3, nil, nil}, sample{2, 2, nil, nil}, sample{3, 6, nil, nil}}, []chunks.Sample{sample{5, 1, nil, nil}, sample{6, 7, nil, nil}, sample{7, 2, nil, nil}},
+)
+var s3Unescaped = storage.NewListSeries(labels.FromStrings("a", "c", "__name__", "foo.bar"),
+	[]chunks.Sample{sample{1, 3, nil, nil}, sample{2, 2, nil, nil}, sample{3, 6, nil, nil}, sample{5, 1, nil, nil}, sample{6, 7, nil, nil}, sample{7, 2, nil, nil}},
+)
+var c3Unescaped = storage.NewListChunkSeriesFromSamples(labels.FromStrings("a", "c", "__name__", "foo.bar"),
+	[]chunks.Sample{sample{1, 3, nil, nil}, sample{2, 2, nil, nil}, sample{3, 6, nil, nil}}, []chunks.Sample{sample{5, 1, nil, nil}, sample{6, 7, nil, nil}, sample{7, 2, nil, nil}},
+)
+
+func TestMixedUTF8BlockQuerier(t *testing.T) {
+	// TODO(npazosmendez): test cases
+	// * same label set is combines and samples are returned in order
+
+	for _, c := range []blockQuerierTestCase{
+		{
+			ms:      []*labels.Matcher{},
+			exp:     newMockSeriesSet([]storage.Series{}),
+			expChks: newMockChunkSeriesSet([]storage.ChunkSeries{}),
+		},
+		{
+			// No __name__= matcher, no-op
+			mint:    math.MinInt64,
+			maxt:    math.MaxInt64,
+			ms:      []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "a", ".+")},
+			exp:     newMockSeriesSet([]storage.Series{s1, s2, s3}),
+			expChks: newMockChunkSeriesSet([]storage.ChunkSeries{c1, c2, c3}),
+		},
+		{
+			// __name__= matcher, explode query and relabel
+			mint:    math.MinInt64,
+			maxt:    math.MaxInt64,
+			ms:      []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "foo.bar")},
+			exp:     newMockSeriesSet([]storage.Series{s1, s2, s3Unescaped}),
+			expChks: newMockChunkSeriesSet([]storage.ChunkSeries{c1, c2, c3Unescaped}),
+		},
+		{
+			// __name__= matcher plus other labels
+			mint:    math.MinInt64,
+			maxt:    math.MaxInt64,
+			ms:      []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "foo.bar"), labels.MustNewMatcher(labels.MatchNotEqual, "a", "b")},
+			exp:     newMockSeriesSet([]storage.Series{s1, s3Unescaped}),
+			expChks: newMockChunkSeriesSet([]storage.ChunkSeries{c1, c3Unescaped}),
+		},
+		{
+			// No need to escape matcher, no-op
+			mint:    math.MinInt64,
+			maxt:    math.MaxInt64,
+			ms:      []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "foo_bar")},
+			exp:     newMockSeriesSet([]storage.Series{s3}),
+			expChks: newMockChunkSeriesSet([]storage.ChunkSeries{c3}),
+		},
+	} {
+		ir, cr, _, _ := createIdxChkReaders(t, mixedUTF8Data)
+		q := &blockQuerier{
+			blockBaseQuerier: &blockBaseQuerier{
+				index:      ir,
+				chunks:     cr,
+				tombstones: tombstones.NewMemTombstones(),
+
+				mint: c.mint,
+				maxt: c.maxt,
+			},
+		}
+
+		mixedQ := &mixedUTF8BlockQuerier{
+			blockQuerier: q,
+			es:           model.UnderscoreEscaping,
+		}
+
+		mixedChunkQ := &mixedUTF8BlockChunkQuerier{
+			blockChunkQuerier: &blockChunkQuerier{
+				blockBaseQuerier: &blockBaseQuerier{
+					index:      ir,
+					chunks:     cr,
+					tombstones: tombstones.NewMemTombstones(),
+					mint:       c.mint,
+					maxt:       c.maxt,
+				},
+			},
+			es: model.UnderscoreEscaping,
+		}
+		testQueriers(t, c, mixedQ, mixedChunkQ)
+	}
+}
+
+func TestEscapedUTF8BlockQuerier(t *testing.T) {
+	for _, c := range []blockQuerierTestCase{
+		{
+			ms:      []*labels.Matcher{},
+			exp:     newMockSeriesSet([]storage.Series{}),
+			expChks: newMockChunkSeriesSet([]storage.ChunkSeries{}),
+		},
+		{
+			mint:    math.MinInt64,
+			maxt:    math.MaxInt64,
+			ms:      []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "a", ".+")},
+			exp:     newMockSeriesSet([]storage.Series{s3}),
+			expChks: newMockChunkSeriesSet([]storage.ChunkSeries{c3}),
+		},
+	} {
+		ir, cr, _, _ := createIdxChkReaders(t, underscoreEscapedUTF8Data)
+		q := &blockQuerier{
+			blockBaseQuerier: &blockBaseQuerier{
+				index:      ir,
+				chunks:     cr,
+				tombstones: tombstones.NewMemTombstones(),
+
+				mint: c.mint,
+				maxt: c.maxt,
+			},
+		}
+
+		escapedQ := &escapedUTF8BlockQuerier{
+			blockQuerier: q,
+			es:           model.UnderscoreEscaping,
+		}
+
+		escapedChunkQ := &escapedUTF8BlockChunkQuerier{
+			blockChunkQuerier: &blockChunkQuerier{
+				blockBaseQuerier: &blockBaseQuerier{
+					index:      ir,
+					chunks:     cr,
+					tombstones: tombstones.NewMemTombstones(),
+					mint:       c.mint,
+					maxt:       c.maxt,
+				},
+			},
+			es: model.UnderscoreEscaping,
+		}
+		testQueriers(t, c, escapedQ, escapedChunkQ)
 	}
 }
 
