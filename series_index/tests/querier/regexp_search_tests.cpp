@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include "bare_bones/utf8.h"
 #include "series_index/querier/regexp_searcher.h"
 
 namespace {
@@ -12,7 +13,7 @@ using series_index::querier::RegexpSearcher;
 using Status = series_index::querier::RegexpMatchAnalyzer::Status;
 
 struct RegexpMatchAnalyzerTestCase {
-  std::string_view regexp;
+  std::string regexp;
   Status status;
 };
 
@@ -28,7 +29,11 @@ TEST_P(RegexpMatchAnalyzerFixture, Test) {
   EXPECT_EQ(GetParam().status, status);
 }
 
-INSTANTIATE_TEST_SUITE_P(InvalidRegexp, RegexpMatchAnalyzerFixture, testing::Values(RegexpMatchAnalyzerTestCase{.regexp = "[", .status = Status::kError}));
+INSTANTIATE_TEST_SUITE_P(InvalidRegexp,
+                         RegexpMatchAnalyzerFixture,
+                         testing::Values(RegexpMatchAnalyzerTestCase{.regexp = "[", .status = Status::kError},
+                                         RegexpMatchAnalyzerTestCase{.regexp = {std::initializer_list<char>{static_cast<char>(BareBones::utf8::kInvalidChar)}},
+                                                                     .status = Status::kError}));
 
 INSTANTIATE_TEST_SUITE_P(EmptyMatch,
                          RegexpMatchAnalyzerFixture,
