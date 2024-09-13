@@ -25,6 +25,7 @@ export interface GraphProps {
   resolution: GraphResolution;
   showExemplars: boolean;
   displayMode: GraphDisplayMode;
+  yAxisMin: number | null;
   retriggerIdx: number;
   onSelectRange: (start: number, end: number) => void;
 }
@@ -37,6 +38,7 @@ const Graph: FC<GraphProps> = ({
   resolution,
   showExemplars,
   displayMode,
+  yAxisMin,
   retriggerIdx,
   onSelectRange,
 }) => {
@@ -222,6 +224,7 @@ const Graph: FC<GraphProps> = ({
           width={width}
           showExemplars={showExemplars}
           displayMode={displayMode}
+          yAxisMin={yAxisMin}
           onSelectRange={onSelectRange}
         />
       </Box>
