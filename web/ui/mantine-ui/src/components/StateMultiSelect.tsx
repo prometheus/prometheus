@@ -10,6 +10,7 @@ import {
   useCombobox,
 } from "@mantine/core";
 import { IconHeartRateMonitor } from "@tabler/icons-react";
+import { inputIconStyle } from "../styles";
 
 interface StatePillProps extends React.ComponentPropsWithoutRef<"div"> {
   value: string;
@@ -80,7 +81,7 @@ export const StateMultiSelect: FC<StateMultiSelectProps> = ({
           pointer
           onClick={() => combobox.toggleDropdown()}
           miw={200}
-          leftSection={<IconHeartRateMonitor size={14} />}
+          leftSection={<IconHeartRateMonitor style={inputIconStyle} />}
           rightSection={
             values.length > 0 ? (
               <ComboboxClearButton onClear={() => onChange([])} />

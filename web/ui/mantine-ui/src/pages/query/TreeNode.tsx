@@ -17,6 +17,7 @@ import {
   Group,
   List,
   Loader,
+  rem,
   Text,
   Tooltip,
 } from "@mantine/core";
@@ -36,6 +37,8 @@ import { functionSignatures } from "../../promql/functionSignatures";
 const nodeIndent = 20;
 const maxLabelNames = 10;
 const maxLabelValues = 10;
+
+const nodeIndicatorIconStyle = { width: rem(18), height: rem(18) };
 
 type NodeState = "waiting" | "running" | "error" | "success";
 
@@ -288,13 +291,14 @@ const TreeNode: FC<{
       </Box>
       {mergedChildState === "waiting" ? (
         <Group c="gray">
-          <IconPointFilled size={18} />
+          <IconPointFilled style={nodeIndicatorIconStyle} />
         </Group>
       ) : mergedChildState === "running" ? (
         <Loader size={14} color="gray" type="dots" />
       ) : mergedChildState === "error" ? (
         <Group c="orange.7" gap={5} fz="xs" wrap="nowrap">
-          <IconPointFilled size={18} /> Blocked on child query error
+          <IconPointFilled style={nodeIndicatorIconStyle} /> Blocked on child
+          query error
         </Group>
       ) : isFetching ? (
         <Loader size={14} color="gray" />
@@ -305,7 +309,7 @@ const TreeNode: FC<{
           style={{ flexShrink: 0 }}
           className={classes.errorText}
         >
-          <IconPointFilled size={18} />
+          <IconPointFilled style={nodeIndicatorIconStyle} />
           <Text fz="xs">
             <strong>Error executing query:</strong> {error.message}
           </Text>
