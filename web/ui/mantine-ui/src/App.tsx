@@ -2,6 +2,7 @@ import "@mantine/core/styles.css";
 import "@mantine/code-highlight/styles.css";
 import "@mantine/notifications/styles.css";
 import "@mantine/dates/styles.css";
+import "./mantine-overrides.css";
 import classes from "./App.module.css";
 import PrometheusLogo from "./images/prometheus-logo.svg";
 
