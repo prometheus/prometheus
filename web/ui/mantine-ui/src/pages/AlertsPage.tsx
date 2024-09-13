@@ -326,7 +326,7 @@ export default function AlertsPage() {
                           {r.rule.alerts.length > 0 && (
                             <Table mt="lg">
                               <Table.Thead>
-                                <Table.Tr>
+                                <Table.Tr style={{whiteSpace: "nowrap"}}>
                                   <Table.Th>Alert labels</Table.Th>
                                   <Table.Th>State</Table.Th>
                                   <Table.Th>Active Since</Table.Th>
