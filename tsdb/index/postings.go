@@ -778,6 +778,56 @@ func (it *ListPostings) Err() error {
 	return nil
 }
 
+// LimitedPostings wraps Postings and limits its iteration.
+type LimitedPostings struct {
+	p     Postings
+	limit int
+	i     int
+}
+
+// NewLimitedPostings returns Postings that can only be iterated to the limit. 0 means limit is disabled.
+func NewLimitedPostings(p Postings, limit int) Postings {
+	if limit <= 0 {
+		return p
+	}
+	return newLimitedPostings(p, limit)
+}
+
+func newLimitedPostings(p Postings, l int) *LimitedPostings {
+	return &LimitedPostings{p: p, limit: l}
+}
+
+func (it *LimitedPostings) At() storage.SeriesRef {
+	return it.p.At()
+}
+
+func (it *LimitedPostings) Next() bool {
+	if it.i >= it.limit {
+		return false
+	}
+	it.i++
+	return it.p.Next()
+}
+
+func (it *LimitedPostings) Seek(x storage.SeriesRef) bool {
+	// If the current value satisfies, then return.
+	if it.At() >= x {
+		return true
+	}
+
+	for it.Next() {
+		if it.At() >= x {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (it *LimitedPostings) Err() error {
+	return nil
+}
+
 // bigEndianPostings implements the Postings interface over a byte stream of
 // big endian numbers.
 type bigEndianPostings struct {

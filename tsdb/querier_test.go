@@ -684,6 +684,96 @@ func TestBlockQuerierDelete(t *testing.T) {
 	}
 }
 
+func TestBlockQuerierLimit(t *testing.T) {
+	tmpdir := t.TempDir()
+	ctx := context.Background()
+	var (
+		allValues     []string
+		allNames      = []string{"__name__"}
+		seriesEntries []storage.Series
+	)
+
+	for i := 0; i < 5; i++ {
+		value := fmt.Sprintf("value%d", i)
+		name := fmt.Sprintf("labelName%d", i)
+		allValues = append(allValues, value)
+		allNames = append(allNames, name)
+
+		seriesEntries = append(seriesEntries, storage.NewListSeries(labels.FromStrings(
+			"__name__", value, name, value,
+		), []chunks.Sample{sample{100, 0, nil, nil}}))
+	}
+
+	blockDir := createBlock(t, tmpdir, seriesEntries)
+
+	// Check open err.
+	block, err := OpenBlock(nil, blockDir, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, block.Close()) })
+
+	q, err := NewBlockQuerier(block, 0, 100)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, q.Close()) })
+
+	type testCase struct {
+		limit               int
+		expectedSeries      []storage.Series
+		expectedLabelValues []string
+		expectedLabelNames  []string
+	}
+
+	testCases := map[string]testCase{
+		"without limit": {
+			expectedSeries:      seriesEntries,
+			expectedLabelValues: allValues,
+			expectedLabelNames:  allNames,
+		},
+		"with limit": {
+			limit:               2,
+			expectedSeries:      seriesEntries[:2],
+			expectedLabelValues: allValues[:2],
+			expectedLabelNames:  allNames[:2],
+		},
+	}
+
+	for tName, tc := range testCases {
+		t.Run(fmt.Sprintf("label values %s", tName), func(t *testing.T) {
+			values, _, err := q.LabelValues(ctx, "__name__", &storage.LabelHints{
+				Limit: tc.limit,
+			})
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedLabelValues, values)
+		})
+
+		t.Run(fmt.Sprintf("label names %s", tName), func(t *testing.T) {
+			names, _, err := q.LabelNames(ctx, &storage.LabelHints{
+				Limit: tc.limit,
+			})
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedLabelNames, names)
+		})
+
+		t.Run(fmt.Sprintf("select %s", tName), func(t *testing.T) {
+			matcher := labels.MustNewMatcher(labels.MatchRegexp, "__name__", "value.*")
+			set := q.Select(ctx, true, &storage.SelectHints{
+				Start: 0,
+				End:   100,
+				Limit: tc.limit,
+			}, matcher)
+
+			var s []storage.Series
+			for set.Next() {
+				s = append(s, set.At())
+			}
+			require.NoError(t, err)
+			require.Equal(t, len(tc.expectedSeries), len(s))
+			for i, exp := range tc.expectedSeries {
+				require.True(t, labels.Equal(exp.Labels(), s[i].Labels()))
+			}
+		})
+	}
+}
+
 type fakeChunksReader struct {
 	ChunkReader
 	chks      map[chunks.ChunkRef]chunkenc.Chunk
