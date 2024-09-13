@@ -20,7 +20,7 @@ class ChunkRecoder {
  public:
   static constexpr auto kInvalidSeriesId = std::numeric_limits<uint32_t>::max();
 
-  explicit ChunkRecoder(const series_data::DataStorage* data_storage) : iterator_(data_storage) {}
+  explicit ChunkRecoder(const series_data::DataStorage* data_storage) : iterator_(data_storage) { advance_to_non_empty_chunk(); }
 
   void recode_next_chunk(ChunkInfoInterface auto& info) {
     stream_.rewind();
@@ -28,7 +28,9 @@ class ChunkRecoder {
     if (has_more_data()) {
       write_samples_count(info);
       recode_chunk(info);
+
       ++iterator_;
+      advance_to_non_empty_chunk();
     } else {
       info.min_t = 0;
       info.max_t = 0;
@@ -65,6 +67,12 @@ class ChunkRecoder {
       encoder.encode(sample.timestamp, sample.value, stream_, stream_);
     });
     info.max_t = encoder.state().timestamp_encoder.last_ts;
+  }
+
+  void advance_to_non_empty_chunk() noexcept {
+    while (has_more_data() && iterator_->chunk().is_empty()) {
+      ++iterator_;
+    }
   }
 };
 
