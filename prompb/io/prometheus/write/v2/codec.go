@@ -168,38 +168,38 @@ func deltasToCounts(deltas []int64) []float64 {
 
 // FromIntHistogram returns remote Histogram from the integer Histogram.
 func FromIntHistogram(timestamp int64, h *histogram.Histogram) *Histogram {
-	return &Histogram{
-		Count:          &Histogram_CountInt{CountInt: h.Count},
-		Sum:            h.Sum,
-		Schema:         h.Schema,
-		ZeroThreshold:  h.ZeroThreshold,
-		ZeroCount:      &Histogram_ZeroCountInt{ZeroCountInt: h.ZeroCount},
-		NegativeSpans:  spansToSpansProto(h.NegativeSpans),
-		NegativeDeltas: h.NegativeBuckets,
-		PositiveSpans:  spansToSpansProto(h.PositiveSpans),
-		PositiveDeltas: h.PositiveBuckets,
-		ResetHint:      Histogram_ResetHint(h.CounterResetHint),
-		CustomValues:   h.CustomValues,
-		Timestamp:      timestamp,
-	}
+	hist := HistogramFromVTPool()
+	hist.Count = &Histogram_CountInt{CountInt: h.Count}
+	hist.Sum = h.Sum
+	hist.Schema = h.Schema
+	hist.ZeroThreshold = h.ZeroThreshold
+	hist.ZeroCount = &Histogram_ZeroCountInt{ZeroCountInt: h.ZeroCount}
+	hist.NegativeSpans = spansToSpansProto(h.NegativeSpans)
+	hist.NegativeDeltas = h.NegativeBuckets
+	hist.PositiveSpans = spansToSpansProto(h.PositiveSpans)
+	hist.PositiveDeltas = h.PositiveBuckets
+	hist.ResetHint = Histogram_ResetHint(h.CounterResetHint)
+	hist.CustomValues = h.CustomValues
+	hist.Timestamp = timestamp
+	return hist
 }
 
 // FromFloatHistogram returns remote Histogram from the float Histogram.
 func FromFloatHistogram(timestamp int64, fh *histogram.FloatHistogram) *Histogram {
-	return &Histogram{
-		Count:          &Histogram_CountFloat{CountFloat: fh.Count},
-		Sum:            fh.Sum,
-		Schema:         fh.Schema,
-		ZeroThreshold:  fh.ZeroThreshold,
-		ZeroCount:      &Histogram_ZeroCountFloat{ZeroCountFloat: fh.ZeroCount},
-		NegativeSpans:  spansToSpansProto(fh.NegativeSpans),
-		NegativeCounts: fh.NegativeBuckets,
-		PositiveSpans:  spansToSpansProto(fh.PositiveSpans),
-		PositiveCounts: fh.PositiveBuckets,
-		ResetHint:      Histogram_ResetHint(fh.CounterResetHint),
-		CustomValues:   fh.CustomValues,
-		Timestamp:      timestamp,
-	}
+	hist := HistogramFromVTPool()
+	hist.Count = &Histogram_CountFloat{CountFloat: fh.Count}
+	hist.Sum = fh.Sum
+	hist.Schema = fh.Schema
+	hist.ZeroThreshold = fh.ZeroThreshold
+	hist.ZeroCount = &Histogram_ZeroCountFloat{ZeroCountFloat: fh.ZeroCount}
+	hist.NegativeSpans = spansToSpansProto(fh.NegativeSpans)
+	hist.NegativeCounts = fh.NegativeBuckets
+	hist.PositiveSpans = spansToSpansProto(fh.PositiveSpans)
+	hist.PositiveCounts = fh.PositiveBuckets
+	hist.ResetHint = Histogram_ResetHint(fh.CounterResetHint)
+	hist.CustomValues = fh.CustomValues
+	hist.Timestamp = timestamp
+	return hist
 }
 
 func spansToSpansProto(s []histogram.Span) []*BucketSpan {

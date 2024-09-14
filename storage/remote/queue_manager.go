@@ -1554,7 +1554,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 	pendingDataV2 := make([]*writev2.TimeSeries, maxCount)
 	for i := range pendingDataV2 {
 		pendingDataV2[i] = writev2.TimeSeriesFromVTPool()
-		pendingDataV2[i].Samples = []*writev2.Sample{{}}
+		pendingDataV2[i].Samples = []*writev2.Sample{writev2.SampleFromVTPool()}
 	}
 
 	timer := time.NewTimer(time.Duration(s.qm.cfg.BatchSendDeadline))
@@ -1567,22 +1567,6 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 		}
 	}
 	defer stop()
-
-	returnTimeSeriesToVTPool := func() {
-		for _, ts := range pendingDataV2 {
-			for _, sample := range ts.Samples {
-				sample.ReturnToVTPool()
-			}
-			for _, examplar := range ts.Exemplars {
-				examplar.ReturnToVTPool()
-			}
-			for _, hist := range ts.Histograms {
-				hist.ReturnToVTPool()
-			}
-			ts.ReturnToVTPool()
-		}
-	}
-	defer returnTimeSeriesToVTPool()
 
 	sendBatch := func(batch []timeSeries, protoMsg config.RemoteWriteProtoMsg, enc Compression, timer bool) {
 		switch protoMsg {
@@ -1968,6 +1952,9 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []*writev
 func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries, pendingData []*writev2.TimeSeries, sendExemplars, sendNativeHistograms bool) (int, int, int, int) {
 	var nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata int
 	for nPending, d := range batch {
+		for _, sample := range pendingData[nPending].Samples {
+			sample.ReturnToVTPool()
+		}
 		pendingData[nPending].Samples = pendingData[nPending].Samples[:0]
 		// todo: should we also safeguard against empty metadata here?
 		if d.metadata != nil {
@@ -1979,9 +1966,15 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 		}
 
 		if sendExemplars {
+			for _, exemplar := range pendingData[nPending].Exemplars {
+				exemplar.ReturnToVTPool()
+			}
 			pendingData[nPending].Exemplars = pendingData[nPending].Exemplars[:0]
 		}
 		if sendNativeHistograms {
+			for _, histogram := range pendingData[nPending].Histograms {
+				histogram.ReturnToVTPool()
+			}
 			pendingData[nPending].Histograms = pendingData[nPending].Histograms[:0]
 		}
 
@@ -1991,17 +1984,17 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 		pendingData[nPending].LabelsRefs = symbolTable.SymbolizeLabels(d.seriesLabels, pendingData[nPending].LabelsRefs)
 		switch d.sType {
 		case tSample:
-			pendingData[nPending].Samples = append(pendingData[nPending].Samples, &writev2.Sample{
-				Value:     d.value,
-				Timestamp: d.timestamp,
-			})
+			sample := writev2.SampleFromVTPool()
+			sample.Value = d.value
+			sample.Timestamp = d.timestamp
+			pendingData[nPending].Samples = append(pendingData[nPending].Samples, sample)
 			nPendingSamples++
 		case tExemplar:
-			pendingData[nPending].Exemplars = append(pendingData[nPending].Exemplars, &writev2.Exemplar{
-				LabelsRefs: symbolTable.SymbolizeLabels(d.exemplarLabels, nil), // TODO: optimize, reuse slice
-				Value:      d.value,
-				Timestamp:  d.timestamp,
-			})
+			exemplar := writev2.ExemplarFromVTPool()
+			exemplar.LabelsRefs = symbolTable.SymbolizeLabels(d.exemplarLabels, nil)
+			exemplar.Value = d.value
+			exemplar.Timestamp = d.timestamp
+			pendingData[nPending].Exemplars = append(pendingData[nPending].Exemplars, exemplar)
 			nPendingExemplars++
 		case tHistogram:
 			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, writev2.FromIntHistogram(d.timestamp, d.histogram))
@@ -2230,7 +2223,10 @@ func buildV2WriteRequest(logger log.Logger, samples []*writev2.TimeSeries, label
 		pBuf = &[]byte{} // For convenience in tests. Not efficient.
 	}
 
-	data, err := req.MarshalVT()
+	data, err := proto.Marshal(req)
+	if err != nil {
+		return nil, highest, lowest, err
+	}
 	req.Symbols = []string{}
 	req.Timeseries = []*writev2.TimeSeries{}
 	req.ReturnToVTPool()
