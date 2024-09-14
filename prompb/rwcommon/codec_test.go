@@ -128,7 +128,7 @@ func TestToMetadata(t *testing.T) {
 	} {
 		t.Run("", func(t *testing.T) {
 			ts := writev2.TimeSeries{Metadata: tc.input}
-			require.Equal(t, tc.expected, ts.ToMetadata(sym.Symbols()))
+			require.Equal(t, *tc.expected, ts.ToMetadata(sym.Symbols()))
 		})
 	}
 }
@@ -139,8 +139,8 @@ func TestToHistogram_Empty(t *testing.T) {
 		require.NotNilf(t, prompb.Histogram{}.ToFloatHistogram(), "")
 	})
 	t.Run("v2", func(t *testing.T) {
-		require.NotNilf(t, writev2.Histogram{}.ToIntHistogram(), "")
-		require.NotNilf(t, writev2.Histogram{}.ToFloatHistogram(), "")
+		require.NotNilf(t, (&writev2.Histogram{}).ToIntHistogram(), "")
+		require.NotNilf(t, (&writev2.Histogram{}).ToFloatHistogram(), "")
 	})
 }
 
