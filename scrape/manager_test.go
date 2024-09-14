@@ -52,12 +52,11 @@ func init() {
 
 func TestPopulateLabels(t *testing.T) {
 	cases := []struct {
-		in            labels.Labels
-		cfg           *config.ScrapeConfig
-		noDefaultPort bool
-		res           labels.Labels
-		resOrig       labels.Labels
-		err           string
+		in      labels.Labels
+		cfg     *config.ScrapeConfig
+		res     labels.Labels
+		resOrig labels.Labels
+		err     string
 	}{
 		// Regular population of scrape config options.
 		{
@@ -111,8 +110,8 @@ func TestPopulateLabels(t *testing.T) {
 				ScrapeTimeout:  model.Duration(time.Second),
 			},
 			res: labels.FromMap(map[string]string{
-				model.AddressLabel:        "1.2.3.4:80",
-				model.InstanceLabel:       "1.2.3.4:80",
+				model.AddressLabel:        "1.2.3.4",
+				model.InstanceLabel:       "1.2.3.4",
 				model.SchemeLabel:         "http",
 				model.MetricsPathLabel:    "/custom",
 				model.JobLabel:            "custom-job",
@@ -142,7 +141,7 @@ func TestPopulateLabels(t *testing.T) {
 				ScrapeTimeout:  model.Duration(time.Second),
 			},
 			res: labels.FromMap(map[string]string{
-				model.AddressLabel:        "[::1]:443",
+				model.AddressLabel:        "[::1]",
 				model.InstanceLabel:       "custom-instance",
 				model.SchemeLabel:         "https",
 				model.MetricsPathLabel:    "/metrics",
@@ -365,7 +364,6 @@ func TestPopulateLabels(t *testing.T) {
 				ScrapeInterval: model.Duration(time.Second),
 				ScrapeTimeout:  model.Duration(time.Second),
 			},
-			noDefaultPort: true,
 			res: labels.FromMap(map[string]string{
 				model.AddressLabel:        "1.2.3.4",
 				model.InstanceLabel:       "1.2.3.4",
@@ -384,7 +382,7 @@ func TestPopulateLabels(t *testing.T) {
 				model.ScrapeTimeoutLabel:  "1s",
 			}),
 		},
-		// Remove default port (http).
+		// verify that the default port is not removed (http).
 		{
 			in: labels.FromMap(map[string]string{
 				model.AddressLabel: "1.2.3.4:80",
@@ -396,9 +394,8 @@ func TestPopulateLabels(t *testing.T) {
 				ScrapeInterval: model.Duration(time.Second),
 				ScrapeTimeout:  model.Duration(time.Second),
 			},
-			noDefaultPort: true,
 			res: labels.FromMap(map[string]string{
-				model.AddressLabel:        "1.2.3.4",
+				model.AddressLabel:        "1.2.3.4:80",
 				model.InstanceLabel:       "1.2.3.4:80",
 				model.SchemeLabel:         "http",
 				model.MetricsPathLabel:    "/metrics",
@@ -415,7 +412,7 @@ func TestPopulateLabels(t *testing.T) {
 				model.ScrapeTimeoutLabel:  "1s",
 			}),
 		},
-		// Remove default port (https).
+		// verify that the default port is not removed (https).
 		{
 			in: labels.FromMap(map[string]string{
 				model.AddressLabel: "1.2.3.4:443",
@@ -427,9 +424,8 @@ func TestPopulateLabels(t *testing.T) {
 				ScrapeInterval: model.Duration(time.Second),
 				ScrapeTimeout:  model.Duration(time.Second),
 			},
-			noDefaultPort: true,
 			res: labels.FromMap(map[string]string{
-				model.AddressLabel:        "1.2.3.4",
+				model.AddressLabel:        "1.2.3.4:443",
 				model.InstanceLabel:       "1.2.3.4:443",
 				model.SchemeLabel:         "https",
 				model.MetricsPathLabel:    "/metrics",
@@ -450,7 +446,7 @@ func TestPopulateLabels(t *testing.T) {
 	for _, c := range cases {
 		in := c.in.Copy()
 
-		res, orig, err := PopulateLabels(labels.NewBuilder(c.in), c.cfg, c.noDefaultPort)
+		res, orig, err := PopulateLabels(labels.NewBuilder(c.in), c.cfg)
 		if c.err != "" {
 			require.EqualError(t, err, c.err)
 		} else {

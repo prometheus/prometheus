@@ -87,8 +87,6 @@ type scrapePool struct {
 	// Constructor for new scrape loops. This is settable for testing convenience.
 	newLoop func(scrapeLoopOptions) loop
 
-	noDefaultPort bool
-
 	metrics *scrapeMetrics
 
 	scrapeFailureLogger    log.Logger
@@ -149,7 +147,6 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 		logger:               logger,
 		metrics:              metrics,
 		httpOpts:             options.HTTPClientOptions,
-		noDefaultPort:        options.NoDefaultPort,
 	}
 	sp.newLoop = func(opts scrapeLoopOptions) loop {
 		// Update the targets retrieval function for metadata to a new scrape cache.
@@ -429,7 +426,7 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 	sp.droppedTargets = []*Target{}
 	sp.droppedTargetsCount = 0
 	for _, tg := range tgs {
-		targets, failures := TargetsFromGroup(tg, sp.config, sp.noDefaultPort, targets, lb)
+		targets, failures := TargetsFromGroup(tg, sp.config, targets, lb)
 		for _, err := range failures {
 			level.Error(sp.logger).Log("msg", "Creating target failed", "err", err)
 		}
