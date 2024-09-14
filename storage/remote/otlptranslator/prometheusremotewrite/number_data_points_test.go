@@ -18,6 +18,7 @@ package prometheusremotewrite
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -253,7 +254,8 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				},
 				metric.Name(),
 			)
-
+			fmt.Println(tt.want())
+			fmt.Println(converter.unique)
 			assert.Equal(t, tt.want(), converter.unique)
 			assert.Empty(t, converter.conflicts)
 		})

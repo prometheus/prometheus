@@ -18,6 +18,7 @@ package prometheusremotewrite
 
 import (
 	"context"
+	"sort"
 	"testing"
 	"time"
 
@@ -165,8 +166,14 @@ func TestCreateAttributes(t *testing.T) {
 				PromoteResourceAttributes: tc.promoteResourceAttributes,
 			}
 			lbls := createAttributes(resource, attrs, settings, nil, false)
-
+			sort.Slice(lbls, func(i, j int) bool {
+				return lbls[i].Name < lbls[j].Name
+			})
+			sort.Slice(tc.expectedLabels, func(i, j int) bool {
+				return tc.expectedLabels[i].Name < tc.expectedLabels[j].Name
+			})
 			for i := range lbls {
+				require.Equal(t, &tc.expectedLabels[i], lbls[i])
 				require.True(t, proto.Equal(lbls[i], &tc.expectedLabels[i]))
 			}
 		})
