@@ -39,6 +39,7 @@ import TargetLabels from "./TargetLabels";
 import { useDebouncedValue } from "@mantine/hooks";
 import { targetPoolDisplayLimit } from "./TargetsPage";
 import { BooleanParam, useQueryParam, withDefault } from "use-query-params";
+import { badgeIconStyle } from "../../styles";
 
 type ScrapePool = {
   targets: Target[];
@@ -53,7 +54,7 @@ type ScrapePools = {
 };
 
 const poolPanelHealthClass = (pool: ScrapePool) =>
-  pool.count > 0 && pool.downCount === pool.count
+  pool.count > 1 && pool.downCount === pool.count
     ? panelClasses.panelHealthErr
     : pool.downCount >= 1
       ? panelClasses.panelHealthWarn
@@ -194,10 +195,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
   return (
     <Stack>
       {allPoolNames.length === 0 ? (
-        <Alert
-          title="No scrape pools found"
-          icon={<IconInfoCircle size={14} />}
-        >
+        <Alert title="No scrape pools found" icon={<IconInfoCircle />}>
           No scrape pools found.
         </Alert>
       ) : (
@@ -205,7 +203,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
         allPoolNames.length !== shownPoolNames.length && (
           <Alert
             title="Hiding pools with no matching targets"
-            icon={<IconInfoCircle size={14} />}
+            icon={<IconInfoCircle />}
           >
             Hiding {allPoolNames.length - shownPoolNames.length} empty pools due
             to filters or no targets.
@@ -218,7 +216,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
       {showLimitAlert && (
         <Alert
           title="Found many pools, showing only one"
-          icon={<IconInfoCircle size={14} />}
+          icon={<IconInfoCircle />}
           withCloseButton
           onClose={() => dispatch(setShowLimitAlert(false))}
         >
@@ -355,7 +353,9 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                                         styles={{
                                           label: { textTransform: "none" },
                                         }}
-                                        leftSection={<IconRefresh size={12} />}
+                                        leftSection={
+                                          <IconRefresh style={badgeIconStyle} />
+                                        }
                                       >
                                         {humanizeDurationRelative(
                                           target.lastScrape,
@@ -376,7 +376,9 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                                           label: { textTransform: "none" },
                                         }}
                                         leftSection={
-                                          <IconHourglass size={12} />
+                                          <IconHourglass
+                                            style={badgeIconStyle}
+                                          />
                                         }
                                       >
                                         {humanizeDuration(
@@ -401,7 +403,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                                     <Alert
                                       color="red"
                                       mb="sm"
-                                      icon={<IconAlertTriangle size={14} />}
+                                      icon={<IconAlertTriangle />}
                                     >
                                       <strong>Error scraping target:</strong>{" "}
                                       {target.lastError}

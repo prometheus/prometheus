@@ -80,7 +80,7 @@ const TableTab: FC<TableTabProps> = ({ panelIdx, retriggerIdx, expr }) => {
         <Alert
           color="red"
           title="Error executing query"
-          icon={<IconAlertTriangle size={14} />}
+          icon={<IconAlertTriangle />}
         >
           {error.message}
         </Alert>
@@ -89,10 +89,7 @@ const TableTab: FC<TableTabProps> = ({ panelIdx, retriggerIdx, expr }) => {
       ) : (
         <>
           {data.data.result.length === 0 && (
-            <Alert
-              title="Empty query result"
-              icon={<IconInfoCircle size={14} />}
-            >
+            <Alert title="Empty query result" icon={<IconInfoCircle />}>
               This query returned no data.
             </Alert>
           )}
@@ -102,7 +99,7 @@ const TableTab: FC<TableTabProps> = ({ panelIdx, retriggerIdx, expr }) => {
               key={idx}
               color="red"
               title="Query warning"
-              icon={<IconAlertTriangle size={14} />}
+              icon={<IconAlertTriangle />}
             >
               {w}
             </Alert>
@@ -113,7 +110,7 @@ const TableTab: FC<TableTabProps> = ({ panelIdx, retriggerIdx, expr }) => {
               key={idx}
               color="yellow"
               title="Query notice"
-              icon={<IconInfoCircle size={14} />}
+              icon={<IconInfoCircle />}
             >
               {w}
             </Alert>
