@@ -7,15 +7,14 @@
 #include <vector>
 
 #include "bare_bones/preprocess.h"
+#include "bare_bones/utf8.h"
 #include "cedar/cedarpp.h"
 
 namespace series_index::trie {
 
 struct Utf8CharTraits {
-  static constexpr uint8_t kUnusedUtf8Char = 0xC0;
-
-  static cedar::uchar replace(cedar::uchar c) noexcept { return c == '\0' ? kUnusedUtf8Char : c; }
-  static cedar::uchar restore(cedar::uchar c) noexcept { return c == kUnusedUtf8Char ? '\0' : c; }
+  static cedar::uchar replace(cedar::uchar c) noexcept { return c == '\0' ? BareBones::utf8::kInvalidChar : c; }
+  static cedar::uchar restore(cedar::uchar c) noexcept { return c == BareBones::utf8::kInvalidChar ? '\0' : c; }
 };
 
 using Trie = cedar::da<uint32_t, Utf8CharTraits>;

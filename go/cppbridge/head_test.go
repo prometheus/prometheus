@@ -69,34 +69,34 @@ func (s *ChunkRecoderSuite) TestStorageWithOneChunk() {
 	}, chunk2)
 }
 
-func (s *ChunkRecoderSuite) TestStorageWithTwoChunks() {
+func (s *ChunkRecoderSuite) TestStorageWithEmptyChunks() {
 	// Arrange
-	s.encoder.Encode(0, 1, 1.0)
-	s.encoder.Encode(0, 2, 1.0)
-	s.encoder.Encode(1, 3, 2.0)
-	s.encoder.Encode(1, 4, 2.0)
+	s.encoder.Encode(2, 1, 1.0)
+	s.encoder.Encode(2, 2, 1.0)
+	s.encoder.Encode(4, 3, 2.0)
+	s.encoder.Encode(4, 4, 2.0)
 	recoder := cppbridge.NewChunkRecoder(s.dataStorage)
 
 	// Act
-	chunk1 := recoder.RecodeNextChunk()
-	chunk1.ChunkData = append([]byte(nil), chunk1.ChunkData...)
 	chunk2 := recoder.RecodeNextChunk()
+	chunk2.ChunkData = append([]byte(nil), chunk2.ChunkData...)
+	chunk4 := recoder.RecodeNextChunk()
 
 	// Assert
 	s.Equal(cppbridge.RecodedChunk{
 		MinT:         1,
 		MaxT:         2,
 		SamplesCount: 2,
-		SeriesId:     0,
+		SeriesId:     2,
 		HasMoreData:  true,
 		ChunkData:    []byte{0x00, 0x02, 0x02, 0x3f, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00},
-	}, chunk1)
+	}, chunk2)
 	s.Equal(cppbridge.RecodedChunk{
 		MinT:         3,
 		MaxT:         4,
 		SamplesCount: 2,
-		SeriesId:     1,
+		SeriesId:     4,
 		HasMoreData:  false,
 		ChunkData:    []byte{0x00, 0x02, 0x06, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00},
-	}, chunk2)
+	}, chunk4)
 }

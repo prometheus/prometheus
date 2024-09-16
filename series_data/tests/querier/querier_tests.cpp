@@ -25,13 +25,12 @@ struct QuerierCase {
 class QuerierFixture : public testing::TestWithParam<QuerierCase> {
  protected:
   DataStorage storage_;
+  std::chrono::system_clock clock_;
+  OutdatedSampleEncoder<decltype(clock_)> outdated_sample_encoder_{clock_};
+  Encoder<decltype(outdated_sample_encoder_)> encoder{storage_, outdated_sample_encoder_};
   Querier querier_{storage_};
 
-  void SetUp() override {
-    std::chrono::system_clock clock;
-    OutdatedSampleEncoder outdated_sample_encoder{clock};
-    Encoder encoder{storage_, outdated_sample_encoder};
-
+  void fill_storage() {
     for (uint32_t ls_id = 0; ls_id < 2; ++ls_id) {
       encoder.encode(ls_id, 1, 1.0);
       encoder.encode(ls_id, 2, 1.0);
@@ -54,11 +53,23 @@ class QuerierFixture : public testing::TestWithParam<QuerierCase> {
   }
 };
 
-TEST_P(QuerierFixture, Test) {
+TEST_F(QuerierFixture, QueryEmptyChunk) {
   // Arrange
+  encoder.encode(2, 1, 1.0);
 
   // Act
-  auto result = querier_.query(GetParam().query);
+  auto& result = querier_.query(Query{.start_timestamp_ms = 1, .end_timestamp_ms = 1, .label_set_ids = {0, 1, 2}});
+
+  // Assert
+  EXPECT_EQ(QueriedChunkList{QueriedChunk(2)}, result);
+}
+
+TEST_P(QuerierFixture, QueryFilledChunks) {
+  // Arrange
+  fill_storage();
+
+  // Act
+  auto& result = querier_.query(GetParam().query);
 
   // Assert
   EXPECT_EQ(GetParam().expected, result);
