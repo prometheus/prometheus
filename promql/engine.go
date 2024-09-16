@@ -1742,9 +1742,8 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			ev.samplesStats.UpdatePeak(ev.currentSamples)
 
 			if e.Func.Name == "rate" || e.Func.Name == "increase" {
-				samples := inMatrix[0]
-				metricName := samples.Metric.Get(labels.MetricName)
-				if metricName != "" && len(samples.Floats) > 0 &&
+				metricName := inMatrix[0].Metric.Get(labels.MetricName)
+				if metricName != "" && len(ss.Floats) > 0 &&
 					!strings.HasSuffix(metricName, "_total") &&
 					!strings.HasSuffix(metricName, "_sum") &&
 					!strings.HasSuffix(metricName, "_count") &&
