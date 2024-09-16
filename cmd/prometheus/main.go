@@ -392,6 +392,9 @@ func main() {
 	serverOnlyFlag(a, "storage.tsdb.samples-per-chunk", "Target number of samples per chunk.").
 		Default("120").Hidden().IntVar(&cfg.tsdb.SamplesPerChunk)
 
+	serverOnlyFlag(a, "storage.tsdb.delayed-compaction.range-percent", "Percentage of the head chunk window to generate a delay for the compaction. 100 can delayed up to the full range (default 10)").
+		Default("10").Hidden().IntVar(&cfg.tsdb.CompactDelayPercentageRange)
+
 	agentOnlyFlag(a, "storage.agent.path", "Base path for metrics storage.").
 		Default("data-agent/").StringVar(&cfg.agentStoragePath)
 
@@ -615,6 +618,12 @@ func main() {
 			}
 
 			cfg.tsdb.MaxBlockDuration = maxBlockDuration
+		}
+
+		// Delayed compaction checks
+		if cfg.tsdb.EnableDelayedCompaction && (cfg.tsdb.CompactDelayPercentageRange >= 100 || cfg.tsdb.CompactDelayPercentageRange < 1) {
+			cfg.tsdb.CompactDelayPercentageRange = tsdb.DefaultCompactDelayPercentageRange
+			level.Warn(logger).Log("msg", "The --storage.tsdb.delayed-compaction.range-percent should have a value between 1 and 100. Using default 10%")
 		}
 	}
 
@@ -1734,6 +1743,7 @@ type tsdbOptions struct {
 	EnableMemorySnapshotOnShutdown bool
 	EnableNativeHistograms         bool
 	EnableDelayedCompaction        bool
+	CompactDelayPercentageRange    int
 	EnableOverlappingCompaction    bool
 }
 
@@ -1756,6 +1766,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableNativeHistograms:         opts.EnableNativeHistograms,
 		OutOfOrderTimeWindow:           opts.OutOfOrderTimeWindow,
 		EnableDelayedCompaction:        opts.EnableDelayedCompaction,
+		CompactDelayPercentageRange:    opts.CompactDelayPercentageRange,
 		EnableOverlappingCompaction:    opts.EnableOverlappingCompaction,
 	}
 }
