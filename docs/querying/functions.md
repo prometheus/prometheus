@@ -382,6 +382,8 @@ variance of observations in a native histogram.
 
 ## `holt_winters()`
 
+**This function has to be enabled via the [feature flag](../feature_flags.md#experimental-promql-functions) `--enable-feature=promql-experimental-functions`.**
+
 `holt_winters(v range-vector, sf scalar, tf scalar)` produces a smoothed value
 for time series based on the range in `v`. The lower the smoothing factor `sf`,
 the more importance is given to old data. The higher the trend factor `tf`, the

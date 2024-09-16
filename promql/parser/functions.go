@@ -203,9 +203,10 @@ var Functions = map[string]*Function{
 		ReturnType: ValueTypeVector,
 	},
 	"holt_winters": {
-		Name:       "holt_winters",
-		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar, ValueTypeScalar},
-		ReturnType: ValueTypeVector,
+		Name:         "holt_winters",
+		ArgTypes:     []ValueType{ValueTypeMatrix, ValueTypeScalar, ValueTypeScalar},
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
 	},
 	"hour": {
 		Name:       "hour",
