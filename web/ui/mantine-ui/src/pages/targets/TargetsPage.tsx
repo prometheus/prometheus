@@ -29,6 +29,7 @@ import ErrorBoundary from "../../components/ErrorBoundary";
 import ScrapePoolList from "./ScrapePoolsList";
 import { useSuspenseAPIQuery } from "../../api/api";
 import { ScrapePoolsResult } from "../../api/responseTypes/scrapePools";
+import { expandIconStyle, inputIconStyle } from "../../styles";
 
 export const targetPoolDisplayLimit = 20;
 
@@ -101,7 +102,7 @@ export default function TargetsPage() {
         />
         <TextInput
           flex={1}
-          leftSection={<IconSearch size={14} />}
+          leftSection={<IconSearch style={inputIconStyle} />}
           placeholder="Filter by endpoint or labels"
           value={searchFilter || ""}
           onChange={(event) =>
@@ -123,9 +124,9 @@ export default function TargetsPage() {
           }
         >
           {collapsedPools.length > 0 ? (
-            <IconLayoutNavbarExpand size={16} />
+            <IconLayoutNavbarExpand style={expandIconStyle} />
           ) : (
-            <IconLayoutNavbarCollapse size={16} />
+            <IconLayoutNavbarCollapse style={expandIconStyle} />
           )}
         </ActionIcon>
       </Group>

@@ -381,11 +381,7 @@ const VectorVectorBinaryExprExplainView: FC<
           </Group>
 
           {numGroups > Object.keys(matchGroups).length && (
-            <Alert
-              color="yellow"
-              mb="md"
-              icon={<IconAlertTriangle size={14} />}
-            >
+            <Alert color="yellow" mb="md" icon={<IconAlertTriangle />}>
               Too many match groups to display, only showing{" "}
               {Object.keys(matchGroups).length} out of {numGroups} groups.
               <br />
@@ -397,11 +393,7 @@ const VectorVectorBinaryExprExplainView: FC<
           )}
 
           {errCount > 0 && (
-            <Alert
-              color="yellow"
-              mb="md"
-              icon={<IconAlertTriangle size={14} />}
-            >
+            <Alert color="yellow" mb="md" icon={<IconAlertTriangle />}>
               Found matching issues in {errCount} match group
               {errCount > 1 ? "s" : ""}. See below for per-group error details.
             </Alert>
@@ -642,7 +634,7 @@ const VectorVectorBinaryExprExplainView: FC<
                             color="red"
                             mb="md"
                             title="Error in match group below"
-                            icon={<IconAlertTriangle size={14} />}
+                            icon={<IconAlertTriangle />}
                           >
                             {explainError(node, mg, error)}
                           </Alert>

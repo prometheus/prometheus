@@ -8,7 +8,7 @@ import {
   vectorMatchCardinality,
   VectorMatching,
 } from "./ast";
-import { isComparisonOperator } from "./utils";
+import { isComparisonOperator, isSetOperator } from "./utils";
 
 // We use a special (otherwise invalid) sample value to indicate that
 // a sample has been filtered away by a comparison operator.
@@ -340,6 +340,11 @@ export const computeVectorVectorBinOp = (
 
   // Annotate the match groups with errors (if any) and populate the results.
   Object.values(groups).forEach((mg) => {
+    // Do not populate results for set operators.
+    if (isSetOperator(op)) {
+        return;
+    }
+
     if (matching.card === vectorMatchCardinality.oneToOne) {
       if (mg.lhs.length > 1 && mg.rhs.length > 1) {
         mg.error = { type: MatchErrorType.multipleMatchesOnBothSides };

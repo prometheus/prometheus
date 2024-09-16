@@ -27,6 +27,7 @@ import { useSuspenseAPIQuery } from "../api/api";
 import { RulesResult } from "../api/responseTypes/rules";
 import badgeClasses from "../Badge.module.css";
 import RuleDefinition from "../components/RuleDefinition";
+import { badgeIconStyle } from "../styles";
 
 const healthBadgeClass = (state: string) => {
   switch (state) {
@@ -47,7 +48,7 @@ export default function RulesPage() {
   return (
     <Stack mt="xs">
       {data.data.groups.length === 0 && (
-        <Alert title="No rule groups" icon={<IconInfoCircle size={14} />}>
+        <Alert title="No rule groups" icon={<IconInfoCircle />}>
           No rule groups configured.
         </Alert>
       )}
@@ -74,7 +75,7 @@ export default function RulesPage() {
                   variant="light"
                   className={badgeClasses.statsBadge}
                   styles={{ label: { textTransform: "none" } }}
-                  leftSection={<IconRefresh size={12} />}
+                  leftSection={<IconRefresh style={badgeIconStyle} />}
                 >
                   last run {humanizeDurationRelative(g.lastEvaluation, now())}
                 </Badge>
@@ -84,7 +85,7 @@ export default function RulesPage() {
                   variant="light"
                   className={badgeClasses.statsBadge}
                   styles={{ label: { textTransform: "none" } }}
-                  leftSection={<IconHourglass size={12} />}
+                  leftSection={<IconHourglass style={badgeIconStyle} />}
                 >
                   took {humanizeDuration(parseFloat(g.evaluationTime) * 1000)}
                 </Badge>
@@ -94,7 +95,7 @@ export default function RulesPage() {
                   variant="transparent"
                   className={badgeClasses.statsBadge}
                   styles={{ label: { textTransform: "none" } }}
-                  leftSection={<IconRepeat size={12} />}
+                  leftSection={<IconRepeat style={badgeIconStyle} />}
                 >
                   every {humanizeDuration(parseFloat(g.interval) * 1000)}{" "}
                 </Badge>
@@ -102,7 +103,7 @@ export default function RulesPage() {
             </Group>
           </Group>
           {g.rules.length === 0 && (
-            <Alert title="No rules" icon={<IconInfoCircle size={14} />}>
+            <Alert title="No rules" icon={<IconInfoCircle />}>
               No rules in rule group.
             </Alert>
           )}
@@ -150,7 +151,7 @@ export default function RulesPage() {
                             variant="light"
                             className={badgeClasses.statsBadge}
                             styles={{ label: { textTransform: "none" } }}
-                            leftSection={<IconRefresh size={12} />}
+                            leftSection={<IconRefresh style={badgeIconStyle} />}
                           >
                             {humanizeDurationRelative(r.lastEvaluation, now())}
                           </Badge>
@@ -164,7 +165,9 @@ export default function RulesPage() {
                             variant="light"
                             className={badgeClasses.statsBadge}
                             styles={{ label: { textTransform: "none" } }}
-                            leftSection={<IconHourglass size={12} />}
+                            leftSection={
+                              <IconHourglass style={badgeIconStyle} />
+                            }
                           >
                             {humanizeDuration(
                               parseFloat(r.evaluationTime) * 1000
@@ -185,7 +188,7 @@ export default function RulesPage() {
                       color="red"
                       mt="sm"
                       title="Rule failed to evaluate"
-                      icon={<IconAlertTriangle size={14} />}
+                      icon={<IconAlertTriangle />}
                     >
                       <strong>Error:</strong> {r.lastError}
                     </Alert>

@@ -7,7 +7,6 @@ import {
   Loader,
   Menu,
   Modal,
-  rem,
   Skeleton,
   useComputedColorScheme,
 } from "@mantine/core";
@@ -70,6 +69,7 @@ import { useSettings } from "../../state/settingsSlice";
 import MetricsExplorer from "./MetricsExplorer/MetricsExplorer";
 import ErrorBoundary from "../../components/ErrorBoundary";
 import { useAppSelector } from "../../state/hooks";
+import { inputIconStyle, menuIconStyle } from "../../styles";
 
 const promqlExtension = new PromQLExtension();
 
@@ -224,25 +224,19 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
                 color="gray"
                 aria-label="Show query options"
               >
-                <IconDotsVertical style={{ width: "1rem", height: "1rem" }} />
+                <IconDotsVertical style={inputIconStyle} />
               </ActionIcon>
             </Menu.Target>
             <Menu.Dropdown>
               <Menu.Label>Query options</Menu.Label>
               <Menu.Item
-                leftSection={
-                  <IconSearch style={{ width: rem(14), height: rem(14) }} />
-                }
+                leftSection={<IconSearch style={menuIconStyle} />}
                 onClick={() => setShowMetricsExplorer(true)}
               >
                 Explore metrics
               </Menu.Item>
               <Menu.Item
-                leftSection={
-                  <IconAlignJustified
-                    style={{ width: rem(14), height: rem(14) }}
-                  />
-                }
+                leftSection={<IconAlignJustified style={menuIconStyle} />}
                 onClick={() => formatQuery()}
                 disabled={
                   isFormatting || expr === "" || expr === formatResult?.data
@@ -251,18 +245,14 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
                 Format expression
               </Menu.Item>
               <Menu.Item
-                leftSection={
-                  <IconBinaryTree style={{ width: rem(14), height: rem(14) }} />
-                }
+                leftSection={<IconBinaryTree style={menuIconStyle} />}
                 onClick={() => setShowTree(!treeShown)}
               >
                 {treeShown ? "Hide" : "Show"} tree view
               </Menu.Item>
               <Menu.Item
                 color="red"
-                leftSection={
-                  <IconTrash style={{ width: rem(14), height: rem(14) }} />
-                }
+                leftSection={<IconTrash style={menuIconStyle} />}
                 onClick={removePanel}
               >
                 Remove query

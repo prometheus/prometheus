@@ -131,7 +131,7 @@ const Graph: FC<GraphProps> = ({
       <Alert
         color="red"
         title="Error executing query"
-        icon={<IconAlertTriangle size={14} />}
+        icon={<IconAlertTriangle />}
       >
         {error.message}
       </Alert>
@@ -146,7 +146,7 @@ const Graph: FC<GraphProps> = ({
 
   if (result.length === 0) {
     return (
-      <Alert title="Empty query result" icon={<IconInfoCircle size={14} />}>
+      <Alert title="Empty query result" icon={<IconInfoCircle />}>
         This query returned no data.
       </Alert>
     );
@@ -158,7 +158,7 @@ const Graph: FC<GraphProps> = ({
         <Alert
           color="orange"
           title="Graphing modified expression"
-          icon={<IconAlertTriangle size={14} />}
+          icon={<IconAlertTriangle />}
         >
           <strong>Note:</strong> Range vector selectors can't be graphed, so
           graphing the equivalent instant vector selector instead.

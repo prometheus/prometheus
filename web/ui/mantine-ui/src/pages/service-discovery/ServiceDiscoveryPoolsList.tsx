@@ -204,10 +204,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
   return (
     <Stack>
       {allPoolNames.length === 0 ? (
-        <Alert
-          title="No scrape pools found"
-          icon={<IconInfoCircle size={14} />}
-        >
+        <Alert title="No scrape pools found" icon={<IconInfoCircle />}>
           No scrape pools found.
         </Alert>
       ) : (
@@ -215,7 +212,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
         allPoolNames.length !== shownPoolNames.length && (
           <Alert
             title="Hiding pools with no matching targets"
-            icon={<IconInfoCircle size={14} />}
+            icon={<IconInfoCircle />}
           >
             Hiding {allPoolNames.length - shownPoolNames.length} empty pools due
             to filters or no targets.
@@ -228,7 +225,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
       {showLimitAlert && (
         <Alert
           title="Found many pools, showing only one"
-          icon={<IconInfoCircle size={14} />}
+          icon={<IconInfoCircle />}
           withCloseButton
           onClose={() => dispatch(setShowLimitAlert(false))}
         >

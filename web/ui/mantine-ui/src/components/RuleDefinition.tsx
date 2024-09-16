@@ -4,7 +4,6 @@ import {
   Box,
   Card,
   Group,
-  rem,
   Table,
   Tooltip,
   useComputedColorScheme,
@@ -25,6 +24,7 @@ import {
 import { PromQLExtension } from "@prometheus-io/codemirror-promql";
 import { LabelBadges } from "./LabelBadges";
 import { useSettings } from "../state/settingsSlice";
+import { actionIconStyle, badgeIconStyle } from "../styles";
 
 const promqlExtension = new PromQLExtension();
 
@@ -64,7 +64,7 @@ const RuleDefinition: FC<{ rule: Rule }> = ({ rule }) => {
             }}
             className={codeboxClasses.queryButton}
           >
-            <IconSearch style={{ width: rem(14) }} />
+            <IconSearch style={actionIconStyle} />
           </ActionIcon>
         </Tooltip>
       </Card>
@@ -74,7 +74,7 @@ const RuleDefinition: FC<{ rule: Rule }> = ({ rule }) => {
             <Badge
               variant="light"
               styles={{ label: { textTransform: "none" } }}
-              leftSection={<IconClockPause size={12} />}
+              leftSection={<IconClockPause style={badgeIconStyle} />}
             >
               for: {formatPrometheusDuration(rule.duration * 1000)}
             </Badge>
@@ -83,7 +83,7 @@ const RuleDefinition: FC<{ rule: Rule }> = ({ rule }) => {
             <Badge
               variant="light"
               styles={{ label: { textTransform: "none" } }}
-              leftSection={<IconClockPlay size={12} />}
+              leftSection={<IconClockPlay style={badgeIconStyle} />}
             >
               keep_firing_for: {formatPrometheusDuration(rule.duration * 1000)}
             </Badge>

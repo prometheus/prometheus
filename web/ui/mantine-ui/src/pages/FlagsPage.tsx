@@ -8,7 +8,6 @@ import {
   TextInput,
   rem,
   keys,
-  Card,
 } from "@mantine/core";
 import {
   IconSelector,
@@ -18,6 +17,9 @@ import {
 } from "@tabler/icons-react";
 import classes from "./FlagsPage.module.css";
 import { useSuspenseAPIQuery } from "../api/api";
+import InfoPageStack from "../components/InfoPageStack";
+import InfoPageCard from "../components/InfoPageCard";
+import { inputIconStyle } from "../styles";
 
 interface RowData {
   flag: string;
@@ -124,59 +126,56 @@ export default function FlagsPage() {
   ));
 
   return (
-    <Card shadow="xs" maw={1000} mx="auto" mt="xs" withBorder>
-      <TextInput
-        placeholder="Filter by flag name or value"
-        mb="md"
-        autoFocus
-        leftSection={
-          <IconSearch
-            style={{ width: rem(16), height: rem(16) }}
-            stroke={1.5}
-          />
-        }
-        value={search}
-        onChange={handleSearchChange}
-      />
-      <Table
-        horizontalSpacing="md"
-        verticalSpacing="xs"
-        miw={700}
-        layout="fixed"
-      >
-        <Table.Tbody>
-          <Table.Tr>
-            <Th
-              sorted={sortBy === "flag"}
-              reversed={reverseSortDirection}
-              onSort={() => setSorting("flag")}
-            >
-              Flag
-            </Th>
-
-            <Th
-              sorted={sortBy === "value"}
-              reversed={reverseSortDirection}
-              onSort={() => setSorting("value")}
-            >
-              Value
-            </Th>
-          </Table.Tr>
-        </Table.Tbody>
-        <Table.Tbody>
-          {rows.length > 0 ? (
-            rows
-          ) : (
+    <InfoPageStack>
+      <InfoPageCard>
+        <TextInput
+          placeholder="Filter by flag name or value"
+          mb="md"
+          autoFocus
+          leftSection={<IconSearch style={inputIconStyle} />}
+          value={search}
+          onChange={handleSearchChange}
+        />
+        <Table
+          horizontalSpacing="md"
+          verticalSpacing="xs"
+          miw={700}
+          layout="fixed"
+        >
+          <Table.Tbody>
             <Table.Tr>
-              <Table.Td colSpan={2}>
-                <Text fw={500} ta="center">
-                  Nothing found
-                </Text>
-              </Table.Td>
+              <Th
+                sorted={sortBy === "flag"}
+                reversed={reverseSortDirection}
+                onSort={() => setSorting("flag")}
+              >
+                Flag
+              </Th>
+
+              <Th
+                sorted={sortBy === "value"}
+                reversed={reverseSortDirection}
+                onSort={() => setSorting("value")}
+              >
+                Value
+              </Th>
             </Table.Tr>
-          )}
-        </Table.Tbody>
-      </Table>
-    </Card>
+          </Table.Tbody>
+          <Table.Tbody>
+            {rows.length > 0 ? (
+              rows
+            ) : (
+              <Table.Tr>
+                <Table.Td colSpan={2}>
+                  <Text fw={500} ta="center">
+                    Nothing found
+                  </Text>
+                </Table.Td>
+              </Table.Tr>
+            )}
+          </Table.Tbody>
+        </Table>
+      </InfoPageCard>
+    </InfoPageStack>
   );
 }

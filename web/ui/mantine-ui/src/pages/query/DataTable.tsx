@@ -64,7 +64,7 @@ const DataTable: FC<DataTableProps> = ({
         result.length > maxDisplayableSeries && (
           <Alert
             color="orange"
-            icon={<IconAlertTriangle size={14} />}
+            icon={<IconAlertTriangle />}
             title="Showing limited results"
           >
             Fetched {data.result.length} metrics, only displaying first{" "}
@@ -76,10 +76,7 @@ const DataTable: FC<DataTableProps> = ({
         )}
 
       {!doFormat && (
-        <Alert
-          title="Formatting turned off"
-          icon={<IconInfoCircle size={14} />}
-        >
+        <Alert title="Formatting turned off" icon={<IconInfoCircle />}>
           Showing more than {maxFormattableSeries} series, turning off label
           formatting to improve rendering performance.
         </Alert>
@@ -166,7 +163,7 @@ const DataTable: FC<DataTableProps> = ({
               <Alert
                 color="red"
                 title="Invalid query response"
-                icon={<IconAlertTriangle size={14} />}
+                icon={<IconAlertTriangle />}
               >
                 Invalid result value type
               </Alert>
