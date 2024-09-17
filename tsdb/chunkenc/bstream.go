@@ -86,8 +86,8 @@ func (b *bstream) writeBit(bit bit) {
 
 func (b *bstream) writeByte(byt byte) {
 	if b.count == 0 {
-		b.stream = append(b.stream, 0)
-		b.count = 8
+		b.stream = append(b.stream, byt)
+		return
 	}
 
 	i := len(b.stream) - 1
