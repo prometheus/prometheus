@@ -260,6 +260,11 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 }
 
 func main() {
+	// Catch HUP (reload) signals as early as possible, so that an early HUP
+	// does not terminate the process.
+	hup := make(chan os.Signal, 1)
+	signal.Notify(hup, syscall.SIGHUP)
+
 	if os.Getenv("DEBUG") != "" {
 		runtime.SetBlockProfileRate(20)
 		runtime.SetMutexProfileFraction(20)
@@ -1067,11 +1072,6 @@ func main() {
 	}
 	{
 		// Reload handler.
-
-		// Make sure that sighup handler is registered with a redirect to the channel before the potentially
-		// long and synchronous tsdb init.
-		hup := make(chan os.Signal, 1)
-		signal.Notify(hup, syscall.SIGHUP)
 		cancel := make(chan struct{})
 
 		var checksum string
