@@ -3747,9 +3747,11 @@ func TestRateAnnotations(t *testing.T) {
 			data: `
 				series{label="a"} 1 {{schema:1 sum:15 count:10 buckets:[1 2 3]}}
 			`,
-			expr:                       "rate(series[45s])",
-			expectedWarningAnnotations: []string{},
-			expectedInfoAnnotations:    []string{},
+			expr: "rate(series[1m1s])",
+			expectedWarningAnnotations: []string{
+				`PromQL warning: encountered a mix of histograms and floats for metric name "series" (1:6)`,
+			},
+			expectedInfoAnnotations: []string{},
 		},
 		"no annotations when selecting two native histograms": {
 			data: `
