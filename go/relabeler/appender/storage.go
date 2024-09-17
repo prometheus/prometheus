@@ -6,6 +6,7 @@ import (
 	"github.com/prometheus/prometheus/pp/go/relabeler/block"
 	"github.com/prometheus/prometheus/pp/go/relabeler/querier"
 	"github.com/prometheus/prometheus/pp/go/util"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/storage"
 	"strings"
 	"sync"
@@ -30,14 +31,26 @@ type QueryableStorage struct {
 
 	signal chan struct{}
 	closer *util.Closer
+
+	headPersistenceDuration *prometheus.GaugeVec
+	querierMetrics          *querier.Metrics
 }
 
 // NewQueryableStorage - QueryableStorage constructor.
-func NewQueryableStorage(blockWriter BlockWriter) *QueryableStorage {
+func NewQueryableStorage(blockWriter BlockWriter, registerer prometheus.Registerer, querierMetrics *querier.Metrics) *QueryableStorage {
+	factory := util.NewUnconflictRegisterer(registerer)
 	qs := &QueryableStorage{
 		blockWriter: blockWriter,
 		signal:      make(chan struct{}),
 		closer:      util.NewCloser(),
+		headPersistenceDuration: factory.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "prompp_head_persistence_duration_duration",
+				Help: "Block write duration in milliseconds.",
+			},
+			[]string{"generation"},
+		),
+		querierMetrics: querierMetrics,
 	}
 	go qs.loop()
 
@@ -103,6 +116,9 @@ func (qs *QueryableStorage) write() {
 			fmt.Println("QUERYABLE STORAGE: failed to write head: ", err.Error())
 			continue
 		}
+		qs.headPersistenceDuration.With(prometheus.Labels{
+			"generation": fmt.Sprintf("%d", head.Generation()),
+		}).Set(float64(time.Since(start).Milliseconds()))
 		head.ReferenceCounter().Add(PersistedHeadValue)
 		fmt.Println("QUERYABLE STORAGE: head {", head.Generation(), "} persisted, duration: ", time.Since(start).Nanoseconds(), "ms")
 	}
@@ -176,6 +192,7 @@ func (qs *QueryableStorage) Querier(mint, maxt int64) (storage.Querier, error) {
 					h.ReferenceCounter().Add(-1)
 					return nil
 				},
+				qs.querierMetrics,
 			),
 		)
 	}

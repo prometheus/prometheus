@@ -3,6 +3,7 @@ package querier
 import (
 	"context"
 	"fmt"
+	"github.com/prometheus/client_golang/prometheus"
 	"sort"
 	"strings"
 	"time"
@@ -31,19 +32,30 @@ type Querier struct {
 	head                relabeler.Head
 	deduplicatorFactory DeduplicatorFactory
 	closer              func() error
+	metrics             *Metrics
 }
 
-func NewQuerier(head relabeler.Head, deduplicatorFactory DeduplicatorFactory, mint, maxt int64, closer func() error) *Querier {
+func NewQuerier(head relabeler.Head, deduplicatorFactory DeduplicatorFactory, mint, maxt int64, closer func() error, metrics *Metrics) *Querier {
 	return &Querier{
 		mint:                mint,
 		maxt:                maxt,
 		head:                head,
 		deduplicatorFactory: deduplicatorFactory,
 		closer:              closer,
+		metrics:             metrics,
 	}
 }
 
 func (q *Querier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	start := time.Now()
+	defer func() {
+		if q.metrics != nil {
+			q.metrics.LabelValuesDuration.With(
+				prometheus.Labels{"generation": fmt.Sprintf("%d", q.head.Generation())},
+			).Observe(float64(time.Since(start).Milliseconds()))
+		}
+	}()
+
 	dedup := q.deduplicatorFactory.Deduplicator(q.head.NumberOfShards())
 	convertedMatchers := convertPrometheusMatchersToOpcoreMatchers(matchers...)
 
@@ -75,6 +87,15 @@ func (q *Querier) LabelValues(ctx context.Context, name string, matchers ...*lab
 }
 
 func (q *Querier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	start := time.Now()
+	defer func() {
+		if q.metrics != nil {
+			q.metrics.LabelNamesDuration.With(
+				prometheus.Labels{"generation": fmt.Sprintf("%d", q.head.Generation())},
+			).Observe(float64(time.Since(start).Milliseconds()))
+		}
+	}()
+
 	dedup := q.deduplicatorFactory.Deduplicator(q.head.NumberOfShards())
 	convertedMatchers := convertPrometheusMatchersToOpcoreMatchers(matchers...)
 
@@ -119,6 +140,14 @@ func (q *Querier) Close() error {
 
 func (q *Querier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	start := time.Now()
+	defer func() {
+		if q.metrics != nil {
+			q.metrics.SelectDuration.With(
+				prometheus.Labels{"generation": fmt.Sprintf("%d", q.head.Generation())},
+			).Observe(float64(time.Since(start).Milliseconds()))
+		}
+	}()
+
 	logger.Warnf("QUERIER: HEAD{ %d } SELECT", q.head.Generation())
 	seriesSets := make([]storage.SeriesSet, q.head.NumberOfShards())
 	convertedMatchers := convertPrometheusMatchersToOpcoreMatchers(matchers...)

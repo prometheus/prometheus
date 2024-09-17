@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/hashicorp/go-multierror"
+	"github.com/prometheus/prometheus/pp/go/util"
 	"github.com/oklog/ulid"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
@@ -13,6 +15,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 const (
@@ -27,12 +30,18 @@ const (
 type BlockWriter struct {
 	dataDir                  string
 	maxBlockChunkSegmentSize int64
+	blockWriteDuration       *prometheus.GaugeVec
 }
 
-func NewBlockWriter(dataDir string, maxBlockChunkSegmentSize int64) *BlockWriter {
+func NewBlockWriter(dataDir string, maxBlockChunkSegmentSize int64, registerer prometheus.Registerer) *BlockWriter {
+	factory := util.NewUnconflictRegisterer(registerer)
 	return &BlockWriter{
 		dataDir:                  dataDir,
 		maxBlockChunkSegmentSize: maxBlockChunkSegmentSize,
+		blockWriteDuration: factory.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "prompp_block_write_duration",
+			Help: "Block write duration in milliseconds.",
+		}, []string{"block_id"}),
 	}
 }
 
@@ -56,6 +65,7 @@ type Block interface {
 }
 
 func (w *BlockWriter) Write(block Block) (err error) {
+	start := time.Now()
 	uid := ulid.MustNew(ulid.Now(), rand.Reader)
 	dir := filepath.Join(w.dataDir, uid.String())
 	tmp := dir + tmpForCreationBlockDirSuffix
@@ -101,7 +111,7 @@ func (w *BlockWriter) Write(block Block) (err error) {
 		blockMeta.Stats.NumSamples += uint64(chunk.SampleCount())
 
 		if previousSeriesID == nil {
-			chunkMetadataListBySeries = append(chunkMetadataListBySeries, []ChunkMetadata{chunkMetadata})
+			chunkMetadataListBySeries = appendChunkMetadata(chunkMetadataListBySeries, chunk, chunkMetadata)
 			blockMeta.Stats.NumSeries++
 		} else {
 			if *previousSeriesID == chunk.SeriesID() {
@@ -109,7 +119,7 @@ func (w *BlockWriter) Write(block Block) (err error) {
 				chunkMetadataList = append(chunkMetadataList, chunkMetadata)
 				chunkMetadataListBySeries[len(chunkMetadataListBySeries)-1] = chunkMetadataList
 			} else {
-				chunkMetadataListBySeries = append(chunkMetadataListBySeries, []ChunkMetadata{chunkMetadata})
+				chunkMetadataListBySeries = appendChunkMetadata(chunkMetadataListBySeries, chunk, chunkMetadata)
 				blockMeta.Stats.NumSeries++
 			}
 		}
@@ -179,6 +189,10 @@ func (w *BlockWriter) Write(block Block) (err error) {
 
 	fmt.Println(*blockMeta)
 
+	w.blockWriteDuration.With(prometheus.Labels{
+		"block_id": blockMeta.ULID.String(),
+	}).Set(float64(time.Since(start).Milliseconds()))
+
 	return
 }
 
@@ -242,4 +256,14 @@ func writeBlockMetaFile(fileName string, blockMeta *tsdb.BlockMeta) (int64, erro
 	metaFile = nil
 
 	return int64(n), fileutil.Replace(tmp, fileName)
+}
+
+func appendChunkMetadata(list [][]ChunkMetadata, chunk Chunk, metadata ChunkMetadata) [][]ChunkMetadata {
+	lastSeriesID := len(list) - 1
+	chunkSeriesID := chunk.SeriesID()
+	for i := chunkSeriesID - 1; i > uint32(lastSeriesID); i-- {
+		list = append(list, make([]ChunkMetadata, 0))
+	}
+	list = append(list, []ChunkMetadata{metadata})
+	return list
 }

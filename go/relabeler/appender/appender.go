@@ -11,15 +11,17 @@ import (
 )
 
 type QueryableAppender struct {
-	lock        sync.Mutex
-	head        relabeler.Head
-	distributor relabeler.Distributor
+	lock           sync.Mutex
+	head           relabeler.Head
+	distributor    relabeler.Distributor
+	querierMetrics *querier.Metrics
 }
 
-func NewQueryableAppender(head relabeler.Head, distributor relabeler.Distributor) *QueryableAppender {
+func NewQueryableAppender(head relabeler.Head, distributor relabeler.Distributor, querierMetrics *querier.Metrics) *QueryableAppender {
 	return &QueryableAppender{
-		head:        head,
-		distributor: distributor,
+		head:           head,
+		distributor:    distributor,
+		querierMetrics: querierMetrics,
 	}
 }
 
@@ -114,5 +116,6 @@ func (qa *QueryableAppender) Querier(mint, maxt int64) (storage.Querier, error) 
 			head.ReferenceCounter().Add(-1)
 			return nil
 		},
+		qa.querierMetrics,
 	), nil
 }
