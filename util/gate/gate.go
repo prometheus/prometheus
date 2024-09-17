@@ -13,23 +13,32 @@
 
 package gate
 
-import "context"
+import (
+	"context"
+
+	"github.com/prometheus/client_golang/prometheus"
+)
 
 // A Gate controls the maximum number of concurrently running and waiting queries.
 type Gate struct {
-	ch chan struct{}
+	ch       chan struct{}
+	limitHit *prometheus.Counter
 }
 
 // New returns a query gate that limits the number of queries
 // being concurrently executed.
-func New(length int) *Gate {
+func New(length int, limitHit *prometheus.Counter) *Gate {
 	return &Gate{
-		ch: make(chan struct{}, length),
+		ch:       make(chan struct{}, length),
+		limitHit: limitHit,
 	}
 }
 
 // Start blocks until the gate has a free spot or the context is done.
 func (g *Gate) Start(ctx context.Context) error {
+	if len(g.ch) == cap(g.ch) {
+		(*g.limitHit).Inc()
+	}
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
