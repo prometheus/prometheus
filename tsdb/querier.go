@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/prometheus/prometheus/util/strutil"
 )
 
 // checkContextEveryNIterations is used in some tight loops to check if the context is done.
@@ -1262,16 +1263,42 @@ type mixedUTF8BlockQuerier struct {
 }
 
 func (q *mixedUTF8BlockQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	panic("not implemented")
+	vals, an, err := q.blockQuerier.LabelValues(ctx, name, hints, matchers...)
+	if err != nil {
+		return nil, nil, err
+	}
+	newMatchers, escaped, original, ok := escapeUTF8NameMatcher(matchers, q.es)
+	var vals2 []string
+	if ok {
+		vals2, _, err = q.blockQuerier.LabelValues(ctx, name, hints, newMatchers...)
+		if err == nil && name == model.MetricNameLabel {
+			for i := range vals2 {
+				if vals2[i] == escaped {
+					vals2[i] = original
+				}
+			}
+		}
+		vals = strutil.MergeStrings(vals, vals2)
+	}
+	if ix := slices.Index(vals, ""); ix != -1 && len(vals) > 1 {
+		vals = append(vals[:ix], vals[ix+1:]...)
+	}
+	return vals, an, err
 }
 
 func (q *mixedUTF8BlockQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	names, an, err := q.blockQuerier.LabelNames(ctx, hints, matchers...)
+	if err != nil {
+		return nil, nil, err
+	}
 	newMatchers, _, _, ok := escapeUTF8NameMatcher(matchers, q.es)
 	if ok {
-		matchers = newMatchers
+		names2, _, err := q.blockQuerier.LabelNames(ctx, hints, newMatchers...)
+		if err == nil {
+			names = strutil.MergeStrings(names, names2)
+		}
 	}
-	return q.blockQuerier.LabelNames(ctx, hints, matchers...)
-
+	return names, an, err
 }
 
 func (q *mixedUTF8BlockQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
@@ -1294,15 +1321,42 @@ type mixedUTF8BlockChunkQuerier struct {
 }
 
 func (q *mixedUTF8BlockChunkQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	panic("not implemented")
+	vals, an, err := q.blockChunkQuerier.LabelValues(ctx, name, hints, matchers...)
+	if err != nil {
+		return nil, nil, err
+	}
+	newMatchers, escaped, original, ok := escapeUTF8NameMatcher(matchers, q.es)
+	var vals2 []string
+	if ok {
+		vals2, _, err = q.blockChunkQuerier.LabelValues(ctx, name, hints, newMatchers...)
+		if err == nil && name == model.MetricNameLabel {
+			for i := range vals2 {
+				if vals2[i] == escaped {
+					vals2[i] = original
+				}
+			}
+		}
+		vals = strutil.MergeStrings(vals, vals2)
+	}
+	if ix := slices.Index(vals, ""); ix != -1 && len(vals) > 1 {
+		vals = append(vals[:ix], vals[ix+1:]...)
+	}
+	return vals, an, err
 }
 
 func (q *mixedUTF8BlockChunkQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	names, an, err := q.blockChunkQuerier.LabelNames(ctx, hints, matchers...)
+	if err != nil {
+		return nil, nil, err
+	}
 	newMatchers, _, _, ok := escapeUTF8NameMatcher(matchers, q.es)
 	if ok {
-		matchers = newMatchers
+		names2, _, err := q.blockChunkQuerier.LabelNames(ctx, hints, newMatchers...)
+		if err == nil {
+			names = strutil.MergeStrings(names, names2)
+		}
 	}
-	return q.blockChunkQuerier.LabelNames(ctx, hints, matchers...)
+	return names, an, err
 }
 
 func (q *mixedUTF8BlockChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {

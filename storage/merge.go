@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/prometheus/prometheus/util/strutil"
 )
 
 type mergeGenericQuerier struct {
@@ -216,34 +217,7 @@ func (q *mergeGenericQuerier) lvals(ctx context.Context, lq labelGenericQueriers
 	if err != nil {
 		return nil, ws, err
 	}
-	return mergeStrings(s1, s2), ws, nil
-}
-
-func mergeStrings(a, b []string) []string {
-	maxl := len(a)
-	if len(b) > len(a) {
-		maxl = len(b)
-	}
-	res := make([]string, 0, maxl*10/9)
-
-	for len(a) > 0 && len(b) > 0 {
-		switch {
-		case a[0] == b[0]:
-			res = append(res, a[0])
-			a, b = a[1:], b[1:]
-		case a[0] < b[0]:
-			res = append(res, a[0])
-			a = a[1:]
-		default:
-			res = append(res, b[0])
-			b = b[1:]
-		}
-	}
-
-	// Append all remaining elements.
-	res = append(res, a...)
-	res = append(res, b...)
-	return res
+	return strutil.MergeStrings(s1, s2), ws, nil
 }
 
 // LabelNames returns all the unique label names present in all queriers in sorted order.
