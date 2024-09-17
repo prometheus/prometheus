@@ -112,7 +112,6 @@ func NewBlockQuerier(b BlockReader, mint, maxt int64) (storage.Querier, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	return &blockQuerier{blockBaseQuerier: q}, nil
 }
 
