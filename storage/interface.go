@@ -43,6 +43,7 @@ var (
 	ErrExemplarLabelLength         = fmt.Errorf("label length for exemplar exceeds maximum of %d UTF-8 characters", exemplar.ExemplarMaxLabelSetLength)
 	ErrExemplarsDisabled           = fmt.Errorf("exemplar storage is disabled or max exemplars is less than or equal to 0")
 	ErrNativeHistogramsDisabled    = fmt.Errorf("native histograms are disabled")
+	ErrOOONativeHistogramsDisabled = fmt.Errorf("out-of-order native histogram ingestion is disabled")
 
 	// ErrOutOfOrderCT indicates failed append of CT to the storage
 	// due to CT being older the then newer sample.
