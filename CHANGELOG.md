@@ -1,5 +1,9 @@
 # Changelog
 
+## unreleased
+
+* [ENHANCEMENT] OTLP receiver: If the feature flag `--created-timestamp-zero-ingestion` is true, convert OTel start timestamps to Prometheus zero samples. #14759
+
 ## 3.0.0-beta.0 / 2024-09-05
 
 Release 3.0.0-beta.0 includes new features such as a brand new UI and UTF-8 support enabled by default. As a new major version, several breaking changes are introduced. The breaking changes are mainly around the removal of deprecated feature flags and CLI arguments, and the full list can be found below. Most users should be able to try this release out of the box without any configuration changes.
