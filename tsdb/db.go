@@ -33,7 +33,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/model"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
@@ -208,8 +207,6 @@ type Options struct {
 
 	// BlockChunkQuerierFunc is a function to return storage.ChunkQuerier from a BlockReader.
 	BlockChunkQuerierFunc BlockChunkQuerierFunc
-
-	UTF8MigrationEscapingScheme model.EscapingScheme
 }
 
 type NewCompactorFunc func(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error)
