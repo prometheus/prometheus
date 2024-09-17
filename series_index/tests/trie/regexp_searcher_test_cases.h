@@ -54,7 +54,10 @@ static inline const auto kSearchByPrefixAndRegexpCases =
                     RegexpSearcherTestCase{.trie_values = {"abc", "abd", "abb"}, .regexp = "abc.*", .matches = {"abc"}},
                     RegexpSearcherTestCase{.trie_values = {"ab"}, .regexp = "abc?", .matches = {"ab"}},
                     RegexpSearcherTestCase{.trie_values = {"abcde", "abcfg"}, .regexp = "abc$", .matches = {}},
-                    RegexpSearcherTestCase{.trie_values = {"abcde"}, .regexp = "a.+", .matches = {"abcde"}});
+                    RegexpSearcherTestCase{.trie_values = {"abcde"}, .regexp = "a.+", .matches = {"abcde"}},
+                    RegexpSearcherTestCase{.trie_values = {"/frontend.Frontend/Process"},
+                                           .regexp = "metrics|/frontend.Frontend/Process",
+                                           .matches = {"/frontend.Frontend/Process"}});
 
 static inline const auto kSearchByRegexpCases = testing::Values(RegexpSearcherTestCase{.trie_values = {"abc"}, .regexp = "^.{5,}", .matches = {}});
 
