@@ -26,6 +26,7 @@ import (
 	"sync"
 
 	"github.com/bboreham/go-loser"
+	"github.com/cespare/xxhash/v2"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -49,46 +50,64 @@ var ensureOrderBatchPool = sync.Pool{
 	},
 }
 
+const shardCount = 256
+
+// memPostingMap stores data for each shard, protected by a lock.
+type memPostingMap struct {
+	mtx    sync.RWMutex
+	series map[string]map[string][]storage.SeriesRef // label name -> label value -> slice of storage.SeriesRef for all series with this label.
+}
+
 // MemPostings holds postings list for series ID per label pair. They may be written
 // to out of order.
 // EnsureOrder() must be called once before any reads are done. This allows for quick
 // unordered batch fills on startup.
 type MemPostings struct {
-	mtx     sync.RWMutex
-	m       map[string]map[string][]storage.SeriesRef
+	m       [shardCount]memPostingMap
 	ordered bool
 }
 
 // NewMemPostings returns a memPostings that's ready for reads and writes.
 func NewMemPostings() *MemPostings {
-	return &MemPostings{
-		m:       make(map[string]map[string][]storage.SeriesRef, 512),
+	p := MemPostings{
+		m:       [shardCount]memPostingMap{},
 		ordered: true,
 	}
+	for i := 0; i < shardCount; i++ {
+		p.m[i].mtx = sync.RWMutex{}
+		p.m[i].series = make(map[string]map[string][]storage.SeriesRef, 512)
+	}
+	return &p
 }
 
 // NewUnorderedMemPostings returns a memPostings that is not safe to be read from
 // until EnsureOrder() was called once.
 func NewUnorderedMemPostings() *MemPostings {
-	return &MemPostings{
-		m:       make(map[string]map[string][]storage.SeriesRef, 512),
+	p := MemPostings{
+		m:       [shardCount]memPostingMap{},
 		ordered: false,
 	}
+	for i := 0; i < shardCount; i++ {
+		p.m[i].mtx = sync.RWMutex{}
+		p.m[i].series = make(map[string]map[string][]storage.SeriesRef, 512)
+	}
+	return &p
 }
 
 // Symbols returns an iterator over all unique name and value strings, in order.
 func (p *MemPostings) Symbols() StringIter {
-	p.mtx.RLock()
-
 	// Add all the strings to a map to de-duplicate.
 	symbols := make(map[string]struct{}, 512)
-	for n, e := range p.m {
-		symbols[n] = struct{}{}
-		for v := range e {
-			symbols[v] = struct{}{}
+	for i := range p.m {
+		p.m[i].mtx.RLock()
+		for n, e := range p.m[i].series {
+			symbols[n] = struct{}{}
+			for v := range e {
+				symbols[v] = struct{}{}
+			}
 		}
+		p.m[i].mtx.RUnlock()
 	}
-	p.mtx.RUnlock()
 
 	res := make([]string, 0, len(symbols))
 	for k := range symbols {
@@ -101,15 +120,17 @@ func (p *MemPostings) Symbols() StringIter {
 
 // SortedKeys returns a list of sorted label keys of the postings.
 func (p *MemPostings) SortedKeys() []labels.Label {
-	p.mtx.RLock()
-	keys := make([]labels.Label, 0, len(p.m))
+	keys := make([]labels.Label, 0, shardCount)
 
-	for n, e := range p.m {
-		for v := range e {
-			keys = append(keys, labels.Label{Name: n, Value: v})
+	for i := range p.m {
+		p.m[i].mtx.RLock()
+		for n, e := range p.m[i].series {
+			for v := range e {
+				keys = append(keys, labels.Label{Name: n, Value: v})
+			}
 		}
+		p.m[i].mtx.RUnlock()
 	}
-	p.mtx.RUnlock()
 
 	slices.SortFunc(keys, func(a, b labels.Label) int {
 		nameCompare := strings.Compare(a.Name, b.Name)
@@ -125,29 +146,28 @@ func (p *MemPostings) SortedKeys() []labels.Label {
 
 // LabelNames returns all the unique label names.
 func (p *MemPostings) LabelNames() []string {
-	p.mtx.RLock()
-	defer p.mtx.RUnlock()
-	n := len(p.m)
-	if n == 0 {
-		return nil
-	}
-
-	names := make([]string, 0, n-1)
-	for name := range p.m {
-		if name != allPostingsKey.Name {
-			names = append(names, name)
+	names := make([]string, 0, shardCount)
+	for i := range p.m {
+		p.m[i].mtx.RLock()
+		for name := range p.m[i].series {
+			if name != allPostingsKey.Name {
+				names = append(names, name)
+			}
 		}
+		p.m[i].mtx.RUnlock()
 	}
 	return names
 }
 
 // LabelValues returns label values for the given name.
 func (p *MemPostings) LabelValues(_ context.Context, name string) []string {
-	p.mtx.RLock()
-	defer p.mtx.RUnlock()
+	slot := xxhash.Sum64String(name) % shardCount
 
-	values := make([]string, 0, len(p.m[name]))
-	for v := range p.m[name] {
+	p.m[slot].mtx.RLock()
+	defer p.m[slot].mtx.RUnlock()
+
+	values := make([]string, 0, len(p.m[slot].series[name]))
+	for v := range p.m[slot].series[name] {
 		values = append(values, v)
 	}
 	return values
@@ -165,7 +185,6 @@ type PostingsStats struct {
 // Stats calculates the cardinality statistics from postings.
 func (p *MemPostings) Stats(label string, limit int) *PostingsStats {
 	var size uint64
-	p.mtx.RLock()
 
 	metrics := &maxHeap{}
 	labels := &maxHeap{}
@@ -178,25 +197,27 @@ func (p *MemPostings) Stats(label string, limit int) *PostingsStats {
 	labelValueLength.init(limit)
 	labelValuePairs.init(limit)
 
-	for n, e := range p.m {
-		if n == "" {
-			continue
-		}
-		labels.push(Stat{Name: n, Count: uint64(len(e))})
-		numLabelPairs += len(e)
-		size = 0
-		for name, values := range e {
-			if n == label {
-				metrics.push(Stat{Name: name, Count: uint64(len(values))})
+	for i := range p.m {
+		p.m[i].mtx.RLock()
+		for n, e := range p.m[i].series {
+			if n == "" {
+				continue
 			}
-			seriesCnt := uint64(len(values))
-			labelValuePairs.push(Stat{Name: n + "=" + name, Count: seriesCnt})
-			size += uint64(len(name)) * seriesCnt
+			labels.push(Stat{Name: n, Count: uint64(len(e))})
+			numLabelPairs += len(e)
+			size = 0
+			for name, values := range e {
+				if n == label {
+					metrics.push(Stat{Name: name, Count: uint64(len(values))})
+				}
+				seriesCnt := uint64(len(values))
+				labelValuePairs.push(Stat{Name: n + "=" + name, Count: seriesCnt})
+				size += uint64(len(name)) * seriesCnt
+			}
+			labelValueLength.push(Stat{Name: n, Count: size})
 		}
-		labelValueLength.push(Stat{Name: n, Count: size})
+		p.m[i].mtx.RUnlock()
 	}
-
-	p.mtx.RUnlock()
 
 	return &PostingsStats{
 		CardinalityMetricsStats: metrics.get(),
@@ -210,12 +231,13 @@ func (p *MemPostings) Stats(label string, limit int) *PostingsStats {
 // Get returns a postings list for the given label pair.
 func (p *MemPostings) Get(name, value string) Postings {
 	var lp []storage.SeriesRef
-	p.mtx.RLock()
-	l := p.m[name]
+	slot := xxhash.Sum64String(name) % shardCount
+	p.m[slot].mtx.RLock()
+	l := p.m[slot].series[name]
 	if l != nil {
 		lp = l[value]
 	}
-	p.mtx.RUnlock()
+	p.m[slot].mtx.RUnlock()
 
 	if lp == nil {
 		return EmptyPostings()
@@ -234,9 +256,6 @@ func (p *MemPostings) All() Postings {
 // CPU cores used for this operation. If it is <= 0, GOMAXPROCS is used.
 // GOMAXPROCS was the default before introducing this parameter.
 func (p *MemPostings) EnsureOrder(numberOfConcurrentProcesses int) {
-	p.mtx.Lock()
-	defer p.mtx.Unlock()
-
 	if p.ordered {
 		return
 	}
@@ -265,15 +284,19 @@ func (p *MemPostings) EnsureOrder(numberOfConcurrentProcesses int) {
 	}
 
 	nextJob := ensureOrderBatchPool.Get().(*[][]storage.SeriesRef)
-	for _, e := range p.m {
-		for _, l := range e {
-			*nextJob = append(*nextJob, l)
+	for i := range p.m {
+		p.m[i].mtx.Lock()
+		for _, e := range p.m[i].series {
+			for _, l := range e {
+				*nextJob = append(*nextJob, l)
 
-			if len(*nextJob) >= ensureOrderBatchSize {
-				workc <- nextJob
-				nextJob = ensureOrderBatchPool.Get().(*[][]storage.SeriesRef)
+				if len(*nextJob) >= ensureOrderBatchSize {
+					workc <- nextJob
+					nextJob = ensureOrderBatchPool.Get().(*[][]storage.SeriesRef)
+				}
 			}
 		}
+		p.m[i].mtx.Unlock()
 	}
 
 	// If the last job was partially filled, we need to push it to workers too.
@@ -290,11 +313,12 @@ func (p *MemPostings) EnsureOrder(numberOfConcurrentProcesses int) {
 // Delete removes all ids in the given map from the postings lists.
 // affectedLabels contains all the labels that are affected by the deletion, there's no need to check other labels.
 func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}, affected map[labels.Label]struct{}) {
-	p.mtx.Lock()
-	defer p.mtx.Unlock()
-
 	process := func(l labels.Label) {
-		orig := p.m[l.Name][l.Value]
+		slot := xxhash.Sum64String(l.Name) % shardCount
+		p.m[slot].mtx.Lock()
+		defer p.m[slot].mtx.Unlock()
+
+		orig := p.m[slot].series[l.Name][l.Value]
 		repl := make([]storage.SeriesRef, 0, len(orig))
 		for _, id := range orig {
 			if _, ok := deleted[id]; !ok {
@@ -302,12 +326,12 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}, affected ma
 			}
 		}
 		if len(repl) > 0 {
-			p.m[l.Name][l.Value] = repl
+			p.m[slot].series[l.Name][l.Value] = repl
 		} else {
-			delete(p.m[l.Name], l.Value)
+			delete(p.m[slot].series[l.Name], l.Value)
 			// Delete the key if we removed all values.
-			if len(p.m[l.Name]) == 0 {
-				delete(p.m, l.Name)
+			if len(p.m[slot].series[l.Name]) == 0 {
+				delete(p.m[slot].series, l.Name)
 			}
 		}
 	}
@@ -320,36 +344,38 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}, affected ma
 
 // Iter calls f for each postings list. It aborts if f returns an error and returns it.
 func (p *MemPostings) Iter(f func(labels.Label, Postings) error) error {
-	p.mtx.RLock()
-	defer p.mtx.RUnlock()
-
-	for n, e := range p.m {
-		for v, p := range e {
-			if err := f(labels.Label{Name: n, Value: v}, newListPostings(p...)); err != nil {
-				return err
+	for i := range p.m {
+		p.m[i].mtx.RLock()
+		for n, e := range p.m[i].series {
+			for v, p := range e {
+				if err := f(labels.Label{Name: n, Value: v}, newListPostings(p...)); err != nil {
+					return err
+				}
 			}
 		}
+		p.m[i].mtx.RUnlock()
 	}
 	return nil
 }
 
 // Add a label set to the postings index.
 func (p *MemPostings) Add(id storage.SeriesRef, lset labels.Labels) {
-	p.mtx.Lock()
-
 	lset.Range(func(l labels.Label) {
 		p.addFor(id, l)
 	})
 	p.addFor(id, allPostingsKey)
-
-	p.mtx.Unlock()
 }
 
 func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
-	nm, ok := p.m[l.Name]
+	slot := xxhash.Sum64String(l.Name) % shardCount
+
+	p.m[slot].mtx.Lock()
+	defer p.m[slot].mtx.Unlock()
+
+	nm, ok := p.m[slot].series[l.Name]
 	if !ok {
 		nm = map[string][]storage.SeriesRef{}
-		p.m[l.Name] = nm
+		p.m[slot].series[l.Name] = nm
 	}
 	list := append(nm[l.Value], id)
 	nm[l.Value] = list
@@ -396,10 +422,12 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 		return EmptyPostings()
 	}
 
+	// Get the shard for our name.
+	slot := xxhash.Sum64String(name) % shardCount
 	// Now `vals` only contains the values that matched, get their postings.
 	its := make([]Postings, 0, len(vals))
-	p.mtx.RLock()
-	e := p.m[name]
+	p.m[slot].mtx.RLock()
+	e := p.m[slot].series[name]
 	for _, v := range vals {
 		if refs, ok := e[v]; ok {
 			// Some of the values may have been garbage-collected in the meantime this is fine, we'll just skip them.
@@ -410,7 +438,7 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 		}
 	}
 	// Let the mutex go before merging.
-	p.mtx.RUnlock()
+	p.m[slot].mtx.RUnlock()
 
 	return Merge(ctx, its...)
 }
@@ -418,10 +446,11 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 // labelValues returns a slice of label values for the given label name.
 // It will take the read lock.
 func (p *MemPostings) labelValues(name string) []string {
-	p.mtx.RLock()
-	defer p.mtx.RUnlock()
+	slot := xxhash.Sum64String(name) % shardCount
+	p.m[slot].mtx.RLock()
+	defer p.m[slot].mtx.RUnlock()
 
-	e := p.m[name]
+	e := p.m[slot].series[name]
 	if len(e) == 0 {
 		return nil
 	}
