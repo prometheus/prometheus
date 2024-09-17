@@ -702,8 +702,8 @@ outer:
 			continue
 		}
 		t.seriesMtx.Lock()
-		lbls := t.seriesLabels[s.Ref]
-		if lbls.Len() == 0 {
+		lbls, ok := t.seriesLabels[s.Ref]
+		if !ok {
 			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[s.Ref]; !ok {
 				level.Info(t.logger).Log("msg", "Dropped sample for series that was not explicitly dropped via relabelling", "ref", s.Ref)
@@ -764,8 +764,8 @@ outer:
 			continue
 		}
 		t.seriesMtx.Lock()
-		lbls := t.seriesLabels[e.Ref]
-		if lbls.Len() == 0 {
+		lbls, ok := t.seriesLabels[e.Ref]
+		if !ok {
 			// Track dropped exemplars in the same EWMA for sharding calc.
 			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[e.Ref]; !ok {
@@ -821,8 +821,8 @@ outer:
 			continue
 		}
 		t.seriesMtx.Lock()
-		lbls := t.seriesLabels[h.Ref]
-		if lbls.Len() == 0 {
+		lbls, ok := t.seriesLabels[h.Ref]
+		if !ok {
 			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[h.Ref]; !ok {
 				level.Info(t.logger).Log("msg", "Dropped histogram for series that was not explicitly dropped via relabelling", "ref", h.Ref)
@@ -876,8 +876,8 @@ outer:
 			continue
 		}
 		t.seriesMtx.Lock()
-		lbls := t.seriesLabels[h.Ref]
-		if lbls.Len() == 0 {
+		lbls, ok := t.seriesLabels[h.Ref]
+		if !ok {
 			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[h.Ref]; !ok {
 				level.Info(t.logger).Log("msg", "Dropped histogram for series that was not explicitly dropped via relabelling", "ref", h.Ref)
