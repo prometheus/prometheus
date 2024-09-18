@@ -3717,7 +3717,7 @@ func TestRateAnnotations(t *testing.T) {
 		expectedWarningAnnotations []string
 		expectedInfoAnnotations    []string
 	}{
-		"annotation when two samples are selected": {
+		"info annotation when two samples are selected": {
 			data: `
 				series 1 2
 			`,
@@ -3727,7 +3727,7 @@ func TestRateAnnotations(t *testing.T) {
 				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "series" (1:6)`,
 			},
 		},
-		"no annotations when no samples": {
+		"no info annotations when no samples": {
 			data: `
 				series
 			`,
@@ -3735,7 +3735,7 @@ func TestRateAnnotations(t *testing.T) {
 			expectedWarningAnnotations: []string{},
 			expectedInfoAnnotations:    []string{},
 		},
-		"no annotations when selecting one sample": {
+		"no info annotations when selecting one sample": {
 			data: `
 				series 1 2
 			`,
@@ -3743,7 +3743,7 @@ func TestRateAnnotations(t *testing.T) {
 			expectedWarningAnnotations: []string{},
 			expectedInfoAnnotations:    []string{},
 		},
-		"no annotations when no samples due to mixed data types": {
+		"no info annotations when no samples due to mixed data types": {
 			data: `
 				series{label="a"} 1 {{schema:1 sum:15 count:10 buckets:[1 2 3]}}
 			`,
@@ -3753,7 +3753,7 @@ func TestRateAnnotations(t *testing.T) {
 			},
 			expectedInfoAnnotations: []string{},
 		},
-		"no annotations when selecting two native histograms": {
+		"no info annotations when selecting two native histograms": {
 			data: `
 				series{label="a"} {{schema:1 sum:10 count:5 buckets:[1 2 3]}} {{schema:1 sum:15 count:10 buckets:[1 2 3]}}
 			`,
@@ -3762,7 +3762,6 @@ func TestRateAnnotations(t *testing.T) {
 			expectedInfoAnnotations:    []string{},
 		},
 	}
-
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			store := promqltest.LoadedStorage(t, "load 1m\n"+strings.TrimSpace(testCase.data))
@@ -3777,8 +3776,8 @@ func TestRateAnnotations(t *testing.T) {
 			require.NoError(t, res.Err)
 
 			warnings, infos := res.Warnings.AsStrings(testCase.expr, 0, 0)
-			require.ElementsMatch(t, testCase.expectedWarningAnnotations, warnings)
-			require.ElementsMatch(t, testCase.expectedInfoAnnotations, infos)
+			testutil.RequireEqual(t, testCase.expectedWarningAnnotations, warnings)
+			testutil.RequireEqual(t, testCase.expectedInfoAnnotations, infos)
 		})
 	}
 }
