@@ -1326,21 +1326,25 @@ func BenchmarkSampleSend(b *testing.B) {
 	cfg.MaxShards = 20
 
 	// todo: test with new proto type(s)
-	m := newTestQueueManager(b, cfg, mcfg, defaultFlushDeadline, c, config.RemoteWriteProtoMsgV1)
-	m.StoreSeries(series, 0)
+	for _, format := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+		b.Run(string(format), func(b *testing.B) {
+			m := newTestQueueManager(b, cfg, mcfg, defaultFlushDeadline, c, format)
+			m.StoreSeries(series, 0)
 
-	// These should be received by the client.
-	m.Start()
-	defer m.Stop()
+			// These should be received by the client.
+			m.Start()
+			defer m.Stop()
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		m.Append(samples)
-		m.UpdateSeriesSegment(series, i+1) // simulate what wlog.Watcher.garbageCollectSeries does
-		m.SeriesReset(i + 1)
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				m.Append(samples)
+				m.UpdateSeriesSegment(series, i+1) // simulate what wlog.Watcher.garbageCollectSeries does
+				m.SeriesReset(i + 1)
+			}
+			// Do not include shutdown
+			b.StopTimer()
+		})
 	}
-	// Do not include shutdown
-	b.StopTimer()
 }
 
 // Check how long it takes to add N series, including external labels processing.
