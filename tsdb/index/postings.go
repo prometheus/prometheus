@@ -435,7 +435,7 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 			return ErrPostings(ctx.Err())
 		}
 
-		if match == nil || match(vals[i]) {
+		if match(vals[i]) {
 			i++
 			continue
 		}
