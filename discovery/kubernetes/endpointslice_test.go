@@ -1199,3 +1199,165 @@ func TestEndpointSliceInfIndexersCount(t *testing.T) {
 		})
 	}
 }
+
+func TestEndpointSliceDiscoverySidecarContainer(t *testing.T) {
+	objs := []runtime.Object{
+		&v1.EndpointSlice{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "testsidecar",
+				Namespace: "default",
+			},
+			AddressType: v1.AddressTypeIPv4,
+			Ports: []v1.EndpointPort{
+				{
+					Name:     strptr("testport"),
+					Port:     int32ptr(9000),
+					Protocol: protocolptr(corev1.ProtocolTCP),
+				},
+				{
+					Name:     strptr("initport"),
+					Port:     int32ptr(9111),
+					Protocol: protocolptr(corev1.ProtocolTCP),
+				},
+			},
+			Endpoints: []v1.Endpoint{
+				{
+					Addresses: []string{"4.3.2.1"},
+					TargetRef: &corev1.ObjectReference{
+						Kind:      "Pod",
+						Name:      "testpod",
+						Namespace: "default",
+					},
+				},
+			},
+		},
+		&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "testpod",
+				Namespace: "default",
+				UID:       types.UID("deadbeef"),
+			},
+			Spec: corev1.PodSpec{
+				NodeName: "testnode",
+				InitContainers: []corev1.Container{
+					{
+						Name:  "ic1",
+						Image: "ic1:latest",
+						Ports: []corev1.ContainerPort{
+							{
+								Name:          "initport",
+								ContainerPort: 1111,
+								Protocol:      corev1.ProtocolTCP,
+							},
+						},
+					},
+					{
+						Name:  "ic2",
+						Image: "ic2:latest",
+						Ports: []corev1.ContainerPort{
+							{
+								Name:          "initport",
+								ContainerPort: 9111,
+								Protocol:      corev1.ProtocolTCP,
+							},
+						},
+					},
+				},
+				Containers: []corev1.Container{
+					{
+						Name:  "c1",
+						Image: "c1:latest",
+						Ports: []corev1.ContainerPort{
+							{
+								Name:          "mainport",
+								ContainerPort: 9000,
+								Protocol:      corev1.ProtocolTCP,
+							},
+						},
+					},
+				},
+			},
+			Status: corev1.PodStatus{
+				HostIP: "2.3.4.5",
+				PodIP:  "4.3.2.1",
+			},
+		},
+	}
+
+	n, _ := makeDiscovery(RoleEndpointSlice, NamespaceDiscovery{}, objs...)
+
+	k8sDiscoveryTest{
+		discovery:        n,
+		expectedMaxItems: 1,
+		expectedRes: map[string]*targetgroup.Group{
+			"endpointslice/default/testsidecar": {
+				Targets: []model.LabelSet{
+					{
+						"__address__": "4.3.2.1:9000",
+						"__meta_kubernetes_endpointslice_address_target_kind": "Pod",
+						"__meta_kubernetes_endpointslice_address_target_name": "testpod",
+						"__meta_kubernetes_endpointslice_port":                "9000",
+						"__meta_kubernetes_endpointslice_port_name":           "testport",
+						"__meta_kubernetes_endpointslice_port_protocol":       "TCP",
+						"__meta_kubernetes_pod_container_image":               "c1:latest",
+						"__meta_kubernetes_pod_container_name":                "c1",
+						"__meta_kubernetes_pod_container_port_name":           "mainport",
+						"__meta_kubernetes_pod_container_port_number":         "9000",
+						"__meta_kubernetes_pod_container_port_protocol":       "TCP",
+						"__meta_kubernetes_pod_host_ip":                       "2.3.4.5",
+						"__meta_kubernetes_pod_ip":                            "4.3.2.1",
+						"__meta_kubernetes_pod_name":                          "testpod",
+						"__meta_kubernetes_pod_node_name":                     "testnode",
+						"__meta_kubernetes_pod_phase":                         "",
+						"__meta_kubernetes_pod_ready":                         "unknown",
+						"__meta_kubernetes_pod_uid":                           "deadbeef",
+						"__meta_kubernetes_pod_container_init":                "false",
+					},
+					{
+						"__address__": "4.3.2.1:9111",
+						"__meta_kubernetes_endpointslice_address_target_kind": "Pod",
+						"__meta_kubernetes_endpointslice_address_target_name": "testpod",
+						"__meta_kubernetes_endpointslice_port":                "9111",
+						"__meta_kubernetes_endpointslice_port_name":           "initport",
+						"__meta_kubernetes_endpointslice_port_protocol":       "TCP",
+						"__meta_kubernetes_pod_container_image":               "ic2:latest",
+						"__meta_kubernetes_pod_container_name":                "ic2",
+						"__meta_kubernetes_pod_container_port_name":           "initport",
+						"__meta_kubernetes_pod_container_port_number":         "9111",
+						"__meta_kubernetes_pod_container_port_protocol":       "TCP",
+						"__meta_kubernetes_pod_host_ip":                       "2.3.4.5",
+						"__meta_kubernetes_pod_ip":                            "4.3.2.1",
+						"__meta_kubernetes_pod_name":                          "testpod",
+						"__meta_kubernetes_pod_node_name":                     "testnode",
+						"__meta_kubernetes_pod_phase":                         "",
+						"__meta_kubernetes_pod_ready":                         "unknown",
+						"__meta_kubernetes_pod_uid":                           "deadbeef",
+						"__meta_kubernetes_pod_container_init":                "true",
+					},
+					{
+						"__address__":                                   "4.3.2.1:1111",
+						"__meta_kubernetes_pod_container_image":         "ic1:latest",
+						"__meta_kubernetes_pod_container_name":          "ic1",
+						"__meta_kubernetes_pod_container_port_name":     "initport",
+						"__meta_kubernetes_pod_container_port_number":   "1111",
+						"__meta_kubernetes_pod_container_port_protocol": "TCP",
+						"__meta_kubernetes_pod_host_ip":                 "2.3.4.5",
+						"__meta_kubernetes_pod_ip":                      "4.3.2.1",
+						"__meta_kubernetes_pod_name":                    "testpod",
+						"__meta_kubernetes_pod_node_name":               "testnode",
+						"__meta_kubernetes_pod_phase":                   "",
+						"__meta_kubernetes_pod_ready":                   "unknown",
+						"__meta_kubernetes_pod_uid":                     "deadbeef",
+						"__meta_kubernetes_pod_container_init":          "true",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_endpointslice_address_type": "IPv4",
+					"__meta_kubernetes_endpointslice_name":         "testsidecar",
+					"__meta_kubernetes_namespace":                  "default",
+				},
+				Source: "endpointslice/default/testsidecar",
+			},
+		},
+	}.Run(t)
+}
