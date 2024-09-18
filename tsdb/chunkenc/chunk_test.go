@@ -308,5 +308,4 @@ func benchmarkAppender(b *testing.B, deltas func() (int64, float64), newChunk fu
 			a.Append(p.t, p.v)
 		}
 	}
-
 }
