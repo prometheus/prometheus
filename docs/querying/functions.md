@@ -76,6 +76,43 @@ absent_over_time(sum(nonexistent{job="myjob"})[1h:])
 In the first two examples, `absent_over_time()` tries to be smart about deriving
 labels of the 1-element output vector from the input vector.
 
+## `adelta()`
+
+**This function has to be enabled via the [feature flag](../feature_flags/) `--enable-feature=promql-experimental-functions`.**
+
+`adelta(v range-vector)` calculates the difference between the last and the first samples
+in the range vector `v`, returning an instant vector with the given deltas and
+equivalent labels. It does not extrapolate values at boundaries as `delta()` does.
+
+`adelta` should only be used with gauges.
+
+See `delta()` for more details.
+
+## `aincrease()`
+
+**This function has to be enabled via the [feature flag](../feature_flags/) `--enable-feature=promql-experimental-functions`.**
+
+`aincrease(v range-vector)` calculates the increase in the time series in the range vector.
+It does not extrapolate values at boundaries as `increase()` does.
+
+`aincrease` should only be used with counters and native histograms where the
+components behave like counters.
+
+See `increase()` for more details.
+
+## `arate()`
+
+**This function has to be enabled via the [feature flag](../feature_flags/) `--enable-feature=promql-experimental-functions`.**
+
+`arate(v range-vector)` calculates the per-second average rate of increase of the
+time series in the range vector. It does not extrapolate at boundaries values
+as `rate()` does.
+
+`arate` should only be used with counters and native histograms where the
+components behave like counters.
+
+See `rate()` for more details.
+
 ## `ceil()`
 
 `ceil(v instant-vector)` rounds the sample values of all elements in `v` up to
@@ -679,7 +716,7 @@ over time and return an instant vector with per-series aggregation results:
 If the [feature flag](../feature_flags.md#experimental-promql-functions)
 `--enable-feature=promql-experimental-functions` is set, the following
 additional functions are available:
-
+* `adelta`, `aincrease` and `arate`: the acurate version of `delta`, `increase` and `rate` functions without extrapolation of data at boundaries.
 * `mad_over_time(range-vector)`: the median absolute deviation of all points in the specified interval.
 
 Note that all values in the specified interval have the same weight in the

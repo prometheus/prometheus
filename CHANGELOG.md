@@ -46,6 +46,7 @@ As is traditional with a beta release, we do **not** recommend users install 3.0
 * [BUGFIX] TSDB: Fix panic in chunk querier. #14874
 * [BUGFIX] promql.Engine.Close: No-op if nil. #14861
 * [BUGFIX] tsdb/wlog.Watcher.readSegmentForGC: Only count unknown record types against record_decode_failures_total metric. #14042
+* [FEATURE] PromQL: Add `adelta`/`aincrease`/`arate` functions: the version without extrapolation of `delta`/`increase`/`rate` functions. #13436
 
 ## 2.54.1 / 2024-08-27
 
