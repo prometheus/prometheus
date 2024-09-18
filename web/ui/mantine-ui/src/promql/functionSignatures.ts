@@ -60,8 +60,8 @@ export const functionSignatures: Record<string, Func> = {
   histogram_stddev: { name: 'histogram_stddev', argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   histogram_stdvar: { name: 'histogram_stdvar', argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   histogram_sum: { name: 'histogram_sum', argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
-  holt_winters: {
-    name: 'holt_winters',
+  double_exponential_smoothing: {
+    name: 'double_exponential_smoothing',
     argTypes: [valueType.matrix, valueType.scalar, valueType.scalar],
     variadic: 0,
     returnType: valueType.vector,
