@@ -992,3 +992,51 @@ go_gc_duration_seconds_created`)
 	require.Equal(t, "go_gc_duration_seconds", string(copyParser.l.b[copyParser.offsets[0]:copyParser.offsets[1]]))
 	require.False(t, copyParser.skipCTSeries)
 }
+
+func BenchmarkCTParse(b *testing.B) {
+	b.ReportAllocs()
+
+	input := `# HELP foo Counter with and without labels to certify CT is parsed for both cases
+# TYPE foo counter
+foo_total 17.0 1520879607.789 # {id="counter-test"} 5
+foo_created 1000
+foo_total{a="b"} 17.0 1520879607.789 # {id="counter-test"} 5
+foo_created{a="b"} 1000
+# HELP bar Summary with CT at the end, making sure we find CT even if it's multiple lines a far
+# TYPE bar summary
+bar_count 17.0
+bar_sum 324789.3
+bar{quantile="0.95"} 123.7
+bar{quantile="0.99"} 150.0
+bar_created 1520430000
+# HELP baz Histogram with the same objective as above's summary
+# TYPE baz histogram
+baz_bucket{le="0.0"} 0
+baz_bucket{le="+Inf"} 17
+baz_count 17
+baz_sum 324789.3
+baz_created 1520430000
+# HELP fizz_created Gauge which shouldn't be parsed as CT
+# TYPE fizz_created gauge
+fizz_created 17.0`
+
+	input += "\n# EOF\n"
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
+	Outer:
+		for {
+			et, err := p.Next()
+			switch et {
+			case EntryInvalid:
+				if errors.Is(err, io.EOF) {
+					break Outer
+				}
+				b.Fatal(err)
+			case EntrySeries:
+				p.CreatedTimestamp()
+			}
+		}
+	}
+}
