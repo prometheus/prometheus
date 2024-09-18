@@ -291,6 +291,7 @@ func TestEndpointSliceDiscoveryAdd(t *testing.T) {
 						"__meta_kubernetes_pod_phase":                               "",
 						"__meta_kubernetes_pod_ready":                               "unknown",
 						"__meta_kubernetes_pod_uid":                                 "deadbeef",
+						"__meta_kubernetes_pod_container_init":                      "false",
 					},
 					{
 						"__address__":                                   "1.2.3.4:9001",
@@ -306,6 +307,7 @@ func TestEndpointSliceDiscoveryAdd(t *testing.T) {
 						"__meta_kubernetes_pod_phase":                   "",
 						"__meta_kubernetes_pod_ready":                   "unknown",
 						"__meta_kubernetes_pod_uid":                     "deadbeef",
+						"__meta_kubernetes_pod_container_init":          "false",
 					},
 				},
 				Labels: model.LabelSet{
@@ -986,6 +988,7 @@ func TestEndpointSliceDiscoveryNamespaces(t *testing.T) {
 						"__meta_kubernetes_pod_phase":                         "",
 						"__meta_kubernetes_pod_ready":                         "unknown",
 						"__meta_kubernetes_pod_uid":                           "deadbeef",
+						"__meta_kubernetes_pod_container_init":                "false",
 					},
 				},
 				Labels: model.LabelSet{

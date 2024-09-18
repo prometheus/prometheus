@@ -244,6 +244,7 @@ func TestEndpointsDiscoveryAdd(t *testing.T) {
 						"__meta_kubernetes_pod_container_port_number":    "9000",
 						"__meta_kubernetes_pod_container_port_protocol":  "TCP",
 						"__meta_kubernetes_pod_uid":                      "deadbeef",
+						"__meta_kubernetes_pod_container_init":           "false",
 					},
 					{
 						"__address__":                                   "1.2.3.4:9001",
@@ -259,6 +260,7 @@ func TestEndpointsDiscoveryAdd(t *testing.T) {
 						"__meta_kubernetes_pod_container_port_number":   "9001",
 						"__meta_kubernetes_pod_container_port_protocol": "TCP",
 						"__meta_kubernetes_pod_uid":                     "deadbeef",
+						"__meta_kubernetes_pod_container_init":          "false",
 					},
 				},
 				Labels: model.LabelSet{
@@ -821,6 +823,7 @@ func TestEndpointsDiscoveryNamespaces(t *testing.T) {
 						"__meta_kubernetes_pod_container_port_number":    "9000",
 						"__meta_kubernetes_pod_container_port_protocol":  "TCP",
 						"__meta_kubernetes_pod_uid":                      "deadbeef",
+						"__meta_kubernetes_pod_container_init":           "false",
 					},
 				},
 				Labels: model.LabelSet{
@@ -1078,6 +1081,7 @@ func TestEndpointsDiscoveryUpdatePod(t *testing.T) {
 						"__meta_kubernetes_pod_container_port_number":    "9000",
 						"__meta_kubernetes_pod_container_port_protocol":  "TCP",
 						"__meta_kubernetes_pod_uid":                      "deadbeef",
+						"__meta_kubernetes_pod_container_init":           "false",
 					},
 				},
 				Labels: model.LabelSet{
