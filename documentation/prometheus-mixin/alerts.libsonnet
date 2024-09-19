@@ -73,19 +73,16 @@
             expr: |||
               (
                 rate(prometheus_notifications_errors_total{%(prometheusSelector)s}[5m])
-              /
-                rate(prometheus_notifications_sent_total{%(prometheusSelector)s}[5m])
               )
-              * 100
-              > 1
+              > 0
             ||| % $._config,
             'for': '15m',
             labels: {
               severity: 'warning',
             },
             annotations: {
-              summary: 'Prometheus has encountered more than 1% errors sending alerts to a specific Alertmanager.',
-              description: '{{ printf "%%.1f" $value }}%% errors while sending alerts from Prometheus %(prometheusName)s to Alertmanager {{$labels.alertmanager}}.' % $._config,
+              summary: 'Prometheus has encountered errors sending alerts to a specific Alertmanager.',
+              description: '{{ printf "%%.1f" $value }} errors/sec while sending alerts from Prometheus %(prometheusName)s to Alertmanager {{$labels.alertmanager}}.' % $._config,
             },
           },
           {
