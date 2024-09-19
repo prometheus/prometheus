@@ -2,15 +2,17 @@ package appender
 
 import (
 	"fmt"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/prometheus/prometheus/pp/go/relabeler"
 	"github.com/prometheus/prometheus/pp/go/relabeler/block"
+	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 	"github.com/prometheus/prometheus/pp/go/relabeler/querier"
 	"github.com/prometheus/prometheus/pp/go/util"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/storage"
-	"strings"
-	"sync"
-	"time"
 )
 
 const (
@@ -66,7 +68,7 @@ func (qs *QueryableStorage) loop() {
 
 	for {
 		if closed && writeFinished == nil {
-			fmt.Println("QUERYABLE STORAGE: done")
+			logger.Infof("QUERYABLE STORAGE: done")
 			return
 		}
 
@@ -93,9 +95,9 @@ func (qs *QueryableStorage) loop() {
 func (qs *QueryableStorage) write() {
 	qs.mtx.Lock()
 	var heads []relabeler.Head
-	for _, head := range qs.heads {
+	for i, head := range qs.heads {
 		if head.ReferenceCounter().Value() >= 0 {
-			heads = append(heads, head)
+			heads = append(heads, qs.heads[i])
 		}
 	}
 	qs.mtx.Unlock()
@@ -105,7 +107,7 @@ func (qs *QueryableStorage) write() {
 		headList = append(headList, fmt.Sprintf("%d", head.Generation()))
 	}
 
-	fmt.Println("QUERYABLE STORAGE: write: selected {", strings.Join(headList, ", "), "} heads")
+	logger.Infof("QUERYABLE STORAGE: write: selected { %s } heads", strings.Join(headList, ", "))
 	for _, head := range heads {
 		start := time.Now()
 		err := head.ForEachShard(func(shard relabeler.Shard) error {
@@ -113,14 +115,14 @@ func (qs *QueryableStorage) write() {
 		})
 		if err != nil {
 			// todo: log
-			fmt.Println("QUERYABLE STORAGE: failed to write head: ", err.Error())
+			logger.Errorf("QUERYABLE STORAGE: failed to write head: %s", err.Error())
 			continue
 		}
 		qs.headPersistenceDuration.With(prometheus.Labels{
 			"generation": fmt.Sprintf("%d", head.Generation()),
 		}).Set(float64(time.Since(start).Milliseconds()))
 		head.ReferenceCounter().Add(PersistedHeadValue)
-		fmt.Println("QUERYABLE STORAGE: head {", head.Generation(), "} persisted, duration: ", time.Since(start).Nanoseconds(), "ms")
+		logger.Infof("QUERYABLE STORAGE: head { %d } persisted, duration: %v", head.Generation(), time.Since(start))
 	}
 
 	qs.shrink()
@@ -130,7 +132,7 @@ func (qs *QueryableStorage) write() {
 func (qs *QueryableStorage) Add(head relabeler.Head) {
 	qs.mtx.Lock()
 	qs.heads = append(qs.heads, head)
-	fmt.Println("QUERYABLE STORAGE: head {", head.Generation(), "} added")
+	logger.Infof("QUERYABLE STORAGE: head { %d } added", head.Generation())
 	qs.mtx.Unlock()
 
 	select {
@@ -214,10 +216,10 @@ func (qs *QueryableStorage) shrink() {
 
 	var heads []relabeler.Head
 	for _, head := range qs.heads {
-		fmt.Println("QUERYABLE STORAGE: SHRINK: HEAD {", head.Generation(), "}: persisted: ", head.ReferenceCounter().Value() < 0, ", ref count: ", refCount(head.ReferenceCounter().Value()))
+		logger.Infof("QUERYABLE STORAGE: SHRINK: HEAD { %d }: persisted: %v, ref count: %d", head.Generation(), head.ReferenceCounter().Value() < 0, refCount(head.ReferenceCounter().Value()))
 		if head.ReferenceCounter().Value() == PersistedHeadValue {
 			_ = head.Close()
-			fmt.Println("QUERYABLE STORAGE: head {", head.Generation(), "} persisted and closed")
+			logger.Infof("QUERYABLE STORAGE: head { %d } persisted and closed", head.Generation())
 			continue
 		}
 		heads = append(heads, head)

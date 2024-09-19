@@ -200,7 +200,11 @@ struct DataStorage {
   template <chunk::DataChunk::Type chunk_type>
   [[nodiscard]] PROMPP_ALWAYS_INLINE const encoder::BitSequenceWithItemsCount& get_timestamp_stream(uint32_t stream_id) const noexcept {
     if constexpr (chunk_type == chunk::DataChunk::Type::kOpen) {
-      return timestamp_encoder.get_stream(stream_id);
+      if (const auto& state = timestamp_encoder.get_state(stream_id); !state.is_finalized()) [[likely]] {
+        return timestamp_encoder.get_stream(stream_id);
+      } else {
+        return finalized_timestamp_streams[state.stream_data.finalized_stream_id].stream;
+      }
     } else {
       return finalized_timestamp_streams[stream_id].stream;
     }

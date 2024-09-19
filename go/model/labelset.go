@@ -540,6 +540,7 @@ func (builder *LabelSetSimpleBuilder) Set(name, value string) {
 		}
 	}
 	builder.pairs = append(builder.pairs, SimpleLabel{Name: name, Value: value})
+	builder.sorted = false
 }
 
 // Del deletes the label of the given name.
