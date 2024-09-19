@@ -575,7 +575,7 @@ clear
 
 clear
 
-# Tes stddev produces consistent results regardless the order the data is loaded in
+# Test stddev produces consistent results regardless the order the data is loaded in
 load 5m
 		series{label="a"} 1
 		series{label="b"} 2
