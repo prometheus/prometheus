@@ -1110,9 +1110,9 @@ func TestScrapeLoopFailLegacyUnderUTF8(t *testing.T) {
 func makeTestMetrics(n int) []byte {
 	// Construct a metrics string to parse
 	sb := bytes.Buffer{}
+	fmt.Fprintf(&sb, "# TYPE metric_a gauge\n")
+	fmt.Fprintf(&sb, "# HELP metric_a help text\n")
 	for i := 0; i < n; i++ {
-		fmt.Fprintf(&sb, "# TYPE metric_a gauge\n")
-		fmt.Fprintf(&sb, "# HELP metric_a help text\n")
 		fmt.Fprintf(&sb, "metric_a{foo=\"%d\",bar=\"%d\"} 1\n", i, i*100)
 	}
 	fmt.Fprintf(&sb, "# EOF\n")
@@ -1146,6 +1146,45 @@ func BenchmarkScrapeLoopAppendOM(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		ts = ts.Add(time.Second)
 		_, _, _, _ = sl.append(slApp, metrics, "application/openmetrics-text", ts)
+	}
+}
+
+func BenchmarkScrapeLoopAppendProto(b *testing.B) {
+	ctx, sl := simpleTestScrapeLoop(b)
+
+	slApp := sl.appender(ctx)
+
+	// Construct a metrics string to parse
+	sb := bytes.Buffer{}
+	fmt.Fprintf(&sb, "type: GAUGE\n")
+	fmt.Fprintf(&sb, "help: \"metric_a help text\"\n")
+	fmt.Fprintf(&sb, "name: \"metric_a\"\n")
+	for i := 0; i < 100; i++ {
+		fmt.Fprintf(&sb, `metric: <
+  label: <
+    name: "foo"
+    value: "%d"
+  >
+  label: <
+    name: "bar"
+    value: "%d"
+  >
+  gauge: <
+    value: 1
+  >
+>
+`, i, i*100)
+	}
+	// From text to proto message.
+	pb := bytes.Buffer{}
+	require.NoError(b, textToProto(sb.String(), &pb))
+	ts := time.Time{}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		ts = ts.Add(time.Second)
+		_, _, _, _ = sl.append(slApp, pb.Bytes(), "application/vnd.google.protobuf", ts)
 	}
 }
 
@@ -2194,18 +2233,7 @@ metric: <
 
 			buf := &bytes.Buffer{}
 			if test.contentType == "application/vnd.google.protobuf" {
-				// In case of protobuf, we have to create the binary representation.
-				pb := &dto.MetricFamily{}
-				// From text to proto message.
-				require.NoError(t, proto.UnmarshalText(test.scrapeText, pb))
-				// From proto message to binary protobuf.
-				protoBuf, err := proto.Marshal(pb)
-				require.NoError(t, err)
-
-				// Write first length, then binary protobuf.
-				varintBuf := binary.AppendUvarint(nil, uint64(len(protoBuf)))
-				buf.Write(varintBuf)
-				buf.Write(protoBuf)
+				require.NoError(t, textToProto(test.scrapeText, buf))
 			} else {
 				buf.WriteString(test.scrapeText)
 			}
@@ -2218,6 +2246,26 @@ metric: <
 			requireEqual(t, test.exemplars, app.resultExemplars)
 		})
 	}
+}
+
+func textToProto(text string, buf *bytes.Buffer) error {
+	// In case of protobuf, we have to create the binary representation.
+	pb := &dto.MetricFamily{}
+	// From text to proto message.
+	err := proto.UnmarshalText(text, pb)
+	if err != nil {
+		return err
+	}
+	// From proto message to binary protobuf.
+	protoBuf, err := proto.Marshal(pb)
+	if err != nil {
+		return err
+	}
+	// Write first length, then binary protobuf.
+	varintBuf := binary.AppendUvarint(nil, uint64(len(protoBuf)))
+	buf.Write(varintBuf)
+	buf.Write(protoBuf)
+	return nil
 }
 
 func TestScrapeLoopAppendExemplarSeries(t *testing.T) {
