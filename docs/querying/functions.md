@@ -380,15 +380,22 @@ do not show up in the returned vector.
 Similarly, `histogram_stdvar(v instant-vector)` returns the estimated standard
 variance of observations in a native histogram.
 
-## `holt_winters()`
+## `double_exponential_smoothing()`
 
-`holt_winters(v range-vector, sf scalar, tf scalar)` produces a smoothed value
+**This function has to be enabled via the [feature flag](../feature_flags.md#experimental-promql-functions) `--enable-feature=promql-experimental-functions`.**
+
+`double_exponential_smoothing(v range-vector, sf scalar, tf scalar)` produces a smoothed value
 for time series based on the range in `v`. The lower the smoothing factor `sf`,
 the more importance is given to old data. The higher the trend factor `tf`, the
 more trends in the data is considered. Both `sf` and `tf` must be between 0 and
 1.
+For additional details, refer to [NIST Engineering Statistics Handbook](https://www.itl.nist.gov/div898/handbook/pmc/section4/pmc433.htm).
+In Prometheus V2 this function was called `holt_winters`. This caused confusion
+since the Holt-Winters method usually refers to triple exponential smoothing.
+Double exponential smoothing as implemented here is also referred to as "Holt
+Linear".
 
-`holt_winters` should only be used with gauges.
+`double_exponential_smoothing` should only be used with gauges.
 
 ## `hour()`
 

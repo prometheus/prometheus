@@ -117,7 +117,7 @@ func rangeQueryCases() []benchCase {
 		},
 		// Holt-Winters and long ranges.
 		{
-			expr: "holt_winters(a_X[1d], 0.3, 0.3)",
+			expr: "double_exponential_smoothing(a_X[1d], 0.3, 0.3)",
 		},
 		{
 			expr: "changes(a_X[1d])",
