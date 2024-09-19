@@ -326,45 +326,70 @@ With native histograms, aggregating everything works as usual without any `by` c
 
     histogram_quantile(0.9, sum(rate(http_request_duration_seconds[10m])))
 
-The `histogram_quantile()` function interpolates quantile values by
-assuming a linear distribution within a bucket. 
+In the (common) case that a quantile value does not coincide with a bucket
+boundary, the `histogram_quantile()` function interpolates the quantile value
+within the bucket the quantile value falls into. For classic histograms, for
+native histograms with custom bucket boundaries, and for the zero bucket of
+other native histograms, it assumes a uniform distribution of observations
+within the bucket (also called _linear interpolation_). For the
+non-zero-buckets of native histograms with a standard exponential bucketing
+schema, the interpolation is done under the assumption that the samples within
+the bucket are distributed in a way that they would uniformly populate the
+buckets in a hypothetical histogram with higher resolution. (This is also
+called _exponential interpolation_.)
 
 If `b` has 0 observations, `NaN` is returned. For φ < 0, `-Inf` is
 returned. For φ > 1, `+Inf` is returned. For φ = `NaN`, `NaN` is returned.
 
-The following is only relevant for classic histograms: If `b` contains
-fewer than two buckets, `NaN` is returned. The highest bucket must have an
-upper bound of `+Inf`. (Otherwise, `NaN` is returned.) If a quantile is located
-in the highest bucket, the upper bound of the second highest bucket is
-returned. A lower limit of the lowest bucket is assumed to be 0 if the upper
-bound of that bucket is greater than
-0. In that case, the usual linear interpolation is applied within that
-bucket. Otherwise, the upper bound of the lowest bucket is returned for
-quantiles located in the lowest bucket. 
+Special cases for classic histograms:
 
-You can use `histogram_quantile(0, v instant-vector)` to get the estimated minimum value stored in
-a histogram.
+* If `b` contains fewer than two buckets, `NaN` is returned.
+* The highest bucket must have an upper bound of `+Inf`. (Otherwise, `NaN` is
+  returned.)
+* If a quantile is located in the highest bucket, the upper bound of the second
+  highest bucket is returned.
+* The lower limit of the lowest bucket is assumed to be 0 if the upper bound of
+  that bucket is greater than 0. In that case, the usual linear interpolation
+  is applied within that bucket. Otherwise, the upper bound of the lowest
+  bucket is returned for quantiles located in the lowest bucket.
 
-You can use `histogram_quantile(1, v instant-vector)` to get the estimated maximum value stored in
-a histogram.
+Special cases for native histograms (relevant for the exact interpolation
+happening within the zero bucket):
 
-Buckets of classic histograms are cumulative. Therefore, the following should always be the case:
+* A zero bucket with finite width is assumed to contain no negative
+  observations if the histogram has observations in positive buckets, but none
+  in negative buckets.
+* A zero bucket with finite width is assumed to contain no positive
+  observations if the histogram has observations in negative buckets, but none
+  in positive buckets.
 
-* The counts in the buckets are monotonically increasing (strictly non-decreasing).
-* A lack of observations between the upper limits of two consecutive buckets results in equal counts
-in those two buckets.
+You can use `histogram_quantile(0, v instant-vector)` to get the estimated
+minimum value stored in a histogram.
 
-However, floating point precision issues (e.g. small discrepancies introduced by computing of buckets
-with `sum(rate(...))`) or invalid data might violate these assumptions. In that case,
-`histogram_quantile` would be unable to return meaningful results. To mitigate the issue,
-`histogram_quantile` assumes that tiny relative differences between consecutive buckets are happening
-because of floating point precision errors and ignores them. (The threshold to ignore a difference
-between two buckets is a trillionth (1e-12) of the sum of both buckets.) Furthermore, if there are
-non-monotonic bucket counts even after this adjustment, they are increased to the value of the
-previous buckets to enforce monotonicity. The latter is evidence for an actual issue with the input
-data and is therefore flagged with an informational annotation reading `input to histogram_quantile
-needed to be fixed for monotonicity`. If you encounter this annotation, you should find and remove
-the source of the invalid data.
+You can use `histogram_quantile(1, v instant-vector)` to get the estimated
+maximum value stored in a histogram.
+
+Buckets of classic histograms are cumulative. Therefore, the following should
+always be the case:
+
+* The counts in the buckets are monotonically increasing (strictly
+  non-decreasing).
+* A lack of observations between the upper limits of two consecutive buckets
+  results in equal counts in those two buckets.
+
+However, floating point precision issues (e.g. small discrepancies introduced
+by computing of buckets with `sum(rate(...))`) or invalid data might violate
+these assumptions. In that case, `histogram_quantile` would be unable to return
+meaningful results. To mitigate the issue, `histogram_quantile` assumes that
+tiny relative differences between consecutive buckets are happening because of
+floating point precision errors and ignores them. (The threshold to ignore a
+difference between two buckets is a trillionth (1e-12) of the sum of both
+buckets.) Furthermore, if there are non-monotonic bucket counts even after this
+adjustment, they are increased to the value of the previous buckets to enforce
+monotonicity. The latter is evidence for an actual issue with the input data
+and is therefore flagged with an informational annotation reading `input to
+histogram_quantile needed to be fixed for monotonicity`. If you encounter this
+annotation, you should find and remove the source of the invalid data.
 
 ## `histogram_stddev()` and `histogram_stdvar()`
 
