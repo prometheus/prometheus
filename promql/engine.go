@@ -2884,9 +2884,13 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				}
 			case parser.STDVAR, parser.STDDEV:
 				if h == nil {
+					fv := float64(0)
+					if math.IsNaN(f) {
+						fv = math.NaN()
+					}
 					*group = groupedAggregation{
 						seen:                   true,
-						floatValue:             0,
+						floatValue:             fv,
 						floatMean:              f,
 						incompatibleHistograms: false,
 						groupCount:             1,

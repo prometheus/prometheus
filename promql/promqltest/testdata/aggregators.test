@@ -599,3 +599,40 @@ eval instant at 0m stddev (series)
 
 eval instant at 0m stdvar (series)
 	{} 0.25
+
+clear
+
+load 5m
+		series{label="a"} 1
+		series{label="b"} 2
+		series{label="c"} NaN
+
+eval instant at 0m stddev (series)
+	{} NaN
+
+eval instant at 0m stdvar (series)
+	{} NaN
+
+clear
+
+load 5m
+		series{label="a"} NaN
+		series{label="b"} 1
+		series{label="c"} 2
+
+eval instant at 0m stddev (series)
+	{} NaN
+
+eval instant at 0m stdvar (series)
+	{} NaN
+
+clear
+
+load 5m
+		series NaN
+
+eval instant at 0m stddev (series)
+	{} NaN
+
+eval instant at 0m stdvar (series)
+	{} NaN
