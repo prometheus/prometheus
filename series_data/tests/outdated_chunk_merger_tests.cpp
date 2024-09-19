@@ -40,7 +40,7 @@ class OutdatedChunkMergerTrait {
   [[nodiscard]] const DataChunk& get_open_chunk(uint32_t ls_id) { return storage_.open_chunks[ls_id]; }
 
   [[nodiscard]] const FinalizedChunkList* get_finalized_chunks(uint32_t ls_id) const noexcept {
-    if (auto it = storage_.finalized_chunks.find(ls_id); it != storage_.finalized_chunks.end()) {
+    if (const auto it = storage_.finalized_chunks.find(ls_id); it != storage_.finalized_chunks.end()) {
       return &it->second;
     }
 
@@ -219,7 +219,7 @@ TEST_P(OutdatedChunkMergerInFinalizedConstantChunkFixture, Test) {
   merger_.merge();
 
   // Assert
-  auto finalized = get_finalized_chunks(0);
+  const auto finalized = get_finalized_chunks(0);
   ASSERT_NE(nullptr, finalized);
   EXPECT_TRUE(std::ranges::equal(
       ExpectedListOfSampleList{
@@ -270,7 +270,7 @@ TEST_F(OutdatedChunkMergerInFinalizedChunkFixture, MergeInTwoDoubleConstantsChun
   merger_.merge();
 
   // Assert
-  auto finalized = get_finalized_chunks(0);
+  const auto finalized = get_finalized_chunks(0);
   ASSERT_NE(nullptr, finalized);
   EXPECT_TRUE(std::ranges::equal(
       ExpectedListOfSampleList{
@@ -311,7 +311,7 @@ TEST_F(OutdatedChunkMergerInFinalizedChunkFixture, MergeInAscIntegerValuesGorill
   merger_.merge();
 
   // Assert
-  auto finalized = get_finalized_chunks(0);
+  const auto finalized = get_finalized_chunks(0);
   ASSERT_NE(nullptr, finalized);
   EXPECT_TRUE(std::ranges::equal(
       ExpectedListOfSampleList{
@@ -355,7 +355,7 @@ TEST_F(OutdatedChunkMergerInFinalizedChunkFixture, MergeInValuesGorillaChunk) {
   merger_.merge();
 
   // Assert
-  auto finalized = get_finalized_chunks(0);
+  const auto finalized = get_finalized_chunks(0);
   ASSERT_NE(nullptr, finalized);
   EXPECT_TRUE(std::ranges::equal(
       ExpectedListOfSampleList{
@@ -393,7 +393,7 @@ TEST_F(OutdatedChunkMergerInFinalizedChunkFixture, MergeInGorillaChunk) {
   merger_.merge();
 
   // Assert
-  auto finalized = get_finalized_chunks(0);
+  const auto finalized = get_finalized_chunks(0);
   ASSERT_NE(nullptr, finalized);
   EXPECT_TRUE(std::ranges::equal(
       ExpectedListOfSampleList{
@@ -411,6 +411,49 @@ TEST_F(OutdatedChunkMergerInFinalizedChunkFixture, MergeInGorillaChunk) {
           },
       },
       Decoder::decode_chunks(storage_, *finalized, get_open_chunk(0))));
+}
+
+TEST_F(OutdatedChunkMergerInFinalizedChunkFixture, MergeInChunkWithFinalizedTimestampStream) {
+  // Arrange
+  encode({{.ls_id = 2, .sample = {.timestamp = 3, .value = 1.0}},
+
+          {.ls_id = 0, .sample = {.timestamp = 2, .value = 1.0}},
+          {.ls_id = 1, .sample = {.timestamp = 2, .value = 1.0}},
+
+          {.ls_id = 1, .sample = {.timestamp = 1, .value = 1.0}},
+
+          {.ls_id = 0, .sample = {.timestamp = 3, .value = 1.0}},
+          {.ls_id = 1, .sample = {.timestamp = 3, .value = 1.0}},
+
+          {.ls_id = 0, .sample = {.timestamp = 4, .value = 1.0}},
+          {.ls_id = 1, .sample = {.timestamp = 4, .value = 1.0}},
+
+          {.ls_id = 0, .sample = {.timestamp = 5, .value = 1.0}},
+          {.ls_id = 1, .sample = {.timestamp = 5, .value = 1.0}},
+
+          {.ls_id = 0, .sample = {.timestamp = 6, .value = 1.0}}});
+
+  // Act
+  merger_.merge();
+  encode({{.ls_id = 1, .sample = {.timestamp = 6, .value = 1.0}}});
+
+  // Assert
+  const auto finalized = get_finalized_chunks(1);
+  ASSERT_NE(nullptr, finalized);
+  EXPECT_TRUE(std::ranges::equal(
+      ExpectedListOfSampleList{
+          {
+              {.timestamp = 1, .value = 1.0},
+              {.timestamp = 2, .value = 1.0},
+              {.timestamp = 3, .value = 1.0},
+              {.timestamp = 4, .value = 1.0},
+          },
+          {
+              {.timestamp = 5, .value = 1.0},
+              {.timestamp = 6, .value = 1.0},
+          },
+      },
+      Decoder::decode_chunks(storage_, *finalized, get_open_chunk(1))));
 }
 
 class OutdatedChunkMergerFixture : public OutdatedChunkMergerTrait<series_data::kSamplesPerChunkDefault>, public testing::Test {};

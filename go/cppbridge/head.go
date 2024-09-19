@@ -5,6 +5,10 @@ import (
 	"runtime"
 )
 
+const (
+	MaxPointsInChunk = 240
+)
+
 // HeadDataStorage is Go wrapper around series_data::Data_storage.
 type HeadDataStorage struct {
 	dataStorage uintptr
