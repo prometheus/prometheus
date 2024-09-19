@@ -15,12 +15,13 @@ package ionos
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"testing"
-
 	ionoscloud "github.com/ionos-cloud/sdk-go/v6"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -53,39 +54,19 @@ func TestIONOSServerRefresh(t *testing.T) {
 	tg := tgs[0]
 	require.NotNil(t, tg)
 	require.NotNil(t, tg.Targets)
-	require.Len(t, tg.Targets, 2)
+	
+	file, err := os.Open("testdata/targets.json")
+	require.NoError(t, err)
+	defer file.Close()
 
-	for i, lbls := range []model.LabelSet{
-		{
-			"__address__":                           "85.215.243.177:80",
-			"__meta_ionos_server_availability_zone": "ZONE_2",
-			"__meta_ionos_server_boot_cdrom_id":     "0e4d57f9-cd78-11e9-b88c-525400f64d8d",
-			"__meta_ionos_server_cpu_family":        "INTEL_SKYLAKE",
-			"__meta_ionos_server_id":                "b501942c-4e08-43e6-8ec1-00e59c64e0e4",
-			"__meta_ionos_server_ip":                ",85.215.243.177,185.56.150.9,85.215.238.118,",
-			"__meta_ionos_server_nic_ip_metrics":    ",85.215.243.177,",
-			"__meta_ionos_server_nic_ip_unnamed":    ",185.56.150.9,85.215.238.118,",
-			"__meta_ionos_server_lifecycle":         "AVAILABLE",
-			"__meta_ionos_server_name":              "prometheus-2",
-			"__meta_ionos_server_servers_id":        "8feda53f-15f0-447f-badf-ebe32dad2fc0/servers",
-			"__meta_ionos_server_state":             "RUNNING",
-			"__meta_ionos_server_type":              "ENTERPRISE",
-		},
-		{
-			"__address__":                           "85.215.248.84:80",
-			"__meta_ionos_server_availability_zone": "ZONE_1",
-			"__meta_ionos_server_boot_cdrom_id":     "0e4d57f9-cd78-11e9-b88c-525400f64d8d",
-			"__meta_ionos_server_cpu_family":        "INTEL_SKYLAKE",
-			"__meta_ionos_server_id":                "523415e6-ff8c-4dc0-86d3-09c256039b30",
-			"__meta_ionos_server_ip":                ",85.215.248.84,",
-			"__meta_ionos_server_nic_ip_unnamed":    ",85.215.248.84,",
-			"__meta_ionos_server_lifecycle":         "AVAILABLE",
-			"__meta_ionos_server_name":              "prometheus-1",
-			"__meta_ionos_server_servers_id":        "8feda53f-15f0-447f-badf-ebe32dad2fc0/servers",
-			"__meta_ionos_server_state":             "RUNNING",
-			"__meta_ionos_server_type":              "ENTERPRISE",
-		},
-	} {
+	var jsonTargets []model.LabelSet
+
+	err = json.NewDecoder(file).Decode(&jsonTargets)
+	require.NoError(t, err)
+
+	require.Len(t, tg.Targets, len(jsonTargets))
+
+	for i, lbls := range jsonTargets {
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
 			require.Equal(t, lbls, tg.Targets[i])
 		})
@@ -93,23 +74,78 @@ func TestIONOSServerRefresh(t *testing.T) {
 }
 
 func mockIONOSServers(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("Authorization") != fmt.Sprintf("Bearer %s", ionosTestBearerToken) {
-		http.Error(w, "bad token", http.StatusUnauthorized)
-		return
-	}
-	if r.URL.Path != fmt.Sprintf("%s/datacenters/%s/servers", ionoscloud.DefaultIonosBasePath, ionosTestDatacenterID) {
-		http.Error(w, fmt.Sprintf("bad url: %s", r.URL.Path), http.StatusNotFound)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	server, err := os.ReadFile("testdata/servers.json")
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	_, err = w.Write(server)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+    if r.Header.Get("Authorization") != fmt.Sprintf("Bearer %s", ionosTestBearerToken) {
+        http.Error(w, "bad token", http.StatusUnauthorized)
+        return
+    }
+
+    if r.URL.Path != fmt.Sprintf("%s/datacenters/%s/servers", ionoscloud.DefaultIonosBasePath, ionosTestDatacenterID) {
+        http.Error(w, fmt.Sprintf("bad url: %s", r.URL.Path), http.StatusNotFound)
+        return
+    }
+
+    limitStr := r.URL.Query().Get("limit")
+    offsetStr := r.URL.Query().Get("offset")
+    
+    limit := 1000 
+    offset := 0   
+
+    if limitStr != "" {
+        if l, err := strconv.Atoi(limitStr); err == nil {
+            limit = l
+        }
+    }
+
+    if offsetStr != "" {
+        if o, err := strconv.Atoi(offsetStr); err == nil {
+            offset = o
+        }
+    }
+
+    w.Header().Set("Content-Type", "application/json")
+    
+    serverData, err := os.ReadFile("testdata/servers.json")
+    if err != nil {
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+    }
+
+    var allServers map[string]interface{}
+    if err := json.Unmarshal(serverData, &allServers); err != nil {
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+    }
+
+    servers, ok := allServers["items"].([]interface{})
+    if !ok {
+        http.Error(w, "Invalid server data", http.StatusInternalServerError)
+        return
+    }
+
+    totalServers := len(servers)
+    if offset >= totalServers {
+        w.Write([]byte(`{"items":[]}`))
+        return
+    }
+
+    end := offset + limit
+    if end > totalServers {
+        end = totalServers
+    }
+
+    paginatedServers := servers[offset:end]
+
+    allServers["items"] = paginatedServers
+
+    paginatedData, err := json.Marshal(allServers)
+    if err != nil {
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+    }
+
+    _, err = w.Write(paginatedData)
+    if err != nil {
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+    }
 }
