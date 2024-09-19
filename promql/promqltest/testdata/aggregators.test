@@ -572,3 +572,30 @@ clear
 #
 #eval instant at 1m count(topk(1,max(up) without()) == topk(1,max(up) without()) == topk(1,max(up) without()) == topk(1,max(up) without()) == topk(1,max(up) without()))
 #	{} 1
+
+clear
+
+# Tes stddev produces consistent results regardless the order the data is loaded in
+load 5m
+		series{label="a"} 1
+		series{label="b"} 2
+		series{label="c"} {{schema:1 sum:15 count:10 buckets:[3 2 5 7 9]}}
+
+eval instant at 0m stddev (series)
+	{} 0.5
+
+eval instant at 0m stdvar (series)
+	{} 0.25
+
+clear
+
+load 5m
+		series{label="a"} {{schema:1 sum:15 count:10 buckets:[3 2 5 7 9]}}
+		series{label="b"} 1
+		series{label="c"} 2
+
+eval instant at 0m stddev (series)
+	{} 0.5
+
+eval instant at 0m stdvar (series)
+	{} 0.25
