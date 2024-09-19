@@ -204,7 +204,7 @@ export function computeStartCompletePosition(state: EditorState, node: SyntaxNod
     // So we have to analyze the string about the current node to see if the duration unit is already present or not.
     (node.type.id === NumberDurationLiteralInDurationContext && !durationTerms.map((v) => v.label).includes(currentText[currentText.length - 1])) ||
     (node.type.id === NumberDurationLiteral && node.parent?.type.id === 0 && node.parent.parent?.type.id === SubqueryExpr) ||
-    (node.type.id === FunctionCallBody && isItATopKLikeAggregationFunc(node) && node.firstChild !== null) ||
+    (node.type.id === FunctionCallBody && isAggregatorWithParam(node) && node.firstChild !== null) ||
     (node.type.id === 0 &&
       (node.parent?.type.id === OffsetExpr ||
         node.parent?.type.id === MatrixSelector ||
@@ -215,18 +215,11 @@ export function computeStartCompletePosition(state: EditorState, node: SyntaxNod
   return start;
 }
 
-function isItATopKLikeAggregationFunc(functionCallBody: SyntaxNode): boolean {
-  const prevSibling = functionCallBody.prevSibling;
-  if (prevSibling !== null && prevSibling.type.id === AggregateOp) {
-    const aggregationOpType = prevSibling.firstChild;
-    if (
-      aggregationOpType !== null &&
-      (aggregationOpType.type.id == Topk ||
-        aggregationOpType.type.id === Bottomk ||
-        aggregationOpType.type.id === LimitK ||
-        aggregationOpType.type.id === LimitRatio ||
-        aggregationOpType.type.id === CountValues)
-    ) {
+function isAggregatorWithParam(functionCallBody: SyntaxNode): boolean {
+  const parent = functionCallBody.parent;
+  if (parent !== null && parent.firstChild?.type.id === AggregateOp) {
+    const aggregationOpType = parent.firstChild.firstChild;
+    if (aggregationOpType !== null && [Topk, Bottomk, LimitK, LimitRatio, CountValues].includes(aggregationOpType.type.id)) {
       return true;
     }
   }
@@ -491,7 +484,7 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
       // Unfortunately, as a current node, codemirror doesn't give us the error node but instead the FunctionCallBody
       // The tree looks like that: PromQL(AggregateExpr(AggregateOp(Topk),FunctionCallBody(NumberDurationLiteral,⚠)))
       // So, we need to figure out if the cursor is on the first parameter or in the second.
-      if (isItATopKLikeAggregationFunc(node)) {
+      if (isAggregatorWithParam(node)) {
         if (node.firstChild === null || (node.firstChild.from <= pos && node.firstChild.to >= pos)) {
           // it means the FunctionCallBody has no child, which means we are autocompleting the first parameter
           result.push({ kind: ContextKind.Number });

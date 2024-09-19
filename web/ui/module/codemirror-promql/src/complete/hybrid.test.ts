@@ -601,6 +601,18 @@ describe('analyzeCompletion test', () => {
       pos: 10,
       expectedContext: [{ kind: ContextKind.MetricName, metricName: 'r' }, { kind: ContextKind.Function }, { kind: ContextKind.Aggregation }],
     },
+    {
+      title: 'autocomplete topk params 4',
+      expr: 'topk by(instance) ()',
+      pos: 19,
+      expectedContext: [{ kind: ContextKind.Number }],
+    },
+    {
+      title: 'autocomplete topk params 5',
+      expr: 'topk by(instance) (inf,r)',
+      pos: 24,
+      expectedContext: [{ kind: ContextKind.MetricName, metricName: 'r' }, { kind: ContextKind.Function }, { kind: ContextKind.Aggregation }],
+    },
   ];
   testCases.forEach((value) => {
     it(value.title, () => {
