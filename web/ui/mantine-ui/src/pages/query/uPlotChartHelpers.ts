@@ -380,10 +380,11 @@ export const getUPlotOptions = (
   hooks: {
     setSelect: [
       (self: uPlot) => {
-        onSelectRange(
-          self.posToVal(self.select.left, "x"),
-          self.posToVal(self.select.left + self.select.width, "x")
-        );
+        // Disallow sub-second zoom as this cause inconsistenices in the X axis in uPlot.
+        const leftVal = self.posToVal(self.select.left, "x");
+        const rightVal = Math.max(self.posToVal(self.select.left + self.select.width, "x"), leftVal + 1);
+
+        onSelectRange(leftVal, rightVal);
       },
     ],
   },
