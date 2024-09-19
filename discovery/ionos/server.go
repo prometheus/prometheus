@@ -86,77 +86,94 @@ func newServerDiscovery(conf *SDConfig, _ log.Logger) (*serverDiscovery, error) 
 
 func (d *serverDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	api := d.client.ServersApi
-
-	servers, _, err := api.DatacentersServersGet(ctx, d.datacenterID).
-		Depth(3).
-		Execute()
-	if err != nil {
-		return nil, err
-	}
-
 	var targets []model.LabelSet
-	for _, server := range *servers.Items {
-		var ips []string
-		ipsByNICName := make(map[string][]string)
 
-		if server.Entities != nil && server.Entities.Nics != nil {
-			for _, nic := range *server.Entities.Nics.Items {
-				nicName := nicDefaultName
-				if name := nic.Properties.Name; name != nil {
-					nicName = *name
-				}
+	limit := int32(1000)
+	offset := int32(0)
 
-				nicIPs := *nic.Properties.Ips
-				ips = append(nicIPs, ips...)
-				ipsByNICName[nicName] = append(nicIPs, ipsByNICName[nicName]...)
-			}
+	for {		
+		servers, _, err := api.DatacentersServersGet(ctx, d.datacenterID).
+			Depth(3).
+			Limit(limit).
+			Offset(offset).
+			Execute()
+
+		if err != nil {
+			return nil, err
 		}
+
+		if servers.Items == nil || len(*servers.Items) == 0 {
+			break
+		}
+
+		for _, server := range *servers.Items {
+			var ips []string
+			ipsByNICName := make(map[string][]string)
+
+			if server.Entities != nil && server.Entities.Nics != nil {
+				for _, nic := range *server.Entities.Nics.Items {
+					nicName := nicDefaultName
+					if name := nic.Properties.Name; name != nil {
+						nicName = *name
+					}
+
+					nicIPs := *nic.Properties.Ips
+					ips = append(nicIPs, ips...)
+					ipsByNICName[nicName] = append(nicIPs, ipsByNICName[nicName]...)
+				}
+			}
 
 		// If a server has no IP addresses, it's being dropped from the targets.
 		if len(ips) == 0 {
 			continue
 		}
 
-		addr := net.JoinHostPort(ips[0], strconv.FormatUint(uint64(d.port), 10))
-		labels := model.LabelSet{
-			model.AddressLabel:          model.LabelValue(addr),
-			serverAvailabilityZoneLabel: model.LabelValue(*server.Properties.AvailabilityZone),
-			serverCPUFamilyLabel:        model.LabelValue(*server.Properties.CpuFamily),
-			serverServersIDLabel:        model.LabelValue(*servers.Id),
-			serverIDLabel:               model.LabelValue(*server.Id),
-			serverIPLabel:               model.LabelValue(join(ips, metaLabelSeparator)),
-			serverLifecycleLabel:        model.LabelValue(*server.Metadata.State),
-			serverNameLabel:             model.LabelValue(*server.Properties.Name),
-			serverStateLabel:            model.LabelValue(*server.Properties.VmState),
-			serverTypeLabel:             model.LabelValue(*server.Properties.Type),
-		}
+			addr := net.JoinHostPort(ips[0], strconv.FormatUint(uint64(d.port), 10))
+			labels := model.LabelSet{
+				model.AddressLabel:          model.LabelValue(addr),
+				serverAvailabilityZoneLabel: model.LabelValue(*server.Properties.AvailabilityZone),
+				serverCPUFamilyLabel:        model.LabelValue(*server.Properties.CpuFamily),
+				serverServersIDLabel:        model.LabelValue(*servers.Id),
+				serverIDLabel:               model.LabelValue(*server.Id),
+				serverIPLabel:               model.LabelValue(join(ips, metaLabelSeparator)),
+				serverLifecycleLabel:        model.LabelValue(*server.Metadata.State),
+				serverNameLabel:             model.LabelValue(*server.Properties.Name),
+				serverStateLabel:            model.LabelValue(*server.Properties.VmState),
+				serverTypeLabel:             model.LabelValue(*server.Properties.Type),
+			}
 
-		for nicName, nicIPs := range ipsByNICName {
-			name := serverNICIPLabelPrefix + strutil.SanitizeLabelName(nicName)
-			labels[model.LabelName(name)] = model.LabelValue(join(nicIPs, metaLabelSeparator))
-		}
+			for nicName, nicIPs := range ipsByNICName {
+				name := serverNICIPLabelPrefix + strutil.SanitizeLabelName(nicName)
+				labels[model.LabelName(name)] = model.LabelValue(join(nicIPs, metaLabelSeparator))
+			}
 
-		if server.Properties.BootCdrom != nil {
-			labels[serverBootCDROMIDLabel] = model.LabelValue(*server.Properties.BootCdrom.Id)
-		}
+			if server.Properties.BootCdrom != nil {
+				labels[serverBootCDROMIDLabel] = model.LabelValue(*server.Properties.BootCdrom.Id)
+			}
 
-		if server.Properties.BootVolume != nil {
-			labels[serverBootVolumeIDLabel] = model.LabelValue(*server.Properties.BootVolume.Id)
-		}
+			if server.Properties.BootVolume != nil {
+				labels[serverBootVolumeIDLabel] = model.LabelValue(*server.Properties.BootVolume.Id)
+			}
 
-		if server.Entities != nil && server.Entities.Volumes != nil {
-			volumes := *server.Entities.Volumes.Items
-			if len(volumes) > 0 {
-				image := volumes[0].Properties.Image
-				if image != nil {
-					labels[serverBootImageIDLabel] = model.LabelValue(*image)
+			if server.Entities != nil && server.Entities.Volumes != nil {
+				volumes := *server.Entities.Volumes.Items
+				if len(volumes) > 0 {
+					image := volumes[0].Properties.Image
+					if image != nil {
+						labels[serverBootImageIDLabel] = model.LabelValue(*image)
+					}
 				}
 			}
+
+			targets = append(targets, labels)
 		}
 
-		targets = append(targets, labels)
-	}
+		offset += limit
 
+		if len(*servers.Items) < int(limit) {
+			break
+		}
+	}
 	return []*targetgroup.Group{{Source: "ionos", Targets: targets}}, nil
 }
 
