@@ -32,7 +32,7 @@
 * [BUGFIX] Scraping: exemplars could be dropped in protobuf scraping. #14810
 * [BUGFIX] Remote-Write: fix metadata sending for experimental Remote-Write V2. #14766
 * [BUGFIX] Remote-Write: Return 4xx not 5xx when timeseries has duplicate label. #14716
-* [BUGFIX] Experimental Native Histograms: many fixes for incorrect results, panics, warnings. #14598, #14611, #14609, #14575, #14513
+* [BUGFIX] Experimental Native Histograms: many fixes for incorrect results, panics, warnings. #14598, #14611, #14609, #14575, #14513, #14821
 * [BUGFIX] TSDB: Only count unknown record types in `record_decode_failures_total` metric. #14042
 * [ENHANCEMENT] Remote-Write: Don't reshard if we haven't successfully sent a sample since last update. #14450
 
