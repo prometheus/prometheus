@@ -380,6 +380,7 @@ func TestEndpoints(t *testing.T) {
 			test_metric4{foo="bar", dup="1"} 1+0x100
 			test_metric4{foo="boo", dup="1"} 1+0x100
 			test_metric4{foo="boo"} 1+0x100
+			test_metric5{"host.name"="localhost"} 1+0x100
 	`)
 	t.Cleanup(func() { storage.Close() })
 
@@ -1110,6 +1111,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 		metadata              []targetMetadata
 		exemplars             []exemplar.QueryResult
 		zeroFunc              func(interface{})
+		nameValidationScheme  model.ValidationScheme
 	}
 
 	rulesZeroFunc := func(i interface{}) {
@@ -2779,6 +2781,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					"test_metric2",
 					"test_metric3",
 					"test_metric4",
+					"test_metric5",
 				},
 			},
 			{
@@ -2791,13 +2794,25 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					"boo",
 				},
 			},
-			// Bad name parameter.
+			// Bad name parameter for legacy validation.
 			{
 				endpoint: api.labelValues,
 				params: map[string]string{
-					"name": "not!!!allowed",
+					"name": "host.name",
 				},
-				errType: errorBadData,
+				nameValidationScheme: model.LegacyValidation,
+				errType:              errorBadData,
+			},
+			// Valid utf8 name parameter for utf8 validation.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "host.name",
+				},
+				nameValidationScheme: model.UTF8Validation,
+				response: []string{
+					"localhost",
+				},
 			},
 			// Start and end before LabelValues starts.
 			{
@@ -3033,15 +3048,15 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					"name": "__name__",
 				},
 				query: url.Values{
-					"limit": []string{"4"},
+					"limit": []string{"5"},
 				},
-				responseLen:   4, // API does not specify which particular values will come back.
+				responseLen:   5, // API does not specify which particular values will come back.
 				warningsCount: 0, // No warnings if limit isn't exceeded.
 			},
 			// Label names.
 			{
 				endpoint: api.labelNames,
-				response: []string{"__name__", "dup", "foo"},
+				response: []string{"__name__", "dup", "foo", "host.name"},
 			},
 			// Start and end before Label names starts.
 			{
@@ -3059,7 +3074,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					"start": []string{"1"},
 					"end":   []string{"100"},
 				},
-				response: []string{"__name__", "dup", "foo"},
+				response: []string{"__name__", "dup", "foo", "host.name"},
 			},
 			// Start before Label names, end within Label names.
 			{
@@ -3068,7 +3083,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					"start": []string{"-1"},
 					"end":   []string{"10"},
 				},
-				response: []string{"__name__", "dup", "foo"},
+				response: []string{"__name__", "dup", "foo", "host.name"},
 			},
 
 			// Start before Label names starts, end after Label names ends.
@@ -3078,7 +3093,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					"start": []string{"-1"},
 					"end":   []string{"100000"},
 				},
-				response: []string{"__name__", "dup", "foo"},
+				response: []string{"__name__", "dup", "foo", "host.name"},
 			},
 			// Start with bad data for Label names, end within Label names.
 			{
@@ -3096,7 +3111,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					"start": []string{"1"},
 					"end":   []string{"1000000006"},
 				},
-				response: []string{"__name__", "dup", "foo"},
+				response: []string{"__name__", "dup", "foo", "host.name"},
 			},
 			// Start and end after Label names ends.
 			{
@@ -3113,7 +3128,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				query: url.Values{
 					"start": []string{"4"},
 				},
-				response: []string{"__name__", "dup", "foo"},
+				response: []string{"__name__", "dup", "foo", "host.name"},
 			},
 			// Only provide End within Label names, don't provide a start time.
 			{
@@ -3121,7 +3136,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				query: url.Values{
 					"end": []string{"20"},
 				},
-				response: []string{"__name__", "dup", "foo"},
+				response: []string{"__name__", "dup", "foo", "host.name"},
 			},
 			// Label names with bad matchers.
 			{
@@ -3189,9 +3204,9 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			{
 				endpoint: api.labelNames,
 				query: url.Values{
-					"limit": []string{"3"},
+					"limit": []string{"4"},
 				},
-				responseLen:   3, // API does not specify which particular values will come back.
+				responseLen:   4, // API does not specify which particular values will come back.
 				warningsCount: 0, // No warnings if limit isn't exceeded.
 			},
 		}...)
@@ -3226,6 +3241,8 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					for p, v := range test.params {
 						ctx = route.WithParam(ctx, p, v)
 					}
+
+					model.NameValidationScheme = test.nameValidationScheme
 
 					req, err := request(method, test.query)
 					require.NoError(t, err)
