@@ -35,6 +35,7 @@ var _ IndexReader = &HeadAndOOOIndexReader{}
 
 type HeadAndOOOIndexReader struct {
 	*headIndexReader            // A reference to the headIndexReader so we can reuse as many interface implementation as possible.
+	inoMint                     int64
 	lastGarbageCollectedMmapRef chunks.ChunkDiskMapperRef
 }
 
@@ -49,13 +50,13 @@ func (o mergedOOOChunks) Iterator(iterator chunkenc.Iterator) chunkenc.Iterator 
 	return storage.ChainSampleIteratorFromIterables(iterator, o.chunkIterables)
 }
 
-func NewHeadAndOOOIndexReader(head *Head, mint, maxt int64, lastGarbageCollectedMmapRef chunks.ChunkDiskMapperRef) *HeadAndOOOIndexReader {
+func NewHeadAndOOOIndexReader(head *Head, inoMint, mint, maxt int64, lastGarbageCollectedMmapRef chunks.ChunkDiskMapperRef) *HeadAndOOOIndexReader {
 	hr := &headIndexReader{
 		head: head,
 		mint: mint,
 		maxt: maxt,
 	}
-	return &HeadAndOOOIndexReader{hr, lastGarbageCollectedMmapRef}
+	return &HeadAndOOOIndexReader{hr, inoMint, lastGarbageCollectedMmapRef}
 }
 
 func (oh *HeadAndOOOIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
@@ -76,9 +77,9 @@ func (oh *HeadAndOOOIndexReader) Series(ref storage.SeriesRef, builder *labels.S
 	*chks = (*chks)[:0]
 
 	if s.ooo != nil {
-		return getOOOSeriesChunks(s, oh.mint, oh.maxt, oh.lastGarbageCollectedMmapRef, 0, true, chks)
+		return getOOOSeriesChunks(s, oh.mint, oh.maxt, oh.lastGarbageCollectedMmapRef, 0, true, oh.inoMint, chks)
 	}
-	*chks = appendSeriesChunks(s, oh.mint, oh.maxt, *chks)
+	*chks = appendSeriesChunks(s, oh.inoMint, oh.maxt, *chks)
 	return nil
 }
 
@@ -87,7 +88,7 @@ func (oh *HeadAndOOOIndexReader) Series(ref storage.SeriesRef, builder *labels.S
 //
 // maxMmapRef tells upto what max m-map chunk that we can consider. If it is non-0, then
 // the oooHeadChunk will not be considered.
-func getOOOSeriesChunks(s *memSeries, mint, maxt int64, lastGarbageCollectedMmapRef, maxMmapRef chunks.ChunkDiskMapperRef, includeInOrder bool, chks *[]chunks.Meta) error {
+func getOOOSeriesChunks(s *memSeries, mint, maxt int64, lastGarbageCollectedMmapRef, maxMmapRef chunks.ChunkDiskMapperRef, includeInOrder bool, inoMint int64, chks *[]chunks.Meta) error {
 	tmpChks := make([]chunks.Meta, 0, len(s.ooo.oooMmappedChunks))
 
 	addChunk := func(minT, maxT int64, ref chunks.ChunkRef, chunk chunkenc.Chunk) {
@@ -128,7 +129,7 @@ func getOOOSeriesChunks(s *memSeries, mint, maxt int64, lastGarbageCollectedMmap
 	}
 
 	if includeInOrder {
-		tmpChks = appendSeriesChunks(s, mint, maxt, tmpChks)
+		tmpChks = appendSeriesChunks(s, inoMint, maxt, tmpChks)
 	}
 
 	// There is nothing to do if we did not collect any chunk.
@@ -476,7 +477,7 @@ func (ir *OOOCompactionHeadIndexReader) Series(ref storage.SeriesRef, builder *l
 		return nil
 	}
 
-	return getOOOSeriesChunks(s, ir.ch.mint, ir.ch.maxt, 0, ir.ch.lastMmapRef, false, chks)
+	return getOOOSeriesChunks(s, ir.ch.mint, ir.ch.maxt, 0, ir.ch.lastMmapRef, false, 0, chks)
 }
 
 func (ir *OOOCompactionHeadIndexReader) SortedLabelValues(_ context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
@@ -516,7 +517,7 @@ type HeadAndOOOQuerier struct {
 	querier    storage.Querier // Used for LabelNames, LabelValues, but may be nil if head was truncated in the mean time, in which case we ignore it and not close it in the end.
 }
 
-func NewHeadAndOOOQuerier(mint, maxt int64, head *Head, oooIsoState *oooIsolationState, querier storage.Querier) storage.Querier {
+func NewHeadAndOOOQuerier(inoMint, mint, maxt int64, head *Head, oooIsoState *oooIsolationState, querier storage.Querier) storage.Querier {
 	cr := &headChunkReader{
 		head:     head,
 		mint:     mint,
@@ -527,7 +528,7 @@ func NewHeadAndOOOQuerier(mint, maxt int64, head *Head, oooIsoState *oooIsolatio
 		mint:    mint,
 		maxt:    maxt,
 		head:    head,
-		index:   NewHeadAndOOOIndexReader(head, mint, maxt, oooIsoState.minRef),
+		index:   NewHeadAndOOOIndexReader(head, inoMint, mint, maxt, oooIsoState.minRef),
 		chunkr:  NewHeadAndOOOChunkReader(head, mint, maxt, cr, oooIsoState, 0),
 		querier: querier,
 	}
@@ -568,7 +569,7 @@ type HeadAndOOOChunkQuerier struct {
 	querier    storage.ChunkQuerier
 }
 
-func NewHeadAndOOOChunkQuerier(mint, maxt int64, head *Head, oooIsoState *oooIsolationState, querier storage.ChunkQuerier) storage.ChunkQuerier {
+func NewHeadAndOOOChunkQuerier(inoMint, mint, maxt int64, head *Head, oooIsoState *oooIsolationState, querier storage.ChunkQuerier) storage.ChunkQuerier {
 	cr := &headChunkReader{
 		head:     head,
 		mint:     mint,
@@ -579,7 +580,7 @@ func NewHeadAndOOOChunkQuerier(mint, maxt int64, head *Head, oooIsoState *oooIso
 		mint:    mint,
 		maxt:    maxt,
 		head:    head,
-		index:   NewHeadAndOOOIndexReader(head, mint, maxt, oooIsoState.minRef),
+		index:   NewHeadAndOOOIndexReader(head, inoMint, mint, maxt, oooIsoState.minRef),
 		chunkr:  NewHeadAndOOOChunkReader(head, mint, maxt, cr, oooIsoState, 0),
 		querier: querier,
 	}
