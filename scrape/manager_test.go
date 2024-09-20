@@ -716,6 +716,71 @@ scrape_configs:
 	require.ElementsMatch(t, []string{"job1", "job3"}, scrapeManager.ScrapePools())
 }
 
+func setupScrapeManager(t *testing.T, enableCTZeroIngestion bool) (*collectResultAppender, *Manager) {
+	app := &collectResultAppender{}
+	scrapeManager, err := NewManager(
+		&Options{
+			EnableCreatedTimestampZeroIngestion: enableCTZeroIngestion,
+			skipOffsetting:                      true,
+		},
+		log.NewLogfmtLogger(os.Stderr),
+		&collectResultAppendable{app},
+		prometheus.NewRegistry(),
+	)
+	require.NoError(t, err)
+
+	require.NoError(t, scrapeManager.ApplyConfig(&config.Config{
+		GlobalConfig: config.GlobalConfig{
+			// Disable regular scrapes.
+			ScrapeInterval:  model.Duration(9999 * time.Minute),
+			ScrapeTimeout:   model.Duration(5 * time.Second),
+			ScrapeProtocols: []config.ScrapeProtocol{config.OpenMetricsText1_0_0, config.PrometheusProto},
+		},
+		ScrapeConfigs: []*config.ScrapeConfig{{JobName: "test"}},
+	}))
+
+	return app, scrapeManager
+}
+
+func setupTestServer(t *testing.T, typ string, toWrite []byte) *httptest.Server {
+	once := sync.Once{}
+
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fail := true
+			once.Do(func() {
+				fail = false
+				w.Header().Set("Content-Type", typ)
+				w.Write(toWrite)
+			})
+
+			if fail {
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+		}),
+	)
+
+	t.Cleanup(func() { server.Close() })
+
+	return server
+}
+
+func prepareWriteData(t *testing.T, mName, typ string, counterSampleProto *dto.Counter, counterSampleText string) []byte {
+	var toWrite []byte
+	switch typ {
+	case "application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited":
+		ctrType := dto.MetricType_COUNTER
+		toWrite = protoMarshalDelimited(t, &dto.MetricFamily{
+			Name:   proto.String(mName),
+			Type:   &ctrType,
+			Metric: []*dto.Metric{{Counter: counterSampleProto}},
+		})
+	case "application/openmetrics-text; version=1.0.0; charset=utf-8":
+		toWrite = []byte(counterSampleText)
+	}
+	return toWrite
+}
+
 // TestManagerCTZeroIngestion tests scrape manager for CT cases.
 func TestManagerCTZeroIngestion(t *testing.T) {
 	const mName = "expected_counter"
@@ -805,67 +870,15 @@ expected_counter 17.0 1520879607.789
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			app := &collectResultAppender{}
-			scrapeManager, err := NewManager(
-				&Options{
-					EnableCreatedTimestampZeroIngestion: tc.enableCTZeroIngestion,
-					skipOffsetting:                      true,
-				},
-				log.NewLogfmtLogger(os.Stderr),
-				&collectResultAppendable{app},
-				prometheus.NewRegistry(),
-			)
-			require.NoError(t, err)
+			app, scrapeManager := setupScrapeManager(t, tc.enableCTZeroIngestion)
 
-			require.NoError(t, scrapeManager.ApplyConfig(&config.Config{
-				GlobalConfig: config.GlobalConfig{
-					// Disable regular scrapes.
-					ScrapeInterval:  model.Duration(9999 * time.Minute),
-					ScrapeTimeout:   model.Duration(5 * time.Second),
-					ScrapeProtocols: []config.ScrapeProtocol{config.OpenMetricsText1_0_0, config.PrometheusProto},
-				},
-				ScrapeConfigs: []*config.ScrapeConfig{{JobName: "test"}},
-			}))
+			toWrite := prepareWriteData(t, mName, tc.typ, tc.counterSampleProto, tc.counterSampleText)
 
-			once := sync.Once{}
-
-			// Prepare the sample to be ingested.
-			var toWrite []byte
-			switch tc.typ {
-			case "application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited":
-				ctrType := dto.MetricType_COUNTER
-				toWrite = protoMarshalDelimited(t, &dto.MetricFamily{
-					Name:   proto.String(mName),
-					Type:   &ctrType,
-					Metric: []*dto.Metric{{Counter: tc.counterSampleProto}},
-				})
-			case "application/openmetrics-text; version=1.0.0; charset=utf-8":
-				toWrite = []byte(tc.counterSampleText)
-			}
-
-			// Start fake HTTP target to that allow one scrape only.
-			server := httptest.NewServer(
-				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					fail := true
-					once.Do(func() {
-						fail = false
-						w.Header().Set("Content-Type", tc.typ)
-
-						w.Write(toWrite)
-					})
-
-					if fail {
-						w.WriteHeader(http.StatusInternalServerError)
-					}
-				}),
-			)
-			defer server.Close()
-
+			server := setupTestServer(t, tc.typ, toWrite)
 			serverURL, err := url.Parse(server.URL)
 			require.NoError(t, err)
 
-			// Add fake target directly into tsets + reload. Normally users would use
-			// Manager.Run and wait for minimum 5s refresh interval.
+			// Add fake target directly into tsets + reload
 			scrapeManager.updateTsets(map[string][]*targetgroup.Group{
 				"test": {{
 					Targets: []model.LabelSet{{
