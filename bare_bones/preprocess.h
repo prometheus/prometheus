@@ -2,8 +2,10 @@
 
 #define PROMPP_ATTRIBUTE_INLINE __attribute__((always_inline))
 #define PROMPP_ATTRIBUTE_NOINLINE __attribute__((noinline))
-#define PROMPP_ALWAYS_INLINE inline PROMPP_ATTRIBUTE_INLINE
-#define PROMPP_LAMBDA_INLINE PROMPP_ATTRIBUTE_INLINE
+// #define PROMPP_ALWAYS_INLINE inline PROMPP_ATTRIBUTE_INLINE
+#define PROMPP_ALWAYS_INLINE inline __attribute__((noinline))
+// #define PROMPP_LAMBDA_INLINE PROMPP_ATTRIBUTE_INLINE
+#define PROMPP_LAMBDA_INLINE __attribute__((noinline))
 
 #define PROMPP_ATTRIBUTE_PACKED __attribute__((__packed__))
 

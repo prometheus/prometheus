@@ -70,8 +70,8 @@ class Decoder {
 
     if (chunk.encoding_type == chunk::DataChunk::EncodingType::kGorilla) {
       [[unlikely]];
-      return encoder::BitSequenceWithItemsCount::count(chunk_type == kOpen ? storage.get_values_gorilla_stream<kOpen>(chunk.encoder.gorilla)
-                                                                           : storage.get_values_gorilla_stream<kFinalized>(chunk.encoder.gorilla));
+      return encoder::BitSequenceWithItemsCount::count(chunk_type == kOpen ? storage.get_gorilla_encoder_stream<kOpen>(chunk.encoder.gorilla)
+                                                                           : storage.get_gorilla_encoder_stream<kFinalized>(chunk.encoder.gorilla));
     } else {
       return (chunk_type == kOpen ? storage.get_timestamp_stream<kOpen>(chunk.timestamp_encoder_state_id)
                                   : storage.get_timestamp_stream<kFinalized>(chunk.timestamp_encoder_state_id))
