@@ -251,54 +251,61 @@ func benchmarkIterator(b *testing.B, newChunk func() Chunk) {
 	}
 }
 
+func newXORChunk() Chunk {
+	return NewXORChunk()
+}
+
 func BenchmarkXORIterator(b *testing.B) {
-	benchmarkIterator(b, func() Chunk {
-		return NewXORChunk()
-	})
+	benchmarkIterator(b, newXORChunk)
 }
 
 func BenchmarkXORAppender(b *testing.B) {
-	benchmarkAppender(b, func() Chunk {
-		return NewXORChunk()
+	r := rand.New(rand.NewSource(1))
+	b.Run("constant", func(b *testing.B) {
+		benchmarkAppender(b, func() (int64, float64) {
+			return 1000, 0
+		}, newXORChunk)
+	})
+	b.Run("random steps", func(b *testing.B) {
+		benchmarkAppender(b, func() (int64, float64) {
+			return int64(r.Intn(100) - 50 + 15000), // 15 seconds +- up to 100ms of jitter.
+				float64(r.Intn(100) - 50) // Varying from -50 to +50 in 100 discrete steps.
+		}, newXORChunk)
+	})
+	b.Run("random 0-1", func(b *testing.B) {
+		benchmarkAppender(b, func() (int64, float64) {
+			return int64(r.Intn(100) - 50 + 15000), // 15 seconds +- up to 100ms of jitter.
+				r.Float64() // Random between 0 and 1.0.
+		}, newXORChunk)
 	})
 }
 
-func benchmarkAppender(b *testing.B, newChunk func() Chunk) {
+func benchmarkAppender(b *testing.B, deltas func() (int64, float64), newChunk func() Chunk) {
 	var (
 		t = int64(1234123324)
 		v = 1243535.123
 	)
+	const nSamples = 120 // Same as tsdb.DefaultSamplesPerChunk.
 	var exp []pair
-	for i := 0; i < b.N; i++ {
-		// t += int64(rand.Intn(10000) + 1)
-		t += int64(1000)
-		// v = rand.Float64()
-		v += float64(100)
+	for i := 0; i < nSamples; i++ {
+		dt, dv := deltas()
+		t += dt
+		v += dv
 		exp = append(exp, pair{t: t, v: v})
 	}
 
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	var chunks []Chunk
-	for i := 0; i < b.N; {
+	for i := 0; i < b.N; i++ {
 		c := newChunk()
 
 		a, err := c.Appender()
 		if err != nil {
 			b.Fatalf("get appender: %s", err)
 		}
-		j := 0
 		for _, p := range exp {
-			if j > 250 {
-				break
-			}
 			a.Append(p.t, p.v)
-			i++
-			j++
 		}
-		chunks = append(chunks, c)
 	}
-
-	fmt.Println("num", b.N, "created chunks", len(chunks))
 }
