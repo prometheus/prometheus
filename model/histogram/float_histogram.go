@@ -234,11 +234,11 @@ func (h *FloatHistogram) TestExpression() string {
 	case UnknownCounterReset:
 		// Unknown is the default, don't add anything.
 	case CounterReset:
-		res = append(res, fmt.Sprintf("counter_reset_hint:reset"))
+		res = append(res, "counter_reset_hint:reset")
 	case NotCounterReset:
-		res = append(res, fmt.Sprintf("counter_reset_hint:not_reset"))
+		res = append(res, "counter_reset_hint:not_reset")
 	case GaugeType:
-		res = append(res, fmt.Sprintf("counter_reset_hint:gauge"))
+		res = append(res, "counter_reset_hint:gauge")
 	}
 
 	addBuckets := func(kind, bucketsKey, offsetKey string, buckets []float64, spans []Span) []string {
