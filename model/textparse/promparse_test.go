@@ -504,7 +504,7 @@ func BenchmarkParse(b *testing.B) {
 	} {
 		for _, fn := range []string{"promtestdata.txt", "promtestdata.nometa.txt", "omtestdata.txt"} {
 			// we only want to benchmark om parsers with omtestdata
-			if fn == "omtestdata.txt" && parserName == "prometheus" {
+			if fn == "omtestdata.txt" && !strings.HasPrefix(fn, "openmetrics") {
 				continue
 			}
 
