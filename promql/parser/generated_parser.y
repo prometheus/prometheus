@@ -818,12 +818,12 @@ histogram_desc_item
                    $$ = yylex.(*parser).newMap()
                    $$["sum"] = $3
                 }
-                | COUNT_DESC COLON number
+                | COUNT_DESC COLON signed_or_unsigned_number
                 {
                    $$ = yylex.(*parser).newMap()
                    $$["count"] = $3
                 }
-                | ZERO_BUCKET_DESC COLON number
+                | ZERO_BUCKET_DESC COLON signed_or_unsigned_number
                 {
                    $$ = yylex.(*parser).newMap()
                    $$["z_bucket"] = $3
@@ -875,11 +875,11 @@ bucket_set      : LEFT_BRACKET bucket_set_list SPACE RIGHT_BRACKET
                 }
                 ;
 
-bucket_set_list : bucket_set_list SPACE number
+bucket_set_list : bucket_set_list SPACE signed_or_unsigned_number
                 {
                   $$ = append($1, $3)
                 }
-                | number
+                | signed_or_unsigned_number
                 {
                   $$ = []float64{$1}
                 }
