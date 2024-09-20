@@ -729,6 +729,7 @@ func setupScrapeManager(t *testing.T, enableCTZeroIngestion bool) (*collectResul
 			skipOffsetting:                      true,
 		},
 		log.NewLogfmtLogger(os.Stderr),
+		nil,
 		&collectResultAppendable{app},
 		prometheus.NewRegistry(),
 	)
