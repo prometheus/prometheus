@@ -46,7 +46,7 @@ import (
 
 var (
 	patSpace       = regexp.MustCompile("[\t ]+")
-	patLoad        = regexp.MustCompile(`^load(?:_(with_nhcb))?\s+(.+?)$`)
+	patLoad        = regexp.MustCompile(`^load(?:_(with_nhcb))?\s+(.+?)(?:\s+(\d+))?$`)
 	patEvalInstant = regexp.MustCompile(`^eval(?:_(fail|warn|ordered|info))?\s+instant\s+(?:at\s+(.+?))?\s+(.+)$`)
 	patEvalRange   = regexp.MustCompile(`^eval(?:_(fail|warn|info))?\s+range\s+from\s+(.+)\s+to\s+(.+)\s+step\s+(.+?)\s+(.+)$`)
 )
@@ -204,11 +204,20 @@ func parseLoad(lines []string, i int) (int, *loadCmd, error) {
 		withNHCB = parts[1] == "with_nhcb"
 		step     = parts[2]
 	)
+	startTime := testStartTime
+	if parts[3] != "" {
+		s, err := strconv.Atoi(parts[3])
+		if err != nil {
+			return i, nil, raise(i, "invalid start time %q: %s", s, err)
+		}
+		startTime = time.Unix(int64(s), 0).UTC()
+	}
+
 	gap, err := model.ParseDuration(step)
 	if err != nil {
 		return i, nil, raise(i, "invalid step definition %q: %s", step, err)
 	}
-	cmd := newLoadCmd(time.Duration(gap), withNHCB)
+	cmd := newLoadCmd(startTime, time.Duration(gap), withNHCB)
 	for i+1 < len(lines) {
 		i++
 		defLine := lines[i]
@@ -422,6 +431,7 @@ func (*evalCmd) testCmd()  {}
 // loadCmd is a command that loads sequences of sample values for specific
 // metrics into the storage.
 type loadCmd struct {
+	startTime time.Time
 	gap       time.Duration
 	metrics   map[uint64]labels.Labels
 	defs      map[uint64][]promql.Sample
@@ -429,8 +439,9 @@ type loadCmd struct {
 	withNHCB  bool
 }
 
-func newLoadCmd(gap time.Duration, withNHCB bool) *loadCmd {
+func newLoadCmd(startTime time.Time, gap time.Duration, withNHCB bool) *loadCmd {
 	return &loadCmd{
+		startTime: startTime,
 		gap:       gap,
 		metrics:   map[uint64]labels.Labels{},
 		defs:      map[uint64][]promql.Sample{},
@@ -448,7 +459,7 @@ func (cmd *loadCmd) set(m labels.Labels, vals ...parser.SequenceValue) {
 	h := m.Hash()
 
 	samples := make([]promql.Sample, 0, len(vals))
-	ts := testStartTime
+	ts := cmd.startTime
 	for _, v := range vals {
 		if !v.Omitted {
 			samples = append(samples, promql.Sample{

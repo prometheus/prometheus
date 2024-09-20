@@ -83,6 +83,7 @@ func DefaultOptions() *Options {
 		IsolationDisabled:           defaultIsolationDisabled,
 		HeadChunksWriteQueueSize:    chunks.DefaultWriteQueueSize,
 		OutOfOrderCapMax:            DefaultOutOfOrderCapMax,
+		OutOfOrderTimeWindow:        24 * time.Hour.Milliseconds(),
 		EnableOverlappingCompaction: true,
 		EnableSharding:              false,
 		EnableDelayedCompaction:     false,

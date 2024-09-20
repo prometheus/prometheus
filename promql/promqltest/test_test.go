@@ -14,6 +14,7 @@
 package promqltest
 
 import (
+	"io/fs"
 	"math"
 	"testing"
 	"time"
@@ -156,6 +157,15 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestRunTestOOO(t *testing.T) {
+	t.Run("testdata/ooo.test", func(t *testing.T) {
+		content, err := fs.ReadFile(testsFs, "testdata/ooo.test")
+		require.NoError(t, err)
+		engine := NewTestEngine(t, false, 0, DefaultMaxSamplesPerQuery)
+		RunTest(t, string(content), engine)
+	})
 }
 
 func TestRunTest(t *testing.T) {

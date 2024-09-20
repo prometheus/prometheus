@@ -1,0 +1,11 @@
+# OOO samples
+
+load 30s 150
+	http_requests{path="/foo"}	1 2 3 4 8 9
+
+load 30s 0
+    http_requests{path="/foo"}	1 2 3 0 1
+
+eval range from 0 to 5m step 30s sum by (path) (http_requests)
+    {path="/foo"} 1 2 3 0 1 1 2 3 4 5
+
