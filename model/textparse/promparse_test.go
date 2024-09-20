@@ -498,8 +498,16 @@ func BenchmarkParse(b *testing.B) {
 		"openmetrics": func(b []byte, st *labels.SymbolTable) Parser {
 			return NewOpenMetricsParser(b, st)
 		},
+		"openmetrics/skip-ct": func(b []byte, st *labels.SymbolTable) Parser {
+			return NewOpenMetricsParser(b, st, WithOMParserCTSeriesSkipped())
+		},
 	} {
-		for _, fn := range []string{"promtestdata.txt", "promtestdata.nometa.txt"} {
+		for _, fn := range []string{"promtestdata.txt", "promtestdata.nometa.txt", "omtestdata.txt"} {
+			// we only want to benchmark om parsers with omtestdata
+			if fn == "omtestdata.txt" && parserName == "prometheus" {
+				continue
+			}
+
 			f, err := os.Open(fn)
 			require.NoError(b, err)
 			defer f.Close()
@@ -627,6 +635,35 @@ func BenchmarkParse(b *testing.B) {
 						}
 						total += len(decSamples)
 						decSamples = decSamples[:0]
+					}
+				}
+				_ = total
+			})
+			b.Run(parserName+"/created-lines/"+fn, func(b *testing.B) {
+				b.SetBytes(int64(len(buf) / promtestdataSampleCount))
+				b.ReportAllocs()
+				b.ResetTimer()
+
+				total := 0
+
+				st := labels.NewSymbolTable()
+				for i := 0; i < b.N; i += promtestdataSampleCount {
+					p := parser(buf, st)
+
+				Outer:
+					for i < b.N {
+						t, err := p.Next()
+						switch t {
+						case EntryInvalid:
+							if errors.Is(err, io.EOF) {
+								break Outer
+							}
+							b.Fatal(err)
+						case EntrySeries:
+							if parserName == "openmetrics/skip-ct" {
+								p.CreatedTimestamp()
+							}
+						}
 					}
 				}
 				_ = total
