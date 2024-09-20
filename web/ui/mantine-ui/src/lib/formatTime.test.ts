@@ -57,6 +57,12 @@ describe("humanizeDuration", () => {
     expect(humanizeDuration(0)).toBe("0s");
   });
 
+  test("formats submilliseconds correctly", () => {
+    expect(humanizeDuration(0.1)).toBe("0ms");
+    expect(humanizeDuration(0.6)).toBe("1ms");
+    expect(humanizeDuration(0.000001)).toBe("0ms");
+  });
+
   test("formats milliseconds correctly", () => {
     expect(humanizeDuration(1)).toBe("1ms");
     expect(humanizeDuration(999)).toBe("999ms");
