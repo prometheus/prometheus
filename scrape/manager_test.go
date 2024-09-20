@@ -16,6 +16,7 @@ package scrape
 import (
 	"context"
 	"fmt"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -32,7 +33,6 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/types/known/timestamppb"
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/config"
@@ -785,7 +785,7 @@ func prepareWriteData(t *testing.T, mName, typ string, counterSampleProto *dto.C
 func TestManagerCTZeroIngestion(t *testing.T) {
 	const mName = "expected_counter"
 
-	type exp struct {
+	type expectCTLineAppended struct {
 		value float64
 		ts    int64
 	}
@@ -795,7 +795,7 @@ func TestManagerCTZeroIngestion(t *testing.T) {
 		counterSampleProto    *dto.Counter
 		counterSampleText     string
 		enableCTZeroIngestion bool
-		exp                   []exp
+		expectCTLineAppended  []expectCTLineAppended
 		typ                   string
 	}{
 		{
@@ -831,7 +831,7 @@ func TestManagerCTZeroIngestion(t *testing.T) {
 expected_counter 17.0 1520879607.789
 expected_counter_created 1000
 # EOF`,
-			exp: []exp{{
+			expectCTLineAppended: []expectCTLineAppended{{
 				value: 17.0,
 				ts:    1520879607789,
 			}},
@@ -844,7 +844,7 @@ expected_counter 17.0 1520879607.789
 expected_counter_created 1000
 # EOF`,
 			enableCTZeroIngestion: true,
-			exp: []exp{
+			expectCTLineAppended: []expectCTLineAppended{
 				{
 					value: 0.0,
 					ts:    1000,
@@ -862,7 +862,7 @@ expected_counter_created 1000
 expected_counter 17.0 1520879607.789
 # EOF`,
 			enableCTZeroIngestion: true,
-			exp: []exp{{
+			expectCTLineAppended: []expectCTLineAppended{{
 				value: 17.0,
 				ts:    1520879607789,
 			}},
@@ -928,9 +928,14 @@ expected_counter 17.0 1520879607.789
 				require.Equal(t, tc.counterSampleProto.GetValue(), got[0])
 
 			case "application/openmetrics-text; version=1.0.0; charset=utf-8":
-				require.Len(t, got, len(tc.exp))
-				for i, e := range tc.exp {
+				require.Len(t, got, len(tc.expectCTLineAppended))
+				for i, e := range tc.expectCTLineAppended {
 					require.Equal(t, e.value, got[i])
+				}
+
+				// We expect _created lines to be appended as a new metric if ct ingestion is disabled
+				if !tc.enableCTZeroIngestion {
+					require.Equal(t, "expected_counter_created", app.resultFloats[1].metric.Get(model.MetricNameLabel))
 				}
 			}
 		})
